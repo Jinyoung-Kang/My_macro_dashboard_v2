@@ -248,8 +248,7 @@ public class ClaudeBookService {
         this.config = config;
         this.mapper = mapper;
         this.clock = clock;
-        List<MarketContext> contexts = new ArrayList<>();
-        contexts.add(new MarketContext(US, packets::build, SCHEMA_RESOURCE));
+        List<MarketContext> contexts = new ArrayList<>(marketContexts(packets));
         contexts.addAll(otherMarkets);
         Map<String, ClaudeDecisionPipeline> byMarket = new LinkedHashMap<>();
         for (MarketContext context : contexts) {
@@ -261,6 +260,15 @@ public class ClaudeBookService {
             }
         }
         this.pipelines = Map.copyOf(byMarket);
+    }
+
+    /**
+     * 운영 결정 문맥 — 시장마다 하나, 지금은 미국 하나(미국 묶음·{@link PacketBuilder#build}·{@value #SCHEMA_RESOURCE}). 서비스가
+     * 이 목록으로 파이프라인을 만들고, 시험이 문맥마다 응답 스키마의 체결 시점 enum·시장 묶음의 체결 시점·고정 문단이 맞물리는지
+     * 봅니다(명세 K38 — 한국 문맥을 여기에 더하면 그 시험이 함께 봄).
+     */
+    static List<MarketContext> marketContexts(PacketBuilder packets) {
+        return List.of(new MarketContext(US, packets::build, SCHEMA_RESOURCE));
     }
 
     /** 같은 거래일·같은 종류에 한 번 더 낼 결정인가 — API 오류이고 아직 재시도하지 않음(명세 C7). */
