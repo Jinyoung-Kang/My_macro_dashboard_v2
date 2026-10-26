@@ -12,7 +12,7 @@ curl -s -o /dev/null -c "$JAR" -H 'Content-Type: application/json' -H "Origin: $
 COOKIE="$(awk '$6=="my_macro_v2_session"{print $7}' "$JAR")"
 [ -n "$COOKIE" ] || { echo "로그인 실패"; exit 1; }
 printf '%-16s %-8s %5s %5s %5s %8s %8s %6s\n' 페이지 폼팩터 성능 접근성 모범 'LCP(ms)' 'TBT(ms)' CLS
-for page in /login /macro /institutions /radar /status; do
+for page in /login / /macro /institutions /radar /status /paper/us; do
   for form in desktop mobile; do
     name="$(echo "${page#/}" | tr '/' '_')"; [ -n "$name" ] || name=root
     extra=(); [ "$form" = desktop ] && extra=(--preset=desktop)

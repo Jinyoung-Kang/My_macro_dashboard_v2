@@ -21,3 +21,6 @@ da0148e5c3339c22a50b28fd869f6641ff17559f:collector/tests/test_dart.py:generic-ap
 
 # 509afc3: 발표·실적 일정 테스트의 가짜 FRED 키(32자, 같은 16자 hex를 두 번 이어 붙인 자리표시) — 오류 메시지에 키가 새지 않는지 보는 표지 값이다.
 509afc3cdacd086a75cae4b0455182a60f32cf1a:collector/tests/test_us_calendar.py:generic-api-key:43
+
+# 183fc20: 홈 테스트 고정값의 매크로 카드 항목 키("kospi200_night_scraped") — 위 3a976e6·91275c5와 같은 데이터셋 키 문자열이다.
+183fc20c61146f478f6653e968466d65fb70cb1f:frontend/src/lib/__tests__/homeFixtures.ts:generic-api-key:115
