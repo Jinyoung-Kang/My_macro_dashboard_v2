@@ -353,10 +353,10 @@ def test_예산_설정은_1에서_600으로_자르고_잘못된_값은_기본값
     assert settings.fundamentals_fetch_budget() == 200
 
 
-def test_weekly에_등록되고_태스크는_28개():
+def test_weekly에_등록되고_태스크는_29개():
     task = tasks.TASKS_BY_NAME["sec_fundamentals"]
     assert task.speed == "weekly" and task.run is task_module.task_sec_fundamentals
-    assert len(tasks.ALL_TASKS) == len(tasks.TASKS_BY_NAME) == 28  # 2단계 A의 us_calendar·B의 news_headlines·C의 earnings_surprise·v2 B3의 fsc_etf_prices까지
+    assert len(tasks.ALL_TASKS) == len(tasks.TASKS_BY_NAME) == 29  # 2단계 A의 us_calendar·B의 news_headlines·C의 earnings_surprise·v2 B3의 fsc_etf_prices·v2 B4의 kr_paper_universe까지
 
 
 # ==============================================================================

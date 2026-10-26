@@ -10,6 +10,7 @@ from .earnings_surprise import task_earnings_surprise
 from .filings import task_sec_13f, task_sec_13f_track_record
 from .fundamentals import task_sec_fundamentals
 from .korea_public import task_dart_fundamentals, task_fsc_etf_prices, task_fsc_prices, task_kr_holidays
+from .kr_paper import task_kr_paper_universe
 from .maintenance import task_run_log_retention
 from .markets import task_macro_collected, task_radar_rankings, task_scraper_markets
 from .news import task_news_headlines
@@ -49,6 +50,8 @@ ALL_TASKS: tuple[Task, ...] = (
     Task("toss_market_flows", "slow", task_toss_market_flows, "코스피·코스닥 투자자별 매매대금 (토스증권)"),
     Task("toss_stock_flows", "slow", task_toss_stock_flows, "레이더 종목 투자자별 매매동향 (토스증권)"),
     Task("toss_radar_universe", "slow", task_toss_radar_universe, "레이더 폴백 — 거래대금 상위 100종목 투자자 매매 (토스증권)"),
+    # 🧪 한국 책(v2 2단계 B4) — 금융위·토스 태스크 뒤(명세 §4-9 순서). 유니버스는 외부 호출 0회(금융위 저장본으로 계산).
+    Task("kr_paper_universe", "slow", task_kr_paper_universe, "🧪 한국 책 유니버스 — 금융위 최신 기준일 코스피 시총 상위 100 보통주 (외부 호출 없음)"),
     Task("sec_13f", "weekly", task_sec_13f, "SEC 13F 기관 포트폴리오 (분기 공시)"),
     Task("sec_13f_track_record", "weekly", task_sec_13f_track_record, "13F 트랙레코드 후보 27곳 30분기 (모의 매매)"),
     Task("sec_fundamentals", "weekly", task_sec_fundamentals, "미국 종목 재무 SEC XBRL (모의 매매 Claude 계좌 패킷, 실행당 200 CIK)"),

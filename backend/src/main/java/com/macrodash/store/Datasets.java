@@ -137,6 +137,13 @@ public final class Datasets {
      * 수집기만 쓰며(ADR 0008) 400일이 지난 행은 수집기가 지웁니다.
      */
     public static final String OBS_FSC_ETF_PRICE = "fsc_etf_price";
+    /**
+     * 🧪 한국 책 유니버스 U(v2 2단계 B4·K3) — 금융위 최신 기준일 B(&lt; 오늘)의 코스피 시가총액 상위 100 보통주(우선주·스팩·리츠·
+     * 거래정지·DART 고유번호 없음 제외). entity = 6자리 코드, obs_date = B, payload {@code {code, name, rank, marketCap, listedShares,
+     * close, rule}}. 그날 U에 든 종목만 있고 날짜마다 통째로 교체됩니다. 정의는 수집기 한 곳({@code collector/app/tasks/kr_paper.py}) —
+     * 백엔드는 그대로 읽어 결정 행에 동결합니다. 수집기만 쓰며(ADR 0008) 400일이 지난 행은 수집기가 지웁니다.
+     */
+    public static final String OBS_KR_PAPER_UNIVERSE = "kr_paper_universe";
     /** 시장별 합계 시가총액·거래대금 (series = "KOSPI.marketCap" 등). */
     public static final String TS_FSC_MARKET = "fsc_market";
     /** 종목별 일별 투자자 매매동향 (토스증권 공식, entity = 종목코드). */

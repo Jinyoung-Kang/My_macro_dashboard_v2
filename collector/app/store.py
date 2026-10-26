@@ -553,6 +553,15 @@ def latest_observation_date(dataset: str) -> str | None:
     return row["d"].isoformat() if row and row["d"] else None
 
 
+def latest_observation_date_before(dataset: str, before: str) -> str | None:
+    """그 데이터셋에서 obs_date < before(YYYY-MM-DD)인 가장 최근 날짜. 없으면 None. 한국 책 유니버스의 금융위 기준일 B(< 오늘)입니다."""
+    with connection() as conn:
+        row = conn.execute(
+            "SELECT MAX(obs_date) AS d FROM observations WHERE dataset = %s AND obs_date < %s", (dataset, before),
+        ).fetchone()
+    return row["d"].isoformat() if row and row["d"] else None
+
+
 def earliest_observation_date(dataset: str) -> str | None:
     """그 데이터셋의 가장 이른 obs_date (YYYY-MM-DD). 없으면 None. 과거 쪽 메우기의 시작점입니다(금융위 시세)."""
     with connection() as conn:
