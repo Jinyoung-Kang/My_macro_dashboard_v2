@@ -4,7 +4,7 @@ WORKDIR /app
 COPY package.json package-lock.json ./
 RUN npm ci
 
-# 실행에 필요한 의존성만(next·react). 빌드 도구(typescript·eslint·tailwind 등)는 운영
+# 실행에 필요한 의존성만(dependencies — next·react·recharts·Radix). 빌드 도구(typescript·eslint·tailwind 등)는 운영
 # 이미지에 넣지 않습니다.
 FROM node:24-alpine AS prod-deps
 WORKDIR /app

@@ -17,6 +17,8 @@ export default defineConfig({
   test: {
     environment: "jsdom",
     include: ["src/**/__tests__/**/*.test.{ts,tsx}"],
+    // jsdom에 없는 브라우저 API(matchMedia 등)의 최소 스텁 — Radix 조각을 그리는 테스트용입니다.
+    setupFiles: ["./vitest.setup.ts"],
     restoreMocks: true,
   },
 });
