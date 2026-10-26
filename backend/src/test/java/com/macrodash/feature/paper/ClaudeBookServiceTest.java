@@ -1,6 +1,7 @@
 package com.macrodash.feature.paper;
 
 import com.macrodash.Golden;
+import com.macrodash.analytics.OrderValidator;
 import com.macrodash.analytics.PaperLedger;
 import com.macrodash.feature.ai.AiService;
 import com.macrodash.read.StoreReader;
@@ -951,6 +952,42 @@ class ClaudeBookServiceTest {
         assertThat(us.status()).isEqualTo(ClaudeBookService.STATUS_SKIPPED);
         assertThat(us.response().path("summary").asString()).contains("일일 호출 상한(20회");
         assertThat(hits.get()).isEqualTo(1);
+    }
+
+    @Test
+    @DisplayName("시장 표기(A7): 다른 시장 문맥의 결정은 그 시장의 받는 체결 시점·금액 표기로 검증 — 그 시장에 없는 시점(NEXT_OBSERVATION)은 MALFORMED, 근거 문구의 금액은 그 시장 표기('$' 없음)")
+    void otherMarketValidatesWithItsTimingsAndMoney() throws Exception {
+        LocalDate wed = LocalDate.of(2026, 11, 25);
+        Instant now = Instant.parse("2026-11-25T13:30:00Z");   // KST 11-25 22:30
+        PaperMarket kr = TestKrMarket.INSTANCE;
+        String krBook = TestKrMarket.CLAUDE_BOOK;
+        activeCashOnly();
+        store.books.put(krBook, TestKrMarket.book(krBook, 100_000, FRI));
+        store.states.put(krBook, new BookState(krBook, 100_000, 100_000, 0, 0, FRI_CLOSE, FRI_CLOSE, FRI, null));
+        when(marketData.quotes(kr)).thenReturn(Optional.of(quotes(Instant.parse("2026-11-25T12:00:00Z"),
+                bar("KRA", LocalDate.of(2026, 11, 24), 50, wed, 51), bar("KRB", LocalDate.of(2026, 11, 24), 30, wed, 31),
+                bar("KRC", LocalDate.of(2026, 11, 24), 20, wed, 21))));
+        answerJson(decision(8, null, order("KRA", "BUY", 8.0, null, "NEXT_CLOSE"),
+                order("KRB", "BUY", 5.0, null, "NEXT_OBSERVATION"), order("KRC", "BUY", 0.4, null, "NEXT_CLOSE")));
+        ClaudeBookService service = serviceWithKr(now, new java.util.ArrayList<>());
+
+        Decision d = service.decide(kr, wed, RuleBookService.SCHEDULED, true);
+
+        assertThat(d.bookCode()).isEqualTo(krBook);
+        assertThat(d.status()).isEqualTo(ClaudeBookService.STATUS_OK);
+        assertThat(store.ordersOf(krBook)).filteredOn(o -> Long.valueOf(d.id()).equals(o.decisionId()))
+                .extracting(Order::ticker, Order::status, Order::rejectReason)
+                .containsExactly(
+                        org.assertj.core.groups.Tuple.tuple("KRA", "PENDING", null),
+                        org.assertj.core.groups.Tuple.tuple("KRB", "REJECTED", OrderValidator.MALFORMED),
+                        org.assertj.core.groups.Tuple.tuple("KRC", "REJECTED", OrderValidator.MIN_NOTIONAL));
+        List<String> details = new java.util.ArrayList<>();
+        d.response().path("validation").forEach(row -> details.add(row.path("detail").asString()));
+        assertThat(details).containsExactly(
+                "현재 0.00% → 목표 8.00%(+8.00%p, 약 8,000원)",
+                "timing은 NEXT_CLOSE여야 함: NEXT_OBSERVATION",
+                "매수 증가분 약 400원 < 최소 500원(현재 0.00% → 목표 0.40%)");
+        assertThat(d.response().path("validation").toString()).doesNotContain("$");
     }
 
     @Test

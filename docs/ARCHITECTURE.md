@@ -182,7 +182,7 @@ config/          설정 값(AppProperties) · 정기 작업 켜기 — 여러 �
 | `GateIndicator` | 🧪 OS 원문의 매크로 게이트 단계(L0/L1/L2) — 지표만, 어느 계좌도 구속하지 않음 |
 | `TrackRecord13F` | 🧪 13F 공시일 다음 거래일 기준 복제 수익률·커버리지·자격·순위 |
 | `Signal13F` | 🧪 신호 풀 기관의 분기 비교 → 매수 후보·매도 신호, 두 기관 그룹 섞기·배분 |
-| `OrderValidator` | 🧪 Claude가 제안한 주문의 하드 규칙 — 제안은 모델, 집행 여부는 이 검사 |
+| `OrderValidator` | 🧪 Claude가 제안한 주문의 하드 규칙 — 제안은 모델, 집행 여부는 이 검사. 받는 체결 시점·이른 시점·근거 문구의 시점 이름과 금액 표기는 시장 묶음이 넘김(`OrderValidator.Market`, 미국 값이 기본) |
 
 🧪 = 모의 알고리즘 매매(운영자 전용, 이 저장소에만 — Local_macro_dashboard_v3에는 없음). 규칙의 근거는
 [명세](specs/2026-10-24-paper-trading-spec.md)·[설계](specs/2026-10-24-paper-trading-design-plan.md)·[ADR 0018](adr/0018-paper-trading-guardrails.md)입니다.

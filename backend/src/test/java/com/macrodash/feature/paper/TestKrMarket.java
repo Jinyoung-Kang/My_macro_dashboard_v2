@@ -1,6 +1,7 @@
 package com.macrodash.feature.paper;
 
 import com.macrodash.Kst;
+import com.macrodash.analytics.OrderValidator;
 import com.macrodash.analytics.TradingCalendar;
 import com.macrodash.store.PaperStore;
 import com.macrodash.support.Json;
@@ -32,6 +33,10 @@ final class TestKrMarket implements PaperMarket {
     static final String QUOTES_DATASET = "test.kr.quotes";
     static final String QUOTES_TASK = "test_kr_quotes";
     static final String HISTORY_DATASET = "test.kr.history";
+    /** 시험용 체결 시점 이름(검증기 근거 문구) — 미국 이름과 일부러 다른 글자. */
+    static final String CLOSE_NAME = "시험용 종가";
+    /** 시험용 금액 표기(원, 소수 없음) — 검증기 근거 문구에 '$'가 섞이지 않는지 보려고. */
+    static final OrderValidator.Money MONEY = new OrderValidator.Money("", "원", 0);
     /** 시험용 시스템 프롬프트 고정 문단 — 미국 고정 문단과 일부러 다른 글자(줄 끝 공백·빈 줄은 렌더링이 정리). */
     static final String FIXED_RULES = "## 시험용 한국 고정(고정)   \n- 시험용 체결 시점 문장\n\n";
 
@@ -145,6 +150,16 @@ final class TestKrMarket implements PaperMarket {
     @Override
     public String earlyTiming() {
         return PaperBooks.NEXT_CLOSE;
+    }
+
+    @Override
+    public Map<String, String> timingNames() {
+        return Map.of(PaperBooks.NEXT_CLOSE, CLOSE_NAME);
+    }
+
+    @Override
+    public OrderValidator.Money money() {
+        return MONEY;
     }
 
     @Override

@@ -64,8 +64,9 @@ import static com.macrodash.feature.paper.ClaudeBookService.noPriceTickers;
  * <p><b>시장마다 하나</b>입니다({@link MarketContext}). 책 코드({@link PaperMarket#claudeBook})·거래일 달력(보유 거래일·주문 만료·
  * 재진입 금지를 보는 다음 세션)·시스템 프롬프트의 시장별 부분({@link FrameworkService#render(PaperMarket, JsonNode, int, JsonNode)})·
  * 패킷·응답 스키마를 그 문맥에서 가져오고, 다른 시장 책은 읽지도 쓰지도 않습니다. 프레임 판(두 시장이 함께 씀, 명세 K9)과 하루 호출
- * 상한({@link PaperApiCalls} — 두 책 합 20, K18)은 시장과 상관없이 하나입니다. 검증기 한도·체결 시점은 아직 미국 설정 키·상수입니다
- * (A7·C1에서 시장별로). 미국 문맥은 이 묶음 전의 값 그대로입니다({@link UsPaperMarket}·{@link PacketBuilder#build}·
+ * 상한({@link PaperApiCalls} — 두 책 합 20, K18)은 시장과 상관없이 하나입니다. 검증기의 받는 체결 시점·이른 시점·근거 문구의 시점
+ * 이름과 금액 표기는 그 시장 묶음의 것이고({@link PaperMarket#orderValidation}, A7), 검증기 한도는 아직 미국 설정 키입니다(C1에서
+ * 시장별로). 미국 문맥은 이 묶음 전의 값 그대로입니다({@link UsPaperMarket}·{@link PacketBuilder#build}·
  * {@value ClaudeBookService#SCHEMA_RESOURCE}).
  */
 final class ClaudeDecisionPipeline {
@@ -286,7 +287,7 @@ final class ClaudeDecisionPipeline {
         OrderValidator.Context ctx = new OrderValidator.Context(view.nav(), view.cash(), weights, heldDays, universe,
                 ruleSettings.etfs(), Set.copyOf(paper.cashLikeTickers()), lockedOut(asOf), noPrice, monthly, stale,
                 heldQty);
-        List<Verdict> verdicts = OrderValidator.validate(proposed, ctx, limits);
+        List<Verdict> verdicts = OrderValidator.validate(proposed, ctx, limits, market.orderValidation());
 
         // 주문을 반영한 예상 노출(클래스 설명) — 통과한 매도·매수만.
         Map<String, Double> sold = new HashMap<>();

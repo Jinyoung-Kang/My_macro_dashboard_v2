@@ -1,6 +1,7 @@
 package com.macrodash.feature.paper;
 
 import com.macrodash.Kst;
+import com.macrodash.analytics.OrderValidator;
 import com.macrodash.analytics.TradingCalendar;
 import tools.jackson.databind.JsonNode;
 
@@ -11,13 +12,15 @@ import java.time.LocalDate;
 import java.time.LocalTime;
 import java.time.ZonedDateTime;
 import java.util.List;
+import java.util.Map;
 
 /**
  * 🧪 모의 매매 시장 하나의 묶음 — 장부 코어가 시장마다 다르게 쓰는 값(달력·관측치·확정 판정·체결 시점·계좌 정의·결정 시각·
  * 복기 시각·통화·설정과 작업 기록의 이름)을 한곳에 둡니다(2단계 명세 2026-10-26-v2-kr-paper-spec.md §9 A4).
  *
  * <p>모든 것을 이 뒤로 보내지는 않습니다. 13F 선정·미국 패킷·게이트·일정/뉴스/재무 섹션은 자료부터 달라 미국 전용으로 남고, 한국은
- * 따로 만듭니다. 비용(수수료·세금)·출발일·초기 현금·금액 표기는 그것을 쓰는 묶음(B6·C1·A7)에서 정합니다.
+ * 따로 만듭니다. 비용(수수료·세금)·출발일·초기 현금은 그것을 쓰는 묶음(B6·C1)에서 정합니다. 검증기의 체결 시점·금액 표기는 A7에서
+ * 더했습니다({@link #orderValidation}).
  *
  * <p>구현은 지금 미국 하나({@link UsPaperMarket#INSTANCE})이고 값은 이 묶음 전의 상수 그대로입니다({@code UsPaperMarketTest}가
  * 고정). 장부·관측치·리스크 점검(A5)과 결정 작업·Claude 결정·주간 복기·메모·조회·관리(A6)가 시장마다 이 묶음으로 돕니다(시장
@@ -82,6 +85,21 @@ interface PaperMarket {
 
     /** 가장 이른 체결 시점 — 규칙 책 주문의 시점이고, 검증기가 '같은 시점 매도만 자리를 만든다'고 보는 시점. */
     String earlyTiming();
+
+    /** 체결 시점({@link #timings}) → 검증기 근거 문구의 이름(미국 NEXT_OBSERVATION → 다음 관측치). 시점마다 하나. */
+    Map<String, String> timingNames();
+
+    /** 검증기 근거 문구의 금액 표기(장부 통화 — 미국 달러). */
+    OrderValidator.Money money();
+
+    /**
+     * Claude 주문 검증의 시장 몫 — 받는 체결 시점({@link #timings})·이른 시점({@link #earlyTiming})·시점 이름·금액 표기(2단계
+     * 명세 §9 A7). 결정 파이프라인이 이 값으로 {@link OrderValidator#validate(java.util.List, OrderValidator.Context,
+     * OrderValidator.Limits, OrderValidator.Market)}를 부릅니다. 미국은 {@link OrderValidator.Market#US}와 같습니다.
+     */
+    default OrderValidator.Market orderValidation() {
+        return new OrderValidator.Market(timings(), earlyTiming(), timingNames(), money());
+    }
 
     /** 결정 시각(KST)의 기본값 — 설정 값이 없거나 틀릴 때. */
     LocalTime defaultDecisionTime();

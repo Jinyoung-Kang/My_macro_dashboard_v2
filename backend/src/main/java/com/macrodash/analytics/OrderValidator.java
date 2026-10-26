@@ -5,6 +5,7 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -77,6 +78,11 @@ import java.util.TreeSet;
  *
  * <p><b>검사하지 않는 것(D7)</b>: 현금 비중·주식 노출(0%든 100%든 거절 사유가 아님), 매크로 게이트 조건, 응답의
  * targetEquityExposurePct와 주문의 어긋남(서비스가 exposureMismatch로 기록 — 숫자를 맞추지 않음). 노출은 Claude가 정합니다(C11).
+ *
+ * <p><b>시장</b>(2단계 명세 §9 A7): 검사 계산은 시장 중립이고, 받는 체결 시점·이른 시점·근거 문구의 시점 이름과 금액 표기만
+ * 시장이 정합니다({@link Market}). 위 설명의 NEXT_OBSERVATION·NEXT_CLOSE·'$'는 미국 값({@link Market#US})이고, 시장을 받지 않는
+ * {@link #validate(List, Context, Limits)}가 그 값으로 검사합니다. 다른 시장에서는 NEXT_OBSERVATION 자리가 그 시장의 이른 시점,
+ * NEXT_CLOSE 자리가 나머지 시점입니다.
  */
 public final class OrderValidator {
 
@@ -111,15 +117,122 @@ public final class OrderValidator {
      * 주문을 가르지 못합니다.
      */
     private static final double WEIGHT_EPSILON = 1e-9;
-    /** 금액(달러) 비교 여유 — 0.5% × 100,000처럼 정확히 500달러인 주문이 499.99999999999994로 거절되지 않게. */
+    /** 금액(장부 통화 — 미국은 달러) 비교 여유 — 0.5% × 100,000처럼 정확히 500달러인 주문이 499.99999999999994로 거절되지 않게. */
     private static final double MONEY_EPSILON = 1e-6;
+
+    /**
+     * 근거 문구의 금액 표기 — 앞붙이 + 세 자리마다 쉼표(Locale.ROOT) + 뒷붙이. 정확한 금액(최소 주문 금액 거절 문구)은
+     * {@code exactDecimals} 자리, 대략 금액(통과한 매수의 '약 …')은 소수 없이 적습니다.
+     *
+     * @param prefix        금액 앞 글자(미국 "$"). null 불가
+     * @param suffix        금액 뒤 글자(미국 ""). null 불가
+     * @param exactDecimals 정확한 금액의 소수 자리(미국 2). 0~6
+     */
+    public record Money(String prefix, String suffix, int exactDecimals) {
+
+        /** 미국 달러 — 이 묶음 전 문구의 "$%,.2f"·"$%,.0f" 그대로. */
+        public static final Money USD = new Money("$", "", 2);
+
+        public Money {
+            if (prefix == null || suffix == null) {
+                throw new IllegalArgumentException("금액 앞뒤 글자가 없습니다(빈 글자는 \"\")");
+            }
+            if (exactDecimals < 0 || exactDecimals > 6) {
+                throw new IllegalArgumentException("정확한 금액의 소수 자리는 0~6이어야 합니다: " + exactDecimals);
+            }
+        }
+
+        /** 정확한 금액(예: 미국 $1,234.50). */
+        public String exact(double amount) {
+            return prefix + String.format(Locale.ROOT, "%,." + exactDecimals + "f", amount) + suffix;
+        }
+
+        /** 대략 금액, 소수 없이(예: 미국 $1,235). */
+        public String rounded(double amount) {
+            return prefix + String.format(Locale.ROOT, "%,.0f", amount) + suffix;
+        }
+    }
+
+    /**
+     * 시장마다 다른 검증기의 체결 시점과 표기(2단계 명세 §9 A7). 검사 계산은 그대로이고 어느 시점 이름을 받는지(MALFORMED), 어느
+     * 시점이 이른 시점인지(클래스 설명의 "체결 시점" — 이 시점의 매수는 같은 시점 매도만 자리를 만든 것으로 봄, 나머지 시점은 모든
+     * 매도 뒤), 근거 문구에 시점과 금액을 어떻게 적는지만 정합니다. 목록·맵은 복사해 둡니다.
+     *
+     * @param timings     받는 체결 시점(주문의 timing — {@code paper_orders.timing}과 같은 문자열), 이른 것부터. 비어 있거나 겹치면 안 됨
+     * @param earlyTiming 이른 시점. {@code timings} 안에 있어야 함
+     * @param timingNames 시점 → 근거 문구의 이름(미국 NEXT_OBSERVATION → "다음 관측치"). 받는 시점마다 있어야 하고, 그 밖의 항목은 버림
+     * @param money       근거 문구의 금액 표기
+     * @throws IllegalArgumentException 위 조건 밖(호출 실수 — 조용히 미국 값으로 바꾸지 않고 막습니다)
+     */
+    public record Market(List<String> timings, String earlyTiming, Map<String, String> timingNames, Money money) {
+
+        /** 미국 — 시점 NEXT_OBSERVATION·NEXT_CLOSE(이른 시점 NEXT_OBSERVATION), 달러. 이 묶음 전의 상수·문구 그대로입니다. */
+        public static final Market US = new Market(List.of(NEXT_OBSERVATION, NEXT_CLOSE), NEXT_OBSERVATION,
+                Map.of(NEXT_OBSERVATION, "다음 관측치", NEXT_CLOSE, "확정 종가"), Money.USD);
+
+        public Market {
+            if (timings == null || timings.isEmpty()) {
+                throw new IllegalArgumentException("받는 체결 시점이 없습니다");
+            }
+            if (timingNames == null) {
+                throw new IllegalArgumentException("체결 시점 이름이 없습니다");
+            }
+            if (money == null) {
+                throw new IllegalArgumentException("금액 표기가 없습니다");
+            }
+            Map<String, String> names = new LinkedHashMap<>();
+            for (String timing : timings) {
+                if (timing == null || timing.isBlank()) {
+                    throw new IllegalArgumentException("빈 체결 시점: " + timings);
+                }
+                String name = timingNames.get(timing);
+                if (name == null || name.isBlank()) {
+                    throw new IllegalArgumentException("체결 시점 이름이 없습니다: " + timing);
+                }
+                if (names.put(timing, name) != null) {
+                    throw new IllegalArgumentException("겹치는 체결 시점: " + timings);
+                }
+            }
+            if (earlyTiming == null || !names.containsKey(earlyTiming)) {
+                throw new IllegalArgumentException("이른 시점이 받는 체결 시점에 없습니다: " + earlyTiming + " ∉ " + timings);
+            }
+            timings = List.copyOf(timings);
+            timingNames = Collections.unmodifiableMap(names);
+        }
+
+        /** 받는 체결 시점인가(null이면 아님). */
+        boolean accepts(String timing) {
+            return timing != null && timingNames.containsKey(timing);
+        }
+
+        /** 이른 시점인가. */
+        boolean isEarly(String timing) {
+            return earlyTiming.equals(timing);
+        }
+
+        /** 근거 문구의 시점 표기 — 이름(시점), 예: 다음 관측치(NEXT_OBSERVATION). */
+        String label(String timing) {
+            return timingNames.get(timing) + "(" + timing + ")";
+        }
+
+        /** 이른 시점이 아닌 시점들의 표기(받는 순서, 둘 이상이면 '·'로 이음) — 미국은 확정 종가(NEXT_CLOSE). */
+        String lateLabel() {
+            List<String> labels = new ArrayList<>();
+            for (String timing : timings) {
+                if (!isEarly(timing)) {
+                    labels.add(label(timing));
+                }
+            }
+            return String.join("·", labels);
+        }
+    }
 
     /**
      * Claude가 제안한 주문 한 줄(decision.schema.json의 orders[] 중 검사에 쓰는 필드).
      *
      * @param targetWeightPct 매수: 체결 뒤 목표 비중(순자산 대비 %, 0~100). 매도에는 쓰지 않음(클래스 설명의 "매도 비율")
      * @param sellFraction    매도: 보유 중 팔 비율(0 초과 1 이하). null이면 전량. 매수에는 쓰지 않음
-     * @param timing          NEXT_OBSERVATION · NEXT_CLOSE
+     * @param timing          체결 시점 — 시장이 받는 것({@link Market#timings}, 미국 NEXT_OBSERVATION · NEXT_CLOSE)
      */
     public record Proposed(String ticker, String side, Double targetWeightPct, Double sellFraction, String timing) {
     }
@@ -241,18 +354,33 @@ public final class OrderValidator {
     }
 
     /**
-     * 주문 목록을 하드 규칙으로 판정합니다(검사 순서는 클래스 설명).
+     * 주문 목록을 미국 시장의 체결 시점·표기로 판정합니다({@link #validate(List, Context, Limits, Market)}에 {@link Market#US}).
      *
      * @param orders 제안 주문(응답 순서). null·빈 목록이면 빈 결과. 원소가 null이면 그 자리는 MALFORMED
      * @return 입력과 같은 순서·같은 길이의 판정(바꿀 수 없는 목록)
      * @throws IllegalArgumentException ctx·limits가 null
      */
     public static List<Verdict> validate(List<Proposed> orders, Context ctx, Limits limits) {
+        return validate(orders, ctx, limits, Market.US);
+    }
+
+    /**
+     * 주문 목록을 하드 규칙으로 판정합니다(검사 순서는 클래스 설명).
+     *
+     * @param orders 제안 주문(응답 순서). null·빈 목록이면 빈 결과. 원소가 null이면 그 자리는 MALFORMED
+     * @param market 받는 체결 시점·이른 시점·근거 문구의 시점 이름과 금액 표기(클래스 설명의 "시장")
+     * @return 입력과 같은 순서·같은 길이의 판정(바꿀 수 없는 목록)
+     * @throws IllegalArgumentException ctx·limits·market이 null
+     */
+    public static List<Verdict> validate(List<Proposed> orders, Context ctx, Limits limits, Market market) {
         if (ctx == null) {
             throw new IllegalArgumentException("검사 문맥(장부 상태)이 없습니다");
         }
         if (limits == null) {
             throw new IllegalArgumentException("하드 규칙 한도가 없습니다");
+        }
+        if (market == null) {
+            throw new IllegalArgumentException("검증기의 시장(체결 시점·표기)이 없습니다");
         }
         if (orders == null || orders.isEmpty()) {
             return List.of();
@@ -272,14 +400,14 @@ public final class OrderValidator {
         // 1) 주문마다 따로. null로 남은 자리가 2단계 후보입니다.
         Map<String, Integer> firstIndex = new HashMap<>();
         for (int i = 0; i < n; i++) {
-            out[i] = checkAlone(orders.get(i), i, firstIndex, ctx, limits);
+            out[i] = checkAlone(orders.get(i), i, firstIndex, ctx, limits, market);
         }
 
         // 2-a) 매도 — 목록 순으로 월 상한 자리를 먼저 받습니다(클래스 설명).
         int slots = Math.max(0, limits.maxDiscretionaryOrdersPerMonth() - ctx.monthlyOrdersSoFar());
         int used = 0;
         Map<String, Double> soldFraction = new HashMap<>();
-        // 다음 관측치(NEXT_OBSERVATION)에 체결되는 매도만 — 같은 시점 매수의 자리를 만드는 매도(클래스 설명의 "체결 시점").
+        // 이른 시점(미국 NEXT_OBSERVATION)에 체결되는 매도만 — 같은 시점 매수의 자리를 만드는 매도(클래스 설명의 "체결 시점").
         Map<String, Double> earlySoldFraction = new HashMap<>();
         List<Integer> buys = new ArrayList<>();
         for (int i = 0; i < n; i++) {
@@ -298,19 +426,19 @@ public final class OrderValidator {
             used++;
             double fraction = order.sellFraction() == null ? 1.0 : Math.min(1.0, order.sellFraction());
             soldFraction.put(order.ticker(), fraction);
-            if (NEXT_OBSERVATION.equals(order.timing())) {
+            if (market.isEarly(order.timing())) {
                 earlySoldFraction.put(order.ticker(), fraction);
             }
             out[i] = Verdict.accept(order, sellDetail(ctx.weightOf(order.ticker()), fraction));
         }
 
         // 매도 뒤 남는 보유 비중과 종목 수 — 티커 순으로 더해 맵 순회 순서와 관계없이 같은 합. 둘 다 두 시점으로 봅니다
-        // (클래스 설명의 "체결 시점"): 확정 종가 뒤(모든 매도 체결) · 다음 관측치(NEXT_OBSERVATION 매도만 체결).
+        // (클래스 설명의 "체결 시점"): 확정 종가 뒤(모든 매도 체결) · 이른 시점(그 시점 매도만 체결).
         double allocated = 0;
         double allocatedEarly = 0;
         int positions = 0;
         int positionsEarly = 0;
-        int lateFreed = 0;   // NEXT_CLOSE 전량 매도로만 비는 자리(거절 문구용)
+        int lateFreed = 0;   // 늦은 시점(미국 NEXT_CLOSE) 전량 매도로만 비는 자리(거절 문구용)
         for (String ticker : heldTickers(ctx)) {
             double weight = ctx.weightOf(ticker);
             double fraction = soldFraction.getOrDefault(ticker, 0.0);
@@ -344,7 +472,7 @@ public final class OrderValidator {
             Double current = ctx.weightOf(ticker);
             double increment = buyIncrementPct(order, ctx);
             boolean newName = current == null && !ctx.cashLike().contains(ticker);
-            boolean early = NEXT_OBSERVATION.equals(order.timing());
+            boolean early = market.isEarly(order.timing());
             if (used >= slots) {
                 out[i] = Verdict.reject(order, MONTHLY_CAP, monthlyDetail(ctx, limits, used));
             } else if (newName && positions + 1 > limits.maxPositions()) {
@@ -352,20 +480,22 @@ public final class OrderValidator {
                         "매수 뒤 종목 수 %d > 상한 %d(현금성 제외)", positions + 1, limits.maxPositions()));
             } else if (newName && early && positionsEarly + 1 > limits.maxPositions()) {
                 out[i] = Verdict.reject(order, MAX_POSITIONS, String.format(Locale.ROOT,
-                        "다음 관측치(NEXT_OBSERVATION) 매수인데 확정 종가(NEXT_CLOSE) 전량 매도 %d종목은 그 뒤에 체결돼 자리를 "
+                        "%s 매수인데 %s 전량 매도 %d종목은 그 뒤에 체결돼 자리를 "
                                 + "비우지 못함 — 그 시점 종목 수 %d > 상한 %d(현금성 제외)",
-                        lateFreed, positionsEarly + 1, limits.maxPositions()));
+                        market.label(market.earlyTiming()), market.lateLabel(), lateFreed, positionsEarly + 1,
+                        limits.maxPositions()));
             } else if (allocated + increment > 100.0 + WEIGHT_EPSILON) {
                 out[i] = Verdict.reject(order, OVER_ALLOCATED, String.format(Locale.ROOT,
                         "매도 뒤 남는 보유 %.2f%% + 앞서 받은 매수 %.2f%%p + 이 주문 %.2f%%p = %.2f%% > 100%% (현재 현금 %.2f%%)",
                         residual, allocated - residual, increment, allocated + increment, cashPct));
             } else if (early && allocatedEarly + increment > 100.0 + WEIGHT_EPSILON) {
                 out[i] = Verdict.reject(order, OVER_ALLOCATED, String.format(Locale.ROOT,
-                        "다음 관측치(NEXT_OBSERVATION) 매수인데 확정 종가(NEXT_CLOSE) 매도 %.2f%%p는 그 뒤에 체결돼 자리를 만들지 "
-                                + "못함 — 그 시점 남는 보유 %.2f%% + 앞서 받은 다음 관측치 매수 %.2f%%p + 이 주문 %.2f%%p = %.2f%% "
+                        "%s 매수인데 %s 매도 %.2f%%p는 그 뒤에 체결돼 자리를 만들지 "
+                                + "못함 — 그 시점 남는 보유 %.2f%% + 앞서 받은 %s 매수 %.2f%%p + 이 주문 %.2f%%p = %.2f%% "
                                 + "> 100%% (현재 현금 %.2f%%)",
-                        residualEarly - residual, residualEarly, allocatedEarly - residualEarly, increment,
-                        allocatedEarly + increment, cashPct));
+                        market.label(market.earlyTiming()), market.lateLabel(), residualEarly - residual,
+                        residualEarly, market.timingNames().get(market.earlyTiming()), allocatedEarly - residualEarly,
+                        increment, allocatedEarly + increment, cashPct));
             } else {
                 used++;
                 allocated += increment;
@@ -378,7 +508,8 @@ public final class OrderValidator {
                         positionsEarly++;
                     }
                 }
-                out[i] = Verdict.accept(order, buyDetail(current, order.targetWeightPct(), increment, ctx.nav()));
+                out[i] = Verdict.accept(order, buyDetail(current, order.targetWeightPct(), increment, ctx.nav(),
+                        market.money()));
             }
         }
         return List.of(out);
@@ -404,7 +535,7 @@ public final class OrderValidator {
 
     /** 1단계 — 다른 주문을 보지 않는 검사. 통과면 null. firstIndex에 티커의 첫 자리를 남깁니다. */
     private static Verdict checkAlone(Proposed order, int index, Map<String, Integer> firstIndex, Context ctx,
-                                      Limits limits) {
+                                      Limits limits, Market market) {
         if (order == null) {
             return Verdict.reject(null, MALFORMED, "주문이 비어 있음");
         }
@@ -414,7 +545,7 @@ public final class OrderValidator {
         }
         // 모양이 틀린 주문도 티커 자리는 잡습니다 — 같은 티커의 뒤 주문이 앞 주문의 판정에 따라 통과·거절이 갈리지 않게.
         Integer earlier = firstIndex.putIfAbsent(ticker, index);
-        String malformed = malformed(order);
+        String malformed = malformed(order, market);
         if (malformed != null) {
             return Verdict.reject(order, MALFORMED, malformed);
         }
@@ -478,21 +609,21 @@ public final class OrderValidator {
         double amount = increment / 100.0 * ctx.nav();
         if (amount < limits.minOrderNotional() - MONEY_EPSILON) {
             return Verdict.reject(order, MIN_NOTIONAL, String.format(Locale.ROOT,
-                    "매수 증가분 약 $%,.2f < 최소 $%,.2f(현재 %.2f%% → 목표 %.2f%%)", amount, limits.minOrderNotional(),
-                    now, target));
+                    "매수 증가분 약 %s < 최소 %s(현재 %.2f%% → 목표 %.2f%%)", market.money().exact(amount),
+                    market.money().exact(limits.minOrderNotional()), now, target));
         }
         return null;
     }
 
     /** MALFORMED 사유 문구. 모양이 맞으면 null. */
-    private static String malformed(Proposed order) {
+    private static String malformed(Proposed order, Market market) {
         String side = order.side();
         if (!BUY.equals(side) && !SELL.equals(side)) {
             return "side는 BUY 또는 SELL이어야 함: " + side;
         }
         String timing = order.timing();
-        if (!NEXT_OBSERVATION.equals(timing) && !NEXT_CLOSE.equals(timing)) {
-            return "timing은 NEXT_OBSERVATION 또는 NEXT_CLOSE여야 함: " + timing;
+        if (!market.accepts(timing)) {
+            return "timing은 " + String.join(" 또는 ", market.timings()) + "여야 함: " + timing;
         }
         Double target = order.targetWeightPct();
         if (BUY.equals(side)) {
@@ -543,9 +674,9 @@ public final class OrderValidator {
         return String.format(Locale.ROOT, "보유 %s 중 %.0f%% 매도", held, fraction * 100.0);
     }
 
-    private static String buyDetail(Double current, double target, double increment, double nav) {
-        return String.format(Locale.ROOT, "현재 %.2f%% → 목표 %.2f%%(+%.2f%%p, 약 $%,.0f)",
-                current == null ? 0.0 : current, target, increment, increment / 100.0 * nav);
+    private static String buyDetail(Double current, double target, double increment, double nav, Money money) {
+        return String.format(Locale.ROOT, "현재 %.2f%% → 목표 %.2f%%(+%.2f%%p, 약 %s)",
+                current == null ? 0.0 : current, target, increment, money.rounded(increment / 100.0 * nav));
     }
 
     // 빈 값도 Map.of()·Set.of()가 아니라 HashMap·HashSet으로 둡니다 — 그 둘은 get(null)·contains(null)에서 예외를 던져, 받은

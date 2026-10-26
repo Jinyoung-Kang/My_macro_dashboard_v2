@@ -203,6 +203,19 @@ class UsPaperMarketTest {
     }
 
     @Test
+    @DisplayName("검증기의 시장 몫(A7) = OrderValidator.Market.US — 시점 NEXT_OBSERVATION·NEXT_CLOSE(이른 시점 NEXT_OBSERVATION), 이름 다음 관측치·확정 종가, 달러 — 시장을 받지 않는 검사와 같은 값")
+    void orderValidation() {
+        assertThat(US.orderValidation()).isEqualTo(OrderValidator.Market.US);
+        assertThat(US.orderValidation().timings()).isEqualTo(US.timings());
+        assertThat(US.orderValidation().earlyTiming()).isEqualTo(US.earlyTiming());
+        assertThat(US.timingNames()).containsExactly(Map.entry("NEXT_OBSERVATION", "다음 관측치"),
+                Map.entry("NEXT_CLOSE", "확정 종가"));
+        assertThat(US.money()).isEqualTo(OrderValidator.Money.USD);
+        assertThat(US.money().exact(500)).isEqualTo("$500.00");
+        assertThat(US.money().rounded(2_000)).isEqualTo("$2,000");
+    }
+
+    @Test
     @DisplayName("결정 07:30·기한 12:00 KST — 결정 작업 기본값이자 설정 기본 본문, 키 이름은 지금 그대로(설정 표에 있음)")
     void decisionTimes() {
         assertThat(US.defaultDecisionTime()).isEqualTo(LocalTime.of(7, 30))

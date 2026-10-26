@@ -16,6 +16,7 @@ import java.time.LocalDate;
 import java.time.LocalTime;
 import java.time.ZonedDateTime;
 import java.util.List;
+import java.util.Map;
 
 /**
  * 🧪 미국 책의 시장 묶음({@link PaperMarket}) — 값은 모두 이 묶음 전부터 있던 상수를 그대로 돌려줍니다(2단계 명세 §9 A4, 미국 숫자
@@ -25,7 +26,8 @@ import java.util.List;
  *   <li>시장·통화 US·USD(V13 기본값), 달력 {@link UsMarketCalendar#CALENDAR}(뉴욕 세션 날짜)</li>
  *   <li>관측치 {@code paper.quotes}(수집기 태스크 {@code paper_quotes})·이력 {@code equity_close}, 확정 종가 = 마감 + 15분 뒤 수집</li>
  *   <li>책 넷({@link PaperBooks#ALL} — 규칙·Claude·SPY 100%·SPY 60/SHY 40), 비교 기준 {@code bench_spy}, 현금성 기본 SHY</li>
- *   <li>Claude 체결 시점 NEXT_OBSERVATION·NEXT_CLOSE(이른 시점 NEXT_OBSERVATION)</li>
+ *   <li>Claude 체결 시점 NEXT_OBSERVATION·NEXT_CLOSE(이른 시점 NEXT_OBSERVATION), 검증기 시점 이름·금액 표기는
+ *       {@link OrderValidator.Market#US}(다음 관측치·확정 종가, 달러) 그대로</li>
  *   <li>결정 07:30·기한 12:00 KST, 세션 <b>다음 KST 날</b>의 그 시각(미국 마감이 KST 새벽이라)</li>
  *   <li>복기 토요일 09:00 KST, 설정 키·작업 기록 이름은 접두어 없이 지금 그대로</li>
  *   <li>Claude 시스템 프롬프트의 하드 규칙 줄은 지금 렌더링의 줄({@code FrameworkService.hardRules}), 고정 문단은
@@ -112,6 +114,16 @@ final class UsPaperMarket implements PaperMarket {
     @Override
     public String earlyTiming() {
         return OrderValidator.NEXT_OBSERVATION;
+    }
+
+    @Override
+    public Map<String, String> timingNames() {
+        return OrderValidator.Market.US.timingNames();
+    }
+
+    @Override
+    public OrderValidator.Money money() {
+        return OrderValidator.Money.USD;
     }
 
     @Override
