@@ -1,7 +1,6 @@
 package com.macrodash.feature.paper;
 
 import com.macrodash.Kst;
-import com.macrodash.analytics.UsMarketCalendar;
 import com.macrodash.store.PaperStore;
 import com.macrodash.store.PaperStore.Note;
 import com.macrodash.support.InvalidRequestException;
@@ -38,6 +37,11 @@ import java.util.regex.Pattern;
  * 설정 {@code notesMaxCharsInPacket}(6,000)자까지 싣고, 각 메모를 {@code <<메모 #id (기준일 …·만료 …) 시작>>} … {@code <<메모 #id 끝>>}
  * 로 감쌉니다. 본문·제목 안의 같은 모양 구분자는 지웁니다 — 메모 안에 가짜 "끝" 구분자를 써서 그 뒤 글이 자료 밖(지시)인 척하지
  * 못하게. 기준일로 거르므로 출발일 초기 결정 패킷은 그날 이하 메모만 봅니다(PIT).
+ *
+ * <p><b>시장 문맥</b>(2단계 명세 §9 A6): 목록·작성은 시장 묶음({@link PaperMarket})을 받아 기준일(그 시장의 마감이 끝난 최근 세션)과
+ * 기본 만료일(그 시장 달력의 n거래일 뒤)을 그 시장 달력으로 셉니다. 메모 표에는 아직 시장이 없어(B1에서 {@code paper_notes.market})
+ * 목록·패킷 섹션은 모든 메모를 봅니다. 만료 거래일 수·패킷 글자 상한 설정은 두 시장이 같은 키입니다. 시장을 받지 않는 옛 시그니처는
+ * 미국입니다.
  */
 @Service
 public class NoteService {
@@ -100,10 +104,15 @@ public class NoteService {
      * {@code active}는 MARKET이면 "그 거래일 패킷에 들어감"(보관 안 함·기준일 ≤ 그날 ≤ 만료일), INSIGHT면 보관 안 함.
      */
     public Map<String, Object> list(boolean includeExpired) {
+        return list(UsPaperMarket.INSTANCE, includeExpired);
+    }
+
+    /** 그 시장 달력의 기준일로 본 메모 목록({@link #list(boolean)}의 시장 판 — 클래스 설명의 시장 문맥). */
+    Map<String, Object> list(PaperMarket market, boolean includeExpired) {
         if (!store.ready()) {
             return notReady();
         }
-        LocalDate reference = referenceDate();
+        LocalDate reference = referenceDate(market);
         List<Map<String, Object>> rows = new ArrayList<>();
         for (Note n : store.notes(includeExpired, reference)) {
             rows.add(view(n, reference));
@@ -124,6 +133,15 @@ public class NoteService {
      * @throws InvalidRequestException 종류·날짜 형식·미래 기준일·만료일이 기준일보다 앞섬·빈 제목·본문·길이 초과
      */
     public Map<String, Object> create(String kind, String asOfDate, String expiresOn, String title, String body) {
+        return create(UsPaperMarket.INSTANCE, kind, asOfDate, expiresOn, title, body);
+    }
+
+    /**
+     * 그 시장 달력으로 기본 기준일·만료일을 정해 메모 한 건을 남깁니다({@link #create(String, String, String, String, String)}의 시장
+     * 판 — 클래스 설명의 시장 문맥).
+     */
+    Map<String, Object> create(PaperMarket market, String kind, String asOfDate, String expiresOn, String title,
+                               String body) {
         if (!store.ready()) {
             Map<String, Object> out = notReady();
             out.put("ok", false);
@@ -135,7 +153,7 @@ public class NoteService {
         if (asOf == null) {
             // 기본은 마지막으로 끝난 미국 세션 — KST 오늘로 두면 결정(07:30) 전 아침에 쓴 시황 메모가 그날 결정 패킷(거래일 d ≤ 어제)에서
             // 빠지고 하루 늦게 실립니다.
-            asOf = referenceDate();
+            asOf = referenceDate(market);
         }
         if (asOf.isAfter(today)) {
             throw new InvalidRequestException("asOfDate(" + asOf + ")가 오늘(KST " + today + ")보다 뒤입니다 — 메모의 기준일은 "
@@ -147,7 +165,7 @@ public class NoteService {
         }
         if (MARKET.equals(k)) {
             if (expires == null) {
-                expires = UsMarketCalendar.addTradingDays(asOf, expiryTradingDays(settingsBody()));
+                expires = market.calendar().addTradingDays(asOf, expiryTradingDays(settingsBody()));
             } else if (expires.isBefore(asOf)) {
                 throw new InvalidRequestException("expiresOn(" + expires + ")이 asOfDate(" + asOf + ")보다 앞섭니다.");
             }
@@ -172,7 +190,7 @@ public class NoteService {
         log.info("메모 #{} ({}, 기준일 {}{}) {}자", id, k, asOf, expires == null ? "" : ", 만료 " + expires, chars);
         Map<String, Object> out = new LinkedHashMap<>();
         out.put("ok", true);
-        out.put("note", view(store.note(id).orElseThrow(), referenceDate()));
+        out.put("note", view(store.note(id).orElseThrow(), referenceDate(market)));
         return out;
     }
 
@@ -294,9 +312,9 @@ public class NoteService {
                 && (n.expiresOn() == null || !n.expiresOn().isBefore(reference));
     }
 
-    /** 만료·유효 판정의 기준 — 마지막으로 끝난 미국 세션(다음 결정이 보는 거래일, {@link PaperDecisionJob}과 같은 함수). */
-    private LocalDate referenceDate() {
-        return UsMarketCalendar.lastCompletedSession(clock.instant());
+    /** 만료·유효 판정의 기준 — 그 시장의 마지막으로 끝난 세션(다음 결정이 보는 거래일, {@link PaperDecisionJob}과 같은 함수). */
+    private LocalDate referenceDate(PaperMarket market) {
+        return market.calendar().lastCompletedSession(clock.instant());
     }
 
     private JsonNode settingsBody() {

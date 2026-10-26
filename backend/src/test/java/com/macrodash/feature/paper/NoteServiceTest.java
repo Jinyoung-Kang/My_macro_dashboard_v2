@@ -216,4 +216,31 @@ class NoteServiceTest {
         store.ready = false;
         assertThat(notes.activeMarketNotes(FRI).ids()).as("테이블이 없으면 빈 결과").isEmpty();
     }
+
+    // ------------------------------------------------------------------ 시장 문맥(2단계 명세 §9 A6)
+    @Test
+    @DisplayName("시장 문맥(A6): 기본 기준일·기본 만료일·목록의 기준일은 그 시장 달력 — 미국 휴장일(추수감사절)이 시험용 한국 달력에서는 거래일")
+    void calendarPerMarket() {
+        // 11-26(목) 21:00 KST — 미국은 추수감사절 휴장이라 마지막 세션 11-25, 시험용 한국 달력(서울 평일)은 11-26 마감 뒤
+        NoteService thanksgiving = new NoteService(store, settings,
+                Clock.fixed(Instant.parse("2026-11-26T12:00:00Z"), ZoneOffset.UTC));
+        PaperMarket kr = TestKrMarket.INSTANCE;
+
+        JsonNode us = MAPPER.valueToTree(thanksgiving.create(UsPaperMarket.INSTANCE, "MARKET", null, null, "미국", "본문")
+                .get("note"));
+        JsonNode krNote = MAPPER.valueToTree(thanksgiving.create(kr, "MARKET", null, null, "한국", "본문").get("note"));
+        assertThat(us.path("asOfDate").asString()).isEqualTo("2026-11-25");
+        assertThat(krNote.path("asOfDate").asString()).isEqualTo("2026-11-26");
+
+        // 기준일 11-24(화) + 3거래일 — 미국 11-25·11-27·11-30, 시험용 한국 11-25·11-26·11-27
+        JsonNode usExpiry = MAPPER.valueToTree(thanksgiving.create("MARKET", "2026-11-24", null, "미국 옛 판", "본문")
+                .get("note"));
+        JsonNode krExpiry = MAPPER.valueToTree(thanksgiving.create(kr, "MARKET", "2026-11-24", null, "한국", "본문")
+                .get("note"));
+        assertThat(usExpiry.path("expiresOn").asString()).isEqualTo("2026-11-30");
+        assertThat(krExpiry.path("expiresOn").asString()).isEqualTo("2026-11-27");
+
+        assertThat(thanksgiving.list(false).get("referenceDate")).isEqualTo("2026-11-25");
+        assertThat(thanksgiving.list(kr, false).get("referenceDate")).isEqualTo("2026-11-26");
+    }
 }
