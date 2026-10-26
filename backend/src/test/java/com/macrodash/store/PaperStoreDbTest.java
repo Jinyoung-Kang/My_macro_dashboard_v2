@@ -1510,7 +1510,7 @@ class PaperStoreDbTest {
     }
 
     @Test
-    @DisplayName("V14 확정 조정 표:체결마다 한 행(두 번째는 DuplicateKeyException), 출처는 FSC·FSC_ETF만, 비용 칸 음수 불가·현금 차이는 음수 가능, 책 초기화·삭제 때 체결과 함께 지워짐")
+    @DisplayName("V14 확정 조정 표: 체결마다 한 행(두 번째는 DuplicateKeyException), 출처는 FSC·FSC_ETF만, 비용 칸 음수 불가·현금 차이는 음수 가능, 책 초기화·삭제 때 체결과 함께 지워짐")
     void fillConfirmationsOnePerFill() {
         store.insertBookIfAbsent(book(BOOK, "규칙 책"));
         long fillId = store.insertFill(fill(store.insertOrder(pendingBuy(BOOK, "SPY", null)), BOOK));
