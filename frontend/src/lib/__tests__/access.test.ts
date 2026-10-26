@@ -26,6 +26,26 @@ describe("메뉴 고르기", () => {
     expect(visibleMenus(menus, undefined).map((m) => m.href)).toEqual(["/regime", "/ai/report"]);
   });
 
+  // 정확히 같은 문자열만 맞추던 때에는 탭 경로가 /paper/us가 되면 회원에게 모의매매 탭이 보였다(셸 5탭, 브리프 §1.3).
+  it("운영자 메뉴는 앞부분 일치 — /paper 아래 경로(/paper/us·/paper/us/settings)도 회원에게 숨긴다", () => {
+    const menus = [{ href: "/paper" }, { href: "/paper/us" }, { href: "/paper/us/settings" }, { href: "/macro" }];
+    const member = { email: "m@x", role: "MEMBER", tier: "PRO" } as const;
+    expect(visibleMenus(menus, member).map((m) => m.href)).toEqual(["/macro"]);
+    expect(visibleMenus(menus, { email: null, role: "MEMBER", tier: "PRO", demo: true }).map((m) => m.href)).toEqual(["/macro"]);
+    expect(visibleMenus(menus, undefined).map((m) => m.href)).toEqual(["/macro"]);
+    expect(visibleMenus(menus, { email: "o@x", role: "OWNER", tier: "PRO" }).map((m) => m.href))
+      .toEqual(["/paper", "/paper/us", "/paper/us/settings", "/macro"]);
+  });
+
+  it("저장소 상태·사용자 관리는 그 경로와 아래 경로를 숨기고, 경계는 '/'로만 자른다(/statusx·/paperclip은 다른 화면)", () => {
+    const menus = [
+      { href: "/status" }, { href: "/status/history" }, { href: "/admin/users" }, { href: "/admin/users/7" },
+      { href: "/connections" }, { href: "/statusx" }, { href: "/paperclip" }, { href: "/admin" },
+    ];
+    expect(visibleMenus(menus, { email: "m@x", role: "MEMBER", tier: "FREE" }).map((m) => m.href))
+      .toEqual(["/statusx", "/paperclip", "/admin"]);
+  });
+
   it("역할·등급 이름", () => {
     expect(roleLabel({ email: "o@x", role: "OWNER", tier: "FREE" })).toBe("운영자");
     expect(roleLabel({ email: "m@x", role: "MEMBER", tier: "PRO" })).toBe("유료 회원");
@@ -40,6 +60,14 @@ describe("유료 메뉴 잠금 표시", () => {
     expect(lockedFor({ email: "o@x", role: "OWNER", tier: "FREE" }, "/ai/report")).toBe(false);
     expect(lockedFor({ email: "m@x", role: "MEMBER", tier: "FREE" }, "/macro")).toBe(false);
   });
+
+  it("잠금도 앞부분 일치 — /ai/report 아래 경로는 잠그고, /ai·/ai/reports는 잠그지 않는다", () => {
+    const free = { email: "m@x", role: "MEMBER", tier: "FREE" } as const;
+    expect(lockedFor(free, "/ai/report/weekly")).toBe(true);
+    expect(lockedFor(free, "/ai")).toBe(false);
+    expect(lockedFor(free, "/ai/reports")).toBe(false);
+    expect(lockedFor(undefined, "/ai/report")).toBe(false);
+  });
 });
 
 describe("데모 열람(ADR 0013)", () => {
@@ -50,6 +78,13 @@ describe("데모 열람(ADR 0013)", () => {
     expect(roleLabel(demo)).toBe("데모 열람");
     expect(visibleMenus(MENUS, demo).map((m) => m.href)).toEqual(["/macro", "/regime"]);
     expect(lockedFor(demo, "/ai/report")).toBe(false);
+  });
+
+  it("데모 열람에게는 내 계정 메뉴도 숨긴다 — 계정·세션이 없어 그 화면이 홈으로 돌려보낸다(회원·모르는 사용자에게는 보임)", () => {
+    const menus = [{ href: "/alerts" }, { href: "/account" }];
+    expect(visibleMenus(menus, demo).map((m) => m.href)).toEqual(["/alerts"]);
+    expect(visibleMenus(menus, { email: "m@x", role: "MEMBER", tier: "FREE" }).map((m) => m.href)).toEqual(["/alerts", "/account"]);
+    expect(visibleMenus(menus, undefined).map((m) => m.href)).toEqual(["/alerts", "/account"]);
   });
 
   it("계정 사용자·모르는 사용자는 데모가 아니다", () => {

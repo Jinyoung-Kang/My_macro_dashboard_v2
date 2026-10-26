@@ -2,8 +2,8 @@
 
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
-import { MarketClock } from "@/components/MarketClock";
-import { MENUS, Sidebar } from "@/components/Sidebar";
+import { Shell } from "@/components/shell/Shell";
+import { ToastProvider } from "@/components/ui/Toast";
 import { useApi } from "@/hooks/useApi";
 import { apiBase } from "@/lib/api";
 import { RefreshProvider, useRefreshSignal } from "@/hooks/useRefreshSignal";
@@ -12,9 +12,10 @@ import { endpoints } from "@/lib/endpoints";
 import type { SessionResponse } from "@/lib/types";
 import { ALERTS_READ_EVENT, titleWithUnread } from "@/lib/alerts";
 import { isNoLogin } from "@/lib/access";
+import { documentTitle } from "@/lib/nav";
 
 /**
- * 대시보드 공통 레이아웃 — 사이드바 + 거래소 시계.
+ * 대시보드 공통 레이아웃 — 셸(왼쪽 내비·상단바 검색·알림 벨·하단 탭) + 거래소 시계.
  *
  * 세션이 없으면 로그인 화면으로 보냅니다. 구버전의 "비밀번호 잠금"과 같은
  * 역할이며, 실제 접근 차단은 백엔드가 합니다(프런트 검사는 UX용입니다).
@@ -30,7 +31,7 @@ export default function DashboardLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
   // 레이아웃 자신도 useApi를 쓰므로 Provider 안쪽에 있어야 합니다.
-  // (수동 새로고침이 사이드바의 읽기 모드 표시까지 갱신합니다.)
+  // (수동 새로고침이 셸의 읽기 모드 표시까지 갱신합니다.)
   return (
     <RefreshProvider>
       <DashboardShell>{children}</DashboardShell>
@@ -39,25 +40,16 @@ export default function DashboardLayout({
 }
 
 /**
- * 브라우저 탭 제목을 현재 메뉴 이름으로 바꿉니다.
+ * 브라우저 탭 제목을 현재 메뉴 이름으로 바꿉니다(lib/nav documentTitle — "순유동성 · 매크로 대시보드").
  *
  * <p>모든 화면이 클라이언트 컴포넌트라 Next의 정적 metadata를 페이지마다 둘 수
  * 없습니다. 그대로 두면 탭 12개가 전부 같은 제목이라, 매크로·레이더·13F를 함께
  * 띄워 두고 비교할 때 어느 탭이 무엇인지 구분할 수 없습니다.
  */
-function useDocumentTitle(pathname: string, unread: number) {
+function useDocumentTitle(pathname: string, unread: number | null) {
   useEffect(() => {
-    const menu = MENUS.find(
-      (entry) => pathname === entry.href || pathname.startsWith(`${entry.href}/`),
-    );
-    // 이모지는 탭에서 잘리기 쉬워 떼고, 뒤에 앱 이름을 붙입니다.
-    // 🏛️처럼 이모지 뒤에 이형 선택자(U+FE0F)가 붙는 글자가 있어, 그림 문자만
-    // 지우면 보이지 않는 문자가 제목 앞에 남습니다. 함께 지웁니다.
-    const name = menu?.label
-      .replace(/^[\p{Extended_Pictographic}\u200d\ufe0f\s]+/u, "")
-      .trim();
     // 읽지 않은 알림이 있으면 앞에 수를 붙입니다(화면 알림함만이라 알아차리는 길이 이것뿐입니다).
-    document.title = titleWithUnread(name ? `${name} · 매크로 대시보드` : "매크로 대시보드", unread);
+    document.title = titleWithUnread(documentTitle(pathname), unread);
   }, [pathname, unread]);
 }
 
@@ -73,7 +65,8 @@ function DashboardShell({
   const pathname = usePathname();
   // 읽지 않은 알림 수 — 기존 자동 갱신 주기(5분). 알림 사건이 5분 평가에서 생기므로 더 빠를 이유가 없습니다.
   const alerts = useApi<{ unread: number }>(endpoints.alerts.unreadCount, 300_000, { followRefresh: false });
-  const unread = alerts.data?.unread ?? 0;
+  // 모르면(읽는 중·실패) null — 알림 벨이 "0건"을 지어내지 않게 합니다(탭 제목은 0과 같게 접두사 없음).
+  const unread = alerts.data ? alerts.data.unread : null;
   useDocumentTitle(pathname, unread);
   // 알림함에서 읽음 처리하면 바로 다시 읽습니다(5분을 기다리지 않음, QA-051).
   const reloadUnread = alerts.reload;
@@ -99,7 +92,7 @@ function DashboardShell({
   const waitingForOwner = noLogin && !authenticated && data?.ownerMissing === true;
 
   useEffect(() => {
-    // 세션 확인이 끝나기 전에는 보내지 않습니다. 사이드바 알림 수 같은 다른 요청의 401이 먼저 오면
+    // 세션 확인이 끝나기 전에는 보내지 않습니다. 알림 벨의 읽지 않은 수 같은 다른 요청의 401이 먼저 오면
     // 로그인 없이 열리는 로컬인지 모르는 채로 로그인 화면에 갔습니다(운영자 계정이 없을 때).
     if (loading) return;
     const toLogin = noLogin
@@ -163,17 +156,14 @@ function DashboardShell({
   return (
     // 화면들이 세션을 다시 읽지 않고 사용자(데모 열람 여부 등)를 알 수 있게 내려 줍니다.
     <SessionUserProvider user={data?.user}>
-      <div className="flex min-h-screen flex-col lg:flex-row">
+      {/* 짧은 안내(토스트)는 셸 안 어디서든 띄웁니다. 화면만 그리는 테스트에서는 Provider가 없어 아무 일도 하지 않습니다. */}
+      <ToastProvider>
         {/* 읽기 모드는 세션 응답에 함께 옵니다. 예전에는 이 한 줄 때문에 페이지를 열 때마다
-            무거운 /api/status(수집기 상태 + DB 집계)를 불렀습니다. */}
-        <Sidebar readMode={data?.readMode} user={data?.user} unread={unread} />
-        <main tabIndex={-1} id="main" className="flex-1 overflow-x-hidden p-4 sm:p-6 lg:h-screen lg:overflow-y-auto">
-          <div className="mb-5">
-            <MarketClock />
-          </div>
+            무거운 /api/status(수집기 상태 + DB 집계)를 불렀습니다. 셸은 MarketClock을 본문 맨 위에 그립니다. */}
+        <Shell readMode={data?.readMode} user={data?.user} unread={unread}>
           {children}
-        </main>
-      </div>
+        </Shell>
+      </ToastProvider>
     </SessionUserProvider>
   );
 }

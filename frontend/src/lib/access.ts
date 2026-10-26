@@ -13,23 +13,40 @@ import type { SessionResponse, SessionUser } from "./types";
  */
 export const OWNER_ONLY_MENUS = ["/status", "/connections", "/admin/users", "/paper"] as const;
 
+/**
+ * 계정이 있는 사용자만 보는 메뉴 — 데모 열람(ADR 0013)은 계정·세션이 없어, 내 계정 화면이 열자마자 홈으로 돌려보냅니다.
+ * 옛 사이드바는 데모에게 내 계정 링크를 두지 않았습니다(계정 영역). 셸의 더보기 목록도 같게 둡니다.
+ */
+export const ACCOUNT_MENUS = ["/account"] as const;
+
 /** 유료 등급 메뉴 — 무료 회원에게는 🔒을 붙입니다(눌러도 되며, 화면이 유료 안내를 띄움). */
 export const PRO_MENUS = ["/ai/report"] as const;
+
+/**
+ * 메뉴 href가 목록의 경로(또는 그 아래 경로)인가 — 앞부분 일치(`/paper` → `/paper/us`·`/paper/us/settings`).
+ * 정확히 같을 때만 맞추면 탭·하위 화면이 `/paper/us`처럼 한 단계 내려갈 때 운영자 전용 메뉴가 회원에게 보였습니다.
+ * `/` 경계로만 자릅니다(`/statusx`는 `/status`가 아님).
+ */
+function matchesMenu(href: string, menus: readonly string[]): boolean {
+  return menus.some((menu) => href === menu || href.startsWith(`${menu}/`));
+}
 
 /** 무료 회원에게 잠긴 메뉴인가. */
 export function lockedFor(user: SessionUser | null | undefined, href: string): boolean {
   if (!user || user.role === "OWNER" || user.tier === "PRO") return false;
-  return (PRO_MENUS as readonly string[]).includes(href);
+  return matchesMenu(href, PRO_MENUS);
 }
 
 export function isOwner(user: SessionUser | null | undefined): boolean {
   return user?.role === "OWNER";
 }
 
-/** 이 사용자에게 보여 줄 메뉴. 사용자를 모르면(세션 응답 전) 운영 메뉴는 숨깁니다. */
+/** 이 사용자에게 보여 줄 메뉴. 사용자를 모르면(세션 응답 전) 운영 메뉴는 숨기고, 데모 열람에게는 내 계정도 숨깁니다. */
 export function visibleMenus<T extends { href: string }>(menus: readonly T[], user: SessionUser | null | undefined): T[] {
   if (isOwner(user)) return [...menus];
-  return menus.filter((menu) => !(OWNER_ONLY_MENUS as readonly string[]).includes(menu.href));
+  return menus.filter(
+    (menu) => !matchesMenu(menu.href, OWNER_ONLY_MENUS) && !(isDemo(user) && matchesMenu(menu.href, ACCOUNT_MENUS)),
+  );
 }
 
 /** 데모 열람인가(ADR 0013) — 계정 없이 읽기만 하는 방문자. */
@@ -53,10 +70,10 @@ export function isLocalOwner(user: SessionUser | null | undefined): boolean {
   return user?.local === true;
 }
 
-/** 로그인 없이 연 로컬 운영자를 사이드바·내 계정에 적는 이름. */
+/** 로그인 없이 연 로컬 운영자를 셸 계정 영역·내 계정에 적는 이름. */
 export const LOCAL_NO_LOGIN = "로컬 · 로그인 없음";
 
-/** 사이드바에 적을 역할·등급 이름. */
+/** 셸 계정 영역에 적을 역할·등급 이름. */
 export function roleLabel(user: SessionUser | null | undefined): string {
   if (!user) return "";
   if (isDemo(user)) return "데모 열람";

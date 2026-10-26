@@ -15,7 +15,7 @@ const signal = vi.hoisted(() => ({
 vi.mock("@/hooks/useRefreshSignal", () => ({ useRefreshSignal: () => signal }));
 vi.mock("next/navigation", () => ({ usePathname: () => "/macro", useRouter: () => ({ push: vi.fn(), replace: vi.fn() }) }));
 
-import { Sidebar } from "@/components/Sidebar";
+import { SearchCommand } from "@/components/shell/SearchCommand";
 import ConsensusPage from "../consensus/page";
 import { FxCompareSection } from "../macro/FxCompareSection";
 
@@ -47,11 +47,14 @@ describe("QA-052 상태를 aria로 알린다", () => {
     expect((await screen.findByRole("button", { name: "Berkshire" })).getAttribute("aria-pressed")).toBe("true");
   });
 
-  it("모바일 메뉴 버튼은 aria-expanded로 열림을 알린다", () => {
-    render(<Sidebar readMode="auto" user={{ email: "m@test.local", role: "MEMBER", tier: "PRO", demo: false }} unread={0} />);
-    const toggle = screen.getByRole("button", { name: /메뉴 열기/ });
-    expect(toggle.getAttribute("aria-expanded")).toBe("false");
-    fireEvent.click(toggle);
-    expect(screen.getByRole("button", { name: /메뉴 닫기/ }).getAttribute("aria-expanded")).toBe("true");
+  // 옛 사이드바의 "메뉴 열기/닫기" 단추는 셸(하단 탭 바)로 없어졌고, 여닫는 단추는 이제 통합 검색 단추입니다.
+  it("통합 검색 단추는 aria-haspopup=dialog·aria-expanded로 열림을 알린다", () => {
+    render(<SearchCommand user={{ email: "m@test.local", role: "MEMBER", tier: "PRO", demo: false }} />);
+    const trigger = screen.getByRole("button", { name: "종목·기관·지표·메뉴 검색" });
+    expect(trigger.getAttribute("aria-haspopup")).toBe("dialog");
+    expect(trigger.getAttribute("aria-expanded")).toBe("false");
+    fireEvent.click(trigger);
+    expect(trigger.getAttribute("aria-expanded")).toBe("true");
+    expect(screen.getByRole("dialog", { name: "통합 검색" })).toBeTruthy();
   });
 });

@@ -19,7 +19,7 @@ vi.mock("@/hooks/useRefreshSignal", () => ({ useRefreshSignal: () => signal }));
 const router = vi.hoisted(() => ({ push: vi.fn(), replace: vi.fn() }));
 vi.mock("next/navigation", () => ({ usePathname: () => "/alerts", useRouter: () => router }));
 
-import { Sidebar } from "@/components/Sidebar";
+import { AccountBox } from "@/components/shell/AccountBox";
 import { useAsyncAction } from "@/hooks/useAsyncAction";
 import AdminUsersPage from "../admin/users/page";
 import AlertsPage from "../alerts/page";
@@ -53,14 +53,15 @@ describe("QA-051", () => {
   // (그 rejection이 테스트 러너 전체를 실패시켜, 수정 전에는 it.skip으로 두었습니다 — 백엔드의 @Disabled와 같음)
   it("로그아웃이 실패하면 화면에 알린다", async () => {
     api.auth.logout.mockRejectedValue(new Error("백엔드 API에 연결하지 못했습니다"));
-    render(<Sidebar readMode="auto" user={{ email: "m@test.local", role: "MEMBER", tier: "PRO", demo: false }} unread={0} />);
+    render(<AccountBox user={{ email: "m@test.local", role: "MEMBER", tier: "PRO", demo: false }} />);
 
     fireEvent.click(screen.getByRole("button", { name: "로그아웃" }));
 
-    expect(await screen.findByText(/로그아웃하지 못했습니다/)).toBeTruthy();
+    expect((await screen.findByRole("alert")).textContent).toMatch(/로그아웃하지 못했습니다 — 백엔드 API에 연결하지 못했습니다/);
+    expect(router.push).not.toHaveBeenCalled();
   });
 
-  // 수정 전에는 알림함만 다시 읽고 사이드바·탭 제목의 읽지 않은 수는 최대 5분 그대로였다.
+  // 수정 전에는 알림함만 다시 읽고 사이드바(지금은 알림 벨)·탭 제목의 읽지 않은 수는 최대 5분 그대로였다.
   it("모두 읽음을 누르면 읽지 않은 수를 다시 읽으라는 신호를 보낸다", async () => {
     reads["/api/alerts/rules"] = () => Promise.resolve({ available: true, rules: [] });
     reads["/api/alerts/inbox"] = () => Promise.resolve({ available: true, unread: 2, items: [] });

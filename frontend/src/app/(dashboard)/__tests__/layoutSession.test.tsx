@@ -106,7 +106,7 @@ describe("로그인 모드(noLogin 없음·false) — 지금과 같다", () => {
     await waitFor(() => expect(router.replace).toHaveBeenCalledWith("/login"));
   });
 
-  it("로그인돼 있으면 화면을 그리고 사이드바에 로그아웃을 보인다", async () => {
+  it("로그인돼 있으면 화면을 그리고 셸 계정 영역에 로그아웃을 보인다", async () => {
     reads[SESSION] = LOGIN_OWNER;
     renderLayout();
 
@@ -117,7 +117,7 @@ describe("로그인 모드(noLogin 없음·false) — 지금과 같다", () => {
 });
 
 describe("로그인 없는 로컬 실행(noLogin: true)", () => {
-  it("로컬 운영자로 풀렸으면 로그인 화면 없이 화면을 그리고, 사이드바에 로그아웃 대신 '로컬 · 로그인 없음'", async () => {
+  it("로컬 운영자로 풀렸으면 로그인 화면 없이 화면을 그리고, 셸 계정 영역에 로그아웃 대신 '로컬 · 로그인 없음'", async () => {
     reads[SESSION] = LOCAL_OWNER;
     renderLayout();
 
@@ -176,7 +176,7 @@ describe("로그인 없는 로컬 실행(noLogin: true)", () => {
     expect(router.replace).not.toHaveBeenCalled();
   });
 
-  it("운영자 계정이 없을 때 사이드바 알림 수의 401이 세션 응답보다 먼저 와도 로그인으로 보내지 않는다", async () => {
+  it("운영자 계정이 없을 때 알림 벨의 읽지 않은 수 401이 세션 응답보다 먼저 와도 로그인으로 보내지 않는다", async () => {
     let answer!: (value: SessionResponse) => void;
     reads[UNREAD] = new api.UnauthorizedError("로그인이 필요합니다");
     api.apiGetShared.mockImplementation((path: string) =>
