@@ -344,7 +344,7 @@ public class PaperSettingsService {
         body.put("gate", gateBody);
         body.put("notesDefaultExpiryTradingDays", 3);
         body.put("notesMaxCharsInPacket", 6000);
-        body.put("apiDailyCallCap", 6);
+        body.put("apiDailyCallCap", 20);
         body.put("frameworkTokenBudget", 8000);
         // 추정 비용 단가(C8, 단계 3b) — 그 전에 만든 설정 행에는 없고, 그 행은 PaperApiCalls.Pricing이 이 기본값으로 읽습니다.
         body.put("pricing", PaperApiCalls.Pricing.defaults().body());

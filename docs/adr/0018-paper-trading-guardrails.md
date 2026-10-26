@@ -144,7 +144,7 @@
      아무것도 남기지 않습니다(400).
    - 정기 작업 스레드는 4개입니다(`spring.task.scheduling.pool.size`). 정기 결정은 작업 잠금을 기다리지 않고(`tryLock`, 수동 실행 중이면 `BUSY`),
      같은 거래일 오류가 계좌마다 3번이면 그날은 포기합니다.
-10. **비용 상한은 하루 호출 수입니다**(C8·D18). 결정·미리보기·시작·재시도·프레임 제안이 같은 상한(설정 `apiDailyCallCap`, 기본 6회, KST 하루, DB로 셈)을 씁니다.
+10. **비용 상한은 하루 호출 수입니다**(C8·D18). 결정·미리보기·시작·재시도·프레임 제안이 같은 상한(설정 `apiDailyCallCap`, 기본 6회 → 2026-10-26 v2에서 20회(결정 V6), KST 하루, DB로 셈)을 씁니다.
     추정 비용은 설정 키 `pricing.sonnet.*`·`pricing.haiku.*`(USD/MTok) 단가로 호출 때 계산해 `paper_api_usage.est_cost_usd`·`est_cost_calls`(V11)에 더합니다.
     화면은 `isEstimated`와 함께 보이고, 단가나 토큰을 모르는 호출은 0달러로 채우지 않습니다.
 11. **별도 Private 저장소입니다**(D0, 2026-10-25 변경). 처음에는 push하지 않는 로컬 브랜치였고, 지금은 My_macro_dashboard_v1 저장소의 main에서

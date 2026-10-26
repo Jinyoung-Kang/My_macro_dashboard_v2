@@ -444,7 +444,7 @@ class FrameworkServiceTest {
         assertThat(stale.path("operations").size()).as("받은 연산은 그대로 보임").isEqualTo(2);
         assertThat(callsToday()).isEqualTo(2);
 
-        store.apiUsage.put(TODAY_KST, new ApiUsage(TODAY_KST, 6, 0, 0, 0, 0));
+        store.apiUsage.put(TODAY_KST, new ApiUsage(TODAY_KST, 20, 0, 0, 0, 0));   // 기본 상한 20(v2)
         assertThatThrownBy(() -> service.propose(null, "글")).isInstanceOf(InvalidRequestException.class)
                 .hasMessageContaining("일일 호출 상한").hasMessageContaining("F7");
         assertThat(hits.get()).isEqualTo(2);

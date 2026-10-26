@@ -318,7 +318,7 @@ class PaperQueryServiceTest {
         assertThat(usage.path("today").path("day").asString()).as("KST 오늘(NOW = 10-26 21:00Z → 10-27)")
                 .isEqualTo("2026-10-27");
         assertThat(usage.path("today").path("calls").asInt()).isEqualTo(2);
-        assertThat(usage.path("today").path("cap").asInt()).isEqualTo(6);
+        assertThat(usage.path("today").path("cap").asInt()).as("기본 상한 20(v2)").isEqualTo(20);
         assertThat(usage.path("month").path("calls").asInt()).isEqualTo(3);
         assertThat(usage.path("month").path("inputTokens").asLong()).isEqualTo(60_000);
         assertThat(usage.path("month").path("days").asInt()).isEqualTo(2);

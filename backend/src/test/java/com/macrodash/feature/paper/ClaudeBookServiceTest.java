@@ -537,18 +537,18 @@ class ClaudeBookServiceTest {
 
     // ------------------------------------------------------------------ 일일 상한
     @Test
-    @DisplayName("일일 호출 상한(오늘 KST 6회)에 닿았으면 부르지 않고 SKIPPED — 재시도 차례였으면 그 재시도를 쓴 것으로 남긴다")
+    @DisplayName("일일 호출 상한(기본 20, 오늘 KST 20회)에 닿았으면 부르지 않고 SKIPPED — 재시도 차례였으면 그 재시도를 쓴 것으로 남긴다")
     void dailyCapSkipsWithoutCalling() {
         activeWithHolding();
-        store.apiUsage.put(TODAY_KST, new ApiUsage(TODAY_KST, 6, 0, 0, 0, 0));
+        store.apiUsage.put(TODAY_KST, new ApiUsage(TODAY_KST, 20, 0, 0, 0, 0));
 
         Decision skipped = service().decide(MON, RuleBookService.SCHEDULED, true);
 
         assertThat(skipped.status()).isEqualTo(ClaudeBookService.STATUS_SKIPPED);
-        assertThat(skipped.response().path("summary").asString()).contains("일일 호출 상한(6회");
+        assertThat(skipped.response().path("summary").asString()).contains("일일 호출 상한(20회");
         assertThat(skipped.model()).isNull();
         assertThat(hits.get()).isZero();
-        assertThat(callsToday()).isEqualTo(6);
+        assertThat(callsToday()).isEqualTo(20);
         verify(packets, org.mockito.Mockito.never()).build(any(), anyString(), anyBoolean(), any(), any());
 
         // 재시도 차례인 API 오류 + 상한 → 부르지 않고 재시도를 씀(10분마다 다시 오지 않게)
@@ -782,7 +782,7 @@ class ClaudeBookServiceTest {
     @DisplayName("미리보기·시작도 일일 호출 상한을 지킨다 — 닿았으면 부르지 않고 400")
     void previewRespectsDailyCap() {
         notStartedWithStartPrices();
-        store.apiUsage.put(TODAY_KST, new ApiUsage(TODAY_KST, 6, 0, 0, 0, 0));
+        store.apiUsage.put(TODAY_KST, new ApiUsage(TODAY_KST, 20, 0, 0, 0, 0));
 
         assertThatThrownBy(() -> service().preview()).isInstanceOf(InvalidRequestException.class)
                 .hasMessageContaining("일일 호출 상한");
@@ -792,7 +792,7 @@ class ClaudeBookServiceTest {
     }
 
     @Test
-    @DisplayName("설정의 모델·effort·상한을 읽고, 목록 밖이면 기본값(sonnet·high·6)")
+    @DisplayName("설정의 모델·effort·상한을 읽고, 목록 밖이면 기본값(sonnet·high·20)")
     void claudeSettingsFallBackToDefaults() {
         JsonNode body = MAPPER.valueToTree(Map.of("model", "claude-haiku-5-5", "effort", "MAX", "apiDailyCallCap", 2));
         ClaudeBookService.ClaudeSettings read = ClaudeBookService.ClaudeSettings.from(body);
@@ -805,7 +805,7 @@ class ClaudeBookServiceTest {
                 "model", "claude-opus-5-5", "effort", "turbo", "apiDailyCallCap", 600)));
         assertThat(bad.model()).isEqualTo("claude-sonnet-5-5");
         assertThat(bad.effort()).isEqualTo("high");
-        assertThat(bad.dailyCallCap()).isEqualTo(6);
+        assertThat(bad.dailyCallCap()).isEqualTo(20);
         assertThat(bad.fallbacks()).containsExactly("model", "effort", "apiDailyCallCap");
     }
 
