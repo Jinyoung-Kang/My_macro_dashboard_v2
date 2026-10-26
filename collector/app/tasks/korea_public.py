@@ -22,16 +22,24 @@ logger = logging.getLogger(__name__)
 # ==============================================================================
 # 매크로 카드 보정
 # ==============================================================================
+# 공휴일 저장본에 남기는 가장 이른 해 — 고정 하한(해가 지나도 올라가지 않음). 모의 매매 한국 책의 지난 거래일 계산
+# (통계 표본·보유 거래일)이 출발일(2026-11 이후)부터 세고, 2025년은 토스 1년 이력 백필 범위의 시작입니다(v2 2단계 명세 K35).
+# 한 해 20여 건이라 몇십 년이 쌓여도 저장본은 작습니다.
+KR_HOLIDAYS_KEEP_FROM = 2025
+
+
 def task_kr_holidays() -> str:
     """
-    📅 한국 공휴일 (천문연 특일정보) — 올해·내년.
+    📅 한국 공휴일 (천문연 특일정보) — 올해·내년을 받아 2025년부터 남김.
 
     저장 규칙
       - 연도별로 합칩니다. 이번에 받지 못한 해는 이전 저장본을 그대로 둡니다.
       - **0건 응답이 기존 목록을 지우지 않게** 합니다. 아직 발표되지 않은 해는
         정상적으로 0건이 오지만, 이미 받아 둔 해가 0건으로 바뀌는 것은 데이터가
         아니라 부재(서비스 만료·일시 오류)일 가능성이 큽니다.
-      - 지난해까지만 남깁니다. 시계는 올해·내년만 봅니다.
+      - **KR_HOLIDAYS_KEEP_FROM(2025)년부터** 남깁니다. 시계는 올해·내년만 보지만, 모의 매매 한국 책
+        (백엔드 KrxCalendar)은 출발일부터의 통계 표본·보유 거래일을 지난 해 목록으로 셉니다 — 예전 규칙
+        ('지난해까지')이면 2028-01-01에 2026년 목록이 사라졌습니다(v2 2단계 명세 K35).
     """
     now = datetime.now(KST)
     years = (now.year, now.year + 1)
@@ -65,7 +73,7 @@ def task_kr_holidays() -> str:
     if not fetched:
         raise EmptyResult("0/2 연도 — 기존 저장본 유지" + _reason_suffix(reasons))
 
-    stored = {y: v for y, v in stored.items() if y.isdigit() and int(y) >= now.year - 1}
+    stored = {y: v for y, v in stored.items() if y.isdigit() and int(y) >= KR_HOLIDAYS_KEEP_FROM}
     store.put_snapshot(catalog.SNAP_KR_HOLIDAYS, {
         "source": "한국천문연구원 특일정보 (getRestDeInfo, isHoliday=Y)",
         "years": stored,

@@ -35,7 +35,7 @@
 | | | `toss_radar_universe` | 🅣 레이더 폴백용 — 시장 거래대금 상위 100종목의 최근 2거래일 투자자 매매 |
 | `weekly` | 12시간 | `sec_13f` | SEC 13F 기관 포트폴리오 (분기 공시) |
 | | | `sec_13f_track_record` | 📒 트랙레코드 후보 기관 27곳의 13F를 기관당 30분기 → `sec.13f.{cik}.q30` + 후보 목록·진행률 `sec.13f.track_record_index`. 저장본에 없는 공시만, 실행당 예산(`TRACK_RECORD_FETCH_BUDGET`, 기본 400건) 안에서(§5 '모의 매매 트랙레코드 후보 기관') |
-| | | `kr_holidays` | 🔑 한국 공휴일 (천문연 특일정보, 올해·내년) |
+| | | `kr_holidays` | 🔑 한국 공휴일 (천문연 특일정보, 올해·내년을 받아 2025년부터 보관 — 모의 매매 한국 책의 지난 거래일 계산, v2 명세 K35) |
 | | | `dart_fundamentals` | 🔑 수급 레이더 종목의 사업보고서 주요계정 (DART) |
 | | | `paper_price_history` | 📒 같은 유니버스의 10년 일별 종가(수정주가) → `timeseries` 데이터셋 `equity_close`(종목 = `series_id`, 이력 누적·지우지 않음) |
 | | | `sec_fundamentals` | 📒 같은 유니버스(ETF 제외 — 설정 ETF와 13F 매핑표의 ETP)의 미국 종목 재무 — SEC XBRL Company Facts(회사당 1건) → `observations` `us.fundamentals`(entity = 티커, obs_date = 공시일, 지우지 않음 — 티커의 CIK가 바뀌면 옛 CIK만의 행은 지움) + 회사별 수집 상태 `us.fundamentals.status`. 실행당 CIK 예산(`FUNDAMENTALS_FETCH_BUDGET`, 기본 200건)이라 약 570곳을 세 번(약 36시간)에 한 바퀴. 13F 두 태스크와 같은 SEC 토큰 버킷(§5 '모의 매매가 쓰는 저장본과 한계') |

@@ -14,6 +14,7 @@ tests/test_public_api.py
 """
 from __future__ import annotations
 
+import datetime as dt
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -175,6 +176,38 @@ def test_0건_응답이_받아_둔_해를_지우지_않는다(monkeypatch):
 
     assert fake.saved["years"][str(this_year)]["holidays"] == old
     assert "유지" in result
+
+
+class _Fixed2029(dt.datetime):
+    """2029-03-05 10:00 KST에 멈춘 시계 — 보존 하한이 해가 지나도 올라가지 않는지 보려고."""
+
+    @classmethod
+    def now(cls, tz=None):
+        return cls(2029, 3, 5, 10, 0, tzinfo=tz)
+
+
+def test_공휴일은_2025년부터_남긴다_2029년에도_2026년이_있다(monkeypatch):
+    # v2 2단계 명세 K35 — 예전 규칙(지난해까지)이면 2029년에는 2028년부터만 남아 한국 책의 2026년 거래일을 셀 수 없었습니다.
+    def year(y):
+        return {"holidays": [{"date": f"{y}-01-01", "name": "1월1일"}], "announced": True}
+
+    fake = _FakeStore({"years": {str(y): year(y) for y in range(2024, 2030)}})
+    monkeypatch.setattr(tasks.korea_public, "store", fake)
+    monkeypatch.setattr(tasks.korea_public, "datetime", _Fixed2029)
+    fetched = []
+
+    def fetch(y):
+        fetched.append(y)
+        return [{"date": f"{y}-01-01", "name": "1월1일"}]
+
+    monkeypatch.setattr(tasks.kasi_service, "fetch_year", fetch)
+
+    tasks.task_kr_holidays()
+
+    assert fetched == [2029, 2030]
+    assert sorted(fake.saved["years"]) == ["2025", "2026", "2027", "2028", "2029", "2030"]
+    assert fake.saved["years"]["2026"]["holidays"] == [{"date": "2026-01-01", "name": "1월1일"}]
+    assert tasks.korea_public.KR_HOLIDAYS_KEEP_FROM == 2025
 
 
 def test_키가_없으면_EmptyResult(monkeypatch):
