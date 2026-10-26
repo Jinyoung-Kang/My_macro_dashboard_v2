@@ -583,10 +583,27 @@ A8이 달력 없는 옛 시그니처 호출과 결정 작업·시세 저장본�
   기본 판정을 그대로 쓰면 한국 토스 순자산·결정이 `prices_final=true`가 되고, false로 덮으면 순자산 줄·`NEXT_CLOSE`가 막히고 결정 작업이 매일 기한까지 기다린다.
   C2 전에 `closeAvailable(bar, collectedAt)`·`fillable(order, bar)`·`pricesConfirmed(…)`로 나누고(미국은 셋 다 지금 `isFinal` — 고정본 불변) 호출부마다 맞는 것을 쓴다.
   C3에서 `upsertNav`의 '확정값끼리는 새 값이 이김'이 토스 재수집으로 금융위 확정 줄을 덮지 않게 한다.
-- **B4·C2 — 관측치 파싱과 체결 선택의 시장 몫**: `PaperMarketData.parse`는 미국 모양(`tickers.{t}.dates/close`)만 읽고 `Bar`에 시가·거래량·가격 출처가 없다.
+- **B4·C2 — 관측치 파싱과 체결 선택의 시장 몫**(→ **B4에서 정함**, 2026-10-27 — 아래 계약): `PaperMarketData.parse`는 미국 모양(`tickers.{t}.dates/close`)만 읽고 `Bar`에 시가·거래량·가격 출처가 없다.
   체결가는 `bar.close()`에 슬리피지를 얹고(`PaperLedger.fillPrice`), 가격 출처는 `quotesDataset()`, 한 관측치 안 순서(종가마다 최고가·스탑 `IMMEDIATE`)도 공통이다.
   B4가 `paper.kr.quotes` 모양을 정하기 전에 '시장이 파싱(`PaperMarket.parse(Snapshot)`)과 체결 선택(`fill(order, bar)` → 가격·출처·비용 칸)을 갖는가'를 정한다 —
   아니면 B4는 미국 모양 dates/close를 내고 C2가 `Bar`를 넓힌다. 어느 쪽이든 미국 경로는 어댑터로 바이트 그대로.
+  - **정함 — 시장이 파싱과 체결 선택을 갖는다.** C2에서 `PaperMarket.parse(Snapshot)`·`fill(order, bar)`(가격·출처·비용 칸)를 시장 묶음에 두고, 미국은 지금의 `PaperMarketData.parse`·`fillPrice`로 위임한다(고정본 바이트 그대로).
+    한국 저장본은 미국 모양을 흉내 내지 않고 아래 자기 모양을 낸다 — 미국 `paper.quotes`·`PaperMarketData.parse`·`Bar`·`paper/golden/` 고정본은 B4에서 손대지 않는다.
+    이유: 미국 모양(dates/close)에 시가·거래량·출처·1분봉·수정 비율을 끼우면 `Bar`를 넓히는 C2가 미국 파서와 고정본까지 건드려야 하고, 한국 봉의 '응답에 없음'·'호출 실패' 구분(B7이 넘긴 모양)이 미국 모양에 자리가 없다.
+  - **`paper.kr.quotes` 계약**(스냅샷, 쓰는 곳은 수집기 `kr_paper_quotes` 하나, 판 `contract: 1`):
+    - 머리: `contract` · `session`(그 실행의 대상 KR 세션 D, ISO 날짜 — D 20:30 KST 뒤 하루 1회) · `universeDate`(쓴 U의 금융위 기준일 B) · `scope`(받으려던 코드, ETF 2 → U 순위 → 끈적 목록 순) · `codes`.
+    - 종목 `codes.{code}`: `status` = `OK`(봉 있음)·`NO_BARS`(토스가 답했는데 봉 0개 — '응답에 없음'), `fetchedAt`(그 종목을 받은 시각, ISO UTC — 체결 조건 ① '관측 수집 시각 > 주문 생성'은 저장본 수집 시각이 아니라 이 값),
+      `securityType`·`nxtSupported`·`krxTradingSuspended`·`listDate`(토스 `/api/v1/stocks`, 모르면 null), `bars`(오래된 날 → 최근, 최근 5봉), `adjBasisChanged`(아래 `kr_close_adj`),
+      이번에 받지 못해 직전 값을 이었으면 `isStale`·`staleReason`·`staleSince`(QA-032 — '호출 실패'). `scope`에 있는데 `codes`에 없으면 '호출 실패, 이을 값도 없음'이다. 0이나 다른 날 값으로 채우지 않는다.
+    - 봉 `bars[]`: `date`·`open`·`high`·`low`·`close`·`volume`(토스 `adjusted=false` 원시 — 금융위와 같은 판. 가격은 양수만, 아니면 null · 거래량 0 = 정지일(관측 아님) · 모르면 null),
+      `priceSource`(`nxtSupported`가 false면 `TOSS_DAILY` = KRX 단독 봉, 참·모름이면 `TOSS_INTEGRATED` = KRX+NXT 통합가 — §4-14 값), `adjClose`·`adjRatio`(같은 날 `adjusted=true` 종가와 그 ÷ 원시 종가 = B7 수정 비율, 모르면 null),
+      `minute`(1분봉 개장 봉 — 받았을 때만).
+    - `minute`: `status` = `OK`·`NO_BAR`(답했는데 그날 그 라벨 봉 없음)·`FAILED`(호출 실패 — 그 봉이 최근 5봉 안에 있는 동안 다음 수집에서 다시), `priceSource` `TOSS_1M_OPEN`,
+      `opens` = {`"09:01"`: {`open`, `volume`}, `"10:01"`: {…}} — 라벨은 봉 **끝** 시각(KST, [확인] 10-23 005930: 09:00 봉 거래량 0, 09:01 봉 거래량 982,971·시가 = 금융위 시가 — G1 표본 1).
+      두 라벨을 다 싣는 이유: 개장 시각 변경일(`kr.calendar.openTimeOverrides` — 수능일·신년 첫날 10:00)은 백엔드 설정이라 수집기가 모른다(ADR 0008 — 설정 표를 읽지 않음). C2가 그날 '개장 + 1분' 라벨을 고르고,
+      없거나 거래량 0이면 사다리(§4-1)로 내려간다(토스 일봉 시가 `TOSS_INTEGRATED`).
+    - 종가 1분봉(G2 — 15:30 단일가 봉)은 지금 싣지 않는다. G2가 통과하면 `minute.closes`로 더하고 `contract`를 올린다(통과 못 하면 `NEXT_CLOSE`가 없어 필요 없음).
+    - 저장본 안의 값으로 백엔드가 한국 `Bar`(시가·종가·거래량·출처·1분봉 시가)와 B7 `DailyBar`(원시 종가·거래량·수정 비율)·`Presence`(토스 `OK` → LISTED, `NO_BARS` → ABSENT, 이음·없음 → UNKNOWN)를 만든다.
 - **D1·E2 — 결정 기한**: `PaperDecisionJob.times`는 기한이 결정 시각보다 이르면 결정 시각으로 묶고, 두 시각 모두 `decisionInstant(session, t)` 한 식으로 순간이 된다 —
   한국 `kr.decisionDeadlineKst` 01:00(결정 시각보다 이르면 다음 날, §4-13)이 22:30으로 접혀 모든 한국 실행이 '기한 지남'이 된다. 기한 뒤 동작도 미국식(미확정 가격으로 진행)이다 —
   한국은 규칙 `NO_TRADE`·Claude 미호출·사유(§4-9). D1 전에 기한 규칙을 시장으로 옮기고(`PaperMarket.deadlineInstant(session, 결정 시각, 기한)` — 한국은 기한 ≤ 결정이면 D+1,
