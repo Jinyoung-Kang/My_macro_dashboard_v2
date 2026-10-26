@@ -1,0 +1,68 @@
+{
+ "_source": "토스증권 Open API GET /api/v1/stocks(symbols=005930,069500,153130) 실제 응답 — 2026-10-26 23:28 KST 조회, HTTP 200(조사 노트 toss.md §1). envelope의 result만 옮김. 토큰·키는 담지 않는다",
+ "result": [
+  {
+   "symbol": "005930",
+   "name": "삼성전자",
+   "englishName": "SamsungElec",
+   "isinCode": "KR7005930003",
+   "market": "KOSPI",
+   "securityType": "STOCK",
+   "isCommonShare": true,
+   "status": "ACTIVE",
+   "currency": "KRW",
+   "listDate": "1975-06-11",
+   "delistDate": null,
+   "sharesOutstanding": "5846278608",
+   "leverageFactor": null,
+   "koreanMarketDetail": {
+    "liquidationTrading": false,
+    "nxtSupported": true,
+    "krxTradingSuspended": false,
+    "nxtTradingSuspended": false
+   }
+  },
+  {
+   "symbol": "069500",
+   "name": "KODEX 200",
+   "englishName": "KODEX 200",
+   "isinCode": "KR7069500007",
+   "market": "KOSPI",
+   "securityType": "ETF",
+   "isCommonShare": true,
+   "status": "ACTIVE",
+   "currency": "KRW",
+   "listDate": "2002-10-14",
+   "delistDate": null,
+   "sharesOutstanding": "249950000",
+   "leverageFactor": "1",
+   "koreanMarketDetail": {
+    "liquidationTrading": false,
+    "nxtSupported": false,
+    "krxTradingSuspended": false,
+    "nxtTradingSuspended": false
+   }
+  },
+  {
+   "symbol": "153130",
+   "name": "KODEX 단기채권",
+   "englishName": "KODEX KRW CASH",
+   "isinCode": "KR7153130000",
+   "market": "KOSPI",
+   "securityType": "ETF",
+   "isCommonShare": true,
+   "status": "ACTIVE",
+   "currency": "KRW",
+   "listDate": "2012-02-22",
+   "delistDate": null,
+   "sharesOutstanding": "10292000",
+   "leverageFactor": "1",
+   "koreanMarketDetail": {
+    "liquidationTrading": false,
+    "nxtSupported": false,
+    "krxTradingSuspended": false,
+    "nxtTradingSuspended": false
+   }
+  }
+ ]
+}

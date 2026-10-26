@@ -1,0 +1,53 @@
+{
+ "_source": "토스증권 Open API GET /api/v1/candles(symbol=069500, interval=1d, count=5, adjusted 기본값) 실제 응답 — 2026-10-26 23:28 KST 조회, HTTP 200(v2 2단계 명세 §7 #2, 조사 노트 toss.md). envelope의 result만 옮김(최신순 그대로). 토큰·키는 담지 않는다",
+ "result": {
+  "candles": [
+   {
+    "timestamp": "2026-10-26T00:00:00.000+09:00",
+    "openPrice": "86265",
+    "highPrice": "87540",
+    "lowPrice": "85700",
+    "closePrice": "85995",
+    "volume": "25113307",
+    "currency": "KRW"
+   },
+   {
+    "timestamp": "2026-10-23T00:00:00.000+09:00",
+    "openPrice": "84470",
+    "highPrice": "87100",
+    "lowPrice": "83045",
+    "closePrice": "87075",
+    "volume": "32381043",
+    "currency": "KRW"
+   },
+   {
+    "timestamp": "2026-10-22T00:00:00.000+09:00",
+    "openPrice": "88805",
+    "highPrice": "90120",
+    "lowPrice": "85790",
+    "closePrice": "86525",
+    "volume": "31012596",
+    "currency": "KRW"
+   },
+   {
+    "timestamp": "2026-10-21T00:00:00.000+09:00",
+    "openPrice": "88665",
+    "highPrice": "91390",
+    "lowPrice": "88115",
+    "closePrice": "89725",
+    "volume": "30126436",
+    "currency": "KRW"
+   },
+   {
+    "timestamp": "2026-10-20T00:00:00.000+09:00",
+    "openPrice": "89125",
+    "highPrice": "89400",
+    "lowPrice": "85635",
+    "closePrice": "86755",
+    "volume": "27514551",
+    "currency": "KRW"
+   }
+  ],
+  "nextBefore": "2026-10-19T00:00:00.000+09:00"
+ }
+}

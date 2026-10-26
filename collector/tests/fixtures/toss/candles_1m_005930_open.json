@@ -1,0 +1,125 @@
+{
+ "_source": "토스증권 Open API GET /api/v1/candles(symbol=005930, interval=1m, count=70, before=2026-10-23T09:05:00+09:00) 실제 응답에서 10-23 08:58~09:05 봉과 같은 응답 끝의 전날(10-22) 19:56~20:00 봉만 옮김(최신순 그대로 — 한 응답이 전날 애프터마켓까지 걸침) — 2026-10-26 23:31 KST 조회, HTTP 200(조사 노트 toss.md §2-1). 라벨은 봉 끝 시각: 09:00 봉 거래량 0, 09:01 봉 시가 206,000 = 그날 금융위 시가(G1 표본 1). nextBefore는 옮기지 않음. 토큰·키는 담지 않는다",
+ "result": {
+  "candles": [
+   {
+    "timestamp": "2026-10-23T09:05:00.000+09:00",
+    "openPrice": "206000",
+    "highPrice": "207000",
+    "lowPrice": "205000",
+    "closePrice": "206750",
+    "volume": "214642",
+    "currency": "KRW"
+   },
+   {
+    "timestamp": "2026-10-23T09:04:00.000+09:00",
+    "openPrice": "206500",
+    "highPrice": "207500",
+    "lowPrice": "206000",
+    "closePrice": "206250",
+    "volume": "129721",
+    "currency": "KRW"
+   },
+   {
+    "timestamp": "2026-10-23T09:03:00.000+09:00",
+    "openPrice": "206000",
+    "highPrice": "208500",
+    "lowPrice": "206000",
+    "closePrice": "206500",
+    "volume": "232710",
+    "currency": "KRW"
+   },
+   {
+    "timestamp": "2026-10-23T09:02:00.000+09:00",
+    "openPrice": "208000",
+    "highPrice": "209500",
+    "lowPrice": "206000",
+    "closePrice": "206500",
+    "volume": "311969",
+    "currency": "KRW"
+   },
+   {
+    "timestamp": "2026-10-23T09:01:00.000+09:00",
+    "openPrice": "206000",
+    "highPrice": "208500",
+    "lowPrice": "206000",
+    "closePrice": "208000",
+    "volume": "982971",
+    "currency": "KRW"
+   },
+   {
+    "timestamp": "2026-10-23T09:00:00.000+09:00",
+    "openPrice": "206000",
+    "highPrice": "206000",
+    "lowPrice": "206000",
+    "closePrice": "206000",
+    "volume": "0",
+    "currency": "KRW"
+   },
+   {
+    "timestamp": "2026-10-23T08:59:00.000+09:00",
+    "openPrice": "206000",
+    "highPrice": "206000",
+    "lowPrice": "206000",
+    "closePrice": "206000",
+    "volume": "0",
+    "currency": "KRW"
+   },
+   {
+    "timestamp": "2026-10-23T08:58:00.000+09:00",
+    "openPrice": "206000",
+    "highPrice": "206000",
+    "lowPrice": "206000",
+    "closePrice": "206000",
+    "volume": "0",
+    "currency": "KRW"
+   },
+   {
+    "timestamp": "2026-10-22T20:00:00.000+09:00",
+    "openPrice": "214000",
+    "highPrice": "214500",
+    "lowPrice": "214000",
+    "closePrice": "214500",
+    "volume": "52522",
+    "currency": "KRW"
+   },
+   {
+    "timestamp": "2026-10-22T19:59:00.000+09:00",
+    "openPrice": "214000",
+    "highPrice": "214500",
+    "lowPrice": "214000",
+    "closePrice": "214500",
+    "volume": "16780",
+    "currency": "KRW"
+   },
+   {
+    "timestamp": "2026-10-22T19:58:00.000+09:00",
+    "openPrice": "214500",
+    "highPrice": "214500",
+    "lowPrice": "214000",
+    "closePrice": "214500",
+    "volume": "11204",
+    "currency": "KRW"
+   },
+   {
+    "timestamp": "2026-10-22T19:57:00.000+09:00",
+    "openPrice": "214500",
+    "highPrice": "215000",
+    "lowPrice": "214000",
+    "closePrice": "214000",
+    "volume": "79430",
+    "currency": "KRW"
+   },
+   {
+    "timestamp": "2026-10-22T19:56:00.000+09:00",
+    "openPrice": "215000",
+    "highPrice": "215000",
+    "lowPrice": "214500",
+    "closePrice": "215000",
+    "volume": "25946",
+    "currency": "KRW"
+   }
+  ],
+  "nextBefore": null
+ }
+}

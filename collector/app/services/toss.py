@@ -7,6 +7,9 @@ app/services/toss.py
   - 📡 수급 레이더 / 🇰🇷 국내 파생: 투자자별 매매 (공식 스펙 1.2.13부터 제공)
       GET /api/v1/market-indicators/{KOSPI|KOSDAQ}/investor-trading  시장 전체 매매**대금**(원)
       GET /api/v1/stocks/{symbol}/investor-trading                    종목별 매매**거래량**(주)
+  - 🧪 모의 매매 한국 책(v2 2단계 B4): 종목 봉과 종목 상태
+      GET /api/v1/candles?symbol=&interval=1d|1m&count=&before=&adjusted=  일봉·1분봉(최신순, 한 번에 200개, before로 과거 쪽)
+      GET /api/v1/stocks?symbols=                                          종목 유형·NXT 거래 여부·KRX 정지·상장일(200개씩)
 
 토스 API에 **없는 것** — 선물·옵션·미결제약정. 파생 수치는 계속 KRX·Daum에서 받습니다.
 (공식 스펙 1.2.17의 시장 지표 심볼 카탈로그는 KOSPI·KOSDAQ·국채 6종뿐입니다.)
@@ -26,6 +29,8 @@ from __future__ import annotations
 import logging
 import threading
 import time
+from datetime import datetime
+from zoneinfo import ZoneInfo
 
 import requests
 
@@ -378,17 +383,113 @@ def fetch_trading_amount_leaders(count: int = 100) -> list[dict]:
     return out
 
 
+STOCK_INFO_MAX_SYMBOLS = 200   # /api/v1/stocks 한 번에 묻는 종목 수 상한(공식 스펙)
+
+
 def fetch_stock_infos(codes: list[str]) -> dict[str, dict]:
-    """종목명·시장(KOSPI/KOSDAQ)·종목 유형. 최대 200개를 한 번에."""
+    """
+    종목명·시장(KOSPI/KOSDAQ)·종목 유형과 한국 시장 상태. 최대 200개를 한 번에(넘는 몫은 묻지 않음 — 부르는 쪽이 나눔).
+
+    한국 상태(``koreanMarketDetail``)는 모의 매매 한국 책이 씁니다(v2 2단계 B4): ``nxtSupported``(NXT 거래 종목 — 토스 일봉이
+    KRX+NXT 통합가), ``krxTradingSuspended``(KRX 매매정지), ``listDate``·``status``. 참·거짓이 아니거나 없으면 None(모름)입니다.
+    """
     if not codes:
         return {}
-    result = api_get("/api/v1/stocks", {"symbols": ",".join(codes[:200])}) or []
-    return {
-        str(item.get("symbol")): {
+    result = api_get("/api/v1/stocks", {"symbols": ",".join(codes[:STOCK_INFO_MAX_SYMBOLS])}) or []
+    out: dict[str, dict] = {}
+    for item in result:
+        if not isinstance(item, dict) or not item.get("symbol"):
+            continue
+        detail = item.get("koreanMarketDetail") if isinstance(item.get("koreanMarketDetail"), dict) else {}
+        out[str(item["symbol"])] = {
             "name": item.get("name"), "market": item.get("market"), "securityType": item.get("securityType"),
+            "nxtSupported": _flag(detail.get("nxtSupported")),
+            "krxTradingSuspended": _flag(detail.get("krxTradingSuspended")),
+            "listDate": str(item["listDate"])[:10] if item.get("listDate") else None,
+            "status": item.get("status"),
         }
-        for item in result if isinstance(item, dict) and item.get("symbol")
+    return out
+
+
+def _flag(value) -> bool | None:
+    return value if isinstance(value, bool) else None
+
+
+# ==============================================================================
+# 종목 봉 — 모의 매매 한국 책의 관측치·이력 (v2 2단계 B4, 명세 §4-1·§9 'paper.kr.quotes 계약')
+# ==============================================================================
+KST = ZoneInfo("Asia/Seoul")
+CANDLE_MAX_COUNT = 200   # 한 번에 받는 봉 수 상한(공식 스펙 1.2.24 count 1~200)
+
+
+def candle_time(stamp) -> datetime | None:
+    """
+    봉 ``timestamp`` → KST 시각. 읽을 수 없거나 시간대가 없으면 None.
+
+    [확인] 2026-10-26 실제 응답은 ``2026-10-26T00:00:00.000+09:00``(일봉 = 거래일 KST 자정, 1분봉 = 봉 **끝** 시각)입니다. 앞 10자를
+    날짜로 자르지 않고 시간대까지 읽어 KST로 옮깁니다 — UTC 표기로 와도 거래일이 하루 밀리지 않게.
+    """
+    if not isinstance(stamp, str) or not stamp:
+        return None
+    try:
+        parsed = datetime.fromisoformat(stamp.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    return parsed.astimezone(KST) if parsed.tzinfo else None
+
+
+def _positive(value) -> float | None:
+    number = to_float(value)
+    return number if number is not None and number > 0 else None
+
+
+def normalize_candle(rec) -> dict | None:
+    """
+    봉 하나 → ``{date, time, open, high, low, close, volume}``(날짜·시각은 KST, 시각은 HH:MM). 숫자는 문자열로 옵니다.
+
+    가격은 양수만(아니면 None), 거래량은 0 이상 정수만(아니면 None — 0은 '그 봉에 체결 없음', 정지일 일봉은 거래량 0·시고저종 =
+    전일 종가로 옵니다). 시각이나 종가를 읽을 수 없는 봉은 None(버림 — 날짜를 짐작하거나 0원 가격을 만들지 않음).
+    """
+    if not isinstance(rec, dict):
+        return None
+    at = candle_time(rec.get("timestamp"))
+    close = _positive(rec.get("closePrice"))
+    if at is None or close is None:
+        return None
+    volume = to_int(rec.get("volume"))
+    return {
+        "date": at.date().isoformat(), "time": at.strftime("%H:%M"),
+        "open": _positive(rec.get("openPrice")), "high": _positive(rec.get("highPrice")),
+        "low": _positive(rec.get("lowPrice")), "close": close,
+        "volume": volume if volume is not None and volume >= 0 else None,
     }
+
+
+def fetch_candles(symbol: str, interval: str, count: int, *, adjusted: bool,
+                  before: str | None = None) -> tuple[list[dict], str | None]:
+    """
+    종목 하나의 봉(``GET /api/v1/candles``, 그룹 MARKET_DATA_CHART — [확인] 초당 20).
+
+    :param interval: ``1d``(일봉) 또는 ``1m``(1분봉)
+    :param count: 1~200(넘으면 200)
+    :param adjusted: 수정주가 여부 — **기본값에 기대지 않고 늘 보냅니다**(토스 기본은 true = 수정주가, 장부는 false = 원시가).
+        requests는 파이썬 bool을 'True'로 보내므로 소문자 문자열로 바꿉니다
+    :param before: 이 시각 이하의 봉만(ISO 8601, 포함). 없으면 최신부터
+    :returns: (정규화한 봉 — 최신순 그대로, 읽을 수 없는 봉은 뺌, 다음 쪽 ``nextBefore`` — 없으면 None)
+    :raises TossMissingKey · TossForbidden · TossError: :func:`api_get`과 같음
+    """
+    if interval not in ("1d", "1m"):
+        raise ValueError(f"지원하지 않는 봉 간격: {interval}")
+    params = {"symbol": symbol, "interval": interval, "count": min(max(int(count), 1), CANDLE_MAX_COUNT),
+              "adjusted": "true" if adjusted else "false"}
+    if before:
+        params["before"] = before
+    result = api_get("/api/v1/candles", params) or {}
+    if not isinstance(result, dict):
+        raise TossError("봉 응답 형식이 다릅니다(result가 객체가 아님)")
+    candles = [normalize_candle(rec) for rec in (result.get("candles") or [])]
+    next_before = result.get("nextBefore")
+    return [c for c in candles if c is not None], (str(next_before) if next_before else None)
 
 
 # ==============================================================================
