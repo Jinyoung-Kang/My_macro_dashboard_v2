@@ -3,8 +3,8 @@ package com.macrodash.feature.paper;
 import com.macrodash.Kst;
 import com.macrodash.analytics.CalendarWindow;
 import com.macrodash.analytics.PaperStats;
+import com.macrodash.analytics.TradingCalendar;
 import com.macrodash.analytics.TrailingStop;
-import com.macrodash.analytics.UsMarketCalendar;
 import com.macrodash.feature.paper.PaperMarketData.Quotes;
 import com.macrodash.read.StoreReader;
 import com.macrodash.store.Datasets;
@@ -35,10 +35,13 @@ import java.time.YearMonth;
 import java.time.temporal.TemporalAccessor;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.TreeSet;
 
 /**
@@ -53,6 +56,12 @@ import java.util.TreeSet;
  *
  * <p>관측치 저장본은 {@link StoreReader#quietly}로 읽습니다 — 화면을 열어도 수집을 깨우거나 기다리지 않습니다(명세 §2).
  * 장부는 백엔드 테이블이라 응답 캐시(ComputedCache)도 쓰지 않습니다.
+ *
+ * <p><b>시장 문맥</b>(2단계 명세 §9 A6): 개요·상태는 시장 묶음({@link PaperMarket})을 받아 그 시장 책·그 책들의 순자산 줄·그 시장
+ * 관측치(확정 판정 포함)·그 시장 Claude 책의 노출 추이와 프레임 경계·초기화 판정(그 시장 책 정의)만 씁니다. 13F 선정·게이트 지표·
+ * 한계 문구·출발일·초기 현금은 미국 전용이라 미국 밖 시장에는 싣지 않습니다(null·빈 목록 — 한국 값은 C1·F2). 작업 기록·설정·호출
+ * 사용량·수집 상태는 시장과 상관없이 하나입니다. 계좌 코드 경로(보유·주문·체결·순자산)는 그 책의 시장({@code paper_books.market})
+ * 달력·비교 기준을 씁니다. 시장을 받지 않는 옛 시그니처는 미국입니다.
  */
 @Service
 public class PaperQueryService {
@@ -74,6 +83,8 @@ public class PaperQueryService {
     private final PaperSettingsService settings;
     private final PaperConfig config;
     private final Clock clock;
+    /** 이 서비스가 아는 시장 — 계좌 코드 경로가 책의 시장 묶음을 찾는 목록이고, 결정 목록이 받는 책 코드의 출처. */
+    private final List<PaperMarket> markets;
 
     @Autowired
     public PaperQueryService(PaperStore store, PaperMarketData marketData, StoreReader reader,
@@ -84,12 +95,19 @@ public class PaperQueryService {
     /** 테스트용 — 시계를 움직입니다. */
     PaperQueryService(PaperStore store, PaperMarketData marketData, StoreReader reader, PaperSettingsService settings,
                       PaperConfig config, Clock clock) {
+        this(store, marketData, reader, settings, config, clock, PaperMarkets.ALL);
+    }
+
+    /** 테스트용 — 시계와 시장 목록을 바꿉니다(시장 격리 시험이 시험용 한국 시장을 넣음). */
+    PaperQueryService(PaperStore store, PaperMarketData marketData, StoreReader reader, PaperSettingsService settings,
+                      PaperConfig config, Clock clock, List<PaperMarket> markets) {
         this.store = store;
         this.marketData = marketData;
         this.reader = reader;
         this.settings = settings;
         this.config = config;
         this.clock = clock;
+        this.markets = List.copyOf(markets);
     }
 
     public boolean ready() {
@@ -121,45 +139,68 @@ public class PaperQueryService {
     }
 
     // ------------------------------------------------------------------ 개요·상태
-    /** GET /api/paper/overview */
+    /** GET /api/paper/overview — {@link #overview(PaperMarket)}의 미국 판. */
     public Map<String, Object> overview() {
+        return overview(UsPaperMarket.INSTANCE);
+    }
+
+    /** 그 시장의 개요(클래스 설명의 시장 문맥). */
+    Map<String, Object> overview(PaperMarket market) {
         if (!ready()) {
             return notReady();
         }
-        List<Book> books = sortedBooks();
+        boolean us = usOnly(market);
+        List<Book> books = sortedBooks(market);
+        Set<String> codes = new HashSet<>();
+        books.forEach(book -> codes.add(book.code()));
         List<NavRow> allNav = store.navSeriesAll();
         Map<String, List<NavRow>> navByBook = new HashMap<>();
-        allNav.forEach(row -> navByBook.computeIfAbsent(row.bookCode(), key -> new ArrayList<>()).add(row));
+        allNav.stream().filter(row -> codes.contains(row.bookCode()))
+                .forEach(row -> navByBook.computeIfAbsent(row.bookCode(), key -> new ArrayList<>()).add(row));
 
         Map<String, Object> out = new LinkedHashMap<>();
         out.put("available", true);
-        out.put("initialized", initialized(books));
+        out.put("initialized", initialized(market, books));
         out.put("pendingBackfill", pendingBackfill(books));
-        out.put("startDate", config.startDate().toString());
+        out.put("startDate", us ? config.startDate().toString() : null);
         List<Map<String, Object>> summaries = new ArrayList<>();
         for (Book book : books) {
-            summaries.add(summary(book, navByBook));
+            summaries.add(summary(market, book, navByBook));
         }
         out.put("books", summaries);
         out.put("navSeries", navSeries(books, navByBook));
-        out.put("quotes", quotesSummary());
-        out.put("selection", latestSelection());
+        out.put("quotes", quotesSummary(market));
+        out.put("selection", us ? latestSelection() : null);
         // OS 게이트 지표(참고 — 구속하지 않음, D7·D19): 결정 작업이 거래일마다 남긴 가장 최근 줄. 없으면 null.
-        out.put("gate", store.recentGate(1).stream().findFirst().map(PaperGate::view).orElse(null));
-        out.put("claudeExposureSeries", claudeExposureSeries(navByBook.getOrDefault(PaperBooks.CLAUDE, List.of())));
-        out.put("frameworkBoundaries", frameworkBoundaries());
-        out.put("limits", limits());
+        out.put("gate", us ? store.recentGate(1).stream().findFirst().map(PaperGate::view).orElse(null) : null);
+        out.put("claudeExposureSeries", claudeExposureSeries(market,
+                navByBook.getOrDefault(market.claudeBook(), List.of())));
+        out.put("frameworkBoundaries", frameworkBoundaries(market));
+        out.put("limits", us ? limits() : List.of());
         out.put("jobs", jobs(OVERVIEW_JOBS));
         return out;
     }
 
+    /** 미국 전용 칸(13F 선정·게이트 지표·한계 문구·출발일·초기 현금)을 싣는 시장인가 — 미국 묶음 그 자체일 때만(클래스 설명). */
+    private static boolean usOnly(PaperMarket market) {
+        return market == UsPaperMarket.INSTANCE;
+    }
+
     // ------------------------------------------------------------------ 결정
-    /** GET /api/paper/decisions?book=&limit= (1–500, 최근 순). 결정을 내는 책은 rules·claude뿐입니다. */
+    /**
+     * GET /api/paper/decisions?book=&limit= (1–500, 최근 순). 결정을 내는 책은 시장마다 규칙·Claude 책뿐입니다(미국 rules·claude —
+     * 아는 시장 순서대로).
+     */
     public Map<String, Object> decisions(String book, int limit) {
         if (!ready()) {
             return notReady();
         }
-        String code = Params.oneOf("book", book, List.of(PaperBooks.RULES, PaperBooks.CLAUDE));
+        Set<String> deciding = new LinkedHashSet<>();
+        markets.forEach(market -> {
+            deciding.add(market.rulesBook());
+            deciding.add(market.claudeBook());
+        });
+        String code = Params.oneOf("book", book, List.copyOf(deciding));
         List<Map<String, Object>> rows = new ArrayList<>();
         for (PaperStore.DecisionSummary d : store.decisions(code, Params.clamp(limit, 1, MAX_LIMIT))) {
             rows.add(decisionRow(d.id(), d.bookCode(), d.asOfTradingDate(), d.kind(), d.status(), d.decidedAt(),
@@ -245,8 +286,13 @@ public class PaperQueryService {
         return fills.stream().map(PaperQueryService::fillRow).toList();
     }
 
-    /** GET /api/paper/status */
+    /** GET /api/paper/status — {@link #status(PaperMarket)}의 미국 판. */
     public Map<String, Object> status() {
+        return status(UsPaperMarket.INSTANCE);
+    }
+
+    /** 그 시장의 상태 — 초기화 판정·관측치는 그 시장 것, 출발일·초기 현금은 미국만(클래스 설명), 나머지는 시장과 상관없이 하나. */
+    Map<String, Object> status(PaperMarket market) {
         Map<String, Object> out = new LinkedHashMap<>();
         if (!ready()) {
             out.putAll(notReady());
@@ -256,11 +302,11 @@ public class PaperQueryService {
         }
         out.put("available", true);
         out.put("schemaReady", true);
-        out.put("initialized", initialized(sortedBooks()));
+        out.put("initialized", initialized(market, sortedBooks(market)));
         out.put("enabled", config.enabled());
-        out.put("startDate", config.startDate().toString());
-        out.put("initialCash", round2(config.initialCash()));
-        out.put("quotes", quotesSummary());
+        out.put("startDate", usOnly(market) ? config.startDate().toString() : null);
+        out.put("initialCash", usOnly(market) ? round2(config.initialCash()) : null);
+        out.put("quotes", quotesSummary(market));
         out.put("jobs", jobs(STATUS_JOBS));
         PaperSettingsService.Current current = settings.current();
         out.put("settingsVersion", current.version());
@@ -486,9 +532,9 @@ public class PaperQueryService {
      * 성과 화면의 프레임 경계(F5, 계약 보충 §4) — Claude 책 결정에 판마다 처음 쓰인 거래일 {@code [{tradingDate, version, status}]},
      * 거래일 순. 판 번호가 남은 결정이 없으면 빈 목록입니다(단계 3b 전 결정은 판 번호가 null이라 세지 않음).
      */
-    private List<Map<String, Object>> frameworkBoundaries() {
+    private List<Map<String, Object>> frameworkBoundaries(PaperMarket market) {
         List<Map<String, Object>> out = new ArrayList<>();
-        for (PaperStore.FrameworkBoundary b : store.frameworkBoundaries(PaperBooks.CLAUDE)) {
+        for (PaperStore.FrameworkBoundary b : store.frameworkBoundaries(market.claudeBook())) {
             Map<String, Object> row = new LinkedHashMap<>();
             row.put("tradingDate", text(b.tradingDate()));
             row.put("version", b.version());
@@ -504,10 +550,10 @@ public class PaperQueryService {
      * 그 거래일 순자산 줄의 노출({@code exposure_pct}, 현금성 포함). 둘 중 하나라도 있는 거래일만 싣고, 없는 쪽은 null입니다.
      * 그 거래일 결정의 목표는 다음 세션에 체결돼 반영되므로, 같은 줄의 실제 노출은 "결정할 때의 노출"입니다.
      */
-    private List<Map<String, Object>> claudeExposureSeries(List<NavRow> nav) {
+    private List<Map<String, Object>> claudeExposureSeries(PaperMarket market, List<NavRow> nav) {
         java.util.TreeMap<LocalDate, Double> target = new java.util.TreeMap<>();
         // 최근 순(같은 날은 나중 결정 먼저)이라 그날 처음 만난 값 있는 결정이 가장 나중 것입니다.
-        for (PaperStore.DecisionSummary d : store.decisions(PaperBooks.CLAUDE, MAX_LIMIT)) {
+        for (PaperStore.DecisionSummary d : store.decisions(market.claudeBook(), MAX_LIMIT)) {
             if (d.targetExposurePct() != null) {
                 target.putIfAbsent(d.asOfTradingDate(), d.targetExposurePct());
             }
@@ -530,13 +576,14 @@ public class PaperQueryService {
     /** 책 하나의 요약(BookSummary) — 버튼 응답이 바뀐 책을 다시 그릴 때. */
     public Map<String, Object> bookSummary(String code) {
         Book book = existing(code);
+        PaperMarket market = marketOf(book);
         Map<String, List<NavRow>> navByBook = new HashMap<>();
         navByBook.put(book.code(), store.navSeries(book.code()));
-        String benchmark = PaperBooks.benchmarkOf(book.code());
+        String benchmark = market.benchmarkOf(book.code());
         if (benchmark != null) {
             navByBook.put(benchmark, store.navSeries(benchmark));
         }
-        return summary(book, navByBook);
+        return summary(market, book, navByBook);
     }
 
     // ------------------------------------------------------------------ 책별
@@ -550,7 +597,8 @@ public class PaperQueryService {
         PaperSettings current = settings.current().settings();
         boolean benchmark = PaperBooks.KIND_BENCHMARK.equals(book.kind());
         Double nav = state.map(BookState::nav).orElse(null);
-        LocalDate session = UsMarketCalendar.currentOrLastSession(clock.instant());
+        TradingCalendar calendar = marketOf(book).calendar();
+        LocalDate session = calendar.currentOrLastSession(clock.instant());
 
         // 사후 체결로 연 보유: 그 종목의 사후 매수 체결 관측 시각 = 보유를 연 시각.
         Map<String, Instant> backfillOpened = new HashMap<>();
@@ -584,7 +632,7 @@ public class PaperQueryService {
                     ? round2((p.lastPrice() / stopPrice - 1.0) * 100.0) : null);
             row.put("openedOn", text(p.openedOn()));
             row.put("holdingTradingDays", p.openedOn() == null ? null
-                    : UsMarketCalendar.tradingDaysBetween(p.openedOn(), session));
+                    : calendar.tradingDaysBetween(p.openedOn(), session));
             row.put("priceStale", p.priceStale() || p.lastPrice() == null);
             row.put("splitNote", p.splitNote());
             row.put("cashLike", cashLike);
@@ -709,11 +757,11 @@ public class PaperQueryService {
      * BookSummary. 시작 전 책은 수익률·통계를 내지 않습니다(null) — 현금만 든 책의 "0%"는 성과가 아니라 아직 시작하지 않은
      * 것이기 때문입니다. 통계는 그 책의 거래일 순자산과 같은 날의 SPY 100% 책 순자산(없는 날은 null)으로 계산합니다(L10).
      */
-    private Map<String, Object> summary(Book book, Map<String, List<NavRow>> navByBook) {
+    private Map<String, Object> summary(PaperMarket market, Book book, Map<String, List<NavRow>> navByBook) {
         Optional<BookState> state = store.state(book.code());
         List<Position> positions = store.positions(book.code());
         boolean started = !PaperBooks.NOT_STARTED.equals(book.status());
-        String benchmark = PaperBooks.benchmarkOf(book.code());
+        String benchmark = market.benchmarkOf(book.code());
 
         Map<String, Object> out = new LinkedHashMap<>();
         out.put("code", book.code());
@@ -793,9 +841,9 @@ public class PaperQueryService {
         return out;
     }
 
-    /** 관측치 요약. 저장본이 없으면 null. */
-    private Map<String, Object> quotesSummary() {
-        Optional<Quotes> found = reader.quietly(marketData::quotes);
+    /** 그 시장 관측치 요약. 저장본이 없으면 null. */
+    private Map<String, Object> quotesSummary(PaperMarket market) {
+        Optional<Quotes> found = reader.quietly(() -> marketData.quotes(market));
         if (found.isEmpty()) {
             return null;
         }
@@ -806,7 +854,7 @@ public class PaperQueryService {
         out.put("collectedAtKst", Kst.stamp(quotes.collectedAt()));
         out.put("ageSeconds", age);
         out.put("barDate", text(barDate));
-        out.put("finalClose", barDate != null && PaperMarketData.isFinal(barDate, quotes.collectedAt()));
+        out.put("finalClose", barDate != null && market.isFinal(barDate, quotes.collectedAt()));
         out.put("tickers", quotes.bars().size());
         out.put("staleTickers", quotes.staleTickers());
         out.put("stale", age > QUOTES_LATE.getSeconds());
@@ -867,14 +915,26 @@ public class PaperQueryService {
         return out;
     }
 
-    private List<Book> sortedBooks() {
-        List<Book> books = new ArrayList<>(store.books());
+    /** 그 시장 책, 정의 순. */
+    private List<Book> sortedBooks(PaperMarket market) {
+        List<Book> books = new ArrayList<>(store.books(market.code()));
         books.sort((a, b) -> PaperBooks.ORDER.compare(a.code(), b.code()));
         return books;
     }
 
-    private static boolean initialized(List<Book> books) {
-        return PaperBooks.ALL.stream().allMatch(d -> books.stream().anyMatch(b -> b.code().equals(d.code())));
+    /** 그 시장 책 정의가 모두 있나. */
+    private static boolean initialized(PaperMarket market, List<Book> books) {
+        return market.books().stream().allMatch(d -> books.stream().anyMatch(b -> b.code().equals(d.code())));
+    }
+
+    /** 그 책의 시장 묶음({@code paper_books.market}). 이 서비스가 모르는 시장이면 IllegalStateException(코드·자료 오류). */
+    private PaperMarket marketOf(Book book) {
+        for (PaperMarket market : markets) {
+            if (market.code().equals(book.market())) {
+                return market;
+            }
+        }
+        throw new IllegalStateException("모르는 시장의 계좌입니다: " + book.code() + " (" + book.market() + ")");
     }
 
     /**

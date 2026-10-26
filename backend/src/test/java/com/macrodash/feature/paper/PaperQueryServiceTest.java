@@ -46,7 +46,7 @@ class PaperQueryServiceTest {
         marketData = mock(PaperMarketData.class);
         when(marketData.history(anyCollection(), any(), any())).thenReturn(Map.of());
         when(marketData.sourcedCloseOn(anyString(), any())).thenReturn(Optional.empty());
-        when(marketData.quotes()).thenReturn(Optional.empty());
+        when(marketData.quotes(UsPaperMarket.INSTANCE)).thenReturn(Optional.empty());
         query = new PaperQueryService(store, marketData, PaperFixtures.quietReader(), PaperFixtures.settings(store),
                 PaperFixtures.config(), NOW);
     }
@@ -100,8 +100,8 @@ class PaperQueryServiceTest {
     void overviewAfterInit() {
         initWithBenchmarks();
         store.upsertNav(new NavRow("bench_spy", MON, 101_000, 450.25, 100_549.75, 99.55, true));
-        when(marketData.quotes()).thenReturn(Optional.of(quotes(MON_FINAL, bar("SPY", FRI, 500, MON, 505),
-                staleBar("QQQ", FRI, 400))));
+        when(marketData.quotes(UsPaperMarket.INSTANCE)).thenReturn(Optional.of(quotes(MON_FINAL,
+                bar("SPY", FRI, 500, MON, 505), staleBar("QQQ", FRI, 400))));
 
         Map<String, Object> overview = query.overview();
 
@@ -543,6 +543,82 @@ class PaperQueryServiceTest {
         assertThat(oddView.path("withEstimate4").isNull()).isTrue();
         assertThat(oddView.path("universe").asInt()).isEqualTo(576);
         assertThat(oddView.path("generatedAtKst").asString()).isEqualTo("2026-10-25 09:31 KST");
+    }
+
+
+    // ------------------------------------------------------------------ 시장 격리(2단계 명세 §9 A6)
+    @Test
+    @DisplayName("시장 격리(A6): 개요는 그 시장 책·그 책들의 순자산 줄·그 시장 관측치만 — 미국 개요에 다른 시장 책·날짜가 섞이지 않고, 다른 시장 개요에는 미국 전용 칸(13F 선정·게이트·한계 문구·출발일)이 없음")
+    @SuppressWarnings("unchecked")
+    void overviewPerMarket() {
+        initWithBenchmarks();
+        PaperMarket kr = TestKrMarket.INSTANCE;
+        String krBook = TestKrMarket.CLAUDE_BOOK;
+        store.books.put(krBook, TestKrMarket.book(krBook, 100_000_000, FRI));
+        store.states.put(krBook, new com.macrodash.store.PaperStore.BookState(krBook, 100_000_000, 100_000_000, 0, 0,
+                null, null, null, null));
+        java.time.LocalDate krOnly = java.time.LocalDate.of(2026, 10, 21);   // 미국 책에는 없는 날
+        store.upsertNav(new NavRow(krBook, krOnly, 100_000_000, 100_000_000, 0, 0, true));
+        store.upsertNav(new NavRow("bench_spy", MON, 101_000, 450.25, 100_549.75, 99.55, true));
+        when(marketData.quotes(kr)).thenReturn(Optional.of(quotes(Instant.parse("2026-10-26T12:00:00Z"),
+                bar("005930", FRI, 70_000, MON, 71_000))));
+        PaperQueryService both = new PaperQueryService(store, marketData, PaperFixtures.quietReader(),
+                PaperFixtures.settings(store), PaperFixtures.config(), NOW, List.of(UsPaperMarket.INSTANCE, kr));
+
+        Map<String, Object> us = both.overview();
+        assertThat((List<Map<String, Object>>) us.get("books")).extracting(b -> b.get("code"))
+                .containsExactly("rules", "claude", "bench_spy", "bench_mix");
+        Map<String, Object> usNav = (Map<String, Object>) us.get("navSeries");
+        assertThat((List<String>) usNav.get("dates")).doesNotContain(krOnly.toString());
+        assertThat((Map<String, Object>) usNav.get("books")).doesNotContainKey(krBook);
+        assertThat(us).isEqualTo(query.overview());
+
+        Map<String, Object> other = both.overview(kr);
+        assertThat(other.get("initialized")).isEqualTo(true);
+        assertThat((List<Map<String, Object>>) other.get("books")).extracting(b -> b.get("code"))
+                .containsExactly(krBook);
+        assertThat(((List<Map<String, Object>>) other.get("books")).get(0).get("benchmark")).isNull();
+        assertThat((List<String>) ((Map<String, Object>) other.get("navSeries")).get("dates"))
+                .containsExactly(krOnly.toString());
+        Map<String, Object> krQuotes = (Map<String, Object>) other.get("quotes");
+        assertThat(krQuotes.get("barDate")).isEqualTo("2026-10-26");
+        assertThat(krQuotes.get("finalClose")).as("그 시장 확정 판정(서울 15:30 + 15분 뒤 수집)").isEqualTo(true);
+        assertThat(other.get("startDate")).isNull();
+        assertThat(other.get("selection")).isNull();
+        assertThat(other.get("gate")).isNull();
+        assertThat(other.get("limits")).isEqualTo(List.of());
+        assertThat(both.status(kr).get("initialCash")).isNull();
+        assertThat(both.status(kr).get("quotes")).isEqualTo(krQuotes);
+    }
+
+    @Test
+    @DisplayName("시장 격리(A6): 계좌 코드 경로는 그 책의 시장 달력(보유 거래일)·비교 기준을 쓰고, 결정 목록은 아는 시장의 규칙·Claude 책만 받음")
+    @SuppressWarnings("unchecked")
+    void bookPathsUseTheBooksMarket() {
+        PaperMarket kr = TestKrMarket.INSTANCE;
+        String krBook = TestKrMarket.CLAUDE_BOOK;
+        store.books.put(krBook, TestKrMarket.book(krBook, 100_000_000, FRI));
+        store.states.put(krBook, new com.macrodash.store.PaperStore.BookState(krBook, 30_000_000, 100_000_000,
+                70_000_000, 70, null, null, null, null));
+        // 11-20(금) 연 보유를 11-27(금) 21:00 KST에 — 시험용 한국 달력(서울 평일)으로 5거래일. 미국 달력이었다면 추수감사절(11-26)
+        // 휴장이 빠지고 그 시각은 미국 11-27 개장 전이라 더 적습니다.
+        store.upsertPosition(new com.macrodash.store.PaperStore.Position(krBook, "005930", 1_000, 70_000,
+                java.time.LocalDate.of(2026, 11, 20), Instant.parse("2026-11-20T06:30:00Z"), 70_000,
+                Instant.parse("2026-11-20T06:30:00Z"), 70_000.0, Instant.parse("2026-11-20T06:30:00Z"), false,
+                java.time.LocalDate.of(2026, 11, 20), 70_000, null));
+        Clock friday = Clock.fixed(Instant.parse("2026-11-27T12:00:00Z"), ZoneOffset.UTC);
+        PaperQueryService both = new PaperQueryService(store, marketData, PaperFixtures.quietReader(),
+                PaperFixtures.settings(store), PaperFixtures.config(), friday, List.of(UsPaperMarket.INSTANCE, kr));
+
+        Map<String, Object> positions = both.positions(krBook);
+        List<Map<String, Object>> rows = (List<Map<String, Object>>) positions.get("positions");
+        assertThat(rows.get(0).get("holdingTradingDays")).isEqualTo(5);
+        assertThat(((Map<String, Object>) positions.get("book")).get("benchmark")).isNull();
+        assertThat(both.decisions(krBook, 10).get("available")).isEqualTo(true);
+        assertThatThrownBy(() -> query.decisions(krBook, 10)).as("모르는 시장의 책은 결정 목록에 받지 않음")
+                .isInstanceOf(InvalidRequestException.class);
+        assertThatThrownBy(() -> query.positions(krBook)).as("모르는 시장의 책은 달력을 고를 수 없음")
+                .isInstanceOf(IllegalStateException.class);
     }
 
     private static final java.time.LocalDate TUE_EXPIRY = java.time.LocalDate.of(2026, 10, 29);
