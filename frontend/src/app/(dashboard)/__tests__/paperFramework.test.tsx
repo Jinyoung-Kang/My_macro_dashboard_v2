@@ -33,7 +33,7 @@ vi.mock("@/components/charts", () => ({
     ) : null,
 }));
 
-import PaperPage from "../paper/page";
+import PaperPage from "@/components/screens/paper/PaperScreen";
 
 const OVERVIEW = {
   available: true, initialized: true, startDate: "2026-10-23", limits: [], jobs: [], pendingBackfill: [], books: [],

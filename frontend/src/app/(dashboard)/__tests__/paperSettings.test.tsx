@@ -22,7 +22,7 @@ vi.mock("@/components/charts", () => ({
   MultiLineSeries: () => null,
 }));
 
-import PaperPage from "../paper/page";
+import PaperPage from "@/components/screens/paper/PaperScreen";
 
 const WARNING = "규칙 계좌는 동결된 대조군입니다 — 이 변경은 실험 조건을 바꿉니다";
 

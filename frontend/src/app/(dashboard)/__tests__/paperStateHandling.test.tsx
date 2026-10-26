@@ -31,7 +31,7 @@ vi.mock("@/components/charts", () => ({
   ),
 }));
 
-import PaperPage from "../paper/page";
+import PaperPage from "@/components/screens/paper/PaperScreen";
 
 const LIMITS = [
   "모의 매매입니다. 어떤 주문도 밖으로 나가지 않습니다.",

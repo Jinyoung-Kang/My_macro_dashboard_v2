@@ -33,7 +33,7 @@ vi.mock("@/components/charts", () => ({
     ) : null,
 }));
 
-import PaperPage from "../paper/page";
+import PaperPage from "@/components/screens/paper/PaperScreen";
 
 const STATS = { cumReturnPct: null, cagrPct: null, volPct: null, mddPct: null, sharpe: null, excessPct: null, beta: null, sampleDays: 0 };
 
