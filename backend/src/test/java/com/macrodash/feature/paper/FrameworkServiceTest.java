@@ -223,6 +223,36 @@ class FrameworkServiceTest {
         changed.put("lockoutTradingDays", 10);
         changed.putArray("cashLikeTickers");
         Golden.assertMatches("render-us-v7-custom.txt", FrameworkService.render(body, 7, changed));
+
+        // 시장 인자 판(2단계 명세 §9 A6) — 미국 묶음을 넘기면 같은 고정본.
+        Golden.assertMatches("render-us-v0-default.txt", FrameworkService.render(UsPaperMarket.INSTANCE,
+                FrameworkService.interimBody(MAPPER), 0, settings.defaultsJson()));
+        Golden.assertMatches("render-us-v7-custom.txt",
+                FrameworkService.render(UsPaperMarket.INSTANCE, body, 7, changed));
+    }
+
+    @Test
+    @DisplayName("시장 인자(2단계 명세 §9 A6·K34): 판 본문(머리·역할·원칙·엔진·지침)은 시장과 상관없이 같고, 하드 규칙 줄과 끝 고정 문단만 그 시장 묶음의 것 — 미국 문장이 섞이지 않음")
+    void renderTakesMarketPromptParts() {
+        JsonNode body = FrameworkService.interimBody(MAPPER);
+        ObjectNode settingsBody = (ObjectNode) settings.defaultsJson().deepCopy();
+        settingsBody.put("maxPositions", 17);
+        String us = FrameworkService.render(UsPaperMarket.INSTANCE, body, 4, settingsBody);
+        String kr = FrameworkService.render(TestKrMarket.INSTANCE, body, 4, settingsBody);
+
+        assertThat(us).isEqualTo(FrameworkService.render(body, 4, settingsBody));
+        String heading = "## 하드 규칙(코드가 집행 — 어기는 주문은 거절된다)";
+        String shared = us.substring(0, us.indexOf(heading));
+        assertThat(shared).startsWith("# 투자 OS — v4 (").contains(ClaudePrompts.ROLE).contains("## 원칙\nP1.")
+                .contains("## 엔진\n### E1.").contains("## 지침\n");
+        assertThat(kr).isEqualTo(shared + heading + "\n"
+                + "- 시험용 한국 하드 규칙 — 최대 17종목\n"
+                + "- 시험용 한국 하드 규칙 둘째 줄\n"
+                + "## 시험용 한국 고정(고정)\n"
+                + "- 시험용 체결 시점 문장");
+        assertThat(kr).as("미국 하드 규칙·고정 문단이 없음").doesNotContain("주문 최소 $").doesNotContain("## 근거(고정)")
+                .doesNotContain("## 출력(고정)");
+        assertThat(FrameworkService.render(TestKrMarket.INSTANCE, body, 4, settingsBody)).as("결정적").isEqualTo(kr);
     }
 
     @Test

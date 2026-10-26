@@ -7,6 +7,7 @@ import com.macrodash.analytics.TradingCalendar;
 import com.macrodash.analytics.UsMarketCalendar;
 import com.macrodash.store.Datasets;
 import com.macrodash.store.PaperStore;
+import tools.jackson.databind.JsonNode;
 
 import java.time.DayOfWeek;
 import java.time.Duration;
@@ -27,6 +28,8 @@ import java.util.List;
  *   <li>Claude 체결 시점 NEXT_OBSERVATION·NEXT_CLOSE(이른 시점 NEXT_OBSERVATION)</li>
  *   <li>결정 07:30·기한 12:00 KST, 세션 <b>다음 KST 날</b>의 그 시각(미국 마감이 KST 새벽이라)</li>
  *   <li>복기 토요일 09:00 KST, 설정 키·작업 기록 이름은 접두어 없이 지금 그대로</li>
+ *   <li>Claude 시스템 프롬프트의 하드 규칙 줄은 지금 렌더링의 줄({@code FrameworkService.hardRules}), 고정 문단은
+ *       {@link ClaudePrompts#FIXED_RULES} — A6 전 렌더링과 글자 그대로</li>
  * </ul>
  */
 final class UsPaperMarket implements PaperMarket {
@@ -125,6 +128,16 @@ final class UsPaperMarket implements PaperMarket {
     @Override
     public Instant decisionInstant(LocalDate session, LocalTime kstTime) {
         return ZonedDateTime.of(session.plusDays(1), kstTime, Kst.ZONE).toInstant();
+    }
+
+    @Override
+    public List<String> promptHardRules(JsonNode settingsBody) {
+        return FrameworkService.hardRules(settingsBody);
+    }
+
+    @Override
+    public String promptFixedRules() {
+        return ClaudePrompts.FIXED_RULES;
     }
 
     @Override

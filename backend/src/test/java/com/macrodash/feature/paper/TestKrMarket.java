@@ -3,6 +3,8 @@ package com.macrodash.feature.paper;
 import com.macrodash.Kst;
 import com.macrodash.analytics.TradingCalendar;
 import com.macrodash.store.PaperStore;
+import com.macrodash.support.Json;
+import tools.jackson.databind.JsonNode;
 
 import java.time.DayOfWeek;
 import java.time.Duration;
@@ -30,6 +32,8 @@ final class TestKrMarket implements PaperMarket {
     static final String QUOTES_DATASET = "test.kr.quotes";
     static final String QUOTES_TASK = "test_kr_quotes";
     static final String HISTORY_DATASET = "test.kr.history";
+    /** 시험용 시스템 프롬프트 고정 문단 — 미국 고정 문단과 일부러 다른 글자(줄 끝 공백·빈 줄은 렌더링이 정리). */
+    static final String FIXED_RULES = "## 시험용 한국 고정(고정)   \n- 시험용 체결 시점 문장\n\n";
 
     private static final TradingCalendar SEOUL_WEEKDAYS = new TradingCalendar() {
         @Override
@@ -156,6 +160,18 @@ final class TestKrMarket implements PaperMarket {
     @Override
     public Instant decisionInstant(LocalDate session, LocalTime kstTime) {
         return ZonedDateTime.of(session, kstTime, Kst.ZONE).toInstant();
+    }
+
+    /** 시험용 하드 규칙 줄 — 받은 설정 본문의 한 키를 그대로 적어, 렌더링이 결정의 설정을 넘기는지 보이게. */
+    @Override
+    public List<String> promptHardRules(JsonNode settingsBody) {
+        return List.of("- 시험용 한국 하드 규칙 — 최대 " + Json.asText(settingsBody, "maxPositions") + "종목",
+                "- 시험용 한국 하드 규칙 둘째 줄");
+    }
+
+    @Override
+    public String promptFixedRules() {
+        return FIXED_RULES;
     }
 
     @Override

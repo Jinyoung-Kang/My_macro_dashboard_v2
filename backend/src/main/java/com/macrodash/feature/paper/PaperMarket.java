@@ -1,6 +1,7 @@
 package com.macrodash.feature.paper;
 
 import com.macrodash.analytics.TradingCalendar;
+import tools.jackson.databind.JsonNode;
 
 import java.time.DayOfWeek;
 import java.time.Duration;
@@ -18,7 +19,7 @@ import java.util.List;
  *
  * <p>구현은 지금 미국 하나({@link UsPaperMarket#INSTANCE})이고 값은 이 묶음 전의 상수 그대로입니다({@code UsPaperMarketTest}가
  * 고정). 장부·관측치·리스크 점검은 시장마다 이 묶음으로 돕니다(A5, 시장 목록 {@link PaperMarkets#ALL}). 결정·복기·조회·관리가
- * 옮겨 가는 것은 A6입니다.
+ * 옮겨 가는 것은 A6입니다 — Claude 시스템 프롬프트의 시장별 부분(하드 규칙 줄·고정 문단)도 여기서 받습니다.
  */
 interface PaperMarket {
 
@@ -90,6 +91,21 @@ interface PaperMarket {
      * 시각의 관계가 시장마다 달라서).
      */
     Instant decisionInstant(LocalDate session, LocalTime kstTime);
+
+    /**
+     * Claude 시스템 프롬프트의 하드 규칙 줄 — 코드가 집행하는 한도를 그 시장의 설정 읽기로 적은 것(검증기·장부와 같은 키). 렌더링
+     * ({@link FrameworkService#render(PaperMarket, JsonNode, int, JsonNode)})이 '## 하드 규칙' 제목 아래에 이 줄을 그대로 넣습니다
+     * (명세 K34 — 시장마다 한도 키·금액 표기가 다름).
+     *
+     * @param settingsBody 결정이 읽은 설정 본문(null이면 기본값으로 읽음 — 키마다 읽는 쪽과 같은 규칙)
+     */
+    List<String> promptHardRules(JsonNode settingsBody);
+
+    /**
+     * Claude 시스템 프롬프트 끝의 고정 문단(근거·출력·체결 시점 규칙) — 렌더링이 하드 규칙 줄 다음에 넣습니다(명세 K34). 미국은
+     * {@link ClaudePrompts#FIXED_RULES} 그대로입니다(실험 중 시스템 프롬프트를 바꾸지 않음).
+     */
+    String promptFixedRules();
 
     /** 주간 복기가 열리는 요일(KST) — 시장별 코드 상수(명세 K38). */
     DayOfWeek reviewOpensOn();
