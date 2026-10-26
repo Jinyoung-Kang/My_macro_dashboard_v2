@@ -10,6 +10,7 @@ from .earnings_surprise import task_earnings_surprise
 from .filings import task_sec_13f, task_sec_13f_track_record
 from .fundamentals import task_sec_fundamentals
 from .korea_public import task_dart_fundamentals, task_fsc_etf_prices, task_fsc_prices, task_kr_holidays
+from .kr_news import task_kr_news_headlines
 from .kr_paper import task_kr_paper_flows, task_kr_paper_price_history, task_kr_paper_quotes, task_kr_paper_universe
 from .maintenance import task_run_log_retention
 from .markets import task_macro_collected, task_radar_rankings, task_scraper_markets
@@ -41,6 +42,7 @@ ALL_TASKS: tuple[Task, ...] = (
     Task("paper_quotes", "slow", task_paper_quotes, "모의 매매 유니버스 최근 3개월 일봉 (장부 관측치)"),
     Task("us_calendar", "slow", task_us_calendar, "미국 발표·실적 일정 — FRED 릴리스·FOMC 상수·yfinance 실적일 (모의 매매 Claude 계좌 패킷)"),
     Task("news_headlines", "slow", task_news_headlines, "사건 뉴스 RSS 헤드라인 — 인베스팅닷컴·연준·BLS·SEC, 7일 보관 (모의 매매 Claude 계좌 패킷)"),
+    Task("kr_news_headlines", "slow", task_kr_news_headlines, "🧪 한국 사건 뉴스 RSS 헤드라인 — 한국은행·재정경제부·국가데이터처·연합뉴스 마켓+, 7일 보관 (한국 책 Claude 계좌 패킷)"),
     Task("volatility_history", "slow", task_volatility_history, "VIX·MOVE 변동성 시계열"),
     Task("cot_history", "slow", task_cot_history, "CFTC COT (주 1회 발표)"),
     Task("daum_futures_trend", "slow", task_daum_futures_trend, "Daum 선물 투자주체별 수급"),

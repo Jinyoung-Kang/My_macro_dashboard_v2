@@ -59,3 +59,22 @@ def test_한국_책_수집_범위는_백엔드_표를_읽지_않는다():
     text = (APP / "tasks" / "kr_paper.py").read_text(encoding="utf-8")
     assert [name for name in BACKEND_TABLES if re.search(rf"\b{name}\b", text)] == []
     assert "watched_stock_codes" not in text
+
+
+# 🧪 한국 책(v2 2단계 B9) 데이터셋 — 데이터셋마다 쓰는 모듈이 하나입니다(읽기는 어디서든).
+B9_WRITERS = {
+    "OBS_KR_NEWS_HEADLINE": "tasks/kr_news.py",
+    "SNAP_KR_NEWS_STATUS": "tasks/kr_news.py",
+}
+B9_WRITE = re.compile(
+    r"\b(put_snapshot|put_observations|put_entity_observations|replace_observations|insert_new_observations|"
+    r"add_headline_feeds|put_timeseries|delete_observations_before)\(\s*catalog\.(" + "|".join(B9_WRITERS) + r")\b"
+)
+
+
+def test_B9_데이터셋은_정해진_태스크_하나만_쓴다():
+    writers = {}
+    for path in APP.rglob("*.py"):
+        for match in B9_WRITE.finditer(path.read_text(encoding="utf-8")):
+            writers.setdefault(match.group(2), set()).add(path.relative_to(APP).as_posix())
+    assert writers == {name: {module} for name, module in B9_WRITERS.items()}

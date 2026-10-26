@@ -84,6 +84,11 @@ public final class Datasets {
      */
     public static final String SNAP_NEWS_STATUS = "news.headlines.status";
     /**
+     * 🧪 한국 책 Claude 계좌 패킷 {@code 11b_events}(v2 2단계 B9)의 한국 사건 헤드라인 수집 상태 — {@link #SNAP_NEWS_STATUS}와 같은 칸 +
+     * 피드별 시각 형식({@code timeFormat})·형식이 다른 시각 수({@code skippedBadTime}). 헤드라인 자체는 {@link #OBS_KR_NEWS_HEADLINE}에 있습니다.
+     */
+    public static final String SNAP_KR_NEWS_STATUS = "kr.news.headlines.status";
+    /**
      * 모의 매매 Claude 계좌 패킷 {@code 8b_fundamentals}의 EPS 서프라이즈(2단계 C) 수집 상태 — 종목별 {@code items}
      * ({@code fetchedAt}·{@code rows}·{@code latestReported}·{@code error}?·{@code isStale}?)와 실행 집계({@code universe}·
      * {@code covered}·{@code withEstimate4}·{@code fetchedThisRun}·{@code failedThisRun}·{@code stoppedReason}?), 받은 시각
@@ -206,6 +211,14 @@ public final class Datasets {
      * 7일이 지난 행은 수집기가 지웁니다. 거르기(종목·키워드)와 패킷 창은 백엔드가 합니다.
      */
     public static final String OBS_NEWS_HEADLINE = "news_headline";
+    /**
+     * 🧪 한국 책 사건 헤드라인(v2 2단계 B9·K21 — 한국은행·재정경제부·국가데이터처·연합뉴스 마켓+ RSS 제목·링크·시각만). 미국
+     * {@link #OBS_NEWS_HEADLINE}과 따로입니다. entity = 같은 제목 해시, obs_date = 발행 KST 날짜, payload {@code {title, link, source, feed,
+     * feeds, publishedAt, publishedDate, timePrecision, knownAt, fetchedAt}} — {@code publishedAt}은 날짜만 주는 피드(재정경제부)에서 null,
+     * {@code timePrecision}은 second·minute·date. 창은 {@code knownAt}('알 수 있는 시각' — 날짜만이면 min(처음 받은 시각, 그 KST 날짜 다음
+     * 자정), 명세 §4-11)으로 자릅니다. 수집기만 쓰고(ADR 0008) 7일이 지난 행은 수집기가 지웁니다.
+     */
+    public static final String OBS_KR_NEWS_HEADLINE = "kr_news_headline";
     /**
      * 모의 매매 어닝 서프라이즈(yfinance quoteSummary {@code earnings.earningsChart}, 2단계 C·D36). entity = 티커, obs_date = 실제
      * 발표 시각({@code reportedDate})의 미국 동부 날짜, payload {@code {periodEnd, actual, estimate, surprisePct, currency, smallBase,

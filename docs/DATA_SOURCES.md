@@ -8,7 +8,7 @@
 
 ---
 
-## 1. 수집 태스크 (32개)
+## 1. 수집 태스크 (33개)
 
 수집기가 세 그룹으로 나눠 돌립니다. 주기는 `.env`로 바꿀 수 있습니다.
 
@@ -26,6 +26,7 @@
 | | | `paper_quotes` | 📒 모의 매매 유니버스(13F 이름 매핑 티커 + 후보 기관 CUSIP 매핑 티커 + ETF 19개, `paper_universe.tradable()`) 최근 3개월 일봉 → 스냅샷 `paper.quotes`. 장중에는 마지막 봉이 지연 시세(장부 관측치) |
 | | | `us_calendar` | 📒 발표·실적 일정 → 스냅샷 `calendar.us_events`. 거시: FRED `release/dates`(CPI 10·PCE 54·고용 50·GDP 53, 앞으로 45일) + FOMC 연간 일정표 상수. 실적: 같은 유니버스(ETF 제외)의 다음 실적일 — yfinance quoteSummary `calendarEvents`, 실행당 120종목(`US_CALENDAR_EARNINGS_BUDGET`)·종목당 24시간 캐시(§5 '모의 매매가 쓰는 저장본과 한계') |
 | | | `news_headlines` | 📒 사건 뉴스 RSS 8개 피드(인베스팅닷컴 넷·연준·BLS 둘·SEC) → `observations` `news_headline`(제목·링크·출처·시각만 — entity = 정규화한 제목의 해시, obs_date = 발행 시각의 UTC 날짜, 7일 보관) + 수집 상태 `news.headlines.status`. 키 없음(§5 '사건 뉴스 RSS') |
+| | | `kr_news_headlines` | 🧪 한국 사건 뉴스 RSS 4개 피드(한국은행 보도자료 전체·재정경제부 보도·참고자료·국가데이터처 보도자료·연합뉴스 마켓+) → `observations` `kr_news_headline`(제목·링크·출처·시각만 — 미국 `news_headline`과 따로, obs_date = 발행 KST 날짜, 7일 보관(KST 날짜)) + 수집 상태 `kr.news.headlines.status`. 피드마다 시각 형식(`rfc822`·`yyyyMMddHHmm`·`date_only`)을 정해 원문을 직접 읽고(feedparser는 국가데이터처 시각을 버림), 날짜만 있는 항목(재정경제부)은 '알 수 있는 시각' `knownAt` = min(처음 받은 시각, 그 KST 날짜 다음 자정). 형식이 다른 시각은 건너뛰고 셈(`skippedBadTime`). 금융위원회 RSS는 점검 중(503)이라 뺌. 키 없음, 설명형 UA. 지금은 저장만(패킷 연결은 v2 E1) — 연합뉴스 이용 조건은 [명세 §7 G12](specs/2026-10-26-v2-kr-paper-spec.md) |
 | | | `volatility_history` | VIX·MOVE 시계열 |
 | | | `cot_history` | CFTC COT (주 1회 발표) |
 | | | `daum_futures_trend` | Daum 선물 투자주체별 수급 |
@@ -310,6 +311,7 @@ EQUITY_MAP = {
 | `calendar.us_events` (스냅샷, 1시간) | Claude 계좌 패킷 `1b_calendar`(2단계 A)·`/api/paper/status`의 `calendar`(개요의 일정 한 줄) — 규칙 계좌·검증기는 읽지 않음 | 아래 '미국 발표·실적 일정' |
 | `news_headline` (observations, 1시간) | Claude 계좌 패킷 `11b_events`(2단계 B)만 — 규칙 계좌·검증기는 읽지 않음 | 아래 '사건 뉴스 RSS' |
 | `news.headlines.status` (스냅샷, 1시간) | `/api/paper/status`의 `news`(개요의 사건 뉴스 한 줄), 정기·미리보기 패킷 `11b_events`의 `feedNote`(창 끝 3시간 전부터 실패 중인 피드) | 피드별 받은 항목·새 항목·건너뛴 수·마지막 성공 시각(`lastOkAt`)·실패 사유, 7일 보관 건수(`stored7d`). 피드가 모두 실패하면 쓰지 않음(직전 저장본 유지) |
+| `kr_news_headline`·`kr.news.headlines.status` (observations·스냅샷, 1시간) | 🧪 한국 책 Claude 계좌 패킷 `11b_events` — 지금은 저장만(연결은 v2 E1). 규칙 계좌·검증기는 읽지 않음 | 미국 두 저장본과 같은 규칙(제목 해시·7일·`feeds` 누적·전부 실패면 쓰지 않음)에 날짜만 KST. 상태에 피드별 `timeFormat`·`skippedBadTime` |
 | `us.earnings_surprise` (observations, 12시간) | Claude 계좌 패킷 `8b_fundamentals` 줄마다의 `eps`(2단계 C)만 — 규칙 계좌·검증기는 읽지 않음 | 아래 '어닝 서프라이즈' |
 | `us.earnings_surprise.status` (스냅샷, 12시간) | `/api/paper/status`의 `earnings`(개요의 어닝 서프라이즈 한 줄) | 종목별 받은 시각·저장 행 수·최신 발표일·오류, 실행 집계(`covered`·`withEstimate4`·`fetchedThisRun`·`failedThisRun`·`stoppedReason`). 숫자는 저장된 행으로 셈(`withEstimate4`는 같은 분기(`periodEnd`)의 두 행을 한 번). 한 종목도 받지 못한 실행·내부 API 변경은 쓰지 않음(직전 저장본 유지). 지금 상태라 패킷에는 싣지 않음 |
 | `us.fundamentals.status` (스냅샷, 12시간) | `/api/paper/status`의 `fundamentals`(개요의 재무 수집 범위 한 줄) | 회사별 받은 시각·최신 공시일·최신 기간 end·분류체계·통화·사실 수·오류. 이번에 실패한 회사는 직전 줄을 `isStale`로 이어받음. 지금 상태라 패킷에는 싣지 않음(초기 결정의 시점 규칙) |
