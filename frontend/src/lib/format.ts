@@ -70,6 +70,23 @@ export function formatPercent(
   return `${formatSigned(value, digits)}%`;
 }
 
+/** 음수 부호 — 하이픈(-)이 아니라 수학 기호 −(U+2212). 화면 패턴의 변화 칩이 씁니다(v2 설계, ChangeChip). */
+export const MINUS = "−";
+
+/**
+ * 부호를 붙인 숫자 — 양수 "+", 음수 "−"(U+2212). 반올림 뒤 0이면 부호를 붙이지 않습니다("+0.00"·"−0.00"을 만들지 않음).
+ *
+ * @param value 유한한 숫자 — 값을 모르는 경우(null·NaN)는 부르는 쪽이 먼저 거릅니다
+ * @returns 글과 **보이는** 숫자의 부호(-1·0·1). 색·화살표는 이 부호로 정합니다(formatSigned·deltaColor와 같은 규칙)
+ */
+export function formatSignedMinus(value: number, digits = 2): { text: string; sign: -1 | 0 | 1 } {
+  const text = formatNumber(Math.abs(value), digits);
+  if (!hasNonZeroDigit(text)) {
+    return { text, sign: 0 };
+  }
+  return value > 0 ? { text: `+${text}`, sign: 1 } : { text: `${MINUS}${text}`, sign: -1 };
+}
+
 /**
  * 시세 지연(분) → 배지 문구. 0이면 "실시간", 모르면 null(표시하지 않음) — 수집기 indicators.delay_label과 같은 규칙(QA-137).
  */

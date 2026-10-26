@@ -10,7 +10,9 @@ import {
   deltaColor, withoutLeadingIcon, formatAge, formatBillionUsd, formatKrw, formatNumber, formatPercent, formatSampleWindow, formatShares,
   formatSigned, formatSignedKrw, formatTrillionDelta, formatTrillionUsd, formatUsd, formatUsdWithKrw,
   formatLatency,
+  formatSignedMinus,
   formatWithUnit,
+  MINUS,
 } from "@/lib/format";
 
 describe("값이 없으면 —", () => {
@@ -136,5 +138,27 @@ describe("QA-049 숫자 + 단위", () => {
   it("값이 있으면 숫자 서식 그대로 단위를 붙인다", () => {
     expect(formatWithUnit(12.345, 2, "%")).toBe(`${formatNumber(12.345, 2)}%`);
     expect(formatWithUnit(0, 0, "일")).toBe("0일");
+  });
+});
+
+describe("부호 −(U+2212) — 변화 칩(formatSignedMinus)", () => {
+  it("양수 +, 음수 −(U+2212), 하이픈을 쓰지 않는다", () => {
+    expect(formatSignedMinus(1.234)).toEqual({ text: "+1.23", sign: 1 });
+    expect(formatSignedMinus(-1.234)).toEqual({ text: `${MINUS}1.23`, sign: -1 });
+    expect(formatSignedMinus(-1.234).text).not.toContain("-");
+    expect(MINUS).toBe("\u2212");
+  });
+
+  it("반올림 뒤 0이면 부호 없음(+0.00·−0.00 없음) — formatSigned와 같은 규칙", () => {
+    expect(formatSignedMinus(-0.004)).toEqual({ text: "0.00", sign: 0 });
+    expect(formatSignedMinus(0.004)).toEqual({ text: "0.00", sign: 0 });
+    expect(formatSignedMinus(0)).toEqual({ text: "0.00", sign: 0 });
+    expect(formatSignedMinus(-0.004, 3)).toEqual({ text: `${MINUS}0.004`, sign: -1 });
+    expect(formatSigned(-0.004)).toBe(formatSignedMinus(-0.004).text);
+  });
+
+  it("천 단위 구분과 자릿수", () => {
+    expect(formatSignedMinus(-12345.678, 1).text).toBe(`${MINUS}12,345.7`);
+    expect(formatSignedMinus(1500, 0).text).toBe("+1,500");
   });
 });

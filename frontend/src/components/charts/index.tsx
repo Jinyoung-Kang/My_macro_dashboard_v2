@@ -802,3 +802,6 @@ export function DonutChart({
     </figure>
   );
 }
+
+/** 선 차트(격자 없음·끝값 축·null에서 끊김) — 화면은 이 지정자(@/components/charts)에서 가져옵니다(테스트 mock이 여기에만 걸림). */
+export { LineChart } from "./LineChart";
