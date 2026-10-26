@@ -1,0 +1,103 @@
+{
+  "max_tokens" : 16000,
+  "messages" : [ {
+    "content" : "{\"0_instructions\":\"가짜 패킷\"}",
+    "role" : "user"
+  } ],
+  "model" : "claude-sonnet-5-5",
+  "output_config" : {
+    "effort" : "high",
+    "format" : {
+      "schema" : {
+        "type" : "object",
+        "additionalProperties" : false,
+        "required" : [ "schemaVersion", "stance", "targetEquityExposurePct", "exposureRationale", "summary", "orders", "noTradeReason", "confidence" ],
+        "properties" : {
+          "schemaVersion" : {
+            "const" : 2
+          },
+          "stance" : {
+            "enum" : [ "RISK_ON", "RISK_OFF", "NEUTRAL", "UNCERTAIN" ]
+          },
+          "targetEquityExposurePct" : {
+            "type" : "number"
+          },
+          "exposureRationale" : {
+            "type" : "string"
+          },
+          "summary" : {
+            "type" : "string"
+          },
+          "orders" : {
+            "type" : "array",
+            "items" : {
+              "type" : "object",
+              "additionalProperties" : false,
+              "required" : [ "ticker", "side", "timing", "thesis", "labels", "invalidation" ],
+              "properties" : {
+                "ticker" : {
+                  "type" : "string",
+                  "pattern" : "^[A-Z.\\-]{1,8}$"
+                },
+                "side" : {
+                  "enum" : [ "BUY", "SELL" ]
+                },
+                "targetWeightPct" : {
+                  "type" : [ "number", "null" ]
+                },
+                "sellFraction" : {
+                  "type" : [ "number", "null" ]
+                },
+                "timing" : {
+                  "enum" : [ "NEXT_OBSERVATION", "NEXT_CLOSE" ]
+                },
+                "thesis" : {
+                  "type" : "string"
+                },
+                "labels" : {
+                  "type" : "array",
+                  "items" : {
+                    "enum" : [ "사실", "해석", "가설", "확인 필요", "결정" ]
+                  }
+                },
+                "invalidation" : {
+                  "type" : "string"
+                }
+              }
+            }
+          },
+          "noTradeReason" : {
+            "type" : [ "string", "null" ]
+          },
+          "watchlist" : {
+            "type" : "array",
+            "items" : {
+              "type" : "object",
+              "additionalProperties" : false,
+              "required" : [ "ticker", "condition" ],
+              "properties" : {
+                "ticker" : {
+                  "type" : "string"
+                },
+                "condition" : {
+                  "type" : "string"
+                }
+              }
+            }
+          },
+          "confidence" : {
+            "type" : "number"
+          }
+        }
+      },
+      "type" : "json_schema"
+    }
+  },
+  "system" : [ {
+    "text" : "<<고정본 render-us-v0-default.txt>>",
+    "type" : "text",
+    "cache_control" : {
+      "type" : "ephemeral"
+    }
+  } ]
+}

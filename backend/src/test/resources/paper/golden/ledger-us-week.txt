@@ -1,0 +1,105 @@
+== backfill rules 2026-10-23 cash=5172.61 nav=99952.61 skipped=[ZZZ=2026-10-23 ZZZ 종가가 없습니다]
+== SAT 재저장 (수집 2026-10-24T15:00:00Z) filled=0 stopped=0 expired=0 splits=0 books=[rules, claude, bench_spy, bench_mix] skipped=null errors=[]
+  state rules cash=5172.61 nav=99952.61 equity=94780.0 exposure=94.8249 lastObserved=2026-10-24T15:00:00Z lastProcessed=2026-10-24T15:00:00Z lastNav=2026-10-23
+  state claude cash=50000.0 nav=74300.0 equity=24300.0 exposure=32.7052 lastObserved=2026-10-24T15:00:00Z lastProcessed=2026-10-24T15:00:00Z lastNav=2026-10-23
+  state bench_spy cash=1000.0 nav=98600.0 equity=97600.0 exposure=98.9858 lastObserved=2026-10-24T15:00:00Z lastProcessed=2026-10-24T15:00:00Z lastNav=2026-10-23
+  state bench_mix cash=500.0 nav=91860.0 equity=91360.0 exposure=99.4557 lastObserved=2026-10-24T15:00:00Z lastProcessed=2026-10-24T15:00:00Z lastNav=2026-10-23
+== MON 장중 (수집 2026-10-26T15:00:00Z) filled=3 stopped=1 expired=1 splits=1 books=[rules, claude, bench_spy, bench_mix] skipped=null errors=[]
+  note claude: DDD 2026-10-26 2:1 분할 감지 — 200주 → 400주, 평단 20.00 → 10.00
+  note claude: 주문 3 BUY CCC 취소 — 재진입 금지 중입니다(2026-11-23까지, 트레일링 스탑)
+  note claude: 주문 6 III 현금 부족으로 2338주 중 2244주만 매수(cashLimited)
+  note claude: 주문 1 BUY SHY 취소 — 현금이 모자라 1주도 살 수 없습니다(현금 20.96)
+  state rules cash=5172.61 nav=100288.11 equity=95115.5 exposure=94.8422 lastObserved=2026-10-26T15:00:00Z lastProcessed=2026-10-26T15:00:00Z lastNav=2026-10-23
+  state claude cash=20.9631 nav=73674.7631 equity=73653.8 exposure=99.9715 lastObserved=2026-10-26T15:00:00Z lastProcessed=2026-10-26T15:00:00Z lastNav=2026-10-23
+  state bench_spy cash=1000.0 nav=90600.0 equity=89600.0 exposure=98.8962 lastObserved=2026-10-26T15:00:00Z lastProcessed=2026-10-26T15:00:00Z lastNav=2026-10-23
+  state bench_mix cash=500.0 nav=87100.0 equity=86600.0 exposure=99.4259 lastObserved=2026-10-26T15:00:00Z lastProcessed=2026-10-26T15:00:00Z lastNav=2026-10-23
+== MON 확정 (수집 2026-10-26T20:20:00Z) filled=2 stopped=0 expired=0 splits=0 books=[rules, claude, bench_spy, bench_mix] skipped=null errors=[]
+  note claude: 주문 4 GGG 현금 부족으로 41주 중 7주만 매수(cashLimited)
+  state rules cash=5172.61 nav=100474.11 equity=95301.5 exposure=94.8518 lastObserved=2026-10-26T20:20:00Z lastProcessed=2026-10-26T20:20:00Z lastNav=2026-10-26
+  state claude cash=53.4496 nav=74522.4496 equity=74469.0 exposure=99.9283 lastObserved=2026-10-26T20:20:00Z lastProcessed=2026-10-26T20:20:00Z lastNav=2026-10-26
+  state bench_spy cash=1000.0 nav=91400.0 equity=90400.0 exposure=98.9059 lastObserved=2026-10-26T20:20:00Z lastProcessed=2026-10-26T20:20:00Z lastNav=2026-10-26
+  state bench_mix cash=500.0 nav=87620.0 equity=87120.0 exposure=99.4294 lastObserved=2026-10-26T20:20:00Z lastProcessed=2026-10-26T20:20:00Z lastNav=2026-10-26
+== TUE 장중 (수집 2026-10-27T15:00:00Z) filled=0 stopped=0 expired=0 splits=0 books=[rules, claude, bench_spy, bench_mix] skipped=null errors=[]
+  note claude: 주문 26 BUY CCC 취소 — 재진입 금지 중입니다(2026-11-23까지, 트레일링 스탑)
+  state rules cash=5172.61 nav=100891.36 equity=95718.75 exposure=94.8731 lastObserved=2026-10-27T15:00:00Z lastProcessed=2026-10-27T15:00:00Z lastNav=2026-10-26
+  state claude cash=53.4496 nav=75811.4496 equity=75758.0 exposure=99.9295 lastObserved=2026-10-27T15:00:00Z lastProcessed=2026-10-27T15:00:00Z lastNav=2026-10-26
+  state bench_spy cash=1000.0 nav=92200.0 equity=91200.0 exposure=98.9154 lastObserved=2026-10-27T15:00:00Z lastProcessed=2026-10-27T15:00:00Z lastNav=2026-10-26
+  state bench_mix cash=500.0 nav=88120.0 equity=87620.0 exposure=99.4326 lastObserved=2026-10-27T15:00:00Z lastProcessed=2026-10-27T15:00:00Z lastNav=2026-10-26
+== TUE 확정 (수집 2026-10-27T20:20:00Z) filled=0 stopped=0 expired=0 splits=0 books=[rules, claude, bench_spy, bench_mix] skipped=null errors=[]
+  state rules cash=5172.61 nav=101308.61 equity=96136.0 exposure=94.8942 lastObserved=2026-10-27T20:20:00Z lastProcessed=2026-10-27T20:20:00Z lastNav=2026-10-27
+  state claude cash=53.4496 nav=77100.4496 equity=77047.0 exposure=99.9307 lastObserved=2026-10-27T20:20:00Z lastProcessed=2026-10-27T20:20:00Z lastNav=2026-10-27
+  state bench_spy cash=1000.0 nav=92520.0 equity=91520.0 exposure=98.9192 lastObserved=2026-10-27T20:20:00Z lastProcessed=2026-10-27T20:20:00Z lastNav=2026-10-27
+  state bench_mix cash=500.0 nav=88332.0 equity=87832.0 exposure=99.434 lastObserved=2026-10-27T20:20:00Z lastProcessed=2026-10-27T20:20:00Z lastNav=2026-10-27
+== TUE 확정 다시(멱등) (수집 2026-10-27T20:20:00Z) filled=0 stopped=0 expired=0 splits=0 books=[] skipped=새 관측치가 없습니다(수집 2026-10-28 05:20 KST까지 처리함) errors=[]
+  state rules cash=5172.61 nav=101308.61 equity=96136.0 exposure=94.8942 lastObserved=2026-10-27T20:20:00Z lastProcessed=2026-10-27T20:20:00Z lastNav=2026-10-27
+  state claude cash=53.4496 nav=77100.4496 equity=77047.0 exposure=99.9307 lastObserved=2026-10-27T20:20:00Z lastProcessed=2026-10-27T20:20:00Z lastNav=2026-10-27
+  state bench_spy cash=1000.0 nav=92520.0 equity=91520.0 exposure=98.9192 lastObserved=2026-10-27T20:20:00Z lastProcessed=2026-10-27T20:20:00Z lastNav=2026-10-27
+  state bench_mix cash=500.0 nav=88332.0 equity=87832.0 exposure=99.434 lastObserved=2026-10-27T20:20:00Z lastProcessed=2026-10-27T20:20:00Z lastNav=2026-10-27
+== settleNav 2026-10-28 final=true → []
+== settleNav 2026-10-28 final=false → [rules, claude, bench_spy, bench_mix]
+== 최종 장부
+book rules kind=RULES label=규칙 계좌 initialCash=100000.0 startedOn=2026-10-23 status=ACTIVE
+  state rules cash=5172.61 nav=101308.61 equity=96136.0 exposure=94.8942 lastObserved=2026-10-27T20:20:00Z lastProcessed=2026-10-27T20:20:00Z lastNav=2026-10-28
+  position AAA qty=399 avgCost=100.05 openedOn=2026-10-23 openedAt=2026-10-23T20:00:00Z watermark=105.0 watermarkAt=2026-10-27T20:20:00Z last=105.0 lastAt=2026-10-27T20:20:00Z stale=false ref=2026-10-27@105.0 split=null
+  position BBB qty=499 avgCost=50.025 openedOn=2026-10-23 openedAt=2026-10-23T20:00:00Z watermark=50.025 watermarkAt=2026-10-23T20:00:00Z last=48.5 lastAt=2026-10-26T20:20:00Z stale=true ref=2026-10-26@48.5 split=null
+  position SHY qty=365 avgCost=82.041 openedOn=2026-10-23 openedAt=2026-10-23T20:00:00Z watermark=82.3 watermarkAt=2026-10-27T20:20:00Z last=82.3 lastAt=2026-10-27T20:20:00Z stale=false ref=2026-10-27@82.3 split=null
+  nav 2026-10-23 nav=99952.61 cash=5172.61 equity=94780.0 exposure=94.8249 final=true
+  nav 2026-10-26 nav=100474.11 cash=5172.61 equity=95301.5 exposure=94.8518 final=true
+  nav 2026-10-27 nav=101308.61 cash=5172.61 equity=96136.0 exposure=94.8942 final=false
+  nav 2026-10-28 nav=101308.61 cash=5172.61 equity=96136.0 exposure=94.8942 final=false
+book claude kind=CLAUDE label=claude initialCash=100000.0 startedOn=2026-10-23 status=ACTIVE
+  state claude cash=53.4496 nav=77100.4496 equity=77047.0 exposure=99.9307 lastObserved=2026-10-27T20:20:00Z lastProcessed=2026-10-27T20:20:00Z lastNav=2026-10-28
+  position DDD qty=350 avgCost=10.0 openedOn=2026-10-23 openedAt=2026-10-23T20:00:00Z watermark=11.0 watermarkAt=2026-10-27T20:20:00Z last=11.0 lastAt=2026-10-27T20:20:00Z stale=false ref=2026-10-27@11.0 split=2026-10-26 2:1 분할 감지 — 200주 → 400주, 평단 20.00 → 10.00
+  position EEE qty=25 avgCost=40.0 openedOn=2026-10-23 openedAt=2026-10-23T20:00:00Z watermark=46.0 watermarkAt=2026-10-27T20:20:00Z last=46.0 lastAt=2026-10-27T20:20:00Z stale=false ref=2026-10-27@46.0 split=null
+  position FFF qty=120 avgCost=30.5153 openedOn=2026-10-26 openedAt=2026-10-26T15:00:00Z watermark=32.0 watermarkAt=2026-10-27T20:20:00Z last=32.0 lastAt=2026-10-27T20:20:00Z stale=false ref=2026-10-27@32.0 split=null
+  position GGG qty=7 avgCost=71.0355 openedOn=2026-10-26 openedAt=2026-10-26T20:20:00Z watermark=73.0 watermarkAt=2026-10-27T20:20:00Z last=73.0 lastAt=2026-10-27T20:20:00Z stale=false ref=2026-10-27@73.0 split=null
+  position III qty=2244 avgCost=25.2126 openedOn=2026-10-26 openedAt=2026-10-26T15:00:00Z watermark=26.5 watermarkAt=2026-10-27T20:20:00Z last=26.5 lastAt=2026-10-27T20:20:00Z stale=false ref=2026-10-27@26.5 split=null
+  position SHY qty=100 avgCost=82.0 openedOn=2026-10-23 openedAt=2026-10-23T20:00:00Z watermark=82.3 watermarkAt=2026-10-27T20:20:00Z last=82.3 lastAt=2026-10-27T20:20:00Z stale=false ref=2026-10-27@82.3 split=null
+  lockout CCC until=2026-11-23 reason=트레일링 스탑 −8%: 최고가 100.00 → 관측가 91.90 (2026-10-26)
+  nav 2026-10-23 nav=74300.0 cash=50000.0 equity=24300.0 exposure=32.7052 final=true
+  nav 2026-10-26 nav=74522.4496 cash=53.4496 equity=74469.0 exposure=99.9283 final=true
+  nav 2026-10-27 nav=77100.4496 cash=53.4496 equity=77047.0 exposure=99.9307 final=true
+  nav 2026-10-28 nav=77100.4496 cash=53.4496 equity=77047.0 exposure=99.9307 final=false
+book bench_spy kind=BENCHMARK label=bench_spy initialCash=100000.0 startedOn=2026-10-23 status=ACTIVE
+  state bench_spy cash=1000.0 nav=92520.0 equity=91520.0 exposure=98.9192 lastObserved=2026-10-27T20:20:00Z lastProcessed=2026-10-27T20:20:00Z lastNav=2026-10-28
+  position SPY qty=160 avgCost=600.0 openedOn=2026-10-23 openedAt=2026-10-23T20:00:00Z watermark=620.0 watermarkAt=2026-10-23T20:00:00Z last=572.0 lastAt=2026-10-27T20:20:00Z stale=false ref=2026-10-27@572.0 split=null
+  nav 2026-10-23 nav=98600.0 cash=1000.0 equity=97600.0 exposure=98.9858 final=true
+  nav 2026-10-26 nav=91400.0 cash=1000.0 equity=90400.0 exposure=98.9059 final=true
+  nav 2026-10-27 nav=92520.0 cash=1000.0 equity=91520.0 exposure=98.9192 final=true
+  nav 2026-10-28 nav=92520.0 cash=1000.0 equity=91520.0 exposure=98.9192 final=false
+book bench_mix kind=BENCHMARK label=bench_mix initialCash=100000.0 startedOn=2026-10-23 status=PAUSED
+  state bench_mix cash=500.0 nav=88332.0 equity=87832.0 exposure=99.434 lastObserved=2026-10-27T20:20:00Z lastProcessed=2026-10-27T20:20:00Z lastNav=2026-10-28
+  position SHY qty=400 avgCost=82.0 openedOn=2026-10-23 openedAt=2026-10-23T20:00:00Z watermark=82.3 watermarkAt=2026-10-27T20:20:00Z last=82.3 lastAt=2026-10-27T20:20:00Z stale=false ref=2026-10-27@82.3 split=null
+  position SPY qty=96 avgCost=600.0 openedOn=2026-10-23 openedAt=2026-10-23T20:00:00Z watermark=610.0 watermarkAt=2026-10-23T20:00:00Z last=572.0 lastAt=2026-10-27T20:20:00Z stale=false ref=2026-10-27@572.0 split=null
+  nav 2026-10-23 nav=91860.0 cash=500.0 equity=91360.0 exposure=99.4557 final=true
+  nav 2026-10-26 nav=87620.0 cash=500.0 equity=87120.0 exposure=99.4294 final=true
+  nav 2026-10-27 nav=88332.0 cash=500.0 equity=87832.0 exposure=99.434 final=true
+  nav 2026-10-28 nav=88332.0 cash=500.0 equity=87832.0 exposure=99.434 final=false
+order #1 claude SHY BUY qty=null targetWeightPct=10.0 sellFraction=null timing=NEXT_OBSERVATION source=CLAUDE status=CANCELLED reject=현금이 모자라 1주도 살 수 없습니다(현금 20.96) decision=null asOf=2026-10-23 created=2026-10-24T15:00:00Z expiresOn=2026-10-30 filledAt=null reason=null
+order #2 claude FFF BUY qty=null targetWeightPct=5.0 sellFraction=null timing=NEXT_OBSERVATION source=CLAUDE status=FILLED reject=null decision=null asOf=2026-10-23 created=2026-10-24T15:00:00Z expiresOn=2026-10-30 filledAt=2026-10-26T15:00:00Z reason=null
+order #3 claude CCC BUY qty=10 targetWeightPct=null sellFraction=null timing=NEXT_OBSERVATION source=CLAUDE status=CANCELLED reject=재진입 금지 중입니다(2026-11-23까지, 트레일링 스탑) decision=null asOf=2026-10-23 created=2026-10-24T15:00:00Z expiresOn=2026-10-30 filledAt=null reason=null
+order #4 claude GGG BUY qty=null targetWeightPct=4.0 sellFraction=null timing=NEXT_CLOSE source=CLAUDE status=FILLED reject=null decision=null asOf=2026-10-23 created=2026-10-24T15:00:00Z expiresOn=2026-10-30 filledAt=2026-10-26T20:20:00Z reason={"cashLimited":true,"requestedQty":41,"filledQty":7}
+order #5 claude EEE SELL qty=null targetWeightPct=null sellFraction=0.5 timing=NEXT_OBSERVATION source=CLAUDE status=FILLED reject=null decision=null asOf=2026-10-23 created=2026-10-24T15:00:00Z expiresOn=2026-10-30 filledAt=2026-10-26T15:00:00Z reason=null
+order #6 claude III BUY qty=null targetWeightPct=80.0 sellFraction=null timing=NEXT_OBSERVATION source=CLAUDE status=FILLED reject=null decision=null asOf=2026-10-23 created=2026-10-24T15:00:00Z expiresOn=2026-10-30 filledAt=2026-10-26T15:00:00Z reason={"cashLimited":true,"requestedQty":2338,"filledQty":2244}
+order #7 claude HHH BUY qty=null targetWeightPct=3.0 sellFraction=null timing=NEXT_OBSERVATION source=CLAUDE status=EXPIRED reject=null decision=null asOf=2026-10-16 created=2026-10-24T15:00:00Z expiresOn=2026-10-23 filledAt=null reason=null
+order #8 claude DDD SELL qty=50 targetWeightPct=null sellFraction=null timing=NEXT_CLOSE source=CLAUDE status=FILLED reject=null decision=null asOf=2026-10-23 created=2026-10-24T15:00:00Z expiresOn=2026-10-30 filledAt=2026-10-26T20:20:00Z reason=null
+order #9 bench_mix SPY BUY qty=1 targetWeightPct=null sellFraction=null timing=NEXT_OBSERVATION source=CLAUDE status=PENDING reject=null decision=null asOf=2026-10-23 created=2026-10-24T15:00:00Z expiresOn=2026-10-30 filledAt=null reason=null
+order #10 rules AAA BUY qty=null targetWeightPct=40.0 sellFraction=null timing=BACKFILL source=RULE status=FILLED reject=null decision=7 asOf=2026-10-22 created=2026-10-23T19:59:59Z expiresOn=null filledAt=2026-10-23T20:00:00Z reason=null
+order #12 rules BBB BUY qty=null targetWeightPct=25.0 sellFraction=null timing=BACKFILL source=RULE status=FILLED reject=null decision=7 asOf=2026-10-22 created=2026-10-23T19:59:59Z expiresOn=null filledAt=2026-10-23T20:00:00Z reason=null
+order #14 rules SHY BUY qty=null targetWeightPct=30.0 sellFraction=null timing=BACKFILL source=RULE status=FILLED reject=null decision=7 asOf=2026-10-22 created=2026-10-23T19:59:59Z expiresOn=null filledAt=2026-10-23T20:00:00Z reason=null
+order #18 claude CCC SELL qty=100 targetWeightPct=null sellFraction=null timing=IMMEDIATE source=STOP status=FILLED reject=null decision=null asOf=2026-10-26 created=2026-10-26T15:00:00Z expiresOn=null filledAt=2026-10-26T15:00:00Z reason={"trigger":"TRAILING_STOP","stopPct":8.0,"highWatermark":100.0,"stopPrice":92.0,"observedPrice":91.9,"barDate":"2026-10-26"}
+order #26 claude CCC BUY qty=5 targetWeightPct=null sellFraction=null timing=NEXT_OBSERVATION source=CLAUDE status=CANCELLED reject=재진입 금지 중입니다(2026-11-23까지, 트레일링 스탑) decision=null asOf=2026-10-26 created=2026-10-26T20:21:00Z expiresOn=2026-11-02 filledAt=null reason=null
+fill #11 order=10 rules AAA BUY qty=399 price=100.05 raw=100.0 bp=5.0 gross=39919.95 observedAt=2026-10-23T20:00:00Z date=2026-10-23 source=equity_close backfill=true
+fill #13 order=12 rules BBB BUY qty=499 price=50.025 raw=50.0 bp=5.0 gross=24962.475 observedAt=2026-10-23T20:00:00Z date=2026-10-23 source=paper.quotes backfill=true
+fill #15 order=14 rules SHY BUY qty=365 price=82.041 raw=82.0 bp=5.0 gross=29944.965 observedAt=2026-10-23T20:00:00Z date=2026-10-23 source=equity_close backfill=true
+fill #17 order=5 claude EEE SELL qty=25 price=42.9785 raw=43.0 bp=5.0 gross=1074.4625 observedAt=2026-10-26T15:00:00Z date=2026-10-26 source=paper.quotes backfill=false
+fill #19 order=18 claude CCC SELL qty=100 price=91.85405 raw=91.9 bp=5.0 gross=9185.405 observedAt=2026-10-26T15:00:00Z date=2026-10-26 source=paper.quotes backfill=false
+fill #20 order=2 claude FFF BUY qty=120 price=30.51525 raw=30.5 bp=5.0 gross=3661.83 observedAt=2026-10-26T15:00:00Z date=2026-10-26 source=paper.quotes backfill=false
+fill #21 order=6 claude III BUY qty=2244 price=25.2126 raw=25.2 bp=5.0 gross=56577.0744 observedAt=2026-10-26T15:00:00Z date=2026-10-26 source=paper.quotes backfill=false
+fill #23 order=8 claude DDD SELL qty=50 price=10.5947 raw=10.6 bp=5.0 gross=529.735 observedAt=2026-10-26T20:20:00Z date=2026-10-26 source=paper.quotes backfill=false
+fill #24 order=4 claude GGG BUY qty=7 price=71.0355 raw=71.0 bp=5.0 gross=497.2485 observedAt=2026-10-26T20:20:00Z date=2026-10-26 source=paper.quotes backfill=false
+job #16 risk started=2026-10-24T15:00:30Z finished=2026-10-24T15:00:30Z outcome=OK detail={"collectedAt":"2026-10-24T15:00:00Z","collectedAtKst":"2026-10-25 00:00 KST","barDate":"2026-10-23","session":"2026-10-23","finalClose":true,"tickers":10,"staleTickers":0,"manual":false,"filled":0,"stopped":0,"expired":0,"splits":0,"booksProcessed":["rules","claude","bench_spy","bench_mix"]}
+job #22 risk started=2026-10-26T15:00:30Z finished=2026-10-26T15:00:30Z outcome=OK detail={"collectedAt":"2026-10-26T15:00:00Z","collectedAtKst":"2026-10-27 00:00 KST","barDate":"2026-10-26","session":"2026-10-26","finalClose":false,"tickers":10,"staleTickers":0,"manual":false,"filled":3,"stopped":1,"expired":1,"splits":1,"booksProcessed":["rules","claude","bench_spy","bench_mix"],"notes":["claude: DDD 2026-10-26 2:1 분할 감지 — 200주 → 400주, 평단 20.00 → 10.00","claude: 주문 3 BUY CCC 취소 — 재진입 금지 중입니다(2026-11-23까지, 트레일링 스탑)","claude: 주문 6 III 현금 부족으로 2338주 중 2244주만 매수(cashLimited)","claude: 주문 1 BUY SHY 취소 — 현금이 모자라 1주도 살 수 없습니다(현금 20.96)"]}
+job #25 risk started=2026-10-26T20:20:30Z finished=2026-10-26T20:20:30Z outcome=OK detail={"collectedAt":"2026-10-26T20:20:00Z","collectedAtKst":"2026-10-27 05:20 KST","barDate":"2026-10-26","session":"2026-10-26","finalClose":true,"tickers":10,"staleTickers":0,"manual":false,"filled":2,"stopped":0,"expired":0,"splits":0,"booksProcessed":["rules","claude","bench_spy","bench_mix"],"notes":["claude: 주문 4 GGG 현금 부족으로 41주 중 7주만 매수(cashLimited)"]}
+job #27 risk started=2026-10-27T15:00:30Z finished=2026-10-27T15:00:30Z outcome=OK detail={"collectedAt":"2026-10-27T15:00:00Z","collectedAtKst":"2026-10-28 00:00 KST","barDate":"2026-10-27","session":"2026-10-27","finalClose":false,"tickers":10,"staleTickers":1,"manual":false,"filled":0,"stopped":0,"expired":0,"splits":0,"booksProcessed":["rules","claude","bench_spy","bench_mix"],"notes":["claude: 주문 26 BUY CCC 취소 — 재진입 금지 중입니다(2026-11-23까지, 트레일링 스탑)"]}
+job #28 risk started=2026-10-27T20:20:30Z finished=2026-10-27T20:20:30Z outcome=OK detail={"collectedAt":"2026-10-27T20:20:00Z","collectedAtKst":"2026-10-28 05:20 KST","barDate":"2026-10-27","session":"2026-10-27","finalClose":true,"tickers":10,"staleTickers":1,"manual":false,"filled":0,"stopped":0,"expired":0,"splits":0,"booksProcessed":["rules","claude","bench_spy","bench_mix"]}

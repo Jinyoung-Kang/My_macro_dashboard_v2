@@ -1,5 +1,6 @@
 package com.macrodash.feature.paper;
 
+import com.macrodash.Golden;
 import com.macrodash.analytics.DailySeries;
 import com.macrodash.analytics.UsMarketCalendar;
 import com.macrodash.feature.paper.PaperLedgerService.Outcome;
@@ -779,5 +780,165 @@ class PaperLedgerServiceTest {
             assertThat(ledger.process(quotes(MON_FINAL, bar("AAA", MON, 1))).skippedReason()).contains("테이블");
             verify(marketData, never()).history(anyCollection(), any(), any());
         }
+    }
+
+    // ------------------------------------------------------------------ 고정본(2단계 묶음 A 기준선)
+    /**
+     * 네 책이 함께 도는 미국 장부 한 주 — 규칙 책 사후 체결(출발일 10-23, 종가 없는 다리 하나) → 토요일 재저장 → 월 장중(분할 2:1·
+     * 스탑·만료·일부 매도·현금 부족 매수·현금성 마지막·벤치마크 무스탑·일시정지 책) → 월 확정(NEXT_CLOSE·순자산 확정) → 화 장중(재진입 금지
+     * 취소·이어 쓴 봉) → 화 확정(미확정 순자산) → 같은 관측치 다시(멱등) → 미확정 순자산 줄(settleNav). 관측치는 리스크 작업으로 넣어
+     * 작업 기록(세션·확정 여부 요약)까지 고정합니다. 덤프는 레코드 toString이 아니라 열을 하나씩 적습니다 — 묶음 A가 레코드에 열을
+     * 더해도(시장·통화) 같은 글자가 나와야 하므로.
+     */
+    @Test
+    @DisplayName("고정본(묶음 A 기준선): 미국 네 책의 사후 체결·관측치 처리(체결·스탑·분할·만료·재진입 금지·현금 부족·평가·순자산)·작업 기록이 바이트까지 같다")
+    void goldenUsLedgerWeek() {
+        // 규칙 책 — 시작 전, 사후 체결로 출발
+        store.books.put(PaperBooks.RULES, new com.macrodash.store.PaperStore.Book(PaperBooks.RULES,
+                PaperBooks.KIND_RULES, PaperBooks.RULES_LABEL, 100_000, null, PaperBooks.NOT_STARTED, FRI_CLOSE));
+        store.states.put(PaperBooks.RULES, new BookState(PaperBooks.RULES, 100_000, 100_000, 0, 0, null, null, null,
+                null));
+        // Claude 책 — 보유 넷(스탑 CCC·분할 DDD·일부 매도 EEE·현금성 SHY)과 대기 주문
+        activeBook(store, PaperBooks.CLAUDE, PaperBooks.KIND_CLAUDE, 50_000, FRI_CLOSE);
+        position(store, PaperBooks.CLAUDE, "CCC", 100, 95, 100, 100.0, FRI, 100);
+        position(store, PaperBooks.CLAUDE, "DDD", 200, 20, 21, 20.0, FRI, 20);
+        position(store, PaperBooks.CLAUDE, "EEE", 50, 40, 44, 42.0, FRI, 42);
+        position(store, PaperBooks.CLAUDE, "SHY", 100, 82, 82, 82.0, FRI, 82);
+        pending(store, PaperBooks.CLAUDE, "SHY", "BUY", null, 10.0, null, "NEXT_OBSERVATION", FRI, SAT);
+        pending(store, PaperBooks.CLAUDE, "FFF", "BUY", null, 5.0, null, "NEXT_OBSERVATION", FRI, SAT);
+        pending(store, PaperBooks.CLAUDE, "CCC", "BUY", 10, null, null, "NEXT_OBSERVATION", FRI, SAT);
+        pending(store, PaperBooks.CLAUDE, "GGG", "BUY", null, 4.0, null, "NEXT_CLOSE", FRI, SAT);
+        pending(store, PaperBooks.CLAUDE, "EEE", "SELL", null, null, 0.5, "NEXT_OBSERVATION", FRI, SAT);
+        pending(store, PaperBooks.CLAUDE, "III", "BUY", null, 80.0, null, "NEXT_OBSERVATION", FRI, SAT);
+        pending(store, PaperBooks.CLAUDE, "HHH", "BUY", null, 3.0, null, "NEXT_OBSERVATION",
+                LocalDate.of(2026, 10, 16), SAT);
+        pending(store, PaperBooks.CLAUDE, "DDD", "SELL", 50, null, null, "NEXT_CLOSE", FRI, SAT);
+        // 벤치마크 둘 — SPY 책은 운용(스탑 없음), 60/40 책은 일시정지(대기 매수를 체결하지 않음)
+        activeBook(store, PaperBooks.BENCH_SPY, PaperBooks.KIND_BENCHMARK, 1_000, FRI_CLOSE);
+        position(store, PaperBooks.BENCH_SPY, "SPY", 160, 600, 620, 610.0, FRI, 610);
+        activeBook(store, PaperBooks.BENCH_MIX, PaperBooks.KIND_BENCHMARK, 500, FRI_CLOSE);
+        store.updateBookStatus(PaperBooks.BENCH_MIX, PaperBooks.PAUSED);
+        position(store, PaperBooks.BENCH_MIX, "SPY", 96, 600, 610, 610.0, FRI, 610);
+        position(store, PaperBooks.BENCH_MIX, "SHY", 400, 82, 82, 82.0, FRI, 82);
+        pending(store, PaperBooks.BENCH_MIX, "SPY", "BUY", 1, null, null, "NEXT_OBSERVATION", FRI, SAT);
+
+        StringBuilder out = new StringBuilder();
+        var backfill = ledger.backfill(new PaperLedgerService.BackfillRequest(store.books.get(PaperBooks.RULES), FRI,
+                "RULE", 7L, 100_000, 100_000, List.of(
+                new PaperLedgerService.BackfillLeg("SHY", "BUY", 30.0, null, null),
+                new PaperLedgerService.BackfillLeg("AAA", "BUY", 40.0, null, null),
+                new PaperLedgerService.BackfillLeg("ZZZ", "BUY", 5.0, null, null),
+                new PaperLedgerService.BackfillLeg("BBB", "BUY", 25.0, null, null)), Map.of(
+                "AAA", new PaperMarketData.SourcedClose(100, PaperBooks.SOURCE_HISTORY),
+                "BBB", new PaperMarketData.SourcedClose(50, PaperBooks.SOURCE_QUOTES),
+                "SHY", new PaperMarketData.SourcedClose(82, PaperBooks.SOURCE_HISTORY)), PaperSettings.defaults()));
+        out.append("== backfill rules ").append(FRI).append(" cash=").append(backfill.cash()).append(" nav=")
+                .append(backfill.valuation().nav()).append(" skipped=").append(backfill.skipped()).append('\n');
+
+        risk(out, "SAT 재저장", SAT, quotes(SAT, bar("AAA", FRI, 100), bar("BBB", FRI, 50), bar("SHY", FRI, 82),
+                bar("CCC", FRI, 100), bar("DDD", FRI, 20), bar("EEE", FRI, 42), bar("FFF", FRI, 30),
+                bar("GGG", FRI, 70), bar("III", FRI, 25), bar("SPY", FRI, 610)));
+        risk(out, "MON 장중", MON_INTRADAY, quotes(MON_INTRADAY, bar("AAA", FRI, 100, MON, 102),
+                bar("BBB", FRI, 50, MON, 49), bar("SHY", FRI, 82, MON, 82.1), bar("CCC", FRI, 100, MON, 91.9),
+                bar("DDD", FRI, 10, MON, 10.4), bar("EEE", FRI, 42, MON, 43), bar("FFF", FRI, 30, MON, 30.5),
+                bar("GGG", FRI, 70, MON, 70.5), bar("III", FRI, 25, MON, 25.2), bar("SPY", FRI, 610, MON, 560)));
+        risk(out, "MON 확정", MON_FINAL, quotes(MON_FINAL, bar("AAA", FRI, 100, MON, 103),
+                bar("BBB", FRI, 50, MON, 48.5), bar("SHY", FRI, 82, MON, 82.2), bar("CCC", FRI, 100, MON, 92),
+                bar("DDD", FRI, 10, MON, 10.6), bar("EEE", FRI, 42, MON, 44), bar("FFF", FRI, 30, MON, 31),
+                bar("GGG", FRI, 70, MON, 71), bar("III", FRI, 25, MON, 25.5), bar("SPY", FRI, 610, MON, 565)));
+        pending(store, PaperBooks.CLAUDE, "CCC", "BUY", 5, null, null, "NEXT_OBSERVATION", MON,
+                MON_FINAL.plusSeconds(60));
+        risk(out, "TUE 장중", TUE_INTRADAY, quotes(TUE_INTRADAY, bar("AAA", MON, 103, TUE, 104),
+                staleBar("BBB", FRI, 50, MON, 48.5), bar("SHY", MON, 82.2, TUE, 82.25), bar("CCC", MON, 92, TUE, 93),
+                bar("DDD", MON, 10.6, TUE, 10.8), bar("EEE", MON, 44, TUE, 45), bar("FFF", MON, 31, TUE, 31.5),
+                bar("GGG", MON, 71, TUE, 72), bar("III", MON, 25.5, TUE, 26), bar("SPY", MON, 565, TUE, 570)));
+        var tueFinal = quotes(TUE_FINAL, bar("AAA", MON, 103, TUE, 105), staleBar("BBB", FRI, 50, MON, 48.5),
+                bar("SHY", MON, 82.2, TUE, 82.3), bar("CCC", MON, 92, TUE, 94), bar("DDD", MON, 10.6, TUE, 11),
+                bar("EEE", MON, 44, TUE, 46), bar("FFF", MON, 31, TUE, 32), bar("GGG", MON, 71, TUE, 73),
+                bar("III", MON, 25.5, TUE, 26.5), bar("SPY", MON, 565, TUE, 572));
+        risk(out, "TUE 확정", TUE_FINAL, tueFinal);
+        risk(out, "TUE 확정 다시(멱등)", TUE_FINAL, tueFinal);
+        LocalDate wed = LocalDate.of(2026, 10, 28);
+        out.append("== settleNav ").append(wed).append(" final=true → ").append(ledger.settleNav(wed, true))
+                .append('\n');
+        out.append("== settleNav ").append(wed).append(" final=false → ").append(ledger.settleNav(wed, false))
+                .append('\n');
+
+        out.append("== 최종 장부\n");
+        List<String> codes = new java.util.ArrayList<>(store.books.keySet());
+        codes.sort(PaperBooks.ORDER);
+        for (String code : codes) {
+            var b = store.books.get(code);
+            out.append("book ").append(b.code()).append(" kind=").append(b.kind()).append(" label=").append(b.label())
+                    .append(" initialCash=").append(b.initialCash()).append(" startedOn=").append(b.startedOn())
+                    .append(" status=").append(b.status()).append('\n');
+            out.append("  ").append(state(store.states.get(code))).append('\n');
+            for (Position p : store.positions(code)) {
+                out.append("  position ").append(p.ticker()).append(" qty=").append(p.qty()).append(" avgCost=")
+                        .append(p.avgCost()).append(" openedOn=").append(p.openedOn()).append(" openedAt=")
+                        .append(p.openedAt()).append(" watermark=").append(p.highWatermark()).append(" watermarkAt=")
+                        .append(p.watermarkAt()).append(" last=").append(p.lastPrice()).append(" lastAt=")
+                        .append(p.lastPriceAt()).append(" stale=").append(p.priceStale()).append(" ref=")
+                        .append(p.fillRefDate()).append('@').append(p.fillRefClose()).append(" split=")
+                        .append(p.splitNote()).append('\n');
+            }
+            for (Lockout l : store.lockouts(code)) {
+                out.append("  lockout ").append(l.ticker()).append(" until=").append(l.untilTradingDate())
+                        .append(" reason=").append(l.reason()).append('\n');
+            }
+            for (var n : store.navSeries(code)) {
+                out.append("  nav ").append(n.tradingDate()).append(" nav=").append(n.nav()).append(" cash=")
+                        .append(n.cash()).append(" equity=").append(n.equityValue()).append(" exposure=")
+                        .append(n.exposurePct()).append(" final=").append(n.pricesFinal()).append('\n');
+            }
+        }
+        for (Order o : store.orders.values()) {
+            out.append("order #").append(o.id()).append(' ').append(o.bookCode()).append(' ').append(o.ticker())
+                    .append(' ').append(o.side()).append(" qty=").append(o.qty()).append(" targetWeightPct=")
+                    .append(o.targetWeightPct()).append(" sellFraction=").append(o.sellFraction()).append(" timing=")
+                    .append(o.timing()).append(" source=").append(o.source()).append(" status=").append(o.status())
+                    .append(" reject=").append(o.rejectReason()).append(" decision=").append(o.decisionId())
+                    .append(" asOf=").append(o.asOfTradingDate()).append(" created=").append(o.createdAt())
+                    .append(" expiresOn=").append(o.expiresOn()).append(" filledAt=").append(o.filledAt())
+                    .append(" reason=").append(PaperFixtures.MAPPER.writeValueAsString(o.reason())).append('\n');
+        }
+        for (Fill f : store.fills.values()) {
+            out.append("fill #").append(f.id()).append(" order=").append(f.orderId()).append(' ').append(f.bookCode())
+                    .append(' ').append(f.ticker()).append(' ').append(f.side()).append(" qty=").append(f.qty())
+                    .append(" price=").append(f.price()).append(" raw=").append(f.rawPrice()).append(" bp=")
+                    .append(f.slippageBp()).append(" gross=").append(f.gross()).append(" observedAt=")
+                    .append(f.observedAt()).append(" date=").append(f.observationDate()).append(" source=")
+                    .append(f.priceSource()).append(" backfill=").append(f.backfill()).append('\n');
+        }
+        for (var run : store.jobRuns) {
+            out.append("job #").append(run.id()).append(' ').append(run.job()).append(" started=")
+                    .append(run.startedAt()).append(" finished=").append(run.finishedAt()).append(" outcome=")
+                    .append(run.outcome()).append(" detail=")
+                    .append(PaperFixtures.MAPPER.writeValueAsString(run.detail())).append('\n');
+        }
+        Golden.assertMatches("ledger-us-week.txt", out.toString().stripTrailing());
+    }
+
+    /** 관측치 하나를 리스크 작업(정기 실행 경로)으로 — 작업 시계는 수집 30초 뒤. 결과와 책마다 상태 한 줄. */
+    private void risk(StringBuilder out, String step, java.time.Instant at, PaperMarketData.Quotes quotes) {
+        when(marketData.quotes()).thenReturn(java.util.Optional.of(quotes));
+        PaperRiskJob job = new PaperRiskJob(store, PaperFixtures.quietReader(), marketData, ledger,
+                PaperFixtures.config(), PaperFixtures.MAPPER, java.time.Clock.fixed(at.plusSeconds(30),
+                java.time.ZoneOffset.UTC));
+        Outcome o = job.run(false);
+        out.append("== ").append(step).append(" (수집 ").append(at).append(") filled=").append(o.filled())
+                .append(" stopped=").append(o.stopped()).append(" expired=").append(o.expired()).append(" splits=")
+                .append(o.splits()).append(" books=").append(o.booksProcessed()).append(" skipped=")
+                .append(o.skippedReason()).append(" errors=").append(o.errors()).append('\n');
+        o.notes().forEach(note -> out.append("  note ").append(note).append('\n'));
+        List<String> codes = new java.util.ArrayList<>(store.states.keySet());
+        codes.sort(PaperBooks.ORDER);
+        codes.forEach(code -> out.append("  ").append(state(store.states.get(code))).append('\n'));
+    }
+
+    private static String state(BookState s) {
+        return "state " + s.bookCode() + " cash=" + s.cash() + " nav=" + s.nav() + " equity=" + s.equityValue()
+                + " exposure=" + s.exposurePct() + " lastObserved=" + s.lastObservedAt() + " lastProcessed="
+                + s.lastProcessedCollectedAt() + " lastNav=" + s.lastNavTradingDate();
     }
 }

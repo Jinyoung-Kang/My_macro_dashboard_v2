@@ -1,5 +1,6 @@
 package com.macrodash.feature.paper;
 
+import com.macrodash.Golden;
 import com.macrodash.analytics.CalendarWindow;
 import com.macrodash.analytics.DailySeries;
 import com.macrodash.analytics.NewsEvents;
@@ -665,10 +666,20 @@ class PacketBuilderTest {
         headline(EV_AFTER, "investing_economy", "Investing.com", "2026-10-26T23:00:00+00:00",
                 "2026-10-26T23:05:00+00:00");
 
+        // 국면 입력은 패킷(4_regime.inputs)에 그대로 실리므로 넣은 순서를 지키는 맵으로 — Map.of는 JVM마다 순서가 달라 고정본이 흔들림.
         regimeEntries.add(new RegimeLogStore.Entry(MON, "RISK_ON", "위험 선호",
-                MAPPER.valueToTree(Map.of("curve", Map.of("value", 0.5, "asOf", "2026-10-23"))), List.of(), "v1"));
+                MAPPER.valueToTree(Map.of("curve", linked("value", 0.5, "asOf", "2026-10-23"))), List.of(), "v1"));
         regimeEntries.add(new RegimeLogStore.Entry(LocalDate.of(2026, 10, 22), "NEUTRAL", "중립",
-                MAPPER.valueToTree(Map.of("curve", Map.of("value", 0.4, "asOf", "2026-10-21"))), List.of(), "v1"));
+                MAPPER.valueToTree(Map.of("curve", linked("value", 0.4, "asOf", "2026-10-21"))), List.of(), "v1"));
+    }
+
+    /** 넣은 순서를 지키는 맵(키, 값, 키, 값 …). */
+    private static Map<String, Object> linked(Object... keyAndValue) {
+        Map<String, Object> out = new LinkedHashMap<>();
+        for (int i = 0; i < keyAndValue.length; i += 2) {
+            out.put((String) keyAndValue[i], keyAndValue[i + 1]);
+        }
+        return out;
     }
 
     private static final Instant CALENDAR_AT = Instant.parse("2026-10-26T21:40:00Z");
@@ -905,6 +916,34 @@ class PacketBuilderTest {
                 null));
         ((ObjectNode) store.settings.body()).put("maxWeightStockPct", 12);
         assertThat(builder.build(FRI, RuleBookService.INITIAL, true).sha256()).isNotEqualTo(first.sha256());
+    }
+
+    // ------------------------------------------------------------------ 고정본(2단계 묶음 A 기준선)
+    /** 미국 초기 패킷(10-23 INITIAL, 메모 하나)의 SHA-256 — 고정본 packet-us-initial.json 글자의 해시. */
+    private static final String GOLDEN_INITIAL_SHA256 =
+            "79c940270ed0ec5b00e8e7cf7429fc611269ccd16f55995117c94fc91c32ca4e";
+    /** 미국 정기 패킷(10-26 SCHEDULED, 운용 중인 Claude 책)의 SHA-256 — 고정본 packet-us-scheduled.json 글자의 해시. */
+    private static final String GOLDEN_SCHEDULED_SHA256 =
+            "313757e080ffd731655c070c54bc81ee96b23bb1debdce335b323e17eeb17860";
+
+    @Test
+    @DisplayName("고정본(묶음 A 기준선): 미국 초기·정기 패킷 글자·해시·메모 번호·측정 태그가 시장 추상화 전과 바이트까지 같다")
+    void goldenUsPackets() {
+        store.insertNote(new Note(0, NoteService.MARKET, FRI, TUE, "금요일 시황", "10년물 4.6%·브렌트 88", false, null));
+        // 결정 서비스와 같은 호출 — 판 번호(임시 v0)와 결정이 읽은 설정 행을 넘깁니다(ClaudeBookService.attempt).
+        Packet initial = builder.build(FRI, RuleBookService.INITIAL, true, 0, store.settings);
+        activeClaude();
+        Packet scheduled = builder.build(MON, RuleBookService.SCHEDULED, false, 0, store.settings);
+
+        Golden.assertMatches("packet-us-initial.json", initial.text());
+        Golden.assertMatches("packet-us-scheduled.json", scheduled.text());
+        Golden.assertMatches("packet-us-meta.txt", String.join("\n",
+                "initial sha256=" + initial.sha256() + " chars=" + initial.text().length() + " noteIds="
+                        + initial.noteIds() + " measure=" + MAPPER.writeValueAsString(initial.measure()),
+                "scheduled sha256=" + scheduled.sha256() + " chars=" + scheduled.text().length() + " noteIds="
+                        + scheduled.noteIds() + " measure=" + MAPPER.writeValueAsString(scheduled.measure())));
+        assertThat(initial.sha256()).isEqualTo(Golden.sha256(initial.text())).isEqualTo(GOLDEN_INITIAL_SHA256);
+        assertThat(scheduled.sha256()).isEqualTo(Golden.sha256(scheduled.text())).isEqualTo(GOLDEN_SCHEDULED_SHA256);
     }
 
     @Test

@@ -1,5 +1,6 @@
 package com.macrodash.analytics;
 
+import com.macrodash.Golden;
 import com.macrodash.analytics.OrderValidator.Context;
 import com.macrodash.analytics.OrderValidator.Limits;
 import com.macrodash.analytics.OrderValidator.Proposed;
@@ -609,5 +610,154 @@ class OrderValidatorTest {
         assertThat(OrderValidator.validate(List.of(), ctx, DEFAULT)).isEmpty();
         // null 집합·맵은 비어 있는 것과 같음.
         assertAccepted(OrderValidator.validate(List.of(buy("AAPL", 5)), ctx, DEFAULT).get(0));
+    }
+
+    // ------------------------------------------------------------------ 고정본(2단계 묶음 A 기준선)
+    @Test
+    @DisplayName("고정본(묶음 A 기준선): 대표 장면마다 미국 검증기의 통과·거절 사유·근거 문구('$' 금액·시점 이름)·매수 증가분이 바이트까지 같다")
+    void goldenOutcomes() {
+        StringBuilder out = new StringBuilder();
+
+        Book stale = new Book().hold("AAPL", 5, 30);
+        stale.stale = true;
+        golden(out, "STALE_INPUT — 전부 거절", stale, DEFAULT, buy("MSFT", 5), sell("AAPL", null), null);
+
+        Book six = new Book().hold("AAPL", 5, 30).hold("MSFT", 5, 30).hold("NVDA", 5, 30).hold("META", 5, 30)
+                .hold("AMZN", 5, 30).hold("GOOGL", 5, 30);
+        golden(out, "MALFORMED — 모양", six, DEFAULT, null, buy(null, 5), buy(" ", 5),
+                new Proposed("JPM", "HOLD", 5.0, null, OrderValidator.NEXT_OBSERVATION),
+                new Proposed("XOM", OrderValidator.BUY, 5.0, null, "IMMEDIATE"),
+                new Proposed("LLY", OrderValidator.BUY, 5.0, null, null),
+                new Proposed("UNH", OrderValidator.BUY, null, null, OrderValidator.NEXT_OBSERVATION),
+                buy("COST", 100.5), buy("AVGO", Double.NaN), buy("XLK", -1), sell("AAPL", 0.0), sell("MSFT", 1.5),
+                sell("NVDA", Double.NaN),
+                new Proposed("META", OrderValidator.SELL, 2.0, null, OrderValidator.NEXT_CLOSE));
+        golden(out, "MALFORMED 아님 — 전량·목표 0% 매도·비율 1", six, DEFAULT, sell("AMZN", null),
+                new Proposed("GOOGL", OrderValidator.SELL, 0.0, null, OrderValidator.NEXT_OBSERVATION),
+                sell("AAPL", 1.0));
+
+        golden(out, "DUPLICATE_TICKER", new Book().hold("AAPL", 5, 30), DEFAULT, buy("MSFT", 5), buy("MSFT", 8),
+                sell("MSFT", null),
+                new Proposed("NVDA", OrderValidator.BUY, null, null, OrderValidator.NEXT_OBSERVATION), buy("NVDA", 5));
+
+        Book outside = new Book().hold("OLD", 4, 30);
+        outside.weights.put("NVDA", 0.0);
+        outside.weights.put("META", null);
+        golden(out, "OUT_OF_UNIVERSE·NOT_HELD", outside, DEFAULT, buy("ZZZZ", 5), sell("YYYY", null),
+                sell("OLD", null), sell("NVDA", 0.5), sell("META", null));
+
+        Book blocked = new Book().hold("AAPL", 5, 30);
+        blocked.locked.add("NVDA");
+        blocked.locked.add("META");
+        blocked.noPrice.add("META");
+        blocked.noPrice.add("AAPL");
+        blocked.noPrice.add("MSFT");
+        golden(out, "LOCKED_OUT·NO_PRICE", blocked, DEFAULT, buy("NVDA", 5), buy("META", 5), sell("AAPL", null),
+                buy("MSFT", 5), buy("AMZN", 5));
+
+        Book held = new Book().hold("AAPL", 5, 4).hold("MSFT", 5, 5).hold("GOOGL", 5, null).hold("SHY", 30, 1);
+        golden(out, "MIN_HOLD — 5거래일·모름·현금성", held, DEFAULT, sell("AAPL", null), sell("MSFT", 0.5),
+                sell("GOOGL", null), sell("SHY", null));
+        golden(out, "MIN_HOLD 끔(0)", held, new Limits(10, 20, 20, 500, 20, 0), sell("GOOGL", null));
+
+        golden(out, "WEIGHT_CAP — 종목 10%·ETF 20%·현금성", new Book(), DEFAULT, buy("AAPL", 10), buy("MSFT", 10.01),
+                buy("XLK", 20), buy("XLE", 20.5), buy("SHY", 60));
+
+        Book three = new Book().hold("AAPL", 5, 30).hold("MSFT", 5, 30).hold("NVDA", 5, 30);
+        golden(out, "MIN_NOTIONAL — $500", three, DEFAULT, buy("META", 0.4), buy("AMZN", 0.5), buy("AAPL", 4),
+                buy("MSFT", 5.3), buy("NVDA", 5), buy("GOOGL", 0));
+        golden(out, "MIN_NOTIONAL 끔(0)", three, new Limits(10, 20, 20, 0, 20, 5), buy("NVDA", 5), buy("META", 0.01));
+
+        Book monthly = new Book().hold("AAPL", 5, 30);
+        monthly.monthly = 18;
+        golden(out, "MONTHLY_CAP — 남은 자리 2", monthly, DEFAULT, buy("MSFT", 5), buy("NVDA", 8), sell("AAPL", null),
+                buy("ZZZZ", 5));
+        monthly.monthly = 20;
+        golden(out, "MONTHLY_CAP — 상한", monthly, DEFAULT, buy("MSFT", 5), sell("AAPL", null));
+
+        Limits threeMax = new Limits(10, 20, 3, 500, 20, 5);
+        Book positions = new Book().hold("AAPL", 5, 30).hold("MSFT", 5, 30).hold("SHY", 10, 30);
+        golden(out, "MAX_POSITIONS — 상한 3", positions, threeMax, buy("NVDA", 6), buy("META", 4), buy("AAPL", 8),
+                buy("SHY", 20));
+        golden(out, "MAX_POSITIONS — 일부 매도는 자리를 비우지 않음", positions, threeMax, sell("MSFT", 0.5),
+                buy("NVDA", 6), buy("META", 4));
+        Book full = new Book();
+        for (int i = 1; i <= 20; i++) {
+            String ticker = String.format("T%02d", i);
+            full.universe.add(ticker);
+            full.hold(ticker, 4.5, 30);
+        }
+        full.universe.addAll(List.of("NEW", "NEW2", "NEW3"));
+        golden(out, "MAX_POSITIONS — 시점(NEXT_OBSERVATION·NEXT_CLOSE)", full, DEFAULT, sell("T01", null),
+                atClose(sell("T02", null)), buy("NEW", 3), atClose(buy("NEW2", 2)), atClose(buy("NEW3", 1)));
+
+        Book shares = new Book().hold("COST", 10, 30).hold("AAPL", 5, 30).hold("MSFT", 5, 30).hold("NVDA", 5, 30)
+                .hold("META", 5, 30).hold("SHY", 10, 30);
+        shares.qty.put("COST", 15);
+        shares.qty.put("AAPL", 15);
+        shares.qty.put("MSFT", 15);
+        shares.qty.put("NVDA", 20);
+        shares.qty.put("SHY", 9);
+        golden(out, "BELOW_ONE_SHARE", shares, DEFAULT, sell("COST", 0.05), sell("AAPL", 1.0), sell("MSFT", null),
+                sell("NVDA", 0.05), sell("META", 0.05), sell("SHY", 0.1));
+
+        golden(out, "OVER_ALLOCATED — 큰 비중부터", new Book().hold("AAPL", 40, 30).hold("MSFT", 40, 30), DEFAULT,
+                buy("NVDA", 5), buy("XLK", 15), buy("META", 10));
+        golden(out, "OVER_ALLOCATED — 통과한 매도만 자리", new Book().hold("AAPL", 50, 30).hold("MSFT", 50, 2), DEFAULT,
+                sell("AAPL", 0.5), buy("META", 1), buy("XLK", 20), buy("NVDA", 5), sell("MSFT", null));
+        golden(out, "OVER_ALLOCATED — 늦은 매도(NEXT_CLOSE)", new Book().hold("AAPL", 20, 30).hold("MSFT", 40, 30)
+                        .hold("XLK", 38, 30), DEFAULT, atClose(sell("AAPL", null)), buy("NVDA", 2), buy("GOOGL", 1),
+                atClose(buy("META", 5)), atClose(buy("AMZN", 5)));
+
+        golden(out, "보유 추가 매수 — 증가분", new Book().hold("AAPL", 8, 30).hold("SHY", 90, 30), DEFAULT,
+                buy("AAPL", 10));
+
+        Book reasons = new Book().hold("AAPL", 11.9, 30);
+        reasons.locked.add("ZZZZ");
+        reasons.noPrice.add("ZZZZ");
+        reasons.locked.add("NVDA");
+        reasons.noPrice.add("NVDA");
+        reasons.noPrice.add("META");
+        golden(out, "여러 규칙 — 첫 사유 하나", reasons, DEFAULT,
+                new Proposed("ZZZZ", OrderValidator.BUY, 150.0, null, OrderValidator.NEXT_OBSERVATION),
+                buy("ZZZZ", 50), buy("NVDA", 50), buy("META", 50), buy("AAPL", 12));
+
+        Map<String, Double> weights = new LinkedHashMap<>();
+        weights.put("AAPL", 30.3);
+        weights.put("MSFT", 20.2);
+        weights.put("XLE", 10.1);
+        weights.put("SHY", 9.9);
+        Set<String> universe = new LinkedHashSet<>(STOCKS);
+        universe.addAll(ETFS);
+        golden(out, "혼합 — 현금 29,500·이달 3건", new Context(NAV, 29_500, weights,
+                        Map.of("AAPL", 10, "MSFT", 3, "XLE", 40, "SHY", 1), universe, ETFS, Set.of("SHY"), Set.of(),
+                        Set.of(), 3, false), DEFAULT,
+                List.of(sell("AAPL", 0.5), buy("NVDA", 7), buy("XLK", 15), buy("META", 7), buy("MSFT", 3),
+                        buy("ZZZZ", 5), buy("GOOGL", 9)));
+
+        Golden.assertMatches("order-validator-us.txt", out.toString().stripTrailing());
+    }
+
+    private static void golden(StringBuilder out, String scene, Book book, Limits limits, Proposed... orders) {
+        golden(out, scene, book.context(), limits, Arrays.asList(orders));
+    }
+
+    /** 장면 하나 — 주문마다 "[i] 주문 → 판정 | 근거" 한 줄(통과한 매수는 증가분 %p도). */
+    private static void golden(StringBuilder out, String scene, Context ctx, Limits limits, List<Proposed> orders) {
+        out.append("## ").append(scene).append('\n');
+        List<Verdict> verdicts = OrderValidator.validate(orders, ctx, limits);
+        for (int i = 0; i < verdicts.size(); i++) {
+            Verdict v = verdicts.get(i);
+            Proposed o = v.order();
+            out.append('[').append(i).append("] ");
+            out.append(o == null ? "null" : o.side() + " " + o.ticker() + " target=" + o.targetWeightPct()
+                    + " fraction=" + o.sellFraction() + " " + o.timing());
+            out.append(" → ").append(v.accepted() ? "OK" : "REJECT " + v.rejectReason()).append(" | ")
+                    .append(v.detail());
+            if (v.accepted() && o != null && OrderValidator.BUY.equals(o.side())) {
+                out.append(" | increment=").append(OrderValidator.buyIncrementPct(o, ctx));
+            }
+            out.append('\n');
+        }
     }
 }

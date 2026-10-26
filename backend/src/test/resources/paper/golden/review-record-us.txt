@@ -1,0 +1,23 @@
+review weekEnding=2026-10-30 status=OK windowWeeks=4 framework=0 model=claude-sonnet-5-5 retry=0 error=null proposal=5
+usage={"model":"claude-sonnet-5-5","effort":"high","inputTokens":9000,"outputTokens":1200,"cacheReadTokens":0,"cacheWriteTokens":5000,"estCostUsd":0.0425,"stopReason":"end_turn","charged":true,"errorKind":null,"inputTokensEst":1115,"defaultWindowTokensEst":null}
+response={
+  "schemaVersion" : 1,
+  "weekEnding" : "2026-10-30",
+  "verdicts" : [ {
+    "decisionId" : 1,
+    "thesisHeld" : "유지",
+    "note" : "체결 뒤 +10%, 무효화 조건 미충족"
+  } ],
+  "recurringErrors" : [ "월 상한 근처에서 신규 진입(#1)" ],
+  "keep" : [ "200일선 위 종목 우선" ],
+  "proposal" : {
+    "operations" : [ {
+      "op" : "ADD_RULE",
+      "target" : "E5",
+      "text" : "월 재량 주문이 상한의 80%를 넘으면 신규 진입을 미룬다.",
+      "why" : "거절된 매수"
+    } ],
+    "judgment" : "월 상한 근처 진입 자제 규칙 추가",
+    "rationale" : "E5에 규칙을 더한다(전: 없음 / 후: E5-R3)."
+  }
+}

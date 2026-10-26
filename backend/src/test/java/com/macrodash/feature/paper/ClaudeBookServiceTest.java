@@ -1,5 +1,6 @@
 package com.macrodash.feature.paper;
 
+import com.macrodash.Golden;
 import com.macrodash.analytics.PaperLedger;
 import com.macrodash.feature.ai.AiService;
 import com.macrodash.read.StoreReader;
@@ -339,6 +340,50 @@ class ClaudeBookServiceTest {
         // 같은 거래일·같은 종류는 한 번 — 다시 불러도 Claude를 부르지 않음
         assertThat(service().decide(MON, RuleBookService.SCHEDULED, true).id()).isEqualTo(d.id());
         assertThat(hits.get()).isEqualTo(1);
+    }
+
+    // ------------------------------------------------------------------ 고정본(2단계 묶음 A 기준선)
+    @Test
+    @DisplayName("고정본(묶음 A 기준선): 미국 정기 결정 — 보낸 요청(시스템 프롬프트·패킷 자리·스키마·모델 인자)과 남긴 결정·주문(검증 판정·노출·측정)이 바이트까지 같다")
+    void goldenScheduledDecision() throws Exception {
+        activeWithHolding();
+        answerJson(decision(60, null,
+                order("AAA", "BUY", 8.0, null, "NEXT_OBSERVATION"),
+                order("ZZZ", "BUY", 5.0, null, "NEXT_OBSERVATION"),
+                order("HELD", "BUY", 10.0, null, "NEXT_CLOSE"),
+                order("XLK", "BUY", 25.0, null, "NEXT_OBSERVATION"),
+                order("SHY", "BUY", 30.0, null, "NEXT_CLOSE"),
+                order("XLE", "BUY", 0.3, null, "NEXT_OBSERVATION"),
+                order("XLF", "SELL", null, null, "NEXT_OBSERVATION")));
+
+        Decision d = service().decide(MON, RuleBookService.SCHEDULED, true);
+
+        assertThat(requests).hasSize(1);
+        // 시스템 프롬프트 = 임시 v0을 결정 시점 설정(기본값)으로 렌더링 — FrameworkServiceTest의 같은 고정본.
+        Golden.assertClaudeRequest(requests.get(0), "render-us-v0-default.txt", null,
+                "claude-decision-request-us.json");
+        StringBuilder out = new StringBuilder();
+        out.append("decision book=").append(d.bookCode()).append(" asOf=").append(d.asOfTradingDate())
+                .append(" kind=").append(d.kind()).append(" status=").append(d.status()).append(" model=")
+                .append(d.model()).append(" framework=").append(d.frameworkVersion()).append(" settings=")
+                .append(d.settingsVersion()).append(" selectionAsOf=").append(d.selectionAsOf()).append(" target=")
+                .append(d.targetExposurePct()).append(" pricesFinal=").append(d.pricesFinal()).append(" retry=")
+                .append(d.retryCount()).append(" packetHash=").append(d.packetHash()).append(" noteIds=")
+                .append(d.noteIds()).append(" error=").append(d.error()).append('\n');
+        ObjectNode usage = (ObjectNode) d.usage().deepCopy();
+        usage.remove("latencyMs");   // 가짜 서버까지 걸린 실제 시간 — 실행마다 다름
+        out.append("usage=").append(MAPPER.writeValueAsString(usage)).append('\n');
+        out.append("response=").append(Golden.prettyJson(d.response())).append('\n');
+        for (Order o : store.ordersOf(PaperBooks.CLAUDE)) {
+            out.append("order #").append(o.id()).append(' ').append(o.ticker()).append(' ').append(o.side())
+                    .append(" qty=").append(o.qty()).append(" targetWeightPct=").append(o.targetWeightPct())
+                    .append(" sellFraction=").append(o.sellFraction()).append(" timing=").append(o.timing())
+                    .append(" source=").append(o.source()).append(" status=").append(o.status()).append(" reject=")
+                    .append(o.rejectReason()).append(" decision=").append(o.decisionId()).append(" asOf=")
+                    .append(o.asOfTradingDate()).append(" expiresOn=").append(o.expiresOn()).append(" reason=")
+                    .append(MAPPER.writeValueAsString(o.reason())).append('\n');
+        }
+        Golden.assertMatches("claude-decision-record-us.txt", out.toString().stripTrailing());
     }
 
     @Test

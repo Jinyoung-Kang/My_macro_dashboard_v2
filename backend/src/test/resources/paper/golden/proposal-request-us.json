@@ -1,0 +1,78 @@
+{
+  "max_tokens" : 16000,
+  "messages" : [ {
+    "content" : "<<고정본 proposal-user-us.txt>>",
+    "role" : "user"
+  } ],
+  "model" : "claude-sonnet-5-5",
+  "output_config" : {
+    "effort" : "high",
+    "format" : {
+      "schema" : {
+        "type" : "object",
+        "additionalProperties" : false,
+        "required" : [ "schemaVersion", "summary", "assessment", "operations", "beforeAfter" ],
+        "properties" : {
+          "schemaVersion" : {
+            "const" : 1
+          },
+          "summary" : {
+            "type" : "string"
+          },
+          "assessment" : {
+            "type" : "array",
+            "items" : {
+              "type" : "object",
+              "additionalProperties" : false,
+              "required" : [ "point", "verdict", "reason" ],
+              "properties" : {
+                "point" : {
+                  "type" : "string"
+                },
+                "verdict" : {
+                  "enum" : [ "일치", "보완", "수정 필요", "모순" ]
+                },
+                "reason" : {
+                  "type" : "string"
+                }
+              }
+            }
+          },
+          "operations" : {
+            "type" : "array",
+            "items" : {
+              "type" : "object",
+              "additionalProperties" : false,
+              "required" : [ "op", "target", "text", "why" ],
+              "properties" : {
+                "op" : {
+                  "enum" : [ "ADD_RULE", "UPDATE_RULE", "DELETE_RULE", "ADD_PRINCIPLE", "UPDATE_PRINCIPLE", "DELETE_PRINCIPLE" ]
+                },
+                "target" : {
+                  "type" : "string"
+                },
+                "text" : {
+                  "type" : [ "string", "null" ]
+                },
+                "why" : {
+                  "type" : "string"
+                }
+              }
+            }
+          },
+          "beforeAfter" : {
+            "type" : "string"
+          }
+        }
+      },
+      "type" : "json_schema"
+    }
+  },
+  "system" : [ {
+    "text" : "<<고정본 proposal-system-us.txt>>",
+    "type" : "text",
+    "cache_control" : {
+      "type" : "ephemeral"
+    }
+  } ]
+}

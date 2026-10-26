@@ -1,5 +1,6 @@
 package com.macrodash.feature.paper;
 
+import com.macrodash.Golden;
 import com.macrodash.analytics.DailySeries;
 import com.macrodash.feature.ai.AiService;
 import com.macrodash.read.StoreReader;
@@ -20,6 +21,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.test.util.ReflectionTestUtils;
 import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.node.ObjectNode;
 
 import java.io.OutputStream;
 import java.net.InetSocketAddress;
@@ -374,6 +376,30 @@ class ReviewServiceTest {
         assertThat(r.path("missingDecisionIds").size()).isZero();
         assertThat(r.path("recurringErrors").get(0).asString()).startsWith("월 상한 근처");
         assertThat(r.path("proposal").isNull()).isTrue();
+    }
+
+    // ------------------------------------------------------------------ 고정본(2단계 묶음 A 기준선)
+    @Test
+    @DisplayName("고정본(묶음 A 기준선): 미국 주간 복기 요청 — 시스템 프롬프트(복기 지시문 + 지금 판 렌더링)·복기 입력(장부 → ReviewFacts)·스키마·모델 인자와 남긴 행이 바이트까지 같다")
+    void goldenReviewRequest() throws Exception {
+        long decisionId = scene();
+        answerJson(reviewJson(decisionId, PROPOSAL));
+
+        assertThat(service().review(WE).kind()).isEqualTo(ReviewService.Kind.CALLED);
+
+        assertThat(requests).hasSize(1);
+        Golden.assertClaudeRequest(requests.get(0), "review-system-us.txt", "review-user-us.txt",
+                "review-request-us.json");
+        Review review = store.reviews.get(WE);
+        ObjectNode usage = (ObjectNode) review.usage().deepCopy();
+        usage.remove("latencyMs");   // 가짜 서버까지 걸린 실제 시간 — 실행마다 다름
+        Golden.assertMatches("review-record-us.txt", String.join("\n",
+                "review weekEnding=" + review.weekEnding() + " status=" + review.status() + " windowWeeks="
+                        + review.windowWeeks() + " framework=" + review.frameworkVersion() + " model=" + review.model()
+                        + " retry=" + review.retryCount() + " error=" + review.error() + " proposal="
+                        + review.proposalId(),
+                "usage=" + MAPPER.writeValueAsString(usage),
+                "response=" + Golden.prettyJson(review.response())));
     }
 
     @Test

@@ -1,5 +1,6 @@
 package com.macrodash.feature.paper;
 
+import com.macrodash.Golden;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import tools.jackson.databind.ObjectMapper;
@@ -46,6 +47,23 @@ class StructuredSchemaTest {
 
     private static ObjectNode firstOrder(ObjectNode response) {
         return (ObjectNode) response.get("orders").get(0);
+    }
+
+    // ── 고정본(2단계 묶음 A 기준선) ─────────────────────────────────────
+
+    /** 스키마 파일 바이트의 SHA-256 — 미국 실험 중 결정·제안·복기 스키마를 바꾸지 않는다(ClaudePrompts 주석, 명세 K34). */
+    private static final Map<String, String> SCHEMA_SHA256 = Map.of(
+            "paper/decision.schema.json", "b1799bd3c8bc3ee389c5de5e36329212825df4be6646b188bb30a0cc61db6763",
+            "paper/proposal.schema.json", "e114882f450573c571cbb0065f0cca801e02d718652a0146aa3b059d7bfc6c60",
+            "paper/review.schema.json", "2b9840e2dd6af3cda675c5452556dcddf409d67349458566e0285bbbe75bf854");
+
+    @Test
+    @DisplayName("고정본(묶음 A 기준선): 결정·제안·복기 스키마 파일의 바이트(SHA-256)와 API에 보내는 미국 결정 스키마가 시장 추상화 전과 같다")
+    void goldenSchemas() {
+        Map<String, String> actual = new java.util.TreeMap<>();
+        SCHEMA_SHA256.keySet().forEach(name -> actual.put(name, Golden.sha256(Golden.resourceBytes(name))));
+        assertThat(actual).isEqualTo(SCHEMA_SHA256);
+        Golden.assertMatches("decision-schema-forapi-us.json", Golden.prettyJson(DECISION.forApi()));
     }
 
     // ── API용 사본 ──────────────────────────────────────────────────────

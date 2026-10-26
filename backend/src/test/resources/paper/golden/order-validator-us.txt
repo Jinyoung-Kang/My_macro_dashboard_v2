@@ -1,0 +1,126 @@
+## STALE_INPUT — 전부 거절
+[0] BUY MSFT target=5.0 fraction=null NEXT_OBSERVATION → REJECT STALE_INPUT | 입력 자료가 오래됨(종목 저장본 24시간 초과 또는 확정 종가 전) — 그날 재량 주문 전부 거절
+[1] SELL AAPL target=null fraction=null NEXT_OBSERVATION → REJECT STALE_INPUT | 입력 자료가 오래됨(종목 저장본 24시간 초과 또는 확정 종가 전) — 그날 재량 주문 전부 거절
+[2] null → REJECT STALE_INPUT | 입력 자료가 오래됨(종목 저장본 24시간 초과 또는 확정 종가 전) — 그날 재량 주문 전부 거절
+## MALFORMED — 모양
+[0] null → REJECT MALFORMED | 주문이 비어 있음
+[1] BUY null target=5.0 fraction=null NEXT_OBSERVATION → REJECT MALFORMED | 티커가 없음
+[2] BUY   target=5.0 fraction=null NEXT_OBSERVATION → REJECT MALFORMED | 티커가 없음
+[3] HOLD JPM target=5.0 fraction=null NEXT_OBSERVATION → REJECT MALFORMED | side는 BUY 또는 SELL이어야 함: HOLD
+[4] BUY XOM target=5.0 fraction=null IMMEDIATE → REJECT MALFORMED | timing은 NEXT_OBSERVATION 또는 NEXT_CLOSE여야 함: IMMEDIATE
+[5] BUY LLY target=5.0 fraction=null null → REJECT MALFORMED | timing은 NEXT_OBSERVATION 또는 NEXT_CLOSE여야 함: null
+[6] BUY UNH target=null fraction=null NEXT_OBSERVATION → REJECT MALFORMED | 매수에 targetWeightPct가 없음
+[7] BUY COST target=100.5 fraction=null NEXT_OBSERVATION → REJECT MALFORMED | targetWeightPct는 0~100이어야 함: 100.5
+[8] BUY AVGO target=NaN fraction=null NEXT_OBSERVATION → REJECT MALFORMED | targetWeightPct는 0~100이어야 함: NaN
+[9] BUY XLK target=-1.0 fraction=null NEXT_OBSERVATION → REJECT MALFORMED | targetWeightPct는 0~100이어야 함: -1.0
+[10] SELL AAPL target=null fraction=0.0 NEXT_OBSERVATION → REJECT MALFORMED | sellFraction은 0 초과 1 이하여야 함: 0.0
+[11] SELL MSFT target=null fraction=1.5 NEXT_OBSERVATION → REJECT MALFORMED | sellFraction은 0 초과 1 이하여야 함: 1.5
+[12] SELL NVDA target=null fraction=NaN NEXT_OBSERVATION → REJECT MALFORMED | sellFraction은 0 초과 1 이하여야 함: NaN
+[13] SELL META target=2.0 fraction=null NEXT_CLOSE → REJECT MALFORMED | 매도에 sellFraction 없이 targetWeightPct만 있음 — 비율 없는 매도는 장부가 전량으로 집행하므로 거절
+## MALFORMED 아님 — 전량·목표 0% 매도·비율 1
+[0] SELL AMZN target=null fraction=null NEXT_OBSERVATION → OK | 보유 5.00% 전량 매도
+[1] SELL GOOGL target=0.0 fraction=null NEXT_OBSERVATION → OK | 보유 5.00% 전량 매도
+[2] SELL AAPL target=null fraction=1.0 NEXT_OBSERVATION → OK | 보유 5.00% 전량 매도
+## DUPLICATE_TICKER
+[0] BUY MSFT target=5.0 fraction=null NEXT_OBSERVATION → OK | 현재 0.00% → 목표 5.00%(+5.00%p, 약 $5,000) | increment=5.0
+[1] BUY MSFT target=8.0 fraction=null NEXT_OBSERVATION → REJECT DUPLICATE_TICKER | 같은 티커의 앞선 주문(1번째)이 있음 — 첫 주문만 봄
+[2] SELL MSFT target=null fraction=null NEXT_OBSERVATION → REJECT DUPLICATE_TICKER | 같은 티커의 앞선 주문(1번째)이 있음 — 첫 주문만 봄
+[3] BUY NVDA target=null fraction=null NEXT_OBSERVATION → REJECT MALFORMED | 매수에 targetWeightPct가 없음
+[4] BUY NVDA target=5.0 fraction=null NEXT_OBSERVATION → REJECT DUPLICATE_TICKER | 같은 티커의 앞선 주문(4번째)이 있음 — 첫 주문만 봄
+## OUT_OF_UNIVERSE·NOT_HELD
+[0] BUY ZZZZ target=5.0 fraction=null NEXT_OBSERVATION → REJECT OUT_OF_UNIVERSE | 유니버스 밖 티커: ZZZZ
+[1] SELL YYYY target=null fraction=null NEXT_OBSERVATION → REJECT OUT_OF_UNIVERSE | 유니버스 밖 티커: YYYY
+[2] SELL OLD target=null fraction=null NEXT_OBSERVATION → OK | 보유 4.00% 전량 매도
+[3] SELL NVDA target=null fraction=0.5 NEXT_OBSERVATION → REJECT NOT_HELD | 보유하지 않은 종목은 팔 수 없음
+[4] SELL META target=null fraction=null NEXT_OBSERVATION → REJECT NOT_HELD | 보유하지 않은 종목은 팔 수 없음
+## LOCKED_OUT·NO_PRICE
+[0] BUY NVDA target=5.0 fraction=null NEXT_OBSERVATION → REJECT LOCKED_OUT | 트레일링 스탑 뒤 재진입 금지 중
+[1] BUY META target=5.0 fraction=null NEXT_OBSERVATION → REJECT LOCKED_OUT | 트레일링 스탑 뒤 재진입 금지 중
+[2] SELL AAPL target=null fraction=null NEXT_OBSERVATION → REJECT NO_PRICE | 가격이 없거나 오래됨 — 체결 가격을 정할 수 없음
+[3] BUY MSFT target=5.0 fraction=null NEXT_OBSERVATION → REJECT NO_PRICE | 가격이 없거나 오래됨 — 체결 가격을 정할 수 없음
+[4] BUY AMZN target=5.0 fraction=null NEXT_OBSERVATION → OK | 현재 0.00% → 목표 5.00%(+5.00%p, 약 $5,000) | increment=5.0
+## MIN_HOLD — 5거래일·모름·현금성
+[0] SELL AAPL target=null fraction=null NEXT_OBSERVATION → REJECT MIN_HOLD | 보유 4거래일 < 최소 5거래일
+[1] SELL MSFT target=null fraction=0.5 NEXT_OBSERVATION → OK | 보유 5.00% 중 50% 매도
+[2] SELL GOOGL target=null fraction=null NEXT_OBSERVATION → REJECT MIN_HOLD | 보유 거래일을 알 수 없음 — 최소 5거래일 확인 불가
+[3] SELL SHY target=null fraction=null NEXT_OBSERVATION → OK | 보유 30.00% 전량 매도
+## MIN_HOLD 끔(0)
+[0] SELL GOOGL target=null fraction=null NEXT_OBSERVATION → OK | 보유 5.00% 전량 매도
+## WEIGHT_CAP — 종목 10%·ETF 20%·현금성
+[0] BUY AAPL target=10.0 fraction=null NEXT_OBSERVATION → OK | 현재 0.00% → 목표 10.00%(+10.00%p, 약 $10,000) | increment=10.0
+[1] BUY MSFT target=10.01 fraction=null NEXT_OBSERVATION → REJECT WEIGHT_CAP | 목표 10.01% > 종목 상한 10.00%
+[2] BUY XLK target=20.0 fraction=null NEXT_OBSERVATION → OK | 현재 0.00% → 목표 20.00%(+20.00%p, 약 $20,000) | increment=20.0
+[3] BUY XLE target=20.5 fraction=null NEXT_OBSERVATION → REJECT WEIGHT_CAP | 목표 20.50% > ETF 상한 20.00%
+[4] BUY SHY target=60.0 fraction=null NEXT_OBSERVATION → OK | 현재 0.00% → 목표 60.00%(+60.00%p, 약 $60,000) | increment=60.0
+## MIN_NOTIONAL — $500
+[0] BUY META target=0.4 fraction=null NEXT_OBSERVATION → REJECT MIN_NOTIONAL | 매수 증가분 약 $400.00 < 최소 $500.00(현재 0.00% → 목표 0.40%)
+[1] BUY AMZN target=0.5 fraction=null NEXT_OBSERVATION → OK | 현재 0.00% → 목표 0.50%(+0.50%p, 약 $500) | increment=0.5
+[2] BUY AAPL target=4.0 fraction=null NEXT_OBSERVATION → REJECT MIN_NOTIONAL | 목표 비중이 현재 비중 이하 — 살 금액 없음(현재 5.00% → 목표 4.00%)
+[3] BUY MSFT target=5.3 fraction=null NEXT_OBSERVATION → REJECT MIN_NOTIONAL | 매수 증가분 약 $300.00 < 최소 $500.00(현재 5.00% → 목표 5.30%)
+[4] BUY NVDA target=5.0 fraction=null NEXT_OBSERVATION → REJECT MIN_NOTIONAL | 목표 비중이 현재 비중 이하 — 살 금액 없음(현재 5.00% → 목표 5.00%)
+[5] BUY GOOGL target=0.0 fraction=null NEXT_OBSERVATION → REJECT MIN_NOTIONAL | 목표 비중이 현재 비중 이하 — 살 금액 없음(현재 0.00% → 목표 0.00%)
+## MIN_NOTIONAL 끔(0)
+[0] BUY NVDA target=5.0 fraction=null NEXT_OBSERVATION → REJECT MIN_NOTIONAL | 목표 비중이 현재 비중 이하 — 살 금액 없음(현재 5.00% → 목표 5.00%)
+[1] BUY META target=0.01 fraction=null NEXT_OBSERVATION → OK | 현재 0.00% → 목표 0.01%(+0.01%p, 약 $10) | increment=0.01
+## MONTHLY_CAP — 남은 자리 2
+[0] BUY MSFT target=5.0 fraction=null NEXT_OBSERVATION → REJECT MONTHLY_CAP | 이달 재량 주문 20건(이번 결정 2건 포함) — 상한 20건
+[1] BUY NVDA target=8.0 fraction=null NEXT_OBSERVATION → OK | 현재 0.00% → 목표 8.00%(+8.00%p, 약 $8,000) | increment=8.0
+[2] SELL AAPL target=null fraction=null NEXT_OBSERVATION → OK | 보유 5.00% 전량 매도
+[3] BUY ZZZZ target=5.0 fraction=null NEXT_OBSERVATION → REJECT OUT_OF_UNIVERSE | 유니버스 밖 티커: ZZZZ
+## MONTHLY_CAP — 상한
+[0] BUY MSFT target=5.0 fraction=null NEXT_OBSERVATION → REJECT MONTHLY_CAP | 이달 재량 주문 20건(이번 결정 0건 포함) — 상한 20건
+[1] SELL AAPL target=null fraction=null NEXT_OBSERVATION → REJECT MONTHLY_CAP | 이달 재량 주문 20건(이번 결정 0건 포함) — 상한 20건
+## MAX_POSITIONS — 상한 3
+[0] BUY NVDA target=6.0 fraction=null NEXT_OBSERVATION → OK | 현재 0.00% → 목표 6.00%(+6.00%p, 약 $6,000) | increment=6.0
+[1] BUY META target=4.0 fraction=null NEXT_OBSERVATION → REJECT MAX_POSITIONS | 매수 뒤 종목 수 4 > 상한 3(현금성 제외)
+[2] BUY AAPL target=8.0 fraction=null NEXT_OBSERVATION → OK | 현재 5.00% → 목표 8.00%(+3.00%p, 약 $3,000) | increment=3.0
+[3] BUY SHY target=20.0 fraction=null NEXT_OBSERVATION → OK | 현재 10.00% → 목표 20.00%(+10.00%p, 약 $10,000) | increment=10.0
+## MAX_POSITIONS — 일부 매도는 자리를 비우지 않음
+[0] SELL MSFT target=null fraction=0.5 NEXT_OBSERVATION → OK | 보유 5.00% 중 50% 매도
+[1] BUY NVDA target=6.0 fraction=null NEXT_OBSERVATION → OK | 현재 0.00% → 목표 6.00%(+6.00%p, 약 $6,000) | increment=6.0
+[2] BUY META target=4.0 fraction=null NEXT_OBSERVATION → REJECT MAX_POSITIONS | 매수 뒤 종목 수 4 > 상한 3(현금성 제외)
+## MAX_POSITIONS — 시점(NEXT_OBSERVATION·NEXT_CLOSE)
+[0] SELL T01 target=null fraction=null NEXT_OBSERVATION → OK | 보유 4.50% 전량 매도
+[1] SELL T02 target=null fraction=null NEXT_CLOSE → OK | 보유 4.50% 전량 매도
+[2] BUY NEW target=3.0 fraction=null NEXT_OBSERVATION → OK | 현재 0.00% → 목표 3.00%(+3.00%p, 약 $3,000) | increment=3.0
+[3] BUY NEW2 target=2.0 fraction=null NEXT_CLOSE → OK | 현재 0.00% → 목표 2.00%(+2.00%p, 약 $2,000) | increment=2.0
+[4] BUY NEW3 target=1.0 fraction=null NEXT_CLOSE → REJECT MAX_POSITIONS | 매수 뒤 종목 수 21 > 상한 20(현금성 제외)
+## BELOW_ONE_SHARE
+[0] SELL COST target=null fraction=0.05 NEXT_OBSERVATION → REJECT BELOW_ONE_SHARE | 보유 15주의 0.05는 1주 미만 — 장부가 전량으로 집행하므로 거절, 전량이면 sellFraction 1
+[1] SELL AAPL target=null fraction=1.0 NEXT_OBSERVATION → OK | 보유 5.00% 전량 매도
+[2] SELL MSFT target=null fraction=null NEXT_OBSERVATION → OK | 보유 5.00% 전량 매도
+[3] SELL NVDA target=null fraction=0.05 NEXT_OBSERVATION → OK | 보유 5.00% 중 5% 매도
+[4] SELL META target=null fraction=0.05 NEXT_OBSERVATION → OK | 보유 5.00% 중 5% 매도
+[5] SELL SHY target=null fraction=0.1 NEXT_OBSERVATION → REJECT BELOW_ONE_SHARE | 보유 9주의 0.1는 1주 미만 — 장부가 전량으로 집행하므로 거절, 전량이면 sellFraction 1
+## OVER_ALLOCATED — 큰 비중부터
+[0] BUY NVDA target=5.0 fraction=null NEXT_OBSERVATION → OK | 현재 0.00% → 목표 5.00%(+5.00%p, 약 $5,000) | increment=5.0
+[1] BUY XLK target=15.0 fraction=null NEXT_OBSERVATION → OK | 현재 0.00% → 목표 15.00%(+15.00%p, 약 $15,000) | increment=15.0
+[2] BUY META target=10.0 fraction=null NEXT_OBSERVATION → REJECT OVER_ALLOCATED | 매도 뒤 남는 보유 80.00% + 앞서 받은 매수 15.00%p + 이 주문 10.00%p = 105.00% > 100% (현재 현금 20.00%)
+## OVER_ALLOCATED — 통과한 매도만 자리
+[0] SELL AAPL target=null fraction=0.5 NEXT_OBSERVATION → OK | 보유 50.00% 중 50% 매도
+[1] BUY META target=1.0 fraction=null NEXT_OBSERVATION → REJECT OVER_ALLOCATED | 매도 뒤 남는 보유 75.00% + 앞서 받은 매수 25.00%p + 이 주문 1.00%p = 101.00% > 100% (현재 현금 0.00%)
+[2] BUY XLK target=20.0 fraction=null NEXT_OBSERVATION → OK | 현재 0.00% → 목표 20.00%(+20.00%p, 약 $20,000) | increment=20.0
+[3] BUY NVDA target=5.0 fraction=null NEXT_OBSERVATION → OK | 현재 0.00% → 목표 5.00%(+5.00%p, 약 $5,000) | increment=5.0
+[4] SELL MSFT target=null fraction=null NEXT_OBSERVATION → REJECT MIN_HOLD | 보유 2거래일 < 최소 5거래일
+## OVER_ALLOCATED — 늦은 매도(NEXT_CLOSE)
+[0] SELL AAPL target=null fraction=null NEXT_CLOSE → OK | 보유 20.00% 전량 매도
+[1] BUY NVDA target=2.0 fraction=null NEXT_OBSERVATION → OK | 현재 0.00% → 목표 2.00%(+2.00%p, 약 $2,000) | increment=2.0
+[2] BUY GOOGL target=1.0 fraction=null NEXT_OBSERVATION → REJECT OVER_ALLOCATED | 다음 관측치(NEXT_OBSERVATION) 매수인데 확정 종가(NEXT_CLOSE) 매도 20.00%p는 그 뒤에 체결돼 자리를 만들지 못함 — 그 시점 남는 보유 98.00% + 앞서 받은 다음 관측치 매수 2.00%p + 이 주문 1.00%p = 101.00% > 100% (현재 현금 2.00%)
+[3] BUY META target=5.0 fraction=null NEXT_CLOSE → OK | 현재 0.00% → 목표 5.00%(+5.00%p, 약 $5,000) | increment=5.0
+[4] BUY AMZN target=5.0 fraction=null NEXT_CLOSE → OK | 현재 0.00% → 목표 5.00%(+5.00%p, 약 $5,000) | increment=5.0
+## 보유 추가 매수 — 증가분
+[0] BUY AAPL target=10.0 fraction=null NEXT_OBSERVATION → OK | 현재 8.00% → 목표 10.00%(+2.00%p, 약 $2,000) | increment=2.0
+## 여러 규칙 — 첫 사유 하나
+[0] BUY ZZZZ target=150.0 fraction=null NEXT_OBSERVATION → REJECT MALFORMED | targetWeightPct는 0~100이어야 함: 150.0
+[1] BUY ZZZZ target=50.0 fraction=null NEXT_OBSERVATION → REJECT DUPLICATE_TICKER | 같은 티커의 앞선 주문(1번째)이 있음 — 첫 주문만 봄
+[2] BUY NVDA target=50.0 fraction=null NEXT_OBSERVATION → REJECT LOCKED_OUT | 트레일링 스탑 뒤 재진입 금지 중
+[3] BUY META target=50.0 fraction=null NEXT_OBSERVATION → REJECT NO_PRICE | 가격이 없거나 오래됨 — 체결 가격을 정할 수 없음
+[4] BUY AAPL target=12.0 fraction=null NEXT_OBSERVATION → REJECT WEIGHT_CAP | 목표 12.00% > 종목 상한 10.00%
+## 혼합 — 현금 29,500·이달 3건
+[0] SELL AAPL target=null fraction=0.5 NEXT_OBSERVATION → OK | 보유 30.30% 중 50% 매도
+[1] BUY NVDA target=7.0 fraction=null NEXT_OBSERVATION → OK | 현재 0.00% → 목표 7.00%(+7.00%p, 약 $7,000) | increment=7.0
+[2] BUY XLK target=15.0 fraction=null NEXT_OBSERVATION → OK | 현재 0.00% → 목표 15.00%(+15.00%p, 약 $15,000) | increment=15.0
+[3] BUY META target=7.0 fraction=null NEXT_OBSERVATION → OK | 현재 0.00% → 목표 7.00%(+7.00%p, 약 $7,000) | increment=7.0
+[4] BUY MSFT target=3.0 fraction=null NEXT_OBSERVATION → REJECT MIN_NOTIONAL | 목표 비중이 현재 비중 이하 — 살 금액 없음(현재 20.20% → 목표 3.00%)
+[5] BUY ZZZZ target=5.0 fraction=null NEXT_OBSERVATION → REJECT OUT_OF_UNIVERSE | 유니버스 밖 티커: ZZZZ
+[6] BUY GOOGL target=9.0 fraction=null NEXT_OBSERVATION → OK | 현재 0.00% → 목표 9.00%(+9.00%p, 약 $9,000) | increment=9.0
