@@ -13,6 +13,8 @@ tests/test_fsc.py
   4. 시장 합계는 값이 있는 행만 더하고, 빠진 행 수를 남긴다.
   5. totalCount만큼 받으면 페이지 요청을 멈춘다.
   6. 이미 최신 기준일이 저장돼 있으면 호출 0회.
+  7. 저장 첫 기준일 이전을 과거 쪽으로 메운다 — 따로 된 실행당 예산(90), 실패한 날에서 멈춤, 자료 없는 날은 건너뜀,
+     보존 창(400일) 안까지, 다 메웠으면 호출 0회(v2 2단계 명세 §4-15 B2).
 """
 from __future__ import annotations
 
@@ -183,13 +185,22 @@ def test_예산이_없으면_호출하지_않는다(monkeypatch):
         fsc.fetch_day("20260923", budget)
 
 
+# 과거 쪽 메우기가 이미 끝난 저장본의 첫 기준일 — 보존 하한보다 이르면 과거 쪽은 할 일이 없습니다. 최신 쪽 시험이 과거 쪽 호출을 섞지 않게
+# _FakeStore의 기본값으로 씁니다(과거 쪽은 _HistoryStore 시험).
+_BACKFILLED = "2000-01-01"
+
+
 class _FakeStore:
-    def __init__(self, latest=None):
+    def __init__(self, latest=None, earliest=_BACKFILLED):
         self.latest = latest
+        self.earliest = earliest
         self.observations, self.timeseries, self.snapshots = [], [], {}
 
     def latest_observation_date(self, dataset):
         return self.latest
+
+    def earliest_observation_date(self, dataset):
+        return self.earliest
 
     def read_snapshot(self, name):
         return None
@@ -387,3 +398,286 @@ def test_QA078_잘린_하루치는_저장하지_않고_그날에서_멈춘다(mo
     with pytest.raises(tasks.EmptyResult):
         tasks.task_fsc_prices()
     assert fake.observations == [] and fake.timeseries == []
+
+
+# ---- B2: 과거 쪽 메우기(저장 첫 기준일 이전, 보존 창 안) ------------------------------------------------------------
+class _HistoryStore(_FakeStore):
+    """저장된 날(기준일 → 행 수)을 들고 최신·첫 기준일을 거기서 셉니다 — 실행을 이어 붙여 시험합니다."""
+
+    def __init__(self, dates):
+        super().__init__()
+        self.days = {d: 1 for d in dates}
+        self.deleted_before: list[str] = []
+
+    def latest_observation_date(self, dataset):
+        return max(self.days) if self.days else None
+
+    def earliest_observation_date(self, dataset):
+        return min(self.days) if self.days else None
+
+    def put_observations(self, dataset, obs_date, rows, entity_key):
+        self.days[obs_date] = len(rows)
+        return super().put_observations(dataset, obs_date, rows, entity_key)
+
+    def delete_observations_before(self, dataset, before):
+        self.deleted_before.append(before)
+        gone = [d for d in self.days if d < before]
+        for d in gone:
+            del self.days[d]
+        return len(gone)
+
+
+def _today():
+    from datetime import datetime
+
+    from app import tasks
+
+    return datetime.now(tasks.KST).date()
+
+
+def _up_to_date(monkeypatch, *older_days):
+    """최신 쪽이 할 일 없는 저장본(어제 거래일까지 있음) + older_days. (가짜 저장소, 저장된 날 목록)"""
+    from app import tasks
+
+    latest = tasks._fsc_candidate_dates(_today())[0]
+    fake = _HistoryStore([latest.isoformat(), *(d.isoformat() for d in older_days)])
+    monkeypatch.setattr(tasks.korea_public, "store", fake)
+    return fake, latest
+
+
+def _days_with_pages(monkeypatch, pages: int, *, fail_on=(), empty_on=()):
+    """
+    실제 fetch_day를 거치는 가짜 HTTP — 하루치가 pages쪽(쪽마다 1행, totalCount = pages). 부른 (basDt, 쪽) 목록을 돌려줍니다.
+    fail_on의 날은 연결 실패(publicapi.get이 올리는 PublicApiError), empty_on의 날은 1쪽이 비고 totalCount 0(그날 자료 없음).
+    """
+    monkeypatch.setattr(fsc.settings, "data_go_kr_key", lambda: "k" * 20)
+    calls: list[tuple[str, int]] = []
+
+    def fake_get(url, params, **kwargs):
+        calls.append((params["basDt"], params["pageNo"]))
+        if params["basDt"] in fail_on:
+            raise publicapi.PublicApiError("ReadTimeout: 읽기 시간 초과")
+        if params["basDt"] in empty_on:
+            return _xml([], 0)
+        item = dict(SAMSUNG, srtnCd=f"{params['pageNo']:06d}", basDt=params["basDt"])
+        return _xml([item], pages)
+
+    monkeypatch.setattr(fsc.publicapi, "get", fake_get)
+    return calls
+
+
+def _ymd(day) -> str:
+    return day.strftime("%Y%m%d")
+
+
+def test_B2_과거_쪽을_최근_날부터_메우고_메타의_최신_기준일은_건드리지_않는다(monkeypatch):
+    """
+    저장본이 최근 며칠뿐이면(2026-10-21부터) 보존 창 400일이 차는 데 1년 넘게 걸렸습니다 — 최신 쪽만 메웠기 때문입니다.
+    저장 첫 기준일 바로 앞 거래일부터 거슬러 가며 하루치(종목 + 시장 합계)를 저장하고, 메타 스냅샷(latestBasDt = 최신 기준일)은 쓰지 않습니다.
+    """
+    from datetime import timedelta
+
+    from app import catalog, tasks
+
+    fake, latest = _up_to_date(monkeypatch)
+    calls = _days_with_pages(monkeypatch, 3)
+    result = tasks.task_fsc_prices()
+
+    expected = tasks._fsc_backfill_dates(latest, _today() - timedelta(days=tasks.FSC_RETENTION_DAYS))[:30]
+    assert [d for d, _ in fake.observations] == [d.isoformat() for d in expected], "최근 날부터 30기준일(90회 ÷ 3쪽)"
+    assert [c for c in calls if c[1] == 1] == [(_ymd(d), 1) for d in expected], "최신 쪽은 호출 0회"
+    assert len(calls) == tasks.FSC_BACKFILL_CALL_BUDGET == 90
+    assert catalog.SNAP_FSC_PRICES_META not in fake.snapshots, "과거 날짜로 최신 기준일을 덮지 않습니다"
+    assert ("KOSPI.marketCap", [(expected[-1].isoformat(), 7100000.0 * 3)]) in fake.timeseries, "시장 합계도 그날 것으로"
+    assert result.startswith(f"최신 상태 (기준일 {latest.isoformat()}, 호출 0회)")
+    assert f"과거 쪽 30일 보충, 가장 이른 기준일 {expected[-1].isoformat()}" in result and "호출 90회" in result
+
+
+def test_B2_과거_쪽_예산은_최신_쪽과_따로_센다(monkeypatch):
+    """최신 쪽 보충(예산 12)이 호출을 쓴 실행에서도 과거 쪽은 제 예산 90을 다 씁니다 — 한쪽이 다른 쪽을 굶기지 않습니다."""
+    from app import tasks
+
+    candidates = tasks._fsc_candidate_dates(_today())
+    fake = _HistoryStore([candidates[2].isoformat()])          # 최신 쪽 2일 빠짐
+    monkeypatch.setattr(tasks.korea_public, "store", fake)
+    calls = _days_with_pages(monkeypatch, 3)
+    result = tasks.task_fsc_prices()
+
+    forward = [c for c in calls if c[0] in (_ymd(candidates[1]), _ymd(candidates[0]))]
+    assert len(forward) == 6 and len(calls) == 6 + 90
+    assert fake.latest_observation_date("x") == candidates[0].isoformat()
+    assert len(fake.days) == 3 + 30
+    assert result.startswith(f"{candidates[0].isoformat()} 3종목 · 2일 보충 (호출 6회) · 과거 쪽 30일 보충")
+
+
+def test_B2_새_기준일이_아직_없어도_과거_쪽을_저장했으면_수집_결과_없음이_아니다(monkeypatch):
+    """최신 쪽이 '발표 전'(빈 날)이어도 과거 쪽에서 진짜 데이터를 저장했으면 성공입니다 — 수집 결과 없음(EmptyResult)은 아무것도 쓰지 않은 실행만."""
+    from app import tasks
+
+    candidates = tasks._fsc_candidate_dates(_today())
+    fake = _HistoryStore([candidates[1].isoformat()])          # 어제 거래일 하루가 빠짐 — 아직 발표 전
+    monkeypatch.setattr(tasks.korea_public, "store", fake)
+    calls = _days_with_pages(monkeypatch, 3, empty_on={_ymd(candidates[0])})
+    result = tasks.task_fsc_prices()
+
+    assert calls[0] == (_ymd(candidates[0]), 1)
+    assert fake.latest_observation_date("x") == candidates[1].isoformat()
+    assert result.startswith("새 기준일 데이터 없음 (호출 1회) · 과거 쪽 30일 보충")
+
+
+def test_B2_과거_쪽은_하루치를_다_받지_못하고_예산이_떨어진_날은_저장하지_않고_실패로도_세지_않는다(monkeypatch):
+    """하루치가 4쪽이면 90회로 22일(88회)을 받고 23번째 날은 2쪽에서 예산이 떨어집니다 — 잘린 하루치는 버리고 다음 실행이 그날부터."""
+    from datetime import timedelta
+
+    from app import tasks
+
+    fake, latest = _up_to_date(monkeypatch)
+    calls = _days_with_pages(monkeypatch, 4)
+    result = tasks.task_fsc_prices()
+
+    pending = tasks._fsc_backfill_dates(latest, _today() - timedelta(days=tasks.FSC_RETENTION_DAYS))
+    assert len(calls) == 90 and len(fake.observations) == 22
+    assert calls[-2:] == [(_ymd(pending[22]), 1), (_ymd(pending[22]), 2)]
+    assert pending[22].isoformat() not in fake.days, "잘린 하루치는 저장하지 않습니다"
+    assert "사유" not in result, "예산 소진은 출처의 실패가 아닙니다"
+
+    calls.clear()
+    tasks.task_fsc_prices()
+    assert calls[0] == (_ymd(pending[22]), 1), "다음 실행은 그날부터"
+
+
+def test_B2_과거_쪽은_실패한_날에서_멈추고_다음_실행이_그날부터_다시_받는다(monkeypatch):
+    """
+    QA-034를 과거 쪽으로 뒤집은 규칙 — 실패한 날보다 오래된 날을 먼저 저장하면 저장 첫 기준일이 그날을 앞질러 다시 받지 않습니다.
+    받은 날은 진짜 데이터라 저장하고(태스크는 성공), 사유를 남깁니다.
+    """
+    from datetime import timedelta
+
+    from app import tasks
+
+    fake, latest = _up_to_date(monkeypatch)
+    pending = tasks._fsc_backfill_dates(latest, _today() - timedelta(days=tasks.FSC_RETENTION_DAYS))
+    calls = _days_with_pages(monkeypatch, 3, fail_on={_ymd(pending[2])})
+    result = tasks.task_fsc_prices()
+
+    assert [d for d, _ in fake.observations] == [pending[0].isoformat(), pending[1].isoformat()]
+    assert all(c[0] != _ymd(pending[3]) for c in calls), "실패한 날 뒤(더 과거)는 부르지도 않습니다"
+    assert f"과거 쪽 {pending[2].isoformat()}: ReadTimeout" in result
+    assert "과거 쪽 2일 보충" in result
+
+    calls = _days_with_pages(monkeypatch, 3)                   # 출처가 다시 답함
+    tasks.task_fsc_prices()
+    assert calls[0] == (_ymd(pending[2]), 1), "다음 실행은 실패한 날부터"
+    assert pending[2].isoformat() in fake.days
+
+
+def test_B2_과거_쪽은_자료_없는_날을_건너뛰고_더_거슬러_간다(monkeypatch):
+    """
+    지난 날에 1쪽이 비고 totalCount 0이면 '발표 전'이 아니라 달력이 모르는 휴장일입니다(저장된 공휴일 목록에 없는 해 — 2025년).
+    그날에서 멈추면 영영 막히므로 건너뛰고, 그보다 오래된 날을 저장하면 다시 묻지 않습니다.
+    """
+    from datetime import timedelta
+
+    from app import tasks
+
+    fake, latest = _up_to_date(monkeypatch)
+    pending = tasks._fsc_backfill_dates(latest, _today() - timedelta(days=tasks.FSC_RETENTION_DAYS))
+    calls = _days_with_pages(monkeypatch, 3, empty_on={_ymd(pending[1])})
+    result = tasks.task_fsc_prices()
+
+    saved = [d for d, _ in fake.observations]
+    assert pending[1].isoformat() not in saved and pending[2].isoformat() in saved
+    assert len(calls) == 1 + 3 * 29 + 2 and len(saved) == 29, "빈 날은 1회만 쓰고 예산 안에서 계속"
+    assert f"자료 없는 날 1일 건너뜀({pending[1].isoformat()})" in result
+    assert "사유" not in result
+
+    calls.clear()
+    tasks.task_fsc_prices()
+    assert all(c[0] != _ymd(pending[1]) for c in calls), "더 오래된 날을 저장했으면 그 빈 날은 다시 묻지 않습니다"
+
+
+def test_B2_과거_쪽은_보존_창_안까지만_메우고_다_메우면_호출_0회다(monkeypatch):
+    """보존 하한(오늘 − 400일)보다 이른 날은 받지 않습니다(받아도 바로 지워짐). 끝까지 메운 뒤에는 몇 번 돌아도 호출 0회 — 같은 저장본입니다."""
+    from datetime import timedelta
+
+    from app import tasks
+
+    floor = _today() - timedelta(days=tasks.FSC_RETENTION_DAYS)
+    near_floor = tasks._fsc_backfill_dates(tasks._fsc_candidate_dates(_today())[0], floor)[-3]   # 하한 위 세 번째 거래일
+    fake, latest = _up_to_date(monkeypatch, near_floor)
+    calls = _days_with_pages(monkeypatch, 3)
+    result = tasks.task_fsc_prices()
+
+    remaining = tasks._fsc_backfill_dates(near_floor, floor)
+    assert len(remaining) == 2 and all(d >= floor for d in remaining)
+    assert [d for d, _ in fake.observations] == [d.isoformat() for d in remaining]
+    assert len(calls) == 6 and "보존 창 끝까지 메움" in result
+    assert fake.deleted_before == [floor.isoformat()], "정리는 같은 하한으로"
+
+    before = dict(fake.days)
+    calls.clear()
+    result = tasks.task_fsc_prices()
+    assert calls == [] and fake.days == before
+    assert result == f"최신 상태 (기준일 {latest.isoformat()}, 호출 0회)"
+
+
+def test_B2_과거_쪽은_시간_상한을_넘기면_새_기준일을_시작하지_않는다(monkeypatch):
+    """slow 상한(600초)에 닿으면 '시간 초과'로 받은 것도 기록이 흐려집니다. 태스크 시작부터 300초가 지나면 새 날을 더 시작하지 않습니다."""
+    from app import tasks
+
+    clock = {"t": 0.0}
+    monkeypatch.setattr(tasks.korea_public, "_clock", lambda: clock["t"])
+    fake, _latest = _up_to_date(monkeypatch)
+    calls = _days_with_pages(monkeypatch, 3)
+    real_get = fsc.publicapi.get
+
+    def slow_get(url, params, **kwargs):
+        clock["t"] += 50.0                     # 쪽마다 50초 — 하루치 150초
+        return real_get(url, params, **kwargs)
+
+    monkeypatch.setattr(fsc.publicapi, "get", slow_get)
+    result = tasks.task_fsc_prices()
+
+    assert len(fake.observations) == 2 and len(calls) == 6, "0초·150초에 시작한 이틀만, 300초에는 시작하지 않음"
+    assert f"시간 상한 {tasks.FSC_BACKFILL_TIME_LIMIT_SECONDS:.0f}초 — 나머지는 다음 실행" in result
+
+
+def test_B2_과거_쪽에서_키가_없으면_수집_결과_없음이다(monkeypatch):
+    """최신 쪽이 할 일 없어도 과거 쪽이 부르려다 키가 없으면 '키 미설정'으로 남깁니다(최신 쪽과 같은 문구)."""
+    from app import tasks
+
+    _up_to_date(monkeypatch)
+    monkeypatch.setattr(fsc.settings, "data_go_kr_key", lambda: "")
+    with pytest.raises(tasks.EmptyResult, match="DATA_GO_KR_SERVICE_KEY 미설정"):
+        tasks.task_fsc_prices()
+
+
+def test_B2_과거_쪽_메우기는_실제_저장본에서_멱등이다(store, monkeypatch):
+    """
+    실제 PostgreSQL에서 — 첫 기준일(MIN)을 읽어 하한까지 메우고, 다시 돌면 호출 0회·행 그대로입니다.
+    시장 합계는 날마다 하나씩, 메타 스냅샷의 latestBasDt는 최신 기준일 그대로입니다.
+    """
+    from datetime import timedelta
+
+    from app import catalog, tasks
+
+    monkeypatch.setattr(tasks.korea_public, "FSC_RETENTION_DAYS", 20)   # 하한을 가깝게 — 한 실행에 끝나도록
+    latest = tasks._fsc_candidate_dates(_today())[0]
+    tasks.korea_public._put_fsc_day(latest.isoformat(), [fsc.normalize(SAMSUNG)], fsc.URL)
+    calls = _days_with_pages(monkeypatch, 1)
+
+    tasks.task_fsc_prices()
+    floor = _today() - timedelta(days=20)
+    expected = tasks._fsc_backfill_dates(latest, floor)
+    assert len(expected) >= 10 and len(calls) == len(expected)
+    assert store.earliest_observation_date(catalog.OBS_FSC_PRICE) == expected[-1].isoformat()
+    assert store.list_observation_dates(catalog.OBS_FSC_PRICE) == sorted(d.isoformat() for d in [latest, *expected])
+    assert len(store.read_timeseries(catalog.TS_FSC_MARKET, "KOSPI.marketCap")) == len(expected) + 1
+    assert store.read_snapshot(catalog.SNAP_FSC_PRICES_META).payload["latestBasDt"] == latest.isoformat()
+    rows = store.read_observations(catalog.OBS_FSC_PRICE, obs_date=expected[-1].isoformat())
+    assert len(rows) == 1 and rows[0]["open"] is None and rows[0]["close"] == 71000.0, "시가 칸이 없는 응답은 null로"
+
+    calls.clear()
+    assert tasks.task_fsc_prices() == f"최신 상태 (기준일 {latest.isoformat()}, 호출 0회)"
+    assert calls == []
+    assert store.list_observation_dates(catalog.OBS_FSC_PRICE) == sorted(d.isoformat() for d in [latest, *expected])

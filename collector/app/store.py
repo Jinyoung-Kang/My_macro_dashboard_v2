@@ -553,6 +553,15 @@ def latest_observation_date(dataset: str) -> str | None:
     return row["d"].isoformat() if row and row["d"] else None
 
 
+def earliest_observation_date(dataset: str) -> str | None:
+    """그 데이터셋의 가장 이른 obs_date (YYYY-MM-DD). 없으면 None. 과거 쪽 메우기의 시작점입니다(금융위 시세)."""
+    with connection() as conn:
+        row = conn.execute(
+            "SELECT MIN(obs_date) AS d FROM observations WHERE dataset = %s", (dataset,),
+        ).fetchone()
+    return row["d"].isoformat() if row and row["d"] else None
+
+
 def delete_observations_before(dataset: str, before: str) -> int:
     """오래된 누적 레코드 정리. 지운 행 수."""
     with connection() as conn:

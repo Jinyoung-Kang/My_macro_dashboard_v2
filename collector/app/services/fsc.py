@@ -55,7 +55,8 @@ def fetch_day(bas_dt: str, budget: publicapi.CallBudget) -> tuple[list[dict], st
     :param budget: 호출 예산. 페이지마다 하나씩 씁니다
     :returns: (정규화한 행 목록, 호출한 주소). 그날 데이터가 없으면 ([], 주소)
     :raises publicapi.MissingKey: DATA_GO_KR_SERVICE_KEY 미설정
-    :raises publicapi.PublicApiError: 인증·서비스 오류, 예산 부족
+    :raises publicapi.BudgetExhausted: 예산 부족(PublicApiError의 하위 — 출처 실패와 가를 때만 따로 잡음)
+    :raises publicapi.PublicApiError: 인증·서비스 오류
     """
     url = endpoint()
     return _fetch_pages(url, bas_dt, settings.data_go_kr_key(), budget), url
@@ -74,7 +75,7 @@ def _fetch_pages(url: str, bas_dt: str, key: str, budget: publicapi.CallBudget) 
     total: int | None = None
     for page in range(1, MAX_PAGES + 1):
         if not budget.take():
-            raise publicapi.PublicApiError("호출 예산 소진")
+            raise publicapi.BudgetExhausted("호출 예산 소진")
         response = publicapi.get(
             url, {"basDt": bas_dt, "numOfRows": ROWS_PER_PAGE, "pageNo": page}, key=key, timeout=30,
         )

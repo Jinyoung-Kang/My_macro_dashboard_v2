@@ -5,7 +5,8 @@ app/tasks/korea_public.py
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timedelta, timezone
+import time
+from datetime import date, datetime, timedelta, timezone
 
 from .. import catalog, krcalendar, publicapi, store
 from ..services import (
@@ -89,6 +90,14 @@ def task_kr_holidays() -> str:
 FSC_CALL_BUDGET = 12
 FSC_LOOKBACK_DAYS = 7
 FSC_RETENTION_DAYS = 400
+# 과거 쪽 메우기(저장 첫 기준일 이전, 보존 창 안)의 실행당 호출 예산 — 최신 쪽(FSC_CALL_BUDGET)과 따로 셉니다. 하루치가 3쪽(1,000행씩,
+# 약 2,780종목)이라 약 30기준일입니다. 보존 창(400일 ≈ 275거래일)을 다 메우는 데 약 830회 — 서버 창 한 밤(slow 매시 약 10회)이면 끝나고
+# 그 뒤로는 0회입니다(v2 2단계 명세 §4-15 B2). 공공데이터포털 개발계정 하루 한도(10,000회) 안입니다.
+FSC_BACKFILL_CALL_BUDGET = 90
+# 과거 쪽에서 새 기준일을 더 시작하지 않는 경과 시간(초, 태스크 시작부터). slow 상한(runner.TASK_DEADLINE_SECONDS["slow"] = 600초)을 넘기면
+# '시간 초과'로 기록되므로 그 전에 멈춥니다. 남는 300초는 진행 중인 하루치(쪽마다 timeout 30초 × 재시도 2회 + 백오프)의 여유입니다.
+# 정상이면 하루치(3쪽 + 저장)가 약 1초라([확인] 2026-10-22~26 실행 기록 0.96~1.09초) 90회가 이 안에 넉넉히 끝납니다.
+FSC_BACKFILL_TIME_LIMIT_SECONDS = 300.0
 
 
 def _fsc_candidate_dates(today) -> list:
@@ -96,14 +105,26 @@ def _fsc_candidate_dates(today) -> list:
     return krcalendar.previous_trading_days(today, FSC_LOOKBACK_DAYS)
 
 
+def _fsc_backfill_dates(earliest: date, floor: date) -> list:
+    """저장 첫 기준일(earliest)보다 앞선 거래일을 최근 날부터 floor(포함)까지."""
+    out: list[date] = []
+    cursor = krcalendar.previous_trading_day(earliest)
+    while cursor >= floor:
+        out.append(cursor)
+        cursor = krcalendar.previous_trading_day(cursor)
+    return out
+
+
 def task_fsc_prices() -> str:
     """
-    🏛️ 금융위 공식 일별 시세 — 전 종목 종가·시가총액 + 시장별 합계.
+    🏛️ 금융위 공식 일별 시세 — 전 종목 종가·시가·고가·저가·시가총액 + 시장별 합계.
 
     규칙
       - 저장된 마지막 기준일 **이후의 영업일을 전부** 받습니다(오래된 날부터). 수집기가
         며칠 꺼져 있었어도 빠진 날이 생기지 않습니다. 최신 상태면 호출 0회로 끝납니다
         (1시간마다 돌아도 한도를 쓰지 않음). 저장본이 아예 없으면 가장 최근 하루만 받습니다.
+      - 그다음 **저장 첫 기준일 이전**을 과거 쪽으로 메웁니다(보존 창 400일 안까지, 따로 된 예산 — _fsc_backfill).
+        다 메웠으면 호출 0회입니다.
       - 하루치(종목별 observations + 시장 합계 timeseries + 메타 스냅샷)는 한 트랜잭션입니다.
         따로 커밋하면 중간에 멈췄을 때 '종목은 있는데 합계는 없는 날'이 생기고, 다음
         실행은 그날을 이미 받은 날로 보고 건너뜁니다.
@@ -111,14 +132,14 @@ def task_fsc_prices() -> str:
         넣으면 화면 요청마다 그 전체를 읽어야 합니다. 인덱스로 필요한 종목만 읽습니다.
       - 400일이 지난 행은 정리합니다.
     """
+    started = _clock()
     today = datetime.now(KST).date()
+    floor = today - timedelta(days=FSC_RETENTION_DAYS)
     stored_latest = store.latest_observation_date(catalog.OBS_FSC_PRICE)
     budget = publicapi.CallBudget(FSC_CALL_BUDGET)
     reasons: list[str] = []
 
     pending = [d for d in _fsc_candidate_dates(today) if not stored_latest or d.isoformat() > stored_latest]
-    if not pending:
-        return f"최신 상태 (기준일 {stored_latest}, 호출 {budget.used}회)"
 
     # 저장본이 있으면 빠진 날을 오래된 순서로 전부 메웁니다(메타 스냅샷의 latestBasDt가
     # 가장 최근 날이 되도록). 저장본이 없으면 시작점을 잡는 것이라, 최신부터 보다가
@@ -148,19 +169,92 @@ def task_fsc_prices() -> str:
         if only_first:
             break
 
-    if not written:
-        raise EmptyResult("새 기준일 데이터가 없습니다 — 기존 저장본 유지" + _reason_suffix(reasons))
+    # 과거 쪽은 최신 쪽이 시작점을 잡은 뒤(같은 실행 포함)에 봅니다 — 최신 기준일이 먼저 들어와야 하는 일(모의 매매 확정가)을 늦추지 않습니다.
+    back_written, back_reasons, back_note = _fsc_backfill(floor, started)
+    reasons += back_reasons
 
-    cutoff = (today - timedelta(days=FSC_RETENTION_DAYS)).isoformat()
-    store.delete_observations_before(catalog.OBS_FSC_PRICE, cutoff)
+    if not written and not back_written:
+        if not pending:
+            return f"최신 상태 (기준일 {stored_latest}, 호출 {budget.used}회)" + back_note + _reason_suffix(reasons)
+        raise EmptyResult("새 기준일 데이터가 없습니다 — 기존 저장본 유지" + back_note + _reason_suffix(reasons))
+
+    store.delete_observations_before(catalog.OBS_FSC_PRICE, floor.isoformat())
+    if not written:
+        head = (f"최신 상태 (기준일 {stored_latest}, 호출 {budget.used}회)" if not pending
+                else f"새 기준일 데이터 없음 (호출 {budget.used}회)")
+        return head + back_note + _reason_suffix(reasons)
     latest_date, latest_rows = written[-1]
     days = f" · {len(written)}일 보충" if len(written) > 1 else ""
-    return f"{latest_date} {latest_rows}종목{days} (호출 {budget.used}회)" + _reason_suffix(reasons)
+    return f"{latest_date} {latest_rows}종목{days} (호출 {budget.used}회)" + back_note + _reason_suffix(reasons)
 
 
-def _put_fsc_day(obs_date: str, rows: list[dict], url: str) -> int:
+def _fsc_backfill(floor: date, started: float) -> tuple[list[tuple[str, int]], list[str], str]:
+    """
+    저장 첫 기준일 **이전**의 거래일을 과거 쪽으로 메웁니다 — floor(보존 하한, 포함)까지, 실행당 FSC_BACKFILL_CALL_BUDGET 안에서.
+
+    규칙
+      - 최근 날부터 하루씩 거슬러 갑니다. 실패한 날에서 **멈춥니다** — 그보다 오래된 날을 먼저 저장하면 저장 첫 기준일이 그날을
+        앞질러 다음 실행이 그날을 다시 받지 않습니다(QA-034를 과거 쪽으로 뒤집은 것). 다음 실행은 그날부터 다시 받습니다.
+      - 자료 없는 날(1쪽이 비고 totalCount 0 — 지난 날이라 '발표 전'이 아니라 달력이 모르는 휴장일)은 건너뛰고 더 거슬러 갑니다.
+        [확인] 2026-10-27 로컬 저장본의 공휴일 목록은 2026·2027년뿐이라 2025년 공휴일(추석·한글날·성탄절 등)을 달력이 거래일로 봅니다
+        (명세 K35 — 지난 해를 새로 받지 않음). 멈추면 그 휴장일에서 영영 막힙니다. 대신 보존 하한 바로 위의 그런 날은 하한이 지나갈 때까지
+        실행마다 다시 묻습니다(하루 몇 회, 명세 §4-15 'B2 구현에서 정한 것').
+      - 하루치를 다 받지 못하고 예산이 떨어진 날은 저장하지 않고(잘린 하루치) 실패로도 세지 않습니다 — 다음 실행이 그날부터.
+      - 저장은 최신 쪽과 같은 하루치 트랜잭션이되 메타 스냅샷(latestBasDt = 최신 기준일)은 쓰지 않습니다.
+      - 이미 저장된 날은 다시 받지 않습니다(저장 첫 기준일 앞만 봄) — 몇 번 돌아도 같은 저장본이 됩니다.
+
+    :returns: (저장한 (기준일, 행 수) — 최근 날부터, 실패 사유, 결과 문구 꼬리(없으면 ""))
+    """
+    earliest = store.earliest_observation_date(catalog.OBS_FSC_PRICE)
+    if not earliest:
+        return [], [], ""   # 저장본이 없으면(최신 쪽도 시작점을 못 잡음) 거슬러 갈 기준이 없습니다
+    pending = _fsc_backfill_dates(date.fromisoformat(earliest), floor)
+    if not pending:
+        return [], [], ""
+
+    budget = publicapi.CallBudget(FSC_BACKFILL_CALL_BUDGET)
+    written: list[tuple[str, int]] = []
+    reasons: list[str] = []
+    empty: list[str] = []
+    stop = ""
+    examined = 0
+    for day in pending:
+        if budget.exhausted:
+            break
+        if _clock() - started >= FSC_BACKFILL_TIME_LIMIT_SECONDS:
+            stop = f", 시간 상한 {FSC_BACKFILL_TIME_LIMIT_SECONDS:.0f}초 — 나머지는 다음 실행"
+            break
+        try:
+            rows, _url = fsc_service.fetch_day(day.strftime("%Y%m%d"), budget)
+        except publicapi.MissingKey:
+            raise EmptyResult("DATA_GO_KR_SERVICE_KEY 미설정 — .env에 공공데이터포털 인증키를 넣으세요") from None
+        except publicapi.BudgetExhausted:
+            break
+        except publicapi.PublicApiError as exc:
+            reasons.append(f"과거 쪽 {day}: {exc}")
+            break
+        examined += 1
+        if not rows:
+            empty.append(day.isoformat())
+            continue
+        obs_date = day.isoformat()
+        written.append((obs_date, _put_fsc_day(obs_date, rows, None)))
+
+    left = len(pending) - examined
+    parts = [f"{len(written)}일 보충"]
+    if written:
+        parts.append(f"가장 이른 기준일 {written[-1][0]}")
+    if empty:
+        parts.append(f"자료 없는 날 {len(empty)}일 건너뜀({', '.join(empty[:3])}{' 등' if len(empty) > 3 else ''})")
+    parts.append(f"남은 거래일 {left}일" if left else "보존 창 끝까지 메움")
+    note = f" · 과거 쪽 {', '.join(parts)} (호출 {budget.used}회{stop})"
+    return written, reasons, note
+
+
+def _put_fsc_day(obs_date: str, rows: list[dict], url: str | None) -> int:
     """
     금융위 하루치 저장 — 종목별 observations + 시장 합계 timeseries + 메타 스냅샷을 한 트랜잭션으로(task_fsc_prices 규칙).
+    url이 None이면(과거 쪽 메우기) 메타 스냅샷은 쓰지 않습니다 — 메타의 latestBasDt는 최신 기준일입니다.
     저장한 종목 행 수를 돌려줍니다.
     """
     totals = fsc_service.market_totals(rows)
@@ -169,14 +263,20 @@ def _put_fsc_day(obs_date: str, rows: list[dict], url: str) -> int:
         for market, agg in totals.items():
             store.put_timeseries(catalog.TS_FSC_MARKET, f"{market}.marketCap", [(obs_date, agg["marketCap"])])
             store.put_timeseries(catalog.TS_FSC_MARKET, f"{market}.tradingValue", [(obs_date, agg["tradingValue"])])
-        store.put_snapshot(catalog.SNAP_FSC_PRICES_META, {
-            "source": "금융위원회 주식시세정보 (거래소 확정치, 기준일 다음 영업일 13시 이후 갱신)",
-            "latestBasDt": obs_date,
-            "rows": saved,
-            "markets": totals,
-            "endpoint": url,
-        })
+        if url is not None:
+            store.put_snapshot(catalog.SNAP_FSC_PRICES_META, {
+                "source": "금융위원회 주식시세정보 (거래소 확정치, 기준일 다음 영업일 13시 이후 갱신)",
+                "latestBasDt": obs_date,
+                "rows": saved,
+                "markets": totals,
+                "endpoint": url,
+            })
     return saved
+
+
+def _clock() -> float:
+    """경과 시간 시계(초). 테스트가 과거 쪽 메우기의 시간 상한을 시험할 때 바꿔 끼웁니다."""
+    return time.monotonic()
 
 
 # DART 재무를 받을 종목 수 상한과 대상 기간. 호출 수 = 상한 / BATCH (+ 이전 연도 재시도).
