@@ -73,6 +73,22 @@ class UsPaperMarketTest {
     }
 
     @Test
+    @DisplayName("복기 여는 순간 = ReviewFacts.opensAt(주, KST) — 2025~2027 모든 주(목요일이 기준일인 주 포함)")
+    void reviewOpening() {
+        int checked = 0;
+        for (LocalDate d = FROM; !d.isAfter(TO); d = d.plusDays(1)) {
+            if (!UsMarketCalendar.isTradingDay(d)) {
+                continue;
+            }
+            LocalDate week = ReviewFacts.weekEnding(d);
+            assertThat(US.reviewOpening(week)).as(week.toString()).isEqualTo(ReviewFacts.opensAt(week, Kst.ZONE));
+            checked++;
+        }
+        assertThat(checked).isGreaterThan(700);
+        assertThat(US.reviewOpening(LocalDate.of(2026, 10, 30))).isEqualTo(Instant.parse("2026-10-31T00:00:00Z"));
+    }
+
+    @Test
     @DisplayName("관측치 paper.quotes·이력 equity_close — 데이터셋 상수이자 체결 가격 출처 문자열")
     void datasets() {
         assertThat(US.quotesDataset()).isEqualTo("paper.quotes").isEqualTo(Datasets.SNAP_PAPER_QUOTES)

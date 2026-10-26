@@ -101,8 +101,8 @@ class ReviewServiceTest {
         store.books.put(PaperBooks.RULES, new Book(PaperBooks.RULES, PaperBooks.KIND_RULES, "규칙 계좌", 100_000,
                 PaperFixtures.FRI, PaperBooks.ACTIVE, PaperFixtures.FRI_CLOSE));
         marketData = mock(PaperMarketData.class);
-        when(marketData.history(anyCollection(), any(), any())).thenAnswer(invocation -> {
-            Collection<String> tickers = invocation.getArgument(0);
+        when(marketData.history(eq(UsPaperMarket.INSTANCE), anyCollection(), any(), any())).thenAnswer(invocation -> {
+            Collection<String> tickers = invocation.getArgument(1);
             Map<String, DailySeries> out = new HashMap<>();
             for (String t : tickers) {
                 if (history.containsKey(t)) {
@@ -111,7 +111,8 @@ class ReviewServiceTest {
             }
             return out;
         });
-        when(marketData.sourcedClosesOn(anyCollection(), eq(WE))).thenAnswer(invocation -> new HashMap<>(finals));
+        when(marketData.sourcedClosesOn(eq(UsPaperMarket.INSTANCE), anyCollection(), eq(WE)))
+                .thenAnswer(invocation -> new HashMap<>(finals));
         reader = PaperFixtures.quietReader();
 
         server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
@@ -695,5 +696,67 @@ class ReviewServiceTest {
         JsonNode rebuy = decisions.get(2).path("orders").get(0);
         assertThat(rebuy.path("stop").path("triggered").asBoolean()).isTrue();
         assertThat(rebuy.path("stop").path("date").asString()).isEqualTo("2026-10-30");
+    }
+
+    // ------------------------------------------------------------------ 시장 격리(2단계 명세 §9 A6)
+    @Test
+    @DisplayName("시장 격리(A6): 미국 계좌 비교 순서는 그대로(규칙 → 벤치마크 둘 → Claude), 다른 시장은 그 시장 책 정의에서")
+    void comparedBooksPerMarket() {
+        assertThat(ReviewService.comparedBooks(UsPaperMarket.INSTANCE)).isEqualTo(ReviewService.COMPARED_BOOKS)
+                .containsExactly("rules", "bench_spy", "bench_mix", "claude");
+        assertThat(ReviewService.comparedBooks(TestKrMarket.INSTANCE)).containsExactly(TestKrMarket.CLAUDE_BOOK);
+    }
+
+    @Test
+    @DisplayName("시장 격리(A6): 다른 시장의 복기 입력은 그 시장 Claude 책의 결정·주문·체결, 그 시장 계좌 비교, 그 시장 종가 이력·기준일 종가, 그 시장 시간대의 체결 날짜만 씀 — 미국 판 입력은 그대로 미국 책, 복기 행은 B1 전까지 미국만")
+    void otherMarketInputsUseOnlyItsBook() throws Exception {
+        long usDecision = scene();
+        PaperMarket kr = TestKrMarket.INSTANCE;
+        String krBook = TestKrMarket.CLAUDE_BOOK;
+        store.books.put(krBook, TestKrMarket.book(krBook, 100_000_000, PaperFixtures.FRI));
+        long krDecision = store.insertDecisionIfAbsent(new Decision(0, krBook, MON, RuleBookService.SCHEDULED, null,
+                ClaudeBookService.STATUS_OK, "claude-sonnet-5-5", 0, 1, null, 40.0, null, null, null,
+                MAPPER.valueToTree(Map.of("stance", "NEUTRAL", "summary", "한국 요약")), null, null, null, true, null, 0))
+                .orElseThrow();
+        long krOrder = store.insertOrder(new Order(0, krBook, krDecision, "KRA", PaperBooks.BUY, null, 5.0, null,
+                PaperBooks.NEXT_CLOSE, PacketBuilder.SOURCE_CLAUDE, PaperBooks.ORDER_FILLED, null,
+                reason("한국 논거", "스탑 발동 시", 5.0, "NEXT_CLOSE"), MON, null, null, null));
+        // 봉 날짜 없이 관측 시각만 — 10-27 15:30Z는 서울 10-28(수) 00:30, 뉴욕 10-27(화) 11:30
+        store.insertFill(new Fill(0, krOrder, krBook, "KRA", PaperBooks.BUY, 10, 70_000, 70_000, 5, 700_000,
+                Instant.parse("2026-10-27T15:30:00Z"), null, TestKrMarket.QUOTES_DATASET, false, null));
+        nav(krBook, PaperFixtures.FRI, 100_000_000);
+        nav(krBook, WE, 101_000_000);
+        TreeMap<LocalDate, Double> krHistory = new TreeMap<>(Map.of(LocalDate.of(2026, 10, 28), 70_000.0,
+                LocalDate.of(2026, 10, 29), 71_000.0));
+        when(marketData.history(eq(kr), anyCollection(), any(), any())).thenReturn(Map.of("KRA",
+                DailySeries.of(krHistory)));
+        when(marketData.sourcedClosesOn(eq(kr), anyCollection(), eq(WE))).thenReturn(Map.of("KRA",
+                new PaperMarketData.SourcedClose(72_000, TestKrMarket.QUOTES_DATASET)));
+        FrameworkService.Frame frame = new FrameworkService.Frame(0, "INTERIM", "임시", MAPPER.createObjectNode(), "",
+                0, null, null, null);
+        ReviewService service = service();
+
+        com.macrodash.analytics.ReviewFacts.Inputs in = service.inputs(kr, WE, frame);
+        assertThat(in.decisions()).extracting(com.macrodash.analytics.ReviewFacts.Decision::id)
+                .containsExactly(krDecision);
+        assertThat(in.decisions().get(0).orders()).singleElement().satisfies(o -> {
+            assertThat(o.ticker()).isEqualTo("KRA");
+            assertThat(o.fill().date()).as("관측 시각의 그 시장 달력 시간대(서울) 날짜").isEqualTo(LocalDate.of(2026, 10, 28));
+        });
+        assertThat(in.books()).extracting(com.macrodash.analytics.ReviewFacts.BookNav::book).containsExactly(krBook);
+        assertThat(in.closes()).containsOnlyKeys("KRA");
+        assertThat(in.closes().get("KRA").valueOn(WE)).isEqualTo(72_000.0);
+
+        com.macrodash.analytics.ReviewFacts.Inputs us = service.inputs(WE, frame);
+        assertThat(us.decisions()).extracting(com.macrodash.analytics.ReviewFacts.Decision::id)
+                .containsExactly(usDecision);
+        assertThat(us.books()).extracting(com.macrodash.analytics.ReviewFacts.BookNav::book)
+                .containsExactly(PaperBooks.RULES, PaperBooks.CLAUDE);
+        assertThat(us.closes()).containsOnlyKeys("AAA", "BBB");
+
+        assertThatThrownBy(() -> service.review(kr, WE)).isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("B1");
+        assertThat(hits.get()).isZero();
+        assertThat(store.reviews).isEmpty();
     }
 }

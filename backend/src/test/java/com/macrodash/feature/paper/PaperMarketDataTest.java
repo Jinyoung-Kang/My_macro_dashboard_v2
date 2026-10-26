@@ -164,6 +164,35 @@ class PaperMarketDataTest {
     }
 
     @Test
+    @DisplayName("기준일 종가의 시장 판(A6): 그 시장의 이력·관측치 데이터셋과 지금 세션·확정 판정, 출처 글자는 그 시장 데이터셋 이름 — 미국 판은 옛 판과 같음")
+    void sourcedClosesPerMarket() throws Exception {
+        PaperMarket kr = TestKrMarket.INSTANCE;
+        // 지금 = 10-27(화) 21:00 KST — 시험용 한국 달력으로 10-27 세션 마감(15:30) 뒤, 10-26은 지난 세션이라 이력을 믿음
+        PaperMarketData krEvening = new PaperMarketData(reader, repository,
+                Clock.fixed(Instant.parse("2026-10-27T12:00:00Z"), ZoneOffset.UTC));
+        when(repository.readTimeseriesColumns(eq(TestKrMarket.HISTORY_DATASET), anyCollection(), eq(MON), eq(MON)))
+                .thenReturn(Map.of("005930", new TimeseriesColumns(new int[]{(int) MON.toEpochDay()},
+                        new double[]{71_000})));
+        when(reader.read(eq(TestKrMarket.QUOTES_DATASET), anyLong(), eq(TestKrMarket.QUOTES_TASK)))
+                .thenReturn(Optional.of(new Snapshot(TestKrMarket.QUOTES_DATASET, MAPPER.readTree("""
+                        {"tickers":{"000660":{"dates":["2026-10-26","2026-10-27"],"close":[200000,201000]}}}"""),
+                        "json", "ok", null, Instant.parse("2026-10-27T11:00:00Z"))));
+
+        assertThat(krEvening.sourcedClosesOn(kr, List.of("005930", "000660"), MON)).containsOnly(
+                Map.entry("005930", new PaperMarketData.SourcedClose(71_000, TestKrMarket.HISTORY_DATASET)),
+                Map.entry("000660", new PaperMarketData.SourcedClose(200_000, TestKrMarket.QUOTES_DATASET)));
+        assertThat(krEvening.sourcedClosesOn(kr, List.of("000660"), PaperFixtures.TUE))
+                .as("그날이 그 시장 지금 세션 — 이력을 보지 않고 마감 뒤 관측치의 그날 봉")
+                .containsOnly(Map.entry("000660", new PaperMarketData.SourcedClose(201_000, TestKrMarket.QUOTES_DATASET)));
+
+        when(repository.readTimeseriesColumns(eq(Datasets.TS_EQUITY_CLOSE), eq(List.of("SPY")), eq(FRI), eq(FRI)))
+                .thenReturn(Map.of("SPY", new TimeseriesColumns(new int[]{(int) FRI.toEpochDay()}, new double[]{500})));
+        assertThat(marketData.sourcedClosesOn(UsPaperMarket.INSTANCE, List.of("SPY"), FRI))
+                .isEqualTo(marketData.sourcedClosesOn(List.of("SPY"), FRI))
+                .containsOnly(Map.entry("SPY", new PaperMarketData.SourcedClose(500, "equity_close")));
+    }
+
+    @Test
     @DisplayName("설정 본문: 범위 밖·없는 키는 그 키만 기본값으로 읽고 어느 키인지 남긴다")
     void settingsFallbacks() throws Exception {
         PaperSettings settings = PaperSettings.from(MAPPER.readTree("""

@@ -1,5 +1,6 @@
 package com.macrodash.feature.paper;
 
+import com.macrodash.Kst;
 import com.macrodash.analytics.TradingCalendar;
 import tools.jackson.databind.JsonNode;
 
@@ -8,6 +9,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalTime;
+import java.time.ZonedDateTime;
 import java.util.List;
 
 /**
@@ -112,6 +114,14 @@ interface PaperMarket {
 
     /** 주간 복기가 열리는 시각(KST) — 시장별 코드 상수(명세 K38). */
     LocalTime reviewOpensAt();
+
+    /**
+     * 그 주 복기가 열리는 순간 — 복기 기준일과 같은 ISO 주의 {@link #reviewOpensOn} {@link #reviewOpensAt}(KST). 미국은
+     * {@code ReviewFacts.opensAt(weekEnding, Kst.ZONE)}(토요일 09:00)과 같습니다.
+     */
+    default Instant reviewOpening(LocalDate weekEnding) {
+        return ZonedDateTime.of(weekEnding.with(reviewOpensOn()), reviewOpensAt(), Kst.ZONE).toInstant();
+    }
 
     /** 설정 키의 접두어(같은 설정 한 행 안의 묶음). */
     String settingsPrefix();

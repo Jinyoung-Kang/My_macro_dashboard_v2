@@ -228,24 +228,33 @@ public class PaperMarketData {
      * </ol>
      */
     public Map<String, SourcedClose> sourcedClosesOn(Collection<String> tickers, LocalDate date) {
+        return sourcedClosesOn(UsPaperMarket.INSTANCE, tickers, date);
+    }
+
+    /**
+     * {@link #sourcedClosesOn(Collection, LocalDate)}와 같은 규칙을 그 시장의 이력·관측치 데이터셋, 달력의 지금 세션, 확정 판정으로
+     * (2단계 명세 §9 A6 — 주간 복기의 기준일 종가). 출처 글자는 그 시장의 데이터셋 이름입니다(미국: {@code equity_close}·
+     * {@code paper.quotes} — {@link PaperBooks#SOURCE_HISTORY}·{@link PaperBooks#SOURCE_QUOTES}와 같은 글자).
+     */
+    Map<String, SourcedClose> sourcedClosesOn(PaperMarket market, Collection<String> tickers, LocalDate date) {
         Map<String, SourcedClose> out = new TreeMap<>();
         Set<String> wanted = new LinkedHashSet<>(tickers);
         if (wanted.isEmpty()) {
             return out;
         }
-        if (!date.equals(UsMarketCalendar.currentOrLastSession(clock.instant()))) {
-            history(List.copyOf(wanted), date, date).forEach((ticker, series) -> {
+        if (!date.equals(market.calendar().currentOrLastSession(clock.instant()))) {
+            history(market, List.copyOf(wanted), date, date).forEach((ticker, series) -> {
                 Double value = series.valueOn(date);
                 if (value != null && value > 0) {
-                    out.put(ticker, new SourcedClose(value, PaperBooks.SOURCE_HISTORY));
+                    out.put(ticker, new SourcedClose(value, market.historyDataset()));
                 }
             });
         }
         if (out.size() == wanted.size()) {
             return out;
         }
-        Optional<Quotes> quotes = quotes();
-        if (quotes.isEmpty() || !isFinal(date, quotes.get().collectedAt())) {
+        Optional<Quotes> quotes = quotes(market);
+        if (quotes.isEmpty() || !market.isFinal(date, quotes.get().collectedAt())) {
             return out;
         }
         for (String ticker : wanted) {
@@ -255,7 +264,7 @@ public class PaperMarketData {
             }
             Double value = bar.recent().valueOn(date);
             if (value != null) {
-                out.put(ticker, new SourcedClose(value, PaperBooks.SOURCE_QUOTES));
+                out.put(ticker, new SourcedClose(value, market.quotesDataset()));
             }
         }
         return out;

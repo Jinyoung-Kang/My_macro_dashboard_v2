@@ -20,6 +20,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
@@ -53,6 +54,12 @@ import java.util.concurrent.locks.ReentrantLock;
  * 두 번 과금되지 않게 — 끝난 뒤 다시 누르면 남은 행을 돌려줌). 같은 주에 오류(예외)가 {@value #MAX_ATTEMPTS}번 나면 그 주는 정기 실행이
  * 더 시도하지 않습니다(30분마다 같은 오류가 작업 기록을 밀어내지 않게 — 수동 실행은 다시 시도, 재기동하면 처음부터 셈).
  * {@code dashboard.paper.enabled=false}면 정기 실행은 아무것도 하지 않습니다.
+ *
+ * <p><b>시장마다 따로</b>입니다(2단계 명세 §9 A6). 정기 실행은 {@link PaperMarkets#ALL}을 차례로 돌고(지금 미국 하나), 시장마다 복기 주
+ * (그 시장 달력)·여는 순간({@link PaperMarket#reviewOpening} — 시장별 요일·시각)·그 시장 Claude 책·확정 종가(그 시장 관측치와 확정
+ * 판정)·오류 횟수(시장 × 주)·작업 기록 이름(시장 접두어 + {@value #JOB})을 그 시장 것으로 쓰고 그 시장 문맥으로 복기합니다
+ * ({@link ReviewService}). 복기 행의 기본키가 아직 주 하나라 미국 밖 시장은 그 주의 행을 읽기 전에 오류로 끝납니다
+ * ({@link ReviewService#requireStorable} — B1에서 걷어 냄). 시장을 받지 않는 옛 시그니처(한 번 실행·수동 실행)는 미국 판입니다.
  */
 @Service
 public class PaperReviewJob {
@@ -95,10 +102,16 @@ public class PaperReviewJob {
     private final PaperConfig config;
     private final ObjectMapper mapper;
     private final Clock clock;
-    /** 정기·수동 실행이 겹치지 않게(한 주에 한 행 — 유일 제약이 마지막 방어선, 한 번의 유료 호출). */
+    /** 정기 실행이 도는 시장, 도는 순서. */
+    private final List<PaperMarket> markets;
+    /** 정기·수동 실행이 겹치지 않게(한 주에 한 행 — 유일 제약이 마지막 방어선, 한 번의 유료 호출). 시장이 여럿이어도 하나. */
     private final ReentrantLock running = new ReentrantLock();
-    /** 복기 주 → 오류 난 횟수(클래스 설명). 재기동하면 사라집니다. */
-    private final Map<LocalDate, Integer> failures = new ConcurrentHashMap<>();
+    /** (시장, 복기 주) → 오류 난 횟수(클래스 설명). 재기동하면 사라집니다. */
+    private final Map<FailureKey, Integer> failures = new ConcurrentHashMap<>();
+
+    /** 오류 횟수를 세는 단위 — 시장 × 복기 주(그 시장 달력의 주 마지막 거래일). */
+    private record FailureKey(String market, LocalDate week) {
+    }
 
     @Autowired
     public PaperReviewJob(PaperStore store, StoreReader reader, PaperMarketData marketData, ReviewService reviews,
@@ -109,6 +122,12 @@ public class PaperReviewJob {
     /** 테스트용 — 시계를 움직입니다. */
     PaperReviewJob(PaperStore store, StoreReader reader, PaperMarketData marketData, ReviewService reviews,
                    PaperConfig config, ObjectMapper mapper, Clock clock) {
+        this(store, reader, marketData, reviews, config, mapper, clock, PaperMarkets.ALL);
+    }
+
+    /** 테스트용 — 시계와 시장 목록을 바꿉니다(시장 격리 시험이 시험용 한국 시장을 넣음). */
+    PaperReviewJob(PaperStore store, StoreReader reader, PaperMarketData marketData, ReviewService reviews,
+                   PaperConfig config, ObjectMapper mapper, Clock clock, List<PaperMarket> markets) {
         this.store = store;
         this.reader = reader;
         this.marketData = marketData;
@@ -116,48 +135,59 @@ public class PaperReviewJob {
         this.config = config;
         this.mapper = mapper;
         this.clock = clock;
+        this.markets = List.copyOf(markets);
     }
 
-    /** 정기 실행. 꺼져 있으면 아무것도 하지 않습니다. 예외는 삼키고 로그만(결정 작업과 같은 관례). */
+    /**
+     * 정기 실행 — 시장마다 차례로 한 번({@link PaperMarkets#ALL}, 클래스 설명). 꺼져 있으면 아무것도 하지 않습니다. 예외는 삼키고
+     * 로그만(결정 작업과 같은 관례) — 한 시장의 예외가 다음 시장을 막지 않습니다.
+     */
     @Scheduled(initialDelayString = "${dashboard.paper.review-initial-delay-ms:180000}",
             fixedDelayString = "${dashboard.paper.review-interval-ms:1800000}")
     public void scheduledRun() {
         if (!config.enabled()) {
             return;
         }
-        try {
-            Result result = run();
-            switch (result.outcome()) {
-                case REVIEWED, SKIPPED -> log.info("주간 복기 작업: {} {} — {}", result.weekEnding(), result.outcome(),
-                        result.review() == null ? "" : result.review().status());
-                case ERROR -> log.warn("주간 복기 작업 오류({}) — {}", result.weekEnding(), result.message());
-                case CAP_REACHED, BUSY -> log.info("주간 복기 작업: {}", result.message());
-                default -> log.debug("주간 복기 작업: {} {}", result.outcome(), result.message());
+        for (PaperMarket market : markets) {
+            try {
+                Result result = run(market);
+                switch (result.outcome()) {
+                    case REVIEWED, SKIPPED -> log.info("주간 복기 작업: {} {} — {}", result.weekEnding(), result.outcome(),
+                            result.review() == null ? "" : result.review().status());
+                    case ERROR -> log.warn("주간 복기 작업 오류({}) — {}", result.weekEnding(), result.message());
+                    case CAP_REACHED, BUSY -> log.info("주간 복기 작업: {}", result.message());
+                    default -> log.debug("주간 복기 작업: {} {}", result.outcome(), result.message());
+                }
+            } catch (RuntimeException e) {
+                log.warn("주간 복기 작업 실패 — 다음 주기에 다시 시도합니다: {}", e.toString());
             }
-        } catch (RuntimeException e) {
-            log.warn("주간 복기 작업 실패 — 다음 주기에 다시 시도합니다: {}", e.toString());
         }
     }
 
-    /**
-     * 정기 실행 한 번(클래스 설명의 순서). 테스트도 부릅니다. 수동 실행이 잠금을 쥐고 있으면 기다리지 않고 {@value #BUSY}.
-     * 복기 중 예외는 그 주의 오류 횟수를 올리고 {@value #ERROR}로 기록합니다.
-     */
+    /** 미국 시장 정기 실행 한 번 — {@link #run(PaperMarket)}의 미국 판. 테스트가 부릅니다. */
     Result run() {
+        return run(UsPaperMarket.INSTANCE);
+    }
+
+    /**
+     * 그 시장의 정기 실행 한 번(클래스 설명의 순서). 수동 실행이 잠금을 쥐고 있으면 기다리지 않고 {@value #BUSY}. 복기 중 예외는 그
+     * 시장·그 주의 오류 횟수를 올리고 {@value #ERROR}로 기록합니다.
+     */
+    Result run(PaperMarket market) {
         if (!running.tryLock()) {
             return new Result(BUSY, null, null, "수동 복기가 진행 중 — 이번 주기는 건너뛰고 다음 주기에 다시 봅니다");
         }
         Instant now = clock.instant();
         try {
-            return runLocked(now, true);
+            return runLocked(market, now, true);
         } catch (RuntimeException e) {
-            LocalDate week = ReviewFacts.latestCompletedWeekEnding(now);
-            int attempt = failures.merge(week, 1, Integer::sum);
+            LocalDate week = ReviewFacts.latestCompletedWeekEnding(market.calendar(), now);
+            int attempt = failures.merge(new FailureKey(market.code(), week), 1, Integer::sum);
             Map<String, Object> detail = new LinkedHashMap<>();
             detail.put("weekEnding", week.toString());
             detail.put("error", message(e));
             detail.put("attempt", attempt);
-            record(now, ERROR, detail);
+            record(market, now, ERROR, detail);
             return new Result(ERROR, week, null, message(e));
         } finally {
             running.unlock();
@@ -173,14 +203,20 @@ public class PaperReviewJob {
      * @throws TooManyRequestsException 다른 복기 실행이 진행 중
      */
     public Map<String, Object> runNow() {
+        return runNow(UsPaperMarket.INSTANCE);
+    }
+
+    /** 그 시장의 수동 복기 — {@link #runNow()}와 같되 그 시장의 주·책·관측치·기록 이름으로. */
+    Map<String, Object> runNow(PaperMarket market) {
         if (!running.tryLock()) {
             throw new TooManyRequestsException("다른 주간 복기가 진행 중입니다 — 끝난 뒤 다시 누르세요.", BUSY_RETRY);
         }
         try {
             Instant now = clock.instant();
             // 그 주의 오류 횟수를 지웁니다 — 수동 실행은 포기한 주도 다시 시도합니다(결정 작업의 수동 실행과 같음).
-            failures.remove(ReviewFacts.latestCompletedWeekEnding(now));
-            Result result = runLocked(now, false);
+            LocalDate week = ReviewFacts.latestCompletedWeekEnding(market.calendar(), now);
+            failures.remove(new FailureKey(market.code(), week));
+            Result result = runLocked(market, now, false);
             switch (result.outcome()) {
                 case NOT_READY -> {
                     Map<String, Object> out = ReviewService.notReady();
@@ -202,43 +238,45 @@ public class PaperReviewJob {
     }
 
     /** 조건을 보고(클래스 설명) 복기합니다. {@code scheduled}가 거짓(수동)이면 토요일 시각 조건과 포기 횟수를 보지 않습니다. */
-    private Result runLocked(Instant now, boolean scheduled) {
+    private Result runLocked(PaperMarket market, Instant now, boolean scheduled) {
         if (!store.ready()) {
             return new Result(NOT_READY, null, null, PaperQueryService.NOT_READY_MESSAGE);
         }
-        LocalDate week = ReviewFacts.latestCompletedWeekEnding(now);
-        if (scheduled && !ReviewFacts.isDue(now, week, Kst.ZONE)) {
-            return new Result(TOO_EARLY, week, null, "복기 시각 " + Kst.stamp(ReviewFacts.opensAt(week, Kst.ZONE)) + " 전");
+        LocalDate week = ReviewFacts.latestCompletedWeekEnding(market.calendar(), now);
+        Instant opens = market.reviewOpening(week);
+        if (scheduled && now.isBefore(opens)) {
+            return new Result(TOO_EARLY, week, null, "복기 시각 " + Kst.stamp(opens) + " 전");
         }
+        ReviewService.requireStorable(market);   // 복기 행의 기본키가 주 하나인 동안(클래스 설명)
         Optional<Review> existing = store.review(week);
         if (existing.isPresent() && !ReviewService.retryable(existing.get())) {
             return new Result(ALREADY_REVIEWED, week, existing.get(), week + " 복기를 이미 남겼습니다("
                     + existing.get().status() + ")");
         }
-        String inactive = inactiveReason(store.book(PaperBooks.CLAUDE), week);
+        String inactive = inactiveReason(store.book(market.claudeBook()), week);
         if (inactive != null) {
             return new Result(NOT_ACTIVE, week, null, inactive);
         }
-        if (!finalCloseIn(week)) {
+        if (!finalCloseIn(market, week)) {
             return new Result(WAITING_FINAL_CLOSE, week, null, week + " 확정 종가가 아직 없습니다 — 장부의 확정 순자산 줄이나, "
                     + "마감 뒤 수집한 관측치를 장부가 반영해 그날 순자산 줄을 남긴 뒤 복기합니다(장중 값으로 금요일 수익률을 만들지 않게)");
         }
-        if (scheduled && failures.getOrDefault(week, 0) >= MAX_ATTEMPTS) {
+        if (scheduled && failures.getOrDefault(new FailureKey(market.code(), week), 0) >= MAX_ATTEMPTS) {
             return new Result(GAVE_UP, week, null, week + " 복기 오류가 " + MAX_ATTEMPTS + "번 나 정기 실행은 더 시도하지 않습니다 "
                     + "— 수동 실행(POST /api/paper/reviews/run)은 다시 시도합니다");
         }
-        ReviewService.Outcome outcome = reviews.review(week);
-        failures.remove(week);
+        ReviewService.Outcome outcome = reviews.review(market, week);
+        failures.remove(new FailureKey(market.code(), week));
         return switch (outcome.kind()) {
             case EXISTING -> new Result(ALREADY_REVIEWED, week, outcome.review(), week + " 복기를 이미 남겼습니다");
             case CAP_REACHED -> new Result(CAP_REACHED, week, null, outcome.message());
-            case SKIPPED -> recorded(now, SKIPPED, week, outcome.review(), scheduled, outcome.message());
-            case CALLED -> recorded(now, REVIEWED, week, outcome.review(), scheduled, null);
+            case SKIPPED -> recorded(market, now, SKIPPED, week, outcome.review(), scheduled, outcome.message());
+            case CALLED -> recorded(market, now, REVIEWED, week, outcome.review(), scheduled, null);
         };
     }
 
-    private Result recorded(Instant now, String outcome, LocalDate week, Review review, boolean scheduled,
-                            String message) {
+    private Result recorded(PaperMarket market, Instant now, String outcome, LocalDate week, Review review,
+                            boolean scheduled, String message) {
         Map<String, Object> detail = new LinkedHashMap<>();
         detail.put("weekEnding", week.toString());
         detail.put("manual", !scheduled);
@@ -247,7 +285,7 @@ public class PaperReviewJob {
         detail.put("retryCount", review.retryCount());
         detail.put("proposalId", review.proposalId());
         detail.put("error", review.error());
-        record(now, outcome, detail);
+        record(market, now, outcome, detail);
         return new Result(outcome, week, review, message);
     }
 
@@ -273,12 +311,17 @@ public class PaperReviewJob {
         return null;
     }
 
-    /**
-     * 그 주 기준일의 확정 종가가 들어왔나(클래스 설명) — Claude 계좌의 w 확정 순자산 줄, 또는 관측치 저장본의 확정 종가 + 장부가 남긴 w
-     * 순자산 줄(확정이 아니어도).
-     */
+    /** 미국 Claude 책 기준 — {@link #finalCloseIn(PaperMarket, LocalDate)}의 미국 판. */
     boolean finalCloseIn(LocalDate week) {
-        Optional<PaperStore.NavRow> row = store.navSeries(PaperBooks.CLAUDE).stream()
+        return finalCloseIn(UsPaperMarket.INSTANCE, week);
+    }
+
+    /**
+     * 그 주 기준일의 확정 종가가 들어왔나(클래스 설명) — 그 시장 Claude 계좌의 w 확정 순자산 줄, 또는 그 시장 관측치 저장본의 확정 종가 +
+     * 장부가 남긴 w 순자산 줄(확정이 아니어도).
+     */
+    boolean finalCloseIn(PaperMarket market, LocalDate week) {
+        Optional<PaperStore.NavRow> row = store.navSeries(market.claudeBook()).stream()
                 .filter(r -> week.equals(r.tradingDate())).findFirst();
         if (row.isEmpty()) {
             return false;   // 장부가 아직 그 세션을 반영하지 않음 — 지금 열면 계좌 비교가 전부 null로 굳습니다(클래스 설명)
@@ -286,12 +329,13 @@ public class PaperReviewJob {
         if (row.get().pricesFinal()) {
             return true;
         }
-        return reader.quietly(marketData::quotes).map(q -> PaperDecisionJob.finalFor(q, week)).orElse(false);
+        return reader.quietly(() -> marketData.quotes(market)).map(q -> PaperDecisionJob.finalFor(market, q, week))
+                .orElse(false);
     }
 
-    private void record(Instant started, String outcome, Map<String, Object> detail) {
+    private void record(PaperMarket market, Instant started, String outcome, Map<String, Object> detail) {
         try {
-            store.recordJobRun(JOB, started, clock.instant(), outcome, mapper.valueToTree(detail));
+            store.recordJobRun(market.jobName(JOB), started, clock.instant(), outcome, mapper.valueToTree(detail));
         } catch (RuntimeException e) {
             // 기록 실패가 복기(이미 커밋됨)를 오류로 바꾸지 않게 로그만 남깁니다.
             log.warn("주간 복기 작업 기록을 남기지 못했습니다: {}", e.toString());

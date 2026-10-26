@@ -3,7 +3,6 @@ package com.macrodash.feature.paper;
 import com.macrodash.Kst;
 import com.macrodash.analytics.DailySeries;
 import com.macrodash.analytics.ReviewFacts;
-import com.macrodash.analytics.UsMarketCalendar;
 import com.macrodash.feature.ai.AiService;
 import com.macrodash.read.StoreReader;
 import com.macrodash.store.PaperStore;
@@ -30,10 +29,12 @@ import tools.jackson.databind.SerializationFeature;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.LocalDate;
+import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -68,6 +69,12 @@ import java.util.regex.Pattern;
  * 승인할 때만 오름, D3). 규칙 계좌·검증기·벤치마크는 읽기만 합니다(D6·D35).
  *
  * <p>언제 부르는지(토요일 09:00 KST·확정 종가·계좌 상태)는 {@link PaperReviewJob}이 정합니다. 이 서비스는 그 주가 정해진 뒤의 일입니다.
+ *
+ * <p><b>시장 문맥</b>(2단계 명세 §9 A6): 입력 조립·호출은 시장 묶음({@link PaperMarket})을 받아 그 시장 Claude 책의 결정·주문·체결,
+ * 그 시장 계좌 비교({@link #comparedBooks}), 그 시장 달력(가정 수익률·계좌 비교의 거래일, 체결 날짜의 시간대), 그 시장 종가 이력·기준일
+ * 종가({@link PaperMarketData#sourcedClosesOn(PaperMarket, java.util.Collection, LocalDate)}), 시스템 프롬프트의 시장별 부분을 씁니다. 복기
+ * 행({@code paper_reviews})은 아직 주 하나가 기본키라(B1에서 (market, week_ending)) 미국 밖 시장의 복기는 저장하지 않고 거절합니다
+ * ({@link #requireStorable}). 시장을 받지 않는 옛 시그니처와 화면 응답은 미국입니다.
  */
 @Service
 public class ReviewService {
@@ -86,9 +93,11 @@ public class ReviewService {
     static final int HISTORY_CALENDAR_DAYS = 420;
     static final int ERROR_CHARS = 1_000;
     static final int VIOLATIONS_IN_ERROR = 5;
-    /** 같은 기간 수익률을 견줄 계좌 — 이 순서로 입력에 싣습니다(없는 책은 뺌). */
+    /** 같은 기간 수익률을 견줄 미국 계좌 — 이 순서로 입력에 싣습니다(없는 책은 뺌). {@link #comparedBooks}의 미국 값. */
     static final List<String> COMPARED_BOOKS = List.of(PaperBooks.RULES, PaperBooks.BENCH_SPY, PaperBooks.BENCH_MIX,
             PaperBooks.CLAUDE);
+    /** 시장을 받지 않는 옛 시그니처·화면 응답의 시장(클래스 설명). */
+    private static final PaperMarket US = UsPaperMarket.INSTANCE;
     static final String NO_DECISIONS = "창 안에 복기할 Claude 결정(OK·NO_TRADE)이 없어 Claude를 부르지 않았습니다";
     /**
      * 입력 값 안의 구분자 모양(전각·보이지 않는 글자 변형 포함 — {@link FrameworkService#delimiterLike}). 단어를 공백 없이 넘깁니다:
@@ -181,6 +190,31 @@ public class ReviewService {
         return Review.API_ERROR.equals(status) && retryCount == 0 && weekEnding.equals(latest);
     }
 
+    /**
+     * 그 시장에서 같은 기간 수익률을 견줄 계좌, 입력 순서 — 규칙 책, 벤치마크 책(정의 순), Claude 책(같은 코드는 한 번). 미국은
+     * {@link #COMPARED_BOOKS}와 같습니다.
+     */
+    static List<String> comparedBooks(PaperMarket market) {
+        Set<String> out = new LinkedHashSet<>();
+        out.add(market.rulesBook());
+        market.books().stream().filter(PaperBooks.Definition::benchmark).forEach(d -> out.add(d.code()));
+        out.add(market.claudeBook());
+        return List.copyOf(out);
+    }
+
+    /**
+     * 복기 행을 남길 수 있는 시장인가(클래스 설명) — {@code paper_reviews}의 기본키가 아직 주 하나라 미국 밖 시장의 복기는 같은 주 미국
+     * 행과 부딪칩니다(B1에서 (market, week_ending)으로 바뀌면 걷어 냅니다).
+     *
+     * @throws IllegalArgumentException 미국 밖 시장
+     */
+    static void requireStorable(PaperMarket market) {
+        if (market != US) {
+            throw new IllegalArgumentException("복기 행의 기본키가 아직 주 하나라(2단계 명세 §9 B1에서 시장 포함) " + market.code()
+                    + " 시장 복기는 남기지 않습니다");
+        }
+    }
+
     // ------------------------------------------------------------------ 실행
     /**
      * 그 주의 복기(클래스 설명). 그 주의 행이 이미 있으면 그대로 돌려주고(부르지 않음), 다시 부를 API 오류면 같은 행에서 한 번 더
@@ -191,6 +225,16 @@ public class ReviewService {
      * @throws IllegalStateException    모의 매매 테이블이 아직 없음
      */
     public Outcome review(LocalDate weekEnding) {
+        return review(US, weekEnding);
+    }
+
+    /**
+     * 그 시장의 그 주 복기 — {@link #review(LocalDate)}와 같되 입력·프롬프트가 그 시장 것(클래스 설명의 시장 문맥).
+     *
+     * @throws IllegalArgumentException 복기 행을 남길 수 없는 시장({@link #requireStorable})
+     */
+    Outcome review(PaperMarket market, LocalDate weekEnding) {
+        requireStorable(market);
         requireReady();
         Optional<Review> existing = store.review(weekEnding);
         if (existing.isPresent() && !retryable(existing.get())) {
@@ -203,7 +247,7 @@ public class ReviewService {
         // 추정 비용의 단가도 호출 전에 읽어 둡니다 — 응답(과금)을 받은 뒤 DB를 읽다 실패하면 행 없이 끝나 30분 뒤 또 부릅니다.
         PaperApiCalls.Pricing pricing = PaperApiCalls.Pricing.from(settingsBody);
         // 입력을 먼저 만듭니다 — 자료 오류로 조립이 실패하면 호출 한 번을 쓰지 않게(결정의 패킷과 같은 순서).
-        Built built = build(weekEnding, frame);
+        Built built = build(market, weekEnding, frame);
         if (!built.facts().hasDecisions()) {
             Review skipped = new Review(weekEnding, built.facts().window().weeks(), mapper.readTree(built.text()), null,
                     null, null, null, null, Review.SKIPPED, NO_DECISIONS, null, frame.version(), 0, null);
@@ -216,7 +260,8 @@ public class ReviewService {
             return new Outcome(Kind.CAP_REACHED, null, ClaudeBookService.capMessage(claude, today)
                     + " — 주간 복기도 같은 상한을 씁니다(D4). 다음 기회에 다시 봅니다");
         }
-        String system = ClaudePrompts.REVIEW + FrameworkService.render(frame.body(), frame.version(), settingsBody);
+        String system = ClaudePrompts.REVIEW
+                + FrameworkService.render(market, frame.body(), frame.version(), settingsBody);
         AiService.StructuredResult result;
         try {
             result = ai.structured(claude.model(), system, userMessage(built.text()), schema.forApi(), claude.effort(),
@@ -254,15 +299,21 @@ public class ReviewService {
      * @param frame 지금 프레임 판(입력의 {@code framework} — 번호·상태)
      */
     Built build(LocalDate weekEnding, FrameworkService.Frame frame) {
-        ReviewFacts.Inputs in = inputs(weekEnding, frame);
-        ReviewFacts.Facts full = ReviewFacts.build(in, weekEnding, ReviewFacts.DEFAULT_WEEKS, null);
+        return build(US, weekEnding, frame);
+    }
+
+    /** 그 시장의 그 주 복기 입력({@link #build(LocalDate, FrameworkService.Frame)}의 시장 판 — 사실 계산의 거래일은 그 시장 달력). */
+    Built build(PaperMarket market, LocalDate weekEnding, FrameworkService.Frame frame) {
+        ReviewFacts.Inputs in = inputs(market, weekEnding, frame);
+        ReviewFacts.Facts full = ReviewFacts.build(market.calendar(), in, weekEnding, ReviewFacts.DEFAULT_WEEKS, null);
         String fullText = json(full);
         int fullEst = PacketBuilder.estimateTokens(fullText);
         String trimmed = ReviewFacts.trimmedReason(fullEst);
         if (trimmed == null) {
             return new Built(full, fullText, fullEst, null);
         }
-        ReviewFacts.Facts shorter = ReviewFacts.build(in, weekEnding, ReviewFacts.FALLBACK_WEEKS, trimmed);
+        ReviewFacts.Facts shorter = ReviewFacts.build(market.calendar(), in, weekEnding, ReviewFacts.FALLBACK_WEEKS,
+                trimmed);
         String text = json(shorter);
         log.info("주간 복기 {}: {}", weekEnding, trimmed);
         return new Built(shorter, text, PacketBuilder.estimateTokens(text), fullEst);
@@ -297,14 +348,20 @@ public class ReviewService {
      * 살 금액(목표 − 현재)이라 그대로 쓰면 논거와 다른 숫자가 됩니다(ClaudeBookService 클래스 설명).
      */
     ReviewFacts.Inputs inputs(LocalDate weekEnding, FrameworkService.Frame frame) {
+        return inputs(US, weekEnding, frame);
+    }
+
+    /** 그 시장의 조립 재료 — 그 시장 Claude 책·계좌 비교·체결 날짜 시간대·종가({@link #inputs(LocalDate, FrameworkService.Frame)}의 시장 판). */
+    ReviewFacts.Inputs inputs(PaperMarket market, LocalDate weekEnding, FrameworkService.Frame frame) {
         ReviewFacts.Window window = ReviewFacts.window(weekEnding, ReviewFacts.DEFAULT_WEEKS);
+        ZoneId zone = market.calendar().zone();
         Map<Long, Fill> fillsByOrder = new HashMap<>();
-        for (Fill f : store.recentFills(PaperBooks.CLAUDE, LEDGER_SCAN)) {
+        for (Fill f : store.recentFills(market.claudeBook(), LEDGER_SCAN)) {
             fillsByOrder.putIfAbsent(f.orderId(), f);
         }
         List<ReviewFacts.Decision> decisions = new ArrayList<>();
         Set<String> tickers = new TreeSet<>();
-        for (DecisionSummary s : store.decisions(PaperBooks.CLAUDE, DECISION_SCAN)) {
+        for (DecisionSummary s : store.decisions(market.claudeBook(), DECISION_SCAN)) {
             if (!window.contains(s.asOfTradingDate())) {
                 continue;
             }
@@ -323,7 +380,7 @@ public class ReviewService {
             Decision d = found.get();
             List<ReviewFacts.Order> orders = new ArrayList<>();
             for (Order o : store.ordersByDecision(d.id())) {
-                orders.add(order(o, fillsByOrder.get(o.id())));
+                orders.add(order(o, fillsByOrder.get(o.id()), zone));
                 tickers.add(o.ticker());
             }
             JsonNode response = d.response();
@@ -334,20 +391,20 @@ public class ReviewService {
         }
         List<ReviewFacts.StopFill> stops = new ArrayList<>();
         List<ReviewFacts.FullSell> fullSells = new ArrayList<>();
-        for (Order o : store.recentOrders(PaperBooks.CLAUDE, LEDGER_SCAN)) {
+        for (Order o : store.recentOrders(market.claudeBook(), LEDGER_SCAN)) {
             Fill f = fillsByOrder.get(o.id());
-            if (!PaperBooks.ORDER_FILLED.equals(o.status()) || f == null || fillDate(f) == null) {
+            if (!PaperBooks.ORDER_FILLED.equals(o.status()) || f == null || fillDate(f, zone) == null) {
                 continue;
             }
             if (PaperBooks.SOURCE_STOP.equals(o.source())) {
-                stops.add(new ReviewFacts.StopFill(o.ticker(), fillDate(f), f.price()));
+                stops.add(new ReviewFacts.StopFill(o.ticker(), fillDate(f, zone), f.price()));
             } else if (fullSell(o)) {
                 // 스탑이 어느 포지션의 것인지 가르는 데 씁니다 — 전량 매도 뒤 다시 산 포지션의 스탑을 앞선 매수에 붙이지 않게.
-                fullSells.add(new ReviewFacts.FullSell(o.ticker(), fillDate(f)));
+                fullSells.add(new ReviewFacts.FullSell(o.ticker(), fillDate(f, zone)));
             }
         }
         List<ReviewFacts.BookNav> books = new ArrayList<>();
-        for (String code : COMPARED_BOOKS) {
+        for (String code : comparedBooks(market)) {
             if (store.book(code).isEmpty()) {
                 continue;
             }
@@ -357,8 +414,8 @@ public class ReviewService {
             }
             books.add(new ReviewFacts.BookNav(code, rows));
         }
-        return new ReviewFacts.Inputs(decisions, closes(tickers, weekEnding), stops, fullSells, books, frame.version(),
-                frame.status());
+        return new ReviewFacts.Inputs(decisions, closes(market, tickers, weekEnding), stops, fullSells, books,
+                frame.version(), frame.status());
     }
 
     /**
@@ -371,7 +428,7 @@ public class ReviewService {
     }
 
     /** 장부 주문 → 복기 주문. 비중·시점은 모델이 제안한 값이 있으면 그것(메서드 위 설명), 체결은 그 주문의 체결(없으면 null). */
-    private static ReviewFacts.Order order(Order o, Fill f) {
+    private static ReviewFacts.Order order(Order o, Fill f, ZoneId zone) {
         JsonNode reason = o.reason();
         JsonNode proposed = Json.child(reason, "proposed");
         boolean buy = PaperBooks.BUY.equals(o.side());
@@ -384,7 +441,8 @@ public class ReviewService {
             fraction = firstNonNull(Json.asDouble(proposed, "sellFraction"), o.sellFraction());
         }
         String timing = Json.asText(proposed, "timing");
-        ReviewFacts.Fill fill = f == null || fillDate(f) == null ? null : new ReviewFacts.Fill(fillDate(f), f.price());
+        ReviewFacts.Fill fill = f == null || fillDate(f, zone) == null ? null
+                : new ReviewFacts.Fill(fillDate(f, zone), f.price());
         return new ReviewFacts.Order(o.id(), o.ticker(), o.side(), target, fraction, timing == null ? o.timing() : timing,
                 o.status(), o.rejectReason(), Json.asText(reason, "thesis"), Json.asText(reason, "invalidation"), fill,
                 o.expiresOn());
@@ -400,12 +458,12 @@ public class ReviewService {
         return null;
     }
 
-    /** 체결의 세션 날짜 — 체결에 쓴 봉 날짜, 없으면 관측 시각의 미국 동부 날짜. */
-    private static LocalDate fillDate(Fill f) {
+    /** 체결의 세션 날짜 — 체결에 쓴 봉 날짜, 없으면 관측 시각의 그 시장 달력 시간대 날짜(미국 동부). */
+    private static LocalDate fillDate(Fill f, ZoneId zone) {
         if (f.observationDate() != null) {
             return f.observationDate();
         }
-        return f.observedAt() == null ? null : f.observedAt().atZone(UsMarketCalendar.NEW_YORK).toLocalDate();
+        return f.observedAt() == null ? null : f.observedAt().atZone(zone).toLocalDate();
     }
 
     /**
@@ -413,14 +471,14 @@ public class ReviewService {
      * 세션이면 이력의 그날 값은 장중 값일 수 있어 관측치 저장본의 확정 종가로 — {@link PaperMarketData#sourcedClosesOn}). 못 구하면
      * 기준일 점이 없고, 사실은 null이 됩니다(지어내지 않음). 저장본은 조용히 읽습니다(수집을 깨우지 않음).
      */
-    private Map<String, DailySeries> closes(Set<String> tickers, LocalDate weekEnding) {
+    private Map<String, DailySeries> closes(PaperMarket market, Set<String> tickers, LocalDate weekEnding) {
         if (tickers.isEmpty()) {
             return Map.of();
         }
-        Map<String, DailySeries> history = marketData.history(tickers,
+        Map<String, DailySeries> history = marketData.history(market, tickers,
                 weekEnding.minusDays(HISTORY_CALENDAR_DAYS), weekEnding);
         Map<String, PaperMarketData.SourcedClose> finals =
-                reader.quietly(() -> marketData.sourcedClosesOn(tickers, weekEnding));
+                reader.quietly(() -> marketData.sourcedClosesOn(market, tickers, weekEnding));
         Map<String, DailySeries> out = new HashMap<>();
         for (String ticker : tickers) {
             TreeMap<LocalDate, Double> points = new TreeMap<>();
@@ -609,7 +667,7 @@ public class ReviewService {
         if (!store.ready()) {
             return notReady();
         }
-        LocalDate latest = ReviewFacts.latestCompletedWeekEnding(clock.instant());
+        LocalDate latest = ReviewFacts.latestCompletedWeekEnding(US.calendar(), clock.instant());
         List<Map<String, Object>> rows = new ArrayList<>();
         for (ReviewSummary s : store.reviews(LIST_LIMIT)) {
             Map<String, Object> row = new LinkedHashMap<>();
@@ -631,7 +689,7 @@ public class ReviewService {
         out.put("available", true);
         out.put("reviews", rows);
         out.put("latestWeekEnding", latest.toString());
-        out.put("latestOpensAtKst", Kst.stamp(ReviewFacts.opensAt(latest, Kst.ZONE)));
+        out.put("latestOpensAtKst", Kst.stamp(US.reviewOpening(latest)));
         return out;
     }
 
@@ -716,7 +774,7 @@ public class ReviewService {
         out.put("frameworkVersion", r.frameworkVersion());
         out.put("retryCount", r.retryCount());
         out.put("retryable", retryableNow(r.weekEnding(), r.status(), r.retryCount(),
-                ReviewFacts.latestCompletedWeekEnding(clock.instant())));
+                ReviewFacts.latestCompletedWeekEnding(US.calendar(), clock.instant())));
         out.put("createdAtKst", stamp(r.createdAt()));
         out.put("error", r.error());
         out.put("verdictCounts", ok ? verdictCounts(held, refuted, undetermined) : null);
