@@ -44,9 +44,30 @@ public class PaperStore {
     static final int JOB_RUNS_KEPT = 200;
 
     // ------------------------------------------------------------------ 레코드
-    /** 책. {@code kind}는 RULES·CLAUDE·BENCHMARK, {@code status}는 NOT_STARTED·ACTIVE·PAUSED. 시작 전이면 {@code startedOn}이 null. */
+    /**
+     * 책. {@code kind}는 RULES·CLAUDE·BENCHMARK, {@code status}는 NOT_STARTED·ACTIVE·PAUSED. 시작 전이면 {@code startedOn}이 null.
+     * {@code market}은 그 책이 거래하는 시장(US·KR), {@code currency}는 장부 통화(USD·KRW)입니다(V13, DB CHECK와 같은 문자열) —
+     * 둘 다 비울 수 없습니다.
+     */
     public record Book(String code, String kind, String label, double initialCash, LocalDate startedOn, String status,
-                       Instant createdAt) {
+                       Instant createdAt, String market, String currency) {
+
+        public static final String MARKET_US = "US";
+        public static final String MARKET_KR = "KR";
+        public static final String CURRENCY_USD = "USD";
+        public static final String CURRENCY_KRW = "KRW";
+
+        public Book {
+            if (market == null || currency == null) {
+                throw new IllegalArgumentException("책의 시장·통화는 비울 수 없습니다: " + code);
+            }
+        }
+
+        /** 미국·달러 책 — V13 전부터 있던 모양(V13 열 기본값과 같음). */
+        public Book(String code, String kind, String label, double initialCash, LocalDate startedOn, String status,
+                    Instant createdAt) {
+            this(code, kind, label, initialCash, startedOn, status, createdAt, MARKET_US, CURRENCY_USD);
+        }
     }
 
     /** 책의 현재 상태. {@code lastProcessedCollectedAt}은 관측치 처리의 멱등 키입니다(이 저장본까지 처리함). */
@@ -350,7 +371,8 @@ public class PaperStore {
         public static final String UNDETERMINED = "판단불가";
     }
 
-    private static final String BOOK_COLUMNS = "code, kind, label, initial_cash, started_on, status, created_at";
+    private static final String BOOK_COLUMNS = "code, kind, label, initial_cash, started_on, status, created_at, market, "
+            + "currency";
     private static final String STATE_COLUMNS = "book_code, cash, nav, equity_value, exposure_pct, last_observed_at, "
             + "last_processed_collected_at, last_nav_trading_date, updated_at";
     private static final String POSITION_COLUMNS = "book_code, ticker, qty, avg_cost, opened_on, opened_at, "
@@ -420,17 +442,19 @@ public class PaperStore {
     }
 
     /**
-     * 테이블이 있는가. 수집기가 아직 V8~V12를 적용하지 않았으면 false입니다 — V8이 마지막에 만드는 테이블과 V9~V11이 더하는
+     * 테이블이 있는가. 수집기가 아직 V8~V13을 적용하지 않았으면 false입니다 — V8이 마지막에 만드는 테이블과 V9~V11이 더하는
      * 열({@code paper_track_record.data_source}·{@code paper_decisions.packet_text}·{@code paper_api_usage.est_cost_calls}),
-     * V12의 {@code paper_reviews} 테이블로 봅니다. V8만 있는 DB(백엔드만 새로 띄운 경우, QA-016)에서 참이면 트랙레코드 읽기·쓰기가
-     * {@code group_code}·{@code data_source} 열과 새 기본키에서, 결정 읽기·쓰기가 {@code packet_text} 열에서, 사용량 읽기·쓰기가 추정
-     * 비용 열에서, 주간 복기 작업·화면이 없는 테이블에서 SQL 오류(500)를 냅니다.
+     * V12의 {@code paper_reviews} 테이블, V13이 더하는 {@code paper_books.market}·{@code currency} 열로 봅니다. V8만 있는 DB(백엔드만
+     * 새로 띄운 경우, QA-016)에서 참이면 트랙레코드 읽기·쓰기가 {@code group_code}·{@code data_source} 열과 새 기본키에서, 결정
+     * 읽기·쓰기가 {@code packet_text} 열에서, 사용량 읽기·쓰기가 추정 비용 열에서, 주간 복기 작업·화면이 없는 테이블에서, 책 읽기·쓰기가
+     * 시장·통화 열에서 SQL 오류(500)를 냅니다.
      */
     public boolean ready() {
         return schema.tableExists("paper_api_usage") && schema.columnExists("paper_track_record", "data_source")
                 && schema.columnExists("paper_decisions", "packet_text")
                 && schema.columnExists("paper_api_usage", "est_cost_calls")
-                && schema.tableExists("paper_reviews");
+                && schema.tableExists("paper_reviews")
+                && schema.columnExists("paper_books", "market") && schema.columnExists("paper_books", "currency");
     }
 
     /**
@@ -445,9 +469,15 @@ public class PaperStore {
     }
 
     // ------------------------------------------------------------------ 책
-    /** 모든 책, code 순(화면에 보이는 순서는 서비스가 정함). */
+    /** 모든 책(시장을 가리지 않음), code 순(화면에 보이는 순서는 서비스가 정함). 한 시장만은 {@link #books(String)}. */
     public List<Book> books() {
         return jdbc.query("SELECT " + BOOK_COLUMNS + " FROM paper_books ORDER BY code", bookMapper());
+    }
+
+    /** 그 시장({@code market} — US·KR)의 책만, code 순. 모르는 시장이면 빈 목록. */
+    public List<Book> books(String market) {
+        return jdbc.query("SELECT " + BOOK_COLUMNS + " FROM paper_books WHERE market = ? ORDER BY code", bookMapper(),
+                market);
     }
 
     public Optional<Book> book(String code) {
@@ -457,13 +487,14 @@ public class PaperStore {
 
     /**
      * 책이 없을 때만 넣습니다(초기화를 여러 번 눌러도 한 번). {@code status}가 null이면 NOT_STARTED,
-     * {@code createdAt}이 null이면 지금.
+     * {@code createdAt}이 null이면 지금. 시장·통화는 책 값 그대로 씁니다.
      *
      * @return 이번에 넣었으면 true, 이미 있었으면 false(기존 행은 그대로)
      */
     public boolean insertBookIfAbsent(Book book) {
-        return jdbc.update("INSERT INTO paper_books (code, kind, label, initial_cash, started_on, status, created_at) "
-                        + "VALUES (?, ?, ?, ?, ?, COALESCE(?, 'NOT_STARTED'), COALESCE(?, now())) "
+        return jdbc.update("INSERT INTO paper_books (code, kind, label, initial_cash, started_on, status, created_at, "
+                        + "market, currency) "
+                        + "VALUES (?, ?, ?, ?, ?, COALESCE(?, 'NOT_STARTED'), COALESCE(?, now()), ?, ?) "
                         + "ON CONFLICT (code) DO NOTHING",
                 ps -> {
                     ps.setString(1, book.code());
@@ -473,6 +504,8 @@ public class PaperStore {
                     setDate(ps, 5, book.startedOn());
                     ps.setString(6, book.status());
                     setInstant(ps, 7, book.createdAt());
+                    ps.setString(8, book.market());
+                    ps.setString(9, book.currency());
                 }) == 1;
     }
 
@@ -1691,7 +1724,7 @@ public class PaperStore {
     private static RowMapper<Book> bookMapper() {
         return (rs, rowNum) -> new Book(rs.getString("code"), rs.getString("kind"), rs.getString("label"),
                 rs.getDouble("initial_cash"), date(rs, "started_on"), rs.getString("status"),
-                instant(rs, "created_at"));
+                instant(rs, "created_at"), rs.getString("market"), rs.getString("currency"));
     }
 
     private RowMapper<Order> orderMapper() {

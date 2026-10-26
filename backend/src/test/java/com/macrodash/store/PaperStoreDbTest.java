@@ -90,9 +90,9 @@ class PaperStoreDbTest {
     }
 
     @Test
-    @DisplayName("테이블이 있다 — V8이 마지막에 만드는 paper_api_usage, V9~V11이 더하는 열, V12의 paper_reviews로 준비 여부를 본다(V13 열은 아직 쓰지 않아 보지 않음)")
+    @DisplayName("테이블이 있다 — V8이 마지막에 만드는 paper_api_usage, V9~V11이 더하는 열, V12의 paper_reviews, V13의 paper_books 시장·통화 열로 준비 여부를 본다")
     void ready() {
-        assertThat(store.ready()).as("make db-test로 V8~V12를 적용했는가").isTrue();
+        assertThat(store.ready()).as("make db-test로 V8~V13을 적용했는가").isTrue();
         assertThat(new SchemaCheck(jdbc).columnExists("paper_decisions", "packet_text")).isTrue();
         assertThat(new SchemaCheck(jdbc).tableExists("paper_reviews")).isTrue();
     }
@@ -108,6 +108,56 @@ class PaperStoreDbTest {
                 .containsEntry("market", "US").containsEntry("currency", "USD");
         assertThatThrownBy(() -> jdbc.update("UPDATE paper_books SET market = 'JP' WHERE code = ?", BOOK))
                 .as("시장은 US·KR만").isInstanceOf(org.springframework.dao.DataIntegrityViolationException.class);
+    }
+
+    @Test
+    @DisplayName("V13 전 DB(paper_books.market·currency 열 없음)는 준비 안 됨 — 책 읽기·쓰기의 SQL 오류(500) 대신 안내 문구, 시험 뒤 되돌림")
+    void readyRequiresV13() {
+        class Rollback extends RuntimeException {
+        }
+        for (String column : List.of("market", "currency")) {
+            assertThatThrownBy(() -> store.atomically(() -> {
+                jdbc.execute("ALTER TABLE paper_books DROP COLUMN " + column);
+                assertThat(new PaperStore(jdbc, MAPPER, new SchemaCheck(jdbc)).ready())
+                        .as("V13 열 " + column + "이 없으면 준비 안 됨").isFalse();
+                throw new Rollback();
+            })).isInstanceOf(Rollback.class);
+        }
+        assertThat(new PaperStore(jdbc, MAPPER, new SchemaCheck(jdbc)).ready()).as("되돌린 뒤").isTrue();
+    }
+
+    @Test
+    @DisplayName("시장별 책 조회 — books(market)은 그 시장 책만 code 순, 시장·통화는 넣은 값 그대로 읽힘, 옛 모양(인자 7개)의 책은 US·USD, books()는 시장을 가리지 않음")
+    void booksByMarket() {
+        String krBook = "t_kr_rules";
+        assertThat(store.insertBookIfAbsent(book(BOOK, "규칙 책"))).isTrue();
+        assertThat(store.insertBookIfAbsent(book(OTHER_BOOK, "벤치마크"))).isTrue();
+        assertThat(store.insertBookIfAbsent(new PaperStore.Book(krBook, "RULES", "한국 규칙 계좌", 100_000_000, null,
+                "NOT_STARTED", null, PaperStore.Book.MARKET_KR, PaperStore.Book.CURRENCY_KRW))).isTrue();
+
+        assertThat(jdbc.queryForMap("SELECT market, currency FROM paper_books WHERE code = ?", krBook))
+                .containsEntry("market", "KR").containsEntry("currency", "KRW");
+        assertThat(store.book(krBook).orElseThrow())
+                .extracting(PaperStore.Book::market, PaperStore.Book::currency, PaperStore.Book::initialCash)
+                .containsExactly("KR", "KRW", 100_000_000.0);
+        assertThat(store.book(BOOK).orElseThrow())
+                .extracting(PaperStore.Book::market, PaperStore.Book::currency)
+                .as("옛 모양 생성자 = V13 기본값").containsExactly("US", "USD");
+
+        assertThat(testCodes(store.books("US"))).as("미국 책만, code 순").containsExactly(OTHER_BOOK, BOOK);
+        assertThat(testCodes(store.books("KR"))).as("한국 책만").containsExactly(krBook);
+        assertThat(testCodes(store.books())).as("시장을 가리지 않음").containsExactly(OTHER_BOOK, krBook, BOOK);
+        assertThat(store.books("JP")).as("모르는 시장").isEmpty();
+
+        assertThatThrownBy(() -> new PaperStore.Book(BOOK, "RULES", "x", 1, null, null, null, null, "USD"))
+                .as("시장을 비울 수 없음").isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> new PaperStore.Book(BOOK, "RULES", "x", 1, null, null, null, "US", null))
+                .as("통화를 비울 수 없음").isInstanceOf(IllegalArgumentException.class);
+    }
+
+    /** 이 시험이 만든 책(t_)의 코드만, 받은 순서대로 — 테스트 DB에 다른 테스트의 책이 있어도 흔들리지 않게. */
+    private static List<String> testCodes(List<PaperStore.Book> books) {
+        return books.stream().map(PaperStore.Book::code).filter(code -> code.startsWith("t_")).toList();
     }
 
     @Test

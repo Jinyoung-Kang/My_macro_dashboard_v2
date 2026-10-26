@@ -85,6 +85,11 @@ class FakePaperStore extends PaperStore {
     }
 
     @Override
+    public List<Book> books(String market) {
+        return new ArrayList<>(books.values().stream().filter(b -> b.market().equals(market)).toList());
+    }
+
+    @Override
     public Optional<Book> book(String code) {
         return Optional.ofNullable(books.get(code));
     }
@@ -95,20 +100,23 @@ class FakePaperStore extends PaperStore {
             return false;
         }
         books.put(book.code(), new Book(book.code(), book.kind(), book.label(), book.initialCash(), book.startedOn(),
-                book.status() == null ? "NOT_STARTED" : book.status(), book.createdAt() == null ? dbNow : book.createdAt()));
+                book.status() == null ? "NOT_STARTED" : book.status(), book.createdAt() == null ? dbNow : book.createdAt(),
+                book.market(), book.currency()));
         return true;
     }
 
     @Override
     public void updateBookStatus(String code, String status) {
         Book b = books.get(code);
-        books.put(code, new Book(b.code(), b.kind(), b.label(), b.initialCash(), b.startedOn(), status, b.createdAt()));
+        books.put(code, new Book(b.code(), b.kind(), b.label(), b.initialCash(), b.startedOn(), status, b.createdAt(),
+                b.market(), b.currency()));
     }
 
     @Override
     public void updateBookStartedOn(String code, LocalDate startedOn) {
         Book b = books.get(code);
-        books.put(code, new Book(b.code(), b.kind(), b.label(), b.initialCash(), startedOn, b.status(), b.createdAt()));
+        books.put(code, new Book(b.code(), b.kind(), b.label(), b.initialCash(), startedOn, b.status(), b.createdAt(),
+                b.market(), b.currency()));
     }
 
     @Override
@@ -117,7 +125,8 @@ class FakePaperStore extends PaperStore {
         if (b == null || !from.equals(b.label())) {
             return false;
         }
-        books.put(code, new Book(b.code(), b.kind(), to, b.initialCash(), b.startedOn(), b.status(), b.createdAt()));
+        books.put(code, new Book(b.code(), b.kind(), to, b.initialCash(), b.startedOn(), b.status(), b.createdAt(),
+                b.market(), b.currency()));
         return true;
     }
 
