@@ -9,7 +9,8 @@
   - `DemoViewerTest`: 꺼짐이 기본, 32자 미만이면 기동 실패(값은 오류 문구에 없음), 정확히 같은 값만 통과
   - `AuthControllerTest`: `/api/auth/session`의 `user.demo`
   - `ApiIntegrationTest`: 데모 열람의 GET(과 AI 리포트 요청)이 사용자별 테이블에 아무것도 쓰지 않음, 쓰기 403
-  - 화면: `Sidebar.test.tsx`, `app/login/__tests__`, `app/(dashboard)/__tests__/demoViewer.test.tsx`
+  - 화면: `components/shell/__tests__/Shell.test.tsx`·`MoreMenu.test.tsx`(데모 열람은 로그아웃·내 계정 없이 '데모 열람' 표시, local과 함께 와도 데모가 앞섬 —
+    v2 1단계에서 옛 `Sidebar.test.tsx`의 의도를 옮김), `app/login/__tests__`, `app/(dashboard)/__tests__/demoViewer.test.tsx`
 
 ## 배경
 

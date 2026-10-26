@@ -1,7 +1,7 @@
 # My_macro_dashboard_v2 프로그램 계획서 — 프런트 전면 개편 · 한국 증시 모의매매 · 외부 OSS 정의 채택 · AWS 교체
 
 - 작성: 2026-10-26 (v1 저장소에서 작성해 v2 fork가 그대로 가져감)
-- 상태: 사용자 결정 반영(2026-10-26), 0단계 시작
+- 상태: 사용자 결정 반영(2026-10-26), 0단계 시작 → 1단계 화면 작업(브랜치 `claude/v2-ui-stage1-2026-10`)까지 — 진행 표시는 §4
 - 함께 보는 문서: [0단계 체크리스트](2026-10-26-v2-step0-fork.md) · [UI/UX 설계](2026-10-26-v2-ui-design.md) ·
   [한국 증시 책 명세 초안](2026-10-26-v2-kr-paper-spec.md) · [외부 OSS 채택 목록](2026-10-26-v2-oss-adoption.md) ·
   [fork 세션 지시문](2026-10-26-v2-fork-session-prompt.md)
@@ -71,13 +71,22 @@ PRINCIPLES.md와 ADR 0001~0019 전부. 이 프로그램에서 특히 자주 걸�
 
 ### 1단계 — UI 기반과 첫 두 화면 ([UI/UX 설계](2026-10-26-v2-ui-design.md))
 
-1. 디자인 토큰(라이트·다크)·타이포·간격 → dataviz 팔레트 검증기 통과 기록
-2. 셸: 좌측 내비(데스크톱)·하단 탭(좁은 폭) 5탭 + 더보기, 통합 검색, 알림 벨
-3. 공용 컴포넌트: `Empty`(—)·`ProvenanceBadge`·`EstimateBadge`·`ChangeChip`·`Sparkline`·`AssetRow`·`Hero`·`StatTile`·`RangeTabs`(저장 구간 제한)·`LineChart`·`DataTable`·`Skeleton`·`Toast`
-4. 홈: 오늘의 국면 히어로 · 모의매매 순자산 히어로(미국·한국 탭, 한국은 '준비 중') · 시장 카드 행 · 알림
-5. 모의매매(미국) 화면: 기존 7탭을 새 패턴으로(개요·기관 선정·보유·체결·결정 로그/복기·프레임·메모·설정)
-6. 병행(백엔드·수집기, 작음): 경제 캘린더 컨센서스(TradingView `forecast`·`previous` 보강, D33 개정), 수집기 거부 래치·호스트 최소 간격·빈 티커 개별 재시도
+1. **완료** 디자인 토큰(라이트·다크)·타이포·간격 → dataviz 팔레트 검증기 통과 기록 — `af36f39`, 기록은 [UI 설계 §11](2026-10-26-v2-ui-design.md)
+2. **완료** 셸: 좌측 내비(데스크톱)·하단 탭(좁은 폭) 5탭 + 더보기, 통합 검색, 알림 벨 — `28795fe`(다듬기 `bdb7c9e`·`dddcc65`)
+3. **완료** 공용 컴포넌트: `Empty`(—)·`ProvenanceBadge`·`EstimateBadge`·`ChangeChip`·`Sparkline`·`AssetRow`·`Hero`·`StatTile`·`RangeTabs`(저장 구간 제한)·`LineChart`·`DataTable`·`Skeleton`·`Toast`
+   — `ed88a92`(폴더 이동 `61516e5`, Radix 조각 `be3ff6d`)
+4. **완료** 홈: 오늘의 국면 히어로 · 모의매매 순자산 히어로(미국·한국 탭, 한국은 '준비 중') · 시장 카드 행 · 알림 — `183fc20`. '3일 확정' 배지는 백엔드 응답에 필드가 생길 때(UI 설계 §11-3)
+5. **완료** 모의매매(미국) 화면: 기존 7탭을 새 패턴으로(개요·기관 선정·보유·체결·결정 로그/복기·프레임·메모·설정) — `1da8a6c`(옮기기)·`efde4ef`(경로·패턴),
+   기능 74개 대조는 [이식 대조표](2026-10-26-v2-paper-us-port.md)
+6. **남음** 병행(백엔드·수집기, 작음): 경제 캘린더 컨센서스(TradingView `forecast`·`previous` 보강, D33 개정), 수집기 거부 래치·호스트 최소 간격·빈 티커 개별 재시도
+   — **1단계 화면 브랜치(`claude/v2-ui-stage1-2026-10`)에서는 하지 않았다. 남은 일.** 같은 브랜치의 백엔드 일은 §6 위험 대응인 기동 로그(`PaperStartupLog`, `10c2b08`) 하나다
 - 수용 기준: 두 화면이 데이터 없음·일부 실패·추정치·오래된 값 네 상태를 모두 바르게 보인다(스토리 고정). 옛 `/paper` 북마크는 새 경로로 리디렉션. `endpoints.test.ts`·`access.test.ts` 통과. 1단계 끝에 토큰·셸 시안을 사용자가 승인
+- 수용 기준 상태(2026-10-26):
+  - 네 상태 — 충족: 홈 `HomeScreen.test.tsx`·`home.test.ts`, 모의매매 `paperOverviewStates.test.tsx`·`paperStateHandling.test.tsx`, 패턴마다 네 상태 테스트
+  - `/paper` 리디렉션 — 충족: `/paper` → `/paper/us`(임시 307, 이유는 UI 설계 §11-3), `nextConfig.test.ts`
+  - `endpoints.test.ts`·`access.test.ts` — 통과(커밋마다 `make test-frontend`, 마지막 `dddcc65` 기준 vitest 1114건)
+  - 시안 승인 — 토큰·셸 시안(액센트 A 잉크·테마 시스템 따름·검색 네 범주·한국어 라벨)은 구현 전에 사용자가 승인했고, 구현 화면은 Chromium에서 라이트·다크·1280/768px로 찍어 보고 다듬었다(`bdb7c9e`·`dddcc65`)
+  - 남은 것: `main` 병합·push 뒤 CI 6 job, 위 6번 병행 항목
 
 ### 2단계 — 한국 증시 책 ([명세 초안](2026-10-26-v2-kr-paper-spec.md))
 

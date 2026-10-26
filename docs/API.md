@@ -33,7 +33,7 @@
 | POST | `/api/alerts/rules/{id}` | 켜기·끄기 `{"enabled": bool}`. 켤 때도 만들 때와 같은 검사 — 무료가 국면 전환 밖의 규칙을 켜면 403, 관심 종목 상한 초과면 400 |
 | DELETE | `/api/alerts/rules/{id}` | 지우기 |
 | GET | `/api/alerts/inbox?limit=50` | 알림함(최근 순) `{items:[{id, kind, occurredOn, title, body, late, createdAt, read}], unread}` — 90일 보관, `late`는 발생 3일 뒤 들어간 '지난 사건' |
-| GET | `/api/alerts/unread-count` | 읽지 않은 수(지난 사건 제외) `{unread}` — 사이드바·탭 제목 표시용 |
+| GET | `/api/alerts/unread-count` | 읽지 않은 수(지난 사건 제외) `{unread}` — 상단바 알림 벨·탭 제목 표시용 |
 | POST | `/api/alerts/inbox/read` | 읽음 `{"ids":[…]}` 또는 `{"all":true}` |
 
 `GET /api/health`는 DB 연결을 확인해 `{"status":"ok","database":"ok"}`(200) 또는

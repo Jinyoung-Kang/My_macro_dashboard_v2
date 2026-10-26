@@ -15,7 +15,8 @@
   - `LocalNoLoginIntegrationTest`(@SpringBootTest): 운영 경로까지 운영자로, 쓰기의 `user_id`가 첫 운영자, 다른 출처 403
   - CI(`ci.yml`): 로컬 compose는 화면·API를 127.0.0.1에만 열고 켬, `.env`가 켜려 해도 AWS·QA 덧붙임은 `"false"`
   - `scripts/ports.sh check`: 켜졌는데 `COOKIE_SECURE=true`·외부 `FRONTEND_ORIGIN`이면 `make up`이 빌드 전에 멈춤
-  - 화면: `layoutSession.test.tsx`, `accountLocal.test.tsx`, `Sidebar.test.tsx`, `app/login/__tests__`, `access.test.ts`
+  - 화면: `layoutSession.test.tsx`, `accountLocal.test.tsx`, `components/shell/__tests__/Shell.test.tsx`·`MoreMenu.test.tsx`(로컬 운영자는 로그아웃 대신
+    '로컬 · 로그인 없음', 쿠키로 로그인한 운영자는 로그아웃 — v2 1단계에서 옛 `Sidebar.test.tsx`의 의도를 옮김), `app/login/__tests__`, `access.test.ts`
 
 ## 배경
 

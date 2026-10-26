@@ -5,7 +5,8 @@
   [UI 설계](../specs/2026-10-26-v2-ui-design.md) · [한국 책 명세 초안](../specs/2026-10-26-v2-kr-paper-spec.md) · [외부 OSS 채택 목록](../specs/2026-10-26-v2-oss-adoption.md)
 - 지키는 방법:
   - 모의 매매 상태는 한 곳(ADR 0019): 로컬 v2 `.env`의 `PAPER_ENABLED=false`, `/api/paper/status`의 `enabled`(0단계 C에서 `false` 확인),
-    CLAUDE.md 절대 규칙. 계획서 §6의 '기동 로그에 값 출력'은 아직 없습니다 — 1단계 백엔드 작업에서 넣습니다.
+    CLAUDE.md 절대 규칙, 기동 로그 `PaperStartupLog`(1단계 — INFO 한 줄에 `PAPER_ENABLED`·스케줄러·`LOCAL_NO_LOGIN`·화면 포트·출발일,
+    로그인 없는 로컬에서 정기 작업이 켜져 있으면 WARN)와 `PaperStartupLogTest`(로컬·서버·스케줄러 꺼짐의 줄, WARN 조건, 줄에 비밀값 없음)
   - 이름·포트·쿠키: `AuthControllerTest`(세션 쿠키 `my_macro_v2_session`), `test_aws_scripts.py`(서버 폴더 이름 `My_macro_dashboard_v2`),
     CI 'AWS 덧붙임 해석'(가짜 로컬 값 3002·8082)
   - 호출 상한 20: `ClaudeBookServiceTest`(기본값·설정이 없을 때·상한에 닿으면 부르지 않음), `FrameworkServiceTest`, `PaperQueryServiceTest`(상태의 `cap`),
@@ -51,6 +52,10 @@ v1(2026-10-25에 v3에서 갈라짐)은 AWS 운영본(ADR 0019)으로 🧪 모�
 ## 결과와 남은 위험
 
 - 0단계(2026-10-26): 저장소·이름·포트·쿠키·V13·상한 20·이 ADR. v3·v1·v2 세 스택이 같은 맥에서 함께 뜨는 것을 확인했습니다.
-- 두 곳 동시 가동을 막는 것은 지금 `.env` 한 줄과 규칙뿐입니다 — 기동 로그 출력(계획서 §6)을 1단계에서 넣습니다.
+- 1단계(2026-10-26, 브랜치 `claude/v2-ui-stage1-2026-10`): 토큰·셸(5탭 + 더보기)·공용 패턴·홈·모의매매(미국) 화면과 기동 로그.
+  결과와 설계에서 벗어난 점은 [UI 설계 §11](../specs/2026-10-26-v2-ui-design.md), 단계별 진행은 계획서 §4. 병행 항목(캘린더 컨센서스·수집기 래치)은 남았습니다.
+- 두 곳 동시 가동을 막는 것은 여전히 `.env` 한 줄과 규칙입니다. 1단계부터는 기동 로그가 그 상태를 보여 줍니다 — 로컬 v2에서
+  `모의 매매 정기 작업 꺼짐 — PAPER_ENABLED=false · 스케줄러(dashboard.scheduler.enabled)=켜짐 · LOCAL_NO_LOGIN=true · 화면 포트 3002 · …` 확인(2026-10-26).
+  기동을 막지는 않습니다(경고만).
 - 갈라진 뒤 v1에 들어가는 긴급 수정은 v2로 손으로 옮겨야 합니다(같은 수정을 두 저장소에).
 - 로컬 v2 DB의 모의 매매 기록은 2026-10-26 15:35 KST의 v1 로컬 사본이라 AWS 운영본보다 뒤처집니다(읽기 전용 자료).

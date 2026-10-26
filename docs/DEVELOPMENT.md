@@ -157,12 +157,40 @@ snapshot.get().putFreshness(out);   // collectedAtKst · ageSeconds · stale
 `RouteInventoryTest`의 목록과 [API.md](API.md) 표에도 적어야 빌드가 통과합니다.
 컨트롤러 하나가 서비스를 5개보다 많이 받으면 같은 테스트가 실패하니, 그때는 나눕니다.
 
-### ⑤ 화면 — `frontend/src/app/(dashboard)/…`
+### ⑤ 화면 — `frontend/src/…`
 
-주소는 `lib/endpoints.ts`에 함수로 추가하고(테스트 CASES에도 한 줄), `useApi` 훅으로 읽습니다.
+주소는 `lib/endpoints.ts`에 함수로 추가하고(테스트 CASES에도 한 줄), `useApi` 훅으로 읽습니다(브라우저에서 —
+서버 컴포넌트 fetch는 쓰지 않음, [ARCHITECTURE §4-3](ARCHITECTURE.md)).
 버튼으로 서버를 부르면 `useAsyncAction`, 데이터 가공은 `lib/`의 순수 함수로 두고 테스트합니다
 ([ADR 0004](adr/0004-frontend-layering.md)). 값이 없으면 `EMPTY`(`—`)로 그립니다 — 0으로 채우지
-않습니다. 사이드바(`components/Sidebar.tsx`)에 메뉴를 추가하세요.
+않습니다. 빈값·추정·이전 값 배지·출처 줄은 `components/patterns`가 그리므로 새 화면은 패턴을 씁니다.
+
+**메뉴 추가**는 `lib/nav.ts`의 `TABS`에 한 줄입니다 — 왼쪽 내비·하단 탭·하위 메뉴 줄·브라우저 탭 제목·통합 검색이 이 표 하나를
+씁니다. 운영자 전용·유료 화면이면 `lib/access.ts`의 `OWNER_ONLY_MENUS`·`PRO_MENUS`에도 넣습니다(경로 앞부분 일치라 그 아래
+주소까지 함께 걸림). `nav.test.ts`·`access.test.ts`가 탭 표와 보이는 범위를 고정합니다. 새 API 경로는 백엔드 `AccessPolicy` 표에도(ADR 0010).
+
+```
+frontend/src/
+├── app/(dashboard)/<경로>/page.tsx  라우트 — 새 화면은 screens 컴포넌트를 그리기만. 옛 화면(4단계에 옮김)은 섹션 파일까지 여기
+├── components/ui/                 기본 조각(index.tsx) + Radix 감싼 Dialog·ConfirmDialog·Toast(하위 경로로 가져옴, 배럴에 넣지 않음)
+├── components/patterns/           화면 패턴(AssetRow·Hero·StatTile·DataTable·배지·Empty…) — `@/components/patterns` 배럴로만
+├── components/charts/             Recharts 래퍼 — 화면은 `@/components/charts`(index.tsx)에서만 가져옴
+├── components/shell/              셸(왼쪽 내비·상단바·하위 메뉴 줄·하단 탭·검색·계정·테마·빌드 정보)
+├── components/screens/<탭>/       새 화면 조립(home·paper)
+├── hooks/                         useApi·useAsyncAction·useTheme·새로고침 신호 …
+└── lib/                           순수 함수 — 서식·거래소 달력, 메뉴 표(nav)·검색 색인(search)·테마(theme), 화면 모델(home·paperOverview·patterns…)
+```
+
+화면 테스트 규칙:
+- 테스트 파일은 `src/**/__tests__/**/*.test.{ts,tsx}`에만 둡니다(밖에 두면 vitest가 조용히 건너뜀). 파일마다 `afterEach(() => cleanup())`.
+- `vitest.setup.ts`(모든 테스트 앞)는 jsdom에 없는 `matchMedia`·`ResizeObserver`·`scrollIntoView`·포인터 캡처의 "아무 일도 안 함" 스텁만
+  둡니다(Radix·테마 훅용, 이미 있으면 덮지 않음). 동작을 봐야 하는 테스트는 그 안에서 `vi.stubGlobal`·prototype 대입으로 덮어씁니다.
+- **네 상태**: 새 패턴은 값 있음·값 없음·추정·오래됨 렌더링 테스트를, 새 화면은 데이터 없음·일부 실패·추정·오래됨을 고정 응답으로
+  보는 테스트를 갖습니다(예: `HomeScreen.test.tsx`·`paperOverviewStates.test.tsx`). 패턴 파일을 더하면 배럴과
+  `patterns/__tests__/index.test.ts`의 목록에 함께 넣습니다(빠지면 그 테스트가 막음).
+- **차트 mock**: 화면 테스트의 `vi.mock("@/components/charts")`는 내보내는 이름의 부분집합입니다. 화면이 charts의 새 이름(예:
+  `LineChart`)을 쓰기 시작하면 그 화면을 그리는 테스트들의 mock에 이름을 더합니다. 하위 경로(`@/components/charts/LineChart`)로
+  가져오면 mock이 걸리지 않으므로 화면은 늘 `@/components/charts`에서 가져옵니다. `@/lib/api`·`next/navigation` mock도 부분집합이라 같습니다.
 
 ---
 
@@ -198,13 +226,13 @@ snapshot.get().putFreshness(out);   // collectedAtKst · ageSeconds · stale
 - 한꺼번에 나누지 않고, **고치러 들어간 파일**에서 그 부분만 떼어 냅니다. 옮길 때는
   동작을 바꾸지 않습니다(옮기는 커밋과 고치는 커밋을 나눕니다).
 - 화면: 메뉴 페이지의 섹션은 같은 폴더의 파일로 둡니다 — 예: `macro/SpreadSection.tsx`,
-  `radar/FlowPanels.tsx`. `page.tsx`에는 데이터 조회와 배치만 남깁니다.
+  `radar/FlowPanels.tsx`. `page.tsx`에는 데이터 조회와 배치만 남깁니다(옛 화면 기준 — 새 화면의 섹션은 `components/screens/<탭>/`).
 - 수집기: 태스크가 부르는 가공 단계는 별도 모듈로 둡니다 — 예: `macro_cards.py`
   (매크로 카드 보정). `tasks/`에는 "받아서 저장"만 남깁니다. 태스크는 주제별 모듈(`markets`·`series`·`filings`·
   `korea_public`·`toss`·`maintenance`)에, 목록은 `registry.py`, 실행·합치기·시간 상한은 `runner.py`에 둡니다.
   테스트가 모듈 전역(`store`·상수)을 바꿔 끼울 때는 그 이름을 실제로 쓰는 모듈(`tasks.toss` 등)을 대상으로 합니다.
 - 아직 큰 파일(600줄 이상): `lib/types.ts`, `services/radar.py`, `store.py`,
-  `components/charts.tsx`, `radar/page.tsx`. 다음에 손댈 때 같은 방식으로 나눕니다.
+  `components/charts/index.tsx`, `radar/page.tsx`. 다음에 손댈 때 같은 방식으로 나눕니다.
 
 자세한 규칙은 [PRINCIPLES.md](PRINCIPLES.md)에 있습니다.
 

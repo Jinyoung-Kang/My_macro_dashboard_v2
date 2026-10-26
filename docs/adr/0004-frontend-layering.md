@@ -4,6 +4,10 @@
 - 지키는 방법: `frontend/src/lib/__tests__/endpoints.test.ts`(경로 목록·docs/API.md 대조),
   `frontend/src/app/(dashboard)/__tests__/actions.test.tsx`(버튼 동작),
   `frontend/src/hooks/__tests__/*`, `frontend/src/lib/__tests__/*`
+  - v2 1단계(아래 덧붙임): `components/patterns/__tests__/index.test.ts`(패턴 파일마다 배럴에 같은 이름, 배럴에 차트 없음),
+    패턴의 네 상태 테스트(`components/patterns/__tests__/*` — 값 있음·값 없음·추정·오래됨), 화면의 네 상태 테스트
+    (`components/screens/home/__tests__/HomeScreen.test.tsx`, `app/(dashboard)/__tests__/paperOverviewStates.test.tsx`·`paperStateHandling.test.tsx`),
+    `lib/__tests__/nav.test.ts`(탭·하위 메뉴 표, 지금 탭, 탭 제목, 검색 메뉴 항목 — 셸은 그리기만)
 
 ## 배경
 
@@ -48,3 +52,14 @@
 - 훅: 옮기기 전에 화면 동작을 렌더링 테스트 10개로 고정하고, 옮긴 뒤 같은 테스트가 그대로 통과.
 - 순수 함수: 바꾸기 전후로 /krx·/macro·/style·/sector를 실제로 띄워 본문 글자와 차트 SVG 경로의 해시가 같음.
 - 번들: `endpoints` 객체가 공용 청크에 들어가 경로마다 First Load JS가 약 1kB 늘었습니다.
+
+## 덧붙임 — v2 1단계(2026-10-26): 화면 층을 패턴·셸·화면 조립으로 나눔
+
+위 결정은 그대로이고 "화면" 층만 폴더로 나눴습니다([UI 설계 §2·§11](../specs/2026-10-26-v2-ui-design.md)).
+
+- `components/patterns/`: 화면 패턴(자산 행·히어로·통계 타일·표·출처/추정/이전 값 배지·Empty). 빈값 `—`와 배지를 여기서 강제하고,
+  화면은 배럴 `@/components/patterns` 하나로 가져옵니다. 표시 규칙(빈값 판정·부호·출처 글)은 `lib/`의 순수 함수입니다(규칙 3).
+- `components/shell/`: 왼쪽 내비·하단 탭·상단바·하위 메뉴 줄. 메뉴 표·지금 탭·탭 제목은 순수 모듈 `lib/nav.ts`가 정하고 셸은 그리기만 합니다.
+- `components/screens/<탭>/`: 화면 조립. 라우트 `page.tsx`는 화면 컴포넌트를 그리기만 합니다. 옛 화면은 4단계에 옮길 때까지 `app/(dashboard)/**`에 그대로.
+- `components/ui.tsx`·`charts.tsx`는 `ui/index.tsx`·`charts/index.tsx`로 옮겼습니다(가져오는 지정자 그대로 — 테스트 mock이 그 지정자에 걸림).
+- 서버 읽기는 그대로 훅(`useApi`, 브라우저)입니다. 설계서의 서버 컴포넌트 fetch를 하지 않은 이유는 [ARCHITECTURE §4-3](../ARCHITECTURE.md).
