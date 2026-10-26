@@ -67,4 +67,18 @@ class TrailingStopTest {
         // 추수감사절(11-26)을 건너뜀: 11-23(1) 24(2) 25(3) 27(4) 30(5)
         assertThat(TrailingStop.lockoutUntil(LocalDate.of(2026, 11, 20), 5)).isEqualTo(LocalDate.of(2026, 11, 30));
     }
+
+    @Test
+    @DisplayName("달력을 받는 판 — 미국 달력이면 옛 시그니처와 같고, 다른 달력이면 그 달력의 거래일로 센다")
+    void lockoutWithCalendar() {
+        LocalDate observed = LocalDate.of(2026, 11, 20);
+        assertThat(TrailingStop.lockoutUntil(UsMarketCalendar.CALENDAR, observed, 5))
+                .isEqualTo(TrailingStop.lockoutUntil(observed, 5))
+                .isEqualTo(LocalDate.of(2026, 11, 30));
+        // 휴장일 없는 시험 달력: 11-23(1) 24(2) 25(3) 26(4 — 미국 추수감사절도 셈) 27(5)
+        assertThat(TrailingStop.lockoutUntil(WeekdaysCalendar.INSTANCE, observed, 5))
+                .isEqualTo(LocalDate.of(2026, 11, 27));
+        assertThatThrownBy(() -> TrailingStop.lockoutUntil(null, observed, 5))
+                .isInstanceOf(NullPointerException.class);
+    }
 }

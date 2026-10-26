@@ -1,6 +1,7 @@
 package com.macrodash.analytics;
 
 import java.time.LocalDate;
+import java.util.Objects;
 
 /**
  * 🧪 트레일링 스탑과 재진입 금지(명세 L7·D10, 설계 §3-3).
@@ -46,10 +47,20 @@ public final class TrailingStop {
 
     /**
      * 재진입 금지 마지막 날 = 관측일 + n거래일({@link UsMarketCalendar#addTradingDays}). 예: 2026-10-23 스탑, 20거래일 →
-     * 2026-11-20까지 금지, 11-23부터 매수 가능.
+     * 2026-11-20까지 금지, 11-23부터 매수 가능. 미국 달력 — {@link #lockoutUntil(TradingCalendar, LocalDate, int)}에 미국 달력을 넘깁니다.
      */
     public static LocalDate lockoutUntil(LocalDate observationDate, int tradingDays) {
-        return UsMarketCalendar.addTradingDays(observationDate, tradingDays);
+        return lockoutUntil(UsMarketCalendar.CALENDAR, observationDate, tradingDays);
+    }
+
+    /**
+     * 재진입 금지 마지막 날 = 관측일 + n거래일(그 시장 달력의 {@link TradingCalendar#addTradingDays}).
+     *
+     * @param calendar 그 책이 속한 시장의 거래일 달력
+     */
+    public static LocalDate lockoutUntil(TradingCalendar calendar, LocalDate observationDate, int tradingDays) {
+        Objects.requireNonNull(calendar, "거래일 달력이 없습니다");
+        return calendar.addTradingDays(observationDate, tradingDays);
     }
 
     /**

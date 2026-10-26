@@ -662,4 +662,68 @@ class ReviewFactsTest {
                 "returnPct", -4.0));
         assertThat(filled).containsEntry("returnSinceFillPct", 10.0).containsEntry("ma200", null);
     }
+
+    // ------------------------------------------------------------------ 달력을 받는 판(2단계 A2)
+    @Test
+    @DisplayName("달력을 받는 판 — 기준일·최근 기준일: 미국 달력이면 옛 시그니처와 같고, 다른 달력이면 그 달력의 거래일로")
+    void weekEndingWithCalendar() {
+        for (LocalDate day = d("2026-01-01"); day.isBefore(d("2028-01-01")); day = day.plusDays(1)) {
+            assertThat(ReviewFacts.weekEnding(UsMarketCalendar.CALENDAR, day)).isEqualTo(ReviewFacts.weekEnding(day));
+        }
+        // 06-19(금)은 미국 준틴스 휴장 — 휴장일 없는 시험 달력에서는 금요일 그대로
+        assertThat(ReviewFacts.weekEnding(WeekdaysCalendar.INSTANCE, d("2026-06-17"))).isEqualTo(d("2026-06-19"));
+        Instant afterSeoulClose = Instant.parse("2026-06-19T07:00:00Z");     // 16:00 KST, 뉴욕은 03:00
+        assertThat(ReviewFacts.latestCompletedWeekEnding(UsMarketCalendar.CALENDAR, afterSeoulClose))
+                .isEqualTo(ReviewFacts.latestCompletedWeekEnding(afterSeoulClose))
+                .isEqualTo(d("2026-06-18"));
+        assertThat(ReviewFacts.latestCompletedWeekEnding(WeekdaysCalendar.INSTANCE, afterSeoulClose))
+                .isEqualTo(d("2026-06-19"));
+        // 시험 달력 마감(15:30 KST = 06:30Z) 전이면 지난주
+        assertThat(ReviewFacts.latestCompletedWeekEnding(WeekdaysCalendar.INSTANCE, Instant.parse("2026-06-19T06:00:00Z")))
+                .isEqualTo(d("2026-06-12"));
+        assertThatThrownBy(() -> ReviewFacts.weekEnding(null, d("2026-06-17")))
+                .isInstanceOf(NullPointerException.class);
+    }
+
+    @Test
+    @DisplayName("달력을 받는 판 — 조립: 미국 달력이면 옛 시그니처와 같은 사실, 다른 달력이면 기준일 검사·가정 진입일을 그 달력으로")
+    void buildWithCalendar() {
+        // 추수감사절 주: 결정 11-25(수), 기준일 11-27(금 — 두 달력 모두 그 주 마지막 거래일)
+        LocalDate we = d("2026-11-27");
+        Map<String, DailySeries> closes = new HashMap<>();
+        closes.put("GGG", series("2026-11-25", 70, "2026-11-26", 80, "2026-11-27", 88));
+        Inputs in = new Inputs(List.of(ok(1, d("2026-11-25"), rejected(11, "GGG", "BUY"))), closes, List.of(),
+                List.of(), List.of(), 3, "현행");
+        Facts us = ReviewFacts.build(in, we, 4, null);
+        assertThat(ReviewFacts.build(UsMarketCalendar.CALENDAR, in, we, 4, null).toMap()).isEqualTo(us.toMap());
+        // 미국: 결정 다음 세션 = 11-27(추수감사절을 건너뜀) → 88 / 88 − 1 = 0
+        assertThat(single(us).hypothetical().entryDate()).isEqualTo(d("2026-11-27"));
+        assertThat(single(us).hypothetical().returnPct()).isEqualTo(0.0);
+        // 휴장일 없는 시험 달력: 다음 세션 = 11-26 → 88 / 80 − 1 = +10%
+        Facts weekdays = ReviewFacts.build(WeekdaysCalendar.INSTANCE, in, we, 4, null);
+        assertThat(single(weekdays).hypothetical().entryDate()).isEqualTo(d("2026-11-26"));
+        assertThat(single(weekdays).hypothetical().returnPct()).isEqualTo(10.0);
+
+        // 기준일 검사도 그 달력으로: 06-19(금)는 미국에선 그 주 기준일이 아님(준틴스), 시험 달력에선 맞음
+        assertThatThrownBy(() -> ReviewFacts.build(in, d("2026-06-19"), 4, null))
+                .isInstanceOf(IllegalArgumentException.class);
+        assertThat(ReviewFacts.build(WeekdaysCalendar.INSTANCE, in, d("2026-06-19"), 4, null).weekEnding())
+                .isEqualTo(d("2026-06-19"));
+    }
+
+    @Test
+    @DisplayName("달력을 받는 판 — 계좌 비교 시작일: 창 시작이 미국 휴장일이면 미국은 직전 거래일, 휴장일 없는 시험 달력은 그날")
+    void comparisonWithCalendar() {
+        LocalDate we = d("2026-07-31");      // after = 07-03(미국 독립기념일 대체 휴장, 금)
+        List<BookNav> books = List.of(new BookNav("rules", List.of(new NavPoint(d("2026-07-02"), 100_000, true),
+                new NavPoint(d("2026-07-03"), 125_000, true), new NavPoint(we, 100_000, true))));
+        Window window = ReviewFacts.window(we, 4);
+        Comparison us = ReviewFacts.comparison(books, window);
+        assertThat(ReviewFacts.comparison(UsMarketCalendar.CALENDAR, books, window)).isEqualTo(us);
+        assertThat(us.from()).isEqualTo(d("2026-07-02"));
+        assertThat(us.books().get(0).returnPct()).isEqualTo(0.0);
+        Comparison weekdays = ReviewFacts.comparison(WeekdaysCalendar.INSTANCE, books, window);
+        assertThat(weekdays.from()).isEqualTo(d("2026-07-03"));
+        assertThat(weekdays.books().get(0).returnPct()).isEqualTo(-20.0);
+    }
 }

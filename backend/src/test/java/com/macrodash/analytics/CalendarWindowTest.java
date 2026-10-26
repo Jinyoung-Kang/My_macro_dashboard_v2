@@ -324,4 +324,29 @@ class CalendarWindowTest {
                 List.of());
         assertThat(r.rows()).extracting(CalendarWindow.Row::name).containsExactly("FOMC 회의 (SEP)", "FOMC 회의 · SEP");
     }
+
+    @Test
+    @DisplayName("달력을 받는 판 — 미국 달력이면 옛 시그니처와 같고, 다른 달력이면 창을 그 달력으로 센다")
+    void windowWithCalendar() {
+        LocalDate asOf = d("2026-11-20");
+        // 미국: 11-23 … 추수감사절(11-26)을 건너뛰어 10번째 거래일 12-07
+        assertThat(CalendarWindow.window(UsMarketCalendar.CALENDAR, asOf))
+                .isEqualTo(CalendarWindow.window(asOf))
+                .isEqualTo(new CalendarWindow.Window(d("2026-11-23"), d("2026-12-07")));
+        // 휴장일 없는 시험 달력: 11-23 … 12-04
+        assertThat(CalendarWindow.window(WeekdaysCalendar.INSTANCE, asOf))
+                .isEqualTo(new CalendarWindow.Window(d("2026-11-23"), d("2026-12-04")));
+
+        CalendarWindow.Stored s = stored(stepZeroMacro(), "ok",
+                lastKnown("2026-12-10", "2026-12-23", "2026-12-04", "2026-12-23"),
+                List.of(earnings("AAA", "2026-12-07", "BMO", false)));
+        CalendarWindow.Result us = CalendarWindow.compute(s, asOf, List.of("AAA"));
+        assertThat(CalendarWindow.compute(UsMarketCalendar.CALENDAR, s, asOf, List.of("AAA"))).isEqualTo(us);
+        assertThat(us.earningsCount()).isEqualTo(1);                 // 12-07은 미국 창 안
+        CalendarWindow.Result weekdays = CalendarWindow.compute(WeekdaysCalendar.INSTANCE, s, asOf, List.of("AAA"));
+        assertThat(weekdays.window().to()).isEqualTo(d("2026-12-04"));
+        assertThat(weekdays.earningsCount()).isZero();               // 창 뒤 — 알려진 일정이라 어느 목록에도 없음
+        assertThat(weekdays.earningsMissing()).isEmpty();
+        assertThatThrownBy(() -> CalendarWindow.window(null, asOf)).isInstanceOf(NullPointerException.class);
+    }
 }

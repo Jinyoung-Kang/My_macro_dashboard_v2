@@ -283,4 +283,27 @@ class PaperStatsTest {
                 List.of(dates.get(0), dates.get(0), dates.get(2)), List.of(100.0, 101.0, 102.0), null))
                 .isInstanceOf(IllegalArgumentException.class);
     }
+
+    @Test
+    @DisplayName("달력을 받는 판 — 미국 달력이면 옛 시그니처와 같고, 다른 달력이면 표본·하루 간격 쌍을 그 달력으로 센다")
+    void computeWithCalendar() {
+        // 10-23부터 미국 거래일 25개 = 11-27까지(11-26 추수감사절을 건너뜀)
+        List<LocalDate> dates = tradingDates(25);
+        assertThat(dates.get(24)).isEqualTo(LocalDate.of(2026, 11, 27));
+        List<Double> nav = alternating(25, 100, 0.01, 0.005);
+        List<Double> bench = alternating(25, 100, 0.008, 0.004);
+        Stats us = PaperStats.compute(dates, nav, bench);
+        assertThat(PaperStats.compute(UsMarketCalendar.CALENDAR, dates, nav, bench)).isEqualTo(us);
+        assertThat(us.sampleDays()).isEqualTo(24);
+        assertThat(us.volPct()).isNotNull();
+
+        // 휴장일 없는 시험 달력에서는 11-26도 거래일 — 표본 25, 11-25→11-27 쌍은 하루 간격이 아님
+        Stats weekdays = PaperStats.compute(WeekdaysCalendar.INSTANCE, dates, nav, bench);
+        assertThat(weekdays.sampleDays()).isEqualTo(25);
+        assertThat(weekdays.cumReturnPct()).isEqualTo(us.cumReturnPct());
+        assertThat(weekdays.cagrPct()).isNotEqualTo(us.cagrPct());
+        assertThat(weekdays.volPct()).isNotNull().isNotEqualTo(us.volPct());
+        assertThatThrownBy(() -> PaperStats.compute(null, dates, nav, bench))
+                .isInstanceOf(NullPointerException.class);
+    }
 }

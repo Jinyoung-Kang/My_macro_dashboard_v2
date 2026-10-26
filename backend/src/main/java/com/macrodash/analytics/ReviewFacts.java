@@ -28,6 +28,7 @@ import java.util.regex.Pattern;
  * <p><b>복기 기준일({@link #weekEnding})</b>은 ISO 주(월~일)의 마지막 미국 거래일 — 보통 금요일, 금요일이 휴장이면 목요일
  * ({@link UsMarketCalendar}). 창은 (기준일 − 주 수×7일, 기준일] 안에 결정 기준일({@code as_of})이 있는 결정입니다. 기본 4주이고,
  * 조립한 입력의 어림이 {@link #TOKEN_LIMIT}을 넘으면 서비스가 2주로 다시 조립해 이유({@link #trimmedReason})를 남깁니다(단계 0).
+ * 달력({@link TradingCalendar})을 받는 판은 기준일·가정 진입일·계좌 비교 시작일을 그 시장 달력으로 셉니다(받지 않는 판은 미국).
  *
  * <p><b>주문별 사실</b>(모두 복기 기준일 종가 기준, 기준일 뒤 값은 쓰지 않음):
  * <ul>
@@ -354,15 +355,26 @@ public final class ReviewFacts {
     // ------------------------------------------------------------------ 복기 기준일·시각
     /**
      * day가 속한 ISO 주(월~일)의 마지막 미국 거래일 — 금요일, 금요일이 휴장이면 목요일. 예: 2026-06-19(준틴스, 금) 주 → 06-18,
-     * 추수감사절 주(목 휴장·금 조기 폐장) → 금요일.
+     * 추수감사절 주(목 휴장·금 조기 폐장) → 금요일. {@link #weekEnding(TradingCalendar, LocalDate)}에 미국 달력을 넘깁니다.
      *
      * @throws IllegalStateException 그 주에 거래일이 없으면(휴장 규칙상 일어나지 않음)
      */
     public static LocalDate weekEnding(LocalDate day) {
+        return weekEnding(UsMarketCalendar.CALENDAR, day);
+    }
+
+    /**
+     * day가 속한 ISO 주(월~일)의 그 시장 마지막 거래일(금요일부터 월요일 쪽으로 처음 만나는 거래일).
+     *
+     * @param calendar 그 시장의 거래일 달력
+     * @throws IllegalStateException 그 주 평일이 모두 휴장이면
+     */
+    public static LocalDate weekEnding(TradingCalendar calendar, LocalDate day) {
+        Objects.requireNonNull(calendar, "거래일 달력이 없습니다");
         Objects.requireNonNull(day, "day");
         LocalDate monday = day.with(DayOfWeek.MONDAY);
         for (LocalDate d = monday.plusDays(4); !d.isBefore(monday); d = d.minusDays(1)) {
-            if (UsMarketCalendar.isTradingDay(d)) {
+            if (calendar.isTradingDay(d)) {
                 return d;
             }
         }
@@ -372,11 +384,23 @@ public final class ReviewFacts {
     /**
      * now에 마감이 끝난 가장 최근 복기 기준일 — 마감이 끝난 최근 세션이 그 주의 기준일이면 그날, 아니면(주 중간) 지난주 기준일.
      * 금요일 마감 전까지는 지난주를 가리키므로, 놓친 복기(맥이 꺼져 있던 토요일)는 다음 주 기준일 마감 전까지 이 값으로 다시 잡힙니다.
+     * 미국 달력 — {@link #latestCompletedWeekEnding(TradingCalendar, Instant)}.
      */
     public static LocalDate latestCompletedWeekEnding(Instant now) {
-        LocalDate session = UsMarketCalendar.lastCompletedSession(now);
-        LocalDate ending = weekEnding(session);
-        return ending.equals(session) ? ending : weekEnding(session.with(DayOfWeek.MONDAY).minusDays(1));
+        return latestCompletedWeekEnding(UsMarketCalendar.CALENDAR, now);
+    }
+
+    /**
+     * {@link #latestCompletedWeekEnding(Instant)}와 같되 그 시장 달력의 세션·주 마지막 거래일로.
+     *
+     * @param calendar 그 시장의 거래일 달력
+     */
+    public static LocalDate latestCompletedWeekEnding(TradingCalendar calendar, Instant now) {
+        Objects.requireNonNull(calendar, "거래일 달력이 없습니다");
+        LocalDate session = calendar.lastCompletedSession(now);
+        LocalDate ending = weekEnding(calendar, session);
+        return ending.equals(session) ? ending
+                : weekEnding(calendar, session.with(DayOfWeek.MONDAY).minusDays(1));
     }
 
     /**
@@ -417,7 +441,7 @@ public final class ReviewFacts {
 
     // ------------------------------------------------------------------ 조립
     /**
-     * 복기 입력을 조립합니다.
+     * 복기 입력을 조립합니다 — 미국 달력({@link #build(TradingCalendar, Inputs, LocalDate, int, String)}).
      *
      * @param weekEnding    복기 기준일 — {@link #weekEnding}이 돌려주는 날이어야 함
      * @param weeks         창(주)
@@ -425,9 +449,24 @@ public final class ReviewFacts {
      * @throws IllegalArgumentException 기준일이 그 주의 마지막 거래일이 아니거나 weeks &lt; 1
      */
     public static Facts build(Inputs in, LocalDate weekEnding, int weeks, String trimmedReason) {
+        return build(UsMarketCalendar.CALENDAR, in, weekEnding, weeks, trimmedReason);
+    }
+
+    /**
+     * 복기 입력을 조립합니다. 주 마지막 거래일 검사·거절 주문의 가정 진입일(결정 다음 세션)·계좌 비교 시작일을 그 시장 달력으로 셉니다.
+     *
+     * @param calendar      그 계좌들이 속한 시장의 거래일 달력
+     * @param weekEnding    복기 기준일 — {@link #weekEnding(TradingCalendar, LocalDate)}가 돌려주는 날이어야 함
+     * @param weeks         창(주)
+     * @param trimmedReason 2주로 줄였으면 이유({@link #trimmedReason}), 아니면 null
+     * @throws IllegalArgumentException 기준일이 그 주의 마지막 거래일이 아니거나 weeks &lt; 1
+     */
+    public static Facts build(TradingCalendar calendar, Inputs in, LocalDate weekEnding, int weeks,
+                              String trimmedReason) {
+        Objects.requireNonNull(calendar, "거래일 달력이 없습니다");
         Objects.requireNonNull(in, "in");
         Objects.requireNonNull(weekEnding, "weekEnding");
-        if (!weekEnding.equals(weekEnding(weekEnding))) {
+        if (!weekEnding.equals(weekEnding(calendar, weekEnding))) {
             // 기준일이 주 중간이면 '그 주 금요일 종가'라는 수익률의 뜻이 바뀝니다 — 호출부 실수라 막습니다.
             throw new IllegalArgumentException("복기 기준일은 그 주의 마지막 거래일이어야 합니다: " + weekEnding);
         }
@@ -447,18 +486,19 @@ public final class ReviewFacts {
         Map<String, Integer> omitted = new TreeMap<>();
         for (Decision d : inWindow) {
             if (OK.equals(d.status()) || NO_TRADE.equals(d.status())) {
-                decisions.add(decision(d, weekEnding, in.closes(), stops, fullSells));
+                decisions.add(decision(calendar, d, weekEnding, in.closes(), stops, fullSells));
             } else {
                 // 오류·거부·건너뜀은 논거가 없어 판정할 것이 없습니다 — 건수만 실어 '결정이 빠진 날'이 있었음을 알립니다.
                 omitted.merge(String.valueOf(d.status()), 1, Integer::sum);
             }
         }
         return new Facts(weekEnding, window, trimmedReason, in.frameworkVersion(), in.frameworkStatus(), decisions,
-                omitted, comparison(in.books(), window));
+                omitted, comparison(calendar, in.books(), window));
     }
 
-    private static DecisionFacts decision(Decision d, LocalDate weekEnding, Map<String, DailySeries> closes,
-                                          List<StopFill> stops, List<FullSell> fullSells) {
+    private static DecisionFacts decision(TradingCalendar calendar, Decision d, LocalDate weekEnding,
+                                          Map<String, DailySeries> closes, List<StopFill> stops,
+                                          List<FullSell> fullSells) {
         if (NO_TRADE.equals(d.status()) && d.orders().isEmpty()) {
             // 관망 결정은 짧게: 노출과 관망 사유만(주문이 없어 대조할 가격 사실이 없음).
             return new DecisionFacts(d.id(), d.kind(), d.asOf(), d.status(), d.stance(), d.targetExposurePct(), null,
@@ -470,7 +510,7 @@ public final class ReviewFacts {
         orders.sort(Comparator.comparingLong(Order::id));
         List<OrderFacts> facts = new ArrayList<>(orders.size());
         for (Order o : orders) {
-            facts.add(order(o, d.asOf(), weekEnding, closes.get(o.ticker()), stops, fullSells));
+            facts.add(order(calendar, o, d.asOf(), weekEnding, closes.get(o.ticker()), stops, fullSells));
         }
         return new DecisionFacts(d.id(), d.kind(), d.asOf(), d.status(), d.stance(), d.targetExposurePct(),
                 clip(d.summary(), SUMMARY_CHARS), clip(d.exposureRationale(), RATIONALE_CHARS),
@@ -478,8 +518,8 @@ public final class ReviewFacts {
     }
 
     /** 주문 하나의 사실(클래스 설명의 목록). */
-    static OrderFacts order(Order o, LocalDate asOf, LocalDate weekEnding, DailySeries series, List<StopFill> stops,
-                            List<FullSell> fullSells) {
+    static OrderFacts order(TradingCalendar calendar, Order o, LocalDate asOf, LocalDate weekEnding,
+                            DailySeries series, List<StopFill> stops, List<FullSell> fullSells) {
         List<String> notes = new ArrayList<>();
         boolean buy = BUY.equals(o.side());
         boolean sell = SELL.equals(o.side());
@@ -531,7 +571,7 @@ public final class ReviewFacts {
         }
 
         Hypothetical hypothetical = rejected && (buy || sell)
-                ? hypothetical(asOf, weekEnding, series, close, sell, notes) : null;
+                ? hypothetical(calendar, asOf, weekEnding, series, close, sell, notes) : null;
         Ma200 ma200 = ma200(series, weekEnding, close, notes);
         Evidence evidence = evidence(fill, buy, sell, stop, maxDrawdown, ma200);
         return new OrderFacts(o.id(), o.ticker(), o.side(), o.targetWeightPct(), o.sellFraction(), o.timing(),
@@ -630,9 +670,9 @@ public final class ReviewFacts {
     }
 
     /** 거절 주문: 결정 다음 세션 종가 → 기준일 종가. */
-    private static Hypothetical hypothetical(LocalDate asOf, LocalDate weekEnding, DailySeries series, Double close,
-                                             boolean sell, List<String> notes) {
-        LocalDate entry = UsMarketCalendar.nextTradingDay(asOf);
+    private static Hypothetical hypothetical(TradingCalendar calendar, LocalDate asOf, LocalDate weekEnding,
+                                             DailySeries series, Double close, boolean sell, List<String> notes) {
+        LocalDate entry = calendar.nextTradingDay(asOf);
         if (entry.isAfter(weekEnding)) {
             notes.add("가정 수익률: 결정 다음 세션(" + entry + ")이 복기 기준일 뒤");
             return new Hypothetical(entry, null, null, null);
@@ -785,8 +825,13 @@ public final class ReviewFacts {
      * 아닙니다. 기준일 줄이 없는 계좌는 null(시작 전·기록 누락), 0이 아닙니다.
      */
     static Comparison comparison(List<BookNav> books, Window window) {
-        LocalDate base = UsMarketCalendar.isTradingDay(window.after()) ? window.after()
-                : UsMarketCalendar.previousTradingDay(window.after());
+        return comparison(UsMarketCalendar.CALENDAR, books, window);
+    }
+
+    /** {@link #comparison(List, Window)}와 같되 시작일(창 시작 당일, 휴장이면 직전 거래일)을 그 시장 달력으로. */
+    static Comparison comparison(TradingCalendar calendar, List<BookNav> books, Window window) {
+        LocalDate base = calendar.isTradingDay(window.after()) ? window.after()
+                : calendar.previousTradingDay(window.after());
         LocalDate end = window.through();
         Map<String, TreeMap<LocalDate, NavPoint>> byBook = new LinkedHashMap<>();
         for (BookNav b : books) {

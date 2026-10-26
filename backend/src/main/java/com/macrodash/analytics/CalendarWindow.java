@@ -150,21 +150,43 @@ public final class CalendarWindow {
     /** 저장본이 없을 때의 사유(패킷에 그대로). */
     public static final String NO_SNAPSHOT = "자료 없음 — 일정 저장본이 없습니다";
 
-    /** 기준일 다음 세션 … 기준일 + {@value #TRADING_DAYS}거래일. */
+    /** 기준일 다음 세션 … 기준일 + {@value #TRADING_DAYS}거래일(미국 달력 — {@link #window(TradingCalendar, LocalDate)}). */
     public static Window window(LocalDate asOf) {
-        Objects.requireNonNull(asOf, "기준 거래일이 없습니다");
-        return new Window(UsMarketCalendar.nextTradingDay(asOf), UsMarketCalendar.addTradingDays(asOf, TRADING_DAYS));
+        return window(UsMarketCalendar.CALENDAR, asOf);
     }
 
     /**
-     * 창 안의 줄(클래스 설명).
+     * 기준일 다음 세션 … 기준일 + {@value #TRADING_DAYS}거래일, 그 시장 달력으로.
+     *
+     * @param calendar 기준일이 속한 시장의 거래일 달력
+     */
+    public static Window window(TradingCalendar calendar, LocalDate asOf) {
+        Objects.requireNonNull(calendar, "거래일 달력이 없습니다");
+        Objects.requireNonNull(asOf, "기준 거래일이 없습니다");
+        return new Window(calendar.nextTradingDay(asOf), calendar.addTradingDays(asOf, TRADING_DAYS));
+    }
+
+    /**
+     * 창 안의 줄(클래스 설명). 창은 미국 달력으로 셉니다 — {@link #compute(TradingCalendar, Stored, LocalDate, Collection)}.
      *
      * @param stored  저장본. 없으면 null — 줄 없이 {@link #NO_SNAPSHOT}
      * @param asOf    기준 거래일(미국 동부 세션 날짜)
      * @param targets 실적일을 실을 종목(보유·후보 — ETF는 호출부가 뺌, 대소문자·앞뒤 공백 무관). null이면 없음
      */
     public static Result compute(Stored stored, LocalDate asOf, Collection<String> targets) {
-        Window window = window(asOf);
+        return compute(UsMarketCalendar.CALENDAR, stored, asOf, targets);
+    }
+
+    /**
+     * 창 안의 줄(클래스 설명), 창은 그 시장 달력으로({@link #window(TradingCalendar, LocalDate)}).
+     *
+     * @param calendar 기준일이 속한 시장의 거래일 달력
+     * @param stored   저장본. 없으면 null — 줄 없이 {@link #NO_SNAPSHOT}
+     * @param asOf     기준 거래일(그 시장의 세션 날짜)
+     * @param targets  실적일을 실을 종목(대소문자·앞뒤 공백 무관). null이면 없음
+     */
+    public static Result compute(TradingCalendar calendar, Stored stored, LocalDate asOf, Collection<String> targets) {
+        Window window = window(calendar, asOf);
         if (stored == null) {
             return new Result(window, false, NO_SNAPSHOT, List.of(), Map.of(), null, null, List.of(), List.of());
         }

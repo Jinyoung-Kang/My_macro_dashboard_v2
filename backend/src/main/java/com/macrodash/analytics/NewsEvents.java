@@ -21,6 +21,7 @@ import java.util.Objects;
 import java.util.Set;
 import java.util.TreeMap;
 import java.util.TreeSet;
+import java.util.function.Function;
 import java.util.function.UnaryOperator;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -426,7 +427,8 @@ public final class NewsEvents {
     }
 
     /**
-     * 기준 거래일의 창(클래스 설명).
+     * 기준 거래일의 창(클래스 설명) — 미국 달력, cutoff = 세션 다음 KST 날짜의 결정 시각.
+     * {@link #window(TradingCalendar, LocalDate, Function)}에 미국 달력과 그 cutoff를 넘깁니다.
      *
      * @param asOf         기준 거래일(미국 동부 세션 날짜)
      * @param decisionTime 결정 시각(KST, 설정 {@code decisionTimeKst} — 호출부가 기본 07:30을 채움)
@@ -434,7 +436,22 @@ public final class NewsEvents {
     public static Window window(LocalDate asOf, LocalTime decisionTime) {
         Objects.requireNonNull(asOf, "기준 거래일이 없습니다");
         Objects.requireNonNull(decisionTime, "결정 시각이 없습니다");
-        return new Window(cutoff(UsMarketCalendar.previousTradingDay(asOf), decisionTime), cutoff(asOf, decisionTime));
+        return window(UsMarketCalendar.CALENDAR, asOf, session -> cutoff(session, decisionTime));
+    }
+
+    /**
+     * 기준 거래일의 창 = (직전 거래일의 결정 순간, 기준일의 결정 순간] — 직전 거래일은 그 시장 달력으로, 결정 순간은 호출부가 줍니다
+     * (세션 날짜와 결정 시각의 관계가 시장마다 달라서 — 미국은 세션 다음 KST 날 07:30).
+     *
+     * @param calendar        기준일이 속한 시장의 거래일 달력
+     * @param asOf            기준 거래일(그 시장의 세션 날짜)
+     * @param decisionInstant 세션 날짜 → 그 세션 결정이 나는 순간(같은 입력이면 같은 값)
+     */
+    public static Window window(TradingCalendar calendar, LocalDate asOf, Function<LocalDate, Instant> decisionInstant) {
+        Objects.requireNonNull(calendar, "거래일 달력이 없습니다");
+        Objects.requireNonNull(asOf, "기준 거래일이 없습니다");
+        Objects.requireNonNull(decisionInstant, "결정 순간 함수가 없습니다");
+        return new Window(decisionInstant.apply(calendar.previousTradingDay(asOf)), decisionInstant.apply(asOf));
     }
 
     /** 그 거래일 결정의 cutoff — 세션 다음 KST 날짜의 결정 시각. */

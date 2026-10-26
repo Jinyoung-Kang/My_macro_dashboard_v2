@@ -3,6 +3,7 @@ package com.macrodash.analytics;
 import java.time.LocalDate;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Objects;
 
 /**
  * 🧪 모의 매매 책의 성과 통계(명세 L10): 누적·CAGR·연율 변동성·MDD·샤프·벤치마크 초과·베타.
@@ -13,7 +14,7 @@ import java.util.List;
  *
  * <p><b>기록이 빠진 날이 있어도 거래일로 셉니다.</b> 순자산 줄은 확정 종가 관측치가 있는 날에만 생기므로(맥 절전·수집 실패),
  * 또 책을 리셋하면 출발일 줄과 그 뒤 줄 사이가 몇 달 비므로, 기록 수가 거래일 수보다 적을 수 있습니다. 그래서 표본 크기와
- * CAGR의 지수는 첫 기록과 마지막 기록 사이의 <b>거래일 수</b>({@link UsMarketCalendar#tradingDaysBetween})로 셉니다 — 기록
+ * CAGR의 지수는 첫 기록과 마지막 기록 사이의 <b>거래일 수</b>(그 시장 달력의 {@link TradingCalendar#tradingDaysBetween})로 셉니다 — 기록
  * 수로 세면 거래일 60일 중 40개만 남았을 때 +5%가 CAGR 37%(실제 23%)로 부풉니다. 변동성·샤프·베타는 <b>하루 간격 쌍</b>
  * (두 기록이 연속 거래일)의 수익률만 씁니다 — 며칠·몇 달치 수익률을 하루치로 세면 분산이 부풀고, 그런 쌍이 20개 미만이면
  * null입니다.
@@ -55,23 +56,38 @@ public final class PaperStats {
      * 그날이 낀 수익률 쌍은 빼고 계산). 표본(첫·마지막 기록 사이 거래일 수) &lt; 20이면 cumReturnPct만 계산하고 나머지 null.
      * 기록 사이가 비는 날은 위 클래스 설명대로 다룹니다.
      *
+     * <p>거래일은 미국 달력으로 셉니다 — {@link #compute(TradingCalendar, List, List, List)}에 미국 달력을 넘깁니다.
+     *
      * @param benchmarkNav null이면 벤치마크 없음(bench_spy 자신) — 초과·베타 null
      * @throws IllegalArgumentException 길이가 다르거나, 날짜가 엄격한 오름차순이 아니거나, 순자산에 null·0 이하·NaN이 있으면
      */
     public static Stats compute(List<LocalDate> dates, List<Double> nav, List<Double> benchmarkNav) {
+        return compute(UsMarketCalendar.CALENDAR, dates, nav, benchmarkNav);
+    }
+
+    /**
+     * {@link #compute(List, List, List)}와 같되 표본·하루 간격 쌍의 거래일을 그 시장 달력으로 셉니다.
+     *
+     * @param calendar     그 책이 속한 시장의 거래일 달력
+     * @param benchmarkNav null이면 벤치마크 없음 — 초과·베타 null
+     * @throws IllegalArgumentException 길이가 다르거나, 날짜가 엄격한 오름차순이 아니거나, 순자산에 null·0 이하·NaN이 있으면
+     */
+    public static Stats compute(TradingCalendar calendar, List<LocalDate> dates, List<Double> nav,
+                                List<Double> benchmarkNav) {
+        Objects.requireNonNull(calendar, "거래일 달력이 없습니다");
         validate(dates, nav, benchmarkNav);
         int points = nav.size();
         if (points < 2) {
             return new Stats(null, null, null, null, null, null, null, 0);
         }
         // 표본 = 기록 수가 아니라 첫·마지막 기록 사이의 거래일 수(클래스 설명 — 빠진 날이 있어도 연율화가 부풀지 않게).
-        int sample = UsMarketCalendar.tradingDaysBetween(dates.get(0), dates.get(points - 1));
+        int sample = calendar.tradingDaysBetween(dates.get(0), dates.get(points - 1));
         double growth = nav.get(points - 1) / nav.get(0);
         Double cum = (growth - 1.0) * 100.0;
         if (sample < MIN_SAMPLE) {
             return new Stats(cum, null, null, null, null, null, null, sample);
         }
-        boolean[] daily = consecutiveDays(dates);
+        boolean[] daily = consecutiveDays(calendar, dates);
 
         Double cagr = (Math.pow(growth, TRADING_DAYS / sample) - 1.0) * 100.0;
         Double mdd = maxDrawdownPct(nav);
@@ -91,10 +107,10 @@ public final class PaperStats {
     }
 
     /** {@code out[i]}(i ≥ 1) = i−1번째와 i번째 기록이 연속 거래일인가. {@code out[0]}은 쓰지 않습니다. */
-    private static boolean[] consecutiveDays(List<LocalDate> dates) {
+    private static boolean[] consecutiveDays(TradingCalendar calendar, List<LocalDate> dates) {
         boolean[] out = new boolean[dates.size()];
         for (int i = 1; i < dates.size(); i++) {
-            out[i] = UsMarketCalendar.tradingDaysBetween(dates.get(i - 1), dates.get(i)) == 1;
+            out[i] = calendar.tradingDaysBetween(dates.get(i - 1), dates.get(i)) == 1;
         }
         return out;
     }
