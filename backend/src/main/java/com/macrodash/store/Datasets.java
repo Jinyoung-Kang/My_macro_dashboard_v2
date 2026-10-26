@@ -26,7 +26,23 @@ public final class Datasets {
     public static final String SNAP_COT_HISTORY = "cot.multi_asset";
     /** 한국 공휴일 (천문연 특일정보). 거래소 휴장 판정에 씁니다. */
     public static final String SNAP_KR_HOLIDAYS = "calendar.kr_holidays";
-    /** DART 사업보고서 주요계정 (수급 레이더 종목). */
+    /**
+     * DART 사업보고서 주요계정 — 한국 책 수집 범위(먼저, v2 2단계 B8)와 수급 레이더 종목. 수집기 {@code dart_fundamentals}(weekly)만 씁니다(ADR 0008).
+     * payload {@code {source, companies: {code: {name, corpCode, bsnsYear, fsDiv, rceptNo, currency, accounts}}, universe, krScope, unmapped}} —
+     * 회사마다 마지막으로 받은 보고서 하나만 있고(저장본보다 이른 사업연도로는 덮지 않음), 이번에 받지 못한 회사는 이전 값이 남습니다.
+     *
+     * <p><b>시점 규칙</b>(한국 책 — 규칙 계좌 재무 필터 D1·Claude 패킷 {@code 8b_fundamentals} E1, 명세 §4-5): 접수번호 {@code rceptNo}(14자리)의
+     * 앞 8자리 {@code yyyyMMdd}가 접수일이고, <b>접수일 ≤ 기준일</b>인 회사만 씁니다. 기준일은 그 결정의 기준 KR 세션 D
+     * (결정 행에 동결하는 다른 입력과 같은 날 — 재선정 따라잡기는 {@code selectionAsOf})입니다.
+     * <ul>
+     *   <li>접수일이 기준일 뒤면 '자료 없음'(사유 '접수일이 기준일 뒤') — 저장본에 이전 보고서가 없으므로 다른 판으로 대신하지 않습니다.</li>
+     *   <li>{@code rceptNo}가 14자리 숫자가 아니면 '자료 없음'(사유 '접수일 모름') — 시점을 확인하지 못한 재무를 쓰지 않습니다.</li>
+     *   <li>밤 결정은 그때 이미 받은 보고서만 보므로 보통 걸리지 않습니다 — 다시 계산·시험에서 기준일 뒤 보고서를 쓰지 않게 막는 자리입니다.
+     *       [확인] 2026-10-26 로컬 저장본 96사 모두 14자리이고 13사는 접수일이 4월 뒤(KB금융 2025 사업보고서 2026-06-19 등 — 정정 보고서의
+     *       접수번호로 보임 [추정]).</li>
+     * </ul>
+     * 화면 레이더 재무({@code feature.publicdata.KrFundamentalsService})는 이 규칙 없이 최신 판을 보입니다.
+     */
     public static final String SNAP_DART_FUNDAMENTALS = "kr.dart_fundamentals";
     /** 금융위 시세 최신 기준일·시장 합계. 종목별 값은 {@link #OBS_FSC_PRICE}. */
     public static final String SNAP_FSC_PRICES_META = "kr.fsc_prices_meta";

@@ -40,7 +40,7 @@
 | `weekly` | 12시간 | `sec_13f` | SEC 13F 기관 포트폴리오 (분기 공시) |
 | | | `sec_13f_track_record` | 📒 트랙레코드 후보 기관 27곳의 13F를 기관당 30분기 → `sec.13f.{cik}.q30` + 후보 목록·진행률 `sec.13f.track_record_index`. 저장본에 없는 공시만, 실행당 예산(`TRACK_RECORD_FETCH_BUDGET`, 기본 400건) 안에서(§5 '모의 매매 트랙레코드 후보 기관') |
 | | | `kr_holidays` | 🔑 한국 공휴일 (천문연 특일정보, 올해·내년을 받아 2025년부터 보관 — 모의 매매 한국 책의 지난 거래일 계산, v2 명세 K35) |
-| | | `dart_fundamentals` | 🔑 수급 레이더 종목의 사업보고서 주요계정 (DART) |
+| | | `dart_fundamentals` | 🔑 사업보고서 주요계정 (DART) — 한국 책 수집 범위(U 순위 → 끈적 목록, ETF 제외, 최대 250)를 먼저, 수급 레이더 종목(최근 30일 빈도순 + 화면, 최대 150)을 뒤에. 회사마다 마지막 보고서 하나(`rceptNo` 포함) — 한국 책은 접수일(`rceptNo` 앞 8자리) ≤ 기준일인 회사만 씀(`Datasets.SNAP_DART_FUNDAMENTALS`) |
 | | | `paper_price_history` | 📒 같은 유니버스의 10년 일별 종가(수정주가) → `timeseries` 데이터셋 `equity_close`(종목 = `series_id`, 이력 누적·지우지 않음) |
 | | | `kr_paper_price_history` | 🧪🅣 한국 책 종가 이력 — 수집 범위의 토스 수정주가(`adjusted=true`) 일봉 종가 → `timeseries` `kr_close_adj`(series = 코드, 지우지 않음). 저장 첫 날이 1년 전(상장일이 늦으면 상장일)보다 늦으면 그 앞을 `before`로 200봉씩 거슬러 메우고(종목마다 한 번 — 다 메우면 0회), `kr_paper_quotes`가 수정주가 기준 바뀜(분할·병합 뒤 과거 수정가가 다시 쓰임 — `adjBasisChanged`)을 걸었고 저장값이 옛 기준이면 저장 구간 전체를 새 기준으로 다시 받아 **끝까지 받았을 때만** 씀(옛·새 기준이 한 시계열에 섞이지 않게), 마지막 날이 일주일 넘게 오래되면 그 사이를 메움. 날마다의 최근 5봉은 `kr_paper_quotes`가 덧붙임. NXT 종목은 KRX+NXT 통합가 |
 | | | `sec_fundamentals` | 📒 같은 유니버스(ETF 제외 — 설정 ETF와 13F 매핑표의 ETP)의 미국 종목 재무 — SEC XBRL Company Facts(회사당 1건) → `observations` `us.fundamentals`(entity = 티커, obs_date = 공시일, 지우지 않음 — 티커의 CIK가 바뀌면 옛 CIK만의 행은 지움) + 회사별 수집 상태 `us.fundamentals.status`. 실행당 CIK 예산(`FUNDAMENTALS_FETCH_BUDGET`, 기본 200건)이라 약 570곳을 세 번(약 36시간)에 한 바퀴. 13F 두 태스크와 같은 SEC 토큰 버킷(§5 '모의 매매가 쓰는 저장본과 한계') |
@@ -435,7 +435,7 @@ EQUITY_MAP = {
 | 한국천문연구원 특일정보 | `DATA_GO_KR_SERVICE_KEY` | `kr_holidays` | 시계의 KRX 휴장 판정 | 주 2~4회 |
 | 금융위원회 주식시세정보 | 〃 | `fsc_prices` | 레이더 시가총액·PER·PBR, KRX 증시 규모, 모의 매매 한국 책 확정가(v2 2단계) | 새 기준일이 있을 때만 3~4회 (최신이면 0회) + 과거 쪽 메우기 중에는 실행당 최대 90회(보존 창 약 275기준일 × 3쪽 ≈ 830회 1회성 — 서버 창 한 밤, 끝나면 0회) |
 | 금융위원회 증권상품시세정보 | 〃 (활용신청 따로) | `fsc_etf_prices` | 모의 매매 한국 책 ETF 확정가(069500·153130, v2 2단계 K15) | 새 기준일이 있을 때만 1회 (최신이면 0회, 실행당 상한 8회) |
-| 금융감독원 Open DART | `DART_API_KEY` | `dart_fundamentals` | 레이더 재무 체크 | 1회 최대 40회 |
+| 금융감독원 Open DART | `DART_API_KEY` | `dart_fundamentals` | 레이더 재무 체크, 모의 매매 한국 책 재무 필터·패킷(v2 2단계) | 1회 최대 40회(대상 400종목 ÷ 20개 묶음 × 두 사업연도까지) |
 
 ### 공통 규칙 (`collector/app/publicapi.py`)
 

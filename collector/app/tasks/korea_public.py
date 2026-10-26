@@ -16,6 +16,7 @@ from ..services import (
 )
 
 from .base import EmptyResult, KST, RADAR_COMBINATIONS, _reason_suffix
+from .kr_paper import KR_SCOPE_ETFS, kr_scope
 
 logger = logging.getLogger(__name__)
 
@@ -355,15 +356,38 @@ def task_fsc_etf_prices() -> str:
     return f"{latest_date} ETF {latest_rows}종목{days} (호출 {budget.used}회{stop})" + _reason_suffix(reasons)
 
 
-# DART 재무를 받을 종목 수 상한과 대상 기간. 호출 수 = 상한 / BATCH (+ 이전 연도 재시도).
+# DART 재무를 받을 종목 — 한국 책 수집 범위(먼저, DART_KR_SCOPE_LIMIT까지) + 수급 레이더 종목(뒤에, 레이더 몫 DART_UNIVERSE_LIMIT까지·
+# 최근 DART_UNIVERSE_DAYS일). 호출 수 = 대상 / BATCH + 이전 연도 재시도(최신 연도에 행이 없던 회사만) — 두 상한의 합은 두 연도를 다
+# 물어도 DART_CALL_BUDGET 안입니다(test_dart가 대조). 예산이 모자라면 앞쪽(한국 범위)부터 받습니다.
 DART_UNIVERSE_LIMIT = 150
 DART_UNIVERSE_DAYS = 30
+DART_KR_SCOPE_LIMIT = 250
 DART_CALL_BUDGET = 40
 _CORP_CODES_MAX_AGE = timedelta(days=7)
 
 
-def _dart_universe() -> list[str]:
-    """최근 30일 수급 레이더에 등장한 종목 + 지금 화면에 걸린 종목."""
+def _dart_universe() -> tuple[list[str], int]:
+    """
+    DART 재무를 받을 종목 — 한국 책 수집 범위를 먼저, 수급 레이더 종목을 뒤에(v2 2단계 명세 §4-5 B8). 중복 없음.
+
+    한국 범위 = ``kr_scope()``의 U 순위 → 끈적 목록(ETF 2는 DART 대상이 아니라 뺌). 규칙 계좌 재무 필터와 Claude 패킷
+    ``8b_fundamentals``가 읽으므로 예산이 모자라도 먼저 받습니다. 레이더 쪽은 예전 목록 그대로(레이더 몫 상한까지)라 한국 범위가
+    레이더 종목을 밀어내지 않습니다. 유니버스 저장본이 없으면(DART 고유번호 표 전·kr_paper_universe 전) 레이더 종목만입니다 —
+    예전 동작과 같습니다.
+
+    :returns: (대상 코드, 그중 맨 앞 한국 범위 수)
+    """
+    scope, _ = kr_scope()
+    codes = [code for code in scope if code not in KR_SCOPE_ETFS][:DART_KR_SCOPE_LIMIT]
+    kr_count = len(codes)
+    for code in _dart_radar_codes():
+        if code not in codes:
+            codes.append(code)
+    return codes, kr_count
+
+
+def _dart_radar_codes() -> list[str]:
+    """최근 30일 수급 레이더에 등장한 종목 + 지금 화면에 걸린 종목(레이더 몫 상한까지)."""
     since = (datetime.now(KST).date() - timedelta(days=DART_UNIVERSE_DAYS)).isoformat()
     codes = store.recent_observation_codes(catalog.OBS_RADAR, since, DART_UNIVERSE_LIMIT)
     for market, investor, trade_type, interval in RADAR_COMBINATIONS:
@@ -398,7 +422,7 @@ def _latest_annual_year(today) -> int:
 
 def task_dart_fundamentals() -> str:
     """
-    📑 DART 사업보고서 주요계정 — 수급 레이더에 오른 국내 종목.
+    📑 DART 사업보고서 주요계정 — 한국 책 수집 범위(먼저)와 수급 레이더에 오른 국내 종목(``_dart_universe``).
 
     규칙
       - 최신 사업연도로 받고, 보고서가 없는 회사만 한 해 전으로 다시 받습니다. '보고서가 없다'는 최신 연도 호출이
@@ -407,8 +431,10 @@ def task_dart_fundamentals() -> str:
       - 저장본보다 이른 사업연도로는 덮지 않습니다(최신 연도 응답에서 행이 빠진 날에도 후퇴하지 않게).
       - 호출 예산(DART_CALL_BUDGET) 안에서만 진행합니다. 남은 종목은 다음 주기.
       - 이번에 받지 못한 종목은 이전 저장본을 유지합니다(부분 실패로 지우지 않음).
+      - 회사마다 마지막으로 받은 보고서 하나만 둡니다(접수번호 ``rceptNo`` 포함). 시점 규칙(접수일 ≤ 기준일)은 읽는 쪽이
+        지킵니다 — 백엔드 ``Datasets.SNAP_DART_FUNDAMENTALS``.
     """
-    universe = _dart_universe()
+    universe, kr_count = _dart_universe()
     if not universe:
         raise EmptyResult("대상 종목이 없습니다 — 수급 레이더(radar_rankings)가 먼저 쌓여야 합니다")
 
@@ -464,9 +490,11 @@ def task_dart_fundamentals() -> str:
         "source": "금융감독원 Open DART 다중회사 주요계정 (사업보고서)",
         "companies": companies,
         "universe": len(universe),
+        "krScope": kr_count,
         "unmapped": unmapped[:50],
     })
     return (f"{len(fetched)}/{len(targets)} 종목 ({_years_text(fetched, year)}, 호출 {budget.used}회)"
+            + (f" · 한국 책 범위 {kr_count} 먼저" if kr_count else "")
             + (f" · 저장본이 더 최신이라 유지 {len(kept_newer)}" if kept_newer else "")
             + (f" · DART 대상 아님 {len(unmapped)}" if unmapped else "") + _reason_suffix(reasons))
 

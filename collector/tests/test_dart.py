@@ -14,6 +14,8 @@ corp_code·corp_name·stock_code)만으로 구성했습니다. 계정명은 가�
   3. 금액 "1,234" → 1234, 빈 값·"-" → None (0으로 채우지 않는다).
   4. status 013(데이터 없음)은 빈 목록, 그 밖의 오류는 키가 지워진 사유로 실패.
   5. 비정상적으로 큰 ZIP은 풀지 않는다.
+  6. 재무 대상은 한국 책 수집 범위(U 순위 → 끈적 목록, ETF 2 제외)가 먼저, 수급 레이더 종목이 뒤 — 레이더 몫은 예전 그대로이고
+     두 상한의 합은 두 연도를 다 물어도 호출 예산 안(v2 2단계 명세 §4-5 B8).
 """
 from __future__ import annotations
 
@@ -118,9 +120,10 @@ def test_사업보고서_기준_연도():
 
 # ------------------------------------------------------------------ 태스크
 class _FakeStore:
-    def __init__(self, snapshots=None, codes=None):
+    def __init__(self, snapshots=None, codes=None, universe=None):
         self.snapshots = dict(snapshots or {})
         self.codes = codes or []
+        self.universe = dict(universe or {})   # 기준일 → 한국 책 유니버스(kr_paper_universe) 행
 
     def read_snapshot(self, name):
         from datetime import datetime, timezone
@@ -131,7 +134,34 @@ class _FakeStore:
         self.snapshots[name] = payload
 
     def recent_observation_codes(self, dataset, since, limit):
-        return list(self.codes)
+        return list(self.codes)[:limit]
+
+    # 한국 책 수집 범위(kr_paper.kr_scope)가 읽는 자리
+    def latest_observation_date(self, dataset):
+        return max(self.universe) if self.universe and dataset == _universe_dataset() else None
+
+    def read_observations(self, dataset, *, obs_date=None, **_):
+        return list(self.universe.get(obs_date) or []) if dataset == _universe_dataset() else []
+
+    def observation_entities_since(self, dataset, since):
+        if dataset != _universe_dataset():
+            return set()
+        return {row["code"] for day, rows in self.universe.items() if day >= since for row in rows}
+
+
+def _universe_dataset():
+    from app import catalog
+    return catalog.OBS_KR_PAPER_UNIVERSE
+
+
+@pytest.fixture(autouse=True)
+def _no_kr_universe(monkeypatch):
+    """
+    기본은 한국 책 유니버스 저장본이 없는 상태(레이더 종목만 — B8 전 동작)입니다. 한국 범위는 kr_paper 모듈의 store로 읽으므로
+    korea_public.store만 바꿔 끼운 시험이 실제 DB를 읽지 않게 막습니다. 한국 범위를 보는 시험은 같은 가짜를 두 모듈에 끼웁니다.
+    """
+    from app import tasks
+    monkeypatch.setattr(tasks.kr_paper, "store", _FakeStore())
 
 
 def test_최신_연도에_없는_회사만_전년도로_다시_받는다(monkeypatch):
@@ -270,3 +300,100 @@ def test_QA077_저장본보다_이른_사업연도로는_덮지_않는다(monkey
     assert companies["005930"]["bsnsYear"] == str(latest)
     assert companies["005930"]["accounts"]["자본총계"]["current"] == 100.0
     assert companies["000660"]["bsnsYear"] == str(latest)
+
+
+# ---- B8: 재무 대상 순서 — 한국 책 수집 범위 먼저, 레이더 종목 뒤에 (v2 2단계 명세 §4-5) ----------------
+def _days_ago(n):
+    from datetime import datetime, timedelta
+
+    from app import tasks
+    return (datetime.now(tasks.KST).date() - timedelta(days=n)).isoformat()
+
+
+def _kr_store(**kwargs):
+    """최신 U(순위가 코드 순과 다르게) + 한 달 전 U(끈적 목록 — 지금 U 밖 888880·111110)."""
+    return _FakeStore(universe={
+        _days_ago(30): [{"code": "888880", "rank": 1}, {"code": "222220", "rank": 2}, {"code": "111110", "rank": 3}],
+        _days_ago(1): [{"code": "333330", "rank": 2}, {"code": "222220", "rank": 1}],
+    }, **kwargs)
+
+
+def _use(monkeypatch, fake):
+    from app import tasks
+    monkeypatch.setattr(tasks.korea_public, "store", fake)
+    monkeypatch.setattr(tasks.kr_paper, "store", fake)
+
+
+def test_B8_재무_대상은_한국_범위_U_순위_끈적_목록_다음에_레이더_종목(monkeypatch):
+    from app import catalog, tasks
+
+    scanner = catalog.snap_radar_scanner(*tasks.RADAR_COMBINATIONS[0])
+    fake = _kr_store(codes=["444440", "333330", "069500"],   # 레이더 기록: 한국 범위와 겹치는 333330·ETF 069500
+                     snapshots={scanner: {"rows": [{"code": "555550"}, {"code": "444440"}]}})
+    _use(monkeypatch, fake)
+
+    codes, kr_count = tasks._dart_universe()
+
+    # U 순위(222220·333330) → 끈적 목록 코드 순(111110·888880) → 레이더(겹친 333330은 한 번만, 레이더의 ETF는 예전처럼 남음)
+    assert codes == ["222220", "333330", "111110", "888880", "444440", "069500", "555550"]
+    assert kr_count == 4
+    assert "153130" not in codes   # 수집 범위의 ETF 2는 DART 대상이 아니라 넣지 않음
+
+
+def test_B8_한국_범위는_상한까지만이고_레이더_몫을_밀어내지_않는다(monkeypatch):
+    from app import tasks
+
+    fake = _kr_store(codes=[f"9{i:04d}0" for i in range(5)])
+    _use(monkeypatch, fake)
+    monkeypatch.setattr(tasks.korea_public, "DART_KR_SCOPE_LIMIT", 2)
+    monkeypatch.setattr(tasks.korea_public, "DART_UNIVERSE_LIMIT", 3)
+
+    codes, kr_count = tasks._dart_universe()
+
+    assert codes == ["222220", "333330", "900000", "900010", "900020"]
+    assert kr_count == 2
+
+
+def test_B8_유니버스_저장본이_없으면_레이더_종목만이라_예전과_같다(monkeypatch):
+    from app import tasks
+
+    fake = _FakeStore(codes=["005930", "000660"])
+    _use(monkeypatch, fake)
+
+    assert tasks._dart_universe() == (["005930", "000660"], 0)
+
+
+def test_B8_예산이_모자라면_한국_범위부터_받는다(monkeypatch):
+    from app import catalog, tasks
+
+    corp = {code: {"corpCode": f"0{code}0", "name": code} for code in ("222220", "333330", "111110", "888880", "444440")}
+    fake = _kr_store(codes=["444440"], snapshots={catalog.SNAP_DART_CORP_CODES: {"codes": corp}})
+    _use(monkeypatch, fake)
+    monkeypatch.setattr(tasks.dart_service, "BATCH", 2)
+    monkeypatch.setattr(tasks.korea_public, "DART_CALL_BUDGET", 2)
+    calls = []
+
+    def fetch(corp_codes, year):
+        calls.append(tuple(corp_codes))
+        stock = {v["corpCode"]: k for k, v in corp.items()}
+        return [{**_row(stock[c], "CFS", "자본총계", "10"), "bsns_year": str(year)} for c in corp_codes]
+
+    monkeypatch.setattr(tasks.dart_service, "fetch_accounts", fetch)
+    result = tasks.task_dart_fundamentals()
+
+    assert calls == [("02222200", "03333300"), ("01111100", "08888800")]   # 레이더 444440은 예산 밖
+    saved = fake.snapshots[catalog.SNAP_DART_FUNDAMENTALS]
+    assert set(saved["companies"]) == {"222220", "333330", "111110", "888880"}
+    assert saved["universe"] == 5 and saved["krScope"] == 4
+    assert "한국 책 범위 4 먼저" in result and "호출 예산 소진" in result
+
+
+def test_B8_두_상한의_합은_두_연도를_다_물어도_호출_예산_안():
+    """최신 연도 한 바퀴 + 행이 없던 회사의 한 해 전 한 바퀴 — 둘 다 끝까지 물어도 예산이 남아 뒤쪽 레이더 종목이 늘 받힌다."""
+    import math
+
+    from app import tasks
+    from app.services import dart as dart_service
+
+    per_year = math.ceil((tasks.DART_KR_SCOPE_LIMIT + tasks.DART_UNIVERSE_LIMIT) / dart_service.BATCH)
+    assert 2 * per_year <= tasks.DART_CALL_BUDGET

@@ -24,7 +24,9 @@ SNAP_EQUITY_HISTORY = "equity.price_history"    # 13F 매핑 종목 일별 종�
 SNAP_COT_HISTORY = "cot.multi_asset"            # CFTC COT 통합
 SNAP_KR_HOLIDAYS = "calendar.kr_holidays"       # 한국 공휴일 (천문연 특일정보) — 거래소 휴장 판정
 SNAP_DART_CORP_CODES = "kr.dart_corp_codes"     # DART 고유번호 ↔ 종목코드 (상장사만)
-SNAP_DART_FUNDAMENTALS = "kr.dart_fundamentals" # DART 사업보고서 주요계정 (수급 레이더 종목)
+# DART 사업보고서 주요계정 — 한국 책 수집 범위(먼저)와 수급 레이더 종목. 회사마다 마지막으로 받은 보고서 하나(rceptNo 포함)만 둡니다.
+# 한국 책은 rceptNo 앞 8자리(접수일)가 기준일 이하인 회사만 씁니다 — 규칙은 백엔드 Datasets.SNAP_DART_FUNDAMENTALS(v2 명세 §4-5 B8).
+SNAP_DART_FUNDAMENTALS = "kr.dart_fundamentals"
 SNAP_FSC_PRICES_META = "kr.fsc_prices_meta"     # 금융위 시세 최신 기준일·시장 합계 (종목별 값은 observations)
 SNAP_TOSS_MARKET_FLOWS = "kr.toss_market_flows" # 코스피·코스닥 투자자별 매매대금 (토스증권 공식, 일별)
 SNAP_TOSS_RADAR_UNIVERSE = "kr.toss_radar_universe"  # 거래대금 상위 100종목의 투자자 매매 (레이더 폴백용)
