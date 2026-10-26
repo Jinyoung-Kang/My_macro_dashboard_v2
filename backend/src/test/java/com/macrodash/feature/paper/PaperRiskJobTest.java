@@ -32,6 +32,9 @@ import static org.mockito.Mockito.when;
  */
 class PaperRiskJobTest {
 
+    /** 정기·수동 실행이 미국 시장으로 저장본을 읽습니다(2단계 명세 §9 A5 — 시장마다 관측치를 읽음). */
+    private static final PaperMarket US = UsPaperMarket.INSTANCE;
+
     private FakePaperStore store;
     private PaperMarketData marketData;
     private StoreReader reader;
@@ -60,6 +63,7 @@ class PaperRiskJobTest {
         job(false).scheduledRun();
 
         verify(marketData, never()).quotes();
+        verify(marketData, never()).quotes(any());
         assertThat(store.jobRuns).isEmpty();
     }
 
@@ -67,11 +71,11 @@ class PaperRiskJobTest {
     @DisplayName("저장본이 없거나 새 관측치가 없으면 기록을 남기지 않고 이유만 돌려준다")
     void nothingToDoLeavesNoRecord() {
         activeBook(store, PaperBooks.CLAUDE, PaperBooks.KIND_CLAUDE, 100_000, null);
-        when(marketData.quotes()).thenReturn(Optional.empty());
+        when(marketData.quotes(US)).thenReturn(Optional.empty());
         assertThat(job(true).runNow().skippedReason()).contains("paper.quotes");
 
         activeBook(store, PaperBooks.CLAUDE, PaperBooks.KIND_CLAUDE, 100_000, MON_FINAL);
-        when(marketData.quotes()).thenReturn(Optional.of(quotes(MON_FINAL, bar("SPY", FRI, 500, MON, 501))));
+        when(marketData.quotes(US)).thenReturn(Optional.of(quotes(MON_FINAL, bar("SPY", FRI, 500, MON, 501))));
         assertThat(job(true).runNow().skippedReason()).contains("새 관측치가 없습니다");
 
         assertThat(store.jobRuns).isEmpty();
@@ -82,7 +86,7 @@ class PaperRiskJobTest {
     @DisplayName("새 관측치를 처리하면 장중 봉 확인용 요약(수집 시각·봉 날짜·확정 여부)과 결과를 남긴다 — 수동 실행은 꺼져 있어도 돈다")
     void recordsWorkWithObservationSummary() {
         activeBook(store, PaperBooks.CLAUDE, PaperBooks.KIND_CLAUDE, 100_000, null);
-        when(marketData.quotes()).thenReturn(Optional.of(quotes(MON_INTRADAY, bar("SPY", FRI, 500, MON, 501),
+        when(marketData.quotes(US)).thenReturn(Optional.of(quotes(MON_INTRADAY, bar("SPY", FRI, 500, MON, 501),
                 bar("QQQ", FRI, 400, MON, 401))));
 
         Outcome outcome = job(false).runNow();
@@ -110,7 +114,7 @@ class PaperRiskJobTest {
         activeBook(store, PaperBooks.RULES, PaperBooks.KIND_RULES, 100_000, null);
         store.books.put(PaperBooks.CLAUDE, new Book(PaperBooks.CLAUDE, PaperBooks.KIND_CLAUDE, "claude", 100_000, FRI,
                 PaperBooks.ACTIVE, PaperFixtures.FRI_CLOSE));   // 상태 행이 없는 책 — 처리 중 예외
-        when(marketData.quotes()).thenReturn(Optional.of(quotes(MON_INTRADAY, bar("SPY", FRI, 500, MON, 501))));
+        when(marketData.quotes(US)).thenReturn(Optional.of(quotes(MON_INTRADAY, bar("SPY", FRI, 500, MON, 501))));
 
         job(true).scheduledRun();
 
@@ -136,7 +140,7 @@ class PaperRiskJobTest {
         };
         activeBook(store, PaperBooks.RULES, PaperBooks.KIND_RULES, 100_000, null);
         activeBook(store, PaperBooks.CLAUDE, PaperBooks.KIND_CLAUDE, 100_000, null);
-        when(marketData.quotes()).thenReturn(Optional.of(quotes(MON_INTRADAY, bar("SPY", FRI, 500, MON, 501))));
+        when(marketData.quotes(US)).thenReturn(Optional.of(quotes(MON_INTRADAY, bar("SPY", FRI, 500, MON, 501))));
         PaperLedgerService ledger = new PaperLedgerService(store, marketData, PaperFixtures.settings(store),
                 PaperFixtures.MAPPER);
         PaperRiskJob job = job(true, ledger);
@@ -155,7 +159,7 @@ class PaperRiskJobTest {
         job.scheduledRun();
         assertThat(store.jobRuns).hasSize(2);
 
-        when(marketData.quotes()).thenReturn(Optional.of(quotes(MON_FINAL, bar("SPY", FRI, 500, MON, 502))));
+        when(marketData.quotes(US)).thenReturn(Optional.of(quotes(MON_FINAL, bar("SPY", FRI, 500, MON, 502))));
         job.scheduledRun();   // 새 관측치 — 다시 시도(여전히 실패하면 그 관측치에서 한 번 기록)
         assertThat(store.jobRuns).hasSize(3);
         assertThat(store.jobRuns.get(2).detail().path("booksProcessed").toString()).contains("rules");

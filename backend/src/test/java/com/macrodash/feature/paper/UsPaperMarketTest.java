@@ -67,6 +67,16 @@ class UsPaperMarketTest {
     }
 
     @Test
+    @DisplayName("관측치를 채우는 수집기 태스크 = paper_quotes(A5 전 저장본 읽기·안내 문구의 글자) — 수집기 태스크 목록에 그 이름이 있음")
+    void quotesTask() throws IOException {
+        assertThat(US.quotesTask()).isEqualTo("paper_quotes");
+        java.nio.file.Path registry = java.nio.file.Path.of("../collector/app/tasks/registry.py");
+        org.junit.jupiter.api.Assumptions.assumeTrue(java.nio.file.Files.exists(registry),
+                "collector/app/tasks/registry.py를 찾을 수 없습니다");
+        assertThat(java.nio.file.Files.readString(registry)).contains("Task(\"" + US.quotesTask() + "\", ");
+    }
+
+    @Test
     @DisplayName("확정 종가 = 거래일 봉 + 마감 15분 뒤 수집 — 보기(금요일·추수감사절 다음 날 조기 폐장·휴장일)와 2025~2027 모든 날에서 PaperMarketData.isFinal과 같음")
     void isFinal() {
         assertThat(US.finalDelay()).isEqualTo(Duration.ofMinutes(15)).isEqualTo(PaperMarketData.FINAL_DELAY);

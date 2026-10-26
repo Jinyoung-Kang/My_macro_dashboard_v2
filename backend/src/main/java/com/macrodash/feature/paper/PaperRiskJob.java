@@ -1,7 +1,6 @@
 package com.macrodash.feature.paper;
 
 import com.macrodash.Kst;
-import com.macrodash.analytics.UsMarketCalendar;
 import com.macrodash.feature.paper.PaperLedgerService.Outcome;
 import com.macrodash.feature.paper.PaperMarketData.Quotes;
 import com.macrodash.read.StoreReader;
@@ -24,6 +23,10 @@ import java.util.Optional;
 /**
  * 🧪 리스크 점검 정기 작업(설계 §6-3) — 5분마다 새 관측치({@code paper.quotes})가 있으면 장부에 적용합니다(체결·스탑·분할·평가).
  *
+ * <p>시장마다 따로 돕니다(2단계 명세 §9 A5): 정기 실행은 {@link PaperMarkets#ALL}을 차례로, 시장마다 그 시장의 관측치 저장본을
+ * 읽어 그 시장 책에만 적용하고({@link PaperLedgerService} 설명), 작업 기록은 그 시장 이름({@link PaperMarket#jobName})으로
+ * 남깁니다. 지금 목록은 미국 하나라 동작은 이 묶음 전과 같습니다. 시장을 받지 않는 수동 실행·한 번 실행은 미국 판입니다.
+ *
  * <p>관측치는 수집기가 1시간마다 저장하므로 대부분의 실행은 "새 저장본 없음"으로 끝나고, 그때는 기록을 남기지 않습니다
  * (5분마다 한 줄씩 쌓이면 작업 기록 200건이 17시간 치뿐입니다). 일했을 때와 오류일 때만 {@code paper_job_runs}에 남기고,
  * detail에 관측치 수집 시각·다수 티커의 봉 날짜·확정 종가 여부를 적습니다 — 장중 저장본의 마지막 봉이 정말 그날 지연 시세인지
@@ -42,7 +45,7 @@ import java.util.Optional;
 @Service
 public class PaperRiskJob {
 
-    /** 작업 기록의 이름(paper_job_runs.job). */
+    /** 작업 기록의 이름(paper_job_runs.job) — 시장의 작업 기록 접두어를 붙여 씁니다(미국은 접두어 없이 그대로). */
     static final String JOB = "risk";
 
     private static final Logger log = LoggerFactory.getLogger(PaperRiskJob.class);
@@ -54,6 +57,8 @@ public class PaperRiskJob {
     private final PaperConfig config;
     private final ObjectMapper mapper;
     private final Clock clock;
+    /** 정기 실행이 도는 시장, 도는 순서. */
+    private final List<PaperMarket> markets;
 
     @Autowired
     public PaperRiskJob(PaperStore store, StoreReader reader, PaperMarketData marketData, PaperLedgerService ledger,
@@ -64,6 +69,12 @@ public class PaperRiskJob {
     /** 테스트용 — 시계를 움직입니다. */
     PaperRiskJob(PaperStore store, StoreReader reader, PaperMarketData marketData, PaperLedgerService ledger,
                  PaperConfig config, ObjectMapper mapper, Clock clock) {
+        this(store, reader, marketData, ledger, config, mapper, clock, PaperMarkets.ALL);
+    }
+
+    /** 테스트용 — 시계와 시장 목록을 바꿉니다(시장 격리 시험이 시험용 한국 시장을 넣음). */
+    PaperRiskJob(PaperStore store, StoreReader reader, PaperMarketData marketData, PaperLedgerService ledger,
+                 PaperConfig config, ObjectMapper mapper, Clock clock, List<PaperMarket> markets) {
         this.store = store;
         this.reader = reader;
         this.marketData = marketData;
@@ -71,50 +82,67 @@ public class PaperRiskJob {
         this.config = config;
         this.mapper = mapper;
         this.clock = clock;
+        this.markets = List.copyOf(markets);
     }
 
-    /** 정기 실행. 꺼져 있으면 아무것도 하지 않습니다. */
+    /**
+     * 정기 실행 — 시장마다 차례로 한 번({@link PaperMarkets#ALL}, 2단계 명세 §9 A5). 한 시장의 예외는 그 시장만 로그로 남기고 다음
+     * 시장으로 넘어갑니다. 꺼져 있으면 아무것도 하지 않습니다.
+     */
     @Scheduled(initialDelayString = "${dashboard.paper.risk-initial-delay-ms:90000}",
             fixedDelayString = "${dashboard.paper.risk-interval-ms:300000}")
     public void scheduledRun() {
         if (!config.enabled()) {
             return;
         }
-        try {
-            Outcome outcome = run(false);
-            if (!outcome.errors().isEmpty()) {
-                log.warn("모의 매매 리스크 점검 중 오류 — 그 책은 같은 관측치로 다시 시도하지 않고 새 관측치에서 다시 시도합니다: {}",
-                        outcome.errors());
-            } else if (outcome.skippedReason() == null) {
-                log.info("모의 매매 리스크 점검: 체결 {} · 스탑 {} · 만료 {} · 분할 {} ({})", outcome.filled(),
-                        outcome.stopped(), outcome.expired(), outcome.splits(), outcome.booksProcessed());
+        for (PaperMarket market : markets) {
+            try {
+                Outcome outcome = run(market, false);
+                if (!outcome.errors().isEmpty()) {
+                    log.warn("모의 매매 리스크 점검 중 오류 — 그 책은 같은 관측치로 다시 시도하지 않고 새 관측치에서 다시 시도합니다: {}",
+                            outcome.errors());
+                } else if (outcome.skippedReason() == null) {
+                    log.info("모의 매매 리스크 점검: 체결 {} · 스탑 {} · 만료 {} · 분할 {} ({})", outcome.filled(),
+                            outcome.stopped(), outcome.expired(), outcome.splits(), outcome.booksProcessed());
+                }
+            } catch (RuntimeException e) {
+                log.warn("모의 매매 리스크 점검 실패 — 다음 주기에 다시 시도합니다: {}", e.toString());
             }
-        } catch (RuntimeException e) {
-            log.warn("모의 매매 리스크 점검 실패 — 다음 주기에 다시 시도합니다: {}", e.toString());
         }
     }
 
-    /**
-     * 수동 실행(POST /api/paper/run/risk) — {@code dashboard.paper.enabled}와 상관없이 한 번. 오류가 났던 관측치도 한 번 더
-     * 시도합니다(사람이 원인을 고친 뒤 누르는 버튼이라). 기록은 누른 만큼만 남습니다.
-     */
+    /** 미국 책의 수동 실행(POST /api/paper/run/risk) — {@link #runNow(PaperMarket)}의 미국 판. */
     public Outcome runNow() {
-        ledger.forgetFailures();
-        return run(true);
+        return runNow(UsPaperMarket.INSTANCE);
     }
 
-    /** 한 번 실행(정기·수동 공통). 테스트도 부릅니다. */
+    /**
+     * 그 시장의 수동 실행 — {@code dashboard.paper.enabled}와 상관없이 한 번. 그 시장에서 오류가 났던 관측치도 한 번 더
+     * 시도합니다(사람이 원인을 고친 뒤 누르는 버튼이라). 기록은 누른 만큼만 남습니다.
+     */
+    Outcome runNow(PaperMarket market) {
+        ledger.forgetFailures(market);
+        return run(market, true);
+    }
+
+    /** 미국 책 한 번 실행 — {@link #run(PaperMarket, boolean)}의 미국 판. 테스트가 부릅니다. */
     Outcome run(boolean manual) {
+        return run(UsPaperMarket.INSTANCE, manual);
+    }
+
+    /** 그 시장 한 번 실행(정기·수동 공통) — 그 시장의 관측치를 그 시장 책에만 적용하고, 그 시장 이름으로 기록합니다. */
+    Outcome run(PaperMarket market, boolean manual) {
         if (!store.ready()) {
             return Outcome.skipped("모의 매매 테이블이 아직 없습니다(V8·V9 적용 전) — make up 후 다시 보세요");
         }
         Instant started = clock.instant();
-        Optional<Quotes> quotes = reader.quietly(marketData::quotes);
+        Optional<Quotes> quotes = reader.quietly(() -> marketData.quotes(market));
         if (quotes.isEmpty()) {
-            return Outcome.skipped("관측치 저장본(paper.quotes)이 아직 없습니다 — 수집기의 paper_quotes가 돈 뒤에 다시 보세요");
+            return Outcome.skipped("관측치 저장본(" + market.quotesDataset() + ")이 아직 없습니다 — 수집기의 "
+                    + market.quotesTask() + "가 돈 뒤에 다시 보세요");
         }
-        if (!ledger.hasNewObservation(quotes.get())) {
-            List<String> failed = ledger.failedBooks(quotes.get());
+        if (!ledger.hasNewObservation(market, quotes.get())) {
+            List<String> failed = ledger.failedBooks(market, quotes.get());
             if (!failed.isEmpty()) {
                 return Outcome.skipped(PaperLedgerService.heldBackReason(quotes.get(), failed));
             }
@@ -122,16 +150,16 @@ public class PaperRiskJob {
         }
         Outcome outcome;
         try {
-            outcome = ledger.process(quotes.get());
+            outcome = ledger.process(market, quotes.get());
         } catch (RuntimeException e) {
             outcome = Outcome.failed(e.getClass().getSimpleName() + " " + e.getMessage());
         }
-        record(started, manual, quotes.get(), outcome);
+        record(market, started, manual, quotes.get(), outcome);
         return outcome;
     }
 
-    private void record(Instant started, boolean manual, Quotes quotes, Outcome outcome) {
-        Map<String, Object> detail = describe(quotes);
+    private void record(PaperMarket market, Instant started, boolean manual, Quotes quotes, Outcome outcome) {
+        Map<String, Object> detail = describe(market, quotes);
         detail.put("manual", manual);
         detail.put("filled", outcome.filled());
         detail.put("stopped", outcome.stopped());
@@ -148,26 +176,31 @@ public class PaperRiskJob {
             detail.put("errors", outcome.errors());
         }
         try {
-            store.recordJobRun(JOB, started, clock.instant(), outcome.errors().isEmpty() ? "OK" : "ERROR",
-                    mapper.valueToTree(detail));
+            store.recordJobRun(market.jobName(JOB), started, clock.instant(),
+                    outcome.errors().isEmpty() ? "OK" : "ERROR", mapper.valueToTree(detail));
         } catch (RuntimeException e) {
             // 기록 실패가 처리 결과(이미 커밋됨)를 오류로 바꾸지 않게 로그만 남깁니다.
             log.warn("모의 매매 작업 기록을 남기지 못했습니다: {}", e.toString());
         }
     }
 
-    /**
-     * 관측치 요약 — 수집 시각·다수 티커의 봉 날짜·그 시각의 세션·확정 종가 여부. {@code barDate == session}인데
-     * {@code finalClose == false}면 장중 봉(지연 시세)입니다.
-     */
+    /** 미국 관측치 요약 — {@link #describe(PaperMarket, Quotes)}의 미국 판(결정 작업 기록이 씀). */
     static Map<String, Object> describe(Quotes quotes) {
+        return describe(UsPaperMarket.INSTANCE, quotes);
+    }
+
+    /**
+     * 관측치 요약 — 수집 시각·다수 티커의 봉 날짜·그 시각의 세션·확정 종가 여부(세션·확정은 그 시장 달력). {@code barDate ==
+     * session}인데 {@code finalClose == false}면 장중 봉(지연 시세)입니다.
+     */
+    static Map<String, Object> describe(PaperMarket market, Quotes quotes) {
         Map<String, Object> out = new LinkedHashMap<>();
         LocalDate barDate = quotes.modalBarDate();
         out.put("collectedAt", quotes.collectedAt().toString());
         out.put("collectedAtKst", Kst.stamp(quotes.collectedAt()));
         out.put("barDate", barDate == null ? null : barDate.toString());
-        out.put("session", UsMarketCalendar.currentOrLastSession(quotes.collectedAt()).toString());
-        out.put("finalClose", barDate != null && PaperMarketData.isFinal(barDate, quotes.collectedAt()));
+        out.put("session", market.calendar().currentOrLastSession(quotes.collectedAt()).toString());
+        out.put("finalClose", barDate != null && market.isFinal(barDate, quotes.collectedAt()));
         out.put("tickers", quotes.bars().size());
         out.put("staleTickers", quotes.staleTickers().size());
         return out;

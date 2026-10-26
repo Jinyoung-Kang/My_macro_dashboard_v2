@@ -36,6 +36,11 @@ import java.util.TreeMap;
  * 저장본이면 마지막 봉이 그날의 지연 시세이고, 장 마감 15분 뒤 이후에 수집했으면 그날 종가입니다({@link #isFinal}).
  * 날짜·종가 개수가 다르거나 마지막 값이 비면 그 티커는 관측치에서 뺍니다 — 어느 값이 어느 날짜인지 모르거나 지금 값이 없는
  * 것이고, 0이나 직전 값으로 채우면 없는 체결가를 만들게 됩니다.
+ *
+ * <p><b>시장</b>: 관측치·이력은 시장 묶음({@link PaperMarket})의 데이터셋에서 읽습니다({@link #quotes(PaperMarket)}·
+ * {@link #history(PaperMarket, Collection, LocalDate, LocalDate)} — 장부·리스크 점검이 씀, 2단계 명세 §9 A5). 시장을 받지 않는 옛
+ * 판({@link #quotes()}·{@link #history(Collection, LocalDate, LocalDate)})과 확정 판정 {@link #isFinal}·사후 체결 종가
+ * {@link #sourcedClosesOn}은 미국 것입니다(미국 패킷·선정·결정·복기·관리가 씀 — 시장 문맥으로 옮기는 것은 A6).
  */
 @Service
 public class PaperMarketData {
@@ -119,9 +124,14 @@ public class PaperMarketData {
         this.clock = clock;
     }
 
-    /** 최신 관측치. 저장본이 없거나 쓸 수 있는 티커가 하나도 없으면 empty. */
+    /** 미국 책의 최신 관측치({@code paper.quotes}) — {@link #quotes(PaperMarket)}의 미국 판. */
     public Optional<Quotes> quotes() {
-        return store.read(Datasets.SNAP_PAPER_QUOTES, Datasets.MAX_AGE_DAILY, "paper_quotes")
+        return quotes(UsPaperMarket.INSTANCE);
+    }
+
+    /** 그 시장의 최신 관측치(시장의 관측치 데이터셋). 저장본이 없거나 쓸 수 있는 티커가 하나도 없으면 empty. */
+    Optional<Quotes> quotes(PaperMarket market) {
+        return store.read(market.quotesDataset(), Datasets.MAX_AGE_DAILY, market.quotesTask())
                 .flatMap(PaperMarketData::parse);
     }
 
@@ -179,13 +189,18 @@ public class PaperMarketData {
         return new Bar(ticker, recent.lastDate(), recent.lastValue(), Json.asBoolean(frame, "isStale"), recent);
     }
 
-    /**
-     * 종목들의 10년 종가 이력(수정주가)을 날짜 범위로. 없는 종목은 결과에 없습니다. from·to가 null이면 그쪽 제한 없음(포함).
-     * 룩어헤드 방지는 부르는 쪽이 범위({@code to})로 합니다.
-     */
+    /** 미국 종목들의 10년 종가 이력({@code equity_close}) — {@link #history(PaperMarket, Collection, LocalDate, LocalDate)}의 미국 판. */
     public Map<String, DailySeries> history(Collection<String> tickers, LocalDate from, LocalDate to) {
+        return history(UsPaperMarket.INSTANCE, tickers, from, to);
+    }
+
+    /**
+     * 그 시장 종목들의 종가 이력(시장의 이력 데이터셋, 미국은 10년 수정주가)을 날짜 범위로. 없는 종목은 결과에 없습니다. from·to가
+     * null이면 그쪽 제한 없음(포함). 룩어헤드 방지는 부르는 쪽이 범위({@code to})로 합니다.
+     */
+    Map<String, DailySeries> history(PaperMarket market, Collection<String> tickers, LocalDate from, LocalDate to) {
         Map<String, DailySeries> out = new LinkedHashMap<>();
-        repository.readTimeseriesColumns(Datasets.TS_EQUITY_CLOSE, tickers, from, to)
+        repository.readTimeseriesColumns(market.historyDataset(), tickers, from, to)
                 .forEach((ticker, columns) -> out.put(ticker, new DailySeries(columns.epochDays(), columns.values())));
         return out;
     }

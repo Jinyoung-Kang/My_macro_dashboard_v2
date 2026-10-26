@@ -517,8 +517,8 @@ class PaperLedgerServiceTest {
             activeBook(store, BOOK, PaperBooks.KIND_CLAUDE, 0, null);
             LocalDate old = LocalDate.of(2026, 6, 1);
             position(store, BOOK, "XYZ", 10, 300, 300, 300.0, old, 300);
-            when(marketData.history(anyCollection(), eq(old), eq(old))).thenReturn(Map.of("XYZ",
-                    new DailySeries(new int[]{(int) old.toEpochDay()}, new double[]{100})));
+            when(marketData.history(eq(UsPaperMarket.INSTANCE), anyCollection(), eq(old), eq(old))).thenReturn(Map.of(
+                    "XYZ", new DailySeries(new int[]{(int) old.toEpochDay()}, new double[]{100})));
 
             ledger.process(quotes(MON_INTRADAY, bar("XYZ", FRI, 101, MON, 102)));
 
@@ -779,6 +779,7 @@ class PaperLedgerServiceTest {
             store.ready = false;
             assertThat(ledger.process(quotes(MON_FINAL, bar("AAA", MON, 1))).skippedReason()).contains("테이블");
             verify(marketData, never()).history(anyCollection(), any(), any());
+            verify(marketData, never()).history(any(), anyCollection(), any(), any());
         }
     }
 
@@ -921,7 +922,7 @@ class PaperLedgerServiceTest {
 
     /** 관측치 하나를 리스크 작업(정기 실행 경로)으로 — 작업 시계는 수집 30초 뒤. 결과와 책마다 상태 한 줄. */
     private void risk(StringBuilder out, String step, java.time.Instant at, PaperMarketData.Quotes quotes) {
-        when(marketData.quotes()).thenReturn(java.util.Optional.of(quotes));
+        when(marketData.quotes(UsPaperMarket.INSTANCE)).thenReturn(java.util.Optional.of(quotes));
         PaperRiskJob job = new PaperRiskJob(store, PaperFixtures.quietReader(), marketData, ledger,
                 PaperFixtures.config(), PaperFixtures.MAPPER, java.time.Clock.fixed(at.plusSeconds(30),
                 java.time.ZoneOffset.UTC));

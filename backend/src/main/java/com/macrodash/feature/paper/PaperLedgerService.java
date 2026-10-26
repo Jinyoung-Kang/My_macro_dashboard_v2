@@ -5,7 +5,6 @@ import com.macrodash.analytics.DailySeries;
 import com.macrodash.analytics.PaperLedger;
 import com.macrodash.analytics.SplitDetector;
 import com.macrodash.analytics.TrailingStop;
-import com.macrodash.analytics.UsMarketCalendar;
 import com.macrodash.feature.paper.PaperMarketData.Bar;
 import com.macrodash.feature.paper.PaperMarketData.Quotes;
 import com.macrodash.store.PaperStore;
@@ -42,7 +41,14 @@ import java.util.concurrent.locks.ReentrantLock;
 import java.util.function.Supplier;
 
 /**
- * 🧪 관측치 하나를 네 책의 장부에 적용합니다(명세 L3~L9, 설계 §3-1) — 체결·트레일링 스탑·분할·평가·순자산.
+ * 🧪 관측치 하나를 그 시장 책들의 장부에 적용합니다(명세 L3~L9, 설계 §3-1) — 체결·트레일링 스탑·분할·평가·순자산.
+ *
+ * <p><b>시장마다 따로입니다</b>(2단계 명세 §9 A5). 관측치 처리·미확정 순자산 줄·'새 관측치가 있나'·오류 기억은 받은 시장
+ * ({@link PaperMarket})의 책({@code paper_books.market})만 보고, 세션 날짜·확정 종가 판정·분할 기준 이력·체결 가격 출처도 그 시장
+ * 묶음에서 가져옵니다. 다른 시장 책은 읽지도 쓰지도 않습니다 — 그러지 않으면 미국 관측치가 한국 책의 멱등 키
+ * ({@code lastProcessedCollectedAt})를 미국 수집 시각으로 밀어 한국 관측치가 '이미 처리함'으로 버려집니다. 시장을 받지 않는 옛
+ * 시그니처는 미국 책만 처리합니다(결정 작업이 시장 문맥으로 옮겨 가는 A6 전까지 그대로 부름). 사후 체결({@link #backfill})은 미국
+ * 책만 받습니다(한국은 출발일 사후 체결이 없음, 명세 K28).
  *
  * <p><b>책마다 한 트랜잭션입니다</b>({@link PaperStore#atomically}). 한 책에서 오류가 나면 그 책만 되돌리고 다른 책은 계속합니다.
  * 그 책은 상태(멱등 키)가 바뀌지 않아 그대로 두면 정기 작업이 같은 저장본으로 5분마다 다시 돌며 같은 오류를 기록합니다(입력이
@@ -68,7 +74,7 @@ import java.util.function.Supplier;
  * 일시정지(PAUSED) 책은 2·4의 최고가 갱신·6만(가격·분할·최고가는 따라가되 사고팔지 않음), 시작 전(NOT_STARTED) 책은 6의 상태만
  * (현금뿐이라 순자산 기록은 남기지 않음 — 시작하지 않은 책의 곡선이 평평하게 그려지지 않게).
  *
- * <p><b>순자산 줄</b>: 관측 시각의 세션({@link UsMarketCalendar#currentOrLastSession})이 다수 티커의 봉 날짜와 같고 그 봉이 확정
+ * <p><b>순자산 줄</b>: 관측 시각의 세션(시장 달력의 {@code currentOrLastSession})이 다수 티커의 봉 날짜와 같고 그 봉이 확정
  * 종가일 때만 그 거래일 줄을 씁니다 — 다음 날 개장 직후에는 새 봉의 과반이 아직 전날 날짜라, 이 조건이 없으면 장중가와 그날
  * 체결이 섞인 평가가 전날 확정 줄을 덮습니다(주말·휴장일·개장 전 재저장은 세션이 그대로라 다시 씀). 확정 표시
  * ({@code prices_final})는 <b>책마다</b> 정합니다: 수량이 있는 보유가 모두 그 세션의 확정 봉(이어 쓴 봉 아님, 분할 확인됨)으로
@@ -77,7 +83,7 @@ import java.util.function.Supplier;
  *
  * <p><b>체결 조건</b>(룩어헤드 방지, 설계 §3-1): ① 관측치 수집 시각 &gt; 주문 생성 시각, ② 봉 날짜 &gt; 주문의 기준 거래일 — 주말·휴장일에
  * 수집기가 직전 종가를 매시간 다시 저장하므로 ①만으로는 결정이 이미 본 종가로 체결됩니다, ③ {@code NEXT_CLOSE}면 확정 종가
- * (마감 + 15분 뒤 수집), ④ 이어 쓴({@code isStale}) 봉은 다음 관측치를 기다립니다.
+ * (미국: 마감 + 15분 뒤 수집 — 시장 묶음의 {@code isFinal}), ④ 이어 쓴({@code isStale}) 봉은 다음 관측치를 기다립니다.
  *
  * <p><b>분할 감지 기준(fill_ref_date·fill_ref_close)</b>: 늘 <b>확정 종가</b> 하나를 기준으로 둡니다. 장중에 체결하면 그 봉(지연 시세)이
  * 아니라 직전 거래일 종가를 기준으로 삼습니다 — 장중 체결가와 그날 종가가 10% 넘게 벌어지면 '8:7 분할' 같은 가짜 분할로 읽히기
@@ -128,10 +134,16 @@ public class PaperLedgerService {
     private final PaperMarketData marketData;
     private final PaperSettingsService settings;
     private final ObjectMapper mapper;
-    /** 장부를 바꾸는 일(관측치 처리·초기화·리셋·일시정지)을 한 줄로 세웁니다(클래스 설명). */
+    /** 장부를 바꾸는 일(관측치 처리·초기화·리셋·일시정지)을 한 줄로 세웁니다(클래스 설명). 시장이 여럿이어도 잠금은 하나입니다. */
     private final ReentrantLock lock = new ReentrantLock();
-    /** 책 → 처리하다 오류가 난 관측치의 수집 시각. 같은 관측치로 다시 시도하지 않으려고 기억합니다(클래스 설명). */
-    private final Map<String, Instant> failedObservations = new ConcurrentHashMap<>();
+    /**
+     * (시장, 책) → 처리하다 오류가 난 관측치의 수집 시각. 같은 관측치로 다시 시도하지 않으려고 기억합니다(클래스 설명). 시장마다
+     * 관측치 저장본이 다르므로 기억도 시장마다 따로 봅니다 — 한 시장의 실패가 다른 시장 관측치를 막거나 지워지지 않게.
+     */
+    private final Map<FailureKey, Instant> failedObservations = new ConcurrentHashMap<>();
+
+    private record FailureKey(String market, String book) {
+    }
 
     public PaperLedgerService(PaperStore store, PaperMarketData marketData, PaperSettingsService settings,
                               ObjectMapper mapper) {
@@ -151,36 +163,52 @@ public class PaperLedgerService {
         }
     }
 
-    /**
-     * 이 관측치를 아직 적용하지 않은 책이 하나라도 있나(정기 작업이 '할 일 없음'을 기록하지 않으려고 먼저 봄). 이 관측치에서
-     * 이미 오류가 난 책은 세지 않습니다 — 같은 관측치로 다시 시도하지 않습니다(클래스 설명).
-     */
+    /** 미국 책에 아직 적용하지 않은 관측치인가 — {@link #hasNewObservation(PaperMarket, Quotes)}의 미국 판. */
     public boolean hasNewObservation(Quotes quotes) {
+        return hasNewObservation(UsPaperMarket.INSTANCE, quotes);
+    }
+
+    /**
+     * 이 관측치를 아직 적용하지 않은 그 시장 책이 하나라도 있나(정기 작업이 '할 일 없음'을 기록하지 않으려고 먼저 봄). 이 관측치에서
+     * 이미 오류가 난 책은 세지 않습니다 — 같은 관측치로 다시 시도하지 않습니다(클래스 설명). 다른 시장 책은 보지 않습니다.
+     */
+    boolean hasNewObservation(PaperMarket market, Quotes quotes) {
         if (!store.ready()) {
             return false;
         }
-        for (Book book : store.books()) {
+        for (Book book : store.books(market.code())) {
             Optional<BookState> state = store.state(book.code());
-            if (state.isPresent() && isNew(quotes, state.get()) && !failedOn(book.code(), quotes)) {
+            if (state.isPresent() && isNew(quotes, state.get()) && !failedOn(market, book.code(), quotes)) {
                 return true;
             }
         }
         return false;
     }
 
-    /** 이 관측치에서 오류가 나 다시 시도하지 않고 있는 책, 정의 순. */
+    /** 이 관측치에서 오류가 나 다시 시도하지 않고 있는 미국 책 — {@link #failedBooks(PaperMarket, Quotes)}의 미국 판. */
     public List<String> failedBooks(Quotes quotes) {
-        return failedObservations.keySet().stream().filter(code -> failedOn(code, quotes)).sorted(PaperBooks.ORDER)
+        return failedBooks(UsPaperMarket.INSTANCE, quotes);
+    }
+
+    /** 이 관측치에서 오류가 나 다시 시도하지 않고 있는 그 시장 책, 정의 순. */
+    List<String> failedBooks(PaperMarket market, Quotes quotes) {
+        return failedObservations.keySet().stream().filter(key -> key.market().equals(market.code()))
+                .map(FailureKey::book).filter(code -> failedOn(market, code, quotes)).sorted(PaperBooks.ORDER)
                 .toList();
     }
 
-    /** 오류가 난 관측치의 기억을 지웁니다 — 수동 실행이 같은 관측치로 한 번 더 시도하게. */
+    /** 모든 시장의 오류 난 관측치 기억을 지웁니다 — 초기화·리셋 뒤 같은 관측치로 다시 처리해도 되게. */
     public void forgetFailures() {
         failedObservations.clear();
     }
 
-    private boolean failedOn(String code, Quotes quotes) {
-        return quotes.collectedAt().equals(failedObservations.get(code));
+    /** 그 시장의 오류 난 관측치 기억만 지웁니다 — 수동 실행이 같은 관측치로 한 번 더 시도하게(다른 시장의 기억은 그대로). */
+    void forgetFailures(PaperMarket market) {
+        failedObservations.keySet().removeIf(key -> key.market().equals(market.code()));
+    }
+
+    private boolean failedOn(PaperMarket market, String code, Quotes quotes) {
+        return quotes.collectedAt().equals(failedObservations.get(new FailureKey(market.code(), code)));
     }
 
     private static boolean isNew(Quotes quotes, BookState state) {
@@ -188,16 +216,21 @@ public class PaperLedgerService {
         return last == null || quotes.collectedAt().isAfter(last);
     }
 
-    /** 관측치 하나를 모든 책에 적용합니다(클래스 설명). */
+    /** 미국 관측치 하나를 미국 책에 적용합니다 — {@link #process(PaperMarket, Quotes)}의 미국 판. */
     public Outcome process(Quotes quotes) {
-        return exclusively(() -> processLocked(quotes));
+        return process(UsPaperMarket.INSTANCE, quotes);
     }
 
-    private Outcome processLocked(Quotes quotes) {
+    /** 그 시장의 관측치 하나를 그 시장 책 모두에 적용합니다(클래스 설명). 다른 시장 책은 건드리지 않습니다. */
+    Outcome process(PaperMarket market, Quotes quotes) {
+        return exclusively(() -> processLocked(market, quotes));
+    }
+
+    private Outcome processLocked(PaperMarket market, Quotes quotes) {
         if (!store.ready()) {
             return Outcome.skipped("모의 매매 테이블이 아직 없습니다(V8·V9 적용 전)");
         }
-        List<Book> books = new ArrayList<>(store.books());
+        List<Book> books = new ArrayList<>(store.books(market.code()));
         if (books.isEmpty()) {
             return Outcome.skipped("초기화 전입니다 — 계좌가 없습니다");
         }
@@ -213,13 +246,14 @@ public class PaperLedgerService {
         List<String> errors = new ArrayList<>();
         List<String> heldBack = new ArrayList<>();
         for (Book book : books) {
-            if (failedOn(book.code(), quotes)) {
+            FailureKey key = new FailureKey(market.code(), book.code());
+            if (failedOn(market, book.code(), quotes)) {
                 heldBack.add(book.code());   // 이 관측치에서 이미 오류가 남 — 새 관측치까지 기다림(클래스 설명)
                 continue;
             }
             try {
-                BookRun run = store.atomically(() -> processBook(book, quotes, current));
-                failedObservations.remove(book.code());
+                BookRun run = store.atomically(() -> processBook(market, book, quotes, current));
+                failedObservations.remove(key);
                 if (run == null) {
                     continue;
                 }
@@ -231,7 +265,7 @@ public class PaperLedgerService {
                 run.notes.forEach(note -> notes.add(book.code() + ": " + note));
             } catch (RuntimeException e) {
                 // 같은 관측치로는 다시 시도하지 않으니 이 경고는 관측치마다 한 번입니다.
-                failedObservations.put(book.code(), quotes.collectedAt());
+                failedObservations.put(key, quotes.collectedAt());
                 log.warn("모의 매매 장부 처리 실패({}, 관측치 {}) — 이 책만 되돌렸고, 같은 관측치로는 다시 시도하지 않고 "
                         + "새 관측치에서 다시 시도합니다: {}", book.code(), Kst.stamp(quotes.collectedAt()), e.toString());
                 errors.add(book.code() + ": " + e.getClass().getSimpleName() + " " + e.getMessage());
@@ -253,7 +287,7 @@ public class PaperLedgerService {
     }
 
     /** 책 하나(트랜잭션 안). 이미 처리한 관측치면 null. */
-    private BookRun processBook(Book book, Quotes quotes, PaperSettings current) {
+    private BookRun processBook(PaperMarket market, Book book, Quotes quotes, PaperSettings current) {
         Optional<BookState> stateRow = store.state(book.code());
         if (stateRow.isEmpty()) {
             throw new IllegalStateException("계좌 상태(paper_book_state)가 없습니다 — 초기화를 다시 실행하세요");
@@ -262,7 +296,7 @@ public class PaperLedgerService {
         if (!isNew(quotes, state)) {
             return null;
         }
-        BookRun run = new BookRun(book, quotes, current, state.cash());
+        BookRun run = new BookRun(market, book, quotes, current, state.cash());
 
         // 1. 만료·재진입 금지 정리
         run.expired = store.expireOrders(book.code(), run.session);
@@ -306,7 +340,7 @@ public class PaperLedgerService {
         if (!needHistory.isEmpty()) {
             LocalDate from = Collections.min(needHistory.values());
             LocalDate to = Collections.max(needHistory.values());
-            history = marketData.history(needHistory.keySet(), from, to);
+            history = marketData.history(run.market, needHistory.keySet(), from, to);
         }
         for (Holding holding : new ArrayList<>(run.holdings.values())) {
             refresh(run, holding, history.get(holding.ticker));
@@ -342,7 +376,7 @@ public class PaperLedgerService {
         holding.lastPrice = bar.close();
         holding.lastPriceAt = run.at;
         holding.priceStale = false;
-        if (PaperMarketData.isFinal(bar.date(), run.at) && bar.date().isAfter(holding.fillRefDate)) {
+        if (run.market.isFinal(bar.date(), run.at) && bar.date().isAfter(holding.fillRefDate)) {
             holding.fillRefDate = bar.date();
             holding.fillRefClose = bar.close();
         }
@@ -398,8 +432,8 @@ public class PaperLedgerService {
         }
     }
 
-    /** 이 주문을 이 관측치로 체결할 수 있으면 그 봉, 아니면 null(클래스 설명의 체결 조건). */
-    static Bar fillableBar(Order order, Quotes quotes) {
+    /** 이 주문을 이 관측치로 체결할 수 있으면 그 봉, 아니면 null(클래스 설명의 체결 조건 — 확정 종가 판정은 그 시장 묶음). */
+    static Bar fillableBar(PaperMarket market, Order order, Quotes quotes) {
         if (order.createdAt() == null || !quotes.collectedAt().isAfter(order.createdAt())) {
             return null;                                   // ① 주문 뒤에 수집한 관측치만
         }
@@ -410,14 +444,14 @@ public class PaperLedgerService {
         if (order.asOfTradingDate() == null || !bar.date().isAfter(order.asOfTradingDate())) {
             return null;                                   // ② 결정이 이미 본 봉(주말 재저장)
         }
-        if (PaperBooks.NEXT_CLOSE.equals(order.timing()) && !PaperMarketData.isFinal(bar.date(), quotes.collectedAt())) {
+        if (PaperBooks.NEXT_CLOSE.equals(order.timing()) && !market.isFinal(bar.date(), quotes.collectedAt())) {
             return null;                                   // ③ 확정 종가 전
         }
         return bar;
     }
 
     private void fillSell(BookRun run, Order order) {
-        Bar bar = fillableBar(order, run.quotes);
+        Bar bar = fillableBar(run.market, order, run.quotes);
         if (bar == null) {
             return;
         }
@@ -458,7 +492,7 @@ public class PaperLedgerService {
     }
 
     private void fillBuy(BookRun run, Order order) {
-        Bar bar = fillableBar(order, run.quotes);
+        Bar bar = fillableBar(run.market, order, run.quotes);
         if (bar == null) {
             return;
         }
@@ -498,7 +532,7 @@ public class PaperLedgerService {
         store.markOrderFilled(order.id(), run.at);
         run.cash = PaperLedger.round4(run.cash - gross);
         if (holding == null) {
-            Reference reference = referenceFor(bar, run.at);
+            Reference reference = referenceFor(run.market, bar, run.at);
             holding = new Holding(order.ticker(), qty, price, bar.date(), run.at, price, run.at, bar.close(), run.at,
                     reference.date(), reference.close());
             holding.verified = true;
@@ -526,8 +560,8 @@ public class PaperLedgerService {
     }
 
     /** 새 보유의 분할 감지 기준 — 확정 종가 하나(클래스 설명). 장중 체결이면 직전 거래일 종가, 그것도 없으면 그 봉. */
-    static Reference referenceFor(Bar bar, Instant collectedAt) {
-        if (PaperMarketData.isFinal(bar.date(), collectedAt)) {
+    static Reference referenceFor(PaperMarket market, Bar bar, Instant collectedAt) {
+        if (market.isFinal(bar.date(), collectedAt)) {
             return new Reference(bar.date(), bar.close());
         }
         LocalDate previous = bar.recent().floorDate(bar.date().minusDays(1));
@@ -611,7 +645,7 @@ public class PaperLedgerService {
         // 그 세션의 마감 뒤 관측치일 때만 그 거래일(다수 티커의 봉 날짜) 순자산을 남깁니다(L9, 클래스 설명의 '순자산 줄').
         // 관측 시각의 세션이 봉 날짜와 달라졌으면(다음 날 개장 뒤) 지난 줄을 다시 쓰지 않습니다. 출발일 전 날짜도 남기지 않습니다.
         boolean sessionClose = barDate != null && barDate.equals(run.session)
-                && PaperMarketData.isFinal(barDate, run.at)
+                && run.market.isFinal(barDate, run.at)
                 && (run.book.startedOn() == null || !barDate.isBefore(run.book.startedOn()));
         if (started && sessionClose) {
             store.upsertNav(new NavRow(code, barDate, PaperLedger.round4(valuation.nav()), PaperLedger.round4(run.cash),
@@ -632,7 +666,7 @@ public class PaperLedgerService {
         for (Holding holding : run.holdings.values()) {
             Bar bar = run.bar(holding.ticker);
             if (!holding.verified || bar == null || bar.stale() || !session.equals(bar.date())
-                    || !PaperMarketData.isFinal(bar.date(), run.at)) {
+                    || !run.market.isFinal(bar.date(), run.at)) {
                 return false;
             }
         }
@@ -640,17 +674,22 @@ public class PaperLedgerService {
     }
 
     // ------------------------------------------------------------------ 결정 작업이 채우는 순자산 줄
+    /** 미국 책의 미확정 순자산 줄 — {@link #settleNav(PaperMarket, LocalDate, boolean)}의 미국 판(결정 작업이 부름). */
+    public List<String> settleNav(LocalDate tradingDate, boolean pricesFinal) {
+        return settleNav(UsPaperMarket.INSTANCE, tradingDate, pricesFinal);
+    }
+
     /**
      * 결정 작업이 확정 종가를 끝내 받지 못한 채 마감 기한(설정 {@code decisionDeadlineKst}, 기본 12:00 KST)을 넘겨 진행할 때,
      * 그 거래일 순자산 줄이 없는 책에 지금 상태(마지막 관측치의 평가)를 <b>미확정</b>({@code prices_final = false}) 줄로 남깁니다
      * (설계 §6-2). 확정 줄은 관측치 처리만 씁니다 — 보유마다 그 세션의 확정 봉으로 평가됐는지를 보는 곳이 거기라서
      * ({@link #process}의 '순자산 줄'), {@code pricesFinal}이 true면 아무것도 하지 않습니다. 미확정 줄은 나중의 확정 관측치가
      * 덮습니다({@link PaperStore#upsertNav}). 이미 그날 줄이 있으면(확정이든 아니든) 건드리지 않습니다. 시작한(운용·일시정지)
-     * 책만, 출발일 전 날짜는 쓰지 않습니다.
+     * 책만, 출발일 전 날짜는 쓰지 않습니다. 그 시장 책만 봅니다 — 다른 시장 책에는 줄을 쓰지 않습니다(거래일 d는 그 시장의 세션).
      *
      * @return 줄을 새로 쓴 책(정의 순)
      */
-    public List<String> settleNav(LocalDate tradingDate, boolean pricesFinal) {
+    List<String> settleNav(PaperMarket market, LocalDate tradingDate, boolean pricesFinal) {
         if (pricesFinal) {
             return List.of();
         }
@@ -658,7 +697,7 @@ public class PaperLedgerService {
             if (!store.ready()) {
                 return List.of();
             }
-            List<Book> books = new ArrayList<>(store.books());
+            List<Book> books = new ArrayList<>(store.books(market.code()));
             books.sort((a, b) -> PaperBooks.ORDER.compare(a.code(), b.code()));
             List<String> written = new ArrayList<>();
             for (Book book : books) {
@@ -729,6 +768,8 @@ public class PaperLedgerService {
 
     /**
      * 주문 목록을 그 거래일 종가로 한 번에 체결합니다(사후 체결, 명세 L2) — 벤치마크 초기화와 규칙 책 "시작"이 함께 씁니다.
+     * 미국 책만 받습니다(거래일·마감 시각은 미국 달력 — 한국은 출발일 사후 체결이 없음, 명세 K28). 다른 시장 책이면 아무것도 쓰지
+     * 않고 {@link IllegalArgumentException}.
      *
      * <p>순서는 관측치 처리와 같습니다: 매도 → 현금성이 아닌 매수 → 현금성 매수({@link #fill}의 이유). 체결가는 종가에 슬리피지,
      * 매수 수량은 {@code baseNav × 목표 비중}을 체결가로 나눠 내림(현금보다 많이 사지 않음 — 줄였으면 근거에 {@code cashLimited}).
@@ -740,13 +781,18 @@ public class PaperLedgerService {
      * 다리 하나라도 못 사면 되돌려야 하는 쪽(벤치마크)은 바깥에서 {@code skipped}를 보고 예외를 던지면 됩니다.
      */
     public BackfillResult backfill(BackfillRequest request) {
-        return store.atomically(() -> backfillLocked(request));
+        PaperMarket us = UsPaperMarket.INSTANCE;
+        if (!us.code().equals(request.book().market())) {
+            throw new IllegalArgumentException("사후 체결은 미국 책만 합니다 — " + request.book().code() + "은 "
+                    + request.book().market() + " 책입니다(한국은 출발일 사후 체결이 없음, 명세 K28)");
+        }
+        return store.atomically(() -> backfillLocked(us, request));
     }
 
-    private BackfillResult backfillLocked(BackfillRequest r) {
+    private BackfillResult backfillLocked(PaperMarket market, BackfillRequest r) {
         String code = r.book().code();
         LocalDate day = r.tradingDate();
-        Instant close = UsMarketCalendar.closeInstant(day);
+        Instant close = market.calendar().closeInstant(day);
         double bp = r.settings().slippageBp();
         Map<String, Position> held = new TreeMap<>();
         store.positions(code).forEach(p -> held.put(p.ticker(), p));
@@ -769,7 +815,7 @@ public class PaperLedgerService {
                 int qty = PaperLedger.sellQty(position.qty(), leg.sellFraction());
                 double price = price6(PaperLedger.fillPrice(raw.close(), PaperLedger.Side.SELL, bp));
                 double gross = gross(qty, price);
-                fills.add(backfillFill(r, leg, leg.reason(), qty, price, raw, gross, close));
+                fills.add(backfillFill(market, r, leg, leg.reason(), qty, price, raw, gross, close));
                 cash = PaperLedger.round4(cash + gross);
                 int left = position.qty() - qty;
                 if (left == 0) {
@@ -807,7 +853,7 @@ public class PaperLedgerService {
                 reason = limited;
             }
             double gross = gross(qty, price);
-            fills.add(backfillFill(r, leg, reason, qty, price, raw, gross, close));
+            fills.add(backfillFill(market, r, leg, reason, qty, price, raw, gross, close));
             cash = PaperLedger.round4(cash - gross);
             Position before = held.get(ticker);
             Position after = before == null
@@ -853,14 +899,14 @@ public class PaperLedgerService {
         return out;
     }
 
-    private Fill backfillFill(BackfillRequest r, BackfillLeg leg, JsonNode reason, int qty, double price,
-                              PaperMarketData.SourcedClose raw, double gross, Instant close) {
+    private Fill backfillFill(PaperMarket market, BackfillRequest r, BackfillLeg leg, JsonNode reason, int qty,
+                              double price, PaperMarketData.SourcedClose raw, double gross, Instant close) {
         String code = r.book().code();
         String side = PaperBooks.SELL.equals(leg.side()) ? PaperBooks.SELL : PaperBooks.BUY;
         long orderId = store.insertOrder(new Order(0, code, r.decisionId(), leg.ticker(), side, null,
                 PaperBooks.SELL.equals(side) ? null : leg.targetWeightPct(),
                 PaperBooks.SELL.equals(side) ? leg.sellFraction() : null, PaperBooks.BACKFILL, r.source(),
-                PaperBooks.ORDER_FILLED, null, reason, UsMarketCalendar.previousTradingDay(r.tradingDate()),
+                PaperBooks.ORDER_FILLED, null, reason, market.calendar().previousTradingDay(r.tradingDate()),
                 close.minusSeconds(1), null, close));
         Fill fill = new Fill(0, orderId, code, leg.ticker(), side, qty, price, raw.close(), r.settings().slippageBp(),
                 gross, close, r.tradingDate(), raw.source(), true, null);
@@ -872,7 +918,7 @@ public class PaperLedgerService {
     private void recordFill(BookRun run, long orderId, String ticker, String side, int qty, double price, Bar bar,
                             double gross) {
         store.insertFill(new Fill(0, orderId, run.book.code(), ticker, side, qty, price, bar.close(),
-                run.settings.slippageBp(), gross, run.at, bar.date(), PaperBooks.SOURCE_QUOTES, false, null));
+                run.settings.slippageBp(), gross, run.at, bar.date(), run.market.quotesDataset(), false, null));
     }
 
     private static void raiseWatermark(Holding holding, double price, Instant at) {
@@ -911,11 +957,13 @@ public class PaperLedgerService {
     // ------------------------------------------------------------------ 작업 상태
     /** 책 하나를 처리하는 동안의 작업 상태(트랜잭션 안에서만 삶). */
     private static final class BookRun {
+        /** 그 책의 시장 — 세션 날짜·확정 종가 판정·분할 기준 이력·체결 가격 출처. */
+        final PaperMarket market;
         final Book book;
         final Quotes quotes;
         final PaperSettings settings;
         final Instant at;
-        /** 관측 시각의 세션 날짜(장중·마감 뒤면 그날, 개장 전·주말이면 직전 거래일). */
+        /** 관측 시각의 세션 날짜(시장 달력 — 장중·마감 뒤면 그날, 개장 전·주말이면 직전 거래일). */
         final LocalDate session;
         double cash;
         final Map<String, Holding> holdings = new TreeMap<>();
@@ -927,12 +975,13 @@ public class PaperLedgerService {
         int expired;
         int splits;
 
-        BookRun(Book book, Quotes quotes, PaperSettings settings, double cash) {
+        BookRun(PaperMarket market, Book book, Quotes quotes, PaperSettings settings, double cash) {
+            this.market = market;
             this.book = book;
             this.quotes = quotes;
             this.settings = settings;
             this.at = quotes.collectedAt();
-            this.session = UsMarketCalendar.currentOrLastSession(at);
+            this.session = market.calendar().currentOrLastSession(at);
             this.cash = cash;
         }
 

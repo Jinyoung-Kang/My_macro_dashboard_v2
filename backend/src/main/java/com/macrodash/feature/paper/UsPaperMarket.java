@@ -22,7 +22,7 @@ import java.util.List;
  *
  * <ul>
  *   <li>시장·통화 US·USD(V13 기본값), 달력 {@link UsMarketCalendar#CALENDAR}(뉴욕 세션 날짜)</li>
- *   <li>관측치 {@code paper.quotes}·이력 {@code equity_close}, 확정 종가 = 마감 + 15분 뒤 수집</li>
+ *   <li>관측치 {@code paper.quotes}(수집기 태스크 {@code paper_quotes})·이력 {@code equity_close}, 확정 종가 = 마감 + 15분 뒤 수집</li>
  *   <li>책 넷({@link PaperBooks#ALL} — 규칙·Claude·SPY 100%·SPY 60/SHY 40), 비교 기준 {@code bench_spy}, 현금성 기본 SHY</li>
  *   <li>Claude 체결 시점 NEXT_OBSERVATION·NEXT_CLOSE(이른 시점 NEXT_OBSERVATION)</li>
  *   <li>결정 07:30·기한 12:00 KST, 세션 <b>다음 KST 날</b>의 그 시각(미국 마감이 KST 새벽이라)</li>
@@ -34,6 +34,9 @@ final class UsPaperMarket implements PaperMarket {
     static final UsPaperMarket INSTANCE = new UsPaperMarket();
 
     private static final List<String> TIMINGS = List.of(OrderValidator.NEXT_OBSERVATION, OrderValidator.NEXT_CLOSE);
+
+    /** 관측치를 채우는 수집기 태스크 — A5 전에는 {@code PaperMarketData.quotes()}·리스크 점검 안내 문구에 글자로 있던 이름. */
+    private static final String QUOTES_TASK = "paper_quotes";
 
     private UsPaperMarket() {
     }
@@ -56,6 +59,11 @@ final class UsPaperMarket implements PaperMarket {
     @Override
     public String quotesDataset() {
         return Datasets.SNAP_PAPER_QUOTES;
+    }
+
+    @Override
+    public String quotesTask() {
+        return QUOTES_TASK;
     }
 
     @Override

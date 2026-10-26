@@ -17,7 +17,8 @@ import java.util.List;
  * 따로 만듭니다. 비용(수수료·세금)·출발일·초기 현금·금액 표기는 그것을 쓰는 묶음(B6·C1·A7)에서 정합니다.
  *
  * <p>구현은 지금 미국 하나({@link UsPaperMarket#INSTANCE})이고 값은 이 묶음 전의 상수 그대로입니다({@code UsPaperMarketTest}가
- * 고정). 장부·작업·조회가 이 묶음으로 옮겨 가는 것은 A5·A6입니다.
+ * 고정). 장부·관측치·리스크 점검은 시장마다 이 묶음으로 돕니다(A5, 시장 목록 {@link PaperMarkets#ALL}). 결정·복기·조회·관리가
+ * 옮겨 가는 것은 A6입니다.
  */
 interface PaperMarket {
 
@@ -32,6 +33,9 @@ interface PaperMarket {
 
     /** 장부 관측치 스냅샷의 데이터셋 — 그 관측치로 체결하면 체결 가격 출처({@code paper_fills.price_source})도 이 이름. */
     String quotesDataset();
+
+    /** 관측치 스냅샷을 채우는 수집기 태스크 이름 — 저장본 읽기의 수집 요청 대상이고, '저장본 없음' 안내 문구에 들어갑니다. */
+    String quotesTask();
 
     /** 종가 이력(timeseries)의 데이터셋 — 사후 체결·분할 감지·패킷 수익률. 그 이력으로 체결하면 가격 출처도 이 이름. */
     String historyDataset();
