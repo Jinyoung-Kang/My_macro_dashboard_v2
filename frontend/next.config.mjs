@@ -35,6 +35,10 @@ const nextConfig = {
       { source: "/toss", destination: "/connections", permanent: true },
       // 🧬 구루 포트폴리오 분석 → 🧬 기관 13F 스타일·위험 (메뉴 이름에 맞춰 주소도 변경)
       { source: "/guru", destination: "/style", permanent: true },
+      // 🧪 모의매매 7탭 화면(/paper) → 미국 책(/paper/us). 임시(307)인 까닭 — 2단계에 /paper/kr이 생기면 /paper를 시장 고르는
+      // 화면으로 쓸 수 있어, 브라우저가 영구(308) 리디렉션을 기억하면 그때 /paper로 갈 수 없습니다. source는 /paper 하나만
+      // (/paper/:path*로 넓히면 /paper/us까지 맞아 끝없이 되돌아갑니다).
+      { source: "/paper", destination: "/paper/us", permanent: false },
     ];
   },
   async headers() {

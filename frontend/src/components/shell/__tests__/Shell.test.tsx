@@ -118,12 +118,12 @@ describe("계정 영역(옛 사이드바 계정 영역)", () => {
 });
 
 describe("탭 — 모의매매(미국)는 운영자만", () => {
-  it("운영자에게는 왼쪽 내비·하단 탭 모두 홈·시장·기관·한국·모의매매·더보기 순서, 모의매매는 지금 있는 미국 화면(/paper)", () => {
+  it("운영자에게는 왼쪽 내비·하단 탭 모두 홈·시장·기관·한국·모의매매·더보기 순서, 모의매매는 미국 화면(/paper/us)", () => {
     renderShell(LOCAL_OWNER);
 
     for (const scope of [mainNav(), bottomNav()]) {
       expect(linkLabels(scope)).toEqual(["홈", "시장", "기관", "한국", "모의매매", "더보기"]);
-      expect(within(scope).getByRole("link", { name: "모의매매" }).getAttribute("href")).toBe("/paper");
+      expect(within(scope).getByRole("link", { name: "모의매매" }).getAttribute("href")).toBe("/paper/us");
     }
     expect(bottomNav().className).toContain("grid-cols-6");
   });
@@ -166,11 +166,21 @@ describe("하위 메뉴 줄", () => {
   });
 
   it("모의매매(운영자)는 미국 링크와 링크 없는 '한국 · 준비 중'", () => {
-    renderShell(LOCAL_OWNER, { path: "/paper" });
+    renderShell(LOCAL_OWNER, { path: "/paper/us" });
     const sub = screen.getByRole("navigation", { name: "모의매매 하위 메뉴" });
     expect(linkLabels(sub)).toEqual(["미국"]);
     expect(within(sub).getByRole("link", { name: "미국" }).getAttribute("aria-current")).toBe("page");
     expect(within(sub).getByText("한국 · 준비 중").closest("a")).toBeNull();
+  });
+
+  it("모의매매 탭 주소(/paper/us/holdings)에서는 '미국'(→ 개요)이 고른 표시만 — aria-current는 page가 아니라 true", () => {
+    renderShell(LOCAL_OWNER, { path: "/paper/us/holdings" });
+    const sub = screen.getByRole("navigation", { name: "모의매매 하위 메뉴" });
+    const us = within(sub).getByRole("link", { name: "미국" });
+    expect(us.getAttribute("aria-current")).toBe("true");
+    expect(us.className).toContain("font-semibold");
+    // 탭 링크도 같은 규칙(첫 화면이 아니면 true)
+    expect(within(mainNav()).getByRole("link", { name: "모의매매" }).getAttribute("aria-current")).toBe("true");
   });
 
   it("무료 회원에게는 유료 화면(AI 종합 분석)에 🔒", () => {

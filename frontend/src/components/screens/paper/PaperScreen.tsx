@@ -1,10 +1,12 @@
 "use client";
 
-import { useState } from "react";
+import { usePathname } from "next/navigation";
+import { useEffect, useState } from "react";
 import { Banner, Card, ErrorState, Freshness, Loading } from "@/components/ui";
 import { useApi } from "@/hooks/useApi";
 import { endpoints } from "@/lib/endpoints";
 import { PAPER_SOURCES, PAPER_TABS, type PaperTabKey } from "@/lib/paper";
+import { paperTabFromPath, paperTabPath } from "@/lib/paperRoutes";
 import type { PaperOverviewResponse } from "@/lib/types";
 import { DecisionsSection } from "./DecisionsSection";
 import { FrameworkSection } from "./FrameworkSection";
@@ -28,24 +30,49 @@ import { SettingsSection } from "./SettingsSection";
  * <p>개요의 계좌 상세에서 "보유·체결 탭에서 전체 보기"·"결정 로그 보기"를 누르면 그 탭으로 바꾸며 그 계좌를 미리 고릅니다(preselect —
  * 탭이 처음 그려질 때의 선택). 탭 단추로 직접 옮기면 미리 고름을 지워, 그 탭의 기본 계좌로 엽니다(예전과 같음). 결정 로그의 주간 복기에서
  * 제안을 누르면 프레임 탭으로 바꾸며 그 제안 번호를 넘깁니다(focusProposal — 같은 규칙으로 탭 단추가 지움).
+ *
+ * <p>주소: 개요는 /paper/us, 나머지 탭은 /paper/us/&lt;탭&gt;(lib/paperRoutes). 라우트가 처음 탭(initialTab)을 넘기고, 화면 안에서 탭을
+ * 바꾸면 window.history.replaceState로 주소만 그 탭의 것으로 바꿉니다 — 라우터 이동(useRouter)을 쓰지 않아 섹션이 다시 읽히지 않고,
+ * 새로고침·링크 공유는 그 탭으로 열립니다(뒤로 가기 기록은 쌓지 않음). 반대로 같은 화면을 띄운 채 셸의 링크(예: 모의매매 탭 → /paper/us)로
+ * 주소가 바뀌면 그 주소의 탭으로 맞춥니다.
  */
-export default function PaperPage() {
-  const [tab, setTab] = useState<PaperTabKey>("overview");
+export default function PaperPage({ initialTab = "overview" }: { initialTab?: PaperTabKey }) {
+  const [tab, setTab] = useState<PaperTabKey>(initialTab);
   const [preselect, setPreselect] = useState("");
   // 결정 로그의 주간 복기에서 누른 제안 번호 — 프레임 탭이 그 제안으로 스크롤해 강조합니다(탭 단추로 옮기면 지움).
   const [focusProposal, setFocusProposal] = useState<number | null>(null);
   const { data, loading, error, reload, refreshError } = useApi<PaperOverviewResponse>(endpoints.paper.overview, 60_000);
   const current = PAPER_TABS.find((entry) => entry.key === tab) ?? PAPER_TABS[0];
+  // 라우터 밖(테스트)에서는 null입니다 — 그때는 주소를 따라가지 않습니다.
+  const pathname = usePathname();
+
+  useEffect(() => {
+    const fromPath = paperTabFromPath(pathname);
+    // 이 화면이 방금 바꾼 주소(replaceState)는 지금 탭과 같아 아무 일도 없습니다. 라우터가 아직 옛 주소를 들고 있는 동안(탭을 막
+    // 바꾼 직후)은 브라우저의 지금 주소와 달라 무시합니다 — 그러지 않으면 방금 고른 탭을 옛 주소의 탭으로 되돌립니다.
+    if (fromPath === null || fromPath === tab || pathname !== window.location.pathname) return;
+    // 주소로 탭을 바꾸는 것은 탭 단추를 누른 것과 같습니다 — 미리 고른 계좌·강조할 제안을 지웁니다.
+    setPreselect("");
+    setFocusProposal(null);
+    setTab(fromPath);
+  }, [pathname, tab]);
+
+  /** 탭을 바꾸고 주소를 그 탭의 것으로 — 기록을 쌓지 않는 replaceState(Next 라우터가 usePathname을 맞춰 줌). */
+  const showTab = (key: PaperTabKey) => {
+    setTab(key);
+    const path = paperTabPath(key);
+    if (window.location.pathname !== path) window.history.replaceState(null, "", path);
+  };
   const openTab = (key: "holdings" | "decisions", code: string) => {
     setPreselect(code);
     setFocusProposal(null);
-    setTab(key);
+    showTab(key);
     // 누른 단추는 개요와 함께 사라지므로, 초점을 새 탭 단추로 옮겨 키보드 위치와 화면 위치를 맞춥니다.
     document.getElementById(`paper-tab-${key}`)?.focus();
   };
   const openProposal = (id: number) => {
     setFocusProposal(id);
-    setTab("framework");
+    showTab("framework");
     document.getElementById("paper-tab-framework")?.focus();
   };
 
@@ -62,6 +89,8 @@ export default function PaperPage() {
         {/* 자동 갱신이 실패하면 앞서 받은 값을 그대로 보이므로 '새로 읽지 못함'을 붙입니다(QA-104, QA-067과 같음). */}
         <Freshness refreshError={refreshError} />
       </header>
+
+      <MarketSwitch />
 
       {loading && !data && <Loading label="장부를 읽는 중…" />}
       {error && <ErrorState message={error} onRetry={reload} />}
@@ -94,10 +123,10 @@ export default function PaperPage() {
                   onClick={() => {
                     setPreselect("");
                     setFocusProposal(null);
-                    setTab(entry.key);
+                    showTab(entry.key);
                   }}
-                  className={`rounded-md px-3 py-1.5 text-xs transition focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-accent ${
-                    active ? "bg-accent/15 font-semibold text-accent" : "text-muted hover:bg-surface-hover hover:text-body"
+                  className={`rounded-md px-3 py-1.5 text-xs transition-colors duration-150 motion-reduce:transition-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus ${
+                    active ? "bg-surface-2 font-semibold text-text" : "text-text-2 hover:bg-surface-2 hover:text-text"
                   }`}
                 >
                   {entry.label}
@@ -127,5 +156,32 @@ export default function PaperPage() {
         </>
       )}
     </div>
+  );
+}
+
+/**
+ * 시장 고르기 — 미국(지금 보는 시장, aria-current="true")과 한국(2단계 — 아직 없는 화면이라 누를 수 없음, "2단계"를 글로 보임).
+ * 미국은 링크가 아닌 표시라 "현재 페이지"(page) 대신 이 묶음에서 고른 것(true)으로 알립니다 — "현재 페이지"는 셸의 탭·하위 메뉴 링크가 맡습니다.
+ * 한국 책이 생기면(계획서 §4 2단계) /paper/kr 링크로 바꿉니다. 셸의 하위 메뉴 줄에도 같은 표시가 있지만, 이 화면만 연 사람에게도
+ * 미국 책이라는 것과 한국 책이 올 것이 보이게 탭 위에 둡니다.
+ */
+function MarketSwitch() {
+  return (
+    <nav aria-label="모의매매 시장" className="flex flex-wrap items-center gap-2 text-sm">
+      <span aria-current="true" className="rounded-md bg-surface-2 px-3 py-1.5 font-semibold text-text">
+        미국
+      </span>
+      <button
+        type="button"
+        disabled
+        aria-describedby="paper-market-kr-note"
+        className="cursor-not-allowed rounded-md px-3 py-1.5 text-text-3"
+      >
+        한국 · 준비 중
+      </button>
+      <span id="paper-market-kr-note" className="rounded-full border border-border px-2 py-0.5 text-xs text-text-3">
+        2단계
+      </span>
+    </nav>
   );
 }

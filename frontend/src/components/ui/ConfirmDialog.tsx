@@ -18,6 +18,8 @@ const CONFIRM_TONE = {
  * - 확인 단추는 스스로 창을 닫지 않습니다. 부르는 쪽이 일을 마친 뒤(성공이든 실패든) `onOpenChange(false)`로 닫습니다 —
  *   모의매매 화면의 "확인은 결과가 나온 뒤 닫는다" 규칙을 지키려는 것입니다. 그동안 `busy`를 주면 확인·취소·Esc·바깥 누르기가 막힙니다.
  * - `requireText`를 주면 그 글자를 정확히(대소문자·공백까지) 쳐야 확인할 수 있습니다. 친 글자는 창을 다시 열면 비워집니다.
+ *   `onConfirm`은 친 글자를 받습니다(requireText가 없으면 빈 글). 서버가 같은 글자를 다시 검사하는 일(계좌 초기화의 confirm)은 부르는
+ *   쪽이 이 값을 그대로 보냅니다 — 화면이 정답(requireText)을 대신 채워 보내면 서버 검사는 늘 통과해 두 번째 울타리가 되지 못합니다.
  * - Esc·취소는 `onOpenChange(false)`를 부릅니다. 열면 첫 포커스는 입력칸(있으면) 또는 취소 단추입니다(실수로 Enter를 눌러도 안전).
  */
 export function ConfirmDialog({
@@ -42,7 +44,8 @@ export function ConfirmDialog({
   busy?: boolean;
   /** 이 글자를 정확히 쳐야 확인할 수 있습니다(빈 문자열이면 묻지 않음). */
   requireText?: string;
-  onConfirm: () => void;
+  /** 확인 — 친 글자를 넘깁니다(requireText가 없으면 ""). 인자를 쓰지 않는 쪽은 `() => …`로 받아도 됩니다. */
+  onConfirm: (typed: string) => void;
 }) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange} title={title} description={description} size="sm" dismissible={!busy} showClose={false}>
@@ -74,7 +77,7 @@ function ConfirmForm({
   tone: "default" | "danger";
   busy: boolean;
   requireText: string | null;
-  onConfirm: () => void;
+  onConfirm: (typed: string) => void;
   onCancel: () => void;
 }) {
   const [typed, setTyped] = useState("");
@@ -88,7 +91,7 @@ function ConfirmForm({
       onSubmit={(event) => {
         event.preventDefault();
         // 입력칸에서 Enter를 눌러도 같은 조건을 거칩니다.
-        if (canConfirm) onConfirm();
+        if (canConfirm) onConfirm(requireText === null ? "" : typed);
       }}
     >
       {requireText !== null && (

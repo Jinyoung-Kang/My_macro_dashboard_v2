@@ -117,8 +117,9 @@ export function DecisionsSection({
             type="button"
             aria-pressed={active}
             onClick={() => setView(entry.key)}
-            className={`px-3 py-1.5 text-xs transition focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-accent ${
-              active ? "bg-accent/15 font-semibold text-accent" : "text-muted hover:bg-surface-hover hover:text-body"
+            // 7탭 바와 같은 모양 — 고른 것은 surface-2 바탕 + 굵게(색만으로 고름을 전하지 않음, aria-pressed가 읽어 줌).
+            className={`px-3 py-1.5 text-xs transition-colors duration-150 motion-reduce:transition-none focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-focus ${
+              active ? "bg-surface-2 font-semibold text-text" : "text-text-2 hover:bg-surface-2 hover:text-text"
             }`}
           >
             {entry.label}

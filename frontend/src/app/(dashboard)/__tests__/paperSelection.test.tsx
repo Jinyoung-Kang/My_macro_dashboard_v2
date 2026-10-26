@@ -136,6 +136,8 @@ async function openSelectionTab() {
   fireEvent.click(await screen.findByRole("tab", { name: "기관 선정" }));
 }
 
+/** Empty 패턴(DataTable의 모르는 칸) — 보이는 "—" + 읽어 주는 "값 없음"(sr-only). 후보 표(펼침 행이 있는 옛 표)는 "—" 그대로. */
+const NONE = "—값 없음";
 const headersOf = (container: HTMLElement) => within(container).getAllByRole("columnheader").map((th) => th.textContent);
 const cellsOf = (name: string) => within(screen.getByRole("row", { name })).getAllByRole("cell").map((td) => td.textContent);
 
@@ -237,7 +239,7 @@ describe("계산된 트랙레코드", () => {
     const last = within(periods).getByText("2026-08-14").closest("tr") as HTMLElement;
     const lastCells = within(last).getAllByRole("cell").map((td) => td.textContent);
     expect(lastCells[4]).toBe("0.0% (티커 0개 · 보유 40줄)");
-    expect(lastCells[5]).toBe("—");
+    expect(lastCells[5]).toBe(NONE);
 
     // 다시 누르면 접습니다.
     fireEvent.click(within(row).getByRole("button", { name: "구간 접기" }));
@@ -314,8 +316,8 @@ describe("두 기관 그룹(D27)", () => {
     expect(headersOf(pool)).toEqual(["기관", "그룹", "그룹 A 순위", "그룹 B 순위", "기관 가중"]);
     const rows = within(pool).getAllByRole("row").slice(1).map((tr) => within(tr).getAllByRole("cell").map((td) => td.textContent));
     expect(rows).toEqual([
-      ["버크셔 해서웨이 (Berkshire Hathaway)CIK 0001067983", "A", "1위", "—", "50.0%"],
-      ["🇺🇸 듀케인 패밀리 오피스 (Duquesne Family Office)CIK 0001536411", "B", "—", "1위", "50.0%"],
+      ["버크셔 해서웨이 (Berkshire Hathaway)CIK 0001067983", "A", "1위", NONE, "50.0%"],
+      ["🇺🇸 듀케인 패밀리 오피스 (Duquesne Family Office)CIK 0001536411", "B", NONE, "1위", "50.0%"],
     ]);
     expect(screen.getByText(/2026-10-23 선정 — 규칙 계좌가 이 기관들의 13F 변화를 신호로 씁니다/)).toBeTruthy();
     expect(screen.getByText(/그룹 A 50\.0% · 그룹 B 50\.0%/)).toBeTruthy();

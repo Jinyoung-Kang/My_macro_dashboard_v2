@@ -5,6 +5,7 @@
  *  - Esc·취소는 onOpenChange(false)
  *  - busy면 확인·취소가 비활성이고 Esc로도 닫히지 않는다
  *  - requireText는 정확히 같은 글자에서만 확인을 연다(대소문자·공백까지), 다시 열면 친 글자는 비워진다
+ *  - onConfirm은 친 글자를 받는다(서버가 다시 검사하는 값을 화면이 대신 채우지 않게), requireText가 없으면 빈 글
  *  - tone="danger"는 danger 토큰 바탕
  */
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
@@ -67,6 +68,8 @@ describe("확인·취소·Esc", () => {
     const { props } = renderConfirm();
     fireEvent.click(confirmButton());
     expect(props.onConfirm).toHaveBeenCalledTimes(1);
+    // 칠 글자가 없으면 빈 글을 넘깁니다.
+    expect(props.onConfirm).toHaveBeenCalledWith("");
     expect(props.onOpenChange).not.toHaveBeenCalled();
     expect(screen.getByRole("dialog")).toBeTruthy();
   });
@@ -120,6 +123,8 @@ describe("requireText", () => {
     expect(confirmButton().disabled).toBe(false);
     fireEvent.submit(input.closest("form") as HTMLFormElement);
     expect(props.onConfirm).toHaveBeenCalledTimes(1);
+    // 친 글자 그대로 넘깁니다 — 서버가 같은지 다시 보는 값(예: 계좌 초기화의 confirm)입니다.
+    expect(props.onConfirm).toHaveBeenCalledWith("RESET");
   });
 
   it("첫 포커스는 입력칸", async () => {

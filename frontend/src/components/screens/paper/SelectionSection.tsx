@@ -1,7 +1,8 @@
 "use client";
 
 import { Fragment, type ReactNode, useState } from "react";
-import { Banner, Button, Card, ErrorState, Freshness, Loading, Table } from "@/components/ui";
+import { DataTable } from "@/components/patterns";
+import { Banner, Button, Card, ErrorState, Freshness, Loading } from "@/components/ui";
 import { useApi } from "@/hooks/useApi";
 import { useAsyncAction } from "@/hooks/useAsyncAction";
 import { useElapsedSeconds } from "@/hooks/useElapsedSeconds";
@@ -43,7 +44,10 @@ import type {
   PaperTrackRecordResponse,
 } from "@/lib/types";
 
-/** 후보 표의 칸 하나. ui의 Table과 같은 모양이지만, 행 아래에 구간 표를 펼쳐야 해서 표를 이 파일이 그립니다. */
+/**
+ * 후보 표의 칸 하나. 행 아래에 구간 표를 펼쳐야 해서 표를 이 파일이 그립니다(DataTable은 행 아래 펼침을 두지 않음 — 1단계에는
+ * 이 표만 옛 모양). 선정 이력·신호 풀·구간 표는 DataTable입니다.
+ */
 interface Column {
   key: string;
   header: ReactNode;
@@ -188,13 +192,15 @@ export function SelectionSection() {
         subtitle="선정은 재선정일(분기 13F 공시 기한 다음 거래일)과 초기 선정 때 한 번씩 남깁니다. 수동 재계산은 선정을 바꾸지 않습니다."
         source={PAPER_SOURCES.selection}
       >
-        <Table<SelectionHistoryRow>
+        <DataTable<SelectionHistoryRow>
           rows={history}
           rowKey={(row) => row.asOfDate}
-          emptyMessage="아직 선정 기록이 없습니다 — 초기 선정은 규칙 계좌 초기화 때, 그 뒤는 재선정일마다 남습니다."
+          caption="선정 이력"
+          scrollHint
+          emptyText="아직 선정 기록이 없습니다 — 초기 선정은 규칙 계좌 초기화 때, 그 뒤는 재선정일마다 남습니다."
           columns={[
-            { key: "asOf", header: "기준일", render: (row) => row.asOfDate },
-            { key: "names", header: "선정 기관", render: (row) => <span className="text-xs text-body">{row.names}</span> },
+            { key: "asOf", header: "기준일", className: "whitespace-nowrap", cell: (row) => row.asOfDate },
+            { key: "names", header: "선정 기관", cell: (row) => <span className="text-xs text-body">{row.names}</span> },
           ]}
         />
       </Card>
@@ -264,29 +270,28 @@ function PoolCard({ rows, asOfDate, groupWeightA }: { rows: PoolRow[]; asOfDate:
     >
       <p className="mb-3 text-xs leading-relaxed text-muted">{poolWeightNote(groupWeightA)}</p>
       <section aria-label="신호 풀 표">
-        <Table<PoolRow>
+        <DataTable<PoolRow>
           rows={rows}
           rowKey={(row) => row.key}
-          emptyMessage="신호 풀이 없습니다 — 이 기준일에 유효한 선정이 아직 없거나, 선정 때 자격 있는 기관이 없었습니다."
+          caption="신호 풀"
+          scrollHint
+          emptyText="신호 풀이 없습니다 — 이 기준일에 유효한 선정이 아직 없거나, 선정 때 자격 있는 기관이 없었습니다."
           columns={[
             {
               key: "name",
               header: "기관",
-              render: (row) => (
+              cell: (row) => (
                 <div className="flex flex-col">
                   <span className="font-semibold text-bright">{row.name}</span>
                   <span className="text-[11px] text-muted">CIK {row.cik}</span>
                 </div>
               ),
             },
-            {
-              key: "group",
-              header: "그룹",
-              render: (row) => (row.group ? <Badges badges={[row.group]} /> : <span className="text-muted">{EMPTY}</span>),
-            },
-            { key: "rankA", header: "그룹 A 순위", align: "right", render: (row) => row.rankA },
-            { key: "rankB", header: "그룹 B 순위", align: "right", render: (row) => row.rankB },
-            { key: "weight", header: "기관 가중", align: "right", render: (row) => row.weight },
+            // 그룹을 모르면 글 "—" — 표가 Empty("값 없음"을 읽어 줌)로 그립니다.
+            { key: "group", header: "그룹", cell: (row) => (row.group ? <Badges badges={[row.group]} /> : EMPTY) },
+            { key: "rankA", header: "그룹 A 순위", align: "right", cell: (row) => row.rankA },
+            { key: "rankB", header: "그룹 B 순위", align: "right", cell: (row) => row.rankB },
+            { key: "weight", header: "기관 가중", align: "right", cell: (row) => row.weight },
           ]}
         />
       </section>
@@ -504,23 +509,29 @@ function PeriodTable({ name, span, periods }: { name: string; span: string; peri
         {name} — 공시 다음 거래일 종가에 사서 다음 공시의 다음 거래일 종가까지(마지막 구간은 기준일까지). 첫 구간은 {span} 시작으로
         자릅니다. 수익률이 &quot;—&quot;인 구간은 커버된 보유가 없어 누적·통계에서 뺐습니다.
       </p>
-      <Table<PaperTrackRecordPeriod>
+      <DataTable<PaperTrackRecordPeriod>
         rows={periods}
-        rowKey={(period, index) => `${period.filingDate}-${index}`}
-        emptyMessage={`${span} 안의 구간이 없습니다.`}
+        // 같은 날 공시가 둘(정정 공시 등)이어도 겹치지 않게 보고 분기·시작일까지 붙입니다.
+        rowKey={(period) => `${period.filingDate}-${period.reportDate}-${period.start}`}
+        caption={`${name} 구간`}
+        scrollHint
+        emptyText={`${span} 안의 구간이 없습니다.`}
         columns={[
-          { key: "filingDate", header: "공시일", render: (period) => period.filingDate },
-          { key: "reportDate", header: "보고 분기", render: (period) => period.reportDate },
-          { key: "start", header: "시작", render: (period) => period.start },
-          { key: "end", header: "끝", render: (period) => period.end },
-          { key: "coverage", header: "커버리지", align: "right", render: (period) => periodCoverageText(period) },
+          { key: "filingDate", header: "공시일", cell: (period) => period.filingDate },
+          { key: "reportDate", header: "보고 분기", cell: (period) => period.reportDate },
+          { key: "start", header: "시작", cell: (period) => period.start },
+          { key: "end", header: "끝", cell: (period) => period.end },
+          { key: "coverage", header: "커버리지", align: "right", cell: (period) => periodCoverageText(period) },
           {
             key: "return",
             header: "수익률",
             align: "right",
-            render: (period) => <span className={deltaColor(period.returnPct)}>{formatPercent(period.returnPct)}</span>,
+            cell: (period) => {
+              const text = formatPercent(period.returnPct);
+              return text === EMPTY ? text : <span className={deltaColor(period.returnPct)}>{text}</span>;
+            },
           },
-          { key: "spy", header: "SPY", align: "right", render: (period) => formatPercent(period.spyReturnPct) },
+          { key: "spy", header: "SPY", align: "right", cell: (period) => formatPercent(period.spyReturnPct) },
         ]}
       />
     </section>

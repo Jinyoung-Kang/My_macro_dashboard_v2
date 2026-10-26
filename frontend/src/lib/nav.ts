@@ -71,11 +71,11 @@ export const TABS: readonly NavTab[] = [
   {
     key: "paper",
     label: "모의매매",
-    // 미국 책 화면은 아직 옛 경로 /paper 하나입니다. /paper/us 경로(옛 /paper는 리디렉션)가 생기는 커밋에서 탭 href와
-    // 하위 화면 href를 함께 /paper/us로 옮깁니다(브리프 §1.3) — 그 전에 옮기면 탭·하위 메뉴·검색이 404로 갑니다.
-    href: "/paper",
+    // 미국 책 화면은 /paper/us(개요)와 그 아래 탭 주소(/paper/us/holdings 등 — 하위 화면 하나가 덮음)입니다. 옛 /paper는
+    // next.config가 /paper/us로 보내고, 탭 영역(section)은 /paper 아래 전부라 2단계의 /paper/kr도 이 탭입니다.
+    href: "/paper/us",
     section: "/paper",
-    items: [{ href: "/paper", label: "미국", title: "모의매매(미국)", keywords: ["모의 알고리즘 매매(미국)"] }],
+    items: [{ href: "/paper/us", label: "미국", title: "모의매매(미국)", keywords: ["모의 알고리즘 매매(미국)"] }],
     // 한국 증시 책은 2단계(계획서 §4) — 그때 /paper/kr 하위 메뉴가 됩니다.
     upcoming: [{ label: "한국", note: "준비 중" }],
   },
@@ -130,8 +130,13 @@ export function visibleItems(tab: NavTab, user: SessionUser | null | undefined):
 export type SubNavModel = {
   tab: NavTab;
   items: NavItem[];
-  /** 지금 화면(aria-current="page")의 href. 탭 영역 안이지만 하위 화면이 아니면(/more) null. */
+  /** 지금 화면(고른 표시)의 href. 탭 영역 안이지만 하위 화면이 아니면(/more) null. */
   current: string | null;
+  /**
+   * 그 링크의 aria-current — 링크 주소 그대로를 보고 있으면 "page", 그 화면의 아래 주소면 "true"(이 화면 안에 있음, tabCurrent와 같은
+   * 규칙). /paper/us/holdings에서 "미국"(→ /paper/us, 누르면 개요로 감)을 "현재 페이지"라고 읽으면 틀린 안내가 됩니다. current가 null이면 null.
+   */
+  currentAria: "page" | "true" | null;
   upcoming: readonly { label: string; note: string }[];
 };
 
@@ -145,8 +150,15 @@ export function subNav(pathname: string, user: SessionUser | null | undefined): 
   const items = visibleItems(tab, user);
   const upcoming = tab.upcoming ?? [];
   if (items.length + upcoming.length < 2) return null;
-  const current = activeItem(pathname);
-  return { tab, items, current: current && items.includes(current) ? current.href : null, upcoming };
+  const item = activeItem(pathname);
+  const current = item && items.includes(item) ? item : null;
+  return {
+    tab,
+    items,
+    current: current ? current.href : null,
+    currentAria: current ? (pathname === current.href ? "page" : "true") : null,
+    upcoming,
+  };
 }
 
 /** 브라우저 탭 제목에 쓸 화면 이름 — 하위 화면 이름(없으면 탭 이름). 메뉴에 없는 경로는 null. */

@@ -1,7 +1,9 @@
 "use client";
 
 import { useState } from "react";
-import { Banner, Button, Card, ErrorState, Freshness, Loading, Select, Table } from "@/components/ui";
+import { type Column, DataTable } from "@/components/patterns";
+import { Banner, Button, Card, ErrorState, Freshness, Loading, Select } from "@/components/ui";
+import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { useApi } from "@/hooks/useApi";
 import { useAsyncAction } from "@/hooks/useAsyncAction";
 import { apiPost } from "@/lib/api";
@@ -47,10 +49,121 @@ import type {
 /** 주문·체결 표에 보일 최근 건수. 서버 상한은 500입니다. */
 const RECENT_LIMIT = 50;
 
+/*
+ * 표 칸 정의(DataTable). 칸이 "—"(EMPTY)를 돌려주면 표가 Empty("—" + 읽어 주는 "값 없음")로 그립니다 — 글자색·title을 덧입히는 칸도
+ * 값이 없으면 글만 돌려줘 같은 모양이 되게 합니다. 숫자 칸은 오른쪽 정렬·tabular-nums(DataTable)입니다.
+ * 보유 표만 정렬 단추를 둡니다(종목·수량·평가액·비중·평가 손익 — 모르는 값은 방향과 무관하게 맨 뒤). 주문·체결은 서버의 시각 순서 그대로.
+ */
+const POSITION_COLUMNS: readonly Column<PaperPosition>[] = [
+  {
+    key: "ticker",
+    header: "종목",
+    sortValue: (row) => row.ticker,
+    cell: (row) => (
+      <span className="flex flex-wrap items-center gap-1">
+        <span className="font-semibold text-bright">{row.ticker}</span>
+        <Badges badges={positionBadges(row)} />
+      </span>
+    ),
+  },
+  { key: "qty", header: "수량", align: "right", sortValue: (row) => row.qty, cell: (row) => formatNumber(row.qty, 0) },
+  // 주당 가격은 4자리(formatSharePrice) — 2자리로 자르면 싼 종목의 5bp 슬리피지가 보이지 않습니다. 총액·비율은 2자리.
+  { key: "avgCost", header: "평단(달러)", align: "right", cell: (row) => formatSharePrice(row.avgCost) },
+  {
+    key: "lastPrice",
+    header: "가격(달러)",
+    align: "right",
+    cell: (row) => {
+      const price = formatSharePrice(row.lastPrice);
+      return price === EMPTY ? price : <span title={row.lastPriceAtKst ? `${formatKst(row.lastPriceAtKst)} 관측` : undefined}>{price}</span>;
+    },
+  },
+  { key: "marketValue", header: "평가액(달러)", align: "right", sortValue: (row) => row.marketValue, cell: (row) => formatNumber(row.marketValue, 2) },
+  { key: "weightPct", header: "비중", align: "right", sortValue: (row) => row.weightPct, cell: (row) => formatWithUnit(row.weightPct, 1, "%") },
+  {
+    key: "unrealizedPct",
+    header: "평가 손익",
+    align: "right",
+    sortValue: (row) => row.unrealizedPct,
+    cell: (row) => {
+      const text = formatPercent(row.unrealizedPct);
+      return text === EMPTY ? text : <span className={deltaColor(row.unrealizedPct)}>{text}</span>;
+    },
+  },
+  { key: "highWatermark", header: "최고가", align: "right", cell: (row) => formatSharePrice(row.highWatermark) },
+  { key: "stop", header: "스탑 가격", align: "right", cell: (row) => stopText(row) },
+  { key: "held", header: "보유 기간", cell: (row) => heldText(row) },
+];
+
+const LOCKOUT_COLUMNS: readonly Column<PaperLockout>[] = [
+  { key: "ticker", header: "종목", cell: (row) => row.ticker },
+  { key: "until", header: "이 날까지(미국 거래일)", cell: (row) => row.untilTradingDate },
+  { key: "reason", header: "사유", cell: (row) => row.reason || EMPTY },
+];
+
+const ORDER_COLUMNS: readonly Column<PaperOrder>[] = [
+  { key: "createdAt", header: "낸 시각", cell: (row) => formatKst(row.createdAtKst) },
+  { key: "ticker", header: "종목", cell: (row) => row.ticker },
+  { key: "side", header: "방향", cell: (row) => <span className={sideClass(row.side)}>{sideLabel(row.side)}</span> },
+  { key: "size", header: "크기", align: "right", cell: (row) => orderSizeText(row) },
+  { key: "timing", header: "체결 시점", cell: (row) => timingLabel(row.timing) },
+  { key: "source", header: "출처", cell: (row) => sourceLabel(row.source) },
+  {
+    key: "status",
+    header: "상태",
+    cell: (row) => (
+      <span className="flex flex-wrap items-center gap-1">
+        <Badges badges={[orderStatusBadge(row.status)]} />
+        {row.rejectReason && <span className="text-xs text-warn">{row.rejectReason}</span>}
+      </span>
+    ),
+  },
+  { key: "asOf", header: "기준 거래일", cell: (row) => row.asOfTradingDate ?? EMPTY },
+  { key: "expires", header: "만료", cell: (row) => row.expiresOn ?? EMPTY },
+  { key: "filledAt", header: "체결 시각", cell: (row) => formatKst(row.filledAtKst) },
+  // 규칙 책 근거는 `rule · signal · kind`가 앞이라 키 순서대로 80자에서 자르면 문장(text)이 안 보입니다 — 결정 로그
+  // 탭과 같은 orderReasonText로 문장(없으면 점수 기여)을 먼저 보이고, 전체 JSON은 마우스를 올려 봅니다.
+  {
+    key: "reason",
+    header: "근거",
+    cell: (row) => {
+      const text = orderReasonText(row.reason, 80);
+      return text === EMPTY ? text : (
+        <span className="text-xs text-muted" title={jsonTitle(row.reason)}>
+          {text}
+        </span>
+      );
+    },
+  },
+];
+
+const FILL_COLUMNS: readonly Column<PaperFill>[] = [
+  { key: "observedAt", header: "관측 시각", cell: (row) => formatKst(row.observedAtKst) },
+  {
+    key: "ticker",
+    header: "종목",
+    cell: (row) => (
+      <span className="flex flex-wrap items-center gap-1">
+        <span>{row.ticker}</span>
+        <Badges badges={fillBadges(row)} />
+      </span>
+    ),
+  },
+  { key: "side", header: "방향", cell: (row) => <span className={sideClass(row.side)}>{sideLabel(row.side)}</span> },
+  { key: "qty", header: "수량", align: "right", cell: (row) => formatNumber(row.qty, 0) },
+  { key: "price", header: "체결가(달러)", align: "right", cell: (row) => formatSharePrice(row.price) },
+  { key: "rawPrice", header: "관측가", align: "right", cell: (row) => formatSharePrice(row.rawPrice) },
+  { key: "slippage", header: "슬리피지", align: "right", cell: (row) => formatWithUnit(row.slippageBp, 1, "bp") },
+  { key: "gross", header: "금액(달러)", align: "right", cell: (row) => formatNumber(row.gross, 2) },
+  { key: "barDate", header: "봉 날짜", cell: (row) => row.observationDate ?? EMPTY },
+  { key: "priceSource", header: "가격 출처", cell: (row) => row.priceSource ?? EMPTY },
+];
+
 /**
- * 보유·체결 탭 — 책 하나를 골라 보유·재진입 금지·주문·체결을 봅니다. 일시정지/재개와 책 초기화(확인 입력)도 여기서.
+ * 보유·체결 탭 — 책 하나를 골라 보유·재진입 금지·주문·체결을 봅니다(표는 DataTable — 모르는 칸은 "—"). 일시정지/재개와 책 초기화
+ * (확인 창에서 계좌 코드를 그대로 입력)도 여기서.
  *
- * 책 목록은 개요 응답에서 받습니다(page.tsx). 책을 바꾸면 useApi가 이전 책의 표를 바로 비워, 새 책 제목 아래 옛 책의
+ * 책 목록은 개요 응답에서 받습니다(PaperScreen). 책을 바꾸면 useApi가 이전 책의 표를 바로 비워, 새 책 제목 아래 옛 책의
  * 숫자가 잠깐 보이지 않습니다. 버튼이 성공하면 이 탭의 표와 개요(onChanged)를 함께 다시 읽습니다.
  */
 export function HoldingsSection({
@@ -79,7 +192,8 @@ export function HoldingsSection({
     (bookCode: string, confirm: string) => apiPost<PaperBookResetResult>(endpoints.paper.bookReset(bookCode), { confirm }),
     "계좌를 초기화하지 못했습니다.",
   );
-  const [confirm, setConfirm] = useState("");
+  // 계좌 초기화 확인 창. 입력 글자는 창 안에 있어 창을 닫으면 비워집니다(다시 열면 처음부터 — 계좌 코드를 다시 쳐야 함).
+  const [confirmingReset, setConfirmingReset] = useState(false);
 
   const reloadAll = () => {
     void positions.reload();
@@ -103,12 +217,13 @@ export function HoldingsSection({
   const changeStatus = async () => {
     if (action && (await toggle.run(code, action.next))) reloadAll();
   };
-  const runReset = async () => {
-    // 성공했을 때만 확인 입력을 지웁니다(실패면 고쳐 다시 누를 수 있게, QA-051과 같음).
-    if (await reset.run(code, confirm)) {
-      setConfirm("");
-      reloadAll();
-    }
+  const runReset = async (typed: string) => {
+    // confirm은 사람이 친 글자 그대로입니다(확인 창은 계좌 코드와 같을 때만 부름) — 서버가 계좌 코드와 같은지 다시 봅니다(아니면 400).
+    // 계좌 코드를 대신 채워 보내면 서버 검사가 늘 통과해 두 번째 울타리가 되지 못합니다.
+    const ok = await reset.run(code, typed);
+    // 성공·실패 모두 창을 닫습니다 — 실패 사유(서버 400 문구)는 아래 경고로 남고, 다시 하려면 창을 열어 코드를 다시 칩니다.
+    setConfirmingReset(false);
+    if (ok) reloadAll();
   };
 
   return (
@@ -122,10 +237,7 @@ export function HoldingsSection({
           <Select
             label="계좌 고르기"
             value={code}
-            onChange={(value) => {
-              setPicked(value);
-              setConfirm("");
-            }}
+            onChange={(value) => setPicked(value)}
             options={bookOptions(books)}
           />
           {summary && (
@@ -169,22 +281,32 @@ export function HoldingsSection({
               다시 사후 체결하고(종가가 없으면 &quot;시작 전&quot;으로 남고 사유를 보입니다), 규칙·Claude 계좌는 현금만 든
               &quot;시작 전&quot;으로 돌아갑니다.
             </p>
-            <label className="text-xs text-muted">
-              확인하려면 계좌 코드 <code className="text-body">{code}</code>를 입력하세요
-              <input
-                value={confirm}
-                onChange={(event) => setConfirm(event.target.value)}
-                autoComplete="off"
-                spellCheck={false}
-                className="mt-1 w-full rounded-md border border-border bg-canvas px-3 py-2 text-sm text-body outline-hidden focus:border-accent sm:max-w-[22rem]"
-              />
-            </label>
             <div>
-              {/* 서버도 confirm이 책 코드와 같은지 다시 봅니다(아니면 400). 여기서는 잘못 누르기를 먼저 막습니다. */}
-              <Button onClick={() => void runReset()} disabled={reset.busy || confirm !== code}>
+              {/* 누르면 확인 창 — 계좌 코드를 그대로 쳐야 확인이 열립니다(잘못 누르기를 먼저 막음). 서버도 confirm을 다시 봅니다. */}
+              <Button onClick={() => setConfirmingReset(true)} disabled={reset.busy}>
                 {reset.busy ? "초기화 중…" : "계좌 초기화"}
               </Button>
             </div>
+            <ConfirmDialog
+              open={confirmingReset}
+              onOpenChange={setConfirmingReset}
+              title={`${book?.label ?? code} 초기화`}
+              description={
+                <>
+                  <p>
+                    이 계좌(<code>{code}</code>)의 체결·주문·보유·재진입 금지·순자산 기록을 모두 지웁니다. 되돌릴 수 없습니다.
+                  </p>
+                  <p className="mt-1">{book?.kind === "BENCHMARK"
+                    ? "벤치마크 계좌는 출발일 종가로 다시 사후 체결합니다(종가가 없으면 \"시작 전\"으로 남고 사유를 보입니다)."
+                    : "규칙·Claude 계좌는 현금만 든 \"시작 전\"으로 돌아갑니다."}</p>
+                </>
+              }
+              confirmLabel={reset.busy ? "초기화 중…" : "초기화 확인"}
+              tone="danger"
+              busy={reset.busy}
+              requireText={code}
+              onConfirm={(typed) => void runReset(typed)}
+            />
             {reset.error && <Banner tone="warn">{reset.error}</Banner>}
             {resetResult && <Banner tone={resetResult.tone}>{resetResult.text}</Banner>}
           </div>
@@ -201,46 +323,13 @@ export function HoldingsSection({
         {positions.data && !positions.data.available && <Banner tone="warn">{positions.data.message}</Banner>}
         {positions.data?.available && (
           <>
-            <Table<PaperPosition>
+            <DataTable<PaperPosition>
+              columns={POSITION_COLUMNS}
               rows={positions.data.positions ?? []}
               rowKey={(row) => row.ticker}
-              emptyMessage="보유가 없습니다 — 현금만 들고 있습니다."
-              columns={[
-                {
-                  key: "ticker",
-                  header: "종목",
-                  render: (row) => (
-                    <span className="flex flex-wrap items-center gap-1">
-                      <span className="font-semibold text-bright">{row.ticker}</span>
-                      <Badges badges={positionBadges(row)} />
-                    </span>
-                  ),
-                },
-                { key: "qty", header: "수량", align: "right", render: (row) => formatNumber(row.qty, 0) },
-                // 주당 가격은 4자리(formatSharePrice) — 2자리로 자르면 싼 종목의 5bp 슬리피지가 보이지 않습니다. 총액·비율은 2자리.
-                { key: "avgCost", header: "평단(달러)", align: "right", render: (row) => formatSharePrice(row.avgCost) },
-                {
-                  key: "lastPrice",
-                  header: "가격(달러)",
-                  align: "right",
-                  render: (row) => (
-                    <span title={row.lastPriceAtKst ? `${formatKst(row.lastPriceAtKst)} 관측` : undefined}>
-                      {formatSharePrice(row.lastPrice)}
-                    </span>
-                  ),
-                },
-                { key: "marketValue", header: "평가액(달러)", align: "right", render: (row) => formatNumber(row.marketValue, 2) },
-                { key: "weightPct", header: "비중", align: "right", render: (row) => formatWithUnit(row.weightPct, 1, "%") },
-                {
-                  key: "unrealizedPct",
-                  header: "평가 손익",
-                  align: "right",
-                  render: (row) => <span className={deltaColor(row.unrealizedPct)}>{formatPercent(row.unrealizedPct)}</span>,
-                },
-                { key: "highWatermark", header: "최고가", align: "right", render: (row) => formatSharePrice(row.highWatermark) },
-                { key: "stop", header: "스탑 가격", align: "right", render: (row) => stopText(row) },
-                { key: "held", header: "보유 기간", render: (row) => heldText(row) },
-              ]}
+              caption="보유"
+              scrollHint
+              emptyText="보유가 없습니다 — 현금만 들고 있습니다."
             />
             <p className="mt-2 text-xs text-muted">현금 {formatNumber(positions.data.cash, 2)} 달러</p>
           </>
@@ -249,15 +338,13 @@ export function HoldingsSection({
 
       {positions.data?.available && (
         <Card title="재진입 금지" subtitle="트레일링 스탑으로 판 종목은 정해진 거래일 동안 다시 사지 않습니다." source={PAPER_SOURCES.ledger}>
-          <Table<PaperLockout>
+          <DataTable<PaperLockout>
+            columns={LOCKOUT_COLUMNS}
             rows={positions.data.lockouts ?? []}
             rowKey={(row) => row.ticker}
-            emptyMessage="재진입 금지 종목이 없습니다."
-            columns={[
-              { key: "ticker", header: "종목", render: (row) => row.ticker },
-              { key: "until", header: "이 날까지(미국 거래일)", render: (row) => row.untilTradingDate },
-              { key: "reason", header: "사유", render: (row) => row.reason || EMPTY },
-            ]}
+            caption="재진입 금지"
+            scrollHint
+            emptyText="재진입 금지 종목이 없습니다."
           />
         </Card>
       )}
@@ -267,42 +354,13 @@ export function HoldingsSection({
         {orders.error && <ErrorState message={orders.error} onRetry={orders.reload} />}
         {orders.data && !orders.data.available && <Banner tone="warn">{orders.data.message}</Banner>}
         {orders.data?.available && (
-          <Table<PaperOrder>
+          <DataTable<PaperOrder>
+            columns={ORDER_COLUMNS}
             rows={orders.data.orders ?? []}
             rowKey={(row) => String(row.id)}
-            emptyMessage="주문이 없습니다."
-            columns={[
-              { key: "createdAt", header: "낸 시각", render: (row) => formatKst(row.createdAtKst) },
-              { key: "ticker", header: "종목", render: (row) => row.ticker },
-              { key: "side", header: "방향", render: (row) => <span className={sideClass(row.side)}>{sideLabel(row.side)}</span> },
-              { key: "size", header: "크기", align: "right", render: (row) => orderSizeText(row) },
-              { key: "timing", header: "체결 시점", render: (row) => timingLabel(row.timing) },
-              { key: "source", header: "출처", render: (row) => sourceLabel(row.source) },
-              {
-                key: "status",
-                header: "상태",
-                render: (row) => (
-                  <span className="flex flex-wrap items-center gap-1">
-                    <Badges badges={[orderStatusBadge(row.status)]} />
-                    {row.rejectReason && <span className="text-xs text-warn">{row.rejectReason}</span>}
-                  </span>
-                ),
-              },
-              { key: "asOf", header: "기준 거래일", render: (row) => row.asOfTradingDate ?? EMPTY },
-              { key: "expires", header: "만료", render: (row) => row.expiresOn ?? EMPTY },
-              { key: "filledAt", header: "체결 시각", render: (row) => formatKst(row.filledAtKst) },
-              // 규칙 책 근거는 `rule · signal · kind`가 앞이라 키 순서대로 80자에서 자르면 문장(text)이 안 보입니다 — 결정 로그
-              // 탭과 같은 orderReasonText로 문장(없으면 점수 기여)을 먼저 보이고, 전체 JSON은 마우스를 올려 봅니다.
-              {
-                key: "reason",
-                header: "근거",
-                render: (row) => (
-                  <span className="text-xs text-muted" title={jsonTitle(row.reason)}>
-                    {orderReasonText(row.reason, 80)}
-                  </span>
-                ),
-              },
-            ]}
+            caption="주문"
+            scrollHint
+            emptyText="주문이 없습니다."
           />
         )}
       </Card>
@@ -316,31 +374,13 @@ export function HoldingsSection({
         {fills.error && <ErrorState message={fills.error} onRetry={fills.reload} />}
         {fills.data && !fills.data.available && <Banner tone="warn">{fills.data.message}</Banner>}
         {fills.data?.available && (
-          <Table<PaperFill>
+          <DataTable<PaperFill>
+            columns={FILL_COLUMNS}
             rows={fills.data.fills ?? []}
             rowKey={(row) => String(row.id)}
-            emptyMessage="체결이 없습니다."
-            columns={[
-              { key: "observedAt", header: "관측 시각", render: (row) => formatKst(row.observedAtKst) },
-              {
-                key: "ticker",
-                header: "종목",
-                render: (row) => (
-                  <span className="flex flex-wrap items-center gap-1">
-                    <span>{row.ticker}</span>
-                    <Badges badges={fillBadges(row)} />
-                  </span>
-                ),
-              },
-              { key: "side", header: "방향", render: (row) => <span className={sideClass(row.side)}>{sideLabel(row.side)}</span> },
-              { key: "qty", header: "수량", align: "right", render: (row) => formatNumber(row.qty, 0) },
-              { key: "price", header: "체결가(달러)", align: "right", render: (row) => formatSharePrice(row.price) },
-              { key: "rawPrice", header: "관측가", align: "right", render: (row) => formatSharePrice(row.rawPrice) },
-              { key: "slippage", header: "슬리피지", align: "right", render: (row) => formatWithUnit(row.slippageBp, 1, "bp") },
-              { key: "gross", header: "금액(달러)", align: "right", render: (row) => formatNumber(row.gross, 2) },
-              { key: "barDate", header: "봉 날짜", render: (row) => row.observationDate ?? EMPTY },
-              { key: "priceSource", header: "가격 출처", render: (row) => row.priceSource ?? EMPTY },
-            ]}
+            caption="체결"
+            scrollHint
+            emptyText="체결이 없습니다."
           />
         )}
       </Card>

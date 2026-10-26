@@ -2,6 +2,7 @@
  * DataTable — 밀도 높은 표(설계서 §5 "열 정렬·고정 머리, 행 클릭 → 상세", §6 네 상태).
  * 네 상태: 값 있음(숫자 열 오른쪽·tabular-nums), 값 없음(칸 "—"·행 없음 문구), 추정·대리(칸 배지), 오래됨(칸 ⚠️ 이전 값).
  * 정렬: 머리 단추 + 정렬한 열의 th에만 aria-sort, 모르는 값은 방향과 무관하게 맨 뒤. 행 클릭: Tab으로 닿고 Enter·Space로 열림.
+ * 틀: 가로 스크롤 상자·sticky 머리·maxHeight, scrollHint(최소 640px + 폰 안내 줄), 행 머리(rowHeader → th scope=row).
  */
 import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -136,6 +137,55 @@ describe("DataTable — 틀", () => {
     const region = screen.getByRole("region", { name: "표 (좌우 스크롤)" });
     expect(region.style.maxHeight).toBe("320px");
     expect(region.style.overflowY).toBe("auto");
+  });
+
+  it("scrollHint — 표 최소 640px + 폰(sm 미만)에서만 보이는 '좌우로 넘겨 보세요' 한 줄(옛 ui Table과 같음), 행이 없으면 둘 다 없다", () => {
+    render(<DataTable columns={COLUMNS} rows={ROWS} rowKey={(row) => row.ticker} scrollHint />);
+    const hint = screen.getByText("← 표를 좌우로 넘겨 보세요");
+    expect(hint.className).toContain("sm:hidden");
+    // 낭독기에는 상자 이름 "(좌우 스크롤)"이 같은 말을 하므로 숨깁니다.
+    expect(hint.getAttribute("aria-hidden")).toBe("true");
+    expect(screen.getByRole("table").className).toContain("min-w-[640px]");
+
+    cleanup();
+    render(<DataTable columns={COLUMNS} rows={[]} rowKey={(row) => row.ticker} scrollHint />);
+    expect(screen.queryByText("← 표를 좌우로 넘겨 보세요")).toBeNull();
+    expect(screen.getByRole("table").className).not.toContain("min-w-[640px]");
+
+    cleanup();
+    render(<DataTable columns={COLUMNS} rows={ROWS} rowKey={(row) => row.ticker} />);
+    expect(screen.queryByText("← 표를 좌우로 넘겨 보세요")).toBeNull();
+    expect(screen.getByRole("table").className).not.toContain("min-w-[640px]");
+  });
+
+  it("글 열의 칸도 tabular-nums — 날짜·시각 열의 자릿수가 맞는다", () => {
+    render(<DataTable columns={COLUMNS} rows={ROWS} rowKey={(row) => row.ticker} />);
+    for (const cell of within(bodyRows()[0]).getAllByRole("cell")) {
+      expect(cell.className).toContain("tabular-nums");
+    }
+  });
+
+  it("rowHeader 열은 행 머리(th scope=row) — 줄이 항목인 표에서 칸마다 항목 이름을 함께 읽는다, 모르는 값은 그대로 '—'", () => {
+    type Metric = { key: string; label: string | null; a: string | null };
+    const columns: Column<Metric>[] = [
+      { key: "label", header: "항목", rowHeader: true, cell: (row) => row.label },
+      { key: "a", header: "규칙 계좌", align: "right", cell: (row) => row.a },
+    ];
+    const rows: Metric[] = [
+      { key: "nav", label: "순자산", a: "100,000 달러" },
+      { key: "x", label: null, a: null },
+    ];
+    render(<DataTable columns={columns} rows={rows} rowKey={(row) => row.key} caption="계좌 비교" />);
+    const headers = screen.getAllByRole("rowheader");
+    expect(headers.map((th) => th.textContent)).toEqual(["순자산", "—값 없음"]);
+    expect(headers[0].tagName).toBe("TH");
+    expect(headers[0].getAttribute("scope")).toBe("row");
+    // 보이는 모양은 다른 칸과 같습니다(굵게 그리지 않음).
+    expect(headers[0].className).toContain("font-normal");
+    // 행 머리는 칸(cell)으로 세지 않습니다 — 값 칸만 남습니다.
+    expect(within(bodyRows()[0]).getAllByRole("cell").map((td) => td.textContent)).toEqual(["100,000 달러"]);
+    // 열 머리는 그대로 scope=col
+    expect(screen.getAllByRole("columnheader").map((th) => th.getAttribute("scope"))).toEqual(["col", "col"]);
   });
 
   it("정렬 값이 없는 열은 머리가 글자뿐(단추 없음)", () => {

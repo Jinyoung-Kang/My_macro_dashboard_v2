@@ -3,7 +3,8 @@
  *
  *  - GET /api/paper/settings의 keys 순서대로 키마다 지금 값·기본값·범위·설명·규칙 책 영향 배지, GET /api/paper/settings/history는 표
  *  - 값을 바꾸면 "바꿀 값"에 모이고, 저장은 POST /api/paper/settings에 바꾼 키만(`{"키": 값}`, 키는 점 경로)
- *  - 규칙 책 영향 키가 있으면 저장 전에 경고와 함께 한 번 더 묻고, 저장 뒤 서버 warning을 경고로 그대로
+ *  - 규칙 책 영향 키가 있으면 저장 전에 확인 창(ConfirmDialog)에서 경고와 함께 한 번 더 묻고, 저장 뒤 서버 warning을 경고로 그대로 —
+ *    창은 저장이 끝난 뒤(성공·실패 모두) 닫히고, 실패면 서버 400 문구가 경고로 남는다
  *  - 숫자가 아니면 저장 버튼이 막히고, 서버 400 문구는 경고로 그대로. 성공하면 설정·이력을 다시 읽고 입력을 비운다
  */
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
@@ -195,11 +196,13 @@ describe("설정 탭", () => {
     fireEvent.click(screen.getByLabelText("parkCashInShy"));
     expect(changes()).toEqual(["parkCashInShy: 예 → 아니오규칙 계좌 영향", "trackRecord.windowYears: 5 → 6규칙 계좌 영향"]);
 
-    // 첫 누름은 확인만 엽니다 — 아직 서버를 부르지 않습니다.
+    // 첫 누름은 확인 창만 엽니다 — 아직 서버를 부르지 않습니다.
     fireEvent.click(saveButton());
     expect(api.apiPost).not.toHaveBeenCalled();
-    const confirm = screen.getByText(/바꾸는 규칙 계좌 영향 키: parkCashInShy, trackRecord\.windowYears/);
+    const dialog = screen.getByRole("dialog", { name: "규칙 계좌 영향 설정 저장" });
+    const confirm = within(dialog).getByText(/바꾸는 규칙 계좌 영향 키: parkCashInShy, trackRecord\.windowYears/);
     expect(confirm.textContent).toContain(WARNING);
+    expect(confirm.className).toContain("text-warn");
 
     // 취소하면 처음으로, 값은 그대로
     fireEvent.click(screen.getByRole("button", { name: "취소" }));
@@ -213,6 +216,51 @@ describe("설정 탭", () => {
     const warning = await screen.findByText(WARNING);
     expect(warning.className).toContain("text-warn");
     expect(screen.getByText(/설정 v4\(으\)로 저장했습니다/)).toBeTruthy();
+    // 저장이 끝나면 확인 창은 닫힙니다.
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  });
+
+  it("확인 창에서 저장에 성공하면 초점은 저장 결과로 — 막힌 '설정 저장' 단추로 돌아가지 못해 문서 처음(body)으로 떨어지지 않는다", async () => {
+    api.apiPost.mockResolvedValue({ version: 4, changedKeys: ["trackRecord.windowYears"], warning: WARNING });
+    await openSettingsTab();
+
+    fireEvent.change(screen.getByLabelText("trackRecord.windowYears"), { target: { value: "6" } });
+    // 키보드로 '설정 저장'에 간 사람 — 확인 창은 닫힌 뒤 이 단추로 초점을 돌려주려 합니다.
+    saveButton().focus();
+    fireEvent.click(saveButton());
+    fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "저장 확인" }));
+
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    // 바꿀 값이 비어 단추는 막혔습니다 — 그래서 초점은 결과(성공 문구 + 서버 경고)로 옮깁니다.
+    expect(saveButton().disabled).toBe(true);
+    await waitFor(() => expect(document.activeElement?.textContent).toContain("설정 v4(으)로 저장했습니다"));
+    // 확인 창이 늦게(다음 틱) 초점을 돌려주는 처리가 지나간 뒤에도 그대로입니다.
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(document.activeElement).not.toBe(document.body);
+    expect(document.activeElement?.textContent).toContain(WARNING);
+    expect(document.activeElement?.getAttribute("tabindex")).toBe("-1");
+  });
+
+  it("규칙 책 영향 키 저장이 실패하면(서버 400) 확인 창을 닫고 서버 문구를 경고로, 입력은 그대로", async () => {
+    const message = "trackRecord.windowYears: 범위 3~10 밖입니다(받은 값 12)";
+    api.apiPost.mockRejectedValue(new Error(message));
+    await openSettingsTab();
+
+    fireEvent.change(screen.getByLabelText("trackRecord.windowYears"), { target: { value: "12" } });
+    saveButton().focus();
+    fireEvent.click(saveButton());
+    fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "저장 확인" }));
+
+    const warning = await screen.findByText(message);
+    expect(warning.className).toContain("text-warn");
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    // 실패하면 단추가 살아 있어 확인 창이 연 단추로 초점을 돌려줍니다.
+    await waitFor(() => expect(document.activeElement).toBe(saveButton()));
+    expect((screen.getByLabelText("trackRecord.windowYears") as HTMLInputElement).value).toBe("12");
+    // 다시 저장하려면 확인을 한 번 더 거칩니다.
+    fireEvent.click(saveButton());
+    expect(screen.getByRole("dialog", { name: "규칙 계좌 영향 설정 저장" })).toBeTruthy();
+    expect(api.apiPost).toHaveBeenCalledTimes(1);
   });
 
   it("확인을 연 뒤 값을 또 바꾸면 확인을 닫는다 — 확인한 내용과 저장할 내용이 달라지지 않게", async () => {

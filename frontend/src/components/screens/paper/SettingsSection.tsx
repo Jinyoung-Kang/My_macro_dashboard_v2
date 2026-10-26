@@ -1,7 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Banner, Button, Card, ErrorState, Loading, Table } from "@/components/ui";
+import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { useApi } from "@/hooks/useApi";
 import { useAsyncAction } from "@/hooks/useAsyncAction";
 import { apiPost } from "@/lib/api";
@@ -30,9 +31,12 @@ const INPUT = "w-full rounded-md border border-border bg-canvas px-3 py-2 text-s
  *
  * 저장 본문은 바꾼 키만 담은 patch이고(`{"키": 값}`), 형·범위는 서버가 검사합니다 — 틀리면 서버 문구(400)를 그대로 보입니다. 화면은
  * 입력 글자를 그 키의 형으로 읽기만 하고(숫자가 아니면 저장 버튼을 막음) 범위를 따로 검사하지 않습니다(같은 규칙을 두 곳에 두지 않게).
- * 규칙 책 영향 키(서버 keys[].affectsRules)를 바꾸면 저장 전에 경고와 함께 한 번 더 묻고, 저장한 뒤에는 서버 warning을 그대로 보입니다(S3).
+ * 규칙 책 영향 키(서버 keys[].affectsRules)를 바꾸면 저장 전에 확인 창(ConfirmDialog)에서 경고와 함께 한 번 더 묻고, 저장한 뒤에는 서버
+ * warning을 그대로 보입니다(S3). 확인 창은 저장이 끝난 뒤(성공·실패 모두) 닫힙니다 — 실패하면 서버 문구가 아래 경고로 남습니다.
  *
  * 입력 중에는 설정을 자동으로 다시 읽지 않습니다 — 저장이 성공하면 설정과 이력을 다시 읽고 입력을 비웁니다.
+ * 성공하면 초점을 저장 결과로 옮깁니다 — 바꿀 값이 비어 "설정 저장" 단추가 막히므로, 확인 창이 연 단추로 초점을 돌려주지 못하고
+ * 초점이 문서 처음(body)으로 떨어지던 것을 막습니다(실패하면 단추가 살아 있어 확인 창이 그 단추로 돌려줌).
  */
 export function SettingsSection() {
   const settings = useApi<PaperSettingsResponse>(endpoints.paper.settings);
@@ -44,6 +48,12 @@ export function SettingsSection() {
     (patch: Record<string, unknown>) => apiPost<PaperSettingsSaveResult>(endpoints.paper.saveSettings, patch),
     "설정을 저장하지 못했습니다.",
   );
+  // 저장에 성공한 횟수 — 바뀌면 그린 뒤(확인 창이 닫히고 결과가 생긴 뒤) 초점을 결과로 옮깁니다.
+  const [saved, setSaved] = useState(0);
+  const resultRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (saved > 0) resultRef.current?.focus();
+  }, [saved]);
 
   if (settings.loading && !settings.data) return <Loading label="설정을 읽는 중…" />;
   if (settings.error) return <ErrorState message={settings.error} onRetry={settings.reload} />;
@@ -68,9 +78,11 @@ export function SettingsSection() {
   };
   const submit = async () => {
     const ok = await save.run(settingsPatch(changes));
+    // 성공·실패 모두 확인 창을 닫습니다(실패 사유는 아래 경고로 — 다시 저장하려면 확인을 한 번 더 거침).
     setConfirming(false);
     if (ok) {
       setDraft({});
+      setSaved((count) => count + 1);
       void settings.reload();
       void history.reload();
     }
@@ -115,31 +127,33 @@ export function SettingsSection() {
             <p className="text-xs text-warn">형으로 읽지 못한 값이 {errorCount}개 있습니다 — 그 키 아래 문구를 보고 고친 뒤 저장하세요.</p>
           )}
 
-          {confirming && confirmText ? (
-            <div className="flex flex-col gap-3 rounded-md border border-warn/40 bg-warn/10 px-3 py-3">
-              <p className="text-sm leading-relaxed text-warn">{confirmText}</p>
-              <div className="flex flex-wrap items-center gap-2">
-                <Button variant="primary" onClick={() => void submit()} disabled={save.busy}>
-                  {save.busy ? "저장 중…" : "저장 확인"}
-                </Button>
-                <Button onClick={() => setConfirming(false)} disabled={save.busy}>취소</Button>
-              </div>
-            </div>
-          ) : (
-            <div className="flex flex-wrap items-center gap-2">
-              <Button variant="primary" onClick={onSave} disabled={!canSave}>
-                {save.busy ? "저장 중…" : "설정 저장"}
-              </Button>
-              <Button onClick={() => setDraft({})} disabled={save.busy || Object.keys(draft).length === 0}>
-                바꾼 값 되돌리기
-              </Button>
-            </div>
-          )}
+          <div className="flex flex-wrap items-center gap-2">
+            <Button variant="primary" onClick={onSave} disabled={!canSave}>
+              {save.busy ? "저장 중…" : "설정 저장"}
+            </Button>
+            <Button onClick={() => setDraft({})} disabled={save.busy || Object.keys(draft).length === 0}>
+              바꾼 값 되돌리기
+            </Button>
+          </div>
+          <ConfirmDialog
+            open={confirming && confirmText !== null}
+            onOpenChange={setConfirming}
+            title="규칙 계좌 영향 설정 저장"
+            description={<p className="text-warn">{confirmText}</p>}
+            confirmLabel={save.busy ? "저장 중…" : "저장 확인"}
+            busy={save.busy}
+            onConfirm={() => void submit()}
+          />
 
           {/* 서버의 400 문구(모르는 키·형·범위 밖)를 그대로 — 어느 키가 왜 틀렸는지 서버가 적어 보냅니다. */}
           {save.error && <Banner tone="warn">{save.error}</Banner>}
-          {result && <Banner tone={result.tone}>{result.text}</Banner>}
-          {result?.warning && <Banner tone="warn">{result.warning}</Banner>}
+          {/* 저장 결과 — 성공하면 초점이 여기로 옵니다(tabIndex -1: 스크립트로만 닿고 Tab 순서에는 넣지 않음). */}
+          {result && (
+            <div ref={resultRef} tabIndex={-1} className="flex flex-col gap-2 rounded-lg focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus">
+              <Banner tone={result.tone}>{result.text}</Banner>
+              {result.warning && <Banner tone="warn">{result.warning}</Banner>}
+            </div>
+          )}
         </section>
       </Card>
 

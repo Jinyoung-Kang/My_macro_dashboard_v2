@@ -2,7 +2,7 @@
  * AssetRow·AssetList — 자산 행(설계서 §5 "값 없음 —, 변화 없음은 칩 생략, 플래그 배지는 반드시 보인다").
  * 네 상태: 값 있음(이름·보조·값+단위·변화 칩), 값 없음("—"·단위 없음·칩 생략, valueText "N/A"도 "—"),
  * 추정·대리(배지), 오래됨(⚠️ 이전 값 + 사유). 그 밖에 경고 글·출처 배지·스파크라인,
- * 상호작용(href → 링크, onSelect → aria-pressed 버튼, 둘 다 없으면 그냥 줄), 목록(제목·윗선·빈 글·선택).
+ * 상호작용(href → 링크, onSelect → aria-pressed 버튼, + disclosure → aria-expanded 펼침 단추, 둘 다 없으면 그냥 줄), 목록(제목·윗선·빈 글·선택).
  */
 import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -156,6 +156,64 @@ describe("AssetRow", () => {
     expect(onSelect).toHaveBeenCalledWith("spx");
     rerender(<AssetRow row={SPX} onSelect={onSelect} selected />);
     expect(screen.getByRole("button").getAttribute("aria-pressed")).toBe("true");
+  });
+
+  it("disclosure — 펼침 단추: aria-expanded·aria-controls·id, aria-pressed 없음, 이름 바로 뒤 안내 글(화살표는 읽지 않음)", () => {
+    const onSelect = vi.fn();
+    const disclosure = { id: "row-toggle-spx", controls: "detail", expanded: false, hint: "상세 보기" };
+    const { rerender } = render(<AssetRow row={SPX} onSelect={onSelect} disclosure={disclosure} />);
+    // 단추 이름은 이름 + 안내 글뿐 — 값·칩·배지까지 이름으로 읽지 않습니다(그것들은 설명으로).
+    const button = screen.getByRole("button", { name: "S&P 500 상세 보기" });
+    expect(button.id).toBe("row-toggle-spx");
+    const description = (button.getAttribute("aria-describedby") ?? "")
+      .split(" ")
+      .map((id) => document.getElementById(id)?.textContent ?? "")
+      .join(" | ");
+    // (DOM 글자 그대로라 aria-hidden 화살표 ▲도 들어 있음 — 낭독기는 읽지 않음)
+    expect(description).toBe("SPX | 5,800.12pt▲상승+12.30(+0.21%)");
+    expect(button.getAttribute("aria-expanded")).toBe("false");
+    expect(button.getAttribute("aria-controls")).toBe("detail");
+    expect(button.hasAttribute("aria-pressed")).toBe(false);
+    expect(within(button).getByText("▾").getAttribute("aria-hidden")).toBe("true");
+    // 닫혀 있으면 고른 막대가 없습니다.
+    expect(button.querySelector(".bg-accent")).toBeNull();
+    // 값·칩·배지는 그대로 행 안에
+    expect(within(button).getByText("5,800.12")).toBeTruthy();
+    fireEvent.click(within(button).getByText("SPX"));
+    expect(onSelect).toHaveBeenCalledWith("spx");
+
+    rerender(<AssetRow row={SPX} onSelect={onSelect} selected disclosure={{ ...disclosure, expanded: true, hint: "상세 닫기" }} />);
+    const open = screen.getByRole("button", { name: /^S&P 500 상세 닫기/ });
+    expect(open.getAttribute("aria-expanded")).toBe("true");
+    expect(within(open).getByText("▴")).toBeTruthy();
+    expect(open.querySelector('[aria-hidden="true"].bg-accent')).not.toBeNull();
+  });
+
+  it("disclosure — 안내 글이 없거나 'N/A'면 이름만, 네 상태 배지는 펼침 단추에서도 보인다", () => {
+    render(
+      <AssetRow
+        row={{ id: "x", name: "계좌", value: null, isStale: true, staleReason: "가격 없음 1종목", warning: "사후 체결 대기" }}
+        onSelect={() => {}}
+        disclosure={{ controls: "detail", expanded: false, hint: "N/A" }}
+      />,
+    );
+    const button = screen.getByRole("button", { name: "계좌" });
+    expect(within(button).queryByText("N/A")).toBeNull();
+    expect(within(button).queryByText("▾")).toBeNull();
+    expect(within(button).getByText("값 없음")).toBeTruthy();
+    expect(within(button).getByText("이전 값")).toBeTruthy();
+    expect(within(button).getByText("사후 체결 대기")).toBeTruthy();
+    // 보조 글이 없으면 설명은 값 + 배지 줄 — 배지는 설명으로 읽힙니다(숨기지 않음).
+    const ids = (button.getAttribute("aria-describedby") ?? "").split(" ");
+    expect(ids).toHaveLength(2);
+    expect(document.getElementById(ids[1])?.textContent).toContain("이전 값");
+    expect(document.getElementById(ids[1])?.textContent).toContain("사후 체결 대기");
+  });
+
+  it("disclosure는 링크 행에는 쓰지 않는다 — href가 이긴다", () => {
+    render(<AssetRow row={{ ...SPX, href: "/macro" }} onSelect={() => {}} disclosure={{ controls: "d", expanded: true, hint: "상세" }} />);
+    expect(screen.getByRole("link").hasAttribute("aria-expanded")).toBe(false);
+    expect(screen.queryByText("상세")).toBeNull();
   });
 
   it("changeDigits — 변화량만 그 자릿수(금리 −0.007), 변화율은 늘 소수 둘째, 방향은 보이는 값 기준", () => {

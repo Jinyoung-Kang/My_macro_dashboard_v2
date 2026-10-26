@@ -1,14 +1,15 @@
 /**
  * 🧪 모의 알고리즘 매매 화면의 상태 — 테이블이 없을 때·초기화 전·값을 모를 때 지어내지 않고 그대로 말한다.
  *
- *  - available:false면 서버 문구 그대로(탭·카드 없음)
+ *  - available:false면 서버 문구 그대로(탭·계좌 행 없음)
  *  - 초기화 전이면 "초기화" 버튼 → POST /api/paper/init → 결과 문구 + 개요 다시 읽기
  *  - 벤치마크가 종가를 못 받아 시작 전이면(200 + skipped → pendingBackfill) 초기화 카드·버튼이 남는다
  *  - 리스크 실행이 ok:false면 경고 배너에 오류, 처리 메모는 목록 / 책 초기화의 사후 체결 실패 사유는 경고
  *  - 주당 가격은 소수 4자리(싼 종목의 5bp 슬리피지가 보이게)
- *  - 숫자 null은 "—"(0.00으로 채우지 않음), 가격 없는 보유는 배지
- *  - 책 초기화는 책 코드를 정확히 입력해야 눌린다
- *  - 주문 표의 근거는 문장(reason.text)을 자르지 않고 먼저 — 없으면 키: 값 요약, 전체 JSON은 title
+ *  - 숫자 null은 "—"(0.00으로 채우지 않음), 가격 없는 보유는 배지 — 개요는 계좌 행 + 계좌 비교 표(예전 카드의 칸)
+ *  - 책 초기화는 확인 창에서 책 코드를 정확히 입력해야 눌린다(창은 결과가 나온 뒤 닫힘)
+ *  - 주문 표의 근거는 문장(reason.text)을 자르지 않고 먼저 — 없으면 키: 값 요약, 전체 JSON은 title, 근거가 없으면 "—"(값 없음)
+ *  - 보유 표 정렬(종목·수량·평가액·비중·평가 손익 — 모르는 값은 맨 뒤), 재진입 금지 표의 행
  */
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -99,8 +100,22 @@ beforeEach(() => {
 
 afterEach(() => cleanup());
 
+/** Empty 패턴(DataTable의 모르는 칸) — 보이는 "—" + 읽어 주는 "값 없음"(sr-only). */
+const NONE = "—값 없음";
+
+/**
+ * 계좌 비교 표의 칸 글(항목 줄 × 계좌 열). 줄이나 열이 없으면 null. 항목 이름은 행 머리(th scope=row)라 줄은 rowheader로 찾고,
+ * 칸은 DOM 순서(행 머리 + 계좌 칸)로 열 머리와 같은 자리에서 꺼냅니다.
+ */
+function comparisonCell(metric: string, account: string): string | null {
+  const table = screen.getByRole("table", { name: "계좌 비교" });
+  const column = within(table).getAllByRole("columnheader").findIndex((th) => th.textContent === account);
+  const row = within(table).getAllByRole("row").find((tr) => within(tr).queryByRole("rowheader")?.textContent === metric);
+  return row && column >= 0 ? row.children[column].textContent : null;
+}
+
 describe("테이블이 아직 없을 때(available:false)", () => {
-  it("서버 문구를 그대로 보이고, 탭·책 카드·버튼은 그리지 않는다", async () => {
+  it("서버 문구를 그대로 보이고, 탭·계좌 행·버튼은 그리지 않는다", async () => {
     const message = "모의 매매 테이블이 아직 없습니다. 수집기가 스키마(V8)를 적용하면 생깁니다 — make up 후 다시 보세요.";
     reads["/api/paper/overview"] = () => Promise.resolve({ available: false, message });
 
@@ -172,7 +187,10 @@ describe("초기화 전", () => {
     // 다시 읽은 개요(책 네 개)가 그려진 뒤에도 카드가 남는다
     expect(await screen.findByText("벤치마크 사후 체결 대기")).toBeTruthy();
     await waitFor(() => expect(overviewReads).toBeGreaterThanOrEqual(2));
-    expect(await screen.findByRole("article", { name: "SPY 계좌" })).toBeTruthy();
+    const spyRow = await screen.findByRole("button", { name: /SPY 계좌 상세 보기/ });
+    // 사후 체결을 기다리는 벤치마크 행에는 그 사실이 경고로 보입니다(추정처럼 '아직 확정 아님'을 숨기지 않음).
+    expect(within(spyRow).getByText("출발일 종가 대기 — 사후 체결 전(현금만)")).toBeTruthy();
+    expect(within(screen.getByRole("button", { name: /규칙 계좌 상세 보기/ })).queryByText(/출발일 종가 대기/)).toBeNull();
     expect(screen.getByText(/SPY 계좌, 60\/40 계좌: 출발일\(2026-10-23\) 종가를 아직 받지 못해/)).toBeTruthy();
     // 서버 사유(skipped.reason)가 보이고, 다시 누를 버튼이 있다
     expect(screen.getByText(/bench_spy 시작하지 않음 — 2026-10-23 SPY 종가가 아직 없습니다/)).toBeTruthy();
@@ -216,25 +234,32 @@ describe("초기화 전", () => {
 });
 
 describe("값을 모를 때", () => {
-  it("책 카드의 null은 '—'이고 0.00으로 채우지 않는다 — 시작 전인 책은 '시작 전'", async () => {
+  it("계좌 행·계좌 비교 표의 null은 '—'이고 0.00으로 채우지 않는다 — 시작 전인 책은 '시작 전'", async () => {
     reads["/api/paper/overview"] = () => Promise.resolve(INITIALIZED);
 
     render(<PaperPage />);
 
-    const claude = await screen.findByRole("article", { name: "Claude 계좌" });
-    const cell = (label: string) => within(claude).getByText(label).nextElementSibling?.textContent;
-    expect(cell("순자산")).toBe("—");
-    expect(cell("수익률")).toBe("—");
-    expect(cell("주식 노출")).toBe("—");
-    expect(cell("현금")).toBe("—");
-    expect(cell("누적 수익률")).toBe("—");
+    // 계좌 행 — 순자산을 모르면 "—"(단위 없음), 수익률을 모르면 칩을 생략(0.00% 없음), 상태는 글로
+    const claude = await screen.findByRole("button", { name: /Claude 계좌 상세 보기/ });
+    expect(within(claude).getByText("값 없음")).toBeTruthy();
+    expect(within(claude).queryByText("달러")).toBeNull();
     expect(within(claude).queryByText(/0\.00/)).toBeNull();
-    expect(within(claude).getByText(/출발 시작 전/)).toBeTruthy();
-    expect(within(claude).getAllByText("시작 전 · 현금만").length).toBeGreaterThan(0);
+    expect(within(claude).getByText(/시작 전 · 현금만/)).toBeTruthy();
+
+    // 계좌 비교 표 — 예전 카드의 칸이 항목 줄로(Claude 열)
+    for (const metric of ["순자산", "수익률(출발 이후)", "주식 노출", "현금", "누적 수익률"]) {
+      expect(comparisonCell(metric, "Claude 계좌"), metric).toBe(NONE);
+    }
+    const table = screen.getByRole("table", { name: "계좌 비교" });
+    const claudeColumn = within(table).getAllByRole("columnheader").findIndex((th) => th.textContent === "Claude 계좌");
+    const claudeCells = within(table).getAllByRole("row").slice(1).map((tr) => tr.children[claudeColumn].textContent);
+    expect(claudeCells.some((text) => /0\.00/.test(text ?? ""))).toBe(false);
+    expect(comparisonCell("출발", "Claude 계좌")).toBe("시작 전");
+    expect(comparisonCell("상태", "Claude 계좌")).toBe("시작 전 · 현금만");
 
     // 값이 있는 책은 서버 값 그대로
-    const spy = screen.getByRole("article", { name: "SPY 계좌" });
-    expect(within(spy).getByText("순자산").nextElementSibling?.textContent).toBe("100,050.12 달러");
+    expect(comparisonCell("순자산", "SPY 계좌")).toBe("100,050.12 달러");
+    expect(within(screen.getByRole("button", { name: /SPY 계좌 상세 보기/ })).getByText("100,050.12")).toBeTruthy();
 
     // 순자산 곡선 계열은 책 순서대로, 관측치 줄은 봉 날짜·티커 수
     expect(within(screen.getByRole("list", { name: "순자산 계열" })).getAllByRole("listitem").map((li) => li.textContent))
@@ -284,9 +309,9 @@ describe("값을 모를 때", () => {
     const spyRow = (await screen.findByText("가격 없음 · 평단 평가")).closest("tr") as HTMLElement;
     const cells = within(spyRow).getAllByRole("cell").map((td) => td.textContent);
     expect(cells[2]).toBe("662.0800");   // 평단 — 주당 가격은 4자리
-    expect(cells[3]).toBe("—");   // 가격
-    expect(cells[6]).toBe("—");   // 평가 손익
-    expect(cells[8]).toBe("—");   // 스탑 가격
+    expect(cells[3]).toBe(NONE);   // 가격
+    expect(cells[6]).toBe(NONE);   // 평가 손익
+    expect(cells[8]).toBe(NONE);   // 스탑 가격
     expect(await screen.findByText("사후 체결")).toBeTruthy();
     expect(screen.getByText("재진입 금지 종목이 없습니다.")).toBeTruthy();
     expect(screen.getByText("주문이 없습니다.")).toBeTruthy();
@@ -336,6 +361,87 @@ describe("주당 가격", () => {
   });
 });
 
+describe("보유·재진입 금지 표", () => {
+  it("정렬 단추는 종목·수량·평가액·비중·평가 손익 다섯 열에만, 평가 손익을 누르면 aria-sort가 붙고 모르는 값(null)은 두 방향 모두 맨 뒤", async () => {
+    const position = (ticker: string, over: Record<string, unknown>) => ({
+      ticker, qty: 10, avgCost: 10, lastPrice: 10, lastPriceAtKst: "2026-10-24 05:15", marketValue: 100, weightPct: 1,
+      unrealizedPct: 0, highWatermark: 10, stopPrice: 9, stopDistancePct: 10, openedOn: "2026-10-23", holdingTradingDays: 1,
+      priceStale: false, splitNote: null, cashLike: false, backfilled: false, ...over,
+    });
+    reads["/api/paper/overview"] = () => Promise.resolve(INITIALIZED);
+    reads["/api/paper/books/bench_spy/positions"] = () => Promise.resolve({
+      available: true,
+      book: INITIALIZED.books[2],
+      cash: 50.12,
+      lockouts: [],
+      positions: [
+        position("AAA", { qty: 10, marketValue: 500, weightPct: 5, unrealizedPct: 2.5 }),
+        // 가격을 몰라 평가 손익도 모르는 보유 — 정렬해도 늘 맨 뒤(가장 크거나 작은 값처럼 보이지 않게)
+        position("BBB", { qty: 5, lastPrice: null, lastPriceAtKst: null, marketValue: 300, weightPct: 3, unrealizedPct: null, priceStale: true }),
+        position("CCC", { qty: 20, marketValue: 900, weightPct: 9, unrealizedPct: -1.2 }),
+      ],
+    });
+    reads["/api/paper/books/bench_spy/orders"] = () => Promise.resolve({ available: true, orders: [] });
+    reads["/api/paper/books/bench_spy/fills"] = () => Promise.resolve({ available: true, fills: [] });
+
+    render(<PaperPage />);
+    fireEvent.click(await screen.findByRole("tab", { name: "보유·체결" }));
+
+    const table = await screen.findByRole("table", { name: "보유" });
+    const headers = within(table).getAllByRole("columnheader");
+    expect(headers.filter((th) => within(th).queryByRole("button")).map((th) => within(th).getByRole("button").textContent?.replace(/[↑↓↕]/g, "")))
+      .toEqual(["종목", "수량", "평가액(달러)", "비중", "평가 손익"]);
+    const tickers = () => within(table).getAllByRole("row").slice(1).map((tr) => within(tr).getAllByRole("cell")[0].textContent?.slice(0, 3));
+    // 처음엔 서버 순서 그대로, aria-sort 없음
+    expect(tickers()).toEqual(["AAA", "BBB", "CCC"]);
+    expect(headers.some((th) => th.hasAttribute("aria-sort"))).toBe(false);
+
+    const pnl = within(table).getByRole("columnheader", { name: /평가 손익/ });
+    fireEvent.click(within(pnl).getByRole("button"));
+    expect(pnl.getAttribute("aria-sort")).toBe("ascending");
+    expect(tickers()).toEqual(["CCC", "AAA", "BBB"]);
+    fireEvent.click(within(pnl).getByRole("button"));
+    expect(pnl.getAttribute("aria-sort")).toBe("descending");
+    expect(tickers()).toEqual(["AAA", "CCC", "BBB"]);
+
+    // 다른 열(평가액)로 옮기면 그 열의 오름차순부터, aria-sort도 옮겨 갑니다.
+    const value = within(table).getByRole("columnheader", { name: /평가액/ });
+    fireEvent.click(within(value).getByRole("button"));
+    expect(value.getAttribute("aria-sort")).toBe("ascending");
+    expect(pnl.hasAttribute("aria-sort")).toBe(false);
+    expect(tickers()).toEqual(["BBB", "AAA", "CCC"]);
+  });
+
+  it("재진입 금지 표 — 종목·이 날까지(미국 거래일)·사유를 서버 순서대로, 사유가 비면 '—'(값 없음)", async () => {
+    reads["/api/paper/overview"] = () => Promise.resolve(INITIALIZED);
+    reads["/api/paper/books/bench_spy/positions"] = () => Promise.resolve({
+      available: true,
+      book: INITIALIZED.books[2],
+      cash: 50.12,
+      positions: [],
+      lockouts: [
+        { ticker: "ZZZ", untilTradingDate: "2026-11-05", reason: "트레일링 스탑(−8%) 체결" },
+        { ticker: "YYY", untilTradingDate: "2026-11-04", reason: "" },
+      ],
+    });
+    reads["/api/paper/books/bench_spy/orders"] = () => Promise.resolve({ available: true, orders: [] });
+    reads["/api/paper/books/bench_spy/fills"] = () => Promise.resolve({ available: true, fills: [] });
+
+    render(<PaperPage />);
+    fireEvent.click(await screen.findByRole("tab", { name: "보유·체결" }));
+
+    const table = await screen.findByRole("table", { name: "재진입 금지" });
+    expect(within(table).getAllByRole("columnheader").map((th) => th.textContent)).toEqual(["종목", "이 날까지(미국 거래일)", "사유"]);
+    const rows = within(table).getAllByRole("row").slice(1).map((tr) => within(tr).getAllByRole("cell").map((td) => td.textContent));
+    expect(rows).toEqual([
+      ["ZZZ", "2026-11-05", "트레일링 스탑(−8%) 체결"],
+      ["YYY", "2026-11-04", NONE],
+    ]);
+    expect(screen.queryByText("재진입 금지 종목이 없습니다.")).toBeNull();
+    expect(screen.getByText("보유가 없습니다 — 현금만 들고 있습니다.")).toBeTruthy();
+  });
+});
+
 describe("주문 근거", () => {
   it("규칙 책 주문의 근거는 문장(reason.text)을 자르지 않고 보이고, 문장이 없으면 키: 값 요약 — 전체 JSON은 마우스를 올려 본다", async () => {
     const active = {
@@ -365,6 +471,8 @@ describe("주문 근거", () => {
         }),
         // 문장이 없는 근거(장부가 덧붙인 키뿐)
         order(3, "OLD", "SELL", { cashLimited: true, note: "현금 부족" }),
+        // 근거가 없는 주문 — 칸은 다른 모르는 칸과 같은 Empty("—" + 읽어 주는 "값 없음")
+        order(4, "NUL", "SELL", null),
       ],
     });
     reads["/api/paper/books/rules/fills"] = () => Promise.resolve({ available: true, fills: [] });
@@ -383,6 +491,9 @@ describe("주문 근거", () => {
     expect(screen.getByText(parkText).getAttribute("title")).toContain('"rule":"park_cash"');
     expect(screen.getByText("cashLimited: true · note: 현금 부족")).toBeTruthy();
     expect(screen.queryByText(/^rule: /)).toBeNull();
+    const nullCells = within(screen.getByText("NUL").closest("tr") as HTMLElement).getAllByRole("cell");
+    expect(nullCells[nullCells.length - 1].textContent).toBe(NONE);
+    expect(nullCells[nullCells.length - 1].querySelector("[title]")).toBeNull();
   });
 });
 
@@ -438,24 +549,56 @@ describe("책 버튼", () => {
     reads["/api/paper/books/bench_spy/fills"] = () => Promise.resolve({ available: true, fills: [] });
   });
 
-  it("책 초기화는 책 코드를 정확히 입력해야 눌리고, 누르면 confirm과 함께 보낸다", async () => {
-    api.apiPost.mockResolvedValue({ ok: true, book: INITIALIZED.books[2], backfilled: true, skippedReason: null });
+  it("책 초기화는 확인 창에서 책 코드를 정확히 입력해야 눌리고, 누르면 confirm과 함께 보낸다 — 창은 결과가 나온 뒤 닫힌다", async () => {
+    let finish: (value: unknown) => void = () => {};
+    api.apiPost.mockImplementation(() => new Promise((resolve) => {
+      finish = resolve;
+    }));
     render(<PaperPage />);
     fireEvent.click(await screen.findByRole("tab", { name: "보유·체결" }));
 
-    const button = (await screen.findByRole("button", { name: "계좌 초기화" })) as HTMLButtonElement;
-    const input = screen.getByLabelText(/계좌 코드/) as HTMLInputElement;
+    // 첫 누름은 확인 창만 엽니다 — 아직 서버를 부르지 않습니다.
+    fireEvent.click(await screen.findByRole("button", { name: "계좌 초기화" }));
+    const dialog = screen.getByRole("dialog", { name: "SPY 계좌 초기화" });
+    expect(within(dialog).getByText(/체결·주문·보유·재진입 금지·순자산 기록을 모두 지웁니다/)).toBeTruthy();
+    const button = within(dialog).getByRole("button", { name: "초기화 확인" }) as HTMLButtonElement;
+    const input = within(dialog).getByRole("textbox", { name: /확인하려면 다음 글자를 그대로 입력하세요: bench_spy/ }) as HTMLInputElement;
     expect(button.disabled).toBe(true);
     fireEvent.change(input, { target: { value: "bench_sp" } });
     expect(button.disabled).toBe(true);
     fireEvent.change(input, { target: { value: "bench_spy" } });
     expect(button.disabled).toBe(false);
+    expect(api.apiPost).not.toHaveBeenCalled();
 
     fireEvent.click(button);
+    expect(api.apiPost).toHaveBeenCalledWith("/api/paper/books/bench_spy/reset", { confirm: "bench_spy" });
+    // 처리 중에는 창이 남아 있고 다시 누를 수 없습니다.
+    expect(screen.getByRole("dialog", { name: "SPY 계좌 초기화" })).toBeTruthy();
+    expect((within(screen.getByRole("dialog")).getByRole("button", { name: "초기화 중…" }) as HTMLButtonElement).disabled).toBe(true);
+
+    finish({ ok: true, book: INITIALIZED.books[2], backfilled: true, skippedReason: null });
 
     expect(await screen.findByText(/SPY 계좌를 초기화했습니다 — 지금 운용 중 · 출발일 종가로 다시 사후 체결했습니다/)).toBeTruthy();
-    expect(api.apiPost).toHaveBeenCalledWith("/api/paper/books/bench_spy/reset", { confirm: "bench_spy" });
-    expect(input.value).toBe("");
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    // 다시 열면 입력은 비어 있습니다(예전의 '성공하면 입력을 비움').
+    fireEvent.click(screen.getByRole("button", { name: "계좌 초기화" }));
+    expect((within(screen.getByRole("dialog")).getByRole("textbox") as HTMLInputElement).value).toBe("");
+  });
+
+  it("책 초기화가 실패하면(서버 400) 창을 닫고 서버 문구를 경고로 — 다시 하려면 창을 열어 코드를 다시 친다", async () => {
+    const message = "confirm이 계좌 코드와 다릅니다(bench_spy).";
+    api.apiPost.mockRejectedValue(new Error(message));
+    render(<PaperPage />);
+    fireEvent.click(await screen.findByRole("tab", { name: "보유·체결" }));
+
+    fireEvent.click(await screen.findByRole("button", { name: "계좌 초기화" }));
+    fireEvent.change(within(screen.getByRole("dialog")).getByRole("textbox"), { target: { value: "bench_spy" } });
+    fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "초기화 확인" }));
+
+    const warning = await screen.findByText(message);
+    expect(warning.className).toContain("text-warn");
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    expect((screen.getByRole("button", { name: "계좌 초기화" }) as HTMLButtonElement).disabled).toBe(false);
   });
 
   it("벤치마크를 다시 사후 체결하지 못하면(skippedReason) 사유를 경고로 보이고, 시작 전 안내는 '종가를 받은 뒤 초기화를 다시'", async () => {
@@ -472,8 +615,9 @@ describe("책 버튼", () => {
     render(<PaperPage />);
     fireEvent.click(await screen.findByRole("tab", { name: "보유·체결" }));
 
-    fireEvent.change(await screen.findByLabelText(/계좌 코드/), { target: { value: "bench_spy" } });
-    fireEvent.click(screen.getByRole("button", { name: "계좌 초기화" }));
+    fireEvent.click(await screen.findByRole("button", { name: "계좌 초기화" }));
+    fireEvent.change(within(screen.getByRole("dialog")).getByRole("textbox"), { target: { value: "bench_spy" } });
+    fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "초기화 확인" }));
 
     const banner = await screen.findByText(/출발일 종가로 다시 사후 체결하지 못했습니다 — 2026-10-23 SPY 종가가 아직 없습니다/);
     expect(banner.className).toContain("text-warn");

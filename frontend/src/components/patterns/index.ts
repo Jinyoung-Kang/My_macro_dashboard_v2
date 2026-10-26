@@ -5,7 +5,7 @@
  * (테스트의 `vi.mock("@/components/charts")`가 그 지정자에만 걸림). 패턴 파일 안끼리는 상대 경로로 가져옵니다.
  * 새 패턴 파일을 만들면 여기에 넣습니다 — `__tests__/index.test.ts`가 빠진 export를 막습니다.
  */
-export { AssetList, AssetRow, type AssetRowData } from "./AssetRow";
+export { AssetList, AssetRow, type AssetRowData, type AssetRowDisclosure } from "./AssetRow";
 export { EstimateBadge, ProvenanceBadge, StaleBadge } from "./badges";
 export { ChangeChip } from "./ChangeChip";
 export { type Column, DataTable } from "./DataTable";

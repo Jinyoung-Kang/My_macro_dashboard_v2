@@ -201,6 +201,8 @@ describe("결정 로그 — 주간 복기", () => {
       fireEvent.click(within(body).getByRole("button", { name: "프레임 탭에서 이 제안 보기" }));
 
       expect((await screen.findByRole("tab", { name: "프레임" })).getAttribute("aria-selected")).toBe("true");
+      // 주소도 프레임 탭의 것으로(기록을 쌓지 않는 replaceState — lib/paperRoutes).
+      expect(window.location.pathname).toBe("/paper/us/framework");
       const focused = await screen.findByText("주간 복기에서 연 제안");
       const article = focused.closest("article") as HTMLElement;
       expect(article.id).toBe("paper-proposal-12");

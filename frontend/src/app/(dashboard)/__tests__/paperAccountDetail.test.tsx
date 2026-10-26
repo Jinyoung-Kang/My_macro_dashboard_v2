@@ -1,7 +1,7 @@
 /**
- * 🧪 개요의 계좌 상세 — 계좌 카드를 누르면 카드 묶음 아래에 그 계좌의 상세가 열린다(한 번에 하나).
+ * 🧪 개요의 계좌 상세 — 계좌 행(AssetRow)을 누르면 계좌 목록 아래에 그 계좌의 상세가 열린다(한 번에 하나).
  *
- *  - 카드 이름 옆 단추(진짜 <button>, aria-expanded·aria-controls)와 카드 어디를 눌러도 열리고, 다시 누르거나 '닫기'·Esc로 닫힌다
+ *  - 행 전체가 진짜 <button>(aria-expanded·aria-controls, 이름 "… 상세 보기")이라 행 어디를 눌러도 열리고, 다시 누르거나 '닫기'·Esc로 닫힌다
  *  - 열면 초점이 패널 제목으로 간다(바로 Esc로 닫을 수 있게), 움직임 줄이기를 켰으면 부드러운 스크롤 대신 바로 옮긴다
  *  - 정의(운용 방식 …)와 지금 설정(설정 응답 — 못 읽으면 숫자 없이 정의만), 핵심 숫자
  *  - 묶음이 셋 이상이면 도넛 + 범례, 둘 이하면 한 줄 막대 + 범례, 어느 쪽이든 표(차트의 표 보기)
@@ -133,8 +133,8 @@ afterEach(() => {
 
 const toggle = (name: RegExp) => screen.getByRole("button", { name });
 
-describe("계좌 카드를 누르면 상세가 열린다", () => {
-  it("카드 단추는 진짜 button이고 aria-expanded·aria-controls로 열림을 알린다 — 누르면 열리고 다시 누르면 닫힌다", async () => {
+describe("계좌 행을 누르면 상세가 열린다", () => {
+  it("계좌 행 단추는 진짜 button이고 aria-expanded·aria-controls로 열림을 알린다 — 누르면 열리고 다시 누르면 닫힌다", async () => {
     render(<PaperPage />);
     const button = await screen.findByRole("button", { name: /규칙 계좌 상세 보기/ });
     expect(button.tagName).toBe("BUTTON");
@@ -153,21 +153,23 @@ describe("계좌 카드를 누르면 상세가 열린다", () => {
     expect(toggle(/규칙 계좌 상세 보기/).getAttribute("aria-expanded")).toBe("false");
   });
 
-  it("카드 어디를 눌러도 열리고, 다른 카드를 누르면 그 계좌로 바뀐다(한 번에 하나)", async () => {
+  it("행 어디를 눌러도 열리고, 다른 행을 누르면 그 계좌로 바뀐다(한 번에 하나)", async () => {
     render(<PaperPage />);
-    const spyCard = await screen.findByRole("article", { name: "SPY 계좌" });
-    fireEvent.click(within(spyCard).getByText("순자산"));
+    // 행 전체가 단추 — 이름이 아니라 순자산 숫자를 눌러도 열립니다(예전 카드의 "카드 어디를 눌러도"와 같은 뜻).
+    const spyRow = await screen.findByRole("button", { name: /SPY 계좌 상세 보기/ });
+    fireEvent.click(within(spyRow).getByText("100,000.00"));
     expect(await screen.findByRole("region", { name: "SPY 계좌 상세" })).toBeTruthy();
 
     fireEvent.click(toggle(/규칙 계좌 상세 보기/));
     expect(await screen.findByRole("region", { name: "규칙 계좌 상세" })).toBeTruthy();
     expect(screen.queryByRole("region", { name: "SPY 계좌 상세" })).toBeNull();
     expect(toggle(/SPY 계좌 상세 보기/).getAttribute("aria-expanded")).toBe("false");
-    // 선택된 카드는 테두리로도 보입니다(색만이 아니라 단추 글자 '상세 닫기'도 바뀜).
-    expect(screen.getByRole("article", { name: "규칙 계좌" }).className).toContain("border-accent");
+    // 선택된 행은 왼쪽 막대로도 보입니다(색만이 아니라 단추 글자 '상세 닫기'도 바뀜) — 다른 행에는 막대가 없습니다.
+    expect(toggle(/규칙 계좌 상세 닫기/).querySelector('[aria-hidden="true"].bg-accent')).not.toBeNull();
+    expect(toggle(/SPY 계좌 상세 보기/).querySelector(".bg-accent")).toBeNull();
   });
 
-  it("'닫기'와 Esc로 닫히고, 초점은 그 카드의 단추로 돌아간다", async () => {
+  it("'닫기'와 Esc로 닫히고, 초점은 그 계좌 행의 단추로 돌아간다", async () => {
     render(<PaperPage />);
     fireEvent.click(await screen.findByRole("button", { name: /규칙 계좌 상세 보기/ }));
     let panel = await screen.findByRole("region", { name: "규칙 계좌 상세" });
@@ -183,7 +185,7 @@ describe("계좌 카드를 누르면 상세가 열린다", () => {
     expect(document.activeElement).toBe(toggle(/규칙 계좌 상세 보기/));
   });
 
-  it("A11Y-1: 열면 초점이 패널 제목으로 간다 — 다음 Tab이 다른 카드 단추를 돌지 않고, 바로 누른 Esc도 패널을 닫는다", async () => {
+  it("A11Y-1: 열면 초점이 패널 제목으로 간다 — 다음 Tab이 다른 행 단추를 돌지 않고, 바로 누른 Esc도 패널을 닫는다", async () => {
     render(<PaperPage />);
     const button = await screen.findByRole("button", { name: /규칙 계좌 상세 보기/ });
     button.focus();
@@ -198,7 +200,7 @@ describe("계좌 카드를 누르면 상세가 열린다", () => {
     expect(screen.queryByRole("region", { name: "규칙 계좌 상세" })).toBeNull();
     expect(document.activeElement).toBe(toggle(/규칙 계좌 상세 보기/));
 
-    // 다른 카드로 바꿔 열어도 새 패널의 제목으로
+    // 다른 행으로 바꿔 열어도 새 패널의 제목으로
     fireEvent.click(toggle(/SPY 계좌 상세 보기/));
     const spy = await screen.findByRole("region", { name: "SPY 계좌 상세" });
     expect(document.activeElement).toBe(within(spy).getByRole("heading", { name: "SPY 계좌 상세" }));
@@ -225,11 +227,11 @@ describe("계좌 카드를 누르면 상세가 열린다", () => {
     expect(scroll).toHaveBeenLastCalledWith({ block: "nearest", behavior: "smooth" });
   });
 
-  it("카드에는 계좌마다 한 줄 소개가 있다", async () => {
+  it("계좌 행에는 계좌마다 한 줄 소개가 있다(종류·상태 뒤)", async () => {
     render(<PaperPage />);
-    const rules = await screen.findByRole("article", { name: "규칙 계좌" });
+    const rules = await screen.findByRole("button", { name: /규칙 계좌 상세 보기/ });
     expect(within(rules).getByText(/13F 신호만 규칙대로 따르는 대조군/)).toBeTruthy();
-    expect(within(screen.getByRole("article", { name: "60/40 계좌" })).getByText(/SPY 60%·SHY 40%를 사서 그대로/)).toBeTruthy();
+    expect(within(toggle(/60\/40 계좌 상세 보기/)).getByText(/SPY 60%·SHY 40%를 사서 그대로/)).toBeTruthy();
   });
 });
 

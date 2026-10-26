@@ -21,6 +21,11 @@ export type Column<T> = {
   cell: (row: T) => ReactNode;
   sortValue?: (row: T) => SortValue;
   className?: string;
+  /**
+   * 이 열의 칸을 행 머리(`<th scope="row">`)로 그립니다 — 줄이 항목인 표(예: 계좌 비교 — 줄 = 항목, 열 = 계좌)에서 낭독기가 칸을 옮길 때
+   * 열 머리(계좌)와 함께 그 줄의 항목 이름도 읽게. 설계서 §1.5 계약에 더한 선택 prop입니다(보통은 첫 열 하나에만).
+   */
+  rowHeader?: boolean;
 };
 
 /** 칸 안의 링크·단추·입력에서 시작한 클릭인가 — 그 조작을 행 클릭으로 한 번 더 받지 않습니다. */
@@ -39,7 +44,10 @@ function fromInnerControl(event: MouseEvent<HTMLTableRowElement>): boolean {
  *   있어야 합니다 — `maxHeight`(px)를 주면 그 높이에서 세로로도 스크롤되고 머리가 위에 남습니다(설계서 §1.5 계약에 더한 선택 props).
  * - `onRowClick`이 있으면 행이 Tab으로 닿고(tabIndex 0) Enter·Space로도 열립니다. 마우스를 올리면 첫 칸에 밑줄 — 바탕은 칠하지 않습니다
  *   (surface-2 위에서는 칸 안의 상승·하락 글자가 4.5:1을 밑돎, AssetRow와 같은 규칙).
- * - 모르는 칸의 "—"는 보조 글자색(text-3) — 타일·히어로·자산 행과 같습니다.
+ * - 모르는 칸의 "—"는 보조 글자색(text-3) — 타일·히어로·자산 행과 같습니다. 칸 글자는 모두 `tabular-nums`(날짜·시각 열도 자릿수가 맞게).
+ * - `scrollHint`(계약에 더한 선택 prop): 폰에서 좌우로 넘겨야 하는 넓은 표 — 표를 최소 640px로 두고 그 폭(sm) 아래에서만 "← 표를 좌우로
+ *   넘겨 보세요" 한 줄을 띄웁니다(옛 ui Table과 같음). 스크롤바가 안 보이는 기기에서는 오른쪽에 칸이 더 있다는 것을 알 수 없어서이고,
+ *   최소 폭과 안내가 같은 경계라 안내가 거짓이 되지 않습니다. 행이 없으면 둘 다 없습니다(넘길 칸이 없음).
  * - 행이 없으면 머리는 그대로 두고 `emptyText` 한 줄.
  */
 export function DataTable<T>({
@@ -51,6 +59,7 @@ export function DataTable<T>({
   onRowClick,
   initialSort,
   maxHeight,
+  scrollHint = false,
 }: {
   columns: readonly Column<T>[];
   rows: readonly T[];
@@ -61,6 +70,7 @@ export function DataTable<T>({
   onRowClick?: (row: T) => void;
   initialSort?: SortState;
   maxHeight?: number;
+  scrollHint?: boolean;
 }): JSX.Element {
   const [sort, setSort] = useState<SortState | null>(initialSort ?? null);
   const sortColumn = sort ? columns.find((column) => column.key === sort.key && column.sortValue) : undefined;
@@ -68,8 +78,8 @@ export function DataTable<T>({
   const activeSort = sortColumn ? sort : null;
   const shown = sortColumn && activeSort ? sortRows(rows, sortColumn.sortValue, activeSort.dir) : rows;
 
-  const alignOf = (column: Column<T>) =>
-    column.align === "right" ? "text-right tabular-nums whitespace-nowrap" : "text-left";
+  const alignOf = (column: Column<T>) => (column.align === "right" ? "text-right whitespace-nowrap" : "text-left");
+  const wide = scrollHint && shown.length > 0;
 
   const activate = onRowClick
     ? {
@@ -93,91 +103,103 @@ export function DataTable<T>({
     : null;
 
   return (
-    <div
-      className="w-full min-w-0 max-w-full overflow-x-auto rounded-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus"
-      style={maxHeight !== undefined && maxHeight > 0 ? { maxHeight, overflowY: "auto" } : undefined}
-      tabIndex={0}
-      role="region"
-      aria-label={`${caption ?? "표"} (좌우 스크롤)`}
-    >
-      <table className="w-full border-collapse text-sm">
-        {caption ? <caption className="sr-only">{caption}</caption> : null}
-        <thead className="sticky top-0 z-10 bg-surface">
-          <tr className="border-b border-border">
-            {columns.map((column) => {
-              const ariaSort = ariaSortOf(activeSort, column.key);
-              const arrow = ariaSort === "ascending" ? "↑" : ariaSort === "descending" ? "↓" : "↕";
-              return (
-                <th
-                  key={column.key}
-                  scope="col"
-                  aria-sort={ariaSort}
-                  className={`whitespace-nowrap px-3 py-2 text-xs font-medium text-text-3 ${alignOf(column)} ${column.className ?? ""}`}
-                >
-                  {column.sortValue ? (
-                    <button
-                      type="button"
-                      onClick={() => setSort(nextSort(activeSort, column.key))}
-                      className={`inline-flex items-center gap-1 rounded-sm hover:text-text focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus ${
-                        ariaSort ? "text-text" : ""
-                      }`}
-                    >
-                      {column.header}
-                      {/* 방향은 aria-sort가 읽어 줍니다. 화살표는 눈으로 보는 보조 표시(정렬 전에는 흐린 ↕). */}
-                      <span aria-hidden="true" className={ariaSort ? "" : "opacity-50"}>
-                        {arrow}
-                      </span>
-                    </button>
-                  ) : (
-                    column.header
-                  )}
-                </th>
-              );
-            })}
-          </tr>
-        </thead>
-        <tbody>
-          {shown.length === 0 ? (
-            <tr>
-              <td colSpan={columns.length} className="px-3 py-6 text-center text-sm text-text-3">
-                {emptyText}
-              </td>
-            </tr>
-          ) : (
-            shown.map((row) => (
-              <tr
-                key={rowKey(row)}
-                tabIndex={activate ? 0 : undefined}
-                onClick={activate ? activate.onClick(row) : undefined}
-                onKeyDown={activate ? activate.onKeyDown(row) : undefined}
-                className={`border-b border-border last:border-0 ${
-                  activate
-                    ? "group cursor-pointer focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-focus"
-                    : ""
-                }`}
-              >
-                {columns.map((column, index) => {
-                  const content = column.cell(row);
-                  return (
-                    <td
-                      key={column.key}
-                      className={`px-3 py-2 text-text ${activate && index === 0 ? "group-hover:underline" : ""} ${alignOf(column)} ${column.className ?? ""}`}
-                    >
-                      {isMissingValue(content) ? (
-                        <span className="text-text-3">
-                          <Empty />
+    <>
+      {/* 눈으로 보는 안내 — 낭독기에는 감싼 상자의 이름("… (좌우 스크롤)")이 같은 말을 하므로 숨깁니다. */}
+      {wide ? (
+        <p aria-hidden="true" className="mb-1 text-[11px] text-text-3 sm:hidden">
+          ← 표를 좌우로 넘겨 보세요
+        </p>
+      ) : null}
+      <div
+        className="w-full min-w-0 max-w-full overflow-x-auto rounded-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus"
+        style={maxHeight !== undefined && maxHeight > 0 ? { maxHeight, overflowY: "auto" } : undefined}
+        tabIndex={0}
+        role="region"
+        aria-label={`${caption ?? "표"} (좌우 스크롤)`}
+      >
+        <table className={`w-full border-collapse text-sm ${wide ? "min-w-[640px]" : ""}`}>
+          {caption ? <caption className="sr-only">{caption}</caption> : null}
+          <thead className="sticky top-0 z-10 bg-surface">
+            <tr className="border-b border-border">
+              {columns.map((column) => {
+                const ariaSort = ariaSortOf(activeSort, column.key);
+                const arrow = ariaSort === "ascending" ? "↑" : ariaSort === "descending" ? "↓" : "↕";
+                return (
+                  <th
+                    key={column.key}
+                    scope="col"
+                    aria-sort={ariaSort}
+                    className={`whitespace-nowrap px-3 py-2 text-xs font-medium text-text-3 ${alignOf(column)} ${column.className ?? ""}`}
+                  >
+                    {column.sortValue ? (
+                      <button
+                        type="button"
+                        onClick={() => setSort(nextSort(activeSort, column.key))}
+                        className={`inline-flex items-center gap-1 rounded-sm hover:text-text focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus ${
+                          ariaSort ? "text-text" : ""
+                        }`}
+                      >
+                        {column.header}
+                        {/* 방향은 aria-sort가 읽어 줍니다. 화살표는 눈으로 보는 보조 표시(정렬 전에는 흐린 ↕). */}
+                        <span aria-hidden="true" className={ariaSort ? "" : "opacity-50"}>
+                          {arrow}
                         </span>
-                      ) : (
-                        content
-                      )}
-                    </td>
-                  );
-                })}
+                      </button>
+                    ) : (
+                      column.header
+                    )}
+                  </th>
+                );
+              })}
+            </tr>
+          </thead>
+          <tbody>
+            {shown.length === 0 ? (
+              <tr>
+                <td colSpan={columns.length} className="px-3 py-6 text-center text-sm text-text-3">
+                  {emptyText}
+                </td>
               </tr>
-            ))
-          )}
-        </tbody>
-      </table>
-    </div>
+            ) : (
+              shown.map((row) => (
+                <tr
+                  key={rowKey(row)}
+                  tabIndex={activate ? 0 : undefined}
+                  onClick={activate ? activate.onClick(row) : undefined}
+                  onKeyDown={activate ? activate.onKeyDown(row) : undefined}
+                  className={`border-b border-border last:border-0 ${
+                    activate
+                      ? "group cursor-pointer focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-focus"
+                      : ""
+                  }`}
+                >
+                  {columns.map((column, index) => {
+                    const content = column.cell(row);
+                    const className = `px-3 py-2 tabular-nums text-text ${activate && index === 0 ? "group-hover:underline" : ""} ${alignOf(column)} ${column.className ?? ""}`;
+                    const shownContent = isMissingValue(content) ? (
+                      <span className="text-text-3">
+                        <Empty />
+                      </span>
+                    ) : (
+                      content
+                    );
+                    // 행 머리 칸은 굵게 그리지 않습니다(th 기본) — 보이는 모양은 다른 칸과 같고, 낭독기만 항목 이름으로 씁니다.
+                    return column.rowHeader ? (
+                      <th key={column.key} scope="row" className={`font-normal ${className}`}>
+                        {shownContent}
+                      </th>
+                    ) : (
+                      <td key={column.key} className={className}>
+                        {shownContent}
+                      </td>
+                    );
+                  })}
+                </tr>
+              ))
+            )}
+          </tbody>
+        </table>
+      </div>
+    </>
   );
 }

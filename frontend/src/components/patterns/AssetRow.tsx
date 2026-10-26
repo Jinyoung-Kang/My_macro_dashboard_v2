@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useId, type JSX, type ReactNode } from "react";
 
 import { assetRowModel } from "@/lib/patternRows";
+import { presentText } from "@/lib/patterns";
 
 import { EstimateBadge, ProvenanceBadge, StaleBadge } from "./badges";
 import { ChangeChip } from "./ChangeChip";
@@ -36,6 +37,24 @@ export type AssetRowData = {
   href?: string;
 };
 
+/**
+ * 행 버튼을 펼침 단추(디스클로저)로 쓸 때 — 누르면 행 밖의 상세 영역(`controls`)이 열리고 닫힙니다(예: 모의매매 개요의 계좌 상세).
+ * 설계서 §1.5 계약에 더한 선택 prop입니다. 이때 버튼은 aria-pressed 대신 aria-expanded·aria-controls를 답니다(둘을 함께 달면 낭독기가
+ * "눌림"과 "펼침"을 같이 읽음). `hint`(예: "상세 보기")는 이름 바로 뒤에 작게 붙어 버튼 이름의 일부가 됩니다 — 화살표(▾·▴)는 읽지 않습니다.
+ *
+ * 버튼 이름은 이름 + 안내 글뿐입니다(aria-labelledby). 보조 글·값·변화 칩·배지는 설명(aria-describedby)으로 잇습니다 — 행 전체가
+ * 단추라 그대로 두면 낭독기가 행의 숫자·배지 전부를 단추 이름으로 읽어, 무엇을 여는 단추인지가 맨 끝에야 나옵니다. 행 전체가 단추이므로
+ * 행의 숫자를 끌어 골라 복사할 수는 없습니다(그 값은 행 밖의 표 등 복사할 수 있는 곳에 함께 둡니다 — 모의매매는 계좌 비교 표).
+ */
+export type AssetRowDisclosure = {
+  /** 버튼 id — 상세를 닫은 뒤 초점을 돌려줄 자리. */
+  id?: string;
+  /** 여닫는 영역의 id(aria-controls). */
+  controls: string;
+  expanded: boolean;
+  hint?: string | null;
+};
+
 // 행 높이 54px(데스크톱 한 줄). 배지가 있으면 둘째 줄로 내려가 행이 늘어납니다.
 const ROW = "relative flex min-h-[54px] w-full flex-wrap items-center gap-x-3 gap-y-1 px-4 py-2 text-left";
 // 행은 카드 폭을 꽉 채우므로 포커스 링을 안쪽으로 그립니다(바깥으로 그리면 카드 테두리 밖으로 삐져나감).
@@ -48,28 +67,54 @@ const INTERACTIVE = "group focus-visible:outline-2 focus-visible:-outline-offset
  * - 값을 모르면 "—"(단위 없음, QA-049). 변화를 모르면 칩을 생략합니다(0.00%를 만들지 않음).
  * - 추정·대리·이전 값·경고는 있으면 반드시 보입니다(숨기는 옵션 없음). 출처 배지는 `showProvenance`일 때.
  * - `row.href`면 링크, 아니고 `onSelect`면 버튼(aria-pressed = selected, 고른 행은 왼쪽 막대), 둘 다 없으면 그냥 줄입니다.
+ * - `disclosure`를 주면 `onSelect` 버튼이 펼침 단추가 됩니다(aria-expanded·aria-controls·id, 이름 뒤 안내 글, 단추 이름은 이름 + 안내 글만 —
+ *   나머지는 설명) — 링크 행에는 쓰지 않습니다.
  */
 export function AssetRow({
   row,
   onSelect,
   selected = false,
   showProvenance = false,
+  disclosure,
 }: {
   row: AssetRowData;
   onSelect?: (id: string) => void;
   selected?: boolean;
   showProvenance?: boolean;
+  disclosure?: AssetRowDisclosure;
 }): JSX.Element {
   const model = assetRowModel(row, showProvenance);
   const selectable = !row.href && onSelect !== undefined;
+  const hint = selectable && disclosure ? presentText(disclosure.hint) : null;
+  // 펼침 단추일 때만 쓰는 조각 id — 이름(이름 + 안내)은 aria-labelledby, 나머지는 aria-describedby.
+  const uid = useId();
+  const parts = selectable && disclosure ? { name: `${uid}-name`, sub: `${uid}-sub`, value: `${uid}-value`, badges: `${uid}-badges` } : null;
+  const describedBy = parts
+    ? [model.sub ? parts.sub : null, parts.value, model.hasBadges ? parts.badges : null].filter(Boolean).join(" ")
+    : undefined;
   const body: ReactNode = (
     <>
       {selectable && selected ? (
         <span aria-hidden="true" className="absolute inset-y-1 left-0 w-[3px] rounded-r bg-accent" />
       ) : null}
       <span className="flex min-w-0 flex-1 basis-32 flex-col">
-        <span className="truncate text-[15px] font-medium leading-5 text-text group-hover:underline">{row.name}</span>
-        {model.sub ? <span className="truncate text-xs leading-4 text-text-3">{model.sub}</span> : null}
+        <span id={parts?.name} className="truncate text-[15px] font-medium leading-5 text-text group-hover:underline">
+          {row.name}
+          {hint ? (
+            <>
+              {" "}
+              <span className="ml-1 text-xs font-normal text-text-3">
+                {hint}
+                <span aria-hidden="true"> {disclosure?.expanded ? "▴" : "▾"}</span>
+              </span>
+            </>
+          ) : null}
+        </span>
+        {model.sub ? (
+          <span id={parts?.sub} className="truncate text-xs leading-4 text-text-3">
+            {model.sub}
+          </span>
+        ) : null}
       </span>
       {model.showSpark && row.spark ? (
         // 좁은 화면에서는 값·변화를 먼저 보이려고 스파크라인을 접습니다.
@@ -77,7 +122,7 @@ export function AssetRow({
           <Sparkline values={row.spark} width={64} height={24} />
         </span>
       ) : null}
-      <span className="flex shrink-0 flex-col items-end">
+      <span id={parts?.value} className="flex shrink-0 flex-col items-end">
         {model.valueText === null ? (
           <span className="text-[15px] font-semibold leading-5 text-text-3">
             <Empty />
@@ -91,7 +136,7 @@ export function AssetRow({
         <ChangeChip change={row.change} changePct={row.changePct} digits={row.changeDigits ?? 2} pctDigits={2} size="sm" />
       </span>
       {model.hasBadges ? (
-        <span className="flex basis-full flex-wrap items-center gap-1">
+        <span id={parts?.badges} className="flex basis-full flex-wrap items-center gap-1">
           <EstimateBadge estimated={row.isEstimated} proxy={row.isProxy} />
           <StaleBadge stale={row.isStale} reason={row.staleReason} />
           {model.warning ? (
@@ -114,6 +159,22 @@ export function AssetRow({
       <Link href={row.href} className={`${ROW} ${INTERACTIVE}`}>
         {body}
       </Link>
+    );
+  }
+  if (onSelect && disclosure) {
+    return (
+      <button
+        type="button"
+        id={disclosure.id}
+        aria-labelledby={parts?.name}
+        aria-describedby={describedBy}
+        aria-expanded={disclosure.expanded}
+        aria-controls={disclosure.controls}
+        onClick={() => onSelect(row.id)}
+        className={`${ROW} ${INTERACTIVE}`}
+      >
+        {body}
+      </button>
     );
   }
   if (onSelect) {

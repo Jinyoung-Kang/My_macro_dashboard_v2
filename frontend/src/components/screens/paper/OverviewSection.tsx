@@ -1,19 +1,18 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { type ReactNode, useEffect, useState } from "react";
 import { MultiLineSeries, SERIES_COLORS } from "@/components/charts";
+import { AssetRow, type Column, DataTable, RangeTabs } from "@/components/patterns";
 import { Banner, Button, Card, Freshness, Table } from "@/components/ui";
 import { useApi } from "@/hooks/useApi";
 import { useAsyncAction } from "@/hooks/useAsyncAction";
 import { useElapsedSeconds } from "@/hooks/useElapsedSeconds";
 import { apiPost } from "@/lib/api";
 import { endpoints } from "@/lib/endpoints";
-import { deltaColor, EMPTY, formatKst } from "@/lib/format";
+import { EMPTY, formatKst } from "@/lib/format";
 import {
-  accountProfile,
   apiUsageView,
   type Badge,
-  bookCard,
   calendarLine,
   claudeExposureChart,
   earningsLine,
@@ -36,8 +35,18 @@ import {
   type SelectedFilerRow,
   selectedFilersView,
 } from "@/lib/paper";
+import {
+  accountComparisonRows,
+  bookAssetRow,
+  type ComparisonRow,
+  NAV_RANGES,
+  type NavRangeKey,
+  navRangeKeys,
+  navSeriesWindow,
+  sampleNotes,
+} from "@/lib/paperOverview";
+import { allowedRangeKey } from "@/lib/patternRows";
 import type {
-  PaperBookSummary,
   PaperInitialDecisionResult,
   PaperInitResult,
   PaperJobRun,
@@ -75,13 +84,16 @@ const ACCOUNT_PANEL_ID = "paper-account-detail";
 const accountToggleId = (code: string) => `paper-account-toggle-${code}`;
 
 /**
- * 개요 탭 — 책 카드 네 개(누르면 카드 묶음 아래에 그 계좌의 상세 — 정의·핵심 숫자·구성 도넛·최근 체결, AccountDetailPanel), 순자산 곡선(프레임 판 경계 세로선), Claude 노출 추이(목표 vs 실제), Claude 호출 사용량(오늘·이달·추정 비용 —
- * 상태 응답), 신호 기관(최근
+ * 개요 탭(설계서 §7) — 네 계좌 행(AssetRow: 이름·종류·상태·순자산·출발 이후 수익률·배지, 누르면 목록 아래에 그 계좌의 상세 — 정의·핵심
+ * 숫자·구성 도넛·최근 체결, AccountDetailPanel), 기간별 순자산 곡선(프레임 판 경계 세로선), 계좌 비교 표(예전 카드의 칸 전부 — 상태·종류·
+ * 출발·처음 현금·순자산·수익률·노출·현금·보유·마지막 관측·가격 없음·통계 일곱 칸·비교 기준, 그 아래 표본 설명), Claude 노출 추이(목표 vs
+ * 실제), Claude 호출 사용량(오늘·이달·추정 비용 — 상태 응답), 신호 기관(최근
  * 선정), OS 게이트 지표(참고), 장부 관측치 신선도(와 재무 수집 범위 한 줄 — 상태 응답, D28), 작업 기록. 초기화 전이거나 벤치마크가
  * 아직 사후 체결을 기다리면(pendingBackfill) "초기화" 버튼, 규칙 책이 시작 전이면
  * "규칙 계좌 시작" 버튼, Claude 계좌가 시작 전이면 "미리보기"·"Claude 계좌 시작" 버튼(ClaudeStartSection).
  *
- * 숫자는 개요 응답 그대로 그립니다. 버튼이 성공하면 onChanged(개요 다시 읽기)를 불러 카드·곡선을 새 장부로 바꿉니다.
+ * 숫자는 개요 응답 그대로 그립니다(행·표의 글은 lib/paperOverview가 bookCard에서 만듦). 버튼이 성공하면 onChanged(개요 다시 읽기)를
+ * 불러 행·곡선·표를 새 장부로 바꿉니다.
  */
 export function OverviewSection({
   overview,
@@ -109,9 +121,11 @@ export function OverviewSection({
   const [confirmingStart, setConfirmingStart] = useState(false);
   // 상세를 연 계좌 코드(한 번에 하나). 이 화면은 주소 쿼리를 쓰지 않아 화면 상태로만 둡니다 — 개요를 다시 읽어도 그대로입니다.
   const [selected, setSelected] = useState<string | null>(null);
-  // 패널을 열면 초점을 패널 제목으로 옮깁니다 — 화면만 패널로 내려가고 초점이 카드 단추에 남으면 다음 Tab이 다른 카드 단추를 돌며
-  // 화면을 다시 끌어올리고, Esc(패널 안에서만 들음)도 듣지 않았습니다. 닫으면 closeAccount가 그 카드 단추로 돌려보냅니다.
-  // 좁은 화면에서는 카드가 한 줄씩이라 패널이 맨 아래 카드 밑에 열립니다 — 연 패널이 보이도록 가까운 쪽으로만 스크롤하고,
+  // 순자산 곡선의 기간 — 처음엔 전체. 저장된 기록보다 긴 기간 탭은 그리지 않습니다(lib navRangeKeys).
+  const [navRange, setNavRange] = useState<NavRangeKey>("all");
+  // 패널을 열면 초점을 패널 제목으로 옮깁니다 — 화면만 패널로 내려가고 초점이 행 단추에 남으면 다음 Tab이 다른 행 단추를 돌며
+  // 화면을 다시 끌어올리고, Esc(패널 안에서만 들음)도 듣지 않았습니다. 닫으면 closeAccount가 그 행 단추로 돌려보냅니다.
+  // 패널은 계좌 목록 맨 아래에 열립니다 — 연 패널이 보이도록 가까운 쪽으로만 스크롤하고,
   // 움직임 줄이기(prefers-reduced-motion)를 켠 사람에게는 부드러운 스크롤 대신 바로 옮깁니다(브라우저가 스크립트 스크롤까지 바꿔
   // 주지는 않음).
   useEffect(() => {
@@ -140,10 +154,14 @@ export function OverviewSection({
   const closeAccount = () => {
     const code = selected;
     setSelected(null);
-    // 키보드로 연 사람이 닫은 뒤 길을 잃지 않게 그 카드의 단추로 돌아갑니다.
+    // 키보드로 연 사람이 닫은 뒤 길을 잃지 않게 그 계좌 행의 단추로 돌아갑니다.
     if (code) document.getElementById(accountToggleId(code))?.focus();
   };
-  const chart = navChart(overview.navSeries, books);
+  // 기간을 고르면 그 기간의 기록만 그립니다(값은 그대로 — 날짜와 계좌별 값을 같은 자리에서 자름).
+  const navRanges = navRangeKeys(overview.navSeries);
+  const range = allowedRangeKey(navRange, NAV_RANGES, navRanges) ?? "all";
+  const navWindow = navSeriesWindow(overview.navSeries, range);
+  const chart = navChart(navWindow, books);
   // 하루 움직임이 1달러 미만이면 정수 눈금이 같은 숫자로 반복됩니다 — 축을 조금 펼치고 자릿수를 간격에 맞춥니다.
   const navY = navAxis(chart);
   const series = chart.series.map((line, index) => ({
@@ -180,7 +198,21 @@ export function OverviewSection({
     earnings ? `어닝 서프라이즈: ${PAPER_SOURCES.earnings}` : null,
   ].filter(Boolean).join(" · ");
   // 판 경계는 Claude 책에만 뜻이 있습니다(프레임은 규칙 책에 영향 없음, 명세 F5) — 그래도 네 책 곡선 위에 그려 같은 날 무엇이 바뀌었는지 봅니다.
+  // 한 줄 글은 전체 기록 기준(기간 밖의 경계를 '그날 기록 없음'으로 적지 않게), 세로선은 고른 기간 안의 날짜만.
   const boundaries = frameworkBoundaryView(overview.frameworkBoundaries, overview.navSeries?.dates ?? []);
+  const windowDates = new Set(navWindow?.dates ?? []);
+  const markers = boundaries.markers.filter((marker) => windowDates.has(marker.x));
+  const comparison = accountComparisonRows(books);
+  const comparisonColumns: Column<ComparisonRow>[] = [
+    // 줄이 항목이라 항목 이름 칸을 행 머리(th scope=row)로 — 낭독기가 칸마다 "순자산 · 규칙 계좌"처럼 항목과 계좌를 함께 읽습니다.
+    { key: "label", header: "항목", rowHeader: true, cell: (row) => row.label, className: "whitespace-nowrap text-text-2" },
+    ...books.map((book): Column<ComparisonRow> => ({
+      key: book.code,
+      header: book.label,
+      align: "right",
+      cell: (row) => comparisonContent(row, book.code),
+    })),
+  ];
 
   return (
     <>
@@ -237,7 +269,7 @@ export function OverviewSection({
 
       <Card
         title="계좌"
-        subtitle={`순자산·수익률·노출은 마지막 관측치 기준 · 통계는 거래일별 순자산 기준${
+        subtitle={`순자산·수익률(출발 이후)은 마지막 관측치 기준 · 행을 누르면 그 계좌의 상세${
           status.data?.settingsVersion ? ` · 설정 v${status.data.settingsVersion}` : ""
         }`}
         source={PAPER_SOURCES.ledger}
@@ -255,17 +287,27 @@ export function OverviewSection({
           <p className="text-sm text-muted">계좌가 없습니다. 초기화하면 생깁니다.</p>
         ) : (
           <>
-            <div className="grid gap-3 md:grid-cols-2">
-              {books.map((book) => (
-                <BookCard
-                  key={book.code}
-                  book={book}
-                  books={books}
-                  selected={book.code === selected}
-                  onToggle={() => toggleAccount(book.code)}
-                />
-              ))}
-            </div>
+            {/* 계좌 행(설계서 §7) — 행 전체가 펼침 단추(aria-expanded·aria-controls)라 어디를 눌러도 상세가 열리고 다시 누르면 닫힙니다. */}
+            <ul aria-label="계좌 목록" className="overflow-hidden rounded-xl border border-border bg-surface">
+              {books.map((book) => {
+                const open = book.code === selected;
+                return (
+                  <li key={book.code} className="border-t border-border first:border-t-0">
+                    <AssetRow
+                      row={bookAssetRow(book, { pendingBackfill: overview.pendingBackfill, quotes })}
+                      onSelect={toggleAccount}
+                      selected={open}
+                      disclosure={{
+                        id: accountToggleId(book.code),
+                        controls: ACCOUNT_PANEL_ID,
+                        expanded: open,
+                        hint: open ? "상세 닫기" : "상세 보기",
+                      }}
+                    />
+                  </li>
+                );
+              })}
+            </ul>
             {selectedBook && (
               <AccountDetailPanel
                 key={selectedBook.code}
@@ -284,6 +326,12 @@ export function OverviewSection({
         title="순자산 곡선"
         subtitle="거래일별 순자산(달러). 그날 기록이 없는 계좌는 선을 끊어 그립니다 — 시작 전인 계좌는 선이 없습니다."
         source={boundaries.text ? `${PAPER_SOURCES.ledger} · 프레임 경계는 ${PAPER_SOURCES.boundaries}` : PAPER_SOURCES.ledger}
+        actions={
+          // 기간이 '전체' 하나뿐이면(출발 직후) 탭을 그리지 않습니다 — 고를 것이 없는 탭은 소음입니다.
+          navRanges.length > 1 && (
+            <RangeTabs ranges={NAV_RANGES} allowed={navRanges} value={range} onChange={setNavRange} label="순자산 곡선 기간" />
+          )
+        }
       >
         <MultiLineSeries
           data={chart.rows}
@@ -291,10 +339,33 @@ export function OverviewSection({
           precision={navY.precision}
           domain={navY.domain}
           height={300}
-          markers={boundaries.markers}
+          markers={markers}
         />
         {boundaries.text && <p className="mt-2 text-xs text-muted">{boundaries.text}</p>}
       </Card>
+
+      {books.length > 0 && (
+        <Card
+          title="계좌 비교"
+          subtitle="네 계좌를 항목별로 나란히 — 순자산·수익률·노출은 마지막 관측치 기준 · 통계는 거래일별 순자산 기준(초과 수익률·베타는 '비교 기준' 줄의 계좌 대비)"
+          source={PAPER_SOURCES.ledger}
+        >
+          <DataTable<ComparisonRow>
+            columns={comparisonColumns}
+            rows={comparison}
+            rowKey={(row) => row.key}
+            caption="계좌 비교"
+            scrollHint
+          />
+          <ul aria-label="표본 설명" className="mt-3 flex flex-col gap-0.5 text-xs text-text-3">
+            {sampleNotes(books).map((note) => (
+              <li key={note.code}>
+                <span className="font-medium text-text-2">{note.label}</span> — {note.text}
+              </li>
+            ))}
+          </ul>
+        </Card>
+      )}
 
       {hasClaude && (
         <Card
@@ -509,93 +580,21 @@ function GroupBadge({ badge }: { badge: Badge }) {
   );
 }
 
-/**
- * 책 하나의 카드 — 상태 배지, 한 줄 소개, 순자산·수익률·노출·현금, 통계. 누르면 상세가 열리고 다시 누르면 닫힙니다.
- *
- * 키보드·화면 낭독기는 이름 옆의 단추(aria-expanded·aria-controls)로 엽니다. 카드 전체에 버튼 역할을 주지 않는 이유 — 단추 안에는
- * 제목·숫자 목록을 넣을 수 없고(HTML 규칙), 넣으면 낭독기가 카드 숫자 전부를 단추 이름으로 읽습니다. 마우스로는 카드 어디를 눌러도
- * 열리게 하되, 숫자를 끌어 고르는(복사하려는) 중이면 열고 닫지 않습니다.
- */
-function BookCard({
-  book,
-  books,
-  selected,
-  onToggle,
-}: {
-  book: PaperBookSummary;
-  books: readonly PaperBookSummary[];
-  selected: boolean;
-  onToggle: () => void;
-}) {
-  const card = bookCard(book, books);
-  const summary = accountProfile(book.code)?.summary ?? null;
-  return (
-    <article
-      aria-label={book.label}
-      onClick={() => {
-        if (window.getSelection?.()?.toString()) return;
-        onToggle();
-      }}
-      className={`cursor-pointer rounded-lg border bg-canvas px-4 py-3 transition ${
-        selected ? "border-accent ring-1 ring-accent/50" : "border-border hover:border-muted"
-      }`}
-    >
-      <header className="flex flex-wrap items-center justify-between gap-2">
-        <div className="min-w-0">
-          <h3 className="text-sm font-semibold text-bright">
-            <button
-              type="button"
-              id={accountToggleId(book.code)}
-              aria-expanded={selected}
-              aria-controls={ACCOUNT_PANEL_ID}
-              onClick={(event) => {
-                // 카드의 클릭과 두 번 겹쳐 열자마자 닫히지 않게 여기서 멈춥니다.
-                event.stopPropagation();
-                onToggle();
-              }}
-              className="rounded-sm text-left hover:text-accent focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-accent"
-            >
-              <span>{book.label}</span>{" "}
-              <span className={`ml-1 text-[11px] font-normal ${selected ? "text-accent" : "text-muted"}`}>
-                {selected ? "상세 닫기" : "상세 보기"}
-                <span aria-hidden> {selected ? "▴" : "▾"}</span>
-              </span>
-            </button>
-          </h3>
-          <p className="text-[11px] text-muted">
-            {card.kind} · 출발 {card.startedOn} · 처음 {card.initialCash}
-          </p>
-          {summary && <p className="mt-0.5 text-[11px] text-body">{summary}</p>}
-        </div>
-        <span className={`rounded-sm border px-2 py-0.5 text-[11px] ${card.status.className}`}>{card.status.label}</span>
-      </header>
-
-      <dl className="mt-3 grid grid-cols-2 gap-x-4 gap-y-2 sm:grid-cols-4">
-        <Cell label="순자산" value={card.nav} />
-        <Cell label="수익률" value={card.returnPct} tone={deltaColor(book.returnPct)} />
-        <Cell label="주식 노출" value={card.exposure} />
-        <Cell label="현금" value={card.cash} />
-      </dl>
-      <p className="mt-2 text-[11px] text-muted">
-        보유 {card.positions} · 마지막 관측 {card.lastObserved}
-      </p>
-      {card.staleWarning && <p className="mt-1 text-[11px] text-warn">⚠️ {card.staleWarning}</p>}
-
-      <dl className="mt-3 grid grid-cols-2 gap-x-4 gap-y-1 border-t border-border pt-2 sm:grid-cols-4">
-        {card.stats.map((stat) => (
-          <Cell key={stat.key} label={stat.label} value={stat.value} small />
-        ))}
-      </dl>
-      <p className="mt-2 text-[11px] text-muted">{card.sample}</p>
-    </article>
-  );
+/** 계좌 비교 표의 칸 — 상태는 배지, 색이 있는 값(수익률·가격 없음)은 그 색, 나머지는 글 그대로("—"면 표가 Empty로 그림). */
+function comparisonContent(row: ComparisonRow, code: string): ReactNode {
+  const cell = row.cells[code];
+  if (!cell || cell.text === EMPTY) return cell?.text ?? null;
+  if (row.badge && cell.className) {
+    return <span className={`whitespace-nowrap rounded-sm border px-2 py-0.5 text-[11px] ${cell.className}`}>{cell.text}</span>;
+  }
+  return cell.className ? <span className={cell.className}>{cell.text}</span> : cell.text;
 }
 
-function Cell({ label, value, tone, small }: { label: string; value: string; tone?: string; small?: boolean }) {
+function Cell({ label, value, small }: { label: string; value: string; small?: boolean }) {
   return (
     <div className="min-w-0">
       <dt className="text-[11px] text-muted">{label}</dt>
-      <dd className={`tabular-nums ${small ? "text-xs" : "text-sm font-semibold"} ${tone ?? "text-bright"}`}>{value}</dd>
+      <dd className={`tabular-nums text-bright ${small ? "text-xs" : "text-sm font-semibold"}`}>{value}</dd>
     </div>
   );
 }
