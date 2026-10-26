@@ -329,6 +329,8 @@ git config credential.https://github.com.username <아이디>
 4. EC2 `my-macro-app`: SSM 공개 파라미터의 최신 Ubuntu 24.04 arm64 AMI, t4g.medium, ap-northeast-2a 기본 서브넷(공인 IPv4 자동 할당),
    키페어 없음, 루트 gp3 30 GB 암호화, 메타데이터 `HttpTokens=required`·`HttpPutResponseHopLimit=1`(컨테이너가 인스턴스 역할의 자격 증명을
    꺼내지 못하게 — 호스트의 aws CLI는 그대로 됨), user-data는 `scripts/aws/bootstrap.sh`. 만든 뒤 인스턴스 ID를 PC `.env`의 `AWS_INSTANCE_ID`에 적습니다.
+   탄력적 IP(태그 `Project=my-macro`·`Name=my-macro-app-eip`)를 할당해 붙이고, 그 주소를 토스 개발자 콘솔의 허용 IP에 넣습니다(ADR 0019 결정 15 —
+   매일 바뀌는 자동 할당 주소로는 토스가 403). 주소와 할당 ID는 공개 저장소에 적지 않습니다.
 5. 세션 설정(`SSM-SessionManagerRunShell`)의 유휴 제한을 60분(최대값)으로. 서버 셸(아래)에서 `tail /var/log/cloud-init-output.log`로
    bootstrap이 끝났는지(`== 끝: Docker … · 스왑 2G`) 봅니다.
 6. 저장소 받기 — 이 저장소 하나만 읽는 **배포 키**(쓰기 권한 없음)를 씁니다. PC의 GitHub 토큰은 서버에 두지 않고, 원격 주소에 토큰을 넣지 않습니다.

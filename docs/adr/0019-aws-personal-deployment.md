@@ -1,6 +1,6 @@
 # 0019. AWS 개인용 배포 — EC2 한 대(t4g.medium) + Postgres 컨테이너, 밤 시간 창(KST 21:55~08:00)만 가동, 접속은 SSM 포트 포워딩(인바운드 0), 앞단 Caddy는 루프백 8201 하나
 
-- 상태: 채택 (2026-10-26). 같은 날 가동 시간을 24시간에서 밤 시간 창으로 바꿈(결정 14, 사용자 결정). [ADR 0018](0018-paper-trading-guardrails.md)의 "AWS 개인용 배포는 별도 ADR로"가 이 문서입니다.
+- 상태: 채택 (2026-10-26). 같은 날 가동 시간을 24시간에서 밤 시간 창으로 바꿈(결정 14, 사용자 결정). 2026-10-27 공인 IPv4를 자동 할당에서 탄력적 IP로 바꿈(결정 15, 사용자 승인 — 토스 허용 IP). [ADR 0018](0018-paper-trading-guardrails.md)의 "AWS 개인용 배포는 별도 ADR로"가 이 문서입니다.
   v3에서 옮겨 온 공개 데모 배포([ADR 0012](0012-aws-demo-deployment.md)·[0013](0013-demo-viewer-mode.md)·[0014](0014-aws-demo-ai-report.md))는
   이 저장소에서 쓰지 않습니다 — `compose.aws.yml`을 개인용으로 다시 썼습니다. 같은 출처(`NEXT_PUBLIC_API_BASE=/`)와 프록시 IP 신뢰는 0012의 정의를 그대로 씁니다.
   2026-10-26: v2(`My_macro_dashboard_v2`)로의 교체는 [ADR 0020](0020-v2-program.md)·계획서 §5 — 교체 전까지 서버는 v1이고, 서버 폴더·볼륨 이름은
@@ -43,7 +43,7 @@ v3 데모 덧붙임(`compose.aws.yml`)은 공개 데모용이었습니다 — RD
 
 1. **서버**: EC2 `my-macro-app` 한 대 — t4g.medium(ARM, 2 vCPU · 4 GiB), Ubuntu 24.04 LTS arm64(만들 때 SSM 공개 파라미터
    `/aws/service/canonical/ubuntu/server/24.04/stable/current/arm64/hvm/ebs-gp3/ami-id`의 최신), ap-northeast-2a 기본 VPC, 루트 gp3 30 GB 암호화,
-   IMDSv2 필수(응답 hop limit 1 — 컨테이너는 IMDSv2 토큰을 받지 못해 인스턴스 역할의 자격 증명을 꺼내지 못함), 키페어 없음, 공인 IPv4 자동 할당(EIP 아님 — 나가는 통신용), 태그 `Project=my-macro`. 첫 기동 준비는 user-data `scripts/aws/bootstrap.sh`
+   IMDSv2 필수(응답 hop limit 1 — 컨테이너는 IMDSv2 토큰을 받지 못해 인스턴스 역할의 자격 증명을 꺼내지 못함), 키페어 없음, 공인 IPv4(나가는 통신용 — 처음엔 자동 할당, 2026-10-27부터 탄력적 IP, 결정 15), 태그 `Project=my-macro`. 첫 기동 준비는 user-data `scripts/aws/bootstrap.sh`
    (Docker 공식 저장소의 docker-ce·compose 플러그인, AWS CLI v2, git·make, 2 GiB 스왑, journald 상한, ubuntu 사용자를 docker 그룹에).
 2. **DB**: RDS가 아니라 **postgres 컨테이너**(기반 `docker-compose.yml` 그대로, PostgreSQL 16). 볼륨 이름은 폴더 이름을 따른
    `my_macro_dashboard_v1_postgres-data`라 서버의 저장소 폴더도 `~/My_macro_dashboard_v1`입니다.
@@ -84,8 +84,8 @@ v3 데모 덧붙임(`compose.aws.yml`)은 공개 데모용이었습니다 — RD
     순서는 **로컬 정기 작업을 먼저 끄고**(`PAPER_ENABLED=false` → `make up`) 백업합니다 — 백업 뒤 로컬에 결정·체결이 더 쌓이지 않고, 서버가 복원을 마치는
     순간에도 두 곳이 겹치지 않습니다. 서버 확인이 안 되면 **서버 정기 작업을 먼저 끄고**(서버 `.env`에 `PAPER_ENABLED=false` → `docker compose up -d backend`,
     다음 `deploy.sh`도 켜지 않고 알림) 로컬의 그 줄을 지워 되돌립니다(로컬 DB는 백업 시점 그대로). 컨테이너를 멈추는 것(`stop`)만으로는 다음 배포가 다시 켭니다.
-13. **비용** 월 약 $17 — 인스턴스 $12.7(t4g.medium $0.0416/시간 × 하루 10시간 × 30.4일) + 토요일 2시간 더 약 $0.4 + 디스크 $2.7(gp3 30 GB, 꺼져 있어도 붙음)
-    + 공인 IPv4 $1.5(켜진 동안만 붙음 — 자동 할당 주소는 끌 때 반납) + S3 소액 + EventBridge Scheduler(월 무료 사용량 안). 24시간이면 약 $37이었습니다.
+13. **비용** 월 약 $19(탄력적 IP 전 $17) — 인스턴스 $12.7(t4g.medium $0.0416/시간 × 하루 10시간 × 30.4일) + 토요일 2시간 더 약 $0.4 + 디스크 $2.7(gp3 30 GB, 꺼져 있어도 붙음)
+    + 공인 IPv4 $3.6(2026-10-27부터 탄력적 IP — 꺼져 있어도 시간당 $0.005가 붙음. 그 전 자동 할당은 켜진 동안만 약 $1.5) + S3 소액 + EventBridge Scheduler(월 무료 사용량 안). 24시간이면 약 $37이었습니다.
     예산 `my-macro-monthly-45usd`(COST, 계정 전체, 실제 비용 80%·100% 알림)를 새로 둡니다. t4g는 기본이 무제한 크레딧이라 기준선(vCPU당 20%)을 오래 넘기면
     추가 요금 — CloudWatch `CPUSurplusCreditsCharged`가 0인지 봅니다.
 14. **가동 시간은 밤 창 — 매일 KST 21:55 켜고 08:00 끔(토요일만 10:00)**(2026-10-26 사용자 결정). EventBridge Scheduler 세 개(시간대 `Asia/Seoul`)가
@@ -111,6 +111,11 @@ v3 데모 덧붙임(`compose.aws.yml`)은 공개 데모용이었습니다 — RD
       다시 켜지면 `restart: unless-stopped`가 컨테이너를 다시 띄웁니다(순서 보장은 없어 DB가 준비될 때까지 백엔드·수집기가 몇 번 다시 뜰 수 있음).
     - 창 밖(주말 낮 등)에 볼 때는 PC에서 `bash scripts/aws/instance.sh start` — 다음 정지 일정에 꺼집니다. `instance.sh stop`은 창 안에서 `--force` 없이 끄지 않습니다.
     - 국내 장중(09:00~15:30 KST) 수집은 서버에서 돌지 않습니다. 켜진 뒤 일별 자료로 따라잡고, 장중 화면은 로컬에서 봅니다.
+15. **탄력적 IP**(2026-10-27, 사용자 승인): 토스증권 Open API는 콘솔에 등록한 허용 IP에서 온 요청만 받는데(토큰 발급부터 403 `IP address not allowed`),
+    자동 할당 주소는 끌 때 반납돼 매일 바뀌므로 등록할 수 없습니다. 탄력적 IP(태그 `Project=my-macro`·`Name=my-macro-app-eip`)를 인스턴스에 붙이고
+    그 주소를 토스 콘솔 허용 IP에 넣습니다. 들어오는 규칙은 여전히 없습니다(보안 그룹 인바운드 0 — 공인 IP에 앱 포트를 열지 않는 원칙 그대로).
+    공인 IPv4 요금은 쓰는 중·쉬는 중 모두 시간당 $0.005(서울, AWS 가격 API로 2026-10-27 확인)라 월 약 $3.6 — 자동 할당보다 약 $2 더 듭니다.
+    v2로 교체할 때(계획서 §5) 같은 인스턴스·같은 탄력적 IP를 그대로 쓰므로 토스 등록을 다시 할 일은 없습니다.
 
 ## 이유
 
@@ -121,7 +126,7 @@ v3 데모 덧붙임(`compose.aws.yml`)은 공개 데모용이었습니다 — RD
 - **t4g.medium**: 상주 메모리 상한(backend·collector 1g, postgres 512m, frontend 256m, caddy 128m)이 4 GiB 안에 들어갑니다. 빌드는 하나씩 + 스왑으로
   버팁니다(부족하면 잠시 t4g.large로 올려 빌드하고 되돌림). 같은 크기의 x86보다 싸고, 쓰는 베이스 이미지(Temurin·Node·Python·Postgres·Caddy)는 모두 arm64를 냅니다.
 - **공인 IPv4 자동 할당(EIP 아님)**: 수집(외부 시장 데이터)·Anthropic API·GitHub·apt는 나가는 통신이 필요합니다. NAT 게이트웨이보다 훨씬 싸고, 들어오는 길이
-  없어 고정 주소가 필요 없습니다.
+  없어 고정 주소가 필요 없습니다. → 2026-10-27 바꿈: 나가는 쪽에도 고정 주소가 필요한 출처(토스 허용 IP)가 있었습니다(결정 15).
 - **TLS 없는 Caddy**: 브라우저 ↔ PC의 session-manager-plugin은 루프백, PC ↔ 서버는 SSM이 암호화합니다. 인증서를 둘 이름(도메인)도 없습니다.
 
 ## 대안과 버린 이유
@@ -148,6 +153,10 @@ v3 데모 덧붙임(`compose.aws.yml`)은 공개 데모용이었습니다 — RD
   - 서버 안에서 듣는 포트: 앱 포트는 모두 `127.0.0.1`. Ubuntu 기본 sshd가 `0.0.0.0:22`에서 듣지만 보안 그룹 인바운드 0·키페어 없음이라 닿지 않고 쓰지 않습니다.
   - 데이터 전환 2026-10-26 05:31 KST(월 — 직전 정기 결정은 10-24, 다음은 10-27 07:30이라 그 사이): 로컬 정기 작업을 먼저 끄고 백업(198 MB) → S3 → 복원.
     계좌 4개 순자산·현금이 로컬과 같음. 백업 cron 첫 수동 실행 190M이 S3 `db/`에 도착.
+  - 2026-10-27: 전환 뒤 서버의 토스 태스크 세 개(`toss_market_flows`·`toss_stock_flows`·`toss_radar_universe`)가 토큰 발급 403 `IP address not allowed`로
+    '수집 결과 없음'(저장본 유지)이었습니다 — 수급 자료가 10-26 05:25부터 새로 쌓이지 않음. 탄력적 IP를 붙이고(결정 15) 사용자가 토스 콘솔에 등록한 뒤
+    서버에서 손으로 돌려 확인: 시장 2/2, 종목 40/40(800건), 레이더 94/100. 레이더 6종목은 401 `token-revoked` — 서버와 로컬 스택이 같은 토스 client를
+    쓰기 때문입니다(client당 토큰 1개). 사용자 결정으로 키는 하나를 유지하고, 충돌한 종목은 이전 값을 이어받아 다음 실행에서 다시 받습니다.
 - 21:55 기동이 실패하면(용량 부족 등 — 일정이 1시간 안에 다시 시도) 그날 밤 리스크 점검·결정이 빠집니다. 결정은 마감(12:00) 규칙대로 그날 주문 없음.
 - 낮에 손으로 켜 두면 다음 정지 일정(08:00, 토 10:00)까지 계속 켜져 있습니다(시간당 약 $0.05).
 - 서버가 한 대라 인스턴스·디스크 장애 때는 마지막 S3 백업(최대 하루 전)으로 돌아갑니다. 그 사이의 모의 매매 기록은 잃습니다.
