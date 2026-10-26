@@ -1,0 +1,103 @@
+{
+ "_source": "KRX 시장동향 > 증시일정 > 휴장일 페이지(open.krx.co.kr/contents/MKD/01/0110/01100305/MKD01100305.jsp)가 부르는 JSON(open.krx.co.kr/contents/OPN/99/OPN99000001.jspx, bld=MKD/01/0110/01100305/mkd01100305_01, search_bas_yy=2022, gridTp=KRX, 키 없음) 실제 응답 — 2026-10-26 23:34~23:35 KST 조회, HTTP 200(v2 2단계 명세 §4-4·§7 #5). block1은 받은 그대로이고 평일 휴장일만 담는다(주말 공휴일 없음). 공개 API 약속이 없는 내부 JSON이라 수집 출처가 아니라 대조 자료로만 쓴다",
+ "block1": [
+  {
+   "calnd_dd": "2022-01-31",
+   "dy_tp_cd": "MON",
+   "calnd_dd_dy": "2022-01-31",
+   "kr_dy_tp": "월요일",
+   "holdy_nm": "설날"
+  },
+  {
+   "calnd_dd": "2022-02-01",
+   "dy_tp_cd": "TUE",
+   "calnd_dd_dy": "2022-02-01",
+   "kr_dy_tp": "화요일",
+   "holdy_nm": "설날"
+  },
+  {
+   "calnd_dd": "2022-02-02",
+   "dy_tp_cd": "WED",
+   "calnd_dd_dy": "2022-02-02",
+   "kr_dy_tp": "수요일",
+   "holdy_nm": "설날"
+  },
+  {
+   "calnd_dd": "2022-03-01",
+   "dy_tp_cd": "TUE",
+   "calnd_dd_dy": "2022-03-01",
+   "kr_dy_tp": "화요일",
+   "holdy_nm": "삼일절"
+  },
+  {
+   "calnd_dd": "2022-03-09",
+   "dy_tp_cd": "WED",
+   "calnd_dd_dy": "2022-03-09",
+   "kr_dy_tp": "수요일",
+   "holdy_nm": "20대 대통령 선거"
+  },
+  {
+   "calnd_dd": "2022-05-05",
+   "dy_tp_cd": "THU",
+   "calnd_dd_dy": "2022-05-05",
+   "kr_dy_tp": "목요일",
+   "holdy_nm": "어린이날"
+  },
+  {
+   "calnd_dd": "2022-06-01",
+   "dy_tp_cd": "WED",
+   "calnd_dd_dy": "2022-06-01",
+   "kr_dy_tp": "수요일",
+   "holdy_nm": "8회 지방선거"
+  },
+  {
+   "calnd_dd": "2022-06-06",
+   "dy_tp_cd": "MON",
+   "calnd_dd_dy": "2022-06-06",
+   "kr_dy_tp": "월요일",
+   "holdy_nm": "현충일"
+  },
+  {
+   "calnd_dd": "2022-08-15",
+   "dy_tp_cd": "MON",
+   "calnd_dd_dy": "2022-08-15",
+   "kr_dy_tp": "월요일",
+   "holdy_nm": "광복절"
+  },
+  {
+   "calnd_dd": "2022-09-09",
+   "dy_tp_cd": "FRI",
+   "calnd_dd_dy": "2022-09-09",
+   "kr_dy_tp": "금요일",
+   "holdy_nm": "추석"
+  },
+  {
+   "calnd_dd": "2022-09-12",
+   "dy_tp_cd": "MON",
+   "calnd_dd_dy": "2022-09-12",
+   "kr_dy_tp": "월요일",
+   "holdy_nm": "추석(대체휴일)"
+  },
+  {
+   "calnd_dd": "2022-10-03",
+   "dy_tp_cd": "MON",
+   "calnd_dd_dy": "2022-10-03",
+   "kr_dy_tp": "월요일",
+   "holdy_nm": "개천절"
+  },
+  {
+   "calnd_dd": "2022-10-10",
+   "dy_tp_cd": "MON",
+   "calnd_dd_dy": "2022-10-10",
+   "kr_dy_tp": "월요일",
+   "holdy_nm": "한글날(대체휴일)"
+  },
+  {
+   "calnd_dd": "2022-12-30",
+   "dy_tp_cd": "FRI",
+   "calnd_dd_dy": "2022-12-30",
+   "kr_dy_tp": "금요일",
+   "holdy_nm": "연말휴장일"
+  }
+ ]
+}
