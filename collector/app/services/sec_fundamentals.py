@@ -32,7 +32,7 @@ from collections import Counter
 from dataclasses import dataclass, field
 from datetime import date
 
-from ..http import brief_error, get_sec_session, sec_rate_limit
+from ..http import SourceRejected, brief_error, get_sec_session, sec_rate_limit
 
 logger = logging.getLogger(__name__)
 
@@ -206,19 +206,25 @@ def fetch_companyfacts(cik: str, session=None) -> dict | None:
     return _get_json(session or get_sec_session(), COMPANYFACTS_URL.format(cik=str(cik).zfill(10)), allow_404=True)
 
 
+# 403은 대개 연락처 없는 User-Agent입니다(SEC 정책). 값 자체는 싣지 않습니다.
+_UA_HINT = " — SEC_USER_AGENT에 본인 이메일을 넣으세요"
+
+
 def _get_json(session, url: str, *, allow_404: bool = False):
     try:
         sec_rate_limit()
         res = session.get(url, timeout=REQUEST_TIMEOUT)
+    except SourceRejected as exc:
+        # SEC 세션의 어댑터가 403·429를 출처 거부로 올립니다(http.py). 연결 실패가 아니고, 메시지가 이미 화면용 한 줄(거부됨 — …)이라
+        # 앞머리 없이 적고 403이면 UA 안내를 붙입니다.
+        raise FetchError(f"{exc}{_UA_HINT if exc.why == 'HTTP 403' else ''}") from exc
     except Exception as exc:  # noqa: BLE001 — 연결 오류의 종류와 관계없이 그 회사 하나의 실패로 기록합니다
         raise FetchError(f"SEC 연결 실패: {brief_error(exc)}") from exc
     status = getattr(res, "status_code", 200)
     if allow_404 and status == 404:
         return None
     if status >= 400:
-        # 403은 대개 연락처 없는 User-Agent입니다(SEC 정책). 값 자체는 싣지 않습니다.
-        hint = " — SEC_USER_AGENT에 본인 이메일을 넣으세요" if status == 403 else ""
-        raise FetchError(f"SEC 응답 {status}{hint}")
+        raise FetchError(f"SEC 응답 {status}{_UA_HINT if status == 403 else ''}")
     try:
         return res.json()
     except ValueError as exc:

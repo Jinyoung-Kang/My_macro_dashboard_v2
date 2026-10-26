@@ -31,12 +31,14 @@ from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
 import yfinance as yf
+from yfinance.exceptions import YFRateLimitError
 
 from ..numbers import to_float
 from .. import yfcache
 
 from .. import settings
-from ..http import brief_error, get_session
+from .. import http
+from ..http import bind_guard, brief_error, get_session
 
 logger = logging.getLogger(__name__)
 
@@ -178,7 +180,7 @@ def collect_futures_history(days: int = 40) -> dict:
         cursor -= timedelta(days=1)
 
     with ThreadPoolExecutor(max_workers=8) as pool:
-        daily = dict(zip(candidates, pool.map(fetch_derivatives_daily, candidates)))
+        daily = dict(zip(candidates, pool.map(bind_guard(fetch_derivatives_daily), candidates)))
 
     parsed: dict[str, dict] = {}
     for date_str, rows in daily.items():
@@ -196,7 +198,7 @@ def collect_futures_history(days: int = 40) -> dict:
 
     with ThreadPoolExecutor(max_workers=8) as pool:
         spots = dict(zip(
-            parsed.keys(), pool.map(fetch_kospi200_index_close, parsed.keys())
+            parsed.keys(), pool.map(bind_guard(fetch_kospi200_index_close), parsed.keys())
         ))
 
     rows: list[dict] = []
@@ -377,8 +379,16 @@ def _fallback_from_kodex(days: int) -> dict:
     frame = None
     last_error: str | None = None
     for symbol in ("069500.KS", "^KS200"):
+        # Yahoo 공용 래치(http.YAHOO_HOST) — 다른 Yahoo 수집이 방금 429를 받았으면 묻지 않고, 여기서 받은 429는 래치를 닫습니다.
+        latched = http.active_rejection(http.YAHOO_HOST)
+        if latched is not None:
+            last_error = str(latched)
+            break
         try:
             candidate = yf.Ticker(symbol).history(period=f"{days + 30}d")
+        except YFRateLimitError:
+            last_error = str(http.reject_host(http.YAHOO_HOST, "HTTP 429(요청 제한)"))
+            break
         except Exception as exc:  # noqa: BLE001
             logger.warning("추정치 소스 조회 실패 (%s): %s", symbol, exc)
             last_error = f"{symbol} {brief_error(exc)}"

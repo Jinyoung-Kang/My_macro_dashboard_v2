@@ -14,7 +14,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import requests
 
-from ..http import get_session
+from ..http import SourceRejected, bind_guard, get_session
 from ..numbers import to_float
 
 logger = logging.getLogger(__name__)
@@ -32,6 +32,9 @@ def collect_contract(contract_code: str, limit: int = 300) -> list[dict]:
 
     반환: [{"date","ncLong","ncShort","commLong","commShort","nrLong","nrShort",
             "ncNet","commNet","nrNet"}, ...] (날짜 오름차순)
+
+    :raises SourceRejected: CFTC가 거부함(403·429) 또는 그 호스트가 래치로 닫혀 있음 — 다시 묻지 않습니다
+    :raises CFTCTransientError: 재시도 뒤에도 실패·빈 결과
     """
     params = {
         "cftc_contract_market_code": contract_code,
@@ -99,7 +102,8 @@ def collect_multi_asset(assets: dict, weeks: int, max_workers: int = 4) -> dict:
 
     with ThreadPoolExecutor(max_workers=max_workers) as pool:
         futures = {
-            pool.submit(collect_contract, info["code"], weeks): (name, info)
+            # bind_guard — 이 풀의 요청도 태스크의 거부 기록·시간 예산을 봅니다(http.TaskGuard).
+            pool.submit(bind_guard(collect_contract), info["code"], weeks): (name, info)
             for name, info in assets.items()
         }
         for future in as_completed(futures):
@@ -137,6 +141,9 @@ def _get_with_retry(params: dict, max_attempts: int = 3):
             )
             response.raise_for_status()
             return response, None
+        except SourceRejected:
+            # 출처의 거부(403·429)는 다시 묻지 않습니다 — 호스트가 래치로 닫혀 기다려도 같은 답입니다(http.py). 사유는 그대로 위로.
+            raise
         except requests.RequestException as exc:
             last_error = exc
             if attempt < max_attempts - 1:

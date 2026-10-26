@@ -32,6 +32,7 @@ from datetime import datetime, timezone
 import yfinance as yf
 from yfinance.exceptions import YFException, YFRateLimitError
 
+from .. import http
 from ..http import brief_error
 from .us_calendar import NEW_YORK, InternalApiChanged, RateLimited, ShapeError, yfinance_version  # noqa: F401 — 태스크가 여기서 씁니다
 
@@ -53,8 +54,12 @@ def fetch_earnings(ticker: str) -> dict | None:
     (없는 종목·ETF의 404, 서버 오류 모두). 그래서 None은 '그 종목 실패'로 다룹니다.
 
     :raises InternalApiChanged: 내부 메서드가 없음·인자 모양이 바뀜·모듈 이름이 받아들여지지 않음
-    :raises RateLimited: 429
+    :raises RateLimited: 429, 또는 공용 Yahoo 래치가 닫혀 있음(묻지 않음)
     """
+    # 같은 Yahoo 한도를 나눠 쓰는 다른 태스크가 방금 429를 받았으면 묻지 않습니다(공용 래치, http.YAHOO_HOST).
+    latched = http.active_rejection(http.YAHOO_HOST)
+    if latched is not None:
+        raise RateLimited(str(latched))
     try:
         fetch = yf.Ticker(ticker)._quote._fetch
     except AttributeError as exc:
@@ -62,6 +67,7 @@ def fetch_earnings(ticker: str) -> dict | None:
     try:
         return fetch([MODULE])
     except YFRateLimitError:
+        http.reject_host(http.YAHOO_HOST, "HTTP 429(요청 제한)")
         raise RateLimited("Yahoo 429(요청 제한)") from None
     except TypeError as exc:
         # 내부 메서드의 인자 모양이 바뀜(버전 고정이 풀린 경우). 그 밖의 TypeError는 그 종목만의 실패로 둡니다.

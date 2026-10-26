@@ -28,9 +28,10 @@ from zoneinfo import ZoneInfo
 
 import pandas as pd
 import yfinance as yf
+from yfinance.exceptions import YFRateLimitError
 
 from ..numbers import to_float
-from .. import indicators, yfcache
+from .. import http, indicators, yfcache
 from .. import kst
 
 from ..http import brief_error
@@ -110,7 +111,13 @@ def _download(symbol: str, period: str) -> tuple[pd.DataFrame | None, bool, str 
     ⚠️ yfinance는 Yahoo가 응답 형식을 바꿀 때마다 깨집니다. 그때 증상은
     "예외 없이 빈 DataFrame"이라 조용한 실패로 보입니다. 사유 문자열에
     그 가능성을 명시해 운영자가 버전 업그레이드를 떠올릴 수 있게 합니다.
+
+    Yahoo 공용 래치(http.YAHOO_HOST)를 봅니다 — 같은 Yahoo 한도를 나눠 쓰는 다른 수집(sector·실적 일정·어닝)이 방금 429를
+    받았으면 묻지 않고, 여기서 받은 429(YFRateLimitError)는 래치를 닫습니다. 사유는 '거부됨 — …' 한 줄입니다.
     """
+    latched = http.active_rejection(http.YAHOO_HOST)
+    if latched is not None:
+        return None, False, str(latched)
     try:
         ticker = yf.Ticker(symbol)
 
@@ -126,6 +133,8 @@ def _download(symbol: str, period: str) -> tuple[pd.DataFrame | None, bool, str 
         frame = ticker.history(period=period)
         sanitized = _sanitize(frame)
         return sanitized, False, (None if sanitized is not None else _empty_reason())
+    except YFRateLimitError:
+        return None, False, str(http.reject_host(http.YAHOO_HOST, "HTTP 429(요청 제한)"))
     except Exception as exc:  # noqa: BLE001
         logger.warning("yfinance 수집 예외 (%s): %s", symbol, exc)
         return None, False, brief_error(exc)
@@ -303,7 +312,7 @@ def collect_macro_cards(categories: list[dict]) -> dict:
     with ThreadPoolExecutor(max_workers=min(12, max(1, len(tickers)))) as pool:
         frames = dict(zip(
             tickers,
-            pool.map(lambda symbol: collect_ticker(symbol, "5d"), tickers),
+            pool.map(http.bind_guard(lambda symbol: collect_ticker(symbol, "5d")), tickers),
         ))
 
     out_categories = []

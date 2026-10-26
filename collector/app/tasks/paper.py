@@ -69,7 +69,7 @@ def _held_back_suffix(held_back: set[str]) -> str:
 
 
 def _missing_suffix(missing: list[str]) -> str:
-    """이어받지도 못하고 빠진 티커. 서비스는 일부 실패에 사유를 주지 않아(error=None) 이름이라도 남깁니다."""
+    """이어받지도 못하고 빠진 티커의 이름. 서비스의 error는 이유별로 묶어 이름을 몇 개만 싣기 때문에 따로 남깁니다."""
     if not missing:
         return ""
     shown = ", ".join(missing[:_MISSING_SHOWN]) + ("…" if len(missing) > _MISSING_SHOWN else "")

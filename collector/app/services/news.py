@@ -35,6 +35,7 @@ import feedparser
 from ..http import (
     SecUserAgentInvalid,
     SecUserAgentMissing,
+    SourceRejected,
     brief_error,
     get_bls_session,
     get_sec_session,
@@ -92,6 +93,11 @@ class FeedFetchError(RuntimeError):
     """피드 하나를 받지 못함 — 사유는 상태 화면에 뜨는 한 줄(연락처·응답 본문 없음)."""
 
 
+# 출처가 403으로 거부했을 때 세션별로 덧붙이는 조치 안내. 403은 BLS·SEC 세션의 어댑터가 출처 거부(SourceRejected, 거부됨 — …)로
+# 올리므로 상태 코드가 아니라 그 예외에 붙입니다(http.py). 공용 세션은 '거부됨'만으로 충분해 붙이지 않습니다.
+_FORBIDDEN_HINTS = {"bls": " — BLS 차단(UA)", "sec": " — SEC_USER_AGENT 확인"}
+
+
 class FeedShapeError(RuntimeError):
     """받았지만 RSS·Atom 피드가 아니거나 쓸 항목이 없음 — 그 피드만 실패로 셉니다."""
 
@@ -118,13 +124,11 @@ def fetch_feed(feed: Feed) -> tuple[bytes, str | None]:
         # stream=True — 본문을 한 번에 받지 않고 상한까지만 읽습니다(MAX_FEED_BYTES). 그래서 응답은 어느 길로 나가든 닫습니다.
         res = session.get(feed.url, timeout=FETCH_TIMEOUT, stream=True)
     except Exception as exc:  # noqa: BLE001 — 연결 오류는 그 피드만의 실패입니다
-        raise FeedFetchError(brief_error(exc)) from None
+        hint = _FORBIDDEN_HINTS.get(feed.session, "") if isinstance(exc, SourceRejected) and exc.why == "HTTP 403" else ""
+        raise FeedFetchError(f"{brief_error(exc)}{hint}") from None
     try:
         if res.status_code != 200:
-            hint = ""
-            if res.status_code == 403:
-                hint = {"bls": " — BLS 차단(UA)", "sec": " — SEC_USER_AGENT 확인"}.get(feed.session, " — 차단")
-            raise FeedFetchError(f"HTTP {res.status_code}{hint}")
+            raise FeedFetchError(f"HTTP {res.status_code}")
         declared = _content_length(res.headers.get("Content-Length"))
         if declared is not None and declared > MAX_FEED_BYTES:
             raise FeedFetchError(f"응답이 너무 큼({declared // 1024}KB 예고) — 피드가 아닌 것으로 봄")

@@ -312,18 +312,30 @@ def test_BLS_세션은_설명형_UA에_연락처가_없고_403을_다시_보내�
     assert user_agent == "LocalMacroDashboard/2.0"
     assert "@" not in user_agent and "Mozilla" not in user_agent
     retry = session.get_adapter("https://www.bls.gov/").max_retries
-    assert 403 not in retry.status_forcelist and 429 in retry.status_forcelist and 503 in retry.status_forcelist
-    # 다른 세션의 재시도 목록은 그대로입니다(403 포함).
-    assert 403 in http.get_session().get_adapter("https://www.investing.com/").max_retries.status_forcelist
+    assert 403 not in retry.status_forcelist and 503 in retry.status_forcelist
+    # v2 1단계 6번부터 모든 공용 세션이 403·429를 다시 보내지 않고 거부 래치로 닫습니다(test_http_guards.py).
+    for other in (http.get_session(), session):
+        forcelist = other.get_adapter("https://www.investing.com/").max_retries.status_forcelist
+        assert 403 not in forcelist and 429 not in forcelist
 
 
-@pytest.mark.parametrize("key, status, expected", [
-    ("bls_cpi", 403, "HTTP 403 — BLS 차단(UA)"),
-    ("sec_press", 403, "HTTP 403 — SEC_USER_AGENT 확인"),
-    ("investing_stock", 404, "HTTP 404"),
+# 403은 실제 세션의 어댑터가 응답 대신 출처 거부(SourceRejected)로 올립니다(app/http.py) — 가짜 세션도 그대로 흉내 냅니다.
+# 실제 어댑터(127.0.0.1 서버)를 거치는 같은 확인은 test_http_guards.py에 있습니다.
+_BLS_REJECTED = "거부됨 — www.bls.gov HTTP 403 · 5분 동안 이 출처 호출을 멈춤"
+
+
+@pytest.mark.parametrize("key, outcome, expected", [
+    ("bls_cpi", http.SourceRejected("www.bls.gov", "HTTP 403"), f"{_BLS_REJECTED} — BLS 차단(UA)"),
+    ("sec_press", http.SourceRejected("www.sec.gov", "HTTP 403"),
+     "거부됨 — www.sec.gov HTTP 403 · 5분 동안 이 출처 호출을 멈춤 — SEC_USER_AGENT 확인"),
+    ("investing_stock", http.SourceRejected("www.investing.com", "HTTP 403"),
+     "거부됨 — www.investing.com HTTP 403 · 5분 동안 이 출처 호출을 멈춤"),
+    ("sec_press", http.SourceRejected("www.sec.gov", "HTTP 429"),
+     "거부됨 — www.sec.gov HTTP 429 · 5분 동안 이 출처 호출을 멈춤"),
+    ("investing_stock", (404, b"<html>gone</html>"), "HTTP 404"),
 ])
-def test_HTTP_오류는_상태_코드와_힌트(web, key, status, expected):
-    web.outcomes[URL[key]] = (status, b"<html>denied</html>")
+def test_HTTP_오류는_상태_코드_또는_거부와_안내(web, key, outcome, expected):
+    web.outcomes[URL[key]] = outcome
     feed = next(feed for feed in svc.FEEDS if feed.key == key)
     with pytest.raises(svc.FeedFetchError) as caught:
         svc.fetch_feed(feed)
@@ -469,7 +481,7 @@ def test_BLS_Atom_항목이_저장되고_미래_시각은_건너뛴다(store, we
 
 
 def test_피드_하나가_실패해도_나머지는_저장되고_사유가_실행_기록에_남는다(store, web):
-    web.outcomes[URL["bls_cpi"]] = (403, b"<html>Access Denied</html>")
+    web.outcomes[URL["bls_cpi"]] = http.SourceRejected("www.bls.gov", "HTTP 403")     # 실제 세션이 403을 올리는 모양
     web.outcomes[URL["sec_press"]] = requests.ConnectionError("connection refused")
 
     ok, detail = tasks.run_task(tasks.TASKS_BY_NAME["news_headlines"])
@@ -479,12 +491,12 @@ def test_피드_하나가_실패해도_나머지는_저장되고_사유가_실�
     recorded = store.read_task_history("news_headlines")[0]
     assert recorded["status"] == "ok"
     assert "피드 6/8" in recorded["detail"]
-    assert "실패 2개: bls_cpi(HTTP 403 — BLS 차단(UA)); sec_press(ConnectionError — 서버가 연결을 거부했습니다)" \
-        in recorded["detail"]
+    assert (f"실패 2개: bls_cpi({_BLS_REJECTED} — BLS 차단(UA)); sec_press(ConnectionError — 서버가 연결을 거부했습니다)"
+            in recorded["detail"])
     status = _status(store)
     assert status["feedsOk"] == 6
     assert status["failedFeeds"] == [
-        {"feed": "bls_cpi", "source": "BLS", "reason": "HTTP 403 — BLS 차단(UA)"},
+        {"feed": "bls_cpi", "source": "BLS", "reason": f"{_BLS_REJECTED} — BLS 차단(UA)"},
         {"feed": "sec_press", "source": "SEC", "reason": "ConnectionError — 서버가 연결을 거부했습니다"},
     ]
     assert status["feeds"]["bls_cpi"]["status"] == "실패" and status["feeds"]["bls_cpi"]["lastOkAt"] is None

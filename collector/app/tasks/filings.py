@@ -65,7 +65,7 @@ def task_sec_13f() -> str:
         return name, cik, payload
 
     with ThreadPoolExecutor(max_workers=4) as pool:
-        for name, cik, payload in pool.map(collect, targets):
+        for name, cik, payload in pool.map(http.bind_guard(collect), targets):
             if not payload.get("quarters"):
                 logger.info("13F 빈 결과(저장본 유지): %s (%s)", name, payload.get("error"))
                 errors.append(f"{name}: {payload.get('error') or '빈 결과'}")

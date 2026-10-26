@@ -15,7 +15,7 @@ import logging
 from datetime import datetime, timedelta
 
 from .. import settings
-from ..http import brief_error, get_fred_session
+from ..http import SourceRejected, brief_error, get_fred_session
 
 logger = logging.getLogger(__name__)
 
@@ -112,6 +112,9 @@ def _from_api(series_id: str, start_date: str) -> tuple[list[dict], str | None]:
     return points, (None if points else "API 응답에 관측치가 없습니다")
 
 
+_CSV_BLOCKED_HINT = " — FRED_API_KEY를 설정하면 공식 API 경로로 우회됩니다"
+
+
 def _from_csv(series_id: str) -> tuple[list[dict], str | None]:
     """
     FRED 웹 CSV 폴백.
@@ -125,7 +128,9 @@ def _from_csv(series_id: str) -> tuple[list[dict], str | None]:
         )
     except Exception as exc:  # noqa: BLE001
         logger.warning("FRED CSV 다운로드 실패 (%s): %s", series_id, exc)
-        return [], f"CSV {brief_error(exc)}"
+        # 403·429는 공용 세션이 출처 거부(SourceRejected)로 올립니다 — 아래와 같은 키 안내를 붙입니다.
+        hint = _CSV_BLOCKED_HINT if isinstance(exc, SourceRejected) else ""
+        return [], f"CSV {brief_error(exc)}{hint}"
 
     if res.status_code != 200:
         logger.warning(
@@ -133,8 +138,7 @@ def _from_csv(series_id: str) -> tuple[list[dict], str | None]:
         )
         # 403은 보통 차단(데이터센터 IP·User-Agent)입니다. 키를 넣으면 API
         # 경로로 우회되므로 사유에 그 힌트를 함께 담습니다.
-        hint = " — FRED_API_KEY를 설정하면 공식 API 경로로 우회됩니다" \
-            if res.status_code in (403, 429) else ""
+        hint = _CSV_BLOCKED_HINT if res.status_code in (403, 429) else ""
         return [], f"CSV HTTP {res.status_code}{hint}"
 
     if len(res.text) < 30:

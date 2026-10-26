@@ -23,6 +23,7 @@ import logging
 from concurrent.futures import ThreadPoolExecutor
 
 from . import fred
+from ..http import bind_guard
 
 logger = logging.getLogger(__name__)
 
@@ -45,7 +46,7 @@ def collect_fed_liquidity(period_years: int = 10) -> dict:
     """
     with ThreadPoolExecutor(max_workers=3) as pool:
         collected = list(pool.map(
-            lambda sid: fred.collect_series_with_reason(sid, period_years), SERIES
+            bind_guard(lambda sid: fred.collect_series_with_reason(sid, period_years)), SERIES
         ))
     walcl, wtregen, rrp = (points for points, _ in collected)
 

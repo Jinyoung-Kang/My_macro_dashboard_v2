@@ -340,11 +340,12 @@ def task_cot_history() -> str:
     )
     assets = result.get("assets") or {}
     usable = {name: entry for name, entry in assets.items() if entry.get("rows")}
+    failed = [entry.get("error") for entry in assets.values() if not entry.get("rows") and entry.get("error")]
 
     if not usable:
-        raise EmptyResult(f"0/{len(assets)} 자산 — 기존 저장본 유지")
+        # 사유를 싣습니다 — CFTC의 거부(거부됨 — …)인지 연결 장애인지가 실행 기록에 보이게.
+        raise EmptyResult(f"0/{len(assets)} 자산 — 기존 저장본 유지" + _reason_suffix(failed))
 
-    failed = [entry.get("error") for entry in assets.values() if not entry.get("rows") and entry.get("error")]
     carried = carry_over_missing(
         assets, previous_payload(catalog.SNAP_COT_HISTORY).get("assets"), list(assets),
         failed[0] if failed else None, lambda entry: bool(entry.get("rows")),

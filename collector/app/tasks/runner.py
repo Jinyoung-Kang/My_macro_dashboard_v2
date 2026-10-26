@@ -11,7 +11,7 @@ import traceback
 from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeoutError
 from datetime import datetime, timezone
 
-from .. import store
+from .. import http, store
 
 from .base import EmptyResult, Task
 from .registry import ALL_TASKS, TASKS_BY_NAME
@@ -152,6 +152,22 @@ def _wait_for_inflight(task: Task, entry: "_InFlight") -> tuple[bool, str]:
 
 EMPTY_PREFIX = "수집 결과 없음: "
 
+# 출처가 거부해 아무것도 받지 못한 실행의 detail 앞머리(상태는 error — ❌). '수집 결과 없음'(⚠️, 소스가 새 데이터를 안 줌)과
+# 가릅니다: 거부는 기다리거나 조치(키·UA·요청 빈도)가 필요한 일이고, 저장본은 그대로 남습니다(http.SourceRejected).
+REJECTED_PREFIX = f"{http.REJECTED_MARK}: "
+
+
+def _rejected_hosts(rejected: dict[str, str]) -> str:
+    """{호스트: 사유} → 'api.stlouisfed.org(HTTP 429), …' (세 곳까지)."""
+    shown = [f"{host}({why})" for host, why in list(rejected.items())[:3]]
+    return ", ".join(shown) + ("…" if len(rejected) > 3 else "")
+
+
+def _rejected_detail(rejected: dict[str, str], detail: str) -> str:
+    """전부 실패한 실행이 출처 거부 때문일 때의 detail — 거부한 호스트를 앞에 두고 원래 사유를 잇습니다."""
+    who = f"{_rejected_hosts(rejected)}가 요청을 거부" if rejected else "출처가 요청을 거부"
+    return f"{REJECTED_PREFIX}{who} · {detail}"
+
 
 def _run_status(ok_count: int, failures: list[str]) -> str:
     """
@@ -197,9 +213,15 @@ def _execute_task(task: Task, run_id: int | None, entry: "_InFlight | None" = No
     detail = ""
 
     deadline = deadline_for(task)
-    future = _task_threads.submit(task.run)
+    # 작업 스레드에 시간 예산과 '이번 실행이 만난 출처 거부' 기록을 겁니다(http.TaskGuard). 예산은 이 상한과 같은 시각에
+    # 끝나 — 대기열에서 기다린 시간도 셈 — 재시도가 상한을 넘겨 좀비로 남지 않게 합니다.
+    guard = http.TaskGuard(deadline=time.monotonic() + deadline)
+    future = _task_threads.submit(http.run_guarded, guard, task.run)
     try:
         detail = future.result(timeout=deadline) or ""
+        if guard.rejected:
+            # 받은 것은 저장했지만 일부 출처가 거부했습니다 — 빠진 항목은 직전 값을 이어받았습니다(isStale). 성공으로 두되 보이게.
+            detail += f" · {REJECTED_PREFIX}{_rejected_hosts(guard.rejected)}"
     except FuturesTimeoutError:
         status, ok = "error", False
         if future.cancel():
@@ -217,10 +239,20 @@ def _execute_task(task: Task, run_id: int | None, entry: "_InFlight | None" = No
             future.add_done_callback(
                 lambda done, name=task.name, t0=started: _finish_overdue(name, entry, t0, done))
     except EmptyResult as exc:
-        status, ok, detail = "empty", False, f"{EMPTY_PREFIX}{exc}"
+        rejected = guard.rejected
+        # 거부는 기록(이 작업 스레드와 http.bind_guard로 묶은 풀에서 난 것)이나 사유 문자열의 표지(묶지 않은 스레드에서 난 것)로
+        # 압니다.
+        if rejected or http.REJECTED_MARK in str(exc):
+            status, ok, detail = "error", False, _rejected_detail(rejected, str(exc))
+        else:
+            status, ok, detail = "empty", False, f"{EMPTY_PREFIX}{exc}"
     except Exception as exc:  # noqa: BLE001
         status, ok = "error", False
         detail = f"{type(exc).__name__}: {exc}"
+        rejected = guard.rejected
+        if rejected or isinstance(exc, http.SourceRejected):
+            # SourceRejected의 메시지는 이미 화면용 한 줄이라 예외 이름을 붙이지 않습니다.
+            detail = _rejected_detail(rejected, str(exc) if isinstance(exc, http.SourceRejected) else detail)
         logger.debug(traceback.format_exc())
 
     elapsed = time.perf_counter() - started

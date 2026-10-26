@@ -21,7 +21,7 @@ from zoneinfo import ZoneInfo
 import requests
 
 from . import market
-from ..http import get_session
+from ..http import bind_guard, get_session
 
 logger = logging.getLogger(__name__)
 
@@ -119,7 +119,7 @@ def collect_scraped_markets() -> dict:
 
     with ThreadPoolExecutor(max_workers=len(SCRAPER_MARKETS)) as pool:
         futures = {
-            pool.submit(_collect_one, config): config
+            pool.submit(bind_guard(_collect_one), config): config
             for config in SCRAPER_MARKETS
         }
         for future, config in futures.items():
@@ -188,7 +188,7 @@ def collect_quotes(keys: set[str]) -> dict[str, dict]:
     if not configs:
         return {}
     with ThreadPoolExecutor(max_workers=len(configs)) as pool:
-        items = list(pool.map(_collect_one, configs))
+        items = list(pool.map(bind_guard(_collect_one), configs))
     stamp = kst.stamp()
     for item in items:
         if item.get("status") == "ok":
