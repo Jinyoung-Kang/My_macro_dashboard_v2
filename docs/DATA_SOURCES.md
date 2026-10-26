@@ -538,3 +538,5 @@ EQUITY_MAP = {
 설명·예시값만 근거로 썼고, 테스트 입력(`collector/tests/fixtures/toss/`)도 그 스펙으로 만든 것이라
 **실제 응답이 아닙니다**. 키를 넣고 첫 수집 뒤 상태 화면의 `toss_market_flows`·`toss_stock_flows`
 결과를 확인하세요.
+
+🧪 한국 책(v2 2단계 B4)이 쓰는 `GET /api/v1/candles`·`GET /api/v1/stocks`의 시험 자료는 **실제 응답**입니다(2026-10-26 23:28~23:31 KST 읽기 전용 조회 — `collector/tests/fixtures/toss/README.md` '실제 응답'). 일봉 `timestamp` = 거래일 KST 자정, 1분봉 라벨 = 봉 끝 시각, 숫자는 문자열입니다. 공식 스펙은 지금 1.2.24이고, 그 판의 종목 투자자별 매매동향 설명은 '거래량은 KRX·NXT 통합 기준'입니다.
