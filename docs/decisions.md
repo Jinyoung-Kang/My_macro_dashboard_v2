@@ -138,3 +138,10 @@
 - 원인: Tailwind `dark:` 변형으로 하면 옛 화면의 클래스마다 고쳐야 하고, 고른 테마를 React 상태로만 붙이면 첫 페인트에 반대 테마가 잠깐 보인다.
 - 선택: `globals.css`의 `:root`에 라이트, `[data-theme="dark"]`와 속성이 없을 때의 `prefers-color-scheme: dark`에 다크 값을 두고 Tailwind `@theme inline`으로 이름을 잇는다. 고른 값은 `localStorage`와 `<html data-theme>`, 첫 페인트 전 인라인 스크립트(`lib/theme.ts`). 옛 색 이름(`canvas`·`muted` 등)은 별칭(4단계에 지움).
 - 이유: 토큰만 바꾸면 모든 화면이 함께 바뀐다. `inline`이어야 하위 요소에서 바꾼 값과 `bg-accent/15` 같은 투명도가 먹는다. 기본을 시스템으로 둔 것은 사용자 결정(UI 설계 §10).
+
+## 2026-10-27 · 캘린더 컨센서스는 한국 책 출발일에 두 책 함께 켬(D33 개정 준비)
+
+- 문제: 미국 `1b_calendar`에 컨센서스(`forecast`·`previous`)를 더하면 미국 책의 실험 조건(패킷)이 바뀐다. 3단계(스키마 v3 `bearCase`·숫자 근거 검사)도 같다.
+- 원인: 코드 배포와 함께 켜지면 `settings_version`·`changed_keys`에 남지 않고, 두 책이 다른 날 다른 판이 된다(ADR 0018 실험 조건).
+- 선택: 수집(`calendar.us_consensus`)은 먼저 넣어 저장만 하고, 설정 `calendar.consensus`·`claude.schemaV3`·`claude.figureCheck`(기본 false)를 한국 출발일 S 21:55~22:30에 한 번에 저장해 켠다 — 미국 `packetVersion` 5→6(S+1 07:30 결정부터), 한국은 처음부터 6, 프레임 판은 그대로.
+- 이유: 실험 조건을 한 날 한 번만 바꾸고 결정마다 판이 남는다. 근거는 [한국 책 명세](specs/2026-10-26-v2-kr-paper-spec.md) §4-12·K22·K37. 출발일에 실제 적용 날짜를 이 항목에 덧붙인다.
