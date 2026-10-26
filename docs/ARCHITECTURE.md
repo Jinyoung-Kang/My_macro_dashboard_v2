@@ -169,7 +169,7 @@ config/          설정 값(AppProperties) · 정기 작업 켜기 — 여러 �
 | `FlowIntegrity` | 토스 투자자별 매매대금 정합성 (매수 합계 = 매도 합계, 기관 = 세부 7개 합) |
 | `FlowRecord` | 투자자별 매매 기록 한 건(값을 모르면 null) — 수급 계산의 입력 타입 |
 | `AlertRules` | 알림 사건 판정(ADR 0011) — 국면 전환 확정(3번 연속 기록)·연속 순매수 N일 도달·13F 신규 편입 |
-| `UsMarketCalendar` | 🧪 미국 거래일·세션 날짜(휴장일 규칙은 화면 `lib/marketCalendar.ts`와 같음)·13F 공시 기한 다음 거래일 |
+| `UsMarketCalendar` | 🧪 미국 거래일·세션 날짜(휴장일 규칙은 화면 `lib/marketCalendar.ts`와 같음)·13F 공시 기한 다음 거래일. 직접 부르는 곳은 미국 전용 파일·옛 시그니처 위임뿐이고(허용 목록 `UsMarketCalendarAllowListTest`), 시장 문맥 코드는 시장 묶음의 `TradingCalendar`를 쓴다 |
 | `TradingCalendar` | 🧪 거래일 달력의 시장 중립 모양(거래일 판정·개장/마감 순간 + 다음·직전·n거래일 뒤·구간 거래일 수·최근 세션 기본 메서드) — 미국 구현은 정적 함수를 그대로 부르는 `UsMarketCalendar.CALENDAR` |
 | `CalendarWindow` | 🧪 Claude 패킷 일정 섹션 `1b_calendar`의 창(기준일 다음 세션 … 10거래일)과 줄 고르기 — 창 밖·대상 밖 제외, '다음 일정 미정'·'자료 없음'·'일정 미공개' 구분(없는 일정을 만들지 않음) |
 | `EarningsHistory` | 🧪 Claude 패킷 재무 섹션 `8b_fundamentals` 줄마다의 어닝 서프라이즈 — 발표일(미국 동부) ≤ 기준일이고 결정 시각 전에 나온 최근 4분기(같은 분기는 가장 늦은 발표 하나), 추정치 없거나 0이면 서프라이즈율 null, 작은 추정치(\|추정치\| < 0.05) 표시, 자료 없음(null)과 0건([]) 구분 |
