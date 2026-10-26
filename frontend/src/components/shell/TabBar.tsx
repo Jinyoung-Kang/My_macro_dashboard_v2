@@ -10,7 +10,8 @@ const COLUMNS: Record<number, string> = { 5: "grid-cols-5", 6: "grid-cols-6" };
 
 /**
  * 좁은 화면(lg 미만) 아래쪽 탭 바 — 홈·시장·기관·한국·모의매매(운영자만)·더보기, 같은 폭의 칸에 아이콘 + 12px 이름.
- * 화면 아래에 붙어 있고(높이 64px + 안전 영역), 본문은 그만큼 아래 여백을 둡니다(Shell). 데스크톱에서는 숨깁니다.
+ * 화면 아래에 붙어 있고(높이 64px + 안전 영역), 본문은 그만큼 아래 여백을 둡니다(Shell). Tab으로 옮긴 포커스가 이 밑에 숨지 않게
+ * 문서 스크롤 여백(html scroll-padding-bottom)도 같은 높이입니다(globals.css). 데스크톱에서는 숨깁니다.
  */
 export function TabBar({ pathname, user }: { pathname: string; user?: SessionUser }) {
   const tabs = visibleTabs(user);

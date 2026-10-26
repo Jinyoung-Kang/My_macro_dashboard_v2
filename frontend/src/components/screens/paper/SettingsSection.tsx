@@ -186,6 +186,7 @@ export function SettingsSection() {
         )}
         {history.data?.available && (
           <Table<SettingsHistoryRow>
+            label="바꾼 기록"
             rows={settingsHistoryRows(history.data.history, data.keys)}
             rowKey={(row) => row.key}
             emptyMessage="아직 설정 이력이 없습니다 — 초기화하면 v1(처음 값)이 남습니다."

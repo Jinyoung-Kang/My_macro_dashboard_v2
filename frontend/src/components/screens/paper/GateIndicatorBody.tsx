@@ -33,6 +33,7 @@ export function GateIndicatorBody({ gate, compact = false }: { gate: PaperGateIn
       </p>
       <section aria-label="게이트 조건" className="flex flex-col gap-1">
         <Table<GateConditionRow>
+          label="게이트 조건"
           rows={view.conditions}
           rowKey={(row) => row.key}
           columns={[
@@ -49,6 +50,7 @@ export function GateIndicatorBody({ gate, compact = false }: { gate: PaperGateIn
       {!compact && (
         <section aria-label="게이트 입력" className="flex flex-col gap-1">
           <Table<GateInputRow>
+            label="게이트 입력"
             rows={view.inputs}
             rowKey={(row) => row.key}
             columns={[

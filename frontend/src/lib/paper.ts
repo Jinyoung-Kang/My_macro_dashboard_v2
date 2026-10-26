@@ -119,10 +119,10 @@ export const PAPER_TABS = [
 
 export type PaperTabKey = (typeof PAPER_TABS)[number]["key"];
 
-/** 배지 색 — Banner·Freshness와 같은 팔레트. */
+/** 배지 색 — Banner·Freshness와 같은 팔레트. 경고·정상 바탕은 불투명 틴트(globals.css) — 계좌 상세처럼 페이지 바탕 위에 놓여도 대비 4.5:1 이상. */
 const TONE = {
-  ok: "border-ok/40 bg-ok/10 text-ok",
-  warn: "border-warn/40 bg-warn/10 text-warn",
+  ok: "border-ok/40 bg-ok-tint text-ok",
+  warn: "border-warn/40 bg-warn-tint text-warn",
   info: "border-accent/40 bg-accent/10 text-accent",
   muted: "border-border bg-surface-hover text-muted",
 } as const;

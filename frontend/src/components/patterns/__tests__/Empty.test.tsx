@@ -40,19 +40,24 @@ describe("Empty", () => {
     }
   });
 
-  it("추정·오래됨 — '—' 옆에 배지가 함께 보인다(값이 없어도 플래그를 숨기지 않음)", () => {
-    render(
+  // Empty는 추정·오래됨 플래그를 받지 않는다 — 값이 없을 때 그 플래그를 함께 보이는 일은 쓰는 쪽(StatTile·AssetRow)의 네 상태 테스트 몫.
+  // 여기서는 배지가 옆에 있어도 "—"와 사유가 그대로인지(배지를 가리거나 대신하지 않음)만 본다.
+  it("추정·오래됨 — 플래그를 받지 않으므로 옆 배지가 있어도 '—'와 사유는 혼자일 때와 똑같다", () => {
+    const { container: alone } = render(<Empty reason="이번 수집 실패" />);
+    const aloneHtml = (alone.firstElementChild as HTMLElement).outerHTML;
+    cleanup();
+
+    const { container } = render(
       <span>
         <Empty reason="이번 수집 실패" />
         <EstimateBadge estimated />
         <StaleBadge stale reason="직전 저장본" />
       </span>,
     );
-    expect(screen.getByText("—")).toBeTruthy();
-    expect(screen.getByText("이번 수집 실패")).toBeTruthy();
+    const row = container.firstElementChild as HTMLElement;
+    expect((row.firstElementChild as HTMLElement).outerHTML).toBe(aloneHtml);
     expect(screen.getByText("추정")).toBeTruthy();
     expect(screen.getByText("이전 값")).toBeTruthy();
-    expect(screen.getByText("· 직전 저장본")).toBeTruthy();
   });
 
   it("문장 안에 놓일 수 있게 인라인 요소다", () => {

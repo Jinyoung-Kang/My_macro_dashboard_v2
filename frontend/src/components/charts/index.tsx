@@ -295,6 +295,7 @@ export function MultiLineSeries({
   zeroLine = false,
   domain,
   markers = [],
+  ariaLabel,
 }: {
   data: Record<string, unknown>[];
   series: MultiSeries[];
@@ -321,6 +322,11 @@ export function MultiLineSeries({
    * 바뀜). 범주 축이라 data에 없는 날짜는 그려지지 않으므로, 부르는 쪽이 같은 내용을 글로도 적습니다(선만으로 뜻을 나르지 않음).
    */
   markers?: { x: string; label: string }[];
+  /**
+   * 차트 이름. Recharts 접근성 층이 그림(svg)을 role="application" 탭 정지점으로 만들므로, 이름이 없으면 낭독기가 이름 없는
+   * 응용 프로그램으로 읽습니다(새 LineChart·도넛과 같은 이유).
+   */
+  ariaLabel?: string;
 }) {
   if (data.length === 0) {
     return <div className="py-10 text-center text-sm text-muted">표시할 시계열이 없습니다.</div>;
@@ -332,7 +338,7 @@ export function MultiLineSeries({
 
   return (
     <ResponsiveContainer width="100%" height={height}>
-      <LineChart data={data} margin={{ top: 8, right: 8, bottom: 0, left: 0 }}>
+      <LineChart data={data} margin={{ top: 8, right: 8, bottom: 0, left: 0 }} aria-label={ariaLabel}>
         {/* recharts 3: 축 id가 기본값(0)이 아니면 격자에도 같은 id를 줘야 그려집니다. */}
         <CartesianGrid stroke={GRID} vertical={false} yAxisId="left" />
         <XAxis dataKey="date" stroke={AXIS_LINE} tick={AXIS} minTickGap={40} tickLine={false} />

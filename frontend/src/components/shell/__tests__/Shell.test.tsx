@@ -259,6 +259,9 @@ describe("본문", () => {
 describe("운영자 수동 새로고침", () => {
   it("누르면 수집을 요청하고, 수집 중에는 막고 안내 문구를 그대로 보인다", () => {
     renderShell(LOCAL_OWNER);
+    // 안내 영역(role=status)은 문구가 없을 때도 있다 — 지웠다 내용과 함께 다시 넣으면 낭독기가 새 문구를 읽지 않기도 한다.
+    const empty = screen.getAllByRole("status").find((node) => node.closest("aside"));
+    expect(empty?.textContent).toBe("");
     fireEvent.click(screen.getByRole("button", { name: "데이터 수동 새로고침 🚀" }));
     expect(signal.requestRefresh).toHaveBeenCalledTimes(1);
     cleanup();
@@ -268,7 +271,7 @@ describe("운영자 수동 새로고침", () => {
     renderShell(LOCAL_OWNER);
     const button = screen.getByRole("button", { name: "수집 중… 끝나면 자동 갱신" }) as HTMLButtonElement;
     expect(button.disabled).toBe(true);
-    expect(screen.getByText("수집을 요청했습니다 — 끝나면 화면이 갱신됩니다.")).toBeTruthy();
+    expect(screen.getByText("수집을 요청했습니다 — 끝나면 화면이 갱신됩니다.").getAttribute("role")).toBe("status");
   });
 });
 

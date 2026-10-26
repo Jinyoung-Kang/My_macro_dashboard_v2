@@ -24,11 +24,11 @@ export function RefreshButton({ user }: { user?: SessionUser }) {
           {collecting ? "수집 중… 끝나면 자동 갱신" : "데이터 수동 새로고침 🚀"}
         </button>
       )}
-      {message && (
-        <p role="status" className="text-xs leading-5 text-text-3">
-          {message}
-        </p>
-      )}
+      {/* 안내 영역은 늘 그려 두고 글만 바꿉니다 — 새로고침마다 지웠다 내용과 함께 다시 넣으면 낭독기가 새 영역의 글을 읽지 않기도
+          합니다. 비어 있으면 보이지 않게(sr-only — 자리·간격을 차지하지 않음). */}
+      <p role="status" className={message ? "text-xs leading-5 text-text-3" : "sr-only"}>
+        {message ?? ""}
+      </p>
     </div>
   );
 }

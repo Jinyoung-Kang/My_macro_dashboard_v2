@@ -145,10 +145,19 @@ describe("macroCardRow — 매크로 카드 → 자산 행", () => {
     for (const row of [sp500, kospi]) {
       expect(badge(row)).not.toContain("실시간");
       expect(badge(row)).not.toContain("지연");
+      // 닫힌 장의 지연은 배지 글이 아니라 툴팁에(ADR 0017 결정 6 — /macro 장 상태 배지와 같음)
+      expect(row.provenanceTitle).toBe("시세 실시간(출처 기준) — 장이 닫혀 있어 배지에는 적지 않습니다");
     }
+    const closed15 = macroCardRow(macroItem({ key: "x", name: "X", delayMinutes: 15 }), evening);
+    expect(closed15.provenanceTitle).toBe("시세 15분 지연(출처 기준) — 장이 닫혀 있어 배지에는 적지 않습니다");
+    // 이어받은 값·지연을 모르는 카드는 툴팁도 없음
+    expect(macroCardRow(macroItem({ key: "s", name: "S", isStale: true }), evening).provenanceTitle).toBeNull();
+    expect(macroCardRow(macroItem({ key: "n", name: "N", delayMinutes: null }), evening).provenanceTitle).toBeNull();
 
     const usdkrw = macroCardRow(macroOverview().categories[0].items[0], CLOCK);
     expect(badge(usdkrw)).toBe("Yahoo Finance (KRW=X) · 개장 · 실시간 · 2026-10-26 16:51");
+    // 열린 장은 지연이 배지에 있으므로 툴팁이 없음
+    expect(usdkrw.provenanceTitle).toBeNull();
     const es = macroCardRow(macroOverview().categories[1].items[1], CLOCK);
     expect(badge(es)).toBe("Yahoo Finance (ES=F) · 개장 · 10분 지연 · 2026-10-26 16:41");
   });

@@ -200,3 +200,16 @@ export function navSeriesWindow(
   );
   return { dates: navSeries.dates.slice(from), books };
 }
+
+/**
+ * 차트 세로선(프레임 경계) 중 고른 기간 안의 날짜만 — 범주 축이라 기간 밖 날짜의 선은 그려지지 않으므로 미리 뺍니다.
+ * 경계 한 줄 글은 전체 기록 기준 그대로 둡니다(기간 밖의 경계를 '그날 기록 없음'으로 적지 않게 — 여기서 다루지 않음).
+ * 기간 기록이 없으면 빈 목록.
+ */
+export function markersInWindow<M extends { x: string }>(
+  markers: readonly M[],
+  navWindow: PaperOverviewResponse["navSeries"],
+): M[] {
+  const dates = new Set(Array.isArray(navWindow?.dates) ? navWindow.dates : []);
+  return markers.filter((marker) => dates.has(marker.x));
+}

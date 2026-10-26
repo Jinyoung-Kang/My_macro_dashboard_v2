@@ -124,7 +124,7 @@ export default function PaperPage({ initialTab = "overview" }: { initialTab?: Pa
                     setFocusProposal(null);
                     showTab(entry.key);
                   }}
-                  className={`rounded-md px-3 py-1.5 text-xs transition-colors duration-150 motion-reduce:transition-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus ${
+                  className={`min-h-11 rounded-md px-3 py-1.5 text-xs transition-colors duration-150 motion-reduce:transition-none lg:min-h-0 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus ${
                     active ? "bg-surface-2 font-semibold text-text" : "text-text-2 hover:bg-surface-2 hover:text-text"
                   }`}
                 >

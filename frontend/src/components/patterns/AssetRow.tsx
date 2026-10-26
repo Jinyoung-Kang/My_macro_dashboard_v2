@@ -29,6 +29,8 @@ export type AssetRowData = {
   delayMin?: number | null;
   live?: boolean;
   source?: string | null;
+  /** 출처 배지의 툴팁(예: 닫힌 장의 시세 지연 — 배지 글에는 적지 않음). 설계서 §1.5 계약에 더한 선택 필드. */
+  provenanceTitle?: string | null;
   isEstimated?: boolean;
   isProxy?: boolean;
   isStale?: boolean;
@@ -147,7 +149,7 @@ export function AssetRow({
             </span>
           ) : null}
           {showProvenance ? (
-            <ProvenanceBadge source={row.source} asOf={row.asOf} delayMin={row.delayMin} live={row.live} />
+            <ProvenanceBadge source={row.source} asOf={row.asOf} delayMin={row.delayMin} live={row.live} title={row.provenanceTitle} />
           ) : null}
         </span>
       ) : null}

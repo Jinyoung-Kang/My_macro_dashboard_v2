@@ -97,6 +97,11 @@
   --color-muted: var(--text-3);
   --color-body: var(--text-2);
   --color-bright: var(--text);
+  /* 옅은 경고·정상 바탕(글자 배지·배너) — 투명 틴트(bg-warn/10)는 놓인 자리와 섞여, 라이트의 페이지 바탕(bg) 위에서는 글자 대비가
+     4.4:1로 모자랐습니다(카드 surface 위 4.7). surface와 미리 섞은 불투명 색이라 어디에 놓여도 카드 위와 같습니다
+     (라이트 warn 4.7·ok 4.7, 다크 6.8·6.0). 토큰 값은 그대로이고 섞는 바탕만 정합니다. */
+  --color-warn-tint: color-mix(in oklab, var(--warn) 10%, var(--surface));
+  --color-ok-tint: color-mix(in oklab, var(--ok) 10%, var(--surface));
 }
 
 @theme {
@@ -131,6 +136,14 @@
   input::placeholder,
   textarea::placeholder {
     color: var(--text-3);
+  }
+
+  /* 좁은 화면(lg 미만)에서는 하단 탭 바(64px + 안전 영역)가 화면 아래에 붙어 있고 문서(html)가 스크롤됩니다. Tab으로 옮긴 포커스가
+     탭 바 밑에 숨지 않게 그만큼 스크롤 여백을 둡니다(WCAG 2.4.11). lg 이상은 탭 바가 없고 본문 main이 스크롤 상자입니다. */
+  @media (width < 64rem) {
+    html {
+      scroll-padding-bottom: calc(64px + env(safe-area-inset-bottom));
+    }
   }
 }
 

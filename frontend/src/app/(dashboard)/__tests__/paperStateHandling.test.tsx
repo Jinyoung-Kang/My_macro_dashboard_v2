@@ -578,7 +578,9 @@ describe("책 버튼", () => {
 
     finish({ ok: true, book: INITIALIZED.books[2], backfilled: true, skippedReason: null });
 
-    expect(await screen.findByText(/SPY 계좌를 초기화했습니다 — 지금 운용 중 · 출발일 종가로 다시 사후 체결했습니다/)).toBeTruthy();
+    const done = await screen.findByText(/SPY 계좌를 초기화했습니다 — 지금 운용 중 · 출발일 종가로 다시 사후 체결했습니다/);
+    // 창이 닫히며 초점은 '계좌 초기화' 단추로 돌아가므로, 결과는 처음부터 있던 알림 영역 안에 그려져 낭독기가 읽는다.
+    expect(done.closest("[role='status']")).toBeTruthy();
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
     // 다시 열면 입력은 비어 있습니다(예전의 '성공하면 입력을 비움').
     fireEvent.click(screen.getByRole("button", { name: "계좌 초기화" }));
@@ -597,6 +599,7 @@ describe("책 버튼", () => {
 
     const warning = await screen.findByText(message);
     expect(warning.className).toContain("text-warn");
+    expect(warning.closest("[role='status']")).toBeTruthy();
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
     expect((screen.getByRole("button", { name: "계좌 초기화" }) as HTMLButtonElement).disabled).toBe(false);
   });

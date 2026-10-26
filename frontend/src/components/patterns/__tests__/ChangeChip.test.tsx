@@ -90,17 +90,24 @@ describe("ChangeChip", () => {
     expect((container.firstElementChild as HTMLElement).className).not.toMatch(/\bbg-/);
   });
 
-  it("추정·오래됨 — 칩은 그대로, 옆 배지가 함께 보인다", () => {
-    render(
+  // 칩은 추정·오래됨 플래그를 받지 않는다 — 그 표시는 칩을 쓰는 쪽(AssetRow·StatTile)이 옆 배지로 그리고, 그쪽 네 상태 테스트가 본다.
+  // 여기서는 배지가 옆에 있어도 칩이 숨거나 모양·색이 바뀌지 않는지만 본다.
+  it("추정·오래됨 — 플래그를 받지 않는 칩이라 옆 배지가 있어도 칩은 혼자일 때와 똑같다", () => {
+    const { container: alone } = render(<ChangeChip changePct={0.5} />);
+    const aloneHtml = (alone.firstElementChild as HTMLElement).outerHTML;
+    cleanup();
+
+    const { container } = render(
       <span>
         <ChangeChip changePct={0.5} />
         <EstimateBadge estimated />
         <StaleBadge stale reason="수집 실패" />
       </span>,
     );
+    const row = container.firstElementChild as HTMLElement;
+    expect((row.firstElementChild as HTMLElement).outerHTML).toBe(aloneHtml);
     expect(screen.getByText("+0.50%")).toBeTruthy();
     expect(screen.getByText("추정")).toBeTruthy();
     expect(screen.getByText("이전 값")).toBeTruthy();
-    expect(screen.getByText("· 수집 실패")).toBeTruthy();
   });
 });

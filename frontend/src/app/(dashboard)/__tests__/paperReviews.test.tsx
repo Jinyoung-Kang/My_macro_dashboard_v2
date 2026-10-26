@@ -210,8 +210,32 @@ describe("결정 로그 — 주간 복기", () => {
       expect(within(article).getByText("주간 복기 2026-10-30")).toBeTruthy();
       expect(document.getElementById("paper-proposal-13")?.getAttribute("aria-current")).toBeNull();
       await waitFor(() => expect(scroll).toHaveBeenCalled());
+      expect(scroll).toHaveBeenLastCalledWith({ block: "start", behavior: "smooth" });
       expect(api.apiPost).not.toHaveBeenCalled();
     } finally {
+      delete (Element.prototype as { scrollIntoView?: unknown }).scrollIntoView;
+    }
+  });
+
+  it("움직임 줄이기(prefers-reduced-motion)를 켰으면 그 제안으로 부드럽게가 아니라 바로 옮긴다", async () => {
+    serve("/api/paper/framework/proposals", () => ({ available: true, proposals: [PROPOSAL(12, "2026-10-30")] }));
+    serve("/api/paper/framework", () => ({ available: true, current: V1, versions: [] }));
+    const scroll = vi.fn();
+    (Element.prototype as { scrollIntoView?: unknown }).scrollIntoView = scroll;
+    vi.stubGlobal("matchMedia", (query: string) => ({
+      matches: query === "(prefers-reduced-motion: reduce)",
+      media: query, onchange: null,
+      addEventListener: () => {}, removeEventListener: () => {}, addListener: () => {}, removeListener: () => {},
+      dispatchEvent: () => false,
+    }));
+    try {
+      await openReviews();
+      const body = await screen.findByRole("region", { name: "2026-10-30 주 복기" });
+      fireEvent.click(within(body).getByRole("button", { name: "프레임 탭에서 이 제안 보기" }));
+      await waitFor(() => expect(scroll).toHaveBeenCalled());
+      expect(scroll).toHaveBeenLastCalledWith({ block: "start", behavior: "auto" });
+    } finally {
+      vi.unstubAllGlobals();
       delete (Element.prototype as { scrollIntoView?: unknown }).scrollIntoView;
     }
   });

@@ -66,7 +66,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
             </ToastPrimitive.Description>
             <ToastPrimitive.Close
               aria-label="닫기"
-              className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-text-3 hover:bg-surface-2 hover:text-text focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus"
+              className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-md text-text-3 hover:bg-surface-2 hover:text-text lg:h-8 lg:w-8 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus"
             >
               <svg aria-hidden="true" viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round">
                 <path d="M4 4l8 8M12 4l-8 8" />

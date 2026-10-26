@@ -126,6 +126,11 @@ describe("AssetRow", () => {
     expect(screen.getByText("TradingView · 15분 지연 · 2026-10-26 05:00")).toBeTruthy();
     expect(screen.getByText("출처 —")).toBeTruthy();
     expect(screen.getByText("TradingView · 실시간")).toBeTruthy();
+    cleanup();
+
+    // 출처 배지의 툴팁(닫힌 장의 지연 등)은 행 자료의 provenanceTitle 그대로
+    render(<AssetRow row={{ id: "c", name: "S&P 500", value: 1, source: "Yahoo · 마감", provenanceTitle: "시세 실시간(출처 기준)" }} showProvenance />);
+    expect(screen.getByText("Yahoo · 마감").getAttribute("title")).toBe("시세 실시간(출처 기준)");
   });
 
   it("스파크라인 — 알려진 점 2개 이상이면 aria-hidden svg, 아니면 없음", () => {

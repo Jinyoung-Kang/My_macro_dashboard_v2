@@ -21,9 +21,9 @@ export function HomeCard({ title, actions, children }: { title: string; actions?
   );
 }
 
-/** 홈의 작은 글 링크("국면 판정 보기" 등) — 밑줄은 hover에서, 포커스 링은 토큰 색. */
+/** 홈의 작은 글 링크("국면 판정 보기" 등) — 밑줄은 hover에서, 포커스 링은 토큰 색. 좁은 화면(lg 미만)에서는 누르는 높이 44px(셸과 같음). */
 export const HOME_LINK =
-  "rounded-sm text-xs font-medium text-text underline-offset-2 hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus";
+  "inline-flex min-h-11 items-center rounded-sm text-xs font-medium text-text underline-offset-2 hover:underline lg:min-h-0 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus";
 
 /**
  * 구역 하나가 읽기에 실패했을 때의 오류 상자 — role="alert"로 감싸 보조 기술에 알립니다. 불러오는 중에는 Skeleton(role="status")이

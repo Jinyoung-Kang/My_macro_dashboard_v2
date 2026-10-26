@@ -43,7 +43,12 @@ describe("Sparkline", () => {
     expect(dots[0].getAttribute("style")).toContain("var(--text-2)");
   });
 
-  it("추정·오래됨 — 선은 같은 모양·같은 색, 옆 배지가 함께 보인다", () => {
+  // 스파크라인은 추정·오래됨 플래그를 받지 않는다(판정을 전하지 않는 선) — 표시는 쓰는 쪽(AssetRow)의 옆 배지와 그 테스트 몫.
+  it("추정·오래됨 — 플래그를 받지 않는 선이라 옆 배지가 있어도 혼자일 때와 똑같다(같은 모양·같은 색)", () => {
+    const { container: alone } = render(<Sparkline values={[1, 3, 2]} />);
+    const aloneHtml = (alone.firstElementChild as Element).outerHTML;
+    cleanup();
+
     const { container } = render(
       <span>
         <Sparkline values={[1, 3, 2]} />
@@ -51,11 +56,11 @@ describe("Sparkline", () => {
         <StaleBadge stale reason="이번 수집 실패" />
       </span>,
     );
+    expect((container.querySelector("svg") as Element).outerHTML).toBe(aloneHtml);
     const lines = container.querySelectorAll("polyline");
     expect(lines).toHaveLength(1);
     expect(lines[0].getAttribute("style")).toContain("var(--text-2)");
     expect(screen.getByText("추정")).toBeTruthy();
-    expect(screen.getByText("이전 값")).toBeTruthy();
   });
 
   it("label이 있으면 role=img + 그 이름으로 읽힌다", () => {

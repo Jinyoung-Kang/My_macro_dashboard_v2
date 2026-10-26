@@ -4,7 +4,7 @@ import { useId, useState, type ReactNode } from "react";
 import { Dialog } from "@/components/ui/Dialog";
 
 const BUTTON =
-  "inline-flex min-h-9 items-center justify-center rounded-md border px-4 py-2 text-sm font-semibold focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus disabled:cursor-not-allowed disabled:opacity-50";
+  "inline-flex min-h-11 items-center justify-center rounded-md border px-4 py-2 text-sm font-semibold lg:min-h-9 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus disabled:cursor-not-allowed disabled:opacity-50";
 
 // 위험한 확인은 danger 바탕. 글자는 surface 색(라이트 흰색·다크 검정에 가까움)이라 두 테마 모두 대비 6.9:1 이상입니다.
 const CONFIRM_TONE = {

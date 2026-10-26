@@ -44,6 +44,19 @@ describe("ProvenanceBadge", () => {
     // 이미 '출처'라는 말이 있어 머리말을 또 붙이지 않습니다("출처: 출처 —"로 읽히지 않게).
     expect(screen.getByText("출처 —").textContent).toBe("출처 —");
   });
+
+  it("툴팁(title) — 주면 캡션에 달고, 비었거나 없으면 달지 않는다(글은 그대로)", () => {
+    render(<ProvenanceBadge source="Yahoo Finance · 마감" title="시세 15분 지연(출처 기준)" />);
+    const caption = screen.getByText("Yahoo Finance · 마감");
+    expect(caption.getAttribute("title")).toBe("시세 15분 지연(출처 기준)");
+    expect(caption.textContent).toBe("출처: Yahoo Finance · 마감");
+    cleanup();
+    for (const title of [null, "", "  "]) {
+      render(<ProvenanceBadge source="FRED" title={title} />);
+      expect(screen.getByText("FRED").hasAttribute("title")).toBe(false);
+      cleanup();
+    }
+  });
 });
 
 describe("EstimateBadge", () => {

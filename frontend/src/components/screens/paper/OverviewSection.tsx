@@ -39,6 +39,7 @@ import {
   accountComparisonRows,
   bookAssetRow,
   type ComparisonRow,
+  markersInWindow,
   NAV_RANGES,
   type NavRangeKey,
   navRangeKeys,
@@ -200,8 +201,7 @@ export function OverviewSection({
   // 판 경계는 Claude 책에만 뜻이 있습니다(프레임은 규칙 책에 영향 없음, 명세 F5) — 그래도 네 책 곡선 위에 그려 같은 날 무엇이 바뀌었는지 봅니다.
   // 한 줄 글은 전체 기록 기준(기간 밖의 경계를 '그날 기록 없음'으로 적지 않게), 세로선은 고른 기간 안의 날짜만.
   const boundaries = frameworkBoundaryView(overview.frameworkBoundaries, overview.navSeries?.dates ?? []);
-  const windowDates = new Set(navWindow?.dates ?? []);
-  const markers = boundaries.markers.filter((marker) => windowDates.has(marker.x));
+  const markers = markersInWindow(boundaries.markers, navWindow);
   const comparison = accountComparisonRows(books);
   const comparisonColumns: Column<ComparisonRow>[] = [
     // 줄이 항목이라 항목 이름 칸을 행 머리(th scope=row)로 — 낭독기가 칸마다 "순자산 · 규칙 계좌"처럼 항목과 계좌를 함께 읽습니다.
@@ -222,6 +222,8 @@ export function OverviewSection({
           누를 때만 돕니다.
         </Banner>
       )}
+      {/* 상태를 읽지 못하면 꺼짐·켜짐을 모릅니다 — 배너가 조용히 사라지면 켜져 있는 것으로 읽히므로 그렇다고 적습니다(홈과 같은 문구). */}
+      {status.error && <Banner tone="warn">정기 작업 상태를 확인하지 못했습니다 — {status.error}</Banner>}
 
       {prompt && (
         <Card title={prompt.title} source={PAPER_SOURCES.ledger}>
@@ -340,6 +342,7 @@ export function OverviewSection({
           domain={navY.domain}
           height={300}
           markers={markers}
+          ariaLabel="순자산 곡선"
         />
         {boundaries.text && <p className="mt-2 text-xs text-muted">{boundaries.text}</p>}
       </Card>
@@ -379,7 +382,15 @@ export function OverviewSection({
             </p>
           ) : (
             <>
-              <MultiLineSeries data={exposure.rows} series={exposureSeries} unit="%" precision={0} height={240} domain={[0, 100]} />
+              <MultiLineSeries
+                data={exposure.rows}
+                series={exposureSeries}
+                unit="%"
+                precision={0}
+                height={240}
+                domain={[0, 100]}
+                ariaLabel="Claude 노출 추이(목표 대비 실제)"
+              />
               {exposure.latest && <p className="mt-2 text-xs text-muted">마지막 {exposure.latest}</p>}
             </>
           )}
@@ -434,6 +445,7 @@ export function OverviewSection({
                 <section aria-label="신호 풀" className="flex flex-col gap-1">
                   <h3 className="text-xs font-semibold text-bright">신호 풀 · 기관 가중</h3>
                   <Table<PoolRow>
+                    label="신호 풀"
                     rows={selection.pool}
                     rowKey={(row) => row.key}
                     columns={[
@@ -480,6 +492,7 @@ export function OverviewSection({
 
       <Card title="작업 기록" subtitle="정기·수동 작업이 일했을 때·오류일 때만 남깁니다(최근 10건). 상세에는 처리한 관측치의 수집 시각·봉 날짜·티커 수가 있습니다." source={PAPER_SOURCES.jobs}>
         <Table<PaperJobRun>
+          label="작업 기록"
           rows={overview.jobs ?? []}
           rowKey={(row, index) => `${row.job}-${row.startedAtKst ?? index}-${index}`}
           emptyMessage="아직 작업 기록이 없습니다. 리스크 작업이 새 관측치를 처리하면 생깁니다."

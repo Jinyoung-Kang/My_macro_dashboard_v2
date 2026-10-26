@@ -50,6 +50,7 @@ export function ClaudeDecisionBody({ view }: { view: ClaudeDecisionView }) {
       {view.hasResponse && (
         <Part title="제안 주문 (모델 응답)" note="모델이 낸 그대로입니다. 통과·거절은 아래 검증 결과에 있습니다.">
           <Table<ClaudeOrderRow>
+            label="제안 주문"
             rows={view.orders}
             rowKey={(row) => row.key}
             emptyMessage="모델이 주문을 내지 않았습니다."
@@ -76,6 +77,7 @@ export function ClaudeDecisionBody({ view }: { view: ClaudeDecisionView }) {
           note="검증기(하드 규칙)가 주문마다 통과·거절을 정했습니다 — 유니버스·비중 상한·최대 종목 수·배분 합·최소 금액·월 상한·최소 보유일·재진입 금지·자료 신선도. 현금 비중·매크로 조건은 검사하지 않습니다(명세 D7)."
         >
           <Table<ValidationRow>
+            label="검증"
             rows={view.validation}
             rowKey={(row) => row.key}
             emptyMessage="검증한 주문이 없습니다."
@@ -98,6 +100,7 @@ export function ClaudeDecisionBody({ view }: { view: ClaudeDecisionView }) {
       {view.watchlist.length > 0 && (
         <Part title="관찰 목록" note="주문은 아니고, 모델이 다음 결정에서 볼 조건으로 남긴 것입니다.">
           <Table<WatchRow>
+            label="관찰 목록"
             rows={view.watchlist}
             rowKey={(row) => row.key}
             columns={[
@@ -134,11 +137,12 @@ function Text({ label, value }: { label: string; value: string | null }) {
   );
 }
 
-/** 상세 안의 한 부분 — 제목이 영역 이름이 되어(aria-label) 표마다 따로 찾을 수 있습니다(결정 로그 탭과 같은 모양). */
+/** 상세 안의 한 부분 — 제목이 영역 이름이 되어(aria-label) 표마다 따로 찾을 수 있습니다(결정 로그 탭과 같은 모양).
+ * 제목은 h3 — 이 상세는 카드(제목 h2) 바로 안에 그려지므로 h4로 건너뛰지 않습니다. */
 function Part({ title, note, children }: { title: string; note?: string; children: ReactNode }) {
   return (
     <section aria-label={title} className="flex flex-col gap-1">
-      <h4 className="text-sm font-semibold text-bright">{title}</h4>
+      <h3 className="text-sm font-semibold text-bright">{title}</h3>
       {note && <p className="text-[11px] leading-relaxed text-muted">{note}</p>}
       {children}
     </section>

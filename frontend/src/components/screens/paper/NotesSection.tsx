@@ -95,6 +95,7 @@ export function NotesSection({ startDate }: { startDate: string | null }) {
         {notes.data && !notes.data.available && <Banner tone="warn">{notes.data.message ?? "메모를 읽을 수 없습니다."}</Banner>}
         {notes.data?.available && (
           <Table<NoteRow>
+            label="메모"
             rows={rows}
             rowKey={(row) => row.key}
             emptyMessage={includeExpired ? "메모가 없습니다." : "유효한 메모가 없습니다 — 만료한 메모는 위 '만료한 메모도 보기'로 봅니다."}

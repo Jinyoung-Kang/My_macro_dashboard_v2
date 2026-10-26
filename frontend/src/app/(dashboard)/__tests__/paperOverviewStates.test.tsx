@@ -157,7 +157,7 @@ describe("없음", () => {
 });
 
 describe("일부 실패", () => {
-  it("상태 응답이 실패해도 계좌 행·곡선·비교 표는 그대로 — 꺼짐 배너와 설정 버전만 빠진다", async () => {
+  it("상태 응답이 실패해도 계좌 행·곡선·비교 표는 그대로 — 꺼짐 배너 대신 '확인하지 못함', 설정 버전은 빠진다", async () => {
     reads["/api/paper/overview"] = () => Promise.resolve(OVERVIEW);
     reads["/api/paper/status"] = () => Promise.reject(new Error("상태를 읽지 못했습니다."));
     render(<PaperPage />);
@@ -166,6 +166,8 @@ describe("일부 실패", () => {
     expect(screen.getByRole("table", { name: "계좌 비교" })).toBeTruthy();
     expect(screen.getByRole("list", { name: "순자산 계열" })).toBeTruthy();
     expect(screen.queryByText(/정기 작업이 꺼져 있습니다/)).toBeNull();
+    // 꺼짐·켜짐을 모르는 채 배너만 사라지면 켜져 있는 것으로 읽힌다 — 모른다고 적는다(홈과 같은 문구).
+    expect(await screen.findByText("정기 작업 상태를 확인하지 못했습니다 — 상태를 읽지 못했습니다.")).toBeTruthy();
     expect(screen.queryByText(/설정 v\d/)).toBeNull();
   });
 

@@ -9,6 +9,7 @@ import {
   indicatorEntries,
   institutionEntries,
   menuEntries,
+  noResultText,
   resultSummary,
   searchGroups,
   searchKey,
@@ -147,6 +148,18 @@ describe("묶음과 상한", () => {
     expect(resultSummary(searchGroups(many, "종목"))).toBe(`결과 10건 중 ${1 + SEARCH_PER_GROUP}건 표시`);
     expect(resultSummary(searchGroups(many, "종목", 20))).toBe("결과 10건");
     expect(resultSummary(searchGroups(many, "없는말"))).toBe("결과 0건");
+  });
+
+  // 색인이 덜 찬 동안(지표·기관·종목을 읽는 중·실패)의 "결과 0건"·"맞는 결과가 없습니다"는 사실이 아니다.
+  it("아직 다 읽지 못한 범주가 있으면 수 안내 뒤에 그 이유를 붙이고, 결과 없음을 단정하지 않는다", () => {
+    const index = buildSearchIndex([entry("순유동성", "menu")]);
+    const pending = ["종목: 불러오는 중…", "기관: 불러오지 못했습니다 — 시간 초과"];
+    expect(resultSummary(searchGroups(index, "aapl"), pending)).toBe("결과 0건 — 종목: 불러오는 중… · 기관: 불러오지 못했습니다 — 시간 초과");
+    expect(resultSummary(searchGroups(index, "순유"), pending)).toBe("결과 1건 — 종목: 불러오는 중… · 기관: 불러오지 못했습니다 — 시간 초과");
+    expect(resultSummary(searchGroups(index, "순유"), [])).toBe("결과 1건");
+
+    expect(noResultText("aapl", pending)).toBe("‘aapl’와 맞는 결과가 아직 없습니다 — 일부 범주를 다 읽지 못했습니다(아래 안내).");
+    expect(noResultText("aapl")).toBe("‘aapl’와 맞는 결과가 없습니다.");
   });
 });
 

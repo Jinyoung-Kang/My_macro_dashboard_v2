@@ -3,13 +3,15 @@
  *
  *  - 계좌 행: 이름 · 종류 · 상태 · 소개, 순자산(달러), 출발 이후 수익률(모르면 null — 칩 생략), 이전 값·사후 체결 대기 배지
  *  - 비교 표: 예전 카드의 칸이 전부 항목 줄로(값은 bookCard 표시 글 그대로, 모르면 "—"), 비교 기준은 따로 한 줄
- *  - 기간: 저장된 기록보다 긴 기간 탭은 없고 "전체"는 늘 있다, 자를 때 날짜와 값 배열을 같은 자리에서 자른다
+ *  - 기간: 저장된 기록보다 긴 기간 탭은 없고 "전체"는 늘 있다, 자를 때 날짜와 값 배열을 같은 자리에서 자른다,
+ *    프레임 경계 세로선은 고른 기간 안의 날짜만
  */
 import { describe, expect, it } from "vitest";
 
 import {
   accountComparisonRows,
   bookAssetRow,
+  markersInWindow,
   monthsBefore,
   NAV_RANGES,
   navRangeKeys,
@@ -178,5 +180,17 @@ describe("기간별 순자산 곡선", () => {
     const short = { dates: ["2026-10-23", "2026-10-26"], books: { rules: [1, 2] } };
     expect(navSeriesWindow(short, "1y")).toBe(short);
     expect(navSeriesWindow(null, "1m")).toBeNull();
+  });
+
+  it("프레임 경계 세로선 — 고른 기간 안의 날짜만 남기고(순서 그대로), 기간 기록이 없으면 없다", () => {
+    const markers = [
+      { x: "2026-01-15", label: "프레임 v1" },
+      { x: "2026-10-01", label: "프레임 v2" },
+      { x: "2026-10-26", label: "프레임 v3" },
+    ];
+    expect(markersInWindow(markers, navSeriesWindow(series, "1m"))).toEqual([markers[1], markers[2]]);
+    expect(markersInWindow(markers, navSeriesWindow(series, "all"))).toEqual(markers);
+    expect(markersInWindow(markers, null)).toEqual([]);
+    expect(markersInWindow([], series)).toEqual([]);
   });
 });

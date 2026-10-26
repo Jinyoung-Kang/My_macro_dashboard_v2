@@ -2,13 +2,14 @@
 
 import Link from "next/link";
 import { Fragment } from "react";
-import { Empty, Skeleton } from "@/components/patterns";
+import { Empty, ProvenanceBadge, Skeleton } from "@/components/patterns";
 import { Freshness } from "@/components/ui";
 import { useApi } from "@/hooks/useApi";
 import { useSessionUser } from "@/hooks/useSessionUser";
 import { isOwner } from "@/lib/access";
 import { endpoints } from "@/lib/endpoints";
 import { HOME_REFRESH_MS, storeStatusModel, type StoreStatusModel } from "@/lib/home";
+import { SOURCES } from "@/lib/sources";
 import type { StatusIssuesResponse } from "@/lib/types";
 import { SectionError } from "./HomeCard";
 
@@ -71,6 +72,8 @@ export function StoreStatusLine() {
             {model.notice}
           </span>
         ) : null}
+        {/* 데이터 카드마다 출처 줄(PRINCIPLES) — 수는 상태 화면의 '수집 오류·경고 로그'와 같은 출처에서 셉니다. */}
+        <ProvenanceBadge source={SOURCES.collectorRuns} />
         {model.checkedAt ? <span className="text-xs tabular-nums text-text-3">확인 {model.checkedAt}</span> : null}
         <Freshness refreshError={issues.refreshError} />
       </Link>

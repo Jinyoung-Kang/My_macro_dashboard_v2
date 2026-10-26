@@ -118,7 +118,9 @@ describe("RangeTabs", () => {
     expect(onChange).not.toHaveBeenCalled();
   });
 
-  it("추정·오래됨 — 히어로의 배지와 함께 놓여도 탭은 그대로 고를 수 있다", () => {
+  // RangeTabs는 추정·오래됨 플래그를 받지 않는다(기간을 고르는 조각) — 배지는 놓인 히어로의 meta가 그리고 Hero 테스트가 본다.
+  // 여기서는 배지와 함께 놓여도 탭이 그대로 그려지고 고를 수 있는지만 본다.
+  it("추정·오래됨 — 플래그를 받지 않는 탭이라 히어로의 배지와 함께 놓여도 그대로 고를 수 있다", () => {
     const onChange = vi.fn();
     render(
       <Hero

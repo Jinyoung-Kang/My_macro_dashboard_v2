@@ -397,6 +397,7 @@ function DecisionDetail({ id }: { id: number }) {
           {/* 그룹 섞기(D27) 뒤 기록은 신호 풀 표와 그룹별 순위표, 그 전 기록은 순위표 하나 — 결정 기록은 바뀌지 않는 이력이라 둘 다 그립니다. */}
           {selection.pool.length > 0 && (
             <Table<PoolRow>
+              label="신호 풀"
               rows={selection.pool}
               rowKey={(row) => row.key}
               columns={[
@@ -414,17 +415,17 @@ function DecisionDetail({ id }: { id: number }) {
           )}
           {selection.rankingA.length > 0 && (
             <Part title="그룹 A 순위표">
-              <RankingTable rows={selection.rankingA} />
+              <RankingTable rows={selection.rankingA} label="그룹 A 순위표" />
             </Part>
           )}
           {selection.rankingB.length > 0 && (
             <Part title="그룹 B 순위표">
-              <RankingTable rows={selection.rankingB} />
+              <RankingTable rows={selection.rankingB} label="그룹 B 순위표" />
             </Part>
           )}
           {(selection.ranking.length > 0
             || (selection.pool.length === 0 && selection.rankingA.length === 0)) && (
-            <RankingTable rows={selection.ranking} />
+            <RankingTable rows={selection.ranking} label="순위표" />
           )}
         </Part>
       )}
@@ -436,6 +437,7 @@ function DecisionDetail({ id }: { id: number }) {
             note="신호 기관마다 선정 기준일까지 공시된 최신 분기와 바로 앞 분기를 비교한 결과입니다. 비중은 그 기관 13F 총액 대비."
           >
             <Table<SignalEventRow>
+              label="13F 신호 이벤트"
               rows={view.events}
               rowKey={(row) => row.key}
               emptyMessage="신호 이벤트가 없습니다 — 신호 기관의 최신 분기에 신규 편입·확대·전량 매도가 없었습니다."
@@ -457,6 +459,7 @@ function DecisionDetail({ id }: { id: number }) {
           <Part title="매수 후보" note={candidatesNote(decision.kind)}>
             {view.allocation && <p className="text-[11px] leading-relaxed text-body">{view.allocation}</p>}
             <Table<SignalCandidateRow>
+              label="매수 후보"
               rows={view.candidates}
               rowKey={(row) => row.ticker}
               emptyMessage="매수 후보가 없습니다 — 여러 기관이 함께 신규 편입·확대한 종목이 없었습니다."
@@ -476,6 +479,7 @@ function DecisionDetail({ id }: { id: number }) {
           {view.scored && (
             <Part title="점수 기여" note={view.convictionNote ?? undefined}>
               <Table<ContributionRow>
+                label="점수 기여"
                 rows={view.contributions}
                 rowKey={(row) => row.key}
                 emptyMessage="점수 기여 기록이 없습니다."
@@ -497,6 +501,7 @@ function DecisionDetail({ id }: { id: number }) {
 
           <Part title="전량 매도한 기관" note="보유 종목을 신호 기관 여러 곳이 전량 매도하면 매도 신호입니다.">
             <Table<ClosedSignalRow>
+              label="전량 매도한 기관"
               rows={view.closed}
               rowKey={(row) => row.ticker}
               emptyMessage="전량 매도가 없습니다."
@@ -518,6 +523,7 @@ function DecisionDetail({ id }: { id: number }) {
           : "이 결정이 낸 주문입니다. 근거에 어느 기관(그룹·순위·가중)의 어떤 행동이 이 주문을 냈는지가 남습니다."}
       >
         <Table<PaperOrder>
+          label="주문"
           rows={orders}
           rowKey={(row) => String(row.id)}
           emptyMessage="이 결정은 주문을 내지 않았습니다."
@@ -551,6 +557,7 @@ function DecisionDetail({ id }: { id: number }) {
       {view.skipped.length > 0 && (
         <Part title="고르지 못한 후보" note="매수 후보였지만 주문을 내지 않은 종목과 서버가 남긴 사유입니다.">
           <Table<SkippedRow>
+            label="고르지 못한 후보"
             rows={view.skipped}
             rowKey={(row) => row.key}
             columns={[
@@ -590,9 +597,10 @@ function DecisionDetail({ id }: { id: number }) {
 }
 
 /** 선정 때의 순위표(상위 10) — 순위·기관·선정·CAGR·초과·샤프. 섞기 전 순위표와 그룹별 순위표가 같은 모양입니다. */
-function RankingTable({ rows }: { rows: RankingRow[] }) {
+function RankingTable({ rows, label }: { rows: RankingRow[]; label: string }) {
   return (
     <Table<RankingRow>
+      label={label}
       rows={rows}
       rowKey={(row) => row.cik}
       emptyMessage="순위표가 없습니다."
@@ -615,11 +623,12 @@ function RankingTable({ rows }: { rows: RankingRow[] }) {
   );
 }
 
-/** 상세 안의 한 부분 — 제목·설명·내용. 제목이 영역 이름이 되어(aria-label) 표마다 따로 찾을 수 있습니다. */
+/** 상세 안의 한 부분 — 제목·설명·내용. 제목이 영역 이름이 되어(aria-label) 표마다 따로 찾을 수 있습니다.
+ * 제목은 h3 — 이 상세는 카드(제목 h2) 바로 안에 그려지므로 h4로 건너뛰지 않습니다. */
 function Part({ title, note, children }: { title: string; note?: string; children: ReactNode }) {
   return (
     <section aria-label={title} className="flex flex-col gap-1">
-      <h4 className="text-sm font-semibold text-bright">{title}</h4>
+      <h3 className="text-sm font-semibold text-bright">{title}</h3>
       {note && <p className="text-[11px] leading-relaxed text-muted">{note}</p>}
       {children}
     </section>

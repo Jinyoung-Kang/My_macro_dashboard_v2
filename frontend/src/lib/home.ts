@@ -5,7 +5,7 @@
  * 수집 오류·경고 수). 여기서는 고르고, 이름을 붙이고, 자산 행·타일 모양으로 옮기기만 합니다 — 판정 글을 지어내거나
  * 일간 변화처럼 응답에 없는 숫자를 빼기로 만들지 않습니다. 모르는 값은 null(화면 "—")이고 0으로 채우지 않습니다.
  */
-import { EMPTY, formatDate, formatKst, formatNumber, formatSigned, formatWithUnit, withoutLeadingIcon } from "./format";
+import { delayLabel, EMPTY, formatDate, formatKst, formatNumber, formatSigned, formatWithUnit, withoutLeadingIcon } from "./format";
 import { MARKETS, sessionStatus, tradeDayFrom, tradeTimeFrom } from "./marketSessions";
 import { TABS } from "./nav";
 import { formatDollars } from "./paper";
@@ -71,6 +71,8 @@ export type HomeRow = {
   delayMin?: number | null;
   /** 출처 배지 앞부분 — 시장 행은 출처 뒤에 장 상태("개장"·"마감" 등)를 붙입니다(macroCardRow). */
   source?: string | null;
+  /** 출처 배지 툴팁 — 닫힌 장이라 배지에 적지 않은 시세 지연(macroCardRow). */
+  provenanceTitle?: string | null;
   isEstimated?: boolean;
   isStale?: boolean;
   staleReason?: string | null;
@@ -246,6 +248,7 @@ export function deltaDigits(deltaStr: string | null | undefined): number | null 
  * - 값은 수집기의 priceStr(자릿수를 수집기가 정함), "N/A"면 "—". 수집 실패(status "fail")는 값·변화를 비우고 경고 "수집 실패".
  * - 변화는 delta·pct 숫자 그대로 — null이면 칩을 생략합니다("N/A" deltaStr을 0으로 읽지 않음). 변화량 자릿수는 deltaStr을 따릅니다.
  * - 출처 배지는 "출처 · 장 상태 · 지연 · 시각" 하나(카드마다 배지 하나 — ADR 0017 결정 6). 장 상태·지연 규칙은 `macroCardSession`.
+ *   장이 닫혀 배지에 적지 않은 지연은 툴팁(provenanceTitle)에 둡니다 — /macro 장 상태 배지의 툴팁과 같은 규칙(이어받은 값·실패는 없음).
  * - 이어받은 값은 "이전 값" 배지 + 사유(수집기가 비우면 "수집 실패" — cardNotices와 같음).
  * - 추정(isEstimated)·경고(warning)는 있으면 그대로 넘깁니다(배지는 반드시 보임).
  */
@@ -254,6 +257,8 @@ export function macroCardRow(item: MacroItem, clock: MarketClock, href: string =
   const stale = item.isStale === true;
   const market = item.market ? (MARKETS[item.market]?.name ?? null) : null;
   const session = macroCardSession(item, clock);
+  // 장 상태를 아는데 배지에 지연이 빠졌으면 닫힌 장입니다(열린 장이면 macroCardSession이 지연을 넘김).
+  const closedDelay = session.label !== null && session.delayMin === null && !failed && !stale ? delayLabel(finite(item.delayMinutes)) : null;
   const digits = failed ? null : deltaDigits(item.deltaStr);
   return {
     id: item.key,
@@ -267,6 +272,7 @@ export function macroCardRow(item: MacroItem, clock: MarketClock, href: string =
     asOf: presentText(item.lastTs),
     delayMin: session.delayMin,
     source: joinPresent([macroItemSource(item), session.label]),
+    provenanceTitle: closedDelay ? `시세 ${closedDelay}(출처 기준) — 장이 닫혀 있어 배지에는 적지 않습니다` : null,
     isEstimated: item.isEstimated === true,
     isStale: stale,
     staleReason: stale ? (presentText(item.staleReason) ?? "수집 실패") : null,

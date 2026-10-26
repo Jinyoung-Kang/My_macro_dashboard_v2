@@ -88,9 +88,13 @@ export function FrameworkSection({ focusProposalId = null }: { focusProposalId?:
   const focus = proposalFocusView(proposalList, focusProposalId);
   const frameworkReady = Boolean(framework.data?.available);
   // 목록이 그려진 뒤에 옮깁니다(판 응답이 늦으면 목록이 아직 없음). jsdom에는 scrollIntoView가 없어 있을 때만 부릅니다.
+  // 움직임 줄이기(prefers-reduced-motion)를 켠 사람에게는 부드러운 스크롤 대신 바로 옮깁니다(개요 탭의 계좌 상세와 같음).
   useEffect(() => {
     if (!focus.found || focusProposalId === null || !frameworkReady) return;
-    document.getElementById(`paper-proposal-${focusProposalId}`)?.scrollIntoView?.({ block: "start", behavior: "smooth" });
+    const reduceMotion = typeof window.matchMedia === "function" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    document
+      .getElementById(`paper-proposal-${focusProposalId}`)
+      ?.scrollIntoView?.({ block: "start", behavior: reduceMotion ? "auto" : "smooth" });
   }, [focus.found, focusProposalId, frameworkReady]);
 
   if (framework.loading && !framework.data) return <Loading label="프레임을 읽는 중…" />;
@@ -411,6 +415,7 @@ function ProposalItem({
       {view.assessment.length > 0 && (
         <Part title="평가 (OS 절차 B)" note="원문의 주장마다 지금 판과 대조한 결과입니다 — Claude 응답 그대로.">
           <Table<ProposalAssessmentRow>
+            label="평가"
             rows={view.assessment}
             rowKey={(row) => row.key}
             columns={[
@@ -425,6 +430,7 @@ function ProposalItem({
       {(view.operations.length > 0 || view.pending) && (
         <Part title="변경" note={view.operationsNote}>
           <Table<ProposalOperationRow>
+            label="변경"
             rows={view.operations}
             rowKey={(row) => row.key}
             emptyMessage={view.emptyMessage}
@@ -510,6 +516,7 @@ function VersionsCard({ response }: { response: PaperFrameworkResponse }) {
   return (
     <Card title="판 목록·비교" subtitle="판마다 바꾼 내용과 출처(제안 승인·수동 편집), 두 판의 렌더링을 나란히." source={PAPER_SOURCES.framework}>
       <Table<FrameworkVersionRow>
+        label="판 목록"
         rows={rows}
         rowKey={(row) => row.key}
         emptyMessage="판 목록이 없습니다."

@@ -54,6 +54,7 @@ export type LineYAxis = {
  * - `includeZero`: 0이 뜻을 갖는 계열(스프레드·순포지션)만 범위에 0을 넣습니다. 0 바닥을 지어내지 않습니다(5.85~6.0조에 0~6조 축 금지).
  * - `nonNegative`: 음수가 될 수 없는 양이면 아래 끝을 0 아래로 내리지 않습니다(valueDomain도 값이 모두 0 이상이면 그렇게 함 — 여기서 한 번 더 막음).
  *   그래도 음수 값이 오면 Recharts가 범위를 넓혀 그 점을 보입니다(allowDataOverflow 기본 false — 값을 숨기지 않음).
+ *   값이 모두 음수면(위 끝도 0 아래) 0으로 올리지 않고 데이터 범위를 그대로 씁니다 — 올리면 아래 끝이 위 끝보다 커져 축이 뒤집힙니다.
  * - 0 기준선은 includeZero이고 0이 범위 안쪽(끝이 아님)에 있을 때만 — 값이 모두 0 이상이면 0은 축 끝 눈금이 대신 말합니다.
  *
  * @returns 값이 하나도 없으면 null
@@ -68,7 +69,7 @@ export function lineYAxis(
   if (typeof rawLower !== "number" || typeof rawUpper !== "number") {
     return null;
   }
-  const lower = options.nonNegative ? Math.max(0, rawLower) : rawLower;
+  const lower = options.nonNegative && rawUpper > 0 ? Math.max(0, rawLower) : rawLower;
   const upper = rawUpper;
   return {
     domain: [lower, upper],

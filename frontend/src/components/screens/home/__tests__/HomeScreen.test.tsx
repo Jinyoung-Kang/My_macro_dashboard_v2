@@ -242,6 +242,8 @@ describe("홈 — 값 있음(운영자)", () => {
     expect(line.getAttribute("href")).toBe("/status");
     expect(within(line).getByText("수집 태스크 오류 0건 · 경고 0건 · 누락 데이터셋 0개")).toBeTruthy();
     expect(within(line).getByText("확인 2026-10-26 16:54")).toBeTruthy();
+    // 데이터 카드마다 출처 줄(PRINCIPLES) — 상태 화면의 수집 오류·경고 로그와 같은 출처.
+    expect(within(line).getByText(SOURCES.collectorRuns)).toBeTruthy();
     expect(within(line).queryByText(COLLECTOR_UNREACHABLE_NOTE)).toBeNull();
   });
 
@@ -472,7 +474,7 @@ describe("홈 — 운영자가 아닌 사용자", () => {
       expect(screen.queryByRole("heading", { name: /모의매매/ })).toBeNull();
       expect(screen.queryByRole("region", { name: "데이터 저장소 상태" })).toBeNull();
       expect(screen.queryByText(/수집 태스크 오류/)).toBeNull();
-      expect(screen.queryByRole("group", { name: "모의매매 시장" })).toBeNull();
+      expect(screen.queryByRole("radiogroup", { name: "모의매매 시장" })).toBeNull();
     });
   }
 });

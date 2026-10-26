@@ -237,11 +237,25 @@ export function searchGroups(index: SearchIndex, rawQuery: string, perGroup: num
 /**
  * 화면 읽기용 결과 수 안내. 범주 상한 때문에 다 보이지 않으면 맞은 수와 보이는 수를 함께 적습니다 — 보이는 수만 말하면
  * 10건이 맞아도 "6건"으로 들립니다(범주 제목의 "N개 더"는 눈으로만 보임).
+ *
+ * @param notices 아직 다 읽지 못한 범주의 안내(`sourceNotice` — 읽는 중·실패·저장본 없음). 있으면 뒤에 붙입니다 — 색인이 덜 찬 동안의
+ *                "결과 0건"은 맞는 것이 없다는 뜻이 아닙니다.
  */
-export function resultSummary(groups: readonly SearchGroup[]): string {
+export function resultSummary(groups: readonly SearchGroup[], notices: readonly string[] = []): string {
   const total = groups.reduce((sum, group) => sum + group.total, 0);
   const shown = groups.reduce((sum, group) => sum + group.items.length, 0);
-  return shown < total ? `결과 ${total}건 중 ${shown}건 표시` : `결과 ${total}건`;
+  const count = shown < total ? `결과 ${total}건 중 ${shown}건 표시` : `결과 ${total}건`;
+  return notices.length > 0 ? `${count} — ${notices.join(" · ")}` : count;
+}
+
+/**
+ * 맞는 결과가 없을 때 보이는 글. 아직 다 읽지 못한 범주가 있으면(`notices`) "없다"고 단정하지 않습니다 — 그 범주의 이유는
+ * 결과 아래 자료 상태 목록이 적습니다.
+ */
+export function noResultText(query: string, notices: readonly string[] = []): string {
+  return notices.length > 0
+    ? `‘${query}’와 맞는 결과가 아직 없습니다 — 일부 범주를 다 읽지 못했습니다(아래 안내).`
+    : `‘${query}’와 맞는 결과가 없습니다.`;
 }
 
 /** 범주 하나의 자료 상태(useApi의 loading·error·data). */

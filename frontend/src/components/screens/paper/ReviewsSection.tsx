@@ -113,6 +113,7 @@ export function ReviewsSection({ onOpenProposal }: { onOpenProposal?: (id: numbe
           </p>
         ) : (
           <Table<ReviewRow>
+            label="복기 기록"
             rows={rows}
             rowKey={(row) => row.key}
             columns={[
@@ -194,6 +195,7 @@ function ReviewBody({
       {view.verdicts.length > 0 && (
         <Part title="논거 판정" note="결정마다 Claude가 그 뒤 사실(서버가 계산한 수익률·낙폭·스탑·무효화 평가)로 내린 판정입니다.">
           <Table<ReviewVerdictRow>
+            label="논거 판정"
             rows={view.verdicts}
             rowKey={(row) => row.key}
             columns={[

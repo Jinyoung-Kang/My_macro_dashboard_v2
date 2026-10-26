@@ -110,11 +110,11 @@ function MarketSwitch() {
   const name = useId();
   return (
     <div role="radiogroup" aria-label="모의매매 시장" className="inline-flex rounded-lg border border-border p-0.5 text-sm">
-      <label className="rounded-md bg-surface-2 px-3 py-1 font-semibold text-text has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-offset-2 has-[:focus-visible]:outline-focus">
+      <label className="inline-flex min-h-11 items-center rounded-md bg-surface-2 px-3 py-1 font-semibold text-text lg:min-h-0 has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-offset-2 has-[:focus-visible]:outline-focus">
         <input type="radio" name={name} value="us" defaultChecked className="sr-only" />
         미국
       </label>
-      <label className="cursor-not-allowed rounded-md px-3 py-1 text-text-3">
+      <label className="inline-flex min-h-11 cursor-not-allowed items-center rounded-md px-3 py-1 text-text-3 lg:min-h-0">
         <input type="radio" name={name} value="kr" disabled className="sr-only" />
         한국 · 준비 중<span className="sr-only"> (2단계에서 엽니다)</span>
       </label>

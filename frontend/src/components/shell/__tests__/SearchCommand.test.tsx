@@ -168,6 +168,27 @@ describe("결과", () => {
 
     type("zzzz");
     expect(screen.getByText("‘zzzz’와 맞는 결과가 없습니다.")).toBeTruthy();
+    // 결과가 없으면 빈 목록 상자도 없다(입력칸은 접힘) — 결과 없음은 status가 읽는다.
+    expect(screen.queryByRole("listbox")).toBeNull();
+    expect(input().getAttribute("aria-expanded")).toBe("false");
+    expect(screen.getByRole("status").textContent).toBe("결과 0건");
+
+    type("aapl");
+    expect(screen.getByRole("listbox", { name: "검색 결과" })).toBeTruthy();
+  });
+
+  it("범주를 아직 다 읽지 못했으면 '결과 0건'·'맞는 결과가 없습니다'로 단정하지 않는다", async () => {
+    delete reads[UNIVERSE]; // 종목 목록은 끝나지 않음(읽는 중)
+    reads[INSTITUTIONS] = new Error("백엔드 API에 연결하지 못했습니다");
+    openSearch();
+
+    type("aapl");
+    await waitFor(() =>
+      expect(screen.getByRole("status").textContent).toBe(
+        "결과 0건 — 기관: 불러오지 못했습니다 — 백엔드 API에 연결하지 못했습니다 · 종목: 불러오는 중…",
+      ),
+    );
+    expect(screen.getByText("‘aapl’와 맞는 결과가 아직 없습니다 — 일부 범주를 다 읽지 못했습니다(아래 안내).")).toBeTruthy();
   });
 
   it("범주별 묶음 — 지표·기관·종목은 그 값을 고르는 화면으로 간다고 적는다", async () => {
@@ -240,6 +261,10 @@ describe("이동", () => {
     fireEvent.keyDown(box, { key: "ArrowDown" });
     expect(options[1].getAttribute("aria-selected")).toBe("true");
     expect(box.getAttribute("aria-activedescendant")).toBe(options[1].id);
+    // 눈으로도 구분된다 — 고른 결과에만 왼쪽 잉크 막대(바탕색 차이만으로는 대비가 모자람).
+    const bar = (option: HTMLElement) => option.querySelector("span[aria-hidden='true'].bg-accent");
+    expect(bar(options[1])).toBeTruthy();
+    expect(bar(options[0])).toBeNull();
     fireEvent.keyDown(box, { key: "ArrowUp" });
     fireEvent.keyDown(box, { key: "ArrowUp" });   // 맨 위에서 위로 → 맨 아래
     expect(options[options.length - 1].getAttribute("aria-selected")).toBe("true");

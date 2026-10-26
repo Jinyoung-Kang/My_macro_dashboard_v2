@@ -100,12 +100,13 @@ export function Dialog({
             </DialogPrimitive.Description>
           )}
           {children}
-          {/* 닫기 단추는 DOM 맨 끝에 둡니다 — 열었을 때 첫 포커스가 내용(입력칸·취소 단추)으로 가게(보이기는 오른쪽 위). */}
+          {/* 닫기 단추는 DOM 맨 끝에 둡니다 — 열었을 때 첫 포커스가 내용(입력칸·취소 단추)으로 가게(보이기는 오른쪽 위).
+              좁은 화면(lg 미만)에서는 누르는 칸을 44px로 키우고 위치를 그만큼 당겨 X 아이콘 자리는 그대로 둡니다. */}
           {showClose && (
             <DialogPrimitive.Close
               aria-label="닫기"
               disabled={!dismissible}
-              className="absolute right-3 top-3 inline-flex h-8 w-8 items-center justify-center rounded-md text-text-3 hover:bg-surface-2 hover:text-text focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus disabled:cursor-not-allowed disabled:opacity-50"
+              className="absolute right-1.5 top-1.5 inline-flex h-11 w-11 items-center justify-center rounded-md text-text-3 hover:bg-surface-2 hover:text-text lg:right-3 lg:top-3 lg:h-8 lg:w-8 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus disabled:cursor-not-allowed disabled:opacity-50"
             >
               <svg aria-hidden="true" viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round">
                 <path d="M4 4l8 8M12 4l-8 8" />

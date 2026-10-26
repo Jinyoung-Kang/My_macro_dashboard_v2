@@ -188,6 +188,7 @@ export function AccountDetailPanel({
         {fills.data && !fills.data.available && <Banner tone="warn">{fills.data.message}</Banner>}
         {fills.data?.available && (
           <Table<PaperFill>
+            label="최근 체결"
             rows={fills.data.fills ?? []}
             rowKey={(row) => String(row.id)}
             emptyMessage="체결이 없습니다."
@@ -269,6 +270,7 @@ function CompositionView({ label, composition }: { label: string; composition: A
         </div>
       )}
       <Table<CompositionRow>
+        label="구성"
         rows={rows}
         rowKey={(row) => row.key}
         emptyMessage="보유가 없습니다."

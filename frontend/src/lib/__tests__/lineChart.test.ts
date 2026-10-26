@@ -87,6 +87,17 @@ describe("lineYAxis", () => {
     expect(far!.domain[0]).toBeGreaterThan(90);
   });
 
+  // 0으로 올리면 [0, -2.84]처럼 아래 끝이 위 끝보다 커져 축이 뒤집혔다.
+  it("nonNegative여도 값이 모두 음수면 데이터 범위 그대로 — 축이 뒤집히지 않는다", () => {
+    const axis = lineYAxis([{ date: "a", v: -5 }, { date: "b", v: -3 }], ONE, { nonNegative: true });
+    const [lower, upper] = axis!.domain;
+    expect(lower).toBeLessThan(upper);
+    expect(lower).toBeLessThan(-5);
+    expect(upper).toBeGreaterThan(-3);
+    expect(upper).toBeLessThan(0);
+    expect(axis!.ticks).toEqual(axis!.domain);
+  });
+
   it("값이 하나도 없으면 null", () => {
     expect(lineYAxis([{ date: "a", v: null }], ONE)).toBeNull();
     expect(lineYAxis([], ONE)).toBeNull();

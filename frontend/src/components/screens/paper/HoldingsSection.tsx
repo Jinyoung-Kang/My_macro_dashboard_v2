@@ -307,8 +307,12 @@ export function HoldingsSection({
               requireText={code}
               onConfirm={(typed) => void runReset(typed)}
             />
-            {reset.error && <Banner tone="warn">{reset.error}</Banner>}
-            {resetResult && <Banner tone={resetResult.tone}>{resetResult.text}</Banner>}
+            {/* 결과·오류는 늘 그려 둔 알림 영역(role=status) 안에 — 확인 창이 닫히면 초점이 '계좌 초기화' 단추로 돌아가므로, 이 영역이
+                없으면 낭독기 사용자는 성공·실패를 듣지 못합니다(영역이 먼저 있어야 새 내용을 읽음). 비어 있으면 높이·간격이 없습니다. */}
+            <div role="status" className="flex flex-col gap-2 empty:-mt-2">
+              {reset.error && <Banner tone="warn">{reset.error}</Banner>}
+              {resetResult && <Banner tone={resetResult.tone}>{resetResult.text}</Banner>}
+            </div>
           </div>
         </div>
       </Card>

@@ -11,6 +11,7 @@ import {
   indicatorEntries,
   institutionEntries,
   menuEntries,
+  noResultText,
   resultSummary,
   searchGroups,
   sourceNotice,
@@ -170,11 +171,19 @@ export function SearchCommand({ user }: { user?: SessionUser }) {
         />
       </div>
 
+      {/* 범주를 아직 다 읽지 못했으면(읽는 중·실패·저장본 없음) 그 사실도 함께 읽어 줍니다 — "결과 0건"만 말하면 없는 것으로 들립니다. */}
       <p role="status" className="sr-only">
-        {trimmed ? resultSummary(groups) : ""}
+        {trimmed ? resultSummary(groups, notices) : ""}
       </p>
 
-      <div id={listboxId} role="listbox" aria-label="검색 결과" className="mt-3 flex max-h-[min(60dvh,28rem)] flex-col gap-3 overflow-y-auto">
+      {/* 결과가 없으면(입력칸이 접힘 — aria-expanded false) 빈 목록 상자를 접근성 트리에서 뺍니다. 결과 없음 안내는 위 status가 읽습니다. */}
+      <div
+        id={listboxId}
+        role="listbox"
+        aria-label="검색 결과"
+        hidden={flat.length === 0}
+        className="mt-3 flex max-h-[min(60dvh,28rem)] flex-col gap-3 overflow-y-auto"
+      >
         {groups.map((group, groupAt) => {
           const headingId = `${baseId}-group-${group.kind}`;
           return (
@@ -200,8 +209,11 @@ export function SearchCommand({ user }: { user?: SessionUser }) {
                     onMouseMove={() => {
                       if (!selected) setActive(index);
                     }}
-                    className={`flex cursor-pointer items-center gap-3 rounded-lg px-2 py-2 ${selected ? "bg-surface-2" : ""}`}
+                    className={`relative flex min-h-11 cursor-pointer items-center gap-3 rounded-lg px-2 py-2 ${selected ? "bg-surface-2" : ""}`}
                   >
+                    {/* 고른 결과 표시 — 초점은 입력칸에 있어 포커스 링이 없고, surface-2 바탕만으로는 대비가 1.1:1이라 왼쪽 잉크 막대를
+                        함께 둡니다(계좌 행 AssetRow의 선택 막대와 같은 모양, 바탕 대비 3:1 이상). */}
+                    {selected && <span aria-hidden="true" className="absolute inset-y-1 left-0 w-[3px] rounded-r bg-accent" />}
                     <span className="flex min-w-0 flex-1 flex-col">
                       <span className="truncate text-[15px] text-text">
                         {entry.label}
@@ -227,9 +239,7 @@ export function SearchCommand({ user }: { user?: SessionUser }) {
           메뉴 이름, 매크로 지표 이름·티커, 13F 기관 이름, 종목 이름·티커를 입력하세요. 지표·기관·종목은 그 값을 고르는 화면으로 갑니다.
         </p>
       )}
-      {trimmed !== "" && flat.length === 0 && (
-        <p className="px-2 text-sm text-text-2">‘{trimmed}’와 맞는 결과가 없습니다.</p>
-      )}
+      {trimmed !== "" && flat.length === 0 && <p className="px-2 text-sm text-text-2">{noResultText(trimmed, notices)}</p>}
       {notices.length > 0 && (
         <ul aria-label="검색 자료 상태" className="mt-3 flex flex-col gap-1 border-t border-border px-2 pt-3 text-xs text-text-3">
           {notices.map((notice) => (

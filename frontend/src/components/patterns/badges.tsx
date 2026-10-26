@@ -18,21 +18,25 @@ const PILL = "inline-flex max-w-full flex-wrap items-center gap-x-1 rounded-full
  *
  * @param asOf 표시용 시각(KST). ISO가 와도 `formatKst`로 같은 형식에 맞춥니다.
  * @param live 참이면 지연 분과 상관없이 "실시간"
+ * @param title 마우스를 올리면 보이는 보조 설명(설계서 §1.5 계약에 더한 선택 prop) — 닫힌 장의 시세 지연처럼 글에는 적지 않는 것
+ *              (ADR 0017 결정 6, /macro의 장 상태 배지와 같음). 뜻을 나르는 내용은 여기에만 두지 않습니다.
  */
 export function ProvenanceBadge({
   source,
   asOf,
   delayMin,
   live,
+  title,
 }: {
   source?: string | null;
   asOf?: string | null;
   delayMin?: number | null;
   live?: boolean;
+  title?: string | null;
 }): JSX.Element | null {
   const text = provenanceText({ source, asOf, delayMin, live });
   return (
-    <span className="min-w-0 max-w-full text-xs leading-4 tabular-nums text-text-3">
+    <span title={presentText(title) ?? undefined} className="min-w-0 max-w-full text-xs leading-4 tabular-nums text-text-3">
       {text === PROVENANCE_UNKNOWN ? null : <span className="sr-only">출처: </span>}
       {text}
     </span>

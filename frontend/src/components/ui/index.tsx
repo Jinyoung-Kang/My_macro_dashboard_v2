@@ -134,7 +134,7 @@ export function Freshness({
     <span className="inline-flex flex-wrap items-center gap-1">
       {refreshError && (
         <span
-          className="inline-flex items-center rounded-sm border border-warn/40 bg-warn/10 px-2 py-0.5 text-[11px] text-warn"
+          className="inline-flex items-center rounded-sm border border-warn/40 bg-warn-tint px-2 py-0.5 text-[11px] text-warn"
           title={`${refreshError} — 앞서 받은 값을 보여 줍니다`}
           role="status"
         >
@@ -153,7 +153,7 @@ function FreshnessBadge({ collectedAt, age, stale }: { collectedAt?: string | nu
     <span
       className={`inline-flex items-center gap-1 rounded-sm border px-2 py-0.5 text-[11px] ${
         stale
-          ? "border-warn/40 bg-warn/10 text-warn"
+          ? "border-warn/40 bg-warn-tint text-warn"
           : "border-border bg-surface-hover text-muted"
       }`}
       title={collectedAt ? `${formatKst(collectedAt)} (한국 시간) · 조회 시점 기준 ${age}` : undefined}
@@ -167,7 +167,10 @@ function FreshnessBadge({ collectedAt, age, stale }: { collectedAt?: string | nu
   );
 }
 
-/** 경고 배너 — 추정치·이력 대체처럼 "값의 성격"을 알려야 할 때. */
+/**
+ * 경고 배너 — 추정치·이력 대체처럼 "값의 성격"을 알려야 할 때.
+ * 경고 바탕은 불투명 틴트(bg-warn-tint, globals.css)라 카드 밖 페이지 바탕 위에 놓여도 글자 대비가 4.5:1 이상입니다.
+ */
 export function Banner({
   tone = "warn",
   children,
@@ -176,7 +179,7 @@ export function Banner({
   children: ReactNode;
 }) {
   const palette = {
-    warn: "border-warn/40 bg-warn/10 text-warn",
+    warn: "border-warn/40 bg-warn-tint text-warn",
     danger: "border-danger/40 bg-danger/10 text-danger",
     info: "border-accent/40 bg-accent/10 text-accent",
   }[tone];
@@ -191,7 +194,8 @@ export function Banner({
 export function Loading({ label = "불러오는 중…" }: { label?: string }) {
   return (
     <div className="flex items-center gap-2 py-8 text-sm text-muted">
-      <span className="h-3 w-3 animate-pulse rounded-full bg-accent" />
+      {/* 깜빡임은 움직임 줄이기(prefers-reduced-motion)가 꺼져 있을 때만 */}
+      <span className="h-3 w-3 rounded-full bg-accent motion-safe:animate-pulse" />
       {label}
     </div>
   );
@@ -213,7 +217,7 @@ export function ErrorState({ message, onRetry }: { message: string; onRetry?: ()
         <button
           type="button"
           onClick={onRetry}
-          className="mt-2 rounded-sm border border-danger/40 px-3 py-1 text-xs hover:bg-danger/20"
+          className="mt-2 min-h-11 rounded-sm border border-danger/40 px-3 py-1 text-xs hover:bg-danger/20 lg:min-h-0"
         >
           다시 시도
         </button>
@@ -307,12 +311,18 @@ export function Select({
   );
 }
 
-/** 단순 테이블. 컬럼 정의로 정렬/포맷을 제어합니다. */
+/**
+ * 단순 테이블. 컬럼 정의로 정렬/포맷을 제어합니다.
+ *
+ * @param label 표 이름 — 좌우 스크롤 상자(region)의 이름 "{label} (좌우 스크롤)"이 됩니다. 한 화면에 표가 여럿이면 이름을 줘야
+ *              랜드마크 목록에서 서로 구별됩니다(주지 않으면 "표 (좌우 스크롤)" — 새 DataTable의 caption과 같은 규칙).
+ */
 export function Table<T>({
   columns,
   rows,
   emptyMessage = "표시할 데이터가 없습니다.",
   rowKey,
+  label,
 }: {
   columns: {
     key: string;
@@ -324,6 +334,7 @@ export function Table<T>({
   rows: T[];
   emptyMessage?: string;
   rowKey: (row: T, index: number) => string;
+  label?: string;
 }) {
   if (rows.length === 0) {
     return <EmptyState message={emptyMessage} />;
@@ -336,7 +347,7 @@ export function Table<T>({
         오른쪽에 열이 더 있다는 사실을 알 수 없어, 폰에서만 안내를 한 줄 띄웁니다.
       */}
       <p className="mb-1 text-[11px] text-muted sm:hidden">← 표를 좌우로 넘겨 보세요</p>
-      <div className="overflow-x-auto" tabIndex={0} role="region" aria-label="표 (좌우 스크롤)">
+      <div className="overflow-x-auto" tabIndex={0} role="region" aria-label={`${label ?? "표"} (좌우 스크롤)`}>
         <table className="w-full min-w-[640px] border-collapse text-sm">
           <thead>
             <tr className="border-b border-border text-xs uppercase tracking-wide text-muted">

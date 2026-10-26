@@ -350,7 +350,8 @@ describe("결정 로그 탭", () => {
       "그룹 A: 듀케인 · 1위, 아팔루사 · 2위. 그룹 B: 듀케인 · 1위, 버크셔 해서웨이 · 2위. "
         + "신호 풀(A ∪ B)과 기관 가중은 선정 때 값입니다(그룹 A 몫 50.0%). 순위표는 그룹마다 선정 때의 상위 10입니다(공시일 기준 복제 수익률).",
     )).toBeTruthy();
-    const pool = within(selection).getAllByRole("region", { name: "표 (좌우 스크롤)" })[0];
+    // 표마다 이름이 있는 스크롤 상자 — 랜드마크 목록에서 서로 구별됩니다.
+    const pool = within(selection).getByRole("region", { name: "신호 풀 (좌우 스크롤)" });
     expect(headersOf(pool)).toEqual(["기관", "그룹", "그룹 A 순위", "그룹 B 순위", "기관 가중"]);
     expect(rowsOf(pool)).toEqual([
       ["듀케인", "AB", "1위", "1위", "53.3%"],

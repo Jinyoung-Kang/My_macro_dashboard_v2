@@ -63,7 +63,7 @@ export function RangeTabs<K extends string>({
               }
             }}
             onKeyDown={(event) => handleKeyDown(event, range.key)}
-            className={`min-h-8 rounded-md px-3 py-1 text-sm tabular-nums transition-colors duration-150 motion-reduce:transition-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus ${
+            className={`min-h-11 rounded-md px-3 py-1 text-sm tabular-nums transition-colors duration-150 motion-reduce:transition-none lg:min-h-8 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus ${
               active ? "bg-surface-2 font-semibold text-text" : "text-text-2 hover:bg-surface-2 hover:text-text"
             }`}
           >
