@@ -28,6 +28,7 @@ from __future__ import annotations
 
 import os
 import re
+from typing import Callable
 
 from ..numbers import to_float
 from .. import publicapi, settings
@@ -59,12 +60,14 @@ def fetch_day(bas_dt: str, budget: publicapi.CallBudget) -> tuple[list[dict], st
     :raises publicapi.PublicApiError: 인증·서비스 오류
     """
     url = endpoint()
-    return _fetch_pages(url, bas_dt, settings.data_go_kr_key(), budget), url
+    return _fetch_pages(url, bas_dt, settings.data_go_kr_key(), budget, normalize, ROWS_PER_PAGE), url
 
 
-def _fetch_pages(url: str, bas_dt: str, key: str, budget: publicapi.CallBudget) -> list[dict]:
+def _fetch_pages(url: str, bas_dt: str, key: str, budget: publicapi.CallBudget,
+                 normalize_row: Callable[[dict], dict], rows_per_page: int) -> list[dict]:
     """
     그날 전 종목을 끝까지 받습니다. 끝까지 받았는지 확인할 수 없으면 실패입니다(QA-078).
+    한 행은 normalize_row로 옮기고(``code``가 없는 행은 버림), 한 쪽에 rows_per_page행씩 묻습니다.
 
     - 1페이지가 비고 totalCount가 없거나 0이면 아직 발표 전(또는 휴장일) — 빈 목록.
     - totalCount를 모르거나, totalCount에 못 미친 채 페이지가 비면 PublicApiError. 예전에는 잘린 행을 그날 전체로
@@ -77,7 +80,7 @@ def _fetch_pages(url: str, bas_dt: str, key: str, budget: publicapi.CallBudget) 
         if not budget.take():
             raise publicapi.BudgetExhausted("호출 예산 소진")
         response = publicapi.get(
-            url, {"basDt": bas_dt, "numOfRows": ROWS_PER_PAGE, "pageNo": page}, key=key, timeout=30,
+            url, {"basDt": bas_dt, "numOfRows": rows_per_page, "pageNo": page}, key=key, timeout=30,
         )
         root = publicapi.parse_xml(response, key=key)
         items = publicapi.xml_items(root)
@@ -89,7 +92,7 @@ def _fetch_pages(url: str, bas_dt: str, key: str, budget: publicapi.CallBudget) 
                 raise publicapi.PublicApiError(
                     "응답에 totalCount가 없습니다 — 그날 전 종목을 다 받았는지 알 수 없어 저장하지 않습니다"
                 )
-        rows.extend(normalize(item) for item in items)
+        rows.extend(normalize_row(item) for item in items)
         if len(rows) >= total:
             break
         if not items:
