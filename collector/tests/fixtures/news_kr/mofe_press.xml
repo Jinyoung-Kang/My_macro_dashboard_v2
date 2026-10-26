@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+		<rss version="2.0"
+			xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"
+			xmlns:dc="http://purl.org/dc/elements/1.1/"
+			xmlns:taxo="http://purl.org/rss/1.0/modules/taxonomy/"
+			xmlns:activity="http://activitystrea.ms/spec/1.0/" >
+<channel>
+
+<title>기획재정부 - <![CDATA[보도·참고자료]]></title>
+<link><![CDATA[http://mofe.go.kr/nw/nes/nesdta.do?bbsId=MOSFBBS_000000000028&menuNo=4010100&menuNo=4010100]]></link>
+<description><![CDATA[보도자료]]></description>
+
+	<item>
+	<title><![CDATA[경제현안간담회 개최]]></title>
+	<link><![CDATA[http://mofe.go.kr/nw/nes/detailNesDtaView.do?searchBbsId=MOSFBBS_000000000028&menuNo=4010100&searchNttId=MOSF_000000000079749]]></link>
+	
+	<tag><![CDATA[MOSF_000000000079749]]></tag>
+	<pubDate>2026-10-25 00:00:00.0</pubDate>
+	</item>
+
+	<item>
+	<title><![CDATA['26.10월 국고채 「모집 방식 비경쟁인수」 발행 미실시]]></title>
+	<link><![CDATA[http://mofe.go.kr/nw/nes/detailNesDtaView.do?searchBbsId=MOSFBBS_000000000028&menuNo=4010100&searchNttId=MOSF_000000000079737]]></link>
+	
+	<tag><![CDATA[MOSF_000000000079737]]></tag>
+	<pubDate>2026-10-23 00:00:00.0</pubDate>
+	</item>
+
+	<item>
+	<title><![CDATA[제9회 디지털 이코노미 포럼 개최]]></title>
+	<link><![CDATA[http://mofe.go.kr/nw/nes/detailNesDtaView.do?searchBbsId=MOSFBBS_000000000028&menuNo=4010100&searchNttId=MOSF_000000000079738]]></link>
+	
+	<tag><![CDATA[MOSF_000000000079738]]></tag>
+	<pubDate>2026-10-23 00:00:00.0</pubDate>
+	</item>
+
+</channel>
+
+</rss>

@@ -1,0 +1,31 @@
+<?xml version = '1.0' encoding = 'utf-8'?>
+<rss version='2.0' xmlns:media='http://search.yahoo.com/mrss/' xmlns:y='http://www.yahoo.com/y-namespace' xmlns:fn='http://www.w3.org/2004/10/xpath-functions' xmlns:atom='http://www.w3.org/2005/Atom'>
+<channel>
+<title>[보도]전체</title>
+<copyright>Copyright mods.go.kr</copyright>
+<link>https://mods.go.kr/board.es?mid=a10301010000&amp;bid=a103010100&amp;act=rss</link>
+<description>국가데이터처::국가데이터처 RSS 서비스 | [보도]전체</description>
+<language>urf-8</language>
+<item>
+<title><![CDATA[2025년 이주배경인구 통계 결과(등록센서스 방식)]]></title>
+<link><![CDATA[https://mods.go.kr/board.es?mid=a10301020200&act=view&bid=203&list_no=447620]]></link>
+<pubDate>202610251905</pubDate>
+<seq>447620</seq>
+<cd>203</cd>
+</item>
+<item>
+<title><![CDATA[2026년 3분기 가축동향조사 결과 보도자료]]></title>
+<link><![CDATA[https://mods.go.kr/board.es?mid=a10301080400&act=view&bid=225&list_no=447576]]></link>
+<pubDate>202610221036</pubDate>
+<seq>447576</seq>
+<cd>225</cd>
+</item>
+<item>
+<title><![CDATA[2025년 기업생멸행정통계(잠정) 결과]]></title>
+<link><![CDATA[https://mods.go.kr/board.es?mid=a10301090700&act=view&bid=11469&list_no=447531]]></link>
+<pubDate>202610211327</pubDate>
+<seq>447531</seq>
+<cd>11469</cd>
+</item>
+</channel>
+</rss>

@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0" xmlns:content="http://purl.org/rss/1.0/modules/content/"  xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:media="http://search.yahoo.com/mrss/" xmlns:atom="http://www.w3.org/2005/Atom" xmlns:sy="http://purl.org/rss/1.0/modules/syndication/">
+	<channel>
+		<title><![CDATA[연합뉴스 마켓+ 최신기사]]></title>
+		<link>https://www.yna.co.kr/market-plus/all</link>
+		<atom:link href="https://www.yna.co.kr/rss/market.xml" rel="self" type="application/rss+xml" />
+		<description><![CDATA[시험용 합성 피드 — 구조만 원문과 같음]]></description>
+		<language>ko-KR</language>
+		<sy:updatePeriod>hourly</sy:updatePeriod>
+		<sy:updateFrequency>1</sy:updateFrequency>
+		<lastBuildDate>Mon, 26 Oct 2026 23:02:50 +0900</lastBuildDate>
+		<pubDate>Mon, 26 Oct 2026 23:02:50 +0900</pubDate>
+		<item>
+			<title><![CDATA[시험 제목 가 — 코스피 외국인 순매수에 상승 마감]]></title>
+			<link>https://www.yna.co.kr/view/AKR20261026000000001</link>
+			<guid isPermaLink="true">https://www.yna.co.kr/view/AKR20261026000000001</guid>
+			<pubDate>Mon, 26 Oct 2026 23:02:50 +0900</pubDate>
+			<dc:creator>시험</dc:creator>
+		</item>
+		<item>
+			<title><![CDATA[시험 제목 나 — 삼성전자가 장 마감 뒤 공시]]></title>
+			<link>https://www.yna.co.kr/view/AKR20261026000000002</link>
+			<guid isPermaLink="true">https://www.yna.co.kr/view/AKR20261026000000002</guid>
+			<pubDate>Mon, 26 Oct 2026 19:35:57 +0900</pubDate>
+			<dc:creator>시험</dc:creator>
+		</item>
+		<item>
+			<title><![CDATA[시험 제목 다 — 애프터마켓 급등 종목]]></title>
+			<link>https://www.yna.co.kr/view/AKR20261026000000003</link>
+			<guid isPermaLink="true">https://www.yna.co.kr/view/AKR20261026000000003</guid>
+			<pubDate>Mon, 26 Oct 2026 19:35:12 +0900</pubDate>
+			<dc:creator>시험</dc:creator>
+		</item>
+	</channel>
+</rss>
