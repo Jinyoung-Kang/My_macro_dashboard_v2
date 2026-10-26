@@ -40,6 +40,13 @@ public final class Datasets {
      */
     public static final String SNAP_PAPER_QUOTES = "paper.quotes";
     /**
+     * 🧪 한국 책 장부 관측치(v2 2단계 B4) — 수집 범위의 토스 일봉 최근 5봉(adjusted=false 원시 시고저종·거래량·출처 {@code TOSS_DAILY}/
+     * {@code TOSS_INTEGRATED}, 같은 날 수정 종가·수정 비율), 1분봉 개장 봉({@code 09:01}·{@code 10:01} 라벨, {@code TOSS_1M_OPEN}),
+     * 종목 상태(NXT·KRX 정지), 종목별 받은 시각 {@code fetchedAt}. 미국 {@link #SNAP_PAPER_QUOTES}와 모양이 다르고 파싱은 시장 묶음(C2)이
+     * 합니다 — 계약 {@code contract 1}은 명세 2026-10-26-v2-kr-paper-spec.md §9 'paper.kr.quotes 계약'. KR 거래일 D 20:30 KST 뒤 하루 1회.
+     */
+    public static final String SNAP_KR_PAPER_QUOTES = "paper.kr.quotes";
+    /**
      * 모의 매매 트랙레코드 후보 기관 목록과 기관별 수집 진행률(저장 분기 수·완료 여부). 기관마다의 공시는
      * {@code sec13f(cik, TRACK_RECORD_QUARTERS)}에 있고, 이 저장본은 "누가 후보이고 어디까지 받았나"만 담습니다.
      */
@@ -153,6 +160,11 @@ public final class Datasets {
      * 분할 감지가 이 값을 기준 종가와 대조합니다. 기간으로 지우지 않습니다.
      */
     public static final String TS_EQUITY_CLOSE = "equity_close";
+    /**
+     * 🧪 한국 책 종가 이력(v2 2단계 B4) — 토스 {@code adjusted=true} 일봉 종가(NXT 종목은 KRX+NXT 통합가), series = 6자리 코드. 수집기가
+     * 1년을 메우고 날마다 최근 5봉을 덧붙이며, 수정주가 기준이 바뀌면(분할·병합) 저장 구간 전체를 새 기준으로 다시 받습니다. 지우지 않습니다.
+     */
+    public static final String TS_KR_CLOSE_ADJ = "kr_close_adj";
     /**
      * 모의 매매 미국 종목 재무(SEC XBRL Company Facts, D28). entity = 티커, obs_date = 공시일(filed), payload
      * {@code {"cik": [...], "facts": [...]}}는 그날 처음 낸(또는 값이 바뀐) 사실 묶음입니다. 수집기만 쓰고(ADR 0008),

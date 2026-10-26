@@ -121,6 +121,12 @@ from .kr_paper import (  # noqa: F401
     KR_SCOPE_ETFS,
     task_kr_paper_universe,
     kr_scope,
+    KR_COLLECT_AFTER,
+    KR_QUOTES_BARS,
+    KR_QUOTES_CALL_BUDGET,
+    KR_QUOTES_TIME_LIMIT_SECONDS,
+    kr_target_session,
+    task_kr_paper_quotes,
 )
 from .maintenance import (  # noqa: F401
     task_run_log_retention,

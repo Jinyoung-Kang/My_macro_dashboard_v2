@@ -8,7 +8,7 @@
 
 ---
 
-## 1. 수집 태스크 (29개)
+## 1. 수집 태스크 (30개)
 
 수집기가 세 그룹으로 나눠 돌립니다. 주기는 `.env`로 바꿀 수 있습니다.
 
@@ -35,6 +35,7 @@
 | | | `toss_stock_flows` | 🅣 레이더 종목 40개 + 알림 관심 종목(최대 60, §2 '수집 범위')의 일별 투자자 매매동향 (주, 최근 20거래일, 종목별 누적) |
 | | | `toss_radar_universe` | 🅣 레이더 폴백용 — 시장 거래대금 상위 100종목의 최근 2거래일 투자자 매매 |
 | | | `kr_paper_universe` | 🧪 한국 책 유니버스 U — `fsc_price` 최신 기준일 B(< 오늘)의 코스피 시가총액 상위 100 보통주(우선주·스팩·리츠·거래정지·DART 고유번호 없음 제외 — 규칙은 `collector/app/tasks/kr_paper.py`) → `observations` `kr_paper_universe`(entity = 코드, obs_date = B, 순위·시총·상장주식수·종가·규칙 판, 날짜마다 통째로 교체, 400일 보관). 외부 호출 없음 — 같은 기준일이면 다시 쓰지 않음. DART 고유번호 표(`dart_fundamentals`)가 없으면 계산하지 않음. 한국 수집 범위(ETF 069500·153130 + 최신 U + 보관 기간 안에 U에 든 종목)의 근거 |
+| | | `kr_paper_quotes` | 🧪🅣 한국 책 장부 관측치 — 수집 범위의 토스 일봉 최근 5봉(`adjusted=false` 원시 시고저종·거래량, 같은 날 `adjusted=true` 종가·수정 비율)·1분봉 개장 봉(09:01·10:01 라벨)·종목 상태(NXT 거래 여부·KRX 정지) → 스냅샷 `paper.kr.quotes`(계약 1 — [명세 §9](specs/2026-10-26-v2-kr-paper-spec.md) 'paper.kr.quotes 계약') + 수정 종가를 `timeseries` `kr_close_adj`에 덧붙임. KR 거래일 D의 20:30 KST 뒤 하루 1회(그 뒤에 받은 종목은 그날 다시 부르지 않음 — 20:30 전 실행은 전 거래일이 대상이고 오늘 장중 봉은 버림). 받지 못한 종목은 직전 값을 `isStale`로 잇고, 봉 0개는 `NO_BARS`('응답에 없음'). NXT 종목 봉은 KRX+NXT 통합가(`TOSS_INTEGRATED`) — §8 '한국 책 호출 예산' |
 | `weekly` | 12시간 | `sec_13f` | SEC 13F 기관 포트폴리오 (분기 공시) |
 | | | `sec_13f_track_record` | 📒 트랙레코드 후보 기관 27곳의 13F를 기관당 30분기 → `sec.13f.{cik}.q30` + 후보 목록·진행률 `sec.13f.track_record_index`. 저장본에 없는 공시만, 실행당 예산(`TRACK_RECORD_FETCH_BUDGET`, 기본 400건) 안에서(§5 '모의 매매 트랙레코드 후보 기관') |
 | | | `kr_holidays` | 🔑 한국 공휴일 (천문연 특일정보, 올해·내년을 받아 2025년부터 보관 — 모의 매매 한국 책의 지난 거래일 계산, v2 명세 K35) |
@@ -483,6 +484,8 @@ EQUITY_MAP = {
 |---|---|---|
 | `GET /api/v1/market-indicators/{KOSPI\|KOSDAQ}/investor-trading` | 시장 전체 투자자별 매수·매도 **대금**(원) — 개인·외국인·기관(7세부)·기타법인 | 📡 레이더 "시장 전체", 🇰🇷 "현물·선물 수급 동조" |
 | `GET /api/v1/stocks/{symbol}/investor-trading` | 종목 일별 투자자별 매수·매도·순매수 **거래량**(주), 기관 7세부, 외국인 보유율 | 📡 레이더 "수급 지속성" |
+| `GET /api/v1/candles?symbol=&interval=1d\|1m&count=&before=&adjusted=` | 종목 일봉·1분봉(최신순, 한 번에 200개, `before`로 과거 쪽 — 공식 스펙 1.2.24). 일봉 `timestamp` = 거래일 KST 자정, 1분봉 라벨 = 봉 **끝** 시각. `adjusted` 기본값은 true(수정주가)라 늘 보냄 | 🧪 한국 책 관측치·이력(`kr_paper_quotes`) |
+| `GET /api/v1/stocks?symbols=` | 종목 유형·`koreanMarketDetail`(`nxtSupported`·`krxTradingSuspended`)·상장일, 200개씩 | 📡 레이더 폴백 종목 정보, 🧪 한국 책 종목 상태 |
 
 ### 🔍 교차 검증에 쓰는 것 (🗄️ 데이터 저장소 상태)
 
@@ -518,6 +521,7 @@ EQUITY_MAP = {
   세 토스 태스크가 모두 1시간 주기(`slow`)라 이 그룹은 1시간에 최대 202회입니다 — 종목 동향
   `TOSS_STOCK_LIMIT`(40) + `TOSS_WATCHED_LIMIT`(60), 레이더 폴백 `TOSS_RADAR_UNIVERSE`(100), 시장 2.
   429 재시도는 넣지 않은 수이고, 레이더 폴백이 랭킹·종목 정보를 1번씩 더 부릅니다(같은 그룹인지는 확인하지 못함).
+- **한국 책 호출 예산** — 🧪 한국 책 태스크는 KR 거래일 D의 20:30 KST 뒤 하루 한 번이고(받은 종목은 그날 다시 부르지 않음 — 다음 slow 주기는 받지 못한 종목만), 실행마다 상한이 있습니다. `kr_paper_quotes` 실행당 최대 500회(`KR_QUOTES_CALL_BUDGET` — 종목 상태 200종목에 1회 + 종목마다 일봉 원시·수정 2회 + 1분봉 개장 1회, 그룹 `MARKET_DATA_CHART`([확인] 초당 20)·`STOCK`(초당 5), 호출 사이 0.1초, 300초가 지나면 새 종목을 시작하지 않음). 수집 범위 약 140종목이면 하루 약 420회입니다. 상한을 넘는 종목은 다음 주기에 이어 받습니다.
 - **잠정치** — 당일 기록은 장중 잠정치입니다. 종목 기록의 개인·기관 세부·기타법인·외국인 보유는 **null**
   (저녁에 확정). null을 0으로 바꾸지 않고, 누적에서 빠진 날수를 화면에 "(n일)"로 적습니다.
 - **한 시장만 실패하면** — 그 시장은 직전 값을 이어 쓰고 `isStale`·`staleSince`를 붙입니다(3일 지나면 뺌).

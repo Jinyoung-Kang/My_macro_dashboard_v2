@@ -35,3 +35,26 @@ def test_수집기는_백엔드_테이블에_쓰지_않는다():
         for match in WRITE.finditer(path.read_text(encoding="utf-8")):
             found.append(f"{path.name}: {match.group(0)}")
     assert found == []
+
+
+# 🧪 한국 책(v2 2단계 B4) 데이터셋 — 쓰는 곳은 app/tasks/kr_paper.py 하나입니다(읽기·누락 점검은 어디서든).
+KR_DATASETS = ("OBS_KR_PAPER_UNIVERSE", "SNAP_KR_PAPER_QUOTES", "TS_KR_CLOSE_ADJ")
+STORE_WRITE = re.compile(
+    r"\b(put_snapshot|put_observations|put_entity_observations|replace_observations|insert_new_observations|"
+    r"add_headline_feeds|put_timeseries|delete_observations_before)\(\s*catalog\.(" + "|".join(KR_DATASETS) + r")\b"
+)
+
+
+def test_한국_책_데이터셋은_kr_paper_태스크만_쓴다():
+    writers = {}
+    for path in APP.rglob("*.py"):
+        for match in STORE_WRITE.finditer(path.read_text(encoding="utf-8")):
+            writers.setdefault(match.group(2), set()).add(path.relative_to(APP).as_posix())
+    assert writers == {name: {"tasks/kr_paper.py"} for name in KR_DATASETS}
+
+
+def test_한국_책_수집_범위는_백엔드_표를_읽지_않는다():
+    """끈적 목록은 수집기 자기 저장본(유니버스 이력)으로 정합니다 — 보유·주문 표를 읽으면 교차 읽기 예외(alert_rules 하나)가 늘어납니다."""
+    text = (APP / "tasks" / "kr_paper.py").read_text(encoding="utf-8")
+    assert [name for name in BACKEND_TABLES if re.search(rf"\b{name}\b", text)] == []
+    assert "watched_stock_codes" not in text

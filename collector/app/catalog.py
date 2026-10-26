@@ -29,6 +29,10 @@ SNAP_FSC_PRICES_META = "kr.fsc_prices_meta"     # 금융위 시세 최신 기준
 SNAP_TOSS_MARKET_FLOWS = "kr.toss_market_flows" # 코스피·코스닥 투자자별 매매대금 (토스증권 공식, 일별)
 SNAP_TOSS_RADAR_UNIVERSE = "kr.toss_radar_universe"  # 거래대금 상위 100종목의 투자자 매매 (레이더 폴백용)
 SNAP_PAPER_QUOTES = "paper.quotes"      # 모의 매매 유니버스 최근 3개월 일봉(장중 마지막 봉 = 지연 시세) — 장부 관측치
+# 모의 매매 한국 책의 장부 관측치(v2 2단계 B4) — 수집 범위의 토스 일봉 최근 5봉(adjusted=false 원시 시고저종·거래량·출처, 같은 날 수정 종가·
+# 수정 비율)·1분봉 개장 봉(09:01·10:01 라벨)·종목 상태(NXT·KRX 정지)·종목별 받은 시각. 미국 paper.quotes와 모양이 다릅니다 —
+# 계약(contract 1)은 docs/specs/2026-10-26-v2-kr-paper-spec.md §9 'paper.kr.quotes 계약'. KR 거래일 D 20:30 KST 뒤 하루 1회.
+SNAP_KR_PAPER_QUOTES = "paper.kr.quotes"
 SNAP_TRACK_RECORD_INDEX = "sec.13f.track_record_index"  # 모의 매매 트랙레코드 후보 기관 목록·기관별 수집 진행률(q30)
 SNAP_US_FUNDAMENTALS_STATUS = "us.fundamentals.status"  # 모의 매매 미국 재무(SEC XBRL) 회사별 수집 상태 — 사실은 observations us.fundamentals
 # 모의 매매 Claude 계좌 패킷 1b_calendar의 원자료(2단계 A) — 거시 발표일(FRED 릴리스·FOMC 상수, 앞으로 45일)과 유니버스 종목
@@ -113,6 +117,10 @@ OBS_KR_PAPER_UNIVERSE = "kr_paper_universe"
 TS_FSC_MARKET = "fsc_market"    # 시장별 합계 시가총액·거래대금 (series = "KOSPI.marketCap" 등)
 OBS_TOSS_STOCK_FLOW = "toss_stock_flow"  # 종목별 일별 투자자 매매동향 (토스증권 공식, entity = 종목코드)
 TS_EQUITY_CLOSE = "equity_close"        # 모의 매매 유니버스 10년 일별 종가(수정주가), series_id = 야후 티커
+# 모의 매매 한국 책의 종가 이력(v2 2단계 B4) — 토스 adjusted=true 일봉 종가(NXT 종목은 KRX+NXT 통합가), series_id = 6자리 코드.
+# kr_paper_price_history(weekly)가 1년을 메우고 kr_paper_quotes가 날마다 최근 5봉을 덧붙입니다. 수정주가 기준이 바뀌면(분할·병합)
+# 덧붙이지 않고 저장 구간 전체를 새 기준으로 다시 받습니다 — 옛 기준과 새 기준이 한 시계열에 섞이지 않게. 지우지 않습니다.
+TS_KR_CLOSE_ADJ = "kr_close_adj"
 # 모의 매매 미국 종목 재무(SEC XBRL Company Facts, 명세 D28). entity = 티커, obs_date = 공시일(filed) —
 # payload {"cik": [...], "facts": [...]}는 그날 처음 낸(또는 값이 바뀐) 사실 묶음. 백엔드는 obs_date ≤ 기준일만 읽습니다.
 OBS_US_FUNDAMENTALS = "us.fundamentals"

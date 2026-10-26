@@ -1,6 +1,6 @@
 """
 app/tasks/kr_paper.py
-🧪 모의 알고리즘 매매 한국 책(v2 2단계)의 자료 — 유니버스·수집 범위.
+🧪 모의 알고리즘 매매 한국 책(v2 2단계)의 자료 — 유니버스·수집 범위·관측치(토스 봉).
 
 태스크는 "받아서 저장"만 합니다. 후보·점수·체결·평가·기업행위 판정은 백엔드(feature/paper)가 저장본을 읽어 합니다 — 수집기가
 장부를 건드리면 테이블마다 쓰는 프로세스가 하나라는 규칙(ADR 0008)이 깨집니다. 백엔드 표(보유·주문·설정)도 읽지 않습니다 —
@@ -17,16 +17,23 @@ app/tasks/kr_paper.py
 [수집 범위]
   ETF 2(069500·153130) → 최신 U(순위 순) → 끈적 목록(보존 400일 안의 유니버스 이력에 한 번이라도 든 다른 종목, 코드 순).
   모든 보유는 U에서 사므로 U를 벗어난 보유도 가격·수급을 계속 받습니다.
+[하루 1회 — 명세 K17·§4-9]
+  토스 태스크는 KR 거래일 D의 20:30 KST 뒤 하루 한 번입니다(통합 세션 20:00 마감·수급 저녁판 20:21~20:23 뒤). 그 뒤에 받은 종목은
+  그날 다시 부르지 않고(호출 0회), 받지 못한 종목만 다음 slow 주기에 다시 받습니다. PAPER_ENABLED와 상관없이 돕니다(미국 paper_quotes와 같음).
+  토큰은 services/toss 한 곳에서 발급·캐시하고(401이면 한 번만 재발급), 403(허용 IP)이면 남은 종목도 같은 답이라 그 실행을 멈춥니다.
 """
 from __future__ import annotations
 
 import logging
 import re
-from datetime import datetime, timedelta
+import time
+from datetime import date, datetime, timedelta, timezone
+from datetime import time as clock_time
 
-from .. import catalog, store
+from .. import catalog, krcalendar, publicapi, store
+from ..services import toss as toss_service
 
-from .base import EmptyResult, KST
+from .base import EmptyResult, KST, _parse_time, _reason_suffix, carried_suffix, carry_over_missing, previous_payload
 
 logger = logging.getLogger(__name__)
 
@@ -159,3 +166,299 @@ def kr_scope() -> tuple[list[str], str | None]:
             if code not in codes:
                 codes.append(code)
     return codes, basis
+
+
+# ==============================================================================
+# 관측치 paper.kr.quotes — 토스 일봉(원시·수정)·1분봉 개장 봉 (계약은 명세 §9 'paper.kr.quotes 계약')
+# ==============================================================================
+# KR 거래일 D의 이 시각(KST) 뒤에 하루 한 번 받습니다(명세 K17). 통합(KRX+NXT) 세션 20:00 마감과 수급 저녁판(20:21~20:23) 뒤입니다.
+KR_COLLECT_AFTER = clock_time(20, 30)
+# 매번 다시 받는 최근 일봉 수 — 토스가 지난 봉을 고치면 다음 날 흡수하고, 기업행위 감지(B7)가 이웃 봉의 수정 비율을 봅니다.
+# 호출은 한 봉 더(6개) 묻습니다 — 20:30 전 실행에서 오늘 장중 봉을 버려도 5봉이 남게.
+KR_QUOTES_BARS = 5
+# 실행당 토스 호출 상한 — 종목 상태(200종목에 1회) + 종목마다 일봉 원시 1·수정 1·1분봉 개장 1. 수집 범위 약 140종목이면 약 420회입니다.
+# 넘는 종목은 받지 않은 채로 남아 다음 slow 주기에 이어 받습니다. DATA_SOURCES.md '한국 책 호출 예산'과 같아야 합니다(test_toss_call_budget).
+KR_QUOTES_CALL_BUDGET = 500
+# 새 종목을 더 시작하지 않는 경과 시간(초, 태스크 시작부터). slow 상한 600초 안 — 남는 시간은 진행 중인 종목(호출마다 timeout 10초)의 여유.
+KR_QUOTES_TIME_LIMIT_SECONDS = 300.0
+# 봉 호출 사이 간격(초). 이 그룹(MARKET_DATA_CHART)은 [확인] 초당 20회(응답 헤더 X-RateLimit-Limit)라 절반 아래로 부릅니다.
+KR_CANDLE_SPACING = 0.1
+# 1분봉 개장 봉의 라벨(봉 끝 시각, KST) — 정규장 09:00 개장이면 09:01, 개장 시각 변경일(수능일·신년 첫날 10:00)이면 10:01.
+# 변경일은 백엔드 설정(kr.calendar.openTimeOverrides)이라 수집기가 모르므로 둘 다 싣고 C2가 고릅니다(명세 §4-4).
+KR_OPEN_PROBE_LABELS = ("09:01", "10:01")
+# 1분봉 한 번으로 두 라벨을 다 받는 인자: 10:01부터 거슬러 61개(10:01~09:01, 분마다 봉이 있으면 정확히 09:01까지).
+KR_OPEN_PROBE_BEFORE = "10:01"
+KR_OPEN_PROBE_COUNT = 61
+# 수정주가 기준이 바뀌었다고 보는 차이(상대값) — 같은 날짜의 저장값과 새 값이 이만큼 넘게 다르면(분할·병합 등으로 과거 수정가가 다시
+# 쓰임) 이력에 덧붙이지 않고 adjBasisChanged를 겁니다. 정수 원으로 반올림한 수정가의 잡음보다 큽니다(백엔드 KrxCorporateActions.RATIO_NOISE와 같음).
+KR_ADJ_BASIS_TOLERANCE = 0.005
+KR_QUOTES_CONTRACT = 1
+
+
+def _now() -> datetime:
+    """지금 시각(KST). 테스트가 시계를 바꿔 끼우는 자리입니다."""
+    return datetime.now(KST)
+
+
+def _clock() -> float:
+    """경과 시간 시계(초). 테스트가 시간 상한을 시험할 때 바꿔 끼웁니다."""
+    return time.monotonic()
+
+
+def kr_target_session(now: datetime) -> date:
+    """
+    그 시각에 받을 KR 세션 D — 오늘이 거래일이고 20:30 KST가 지났으면 오늘, 아니면 그 앞 거래일(그날 20:30은 이미 지남).
+    로컬 맥(24시간)에서도 장중 봉을 받지 않습니다. 달력은 krcalendar(저장된 공휴일 — 모르는 해는 주말만 건너뜀)입니다.
+    """
+    local = now.astimezone(KST)
+    if krcalendar.is_trading_day(local.date()) and local.time() >= KR_COLLECT_AFTER:
+        return local.date()
+    return krcalendar.previous_trading_day(local.date())
+
+
+def collected_after(entry, after: datetime) -> bool:
+    """그 종목 항목을 ``after`` 이후에 새로 받았는가(이어받은 isStale 항목은 아님) — 그날 다시 부르지 않는 기준."""
+    if not isinstance(entry, dict) or entry.get("isStale"):
+        return False
+    at = _parse_time(entry.get("fetchedAt"))
+    return at is not None and at >= after
+
+
+class _TossRun:
+    """한 실행의 토스 호출 예산·간격과 멈춤(403) 기록."""
+
+    def __init__(self, limit: int) -> None:
+        self.budget = publicapi.CallBudget(limit)
+        self.reasons: list[str] = []
+        self.forbidden: str | None = None
+
+    def take(self) -> bool:
+        """호출 하나를 씁니다(앞 호출과 간격을 둠). 예산이 없거나 403으로 멈췄으면 False — 부르지 말 것."""
+        if self.forbidden or not self.budget.take():
+            return False
+        if self.budget.used > 1 and KR_CANDLE_SPACING:
+            time.sleep(KR_CANDLE_SPACING)
+        return True
+
+    @property
+    def remaining(self) -> int:
+        return self.budget.limit - self.budget.used
+
+
+def _has_quote(entry: dict) -> bool:
+    return entry.get("status") in ("OK", "NO_BARS")
+
+
+def _static_info(info: dict | None, previous: dict | None) -> dict:
+    """
+    종목 상태 칸. 이번 종목 상태 호출에 그 종목이 있으면 그 값, 없으면(호출 실패·응답에 없음) 잘 바뀌지 않는 칸(유형·NXT 여부·상장일)만
+    직전 항목에서 잇고 그날의 KRX 정지 여부는 모름(None)으로 둡니다.
+    """
+    if info:
+        return {key: info.get(key) for key in ("name", "securityType", "nxtSupported", "krxTradingSuspended", "listDate")}
+    previous = previous or {}
+    return {"name": previous.get("name"), "securityType": previous.get("securityType"),
+            "nxtSupported": previous.get("nxtSupported"), "krxTradingSuspended": None, "listDate": previous.get("listDate")}
+
+
+def _daily(code: str, previous: dict | None, info: dict | None, run: _TossRun, fetched_at: str,
+           session: str) -> dict | None:
+    """
+    종목 하나의 일봉 — 원시(adjusted=false) 최근 5봉 + 같은 날 수정(adjusted=true) 종가·수정 비율. 원시 호출이 실패하면 TossError를 그대로
+    올립니다(그 종목은 이번에 못 받음 — 직전 값을 이음). 수정 호출만 실패하면 adjClose·adjRatio를 None으로 두고 사유를 남깁니다.
+    예산이 원시·수정 두 번에 모자라면 None(시작하지 않음).
+
+    대상 세션 ``session``보다 늦은 날짜의 봉은 버립니다 — 20:30 전에 돈 실행(로컬 맥의 낮, 손으로 켠 서버)에서 토스는 오늘의 장중 봉을
+    주는데, 그 값은 그날 종가가 아닙니다(명세 §0 '장중 관측치 없음').
+    """
+    if run.remaining < 2 or not run.take():
+        return None
+    raw, _ = toss_service.fetch_candles(code, "1d", KR_QUOTES_BARS + 1, adjusted=False)
+    static = _static_info(info, previous)
+    entry = {"code": code, "fetchedAt": fetched_at, **static,
+             "adjBasisChanged": bool((previous or {}).get("adjBasisChanged"))}
+    by_date: dict[str, dict] = {}
+    for candle in raw:                       # 최신순 — 같은 날짜가 두 번 오면 앞(최신) 것
+        if candle["date"] <= session:
+            by_date.setdefault(candle["date"], candle)
+    days = sorted(by_date)[-KR_QUOTES_BARS:]
+    if not days:
+        return {**entry, "status": "NO_BARS", "bars": []}
+
+    adjusted: dict[str, float] = {}
+    if run.take():
+        try:
+            adjusted = {c["date"]: c["close"]
+                        for c in toss_service.fetch_candles(code, "1d", KR_QUOTES_BARS + 1, adjusted=True)[0]}
+        except toss_service.TossForbidden as exc:
+            run.forbidden = str(exc)
+        except toss_service.TossError as exc:
+            run.reasons.append(f"{code} 수정주가: {exc}")
+    source = "TOSS_DAILY" if static.get("nxtSupported") is False else "TOSS_INTEGRATED"
+    bars = []
+    for day in days:
+        candle = by_date[day]
+        adj_close = adjusted.get(day)
+        bars.append({"date": day, "open": candle["open"], "high": candle["high"], "low": candle["low"],
+                     "close": candle["close"], "volume": candle["volume"], "priceSource": source,
+                     "adjClose": adj_close, "adjRatio": adj_close / candle["close"] if adj_close else None})
+    return {**entry, "status": "OK", "bars": bars}
+
+
+def _probe_open(code: str, day: str) -> dict:
+    """그날 1분봉 개장 봉(KR_OPEN_PROBE_LABELS) — 한 번 호출. 그날 그 라벨 봉이 없으면 NO_BAR(전날 봉이 같은 응답에 섞여 와도 날짜로 거름)."""
+    candles, _ = toss_service.fetch_candles(code, "1m", KR_OPEN_PROBE_COUNT, adjusted=False,
+                                            before=f"{day}T{KR_OPEN_PROBE_BEFORE}:00+09:00")
+    opens = {c["time"]: {"open": c["open"], "volume": c["volume"]}
+             for c in candles if c["date"] == day and c["time"] in KR_OPEN_PROBE_LABELS}
+    return {"status": "OK" if opens else "NO_BAR", "priceSource": "TOSS_1M_OPEN", "opens": dict(sorted(opens.items()))}
+
+
+def _probe_targets(entry: dict, previous: dict | None) -> list[dict]:
+    """
+    1분봉 개장 봉을 물을 봉(최신 날부터). 직전 항목에서 확정된 결과(OK·NO_BAR)는 그대로 옮기고, 묻는 것은
+      - 직전 항목의 마지막 봉보다 **새 날짜**의 봉(보통 그날 하나, 서버가 며칠 꺼졌으면 그 며칠) — 처음 보는 종목은 최신 봉 하나만
+        (그 전 날은 주문이 없던 때라 쓰일 데가 없음 — 첫 실행에 호출을 다섯 배로 쓰지 않게),
+      - 직전에 FAILED였던 봉(최근 5봉 안에 있는 동안)
+    입니다. 거래량이 0이거나 모르는 봉(정지일 — 시가 단일가 체결이 없음)은 묻지 않습니다.
+    """
+    previous_bars = [bar for bar in ((previous or {}).get("bars") or []) if isinstance(bar, dict) and bar.get("date")]
+    carried = {bar["date"]: bar.get("minute") for bar in previous_bars}
+    previous_latest = max((bar["date"] for bar in previous_bars), default=None)
+    targets = []
+    for index, bar in enumerate(reversed(entry.get("bars") or [])):
+        before = carried.get(bar["date"])
+        status = before.get("status") if isinstance(before, dict) else None
+        if status in ("OK", "NO_BAR"):
+            bar["minute"] = before
+            continue
+        new = index == 0 if previous_latest is None else bar["date"] > previous_latest
+        if bar.get("volume") and (new or status == "FAILED"):
+            targets.append(bar)
+    return targets
+
+
+def _append_adj_closes(entry: dict) -> None:
+    """
+    수정 종가를 timeseries ``kr_close_adj``에 덧붙입니다 — 같은 날짜의 저장값과 KR_ADJ_BASIS_TOLERANCE 넘게 다르면 수정주가 기준이 바뀐
+    것이라(분할·병합 뒤 토스가 과거 수정가를 다시 씀) 덧붙이지 않고 ``adjBasisChanged``를 겁니다 — 옛 기준 값과 새 기준 값이 한
+    시계열에 섞이지 않게. kr_paper_price_history가 그 종목의 저장 구간 전체를 새 기준으로 다시 받은 뒤 다음 수집에서 풀립니다.
+    수정 종가를 못 받았으면 아무것도 바꾸지 않습니다(직전 표시 유지).
+    """
+    points = [(bar["date"], bar["adjClose"]) for bar in entry.get("bars") or [] if bar.get("adjClose")]
+    if not points:
+        return
+    stored = {row["date"]: row["value"] for row in store.read_timeseries(catalog.TS_KR_CLOSE_ADJ, entry["code"],
+                                                                          start_date=points[0][0])}
+    if any(day in stored and stored[day] and abs(value / stored[day] - 1) > KR_ADJ_BASIS_TOLERANCE
+           for day, value in points):
+        entry["adjBasisChanged"] = True
+        return
+    store.put_timeseries(catalog.TS_KR_CLOSE_ADJ, entry["code"], points)
+    entry["adjBasisChanged"] = False
+
+
+def task_kr_paper_quotes() -> str:
+    """
+    🧪 한국 책 관측치 — 수집 범위(kr_scope)의 토스 일봉 최근 5봉(원시·수정)·1분봉 개장 봉 → 스냅샷 ``paper.kr.quotes``
+    (+ 수정 종가를 timeseries ``kr_close_adj``에 덧붙임). 모양은 명세 §9 'paper.kr.quotes 계약'(contract 1).
+
+    규칙
+      - KR 세션 D(kr_target_session)의 20:30 KST 뒤에 받은 종목은 다시 부르지 않습니다 — 모두 받았으면 호출 0회.
+      - 순서: 종목 상태(200종목에 1회) → 종목마다 일봉 원시·수정 → 1분봉 개장 봉(일봉을 다 받은 뒤 남은 예산으로). 실행당
+        KR_QUOTES_CALL_BUDGET·KR_QUOTES_TIME_LIMIT_SECONDS 안에서만, 넘는 종목은 다음 주기에.
+      - 받지 못한 종목은 직전 항목을 isStale로 잇습니다(QA-032, 3일 지나면 뺌) — 장부는 isStale 봉으로 체결하지 않습니다. 한 종목도
+        새로 받지 못하면 EmptyResult로 저장본을 그대로 둡니다. 토스가 답했는데 봉이 없으면 status NO_BARS('응답에 없음').
+      - 403(허용 IP)이면 그 실행을 멈춥니다. 키가 없으면 EmptyResult.
+    """
+    started = _clock()
+    now = _now()
+    session = kr_target_session(now)
+    after = datetime.combine(session, KR_COLLECT_AFTER, tzinfo=KST)
+    scope, basis = kr_scope()
+    previous = previous_payload(catalog.SNAP_KR_PAPER_QUOTES).get("codes") or {}
+    pending = [code for code in scope if not collected_after(previous.get(code), after)]
+    if not pending:
+        return f"최신 상태 (세션 {session}, {len(scope)}종목, 호출 0회)"
+
+    run = _TossRun(KR_QUOTES_CALL_BUDGET)
+    fetched_at = now.astimezone(timezone.utc).isoformat()
+    infos: dict[str, dict] = {}
+    try:
+        for start in range(0, len(pending), toss_service.STOCK_INFO_MAX_SYMBOLS):
+            if not run.take():
+                break
+            infos.update(toss_service.fetch_stock_infos(pending[start:start + toss_service.STOCK_INFO_MAX_SYMBOLS]))
+    except toss_service.TossMissingKey as exc:
+        raise EmptyResult(f"{exc} — 한국 책 관측치를 받지 않습니다 · 기존 저장본 유지") from None
+    except toss_service.TossForbidden as exc:
+        raise EmptyResult(f"0/{len(pending)} 종목 — {exc} · 기존 저장본 유지") from None
+    except toss_service.TossError as exc:
+        run.reasons.append(f"종목 상태: {exc}")   # 일봉은 계속 받습니다 — 상태 칸은 직전 항목에서 잇고 정지 여부는 모름
+
+    fresh: dict[str, dict] = {}
+    stop = ""
+    for code in pending:
+        if run.forbidden:
+            break
+        if _clock() - started >= KR_QUOTES_TIME_LIMIT_SECONDS:
+            stop = f"시간 상한 {KR_QUOTES_TIME_LIMIT_SECONDS:.0f}초 — 나머지는 다음 주기"
+            break
+        try:
+            entry = _daily(code, previous.get(code), infos.get(code), run, fetched_at, session.isoformat())
+        except toss_service.TossForbidden as exc:
+            run.forbidden = str(exc)
+            break
+        except toss_service.TossError as exc:
+            run.reasons.append(f"{code}: {exc}")
+            continue
+        if entry is None:
+            stop = "호출 예산 소진 — 나머지는 다음 주기"
+            break
+        fresh[code] = entry
+
+    probes = 0
+    for code, entry in fresh.items():
+        for bar in _probe_targets(entry, previous.get(code)):
+            if _clock() - started >= KR_QUOTES_TIME_LIMIT_SECONDS or not run.take():
+                break
+            try:
+                bar["minute"] = _probe_open(code, bar["date"])
+                probes += bar["minute"]["status"] == "OK"
+            except toss_service.TossForbidden as exc:
+                run.forbidden = str(exc)
+            except toss_service.TossError as exc:
+                bar["minute"] = {"status": "FAILED", "priceSource": "TOSS_1M_OPEN", "reason": str(exc)[:200]}
+
+    if run.forbidden:
+        run.reasons.insert(0, run.forbidden)
+    if not fresh:
+        raise EmptyResult(f"0/{len(pending)} 종목 — 기존 저장본 유지" + (f" ({stop})" if stop else "")
+                          + _reason_suffix(run.reasons))
+
+    for entry in fresh.values():
+        if entry["status"] == "OK":
+            _append_adj_closes(entry)
+    codes = {code: previous[code] for code in scope if code not in pending and code in previous}
+    codes.update(fresh)
+    carried = carry_over_missing(codes, previous, scope, (run.reasons[0] if run.reasons else stop) or None, _has_quote)
+    store.put_snapshot(catalog.SNAP_KR_PAPER_QUOTES, {
+        "contract": KR_QUOTES_CONTRACT,
+        "source": "토스증권 Open API — /api/v1/candles 일봉(adjusted=false 원시·true 수정)·1분봉 개장 봉, /api/v1/stocks 종목 상태",
+        "session": session.isoformat(),
+        "universeDate": basis,
+        "scope": scope,
+        "codes": {code: codes[code] for code in scope if code in codes},
+    })
+
+    no_bars = sum(1 for entry in fresh.values() if entry["status"] == "NO_BARS")
+    rebase = sorted(code for code, entry in fresh.items() if entry.get("adjBasisChanged"))
+    detail = (f"세션 {session} · {len(fresh)}/{len(pending)} 종목" + (f"(봉 없음 {no_bars})" if no_bars else "")
+              + f" · 1분봉 개장 {probes}건 · 호출 {run.budget.used}회" + carried_suffix(carried))
+    if basis is None:
+        detail += " · 유니버스 저장본 없음 — ETF 2만"
+    if rebase:
+        detail += f" · 수정주가 기준 바뀜 {len(rebase)}({', '.join(rebase[:5])}) — kr_paper_price_history가 다시 받음"
+    if stop:
+        detail += f" · {stop}"
+    return detail + _reason_suffix(run.reasons)
