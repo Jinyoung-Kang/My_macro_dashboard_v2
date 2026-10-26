@@ -27,8 +27,6 @@ import java.util.Map;
  */
 final class TestKrMarket implements PaperMarket {
 
-    static final TestKrMarket INSTANCE = new TestKrMarket();
-
     static final String CLAUDE_BOOK = "t_kr_claude";
     static final String QUOTES_DATASET = "test.kr.quotes";
     static final String QUOTES_TASK = "test_kr_quotes";
@@ -75,7 +73,21 @@ final class TestKrMarket implements PaperMarket {
         }
     };
 
-    private TestKrMarket() {
+    /** 주말만 쉬는 달력의 시험용 한국 묶음(아래 상수 뒤에 둬야 달력이 먼저 만들어짐). */
+    static final TestKrMarket INSTANCE = new TestKrMarket(SEOUL_WEEKDAYS);
+
+    private final TradingCalendar calendar;
+
+    private TestKrMarket(TradingCalendar calendar) {
+        this.calendar = calendar;
+    }
+
+    /**
+     * 달력만 바꾼 시험용 한국 묶음 — '달력 없음' 시험(명세 K35)이 공휴일 목록이 빠진 {@code KrxCalendar}를 넣습니다. 나머지(책·데이터셋·
+     * 시각)는 {@link #INSTANCE}와 같습니다.
+     */
+    static TestKrMarket withCalendar(TradingCalendar calendar) {
+        return new TestKrMarket(calendar);
     }
 
     /** 시험용 한국 책 한 권(운용 중) — 시장·통화가 KR·KRW. */
@@ -96,7 +108,7 @@ final class TestKrMarket implements PaperMarket {
 
     @Override
     public TradingCalendar calendar() {
-        return SEOUL_WEEKDAYS;
+        return calendar;
     }
 
     @Override

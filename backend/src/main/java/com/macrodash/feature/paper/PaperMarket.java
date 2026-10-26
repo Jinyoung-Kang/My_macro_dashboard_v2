@@ -1,6 +1,8 @@
 package com.macrodash.feature.paper;
 
 import com.macrodash.Kst;
+import com.macrodash.analytics.CalendarUnavailableException;
+import com.macrodash.analytics.CalendarWindow;
 import com.macrodash.analytics.OrderValidator;
 import com.macrodash.analytics.TradingCalendar;
 import tools.jackson.databind.JsonNode;
@@ -38,6 +40,26 @@ interface PaperMarket {
 
     /** 세션 날짜를 정하고 체결·만료·재진입 금지·통계 표본을 세는 거래일 달력. */
     TradingCalendar calendar();
+
+    /**
+     * 정기 작업이 앞으로 쓸 창의 거래일 수 — 주문 만료(기준일 + {@value RuleBookService#ORDER_EXPIRY_TRADING_DAYS}거래일)와 패킷 일정
+     * 창({@code 1b_calendar}, 기준일 + {@value CalendarWindow#TRADING_DAYS}거래일) 중 긴 쪽(명세 §4-4·K35). 재진입 금지(관측일 +
+     * 20거래일)는 넣지 않았습니다 — 명세가 정한 창이 아니고, 그 계산이 모르는 해에 닿으면 장부 오류로 그 실행의 작업 기록에 남습니다.
+     */
+    int CALENDAR_WINDOW_TRADING_DAYS = Math.max(RuleBookService.ORDER_EXPIRY_TRADING_DAYS, CalendarWindow.TRADING_DAYS);
+
+    /**
+     * 정기 작업이 시작할 때 그 시장 달력이 앞으로 쓸 창(직전 세션 ~ 그 뒤 {@value #CALENDAR_WINDOW_TRADING_DAYS}거래일)이 걸친 해를
+     * 아는지 확인합니다(명세 K35 — 앞 창의 해 목록이 없으면 그 시장 실행은 '달력 없음'으로 섬). 모르는 해에 닿으면 달력이 던진
+     * {@link CalendarUnavailableException}이 그대로 나갑니다 — 작업은 그것을 작업 기록의 '달력 없음'으로 남깁니다
+     * ({@link CalendarGaps}). 지난 해(통계 표본·보유 거래일)는 여기서 보지 않습니다 — 그 계산만 null + 사유(K35). 미국 달력은 늘 압니다.
+     *
+     * @throws CalendarUnavailableException 창이 걸친 해의 공휴일 목록이 없음
+     */
+    default void requireCalendarWindow(Instant now) {
+        TradingCalendar calendar = calendar();
+        calendar.addTradingDays(calendar.lastCompletedSession(now), CALENDAR_WINDOW_TRADING_DAYS);
+    }
 
     /** 장부 관측치 스냅샷의 데이터셋 — 그 관측치로 체결하면 체결 가격 출처({@code paper_fills.price_source})도 이 이름. */
     String quotesDataset();

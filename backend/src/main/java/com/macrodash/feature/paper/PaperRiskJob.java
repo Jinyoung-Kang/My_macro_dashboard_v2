@@ -1,6 +1,7 @@
 package com.macrodash.feature.paper;
 
 import com.macrodash.Kst;
+import com.macrodash.analytics.CalendarUnavailableException;
 import com.macrodash.feature.paper.PaperLedgerService.Outcome;
 import com.macrodash.feature.paper.PaperMarketData.Quotes;
 import com.macrodash.read.StoreReader;
@@ -39,6 +40,10 @@ import java.util.Optional;
  * 5분마다 같은 오류를 내고 ERROR 기록이 쌓여 장중 봉 확인용 기록을 밀어내지 않게. 새 관측치가 오면 다시 시도하고, 수동 실행은
  * 같은 관측치로 한 번 더 시도합니다.
  *
+ * <p>그 시장 달력이 앞으로 쓸 창의 해를 모르면(공휴일 목록 없음 — 명세 K35) 관측치를 읽지 않고 그 시장 실행을 멈추며, 작업 기록에
+ * {@value CalendarGaps#NO_CALENDAR}('달력 없음' 사유·빠진 해)를 남깁니다 — 정기 실행은 그 시장·KST 날짜·빠진 해마다 한 번,
+ * 수동 실행은 누를 때마다({@link CalendarGaps}).
+ *
  * <p>{@code dashboard.paper.enabled=false}면 정기 실행은 아무것도 하지 않습니다(통합 테스트). 수동 실행({@link #runNow})은
  * 설정과 상관없이 한 번 돕니다.
  */
@@ -59,6 +64,8 @@ public class PaperRiskJob {
     private final Clock clock;
     /** 정기 실행이 도는 시장, 도는 순서. */
     private final List<PaperMarket> markets;
+    /** '달력 없음'을 시장·날짜·빠진 해마다 한 번만 남기는 장부(클래스 설명). */
+    private final CalendarGaps calendarGaps = new CalendarGaps();
 
     @Autowired
     public PaperRiskJob(PaperStore store, StoreReader reader, PaperMarketData marketData, PaperLedgerService ledger,
@@ -136,6 +143,19 @@ public class PaperRiskJob {
             return Outcome.skipped("모의 매매 테이블이 아직 없습니다(V8·V9 적용 전) — make up 후 다시 보세요");
         }
         Instant started = clock.instant();
+        try {
+            market.requireCalendarWindow(started);
+            calendarGaps.clear(market);
+        } catch (CalendarUnavailableException e) {
+            // 그 시장 달력이 앞 창의 해를 모름(명세 K35) — 장부를 돌리지 않고 '달력 없음'으로 남깁니다(클래스 설명).
+            if (manual || calendarGaps.firstToday(market, started, e)) {
+                Map<String, Object> detail = CalendarGaps.detail(e);
+                detail.put("manual", manual);
+                write(market, started, CalendarGaps.NO_CALENDAR, detail);
+                log.warn("모의 매매 리스크 점검({}) — {}", market.code(), e.getMessage());
+            }
+            return Outcome.skipped(e.getMessage());
+        }
         Optional<Quotes> quotes = reader.quietly(() -> marketData.quotes(market));
         if (quotes.isEmpty()) {
             return Outcome.skipped("관측치 저장본(" + market.quotesDataset() + ")이 아직 없습니다 — 수집기의 "
@@ -175,9 +195,12 @@ public class PaperRiskJob {
         if (!outcome.errors().isEmpty()) {
             detail.put("errors", outcome.errors());
         }
+        write(market, started, outcome.errors().isEmpty() ? "OK" : "ERROR", detail);
+    }
+
+    private void write(PaperMarket market, Instant started, String outcome, Map<String, Object> detail) {
         try {
-            store.recordJobRun(market.jobName(JOB), started, clock.instant(),
-                    outcome.errors().isEmpty() ? "OK" : "ERROR", mapper.valueToTree(detail));
+            store.recordJobRun(market.jobName(JOB), started, clock.instant(), outcome, mapper.valueToTree(detail));
         } catch (RuntimeException e) {
             // 기록 실패가 처리 결과(이미 커밋됨)를 오류로 바꾸지 않게 로그만 남깁니다.
             log.warn("모의 매매 작업 기록을 남기지 못했습니다: {}", e.toString());

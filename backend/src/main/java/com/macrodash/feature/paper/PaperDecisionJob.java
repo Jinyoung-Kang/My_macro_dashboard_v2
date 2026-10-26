@@ -1,6 +1,7 @@
 package com.macrodash.feature.paper;
 
 import com.macrodash.Kst;
+import com.macrodash.analytics.CalendarUnavailableException;
 import com.macrodash.analytics.GateIndicator;
 import com.macrodash.feature.paper.PaperLedgerService.Outcome;
 import com.macrodash.feature.paper.PaperMarketData.Quotes;
@@ -39,6 +40,7 @@ import java.util.concurrent.locks.ReentrantLock;
  * 🧪 하루 한 번의 결정 작업(설계 §6-2) — 10분마다 돌며, 미국 세션이 끝난 다음 날 아침(KST)에 그 거래일의 결정을 냅니다.
  *
  * <pre>
+ *  그 시장 달력이 앞 창(직전 세션 ~ 10거래일)의 해를 모름 → NO_CALENDAR(그 시장·KST 날짜·빠진 해마다 한 번 기록 — 명세 K35)
  *  d = 마감이 끝난 가장 최근 세션
  *  d 다음 날 decisionTimeKst(07:30) 전           → TOO_EARLY(기록 안 함)
  *  그날 할 일(게이트 지표·규칙 책 결정·Claude 책 결정)이 다 됨 → ALREADY_DECIDED(기록 안 함)
@@ -110,13 +112,15 @@ public class PaperDecisionJob {
     public static final String ERROR = "ERROR";
     /** 수동 실행이 작업 잠금을 쥐고 있어 정기 실행이 그 주기를 건너뜀(기록 안 함 — 클래스 설명). */
     public static final String BUSY = "BUSY";
+    /** 그 시장 달력이 앞 창의 해를 모름 — 그 시장 결정을 내지 않음(명세 K35, {@link CalendarGaps}). */
+    public static final String NO_CALENDAR = CalendarGaps.NO_CALENDAR;
     /** 미국 밖 시장의 규칙 책 결정 자리(작업 기록) — 그 시장 규칙 책은 2단계 D1에서 들어옵니다(클래스 설명). */
     static final String RULES_NOT_YET = "이 시장의 규칙 계좌 결정은 아직 없습니다(2단계 D1)";
 
     /**
      * 한 번 실행의 결과.
      *
-     * @param outcome     위 상수 중 하나. DECIDED·ERROR만 작업 기록을 남깁니다
+     * @param outcome     위 상수 중 하나. DECIDED·ERROR만 작업 기록을 남깁니다(NO_CALENDAR는 시장·KST 날짜·빠진 해마다 한 번)
      * @param tradingDate 결정 대상 거래일(테이블이 없으면 null)
      * @param pricesFinal 확정 종가로 결정했나(결정 전에 끝났으면 null)
      * @param rules       규칙 책 결정(내지 않았으면 null)
@@ -147,6 +151,8 @@ public class PaperDecisionJob {
     private final ReentrantLock running = new ReentrantLock();
     /** (시장, 거래일, 책) → 오류 난 횟수(클래스 설명). 재기동하면 사라집니다. */
     private final Map<FailureKey, Integer> failures = new ConcurrentHashMap<>();
+    /** '달력 없음'을 시장·날짜·빠진 해마다 한 번만 남기는 장부(클래스 설명). */
+    private final CalendarGaps calendarGaps = new CalendarGaps();
 
     /** 오류 횟수를 세는 단위 — 시장 × 거래일(그 시장 세션) × 책 코드(그 시장의 규칙·Claude 책). */
     private record FailureKey(String market, LocalDate day, String book) {
@@ -250,6 +256,12 @@ public class PaperDecisionJob {
             return new Result(NOT_READY, null, null, null, null, PaperQueryService.NOT_READY_MESSAGE);
         }
         Instant now = clock.instant();
+        try {
+            market.requireCalendarWindow(now);
+            calendarGaps.clear(market);
+        } catch (CalendarUnavailableException e) {
+            return noCalendar(market, now, e);
+        }
         LocalDate d = market.calendar().lastCompletedSession(now);
         if (store.books(market.code()).isEmpty()) {
             return new Result(NOT_INITIALIZED, d, null, null, null, "초기화 전입니다 — 계좌가 없습니다");
@@ -423,6 +435,18 @@ public class PaperDecisionJob {
         return new Result(ERROR, d, pricesFinal, rulesDecision, claudeDecision, message);
     }
 
+    /**
+     * 그 시장 달력이 앞 창의 해를 모름(명세 K35) — 그 시장 결정을 내지 않고, 그 시장·KST 날짜·빠진 해마다 한 번 작업 기록에
+     * {@value #NO_CALENDAR}로 남깁니다(10분마다 같은 줄이 작업 기록을 밀어내지 않게 — {@link CalendarGaps}).
+     */
+    private Result noCalendar(PaperMarket market, Instant now, CalendarUnavailableException e) {
+        if (calendarGaps.firstToday(market, now, e)) {
+            record(market, now, NO_CALENDAR, CalendarGaps.detail(e));
+            log.warn("모의 매매 결정 작업({}) — {}", market.code(), e.getMessage());
+        }
+        return new Result(NO_CALENDAR, null, null, null, null, e.getMessage());
+    }
+
     private boolean gaveUp(PaperMarket market, LocalDate d, String book) {
         return failures.getOrDefault(new FailureKey(market.code(), d, book), 0) >= MAX_ATTEMPTS;
     }
@@ -452,7 +476,7 @@ public class PaperDecisionJob {
      * 전용 단계라 미국 묶음에서만 받습니다(클래스 설명).
      *
      * @throws InvalidRequestException 책 코드가 그 시장의 규칙·Claude 책이 아님(미국 밖 시장은 Claude 책만), 그 책이 시작 전, Claude 책이
-     *                                 일시정지 중
+     *                                 일시정지 중, 그 시장 달력이 앞 창의 해를 모름('달력 없음' — 명세 K35)
      */
     Decision runNow(PaperMarket market, String book) {
         String code = Params.oneOf("book", book, usSteps(market) ? List.of(market.rulesBook(), market.claudeBook())
@@ -462,6 +486,11 @@ public class PaperDecisionJob {
             // 그 책의 오류 횟수만 지웁니다(클래스 설명) — 다른 책·다른 시장의 포기 상태는 그대로.
             failures.keySet().removeIf(key -> key.market().equals(market.code()) && key.book().equals(code));
             Instant now = clock.instant();
+            try {
+                market.requireCalendarWindow(now);
+            } catch (CalendarUnavailableException e) {
+                throw new InvalidRequestException(e.getMessage());
+            }
             LocalDate d = market.calendar().lastCompletedSession(now);
             Optional<Quotes> quotes = reader.quietly(() -> marketData.quotes(market));
             boolean pricesFinal = quotes.map(q -> finalFor(market, q, d)).orElse(false);

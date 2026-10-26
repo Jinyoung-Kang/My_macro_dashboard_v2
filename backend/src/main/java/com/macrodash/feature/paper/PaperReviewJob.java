@@ -1,6 +1,7 @@
 package com.macrodash.feature.paper;
 
 import com.macrodash.Kst;
+import com.macrodash.analytics.CalendarUnavailableException;
 import com.macrodash.analytics.ReviewFacts;
 import com.macrodash.read.StoreReader;
 import com.macrodash.store.PaperStore;
@@ -30,6 +31,7 @@ import java.util.concurrent.locks.ReentrantLock;
  * 🧪 주간 복기 작업(2단계 명세 §3 D1·D4) — 30분마다 돌며, 그 주 복기를 낼 때가 됐으면 {@link ReviewService#review}를 한 번 부릅니다.
  *
  * <pre>
+ *  그 시장 달력이 앞 창(직전 세션 ~ 10거래일)의 해를 모름 → NO_CALENDAR(정기 실행은 그 시장·KST 날짜·빠진 해마다 한 번 기록 — 명세 K35)
  *  w = 지금 마감이 끝난 가장 최근 복기 주(그 ISO 주의 마지막 거래일 — 금요일, 휴장이면 목요일)
  *  w 주 토요일 09:00 KST 전                                  → TOO_EARLY(기록 안 함)
  *  w의 행이 이미 있음(다시 부를 API 오류가 아니면)              → ALREADY_REVIEWED
@@ -84,11 +86,13 @@ public class PaperReviewJob {
     /** 창 안에 복기할 결정이 없어 SKIPPED 행을 남김(부르지 않음). */
     public static final String SKIPPED = "SKIPPED";
     public static final String ERROR = "ERROR";
+    /** 그 시장 달력이 앞 창의 해를 모름 — 그 시장 복기를 하지 않음(명세 K35, {@link CalendarGaps}). */
+    public static final String NO_CALENDAR = CalendarGaps.NO_CALENDAR;
 
     /**
      * 한 번 실행의 결과.
      *
-     * @param outcome    위 상수 중 하나. REVIEWED·SKIPPED·ERROR만 작업 기록을 남깁니다
+     * @param outcome    위 상수 중 하나. REVIEWED·SKIPPED·ERROR만 작업 기록을 남깁니다(NO_CALENDAR는 정기 실행에서 시장·KST 날짜·빠진 해마다 한 번)
      * @param weekEnding 대상 복기 주(테이블이 없으면 null)
      * @param review     남은(또는 이미 있던) 복기 행. 없으면 null
      */
@@ -108,6 +112,8 @@ public class PaperReviewJob {
     private final ReentrantLock running = new ReentrantLock();
     /** (시장, 복기 주) → 오류 난 횟수(클래스 설명). 재기동하면 사라집니다. */
     private final Map<FailureKey, Integer> failures = new ConcurrentHashMap<>();
+    /** '달력 없음'을 시장·날짜·빠진 해마다 한 번만 남기는 장부(클래스 설명). */
+    private final CalendarGaps calendarGaps = new CalendarGaps();
 
     /** 오류 횟수를 세는 단위 — 시장 × 복기 주(그 시장 달력의 주 마지막 거래일). */
     private record FailureKey(String market, LocalDate week) {
@@ -199,7 +205,8 @@ public class PaperReviewJob {
      * 조건이며, 그 주의 행이 이미 있으면 부르지 않고 그 행을 돌려줍니다(API 오류였으면 한 번 다시 부름).
      *
      * @return {@code {ok, outcome, review}} — 테이블이 없으면 {@code {available:false, ok:false, message}}
-     * @throws InvalidRequestException  Claude 계좌가 운용 중이 아님·출발일이 그 주 전이 아님·확정 종가가 아직 없음·하루 호출 상한
+     * @throws InvalidRequestException  Claude 계좌가 운용 중이 아님·출발일이 그 주 전이 아님·확정 종가가 아직 없음·하루 호출 상한·
+     *                                  그 시장 달력이 앞 창의 해를 모름('달력 없음' — 명세 K35)
      * @throws TooManyRequestsException 다른 복기 실행이 진행 중
      */
     public Map<String, Object> runNow() {
@@ -214,7 +221,13 @@ public class PaperReviewJob {
         try {
             Instant now = clock.instant();
             // 그 주의 오류 횟수를 지웁니다 — 수동 실행은 포기한 주도 다시 시도합니다(결정 작업의 수동 실행과 같음).
-            LocalDate week = ReviewFacts.latestCompletedWeekEnding(market.calendar(), now);
+            LocalDate week;
+            try {
+                market.requireCalendarWindow(now);
+                week = ReviewFacts.latestCompletedWeekEnding(market.calendar(), now);
+            } catch (CalendarUnavailableException e) {
+                throw new InvalidRequestException(e.getMessage());
+            }
             failures.remove(new FailureKey(market.code(), week));
             Result result = runLocked(market, now, false);
             switch (result.outcome()) {
@@ -223,7 +236,8 @@ public class PaperReviewJob {
                     out.put("ok", false);
                     return out;
                 }
-                case NOT_ACTIVE, WAITING_FINAL_CLOSE, CAP_REACHED -> throw new InvalidRequestException(result.message());
+                case NOT_ACTIVE, WAITING_FINAL_CLOSE, CAP_REACHED, NO_CALENDAR ->
+                        throw new InvalidRequestException(result.message());
                 default -> {
                     Map<String, Object> out = new LinkedHashMap<>();
                     out.put("ok", true);
@@ -241,6 +255,17 @@ public class PaperReviewJob {
     private Result runLocked(PaperMarket market, Instant now, boolean scheduled) {
         if (!store.ready()) {
             return new Result(NOT_READY, null, null, PaperQueryService.NOT_READY_MESSAGE);
+        }
+        try {
+            market.requireCalendarWindow(now);
+            calendarGaps.clear(market);
+        } catch (CalendarUnavailableException e) {
+            // 그 시장 달력이 앞 창의 해를 모름(명세 K35) — 복기하지 않고, 정기 실행은 하루 한 번 '달력 없음'으로 남깁니다.
+            if (scheduled && calendarGaps.firstToday(market, now, e)) {
+                record(market, now, NO_CALENDAR, CalendarGaps.detail(e));
+                log.warn("주간 복기 작업({}) — {}", market.code(), e.getMessage());
+            }
+            return new Result(NO_CALENDAR, null, null, e.getMessage());
         }
         LocalDate week = ReviewFacts.latestCompletedWeekEnding(market.calendar(), now);
         Instant opens = market.reviewOpening(week);
