@@ -6,8 +6,8 @@
 import http from 'k6/http';
 import { check } from 'k6';
 
-const BASE = __ENV.BASE || 'http://127.0.0.1:18081';
-const ORIGIN = __ENV.ORIGIN || 'http://localhost:13001';
+const BASE = __ENV.BASE || 'http://127.0.0.1:18082';
+const ORIGIN = __ENV.ORIGIN || 'http://localhost:13002';
 const SCENARIO = __ENV.SCENARIO || 'refresh';
 export const options = { scenarios: { burst: { executor: 'per-vu-iterations', vus: SCENARIO === 'login' ? 30 : 20, iterations: 1 } } };
 
@@ -16,15 +16,15 @@ export function setup() {
   const res = http.post(`${BASE}/api/auth/login`, JSON.stringify({ email: __ENV.EMAIL || '', password: __ENV.PASSWORD || '' }),
     { headers: { 'Content-Type': 'application/json', Origin: ORIGIN } });
   if (res.status !== 200) throw new Error(`login failed: ${res.status}`);
-  return { cookie: res.cookies.my_macro_session[0].value };
+  return { cookie: res.cookies.my_macro_v2_session[0].value };
 }
 
 export default function (data) {
   let res;
   if (SCENARIO === 'refresh') {
-    res = http.post(`${BASE}/api/status/refresh?runFast=true`, null, { cookies: { my_macro_session: data.cookie }, timeout: '120s' });
+    res = http.post(`${BASE}/api/status/refresh?runFast=true`, null, { cookies: { my_macro_v2_session: data.cookie }, timeout: '120s' });
   } else if (SCENARIO === 'run') {
-    res = http.post(`${BASE}/api/status/run/kr_holidays`, null, { cookies: { my_macro_session: data.cookie }, timeout: '120s' });
+    res = http.post(`${BASE}/api/status/run/kr_holidays`, null, { cookies: { my_macro_v2_session: data.cookie }, timeout: '120s' });
   } else {
     res = http.post(`${BASE}/api/auth/login`, JSON.stringify({ email: __ENV.EMAIL || '', password: 'wrong-' + __VU }),
       { headers: { 'Content-Type': 'application/json', Origin: ORIGIN } });

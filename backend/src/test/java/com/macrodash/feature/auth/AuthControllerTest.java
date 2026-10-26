@@ -55,12 +55,12 @@ class AuthControllerTest {
     }
 
     @Test
-    @DisplayName("세션 쿠키는 my_macro_session(v3의 macro_session과 다름) · HttpOnly + SameSite=Strict, 응답에 사용자(이메일·역할·등급)")
+    @DisplayName("세션 쿠키는 my_macro_v2_session(v3의 macro_session·v1의 my_macro_session과 다름) · HttpOnly + SameSite=Strict, 응답에 사용자(이메일·역할·등급)")
     void cookieAttributes() {
         ResponseEntity<Map<String, Object>> response = login(db.email("owner"), "right-password-1", "10.0.0.1");
 
         String cookie = response.getHeaders().getFirst(HttpHeaders.SET_COOKIE);
-        assertThat(cookie).as("같은 localhost의 v3(macro_session)와 섞이지 않는 이름").startsWith("my_macro_session=");
+        assertThat(cookie).as("같은 localhost의 v3(macro_session)·v1(my_macro_session)과 섞이지 않는 이름").startsWith("my_macro_v2_session=");
         assertThat(cookie).contains("HttpOnly").contains("SameSite=Strict").doesNotContain("Secure");
         assertThat(response.getBody()).containsEntry("ok", true);
         assertThat(String.valueOf(((Map<?, ?>) response.getBody().get("user")).get("role"))).isEqualTo("OWNER");

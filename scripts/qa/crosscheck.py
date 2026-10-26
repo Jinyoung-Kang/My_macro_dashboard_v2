@@ -20,7 +20,7 @@ import urllib.request
 from datetime import date, timedelta
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
-PROJECT = "my_macrodash_qa"
+PROJECT = "my_macrodash_v2_qa"
 
 
 def env_value(key: str) -> str:
@@ -54,12 +54,12 @@ def close(a, b, tol=1e-6) -> str:
 
 
 def main() -> None:
-    base = f"http://127.0.0.1:{env_value('BACKEND_PORT') or '18081'}"
+    base = f"http://127.0.0.1:{env_value('BACKEND_PORT') or '18082'}"
     jar = http.cookiejar.CookieJar()
     opener = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(jar))
     body = json.dumps({"email": env_value("OWNER_EMAIL"), "password": env_value("APP_PASSWORD")}).encode()
     opener.open(urllib.request.Request(f"{base}/api/auth/login", data=body, method="POST",
-                headers={"Content-Type": "application/json", "Origin": f"http://localhost:{env_value('FRONTEND_PORT') or '13001'}"}), timeout=30)
+                headers={"Content-Type": "application/json", "Origin": f"http://localhost:{env_value('FRONTEND_PORT') or '13002'}"}), timeout=30)
     results: list[str] = []
 
     # ---- 유동성

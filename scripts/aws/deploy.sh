@@ -4,10 +4,10 @@
 # 서버에서는 make up 대신 이것을 씁니다.
 #
 # 사용(서버 셸 — PC에서 aws ssm start-session으로 붙은 뒤 `sudo -iu ubuntu`):
-#   bash ~/My_macro_dashboard_v1/scripts/aws/deploy.sh
+#   bash ~/My_macro_dashboard_v2/scripts/aws/deploy.sh
 #
 # 순서
-#   1. 점검: 폴더 이름(My_macro_dashboard_v1 — compose 프로젝트·DB 볼륨 이름이 폴더 이름을 따름), .env가 있고
+#   1. 점검: 폴더 이름(My_macro_dashboard_v2 — compose 프로젝트·DB 볼륨 이름이 폴더 이름을 따름), .env가 있고
 #      서버에 적지 않는 이름(포트 네 줄 등, .env.aws.example)이 없는지. 값은 읽지도 찍지도 않습니다.
 #   2. git fetch → main 체크아웃 → origin/main으로 fast-forward. 서버에서 고친 파일이 있거나 갈라졌으면 멈춥니다.
 #   3. 화면 왼쪽 아래 버전(APP_VERSION·APP_UPDATED)
@@ -27,12 +27,12 @@ die() {
 }
 
 # ---------------------------------------------------------------- 1) 점검
-[ "$(basename "$PWD")" = "My_macro_dashboard_v1" ] ||
-    die "폴더 이름이 My_macro_dashboard_v1이 아닙니다($(basename "$PWD")). compose 프로젝트·DB 볼륨 이름이 폴더 이름을 따릅니다."
+[ "$(basename "$PWD")" = "My_macro_dashboard_v2" ] ||
+    die "폴더 이름이 My_macro_dashboard_v2가 아닙니다($(basename "$PWD")). compose 프로젝트·DB 볼륨 이름이 폴더 이름을 따릅니다."
 [ -f .env ] || die ".env가 없습니다 — docs/DEVELOPMENT.md '서버 .env 전달'을 보세요."
 [ -n "$(find .env -maxdepth 0 -perm 600)" ] || echo "⚠️  .env 권한이 600이 아닙니다(비밀값) — chmod 600 .env"
 
-# 서버 .env에 적지 않는 이름(.env.aws.example). 포트 네 줄이 들어오면 로컬 포트(3001…)로 뜨고, 나머지는
+# 서버 .env에 적지 않는 이름(.env.aws.example). 포트 네 줄이 들어오면 로컬 포트(3002…)로 뜨고, 나머지는
 # compose.aws.yml이 박아 둔 값이라 적어도 쓰이지 않아 헷갈리기만 합니다. 이름만 봅니다.
 unwanted=""
 for name in DATABASE_PORT BACKEND_PORT COLLECTOR_PORT FRONTEND_PORT LOCAL_NO_LOGIN FRONTEND_ORIGIN PUBLIC_URL AWS_INSTANCE_ID; do

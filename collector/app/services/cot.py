@@ -133,7 +133,7 @@ def _get_with_retry(params: dict, max_attempts: int = 3):
                 params=params,
                 timeout=(5, 30),
                 # CFTC(Socrata)는 연락처를 요구하지 않습니다. 자리표시 주소를 코드 기본값으로 싣지 않습니다(QA-038).
-                headers={"User-Agent": "my-macro-dashboard-v1/1.0"},
+                headers={"User-Agent": "my-macro-dashboard-v2/1.0"},
             )
             response.raise_for_status()
             return response, None

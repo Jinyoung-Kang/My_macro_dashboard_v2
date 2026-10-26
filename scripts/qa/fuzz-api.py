@@ -58,7 +58,7 @@ def env_value(key: str) -> str:
 def login(opener, base: str) -> None:
     body = json.dumps({"email": env_value("OWNER_EMAIL"), "password": env_value("APP_PASSWORD")}).encode()
     req = urllib.request.Request(f"{base}/api/auth/login", data=body, method="POST",
-                                 headers={"Content-Type": "application/json", "Origin": f"http://localhost:{env_value('FRONTEND_PORT') or '13001'}"})
+                                 headers={"Content-Type": "application/json", "Origin": f"http://localhost:{env_value('FRONTEND_PORT') or '13002'}"})
     with opener.open(req, timeout=TIMEOUT) as r:
         if r.status != 200:
             sys.exit(f"login failed: {r.status}")
@@ -84,7 +84,7 @@ def main() -> None:
     ap.add_argument("--only")
     ap.add_argument("--quick", action="store_true", help="파라미터당 값 5개만")
     args = ap.parse_args()
-    base = f"http://127.0.0.1:{env_value('BACKEND_PORT') or '18081'}"
+    base = f"http://127.0.0.1:{env_value('BACKEND_PORT') or '18082'}"
     spec = json.loads((ROOT / "scripts/qa/routes.json").read_text())
     jar = http.cookiejar.CookieJar()
     opener = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(jar))

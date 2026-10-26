@@ -29,7 +29,7 @@ FRONTEND_PORT=$(get_env FRONTEND_PORT);   FRONTEND_PORT=${FRONTEND_PORT:-3000}
 PY=python3
 [ -x collector/.venv/bin/python ] && PY=collector/.venv/bin/python
 
-printf '%s\n' "${BOLD}My Macro Dashboard v1 — 진단${RESET}"
+printf '%s\n' "${BOLD}My Macro Dashboard v2 — 진단${RESET}"
 
 # 어느 코드로 돌고 있는지 먼저 밝힙니다. "고쳤다는 기능이 없다"의 절반은
 # 그 코드가 아예 안 받아진 경우였습니다(다른 브랜치에 있는데 git pull만 함).

@@ -28,7 +28,7 @@
 #   · 앞단이 넘긴 X-Forwarded-For를 Tomcat이 믿음(내부 대역에서 온 것만). 터널로 들어온 요청은 모두 한 주소로 보여
 #     로그인 제한은 사실상 이메일별 — 사용자 1명이라 그대로 둠(ADR 0019)
 #   · 국면 판정 기록은 23시(가동 창 안, 기동 뒤 수집이 한 바퀴 돈 뒤), postgres는 꺼질 때 30초까지 기다림(매일 아침 정지)
-# 바뀌지 않는 것: postgres 컨테이너(볼륨 my_macro_dashboard_v1_postgres-data — 폴더 이름을 따름), 나머지 포트는 기반 파일 그대로
+# 바뀌지 않는 것: postgres 컨테이너(볼륨 my_macro_dashboard_v2_postgres-data — 폴더 이름을 따름), 나머지 포트는 기반 파일 그대로
 #   127.0.0.1의 기본값(3000/8080/8000/5432), AI 엔진·모의 매매(PAPER_ENABLED)·읽기 모드는 .env 그대로
 # 서버 .env(이름은 .env.aws.example): 로컬 .env에서 포트 네 줄·COOKIE_SECURE·LOCAL_NO_LOGIN·FRONTEND_ORIGIN·PUBLIC_URL·
 #   AWS_INSTANCE_ID(와 전환 뒤 로컬의 PAPER_ENABLED=false)를 빼고 COMPOSE_FILE·AWS_BACKUP_BUCKET을 더한 것

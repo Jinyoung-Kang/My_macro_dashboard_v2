@@ -3,7 +3,7 @@
 # scripts/bench-api.sh — 화면 API 응답 시간을 잰다 (성능 변경 전후 비교용).
 #
 # 사용: bash scripts/bench-api.sh [반복 횟수=5] [> 결과파일]
-#       ENV_FILE=.env.qa bash scripts/bench-api.sh   # QA 스택(18081)에서 — 성능 시험은 운영 스택이 아니라 여기서(CLAUDE.md)
+#       ENV_FILE=.env.qa bash scripts/bench-api.sh   # QA 스택(18082)에서 — 성능 시험은 운영 스택이 아니라 여기서(CLAUDE.md)
 #
 # ENV_FILE(기본 .env)의 OWNER_EMAIL·APP_PASSWORD(운영자 계정)로 로그인해 쿠키를 받은 뒤, 아래 목록의 엔드포인트를 반복 호출하고
 # 중앙값(ms)과 응답 크기를 표로 찍는다. 첫 호출은 JIT·커넥션 준비 때문에 느리므로 버린다.

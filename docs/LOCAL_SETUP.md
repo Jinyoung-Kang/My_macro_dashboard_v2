@@ -1,6 +1,6 @@
 # 로컬 설치·실행 가이드 (macOS)
 
-이 문서는 맥에서 `~/Projects/My_macro_dashboard_v1`에 프로젝트를 두고 쓰는
+이 문서는 맥에서 `~/Projects/My_macro_dashboard_v2`에 프로젝트를 두고 쓰는
 것을 기준으로 씁니다. 다른 경로를 쓰면 아래 명령의 경로만 바꾸면 됩니다.
 
 > 컨테이너 네 개(화면·API·수집기·DB)로 이뤄져 있어 **Docker로 묶어 한 줄로
@@ -12,9 +12,9 @@
 
 ```bash
 # 저장
-git clone https://github.com/Jinyoung-Kang/My_macro_dashboard_v1.git \
-  ~/Projects/My_macro_dashboard_v1
-cd ~/Projects/My_macro_dashboard_v1
+git clone https://github.com/Jinyoung-Kang/My_macro_dashboard_v2.git \
+  ~/Projects/My_macro_dashboard_v2
+cd ~/Projects/My_macro_dashboard_v2
 
 # 준비 (.env 생성 · 키/포트 확인)
 make setup
@@ -22,51 +22,33 @@ make setup
 # 실행
 make up          # 최초 빌드 5~10분
 make collect     # 첫 데이터 수집 (이걸 해야 화면에 숫자가 찹니다)
-open http://localhost:3001
+open http://localhost:3002
 ```
 
 > **폴더 이름이 DB 볼륨 이름을 정합니다.** 로컬 폴더는 저장소 이름과 같은
-> `My_macro_dashboard_v1`이라, `git clone`에 경로를 주지 않아도 이 이름으로
+> `My_macro_dashboard_v2`라, `git clone`에 경로를 주지 않아도 이 이름으로
 > 만들어집니다. Docker는 폴더 이름으로 DB 볼륨을 구분하므로
-> (`my_macro_dashboard_v1_postgres-data`), 폴더 이름을 바꾸거나 다른 이름의
+> (`my_macro_dashboard_v2_postgres-data`), 폴더 이름을 바꾸거나 다른 이름의
 > 폴더에 clone하면 **빈 DB로 시작**합니다. 쌓아 둔 이력은 옛 이름의 볼륨에 그대로
 > 남아 있습니다. 반대로 위치만 다르고 이름이 같은 폴더는 같은 DB·컨테이너를 함께 씁니다.
 
-> **`Local_macro_dashboard_v3`에서 옮겨 오기** — 이 저장소는 2026-10-25에 v3 저장소의
-> 브랜치 `claude/paper-trading-2026-10`을 그대로 `main`으로 가져와 만들었고, 같은 맥의 v3 스택이
-> 쌓은 데이터(모의 매매 계좌·결정 기록 포함)는 DB 볼륨을 복사해 이어받았습니다. 다시 해야 한다면
-> 새로 clone한 뒤 볼륨을 새 이름으로 복사하세요. v3 폴더는 **모의 매매 개발 전 main 그대로** 두고 v3 볼륨도
-> v3가 계속 씁니다 — 두 프로젝트는 따로 돕니다. 이 저장소는 `.env`의 포트를 3001/8081/8001/5433으로 바꿔
-> v3(3000/8080/8000/5432)와 함께 띄웁니다(compose 프로젝트·볼륨·QA 스택 이름도 다름). 한 줄씩 붙여 넣고,
-> 오류 없이 끝났는지 본 뒤 다음 줄로 넘어가세요.
+> **`My_macro_dashboard_v1`에서 갈라내기(2026-10-26)** — 이 저장소는 v1을 전체 이력으로 clone해 `origin`만 새 저장소로 바꿔
+> 만들었습니다(v1은 2026-10-25에 `Local_macro_dashboard_v3`에서 같은 식으로 갈라져 나옴). v1·v3 폴더·볼륨·스택은 **그대로 계속 돕니다** —
+> 이 저장소는 `.env`의 포트를 3002/8082/8002/5434로 바꿔 v3(3000/…)·v1(3001/…)과 함께 띄웁니다(compose 프로젝트·볼륨·QA 스택·세션 쿠키
+> 이름도 다름). 모의 매매 정기 작업은 AWS의 v1 한 곳에서만 돌므로 이 폴더의 `.env`는 `PAPER_ENABLED=false`입니다(ADR 0019).
+> 데이터는 볼륨 복사가 아니라 백업·복원(ADR 0003)으로 이어받습니다. 한 줄씩 붙여 넣고, 오류 없이 끝났는지 본 뒤 다음 줄로 넘어가세요.
 > ```bash
-> cd ~/Projects/Local_macro_dashboard_v3 && make backup && make down
-> git clone https://github.com/Jinyoung-Kang/My_macro_dashboard_v1.git ~/Projects/My_macro_dashboard_v1
-> cp ~/Projects/Local_macro_dashboard_v3/.env ~/Projects/My_macro_dashboard_v1/.env
-> ! docker volume inspect my_macro_dashboard_v1_postgres-data >/dev/null 2>&1 \
->   && docker volume create --label com.docker.compose.project=my_macro_dashboard_v1 \
->        --label com.docker.compose.volume=postgres-data my_macro_dashboard_v1_postgres-data \
->   && docker run --rm -v local_macro_dashboard_v3_postgres-data:/from:ro \
->        -v my_macro_dashboard_v1_postgres-data:/to postgres:16-alpine cp -a /from/. /to/
-> cd ~/Projects/My_macro_dashboard_v1 && sed -i -e 's/^DATABASE_PORT=.*/DATABASE_PORT=5433/' -e 's/^BACKEND_PORT=.*/BACKEND_PORT=8081/' \
->   -e 's/^COLLECTOR_PORT=.*/COLLECTOR_PORT=8001/' -e 's/^FRONTEND_PORT=.*/FRONTEND_PORT=3001/' .env
+> git clone https://github.com/Jinyoung-Kang/My_macro_dashboard_v2.git ~/Projects/My_macro_dashboard_v2
+> cp ~/Projects/My_macro_dashboard_v1/.env ~/Projects/My_macro_dashboard_v2/.env
+> cd ~/Projects/My_macro_dashboard_v2 && sed -i -e 's/^DATABASE_PORT=.*/DATABASE_PORT=5434/' -e 's/^BACKEND_PORT=.*/BACKEND_PORT=8082/' \
+>   -e 's/^COLLECTOR_PORT=.*/COLLECTOR_PORT=8002/' -e 's/^FRONTEND_PORT=.*/FRONTEND_PORT=3002/' -e 's/^PAPER_ENABLED=.*/PAPER_ENABLED=false/' .env
+> grep -q '^PAPER_ENABLED=false$' .env || echo 'PAPER_ENABLED=false' >> .env
 > make up && make doctor
-> cd ~/Projects/Local_macro_dashboard_v3 && git switch main && make up   # v3는 개발 전 main으로 다시
+> (cd ~/Projects/My_macro_dashboard_v1 && make backup)      # 마지막 줄의 파일 이름을 적어 둠
+> make restore F=$HOME/Projects/My_macro_dashboard_v1/backups/<그 파일>.sql
 > ```
-> `.env`는 v3 것을 그대로 씁니다(QA 스택용 `.env.qa`가 있으면 같은 방법으로 복사). 내용을 화면에
-> 출력하지 마세요. 볼륨 복사 명령은 성공하면 새 볼륨 이름을 한 줄 출력합니다. 아무것도 나오지 않으면
-> 새 이름의 볼륨이 이미 있는 것이니(새 폴더에서 `make up`을 한 번이라도 했다면) 멈추고 그 볼륨부터
-> 확인하세요. v3 볼륨은 지우지 않으므로, 문제가 생기면 새 폴더에서 `make down` 한 뒤 v3 폴더에서
-> `make up` 하면 원래대로 돌아갑니다(옮긴 뒤 수집한 데이터·모의 매매 기록은 새 볼륨에만 있습니다).
-> 빠짐없이 옮겨졌는지는 마지막 줄 전에 새 폴더에서 `make infra`(DB만)로 띄워 대조하는 것이 정확합니다 —
-> 첫 줄이 v3 폴더에 만든 백업 파일(`~/Projects/Local_macro_dashboard_v3/backups/macrodash-….sql`)의 표별 행 수
-> (`COPY` 블록의 줄 수)와 `make db`로 센 새 DB의 행 수를 봅니다. `make up` 뒤에는 수집기와 백엔드 정기 작업
-> (수집 기록·국면 기록·모의 매매 작업 기록 등)이 표를 바꾸므로 그 표들은 같지 않을 수 있습니다.
->
-> 새 폴더에는 `collector/.venv`·`frontend/node_modules`가 없습니다(저장소에 넣지 않는 폴더).
-> `make test` 전에 §5의 가상환경 절을 따라 `collector/.venv`를 만들고, `npm --prefix frontend ci`를
-> 한 번 실행하세요. v3의 `.venv`를 복사해 쓰면 pip·uvicorn 같은 실행 파일과 `activate`에 옛 경로가
-> 박혀 있어 동작하지 않습니다.
+> `.env` 내용은 화면에 출력하지 마세요. `.env.qa`는 복사하지 않습니다 — `bash scripts/qa/qa-stack.sh up`이 새 비밀값으로 만듭니다.
+> v1 볼륨은 그대로라, 문제가 생기면 이 폴더에서 `make down` 하면 v1·v3는 영향 없이 계속 돕니다.
 
 ---
 
@@ -110,17 +92,17 @@ Python은 **3.11(3.11.5 이상) 또는 3.12**를 권합니다. 고정판 soupsie
 
 ```bash
 mkdir -p ~/Projects
-git clone https://github.com/Jinyoung-Kang/My_macro_dashboard_v1.git \
-  ~/Projects/My_macro_dashboard_v1
+git clone https://github.com/Jinyoung-Kang/My_macro_dashboard_v2.git \
+  ~/Projects/My_macro_dashboard_v2
 
-cd ~/Projects/My_macro_dashboard_v1
+cd ~/Projects/My_macro_dashboard_v2
 ls          # README.md · docker-compose.yml · Makefile · backend · collector · frontend
 ```
 
 이미 받아 둔 폴더를 최신으로 맞출 때:
 
 ```bash
-cd ~/Projects/My_macro_dashboard_v1
+cd ~/Projects/My_macro_dashboard_v2
 make update      # git pull 대신 — 아래 이유를 꼭 읽어 주세요
 make up          # 받은 코드로 다시 빌드·기동
 ```
@@ -247,9 +229,9 @@ make up
 
 | 주소 | 용도 |
 |---|---|
-| <http://localhost:3001> | 화면 — 로그인 없이 운영자로 열림(이 맥에서만, ADR 0016). 운영자 계정은 `.env`의 `OWNER_EMAIL` + `APP_PASSWORD`로 처음 기동 때 만듦 |
-| <http://localhost:8081/api/health> | 백엔드 상태 |
-| <http://localhost:8001/docs> | 수집기 API 문서 (FastAPI 자동 생성) |
+| <http://localhost:3002> | 화면 — 로그인 없이 운영자로 열림(이 맥에서만, ADR 0016). 운영자 계정은 `.env`의 `OWNER_EMAIL` + `APP_PASSWORD`로 처음 기동 때 만듦 |
+| <http://localhost:8082/api/health> | 백엔드 상태 |
+| <http://localhost:8002/docs> | 수집기 API 문서 (FastAPI 자동 생성) |
 
 ### 첫 데이터 수집
 
@@ -301,21 +283,21 @@ make backup             # DB 백업 → backups/
 >
 > 이 절은 **코드를 고치면서 핫 리로드로 보고 싶을 때**만 쓰는 경로입니다.
 
-터미널 4개를 씁니다. 아래 명령은 모두 **저장소 최상위(`~/Projects/My_macro_dashboard_v1`)
+터미널 4개를 씁니다. 아래 명령은 모두 **저장소 최상위(`~/Projects/My_macro_dashboard_v2`)
 에서 새 터미널을 연 상태**를 가정합니다. 이미 하위 폴더에 들어가 있다면
-`cd ~/Projects/My_macro_dashboard_v1` 로 먼저 돌아가세요
+`cd ~/Projects/My_macro_dashboard_v2` 로 먼저 돌아가세요
 (`cd frontend`를 프런트 폴더 안에서 또 치면 `no such file or directory`가 납니다).
 
 먼저 DB만 컨테이너로 띄우면 `psql`·`brew services`가 필요 없습니다.
 
 ```bash
-cd ~/Projects/My_macro_dashboard_v1
+cd ~/Projects/My_macro_dashboard_v2
 make infra      # postgres만 기동 (기본 스키마 자동 적용, 이후 버전은 수집기가 기동할 때 적용)
 ```
 
 ```bash
 # --- 터미널 1: 수집기 ---
-cd ~/Projects/My_macro_dashboard_v1
+cd ~/Projects/My_macro_dashboard_v2
 
 # 가상환경을 collector/.venv 에 만듭니다. Makefile도 이 경로를 먼저 찾습니다.
 python3.11 -m venv collector/.venv
@@ -335,13 +317,13 @@ make dev-collector      # 내부적으로 collector/.venv/bin/python -m uvicorn 
 
 ```bash
 # --- 터미널 2: 백엔드 (Java 21 필요) ---
-cd ~/Projects/My_macro_dashboard_v1
+cd ~/Projects/My_macro_dashboard_v2
 java -version           # 21 이상인지 먼저 확인하세요
 
 # DB 주소(.env의 DATABASE_PORT)와 수집기 토큰(.env의 COLLECTOR_API_TOKEN)은 make가 넘깁니다.
 DATABASE_USER="macro" DATABASE_PASSWORD="macro" \
 OWNER_EMAIL="로그인용_이메일" APP_PASSWORD="원하는_비밀번호" \
-COLLECTOR_URL="http://localhost:8001" \
+COLLECTOR_URL="http://localhost:8002" \
   make dev-backend
 ```
 
@@ -355,7 +337,7 @@ COLLECTOR_URL="http://localhost:8001" \
 
 ```bash
 # --- 터미널 3: 화면 ---
-cd ~/Projects/My_macro_dashboard_v1
+cd ~/Projects/My_macro_dashboard_v2
 npm --prefix frontend install
 make dev-frontend
 ```
@@ -380,14 +362,14 @@ Docker 없이 쓸 때, 맥이 켜져 있는 동안 수집기가 계속 돌게 �
 
   <key>ProgramArguments</key>
   <array>
-    <string>/Users/jinyoung/Projects/My_macro_dashboard_v1/collector/.venv/bin/uvicorn</string>
+    <string>/Users/jinyoung/Projects/My_macro_dashboard_v2/collector/.venv/bin/uvicorn</string>
     <string>app.main:app</string>
     <string>--host</string><string>127.0.0.1</string>
     <string>--port</string><string>8000</string>
   </array>
 
   <key>WorkingDirectory</key>
-  <string>/Users/jinyoung/Projects/My_macro_dashboard_v1/collector</string>
+  <string>/Users/jinyoung/Projects/My_macro_dashboard_v2/collector</string>
 
   <key>EnvironmentVariables</key>
   <dict>
@@ -404,16 +386,16 @@ Docker 없이 쓸 때, 맥이 켜져 있는 동안 수집기가 계속 돌게 �
   <key>KeepAlive</key><true/>
 
   <key>StandardOutPath</key>
-  <string>/Users/jinyoung/Projects/My_macro_dashboard_v1/collector.log</string>
+  <string>/Users/jinyoung/Projects/My_macro_dashboard_v2/collector.log</string>
   <key>StandardErrorPath</key>
-  <string>/Users/jinyoung/Projects/My_macro_dashboard_v1/collector.log</string>
+  <string>/Users/jinyoung/Projects/My_macro_dashboard_v2/collector.log</string>
 </dict>
 </plist>
 ```
 
 ```bash
 launchctl load -w ~/Library/LaunchAgents/com.local.macro-dashboard.collector.plist
-tail -f ~/Projects/My_macro_dashboard_v1/collector.log
+tail -f ~/Projects/My_macro_dashboard_v2/collector.log
 
 # 해제
 launchctl unload -w ~/Library/LaunchAgents/com.local.macro-dashboard.collector.plist
@@ -446,7 +428,7 @@ make test-frontend     # 자가검증 + 훅 테스트 + 린트 + 빌드 (Node 24
 make db-test           # 테스트 전용 DB 준비 (위 명령들이 자동으로 부릅니다)
 ```
 
-`make test`는 `.env`의 `DATABASE_PORT`(이 저장소 기본 5433) PostgreSQL을 씁니다. Docker로 띄운 상태라면
+`make test`는 `.env`의 `DATABASE_PORT`(이 저장소 기본 5434) PostgreSQL을 씁니다. Docker로 띄운 상태라면
 그대로 돌아가고, 아니면 `make infra`로 DB만 먼저 올리세요.
 
 > ⚠️ **테스트는 평소 쓰는 DB(`macrodash`)를 건드리지 않습니다.**
@@ -477,9 +459,9 @@ make db-test           # 테스트 전용 DB 준비 (위 명령들이 자동으�
 |---|---|
 | 폴더 이름을 바꾼 뒤 로그인은 되는데 데이터가 비어 있음 | DB 볼륨 이름이 폴더 이름을 따라가 빈 볼륨이 새로 생겼습니다. 옛 이력은 옛 이름의 볼륨에 그대로 있습니다(`docker volume ls \| grep postgres-data`). `make down` 후 폴더 이름을 되돌리면 예전 데이터로 돌아갑니다. 새 이름으로 옮기는 방법은 §0에 있습니다 |
 | `Cannot connect to the Docker daemon` | Docker Desktop이 꺼져 있습니다. `open -a Docker` 후 30초 |
-| 포트 5432 충돌 | 맥에 PostgreSQL이 이미 돌고 있습니다. `.env`의 `DATABASE_PORT=5433`으로 바꾸고 `make up` |
-| 포트 3000 충돌 | 다른 개발 서버가 씁니다. `.env`에서 `FRONTEND_PORT=3001`. `FRONTEND_ORIGIN`을 `.env`에 직접 적어 두셨다면 `http://localhost:3001`로 함께 고치거나 그 줄을 지우세요(지우면 포트를 따라감) |
-| `Bind for 127.0.0.1:8081 failed: port is already allocated` | 8081을 **다른 컨테이너**가 잡고 있습니다(다른 프로젝트, IDE에서 띄운 Spring Boot 등 — 같은 맥의 v3는 8080이라 겹치지 않음). 나머지는 다 떠서 화면은 "백엔드 API에 연결하지 못했습니다"만 보입니다. `bash scripts/ports.sh check`가 누가 잡았는지 보여 줍니다 → `docker stop <이름>`, 또는 `.env`에서 `BACKEND_PORT=18080` 후 `make up`. 잡은 컨테이너가 없는데도 이 오류가 나면 Docker Desktop을 재시작하세요 |
+| 포트 5432 충돌 | 맥에 PostgreSQL이 이미 돌고 있습니다. `.env`의 `DATABASE_PORT=5434`(이 저장소 기본)인지 보고 `make up` |
+| 포트 3000 충돌 | 다른 개발 서버가 씁니다. `.env`에서 `FRONTEND_PORT=3002`(이 저장소 기본). `FRONTEND_ORIGIN`을 `.env`에 직접 적어 두셨다면 `http://localhost:3001`로 함께 고치거나 그 줄을 지우세요(지우면 포트를 따라감) |
+| `Bind for 127.0.0.1:8082 failed: port is already allocated` | 8082를 **다른 컨테이너**가 잡고 있습니다(다른 프로젝트, IDE에서 띄운 Spring Boot 등 — 같은 맥의 v3는 8080이라 겹치지 않음). 나머지는 다 떠서 화면은 "백엔드 API에 연결하지 못했습니다"만 보입니다. `bash scripts/ports.sh check`가 누가 잡았는지 보여 줍니다 → `docker stop <이름>`, 또는 `.env`에서 `BACKEND_PORT=18080` 후 `make up`. 잡은 컨테이너가 없는데도 이 오류가 나면 Docker Desktop을 재시작하세요 |
 | 로그인은 되는데 화면이 계속 401 | `127.0.0.1`로 접속했는데 `FRONTEND_ORIGIN`은 `localhost`입니다(또는 반대). 브라우저는 둘을 **다른 오리진**으로 보고 쿠키를 막습니다. 주소를 하나로 통일하세요 |
 | 화면은 뜨는데 전부 "데이터 없음" | 아직 수집을 하지 않았습니다. `make collect` |
 | `make collect`가 "수집기에 연결하지 못했습니다" | `make logs S=collector`로 기동 여부 확인 |
@@ -528,6 +510,6 @@ make restore F=backups/macrodash-….sql   # 복원 (DB 전체를 백업 시점�
   도중에 실패하거나 입력이 끊겨도(창을 닫음·Ctrl-C) 전부 되돌려 DB는 복원 전과 같습니다. 잘못 복원했다면
   `make restore F=backups/pre-restore-….sql`로 되돌리면 됩니다.
 
-Time Machine을 쓴다면 `~/Projects/My_macro_dashboard_v1/backups`가 백업
+Time Machine을 쓴다면 `~/Projects/My_macro_dashboard_v2/backups`가 백업
 대상에 포함되는지 확인해 두세요. Docker 볼륨 자체(`postgres-data`)는 Time
 Machine이 온전히 담지 못할 수 있어, SQL 덤프를 남기는 편이 안전합니다.

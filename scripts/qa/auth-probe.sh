@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
 # scripts/qa/auth-probe.sh — 인증 누락·경로 변형·메서드·헤더·CORS·쿠키 점검 (QA 스택 대상)
 #
-# 사용: bash scripts/qa/auth-probe.sh [호스트:포트]   (기본 127.0.0.1:18081 — .env.qa의 BACKEND_PORT)
+# 사용: bash scripts/qa/auth-probe.sh [호스트:포트]   (기본 127.0.0.1:18082 — .env.qa의 BACKEND_PORT)
 # 출력: 사람이 읽는 표 + 실패 수. 결과를 docs/qa/evidence/에 저장해 두세요.
 set -uo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-PORT="$(grep -s '^BACKEND_PORT=' "$ROOT/.env.qa" | cut -d= -f2)"; PORT="${PORT:-18081}"
+PORT="$(grep -s '^BACKEND_PORT=' "$ROOT/.env.qa" | cut -d= -f2)"; PORT="${PORT:-18082}"
 BASE="${1:-127.0.0.1:$PORT}"
-FRONT_PORT="$(grep -s '^FRONTEND_PORT=' "$ROOT/.env.qa" | cut -d= -f2)"; FRONT_PORT="${FRONT_PORT:-13001}"
+FRONT_PORT="$(grep -s '^FRONTEND_PORT=' "$ROOT/.env.qa" | cut -d= -f2)"; FRONT_PORT="${FRONT_PORT:-13002}"
 fails=0
 check() {  # check <설명> <기대코드(정규식)> <실제코드>
   if [[ "$3" =~ ^($2)$ ]]; then printf '  ✓ %-70s %s\n' "$1" "$3"; else printf '  ✗ %-70s %s (기대 %s)\n' "$1" "$3" "$2"; fails=$((fails+1)); fi
@@ -99,7 +99,7 @@ done
 if printf '%s' "$fh" | grep -qi '^x-powered-by:'; then echo "  ! 화면 X-Powered-By 노출: $(printf '%s' "$fh" | grep -i '^x-powered-by:' | tr -d '\r')"; fi
 
 echo "## 8. 수집기 — 호스트에서 토큰 없이"
-CPORT="$(grep -s '^COLLECTOR_PORT=' "$ROOT/.env.qa" | cut -d= -f2)"; CPORT="${CPORT:-18001}"
+CPORT="$(grep -s '^COLLECTOR_PORT=' "$ROOT/.env.qa" | cut -d= -f2)"; CPORT="${CPORT:-18002}"
 # 읽기 전용 진단 경로(/status·/tasks·/task-history)는 설계상 토큰 없이 열려 있습니다(doctor·make status가
 # 씁니다). 127.0.0.1에만 열려 있고 Host 검증이 있어 외부에서는 닿지 않습니다 — 결함이 아니라 설계로 기록합니다.
 for p in /status /tasks /task-history; do

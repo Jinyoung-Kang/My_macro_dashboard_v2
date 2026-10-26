@@ -14,7 +14,7 @@ services:
     volumes:
       - ./scripts/qa/blackhole-proxy.py:/proxy/blackhole-proxy.py:ro
     ports:
-      - "127.0.0.1:${QA_PROXY_PORT:-18889}:8888"
+      - "127.0.0.1:${QA_PROXY_PORT:-18890}:8888"
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8888/__mode', timeout=2)"]
       interval: 10s

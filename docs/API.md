@@ -2,10 +2,10 @@
 
 두 개의 서비스가 API를 노출합니다.
 
-- **백엔드** `http://localhost:8081` — 화면이 쓰는 API. 인증 필요.
-- **수집기** `http://localhost:8001` — 내부용. 백엔드만 호출합니다.
+- **백엔드** `http://localhost:8082` — 화면이 쓰는 API. 인증 필요.
+- **수집기** `http://localhost:8002` — 내부용. 백엔드만 호출합니다.
 
-(포트는 `.env` 값 — 이 저장소 기본 8081·8001. 같은 맥의 v3는 8080·8000.)
+(포트는 `.env` 값 — 이 저장소 기본 8082·8002. 같은 맥의 v3는 8080·8000, v1은 8081·8001.)
 
 ## 1. 백엔드 (`/api`)
 
@@ -302,4 +302,4 @@ CAGR 지수도 같음), 20일 미만이면 `cumReturnPct`만 있습니다. 변�
 | 🔒 `GET /diagnostics/public-apis` | 특일정보·주식시세·DART 진단 (API당 1회) |
 | 🔒 `GET /diagnostics/toss`, `/toss/*` | 토스 진단·조회 |
 
-FastAPI 자동 문서: <http://localhost:8001/docs>
+FastAPI 자동 문서: <http://localhost:8002/docs>

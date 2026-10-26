@@ -1,6 +1,6 @@
 # QA 스택에서 로그인 없는 로컬 실행(ADR 0016)을 시험할 때만 얹는 덧붙임 — `QA_NO_LOGIN=1 bash scripts/qa/qa-stack.sh …`.
 # 기본 QA 스택은 로그인 경로를 시험합니다(docker-compose.qa.yml이 끔을 고정). 이 파일이 그 뒤에 와서 켭니다.
-# 포트는 기반 파일대로 127.0.0.1에만 열리고, .env.qa의 화면 주소(localhost:13001)·Secure 아님은 기동 검사를 통과합니다.
+# 포트는 기반 파일대로 127.0.0.1에만 열리고, .env.qa의 화면 주소(localhost:13002)·Secure 아님은 기동 검사를 통과합니다.
 services:
   backend:
     environment:

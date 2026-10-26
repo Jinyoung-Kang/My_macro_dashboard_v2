@@ -30,7 +30,7 @@ fail()  { printf '  %s✗%s %s\n' "$RED" "$RESET" "$1"; }
 note()  { printf '    %s%s%s\n' "$DIM" "$1" "$RESET"; }
 title() { printf '\n%s%s%s\n' "$BOLD" "$1" "$RESET"; }
 
-printf '%s\n' "${BOLD}My Macro Dashboard v1 — 준비${RESET}"
+printf '%s\n' "${BOLD}My Macro Dashboard v2 — 준비${RESET}"
 printf '%s\n' "${DIM}경로: $REPO_ROOT${RESET}"
 
 # ==============================================================================
@@ -291,7 +291,7 @@ if [ "$DOCKER_READY" -eq 1 ]; then
   cat <<NEXT
     make up        # 전체 스택 기동 (최초 빌드 5~10분)
     make collect   # 첫 데이터 수집 (없으면 화면이 비어 있습니다)
-    open http://localhost:${front_port:-3001}
+    open http://localhost:${front_port:-3002}
 NEXT
 else
   cat <<'NEXT'

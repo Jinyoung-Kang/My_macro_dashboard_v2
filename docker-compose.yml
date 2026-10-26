@@ -8,7 +8,7 @@
 #   frontend  화면 (Next.js)
 #
 # 실행:  make up   (빌드·기동 뒤 대기 중인 스키마까지 적용 — docker compose up만 쓰면 새 스키마가 빠질 수 있음, QA-016)
-# 접속:  http://localhost:<FRONTEND_PORT>(이 저장소 기본 3001)  — 로그인 화면 없이 운영자 계정으로 열립니다(ADR 0016). 계정은 처음 기동할 때
+# 접속:  http://localhost:<FRONTEND_PORT>(이 저장소 기본 3002)  — 로그인 화면 없이 운영자 계정으로 열립니다(ADR 0016). 계정은 처음 기동할 때
 #        .env의 OWNER_EMAIL·APP_PASSWORD로 만듭니다('make setup'이 비밀번호를 만들어 줌). 로그인을 거치려면 LOCAL_NO_LOGIN=false
 #
 # [포트를 어디까지 여는가]

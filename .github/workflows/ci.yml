@@ -209,10 +209,10 @@ jobs:
           DATABASE_PASSWORD: ci
           LOCAL_NO_LOGIN: "true"
           MAIL_HOST: smtp.ci.example
-          FRONTEND_ORIGIN: http://localhost:3001
-          PUBLIC_URL: http://localhost:3001
-          NEXT_PUBLIC_API_BASE: http://localhost:8081
-          FRONTEND_PORT: "3001"
+          FRONTEND_ORIGIN: http://localhost:3002
+          PUBLIC_URL: http://localhost:3002
+          NEXT_PUBLIC_API_BASE: http://localhost:8082
+          FRONTEND_PORT: "3002"
           DEMO_VIEWER_TOKEN: ci-demo-viewer-token-0123456789abcdef
         run: |
           docker compose --env-file /dev/null -f docker-compose.yml -f compose.aws.yml config -q

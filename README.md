@@ -5,9 +5,11 @@ SEC 13F · 국내 수급을 **한 화면에서** 보는 개인용 대시보드�
 🧪 모의 알고리즘 매매(규칙·Claude·SPY·60/40 네 계좌, $100k씩)도 들어 있습니다.
 맥에서 Docker 한 줄로 띄우고, 모의 매매가 도는 운영본은 AWS의 개인용 서버(EC2 한 대, 매일 밤 KST 21:55~08:00)에 둡니다.
 
-> 이 저장소(`My_macro_dashboard_v1`)는 2026-10-25에 `Local_macro_dashboard_v3`에서 갈라져 나온
-> **공개 저장소입니다**(2026-10-26 사용자 확인 — 모의 매매 프롬프트·투자 OS 원문도 공개). 비밀값은 `.env`에만 둡니다. 모의 매매는 이 저장소에만 있습니다.
-> 같은 맥에서 v3(3000/8080/8000/5432)와 함께 띄울 수 있게 이 저장소는 **3001/8081/8001/5433**을 씁니다(`.env`의 포트 값).
+> 이 저장소(`My_macro_dashboard_v2`)는 2026-10-26에 `My_macro_dashboard_v1`에서 전체 이력으로 갈라져 나왔습니다 — 화면 전면 개편과
+> 한국 증시 모의 매매를 여기서 합니다([v2 프로그램 계획서](docs/specs/2026-10-26-v2-program-plan.md)). **교체 전까지 AWS 운영본은 v1**이고,
+> 로컬 v2는 모의 매매 정기 작업을 끈 채(`PAPER_ENABLED=false`) 돕니다. v1은 2026-10-25에 `Local_macro_dashboard_v3`에서 갈라져 나왔습니다.
+> **공개 저장소입니다**(2026-10-26 사용자 확인 — 모의 매매 프롬프트·투자 OS 원문도 공개). 비밀값은 `.env`에만 둡니다.
+> 같은 맥에서 v3(3000/8080/8000/5432)·v1(3001/8081/8001/5433)과 함께 띄울 수 있게 이 저장소는 **3002/8082/8002/5434**를 씁니다(`.env`의 포트 값).
 
 만든 사람: **강진영** · <kangjy5235@gmail.com>
 
@@ -41,15 +43,15 @@ Next.js ──REST──▶ Spring Boot ──JDBC──▶ PostgreSQL ◀──
 필요가 없습니다 — 전부 컨테이너 안에 있습니다.
 
 ```bash
-git clone https://github.com/Jinyoung-Kang/My_macro_dashboard_v1.git \
-  ~/Projects/My_macro_dashboard_v1
-cd ~/Projects/My_macro_dashboard_v1
+git clone https://github.com/Jinyoung-Kang/My_macro_dashboard_v2.git \
+  ~/Projects/My_macro_dashboard_v2
+cd ~/Projects/My_macro_dashboard_v2
 
 make setup     # .env 생성 + 세션 서명 키 자동 생성
 make up        # 전체 기동 (최초 빌드 5~10분)
 make collect   # 첫 수집 — 이걸 해야 화면에 숫자가 찹니다
 
-open http://localhost:3001
+open http://localhost:3002
 ```
 
 로컬 실행은 **로그인 없이 이 맥에서만** 열립니다 — 화면·API는 `127.0.0.1`에만 열리고, 이 맥의 브라우저는 운영자 계정으로
@@ -60,9 +62,9 @@ AWS 개인용 서버(터널로 여는 화면, [아래](#aws-개인용-서버))�
 
 | 주소 | 용도 |
 |---|---|
-| <http://localhost:3001> | 화면 |
-| <http://localhost:8081/api/health> | 백엔드 상태 확인 |
-| <http://localhost:8001/docs> | 수집기 API 문서 (이 맥에서만 열립니다) |
+| <http://localhost:3002> | 화면 |
+| <http://localhost:8082/api/health> | 백엔드 상태 확인 |
+| <http://localhost:8002/docs> | 수집기 API 문서 (이 맥에서만 열립니다) |
 
 ### 처음 켠 뒤 해야 할 일
 
@@ -313,7 +315,7 @@ make test-frontend     # 자가검증 + 훅 테스트(vitest) + 린트 + 빌드(
 
 **모든 포트(화면·API·DB·수집기)는 이 맥(127.0.0.1)에서만 열립니다.** 로컬 화면은 로그인 없이 운영자로 열리기 때문입니다
 (예전 `WEB_BIND_HOST`로 다른 기기에 여는 방법은 없앴습니다). 이 맥의 다른 웹사이트가 로컬 API를 부르지 못하게, 로그인 없는
-요청은 이 맥의 화면 주소에서 온 것만 받습니다 — 쿠키 없이 curl로 쓰기 요청을 보낼 때는 `Origin: http://localhost:3001`이 필요합니다.
+요청은 이 맥의 화면 주소에서 온 것만 받습니다 — 쿠키 없이 curl로 쓰기 요청을 보낼 때는 `Origin: http://localhost:3002`이 필요합니다.
 
 ### AWS 개인용 서버
 
@@ -332,7 +334,7 @@ bash scripts/aws/instance.sh status    # 지금 켜져 있나 — 08:00 뒤에 �
 
 ```bash
 sudo -iu ubuntu
-bash ~/My_macro_dashboard_v1/scripts/aws/deploy.sh   # main 받기 → 이미지 하나씩 빌드 → 기동 → 스키마 적용
+bash ~/My_macro_dashboard_v2/scripts/aws/deploy.sh   # main 받기 → 이미지 하나씩 빌드 → 기동 → 스키마 적용
 ```
 
 - 서버에서는 `make up` 대신 `deploy.sh`를 씁니다. 4 GiB라 이미지를 하나씩 빌드하고(backend → frontend → collector), 기동 뒤에는

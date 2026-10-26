@@ -198,7 +198,7 @@ export function Sidebar({ readMode, user, unread }: { readMode?: string; user?: 
           값이 없으면(직접 docker compose로 띄운 경우) 표시하지 않습니다.
         */}
         <p className="text-[11px] text-muted">
-          © 2026 My Macro Dashboard v1
+          © 2026 My Macro Dashboard v2
           {build.version && (
             <span className="ml-1 tabular-nums" title="실행 중인 코드의 브랜치@커밋">
               · {build.version}

@@ -55,8 +55,8 @@ make test-frontend     # 자가검증 + 훅 테스트(vitest) + 린트 + 빌드(
 
 ```bash
 # 직접 실행할 때
-cd backend  && TEST_DATABASE_URL=jdbc:postgresql://localhost:5433/macrodash_test mvn test      # 5433 = 이 저장소 .env의 DATABASE_PORT
-cd collector && TEST_DATABASE_URL=postgresql://macro:macro@localhost:5433/macrodash_test pytest
+cd backend  && TEST_DATABASE_URL=jdbc:postgresql://localhost:5434/macrodash_test mvn test      # 5434 = 이 저장소 .env의 DATABASE_PORT
+cd collector && TEST_DATABASE_URL=postgresql://macro:macro@localhost:5434/macrodash_test pytest
 ```
 
 백엔드에는 `guardAgainstRealDatabase()`가 있어 DB 이름이 `_test`로 끝나지 않으면
@@ -286,6 +286,9 @@ git config credential.https://github.com.username <아이디>
 서버에는 인바운드 포트가 없어 화면도 셸도 SSM으로만 엽니다. 아래 명령의 `<AWS_INSTANCE_ID>`·`<버킷>`은 PC `.env`의
 `AWS_INSTANCE_ID`·서버 `.env`의 `AWS_BACKUP_BUCKET` 값입니다.
 
+> **v2(이 저장소)는 아직 서버에 없습니다.** 교체 전까지 서버는 `~/My_macro_dashboard_v1`(v1)을 돌립니다. 아래 경로는 교체 뒤(서버의
+> `~/My_macro_dashboard_v2`) 기준이고, 교체 절차는 [v2 프로그램 계획서 §5](specs/2026-10-26-v2-program-plan.md#5-aws-교체-절차-4단계)입니다.
+
 ### 서버 만들기 (처음 한 번)
 
 자원은 ADR 0019 결정 1~5·13 그대로입니다(서울 리전, 태그 `Project=my-macro`). v3 데모 스택(portfolio-*)은 건드리지 않습니다.
@@ -308,9 +311,9 @@ git config credential.https://github.com.username <아이디>
    ssh-keyscan -t ed25519 github.com >> ~/.ssh/known_hosts && ssh-keygen -lf ~/.ssh/known_hosts
    # PC: 위 지문이 GitHub가 공개한 값과 같은지 보고, 공개키(위 cat 출력)를 읽기 전용 배포 키로 등록합니다
    gh api meta --jq .ssh_key_fingerprints.SHA256_ED25519
-   gh repo deploy-key add <공개키 파일> --repo Jinyoung-Kang/My_macro_dashboard_v1 --title my-macro-app
+   gh repo deploy-key add <공개키 파일> --repo Jinyoung-Kang/My_macro_dashboard_v2 --title my-macro-app
    # 서버(ubuntu): 폴더 이름 그대로 — compose 프로젝트·DB 볼륨 이름이 폴더 이름을 따릅니다
-   git clone git@github.com:Jinyoung-Kang/My_macro_dashboard_v1.git ~/My_macro_dashboard_v1
+   git clone git@github.com:Jinyoung-Kang/My_macro_dashboard_v2.git ~/My_macro_dashboard_v2
    ```
 
    `gh`로 등록한 배포 키는 그때의 `gh` 인증 토큰에 묶여, 그 토큰을 끊으면 함께 지워집니다 — 서버의 `git fetch`가 `Permission denied`면 다시 등록합니다.
@@ -350,7 +353,7 @@ bash scripts/aws/tunnel.sh
 - 필요한 것: aws CLI v2 · session-manager-plugin · `aws login`으로 로그인한 세션 · PC `.env`의 `AWS_INSTANCE_ID`.
 - 브라우저 <http://localhost:8201>에서 운영자 계정(`OWNER_EMAIL`)으로 로그인합니다. 비밀번호는 그 계정을 만들 때의 `APP_PASSWORD`입니다 — 로컬 DB를
   서버로 옮긴 뒤에는 로컬에서 계정을 만들 때의 값(화면에서 바꿨다면 그 값). 메일이 꺼져 있어 재설정 화면은 없습니다.
-- 같은 PC에서 QA 스택(`localhost:13001`, 로그인 모드)도 쓰면 세션 쿠키 이름이 같아 서로 로그아웃시킵니다 — 그때는 <http://127.0.0.1:8201>로 엽니다.
+- 같은 PC에서 QA 스택(`localhost:13002`, 로그인 모드)도 쓰면 세션 쿠키 이름이 같아 서로 로그아웃시킵니다 — 그때는 <http://127.0.0.1:8201>로 엽니다.
 - 세션이 끊기면(유휴 제한 60분·네트워크) 3초 뒤 다시 잇습니다. 5번 연달아 곧바로 끊기면(서버가 꺼짐·SSM 에이전트 끊김) 멈추고,
   로그인이 만료되면 `aws login`을 하라고 알리고 멈춥니다.
 - 로그인해도 다시 로그인 화면이 나오면(브라우저가 `http://localhost`의 `Secure` 쿠키를 받지 않음 — Safari가 그렇고 Chrome·Firefox는 받음)
@@ -361,7 +364,7 @@ bash scripts/aws/tunnel.sh
 ```bash
 aws ssm start-session --region ap-northeast-2 --target <AWS_INSTANCE_ID>   # PC에서
 sudo -iu ubuntu                    # SSM 셸은 ssm-user로 열립니다 — 저장소·docker는 ubuntu 사용자
-cd ~/My_macro_dashboard_v1
+cd ~/My_macro_dashboard_v2
 docker compose ps                  # 서버 .env의 COMPOSE_FILE 덕분에 덧붙임(caddy 포함)까지 봅니다
 make logs S=backend                # make status · make db · make backup도 그대로
 ```
@@ -369,7 +372,7 @@ make logs S=backend                # make status · make db · make backup도 �
 ### 배포
 
 ```bash
-bash ~/My_macro_dashboard_v1/scripts/aws/deploy.sh
+bash ~/My_macro_dashboard_v2/scripts/aws/deploy.sh
 ```
 
 - 서버에서는 **`make up`을 쓰지 않습니다** — 이미지를 한꺼번에 빌드해 4 GiB에서 메모리가 모자랄 수 있습니다. `deploy.sh`가 main을
@@ -391,14 +394,16 @@ tmp="$(mktemp)" && grep -Ev '^[[:space:]]*(DATABASE_PORT|BACKEND_PORT|COLLECTOR_
   && printf 'COMPOSE_FILE=docker-compose.yml:compose.aws.yml\nAWS_BACKUP_BUCKET=%s\n' "<버킷>" >> "$tmp" \
   && aws s3 cp --only-show-errors "$tmp" "s3://<버킷>/bootstrap/.env"; rm -f "$tmp"
 # 서버(ubuntu) — 받아서 600으로 두고 S3 객체는 바로 지웁니다(umask는 괄호 안에서만 — 셸에 남으면 git이 0600 파일을 씀)
-( umask 077 && aws s3 cp --only-show-errors "s3://<버킷>/bootstrap/.env" ~/My_macro_dashboard_v1/.env ) \
-  && chmod 600 ~/My_macro_dashboard_v1/.env && aws s3 rm --only-show-errors "s3://<버킷>/bootstrap/.env"
+( umask 077 && aws s3 cp --only-show-errors "s3://<버킷>/bootstrap/.env" ~/My_macro_dashboard_v2/.env ) \
+  && chmod 600 ~/My_macro_dashboard_v2/.env && aws s3 rm --only-show-errors "s3://<버킷>/bootstrap/.env"
 ```
 
 다시 전달하면 서버 `.env`를 통째로 덮어씁니다. 서버에만 적은 줄(`COOKIE_SECURE=false`, 서버 정기 작업을 일부러 끈 `PAPER_ENABLED=false`,
 `COMPUTE_MAX_CONCURRENT` 등)은 다시 덧붙입니다. `deploy.sh`는 `PAPER_ENABLED`가 꺼져 있으면 알립니다.
 
-### 데이터 전환 (로컬 v1 → 서버, 한 번)
+### 데이터 전환 (로컬 v1 → 서버, 한 번 — 2026-10-26에 v1에서 끝남)
+
+> v1을 처음 서버로 옮긴 기록입니다. v2로 바꾸는 교체는 이 절차가 아니라 계획서 §5(서버의 v1 백업 → v2 복원)를 따릅니다.
 
 낮에 하므로 서버는 손으로 켜 둡니다(`instance.sh start`). 일정은 아직 `DISABLED`입니다.
 
@@ -432,7 +437,7 @@ tmp="$(mktemp)" && grep -Ev '^[[:space:]]*(DATABASE_PORT|BACKEND_PORT|COLLECTOR_
 
 ```bash
 # 서버(ubuntu) — 매일 21:10 UTC(06:10 KST). 서버 시간대는 UTC입니다
-(crontab -l 2>/dev/null | grep -v 'scripts/aws/backup-s3.sh'; echo '10 21 * * * /home/ubuntu/My_macro_dashboard_v1/scripts/aws/backup-s3.sh') | crontab -
+(crontab -l 2>/dev/null | grep -v 'scripts/aws/backup-s3.sh'; echo '10 21 * * * /home/ubuntu/My_macro_dashboard_v2/scripts/aws/backup-s3.sh') | crontab -
 journalctl -t my-macro-backup --since yesterday       # 결과(실패는 err)
 ```
 

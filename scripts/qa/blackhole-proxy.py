@@ -7,8 +7,8 @@ scripts/qa/blackhole-proxy.py — QA용 차단·지연 프록시.
   hang         요청을 받고 응답하지 않음(최대 600초) (외부가 먹통)
   slow:N       N초 기다린 뒤 502 (외부가 느림)
 
-모드는 실행 중 바꿉니다:  GET http://127.0.0.1:18889/__mode?set=hang
-현재 모드·시도된 외부 호출 수:  GET http://127.0.0.1:18889/__mode
+모드는 실행 중 바꿉니다:  GET http://127.0.0.1:18890/__mode?set=hang
+현재 모드·시도된 외부 호출 수:  GET http://127.0.0.1:18890/__mode
 시도된 외부 호출은 표준출력에 한 줄씩 남습니다 — 어떤 호스트를 부르려 했는지의 증거입니다.
 """
 from __future__ import annotations
@@ -95,7 +95,7 @@ class Handler(BaseHTTPRequestHandler):
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--listen", default="127.0.0.1:18889")
+    parser.add_argument("--listen", default="127.0.0.1:18890")
     args = parser.parse_args()
     host, port = args.listen.rsplit(":", 1)
     server = ThreadingHTTPServer((host, int(port)), Handler)

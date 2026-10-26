@@ -138,10 +138,10 @@ def _git(cwd: Path, *args: str) -> str:
 
 @pytest.fixture()
 def server(tmp_path):
-    """원격 origin(bare)과 서버 역할의 클론 ~/My_macro_dashboard_v1(폴더 이름 규칙), 서버 .env."""
+    """원격 origin(bare)과 서버 역할의 클론 ~/My_macro_dashboard_v2(폴더 이름 규칙), 서버 .env."""
     if shutil.which("git") is None:
         pytest.skip("git이 없어 건너뜁니다.")
-    origin, here = tmp_path / "origin.git", tmp_path / "home" / "My_macro_dashboard_v1"
+    origin, here = tmp_path / "origin.git", tmp_path / "home" / "My_macro_dashboard_v2"
     seed = tmp_path / "seed"
     _git(tmp_path, "init", "-q", "--bare", "-b", "main", str(origin))
     _git(tmp_path, "clone", "-q", str(origin), str(seed))
@@ -262,11 +262,11 @@ def test_deploy는_서버_정기_작업이_꺼져_있으면_알린다(server, fa
 
 def test_deploy는_폴더_이름이_다르면_멈춘다(server, fakes):
     here, _ = server
-    moved = here.with_name("My_macro_dashboard_v1-copy")
+    moved = here.with_name("My_macro_dashboard_v2-copy")
     here.rename(moved)
     result = _run(moved / "scripts/aws/deploy.sh", moved, _env(fakes))
     assert result.returncode != 0
-    assert "My_macro_dashboard_v1" in result.stderr
+    assert "My_macro_dashboard_v2" in result.stderr
     assert _docker_calls(fakes) == []
 
 
@@ -300,7 +300,7 @@ def test_QA118_deploy의_스키마_적용이_10번_모두_실패하면_알리고
 # --------------------------------------------------------------------------- backup-s3.sh
 @pytest.fixture()
 def backup_root(tmp_path):
-    root = tmp_path / "My_macro_dashboard_v1"
+    root = tmp_path / "My_macro_dashboard_v2"
     (root / "scripts/aws").mkdir(parents=True)
     shutil.copy(ROOT / "scripts/aws/backup-s3.sh", root / "scripts/aws/backup-s3.sh")
     shutil.copy(ROOT / "scripts/db-common.sh", root / "scripts/db-common.sh")
@@ -348,7 +348,7 @@ def test_backup_s3는_make_backup이_실패하면_올리지_않고_syslog에_원
 
 
 def test_backup_s3는_env_해석_오류의_값을_syslog에_남기지_않는다(backup_root, fakes):
-    message = f'failed to read /home/ubuntu/My_macro_dashboard_v1/.env: unterminated quoted value "{SECRET}'
+    message = f'failed to read /home/ubuntu/My_macro_dashboard_v2/.env: unterminated quoted value "{SECRET}'
     result = _backup(backup_root, fakes, FAKE_MAKE_RC="2", FAKE_MAKE_MSG=message)
     assert result.returncode != 0
     errors = [c for c in _calls(fakes) if c.startswith("logger -t my-macro-backup -p user.err")]
@@ -394,7 +394,7 @@ def test_backup_s3는_버킷_이름이_없으면_백업하지_않는다(backup_r
 # --------------------------------------------------------------------------- tunnel.sh
 @pytest.fixture()
 def pc_root(tmp_path):
-    root = tmp_path / "My_macro_dashboard_v1"
+    root = tmp_path / "My_macro_dashboard_v2"
     (root / "scripts/aws").mkdir(parents=True)
     shutil.copy(ROOT / "scripts/aws/tunnel.sh", root / "scripts/aws/tunnel.sh")
     shutil.copy(ROOT / "scripts/db-common.sh", root / "scripts/db-common.sh")

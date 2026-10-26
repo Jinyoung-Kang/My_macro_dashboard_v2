@@ -53,7 +53,7 @@
 //
 // 사용(QA 스택에서만 — 운영 스택 8080에 돌리지 않습니다):
 //   bash scripts/qa/qa-stack.sh up && bash scripts/qa/qa-stack.sh restore F=backups/….sql   # .env.qa 기본값: 수집 스케줄 꺼짐
-//   k6 run -e BASE=http://127.0.0.1:18081 -e ORIGIN=http://localhost:13001 \
+//   k6 run -e BASE=http://127.0.0.1:18082 -e ORIGIN=http://localhost:13002 \
 //     -e EMAIL="$(grep ^OWNER_EMAIL= .env.qa | cut -d= -f2-)" -e PASSWORD="$(grep ^APP_PASSWORD= .env.qa | cut -d= -f2-)" \
 //     -e RATE=5 -e DURATION=120s scripts/qa/k6/cache-churn.js
 //   선택: -e HOT_VUS=10 -e RARE_EVERY=20 -e CAL_N=7 -e MISS_K=3 -e MISS_D=20
@@ -82,8 +82,8 @@ import exec from 'k6/execution';
 import { sleep } from 'k6';
 import { Counter, Rate, Trend } from 'k6/metrics';
 
-const BASE = __ENV.BASE || 'http://127.0.0.1:18081';
-const ORIGIN = __ENV.ORIGIN || 'http://localhost:13001';
+const BASE = __ENV.BASE || 'http://127.0.0.1:18082';
+const ORIGIN = __ENV.ORIGIN || 'http://localhost:13002';
 const RATE = Number(__ENV.RATE || 0);
 const DURATION = __ENV.DURATION || '120s';
 const HOT_VUS = Number(__ENV.HOT_VUS || 10);
@@ -178,7 +178,7 @@ export const options = {
 
 function get(data, path, name) {
   // 경로마다 시계열이 생기지 않게 name 태그로 묶습니다(churn 키는 수천 개).
-  return http.get(`${BASE}${path}`, { cookies: { my_macro_session: data.cookie }, tags: { name }, timeout: `${REQ_TIMEOUT_S}s` });
+  return http.get(`${BASE}${path}`, { cookies: { my_macro_v2_session: data.cookie }, tags: { name }, timeout: `${REQ_TIMEOUT_S}s` });
 }
 
 // 실패 종류: 응답이 없으면(status 0) k6 오류 코드로 시간 초과(1050)와 그 밖의 연결 실패를 나눕니다.
@@ -216,7 +216,7 @@ function record(data, key, shedCounter) {
 }
 
 function getJson(cookie, path) {
-  const res = http.get(`${BASE}${path}`, { cookies: { my_macro_session: cookie } });
+  const res = http.get(`${BASE}${path}`, { cookies: { my_macro_v2_session: cookie } });
   if (res.status !== 200) throw new Error(`${path}: ${res.status}`);
   return res.json();
 }
@@ -227,7 +227,7 @@ function postLogin(params) {
     Object.assign({ headers: { 'Content-Type': 'application/json', Origin: ORIGIN } }, params));
 }
 
-const sessionCookie = (res) => (res.cookies.my_macro_session && res.cookies.my_macro_session[0] ? res.cookies.my_macro_session[0].value : null);
+const sessionCookie = (res) => (res.cookies.my_macro_v2_session && res.cookies.my_macro_v2_session[0] ? res.cookies.my_macro_v2_session[0].value : null);
 
 // 종류가 섞이게 번갈아 꺼냅니다(스코어카드만 몰리지 않게).
 function interleave(lists) {
@@ -253,7 +253,7 @@ function calibrate(cookie, key) {
   const warmSamples = [];
   let firstMs = null;
   for (let i = 0; i <= CAL_N; i++) {
-    const res = http.get(`${BASE}${key.path}`, { cookies: { my_macro_session: cookie }, tags: { name: 'calibrate' }, timeout: '60s' });
+    const res = http.get(`${BASE}${key.path}`, { cookies: { my_macro_v2_session: cookie }, tags: { name: 'calibrate' }, timeout: '60s' });
     if (res.status !== 200) return { missMs: key.fallbackMs, source: 'fallback', why: `보정 요청이 ${res.status}`, firstMs, warmMs: null };
     if (i === 0) firstMs = res.timings.duration;
     else warmSamples.push(res.timings.duration);
@@ -339,7 +339,7 @@ export function login() {
   const cookie = ok ? sessionCookie(res) : null;
   if (cookie) {
     tally(http.post(`${BASE}/api/auth/logout`, null,
-      { headers: { Origin: ORIGIN }, cookies: { my_macro_session: cookie }, tags: { name: 'logout' }, timeout: `${REQ_TIMEOUT_S}s` }), null);
+      { headers: { Origin: ORIGIN }, cookies: { my_macro_v2_session: cookie }, tags: { name: 'logout' }, timeout: `${REQ_TIMEOUT_S}s` }), null);
   }
 }
 
