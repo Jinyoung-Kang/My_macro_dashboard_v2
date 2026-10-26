@@ -10,6 +10,7 @@
 | `datagokr_error_not_registered.xml` | 공공데이터포털 게이트웨이 오류 봉투 | 등록되지 않은 키 → HTTP 403 |
 | `datagokr_error_key_null.xml` | 같은 오류 봉투 | 빈 키 → HTTP 401 |
 | `fsc_getStockPriceInfo_V2_guide_sample.xml` | 금융위원회_주식시세정보 오픈API 활용가이드의 `getStockPriceInfo_V2` 응답 예시 | 공식 문서 예시. `fltRt`가 `.47`처럼 앞자리 0 없이 옴 |
+| `fsc_getStockPriceInfo_V2_halted_101530.xml` | 같은 API 실제 응답 — `basDt=20261023&likeSrtnCd=101530`(2026-10-27 06:2x KST 조회, HTTP 200, 본문 그대로) | 거래가 없던 종목(거래량 0): `mkp`·`hipr`·`lopr`가 `0`, `clpr`은 직전 종가 |
 
 실제 인증키는 어떤 파일에도 들어 있지 않습니다.
 

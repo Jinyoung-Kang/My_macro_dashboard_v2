@@ -8,10 +8,11 @@ tests/test_fsc.py
 고정하는 규칙
   1. 활용가이드의 오퍼레이션 이름(getStockPriceInfo_V2)으로 부른다.
      (getStockPriceInfo로 부르면 NO_OPENAPI_SERVICE_ERROR — 실제로 겪은 일)
-  2. "A005930" 같은 접두어를 떼고 6자리 코드로 맞춘다. 숫자가 아니면 None.
-  3. 시장 합계는 값이 있는 행만 더하고, 빠진 행 수를 남긴다.
-  4. totalCount만큼 받으면 페이지 요청을 멈춘다.
-  5. 이미 최신 기준일이 저장돼 있으면 호출 0회.
+  2. "A005930" 같은 접두어를 떼고 6자리 코드로 맞춘다. 숫자·영문 대문자 6자리(토스 규칙)가 아니면 None.
+  3. 시가·고가·저가를 저장한다 — 없거나 0이면(거래 없음) None. 0으로 채우지 않는다.
+  4. 시장 합계는 값이 있는 행만 더하고, 빠진 행 수를 남긴다.
+  5. totalCount만큼 받으면 페이지 요청을 멈춘다.
+  6. 이미 최신 기준일이 저장돼 있으면 호출 0회.
 """
 from __future__ import annotations
 
@@ -40,11 +41,50 @@ SAMSUNG = {"basDt": "20260923", "srtnCd": "A005930", "itmsNm": "삼성전자", "
 
 
 def test_행을_정규화한다():
-    row = fsc.normalize(SAMSUNG)
+    row = fsc.normalize(dict(SAMSUNG, mkp="70,500", hipr="71,200", lopr="70,100"))
     assert row["code"] == "005930" and row["market"] == "KOSPI"
     assert row["close"] == 71000.0 and row["changePct"] == -0.70
+    assert (row["open"], row["high"], row["low"]) == (70500.0, 71200.0, 70100.0)
     assert fsc.normalize({"srtnCd": "XYZ", "clpr": "-"})["code"] is None
     assert fsc.normalize({"srtnCd": "000660", "clpr": ""})["close"] is None
+
+
+def test_영문이_섞인_새_종목코드도_받는다():
+    """
+    예전 규칙(숫자 6자리)은 영문이 섞인 새 코드를 None으로 만들어 그 종목 행을 버렸습니다. 토스 종목코드 규칙
+    ^[0-9A-Z]{6}$과 같게 받습니다(v2 2단계 명세 §4-5 B2). A 접두어는 그대로 뗍니다.
+    """
+    assert fsc.normalize({"srtnCd": "0126Z0"})["code"] == "0126Z0"
+    assert fsc.normalize({"srtnCd": "A0126Z0"})["code"] == "0126Z0"
+    assert fsc.normalize({"srtnCd": "00680K"})["code"] == "00680K"
+    assert fsc.normalize({"srtnCd": "A005930"})["code"] == "005930"
+    for bad in ("00680k", "1234567", "12345", "KR7005930003", ""):
+        assert fsc.normalize({"srtnCd": bad})["code"] is None, bad
+
+
+def test_시가_고가_저가가_없으면_None이다():
+    """칸이 없거나 비었거나 숫자가 아니면 None — 0으로 채우지 않습니다(명세 §4-15 '없으면 null')."""
+    row = fsc.normalize(SAMSUNG)                               # mkp·hipr·lopr 칸 자체가 없음
+    assert (row["open"], row["high"], row["low"]) == (None, None, None)
+    row = fsc.normalize(dict(SAMSUNG, mkp="", hipr="-", lopr="N/A"))
+    assert (row["open"], row["high"], row["low"]) == (None, None, None)
+    assert row["close"] == 71000.0, "종가는 그대로"
+
+
+def test_거래가_없던_날의_시가_0은_None이다():
+    """
+    거래량 0인 종목(거래정지 등)은 실제 응답에서 시가·고가·저가가 0으로 옵니다(종가는 직전 종가). 0원은 가격이 아니라
+    '체결 없음'이라 None으로 둡니다 — 시가 0이 이력에 쌓이면 수익률·대조가 0원에서 출발합니다.
+    """
+    from pathlib import Path
+
+    text = (Path(__file__).parent / "fixtures" / "public" / "fsc_getStockPriceInfo_V2_halted_101530.xml").read_text()
+    root = publicapi.parse_xml(SimpleNamespace(text=text, status_code=200), key="k" * 20)
+    row = fsc.normalize(publicapi.xml_items(root)[0])
+    assert row["code"] == "101530" and row["basDt"] == "20261023"
+    assert (row["open"], row["high"], row["low"]) == (None, None, None)
+    assert row["close"] == 5530.0 and row["volume"] == 0.0
+    assert fsc.normalize(dict(SAMSUNG, mkp="-5"))["open"] is None
 
 
 def test_시장_합계는_빈_값을_0으로_섞지_않는다():
@@ -115,8 +155,8 @@ def test_활용가이드_응답_예시를_읽는다():
     root = publicapi.parse_xml(SimpleNamespace(text=text, status_code=200), key="k" * 20)
     row = fsc.normalize(publicapi.xml_items(root)[0])
     assert row == {
-        "code": "900290", "name": "GRT", "market": "KOSDAQ", "close": 3185.0, "change": 15.0,
-        "changePct": 0.47, "volume": 493925.0, "tradingValue": 1533304201.0,
+        "code": "900290", "name": "GRT", "market": "KOSDAQ", "close": 3185.0,
+        "open": 3170.0, "high": 3205.0, "low": 3015.0, "change": 15.0, "changePct": 0.47, "volume": 493925.0, "tradingValue": 1533304201.0,
         "listedShares": 81800000.0, "marketCap": 260533000000.0, "basDt": "20260611",
     }
 

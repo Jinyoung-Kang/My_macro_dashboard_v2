@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<response>
+    <header>
+        <resultCode>00</resultCode>
+        <resultMsg>NORMAL SERVICE.</resultMsg>
+    </header>
+    <body>
+        <numOfRows>10</numOfRows>
+        <pageNo>1</pageNo>
+        <totalCount>1</totalCount>
+        <items>
+            <item>
+                <basDt>20261023</basDt>
+                <srtnCd>101530</srtnCd>
+                <isinCd>KR7101530004</isinCd>
+                <itmsNm>해태제과식품</itmsNm>
+                <mrktCtg>KOSPI</mrktCtg>
+                <clpr>5530</clpr>
+                <vs>0</vs>
+                <fltRt>0</fltRt>
+                <mkp>0</mkp>
+                <hipr>0</hipr>
+                <lopr>0</lopr>
+                <trqu>0</trqu>
+                <trPrc>0</trPrc>
+                <lstgStCnt>29116822</lstgStCnt>
+                <mrktTotAmt>161016025660</mrktTotAmt>
+            </item>
+        </items>
+    </body>
+</response>

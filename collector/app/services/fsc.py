@@ -11,9 +11,12 @@ DART 재무와 합쳐 PER·PBR을 계산할 수 있습니다.
 
 응답 필드 (실제로 동작하는 코드가 읽는 필드와 공개된 필드 설명 기준)
   basDt 기준일(YYYYMMDD) · srtnCd 단축코드 · isinCd · itmsNm 종목명 · mrktCtg 시장구분
-  clpr 종가 · vs 대비 · fltRt 등락률 · trqu 거래량 · trPrc 거래대금
+  clpr 종가 · mkp 시가 · hipr 고가 · lopr 저가 · vs 대비 · fltRt 등락률 · trqu 거래량 · trPrc 거래대금
   lstgStCnt 상장주식수 · mrktTotAmt 시가총액
-  srtnCd가 "A005930"처럼 A 접두어로 오는 경우가 있어 떼어 냅니다.
+  srtnCd가 "A005930"처럼 A 접두어로 오는 경우가 있어 떼어 냅니다. 코드는 숫자·영문 대문자 6자리입니다
+  (영문이 섞인 새 코드 — 토스 종목코드 규칙 ^[0-9A-Z]{6}$과 같음, v2 2단계 명세 §4-5).
+  거래가 없던 날(거래정지 등, trqu 0)은 시가·고가·저가가 0으로 오고 종가는 직전 종가입니다
+  ([확인] 2026-10-27 실제 응답 — tests/fixtures/public/fsc_getStockPriceInfo_V2_halted_101530.xml).
 
 주소·필드 — 금융위원회_주식시세정보 오픈API 활용가이드(GetStockSecuritiesInfoService_V2)의
 "주식시세" 상세기능 `getStockPriceInfo_V2`. 응답 예시는 tests/fixtures/public에 있습니다.
@@ -35,7 +38,8 @@ URL = "https://apis.data.go.kr/1160100/GetStockSecuritiesInfoService_V2/getStock
 ROWS_PER_PAGE = 1000
 MAX_PAGES = 5
 
-_CODE = re.compile(r"^A?(\d{6})$")
+# 단축코드 — 숫자·영문 대문자 6자리(앞의 A 접두어는 뗌). 예전 규칙(숫자 6자리)은 영문이 섞인 새 코드를 버렸습니다.
+_CODE = re.compile(r"^A?([0-9A-Z]{6})$")
 
 
 def endpoint() -> str:
@@ -100,7 +104,10 @@ def normalize(item: dict) -> dict:
     """
     응답 한 행을 저장 형태로 옮깁니다. 숫자가 아니면 None (0으로 채우지 않음).
 
-    :returns: ``{"code", "name", "market", "close", "change", "changePct", "volume",
+    시가·고가·저가(``open``·``high``·``low``)는 0 이하도 None입니다 — 거래가 없던 날은 0으로 오는데(모듈 설명),
+    0원은 가격이 아니라 '체결 없음'입니다. 고가·저가는 대조·화면용이고 체결·스탑에 쓰지 않습니다(명세 §4-1).
+
+    :returns: ``{"code", "name", "market", "close", "open", "high", "low", "change", "changePct", "volume",
               "tradingValue", "listedShares", "marketCap", "basDt"}``
     """
     match = _CODE.match((item.get("srtnCd") or "").strip())
@@ -109,6 +116,9 @@ def normalize(item: dict) -> dict:
         "name": (item.get("itmsNm") or "").strip() or None,
         "market": (item.get("mrktCtg") or "").strip() or None,
         "close": to_float(item.get("clpr")),
+        "open": _price(item.get("mkp")),
+        "high": _price(item.get("hipr")),
+        "low": _price(item.get("lopr")),
         "change": to_float(item.get("vs")),
         "changePct": to_float(item.get("fltRt")),
         "volume": to_float(item.get("trqu")),
@@ -117,6 +127,12 @@ def normalize(item: dict) -> dict:
         "marketCap": to_float(item.get("mrktTotAmt")),
         "basDt": (item.get("basDt") or "").strip() or None,
     }
+
+
+def _price(value) -> float | None:
+    """가격 칸 — 숫자가 아니거나 0 이하면 None(거래 없음)."""
+    number = to_float(value)
+    return number if number is not None and number > 0 else None
 
 
 def market_totals(rows: list[dict]) -> dict[str, dict]:
