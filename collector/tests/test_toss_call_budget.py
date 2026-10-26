@@ -46,6 +46,7 @@ def test_DATA_SOURCES의_토스_호출_예산이_코드_상수와_같다():
 KR_BUDGETS = (
     ("kr_paper_quotes", "KR_QUOTES_CALL_BUDGET"),
     ("kr_paper_flows", "KR_FLOWS_CALL_BUDGET"),
+    ("kr_paper_price_history", "KR_HISTORY_CALL_BUDGET"),
 )
 
 

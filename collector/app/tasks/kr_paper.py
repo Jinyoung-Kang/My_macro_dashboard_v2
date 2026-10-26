@@ -1,6 +1,6 @@
 """
 app/tasks/kr_paper.py
-🧪 모의 알고리즘 매매 한국 책(v2 2단계)의 자료 — 유니버스·수집 범위·관측치(토스 봉)·종목별 수급.
+🧪 모의 알고리즘 매매 한국 책(v2 2단계)의 자료 — 유니버스·수집 범위·관측치(토스 봉)·종목별 수급·종가 이력.
 
 태스크는 "받아서 저장"만 합니다. 후보·점수·체결·평가·기업행위 판정은 백엔드(feature/paper)가 저장본을 읽어 합니다 — 수집기가
 장부를 건드리면 테이블마다 쓰는 프로세스가 하나라는 규칙(ADR 0008)이 깨집니다. 백엔드 표(보유·주문·설정)도 읽지 않습니다 —
@@ -564,6 +564,160 @@ def task_kr_paper_flows() -> str:
     empty = sum(1 for entry in fresh.values() if entry["status"] == "NO_RECORDS")
     detail = (f"세션 {session} · {len(fresh)}/{len(pending)} 종목" + (f"(기록 없음 {empty})" if empty else "")
               + f" · {saved}건 · 호출 {run.budget.used}회" + carried_suffix(carried))
+    if stop:
+        detail += f" · {stop}"
+    return detail + _reason_suffix(run.reasons)
+
+
+# ==============================================================================
+# 종가 이력 kr_close_adj — 토스 수정주가 1년 메우기·기준 바뀜 다시 받기 (명세 §4-1 '이력', §4-15)
+# ==============================================================================
+# 처음 메우는 기간(달력일) — 수익률·패킷 요약의 1년 창. 2025년은 공휴일 보존 하한(K35)과 같은 해입니다.
+KR_HISTORY_DAYS = 365
+# 실행당 토스 호출 상한 — 1년 ≈ 250거래일이라 종목마다 200봉 쪽 2번. 수집 범위 약 140종목을 한 실행에 메웁니다(그 뒤로는 거의 0회).
+# DATA_SOURCES.md '한국 책 호출 예산'과 같아야 합니다(test_toss_call_budget).
+KR_HISTORY_CALL_BUDGET = 300
+# 새 종목을 더 시작하지 않는 경과 시간(초) — weekly 상한 1800초 안.
+KR_HISTORY_TIME_LIMIT_SECONDS = 900.0
+# 저장된 마지막 날이 이만큼(달력일) 넘게 오래되면 그 사이를 메웁니다 — kr_paper_quotes가 날마다 최근 5봉을 덧붙이므로, 수집기가 일주일
+# 넘게 꺼져 있었을 때만 생기는 빈 구간입니다.
+KR_HISTORY_GAP_DAYS = 7
+
+
+def _adjusted_back_to(code: str, stop: str, run: _TossRun, session: str,
+                      before: str | None = None) -> tuple[list[tuple[str, float]], bool]:
+    """
+    수정 일봉 종가를 최신 쪽(``before``가 있으면 그 시각 이하)부터 200봉씩 거슬러 받습니다 — 가장 오래된 봉이 ``stop`` 이하이거나
+    더 오래된 봉이 없으면(``nextBefore`` 없음·빈 쪽 — 상장일) 끝. 대상 세션보다 늦은 날짜(오늘 장중 봉)는 버립니다.
+
+    :returns: (날짜·종가 점, 끝까지 받았는가 — 예산·403·둘째 쪽부터의 실패로 멈췄으면 False, 실패 사유는 run.reasons)
+    :raises toss_service.TossError: 첫 쪽 호출 실패(403 제외 — run.forbidden에 남기고 False)
+    """
+    points: list[tuple[str, float]] = []
+    cursor = before
+    while True:
+        if not run.take():
+            return points, False
+        try:
+            candles, next_before = toss_service.fetch_candles(code, "1d", toss_service.CANDLE_MAX_COUNT, adjusted=True,
+                                                              before=cursor)
+        except toss_service.TossForbidden as exc:
+            run.forbidden = str(exc)
+            return points, False
+        except toss_service.TossMissingKey:
+            raise
+        except toss_service.TossError as exc:
+            if not points:
+                raise
+            run.reasons.append(f"{code}: {exc} — 받은 쪽까지만")
+            return points, False
+        points += [(c["date"], c["close"]) for c in candles if c["date"] <= session]
+        if not candles or not next_before or min(c["date"] for c in candles) <= stop:
+            return points, True
+        cursor = next_before
+
+
+def _history_plan(code: str, entry: dict | None, floor: date, today: date) -> tuple[str, str, str | None] | None:
+    """
+    그 종목에 할 일 — (종류, 멈출 날짜, 시작 before) 또는 None(할 일 없음).
+      다시 받기  관측치가 수정주가 기준 바뀜(adjBasisChanged)을 걸었고 저장값이 관측치의 수정 종가와 다름 → 최신부터 저장 첫 날까지 통째로
+      메우기    저장 첫 날이 목표(1년 전, 상장일이 더 늦으면 상장일)보다 늦음 → 저장 첫 날 앞부터 목표까지
+      빈 구간   저장된 마지막 날이 KR_HISTORY_GAP_DAYS보다 오래됨 → 최신부터 그 날까지
+    """
+    earliest = store.earliest_timeseries_date(catalog.TS_KR_CLOSE_ADJ, code)
+    latest = store.latest_timeseries_date(catalog.TS_KR_CLOSE_ADJ, code)
+    entry = entry if isinstance(entry, dict) else {}
+    if earliest and entry.get("adjBasisChanged") and _stored_differs(code, entry):
+        return "다시 받기", earliest, None
+    list_date = str(entry.get("listDate") or "")[:10]
+    target = max(floor.isoformat(), list_date) if list_date else floor.isoformat()
+    if earliest is None:
+        return "메우기", target, None
+    if earliest > target:
+        before = (date.fromisoformat(earliest) - timedelta(days=1)).isoformat() + "T00:00:00+09:00"
+        return "메우기", target, before
+    if latest and latest < (today - timedelta(days=KR_HISTORY_GAP_DAYS)).isoformat():
+        return "빈 구간", latest, None
+    return None
+
+
+def _stored_differs(code: str, entry: dict) -> bool:
+    """관측치의 수정 종가(최근 5봉)가 같은 날짜의 저장값과 KR_ADJ_BASIS_TOLERANCE 넘게 다른가 — 아직 옛 기준이면 참, 이미 다시 받았으면 거짓."""
+    points = [(bar["date"], bar["adjClose"]) for bar in entry.get("bars") or [] if isinstance(bar, dict) and bar.get("adjClose")]
+    if not points:
+        return False
+    stored = {row["date"]: row["value"] for row in store.read_timeseries(catalog.TS_KR_CLOSE_ADJ, code, start_date=points[0][0])}
+    return any(day in stored and stored[day] and abs(value / stored[day] - 1) > KR_ADJ_BASIS_TOLERANCE for day, value in points)
+
+
+def task_kr_paper_price_history() -> str:
+    """
+    🧪 한국 책 종가 이력 — 수집 범위(kr_scope)의 토스 수정주가(adjusted=true) 일봉 종가 → timeseries ``kr_close_adj``(series = 코드).
+
+    kr_paper_quotes가 날마다 최근 5봉을 덧붙이고, 이 태스크는 그 앞을 메웁니다(weekly).
+      - 메우기: 저장 첫 날이 1년 전(상장일이 늦으면 상장일)보다 늦으면 그 앞을 ``before``로 200봉씩 거슬러 받습니다 — 종목마다 한 번이고
+        다 메우면 0회입니다. 받은 쪽은 바로 씁니다(다음 실행이 저장 첫 날 앞부터 이어 받음).
+      - 다시 받기: 관측치가 수정주가 기준 바뀜(분할·병합 뒤 토스가 과거 수정가를 다시 씀)을 걸었고 저장값이 아직 옛 기준이면, 저장 구간
+        전체를 새 기준으로 다시 받습니다. **끝까지 받았을 때만** 씁니다 — 반만 고친 시계열은 옛 기준과 새 기준이 섞입니다.
+      - 빈 구간: 저장된 마지막 날이 일주일 넘게 오래되면(수집기가 오래 꺼져 있었음) 최신부터 그 날까지.
+      - 대상 세션(kr_target_session)보다 늦은 날짜(오늘 장중 봉)는 쓰지 않습니다. 기존 점은 지우지 않습니다(upsert).
+      - 실행당 KR_HISTORY_CALL_BUDGET·KR_HISTORY_TIME_LIMIT_SECONDS 안에서만, 403이면 멈춥니다. 할 일이 있었는데 한 종목도 받지 못하면
+        EmptyResult(기존 이력 유지).
+    """
+    started = _clock()
+    now = _now()
+    today = now.astimezone(KST).date()
+    session = kr_target_session(now).isoformat()
+    floor = today - timedelta(days=KR_HISTORY_DAYS)
+    scope, _basis = kr_scope()
+    quotes = previous_payload(catalog.SNAP_KR_PAPER_QUOTES).get("codes") or {}
+    run = _TossRun(KR_HISTORY_CALL_BUDGET, KR_CANDLE_SPACING)
+    done: dict[str, list[str]] = {"메우기": [], "다시 받기": [], "빈 구간": [], "더 오래된 봉 없음": []}
+    attempted = 0
+    points_written = 0
+    stop = ""
+    for code in scope:
+        if run.forbidden:
+            break
+        plan = _history_plan(code, quotes.get(code), floor, today)
+        if plan is None:
+            continue
+        if _clock() - started >= KR_HISTORY_TIME_LIMIT_SECONDS:
+            stop = f"시간 상한 {KR_HISTORY_TIME_LIMIT_SECONDS:.0f}초 — 나머지는 다음 실행"
+            break
+        if run.remaining < 1:
+            stop = "호출 예산 소진 — 나머지는 다음 실행"
+            break
+        kind, until, before = plan
+        attempted += 1
+        try:
+            points, complete = _adjusted_back_to(code, until, run, session, before)
+        except toss_service.TossMissingKey as exc:
+            raise EmptyResult(f"{exc} — 한국 책 종가 이력을 받지 않습니다 · 기존 이력 유지") from None
+        except toss_service.TossError as exc:
+            run.reasons.append(f"{code}: {exc}")
+            continue
+        if not complete and run.remaining < 1 and not run.forbidden:
+            stop = "호출 예산 소진 — 나머지는 다음 실행"
+        if kind == "다시 받기" and not complete:
+            run.reasons.append(f"{code}: 다시 받기를 끝내지 못함 — 쓰지 않고 다음 실행에 처음부터")
+            continue
+        if points:
+            points_written += store.put_timeseries(catalog.TS_KR_CLOSE_ADJ, code, points)
+            done[kind].append(code)
+        elif complete:
+            done["더 오래된 봉 없음" if kind == "메우기" else kind].append(code)
+
+    if run.forbidden:
+        run.reasons.insert(0, run.forbidden)
+    if not attempted:
+        return f"최신 상태 ({len(scope)}종목, 호출 0회)"
+    finished = sum(len(codes) for codes in done.values())
+    if not finished:
+        raise EmptyResult(f"0/{attempted} 종목 — 기존 이력 유지" + (f" ({stop})" if stop else "") + _reason_suffix(run.reasons))
+    parts = [f"{kind} {len(codes)}" + (f"({', '.join(codes[:3])}{'…' if len(codes) > 3 else ''})" if kind != "메우기" else "")
+             for kind, codes in done.items() if codes]   # 메우기는 처음에 수집 범위 전부라 이름을 늘어놓지 않음
+    detail = f"{finished}/{attempted} 종목 — {' · '.join(parts)} · 점 {points_written}개 · 호출 {run.budget.used}회"
     if stop:
         detail += f" · {stop}"
     return detail + _reason_suffix(run.reasons)

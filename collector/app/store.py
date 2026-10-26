@@ -301,6 +301,16 @@ def latest_timeseries_date(dataset: str, series_id: str) -> str | None:
     return row["d"].isoformat() if row and row["d"] else None
 
 
+def earliest_timeseries_date(dataset: str, series_id: str) -> str | None:
+    """그 시리즈의 가장 이른 obs_date (YYYY-MM-DD). 없으면 None. 과거 쪽 메우기의 시작점입니다(한국 책 종가 이력)."""
+    with connection() as conn:
+        row = conn.execute(
+            "SELECT MIN(obs_date) AS d FROM timeseries WHERE dataset = %s AND series_id = %s",
+            (dataset, series_id),
+        ).fetchone()
+    return row["d"].isoformat() if row and row["d"] else None
+
+
 def read_timeseries(
     dataset: str,
     series_id: str,

@@ -8,7 +8,7 @@
 
 ---
 
-## 1. 수집 태스크 (31개)
+## 1. 수집 태스크 (32개)
 
 수집기가 세 그룹으로 나눠 돌립니다. 주기는 `.env`로 바꿀 수 있습니다.
 
@@ -42,6 +42,7 @@
 | | | `kr_holidays` | 🔑 한국 공휴일 (천문연 특일정보, 올해·내년을 받아 2025년부터 보관 — 모의 매매 한국 책의 지난 거래일 계산, v2 명세 K35) |
 | | | `dart_fundamentals` | 🔑 수급 레이더 종목의 사업보고서 주요계정 (DART) |
 | | | `paper_price_history` | 📒 같은 유니버스의 10년 일별 종가(수정주가) → `timeseries` 데이터셋 `equity_close`(종목 = `series_id`, 이력 누적·지우지 않음) |
+| | | `kr_paper_price_history` | 🧪🅣 한국 책 종가 이력 — 수집 범위의 토스 수정주가(`adjusted=true`) 일봉 종가 → `timeseries` `kr_close_adj`(series = 코드, 지우지 않음). 저장 첫 날이 1년 전(상장일이 늦으면 상장일)보다 늦으면 그 앞을 `before`로 200봉씩 거슬러 메우고(종목마다 한 번 — 다 메우면 0회), `kr_paper_quotes`가 수정주가 기준 바뀜(분할·병합 뒤 과거 수정가가 다시 쓰임 — `adjBasisChanged`)을 걸었고 저장값이 옛 기준이면 저장 구간 전체를 새 기준으로 다시 받아 **끝까지 받았을 때만** 씀(옛·새 기준이 한 시계열에 섞이지 않게), 마지막 날이 일주일 넘게 오래되면 그 사이를 메움. 날마다의 최근 5봉은 `kr_paper_quotes`가 덧붙임. NXT 종목은 KRX+NXT 통합가 |
 | | | `sec_fundamentals` | 📒 같은 유니버스(ETF 제외 — 설정 ETF와 13F 매핑표의 ETP)의 미국 종목 재무 — SEC XBRL Company Facts(회사당 1건) → `observations` `us.fundamentals`(entity = 티커, obs_date = 공시일, 지우지 않음 — 티커의 CIK가 바뀌면 옛 CIK만의 행은 지움) + 회사별 수집 상태 `us.fundamentals.status`. 실행당 CIK 예산(`FUNDAMENTALS_FETCH_BUDGET`, 기본 200건)이라 약 570곳을 세 번(약 36시간)에 한 바퀴. 13F 두 태스크와 같은 SEC 토큰 버킷(§5 '모의 매매가 쓰는 저장본과 한계') |
 | | | `earnings_surprise` | 📒 같은 유니버스(ETF 제외 — `us_calendar`와 같은 범위)의 어닝 서프라이즈 — yfinance quoteSummary `earnings.earningsChart`(내부 호출, 최근 4분기 EPS 실제치·컨센서스·실제 발표 시각) → `observations` `us.earnings_surprise`(entity = 티커, obs_date = 발표 시각의 미국 동부 날짜, (날짜, 티커)마다 덮어씀·지우지 않음) + 수집 상태 `us.earnings_surprise.status`. 실행당 100종목(`EARNINGS_SURPRISE_BUDGET`, 1~600), 키 없음(§5 '어닝 서프라이즈') |
 | | | `run_log_retention` | 🧹 수집 실행 기록 중 보존 기간(`COLLECTOR_RUN_LOG_RETENTION_DAYS`, 기본 90일)이 지난 것 정리 — 외부 호출 없음, 수집한 데이터는 그대로 |
@@ -522,7 +523,7 @@ EQUITY_MAP = {
   세 토스 태스크가 모두 1시간 주기(`slow`)라 이 그룹은 1시간에 최대 202회입니다 — 종목 동향
   `TOSS_STOCK_LIMIT`(40) + `TOSS_WATCHED_LIMIT`(60), 레이더 폴백 `TOSS_RADAR_UNIVERSE`(100), 시장 2.
   429 재시도는 넣지 않은 수이고, 레이더 폴백이 랭킹·종목 정보를 1번씩 더 부릅니다(같은 그룹인지는 확인하지 못함).
-- **한국 책 호출 예산** — 🧪 한국 책 태스크는 KR 거래일 D의 20:30 KST 뒤 하루 한 번이고(받은 종목은 그날 다시 부르지 않음 — 다음 slow 주기는 받지 못한 종목만), 실행마다 상한이 있습니다. `kr_paper_quotes` 실행당 최대 500회(`KR_QUOTES_CALL_BUDGET` — 종목 상태 200종목에 1회 + 종목마다 일봉 원시·수정 2회 + 1분봉 개장 1회, 그룹 `MARKET_DATA_CHART`([확인] 초당 20)·`STOCK`(초당 5), 호출 사이 0.1초, 300초가 지나면 새 종목을 시작하지 않음), `kr_paper_flows` 실행당 최대 200회(`KR_FLOWS_CALL_BUDGET` — 종목마다 1회, 위 `STOCK_TRADING_TREND` 그룹, 호출 사이 0.3초, 300초). 수집 범위 약 140종목이면 하루 약 420 + 140회이고, 수급 그룹은 그 한 시간에 위 202회에 140회쯤이 더해집니다. 상한을 넘는 종목은 다음 주기에 이어 받습니다.
+- **한국 책 호출 예산** — 🧪 한국 책 태스크는 KR 거래일 D의 20:30 KST 뒤 하루 한 번이고(받은 종목은 그날 다시 부르지 않음 — 다음 slow 주기는 받지 못한 종목만), 실행마다 상한이 있습니다. `kr_paper_quotes` 실행당 최대 500회(`KR_QUOTES_CALL_BUDGET` — 종목 상태 200종목에 1회 + 종목마다 일봉 원시·수정 2회 + 1분봉 개장 1회, 그룹 `MARKET_DATA_CHART`([확인] 초당 20)·`STOCK`(초당 5), 호출 사이 0.1초, 300초가 지나면 새 종목을 시작하지 않음), `kr_paper_flows` 실행당 최대 200회(`KR_FLOWS_CALL_BUDGET` — 종목마다 1회, 위 `STOCK_TRADING_TREND` 그룹, 호출 사이 0.3초, 300초), `kr_paper_price_history` 실행당 최대 300회(weekly, `KR_HISTORY_CALL_BUDGET` — 종목마다 200봉 쪽 약 2번으로 1년을 한 번 메우고 그 뒤로는 거의 0회, 그룹 `MARKET_DATA_CHART`, 호출 사이 0.1초, 900초). 수집 범위 약 140종목이면 하루 약 420 + 140회이고, 수급 그룹은 그 한 시간에 위 202회에 140회쯤이 더해집니다. 상한을 넘는 종목은 다음 주기에 이어 받습니다.
 - **잠정치** — 당일 기록은 장중 잠정치입니다. 종목 기록의 개인·기관 세부·기타법인·외국인 보유는 **null**
   (저녁에 확정). null을 0으로 바꾸지 않고, 누적에서 빠진 날수를 화면에 "(n일)"로 적습니다.
 - **한 시장만 실패하면** — 그 시장은 직전 값을 이어 쓰고 `isStale`·`staleSince`를 붙입니다(3일 지나면 뺌).

@@ -10,7 +10,7 @@ from .earnings_surprise import task_earnings_surprise
 from .filings import task_sec_13f, task_sec_13f_track_record
 from .fundamentals import task_sec_fundamentals
 from .korea_public import task_dart_fundamentals, task_fsc_etf_prices, task_fsc_prices, task_kr_holidays
-from .kr_paper import task_kr_paper_flows, task_kr_paper_quotes, task_kr_paper_universe
+from .kr_paper import task_kr_paper_flows, task_kr_paper_price_history, task_kr_paper_quotes, task_kr_paper_universe
 from .maintenance import task_run_log_retention
 from .markets import task_macro_collected, task_radar_rankings, task_scraper_markets
 from .news import task_news_headlines
@@ -61,6 +61,7 @@ ALL_TASKS: tuple[Task, ...] = (
     Task("kr_holidays", "weekly", task_kr_holidays, "한국 공휴일 (천문연 특일정보)"),
     Task("dart_fundamentals", "weekly", task_dart_fundamentals, "국내 종목 재무 (DART 사업보고서)"),
     Task("paper_price_history", "weekly", task_paper_price_history, "모의 매매 유니버스 10년 일별 종가 (이력 누적)"),
+    Task("kr_paper_price_history", "weekly", task_kr_paper_price_history, "🧪 한국 책 종가 이력 — 수집 범위 토스 수정주가 1년 메우기·기준 바뀜 다시 받기"),
     Task("run_log_retention", "weekly", task_run_log_retention, "수집 실행 기록 정리 (보존 기간이 지난 것만)"),
 )
 

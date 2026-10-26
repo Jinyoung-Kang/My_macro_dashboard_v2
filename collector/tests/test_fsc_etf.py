@@ -319,13 +319,13 @@ def test_예산은_되돌아보기_7거래일을_한_번에_메운다():
     assert tasks.FSC_ETF_CALL_BUDGET >= tasks.FSC_LOOKBACK_DAYS
 
 
-def test_slow에서_주식시세_바로_뒤에_돌고_태스크는_31개():
+def test_slow에서_주식시세_바로_뒤에_돌고_태스크는_32개():
     """같은 slow 바퀴에서 한국 확정가(주식 → ETF)가 토스 태스크보다 먼저 들어옵니다(명세 §4-9 시각표)."""
     task = tasks.TASKS_BY_NAME["fsc_etf_prices"]
     assert task.speed == "slow" and task.run is tasks.korea_public.task_fsc_etf_prices
     names = [t.name for t in tasks.ALL_TASKS]
     assert names.index("fsc_etf_prices") == names.index("fsc_prices") + 1
-    assert len(tasks.ALL_TASKS) == len(tasks.TASKS_BY_NAME) == 31
+    assert len(tasks.ALL_TASKS) == len(tasks.TASKS_BY_NAME) == 32
 
 
 def test_실제_저장본에서_ETF_하루치를_넣고_다시_돌면_호출_0회다(store, monkeypatch):
