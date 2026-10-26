@@ -85,6 +85,13 @@ public class PaperStore {
                            boolean priceStale, LocalDate fillRefDate, double fillRefClose, String splitNote) {
     }
 
+    /**
+     * '미처리 기업행위' 표시가 걸린 보유 하나(한국 책, 명세 K32). 걸려 있는 동안 평가는 마지막 확정가로 묶이고 스탑·주문이 보류됩니다
+     * (장부 연결은 C2).
+     */
+    public record CorpActionHold(String bookCode, String ticker, String reason) {
+    }
+
     /** 재진입 금지. {@code untilTradingDate}까지(포함) 다시 사지 않습니다. */
     public record Lockout(String bookCode, String ticker, LocalDate untilTradingDate, String reason) {
     }
@@ -643,6 +650,46 @@ public class PaperStore {
 
     public void deletePosition(String code, String ticker) {
         jdbc.update("DELETE FROM paper_positions WHERE book_code = ? AND ticker = ?", code, ticker);
+    }
+
+    // ------------------------------------------------------------------ 미처리 기업행위(한국, V14)
+    /**
+     * 한 책에서 '미처리 기업행위' 표시가 걸린 보유, ticker 순(2단계 명세 K32, {@code paper_positions.corp_action_hold}). 표시가 없는
+     * 보유는 빠집니다. 보유 레코드({@link Position})에는 이 칸이 없습니다 — {@link #upsertPosition}이 쓰지 않는 칸이라 보유 갱신이
+     * 표시를 지우지 않고, 걸고 푸는 것은 아래 두 메서드만 합니다.
+     */
+    public List<CorpActionHold> corpActionHolds(String code) {
+        return jdbc.query("SELECT book_code, ticker, corp_action_hold FROM paper_positions "
+                        + "WHERE book_code = ? AND corp_action_hold IS NOT NULL ORDER BY ticker",
+                (rs, rowNum) -> new CorpActionHold(rs.getString("book_code"), rs.getString("ticker"),
+                        rs.getString("corp_action_hold")),
+                code);
+    }
+
+    /**
+     * 보유에 '미처리 기업행위' 표시를 겁니다. 이미 걸려 있으면 그대로 둡니다(처음 사유·걸린 날을 지킴 — 같은 신호가 밤마다 다시
+     * 나와도 됨).
+     *
+     * @param reason 사유(머리에 걸린 날, {@code analytics.KrxCorporateActions.holdReason})
+     * @return 새로 걸었으면 true, 이미 걸려 있거나 그 보유가 없으면 false
+     * @throws IllegalArgumentException 사유가 비었음
+     */
+    public boolean holdForCorpAction(String code, String ticker, String reason) {
+        if (reason == null || reason.isBlank()) {
+            throw new IllegalArgumentException("미처리 기업행위 사유가 비었습니다: " + code + " " + ticker);
+        }
+        return jdbc.update("UPDATE paper_positions SET corp_action_hold = ?, updated_at = now() "
+                + "WHERE book_code = ? AND ticker = ? AND corp_action_hold IS NULL", reason, code, ticker) == 1;
+    }
+
+    /**
+     * '미처리 기업행위' 표시를 풉니다(사람이 확인한 뒤 — 정리 기능은 2단계에 두지 않음, 명세 §4-2).
+     *
+     * @return 걸려 있던 표시를 풀었으면 true
+     */
+    public boolean releaseCorpActionHold(String code, String ticker) {
+        return jdbc.update("UPDATE paper_positions SET corp_action_hold = NULL, updated_at = now() "
+                + "WHERE book_code = ? AND ticker = ? AND corp_action_hold IS NOT NULL", code, ticker) == 1;
     }
 
     // ------------------------------------------------------------------ 재진입 금지

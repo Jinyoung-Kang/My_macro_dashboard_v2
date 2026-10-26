@@ -1464,7 +1464,53 @@ class PaperStoreDbTest {
     }
 
     @Test
-    @DisplayName("V14 확정 조정 표: 체결마다 한 행(두 번째는 DuplicateKeyException), 출처는 FSC·FSC_ETF만, 비용 칸 음수 불가·현금 차이는 음수 가능, 책 초기화·삭제 때 체결과 함께 지워짐")
+    @DisplayName("미처리 기업행위 표시(B7): 걸면 그 책 목록에만 나오고 다시 걸어도 처음 사유가 남음, 보유 갱신은 지우지 않음, 풀면 빠지고 다시 걸 수 있음, 보유 없는 종목·빈 사유, 보유를 지우면 표시도")
+    void corpActionHoldIsSetOnceAndReleased() {
+        store.insertBookIfAbsent(book(BOOK, "규칙 책"));
+        store.insertBookIfAbsent(book(OTHER_BOOK, "벤치마크"));
+        PaperStore.Position samsung = new PaperStore.Position(BOOK, "005930", 10, 71_300, DAY, CLOSE, 71_300, CLOSE,
+                null, null, false, DAY, 71_300, null);
+        store.upsertPosition(samsung);
+        store.upsertPosition(new PaperStore.Position(BOOK, "000660", 3, 250_000, DAY, CLOSE, 250_000, CLOSE, null, null,
+                false, DAY, 250_000, null));
+        store.upsertPosition(new PaperStore.Position(OTHER_BOOK, "005930", 1, 71_300, DAY, CLOSE, 71_300, CLOSE, null,
+                null, false, DAY, 71_300, null));
+        assertThat(store.corpActionHolds(BOOK)).isEmpty();
+
+        String first = "2026-10-23 기업행위 확인 필요 — 2026-10-23 가격제한폭(±30%) 밖 변동 -40.0%(2026-10-22 71,300 → "
+                + "2026-10-23 42,780)";
+        assertThat(store.holdForCorpAction(BOOK, "005930", first)).isTrue();
+        assertThat(store.holdForCorpAction(BOOK, "005930", "2026-10-26 기업행위 확인 필요 — 다른 사유"))
+                .as("이미 걸림 — 처음 사유·걸린 날을 지킴").isFalse();
+        assertThat(store.corpActionHolds(BOOK)).containsExactly(new PaperStore.CorpActionHold(BOOK, "005930", first));
+        assertThat(store.corpActionHolds(OTHER_BOOK)).as("다른 책의 같은 종목").isEmpty();
+
+        store.upsertPosition(new PaperStore.Position(BOOK, "005930", 10, 71_300, DAY, CLOSE, 71_300, CLOSE, 70_000.0,
+                CLOSE, false, DAY, 71_300, null));
+        assertThat(store.corpActionHolds(BOOK)).as("보유 갱신은 표시를 지우지 않음").extracting(PaperStore.CorpActionHold::reason)
+                .containsExactly(first);
+        assertThat(store.positions(BOOK)).hasSize(2);
+
+        assertThat(store.holdForCorpAction(BOOK, "035420", first)).as("보유 없는 종목").isFalse();
+        assertThat(store.corpActionHolds(BOOK)).hasSize(1);
+        assertThatThrownBy(() -> store.holdForCorpAction(BOOK, "000660", " ")).isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> store.holdForCorpAction(BOOK, "000660", null)).isInstanceOf(IllegalArgumentException.class);
+
+        assertThat(store.releaseCorpActionHold(BOOK, "005930")).isTrue();
+        assertThat(store.releaseCorpActionHold(BOOK, "005930")).as("이미 풂").isFalse();
+        assertThat(store.corpActionHolds(BOOK)).isEmpty();
+        assertThat(store.holdForCorpAction(BOOK, "005930", first)).as("푼 뒤 다시 걸 수 있음").isTrue();
+
+        assertThat(store.holdForCorpAction(BOOK, "000660", "2026-10-23 기업행위 확인 필요 — 토스·금융위 모두 종목 없음")).isTrue();
+        assertThat(store.corpActionHolds(BOOK)).extracting(PaperStore.CorpActionHold::ticker)
+                .as("ticker 순").containsExactly("000660", "005930");
+        store.deletePosition(BOOK, "000660");
+        assertThat(store.corpActionHolds(BOOK)).as("보유를 지우면 표시도").extracting(PaperStore.CorpActionHold::ticker)
+                .containsExactly("005930");
+    }
+
+    @Test
+    @DisplayName("V14 확정 조정 표:체결마다 한 행(두 번째는 DuplicateKeyException), 출처는 FSC·FSC_ETF만, 비용 칸 음수 불가·현금 차이는 음수 가능, 책 초기화·삭제 때 체결과 함께 지워짐")
     void fillConfirmationsOnePerFill() {
         store.insertBookIfAbsent(book(BOOK, "규칙 책"));
         long fillId = store.insertFill(fill(store.insertOrder(pendingBuy(BOOK, "SPY", null)), BOOK));
