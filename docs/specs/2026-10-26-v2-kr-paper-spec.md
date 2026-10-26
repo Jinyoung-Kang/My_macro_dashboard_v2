@@ -135,6 +135,28 @@
     대체일은 12/31 규칙을 더하기 **전**의 공휴일로 센다. 수집기 `is_krx_closure`는 실제로 쉬는 그 하루만 참이다(주말 12/31은 주말로 이미 휴장).
   - 백엔드 `analytics.Verification.isKrxYearEndClosure`(운영자 수집 검증의 확정·장중 대조 시간 판정, QA-111)도 '평일인 12/31'만 보는 같은 잠복 결함이다 —
     [추정, 코드 읽기] 2028-12-29 장중에 확정 대조를 건너뛰고 KIS 가집계 대조를 열어 거짓 오류를 낸다. K27의 범위(수집기·화면)에 넣지 않고 **B5에서 `KrxCalendar`의 연말휴장 규칙을 쓰게 바꾼다**(2028-12 전까지 영향 없음).
+- **B5 구현에서 정한 것**(2026-10-27 — 위 식과 §9 묶음 A 리뷰 메모 'B5 — 달력이 모르는 날'이 열어 둔 자리. 커밋 `a48abd7`~`bc79606`):
+  - **모르는 날 = 전용 예외**: `analytics.CalendarUnavailableException`(비검사 예외, `IllegalStateException`이 아닌 따로 된 형 — 일반 상태 오류를 잡는 곳이 섞지 않게, 빠진 해 `year()`, 메시지 머리 '달력 없음').
+    `TradingCalendar`에 `covers(date)`는 두지 않았다 — 달력 호출이 한 실행에 수십 곳(봉마다 `isFinal`)이라 호출부마다 묻는 것보다 달력이 던지는 편이 빠뜨릴 수 없다. `KrxCalendar`는 `covers(year)`·`coveredYears()`만 보조로 둔다.
+    공휴일 목록이 없거나 **빈 해**(천문연은 발표 전 해에 0건 — 신정이 늘 있어 빈 목록은 '모름')의 **평일**만 던지고, 주말은 목록 없이도 휴장이라 던지지 않는다. 기본 메서드(다음·직전·n거래일·구간 수·최근 세션)도 모르는 평일에 닿는 순간 같은 예외로 멈춘다.
+  - **임시휴장(`kr.calendar.extraClosures`)은 연말휴장 대체일 계산에서도 휴장**으로 센다: 연말휴장일 = 12/31부터 거슬러 올라가 주말도, 공휴일 목록에도, 임시휴장에도 없는 첫 날
+    (KRX 규정의 '직전 매매거래일'을 그대로 읽은 것 — [추정] 실례 없음). 수집기·화면에는 이 설정이 없어 그 둘의 식은 공휴일까지만이다(설정이 비어 있으면 셋이 같음).
+  - **5/1(2026년 전)**은 평일일 때만 휴장으로 더하고 주말이면 대체하지 않는다([확인] 2022-05-01 일요일은 KRX 목록에 없음). 2026년부터는 천문연 목록(노동절)을 따른다 — 목록에 없으면 거래일.
+  - **앞 창**(K35 '정기 작업은 앞으로 쓸 창의 해 목록이 없을 때만 선다') = 직전 세션(`lastCompletedSession`) ~ 그 뒤 **10거래일**(`PaperMarket.CALENDAR_WINDOW_TRADING_DAYS` = max(만료 3, `1b_calendar` 10)).
+    `PaperMarket.requireCalendarWindow(now)`가 그 창을 달력으로 걸어 보고(미국은 늘 통과), 결정·리스크 점검·복기 작업이 `store.ready()` 바로 뒤(초기화 전 판정보다도 앞)에 부른다.
+    재진입 금지(20거래일)는 창에 넣지 않았다 — 명세가 정한 창이 아니고, 그 계산이 모르는 해에 닿으면 장부 오류(ERROR, 메시지 '달력 없음 — …')로 그 실행 기록에 남는다. C1에서 `kr.lockoutTradingDays`로 창을 넓힐지 다시 본다.
+  - **작업 기록**: 결과 `NO_CALENDAR`, detail `{reason:'달력 없음', year, message}`(리스크 점검은 `manual`도). 정기 실행은 **시장 × KST 날짜 × 빠진 해마다 한 번**만 남긴다(5~30분 주기가 작업당 200건을 밀어내지 않게, 창을 다시 알면 잊음, 재기동하면 처음부터 — `CalendarGaps`).
+    수동 실행: 리스크 점검은 누를 때마다 기록하고 `skippedReason`으로 답하며, 결정·복기는 기록 없이 400(`InvalidRequestException`, 메시지 '달력 없음 — …').
+  - **조회**: `BookSummary.statsReason`·보유 행 `holdingTradingDaysReason`(보통 null, 그 계산만 null일 때 예외 메시지) — 응답은 그대로 낸다. 오늘 세션을 모르면 보유 행 전부가 null + 사유다.
+    Claude 결정 파이프라인의 보유 거래일도 그 종목만 빼서(모름) 결정은 이어 가고, 그 종목 재량 매도는 검증기가 `MIN_HOLD`('보유 거래일을 알 수 없음')로 거절한다(K35 '그 계산만').
+    그 밖의 조회·수동 경로(관측치 요약 `finalClose`, 메모 만료, 조회의 최근 세션)는 아직 예외가 그대로 나간다 — 한국 시장을 목록에 넣는 C1(실행마다 달력 한 벌)에서 함께 막는다.
+  - **수집기 보존 하한**은 고정 상수 `KR_HOLIDAYS_KEEP_FROM = 2025`(`korea_public.py`). 받는 해는 올해·내년 그대로라 저장본에 없는 지난 해를 새로 받지는 않는다.
+  - `kr.calendar.openTimeOverrides`는 `KrxCalendar`에 넣지 않았다(개장·마감 순간은 정규장 09:00·15:30 고정) — 1분봉 시가 봉 고르기(C2)의 몫. 공휴일·임시휴장을 저장본·설정에서 읽어 달력을 만드는 연결(`announced=false` 해는 빈 목록)도 C1.
+  - **검증 대조 시간**(위 항목): 백엔드 몫을 새 결함 **QA-143**으로 재현(`b047d71`) → 수정(`bc79606`). `Verification.settledGate`·`intradayGate`에 공휴일 목록을 받는 판을 더해 `VerificationService`가 저장된 공휴일을 넘긴다.
+    목록이 없으면 주말 대체만 본다(운영자 진단이라 fail-closed가 아님).
+  - **시험 자료**: `backend/src/test/resources/paper/kr-calendar/` — KRX 휴장일 JSON 2022·2023·2026·2027과 천문연 2026·2027 응답(파일마다 `_source`에 출처·조회 시각). 2022·2023은 천문연 응답을 받지 않아
+    KRX 목록에서 KRX 고유 휴장일(연말휴장일·근로자의날)을 뺀 것을 공휴일 입력으로 썼다(그 해 시험의 대상은 대체 규칙·5/1뿐). 화면 대조는 공유 고정본 `krx-closures-2025-2028.json`을 백엔드
+    `KrxCalendarScreenParityTest`와 화면 `marketCalendarKrxParity.test.ts`가 함께 본다 — 2026·2027은 KRX 목록과 같고 2025·2028은 식으로 만든 값이다(KRX 목록 미대조).
 
 ### 4-5. 유니버스와 수집 범위 (K3·K26 — 권장안, 초안 변경)
 - **유니버스 U(D)** = 금융위 최신 기준일 B(< D)의 코스피 종목 중 시가총액 상위 100 **보통주**. 제외: 우선주(코드 끝자리 ≠ '0' 또는 이름이 '우'·'우B'·'우C'로 끝남 — 추정 규칙, 고정본 테스트로 잠금), 스팩('스팩'), 리츠('리츠'), 거래정지, DART 고유번호 매핑 없음. ETF·ETN은 주식시세 API에 없다.
@@ -469,7 +491,7 @@
 A8이 달력 없는 옛 시그니처 호출과 결정 작업·시세 저장본까지 봄, 책 정의 순서·관측치 늦음 기준이 시장 값, 달력 기본 메서드의 연속 휴장 31일 상한,
 응답 스키마 timing enum·시장 체결 시점·고정 문단 잠금 시험. 뒤 묶음의 설계 몫은 아래에 두고 그 묶음을 시작할 때 먼저 정한다.
 
-- **B5 — 달력이 모르는 날**: `TradingCalendar`에는 '모르는 날을 휴장으로 답하지 않고 예외로 알림'만 정했다(기본 메서드는 연속 휴장 31일을 넘으면 `IllegalStateException`).
+- **B5 — 달력이 모르는 날**(→ **B5에서 정함**, §4-4 'B5 구현에서 정한 것' — 전용 예외 `CalendarUnavailableException`, 작업 기록 `NO_CALENDAR`, 조회 `statsReason`·`holdingTradingDaysReason`): `TradingCalendar`에는 '모르는 날을 휴장으로 답하지 않고 예외로 알림'만 정했다(기본 메서드는 연속 휴장 31일을 넘으면 `IllegalStateException`).
   B5에서 정할 것: `KrxCalendar`가 공휴일 목록 없는 해에 던질 전용 예외(가칭 `CalendarUnavailableException`, analytics) 또는 `covers(LocalDate)`(미국은 늘 참),
   정기 작업(결정·리스크·복기)이 그 예외를 작업 기록의 '달력 없음' 사유로 남기기(지금은 `log.warn`뿐), 조회의 통계·보유 거래일은 null + 사유
   (K35 '지난 해는 그 계산만 null' — 지금 `PaperQueryService.stats`는 `IllegalArgumentException`만 잡는다).
