@@ -173,6 +173,65 @@ class TradingCalendarTest {
         m.assertNone("개장 순간");
     }
 
+    /** 시험용 — 서울 시간대, from~until(양 끝 포함) 휴장, 그 밖의 평일은 거래일. until이 null이면 from부터 끝까지 휴장. */
+    private static TradingCalendar closedFrom(LocalDate from, LocalDate until) {
+        return new TradingCalendar() {
+            @Override
+            public ZoneId zone() {
+                return ZoneId.of("Asia/Seoul");
+            }
+
+            @Override
+            public boolean isHoliday(LocalDate d) {
+                return d.getDayOfWeek().getValue() <= 5 && !isTradingDay(d);
+            }
+
+            @Override
+            public boolean isTradingDay(LocalDate d) {
+                boolean closed = !d.isBefore(from) && (until == null || !d.isAfter(until));
+                return !closed && d.getDayOfWeek().getValue() <= 5;
+            }
+
+            @Override
+            public boolean isEarlyClose(LocalDate d) {
+                return false;
+            }
+
+            @Override
+            public Instant openInstant(LocalDate tradingDate) {
+                return ZonedDateTime.of(tradingDate, LocalTime.of(9, 0), zone()).toInstant();
+            }
+
+            @Override
+            public Instant closeInstant(LocalDate tradingDate) {
+                return ZonedDateTime.of(tradingDate, LocalTime.of(15, 30), zone()).toInstant();
+            }
+        };
+    }
+
+    @Test
+    @DisplayName("기본 메서드는 끝없이 돌지 않는다 — 모르는 날을 휴장으로 답하는 달력은 31일 넘게 거래일이 없으면 IllegalStateException, 31일 휴장까지는 건너뜀")
+    void defaultMethodsAreBounded() {
+        LocalDate start = LocalDate.of(2028, 1, 1);   // 토요일 — 이날부터 영영 휴장(목록 없는 해를 휴장으로 답한 구현)
+        TradingCalendar forever = closedFrom(start, null);
+        Duration limit = Duration.ofSeconds(5);
+        org.junit.jupiter.api.Assertions.assertTimeoutPreemptively(limit, () -> {
+            assertThatThrownBy(() -> forever.nextTradingDay(LocalDate.of(2027, 12, 31)))
+                    .isInstanceOf(IllegalStateException.class).hasMessageContaining("2027-12-31 뒤 31일 안에 거래일이 없습니다");
+            assertThatThrownBy(() -> forever.addTradingDays(LocalDate.of(2027, 12, 30), 3))
+                    .isInstanceOf(IllegalStateException.class);
+            assertThatThrownBy(() -> forever.lastCompletedSession(Instant.parse("2028-03-01T00:00:00Z")))
+                    .isInstanceOf(IllegalStateException.class).hasMessageContaining("앞 31일 안에 거래일이 없습니다");
+        });
+        assertThat(forever.nextTradingDay(LocalDate.of(2027, 12, 30))).as("모르는 해 전 날은 그대로").isEqualTo(
+                LocalDate.of(2027, 12, 31));
+
+        // 휴장이 딱 31일(1-1 ~ 1-31)이고 2-1(화)부터 다시 열면 건너뜀 — 경계는 넘지 않음
+        TradingCalendar longClosure = closedFrom(LocalDate.of(2030, 1, 1), LocalDate.of(2030, 1, 31));
+        assertThat(longClosure.nextTradingDay(LocalDate.of(2029, 12, 31))).isEqualTo(LocalDate.of(2030, 2, 1));
+        assertThat(longClosure.previousTradingDay(LocalDate.of(2030, 2, 1))).isEqualTo(LocalDate.of(2029, 12, 31));
+    }
+
     @Test
     @DisplayName("시간대는 뉴욕, 음수 거래일 수는 정적 함수와 같은 말로 거절(어댑터·기본 메서드 모두)")
     void zoneAndNegativeDays() {

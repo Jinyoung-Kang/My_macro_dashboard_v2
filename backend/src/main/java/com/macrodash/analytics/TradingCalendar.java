@@ -17,8 +17,20 @@ import java.time.ZoneId;
  *
  * <p>날짜는 전부 {@link #zone} 기준 세션 날짜입니다. 기본 메서드 {@link #lastCompletedSession}·{@link #currentOrLastSession}은
  * 세션의 개장·마감이 그 세션 날짜(현지) 안에 있다고 가정합니다 — 직전 거래일의 마감이 오늘(현지) 0시보다 앞이라 한 번 물러서면 충분.
+ *
+ * <p><b>모르는 날</b>: 구현은 거래일인지 알 수 없는 날(예: 공휴일 목록이 없는 해 — 명세 K35 fail-closed)을 {@code false}('휴장')로
+ * 답해 꾸미지 않습니다 — 추측한 휴장은 만료·재진입 금지·표본을 조용히 바꿉니다. 그런 날은 예외로 알립니다. 예외의 형식과 정기
+ * 작업이 그것을 '달력 없음' 사유로 남기는 방법은 한국 달력(B5)에서 정합니다(명세 §9 메모). 미국 달력은 규칙으로 모든 해를 덮어
+ * 모르는 날이 없습니다.
+ *
+ * <p>기본 메서드의 다음·직전 거래일은 휴장이 {@value #MAX_CLOSED_RUN_DAYS}일 넘게 이어지면 끝없이 돌지 않고
+ * {@link IllegalStateException}을 던집니다 — 그만큼 이어지는 휴장은 실제 시장에 없고(가장 긴 연휴도 열흘 남짓), 구현이 모르는 날을
+ * 휴장으로 답했다는 뜻이라 스케줄러 스레드를 붙잡지 않게 합니다.
  */
 public interface TradingCalendar {
+
+    /** 기본 메서드가 다음·직전 거래일을 찾으며 지나칠 수 있는 연속 휴장 일수(달력일) — 넘으면 구현 오류로 봅니다(위 설명). */
+    int MAX_CLOSED_RUN_DAYS = 31;
 
     /** 세션 날짜를 정하는 시간대(미국은 뉴욕). */
     ZoneId zone();
@@ -38,19 +50,35 @@ public interface TradingCalendar {
     /** 그 거래일 정규장 마감 순간(조기 폐장 반영). 휴장일·주말을 넣었을 때의 값은 의미가 없습니다. */
     Instant closeInstant(LocalDate tradingDate);
 
-    /** d 다음(엄격히 뒤) 거래일. d가 거래일이어도 d는 돌려주지 않습니다. */
+    /**
+     * d 다음(엄격히 뒤) 거래일. d가 거래일이어도 d는 돌려주지 않습니다.
+     *
+     * @throws IllegalStateException d 뒤 {@value #MAX_CLOSED_RUN_DAYS}일 안에 거래일이 없음(구현 오류 — 클래스 설명)
+     */
     default LocalDate nextTradingDay(LocalDate d) {
         LocalDate next = d.plusDays(1);
-        while (!isTradingDay(next)) {
+        for (int skipped = 0; !isTradingDay(next); skipped++) {
+            if (skipped >= MAX_CLOSED_RUN_DAYS) {
+                throw new IllegalStateException(d + " 뒤 " + MAX_CLOSED_RUN_DAYS + "일 안에 거래일이 없습니다 — 달력("
+                        + this + ")이 모르는 날을 휴장으로 답하는지 확인하세요");
+            }
             next = next.plusDays(1);
         }
         return next;
     }
 
-    /** d 전(엄격히 앞) 거래일. */
+    /**
+     * d 전(엄격히 앞) 거래일.
+     *
+     * @throws IllegalStateException d 앞 {@value #MAX_CLOSED_RUN_DAYS}일 안에 거래일이 없음(구현 오류 — 클래스 설명)
+     */
     default LocalDate previousTradingDay(LocalDate d) {
         LocalDate previous = d.minusDays(1);
-        while (!isTradingDay(previous)) {
+        for (int skipped = 0; !isTradingDay(previous); skipped++) {
+            if (skipped >= MAX_CLOSED_RUN_DAYS) {
+                throw new IllegalStateException(d + " 앞 " + MAX_CLOSED_RUN_DAYS + "일 안에 거래일이 없습니다 — 달력("
+                        + this + ")이 모르는 날을 휴장으로 답하는지 확인하세요");
+            }
             previous = previous.minusDays(1);
         }
         return previous;
