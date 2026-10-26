@@ -699,10 +699,14 @@ class ReviewServiceTest {
     }
 
     // ------------------------------------------------------------------ 시장 격리(2단계 명세 §9 A6)
+    /** 이 묶음 전 미국 계좌 비교 순서 — 옛 {@code ReviewService.COMPARED_BOOKS}(main에서 부르는 곳이 없어 시험으로 옮김). */
+    private static final List<String> US_COMPARED_BOOKS = List.of(PaperBooks.RULES, PaperBooks.BENCH_SPY,
+            PaperBooks.BENCH_MIX, PaperBooks.CLAUDE);
+
     @Test
     @DisplayName("시장 격리(A6): 미국 계좌 비교 순서는 그대로(규칙 → 벤치마크 둘 → Claude), 다른 시장은 그 시장 책 정의에서")
     void comparedBooksPerMarket() {
-        assertThat(ReviewService.comparedBooks(UsPaperMarket.INSTANCE)).isEqualTo(ReviewService.COMPARED_BOOKS)
+        assertThat(ReviewService.comparedBooks(UsPaperMarket.INSTANCE)).isEqualTo(US_COMPARED_BOOKS)
                 .containsExactly("rules", "bench_spy", "bench_mix", "claude");
         assertThat(ReviewService.comparedBooks(TestKrMarket.INSTANCE)).containsExactly(TestKrMarket.CLAUDE_BOOK);
     }

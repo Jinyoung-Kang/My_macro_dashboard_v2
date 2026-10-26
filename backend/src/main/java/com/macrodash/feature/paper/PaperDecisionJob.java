@@ -2,7 +2,6 @@ package com.macrodash.feature.paper;
 
 import com.macrodash.Kst;
 import com.macrodash.analytics.GateIndicator;
-import com.macrodash.analytics.UsMarketCalendar;
 import com.macrodash.feature.paper.PaperLedgerService.Outcome;
 import com.macrodash.feature.paper.PaperMarketData.Quotes;
 import com.macrodash.read.StoreReader;
@@ -362,7 +361,7 @@ public class PaperDecisionJob {
      */
     private Decision decideRules(LocalDate d, boolean pricesFinal, Map<String, Object> detail) {
         // 이 거래일 시점에 재선정이 지난 최신 분기의 재선정일 r — 오늘이 r이면 재선정, r을 놓쳤으면 따라잡기(클래스 설명).
-        LocalDate reselectionDay = UsMarketCalendar.reselectionDay(UsMarketCalendar.latestQuarterEndReselectedBy(d));
+        LocalDate reselectionDay = RuleBookService.reselectionDayAsOf(d);
         boolean reselection = reselectionDay.equals(d);
         detail.put("reselectionDay", reselection);
         Optional<Book> book = store.book(PaperBooks.RULES);

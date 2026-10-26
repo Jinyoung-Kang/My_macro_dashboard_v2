@@ -99,11 +99,11 @@ class PaperMarketDataTest {
     @Test
     @DisplayName("확정 종가: 거래일이고 마감 + 15분 뒤 수집. 주말 수집의 금요일 봉도 확정")
     void finalCloseRule() {
-        assertThat(PaperMarketData.isFinal(MON, MON_INTRADAY)).isFalse();
-        assertThat(PaperMarketData.isFinal(MON, Instant.parse("2026-10-26T20:14:59Z"))).isFalse();
-        assertThat(PaperMarketData.isFinal(MON, Instant.parse("2026-10-26T20:15:00Z"))).isTrue();
-        assertThat(PaperMarketData.isFinal(FRI, PaperFixtures.SAT)).isTrue();
-        assertThat(PaperMarketData.isFinal(LocalDate.of(2026, 10, 24), PaperFixtures.SAT)).as("토요일 봉").isFalse();
+        assertThat(UsPaperMarket.INSTANCE.isFinal(MON, MON_INTRADAY)).isFalse();
+        assertThat(UsPaperMarket.INSTANCE.isFinal(MON, Instant.parse("2026-10-26T20:14:59Z"))).isFalse();
+        assertThat(UsPaperMarket.INSTANCE.isFinal(MON, Instant.parse("2026-10-26T20:15:00Z"))).isTrue();
+        assertThat(UsPaperMarket.INSTANCE.isFinal(FRI, PaperFixtures.SAT)).isTrue();
+        assertThat(UsPaperMarket.INSTANCE.isFinal(LocalDate.of(2026, 10, 24), PaperFixtures.SAT)).as("토요일 봉").isFalse();
     }
 
     @Test

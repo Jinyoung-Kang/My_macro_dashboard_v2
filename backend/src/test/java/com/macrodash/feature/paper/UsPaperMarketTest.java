@@ -117,7 +117,7 @@ class UsPaperMarketTest {
     }
 
     @Test
-    @DisplayName("확정 종가 = 거래일 봉 + 마감 15분 뒤 수집 — 보기(금요일·추수감사절 다음 날 조기 폐장·휴장일)와 2025~2027 모든 날에서 PaperMarketData.isFinal과 같음")
+    @DisplayName("확정 종가 = 거래일 봉 + 마감 15분 뒤 수집 — 보기(금요일·추수감사절 다음 날 조기 폐장·휴장일)와 2025~2027 모든 날에서 이 묶음 전 판정 식(옛 PaperMarketData.isFinal)과 같음")
     void isFinal() {
         assertThat(US.finalDelay()).isEqualTo(Duration.ofMinutes(15)).isEqualTo(PaperMarketData.FINAL_DELAY);
 
@@ -142,11 +142,20 @@ class UsPaperMarketTest {
                 }
             }
             for (Instant t : moments) {
-                assertThat(US.isFinal(d, t)).as(d + " " + t).isEqualTo(PaperMarketData.isFinal(d, t));
+                assertThat(US.isFinal(d, t)).as(d + " " + t).isEqualTo(legacyIsFinal(d, t));
                 checked++;
             }
         }
         assertThat(checked).isGreaterThan(5_000);
+    }
+
+    /**
+     * 이 묶음 전 확정 판정 식 — 옛 {@code PaperMarketData.isFinal}(미국 달력 정적 함수)을 글자 그대로 옮긴 대조 기준입니다. 그 정적
+     * 판은 PaperMarketData를 A8의 시장 중립 코어에 넣으면서 지웠습니다(main에서 부르는 곳이 없었음).
+     */
+    private static boolean legacyIsFinal(LocalDate barDate, Instant collectedAt) {
+        return UsMarketCalendar.isTradingDay(barDate)
+                && !collectedAt.isBefore(UsMarketCalendar.closeInstant(barDate).plus(PaperMarketData.FINAL_DELAY));
     }
 
     @Test

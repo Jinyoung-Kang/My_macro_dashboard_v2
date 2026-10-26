@@ -243,6 +243,15 @@ public class RuleBookService {
         this.clock = clock;
     }
 
+    /**
+     * 그 거래일 시점에 재선정이 지난 최신 분기의 재선정일 r(13F 공시 기한 다음 거래일, R5 — 미국 달력). 거래일이 r이면 재선정일이고,
+     * r 뒤면 r 선정으로 사는 그 분기의 재선정이 이미 열린 것입니다. 결정 작업이 재선정·따라잡기를 판정하고, 결정이 REBALANCE의
+     * 선정을 확인할 때 이 날을 씁니다 — 미국 규칙 책 전용 단계라 이 미국 전용 서비스에 둡니다(A8 허용 목록).
+     */
+    static LocalDate reselectionDayAsOf(LocalDate tradingDate) {
+        return UsMarketCalendar.reselectionDay(UsMarketCalendar.latestQuarterEndReselectedBy(tradingDate));
+    }
+
     // ------------------------------------------------------------------ 하루 결정
     /** {@link #decide(LocalDate, String, boolean)} — 확정 종가 표시 없이(true). */
     public Decision decide(LocalDate asOf, String kind) {
@@ -822,7 +831,7 @@ public class RuleBookService {
             return draft;
         }
         // REBALANCE는 그 분기의 재선정일 r 선정으로만 삽니다. 재선정일을 놓쳐 뒤늦게 내는 REBALANCE(결정 작업)도 r 선정을 씁니다.
-        LocalDate reselection = UsMarketCalendar.reselectionDay(UsMarketCalendar.latestQuarterEndReselectedBy(asOf));
+        LocalDate reselection = reselectionDayAsOf(asOf);
         if (REBALANCE.equals(kind) && !context.selection().asOfDate().equals(reselection)) {
             draft.notes.add("재선정일(" + reselection + ") 선정이 없습니다(가장 최근 선정 " + context.selection().asOfDate()
                     + ") — 지난 분기 신호로 다시 사지 않습니다");

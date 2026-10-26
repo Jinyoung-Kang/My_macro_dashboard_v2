@@ -93,9 +93,6 @@ public class ReviewService {
     static final int HISTORY_CALENDAR_DAYS = 420;
     static final int ERROR_CHARS = 1_000;
     static final int VIOLATIONS_IN_ERROR = 5;
-    /** 같은 기간 수익률을 견줄 미국 계좌 — 이 순서로 입력에 싣습니다(없는 책은 뺌). {@link #comparedBooks}의 미국 값. */
-    static final List<String> COMPARED_BOOKS = List.of(PaperBooks.RULES, PaperBooks.BENCH_SPY, PaperBooks.BENCH_MIX,
-            PaperBooks.CLAUDE);
     /** 시장을 받지 않는 옛 시그니처·화면 응답의 시장(클래스 설명). */
     private static final PaperMarket US = UsPaperMarket.INSTANCE;
     static final String NO_DECISIONS = "창 안에 복기할 Claude 결정(OK·NO_TRADE)이 없어 Claude를 부르지 않았습니다";
@@ -192,7 +189,7 @@ public class ReviewService {
 
     /**
      * 그 시장에서 같은 기간 수익률을 견줄 계좌, 입력 순서 — 규칙 책, 벤치마크 책(정의 순), Claude 책(같은 코드는 한 번). 미국은
-     * {@link #COMPARED_BOOKS}와 같습니다.
+     * 이 묶음 전 순서 그대로입니다(rules → bench_spy → bench_mix → claude). 이 순서로 입력에 싣고 없는 책은 뺍니다.
      */
     static List<String> comparedBooks(PaperMarket market) {
         Set<String> out = new LinkedHashSet<>();

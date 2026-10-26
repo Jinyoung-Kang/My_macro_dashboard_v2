@@ -61,6 +61,8 @@ class UsMarketCalendarAllowListTest {
             "feature/paper/PaperMarkets.java",
             "feature/paper/PaperLedgerService.java",
             "feature/paper/PaperRiskJob.java",
+            "feature/paper/PaperMarketData.java",
+            "feature/paper/PaperDecisionJob.java",
             "feature/paper/ClaudeBookService.java",
             "feature/paper/ClaudeDecisionPipeline.java",
             "feature/paper/FrameworkService.java",
@@ -83,14 +85,12 @@ class UsMarketCalendarAllowListTest {
         m.put("analytics/TrailingStop.java", "달력 인자 없는 옛 시그니처를 미국 달력으로 위임(A2)");
         m.put("analytics/TrackRecord13F.java", "13F 공시일 다음 거래일 기준 복제 수익률 — 미국 전용");
         m.put("feature/paper/UsPaperMarket.java", "미국 시장 묶음 — calendar()가 어댑터 CALENDAR를 돌려줌");
-        m.put("feature/paper/PaperMarketData.java",
-                "미국 확정 판정의 옛 정적 함수 isFinal — UsPaperMarketTest가 시장 묶음의 판정과 대조");
         m.put("feature/paper/PaperConfig.java", "미국 출발일(dashboard.paper.start-date)이 미국 거래일인지 — 한국 출발일은 C1");
-        m.put("feature/paper/PaperDecisionJob.java", "규칙 책 13F 재선정일 — 미국 전용 단계");
         m.put("feature/paper/PacketBuilder.java", "미국 결정 패킷(일정·휴장·조기 폐장·13F 분기·보유 거래일)");
         m.put("feature/paper/PaperGate.java", "미국 게이트 지표의 뉴욕 날짜");
         m.put("feature/paper/PaperSelectionService.java", "13F 기관 선정");
-        m.put("feature/paper/RuleBookService.java", "미국 규칙 책(13F 재선정·출발일 마감·주문 만료·체결일)");
+        m.put("feature/paper/RuleBookService.java",
+                "미국 규칙 책(13F 재선정일 — 결정 작업도 여기서 받음·출발일 마감·주문 만료·체결일)");
         return Collections.unmodifiableMap(m);
     }
 
@@ -137,7 +137,7 @@ class UsMarketCalendarAllowListTest {
     }
 
     @Test
-    @DisplayName("시장 중립 코어(장부·리스크·결정·복기·메모·조회·관리·Claude 결정·프롬프트 렌더링·검증기·달력 인터페이스)는 미국 달력을 직접 부르지 않고 허용 목록에도 없다")
+    @DisplayName("시장 중립 코어(장부·관측치 저장본·리스크·결정 작업·복기·메모·조회·관리·Claude 결정·프롬프트 렌더링·검증기·달력 인터페이스)는 미국 달력을 직접 부르지 않고 허용 목록에도 없다")
     void marketCoreStaysMarketNeutral() {
         assertThat(CODE.keySet()).as("코어 파일이 없음(이름이 바뀌었으면 목록도)").containsAll(MARKET_CORE);
         assertThat(ALLOWED.keySet()).as("코어 파일은 허용 목록에 올릴 수 없음").doesNotContainAnyElementsOf(MARKET_CORE);
