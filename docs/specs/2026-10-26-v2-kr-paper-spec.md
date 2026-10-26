@@ -446,3 +446,44 @@
 - 크기 [추정]: A ≈ M(8커밋) · B ≈ L(11) · C ≈ M~L(3) · D ≈ L · E ≈ L · F ≈ L, 합 약 32커밋 **XL**(계획서 §4의 1~2주보다 길어 2~3주로 다시 잡음). 백엔드 약 6,500~8,500줄(테스트 포함), 수집기 약 1,500~2,000줄, 화면 약 2,500~3,500줄.
   리뷰 반영으로 사후 체결 경로(한국 `backfill`)가 빠지고 확정 조정 표·출발 원자성·따라잡기·한국 render가 더해져 백엔드가 조금 늘었다.
 - A가 끝나면 미국 책은 한국 코드에 기대지 않는 상태로 고정된다 — 회귀 0을 확인하는 지점. C까지 끝나면 벤치마크 두 계좌로 수용 기준 1을 먼저 본다.
+
+**묶음 A 리뷰 메모(2026-10-27)** — 리뷰 지적 14건(같은 지적 2건 포함) 중 A 범위는 코드로 고쳤다(미국 숫자 불변): 재진입 금지·개요 통계가 그 시장 달력,
+A8이 달력 없는 옛 시그니처 호출과 결정 작업·시세 저장본까지 봄, 책 정의 순서·관측치 늦음 기준이 시장 값, 달력 기본 메서드의 연속 휴장 31일 상한,
+응답 스키마 timing enum·시장 체결 시점·고정 문단 잠금 시험. 뒤 묶음의 설계 몫은 아래에 두고 그 묶음을 시작할 때 먼저 정한다.
+
+- **B5 — 달력이 모르는 날**: `TradingCalendar`에는 '모르는 날을 휴장으로 답하지 않고 예외로 알림'만 정했다(기본 메서드는 연속 휴장 31일을 넘으면 `IllegalStateException`).
+  B5에서 정할 것: `KrxCalendar`가 공휴일 목록 없는 해에 던질 전용 예외(가칭 `CalendarUnavailableException`, analytics) 또는 `covers(LocalDate)`(미국은 늘 참),
+  정기 작업(결정·리스크·복기)이 그 예외를 작업 기록의 '달력 없음' 사유로 남기기(지금은 `log.warn`뿐), 조회의 통계·보유 거래일은 null + 사유
+  (K35 '지난 해는 그 계산만 null' — 지금 `PaperQueryService.stats`는 `IllegalArgumentException`만 잡는다).
+- **C1 — 시장 목록과 실행마다 달력 한 벌**: 한국 달력은 `kr_holidays`(`StoreReader.quietly`)와 설정 `kr.calendar.extraClosures`·`openTimeOverrides`에 기대므로
+  정적 `PaperMarkets.ALL`·인자 없는 `PaperMarket.calendar()`로는 만들 수 없다. 시장 목록을 주입 빈으로 바꾸거나(`KrPaperMarket` @Component + StoreReader),
+  실행 시작 때 한 번 만든 `MarketRun`(그때 읽은 공휴일 + 그 결정이 읽은 설정 판으로 만든 달력)을 장부·결정 파이프라인·조회에 넘긴다 — 결정 행의
+  `settings_version`과 달력이 같은 판이 되고, 한 실행 안의 `calendar()` 호출(약 27곳, `isFinal`은 봉마다)이 한 인스턴스를 쓰게.
+  바꿀 곳: `PaperDecisionJob`·`PaperRiskJob`·`PaperReviewJob`·`PaperQueryService` 기본 생성자의 `PaperMarkets.ALL`, `PaperAdminService`의 `PaperMarkets.of`.
+  `UsPaperMarket.INSTANCE`는 동일성 비교(미국 전용 단계 판정)에 남긴다.
+- **C1 — 시장별 설정 읽기**: 장부(`processLocked`)·결정 파이프라인 `plan`·검증기 한도·`FrameworkService` 하드 규칙·관리 리셋이 설정 루트(미국) 키를 읽는다
+  (슬리피지·스탑·재진입 금지·`cashLikeTickers` 기본 SHY). 그대로면 한국 책의 153130이 현금성이 아니어서 스탑·비중 상한·종목 수에 걸린다.
+  `PaperSettings.from(body, market)`(접두어 `settingsPrefix()`, 현금성 기본 `defaultCashLike()` — A에서는 읽는 곳 없이 남김)을 두고 다섯 곳이 쓴다. 그 전에는 한국 책을 장부에 돌리지 않는다.
+- **C1 — 관측치 늦음 기준의 한국 값**: A에서 `PaperMarket.quotesLateAfter()`(미국 3시간)로 옮겼다. 한국은 하루 1회 수집(K17)이라 고정 시간보다
+  '다음 수집 예정(KR 거래일 D 20:30 뒤 첫 slow) + 여유'가 맞다 — C1에서 정한다.
+- **C2·C3 — 확정 판정 나누기**: `PaperMarket.isFinal(봉 날짜, 수집 시각)` 하나가 `NEXT_CLOSE` 체결 가능·분할 기준가·밤 순자산 줄 쓰기·순자산 `prices_final`·
+  결정의 `pricesFinal`과 `PRICES_NOT_FINAL` 대기·복기 `finalCloseIn`·조회와 리스크 기록의 `finalClose`를 함께 정한다. 한국은 셋으로 갈린다 —
+  ⓐ 밤 잠정 종가가 있음(순자산 줄은 씀) ⓑ `NEXT_CLOSE`는 1분봉 15:30 봉이 있을 때만(시각이 아니라 봉, G2) ⓒ `prices_final`은 금융위 확정 뒤(K29).
+  기본 판정을 그대로 쓰면 한국 토스 순자산·결정이 `prices_final=true`가 되고, false로 덮으면 순자산 줄·`NEXT_CLOSE`가 막히고 결정 작업이 매일 기한까지 기다린다.
+  C2 전에 `closeAvailable(bar, collectedAt)`·`fillable(order, bar)`·`pricesConfirmed(…)`로 나누고(미국은 셋 다 지금 `isFinal` — 고정본 불변) 호출부마다 맞는 것을 쓴다.
+  C3에서 `upsertNav`의 '확정값끼리는 새 값이 이김'이 토스 재수집으로 금융위 확정 줄을 덮지 않게 한다.
+- **B4·C2 — 관측치 파싱과 체결 선택의 시장 몫**: `PaperMarketData.parse`는 미국 모양(`tickers.{t}.dates/close`)만 읽고 `Bar`에 시가·거래량·가격 출처가 없다.
+  체결가는 `bar.close()`에 슬리피지를 얹고(`PaperLedger.fillPrice`), 가격 출처는 `quotesDataset()`, 한 관측치 안 순서(종가마다 최고가·스탑 `IMMEDIATE`)도 공통이다.
+  B4가 `paper.kr.quotes` 모양을 정하기 전에 '시장이 파싱(`PaperMarket.parse(Snapshot)`)과 체결 선택(`fill(order, bar)` → 가격·출처·비용 칸)을 갖는가'를 정한다 —
+  아니면 B4는 미국 모양 dates/close를 내고 C2가 `Bar`를 넓힌다. 어느 쪽이든 미국 경로는 어댑터로 바이트 그대로.
+- **D1·E2 — 결정 기한**: `PaperDecisionJob.times`는 기한이 결정 시각보다 이르면 결정 시각으로 묶고, 두 시각 모두 `decisionInstant(session, t)` 한 식으로 순간이 된다 —
+  한국 `kr.decisionDeadlineKst` 01:00(결정 시각보다 이르면 다음 날, §4-13)이 22:30으로 접혀 모든 한국 실행이 '기한 지남'이 된다. 기한 뒤 동작도 미국식(미확정 가격으로 진행)이다 —
+  한국은 규칙 `NO_TRADE`·Claude 미호출·사유(§4-9). D1 전에 기한 규칙을 시장으로 옮기고(`PaperMarket.deadlineInstant(session, 결정 시각, 기한)` — 한국은 기한 ≤ 결정이면 D+1,
+  미국은 지금의 묶기) 기한 뒤 동작 훅을 둔다(미국 `pricesFinal=false`로 진행, 한국 `NO_TRADE` + 사유). 시험용 `TestKrMarket`은 기한 23:30으로 이 문제를 비켜 가므로
+  22:30/01:00으로 바꾸고 회귀 시험을 더한다.
+- **E2 — 한국 프롬프트 수용 기준(§5, K34)**: '한국 시스템 프롬프트에 `NEXT_OBSERVATION`·13F 문구가 없음'은 지금 `render(market, …)`로는 통과할 수 없다 —
+  프레임 본문(DB 판, 두 시장 공유 K9)이 시장과 상관없이 들어가고 v0 시드에 '[E2-R3] 13F는…'·'[E5-R1] …(NEXT_OBSERVATION)…'이 있으며, K34③ 우선순위 문장이 `NEXT_OBSERVATION`을 직접 쓴다.
+  E2를 시작할 때 둘 중 하나를 정해 §5를 고친다: ⓐ 시험 범위를 시장별 부분(하드 규칙 줄 + `KR_FIXED_RULES`, 우선순위 문장은 예외)으로 좁힘(제안 — 판 공유 K9와 맞고 판 비교가 흐려지지 않음)
+  ⓑ 시장별 본문 거르개(판의 글자가 시장마다 달라짐).
+- **E3 — 복기의 가정 진입가**: `ReviewFacts.hypothetical`은 거절 주문의 가정 진입을 다음 세션 **종가**로 두고 NOTE도 '결정 다음 세션 종가에 체결됐다고 가정'·'SPY 대비'로 적는다
+  (미국 `NEXT_OBSERVATION` 근사). 한국 주문은 `NEXT_OPEN`이므로 E3에서 가정 진입을 시장이 정하고(한국: 다음 세션 시가, 못 구하면 종가 근사라고 표시) 시장별 NOTE를 둔다. 미국 문구는 그대로.
