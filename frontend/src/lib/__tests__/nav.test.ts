@@ -49,7 +49,7 @@ describe("탭 표(브리프 §1.3 그대로)", () => {
     ]);
     expect(items("korea")).toEqual(["수급 레이더 /radar", "파생·투기세력(KRX) /krx"]);
     expect(items("paper")).toEqual(["미국 /paper/us"]);
-    expect(tab("paper").upcoming).toEqual([{ label: "한국", note: "준비 중" }]);
+    expect(tab("paper").upcoming).toEqual([{ label: "한국", note: "준비 중", opensIn: "2단계" }]);
     expect(items("more")).toEqual([
       "알림 /alerts", "AI 종합 분석 /ai/report", "데이터 저장소 상태 /status", "외부 API 연결 테스트 /connections",
       "사용자 관리 /admin/users", "내 계정 /account",
@@ -141,7 +141,7 @@ describe("하위 메뉴 줄", () => {
   it("모의매매: 운영자에게는 미국 + '한국 · 준비 중'(링크 없음), 주소로 연 회원에게는 줄이 없다", () => {
     const paper = subNav("/paper/us", OWNER);
     expect(paper?.items.map((item) => item.href)).toEqual(["/paper/us"]);
-    expect(paper?.upcoming).toEqual([{ label: "한국", note: "준비 중" }]);
+    expect(paper?.upcoming).toEqual([{ label: "한국", note: "준비 중", opensIn: "2단계" }]);
     expect(paper?.current).toBe("/paper/us");
     expect(paper?.currentAria).toBe("page");
     // 탭 주소(/paper/us/settings)에서도 미국이 지금 화면입니다 — 다만 "미국" 링크는 개요(/paper/us)로 가므로 "현재 페이지"가 아니라

@@ -7,7 +7,8 @@ import type { SessionUser } from "@/lib/types";
 
 /**
  * 상단바 아래 하위 메뉴 줄 — 지금 탭에 화면이 둘 이상일 때만(lib/nav subNav). 좁으면 가로로 스크롤됩니다(줄을 바꾸지 않음).
- * 준비 중인 화면(모의매매 한국)은 링크 없이 이름만 흐리게 보입니다. 유료 화면은 무료 회원에게 🔒(눌러도 되며 화면이 안내).
+ * 준비 중인 화면(모의매매 한국)은 링크 없이 이름만 흐리게 보이고, 언제 여는지("2단계")를 작은 표시로 붙입니다 — title이 아니라
+ * 보이는 글이라 키보드·터치 사용자도 봅니다. 유료 화면은 무료 회원에게 🔒(눌러도 되며 화면이 안내).
  * 고른 링크의 aria-current는 그 주소 그대로면 "page", 그 화면의 아래 주소(/paper/us/holdings)면 "true"입니다(lib/nav currentAria).
  */
 export function SubNav({ pathname, user }: { pathname: string; user?: SessionUser }) {
@@ -39,8 +40,15 @@ export function SubNav({ pathname, user }: { pathname: string; user?: SessionUse
         })}
         {model.upcoming.map((entry) => (
           <li key={entry.label} className="shrink-0">
-            <span aria-disabled="true" className="inline-flex h-11 items-center whitespace-nowrap px-3 text-sm text-text-3">
+            <span aria-disabled="true" className="inline-flex h-11 items-center gap-1.5 whitespace-nowrap px-3 text-sm text-text-3">
               {entry.label} · {entry.note}
+              {entry.opensIn ? (
+                <span className="rounded-full border border-border px-1.5 text-xs leading-4">
+                  <span className="sr-only"> (</span>
+                  {entry.opensIn}
+                  <span className="sr-only">에서 엽니다)</span>
+                </span>
+              ) : null}
             </span>
           </li>
         ))}

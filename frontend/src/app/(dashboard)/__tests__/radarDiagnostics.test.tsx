@@ -2,7 +2,7 @@
  * 수급 레이더의 '데이터 소스 연결 테스트'(QA-098).
  *
  * 진단 경로(GET /api/radar/diagnostics)는 운영자 전용입니다(ADR 0010). 일반 회원·데모 방문자가 눌러 봐야 403만 받는
- * 버튼은 처음부터 보이지 않게 합니다(lib/access.ts, 사이드바의 수동 새로고침과 같은 규칙). 운영자가 열었을 때 진단이
+ * 버튼은 처음부터 보이지 않게 합니다(lib/access.ts, 셸의 수동 새로고침과 같은 규칙). 운영자가 열었을 때 진단이
  * 실패하면 빈 카드가 아니라 오류를 그립니다.
  */
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";

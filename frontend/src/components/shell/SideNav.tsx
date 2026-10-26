@@ -17,7 +17,8 @@ import { TabIcon } from "./icons";
 export function SideNav({ pathname, user }: { pathname: string; user?: SessionUser }) {
   return (
     <aside className="hidden w-[232px] shrink-0 flex-col border-r border-border bg-surface lg:flex lg:h-screen lg:overflow-y-auto">
-      <p className="px-6 pb-[18px] pt-[26px] text-[15px] font-bold text-text">My Macro Dashboard v2</p>
+      {/* 상표는 한 줄(시안 15px 굵게). 232px 폭에서 "v2"가 다음 줄로 넘어갔습니다 — 대체 글꼴(약 204px)도 오른쪽 여백 안에서 끝납니다. */}
+      <p className="whitespace-nowrap px-6 pb-[18px] pt-[26px] text-[15px] font-bold text-text">My Macro Dashboard v2</p>
       <nav aria-label="주 메뉴" className="flex flex-col gap-1 px-3.5">
         {visibleTabs(user).map((tab) => {
           const current = tabCurrent(tab, pathname);

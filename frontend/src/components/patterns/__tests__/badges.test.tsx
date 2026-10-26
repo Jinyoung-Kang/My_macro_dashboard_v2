@@ -1,5 +1,5 @@
 /**
- * 상태 배지 — ProvenanceBadge·EstimateBadge·StaleBadge(설계서 §5 "플래그가 있으면 반드시 보인다").
+ * 상태 표시 — ProvenanceBadge(캡션 줄)·EstimateBadge·StaleBadge(알약)(설계서 §5 "플래그가 있으면 반드시 보인다").
  * 네 상태: 값 있음(출처·지연·시각), 값 없음(모르는 부분 생략·"출처 —"·플래그 없으면 배지 없음),
  * 추정·대리(라벨 글자), 오래됨(⚠️ 이전 값 + 사유). 색만으로 뜻을 전하지 않는다(라벨 글자가 늘 있음).
  */
@@ -11,12 +11,19 @@ import { EstimateBadge, ProvenanceBadge, StaleBadge } from "../badges";
 afterEach(() => cleanup());
 
 describe("ProvenanceBadge", () => {
-  it("값 있음 — 출처 · 지연 · 시각을 한 알약에", () => {
+  it("값 있음 — 출처 · 지연 · 시각을 작은 캡션 한 줄로(테두리·알약 없음), 낭독기에는 '출처:'가 앞에", () => {
     render(<ProvenanceBadge source="FRED" delayMin={15} asOf="2026-10-26 14:20" />);
-    const badge = screen.getByText("FRED · 15분 지연 · 2026-10-26 14:20");
-    expect(badge.className).toContain("rounded-full");
-    expect(badge.className).toContain("border");
-    expect(badge.className).toContain("tabular-nums");
+    const caption = screen.getByText("FRED · 15분 지연 · 2026-10-26 14:20");
+    // 긴 출처가 알약 안에서 두 줄로 접혀 어색했습니다 — 글만 두고 길면 그대로 줄을 바꿉니다.
+    expect(caption.className).not.toContain("rounded-full");
+    expect(caption.className).not.toContain("border");
+    expect(caption.className).toContain("text-xs");
+    expect(caption.className).toContain("text-text-3");
+    expect(caption.className).toContain("tabular-nums");
+    expect(caption.className).not.toContain("whitespace-nowrap");
+    // 보이는 글에는 '출처'라는 말이 없으므로 낭독기용 머리말을 붙입니다.
+    expect(screen.getByText("출처:").className).toContain("sr-only");
+    expect(caption.textContent).toBe("출처: FRED · 15분 지연 · 2026-10-26 14:20");
   });
 
   it("실시간 — live면 지연 분과 상관없이 '실시간'", () => {
@@ -34,7 +41,8 @@ describe("ProvenanceBadge", () => {
     expect(screen.getByText("10분 지연")).toBeTruthy();
     cleanup();
     render(<ProvenanceBadge />);
-    expect(screen.getByText("출처 —")).toBeTruthy();
+    // 이미 '출처'라는 말이 있어 머리말을 또 붙이지 않습니다("출처: 출처 —"로 읽히지 않게).
+    expect(screen.getByText("출처 —").textContent).toBe("출처 —");
   });
 });
 
@@ -87,7 +95,7 @@ describe("StaleBadge", () => {
     expect(container.textContent).toBe("⚠️주의: 이전 값");
   });
 
-  it("배지에 바탕색을 칠하지 않는다(경고색 글자 대비 유지)", () => {
+  it("배지·캡션에 바탕색을 칠하지 않는다(경고색 글자 대비 유지)", () => {
     render(
       <>
         <StaleBadge stale />

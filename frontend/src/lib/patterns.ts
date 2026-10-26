@@ -76,8 +76,11 @@ export function changeChipModel(
   };
 }
 
+/** 출처를 전부 모를 때의 출처 글 — 이미 "출처"라는 말이 있어 캡션이 낭독기용 머리말을 붙이지 않습니다(ProvenanceBadge). */
+export const PROVENANCE_UNKNOWN = `출처 ${EMPTY}`;
+
 /**
- * 출처 배지 글 — "출처 · 실시간|N분 지연 · 시각". 모르는 부분은 빼고, 전부 모르면 "출처 —".
+ * 출처 캡션 글 — "출처 · 실시간|N분 지연 · 시각". 모르는 부분은 빼고, 전부 모르면 "출처 —".
  *
  * `live`가 참이면 지연 분과 상관없이 "실시간". 지연 문구는 `delayLabel`(0분 = 실시간, 모르면 생략)과 같은 규칙입니다.
  * 시각은 `formatKst`로 한 형식(YYYY-MM-DD HH:mm)에 맞춥니다 — 이미 맞춘 글이면 그대로입니다.
@@ -97,7 +100,7 @@ export function provenanceText({
   const parts = [presentText(source), live ? "실시간" : delayLabel(delayMin), at === null ? null : formatKst(at)].filter(
     (part): part is string => part !== null,
   );
-  return parts.length > 0 ? parts.join(" · ") : `출처 ${EMPTY}`;
+  return parts.length > 0 ? parts.join(" · ") : PROVENANCE_UNKNOWN;
 }
 
 /**

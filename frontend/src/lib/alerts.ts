@@ -16,14 +16,14 @@ export function titleWithUnread(title: string, unread: number | null | undefined
   return `(${unread > 99 ? "99+" : unread}) ${stripped}`;
 }
 
-/** 사이드바 뱃지 문자열. 0이면 없음(null). */
+/** 상단바 알림 벨의 숫자 배지 문자열. 0이면 없음(null). */
 export function unreadBadge(unread: number | null | undefined): string | null {
   if (!unread || unread <= 0) return null;
   return unread > 99 ? "99+" : String(unread);
 }
 
 /**
- * 알림을 읽음 처리했다는 신호. 사이드바·탭 제목의 읽지 않은 수는 레이아웃이 5분마다 읽어, 알림함에서 읽어도 최대
+ * 알림을 읽음 처리했다는 신호. 알림 벨·탭 제목의 읽지 않은 수는 레이아웃이 5분마다 읽어, 알림함에서 읽어도 최대
  * 5분 그대로였습니다(QA-051). 레이아웃이 이 이벤트를 듣고 바로 다시 읽습니다.
  */
 export const ALERTS_READ_EVENT = "macrodash:alerts-read";

@@ -1,13 +1,13 @@
 /**
  * 🧪 모의매매(미국) 개요 — 네 상태 이야기(설계서 §9 DoD "없음·일부 실패·추정·오래됨").
  *
- *  - 없음: 장부가 없으면(available:false) 서버 문구만 — 시장 고르기는 남고 탭·계좌 행·비교 표는 없다 / 계좌가 0개면 안내만
+ *  - 없음: 장부가 없으면(available:false) 서버 문구만 — 제목은 남고 탭·계좌 행·비교 표는 없다 / 계좌가 0개면 안내만
  *  - 일부 실패: 상태 응답이 실패해도 개요(계좌 행·곡선·비교 표)는 그대로 — 꺼짐 배너·사용량·설정 버전만 빠진다 /
  *    계좌 상세의 보유 응답이 실패하면 그 칸만 오류 + 다시 시도, 나머지(정의·핵심 숫자)는 개요 값으로
  *  - 추정에 가까운 상태: 사후 체결을 기다리는 벤치마크 행에 경고, 가격 없는 보유가 있으면 비교 표 '가격 없음'이 경고색
  *  - 오래됨: 가격 없는 보유·늦은 관측치 저장본이면 계좌 행에 '이전 값' 배지와 사유(숨기는 옵션 없음)
  *  - 기간별 순자산 곡선: 저장된 기록보다 긴 기간 탭은 없고, 고르면 그 기간만(경계선도 그 기간 안의 것만)
- *  - 시장 고르기: 미국(지금) · 한국 · 준비 중(누를 수 없음, '2단계')
+ *  - 시장 고르기: 화면 안에는 없다 — 셸의 하위 메뉴 줄(미국 | 한국 · 준비 중 · 2단계)이 맡는다(Shell.test.tsx), 제목은 '(미국)'
  */
 import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -134,13 +134,13 @@ describe("값 있음 — 계좌 행·비교 표·곡선", () => {
 });
 
 describe("없음", () => {
-  it("장부가 없으면(available:false) 서버 문구만 — 시장 고르기는 남고 탭·계좌 행·비교 표는 없다", async () => {
+  it("장부가 없으면(available:false) 서버 문구만 — 제목은 남고 탭·계좌 행·비교 표는 없다", async () => {
     const message = "모의 매매 테이블이 아직 없습니다. 수집기가 스키마(V8)를 적용하면 생깁니다 — make up 후 다시 보세요.";
     reads["/api/paper/overview"] = () => Promise.resolve({ available: false, message });
     render(<PaperPage />);
 
     expect(await screen.findByText(message)).toBeTruthy();
-    expect(screen.getByRole("navigation", { name: "모의매매 시장" })).toBeTruthy();
+    expect(screen.getByRole("heading", { level: 1, name: "모의 알고리즘 매매(미국)" })).toBeTruthy();
     expect(screen.queryByRole("tablist")).toBeNull();
     expect(screen.queryByRole("list", { name: "계좌 목록" })).toBeNull();
     expect(screen.queryByRole("table", { name: "계좌 비교" })).toBeNull();
@@ -293,17 +293,14 @@ describe("기간별 순자산 곡선", () => {
 });
 
 describe("시장 고르기", () => {
-  it("미국은 지금 화면(aria-current), 한국은 준비 중 — 누를 수 없고 '2단계'가 글로 보인다, 제목은 그대로", async () => {
+  it("화면 안에는 시장 고르기가 없다 — 셸의 하위 메뉴 줄이 맡고(한국 · 준비 중 · 2단계는 Shell.test.tsx), 제목이 미국 책임을 말한다", async () => {
     reads["/api/paper/overview"] = () => Promise.resolve(OVERVIEW);
     render(<PaperPage />);
 
-    const market = screen.getByRole("navigation", { name: "모의매매 시장" });
-    // 링크가 아닌 표시라 "현재 페이지"(page)가 아니라 이 묶음에서 고른 것(true) — "현재 페이지"는 셸의 탭·하위 메뉴 링크가 맡습니다.
-    expect(within(market).getByText("미국").getAttribute("aria-current")).toBe("true");
-    const korea = within(market).getByRole("button", { name: "한국 · 준비 중" }) as HTMLButtonElement;
-    expect(korea.disabled).toBe(true);
-    expect(within(market).getByText("2단계")).toBeTruthy();
-    expect(document.getElementById(korea.getAttribute("aria-describedby") ?? "")?.textContent).toBe("2단계");
+    expect(await screen.findByRole("tablist", { name: "모의 매매 화면" })).toBeTruthy();
+    // 예전에는 제목 아래에 같은 고르기가 한 줄 더 있어 셸의 하위 메뉴 줄과 두 줄로 겹쳐 보였습니다.
+    expect(screen.queryByRole("navigation", { name: "모의매매 시장" })).toBeNull();
+    expect(screen.queryByText(/한국 · 준비 중/)).toBeNull();
     expect(screen.getByRole("heading", { level: 1, name: "모의 알고리즘 매매(미국)" })).toBeTruthy();
   });
 });

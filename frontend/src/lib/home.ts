@@ -307,7 +307,7 @@ export type PaperHomeModel = {
   available: boolean;
   /** 장부를 못 읽거나 계좌가 없을 때의 안내. 행이 있으면 null. */
   message: string | null;
-  /** 히어로 값이 무엇인지 — "Claude 계좌 순자산"(구역 제목은 늘 "모의매매"라 값 옆 설명으로 둡니다). */
+  /** 히어로 값이 무엇인지 — "Claude 계좌 순자산"(구역 제목에도 있지만, 평가 시각 줄에 서버가 붙인 계좌 이름으로 다시 적습니다). */
   heroCaption: string;
   /** Claude 계좌 순자산(달러, 소수 둘째). 모르면 null("—"). */
   heroValueText: string | null;

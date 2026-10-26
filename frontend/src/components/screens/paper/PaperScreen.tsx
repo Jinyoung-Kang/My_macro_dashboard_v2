@@ -90,8 +90,7 @@ export default function PaperPage({ initialTab = "overview" }: { initialTab?: Pa
         <Freshness refreshError={refreshError} />
       </header>
 
-      <MarketSwitch />
-
+      {/* 시장 고르기(미국 | 한국 · 준비 중 · 2단계)는 셸의 하위 메뉴 줄이 맡습니다(lib/nav) — 화면 안에 또 두면 두 줄로 겹쳐 보였습니다. */}
       {loading && !data && <Loading label="장부를 읽는 중…" />}
       {error && <ErrorState message={error} onRetry={reload} />}
       {/* 테이블이 아직 없으면 서버 문구 그대로 — 무엇을 하면 생기는지까지 서버가 적어 보냅니다. */}
@@ -156,32 +155,5 @@ export default function PaperPage({ initialTab = "overview" }: { initialTab?: Pa
         </>
       )}
     </div>
-  );
-}
-
-/**
- * 시장 고르기 — 미국(지금 보는 시장, aria-current="true")과 한국(2단계 — 아직 없는 화면이라 누를 수 없음, "2단계"를 글로 보임).
- * 미국은 링크가 아닌 표시라 "현재 페이지"(page) 대신 이 묶음에서 고른 것(true)으로 알립니다 — "현재 페이지"는 셸의 탭·하위 메뉴 링크가 맡습니다.
- * 한국 책이 생기면(계획서 §4 2단계) /paper/kr 링크로 바꿉니다. 셸의 하위 메뉴 줄에도 같은 표시가 있지만, 이 화면만 연 사람에게도
- * 미국 책이라는 것과 한국 책이 올 것이 보이게 탭 위에 둡니다.
- */
-function MarketSwitch() {
-  return (
-    <nav aria-label="모의매매 시장" className="flex flex-wrap items-center gap-2 text-sm">
-      <span aria-current="true" className="rounded-md bg-surface-2 px-3 py-1.5 font-semibold text-text">
-        미국
-      </span>
-      <button
-        type="button"
-        disabled
-        aria-describedby="paper-market-kr-note"
-        className="cursor-not-allowed rounded-md px-3 py-1.5 text-text-3"
-      >
-        한국 · 준비 중
-      </button>
-      <span id="paper-market-kr-note" className="rounded-full border border-border px-2 py-0.5 text-xs text-text-3">
-        2단계
-      </span>
-    </nav>
   );
 }

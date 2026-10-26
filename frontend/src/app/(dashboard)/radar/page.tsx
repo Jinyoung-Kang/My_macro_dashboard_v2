@@ -58,7 +58,7 @@ export default function RadarPage() {
   const [topN, setTopN] = useState("30");
   const [showDiagnostics, setShowDiagnostics] = useState(false);
   // 연결 진단은 운영자 전용 경로입니다(백엔드 403). 회원·데모 방문자가 눌러 봐야 빈 카드만 남았으므로(QA-098)
-  // 사이드바의 수동 새로고침처럼 운영자에게만 버튼을 보입니다. 사용자를 아직 모르면(세션 응답 전) 숨깁니다.
+  // 셸(왼쪽 내비·더보기)의 수동 새로고침처럼 운영자에게만 버튼을 보입니다. 사용자를 아직 모르면(세션 응답 전) 숨깁니다.
   const owner = isOwner(useSessionUser());
 
   const query = endpoints.positioning.radarRanking({ market, investor, tradeType, intervalType: interval, topN });

@@ -30,8 +30,11 @@ export type NavTab = {
   /** 하위 화면 말고도 이 탭에 속하는 경로의 앞부분 — 모의매매는 /paper 아래 전부(2단계의 /paper/kr까지). */
   section?: string;
   /** 아직 없는 하위 화면 — 하위 메뉴에 표시만 하고 링크는 없습니다. */
-  upcoming?: readonly { label: string; note: string }[];
+  upcoming?: readonly UpcomingItem[];
 };
+
+/** 하위 메뉴의 준비 중 표시 하나 — "한국 · 준비 중" + 언제 여는지("2단계", 보이는 글). */
+export type UpcomingItem = { label: string; note: string; opensIn?: string };
 
 export const TABS: readonly NavTab[] = [
   { key: "home", label: "홈", href: "/", items: [{ href: "/", label: "홈" }] },
@@ -76,8 +79,9 @@ export const TABS: readonly NavTab[] = [
     href: "/paper/us",
     section: "/paper",
     items: [{ href: "/paper/us", label: "미국", title: "모의매매(미국)", keywords: ["모의 알고리즘 매매(미국)"] }],
-    // 한국 증시 책은 2단계(계획서 §4) — 그때 /paper/kr 하위 메뉴가 됩니다.
-    upcoming: [{ label: "한국", note: "준비 중" }],
+    // 한국 증시 책은 2단계(계획서 §4) — 그때 /paper/kr 하위 메뉴가 됩니다. 이 하위 메뉴 줄이 모의매매의 시장 고르기입니다
+    // (화면 안에 같은 고르기를 또 두지 않음 — 두 줄로 겹쳐 보였음).
+    upcoming: [{ label: "한국", note: "준비 중", opensIn: "2단계" }],
   },
   {
     key: "more",
@@ -137,7 +141,7 @@ export type SubNavModel = {
    * 규칙). /paper/us/holdings에서 "미국"(→ /paper/us, 누르면 개요로 감)을 "현재 페이지"라고 읽으면 틀린 안내가 됩니다. current가 null이면 null.
    */
   currentAria: "page" | "true" | null;
-  upcoming: readonly { label: string; note: string }[];
+  upcoming: readonly UpcomingItem[];
 };
 
 /**

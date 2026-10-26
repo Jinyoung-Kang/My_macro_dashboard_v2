@@ -11,6 +11,7 @@ import { describe, expect, it } from "vitest";
 
 import { MINUS } from "../format";
 import {
+  PROVENANCE_UNKNOWN,
   changeChipModel,
   estimateLabel,
   isMissingValue,
@@ -117,8 +118,9 @@ describe("provenanceText", () => {
     expect(provenanceText({ source: "  ", asOf: "2026-10-26 09:00" })).toBe("2026-10-26 09:00");
   });
 
-  it("전부 모르면 '출처 —'", () => {
+  it("전부 모르면 '출처 —'(PROVENANCE_UNKNOWN — 캡션은 이때 낭독기용 '출처:' 머리말을 붙이지 않음)", () => {
     expect(provenanceText({})).toBe("출처 —");
+    expect(provenanceText({})).toBe(PROVENANCE_UNKNOWN);
     expect(provenanceText({ source: "N/A", asOf: "", delayMin: NaN })).toBe("출처 —");
   });
 });

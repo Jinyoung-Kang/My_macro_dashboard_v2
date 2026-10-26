@@ -95,10 +95,14 @@ function renderHome(user: SessionUser | undefined, page: ReactElement = <HomeScr
 const requested = () => api.apiGetShared.mock.calls.map(([path]) => path as string);
 const region = (name: string | RegExp) => screen.getByRole("region", { name });
 
-/** 모의매매 히어로(운영자, 장부를 읽은 뒤) — 불러오는 중·오류와 같은 이름 "모의매매"인 구역에 계좌 행이 그려진 뒤. */
+/** 모의매매 히어로 구역 이름 — 불러오는 중·오류·읽은 뒤 모두 같습니다(큰 숫자가 무엇인지 제목이 먼저 말함). */
+const PAPER_REGION = "모의매매 · Claude 계좌 순자산";
+
+/** 모의매매 히어로(운영자, 장부를 읽은 뒤) — 같은 이름의 구역에 평가 시각 줄·계좌 행이 그려진 뒤. */
 async function paperHero(): Promise<HTMLElement> {
-  await screen.findByText("Claude 계좌 순자산", { exact: false });
-  return region("모의매매");
+  // 제목에도 "Claude 계좌 순자산"이 있어(불러오는 중에도) 평가 시각 줄로 기다립니다.
+  await screen.findByText(/^Claude 계좌 순자산 · 마지막 관측/);
+  return region(PAPER_REGION);
 }
 
 /** 시장 행 한 줄(링크) — 이름 글자에서 가장 가까운 a. */
@@ -142,8 +146,8 @@ describe("홈 — 값 있음(운영자)", () => {
     reads = happyReads();
     renderHome(OWNER);
     const hero = await paperHero();
-    // 구역 이름은 불러오는 중·오류일 때와 같은 "모의매매", 값이 무엇인지는 값 아래 설명이 말합니다.
-    expect(within(hero).getByRole("heading", { level: 2 }).textContent).toBe("모의매매");
+    // 구역 이름은 불러오는 중·오류일 때와 같고, 큰 숫자가 무엇인지(Claude 계좌 순자산)를 숫자보다 먼저 말합니다.
+    expect(within(hero).getByRole("heading", { level: 2 }).textContent).toBe(PAPER_REGION);
     // 히어로 값과 Claude 계좌 행이 같은 순자산을 적습니다.
     expect(within(hero).getAllByText("99,967.28")).toHaveLength(2);
     expect(within(hero).getByText("출발 대비")).toBeTruthy();   // 히어로 변화 칩 옆 — 일간 변화가 아님
@@ -268,6 +272,8 @@ describe("홈 — 불러오는 중·값 없음", () => {
       "알림을 불러오는 중",
       "데이터 저장소 상태를 불러오는 중",
     ]);
+    // 모의매매 구역은 불러오는 중에도 읽은 뒤와 같은 이름 — 무엇을 불러오는지(Claude 계좌 순자산) 제목이 말합니다.
+    expect(within(region(PAPER_REGION)).getByRole("status").getAttribute("aria-label")).toBe("모의매매 계좌를 불러오는 중");
     // 읽지 않은 수를 모르면 "—"(읽어 주기 "값 없음") — 0건으로 적지 않습니다.
     expect(within(region("알림")).getByText("값 없음")).toBeTruthy();
     expect(screen.queryByText("0건")).toBeNull();
@@ -375,9 +381,9 @@ describe("홈 — 일부 실패", () => {
     reads = { ...happyReads(), [PAPER_OVERVIEW]: new Error("요청 실패 (HTTP 500)"), [ISSUES]: new Error("요청 실패 (HTTP 502)") };
     renderHome(OWNER);
 
-    expect(await within(region("모의매매")).findByText("요청 실패 (HTTP 500)")).toBeTruthy();
+    expect(await within(region(PAPER_REGION)).findByText("요청 실패 (HTTP 500)")).toBeTruthy();
     expect(await within(region("데이터 저장소 상태")).findByText("요청 실패 (HTTP 502)")).toBeTruthy();
-    expect(within(region("모의매매")).getByRole("alert")).toBeTruthy();
+    expect(within(region(PAPER_REGION)).getByRole("alert")).toBeTruthy();
     expect(within(region("데이터 저장소 상태")).getByRole("alert")).toBeTruthy();
     expect(screen.queryByText(/수집 태스크 오류/)).toBeNull();
     expect(screen.getByText("확장 (Expansion)")).toBeTruthy();

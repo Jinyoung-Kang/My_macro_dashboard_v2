@@ -12,8 +12,9 @@ import { PAPER_SOURCES } from "@/lib/paper";
 import type { PaperOverviewResponse, PaperStatusResponse } from "@/lib/types";
 import { HomeCard, SectionError } from "./HomeCard";
 
-// 불러오는 중·오류·읽은 뒤 모두 같은 구역 이름입니다(HomeCard와 Hero 제목). 히어로 값이 무엇인지는 값 아래 설명(heroCaption)이 말합니다.
-const TITLE = "모의매매";
+// 불러오는 중·오류·읽은 뒤 모두 같은 구역 이름입니다(HomeCard와 Hero 제목). 큰 숫자가 무엇인지(Claude 계좌 순자산)를 제목에 함께 적어
+// 숫자보다 먼저 읽히게 합니다 — 값 아래 설명(heroCaption)에만 있으면 숫자를 본 뒤에야 어느 계좌인지 알았습니다.
+const TITLE = "모의매매 · Claude 계좌 순자산";
 
 /**
  * ② 모의매매(미국) 히어로 — 운영자 전용(/api/paper/* 전부 OWNER). 운영자가 아니면 요청하지 않고(null 경로) 그리지 않습니다.
