@@ -186,7 +186,7 @@ class ReviewServiceTest {
                 null, true, null, 0)).orElseThrow();
     }
 
-    /** 주문 근거 — 모델이 쓴 논거·무효화 조건과 제안 값(ClaudeBookService.reason과 같은 모양). */
+    /** 주문 근거 — 모델이 쓴 논거·무효화 조건과 제안 값(ClaudeDecisionPipeline.reason과 같은 모양). */
     private static JsonNode reason(String thesis, String invalidation, Double target, String timing) {
         Map<String, Object> proposed = new java.util.LinkedHashMap<>();
         proposed.put("targetWeightPct", target);

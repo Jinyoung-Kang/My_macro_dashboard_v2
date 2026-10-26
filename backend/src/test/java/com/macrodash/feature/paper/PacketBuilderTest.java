@@ -930,7 +930,7 @@ class PacketBuilderTest {
     @DisplayName("고정본(묶음 A 기준선): 미국 초기·정기 패킷 글자·해시·메모 번호·측정 태그가 시장 추상화 전과 바이트까지 같다")
     void goldenUsPackets() {
         store.insertNote(new Note(0, NoteService.MARKET, FRI, TUE, "금요일 시황", "10년물 4.6%·브렌트 88", false, null));
-        // 결정 서비스와 같은 호출 — 판 번호(임시 v0)와 결정이 읽은 설정 행을 넘깁니다(ClaudeBookService.attempt).
+        // 결정 서비스와 같은 호출 — 판 번호(임시 v0)와 결정이 읽은 설정 행을 넘깁니다(ClaudeDecisionPipeline.attempt).
         Packet initial = builder.build(FRI, RuleBookService.INITIAL, true, 0, store.settings);
         activeClaude();
         Packet scheduled = builder.build(MON, RuleBookService.SCHEDULED, false, 0, store.settings);

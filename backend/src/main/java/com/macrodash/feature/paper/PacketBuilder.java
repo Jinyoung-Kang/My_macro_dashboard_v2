@@ -1621,7 +1621,7 @@ public class PacketBuilder {
     /**
      * 직전 결정의 watchlist 티커(응답 순서, 대문자) — 모델 판단이 남은 가장 최근 결정의 것입니다. 형식 오류·호출 실패·건너뜀
      * (일시정지·호출 상한)으로 끝난 결정은 건너뜁니다(그날 실패가 앞선 판단의 관찰 목록을 지우지 않게). 그런 결정도 response는
-     * 객체로 남습니다({summary, book, kind, failure|skipped, …} — ClaudeBookService.recordFailure·recordSkipped)라 객체인지가 아니라
+     * 객체로 남습니다({summary, book, kind, failure|skipped, …} — ClaudeDecisionPipeline.recordFailure·recordSkipped)라 객체인지가 아니라
      * 검증된 응답에만 있는 {@code schemaVersion}(decision.schema.json의 required)으로 가립니다. 호출 중 일시정지된 결정은 검증된
      * 응답이 남아 그 판단을 씁니다. 판단이 남았는데 watchlist가 비었으면 그 결정의 판단이라 빈 목록입니다.
      */
@@ -1665,7 +1665,7 @@ public class PacketBuilder {
             return new LedgerView(false, null, cash, cash, 0, 0, List.of(), List.of(), 0, List.of());
         }
         int monthly = monthlyDiscretionaryOrders(store.recentOrders(PaperBooks.CLAUDE, MONTHLY_SCAN), asOf);
-        // 결정 서비스가 검증을 마친 결정마다 취소하는 것과 같은 묶음(ClaudeBookService.supersedePending: CLAUDE 출처의 PENDING).
+        // 결정 서비스가 검증을 마친 결정마다 취소하는 것과 같은 묶음(ClaudeDecisionPipeline.supersedePending: CLAUDE 출처의 PENDING).
         List<Order> pending = store.ordersByStatus(PaperBooks.CLAUDE, PaperBooks.ORDER_PENDING).stream()
                 .filter(o -> SOURCE_CLAUDE.equals(o.source())).toList();
         BookState s = state.get();
