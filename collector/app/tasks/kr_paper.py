@@ -1,6 +1,6 @@
 """
 app/tasks/kr_paper.py
-🧪 모의 알고리즘 매매 한국 책(v2 2단계)의 자료 — 유니버스·수집 범위·관측치(토스 봉).
+🧪 모의 알고리즘 매매 한국 책(v2 2단계)의 자료 — 유니버스·수집 범위·관측치(토스 봉)·종목별 수급.
 
 태스크는 "받아서 저장"만 합니다. 후보·점수·체결·평가·기업행위 판정은 백엔드(feature/paper)가 저장본을 읽어 합니다 — 수집기가
 장부를 건드리면 테이블마다 쓰는 프로세스가 하나라는 규칙(ADR 0008)이 깨집니다. 백엔드 표(보유·주문·설정)도 읽지 않습니다 —
@@ -227,8 +227,9 @@ def collected_after(entry, after: datetime) -> bool:
 class _TossRun:
     """한 실행의 토스 호출 예산·간격과 멈춤(403) 기록."""
 
-    def __init__(self, limit: int) -> None:
+    def __init__(self, limit: int, spacing: float) -> None:
         self.budget = publicapi.CallBudget(limit)
+        self.spacing = spacing
         self.reasons: list[str] = []
         self.forbidden: str | None = None
 
@@ -236,8 +237,8 @@ class _TossRun:
         """호출 하나를 씁니다(앞 호출과 간격을 둠). 예산이 없거나 403으로 멈췄으면 False — 부르지 말 것."""
         if self.forbidden or not self.budget.take():
             return False
-        if self.budget.used > 1 and KR_CANDLE_SPACING:
-            time.sleep(KR_CANDLE_SPACING)
+        if self.budget.used > 1 and self.spacing:
+            time.sleep(self.spacing)
         return True
 
     @property
@@ -381,7 +382,7 @@ def task_kr_paper_quotes() -> str:
     if not pending:
         return f"최신 상태 (세션 {session}, {len(scope)}종목, 호출 0회)"
 
-    run = _TossRun(KR_QUOTES_CALL_BUDGET)
+    run = _TossRun(KR_QUOTES_CALL_BUDGET, KR_CANDLE_SPACING)
     fetched_at = now.astimezone(timezone.utc).isoformat()
     infos: dict[str, dict] = {}
     try:
@@ -459,6 +460,110 @@ def task_kr_paper_quotes() -> str:
         detail += " · 유니버스 저장본 없음 — ETF 2만"
     if rebase:
         detail += f" · 수정주가 기준 바뀜 {len(rebase)}({', '.join(rebase[:5])}) — kr_paper_price_history가 다시 받음"
+    if stop:
+        detail += f" · {stop}"
+    return detail + _reason_suffix(run.reasons)
+
+
+# ==============================================================================
+# 종목별 수급 kr_paper_flow — 토스 투자자별 매매동향 (명세 §4-6·K26)
+# ==============================================================================
+# 종목마다 다시 받는 최근 거래일 수 — 규칙 계좌의 20거래일 누적·연속일에 쓰고, 토스가 지난 기록을 고친 판(저녁 확정·다음 날 새벽 CFD·
+# 오전 외국인 보유 — 공식 스펙 1.2.24 '데이터 적시성')을 흡수합니다. 처음 보는 종목은 스펙 상한(100)만큼 한 번에 받습니다(같은 1회).
+KR_FLOW_DAYS = 20
+KR_FLOW_FIRST_DAYS = 100
+# 실행당 토스 호출 상한 — 종목마다 1회. 수집 범위 약 140종목. DATA_SOURCES.md '한국 책 호출 예산'과 같아야 합니다(test_toss_call_budget).
+KR_FLOWS_CALL_BUDGET = 200
+KR_FLOWS_TIME_LIMIT_SECONDS = 300.0
+# 이 그룹(STOCK_TRADING_TREND)의 초당 한도는 공개 표에 없어 레이더 수급(toss.TOSS_STOCK_SPACING)과 같은 간격을 둡니다.
+KR_FLOW_SPACING = 0.3
+KR_FLOW_RETENTION_DAYS = 400
+
+
+def task_kr_paper_flows() -> str:
+    """
+    🧪 한국 책 종목별 수급 — 수집 범위(kr_scope)의 토스 투자자별 매매동향(주, 최근 20거래일·처음이면 100) → observations ``kr_paper_flow``
+    (entity = 코드, obs_date = 기록 날짜) + 종목별 수집 상태 스냅샷 ``kr.paper_flows.status``.
+
+    payload는 레이더 수급(toss_stock_flow)과 같은 칸(투자자 4분류·기관 세부 7·외국인 보유율·토스 ``updatedAt``)에 ``code``·``fetchedAt``
+    (우리가 받은 시각)을 더한 것입니다. 같은 날짜를 다시 받으면 덮으므로(D 저녁판 → D+1 새벽판), 결정·선정은 그때 읽은 값과 ``updatedAt``을
+    결정 행에 동결합니다(명세 K26). 레이더 수급 수집(toss_stock_flows, 매시)과 따로 돕니다.
+
+    규칙
+      - KR 세션 D(kr_target_session)의 20:30 KST 뒤에 받은 종목은 다시 부르지 않습니다. D보다 늦은 날짜의 기록(20:30 전 실행의 오늘
+        장중 잠정치)은 쓰지 않습니다.
+      - 실행당 KR_FLOWS_CALL_BUDGET·KR_FLOWS_TIME_LIMIT_SECONDS 안에서만, 넘는 종목은 다음 주기에. 403이면 멈춥니다.
+      - 받지 못한 종목은 기록을 지우지 않고(저장된 날짜 행이 그대로) 상태 항목만 직전 것을 isStale로 잇습니다. 한 종목도 받지 못하면
+        EmptyResult. 토스가 답했는데 기록이 0건이면 상태 NO_RECORDS('응답에 없음').
+      - 400일이 지난 행은 지웁니다.
+    """
+    started = _clock()
+    now = _now()
+    session = kr_target_session(now)
+    session_iso = session.isoformat()
+    after = datetime.combine(session, KR_COLLECT_AFTER, tzinfo=KST)
+    scope, basis = kr_scope()
+    previous = previous_payload(catalog.SNAP_KR_PAPER_FLOWS_STATUS).get("codes") or {}
+    pending = [code for code in scope if not collected_after(previous.get(code), after)]
+    if not pending:
+        return f"최신 상태 (세션 {session}, {len(scope)}종목, 호출 0회)"
+
+    run = _TossRun(KR_FLOWS_CALL_BUDGET, KR_FLOW_SPACING)
+    fetched_at = now.astimezone(timezone.utc).isoformat()
+    by_date: dict[str, list[dict]] = {}
+    fresh: dict[str, dict] = {}
+    stop = ""
+    for code in pending:
+        if _clock() - started >= KR_FLOWS_TIME_LIMIT_SECONDS:
+            stop = f"시간 상한 {KR_FLOWS_TIME_LIMIT_SECONDS:.0f}초 — 나머지는 다음 주기"
+            break
+        if not run.take():
+            stop = "호출 예산 소진 — 나머지는 다음 주기"
+            break
+        seen_before = isinstance(previous.get(code), dict) and previous[code].get("status") == "OK"
+        try:
+            records = toss_service.fetch_stock_investor_trading(code, KR_FLOW_DAYS if seen_before else KR_FLOW_FIRST_DAYS)
+        except toss_service.TossMissingKey as exc:
+            raise EmptyResult(f"{exc} — 한국 책 수급을 받지 않습니다 · 기존 저장본 유지") from None
+        except toss_service.TossForbidden as exc:
+            run.forbidden = str(exc)
+            break
+        except toss_service.TossError as exc:
+            run.reasons.append(f"{code}: {exc}")
+            continue
+        kept = [record for record in records if record.get("date") and record["date"] <= session_iso]
+        for record in kept:
+            by_date.setdefault(record["date"], []).append({**record, "code": code, "fetchedAt": fetched_at})
+        latest = max(kept, key=lambda record: record["date"], default=None)
+        fresh[code] = {"code": code, "status": "OK" if kept else "NO_RECORDS", "fetchedAt": fetched_at, "records": len(kept),
+                       "latestDate": latest["date"] if latest else None,
+                       "latestUpdatedAt": latest.get("updatedAt") if latest else None}
+
+    if run.forbidden:
+        run.reasons.insert(0, run.forbidden)
+    if not fresh:
+        raise EmptyResult(f"0/{len(pending)} 종목 — 기존 저장본 유지" + (f" ({stop})" if stop else "")
+                          + _reason_suffix(run.reasons))
+
+    saved = sum(store.put_observations(catalog.OBS_KR_PAPER_FLOW, obs_date, rows, entity_key="code")
+                for obs_date, rows in sorted(by_date.items()))
+    cutoff = (now.astimezone(KST).date() - timedelta(days=KR_FLOW_RETENTION_DAYS)).isoformat()
+    store.delete_observations_before(catalog.OBS_KR_PAPER_FLOW, cutoff)
+
+    codes = {code: previous[code] for code in scope if code not in pending and code in previous}
+    codes.update(fresh)
+    carried = carry_over_missing(codes, previous, scope, (run.reasons[0] if run.reasons else stop) or None,
+                                 lambda entry: entry.get("status") in ("OK", "NO_RECORDS"))
+    store.put_snapshot(catalog.SNAP_KR_PAPER_FLOWS_STATUS, {
+        "source": "토스증권 Open API — /api/v1/stocks/{symbol}/investor-trading (주, KRX·NXT 통합)",
+        "session": session_iso,
+        "universeDate": basis,
+        "scope": scope,
+        "codes": {code: codes[code] for code in scope if code in codes},
+    })
+    empty = sum(1 for entry in fresh.values() if entry["status"] == "NO_RECORDS")
+    detail = (f"세션 {session} · {len(fresh)}/{len(pending)} 종목" + (f"(기록 없음 {empty})" if empty else "")
+              + f" · {saved}건 · 호출 {run.budget.used}회" + carried_suffix(carried))
     if stop:
         detail += f" · {stop}"
     return detail + _reason_suffix(run.reasons)

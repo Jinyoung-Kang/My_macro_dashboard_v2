@@ -156,6 +156,19 @@ public final class Datasets {
     /** 종목별 일별 투자자 매매동향 (토스증권 공식, entity = 종목코드). */
     public static final String OBS_TOSS_STOCK_FLOW = "toss_stock_flow";
     /**
+     * 🧪 한국 책 종목별 수급(v2 2단계 B4) — 수집 범위의 토스 투자자별 매매동향(주, KRX·NXT 통합). entity = 코드, obs_date = 기록 날짜,
+     * payload = {@link #OBS_TOSS_STOCK_FLOW}와 같은 칸(투자자 4분류·기관 세부 7·외국인 보유율·토스 {@code updatedAt}) + {@code code}·
+     * {@code fetchedAt}. 같은 날짜는 나중 판으로 덮이므로 결정·선정은 그때 읽은 값과 {@code updatedAt}을 결정 행에 동결합니다(명세 K26).
+     * 수집기만 쓰며(ADR 0008) 400일이 지난 행은 수집기가 지웁니다.
+     */
+    public static final String OBS_KR_PAPER_FLOW = "kr_paper_flow";
+    /**
+     * 위 수급의 종목별 수집 상태 — {@code {session, universeDate, scope, codes: {code: {status OK|NO_RECORDS, fetchedAt, records,
+     * latestDate, latestUpdatedAt, isStale?}}}}. {@code scope}에 있는데 {@code codes}에 없거나 {@code isStale}이면 '호출 실패',
+     * {@code NO_RECORDS}면 '응답에 없음'입니다.
+     */
+    public static final String SNAP_KR_PAPER_FLOWS_STATUS = "kr.paper_flows.status";
+    /**
      * 모의 매매 유니버스의 10년 일별 종가(수정주가, series = 야후 티커). 분할·배당으로 과거 값이 다시 쓰일 수 있어
      * 분할 감지가 이 값을 기준 종가와 대조합니다. 기간으로 지우지 않습니다.
      */

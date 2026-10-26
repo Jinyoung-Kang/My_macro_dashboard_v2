@@ -45,6 +45,7 @@ def test_DATA_SOURCES의_토스_호출_예산이_코드_상수와_같다():
 # 🧪 한국 책(v2 2단계 B4) — 하루 한 번 도는 태스크마다 실행당 상한. (태스크, 상수 이름) — 문서의 숫자와 상수 이름을 함께 대조합니다.
 KR_BUDGETS = (
     ("kr_paper_quotes", "KR_QUOTES_CALL_BUDGET"),
+    ("kr_paper_flows", "KR_FLOWS_CALL_BUDGET"),
 )
 
 

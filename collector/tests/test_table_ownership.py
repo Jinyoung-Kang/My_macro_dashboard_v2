@@ -38,7 +38,8 @@ def test_수집기는_백엔드_테이블에_쓰지_않는다():
 
 
 # 🧪 한국 책(v2 2단계 B4) 데이터셋 — 쓰는 곳은 app/tasks/kr_paper.py 하나입니다(읽기·누락 점검은 어디서든).
-KR_DATASETS = ("OBS_KR_PAPER_UNIVERSE", "SNAP_KR_PAPER_QUOTES", "TS_KR_CLOSE_ADJ")
+KR_DATASETS = ("OBS_KR_PAPER_UNIVERSE", "SNAP_KR_PAPER_QUOTES", "TS_KR_CLOSE_ADJ", "OBS_KR_PAPER_FLOW",
+               "SNAP_KR_PAPER_FLOWS_STATUS")
 STORE_WRITE = re.compile(
     r"\b(put_snapshot|put_observations|put_entity_observations|replace_observations|insert_new_observations|"
     r"add_headline_feeds|put_timeseries|delete_observations_before)\(\s*catalog\.(" + "|".join(KR_DATASETS) + r")\b"

@@ -116,6 +116,13 @@ OBS_FSC_ETF_PRICE = "fsc_etf_price"
 OBS_KR_PAPER_UNIVERSE = "kr_paper_universe"
 TS_FSC_MARKET = "fsc_market"    # 시장별 합계 시가총액·거래대금 (series = "KOSPI.marketCap" 등)
 OBS_TOSS_STOCK_FLOW = "toss_stock_flow"  # 종목별 일별 투자자 매매동향 (토스증권 공식, entity = 종목코드)
+# 모의 매매 한국 책의 종목별 수급(v2 2단계 B4) — 수집 범위의 토스 투자자별 매매동향(주, KRX·NXT 통합). entity = 코드, obs_date = 기록 날짜,
+# payload = toss_stock_flow와 같은 칸(투자자 4분류·기관 세부 7·외국인 보유율·토스 updatedAt) + code + fetchedAt. KR 거래일 D 20:30 KST 뒤
+# 하루 1회, 400일 보존. 같은 날짜는 나중 판으로 덮이므로 결정은 그때 읽은 값과 updatedAt을 결정 행에 동결합니다(명세 K26).
+OBS_KR_PAPER_FLOW = "kr_paper_flow"
+# 위 수급의 종목별 수집 상태 — {session, universeDate, scope, codes: {code: {status OK·NO_RECORDS, fetchedAt, records, latestDate,
+# latestUpdatedAt, isStale?}}}. 그날 다시 부르지 않는 기준이고, 백엔드가 '호출 실패'와 '응답에 없음'을 가르는 근거입니다.
+SNAP_KR_PAPER_FLOWS_STATUS = "kr.paper_flows.status"
 TS_EQUITY_CLOSE = "equity_close"        # 모의 매매 유니버스 10년 일별 종가(수정주가), series_id = 야후 티커
 # 모의 매매 한국 책의 종가 이력(v2 2단계 B4) — 토스 adjusted=true 일봉 종가(NXT 종목은 KRX+NXT 통합가), series_id = 6자리 코드.
 # kr_paper_price_history(weekly)가 1년을 메우고 kr_paper_quotes가 날마다 최근 5봉을 덧붙입니다. 수정주가 기준이 바뀌면(분할·병합)
@@ -133,7 +140,7 @@ OBS_NEWS_HEADLINE = "news_headline"
 # surprisePct, currency, smallBase, reportedAt, source}. (날짜, 티커)마다 upsert(나중에 받은 값이 추정치를 채우거나 고침), 지우지 않음.
 OBS_US_EARNINGS_SURPRISE = "us.earnings_surprise"
 
-# 기간으로 지워도 되는 누적 데이터셋은 태스크가 스스로 보존 기한을 두는 fsc_price·fsc_etf_price·toss_stock_flow·kr_paper_universe(각 400일)·
+# 기간으로 지워도 되는 누적 데이터셋은 태스크가 스스로 보존 기한을 두는 fsc_price·fsc_etf_price·toss_stock_flow·kr_paper_universe·kr_paper_flow(각 400일)·
 # news_headline(7일)뿐입니다(QA-070).
 # radar_ranking(다시 받을 수 없음, ADR 0005)·fred·fed_liquidity(증분 적재, 판정 성과가 전 구간을 씀, ADR 0009)·
 # krx_futures(원천이 최근 40일만 줌)·fsc_market(보충은 최근 7일만 함)·equity_close(모의 매매 트랙레코드가 10년 창을 통째로 쓰고,
