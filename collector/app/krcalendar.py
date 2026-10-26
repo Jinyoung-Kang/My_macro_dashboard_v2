@@ -18,7 +18,8 @@ app/krcalendar.py
 거래소 휴장일과 공휴일은 다릅니다(PRINCIPLES.md). 공휴일은 휴장으로 보고, 공휴일이 아닌 KRX 고유 휴장일은
 공휴일 목록과 따로 규칙으로 더합니다(KRX_YEAR_END_CLOSURE). 예전에는 "공휴일 아닌 휴장일은 데이터가 비어 잘못
 쌓이지 않는다"고 보고 다루지 않았는데, 날짜를 밝히지 않는 소스(KIS 가집계·Daum 기간 응답)는 휴장일에도 전 거래일
-데이터를 줘서 그 데이터가 12-31 날짜로 이력에 쌓였습니다(QA-081).
+데이터를 줘서 그 데이터가 12-31 날짜로 이력에 쌓였습니다(QA-081). 12-31이 주말·공휴일인 해는 그 직전 매매거래일이
+연말 휴장일인데 12-31만 더해 그 금요일(2028-12-29)을 거래일로 봤습니다(QA-142).
 """
 from __future__ import annotations
 
@@ -35,10 +36,9 @@ CLOSE = time(15, 30)
 
 _holidays: set[str] = set()
 
-# KRX 연말 휴장일(월, 일) — 공휴일 목록(천문연)에 없는 거래소 고유 휴장일. 화면 달력(frontend/src/lib/marketCalendar.ts
-# krMarketHolidays)과 같은 규칙입니다. 12-31이 주말이면 원래 쉬는 날이라 따로 할 일이 없습니다. 12-31이 주말·공휴일인 해에
-# 직전 거래일을 대신 쉬는지는 공식 규정을 확인하지 못해 다루지 않습니다(다음 해당 해는 2028년).
-# 5-1(근로자의 날)은 2026년부터 천문연 공휴일 목록에 들어 있어 더하지 않습니다.
+# KRX 연말 휴장일(월, 일) — 공휴일 목록(천문연)에 없는 거래소 고유 휴장일. 12-31이 토·일·공휴일이면 그 직전 매매거래일을
+# 쉽니다(KRX 휴장일 목록의 2022-12-30·2023-12-29, 다음은 2028-12-29 — QA-142). 화면 달력(frontend/src/lib/marketCalendar.ts
+# krMarketHolidays)과 같은 규칙입니다. 5-1(근로자의 날)은 2026년부터 천문연 공휴일 목록에 들어 있어 더하지 않습니다.
 KRX_YEAR_END_CLOSURE = (12, 31)
 
 
@@ -72,9 +72,20 @@ def load_from_store() -> int:
     return len(_holidays)
 
 
+def year_end_closure(year: int) -> date:
+    """
+    그해 KRX 연말 휴장일 — 12-31, 그날이 주말·공휴일이면 거슬러 올라가 처음 만나는 평일 비공휴일(직전 매매거래일).
+    공휴일 목록이 비어 있어도(첫 기동) 주말 대체는 규칙만으로 맞습니다.
+    """
+    day = date(year, *KRX_YEAR_END_CLOSURE)
+    while day.weekday() >= 5 or day.isoformat() in _holidays:
+        day -= timedelta(days=1)
+    return day
+
+
 def is_krx_closure(day: date) -> bool:
     """공휴일이 아닌 KRX 고유 휴장일인가(연말 휴장일)."""
-    return (day.month, day.day) == KRX_YEAR_END_CLOSURE
+    return day.month == KRX_YEAR_END_CLOSURE[0] and day == year_end_closure(day.year)
 
 
 def is_trading_day(day: date) -> bool:

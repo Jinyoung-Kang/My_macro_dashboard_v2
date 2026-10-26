@@ -12,28 +12,28 @@ import { krMarketHolidays } from "@/lib/marketCalendar";
 import { sessionStatus } from "@/lib/marketSessions";
 
 describe("QA-142 KRX 연말 휴장일은 12-31, 주말·공휴일이면 직전 매매거래일", () => {
-  it.fails("2028-12-31(일) → 2028-12-29(금) 휴장, 12-28(목)은 개장 — 내장 표", () => {
+  it("2028-12-31(일) → 2028-12-29(금) 휴장, 12-28(목)은 개장 — 내장 표", () => {
     const days = krMarketHolidays(2028);
     expect(days.has("2028-12-29")).toBe(true);
     expect(days.has("2028-12-28")).toBe(false);
   });
 
-  it.fails("2028-12-29 10:00 KST 한국 주식 배지는 휴장", () => {
+  it("2028-12-29 10:00 KST 한국 주식 배지는 휴장", () => {
     expect(sessionStatus("krx", new Date("2028-12-29T01:00:00Z"))?.state).toBe("holiday");
   });
 
-  it.fails("KRX 실례 2022-12-30(12-31 토)·2023-12-29(12-31 일) — 공식 목록이 와도 같음", () => {
+  it("KRX 실례 2022-12-30(12-31 토)·2023-12-29(12-31 일) — 공식 목록이 와도 같음", () => {
     expect(krMarketHolidays(2022).has("2022-12-30")).toBe(true);
     expect(krMarketHolidays(2023, ["2023-01-01", "2023-12-25"]).has("2023-12-29")).toBe(true);
     expect(krMarketHolidays(2023, ["2023-01-01", "2023-12-25"]).has("2023-12-28")).toBe(false);
   });
 
-  it.fails("표 없는 해(양력 규칙 겹)도 주말 대체는 앎 — 2033-12-30·2034-12-29", () => {
+  it("표 없는 해(양력 규칙 겹)도 주말 대체는 앎 — 2033-12-30·2034-12-29", () => {
     expect(krMarketHolidays(2033).has("2033-12-30")).toBe(true);
     expect(krMarketHolidays(2034).has("2034-12-29")).toBe(true);
   });
 
-  it.fails("12-31이 평일 공휴일이면 직전 매매거래일 — 가상의 2029-12-31(월) 임시공휴일 → 12-28(금)", () => {
+  it("12-31이 평일 공휴일이면 직전 매매거래일 — 가상의 2029-12-31(월) 임시공휴일 → 12-28(금)", () => {
     const days = krMarketHolidays(2029, ["2029-01-01", "2029-12-25", "2029-12-31"]);
     expect(days.has("2029-12-28")).toBe(true);
     expect(days.has("2029-12-27")).toBe(false);

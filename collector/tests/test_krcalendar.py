@@ -85,7 +85,6 @@ KR_HOLIDAYS_2028 = {
 }
 
 
-@pytest.mark.xfail(strict=True, reason="QA-142 재현: 12-31이 일요일인 2028년에 직전 금요일(12-29)을 거래일로 봄")
 def test_QA142_12월_31일이_일요일이면_직전_금요일이_연말_휴장이다_2028():
     krcalendar.set_holidays(KR_HOLIDAYS_2028)
     assert krcalendar.is_trading_day(date(2028, 12, 29)) is False
@@ -96,7 +95,6 @@ def test_QA142_12월_31일이_일요일이면_직전_금요일이_연말_휴장�
     assert krcalendar.previous_trading_days(date(2029, 1, 2), 2) == [date(2028, 12, 28), date(2028, 12, 27)]
 
 
-@pytest.mark.xfail(strict=True, reason="QA-142 재현: KRX 실례 2022-12-30(12-31 토)·2023-12-29(12-31 일)를 거래일로 봄")
 def test_QA142_KRX_실례_2022_12_30과_2023_12_29는_연말_휴장이다():
     krcalendar.set_holidays({"2022-12-25", "2023-01-01", "2023-12-25", "2024-01-01"})
     assert krcalendar.is_trading_day(date(2022, 12, 30)) is False
@@ -105,7 +103,6 @@ def test_QA142_KRX_실례_2022_12_30과_2023_12_29는_연말_휴장이다():
     assert krcalendar.is_trading_day(date(2023, 12, 28)) is True
 
 
-@pytest.mark.xfail(strict=True, reason="QA-142 재현: 공휴일 목록이 없는 해(첫 기동)에도 주말 대체는 규칙만으로 알 수 있음")
 def test_QA142_공휴일_목록이_비어도_주말_대체는_안다():
     krcalendar.set_holidays(())
     assert krcalendar.is_trading_day(date(2028, 12, 29)) is False
@@ -113,7 +110,6 @@ def test_QA142_공휴일_목록이_비어도_주말_대체는_안다():
     assert krcalendar.is_trading_day(date(2034, 12, 29)) is False   # 12-31 일
 
 
-@pytest.mark.xfail(strict=True, reason="QA-142 재현: 12-31이 평일 공휴일이면 직전 매매거래일이 연말 휴장")
 def test_QA142_12월_31일이_평일_공휴일이면_직전_매매거래일이_연말_휴장이다():
     """가상의 해: 2029-12-31(월)이 임시공휴일이면 직전 매매거래일 12-28(금)이 연말 휴장일입니다(주말 12-29·30을 건너뜀)."""
     krcalendar.set_holidays({"2029-12-25", "2029-12-31", "2030-01-01"})

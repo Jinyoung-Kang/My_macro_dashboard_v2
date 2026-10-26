@@ -135,29 +135,55 @@ export function usMarketHolidays(year: number): Set<string> {
  *
  * 어느 겹이든 KRX 고유 휴장일(근로자의 날 5/1, 연말 폐장 12/31)을 더합니다.
  * 5/1은 2026년부터 공휴일(노동절)이기도 하지만, 그 전 해에도 KRX는 쉬었습니다.
+ * 12/31이 주말·공휴일이면 그 직전 매매거래일도 더합니다({@link krYearEndClosure}, QA-142).
  *
  * @param year 연도
  * @param official 백엔드가 준 그 해 공휴일(YYYY-MM-DD). 없거나 비면 내장 표·규칙을 씁니다
  * @returns YYYY-MM-DD 집합
  */
 export function krMarketHolidays(year: number, official?: readonly string[] | null): Set<string> {
-  const days = new Set<string>([iso(year, 5, 1), iso(year, 12, 31)]);
+  const days = new Set<string>([iso(year, 5, 1)]);
   const listed = official && official.length > 0 ? official : KR_PUBLIC_HOLIDAYS[year];
   if (listed) {
     listed.forEach((day) => days.add(day));
-    return days;
+  } else {
+    [
+      iso(year, 1, 1),    // 신정
+      iso(year, 3, 1),    // 삼일절
+      iso(year, 5, 5),    // 어린이날
+      iso(year, 6, 6),    // 현충일
+      iso(year, 8, 15),   // 광복절
+      iso(year, 10, 3),   // 개천절
+      iso(year, 10, 9),   // 한글날
+      iso(year, 12, 25),  // 성탄절
+    ].forEach((day) => days.add(day));
   }
-  [
-    iso(year, 1, 1),    // 신정
-    iso(year, 3, 1),    // 삼일절
-    iso(year, 5, 5),    // 어린이날
-    iso(year, 6, 6),    // 현충일
-    iso(year, 8, 15),   // 광복절
-    iso(year, 10, 3),   // 개천절
-    iso(year, 10, 9),   // 한글날
-    iso(year, 12, 25),  // 성탄절
-  ].forEach((day) => days.add(day));
+  // 대체일은 12/31을 더하기 전의 공휴일로 셉니다(12/31 자신이 공휴일인지만 봄).
+  const yearEnd = krYearEndClosure(year, days);
+  days.add(iso(year, 12, 31));
+  days.add(yearEnd);
   return days;
+}
+
+/**
+ * KRX 연말 휴장일 — 12/31, 그날이 토·일·공휴일이면 그 직전 매매거래일.
+ *
+ * KRX 휴장일 목록의 실례가 2022-12-30(12/31 토)·2023-12-29(12/31 일)이고 다음은 2028-12-29입니다.
+ * 12/31만 더하면 그 금요일을 거래일로 봅니다(QA-142). 수집기 `krcalendar.year_end_closure`와 같은 규칙입니다.
+ *
+ * @param year     연도
+ * @param holidays 그 해 공휴일(YYYY-MM-DD) — 12/31 규칙으로 더한 날은 넣지 않습니다
+ * @returns YYYY-MM-DD
+ */
+function krYearEndClosure(year: number, holidays: ReadonlySet<string>): string {
+  for (let day = 31; day >= 1; day--) {
+    const date = iso(year, 12, day);
+    const weekday = new Date(Date.UTC(year, 11, day)).getUTCDay();
+    if (weekday !== 0 && weekday !== 6 && !holidays.has(date)) {
+      return date;
+    }
+  }
+  return iso(year, 12, 31);
 }
 
 /**
