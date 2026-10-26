@@ -10,6 +10,8 @@ import org.springframework.jdbc.datasource.DriverManagerDataSource;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.sql.Timestamp;
 import java.time.Instant;
 import java.time.LocalDate;
@@ -18,6 +20,7 @@ import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 /**
  * 모의 매매 장부 테이블(V8)과 여러 시계열 읽기 — 실제 테스트 DB(macrodash_test)에서 유일 제약·덮어쓰기 규칙·트랜잭션을
@@ -90,9 +93,9 @@ class PaperStoreDbTest {
     }
 
     @Test
-    @DisplayName("테이블이 있다 — V8이 마지막에 만드는 paper_api_usage, V9~V11이 더하는 열, V12의 paper_reviews, V13의 paper_books 시장·통화 열로 준비 여부를 본다")
+    @DisplayName("테이블이 있다 — V8이 마지막에 만드는 paper_api_usage, V9~V11이 더하는 열, V12의 paper_reviews, V13의 paper_books 시장·통화 열, V14의 복기·메모 시장 열로 준비 여부를 본다")
     void ready() {
-        assertThat(store.ready()).as("make db-test로 V8~V13을 적용했는가").isTrue();
+        assertThat(store.ready()).as("make db-test로 V8~V14를 적용했는가").isTrue();
         assertThat(new SchemaCheck(jdbc).columnExists("paper_decisions", "packet_text")).isTrue();
         assertThat(new SchemaCheck(jdbc).tableExists("paper_reviews")).isTrue();
     }
@@ -1395,10 +1398,234 @@ class PaperStoreDbTest {
         })).isInstanceOf(Rollback.class);
     }
 
+    // ------------------------------------------------------------------ 한국 책 스키마(V14, 2단계 명세 §4-14)
+    /** V14 파일 — 백엔드 모듈에서 본 저장소 경로(DatasetsParityTest의 catalog.py와 같은 방식). */
+    private static final Path V14 = Path.of("../db/migrations/V14__paper_kr_schema.sql");
+
+    private static PaperStore.Review review(String market, LocalDate week, String status) throws Exception {
+        PaperStore.Review r = review(week, status, null, null);
+        return new PaperStore.Review(r.weekEnding(), r.windowWeeks(), r.input(), r.inputText(), r.response(),
+                r.responseRaw(), r.model(), r.usage(), r.status(), r.error(), r.proposalId(), r.frameworkVersion(),
+                r.retryCount(), r.createdAt(), market);
+    }
+
+    @Test
+    @DisplayName("V14 전 DB(paper_reviews.market·paper_notes.market 열 없음)는 준비 안 됨 — 복기·메모 SQL 오류(500) 대신 안내 문구, 시험 뒤 되돌림")
+    void readyRequiresV14() {
+        class Rollback extends RuntimeException {
+        }
+        for (String table : List.of("paper_reviews", "paper_notes")) {
+            assertThatThrownBy(() -> store.atomically(() -> {
+                jdbc.execute("ALTER TABLE " + table + " DROP COLUMN market");
+                assertThat(new PaperStore(jdbc, MAPPER, new SchemaCheck(jdbc)).ready())
+                        .as("V14 열 " + table + ".market이 없으면 준비 안 됨").isFalse();
+                throw new Rollback();
+            })).isInstanceOf(Rollback.class);
+        }
+        assertThat(new PaperStore(jdbc, MAPPER, new SchemaCheck(jdbc)).ready()).as("되돌린 뒤").isTrue();
+    }
+
+    @Test
+    @DisplayName("V14: 주문 시점에 NEXT_OPEN(옛 네 시점 그대로, 모르는 시점은 막힘), 미국 체결의 비용 칸 fee·tax·slippage_cost는 0(음수는 막힘), 보유의 corp_action_hold는 NULL로 시작하고 보유 갱신이 지우지 않음")
+    void v14TimingFillCostsAndCorpActionHold() {
+        store.insertBookIfAbsent(book(BOOK, "규칙 책"));
+        long open = store.insertOrder(new PaperStore.Order(0, BOOK, null, "005930", "BUY", 10, null, null, "NEXT_OPEN",
+                "RULE", "PENDING", null, null, DAY, null, DAY.plusDays(5), null));
+        assertThat(store.ordersByStatus(BOOK, "PENDING")).singleElement()
+                .satisfies(o -> assertThat(o.timing()).isEqualTo("NEXT_OPEN"));
+        for (String timing : List.of("NEXT_OBSERVATION", "NEXT_CLOSE", "IMMEDIATE", "BACKFILL")) {
+            assertThat(store.insertOrder(new PaperStore.Order(0, BOOK, null, "SPY", "BUY", 1, null, null, timing, "RULE",
+                    "PROPOSED", null, null, DAY, null, null, null))).as("옛 시점 " + timing).isPositive();
+        }
+        assertThatThrownBy(() -> jdbc.update("UPDATE paper_orders SET timing = 'NEXT_NOON' WHERE id = ?", open))
+                .as("모르는 시점").isInstanceOf(org.springframework.dao.DataIntegrityViolationException.class);
+
+        long orderId = store.insertOrder(pendingBuy(BOOK, "SPY", null));
+        long fillId = store.insertFill(fill(orderId, BOOK));
+        assertThat(jdbc.queryForMap("SELECT fee::text AS fee, tax::text AS tax, slippage_cost::text AS slippage_cost "
+                + "FROM paper_fills WHERE id = ?", fillId)).as("미국 체결은 비용 칸 0(슬리피지는 price에 들어 있음)")
+                .containsEntry("fee", "0.0000").containsEntry("tax", "0.0000").containsEntry("slippage_cost", "0.0000");
+        assertThat(store.recentFills(BOOK, 1).get(0).price()).as("미국 체결가 그대로").isEqualTo(680.34);
+        for (String column : List.of("fee", "tax", "slippage_cost")) {
+            assertThatThrownBy(() -> jdbc.update("UPDATE paper_fills SET " + column + " = -1 WHERE id = ?", fillId))
+                    .as(column + " 음수").isInstanceOf(org.springframework.dao.DataIntegrityViolationException.class);
+        }
+
+        store.upsertPosition(new PaperStore.Position(BOOK, "005930", 10, 71_300, DAY, CLOSE, 71_300, CLOSE, null, null,
+                false, DAY, 71_300, null));
+        assertThat(jdbc.queryForObject("SELECT corp_action_hold FROM paper_positions WHERE book_code = ? AND ticker = ?",
+                String.class, BOOK, "005930")).as("정상 보유").isNull();
+        jdbc.update("UPDATE paper_positions SET corp_action_hold = ? WHERE book_code = ? AND ticker = ?",
+                "가격제한폭 밖 변동 — 확인 필요", BOOK, "005930");
+        store.upsertPosition(new PaperStore.Position(BOOK, "005930", 10, 71_300, DAY, CLOSE, 71_300, CLOSE, 70_000.0,
+                CLOSE, false, DAY, 71_300, null));
+        assertThat(jdbc.queryForObject("SELECT corp_action_hold FROM paper_positions WHERE book_code = ? AND ticker = ?",
+                String.class, BOOK, "005930")).as("보유 갱신은 그 칸을 쓰지 않음").isEqualTo("가격제한폭 밖 변동 — 확인 필요");
+    }
+
+    @Test
+    @DisplayName("V14 확정 조정 표: 체결마다 한 행(두 번째는 DuplicateKeyException), 출처는 FSC·FSC_ETF만, 비용 칸 음수 불가·현금 차이는 음수 가능, 책 초기화·삭제 때 체결과 함께 지워짐")
+    void fillConfirmationsOnePerFill() {
+        store.insertBookIfAbsent(book(BOOK, "규칙 책"));
+        long fillId = store.insertFill(fill(store.insertOrder(pendingBuy(BOOK, "SPY", null)), BOOK));
+        String insert = "INSERT INTO paper_fill_confirmations (fill_id, book_code, confirmed_price, fee, tax, "
+                + "slippage_cost, cash_delta, source) VALUES (?, ?, ?, ?, ?, ?, ?, ?)";
+        // §5 손계산 — 매수 10주 잠정 71,300 → 확정 71,200: 수수료 106·슬리피지 356 그대로, 현금 +1,000
+        assertThat(jdbc.update(insert, fillId, BOOK, 71_200, 106, 0, 356, 1_000, "FSC")).isEqualTo(1);
+        assertThatThrownBy(() -> jdbc.update(insert, fillId, BOOK, 71_100, 106, 0, 355, 2_000, "FSC"))
+                .as("체결마다 한 행(추가만)").isInstanceOf(DuplicateKeyException.class);
+        assertThat(jdbc.queryForMap("SELECT confirmed_price::text AS price, cash_delta::text AS delta, "
+                + "reconciled_at IS NOT NULL AS stamped FROM paper_fill_confirmations WHERE fill_id = ?", fillId))
+                .containsEntry("price", "71200.000000").containsEntry("delta", "1000.0000")
+                .containsEntry("stamped", true);
+
+        long second = store.insertFill(fill(store.insertOrder(pendingBuy(BOOK, "QQQ", null)), BOOK));
+        assertThatThrownBy(() -> jdbc.update(insert, second, BOOK, 1, 0, 0, 0, 0, "TOSS_DAILY"))
+                .as("확정 출처는 금융위만").isInstanceOf(org.springframework.dao.DataIntegrityViolationException.class);
+        assertThatThrownBy(() -> jdbc.update(insert, second, BOOK, 1, -1, 0, 0, 0, "FSC"))
+                .as("수수료 음수").isInstanceOf(org.springframework.dao.DataIntegrityViolationException.class);
+        assertThatThrownBy(() -> jdbc.update(insert, -1L, BOOK, 1, 0, 0, 0, 0, "FSC"))
+                .as("없는 체결").isInstanceOf(org.springframework.dao.DataIntegrityViolationException.class);
+        assertThat(jdbc.update(insert, second, BOOK, 108_100, 1_621, 0, 5_405, -999, "FSC_ETF")).as("현금 차이 음수")
+                .isEqualTo(1);
+
+        store.resetBook(BOOK);
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM paper_fill_confirmations WHERE book_code = ?",
+                Integer.class, BOOK)).as("초기화가 지운 체결의 확정 조정도 함께").isZero();
+    }
+
+    @Test
+    @DisplayName("V14 복기 기본키 (market, week_ending): 같은 주의 미국·한국 행이 따로 들어가고(시장마다 두 번째는 false), 읽기·목록·재시도·제안 잇기가 그 시장 행만 — 시장을 받지 않는 옛 시그니처는 미국, 모르는 시장은 레코드·CHECK가 막음 — 시험 뒤 되돌림")
+    void reviewsPerMarket() {
+        class Rollback extends RuntimeException {
+        }
+        assertThat(jdbc.queryForObject("SELECT pg_get_constraintdef(oid) FROM pg_constraint "
+                + "WHERE conrelid = 'paper_reviews'::regclass AND contype = 'p'", String.class))
+                .isEqualTo("PRIMARY KEY (market, week_ending)");
+        assertThatThrownBy(() -> store.atomically(() -> {
+            try {
+                assertThat(store.insertReviewIfAbsent(review(W1, "API_ERROR", null, null))).as("옛 모양 = 미국").isTrue();
+                assertThat(store.insertReviewIfAbsent(review("KR", W1, "API_ERROR"))).as("같은 주 한국").isTrue();
+                assertThat(store.insertReviewIfAbsent(review("KR", W1, "OK"))).as("한국 같은 주 두 번째").isFalse();
+                assertThat(store.insertReviewIfAbsent(review("US", W1, "OK"))).as("미국 같은 주 두 번째").isFalse();
+                assertThat(store.insertReviewIfAbsent(review("KR", W2, "SKIPPED"))).isTrue();
+                assertThat(jdbc.queryForList("SELECT market FROM paper_reviews WHERE week_ending = ? ORDER BY market",
+                        String.class, java.sql.Date.valueOf(W1))).containsExactly("KR", "US");
+
+                assertThat(store.review(W1).orElseThrow().market()).isEqualTo("US");
+                assertThat(store.review("KR", W1).orElseThrow().market()).isEqualTo("KR");
+                assertThat(store.review("US", W2)).as("한국에만 있는 주").isEmpty();
+                assertThat(store.reviews(10)).extracting(PaperStore.ReviewSummary::weekEnding).containsExactly(W1);
+                assertThat(store.reviews("KR", 10)).extracting(PaperStore.ReviewSummary::weekEnding)
+                        .containsExactly(W2, W1);
+                assertThat(store.reviews("JP", 10)).as("모르는 시장").isEmpty();
+
+                String resent = "{\"weekEnding\":\"1999-01-08\",\"market\":\"KR\"}";
+                PaperStore.Review retry = new PaperStore.Review(W1, 4, MAPPER.readTree(resent), resent, verdicts("유지"),
+                        "{raw}", "claude-sonnet-5-5", null, "OK", null, null, 3, 0, null, "KR");
+                assertThat(store.updateReviewRetry(retry)).isTrue();
+                assertThat(store.review("KR", W1).orElseThrow()).extracting(PaperStore.Review::status,
+                        PaperStore.Review::retryCount).containsExactly("OK", 1);
+                assertThat(store.review(W1).orElseThrow()).as("같은 주 미국 행은 그대로(아직 재시도 전)")
+                        .extracting(PaperStore.Review::status, PaperStore.Review::retryCount)
+                        .containsExactly("API_ERROR", 0);
+                assertThat(store.updateReviewRetry(withWeek(retry, W2))).as("한국 W2는 건너뛴 주").isFalse();
+
+                long proposal = store.insertProposal(new PaperStore.FrameworkProposal(0, null, 3, "주간 복기 KR",
+                        "m", null, null, "PENDING", null, null, null, null));
+                assertThat(store.linkReviewProposal("KR", W1, proposal)).isTrue();
+                assertThat(store.review(W1).orElseThrow().proposalId()).as("미국 행에는 잇지 않음").isNull();
+                assertThat(store.linkReviewProposal("US", W2, proposal)).as("미국에 없는 주").isFalse();
+                assertThat(store.linkReviewProposal(W1, proposal)).as("옛 시그니처 = 미국 행").isTrue();
+
+                assertThatThrownBy(() -> review("JP", W3, "OK")).as("레코드가 먼저 막음")
+                        .isInstanceOf(IllegalArgumentException.class).hasMessageContaining("JP");
+                // 모르는 시장은 CHECK가 막습니다 — 트랜잭션이 오류 상태가 되므로 마지막 문장입니다.
+                assertThatThrownBy(() -> jdbc.update("UPDATE paper_reviews SET market = 'JP' WHERE week_ending = ?",
+                        java.sql.Date.valueOf(W2)))
+                        .isInstanceOf(org.springframework.dao.DataIntegrityViolationException.class);
+            } catch (Exception e) {
+                throw new IllegalStateException(e);
+            }
+            throw new Rollback();
+        })).isInstanceOf(Rollback.class);
+    }
+
+    @Test
+    @DisplayName("V14 메모 시장: 넣은 시장 그대로 읽히고(옛 모양 = 미국), 목록·유효 시황은 그 시장 메모만, 번호 읽기·보관은 시장을 가리지 않음, 모르는 시장은 CHECK가 막음 — 시험 뒤 되돌림")
+    void notesPerMarket() {
+        class Rollback extends RuntimeException {
+        }
+        LocalDate mon = LocalDate.of(2026, 10, 26);
+        assertThatThrownBy(() -> store.atomically(() -> {
+            jdbc.update("DELETE FROM paper_framework_proposals");
+            jdbc.update("DELETE FROM paper_notes");
+            long us = store.insertNote(new PaperStore.Note(0, "MARKET", DAY, mon, "미국", "금리", false, null));
+            long kr = store.insertNote(new PaperStore.Note(0, "MARKET", DAY, mon, "한국", "수급", false, null, "KR"));
+            long krInsight = store.insertNote(new PaperStore.Note(0, "INSIGHT", DAY, null, "한국 방법론", "원문", false,
+                    null, "KR"));
+            assertThat(jdbc.queryForObject("SELECT market FROM paper_notes WHERE id = ?", String.class, us))
+                    .as("옛 모양 = V14 기본값").isEqualTo("US");
+            assertThat(store.note(kr).orElseThrow().market()).isEqualTo("KR");
+
+            assertThat(store.notes(false, mon)).extracting(PaperStore.Note::id).as("옛 시그니처 = 미국").containsExactly(us);
+            assertThat(store.notes("KR", false, mon)).extracting(PaperStore.Note::id).containsExactly(krInsight, kr);
+            assertThat(store.notes("KR", true, mon)).extracting(PaperStore.Note::id).containsExactly(krInsight, kr);
+            assertThat(store.activeMarketNotes(mon)).extracting(PaperStore.Note::id).containsExactly(us);
+            assertThat(store.activeMarketNotes("KR", mon)).extracting(PaperStore.Note::id).containsExactly(kr);
+            assertThat(store.activeMarketNotes("JP", mon)).isEmpty();
+
+            assertThat(store.archiveNote(kr)).as("번호로 보관").isTrue();
+            assertThat(store.activeMarketNotes("KR", mon)).isEmpty();
+            assertThat(store.activeMarketNotes(mon)).extracting(PaperStore.Note::id).containsExactly(us);
+            // 모르는 시장은 CHECK가 막습니다 — 트랜잭션이 오류 상태가 되므로 마지막 문장입니다.
+            assertThatThrownBy(() -> jdbc.update("UPDATE paper_notes SET market = 'JP' WHERE id = ?", us))
+                    .isInstanceOf(org.springframework.dao.DataIntegrityViolationException.class);
+            throw new Rollback();
+        })).isInstanceOf(Rollback.class);
+    }
+
+    @Test
+    @DisplayName("V14는 여러 번 실행해도 안전 — 이미 적용한 DB에서 두 번 더 돌려도 기존 미국 복기·메모·체결 행과 기본키·CHECK 모양이 그대로(make db-test·수집기 기동이 다시 돌림) — 시험 뒤 되돌림")
+    void v14RerunIsSafe() throws Exception {
+        assumeTrue(Files.exists(V14), "db/migrations/V14__paper_kr_schema.sql을 찾을 수 없습니다");
+        String sql = Files.readString(V14);
+        class Rollback extends RuntimeException {
+        }
+        store.insertBookIfAbsent(book(BOOK, "규칙 책"));
+        long fillId = store.insertFill(fill(store.insertOrder(pendingBuy(BOOK, "SPY", null)), BOOK));
+        String constraints = "SELECT string_agg(conname || ' ' || pg_get_constraintdef(oid), '; ' ORDER BY conname) "
+                + "FROM pg_constraint WHERE conrelid IN ('paper_orders'::regclass, 'paper_fills'::regclass, "
+                + "'paper_reviews'::regclass, 'paper_notes'::regclass, 'paper_fill_confirmations'::regclass, "
+                + "'paper_positions'::regclass)";
+        String before = jdbc.queryForObject(constraints, String.class);
+        assertThatThrownBy(() -> store.atomically(() -> {
+            try {
+                assertThat(store.insertReviewIfAbsent(review(W1, "API_ERROR", null, null))).isTrue();
+                long note = store.insertNote(new PaperStore.Note(0, "MARKET", DAY, DAY, "미국", "본문", false, null));
+                jdbc.execute(sql);
+                jdbc.execute(sql);
+                assertThat(jdbc.queryForObject(constraints, String.class)).as("제약 모양 그대로").isEqualTo(before);
+                assertThat(store.review(W1).orElseThrow()).extracting(PaperStore.Review::market,
+                        PaperStore.Review::status).containsExactly("US", "API_ERROR");
+                assertThat(store.note(note).orElseThrow().market()).isEqualTo("US");
+                assertThat(jdbc.queryForObject("SELECT fee + tax + slippage_cost FROM paper_fills WHERE id = ?",
+                        Double.class, fillId)).isZero();
+                assertThat(store.insertReviewIfAbsent(review(W1, "OK", null, null))).as("다시 돌린 뒤에도 ON CONFLICT")
+                        .isFalse();
+                assertThat(store.insertReviewIfAbsent(review("KR", W1, "OK"))).isTrue();
+            } catch (Exception e) {
+                throw new IllegalStateException(e);
+            }
+            throw new Rollback();
+        })).isInstanceOf(Rollback.class);
+        assertThat(jdbc.queryForObject(constraints, String.class)).as("되돌린 뒤").isEqualTo(before);
+    }
+
     private static PaperStore.Review withWeek(PaperStore.Review r, LocalDate week) {
         return new PaperStore.Review(week, r.windowWeeks(), r.input(), r.inputText(), r.response(), r.responseRaw(),
                 r.model(), r.usage(), r.status(), r.error(), r.proposalId(), r.frameworkVersion(), r.retryCount(),
-                r.createdAt());
+                r.createdAt(), r.market());
     }
 
     private void insertPoint(String seriesId, String date, Double value) {

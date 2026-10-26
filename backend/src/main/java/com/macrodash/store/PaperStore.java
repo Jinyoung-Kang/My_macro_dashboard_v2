@@ -185,9 +185,21 @@ public class PaperStore {
     /**
      * 메모 한 건({@code paper_notes}, F6·D14). {@code kind}는 MARKET(시황 — 만료가 있고 유효하면 패킷에 들어감)·INSIGHT(방법론 글 —
      * 만료 없음, 프레임 제안에만). 지우지 않고 {@code archived}로 내립니다. {@code createdAt}은 넣을 때 쓰지 않습니다.
+     * {@code market}(V14)은 그 메모가 실리는 시장({@link Book#MARKET_US}·{@link Book#MARKET_KR}) — 목록·패킷은 그 시장 메모만
+     * 읽습니다. 시장을 받지 않는 생성자는 미국입니다(V14 열 기본값).
      */
     public record Note(long id, String kind, LocalDate asOfDate, LocalDate expiresOn, String title, String body,
-                       boolean archived, Instant createdAt) {
+                       boolean archived, Instant createdAt, String market) {
+
+        public Note {
+            requireMarket(market, "메모");
+        }
+
+        /** 미국 메모 — V14 전부터 있던 모양. */
+        public Note(long id, String kind, LocalDate asOfDate, LocalDate expiresOn, String title, String body,
+                    boolean archived, Instant createdAt) {
+            this(id, kind, asOfDate, expiresOn, title, body, archived, createdAt, Book.MARKET_US);
+        }
     }
 
     /** 성과 화면의 프레임 경계(F5) — 그 판이 그 책의 결정에 처음 쓰인 거래일과 판의 상태(INTERIM·USER, 판이 없으면 null). */
@@ -318,16 +330,17 @@ public class PaperStore {
     }
 
     /**
-     * 주간 복기 한 건({@code paper_reviews}, V12 — 2단계 명세 §3 D1~D6). 주({@code weekEnding} = 그 ISO 주의 마지막 미국 거래일)마다
-     * 하나입니다. {@code input}은 코드가 만든 복기 입력(비울 수 없음 — 부르지 않은 SKIPPED도 무엇을 보고 건너뛰었는지 남김),
-     * {@code inputText}는 Claude에 보낸 그 입력 JSON 문자열 그대로(구분자·안내 문장 빼고 — 부르지 않았으면 null)입니다. 읽을 때
-     * {@code inputText}가 있으면 {@code input}도 그 문자열에서 읽어 보낸 키 순서를 지킵니다(JSONB는 키를 다시 정렬 — {@link Decision}의
-     * 패킷과 같은 방식). {@code proposalId}는 이 복기가 낸 프레임 제안(없으면 null), {@code retryCount}는 API 오류 뒤 다시 부른 횟수(0·1),
-     * {@code createdAt}은 넣을 때 null이면 DB가 지금으로 채웁니다.
+     * 주간 복기 한 건({@code paper_reviews}, V12 — 2단계 명세 §3 D1~D6). 시장({@code market}, V14)·주({@code weekEnding} = 그 시장
+     * 달력의 ISO 주 마지막 거래일)마다 하나입니다 — 기본키 (market, week_ending). {@code input}은 코드가 만든 복기 입력(비울 수 없음 —
+     * 부르지 않은 SKIPPED도 무엇을 보고 건너뛰었는지 남김), {@code inputText}는 Claude에 보낸 그 입력 JSON 문자열 그대로(구분자·안내
+     * 문장 빼고 — 부르지 않았으면 null)입니다. 읽을 때 {@code inputText}가 있으면 {@code input}도 그 문자열에서 읽어 보낸 키 순서를
+     * 지킵니다(JSONB는 키를 다시 정렬 — {@link Decision}의 패킷과 같은 방식). {@code proposalId}는 이 복기가 낸 프레임 제안(없으면 null),
+     * {@code retryCount}는 API 오류 뒤 다시 부른 횟수(0·1), {@code createdAt}은 넣을 때 null이면 DB가 지금으로 채웁니다. 시장을 받지
+     * 않는 생성자는 미국입니다(V14 열 기본값).
      */
     public record Review(LocalDate weekEnding, Integer windowWeeks, JsonNode input, String inputText, JsonNode response,
                          String responseRaw, String model, JsonNode usage, String status, String error, Long proposalId,
-                         Integer frameworkVersion, int retryCount, Instant createdAt) {
+                         Integer frameworkVersion, int retryCount, Instant createdAt, String market) {
 
         /** 형식을 지난 응답. 아래 다섯은 DB CHECK와 같은 문자열입니다. */
         public static final String OK = "OK";
@@ -353,6 +366,27 @@ public class PaperStore {
             if (retryCount < 0) {
                 throw new IllegalArgumentException("재시도 횟수는 0 이상입니다: " + retryCount);
             }
+            requireMarket(market, "복기");
+        }
+
+        /** 미국 복기 — V14 전부터 있던 모양. */
+        public Review(LocalDate weekEnding, Integer windowWeeks, JsonNode input, String inputText, JsonNode response,
+                      String responseRaw, String model, JsonNode usage, String status, String error, Long proposalId,
+                      Integer frameworkVersion, int retryCount, Instant createdAt) {
+            this(weekEnding, windowWeeks, input, inputText, response, responseRaw, model, usage, status, error,
+                    proposalId, frameworkVersion, retryCount, createdAt, Book.MARKET_US);
+        }
+    }
+
+    /**
+     * 시장 코드 확인 — DB CHECK(V13·V14의 {@code market IN ('US', 'KR')})보다 먼저 막아, 오타 난 시장이 가짜 저장소로 도는 서비스
+     * 시험에서도 같은 자리에서 멈추게 합니다.
+     *
+     * @throws IllegalArgumentException US·KR이 아님
+     */
+    private static void requireMarket(String market, String what) {
+        if (!Book.MARKET_US.equals(market) && !Book.MARKET_KR.equals(market)) {
+            throw new IllegalArgumentException(what + "의 시장은 " + Book.MARKET_US + "·" + Book.MARKET_KR + "입니다: " + market);
         }
     }
 
@@ -412,14 +446,15 @@ public class PaperStore {
             + "changelog, source_proposal_id, created_at";
     private static final String PROPOSAL_COLUMNS = "id, note_id, base_version, request_text, model, "
             + "response::text AS response, response_raw, status, error, result_version, created_at, decided_at";
-    private static final String NOTE_COLUMNS = "id, kind, as_of_date, expires_on, title, body, archived, created_at";
+    private static final String NOTE_COLUMNS = "id, kind, as_of_date, expires_on, title, body, archived, created_at, "
+            + "market";
     private static final String API_USAGE_COLUMNS = "day, calls, input_tokens, output_tokens, cache_read_tokens, "
             + "cache_write_tokens, est_cost_usd, est_cost_calls";
     private static final String REVIEW_COLUMNS = "week_ending, window_weeks, "
             // 보낸 문자열이 있으면 그것을(키 순서 그대로), 없으면 JSONB를 — 결정의 패킷과 같은 한 칸 읽기.
             + "COALESCE(input_text, input::text) AS input, (input_text IS NOT NULL) AS input_text_stored, "
             + "response::text AS response, response_raw, model, usage::text AS usage, status, error, proposal_id, "
-            + "framework_version, retry_count, created_at";
+            + "framework_version, retry_count, created_at, market";
     /** 판정 수 하나 — 형식을 지난(OK) 행의 {@code verdicts} 배열에서 그 값의 개수, 그 밖이면 NULL(목록 레코드 설명). */
     private static final String VERDICT_COUNT = "CASE WHEN r.status = 'OK' AND jsonb_typeof(r.response->'verdicts') = "
             + "'array' THEN (SELECT COUNT(*)::int FROM jsonb_array_elements(r.response->'verdicts') v "
@@ -442,19 +477,21 @@ public class PaperStore {
     }
 
     /**
-     * 테이블이 있는가. 수집기가 아직 V8~V13을 적용하지 않았으면 false입니다 — V8이 마지막에 만드는 테이블과 V9~V11이 더하는
+     * 테이블이 있는가. 수집기가 아직 V8~V14를 적용하지 않았으면 false입니다 — V8이 마지막에 만드는 테이블과 V9~V11이 더하는
      * 열({@code paper_track_record.data_source}·{@code paper_decisions.packet_text}·{@code paper_api_usage.est_cost_calls}),
-     * V12의 {@code paper_reviews} 테이블, V13이 더하는 {@code paper_books.market}·{@code currency} 열로 봅니다. V8만 있는 DB(백엔드만
-     * 새로 띄운 경우, QA-016)에서 참이면 트랙레코드 읽기·쓰기가 {@code group_code}·{@code data_source} 열과 새 기본키에서, 결정
-     * 읽기·쓰기가 {@code packet_text} 열에서, 사용량 읽기·쓰기가 추정 비용 열에서, 주간 복기 작업·화면이 없는 테이블에서, 책 읽기·쓰기가
-     * 시장·통화 열에서 SQL 오류(500)를 냅니다.
+     * V12의 {@code paper_reviews} 테이블, V13이 더하는 {@code paper_books.market}·{@code currency} 열, V14가 더하는
+     * {@code paper_reviews.market}·{@code paper_notes.market} 열로 봅니다. V8만 있는 DB(백엔드만 새로 띄운 경우, QA-016)에서 참이면
+     * 트랙레코드 읽기·쓰기가 {@code group_code}·{@code data_source} 열과 새 기본키에서, 결정 읽기·쓰기가 {@code packet_text} 열에서,
+     * 사용량 읽기·쓰기가 추정 비용 열에서, 주간 복기 작업·화면이 없는 테이블에서, 책 읽기·쓰기가 시장·통화 열에서, 복기·메모
+     * 읽기·쓰기가 시장 열과 새 기본키({@code ON CONFLICT (market, week_ending)})에서 SQL 오류(500)를 냅니다.
      */
     public boolean ready() {
         return schema.tableExists("paper_api_usage") && schema.columnExists("paper_track_record", "data_source")
                 && schema.columnExists("paper_decisions", "packet_text")
                 && schema.columnExists("paper_api_usage", "est_cost_calls")
                 && schema.tableExists("paper_reviews")
-                && schema.columnExists("paper_books", "market") && schema.columnExists("paper_books", "currency");
+                && schema.columnExists("paper_books", "market") && schema.columnExists("paper_books", "currency")
+                && schema.columnExists("paper_reviews", "market") && schema.columnExists("paper_notes", "market");
     }
 
     /**
@@ -1531,56 +1568,69 @@ public class PaperStore {
 
     // ------------------------------------------------------------------ 메모
     /**
-     * 메모를 넣습니다. {@code id}·{@code createdAt}은 무시하고, {@code archived}는 늘 false로 시작합니다.
+     * 메모를 넣습니다(시장은 {@link Note#market}). {@code id}·{@code createdAt}은 무시하고, {@code archived}는 늘 false로 시작합니다.
      *
      * @return 새 메모 번호
      */
     public long insertNote(Note n) {
-        List<Long> ids = jdbc.query("INSERT INTO paper_notes (kind, as_of_date, expires_on, title, body) "
-                        + "VALUES (?, ?, ?, ?, ?) RETURNING id",
+        List<Long> ids = jdbc.query("INSERT INTO paper_notes (kind, as_of_date, expires_on, title, body, market) "
+                        + "VALUES (?, ?, ?, ?, ?, ?) RETURNING id",
                 ps -> {
                     ps.setString(1, n.kind());
                     setDate(ps, 2, n.asOfDate());
                     setDate(ps, 3, n.expiresOn());
                     ps.setString(4, n.title());
                     ps.setString(5, n.body());
+                    ps.setString(6, n.market());
                 },
                 (rs, rowNum) -> rs.getLong("id"));
         return single(ids, "메모");
     }
 
+    /** 번호로 메모 한 건 — 시장을 가리지 않습니다(결정의 {@code note_ids}·제안의 {@code note_id}가 가리키는 행). */
     public Optional<Note> note(long id) {
         return jdbc.query("SELECT " + NOTE_COLUMNS + " FROM paper_notes WHERE id = ?", noteMapper(), id)
                 .stream().findFirst();
     }
 
-    /**
-     * 메모 목록, 기준일 최근 순(같으면 번호 최근 순). {@code includeExpired}가 false면 보관하지 않았고 {@code today}에 아직 만료되지
-     * 않은 것만(만료일 당일까지는 유효 — 만료가 없는 INSIGHT는 늘 포함), true면 보관·만료한 것까지 전부.
-     */
+    /** 미국 메모 목록 — {@link #notes(String, boolean, LocalDate)}의 미국 판(V14 전부터 있던 시그니처). */
     public List<Note> notes(boolean includeExpired, LocalDate today) {
-        if (includeExpired) {
-            return jdbc.query("SELECT " + NOTE_COLUMNS + " FROM paper_notes ORDER BY as_of_date DESC, id DESC",
-                    noteMapper());
-        }
-        return jdbc.query("SELECT " + NOTE_COLUMNS + " FROM paper_notes WHERE NOT archived "
-                        + "AND (expires_on IS NULL OR expires_on >= ?) ORDER BY as_of_date DESC, id DESC",
-                noteMapper(), Date.valueOf(today));
+        return notes(Book.MARKET_US, includeExpired, today);
     }
 
     /**
-     * 그 거래일에 유효한 시황 메모(F6, 계약 E) — MARKET이고 보관하지 않았고 기준일 ≤ {@code asOf}이고 만료가 없거나 만료일 ≥
-     * {@code asOf}. 최신부터(기준일 최근 순, 같으면 번호 최근 순). 글자 수 상한은 부르는 쪽이 셉니다.
+     * 그 시장의 메모 목록, 기준일 최근 순(같으면 번호 최근 순). {@code includeExpired}가 false면 보관하지 않았고 {@code today}에 아직
+     * 만료되지 않은 것만(만료일 당일까지는 유효 — 만료가 없는 INSIGHT는 늘 포함), true면 보관·만료한 것까지 전부.
      */
+    public List<Note> notes(String market, boolean includeExpired, LocalDate today) {
+        if (includeExpired) {
+            return jdbc.query("SELECT " + NOTE_COLUMNS + " FROM paper_notes WHERE market = ? "
+                    + "ORDER BY as_of_date DESC, id DESC", noteMapper(), market);
+        }
+        return jdbc.query("SELECT " + NOTE_COLUMNS + " FROM paper_notes WHERE market = ? AND NOT archived "
+                        + "AND (expires_on IS NULL OR expires_on >= ?) ORDER BY as_of_date DESC, id DESC",
+                noteMapper(), market, Date.valueOf(today));
+    }
+
+    /** 미국 패킷의 유효한 시황 메모 — {@link #activeMarketNotes(String, LocalDate)}의 미국 판(V14 전부터 있던 시그니처). */
     public List<Note> activeMarketNotes(LocalDate asOf) {
-        return jdbc.query("SELECT " + NOTE_COLUMNS + " FROM paper_notes WHERE kind = 'MARKET' AND NOT archived "
-                        + "AND as_of_date <= ? AND (expires_on IS NULL OR expires_on >= ?) ORDER BY as_of_date DESC, id DESC",
-                noteMapper(), Date.valueOf(asOf), Date.valueOf(asOf));
+        return activeMarketNotes(Book.MARKET_US, asOf);
+    }
+
+    /**
+     * 그 시장·그 거래일에 유효한 시황 메모(F6, 계약 E) — 그 시장의 MARKET이고 보관하지 않았고 기준일 ≤ {@code asOf}이고 만료가
+     * 없거나 만료일 ≥ {@code asOf}. 최신부터(기준일 최근 순, 같으면 번호 최근 순). 글자 수 상한은 부르는 쪽이 셉니다.
+     */
+    public List<Note> activeMarketNotes(String market, LocalDate asOf) {
+        return jdbc.query("SELECT " + NOTE_COLUMNS + " FROM paper_notes WHERE market = ? AND kind = 'MARKET' "
+                        + "AND NOT archived AND as_of_date <= ? AND (expires_on IS NULL OR expires_on >= ?) "
+                        + "ORDER BY as_of_date DESC, id DESC",
+                noteMapper(), market, Date.valueOf(asOf), Date.valueOf(asOf));
     }
 
     /**
      * 메모를 보관합니다(지우지 않음 — 결정 기록의 {@code note_ids}·제안의 {@code note_id}가 가리키는 행이 남게). 이미 보관한
-     * 메모도 그대로 참입니다(멱등).
+     * 메모도 그대로 참입니다(멱등). 번호로 찾으므로 시장을 가리지 않습니다.
      *
      * @return 그 번호의 메모가 있었으면 true
      */
@@ -1588,12 +1638,13 @@ public class PaperStore {
         return jdbc.update("UPDATE paper_notes SET archived = true WHERE id = ?", id) == 1;
     }
 
-    // ------------------------------------------------------------------ 주간 복기(V12)
+    // ------------------------------------------------------------------ 주간 복기(V12 — V14부터 시장마다)
     /**
-     * 복기를 그 주({@code weekEnding})에 아직 없을 때만 넣습니다({@code ON CONFLICT DO NOTHING}) — 정기 작업이 30분마다 돌고 수동
-     * 실행과 겹쳐도 한 주에 한 건입니다(명세 §3-3 "두 번 돌아도 1건"). {@code createdAt}이 null이면 지금입니다.
+     * 복기를 그 시장·그 주({@link Review#market}·{@code weekEnding})에 아직 없을 때만 넣습니다({@code ON CONFLICT (market,
+     * week_ending) DO NOTHING}) — 정기 작업이 30분마다 돌고 수동 실행과 겹쳐도 시장마다 한 주에 한 건입니다(명세 §3-3 "두 번 돌아도
+     * 1건"). 같은 주의 다른 시장 행과는 부딪치지 않습니다. {@code createdAt}이 null이면 지금입니다.
      *
-     * @return 이번에 넣었으면 true, 그 주의 행이 이미 있었으면 false(기존 행 그대로 — {@link #review}로 읽음)
+     * @return 이번에 넣었으면 true, 그 시장·그 주의 행이 이미 있었으면 false(기존 행 그대로 — {@link #review}로 읽음)
      * @throws IllegalArgumentException {@code inputText}가 JSON 문자열이 아님(읽을 때 입력을 그 문자열에서 만듦 — {@link Review})
      */
     public boolean insertReviewIfAbsent(Review r) {
@@ -1603,8 +1654,9 @@ public class PaperStore {
         String usage = r.usage() == null ? null : mapper.writeValueAsString(r.usage());
         return jdbc.update("INSERT INTO paper_reviews (week_ending, window_weeks, input, input_text, response, "
                         + "response_raw, model, usage, status, error, proposal_id, framework_version, retry_count, "
-                        + "created_at) VALUES (?, ?, CAST(? AS jsonb), ?, CAST(? AS jsonb), ?, ?, CAST(? AS jsonb), ?, ?, "
-                        + "?, ?, ?, COALESCE(CAST(? AS timestamptz), now())) ON CONFLICT (week_ending) DO NOTHING",
+                        + "created_at, market) VALUES (?, ?, CAST(? AS jsonb), ?, CAST(? AS jsonb), ?, ?, CAST(? AS jsonb), "
+                        + "?, ?, ?, ?, ?, COALESCE(CAST(? AS timestamptz), now()), ?) "
+                        + "ON CONFLICT (market, week_ending) DO NOTHING",
                 ps -> {
                     setDate(ps, 1, r.weekEnding());
                     setInteger(ps, 2, r.windowWeeks());
@@ -1620,36 +1672,47 @@ public class PaperStore {
                     setInteger(ps, 12, r.frameworkVersion());
                     ps.setInt(13, r.retryCount());
                     setInstant(ps, 14, r.createdAt());
+                    ps.setString(15, r.market());
                 }) == 1;
     }
 
-    /** 그 주의 복기. 없으면 empty. */
+    /** 그 주의 미국 복기 — {@link #review(String, LocalDate)}의 미국 판(V14 전부터 있던 시그니처). */
     public Optional<Review> review(LocalDate weekEnding) {
-        return jdbc.query("SELECT " + REVIEW_COLUMNS + " FROM paper_reviews WHERE week_ending = ?", reviewMapper(),
-                Date.valueOf(weekEnding)).stream().findFirst();
+        return review(Book.MARKET_US, weekEnding);
     }
 
-    /** 최근 복기 {@code limit}건 — 주 최근 순, 큰 JSON 없이 판정 수·연결된 제안 상태와 함께({@link ReviewSummary}). */
+    /** 그 시장·그 주의 복기. 없으면 empty. */
+    public Optional<Review> review(String market, LocalDate weekEnding) {
+        return jdbc.query("SELECT " + REVIEW_COLUMNS + " FROM paper_reviews WHERE market = ? AND week_ending = ?",
+                reviewMapper(), market, Date.valueOf(weekEnding)).stream().findFirst();
+    }
+
+    /** 최근 미국 복기 — {@link #reviews(String, int)}의 미국 판(V14 전부터 있던 시그니처). */
     public List<ReviewSummary> reviews(int limit) {
+        return reviews(Book.MARKET_US, limit);
+    }
+
+    /** 그 시장의 최근 복기 {@code limit}건 — 주 최근 순, 큰 JSON 없이 판정 수·연결된 제안 상태와 함께({@link ReviewSummary}). */
+    public List<ReviewSummary> reviews(String market, int limit) {
         return jdbc.query("SELECT " + REVIEW_SUMMARY_COLUMNS + " FROM paper_reviews r "
                         + "LEFT JOIN paper_framework_proposals p ON p.id = r.proposal_id "
-                        + "ORDER BY r.week_ending DESC LIMIT ?",
+                        + "WHERE r.market = ? ORDER BY r.week_ending DESC LIMIT ?",
                 (rs, rowNum) -> new ReviewSummary(date(rs, "week_ending"), rs.getObject("window_weeks", Integer.class),
                         rs.getString("status"), rs.getString("model"), rs.getString("error"),
                         rs.getObject("proposal_id", Long.class), rs.getString("proposal_status"),
                         rs.getObject("framework_version", Integer.class), rs.getInt("retry_count"),
                         rs.getObject("held", Integer.class), rs.getObject("refuted", Integer.class),
                         rs.getObject("undetermined", Integer.class), instant(rs, "created_at")),
-                ReviewSummary.HELD, ReviewSummary.REFUTED, ReviewSummary.UNDETERMINED, limit);
+                ReviewSummary.HELD, ReviewSummary.REFUTED, ReviewSummary.UNDETERMINED, market, limit);
     }
 
     /**
      * API 오류로 끝난 복기를 <b>같은 행</b>에서 한 번 더 부른 결과로 바꿉니다(결정의 C7 재시도와 같은 규칙 — 형식 오류·거절은 그 주의
-     * 끝). 그 행이 아직 {@code status = 'API_ERROR'}이고 {@code retry_count = 0}일 때만 바꾸고 {@code retry_count}를 1 올립니다 — 정기
-     * 작업과 수동 실행이 동시에 재시도해도 한 번만 반영됩니다. 주는 그대로이고 나머지 열은 {@code r}의 값으로 통째로 씁니다
-     * ({@code createdAt}이 null이면 지금 — 남은 내용을 만든 시각).
+     * 끝). 그 시장·그 주의 행이 아직 {@code status = 'API_ERROR'}이고 {@code retry_count = 0}일 때만 바꾸고 {@code retry_count}를 1
+     * 올립니다 — 정기 작업과 수동 실행이 동시에 재시도해도 한 번만 반영됩니다. 시장·주는 그대로이고 나머지 열은 {@code r}의 값으로
+     * 통째로 씁니다({@code createdAt}이 null이면 지금 — 남은 내용을 만든 시각).
      *
-     * @return 바꿨으면 true, 이미 재시도했거나 상태가 API 오류가 아니거나 행이 없으면 false(아무것도 바꾸지 않음)
+     * @return 바꿨으면 true, 이미 재시도했거나 상태가 API 오류가 아니거나 그 시장·그 주의 행이 없으면 false(아무것도 바꾸지 않음)
      * @throws IllegalArgumentException {@code inputText}가 JSON 문자열이 아님
      */
     public boolean updateReviewRetry(Review r) {
@@ -1661,7 +1724,7 @@ public class PaperStore {
                         + "response = CAST(? AS jsonb), response_raw = ?, model = ?, usage = CAST(? AS jsonb), status = ?, "
                         + "error = ?, proposal_id = ?, framework_version = ?, retry_count = retry_count + 1, "
                         + "created_at = COALESCE(CAST(? AS timestamptz), now()) "
-                        + "WHERE week_ending = ? AND status = 'API_ERROR' AND retry_count = 0",
+                        + "WHERE market = ? AND week_ending = ? AND status = 'API_ERROR' AND retry_count = 0",
                 ps -> {
                     setInteger(ps, 1, r.windowWeeks());
                     ps.setString(2, input);
@@ -1675,19 +1738,25 @@ public class PaperStore {
                     setLong(ps, 10, r.proposalId());
                     setInteger(ps, 11, r.frameworkVersion());
                     setInstant(ps, 12, r.createdAt());
-                    setDate(ps, 13, r.weekEnding());
+                    ps.setString(13, r.market());
+                    setDate(ps, 14, r.weekEnding());
                 }) == 1;
     }
 
-    /**
-     * 복기에 그 복기가 낸 프레임 제안을 잇습니다 — 아직 이은 제안이 없을 때만(한 복기에 제안은 하나, 먼저 이은 것을 덮지 않음).
-     * 제안을 넣은 뒤 번호를 받아 부르거나, 복기 행과 함께 {@link #atomically} 안에서 부릅니다.
-     *
-     * @return 이었으면 true, 그 주의 행이 없거나 이미 이은 제안이 있으면 false
-     */
+    /** 미국 복기에 제안을 잇습니다 — {@link #linkReviewProposal(String, LocalDate, long)}의 미국 판(V14 전부터 있던 시그니처). */
     public boolean linkReviewProposal(LocalDate weekEnding, long proposalId) {
-        return jdbc.update("UPDATE paper_reviews SET proposal_id = ? WHERE week_ending = ? AND proposal_id IS NULL",
-                proposalId, Date.valueOf(weekEnding)) == 1;
+        return linkReviewProposal(Book.MARKET_US, weekEnding, proposalId);
+    }
+
+    /**
+     * 그 시장·그 주의 복기에 그 복기가 낸 프레임 제안을 잇습니다 — 아직 이은 제안이 없을 때만(한 복기에 제안은 하나, 먼저 이은 것을
+     * 덮지 않음). 제안을 넣은 뒤 번호를 받아 부르거나, 복기 행과 함께 {@link #atomically} 안에서 부릅니다.
+     *
+     * @return 이었으면 true, 그 시장·그 주의 행이 없거나 이미 이은 제안이 있으면 false
+     */
+    public boolean linkReviewProposal(String market, LocalDate weekEnding, long proposalId) {
+        return jdbc.update("UPDATE paper_reviews SET proposal_id = ? WHERE market = ? AND week_ending = ? "
+                + "AND proposal_id IS NULL", proposalId, market, Date.valueOf(weekEnding)) == 1;
     }
 
     /** 입력 문자열이 JSON인가 — 아니면 읽을 때마다 깨지므로 넣을 때 막습니다(null은 "보내지 않음"이라 통과). */
@@ -1793,14 +1862,14 @@ public class PaperStore {
                     rs.getBoolean("input_text_stored") ? input : null, json(rs, "response"), rs.getString("response_raw"),
                     rs.getString("model"), json(rs, "usage"), rs.getString("status"), rs.getString("error"),
                     rs.getObject("proposal_id", Long.class), rs.getObject("framework_version", Integer.class),
-                    rs.getInt("retry_count"), instant(rs, "created_at"));
+                    rs.getInt("retry_count"), instant(rs, "created_at"), rs.getString("market"));
         };
     }
 
     private static RowMapper<Note> noteMapper() {
         return (rs, rowNum) -> new Note(rs.getLong("id"), rs.getString("kind"), date(rs, "as_of_date"),
                 date(rs, "expires_on"), rs.getString("title"), rs.getString("body"), rs.getBoolean("archived"),
-                instant(rs, "created_at"));
+                instant(rs, "created_at"), rs.getString("market"));
     }
 
     private RowMapper<GateRow> gateMapper() {

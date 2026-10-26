@@ -243,4 +243,35 @@ class NoteServiceTest {
         assertThat(thanksgiving.list(false).get("referenceDate")).isEqualTo("2026-11-25");
         assertThat(thanksgiving.list(kr, false).get("referenceDate")).isEqualTo("2026-11-26");
     }
+
+    @Test
+    @DisplayName("메모 시장(B1, V14 paper_notes.market): 작성한 시장 칸에 남고 목록·패킷은 그 시장 메모만 — 미국 옛 시그니처는 미국 메모만, 번호 보관은 시장을 가리지 않음")
+    void notesStayInTheirMarket() {
+        PaperMarket kr = TestKrMarket.INSTANCE;
+        JsonNode us = create("MARKET", "2026-10-26", null, "미국 시황", "10년물 4.6%");
+        JsonNode krNote = MAPPER.valueToTree(notes.create(kr, "MARKET", "2026-10-26", null, "한국 시황", "외국인 순매수")
+                .get("note"));
+        long usId = us.path("id").asLong();
+        long krId = krNote.path("id").asLong();
+        assertThat(store.note(usId).orElseThrow().market()).isEqualTo("US");
+        assertThat(store.note(krId).orElseThrow().market()).isEqualTo("KR");
+
+        assertThat(ids(notes.list(false))).as("미국 목록").containsExactly(usId);
+        assertThat(ids(notes.list(kr, false))).as("한국 목록").containsExactly(krId);
+        assertThat(notes.activeMarketNotes(MON).ids()).as("미국 패킷(옛 시그니처)").containsExactly(usId);
+        assertThat(notes.activeMarketNotes(MON, settings.defaultsJson()).ids()).containsExactly(usId);
+        assertThat(notes.activeMarketNotes(kr, MON, settings.defaultsJson()).ids()).as("한국 패킷").containsExactly(krId);
+
+        assertThat(notes.archive(krId).get("ok")).as("번호로 보관 — 시장을 받지 않음").isEqualTo(true);
+        assertThat(ids(notes.list(kr, false))).isEmpty();
+        assertThat(ids(notes.list(kr, true))).containsExactly(krId);
+        assertThat(ids(notes.list(false))).as("미국 메모는 그대로").containsExactly(usId);
+        assertThatThrownBy(() -> new Note(0, NoteService.MARKET, FRI, null, "t", "b", false, null, "JP"))
+                .as("시장은 US·KR만").isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @SuppressWarnings("unchecked")
+    private static List<Long> ids(Map<String, Object> listView) {
+        return ((List<Map<String, Object>>) listView.get("notes")).stream().map(n -> (Long) n.get("id")).toList();
+    }
 }

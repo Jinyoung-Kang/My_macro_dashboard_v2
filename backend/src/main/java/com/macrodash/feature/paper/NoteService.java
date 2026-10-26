@@ -39,9 +39,9 @@ import java.util.regex.Pattern;
  * 못하게. 기준일로 거르므로 출발일 초기 결정 패킷은 그날 이하 메모만 봅니다(PIT).
  *
  * <p><b>시장 문맥</b>(2단계 명세 §9 A6): 목록·작성은 시장 묶음({@link PaperMarket})을 받아 기준일(그 시장의 마감이 끝난 최근 세션)과
- * 기본 만료일(그 시장 달력의 n거래일 뒤)을 그 시장 달력으로 셉니다. 메모 표에는 아직 시장이 없어(B1에서 {@code paper_notes.market})
- * 목록·패킷 섹션은 모든 메모를 봅니다. 만료 거래일 수·패킷 글자 상한 설정은 두 시장이 같은 키입니다. 시장을 받지 않는 옛 시그니처는
- * 미국입니다.
+ * 기본 만료일(그 시장 달력의 n거래일 뒤)을 그 시장 달력으로 셉니다. 메모는 시장을 하나 갖고({@code paper_notes.market}, V14 — 작성한
+ * 시장), 목록·패킷 섹션은 그 시장 메모만 봅니다. 번호로 찾는 보관·프레임 제안의 INSIGHT 메모는 시장을 가리지 않습니다. 만료 거래일 수·패킷
+ * 글자 상한 설정은 두 시장이 같은 키입니다. 시장을 받지 않는 옛 시그니처는 미국입니다.
  */
 @Service
 public class NoteService {
@@ -114,7 +114,7 @@ public class NoteService {
         }
         LocalDate reference = referenceDate(market);
         List<Map<String, Object>> rows = new ArrayList<>();
-        for (Note n : store.notes(includeExpired, reference)) {
+        for (Note n : store.notes(market.code(), includeExpired, reference)) {
             rows.add(view(n, reference));
         }
         Map<String, Object> out = new LinkedHashMap<>();
@@ -186,7 +186,7 @@ public class NoteService {
         if (chars > max) {
             throw new InvalidRequestException(k + " 메모 본문은 " + max + "자 이내여야 합니다(지금 " + chars + "자).");
         }
-        long id = store.insertNote(new Note(0, k, asOf, expires, t, b, false, null));
+        long id = store.insertNote(new Note(0, k, asOf, expires, t, b, false, null, market.code()));
         log.info("메모 #{} ({}, 기준일 {}{}) {}자", id, k, asOf, expires == null ? "" : ", 만료 " + expires, chars);
         Map<String, Object> out = new LinkedHashMap<>();
         out.put("ok", true);
@@ -230,6 +230,11 @@ public class NoteService {
      * null이면 기본값.
      */
     public PacketNotes activeMarketNotes(LocalDate asOf, JsonNode settingsBody) {
+        return activeMarketNotes(UsPaperMarket.INSTANCE, asOf, settingsBody);
+    }
+
+    /** 그 시장 패킷에 넣을 시황 메모 — {@link #activeMarketNotes(LocalDate, JsonNode)}와 같되 그 시장 메모만(클래스 설명의 시장 문맥). */
+    PacketNotes activeMarketNotes(PaperMarket market, LocalDate asOf, JsonNode settingsBody) {
         int maxChars = maxCharsInPacket(settingsBody);
         if (!store.ready() || asOf == null) {
             return new PacketNotes(List.of(), PacketBuilder.NO_NOTES, List.of(), 0, maxChars, PACKET_NOTE);
@@ -240,7 +245,7 @@ public class NoteService {
         int used = 0;
         int omitted = 0;
         boolean full = false;
-        for (Note n : store.activeMarketNotes(asOf)) {
+        for (Note n : store.activeMarketNotes(market.code(), asOf)) {
             String title = stripDelimiters(FrameworkService.oneLine(n.title()));
             String body = stripDelimiters(FrameworkService.multiLine(n.body()));
             String block = block(n.id(), n.asOfDate(), n.expiresOn(), title, body);

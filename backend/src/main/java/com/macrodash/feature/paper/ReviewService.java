@@ -73,8 +73,8 @@ import java.util.regex.Pattern;
  * <p><b>시장 문맥</b>(2단계 명세 §9 A6): 입력 조립·호출은 시장 묶음({@link PaperMarket})을 받아 그 시장 Claude 책의 결정·주문·체결,
  * 그 시장 계좌 비교({@link #comparedBooks}), 그 시장 달력(가정 수익률·계좌 비교의 거래일, 체결 날짜의 시간대), 그 시장 종가 이력·기준일
  * 종가({@link PaperMarketData#sourcedClosesOn(PaperMarket, java.util.Collection, LocalDate)}), 시스템 프롬프트의 시장별 부분을 씁니다. 복기
- * 행({@code paper_reviews})은 아직 주 하나가 기본키라(B1에서 (market, week_ending)) 미국 밖 시장의 복기는 저장하지 않고 거절합니다
- * ({@link #requireStorable}). 시장을 받지 않는 옛 시그니처와 화면 응답은 미국입니다.
+ * 행({@code paper_reviews})은 시장마다 한 주 한 행이라(V14 기본키 (market, week_ending)) 같은 주의 다른 시장 행을 읽지도 덮지도
+ * 않습니다. 시장을 받지 않는 옛 시그니처와 화면 응답은 미국입니다.
  */
 @Service
 public class ReviewService {
@@ -199,19 +199,6 @@ public class ReviewService {
         return List.copyOf(out);
     }
 
-    /**
-     * 복기 행을 남길 수 있는 시장인가(클래스 설명) — {@code paper_reviews}의 기본키가 아직 주 하나라 미국 밖 시장의 복기는 같은 주 미국
-     * 행과 부딪칩니다(B1에서 (market, week_ending)으로 바뀌면 걷어 냅니다).
-     *
-     * @throws IllegalArgumentException 미국 밖 시장
-     */
-    static void requireStorable(PaperMarket market) {
-        if (market != US) {
-            throw new IllegalArgumentException("복기 행의 기본키가 아직 주 하나라(2단계 명세 §9 B1에서 시장 포함) " + market.code()
-                    + " 시장 복기는 남기지 않습니다");
-        }
-    }
-
     // ------------------------------------------------------------------ 실행
     /**
      * 그 주의 복기(클래스 설명). 그 주의 행이 이미 있으면 그대로 돌려주고(부르지 않음), 다시 부를 API 오류면 같은 행에서 한 번 더
@@ -226,14 +213,11 @@ public class ReviewService {
     }
 
     /**
-     * 그 시장의 그 주 복기 — {@link #review(LocalDate)}와 같되 입력·프롬프트가 그 시장 것(클래스 설명의 시장 문맥).
-     *
-     * @throws IllegalArgumentException 복기 행을 남길 수 없는 시장({@link #requireStorable})
+     * 그 시장의 그 주 복기 — {@link #review(LocalDate)}와 같되 입력·프롬프트·복기 행이 그 시장 것(클래스 설명의 시장 문맥).
      */
     Outcome review(PaperMarket market, LocalDate weekEnding) {
-        requireStorable(market);
         requireReady();
-        Optional<Review> existing = store.review(weekEnding);
+        Optional<Review> existing = store.review(market.code(), weekEnding);
         if (existing.isPresent() && !retryable(existing.get())) {
             return new Outcome(Kind.EXISTING, existing.get(), null);
         }
@@ -247,7 +231,7 @@ public class ReviewService {
         Built built = build(market, weekEnding, frame);
         if (!built.facts().hasDecisions()) {
             Review skipped = new Review(weekEnding, built.facts().window().weeks(), mapper.readTree(built.text()), null,
-                    null, null, null, null, Review.SKIPPED, NO_DECISIONS, null, frame.version(), 0, null);
+                    null, null, null, null, Review.SKIPPED, NO_DECISIONS, null, frame.version(), 0, null, market.code());
             Review saved = save(skipped, retrying, null);
             log.info("주간 복기 {}: {}", weekEnding, NO_DECISIONS);
             return new Outcome(Kind.SKIPPED, saved, NO_DECISIONS);
@@ -275,9 +259,10 @@ public class ReviewService {
         JsonNode usage = null;
         try {
             usage = usageNode(result, claude, built, pricing);
-            return new Outcome(Kind.CALLED, persist(weekEnding, frame, claude, built, result, usage, retrying), null);
+            return new Outcome(Kind.CALLED, persist(market, weekEnding, frame, claude, built, result, usage, retrying),
+                    null);
         } catch (RuntimeException e) {
-            recordAfterResponse(weekEnding, frame, claude, built, result, usage, retrying, e);
+            recordAfterResponse(market, weekEnding, frame, claude, built, result, usage, retrying, e);
             throw e;
         }
     }
@@ -556,8 +541,9 @@ public class ReviewService {
     }
 
     /** 응답을 분류하고, 제안이 있으면 사전 검사를 거친 제안 행과 함께 복기 행을 한 트랜잭션으로 남깁니다. */
-    private Review persist(LocalDate weekEnding, FrameworkService.Frame frame, ClaudeBookService.ClaudeSettings claude,
-                           Built built, AiService.StructuredResult r, JsonNode usage, Review retrying) {
+    private Review persist(PaperMarket market, LocalDate weekEnding, FrameworkService.Frame frame,
+                           ClaudeBookService.ClaudeSettings claude, Built built, AiService.StructuredResult r,
+                           JsonNode usage, Review retrying) {
         Classified c = classify(r, built, weekEnding);
         FrameworkProposal proposal = null;
         if (Review.OK.equals(c.status())) {
@@ -568,7 +554,8 @@ public class ReviewService {
             }
         }
         Review row = new Review(weekEnding, built.facts().window().weeks(), mapper.readTree(built.text()), built.text(),
-                c.response(), r.text(), claude.model(), usage, c.status(), c.error(), null, frame.version(), 0, null);
+                c.response(), r.text(), claude.model(), usage, c.status(), c.error(), null, frame.version(), 0, null,
+                market.code());
         Review saved = save(row, retrying, proposal);
         if (c.error() == null) {
             log.info("주간 복기 {}{}: OK — 판정 {}건{}", weekEnding, retrying == null ? "" : "(재시도)",
@@ -581,8 +568,9 @@ public class ReviewService {
     }
 
     /**
-     * 복기 행(과 제안 행)을 한 트랜잭션으로 — 새 주면 넣고({@code ON CONFLICT DO NOTHING}), 재시도면 같은 행을 바꿉니다. 그사이 같은
-     * 주의 행이 생겼으면(같은 백엔드 안에서는 작업 잠금이 막음) 제안까지 되돌리고 그 행을 돌려줍니다.
+     * 복기 행(과 제안 행)을 한 트랜잭션으로 — 그 시장의 새 주면 넣고({@code ON CONFLICT (market, week_ending) DO NOTHING}), 재시도면
+     * 같은 행을 바꿉니다. 그사이 같은 시장·같은 주의 행이 생겼으면(같은 백엔드 안에서는 작업 잠금이 막음) 제안까지 되돌리고 그 행을
+     * 돌려줍니다.
      */
     private Review save(Review row, Review retrying, FrameworkProposal proposal) {
         try {
@@ -592,19 +580,19 @@ public class ReviewService {
                     long id = store.insertProposal(proposal);
                     r = new Review(row.weekEnding(), row.windowWeeks(), row.input(), row.inputText(), row.response(),
                             row.responseRaw(), row.model(), row.usage(), row.status(), row.error(), id,
-                            row.frameworkVersion(), row.retryCount(), row.createdAt());
+                            row.frameworkVersion(), row.retryCount(), row.createdAt(), row.market());
                 }
                 boolean wrote = retrying == null ? store.insertReviewIfAbsent(r) : store.updateReviewRetry(r);
                 if (!wrote) {
                     throw new ConcurrentReview();
                 }
-                return store.review(row.weekEnding()).orElseThrow(() -> new IllegalStateException(
-                        "주간 복기를 남겼는데 다시 읽지 못했습니다: " + row.weekEnding()));
+                return store.review(row.market(), row.weekEnding()).orElseThrow(() -> new IllegalStateException(
+                        "주간 복기를 남겼는데 다시 읽지 못했습니다: " + row.market() + " " + row.weekEnding()));
             });
         } catch (ConcurrentReview e) {
             log.warn("주간 복기 {}: 그사이 같은 주의 행이 생겨 이번 결과를 남기지 않았습니다(먼저 남은 행을 씁니다)", row.weekEnding());
-            return store.review(row.weekEnding()).orElseThrow(() -> new IllegalStateException(
-                    "주간 복기 행이 없습니다: " + row.weekEnding()));
+            return store.review(row.market(), row.weekEnding()).orElseThrow(() -> new IllegalStateException(
+                    "주간 복기 행이 없습니다: " + row.market() + " " + row.weekEnding()));
         }
     }
 
@@ -612,14 +600,14 @@ public class ReviewService {
      * 받은 응답을 저장하다 예외가 난 복기 — 원문·사용량·오류를 따로 남기고 다시 부르지 않는 행({@code API_ERROR}·{@code retry_count = 1})
      * 으로 둡니다(ClaudeBookService의 같은 이름 메서드와 같은 이유). 이 기록까지 실패하면 로그만 남깁니다.
      */
-    private void recordAfterResponse(LocalDate weekEnding, FrameworkService.Frame frame,
+    private void recordAfterResponse(PaperMarket market, LocalDate weekEnding, FrameworkService.Frame frame,
                                      ClaudeBookService.ClaudeSettings claude, Built built, AiService.StructuredResult r,
                                      JsonNode usage, Review retrying, RuntimeException cause) {
         String message = clip("응답을 받은 뒤 검증·저장 중 오류(과금된 응답 — 다시 부르지 않음): " + cause, ERROR_CHARS);
         try {
             Review row = new Review(weekEnding, built.facts().window().weeks(), mapper.readTree(built.text()),
                     built.text(), null, r.text(), claude.model(), usage, Review.API_ERROR, message, null,
-                    frame.version(), 1, null);
+                    frame.version(), 1, null, market.code());
             store.atomically(() -> retrying == null ? store.insertReviewIfAbsent(row) : store.updateReviewRetry(row));
             log.warn("주간 복기 {}: 응답을 받은 뒤 오류 — 다시 부르지 않는 API_ERROR로 남김: {}", weekEnding, cause.toString());
         } catch (RuntimeException e) {
@@ -666,7 +654,7 @@ public class ReviewService {
         }
         LocalDate latest = ReviewFacts.latestCompletedWeekEnding(US.calendar(), clock.instant());
         List<Map<String, Object>> rows = new ArrayList<>();
-        for (ReviewSummary s : store.reviews(LIST_LIMIT)) {
+        for (ReviewSummary s : store.reviews(US.code(), LIST_LIMIT)) {
             Map<String, Object> row = new LinkedHashMap<>();
             row.put("weekEnding", s.weekEnding().toString());
             row.put("status", s.status());
@@ -703,7 +691,7 @@ public class ReviewService {
         if (day == null) {
             throw new InvalidRequestException("weekEnding(복기 기준일, 예: 2026-10-30)을 보내세요.");
         }
-        Review r = store.review(day).orElseThrow(() -> new InvalidRequestException("없는 복기입니다: " + day));
+        Review r = store.review(US.code(), day).orElseThrow(() -> new InvalidRequestException("없는 복기입니다: " + day));
         Map<String, Object> out = new LinkedHashMap<>();
         out.put("available", true);
         out.put("review", reviewView(r));

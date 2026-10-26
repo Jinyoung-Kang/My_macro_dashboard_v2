@@ -713,7 +713,8 @@ class FakePaperStore extends PaperStore {
     @Override
     public long insertNote(Note n) {
         long id = ++sequence;
-        notes.put(id, new Note(id, n.kind(), n.asOfDate(), n.expiresOn(), n.title(), n.body(), false, dbNow));
+        notes.put(id, new Note(id, n.kind(), n.asOfDate(), n.expiresOn(), n.title(), n.body(), false, dbNow,
+                n.market()));
         return id;
     }
 
@@ -725,18 +726,19 @@ class FakePaperStore extends PaperStore {
     private static final Comparator<Note> NEWEST_NOTE_FIRST = Comparator.comparing(Note::asOfDate)
             .thenComparing(Note::id).reversed();
 
+    /** 그 시장 메모만(실제 저장소의 WHERE market과 같음 — 시장을 받지 않는 옛 시그니처는 PaperStore가 미국으로 넘김). */
     @Override
-    public List<Note> notes(boolean includeExpired, LocalDate today) {
-        return notes.values().stream()
+    public List<Note> notes(String market, boolean includeExpired, LocalDate today) {
+        return notes.values().stream().filter(n -> n.market().equals(market))
                 .filter(n -> includeExpired || (!n.archived() && (n.expiresOn() == null || !n.expiresOn().isBefore(today))))
                 .sorted(NEWEST_NOTE_FIRST).toList();
     }
 
     @Override
-    public List<Note> activeMarketNotes(LocalDate asOf) {
+    public List<Note> activeMarketNotes(String market, LocalDate asOf) {
         return notes.values().stream()
-                .filter(n -> "MARKET".equals(n.kind()) && !n.archived() && !n.asOfDate().isAfter(asOf)
-                        && (n.expiresOn() == null || !n.expiresOn().isBefore(asOf)))
+                .filter(n -> n.market().equals(market) && "MARKET".equals(n.kind()) && !n.archived()
+                        && !n.asOfDate().isAfter(asOf) && (n.expiresOn() == null || !n.expiresOn().isBefore(asOf)))
                 .sorted(NEWEST_NOTE_FIRST).toList();
     }
 
@@ -746,34 +748,47 @@ class FakePaperStore extends PaperStore {
         if (n == null) {
             return false;
         }
-        notes.put(id, new Note(n.id(), n.kind(), n.asOfDate(), n.expiresOn(), n.title(), n.body(), true, n.createdAt()));
+        notes.put(id, new Note(n.id(), n.kind(), n.asOfDate(), n.expiresOn(), n.title(), n.body(), true, n.createdAt(),
+                n.market()));
         return true;
     }
 
-    // ------------------------------------------------------------------ 주간 복기(V12)
+    // ------------------------------------------------------------------ 주간 복기(V12 — V14부터 시장마다)
+    /** 미국 복기(주 → 행) — 시험들이 그대로 읽고 씁니다. */
     TreeMap<LocalDate, Review> reviews = new TreeMap<>();
+    /** 미국 밖 시장의 복기(시장 → 주 → 행) — 실제 저장소의 기본키 (market, week_ending)과 같은 칸 나누기. */
+    Map<String, TreeMap<LocalDate, Review>> otherReviews = new HashMap<>();
 
-    /** 그 주가 이미 있으면 false(ON CONFLICT DO NOTHING). 입력 문자열이 JSON이 아니면 실제 저장소처럼 거절합니다. */
+    /** 그 시장의 복기 표(미국은 {@link #reviews}). */
+    TreeMap<LocalDate, Review> reviewsOf(String market) {
+        return Book.MARKET_US.equals(market) ? reviews : otherReviews.computeIfAbsent(market, m -> new TreeMap<>());
+    }
+
+    /**
+     * 그 시장·그 주가 이미 있으면 false(ON CONFLICT (market, week_ending) DO NOTHING). 입력 문자열이 JSON이 아니면 실제 저장소처럼
+     * 거절합니다.
+     */
     @Override
     public boolean insertReviewIfAbsent(Review r) {
         requireJson(r.inputText());
         requireProposal(r.proposalId());
-        if (reviews.containsKey(r.weekEnding())) {
+        TreeMap<LocalDate, Review> table = reviewsOf(r.market());
+        if (table.containsKey(r.weekEnding())) {
             return false;
         }
-        reviews.put(r.weekEnding(), withCreatedAt(r, r.retryCount(), r.createdAt() == null ? dbNow : r.createdAt()));
+        table.put(r.weekEnding(), withCreatedAt(r, r.retryCount(), r.createdAt() == null ? dbNow : r.createdAt()));
         return true;
     }
 
     @Override
-    public Optional<Review> review(LocalDate weekEnding) {
-        return Optional.ofNullable(reviews.get(weekEnding));
+    public Optional<Review> review(String market, LocalDate weekEnding) {
+        return Optional.ofNullable(reviewsOf(market).get(weekEnding));
     }
 
-    /** 주 최근 순. 판정 수는 OK 행의 verdicts 배열만 세고 그 밖은 null(실제 저장소의 SQL과 같음). */
+    /** 그 시장, 주 최근 순. 판정 수는 OK 행의 verdicts 배열만 세고 그 밖은 null(실제 저장소의 SQL과 같음). */
     @Override
-    public List<ReviewSummary> reviews(int limit) {
-        return reviews.descendingMap().values().stream().limit(limit).map(r -> {
+    public List<ReviewSummary> reviews(String market, int limit) {
+        return reviewsOf(market).descendingMap().values().stream().limit(limit).map(r -> {
             FrameworkProposal p = r.proposalId() == null ? null : proposals.get(r.proposalId());
             JsonNode verdicts = r.response() == null ? null : r.response().get("verdicts");
             boolean counted = Review.OK.equals(r.status()) && verdicts != null && verdicts.isArray();
@@ -790,31 +805,34 @@ class FakePaperStore extends PaperStore {
     public boolean updateReviewRetry(Review r) {
         requireJson(r.inputText());
         requireProposal(r.proposalId());
-        Review old = reviews.get(r.weekEnding());
+        TreeMap<LocalDate, Review> table = reviewsOf(r.market());
+        Review old = table.get(r.weekEnding());
         if (old == null || !Review.API_ERROR.equals(old.status()) || old.retryCount() != 0) {
             return false;
         }
-        reviews.put(r.weekEnding(), withCreatedAt(r, old.retryCount() + 1, r.createdAt() == null ? dbNow : r.createdAt()));
+        table.put(r.weekEnding(), withCreatedAt(r, old.retryCount() + 1, r.createdAt() == null ? dbNow : r.createdAt()));
         return true;
     }
 
-    /** 이은 제안이 아직 없을 때만. 없는 제안 번호는 외래키처럼 거절합니다. */
+    /** 그 시장·그 주에 이은 제안이 아직 없을 때만. 없는 제안 번호는 외래키처럼 거절합니다. */
     @Override
-    public boolean linkReviewProposal(LocalDate weekEnding, long proposalId) {
-        Review r = reviews.get(weekEnding);
+    public boolean linkReviewProposal(String market, LocalDate weekEnding, long proposalId) {
+        TreeMap<LocalDate, Review> table = reviewsOf(market);
+        Review r = table.get(weekEnding);
         if (r == null || r.proposalId() != null) {
             return false;
         }
         requireProposal(proposalId);
-        reviews.put(weekEnding, new Review(r.weekEnding(), r.windowWeeks(), r.input(), r.inputText(), r.response(),
+        table.put(weekEnding, new Review(r.weekEnding(), r.windowWeeks(), r.input(), r.inputText(), r.response(),
                 r.responseRaw(), r.model(), r.usage(), r.status(), r.error(), proposalId, r.frameworkVersion(),
-                r.retryCount(), r.createdAt()));
+                r.retryCount(), r.createdAt(), r.market()));
         return true;
     }
 
     private static Review withCreatedAt(Review r, int retryCount, Instant createdAt) {
         return new Review(r.weekEnding(), r.windowWeeks(), r.input(), r.inputText(), r.response(), r.responseRaw(),
-                r.model(), r.usage(), r.status(), r.error(), r.proposalId(), r.frameworkVersion(), retryCount, createdAt);
+                r.model(), r.usage(), r.status(), r.error(), r.proposalId(), r.frameworkVersion(), retryCount, createdAt,
+                r.market());
     }
 
     /** 없는 제안 번호는 외래키(paper_reviews_proposal_id_fkey)처럼 거절합니다. */
@@ -872,14 +890,15 @@ class FakePaperStore extends PaperStore {
                             TreeMap<LocalDate, Selection> selections, TreeMap<Long, Decision> decisions,
                             TreeMap<LocalDate, GateRow> gates, TreeMap<Integer, FrameworkVersion> frameworks,
                             TreeMap<Long, FrameworkProposal> proposals, TreeMap<Long, Note> notes,
-                            TreeMap<LocalDate, ApiUsage> apiUsage, TreeMap<LocalDate, Review> reviews) {
+                            TreeMap<LocalDate, ApiUsage> apiUsage, TreeMap<LocalDate, Review> reviews,
+                            Map<String, TreeMap<LocalDate, Review>> otherReviews) {
         Snapshot(FakePaperStore s) {
             this(new TreeMap<>(s.books), new TreeMap<>(s.states), deep(s.positions), deep(s.lockouts),
                     new TreeMap<>(s.orders), new TreeMap<>(s.fills), deep(s.nav), new ArrayList<>(s.jobRuns),
                     new TreeMap<>(s.startPrices), s.settings, deepDates(s.trackRecords), new TreeMap<>(s.selections),
                     new TreeMap<>(s.decisions), new TreeMap<>(s.gates), new TreeMap<>(s.frameworks),
                     new TreeMap<>(s.proposals), new TreeMap<>(s.notes), new TreeMap<>(s.apiUsage),
-                    new TreeMap<>(s.reviews));
+                    new TreeMap<>(s.reviews), deep(s.otherReviews));
         }
 
         void restore(FakePaperStore s) {
@@ -902,6 +921,7 @@ class FakePaperStore extends PaperStore {
             s.notes = notes;
             s.apiUsage = apiUsage;
             s.reviews = reviews;
+            s.otherReviews = otherReviews;
         }
 
         private static TreeMap<LocalDate, TreeMap<String, TrackRecordRow>> deepDates(

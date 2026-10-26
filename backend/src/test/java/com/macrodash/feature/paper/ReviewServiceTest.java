@@ -712,7 +712,7 @@ class ReviewServiceTest {
     }
 
     @Test
-    @DisplayName("시장 격리(A6): 다른 시장의 복기 입력은 그 시장 Claude 책의 결정·주문·체결, 그 시장 계좌 비교, 그 시장 종가 이력·기준일 종가, 그 시장 시간대의 체결 날짜만 씀 — 미국 판 입력은 그대로 미국 책, 복기 행은 B1 전까지 미국만")
+    @DisplayName("시장 격리(A6·B1): 다른 시장의 복기 입력은 그 시장 Claude 책의 결정·주문·체결, 그 시장 계좌 비교, 그 시장 종가 이력·기준일 종가, 그 시장 시간대의 체결 날짜만 씀 — 미국 판 입력은 그대로 미국 책, 복기 행은 시장마다 한 주 한 행(V14 기본키 (market, week_ending))이라 같은 주의 두 시장 복기가 서로 막지도 덮지도 않고 화면 목록은 미국 행만")
     void otherMarketInputsUseOnlyItsBook() throws Exception {
         long usDecision = scene();
         PaperMarket kr = TestKrMarket.INSTANCE;
@@ -758,9 +758,31 @@ class ReviewServiceTest {
                 .containsExactly(PaperBooks.RULES, PaperBooks.CLAUDE);
         assertThat(us.closes()).containsOnlyKeys("AAA", "BBB");
 
-        assertThatThrownBy(() -> service.review(kr, WE)).isInstanceOf(IllegalArgumentException.class)
-                .hasMessageContaining("B1");
-        assertThat(hits.get()).isZero();
-        assertThat(store.reviews).isEmpty();
+        answerJson(reviewJson(krDecision, "null"));
+        ReviewService.Outcome krReview = service.review(kr, WE);
+        assertThat(krReview.kind()).isEqualTo(ReviewService.Kind.CALLED);
+        assertThat(krReview.review().market()).isEqualTo("KR");
+        assertThat(krReview.review().status()).isEqualTo(Review.OK);
+        assertThat(krReview.review().input().path("decisions").get(0).path("id").asLong()).isEqualTo(krDecision);
+        assertThat(store.otherReviews.get("KR")).containsOnlyKeys(WE);
+        assertThat(store.reviews).as("한국 복기가 같은 주의 미국 칸을 쓰지 않음").isEmpty();
+
+        answerJson(reviewJson(usDecision, "null"));
+        ReviewService.Outcome usReview = service.review(WE);
+        assertThat(usReview.kind()).as("같은 주의 한국 행이 있어도 미국은 새로 복기").isEqualTo(ReviewService.Kind.CALLED);
+        assertThat(usReview.review().market()).isEqualTo("US");
+        assertThat(usReview.review().input().path("decisions").get(0).path("id").asLong()).isEqualTo(usDecision);
+        assertThat(store.reviews).containsOnlyKeys(WE);
+        assertThat(store.otherReviews.get("KR").get(WE).input().path("decisions").get(0).path("id").asLong())
+                .as("미국 행이 한국 행을 덮지 않음").isEqualTo(krDecision);
+
+        assertThat(service.review(kr, WE).kind()).as("그 시장 행이 있으면 다시 부르지 않음")
+                .isEqualTo(ReviewService.Kind.EXISTING);
+        assertThat(service.review(WE).kind()).isEqualTo(ReviewService.Kind.EXISTING);
+        assertThat(hits.get()).as("한국 1 + 미국 1").isEqualTo(2);
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> listed = (List<Map<String, Object>>) service.listView().get("reviews");
+        assertThat(listed).as("화면 목록은 미국 행만(시장을 받지 않는 화면 응답 = 미국)").singleElement()
+                .satisfies(row -> assertThat(row.get("weekEnding")).isEqualTo(WE.toString()));
     }
 }

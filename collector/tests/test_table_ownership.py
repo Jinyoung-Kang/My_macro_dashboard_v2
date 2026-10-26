@@ -21,6 +21,8 @@ BACKEND_TABLES = (
     "paper_settings_history", "paper_job_runs", "paper_api_usage", "paper_start_prices",
     # 주간 복기(V12, 2단계 D) — 백엔드 정기 작업만 씁니다.
     "paper_reviews",
+    # 한국 책 확정 조정(V14, v2 2단계 K29) — 금융위 확정가는 수집기가 받고, 조정 행은 백엔드 장부만 씁니다.
+    "paper_fill_confirmations",
 )
 WRITE = re.compile(
     r"(?i)(INSERT\s+INTO|UPDATE|DELETE\s+FROM|TRUNCATE)\s+(" + "|".join(BACKEND_TABLES) + r")\b"

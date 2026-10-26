@@ -288,11 +288,14 @@ class PaperReviewJobTest {
 
     // ------------------------------------------------------------------ 시장 격리(2단계 명세 §9 A6)
     @Test
-    @DisplayName("시장 격리(A6): 다른 시장의 복기 작업은 그 시장 달력의 복기 주·여는 시각(시장별 요일·시각) 전이면 TOO_EARLY, 그 뒤엔 복기 행 기본키가 주 하나인 동안(B1 전) 그 주의 행을 읽기 전에 오류로 남김(기록 이름 kr.review, 그 시장 오류 횟수) — 미국 복기는 그대로")
-    void otherMarketReviewWaitsForMarketKey() {
+    @DisplayName("시장 격리(A6·B1): 다른 시장의 복기 작업은 그 시장 달력의 복기 주·여는 시각(시장별 요일·시각) 전이면 TOO_EARLY, 그 뒤엔 같은 주 미국 행과 상관없이 그 시장 행·Claude 책·순자산 줄로 판정해 그 시장 문맥으로 복기(기록 이름 kr.review) — 그 시장 행이 생기면 ALREADY_REVIEWED, 미국 복기는 그대로")
+    void otherMarketReviewUsesItsOwnRow() {
         PaperMarket kr = TestKrMarket.INSTANCE;
+        String krBook = TestKrMarket.CLAUDE_BOOK;
         finalNav(WE, true);
         store.reviews.put(WE, row(WE, Review.OK, 0));   // 같은 주의 미국 행
+        store.books.put(krBook, TestKrMarket.book(krBook, 100_000_000, PaperFixtures.FRI));
+        store.upsertNav(new NavRow(krBook, WE, 101_000_000, 0, 101_000_000, 0, true));
         // OPENS = 토 09:00 KST — 미국은 열렸고, 시험용 한국 시장(토 22:30 KST)은 아직
         PaperReviewJob early = new PaperReviewJob(store, reader, marketData, reviews, PaperFixtures.config(), MAPPER,
                 Clock.fixed(OPENS, ZoneOffset.UTC), List.of(US, kr));
@@ -302,20 +305,27 @@ class PaperReviewJobTest {
         assertThat(tooEarly.message()).contains("22:30");
         assertThat(kr.reviewOpening(WE)).isEqualTo(Instant.parse("2026-10-31T13:30:00Z"));
 
+        Review krRow = new Review(WE, 4, MAPPER.createObjectNode(), null, null, null, null, null, Review.OK, null, null,
+                0, 0, null, Book.MARKET_KR);
+        when(reviews.review(kr, WE)).thenReturn(new ReviewService.Outcome(ReviewService.Kind.CALLED, krRow, null));
         Instant krOpen = Instant.parse("2026-10-31T14:00:00Z");   // 토 23:00 KST
         PaperReviewJob job = new PaperReviewJob(store, reader, marketData, reviews, PaperFixtures.config(), MAPPER,
                 Clock.fixed(krOpen, ZoneOffset.UTC), List.of(US, kr));
         job.scheduledRun();
 
-        assertThat(store.jobRuns).extracting(PaperStore.JobRun::job).as("미국은 이미 복기함(기록 없음), 한국은 오류")
+        assertThat(store.jobRuns).extracting(PaperStore.JobRun::job).as("미국은 이미 복기함(기록 없음), 한국은 복기")
                 .containsExactly("kr.review");
-        assertThat(store.jobRuns.get(0).outcome()).isEqualTo(PaperReviewJob.ERROR);
+        assertThat(store.jobRuns.get(0).outcome()).isEqualTo(PaperReviewJob.REVIEWED);
         assertThat(store.jobRuns.get(0).detail().path("weekEnding").asString()).isEqualTo("2026-10-30");
-        assertThat(store.jobRuns.get(0).detail().path("error").asString()).contains("B1");
-        assertThat(job.run(kr).outcome()).isEqualTo(PaperReviewJob.ERROR);
-        assertThat(store.jobRuns.get(1).detail().path("attempt").asInt()).as("그 시장·그 주의 오류 횟수").isEqualTo(2);
-        assertThat(job.run().outcome()).as("미국은 그 시장 오류와 상관없음").isEqualTo(PaperReviewJob.ALREADY_REVIEWED);
-        verify(reviews, never()).review(any(), any());
+        verify(reviews, times(1)).review(kr, WE);
+        verify(reviews, never()).review(US, WE);
+
+        assertThat(store.insertReviewIfAbsent(krRow)).as("같은 주 미국 행과 부딪치지 않음").isTrue();
+        assertThat(job.run(kr).outcome()).as("그 시장 행이 있으면").isEqualTo(PaperReviewJob.ALREADY_REVIEWED);
+        assertThat(job.run().outcome()).isEqualTo(PaperReviewJob.ALREADY_REVIEWED);
+        verify(reviews, times(1)).review(kr, WE);
         assertThat(store.reviews).containsOnlyKeys(WE);
+        assertThat(store.reviews.get(WE).market()).isEqualTo(Book.MARKET_US);
+        assertThat(store.otherReviews.get(Book.MARKET_KR)).containsOnlyKeys(WE);
     }
 }

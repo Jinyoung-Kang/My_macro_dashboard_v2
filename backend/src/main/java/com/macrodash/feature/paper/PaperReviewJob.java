@@ -58,8 +58,8 @@ import java.util.concurrent.locks.ReentrantLock;
  * <p><b>시장마다 따로</b>입니다(2단계 명세 §9 A6). 정기 실행은 {@link PaperMarkets#ALL}을 차례로 돌고(지금 미국 하나), 시장마다 복기 주
  * (그 시장 달력)·여는 순간({@link PaperMarket#reviewOpening} — 시장별 요일·시각)·그 시장 Claude 책·확정 종가(그 시장 관측치와 확정
  * 판정)·오류 횟수(시장 × 주)·작업 기록 이름(시장 접두어 + {@value #JOB})을 그 시장 것으로 쓰고 그 시장 문맥으로 복기합니다
- * ({@link ReviewService}). 복기 행의 기본키가 아직 주 하나라 미국 밖 시장은 그 주의 행을 읽기 전에 오류로 끝납니다
- * ({@link ReviewService#requireStorable} — B1에서 걷어 냄). 시장을 받지 않는 옛 시그니처(한 번 실행·수동 실행)는 미국 판입니다.
+ * ({@link ReviewService}). 복기 행은 시장마다 한 주 한 행이라(V14 기본키 (market, week_ending)) '이미 복기함'·재시도 판정도 그 시장
+ * 행으로 봅니다. 시장을 받지 않는 옛 시그니처(한 번 실행·수동 실행)는 미국 판입니다.
  */
 @Service
 public class PaperReviewJob {
@@ -247,8 +247,7 @@ public class PaperReviewJob {
         if (scheduled && now.isBefore(opens)) {
             return new Result(TOO_EARLY, week, null, "복기 시각 " + Kst.stamp(opens) + " 전");
         }
-        ReviewService.requireStorable(market);   // 복기 행의 기본키가 주 하나인 동안(클래스 설명)
-        Optional<Review> existing = store.review(week);
+        Optional<Review> existing = store.review(market.code(), week);
         if (existing.isPresent() && !ReviewService.retryable(existing.get())) {
             return new Result(ALREADY_REVIEWED, week, existing.get(), week + " 복기를 이미 남겼습니다("
                     + existing.get().status() + ")");

@@ -260,6 +260,15 @@
   `PaperStoreDbTest`가 그 커밋에서 깨진다([추정, PostgreSQL 표준 동작] 'no unique or exclusion constraint matching the ON CONFLICT specification'). 삽입은 `ON CONFLICT (market, week_ending)`, `week_ending`으로 읽기·재시도 UPDATE·`proposal_id` UPDATE의 WHERE에 `market`(미국 경로 'US')을 더한다.
 - 나머지 표는 그대로: `paper_selection_log`·`gate_log`·`track_record`는 미국·13F 전용(한국 선정·순위는 `kr_rules` 결정 행 JSONB에 동결), `paper_start_prices`는 한국에서 쓰지 않음(K28), `paper_api_usage` 변경 없음, 금액 NUMERIC(18,4)는 1억 원을 담는다.
 - 여러 번 실행해도 안전하게(기본키 교체는 V9처럼 지우고 같은 모양으로 다시). 수집기 쪽은 observations·snapshots·timeseries에 데이터셋만 더하므로 스키마 변경 없음.
+- **B1 구현에서 정한 것**(2026-10-27, `db/migrations/V14__paper_kr_schema.sql` — 위 목록이 정하지 않은 자리):
+  - `price_source`에는 CHECK를 두지 않는다(V8 그대로) — 미국 값이 관측치 데이터셋 이름이라 목록을 고정하면 운영 행이 막힐 수 있다. 한국 값은 C2의 코드 상수.
+  - 비용 칸(`paper_fills`·`paper_fill_confirmations`의 `fee`·`tax`·`slippage_cost`)은 CHECK ≥ 0. 확정 조정 표의 비용 칸·`confirmed_price`·`cash_delta`는 기본값 없는 NOT NULL(쓰는 쪽이 늘 다시 계산한 값을 넣음), `cash_delta`만 음수 가능, `reconciled_at` 기본 now().
+  - 확정 조정 표의 `fill_id`·`book_code` 외래키는 ON DELETE CASCADE — 초기화(`resetBook`이 체결을 지움)·책 삭제 때 함께 지워진다. 색인 (book_code, reconciled_at DESC)(계좌별 확정 조정 합계·목록 — 뒤에 V15를 만들지 않게 지금 둠).
+  - `paper_notes.market`도 `paper_reviews.market`처럼 NOT NULL·CHECK (US·KR).
+  - 백엔드: `PaperStore.Review`·`Note`에 `market`(마지막 칸, 레코드가 US·KR만 받음), 시장을 받지 않는 옛 생성자·옛 메서드(`review(week)`·`reviews(n)`·`linkReviewProposal(week, id)`·`notes(…)`·`activeMarketNotes(asOf)`)는 미국(묶음 A와 같은 방식).
+    번호로 찾는 `note(id)`·`archiveNote(id)`는 시장을 가리지 않는다. `ready()`는 V14를 `paper_reviews.market`·`paper_notes.market`으로 본다(수집기가 V14를 한 트랜잭션으로 적용).
+    `ReviewService.requireStorable`(묶음 A의 '미국만 복기' 거절)은 걷어 냈다 — 복기·'이미 복기함'·재시도는 그 시장 행으로 본다. 화면 응답(`/api/paper/reviews`·`/notes`)은 F1까지 미국이고 메모 응답에 시장 칸은 아직 없다.
+  - 체결 비용 칸·확정 조정 표·`corp_action_hold`를 읽고 쓰는 저장소 코드(`Fill` 레코드 확장 등)는 쓰는 묶음(C2·C3·B7)에 둔다. `upsertPosition`은 `corp_action_hold`를 쓰지 않아 보유 갱신이 그 사유를 지우지 않는다 — 풀 때는 B7이 따로 지운다.
 
 ### 4-15. 데이터셋·태스크 (K24 — `catalog.py`·`Datasets.java` 양쪽, `DatasetsParityTest`)
 

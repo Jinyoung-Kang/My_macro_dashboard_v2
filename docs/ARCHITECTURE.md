@@ -51,7 +51,7 @@
 | `regime_log` | 국면 판정 라이브 기록 — 하루 한 건, 추가만. **백엔드가 씁니다**(ADR 0008) |
 | `users`·`user_sessions`·`audit_log`·`email_tokens`·`usage_counters` | 계정·DB 세션·감사 기록·메일 링크 토큰·하루 사용량 — **백엔드가 씁니다**(ADR 0010) |
 | `alert_rules`·`alert_events`·`alert_deliveries` | 알림 규칙·사건·알림함 — **백엔드가 씁니다**(ADR 0011). 수집기는 종목 규칙의 코드만 읽습니다 |
-| `paper_*` 20개 (V8, V9~V11은 열 추가, V12 `paper_reviews`) | 🧪 모의 매매(운영자 전용) — 계좌·보유·재진입 금지·주문·체결·순자산, 결정 기록, 게이트 지표, 13F 트랙레코드·기관 선정, 프레임 판·제안, 메모, 설정, 작업 기록, 출발일 종가, Claude 사용량·추정 비용, 주간 복기. **백엔드가 씁니다**(ADR 0008, JDBC는 `store.PaperStore`에만). 수집기는 쓰지 않습니다(`collector/tests/test_table_ownership.py`가 검사) |
+| `paper_*` 21개 (V8, V9~V11·V13은 열 추가, V12 `paper_reviews`, V14 `paper_fill_confirmations`와 한국 책 열) | 🧪 모의 매매(운영자 전용) — 계좌·보유·재진입 금지·주문·체결·순자산, 결정 기록, 게이트 지표, 13F 트랙레코드·기관 선정, 프레임 판·제안, 메모, 설정, 작업 기록, 출발일 종가, Claude 사용량·추정 비용, 주간 복기, 체결 확정 조정(한국). **백엔드가 씁니다**(ADR 0008, JDBC는 `store.PaperStore`에만). 수집기는 쓰지 않습니다(`collector/tests/test_table_ownership.py`가 검사) |
 
 **데이터셋 이름은 두 언어에 같은 문자열로 존재합니다** — `collector/app/catalog.py`와
 `backend/.../store/Datasets.java`. `DatasetsParityTest`가 실제로 `catalog.py`를
@@ -205,7 +205,7 @@ config/          설정 값(AppProperties) · 정기 작업 켜기 — 여러 �
 | `PaperRiskJob` | 5분 | 새 관측치(`paper.quotes`, 1시간마다 수집)가 있을 때만 장부에 적용 — 대기 주문 체결·스탑·분할·평가. 시장마다 차례로(`PaperMarkets.ALL`, 지금 미국 하나) 그 시장 관측치를 그 시장 책에만 적용하고 기록 이름은 시장 접두어 + `risk` |
 | `PaperDecisionJob` | 10분 폴링 | 미국 세션 다음 날 아침(KST)에 그 거래일 결정을 한 번 — 관측치 처리 → 게이트 지표 → (재선정일이면) 기관 선정 → 규칙 계좌 → Claude 계좌. 두 계좌의 오류는 따로 잡음. 시장마다 차례로(`PaperMarkets.ALL`, 지금 미국 하나) 그 시장 달력·결정 시각·관측치·책으로 돌고, 게이트·13F 선정·규칙 계좌는 미국 전용 단계, 기록 이름은 시장 접두어 + `decision` |
 | `PaperAdminService` 출발일 종가 | 30분 | 출발일 확정 종가를 `paper_start_prices`에 한 번 얼림 — 배당락 뒤 수정주가로 낮아진 값이 사후 체결에 쓰이지 않게 |
-| `PaperReviewJob` | 30분 | 토요일 09:00 KST 뒤 그 주 확정 종가를 장부가 반영하면 그 주 복기를 한 번(`paper_reviews`, Claude 1회 — 하루 상한을 결정·제안과 같이 셈, 제안은 PENDING만). 수동 실행과 한 잠금(정기는 기다리지 않음). 시장마다 차례로 그 시장 달력의 주·여는 시각·Claude 책으로 돌고 기록 이름은 시장 접두어 + `review`(복기 행 기본키에 시장이 들기 전까지는 미국만 복기) |
+| `PaperReviewJob` | 30분 | 토요일 09:00 KST 뒤 그 주 확정 종가를 장부가 반영하면 그 주 복기를 한 번(`paper_reviews`, Claude 1회 — 하루 상한을 결정·제안과 같이 셈, 제안은 PENDING만). 수동 실행과 한 잠금(정기는 기다리지 않음). 시장마다 차례로 그 시장 달력의 주·여는 시각·Claude 책으로 돌고 기록 이름은 시장 접두어 + `review`(복기 행은 시장마다 한 주 한 행 — V14 기본키 (market, week_ending)) |
 
 - **스레드 4개**(`application.yml`의 `spring.task.scheduling.pool.size`, Spring Boot 기본 1개). 결정 작업이 Claude를 부르는 몇 분
   (한도 `claude-timeout-seconds` 300초) 동안 리스크 점검·알림·국면 기록이 그 뒤에 줄을 섰기 때문입니다. 주간 복기도 Claude를 부르는
