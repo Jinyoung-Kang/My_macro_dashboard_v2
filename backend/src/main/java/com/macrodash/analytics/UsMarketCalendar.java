@@ -45,6 +45,13 @@ public final class UsMarketCalendar {
     /** 미국 동부 시간대. 서머타임(EDT↔EST) 전환은 이 시간대 규칙이 처리합니다. */
     public static final ZoneId NEW_YORK = ZoneId.of("America/New_York");
 
+    /**
+     * 이 달력을 {@link TradingCalendar}로 — 시장 중립 코드(장부·통계·복기 등)가 받는 미국 달력(2단계 명세 §9 A1). 모든 메서드가 아래
+     * 같은 이름의 정적 함수를 그대로 부르므로(인터페이스의 기본 메서드도 쓰지 않음) 미국 숫자는 정적 함수와 같습니다. 13F 공시 기한·
+     * 재선정일·SEC 영업일은 미국 전용이라 인터페이스에 없고 정적 함수로만 씁니다.
+     */
+    public static final TradingCalendar CALENDAR = new Adapter();
+
     /** 정규장 시작(동부 시각). */
     private static final LocalTime OPEN = LocalTime.of(9, 30);
     /** 정규장 마감(동부 시각). */
@@ -324,5 +331,77 @@ public final class UsMarketCalendar {
 
     private static LocalDate previousQuarterEnd(LocalDate quarterEnd) {
         return quarterEnd.minusMonths(3).with(TemporalAdjusters.lastDayOfMonth());
+    }
+
+    /**
+     * {@link #CALENDAR}의 구현. 안에서 이름만 부르면 같은 이름의 인터페이스 메서드(자기 자신)로 풀려 끝없이 돌므로 모두
+     * {@code UsMarketCalendar.}를 붙여 정적 함수를 부릅니다.
+     */
+    private static final class Adapter implements TradingCalendar {
+
+        @Override
+        public ZoneId zone() {
+            return NEW_YORK;
+        }
+
+        @Override
+        public boolean isHoliday(LocalDate d) {
+            return UsMarketCalendar.isHoliday(d);
+        }
+
+        @Override
+        public boolean isTradingDay(LocalDate d) {
+            return UsMarketCalendar.isTradingDay(d);
+        }
+
+        @Override
+        public boolean isEarlyClose(LocalDate d) {
+            return UsMarketCalendar.isEarlyClose(d);
+        }
+
+        @Override
+        public Instant openInstant(LocalDate tradingDate) {
+            return UsMarketCalendar.openInstant(tradingDate);
+        }
+
+        @Override
+        public Instant closeInstant(LocalDate tradingDate) {
+            return UsMarketCalendar.closeInstant(tradingDate);
+        }
+
+        @Override
+        public LocalDate nextTradingDay(LocalDate d) {
+            return UsMarketCalendar.nextTradingDay(d);
+        }
+
+        @Override
+        public LocalDate previousTradingDay(LocalDate d) {
+            return UsMarketCalendar.previousTradingDay(d);
+        }
+
+        @Override
+        public LocalDate addTradingDays(LocalDate d, int n) {
+            return UsMarketCalendar.addTradingDays(d, n);
+        }
+
+        @Override
+        public int tradingDaysBetween(LocalDate from, LocalDate to) {
+            return UsMarketCalendar.tradingDaysBetween(from, to);
+        }
+
+        @Override
+        public LocalDate lastCompletedSession(Instant now) {
+            return UsMarketCalendar.lastCompletedSession(now);
+        }
+
+        @Override
+        public LocalDate currentOrLastSession(Instant now) {
+            return UsMarketCalendar.currentOrLastSession(now);
+        }
+
+        @Override
+        public String toString() {
+            return "UsMarketCalendar.CALENDAR";
+        }
     }
 }
