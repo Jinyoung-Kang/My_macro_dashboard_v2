@@ -621,5 +621,30 @@ class PaperQueryServiceTest {
                 .isInstanceOf(IllegalStateException.class);
     }
 
+    @Test
+    @DisplayName("시장 격리: 개요 통계의 표본 거래일은 그 시장 달력으로 센다 — 미국 추수감사절(11-26)을 사이에 둔 두 줄이 시험용 한국 책에서는 2거래일")
+    @SuppressWarnings("unchecked")
+    void overviewStatsCountThatMarketsTradingDays() {
+        PaperMarket kr = TestKrMarket.INSTANCE;
+        String krBook = TestKrMarket.CLAUDE_BOOK;
+        store.books.put(krBook, TestKrMarket.book(krBook, 100_000_000, FRI));
+        store.states.put(krBook, new com.macrodash.store.PaperStore.BookState(krBook, 101_000_000, 101_000_000, 0, 0,
+                null, null, null, null));
+        java.time.LocalDate wed = java.time.LocalDate.of(2026, 11, 25);
+        java.time.LocalDate fri = java.time.LocalDate.of(2026, 11, 27);
+        store.upsertNav(new NavRow(krBook, wed, 100_000_000, 100_000_000, 0, 0, true));
+        store.upsertNav(new NavRow(krBook, fri, 101_000_000, 101_000_000, 0, 0, true));
+        when(marketData.quotes(kr)).thenReturn(Optional.empty());
+        PaperQueryService both = new PaperQueryService(store, marketData, PaperFixtures.quietReader(),
+                PaperFixtures.settings(store), PaperFixtures.config(), NOW, List.of(UsPaperMarket.INSTANCE, kr));
+
+        Map<String, Object> book = ((List<Map<String, Object>>) both.overview(kr).get("books")).get(0);
+        Map<String, Object> stats = (Map<String, Object>) book.get("stats");
+        assertThat(stats.get("sampleDays")).as("서울 평일: 11-26·11-27(미국 달력이면 11-27 하나)").isEqualTo(2);
+        assertThat(stats.get("cumReturnPct")).isEqualTo(1.0);
+        assertThat(UsPaperMarket.INSTANCE.calendar().tradingDaysBetween(wed, fri)).as("시험 전제: 미국 달력과 갈림")
+                .isEqualTo(1);
+    }
+
     private static final java.time.LocalDate TUE_EXPIRY = java.time.LocalDate.of(2026, 10, 29);
 }

@@ -44,8 +44,8 @@ import java.util.function.Supplier;
  * 🧪 관측치 하나를 그 시장 책들의 장부에 적용합니다(명세 L3~L9, 설계 §3-1) — 체결·트레일링 스탑·분할·평가·순자산.
  *
  * <p><b>시장마다 따로입니다</b>(2단계 명세 §9 A5). 관측치 처리·미확정 순자산 줄·'새 관측치가 있나'·오류 기억은 받은 시장
- * ({@link PaperMarket})의 책({@code paper_books.market})만 보고, 세션 날짜·확정 종가 판정·분할 기준 이력·체결 가격 출처도 그 시장
- * 묶음에서 가져옵니다. 다른 시장 책은 읽지도 쓰지도 않습니다 — 그러지 않으면 미국 관측치가 한국 책의 멱등 키
+ * ({@link PaperMarket})의 책({@code paper_books.market})만 보고, 세션 날짜·확정 종가 판정·분할 기준 이력·체결 가격 출처·스탑 뒤
+ * 재진입 금지 거래일도 그 시장 묶음에서 가져옵니다. 다른 시장 책은 읽지도 쓰지도 않습니다 — 그러지 않으면 미국 관측치가 한국 책의 멱등 키
  * ({@code lastProcessedCollectedAt})를 미국 수집 시각으로 밀어 한국 관측치가 '이미 처리함'으로 버려집니다. 시장을 받지 않는 옛
  * 시그니처는 미국 책만 처리합니다(결정 작업이 시장 문맥으로 옮겨 가는 A6 전까지 그대로 부름). 사후 체결({@link #backfill})은 미국
  * 책만 받습니다(한국은 출발일 사후 체결이 없음, 명세 K28).
@@ -619,7 +619,8 @@ public class PaperLedgerService {
             run.holdings.remove(holding.ticker);
             run.removed.add(holding.ticker);
 
-            LocalDate until = TrailingStop.lockoutUntil(bar.date(), run.settings.lockoutTradingDays());
+            LocalDate until = TrailingStop.lockoutUntil(run.market.calendar(), bar.date(),
+                    run.settings.lockoutTradingDays());
             store.upsertLockout(new Lockout(run.book.code(), holding.ticker, until,
                     "트레일링 스탑 −%s%%: 최고가 %s → 관측가 %s (%s)".formatted(trim(stopPct),
                             money(holding.highWatermark), money(bar.close()), bar.date())));

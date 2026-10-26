@@ -224,6 +224,33 @@ class PaperMarketIsolationTest {
     }
 
     @Test
+    @DisplayName("트레일링 스탑 뒤 재진입 금지는 그 시장 달력의 거래일로 센다 — 미국 추수감사절(11-26)이 낀 20거래일이 시험용 한국 책에서는 하루 이르게 끝남")
+    void stopLockoutCountsThatMarketsTradingDays() {
+        LocalDate tue = LocalDate.of(2026, 11, 24);
+        LocalDate wed = LocalDate.of(2026, 11, 25);
+        Instant krTuesday = Instant.parse("2026-11-24T12:00:00Z");
+        Instant krWednesday = Instant.parse("2026-11-25T12:00:00Z");   // 서울 21:00 — 그날 세션의 확정 종가 뒤
+        store.books.put(KR_BOOK, TestKrMarket.book(KR_BOOK, 100_000_000, FRI));
+        store.states.put(KR_BOOK, new BookState(KR_BOOK, 30_000_000, 109_000_000, 79_000_000, 72.4771, krTuesday,
+                krTuesday, tue, null));
+        position(store, KR_BOOK, "005930", 1_000, 70_000, 80_000, 79_000.0, tue, 79_000);
+
+        // 최고가 80,000 → 70,000(−12.5%)이라 스탑 8%에 걸림
+        Outcome outcome = ledger.process(KR, quotes(krWednesday, bar("005930", tue, 79_000, wed, 70_000)));
+
+        assertThat(outcome.errors()).isEmpty();
+        assertThat(outcome.stopped()).isEqualTo(1);
+        int days = PaperSettings.DEFAULT_LOCKOUT_TRADING_DAYS;
+        assertThat(store.lockouts(KR_BOOK)).singleElement().satisfies(lockout -> {
+            assertThat(lockout.ticker()).isEqualTo("005930");
+            assertThat(lockout.untilTradingDate()).as("서울 평일 20거래일(미국 달력이면 12-24)")
+                    .isEqualTo(LocalDate.of(2026, 12, 23)).isEqualTo(KR.calendar().addTradingDays(wed, days));
+        });
+        assertThat(US.calendar().addTradingDays(wed, days)).as("시험 전제: 같은 날·같은 거래일 수가 미국 달력으로는 다른 날")
+                .isEqualTo(LocalDate.of(2026, 12, 24));
+    }
+
+    @Test
     @DisplayName("관측치·이력은 그 시장의 데이터셋에서 읽는다 — 미국 판(옛 시그니처)은 paper.quotes·equity_close 그대로")
     void marketDataReadsMarketDatasets() {
         com.macrodash.read.StoreReader reader = mock(com.macrodash.read.StoreReader.class);

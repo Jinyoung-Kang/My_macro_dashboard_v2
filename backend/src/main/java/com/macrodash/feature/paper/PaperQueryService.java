@@ -779,14 +779,17 @@ public class PaperQueryService {
         out.put("lastObservedAtKst", state.map(s -> stamp(s.lastObservedAt())).orElse(null));
         out.put("positions", positions.size());
         out.put("staleCount", (int) positions.stream().filter(p -> p.priceStale() || p.lastPrice() == null).count());
-        out.put("stats", started ? stats(navByBook.getOrDefault(book.code(), List.of()),
+        out.put("stats", started ? stats(market.calendar(), navByBook.getOrDefault(book.code(), List.of()),
                 benchmark == null ? null : navByBook.getOrDefault(benchmark, List.of())) : null);
         out.put("benchmark", benchmark);
         return out;
     }
 
-    /** 통계. 순자산이 0 이하인 날(있을 수 없지만)은 빼고, 계산이 거절되면(날짜 순서 등) null. */
-    private static Map<String, Object> stats(List<NavRow> rows, List<NavRow> benchmarkRows) {
+    /**
+     * 통계 — 표본·하루 간격 쌍의 거래일은 그 책 시장의 달력으로 셉니다. 순자산이 0 이하인 날(있을 수 없지만)은 빼고, 계산이
+     * 거절되면(날짜 순서 등) null.
+     */
+    private static Map<String, Object> stats(TradingCalendar calendar, List<NavRow> rows, List<NavRow> benchmarkRows) {
         Map<LocalDate, Double> benchmarkByDate = new HashMap<>();
         if (benchmarkRows != null) {
             benchmarkRows.forEach(row -> benchmarkByDate.put(row.tradingDate(), row.nav()));
@@ -804,7 +807,7 @@ public class PaperQueryService {
         }
         PaperStats.Stats s;
         try {
-            s = PaperStats.compute(dates, nav, benchmarkRows == null ? null : bench);
+            s = PaperStats.compute(calendar, dates, nav, benchmarkRows == null ? null : bench);
         } catch (IllegalArgumentException e) {
             return null;
         }
