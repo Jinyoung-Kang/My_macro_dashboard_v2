@@ -39,7 +39,7 @@ export const MENUS = [
   { href: "/krx", label: "국내 파생 & 투기세력 (KRX)" },
   { href: "/radar", label: "외국인/기관 수급 레이더 (KRX)" },
   { href: "/regime", label: "시장 국면 판정" },
-  { href: "/paper", label: "모의 알고리즘 매매" },
+  { href: "/paper", label: "모의 알고리즘 매매(미국)" },
   { href: "/ai/report", label: "AI 종합 데이터 분석" },
   { href: "/alerts", label: "알림" },
   { href: "/correlation", label: "지표 상관관계" },

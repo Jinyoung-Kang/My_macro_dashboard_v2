@@ -81,25 +81,25 @@ describe("사이드바 계정 영역", () => {
   });
 });
 
-describe("사이드바 메뉴 — 모의 알고리즘 매매", () => {
+describe("사이드바 메뉴 — 모의 알고리즘 매매(미국)", () => {
   it("운영자에게는 국면 판정 다음, AI 앞에 보인다", () => {
     render(<Sidebar readMode="auto" user={{ email: "owner@test.local", role: "OWNER", tier: "PRO", local: true }} unread={0} />);
 
     const labels = screen.getAllByRole("link").map((link) => link.textContent ?? "");
-    const paper = labels.indexOf("모의 알고리즘 매매");
+    const paper = labels.indexOf("모의 알고리즘 매매(미국)");
     expect(paper).toBeGreaterThan(-1);
     expect(labels[paper - 1]).toBe("시장 국면 판정");
     expect(labels[paper + 1]).toBe("AI 종합 데이터 분석");
-    expect(screen.getByRole("link", { name: "모의 알고리즘 매매" }).getAttribute("href")).toBe("/paper");
+    expect(screen.getByRole("link", { name: "모의 알고리즘 매매(미국)" }).getAttribute("href")).toBe("/paper");
   });
 
   it("회원·데모 열람에게는 보이지 않는다", () => {
     render(<Sidebar readMode="auto" user={{ email: "member@test.local", role: "MEMBER", tier: "PRO" }} unread={0} />);
-    expect(screen.queryByRole("link", { name: "모의 알고리즘 매매" })).toBeNull();
+    expect(screen.queryByRole("link", { name: "모의 알고리즘 매매(미국)" })).toBeNull();
     cleanup();
 
     render(<Sidebar readMode="store_only" user={{ email: null, role: "MEMBER", tier: "PRO", demo: true }} unread={0} />);
-    expect(screen.queryByRole("link", { name: "모의 알고리즘 매매" })).toBeNull();
+    expect(screen.queryByRole("link", { name: "모의 알고리즘 매매(미국)" })).toBeNull();
   });
 });
 

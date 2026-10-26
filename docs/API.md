@@ -214,7 +214,7 @@ GET·OPTIONS 밖(쓰기·HEAD)은 경로와 상관없이 403 `{"error":"demo_rea
 | `GET /api/ai/toss/exchange-rate?base=USD&quote=KRW` | 환율 조회 |
 | `GET /api/ai/toss/indices?symbols=KOSPI,KOSDAQ` | 지수 조회 |
 
-### 🧪 모의 매매(운영자 전용)
+### 🧪 모의 매매(미국, 운영자 전용)
 
 모든 경로가 운영자 전용입니다. 테이블(V8)이나 V9~V11의 열(`paper_track_record.group_code`·`data_source`, `paper_decisions.packet_text`, `paper_api_usage.est_cost_calls`), V12의 `paper_reviews`가 아직 없으면 `{available:false, message}`(POST·DELETE는 `ok:false`도)로 답합니다.
 계좌 코드 `{code}`는 `rules`·`claude`·`bench_spy`·`bench_mix`이고, 없는 코드는 400입니다. 시각은 KST 문자열, 거래일은 미국 동부

@@ -90,11 +90,24 @@ class PaperStoreDbTest {
     }
 
     @Test
-    @DisplayName("테이블이 있다 — V8이 마지막에 만드는 paper_api_usage, V9~V11이 더하는 열, V12의 paper_reviews로 준비 여부를 본다")
+    @DisplayName("테이블이 있다 — V8이 마지막에 만드는 paper_api_usage, V9~V11이 더하는 열, V12의 paper_reviews로 준비 여부를 본다(V13 열은 아직 쓰지 않아 보지 않음)")
     void ready() {
         assertThat(store.ready()).as("make db-test로 V8~V12를 적용했는가").isTrue();
         assertThat(new SchemaCheck(jdbc).columnExists("paper_decisions", "packet_text")).isTrue();
         assertThat(new SchemaCheck(jdbc).tableExists("paper_reviews")).isTrue();
+    }
+
+    @Test
+    @DisplayName("V13: paper_books에 market·currency 열 — 기존 계좌는 US·USD 기본값, 다른 값은 막힘(한국 책은 2단계)")
+    void booksHaveMarketAndCurrency() {
+        SchemaCheck schema = new SchemaCheck(jdbc);
+        assertThat(schema.columnExists("paper_books", "market")).as("make db-test로 V13을 적용했는가").isTrue();
+        assertThat(schema.columnExists("paper_books", "currency")).isTrue();
+        assertThat(store.insertBookIfAbsent(book(BOOK, "시험 계좌"))).isTrue();
+        assertThat(jdbc.queryForMap("SELECT market, currency FROM paper_books WHERE code = ?", BOOK))
+                .containsEntry("market", "US").containsEntry("currency", "USD");
+        assertThatThrownBy(() -> jdbc.update("UPDATE paper_books SET market = 'JP' WHERE code = ?", BOOK))
+                .as("시장은 US·KR만").isInstanceOf(org.springframework.dao.DataIntegrityViolationException.class);
     }
 
     @Test

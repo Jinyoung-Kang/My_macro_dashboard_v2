@@ -53,7 +53,7 @@ export default function PaperPage() {
     <div className="flex flex-col gap-6">
       <header className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h1 className="text-xl font-bold text-bright">모의 알고리즘 매매</h1>
+          <h1 className="text-xl font-bold text-bright">모의 알고리즘 매매(미국)</h1>
           <p className="mt-1 text-xs text-muted">
             같은 돈·같은 날 출발한 네 계좌 — 규칙 · Claude · SPY(100%) · 60/40(SPY 60%·SHY 40%)
             {data?.startDate ? ` · 출발 ${data.startDate}` : ""}
