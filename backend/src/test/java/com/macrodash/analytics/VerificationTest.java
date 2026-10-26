@@ -1,8 +1,10 @@
 package com.macrodash.analytics;
 
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.time.ZonedDateTime;
@@ -131,6 +133,25 @@ class VerificationTest {
         // 주말인 12-31은 그냥 주말입니다.
         assertThat(Verification.settledGate(ZonedDateTime.of(LocalDateTime.of(2028, 12, 31, 11, 0), KST)).reason())
                 .contains("주말");
+    }
+
+    @Test
+    @Disabled("QA-143 재현 — 수정 전: isKrxYearEndClosure가 평일인 12-31만 봄")
+    @DisplayName("QA-143: 12-31이 주말이면 직전 금요일이 연말휴장일 — 2028-12-29(금) 장중은 확정 대조가 되고 장중 가집계 대조는 안 된다")
+    void yearEndClosureMovesBeforeWeekend() {
+        ZonedDateTime closure = ZonedDateTime.of(LocalDateTime.of(2028, 12, 29, 11, 0), KST);   // 12-31이 일요일
+
+        Verification.Gate settled = Verification.settledGate(closure);
+        assertThat(settled.allowed()).isTrue();
+        assertThat(settled.reason()).contains("휴장");
+        assertThat(Verification.intradayGate(closure).allowed()).isFalse();
+        assertThat(Verification.isKrxYearEndClosure(LocalDate.of(2028, 12, 29))).isTrue();
+        assertThat(Verification.isKrxYearEndClosure(LocalDate.of(2028, 12, 28))).isFalse();
+        assertThat(Verification.intradayGate(ZonedDateTime.of(LocalDateTime.of(2028, 12, 28, 11, 0), KST)).allowed())
+                .as("그 전날은 정규장").isTrue();
+        // KRX 휴장일 목록의 실례(2022-12-30 — 12-31 토, 2023-12-29 — 12-31 일).
+        assertThat(Verification.isKrxYearEndClosure(LocalDate.of(2022, 12, 30))).isTrue();
+        assertThat(Verification.isKrxYearEndClosure(LocalDate.of(2023, 12, 29))).isTrue();
     }
 
     @Test

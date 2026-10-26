@@ -3,6 +3,7 @@ package com.macrodash.feature.status;
 import com.macrodash.collector.CollectorClient;
 import com.macrodash.feature.publicdata.CalendarService;
 import com.macrodash.read.StoreReader;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import tools.jackson.databind.ObjectMapper;
@@ -45,5 +46,28 @@ class VerificationServiceTest {
                 .map(Map.class::cast).filter(row -> RANKING.equals(row.get("name"))).findFirst().orElseThrow();
         assertThat(ranking.get("verdict")).isEqualTo("skipped");
         assertThat(String.valueOf(ranking.get("note"))).contains("휴장");
+    }
+
+    @Test
+    @Disabled("QA-143 재현 — 수정 전: 12-31이 주말인 해의 연말휴장일을 장중으로 봄")
+    @DisplayName("QA-143: 연말휴장일 2028-12-29(금, 12-31 일) 장 시간에는 수급 1위 대조를 건너뛴다(휴장)")
+    void rankingComparisonIsSkippedOnSubstitutedYearEndClosure() throws Exception {
+        assertThat(ranking(Set.of("2028-12-25"), LocalDateTime.of(2028, 12, 29, 11, 0)).get("verdict"))
+                .isEqualTo("skipped");
+        assertThat(String.valueOf(ranking(Set.of("2028-12-25"), LocalDateTime.of(2028, 12, 29, 11, 0)).get("note")))
+                .contains("휴장");
+    }
+
+    /** 키는 KIS만 — 수급 1위 대조 줄 하나(시간 조건만 봄). */
+    private static Map<?, ?> ranking(Set<String> holidays, LocalDateTime at) throws Exception {
+        CollectorClient collector = mock(CollectorClient.class);
+        when(collector.verificationReadings(anyString(), anyString(), anyString())).thenReturn(Optional.of(
+                new ObjectMapper().readTree("{\"keys\": {\"krx\": false, \"kis\": true, \"toss\": false}, \"rankingTop\": {}}")));
+        CalendarService calendar = mock(CalendarService.class);
+        when(calendar.holidayDates()).thenReturn(holidays);
+        VerificationService service = new VerificationService(mock(StoreReader.class), collector, calendar);
+        Map<String, Object> out = service.run(ZonedDateTime.of(at, KST));
+        return ((List<?>) out.get("results")).stream()
+                .map(Map.class::cast).filter(row -> RANKING.equals(row.get("name"))).findFirst().orElseThrow();
     }
 }
