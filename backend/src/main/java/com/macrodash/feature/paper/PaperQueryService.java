@@ -34,6 +34,7 @@ import java.time.LocalDate;
 import java.time.YearMonth;
 import java.time.temporal.TemporalAccessor;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
@@ -74,7 +75,10 @@ public class PaperQueryService {
     static final int STATUS_JOBS = 30;
     /** 주문·체결 목록 상한. */
     static final int MAX_LIMIT = 500;
-    /** 관측치가 이보다 오래되면 늦었다고 표시합니다 — 수집 주기 1시간의 세 배(두 번 연속 못 받음). */
+    /**
+     * 미국 관측치가 이보다 오래되면 늦었다고 표시합니다 — 수집 주기 1시간의 세 배(두 번 연속 못 받음). 미국 시장 묶음의
+     * {@link PaperMarket#quotesLateAfter} 값이고, 관측치 요약은 그 시장 묶음의 값을 씁니다.
+     */
     static final Duration QUOTES_LATE = Duration.ofHours(3);
 
     private final PaperStore store;
@@ -860,7 +864,7 @@ public class PaperQueryService {
         out.put("finalClose", barDate != null && market.isFinal(barDate, quotes.collectedAt()));
         out.put("tickers", quotes.bars().size());
         out.put("staleTickers", quotes.staleTickers());
-        out.put("stale", age > QUOTES_LATE.getSeconds());
+        out.put("stale", age > market.quotesLateAfter().getSeconds());
         return out;
     }
 
@@ -921,7 +925,7 @@ public class PaperQueryService {
     /** 그 시장 책, 정의 순. */
     private List<Book> sortedBooks(PaperMarket market) {
         List<Book> books = new ArrayList<>(store.books(market.code()));
-        books.sort((a, b) -> PaperBooks.ORDER.compare(a.code(), b.code()));
+        books.sort(Comparator.comparing(Book::code, market.bookOrder()));
         return books;
     }
 

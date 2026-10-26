@@ -107,6 +107,12 @@ class UsPaperMarketTest {
     }
 
     @Test
+    @DisplayName("관측치 늦음 기준 = 3시간(수집 주기 1시간의 세 배) — PaperQueryService.QUOTES_LATE 그대로")
+    void quotesLateAfter() {
+        assertThat(US.quotesLateAfter()).isEqualTo(Duration.ofHours(3)).isEqualTo(PaperQueryService.QUOTES_LATE);
+    }
+
+    @Test
     @DisplayName("관측치를 채우는 수집기 태스크 = paper_quotes(A5 전 저장본 읽기·안내 문구의 글자) — 수집기 태스크 목록에 그 이름이 있음")
     void quotesTask() throws IOException {
         assertThat(US.quotesTask()).isEqualTo("paper_quotes");
@@ -180,6 +186,34 @@ class UsPaperMarketTest {
         }
         assertThat(US.benchmarkOf("bench_spy")).isNull();
         assertThat(US.benchmarkOf("bench_mix")).isEqualTo("bench_spy");
+    }
+
+    @Test
+    @DisplayName("책 정의 순서 = PaperBooks.ORDER(규칙 → Claude → SPY → 60/40, 모르는 코드는 뒤·코드 순) — 다른 시장은 그 시장 책 정의 순")
+    void bookOrder() {
+        List<String> codes = new ArrayList<>(List.of("zz_other", "bench_mix", "claude", "aa_other", "bench_spy", "rules"));
+        List<String> byMarket = new ArrayList<>(codes);
+        byMarket.sort(US.bookOrder());
+        List<String> byConstant = new ArrayList<>(codes);
+        byConstant.sort(PaperBooks.ORDER);
+        assertThat(byMarket).isEqualTo(byConstant)
+                .containsExactly("rules", "claude", "bench_spy", "bench_mix", "aa_other", "zz_other");
+
+        // 정의 순이 코드 순과 다른 목록(한국 책 넷의 명세 순서) — 코드 순(bench_k200, bench_mix, claude, rules)이 아니라 정의 순
+        List<PaperBooks.Definition> krLike = List.of(
+                new PaperBooks.Definition("kr_rules", PaperBooks.KIND_RULES, "규칙", Map.of()),
+                new PaperBooks.Definition("kr_claude", PaperBooks.KIND_CLAUDE, "Claude", Map.of()),
+                new PaperBooks.Definition("kr_bench_k200", PaperBooks.KIND_BENCHMARK, "K200", Map.of("069500", 100.0)),
+                new PaperBooks.Definition("kr_bench_mix", PaperBooks.KIND_BENCHMARK, "60/40",
+                        Map.of("069500", 60.0, "153130", 40.0)));
+        List<String> kr = new ArrayList<>(List.of("kr_bench_mix", "kr_rules", "kr_bench_k200", "kr_claude"));
+        kr.sort(PaperBooks.orderOf(krLike));
+        assertThat(kr).containsExactly("kr_rules", "kr_claude", "kr_bench_k200", "kr_bench_mix");
+
+        List<String> mixed = new ArrayList<>(List.of("rules", TestKrMarket.CLAUDE_BOOK, "claude"));
+        mixed.sort(TestKrMarket.INSTANCE.bookOrder());
+        assertThat(mixed).as("시험용 한국 묶음: 자기 책이 먼저, 다른 시장 책은 모르는 코드").containsExactly(
+                TestKrMarket.CLAUDE_BOOK, "claude", "rules");
     }
 
     @Test

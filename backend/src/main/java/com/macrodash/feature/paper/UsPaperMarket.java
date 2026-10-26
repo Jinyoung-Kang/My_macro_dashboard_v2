@@ -24,7 +24,8 @@ import java.util.Map;
  *
  * <ul>
  *   <li>시장·통화 US·USD(V13 기본값), 달력 {@link UsMarketCalendar#CALENDAR}(뉴욕 세션 날짜)</li>
- *   <li>관측치 {@code paper.quotes}(수집기 태스크 {@code paper_quotes})·이력 {@code equity_close}, 확정 종가 = 마감 + 15분 뒤 수집</li>
+ *   <li>관측치 {@code paper.quotes}(수집기 태스크 {@code paper_quotes}, 3시간 넘게 묵으면 늦음)·이력 {@code equity_close}, 확정 종가 =
+ *       마감 + 15분 뒤 수집</li>
  *   <li>책 넷({@link PaperBooks#ALL} — 규칙·Claude·SPY 100%·SPY 60/SHY 40), 비교 기준 {@code bench_spy}, 현금성 기본 SHY</li>
  *   <li>Claude 체결 시점 NEXT_OBSERVATION·NEXT_CLOSE(이른 시점 NEXT_OBSERVATION), 검증기 시점 이름·금액 표기는
  *       {@link OrderValidator.Market#US}(다음 관측치·확정 종가, 달러) 그대로</li>
@@ -69,6 +70,11 @@ final class UsPaperMarket implements PaperMarket {
     @Override
     public String quotesTask() {
         return QUOTES_TASK;
+    }
+
+    @Override
+    public Duration quotesLateAfter() {
+        return PaperQueryService.QUOTES_LATE;
     }
 
     @Override

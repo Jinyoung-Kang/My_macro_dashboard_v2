@@ -99,15 +99,19 @@ final class PaperBooks {
         return BENCH_SPY.equals(code) ? null : BENCH_SPY;
     }
 
-    /** 정의 순서(모르는 코드는 뒤, 코드 순). */
-    static final Comparator<String> ORDER = Comparator.<String>comparingInt(code -> {
-        for (int i = 0; i < ALL.size(); i++) {
-            if (ALL.get(i).code().equals(code)) {
-                return i;
-            }
-        }
-        return ALL.size();
-    }).thenComparing(Comparator.naturalOrder());
+    /**
+     * 그 책 정의 목록의 순서(모르는 코드는 뒤, 코드 순) — 시장 묶음의 {@link PaperMarket#bookOrder}가 그 시장 책 정의로 만듭니다.
+     */
+    static Comparator<String> orderOf(List<Definition> definitions) {
+        List<String> codes = definitions.stream().map(Definition::code).toList();
+        return Comparator.<String>comparingInt(code -> {
+            int i = codes.indexOf(code);
+            return i < 0 ? codes.size() : i;
+        }).thenComparing(Comparator.naturalOrder());
+    }
+
+    /** 미국 책의 정의 순서(모르는 코드는 뒤, 코드 순) — {@link #ALL}로 만든 {@link #orderOf}. */
+    static final Comparator<String> ORDER = orderOf(ALL);
 
     private static Map<String, Double> weights(Object... tickerAndPct) {
         Map<String, Double> out = new LinkedHashMap<>();

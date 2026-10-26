@@ -33,6 +33,8 @@ final class TestKrMarket implements PaperMarket {
     static final String QUOTES_DATASET = "test.kr.quotes";
     static final String QUOTES_TASK = "test_kr_quotes";
     static final String HISTORY_DATASET = "test.kr.history";
+    /** 시험용 관측치 늦음 기준 — 미국 3시간과 일부러 다른 값(하루 한 번 수집하는 시장을 흉내). */
+    static final Duration QUOTES_LATE = Duration.ofHours(26);
     /** 시험용 체결 시점 이름(검증기 근거 문구) — 미국 이름과 일부러 다른 글자. */
     static final String CLOSE_NAME = "시험용 종가";
     /** 시험용 금액 표기(원, 소수 없음) — 검증기 근거 문구에 '$'가 섞이지 않는지 보려고. */
@@ -105,6 +107,11 @@ final class TestKrMarket implements PaperMarket {
     @Override
     public String quotesTask() {
         return QUOTES_TASK;
+    }
+
+    @Override
+    public Duration quotesLateAfter() {
+        return QUOTES_LATE;
     }
 
     @Override

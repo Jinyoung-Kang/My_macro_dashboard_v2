@@ -646,5 +646,26 @@ class PaperQueryServiceTest {
                 .isEqualTo(1);
     }
 
+    @Test
+    @DisplayName("시장 격리: 관측치 '늦음'은 그 시장 묶음의 기준으로 — 4시간 묵은 저장본이 미국(3시간)에서는 늦음, 시험용 한국(26시간)에서는 아님")
+    @SuppressWarnings("unchecked")
+    void quotesLatenessPerMarket() {
+        PaperMarket kr = TestKrMarket.INSTANCE;
+        Instant fourHoursAgo = Instant.parse("2026-10-26T17:00:00Z");   // NOW 21:00Z의 4시간 전
+        when(marketData.quotes(UsPaperMarket.INSTANCE)).thenReturn(Optional.of(quotes(fourHoursAgo,
+                bar("SPY", FRI, 500, MON, 505))));
+        when(marketData.quotes(kr)).thenReturn(Optional.of(quotes(fourHoursAgo,
+                bar("005930", FRI, 70_000, MON, 71_000))));
+        PaperQueryService both = new PaperQueryService(store, marketData, PaperFixtures.quietReader(),
+                PaperFixtures.settings(store), PaperFixtures.config(), NOW, List.of(UsPaperMarket.INSTANCE, kr));
+
+        Map<String, Object> us = (Map<String, Object>) both.status().get("quotes");
+        Map<String, Object> other = (Map<String, Object>) both.status(kr).get("quotes");
+        assertThat(us.get("ageSeconds")).isEqualTo(4L * 3600);
+        assertThat(other.get("ageSeconds")).isEqualTo(4L * 3600);
+        assertThat(us.get("stale")).as("미국 3시간 기준").isEqualTo(true);
+        assertThat(other.get("stale")).as("시험용 한국 26시간 기준").isEqualTo(false);
+    }
+
     private static final java.time.LocalDate TUE_EXPIRY = java.time.LocalDate.of(2026, 10, 29);
 }

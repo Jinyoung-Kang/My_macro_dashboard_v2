@@ -11,6 +11,7 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalTime;
 import java.time.ZonedDateTime;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 
@@ -44,6 +45,9 @@ interface PaperMarket {
     /** 관측치 스냅샷을 채우는 수집기 태스크 이름 — 저장본 읽기의 수집 요청 대상이고, '저장본 없음' 안내 문구에 들어갑니다. */
     String quotesTask();
 
+    /** 관측치 저장본이 이보다 오래되면 화면(개요·상태의 관측치 요약)에 늦었다고 표시합니다 — 그 시장 관측치의 수집 주기에 맞춘 값. */
+    Duration quotesLateAfter();
+
     /** 종가 이력(timeseries)의 데이터셋 — 사후 체결·분할 감지·패킷 수익률. 그 이력으로 체결하면 가격 출처도 이 이름. */
     String historyDataset();
 
@@ -62,6 +66,14 @@ interface PaperMarket {
 
     /** 이 시장의 책 정의 — 초기화가 만드는 책이고, 화면에 보이는 순서입니다. */
     List<PaperBooks.Definition> books();
+
+    /**
+     * 이 시장 책 코드의 정의 순서({@link #books}의 순서 — 모르는 코드는 뒤, 코드 순). 장부·조회가 그 시장 책을 이 순서로 돌고
+     * 보여 줍니다. 미국은 {@link PaperBooks#ORDER}와 같습니다.
+     */
+    default Comparator<String> bookOrder() {
+        return PaperBooks.orderOf(books());
+    }
 
     /** 규칙 책(동결 대조군)의 코드. */
     String rulesBook();

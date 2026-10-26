@@ -28,6 +28,7 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
@@ -193,7 +194,7 @@ public class PaperLedgerService {
     /** 이 관측치에서 오류가 나 다시 시도하지 않고 있는 그 시장 책, 정의 순. */
     List<String> failedBooks(PaperMarket market, Quotes quotes) {
         return failedObservations.keySet().stream().filter(key -> key.market().equals(market.code()))
-                .map(FailureKey::book).filter(code -> failedOn(market, code, quotes)).sorted(PaperBooks.ORDER)
+                .map(FailureKey::book).filter(code -> failedOn(market, code, quotes)).sorted(market.bookOrder())
                 .toList();
     }
 
@@ -234,7 +235,7 @@ public class PaperLedgerService {
         if (books.isEmpty()) {
             return Outcome.skipped("초기화 전입니다 — 계좌가 없습니다");
         }
-        books.sort((a, b) -> PaperBooks.ORDER.compare(a.code(), b.code()));
+        books.sort(Comparator.comparing(Book::code, market.bookOrder()));
         PaperSettings current = settings.current().settings();
 
         int filled = 0;
@@ -699,7 +700,7 @@ public class PaperLedgerService {
                 return List.of();
             }
             List<Book> books = new ArrayList<>(store.books(market.code()));
-            books.sort((a, b) -> PaperBooks.ORDER.compare(a.code(), b.code()));
+            books.sort(Comparator.comparing(Book::code, market.bookOrder()));
             List<String> written = new ArrayList<>();
             for (Book book : books) {
                 boolean started = PaperBooks.ACTIVE.equals(book.status()) || PaperBooks.PAUSED.equals(book.status());
