@@ -23,7 +23,7 @@
 | V5 | 봇 차단 우회 | 허용(D29 개정). 다만 **쓸 곳을 가린다** — 브라우저 없이 되는 출처는 우회하지 않고, 우회 자료도 출처·수집 시각을 적는다 |
 | V6 | Claude 호출 상한 | 하루 20회(설정 `apiDailyCallCap`, 코드 최대 50 안). 기본값도 20 |
 | V7 | 이름 | 기존 모의 알고리즘 매매는 "모의 알고리즘 매매(미국)". 테이블·계좌 코드는 그대로, `paper_books`에 `market`·`currency` 열 추가 |
-| V8 | 라이선스 | 비공개·개인·비영리 — 외부 코드 라이선스는 따지지 않는다. v2 GitHub 저장소는 **private** |
+| V8 | 라이선스 | 비공개·개인·비영리 — 외부 코드 라이선스는 따지지 않는다. v2 GitHub 저장소는 ~~private~~ → **public**(2026-10-26 사용자 지시, v1도 공개) |
 
 ## 2. 범위
 
@@ -66,7 +66,7 @@ PRINCIPLES.md와 ADR 0001~0019 전부. 이 프로그램에서 특히 자주 걸�
 
 ### 0단계 — 저장소와 환경 ([체크리스트](2026-10-26-v2-step0-fork.md))
 
-- 산출물: GitHub private 저장소 `Jinyoung-Kang/My_macro_dashboard_v2`, 로컬 폴더 `~/Projects/My_macro_dashboard_v2`, v1·v3와 동시에 뜨는 스택, 이름·포트·쿠키·상한·문서 갱신, decisions.md의 D29 개정, ADR 0020(v2 프로그램·전환·우회 허용 범위)
+- 산출물: GitHub 공개 저장소 `Jinyoung-Kang/My_macro_dashboard_v2`(V8 개정), 로컬 폴더 `~/Projects/My_macro_dashboard_v2`, v1·v3와 동시에 뜨는 스택, 이름·포트·쿠키·상한·문서 갱신, decisions.md의 D29 개정, ADR 0020(v2 프로그램·전환·우회 허용 범위)
 - 수용 기준: `make up && make doctor` 통과(세 스택 동시), `make test` 통과, CI 6 job 녹색, 메뉴에 "모의 알고리즘 매매(미국)", 설정 화면에서 상한 20 저장, 로컬 `.env`에 `PAPER_ENABLED=false`
 
 ### 1단계 — UI 기반과 첫 두 화면 ([UI/UX 설계](2026-10-26-v2-ui-design.md))
@@ -156,4 +156,4 @@ PRINCIPLES.md와 ADR 0001~0019 전부. 이 프로그램에서 특히 자주 걸�
 | [한국 증시 책 명세 초안](2026-10-26-v2-kr-paper-spec.md) | 요구·결정 K1~K12·수용 기준·단계 0 확인 |
 | [외부 OSS 채택 목록](2026-10-26-v2-oss-adoption.md) | 출처 파일·줄, 우리 자리, 안 가져오는 것, 확인한 엔드포인트 |
 | [fork 세션 지시문](2026-10-26-v2-fork-session-prompt.md) | 새 폴더에서 여는 Claude 세션에 붙이는 지시 |
-| ADR 0020(0단계에서 v2에 작성) | fork·전환·우회 허용 범위·상한 20의 되돌리기 어려운 결정 |
+| [ADR 0020](../adr/0020-v2-program.md) | fork·전환·우회 허용 범위·상한 20의 되돌리기 어려운 결정 |

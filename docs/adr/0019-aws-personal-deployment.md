@@ -3,6 +3,8 @@
 - 상태: 채택 (2026-10-26). 같은 날 가동 시간을 24시간에서 밤 시간 창으로 바꿈(결정 14, 사용자 결정). [ADR 0018](0018-paper-trading-guardrails.md)의 "AWS 개인용 배포는 별도 ADR로"가 이 문서입니다.
   v3에서 옮겨 온 공개 데모 배포([ADR 0012](0012-aws-demo-deployment.md)·[0013](0013-demo-viewer-mode.md)·[0014](0014-aws-demo-ai-report.md))는
   이 저장소에서 쓰지 않습니다 — `compose.aws.yml`을 개인용으로 다시 썼습니다. 같은 출처(`NEXT_PUBLIC_API_BASE=/`)와 프록시 IP 신뢰는 0012의 정의를 그대로 씁니다.
+  2026-10-26: v2(`My_macro_dashboard_v2`)로의 교체는 [ADR 0020](0020-v2-program.md)·계획서 §5 — 교체 전까지 서버는 v1이고, 서버 폴더·볼륨 이름은
+  교체 뒤 `~/My_macro_dashboard_v2`·`my_macro_dashboard_v2_postgres-data`. v2의 세션 쿠키는 `my_macro_v2_session`.
 - 지키는 방법:
   - CI `images` 잡의 'AWS 덧붙임 해석' 단계: 서버 `.env`에 로컬 값이 섞인 경우를 흉내 낸 가짜 값으로 `compose.aws.yml`을 합쳐 해석 —
     공개 포트는 모두 `127.0.0.1`, caddy는 `8201` 하나, postgres 서비스 유지, backend `COOKIE_SECURE=true`(기본값)·`DASHBOARD_LOCAL_NO_LOGIN="false"`·

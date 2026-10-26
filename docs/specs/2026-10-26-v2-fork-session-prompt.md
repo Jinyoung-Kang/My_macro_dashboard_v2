@@ -4,7 +4,7 @@
 
 ---
 
-이 폴더는 2026-10-26에 `My_macro_dashboard_v1`을 전체 이력으로 갈라낸 `My_macro_dashboard_v2`다. 원격은 private 저장소
+이 폴더는 2026-10-26에 `My_macro_dashboard_v1`을 전체 이력으로 갈라낸 `My_macro_dashboard_v2`다. 원격은 공개 저장소
 `Jinyoung-Kang/My_macro_dashboard_v2`이고 `main`은 v1 `main`과 같은 커밋에서 시작한다. 아직 포트·이름·쿠키는 v1 것 그대로다.
 
 상황
@@ -18,7 +18,7 @@
 2. `docs/specs/2026-10-26-v2-program-plan.md` — 전체 순서·사용자 결정 V1~V8·전환 절차
 3. `docs/specs/2026-10-26-v2-step0-fork.md` — 지금 할 일. **A는 clone·origin 설정까지 끝났고 GitHub 저장소 만들기·첫 push가 남았다**(A-1·A-2 결과 줄).
    첫 일: `gh repo view Jinyoung-Kang/My_macro_dashboard_v2`로 저장소가 있는지 본다. 있으면 `git push -u origin main`, 없으면 사용자에게 알리고
-   허락을 받아 `gh repo create … --private --source=. --remote=origin --push`. 그 뒤 **B부터 I까지 순서대로**
+   허락을 받아 `gh repo create … --public`(V8 개정 — 2026-10-26에 만듦). 그 뒤 **B부터 I까지 순서대로**
 4. `docs/specs/2026-10-26-v2-ui-design.md`, `docs/specs/2026-10-26-v2-kr-paper-spec.md`, `docs/specs/2026-10-26-v2-oss-adoption.md` — 1·2단계 설계(지금은 읽기만)
 5. `docs/PRINCIPLES.md`, `docs/adr/README.md`, `docs/DEVELOPMENT.md`
 

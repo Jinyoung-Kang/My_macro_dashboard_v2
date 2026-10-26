@@ -25,3 +25,4 @@
 | [0017](0017-macro-card-delay-and-realtime-sources.md) | 매크로 카드의 지연 배지는 출처가 밝힌 지연으로(카탈로그는 분, 문구는 함수), 같은 종목의 실시간 공개 시세(TradingView)를 먼저 — 장 밖이면 거래일 |
 | [0018](0018-paper-trading-guardrails.md) | 모의 알고리즘 매매(별도 Private 저장소 My_macro_dashboard_v1): 제안은 모델·검증과 집행은 코드(현금 비중은 모델 재량), 체결은 결정 뒤 첫 관측치(봉 날짜 > 기준 거래일), 신호 기관은 공시일 기준 복제 성과로 분기마다 두 그룹, 프레임은 승인된 판만, 실패는 그날 주문 없음·하루 호출 상한 |
 | [0019](0019-aws-personal-deployment.md) | AWS 개인용 배포: EC2 t4g.medium 한 대 + Postgres 컨테이너, 밤 시간 창(KST 21:55~08:00, 토 ~10:00 — EventBridge Scheduler)만 가동, 접속은 SSM 포트 포워딩(인바운드 0) · 앞단 Caddy는 루프백 8201 하나 · 서버 `.env`에 적지 않는 이름 · 모의 매매는 서버 한 곳(로컬 `PAPER_ENABLED=false`) |
+| [0020](0020-v2-program.md) | v2 프로그램: v1을 fork해 프런트만 새로 씀(저장소 공개) · 로컬 3002/8082/8002/5434·쿠키 `my_macro_v2_session` · 모의 매매 상태는 계속 AWS v1 한 곳 · 한국 증시 책 · Claude 호출 상한 20 · 봇 차단 우회의 허용 범위(D29 개정) · AWS는 같은 EC2에서 교체 |
