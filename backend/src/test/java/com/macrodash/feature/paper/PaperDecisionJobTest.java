@@ -2,6 +2,7 @@ package com.macrodash.feature.paper;
 
 import com.macrodash.read.StoreReader;
 import com.macrodash.store.Datasets;
+import com.macrodash.store.PaperStore;
 import com.macrodash.store.PaperStore.Book;
 import com.macrodash.store.PaperStore.BookState;
 import com.macrodash.store.PaperStore.Decision;
@@ -63,6 +64,9 @@ import static org.mockito.Mockito.when;
  */
 class PaperDecisionJobTest {
 
+    /** 정기·수동 실행이 미국 시장으로 저장본을 읽고 Claude 결정을 부릅니다(2단계 명세 §9 A6 — 시장마다 결정 작업이 돎). */
+    private static final PaperMarket US = UsPaperMarket.INSTANCE;
+
     /** 금요일 장중(15:30 ET) 저장본 — 확정 종가 아님. */
     private static final Instant FRI_INTRADAY = Instant.parse("2026-10-23T19:30:00Z");
     /** 2026-10-22(목) — setUp의 규칙 책 출발일(출발일 당일은 초기 결정이 그날 결정이라 정기 결정을 내지 않음). */
@@ -109,10 +113,10 @@ class PaperDecisionJobTest {
         });
         claude = mock(ClaudeBookService.class);
         claudeDecided = new ArrayList<>();
-        when(claude.decide(any(), anyString(), anyBoolean())).thenAnswer(invocation -> {
-            LocalDate d = invocation.getArgument(0);
-            String kind = invocation.getArgument(1);
-            boolean pricesFinal = invocation.getArgument(2);
+        when(claude.decide(eq(US), any(), anyString(), anyBoolean())).thenAnswer(invocation -> {
+            LocalDate d = invocation.getArgument(1);
+            String kind = invocation.getArgument(2);
+            boolean pricesFinal = invocation.getArgument(3);
             claudeDecided.add(d + " " + kind + " " + pricesFinal);
             calls.add("claude " + d + " " + kind + " " + pricesFinal);
             return new Decision(98, PaperBooks.CLAUDE, d, kind, store.dbNow, "NO_TRADE", "claude-sonnet-5-5", null, 1,
@@ -140,7 +144,7 @@ class PaperDecisionJobTest {
     }
 
     private void observed(Instant collectedAt, LocalDate barDate) {
-        when(marketData.quotes()).thenReturn(Optional.of(quotes(collectedAt,
+        when(marketData.quotes(US)).thenReturn(Optional.of(quotes(collectedAt,
                 bar("SPY", barDate.minusDays(1), 499, barDate, 500))));
     }
 
@@ -180,6 +184,7 @@ class PaperDecisionJobTest {
         assertThat(result.outcome()).isEqualTo(PaperDecisionJob.TOO_EARLY);
         assertThat(result.tradingDate()).isEqualTo(FRI);
         verify(marketData, never()).quotes();
+        verify(marketData, never()).quotes(any());
         assertThat(store.jobRuns).isEmpty();
         assertThat(store.gates).isEmpty();
     }
@@ -254,6 +259,7 @@ class PaperDecisionJobTest {
         assertThat(result.outcome()).isEqualTo(PaperDecisionJob.ALREADY_DECIDED);
         assertThat(decided).isEmpty();
         verify(marketData, never()).quotes();
+        verify(marketData, never()).quotes(any());
         assertThat(store.jobRuns).isEmpty();
     }
 
@@ -600,9 +606,9 @@ class PaperDecisionJobTest {
      */
     private void recordingClaude(String firstStatus) {
         doAnswer(invocation -> {
-            LocalDate d = invocation.getArgument(0);
-            String kind = invocation.getArgument(1);
-            boolean pricesFinal = invocation.getArgument(2);
+            LocalDate d = invocation.getArgument(1);
+            String kind = invocation.getArgument(2);
+            boolean pricesFinal = invocation.getArgument(3);
             claudeDecided.add(d + " " + kind + " " + pricesFinal);
             Optional<Decision> existing = store.decisionFor(PaperBooks.CLAUDE, d, kind);
             if (existing.isEmpty()) {
@@ -620,7 +626,7 @@ class PaperDecisionJobTest {
                         MAPPER.valueToTree(Map.of("summary", "주문 없음")), null, null, null, pricesFinal, 10L, 0));
             }
             return store.decision(old.id()).orElseThrow();
-        }).when(claude).decide(any(), anyString(), anyBoolean());
+        }).when(claude).decide(eq(US), any(), anyString(), anyBoolean());
     }
 
     @Test
@@ -667,7 +673,7 @@ class PaperDecisionJobTest {
             claudeDecided.add("retry");
             return new Decision(97, PaperBooks.CLAUDE, wednesday, "SCHEDULED", store.dbNow, "NO_TRADE",
                     "claude-sonnet-5-5", null, 1, null, null, null, null, null, null, null, null, null, true, 0L, 0);
-        }).when(claude).decide(any(), anyString(), anyBoolean());
+        }).when(claude).decide(eq(US), any(), anyString(), anyBoolean());
         observed(Instant.parse("2026-11-18T21:30:00Z"), wednesday);
         assertThat(job(Instant.parse("2026-11-18T23:00:00Z")).run().outcome()).isEqualTo(PaperDecisionJob.ERROR);
         assertThat(decided).containsExactly("2026-11-18 REBALANCE true");
@@ -732,12 +738,12 @@ class PaperDecisionJobTest {
             release.await(10, TimeUnit.SECONDS);
             return new Decision(96, PaperBooks.CLAUDE, PaperFixtures.MON, "MANUAL", store.dbNow, "NO_TRADE",
                     "claude-sonnet-5-5", null, 1, null, null, null, null, null, null, null, null, null, true, 0L, 0);
-        }).when(claude).decide(any(), eq("MANUAL"), anyBoolean());
+        }).when(claude).decide(eq(US), any(), eq("MANUAL"), anyBoolean());
         Thread manual = new Thread(() -> job.runNow("claude"));
         manual.start();
         try {
             assertThat(inCall.await(5, TimeUnit.SECONDS)).isTrue();
-            PaperDecisionJob.Result busy = assertTimeoutPreemptively(Duration.ofSeconds(5), job::run);
+            PaperDecisionJob.Result busy = assertTimeoutPreemptively(Duration.ofSeconds(5), () -> job.run());
             assertThat(busy.outcome()).isEqualTo(PaperDecisionJob.BUSY);
             assertThat(store.jobRuns).as("건너뛴 주기는 기록하지 않음").isEmpty();
             assertThat(claudeDecided).as("정기 결정을 부르지 않음").isEmpty();
@@ -757,7 +763,7 @@ class PaperDecisionJobTest {
         doAnswer(invocation -> {
             claudeDecided.add("scheduled");
             throw new IllegalStateException("저장 고장");
-        }).when(claude).decide(any(), eq("SCHEDULED"), anyBoolean());
+        }).when(claude).decide(eq(US), any(), eq("SCHEDULED"), anyBoolean());
         observed(Instant.parse("2026-10-26T20:30:00Z"), PaperFixtures.MON);
         PaperDecisionJob job = job(Instant.parse("2026-10-26T23:00:00Z"));
 
@@ -776,6 +782,129 @@ class PaperDecisionJobTest {
 
         job.runNow("claude");
         assertThat(job.run().outcome()).as("Claude 책 수동 결정은 그 책의 횟수를 지움").isEqualTo(PaperDecisionJob.ERROR);
+        assertThat(store.jobRuns.get(store.jobRuns.size() - 1).detail().path("attempt").asInt()).isEqualTo(1);
+    }
+
+    // ------------------------------------------------------------------ 시장 격리(2단계 명세 §9 A6)
+    private static final PaperMarket KR = TestKrMarket.INSTANCE;
+    private static final String KR_BOOK = TestKrMarket.CLAUDE_BOOK;
+    /** 10-26(월) 22:00 KST — 시험용 한국 달력으로는 그날 세션 마감 뒤·기본 결정 시각(22:30) 전, 미국 달력으로는 금요일 세션 다음 날. */
+    private static final Instant KR_22_00 = Instant.parse("2026-10-26T13:00:00Z");
+
+    private PaperDecisionJob job(Instant now, List<PaperMarket> markets) {
+        PaperSettingsService settings = PaperFixtures.settings(store);
+        return new PaperDecisionJob(store, reader, marketData,
+                new PaperLedgerService(store, marketData, settings, MAPPER), selection, rules, claude, settings,
+                PaperFixtures.config(), MAPPER, Clock.fixed(now, ZoneOffset.UTC), markets);
+    }
+
+    /**
+     * 시험용 한국 Claude 책(운용 중, 금요일 출발)과 그 시장 관측치(월요일 봉, 서울 21:00 수집 — 시험용 달력으로 확정 종가), 그 시장
+     * Claude 결정(부른 인자를 calls에 남기고 결정 행을 저장 — 같은 거래일 두 번째 실행은 할 일이 없게).
+     */
+    private void krBook(RuntimeException failure) {
+        store.books.put(KR_BOOK, TestKrMarket.book(KR_BOOK, 100_000_000, FRI));
+        store.states.put(KR_BOOK, new BookState(KR_BOOK, 100_000_000, 100_000_000, 0, 0, null, null, null, null));
+        when(marketData.quotes(KR)).thenReturn(Optional.of(quotes(Instant.parse("2026-10-26T12:00:00Z"),
+                bar("005930", FRI, 70_000, PaperFixtures.MON, 71_000))));
+        doAnswer(invocation -> {
+            LocalDate d = invocation.getArgument(1);
+            String kind = invocation.getArgument(2);
+            boolean pricesFinal = invocation.getArgument(3);
+            calls.add("kr claude " + d + " " + kind + " " + pricesFinal);
+            if (failure != null) {
+                throw failure;
+            }
+            store.insertDecisionIfAbsent(new Decision(0, KR_BOOK, d, kind, null, "NO_TRADE", "claude-sonnet-5-5", null,
+                    1, null, 30.0, null, null, null, MAPPER.valueToTree(Map.of("summary", "주문 없음")), null, null,
+                    null, pricesFinal, 0L, 0));
+            return store.decisionFor(KR_BOOK, d, kind).orElseThrow();
+        }).when(claude).decide(eq(KR), any(), anyString(), anyBoolean());
+    }
+
+    @Test
+    @DisplayName("시장 격리(A6): 결정 시각·기한은 그 시장의 설정 키(접두어)와 시장 기본값 — 미국 키와 서로 섞이지 않음")
+    void decisionTimesPerMarket() {
+        assertThat(job(FRI_CLOSE).times(KR)).isEqualTo(new PaperDecisionJob.Times(java.time.LocalTime.of(22, 30),
+                java.time.LocalTime.of(23, 30)));
+        tools.jackson.databind.node.ObjectNode body = (tools.jackson.databind.node.ObjectNode) store.settings.body();
+        body.put("decisionTimeKst", "08:15");
+        body.putObject("kr").put("decisionTimeKst", "21:50").put("decisionDeadlineKst", "21:00");
+        assertThat(job(FRI_CLOSE).times(KR)).as("기한이 결정 시각보다 앞이면 결정 시각").isEqualTo(
+                new PaperDecisionJob.Times(java.time.LocalTime.of(21, 50), java.time.LocalTime.of(21, 50)));
+        assertThat(job(FRI_CLOSE).times()).isEqualTo(new PaperDecisionJob.Times(java.time.LocalTime.of(8, 15),
+                java.time.LocalTime.of(12, 0)));
+        assertThat(PaperDecisionJob.decisionTime(KR, body)).isEqualTo(java.time.LocalTime.of(21, 50));
+        assertThat(PaperDecisionJob.decisionTime(body)).isEqualTo(java.time.LocalTime.of(8, 15));
+    }
+
+    @Test
+    @DisplayName("시장 격리(A6): 정기 실행은 시장마다 차례로 — 다른 시장은 그 시장 달력의 세션·결정 시각·관측치·확정 판정으로 그 시장 Claude 책만 결정하고, 게이트 지표·13F 선정·규칙 책(미국 전용 단계)은 돌지 않으며 기록 이름은 시장 접두어 · 미국 실행은 그 시장 책을 건드리지 않음")
+    void eachMarketRunsOnlyItsBooks() {
+        krBook(null);
+        PaperDecisionJob.Result early = job(KR_22_00, List.of(KR)).run(KR);
+        assertThat(early.outcome()).isEqualTo(PaperDecisionJob.TOO_EARLY);
+        assertThat(early.tradingDate()).as("시험용 한국 달력의 세션").isEqualTo(PaperFixtures.MON);
+        verify(marketData, never()).quotes(any());
+        assertThat(store.jobRuns).isEmpty();
+
+        ((tools.jackson.databind.node.ObjectNode) store.settings.body()).putObject("kr").put("decisionTimeKst",
+                "21:50");
+        BookState usRulesBefore = store.states.get(PaperBooks.RULES);
+        job(KR_22_00, List.of(UsPaperMarket.INSTANCE, KR)).scheduledRun();
+
+        assertThat(store.jobRuns).extracting(PaperStore.JobRun::job).as("시장마다 차례로, 기록 이름은 시장 접두어 + decision")
+                .containsExactly("decision", "kr.decision");
+        assertThat(store.jobRuns).extracting(PaperStore.JobRun::outcome).containsExactly("DECIDED", "DECIDED");
+        // 미국: 금요일 세션(미국 달력), 확정 종가 없이 기한 뒤 진행 — 게이트·규칙 책 결정, 한국 책은 그대로
+        assertThat(decided).containsExactly("2026-10-23 SCHEDULED false");
+        assertThat(store.gates).containsOnlyKeys(FRI);
+        assertThat(claudeDecided).as("미국 Claude 책은 시작 전").isEmpty();
+        // 한국: 월요일 세션(시험용 달력), 확정 종가로 — 장부 처리 뒤 Claude 책만, 게이트·선정·규칙 책 없음
+        assertThat(calls).containsExactly("rules 2026-10-23 SCHEDULED false", "kr claude 2026-10-26 SCHEDULED true");
+        JsonNode kr = store.jobRuns.get(1).detail();
+        assertThat(kr.path("tradingDate").asString()).isEqualTo("2026-10-26");
+        assertThat(kr.path("pricesFinal").asBoolean()).isTrue();
+        assertThat(kr.path("quotes").path("session").asString()).isEqualTo("2026-10-26");
+        assertThat(kr.has("gateLevel")).isFalse();
+        assertThat(kr.path("rules").asString()).isEqualTo(PaperDecisionJob.RULES_NOT_YET);
+        assertThat(kr.path("claude").path("status").asString()).isEqualTo("NO_TRADE");
+        verify(selection, never()).select(any());
+        assertThat(store.states.get(KR_BOOK).lastProcessedCollectedAt()).as("그 시장 관측치를 그 시장 책에")
+                .isEqualTo(Instant.parse("2026-10-26T12:00:00Z"));
+        assertThat(store.navSeries(KR_BOOK)).extracting(NavRow::tradingDate, NavRow::pricesFinal)
+                .as("그 시장 관측치의 확정 줄(월요일)뿐 — 미국 실행의 금요일 미확정 줄이 생기지 않음")
+                .containsExactly(org.assertj.core.groups.Tuple.tuple(PaperFixtures.MON, true));
+        assertThat(store.navSeries(PaperBooks.RULES)).extracting(NavRow::tradingDate, NavRow::pricesFinal)
+                .as("미국 실행은 미국 책에 금요일 미확정 줄").containsExactly(org.assertj.core.groups.Tuple.tuple(FRI, false));
+        assertThat(store.states.get(PaperBooks.RULES).lastProcessedCollectedAt())
+                .isEqualTo(usRulesBefore.lastProcessedCollectedAt());
+
+        // 같은 시장 두 번째 실행 — 그 시장의 그날 일이 끝남(미국 게이트·결정과 상관없이)
+        assertThat(job(KR_22_00, List.of(KR)).run(KR).outcome()).isEqualTo(PaperDecisionJob.ALREADY_DECIDED);
+        assertThat(calls).hasSize(2);
+    }
+
+    @Test
+    @DisplayName("시장 격리(A6): 오류 횟수는 시장마다 — 다른 시장이 그날 포기해도 미국 실행은 그대로, 그 시장 수동 결정은 그 시장 Claude 책만 받고 그 시장 횟수만 지움")
+    void failuresArePerMarket() {
+        krBook(new IllegalStateException("한국 패킷 고장"));
+        ((tools.jackson.databind.node.ObjectNode) store.settings.body()).putObject("kr").put("decisionTimeKst",
+                "21:50");
+        PaperDecisionJob job = job(KR_22_00, List.of(UsPaperMarket.INSTANCE, KR));
+        for (int i = 0; i < PaperDecisionJob.MAX_ATTEMPTS; i++) {
+            assertThat(job.run(KR).outcome()).isEqualTo(PaperDecisionJob.ERROR);
+        }
+        assertThat(store.jobRuns.get(store.jobRuns.size() - 1).detail().path("attempts").path(KR_BOOK).asInt())
+                .isEqualTo(PaperDecisionJob.MAX_ATTEMPTS);
+        assertThat(job.run(KR).outcome()).isEqualTo(PaperDecisionJob.GAVE_UP);
+        assertThat(job.run().outcome()).as("미국은 그 시장 오류 횟수와 상관없음").isEqualTo(PaperDecisionJob.DECIDED);
+
+        assertThatThrownBy(() -> job.runNow(KR, PaperBooks.RULES)).isInstanceOf(InvalidRequestException.class);
+        assertThatThrownBy(() -> job.runNow(KR, KR_BOOK)).isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("한국 패킷 고장");
+        assertThat(job.run(KR).outcome()).as("그 시장 수동 결정이 그 시장 횟수를 지움").isEqualTo(PaperDecisionJob.ERROR);
+        assertThat(store.jobRuns.get(store.jobRuns.size() - 1).job()).isEqualTo("kr.decision");
         assertThat(store.jobRuns.get(store.jobRuns.size() - 1).detail().path("attempt").asInt()).isEqualTo(1);
     }
 

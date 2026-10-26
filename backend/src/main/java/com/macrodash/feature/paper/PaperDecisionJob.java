@@ -27,7 +27,6 @@ import java.time.Clock;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalTime;
-import java.time.ZonedDateTime;
 import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -82,6 +81,13 @@ import java.util.concurrent.locks.ReentrantLock;
  * {@value #GAVE_UP}입니다. 수동 실행은 <b>그 책의</b> 횟수만 지웁니다 — 규칙 책 수동 결정이 Claude 책의 포기를 풀면 Claude 쪽 예외가
  * 되풀이될 때 유료 호출을 다시 부르게 됩니다. 재기동하면 처음부터 셉니다.
  * 정기 실행은 {@code dashboard.paper.enabled=false}면 아무것도 하지 않고, 수동 실행({@link #runNow})은 설정과 상관없이 돕니다.
+ *
+ * <p><b>시장마다 따로</b>입니다(2단계 명세 §9 A6). 정기 실행은 {@link PaperMarkets#ALL}을 차례로 돌고(지금 미국 하나), 시장마다 세션
+ * d(그 시장 달력)·결정 시각과 기한(그 시장의 설정 키 — 미국은 접두어 없이 지금 키, 없으면 시장 기본값 — 을 그 시장의 '세션 → 결정
+ * 순간' 식으로)·관측치와 확정 종가 판정·장부 처리·미확정 순자산 줄·책·오류 횟수(시장 × 거래일 × 책)·작업 기록 이름(시장 접두어 +
+ * {@value #JOB})을 그 시장 것으로 씁니다. 게이트 지표·13F 재선정·규칙 책 결정({@link RuleBookService})은 미국 전용 단계라 미국 묶음에서만
+ * 돌고(한국은 게이트가 없고 규칙 책은 2단계 D1), Claude 책 결정은 그 시장 문맥으로 냅니다({@link ClaudeBookService}). 잠금은 시장과
+ * 상관없이 하나입니다. 시장을 받지 않는 옛 시그니처(한 번 실행·수동 실행·시각 설정)는 미국 판입니다.
  */
 @Service
 public class PaperDecisionJob {
@@ -105,6 +111,8 @@ public class PaperDecisionJob {
     public static final String ERROR = "ERROR";
     /** 수동 실행이 작업 잠금을 쥐고 있어 정기 실행이 그 주기를 건너뜀(기록 안 함 — 클래스 설명). */
     public static final String BUSY = "BUSY";
+    /** 미국 밖 시장의 규칙 책 결정 자리(작업 기록) — 그 시장 규칙 책은 2단계 D1에서 들어옵니다(클래스 설명). */
+    static final String RULES_NOT_YET = "이 시장의 규칙 계좌 결정은 아직 없습니다(2단계 D1)";
 
     /**
      * 한 번 실행의 결과.
@@ -134,13 +142,15 @@ public class PaperDecisionJob {
     private final PaperConfig config;
     private final ObjectMapper mapper;
     private final Clock clock;
-    /** 정기 실행과 수동 실행이 겹치지 않게(같은 거래일 결정을 동시에 만들지 않게 — 유일 제약이 마지막 방어선). */
+    /** 정기 실행이 도는 시장, 도는 순서. */
+    private final List<PaperMarket> markets;
+    /** 정기 실행과 수동 실행이 겹치지 않게(같은 거래일 결정을 동시에 만들지 않게 — 유일 제약이 마지막 방어선). 시장이 여럿이어도 하나. */
     private final ReentrantLock running = new ReentrantLock();
-    /** (거래일, 책) → 오류 난 횟수(클래스 설명). 재기동하면 사라집니다. */
+    /** (시장, 거래일, 책) → 오류 난 횟수(클래스 설명). 재기동하면 사라집니다. */
     private final Map<FailureKey, Integer> failures = new ConcurrentHashMap<>();
 
-    /** 오류 횟수를 세는 단위 — 거래일 × 책 코드(rules·claude). */
-    private record FailureKey(LocalDate day, String book) {
+    /** 오류 횟수를 세는 단위 — 시장 × 거래일(그 시장 세션) × 책 코드(그 시장의 규칙·Claude 책). */
+    private record FailureKey(String market, LocalDate day, String book) {
     }
 
     /**
@@ -164,6 +174,15 @@ public class PaperDecisionJob {
     PaperDecisionJob(PaperStore store, StoreReader reader, PaperMarketData marketData, PaperLedgerService ledger,
                      PaperSelectionService selection, RuleBookService rules, ClaudeBookService claude,
                      PaperSettingsService settings, PaperConfig config, ObjectMapper mapper, Clock clock) {
+        this(store, reader, marketData, ledger, selection, rules, claude, settings, config, mapper, clock,
+                PaperMarkets.ALL);
+    }
+
+    /** 테스트용 — 시계와 시장 목록을 바꿉니다(시장 격리 시험이 시험용 한국 시장을 넣음). */
+    PaperDecisionJob(PaperStore store, StoreReader reader, PaperMarketData marketData, PaperLedgerService ledger,
+                     PaperSelectionService selection, RuleBookService rules, ClaudeBookService claude,
+                     PaperSettingsService settings, PaperConfig config, ObjectMapper mapper, Clock clock,
+                     List<PaperMarket> markets) {
         this.store = store;
         this.reader = reader;
         this.marketData = marketData;
@@ -175,75 +194,86 @@ public class PaperDecisionJob {
         this.config = config;
         this.mapper = mapper;
         this.clock = clock;
+        this.markets = List.copyOf(markets);
     }
 
-    /** 정기 실행. 꺼져 있으면 아무것도 하지 않습니다. 예외는 삼키고 로그만(RegimeLogService 관례). */
+    /**
+     * 정기 실행 — 시장마다 차례로 한 번({@link PaperMarkets#ALL}, 클래스 설명). 한 시장의 예외는 그 시장만 로그로 남기고 다음 시장으로
+     * 넘어갑니다. 꺼져 있으면 아무것도 하지 않습니다. 예외는 삼키고 로그만(RegimeLogService 관례).
+     */
     @Scheduled(initialDelayString = "${dashboard.paper.decision-initial-delay-ms:120000}",
             fixedDelayString = "${dashboard.paper.decision-interval-ms:600000}")
     public void scheduledRun() {
         if (!config.enabled()) {
             return;
         }
-        try {
-            Result result = run();
-            if (BUSY.equals(result.outcome())) {
-                log.info("모의 매매 결정 작업: {}", result.message());
-            } else if (ERROR.equals(result.outcome())) {
-                log.warn("모의 매매 결정 작업 오류({}) — {}", result.tradingDate(), result.message());
-            } else if (DECIDED.equals(result.outcome())) {
-                log.info("모의 매매 결정 작업: {} 규칙 책 {} · Claude 책 {}", result.tradingDate(),
-                        result.rules() == null ? "결정 없음" : result.rules().status(),
-                        result.claude() == null ? "결정 없음" : result.claude().status());
+        for (PaperMarket market : markets) {
+            try {
+                Result result = run(market);
+                if (BUSY.equals(result.outcome())) {
+                    log.info("모의 매매 결정 작업: {}", result.message());
+                } else if (ERROR.equals(result.outcome())) {
+                    log.warn("모의 매매 결정 작업 오류({}) — {}", result.tradingDate(), result.message());
+                } else if (DECIDED.equals(result.outcome())) {
+                    log.info("모의 매매 결정 작업: {} 규칙 책 {} · Claude 책 {}", result.tradingDate(),
+                            result.rules() == null ? "결정 없음" : result.rules().status(),
+                            result.claude() == null ? "결정 없음" : result.claude().status());
+                }
+            } catch (RuntimeException e) {
+                log.warn("모의 매매 결정 작업 실패 — 다음 주기에 다시 시도합니다: {}", e.toString());
             }
-        } catch (RuntimeException e) {
-            log.warn("모의 매매 결정 작업 실패 — 다음 주기에 다시 시도합니다: {}", e.toString());
         }
     }
 
-    /**
-     * 정기 실행 한 번(클래스 설명의 순서). 테스트도 부릅니다. 수동 실행이 잠금을 쥐고 있으면 기다리지 않고 {@value #BUSY} — 스케줄러
-     * 스레드를 Claude 호출 몇 분 동안 붙잡지 않게(다음 주기에 다시 봅니다).
-     */
+    /** 미국 시장 정기 실행 한 번 — {@link #run(PaperMarket)}의 미국 판. 테스트가 부릅니다. */
     Result run() {
+        return run(UsPaperMarket.INSTANCE);
+    }
+
+    /**
+     * 그 시장의 정기 실행 한 번(클래스 설명의 순서). 수동 실행이 잠금을 쥐고 있으면 기다리지 않고 {@value #BUSY} — 스케줄러 스레드를
+     * Claude 호출 몇 분 동안 붙잡지 않게(다음 주기에 다시 봅니다).
+     */
+    Result run(PaperMarket market) {
         if (!running.tryLock()) {
             return new Result(BUSY, null, null, null, null,
                     "수동 결정이 진행 중 — 이번 주기는 건너뛰고 다음 주기에 다시 봅니다");
         }
         try {
-            return runLocked();
+            return runLocked(market);
         } finally {
             running.unlock();
         }
     }
 
-    private Result runLocked() {
+    private Result runLocked(PaperMarket market) {
         if (!store.ready()) {
             return new Result(NOT_READY, null, null, null, null, PaperQueryService.NOT_READY_MESSAGE);
         }
         Instant now = clock.instant();
-        LocalDate d = UsMarketCalendar.lastCompletedSession(now);
-        if (store.books().isEmpty()) {
+        LocalDate d = market.calendar().lastCompletedSession(now);
+        if (store.books(market.code()).isEmpty()) {
             return new Result(NOT_INITIALIZED, d, null, null, null, "초기화 전입니다 — 계좌가 없습니다");
         }
-        Times times = times();
-        Instant decisionAt = kst(d.plusDays(1), times.decision());
+        Times times = times(market);
+        Instant decisionAt = market.decisionInstant(d, times.decision());
         if (now.isBefore(decisionAt)) {
             return new Result(TOO_EARLY, d, null, null, null, "결정 시각 " + Kst.stamp(decisionAt) + " 전");
         }
-        Work work = pendingWork(d);
+        Work work = pendingWork(market, d);
         if (!work.any()) {
             return new Result(ALREADY_DECIDED, d, null, null, null, d + " 결정·게이트 지표를 이미 남겼습니다");
         }
-        boolean rulesGaveUp = gaveUp(d, PaperBooks.RULES);
-        boolean claudeGaveUp = gaveUp(d, PaperBooks.CLAUDE);
+        boolean rulesGaveUp = gaveUp(market, d, market.rulesBook());
+        boolean claudeGaveUp = gaveUp(market, d, market.claudeBook());
         // 게이트 지표는 두 책이 함께 기다리는 일입니다(그 단계 오류는 두 책 모두에 셈).
         if ((!(work.gate() || work.rules()) || rulesGaveUp) && (!(work.gate() || work.claude()) || claudeGaveUp)) {
             return new Result(GAVE_UP, d, null, null, null, d + " 오류가 " + MAX_ATTEMPTS + "번 나 오늘은 더 시도하지 않습니다 — "
                     + "수동 실행(POST /api/paper/run/decision)은 다시 시도합니다");
         }
-        Optional<Quotes> quotes = reader.quietly(marketData::quotes);
-        boolean pricesFinal = quotes.map(q -> finalFor(q, d)).orElse(false);
-        Instant deadline = kst(d.plusDays(1), times.deadline());
+        Optional<Quotes> quotes = reader.quietly(() -> marketData.quotes(market));
+        boolean pricesFinal = quotes.map(q -> finalFor(market, q, d)).orElse(false);
+        Instant deadline = market.decisionInstant(d, times.deadline());
         if (!pricesFinal && now.isBefore(deadline)) {
             return new Result(PRICES_NOT_FINAL, d, false, null, null, d + " 확정 종가 관측치를 기다립니다(기한 "
                     + Kst.stamp(deadline) + ")");
@@ -253,21 +283,23 @@ public class PaperDecisionJob {
         detail.put("tradingDate", d.toString());
         detail.put("pricesFinal", pricesFinal);
         detail.put("pastDeadline", !now.isBefore(deadline));
-        quotes.ifPresent(q -> detail.put("quotes", PaperRiskJob.describe(q)));
+        quotes.ifPresent(q -> detail.put("quotes", PaperRiskJob.describe(market, q)));
         try {
-            quotes.ifPresent(q -> detail.put("ledger", ledgerDetail(ledger.process(q))));
+            quotes.ifPresent(q -> detail.put("ledger", ledgerDetail(ledger.process(market, q))));
             // 다음 세션 봉이 섞인 관측치(기한을 한참 넘겨 장중에 돈 경우)로는 d의 줄을 쓰지 않습니다 — 그날 값이 아닙니다.
             boolean sameSession = quotes.map(q -> q.modalBarDate() == null || !q.modalBarDate().isAfter(d))
                     .orElse(true);
             if (sameSession) {
-                detail.put("navSettled", ledger.settleNav(d, pricesFinal));
+                detail.put("navSettled", ledger.settleNav(market, d, pricesFinal));
             }
-            GateRow gate = recordGate(d);
-            detail.put("gateLevel", gate.level());
+            if (usSteps(market)) {
+                GateRow gate = recordGate(d);
+                detail.put("gateLevel", gate.level());
+            }
         } catch (RuntimeException e) {
             // 장부·게이트가 실패하면 두 책 모두 결정하지 않습니다(그날 장부를 믿을 수 없음) — 오류도 두 책 모두에 셉니다.
-            return failed(now, d, pricesFinal, detail, List.of(message(e)), List.of(PaperBooks.RULES, PaperBooks.CLAUDE),
-                    null, null);
+            return failed(market, now, d, pricesFinal, detail, List.of(message(e)),
+                    List.of(market.rulesBook(), market.claudeBook()), null, null);
         }
 
         // 규칙 책(대조군)과 Claude 책(실험군)은 따로 잡습니다 — 한쪽 오류가 다른 쪽의 그날 결정을 막지 않게(클래스 설명).
@@ -276,14 +308,16 @@ public class PaperDecisionJob {
         Decision decision = null;
         if (rulesGaveUp) {
             detail.put("rules", gaveUpNote());
+        } else if (!usSteps(market)) {
+            detail.put("rules", RULES_NOT_YET);
         } else {
             try {
                 decision = decideRules(d, pricesFinal, detail);
-                failures.remove(new FailureKey(d, PaperBooks.RULES));
+                failures.remove(new FailureKey(market.code(), d, market.rulesBook()));
             } catch (RuntimeException e) {
                 errors.add("규칙 계좌: " + message(e));
                 detail.put("rulesError", message(e));
-                failedBooks.add(PaperBooks.RULES);
+                failedBooks.add(market.rulesBook());
             }
         }
         Decision claudeDecision = null;
@@ -291,25 +325,33 @@ public class PaperDecisionJob {
             detail.put("claude", gaveUpNote());
         } else {
             try {
-                String claudeSkip = claudeSkipReason(store.book(PaperBooks.CLAUDE), d);
+                String claudeSkip = claudeSkipReason(market, store.book(market.claudeBook()), d);
                 if (claudeSkip == null) {
-                    claudeDecision = claude.decide(d, RuleBookService.SCHEDULED, pricesFinal);
+                    claudeDecision = claude.decide(market, d, RuleBookService.SCHEDULED, pricesFinal);
                     detail.put("claude", decisionDetail(claudeDecision));
                 } else {
                     detail.put("claude", claudeSkip);
                 }
-                failures.remove(new FailureKey(d, PaperBooks.CLAUDE));
+                failures.remove(new FailureKey(market.code(), d, market.claudeBook()));
             } catch (RuntimeException e) {
                 errors.add("Claude 계좌: " + message(e));
                 detail.put("claudeError", message(e));
-                failedBooks.add(PaperBooks.CLAUDE);
+                failedBooks.add(market.claudeBook());
             }
         }
         if (!errors.isEmpty()) {
-            return failed(now, d, pricesFinal, detail, errors, failedBooks, decision, claudeDecision);
+            return failed(market, now, d, pricesFinal, detail, errors, failedBooks, decision, claudeDecision);
         }
-        record(now, DECIDED, detail);
+        record(market, now, DECIDED, detail);
         return new Result(DECIDED, d, pricesFinal, decision, claudeDecision, null);
+    }
+
+    /**
+     * 미국 전용 단계(게이트 지표·13F 재선정·규칙 책 결정 — {@link RuleBookService})를 도는 시장인가(클래스 설명). 미국 묶음 그 자체일
+     * 때만 참입니다.
+     */
+    private static boolean usSteps(PaperMarket market) {
+        return market == UsPaperMarket.INSTANCE;
     }
 
     /**
@@ -364,26 +406,26 @@ public class PaperDecisionJob {
      * 오류로 끝난 실행 — 오류 난 책마다 그날 오류 횟수를 하나 올리고 기록합니다({@code attempt}는 그중 가장 큰 횟수, {@code attempts}는
      * 책마다). 그사이 낸 결정은 결과에 그대로 싣습니다.
      */
-    private Result failed(Instant now, LocalDate d, boolean pricesFinal, Map<String, Object> detail, List<String> errors,
-                          List<String> books, Decision rulesDecision, Decision claudeDecision) {
+    private Result failed(PaperMarket market, Instant now, LocalDate d, boolean pricesFinal, Map<String, Object> detail,
+                          List<String> errors, List<String> books, Decision rulesDecision, Decision claudeDecision) {
         int attempt = 0;
         for (String book : books) {
-            attempt = Math.max(attempt, failures.merge(new FailureKey(d, book), 1, Integer::sum));
+            attempt = Math.max(attempt, failures.merge(new FailureKey(market.code(), d, book), 1, Integer::sum));
         }
         Map<String, Integer> attempts = new LinkedHashMap<>();
-        for (String book : List.of(PaperBooks.RULES, PaperBooks.CLAUDE)) {
-            attempts.put(book, failures.getOrDefault(new FailureKey(d, book), 0));
+        for (String book : List.of(market.rulesBook(), market.claudeBook())) {
+            attempts.put(book, failures.getOrDefault(new FailureKey(market.code(), d, book), 0));
         }
         String message = String.join(" · ", errors);
         detail.put("error", message);
         detail.put("attempt", attempt);
         detail.put("attempts", attempts);
-        record(now, ERROR, detail);
+        record(market, now, ERROR, detail);
         return new Result(ERROR, d, pricesFinal, rulesDecision, claudeDecision, message);
     }
 
-    private boolean gaveUp(LocalDate d, String book) {
-        return failures.getOrDefault(new FailureKey(d, book), 0) >= MAX_ATTEMPTS;
+    private boolean gaveUp(PaperMarket market, LocalDate d, String book) {
+        return failures.getOrDefault(new FailureKey(market.code(), d, book), 0) >= MAX_ATTEMPTS;
     }
 
     private static String gaveUpNote() {
@@ -403,26 +445,38 @@ public class PaperDecisionJob {
      * @throws InvalidRequestException 책 코드가 rules·claude가 아님, 그 책이 시작 전, Claude 책이 일시정지 중
      */
     public Decision runNow(String book) {
-        String code = Params.oneOf("book", book, List.of(PaperBooks.RULES, PaperBooks.CLAUDE));
+        return runNow(UsPaperMarket.INSTANCE, book);
+    }
+
+    /**
+     * 그 시장의 수동 결정 — {@link #runNow(String)}과 같되 책 코드·세션·관측치·장부·기록 이름이 그 시장 것. 규칙 책 수동 결정은 미국
+     * 전용 단계라 미국 묶음에서만 받습니다(클래스 설명).
+     *
+     * @throws InvalidRequestException 책 코드가 그 시장의 규칙·Claude 책이 아님(미국 밖 시장은 Claude 책만), 그 책이 시작 전, Claude 책이
+     *                                 일시정지 중
+     */
+    Decision runNow(PaperMarket market, String book) {
+        String code = Params.oneOf("book", book, usSteps(market) ? List.of(market.rulesBook(), market.claudeBook())
+                : List.of(market.claudeBook()));
         running.lock();
         try {
-            // 그 책의 오류 횟수만 지웁니다(클래스 설명) — 다른 책의 포기 상태는 그대로.
-            failures.keySet().removeIf(key -> key.book().equals(code));
+            // 그 책의 오류 횟수만 지웁니다(클래스 설명) — 다른 책·다른 시장의 포기 상태는 그대로.
+            failures.keySet().removeIf(key -> key.market().equals(market.code()) && key.book().equals(code));
             Instant now = clock.instant();
-            LocalDate d = UsMarketCalendar.lastCompletedSession(now);
-            Optional<Quotes> quotes = reader.quietly(marketData::quotes);
-            boolean pricesFinal = quotes.map(q -> finalFor(q, d)).orElse(false);
+            LocalDate d = market.calendar().lastCompletedSession(now);
+            Optional<Quotes> quotes = reader.quietly(() -> marketData.quotes(market));
+            boolean pricesFinal = quotes.map(q -> finalFor(market, q, d)).orElse(false);
             Map<String, Object> detail = new LinkedHashMap<>();
             detail.put("manual", true);
             detail.put("book", code);
             detail.put("tradingDate", d.toString());
             detail.put("pricesFinal", pricesFinal);
-            quotes.ifPresent(q -> detail.put("ledger", ledgerDetail(ledger.process(q))));
-            Decision decision = PaperBooks.CLAUDE.equals(code)
-                    ? claude.decide(d, RuleBookService.MANUAL, pricesFinal)
+            quotes.ifPresent(q -> detail.put("ledger", ledgerDetail(ledger.process(market, q))));
+            Decision decision = market.claudeBook().equals(code)
+                    ? claude.decide(market, d, RuleBookService.MANUAL, pricesFinal)
                     : rules.decide(d, RuleBookService.MANUAL, pricesFinal);
             detail.put(code, decisionDetail(decision));
-            record(now, DECIDED, detail);
+            record(market, now, DECIDED, detail);
             return decision;
         } finally {
             running.unlock();
@@ -434,11 +488,15 @@ public class PaperDecisionJob {
      * 그 거래일에 아직 할 일 — 게이트 지표가 없음, 시작한 규칙 책의 그날 정기 결정(SCHEDULED·REBALANCE)이 없음, Claude 책이 그날
      * 결정을 내야 하는데 아직 없음(또는 재시도할 API 오류 — {@link #claudeSkipReason}).
      */
-    private Work pendingWork(LocalDate d) {
+    private Work pendingWork(PaperMarket market, LocalDate d) {
+        boolean claudeDue = claudeSkipReason(market, store.book(market.claudeBook()), d) == null;
+        if (!usSteps(market)) {
+            return new Work(false, false, claudeDue);   // 게이트 지표·규칙 책 결정은 미국 전용 단계(클래스 설명)
+        }
         Optional<Book> book = store.book(PaperBooks.RULES);
         boolean rules = book.isPresent() && !PaperBooks.NOT_STARTED.equals(book.get().status())
                 && afterStart(book.get(), d) && rulesDecisionOn(d).isEmpty();
-        return new Work(store.gate(d).isEmpty(), rules, claudeSkipReason(store.book(PaperBooks.CLAUDE), d) == null);
+        return new Work(store.gate(d).isEmpty(), rules, claudeDue);
     }
 
     /** 출발일 뒤 거래일인가 — 출발일 이하는 초기 결정이 그날 결정이라 정기 결정을 내지 않습니다(두 책 같음). */
@@ -456,7 +514,7 @@ public class PaperDecisionJob {
      * Claude 책이 그 거래일 정기 결정을 내야 하면 null, 아니면 내지 않는 이유 — 책 없음·운용 중 아님(시작 전·일시정지)·출발일
      * 이하(초기 결정이 그날 결정)·이미 결정함(재시도할 API 오류는 "낼 것"으로 봄, 명세 C7).
      */
-    private String claudeSkipReason(Optional<Book> book, LocalDate d) {
+    private String claudeSkipReason(PaperMarket market, Optional<Book> book, LocalDate d) {
         if (book.isEmpty()) {
             return "Claude 계좌 없음";
         }
@@ -468,7 +526,7 @@ public class PaperDecisionJob {
         if (startedOn == null || !d.isAfter(startedOn)) {
             return "출발일(" + startedOn + ") 이하 — 초기 결정이 그날 결정입니다";
         }
-        Optional<Decision> existing = store.decisionFor(PaperBooks.CLAUDE, d, RuleBookService.SCHEDULED);
+        Optional<Decision> existing = store.decisionFor(market.claudeBook(), d, RuleBookService.SCHEDULED);
         if (existing.isPresent() && !ClaudeBookService.retryable(existing.get())) {
             return "이미 결정함(" + existing.get().status() + ")";
         }
@@ -489,19 +547,29 @@ public class PaperDecisionJob {
                 List.of(RuleBookService.REBALANCE, RuleBookService.INITIAL), reselectionDay);
     }
 
-    /** d의 확정 종가 관측치인가 — 다수 티커의 봉 날짜가 d이고 마감 + 15분 뒤에 수집함(설계 §6-1). */
+    /** 미국 관측치가 d의 확정 종가인가 — {@link #finalFor(PaperMarket, Quotes, LocalDate)}의 미국 판. */
     static boolean finalFor(Quotes quotes, LocalDate d) {
-        return d.equals(quotes.modalBarDate()) && PaperMarketData.isFinal(d, quotes.collectedAt());
+        return finalFor(UsPaperMarket.INSTANCE, quotes, d);
+    }
+
+    /** d의 확정 종가 관측치인가 — 다수 티커의 봉 날짜가 d이고 그 시장의 확정 판정(미국: 마감 + 15분 뒤에 수집, 설계 §6-1). */
+    static boolean finalFor(PaperMarket market, Quotes quotes, LocalDate d) {
+        return d.equals(quotes.modalBarDate()) && market.isFinal(d, quotes.collectedAt());
+    }
+
+    /** 미국 책의 결정 시각·마감 기한 — {@link #times(PaperMarket)}의 미국 판. */
+    Times times() {
+        return times(UsPaperMarket.INSTANCE);
     }
 
     /**
-     * 설정의 결정 시각·마감 기한({@code decisionTimeKst}·{@code decisionDeadlineKst}, "HH:mm"). 없거나 틀리면 07:30·12:00,
-     * 기한이 결정 시각보다 앞이면 기한을 결정 시각으로 봅니다(기다리지 않고 바로 진행).
+     * 설정의 결정 시각·마감 기한(그 시장의 {@code decisionTimeKst}·{@code decisionDeadlineKst} 키, "HH:mm" — 미국은 접두어 없음).
+     * 없거나 틀리면 그 시장 기본값(미국 07:30·12:00), 기한이 결정 시각보다 앞이면 기한을 결정 시각으로 봅니다(기다리지 않고 바로 진행).
      */
-    Times times() {
+    Times times(PaperMarket market) {
         var body = store.settings().map(PaperStore.SettingsRow::body).orElse(null);
-        LocalTime decision = decisionTime(body);
-        LocalTime deadline = time(Json.asText(body, "decisionDeadlineKst"), DEFAULT_DEADLINE);
+        LocalTime decision = decisionTime(market, body);
+        LocalTime deadline = time(text(body, market.settingKey("decisionDeadlineKst")), market.defaultDeadline());
         return new Times(decision, deadline.isBefore(decision) ? decision : deadline);
     }
 
@@ -511,7 +579,18 @@ public class PaperDecisionJob {
      * 그 사이 전부)"가 됩니다.
      */
     static LocalTime decisionTime(JsonNode body) {
-        return time(Json.asText(body, "decisionTimeKst"), DEFAULT_DECISION_TIME);
+        return decisionTime(UsPaperMarket.INSTANCE, body);
+    }
+
+    /** 설정 본문의 그 시장 결정 시각 — 없거나 틀리면 그 시장 기본값({@link #decisionTime(JsonNode)}의 시장 판). */
+    static LocalTime decisionTime(PaperMarket market, JsonNode body) {
+        return time(text(body, market.settingKey("decisionTimeKst")), market.defaultDecisionTime());
+    }
+
+    /** 설정 본문의 점 경로 값을 글로({@link Json#asText}와 같은 규칙 — 없거나 null이면 null). */
+    private static String text(JsonNode body, String path) {
+        JsonNode value = PaperSettingsService.valueAt(body, path);
+        return value == null || value.isNull() ? null : value.asString("");
     }
 
     private static LocalTime time(String text, LocalTime fallback) {
@@ -523,10 +602,6 @@ public class PaperDecisionJob {
         } catch (DateTimeParseException e) {
             return fallback;
         }
-    }
-
-    private static Instant kst(LocalDate day, LocalTime time) {
-        return ZonedDateTime.of(day, time, Kst.ZONE).toInstant();
     }
 
     // ------------------------------------------------------------------ 게이트 지표
@@ -545,7 +620,7 @@ public class PaperDecisionJob {
                 Datasets.MAX_AGE_REALTIME, "macro_collected"));
         Map<String, PaperGate.Input> read = PaperGate.read(macro.orElse(null));
         Map<String, Integer> previous = store.latestGateBefore(d)
-                .filter(row -> row.tradingDate().equals(UsMarketCalendar.previousTradingDay(d)))
+                .filter(row -> row.tradingDate().equals(UsPaperMarket.INSTANCE.calendar().previousTradingDay(d)))
                 .map(row -> PaperGate.streaks(row.streaks())).orElse(null);
         GateIndicator.Thresholds thresholds = settings.current().settings().gate();
         // 이어 쓴 값·그 거래일보다 앞선 값은 연속 일수에 넣지 않습니다(PaperGate.counted) — 기록에는 그대로 남김.
@@ -557,9 +632,9 @@ public class PaperDecisionJob {
     }
 
     // ------------------------------------------------------------------ 기록
-    private void record(Instant started, String outcome, Map<String, Object> detail) {
+    private void record(PaperMarket market, Instant started, String outcome, Map<String, Object> detail) {
         try {
-            store.recordJobRun(JOB, started, clock.instant(), outcome, mapper.valueToTree(detail));
+            store.recordJobRun(market.jobName(JOB), started, clock.instant(), outcome, mapper.valueToTree(detail));
         } catch (RuntimeException e) {
             // 기록 실패가 결정(이미 커밋됨)을 오류로 바꾸지 않게 로그만 남깁니다.
             log.warn("모의 매매 결정 작업 기록을 남기지 못했습니다: {}", e.toString());
