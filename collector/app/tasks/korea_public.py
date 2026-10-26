@@ -143,19 +143,7 @@ def task_fsc_prices() -> str:
             continue  # 아직 발표 전이거나 휴장일
 
         obs_date = day.isoformat()
-        totals = fsc_service.market_totals(rows)
-        with store.transaction():
-            saved = store.put_observations(catalog.OBS_FSC_PRICE, obs_date, rows, entity_key="code")
-            for market, agg in totals.items():
-                store.put_timeseries(catalog.TS_FSC_MARKET, f"{market}.marketCap", [(obs_date, agg["marketCap"])])
-                store.put_timeseries(catalog.TS_FSC_MARKET, f"{market}.tradingValue", [(obs_date, agg["tradingValue"])])
-            store.put_snapshot(catalog.SNAP_FSC_PRICES_META, {
-                "source": "금융위원회 주식시세정보 (거래소 확정치, 기준일 다음 영업일 13시 이후 갱신)",
-                "latestBasDt": obs_date,
-                "rows": saved,
-                "markets": totals,
-                "endpoint": url,
-            })
+        saved = _put_fsc_day(obs_date, rows, url)
         written.append((obs_date, saved))
         if only_first:
             break
@@ -168,6 +156,27 @@ def task_fsc_prices() -> str:
     latest_date, latest_rows = written[-1]
     days = f" · {len(written)}일 보충" if len(written) > 1 else ""
     return f"{latest_date} {latest_rows}종목{days} (호출 {budget.used}회)" + _reason_suffix(reasons)
+
+
+def _put_fsc_day(obs_date: str, rows: list[dict], url: str) -> int:
+    """
+    금융위 하루치 저장 — 종목별 observations + 시장 합계 timeseries + 메타 스냅샷을 한 트랜잭션으로(task_fsc_prices 규칙).
+    저장한 종목 행 수를 돌려줍니다.
+    """
+    totals = fsc_service.market_totals(rows)
+    with store.transaction():
+        saved = store.put_observations(catalog.OBS_FSC_PRICE, obs_date, rows, entity_key="code")
+        for market, agg in totals.items():
+            store.put_timeseries(catalog.TS_FSC_MARKET, f"{market}.marketCap", [(obs_date, agg["marketCap"])])
+            store.put_timeseries(catalog.TS_FSC_MARKET, f"{market}.tradingValue", [(obs_date, agg["tradingValue"])])
+        store.put_snapshot(catalog.SNAP_FSC_PRICES_META, {
+            "source": "금융위원회 주식시세정보 (거래소 확정치, 기준일 다음 영업일 13시 이후 갱신)",
+            "latestBasDt": obs_date,
+            "rows": saved,
+            "markets": totals,
+            "endpoint": url,
+        })
+    return saved
 
 
 # DART 재무를 받을 종목 수 상한과 대상 기간. 호출 수 = 상한 / BATCH (+ 이전 연도 재시도).
