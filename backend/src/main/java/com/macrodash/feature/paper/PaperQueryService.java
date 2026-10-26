@@ -1,6 +1,7 @@
 package com.macrodash.feature.paper;
 
 import com.macrodash.Kst;
+import com.macrodash.analytics.CalendarUnavailableException;
 import com.macrodash.analytics.CalendarWindow;
 import com.macrodash.analytics.PaperStats;
 import com.macrodash.analytics.TradingCalendar;
@@ -602,7 +603,14 @@ public class PaperQueryService {
         boolean benchmark = PaperBooks.KIND_BENCHMARK.equals(book.kind());
         Double nav = state.map(BookState::nav).orElse(null);
         TradingCalendar calendar = marketOf(book).calendar();
-        LocalDate session = calendar.currentOrLastSession(clock.instant());
+        // 달력이 모르는 해(공휴일 목록 없음)에 닿으면 보유 거래일만 null + 사유 — 응답 전체를 실패시키지 않습니다(명세 K35).
+        LocalDate session = null;
+        String calendarGap = null;
+        try {
+            session = calendar.currentOrLastSession(clock.instant());
+        } catch (CalendarUnavailableException e) {
+            calendarGap = e.getMessage();
+        }
 
         // 사후 체결로 연 보유: 그 종목의 사후 매수 체결 관측 시각 = 보유를 연 시각.
         Map<String, Instant> backfillOpened = new HashMap<>();
@@ -635,8 +643,17 @@ public class PaperQueryService {
             row.put("stopDistancePct", stopPrice != null && p.lastPrice() != null && stopPrice > 0
                     ? round2((p.lastPrice() / stopPrice - 1.0) * 100.0) : null);
             row.put("openedOn", text(p.openedOn()));
-            row.put("holdingTradingDays", p.openedOn() == null ? null
-                    : calendar.tradingDaysBetween(p.openedOn(), session));
+            Integer holdingDays = null;
+            String holdingDaysReason = p.openedOn() == null ? null : calendarGap;
+            if (p.openedOn() != null && session != null) {
+                try {
+                    holdingDays = calendar.tradingDaysBetween(p.openedOn(), session);
+                } catch (CalendarUnavailableException e) {
+                    holdingDaysReason = e.getMessage();
+                }
+            }
+            row.put("holdingTradingDays", holdingDays);
+            row.put("holdingTradingDaysReason", holdingDaysReason);
             row.put("priceStale", p.priceStale() || p.lastPrice() == null);
             row.put("splitNote", p.splitNote());
             row.put("cashLike", cashLike);
@@ -783,15 +800,27 @@ public class PaperQueryService {
         out.put("lastObservedAtKst", state.map(s -> stamp(s.lastObservedAt())).orElse(null));
         out.put("positions", positions.size());
         out.put("staleCount", (int) positions.stream().filter(p -> p.priceStale() || p.lastPrice() == null).count());
-        out.put("stats", started ? stats(market.calendar(), navByBook.getOrDefault(book.code(), List.of()),
-                benchmark == null ? null : navByBook.getOrDefault(benchmark, List.of())) : null);
+        Map<String, Object> stats = null;
+        String statsReason = null;
+        if (started) {
+            try {
+                stats = stats(market.calendar(), navByBook.getOrDefault(book.code(), List.of()),
+                        benchmark == null ? null : navByBook.getOrDefault(benchmark, List.of()));
+            } catch (CalendarUnavailableException e) {
+                // 순자산 줄이 걸친 해의 공휴일 목록이 없음 — 표본 거래일을 셀 수 없어 통계만 null + 사유(명세 K35).
+                statsReason = e.getMessage();
+            }
+        }
+        out.put("stats", stats);
+        out.put("statsReason", statsReason);
         out.put("benchmark", benchmark);
         return out;
     }
 
     /**
      * 통계 — 표본·하루 간격 쌍의 거래일은 그 책 시장의 달력으로 셉니다. 순자산이 0 이하인 날(있을 수 없지만)은 빼고, 계산이
-     * 거절되면(날짜 순서 등) null.
+     * 거절되면(날짜 순서 등) null. 달력이 그 줄들이 걸친 해를 모르면 {@link CalendarUnavailableException}이 나갑니다(부르는 쪽이
+     * null + 사유로 — {@code statsReason}).
      */
     private static Map<String, Object> stats(TradingCalendar calendar, List<NavRow> rows, List<NavRow> benchmarkRows) {
         Map<LocalDate, Double> benchmarkByDate = new HashMap<>();

@@ -50,6 +50,8 @@ export interface PaperBookSummary {
   /** 가격을 새로 받지 못한 보유 수. */
   staleCount: number | null;
   stats: PaperStats | null;
+  /** 통계를 낼 수 없는 사유('달력 없음 — …', 그 시장 달력이 순자산 줄이 걸친 해의 공휴일 목록을 모름). 보통 null. 화면 표시는 2단계 F2. */
+  statsReason?: string | null;
   /** 통계 비교 기준 책 코드(rules·claude·bench_mix → bench_spy). bench_spy 자신은 null. */
   benchmark: string | null;
 }
@@ -413,6 +415,8 @@ export interface PaperPosition {
   stopDistancePct: number | null;
   openedOn: string | null;
   holdingTradingDays: number | null;
+  /** 보유 거래일을 셀 수 없는 사유('달력 없음 — …', 그 시장 달력이 그해 공휴일 목록을 모름). 보통 null. 화면 표시는 2단계 F2. */
+  holdingTradingDaysReason?: string | null;
   priceStale: boolean;
   splitNote: string | null;
   /** 현금성 ETF(SHY 등) — 트레일링 스탑을 적용하지 않습니다. */

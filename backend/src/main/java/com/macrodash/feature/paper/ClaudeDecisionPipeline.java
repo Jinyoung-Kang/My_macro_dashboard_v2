@@ -1,5 +1,6 @@
 package com.macrodash.feature.paper;
 
+import com.macrodash.analytics.CalendarUnavailableException;
 import com.macrodash.analytics.OrderValidator;
 import com.macrodash.analytics.OrderValidator.Proposed;
 import com.macrodash.analytics.OrderValidator.Verdict;
@@ -266,7 +267,12 @@ final class ClaudeDecisionPipeline {
             weights.put(p.ticker(), p.qty() * price / view.nav() * 100.0);
             heldQty.put(p.ticker(), p.qty());
             if (p.openedOn() != null) {
-                heldDays.put(p.ticker(), market.calendar().tradingDaysBetween(p.openedOn(), asOf));
+                try {
+                    heldDays.put(p.ticker(), market.calendar().tradingDaysBetween(p.openedOn(), asOf));
+                } catch (CalendarUnavailableException e) {
+                    // 보유를 연 해의 공휴일 목록이 없음 — 보유 거래일만 모름으로 둡니다(명세 K35). 검증기가 그 종목 재량 매도를
+                    // '보유 거래일을 알 수 없음'(MIN_HOLD)으로 거절하고 결정은 이어 갑니다.
+                }
             }
         }
         Set<String> noPrice = new TreeSet<>();

@@ -667,5 +667,54 @@ class PaperQueryServiceTest {
         assertThat(other.get("stale")).as("시험용 한국 26시간 기준").isEqualTo(false);
     }
 
+    @Test
+    @DisplayName("달력 없음(K35): 지난 해 공휴일 목록이 없으면 그 계산만 null + 사유 — 개요 통계(statsReason)·보유 거래일(holdingTradingDaysReason), 그해 안의 계산과 응답은 그대로")
+    @SuppressWarnings("unchecked")
+    void calendarGapNullsOnlyThatComputation() {
+        // 2027년만 아는 한국 달력 — 2026년 날짜가 끼는 계산만 셀 수 없음.
+        PaperMarket kr = TestKrMarket.withCalendar(new com.macrodash.analytics.KrxCalendar(Map.of(2027, List.of(
+                java.time.LocalDate.of(2027, 1, 1), java.time.LocalDate.of(2027, 2, 8), java.time.LocalDate.of(2027, 2, 9),
+                java.time.LocalDate.of(2027, 3, 1))), List.of()));
+        String krBook = TestKrMarket.CLAUDE_BOOK;
+        store.books.put(krBook, TestKrMarket.book(krBook, 100_000_000, FRI));
+        store.states.put(krBook, new com.macrodash.store.PaperStore.BookState(krBook, 50_000_000, 101_000_000,
+                51_000_000, 50.5, null, null, null, null));
+        store.upsertNav(new NavRow(krBook, java.time.LocalDate.of(2026, 12, 30), 100_000_000, 100_000_000, 0, 0, true));
+        store.upsertNav(new NavRow(krBook, java.time.LocalDate.of(2027, 1, 4), 101_000_000, 50_000_000, 51_000_000, 50.5,
+                true));
+        Instant opened = Instant.parse("2026-11-20T06:30:00Z");
+        store.upsertPosition(new com.macrodash.store.PaperStore.Position(krBook, "005930", 300, 70_000,
+                java.time.LocalDate.of(2026, 11, 20), opened, 70_000, opened, 70_000.0, opened, false,
+                java.time.LocalDate.of(2026, 11, 20), 70_000, null));
+        store.upsertPosition(new com.macrodash.store.PaperStore.Position(krBook, "000660", 150, 200_000,
+                java.time.LocalDate.of(2027, 2, 1), opened, 200_000, opened, 200_000.0, opened, false,
+                java.time.LocalDate.of(2027, 2, 1), 200_000, null));
+        when(marketData.quotes(kr)).thenReturn(Optional.empty());
+        Clock march = Clock.fixed(Instant.parse("2027-03-02T12:00:00Z"), ZoneOffset.UTC);   // 03-02(화) 21:00 KST
+        PaperQueryService both = new PaperQueryService(store, marketData, PaperFixtures.quietReader(),
+                PaperFixtures.settings(store), PaperFixtures.config(), march, List.of(UsPaperMarket.INSTANCE, kr));
+
+        Map<String, Object> book = ((List<Map<String, Object>>) both.overview(kr).get("books")).get(0);
+        assertThat(book.get("stats")).isNull();
+        assertThat((String) book.get("statsReason")).startsWith(com.macrodash.analytics.CalendarUnavailableException.REASON
+                + " — 2026년");
+        assertThat(book.get("nav")).as("통계 밖의 칸은 그대로").isEqualTo(101_000_000.0);
+
+        List<Map<String, Object>> rows = (List<Map<String, Object>>) both.positions(krBook).get("positions");
+        assertThat(rows).extracting(r -> r.get("ticker"), r -> r.get("holdingTradingDays"))
+                .containsExactlyInAnyOrder(org.assertj.core.groups.Tuple.tuple("005930", null),
+                        org.assertj.core.groups.Tuple.tuple("000660", 18));
+        Map<String, Object> unknown = rows.stream().filter(r -> "005930".equals(r.get("ticker"))).findFirst().orElseThrow();
+        assertThat((String) unknown.get("holdingTradingDaysReason")).startsWith("달력 없음 — 2026년");
+        assertThat(rows.stream().filter(r -> "000660".equals(r.get("ticker"))).findFirst().orElseThrow()
+                .get("holdingTradingDaysReason")).isNull();
+
+        // 미국 책은 늘 계산 — 사유 칸은 null.
+        initWithBenchmarks();
+        Map<String, Object> us = ((List<Map<String, Object>>) both.overview().get("books")).get(0);
+        assertThat(us).containsKey("statsReason");
+        assertThat(us.get("statsReason")).isNull();
+    }
+
     private static final java.time.LocalDate TUE_EXPIRY = java.time.LocalDate.of(2026, 10, 29);
 }

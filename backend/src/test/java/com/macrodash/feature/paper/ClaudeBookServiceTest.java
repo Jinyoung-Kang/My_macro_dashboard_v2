@@ -864,6 +864,12 @@ class ClaudeBookServiceTest {
      * 서비스.
      */
     private ClaudeBookService serviceWithKr(Instant now, List<String> krPacketCalls) throws Exception {
+        return serviceWithKr(TestKrMarket.INSTANCE, now, krPacketCalls);
+    }
+
+    /** {@link #serviceWithKr(Instant, List)}의 시장 판 — 달력만 바꾼 시험용 한국 묶음({@link TestKrMarket#withCalendar})용. */
+    private ClaudeBookService serviceWithKr(PaperMarket market, Instant now, List<String> krPacketCalls)
+            throws Exception {
         Clock clock = Clock.fixed(now, ZoneOffset.UTC);
         PaperAdminService admin = new PaperAdminService(store, marketData, reader, settings, ledger,
                 PaperFixtures.config(), MAPPER, clock);
@@ -871,7 +877,7 @@ class ClaudeBookServiceTest {
         PaperApiCalls calls = new PaperApiCalls(store, settings);
         PacketBuilder.Packet krPacket = new PacketBuilder.Packet(MAPPER.readTree(KR_PACKET_TEXT), KR_PACKET_TEXT,
                 "hash-kr", List.of(), null);
-        ClaudeDecisionPipeline.MarketContext kr = new ClaudeDecisionPipeline.MarketContext(TestKrMarket.INSTANCE,
+        ClaudeDecisionPipeline.MarketContext kr = new ClaudeDecisionPipeline.MarketContext(market,
                 (asOf, kind, initial, version, row) -> {
                     krPacketCalls.add(asOf + " " + kind + " " + initial + " v" + version + " s" + row.version());
                     return krPacket;
@@ -988,6 +994,39 @@ class ClaudeBookServiceTest {
                 "timing은 NEXT_CLOSE여야 함: NEXT_OBSERVATION",
                 "매수 증가분 약 400원 < 최소 500원(현재 0.00% → 목표 0.40%)");
         assertThat(d.response().path("validation").toString()).doesNotContain("$");
+    }
+
+    @Test
+    @DisplayName("달력 없음(K35): 보유를 연 해의 공휴일 목록이 없으면 그 보유 거래일만 모름 — 결정은 이어 가고 그 종목 재량 매도는 MIN_HOLD('보유 거래일을 알 수 없음')")
+    void unknownHoldingYearRejectsOnlyThatSell() throws Exception {
+        LocalDate wed = LocalDate.of(2026, 11, 25);
+        Instant now = Instant.parse("2026-11-25T13:30:00Z");   // KST 11-25 22:30
+        // 2026년만 아는 한국 달력 — 2025-12-15에 연 보유의 거래일 수를 셀 수 없음.
+        PaperMarket kr = TestKrMarket.withCalendar(new com.macrodash.analytics.KrxCalendar(java.util.Map.of(2026,
+                List.of(LocalDate.of(2026, 1, 1), LocalDate.of(2026, 12, 25))), List.of()));
+        String krBook = TestKrMarket.CLAUDE_BOOK;
+        activeCashOnly();
+        store.books.put(krBook, TestKrMarket.book(krBook, 100_000, FRI));
+        store.states.put(krBook, new BookState(krBook, 80_000, 100_000, 20_000, 20, FRI_CLOSE, FRI_CLOSE, FRI, null));
+        store.upsertPosition(new PaperStore.Position(krBook, "KRA", 200, 50, LocalDate.of(2025, 12, 15), FRI_CLOSE, 51,
+                FRI_CLOSE, 51.0, FRI_CLOSE, false, LocalDate.of(2025, 12, 15), 50, null));
+        store.upsertPosition(new PaperStore.Position(krBook, "KRB", 300, 30, LocalDate.of(2026, 11, 2), FRI_CLOSE, 31,
+                FRI_CLOSE, 31.0, FRI_CLOSE, false, LocalDate.of(2026, 11, 2), 30, null));
+        when(marketData.quotes(kr)).thenReturn(Optional.of(quotes(Instant.parse("2026-11-25T12:00:00Z"),
+                bar("KRA", LocalDate.of(2026, 11, 24), 50, wed, 51), bar("KRB", LocalDate.of(2026, 11, 24), 30, wed, 31))));
+        answerJson(decision(10, null, order("KRA", "SELL", null, 1.0, "NEXT_CLOSE"),
+                order("KRB", "SELL", null, 1.0, "NEXT_CLOSE")));
+        ClaudeBookService service = serviceWithKr(kr, now, new java.util.ArrayList<>());
+
+        Decision d = service.decide(kr, wed, RuleBookService.SCHEDULED, true);
+
+        assertThat(d.status()).isEqualTo(ClaudeBookService.STATUS_OK);
+        assertThat(store.ordersOf(krBook)).filteredOn(o -> Long.valueOf(d.id()).equals(o.decisionId()))
+                .extracting(Order::ticker, Order::status, Order::rejectReason)
+                .containsExactly(
+                        org.assertj.core.groups.Tuple.tuple("KRA", "REJECTED", OrderValidator.MIN_HOLD),
+                        org.assertj.core.groups.Tuple.tuple("KRB", "PENDING", null));
+        assertThat(d.response().path("validation").get(0).path("detail").asString()).contains("보유 거래일을 알 수 없음");
     }
 
     @Test
