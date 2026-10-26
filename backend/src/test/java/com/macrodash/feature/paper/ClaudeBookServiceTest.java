@@ -104,7 +104,7 @@ class ClaudeBookServiceTest {
         store.dbNow = NOW;
         reader = PaperFixtures.quietReader();
         marketData = mock(PaperMarketData.class);
-        when(marketData.quotes()).thenReturn(Optional.of(quotes(MON_FINAL,
+        when(marketData.quotes(UsPaperMarket.INSTANCE)).thenReturn(Optional.of(quotes(MON_FINAL,
                 bar("AAA", FRI, 99, MON, 100), bar("HELD", FRI, 99, MON, 100), bar("SHY", FRI, 82, MON, 82.5),
                 bar("SPY", FRI, 680, MON, 681), bar("XLK", FRI, 200, MON, 201), bar("XLF", FRI, 50, MON, 51),
                 bar("XLE", FRI, 90, MON, 91), bar("XLV", FRI, 140, MON, 141), bar("XLI", FRI, 130, MON, 131),
@@ -852,6 +852,115 @@ class ClaudeBookServiceTest {
         assertThat(bad.effort()).isEqualTo("high");
         assertThat(bad.dailyCallCap()).isEqualTo(20);
         assertThat(bad.fallbacks()).containsExactly("model", "effort", "apiDailyCallCap");
+    }
+
+    // ------------------------------------------------------------------ 시장 격리(2단계 명세 §9 A6)
+    /** 시험용 한국 패킷 — 미국 가짜 패킷과 글자가 다름. */
+    private static final String KR_PACKET_TEXT = "{\"0_instructions\":\"시험용 한국 패킷\"}";
+
+    /**
+     * 시계를 바꾸고 시험용 한국 결정 문맥(가짜 패킷 — 받은 인자를 {@code krPacketCalls}에 남김, 응답 스키마는 미국과 같은 파일)을 더한
+     * 서비스.
+     */
+    private ClaudeBookService serviceWithKr(Instant now, List<String> krPacketCalls) throws Exception {
+        Clock clock = Clock.fixed(now, ZoneOffset.UTC);
+        PaperAdminService admin = new PaperAdminService(store, marketData, reader, settings, ledger,
+                PaperFixtures.config(), MAPPER, clock);
+        AiService ai = ai(KEY);
+        PaperApiCalls calls = new PaperApiCalls(store, settings);
+        PacketBuilder.Packet krPacket = new PacketBuilder.Packet(MAPPER.readTree(KR_PACKET_TEXT), KR_PACKET_TEXT,
+                "hash-kr", List.of(), null);
+        ClaudeDecisionPipeline.MarketContext kr = new ClaudeDecisionPipeline.MarketContext(TestKrMarket.INSTANCE,
+                (asOf, kind, initial, version, row) -> {
+                    krPacketCalls.add(asOf + " " + kind + " " + initial + " v" + version + " s" + row.version());
+                    return krPacket;
+                }, ClaudeBookService.SCHEMA_RESOURCE);
+        return new ClaudeBookService(store, reader, marketData, selection, ledger, admin, packets,
+                new FrameworkService(store, ai, settings, calls, MAPPER, 30, clock), calls, ai, settings,
+                PaperFixtures.config(), MAPPER, 30, clock, List.of(kr));
+    }
+
+    private static String systemText(JsonNode request) {
+        JsonNode system = request.path("system");
+        return system.isArray() ? system.get(0).path("text").asString() : system.asString();
+    }
+
+    @Test
+    @DisplayName("시장 격리(A6): 다른 시장 문맥의 결정은 그 시장 Claude 책·관측치·달력(주문 만료·재진입 금지를 보는 다음 세션)·패킷·시스템 프롬프트의 시장별 부분만 쓰고, 미국 Claude 책의 대기 주문·결정·상태는 그대로 — 하루 호출 상한은 두 시장이 함께 셈")
+    void otherMarketDecisionTouchesOnlyItsBook() throws Exception {
+        // 세션 2026-11-25(수): 미국은 다음 날(11-26 추수감사절) 휴장, 시험용 한국 달력(서울 평일)은 거래일 — 두 달력이 갈리는 주.
+        LocalDate wed = LocalDate.of(2026, 11, 25);
+        Instant now = Instant.parse("2026-11-25T13:30:00Z");   // KST 11-25 22:30
+        LocalDate todayKst = LocalDate.of(2026, 11, 25);
+        PaperMarket kr = TestKrMarket.INSTANCE;
+        String krBook = TestKrMarket.CLAUDE_BOOK;
+        activeCashOnly();
+        long usPending = PaperFixtures.pending(store, PaperBooks.CLAUDE, "AAA", "BUY", null, 5.0, null,
+                "NEXT_OBSERVATION", FRI, FRI_CLOSE);
+        BookState usState = store.states.get(PaperBooks.CLAUDE);
+        store.books.put(krBook, TestKrMarket.book(krBook, 100_000, FRI));
+        store.states.put(krBook, new BookState(krBook, 100_000, 100_000, 0, 0, FRI_CLOSE, FRI_CLOSE, FRI, null));
+        long krPending = PaperFixtures.pending(store, krBook, "KRB", "BUY", null, 5.0, null, "NEXT_CLOSE", FRI,
+                FRI_CLOSE);
+        // 재진입 금지 11-26까지 — 한국 달력의 다음 세션(11-26)이면 막히고, 미국 달력이었다면 다음 세션이 11-27이라 풀립니다.
+        store.upsertLockout(new PaperStore.Lockout(krBook, "KRL", LocalDate.of(2026, 11, 26), "STOP"));
+        when(marketData.quotes(kr)).thenReturn(Optional.of(quotes(Instant.parse("2026-11-25T12:00:00Z"),
+                bar("KRA", LocalDate.of(2026, 11, 24), 50, wed, 51), bar("KRB", LocalDate.of(2026, 11, 24), 30, wed, 31),
+                bar("KRL", LocalDate.of(2026, 11, 24), 20, wed, 21))));
+        store.apiUsage.put(todayKst, new ApiUsage(todayKst, 19, 0, 0, 0, 0));
+        answerJson(decision(8, null, order("KRA", "BUY", 8.0, null, "NEXT_CLOSE"),
+                order("KRL", "BUY", 5.0, null, "NEXT_CLOSE")));
+        List<String> krPacketCalls = new java.util.ArrayList<>();
+        ClaudeBookService service = serviceWithKr(now, krPacketCalls);
+
+        Decision d = service.decide(kr, wed, RuleBookService.SCHEDULED, true);
+
+        assertThat(d.bookCode()).isEqualTo(krBook);
+        assertThat(d.status()).isEqualTo(ClaudeBookService.STATUS_OK);
+        assertThat(d.packetText()).isEqualTo(KR_PACKET_TEXT);
+        assertThat(d.packetHash()).isEqualTo("hash-kr");
+        assertThat(d.response().path("book").asString()).isEqualTo(krBook);
+        assertThat(krPacketCalls).as("그 시장 패킷을 결정이 읽은 판·설정 행으로").containsExactly(
+                wed + " SCHEDULED false v0 s" + store.settings().orElseThrow().version());
+        verify(packets, org.mockito.Mockito.never()).build(any(), anyString(), anyBoolean(), any(), any());
+        assertThat(requests).hasSize(1);
+        assertThat(systemText(requests.get(0))).as("시스템 프롬프트의 시장별 부분은 그 시장 묶음의 것")
+                .contains("- 시험용 한국 하드 규칙 — 최대 20종목").contains("## 시험용 한국 고정(고정)")
+                .doesNotContain("주문 최소 $").doesNotContain("## 근거(고정)");
+        assertThat(requests.get(0).path("messages").get(0).toString()).contains("시험용 한국 패킷");
+
+        List<Order> krOrders = store.ordersOf(krBook);
+        assertThat(krOrders).filteredOn(o -> Long.valueOf(d.id()).equals(o.decisionId()))
+                .extracting(Order::ticker, Order::status, Order::rejectReason, Order::expiresOn)
+                .containsExactly(
+                        org.assertj.core.groups.Tuple.tuple("KRA", "PENDING", null, LocalDate.of(2026, 11, 30)),
+                        org.assertj.core.groups.Tuple.tuple("KRL", "REJECTED", "LOCKED_OUT", null));
+        assertThat(PaperFixtures.order(store, krPending).status()).as("그 시장 앞선 대기 주문은 다음 결정이 대신함")
+                .isEqualTo(PaperBooks.ORDER_CANCELLED);
+
+        assertThat(PaperFixtures.order(store, usPending).status()).as("미국 책의 대기 주문은 그대로")
+                .isEqualTo(PaperBooks.ORDER_PENDING);
+        assertThat(store.decisionFor(PaperBooks.CLAUDE, wed, RuleBookService.SCHEDULED)).isEmpty();
+        assertThat(store.states.get(PaperBooks.CLAUDE)).isEqualTo(usState);
+        assertThat(store.ordersOf(PaperBooks.CLAUDE)).hasSize(1);
+
+        // 하루 호출 상한(기본 20)은 시장과 상관없이 하나 — 한국 결정이 20번째를 썼으니 같은 날 미국 결정은 부르지 않음.
+        assertThat(store.apiUsage(todayKst).map(ApiUsage::calls)).contains(20);
+        Decision us = service.decide(wed, RuleBookService.SCHEDULED, true);
+        assertThat(us.bookCode()).isEqualTo(PaperBooks.CLAUDE);
+        assertThat(us.status()).isEqualTo(ClaudeBookService.STATUS_SKIPPED);
+        assertThat(us.response().path("summary").asString()).contains("일일 호출 상한(20회");
+        assertThat(hits.get()).isEqualTo(1);
+    }
+
+    @Test
+    @DisplayName("시장 격리(A6): 결정 문맥이 없는 시장이면 아무것도 읽거나 쓰기 전에 거절(코드 오류)")
+    void unknownMarketIsRejected() {
+        activeCashOnly();
+        assertThatThrownBy(() -> service().decide(TestKrMarket.INSTANCE, MON, RuleBookService.SCHEDULED, true))
+                .isInstanceOf(IllegalArgumentException.class).hasMessageContaining("KR");
+        assertThat(store.decisions).isEmpty();
+        assertThat(hits.get()).isZero();
     }
 
     // ------------------------------------------------------------------ 호출하는 사이의 변화·응답 뒤 오류

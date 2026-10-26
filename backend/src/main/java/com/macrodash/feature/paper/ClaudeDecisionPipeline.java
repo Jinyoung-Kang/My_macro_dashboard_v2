@@ -5,7 +5,6 @@ import com.macrodash.analytics.OrderValidator.Proposed;
 import com.macrodash.analytics.OrderValidator.Verdict;
 import com.macrodash.analytics.PaperLedger;
 import com.macrodash.analytics.TrailingStop;
-import com.macrodash.analytics.UsMarketCalendar;
 import com.macrodash.feature.ai.AiService;
 import com.macrodash.feature.paper.ClaudeBookService.ClaudeSettings;
 import com.macrodash.feature.paper.PacketBuilder.Packet;
@@ -61,14 +60,35 @@ import static com.macrodash.feature.paper.ClaudeBookService.noPriceTickers;
  * <p>2단계 명세 §9 A6에서 {@link ClaudeBookService}의 이 부분만 그대로 옮겨 왔습니다(떼어 내기 — 동작·문구·기록·로그 이름 그대로).
  * 언제 부르고 무엇을 지키는지(재시도 한 번·일시정지·호출 사이 초기화·시작·미리보기·잠금)는 서비스가 정하고, 이 클래스는 그 결정
  * 한 번의 일만 합니다. 서비스가 만들어 쥐는 객체라 빈이 아닙니다.
+ *
+ * <p><b>시장마다 하나</b>입니다({@link MarketContext}). 책 코드({@link PaperMarket#claudeBook})·거래일 달력(보유 거래일·주문 만료·
+ * 재진입 금지를 보는 다음 세션)·시스템 프롬프트의 시장별 부분({@link FrameworkService#render(PaperMarket, JsonNode, int, JsonNode)})·
+ * 패킷·응답 스키마를 그 문맥에서 가져오고, 다른 시장 책은 읽지도 쓰지도 않습니다. 프레임 판(두 시장이 함께 씀, 명세 K9)과 하루 호출
+ * 상한({@link PaperApiCalls} — 두 책 합 20, K18)은 시장과 상관없이 하나입니다. 검증기 한도·체결 시점은 아직 미국 설정 키·상수입니다
+ * (A7·C1에서 시장별로). 미국 문맥은 이 묶음 전의 값 그대로입니다({@link UsPaperMarket}·{@link PacketBuilder#build}·
+ * {@value ClaudeBookService#SCHEMA_RESOURCE}).
  */
 final class ClaudeDecisionPipeline {
 
     /** 로그 이름은 옮기기 전 그대로(ClaudeBookService) — 운영 로그를 찾는 이름이 바뀌지 않게. */
     private static final Logger log = LoggerFactory.getLogger(ClaudeBookService.class);
 
+    /** 그 시장의 결정 패킷을 만드는 함수 — 미국은 {@link PacketBuilder#build}. 인자는 결정이 읽은 판 번호와 설정 행. */
+    @FunctionalInterface
+    interface PacketSource {
+        Packet build(LocalDate asOf, String kind, boolean initial, Integer frameworkVersion, SettingsRow row);
+    }
+
+    /**
+     * Claude 결정 한 번이 시장마다 다르게 쓰는 것(2단계 명세 §9 A6) — 시장 묶음(책·달력·관측치·프롬프트의 시장별 부분), 패킷, 응답
+     * 스키마 파일(API용과 검사용이 같은 파일 — D26).
+     */
+    record MarketContext(PaperMarket market, PacketSource packets, String schemaResource) {
+    }
+
+    private final PaperMarket market;
     private final PaperStore store;
-    private final PacketBuilder packets;
+    private final PacketSource packets;
     private final FrameworkService framework;
     private final PaperApiCalls calls;
     private final AiService ai;
@@ -77,10 +97,11 @@ final class ClaudeDecisionPipeline {
     private final int timeoutSeconds;
     private final StructuredSchema schema;
 
-    ClaudeDecisionPipeline(PaperStore store, PacketBuilder packets, FrameworkService framework, PaperApiCalls calls,
+    ClaudeDecisionPipeline(MarketContext context, PaperStore store, FrameworkService framework, PaperApiCalls calls,
                            AiService ai, ObjectMapper mapper, Clock clock, int timeoutSeconds) {
+        this.market = context.market();
         this.store = store;
-        this.packets = packets;
+        this.packets = context.packets();
         this.framework = framework;
         this.calls = calls;
         this.ai = ai;
@@ -88,7 +109,12 @@ final class ClaudeDecisionPipeline {
         this.clock = clock;
         this.timeoutSeconds = timeoutSeconds;
         // 스키마 파일이 깨졌으면 기동하지 않습니다 — 첫 결정 날 아침에야 알게 되지 않게.
-        this.schema = StructuredSchema.load(ClaudeBookService.SCHEMA_RESOURCE);
+        this.schema = StructuredSchema.load(context.schemaResource());
+    }
+
+    /** 이 파이프라인의 시장 묶음. */
+    PaperMarket market() {
+        return market;
     }
 
     // ------------------------------------------------------------------ 호출
@@ -97,7 +123,7 @@ final class ClaudeDecisionPipeline {
      * {@code frame}은 시스템 프롬프트로 쓴 프레임 판(결정 기록의 framework_version·응답의 framework).
      */
     record Attempt(Packet packet, FrameworkService.Frame frame, AiService.StructuredResult result, String status,
-                           String error, JsonNode parsed, List<String> violations, String model, String effort) {
+                   String error, JsonNode parsed, List<String> violations, String model, String effort) {
 
         boolean succeeded() {
             return status == null;
@@ -119,9 +145,9 @@ final class ClaudeDecisionPipeline {
      * 1_basis.settingsVersion이 서로 다른 판을 말합니다(FW-5).
      */
     Attempt attempt(LocalDate asOf, String kind, boolean initial, SettingsRow row, ClaudeSettings claude,
-                            LocalDate today) {
+                    LocalDate today) {
         FrameworkService.Frame frame = framework.current();
-        String system = FrameworkService.render(frame.body(), frame.version(), row.body());
+        String system = FrameworkService.render(market, frame.body(), frame.version(), row.body());
         Packet packet = packets.build(asOf, kind, initial, frame.version(), row);
         if (calls.reserve(today, claude.dailyCallCap()).isEmpty()) {
             return null;
@@ -186,14 +212,14 @@ final class ClaudeDecisionPipeline {
     }
 
     LedgerView ledgerView(boolean initial) {
-        BookState state = store.state(PaperBooks.CLAUDE).orElseThrow(() -> new IllegalStateException(
+        BookState state = store.state(market.claudeBook()).orElseThrow(() -> new IllegalStateException(
                 "Claude 계좌 상태(paper_book_state)가 없습니다 — 초기화를 다시 실행하세요"));
         if (initial) {
             return cashOnly(state.cash());
         }
         Map<String, Integer> qty = new HashMap<>();
         Map<String, Double> price = new HashMap<>();
-        List<Position> positions = store.positions(PaperBooks.CLAUDE);
+        List<Position> positions = store.positions(market.claudeBook());
         for (Position p : positions) {
             qty.put(p.ticker(), p.qty());
             price.put(p.ticker(), p.lastPrice() != null ? p.lastPrice() : p.avgCost());
@@ -239,7 +265,7 @@ final class ClaudeDecisionPipeline {
             weights.put(p.ticker(), p.qty() * price / view.nav() * 100.0);
             heldQty.put(p.ticker(), p.qty());
             if (p.openedOn() != null) {
-                heldDays.put(p.ticker(), UsMarketCalendar.tradingDaysBetween(p.openedOn(), asOf));
+                heldDays.put(p.ticker(), market.calendar().tradingDaysBetween(p.openedOn(), asOf));
             }
         }
         Set<String> noPrice = new TreeSet<>();
@@ -256,7 +282,7 @@ final class ClaudeDecisionPipeline {
             stale = inputsStale(quotes, clock.instant());
         }
         int monthly = initial ? 0 : PacketBuilder.monthlyDiscretionaryOrders(
-                store.recentOrders(PaperBooks.CLAUDE, PacketBuilder.MONTHLY_SCAN), asOf);
+                store.recentOrders(market.claudeBook(), PacketBuilder.MONTHLY_SCAN), asOf);
         OrderValidator.Context ctx = new OrderValidator.Context(view.nav(), view.cash(), weights, heldDays, universe,
                 ruleSettings.etfs(), Set.copyOf(paper.cashLikeTickers()), lockedOut(asOf), noPrice, monthly, stale,
                 heldQty);
@@ -305,7 +331,7 @@ final class ClaudeDecisionPipeline {
         response.put("currentExposurePct", PaperQueryService.round2(view.exposurePct()));
         response.put("inputsStale", stale);
         response.put("monthlyDiscretionaryOrders", monthly);
-        response.put("book", PaperBooks.CLAUDE);
+        response.put("book", market.claudeBook());
         response.put("kind", kind);
         response.put("asOfTradingDate", asOf.toString());
         response.set("framework", mapper.valueToTree(FrameworkService.decisionView(attempt.frame())));
@@ -393,7 +419,7 @@ final class ClaudeDecisionPipeline {
      */
     void insertOrders(long decisionId, LocalDate asOf, Plan plan, String accepted) {
         boolean pending = PaperBooks.ORDER_PENDING.equals(accepted);
-        LocalDate expires = UsMarketCalendar.addTradingDays(asOf, RuleBookService.ORDER_EXPIRY_TRADING_DAYS);
+        LocalDate expires = market.calendar().addTradingDays(asOf, RuleBookService.ORDER_EXPIRY_TRADING_DAYS);
         for (Planned p : plan.planned()) {
             Verdict v = p.verdict();
             Proposed o = v.order();
@@ -402,12 +428,12 @@ final class ClaudeDecisionPipeline {
                 if (accepted == null) {
                     continue;
                 }
-                store.insertOrder(new Order(0, PaperBooks.CLAUDE, decisionId, o.ticker(), o.side(), null,
+                store.insertOrder(new Order(0, market.claudeBook(), decisionId, o.ticker(), o.side(), null,
                         buy ? p.orderWeightPct() : null, buy ? null : p.sellFraction(), o.timing(),
                         PacketBuilder.SOURCE_CLAUDE, accepted, pending ? null : PAUSED_DURING_CALL, p.reason(), asOf,
                         null, pending ? expires : null, null));
             } else {
-                store.insertOrder(new Order(0, PaperBooks.CLAUDE, decisionId, o.ticker(), o.side(), null,
+                store.insertOrder(new Order(0, market.claudeBook(), decisionId, o.ticker(), o.side(), null,
                         buy ? o.targetWeightPct() : null, buy ? null : o.sellFraction(), o.timing(),
                         PacketBuilder.SOURCE_CLAUDE, "REJECTED", v.rejectReason(), p.reason(), asOf, null, null, null));
             }
@@ -417,7 +443,7 @@ final class ClaudeDecisionPipeline {
     /** 앞선 결정이 남긴 대기 주문을 "다음 결정이 대신함"으로 취소합니다(클래스 설명). 취소한 주문 번호. */
     List<Long> supersedePending() {
         List<Long> out = new ArrayList<>();
-        for (Order order : store.ordersByStatus(PaperBooks.CLAUDE, PaperBooks.ORDER_PENDING)) {
+        for (Order order : store.ordersByStatus(market.claudeBook(), PaperBooks.ORDER_PENDING)) {
             if (PacketBuilder.SOURCE_CLAUDE.equals(order.source())) {
                 store.markOrderStatus(order.id(), PaperBooks.ORDER_CANCELLED, "다음 결정이 대신함");
                 out.add(order.id());
@@ -435,9 +461,9 @@ final class ClaudeDecisionPipeline {
 
     /** 다음 세션(주문이 체결될 날)에도 재진입 금지인 종목 — 장부가 체결 때 보는 날과 같습니다. */
     private Set<String> lockedOut(LocalDate asOf) {
-        LocalDate fillDay = UsMarketCalendar.nextTradingDay(asOf);
+        LocalDate fillDay = market.calendar().nextTradingDay(asOf);
         Set<String> out = new TreeSet<>();
-        for (Lockout lockout : store.lockouts(PaperBooks.CLAUDE)) {
+        for (Lockout lockout : store.lockouts(market.claudeBook())) {
             if (TrailingStop.lockedOut(lockout.untilTradingDate(), fillDay)) {
                 out.add(lockout.ticker());
             }
@@ -455,7 +481,7 @@ final class ClaudeDecisionPipeline {
     Decision decisionRow(long id, LocalDate asOf, String kind, String status, SettingsRow row,
                                  ClaudeSettings claude, Attempt attempt, Double target, JsonNode response, String error,
                                  boolean pricesFinal, int retryCount) {
-        return new Decision(id, PaperBooks.CLAUDE, asOf, kind, null, status, claude.model(),
+        return new Decision(id, market.claudeBook(), asOf, kind, null, status, claude.model(),
                 attempt.frame().version(), row.version(), attempt.selectionAsOf(), target, attempt.packet().body(),
                 attempt.packet().sha256(), attempt.result().text(), response, mapper.valueToTree(usageView(attempt)), error,
                 attempt.packet().noteIds(), pricesFinal, attempt.result().latencyMs(), retryCount,
@@ -468,7 +494,7 @@ final class ClaudeDecisionPipeline {
         Map<String, Object> response = new LinkedHashMap<>();
         response.put("summary", statusLabel(attempt.status()) + " — 그날 재량 주문 없음(리스크 규칙은 계속)"
                 + (STATUS_API_ERROR.equals(attempt.status()) && retrying == null ? ". 같은 거래일에 한 번 다시 부릅니다" : ""));
-        response.put("book", PaperBooks.CLAUDE);
+        response.put("book", market.claudeBook());
         response.put("kind", kind);
         response.put("asOfTradingDate", asOf.toString());
         Map<String, Object> failure = new LinkedHashMap<>();
@@ -492,7 +518,7 @@ final class ClaudeDecisionPipeline {
             }
             Optional<Long> id = store.insertDecisionIfAbsent(d);
             return id.flatMap(store::decision)
-                    .orElseGet(() -> store.decisionFor(PaperBooks.CLAUDE, asOf, kind).orElseThrow());
+                    .orElseGet(() -> store.decisionFor(market.claudeBook(), asOf, kind).orElseThrow());
         });
         log.warn("Claude 책 결정 {} {}{}: {} — {}", asOf, kind, retrying == null ? "" : "(재시도)", attempt.status(),
                 attempt.error());
@@ -513,7 +539,7 @@ final class ClaudeDecisionPipeline {
             Map<String, Object> response = new LinkedHashMap<>();
             response.put("summary", "응답을 받은 뒤 검증·저장 중 오류 — 그날 재량 주문 없음(리스크 규칙은 계속). 과금된 응답이라 같은 "
                     + "거래일에 다시 부르지 않습니다");
-            response.put("book", PaperBooks.CLAUDE);
+            response.put("book", market.claudeBook());
             response.put("kind", kind);
             response.put("asOfTradingDate", asOf.toString());
             Map<String, Object> failure = new LinkedHashMap<>();
@@ -553,17 +579,17 @@ final class ClaudeDecisionPipeline {
                                    boolean pricesFinal, String reason) {
         Map<String, Object> response = new LinkedHashMap<>();
         response.put("summary", reason);
-        response.put("book", PaperBooks.CLAUDE);
+        response.put("book", market.claudeBook());
         response.put("kind", kind);
         response.put("asOfTradingDate", asOf.toString());
         response.put("skipped", reason);
         response.put("settings", claudeView(claude));
         return store.atomically(() -> {
-            Optional<Long> id = store.insertDecisionIfAbsent(new Decision(0, PaperBooks.CLAUDE, asOf, kind, null,
+            Optional<Long> id = store.insertDecisionIfAbsent(new Decision(0, market.claudeBook(), asOf, kind, null,
                     STATUS_SKIPPED, null, null, row.version(), null, null, null, null, null, mapper.valueToTree(response),
                     null, null, null, pricesFinal, null, 0));
             return id.flatMap(store::decision)
-                    .orElseGet(() -> store.decisionFor(PaperBooks.CLAUDE, asOf, kind).orElseThrow());
+                    .orElseGet(() -> store.decisionFor(market.claudeBook(), asOf, kind).orElseThrow());
         });
     }
 

@@ -2,10 +2,10 @@ package com.macrodash.feature.paper;
 
 import com.macrodash.Kst;
 import com.macrodash.analytics.OrderValidator;
-import com.macrodash.analytics.UsMarketCalendar;
 import com.macrodash.feature.ai.AiService;
 import com.macrodash.feature.paper.ClaudeDecisionPipeline.Attempt;
 import com.macrodash.feature.paper.ClaudeDecisionPipeline.LedgerView;
+import com.macrodash.feature.paper.ClaudeDecisionPipeline.MarketContext;
 import com.macrodash.feature.paper.ClaudeDecisionPipeline.Plan;
 import com.macrodash.feature.paper.ClaudeDecisionPipeline.Planned;
 import com.macrodash.feature.paper.PaperMarketData.Quotes;
@@ -97,11 +97,18 @@ import static com.macrodash.feature.paper.ClaudeDecisionPipeline.usageView;
  *
  * <p>초기 결정({@link #start})·미리보기({@link #preview})는 {@code dashboard.paper.start-date} 기준 초기 패킷(그날 이하 값만, C6)으로
  * 부르고, 시작은 통과 주문을 얼려 둔 출발일 종가로 사후 체결합니다(규칙 책과 같은 함수 — {@link PaperLedgerService#backfill}).
+ *
+ * <p><b>시장 문맥</b>(2단계 명세 §9 A6): 하루 결정은 시장 묶음({@link PaperMarket})을 받아 그 시장의 Claude 책·관측치·달력과 그 시장의
+ * 결정 파이프라인(패킷·응답 스키마·시스템 프롬프트의 시장별 부분 — {@link ClaudeDecisionPipeline.MarketContext})으로 냅니다. 다른 시장
+ * 책은 건드리지 않습니다. 시장을 받지 않는 옛 시그니처는 미국입니다. 지금 문맥은 미국 하나이고(한국은 E2), 시작·미리보기는 미국
+ * 것입니다(13F 출발일 선정·출발일 종가 사후 체결 — 한국은 출발일 사후 체결이 없음, 명세 K28).
  */
 @Service
 public class ClaudeBookService {
 
     private static final Logger log = LoggerFactory.getLogger(ClaudeBookService.class);
+    /** 시작·미리보기·옛 시그니처의 시장(클래스 설명). */
+    private static final PaperMarket US = UsPaperMarket.INSTANCE;
 
     /** 결정 상태(paper_decisions.status CHECK). */
     public static final String STATUS_OK = "OK";
@@ -195,8 +202,11 @@ public class ClaudeBookService {
     private final PaperConfig config;
     private final ObjectMapper mapper;
     private final Clock clock;
-    /** 결정 한 번의 호출·검증·기록(2단계 명세 §9 A6에서 떼어 냄 — {@link ClaudeDecisionPipeline}). */
-    private final ClaudeDecisionPipeline pipeline;
+    /**
+     * 시장 코드 → 그 시장의 결정 한 번의 호출·검증·기록(2단계 명세 §9 A6에서 떼어 냄 — {@link ClaudeDecisionPipeline}). 지금은 미국
+     * 하나입니다(클래스 설명).
+     */
+    private final Map<String, ClaudeDecisionPipeline> pipelines;
     /** 미리보기·시작이 겹치지 않게(두 번 눌러 두 번 과금되지 않게). 정기 결정은 결정 작업의 잠금이 줄을 세웁니다. */
     private final ReentrantLock initialCall = new ReentrantLock();
 
@@ -215,6 +225,19 @@ public class ClaudeBookService {
                       PaperLedgerService ledger, PaperAdminService admin, PacketBuilder packets,
                       FrameworkService framework, PaperApiCalls calls, AiService ai, PaperSettingsService settings,
                       PaperConfig config, ObjectMapper mapper, int timeoutSeconds, Clock clock) {
+        this(store, reader, marketData, selection, ledger, admin, packets, framework, calls, ai, settings, config,
+                mapper, timeoutSeconds, clock, List.of());
+    }
+
+    /**
+     * 테스트용 — 시계와 함께 미국 밖 시장의 결정 문맥을 더합니다(시장 격리 시험이 시험용 한국 시장을 넣음). 미국 문맥은 늘 있고
+     * (미국 묶음·{@link PacketBuilder#build}·{@value #SCHEMA_RESOURCE}), 같은 시장 코드를 두 번 넣으면 거절합니다.
+     */
+    ClaudeBookService(PaperStore store, StoreReader reader, PaperMarketData marketData, PaperSelectionService selection,
+                      PaperLedgerService ledger, PaperAdminService admin, PacketBuilder packets,
+                      FrameworkService framework, PaperApiCalls calls, AiService ai, PaperSettingsService settings,
+                      PaperConfig config, ObjectMapper mapper, int timeoutSeconds, Clock clock,
+                      List<MarketContext> otherMarkets) {
         this.store = store;
         this.reader = reader;
         this.marketData = marketData;
@@ -225,9 +248,19 @@ public class ClaudeBookService {
         this.config = config;
         this.mapper = mapper;
         this.clock = clock;
-        // 스키마 파일이 깨졌으면 기동하지 않습니다(파이프라인이 만들 때 읽음) — 첫 결정 날 아침에야 알게 되지 않게.
-        this.pipeline = new ClaudeDecisionPipeline(store, packets, framework, calls, ai, mapper, clock,
-                Math.max(1, timeoutSeconds));
+        List<MarketContext> contexts = new ArrayList<>();
+        contexts.add(new MarketContext(US, packets::build, SCHEMA_RESOURCE));
+        contexts.addAll(otherMarkets);
+        Map<String, ClaudeDecisionPipeline> byMarket = new LinkedHashMap<>();
+        for (MarketContext context : contexts) {
+            // 스키마 파일이 깨졌으면 기동하지 않습니다(파이프라인이 만들 때 읽음) — 첫 결정 날 아침에야 알게 되지 않게.
+            ClaudeDecisionPipeline pipeline = new ClaudeDecisionPipeline(context, store, framework, calls, ai, mapper,
+                    clock, Math.max(1, timeoutSeconds));
+            if (byMarket.putIfAbsent(context.market().code(), pipeline) != null) {
+                throw new IllegalArgumentException("같은 시장의 결정 문맥이 둘입니다: " + context.market().code());
+            }
+        }
+        this.pipelines = Map.copyOf(byMarket);
     }
 
     /** 같은 거래일·같은 종류에 한 번 더 낼 결정인가 — API 오류이고 아직 재시도하지 않음(명세 C7). */
@@ -241,8 +274,13 @@ public class ClaudeBookService {
         return decide(asOf, kind, true);
     }
 
+    /** 미국 Claude 책의 그 거래일 결정 — {@link #decide(PaperMarket, LocalDate, String, boolean)}의 미국 판. */
+    public Decision decide(LocalDate asOf, String kind, boolean pricesFinal) {
+        return decide(US, asOf, kind, pricesFinal);
+    }
+
     /**
-     * 그 거래일의 Claude 책 결정(클래스 설명). 이미 있으면 그대로 돌려주고, 그 결정이 아직 재시도하지 않은 API 오류면 한 번 더 냅니다.
+     * 그 시장 Claude 책의 그 거래일 결정(클래스 설명). 이미 있으면 그대로 돌려주고, 그 결정이 아직 재시도하지 않은 API 오류면 한 번 더 냅니다.
      * 일시정지 책은 Claude를 부르지 않고 정기 결정이면 {@code SKIPPED}, 수동 결정이면 행 없이 400(재개한 뒤 같은 거래일에 다시 누를 수
      * 있게)입니다. 일일 호출 상한에 닿았으면 {@code SKIPPED}(재시도 차례였으면 그 재시도를 쓴 것으로 남김 — 같은 날 10분마다 다시
      * 오지 않게)입니다. 호출하는 사이에 일시정지되면 응답을 {@code SKIPPED}로 남기고 주문을 집행하지 않습니다(클래스 설명).
@@ -250,8 +288,10 @@ public class ClaudeBookService {
      * @param kind        SCHEDULED(정기) · MANUAL(수동). 초기 결정은 {@link #start}
      * @param pricesFinal 결정에 쓴 관측치가 그 거래일 확정 종가였나({@code prices_final})
      * @throws InvalidRequestException Claude 책이 없음(초기화 전)·시작 전·일시정지 중 수동 결정·호출하는 사이 초기화(뒤 재시작)
+     * @throws IllegalArgumentException 결정 문맥이 없는 시장
      */
-    public Decision decide(LocalDate asOf, String kind, boolean pricesFinal) {
+    Decision decide(PaperMarket market, LocalDate asOf, String kind, boolean pricesFinal) {
+        ClaudeDecisionPipeline pipeline = pipeline(market);
         if (asOf == null) {
             throw new IllegalArgumentException("기준 거래일이 없습니다");
         }
@@ -260,14 +300,14 @@ public class ClaudeBookService {
         }
         requireReady();
         Decision retrying = null;
-        Optional<Decision> existing = store.decisionFor(PaperBooks.CLAUDE, asOf, kind);
+        Optional<Decision> existing = store.decisionFor(market.claudeBook(), asOf, kind);
         if (existing.isPresent()) {
             if (!retryable(existing.get())) {
                 return existing.get();
             }
             retrying = existing.get();
         }
-        Book book = claudeBook();
+        Book book = claudeBook(market);
         if (PaperBooks.NOT_STARTED.equals(book.status())) {
             throw new InvalidRequestException("Claude 계좌는 아직 시작 전입니다 — 개요의 'Claude 계좌 시작'으로 초기 결정을 먼저 "
                     + "내리세요.");
@@ -301,7 +341,7 @@ public class ClaudeBookService {
         }
         // 여기부터는 과금된 응답이 있습니다 — 검증·저장이 예외로 끝나도 그 응답을 다시 부르지 않는 행으로 남깁니다(클래스 설명).
         try {
-            return persist(asOf, kind, pricesFinal, row, claude, attempt, retrying, before);
+            return persist(pipeline, asOf, kind, pricesFinal, row, claude, attempt, retrying, before);
         } catch (InvalidRequestException e) {
             throw e;   // 호출하는 사이 초기화(뒤 재시작) — 이 책의 결정이 아니라 남기지 않습니다(persist)
         } catch (RuntimeException e) {
@@ -314,11 +354,13 @@ public class ClaudeBookService {
      * 받은 응답을 잠금 안에서 그때의 장부로 검증하고 결정·주문을 한 트랜잭션으로 남깁니다. 호출하는 사이의 초기화·재시작은 400,
      * 일시정지는 주문을 집행하지 않는 {@code SKIPPED}(클래스 설명).
      */
-    private Decision persist(LocalDate asOf, String kind, boolean pricesFinal, SettingsRow row, ClaudeSettings claude,
-                             Attempt attempt, Decision retried, Generation before) {
-        Optional<Quotes> quotes = reader.quietly(marketData::quotes);
+    private Decision persist(ClaudeDecisionPipeline pipeline, LocalDate asOf, String kind, boolean pricesFinal,
+                             SettingsRow row, ClaudeSettings claude, Attempt attempt, Decision retried,
+                             Generation before) {
+        PaperMarket market = pipeline.market();
+        Optional<Quotes> quotes = reader.quietly(() -> marketData.quotes(market));
         return ledger.exclusively(() -> {
-            Book current = claudeBook();
+            Book current = claudeBook(market);
             if (PaperBooks.NOT_STARTED.equals(current.status())) {
                 // Claude를 부르는 사이에 초기화(리셋)됐습니다 — 현금만 든 시작 전 책에 주문을 남기지 않습니다.
                 throw new InvalidRequestException("Claude 계좌가 결정을 준비하는 사이에 초기화돼 시작 전 상태입니다 — 결정을 내지 "
@@ -329,7 +371,7 @@ public class ClaudeBookService {
                 throw new InvalidRequestException("Claude 계좌가 결정을 준비하는 사이에 초기화된 뒤 다시 시작했습니다 — 초기화 전 "
                         + "장부로 만든 결정이라 내지 않았습니다.");
             }
-            Optional<Decision> raced = store.decisionFor(PaperBooks.CLAUDE, asOf, kind);
+            Optional<Decision> raced = store.decisionFor(market.claudeBook(), asOf, kind);
             if (raced.isPresent() && (retried == null || !retryable(raced.get()))) {
                 return raced.get();
             }
@@ -396,6 +438,7 @@ public class ClaudeBookService {
         }
         try {
             Prepared prepared = prepareInitial();
+            ClaudeDecisionPipeline pipeline = pipeline(US);
             Attempt attempt = pipeline.attempt(prepared.start(), RuleBookService.INITIAL, true, prepared.row(),
                     prepared.claude(), prepared.today());
             if (attempt == null) {
@@ -411,22 +454,22 @@ public class ClaudeBookService {
             Set<String> universe = initialUniverse(attempt);
             Map<String, PaperMarketData.SourcedClose> closes = startCloses(attempt, universe);
             return ledger.exclusively(() -> {
-                Book book = claudeBook();
+                Book book = claudeBook(US);
                 requireNotStarted(book);
-                Optional<Decision> existing = store.decisionFor(PaperBooks.CLAUDE, prepared.start(),
+                Optional<Decision> existing = store.decisionFor(US.claudeBook(), prepared.start(),
                         RuleBookService.INITIAL);
                 if (existing.isPresent()) {
                     // 시작 전 책에 초기 결정이 남아 있을 수는 없지만(리셋이 지움), 있으면 새로 사지 않고 그 기록을 돌려줍니다.
                     return new StartResult(existing.get(), List.of());
                 }
-                BookState state = store.state(PaperBooks.CLAUDE).orElseThrow(() -> new IllegalStateException(
+                BookState state = store.state(US.claudeBook()).orElseThrow(() -> new IllegalStateException(
                         "Claude 계좌 상태(paper_book_state)가 없습니다 — 초기화를 다시 실행하세요"));
                 LedgerView view = cashOnly(state.cash());
                 Plan plan = pipeline.plan(prepared.start(), RuleBookService.INITIAL, true, attempt, view,
                         prepared.row(), prepared.claude(), Optional.empty(), universe, closes);
                 return store.atomically(() -> {
                     // 시작 전 책에 남은 대기 주문(리셋과 겹친 결정의 찌꺼기)이 초기 배분 위에 더 체결되지 않게 먼저 취소합니다.
-                    int stale = store.cancelPendingOrders(PaperBooks.CLAUDE);
+                    int stale = store.cancelPendingOrders(US.claudeBook());
                     if (stale > 0) {
                         log.warn("Claude 책 시작: 시작 전 책에 남아 있던 대기 주문 {}건을 취소했습니다", stale);
                     }
@@ -434,7 +477,7 @@ public class ClaudeBookService {
                             RuleBookService.INITIAL, plan.status(), prepared.row(), prepared.claude(), attempt,
                             plan.target(), plan.response(), null, true));
                     if (id.isEmpty()) {
-                        return new StartResult(store.decisionFor(PaperBooks.CLAUDE, prepared.start(),
+                        return new StartResult(store.decisionFor(US.claudeBook(), prepared.start(),
                                 RuleBookService.INITIAL).orElseThrow(), List.of());
                     }
                     pipeline.insertOrders(id.get(), prepared.start(), plan, null);
@@ -484,6 +527,7 @@ public class ClaudeBookService {
         }
         try {
             Prepared prepared = prepareInitial();
+            ClaudeDecisionPipeline pipeline = pipeline(US);
             Attempt attempt = pipeline.attempt(prepared.start(), RuleBookService.INITIAL, true, prepared.row(),
                     prepared.claude(), prepared.today());
             if (attempt == null) {
@@ -492,7 +536,7 @@ public class ClaudeBookService {
             Map<String, Object> out = new LinkedHashMap<>();
             out.put("ok", true);
             out.put("preview", true);
-            out.put("book", PaperBooks.CLAUDE);
+            out.put("book", US.claudeBook());
             out.put("asOfTradingDate", prepared.start().toString());
             out.put("model", attempt.model());
             out.put("effort", attempt.effort());
@@ -507,7 +551,7 @@ public class ClaudeBookService {
                 out.put("validation", null);
                 out.put("exposureMismatch", null);
             } else {
-                BookState state = store.state(PaperBooks.CLAUDE).orElse(null);
+                BookState state = store.state(US.claudeBook()).orElse(null);
                 LedgerView view = cashOnly(state == null ? prepared.book().initialCash() : state.cash());
                 Set<String> universe = initialUniverse(attempt);   // 얼리기 전에(시작과 같음)
                 Plan plan = pipeline.plan(prepared.start(), RuleBookService.INITIAL, true, attempt, view,
@@ -532,16 +576,16 @@ public class ClaudeBookService {
     private Prepared prepareInitial() {
         requireReady();
         Instant now = clock.instant();
-        Book book = claudeBook();
+        Book book = claudeBook(US);
         requireNotStarted(book);
         LocalDate start = config.startDate();
-        if (now.isBefore(UsMarketCalendar.closeInstant(start).plus(PaperMarketData.FINAL_DELAY))) {
+        if (now.isBefore(US.calendar().closeInstant(start).plus(US.finalDelay()))) {
             throw new InvalidRequestException(start + " 장 마감 15분 뒤부터 시작할 수 있습니다(그날 종가로 사후 체결).");
         }
         SettingsRow row = settingsRow();
         ClaudeSettings claude = ClaudeSettings.from(row.body());
         LocalDate today = Kst.today(clock);
-        if (pipeline.callsLeft(today, claude) <= 0) {
+        if (pipeline(US).callsLeft(today, claude) <= 0) {
             throw new InvalidRequestException(capMessage(claude, today));
         }
         ensureStartSelection(start, row);
@@ -617,7 +661,7 @@ public class ClaudeBookService {
             }
             return out;
         }
-        reader.quietly(marketData::quotes).ifPresent(q -> out.addAll(q.bars().keySet()));
+        reader.quietly(() -> marketData.quotes(US)).ifPresent(q -> out.addAll(q.bars().keySet()));
         for (StartPrice p : store.startPrices()) {
             if (config.startDate().equals(p.tradingDate())) {
                 out.add(p.ticker());
@@ -672,14 +716,24 @@ public class ClaudeBookService {
     }
 
     private Generation generation(Book book) {
-        Long initial = book.startedOn() == null ? null : store.decisionFor(PaperBooks.CLAUDE, book.startedOn(),
+        Long initial = book.startedOn() == null ? null : store.decisionFor(book.code(), book.startedOn(),
                 RuleBookService.INITIAL).map(Decision::id).orElse(null);
         return new Generation(book.startedOn(), initial);
     }
 
-    private Book claudeBook() {
-        return store.book(PaperBooks.CLAUDE).orElseThrow(() -> new InvalidRequestException(
+    /** 그 시장의 Claude 책. 없으면(초기화 전) 400. */
+    private Book claudeBook(PaperMarket market) {
+        return store.book(market.claudeBook()).orElseThrow(() -> new InvalidRequestException(
                 "Claude 계좌가 없습니다 — 먼저 초기화(POST /api/paper/init)를 누르세요."));
+    }
+
+    /** 그 시장의 결정 파이프라인(클래스 설명의 시장 문맥). */
+    private ClaudeDecisionPipeline pipeline(PaperMarket market) {
+        ClaudeDecisionPipeline pipeline = pipelines.get(market.code());
+        if (pipeline == null || pipeline.market() != market) {
+            throw new IllegalArgumentException("Claude 결정 문맥이 없는 시장입니다: " + market.code());
+        }
+        return pipeline;
     }
 
     private static void requireNotStarted(Book book) {
