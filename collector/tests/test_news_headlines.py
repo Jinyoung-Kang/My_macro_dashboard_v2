@@ -99,7 +99,7 @@ def test_slow에_등록되고_시간_상한은_slow_상한보다_짧다():
     task = tasks.TASKS_BY_NAME["news_headlines"]
     assert task.speed == "slow" and task.run is task_module.task_news_headlines
     assert task_module.TIME_LIMIT_SECONDS < tasks.TASK_DEADLINE_SECONDS["slow"]
-    assert len(tasks.ALL_TASKS) == len(tasks.TASKS_BY_NAME) == 27  # 2단계 C의 earnings_surprise까지
+    assert len(tasks.ALL_TASKS) == len(tasks.TASKS_BY_NAME) == 28  # 2단계 C의 earnings_surprise·v2 B3의 fsc_etf_prices까지
 
 
 # ==============================================================================

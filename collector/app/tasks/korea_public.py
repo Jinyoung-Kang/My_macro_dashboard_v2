@@ -1,6 +1,6 @@
 """
 app/tasks/korea_public.py
-국내 공공 데이터 — 공휴일(천문연)·금융위 일별 시세·DART 재무.
+국내 공공 데이터 — 공휴일(천문연)·금융위 일별 시세(주식·ETF)·DART 재무.
 """
 from __future__ import annotations
 
@@ -277,6 +277,82 @@ def _put_fsc_day(obs_date: str, rows: list[dict], url: str | None) -> int:
 def _clock() -> float:
     """경과 시간 시계(초). 테스트가 과거 쪽 메우기의 시간 상한을 시험할 때 바꿔 끼웁니다."""
     return time.monotonic()
+
+
+# 금융위 ETF 시세(증권상품시세)의 실행당 호출 예산. 하루치가 한 쪽이라(fsc.ETF_ROWS_PER_PAGE) 되돌아보기 7거래일(FSC_LOOKBACK_DAYS)을
+# 다 메워도 7회입니다 — 남는 1회는 ETF가 늘어 하루치가 두 쪽이 되는 날의 여유입니다. 최신이면 0회.
+FSC_ETF_CALL_BUDGET = 8
+# 새 기준일을 더 시작하지 않는 경과 시간(초, 태스크 시작부터) — 과거 쪽 메우기(FSC_BACKFILL_TIME_LIMIT_SECONDS)와 같은 이유입니다.
+# 저장본이 없을 때는 실패한 날을 건너뛰고 하루 앞을 보므로 연결 실패가 이어지면 쪽마다 timeout 30초 × 재시도 2회가 쌓여 slow 상한
+# (600초)을 넘을 수 있습니다. 정상이면 하루치 약 0.5초입니다.
+FSC_ETF_TIME_LIMIT_SECONDS = 300.0
+FSC_ETF_NOT_REGISTERED = ("증권상품시세 활용신청 필요 — 공공데이터포털에서 '금융위원회_증권상품시세정보'를 활용신청하세요"
+                          "(자동승인, 같은 DATA_GO_KR_SERVICE_KEY) · 기존 저장본 유지")
+
+
+def task_fsc_etf_prices() -> str:
+    """
+    🏛️ 금융위 공식 ETF 일별 시세(증권상품시세) — 전 ETF 종가·시가·고가·저가·NAV·순자산·상장좌수·기초지수.
+
+    주식시세(task_fsc_prices)와 따로 된 태스크입니다. 활용신청이 서비스마다 따로라 한쪽이 403이거나 실패해도 다른 쪽은 받습니다.
+    모의 매매 한국 책의 ETF 확정가(069500·153130, 명세 K15)가 이 저장본을 읽습니다.
+
+    규칙
+      - 저장된 마지막 기준일 **이후의 거래일을 전부** 받습니다(오래된 날부터, 되돌아보기 7거래일 — fsc_prices의 최신 쪽과 같음).
+        최신 상태면 호출 0회, 저장본이 없으면 가장 최근에 발표된 하루만 받습니다. 과거 쪽 메우기는 하지 않습니다 — ETF 확정가는
+        출발(K25) 뒤의 체결·순자산 확정에만 쓰고, 그 전 이력은 토스 종가가 맡습니다(명세 §4-15 'B3 구현에서 정한 것').
+      - 끝까지 받지 못한 하루치(totalCount, QA-078)는 실패이고, 보충 중이면 그날에서 멈춰 다음 실행이 그날부터 다시 받습니다(QA-034).
+      - 403 코드 30(서비스 미등록)이면 바로 멈추고 '활용신청 필요'로 남깁니다(EmptyResult — 기존 저장본 유지). 다른 날을 물어도
+        같은 답이라 한도만 씁니다.
+      - 하루치는 observations 한 번(ETF 코드 = entity, 한 문장이라 원자적)입니다. 400일(FSC_RETENTION_DAYS)이 지난 행은 정리합니다.
+    """
+    started = _clock()
+    today = datetime.now(KST).date()
+    stored_latest = store.latest_observation_date(catalog.OBS_FSC_ETF_PRICE)
+    pending = [d for d in _fsc_candidate_dates(today) if not stored_latest or d.isoformat() > stored_latest]
+    if not pending:
+        return f"최신 상태 (기준일 {stored_latest}, 호출 0회)"
+
+    budget = publicapi.CallBudget(FSC_ETF_CALL_BUDGET)
+    reasons: list[str] = []
+    not_registered = ""
+    stop = ""
+    written: list[tuple[str, int]] = []
+    # 저장본이 있으면 빠진 날을 오래된 순서로, 없으면 최신부터 보다가 처음 발표된 하루만(fsc_prices와 같음).
+    for day in (list(reversed(pending)) if stored_latest else pending):
+        if _clock() - started >= FSC_ETF_TIME_LIMIT_SECONDS:
+            stop = f", 시간 상한 {FSC_ETF_TIME_LIMIT_SECONDS:.0f}초 — 나머지는 다음 실행"
+            break
+        try:
+            rows, _url = fsc_service.fetch_etf_day(day.strftime("%Y%m%d"), budget)
+        except publicapi.MissingKey:
+            raise EmptyResult("DATA_GO_KR_SERVICE_KEY 미설정 — .env에 공공데이터포털 인증키를 넣으세요") from None
+        except publicapi.NotRegistered as exc:
+            not_registered = str(exc)
+            break
+        except publicapi.PublicApiError as exc:
+            reasons.append(f"{day}: {exc}")
+            if budget.exhausted or stored_latest:
+                break   # 보충 중이면 실패한 날에서 멈춥니다(QA-034)
+            continue
+        if not rows:
+            continue    # 아직 발표 전이거나 휴장일
+        obs_date = day.isoformat()
+        written.append((obs_date, store.put_observations(catalog.OBS_FSC_ETF_PRICE, obs_date, rows, entity_key="code")))
+        if not stored_latest:
+            break
+
+    if not_registered:
+        if not written:
+            raise EmptyResult(f"{FSC_ETF_NOT_REGISTERED} ({not_registered})")
+        reasons.append(not_registered)
+    if not written:
+        raise EmptyResult(f"새 기준일 데이터가 없습니다 — 기존 저장본 유지 (호출 {budget.used}회{stop})" + _reason_suffix(reasons))
+
+    store.delete_observations_before(catalog.OBS_FSC_ETF_PRICE, (today - timedelta(days=FSC_RETENTION_DAYS)).isoformat())
+    latest_date, latest_rows = written[-1]
+    days = f" · {len(written)}일 보충" if len(written) > 1 else ""
+    return f"{latest_date} ETF {latest_rows}종목{days} (호출 {budget.used}회{stop})" + _reason_suffix(reasons)
 
 
 # DART 재무를 받을 종목 수 상한과 대상 기간. 호출 수 = 상한 / BATCH (+ 이전 연도 재시도).

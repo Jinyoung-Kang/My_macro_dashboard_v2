@@ -72,6 +72,15 @@ class MissingKey(PublicApiError):
     """인증키가 설정되지 않았습니다. 수집을 시도하지 않고 멈춥니다."""
 
 
+class NotRegistered(PublicApiError):
+    """
+    이 키로 그 서비스의 활용신청이 없습니다 — 게이트웨이 봉투의 ``SERVICE_KEY_IS_NOT_REGISTERED_ERROR``(코드 30, HTTP 403).
+    공공데이터포털은 키 하나에 서비스별 활용신청이라, 같은 키가 다른 서비스에는 200을 받으면서 이 서비스만 이렇게 옵니다
+    ([확인] 2026-10-26 증권상품시세 — 주식시세는 200). 다른 날·쪽을 물어도 같은 답이라, 부르는 쪽이 바로 멈추고 '활용신청 필요'로
+    남길 때만 따로 잡습니다(메시지는 PublicApiError와 같은 문구).
+    """
+
+
 class BudgetExhausted(PublicApiError):
     """
     이번 실행의 호출 예산(:class:`CallBudget`)을 다 써서 부르지 않았습니다 — 출처의 실패가 아닙니다.
@@ -222,6 +231,7 @@ def parse_xml(response: requests.Response, *, key: str, ok_codes=DATA_GO_KR_OK) 
     :param response: :func:`get`의 반환값
     :param key: 오류 문구에서 지울 키
     :param ok_codes: 정상으로 볼 resultCode
+    :raises NotRegistered: 서비스 활용신청 없음(코드 30) — PublicApiError의 하위
     :raises PublicApiError: 정상 응답이 아닐 때 (키가 지워진 사유 포함)
     """
     text = response.text or ""
@@ -239,7 +249,8 @@ def parse_xml(response: requests.Response, *, key: str, ok_codes=DATA_GO_KR_OK) 
         auth = (root.findtext(".//returnAuthMsg") or "").strip()
         hint = _AUTH_HINTS.get(auth) or _AUTH_HINTS.get(err) or ""
         detail = " / ".join(part for part in (err, auth, f"코드 {reason}" if reason else "") if part)
-        raise PublicApiError(scrub(
+        error = NotRegistered if err == "SERVICE_KEY_IS_NOT_REGISTERED_ERROR" or reason == "30" else PublicApiError
+        raise error(scrub(
             f"HTTP {response.status_code} — {detail}" + (f" — {hint}" if hint else ""), key
         ))
 

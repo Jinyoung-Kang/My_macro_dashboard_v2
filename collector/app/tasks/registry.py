@@ -9,7 +9,7 @@ from .base import Task
 from .earnings_surprise import task_earnings_surprise
 from .filings import task_sec_13f, task_sec_13f_track_record
 from .fundamentals import task_sec_fundamentals
-from .korea_public import task_dart_fundamentals, task_fsc_prices, task_kr_holidays
+from .korea_public import task_dart_fundamentals, task_fsc_etf_prices, task_fsc_prices, task_kr_holidays
 from .maintenance import task_run_log_retention
 from .markets import task_macro_collected, task_radar_rankings, task_scraper_markets
 from .news import task_news_headlines
@@ -44,6 +44,8 @@ ALL_TASKS: tuple[Task, ...] = (
     Task("cot_history", "slow", task_cot_history, "CFTC COT (주 1회 발표)"),
     Task("daum_futures_trend", "slow", task_daum_futures_trend, "Daum 선물 투자주체별 수급"),
     Task("fsc_prices", "slow", task_fsc_prices, "국내 공식 일별 시세 (금융위)"),
+    # 주식시세 바로 뒤 — 같은 slow 바퀴에서 한국 확정가(주식 → ETF)가 토스 태스크보다 먼저 들어옵니다(v2 2단계 명세 §4-9).
+    Task("fsc_etf_prices", "slow", task_fsc_etf_prices, "국내 ETF 공식 일별 시세 (금융위 증권상품시세)"),
     Task("toss_market_flows", "slow", task_toss_market_flows, "코스피·코스닥 투자자별 매매대금 (토스증권)"),
     Task("toss_stock_flows", "slow", task_toss_stock_flows, "레이더 종목 투자자별 매매동향 (토스증권)"),
     Task("toss_radar_universe", "slow", task_toss_radar_universe, "레이더 폴백 — 거래대금 상위 100종목 투자자 매매 (토스증권)"),

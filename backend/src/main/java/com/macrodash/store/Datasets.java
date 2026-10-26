@@ -130,6 +130,13 @@ public final class Datasets {
     public static final String OBS_RADAR = "radar_ranking";
     /** 금융위 공식 일별 시세 (entity = 6자리 종목코드). */
     public static final String OBS_FSC_PRICE = "fsc_price";
+    /**
+     * 금융위 ETF 일별 시세(증권상품시세 {@code getETFPriceInfo_V2}, v2 2단계 B3·K15). entity = 6자리 코드(영문 섞임 포함), obs_date = 기준일,
+     * payload {@code {code, name, close, open, high, low, volume, tradingValue, marketCap, nav, netAssets, listedUnits, indexName,
+     * indexClose, basDt}}. 주식시세({@link #OBS_FSC_PRICE})에는 ETF가 없습니다. 한국 책의 ETF 확정가(069500·153130)가 읽고,
+     * 수집기만 쓰며(ADR 0008) 400일이 지난 행은 수집기가 지웁니다.
+     */
+    public static final String OBS_FSC_ETF_PRICE = "fsc_etf_price";
     /** 시장별 합계 시가총액·거래대금 (series = "KOSPI.marketCap" 등). */
     public static final String TS_FSC_MARKET = "fsc_market";
     /** 종목별 일별 투자자 매매동향 (토스증권 공식, entity = 종목코드). */

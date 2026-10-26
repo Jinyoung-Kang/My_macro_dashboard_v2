@@ -102,6 +102,10 @@ OBS_RADAR = "radar_ranking"     # 날짜별 수급 상위 종목 (과거 조회 
 #   molit_apt — 서울 아파트 실거래 (2026-09 제거)
 RETIRED_OBSERVATION_DATASETS = ("molit_apt",)
 OBS_FSC_PRICE = "fsc_price"     # 금융위 공식 일별 시세 (entity = 6자리 종목코드)
+# 금융위 ETF 일별 시세(증권상품시세 getETFPriceInfo_V2, v2 2단계 B3·K15). entity = 6자리 코드(영문 섞임 포함), obs_date = 기준일,
+# payload {code, name, close, open, high, low, volume, tradingValue, marketCap, nav, netAssets, listedUnits, indexName, indexClose, basDt}.
+# 주식시세(fsc_price)에는 ETF가 없습니다. 모의 매매 한국 책의 ETF 확정가(069500·153130 — 체결 확정 조정·순자산 확정)가 읽습니다. 400일 보존.
+OBS_FSC_ETF_PRICE = "fsc_etf_price"
 TS_FSC_MARKET = "fsc_market"    # 시장별 합계 시가총액·거래대금 (series = "KOSPI.marketCap" 등)
 OBS_TOSS_STOCK_FLOW = "toss_stock_flow"  # 종목별 일별 투자자 매매동향 (토스증권 공식, entity = 종목코드)
 TS_EQUITY_CLOSE = "equity_close"        # 모의 매매 유니버스 10년 일별 종가(수정주가), series_id = 야후 티커
@@ -117,7 +121,7 @@ OBS_NEWS_HEADLINE = "news_headline"
 # surprisePct, currency, smallBase, reportedAt, source}. (날짜, 티커)마다 upsert(나중에 받은 값이 추정치를 채우거나 고침), 지우지 않음.
 OBS_US_EARNINGS_SURPRISE = "us.earnings_surprise"
 
-# 기간으로 지워도 되는 누적 데이터셋은 태스크가 스스로 보존 기한을 두는 fsc_price·toss_stock_flow(각 400일)·news_headline(7일)뿐입니다(QA-070).
+# 기간으로 지워도 되는 누적 데이터셋은 태스크가 스스로 보존 기한을 두는 fsc_price·fsc_etf_price·toss_stock_flow(각 400일)·news_headline(7일)뿐입니다(QA-070).
 # radar_ranking(다시 받을 수 없음, ADR 0005)·fred·fed_liquidity(증분 적재, 판정 성과가 전 구간을 씀, ADR 0009)·
 # krx_futures(원천이 최근 40일만 줌)·fsc_market(보충은 최근 7일만 함)·equity_close(모의 매매 트랙레코드가 10년 창을 통째로 쓰고,
 # 상장폐지되면 야후가 그 종목의 과거 종가를 더 주지 않음)·us.fundamentals(사실은 공시로 쌓이기만 하고, 그 시점 값을 고르려면

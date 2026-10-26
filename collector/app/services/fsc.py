@@ -1,6 +1,6 @@
 """
 app/services/fsc.py
-금융위원회 주식시세정보 — 국내 상장 종목 일별 공식 시세(종가·시가총액).
+금융위원회 주식시세정보·증권상품시세정보 — 국내 상장 종목·ETF 일별 공식 시세(종가·시가총액).
 
 왜 필요한가 — 수급 레이더의 가격은 포털·증권사 API에서 장중에 받은 값입니다.
 금융위 시세는 거래소 확정치를 기준일 단위로 주므로 시가총액의 기준이 되고,
@@ -23,6 +23,14 @@ DART 재무와 합쳐 PER·PBR을 계산할 수 있습니다.
 (처음에는 오퍼레이션 이름을 확인하지 못해 `getStockPriceInfo`로 불렀고, 실제 호출에서
 NO_OPENAPI_SERVICE_ERROR(코드 12)가 나와 활용가이드로 바로잡았습니다.)
 FSC_STOCK_PRICE_URL로 주소를 직접 지정할 수 있습니다.
+
+증권상품시세(ETF) — 주식시세에는 ETF가 없습니다([확인] 069500 totalCount 0). 금융위원회_증권상품시세정보
+`GetSecuritiesProductInfoService_V2/getETFPriceInfo_V2`(같은 키, 서비스 활용신청은 따로)를 같은 끝까지 받기 규칙으로 부릅니다
+(fetch_etf_day). 응답 필드([확인] 2026-10-27 실제 응답, G3 — tests/fixtures/public/fsc_getETFPriceInfo_V2_*.xml)
+  basDt · srtnCd · isinCd · itmsNm · clpr 종가 · vs · fltRt · nav · mkp 시가 · hipr 고가 · lopr 저가 · trqu 거래량 · trPrc 거래대금 ·
+  mrktTotAmt 시가총액 · nPptTotAmt 순자산총액 · stLstgCnt 상장좌수 · bssIdxIdxNm 기초지수명 · bssIdxClpr 기초지수 종가
+  하루 약 1,180종목(2026-10-23 totalCount 1,183)이고 그중 324종목이 영문 섞인 코드(0000D0 등)입니다. 거래가 없던 ETF(11종목)는
+  주식처럼 시가·고가·저가가 0, 종가는 직전 종가로 옵니다.
 """
 from __future__ import annotations
 
@@ -38,6 +46,10 @@ URL = "https://apis.data.go.kr/1160100/GetStockSecuritiesInfoService_V2/getStock
 # 한 페이지 행 수와 최대 페이지. 상장 종목은 KOSPI·KOSDAQ·KONEX 합쳐 3천 개 안팎입니다.
 ROWS_PER_PAGE = 1000
 MAX_PAGES = 5
+
+ETF_URL = "https://apis.data.go.kr/1160100/GetSecuritiesProductInfoService_V2/getETFPriceInfo_V2"
+# ETF 한 쪽 행 수 — 하루치(약 1,180종목)가 한 쪽에 옵니다([확인] numOfRows 2000 → 1,183행 한 쪽, 약 1 MB·0.5초). 늘면 2쪽째를 받습니다.
+ETF_ROWS_PER_PAGE = 2000
 
 # 단축코드 — 숫자·영문 대문자 6자리(앞의 A 접두어는 뗌). 예전 규칙(숫자 6자리)은 영문이 섞인 새 코드를 버렸습니다.
 _CODE = re.compile(r"^A?([0-9A-Z]{6})$")
@@ -129,6 +141,50 @@ def normalize(item: dict) -> dict:
         "tradingValue": to_float(item.get("trPrc")),
         "listedShares": to_float(item.get("lstgStCnt")),
         "marketCap": to_float(item.get("mrktTotAmt")),
+        "basDt": (item.get("basDt") or "").strip() or None,
+    }
+
+
+def fetch_etf_day(bas_dt: str, budget: publicapi.CallBudget) -> tuple[list[dict], str]:
+    """
+    그 기준일의 전 ETF 시세(증권상품시세) — 주식시세와 같은 끝까지 받기 규칙(_fetch_pages, QA-078).
+
+    :returns: (정규화한 행 목록, 호출한 주소). 그날 데이터가 없으면 ([], 주소)
+    :raises publicapi.MissingKey: DATA_GO_KR_SERVICE_KEY 미설정
+    :raises publicapi.NotRegistered: 증권상품시세 활용신청 없음(403 코드 30)
+    :raises publicapi.BudgetExhausted: 예산 부족
+    :raises publicapi.PublicApiError: 그 밖의 인증·서비스 오류, 끝까지 받지 못한 하루치
+    """
+    return _fetch_pages(ETF_URL, bas_dt, settings.data_go_kr_key(), budget, normalize_etf, ETF_ROWS_PER_PAGE), ETF_URL
+
+
+def normalize_etf(item: dict) -> dict:
+    """
+    ETF 응답 한 행을 저장 형태로 옮깁니다. 숫자가 아니면 None (0으로 채우지 않음).
+
+    시가·고가·저가는 주식과 같이 0 이하면 None입니다(거래 없던 날 0 — [확인] 2026-10-23 11종목). NAV·기초지수 종가도 0 이하면
+    None입니다(값이 아님 — 그날 1,183행에 0은 없었음). 종가는 응답 그대로(거래 없던 날 = 직전 종가). 대비·등락률·ISIN은 저장하지
+    않습니다(종가 이력으로 다시 셀 수 있음).
+
+    :returns: ``{"code", "name", "close", "open", "high", "low", "volume", "tradingValue", "marketCap", "nav", "netAssets",
+              "listedUnits", "indexName", "indexClose", "basDt"}``
+    """
+    match = _CODE.match((item.get("srtnCd") or "").strip())
+    return {
+        "code": match.group(1) if match else None,
+        "name": (item.get("itmsNm") or "").strip() or None,
+        "close": to_float(item.get("clpr")),
+        "open": _price(item.get("mkp")),
+        "high": _price(item.get("hipr")),
+        "low": _price(item.get("lopr")),
+        "volume": to_float(item.get("trqu")),
+        "tradingValue": to_float(item.get("trPrc")),
+        "marketCap": to_float(item.get("mrktTotAmt")),
+        "nav": _price(item.get("nav")),
+        "netAssets": to_float(item.get("nPptTotAmt")),
+        "listedUnits": to_float(item.get("stLstgCnt")),
+        "indexName": (item.get("bssIdxIdxNm") or "").strip() or None,
+        "indexClose": _price(item.get("bssIdxClpr")),
         "basDt": (item.get("basDt") or "").strip() or None,
     }
 

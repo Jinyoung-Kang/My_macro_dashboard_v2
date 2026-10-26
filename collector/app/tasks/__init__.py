@@ -10,7 +10,7 @@ app/tasks/ — 수집 작업 정의(패키지).
 [작업군과 주기 — 구버전과 동일]
   fast   (5분)  : scraper_markets · macro_collected · radar_rankings
   slow   (1시간): fred_series · fed_liquidity · krx_futures · sector_history · fx_history ·
-                  volatility_history · cot_history · daum_futures_trend · fsc_prices
+                  volatility_history · cot_history · daum_futures_trend · fsc_prices · fsc_etf_prices
   weekly (12시간): sec_13f · kr_holidays · dart_fundamentals
 
 [규칙]
@@ -88,6 +88,10 @@ from .korea_public import (  # noqa: F401
     _fsc_candidate_dates,
     _fsc_backfill_dates,
     task_fsc_prices,
+    FSC_ETF_CALL_BUDGET,
+    FSC_ETF_TIME_LIMIT_SECONDS,
+    FSC_ETF_NOT_REGISTERED,
+    task_fsc_etf_prices,
     DART_UNIVERSE_LIMIT,
     DART_UNIVERSE_DAYS,
     DART_CALL_BUDGET,

@@ -11,6 +11,8 @@
 | `datagokr_error_key_null.xml` | 같은 오류 봉투 | 빈 키 → HTTP 401 |
 | `fsc_getStockPriceInfo_V2_guide_sample.xml` | 금융위원회_주식시세정보 오픈API 활용가이드의 `getStockPriceInfo_V2` 응답 예시 | 공식 문서 예시. `fltRt`가 `.47`처럼 앞자리 0 없이 옴 |
 | `fsc_getStockPriceInfo_V2_halted_101530.xml` | 같은 API 실제 응답 — `basDt=20261023&likeSrtnCd=101530`(2026-10-27 06:2x KST 조회, HTTP 200, 본문 그대로) | 거래가 없던 종목(거래량 0): `mkp`·`hipr`·`lopr`가 `0`, `clpr`은 직전 종가 |
+| `fsc_getETFPriceInfo_V2_069500.xml` | 금융위원회_증권상품시세정보 `getETFPriceInfo_V2` 실제 응답 — `basDt=20261023&likeSrtnCd=069500&numOfRows=10&pageNo=1`(2026-10-27 06:50 KST 조회, HTTP 200, 본문 그대로) | KODEX 200 — 필드 18개(`nav`·`nPptTotAmt`·`stLstgCnt`·`bssIdxIdxNm`·`bssIdxClpr` 포함). 출처 공공데이터포털(공공누리 4유형 — 출처표시·변경금지, 고치지 않은 원문) |
+| `fsc_getETFPriceInfo_V2_0000Y0.xml` | 같은 API 실제 응답 — `basDt=20261023&likeSrtnCd=0000Y0&numOfRows=10&pageNo=1`(같은 때 조회, 본문 그대로) | 거래가 없던 ETF(거래량 0)·영문 섞인 코드: `mkp`·`hipr`·`lopr`가 `0`, `vs` 0. 그날 전체(1,183종목) 중 거래량 0은 11종목, 영문 섞인 코드는 324종목 |
 
 실제 인증키는 어떤 파일에도 들어 있지 않습니다.
 

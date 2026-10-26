@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<response>
+    <header>
+        <resultCode>00</resultCode>
+        <resultMsg>NORMAL SERVICE.</resultMsg>
+    </header>
+    <body>
+        <numOfRows>10</numOfRows>
+        <pageNo>1</pageNo>
+        <totalCount>1</totalCount>
+        <items>
+            <item>
+                <basDt>20261023</basDt>
+                <srtnCd>069500</srtnCd>
+                <isinCd>KR7069500007</isinCd>
+                <itmsNm>KODEX 200</itmsNm>
+                <clpr>87075</clpr>
+                <vs>550</vs>
+                <fltRt>.64</fltRt>
+                <nav>87240.93</nav>
+                <mkp>84470</mkp>
+                <hipr>87100</hipr>
+                <lopr>83045</lopr>
+                <trqu>32381043</trqu>
+                <trPrc>2762810237422</trPrc>
+                <mrktTotAmt>21768750000000</mrktTotAmt>
+                <nPptTotAmt>21805870284076</nPptTotAmt>
+                <stLstgCnt>250000000</stLstgCnt>
+                <bssIdxIdxNm>코스피 200</bssIdxIdxNm>
+                <bssIdxClpr>862.77</bssIdxClpr>
+            </item>
+        </items>
+    </body>
+</response>

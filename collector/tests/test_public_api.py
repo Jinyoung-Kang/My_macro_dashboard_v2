@@ -84,11 +84,13 @@ def test_등록되지_않은_키_봉투를_사유와_함께_잡는다():
     assert "SERVICE_KEY_IS_NOT_REGISTERED_ERROR" in message
     assert "HTTP 403" in message
     assert "활용신청" in message  # 무엇을 해야 하는지까지 알려 줍니다
+    assert isinstance(info.value, publicapi.NotRegistered), "부르는 쪽이 '활용신청 필요'로 바로 멈출 수 있게(증권상품시세 B3)"
 
 
 def test_빈_키_봉투도_잡는다():
-    with pytest.raises(publicapi.PublicApiError, match="SERVICE_KEY_IS_NULL"):
+    with pytest.raises(publicapi.PublicApiError, match="SERVICE_KEY_IS_NULL") as info:
         publicapi.parse_xml(_response("datagokr_error_key_null.xml", 401), key=DECODED)
+    assert not isinstance(info.value, publicapi.NotRegistered), "빈 키(코드 20)는 활용신청 문제가 아닙니다"
 
 
 def test_XML이_아닌_응답은_본문_앞부분을_보여_주되_키는_지운다():
