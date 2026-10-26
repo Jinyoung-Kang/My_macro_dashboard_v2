@@ -3,7 +3,6 @@ package com.macrodash.feature.status;
 import com.macrodash.collector.CollectorClient;
 import com.macrodash.feature.publicdata.CalendarService;
 import com.macrodash.read.StoreReader;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import tools.jackson.databind.ObjectMapper;
@@ -49,13 +48,22 @@ class VerificationServiceTest {
     }
 
     @Test
-    @Disabled("QA-143 재현 — 수정 전: 12-31이 주말인 해의 연말휴장일을 장중으로 봄")
     @DisplayName("QA-143: 연말휴장일 2028-12-29(금, 12-31 일) 장 시간에는 수급 1위 대조를 건너뛴다(휴장)")
     void rankingComparisonIsSkippedOnSubstitutedYearEndClosure() throws Exception {
         assertThat(ranking(Set.of("2028-12-25"), LocalDateTime.of(2028, 12, 29, 11, 0)).get("verdict"))
                 .isEqualTo("skipped");
         assertThat(String.valueOf(ranking(Set.of("2028-12-25"), LocalDateTime.of(2028, 12, 29, 11, 0)).get("note")))
                 .contains("휴장");
+    }
+
+    @Test
+    @DisplayName("QA-143: 저장된 공휴일로 연말휴장 대체를 본다 — 12-31(월)이 공휴일인 가상의 2029년이면 12-28(금) 장 시간에 수급 1위 대조를 건너뜀")
+    void rankingComparisonUsesStoredHolidaysForYearEnd() throws Exception {
+        LocalDateTime friday = LocalDateTime.of(2029, 12, 28, 11, 0);
+        assertThat(ranking(Set.of("2029-12-25", "2029-12-31"), friday).get("verdict")).isEqualTo("skipped");
+        assertThat(String.valueOf(ranking(Set.of("2029-12-25", "2029-12-31"), friday).get("note"))).contains("휴장");
+        assertThat(String.valueOf(ranking(Set.of("2029-12-25"), friday).get("note"))).as("12-31이 평일 비공휴일이면 12-28은 정규장")
+                .doesNotContain("휴장");
     }
 
     /** 키는 KIS만 — 수급 1위 대조 줄 하나(시간 조건만 봄). */

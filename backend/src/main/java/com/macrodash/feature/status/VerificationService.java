@@ -14,12 +14,16 @@ import com.macrodash.support.Json;
 import org.springframework.stereotype.Service;
 import tools.jackson.databind.JsonNode;
 
+import java.time.LocalDate;
 import java.time.ZonedDateTime;
+import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 
 /**
  * 🔍 데이터 교차 검증 (KRX · KIS · 토스증권).
@@ -88,8 +92,9 @@ public class VerificationService {
         boolean hasToss = Json.asBoolean(keys, "toss");
 
         List<Verification.Result> results = new ArrayList<>();
-        boolean holiday = calendar.holidayDates().contains(now.toLocalDate().toString());
-        Verification.Gate settled = Verification.settledGate(now, holiday);
+        // 공휴일 목록으로 오늘이 공휴일인지와 연말 휴장일(12-31이 주말·공휴일이면 직전 매매거래일 — QA-143)을 함께 봅니다.
+        Set<LocalDate> holidays = holidayDates(calendar.holidayDates());
+        Verification.Gate settled = Verification.settledGate(now, holidays);
 
         if (!hasKrx && !hasKis) {
             results.add(Verification.skipped("KOSPI200 선물 종가",
@@ -107,7 +112,7 @@ public class VerificationService {
             results.add(compareIndex(payload));
         }
 
-        results.add(compareRankingTop(payload, now, holiday));
+        results.add(compareRankingTop(payload, now, holidays));
 
         // 토스증권 공식 — 키가 없으면 "확인 못 함"으로 남깁니다(일치로 위장하지 않음).
         String noToss = "토스 키(TOSS_CLIENT_ID/SECRET)가 없어 이 항목은 대조하지 않습니다.";
@@ -269,9 +274,9 @@ public class VerificationService {
      * <p>금액은 가집계 시점 차이로 조금씩 다를 수 있지만, <b>1위 종목명</b>이
      * 갈라지면 둘 중 하나의 파싱이 깨졌다는 강한 신호입니다.
      */
-    private Verification.Result compareRankingTop(JsonNode payload, ZonedDateTime now, boolean holiday) {
+    private Verification.Result compareRankingTop(JsonNode payload, ZonedDateTime now, Set<LocalDate> holidays) {
         String name = "KOSPI 외국인 순매수 1위 종목";
-        Verification.Gate gate = Verification.intradayGate(now, holiday);
+        Verification.Gate gate = Verification.intradayGate(now, holidays);
         if (!gate.allowed()) {
             return Verification.skipped(name, gate.reason());
         }
@@ -458,5 +463,18 @@ public class VerificationService {
             }
         }
         return newest;
+    }
+
+    /** 저장된 공휴일(YYYY-MM-DD 글자) → 날짜. 읽을 수 없는 글자는 버립니다(그날은 공휴일로 보지 않음). */
+    private static Set<LocalDate> holidayDates(Set<String> texts) {
+        Set<LocalDate> out = new HashSet<>();
+        for (String text : texts) {
+            try {
+                out.add(LocalDate.parse(text));
+            } catch (DateTimeParseException e) {
+                // CalendarService가 형식을 이미 거르므로 오지 않는 값 — 버립니다.
+            }
+        }
+        return out;
     }
 }

@@ -3,9 +3,11 @@ package com.macrodash.analytics;
 import java.time.DayOfWeek;
 import java.time.LocalDate;
 import java.time.LocalTime;
+import java.time.Month;
 import java.time.ZonedDateTime;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Set;
 
 /**
  * 교차 검증 판정 규칙.
@@ -193,9 +195,25 @@ public final class Verification {
 
     /**
      * @param holiday 오늘이 한국 공휴일인가. 평일 공휴일 09:00~16:29를 장중으로 보면 KRX 확정치가
-     *                있는데도 하루 종일 대조를 건너뜁니다
+     *                있는데도 하루 종일 대조를 건너뜁니다. 연말 휴장일은 주말 대체만 봅니다 — 공휴일 대체까지 보려면
+     *                {@link #settledGate(ZonedDateTime, Set)}
      */
     public static Gate settledGate(ZonedDateTime nowKst, boolean holiday) {
+        return settledGate(nowKst, holiday, isKrxYearEndClosure(nowKst.toLocalDate()));
+    }
+
+    /**
+     * 공휴일 목록(천문연)을 받은 판 — 오늘이 공휴일인지와 KRX 연말 휴장일(12-31이 주말·공휴일이면 직전 매매거래일, QA-143)을
+     * 그 목록으로 봅니다. 운영자 수집 검증({@code VerificationService})이 씁니다.
+     *
+     * @param holidays 저장된 한국 공휴일(없으면 빈 집합 — 연말 휴장일은 주말 대체만)
+     */
+    public static Gate settledGate(ZonedDateTime nowKst, Set<LocalDate> holidays) {
+        LocalDate today = nowKst.toLocalDate();
+        return settledGate(nowKst, holidays.contains(today), isKrxYearEndClosure(today, holidays));
+    }
+
+    private static Gate settledGate(ZonedDateTime nowKst, boolean holiday, boolean yearEndClosure) {
         if (nowKst.getDayOfWeek() == DayOfWeek.SATURDAY
                 || nowKst.getDayOfWeek() == DayOfWeek.SUNDAY) {
             return new Gate(true, "주말 (확정 데이터)");
@@ -203,7 +221,7 @@ public final class Verification {
         if (holiday) {
             return new Gate(true, "공휴일 (확정 데이터)");
         }
-        if (isKrxYearEndClosure(nowKst.toLocalDate())) {
+        if (yearEndClosure) {
             return new Gate(true, "KRX 연말 휴장일 (확정 데이터)");
         }
         LocalTime time = nowKst.toLocalTime();
@@ -230,14 +248,29 @@ public final class Verification {
 
     /**
      * @param holiday 오늘이 한국 공휴일인가. 휴장일에는 가집계 TR이 빈 값을 주므로, 장 시간에 대조하면
-     *                운영자 진단에 거짓 오류가 납니다(QA-111)
+     *                운영자 진단에 거짓 오류가 납니다(QA-111). 연말 휴장일은 주말 대체만 봅니다 — 공휴일 대체까지 보려면
+     *                {@link #intradayGate(ZonedDateTime, Set)}
      */
     public static Gate intradayGate(ZonedDateTime nowKst, boolean holiday) {
+        return intradayGate(nowKst, holiday, isKrxYearEndClosure(nowKst.toLocalDate()));
+    }
+
+    /**
+     * 공휴일 목록(천문연)을 받은 판 — {@link #settledGate(ZonedDateTime, Set)}와 같은 휴장 판정.
+     *
+     * @param holidays 저장된 한국 공휴일(없으면 빈 집합 — 연말 휴장일은 주말 대체만)
+     */
+    public static Gate intradayGate(ZonedDateTime nowKst, Set<LocalDate> holidays) {
+        LocalDate today = nowKst.toLocalDate();
+        return intradayGate(nowKst, holidays.contains(today), isKrxYearEndClosure(today, holidays));
+    }
+
+    private static Gate intradayGate(ZonedDateTime nowKst, boolean holiday, boolean yearEndClosure) {
         if (nowKst.getDayOfWeek() == DayOfWeek.SATURDAY
                 || nowKst.getDayOfWeek() == DayOfWeek.SUNDAY) {
             return new Gate(false, "주말입니다. 장중 가집계 비교는 정규장에만 가능합니다.");
         }
-        if (holiday || isKrxYearEndClosure(nowKst.toLocalDate())) {
+        if (holiday || yearEndClosure) {
             return new Gate(false, "휴장일입니다. 장중 가집계 비교는 정규장에만 가능합니다.");
         }
         LocalTime time = nowKst.toLocalTime();
@@ -250,14 +283,24 @@ public final class Verification {
     }
 
     /**
-     * KRX 연말 휴장일인가 — 평일인 12월 31일. 공휴일이 아니라 거래소 규정이라 천문연 공휴일 목록에 없습니다.
-     *
-     * <p>같은 규칙이 화면({@code lib/marketCalendar.ts})과 수집기({@code krcalendar.KRX_YEAR_END_CLOSURE})에도 있습니다.
-     * 12-31이 주말이면 그냥 주말로 봅니다(그해 직전 평일이 휴장인지는 규정을 확인하지 못해 다루지 않음).
+     * KRX 연말 휴장일인가(공휴일 목록 없이 — 주말 대체만). {@link #isKrxYearEndClosure(LocalDate, Set)}의 빈 목록 판.
      */
     public static boolean isKrxYearEndClosure(LocalDate date) {
-        return date.getMonthValue() == 12 && date.getDayOfMonth() == 31
-                && date.getDayOfWeek() != DayOfWeek.SATURDAY && date.getDayOfWeek() != DayOfWeek.SUNDAY;
+        return isKrxYearEndClosure(date, Set.of());
+    }
+
+    /**
+     * KRX 연말 휴장일인가 — 12-31, 그날이 주말·공휴일이면 거슬러 올라가 처음 만나는 평일 비공휴일(직전 매매거래일). 공휴일이 아니라
+     * 거래소 규정이라 천문연 공휴일 목록에 없습니다. KRX 휴장일 목록의 실례가 2022-12-30(12-31 토)·2023-12-29(12-31 일)이고
+     * 다음은 2028-12-29입니다 — 평일인 12-31만 보던 예전 판은 그날을 장중으로 봤습니다(QA-143).
+     *
+     * <p>모의 매매 한국 달력과 같은 식입니다({@link KrxCalendar#yearEndClosure(int, Set)}). 화면({@code lib/marketCalendar.ts}
+     * {@code krYearEndClosure})·수집기({@code krcalendar.year_end_closure})도 같습니다(QA-142).
+     *
+     * @param holidays 그해 한국 공휴일(빈 집합이면 주말 대체만)
+     */
+    public static boolean isKrxYearEndClosure(LocalDate date, Set<LocalDate> holidays) {
+        return date.getMonth() == Month.DECEMBER && date.equals(KrxCalendar.yearEndClosure(date.getYear(), holidays));
     }
 
     public record Gate(boolean allowed, String reason) {
