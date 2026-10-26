@@ -19,22 +19,25 @@ const SPOKEN: Record<ChangeDirection, string> = { up: "상승", down: "하락", 
  *
  * - 방향·부호는 보이는(반올림된) 값 기준. 0으로 찍히면 화살표 없이 중립색.
  * - 음수 부호는 −(U+2212). 단위(`unit`)는 변화량 바로 옆에 작게, 변화율은 "%"를 붙입니다.
- * - `digits`(기본 2)는 변화량·변화율에 함께 씁니다.
+ * - `digits`(기본 2)는 변화량·변화율에 함께 씁니다. 변화율만 다르게 찍으려면 `pctDigits`(설계서 §1.5 계약에 더한 선택 prop —
+ *   금리 카드의 "−0.007 (−0.14%)"처럼 수집기가 두 자릿수를 따로 정할 때).
  */
 export function ChangeChip({
   change,
   changePct,
   digits = 2,
+  pctDigits,
   unit,
   size = "md",
 }: {
   change?: number | null;
   changePct?: number | null;
   digits?: number;
+  pctDigits?: number;
   unit?: string;
   size?: "sm" | "md";
 }): JSX.Element | null {
-  const model = changeChipModel(change, changePct, digits);
+  const model = changeChipModel(change, changePct, digits, pctDigits ?? digits);
   if (model === null) {
     return null;
   }

@@ -1,0 +1,202 @@
+/**
+ * 모의매매(미국) 개요의 새 패턴(설계서 §7 — 네 계좌 행 + 기간별 순자산 차트 + 계좌 비교 표)에 쓰는 표시 규칙. 순수 함수(ADR 0004).
+ *
+ * 숫자·서식은 lib/paper.ts의 bookCard·statCells·sampleNote를 그대로 씁니다 — 카드에 있던 칸을 행·표로 옮길 뿐, 새 숫자를 만들지 않습니다.
+ * 개요 응답에 없는 값(예: 출발 이후 변화 금액)은 계산해 넣지 않습니다.
+ */
+import { deltaColor, EMPTY, formatKst, formatNumber } from "./format";
+import { accountProfile, benchmarkLabel, bookCard, statCells } from "./paper";
+import type { PaperBookSummary, PaperOverviewResponse, PaperQuotesSummary } from "./types";
+
+// ---------------------------------------------------------------- 계좌 행(AssetRow)
+
+/** 계좌 행이 개요에서 함께 읽는 것 — 사후 체결 대기 목록과 장부 관측치 신선도. */
+export interface BookRowContext {
+  pendingBackfill?: readonly string[] | null;
+  quotes?: Pick<PaperQuotesSummary, "stale"> | null;
+}
+
+/** 사후 체결을 기다리는 벤치마크 행의 경고(초기화 카드가 사유와 다시 누를 단추를 보입니다). */
+export const PENDING_BACKFILL_WARNING = "출발일 종가 대기 — 사후 체결 전(현금만)";
+
+/**
+ * 계좌 행 자료 — `AssetRowData`(components/patterns/AssetRow.tsx)의 부분집합이라 그대로 넘깁니다(lib는 components를 가져오지 않음,
+ * lib/patternRows.ts의 AssetRowFlags와 같은 방식).
+ */
+export interface BookRow {
+  id: string;
+  name: string;
+  sub: string;
+  value: number | null;
+  unit: string;
+  changePct: number | null;
+  isStale: boolean;
+  staleReason: string | null;
+  warning: string | null;
+}
+
+/**
+ * 계좌 하나 → 자산 행. 이름 · 보조(종류 · 상태 · 한 줄 소개) · 순자산(달러) · 출발 이후 수익률 칩 · 배지.
+ *
+ * - 순자산을 모르면 "—"(단위 없음), 수익률을 모르면 칩을 생략합니다(0.00%를 만들지 않음 — AssetRow 규칙).
+ * - 이전 값 배지: 가격을 새로 받지 못한 보유가 있거나(staleCount > 0 — 지난 값으로 평가), 장부 관측치 저장본이 늦었으면
+ *   (quotes.stale — 서버 판정) 시작한 계좌의 순자산은 그 늦은 관측으로 평가한 값입니다. 사유를 함께 적습니다.
+ * - 경고: 벤치마크가 출발일 종가를 기다리면(pendingBackfill) 그 사실. 추정 배지는 없습니다(장부 값은 추정이 아님).
+ */
+export function bookAssetRow(book: PaperBookSummary, context: BookRowContext = {}): BookRow {
+  const card = bookCard(book, []);
+  const summary = accountProfile(book.code)?.summary ?? null;
+  const staleReasons = [
+    card.staleWarning,
+    context.quotes?.stale === true && book.lastObservedAtKst ? `관측치 저장본이 늦음 · 마지막 관측 ${formatKst(book.lastObservedAtKst)}` : null,
+  ].filter((reason): reason is string => reason !== null);
+  return {
+    id: book.code,
+    name: book.label,
+    sub: [card.kind, card.status.label, summary].filter((part) => part && part !== EMPTY).join(" · "),
+    value: book.nav,
+    unit: "달러",
+    changePct: book.returnPct,
+    isStale: staleReasons.length > 0,
+    staleReason: staleReasons.length > 0 ? staleReasons.join(" · ") : null,
+    warning: (context.pendingBackfill ?? []).includes(book.code) ? PENDING_BACKFILL_WARNING : null,
+  };
+}
+
+// ---------------------------------------------------------------- 계좌 비교 표(DataTable, 행 = 항목 · 열 = 계좌)
+
+/** 비교 표 칸 하나 — 글과(있으면) 글자색 클래스. 값을 모르면 글은 "—"이고 색은 없습니다. */
+export interface ComparisonCell {
+  text: string;
+  className: string | null;
+}
+
+/** 비교 표의 한 줄(항목 하나). `cells`는 계좌 코드 → 칸. */
+export interface ComparisonRow {
+  key: string;
+  label: string;
+  /** 상태 줄은 배지로 그립니다(글자색이 아니라 테두리·바탕이 있는 배지 클래스). */
+  badge?: boolean;
+  cells: Record<string, ComparisonCell>;
+}
+
+const plain = (text: string): ComparisonCell => ({ text, className: null });
+const toned = (text: string, className: string | null): ComparisonCell => ({ text, className: text === EMPTY ? null : className });
+
+/** 가격 없음 칸 — 모르면 "—", 0이면 "없음", 있으면 경고색 "N종목 — 지난 값으로 평가". */
+function staleCell(book: PaperBookSummary): ComparisonCell {
+  const count = book.staleCount;
+  if (count === null || count === undefined || !Number.isFinite(count)) return plain(EMPTY);
+  if (count <= 0) return plain("없음");
+  return toned(`${formatNumber(count, 0)}종목 — 지난 값으로 평가`, "text-warn");
+}
+
+/**
+ * 계좌 비교 표 — 예전 계좌 카드 네 장의 칸을 항목별 줄로 모읍니다(상태·종류·출발·처음 현금·순자산·수익률·노출·현금·보유 수·
+ * 마지막 관측·가격 없음·통계 일곱 칸·비교 기준). 값은 bookCard·statCells의 표시 글 그대로("—" 포함). 표본 설명은 문장이라 표 밖
+ * (`sampleNotes`)에 둡니다.
+ *
+ * 초과 수익률·베타의 비교 기준은 계좌마다 다를 수 있어(SPY 계좌 자신은 기준 없음) 항목 이름에 적지 않고 "비교 기준" 줄로 따로 둡니다.
+ */
+export function accountComparisonRows(books: readonly PaperBookSummary[]): ComparisonRow[] {
+  const cards = books.map((book) => ({ book, card: bookCard(book, books) }));
+  const row = (key: string, label: string, cell: (entry: (typeof cards)[number]) => ComparisonCell, badge = false): ComparisonRow => ({
+    key,
+    label,
+    badge,
+    cells: Object.fromEntries(cards.map((entry) => [entry.book.code, cell(entry)])),
+  });
+  // 항목 이름은 비교 기준 없는 통계 칸 이름(같은 순서) — 값은 계좌마다 bookCard.stats에서 같은 key로 찾습니다.
+  const statRows = statCells(null, null).map((stat) =>
+    row(`stat-${stat.key}`, stat.label, ({ card }) => {
+      const value = card.stats.find((cell) => cell.key === stat.key)?.value ?? EMPTY;
+      return plain(value);
+    }),
+  );
+  return [
+    row("status", "상태", ({ card }) => ({ text: card.status.label, className: card.status.className }), true),
+    row("kind", "종류", ({ card }) => plain(card.kind)),
+    row("startedOn", "출발", ({ card }) => plain(card.startedOn)),
+    row("initialCash", "처음 현금", ({ card }) => plain(card.initialCash)),
+    row("nav", "순자산", ({ card }) => plain(card.nav)),
+    row("returnPct", "수익률(출발 이후)", ({ book, card }) => toned(card.returnPct, deltaColor(book.returnPct))),
+    row("exposure", "주식 노출", ({ card }) => plain(card.exposure)),
+    row("cash", "현금", ({ card }) => plain(card.cash)),
+    row("positions", "보유", ({ card }) => plain(card.positions)),
+    row("lastObserved", "마지막 관측", ({ card }) => plain(card.lastObserved)),
+    row("stale", "가격 없음", ({ book }) => staleCell(book)),
+    ...statRows,
+    row("benchmark", "비교 기준", ({ book }) => plain(benchmarkLabel(book, books) ?? EMPTY)),
+  ];
+}
+
+/** 계좌마다의 표본 설명(sampleNote) — 표 아래 목록. 순서는 계좌 순서. */
+export function sampleNotes(books: readonly PaperBookSummary[]): { code: string; label: string; text: string }[] {
+  return books.map((book) => ({ code: book.code, label: book.label, text: bookCard(book, books).sample }));
+}
+
+// ---------------------------------------------------------------- 기간별 순자산 곡선
+
+/** 순자산 곡선의 기간 탭. `months`가 null이면 전체(저장된 순자산 기록 전부). */
+export const NAV_RANGES = [
+  { key: "1m", label: "1개월", months: 1 },
+  { key: "3m", label: "3개월", months: 3 },
+  { key: "6m", label: "6개월", months: 6 },
+  { key: "1y", label: "1년", months: 12 },
+  { key: "all", label: "전체", months: null },
+] as const;
+
+export type NavRangeKey = (typeof NAV_RANGES)[number]["key"];
+
+/** "YYYY-MM-DD"에서 n개월 전 날짜(같은 날, 그 달에 없으면 그 달 마지막 날). 날짜 꼴이 아니면 null. */
+export function monthsBefore(date: string, months: number): string | null {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(date);
+  if (!match) return null;
+  const year = Number(match[1]);
+  const month = Number(match[2]) - 1 - months;
+  const target = new Date(Date.UTC(year, month, 1));
+  const lastDay = new Date(Date.UTC(target.getUTCFullYear(), target.getUTCMonth() + 1, 0)).getUTCDate();
+  target.setUTCDate(Math.min(Number(match[3]), lastDay));
+  return target.toISOString().slice(0, 10);
+}
+
+/** 기간의 첫 날짜(이 날 이후 기록만 그림). 전체·기록 없음은 null. */
+function rangeStart(dates: readonly string[], range: NavRangeKey): string | null {
+  const spec = NAV_RANGES.find((entry) => entry.key === range);
+  const last = dates[dates.length - 1];
+  if (!spec || spec.months === null || !last) return null;
+  return monthsBefore(last, spec.months);
+}
+
+/**
+ * 고를 수 있는 기간 — 저장된 기록이 그 기간보다 길 때만(기간이 기록 전부와 같으면 "전체"와 같은 탭이 둘이 됨). "전체"는 늘 있습니다.
+ * 저장 구간을 넘는 기간 탭은 그리지 않습니다(PRINCIPLES "기간 탭은 저장 구간을 넘지 않음").
+ */
+export function navRangeKeys(navSeries: PaperOverviewResponse["navSeries"]): NavRangeKey[] {
+  const dates = Array.isArray(navSeries?.dates) ? navSeries.dates : [];
+  const first = dates[0];
+  return NAV_RANGES.filter((range) => {
+    if (range.months === null) return true;
+    const start = rangeStart(dates, range.key);
+    return first !== undefined && start !== null && first < start;
+  }).map((range) => range.key);
+}
+
+/**
+ * 고른 기간만 남긴 순자산 기록 — 날짜와 계좌별 값 배열을 같은 자리에서 자릅니다(값은 건드리지 않음, null도 그대로).
+ * 전체·모르는 기간·기록 없음은 받은 그대로 돌려줍니다.
+ */
+export function navSeriesWindow(
+  navSeries: PaperOverviewResponse["navSeries"],
+  range: NavRangeKey,
+): PaperOverviewResponse["navSeries"] {
+  if (!navSeries || !Array.isArray(navSeries.dates) || !navSeries.books) return navSeries;
+  const start = rangeStart(navSeries.dates, range);
+  if (start === null) return navSeries;
+  const from = navSeries.dates.findIndex((date) => date >= start);
+  if (from <= 0) return navSeries;
+  const books = Object.fromEntries(
+    Object.entries(navSeries.books).map(([code, values]) => [code, Array.isArray(values) ? values.slice(from) : values]),
+  );
+  return { dates: navSeries.dates.slice(from), books };
+}

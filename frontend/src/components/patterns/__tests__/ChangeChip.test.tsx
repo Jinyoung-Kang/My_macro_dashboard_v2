@@ -66,6 +66,13 @@ describe("ChangeChip", () => {
     expect(screen.getByText("(+1%)")).toBeTruthy();
   });
 
+  it("pctDigits — 변화율만 따로(변화량 셋째, 변화율 둘째)", () => {
+    render(<ChangeChip change={-0.007} changePct={-0.1402} digits={3} pctDigits={2} />);
+    expect(screen.getByText(`${MINUS}0.007`)).toBeTruthy();
+    expect(screen.getByText(`(${MINUS}0.14%)`)).toBeTruthy();
+    expect(screen.getByText("하락")).toBeTruthy();
+  });
+
   it("size — sm은 text-xs, 기본(md)은 text-sm", () => {
     const { container } = render(
       <>

@@ -21,6 +21,8 @@ export type AssetRowData = {
   unit?: string | null;
   change?: number | null;
   changePct?: number | null;
+  /** 변화량 소수 자릿수(기본 2) — 설계서 §1.5 계약에 더한 선택 prop. 변화율은 늘 소수 둘째입니다(수집기 deltaStr과 같음). */
+  changeDigits?: number;
   spark?: readonly (number | null)[];
   asOf?: string | null;
   delayMin?: number | null;
@@ -86,7 +88,7 @@ export function AssetRow({
             {row.unit ? <span className="ml-0.5 text-xs font-normal text-text-3">{row.unit}</span> : null}
           </span>
         )}
-        <ChangeChip change={row.change} changePct={row.changePct} size="sm" />
+        <ChangeChip change={row.change} changePct={row.changePct} digits={row.changeDigits ?? 2} pctDigits={2} size="sm" />
       </span>
       {model.hasBadges ? (
         <span className="flex basis-full flex-wrap items-center gap-1">
@@ -130,6 +132,8 @@ export function AssetRow({
  * - 행이 없으면 `emptyText`(기본 "표시할 항목이 없습니다.").
  * - `onSelect`·`selectedId`는 각 행에 넘깁니다(href가 있는 행은 링크가 이김).
  * - `showProvenance`는 설계서 §1.5 계약에 더한 선택 prop입니다 — 모든 행에 출처 배지를 붙입니다.
+ * - `headingLevel`(기본 2, 계약에 더한 선택 prop)이 3이면 제목을 h3으로 그리고 영역(region)으로 만들지 않습니다 — 이미 이름 붙은
+ *   구역 안의 소제목이라(예: 홈 "시장" 안의 범주) 랜드마크를 겹쳐 늘리지 않습니다. 제목 탐색은 그대로 됩니다.
  * - `children`은 행 아래에 그립니다(더 보기 링크·주석 등).
  */
 export function AssetList({
@@ -139,6 +143,7 @@ export function AssetList({
   onSelect,
   selectedId,
   showProvenance = false,
+  headingLevel = 2,
   children,
 }: {
   title?: string;
@@ -147,15 +152,18 @@ export function AssetList({
   onSelect?: (id: string) => void;
   selectedId?: string | null;
   showProvenance?: boolean;
+  headingLevel?: 2 | 3;
   children?: ReactNode;
 }): JSX.Element {
   const headingId = useId();
+  const Heading = headingLevel === 3 ? "h3" : "h2";
+  const labelled = Boolean(title) && headingLevel === 2;
   return (
-    <section aria-labelledby={title ? headingId : undefined} className="min-w-0 rounded-xl border border-border bg-surface">
+    <section aria-labelledby={labelled ? headingId : undefined} className="min-w-0 rounded-xl border border-border bg-surface">
       {title ? (
-        <h2 id={headingId} className="px-4 pb-1 pt-4 text-sm font-medium text-text-2">
+        <Heading id={headingId} className="px-4 pb-1 pt-4 text-sm font-medium text-text-2">
           {title}
-        </h2>
+        </Heading>
       ) : null}
       {rows.length === 0 ? (
         <p className="px-4 py-6 text-sm text-text-3">{emptyText}</p>

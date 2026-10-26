@@ -49,14 +49,16 @@ export type ChangeChipModel = {
  * 변화 칩의 글과 방향. 변화량·변화율을 둘 다 모르면 null — 칩을 생략합니다(0.00%를 만들지 않음).
  *
  * 방향은 보이는 숫자의 부호로 정합니다. 둘 다 0으로 찍히면 flat, 두 부호가 어긋나면(자료 오류) 방향을 단정하지 않고 flat.
+ * `pctDigits`(기본 = `digits`)는 변화율만의 자릿수입니다 — 금리처럼 변화량은 셋째, 변화율은 둘째 자리로 찍을 때.
  */
 export function changeChipModel(
   change: number | null | undefined,
   changePct: number | null | undefined,
   digits = 2,
+  pctDigits = digits,
 ): ChangeChipModel | null {
   const amount = isMissingValue(change) ? null : formatSignedMinus(change as number, digits);
-  const pct = isMissingValue(changePct) ? null : formatSignedMinus(changePct as number, digits);
+  const pct = isMissingValue(changePct) ? null : formatSignedMinus(changePct as number, pctDigits);
   if (amount === null && pct === null) {
     return null;
   }

@@ -46,7 +46,8 @@ export default function LoginPage() {
     setError(null);
     try {
       await auth.login(email, password);
-      router.replace("/macro");
+      // 로그인 뒤 첫 화면은 홈(/)입니다(v2 — 예전에는 /가 /macro로 리디렉션돼 바로 매크로 화면으로 보냈음).
+      router.replace("/");
     } catch (err) {
       setError(err instanceof Error ? err.message : "로그인에 실패했습니다.");
     } finally {

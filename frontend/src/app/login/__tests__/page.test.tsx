@@ -2,7 +2,7 @@
  * 로그인 화면 — 데모 열람(ADR 0013)이면 로그인 칸 대신 대시보드 첫 화면(/)으로 보낸다.
  * 로그인 없이 연 로컬 운영자(ADR 0016)도 같다. 그 밖에는 지금처럼 로그인 칸을 보인다.
  */
-import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const api = vi.hoisted(() => ({ auth: { session: vi.fn(), login: vi.fn() } }));
@@ -15,6 +15,7 @@ import LoginPage from "../page";
 
 beforeEach(() => {
   api.auth.session.mockReset();
+  api.auth.login.mockReset();
   router.replace.mockReset();
 });
 
@@ -88,5 +89,21 @@ describe("로그인 화면", () => {
     expect(api.auth.session).toHaveBeenCalled();
     expect(screen.getByLabelText("이메일")).toBeTruthy();
     expect(router.replace).not.toHaveBeenCalled();
+  });
+
+  // v2부터 첫 화면은 홈(/)입니다 — 예전에는 /가 /macro로 리디렉션돼, 로그인 뒤에도 /macro로 바로 보냈습니다.
+  it("로그인에 성공하면 첫 화면인 홈(/)으로 보낸다", async () => {
+    api.auth.session.mockResolvedValue({ authenticated: false, mailAvailable: false });
+    api.auth.login.mockResolvedValue(undefined);
+
+    render(<LoginPage />);
+    await act(async () => {});   // 세션 응답까지 처리한 뒤에 입력합니다
+    fireEvent.change(screen.getByLabelText("이메일"), { target: { value: "member@test.local" } });
+    fireEvent.change(screen.getByLabelText("비밀번호"), { target: { value: "pw" } });
+    fireEvent.click(screen.getByRole("button", { name: "로그인" }));
+
+    await waitFor(() => expect(router.replace).toHaveBeenCalledWith("/"));
+    expect(api.auth.login).toHaveBeenCalledWith("member@test.local", "pw");
+    expect(router.replace).not.toHaveBeenCalledWith("/macro");
   });
 });

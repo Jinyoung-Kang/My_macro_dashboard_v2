@@ -31,6 +31,8 @@ export interface MacroItem {
   warning?: string | null;
   /** 비공식 참고 시세(TradingView) — 출처 줄에 '참고 시세'로 적습니다 */
   isReference?: boolean;
+  /** 추정치인가(수집기 macro_cards — 지금은 TradingView 참고 시세 카드만 보냄). 참이면 화면은 '추정' 배지를 반드시 보입니다 */
+  isEstimated?: boolean;
   /** 이번 수집이 실패해 직전 저장본의 값·시각을 그대로 이어받은 카드 (note가 "⚠️ 이전 값") */
   isStale?: boolean;
   staleReason?: string | null;

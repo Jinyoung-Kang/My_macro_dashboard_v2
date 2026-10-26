@@ -87,6 +87,13 @@ describe("changeChipModel", () => {
     expect(changeChipModel(12.3456, 1.23456, 1)).toEqual({ direction: "up", change: "+12.3", changePct: "+1.2%" });
     expect(changeChipModel(-0.04, null, 1)).toEqual({ direction: "flat", change: "0.0", changePct: null });
   });
+
+  it("pctDigits를 주면 변화율만 그 자릿수 — 금리 −0.007 (−0.14%)", () => {
+    expect(changeChipModel(-0.007, -0.1402, 3, 2)).toEqual({ direction: "down", change: `${MINUS}0.007`, changePct: `${MINUS}0.14%` });
+    // 셋째 자리로 찍으면 0.004는 방향이 있는 값입니다(둘째 자리면 0.00 — flat).
+    expect(changeChipModel(0.004, 0.09, 3, 2)?.direction).toBe("up");
+    expect(changeChipModel(0.004, 0.09)).toEqual({ direction: "up", change: "0.00", changePct: "+0.09%" });
+  });
 });
 
 describe("provenanceText", () => {

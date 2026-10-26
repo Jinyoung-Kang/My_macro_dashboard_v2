@@ -158,6 +158,18 @@ describe("AssetRow", () => {
     expect(screen.getByRole("button").getAttribute("aria-pressed")).toBe("true");
   });
 
+  it("changeDigits — 변화량만 그 자릿수(금리 −0.007), 변화율은 늘 소수 둘째, 방향은 보이는 값 기준", () => {
+    render(<AssetRow row={{ id: "us10y", name: "미국채 10년물", value: 4.992, valueText: "4.992", change: -0.007, changePct: -0.14, changeDigits: 3 }} />);
+    expect(screen.getByText("−0.007")).toBeTruthy();
+    expect(screen.getByText("(−0.14%)")).toBeTruthy();
+    expect(screen.getByText("하락")).toBeTruthy();
+    cleanup();
+    // 자릿수를 주지 않으면 예전처럼 둘째 자리 — 0.004는 "0.00"으로 뭉개집니다(홈 시장 행이 changeDigits를 넘기는 까닭).
+    render(<AssetRow row={{ id: "x", name: "X", value: 1, change: 0.004, changePct: 0.09 }} />);
+    expect(screen.getByText("0.00")).toBeTruthy();
+    expect(screen.getByText("(+0.09%)")).toBeTruthy();
+  });
+
   it("href와 onSelect가 함께 오면 링크가 이긴다", () => {
     render(<AssetRow row={{ ...SPX, href: "/macro" }} onSelect={() => {}} selected />);
     expect(screen.getByRole("link")).toBeTruthy();
@@ -224,6 +236,18 @@ describe("AssetList", () => {
     expect(screen.getAllByText(/TradingView|출처 —/)).toHaveLength(3);
     const region = screen.getByRole("region", { name: "시장" });
     expect(region.lastElementChild?.textContent).toBe("매크로 지표 전체");
+  });
+
+  it("headingLevel 3 — 제목은 h3이고 영역(region)으로 만들지 않는다(이름 붙은 구역 안의 소제목)", () => {
+    render(
+      <section aria-label="바깥">
+        <AssetList title="통화 및 환율" rows={ROWS} headingLevel={3} />
+      </section>,
+    );
+    expect(screen.getByRole("heading", { level: 3, name: "통화 및 환율" })).toBeTruthy();
+    expect(screen.queryByRole("heading", { level: 2 })).toBeNull();
+    expect(screen.getAllByRole("region").map((region) => region.getAttribute("aria-label"))).toEqual(["바깥"]);
+    expect(screen.getAllByRole("listitem")).toHaveLength(3);
   });
 
   it("제목이 없으면 이름 없는 묶음(제목 요소 없음)", () => {
