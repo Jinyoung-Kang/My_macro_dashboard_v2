@@ -279,11 +279,12 @@ function SimilarityCard() {
                         key={other.cik}
                         className="px-2 py-2 text-right tabular-nums"
                         style={{
+                          // 농도는 계열 첫 색(SERIES_COLORS.blue #3987e5)의 투명도 — 예전 옛 강조색(#58A6FF) 위 흰 글자는 다크 전용이라
+                          // 라이트 표면에서 1.8:1까지 떨어졌습니다. 숫자는 본문색(text)으로, 농도 전 범위(0.08~0.63)에서 라이트 9.0:1·다크 5.7:1 이상.
                           backgroundColor: self
                             ? "rgba(139, 148, 158, 0.12)"
-                            : `rgba(88, 166, 255, ${0.08 + intensity * 0.55})`,
-                          // 진한 칸은 본문색과 대비가 모자라(WCAG AA 4.5:1) 흰 글자로. 어두운 글자는 더 나쁩니다(axe 실측 3.0:1).
-                          color: !self && intensity > 0.5 ? "#ffffff" : undefined,
+                            : `rgba(57, 135, 229, ${0.08 + intensity * 0.55})`,
+                          color: self ? undefined : "var(--text)",
                         }}
                       >
                         {value === undefined

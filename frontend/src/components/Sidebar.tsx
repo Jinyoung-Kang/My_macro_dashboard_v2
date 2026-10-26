@@ -117,7 +117,7 @@ export function Sidebar({ readMode, user, unread }: { readMode?: string; user?: 
               className={`rounded-lg border px-3 py-2 text-xs transition ${
                 active
                   ? "border-accent/50 bg-accent/10 text-accent"
-                  : "border-white/5 bg-white/[0.02] text-body hover:translate-x-1 hover:border-accent/30 hover:bg-accent/10"
+                  : "border-border bg-surface text-body hover:translate-x-1 hover:border-accent/30 hover:bg-accent/10"
               }`}
             >
               {menu.label}
@@ -163,7 +163,7 @@ export function Sidebar({ readMode, user, unread }: { readMode?: string; user?: 
 
         {/* 데모 열람(ADR 0013)은 계정·세션이 없어 내 계정·로그아웃이 없습니다. 접근은 앞단의 접근 코드가 정합니다. */}
         {isDemo(user) ? (
-          <p className="rounded-lg border border-white/5 bg-white/[0.02] px-3 py-2 text-[11px] text-body">
+          <p className="rounded-lg border border-border bg-surface px-3 py-2 text-[11px] text-body">
             {roleLabel(user)}
             <span className="ml-1 text-muted">· {DEMO_READ_ONLY}</span>
           </p>
@@ -171,7 +171,7 @@ export function Sidebar({ readMode, user, unread }: { readMode?: string; user?: 
           // 로그인 없이 연 로컬 운영자(ADR 0016)는 세션이 없어 로그아웃할 것이 없습니다. 비밀번호 변경은 내 계정에서.
           <Link
             href="/account"
-            className="rounded-lg border border-white/5 bg-white/[0.02] px-3 py-2 text-[11px] text-body hover:border-accent/30"
+            className="rounded-lg border border-border bg-surface px-3 py-2 text-[11px] text-body hover:border-accent/30"
           >
             {LOCAL_NO_LOGIN}
             <span className="ml-1 text-muted">· {roleLabel(user)}</span>
@@ -181,7 +181,7 @@ export function Sidebar({ readMode, user, unread }: { readMode?: string; user?: 
             {user && (
               <Link
                 href="/account"
-                className="rounded-lg border border-white/5 bg-white/[0.02] px-3 py-2 text-[11px] text-body hover:border-accent/30"
+                className="rounded-lg border border-border bg-surface px-3 py-2 text-[11px] text-body hover:border-accent/30"
               >
                 {user.email}
                 <span className="ml-1 text-muted">· {roleLabel(user)}</span>

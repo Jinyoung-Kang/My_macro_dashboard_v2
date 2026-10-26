@@ -34,18 +34,20 @@ const RECENT_FILLS = 5;
 /**
  * 구성 차트 색 — 상위 종목(lib COMPOSITION_TOP_N = 3)은 순위 순서대로 charts의 검증된 세 색을 고정 배정합니다. 기타·현금은 무채색.
  *
- * dataviz 검증기(validate_palette.js --mode dark)로 이 화면의 두 표면(#0d1117·#161b22)에서 쟀습니다: 세 색 모두 밝기 띠·채도·대비 3:1
+ * dataviz 검증기(validate_palette.js)로 v2 토큰의 바탕·표면(라이트 #f7f7f5·#ffffff, 다크 #0d0d0d·#1a1a19)에서 쟀습니다: 세 색 모두 밝기 띠·채도·대비 3:1
  * 통과, 이웃 쌍뿐 아니라 모든 쌍(--pairs all)이 색약 ΔE 최소 9.4(청록↔주황)·정상 시각 최소 20.9(청록↔파랑). 넷째 색 노랑(#c98500)은
  * 주황과 모든 쌍에서 색약 4.8·정상 10.6이라 뺐습니다 — 묶음이 넷을 넘으면 직접 라벨이 없어 색으로 범례와 맞춰야 하기 때문입니다.
  * 회색 둘은 고리에서 맞닿을 수 있는 모든 쌍(기타↔청록·현금·파랑, 현금↔세 색 — 마지막 조각은 첫 조각과도 맞닿음)이 정상 시각 ΔE 15
  * 이상이고 색약 ΔE 8 이상인 단계입니다(기타↔청록 16.7·11.8로 가장 가까움). 앞서 쓰던 기타 #6e7681은 노랑을 빼자 청록 바로 뒤에 놓여
  * 14.3·7.7로 기준에 못 미쳐 한 단계 어둡게 했고, 처음 떠올린 #8b949e는 파랑과 14.9, 청록과 13.5로 쓰지 않습니다.
+ * 회색은 범주 색이 아니라 채도·밝기 띠 검사는 적용하지 않습니다(현금 #9ea7b3은 다크 띠 위 0.725 — 띠 안의 회색 둘로는 세 색·서로와의
+ * 구분을 함께 지킬 수 없음을 확인). 라이트에서 현금은 바탕 대비 2.3:1이라 범례·표가 같은 값을 함께 나릅니다.
  */
 const SLOT_COLORS = [SERIES_COLORS.blue, SERIES_COLORS.orange, SERIES_COLORS.green];
 const OTHER_COLOR = "#606870";
 const CASH_COLOR = "#9ea7b3";
-/** 패널 바탕(bg-canvas) — 도넛 조각 사이 2px 틈의 색이라 바탕과 같아야 틈으로 보입니다. */
-const PANEL_SURFACE = "#0d1117";
+/** 패널 바탕(bg-canvas = 토큰 bg) — 도넛 조각 사이 2px 틈의 색이라 바탕과 같아야 틈으로 보입니다(라이트·다크를 따라 바뀜). */
+const PANEL_SURFACE = "var(--bg)";
 
 function segmentColor(segment: Pick<CompositionSegment, "kind" | "slot">): string {
   if (segment.kind === "other") return OTHER_COLOR;

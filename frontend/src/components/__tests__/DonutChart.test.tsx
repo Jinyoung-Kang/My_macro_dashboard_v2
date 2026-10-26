@@ -3,6 +3,7 @@
  *
  *  - Tab으로 닿는 SVG(role="application", tabindex=0)에 이름이 붙는다(바깥 figure가 아니라) — A11Y-2
  *  - 직접 라벨은 차트 너비가 넉넉할 때만 — 좁으면 SVG 끝에서 잘리므로 끄고 범례·툴팁·표에 맡긴다 — DV-2
+ *  - 조각 사이 틈은 바탕색 선 — 기본은 테마 토큰 var(--surface), 다른 바탕 위면 넘긴 값(라이트·다크를 CSS가 바꿈)
  *
  * jsdom에는 ResizeObserver가 없어 ResponsiveContainer가 크기를 모릅니다 — 관찰을 시작하면 정한 크기를 바로 알려 주는 가짜를 씁니다.
  */
@@ -43,7 +44,7 @@ const NAME = "규칙 계좌 구성 도넛: NVDA 35.0%, MSFT 30.0%, AAPL 25.0%, �
 describe("DonutChart", () => {
   it("A11Y-2: Tab으로 닿는 SVG 자체에 이름이 있고, figure에는 같은 이름을 다시 달지 않는다", () => {
     observeAs(480, 220);
-    const { container } = render(<DonutChart segments={SEGMENTS} surface="#0d1117" ariaLabel={NAME} />);
+    const { container } = render(<DonutChart segments={SEGMENTS} ariaLabel={NAME} />);
     const surface = container.querySelector("svg.recharts-surface");
     expect(surface).not.toBeNull();
     expect(surface?.getAttribute("tabindex")).toBe("0");
@@ -54,14 +55,28 @@ describe("DonutChart", () => {
 
   it("DV-2: 넓으면 고리 밖에 직접 라벨을, 휴대폰 너비면 라벨 없이(잘리지 않게) 그린다", () => {
     observeAs(480, 220);
-    const wide = render(<DonutChart segments={SEGMENTS} surface="#0d1117" ariaLabel={NAME} />);
+    const wide = render(<DonutChart segments={SEGMENTS} ariaLabel={NAME} />);
     const wideTexts = [...wide.container.querySelectorAll("text")].map((node) => node.textContent);
     expect(wideTexts).toEqual(expect.arrayContaining(["NVDA 35.0%", "현금 10.0%"]));
     cleanup();
 
     observeAs(260, 220);
-    const narrow = render(<DonutChart segments={SEGMENTS} surface="#0d1117" ariaLabel={NAME} />);
+    const narrow = render(<DonutChart segments={SEGMENTS} ariaLabel={NAME} />);
     expect(narrow.container.querySelector("svg.recharts-surface")).not.toBeNull();
     expect([...narrow.container.querySelectorAll("text")].map((node) => node.textContent)).not.toContain("NVDA 35.0%");
+  });
+
+  it("조각 사이 틈은 바탕색 선 — 기본은 var(--surface), 페이지 바탕 위면 넘긴 var(--bg)", () => {
+    observeAs(480, 220);
+    const strokes = (container: HTMLElement) =>
+      [...container.querySelectorAll("path.recharts-sector")].map((node) => node.getAttribute("stroke"));
+
+    const card = render(<DonutChart segments={SEGMENTS} ariaLabel={NAME} />);
+    expect(strokes(card.container)).toHaveLength(SEGMENTS.length);
+    expect(new Set(strokes(card.container))).toEqual(new Set(["var(--surface)"]));
+    cleanup();
+
+    const page = render(<DonutChart segments={SEGMENTS} surface="var(--bg)" ariaLabel={NAME} />);
+    expect(new Set(strokes(page.container))).toEqual(new Set(["var(--bg)"]));
   });
 });

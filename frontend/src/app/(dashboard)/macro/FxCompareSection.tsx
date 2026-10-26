@@ -194,8 +194,11 @@ export function FxCompareSection() {
   );
 }
 
-/** 4개 계열이 서로 구분되는 색. dataviz 검증기를 통과한 조합입니다. */
-const FX_COLORS = ["#58A6FF", "#D29922", "#3FB950", "#A371F7"];
+/**
+ * 4개 계열이 서로 구분되는 색. dataviz 검증기로 라이트(#ffffff)·다크(#1a1a19) 표면 모두 통과한 조합입니다(이웃 쌍 색약 ΔE 최소 8.1·정상 22.0).
+ * 예전 값(#58A6FF·#D29922·#3FB950)은 초록↔노랑 색약 5.1과 다크 밝기 띠 이탈로 실패해 가장 가까운 통과 값으로 옮겼습니다.
+ */
+const FX_COLORS = ["#4798ee", "#d47d0d", "#1caa5e", "#a371f7"];
 
 const FX_PERIODS = [
   { value: "1mo", label: "최근 1개월" },

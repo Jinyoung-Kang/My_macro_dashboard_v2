@@ -29,13 +29,22 @@ import {
 import { EMPTY, formatNumber } from "@/lib/format";
 import { type DonutLabelGeometry, donutLabelsFit, truncateToWidth, valueDomain } from "@/lib/chartAxis";
 
-const AXIS = { stroke: "#8B949E", fontSize: 11 };
-const GRID = "#30363D";
+/*
+ * 차트 틀의 색 — 디자인 토큰의 CSS 변수(globals.css)라 라이트·다크가 :root에서 함께 바뀝니다.
+ * Recharts는 var() 문자열을 그대로 SVG 속성으로 넘깁니다. 기본값(축 #666·참조선·커서 #ccc·글자 #808080)은 테마를 모르므로
+ * 축·참조선·커서·글자마다 여기 값을 넘겨 덮습니다. 글자는 text-3(표면 대비 라이트 5.4·다크 6.0:1), 선은 border·text-3.
+ */
+const AXIS_TEXT = "var(--text-3)";
+const AXIS_LINE = "var(--border)";
+const AXIS = { fill: AXIS_TEXT, fontSize: 11 };
+const GRID = "var(--border)";
+/** 0선·경계선·커서 선 — 격자(border)보다 진하게(text-3) 그어 기준선으로 읽히게 합니다. */
+const GUIDE = "var(--text-3)";
 
 /**
- * 시계열 색 (다크 표면 #161B22 기준).
+ * 시계열 색.
  *
- * dataviz 검증기(scripts/validate_palette.js)를 통과한 조합입니다.
+ * dataviz 검증기(scripts/validate_palette.js)를 라이트(#ffffff)·다크(#1a1a19) 표면 모두에서 통과한 조합입니다.
  * 이전 조합(#58A6FF·#D29922·#F85149)은 적록색약에서 노랑↔빨강 ΔE가 5.8로
  * 구분 한계(6) 아래였습니다 — 화면에서도 두 선이 겹쳐 보였습니다.
  */
@@ -71,7 +80,7 @@ function CategoryTick({
       y={Number(y) || 0}
       dy={4}
       textAnchor="end"
-      fill={AXIS.stroke}
+      fill={AXIS_TEXT}
       fontSize={AXIS.fontSize}
     >
       <title>{label}</title>
@@ -122,7 +131,7 @@ function BarValueLabel({
       y={(Number(y) || 0) + (Number(height) || 0) / 2}
       dy={4}
       textAnchor={positive ? "start" : "end"}
-      fill={AXIS.stroke}
+      fill={AXIS_TEXT}
       fontSize={AXIS.fontSize}
     >
       {`${formatNumber(amount, digits)}${unit}`}
@@ -133,27 +142,26 @@ function BarValueLabel({
 /**
  * 툴팁 상자 스타일.
  *
- * <p><b>왜 손봤는가</b> — 기본 스타일은 배경(#161B22)이 카드 배경과 같고
+ * <p><b>왜 손봤는가</b> — 기본 스타일은 배경이 카드 배경과 같고
  * 테두리도 흐려서, 툴팁이 차트 위에 떠 있는 것인지 그려진 것인지 구분되지
  * 않았습니다. 막대 위에 겹치면 글자가 막대 색과 뒤섞여 숫자를 읽을 수
  * 없었습니다(실제로 화면에서 그랬습니다).
  *
- * <p>고친 것: 배경을 카드보다 <b>더 어둡게</b>(캔버스 색) 낮추고, 테두리를
- * 밝히고, 그림자를 넣어 떠 있게 하고, 글자를 밝은 색으로 올렸습니다.
+ * <p>고친 것: 바탕은 불투명한 표면색(surface)으로 막대·선을 가리고, 테두리는 격자보다 진한 text-3(표면 대비 3:1 이상)으로
+ * 떠 있는 상자임을 보입니다(디자인 원칙상 그림자 없이 1px 선). 글자는 본문색(text), 날짜는 보조색(text-2).
  */
 function tooltipStyle() {
   return {
     contentStyle: {
-      backgroundColor: "rgba(1, 4, 9, 0.97)",
-      border: "1px solid #8B949E",
+      backgroundColor: "var(--surface)",
+      border: "1px solid var(--text-3)",
       borderRadius: 8,
-      boxShadow: "0 8px 24px rgba(0, 0, 0, 0.65)",
       fontSize: 12,
       padding: "8px 10px",
-      color: "#F0F6FC",
+      color: "var(--text)",
     },
-    labelStyle: { color: "#C9D1D9", fontWeight: 600, marginBottom: 4 },
-    itemStyle: { color: "#F0F6FC", padding: 0 },
+    labelStyle: { color: "var(--text-2)", fontWeight: 600, marginBottom: 4 },
+    itemStyle: { color: "var(--text)", padding: 0 },
     wrapperStyle: { outline: "none", zIndex: 40 },
   };
 }
@@ -161,18 +169,19 @@ function tooltipStyle() {
 /**
  * 막대 차트의 마우스 커서(행 강조) 색.
  *
- * <p>Recharts 기본값은 밝은 회색(rgba(204,204,204,…))입니다. 어두운 테마에서는
+ * <p>Recharts 기본값은 밝은 회색(#ccc)입니다. 어두운 테마에서는
  * 이 회색이 막대보다 밝아, 가리키는 막대의 값 라벨이 <b>흰 배경 위 흰 글씨</b>가
- * 됩니다. 강조는 남기되 색은 강조색의 옅은 틴트로 바꿉니다.
+ * 됩니다. 강조는 남기되 색은 hover 토큰(surface-2)으로 바꿉니다 — 테마마다 표면보다 한 단계만 다릅니다.
  */
-const BAR_CURSOR = { fill: "rgba(88, 166, 255, 0.12)" };
+const BAR_CURSOR = { fill: "var(--surface-2)" };
 
 export type Point = { date: string; value: number | null };
 
 /** 단일 시계열 라인 차트. */
 export function LineSeries({
   data,
-  color = "#58A6FF",
+  // 기본 선 색은 검증된 계열 첫 색 — 예전 #58A6FF는 다크 밝기 띠(L 0.48~0.67)를 벗어났습니다(0.715).
+  color = SERIES_COLORS.blue,
   height = 260,
   unit = "",
   zeroLine = false,
@@ -185,7 +194,7 @@ export function LineSeries({
   /**
    * 0선을 그립니다 (스프레드·지수처럼 부호가 의미 있는 값).
    *
-   * 선 색(#8B949E)은 격자(#30363D)보다 밝아 구분은 되지만, 선만으로는
+   * 선 색(text-3)은 격자(border)보다 진해 구분은 되지만, 선만으로는
    * "역전"이라는 뜻까지 전달되지 않습니다. 부호가 판정으로 이어지는
    * 차트는 카드 쪽에서 배너 한 줄을 함께 띄웁니다(색·선만으로 의미를
    * 나르지 않기 위해서입니다). 예: 심화 매크로의 T10Y3M·NFCI.
@@ -223,8 +232,9 @@ export function LineSeries({
         </defs>
         {/* 점선 격자는 '임계선'처럼 읽힙니다. 격자는 실선 헤어라인으로. */}
         <CartesianGrid stroke={GRID} vertical={false} />
-        <XAxis dataKey="date" tick={AXIS} minTickGap={40} tickLine={false} />
+        <XAxis dataKey="date" stroke={AXIS_LINE} tick={AXIS} minTickGap={40} tickLine={false} />
         <YAxis
+          stroke={AXIS_LINE}
           tick={AXIS}
           tickLine={false}
           width={64}
@@ -233,7 +243,7 @@ export function LineSeries({
         />
         <Tooltip
           {...tooltipStyle()}
-          cursor={{ stroke: "#8B949E", strokeWidth: 1 }}
+          cursor={{ stroke: GUIDE, strokeWidth: 1 }}
           // recharts 3: value는 ValueType | undefined — 숫자로 맞춰 씁니다.
           formatter={(value) => [
             // 툴팁은 눈금보다 한 자리 더 보여 줍니다(정확한 값을 확인하는 곳).
@@ -241,7 +251,7 @@ export function LineSeries({
             "값",
           ]}
         />
-        {zeroLine && <ReferenceLine y={0} stroke="#8B949E" strokeWidth={1} />}
+        {zeroLine && <ReferenceLine y={0} stroke={GUIDE} strokeWidth={1} />}
         <Area
           isAnimationActive={false}
           type="monotone"
@@ -251,7 +261,7 @@ export function LineSeries({
           fill={`url(#${gradientId})`}
           connectNulls={false}
           dot={false}
-          activeDot={{ r: 4, strokeWidth: 2, stroke: "#161B22" }}
+          activeDot={{ r: 4, strokeWidth: 2, stroke: "var(--surface)" }}
         />
       </AreaChart>
     </ResponsiveContainer>
@@ -325,9 +335,10 @@ export function MultiLineSeries({
       <LineChart data={data} margin={{ top: 8, right: 8, bottom: 0, left: 0 }}>
         {/* recharts 3: 축 id가 기본값(0)이 아니면 격자에도 같은 id를 줘야 그려집니다. */}
         <CartesianGrid stroke={GRID} vertical={false} yAxisId="left" />
-        <XAxis dataKey="date" tick={AXIS} minTickGap={40} tickLine={false} />
+        <XAxis dataKey="date" stroke={AXIS_LINE} tick={AXIS} minTickGap={40} tickLine={false} />
         <YAxis
           yAxisId="left"
+          stroke={AXIS_LINE}
           tick={AXIS}
           tickLine={false}
           width={64}
@@ -343,6 +354,7 @@ export function MultiLineSeries({
           yAxisId="right"
           orientation="right"
           hide={!usesRight}
+          stroke={AXIS_LINE}
           tick={AXIS}
           tickLine={false}
           width={76}
@@ -351,7 +363,7 @@ export function MultiLineSeries({
         />
         <Tooltip
           {...tooltipStyle()}
-          cursor={{ stroke: "#8B949E", strokeWidth: 1 }}
+          cursor={{ stroke: GUIDE, strokeWidth: 1 }}
           formatter={(value, name) => [
             value === null || value === undefined
               ? EMPTY
@@ -359,18 +371,18 @@ export function MultiLineSeries({
             String(name),
           ]}
         />
-        <Legend wrapperStyle={{ fontSize: 11, color: "#8B949E" }} />
-        {zeroLine && <ReferenceLine yAxisId="left" y={0} stroke="#8B949E" strokeWidth={1} />}
+        <Legend wrapperStyle={{ fontSize: 11, color: AXIS_TEXT }} inactiveColor={AXIS_TEXT} />
+        {zeroLine && <ReferenceLine yAxisId="left" y={0} stroke={GUIDE} strokeWidth={1} />}
         {/* 경계선은 계열선보다 흐린 회색 점선 — 값이 아니라 "여기서 조건이 바뀜" 표시라 계열색과 겹치지 않게 합니다. */}
         {markers.map((marker) => (
           <ReferenceLine
             key={`${marker.x}-${marker.label}`}
             yAxisId="left"
             x={marker.x}
-            stroke="#8B949E"
+            stroke={GUIDE}
             strokeDasharray="4 3"
             strokeWidth={1}
-            label={{ value: marker.label, position: "insideTopLeft", fill: AXIS.stroke, fontSize: 10 }}
+            label={{ value: marker.label, position: "insideTopLeft", fill: AXIS_TEXT, fontSize: 10 }}
           />
         ))}
         {series.map((entry) => (
@@ -433,6 +445,7 @@ export function HorizontalBars({
         <CartesianGrid stroke={GRID} horizontal={false} />
         <XAxis
           type="number"
+          stroke={AXIS_LINE}
           tick={AXIS}
           tickLine={false}
           tickFormatter={(value: number) => `${formatNumber(value, 0)}${unit}`}
@@ -440,6 +453,7 @@ export function HorizontalBars({
         <YAxis
           type="category"
           dataKey="name"
+          stroke={AXIS_LINE}
           width={150}
           tickLine={false}
           interval={0}
@@ -450,13 +464,13 @@ export function HorizontalBars({
           cursor={BAR_CURSOR}
           formatter={(value) => [`${formatNumber(Number(value), digits)}${unit}`, valueName]}
         />
-        <ReferenceLine x={0} stroke="#8B949E" />
-        {/* 한국 관행: 양수(순매수·상승) 빨강, 음수 파랑 */}
+        <ReferenceLine x={0} stroke={GUIDE} />
+        {/* 한국 관행: 양수(순매수·상승) 빨강, 음수 파랑 — 상승·하락 토큰(테마마다 표면 대비 4.5:1 이상) */}
         <Bar dataKey="value" radius={[0, 4, 4, 0]} isAnimationActive={false}>
           {data.map((entry) => (
             <Cell
               key={entry.name}
-              fill={neutral ? SERIES_COLORS.blue : entry.value >= 0 ? "#F85149" : "#4493F8"}
+              fill={neutral ? SERIES_COLORS.blue : entry.value >= 0 ? "var(--up)" : "var(--down)"}
             />
           ))}
           <LabelList
@@ -493,8 +507,9 @@ export function SignedBars({
     <ResponsiveContainer width="100%" height={height}>
       <BarChart data={data} margin={{ top: 8, right: 8, bottom: 0, left: 0 }}>
         <CartesianGrid stroke={GRID} vertical={false} />
-        <XAxis dataKey="name" tick={AXIS} tickLine={false} interval={0} angle={-25} height={70} textAnchor="end" />
+        <XAxis dataKey="name" stroke={AXIS_LINE} tick={AXIS} tickLine={false} interval={0} angle={-25} height={70} textAnchor="end" />
         <YAxis
+          stroke={AXIS_LINE}
           tick={AXIS}
           tickLine={false}
           width={64}
@@ -505,10 +520,10 @@ export function SignedBars({
           cursor={BAR_CURSOR}
           formatter={(value) => [`${formatNumber(Number(value), 0)}${unit}`, valueName]}
         />
-        <ReferenceLine y={0} stroke="#8B949E" />
+        <ReferenceLine y={0} stroke={GUIDE} />
         <Bar dataKey="value" radius={[4, 4, 0, 0]} isAnimationActive={false}>
           {data.map((entry) => (
-            <Cell key={entry.name} fill={entry.color ?? (entry.value >= 0 ? "#F85149" : "#4493F8")} />
+            <Cell key={entry.name} fill={entry.color ?? (entry.value >= 0 ? "var(--up)" : "var(--down)")} />
           ))}
         </Bar>
       </BarChart>
@@ -555,16 +570,18 @@ export function ScatterPlot({
           type="number"
           dataKey="x"
           name={xLabel}
+          stroke={AXIS_LINE}
           tick={AXIS}
           tickLine={false}
           tickFormatter={(value: number) => `${formatNumber(value, 2)}`}
           label={{ value: `${xLabel}${xUnit ? ` (${xUnit})` : ""}`, position: "insideBottom",
-                   offset: -18, fill: AXIS.stroke, fontSize: 11 }}
+                   offset: -18, fill: AXIS_TEXT, fontSize: 11 }}
         />
         <YAxis
           type="number"
           dataKey="y"
           name={yLabel}
+          stroke={AXIS_LINE}
           tick={AXIS}
           tickLine={false}
           width={70}
@@ -572,11 +589,11 @@ export function ScatterPlot({
         />
         <ZAxis range={[24, 24]} />
         {/* 0선을 그어 사분면이 보이게 합니다 — 변화끼리 비교할 때 핵심입니다. */}
-        <ReferenceLine x={0} stroke="#8B949E" />
-        <ReferenceLine y={0} stroke="#8B949E" />
+        <ReferenceLine x={0} stroke={GUIDE} />
+        <ReferenceLine y={0} stroke={GUIDE} />
         <Tooltip
           {...tooltipStyle()}
-          cursor={{ strokeDasharray: "3 3", stroke: "#8B949E" }}
+          cursor={{ strokeDasharray: "3 3", stroke: GUIDE }}
           formatter={(value, name) => [
             `${formatNumber(Number(value), 3)}${String(name) === xLabel ? xUnit : yUnit}`,
             String(name),
@@ -644,9 +661,9 @@ export function WeightHeatmap({
                         typeof value === "number" && value > 0
                           ? `rgba(57, 135, 229, ${0.08 + ratio * 0.62})`
                           : "transparent",
-                      // 진한 칸(#2d62a3 부근)은 본문색(#c9d1d9)과 3.9:1로 WCAG AA(4.5:1) 미달 — 흰 글자(6.2:1)로.
-                      // 어두운 글자는 3.0:1로 더 나쁩니다(axe 실측).
-                      color: ratio > 0.5 ? "#ffffff" : undefined,
+                      // 칠한 칸의 숫자는 본문색(text) — 농도 전 범위(불투명도 0.08~0.70)에서 라이트 8.2:1·다크 5.1:1 이상(WCAG AA 4.5:1).
+                      // 예전 흰 글자는 다크 전용이었고, 라이트 표면 위 옅은 파랑에서는 2.4:1 아래로 떨어집니다.
+                      color: typeof value === "number" && value > 0 ? "var(--text)" : undefined,
                     }}
                     title={`${name} · ${dates[index] ?? ""}`}
                   >
@@ -697,11 +714,11 @@ function DonutTooltip({ active, payload }: { active?: boolean; payload?: Readonl
     <div style={tooltipStyle().contentStyle}>
       <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
         <span aria-hidden style={{ display: "inline-block", width: 12, height: 2, borderRadius: 1, backgroundColor: datum.color }} />
-        <strong style={{ color: "#F0F6FC", fontVariantNumeric: "tabular-nums" }}>{datum.valueText}</strong>
-        <span style={{ color: "#C9D1D9" }}>{datum.name}</span>
+        <strong style={{ color: "var(--text)", fontVariantNumeric: "tabular-nums" }}>{datum.valueText}</strong>
+        <span style={{ color: "var(--text-2)" }}>{datum.name}</span>
       </div>
-      {datum.caption && <div style={{ marginTop: 2, color: "#C9D1D9" }}>{datum.caption}</div>}
-      {datum.detail && <div style={{ marginTop: 2, maxWidth: 260, color: AXIS.stroke }}>{datum.detail}</div>}
+      {datum.caption && <div style={{ marginTop: 2, color: "var(--text-2)" }}>{datum.caption}</div>}
+      {datum.detail && <div style={{ marginTop: 2, maxWidth: 260, color: AXIS_TEXT }}>{datum.detail}</div>}
     </div>
   );
 }
@@ -714,7 +731,7 @@ function DonutLabel(props: PieLabelRenderProps) {
   const label = (props.payload as DonutSegment | undefined)?.label;
   if (!label) return null;
   return (
-    <text x={props.x} y={props.y} textAnchor={props.textAnchor} dominantBaseline="central" fill="#C9D1D9" fontSize={DONUT_LABEL_GEOMETRY.fontSize}>
+    <text x={props.x} y={props.y} textAnchor={props.textAnchor} dominantBaseline="central" fill="var(--text-2)" fontSize={DONUT_LABEL_GEOMETRY.fontSize}>
       {label}
     </text>
   );
@@ -729,17 +746,18 @@ function DonutSector(props: PieSectorShapeProps) {
  * 부분-전체 도넛(조각 여섯 개 이하에서만 — 부르는 쪽이 지킴).
  *
  * <p>조각 사이는 표면색 2px 선으로 띄웁니다(테두리가 아니라 틈 — 이웃 조각이 색으로만 붙어 보이지 않게). 그래서 {@code surface}는
- * 차트가 놓이는 바탕색이어야 합니다. 12시 방향에서 시계 방향으로, 받은 순서대로 그립니다. 조각마다 툴팁이 있고, 범례·표는 부르는
+ * 차트가 놓이는 바탕색이어야 합니다 — 기본은 카드 표면 var(--surface), 페이지 바탕(bg-bg) 위에 놓이면 "var(--bg)"를 넘깁니다.
+ * 12시 방향에서 시계 방향으로, 받은 순서대로 그립니다. 조각마다 툴팁이 있고, 범례·표는 부르는
  * 쪽이 함께 그립니다(툴팁은 보조 — 값은 범례·표에서도 읽힘).
  */
 export function DonutChart({
   segments,
-  surface,
+  surface = "var(--surface)",
   height = 220,
   ariaLabel,
 }: {
   segments: DonutSegment[];
-  surface: string;
+  surface?: string;
   height?: number;
   /** 차트 전체를 한 문장으로(화면 낭독기용 — 표가 같은 값을 나름). */
   ariaLabel: string;

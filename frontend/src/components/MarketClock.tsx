@@ -23,11 +23,16 @@ type MarketStatus = {
   className: string;
 };
 
+/**
+ * 장 상태 배지 색 — 디자인 토큰만 씁니다(라이트·다크가 함께 바뀜). 배지 글자는 옅은 바탕(같은 색 10%) 위에서 두 테마 모두
+ * 4.5:1 이상입니다(라이트 4.7~4.8, 다크 5.2~6.6, 애프터 잉크 15.9·11.7). 15% 바탕은 라이트에서 4.4:1로 모자랐고,
+ * 예전 애프터마켓의 purple-300은 라이트 표면에서 1.8:1이었습니다. 상태는 글자(거래 중·프리마켓…)가 나르고 색은 보조입니다.
+ */
 const STATUS_STYLES: Record<string, string> = {
-  trading: "bg-ok/15 text-ok border-ok/40",
-  pre: "bg-warn/15 text-warn border-warn/40",
-  post: "bg-purple-500/15 text-purple-300 border-purple-500/40",
-  closed: "bg-muted/15 text-muted border-muted/40",
+  trading: "bg-ok/10 text-ok border-ok/40",
+  pre: "bg-warn/10 text-warn border-warn/40",
+  post: "bg-accent/10 text-accent border-accent/40",
+  closed: "bg-muted/10 text-muted border-muted/40",
 };
 
 function partsFor(timeZone: string, now: Date) {

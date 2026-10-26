@@ -50,16 +50,19 @@ import { ClaudeStartSection } from "./ClaudeStartSection";
 import { GateIndicatorBody } from "./GateIndicatorBody";
 
 /**
- * 책 코드별 선 색. 앞 셋은 charts의 검증된 팔레트, 혼합 벤치마크는 COT 화면의 보조 계열과 같은 회색입니다
+ * 책 코드별 선 색. 앞 셋은 charts의 검증된 팔레트, 혼합 벤치마크는 회색입니다
  * (벤치마크 둘이 같은 계열색이면 어느 선이 SPY인지 범례를 다시 봐야 했음). 모르는 책은 남는 색을 돌려 씁니다.
+ * dataviz 검증기(라이트 #ffffff·다크 #1a1a19): 예전 회색 #8B949E는 바로 앞 초록과 정상 시각 ΔE 13.5(15 미만)라 한 단계 어둡게
+ * #6b727e(초록과 15.1·색약 8.8, 대비 4.9/3.6:1)로, 남는 색의 청록 #39C5CF는 다크 밝기 띠(0.755) 밖이라 #22a2bd로 옮겼습니다.
+ * 회색은 범주 색이 아니라 채도 검사는 적용하지 않습니다.
  */
 const BOOK_COLORS: Record<string, string> = {
   rules: SERIES_COLORS.blue,
   claude: SERIES_COLORS.orange,
   bench_spy: SERIES_COLORS.green,
-  bench_mix: "#8B949E",
+  bench_mix: "#6b727e",
 };
-const SPARE_COLORS = ["#A371F7", "#39C5CF", "#DB6D28"];
+const SPARE_COLORS = ["#a371f7", "#22a2bd", "#db6d28"];
 
 /**
  * Claude 노출 추이의 두 선 — 목표는 순자산 곡선의 Claude 책 색(주황), 실제는 검증된 팔레트의 다음 색(파랑). 두 색은 charts의

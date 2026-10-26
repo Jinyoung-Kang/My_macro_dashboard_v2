@@ -3,24 +3,103 @@
    지정하지 않으면 빌드를 돌린 폴더 전체를 훑어, 맥과 Docker 빌드의 결과가 달라질 수 있습니다. */
 @import "tailwindcss" source("..");
 
-/* 구버전 Streamlit 앱의 다크 핀테크 팔레트를 그대로 옮겼습니다.
-     배경 #0D1117 · 카드 #161B22 · 테두리 #30363D · 강조 #58A6FF
-   bg-canvas·text-up·border-border 같은 클래스가 이 이름에서 나옵니다. 기본 팔레트(purple-500 등)도 그대로 씁니다. */
-@theme {
-  --color-canvas: #0d1117;
-  --color-surface: #161b22;
-  --color-surface-hover: #21262d;
-  --color-border: #30363d;
-  --color-muted: #8b949e;
-  --color-body: #c9d1d9;
-  --color-bright: #f0f6fc;
-  --color-accent: #58a6ff;
-  --color-up: #f85149; /* 한국 관행: 상승 = 빨강 */
-  --color-down: #4493f8; /* 하락 = 파랑 */
-  --color-ok: #3fb950;
-  --color-warn: #d29922;
-  --color-danger: #f85149;
+/* 디자인 토큰(v2 설계서 §3, 승인된 시안 "v2 디자인 토큰·셸 시안") — 라이트·다크 두 벌.
+   값은 여기 원래 변수(--bg 등)에만 둡니다. 차트·JS에서 색이 필요하면 var(--up)처럼 이 이름을 씁니다
+   (아래 @theme inline의 --color-*는 CSS에 출력되지 않습니다).
+   적용: 속성이 없으면 시스템 설정을 따르고(기본), 사용자가 고르면 <html data-theme="light|dark">가 이깁니다
+   (lib/theme.ts의 인라인 스크립트가 첫 페인트 전에 붙임). 다크 값은 두 곳(data-theme·미디어 쿼리)에 같게 적습니다.
+   글자 대비(WCAG, surface 기준): 라이트 text 19.7·text-2 7.9·text-3 5.4·up 4.9·down 5.7·warn 5.3·ok 5.4·danger 7.5,
+   다크 text 15.2·text-2 9.7·text-3 6.0·up 4.5·down 4.5·warn 7.9·ok 6.9·danger 6.9.
+   상승·하락 글자는 surface·bg 위에서만 씁니다(surface-2 위에서는 4.5:1 미만). */
+:root {
+  color-scheme: light;
+  --bg: #f7f7f5; /* 페이지 바탕 */
+  --surface: #ffffff; /* 카드·표 */
+  --surface-2: #f0efec; /* 선택된 탭·입력칸·눌림·hover */
+  --border: #e1e0d9; /* 1px 경계(그림자 대신) */
+  --text: #0b0b0b; /* 본문·큰 숫자 */
+  --text-2: #52514e; /* 보조 글 */
+  --text-3: #6b6a65; /* 캡션·축 끝값 */
+  --accent: #0b0b0b; /* 상호작용 강조(잉크) — 주 버튼 바탕, 선택 표시 */
+  --accent-fg: #ffffff; /* accent 바탕 위 글자 */
+  --up: #cf3a3a; /* 상승(빨강, 한국 관행) */
+  --down: #1f63c9; /* 하락(파랑) */
+  --warn: #946000; /* 주의·오래된 값(아이콘·글과 함께) */
+  --neutral: #6b6a65; /* 변화 없음·판정 불가 */
+  --focus: var(--accent); /* 포커스 링 2px — 테마가 바뀌면 accent를 따라감 */
+  --ok: #1e7a3c; /* 상태 전용(정상) — 아이콘·글과 함께 */
+  --danger: #a61b29; /* 상태 전용(오류) — up과 다른 값 */
+}
 
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: #0d0d0d;
+  --surface: #1a1a19;
+  --surface-2: #242422;
+  --border: #383835;
+  --text: #f0efec;
+  --text-2: #c3c2b7;
+  --text-3: #9a988f;
+  --accent: #f0efec;
+  --accent-fg: #0b0b0b;
+  --up: #e94646;
+  --down: #3683e0;
+  --warn: #e0a42a;
+  --neutral: #9a988f;
+  --ok: #3fb950;
+  --danger: #ff7b72;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --bg: #0d0d0d;
+    --surface: #1a1a19;
+    --surface-2: #242422;
+    --border: #383835;
+    --text: #f0efec;
+    --text-2: #c3c2b7;
+    --text-3: #9a988f;
+    --accent: #f0efec;
+    --accent-fg: #0b0b0b;
+    --up: #e94646;
+    --down: #3683e0;
+    --warn: #e0a42a;
+    --neutral: #9a988f;
+    --ok: #3fb950;
+    --danger: #ff7b72;
+  }
+}
+
+/* bg-surface·text-up·border-border 같은 클래스가 이 이름에서 나옵니다. inline이어야 유틸리티가 var(--x)를 바로 참조해
+   하위 요소에서 바꾼 값도 먹고, bg-accent/15 같은 투명도는 color-mix로 나옵니다. 토큰이 테마마다 바뀌므로 dark: 변형은 쓰지 않습니다.
+   기본 팔레트(purple-500 등)는 그대로 남아 있습니다. */
+@theme inline {
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-border: var(--border);
+  --color-text: var(--text);
+  --color-text-2: var(--text-2);
+  --color-text-3: var(--text-3);
+  --color-accent: var(--accent);
+  --color-accent-fg: var(--accent-fg);
+  --color-up: var(--up);
+  --color-down: var(--down);
+  --color-warn: var(--warn);
+  --color-neutral: var(--neutral);
+  --color-focus: var(--focus);
+  --color-ok: var(--ok);
+  --color-danger: var(--danger);
+  /* 옛 이름 별칭 — 4단계에서 옛 화면을 옮긴 뒤 지운다 */
+  --color-canvas: var(--bg);
+  --color-surface-hover: var(--surface-2);
+  --color-muted: var(--text-3);
+  --color-body: var(--text-2);
+  --color-bright: var(--text);
+}
+
+@theme {
   --font-sans: Pretendard, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   --font-mono: SFMono-Regular, Menlo, Consolas, monospace;
 
@@ -36,14 +115,10 @@
 }
 
 @layer base {
-  :root {
-    color-scheme: dark;
-  }
-
   html,
   body {
-    background-color: #0d1117;
-    color: #c9d1d9;
+    background-color: var(--bg);
+    color: var(--text);
   }
 
   /* Tailwind 4의 기본값이 바뀐 두 가지를 v3 겉모습대로 되돌립니다(업그레이드 가이드의 호환 규칙).
@@ -55,7 +130,7 @@
 
   input::placeholder,
   textarea::placeholder {
-    color: #9ca3af;
+    color: var(--text-3);
   }
 }
 
@@ -70,14 +145,14 @@
 }
 
 ::-webkit-scrollbar-track {
-  background: #0d1117;
+  background: var(--bg);
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #30363d;
+  background: var(--border);
   border-radius: 6px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: #8b949e;
+  background: var(--text-3);
 }
