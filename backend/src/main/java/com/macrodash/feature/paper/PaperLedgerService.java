@@ -49,7 +49,9 @@ import java.util.function.Supplier;
  * 재진입 금지 거래일도 그 시장 묶음에서 가져옵니다. 다른 시장 책은 읽지도 쓰지도 않습니다 — 그러지 않으면 미국 관측치가 한국 책의 멱등 키
  * ({@code lastProcessedCollectedAt})를 미국 수집 시각으로 밀어 한국 관측치가 '이미 처리함'으로 버려집니다. 시장을 받지 않는 옛
  * 시그니처는 미국 책만 처리합니다(결정 작업이 시장 문맥으로 옮겨 가는 A6 전까지 그대로 부름). 사후 체결({@link #backfill})은 미국
- * 책만 받습니다(한국은 출발일 사후 체결이 없음, 명세 K28).
+ * 책만 받습니다(한국은 출발일 사후 체결이 없음, 명세 K28). <b>설정은 아직 시장별이 아닙니다</b> — 슬리피지·트레일링 스탑·재진입 금지
+ * 거래일·현금성 종목(기본 SHY)을 설정 루트의 미국 키로 시장과 상관없이 읽습니다. 시장별 설정 읽기는 C1입니다(명세 §9 묶음 A 리뷰
+ * 메모 — 그 전에 한국 책을 이 장부에 돌리지 않음).
  *
  * <p><b>책마다 한 트랜잭션입니다</b>({@link PaperStore#atomically}). 한 책에서 오류가 나면 그 책만 되돌리고 다른 책은 계속합니다.
  * 그 책은 상태(멱등 키)가 바뀌지 않아 그대로 두면 정기 작업이 같은 저장본으로 5분마다 다시 돌며 같은 오류를 기록합니다(입력이
@@ -236,6 +238,7 @@ public class PaperLedgerService {
             return Outcome.skipped("초기화 전입니다 — 계좌가 없습니다");
         }
         books.sort(Comparator.comparing(Book::code, market.bookOrder()));
+        // 설정 루트(미국) 키 — 시장별 읽기는 C1(클래스 설명).
         PaperSettings current = settings.current().settings();
 
         int filled = 0;

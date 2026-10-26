@@ -89,7 +89,12 @@ interface PaperMarket {
         return benchmarkBook().equals(bookCode) ? null : benchmarkBook();
     }
 
-    /** 설정에 현금성 종목 키가 없을 때의 현금성 종목(스탑을 걸지 않고 비중 상한·종목 수·최소 보유일에서 빠짐). */
+    /**
+     * 설정에 현금성 종목 키가 없을 때의 현금성 종목(스탑을 걸지 않고 비중 상한·종목 수·최소 보유일에서 빠짐). <b>C1 전에는 읽는 곳이
+     * 없습니다</b> — 장부·결정 파이프라인·검증기 한도·프롬프트 하드 규칙·관리 리셋은 아직 설정 루트(미국)의 {@code cashLikeTickers}
+     * (기본 {@link PaperSettings#DEFAULT_CASH_LIKE})와 슬리피지·스탑·재진입 금지 키를 시장과 상관없이 읽습니다. 시장별 설정 읽기(접두어
+     * {@link #settingsPrefix}와 이 기본값)는 C1에서 들어옵니다(2단계 명세 §9 묶음 A 리뷰 메모).
+     */
     List<String> defaultCashLike();
 
     /** Claude가 고를 수 있는 체결 시점({@code paper_orders.timing}), 이른 것부터. */
