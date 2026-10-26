@@ -324,6 +324,7 @@ def test_예산이_모자라면_일봉을_먼저_받고_나머지는_다음_주�
     assert set(codes) == {"069500", "153130"}
     assert [c[1] for c in toss.calls] == ["info", "raw", "adj", "raw", "adj", "1m"]
     assert "2/3 종목" in detail and "호출 예산 소진" in detail and "호출 6회" in detail
+    assert codes["153130"]["bars"][-1]["minute"]["status"] == "FAILED"     # 못 물은 봉은 다음 수집이 다시 묻게
 
     monkeypatch.setattr(kr_paper, "KR_QUOTES_CALL_BUDGET", 500)
     toss.calls.clear()

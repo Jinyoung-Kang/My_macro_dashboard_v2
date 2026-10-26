@@ -321,7 +321,8 @@ def _probe_targets(entry: dict, previous: dict | None) -> list[dict]:
       - 직전 항목의 마지막 봉보다 **새 날짜**의 봉(보통 그날 하나, 서버가 며칠 꺼졌으면 그 며칠) — 처음 보는 종목은 최신 봉 하나만
         (그 전 날은 주문이 없던 때라 쓰일 데가 없음 — 첫 실행에 호출을 다섯 배로 쓰지 않게),
       - 직전에 FAILED였던 봉(최근 5봉 안에 있는 동안)
-    입니다. 거래량이 0이거나 모르는 봉(정지일 — 시가 단일가 체결이 없음)은 묻지 않습니다.
+    입니다. 거래량이 0이거나 모르는 봉(정지일 — 시가 단일가 체결이 없음)은 묻지 않습니다. 물을 봉에는 먼저 FAILED('아직 묻지 못함')를
+    걸어 둡니다 — 이번 실행이 예산·시간 상한으로 그 봉까지 못 가도 다음 수집이 다시 묻게.
     """
     previous_bars = [bar for bar in ((previous or {}).get("bars") or []) if isinstance(bar, dict) and bar.get("date")]
     carried = {bar["date"]: bar.get("minute") for bar in previous_bars}
@@ -335,6 +336,8 @@ def _probe_targets(entry: dict, previous: dict | None) -> list[dict]:
             continue
         new = index == 0 if previous_latest is None else bar["date"] > previous_latest
         if bar.get("volume") and (new or status == "FAILED"):
+            bar["minute"] = before if status == "FAILED" else {
+                "status": "FAILED", "priceSource": "TOSS_1M_OPEN", "reason": "아직 묻지 못함 — 호출 예산·시간 상한"}
             targets.append(bar)
     return targets
 
