@@ -1,6 +1,5 @@
 package com.macrodash.feature.paper;
 
-import com.macrodash.analytics.UsMarketCalendar;
 import com.macrodash.read.StoreReader;
 import com.macrodash.store.PaperStore;
 import com.macrodash.store.PaperStore.Book;
@@ -47,6 +46,12 @@ import java.util.TreeSet;
  * 저장본이 나중에 처리되며 장부를 과거 가격으로 되돌리지 않게 합니다.
  *
  * <p>장부를 바꾸는 일은 관측치 처리와 겹치지 않게 {@link PaperLedgerService#exclusively} 안에서 합니다.
+ *
+ * <p><b>시장 문맥</b>(2단계 명세 §9 A6): 초기화는 시장 묶음({@link PaperMarket})을 받아 그 시장 책 정의로 책을 만들고 책 행에 그
+ * 시장·통화를 적으며, 실패로 기억해 둔 관측치도 그 시장 것만 지웁니다. 출발일 종가 얼리기와 벤치마크 사후 체결은 미국 묶음의
+ * 달력·확정 지연·관측치로 하는 미국 전용 일입니다(한국은 출발일 사후 체결·{@code paper_start_prices}가 없음, 명세 K28). 초기 현금·
+ * 출발일이 아직 미국 설정({@code dashboard.paper.*})뿐이라 미국 밖 시장의 초기화는 거절합니다(한국 초기화는 C1). 계좌 하나의
+ * 리셋은 그 책의 시장 기억만 지우고, 벤치마크 다시 사후 체결은 미국 책만 합니다. 시장을 받지 않는 옛 시그니처는 미국입니다.
  */
 @Service
 public class PaperAdminService {
@@ -78,6 +83,8 @@ public class PaperAdminService {
     private final PaperConfig config;
     private final ObjectMapper mapper;
     private final Clock clock;
+    /** 출발일 종가·벤치마크 사후 체결·옛 시그니처의 시장(클래스 설명). */
+    private static final PaperMarket US = UsPaperMarket.INSTANCE;
 
     @Autowired
     public PaperAdminService(PaperStore store, PaperMarketData marketData, StoreReader reader,
@@ -106,11 +113,24 @@ public class PaperAdminService {
      * @throws IllegalStateException 테이블이 없을 때(부르는 쪽이 {@link PaperStore#ready()}를 먼저 봄)
      */
     public InitResult init() {
+        return init(US);
+    }
+
+    /**
+     * 그 시장의 초기화(클래스 설명의 시장 문맥) — 그 시장 책 정의로 책을 만들고 책 행에 그 시장·통화를 적습니다.
+     *
+     * @throws IllegalArgumentException 초기 현금·출발일 설정이 없는 시장(미국 밖 — 한국은 C1)
+     */
+    InitResult init(PaperMarket market) {
+        if (market != US) {
+            throw new IllegalArgumentException(market.code() + " 시장 초기화는 아직 없습니다 — 초기 현금·출발일 설정이 미국뿐입니다"
+                    + "(2단계 명세 §9 C1)");
+        }
         requireReady();
         // 이미 있는 책은 아래에서 다시 넣지 않으므로(이름도 그대로), 옛 이름이면 여기서 맞춥니다.
         reconcileLabels();
-        // 초기화로 원인이 풀렸을 수 있으니, 실패로 기억해 둔 관측치도 다음 처리에서 다시 시도합니다.
-        ledger.forgetFailures();
+        // 초기화로 원인이 풀렸을 수 있으니, 실패로 기억해 둔 그 시장 관측치도 다음 처리에서 다시 시도합니다.
+        ledger.forgetFailures(market);
         return ledger.exclusively(() -> {
             boolean settingsCreated = settings.ensureInitialized();
             int captured = captureStartPrices();
@@ -118,10 +138,11 @@ public class PaperAdminService {
             List<String> created = new ArrayList<>();
             List<String> backfilled = new ArrayList<>();
             List<Map<String, String>> skipped = new ArrayList<>();
-            for (PaperBooks.Definition definition : PaperBooks.ALL) {
+            for (PaperBooks.Definition definition : market.books()) {
                 boolean inserted = store.atomically(() -> {
                     boolean fresh = store.insertBookIfAbsent(new Book(definition.code(), definition.kind(),
-                            definition.label(), config.initialCash(), null, PaperBooks.NOT_STARTED, null));
+                            definition.label(), config.initialCash(), null, PaperBooks.NOT_STARTED, null,
+                            market.code(), market.currency()));
                     if (store.state(definition.code()).isEmpty()) {
                         store.upsertState(cashOnly(definition.code(), config.initialCash()));
                     }
@@ -225,12 +246,12 @@ public class PaperAdminService {
      */
     int captureStartPrices() {
         LocalDate start = config.startDate();
-        if (clock.instant().isBefore(UsMarketCalendar.closeInstant(start).plus(PaperMarketData.FINAL_DELAY))) {
+        if (clock.instant().isBefore(US.calendar().closeInstant(start).plus(US.finalDelay()))) {
             return 0;
         }
         Set<String> universe = new TreeSet<>();
-        reader.quietly(marketData::quotes).ifPresent(quotes -> universe.addAll(quotes.bars().keySet()));
-        PaperBooks.ALL.forEach(definition -> universe.addAll(definition.weights().keySet()));
+        reader.quietly(() -> marketData.quotes(US)).ifPresent(quotes -> universe.addAll(quotes.bars().keySet()));
+        US.books().forEach(definition -> universe.addAll(definition.weights().keySet()));
         for (StartPrice frozen : store.startPrices()) {
             if (start.equals(frozen.tradingDate())) {
                 universe.remove(frozen.ticker());
@@ -320,13 +341,20 @@ public class PaperAdminService {
             throw new InvalidRequestException("초기화하려면 확인 문구로 계좌 코드(" + code + ")를 그대로 입력하세요.");
         }
         PaperSettings current = settings.current().settings();
-        ledger.forgetFailures();   // 비운 책은 같은 관측치로 다시 처리해도 됩니다
+        PaperMarket market = PaperMarkets.of(book.market()).orElse(null);
+        // 비운 책은 같은 관측치로 다시 처리해도 됩니다 — 그 책 시장의 기억만(모르는 시장이면 전부) 지웁니다.
+        if (market == null) {
+            ledger.forgetFailures();
+        } else {
+            ledger.forgetFailures(market);
+        }
         return ledger.exclusively(() -> store.atomically(() -> {
             store.resetBook(code);
             store.updateBookStatus(code, PaperBooks.NOT_STARTED);
             store.updateBookStartedOn(code, null);
             store.upsertState(cashOnly(code, book.initialCash()));
-            Optional<PaperBooks.Definition> definition = PaperBooks.find(code);
+            // 벤치마크를 다시 사후 체결하는 것은 미국 책뿐입니다(클래스 설명 — 한국은 출발일 사후 체결이 없음, K28).
+            Optional<PaperBooks.Definition> definition = market == US ? PaperBooks.find(code) : Optional.empty();
             if (definition.isEmpty() || !definition.get().benchmark()) {
                 return new ResetResult(code, false, null);
             }
@@ -344,8 +372,8 @@ public class PaperAdminService {
      */
     private Optional<String> backfill(Book book, PaperBooks.Definition definition, PaperSettings current) {
         LocalDate start = config.startDate();
-        Instant close = UsMarketCalendar.closeInstant(start);
-        if (clock.instant().isBefore(close.plus(PaperMarketData.FINAL_DELAY))) {
+        Instant close = US.calendar().closeInstant(start);
+        if (clock.instant().isBefore(close.plus(US.finalDelay()))) {
             return Optional.of(start + " 장 마감 15분 뒤부터 종가로 사후 체결할 수 있습니다.");
         }
         Map<String, PaperMarketData.SourcedClose> closes = new LinkedHashMap<>();

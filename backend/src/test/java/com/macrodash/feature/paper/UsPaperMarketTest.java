@@ -89,6 +89,15 @@ class UsPaperMarketTest {
     }
 
     @Test
+    @DisplayName("시장 목록 = 미국 하나, 책 행의 시장 코드로 찾음(모르는 코드는 없음)")
+    void marketsLookup() {
+        assertThat(PaperMarkets.ALL).containsExactly(US);
+        assertThat(PaperMarkets.of("US")).containsSame(US);
+        assertThat(PaperMarkets.of("KR")).isEmpty();
+        assertThat(PaperMarkets.of(null)).isEmpty();
+    }
+
+    @Test
     @DisplayName("관측치 paper.quotes·이력 equity_close — 데이터셋 상수이자 체결 가격 출처 문자열")
     void datasets() {
         assertThat(US.quotesDataset()).isEqualTo("paper.quotes").isEqualTo(Datasets.SNAP_PAPER_QUOTES)

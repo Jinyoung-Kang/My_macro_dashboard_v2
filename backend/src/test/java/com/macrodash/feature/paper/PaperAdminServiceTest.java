@@ -350,7 +350,7 @@ class PaperAdminServiceTest {
     @Test
     @DisplayName("초기화는 관측치 유니버스 전체의 출발일 종가를 한 번 얼리고, 사후 체결은 그 값을 쓴다")
     void initFreezesStartPricesForWholeUniverse() {
-        when(marketData.quotes()).thenReturn(Optional.of(quotes(MON_INTRADAY, bar("AAA", FRI, 100, MON, 101),
+        when(marketData.quotes(UsPaperMarket.INSTANCE)).thenReturn(Optional.of(quotes(MON_INTRADAY, bar("AAA", FRI, 100, MON, 101),
                 bar("SPY", FRI, 500, MON, 505), bar("SHY", FRI, 82.5, MON, 82.6))));
         when(marketData.sourcedClosesOn(anyCollection(), eq(FRI))).thenReturn(Map.of(
                 "AAA", new SourcedClose(100, "paper.quotes"), "SPY", new SourcedClose(500, "equity_close"),
@@ -416,7 +416,7 @@ class PaperAdminServiceTest {
 
     /** 관측치 저장본에 AAA·SPY·SHY가 있고, 세 종목의 출발일 종가를 찾을 수 있는 상태. */
     private void universeWithCloses() {
-        when(marketData.quotes()).thenReturn(Optional.of(quotes(MON_INTRADAY, bar("AAA", FRI, 100, MON, 101),
+        when(marketData.quotes(UsPaperMarket.INSTANCE)).thenReturn(Optional.of(quotes(MON_INTRADAY, bar("AAA", FRI, 100, MON, 101),
                 bar("SPY", FRI, 500, MON, 505), bar("SHY", FRI, 82.5, MON, 82.6))));
         when(marketData.sourcedClosesOn(anyCollection(), eq(FRI))).thenReturn(Map.of(
                 "AAA", new SourcedClose(100, "paper.quotes"), "SPY", new SourcedClose(500, "equity_close"),
@@ -439,6 +439,7 @@ class PaperAdminServiceTest {
 
         assertThat(store.startPrices).isEmpty();
         verify(marketData, never()).quotes();
+        verify(marketData, never()).quotes(any());
         verify(marketData, never()).sourcedClosesOn(anyCollection(), any());
     }
 
@@ -463,7 +464,7 @@ class PaperAdminServiceTest {
         store.insertStartPriceIfAbsent(new StartPrice("SPY", FRI, 499.5, "equity_close", null));
         store.insertStartPriceIfAbsent(new StartPrice("SHY", FRI.minusDays(1), 80, "equity_close", null));
         // 벤치마크 종목은 관측치에 없어도 유니버스에 들어갑니다.
-        when(marketData.quotes()).thenReturn(Optional.of(quotes(MON_INTRADAY, bar("AAA", FRI, 100, MON, 101))));
+        when(marketData.quotes(UsPaperMarket.INSTANCE)).thenReturn(Optional.of(quotes(MON_INTRADAY, bar("AAA", FRI, 100, MON, 101))));
 
         admin(AFTER_START).scheduledCaptureStartPrices();
 
@@ -543,5 +544,45 @@ class PaperAdminServiceTest {
 
         admin.scheduledCaptureStartPrices();
         assertThat(store.startPrices.keySet()).containsExactly("AAA", "SHY", "SPY");
+    }
+
+    // ------------------------------------------------------------------ 시장 문맥(2단계 명세 §9 A6)
+    @Test
+    @DisplayName("시장 문맥(A6): 초기화는 그 시장 책 정의로 책을 만들고 책 행에 시장·통화를 적음(미국 US·USD) — 초기 현금·출발일이 미국 설정뿐이라 다른 시장 초기화는 아무것도 쓰지 않고 거절")
+    void initPerMarket() {
+        closes(500, 82.5);
+        PaperAdminService admin = admin(AFTER_START);
+
+        assertThatThrownBy(() -> admin.init(TestKrMarket.INSTANCE)).isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("C1");
+        assertThat(store.books).isEmpty();
+        assertThat(store.settings).isNull();
+
+        admin.init();
+        assertThat(store.books.values()).extracting(Book::market, Book::currency).containsOnly(
+                org.assertj.core.groups.Tuple.tuple("US", "USD"));
+        assertThat(store.books).containsOnlyKeys("rules", "claude", "bench_spy", "bench_mix");
+    }
+
+    @Test
+    @DisplayName("시장 문맥(A6): 다른 시장 책의 리셋은 그 책만 현금 상태로 — 벤치마크 다시 사후 체결은 미국 책만(한국은 출발일 사후 체결 없음, K28)")
+    void resetOfOtherMarketBookDoesNotBackfill() {
+        closes(500, 82.5);
+        PaperAdminService admin = admin(AFTER_START);
+        admin.init();
+        String krBook = TestKrMarket.CLAUDE_BOOK;
+        store.books.put(krBook, new Book(krBook, PaperBooks.KIND_BENCHMARK, "시험용 한국 벤치마크", 100_000_000, FRI,
+                PaperBooks.ACTIVE, FRI_CLOSE, Book.MARKET_KR, Book.CURRENCY_KRW));
+        store.states.put(krBook, new BookState(krBook, 1_000, 100_000_000, 99_999_000, 99.99, null, null, null, null));
+        int usFills = store.fills.size();
+
+        PaperAdminService.ResetResult result = admin.reset(krBook, krBook);
+
+        assertThat(result.backfilled()).isFalse();
+        assertThat(result.skippedReason()).isNull();
+        assertThat(store.books.get(krBook).status()).isEqualTo(PaperBooks.NOT_STARTED);
+        assertThat(store.states.get(krBook).cash()).isEqualTo(100_000_000);
+        assertThat(store.fills).hasSize(usFills);
+        assertThat(store.books.get("bench_spy").status()).isEqualTo(PaperBooks.ACTIVE);
     }
 }
