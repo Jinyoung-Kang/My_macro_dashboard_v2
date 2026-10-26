@@ -15,7 +15,10 @@ import org.springframework.jdbc.datasource.DriverManagerDataSource;
 
 import java.time.Clock;
 import java.time.Instant;
+import java.time.LocalDate;
 import java.time.ZoneOffset;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 
@@ -41,10 +44,14 @@ import static org.mockito.Mockito.when;
  * (rules·claude·bench_spy·bench_mix)라 통합 테스트(ApiIntegrationTest)와 같은 행을 쓰므로 시작·끝에 그 네 책만 지웁니다 —
  * 책을 지우면 장부가 외래키로 함께 지워집니다. 설정 행은 이 테스트가 만들었을 때만 지웁니다. 초기화가 얼리는 출발일 종가
  * ({@code paper_start_prices})도 이 테스트가 쓰는 종목만 지웁니다 — 남겨 두면 다른 테스트의 초기화가 그 값으로 사후 체결합니다.
+ * 시장 격리 시험의 시험용 한국 책({@value #KR_BOOK})과 그 시험이 남긴 리스크 점검 기록도 지웁니다.
  */
 class PaperLedgerDbTest {
 
     private static final Clock AFTER_START = Clock.fixed(Instant.parse("2026-10-24T03:00:00Z"), ZoneOffset.UTC);
+
+    /** 시장 격리 시험의 시험용 한국 책 — 실제 한국 계좌 코드(kr_*)와 겹치지 않는 시험 접두어(PaperStoreDbTest도 t_로 지움). */
+    private static final String KR_BOOK = "t_kr_claude";
 
     private JdbcTemplate jdbc;
     private PaperStore store;
@@ -53,6 +60,8 @@ class PaperLedgerDbTest {
     private PaperLedgerService ledger;
     private PaperAdminService admin;
     private boolean settingsExisted;
+    /** 시장 격리 시험이 시작할 때의 작업 기록 마지막 번호 — 그 뒤에 쌓인 리스크 점검 기록을 끝에 지웁니다. */
+    private Long jobRunsFrom;
 
     @BeforeEach
     void setUp() {
@@ -81,6 +90,9 @@ class PaperLedgerDbTest {
             return;
         }
         deleteBooks();
+        if (jobRunsFrom != null) {
+            jdbc.update("DELETE FROM paper_job_runs WHERE job = ? AND id > ?", PaperRiskJob.JOB, jobRunsFrom);
+        }
         if (!settingsExisted) {
             jdbc.update("DELETE FROM paper_settings");
             jdbc.update("DELETE FROM paper_settings_history WHERE version = 1");
@@ -88,7 +100,7 @@ class PaperLedgerDbTest {
     }
 
     private void deleteBooks() {
-        jdbc.update("DELETE FROM paper_books WHERE code IN ('rules', 'claude', 'bench_spy', 'bench_mix')");
+        jdbc.update("DELETE FROM paper_books WHERE code IN ('rules', 'claude', 'bench_spy', 'bench_mix', ?)", KR_BOOK);
         jdbc.update("DELETE FROM paper_start_prices WHERE ticker IN ('SPY', 'SHY', 'AAA')");
     }
 
@@ -202,5 +214,109 @@ class PaperLedgerDbTest {
         assertThat(jdbc.queryForList("SELECT ticker || ' ' || qty || ' ' || raw_price::text FROM paper_fills "
                 + "WHERE book_code = 'bench_mix' ORDER BY ticker", String.class))
                 .containsExactly("SHY 484 82.500000", "SPY 119 500.000000");
+    }
+
+    /**
+     * 시장 격리 회귀(2단계 명세 §9 A5) — 같은 paper_books 표에 한국 책이 있어도 미국 작업은 그 책을 읽지도 쓰지도 않습니다. 묶음 전
+     * 장부는 {@code store.books()} 전체를 돌아, 미국 관측치가 한국 책의 멱등 키를 미국 수집 시각으로 밀고(그 뒤 한국 관측치는 '이미
+     * 처리함'), 미국 관측치에 없는 한국 보유를 '가격 없음'으로 바꾸고, 미국 세션으로 한국 주문을 만료·재진입 금지를 지우고, 미국
+     * 거래일 순자산 줄을 한국 책에 썼습니다. 시험용 한국 책은 그 일이 하나라도 일어나면 행이 바뀌도록 차려 두고, book_code 열이 있는
+     * 모든 표의 그 책 행을 전후로 글자 그대로 비교합니다.
+     */
+    @Test
+    @DisplayName("시장 격리: 미국 리스크 점검(정기 실행)·장부 처리·미확정 순자산 줄은 같은 표의 시험용 한국 책 행을 하나도 바꾸지 않는다")
+    void usJobsLeaveKoreanBookUntouched() throws Exception {
+        // 1. 미국 네 책(벤치마크 사후 체결) + 운용 중인 Claude 책의 대기 매수 — 미국 장부가 실제로 일을 하게
+        observe(SAT, """
+                {"SPY":{"dates":["2026-10-22","2026-10-23"],"close":[495.0,500.0]},
+                 "SHY":{"dates":["2026-10-22","2026-10-23"],"close":[82.4,82.5]},
+                 "AAA":{"dates":["2026-10-22","2026-10-23"],"close":[99.0,100.0]}}""");
+        admin.init();
+        jdbc.update("UPDATE paper_books SET status = 'ACTIVE', started_on = DATE '2026-10-23' WHERE code = 'claude'");
+        long buy = store.insertOrder(new PaperStore.Order(0, "claude", null, "AAA", "BUY", null, 10.0, null,
+                "NEXT_OBSERVATION", "CLAUDE", "PENDING", null, null, FRI, SAT.plusSeconds(60), MON.plusDays(3), null));
+
+        // 2. 시험용 한국 책 — 운용 중, 멱등 키는 미국 관측치보다 앞(미국 관측치가 '새 관측치'로 보이는 자리), 미국 관측치에 없는
+        //    보유, 미국 세션으로 보면 기한이 지난 대기 주문, 미국 세션 전날까지의 재진입 금지, 순자산 줄 하나
+        Instant krObserved = Instant.parse("2026-10-23T13:30:00Z");   // 10-23(금) 22:30 KST
+        assertThat(store.insertBookIfAbsent(new PaperStore.Book(KR_BOOK, PaperBooks.KIND_CLAUDE, "시험용 한국 Claude 계좌",
+                100_000_000, LocalDate.of(2026, 10, 22), PaperBooks.ACTIVE, null, PaperStore.Book.MARKET_KR,
+                PaperStore.Book.CURRENCY_KRW))).isTrue();
+        store.upsertState(new PaperStore.BookState(KR_BOOK, 30_000_000, 100_700_000, 70_700_000, 70.2085, krObserved,
+                krObserved, FRI, null));
+        store.upsertPosition(new PaperStore.Position(KR_BOOK, "005930", 1_000, 70_000, LocalDate.of(2026, 10, 22),
+                Instant.parse("2026-10-23T00:01:00Z"), 72_000, krObserved, 70_700.0, krObserved, false, FRI, 70_700,
+                null));
+        long krOrder = store.insertOrder(new PaperStore.Order(0, KR_BOOK, null, "000660", "BUY", null, 10.0, null,
+                "NEXT_OBSERVATION", "CLAUDE", "PENDING", null, null, LocalDate.of(2026, 10, 21),
+                Instant.parse("2026-10-21T13:30:00Z"), LocalDate.of(2026, 10, 24), null));
+        store.upsertLockout(new PaperStore.Lockout(KR_BOOK, "035420", FRI, "시험용 재진입 금지"));
+        store.upsertNav(new PaperStore.NavRow(KR_BOOK, FRI, 100_700_000, 30_000_000, 70_700_000, 70.2085, true));
+        assertThat(store.books()).extracting(PaperStore.Book::code).as("미국 작업이 읽는 같은 표에 있음")
+                .contains(KR_BOOK, "claude");
+        List<String> before = koreanRows();
+        assertThat(before).as("책·상태·보유·주문·재진입 금지·순자산 행이 모두 비교 대상")
+                .anyMatch(row -> row.startsWith("paper_books "))
+                .anyMatch(row -> row.startsWith("paper_book_state "))
+                .anyMatch(row -> row.startsWith("paper_positions "))
+                .anyMatch(row -> row.startsWith("paper_orders "))
+                .anyMatch(row -> row.startsWith("paper_lockouts "))
+                .anyMatch(row -> row.startsWith("paper_nav_daily "));
+        jobRunsFrom = count("SELECT COALESCE(MAX(id), 0) FROM paper_job_runs");
+
+        // 3. 미국 리스크 점검 정기 실행 — 월 장중(체결) → 같은 저장본 다시(할 일 없음) → 화 확정(순자산 줄)
+        PaperRiskJob job = new PaperRiskJob(store, reader, marketData, ledger, PaperFixtures.config(), MAPPER,
+                Clock.fixed(TUE_FINAL.plusSeconds(30), ZoneOffset.UTC));
+        observe(MON_INTRADAY, """
+                {"SPY":{"dates":["2026-10-23","2026-10-26"],"close":[500.0,505.0]},
+                 "SHY":{"dates":["2026-10-23","2026-10-26"],"close":[82.5,82.5]},
+                 "AAA":{"dates":["2026-10-23","2026-10-26"],"close":[100.0,100.0]}}""");
+        job.scheduledRun();
+        assertThat(jdbc.queryForObject("SELECT status FROM paper_orders WHERE id = ?", String.class, buy))
+                .as("미국 장부는 일함").isEqualTo("FILLED");
+
+        job.scheduledRun();
+        assertThat(job.run(false).skippedReason()).as("한국 책의 옛 멱등 키가 미국 관측치를 '새 관측치'로 만들지 않음")
+                .contains("새 관측치가 없습니다");
+
+        observe(TUE_FINAL, """
+                {"SPY":{"dates":["2026-10-23","2026-10-26","2026-10-27"],"close":[500.0,505.0,507.0]},
+                 "SHY":{"dates":["2026-10-23","2026-10-26","2026-10-27"],"close":[82.5,82.5,82.6]},
+                 "AAA":{"dates":["2026-10-23","2026-10-26","2026-10-27"],"close":[100.0,100.0,101.0]}}""");
+        job.scheduledRun();
+        assertThat(jdbc.queryForList("SELECT book_code FROM paper_nav_daily WHERE trading_date = DATE '2026-10-27' "
+                + "AND prices_final AND book_code IN ('rules', 'claude', 'bench_spy', 'bench_mix', ?) ORDER BY book_code",
+                String.class, KR_BOOK)).containsExactly("bench_mix", "bench_spy", "claude");
+        assertThat(koreanRows()).as("리스크 점검 뒤 한국 책의 행").isEqualTo(before);
+
+        // 4. 결정 작업이 부르는 장부 처리(시장을 받지 않는 옛 시그니처 = 미국)·미확정 순자산 줄
+        assertThat(processLatest().booksProcessed()).as("미국 책은 이미 처리함 — 한국 책을 대신 처리하지 않음").isEmpty();
+        assertThat(ledger.settleNav(LocalDate.of(2026, 10, 28), false)).containsExactly("claude", "bench_spy",
+                "bench_mix");
+
+        // 5. 한국 책의 행은 글자 그대로, 리스크 점검 기록에도 한국 책이 없음
+        assertThat(koreanRows()).isEqualTo(before);
+        assertThat(jdbc.queryForObject("SELECT status FROM paper_orders WHERE id = ?", String.class, krOrder))
+                .isEqualTo("PENDING");
+        List<String> processed = jdbc.queryForList("SELECT detail->>'booksProcessed' FROM paper_job_runs "
+                + "WHERE job = ? AND id > ? ORDER BY id", String.class, PaperRiskJob.JOB, jobRunsFrom);
+        assertThat(processed).as("월 장중·화 확정 두 번만 기록(같은 저장본은 기록 없음)").hasSize(2)
+                .allSatisfy(books -> assertThat(books).contains("claude").doesNotContain(KR_BOOK));
+    }
+
+    /**
+     * 시험용 한국 책의 모든 행 — paper_books와 book_code 열이 있는 모든 표(정보 스키마에서 찾음 — 나중에 표가 늘어도 빠지지 않게).
+     * 행마다 "표 이름 + JSON 한 줄"이고, 표 안에서는 글자 순입니다.
+     */
+    private List<String> koreanRows() {
+        List<String> rows = new ArrayList<>(jdbc.queryForList(
+                "SELECT 'paper_books ' || to_jsonb(b)::text FROM paper_books b WHERE code = ?", String.class, KR_BOOK));
+        List<String> tables = jdbc.queryForList("SELECT table_name FROM information_schema.columns "
+                + "WHERE table_schema = current_schema() AND column_name = 'book_code' ORDER BY table_name", String.class);
+        for (String table : tables) {
+            rows.addAll(jdbc.queryForList("SELECT CAST(? AS text) || ' ' || to_jsonb(t)::text FROM \"" + table
+                    + "\" t WHERE book_code = ? ORDER BY 1", String.class, table, KR_BOOK));
+        }
+        return rows;
     }
 }
