@@ -24,7 +24,8 @@ import java.util.function.Function;
  * 시험용 가짜 이름(수집기에 없음), 책은 시험 접두어 {@code t_kr_} 하나.
  *
  * <p>미국과 일부러 갈리게 골랐습니다 — 서울 21:00(UTC 12:00)은 이 달력으로는 그날 세션의 확정 종가 뒤지만 미국 달력으로는 개장
- * 전(직전 세션)입니다. 장부가 미국 달력을 썼다면 세션·확정 여부·순자산 줄이 달라집니다.
+ * 전(직전 세션)입니다. 장부가 미국 달력을 썼다면 세션·확정 여부·순자산 줄이 달라집니다. 결정 시각·기한은 실제 한국 기본값과 같은
+ * 22:30·01:00이고 기한 규칙도 한국 것(기한 ≤ 결정이면 다음 날)입니다(D0).
  */
 final class TestKrMarket implements PaperMarket {
 
@@ -303,9 +304,10 @@ final class TestKrMarket implements PaperMarket {
         return LocalTime.of(22, 30);
     }
 
+    /** 실제 한국 기본값과 같은 01:00(D+1 — {@link #deadlineInstant}). 예전 시험용 23:30은 결정 작업의 기한 묶기를 비켜 갔습니다(명세 §9 'D1·E2 — 결정 기한'). */
     @Override
     public LocalTime defaultDeadline() {
-        return LocalTime.of(23, 30);
+        return LocalTime.of(1, 0);
     }
 
     @Override
@@ -313,10 +315,10 @@ final class TestKrMarket implements PaperMarket {
         return ZonedDateTime.of(session, kstTime, Kst.ZONE).toInstant();
     }
 
-    /** 결정 작업의 예전 묶기 그대로(기한이 결정 시각보다 앞이면 결정 시각). */
+    /** 실제 한국 묶음과 같은 규칙 — 기한이 결정 시각보다 이르거나 같으면 다음 날({@link KrPaperMarket#nextDayDeadline}). */
     @Override
     public Instant deadlineInstant(LocalDate session, LocalTime decisionTime, LocalTime deadline) {
-        return decisionInstant(session, deadline.isBefore(decisionTime) ? decisionTime : deadline);
+        return KrPaperMarket.nextDayDeadline(this, session, decisionTime, deadline);
     }
 
     /** 시험용 하드 규칙 줄 — 받은 설정 본문의 한 키를 그대로 적어, 렌더링이 결정의 설정을 넘기는지 보이게. */

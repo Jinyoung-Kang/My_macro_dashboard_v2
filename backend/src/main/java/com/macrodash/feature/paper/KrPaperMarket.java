@@ -296,21 +296,16 @@ final class KrPaperMarket implements PaperMarket {
 
     /**
      * 세션 D의 한국 결정 창: 그 실행이 읽은 설정 판의 {@code kr.decisionTimeKst}·{@code kr.decisionDeadlineKst}(없거나 틀리면 기본 22:30·
-     * 01:00)를 {@link #decisionInstant}로 순간으로 만들고, 기한이 결정 시각보다 이르거나 같으면 다음 날로 읽습니다(설정 저장 규칙과 같은 뜻 —
-     * 명세 §4-13 'C1b 구현에서 정한 것'). 기본값이면 D 22:30 ~ D+1 01:00. 한국 출발(S 22:30, 기한 S+1 01:00 — §4-8)과 한국 초기화의 출발일
-     * 검사가 씁니다 — 정기 결정 작업의 기한 묶기({@code PaperDecisionJob.times})를 시장으로 옮기는 일은 D1(명세 §9 'D1·E2 — 결정 기한').
+     * 01:00 — 결정 작업과 같은 읽기 {@code PaperDecisionJob.times})를 결정 순간({@link #decisionInstant})과 기한 순간({@link #deadlineInstant}
+     * — 기한이 결정 시각보다 이르거나 같으면 다음 날)으로. 기본값이면 D 22:30 ~ D+1 01:00. 정기 결정 작업의 기한·한국 출발(S 22:30, 기한 S+1
+     * 01:00 — §4-8)·한국 초기화의 출발일 검사·1분봉 기다림의 끝(결정 d11)이 모두 이 한 규칙입니다(D0 — 명세 §9 'D1·E2 — 결정 기한').
      *
-     * @param market 한국 묶음 또는 그 실행(설정 키 접두어·기본값·결정 순간 식)
+     * @param market 한국 묶음 또는 그 실행(설정 키 접두어·기본값·결정 순간과 기한 순간 식)
      */
     static DecisionWindow decisionWindow(PaperMarket market, JsonNode settingsBody, LocalDate session) {
-        LocalTime decision = PaperDecisionJob.decisionTime(market, settingsBody);
-        LocalTime deadline = time(PaperSettingsService.valueAt(settingsBody, market.settingKey("decisionDeadlineKst")));
-        Instant opens = market.decisionInstant(session, decision);
-        Instant due = market.decisionInstant(session, deadline == null ? market.defaultDeadline() : deadline);
-        while (!due.isAfter(opens)) {
-            due = due.plus(Duration.ofDays(1));
-        }
-        return new DecisionWindow(opens, due);
+        PaperDecisionJob.Times times = PaperDecisionJob.times(market, settingsBody);
+        return new DecisionWindow(market.decisionInstant(session, times.decision()),
+                market.deadlineInstant(session, times.decision(), times.deadline()));
     }
 
     @Override
@@ -494,8 +489,7 @@ final class KrPaperMarket implements PaperMarket {
     /**
      * 세션 D에 딸린 KST 시각의 순간 — {@link #NEXT_MORNING_BEFORE}(09:00) 전 시각은 D+1 아침, 나머지는 D 그날(밤). 설정 저장 규칙
      * (결정 시각 20:30~23:59 또는 00:00~08:59, 기한은 결정 뒤 첫 그 시각·D+1 08:30까지)으로 받는 값이면 기본 22:30 → D 22:30, 01:00 →
-     * D+1 01:00처럼 '결정 시각 뒤의 첫 그 시각'과 같은 순간입니다. (결정 작업의 기한 묶기 규칙을 시장으로 옮기는 일은 D1 — 명세 §9
-     * 'D1·E2 — 결정 기한'.)
+     * D+1 01:00처럼 '결정 시각 뒤의 첫 그 시각'과 같은 순간입니다. 기한은 결정 시각과의 관계까지 보는 {@link #deadlineInstant}로 셉니다.
      */
     @Override
     public Instant decisionInstant(LocalDate session, LocalTime kstTime) {
@@ -503,10 +497,29 @@ final class KrPaperMarket implements PaperMarket {
         return ZonedDateTime.of(day, kstTime, KrxCalendar.SEOUL).toInstant();
     }
 
-    /** 결정 작업의 예전 묶기 그대로(기한이 결정 시각보다 앞이면 결정 시각) — 시장으로 옮기기만 했습니다. 한국 규칙은 명세 §9 'D1·E2 — 결정 기한'. */
+    /**
+     * 기한이 결정 시각보다 이르거나 같으면 다음 날 — 설정 저장 규칙('기한은 결정 시각 뒤의 첫 그 시각', 명세 §4-13 'C1b 구현에서 정한 것')과
+     * 같은 뜻입니다({@link #nextDayDeadline}). 기본 22:30·01:00이면 D+1 01:00(예전 결정 작업은 01:00을 22:30으로 접어 모든 한국 실행이
+     * '기한 지남'이었음 — 명세 §9 'D1·E2 — 결정 기한', D0).
+     */
     @Override
     public Instant deadlineInstant(LocalDate session, LocalTime decisionTime, LocalTime deadline) {
-        return decisionInstant(session, deadline.isBefore(decisionTime) ? decisionTime : deadline);
+        return nextDayDeadline(this, session, decisionTime, deadline);
+    }
+
+    /**
+     * '기한 ≤ 결정이면 다음 날' 규칙 — 두 시각을 그 시장의 {@link PaperMarket#decisionInstant}로 순간으로 만든 뒤, 기한 순간이 결정 순간
+     * 뒤가 될 때까지 하루(달력 날, 거래일 아님)씩 미룹니다. 한국 묶음과 시험용 한국 묶음이 같은 규칙을 쓰게 둔 자리입니다.
+     *
+     * @param market 결정 순간 식(세션 날짜 ↔ KST 시각)을 가진 시장
+     */
+    static Instant nextDayDeadline(PaperMarket market, LocalDate session, LocalTime decisionTime, LocalTime deadline) {
+        Instant opens = market.decisionInstant(session, decisionTime);
+        Instant due = market.decisionInstant(session, deadline);
+        while (!due.isAfter(opens)) {
+            due = due.plus(Duration.ofDays(1));
+        }
+        return due;
     }
 
     /** @throws IllegalStateException 늘 — 한국 하드 규칙 줄(₩·153130·NEXT_OPEN)은 E2(명세 K34). 한국 Claude 계좌는 그 전에 시작하지 않습니다. */

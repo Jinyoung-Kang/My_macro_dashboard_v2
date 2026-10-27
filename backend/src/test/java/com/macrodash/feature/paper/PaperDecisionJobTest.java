@@ -840,7 +840,7 @@ class PaperDecisionJobTest {
 
         PaperDecisionJob.Result result = job(KR_22_00, List.of(provisional)).run(provisional);
 
-        assertThat(result.outcome()).as("기한(23:30) 전이지만 종가가 나옴 — 기다리지 않음").isEqualTo(PaperDecisionJob.DECIDED);
+        assertThat(result.outcome()).as("기한(D+1 01:00) 전이지만 종가가 나옴 — 기다리지 않음").isEqualTo(PaperDecisionJob.DECIDED);
         assertThat(result.pricesFinal()).isFalse();
         assertThat(calls).containsExactly("kr claude 2026-10-26 SCHEDULED false");
         JsonNode detail = store.jobRuns.get(0).detail();
@@ -853,25 +853,54 @@ class PaperDecisionJobTest {
     }
 
     @Test
-    @DisplayName("시장 격리(A6): 결정 시각·기한은 그 시장의 설정 키(접두어)와 시장 기본값 — 미국 키와 서로 섞이지 않음")
+    @DisplayName("시장 격리(A6): 결정 시각·기한은 그 시장의 설정 키(접두어)와 시장 기본값 — 미국 키와 서로 섞이지 않음, 읽은 값 그대로(기한의 순간은 시장 규칙 — D0)")
     void decisionTimesPerMarket() {
-        // 한국 키가 없는 행 — 시장 기본값(시험용 22:30·23:30). 실제 한국 기본 본문(C1b, 기한 01:00)을 이 작업이 결정 시각으로 접는 문제는
-        // D1이 기한 규칙을 시장으로 옮길 자리입니다(명세 §9 'D1·E2 — 결정 기한').
+        java.time.LocalTime krTime = java.time.LocalTime.of(22, 30);
+        java.time.LocalTime krDeadline = java.time.LocalTime.of(1, 0);
+        assertThat(job(FRI_CLOSE).times(KR)).as("실제 한국 기본 본문 — 01:00을 결정 시각으로 접지 않음")
+                .isEqualTo(new PaperDecisionJob.Times(krTime, krDeadline));
         PaperFixtures.dropKrDefaults(store);
-        assertThat(job(FRI_CLOSE).times(KR)).isEqualTo(new PaperDecisionJob.Times(java.time.LocalTime.of(22, 30),
-                java.time.LocalTime.of(23, 30)));
+        assertThat(job(FRI_CLOSE).times(KR)).as("한국 키가 없는 행 — 시장 기본값(시험용도 실제와 같은 22:30·01:00)")
+                .isEqualTo(new PaperDecisionJob.Times(krTime, krDeadline));
         tools.jackson.databind.node.ObjectNode body = (tools.jackson.databind.node.ObjectNode) store.settings.body();
         body.put("decisionTimeKst", "08:15");
         body.putObject("kr").put("decisionTimeKst", "21:50").put("decisionDeadlineKst", "21:00");
         assertThat(job(FRI_CLOSE).times(KR)).as("읽은 값 그대로 — 기한의 순간은 시장 규칙").isEqualTo(
                 new PaperDecisionJob.Times(java.time.LocalTime.of(21, 50), java.time.LocalTime.of(21, 0)));
         assertThat(KR.deadlineInstant(PaperFixtures.MON, java.time.LocalTime.of(21, 50), java.time.LocalTime.of(21, 0)))
-                .as("기한이 결정 시각보다 앞이면 결정 시각").isEqualTo(KR.decisionInstant(PaperFixtures.MON,
-                        java.time.LocalTime.of(21, 50)));
+                .as("한국 규칙 — 기한이 결정 시각보다 이르면 다음 날(10-27 21:00 KST)")
+                .isEqualTo(Instant.parse("2026-10-27T12:00:00Z"));
         assertThat(job(FRI_CLOSE).times()).isEqualTo(new PaperDecisionJob.Times(java.time.LocalTime.of(8, 15),
                 java.time.LocalTime.of(12, 0)));
         assertThat(PaperDecisionJob.decisionTime(KR, body)).isEqualTo(java.time.LocalTime.of(21, 50));
         assertThat(PaperDecisionJob.decisionTime(body)).isEqualTo(java.time.LocalTime.of(8, 15));
+    }
+
+    /** 시험용 한국 관측치를 서울 14:00(그날 종가 전)에 수집한 판으로 바꿉니다 — 결정 작업이 그날 종가를 기다리게. */
+    private void krIntradayQuotes() {
+        when(marketData.quotes(market(KR))).thenReturn(Optional.of(quotes(Instant.parse("2026-10-26T05:00:00Z"),
+                bar("005930", FRI, 70_000, PaperFixtures.MON, 71_000))));
+    }
+
+    @Test
+    @DisplayName("결정 기한(D0 — 명세 §9 'D1·E2 — 결정 기한'): 실제 한국 기본 본문(kr.decisionTimeKst 22:30·kr.decisionDeadlineKst 01:00)의 기한은 D+1 01:00 — 그날 종가 관측치가 아니면 22:40에도 00:50에도 기다리고(결정·기록 없음), 예전처럼 01:00이 22:30으로 접혀 22:30부터 '기한 지남'으로 미확정 진행하지 않음")
+    void krDeadlineIsNextDayWithRealDefaults() {
+        krBook(null);
+        krIntradayQuotes();
+        assertThat(store.settings.body().path("kr").path("decisionDeadlineKst").asString()).as("실제 한국 기본 본문")
+                .isEqualTo("01:00");
+
+        PaperDecisionJob.Result evening = job(Instant.parse("2026-10-26T13:40:00Z"), List.of(KR)).run(KR);   // 월 22:40 KST
+        PaperDecisionJob.Result night = job(Instant.parse("2026-10-26T15:50:00Z"), List.of(KR)).run(KR);     // 화 00:50 KST
+
+        for (PaperDecisionJob.Result result : List.of(evening, night)) {
+            assertThat(result.outcome()).isEqualTo(PaperDecisionJob.PRICES_NOT_FINAL);
+            assertThat(result.tradingDate()).isEqualTo(PaperFixtures.MON);
+            assertThat(result.message()).contains("기한 2026-10-27 01:00 KST");
+        }
+        assertThat(calls).as("Claude를 부르지 않음 — 기다림").isEmpty();
+        assertThat(store.jobRuns).isEmpty();
+        assertThat(store.navSeries(KR_BOOK)).isEmpty();
     }
 
     @Test

@@ -187,6 +187,42 @@ class KrPaperMarketTest {
     }
 
     @Test
+    @DisplayName("결정 기한 순간(D0, 명세 §9 'D1·E2 — 결정 기한') — 기한이 결정 시각보다 이르거나 같으면 다음 날(달력 날): 기본 22:30·01:00 → D+1 01:00(금요일 세션은 토요일 01:00), 23:50·00:10 → D+1 00:10, 아침 07:00·08:30 → D+1 08:30, 22:30·23:30 → D 23:30, 같은 시각 → D+1 · 결정 창도 같은 규칙, 시험용 한국 묶음도 같은 값")
+    void deadlineInstant() {
+        LocalDate d = LocalDate.of(2026, 11, 30);
+        assertThat(KR.deadlineInstant(d, LocalTime.of(22, 30), LocalTime.of(1, 0))).isEqualTo(kst("2026-12-01T01:00"));
+        assertThat(KR.deadlineInstant(LocalDate.of(2026, 11, 27), LocalTime.of(22, 30), LocalTime.of(1, 0)))
+                .as("금요일 세션 → 토요일 01:00(거래일이 아니라 달력 날)").isEqualTo(kst("2026-11-28T01:00"));
+        assertThat(KR.deadlineInstant(d, LocalTime.of(23, 50), LocalTime.of(0, 10))).isEqualTo(kst("2026-12-01T00:10"));
+        assertThat(KR.deadlineInstant(d, LocalTime.of(7, 0), LocalTime.of(8, 30))).as("D+1 아침 결정")
+                .isEqualTo(kst("2026-12-01T08:30"));
+        assertThat(KR.deadlineInstant(d, LocalTime.of(22, 30), LocalTime.of(23, 30))).isEqualTo(kst("2026-11-30T23:30"));
+        assertThat(KR.deadlineInstant(d, LocalTime.of(22, 30), LocalTime.of(22, 30))).as("같은 시각 = 다음 날(설정 저장은 거절)")
+                .isEqualTo(kst("2026-12-01T22:30"));
+        assertThat(KR.deadlineInstant(d, LocalTime.of(22, 30), LocalTime.of(21, 0))).as("결정보다 이른 저녁 시각 = 다음 날")
+                .isEqualTo(kst("2026-12-01T21:00"));
+        assertThat(KR.deadlineInstant(d, LocalTime.of(22, 30), LocalTime.of(1, 0)))
+                .as("예전 결정 작업의 묶기(01:00 → 22:30)가 아님").isNotEqualTo(KR.decisionInstant(d, LocalTime.of(22, 30)));
+
+        // 결정 창 = 결정 작업과 같은 시각 읽기 + 이 규칙(출발·초기화 검사·1분봉 기다림의 끝이 쓰는 한 규칙)
+        JsonNode defaults = PaperFixtures.settings(new FakePaperStore()).defaultsJson();
+        KrPaperMarket.DecisionWindow standard = new KrPaperMarket.DecisionWindow(kst("2026-11-30T22:30"), kst("2026-12-01T01:00"));
+        assertThat(KrPaperMarket.decisionWindow(KR, defaults, d)).isEqualTo(standard);
+        assertThat(KrPaperMarket.decisionWindow(KR, null, d)).as("설정 행 없음 = 기본값").isEqualTo(standard);
+        ObjectNode night = (ObjectNode) defaults.deepCopy();
+        ((ObjectNode) night.get("kr")).put("decisionTimeKst", "23:50").put("decisionDeadlineKst", "00:10");
+        assertThat(KrPaperMarket.decisionWindow(KR, night, d))
+                .isEqualTo(new KrPaperMarket.DecisionWindow(kst("2026-11-30T23:50"), kst("2026-12-01T00:10")));
+
+        // 시험용 한국 묶음(결정 순간 식은 그날 같은 시각)도 같은 기본값·같은 기한 규칙
+        PaperMarket test = TestKrMarket.INSTANCE;
+        assertThat(test.defaultDecisionTime()).isEqualTo(KR.defaultDecisionTime());
+        assertThat(test.defaultDeadline()).isEqualTo(KR.defaultDeadline());
+        assertThat(test.deadlineInstant(d, LocalTime.of(22, 30), LocalTime.of(1, 0))).isEqualTo(kst("2026-12-01T01:00"));
+        assertThat(test.deadlineInstant(d, LocalTime.of(22, 30), LocalTime.of(22, 30))).isEqualTo(kst("2026-12-01T22:30"));
+    }
+
+    @Test
     @DisplayName("관측치 늦음(결정 d5) = 다음 거래일 D′의 21:55 + 2시간 5분 = D′+1 00:00 KST — 금요일은 화요일 00:00, 휴장은 건너뜀, 세션을 모르면 수집 시각으로")
     void quotesLateAt() {
         TradingCalendar calendar = calendar2026And2027();
