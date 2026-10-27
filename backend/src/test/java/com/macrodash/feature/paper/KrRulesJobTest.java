@@ -432,7 +432,7 @@ class KrRulesJobTest {
     }
 
     @Test
-    @DisplayName("게이트 ①은 그 계좌 장부가 이 실행의 관측치를 처리했는지도 봄 — 규칙 계좌 장부 처리가 그 관측치에서 오류로 되돌려졌으면(같은 관측치로는 다시 시도하지 않음) 대기 주문이 없어도 미달·기다림, 새 관측치를 처리하면 결정")
+    @DisplayName("게이트 ①은 그 계좌 장부가 이 실행의 관측치를 처리했는지도 봄 — 규칙 계좌 장부 처리가 그 관측치에서 오류로 되돌려졌으면 대기 주문이 없어도 미달·기다림. 장부는 같은 관측치로 다시 시도하지 않고 수집기는 그 밤 새 저장본을 쓰지 않으므로(다음은 다음 KR 거래일 20:30 뒤) 원인을 고쳐도 기다림이 이어지고, 백엔드를 재기동하면(오류 기억이 지워짐) 그 창에서 결정")
     void gateOneNeedsTheLedgerToHaveProcessedTheObservation() {
         session(R);
         failLedgerFor = PaperBooks.KR_RULES;
@@ -441,17 +441,44 @@ class KrRulesJobTest {
 
         assertThat(failed.outcome()).isEqualTo(PaperDecisionJob.DATA_NOT_READY);
         assertThat(failed.message()).contains("① kr_rules").contains("처리하지 못함")
-                .contains("수집 2026-11-02 21:57 KST");
-        failLedgerFor = null;   // 고쳐져도 같은 관측치로는 다시 시도하지 않음(장부 규칙) — 새 관측치까지 기다림
-        assertThat(runAt("2026-11-02T22:40").outcome()).isEqualTo(PaperDecisionJob.DATA_NOT_READY);
+                .contains("수집 2026-11-02 21:57 KST").contains("그 밤 새로 저장되지 않음").contains("백엔드 재기동")
+                .doesNotContain("새 관측치에서");
+        failLedgerFor = null;   // 원인은 풀렸지만 같은 관측치(운영 수집기는 '최신 상태'면 저장본을 다시 쓰지 않음)
+        for (String at : List.of("2026-11-02T22:40", "2026-11-02T23:50")) {
+            assertThat(runAt(at).outcome()).isEqualTo(PaperDecisionJob.DATA_NOT_READY);
+        }
         assertThat(rulesDecisions()).as("출발 INITIAL뿐").hasSize(1);
         assertThat(krRuns()).as("기다림은 기록하지 않음").isEmpty();
 
-        KrFixtures.stub(reader, Datasets.SNAP_KR_PAPER_QUOTES, KrFixtures.snapshot(Datasets.SNAP_KR_PAPER_QUOTES,
-                KrRulesFixtures.quotes(R).payload(), kst("2026-11-02T22:45")));
-        PaperDecisionJob.Result decided = runAt("2026-11-02T22:50");
+        job = job(new PaperMarketData(reader, repository));   // 백엔드 재기동 — 장부의 오류 기억이 지워짐
+        PaperDecisionJob.Result decided = runAt("2026-11-03T00:00");
         assertThat(decided.outcome()).isEqualTo(PaperDecisionJob.DECIDED);
+        assertThat(decided.tradingDate()).isEqualTo(R);
         assertThat(decided.rules().response().path("gates").get(0).path("status").asString()).isEqualTo("PASS");
+    }
+
+    @Test
+    @DisplayName("규칙 계좌 장부가 그 밤 관측치에서 오류로 되돌려진 채 재기동이 없으면 기한까지 ①로 기다리고 기한 뒤 NO_TRADE(기한 지남·waitedFor ①) — 다음 KR 거래일 관측치는 장부가 다시 시도해 처리하고 그날 재선정을 따라잡음")
+    void ledgerErrorWithoutRestartEndsAsNoTrade() {
+        session(R);
+        failLedgerFor = PaperBooks.KR_RULES;
+        assertThat(runAt("2026-11-02T22:30").outcome()).isEqualTo(PaperDecisionJob.DATA_NOT_READY);
+        failLedgerFor = null;
+        assertThat(runAt("2026-11-03T00:50").outcome()).isEqualTo(PaperDecisionJob.DATA_NOT_READY);
+
+        PaperDecisionJob.Result late = runAt("2026-11-03T01:00");
+
+        assertThat(late.outcome()).isEqualTo(PaperDecisionJob.PAST_DEADLINE);
+        assertThat(late.rules().status()).isEqualTo("NO_TRADE");
+        assertThat(late.rules().response().path("noTradeReason").asString()).isEqualTo("기한 지남");
+        assertThat(late.rules().response().path("waitedFor").toString()).contains("① kr_rules").contains("처리하지 못함")
+                .doesNotContain("⑤");
+
+        session(R1);   // 다음 KR 거래일 관측치(새 수집 시각) — 장부가 다시 시도함
+        PaperDecisionJob.Result caught = runAt("2026-11-03T22:30");
+        assertThat(caught.outcome()).isEqualTo(PaperDecisionJob.DECIDED);
+        assertThat(caught.rules().kind()).isEqualTo(RuleBookService.REBALANCE);
+        assertThat(caught.rules().response().path("catchUp").asBoolean()).isTrue();
     }
 
     @Test

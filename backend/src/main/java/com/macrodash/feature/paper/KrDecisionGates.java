@@ -30,7 +30,8 @@ import java.util.Optional;
  * <ul>
  *   <li>① 장부가 앞 결정의 주문을 정리함 — 그 계좌 장부가 그 실행의 관측치를 처리했고(상태의 마지막 처리 수집 시각 ≥ 그 관측치의 수집 시각 —
  *       장부가 그 관측치에서 오류로 그 계좌를 되돌렸으면 같은 관측치로는 다시 시도하지 않으므로, D 체결·만료·스탑 감지·평가 전 장부로 결정하지
- *       않게), 그 계좌에 기준 거래일 &lt; D이고 그 시장이 체결하는 시점({@link PaperMarket#timings})인 대기 주문이
+ *       않게. 한국 관측치는 KR 거래일마다 한 번이라 그 밤 새 관측치가 오지 않습니다 — 복구는 원인을 고친 뒤 백엔드 재기동, 아니면 기한 뒤
+ *       NO_TRADE), 그 계좌에 기준 거래일 &lt; D이고 그 시장이 체결하는 시점({@link PaperMarket#timings})인 대기 주문이
  *       없음(결정 d11 '대기 = 정리 안 됨'). 확정 순자산 줄의 대기 주문 조건과 같은 거름({@link KrConfirmations#pendingBefore})이되 체결 조건 ⑤
  *       (D 개장 순간 &gt; 주문 생성)는 보지 않습니다 — D 개장 뒤에 만든 주문도 아직 체결되지 않은 대기입니다(결정 e3). 결정하는 계좌마다 따로
  *       봅니다(그 계좌의 주문 — 한 계좌의 대기 주문이 다른 계좌 결정을 막지 않게, 두 책은 따로). 정기 결정 작업이 그 실행에서 장부를 처리한
@@ -201,9 +202,12 @@ final class KrDecisionGates {
         if (observed != null) {
             Instant processed = store.state(book).map(PaperStore.BookState::lastProcessedCollectedAt).orElse(null);
             if (processed == null || processed.isBefore(observed)) {
+                // 복구 경로(명세 §4-9 'D1c'): 장부는 오류 난 관측치로 다시 시도하지 않고, paper.kr.quotes는 KR 거래일마다 한 번이라 그 밤
+                // 새 관측치가 오지 않습니다 — 원인을 고친 뒤 재기동(오류 기억이 메모리라 지워짐)하거나, 기한 뒤 NO_TRADE.
                 return new Gate("①", "FAIL", book + " — 장부가 이 실행의 관측치(수집 " + Kst.stamp(observed) + ")를 처리하지 못함(마지막 처리 "
-                        + (processed == null ? "없음" : Kst.stamp(processed)) + " — 그 관측치에서 장부 오류가 났으면 같은 관측치로는 다시 "
-                        + "시도하지 않음, 새 관측치에서) — D 체결·만료·스탑 감지·평가 전 장부로 결정하지 않음");
+                        + (processed == null ? "없음" : Kst.stamp(processed)) + ") — D 체결·만료·스탑 감지·평가 전 장부로 결정하지 않음. "
+                        + "장부 오류였으면 같은 관측치로는 다시 시도하지 않고 한국 관측치는 그 밤 새로 저장되지 않음(다음은 다음 KR 거래일 "
+                        + "20:30 뒤) — 원인을 고친 뒤 백엔드 재기동(오류 기억이 지워져 리스크 점검이 다시 처리), 아니면 기한 뒤 NO_TRADE");
             }
         }
         List<Order> pending = KrConfirmations.pendingBefore(store, market, book, d);
