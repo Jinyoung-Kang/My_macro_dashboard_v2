@@ -4,7 +4,9 @@ import com.macrodash.analytics.NewsEvents;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.node.ArrayNode;
 import tools.jackson.databind.node.JsonNodeFactory;
+import tools.jackson.databind.node.ObjectNode;
 
+import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.LinkedHashMap;
@@ -70,10 +72,19 @@ final class PaperSettingKeys {
      * 값의 형. {@link #wire}는 화면에 보내는 이름(frontend lib/paper.ts settingKind가 읽는 이름). {@code PHRASES}는 낱말·구절 목록
      * (사건 뉴스 키워드 — "rate decision"처럼 공백이 든 항목)이라 화면이 공백으로 나누지 않게 {@code list}와 다른 이름입니다. {@code FEEDS}는
      * 정해진 피드 키({@link Spec#options})만 받는 목록입니다 — 화면에는 {@code list}로 보냅니다(선택지가 있으면 화면이 한 값 고르기로 그림).
+     *
+     * <p>2단계(C1b, 명세 K38)에 더한 넷 — 모두 저장할 때 정해진 모양으로 맞춰(순서·표기) 같은 값이 다른 글자로 저장되지 않게 합니다:
+     * {@code DATE} 날짜 하나({@code "yyyy-MM-dd"}, {@value #DATE_MIN_TEXT}~{@value #DATE_MAX_TEXT}) ·
+     * {@code DATE_LIST} 날짜 목록(중복 제거·오름차순) ·
+     * {@code DATE_TIME_MAP} 날짜 → 개장·마감 쌍({@code {"2026-11-19": {"open": "10:00", "close": "16:30"}}} — 둘 다 HH:mm, 개장 &lt; 마감,
+     * 날짜 오름차순; 명세 §9 묶음 B 리뷰 메모 '수능일 마감 16:30' — 개장만이 아니라 마감도 바뀌는 날이 있어 쌍으로 둠) ·
+     * {@code ALIAS_MAP} 한국 종목 코드 → 별칭 목록({@code {"000660": ["하이닉스"]}} — 코드 6자리 영문 대문자·숫자, 별칭은 {@code PHRASES}와 같은
+     * 규칙, 코드 오름차순).
      */
     enum Type {
         NUMBER("number"), INTEGER("integer"), BOOLEAN("boolean"), CHOICE("string"), TIME("time"), TICKERS("list"),
-        CIKS("list"), PHRASES("phrases"), FEEDS("list");
+        CIKS("list"), PHRASES("phrases"), FEEDS("list"), DATE("date"), DATE_LIST("dates"), DATE_TIME_MAP("dateTimeMap"),
+        ALIAS_MAP("aliasMap");
 
         final String wire;
 
@@ -238,6 +249,19 @@ final class PaperSettingKeys {
     }
 
     private static final Pattern TIME = Pattern.compile("([01]\\d|2[0-3]):[0-5]\\d");
+    /** 날짜 형(DATE·DATE_LIST·DATE_TIME_MAP)이 받는 범위 — 자리 수 오타(0202-…·2206-…)를 막는 값이고 뜻 있는 한계는 아닙니다. */
+    static final String DATE_MIN_TEXT = "2000-01-01";
+    static final String DATE_MAX_TEXT = "2099-12-31";
+    private static final LocalDate DATE_MIN = LocalDate.parse(DATE_MIN_TEXT);
+    private static final LocalDate DATE_MAX = LocalDate.parse(DATE_MAX_TEXT);
+    private static final Pattern DATE = Pattern.compile("\\d{4}-\\d{2}-\\d{2}");
+    /** 날짜 목록·날짜별 시각 표의 항목 수 상한 — 임시휴장·장 시간 변경일은 한 해 몇 날이라 넉넉합니다. */
+    static final int MAX_DATES = 100;
+    /** 한국 종목 코드(토스·금융위와 같은 대문자 규칙 — 명세 §4-5, B2 {@code ^A?([0-9A-Z]{6})$}의 6자리). */
+    static final Pattern KR_CODE = Pattern.compile("[0-9A-Z]{6}");
+    /** 별칭 표의 종목 수·종목당 별칭 수 상한 — 약칭·우선주 별칭(명세 §4-11)은 종목마다 몇 개라 넉넉합니다. */
+    static final int MAX_ALIAS_CODES = 200;
+    static final int MAX_ALIASES_PER_CODE = 10;
     private static final Pattern TICKER = Pattern.compile("[A-Z0-9][A-Z0-9.\\-]{0,9}");
     private static final int MAX_TICKERS = 50;
     private static final int MAX_CIKS = 100;
@@ -364,37 +388,7 @@ final class PaperSettingKeys {
                 return new Checked(out, null);
             }
             case PHRASES -> {
-                if (!value.isArray()) {
-                    return error(key + ": 글자 목록이어야 합니다");
-                }
-                List<String> phrases = new ArrayList<>();
-                Set<String> seen = new LinkedHashSet<>();
-                for (JsonNode item : value) {
-                    if (!item.isString()) {
-                        return error(key + ": 글자 목록이어야 합니다 — " + shown(item.toString()));
-                    }
-                    // 공백(줄바꿈·탭 포함)을 먼저 한 칸으로 접고 남은 글자를 봅니다.
-                    String text = PHRASE_SPACES.matcher(item.asString("")).replaceAll(" ").strip();
-                    if (PHRASE_FORBIDDEN.matcher(text).find()) {
-                        return error(key + ": 꺾쇠(<>)·제어 문자는 쓸 수 없습니다 — " + shown(text));
-                    }
-                    if (text.isEmpty()) {
-                        continue;
-                    }
-                    if (text.length() > MAX_PHRASE_CHARS) {
-                        return error(key + ": 한 항목은 " + MAX_PHRASE_CHARS + "자까지입니다 — " + shown(text));
-                    }
-                    // 대소문자만 다른 항목은 앞의 것만 — 맞추기가 대소문자를 무시해 같은 키워드입니다.
-                    if (seen.add(text.toLowerCase(Locale.ROOT))) {
-                        phrases.add(text);
-                    }
-                }
-                if (phrases.size() > MAX_PHRASES) {
-                    return error(key + ": 항목은 " + MAX_PHRASES + "개까지입니다");
-                }
-                ArrayNode out = f.arrayNode();
-                phrases.forEach(out::add);
-                return new Checked(out, null);
+                return phrases(key, value, MAX_PHRASES);
             }
             case FEEDS -> {
                 if (!value.isArray()) {
@@ -416,10 +410,167 @@ final class PaperSettingKeys {
                 spec.options().stream().filter(feeds::contains).forEach(out::add);
                 return new Checked(out, null);
             }
+            case DATE -> {
+                LocalDate date = date(value);
+                return date != null ? new Checked(f.stringNode(date.toString()), null)
+                        : error(key + ": " + DATE_FORMAT + "이어야 합니다 — " + shown(value.toString()));
+            }
+            case DATE_LIST -> {
+                if (!value.isArray()) {
+                    return error(key + ": 날짜 목록이어야 합니다(" + DATE_FORMAT + ")");
+                }
+                // 날짜 묶음이라 순서에 뜻이 없습니다 — 오름차순으로 맞춰 저장해 순서만 다른 같은 묶음이 설정 판을 올리지 않게.
+                java.util.TreeSet<LocalDate> dates = new java.util.TreeSet<>();
+                for (JsonNode item : value) {
+                    LocalDate date = date(item);
+                    if (date == null) {
+                        return error(key + ": " + DATE_FORMAT + "이 아닙니다 — " + shown(item.toString()));
+                    }
+                    dates.add(date);
+                }
+                if (dates.size() > MAX_DATES) {
+                    return error(key + ": 날짜는 " + MAX_DATES + "개까지입니다");
+                }
+                ArrayNode out = f.arrayNode();
+                dates.forEach(date -> out.add(date.toString()));
+                return new Checked(out, null);
+            }
+            case DATE_TIME_MAP -> {
+                String shape = key + ": {\"yyyy-MM-dd\": {\"open\": \"HH:mm\", \"close\": \"HH:mm\"}} 모양이어야 합니다";
+                if (!value.isObject()) {
+                    return error(shape);
+                }
+                java.util.TreeMap<LocalDate, String[]> entries = new java.util.TreeMap<>();
+                for (Map.Entry<String, JsonNode> entry : value.properties()) {
+                    LocalDate date = date(entry.getKey());
+                    if (date == null) {
+                        return error(key + ": 날짜 키가 " + DATE_FORMAT + "이 아닙니다 — " + shown(entry.getKey()));
+                    }
+                    JsonNode pair = entry.getValue();
+                    Set<String> names = new LinkedHashSet<>();
+                    if (pair != null && pair.isObject()) {
+                        pair.propertyNames().forEach(names::add);
+                    }
+                    if (!names.equals(Set.of("open", "close"))) {
+                        return error(key + ": " + date + " — 개장·마감 둘({\"open\": \"HH:mm\", \"close\": \"HH:mm\"})만 받습니다");
+                    }
+                    String open = time(pair.get("open"));
+                    String close = time(pair.get("close"));
+                    if (open == null || close == null) {
+                        return error(key + ": " + date + " — 개장·마감은 HH:mm 형식(00:00~23:59)이어야 합니다 — "
+                                + shown(pair.toString()));
+                    }
+                    if (open.compareTo(close) >= 0) {
+                        return error(key + ": " + date + " — 마감(" + close + ")이 개장(" + open + ")보다 늦어야 합니다");
+                    }
+                    entries.put(date, new String[]{open, close});
+                }
+                if (entries.size() > MAX_DATES) {
+                    return error(key + ": 날짜는 " + MAX_DATES + "개까지입니다");
+                }
+                ObjectNode out = f.objectNode();
+                entries.forEach((date, pair) -> out.putObject(date.toString()).put("open", pair[0]).put("close", pair[1]));
+                return new Checked(out, null);
+            }
+            case ALIAS_MAP -> {
+                if (!value.isObject()) {
+                    return error(key + ": {\"종목 코드\": [\"별칭\", …]} 모양이어야 합니다");
+                }
+                java.util.TreeMap<String, JsonNode> codes = new java.util.TreeMap<>();
+                for (Map.Entry<String, JsonNode> entry : value.properties()) {
+                    String code = entry.getKey().strip().toUpperCase(Locale.ROOT);
+                    if (!KR_CODE.matcher(code).matches()) {
+                        return error(key + ": 종목 코드는 6자리 영문 대문자·숫자여야 합니다 — " + shown(entry.getKey()));
+                    }
+                    if (codes.containsKey(code)) {
+                        return error(key + ": 같은 종목 코드가 두 번 있습니다 — " + code);
+                    }
+                    Checked aliases = phrases(key + " " + code, entry.getValue(), MAX_ALIASES_PER_CODE);
+                    if (aliases.error() != null) {
+                        return aliases;
+                    }
+                    if (aliases.value().isEmpty()) {
+                        return error(key + " " + code + ": 별칭이 비었습니다 — 그 종목 줄을 지우세요");
+                    }
+                    codes.put(code, aliases.value());
+                }
+                if (codes.size() > MAX_ALIAS_CODES) {
+                    return error(key + ": 종목은 " + MAX_ALIAS_CODES + "개까지입니다");
+                }
+                ObjectNode out = f.objectNode();
+                codes.forEach(out::set);
+                return new Checked(out, null);
+            }
             default -> {
                 return error(key + ": 바꿀 수 없는 키입니다");
             }
         }
+    }
+
+    /** 날짜 형의 안내 문구. */
+    private static final String DATE_FORMAT = "날짜 yyyy-MM-dd(" + DATE_MIN_TEXT + "~" + DATE_MAX_TEXT + ")";
+
+    /** 글자 하나(또는 글자 노드)를 날짜로 — 형식(yyyy-MM-dd)·달력에 있는 날·범위가 아니면 null. */
+    private static LocalDate date(JsonNode value) {
+        return value != null && value.isString() ? date(value.asString("")) : null;
+    }
+
+    private static LocalDate date(String text) {
+        String trimmed = text == null ? "" : text.strip();
+        if (!DATE.matcher(trimmed).matches()) {
+            return null;
+        }
+        try {
+            LocalDate date = LocalDate.parse(trimmed);
+            return date.isBefore(DATE_MIN) || date.isAfter(DATE_MAX) ? null : date;
+        } catch (java.time.format.DateTimeParseException e) {
+            return null;
+        }
+    }
+
+    /** HH:mm 글자 노드 — 아니면 null. */
+    private static String time(JsonNode value) {
+        String text = value != null && value.isString() ? value.asString("").strip() : "";
+        return TIME.matcher(text).matches() ? text : null;
+    }
+
+    /**
+     * 낱말·구절 목록(PHRASES — 사건 뉴스 키워드, 별칭 표의 별칭): 공백은 한 칸으로 접고, 꺾쇠·제어 문자는 거절, 빈 항목은 빼고, 한 항목
+     * {@value #MAX_PHRASE_CHARS}자·{@code maxItems}개까지, 대소문자만 다른 중복은 앞의 것만.
+     */
+    private static Checked phrases(String key, JsonNode value, int maxItems) {
+        JsonNodeFactory f = JsonNodeFactory.instance;
+        if (value == null || !value.isArray()) {
+            return error(key + ": 글자 목록이어야 합니다");
+        }
+        List<String> phrases = new ArrayList<>();
+        Set<String> seen = new LinkedHashSet<>();
+        for (JsonNode item : value) {
+            if (!item.isString()) {
+                return error(key + ": 글자 목록이어야 합니다 — " + shown(item.toString()));
+            }
+            // 공백(줄바꿈·탭 포함)을 먼저 한 칸으로 접고 남은 글자를 봅니다.
+            String text = PHRASE_SPACES.matcher(item.asString("")).replaceAll(" ").strip();
+            if (PHRASE_FORBIDDEN.matcher(text).find()) {
+                return error(key + ": 꺾쇠(<>)·제어 문자는 쓸 수 없습니다 — " + shown(text));
+            }
+            if (text.isEmpty()) {
+                continue;
+            }
+            if (text.length() > MAX_PHRASE_CHARS) {
+                return error(key + ": 한 항목은 " + MAX_PHRASE_CHARS + "자까지입니다 — " + shown(text));
+            }
+            // 대소문자만 다른 항목은 앞의 것만 — 맞추기가 대소문자를 무시해 같은 키워드입니다.
+            if (seen.add(text.toLowerCase(Locale.ROOT))) {
+                phrases.add(text);
+            }
+        }
+        if (phrases.size() > maxItems) {
+            return error(key + ": 항목은 " + maxItems + "개까지입니다");
+        }
+        ArrayNode out = f.arrayNode();
+        phrases.forEach(out::add);
+        return new Checked(out, null);
     }
 
     /** 같은 값인가 — 숫자는 값으로(5와 5.0은 같음), 나머지는 JSON 그대로. 둘 다 없으면 같음. */
