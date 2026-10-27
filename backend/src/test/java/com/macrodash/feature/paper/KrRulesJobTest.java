@@ -256,6 +256,25 @@ class KrRulesJobTest {
     }
 
     @Test
+    @DisplayName("게이트 ③과 그 결정은 같은 읽기(결정 e5) — 한 실행에서 U·20일 수급을 한 번만 읽고, 결정 행의 동결 값·③ 문구가 그 읽기")
+    void gateThreeAndTheDecisionShareOneRead() {
+        session(R);
+        org.mockito.Mockito.clearInvocations(repository);
+
+        PaperDecisionJob.Result decided = runAt("2026-11-02T22:30");
+
+        assertThat(decided.outcome()).isEqualTo(PaperDecisionJob.DECIDED);
+        org.mockito.Mockito.verify(repository, org.mockito.Mockito.times(1)).readObservationSeries(
+                eq(Datasets.OBS_KR_PAPER_FLOW), anyCollection(), org.mockito.ArgumentMatchers.any(LocalDate.class));
+        org.mockito.Mockito.verify(repository, org.mockito.Mockito.times(1)).latestObservationDateBefore(
+                eq(Datasets.OBS_KR_PAPER_UNIVERSE), org.mockito.ArgumentMatchers.any(LocalDate.class));
+        JsonNode response = decided.rules().response();
+        assertThat(response.path("gates").get(2).path("note").asString()).contains("U 8/8").contains("U 기준일 2026-10-30");
+        assertThat(response.path("input").path("universe").path("size").asInt()).isEqualTo(8);
+        assertThat(response.path("input").path("readAtKst").asString()).isEqualTo("2026-11-02 22:30 KST");
+    }
+
+    @Test
     @DisplayName("게이트 하나씩 미달이면 결정하지 않음(DATA_NOT_READY, 결정·기록 없음) — ② 범위 8/10 · ④ 금융위 기준일 · ⑤ 069500 D 봉(②는 9/10 통과) · ③ U 7/8(장중 판) · ① 기준일 < D 대기 주문; 다 고치면 그 창에서 결정")
     void eachGateAloneBlocks() {
         quotes(R, Set.of("005930", "000660"));
