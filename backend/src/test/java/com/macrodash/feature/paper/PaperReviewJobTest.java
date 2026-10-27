@@ -332,4 +332,33 @@ class PaperReviewJobTest {
         assertThat(store.reviews.get(WE).market()).isEqualTo(Book.MARKET_US);
         assertThat(store.otherReviews.get(Book.MARKET_KR)).containsOnlyKeys(WE);
     }
+
+    @Test
+    @DisplayName("한국 실행을 열다 실패하면(공휴일 저장본 읽기 중 DB 오류) 그 원래 예외로 ERROR를 기록 — 실행 밖 한국 묶음의 달력 예외가 그것을 가리지 않고, 복기 주는 모름(null)")
+    void krOpenFailureIsRecordedWithTheOriginalError() {
+        for (PaperBooks.Definition d : PaperBooks.KR) {
+            store.books.put(d.code(), new Book(d.code(), d.kind(), d.label(), 100_000_000, null, PaperBooks.NOT_STARTED,
+                    PaperFixtures.FRI_CLOSE, Book.MARKET_KR, Book.CURRENCY_KRW));
+        }
+        when(reader.read(eq(com.macrodash.store.Datasets.SNAP_KR_HOLIDAYS), org.mockito.ArgumentMatchers.anyLong(),
+                org.mockito.ArgumentMatchers.nullable(String.class))).thenThrow(new IllegalStateException("시험용 DB 끊김"));
+        PaperConfig config = new PaperConfig(true, PaperFixtures.FRI, 100_000, LocalDate.of(2026, 11, 2),
+                PaperConfig.DEFAULT_KR_INITIAL_CASH);
+        PaperReviewJob job = new PaperReviewJob(store, reader, marketData, reviews, config, MAPPER,
+                Clock.fixed(Instant.parse("2026-11-07T14:00:00Z"), ZoneOffset.UTC), List.of(KrPaperMarket.INSTANCE));
+
+        PaperReviewJob.Result result = job.run(KrPaperMarket.INSTANCE);
+
+        assertThat(result.outcome()).isEqualTo(PaperReviewJob.ERROR);
+        assertThat(result.weekEnding()).isNull();
+        assertThat(result.message()).contains("시험용 DB 끊김");
+        assertThat(store.jobRuns).singleElement().satisfies(run -> {
+            assertThat(run.job()).isEqualTo("kr.review");
+            assertThat(run.outcome()).isEqualTo(PaperReviewJob.ERROR);
+            assertThat(run.detail().path("error").asString()).contains("시험용 DB 끊김");
+            assertThat(run.detail().path("weekEnding").isNull()).isTrue();
+            assertThat(run.detail().path("stage").asString()).isEqualTo("실행 열기");
+        });
+        verify(reviews, never()).review(any(), any());
+    }
 }

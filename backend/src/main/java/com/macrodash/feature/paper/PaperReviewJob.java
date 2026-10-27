@@ -203,12 +203,18 @@ public class PaperReviewJob {
             run = markets.open(market);
             return runLocked(run, now, true);
         } catch (RuntimeException e) {
-            LocalDate week = ReviewFacts.latestCompletedWeekEnding((run != null ? run : market).calendar(), now);
-            int attempt = failures.merge(new FailureKey(market.code(), week), 1, Integer::sum);
+            // 복기 주는 그 실행의 달력으로 — 실행을 열다 실패했으면(설정·공휴일 저장본 읽기 중 DB 오류 등) 고정 달력이 있는 시장(미국)만 셀 수 있고,
+            // 실행마다 달력을 만드는 시장(한국 — 고정 달력이 던짐)이나 달력이 모르는 해면 주 없이 기록합니다. 그 셈이 원래 예외를 가리지 않게
+            // (묶음 C 리뷰).
+            LocalDate week = weekOf(run != null ? run : market, now);
             Map<String, Object> detail = new LinkedHashMap<>();
-            detail.put("weekEnding", week.toString());
+            detail.put("weekEnding", week == null ? null : week.toString());
             detail.put("error", message(e));
-            detail.put("attempt", attempt);
+            if (week != null) {
+                detail.put("attempt", failures.merge(new FailureKey(market.code(), week), 1, Integer::sum));
+            } else {
+                detail.put("stage", run == null ? "실행 열기" : "복기 주 셈");
+            }
             record(market, now, ERROR, detail);
             return new Result(ERROR, week, null, message(e));
         } finally {
@@ -269,6 +275,15 @@ public class PaperReviewJob {
             }
         } finally {
             running.unlock();
+        }
+    }
+
+    /** 그 시장 문맥 달력의 마감이 끝난 최근 복기 주 — 달력을 물을 수 없거나(실행 밖의 한국 묶음) 모르는 해면 null. */
+    private static LocalDate weekOf(PaperMarket market, Instant now) {
+        try {
+            return ReviewFacts.latestCompletedWeekEnding(market.calendar(), now);
+        } catch (RuntimeException e) {
+            return null;
         }
     }
 
