@@ -108,7 +108,7 @@ import java.util.concurrent.locks.ReentrantLock;
  * <p><b>한국 결정 게이트</b>(2단계 명세 §4-9·§5, D1c — {@link KrDecisionGates}): 한국 묶음의 정기 결정은 '그날 종가 관측치' 기다림 대신 자료
  * 게이트 ①~⑥을 모두 통과해야 냅니다. ②④⑤⑥(관측치 저장본의 D 봉 90%·금융위 기준일·069500 D 봉·거래일)이 미달이면 장부를 처리하지 않고,
  * 통과하면 장부를 처리한 뒤 규칙 계좌 입력을 한 번 읽어(K26 동결과 같은 읽기 — 그 결정이 그대로 씀) ③(U 90%의 D 수급 저녁 판)을 보고, 결정할
- * 계좌마다 ①(그 계좌의 기준일 &lt; D 대기 주문 없음 — 체결 조건 ⑤는 보지 않음)을 봅니다. 미달은 {@value #DATA_NOT_READY}(기록 안 함 — 다음
+ * 계좌마다 ①(그 계좌 장부가 그 실행의 관측치를 처리했고 기준일 &lt; D 대기 주문 없음 — 체결 조건 ⑤는 보지 않음)을 봅니다. 미달은 {@value #DATA_NOT_READY}(기록 안 함 — 다음
  * 주기에 다시)이고, 판정은 결정 행 응답과 작업 기록의 {@code gates}에 남습니다. 기한(D+1 01:00)이 지나면 규칙 계좌는 그 세션 NO_TRADE 행(그 세션
  * 기한 전 마지막 게이트 판정과 사유 — ⑤ 미달이면 '069500 D 봉 없음(휴장 또는 지연)', 아니면 '기한 지남'; 그 판정 기록이 없으면 기한 뒤 첫 실행의
  * 판정에 '기한 뒤 판정' 표시), Claude는 부르지 않습니다. 자정을 넘긴 실행도 세션은
@@ -466,7 +466,7 @@ public class PaperDecisionJob {
     /**
      * 한국 정기 결정 한 번(클래스 설명 '한국 결정 게이트' — 2단계 명세 §4-9, D1c). 게이트 ②④⑤⑥(관측치 저장본·금융위 메타·달력)이 미달이면 장부를
      * 처리하지 않고 {@value #DATA_NOT_READY}(기록 안 함), 통과하면 장부를 처리한 뒤 규칙 계좌 입력을 그 실행에서 한 번 읽어(K26 동결과 같은 읽기 —
-     * 결정 e5) ③을 보고, 계좌마다 ①(그 계좌의 기준일 &lt; D 대기 주문 — 결정 e3)을 본 뒤 결정합니다. 판정은 결정 행 응답 {@code gates}와 작업 기록
+     * 결정 e5) ③을 보고, 계좌마다 ①(그 계좌 장부가 이번 관측치를 처리함·기준일 &lt; D 대기 주문 없음 — 결정 e3)을 본 뒤 결정합니다. 판정은 결정 행 응답 {@code gates}와 작업 기록
      * {@code gates}에 남습니다. 결정한 계좌가 없고 ①로 기다리는 계좌만 있으면 {@value #DATA_NOT_READY}입니다.
      */
     private Result decideKr(MarketRun market, Instant now, LocalDate d, Instant deadline, boolean rulesGaveUp,
@@ -534,7 +534,7 @@ public class PaperDecisionJob {
                 } else if (skip != null) {
                     detail.put("rules", skip);
                 } else {
-                    KrDecisionGates.Gate first = KrDecisionGates.ledger(store, market, market.rulesBook(), d);
+                    KrDecisionGates.Gate first = KrDecisionGates.ledger(store, market, market.rulesBook(), d, inputs);
                     gates.add(first);
                     rememberGates(market, d, withFirst(first, data), now);
                     if (first.blocks()) {
@@ -563,7 +563,7 @@ public class PaperDecisionJob {
                 if (claudeSkip != null) {
                     detail.put("claude", claudeSkip);
                 } else {
-                    KrDecisionGates.Gate first = KrDecisionGates.ledger(store, market, market.claudeBook(), d);
+                    KrDecisionGates.Gate first = KrDecisionGates.ledger(store, market, market.claudeBook(), d, inputs);
                     gates.add(first);
                     if (first.blocks()) {
                         waiting.add(first.id() + " " + first.note());
@@ -712,7 +712,8 @@ public class PaperDecisionJob {
     private List<KrDecisionGates.Gate> deadlineGates(MarketRun market, LocalDate d, Instant now) {
         try {
             KrDecisionGates.Inputs inputs = krGates.withRules(market, krGates.readSession(market, d), now);
-            return withFirst(KrDecisionGates.ledger(store, market, market.rulesBook(), d), krGates.data(market, inputs));
+            return withFirst(KrDecisionGates.ledger(store, market, market.rulesBook(), d, inputs),
+                    krGates.data(market, inputs));
         } catch (RuntimeException e) {
             log.warn("모의 매매 결정 작업({}) — 기한 지난 세션 {}의 자료 게이트를 판정하지 못했습니다: {}", market.code(), d, e.toString());
             return null;
@@ -939,8 +940,9 @@ public class PaperDecisionJob {
             quotes.ifPresent(q -> detail.put("ledger", ledgerDetail(ledger.process(market, q))));
             if (session != null) {
                 // 장부를 처리한 뒤 ③(같은 읽기)과 그 계좌의 ① — 정기 결정과 같은 판정(클래스 설명 '한국 결정 게이트').
-                List<KrDecisionGates.Gate> gates = withFirst(KrDecisionGates.ledger(store, market, code, d),
-                        krGates.data(market, krGates.withRules(market, session, now)));
+                KrDecisionGates.Inputs inputs = krGates.withRules(market, session, now);
+                List<KrDecisionGates.Gate> gates = withFirst(KrDecisionGates.ledger(store, market, code, d, inputs),
+                        krGates.data(market, inputs));
                 requireGates(gates);
                 detail.put("gates", views(gates));
             }

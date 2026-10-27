@@ -1,5 +1,6 @@
 package com.macrodash.feature.paper;
 
+import com.macrodash.Kst;
 import com.macrodash.analytics.KrxCalendar;
 import com.macrodash.analytics.TradingCalendar;
 import com.macrodash.feature.paper.PaperMarketData.Quotes;
@@ -27,7 +28,9 @@ import java.util.Optional;
  * ({@link KrStartPipeline} — S 22:30, ①은 앞 주문이 없어 보지 않음 §4-8)이 같은 판정을 씁니다(D1c).
  *
  * <ul>
- *   <li>① 장부가 앞 결정의 주문을 정리함 — 그 계좌에 기준 거래일 &lt; D이고 그 시장이 체결하는 시점({@link PaperMarket#timings})인 대기 주문이
+ *   <li>① 장부가 앞 결정의 주문을 정리함 — 그 계좌 장부가 그 실행의 관측치를 처리했고(상태의 마지막 처리 수집 시각 ≥ 그 관측치의 수집 시각 —
+ *       장부가 그 관측치에서 오류로 그 계좌를 되돌렸으면 같은 관측치로는 다시 시도하지 않으므로, D 체결·만료·스탑 감지·평가 전 장부로 결정하지
+ *       않게), 그 계좌에 기준 거래일 &lt; D이고 그 시장이 체결하는 시점({@link PaperMarket#timings})인 대기 주문이
  *       없음(결정 d11 '대기 = 정리 안 됨'). 확정 순자산 줄의 대기 주문 조건과 같은 거름({@link KrConfirmations#pendingBefore})이되 체결 조건 ⑤
  *       (D 개장 순간 &gt; 주문 생성)는 보지 않습니다 — D 개장 뒤에 만든 주문도 아직 체결되지 않은 대기입니다(결정 e3). 결정하는 계좌마다 따로
  *       봅니다(그 계좌의 주문 — 한 계좌의 대기 주문이 다른 계좌 결정을 막지 않게, 두 책은 따로). 정기 결정 작업이 그 실행에서 장부를 처리한
@@ -176,12 +179,22 @@ final class KrDecisionGates {
     }
 
     /**
-     * ① 그 계좌의 장부가 앞 결정의 주문을 정리함(클래스 설명) — 기준 거래일 &lt; D·체결하는 시점인 대기 주문이 없음. 판정 문구 머리에 계좌 코드.
+     * ① 그 계좌의 장부가 앞 결정의 주문을 정리함(클래스 설명) — 그 실행의 관측치({@code in}의 관측치 — 없으면 그 판정 없이)를 처리했고, 기준
+     * 거래일 &lt; D·체결하는 시점인 대기 주문이 없음. 판정 문구 머리에 계좌 코드.
      */
-    static Gate ledger(PaperStore store, PaperMarket market, String book, LocalDate d) {
+    static Gate ledger(PaperStore store, PaperMarket market, String book, LocalDate d, Inputs in) {
         if (store.book(book).map(b -> PaperBooks.PAUSED.equals(b.status())).orElse(false)) {
             // 일시정지 계좌는 장부가 사고팔지 않아 대기 주문이 정리되지 않고, 그 결정은 주문을 내지 않습니다(SKIPPED) — 막을 까닭이 없음.
             return new Gate("①", "PASS", book + " — 일시정지 중(주문을 내지 않음 — 대기 주문을 보지 않음)");
+        }
+        Instant observed = in == null ? null : in.quotes().map(Quotes::collectedAt).orElse(null);
+        if (observed != null) {
+            Instant processed = store.state(book).map(PaperStore.BookState::lastProcessedCollectedAt).orElse(null);
+            if (processed == null || processed.isBefore(observed)) {
+                return new Gate("①", "FAIL", book + " — 장부가 이 실행의 관측치(수집 " + Kst.stamp(observed) + ")를 처리하지 못함(마지막 처리 "
+                        + (processed == null ? "없음" : Kst.stamp(processed)) + " — 그 관측치에서 장부 오류가 났으면 같은 관측치로는 다시 "
+                        + "시도하지 않음, 새 관측치에서) — D 체결·만료·스탑 감지·평가 전 장부로 결정하지 않음");
+            }
         }
         List<Order> pending = KrConfirmations.pendingBefore(store, market, book, d);
         if (pending.isEmpty()) {

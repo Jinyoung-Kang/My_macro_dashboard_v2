@@ -49,10 +49,30 @@ class KrRulesJobTest {
     private KrRulesFixtures data;
     /** 가짜 저장소(유니버스·수급 읽기 — 읽은 횟수를 보는 시험이 씀). */
     private StoreRepository repository;
+    /** 장부 처리를 실패시킬 계좌(시험 — 그 계좌의 만료 정리에서 예외, 장부가 그 계좌만 되돌림). null이면 실패 없음. */
+    private String failLedgerFor;
+    /** 규칙 계좌 결정 행 쓰기를 실패시킴(시험 — 게이트를 통과한 뒤의 결정 예외). */
+    private boolean failRulesDecision;
 
     @BeforeEach
     void setUp() {
-        store = new FakePaperStore();
+        store = new FakePaperStore() {
+            @Override
+            public int expireOrders(String code, LocalDate today) {
+                if (code.equals(failLedgerFor)) {
+                    throw new IllegalStateException("시험용 장부 오류");
+                }
+                return super.expireOrders(code, today);
+            }
+
+            @Override
+            public java.util.Optional<Long> insertDecisionIfAbsent(Decision d) {
+                if (failRulesDecision && PaperBooks.KR_RULES.equals(d.bookCode())) {
+                    throw new IllegalStateException("시험용 결정 쓰기 오류");
+                }
+                return super.insertDecisionIfAbsent(d);
+            }
+        };
         reader = PaperFixtures.quietReader();
         KrFixtures.stubHolidays(reader, KrFixtures.holidays(2026, 2027));
         repository = repository();
@@ -319,6 +339,29 @@ class KrRulesJobTest {
     }
 
     @Test
+    @DisplayName("게이트 ①은 그 계좌 장부가 이 실행의 관측치를 처리했는지도 봄 — 규칙 계좌 장부 처리가 그 관측치에서 오류로 되돌려졌으면(같은 관측치로는 다시 시도하지 않음) 대기 주문이 없어도 미달·기다림, 새 관측치를 처리하면 결정")
+    void gateOneNeedsTheLedgerToHaveProcessedTheObservation() {
+        session(R);
+        failLedgerFor = PaperBooks.KR_RULES;
+
+        PaperDecisionJob.Result failed = runAt("2026-11-02T22:30");
+
+        assertThat(failed.outcome()).isEqualTo(PaperDecisionJob.DATA_NOT_READY);
+        assertThat(failed.message()).contains("① kr_rules").contains("처리하지 못함")
+                .contains("수집 2026-11-02 21:57 KST");
+        failLedgerFor = null;   // 고쳐져도 같은 관측치로는 다시 시도하지 않음(장부 규칙) — 새 관측치까지 기다림
+        assertThat(runAt("2026-11-02T22:40").outcome()).isEqualTo(PaperDecisionJob.DATA_NOT_READY);
+        assertThat(rulesDecisions()).as("출발 INITIAL뿐").hasSize(1);
+        assertThat(krRuns()).as("기다림은 기록하지 않음").isEmpty();
+
+        KrFixtures.stub(reader, Datasets.SNAP_KR_PAPER_QUOTES, KrFixtures.snapshot(Datasets.SNAP_KR_PAPER_QUOTES,
+                KrRulesFixtures.quotes(R).payload(), kst("2026-11-02T22:45")));
+        PaperDecisionJob.Result decided = runAt("2026-11-02T22:50");
+        assertThat(decided.outcome()).isEqualTo(PaperDecisionJob.DECIDED);
+        assertThat(decided.rules().response().path("gates").get(0).path("status").asString()).isEqualTo("PASS");
+    }
+
+    @Test
     @DisplayName("일시정지 규칙 계좌 — 장부가 사고팔지 않아 남은 기준일 < D 대기 주문이 그 세션을 막지 않고 SKIPPED(입력·게이트·주문 없음)")
     void pausedBookIsNotHeldByGateOne() {
         session(R);
@@ -550,20 +593,35 @@ class KrRulesJobTest {
     @DisplayName("게이트를 통과한 뒤 규칙 계좌 결정이 예외면 그 계좌 오류로 셈 — ERROR 기록(게이트 포함), 세 번이면 그날은 더 시도하지 않고, 기한이 지나면 NO_TRADE 행")
     void decisionErrorCountsAsRulesFailure() {
         session(R);
-        store.states.remove(PaperBooks.KR_RULES);   // 결정이 볼 계좌 상태 없음
+        failRulesDecision = true;   // 게이트(장부 처리 포함)는 통과하고 결정 행 쓰기에서 예외
 
         for (String at : List.of("2026-11-02T22:30", "2026-11-02T22:40", "2026-11-02T22:50")) {
             PaperDecisionJob.Result failed = runAt(at);
             assertThat(failed.outcome()).isEqualTo(PaperDecisionJob.ERROR);
-            assertThat(failed.message()).contains("규칙 계좌").contains("상태가 없습니다");
+            assertThat(failed.message()).contains("규칙 계좌").contains("시험용 결정 쓰기 오류");
         }
         assertThat(krRuns()).hasSize(3).allSatisfy(run -> assertThat(run.detail().path("gates").size()).isEqualTo(6));
         assertThat(runAt("2026-11-02T23:00").outcome()).isEqualTo(PaperDecisionJob.GAVE_UP);
         assertThat(rulesDecisions()).hasSize(1);
 
+        failRulesDecision = false;
         PaperDecisionJob.Result late = runAt("2026-11-03T01:00");
         assertThat(late.outcome()).isEqualTo(PaperDecisionJob.PAST_DEADLINE);
         assertThat(late.rules().status()).isEqualTo("NO_TRADE");
         assertThat(late.rules().kind()).isEqualTo(RuleBookService.REBALANCE);
+        assertThat(late.rules().response().path("waitedFor").toString()).as("게이트는 통과했음 — 오류로 결정하지 못함").isEqualTo("[]");
+        assertThat(late.rules().response().path("noTradeReason").asString()).isEqualTo("기한 지남");
+    }
+
+    @Test
+    @DisplayName("계좌 상태가 없어 장부가 그 계좌를 처리하지 못하면 게이트 ①(처리하지 못함)로 기다림 — 결정 예외로 세지 않음")
+    void missingStateWaitsAtGateOne() {
+        session(R);
+        store.states.remove(PaperBooks.KR_RULES);
+
+        PaperDecisionJob.Result waiting = runAt("2026-11-02T22:30");
+
+        assertThat(waiting.outcome()).isEqualTo(PaperDecisionJob.DATA_NOT_READY);
+        assertThat(waiting.message()).contains("① kr_rules").contains("마지막 처리 없음");
     }
 }
