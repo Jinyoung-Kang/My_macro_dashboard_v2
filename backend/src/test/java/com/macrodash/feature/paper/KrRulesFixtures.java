@@ -210,6 +210,17 @@ final class KrRulesFixtures {
         return snapshot;
     }
 
+    /**
+     * 그 저장본 {@code code} 종목 항목을 이어받은 항목으로({@code isStale} — 수집기가 이번에 받지 못해 직전 값을 이음, 봉은 그대로). 같은 저장본을
+     * 고쳐 돌려줍니다.
+     */
+    static com.macrodash.store.Snapshot stale(com.macrodash.store.Snapshot snapshot, String code) {
+        ObjectNode entry = (ObjectNode) snapshot.payload().path("codes").path(code);
+        entry.put("isStale", true);
+        entry.put("staleReason", "시험용 호출 실패");
+        return snapshot;
+    }
+
     /** 같은 본문을 다른 수집 시각에 저장한 저장본(그 밤 다음 slow가 다시 쓴 판 — 장부가 새 관측치로 다시 처리). */
     static com.macrodash.store.Snapshot recollected(com.macrodash.store.Snapshot snapshot, Instant collectedAt) {
         return KrFixtures.snapshot(Datasets.SNAP_KR_PAPER_QUOTES, snapshot.payload(), collectedAt);

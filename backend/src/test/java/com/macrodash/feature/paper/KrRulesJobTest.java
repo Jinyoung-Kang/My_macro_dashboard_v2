@@ -844,6 +844,23 @@ class KrRulesJobTest {
     }
 
     @Test
+    @DisplayName("이어받은 항목(isStale)의 기준일 뒤 관측 봉은 센다(D2b) — 장부는 이어받은 봉으로 체결하지 않아 그 주문을 기다리고, 게이트 ①도 '정리 안 됨'으로 기다림(DATA_NOT_READY)")
+    void staleEntryStillHoldsGateOne() {
+        long waiting = pending("005930", PaperBooks.BUY, PaperBooks.NEXT_OPEN, RuleBookService.SOURCE_RULE, FRI,
+                "2026-10-30T22:30");
+        KrFixtures.stub(reader, Datasets.SNAP_KR_PAPER_QUOTES, KrRulesFixtures.stale(KrRulesFixtures.quotes(R), "005930"));
+        fsc(FRI);
+
+        PaperDecisionJob.Result blocked = runAt("2026-11-02T22:30");
+
+        assertThat(blocked.outcome()).isEqualTo(PaperDecisionJob.DATA_NOT_READY);
+        assertThat(blocked.message()).contains("① kr_rules — 기준일 < 2026-11-02인 대기 주문 1건 #" + waiting + " BUY 005930")
+                .contains("정리 안 됨").doesNotContain("기다리지 않음");
+        assertThat(store.orders.get(waiting).status()).as("장부는 이어받은 봉으로 체결하지 않음").isEqualTo(PaperBooks.ORDER_PENDING);
+        assertThat(rulesDecisions()).noneMatch(d -> R.equals(d.asOfTradingDate()));
+    }
+
+    @Test
     @DisplayName("기한이 지났는데 ⑤는 통과(④만 미달) — NO_TRADE 사유는 '기한 지남', 기다린 까닭은 waitedFor에")
     void pastDeadlineWithoutAnchorProblem() {
         quotes(R, Set.of());
