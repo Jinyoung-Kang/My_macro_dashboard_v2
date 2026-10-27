@@ -27,14 +27,44 @@ import java.util.regex.Pattern;
  * 금지·비중 상한·최소 금액·유니버스 ETF·현금성 종목·슬리피지. 계약이 적은 목록(trackRecord.*·minHolders·rulesMaxNames·trailingStopPct·
  * maxWeight*)과 설계 §4-4의 blend.*에 더해, 규칙 책 계획·장부가 실제로 읽는 나머지 키도 넣었습니다(바꾸면 대조군의 조건이 바뀌는 것은
  * 같아서).
+ *
+ * <p><b>시장 범위</b>({@link Scope}, 2단계 명세 §4-13 — 설정은 한 행이고 한국 키는 {@code kr.*} 묶음): 키마다 어느 책이 읽는지 —
+ * 두 책 공통({@code model}·{@code effort}·{@code apiDailyCallCap}·{@code pricing.*}·{@code frameworkTokenBudget}과 그 뒤 공통 키),
+ * 미국 책, 한국 책({@code kr.} 접두어와 같음 — 접두어와 범위가 어긋나면 클래스가 올라오지 않음). {@code affectsRules}는 <b>그 시장</b> 규칙
+ * 계좌가 읽는 키이고, 저장 경고({@link #rulesWarning})도 그 시장 규칙 계좌 이름으로 냅니다 — 미국 키만 바꾸면 지금 문장 그대로입니다.
  */
 final class PaperSettingKeys {
 
     private PaperSettingKeys() {
     }
 
-    /** 규칙 책 영향 키를 바꿨을 때의 경고(명세 S3) — 화면의 확인 문구와 같은 문장입니다. */
+    /** 미국 규칙 책 영향 키를 바꿨을 때의 경고(명세 S3) — 화면의 확인 문구와 같은 문장입니다. */
     static final String RULES_FROZEN_WARNING = "규칙 계좌는 동결된 대조군입니다 — 이 변경은 실험 조건을 바꿉니다";
+
+    /** 한국 규칙 계좌({@code kr_rules}, 2단계 명세 K1) 영향 키를 바꿨을 때의 경고 — 화면 확인 문구와 같은 문장입니다. */
+    static final String KR_RULES_FROZEN_WARNING =
+            "한국 규칙 계좌(kr_rules)는 동결된 대조군입니다 — 이 변경은 한국 책의 실험 조건을 바꿉니다";
+
+    /**
+     * 키를 읽는 책(시장 범위). {@link #market}은 화면에 보내는 값({@code paper_books.market}과 같은 US·KR, 두 책 공통이면 null)이고
+     * {@link #prefix}는 그 범위 키의 접두어입니다(한국 {@code kr.} — 미국·공통은 접두어 없음).
+     */
+    enum Scope {
+        SHARED(null, ""), US("US", ""), KR("KR", "kr.");
+
+        final String market;
+        final String prefix;
+
+        Scope(String market, String prefix) {
+            this.market = market;
+            this.prefix = prefix;
+        }
+
+        /** 키 이름으로 정한 기본 범위 — {@code kr.}로 시작하면 한국, 아니면 미국(공통 키는 {@link #shared}로 따로 표시). */
+        static Scope ofKey(String key) {
+            return key.startsWith(KR.prefix) ? KR : US;
+        }
+    }
 
     /**
      * 값의 형. {@link #wire}는 화면에 보내는 이름(frontend lib/paper.ts settingKind가 읽는 이름). {@code PHRASES}는 낱말·구절 목록
@@ -59,15 +89,26 @@ final class PaperSettingKeys {
      * @param min     숫자 키의 최솟값(포함). 아니면 null
      * @param max     숫자 키의 최댓값(포함). 아니면 null
      * @param options 고를 수 있는 값(CHOICE — 하나, FEEDS — 여럿). 아니면 빈 목록
+     * @param affectsRules 그 시장({@code scope}) 규칙 계좌가 읽는 키 — 바꾸면 그 시장 경고({@link #rulesWarning})
+     * @param scope   키를 읽는 책 — 두 책 공통·미국·한국. 한국 범위 ⇔ {@code kr.} 접두어(어긋나면 예외)
+     * @throws IllegalStateException 접두어와 범위가 어긋남(한국 키가 아닌데 {@code kr.}로 시작하거나 그 반대)
      */
     record Spec(String key, Type type, Double min, Double max, List<String> options, boolean affectsRules,
-                String description) {
+                String description, Scope scope) {
 
         Spec {
             options = List.copyOf(options);
+            if ((scope == Scope.KR) != key.startsWith(Scope.KR.prefix)) {
+                throw new IllegalStateException("설정 키의 시장 범위와 접두어가 어긋납니다: " + key + " · " + scope);
+            }
         }
 
-        /** 화면에 보내는 모양 {@code {key, type, min, max, affectsRules, description, options}}. */
+        /** 시장 범위를 바꾼 사본(공통 키 표시 — {@link #shared}). */
+        Spec withScope(Scope other) {
+            return new Spec(key, type, min, max, options, affectsRules, description, other);
+        }
+
+        /** 화면에 보내는 모양 {@code {key, type, min, max, affectsRules, market, description, options}}. */
         Map<String, Object> view() {
             Map<String, Object> out = new LinkedHashMap<>();
             out.put("key", key);
@@ -75,6 +116,8 @@ final class PaperSettingKeys {
             out.put("min", min);
             out.put("max", max);
             out.put("affectsRules", affectsRules);
+            // 키를 읽는 책 — US·KR, 두 책 공통이면 null. 화면은 affectsRules 경고를 이 시장의 규칙 계좌로 적습니다.
+            out.put("market", scope.market);
             out.put("description", description);
             // 선택지는 한 값 고르기(CHOICE)에만 보냅니다 — 화면은 선택지가 있으면 선택 상자 하나로 그려, 여럿을 고르는 피드 목록이
             // 한 값으로 저장됩니다. 피드 키는 설명(description)에 적습니다.
@@ -83,28 +126,38 @@ final class PaperSettingKeys {
         }
     }
 
+    // 만드는 함수의 시장 범위는 키 이름으로(kr. → 한국, 아니면 미국) — 두 책 공통 키는 shared(…)로 감쌉니다.
     private static Spec number(String key, double min, double max, boolean rules, String description) {
-        return new Spec(key, Type.NUMBER, min, max, List.of(), rules, description);
+        return new Spec(key, Type.NUMBER, min, max, List.of(), rules, description, Scope.ofKey(key));
     }
 
     private static Spec integer(String key, int min, int max, boolean rules, String description) {
-        return new Spec(key, Type.INTEGER, (double) min, (double) max, List.of(), rules, description);
+        return new Spec(key, Type.INTEGER, (double) min, (double) max, List.of(), rules, description, Scope.ofKey(key));
     }
 
     private static Spec choice(String key, List<String> options, boolean rules, String description) {
-        return new Spec(key, Type.CHOICE, null, null, options, rules, description);
+        return new Spec(key, Type.CHOICE, null, null, options, rules, description, Scope.ofKey(key));
     }
 
     private static Spec of(String key, Type type, boolean rules, String description) {
-        return new Spec(key, type, null, null, List.of(), rules, description);
+        return new Spec(key, type, null, null, List.of(), rules, description, Scope.ofKey(key));
+    }
+
+    /** 두 책 공통 키(명세 §4-13 공유 키) — 규칙 계좌 영향이 없는 키만 받습니다(어느 시장의 대조군인지 정할 수 없어서). */
+    private static Spec shared(Spec spec) {
+        if (spec.affectsRules()) {
+            throw new IllegalStateException("두 책 공통 키는 규칙 계좌 영향이 없어야 합니다: " + spec.key());
+        }
+        return spec.withScope(Scope.SHARED);
     }
 
     /** 화면에 보이는 순서이기도 합니다(점 경로의 첫 마디로 묶음). */
     static final List<Spec> ALL = List.of(
-            choice("model", ClaudeBookService.MODELS, false, "Claude 계좌 모델(D5) — 거절·오류 때 다른 모델로 자동 전환하지 않음"),
-            choice("effort", ClaudeBookService.EFFORTS, false, "Claude 계좌 effort(C2 기본 high)"),
-            integer("apiDailyCallCap", 0, ClaudeBookService.MAX_DAILY_CALL_CAP, false,
-                    "하루(KST) Claude 호출 상한(D18) — 정기·수동 결정·재시도·미리보기·시작을 모두 셈. 0이면 부르지 않음"),
+            shared(choice("model", ClaudeBookService.MODELS, false,
+                    "Claude 계좌 모델(D5) — 거절·오류 때 다른 모델로 자동 전환하지 않음")),
+            shared(choice("effort", ClaudeBookService.EFFORTS, false, "Claude 계좌 effort(C2 기본 high)")),
+            shared(integer("apiDailyCallCap", 0, ClaudeBookService.MAX_DAILY_CALL_CAP, false,
+                    "하루(KST) Claude 호출 상한(D18) — 정기·수동 결정·재시도·미리보기·시작을 모두 셈. 0이면 부르지 않음")),
             of("decisionTimeKst", Type.TIME, false, "결정 시각(KST, HH:mm) — 미국 세션 다음 날 이 시각부터 그 거래일 결정(C1)"),
             of("decisionDeadlineKst", Type.TIME, false,
                     "확정 종가를 기다리는 기한(KST, HH:mm) — 지나면 있는 값으로 진행하고 pricesFinal=false"),
@@ -124,23 +177,24 @@ final class PaperSettingKeys {
             of("cashLikeTickers", Type.TICKERS, true, "현금성 종목(스탑·비중 상한·종목 수 제외, 기본 SHY)"),
             integer("notesDefaultExpiryTradingDays", 1, 60, false, "시황 메모 기본 만료(거래일, F6)"),
             integer("notesMaxCharsInPacket", 0, 20_000, false, "패킷에 싣는 유효 메모 합계 글자 수(F6)"),
-            integer("frameworkTokenBudget", 1_000, 50_000, false, "프레임 렌더링 크기 예산(토큰 어림, F4 — 넘으면 경고)"),
-            number("pricing.sonnet.inputUsdPerMTok", 0, PaperApiCalls.MAX_PRICE, false,
-                    "Sonnet 입력 단가(달러/100만 토큰, 추정 비용 C8). " + PaperApiCalls.PRICE_NOTE),
-            number("pricing.sonnet.outputUsdPerMTok", 0, PaperApiCalls.MAX_PRICE, false,
-                    "Sonnet 출력 단가(달러/100만 토큰, 사고 포함). " + PaperApiCalls.PRICE_NOTE),
-            number("pricing.sonnet.cacheReadUsdPerMTok", 0, PaperApiCalls.MAX_PRICE, false,
-                    "Sonnet 캐시 읽기 단가(달러/100만 토큰). " + PaperApiCalls.PRICE_NOTE),
-            number("pricing.sonnet.cacheWriteUsdPerMTok", 0, PaperApiCalls.MAX_PRICE, false,
-                    "Sonnet 캐시 쓰기 단가(달러/100만 토큰). " + PaperApiCalls.PRICE_NOTE),
-            number("pricing.haiku.inputUsdPerMTok", 0, PaperApiCalls.MAX_PRICE, false,
-                    "Haiku 입력 단가(달러/100만 토큰, 프롬프트 100K 토큰 이하 단가). " + PaperApiCalls.PRICE_NOTE),
-            number("pricing.haiku.outputUsdPerMTok", 0, PaperApiCalls.MAX_PRICE, false,
-                    "Haiku 출력 단가(달러/100만 토큰, 프롬프트 100K 토큰 이하 단가). " + PaperApiCalls.PRICE_NOTE),
-            number("pricing.haiku.cacheReadUsdPerMTok", 0, PaperApiCalls.MAX_PRICE, false,
-                    "Haiku 캐시 읽기 단가(달러/100만 토큰, 프롬프트 100K 토큰 이하 단가). " + PaperApiCalls.PRICE_NOTE),
-            number("pricing.haiku.cacheWriteUsdPerMTok", 0, PaperApiCalls.MAX_PRICE, false,
-                    "Haiku 캐시 쓰기 단가(달러/100만 토큰, 프롬프트 100K 토큰 이하 단가). " + PaperApiCalls.PRICE_NOTE),
+            shared(integer("frameworkTokenBudget", 1_000, 50_000, false,
+                    "프레임 렌더링 크기 예산(토큰 어림, F4 — 넘으면 경고)")),
+            shared(number("pricing.sonnet.inputUsdPerMTok", 0, PaperApiCalls.MAX_PRICE, false,
+                    "Sonnet 입력 단가(달러/100만 토큰, 추정 비용 C8). " + PaperApiCalls.PRICE_NOTE)),
+            shared(number("pricing.sonnet.outputUsdPerMTok", 0, PaperApiCalls.MAX_PRICE, false,
+                    "Sonnet 출력 단가(달러/100만 토큰, 사고 포함). " + PaperApiCalls.PRICE_NOTE)),
+            shared(number("pricing.sonnet.cacheReadUsdPerMTok", 0, PaperApiCalls.MAX_PRICE, false,
+                    "Sonnet 캐시 읽기 단가(달러/100만 토큰). " + PaperApiCalls.PRICE_NOTE)),
+            shared(number("pricing.sonnet.cacheWriteUsdPerMTok", 0, PaperApiCalls.MAX_PRICE, false,
+                    "Sonnet 캐시 쓰기 단가(달러/100만 토큰). " + PaperApiCalls.PRICE_NOTE)),
+            shared(number("pricing.haiku.inputUsdPerMTok", 0, PaperApiCalls.MAX_PRICE, false,
+                    "Haiku 입력 단가(달러/100만 토큰, 프롬프트 100K 토큰 이하 단가). " + PaperApiCalls.PRICE_NOTE)),
+            shared(number("pricing.haiku.outputUsdPerMTok", 0, PaperApiCalls.MAX_PRICE, false,
+                    "Haiku 출력 단가(달러/100만 토큰, 프롬프트 100K 토큰 이하 단가). " + PaperApiCalls.PRICE_NOTE)),
+            shared(number("pricing.haiku.cacheReadUsdPerMTok", 0, PaperApiCalls.MAX_PRICE, false,
+                    "Haiku 캐시 읽기 단가(달러/100만 토큰, 프롬프트 100K 토큰 이하 단가). " + PaperApiCalls.PRICE_NOTE)),
+            shared(number("pricing.haiku.cacheWriteUsdPerMTok", 0, PaperApiCalls.MAX_PRICE, false,
+                    "Haiku 캐시 쓰기 단가(달러/100만 토큰, 프롬프트 100K 토큰 이하 단가). " + PaperApiCalls.PRICE_NOTE)),
             integer("trackRecord.windowYears", 1, 7, true, "그룹 A 트랙레코드 창(년, D6)"),
             integer("trackRecord.topN", 1, 50, true, "그룹 A 선정 수(R1)"),
             choice("trackRecord.metric", List.of("CAGR", "EXCESS_VS_SPY", "SHARPE"), true, "순위 기준(R10, D20)"),
@@ -169,7 +223,7 @@ final class PaperSettingKeys {
             of("news.keywords", Type.PHRASES, false,
                     "매크로 키워드(영어 낱말·구절, 대소문자 무시, 쉼표·줄바꿈으로 나눔 — B3). 보유·후보·watchlist 티커는 따로 잡음"),
             new Spec("news.feeds", Type.FEEDS, null, null, NewsEvents.DEFAULT_FEEDS, false,
-                    "패킷에 넣을 피드 키(수집은 여덟 피드 모두) — " + String.join(" · ", NewsEvents.DEFAULT_FEEDS)));
+                    "패킷에 넣을 피드 키(수집은 여덟 피드 모두) — " + String.join(" · ", NewsEvents.DEFAULT_FEEDS), Scope.US));
 
     private static final Map<String, Spec> BY_KEY;
 
@@ -197,6 +251,19 @@ final class PaperSettingKeys {
 
     static Optional<Spec> find(String key) {
         return Optional.ofNullable(BY_KEY.get(key));
+    }
+
+    /**
+     * 바뀐 키에 규칙 계좌 영향 키가 있으면 그 시장 규칙 계좌의 경고 — 미국 키는 {@link #RULES_FROZEN_WARNING}(지금 문장 그대로),
+     * 한국 키는 {@link #KR_RULES_FROZEN_WARNING}, 둘 다면 미국 · 한국 순으로 잇습니다. 없으면 null.
+     */
+    static String rulesWarning(List<Spec> changed) {
+        boolean us = changed.stream().anyMatch(spec -> spec.affectsRules() && spec.scope() == Scope.US);
+        boolean kr = changed.stream().anyMatch(spec -> spec.affectsRules() && spec.scope() == Scope.KR);
+        if (us && kr) {
+            return RULES_FROZEN_WARNING + " · " + KR_RULES_FROZEN_WARNING;
+        }
+        return us ? RULES_FROZEN_WARNING : kr ? KR_RULES_FROZEN_WARNING : null;
     }
 
     /** 이 경로 아래에 키가 있는 묶음인가({@code blend} → {@code blend.groupB.topN}이 있으니 참). */

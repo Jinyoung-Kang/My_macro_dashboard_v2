@@ -97,7 +97,7 @@ public class PaperSettingsService {
     // ------------------------------------------------------------------ 화면(GET·POST /api/paper/settings)
     /**
      * GET /api/paper/settings — {@code {available, version, updatedAtKst, body, defaults, keys:[{key, type, min, max, affectsRules,
-     * description, options}], fallbacks}}. 행이 없으면(초기화 전) {@code version:null}이고 {@code body}는 기본값입니다.
+     * market, description, options}], fallbacks}}({@code market} = 그 키를 읽는 책 US·KR, 두 책 공통이면 null). 행이 없으면(초기화 전) {@code version:null}이고 {@code body}는 기본값입니다.
      * {@code fallbacks}는 지금 본문에서 없거나 범위 밖이라 기본값으로 읽는 키(장부·섞기·규칙 책 묶음·Claude 책·추정 비용 단가·사건 뉴스).
      */
     public Map<String, Object> view() {
@@ -130,7 +130,8 @@ public class PaperSettingsService {
      * <p>키는 점 경로({@code {"trackRecord.windowYears": 5}})로도, 묶음({@code {"trackRecord": {"windowYears": 5}}})으로도 받습니다.
      * 모르는 키·형이 틀린 값·범위 밖 값이 하나라도 있으면 <b>아무것도 바꾸지 않고</b> 400(사유를 모두 적음). 지금 값과 같은 키는 바뀐
      * 키로 세지 않고, 바뀐 키가 없으면 저장하지 않습니다(버전 그대로). 바뀐 키가 있으면 버전을 올리고 이력에 본문 전체와 바뀐 키를
-     * 남깁니다 — 다음 작업부터 새 값입니다(캐시 없음). 규칙 책이 읽는 키를 바꾸면 {@code warning}(S3).
+     * 남깁니다 — 다음 작업부터 새 값입니다(캐시 없음). 규칙 책이 읽는 키를 바꾸면 {@code warning}(S3) — 그 키 시장의 규칙 계좌 문장
+     * ({@link PaperSettingKeys#rulesWarning}, 미국 키만이면 예전 문장 그대로).
      *
      * <p>설정 행이 아직 없으면 먼저 기본값으로 버전 1을 만든 뒤 바꿉니다(이력에 "처음 값"과 "바꾼 값"이 따로 남게).
      *
@@ -187,12 +188,14 @@ public class PaperSettingsService {
                 return out;
             }
             int version = store.saveSettings(body, changed);
-            boolean rules = changed.stream().anyMatch(key -> PaperSettingKeys.find(key)
-                    .map(PaperSettingKeys.Spec::affectsRules).orElse(false));
-            log.info("모의 매매 설정 v{} → v{}: {}{}", row.version(), version, changed, rules ? " (규칙 책 영향)" : "");
+            // 경고는 바꾼 규칙 계좌 영향 키의 시장마다(미국 키만이면 지금 문장 그대로 — 명세 §4-13 '그 시장 규칙 계좌 기준').
+            String warning = PaperSettingKeys.rulesWarning(changed.stream()
+                    .map(key -> PaperSettingKeys.find(key).orElseThrow()).toList());
+            log.info("모의 매매 설정 v{} → v{}: {}{}", row.version(), version, changed,
+                    warning != null ? " (규칙 책 영향)" : "");
             out.put("version", version);
             out.put("changedKeys", changed);
-            out.put("warning", rules ? PaperSettingKeys.RULES_FROZEN_WARNING : null);
+            out.put("warning", warning);
             return out;
         } finally {
             writing.unlock();

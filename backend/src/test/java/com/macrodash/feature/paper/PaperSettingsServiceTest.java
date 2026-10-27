@@ -255,6 +255,45 @@ class PaperSettingsServiceTest {
     }
 
     @Test
+    @DisplayName("시장 범위(2단계 §4-13) — 공유 키는 market null·나머지는 US, 규칙 계좌 경고는 그 시장 문장(미국 키만이면 지금 문장 그대로)")
+    void marketScopeAndRulesWarningPerMarket() {
+        JsonNode keys = MAPPER.valueToTree(service.view().get("keys"));
+        List<String> shared = new ArrayList<>();
+        for (JsonNode key : keys) {
+            assertThat(key.has("market")).as(key.path("key").asString()).isTrue();
+            if (key.path("market").isNull()) {
+                shared.add(key.path("key").asString());
+                assertThat(key.path("affectsRules").asBoolean()).as("공유 키는 규칙 계좌 영향 없음").isFalse();
+            } else {
+                assertThat(key.path("market").asString()).as(key.path("key").asString()).isEqualTo("US");
+            }
+        }
+        assertThat(shared).containsExactly("model", "effort", "apiDailyCallCap", "frameworkTokenBudget",
+                "pricing.sonnet.inputUsdPerMTok", "pricing.sonnet.outputUsdPerMTok", "pricing.sonnet.cacheReadUsdPerMTok",
+                "pricing.sonnet.cacheWriteUsdPerMTok", "pricing.haiku.inputUsdPerMTok", "pricing.haiku.outputUsdPerMTok",
+                "pricing.haiku.cacheReadUsdPerMTok", "pricing.haiku.cacheWriteUsdPerMTok");
+
+        PaperSettingKeys.Spec usRules = PaperSettingKeys.find("slippageBp").orElseThrow();
+        PaperSettingKeys.Spec usPlain = PaperSettingKeys.find("decisionTimeKst").orElseThrow();
+        PaperSettingKeys.Spec sharedKey = PaperSettingKeys.find("model").orElseThrow();
+        PaperSettingKeys.Spec krRules = new PaperSettingKeys.Spec("kr.test", PaperSettingKeys.Type.NUMBER, 0.0, 1.0,
+                List.of(), true, "시험용 한국 키", PaperSettingKeys.Scope.KR);
+        assertThat(PaperSettingKeys.rulesWarning(List.of(usPlain, sharedKey))).isNull();
+        assertThat(PaperSettingKeys.rulesWarning(List.of(usRules, sharedKey)))
+                .isEqualTo("규칙 계좌는 동결된 대조군입니다 — 이 변경은 실험 조건을 바꿉니다");
+        assertThat(PaperSettingKeys.rulesWarning(List.of(krRules)))
+                .isEqualTo("한국 규칙 계좌(kr_rules)는 동결된 대조군입니다 — 이 변경은 한국 책의 실험 조건을 바꿉니다");
+        assertThat(PaperSettingKeys.rulesWarning(List.of(krRules, usRules))).as("둘 다면 미국 · 한국 순")
+                .isEqualTo(PaperSettingKeys.RULES_FROZEN_WARNING + " · " + PaperSettingKeys.KR_RULES_FROZEN_WARNING);
+
+        // 접두어와 범위가 어긋나면 키 표가 올라오지 않음 — 한국 키는 kr. 아래에만, kr. 아래는 한국 키만.
+        assertThatThrownBy(() -> new PaperSettingKeys.Spec("kr.slippageBp", PaperSettingKeys.Type.NUMBER, 0.0, 1.0,
+                List.of(), true, "", PaperSettingKeys.Scope.US)).isInstanceOf(IllegalStateException.class);
+        assertThatThrownBy(() -> new PaperSettingKeys.Spec("slippageBp", PaperSettingKeys.Type.NUMBER, 0.0, 1.0,
+                List.of(), true, "", PaperSettingKeys.Scope.KR)).isInstanceOf(IllegalStateException.class);
+    }
+
+    @Test
     @DisplayName("쓰기 범위는 읽는 쪽의 범위 안 — 모든 숫자 키를 최솟값·최댓값으로 저장해도 어느 읽기도 기본값으로 바꾸지 않는다")
     void writableRangesAreReadableWithoutFallbacks() {
         for (boolean useMax : List.of(false, true)) {
