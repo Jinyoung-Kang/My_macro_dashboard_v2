@@ -548,13 +548,13 @@ class PaperAdminServiceTest {
 
     // ------------------------------------------------------------------ 시장 문맥(2단계 명세 §9 A6)
     @Test
-    @DisplayName("시장 문맥(A6): 초기화는 그 시장 책 정의로 책을 만들고 책 행에 시장·통화를 적음(미국 US·USD) — 초기 현금·출발일이 미국 설정뿐이라 다른 시장 초기화는 아무것도 쓰지 않고 거절")
+    @DisplayName("시장 문맥(A6): 초기화는 그 시장 책 정의로 책을 만들고 책 행에 시장·통화를 적음(미국 US·USD) — 다른 시장은 이 경로로 받지 않고(한국은 initKr, C1c) 아무것도 쓰지 않음")
     void initPerMarket() {
         closes(500, 82.5);
         PaperAdminService admin = admin(AFTER_START);
 
         assertThatThrownBy(() -> admin.init(TestKrMarket.INSTANCE)).isInstanceOf(IllegalArgumentException.class)
-                .hasMessageContaining("C1");
+                .hasMessageContaining("initKr");
         assertThat(store.books).isEmpty();
         assertThat(store.settings).isNull();
 

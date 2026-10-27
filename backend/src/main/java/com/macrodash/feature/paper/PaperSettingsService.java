@@ -143,6 +143,61 @@ public class PaperSettingsService {
         return store.initSettingsIfAbsent(defaultsJson());
     }
 
+    /**
+     * 한국 초기화가 설정 행에 쓴 결과.
+     *
+     * @param version 쓴 뒤(쓰지 않았으면 지금) 설정 판
+     * @param written 이번에 기본값으로 채운 한국 키(점 경로, 키 표 순서) — 비었으면 쓰지 않음(판 그대로)
+     */
+    record KrDefaults(int version, List<String> written) {
+
+        KrDefaults {
+            written = List.copyOf(written);
+        }
+    }
+
+    /**
+     * 한국 초기화(C1c — 명세 §4-13 '한국 초기화 때 {@code kr.*} 기본값을 행에 써 판을 올린다, 코드 기본값에만 기대지 않음'): 설정 행에
+     * 없는(또는 JSON null인) 한국 키({@link PaperSettingKeys.Scope#KR})를 기본값({@link #krDefaultsBody})으로 채워 <b>판을 한 번</b>
+     * 올립니다 — 이력에는 채운 키가 바뀐 키로 남습니다. 이미 있는 한국 키(먼저 저장한 값)는 그대로 두고, 모두 있으면 쓰지 않습니다(몇 번
+     * 불러도 같음). 행이 없으면 먼저 기본값으로 만듭니다 — 그 본문에는 한국 묶음이 이미 있어 판 1 그대로입니다. 설정 저장({@link #update})과
+     * 같은 잠금 안에서 합니다(같은 옛 본문에서 출발한 두 쓰기가 서로를 지우지 않게).
+     */
+    KrDefaults ensureKrDefaults() {
+        writing.lock();
+        try {
+            ensureInitialized();
+            PaperStore.SettingsRow row = store.settings().orElseThrow(() -> new IllegalStateException(
+                    "모의 매매 설정 행을 만들지 못했습니다"));
+            ObjectNode body = row.body() instanceof ObjectNode existing ? existing.deepCopy()
+                    : (ObjectNode) defaultsJson();
+            JsonNode defaults = mapper.valueToTree(Map.of("kr", krDefaultsBody()));
+            List<String> written = new ArrayList<>();
+            for (PaperSettingKeys.Spec spec : PaperSettingKeys.ALL) {
+                if (spec.scope() != PaperSettingKeys.Scope.KR) {
+                    continue;
+                }
+                JsonNode current = valueAt(body, spec.key());
+                if (current == null || current.isNull()) {
+                    JsonNode value = valueAt(defaults, spec.key());
+                    if (value == null) {
+                        throw new IllegalStateException("한국 키의 기본값이 없습니다: " + spec.key());
+                    }
+                    setAt(body, spec.key(), value.deepCopy());
+                    written.add(spec.key());
+                }
+            }
+            if (written.isEmpty()) {
+                return new KrDefaults(row.version(), List.of());
+            }
+            int version = store.saveSettings(body, written);
+            log.info("모의 매매 설정 v{} → v{}: 한국 초기화 — 한국 키 {}개를 기본값으로 채움", row.version(), version, written.size());
+            return new KrDefaults(version, written);
+        } finally {
+            writing.unlock();
+        }
+    }
+
     // ------------------------------------------------------------------ 화면(GET·POST /api/paper/settings)
     /**
      * GET /api/paper/settings — {@code {available, version, updatedAtKst, body, defaults, keys:[{key, type, min, max, affectsRules,

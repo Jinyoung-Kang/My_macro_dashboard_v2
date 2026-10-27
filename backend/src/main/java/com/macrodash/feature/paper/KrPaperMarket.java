@@ -264,6 +264,31 @@ final class KrPaperMarket implements PaperMarket {
         return calendar.previousTradingDay(today);
     }
 
+    /**
+     * 세션 D의 한국 결정 창 — 결정 시각({@code opens}) ~ 기한({@code deadline}).
+     */
+    record DecisionWindow(Instant opens, Instant deadline) {
+    }
+
+    /**
+     * 세션 D의 한국 결정 창: 그 실행이 읽은 설정 판의 {@code kr.decisionTimeKst}·{@code kr.decisionDeadlineKst}(없거나 틀리면 기본 22:30·
+     * 01:00)를 {@link #decisionInstant}로 순간으로 만들고, 기한이 결정 시각보다 이르거나 같으면 다음 날로 읽습니다(설정 저장 규칙과 같은 뜻 —
+     * 명세 §4-13 'C1b 구현에서 정한 것'). 기본값이면 D 22:30 ~ D+1 01:00. 한국 출발(S 22:30, 기한 S+1 01:00 — §4-8)과 한국 초기화의 출발일
+     * 검사가 씁니다 — 정기 결정 작업의 기한 묶기({@code PaperDecisionJob.times})를 시장으로 옮기는 일은 D1(명세 §9 'D1·E2 — 결정 기한').
+     *
+     * @param market 한국 묶음 또는 그 실행(설정 키 접두어·기본값·결정 순간 식)
+     */
+    static DecisionWindow decisionWindow(PaperMarket market, JsonNode settingsBody, LocalDate session) {
+        LocalTime decision = PaperDecisionJob.decisionTime(market, settingsBody);
+        LocalTime deadline = time(PaperSettingsService.valueAt(settingsBody, market.settingKey("decisionDeadlineKst")));
+        Instant opens = market.decisionInstant(session, decision);
+        Instant due = market.decisionInstant(session, deadline == null ? market.defaultDeadline() : deadline);
+        while (!due.isAfter(opens)) {
+            due = due.plus(Duration.ofDays(1));
+        }
+        return new DecisionWindow(opens, due);
+    }
+
     @Override
     public String historyDataset() {
         return Datasets.TS_KR_CLOSE_ADJ;

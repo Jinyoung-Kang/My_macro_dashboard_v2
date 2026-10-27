@@ -1,5 +1,7 @@
 package com.macrodash.feature.paper;
 
+import com.macrodash.Kst;
+import com.macrodash.analytics.CalendarUnavailableException;
 import com.macrodash.read.StoreReader;
 import com.macrodash.store.PaperStore;
 import com.macrodash.store.PaperStore.Book;
@@ -50,8 +52,15 @@ import java.util.TreeSet;
  * <p><b>시장 문맥</b>(2단계 명세 §9 A6): 초기화는 시장 묶음({@link PaperMarket})을 받아 그 시장 책 정의로 책을 만들고 책 행에 그
  * 시장·통화를 적으며, 실패로 기억해 둔 관측치도 그 시장 것만 지웁니다. 출발일 종가 얼리기와 벤치마크 사후 체결은 미국 묶음의
  * 달력·확정 지연·관측치로 하는 미국 전용 일입니다(한국은 출발일 사후 체결·{@code paper_start_prices}가 없음, 명세 K28). 초기 현금·
- * 출발일이 아직 미국 설정({@code dashboard.paper.*})뿐이라 미국 밖 시장의 초기화는 거절합니다(한국 초기화는 C1). 계좌 하나의
- * 리셋은 그 책의 시장 기억만 지우고, 벤치마크 다시 사후 체결은 미국 책만 합니다. 시장을 받지 않는 옛 시그니처는 미국입니다.
+ * 출발일은 시장마다 따로라 {@link #init(PaperMarket)}는 미국만 받고, 한국은 {@link #initKr}입니다. 계좌 하나의 리셋은 그 책의 시장 기억만
+ * 지우고, 벤치마크 다시 사후 체결은 미국 책만 합니다. 시장을 받지 않는 옛 시그니처는 미국입니다.
+ *
+ * <p><b>한국 초기화</b>({@link #initKr}, 2단계 명세 §4-13·K38 — C1c): 출발일 {@code dashboard.paper.kr.start-date}가 있어야 하고, 그 날을
+ * 조용히 읽은 공휴일 저장본 + 그 실행의 설정 판으로 만든 {@code KrxCalendar}로 검사합니다(거래일 · 달력이 그해를 앎 · 처음 만들 때는 그날
+ * 출발 기한 S+1 01:00 전). 통과하면 한 트랜잭션으로 설정 행에 없는 {@code kr.*} 키를 기본값으로 채워 판을 한 번 올리고
+ * ({@link PaperSettingsService#ensureKrDefaults}) 한국 네 계좌를 현금 1억 원({@code dashboard.paper.kr.initial-cash})의 '시작 전'으로
+ * 만듭니다. 몇 번 불러도 같고(있는 책·키는 그대로), 사후 체결·출발일 종가 얼리기는 없습니다(K28 — 출발은 S 22:30 결정 작업이 S+1 시가
+ * 주문으로). 그 HTTP 경로({@code POST /api/paper/init?market=KR})는 F1입니다.
  */
 @Service
 public class PaperAdminService {
@@ -65,6 +74,24 @@ public class PaperAdminService {
      */
     public record InitResult(boolean settingsCreated, List<String> created, List<String> backfilled,
                              List<Map<String, String>> skipped, int startPricesCaptured) {
+    }
+
+    /**
+     * 한국 초기화 결과({@link #initKr}).
+     *
+     * @param startDate           한국 출발일 S(배포 설정)
+     * @param settingsCreated     설정 행을 이번에 만들었나(만들었으면 한국 묶음이 처음부터 들어 있어 키를 따로 채우지 않음)
+     * @param settingsVersion     초기화 뒤 설정 판
+     * @param settingsKeysWritten 이번에 기본값으로 채운 한국 키 — 비었으면 판을 올리지 않음
+     * @param created             이번에 새로 만든 한국 계좌(정의 순)
+     */
+    public record KrInitResult(LocalDate startDate, boolean settingsCreated, int settingsVersion,
+                               List<String> settingsKeysWritten, List<String> created) {
+
+        public KrInitResult {
+            settingsKeysWritten = List.copyOf(settingsKeysWritten);
+            created = List.copyOf(created);
+        }
     }
 
     /** 일시정지/재개 결과. */
@@ -127,12 +154,12 @@ public class PaperAdminService {
     /**
      * 그 시장의 초기화(클래스 설명의 시장 문맥) — 그 시장 책 정의로 책을 만들고 책 행에 그 시장·통화를 적습니다.
      *
-     * @throws IllegalArgumentException 초기 현금·출발일 설정이 없는 시장(미국 밖 — 한국은 C1)
+     * @throws IllegalArgumentException 미국 밖 시장(출발일·초기 현금·출발 방식이 달라 한국은 {@link #initKr})
      */
     InitResult init(PaperMarket market) {
         if (market.definition() != US) {
-            throw new IllegalArgumentException(market.code() + " 시장 초기화는 아직 없습니다 — 초기 현금·출발일 설정이 미국뿐입니다"
-                    + "(2단계 명세 §9 C1)");
+            throw new IllegalArgumentException(market.code() + " 시장 초기화는 이 경로가 아닙니다 — 한국은 initKr(출발일 "
+                    + "dashboard.paper.kr.start-date, 사후 체결 없음 — 2단계 명세 K28)");
         }
         requireReady();
         // 이미 있는 책은 아래에서 다시 넣지 않으므로(이름도 그대로), 옛 이름이면 여기서 맞춥니다.
@@ -178,6 +205,71 @@ public class PaperAdminService {
             }
             return new InitResult(settingsCreated, created, backfilled, skipped, captured);
         });
+    }
+
+    // ------------------------------------------------------------------ 한국 초기화
+    /**
+     * 한국 초기화(클래스 설명 '한국 초기화'). 출발일을 검사한 뒤 설정 행의 {@code kr.*} 기본값과 한국 네 계좌를 한 트랜잭션으로 만듭니다.
+     *
+     * @throws InvalidRequestException 출발일이 비었음({@link PaperConfig#KR_START_MISSING}) · 출발일의 해를 달력이 모름('달력 없음') ·
+     *                                 출발일이 KRX 거래일이 아님 · (한국 계좌를 처음 만들 때) 출발일의 출발 기한이 이미 지남
+     */
+    public KrInitResult initKr() {
+        requireReady();
+        if (!config.krStartConfigured()) {
+            throw new InvalidRequestException(PaperConfig.KR_START_MISSING);
+        }
+        LocalDate start = config.krStartDate();
+        // 출발일 검사는 이 실행의 달력 한 벌로 — 조용히 읽은 공휴일 저장본 + 지금 설정 판의 임시휴장(PaperMarkets#open).
+        MarketRun run = markets.open(KrPaperMarket.INSTANCE);
+        boolean fresh = store.books(run.code()).isEmpty();
+        requireKrStart(run, start, fresh);
+        ledger.forgetFailures(run);
+        return ledger.exclusively(() -> store.atomically(() -> {
+            boolean settingsCreated = settings.ensureInitialized();
+            PaperSettingsService.KrDefaults defaults = settings.ensureKrDefaults();
+            double cash = config.krInitialCash().doubleValue();
+            List<String> created = new ArrayList<>();
+            for (PaperBooks.Definition definition : run.books()) {
+                if (store.insertBookIfAbsent(new Book(definition.code(), definition.kind(), definition.label(), cash,
+                        null, PaperBooks.NOT_STARTED, null, run.code(), run.currency()))) {
+                    created.add(definition.code());
+                }
+                if (store.state(definition.code()).isEmpty()) {
+                    store.upsertState(cashOnly(definition.code(), cash));
+                }
+            }
+            if (!created.isEmpty() || !defaults.written().isEmpty()) {
+                log.info("모의 매매 한국 초기화: 출발일 {} · 새 계좌 {} · 설정 v{}(한국 키 {}개 채움)", start, created,
+                        defaults.version(), defaults.written().size());
+            }
+            return new KrInitResult(start, settingsCreated, defaults.version(), defaults.written(), created);
+        }));
+    }
+
+    /**
+     * 한국 출발일 S 검사(클래스 설명) — 그 실행의 달력이 S의 해를 알고, S가 KRX 거래일이고, 계좌를 처음 만들 때는 S의 출발 기한
+     * ({@link KrPaperMarket#decisionWindow} — 기본 S+1 01:00)이 아직 지나지 않았어야 합니다. 이미 계좌가 있으면(다시 누름) 기한은 보지
+     * 않습니다 — 기한이 지난 출발은 결정 작업이 다음 KR 거래일로 미룹니다(§4-8).
+     */
+    private void requireKrStart(MarketRun run, LocalDate start, boolean fresh) {
+        boolean trading;
+        try {
+            trading = run.calendar().isTradingDay(start);
+        } catch (CalendarUnavailableException e) {
+            throw new InvalidRequestException("한국 출발일 " + start + "을 확인할 수 없습니다 — " + e.getMessage());
+        }
+        if (!trading) {
+            throw new InvalidRequestException("한국 출발일 " + start + "은 KRX 거래일이 아닙니다(주말·공휴일·연말휴장·임시휴장) — "
+                    + ".env PAPER_KR_START_DATE를 거래일로 바꾸고 백엔드를 다시 띄우세요");
+        }
+        if (fresh) {
+            Instant deadline = KrPaperMarket.decisionWindow(run, run.settingsBody(), start).deadline();
+            if (!clock.instant().isBefore(deadline)) {
+                throw new InvalidRequestException("한국 출발일 " + start + "의 출발 기한(" + Kst.stamp(deadline) + ")이 이미 "
+                        + "지났습니다 — .env PAPER_KR_START_DATE를 앞으로의 KRX 거래일로 바꾸고 백엔드를 다시 띄우세요");
+            }
+        }
     }
 
     // ------------------------------------------------------------------ 화면 이름
