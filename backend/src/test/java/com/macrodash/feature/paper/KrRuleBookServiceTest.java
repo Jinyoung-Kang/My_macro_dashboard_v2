@@ -390,6 +390,22 @@ class KrRuleBookServiceTest {
     }
 
     @Test
+    @DisplayName("거래정지 — 토스 매매정지 표시가 없어도 그 종목 D 봉 거래량이 0이면(정지일 봉 — 시고저종 = 전일 종가) '거래정지'로 빠짐, 전날 봉 거래량 0은 보지 않음")
+    void suspendedByZeroVolumeBar() {
+        com.macrodash.store.Snapshot snapshot = KrRulesFixtures.suspend(KrRulesFixtures.quotes(R), "000660", false);
+        JsonNode bars = snapshot.payload().path("codes").path("005930").path("bars");
+        ((ObjectNode) bars.get(0)).put("volume", 0);   // 005930은 전날(10-30) 봉만 거래량 0 — D 판정과 무관
+        assertThat(snapshot.payload().path("codes").path("000660").path("krxTradingSuspended").asBoolean()).isFalse();
+        clock.set(kst("2026-11-02T22:30"));
+
+        Decision decision = service.decide(run(), R, false, KrPaperMarket.INSTANCE.parse(snapshot));
+
+        assertThat(subReasons(member(decision, "000660"))).containsExactly("거래정지/거래정지");
+        assertThat(decision.response().path("input").path("suspended").toString()).isEqualTo("[\"000660\"]");
+        assertThat(member(decision, "005930").path("candidate").asBoolean()).isTrue();
+    }
+
+    @Test
     @DisplayName("체결될 수 없는 종목에는 주문을 내지 않음 — 미처리 기업행위 보유(장부가 보류)의 '후보 밖' 매도와 후보 보유의 더 사기, 관측치에 봉이 없는 보유의 매도는 skipped에 사유")
     void unfillableOrdersAreNotPlaced() {
         holding("207940", 100, 10_000);    // DART 없음 — 후보 밖, 미처리 기업행위 보유
