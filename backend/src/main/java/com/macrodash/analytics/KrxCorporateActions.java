@@ -45,9 +45,9 @@ import java.util.Set;
  *   <li><b>가격제한폭 밖 변동</b>: 이웃한 두 관측(거래량 0 봉은 건너뜀)의 원시 종가 변화가 ±{@link #PRICE_LIMIT} 밖. 확인된 분할의 그
  *       구간이면 설명된 것이고, 아니면 미처리입니다(정리매매·감자·출처 오류 등).</li>
  *   <li><b>상태 신호</b>(since와 상관없이 그 상태면 매번): 금융위 상장주식수가 ±{@link #LISTED_SHARES_CHANGE} 넘게 바뀜(창 안 비율 변화의
- *       k와 맞으면 설명됨 — 금융위는 하루 늦게 들어옴), 토스·금융위 모두 종목 없음, 최근 {@link #LONG_SUSPENSION_BARS}봉 넘게 이어진
- *       거래량 0(긴 거래정지 — 인적분할 변경상장·합병·상장폐지 등). 보유의 보류 표시는 한 번 걸면 사람이 풀 때까지 남으므로 같은 신호가
- *       밤마다 다시 나와도 됩니다.</li>
+ *       k와 맞으면 설명됨 — 금융위는 하루 늦게 들어옴), 토스·금융위 모두 종목 없음, 최근 {@link #LONG_SUSPENSION_BARS}봉 이상 이어진
+ *       거래량 0(긴 거래정지 — 인적분할 변경상장·합병·상장폐지 등. 거래량을 모르는 봉(null)은 세지 않습니다 — 모름은 정지 신호가 아님).
+ *       보유의 보류 표시는 한 번 걸면 사람이 풀 때까지 남으므로 같은 신호가 밤마다 다시 나와도 됩니다.</li>
  * </ol>
  *
  * <p><b>결과를 쓰는 쪽</b>(장부 연결은 C2): {@link Assessment#holdOrders()}면 그 종목 주문을 그날 보류, {@link Kind#SPLIT}이면 수량을
@@ -70,7 +70,10 @@ public final class KrxCorporateActions {
     public static final double RATIO_NOISE = 0.005;
     /** 한국 분할·병합(액면 변경)으로 읽는 최소 배율 — k ≥ 2 또는 k ≤ 1/2. 그 사이(6:5·3:2 등)는 증자 조정으로 보고 미처리. */
     public static final int MIN_SPLIT_FACTOR = 2;
-    /** 최근 봉이 이만큼 이상 이어서 거래량 0이면 긴 거래정지 — 미처리. [확인] 2018 삼성전자 분할 정지는 3봉. */
+    /**
+     * 최근 봉이 이만큼 이상 이어서 거래량 0이면 긴 거래정지 — 미처리. 거래량을 모르는 봉(null)은 세지 않습니다(B4 계약 '모르면 null — 0은
+     * 정지일'). [확인] 2018 삼성전자 분할 정지는 3봉.
+     */
     public static final int LONG_SUSPENSION_BARS = 5;
     /** 금융위 상장주식수가 이만큼(상대값) 이상 바뀌면 신호 — 자사주 소각·전환사채 전환 같은 작은 변화는 넘깁니다. */
     public static final double LISTED_SHARES_CHANGE = 0.10;
@@ -303,7 +306,7 @@ public final class KrxCorporateActions {
             details.add("토스·금융위 모두 종목 없음(상장폐지·합병·변경상장 거래정지 등)");
             unresolved = true;
         }
-        int suspended = trailingNonObservations(sorted);
+        int suspended = trailingSuspensionBars(sorted);
         if (suspended >= LONG_SUSPENSION_BARS) {
             signals.add(Signal.LONG_SUSPENSION);
             details.add("최근 %d봉 이어서 거래량 0(거래정지 — 마지막 관측 %s)".formatted(suspended,
@@ -516,9 +519,17 @@ public final class KrxCorporateActions {
         return out;
     }
 
-    private static int trailingNonObservations(List<DailyBar> sorted) {
+    /**
+     * 최근 봉부터 거슬러 센, 이어진 거래량 0 봉(정지일) 수. 거래량을 모르는 봉(null)을 만나면 멈춥니다 — 모르는 값을 정지로 읽으면
+     * 거래량이 비어 온 날마다 '긴 거래정지' 보류(한 번 걸면 남음)가 걸리고 근거 문장도 사실과 달리 '거래량 0'이라고 적습니다.
+     */
+    private static int trailingSuspensionBars(List<DailyBar> sorted) {
         int count = 0;
-        for (int i = sorted.size() - 1; i >= 0 && !sorted.get(i).observed(); i--) {
+        for (int i = sorted.size() - 1; i >= 0; i--) {
+            Long volume = sorted.get(i).volume();
+            if (volume == null || volume.longValue() != 0L) {
+                break;
+            }
             count++;
         }
         return count;

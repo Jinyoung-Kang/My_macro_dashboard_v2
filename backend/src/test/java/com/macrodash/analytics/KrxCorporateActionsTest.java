@@ -326,6 +326,22 @@ class KrxCorporateActionsTest {
     }
 
     @Test
+    @DisplayName("거래량을 모르는 봉(null)은 정지로 세지 않는다 — 최근 5봉이 모두 null이면 신호 없음, 정지 봉 뒤에 null이 오면 거기서 멈춤")
+    void unknownVolumeIsNotASuspension() {
+        List<LocalDate> days = List.of(NOV_03, NOV_04, NOV_05, LocalDate.of(2026, 11, 6), LocalDate.of(2026, 11, 9));
+        List<DailyBar> unknown = days.stream().map(d -> new DailyBar(d, 10_000, null, 1.0)).toList();
+
+        Assessment a = KrxCorporateActions.assess(LocalDate.of(2026, 11, 9), NOV_02, 10, unknown, Listing.UNKNOWN);
+        assertThat(a.kind()).as("B4 계약 '모르면 null — 0은 정지일': 모름을 신호로 읽지 않음").isEqualTo(Kind.NONE);
+        assertThat(a.signals()).isEmpty();
+
+        List<DailyBar> zerosThenUnknown = new ArrayList<>(days.stream().map(d -> new DailyBar(d, 10_000, 0L, 1.0)).toList());
+        zerosThenUnknown.add(new DailyBar(LocalDate.of(2026, 11, 10), 10_000, null, 1.0));
+        assertThat(KrxCorporateActions.assess(LocalDate.of(2026, 11, 10), NOV_02, 10, zerosThenUnknown, Listing.UNKNOWN)
+                .kind()).as("가장 최근 봉의 거래량을 모르면 이어진 정지를 셀 수 없음").isEqualTo(Kind.NONE);
+    }
+
+    @Test
     @DisplayName("보유가 없는 종목(주문만 있음)도 판정한다 — 분할이면 그날 주문 보류, 순자산 연속성은 한 주로")
     void noPositionStillHoldsOrders() {
         Assessment a = KrxCorporateActions.assess(MAY_04, APR_27, 0, samsung(APR_27, MAY_04), Listing.UNKNOWN);
