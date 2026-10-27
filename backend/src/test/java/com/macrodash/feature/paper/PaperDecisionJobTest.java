@@ -229,6 +229,25 @@ class PaperDecisionJobTest {
     }
 
     @Test
+    @DisplayName("미국 결정 작업은 한국 자료 게이트(D1c)를 거치지 않음 — 기다림은 PRICES_NOT_FINAL 그대로, 한국 관측치·금융위 메타·수급·유니버스를 읽지 않고 기록에 gates 없음")
+    void usJobSkipsKoreanGates() {
+        observed(FRI_INTRADAY, FRI);
+        assertThat(job(Instant.parse("2026-10-23T23:00:00Z")).run().outcome()).isEqualTo(PaperDecisionJob.PRICES_NOT_FINAL);
+
+        PaperDecisionJob.Result result = job(Instant.parse("2026-10-24T03:30:00Z")).run();
+
+        assertThat(result.outcome()).isEqualTo(PaperDecisionJob.DECIDED);
+        assertThat(store.jobRuns).singleElement().satisfies(run -> assertThat(run.detail().has("gates")).isFalse());
+        for (String dataset : List.of(com.macrodash.store.Datasets.SNAP_KR_PAPER_QUOTES,
+                com.macrodash.store.Datasets.SNAP_FSC_PRICES_META, com.macrodash.store.Datasets.SNAP_KR_PAPER_FLOWS_STATUS,
+                com.macrodash.store.Datasets.SNAP_DART_FUNDAMENTALS)) {
+            verify(reader, never()).read(org.mockito.ArgumentMatchers.eq(dataset), anyLong(), any());
+        }
+        verify(marketData, never()).krUniverseBefore(any());
+        verify(marketData, never()).krFlows(anyCollection(), any());
+    }
+
+    @Test
     @DisplayName("재선정일이면 그날 기준으로 다시 선정한 뒤 규칙 책은 REBALANCE — 확정 종가면 prices_final=true")
     void reselectionDaySelectsThenRebalances() {
         observed(Instant.parse("2026-11-17T21:30:00Z"), RESELECTION);

@@ -5,6 +5,8 @@ import com.macrodash.analytics.TradingCalendar;
 import com.macrodash.feature.paper.PaperMarketData.Quotes;
 import com.macrodash.read.StoreReader;
 import com.macrodash.store.Datasets;
+import com.macrodash.store.PaperStore;
+import com.macrodash.store.PaperStore.Order;
 import com.macrodash.store.Snapshot;
 import tools.jackson.databind.JsonNode;
 
@@ -21,10 +23,15 @@ import java.util.Map;
 import java.util.Optional;
 
 /**
- * 🧪 한국 결정 자료 게이트(2단계 명세 §4-9 — 모두 충족해야 결정을 부름). 한국 출발({@link KrStartPipeline} — S 22:30, ①은 앞 주문이 없어 보지
- * 않음 §4-8)의 판정입니다.
+ * 🧪 한국 결정 자료 게이트(2단계 명세 §4-9 — 모두 충족해야 결정을 부름). 정기 결정 작업({@link PaperDecisionJob} — ①~⑥)과 한국 출발
+ * ({@link KrStartPipeline} — S 22:30, ①은 앞 주문이 없어 보지 않음 §4-8)이 같은 판정을 씁니다(D1c).
  *
  * <ul>
+ *   <li>① 장부가 앞 결정의 주문을 정리함 — 그 계좌에 기준 거래일 &lt; D이고 그 시장이 체결하는 시점({@link PaperMarket#timings})인 대기 주문이
+ *       없음(결정 d11 '대기 = 정리 안 됨'). 확정 순자산 줄의 대기 주문 조건과 같은 거름({@link KrConfirmations#pendingBefore})이되 체결 조건 ⑤
+ *       (D 개장 순간 &gt; 주문 생성)는 보지 않습니다 — D 개장 뒤에 만든 주문도 아직 체결되지 않은 대기입니다(결정 e3). 결정하는 계좌마다 따로
+ *       봅니다(그 계좌의 주문 — 한 계좌의 대기 주문이 다른 계좌 결정을 막지 않게, 두 책은 따로). 정기 결정 작업이 그 실행에서 장부를 처리한
+ *       뒤에 봅니다</li>
  *   <li>② 수집 범위 90% 이상에 D 봉 — {@code paper.kr.quotes} 머리 {@code session} = D이고, {@code scope}의 종목 중 이어받지 않은 항목의
  *       마지막 봉 날짜가 D인 비율(수집기 {@code _has_session_bar}와 같은 규칙)</li>
  *   <li>③ U 90% 이상에 D 수급 — U 구성원 중 D 기록의 토스 판({@code updatedAt})이 D 15:35 KST 이후이고 기관 세부 칸이 채워진
@@ -124,8 +131,11 @@ final class KrDecisionGates {
     }
 
     // ------------------------------------------------------------------ 판정
-    /** 출발 결정의 자료 게이트(클래스 설명 ②~⑥ — ①은 앞 주문이 없어 보지 않음, §4-8). */
-    List<Gate> start(MarketRun run, Inputs in) {
+    /**
+     * 자료 게이트 ②~⑥(클래스 설명) — 출발 결정은 이것만(①은 앞 주문이 없어 보지 않음, §4-8), 정기 결정은 계좌마다 {@link #ledger}(①)를 더합니다.
+     * 입력에 규칙 계좌 입력이 없으면({@link #readSession}만 읽음) ③은 미달입니다.
+     */
+    List<Gate> data(MarketRun run, Inputs in) {
         TradingCalendar calendar = run.calendar();
         List<Gate> out = new ArrayList<>();
         out.add(coverage(in.quotesPayload(), in.session()));
@@ -134,6 +144,39 @@ final class KrDecisionGates {
         out.add(anchor(in.quotesPayload(), in.session()));
         out.add(tradingDay(calendar, in.session()));
         return out;
+    }
+
+    /**
+     * 장부를 처리하기 전에 볼 수 있는 게이트 ②④⑤⑥(관측치 저장본·금융위 메타·달력) — 정기 결정 작업은 이것이 미달이면 장부·규칙 계좌 입력을 읽지
+     * 않고 기다립니다(그날 관측치 전에 미확정 순자산 줄을 쓰지 않게).
+     */
+    List<Gate> beforeLedger(MarketRun run, Inputs in) {
+        TradingCalendar calendar = run.calendar();
+        return List.of(coverage(in.quotesPayload(), in.session()),
+                fsc(in.fscMeta(), calendar.previousTradingDay(in.session())),
+                anchor(in.quotesPayload(), in.session()),
+                tradingDay(calendar, in.session()));
+    }
+
+    /**
+     * ① 그 계좌의 장부가 앞 결정의 주문을 정리함(클래스 설명) — 기준 거래일 &lt; D·체결하는 시점인 대기 주문이 없음. 판정 문구 머리에 계좌 코드.
+     */
+    static Gate ledger(PaperStore store, PaperMarket market, String book, LocalDate d) {
+        List<Order> pending = KrConfirmations.pendingBefore(store, market, book, d);
+        if (pending.isEmpty()) {
+            return new Gate("①", "PASS", book + " — 기준일 < " + d + "인 대기 주문 없음(앞 결정의 주문이 정리됨)");
+        }
+        List<String> rows = new ArrayList<>();
+        for (Order order : pending.subList(0, Math.min(5, pending.size()))) {
+            rows.add("#" + order.id() + " " + order.side() + " " + order.ticker() + "(기준일 " + order.asOfTradingDate() + ")");
+        }
+        return new Gate("①", "FAIL", book + " — 기준일 < " + d + "인 대기 주문 " + pending.size() + "건 " + String.join(" · ", rows)
+                + (pending.size() > 5 ? " …" : "") + " — 체결·불가 판정 전(정리 안 됨)");
+    }
+
+    /** 그 게이트 목록에서 ⑤(069500 D 봉)가 미달인가 — 기한 지남 NO_TRADE 행의 사유(결정 e4). */
+    static boolean anchorMissing(List<Gate> gates) {
+        return gates != null && gates.stream().anyMatch(g -> "⑤".equals(g.id()) && g.blocks());
     }
 
     /** ② 수집 범위 90% 이상에 D 봉(클래스 설명). */

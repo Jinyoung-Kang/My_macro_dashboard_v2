@@ -125,14 +125,31 @@ final class KrRulesFixtures {
      * 없음 — 토스 일봉 시가 사다리), 그날 21:56 KST에 받고 21:57에 저장.
      */
     static com.macrodash.store.Snapshot quotes(LocalDate session) {
+        return quotes(session, java.util.Set.of());
+    }
+
+    /**
+     * {@link #quotes(LocalDate)}에서 {@code noSessionBar} 종목만 그날 봉이 없는(토스가 아직 직전 거래일 봉까지만 준) 저장본 — 결정 게이트 ②·⑤
+     * 시험(머리 {@code session}은 그날 그대로).
+     */
+    static com.macrodash.store.Snapshot quotes(LocalDate session, java.util.Set<String> noSessionBar) {
         LocalDate previous = CALENDAR.previousTradingDay(session);
         KrFixtures.Payload payload = new KrFixtures.Payload(session);
         Instant fetched = kst(session, "21:56");
         for (String code : List.of("005930", "000660", "373220", "207940", "005380", "068270", "105560", "000270")) {
-            payload.code(code, fetched).bar(previous, 10_000, 10_050, 100_000).bar(session, 10_000, 10_100, 120_000);
+            KrFixtures.Entry entry = payload.code(code, fetched).bar(previous, 10_000, 10_050, 100_000);
+            if (!noSessionBar.contains(code)) {
+                entry.bar(session, 10_000, 10_100, 120_000);
+            }
         }
-        payload.etf("069500", fetched).bar(previous, 95_000, 95_100, 3_000_000).bar(session, 95_200, 95_300, 3_100_000);
-        payload.etf("153130", fetched).bar(previous, 108_000, 108_010, 40_000).bar(session, 108_000, 108_020, 41_000);
+        KrFixtures.Entry kodex = payload.etf("069500", fetched).bar(previous, 95_000, 95_100, 3_000_000);
+        if (!noSessionBar.contains("069500")) {
+            kodex.bar(session, 95_200, 95_300, 3_100_000);
+        }
+        KrFixtures.Entry bond = payload.etf("153130", fetched).bar(previous, 108_000, 108_010, 40_000);
+        if (!noSessionBar.contains("153130")) {
+            bond.bar(session, 108_000, 108_020, 41_000);
+        }
         return payload.snapshot(kst(session, "21:57"));
     }
 

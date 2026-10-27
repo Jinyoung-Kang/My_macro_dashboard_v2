@@ -94,6 +94,11 @@ final class KrRuleBookService {
     static final List<String> BUY_KINDS = List.of(RuleBookService.REBALANCE, RuleBookService.INITIAL);
     /** 기한이 지나 결정하지 않은 세션의 사유(결정 행 응답 {@code noTradeReason}). */
     static final String PAST_DEADLINE_REASON = "기한 지남";
+    /**
+     * 기한이 지난 세션에 게이트 ⑤(069500 D 봉)가 미달이었을 때의 사유 — 늦게 지정된 휴장일과 토스 쪽 지연을 가르지 않습니다(결정 e4, 명세 §9 'D1 —
+     * 세션 자료 다시 묻기와 게이트 ⑤': 수집기는 069500에 D 봉이 없으면 다른 종목을 다시 묻지 않음).
+     */
+    static final String ANCHOR_MISSING_REASON = "069500 D 봉 없음(휴장 또는 지연)";
     /** 신호 주문(매수·매도)의 근거 이름. */
     static final String RULE_SIGNAL = "K7";
     /** 선정한 날의 남는 현금 153130 주문. */
@@ -300,6 +305,26 @@ final class KrRuleBookService {
      * @throws IllegalStateException 계좌가 없거나 시작 전, 설정 행 없음, U 저장본 없음 등 입력 오류(결정 작업이 그 계좌 오류로 셈)
      */
     Decision decide(MarketRun run, LocalDate d, boolean pricesFinal, Optional<Quotes> quotes) {
+        return decide(run, d, pricesFinal, quotes, null, null);
+    }
+
+    /**
+     * 결정 작업의 정기 결정 — 자료 게이트가 본 그 읽기({@link KrDecisionGates.Inputs#rules} — 게이트 ③과 같은 U·수급, 결정 e5)로 정하고 판정
+     * ({@code gates} — ①~⑥)을 결정 행 응답 {@code gates}에 남깁니다.
+     *
+     * @param read  그 실행이 게이트 ③ 때 읽은 입력(같은 세션)
+     * @param gates 그 결정의 자료 게이트 판정(사람이 읽을 모양)
+     */
+    Decision decide(MarketRun run, LocalDate d, boolean pricesFinal, KrDecisionGates.Inputs read,
+                    List<Map<String, Object>> gates) {
+        if (read.rules() == null || !d.equals(read.rules().input().session())) {
+            throw new IllegalStateException("한국 규칙 계좌 결정의 입력이 게이트 판정과 함께 넘어오지 않았습니다(" + d + ")");
+        }
+        return decide(run, d, pricesFinal, read.quotes(), read.rules(), gates);
+    }
+
+    private Decision decide(MarketRun run, LocalDate d, boolean pricesFinal, Optional<Quotes> quotes, Read given,
+                            List<Map<String, Object>> gates) {
         Optional<Decision> existing = decisionOn(d);
         if (existing.isPresent()) {
             return existing.get();
@@ -318,7 +343,7 @@ final class KrRuleBookService {
             return writeSkipped(run, d, kind, version, cycle.orElse(null), pricesFinal, started);
         }
         Set<String> holdings = holdingCodes(settings);
-        Read read = read(run, d, started, quotes, holdings);
+        Read read = given != null ? given : read(run, d, started, quotes, holdings);
         KrRules.Selection selection = KrRules.select(run.calendar(), read.input(), settings.params());
         boolean selectionDay = cycle.isPresent();
         List<KrRules.HoldingCheck> checks = KrRules.holdingChecks(run.calendar(), d, holdings, read.input().flows(),
@@ -341,7 +366,7 @@ final class KrRuleBookService {
             boolean selected = selectionDay;
             String status = selected || !draft.orders.isEmpty() ? RuleBookService.STATUS_OK : RuleBookService.STATUS_NO_TRADE;
             Map<String, Object> response = response(d, kind, cycle.orElse(null), read, selection, checks, view, draft,
-                    settings, version, null);
+                    settings, version, gates == null ? null : Map.of("gates", gates));
             Decision decision = new Decision(0, PaperBooks.KR_RULES, d, kind, null, status, null, null, version,
                     selected ? d : null, selected ? round4(selection.stockWeightPct()) : null, null, null, null,
                     mapper.valueToTree(response), null, null, null, pricesFinal, latency(started), 0);
@@ -362,6 +387,17 @@ final class KrRuleBookService {
      * 재기동해도 다시 쓰지 않습니다(이미 있으면 그 행).
      */
     Decision pastDeadline(MarketRun run, LocalDate d, Instant deadline) {
+        return pastDeadline(run, d, deadline, null);
+    }
+
+    /**
+     * {@link #pastDeadline(MarketRun, LocalDate, Instant)}에 그 순간의 자료 게이트 판정을 더한 것 — 응답 {@code gates}·{@code waitedFor}(미달
+     * 게이트)에 남기고, ⑤(069500 D 봉)가 미달이면 사유를 {@value #ANCHOR_MISSING_REASON}로 둡니다(명세 §9 'D1 — 세션 자료 다시 묻기와 게이트 ⑤',
+     * 결정 e4 — 늦게 지정된 휴장일과 토스 지연을 가르는 척하지 않음). 그 밖에는 {@value #PAST_DEADLINE_REASON}.
+     *
+     * @param gates 기한 뒤 첫 실행이 본 게이트(①은 이 계좌, 판정하지 못했으면 null)
+     */
+    Decision pastDeadline(MarketRun run, LocalDate d, Instant deadline, List<KrDecisionGates.Gate> gates) {
         Optional<Decision> existing = decisionOn(d);
         if (existing.isPresent()) {
             return existing.get();
@@ -370,15 +406,19 @@ final class KrRuleBookService {
         Settings settings = Settings.from(run);
         Optional<KrReselection.Cycle> cycle = selectionOn(run, d, settings);
         String kind = cycle.isPresent() ? RuleBookService.REBALANCE : RuleBookService.SCHEDULED;
+        boolean anchorMissing = KrDecisionGates.anchorMissing(gates);
         Map<String, Object> response = new LinkedHashMap<>();
         response.put("summary", "결정 기한(" + Kst.stamp(deadline) + ")이 지나 " + d + " 세션은 결정하지 않습니다(NO_TRADE)"
+                + (anchorMissing ? " — " + ANCHOR_MISSING_REASON : "")
                 + (cycle.isPresent() ? " — 재선정은 다음 KR 결정일에 그날 자료로(K33)" : ""));
         response.put("book", PaperBooks.KR_RULES);
         response.put("kind", kind);
         response.put("asOfTradingDate", d.toString());
-        response.put("noTradeReason", PAST_DEADLINE_REASON);
+        response.put("noTradeReason", anchorMissing ? ANCHOR_MISSING_REASON : PAST_DEADLINE_REASON);
         response.put("pastDeadline", true);
         response.put("deadlineKst", Kst.stamp(deadline));
+        response.put("gates", gates == null ? null : gates.stream().map(KrDecisionGates.Gate::view).toList());
+        response.put("waitedFor", gates == null ? null : KrDecisionGates.blocking(gates));
         response.put("selectionDay", cycle.isPresent());
         response.put("cycleDate", cycle.map(c -> c.cycleDate().toString()).orElse(null));
         response.put("orders", List.of());

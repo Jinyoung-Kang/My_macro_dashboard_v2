@@ -23,7 +23,11 @@ import java.util.Map;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyCollection;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 /**
  * 한국 출발(2단계 명세 §4-8·K28, 결정 d13 — C1c, 규칙 계좌 몫은 D1b): S 22:30 결정 작업이 규칙 계좌(INITIAL — 재선정과 같은 계산)와 벤치마크 두
@@ -69,6 +73,15 @@ class KrStartTest {
         reader = PaperFixtures.quietReader();
         KrFixtures.stubHolidays(reader, KrFixtures.holidays(2026, 2027));
         com.macrodash.store.StoreRepository repository = mock(com.macrodash.store.StoreRepository.class);
+        // 금융위 시장 구분(체결 비용의 종목 구분) — 표준 U 주식 모두 코스피(S+1 시가 체결 — 다음 밤 정기 결정의 게이트 ①).
+        when(repository.latestObservationDate(Datasets.OBS_FSC_PRICE)).thenReturn(PREV);
+        when(repository.readObservationsFor(eq(Datasets.OBS_FSC_PRICE), any(LocalDate.class), anyCollection()))
+                .thenAnswer(invocation -> {
+                    java.util.Collection<String> codes = invocation.getArgument(2);
+                    Map<String, JsonNode> out = new LinkedHashMap<>();
+                    codes.forEach(code -> out.put(code, PaperFixtures.MAPPER.createObjectNode().put("market", "KOSPI")));
+                    return out;
+                });
         rulesData = KrRulesFixtures.standardThrough(NEXT, LocalDate.of(2026, 11, 26), PREV, S);
         rulesData.install(repository, reader);
         marketData = new PaperMarketData(reader, repository);
@@ -214,6 +227,10 @@ class KrStartTest {
         PaperDecisionJob.Result next = runAt("2026-12-01T22:30");
 
         assertThat(next.outcome()).as("출발 판정(모두 시작 전)이 거짓 — 정기 결정").isEqualTo(PaperDecisionJob.DECIDED);
+        assertThat(store.orders.values()).filteredOn(o -> o.bookCode().equals("kr_rules") && o.asOfTradingDate().equals(S))
+                .as("게이트 ① — 출발 주문이 S+1 시가에 체결된 뒤(그 실행이 장부를 처리)").isNotEmpty()
+                .allSatisfy(o -> assertThat(o.status()).isEqualTo(PaperBooks.ORDER_FILLED));
+        assertThat(next.rules().response().path("gates").get(0).path("status").asString()).isEqualTo("PASS");
         assertThat(next.rules().kind()).as("12-01 = 12월 첫 거래일 — 새 주기").isEqualTo(RuleBookService.REBALANCE);
         assertThat(next.rules().response().path("cycleDate").asString()).isEqualTo("2026-12-01");
         assertThat(store.books.get("kr_claude").status()).isEqualTo(PaperBooks.NOT_STARTED);

@@ -47,6 +47,7 @@ import java.util.concurrent.locks.ReentrantLock;
  *  그날 할 일(게이트 지표·규칙 책 결정·Claude 책 결정)이 다 됨 → ALREADY_DECIDED(기록 안 함)
  *  기한이 지났고 그 시장 규칙이 '결정하지 않음'(한국)  → PAST_DEADLINE(시장·세션마다 한 번 기록 — Claude를 부르지 않음)
  *  관측치가 d의 확정 종가가 아님 && decisionDeadlineKst(12:00) 전 → PRICES_NOT_FINAL(기록 안 함 — 다음 주기에 다시)
+ *    (한국 묶음은 이 자리가 자료 게이트 ①~⑥ — 미달이면 DATA_NOT_READY, 클래스 설명 '한국 결정 게이트')
  *  관측치 처리 → (확정이 아니면) d의 미확정 순자산 줄 → 게이트 지표 → 재선정일이면 선정 → 규칙 책 결정
  *  → Claude 책 결정(운용 중일 때만) → 작업 기록     (두 책 모두 출발일 뒤 거래일만 — 출발일은 초기 결정이 그날 결정)
  * </pre>
@@ -100,9 +101,17 @@ import java.util.concurrent.locks.ReentrantLock;
  * 상관없이 하나입니다. 시장을 받지 않는 옛 시그니처(한 번 실행·수동 실행·시각 설정)는 미국 판입니다.
  *
  * <p><b>한국 출발</b>(2단계 명세 §4-8·K28, C1c): 한국 실행에서 한국 계좌가 모두 시작 전이면 정기 결정 대신 {@link KrStartPipeline}이
- * 출발을 냅니다 — 출발일 S(배포 설정) 이후 세션 D의 결정 창(22:30 ~ D+1 01:00) 안에서 자료 게이트(§4-9 ②④⑤⑥, ③은 D1)를 통과하면 계좌마다
+ * 출발을 냅니다 — 출발일 S(배포 설정) 이후 세션 D의 결정 창(22:30 ~ D+1 01:00) 안에서 자료 게이트(§4-9 ②~⑥)를 통과하면 계좌마다
  * 출발 계획(규칙 계좌 INITIAL — 재선정과 같은 계산 · 벤치마크 둘, Claude E2는 갈고리)을 한 트랜잭션으로 씁니다({@value #STARTED}). 게이트 미달은 {@value #START_WAITING}
  * (기록 안 함), 기한이 지나면 {@value #START_POSTPONED}(그 세션에 한 번 기록 — 다음 KR 거래일 창에서 다시)입니다.
+ *
+ * <p><b>한국 결정 게이트</b>(2단계 명세 §4-9·§5, D1c — {@link KrDecisionGates}): 한국 묶음의 정기 결정은 '그날 종가 관측치' 기다림 대신 자료
+ * 게이트 ①~⑥을 모두 통과해야 냅니다. ②④⑤⑥(관측치 저장본의 D 봉 90%·금융위 기준일·069500 D 봉·거래일)이 미달이면 장부를 처리하지 않고,
+ * 통과하면 장부를 처리한 뒤 규칙 계좌 입력을 한 번 읽어(K26 동결과 같은 읽기 — 그 결정이 그대로 씀) ③(U 90%의 D 수급 저녁 판)을 보고, 결정할
+ * 계좌마다 ①(그 계좌의 기준일 &lt; D 대기 주문 없음 — 체결 조건 ⑤는 보지 않음)을 봅니다. 미달은 {@value #DATA_NOT_READY}(기록 안 함 — 다음
+ * 주기에 다시)이고, 판정은 결정 행 응답과 작업 기록의 {@code gates}에 남습니다. 기한(D+1 01:00)이 지나면 규칙 계좌는 그 세션 NO_TRADE 행(그 순간의
+ * 게이트와 사유 — ⑤ 미달이면 '069500 D 봉 없음(휴장 또는 지연)', 아니면 '기한 지남'), Claude는 부르지 않습니다. 자정을 넘긴 실행도 세션은
+ * {@code lastCompletedSession}이라 D 그대로입니다.
  *
  * <p><b>실행 하나 = 달력 한 벌·설정 판 하나</b>(C1a): 정기·수동 실행은 시작할 때 그 시장의 실행 문맥({@link MarketRun})을 한 번 열어
  * ({@link PaperMarkets#open}) 세션 d·결정 시각과 기한·관측치 확정 판정·장부 처리·미확정 순자산 줄·Claude 결정에 그대로 넘깁니다 —
@@ -146,6 +155,11 @@ public class PaperDecisionJob {
      * 기록합니다(재기동하면 한 번 더).
      */
     public static final String PAST_DEADLINE = "PAST_DEADLINE";
+    /**
+     * 한국 결정 자료 게이트(§4-9 ①~⑥) 미달 — 결정하지 않고 다음 주기에 다시(기록 안 함 — {@link KrDecisionGates}). 미국의
+     * {@value #PRICES_NOT_FINAL}(그날 종가 관측치 기다림) 자리입니다.
+     */
+    public static final String DATA_NOT_READY = "DATA_NOT_READY";
     /** 기한이 지나 Claude 계좌를 부르지 않음(작업 기록 — 그 시장 Claude 계좌가 그날 결정할 차례였을 때). */
     static final String CLAUDE_PAST_DEADLINE = "결정 기한이 지나 Claude를 부르지 않습니다";
     /** 기한이 지나 규칙 계좌를 결정하지 않음(작업 기록 — NO_TRADE 결정 행은 그 시장 규칙 계좌 결정이 씁니다). */
@@ -363,6 +377,10 @@ public class PaperDecisionJob {
             return new Result(GAVE_UP, d, null, null, null, d + " 오류가 " + MAX_ATTEMPTS + "번 나 오늘은 더 시도하지 않습니다 — "
                     + "수동 실행(POST /api/paper/run/decision)은 다시 시도합니다");
         }
+        if (krRulesSteps(market)) {
+            // 한국 묶음 — 자료 게이트 ①~⑥(§4-9)가 '그날 종가 관측치' 기다림을 대신합니다(클래스 설명 '한국 결정 게이트').
+            return decideKr(market, now, d, deadline, rulesGaveUp, claudeGaveUp);
+        }
         Optional<Quotes> quotes = reader.quietly(() -> marketData.quotes(market));
         boolean closesIn = quotes.map(q -> closesFor(market, q, d)).orElse(false);
         boolean pricesFinal = quotes.map(q -> confirmedFor(market, q, d)).orElse(false);
@@ -400,15 +418,6 @@ public class PaperDecisionJob {
         Decision decision = null;
         if (rulesGaveUp) {
             detail.put("rules", gaveUpNote());
-        } else if (krRulesSteps(market)) {
-            try {
-                decision = decideKrRules(market, d, pricesFinal, quotes, detail);
-                failures.remove(new FailureKey(market.code(), d, market.rulesBook()));
-            } catch (RuntimeException e) {
-                errors.add("규칙 계좌: " + message(e));
-                detail.put("rulesError", message(e));
-                failedBooks.add(market.rulesBook());
-            }
         } else if (!usSteps(market)) {
             detail.put("rules", RULES_NOT_YET);
         } else {
@@ -448,6 +457,143 @@ public class PaperDecisionJob {
     }
 
     /**
+     * 한국 정기 결정 한 번(클래스 설명 '한국 결정 게이트' — 2단계 명세 §4-9, D1c). 게이트 ②④⑤⑥(관측치 저장본·금융위 메타·달력)이 미달이면 장부를
+     * 처리하지 않고 {@value #DATA_NOT_READY}(기록 안 함), 통과하면 장부를 처리한 뒤 규칙 계좌 입력을 그 실행에서 한 번 읽어(K26 동결과 같은 읽기 —
+     * 결정 e5) ③을 보고, 계좌마다 ①(그 계좌의 기준일 &lt; D 대기 주문 — 결정 e3)을 본 뒤 결정합니다. 판정은 결정 행 응답 {@code gates}와 작업 기록
+     * {@code gates}에 남습니다. 결정한 계좌가 없고 ①로 기다리는 계좌만 있으면 {@value #DATA_NOT_READY}입니다.
+     */
+    private Result decideKr(MarketRun market, Instant now, LocalDate d, Instant deadline, boolean rulesGaveUp,
+                            boolean claudeGaveUp) {
+        KrDecisionGates.Inputs session = krGates.readSession(market, d);
+        List<KrDecisionGates.Gate> before = krGates.beforeLedger(market, session);
+        if (!KrDecisionGates.blocking(before).isEmpty()) {
+            return dataNotReady(d, before, deadline);
+        }
+        Optional<Quotes> quotes = session.quotes();
+        boolean closesIn = quotes.map(q -> closesFor(market, q, d)).orElse(false);
+        boolean pricesFinal = quotes.map(q -> confirmedFor(market, q, d)).orElse(false);
+        Map<String, Object> detail = new LinkedHashMap<>();
+        detail.put("tradingDate", d.toString());
+        detail.put("pricesFinal", pricesFinal);
+        detail.put("pastDeadline", false);
+        quotes.ifPresent(q -> detail.put("quotes", PaperRiskJob.describe(market, q)));
+        KrDecisionGates.Inputs inputs;
+        List<KrDecisionGates.Gate> data;
+        try {
+            quotes.ifPresent(q -> detail.put("ledger", ledgerDetail(ledger.process(market, q))));
+            boolean sameSession = quotes.map(q -> q.modalBarDate() == null || !q.modalBarDate().isAfter(d))
+                    .orElse(true);
+            if (sameSession) {
+                detail.put("navSettled", ledger.settleNav(market, d, closesIn));
+            }
+            // 장부를 처리한 뒤의 보유·재진입 금지로 — 게이트 ③과 규칙 계좌 결정이 같은 읽기(결정 e5). 읽은 순간 = 이 실행의 지금.
+            inputs = krGates.withRules(market, session, now);
+            data = krGates.data(market, inputs);
+        } catch (RuntimeException e) {
+            return failed(market, now, d, pricesFinal, detail, List.of(message(e)),
+                    List.of(market.rulesBook(), market.claudeBook()), null, null);
+        }
+        if (!KrDecisionGates.blocking(data).isEmpty()) {
+            return dataNotReady(d, data, deadline);
+        }
+
+        List<KrDecisionGates.Gate> gates = new ArrayList<>();
+        List<String> waiting = new ArrayList<>();
+        List<String> errors = new ArrayList<>();
+        List<String> failedBooks = new ArrayList<>();
+        Decision decision = null;
+        boolean rulesDecided = false;
+        if (rulesGaveUp) {
+            detail.put("rules", gaveUpNote());
+        } else {
+            try {
+                Optional<Decision> existing = krRules.decisionOn(d);
+                String skip = existing.isPresent() ? null : krRules.skipReason(d);
+                if (existing.isPresent()) {
+                    Map<String, Object> view = krDecisionDetail(existing.get());
+                    view.put("existing", true);
+                    detail.put("rules", view);
+                    decision = existing.get();
+                } else if (skip != null) {
+                    detail.put("rules", skip);
+                } else {
+                    KrDecisionGates.Gate first = KrDecisionGates.ledger(store, market, market.rulesBook(), d);
+                    gates.add(first);
+                    if (first.blocks()) {
+                        waiting.add(first.id() + " " + first.note());
+                        detail.put("rules", "자료 게이트 미달 — 다음 주기에 다시: " + first.id() + " " + first.note());
+                    } else {
+                        decision = krRules.decide(market, d, pricesFinal, inputs, views(withFirst(first, data)));
+                        rulesDecided = true;
+                        detail.put("rules", krDecisionDetail(decision));
+                    }
+                }
+                failures.remove(new FailureKey(market.code(), d, market.rulesBook()));
+            } catch (RuntimeException e) {
+                errors.add("규칙 계좌: " + message(e));
+                detail.put("rulesError", message(e));
+                failedBooks.add(market.rulesBook());
+            }
+        }
+        Decision claudeDecision = null;
+        if (claudeGaveUp) {
+            detail.put("claude", gaveUpNote());
+        } else {
+            try {
+                String claudeSkip = claudeSkipReason(market, store.book(market.claudeBook()), d);
+                if (claudeSkip != null) {
+                    detail.put("claude", claudeSkip);
+                } else {
+                    KrDecisionGates.Gate first = KrDecisionGates.ledger(store, market, market.claudeBook(), d);
+                    gates.add(first);
+                    if (first.blocks()) {
+                        waiting.add(first.id() + " " + first.note());
+                        detail.put("claude", "자료 게이트 미달 — 다음 주기에 다시: " + first.id() + " " + first.note());
+                    } else {
+                        claudeDecision = claude.decide(market, d, RuleBookService.SCHEDULED, pricesFinal);
+                        detail.put("claude", decisionDetail(claudeDecision));
+                    }
+                }
+                failures.remove(new FailureKey(market.code(), d, market.claudeBook()));
+            } catch (RuntimeException e) {
+                errors.add("Claude 계좌: " + message(e));
+                detail.put("claudeError", message(e));
+                failedBooks.add(market.claudeBook());
+            }
+        }
+        gates.addAll(data);
+        detail.put("gates", views(gates));
+        if (!errors.isEmpty()) {
+            return failed(market, now, d, pricesFinal, detail, errors, failedBooks, decision, claudeDecision);
+        }
+        if (!waiting.isEmpty() && !rulesDecided && claudeDecision == null) {
+            // 결정한 계좌 없이 ①로 기다리는 계좌만 — 기록하지 않고 다음 주기에 다시(10분마다 같은 줄이 작업 기록을 밀어내지 않게).
+            return new Result(DATA_NOT_READY, d, pricesFinal, decision, null, "자료 게이트 미달: " + String.join(" · ", waiting)
+                    + " — 기한 " + Kst.stamp(deadline) + "까지 다음 주기에 다시 봅니다");
+        }
+        record(market, now, DECIDED, detail);
+        return new Result(DECIDED, d, pricesFinal, decision, claudeDecision, null);
+    }
+
+    /** 자료 게이트 미달 — 결정·기록 없이 다음 주기에 다시({@value #DATA_NOT_READY}). */
+    private static Result dataNotReady(LocalDate d, List<KrDecisionGates.Gate> gates, Instant deadline) {
+        return new Result(DATA_NOT_READY, d, null, null, null, "자료 게이트 미달: "
+                + String.join(" · ", KrDecisionGates.blocking(gates)) + " — 기한 " + Kst.stamp(deadline) + "까지 다음 주기에 다시 봅니다");
+    }
+
+    /** ①(그 계좌) 다음에 ②~⑥. */
+    private static List<KrDecisionGates.Gate> withFirst(KrDecisionGates.Gate first, List<KrDecisionGates.Gate> data) {
+        List<KrDecisionGates.Gate> out = new ArrayList<>();
+        out.add(first);
+        out.addAll(data);
+        return out;
+    }
+
+    private static List<Map<String, Object>> views(List<KrDecisionGates.Gate> gates) {
+        return gates.stream().map(KrDecisionGates.Gate::view).toList();
+    }
+
+    /**
      * 기한이 지난 세션을 결정하지 않음({@link PaperMarket.AfterDeadline#NO_TRADE} — 한국, 명세 §4-9·§5). Claude 계좌는 부르지 않고(그날
      * 결정할 차례였으면 사유 {@value #CLAUDE_PAST_DEADLINE}), 규칙 계좌도 결정하지 않습니다 — 그 시장 규칙 계좌 결정이 생기면(한국 D1) 이
      * 자리에서 그 세션의 NO_TRADE 결정 행을 씁니다(재선정 따라잡기 K33의 근거). 관측치·장부·순자산 줄은 이 작업에서 처리하지 않습니다(리스크
@@ -459,13 +605,16 @@ public class PaperDecisionJob {
         // 쓰기가 실패했으면 다음 주기에 다시 씁니다.
         Object rulesView = usSteps(market) ? RULES_PAST_DEADLINE : RULES_NOT_YET;
         Decision rulesRow = null;
+        List<KrDecisionGates.Gate> gates = null;
         if (krRulesSteps(market)) {
             String skip = krRules.skipReason(d);
             if (skip != null) {
                 rulesView = skip;
             } else {
+                // 그 순간의 자료 게이트(① 규칙 계좌 · ②~⑥) — NO_TRADE 행의 사유(⑤ 미달이면 '069500 D 봉 없음', 결정 e4)와 기다린 까닭.
+                gates = deadlineGates(market, d, now);
                 try {
-                    rulesRow = krRules.pastDeadline(market, d, deadline);
+                    rulesRow = krRules.pastDeadline(market, d, deadline, gates);
                     rulesView = decisionDetail(rulesRow);
                 } catch (RuntimeException e) {
                     rulesView = "기한 지남 NO_TRADE 행을 쓰지 못함 — 다음 주기에 다시: " + message(e);
@@ -479,6 +628,9 @@ public class PaperDecisionJob {
             detail.put("tradingDate", d.toString());
             detail.put("pastDeadline", true);
             detail.put("deadline", Kst.stamp(deadline));
+            if (gates != null) {
+                detail.put("gates", views(gates));
+            }
             detail.put("rules", rulesView);
             String claudeSkip = claudeSkipReason(market, store.book(market.claudeBook()), d);
             detail.put("claude", claudeSkip == null ? CLAUDE_PAST_DEADLINE : claudeSkip);
@@ -488,6 +640,20 @@ public class PaperDecisionJob {
             log.debug("모의 매매 결정 작업({}): {}", market.code(), message);
         }
         return new Result(PAST_DEADLINE, d, null, rulesRow, null, message);
+    }
+
+    /**
+     * 기한이 지난 세션의 자료 게이트(① 한국 규칙 계좌 · ②~⑥) — 이 작업은 기한 뒤 장부를 처리하지 않으므로 ①은 저장된 대기 주문(리스크 점검이 처리한
+     * 상태)으로 봅니다. 판정하다 예외가 나면 null(행은 '기한 지남'으로 그대로 씀 — 로그만).
+     */
+    private List<KrDecisionGates.Gate> deadlineGates(MarketRun market, LocalDate d, Instant now) {
+        try {
+            KrDecisionGates.Inputs inputs = krGates.withRules(market, krGates.readSession(market, d), now);
+            return withFirst(KrDecisionGates.ledger(store, market, market.rulesBook(), d), krGates.data(market, inputs));
+        } catch (RuntimeException e) {
+            log.warn("모의 매매 결정 작업({}) — 기한 지난 세션 {}의 자료 게이트를 판정하지 못했습니다: {}", market.code(), d, e.toString());
+            return null;
+        }
     }
 
     /** 출발일·계좌가 갖춰지지 않은 시장이면 그 사유({@link PaperMarket#dormantReason}) — 실행을 열기 전에 봅니다(저장본을 읽지 않게). */
@@ -506,29 +672,6 @@ public class PaperDecisionJob {
     /** 한국 규칙 계좌 결정({@link KrRuleBookService})을 도는 시장인가 — 한국 묶음 그 자체일 때만 참입니다(시험용 한국 묶음은 아님). */
     private static boolean krRulesSteps(PaperMarket market) {
         return market.definition() == KrPaperMarket.INSTANCE;
-    }
-
-    /**
-     * 한국 규칙 계좌의 그 세션 정기 결정({@link KrRuleBookService#decide}) — 이미 있으면 그 결정(다시 내지 않음), 낼 차례가 아니면(시작 전·출발일
-     * 이하) 사유만 남기고 null. 관측치는 그 실행이 읽은 것을 넘깁니다(거래정지·체결할 수 있는 종목 판정 — 한 번 읽기).
-     */
-    private Decision decideKrRules(MarketRun market, LocalDate d, boolean pricesFinal, Optional<Quotes> quotes,
-                                   Map<String, Object> detail) {
-        Optional<Decision> existing = krRules.decisionOn(d);
-        if (existing.isPresent()) {
-            Map<String, Object> view = krDecisionDetail(existing.get());
-            view.put("existing", true);
-            detail.put("rules", view);
-            return existing.get();
-        }
-        String skip = krRules.skipReason(d);
-        if (skip != null) {
-            detail.put("rules", skip);
-            return null;
-        }
-        Decision decision = krRules.decide(market, d, pricesFinal, quotes);
-        detail.put("rules", krDecisionDetail(decision));
-        return decision;
     }
 
     /** 한국 규칙 계좌 결정의 작업 기록 칸 — 결정 요약에 선정 날짜(주기 r·입력 r′·따라잡기)를 더한 것. */

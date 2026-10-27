@@ -235,7 +235,7 @@ final class KrStartPipeline {
         }
         // 게이트와 계좌 몫이 같은 읽기(클래스 설명 — 결정 e5). 읽은 순간 = 이 실행의 지금(규칙 계좌 입력은 그 뒤에 받은 기록을 빼고 읽음).
         KrDecisionGates.Inputs inputs = decisionGates.withRules(run, decisionGates.readSession(run, d), now);
-        List<Gate> gates = decisionGates.start(run, inputs);
+        List<Gate> gates = decisionGates.data(run, inputs);
         String waiting = waitingReason(run, gates);
         if (waiting != null) {
             lastWait.keySet().removeIf(day -> !day.equals(d));
