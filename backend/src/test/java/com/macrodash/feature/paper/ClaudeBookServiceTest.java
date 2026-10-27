@@ -896,6 +896,7 @@ class ClaudeBookServiceTest {
     @Test
     @DisplayName("시장 격리(A6): 다른 시장 문맥의 결정은 그 시장 Claude 책·관측치·달력(주문 만료·재진입 금지를 보는 다음 세션)·패킷·시스템 프롬프트의 시장별 부분만 쓰고, 미국 Claude 책의 대기 주문·결정·상태는 그대로 — 하루 호출 상한은 두 시장이 함께 셈")
     void otherMarketDecisionTouchesOnlyItsBook() throws Exception {
+        PaperFixtures.dropKrDefaults(store);   // 시험용 한국 묶음의 기본값(최소 주문 500원·기한 23:30)으로
         // 세션 2026-11-25(수): 미국은 다음 날(11-26 추수감사절) 휴장, 시험용 한국 달력(서울 평일)은 거래일 — 두 달력이 갈리는 주.
         LocalDate wed = LocalDate.of(2026, 11, 25);
         Instant now = Instant.parse("2026-11-25T13:30:00Z");   // KST 11-25 22:30
@@ -964,6 +965,7 @@ class ClaudeBookServiceTest {
     @Test
     @DisplayName("시장 표기(A7): 다른 시장 문맥의 결정은 그 시장의 받는 체결 시점·금액 표기로 검증 — 그 시장에 없는 시점(NEXT_OBSERVATION)은 MALFORMED, 근거 문구의 금액은 그 시장 표기('$' 없음)")
     void otherMarketValidatesWithItsTimingsAndMoney() throws Exception {
+        PaperFixtures.dropKrDefaults(store);   // 시험용 한국 묶음의 기본값(최소 주문 500원·기한 23:30)으로
         LocalDate wed = LocalDate.of(2026, 11, 25);
         Instant now = Instant.parse("2026-11-25T13:30:00Z");   // KST 11-25 22:30
         PaperMarket kr = TestKrMarket.INSTANCE;
@@ -1074,6 +1076,7 @@ class ClaudeBookServiceTest {
     @Test
     @DisplayName("한 실행 = 달력 한 벌·설정 판 하나(C1a): 결정 작업 한 번이 그 시장 달력을 한 번만 만들어 장부·관측치 요약·Claude 파이프라인(주문 만료)이 그 한 벌을 쓰고, 실행을 연 뒤 저장된 새 설정 판이 끼어도 결정 행의 settings_version·패킷·시스템 프롬프트는 그 실행이 읽은 판")
     void decisionRunUsesOneCalendarAndTheSettingsVersionItRead() throws Exception {
+        PaperFixtures.dropKrDefaults(store);   // 시험용 한국 묶음의 기본값(최소 주문 500원·기한 23:30)으로
         List<CountingCalendar> opened = new java.util.ArrayList<>();
         TestKrMarket kr = TestKrMarket.perRun(CountingCalendar.factory(opened, new java.util.ArrayList<>()));
         String krBook = TestKrMarket.CLAUDE_BOOK;

@@ -162,6 +162,17 @@ final class PaperSettingKeys {
         return spec.withScope(Scope.SHARED);
     }
 
+    // ------------------------------------------------------------------ 한국 키의 저장 규칙(C1b — 형·범위 검사 뒤 policy)
+    /** 수집기가 늘 받는 한국 ETF(수집기 {@code kr_paper.KR_SCOPE_ETFS}와 같은 목록·순서 — {@code KrSettingsParityTest}). */
+    static final List<String> KR_SCOPE_ETFS = List.of("069500", "153130");
+    /**
+     * 장 시간 변경일에 받는 개장 시각 — 수집기가 싣는 1분봉 개장 봉 라벨({@code kr_paper.KR_OPEN_PROBE_LABELS} 09:01·10:01 = 개장 + 1분,
+     * 계약 1 — {@code KrSettingsParityTest})뿐이라 다른 개장 시각은 받을 봉이 없습니다(수집기 계약을 함께 바꿔야 함).
+     */
+    static final List<String> KR_OVERRIDE_OPENS = List.of("09:00", "10:00");
+    /** 장 시간 변경일 마감의 상한 — 통합(KRX+NXT) 세션 마감 20:00(그 뒤 20:30 수집이 그날을 다 받은 것으로 봄, K17). */
+    static final String KR_OVERRIDE_CLOSE_LATEST = "20:00";
+
     /** 화면에 보이는 순서이기도 합니다(점 경로의 첫 마디로 묶음). */
     static final List<Spec> ALL = List.of(
             shared(choice("model", ClaudeBookService.MODELS, false,
@@ -249,7 +260,66 @@ final class PaperSettingKeys {
                     "Claude 결정 스키마 v3(bearCase, 3단계 — 2단계 K37, 두 책 공통). 한국 책 출발일에 함께 켬. 지금은 읽는 코드가 없음")),
             shared(of("claude.figureCheck", Type.BOOLEAN, false,
                     "Claude 응답의 숫자 근거 검사 + 교정 재호출(3단계 — 2단계 K37, 두 책 공통, 결정마다 호출 +1 — "
-                            + "apiScheduledReserve 9 권장). 한국 책 출발일에 함께 켬. 지금은 읽는 코드가 없음")));
+                            + "apiScheduledReserve 9 권장). 한국 책 출발일에 함께 켬. 지금은 읽는 코드가 없음")),
+            // ---- 한국 책(2단계 명세 §4-13 — 같은 한 행의 kr.* 묶음, C1b). 규칙 계좌 영향 = 한국 규칙 계좌(kr_rules)가 읽는 키.
+            // 미국 키와 이름이 같은 키는 미국 범위·영향 표시를 그대로 따르고 값은 따로 둡니다(미국 키로 대신하지 않음 — 동결 대조군).
+            number("kr.slippageBp", 0, 100, true,
+                    "한국 슬리피지(bp) — 체결가는 관측가 그대로, 체결 금액 × 이 값을 비용 칸(slippage_cost)으로 현금에서 뺌(K31, 네 계좌 공통)"),
+            number("kr.commissionBp", 0, 100, true, "한국 수수료(bp, 매수·매도 각각, 최소 수수료 없음 — 가정 1.5bp, K5)"),
+            number("kr.tax.kospi.sttBp", 0, 100, true,
+                    "코스피 매도 증권거래세(bp) — 증권거래세법 시행령 제5조 제1호(2026-01-01 시행 5bp)"),
+            number("kr.tax.kospi.ruralBp", 0, 100, true, "코스피 매도 농어촌특별세(bp) — 농특세법 제5조①5(15bp)"),
+            number("kr.tax.kosdaq.sttBp", 0, 100, true, "코스닥 매도 증권거래세(bp, 농특세 없음) — 시행령 제5조 제3호 가목(20bp)"),
+            number("kr.tax.etfBp", 0, 100, true, "ETF 매도 세금(bp) — 0(과세 대상이 주권·지분이라 ETF 수익증권은 아님)"),
+            of("kr.tax.effectiveFrom", Type.DATE, true,
+                    "세율 시행일(yyyy-MM-dd) — 이보다 이른 날의 매도는 세율을 몰라 체결하지 않음. 오늘(KST)보다 늦은 날은 저장하지 "
+                            + "않음 — 새 세율은 시행일 당일에 저장(G13)"),
+            number("kr.minOrderNotional", 0, 100_000_000, true, "주문 최소 금액(원) — Claude 검증기·한국 규칙 계좌 매수(1억의 0.5%)"),
+            number("kr.maxWeightStockPct", 1, 100, true, "한국 종목당 비중 상한(%) — Claude 검증기·한국 규칙 계좌(미국과 같은 값)"),
+            number("kr.maxWeightEtfPct", 1, 100, true, "한국 ETF 비중 상한(%) — Claude 검증기·한국 규칙 계좌(미국과 같은 값)"),
+            integer("kr.maxPositions", 1, 100, false, "한국 매수 뒤 최대 종목 수(현금성 제외) — Claude 검증기"),
+            integer("kr.maxDiscretionaryOrdersPerMonth", 0, 200, false, "한국 Claude 재량 주문 월 상한"),
+            integer("kr.minHoldTradingDaysForSell", 0, 60, false, "한국 Claude 재량 매도 전 최소 보유 거래일(KRX 거래일, 스탑 제외)"),
+            number("kr.trailingStopPct", 1, 50, true, "한국 트레일링 스탑(%) — 밤 잠정 평가가로 감지해 다음 거래일 시가 매도(K30)"),
+            integer("kr.lockoutTradingDays", 0, 250, true, "한국 스탑 뒤 재진입 금지(KRX 거래일)"),
+            integer("kr.rulesMaxNames", 1, 50, true, "한국 규칙 계좌 매수 종목 수 상한(K7 — 후보가 모자란 만큼은 153130)"),
+            choice("kr.rules.weighting", List.of("EQUAL", "SCORE"), true,
+                    "한국 규칙 계좌 배분 — 동일비중(EQUAL)·점수 비례(SCORE, 점수 = 20일 외국인·기관 순매수 주 ÷ 상장주식수)"),
+            integer("kr.rules.minStreakDays", 0, 20, true, "후보가 될 외국인·기관 연속 순매수 최소 일수(0 = 끔, K7)"),
+            number("kr.rules.debtRatioMaxPct", 0, 1_000, true,
+                    "비금융 부채비율 상한(%, 가정 200 — 매출액 계정이 있는 회사만, 금융업은 보지 않음)"),
+            choice("kr.rules.reselection", List.of("MONTHLY_FIRST", "TWICE_MONTHLY"), true,
+                    "재선정 주기(K10) — 그 달 첫 KR 거래일(MONTHLY_FIRST)·월 2회(TWICE_MONTHLY: 첫째·셋째 월요일 다음 거래일)"),
+            number("kr.rules.parkCashThresholdPct", 0, 20, true, "재선정일이 아닌 날 남는 현금을 153130에 두는 기준(순자산 %)"),
+            of("kr.cashLikeTickers", Type.TICKERS, true,
+                    "한국 현금성 종목(스탑·비중 상한·종목 수 제외, 기본 153130) — 수집기가 늘 받는 ETF("
+                            + String.join("·", KR_SCOPE_ETFS) + ")만"),
+            of("kr.universeExtraTickers", Type.TICKERS, false,
+                    "Claude 계좌 유니버스에 늘 넣는 종목(§4-7) — 빈 목록만 받음: 수집기는 백엔드 설정을 읽지 않아(ADR 0008) 여기 "
+                            + "넣은 종목에는 토스 시세·수급이 없음"),
+            of("kr.decisionTimeKst", Type.TIME, false,
+                    "한국 결정 시각(KST, HH:mm, K6) — KR 거래일 D의 20:30~23:59(그날 밤) 또는 00:00~08:59(다음 날 아침)"),
+            of("kr.decisionDeadlineKst", Type.TIME, false,
+                    "한국 결정 기한(KST, HH:mm) — 결정 시각보다 이르거나 같으면 다음 날로 읽고 다음 개장 30분 전(08:30)까지. 지나면 "
+                            + "규칙 NO_TRADE·Claude 미호출(§4-9)"),
+            of("kr.calendar.extraClosures", Type.DATE_LIST, false,
+                    "임시휴장일(yyyy-MM-dd 목록, K16) — 천문연 공휴일·연말휴장에 없는 KRX 휴장. 실제 휴장을 알리는 값이라 "
+                            + "규칙 계좌 실험 조건이 아님"),
+            of("kr.calendar.openTimeOverrides", Type.DATE_TIME_MAP, false,
+                    "장 시간 변경일(날짜 → 개장·마감, 예 수능일 2026-11-19 10:00~16:30) — 1분봉 시가 봉(개장 + 1분)을 고름. 개장은 "
+                            + "수집기가 싣는 " + String.join("·", KR_OVERRIDE_OPENS) + "만, 마감은 " + KR_OVERRIDE_CLOSE_LATEST
+                            + "까지"),
+            of("kr.news.enabled", Type.BOOLEAN, false, "한국 Claude 패킷에 사건 뉴스 11b_events를 넣음 — 꺼도 수집은 계속"),
+            integer("kr.news.maxPerDay", 0, NewsEvents.MAX_PER_DAY_LIMIT, false, "한국 패킷에 싣는 사건 헤드라인 상한"),
+            of("kr.news.keywords", Type.PHRASES, false,
+                    "한국 매크로 키워드(쉼표·줄바꿈으로 나눔) — 한글 맞춤 규칙은 E1. 보유·후보 종목 이름은 따로 잡음"),
+            new Spec("kr.news.feeds", Type.FEEDS, null, null, PaperSettingsService.KR_NEWS_FEEDS, false,
+                    "한국 패킷에 넣을 피드 키(수집은 넷 모두) — " + String.join(" · ", PaperSettingsService.KR_NEWS_FEEDS)
+                            + ". yna_market(연합뉴스 마켓+)은 채널의 '무단 전재-재배포, AI 학습 및 활용 금지' 문구에도 사용자 결정으로 "
+                            + "기본에 둠(G12) — 빼려면 목록에서 지움", Scope.KR),
+            of("kr.news.aliases", Type.ALIAS_MAP, false,
+                    "종목 별칭 표(6자리 코드 → 별칭, 예 000660: 하이닉스) — 금융위·DART 이름 밖의 약칭·우선주 이름"));
+
 
     private static final Map<String, Spec> BY_KEY;
 
@@ -303,6 +373,61 @@ final class PaperSettingKeys {
             return RULES_FROZEN_WARNING + " · " + KR_RULES_FROZEN_WARNING;
         }
         return us ? RULES_FROZEN_WARNING : kr ? KR_RULES_FROZEN_WARNING : null;
+    }
+
+    /**
+     * 형·범위 검사를 지난 값({@link #check}이 맞춘 모양)에 그 키의 저장 규칙을 봅니다 — 틀리면 사유, 아니면 null(2단계 명세 §4-13, C1b).
+     * <ul>
+     *   <li>{@code kr.universeExtraTickers}: 빈 목록만(결정 d6) — 수집기는 백엔드 설정·보유를 읽지 않아(ADR 0008) 여기 넣은 종목에는
+     *       {@code paper.kr.quotes}·수급이 없습니다(수집 범위 = ETF 2 + U + 유니버스 이력 400일)</li>
+     *   <li>{@code kr.cashLikeTickers}: 수집기가 늘 받는 ETF({@link #KR_SCOPE_ETFS})만 — 같은 까닭(다른 종목은 시세가 없어 남는 현금 주문이
+     *       체결되지 않음)</li>
+     *   <li>{@code kr.tax.effectiveFrom}: 오늘(KST) 이하만(결정 d7) — 새 세율을 시행일 전에 저장하면 그 사이 매도가 '세율 모름'으로
+     *       섭니다({@code KrxCosts.fill}). 새 세율은 시행일 당일에 저장합니다</li>
+     *   <li>{@code kr.calendar.openTimeOverrides}: 개장은 {@link #KR_OVERRIDE_OPENS}만(수집기가 싣는 1분봉 라벨 − 1분), 마감은
+     *       {@value #KR_OVERRIDE_CLOSE_LATEST}까지</li>
+     * </ul>
+     */
+    static String policy(Spec spec, JsonNode value, LocalDate today) {
+        String key = spec.key();
+        switch (key) {
+            case "kr.universeExtraTickers" -> {
+                return value.isEmpty() ? null : key + ": 빈 목록만 받습니다 — 수집기는 백엔드 설정을 읽지 않아(ADR 0008) 여기 넣은 "
+                        + "종목에는 토스 시세·수급이 없습니다(수집 범위 = ETF " + String.join("·", KR_SCOPE_ETFS)
+                        + " + 유니버스 + 유니버스 이력 400일). 늘 넣을 종목은 수집기 상수와 함께 바꿉니다";
+            }
+            case "kr.cashLikeTickers" -> {
+                for (JsonNode item : value) {
+                    if (!KR_SCOPE_ETFS.contains(item.asString(""))) {
+                        return key + ": 수집기가 늘 받는 ETF(" + String.join("·", KR_SCOPE_ETFS) + ")만 받습니다 — "
+                                + item.asString("") + "는 시세가 없을 수 있어 남는 현금 주문이 체결되지 않습니다";
+                    }
+                }
+                return null;
+            }
+            case "kr.tax.effectiveFrom" -> {
+                LocalDate from = LocalDate.parse(value.asString(""));
+                return from.isAfter(today) ? key + ": 오늘(KST " + today + ")보다 늦은 시행일(" + from + ")은 저장하지 않습니다 — "
+                        + "그 사이 매도가 '세율 모름'으로 섭니다. 새 세율은 시행일 당일에 저장하세요" : null;
+            }
+            case "kr.calendar.openTimeOverrides" -> {
+                for (Map.Entry<String, JsonNode> entry : value.properties()) {
+                    String open = entry.getValue().path("open").asString("");
+                    String close = entry.getValue().path("close").asString("");
+                    if (!KR_OVERRIDE_OPENS.contains(open)) {
+                        return key + ": " + entry.getKey() + " — 개장은 " + String.join("·", KR_OVERRIDE_OPENS) + "만 받습니다(수집기가 "
+                                + "싣는 1분봉 개장 봉이 그 + 1분뿐) — " + open;
+                    }
+                    if (close.compareTo(KR_OVERRIDE_CLOSE_LATEST) > 0) {
+                        return key + ": " + entry.getKey() + " — 마감은 " + KR_OVERRIDE_CLOSE_LATEST + "까지입니다 — " + close;
+                    }
+                }
+                return null;
+            }
+            default -> {
+                return null;
+            }
+        }
     }
 
     /** 이 경로 아래에 키가 있는 묶음인가({@code blend} → {@code blend.groupB.topN}이 있으니 참). */
@@ -365,10 +490,13 @@ final class PaperSettingKeys {
                     return error(key + ": 티커 목록이어야 합니다");
                 }
                 Set<String> tickers = new LinkedHashSet<>();
+                // 한국 키는 6자리 종목 코드(영문 대문자·숫자 — 명세 §4-5), 미국·공통 키는 지금 티커 규칙.
+                boolean kr = spec.scope() == Scope.KR;
                 for (JsonNode item : value) {
                     String text = item.isString() ? item.asString("").strip().toUpperCase(Locale.ROOT) : "";
-                    if (!TICKER.matcher(text).matches()) {
-                        return error(key + ": 티커 형식이 아닙니다 — " + shown(item.toString()));
+                    if (!(kr ? KR_CODE : TICKER).matcher(text).matches()) {
+                        return error(key + (kr ? ": 6자리 종목 코드(영문 대문자·숫자)가 아닙니다 — " : ": 티커 형식이 아닙니다 — ")
+                                + shown(item.toString()));
                     }
                     tickers.add(text);
                 }

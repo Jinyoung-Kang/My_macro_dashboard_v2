@@ -305,7 +305,8 @@ class PaperSettingsServiceTest {
                 shared.add(key.path("key").asString());
                 assertThat(key.path("affectsRules").asBoolean()).as("공유 키는 규칙 계좌 영향 없음").isFalse();
             } else {
-                assertThat(key.path("market").asString()).as(key.path("key").asString()).isEqualTo("US");
+                String name = key.path("key").asString();
+                assertThat(key.path("market").asString()).as(name).isEqualTo(name.startsWith("kr.") ? "KR" : "US");
             }
         }
         assertThat(shared).containsExactly("model", "effort", "apiDailyCallCap", "apiScheduledReserve",
@@ -364,13 +365,34 @@ class PaperSettingsServiceTest {
                     .isEqualTo(body.path("maxDiscretionaryOrdersPerMonth").asInt());
             assertThat(limits.minHoldTradingDaysForSell()).isEqualTo(body.path("minHoldTradingDaysForSell").asInt());
             assertThat(limits.minOrderNotional()).isEqualTo(body.path("minOrderNotional").asDouble());
+            // 한국 키(C1b)도 — 장부·검증기 한도는 kr. 접두어 묶음으로(시험용 한국 묶음의 접두어도 kr.), 세율·요율은 그 값을 받을
+            // KrxCosts(C2가 읽음)의 범위 안.
+            PaperSettings kr = PaperSettings.from(body, TestKrMarket.INSTANCE);
+            assertThat(kr.fallbacks()).as("한국 " + (useMax ? "최댓값" : "최솟값")).isEmpty();
+            assertThat(kr.rules().fallbacks()).isEmpty();
+            JsonNode krBody = body.path("kr");
+            assertThat(kr.slippageBp()).isEqualTo(krBody.path("slippageBp").asDouble());
+            assertThat(kr.trailingStopPct()).isEqualTo(krBody.path("trailingStopPct").asDouble());
+            assertThat(kr.lockoutTradingDays()).isEqualTo(krBody.path("lockoutTradingDays").asInt());
+            PacketBuilder.Limits krLimits = PacketBuilder.Limits.from(body, TestKrMarket.INSTANCE);
+            assertThat(krLimits).isEqualTo(new PacketBuilder.Limits(krBody.path("maxWeightStockPct").asDouble(),
+                    krBody.path("maxWeightEtfPct").asDouble(), krBody.path("maxPositions").asInt(),
+                    krBody.path("minOrderNotional").asDouble(), krBody.path("maxDiscretionaryOrdersPerMonth").asInt(),
+                    krBody.path("minHoldTradingDaysForSell").asInt()));
+            JsonNode tax = krBody.path("tax");
+            new com.macrodash.analytics.KrxCosts.Rates(krBody.path("commissionBp").decimalValue(),
+                    krBody.path("slippageBp").decimalValue(), new com.macrodash.analytics.KrxCosts.TaxRates(
+                    java.time.LocalDate.parse(tax.path("effectiveFrom").asString()),
+                    tax.path("kospi").path("sttBp").decimalValue(), tax.path("kospi").path("ruralBp").decimalValue(),
+                    tax.path("kosdaq").path("sttBp").decimalValue(), tax.path("etfBp").decimalValue()));
         }
     }
 
     private static void collectLeaves(JsonNode node, String prefix, List<String> out) {
         for (Map.Entry<String, JsonNode> field : node.properties()) {
             String path = prefix.isEmpty() ? field.getKey() : prefix + "." + field.getKey();
-            if (field.getValue().isObject()) {
+            // 값이 객체인 키(날짜별 시각 표·별칭 표 — C1b)는 그 자체가 키 하나입니다.
+            if (field.getValue().isObject() && PaperSettingKeys.find(path).isEmpty()) {
                 collectLeaves(field.getValue(), path, out);
             } else {
                 out.add(path);

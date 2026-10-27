@@ -22,12 +22,19 @@ class PaperSettingsMarketTest {
 
     private static final PaperMarket US = UsPaperMarket.INSTANCE;
 
-    /** 기본 본문(미국 키만 — 한국 키는 C1b에서 기본 본문에 들어감). */
+    /** 기본 본문(C1b부터 한국 묶음 kr.*도 들어 있음 — 한국 키가 없는 옛 행은 {@link #withoutKr}). */
     private static ObjectNode defaults() {
         return (ObjectNode) PaperFixtures.settings(new FakePaperStore()).defaultsJson();
     }
 
-    /** 접두어 kr.·현금성 기본 153130·최소 주문 기본 500,000원인 시장 묶음(가짜 — 실제 한국 묶음은 C1b). */
+    /** 한국 묶음이 없는 기본 본문 — C1b 전에 만든 행(서버의 지금 행)과 같은 모양. */
+    private static ObjectNode withoutKr() {
+        ObjectNode body = defaults();
+        body.remove("kr");
+        return body;
+    }
+
+    /** 접두어 kr.·현금성 기본 153130·최소 주문 기본 500,000원인 시장 묶음(가짜 — 실제 한국 묶음 KrPaperMarket은 C1c). */
     private static PaperMarket krLike() {
         PaperMarket market = mock(PaperMarket.class);
         when(market.settingsPrefix()).thenReturn("kr.");
@@ -95,7 +102,7 @@ class PaperSettingsMarketTest {
     @Test
     @DisplayName("한국 묶음이 없는 행(한국 키를 아직 쓰지 않음) — 키마다 기본값, 현금성·최소 주문은 그 시장 기본값(SHY·$500 아님), fallbacks는 접두어를 붙인 실제 키 이름")
     void missingSectionFallsBackToMarketDefaults() {
-        ObjectNode body = defaults();
+        ObjectNode body = withoutKr();
         PaperMarket market = krLike();
 
         PaperSettings read = PaperSettings.from(body, market);
@@ -114,6 +121,22 @@ class PaperSettingsMarketTest {
                 .isEqualTo(PaperSettings.defaults(market));
         assertThat(PaperSettings.defaults(market).cashLikeTickers()).containsExactly("153130");
         assertThat(PaperSettings.defaults(market).fallbacks()).isEmpty();
+    }
+
+    @Test
+    @DisplayName("한국 기본 본문(C1b) — 장부 키·rules.*·검증기 한도를 kr. 아래 기본값으로 읽어 fallbacks가 없고, 값은 미국과 같은 크기·현금성 153130·최소 주문 500,000원")
+    void krDefaultsReadWithoutFallbacks() {
+        ObjectNode body = defaults();
+        PaperMarket market = krLike();
+        PaperSettings read = PaperSettings.from(body, market);
+        assertThat(read.fallbacks()).isEmpty();
+        assertThat(read.rules().fallbacks()).isEmpty();
+        assertThat(List.of(read.slippageBp(), read.trailingStopPct(), (double) read.lockoutTradingDays(),
+                read.rules().parkCashThresholdPct())).containsExactly(5.0, 8.0, 20.0, 2.0);
+        assertThat(read.cashLikeTickers()).containsExactly("153130");
+        assertThat(PacketBuilder.Limits.from(body, market)).isEqualTo(new PacketBuilder.Limits(10, 20, 20, 500_000, 20, 5));
+        assertThat(PaperSettings.from(body)).as("미국 판은 한국 묶음과 상관없이 그대로").isEqualTo(PaperSettings.from(withoutKr()));
+        assertThat(PacketBuilder.Limits.from(body)).isEqualTo(PacketBuilder.Limits.from(withoutKr()));
     }
 
     @Test

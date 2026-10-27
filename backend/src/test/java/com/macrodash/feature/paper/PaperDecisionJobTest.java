@@ -826,6 +826,9 @@ class PaperDecisionJobTest {
     @Test
     @DisplayName("시장 격리(A6): 결정 시각·기한은 그 시장의 설정 키(접두어)와 시장 기본값 — 미국 키와 서로 섞이지 않음")
     void decisionTimesPerMarket() {
+        // 한국 키가 없는 행 — 시장 기본값(시험용 22:30·23:30). 실제 한국 기본 본문(C1b, 기한 01:00)을 이 작업이 결정 시각으로 접는 문제는
+        // D1이 기한 규칙을 시장으로 옮길 자리입니다(명세 §9 'D1·E2 — 결정 기한').
+        PaperFixtures.dropKrDefaults(store);
         assertThat(job(FRI_CLOSE).times(KR)).isEqualTo(new PaperDecisionJob.Times(java.time.LocalTime.of(22, 30),
                 java.time.LocalTime.of(23, 30)));
         tools.jackson.databind.node.ObjectNode body = (tools.jackson.databind.node.ObjectNode) store.settings.body();

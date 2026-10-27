@@ -120,6 +120,15 @@ final class PaperFixtures {
         return new PaperSettingsService(store, MAPPER);
     }
 
+    /**
+     * 설정 행에서 실제 한국 묶음({@code kr.*} 기본값 — C1b부터 기본 본문에 있음)을 뺍니다. 시험용 한국 묶음({@link TestKrMarket}, 접두어
+     * {@code kr.})이 실제 한국 기본값(1억 원 기준 최소 주문 500,000원·현금성 153130·결정 기한 01:00) 대신 자기 기본값(시험용 값)으로 돌게
+     * — 한국 키가 없는 행(C1b 전에 만든 행)과 같습니다. 한국 키를 시험마다 정하는 시험은 {@code putObject("kr")}로 묶음을 통째로 바꿉니다.
+     */
+    static void dropKrDefaults(FakePaperStore store) {
+        ((tools.jackson.databind.node.ObjectNode) store.settings.body()).remove("kr");
+    }
+
     static PaperConfig config() {
         return new PaperConfig(true, FRI, 100_000);
     }
