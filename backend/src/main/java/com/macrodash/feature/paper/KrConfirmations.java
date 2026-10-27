@@ -7,6 +7,7 @@ import com.macrodash.store.PaperStore.Book;
 import com.macrodash.store.PaperStore.BookState;
 import com.macrodash.store.PaperStore.Fill;
 import com.macrodash.store.PaperStore.FillConfirmation;
+import com.macrodash.store.PaperStore.NavRow;
 import com.macrodash.store.PaperStore.Position;
 import com.macrodash.store.PaperStore.SettingsRow;
 import com.macrodash.store.PaperStore.UnconfirmedFill;
@@ -58,6 +59,10 @@ import java.util.TreeSet;
  * 기다림), 그날을 냈는데 그 종목 행이 없음(<b>'금융위 확정 미보정'</b> — ETF는 증권상품시세의 그날 행이 없을 때만, 작업 기록에 사유), 확정가 칸이
  * 비었음(거래 없던 날·시가 칸 전 저장본), 체결 때 설정 판을 이력에서 찾지 못함, 종목 구분을 모름. 확정되지 않은 체결이 남은 날의 순자산은
  * 확정({@code prices_final})이 되지 않습니다.
+ *
+ * <p><b>확정 순자산 줄</b>({@link #rewriteNav}): 체결을 확정한 뒤 그 책의 마지막 순자산 줄(거래일 D)을 금융위 D 종가로 다시 씁니다 — 장부 상태가 D
+ * 마감일 때만(마지막 관측치의 세션 = D, D 뒤 체결 없음). 그날까지의 체결이 모두 확정되고 모든 보유가 금융위 D 종가로 평가되면 {@code prices_final =
+ * true}, 아니면 잠정(이번에 확정한 체결이 있으면 고친 현금으로 다시 씀). 미처리 기업행위 보유는 묶인 평가 그대로라 그 줄은 잠정입니다.
  */
 final class KrConfirmations {
 
@@ -77,36 +82,50 @@ final class KrConfirmations {
     /**
      * 책 하나의 확정 결과.
      *
-     * @param confirmed 이번에 쓴 확정 조정 행 수
-     * @param notes     사람이 알아야 할 일(확정한 체결의 잠정 → 확정가·현금 차이, 확정하지 못한 사유)
+     * @param confirmed    이번에 쓴 확정 조정 행 수
+     * @param navFinalized 이번에 확정({@code prices_final = true})이 된 순자산 줄의 거래일(없으면 null)
+     * @param notes        사람이 알아야 할 일(확정한 체결의 잠정 → 확정가·현금 차이, 확정하지 못한 사유, 순자산 줄)
      */
-    record Result(int confirmed, List<String> notes) {
+    record Result(int confirmed, LocalDate navFinalized, List<String> notes) {
+
+        static final Result NOTHING = new Result(0, null, List.of());
 
         Result {
             notes = List.copyOf(notes);
         }
 
         boolean worked() {
-            return confirmed > 0;
+            return confirmed > 0 || navFinalized != null;
         }
     }
 
     /**
-     * 책 하나를 확정합니다(클래스 설명) — 부르는 쪽이 장부 잠금과 {@link PaperStore#atomically} 안에서 부릅니다.
+     * 책 하나를 확정합니다(클래스 설명) — 부르는 쪽이 장부 잠금과 {@link PaperStore#atomically} 안에서 부릅니다. 체결을 확정한 뒤 그 책의 마지막
+     * 순자산 줄을 금융위 종가로 다시 씁니다({@link #rewriteNav}).
      *
-     * @param run 그 실행(시장 묶음·설정 판 — 확정 시세 읽기의 ETF 목록)
+     * @param run 그 실행(시장 묶음·설정 판 — 확정 시세 읽기의 ETF 목록, 달력 — 장부 상태의 세션)
      */
     Result confirm(MarketRun run, Book book) {
         List<UnconfirmedFill> pending = store.unconfirmedFills(book.code());
-        if (pending.isEmpty()) {
-            return new Result(0, List.of());
+        Optional<BookState> stateRow = store.state(book.code());
+        if (stateRow.isEmpty()) {
+            if (pending.isEmpty()) {
+                return Result.NOTHING;
+            }
+            throw new IllegalStateException("계좌 상태(paper_book_state)가 없습니다 — 초기화를 다시 실행하세요");
         }
-        BookState state = store.state(book.code()).orElseThrow(() ->
-                new IllegalStateException("계좌 상태(paper_book_state)가 없습니다 — 초기화를 다시 실행하세요"));
+        BookState state = stateRow.get();
+        LocalDate navDay = state.lastNavTradingDate();
+        Optional<NavRow> line = navDay == null ? Optional.empty() : store.navSeries(book.code()).stream()
+                .filter(row -> navDay.equals(row.tradingDate())).findFirst();
+        boolean lineOpen = line.isPresent() && !line.get().pricesFinal();
+        if (pending.isEmpty() && !lineOpen) {
+            return Result.NOTHING;   // 확정할 체결도, 확정을 기다리는 순자산 줄도 없음(5분마다 도는 길 — 시세를 읽지 않음)
+        }
         Map<String, Position> positions = new TreeMap<>();
         store.positions(book.code()).forEach(position -> positions.put(position.ticker(), position));
-        Set<String> codes = new TreeSet<>();
-        LocalDate from = null;
+        Set<String> codes = new TreeSet<>(positions.keySet());
+        LocalDate from = navDay;
         for (UnconfirmedFill unconfirmed : pending) {
             codes.add(unconfirmed.fill().ticker());
             LocalDate day = unconfirmed.fill().observationDate();
@@ -118,22 +137,120 @@ final class KrConfirmations {
         BigDecimal nav = BigDecimal.valueOf(state.nav());
         int confirmed = 0;
         List<String> notes = new ArrayList<>();
+        List<UnconfirmedFill> left = new ArrayList<>();
         for (UnconfirmedFill unconfirmed : pending) {
             Optional<BigDecimal> delta = confirmFill(run, book, unconfirmed, fsc, positions, notes);
             if (delta.isPresent()) {
                 cash = cash.add(delta.get());
                 nav = nav.add(delta.get());
                 confirmed++;
+            } else {
+                left.add(unconfirmed);
             }
         }
+        double cashNow = PaperLedger.round4(cash.doubleValue());
         if (confirmed > 0) {
-            double cashNow = PaperLedger.round4(cash.doubleValue());
             double navNow = PaperLedger.round4(nav.doubleValue());
             double exposure = navNow > 0 ? PaperLedger.round4(state.equityValue() / navNow * 100) : state.exposurePct();
             store.upsertState(new BookState(state.bookCode(), cashNow, navNow, state.equityValue(), exposure,
                     state.lastObservedAt(), state.lastProcessedCollectedAt(), state.lastNavTradingDate(), null));
         }
-        return new Result(confirmed, notes);
+        LocalDate finalized = null;
+        if (line.isPresent() && (confirmed > 0 || lineOpen)) {
+            finalized = rewriteNav(run, book, state, line.get(), cashNow, positions, left, fsc, confirmed > 0, notes);
+        }
+        return new Result(confirmed, finalized, notes);
+    }
+
+    /**
+     * 그 책의 마지막 순자산 줄(거래일 D = 상태의 {@code last_nav_trading_date})을 금융위 종가로 다시 씁니다(명세 §4-1·K29 — '그날까지 모든 체결이
+     * 확정되고 모든 보유가 확정 종가로 평가된 날만 {@code prices_final=true}, 그 전은 잠정, 확정 때 다시 씀').
+     *
+     * <p><b>장부 상태가 D 마감일 때만</b> 씁니다 — 줄을 다시 셀 수량·현금은 지금 상태뿐이라(지난날로 되감지 않음): 마지막으로 처리한 관측치의 세션이 D이고
+     * D 뒤 체결이 없을 때. 금융위 D 값은 D+1 밤에 D+1 관측치보다 먼저 들어오므로(slow 순서, 장부는 관측치 처리 전에 확정 조정을 먼저 돎) 보통은 이
+     * 조건이 맞습니다. 금융위가 D+1 관측치 처리보다 늦게 들어오면 D 줄은 잠정으로 남고 다음 줄이 확정됩니다(남은 위험 — 명세 §4-1 'C3 구현에서 정한 것').
+     *
+     * <p>평가: 보유마다 그 종목 금융위 D 행의 종가(거래가 없던 날이면 그 행의 종가 = KRX 공식 종가인 전날 값 — 평가 가격으로는 그대로 씀; 체결가가
+     * 아닐 뿐), 행이 없으면 마지막 평가 가격(토스 — 그 줄은 잠정), <b>미처리 기업행위 보유는 묶인 평가 그대로</b>(금융위 최신 종가로 덮지 않음 — 그 줄은
+     * 잠정, 명세 §4-2 'C2c 구현에서 정한 것'이 넘긴 자리). 현금은 확정 조정을 반영한 지금 현금. 확정 = 그날까지(체결일 ≤ D) 확정 안 된 체결이 없고 모든
+     * 보유가 금융위 D 종가로 평가됨. 이번에 확정한 체결이 있으면 잠정이어도 다시 쓰고(고친 현금), 없으면 확정이 될 때만 씁니다. 확정 줄은 잠정 줄로
+     * 덮이지 않습니다({@link PaperStore#upsertNav}).
+     *
+     * @return 이번에 확정이 된 줄의 거래일(아니면 null)
+     */
+    private LocalDate rewriteNav(MarketRun run, Book book, BookState state, NavRow line, double cash,
+                                 Map<String, Position> positions, List<UnconfirmedFill> left, KrConfirmed fsc,
+                                 boolean cashChanged, List<String> notes) {
+        LocalDate day = line.tradingDate();
+        String moved = stateMovedPast(run, book, state, day);
+        if (moved != null) {
+            if (cashChanged) {
+                notes.add("순자산 " + day + " 줄은 다시 쓰지 않음 — " + moved + "(확정 현금은 상태에 반영, 그 줄은 잠정 그대로)");
+            }
+            return null;
+        }
+        Map<String, String> holds = new TreeMap<>();
+        store.corpActionHolds(book.code()).forEach(hold -> holds.put(hold.ticker(), hold.reason()));
+        Map<String, Integer> qty = new TreeMap<>();
+        Map<String, Double> price = new TreeMap<>();
+        List<String> provisional = new ArrayList<>();
+        for (Position p : positions.values()) {
+            qty.put(p.ticker(), p.qty());
+            double valued = p.lastPrice() != null ? p.lastPrice() : p.avgCost();
+            Optional<KrConfirmed.Day> row = fsc.of(p.ticker()).on(day);
+            if (holds.containsKey(p.ticker())) {
+                provisional.add(p.ticker() + " 미처리 기업행위 — 묶인 평가 " + won(BigDecimal.valueOf(valued)) + "원");
+            } else if (row.isPresent() && row.get().close() != null) {
+                valued = row.get().close().doubleValue();
+            } else {
+                provisional.add(p.ticker() + " 금융위 " + day + " 종가 없음 — 마지막 평가 가격 " + won(BigDecimal.valueOf(valued)) + "원");
+            }
+            price.put(p.ticker(), valued);
+        }
+        for (UnconfirmedFill unconfirmed : left) {
+            LocalDate filled = unconfirmed.fill().observationDate();
+            if (filled == null || !filled.isAfter(day)) {
+                provisional.add("체결 " + unconfirmed.fill().id() + " " + unconfirmed.fill().ticker() + "(" + filled + ") 확정 전");
+            }
+        }
+        boolean pricesFinal = provisional.isEmpty();
+        if (!cashChanged && !pricesFinal) {
+            return null;   // 고칠 현금도, 확정할 수도 없음 — 줄 그대로
+        }
+        PaperLedger.Valuation valuation = PaperLedger.value(cash, qty, price);
+        store.upsertNav(new NavRow(book.code(), day, PaperLedger.round4(valuation.nav()), PaperLedger.round4(cash),
+                PaperLedger.round4(valuation.equityValue()), PaperLedger.round4(valuation.exposurePct()), pricesFinal));
+        if (pricesFinal) {
+            notes.add("순자산 " + day + " 확정(금융위 종가) " + won(BigDecimal.valueOf(PaperLedger.round4(valuation.nav())))
+                    + "원 — 그날까지 체결 모두 확정·보유 모두 금융위 " + day + " 종가");
+            return line.pricesFinal() ? null : day;
+        }
+        notes.add("순자산 " + day + " 잠정으로 다시 씀(확정 현금 " + won(BigDecimal.valueOf(PaperLedger.round4(cash))) + "원) — "
+                + String.join("; ", provisional));
+        return null;
+    }
+
+    /**
+     * 장부 상태가 그 줄의 거래일 D 마감이 아닌 까닭(맞으면 null) — 마지막으로 처리한 관측치의 세션이 D가 아니거나 D 뒤 체결이 있음({@link #rewriteNav}).
+     */
+    private String stateMovedPast(MarketRun run, Book book, BookState state, LocalDate day) {
+        if (state.lastProcessedCollectedAt() == null) {
+            return "장부가 관측치를 처리한 적이 없음";
+        }
+        LocalDate session;
+        try {
+            session = run.calendar().currentOrLastSession(state.lastProcessedCollectedAt());
+        } catch (com.macrodash.analytics.CalendarUnavailableException e) {
+            return "마지막 관측치의 세션을 셀 수 없음(" + e.getMessage() + ")";
+        }
+        if (!day.equals(session)) {
+            return "마지막으로 처리한 관측치의 세션이 " + session + "(그 줄 " + day + "이 아님)";
+        }
+        Optional<LocalDate> latest = store.latestFillDate(book.code());
+        if (latest.isPresent() && latest.get().isAfter(day)) {
+            return day + " 뒤 체결(" + latest.get() + ")이 장부에 있음";
+        }
+        return null;
     }
 
     /** 체결 하나 — 확정 조정 행을 새로 썼으면 그 현금 차이, 아니면 empty(사유는 {@code notes}). */

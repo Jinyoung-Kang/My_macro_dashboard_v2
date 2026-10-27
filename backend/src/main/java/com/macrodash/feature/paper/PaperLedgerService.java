@@ -94,6 +94,12 @@ import java.util.function.Supplier;
  * 시장 몫이고({@link PaperMarket#fillBar} — 기준 거래일 뒤 첫 관측 봉의 시가 사다리, {@link PaperMarket#fill} — 비용 칸·보류), 체결 조건 ①은
  * 저장본이 아니라 그 종목을 받은 시각입니다. 미국식 분할 감지·관측가 최고가·즉시 스탑은 쓰지 않습니다({@code processAuction}).
  *
+ * <p><b>한국 — 금융위 확정 조정</b>({@link PaperMarket#confirmsFills}, 2단계 K29 — C3 {@link KrConfirmations}): 관측치를 처리하기 <b>전에</b> 책마다
+ * 확정 안 된 체결을 금융위 시가로 확정하고(체결마다 한 행·현금·평단·최고가) 마지막 순자산 줄을 금융위 종가로 다시 씁니다 — 금융위 D 값이 들어온
+ * 밤에 D+1 관측치보다 앞서야 장부가 D 마감 상태일 때 D 줄을 확정할 수 있습니다. 리스크 점검은 새 관측치가 없는 주기에도 확정 조정만 돌립니다
+ * ({@link #confirm}). 관측치가 쓰는 한국 순자산 줄은 잠정이고(토스 관측치는 확정가가 아님), 현금뿐인 줄도 그날까지의 체결이 모두 확정됐을 때만
+ * 확정입니다.
+ *
  * <p><b>순자산 줄</b>: 관측 시각의 세션(시장 달력의 {@code currentOrLastSession})이 다수 티커의 봉 날짜와 같고 그 봉의 종가가
  * 나왔을 때만({@link PaperMarket#closeAvailable}) 그 거래일 줄을 씁니다 — 다음 날 개장 직후에는 새 봉의 과반이 아직 전날 날짜라, 이 조건이 없으면 장중가와 그날
  * 체결이 섞인 평가가 전날 확정 줄을 덮습니다(주말·휴장일·개장 전 재저장은 세션이 그대로라 다시 씀). 확정 표시
@@ -312,7 +318,8 @@ public class PaperLedgerService {
     /**
      * 그 시장 책의 금융위 확정 조정만 한 번({@link KrConfirmations}, 명세 K29 — C3). 리스크 점검이 새 관측치가 없는 주기에 부릅니다(금융위 값은
      * 관측치와 따로 들어오므로). 확정 조정 시장이 아니면 아무것도 하지 않습니다. 한 책의 오류는 그 책만 되돌리고, 같은 오류는 결과에 다시
-     * 올리지 않습니다({@link #confirmErrors}).
+     * 올리지 않습니다({@link #confirmErrors}). 결과의 {@code booksProcessed}는 확정 조정 행을 썼거나 순자산 줄이 확정이 된 책, {@code confirmed}는 쓴 행
+     * 수이고, 한 일이 없으면 {@code skippedReason}이 있습니다.
      */
     Outcome confirm(PaperMarket market) {
         MarketRun run = MarketRun.of(market, store);
@@ -354,7 +361,7 @@ public class PaperLedgerService {
                 }
             }
         }
-        String skipped = confirmed == 0 && errors.isEmpty() ? "새로 확정할 체결이 없습니다" : null;
+        String skipped = worked.isEmpty() && errors.isEmpty() ? "새로 확정할 체결이 없습니다" : null;
         return new Outcome(0, 0, 0, 0, worked, skipped, notes, errors, List.of(), confirmed);
     }
 
@@ -1452,14 +1459,22 @@ public class PaperLedgerService {
                 && run.market.closeAvailable(barDate, run.at)
                 && (run.book.startedOn() == null || !barDate.isBefore(run.book.startedOn()));
         if (started && sessionClose) {
+            // 확정 조정 시장(한국)은 그날까지의 체결이 모두 확정됐을 때만 — 현금에 잠정 체결가가 남아 있으면 현금뿐인 줄도 잠정(K29, C3).
+            boolean pricesFinal = allFinal(run, barDate) && (!run.market.confirmsFills() || confirmedThrough(code, barDate));
             store.upsertNav(new NavRow(code, barDate, PaperLedger.round4(valuation.nav()), PaperLedger.round4(run.cash),
                     PaperLedger.round4(valuation.equityValue()), PaperLedger.round4(valuation.exposurePct()),
-                    allFinal(run, barDate)));
+                    pricesFinal));
             navDate = navDate == null || barDate.isAfter(navDate) ? barDate : navDate;
         }
         store.upsertState(new BookState(code, PaperLedger.round4(run.cash), PaperLedger.round4(valuation.nav()),
                 PaperLedger.round4(valuation.equityValue()), PaperLedger.round4(valuation.exposurePct()), run.at, run.at,
                 navDate, null));
+    }
+
+    /** 그 책의 체결 중 체결일 ≤ {@code day}인 것이 모두 금융위 확정 조정을 받았나(확정 조정 시장 — K29, C3). */
+    private boolean confirmedThrough(String code, LocalDate day) {
+        return store.unconfirmedFills(code).stream()
+                .allMatch(u -> u.fill().observationDate() != null && u.fill().observationDate().isAfter(day));
     }
 
     /**

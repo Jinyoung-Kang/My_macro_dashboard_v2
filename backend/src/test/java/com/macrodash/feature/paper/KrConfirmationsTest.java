@@ -8,6 +8,7 @@ import com.macrodash.store.PaperStore.Book;
 import com.macrodash.store.PaperStore.BookState;
 import com.macrodash.store.PaperStore.Fill;
 import com.macrodash.store.PaperStore.FillConfirmation;
+import com.macrodash.store.PaperStore.NavRow;
 import com.macrodash.store.PaperStore.Order;
 import com.macrodash.store.PaperStore.Position;
 import org.junit.jupiter.api.BeforeEach;
@@ -367,6 +368,158 @@ class KrConfirmationsTest {
         assertThat(some.after(none).confirmed()).isEqualTo(2);
         assertThat(none.after(some).filled()).as("셈은 관측치 처리 쪽").isEqualTo(1);
         assertThat(none.after(some).confirmed()).isEqualTo(2);
+    }
+
+    // ------------------------------------------------------------------ 확정 순자산 줄
+    private NavRow navOn(LocalDate day) {
+        return store.navSeries(BOOK).stream().filter(row -> row.tradingDate().equals(day)).findFirst().orElseThrow();
+    }
+
+    @Test
+    @DisplayName("확정 순자산 줄 — D+1 밤 줄(토스 종가, 잠정)이 금융위 D+1 행이 들어오면 확정 현금 + 금융위 종가로 다시 쓰여 prices_final=true(그날까지 체결 모두 확정·보유 모두 금융위 종가)")
+    void navLineIsConfirmed() {
+        book(1_000_000);
+        order("005930", PaperBooks.BUY, 10, D, CREATED);
+        process(nightD1("005930", 71_300), COLLECTED_D1);
+        NavRow provisional = navOn(D1);
+        assertThat(provisional.pricesFinal()).as("토스 관측치의 줄은 잠정").isFalse();
+        assertThat(provisional.nav()).isEqualTo(286_538 + 714_000);
+        fsc("005930", KrConfirmed.SOURCE_FSC, D1, day(D1, 71_200L, 71_000, 5_000_000, "KOSPI"));
+
+        Outcome outcome = confirm();
+
+        NavRow line = navOn(D1);
+        assertThat(line.pricesFinal()).isTrue();
+        assertThat(line.cash()).isEqualTo(287_538);
+        assertThat(line.equityValue()).as("10주 × 금융위 종가 71,000").isEqualTo(710_000);
+        assertThat(line.nav()).isEqualTo(997_538);
+        assertThat(outcome.booksProcessed()).containsExactly(BOOK);
+        assertThat(outcome.notes()).anySatisfy(note -> assertThat(note).contains("순자산 2026-11-03 확정(금융위 종가) 997538원"));
+        assertThat(store.states.get(BOOK).nav()).as("상태는 토스 평가 + 확정 현금(지금 평가는 다음 관측치가 씀)")
+                .isEqualTo(287_538 + 714_000);
+    }
+
+    @Test
+    @DisplayName("보유 하나라도 금융위 그날 종가가 없으면 그 줄은 잠정 — 확정한 체결이 있으면 고친 현금으로 다시 쓰고, 나중에 그 종목 행(증권상품시세)이 들어오면 새 확정 없이도 그 줄이 확정이 됨")
+    void navWaitsForEveryHolding() {
+        book(1_000_000);
+        store.upsertPosition(new Position(BOOK, "153130", 100, 107_000, D, CREATED, 107_000, CREATED, 107_000.0, CREATED,
+                false, D, 108_000, null));
+        order("005930", PaperBooks.BUY, 10, D, CREATED);
+        KrFixtures.Payload payload = nightD1("005930", 71_300);
+        payload.etf("153130", FETCHED_D1).bar(D, 108_000.0, 108_000.0, 50_000).bar(D1, 108_010.0, 108_020.0, 40_000);
+        process(payload, COLLECTED_D1);
+        assertThat(navOn(D1).nav()).isEqualTo(286_538 + 714_000 + 10_802_000);
+        fsc("005930", KrConfirmed.SOURCE_FSC, D1, day(D1, 71_200L, 71_000, 5_000_000, "KOSPI"));
+        fsc("153130", KrConfirmed.SOURCE_FSC_ETF, D);
+
+        Outcome stocks = confirm();
+
+        assertThat(stocks.confirmed()).isEqualTo(1);
+        NavRow partly = navOn(D1);
+        assertThat(partly.pricesFinal()).isFalse();
+        assertThat(partly.cash()).as("고친 현금").isEqualTo(287_538);
+        assertThat(partly.nav()).as("005930 금융위 71,000 + 153130 토스 108,020").isEqualTo(287_538 + 710_000 + 10_802_000);
+        assertThat(stocks.notes()).anySatisfy(note -> assertThat(note).contains("순자산 2026-11-03 잠정으로 다시 씀")
+                .contains("153130 금융위 2026-11-03 종가 없음"));
+
+        fsc("153130", KrConfirmed.SOURCE_FSC_ETF, D1, day(D1, 108_000L, 108_000, 30_000, null));
+        Outcome etf = confirm();
+
+        assertThat(etf.confirmed()).as("153130은 체결이 없음").isZero();
+        assertThat(etf.booksProcessed()).as("줄이 확정이 됨").containsExactly(BOOK);
+        assertThat(etf.skippedReason()).isNull();
+        NavRow line = navOn(D1);
+        assertThat(line.pricesFinal()).isTrue();
+        assertThat(line.nav()).isEqualTo(287_538 + 710_000 + 10_800_000);
+        assertThat(confirm().booksProcessed()).as("다시 돌면 할 일 없음").isEmpty();
+    }
+
+    @Test
+    @DisplayName("확정값 불가침 — 확정된 D+1 줄을 같은 세션의 토스 재수집(다른 종가)이 덮지 않음(upsertNav: 잠정은 확정을 덮지 못함)")
+    void provisionalNeverOverwritesConfirmed() {
+        book(1_000_000);
+        order("005930", PaperBooks.BUY, 10, D, CREATED);
+        process(nightD1("005930", 71_300), COLLECTED_D1);
+        fsc("005930", KrConfirmed.SOURCE_FSC, D1, day(D1, 71_200L, 71_000, 5_000_000, "KOSPI"));
+        confirm();
+        NavRow confirmedLine = navOn(D1);
+        assertThat(confirmedLine.pricesFinal()).isTrue();
+
+        KrFixtures.Payload again = new KrFixtures.Payload(D1);
+        again.code("005930", kst("2026-11-03T23:27")).bar(D, 71_300, 71_300, 1_000_000).bar(D1, 71_800, 72_000, 950_000)
+                .minute("OK", "09:01", 71_300, 50_000);
+        Outcome reprocessed = process(again, kst("2026-11-03T23:30"));
+
+        assertThat(reprocessed.booksProcessed()).containsExactly(BOOK);
+        assertThat(navOn(D1)).as("확정 줄 그대로").isEqualTo(confirmedLine);
+        assertThat(position("005930").lastPrice()).as("상태·평가는 새 관측치").isEqualTo(72_000);
+    }
+
+    @Test
+    @DisplayName("현금뿐인 줄도 그날까지의 체결이 확정돼야 확정 — D+1 시가에 다 판 날의 줄은 잠정(잠정 매도가가 현금에 있음), 금융위 D+1 시가가 들어오면 확정")
+    void cashOnlyLineWaitsForTheSale() {
+        book(0);
+        store.upsertPosition(new Position(BOOK, "005930", 10, 70_000, D, CREATED, 70_000, CREATED, 70_000.0, CREATED, false,
+                D, 70_000, null));
+        order("005930", PaperBooks.SELL, 10, D, CREATED);
+        process(nightD1("005930", 72_000), COLLECTED_D1);
+        assertThat(navOn(D1).pricesFinal()).as("보유 없음이지만 매도가 잠정").isFalse();
+        assertThat(navOn(D1).nav()).isEqualTo(718_092);
+        fsc("005930", KrConfirmed.SOURCE_FSC, D1, day(D1, 72_100L, 72_300, 5_000_000, "KOSPI"));
+
+        confirm();
+
+        assertThat(navOn(D1).pricesFinal()).isTrue();
+        assertThat(navOn(D1).nav()).isEqualTo(719_091);
+        assertThat(navOn(D1).equityValue()).isZero();
+    }
+
+    @Test
+    @DisplayName("미처리 기업행위 보유는 확정 줄에서도 묶인 평가 그대로(금융위 최신 종가로 덮지 않음) — 그 줄은 잠정")
+    void heldValuationStaysBound() {
+        book(1_000_000);
+        store.upsertPosition(new Position(BOOK, "000660", 5, 60_000, D, CREATED, 60_000, CREATED, 60_000.0, CREATED, false,
+                D, 60_000, null));
+        store.holdForCorpAction(BOOK, "000660", "2026-11-02 기업행위 확인 필요 — 시험용");
+        order("005930", PaperBooks.BUY, 10, D, CREATED);
+        process(nightD1("005930", 71_300), COLLECTED_D1);
+        fsc("005930", KrConfirmed.SOURCE_FSC, D1, day(D1, 71_200L, 71_000, 5_000_000, "KOSPI"));
+        fsc("000660", KrConfirmed.SOURCE_FSC, D1, day(D1, 64_000L, 65_000, 1_000_000, "KOSPI"));
+
+        Outcome outcome = confirm();
+
+        NavRow line = navOn(D1);
+        assertThat(line.pricesFinal()).isFalse();
+        assertThat(line.equityValue()).as("005930 금융위 71,000 × 10 + 000660 묶인 평가 60,000 × 5(65,000이 아님)")
+                .isEqualTo(710_000 + 300_000);
+        assertThat(outcome.notes()).anySatisfy(note -> assertThat(note).contains("000660 미처리 기업행위 — 묶인 평가 60000원"));
+    }
+
+    @Test
+    @DisplayName("장부가 다음 세션으로 넘어간 뒤(금융위 D+1이 D+2 관측치보다 늦음) — D+1 체결은 확정되고 현금은 고쳐지지만 D+1 줄은 잠정으로 남음, 마지막 줄(D+2)만 고친 현금으로 다시 씀")
+    void lateFscLeavesThePassedLineProvisional() {
+        book(2_000_000);
+        order("005930", PaperBooks.BUY, 10, D, CREATED);
+        process(nightD1("005930", 71_300), COLLECTED_D1);
+        order("000660", PaperBooks.BUY, 4, D1, kst("2026-11-03T22:30"));
+        KrFixtures.Payload d2 = new KrFixtures.Payload(D2);
+        d2.code("005930", FETCHED_D2).bar(D1, 71_800, 71_400, 900_000).bar(D2, 71_500, 71_300, 800_000)
+                .minute("OK", "09:01", 71_400, 40_000);
+        d2.code("000660", FETCHED_D2).bar(D1, 71_000, 71_000, 900_000).bar(D2, 71_900, 71_800, 800_000)
+                .minute("OK", "09:01", 71_700, 40_000);
+        process(d2, COLLECTED_D2);
+        NavRow d1Before = navOn(D1);
+        double d2Cash = navOn(D2).cash();
+        fsc("005930", KrConfirmed.SOURCE_FSC, D1, day(D1, 71_200L, 71_000, 5_000_000, "KOSPI"));
+
+        Outcome outcome = confirm();
+
+        assertThat(outcome.confirmed()).isEqualTo(1);
+        assertThat(navOn(D1)).as("D+1 줄은 다시 셀 수 없음 — 잠정 그대로").isEqualTo(d1Before);
+        assertThat(navOn(D2).pricesFinal()).isFalse();
+        assertThat(navOn(D2).cash()).as("마지막 줄은 고친 현금").isEqualTo(d2Cash + 1_000);
+        assertThat(cash()).isEqualTo(d2Cash + 1_000);
     }
 
     @Test
