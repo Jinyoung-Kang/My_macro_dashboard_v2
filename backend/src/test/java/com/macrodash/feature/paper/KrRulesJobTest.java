@@ -3,9 +3,11 @@ package com.macrodash.feature.paper;
 import com.macrodash.Kst;
 import com.macrodash.read.StoreReader;
 import com.macrodash.store.Datasets;
+import com.macrodash.store.PaperStore.BookState;
 import com.macrodash.store.PaperStore.Decision;
 import com.macrodash.store.PaperStore.JobRun;
 import com.macrodash.store.PaperStore.Order;
+import com.macrodash.store.PaperStore.Position;
 import com.macrodash.store.StoreRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -114,6 +116,12 @@ class KrRulesJobTest {
         List<String> out = new ArrayList<>();
         gates.forEach(g -> out.add(g.path("gate").asString() + " " + g.path("status").asString()));
         return out;
+    }
+
+    /** 규칙 계좌 보유 하나(출발일 S에 그 가격으로 산 것 — 마지막 평가 가격도 같음). */
+    private void holding(String code, int qty, double price) {
+        store.upsertPosition(new Position(PaperBooks.KR_RULES, code, qty, price, S, kst("2026-10-30T09:00"), price,
+                kst("2026-10-30T09:00"), price, kst("2026-10-30T21:57"), false, S, price, null));
     }
 
     /** 규칙 계좌의 대기 주문 하나. */
@@ -321,6 +329,40 @@ class KrRulesJobTest {
         assertThat(store.orders.get(stale).status()).isEqualTo(PaperBooks.ORDER_PENDING);
         assertThat(krRuns()).singleElement().satisfies(run -> assertThat(run.detail().path("gates").get(0).path("note")
                 .asString()).contains("일시정지"));
+    }
+
+    @Test
+    @DisplayName("보유 종목이 재선정일에 거래정지(KRX 매매정지·그날 거래량 0)면 '후보 밖' 매도 주문을 내지 않고 skipped에 사유 — 체결될 수 없는 주문이 만료(기준일 + 3거래일)까지 다음 결정의 게이트 ①을 막지 않게, 정지가 이어진 다음 밤도 정기 결정")
+    void suspendedHoldingIsNotSoldIntoGateOne() {
+        holding("000660", 100, 10_000);
+        store.upsertState(new BookState(PaperBooks.KR_RULES, 99_000_000, 100_000_000, 1_000_000, 1.0, null, null, S, null));
+        KrFixtures.stub(reader, Datasets.SNAP_KR_PAPER_QUOTES,
+                KrRulesFixtures.suspend(KrRulesFixtures.quotes(R), "000660", true));
+        fsc(FRI);
+
+        PaperDecisionJob.Result decided = runAt("2026-11-02T22:30");
+
+        assertThat(decided.outcome()).isEqualTo(PaperDecisionJob.DECIDED);
+        assertThat(decided.rules().kind()).isEqualTo(RuleBookService.REBALANCE);
+        assertThat(store.ordersByDecision(decided.rules().id())).extracting(Order::ticker)
+                .as("000660은 거래정지로 후보 밖이지만 그날 체결할 수 없어 매도하지 않음").containsExactly("005930", "105560", "153130");
+        JsonNode skipped = decided.rules().response().path("skipped");
+        assertThat(skipped).anySatisfy(row -> {
+            assertThat(row.path("ticker").asString()).isEqualTo("000660");
+            assertThat(row.path("reason").asString()).contains("재선정 — 후보 밖").contains("거래정지")
+                    .contains("매도 주문을 내지 않음");
+        });
+
+        // 다음 밤 — 정지가 이어짐. 앞 결정의 다른 주문은 R1 시가에 체결되고, 체결될 수 없는 대기 주문이 없어 ①이 통과.
+        KrFixtures.stub(reader, Datasets.SNAP_KR_PAPER_QUOTES,
+                KrRulesFixtures.suspend(KrRulesFixtures.quotes(R1), "000660", true));
+        fsc(R);
+        PaperDecisionJob.Result next = runAt("2026-11-03T22:30");
+
+        assertThat(next.outcome()).isEqualTo(PaperDecisionJob.DECIDED);
+        assertThat(next.rules().kind()).isEqualTo(RuleBookService.SCHEDULED);
+        assertThat(next.rules().response().path("gates").get(0).path("status").asString()).isEqualTo("PASS");
+        assertThat(store.positions(PaperBooks.KR_RULES)).extracting(Position::ticker).contains("000660");
     }
 
     @Test

@@ -344,6 +344,34 @@ class KrRuleBookServiceTest {
     }
 
     @Test
+    @DisplayName("체결될 수 없는 종목에는 주문을 내지 않음 — 미처리 기업행위 보유(장부가 보류)의 '후보 밖' 매도와 후보 보유의 더 사기, 관측치에 봉이 없는 보유의 매도는 skipped에 사유")
+    void unfillableOrdersAreNotPlaced() {
+        holding("207940", 100, 10_000);    // DART 없음 — 후보 밖, 미처리 기업행위 보유
+        holding("000660", 100, 10_000);    // 후보 — 모자란 만큼 더 살 차례지만 미처리 기업행위 보유
+        holding("034020", 100, 10_000);    // U 밖 보유 — 이번 관측치에 봉이 없음(수집 범위 밖)
+        store.holdForCorpAction(PaperBooks.KR_RULES, "207940", "큰 변동 — 3중 조건 미충족");
+        store.holdForCorpAction(PaperBooks.KR_RULES, "000660", "판정 대기");
+        store.upsertState(new BookState(PaperBooks.KR_RULES, 97_000_000, NAV, 3_000_000, 3.0, null, null, S, null));
+
+        Decision decision = decideAt(R, "22:30");
+
+        assertThat(ordersOf(decision)).extracting(Order::ticker, Order::side)
+                .containsExactly(tuple("005930", "BUY"), tuple("105560", "BUY"), tuple("153130", "BUY"));
+        JsonNode skipped = decision.response().path("skipped");
+        assertThat(skipped).extracting(row -> row.path("ticker").asString()).contains("207940", "000660", "034020");
+        for (JsonNode row : skipped) {
+            String reason = row.path("reason").asString();
+            switch (row.path("ticker").asString()) {
+                case "207940" -> assertThat(reason).contains("매도 신호(재선정 — 후보 밖)").contains("미처리 기업행위 보유")
+                        .contains("매도 주문을 내지 않음");
+                case "000660" -> assertThat(reason).contains("미처리 기업행위 보유(판정 대기)").contains("사지 않음");
+                case "034020" -> assertThat(reason).contains("이번 관측치에 그 종목 봉이 없음").contains("매도 주문을 내지 않음");
+                default -> { }
+            }
+        }
+    }
+
+    @Test
     @DisplayName("일시정지 계좌 — 입력을 읽지 않고 SKIPPED(주문 없음), 재선정일이면 종류는 REBALANCE라 따라잡기가 셈하지 않음")
     void pausedBookIsSkipped() {
         store.updateBookStatus(PaperBooks.KR_RULES, PaperBooks.PAUSED);

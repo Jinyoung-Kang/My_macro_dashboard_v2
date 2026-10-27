@@ -153,6 +153,20 @@ final class KrRulesFixtures {
         return payload.snapshot(kst(session, "21:57"));
     }
 
+    /**
+     * 그 저장본의 {@code code} 종목을 그날 거래정지로 — 마지막 봉(그날) 거래량 0(토스 정지일 봉, toss.md 6), {@code krxFlag}면 토스
+     * {@code krxTradingSuspended}도 참. 같은 저장본을 고쳐 돌려줍니다.
+     */
+    static com.macrodash.store.Snapshot suspend(com.macrodash.store.Snapshot snapshot, String code, boolean krxFlag) {
+        ObjectNode entry = (ObjectNode) snapshot.payload().path("codes").path(code);
+        JsonNode bars = entry.path("bars");
+        ((ObjectNode) bars.get(bars.size() - 1)).put("volume", 0);
+        if (krxFlag) {
+            entry.put("krxTradingSuspended", true);
+        }
+        return snapshot;
+    }
+
     /** 그 기준일 U 한 종목(수집기 select_universe 모양). */
     KrRulesFixtures member(LocalDate base, int rank, String code, String name, long listedShares) {
         ObjectNode row = PaperFixtures.MAPPER.createObjectNode();

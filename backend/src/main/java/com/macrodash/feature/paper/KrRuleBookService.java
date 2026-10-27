@@ -78,6 +78,10 @@ import java.util.TreeSet;
  * 여유 0.5%p를 넘는 만큼(모자라면 153130을 팔아 메움), 그 밖의 날은 {@code kr.rules.parkCashThresholdPct}를 넘을 때만. 선정한 날은 앞선 날의
  * 대기 중인 남는 현금 주문({@code park_cash})을 먼저 취소합니다(미국 규칙 책 {@code replaceParkingOrders}와 같은 까닭). 비중은 마지막 평가 가격
  * (없으면 평단)으로, 현금 어림은 대기·이번 주문을 비용 요율(수수료 + 슬리피지 + 매도세)로 줄여 셉니다(어림 — 체결은 장부가 {@code KrxCosts}로).
+ * <b>체결될 수 없는 종목에는 주문을 내지 않습니다</b>(매수·매도·153130 모두 — {@link Fillable}): 그 실행 관측치에 봉이 없음, D 거래정지,
+ * 미처리 기업행위 보유(장부가 주문을 보류). 그런 주문은 만료(기준일 + 3거래일)까지 대기로 남아 결정 게이트 ①이 그 계좌의 다음 결정을 막기
+ * 때문입니다(결정 e3 — ①은 대기 주문을 그대로 셈). 매도 신호는 {@code skipped}에 사유와 함께 남고, 매일 신호는 다음 결정에서 다시 보며
+ * 재선정의 '후보 밖'은 다음 재선정에서 다시 봅니다.
  *
  * <p><b>상태</b>: 선정한 결정(REBALANCE·INITIAL)은 주문이 없어도 {@code OK}입니다 — 그 주기의 매수 결정이라 따라잡기가 다시 고르지 않게(K33,
  * {@link KrReselection}은 OK만 셈). SCHEDULED는 주문이 있으면 OK, 없으면 {@code NO_TRADE}(미국과 같은 뜻). 기한이 지나 결정하지 않은 세션도
@@ -362,7 +366,7 @@ final class KrRuleBookService {
                 cancelDailyParking();
             }
             View view = view(PaperBooks.KR_RULES);
-            Draft draft = plan(kind, selectionDay, selection, checks, view, settings, read.tradable());
+            Draft draft = plan(kind, selectionDay, selection, checks, view, settings, fillable(read));
             boolean selected = selectionDay;
             String status = selected || !draft.orders.isEmpty() ? RuleBookService.STATUS_OK : RuleBookService.STATUS_NO_TRADE;
             Map<String, Object> response = response(d, kind, cycle.orElse(null), read, selection, checks, view, draft,
@@ -492,7 +496,7 @@ final class KrRuleBookService {
         List<KrRules.HoldingCheck> checks = KrRules.holdingChecks(run.calendar(), session, holdings,
                 read.input().flows(), selection.candidateCodes(), settings.cashLike());
         View view = view(PaperBooks.KR_RULES);
-        Draft draft = plan(RuleBookService.INITIAL, true, selection, checks, view, settings, read.tradable());
+        Draft draft = plan(RuleBookService.INITIAL, true, selection, checks, view, settings, fillable(read));
         Map<String, Object> start = new LinkedHashMap<>();
         start.put("configuredStartDate", String.valueOf(config.krStartDate()));
         start.put("postponed", !session.equals(config.krStartDate()));
@@ -777,12 +781,46 @@ final class KrRuleBookService {
     }
 
     /**
-     * 주문 계획(클래스 설명의 '주문') — ① 매도 신호(보유 전량) ② 선정한 날만 매수(목표 − 지금) ③ 남는 현금 153130.
-     *
-     * @param tradable 그 실행 관측치에 봉이 있는 코드(null이면 판정하지 않음) — 없는 종목은 체결할 수 없어 사지 않음
+     * 그 결정의 주문이 체결될 수 있나(클래스 설명 '체결될 수 없는 종목') — 그 실행 관측치에 봉이 있는 코드({@code tradable}, 관측치를 읽지
+     * 못했으면 null — 판정하지 않음), D 거래정지({@code suspended} — {@link KrRules.Input#suspended}와 같은 판정), 미처리 기업행위 보유
+     * ({@code holds} — 코드 → 사유, 장부가 그 종목 주문을 보류).
+     */
+    record Fillable(LocalDate session, Set<String> tradable, Set<String> suspended, Map<String, String> holds) {
+
+        Fillable {
+            tradable = tradable == null ? null : Set.copyOf(tradable);
+            suspended = suspended == null ? Set.of() : Set.copyOf(suspended);
+            holds = holds == null ? Map.of() : Map.copyOf(holds);
+        }
+
+        /** 체결될 수 없는 사유(될 수 있으면 null). */
+        String blocked(String ticker) {
+            if (tradable != null && !tradable.contains(ticker)) {
+                return "이번 관측치에 그 종목 봉이 없음";
+            }
+            if (suspended.contains(ticker)) {
+                return session + " 거래정지(KRX 매매정지 또는 그날 거래량 0)";
+            }
+            String hold = holds.get(ticker);
+            return hold == null ? null : "미처리 기업행위 보유(" + hold + ") — 장부가 그 종목 주문을 보류";
+        }
+    }
+
+    /** 그 결정의 {@link Fillable} — 그 읽기의 관측치·거래정지와 이 계좌의 미처리 기업행위 보유. */
+    private Fillable fillable(Read read) {
+        Map<String, String> holds = new TreeMap<>();
+        for (PaperStore.CorpActionHold hold : store.corpActionHolds(PaperBooks.KR_RULES)) {
+            holds.put(hold.ticker(), hold.reason());
+        }
+        return new Fillable(read.input().session(), read.tradable(), read.input().suspended(), holds);
+    }
+
+    /**
+     * 주문 계획(클래스 설명의 '주문') — ① 매도 신호(보유 전량) ② 선정한 날만 매수(목표 − 지금) ③ 남는 현금 153130. 체결될 수 없는 종목
+     * ({@link Fillable})에는 어느 쪽 주문도 내지 않습니다.
      */
     private Draft plan(String kind, boolean selectionDay, KrRules.Selection selection, List<KrRules.HoldingCheck> checks,
-                       View view, Settings settings, Set<String> tradable) {
+                       View view, Settings settings, Fillable fillable) {
         Draft draft = new Draft();
         BigDecimal nav = view.nav();
         BigDecimal projected = view.cash().add(pendingCash(view, settings));
@@ -798,6 +836,13 @@ final class KrRuleBookService {
                 continue;
             }
             List<String> labels = check.reasons().stream().map(KrRules.SellReason::label).toList();
+            String blocked = fillable.blocked(ticker);
+            if (blocked != null) {
+                // 체결될 수 없는 매도 주문은 만료까지 대기로 남아 게이트 ①이 다음 결정을 막음(결정 e3) — 내지 않고 사유만.
+                draft.skip(ticker, "매도 신호(" + String.join(" · ", labels) + ") — " + blocked
+                        + " — 체결할 수 없어 매도 주문을 내지 않음(매일 신호는 다음 결정에서, '후보 밖'은 다음 재선정에서 다시 봄)");
+                continue;
+            }
             Map<String, Object> reason = new LinkedHashMap<>();
             reason.put("rule", RULE_SIGNAL);
             reason.put("signal", "SELL");
@@ -815,7 +860,7 @@ final class KrRuleBookService {
                 draft.notes.add("후보 " + selection.candidates().size() + "개는 재선정일이 아니라 사지 않습니다(K10 — 매수는 재선정일·따라잡기·"
                         + "출발에만)");
             }
-            parkDaily(draft, kind, view, settings, tradable, projected);
+            parkDaily(draft, kind, view, settings, fillable, projected);
             return draft;
         }
         if (nav.signum() <= 0) {
@@ -836,8 +881,9 @@ final class KrRuleBookService {
                 draft.skip(ticker, "대기 중인 매도 주문이 있음 — 같은 시가에 사고팔지 않음");
                 continue;
             }
-            if (tradable != null && !tradable.contains(ticker)) {
-                draft.skip(ticker, "이번 관측치에 그 종목 봉이 없음 — 체결할 수 없어 사지 않음");
+            String blocked = fillable.blocked(ticker);
+            if (blocked != null) {
+                draft.skip(ticker, blocked + " — 체결할 수 없어 사지 않음");
                 continue;
             }
             double current = view.weight(ticker);
@@ -876,9 +922,11 @@ final class KrRuleBookService {
         double increment = KrRules.parkingIncrementPct(spare, true, settings.params().parkCashThresholdPct());
         String parking = KrRules.PARKING_CODE;
         double parkingWeight = view.weight(parking);
+        String parkingBlocked = fillable.blocked(parking);
         if (increment > 0) {
-            if (tradable != null && !tradable.contains(parking)) {
-                draft.notes.add(parking + " 시세가 없어 남는 현금 " + String.format(Locale.ROOT, "%.2f%%", spare) + "를 현금으로 둡니다");
+            if (parkingBlocked != null) {
+                draft.notes.add(parking + " 체결할 수 없음(" + parkingBlocked + ") — 남는 현금 "
+                        + String.format(Locale.ROOT, "%.2f%%", spare) + "를 현금으로 둡니다");
             } else if (view.pendingBuys().containsKey(parking) || view.pendingSells().containsKey(parking)) {
                 draft.skip(parking, "남는 현금 — 이미 대기 중인 " + parking + " 주문이 있음");
             } else {
@@ -897,6 +945,9 @@ final class KrRuleBookService {
             if (available.signum() <= 0) {
                 draft.notes.add(String.format(Locale.ROOT, "현금이 순자산의 %.2f%%만큼 모자라는데 팔 %s가 없습니다 — 뒤쪽 매수는 체결 때 "
                         + "살 수 있는 만큼으로 줄어듭니다(cashLimited)", -spare, parking));
+            } else if (parkingBlocked != null) {
+                draft.notes.add(String.format(Locale.ROOT, "현금이 순자산의 %.2f%%만큼 모자라는데 %s를 체결할 수 없음(%s) — 뒤쪽 매수는 "
+                        + "체결 때 살 수 있는 만큼으로 줄어듭니다(cashLimited)", -spare, parking, parkingBlocked));
             } else if (view.pendingSells().containsKey(parking)) {
                 draft.skip(parking, "모자란 현금 — 이미 대기 중인 매도 주문이 있음");
             } else {
@@ -914,7 +965,7 @@ final class KrRuleBookService {
     }
 
     /** 선정하지 않은 날의 남는 현금 — 어림한 남는 현금이 기준(kr.rules.parkCashThresholdPct, 여유 이상)을 넘으면 153130 매수 한 건. */
-    private static void parkDaily(Draft draft, String kind, View view, Settings settings, Set<String> tradable,
+    private static void parkDaily(Draft draft, String kind, View view, Settings settings, Fillable fillable,
                                   BigDecimal projected) {
         BigDecimal nav = view.nav();
         if (nav.signum() <= 0) {
@@ -927,8 +978,10 @@ final class KrRuleBookService {
             return;
         }
         String parking = KrRules.PARKING_CODE;
-        if (tradable != null && !tradable.contains(parking)) {
-            draft.notes.add(parking + " 시세가 없어 남는 현금 " + String.format(Locale.ROOT, "%.2f%%", spare) + "를 현금으로 둡니다");
+        String blocked = fillable.blocked(parking);
+        if (blocked != null) {
+            draft.notes.add(parking + " 체결할 수 없음(" + blocked + ") — 남는 현금 " + String.format(Locale.ROOT, "%.2f%%", spare)
+                    + "를 현금으로 둡니다");
             return;
         }
         if (view.pendingBuys().containsKey(parking) || view.pendingSells().containsKey(parking)) {
