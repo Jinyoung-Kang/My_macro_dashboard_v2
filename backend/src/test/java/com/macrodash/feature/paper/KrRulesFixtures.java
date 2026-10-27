@@ -60,7 +60,7 @@ final class KrRulesFixtures {
      *   4  207940     +20,000    +20,000     71,174,000  0.0562…  자료 없음(DART 없음)
      *   5  005380     +60,000    +40,000    200,000,000  0.05     자료 없음(접수일 2026-11-04 > 기준일)
      *   6  068270     +60,000    +40,000    200,000,000  0.05     자료 없음(접수일 모름 — 접수번호가 14자리 숫자가 아님)
-     *   7  105560    +100,000   +100,000    400,000,000  0.05     후보(매출액 계정 없음 = 금융업 — 부채비율 2,000%여도 통과)
+     *   7  105560    +100,000   +100,000    400,000,000  0.05     후보(금융업 코드 표 — 부채비율 2,000%여도 통과)
      *   8  000270  (10-22 기록 없음)          400,000,000  null     자료 부족(20거래일 중 19일)
      * </pre>
      * 후보 = 000660(0.2) · 005930(0.1) · 105560(0.05, U 순위 7), 동일비중이면 종목마다 100 ÷ 15 = 6.6667%(상한 10% 안), 주식 20%·153130 80%.
@@ -226,7 +226,8 @@ final class KrRulesFixtures {
     }
 
     /**
-     * DART 회사 하나(사업보고서 주요계정 — 매출액 null이면 그 계정 없음 = 금융업).
+     * DART 회사 하나(사업보고서 주요계정 — 매출액 null이면 금융업식 재무상태표: 매출액·유동자산 계정 없음. 부채비율 상한을 볼지는 계정이
+     * 아니라 금융업 코드 표({@code KrFinancialSector})가 정함).
      *
      * @param rceptNo 접수번호(앞 8자리 = 접수일)
      */
@@ -240,6 +241,7 @@ final class KrRulesFixtures {
         ObjectNode accounts = company.putObject("accounts");
         if (revenue != null) {
             accounts.putObject("매출액").put("current", revenue);
+            accounts.putObject("유동자산").put("current", equity / 2);
         }
         accounts.putObject("당기순이익").put("current", netIncome);
         accounts.putObject("자본총계").put("current", equity);

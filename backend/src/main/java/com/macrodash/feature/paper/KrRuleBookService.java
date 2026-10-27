@@ -1,6 +1,7 @@
 package com.macrodash.feature.paper;
 
 import com.macrodash.Kst;
+import com.macrodash.analytics.KrFinancialSector;
 import com.macrodash.analytics.KrFundamentals;
 import com.macrodash.analytics.KrReselection;
 import com.macrodash.analytics.KrRules;
@@ -68,8 +69,8 @@ import java.util.TreeSet;
  * '자료 부족' — 다른 판으로 채우지 않음).
  *
  * <p><b>결정 행 동결</b>(K26, 응답 {@code input}): 읽은 순간, U(기준일 B·규칙 판·종목마다 순위·시총·상장주식수), 수급 창과 종목마다 20일·5일 합·연속일·
- * D 기록의 판({@code updatedAt})·받은 시각·세부 칸 유무, DART(회사마다 사업연도·접수번호·접수일·ROE·부채비율·매출액 계정 유무·자본잠식), 점수·후보
- * 여부·빠진 사유(해당하는 것 모두 — '자료 없음' 세부 사유 포함), U 밖 보유의 수급, 재진입 금지·거래정지. 선정한 날은 {@code cycleDate}·
+ * D 기록의 판({@code updatedAt})·받은 시각·세부 칸 유무, DART(회사마다 사업연도·접수번호·접수일·ROE·부채비율·유동자산 계정 유무·금융업 코드 표·
+ * 자본잠식 — 표의 판은 {@code financialSectorTable}), 점수·후보 여부·빠진 사유(해당하는 것 모두 — '자료 없음' 세부 사유 포함), U 밖 보유의 수급, 재진입 금지·거래정지. 선정한 날은 {@code cycleDate}·
  * {@code selectionAsOf}·후보 순서·매수 종목·비중을 함께 남깁니다(K33 — 따라잡기는 r′ 자료로 고른 것이 행에 보임).
  *
  * <p><b>주문</b>(장부가 다음 거래일 시가에 체결): 출처 {@code RULE}, 시점 {@code NEXT_OPEN}, 기준 거래일 D, 만료 D + 3거래일. 매도 = 보유 전량
@@ -1186,6 +1187,7 @@ final class KrRuleBookService {
             dart.put("receiptRule", "접수일(rceptNo 앞 8자리) ≤ 기준 세션 " + input.session() + "만");
         }
         out.put("dart", dart);
+        out.put("financialSectorTable", KrFinancialSector.VERSION);   // 부채비율 상한을 보지 않는 금융업 코드 표의 판(D2a)
         out.put("excludedFlowRecords", read.excluded());
         out.put("lockedOut", read.lockouts().stream().map(lockout -> {
             Map<String, Object> row = new LinkedHashMap<>();
@@ -1292,7 +1294,8 @@ final class KrRuleBookService {
         out.put("receiptDate", evaluation.receiptDate() == null ? null : evaluation.receiptDate().toString());
         out.put("roePct", financials.roePct());
         out.put("debtRatioPct", financials.debtRatioPct());
-        out.put("hasRevenueAccount", financials.hasRevenueAccount());
+        out.put("financialSector", KrFinancialSector.contains(evaluation.code()));   // 표의 회사 = 부채비율 상한을 보지 않음
+        out.put("hasCurrentAssetsAccount", financials.hasCurrentAssetsAccount());
         out.put("capitalImpaired", financials.capitalImpaired());
         return out;
     }

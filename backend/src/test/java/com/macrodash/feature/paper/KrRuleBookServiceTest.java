@@ -213,7 +213,7 @@ class KrRuleBookServiceTest {
 
     // ------------------------------------------------------------------ 자료 없음 사유
     @Test
-    @DisplayName("'자료 없음' 사유가 결정 행에 — DART 없음·접수일이 기준일 뒤·접수일 모름, 자료 부족(19/20일)·수급 미달, 금융업(매출액 없음)은 부채비율로 빠지지 않음")
+    @DisplayName("'자료 없음' 사유가 결정 행에 — DART 없음·접수일이 기준일 뒤·접수일 모름, 자료 부족(19/20일)·수급 미달, 금융업 코드 표(KB금융)는 부채비율로 빠지지 않음")
     void missingDataReasonsAreRecorded() {
         Decision decision = decideAt(R, "22:30");
 
@@ -232,7 +232,12 @@ class KrRuleBookServiceTest {
         assertThat(subReasons(member(decision, "373220"))).containsExactly("수급 미달/수급 미달");
         JsonNode kb = member(decision, "105560");
         assertThat(kb.path("candidate").asBoolean()).isTrue();
-        assertThat(kb.path("dart").path("hasRevenueAccount").asBoolean()).isFalse();
+        assertThat(kb.path("dart").path("financialSector").asBoolean()).isTrue();
+        assertThat(kb.path("dart").path("hasCurrentAssetsAccount").asBoolean()).isFalse();
+        assertThat(member(decision, "005930").path("dart").path("financialSector").asBoolean()).isFalse();
+        assertThat(member(decision, "005930").path("dart").path("hasCurrentAssetsAccount").asBoolean()).isTrue();
+        assertThat(decision.response().path("input").path("financialSectorTable").asString())
+                .isEqualTo(com.macrodash.analytics.KrFinancialSector.VERSION);
         assertThat(kb.path("dart").path("debtRatioPct").asDouble()).as("2,000%여도 금융업은 통과").isEqualTo(2_000.0);
         assertThat(kb.path("dart").path("bsnsYear").asString()).isEqualTo("2025");
         assertThat(kb.path("dart").path("rceptNo").asString()).isEqualTo("20260619000333");

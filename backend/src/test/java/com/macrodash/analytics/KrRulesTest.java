@@ -30,18 +30,18 @@ import static org.assertj.core.api.Assertions.within;
 
 /**
  * 한국 규칙 계좌의 후보·점수·재무 필터·비중(2단계 명세 §4-6·K7, §5 '후보·점수 산정이 손계산 고정본과 같다'·'DART·ROE 없는 종목은 후보에서
- * 빠지고 사유가 보인다'·'금융업은 부채비율로 빠지지 않는다'). 손계산 고정본: 기준 세션 D = 2026-10-27(화), U 기준일 B = 2026-10-26.
+ * 빠지고 사유가 보인다'·'금융업 코드 표의 회사는 부채비율로 빠지지 않는다'). 손계산 고정본: 기준 세션 D = 2026-10-27(화), U 기준일 B = 2026-10-26.
  *
  * <p>창(20 KR 거래일)은 KRX 휴장일 목록으로 셌습니다 — 2026-09-28(월)~10-27, 10-05(개천절 대체휴일)·10-09(한글날)·주말 빼고:
  * 09-28·29·30, 10-01·02·06·07·08·12·13·14·15·16·19·20·21·22·23·26·27.
  *
  * <pre>
  *  코드     순위 상장주식수   하루 외국인/기관(주)    20일 합(외/기)        점수                     재무                       판정
- *  000010   1   1,000,000    +1,000 / +500          20,000 / 10,000      30,000/1,000,000×100=3.0 ROE 10·부채 50·매출 있음   후보
+ *  000010   1   1,000,000    +1,000 / +500          20,000 / 10,000      30,000/1,000,000×100=3.0 ROE 10·부채 50·유동자산 있음 후보
  *  000020   2   4,000,000    +2,000 / +1,000        40,000 / 20,000      60,000/4,000,000×100=1.5 같음                       후보
  *  000030   3   1,000,000    +3,000 / −100          60,000 / −2,000      5.8                      같음                       수급 미달
- *  000040   4   2,000,000    +500 / +500            10,000 / 10,000      1.0                      금융(매출 없음)·부채 1,200   후보(부채비율 안 봄)
- *  000050   5   1,000,000    +100 / +100            2,000 / 2,000        0.4                      매출 있음·부채 250           재무 미달
+ *  000810   4   2,000,000    +500 / +500            10,000 / 10,000      1.0                      금융업 표(삼성화재)·부채 1,200 후보(부채비율 안 봄)
+ *  000050   5   1,000,000    +100 / +100            2,000 / 2,000        0.4                      표 밖·부채 250               재무 미달
  *  000060   6   1,000,000    +100 / +100            —                    0.4                      접수 2026-10-28 > D          자료 없음(접수일이 기준일 뒤)
  *  000070   7   1,000,000    +100 / +100(10-06 없음) 19일만               null                     좋음                       자료 부족
  *  000080   8   1,000,000    +100 / +100            —                    0.4                      DART 없음                  자료 없음
@@ -51,12 +51,12 @@ import static org.assertj.core.api.Assertions.within;
  *  000120   12  1,000,000    +100 / +100(10-22 기관 −50) 2,000 / 1,850   3,850/1,000,000×100=0.385 좋음                      후보(연속 3일)
  *  000130   13  1,000,000    +100 / +100            —                    0.4                      접수번호 10자리              자료 없음(접수일 모름)
  *  000140   14  null         +100 / +100            —                    null                     좋음                       자료 없음(상장주식수 없음)
- *  000150   15  1,000,000    +100 / +100            —                    0.4                      ROE·부채비율 없음(매출 있음) 자료 없음 둘
+ *  000150   15  1,000,000    +100 / +100            —                    0.4                      ROE·부채비율 없음(표 밖)     자료 없음 둘
  *  000160   16  1,000,000    +100 / +100            —                    0.4                      자본잠식                   재무 미달
  *  000170   17  1,000,000    +100 / +100            —                    0.4                      ROE 0                      재무 미달(ROE는 0보다 커야)
  *  000180   18  1,000,000    +100 / −100            2,000 / −2,000       0.0                      부채 정확히 200(상한 포함)  수급 미달만
  * </pre>
- * 후보 = 000010(3.0) · 000020(1.5) · 000040(1.0) · 000120(0.385).
+ * 후보 = 000010(3.0) · 000020(1.5) · 000810(1.0) · 000120(0.385).
  */
 class KrRulesTest {
 
@@ -108,13 +108,13 @@ class KrRulesTest {
         List<Member> universe = new ArrayList<>();
         Map<String, List<FlowDay>> flows = new HashMap<>();
         Map<String, Financials> financials = new HashMap<>();
-        String[] codes = {"000010", "000020", "000030", "000040", "000050", "000060", "000070", "000080", "000090",
+        String[] codes = {"000010", "000020", "000030", "000810", "000050", "000060", "000070", "000080", "000090",
                 "000100", "000110", "000120", "000130", "000140", "000150", "000160", "000170", "000180"};
         for (int i = 0; i < codes.length; i++) {
             String code = codes[i];
             Long listed = switch (code) {
                 case "000020" -> Long.valueOf(4_000_000L);
-                case "000040" -> Long.valueOf(2_000_000L);
+                case "000810" -> Long.valueOf(2_000_000L);
                 case "000140" -> null;
                 default -> Long.valueOf(1_000_000L);
             };
@@ -125,8 +125,8 @@ class KrRulesTest {
         flows.put("000010", daily(1_000, 500));
         flows.put("000020", daily(2_000, 1_000));
         flows.put("000030", daily(3_000, -100));
-        flows.put("000040", daily(500, 500));
-        financials.put("000040", new Financials("2025", "20260619000667", 9.0, 1_200.0, false, false));
+        flows.put("000810", daily(500, 500));
+        financials.put("000810", new Financials("2025", "20260619000667", 9.0, 1_200.0, false, false));
         financials.put("000050", new Financials("2025", "20260318000001", 8.0, 250.0, true, false));
         financials.put("000060", new Financials("2026", "20261028000001", 8.0, 50.0, true, false));
         List<FlowDay> missingOne = new ArrayList<>(daily(100, 100));
@@ -243,10 +243,10 @@ class KrRulesTest {
         Map<String, Evaluation> e = byCode(KrRules.evaluate(CAL, fixture(), DEFAULTS));
 
         assertThat(e.values().stream().filter(Evaluation::candidate).map(Evaluation::code))
-                .containsExactly("000010", "000020", "000040", "000120");
+                .containsExactly("000010", "000020", "000810", "000120");
         assertThat(e.get("000010").score()).isCloseTo(3.0, within(1e-12));
         assertThat(e.get("000020").score()).isCloseTo(1.5, within(1e-12));
-        assertThat(e.get("000040").score()).isCloseTo(1.0, within(1e-12));
+        assertThat(e.get("000810").score()).isCloseTo(1.0, within(1e-12));
         assertThat(e.get("000120").score()).isCloseTo(0.385, within(1e-12));
         assertThat(e.get("000030").score()).as("후보가 아니어도 점수는 셈(동결)").isCloseTo(5.8, within(1e-12));
 
@@ -277,17 +277,107 @@ class KrRulesTest {
     }
 
     @Test
-    @DisplayName("금융업(매출액 계정 없음)은 부채비율로 빠지지 않음 — 같은 부채비율 1,200%라도 매출액 계정이 있으면 빠짐")
+    @DisplayName("금융업 코드 표의 회사(000810 삼성화재)는 부채비율 1,200%로 빠지지 않음 — 같은 재무를 표 밖 코드로 옮기면 빠짐")
     void financialsAreNotExcludedByDebtRatio() {
         Map<String, Evaluation> e = byCode(KrRules.evaluate(CAL, fixture(), DEFAULTS));
-        assertThat(e.get("000040").candidate()).isTrue();
+        assertThat(KrFinancialSector.contains("000810")).isTrue();
+        assertThat(e.get("000810").candidate()).isTrue();
 
+        // 같은 U 순위·수급·재무를 표 밖 코드 000040에 — 판정은 코드 표로만 갈림(계정 모양은 보지 않음)
         Input in = fixture();
-        Map<String, Financials> withRevenue = new HashMap<>(in.financials());
-        withRevenue.put("000040", new Financials("2025", "20260619000667", 9.0, 1_200.0, true, false));
-        Input changed = new Input(D, B, in.universe(), in.flows(), withRevenue, in.lockedOut(), in.suspended());
-        assertThat(subs(byCode(KrRules.evaluate(CAL, changed, DEFAULTS)).get("000040")))
-                .containsExactly(KrRules.DEBT_RATIO_OVER);
+        List<Member> universe = new ArrayList<>();
+        for (Member m : in.universe()) {
+            universe.add(m.code().equals("000810") ? new Member("000040", m.name(), m.rank(), m.marketCap(), m.listedShares()) : m);
+        }
+        Map<String, List<FlowDay>> flows = new HashMap<>(in.flows());
+        flows.put("000040", flows.remove("000810"));
+        Map<String, Financials> financials = new HashMap<>(in.financials());
+        financials.put("000040", financials.remove("000810"));
+        Input moved = new Input(D, B, universe, flows, financials, in.lockedOut(), in.suspended());
+        Evaluation outside = byCode(KrRules.evaluate(CAL, moved, DEFAULTS)).get("000040");
+        assertThat(KrFinancialSector.contains("000040")).isFalse();
+        assertThat(subs(outside)).containsExactly(KrRules.DEBT_RATIO_OVER);
+    }
+
+    /**
+     * DART 주요계정 손계산(단위 억 원 — 비율만 봄): 부채 101,500 ÷ 자본 10,000 × 100 = 1,015.0%, 순이익 1,174 ÷ 자본 10,000 × 100 = ROE 11.74%
+     * (2026-10-28 로컬 저장본 미래에셋증권의 비율 — 매출액 계정이 있고 '유동자산' 계정이 없는 금융업식 재무상태표).
+     */
+    static Map<String, KrFundamentals.Amounts> securitiesFirm(double netIncome) {
+        Map<String, KrFundamentals.Amounts> accounts = new HashMap<>();
+        accounts.put(KrFundamentals.REVENUE, new KrFundamentals.Amounts(292_830.0, 250_000.0));
+        accounts.put(KrFundamentals.NET_INCOME, new KrFundamentals.Amounts(netIncome, 900.0));
+        accounts.put(KrFundamentals.EQUITY, new KrFundamentals.Amounts(10_000.0, 9_000.0));
+        accounts.put(KrFundamentals.DEBT, new KrFundamentals.Amounts(101_500.0, 90_000.0));
+        return accounts;
+    }
+
+    /** U 한 종목(창 20일 외국인·기관 하루 +100씩 — 둘 다 순매수, 점수 4,000 ÷ 1,000,000 × 100 = 0.4)의 판정. */
+    static Evaluation evaluateOne(String code, Map<String, KrFundamentals.Amounts> accounts) {
+        Input in = new Input(D, B, List.of(member(code, 1, 1_000_000L)), Map.of(code, daily(100, 100)),
+                Map.of(code, Financials.fromAccounts("2025", "20260515002972", accounts)), Set.of(), Set.of());
+        return KrRules.evaluate(CAL, in, DEFAULTS).get(0);
+    }
+
+    @Test
+    @DisplayName("코드 표의 회사(006800 미래에셋증권)는 부채비율 1,015.0%·매출액 계정이 있어도 ROE 11.74% > 0이면 후보 — ROE ≤ 0이면 빠짐")
+    void tableMemberSkipsTheDebtCapButNotRoe() {
+        assertThat(KrFinancialSector.get("006800")).hasValueSatisfying(c -> assertThat(c.ksic()).isEqualTo("66121"));
+
+        Evaluation member = evaluateOne("006800", securitiesFirm(1_174.0));
+        assertThat(member.financials().debtRatioPct()).isCloseTo(1_015.0, within(1e-9));
+        assertThat(member.financials().roePct()).isCloseTo(11.74, within(1e-9));
+        assertThat(member.financials().hasCurrentAssetsAccount()).isFalse();
+        assertThat(member.candidate()).isTrue();
+        assertThat(member.score()).isCloseTo(0.4, within(1e-12));
+
+        Evaluation losing = evaluateOne("006800", securitiesFirm(-100.0));   // ROE −100 ÷ 10,000 × 100 = −1.00%
+        assertThat(subs(losing)).containsExactly(KrRules.ROE_NOT_POSITIVE);
+        assertThat(losing.exclusions().get(0).detail()).contains("ROE -1.00%");
+
+        Map<String, KrFundamentals.Amounts> noDebt = securitiesFirm(1_174.0);
+        noDebt.remove(KrFundamentals.DEBT);
+        assertThat(evaluateOne("006800", noDebt).candidate()).as("표의 회사는 부채비율을 셀 수 없어도 그 사유로 빠지지 않음").isTrue();
+    }
+
+    @Test
+    @DisplayName("코드 표 밖은 부채비율 상한 — 비금융 지주(006260 LS, 산업분류 64992) 225.5% > 200%는 빠짐, '유동자산' 계정이 있어 경고 없음")
+    void nonMemberIsCappedWithoutWarningWhenCurrentAssetsExist() {
+        assertThat(KrFinancialSector.contains("006260")).as("64992 지주회사지만 금융지주가 아님").isFalse();
+        Map<String, KrFundamentals.Amounts> holding = new HashMap<>();
+        holding.put(KrFundamentals.REVENUE, new KrFundamentals.Amounts(30_000.0, 28_000.0));
+        holding.put(KrFinancialSector.CURRENT_ASSETS, new KrFundamentals.Amounts(15_000.0, 14_000.0));
+        holding.put(KrFundamentals.NET_INCOME, new KrFundamentals.Amounts(632.0, 500.0));
+        holding.put(KrFundamentals.EQUITY, new KrFundamentals.Amounts(10_000.0, 9_500.0));
+        holding.put(KrFundamentals.DEBT, new KrFundamentals.Amounts(22_550.0, 20_000.0));   // 22,550 ÷ 10,000 × 100 = 225.5%
+
+        Evaluation e = evaluateOne("006260", holding);
+        assertThat(subs(e)).containsExactly(KrRules.DEBT_RATIO_OVER);
+        assertThat(e.exclusions().get(0).reason()).isEqualTo(Reason.FINANCIAL);
+        assertThat(e.exclusions().get(0).detail()).isEqualTo("부채비율 225.5% > 상한 200%(금융업 코드 표 밖)");
+    }
+
+    @Test
+    @DisplayName("코드 표 밖인데 '유동자산' 계정이 없는 회사가 부채비율로 빠지면 사유에 '금융업 코드 표 확인 필요' — 상한 초과·부채비율 없음 둘 다")
+    void nonMemberWithoutCurrentAssetsCarriesTheTableWarning() {
+        Evaluation over = evaluateOne("000990", securitiesFirm(1_174.0));   // 같은 증권사 재무, 표 밖 코드
+        assertThat(subs(over)).containsExactly(KrRules.DEBT_RATIO_OVER);
+        assertThat(over.exclusions().get(0).detail())
+                .isEqualTo("부채비율 1015.0% > 상한 200%(금융업 코드 표 밖) — '유동자산' 계정 없음: 금융업 코드 표 확인 필요");
+
+        Map<String, KrFundamentals.Amounts> noDebt = securitiesFirm(1_174.0);
+        noDebt.remove(KrFundamentals.DEBT);
+        Evaluation missing = evaluateOne("000990", noDebt);
+        assertThat(subs(missing)).containsExactly(KrRules.NO_DEBT_RATIO);
+        assertThat(missing.exclusions().get(0).detail()).endsWith(KrRules.FINANCIAL_TABLE_CHECK);
+
+        Map<String, KrFundamentals.Amounts> withCurrentAssets = securitiesFirm(1_174.0);
+        withCurrentAssets.put(KrFinancialSector.CURRENT_ASSETS, new KrFundamentals.Amounts(50_000.0, 45_000.0));
+        assertThat(evaluateOne("000990", withCurrentAssets).exclusions().get(0).detail())
+                .doesNotContain(KrRules.FINANCIAL_TABLE_CHECK);
+        assertThat(evaluateOne("000990", securitiesFirm(-100.0)).exclusions().stream().map(Exclusion::detail))
+                .as("ROE로 빠지고 부채비율로도 빠지면 부채비율 사유에만 경고").filteredOn(d -> d.contains(KrRules.FINANCIAL_TABLE_CHECK))
+                .hasSize(1);
     }
 
     @Test
@@ -319,25 +409,25 @@ class KrRulesTest {
     void equalWeightWithFewCandidates() {
         Selection s = KrRules.select(CAL, fixture(), DEFAULTS);
 
-        assertThat(s.targets().stream().map(Target::code)).containsExactly("000010", "000020", "000040", "000120");
+        assertThat(s.targets().stream().map(Target::code)).containsExactly("000010", "000020", "000810", "000120");
         assertThat(s.targets().stream().map(Target::rankInPlan)).containsExactly(1, 2, 3, 4);
         assertThat(s.targets()).allSatisfy(t -> assertThat(t.weightPct()).isCloseTo(100.0 / 15, within(1e-12)));
         assertThat(s.stockWeightPct()).isCloseTo(400.0 / 15, within(1e-9));
         assertThat(s.parkingWeightPct()).isCloseTo(100 - 400.0 / 15, within(1e-9));
         assertThat(s.notChosen()).isEmpty();
-        assertThat(s.candidateCodes()).containsExactly("000010", "000020", "000040", "000120");
+        assertThat(s.candidateCodes()).containsExactly("000010", "000020", "000810", "000120");
         assertThat(s.session()).isEqualTo(D);
         assertThat(s.universeDate()).isEqualTo(B);
     }
 
     @Test
-    @DisplayName("상위 2자리 — 동일비중 min(50, 상한 10) = 10%씩, 후보 000040·000120은 상위 밖(사지 않음), 남는 80%")
+    @DisplayName("상위 2자리 — 동일비중 min(50, 상한 10) = 10%씩, 후보 000810·000120은 상위 밖(사지 않음), 남는 80%")
     void topNamesAndCap() {
         Selection s = KrRules.select(CAL, fixture(), params(2, Weighting.EQUAL, 0, 10));
 
         assertThat(s.targets().stream().map(Target::code)).containsExactly("000010", "000020");
         assertThat(s.targets()).allSatisfy(t -> assertThat(t.weightPct()).isCloseTo(10.0, within(1e-12)));
-        assertThat(s.notChosen().stream().map(Evaluation::code)).containsExactly("000040", "000120");
+        assertThat(s.notChosen().stream().map(Evaluation::code)).containsExactly("000810", "000120");
         assertThat(s.stockWeightPct()).isCloseTo(20.0, within(1e-12));
         assertThat(s.parkingWeightPct()).isCloseTo(80.0, within(1e-12));
     }
@@ -346,7 +436,7 @@ class KrRulesTest {
     @DisplayName("점수 비례 — 예산 3 × 100/15 = 20%를 3.0:1.5:1.0으로(120/11·60/11·40/11), 상한 10이면 첫 종목만 잘리고 남는 몫은 153130")
     void scoreWeighting() {
         Selection uncapped = KrRules.select(CAL, fixture(), params(15, Weighting.SCORE, 4, 100));
-        assertThat(uncapped.targets().stream().map(Target::code)).containsExactly("000010", "000020", "000040");
+        assertThat(uncapped.targets().stream().map(Target::code)).containsExactly("000010", "000020", "000810");
         assertThat(uncapped.targets().get(0).weightPct()).isCloseTo(120.0 / 11, within(1e-12));
         assertThat(uncapped.targets().get(1).weightPct()).isCloseTo(60.0 / 11, within(1e-12));
         assertThat(uncapped.targets().get(2).weightPct()).isCloseTo(40.0 / 11, within(1e-12));
@@ -459,7 +549,7 @@ class KrRulesTest {
 
     // ---- 매도 신호·남는 현금 -------------------------------------------------------------------------------------
 
-    /** 보유: 후보 000010·000040, 수급 미달 000030, U 밖 둘 다 순매도 000900, 창 덜 참 000070, 현금성 153130·069500. */
+    /** 보유: 후보 000010·000810, 수급 미달 000030, U 밖 둘 다 순매도 000900, 창 덜 참 000070, 현금성 153130·069500. */
     static Map<String, List<FlowDay>> holdingFlows() {
         Map<String, List<FlowDay>> flows = new HashMap<>(fixture().flows());
         flows.put("000900", daily(-100, -1));
@@ -468,7 +558,7 @@ class KrRulesTest {
         return flows;
     }
 
-    static final List<String> HOLDINGS = List.of("000900", "000010", "000030", "000070", "000040", "153130", "069500");
+    static final List<String> HOLDINGS = List.of("000900", "000010", "000030", "000070", "000810", "153130", "069500");
 
     @Test
     @DisplayName("매일 매도 신호 = 20일 외국인·기관 둘 다 < 0 — U 밖 보유도 봄, 창이 덜 차면 신호 없음, 153130·현금성은 보지 않음")
@@ -477,7 +567,7 @@ class KrRulesTest {
                 Set.of("069500"));
 
         assertThat(checks.stream().map(KrRules.HoldingCheck::code))
-                .containsExactly("000010", "000030", "000040", "000070", "000900");
+                .containsExactly("000010", "000030", "000070", "000810", "000900");
         Map<String, KrRules.HoldingCheck> by = new LinkedHashMap<>();
         checks.forEach(c -> by.put(c.code(), c));
         assertThat(by.get("000900").reasons()).containsExactly(KrRules.SellReason.FLOWS_BOTH_NEGATIVE);
@@ -490,16 +580,16 @@ class KrRulesTest {
     }
 
     @Test
-    @DisplayName("재선정한 날 매도 = 후보 밖(수급 미달·창 덜 참·U 밖) — 후보인데 상위 maxNames 밖인 보유(000040)는 팔지 않음")
+    @DisplayName("재선정한 날 매도 = 후보 밖(수급 미달·창 덜 참·U 밖) — 후보인데 상위 maxNames 밖인 보유(000810)는 팔지 않음")
     void selectionDaySellsOutsideCandidates() {
         Selection top2 = KrRules.select(CAL, fixture(), params(2, Weighting.EQUAL, 0, 10));
-        assertThat(top2.notChosen().stream().map(Evaluation::code)).contains("000040");
+        assertThat(top2.notChosen().stream().map(Evaluation::code)).contains("000810");
 
         Map<String, KrRules.HoldingCheck> by = new LinkedHashMap<>();
         KrRules.holdingChecks(CAL, D, HOLDINGS, holdingFlows(), top2.candidateCodes(), Set.of("069500"))
                 .forEach(c -> by.put(c.code(), c));
         assertThat(by.get("000010").sell()).isFalse();
-        assertThat(by.get("000040").sell()).isFalse();
+        assertThat(by.get("000810").sell()).isFalse();
         assertThat(by.get("000030").reasons()).containsExactly(KrRules.SellReason.OUT_OF_CANDIDATES);
         assertThat(by.get("000070").reasons()).containsExactly(KrRules.SellReason.OUT_OF_CANDIDATES);
         assertThat(by.get("000900").reasons()).containsExactly(KrRules.SellReason.FLOWS_BOTH_NEGATIVE,
@@ -529,28 +619,29 @@ class KrRulesTest {
     // ---- 재무 입력 ----------------------------------------------------------------------------------------------
 
     @Test
-    @DisplayName("계정표에서 재무 — ROE·부채비율은 KrFundamentals 정의, 매출액 계정 유무, 자본잠식")
+    @DisplayName("계정표에서 재무 — ROE·부채비율은 KrFundamentals 정의, '유동자산' 계정(당기 금액) 유무, 자본잠식")
     void financialsFromAccounts() {
         Map<String, KrFundamentals.Amounts> nonFinancial = Map.of(
                 KrFundamentals.NET_INCOME, new KrFundamentals.Amounts(1_000.0, 900.0),
                 KrFundamentals.EQUITY, new KrFundamentals.Amounts(10_000.0, 9_000.0),
                 KrFundamentals.DEBT, new KrFundamentals.Amounts(5_000.0, 4_000.0),
-                KrFundamentals.REVENUE, new KrFundamentals.Amounts(20_000.0, 18_000.0));
+                KrFundamentals.REVENUE, new KrFundamentals.Amounts(20_000.0, 18_000.0),
+                KrFinancialSector.CURRENT_ASSETS, new KrFundamentals.Amounts(8_000.0, 7_000.0));
         Financials f = Financials.fromAccounts("2025", "20260310002820", nonFinancial);
         assertThat(f.roePct()).isCloseTo(10.0, within(1e-12));
         assertThat(f.debtRatioPct()).isCloseTo(50.0, within(1e-12));
-        assertThat(f.hasRevenueAccount()).isTrue();
+        assertThat(f.hasCurrentAssetsAccount()).isTrue();
         assertThat(f.capitalImpaired()).isFalse();
         assertThat(f.receiptDate()).isEqualTo(LocalDate.of(2026, 3, 10));
 
         Map<String, KrFundamentals.Amounts> bank = new HashMap<>(nonFinancial);
-        bank.remove(KrFundamentals.REVENUE);
-        assertThat(Financials.fromAccounts("2025", "20260619000667", bank).hasRevenueAccount()).isFalse();
+        bank.remove(KrFinancialSector.CURRENT_ASSETS);
+        assertThat(Financials.fromAccounts("2025", "20260619000667", bank).hasCurrentAssetsAccount()).isFalse();
 
-        // 매출액 계정은 있는데 당기 금액이 없음(전기만) — '매출액 계정(당기 금액)이 없는 회사' = 금융업으로 봄(부채비율 상한을 보지 않음).
+        // '유동자산' 계정은 있는데 당기 금액이 없음(전기만) — 계정 없음과 같이 봄(표 밖 회사가 부채비율로 빠지면 경고).
         Map<String, KrFundamentals.Amounts> noCurrent = new HashMap<>(nonFinancial);
-        noCurrent.put(KrFundamentals.REVENUE, new KrFundamentals.Amounts(null, 18_000.0));
-        assertThat(Financials.fromAccounts("2025", "20260619000667", noCurrent).hasRevenueAccount()).isFalse();
+        noCurrent.put(KrFinancialSector.CURRENT_ASSETS, new KrFundamentals.Amounts(null, 7_000.0));
+        assertThat(Financials.fromAccounts("2025", "20260619000667", noCurrent).hasCurrentAssetsAccount()).isFalse();
 
         Map<String, KrFundamentals.Amounts> impaired = new HashMap<>(nonFinancial);
         impaired.put(KrFundamentals.EQUITY, new KrFundamentals.Amounts(-1.0, 1.0));

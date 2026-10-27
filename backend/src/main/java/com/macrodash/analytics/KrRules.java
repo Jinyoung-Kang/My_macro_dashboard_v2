@@ -28,7 +28,7 @@ import java.util.TreeSet;
  *  후보     = U 중 외국인 합 > 0 ∧ 기관 합 > 0 ∧ (minStreakDays > 0이면 동시 순매수 연속일 ≥ minStreakDays)
  *             ∧ 재무 통과 ∧ 거래정지·재진입 금지 아님
  *  점수     = (외국인 합 + 기관 합) ÷ 상장주식수(금융위, U 행) × 100
- *  재무     = ROE > 0(모두) ∧ (매출액 계정이 있으면 부채비율 ≤ debtRatioMaxPct) — 매출액 계정이 없는 회사(금융업)는 부채비율을 보지 않음.
+ *  재무     = ROE > 0(모두) ∧ (금융업 코드 표 밖이면 부채비율 ≤ debtRatioMaxPct) — 표의 회사({@link KrFinancialSector})는 부채비율을 보지 않음.
  *             DART 보고서 접수일(rceptNo 앞 8자리) ≤ D만 씀
  *  매수     = 점수 순 상위 maxNames(동점은 U 순위·코드 순)
  *  비중     EQUAL  종목마다 min(100 ÷ maxNames, 종목 상한)
@@ -79,6 +79,11 @@ public final class KrRules {
     public static final String ROE_NOT_POSITIVE = "ROE 0 이하";
     public static final String DEBT_RATIO_OVER = "부채비율 상한 초과";
     public static final String CAPITAL_IMPAIRED = "자본잠식";
+    /**
+     * 표 밖 회사가 부채비율(상한 초과·셀 수 없음)로 빠졌는데 DART에 '유동자산' 계정이 없을 때 그 사유에 붙는 경고 — 금융업식 재무상태표라
+     * 표에 빠진 금융사일 수 있음({@link KrFinancialSector}).
+     */
+    public static final String FINANCIAL_TABLE_CHECK = "금융업 코드 표 확인 필요";
 
     private static final DateTimeFormatter BASIC = DateTimeFormatter.BASIC_ISO_DATE;
     /** 비중 합이 100을 아주 조금 넘는 부동소수 잔차(100 ÷ 15 × 15)를 0으로 보는 한계. */
@@ -103,7 +108,7 @@ public final class KrRules {
      * @param maxNames             매수 종목 수 상한({@code kr.rulesMaxNames}, 기본 15)
      * @param weighting            배분 방식({@code kr.rules.weighting}, 기본 EQUAL)
      * @param minStreakDays        후보가 될 동시 순매수 연속일({@code kr.rules.minStreakDays}, 기본 0 = 끔, 0~{@value #FLOW_DAYS})
-     * @param debtRatioMaxPct      비금융 부채비율 상한(%, {@code kr.rules.debtRatioMaxPct}, 기본 200 — 가정)
+     * @param debtRatioMaxPct      금융업 코드 표 밖 회사의 부채비율 상한(%, {@code kr.rules.debtRatioMaxPct}, 기본 200 — 가정)
      * @param maxWeightStockPct    종목당 비중 상한(%, {@code kr.maxWeightStockPct}, 기본 10)
      * @param parkCashThresholdPct 재선정일이 아닌 날 남는 현금을 153130에 두는 기준(순자산 %, {@code kr.rules.parkCashThresholdPct}, 기본 2)
      * @param reselection          재선정 주기({@code kr.rules.reselection}, 기본 MONTHLY_FIRST)
@@ -166,11 +171,12 @@ public final class KrRules {
      * @param rceptNo           접수번호(14자리, 앞 8자리 = 접수일 — 동결용·시점 규칙)
      * @param roePct            ROE(%, 당기순이익 ÷ 기말 자본총계 × 100 — {@link KrFundamentals}). 셀 수 없으면 null
      * @param debtRatioPct      부채비율(%, 부채총계 ÷ 자본총계 × 100). 셀 수 없으면 null
-     * @param hasRevenueAccount 매출액 계정이 있음 — 있으면 부채비율 상한을 봄(없는 회사 = 금융업으로 보고 보지 않음)
+     * @param hasCurrentAssetsAccount '유동자산' 계정(당기 금액)이 있음 — 부채비율 상한을 정하지 않음(그건 {@link KrFinancialSector}).
+     *                                표 밖 회사가 부채비율로 빠질 때 없으면 {@link #FINANCIAL_TABLE_CHECK} 경고
      * @param capitalImpaired   자본총계 ≤ 0(자본잠식)
      */
     public record Financials(String bsnsYear, String rceptNo, Double roePct, Double debtRatioPct,
-                             boolean hasRevenueAccount, boolean capitalImpaired) {
+                             boolean hasCurrentAssetsAccount, boolean capitalImpaired) {
 
         public Financials {
             roePct = finite(roePct);
@@ -178,14 +184,15 @@ public final class KrRules {
         }
 
         /**
-         * 계정표에서 — ROE·부채비율·자본잠식은 {@link KrFundamentals#metrics}(화면 레이더 재무와 같은 정의), 매출액 계정은 당기 금액이 있을 때.
+         * 계정표에서 — ROE·부채비율·자본잠식은 {@link KrFundamentals#metrics}(화면 레이더 재무와 같은 정의), '유동자산' 계정은 당기 금액이 있을 때.
          */
         public static Financials fromAccounts(String bsnsYear, String rceptNo, Map<String, KrFundamentals.Amounts> accounts) {
             Map<String, KrFundamentals.Amounts> table = accounts == null ? Map.of() : accounts;
             Map<String, Object> metrics = KrFundamentals.metrics(table);
-            KrFundamentals.Amounts revenue = table.get(KrFundamentals.REVENUE);
+            KrFundamentals.Amounts currentAssets = table.get(KrFinancialSector.CURRENT_ASSETS);
             return new Financials(bsnsYear, rceptNo, (Double) metrics.get("roe"), (Double) metrics.get("debtRatio"),
-                    revenue != null && revenue.current() != null, Boolean.TRUE.equals(metrics.get("capitalImpaired")));
+                    currentAssets != null && currentAssets.current() != null,
+                    Boolean.TRUE.equals(metrics.get("capitalImpaired")));
         }
 
         /** 접수일 — 접수번호가 14자리 숫자이고 앞 8자리가 날짜일 때만(아니면 null = '접수일 모름', B8). */
@@ -450,15 +457,15 @@ public final class KrRules {
             }
             Financials financials = input.financials().get(code);
             LocalDate receipt = financials == null ? null : financials.receiptDate();
-            financialExclusions(financials, receipt, session, params, exclusions);
+            financialExclusions(code, financials, receipt, session, params, exclusions);
             out.add(new Evaluation(member, flows, financials, receipt, score, exclusions));
         }
         return out;
     }
 
     /** 재무 필터(클래스 설명) — 사유를 {@code out}에 더합니다. */
-    private static void financialExclusions(Financials financials, LocalDate receipt, LocalDate session, Params params,
-                                            List<Exclusion> out) {
+    private static void financialExclusions(String code, Financials financials, LocalDate receipt, LocalDate session,
+                                            Params params, List<Exclusion> out) {
         if (financials == null) {
             out.add(new Exclusion(Reason.NO_DATA, NO_DART, NO_DART + "(DART 주요계정 저장본에 그 회사가 없음)"));
             return;
@@ -485,14 +492,18 @@ public final class KrRules {
             out.add(new Exclusion(Reason.FINANCIAL, ROE_NOT_POSITIVE,
                     String.format(Locale.ROOT, "ROE %.2f%% — 0보다 커야 함", roe)));
         }
-        if (financials.hasRevenueAccount()) {
-            Double debt = financials.debtRatioPct();
-            if (debt == null) {
-                out.add(new Exclusion(Reason.NO_DATA, NO_DEBT_RATIO, NO_DEBT_RATIO + "(부채총계·자본총계 계정을 셀 수 없음)"));
-            } else if (debt > params.debtRatioMaxPct()) {
-                out.add(new Exclusion(Reason.FINANCIAL, DEBT_RATIO_OVER, String.format(Locale.ROOT,
-                        "부채비율 %.1f%% > 상한 %s%%(매출액 계정이 있는 비금융)", debt, plain(params.debtRatioMaxPct()))));
-            }
+        if (KrFinancialSector.contains(code)) {
+            return;                                    // 금융업 코드 표 — 부채비율 상한을 보지 않음(ROE는 위에서 봄)
+        }
+        // 표 밖인데 '유동자산' 계정이 없음 = 금융업식 재무상태표 — 표에 빠진 금융사일 수 있어 사유에 경고를 붙임
+        String check = financials.hasCurrentAssetsAccount() ? ""
+                : " — '" + KrFinancialSector.CURRENT_ASSETS + "' 계정 없음: " + FINANCIAL_TABLE_CHECK;
+        Double debt = financials.debtRatioPct();
+        if (debt == null) {
+            out.add(new Exclusion(Reason.NO_DATA, NO_DEBT_RATIO, NO_DEBT_RATIO + "(부채총계·자본총계 계정을 셀 수 없음)" + check));
+        } else if (debt > params.debtRatioMaxPct()) {
+            out.add(new Exclusion(Reason.FINANCIAL, DEBT_RATIO_OVER, String.format(Locale.ROOT,
+                    "부채비율 %.1f%% > 상한 %s%%(금융업 코드 표 밖)", debt, plain(params.debtRatioMaxPct())) + check));
         }
     }
 

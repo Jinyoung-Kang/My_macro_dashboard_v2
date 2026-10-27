@@ -288,7 +288,7 @@ final class PaperSettingKeys {
                     "한국 규칙 계좌 배분 — 동일비중(EQUAL)·점수 비례(SCORE, 점수 = 20일 외국인·기관 순매수 주 ÷ 상장주식수)"),
             integer("kr.rules.minStreakDays", 0, 20, true, "후보가 될 외국인·기관 연속 순매수 최소 일수(0 = 끔, K7)"),
             number("kr.rules.debtRatioMaxPct", 0, 1_000, true,
-                    "비금융 부채비율 상한(%, 가정 200 — 매출액 계정이 있는 회사만, 금융업은 보지 않음)"),
+                    "비금융 부채비율 상한(%, 가정 200 — 금융업 코드 표(DART 업종 K, 지주는 금융지주만) 밖 회사만, 표의 회사는 보지 않음)"),
             choice("kr.rules.reselection", List.of("MONTHLY_FIRST", "TWICE_MONTHLY"), true,
                     "재선정 주기(K10) — 그 달 첫 KR 거래일(MONTHLY_FIRST)·월 2회(TWICE_MONTHLY: 첫째·셋째 월요일 다음 거래일)"),
             number("kr.rules.parkCashThresholdPct", 0, 20, true, "재선정일이 아닌 날 남는 현금을 153130에 두는 기준(순자산 %)"),
