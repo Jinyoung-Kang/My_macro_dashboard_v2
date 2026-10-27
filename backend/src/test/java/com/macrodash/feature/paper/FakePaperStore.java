@@ -37,6 +37,10 @@ class FakePaperStore extends PaperStore {
     Map<String, BookState> states = new TreeMap<>();
     Map<String, TreeMap<String, Position>> positions = new HashMap<>();
     Map<String, TreeMap<String, Lockout>> lockouts = new HashMap<>();
+    /** 책 → (종목 → '미처리 기업행위' 사유) — {@code paper_positions.corp_action_hold}(보유 레코드에 없는 칸). */
+    Map<String, TreeMap<String, String>> corpHolds = new HashMap<>();
+    /** 책 → (종목 → since 봉 거래량) — {@code paper_positions.fill_ref_volume}(V15, 보유 레코드에 없는 칸). */
+    Map<String, TreeMap<String, Long>> refVolumes = new HashMap<>();
     TreeMap<Long, Order> orders = new TreeMap<>();
     TreeMap<Long, Fill> fills = new TreeMap<>();
     Map<String, TreeMap<LocalDate, NavRow>> nav = new HashMap<>();
@@ -158,6 +162,54 @@ class FakePaperStore extends PaperStore {
     @Override
     public void deletePosition(String code, String ticker) {
         positions.getOrDefault(code, new TreeMap<>()).remove(ticker);
+        corpHolds.getOrDefault(code, new TreeMap<>()).remove(ticker);
+        refVolumes.getOrDefault(code, new TreeMap<>()).remove(ticker);
+    }
+
+    @Override
+    public List<CorpActionHold> corpActionHolds(String code) {
+        List<CorpActionHold> out = new ArrayList<>();
+        corpHolds.getOrDefault(code, new TreeMap<>()).forEach((ticker, reason) ->
+                out.add(new CorpActionHold(code, ticker, reason)));
+        return out;
+    }
+
+    @Override
+    public boolean holdForCorpAction(String code, String ticker, String reason) {
+        if (reason == null || reason.isBlank()) {
+            throw new IllegalArgumentException("미처리 기업행위 사유가 비었습니다: " + code + " " + ticker);
+        }
+        if (!positions.getOrDefault(code, new TreeMap<>()).containsKey(ticker)
+                || corpHolds.getOrDefault(code, new TreeMap<>()).containsKey(ticker)) {
+            return false;
+        }
+        corpHolds.computeIfAbsent(code, k -> new TreeMap<>()).put(ticker, reason);
+        return true;
+    }
+
+    @Override
+    public boolean releaseCorpActionHold(String code, String ticker) {
+        return corpHolds.getOrDefault(code, new TreeMap<>()).remove(ticker) != null;
+    }
+
+    @Override
+    public Map<String, Long> fillRefVolumes(String code) {
+        return new TreeMap<>(refVolumes.getOrDefault(code, new TreeMap<>()));
+    }
+
+    @Override
+    public void updateFillRefVolume(String code, String ticker, Long volume) {
+        if (volume != null && volume <= 0) {
+            throw new IllegalArgumentException("since 봉 거래량은 0보다 커야 합니다: " + volume);
+        }
+        if (!positions.getOrDefault(code, new TreeMap<>()).containsKey(ticker)) {
+            return;
+        }
+        if (volume == null) {
+            refVolumes.getOrDefault(code, new TreeMap<>()).remove(ticker);
+        } else {
+            refVolumes.computeIfAbsent(code, k -> new TreeMap<>()).put(ticker, volume);
+        }
     }
 
     @Override
@@ -875,6 +927,8 @@ class FakePaperStore extends PaperStore {
         orders.values().removeIf(o -> o.bookCode().equals(code));
         fills.values().removeIf(f -> f.bookCode().equals(code));
         positions.remove(code);
+        corpHolds.remove(code);
+        refVolumes.remove(code);
         lockouts.remove(code);
         nav.remove(code);
         states.remove(code);
@@ -883,6 +937,7 @@ class FakePaperStore extends PaperStore {
     /** 표 전체의 얕은 복사(레코드는 바뀌지 않으니 표만 복사하면 됨). */
     private record Snapshot(Map<String, Book> books, Map<String, BookState> states,
                             Map<String, TreeMap<String, Position>> positions,
+                            Map<String, TreeMap<String, String>> corpHolds, Map<String, TreeMap<String, Long>> refVolumes,
                             Map<String, TreeMap<String, Lockout>> lockouts, TreeMap<Long, Order> orders,
                             TreeMap<Long, Fill> fills, Map<String, TreeMap<LocalDate, NavRow>> nav,
                             List<JobRun> jobRuns, Map<String, StartPrice> startPrices, SettingsRow settings,
@@ -893,7 +948,8 @@ class FakePaperStore extends PaperStore {
                             TreeMap<LocalDate, ApiUsage> apiUsage, TreeMap<LocalDate, Review> reviews,
                             Map<String, TreeMap<LocalDate, Review>> otherReviews) {
         Snapshot(FakePaperStore s) {
-            this(new TreeMap<>(s.books), new TreeMap<>(s.states), deep(s.positions), deep(s.lockouts),
+            this(new TreeMap<>(s.books), new TreeMap<>(s.states), deep(s.positions), deep(s.corpHolds),
+                    deep(s.refVolumes), deep(s.lockouts),
                     new TreeMap<>(s.orders), new TreeMap<>(s.fills), deep(s.nav), new ArrayList<>(s.jobRuns),
                     new TreeMap<>(s.startPrices), s.settings, deepDates(s.trackRecords), new TreeMap<>(s.selections),
                     new TreeMap<>(s.decisions), new TreeMap<>(s.gates), new TreeMap<>(s.frameworks),
@@ -905,6 +961,8 @@ class FakePaperStore extends PaperStore {
             s.books = books;
             s.states = states;
             s.positions = positions;
+            s.corpHolds = corpHolds;
+            s.refVolumes = refVolumes;
             s.lockouts = lockouts;
             s.orders = orders;
             s.fills = fills;

@@ -1,6 +1,7 @@
 package com.macrodash.store;
 
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.jdbc.core.RowCallbackHandler;
 import org.springframework.jdbc.core.RowMapper;
 import org.springframework.jdbc.datasource.DataSourceTransactionManager;
 import org.springframework.stereotype.Repository;
@@ -22,8 +23,10 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.TreeMap;
 import java.util.function.Supplier;
 
 /**
@@ -523,13 +526,15 @@ public class PaperStore {
     }
 
     /**
-     * 테이블이 있는가. 수집기가 아직 V8~V14를 적용하지 않았으면 false입니다 — V8이 마지막에 만드는 테이블과 V9~V11이 더하는
+     * 테이블이 있는가. 수집기가 아직 V8~V15를 적용하지 않았으면 false입니다 — V8이 마지막에 만드는 테이블과 V9~V11이 더하는
      * 열({@code paper_track_record.data_source}·{@code paper_decisions.packet_text}·{@code paper_api_usage.est_cost_calls}),
      * V12의 {@code paper_reviews} 테이블, V13이 더하는 {@code paper_books.market}·{@code currency} 열, V14가 더하는
-     * {@code paper_reviews.market}·{@code paper_notes.market} 열로 봅니다. V8만 있는 DB(백엔드만 새로 띄운 경우, QA-016)에서 참이면
+     * {@code paper_reviews.market}·{@code paper_notes.market} 열, V15가 더하는 {@code paper_positions.fill_ref_volume} 열로 봅니다.
+     * V8만 있는 DB(백엔드만 새로 띄운 경우, QA-016)에서 참이면
      * 트랙레코드 읽기·쓰기가 {@code group_code}·{@code data_source} 열과 새 기본키에서, 결정 읽기·쓰기가 {@code packet_text} 열에서,
      * 사용량 읽기·쓰기가 추정 비용 열에서, 주간 복기 작업·화면이 없는 테이블에서, 책 읽기·쓰기가 시장·통화 열에서, 복기·메모
-     * 읽기·쓰기가 시장 열과 새 기본키({@code ON CONFLICT (market, week_ending)})에서 SQL 오류(500)를 냅니다.
+     * 읽기·쓰기가 시장 열과 새 기본키({@code ON CONFLICT (market, week_ending)})에서, 한국 장부가 since 봉 거래량 열에서 SQL 오류(500)를
+     * 냅니다.
      */
     public boolean ready() {
         return schema.tableExists("paper_api_usage") && schema.columnExists("paper_track_record", "data_source")
@@ -537,7 +542,8 @@ public class PaperStore {
                 && schema.columnExists("paper_api_usage", "est_cost_calls")
                 && schema.tableExists("paper_reviews")
                 && schema.columnExists("paper_books", "market") && schema.columnExists("paper_books", "currency")
-                && schema.columnExists("paper_reviews", "market") && schema.columnExists("paper_notes", "market");
+                && schema.columnExists("paper_reviews", "market") && schema.columnExists("paper_notes", "market")
+                && schema.columnExists("paper_positions", "fill_ref_volume");
     }
 
     /**
@@ -729,6 +735,36 @@ public class PaperStore {
     public boolean releaseCorpActionHold(String code, String ticker) {
         return jdbc.update("UPDATE paper_positions SET corp_action_hold = NULL, updated_at = now() "
                 + "WHERE book_code = ? AND ticker = ? AND corp_action_hold IS NOT NULL", code, ticker) == 1;
+    }
+
+    // ------------------------------------------------------------------ since 봉 거래량(한국, V15)
+    /**
+     * 한 책 보유의 since 봉 거래량({@code paper_positions.fill_ref_volume}, 2단계 결정 d12) — ticker → 토스 원시 거래량. 값이 없는(NULL —
+     * 미국 보유·V15 전 한국 보유) 보유는 빠집니다. since 봉은 그 보유 수량이 반영한 마지막 관측({@code fill_ref_date}·{@code fill_ref_close}와
+     * 같은 봉)이고, 장부가 기업행위 판정에 저장본의 최근 봉과 함께 넘깁니다. 보유 레코드({@link Position})에는 이 칸이 없습니다 —
+     * {@link #upsertPosition}이 쓰지 않는 칸이라(미국 보유 경로 그대로) 한국 장부가 {@link #updateFillRefVolume}으로 따로 씁니다.
+     */
+    public Map<String, Long> fillRefVolumes(String code) {
+        Map<String, Long> out = new TreeMap<>();
+        jdbc.query("SELECT ticker, fill_ref_volume FROM paper_positions WHERE book_code = ? AND fill_ref_volume IS NOT NULL",
+                (RowCallbackHandler) rs -> out.put(rs.getString("ticker"), rs.getLong("fill_ref_volume")), code);
+        return out;
+    }
+
+    /**
+     * 보유의 since 봉 거래량을 씁니다(null이면 비움 — 모름). 그 보유가 없으면 아무것도 하지 않습니다.
+     *
+     * @throws IllegalArgumentException 거래량이 0 이하(since 봉은 관측 — 거래량 &gt; 0)
+     */
+    public void updateFillRefVolume(String code, String ticker, Long volume) {
+        if (volume != null && volume <= 0) {
+            throw new IllegalArgumentException("since 봉 거래량은 0보다 커야 합니다(관측 봉): " + code + " " + ticker + " " + volume);
+        }
+        jdbc.update("UPDATE paper_positions SET fill_ref_volume = ? WHERE book_code = ? AND ticker = ?", ps -> {
+            setLong(ps, 1, volume);
+            ps.setString(2, code);
+            ps.setString(3, ticker);
+        });
     }
 
     // ------------------------------------------------------------------ 재진입 금지

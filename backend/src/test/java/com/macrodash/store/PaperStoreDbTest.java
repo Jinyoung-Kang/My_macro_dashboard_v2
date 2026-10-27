@@ -93,9 +93,9 @@ class PaperStoreDbTest {
     }
 
     @Test
-    @DisplayName("테이블이 있다 — V8이 마지막에 만드는 paper_api_usage, V9~V11이 더하는 열, V12의 paper_reviews, V13의 paper_books 시장·통화 열, V14의 복기·메모 시장 열로 준비 여부를 본다")
+    @DisplayName("테이블이 있다 — V8이 마지막에 만드는 paper_api_usage, V9~V11이 더하는 열, V12의 paper_reviews, V13의 paper_books 시장·통화 열, V14의 복기·메모 시장 열, V15의 since 봉 거래량 열로 준비 여부를 본다")
     void ready() {
-        assertThat(store.ready()).as("make db-test로 V8~V14를 적용했는가").isTrue();
+        assertThat(store.ready()).as("make db-test로 V8~V15를 적용했는가").isTrue();
         assertThat(new SchemaCheck(jdbc).columnExists("paper_decisions", "packet_text")).isTrue();
         assertThat(new SchemaCheck(jdbc).tableExists("paper_reviews")).isTrue();
     }
@@ -1498,6 +1498,48 @@ class PaperStoreDbTest {
         assertThatThrownBy(() -> new PaperStore.Fill(0, 1, BOOK, "005930", "BUY", 1, 1, 1, 5, 1, CLOSE, DAY, "X", false,
                 null, new java.math.BigDecimal("0.00001"), java.math.BigDecimal.ZERO, java.math.BigDecimal.ZERO))
                 .as("소수 5자리").isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
+    @DisplayName("V15 since 봉 거래량(C2c, 결정 d12): NULL로 시작하고 쓰면 그 책 목록에만, 보유 갱신은 지우지 않음, null로 비움, 0 이하는 코드·CHECK가 막음, 보유가 없으면 아무것도 안 함")
+    void fillRefVolumeRoundTrip() {
+        store.insertBookIfAbsent(book(BOOK, "규칙 책"));
+        store.insertBookIfAbsent(book(OTHER_BOOK, "벤치마크"));
+        store.upsertPosition(new PaperStore.Position(BOOK, "005930", 10, 71_300, DAY, CLOSE, 71_300, CLOSE, null, null,
+                false, DAY, 71_400, null));
+        store.upsertPosition(new PaperStore.Position(OTHER_BOOK, "005930", 1, 71_300, DAY, CLOSE, 71_300, CLOSE, null,
+                null, false, DAY, 71_400, null));
+        assertThat(store.fillRefVolumes(BOOK)).as("새 보유·미국 보유는 모름(NULL)").isEmpty();
+
+        store.updateFillRefVolume(BOOK, "005930", 17_213_072L);
+        assertThat(store.fillRefVolumes(BOOK)).containsExactly(java.util.Map.entry("005930", 17_213_072L));
+        assertThat(store.fillRefVolumes(OTHER_BOOK)).as("다른 책의 같은 종목").isEmpty();
+
+        store.upsertPosition(new PaperStore.Position(BOOK, "005930", 12, 71_300, DAY, CLOSE, 71_300, CLOSE, 70_000.0,
+                CLOSE, false, DAY, 71_400, null));
+        assertThat(store.fillRefVolumes(BOOK)).as("보유 갱신은 그 칸을 쓰지 않음").containsEntry("005930", 17_213_072L);
+
+        store.updateFillRefVolume(BOOK, "035420", 5L);
+        assertThat(store.fillRefVolumes(BOOK)).as("보유 없는 종목 — 행이 생기지 않음").containsOnlyKeys("005930");
+        assertThatThrownBy(() -> store.updateFillRefVolume(BOOK, "005930", 0L)).isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> jdbc.update("UPDATE paper_positions SET fill_ref_volume = 0 WHERE book_code = ?", BOOK))
+                .as("CHECK > 0 — since 봉은 관측").isInstanceOf(org.springframework.dao.DataIntegrityViolationException.class);
+
+        store.updateFillRefVolume(BOOK, "005930", null);
+        assertThat(store.fillRefVolumes(BOOK)).as("null로 비움").isEmpty();
+    }
+
+    @Test
+    @DisplayName("V15 전 DB(paper_positions.fill_ref_volume 열 없음)는 준비 안 됨 — 한국 장부의 SQL 오류 대신 안내 문구, 시험 뒤 되돌림")
+    void readyRequiresV15() {
+        class Rollback extends RuntimeException {
+        }
+        assertThatThrownBy(() -> store.atomically(() -> {
+            jdbc.execute("ALTER TABLE paper_positions DROP COLUMN fill_ref_volume");
+            assertThat(new PaperStore(jdbc, MAPPER, new SchemaCheck(jdbc)).ready()).as("V15 열이 없으면 준비 안 됨").isFalse();
+            throw new Rollback();
+        })).isInstanceOf(Rollback.class);
+        assertThat(new PaperStore(jdbc, MAPPER, new SchemaCheck(jdbc)).ready()).as("되돌린 뒤").isTrue();
     }
 
     @Test
