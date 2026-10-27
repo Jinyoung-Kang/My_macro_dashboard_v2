@@ -255,6 +255,44 @@ class PaperSettingsServiceTest {
     }
 
     @Test
+    @DisplayName("공유 키(2단계 K18·K22·K37): 예약 7·세 스위치 꺼짐이 기본, 형·범위대로 검사, 바꿔도 경고 없음 — 키를 더해도 저장된 행의 판은 그대로")
+    void sharedStage2Keys() {
+        JsonNode defaults = service.defaultsJson();
+        assertThat(defaults.path("apiScheduledReserve").asInt()).isEqualTo(7);
+        assertThat(defaults.path("calendar").path("consensus").asBoolean(true)).isFalse();
+        assertThat(defaults.path("claude").path("schemaV3").asBoolean(true)).isFalse();
+        assertThat(defaults.path("claude").path("figureCheck").asBoolean(true)).isFalse();
+        PaperSettingKeys.Spec reserve = PaperSettingKeys.find("apiScheduledReserve").orElseThrow();
+        assertThat(reserve.type()).isEqualTo(PaperSettingKeys.Type.INTEGER);
+        assertThat(List.of(reserve.min(), reserve.max())).containsExactly(0.0, (double) ClaudeBookService.MAX_DAILY_CALL_CAP);
+        for (String key : List.of("calendar.consensus", "claude.schemaV3", "claude.figureCheck")) {
+            assertThat(PaperSettingKeys.find(key).orElseThrow().type()).as(key).isEqualTo(PaperSettingKeys.Type.BOOLEAN);
+            assertThat(PaperSettingKeys.find(key).orElseThrow().affectsRules()).as(key).isFalse();
+        }
+
+        // 공유 키가 없는 옛 행(C1b 전 — 서버의 지금 행)은 그대로 읽히고 판이 오르지 않으며, 그 키를 처음 쓸 때만 판이 오른다.
+        tools.jackson.databind.node.ObjectNode old = (tools.jackson.databind.node.ObjectNode) body();
+        old.remove("apiScheduledReserve");
+        old.remove("calendar");
+        old.remove("claude");
+        assertThat(service.current().version()).isEqualTo(1);
+        assertThat(service.view().get("version")).isEqualTo(1);
+        Map<String, Object> out = update("calendar.consensus", true, "claude", Map.of("schemaV3", true, "figureCheck", true),
+                "apiScheduledReserve", 9);
+        assertThat(out.get("version")).isEqualTo(2);
+        assertThat(out.get("changedKeys")).isEqualTo(List.of("calendar.consensus", "claude.schemaV3", "claude.figureCheck",
+                "apiScheduledReserve"));
+        assertThat(out.get("warning")).as("규칙 계좌가 읽지 않는 키").isNull();
+        assertThat(body().path("claude").path("figureCheck").asBoolean()).isTrue();
+
+        assertThatThrownBy(() -> update("apiScheduledReserve", 51)).hasMessageContaining("0~50");
+        assertThatThrownBy(() -> update("apiScheduledReserve", -1)).hasMessageContaining("0~50");
+        assertThatThrownBy(() -> update("claude.schemaV3", "true")).hasMessageContaining("true·false");
+        assertThatThrownBy(() -> update("calendar", true)).as("묶음 자리에 값").hasMessageContaining("모르는 설정 키: calendar");
+        assertThatThrownBy(() -> update("claude.unknownSwitch", true)).hasMessageContaining("모르는 설정 키: claude.unknownSwitch");
+    }
+
+    @Test
     @DisplayName("시장 범위(2단계 §4-13) — 공유 키는 market null·나머지는 US, 규칙 계좌 경고는 그 시장 문장(미국 키만이면 지금 문장 그대로)")
     void marketScopeAndRulesWarningPerMarket() {
         JsonNode keys = MAPPER.valueToTree(service.view().get("keys"));
@@ -268,10 +306,12 @@ class PaperSettingsServiceTest {
                 assertThat(key.path("market").asString()).as(key.path("key").asString()).isEqualTo("US");
             }
         }
-        assertThat(shared).containsExactly("model", "effort", "apiDailyCallCap", "frameworkTokenBudget",
+        assertThat(shared).containsExactly("model", "effort", "apiDailyCallCap", "apiScheduledReserve",
+                "frameworkTokenBudget",
                 "pricing.sonnet.inputUsdPerMTok", "pricing.sonnet.outputUsdPerMTok", "pricing.sonnet.cacheReadUsdPerMTok",
                 "pricing.sonnet.cacheWriteUsdPerMTok", "pricing.haiku.inputUsdPerMTok", "pricing.haiku.outputUsdPerMTok",
-                "pricing.haiku.cacheReadUsdPerMTok", "pricing.haiku.cacheWriteUsdPerMTok");
+                "pricing.haiku.cacheReadUsdPerMTok", "pricing.haiku.cacheWriteUsdPerMTok",
+                "calendar.consensus", "claude.schemaV3", "claude.figureCheck");
 
         PaperSettingKeys.Spec usRules = PaperSettingKeys.find("slippageBp").orElseThrow();
         PaperSettingKeys.Spec usPlain = PaperSettingKeys.find("decisionTimeKst").orElseThrow();

@@ -169,6 +169,10 @@ final class PaperSettingKeys {
             shared(choice("effort", ClaudeBookService.EFFORTS, false, "Claude 계좌 effort(C2 기본 high)")),
             shared(integer("apiDailyCallCap", 0, ClaudeBookService.MAX_DAILY_CALL_CAP, false,
                     "하루(KST) Claude 호출 상한(D18) — 정기·수동 결정·재시도·미리보기·시작을 모두 셈. 0이면 부르지 않음")),
+            shared(integer("apiScheduledReserve", 0, ClaudeBookService.MAX_DAILY_CALL_CAP, false,
+                    "정기 작업 몫 예약(2단계 K18, 두 책 공통) — 수동 호출(미리보기·프레임 제안·수동 실행)은 그날 호출이 상한 − 예약 "
+                            + "미만일 때만, 정기 작업은 상한까지. 기본 7, claude.figureCheck를 켜면 9 권장. 예약이 상한 이상이면 수동 "
+                            + "호출은 늘 막힘. 지금은 읽는 코드가 없음(한국 Claude 계좌 E2에서 연결 — 그 전에는 바꿔도 동작 같음)")),
             of("decisionTimeKst", Type.TIME, false, "결정 시각(KST, HH:mm) — 미국 세션 다음 날 이 시각부터 그 거래일 결정(C1)"),
             of("decisionDeadlineKst", Type.TIME, false,
                     "확정 종가를 기다리는 기한(KST, HH:mm) — 지나면 있는 값으로 진행하고 pricesFinal=false"),
@@ -234,7 +238,18 @@ final class PaperSettingKeys {
             of("news.keywords", Type.PHRASES, false,
                     "매크로 키워드(영어 낱말·구절, 대소문자 무시, 쉼표·줄바꿈으로 나눔 — B3). 보유·후보·watchlist 티커는 따로 잡음"),
             new Spec("news.feeds", Type.FEEDS, null, null, NewsEvents.DEFAULT_FEEDS, false,
-                    "패킷에 넣을 피드 키(수집은 여덟 피드 모두) — " + String.join(" · ", NewsEvents.DEFAULT_FEEDS), Scope.US));
+                    "패킷에 넣을 피드 키(수집은 여덟 피드 모두) — " + String.join(" · ", NewsEvents.DEFAULT_FEEDS), Scope.US),
+            // 3단계 스위치(2단계 명세 K22·K37) — 한국 책 출발일 S에 설정 저장 한 번으로 함께 켜 두 책이 같은 날 같은 판이 됩니다.
+            // 지금은 읽는 코드가 없습니다(꺼짐 = 미국 packetVersion 5·스키마·프롬프트 바이트 그대로 — PacketBuilderTest·FrameworkServiceTest).
+            shared(of("calendar.consensus", Type.BOOLEAN, false,
+                    "Claude 패킷 1b_calendar에 미국 컨센서스(Nasdaq — forecast·previous·unit) 열을 실음(2단계 K22, 두 책 공통) — "
+                            + "켜면 미국 packetVersion 6. 한국 책 출발일에 claude.* 스위치와 같은 저장으로 켬. 지금은 읽는 코드가 "
+                            + "없음(E1에서 연결)")),
+            shared(of("claude.schemaV3", Type.BOOLEAN, false,
+                    "Claude 결정 스키마 v3(bearCase, 3단계 — 2단계 K37, 두 책 공통). 한국 책 출발일에 함께 켬. 지금은 읽는 코드가 없음")),
+            shared(of("claude.figureCheck", Type.BOOLEAN, false,
+                    "Claude 응답의 숫자 근거 검사 + 교정 재호출(3단계 — 2단계 K37, 두 책 공통, 결정마다 호출 +1 — "
+                            + "apiScheduledReserve 9 권장). 한국 책 출발일에 함께 켬. 지금은 읽는 코드가 없음")));
 
     private static final Map<String, Spec> BY_KEY;
 

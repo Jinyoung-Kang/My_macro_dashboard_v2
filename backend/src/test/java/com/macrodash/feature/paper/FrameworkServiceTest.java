@@ -232,6 +232,19 @@ class FrameworkServiceTest {
     }
 
     @Test
+    @DisplayName("고정본: 2단계 공유 키(예약·컨센서스·3단계 스위치)를 켠 설정으로 렌더링해도 미국 시스템 프롬프트가 바이트까지 같다(C1b — 읽는 코드 없음)")
+    void goldenRenderIgnoresStage2SharedKeys() {
+        ObjectNode switched = (ObjectNode) settings.defaultsJson().deepCopy();
+        switched.put("apiScheduledReserve", 9);
+        switched.putObject("calendar").put("consensus", true);
+        switched.putObject("claude").put("schemaV3", true).put("figureCheck", true);
+        Golden.assertMatches("render-us-v0-default.txt",
+                FrameworkService.render(FrameworkService.interimBody(MAPPER), 0, switched));
+        Golden.assertMatches("render-us-v0-default.txt", FrameworkService.render(UsPaperMarket.INSTANCE,
+                FrameworkService.interimBody(MAPPER), 0, switched));
+    }
+
+    @Test
     @DisplayName("시장 인자(2단계 명세 §9 A6·K34): 판 본문(머리·역할·원칙·엔진·지침)은 시장과 상관없이 같고, 하드 규칙 줄과 끝 고정 문단만 그 시장 묶음의 것 — 미국 문장이 섞이지 않음")
     void renderTakesMarketPromptParts() {
         JsonNode body = FrameworkService.interimBody(MAPPER);

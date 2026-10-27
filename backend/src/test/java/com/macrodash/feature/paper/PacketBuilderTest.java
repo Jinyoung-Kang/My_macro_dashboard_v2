@@ -947,6 +947,23 @@ class PacketBuilderTest {
     }
 
     @Test
+    @DisplayName("고정본: 2단계 공유 키(예약·컨센서스·3단계 스위치)를 켠 설정 행으로 만들어도 미국 초기·정기 패킷은 바이트까지 같다 — 지금은 읽는 코드가 없음(C1b)")
+    void goldenUsPacketsIgnoreStage2SharedKeys() {
+        store.insertNote(new Note(0, NoteService.MARKET, FRI, TUE, "금요일 시황", "10년물 4.6%·브렌트 88", false, null));
+        ObjectNode body = (ObjectNode) store.settings.body();
+        body.put("apiScheduledReserve", 9);
+        body.putObject("calendar").put("consensus", true);
+        body.putObject("claude").put("schemaV3", true).put("figureCheck", true);
+        Packet initial = builder.build(FRI, RuleBookService.INITIAL, true, 0, store.settings);
+        activeClaude();
+        Packet scheduled = builder.build(MON, RuleBookService.SCHEDULED, false, 0, store.settings);
+
+        // E1이 calendar.consensus를 읽기 시작하면(켜짐 = packetVersion 6) 이 시험을 그 커밋이 고칩니다 — 꺼짐 판은 goldenUsPackets가 지킴.
+        assertThat(initial.sha256()).isEqualTo(GOLDEN_INITIAL_SHA256);
+        assertThat(scheduled.sha256()).isEqualTo(GOLDEN_SCHEDULED_SHA256);
+    }
+
+    @Test
     @DisplayName("섹션은 0_instructions … 12_hardRules(6b 포함) 순서로, 들여쓰기 없이 직렬화")
     void sectionsInReadingOrder() {
         Packet packet = builder.build(FRI, RuleBookService.INITIAL, true);

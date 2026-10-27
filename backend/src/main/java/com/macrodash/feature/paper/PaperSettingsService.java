@@ -51,6 +51,12 @@ public class PaperSettingsService {
             "XLK", "XLC", "XLY", "XLI", "XLF", "XLV", "XLP", "XLE", "XLB", "XLU", "XLRE",
             "SHY", "UUP", "GLD", "DBC", "TLT", "IEF");
 
+    /**
+     * 정기 작업 몫 예약 기본값(2단계 명세 §4-10·K18) — 토요일 최악(금요일 한국 결정의 자정 넘은 재시도 1 + 미국 결정 2 + 미국 복기 2 + 한국
+     * 복기 2). 교정 재호출({@code claude.figureCheck})을 켜면 9를 권장합니다(출발일 저장 — 기본값은 7 그대로). 읽는 곳은 E2입니다.
+     */
+    static final int DEFAULT_API_SCHEDULED_RESERVE = 7;
+
     /** 설정 이력 응답에 싣는 최근 버전 수. 설정은 손으로 바꿀 때만 버전이 올라 몇 년이어도 이 안입니다. */
     static final int HISTORY_SHOWN = 100;
 
@@ -297,6 +303,8 @@ public class PaperSettingsService {
      * 이고, 나머지는 뒤 단계(규칙 책·Claude 책·메모)가 읽도록 처음부터 한 행에 둡니다 — 나중에 키를 더하면 버전이 바뀌어
      * "이 결정은 어느 설정으로 했나" 기록이 끊깁니다. {@code blend.*}(D27)·{@code rules.*}는 단계 2에 더한 키라 그 전에 만든 행에는 없고,
      * 없으면 읽는 쪽이 이 기본값으로 읽습니다(행을 고쳐 쓰지 않음 — 버전을 바꾸는 쓰기는 설정 API, 단계 3a).
+     * 2단계(C1b)에 더한 공유 키({@code apiScheduledReserve}·{@code calendar.consensus}·{@code claude.*})도 같은 규칙입니다 — 키를 더해도
+     * 저장된 행의 판은 그대로이고(미국 결정 기록이 끊기지 않음), 새로 만드는 행에만 처음부터 들어갑니다.
      */
     public JsonNode defaultsJson() {
         Map<String, Object> body = new LinkedHashMap<>();
@@ -356,11 +364,19 @@ public class PaperSettingsService {
         body.put("notesDefaultExpiryTradingDays", 3);
         body.put("notesMaxCharsInPacket", 6000);
         body.put("apiDailyCallCap", 20);
+        // 2단계(C1b)에 더한 공유 키 — 그 전에 만든 설정 행에는 없고(행을 고쳐 쓰지 않음 — 판 그대로), 읽는 쪽(E1·E2)이 이 기본값으로 읽습니다.
+        body.put("apiScheduledReserve", DEFAULT_API_SCHEDULED_RESERVE);
         body.put("frameworkTokenBudget", 8000);
         // 추정 비용 단가(C8, 단계 3b) — 그 전에 만든 설정 행에는 없고, 그 행은 PaperApiCalls.Pricing이 이 기본값으로 읽습니다.
         body.put("pricing", PaperApiCalls.Pricing.defaults().body());
         // 사건 뉴스(2단계 B, 패킷 11b_events) — 그 전에 만든 설정 행에는 없고, 그 행은 EventsSection.settings가 이 기본값으로 읽습니다.
         body.put("news", EventsSection.defaultsBody());
+        // 3단계 스위치(2단계 K22·K37, 두 책 공통) — 모두 꺼짐. 한국 책 출발일에 한 번의 저장으로 함께 켭니다.
+        body.put("calendar", Map.of("consensus", false));
+        Map<String, Object> claude = new LinkedHashMap<>();
+        claude.put("schemaV3", false);
+        claude.put("figureCheck", false);
+        body.put("claude", claude);
         return mapper.valueToTree(body);
     }
 }
