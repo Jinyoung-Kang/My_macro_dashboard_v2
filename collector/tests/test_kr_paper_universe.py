@@ -4,7 +4,8 @@ tests/test_kr_paper_universe.py
 
 고정하는 규칙
   1. U = 금융위 최신 기준일 B(< 오늘)의 코스피 시가총액 상위 100 보통주. 우선주(코드 끝자리·이름 '우'·'우B'·'우C')·스팩·리츠
-     ('메리츠'의 '리츠'는 아님)·거래정지(그날 거래량 0)·DART 고유번호 없음은 뺀다 — 실제 이름으로 잠근다(추정 규칙).
+     ('메리츠'의 '리츠'는 아님)·투융자회사(코드 표 — 사용자 결정 2026-10-27)·거래정지(그날 거래량 0)·DART 고유번호 없음은 뺀다
+     — 실제 이름으로 잠근다(추정 규칙).
   2. 같은 기준일·같은 규칙 판이면 다시 쓰지 않고, 기준일이 바뀌면 그날 U를 통째로 쓴다. 외부 호출 없음.
   3. 금융위 저장본·DART 고유번호 표가 없으면 EmptyResult — 저장본을 그대로 둔다.
   4. 수집 범위 = ETF 2 → 최신 U 순위 → 끈적 목록(보존 기간 안 이력의 다른 종목, 코드 순).
@@ -19,7 +20,7 @@ from app import catalog, tasks
 from app.tasks import kr_paper
 from app.tasks.base import KST
 
-# 2026-10-23 금융위 코스피 실제 이름·코드(시총·거래량은 시험용 값). 우선주 셋과 리츠 둘은 빠지고, '메리츠'·투융자회사는 남는다.
+# 2026-10-23 금융위 코스피 실제 이름·코드(시총·거래량은 시험용 값). 우선주 셋·리츠 둘·투융자회사 둘은 빠지고, '메리츠'는 남는다.
 REAL_NAMES = [
     ("005930", "삼성전자", True),
     ("005935", "삼성전자우", False),        # 우선주 — 코드 끝자리 5·이름 '우'
@@ -28,7 +29,9 @@ REAL_NAMES = [
     ("138040", "메리츠금융지주", True),     # '메리츠'의 '리츠'는 리츠가 아님
     ("088260", "이리츠코크렙", False),      # 리츠(이름 가운데 '리츠')
     ("395400", "SK리츠", False),
-    ("088980", "맥쿼리인프라", True),       # 투융자회사 — 명세의 제외 규칙에 없음
+    ("088980", "맥쿼리인프라", False),      # 투융자회사 — 코드 표(사용자 결정 2026-10-27, 판 v2)
+    ("415640", "KB발해인프라", False),      # 투융자회사 — 지금 U 밖(시총)이지만 같은 표로
+    ("063570", "NICE인프라", True),         # 이름에 '인프라'가 든 보통 회사(실제는 코스닥 — 이름 규칙을 쓰지 않음을 잠금)
 ]
 
 
@@ -46,7 +49,33 @@ def test_실제_이름으로_우선주_리츠_규칙을_잠근다():
     members, excluded = kr_paper.select_universe(rows, _dart(code for code, *_ in REAL_NAMES))
 
     assert [m["code"] for m in members] == [code for code, _name, kept in REAL_NAMES if kept]
-    assert excluded == {"우선주": 3, "리츠": 2}
+    assert excluded == {"우선주": 3, "리츠": 2, "투융자회사": 2}
+
+
+def test_투융자회사가_빠지면_101위가_들어온다(monkeypatch):
+    """2026-10-26 로컬 저장본에서 맥쿼리인프라는 v1 U의 92위였습니다 — 빠지면 그 아래가 한 칸씩 오르고 101번째가 100위로 듭니다."""
+    rows = [_row(f"{i:05d}0", f"회사{i}", float(1000 - i)) for i in range(101)]
+    rows.append(_row("088980", "맥쿼리인프라", 909.5))   # 시총으로 92번째(회사90 910 > 909.5 > 회사91 909)
+    dart = _dart(r["code"] for r in rows)
+    with monkeypatch.context() as m:
+        m.setattr(kr_paper, "KR_UNIVERSE_EXCLUDED_CODES", {})      # v1 규칙(코드 표 없음)이었다면
+        before, _ = kr_paper.select_universe(rows, dart)
+    assert before[91]["code"] == "088980" and "000990" not in [r["code"] for r in before]
+
+    members, excluded = kr_paper.select_universe(rows, dart)
+
+    assert len(members) == 100
+    assert "088980" not in [r["code"] for r in members]
+    assert [r["code"] for r in members[90:92]] == ["000900", "000910"]   # 92위 자리를 회사91이 이음
+    assert members[-1] == {"code": "000990", "name": "회사99", "rank": 100, "marketCap": 901.0, "listedShares": 1_000_000.0,
+                           "close": 1000.0, "rule": "kospi-mcap-top100-common/v2"}
+    assert excluded == {"투융자회사": 1}
+
+
+def test_코드_표의_사유는_결과_문구의_사유_목록에_있다():
+    assert kr_paper.KR_UNIVERSE_EXCLUDED_CODES == {"088980": ("투융자회사", "맥쿼리인프라"),
+                                                  "415640": ("투융자회사", "KB발해인프라")}
+    assert {reason for reason, _name in kr_paper.KR_UNIVERSE_EXCLUDED_CODES.values()} <= set(kr_paper._EXCLUSIONS)
 
 
 def test_우선주의_두_규칙은_하나씩_따로_걸러낸다():
@@ -130,6 +159,23 @@ def test_오늘_날짜의_금융위_행은_기준일로_쓰지_않는다(store):
     tasks.task_kr_paper_universe()
 
     assert store.latest_observation_date(catalog.OBS_KR_PAPER_UNIVERSE) == yesterday
+
+
+def test_v1_판으로_저장된_기준일은_투융자회사를_빼고_다시_쓴다(store):
+    """판을 v2로 올린 까닭 — v1(투융자회사 포함)으로 저장된 최신 기준일이 '최신 상태'로 남지 않고 다시 계산됩니다."""
+    day = _days_ago(1)
+    v1 = [{"code": "222220", "name": "큰회사", "rank": 1, "rule": "kospi-mcap-top100-common/v1"},
+          {"code": "088980", "name": "맥쿼리인프라", "rank": 2, "rule": "kospi-mcap-top100-common/v1"}]
+    store.put_observations(catalog.OBS_KR_PAPER_UNIVERSE, day, v1, entity_key="code")
+    _seed(store, day, [_row("222220", "큰회사", 3e12), _row("088980", "맥쿼리인프라", 2e12), _row("333330", "작은회사", 1e12)],
+          ["222220", "088980", "333330"])
+
+    detail = tasks.task_kr_paper_universe()
+
+    saved = store.read_observations(catalog.OBS_KR_PAPER_UNIVERSE, obs_date=day)
+    assert sorted((r["code"], r["rank"], r["rule"]) for r in saved) == [
+        ("222220", 1, "kospi-mcap-top100-common/v2"), ("333330", 2, "kospi-mcap-top100-common/v2")]
+    assert detail == f"기준일 {day} 코스피 3종목 → 2종목 — 100종목에 못 미침 (제외 투융자회사 1)"
 
 
 def test_규칙_판이_바뀌면_같은_기준일도_통째로_다시_쓴다(store, monkeypatch):
