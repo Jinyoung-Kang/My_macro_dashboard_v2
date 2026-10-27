@@ -537,7 +537,7 @@ public class PaperDecisionJob {
                 } else if (skip != null) {
                     detail.put("rules", skip);
                 } else {
-                    KrDecisionGates.Gate first = KrDecisionGates.ledger(store, market, market.rulesBook(), d, inputs);
+                    KrDecisionGates.Gate first = ledgerGate(market, market.rulesBook(), d, inputs);
                     gates.add(first);
                     rememberGates(market, d, withFirst(first, data), now);
                     if (first.blocks()) {
@@ -566,7 +566,7 @@ public class PaperDecisionJob {
                 if (claudeSkip != null) {
                     detail.put("claude", claudeSkip);
                 } else {
-                    KrDecisionGates.Gate first = KrDecisionGates.ledger(store, market, market.claudeBook(), d, inputs);
+                    KrDecisionGates.Gate first = ledgerGate(market, market.claudeBook(), d, inputs);
                     gates.add(first);
                     if (first.blocks()) {
                         waiting.add(first.id() + " " + first.note());
@@ -637,6 +637,16 @@ public class PaperDecisionJob {
     private static Result dataNotReady(LocalDate d, List<KrDecisionGates.Gate> gates, Instant deadline) {
         return new Result(DATA_NOT_READY, d, null, null, null, "자료 게이트 미달: "
                 + String.join(" · ", KrDecisionGates.blocking(gates)) + " — 기한 " + Kst.stamp(deadline) + "까지 다음 주기에 다시 봅니다");
+    }
+
+    /**
+     * 그 계좌의 게이트 ①({@link KrDecisionGates#ledger}) — 장부가 그 실행의 관측치를 처리하면서 그날 보류한 주문 종목(이 작업이나 리스크 점검이
+     * 처리한 것, {@link PaperLedgerService#orderHolds(PaperMarket, String, Instant)})과 함께.
+     */
+    private KrDecisionGates.Gate ledgerGate(MarketRun market, String book, LocalDate d, KrDecisionGates.Inputs inputs) {
+        Map<String, String> held = inputs.quotes().map(q -> ledger.orderHolds(market, book, q.collectedAt()))
+                .orElse(Map.of());
+        return KrDecisionGates.ledger(store, market, book, d, inputs, held);
     }
 
     /** ①(그 계좌) 다음에 ②~⑥. */
@@ -715,7 +725,7 @@ public class PaperDecisionJob {
     private List<KrDecisionGates.Gate> deadlineGates(MarketRun market, LocalDate d, Instant now) {
         try {
             KrDecisionGates.Inputs inputs = krGates.withRules(market, krGates.readSession(market, d), now);
-            return withFirst(KrDecisionGates.ledger(store, market, market.rulesBook(), d, inputs),
+            return withFirst(ledgerGate(market, market.rulesBook(), d, inputs),
                     krGates.data(market, inputs));
         } catch (RuntimeException e) {
             log.warn("모의 매매 결정 작업({}) — 기한 지난 세션 {}의 자료 게이트를 판정하지 못했습니다: {}", market.code(), d, e.toString());
@@ -944,7 +954,7 @@ public class PaperDecisionJob {
             if (session != null) {
                 // 장부를 처리한 뒤 ③(같은 읽기)과 그 계좌의 ① — 정기 결정과 같은 판정(클래스 설명 '한국 결정 게이트').
                 KrDecisionGates.Inputs inputs = krGates.withRules(market, session, now);
-                List<KrDecisionGates.Gate> gates = withFirst(KrDecisionGates.ledger(store, market, code, d, inputs),
+                List<KrDecisionGates.Gate> gates = withFirst(ledgerGate(market, code, d, inputs),
                         krGates.data(market, inputs));
                 requireGates(gates);
                 detail.put("gates", views(gates));

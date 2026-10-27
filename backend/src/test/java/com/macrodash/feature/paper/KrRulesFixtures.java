@@ -182,6 +182,22 @@ final class KrRulesFixtures {
     }
 
     /**
+     * 그 저장본 {@code code} 종목 {@code date} 봉의 시가(고가)·종가(저가)·거래량·수정 비율({@code adjRatio} — 수정 종가도 함께)을 바꿉니다 — 분할 재상장·
+     * 큰 변동 시험. 같은 저장본을 고쳐 돌려줍니다.
+     */
+    static com.macrodash.store.Snapshot rebar(com.macrodash.store.Snapshot snapshot, String code, LocalDate date, long open,
+                                              long close, long volume, double adjRatio) {
+        for (JsonNode bar : snapshot.payload().path("codes").path(code).path("bars")) {
+            if (date.toString().equals(bar.path("date").asString())) {
+                ((ObjectNode) bar).put("open", open).put("high", open).put("low", close).put("close", close)
+                        .put("volume", volume).put("adjRatio", adjRatio).put("adjClose", close * adjRatio);
+                return snapshot;
+            }
+        }
+        throw new IllegalArgumentException(code + "에 " + date + " 봉이 없습니다");
+    }
+
+    /**
      * 그 저장본 {@code code} 종목 마지막 봉(그날)의 1분봉 개장 봉을 {@code FAILED}로 — 수집기가 같은 밤 다시 묻는 중이라 장부가 그 시가 주문을
      * 기다림(결정 d11, 관측 봉은 있음). 같은 저장본을 고쳐 돌려줍니다.
      */

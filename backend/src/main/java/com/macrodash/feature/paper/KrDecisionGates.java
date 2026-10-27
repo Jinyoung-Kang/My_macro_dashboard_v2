@@ -35,8 +35,10 @@ import java.util.Optional;
  *       없음(결정 d11 '대기 = 정리 안 됨'). 확정 순자산 줄의 대기 주문 조건과 같은 거름({@link KrConfirmations#pendingBefore})이되 체결 조건 ⑤
  *       (D 개장 순간 &gt; 주문 생성)는 보지 않습니다 — D 개장 뒤에 만든 주문도 아직 체결되지 않은 대기입니다(결정 e3). <b>장부가 그 실행의
  *       관측치로 체결할 수 없는 주문은 기다리지 않습니다</b>(사용자 결정 2026-10-28 u2 — 명세 §9 '주문 뒤에 시작된 정지와 게이트 ①'의 ⓑ,
- *       {@link #unworkable}): 그 관측치에 그 종목의 기준일 뒤 관측 봉(거래량 &gt; 0)이 없음(거래정지·수집 범위 밖·봉 없음), 또는 그 계좌의
- *       미처리 기업행위 보유(장부가 그 종목 주문을 보류). 주문은 대기 그대로라 만료(기준일 + 3거래일) 전에 풀리면 체결됩니다. 관측 봉이 있는데
+ *       {@link #unworkable}): 그 관측치에 그 종목의 기준일 뒤 관측 봉(거래량 &gt; 0)이 없음(거래정지·수집 범위 밖·봉 없음), 그 계좌의
+ *       미처리 기업행위 보유(장부가 그 종목 주문을 보류), 또는 장부가 그 관측치를 처리하면서 그 종목 주문을 그날 보류함(기업행위 판정 대기·
+ *       분할·병합을 반영한 밤·보유 없는 주문 종목의 신호 — {@link PaperLedgerService#orderHolds(PaperMarket, String, Instant)}, 메모리라 재기동
+ *       뒤에는 모름 → 기다림). 주문은 대기 그대로라 만료(기준일 + 3거래일) 전에 풀리면 체결됩니다. 관측 봉이 있는데
  *       기다리는 주문(1분봉 {@code FAILED} — 결정 d11, 조건 ⑤)은 그대로 막습니다. 결정하는 계좌마다 따로
  *       봅니다(그 계좌의 주문 — 한 계좌의 대기 주문이 다른 계좌 결정을 막지 않게, 두 책은 따로). 정기 결정 작업이 그 실행에서 장부를 처리한
  *       뒤에 봅니다. 일시정지 계좌는 보지 않습니다(장부가 사고팔지 않아 정리되지 않고, 그 결정은 주문 없는 SKIPPED)</li>
@@ -197,8 +199,12 @@ final class KrDecisionGates {
      * ① 그 계좌의 장부가 앞 결정의 주문을 정리함(클래스 설명) — 그 실행의 관측치({@code in}의 관측치 — ②는 시장 파서가 읽은 저장본에서만 통과하므로
      * ② 뒤에는 늘 있음, 없으면 그 판정 없이)를 처리했고, 기준 거래일 &lt; D·체결하는 시점인 대기 주문 중 장부가 그 관측치로 일하는 것이 없음
      * (체결할 수 없는 주문은 문구에만 — {@link #unworkable}). 판정 문구 머리에 계좌 코드.
+     *
+     * @param ledgerHolds 그 계좌 장부가 그 관측치를 처리하면서 그날 보류한 주문 종목(코드 → 사유 —
+     *                    {@link PaperLedgerService#orderHolds(PaperMarket, String, Instant)}, 모르면 빈 표)
      */
-    static Gate ledger(PaperStore store, PaperMarket market, String book, LocalDate d, Inputs in) {
+    static Gate ledger(PaperStore store, PaperMarket market, String book, LocalDate d, Inputs in,
+                       Map<String, String> ledgerHolds) {
         if (store.book(book).map(b -> PaperBooks.PAUSED.equals(b.status())).orElse(false)) {
             // 일시정지 계좌는 장부가 사고팔지 않아 대기 주문이 정리되지 않고, 그 결정은 주문을 내지 않습니다(SKIPPED) — 막을 까닭이 없음.
             return new Gate("①", "PASS", book + " — 일시정지 중(주문을 내지 않음 — 대기 주문을 보지 않음)");
@@ -225,7 +231,7 @@ final class KrDecisionGates {
         List<Order> working = new ArrayList<>();
         List<String> idle = new ArrayList<>();
         for (Order order : pending) {
-            String why = unworkable(order, quotes, holds);
+            String why = unworkable(order, quotes, holds, ledgerHolds);
             if (why == null) {
                 working.add(order);
             } else {
@@ -248,16 +254,24 @@ final class KrDecisionGates {
 
     /**
      * 장부가 그 실행의 관측치로는 그 대기 주문을 체결할 수 없는 사유 — ①이 그 주문을 기다리지 않습니다(클래스 설명, 사용자 결정 2026-10-28 u2).
-     * 체결할 수 있거나 아직 일하는 주문이면 null: 관측치에 그 종목의 기준일 뒤 관측 봉(거래량 &gt; 0 — 체결 조건 ④와 같은 뜻)이 있으면 장부가
-     * 그 봉으로 체결하거나 기다리는 중입니다(1분봉 {@code FAILED} — 결정 d11, D 개장 뒤 생성 — 조건 ⑤). 이어받은 항목({@code isStale})의 봉도
-     * 셉니다 — 관측 봉을 이어받았으면 수집기가 그 종목을 다시 받는 중이라 기다리는 쪽으로 둡니다. 관측치가 없으면 판정하지 않습니다(막음).
+     * 장부가 그 관측치를 처리하면서 그 종목 주문을 그날 보류했으면({@code ledgerHolds} — 기업행위 판정 대기·분할·병합을 반영한 밤·보유 없는 주문
+     * 종목의 신호, 저장하지 않는 보류) 관측 봉이 있어도 그 관측치로는 체결하지 않습니다. 체결할 수 있거나 아직 일하는 주문이면 null: 관측치에 그
+     * 종목의 기준일 뒤 관측 봉(거래량 &gt; 0 — 체결 조건 ④와 같은 뜻)이 있으면 장부가 그 봉으로 체결하거나 기다리는 중입니다(1분봉 {@code FAILED} —
+     * 결정 d11, D 개장 뒤 생성 — 조건 ⑤). 이어받은 항목({@code isStale})의 봉도 셉니다 — 관측 봉을 이어받았으면 수집기가 그 종목을 다시 받는 중이라
+     * 기다리는 쪽으로 둡니다. 관측치가 없으면 판정하지 않습니다(막음).
      *
-     * @param holds 그 계좌의 미처리 기업행위 보유(코드 → 사유 — 장부가 그 종목 주문을 보류)
+     * @param holds       그 계좌의 미처리 기업행위 보유(코드 → 사유 — 장부가 그 종목 주문을 보류, 저장된 표시)
+     * @param ledgerHolds 장부가 그 관측치를 처리하면서 그날 보류한 주문 종목(코드 → 사유, 모르면 빈 표)
      */
-    static String unworkable(Order order, Optional<Quotes> quotes, Map<String, String> holds) {
+    static String unworkable(Order order, Optional<Quotes> quotes, Map<String, String> holds,
+                             Map<String, String> ledgerHolds) {
         String hold = holds.get(order.ticker());
         if (hold != null) {
             return "미처리 기업행위 보유(" + hold + ") — 장부가 그 종목 주문을 보류";
+        }
+        String held = ledgerHolds.get(order.ticker());
+        if (held != null) {
+            return "장부가 이번 관측치로는 보류 — " + held;
         }
         if (quotes.isEmpty() || order.asOfTradingDate() == null) {
             return null;

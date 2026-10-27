@@ -762,6 +762,66 @@ class KrRulesJobTest {
     }
 
     @Test
+    @DisplayName("분할·병합을 반영한 밤(장부가 그날 그 종목 주문을 보류 — 저장하지 않는 보류)의 대기 주문도 게이트 ①을 막지 않음 — 재선정일 R에 정지된 보유의 '후보 밖' 매도가 R1 2:1 분할 재상장(관측 봉 있음)에 걸려도 R1 정기 결정, 주문은 대기 그대로이고 R2에 분할 뒤 수량 전부가 팔림")
+    void splitNightHoldDoesNotHoldGateOne() {
+        holding("000660", 100, 10_000);
+        store.upsertState(new BookState(PaperBooks.KR_RULES, 99_000_000, 100_000_000, 1_000_000, 1.0, null, null, S, null));
+        KrFixtures.stub(reader, Datasets.SNAP_KR_PAPER_QUOTES,
+                KrRulesFixtures.suspend(KrRulesFixtures.quotes(R), "000660", true));
+        fsc(FRI);
+        PaperDecisionJob.Result placed = runAt("2026-11-02T22:30");
+        Order sell = store.ordersByDecision(placed.rules().id()).stream()
+                .filter(o -> "000660".equals(o.ticker()) && PaperBooks.SELL.equals(o.side())).findFirst().orElseThrow();
+
+        // R1 — 2:1 분할 재상장: R 봉은 정지일 봉(수정 비율 0.5 — 분할 뒤 단위로 고친 판), R1 봉은 관측 봉(원시가 절반·거래량 두 배, 비율 1).
+        KrFixtures.stub(reader, Datasets.SNAP_KR_PAPER_QUOTES, KrRulesFixtures.rebar(
+                KrRulesFixtures.rebar(KrRulesFixtures.quotes(R1), "000660", R, 10_050, 10_050, 0, 0.5),
+                "000660", R1, 5_000, 5_050, 200_000, 1.0));
+        fsc(R);
+        PaperDecisionJob.Result next = runAt("2026-11-03T22:30");
+
+        assertThat(next.outcome()).isEqualTo(PaperDecisionJob.DECIDED);
+        assertThat(next.rules().kind()).isEqualTo(RuleBookService.SCHEDULED);
+        assertThat(store.positions(PaperBooks.KR_RULES)).filteredOn(p -> "000660".equals(p.ticker())).singleElement()
+                .satisfies(p -> assertThat(p.qty()).as("장부가 분할을 반영").isEqualTo(200));
+        JsonNode first = next.rules().response().path("gates").get(0);
+        assertThat(first.path("status").asString()).isEqualTo("PASS");
+        assertThat(first.path("note").asString()).contains("#" + sell.id() + " SELL 000660")
+                .contains("장부가 이번 관측치로는 보류").contains("분할·병합").contains("기다리지 않음");
+        assertThat(store.orders.get(sell.id()).status()).as("장부가 그날 보류 — 대기 그대로").isEqualTo(PaperBooks.ORDER_PENDING);
+
+        // R2 — 분할 뒤 첫 밤(since = R1). 새 사건이 없어 보류가 풀리고 분할 뒤 수량 전부를 팖.
+        KrFixtures.stub(reader, Datasets.SNAP_KR_PAPER_QUOTES, KrRulesFixtures.rebar(
+                KrRulesFixtures.rebar(KrRulesFixtures.quotes(R2), "000660", R1, 5_000, 5_050, 200_000, 1.0),
+                "000660", R2, 5_050, 5_100, 150_000, 1.0));
+        fsc(R1);
+        assertThat(runAt("2026-11-04T22:30").outcome()).isEqualTo(PaperDecisionJob.DECIDED);
+        assertThat(store.orders.get(sell.id()).status()).isEqualTo("FILLED");
+        assertThat(store.fillsOf(PaperBooks.KR_RULES)).filteredOn(f -> "000660".equals(f.ticker())).singleElement()
+                .satisfies(f -> assertThat(f.qty()).isEqualTo(200));
+    }
+
+    @Test
+    @DisplayName("보유 없는 주문 종목의 기업행위 신호(장부가 그날 그 종목 주문을 보류 — since가 주문 기준일로 고정돼 만료까지 밤마다 되풀이)도 게이트 ①을 막지 않음 — 기준일 FRI 대기 매수 005930의 R 봉이 가격제한폭 밖이면 R 정기 결정, 주문은 대기 그대로")
+    void orderOnlyCorporateActionHoldDoesNotHoldGateOne() {
+        long held = pending("005930", PaperBooks.BUY, PaperBooks.NEXT_OPEN, RuleBookService.SOURCE_RULE, FRI,
+                "2026-10-30T22:30");
+        KrFixtures.stub(reader, Datasets.SNAP_KR_PAPER_QUOTES,
+                KrRulesFixtures.rebar(KrRulesFixtures.quotes(R), "005930", R, 15_000, 15_000, 120_000, 1.0));
+        fsc(FRI);
+
+        PaperDecisionJob.Result decided = runAt("2026-11-02T22:30");
+
+        assertThat(decided.outcome()).isEqualTo(PaperDecisionJob.DECIDED);
+        assertThat(decided.rules().kind()).isEqualTo(RuleBookService.REBALANCE);
+        JsonNode first = decided.rules().response().path("gates").get(0);
+        assertThat(first.path("status").asString()).isEqualTo("PASS");
+        assertThat(first.path("note").asString()).contains("#" + held + " BUY 005930")
+                .contains("장부가 이번 관측치로는 보류").contains("가격제한폭").contains("기다리지 않음");
+        assertThat(store.orders.get(held).status()).as("장부가 그날 보류 — 대기 그대로").isEqualTo(PaperBooks.ORDER_PENDING);
+    }
+
+    @Test
     @DisplayName("기한이 지났는데 ⑤는 통과(④만 미달) — NO_TRADE 사유는 '기한 지남', 기다린 까닭은 waitedFor에")
     void pastDeadlineWithoutAnchorProblem() {
         quotes(R, Set.of());
