@@ -4,11 +4,12 @@ tests/test_kr_paper_universe.py
 
 고정하는 규칙
   1. U = 금융위 최신 기준일 B(< 오늘)의 코스피 시가총액 상위 100 보통주. 우선주(코드 끝자리·이름 '우'·'우B'·'우C')·스팩·리츠
-     ('메리츠'의 '리츠'는 아님)·투융자회사(코드 표 — 사용자 결정 2026-10-27)·거래정지(그날 거래량 0)·DART 고유번호 없음은 뺀다
-     — 실제 이름으로 잠근다(추정 규칙).
+     ('메리츠'의 '리츠'는 아님 · 이름에 '리츠'가 없는 맵스리얼티는 코드 표 — 사용자 결정 2026-10-28)·투융자회사(코드 표 — 사용자 결정
+     2026-10-27)·거래정지(그날 거래량 0)·DART 고유번호 없음은 뺀다 — 실제 이름으로 잠근다(추정 규칙).
   2. 같은 기준일·같은 규칙 판이면 다시 쓰지 않고, 기준일이 바뀌면 그날 U를 통째로 쓴다. 외부 호출 없음.
   3. 금융위 저장본·DART 고유번호 표가 없으면 EmptyResult — 저장본을 그대로 둔다.
   4. 수집 범위 = ETF 2 → 최신 U 순위 → 끈적 목록(보존 기간 안 이력의 다른 종목, 코드 순).
+  5. 결과 문구는 저장된 paper.kr.quotes의 토스 securityType이 알려졌고 STOCK이 아닌 U 종목을 '확인 필요'로 보인다 — U는 바꾸지 않는다.
 """
 from __future__ import annotations
 
@@ -20,7 +21,7 @@ from app import catalog, tasks
 from app.tasks import kr_paper
 from app.tasks.base import KST
 
-# 2026-10-23 금융위 코스피 실제 이름·코드(시총·거래량은 시험용 값). 우선주 셋·리츠 둘·투융자회사 둘은 빠지고, '메리츠'는 남는다.
+# 2026-10-23 금융위 코스피 실제 이름·코드(시총·거래량은 시험용 값). 우선주 셋·리츠 셋·투융자회사 둘은 빠지고, '메리츠'는 남는다.
 REAL_NAMES = [
     ("005930", "삼성전자", True),
     ("005935", "삼성전자우", False),        # 우선주 — 코드 끝자리 5·이름 '우'
@@ -29,6 +30,7 @@ REAL_NAMES = [
     ("138040", "메리츠금융지주", True),     # '메리츠'의 '리츠'는 리츠가 아님
     ("088260", "이리츠코크렙", False),      # 리츠(이름 가운데 '리츠')
     ("395400", "SK리츠", False),
+    ("094800", "맵스리얼티", False),        # 리츠 — 이름에 '리츠'가 없어 코드 표(사용자 결정 2026-10-28, 판 v3)
     ("088980", "맥쿼리인프라", False),      # 투융자회사 — 코드 표(사용자 결정 2026-10-27, 판 v2)
     ("415640", "KB발해인프라", False),      # 투융자회사 — 지금 U 밖(시총)이지만 같은 표로
     ("063570", "NICE인프라", True),         # 이름에 '인프라'가 든 보통 회사(실제는 코스닥 — 이름 규칙을 쓰지 않음을 잠금)
@@ -49,7 +51,7 @@ def test_실제_이름으로_우선주_리츠_규칙을_잠근다():
     members, excluded = kr_paper.select_universe(rows, _dart(code for code, *_ in REAL_NAMES))
 
     assert [m["code"] for m in members] == [code for code, _name, kept in REAL_NAMES if kept]
-    assert excluded == {"우선주": 3, "리츠": 2, "투융자회사": 2}
+    assert excluded == {"우선주": 3, "리츠": 3, "투융자회사": 2}
 
 
 def test_투융자회사가_빠지면_101위가_들어온다(monkeypatch):
@@ -68,13 +70,23 @@ def test_투융자회사가_빠지면_101위가_들어온다(monkeypatch):
     assert "088980" not in [r["code"] for r in members]
     assert [r["code"] for r in members[90:92]] == ["000900", "000910"]   # 92위 자리를 회사91이 이음
     assert members[-1] == {"code": "000990", "name": "회사99", "rank": 100, "marketCap": 901.0, "listedShares": 1_000_000.0,
-                           "close": 1000.0, "rule": "kospi-mcap-top100-common/v2"}
+                           "close": 1000.0, "rule": "kospi-mcap-top100-common/v3"}
     assert excluded == {"투융자회사": 1}
+
+
+def test_맵스리얼티는_이름_규칙이_아니라_코드_표로_리츠_사유():
+    row = _row("094800", "맵스리얼티", 6.2e11)
+    with pytest.MonkeyPatch.context() as m:
+        m.setattr(kr_paper, "KR_UNIVERSE_EXCLUDED_CODES", {})      # 코드 표가 없었다면(v2까지) 이름으로는 걸리지 않음
+        assert kr_paper.universe_exclusion(row, _dart(["094800"])) is None
+    assert kr_paper.universe_exclusion(row, _dart(["094800"])) == "리츠"
 
 
 def test_코드_표의_사유는_결과_문구의_사유_목록에_있다():
     assert kr_paper.KR_UNIVERSE_EXCLUDED_CODES == {"088980": ("투융자회사", "맥쿼리인프라"),
-                                                  "415640": ("투융자회사", "KB발해인프라")}
+                                                  "415640": ("투융자회사", "KB발해인프라"),
+                                                  "094800": ("리츠", "맵스리얼티")}
+    assert kr_paper.KR_UNIVERSE_RULE == "kospi-mcap-top100-common/v3"
     assert {reason for reason, _name in kr_paper.KR_UNIVERSE_EXCLUDED_CODES.values()} <= set(kr_paper._EXCLUSIONS)
 
 
@@ -174,8 +186,26 @@ def test_v1_판으로_저장된_기준일은_투융자회사를_빼고_다시_�
 
     saved = store.read_observations(catalog.OBS_KR_PAPER_UNIVERSE, obs_date=day)
     assert sorted((r["code"], r["rank"], r["rule"]) for r in saved) == [
-        ("222220", 1, "kospi-mcap-top100-common/v2"), ("333330", 2, "kospi-mcap-top100-common/v2")]
+        ("222220", 1, "kospi-mcap-top100-common/v3"), ("333330", 2, "kospi-mcap-top100-common/v3")]
     assert detail == f"기준일 {day} 코스피 3종목 → 2종목 — 100종목에 못 미침 (제외 투융자회사 1)"
+
+
+def test_v2_판으로_저장된_기준일은_맵스리얼티를_빼고_다시_쓴다(store):
+    """판을 v3로 올린 까닭 — v2(맵스리얼티 포함)로 저장된 최신 기준일이 '최신 상태'로 남지 않고 다시 계산됩니다."""
+    day = _days_ago(1)
+    v2 = [{"code": "222220", "name": "큰회사", "rank": 1, "rule": "kospi-mcap-top100-common/v2"},
+          {"code": "094800", "name": "맵스리얼티", "rank": 2, "rule": "kospi-mcap-top100-common/v2"}]
+    store.put_observations(catalog.OBS_KR_PAPER_UNIVERSE, day, v2, entity_key="code")
+    _seed(store, day, [_row("222220", "큰회사", 3e12), _row("094800", "맵스리얼티", 2e12), _row("333330", "작은회사", 1e12)],
+          ["222220", "094800", "333330"])
+
+    detail = tasks.task_kr_paper_universe()
+
+    saved = store.read_observations(catalog.OBS_KR_PAPER_UNIVERSE, obs_date=day)
+    assert sorted((r["code"], r["rank"], r["rule"]) for r in saved) == [
+        ("222220", 1, "kospi-mcap-top100-common/v3"), ("333330", 2, "kospi-mcap-top100-common/v3")]
+    assert detail == f"기준일 {day} 코스피 3종목 → 2종목 — 100종목에 못 미침 (제외 리츠 1)"
+    assert tasks.task_kr_paper_universe() == f"최신 상태 (기준일 {day}, 2종목)"
 
 
 def test_규칙_판이_바뀌면_같은_기준일도_통째로_다시_쓴다(store, monkeypatch):
@@ -244,3 +274,57 @@ def test_slow에서_토스_태스크_뒤에_돌고_태스크는_35개():
     names = [t.name for t in tasks.ALL_TASKS]
     assert names.index("kr_paper_universe") == names.index("toss_radar_universe") + 1
     assert len(tasks.ALL_TASKS) == len(tasks.TASKS_BY_NAME) == 35
+
+
+# ------------------------------------------------------------------ 토스 유형 경고(결과 문구만 — U는 그대로)
+def _quotes(entries: dict) -> dict:
+    return {"contract": 1, "session": _days_ago(1), "codes": entries}
+
+
+def test_토스_유형이_STOCK이_아닌_U_종목은_결과_문구에_확인_필요로_보이고_U는_그대로(store):
+    day = _days_ago(1)
+    _seed(store, day, [_row("222220", "큰회사", 3e12), _row("333330", "새리얼티", 2e12), _row("444440", "작은회사", 1e12),
+                       _row("555550", "유형모름", 9e11), _row("666660", "항목없음", 8e11)],
+          ["222220", "333330", "444440", "555550", "666660"])
+    store.put_snapshot(catalog.SNAP_KR_PAPER_QUOTES, _quotes({
+        "222220": {"securityType": "STOCK"},
+        "333330": {"securityType": "REIT"},
+        "444440": {"securityType": "INFRASTRUCTURE_FUND", "isStale": True},   # 이어 쓴 항목도 유형은 알려진 값
+        "555550": {"securityType": None},
+        "069500": {"securityType": "ETF"},                                     # U 밖(수집 범위의 ETF)은 보지 않음
+    }))
+
+    detail = tasks.task_kr_paper_universe()
+
+    assert detail == (f"기준일 {day} 코스피 5종목 → 5종목 — 100종목에 못 미침"
+                      " · 확인 필요 — 토스 유형이 STOCK이 아닌 U 종목 2: 333330 새리얼티(REIT), 444440 작은회사(INFRASTRUCTURE_FUND)"
+                      " (U 계산에는 쓰지 않음 — 제외 코드 표에 더할지 확인)")
+    saved = store.read_observations(catalog.OBS_KR_PAPER_UNIVERSE, obs_date=day)
+    assert sorted(r["code"] for r in saved) == ["222220", "333330", "444440", "555550", "666660"]
+    # 같은 기준일 다시 — '최신 상태'에도 같은 경고(관측치가 U보다 뒤에 돌아 새 구성원의 유형은 다음 실행에야 알기 때문)
+    assert tasks.task_kr_paper_universe() == (
+        f"최신 상태 (기준일 {day}, 5종목)"
+        " · 확인 필요 — 토스 유형이 STOCK이 아닌 U 종목 2: 333330 새리얼티(REIT), 444440 작은회사(INFRASTRUCTURE_FUND)"
+        " (U 계산에는 쓰지 않음 — 제외 코드 표에 더할지 확인)")
+
+
+def test_관측치_저장본이_없거나_유형이_STOCK이거나_모르면_경고가_없다(store):
+    day = _days_ago(1)
+    _seed(store, day, [_row("222220", "큰회사", 3e12), _row("333330", "작은회사", 1e12)], ["222220", "333330"])
+    assert tasks.task_kr_paper_universe() == f"기준일 {day} 코스피 2종목 → 2종목 — 100종목에 못 미침"
+
+    store.put_snapshot(catalog.SNAP_KR_PAPER_QUOTES, _quotes({"222220": {"securityType": "STOCK"},
+                                                              "333330": {"securityType": ""}}))
+    assert tasks.task_kr_paper_universe() == f"최신 상태 (기준일 {day}, 2종목)"
+    store.put_snapshot(catalog.SNAP_KR_PAPER_QUOTES, {"contract": 1, "codes": ["망가진", "모양"]})
+    assert tasks.task_kr_paper_universe() == f"최신 상태 (기준일 {day}, 2종목)"
+
+
+def test_확인_필요_종목은_순위_순으로_열까지만_보인다(store):
+    members = [{"code": f"{i:05d}0", "name": f"회사{i}", "rank": i} for i in range(1, 13)]
+    store.put_snapshot(catalog.SNAP_KR_PAPER_QUOTES, _quotes({m["code"]: {"securityType": "REIT"} for m in members}))
+
+    tail = kr_paper.security_type_warning(members)
+
+    assert tail.startswith(" · 확인 필요 — 토스 유형이 STOCK이 아닌 U 종목 12: 000010 회사1(REIT), ")
+    assert "000100 회사10(REIT)…" in tail and "000110" not in tail

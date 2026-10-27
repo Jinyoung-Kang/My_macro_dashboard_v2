@@ -10,13 +10,16 @@ app/tasks/kr_paper.py
   금융위 주식시세의 최신 기준일 B(< 오늘)에서 코스피 시가총액 상위 100 보통주. 제외(추정 규칙 — 고정본 테스트가 잠금):
     우선주   코드 끝자리 ≠ '0' 또는 이름이 '우'·'우B'·'우C'로 끝남
     스팩     이름에 '스팩'
-    리츠     이름에 '리츠' — 단 '메리츠'의 '리츠'는 아님([확인] 2026-10-23 코스피 '리츠' 포함 24종목 중 메리츠금융지주만 리츠가 아님)
+    리츠     이름에 '리츠' — 단 '메리츠'의 '리츠'는 아님([확인] 2026-10-23 코스피 '리츠' 포함 24종목 중 메리츠금융지주만 리츠가 아님).
+             이름에 '리츠'가 없는 리츠는 코드 표 KR_UNIVERSE_EXCLUDED_CODES(맵스리얼티 094800 — 사용자 결정 2026-10-28)
     투융자회사 코드 표 KR_UNIVERSE_EXCLUDED_CODES(맥쿼리인프라 088980·KB발해인프라 415640 — 사용자 결정 2026-10-27). 금융위 행에는
              종목 유형 칸이 없고, 토스 securityType(INFRASTRUCTURE_FUND)은 수집 범위(= U에서 나옴)의 종목에만 있어 U를 정하는 데
              쓸 수 없습니다 — 이름('인프라')은 보통 회사(NICE인프라 등)에도 있어 쓰지 않습니다. 새 투융자회사가 상장하면 표에 더하고 판을 올립니다
     거래정지 B의 금융위 거래량이 0이거나 없음(금융위 행에는 정지 표시가 없어 '그날 체결 없음'으로 읽음 — 외부 호출 없이)
     DART     고유번호 표(kr.dart_corp_codes — dart_fundamentals가 받음)에 없음. 표가 없으면 계산하지 않습니다(추측하지 않음)
   ETF·ETN은 주식시세에 없습니다. 같은 시가총액이면 코드 순.
+  결과 문구는 저장된 paper.kr.quotes의 토스 securityType이 알려졌고 STOCK이 아닌 U 종목을 '확인 필요'로 보입니다(경고만 — U 계산에는
+  쓰지 않음, 코드 표에 더할지 사람이 정함).
 [수집 범위]
   ETF 2(069500·153130) → 최신 U(순위 순) → 끈적 목록(보존 400일 안의 유니버스 이력에 한 번이라도 든 다른 종목, 코드 순).
   모든 보유는 U에서 사므로 U를 벗어난 보유도 가격·수급을 계속 받습니다.
@@ -50,15 +53,19 @@ KR_UNIVERSE_SIZE = 100
 KR_UNIVERSE_MARKET = "KOSPI"
 # 규칙 판 — 행마다 남깁니다. 위 정의(제외 규칙·크기)를 바꾸면 판을 올려, 같은 기준일도 다시 계산하고 결정 행이 어느 판인지 알게 합니다.
 # v2(2026-10-27): 투융자회사 제외(KR_UNIVERSE_EXCLUDED_CODES)를 더함 — v1 행이 있는 최신 기준일도 다시 계산합니다.
-KR_UNIVERSE_RULE = "kospi-mcap-top100-common/v2"
+# v3(2026-10-28): 이름에 '리츠'가 없는 리츠 맵스리얼티(094800)를 코드 표에 더함 — v2 행이 있는 최신 기준일도 다시 계산합니다.
+KR_UNIVERSE_RULE = "kospi-mcap-top100-common/v3"
 KR_UNIVERSE_RETENTION_DAYS = 400
 # 코드로 빼는 종목 — 코드 → (사유, 이름). 이름은 읽는 사람을 위한 것이고 판정은 코드로만 합니다. 사유는 _EXCLUSIONS에 있어야 합니다.
 # [확인] 토스 /api/v1/stocks가 088980을 securityType INFRASTRUCTURE_FUND로 줍니다(로컬 paper.kr.quotes, 2026-10-27).
 # [확인, 이름 검색] 2026-10-26 금융위 코스피 913종목에서 이 둘 말고 투융자회사로 보이는 종목은 찾지 못했습니다
 # (415640은 시총 약 1.2조로 지금 U 밖 — 100위 약 3.9조이지만, 들어오는 날 하루라도 U에 들지 않게 미리 넣음).
+# 094800 맵스리얼티는 이름에 '리츠'가 없는 리츠라 이름 규칙에 걸리지 않습니다(사용자 결정 2026-10-28 — 사유 '리츠').
+# [확인] 로컬 금융위 저장본 2026-10-20~26 코스피 '맵스리얼티'(시총 약 6,229억 — 지금 U 밖, 들어오는 날 하루라도 U에 들지 않게).
 KR_UNIVERSE_EXCLUDED_CODES: dict[str, tuple[str, str]] = {
     "088980": ("투융자회사", "맥쿼리인프라"),
     "415640": ("투융자회사", "KB발해인프라"),
+    "094800": ("리츠", "맵스리얼티"),
 }
 # 한국 책 벤치마크·현금성 ETF(명세 K2) — 유니버스와 상관없이 늘 수집 범위의 맨 앞입니다.
 KR_SCOPE_ETFS = ("069500", "153130")
@@ -68,6 +75,9 @@ _REIT_NAME = re.compile(r"(?<!메)리츠")
 
 # 제외 사유(결과 문구의 이름과 순서)
 _EXCLUSIONS = ("우선주", "스팩", "리츠", "투융자회사", "거래정지", "DART 없음", "시총 없음")
+# 결과 문구의 '확인 필요' — 저장된 paper.kr.quotes의 토스 securityType이 이 값이 아닌 U 종목(모르면 보이지 않음). 보이는 종목 수 상한.
+KR_SECURITY_TYPE_STOCK = "STOCK"
+KR_SECURITY_TYPE_WARN_LIMIT = 10
 
 
 def universe_exclusion(row: dict, dart_codes) -> str | None:
@@ -116,6 +126,35 @@ def select_universe(rows: list[dict], dart_codes) -> tuple[list[dict], dict[str,
     return members, {reason: n for reason, n in excluded.items() if n}
 
 
+def security_type_warning(members: list[dict]) -> str:
+    """
+    U 구성원 중 저장된 paper.kr.quotes의 토스 securityType이 알려졌고 STOCK이 아닌 종목 → 결과 문구 꼬리(없으면 "").
+
+    경고만입니다 — U는 금융위 행과 코드 표로만 정합니다(토스 유형은 수집 범위 = U에서 나온 종목에만 있어, U를 정하는 데 쓰면 U가 토스
+    성패에 따라 달라짐 — 위 '투융자회사' 설명). 유형을 모르는 종목(저장본 없음·그 종목 항목 없음·null·빈 값)과 STOCK은 보이지 않습니다.
+    외부 호출 없음(수집기 자기 저장본만 읽음).
+    """
+    snap = store.read_snapshot(catalog.SNAP_KR_PAPER_QUOTES)
+    payload = snap.payload if snap else None
+    entries = payload.get("codes") if isinstance(payload, dict) else None
+    if not isinstance(entries, dict):
+        return ""
+    flagged: list[str] = []
+    for member in members:
+        code = str(member.get("code") or "")
+        entry = entries.get(code)
+        kind = entry.get("securityType") if isinstance(entry, dict) else None
+        if not isinstance(kind, str) or not kind.strip() or kind.strip() == KR_SECURITY_TYPE_STOCK:
+            continue
+        name = str(member.get("name") or "").strip()
+        flagged.append(f"{code} {name}({kind.strip()})" if name else f"{code}({kind.strip()})")
+    if not flagged:
+        return ""
+    shown = ", ".join(flagged[:KR_SECURITY_TYPE_WARN_LIMIT]) + ("…" if len(flagged) > KR_SECURITY_TYPE_WARN_LIMIT else "")
+    return (f" · 확인 필요 — 토스 유형이 STOCK이 아닌 U 종목 {len(flagged)}: {shown}"
+            " (U 계산에는 쓰지 않음 — 제외 코드 표에 더할지 확인)")
+
+
 def task_kr_paper_universe() -> str:
     """
     🧪 한국 책 유니버스 U — 금융위 최신 기준일 B(< 오늘)의 코스피 시가총액 상위 100 보통주 → observations ``kr_paper_universe``.
@@ -136,7 +175,8 @@ def task_kr_paper_universe() -> str:
 
     stored = store.read_observations(catalog.OBS_KR_PAPER_UNIVERSE, obs_date=basis)
     if stored and all(row.get("rule") == KR_UNIVERSE_RULE for row in stored):
-        return f"최신 상태 (기준일 {basis}, {len(stored)}종목)"
+        ranked = sorted(stored, key=lambda row: (row.get("rank") or 10**9, str(row.get("code"))))
+        return f"최신 상태 (기준일 {basis}, {len(stored)}종목)" + security_type_warning(ranked)
 
     snap = store.read_snapshot(catalog.SNAP_DART_CORP_CODES)
     dart_codes = ((snap.payload or {}).get("codes") or {}) if snap else {}
@@ -156,7 +196,7 @@ def task_kr_paper_universe() -> str:
     short = f" — {KR_UNIVERSE_SIZE}종목에 못 미침" if len(members) < KR_UNIVERSE_SIZE else ""
     excluded_text = "·".join(f"{reason} {n}" for reason, n in excluded.items())
     return (f"기준일 {basis} 코스피 {kospi}종목 → {len(members)}종목{short}"
-            + (f" (제외 {excluded_text})" if excluded_text else ""))
+            + (f" (제외 {excluded_text})" if excluded_text else "") + security_type_warning(members))
 
 
 # ==============================================================================
