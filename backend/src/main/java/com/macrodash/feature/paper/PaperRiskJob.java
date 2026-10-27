@@ -33,6 +33,10 @@ import java.util.Optional;
  * <p><b>운영 알림</b>: 장부가 낸 알림({@link Outcome#alerts} — 한국 '미처리 기업행위' 보류가 걸린 날 뒤 5거래일을 넘김, 명세 §4-2 K32)은 그
  * 실행 기록의 {@code detail.alerts}와 경고 로그에 남습니다(알림 벨·알림함에는 넣지 않음 — 2단계 명세 §4-2 'C2c 구현에서 정한 것').
  *
+ * <p><b>금융위 확정 조정</b>(한국 — {@link PaperMarket#confirmsFills}, 2단계 K29·C3): 금융위 값은 관측치와 따로(D+1 밤 slow 첫머리) 들어오므로 새
+ * 관측치가 없는 주기에도 장부의 확정 조정만 돌립니다({@link PaperLedgerService#confirm}). 확정 조정 행을 썼거나 순자산 줄이 확정이 됐거나 새 오류가
+ * 났을 때만 기록하고({@code detail.confirmationOnly}), 새 관측치가 있으면 장부가 그 처리 앞에서 확정 조정을 함께 합니다({@code detail.confirmed}).
+ *
  * <p>관측치는 수집기가 1시간마다 저장하므로 대부분의 실행은 "새 저장본 없음"으로 끝나고, 그때는 기록을 남기지 않습니다
  * (5분마다 한 줄씩 쌓이면 작업 기록 200건이 17시간 치뿐입니다). 일했을 때와 오류일 때만 {@code paper_job_runs}에 남기고,
  * detail에 관측치 수집 시각·다수 티커의 봉 날짜·확정 종가 여부를 적습니다 — 장중 저장본의 마지막 봉이 정말 그날 지연 시세인지
@@ -122,8 +126,9 @@ public class PaperRiskJob {
                     log.warn("모의 매매 리스크 점검 중 오류 — 그 책은 같은 관측치로 다시 시도하지 않고 새 관측치에서 다시 시도합니다: {}",
                             outcome.errors());
                 } else if (outcome.skippedReason() == null) {
-                    log.info("모의 매매 리스크 점검: 체결 {} · 스탑 {} · 만료 {} · 분할 {} ({})", outcome.filled(),
-                            outcome.stopped(), outcome.expired(), outcome.splits(), outcome.booksProcessed());
+                    log.info("모의 매매 리스크 점검({}): 체결 {} · 스탑 {} · 만료 {} · 분할 {} · 확정 조정 {} ({})", market.code(),
+                            outcome.filled(), outcome.stopped(), outcome.expired(), outcome.splits(), outcome.confirmed(),
+                            outcome.booksProcessed());
                 }
             } catch (RuntimeException e) {
                 log.warn("모의 매매 리스크 점검 실패 — 다음 주기에 다시 시도합니다: {}", e.toString());
@@ -177,6 +182,13 @@ public class PaperRiskJob {
             return Outcome.skipped(e.getMessage());
         }
         Optional<Quotes> quotes = reader.quietly(() -> marketData.quotes(market));
+        if (quotes.isEmpty() || !ledger.hasNewObservation(market, quotes.get())) {
+            // 새 관측치가 없어도 금융위 확정 조정은 돕니다(한국 — 금융위 값은 관측치와 따로 들어옴, K29·C3). 한 일이 있을 때만 기록합니다.
+            Outcome confirmation = confirmOnly(market, started, manual, quotes.orElse(null));
+            if (confirmation != null) {
+                return confirmation;
+            }
+        }
         if (quotes.isEmpty()) {
             return Outcome.skipped("관측치 저장본(" + market.quotesDataset() + ")이 아직 없습니다 — 수집기의 "
                     + market.quotesTask() + "가 돈 뒤에 다시 보세요");
@@ -218,7 +230,45 @@ public class PaperRiskJob {
         if (!outcome.alerts().isEmpty()) {
             detail.put("alerts", outcome.alerts());   // 운영 알림(한국 미처리 기업행위 보류 5거래일 넘음 — 미국은 생기지 않음)
         }
+        if (outcome.confirmed() > 0) {
+            detail.put("confirmed", outcome.confirmed());   // 금융위 확정 조정 행(한국 — 미국은 생기지 않음)
+        }
         write(market, started, outcome.errors().isEmpty() ? "OK" : "ERROR", detail);
+    }
+
+    /**
+     * 새 관측치가 없는 주기의 금융위 확정 조정(확정 조정 시장만 — {@link PaperMarket#confirmsFills}, {@link PaperLedgerService#confirm}). 확정 조정 행을
+     * 썼거나 순자산 줄이 확정이 됐거나 새 오류가 났으면 작업 기록을 남기고 그 결과를, 한 일이 없으면 null(부르는 쪽이 '새 관측치 없음'으로 답함)을
+     * 돌려줍니다 — 금융위 값을 기다리는 5분마다의 확인은 기록하지 않습니다(클래스 설명의 '할 일 없음').
+     *
+     * @param quotes 지금 관측치(없으면 null — 기록의 관측치 요약에만)
+     */
+    private Outcome confirmOnly(MarketRun market, Instant started, boolean manual, Quotes quotes) {
+        if (!market.confirmsFills()) {
+            return null;
+        }
+        Outcome outcome;
+        try {
+            outcome = ledger.confirm(market);
+        } catch (RuntimeException e) {
+            outcome = Outcome.failed(e.getClass().getSimpleName() + " " + e.getMessage());
+        }
+        if (outcome.booksProcessed().isEmpty() && outcome.errors().isEmpty()) {
+            return null;
+        }
+        Map<String, Object> detail = quotes == null ? new LinkedHashMap<>() : describe(market, quotes);
+        detail.put("manual", manual);
+        detail.put("confirmationOnly", true);   // 새 관측치 없이 확정 조정만 — 체결·스탑·평가는 하지 않음
+        detail.put("confirmed", outcome.confirmed());
+        detail.put("booksProcessed", outcome.booksProcessed());
+        if (!outcome.notes().isEmpty()) {
+            detail.put("notes", outcome.notes());
+        }
+        if (!outcome.errors().isEmpty()) {
+            detail.put("errors", outcome.errors());
+        }
+        write(market, started, outcome.errors().isEmpty() ? "OK" : "ERROR", detail);
+        return outcome;   // 로그는 정기 실행이 결과로 남김(scheduledRun)
     }
 
     private void write(PaperMarket market, Instant started, String outcome, Map<String, Object> detail) {

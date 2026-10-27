@@ -553,4 +553,40 @@ class KrConfirmationsTest {
         assertThat(UsPaperMarket.INSTANCE.confirmsFills()).isFalse();
         assertThat(run().confirmsFills()).isTrue();
     }
+
+    @Test
+    @DisplayName("리스크 점검은 새 관측치가 없는 주기에도 확정 조정만 돌림 — 한 일이 있으면 kr.risk 기록(confirmationOnly·confirmed), 금융위 값을 기다리는 주기는 기록하지 않음")
+    void riskJobConfirmsWithoutANewObservation() {
+        book(1_000_000);
+        order("005930", PaperBooks.BUY, 10, D, CREATED);
+        Quotes d1 = KrQuotes.parse(nightD1("005930", 71_300).snapshot(COLLECTED_D1)).orElseThrow();
+        ledger.process(run(), d1);
+        com.macrodash.read.StoreReader reader = PaperFixtures.quietReader();
+        KrFixtures.stubHolidays(reader, KrFixtures.holidays(2026, 2027));
+        when(marketData.quotes(org.mockito.ArgumentMatchers.any(PaperMarket.class)))
+                .thenReturn(java.util.Optional.of(d1));
+        PaperConfig config = new PaperConfig(true, PaperFixtures.FRI, 100_000, D, PaperConfig.DEFAULT_KR_INITIAL_CASH);
+        PaperRiskJob job = new PaperRiskJob(store, reader, marketData, ledger, config, PaperFixtures.MAPPER,
+                java.time.Clock.fixed(kst("2026-11-04T21:58"), java.time.ZoneOffset.UTC), java.util.List.of(KR));
+
+        Outcome waiting = job.run(KR, false);
+        assertThat(waiting.skippedReason()).as("금융위 D+1 전 — 새 관측치 없음").startsWith("새 관측치가 없습니다");
+        assertThat(store.jobRuns).isEmpty();
+
+        fsc("005930", KrConfirmed.SOURCE_FSC, D1, day(D1, 71_200L, 71_000, 5_000_000, "KOSPI"));
+        Outcome confirmedRun = job.run(KR, false);
+
+        assertThat(confirmedRun.confirmed()).isEqualTo(1);
+        assertThat(cash()).isEqualTo(287_538);
+        assertThat(store.jobRuns).singleElement().satisfies(runRecord -> {
+            assertThat(runRecord.job()).isEqualTo("kr.risk");
+            assertThat(runRecord.outcome()).isEqualTo("OK");
+            assertThat(runRecord.detail().path("confirmationOnly").asBoolean()).isTrue();
+            assertThat(runRecord.detail().path("confirmed").asInt()).isEqualTo(1);
+            assertThat(runRecord.detail().path("booksProcessed").get(0).asString()).isEqualTo(BOOK);
+            assertThat(runRecord.detail().path("collectedAt").asString()).as("지금 관측치 요약").isEqualTo(COLLECTED_D1.toString());
+        });
+        assertThat(job.run(KR, false).skippedReason()).as("다시 돌면 할 일 없음").startsWith("새 관측치가 없습니다");
+        assertThat(store.jobRuns).hasSize(1);
+    }
 }
