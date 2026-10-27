@@ -427,13 +427,16 @@ final class KrRuleBookService {
     }
 
     /**
-     * {@link #pastDeadline(MarketRun, LocalDate, Instant)}에 그 순간의 자료 게이트 판정을 더한 것 — 응답 {@code gates}·{@code waitedFor}(미달
-     * 게이트)에 남기고, ⑤(069500 D 봉)가 미달이면 사유를 {@value #ANCHOR_MISSING_REASON}로 둡니다(명세 §9 'D1 — 세션 자료 다시 묻기와 게이트 ⑤',
-     * 결정 e4 — 늦게 지정된 휴장일과 토스 지연을 가르는 척하지 않음). 그 밖에는 {@value #PAST_DEADLINE_REASON}.
+     * {@link #pastDeadline(MarketRun, LocalDate, Instant)}에 자료 게이트 판정을 더한 것 — 응답 {@code gates}·{@code waitedFor}(미달 게이트)·
+     * {@code gatesJudgedAtKst}·{@code gatesBasis}에 남기고, ⑤(069500 D 봉)가 미달이면 사유를 {@value #ANCHOR_MISSING_REASON}로 둡니다(명세 §9
+     * 'D1 — 세션 자료 다시 묻기와 게이트 ⑤', 결정 e4 — 늦게 지정된 휴장일과 토스 지연을 가르는 척하지 않음). 그 밖에는
+     * {@value #PAST_DEADLINE_REASON}.
      *
-     * @param gates 기한 뒤 첫 실행이 본 게이트(①은 이 계좌, 판정하지 못했으면 null)
+     * @param judged 결정 작업이 그 세션 기한 전에 마지막으로 본 게이트(없으면 기한 뒤 첫 실행의 판정 — {@link KrDecisionGates.Judged}),
+     *               판정하지 못했으면 null
      */
-    Decision pastDeadline(MarketRun run, LocalDate d, Instant deadline, List<KrDecisionGates.Gate> gates) {
+    Decision pastDeadline(MarketRun run, LocalDate d, Instant deadline, KrDecisionGates.Judged judged) {
+        List<KrDecisionGates.Gate> gates = judged == null ? null : judged.gates();
         Optional<Decision> existing = decisionOn(d);
         if (existing.isPresent()) {
             return existing.get();
@@ -458,6 +461,8 @@ final class KrRuleBookService {
         response.put("deadlineKst", Kst.stamp(deadline));
         response.put("gates", gates == null ? null : gates.stream().map(KrDecisionGates.Gate::view).toList());
         response.put("waitedFor", gates == null ? null : KrDecisionGates.blocking(gates));
+        response.put("gatesJudgedAtKst", judged == null ? null : Kst.stamp(judged.at()));
+        response.put("gatesBasis", judged == null ? null : judged.basis());
         response.put("selectionDay", cycle.isPresent());
         response.put("cycleDate", cycle.map(c -> c.cycleDate().toString()).orElse(null));
         response.put("orders", List.of());

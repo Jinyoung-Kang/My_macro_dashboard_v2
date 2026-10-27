@@ -154,8 +154,10 @@ class KrRulesJobTest {
                     .isEqualTo("069500 D 봉 없음(휴장 또는 지연)");
             assertThat(row.response().path("pastDeadline").asBoolean()).isTrue();
             assertThat(row.response().path("cycleDate").asString()).isEqualTo("2026-11-02");
-            assertThat(gateStatuses(row.response().path("gates"))).containsExactly("① PASS", "② FAIL", "③ PASS",
-                    "④ FAIL", "⑤ FAIL", "⑥ PASS");
+            assertThat(gateStatuses(row.response().path("gates"))).as("기한 전 마지막 판정(00:50 — 장부 전 게이트에서 멈춤, ①③은 판정 전)")
+                    .containsExactly("② FAIL", "④ FAIL", "⑤ FAIL", "⑥ PASS");
+            assertThat(row.response().path("gatesJudgedAtKst").asString()).isEqualTo("2026-11-03 00:50 KST");
+            assertThat(row.response().path("gatesBasis").asString()).isEqualTo("기한 전 마지막 판정");
             assertThat(row.response().path("waitedFor").toString()).contains("②").contains("④").contains("⑤");
         });
         assertThat(store.ordersByDecision(missed.rules().id())).isEmpty();
@@ -408,8 +410,40 @@ class KrRulesJobTest {
         assertThat(late.rules().status()).isEqualTo("NO_TRADE");
         assertThat(late.rules().response().path("noTradeReason").asString()).isEqualTo("기한 지남");
         assertThat(late.rules().response().path("waitedFor").toString()).contains("④").doesNotContain("⑤");
-        assertThat(gateStatuses(late.rules().response().path("gates"))).containsExactly("① PASS", "② PASS", "③ PASS",
-                "④ FAIL", "⑤ PASS", "⑥ PASS");
+        assertThat(gateStatuses(late.rules().response().path("gates"))).as("23:30 판정 — 장부 전 게이트")
+                .containsExactly("② PASS", "④ FAIL", "⑤ PASS", "⑥ PASS");
+    }
+
+    @Test
+    @DisplayName("기한 지남 행의 게이트는 그 세션 기한 전 마지막 판정 — 00:50까지 ⑤로 기다렸는데 기한 직후 069500 D 봉이 들어와도 사유 '069500 D 봉 없음(휴장 또는 지연)'·waitedFor ⑤; 기한 전 판정이 없으면(그 밤 첫 실행이 기한 뒤) 지금 판정에 '기한 뒤 판정' 표시")
+    void pastDeadlineKeepsTheLastWaitBeforeTheDeadline() {
+        quotes(R, Set.of("069500"));
+        fsc(FRI);
+        assertThat(runAt("2026-11-03T00:50").outcome()).isEqualTo(PaperDecisionJob.DATA_NOT_READY);
+        quotes(R, Set.of());   // 00:55 slow가 01:01에 069500 R 봉을 다시 받음
+
+        PaperDecisionJob.Result late = runAt("2026-11-03T01:07");
+
+        assertThat(late.outcome()).isEqualTo(PaperDecisionJob.PAST_DEADLINE);
+        JsonNode row = late.rules().response();
+        assertThat(row.path("noTradeReason").asString()).as("기한까지 ⑤로 기다렸음").isEqualTo("069500 D 봉 없음(휴장 또는 지연)");
+        assertThat(row.path("waitedFor").toString()).contains("⑤");
+        assertThat(row.path("gatesJudgedAtKst").asString()).isEqualTo("2026-11-03 00:50 KST");
+        assertThat(row.path("gatesBasis").asString()).isEqualTo("기한 전 마지막 판정");
+        assertThat(krRuns()).singleElement().satisfies(run -> {
+            assertThat(gateStatuses(run.detail().path("gates"))).contains("⑤ FAIL");
+            assertThat(run.detail().path("gatesBasis").asString()).isEqualTo("기한 전 마지막 판정");
+        });
+
+        // 다음 세션 — 그 밤 첫 실행이 기한 뒤(기한 전 판정 없음): 지금 저장본으로 판정하고 그렇게 표시.
+        session(R1);
+        PaperDecisionJob.Result first = runAt("2026-11-04T01:00");
+        assertThat(first.outcome()).isEqualTo(PaperDecisionJob.PAST_DEADLINE);
+        assertThat(first.tradingDate()).isEqualTo(R1);
+        assertThat(first.rules().response().path("noTradeReason").asString()).isEqualTo("기한 지남");
+        assertThat(first.rules().response().path("gatesJudgedAtKst").asString()).isEqualTo("2026-11-04 01:00 KST");
+        assertThat(first.rules().response().path("gatesBasis").asString()).startsWith("기한 뒤 판정");
+        assertThat(gateStatuses(first.rules().response().path("gates"))).hasSize(6);
     }
 
     @Test

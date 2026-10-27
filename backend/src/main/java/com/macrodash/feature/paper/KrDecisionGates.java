@@ -87,6 +87,23 @@ final class KrDecisionGates {
         }
     }
 
+    /**
+     * 한 세션에서 판정한 게이트와 그 순간 — 기한 지남 행의 사유·기다린 까닭(결정 e4)을 기한 전 마지막 판정으로 남기는지
+     * ({@code beforeDeadline}), 그 기록이 없어 기한 뒤에 판정했는지. 장부 처리 전 게이트(②④⑤⑥)에서 멈췄으면 그 넷뿐입니다(①③은 판정 전).
+     */
+    record Judged(List<Gate> gates, Instant at, boolean beforeDeadline) {
+
+        Judged {
+            gates = List.copyOf(gates);
+        }
+
+        /** 결정 행 응답의 판정 근거 문구. */
+        String basis() {
+            return beforeDeadline ? "기한 전 마지막 판정"
+                    : "기한 뒤 판정 — 기한 전 판정 기록이 없음(재기동했거나 그 밤 첫 실행이 기한 뒤)";
+        }
+    }
+
     /** 판정과 그 재료 — 계좌 몫(출발)이 게이트를 결정 행에 남기고 같은 입력으로 계획합니다. */
     record Checked(List<Gate> gates, Inputs inputs) {
 
