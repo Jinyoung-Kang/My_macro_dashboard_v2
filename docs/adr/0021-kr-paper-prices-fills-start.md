@@ -38,10 +38,15 @@
   5. 출발(K28)
      - 있음(미국 출발 경로가 그대로임): `PaperAdminServiceTest.initBackfillsBenchmarks`·`initBeforeFinalCloseSkips`, `PaperMarketIsolationTest.backfillIsUsOnly`
      - 있음(C1): `PaperConfigTest.emptyKrStartKeepsUsBoot`(`kr.start-date`가 비어도 미국 기동), `PaperAdminKrInitTest.nonTradingStartDateIsRefused`·`unknownYearIsRefused`(한국 초기화의
-       `KrxCalendar` 거래일 검사 — 공휴일 저장본은 `StoreReader.quietly`), `KrStartTest.startsBothBenchmarksAtS2230`(벤치마크 두 계좌의 S+1 `NEXT_OPEN` 주문).
+       `KrxCalendar` 거래일 검사 — 공휴일 저장본은 `StoreReader.quietly`), `KrStartTest.startsRulesAndBenchmarksAtS2230`(벤치마크 두 계좌의 S+1 `NEXT_OPEN` 주문 — D1에서 규칙 계좌도 함께라 이름이 바뀜).
        점검(§9) — QA 스택에서 벤치마크 두 계좌가 S+1 시가 출발부터 끝까지 돎(수용 기준 1)은 F1(한국 초기화 경로) 뒤로 옮김(명세 §4-1 'C3' '수용 기준 1'). 있음(C3): `KrBenchmarkLifecycleTest.benchmarksFromInitToConfirmedNav`(초기화 → S 22:30 출발 → 봉 ≤ S로는
-       체결 안 함 → S+1 시가 → S+2 밤 확정 조정 → 순자산 = 출발가 대비 ETF 가격 변화 − 비용, 결정적 시험 — QA 스택 점검은 F1 뒤). E2: 출발 원자성(Claude 실패 → 네 계좌 모두 다음 KR 거래일), 출발 결정의 입력 ≤ 결정 시각
-       (`PacketBuilderTest.initialPacketHasNothingAfterAsOf`의 한국판)
+       체결 안 함 → S+1 시가 → S+2 밤 확정 조정 → 순자산 = 출발가 대비 ETF 가격 변화 − 비용, 결정적 시험 — QA 스택 점검은 F1 뒤).
+     - 있음(D1): `KrStartTest.startsRulesAndBenchmarksAtS2230`(규칙 계좌 `INITIAL` — S 재선정과 같은 계산·입력 동결, 벤치마크와 한 트랜잭션, S+1 `NEXT_OPEN`)·
+       `startInputsHaveNothingAfterTheDecision`(출발 입력 ≤ 결정 시각 — `PacketBuilderTest.initialPacketHasNothingAfterAsOf`의 규칙 계좌판)·
+       `rulesLegFailurePostponesTheStart`(규칙 몫 실패 → 어느 계좌에도 쓰지 않고 다음 KR 거래일로 미룸)·`claudeNotYetStaysNotStarted`(Claude 몫이 아직 없으면
+       규칙·벤치마크 셋만 출발하고 Claude는 뒤따라 출발하지 않음)
+     - E2: 출발 원자성의 Claude 몫(Claude 실패 → 네 계좌 모두 다음 KR 거래일), 출발 결정의 입력 ≤ 결정 시각(Claude 패킷 — `PacketBuilderTest.initialPacketHasNothingAfterAsOf`의
+       한국판)
   6. 캘린더 컨센서스(K22)
      - 있음: `PacketBuilderTest.goldenUsPackets`(미국 `packetVersion` 5 패킷 고정본·해시), 수집기 `test_us_consensus.py::test_백엔드와_화면은_컨센서스_저장본을_읽지_않는다`
        (저장만 — 읽기 시작하는 E1 커밋이 이 시험을 고침)
@@ -84,7 +89,9 @@ v2 2단계는 한국 증시 책이다 — 1억 원씩 네 계좌(수급 규칙 `
 5. **출발(K28)** — 출발일 S의 22:30 한국 결정 작업이 출발을 낸다. 입력은 그때 수집된 S 밤 판(결정 행에 동결), 네 계좌 주문은 모두 `NEXT_OPEN`·기준 거래일 S → **S+1 시가 체결**.
    규칙 계획과 Claude 응답이 모두 준비된 뒤 네 계좌의 결정·주문을 **한 트랜잭션**으로 쓰고, Claude가 상한·오류(재시도 1회 뒤)·기한(S+1 01:00)으로 실패하면 어느 계좌에도 쓰지 않고
    출발을 다음 KR 거래일로 미룬다. 사후 체결·출발일 종가 동결·`paper_start_prices`·`backfill`은 한국에 없다. 수익률의 기준은 S 마감 순자산 1억 원(전액 현금).
-   벤치마크는 069500 100% · 069500 60% + 153130 40%, 출발 뒤 리밸런싱 없음. 묶음 C에서는 벤치마크 두 계좌만 주문을 내고, 규칙 계획(D1)·Claude 계획(E2)이 들어갈 자리를 둔다.
+   벤치마크는 069500 100% · 069500 60% + 153130 40%, 출발 뒤 리밸런싱 없음. 묶음 C에서는 벤치마크 두 계좌만 주문을 내고 규칙 계획(D1)·Claude 계획(E2)이 들어갈 자리를 두었다.
+   D1부터 규칙 계좌 몫은 S 재선정과 같은 계산(입력 동결 K26)으로 `INITIAL`을 낸다. Claude 몫이 아직 없으면(E2 전) 규칙·벤치마크 셋만 한 트랜잭션으로 출발하고 Claude는
+   시작 전 그대로 뒤따라 출발하지 않는다(출발 판정 = 넷 모두 시작 전 — 그 몫이 생긴 뒤 넷을 리셋해 다시 출발). 서버는 E2 뒤에만 출발하므로 운영에서는 넷이 함께 출발한다.
 6. **캘린더 컨센서스(K22)** — 미국 `1b_calendar.macro`에 `forecast`·`previous`·`unit`·`consensusSource`를 더하고 출처는 Nasdaq(비공식 참고, ADR 0017식)이다.
    수집은 먼저 넣어 저장만 하고(`calendar.us_consensus`), 패킷 스위치 `calendar.consensus`(기본 false)는 **한국 출발일 S 21:55~22:30에** 3단계 스위치
    `claude.schemaV3`·`claude.figureCheck`와 같은 설정 저장 한 번으로 켠다 — 미국 `packetVersion` 5 → 6(S+1 07:30 결정부터), 한국은 처음부터 6, 프레임 판은 그대로.
