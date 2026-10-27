@@ -334,6 +334,16 @@ final class KrPaperMarket implements PaperMarket {
         return false;
     }
 
+    /**
+     * @throws IllegalStateException 늘 — 한국 체결 선택(체결가 = 관측가: 1분봉 개장 봉 시가 {@code TOSS_1M_OPEN} → 토스 일봉 시가
+     *                               {@code TOSS_INTEGRATED}, 비용 칸은 {@code KrxCosts})은 C2b입니다. {@link #fillable}이 늘 false라 장부가
+     *                               부르지 않습니다.
+     */
+    @Override
+    public FillTerms fill(Order order, Bar bar, PaperSettings settings, TradingCalendar calendar) {
+        throw new IllegalStateException("한국 체결 선택(시가 사다리·비용 칸)은 아직 없습니다(2단계 C2b) — " + order.ticker());
+    }
+
     @Override
     public List<PaperBooks.Definition> books() {
         return PaperBooks.KR;

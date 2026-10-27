@@ -160,6 +160,34 @@ class UsPaperMarketTest {
     }
 
     @Test
+    @DisplayName("체결 조건(결정 d10) = 이 묶음 전 장부 식 — 체결가 price6(fillPrice(종가, 방향, bp)), 관측가 = 종가, 출처 paper.quotes, 수량 buyQty(예산, 체결가), 금액 gross(수량, 체결가), 비용 칸 0")
+    void fillUsesTheLegacyLedgerFormula() {
+        PaperSettings settings = PaperSettings.defaults();
+        PaperMarketData.Bar bar = PaperFixtures.bar("AAA", FRI, 123.456789);
+        for (String side : List.of(PaperBooks.BUY, PaperBooks.SELL)) {
+            PaperStore.Order order = new PaperStore.Order(1, PaperBooks.CLAUDE, null, "AAA", side, null, 10.0, null,
+                    OrderValidator.NEXT_OBSERVATION, "CLAUDE", PaperBooks.ORDER_PENDING, null, null, FRI.minusDays(1),
+                    Instant.parse("2026-10-22T00:00:00Z"), null, null);
+            FillTerms terms = US.fill(order, bar, settings, US.calendar());
+            com.macrodash.analytics.PaperLedger.Side direction = PaperBooks.SELL.equals(side)
+                    ? com.macrodash.analytics.PaperLedger.Side.SELL : com.macrodash.analytics.PaperLedger.Side.BUY;
+            double legacy = PaperLedgerService.price6(com.macrodash.analytics.PaperLedger.fillPrice(123.456789, direction,
+                    settings.slippageBp()));
+            assertThat(terms.price()).as(side).isEqualTo(legacy).isNotEqualTo(123.456789);
+            assertThat(terms.rawPrice()).isEqualTo(123.456789);
+            assertThat(terms.priceSource()).isEqualTo("paper.quotes").isEqualTo(US.quotesDataset());
+            assertThat(terms.slippageBp()).isEqualTo(settings.slippageBp());
+            assertThat(terms.affordableQty(10_000)).isEqualTo(com.macrodash.analytics.PaperLedger.buyQty(10_000, legacy));
+            assertThat(terms.affordableQty(0)).isZero();
+            FillTerms.Costs costs = terms.costs(7);
+            double gross = PaperLedgerService.gross(7, legacy);
+            assertThat(costs.gross()).isEqualTo(gross);
+            assertThat(costs.cashDelta()).isEqualTo(PaperBooks.SELL.equals(side) ? gross : -gross);
+            assertThat(costs.hasCostColumns()).isFalse();
+        }
+    }
+
+    @Test
     @DisplayName("관측치를 채우는 수집기 태스크 = paper_quotes(A5 전 저장본 읽기·안내 문구의 글자) — 수집기 태스크 목록에 그 이름이 있음")
     void quotesTask() throws IOException {
         assertThat(US.quotesTask()).isEqualTo("paper_quotes");

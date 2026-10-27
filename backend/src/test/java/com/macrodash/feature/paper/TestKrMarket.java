@@ -76,16 +76,20 @@ final class TestKrMarket implements PaperMarket {
     };
 
     /** 주말만 쉬는 달력의 시험용 한국 묶음(아래 상수 뒤에 둬야 달력이 먼저 만들어짐). */
-    static final TestKrMarket INSTANCE = new TestKrMarket(SEOUL_WEEKDAYS, null);
+    static final TestKrMarket INSTANCE = new TestKrMarket(SEOUL_WEEKDAYS, null, false);
 
     /** 고정 달력 — 실행마다 달력을 만드는 판({@link #perRun})이면 null. */
     private final TradingCalendar calendar;
     /** 실행마다 달력을 만드는 함수({@link #perRun}) — 고정 달력 판이면 null. */
     private final Function<MarketRun.Inputs, TradingCalendar> perRun;
+    /** 체결 조건이 비용 칸(수수료 1)을 내는 판({@link #withCostColumns}). */
+    private final boolean costColumns;
 
-    private TestKrMarket(TradingCalendar calendar, Function<MarketRun.Inputs, TradingCalendar> perRun) {
+    private TestKrMarket(TradingCalendar calendar, Function<MarketRun.Inputs, TradingCalendar> perRun,
+                         boolean costColumns) {
         this.calendar = calendar;
         this.perRun = perRun;
+        this.costColumns = costColumns;
     }
 
     /**
@@ -94,7 +98,7 @@ final class TestKrMarket implements PaperMarket {
      * 벌만 쓰는지(실행 밖 경로가 달력을 묻지 않는지)를 보는 시험이 씁니다. 나머지는 {@link #INSTANCE}와 같습니다.
      */
     static TestKrMarket perRun(Function<MarketRun.Inputs, TradingCalendar> factory) {
-        return new TestKrMarket(null, java.util.Objects.requireNonNull(factory));
+        return new TestKrMarket(null, java.util.Objects.requireNonNull(factory), false);
     }
 
     /**
@@ -102,7 +106,15 @@ final class TestKrMarket implements PaperMarket {
      * 시각)는 {@link #INSTANCE}와 같습니다.
      */
     static TestKrMarket withCalendar(TradingCalendar calendar) {
-        return new TestKrMarket(calendar, null);
+        return new TestKrMarket(calendar, null, false);
+    }
+
+    /**
+     * 체결 조건({@link #fill})이 비용 칸(체결마다 수수료 1원, 현금에서도 1원 더 빠짐)을 내는 시험용 한국 묶음 — 비용 칸을 저장하는 장부 코드
+     * (C2b) 전에 장부가 그 칸을 조용히 버리지 않는지 보는 시험이 씁니다. 나머지는 {@link #INSTANCE}와 같습니다.
+     */
+    static TestKrMarket withCostColumns() {
+        return new TestKrMarket(SEOUL_WEEKDAYS, null, true);
     }
 
     /** 시험용 한국 책 한 권(운용 중) — 시장·통화가 KR·KRW. */
@@ -177,6 +189,50 @@ final class TestKrMarket implements PaperMarket {
     @Override
     public boolean pricesConfirmed(LocalDate barDate, Instant collectedAt, TradingCalendar calendar) {
         return closeAvailable(barDate, collectedAt, calendar);
+    }
+
+    /** 시험용 체결 — 미국과 같은 '종가 + 슬리피지' 식, 가격 출처는 이 시장의 관측치 데이터셋({@link #QUOTES_DATASET}). */
+    @Override
+    public FillTerms fill(PaperStore.Order order, PaperMarketData.Bar bar, PaperSettings settings,
+                          TradingCalendar calendar) {
+        FillTerms.SlippageInPrice base = FillTerms.SlippageInPrice.ofClose(order.side(), bar, settings.slippageBp(),
+                QUOTES_DATASET);
+        if (!costColumns) {
+            return base;
+        }
+        return new FillTerms() {
+            @Override
+            public double price() {
+                return base.price();
+            }
+
+            @Override
+            public double rawPrice() {
+                return base.rawPrice();
+            }
+
+            @Override
+            public String priceSource() {
+                return base.priceSource();
+            }
+
+            @Override
+            public double slippageBp() {
+                return base.slippageBp();
+            }
+
+            @Override
+            public int affordableQty(double budget) {
+                return base.affordableQty(budget);
+            }
+
+            @Override
+            public Costs costs(int qty) {
+                Costs plain = base.costs(qty);
+                return new Costs(plain.gross(), java.math.BigDecimal.ONE, java.math.BigDecimal.ZERO,
+                        java.math.BigDecimal.ZERO, plain.cashDelta() - 1);
+            }
+        };
     }
 
     @Override

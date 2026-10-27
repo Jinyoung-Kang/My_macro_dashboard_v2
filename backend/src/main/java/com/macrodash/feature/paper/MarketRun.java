@@ -196,6 +196,11 @@ final class MarketRun implements PaperMarket {
     }
 
     @Override
+    public FillTerms fill(Order order, Bar bar, PaperSettings settings, TradingCalendar calendar) {
+        return market.fill(order, bar, settings, calendar);
+    }
+
+    @Override
     public List<PaperBooks.Definition> books() {
         return market.books();
     }

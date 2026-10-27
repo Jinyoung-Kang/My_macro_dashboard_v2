@@ -182,6 +182,16 @@ interface PaperMarket {
         return pricesConfirmed(barDate, collectedAt, calendar());
     }
 
+    /**
+     * 그 주문을 그 봉으로 체결하는 조건(결정 d10, C2a) — 체결가·관측가·가격 출처·슬리피지 기록값과 수량별 비용 칸. 장부가 체결 조건
+     * ({@link #fillable})을 본 뒤 대기 주문마다, 그리고 관측치가 만든 즉시 주문(미국 트레일링 스탑 {@code IMMEDIATE})마다 부릅니다.
+     * 미국은 관측 종가에 슬리피지를 얹은 체결가({@link FillTerms.SlippageInPrice} — 이 묶음 전 장부 식 그대로)입니다.
+     *
+     * @param settings 그 실행이 읽은 그 시장의 장부 설정(슬리피지 등)
+     * @param calendar 그 실행의 달력 한 벌(한국 개장 봉 고르기 — 장 시간 변경일)
+     */
+    FillTerms fill(Order order, Bar bar, PaperSettings settings, TradingCalendar calendar);
+
     /** 이 시장의 책 정의 — 초기화가 만드는 책이고, 화면에 보이는 순서입니다. */
     List<PaperBooks.Definition> books();
 

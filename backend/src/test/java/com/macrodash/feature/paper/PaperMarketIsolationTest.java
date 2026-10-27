@@ -271,6 +271,21 @@ class PaperMarketIsolationTest {
         verify(repository).readTimeseriesColumns("equity_close", List.of("AAA"), FRI, MON);
     }
 
+    @Test
+    @DisplayName("체결 조건은 시장 몫(결정 d10) — 시장이 비용 칸을 내면 장부가 그 칸을 조용히 버리고 체결하지 않고, 그 책만 되돌려 오류로 남긴다(비용 칸 저장은 C2b)")
+    void costColumnsAreNotDroppedSilently() {
+        twoMarkets(store);
+        String krBefore = ledgerOf(store, KR_BOOK);
+        String usBefore = ledgerOf(store, US_BOOK);
+
+        Outcome outcome = ledger.process(TestKrMarket.withCostColumns(), krQuotes());
+
+        assertThat(outcome.booksProcessed()).isEmpty();
+        assertThat(outcome.errors()).singleElement().asString().startsWith(KR_BOOK + ": ").contains("비용 칸", "C2b");
+        assertThat(ledgerOf(store, KR_BOOK)).as("그 책은 되돌림 — 체결 행 없이 현금만 빠지지 않음").isEqualTo(krBefore);
+        assertThat(ledgerOf(store, US_BOOK)).isEqualTo(usBefore);
+    }
+
     /** 이 클래스의 고정 날짜가 가정과 맞는지(10-26 월 21:00 KST = 미국 개장 전). */
     @Test
     @DisplayName("시험 전제: 10-26 21:00 KST는 시험용 한국 달력으로 그날 세션·확정, 미국 달력으로 직전 세션(10-23)·미확정")

@@ -28,8 +28,9 @@ import java.util.Optional;
  *
  * <ul>
  *   <li>시장·통화 US·USD(V13 기본값), 달력 {@link UsMarketCalendar#CALENDAR}(뉴욕 세션 날짜)</li>
- *   <li>관측치 {@code paper.quotes}(수집기 태스크 {@code paper_quotes}, 3시간 넘게 묵으면 늦음)·이력 {@code equity_close}, 확정 판정 셋
- *       (종가 나옴·그 시점 가격 있음·확정 — C2a)은 모두 옛 isFinal = 마감 + 15분 뒤 수집</li>
+ *   <li>관측치 {@code paper.quotes}(수집기 태스크 {@code paper_quotes}, 3시간 넘게 묵으면 늦음 — 파서 {@link PaperMarketData#parse})·
+ *       이력 {@code equity_close}, 확정 판정 셋(종가 나옴·그 시점 가격 있음·확정 — C2a)은 모두 옛 isFinal = 마감 + 15분 뒤 수집, 체결은
+ *       관측 종가에 슬리피지를 얹은 체결가({@link FillTerms.SlippageInPrice})</li>
  *   <li>책 넷({@link PaperBooks#ALL} — 규칙·Claude·SPY 100%·SPY 60/SHY 40), 비교 기준 {@code bench_spy}, 현금성 기본 SHY, 최소 주문
  *       기본 $500</li>
  *   <li>Claude 체결 시점 NEXT_OBSERVATION·NEXT_CLOSE(이른 시점 NEXT_OBSERVATION), 검증기 시점 이름·금액 표기는
@@ -117,6 +118,16 @@ final class UsPaperMarket implements PaperMarket {
     @Override
     public boolean pricesConfirmed(LocalDate barDate, Instant collectedAt, TradingCalendar calendar) {
         return closeAvailable(barDate, collectedAt, calendar);
+    }
+
+    /**
+     * 관측 종가에 슬리피지를 얹은 체결가(D9), 가격 출처 = 관측치 데이터셋 {@code paper.quotes}, 비용 칸 없음 — 이 묶음 전 장부의
+     * {@code PaperLedger.fillPrice}·{@code price6}·{@code gross}·{@code buyQty} 그대로(결정 d10, 고정본 바이트 그대로). 시점·달력은 보지
+     * 않습니다(대기 주문도 스탑 {@code IMMEDIATE}도 그 관측치의 종가).
+     */
+    @Override
+    public FillTerms fill(Order order, Bar bar, PaperSettings settings, TradingCalendar calendar) {
+        return FillTerms.SlippageInPrice.ofClose(order.side(), bar, settings.slippageBp(), quotesDataset());
     }
 
     @Override

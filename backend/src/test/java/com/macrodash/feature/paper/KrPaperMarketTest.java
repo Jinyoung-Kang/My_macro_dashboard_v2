@@ -240,6 +240,9 @@ class KrPaperMarketTest {
         assertThat(run.fillable(order, PaperFixtures.bar("069500", d, 84_000), kst("2026-11-02T22:00")))
                 .as("시가 사다리 전(C2b)").isFalse();
         assertThat(run.pricesConfirmed(d, kst("2026-11-03T22:00"))).as("금융위 확정 조정 전(C3)").isFalse();
+        assertThatThrownBy(() -> run.fill(order, PaperFixtures.bar("069500", d, 84_000), PaperSettings.defaults(KR),
+                run.calendar())).as("체결 선택(시가 사다리·비용 칸)은 C2b").isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("C2b");
     }
 
     @Test

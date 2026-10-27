@@ -46,7 +46,8 @@ import java.util.function.Supplier;
  *
  * <p><b>시장마다 따로입니다</b>(2단계 명세 §9 A5). 관측치 처리·미확정 순자산 줄·'새 관측치가 있나'·오류 기억은 받은 시장
  * ({@link PaperMarket})의 책({@code paper_books.market})만 보고, 세션 날짜·확정 판정 셋(종가 나옴·그 시점 가격 있음·확정 — 결정 d9)·
- * 분할 기준 이력·체결 가격 출처·스탑 뒤 재진입 금지 거래일도 그 시장 묶음에서 가져옵니다. 다른 시장 책은 읽지도 쓰지도 않습니다 — 그러지 않으면 미국 관측치가 한국 책의 멱등 키
+ * 분할 기준 이력·체결 조건(체결가·관측가·가격 출처·비용 칸·살 수 있는 수량 — {@link PaperMarket#fill}, 결정 d10)·스탑 뒤 재진입 금지
+ * 거래일도 그 시장 묶음에서 가져옵니다. 다른 시장 책은 읽지도 쓰지도 않습니다 — 그러지 않으면 미국 관측치가 한국 책의 멱등 키
  * ({@code lastProcessedCollectedAt})를 미국 수집 시각으로 밀어 한국 관측치가 '이미 처리함'으로 버려집니다. 시장을 받지 않는 옛
  * 시그니처는 미국 책만 처리합니다(결정 작업이 시장 문맥으로 옮겨 가는 A6 전까지 그대로 부름). 사후 체결({@link #backfill})은 미국
  * 책만 받습니다(한국은 출발일 사후 체결이 없음, 명세 K28). <b>설정과 달력은 실행 문맥에서</b>(C1a) — 슬리피지·트레일링 스탑·재진입 금지
@@ -490,11 +491,11 @@ public class PaperLedgerService {
             }
             qty = PaperLedger.sellQty(holding.qty, fraction);
         }
-        double price = price6(PaperLedger.fillPrice(bar.close(), PaperLedger.Side.SELL, run.settings.slippageBp()));
-        double gross = gross(qty, price);
-        recordFill(run, order.id(), order.ticker(), PaperBooks.SELL, qty, price, bar, gross);
+        FillTerms terms = run.fill(order, bar);
+        FillTerms.Costs costs = terms.costs(qty);
+        recordFill(run, order.id(), order.ticker(), PaperBooks.SELL, qty, terms, costs, bar);
         store.markOrderFilled(order.id(), run.at);
-        run.cash = PaperLedger.round4(run.cash + gross);
+        run.cash = PaperLedger.round4(run.cash + costs.cashDelta());
         holding.qty -= qty;
         if (holding.qty == 0) {
             run.holdings.remove(holding.ticker);
@@ -518,13 +519,14 @@ public class PaperLedgerService {
             cancel(run, order, "재진입 금지 중입니다(" + until + "까지, 트레일링 스탑)");
             return;
         }
-        double price = price6(PaperLedger.fillPrice(bar.close(), PaperLedger.Side.BUY, run.settings.slippageBp()));
+        FillTerms terms = run.fill(order, bar);
+        double price = terms.price();
         int wanted;
         if (order.qty() != null) {
             wanted = order.qty();
         } else if (order.targetWeightPct() != null && Double.isFinite(order.targetWeightPct())) {
             // 목표 금액 = 목표 비중 × 체결 시점 순자산(같은 관측치의 매도·앞선 매수를 반영한 값).
-            wanted = PaperLedger.buyQty(order.targetWeightPct() / 100.0 * run.nav(), price);
+            wanted = terms.affordableQty(order.targetWeightPct() / 100.0 * run.nav());
         } else {
             cancel(run, order, "매수 크기(수량·목표 비중)가 없습니다");
             return;
@@ -533,16 +535,16 @@ public class PaperLedgerService {
             cancel(run, order, "목표 금액으로 1주도 살 수 없습니다");
             return;
         }
-        int affordable = PaperLedger.buyQty(run.cash, price);
+        int affordable = terms.affordableQty(run.cash);
         int qty = Math.min(wanted, affordable);
         if (qty <= 0) {
             cancel(run, order, "현금이 모자라 1주도 살 수 없습니다(현금 " + money(run.cash) + ")");
             return;
         }
-        double gross = gross(qty, price);
-        recordFill(run, order.id(), order.ticker(), PaperBooks.BUY, qty, price, bar, gross);
+        FillTerms.Costs costs = terms.costs(qty);
+        recordFill(run, order.id(), order.ticker(), PaperBooks.BUY, qty, terms, costs, bar);
         store.markOrderFilled(order.id(), run.at);
-        run.cash = PaperLedger.round4(run.cash - gross);
+        run.cash = PaperLedger.round4(run.cash + costs.cashDelta());
         if (holding == null) {
             Reference reference = referenceFor(run.market, bar, run.at);
             holding = new Holding(order.ticker(), qty, price, bar.date(), run.at, price, run.at, bar.close(), run.at,
@@ -613,8 +615,6 @@ public class PaperLedgerService {
             }
             double stopPrice = TrailingStop.stopPrice(holding.highWatermark, stopPct);
             int qty = holding.qty;
-            double price = price6(PaperLedger.fillPrice(bar.close(), PaperLedger.Side.SELL, run.settings.slippageBp()));
-            double gross = gross(qty, price);
             Map<String, Object> reason = new LinkedHashMap<>();
             reason.put("trigger", "TRAILING_STOP");
             reason.put("stopPct", stopPct);
@@ -622,12 +622,15 @@ public class PaperLedgerService {
             reason.put("stopPrice", PaperLedger.round4(stopPrice));
             reason.put("observedPrice", bar.close());
             reason.put("barDate", bar.date().toString());
-            // 스탑은 관측치가 만든 주문이라 생성·체결 시각 모두 그 관측치의 수집 시각입니다(IMMEDIATE).
-            long orderId = store.insertOrder(new Order(0, run.book.code(), null, holding.ticker, PaperBooks.SELL, qty,
+            // 스탑은 관측치가 만든 주문이라 생성·체결 시각 모두 그 관측치의 수집 시각입니다(IMMEDIATE). 체결가는 시장 몫(그 관측가).
+            Order stop = new Order(0, run.book.code(), null, holding.ticker, PaperBooks.SELL, qty,
                     null, null, PaperBooks.IMMEDIATE, PaperBooks.SOURCE_STOP, PaperBooks.ORDER_FILLED, null,
-                    mapper.valueToTree(reason), bar.date(), run.at, null, run.at));
-            recordFill(run, orderId, holding.ticker, PaperBooks.SELL, qty, price, bar, gross);
-            run.cash = PaperLedger.round4(run.cash + gross);
+                    mapper.valueToTree(reason), bar.date(), run.at, null, run.at);
+            FillTerms terms = run.fill(stop, bar);
+            FillTerms.Costs costs = terms.costs(qty);
+            long orderId = store.insertOrder(stop);
+            recordFill(run, orderId, holding.ticker, PaperBooks.SELL, qty, terms, costs, bar);
+            run.cash = PaperLedger.round4(run.cash + costs.cashDelta());
             run.holdings.remove(holding.ticker);
             run.removed.add(holding.ticker);
 
@@ -929,10 +932,19 @@ public class PaperLedgerService {
                 gross, close, r.tradingDate(), raw.source(), true, null);
     }
 
-    private void recordFill(BookRun run, long orderId, String ticker, String side, int qty, double price, Bar bar,
-                            double gross) {
-        store.insertFill(new Fill(0, orderId, run.book.code(), ticker, side, qty, price, bar.close(),
-                run.settings.slippageBp(), gross, run.at, bar.date(), run.market.quotesDataset(), false, null));
+    /**
+     * 체결 행 한 줄 — 체결가·관측가·출처·슬리피지 기록값은 시장의 체결 조건({@link FillTerms}), 금액은 그 수량의 {@link FillTerms.Costs}.
+     *
+     * @throws IllegalStateException 비용 칸(수수료·세금·슬리피지 비용)이 0이 아님 — 그 칸을 쓰는 저장은 한국 체결(C2b)과 함께 들어옵니다
+     *                               (조용히 버리면 현금만 빠지고 체결 행에 비용이 남지 않음). 미국은 늘 0입니다
+     */
+    private void recordFill(BookRun run, long orderId, String ticker, String side, int qty, FillTerms terms,
+                            FillTerms.Costs costs, Bar bar) {
+        if (costs.hasCostColumns()) {
+            throw new IllegalStateException("체결 비용 칸(fee·tax·slippage_cost) 저장은 아직 없습니다(2단계 C2b) — " + ticker);
+        }
+        store.insertFill(new Fill(0, orderId, run.book.code(), ticker, side, qty, terms.price(), terms.rawPrice(),
+                terms.slippageBp(), costs.gross(), run.at, bar.date(), terms.priceSource(), false, null));
     }
 
     private static void raiseWatermark(Holding holding, double price, Instant at) {
@@ -1001,6 +1013,11 @@ public class PaperLedgerService {
 
         Bar bar(String ticker) {
             return quotes.bars().get(ticker);
+        }
+
+        /** 그 주문을 그 봉으로 체결하는 조건 — 시장 몫(결정 d10), 이 실행이 읽은 설정과 그 실행의 달력으로. */
+        FillTerms fill(Order order, Bar bar) {
+            return market.fill(order, bar, settings, market.calendar());
         }
 
         void note(String text) {
