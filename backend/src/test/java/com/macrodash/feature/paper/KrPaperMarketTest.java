@@ -211,14 +211,35 @@ class KrPaperMarketTest {
     }
 
     @Test
-    @DisplayName("확정 판정 셋(결정 d9) — 아직 옛 기본 isFinal 식: 15:30 + 5시간 = 그날 20:30 이후 수집이면 셋 다 참")
-    void finalJudgementsMeetCollectionTime() {
+    @DisplayName("확정 판정 셋(결정 d9) — 종가 나옴 = 그날 20:30 KST(수집 규칙) 이후 수집(장 시간 변경일도 20:30), 체결 가격은 C2b·확정은 C3 전이라 늘 false")
+    void finalJudgementsFollowTheCollectionTime() {
         MarketRun run = new MarketRun(KR, calendar2026And2027(), null);
         LocalDate d = LocalDate.of(2026, 11, 2);
         assertThat(run.closeAvailable(d, kst("2026-11-02T20:29"))).isFalse();
         assertThat(run.closeAvailable(d, kst("2026-11-02T20:30"))).isTrue();
-        assertThat(run.pricesConfirmed(d, kst("2026-11-02T20:29"))).isFalse();
-        assertThat(run.pricesConfirmed(d, kst("2026-11-02T20:30"))).isTrue();
+        assertThat(run.closeAvailable(LocalDate.of(2026, 10, 30), kst("2026-11-02T20:00"))).as("지난 세션의 봉").isTrue();
+        assertThat(run.closeAvailable(LocalDate.of(2026, 10, 31), kst("2026-11-02T20:30"))).as("토요일 봉").isFalse();
+
+        // 수능일(10:00~16:30) — 마감 + 5시간(21:30)이 아니라 수집 시각 20:30.
+        ObjectNode body = PaperFixtures.MAPPER.createObjectNode();
+        body.putObject("kr").putObject("calendar").putObject("openTimeOverrides").putObject("2026-11-19")
+                .put("open", "10:00").put("close", "16:30");
+        MarketRun suneung = new MarketRun(KR, KR.openCalendar(KrFixtures.inputs(body, KrFixtures.holidays(2026, 2027))), null);
+        LocalDate exam = LocalDate.of(2026, 11, 19);
+        assertThat(suneung.calendar().closeInstant(exam)).isEqualTo(kst("2026-11-19T16:30"));
+        assertThat(suneung.closeAvailable(exam, kst("2026-11-19T20:29"))).isFalse();
+        assertThat(suneung.closeAvailable(exam, kst("2026-11-19T20:30"))).isTrue();
+
+        // 모르는 해의 평일 — 지어내지 않고 '달력 없음'.
+        assertThatThrownBy(() -> run.closeAvailable(LocalDate.of(2028, 1, 4), kst("2028-01-04T21:00")))
+                .isInstanceOf(CalendarUnavailableException.class);
+
+        PaperStore.Order order = new PaperStore.Order(1, PaperBooks.KR_BENCH_K200, null, "069500", PaperBooks.BUY, null,
+                100.0, null, PaperBooks.NEXT_OPEN, PaperBooks.SOURCE_BENCHMARK, PaperBooks.ORDER_PENDING, null, null,
+                LocalDate.of(2026, 10, 30), kst("2026-10-30T22:30"), LocalDate.of(2026, 11, 4), null);
+        assertThat(run.fillable(order, PaperFixtures.bar("069500", d, 84_000), kst("2026-11-02T22:00")))
+                .as("시가 사다리 전(C2b)").isFalse();
+        assertThat(run.pricesConfirmed(d, kst("2026-11-03T22:00"))).as("금융위 확정 조정 전(C3)").isFalse();
     }
 
     @Test

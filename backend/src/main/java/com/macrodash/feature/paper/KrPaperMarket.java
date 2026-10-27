@@ -35,8 +35,9 @@ import java.util.regex.Pattern;
  * <ul>
  *   <li>시장·통화 KR·KRW, 설정 접두어·작업 기록 접두어 {@code kr.}</li>
  *   <li>관측치 {@code paper.kr.quotes}(수집기 {@code kr_paper_quotes}, KR 거래일 D 20:30 뒤 하루 1회 — K17)·이력 {@code kr_close_adj};
- *       파싱과 체결 선택(결정 d10)은 C2 — 확정 판정 셋(결정 d9)은 아직 옛 기본 isFinal 식이고, 미국 파서가 이 저장본에서 봉을 찾지 못해 장부가 한국
- *       관측치를 처리하지 않습니다</li>
+ *       파싱과 체결 선택(결정 d10)은 C2 — 그 전에는 미국 파서가 이 저장본에서 봉을 찾지 못해 장부가 한국 관측치를 처리하지 않습니다</li>
+ *   <li>확정 판정 셋(결정 d9, C2a): 종가 나옴 = 그날 한국 수집 시각(20:30) 이후 수집({@link #closeAvailable}), 그 시점 가격 있음 = 아직
+ *       없음(시가 사다리는 C2b — {@link #fillable}), 확정 = 아직 없음(금융위 확정 조정은 C3 — {@link #pricesConfirmed})</li>
  *   <li>관측치 늦음 = 다음 수집 예정 + 여유(결정 d5, 명세 §4-9 'C1a에서 정한 것' — {@link #quotesLateAt})</li>
  *   <li>계좌 넷({@link PaperBooks#KR} — K1·§4-8), 비교 기준 {@code kr_bench_k200}, 현금성 기본 153130, 최소 주문 기본 500,000원</li>
  *   <li>체결 시점 {@code NEXT_OPEN}뿐 — {@code NEXT_CLOSE}는 G2 판정 뒤 정하는 코드 상수 {@link #ALLOW_NEXT_CLOSE}(지금 false, K13·K38)</li>
@@ -71,13 +72,6 @@ final class KrPaperMarket implements PaperMarket {
      * 새 저장본을 내지 못한 뒤, 한국 결정 기한 D′+1 01:00보다 한 시간 앞).
      */
     static final Duration QUOTES_LATE_MARGIN = Duration.ofMinutes(125);
-    /**
-     * 정규장 마감(15:30) 뒤 이만큼이면 그날 한국 수집 시각({@link #COLLECT_AFTER} 20:30)입니다 — 확정 판정 셋(결정 d9)이 옛 기본
-     * {@code isFinal} 그대로 쓰는 값. 장 시간 변경일(수능일 마감 16:30)에는 21:30이 되어 수집 규칙(20:30 고정)과 어긋나므로
-     * {@link #closeAvailable}을 수집 시각 규칙으로 바꿀 자리입니다(C2a — 지금 한국 관측치는 장부가 처리하지 않아 영향 없음, 클래스 설명).
-     */
-    static final Duration FINAL_DELAY = Duration.ofHours(5);
-
     /** 결정 시각·기한 기본값(KST, K6 — 설정 {@code kr.decisionTimeKst}·{@code kr.decisionDeadlineKst}의 기본값과 같음). */
     static final LocalTime DEFAULT_DECISION_TIME = LocalTime.parse(PaperSettingsService.KR_DEFAULT_DECISION_TIME);
     static final LocalTime DEFAULT_DEADLINE = LocalTime.parse(PaperSettingsService.KR_DEFAULT_DECISION_DEADLINE);
@@ -296,23 +290,36 @@ final class KrPaperMarket implements PaperMarket {
         return Datasets.TS_KR_CLOSE_ADJ;
     }
 
-    /** 봉 날짜가 거래일이고 그날 마감 + {@link #FINAL_DELAY}(5시간 — 정규장이면 20:30) 이후에 수집함 — 옛 기본 {@code isFinal} 그대로. */
+    /**
+     * 봉 날짜가 KR 거래일이고 저장본을 그날 {@link #COLLECT_AFTER}(20:30 KST — 한국 수집 규칙 K17, 통합 세션 마감 20:00·수급 저녁판 뒤)
+     * 이후에 수집함. 정규장 마감 시각({@code closeInstant})이 아니라 수집 시각으로 봅니다 — 장 시간 변경일(수능일 마감 16:30)에도 수집기는
+     * 20:30 뒤 하루 1회라(설정을 읽지 않음, ADR 0008) 마감 + 여유로 세면 그날만 21:30이 되어 수집 규칙과 어긋납니다(명세 §4-9 'C1c에서
+     * 정한 것'의 넘김). 그날 값은 토스 잠정 종가이고 확정({@link #pricesConfirmed})이 아닙니다.
+     *
+     * @throws com.macrodash.analytics.CalendarUnavailableException 봉 날짜가 달력이 모르는 해의 평일
+     */
     @Override
     public boolean closeAvailable(LocalDate barDate, Instant collectedAt, TradingCalendar calendar) {
         return calendar.isTradingDay(barDate)
-                && !collectedAt.isBefore(calendar.closeInstant(barDate).plus(FINAL_DELAY));
+                && !collectedAt.isBefore(ZonedDateTime.of(barDate, COLLECT_AFTER, KrxCalendar.SEOUL).toInstant());
     }
 
-    /** {@code NEXT_CLOSE}면 그 봉의 종가가 나왔을 때만, 그 밖의 시점은 늘 — 옛 장부 체결 조건 ③ 그대로. */
+    /**
+     * 늘 false — 한국 체결 가격(시가 사다리 {@code TOSS_1M_OPEN} → {@code TOSS_INTEGRATED}, 1분봉 {@code FAILED}는 기다림 — 결정 d11)은
+     * C2b입니다. 그 전에는 어떤 한국 주문도 체결하지 않습니다(fail-closed — 일봉 종가로 시가 주문을 채우지 않게).
+     */
     @Override
     public boolean fillable(Order order, Bar bar, Instant collectedAt, TradingCalendar calendar) {
-        return !PaperBooks.NEXT_CLOSE.equals(order.timing()) || closeAvailable(bar.date(), collectedAt, calendar);
+        return false;
     }
 
-    /** 종가가 나왔으면 확정 — 옛 기본 {@code isFinal} 그대로. */
+    /**
+     * 늘 false — 한국 가격의 확정은 금융위 값으로 하는 확정 조정(K29, C3)입니다. 그 전의 순자산 줄·결정 행은 잠정({@code prices_final =
+     * false})이고, 토스 잠정 종가를 확정으로 적지 않습니다(보유가 없는 현금뿐인 줄은 장부가 따로 확정으로 둠).
+     */
     @Override
     public boolean pricesConfirmed(LocalDate barDate, Instant collectedAt, TradingCalendar calendar) {
-        return closeAvailable(barDate, collectedAt, calendar);
+        return false;
     }
 
     @Override
