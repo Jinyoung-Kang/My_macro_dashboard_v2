@@ -727,7 +727,7 @@ class KrLedgerTest {
             assertThat(held.fillRefDate()).as("since 그대로").isEqualTo(D);
             assertThat(store.orders.get(sell).status()).isEqualTo(PaperBooks.ORDER_PENDING);
             assertThat(outcome.notes()).anySatisfy(n -> assertThat(n).contains("기업행위 확인 필요")
-                    .contains("금융위 2026-11-02 종가 2655000.00원으로 묶음").contains("스탑 없음·주문 보류"));
+                    .contains("금융위 2026-11-02 종가 2655000원으로 묶음").contains("스탑 없음·주문 보류"));
 
             KrFixtures.Payload next = new KrFixtures.Payload(thu);
             next.code("005930", kst("2026-11-05T21:57")).bar(D2, 52_000, 53_000, 300_000)
@@ -830,6 +830,197 @@ class KrLedgerTest {
                     .startsWith(BOOK + ": 005930 미처리 기업행위 보류 6거래일째(걸린 날 2026-11-02")
                     .contains("사람이 확인하세요").contains("시험용 사유"));
             assertThat(position(BOOK, "005930").lastPrice()).as("묶인 평가 — 새 봉으로 바꾸지 않음").isEqualTo(70_000);
+        }
+    }
+
+    // ------------------------------------------------------------------ 트레일링 스탑·최고가(K30 — C2c)
+    @Nested
+    @DisplayName("트레일링 스탑(§4-2 K30·§5) — 잠정 평가가로 감지 → 다음 날 시가 STOP 주문, 체결 처리 때 확정 D 종가로 다시 판정, 최고가는 KRX 기준가로만")
+    class Stops {
+
+        /** 최고가 100,000(8% → 스탑가 92,000)인 보유 10주, since D. */
+        private void heldAtHundred(String code) {
+            holdingSince(code, "005930", 10, 100_000, D, 100_000, 1_000L);
+        }
+
+        /** D+1 밤 — D+1 종가 {@code close}(NXT 주식 → TOSS_INTEGRATED). */
+        private KrFixtures.Payload nightD1(double close) {
+            KrFixtures.Payload payload = new KrFixtures.Payload(D1);
+            payload.code("005930", FETCHED_D1).bar(D, 100_000, 100_000, 1_000).bar(D1, 99_000, close, 2_000)
+                    .minute("OK", "09:01", 99_000, 100);
+            return payload;
+        }
+
+        /** D+2 밤 — D+2 시가(1분봉) {@code open}·종가 {@code close}. */
+        private KrFixtures.Payload nightD2(double open, double close) {
+            KrFixtures.Payload payload = new KrFixtures.Payload(D2);
+            payload.code("005930", kst("2026-11-04T21:57")).bar(D1, 99_000, 91_000, 2_000)
+                    .bar(D2, open + 300, close, 3_000).minute("OK", "09:01", open, 200);
+            return payload;
+        }
+
+        private Order stopOrder() {
+            return store.orders.values().stream().filter(o -> PaperBooks.SOURCE_STOP.equals(o.source())).findFirst()
+                    .orElseThrow();
+        }
+
+        @Test
+        @DisplayName("밤 잠정 종가 91,000 ≤ 스탑가 92,000 → 그 밤에는 팔지 않고 다음 거래일 시가 STOP 주문(NEXT_OPEN·PENDING·기준일 D+1·만료 D+1 + 3거래일·수량 null = 전량), 같은 밤 다시 쓴 저장본은 주문을 더 내지 않음")
+        void detectionPlacesTheNextOpenStopOrder() {
+            book(BOOK, PaperBooks.KIND_CLAUDE, 0);
+            heldAtHundred(BOOK);
+
+            Outcome outcome = process(nightD1(91_000), COLLECTED_D1);
+
+            Order stop = stopOrder();
+            assertThat(stop.side()).isEqualTo(PaperBooks.SELL);
+            assertThat(stop.timing()).isEqualTo(PaperBooks.NEXT_OPEN);
+            assertThat(stop.status()).isEqualTo(PaperBooks.ORDER_PENDING);
+            assertThat(stop.asOfTradingDate()).isEqualTo(D1);
+            assertThat(stop.expiresOn()).isEqualTo(LocalDate.of(2026, 11, 6));
+            assertThat(stop.qty()).isNull();
+            assertThat(stop.sellFraction()).isNull();
+            assertThat(stop.createdAt()).isEqualTo(COLLECTED_D1);
+            assertThat(stop.reason().path("stopPrice").asDouble()).isEqualTo(92_000);
+            assertThat(stop.reason().path("observedPrice").asDouble()).isEqualTo(91_000);
+            assertThat(stop.reason().path("observedSource").asString()).isEqualTo(KrQuotes.SOURCE_INTEGRATED);
+            assertThat(store.fillsOf(BOOK)).as("밤에는 그 가격으로 팔 수 없음").isEmpty();
+            assertThat(position(BOOK, "005930").qty()).isEqualTo(10);
+            assertThat(store.lockouts(BOOK)).isEmpty();
+            assertThat(outcome.stopped()).as("체결한 스탑만 셈").isZero();
+            assertThat(outcome.notes()).anySatisfy(n -> assertThat(n).contains("트레일링 스탑 감지").contains("92000"));
+
+            process(nightD1(90_000), COLLECTED_D1.plusSeconds(3_600));
+            assertThat(store.orders.values()).filteredOn(o -> PaperBooks.SOURCE_STOP.equals(o.source())).hasSize(1);
+        }
+
+        @Test
+        @DisplayName("STOP_NOT_CONFIRMED — 체결 처리(D+2 밤) 때 금융위 D+1 종가 92,500이 스탑가 위면 취소(체결·재진입 금지 없음, 근거에 stopBasis FSC·확정 종가), 보유 그대로")
+        void notConfirmedCancelsWithoutLockout() {
+            book(BOOK, PaperBooks.KIND_CLAUDE, 0);
+            heldAtHundred(BOOK);
+            process(nightD1(91_000), COLLECTED_D1);
+            fsc("005930", D1, fscDay(D1, 92_500, 5_000, null));
+
+            Outcome outcome = process(nightD2(93_000, 95_000), kst("2026-11-04T22:01"));
+
+            Order stop = stopOrder();
+            assertThat(stop.status()).isEqualTo(PaperBooks.ORDER_CANCELLED);
+            assertThat(stop.rejectReason()).startsWith("STOP_NOT_CONFIRMED — 금융위 2026-11-03 종가 92500원이 스탑가 92000원")
+                    .contains("재진입 금지 없음");
+            assertThat(stop.reason().path("stopBasis").asString()).isEqualTo(KrConfirmed.SOURCE_FSC);
+            assertThat(stop.reason().path("confirmedClose").asDouble()).isEqualTo(92_500);
+            assertThat(store.fillsOf(BOOK)).isEmpty();
+            assertThat(store.lockouts(BOOK)).isEmpty();
+            assertThat(position(BOOK, "005930").qty()).isEqualTo(10);
+            assertThat(outcome.stopped()).isZero();
+            assertThat(store.orders.values()).as("D+2 종가 95,000은 스탑가 위 — 새 감지 없음")
+                    .filteredOn(o -> PaperBooks.SOURCE_STOP.equals(o.source())).hasSize(1);
+        }
+
+        @Test
+        @DisplayName("확정 D+1 종가 91,500 ≤ 스탑가 → D+2 시가(1분봉 90,000)에 전량 매도, stopBasis FSC, 재진입 금지는 체결한 날(D+2)부터 20거래일 — 같은 시가의 그 종목 매수는 취소")
+        void confirmedStopSellsAtTheNextOpen() {
+            book(BOOK, PaperBooks.KIND_CLAUDE, 0);
+            heldAtHundred(BOOK);
+            process(nightD1(91_000), COLLECTED_D1);
+            fsc("005930", D1, fscDay(D1, 91_500, 5_000, null));
+            Order rebuy = store.orders.get(store.insertOrder(new Order(0, BOOK, null, "005930", PaperBooks.BUY, 1, null, null,
+                    PaperBooks.NEXT_OPEN, "CLAUDE", "PENDING", null, null, D1, kst("2026-11-03T22:30"),
+                    LocalDate.of(2026, 11, 6), null)));
+
+            Outcome outcome = process(nightD2(90_000, 89_000), kst("2026-11-04T22:01"));
+
+            Fill fill = onlyFill();
+            assertThat(fill.side()).isEqualTo(PaperBooks.SELL);
+            assertThat(fill.qty()).isEqualTo(10);
+            assertThat(fill.price()).isEqualTo(90_000);
+            assertThat(fill.priceSource()).isEqualTo(KrQuotes.SOURCE_1M_OPEN);
+            assertThat(fill.observationDate()).isEqualTo(D2);
+            Order stop = stopOrder();
+            assertThat(stop.status()).isEqualTo(PaperBooks.ORDER_FILLED);
+            assertThat(stop.reason().path("stopBasis").asString()).isEqualTo(KrConfirmed.SOURCE_FSC);
+            assertThat(store.positions(BOOK)).isEmpty();
+            LocalDate until = run().calendar().addTradingDays(D2, 20);
+            assertThat(store.lockouts(BOOK)).singleElement().satisfies(lockout -> {
+                assertThat(lockout.untilTradingDate()).as("체결한 날부터 — 감지한 날(D+1)이 아님").isEqualTo(until);
+                assertThat(lockout.reason()).contains("판정 FSC").contains("2026-11-04 시가 90000 체결");
+            });
+            assertThat(store.orders.get(rebuy.id()).status()).as("재진입 금지").isEqualTo(PaperBooks.ORDER_CANCELLED);
+            assertThat(outcome.stopped()).isEqualTo(1);
+        }
+
+        @Test
+        @DisplayName("금융위 D+1 행이 아직 없으면 잠정 판정대로 집행 — stopBasis=PROVISIONAL과 사유, 거래량 0 행(종가는 전날 값)도 확정 종가가 아니라 같음")
+        void provisionalWhenTheConfirmedCloseIsMissing() {
+            book(BOOK, PaperBooks.KIND_CLAUDE, 0);
+            heldAtHundred(BOOK);
+            holdingSince(BOOK, "000660", 10, 100_000, D, 100_000, 1_000L);
+            KrFixtures.Payload d1 = nightD1(91_000);
+            d1.code("000660", FETCHED_D1).bar(D, 100_000, 100_000, 1_000).bar(D1, 99_000, 91_000, 2_000);
+            process(d1, COLLECTED_D1);
+            fsc("000660", D1, fscDay(D1, 92_500, 0, null));   // 거래 없던 행 — 92,500은 그날 종가가 아님
+
+            KrFixtures.Payload d2 = nightD2(90_000, 89_000);
+            d2.code("000660", kst("2026-11-04T21:57")).bar(D1, 99_000, 91_000, 2_000).bar(D2, 90_300, 89_000, 3_000)
+                    .minute("OK", "09:01", 90_000, 200);
+            process(d2, kst("2026-11-04T22:01"));
+
+            assertThat(store.fillsOf(BOOK)).extracting(Fill::ticker).containsExactlyInAnyOrder("005930", "000660");
+            for (Order stop : store.orders.values()) {
+                assertThat(stop.status()).isEqualTo(PaperBooks.ORDER_FILLED);
+                assertThat(stop.reason().path("stopBasis").asString()).isEqualTo(PaperLedgerService.STOP_BASIS_PROVISIONAL);
+                assertThat(stop.reason().path("stopBasisNote").asString()).contains("확정 종가 없음");
+            }
+            assertThat(store.lockouts(BOOK)).hasSize(2);
+        }
+
+        @Test
+        @DisplayName("최고가는 토스 종가로 오르지 않음 — NXT 통합가(TOSS_INTEGRATED) 120,000·KRX 단독 봉 종가 모두, 금융위 D+1 종가 110,000이 들어온 밤에 그 값으로(하루 늦게)")
+        void watermarkRisesOnlyOnConfirmedCloses() {
+            book(BOOK, PaperBooks.KIND_CLAUDE, 0);
+            heldAtHundred(BOOK);
+            holdingSince(BOOK, "069500", 10, 100_000, D, 100_000, 1_000L);
+            KrFixtures.Payload d1 = new KrFixtures.Payload(D1);
+            d1.code("005930", FETCHED_D1).bar(D, 100_000, 100_000, 1_000).bar(D1, 101_000, 120_000, 2_000);
+            d1.etf("069500", FETCHED_D1).bar(D, 100_000.0, 100_000.0, 1_000).bar(D1, 101_000.0, 118_000.0, 2_000);
+
+            process(d1, COLLECTED_D1);
+
+            assertThat(position(BOOK, "005930").highWatermark()).as("TOSS_INTEGRATED 종가").isEqualTo(100_000);
+            assertThat(position(BOOK, "069500").highWatermark()).as("TOSS_DAILY 잠정 종가도").isEqualTo(100_000);
+            assertThat(position(BOOK, "005930").lastPrice()).as("평가는 잠정 종가").isEqualTo(120_000);
+
+            fsc("005930", D1, fscDay(D, 100_500, 1_000, null), fscDay(D1, 110_000, 5_000, null));
+            KrFixtures.Payload d2 = new KrFixtures.Payload(D2);
+            d2.code("005930", kst("2026-11-04T21:57")).bar(D1, 101_000, 120_000, 2_000).bar(D2, 116_000, 115_000, 3_000);
+            process(d2, kst("2026-11-04T22:01"));
+
+            assertThat(position(BOOK, "005930").highWatermark()).as("금융위 D+1 종가 — D+2 토스 종가 115,000은 아님")
+                    .isEqualTo(110_000);
+            assertThat(store.orders.values()).as("115,000 > 101,200(110,000 × 0.92) — 스탑 없음")
+                    .noneMatch(o -> PaperBooks.SOURCE_STOP.equals(o.source()));
+        }
+
+        @Test
+        @DisplayName("스탑을 보지 않는 보유: 현금성(153130)·벤치마크 계좌·미처리 기업행위 보유·이번 관측치의 마지막 봉이 정지일(거래량 0)")
+        void noStopForCashLikeBenchmarkHeldOrHaltedBars() {
+            book(BOOK, PaperBooks.KIND_CLAUDE, 0);
+            book(PaperBooks.KR_BENCH_K200, PaperBooks.KIND_BENCHMARK, 0);
+            holdingSince(BOOK, "153130", 10, 100_000, D, 100_000, 1_000L);
+            holdingSince(BOOK, "000660", 10, 100_000, D, 100_000, 1_000L);
+            holdingSince(BOOK, "035720", 10, 100_000, D, 100_000, 1_000L);
+            store.holdForCorpAction(BOOK, "035720", "2026-11-02 기업행위 확인 필요 — 시험용");
+            holdingSince(PaperBooks.KR_BENCH_K200, "005930", 10, 100_000, D, 100_000, 1_000L);
+            KrFixtures.Payload payload = new KrFixtures.Payload(D1);
+            payload.etf("153130", FETCHED_D1).bar(D, 100_000.0, 100_000.0, 10).bar(D1, 80_000.0, 80_000.0, 10);
+            payload.code("000660", FETCHED_D1).bar(D, 100_000, 100_000, 10).bar(D1, 80_000, 80_000, 0);
+            payload.code("035720", FETCHED_D1).bar(D, 100_000, 100_000, 10).bar(D1, 80_000, 80_000, 10);
+            payload.code("005930", FETCHED_D1).bar(D, 100_000, 100_000, 10).bar(D1, 80_000, 80_000, 10);
+
+            process(payload, COLLECTED_D1);
+
+            assertThat(store.orders.values()).noneMatch(o -> PaperBooks.SOURCE_STOP.equals(o.source()));
         }
     }
 

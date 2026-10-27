@@ -23,6 +23,7 @@ import com.macrodash.store.PaperStore.Lockout;
 import com.macrodash.store.PaperStore.NavRow;
 import com.macrodash.store.PaperStore.Order;
 import com.macrodash.store.PaperStore.Position;
+import com.macrodash.support.Json;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
@@ -645,8 +646,11 @@ public class PaperLedgerService {
      * <p><b>since 봉</b>: 기업행위 판정이 그 보유에 새 사건이 없다고 본(또는 분할을 반영한) 관측치의 마지막 관측 봉(거래량 &gt; 0)으로 옮깁니다
      * ({@link #advanceSince} — 거래량 0 봉에서는 옮기지 않음). 이번 관측치에서 새로 산 보유는 체결 봉 그대로 둡니다(C2b — 다음 관측치가 그 뒤를 판정).
      *
-     * <p><b>최고가 갱신·스탑 감지</b>(K30 — KRX 기준가로만 올리고, 감지하면 다음 거래일 {@code NEXT_OPEN} {@code STOP} 매도 주문, 체결 때 금융위
-     * 확정 종가로 다시 판정)는 다음 단계입니다. 그때까지 한국 보유에는 스탑이 걸리지 않습니다.
+     * <p><b>최고가 갱신·스탑 감지</b>(K30): 최고가는 KRX 기준가로만 올립니다 — G2 판정 전이라 금융위 확정 종가뿐이고 토스 종가로는 올리지 않습니다
+     * ({@link #raiseKrxWatermarks}). 스탑은 밤 잠정 종가(토스)로 감지해 다음 거래일 {@code NEXT_OPEN} {@code STOP} 매도 주문을 내고
+     * ({@link #detectStops} — 밤에는 장이 닫혀 그 가격으로 팔 수 없음), 그 주문을 체결 처리할 때 감지한 날 D의 금융위 확정 종가로 다시 판정합니다
+     * ({@link #rejudgeStop}): 스탑가 위면 {@code STOP_NOT_CONFIRMED}로 취소(재진입 금지 없음), 금융위 D 행이 아직 없으면 잠정 판정대로 집행
+     * ({@code stopBasis=PROVISIONAL}). 재진입 금지는 체결한 날부터 셉니다.
      *
      * <p><b>순자산 기준</b>: 목표 비중 매수의 목표 금액 = 목표 비중 × 그 체결 직전 순자산 — 보유 평가는 직전 관측치의 가격(이번 관측치의 종가는
      * 평가 단계에서 반영), 같은 관측치에서 앞서 산 종목은 체결가입니다. 그래서 한 시가에 함께 사는 주문(벤치마크 60/40 등)이 그날 시가 뒤
@@ -660,8 +664,11 @@ public class PaperLedgerService {
         auctionFills(run, pending, PaperBooks.BUY, true);               // 4. 시가 매수
         auctionFills(run, pending, PaperBooks.SELL, false);             // 5. 종가 매도(NEXT_CLOSE — 지금은 체결하지 않음)
         auctionFills(run, pending, PaperBooks.BUY, false);              // 6. 종가 매수
-        // 7. 최고가 갱신·스탑 감지 — 다음 단계(K30, 위 설명)
         if (started) {
+            raiseKrxWatermarks(run);                                    // 7. 최고가 갱신(KRX 기준가 — 금융위 확정 종가로만)
+            if (PaperBooks.ACTIVE.equals(run.book.status()) && !PaperBooks.KIND_BENCHMARK.equals(run.book.kind())) {
+                detectStops(run);                                       //    스탑 감지 → 다음 거래일 시가 STOP 주문
+            }
             revalueAuction(run);                                        // 8. 평가 가격 = 이번 관측치의 그 종목 마지막 봉 종가
             advanceSince(run);                                          //    since 봉을 이번 관측치의 마지막 관측으로
         }
@@ -797,7 +804,7 @@ public class PaperLedgerService {
         }
         holding.splitFrom = assessment.effectiveDate();
         String note = "%s %s 분할·병합 확인 — %d주 → %d주, 평단 %s → %s".formatted(assessment.effectiveDate(),
-                ratio.label(), before, holding.qty, money(avgBefore), money(holding.avgCost));
+                ratio.label(), before, holding.qty, won(avgBefore), won(holding.avgCost));
         holding.splitNote = appendNote(holding.splitNote, note);
         run.splits++;
         holdOrders(run, holding.ticker, assessment);
@@ -820,10 +827,10 @@ public class PaperLedgerService {
             holding.lastPrice = confirmed.get().doubleValue();
             holding.lastPriceAt = run.at;
             holding.priceStale = false;
-            valued = "평가를 금융위 " + holding.fillRefDate + " 종가 " + money(holding.lastPrice) + "원으로 묶음";
+            valued = "평가를 금융위 " + holding.fillRefDate + " 종가 " + won(holding.lastPrice) + "원으로 묶음";
         } else {
             valued = "금융위 " + holding.fillRefDate + " 확정 종가가 없어 마지막 평가 가격 "
-                    + (holding.lastPrice == null ? "없음(평단 " + money(holding.avgCost) + "원)" : money(holding.lastPrice) + "원")
+                    + (holding.lastPrice == null ? "없음(평단 " + won(holding.avgCost) + "원)" : won(holding.lastPrice) + "원")
                     + "으로 묶음";
         }
         run.orderHolds.put(holding.ticker, "미처리 기업행위 보유 — " + reason);
@@ -887,6 +894,168 @@ public class PaperLedgerService {
         }
     }
 
+    // ------------------------------------------------------------------ 최고가·트레일링 스탑(한국 — 명세 §4-2 K30)
+    /**
+     * 최고가를 KRX 기준가로만 올립니다(K30 — 통합가 고점으로 되돌릴 수 없는 매도·재진입 금지가 나지 않게). G2(1분봉 15:30 단일가 봉 = 금융위 종가)
+     * 판정 전이라 KRX 기준가는 금융위 확정 종가(주식 {@code clpr}·ETF 종가, 거래량 &gt; 0 행)뿐이고, 토스 종가로는 올리지 않습니다 — NXT 종목의
+     * 통합가({@code TOSS_INTEGRATED})는 물론 KRX 단독 봉({@code TOSS_DAILY})의 잠정 종가도(확정값으로 다시 계산할 일을 만들지 않게). 금융위 D 종가는
+     * D+1 밤에 들어오므로 최고가는 하루 늦게 따라갑니다. 보는 날짜 = 그 보유가 이번 관측치 시작 때 반영한 마지막 관측(since) 이후 — 분할을 반영한
+     * 날은 비율이 바뀐 날 E 이후(그 전 가격은 옛 단위). 최고가는 max라 같은 종가를 다시 봐도 두 번 오르지 않습니다. 미처리 기업행위·판정 대기 보유는
+     * 올리지 않습니다. 새 보유의 처음 값은 체결가(C2b — 시가 사다리를 내려간 {@code TOSS_INTEGRATED} 체결이면 그 값; 금융위 확정 때 다시 계산하는 일은 C3).
+     */
+    private static void raiseKrxWatermarks(BookRun run) {
+        for (Holding holding : run.holdings.values()) {
+            if (holding.corpHold != null || holding.assessed == Kind.PENDING || holding.assessed == Kind.UNPROCESSED) {
+                continue;
+            }
+            LocalDate from = holding.splitFrom != null ? holding.splitFrom : holding.sinceAtStart;
+            if (from == null) {
+                continue;
+            }
+            for (KrConfirmed.Day day : run.confirmed.of(holding.ticker).observedFrom(from)) {
+                raiseWatermark(holding, day.close().doubleValue(), run.at);
+            }
+        }
+    }
+
+    /**
+     * 스탑 감지(K30): 밤 잠정 종가(이번 관측치의 그 종목 마지막 봉 — 거래량 &gt; 0 관측일 때만)가 최고가 × (1 − {@code kr.trailingStopPct}%) 이하면
+     * <b>다음 거래일 시가</b> 전량 매도 주문({@code SELL}·{@code NEXT_OPEN}·출처 {@code STOP}·{@code PENDING}, 수량 null = 체결 때 보유 전량,
+     * 기준 거래일 = 감지한 봉 날짜 D, 만료 D + 3거래일, 생성 = 이 관측치의 수집 시각)을 냅니다 — 밤에는 장이 닫혀 그 가격으로 팔 수 없기 때문입니다.
+     * 근거에 최고가·스탑 비율·스탑가·관측가와 그 출처를 남기고, 체결 때 그 값으로 다시 판정합니다({@link #rejudgeStop}). 그 종목에 대기 중인 스탑
+     * 주문이 있으면 다시 내지 않습니다(같은 밤 다시 쓴 저장본). 현금성·미처리 기업행위·판정 대기·이번 관측치에 새 항목이 없는 보유는 보지 않습니다.
+     * 운용 중인 규칙·Claude 책만(벤치마크·일시정지는 스탑 없음 — 미국과 같음).
+     */
+    private void detectStops(BookRun run) {
+        double stopPct = run.settings.trailingStopPct();
+        Set<String> waiting = new TreeSet<>();
+        for (Order order : store.ordersByStatus(run.book.code(), PaperBooks.ORDER_PENDING)) {
+            if (PaperBooks.SOURCE_STOP.equals(order.source())) {
+                waiting.add(order.ticker());
+            }
+        }
+        for (Holding holding : run.holdings.values()) {
+            if (!holding.verified || holding.corpHold != null || holding.assessed == Kind.PENDING
+                    || holding.assessed == Kind.UNPROCESSED || run.settings.cashLike(holding.ticker)
+                    || waiting.contains(holding.ticker)) {
+                continue;
+            }
+            Bar bar = run.bar(holding.ticker);
+            if (bar == null || bar.stale() || bar.kr() == null) {
+                continue;
+            }
+            KrQuotes.Day last = bar.kr().last();
+            if (!last.observed() || last.close() == null) {
+                continue;   // 정지일(거래량 0)·거래량 모름 — 그날 종가가 관측이 아님
+            }
+            double close = last.close().doubleValue();
+            if (!TrailingStop.triggered(holding.highWatermark, close, stopPct)) {
+                continue;
+            }
+            double stopPrice = TrailingStop.stopPrice(holding.highWatermark, stopPct);
+            Map<String, Object> reason = new LinkedHashMap<>();
+            reason.put("trigger", "TRAILING_STOP");
+            reason.put("stopPct", stopPct);
+            reason.put("highWatermark", PaperLedger.round4(holding.highWatermark));
+            reason.put("stopPrice", PaperLedger.round4(stopPrice));
+            reason.put("observedPrice", close);
+            reason.put("observedSource", last.priceSource());
+            reason.put("barDate", last.date().toString());
+            reason.put("detection", "밤 잠정 종가 — 다음 거래일 시가(NEXT_OPEN) 매도, 체결 때 금융위 " + last.date()
+                    + " 종가로 다시 판정(스탑가 위면 STOP_NOT_CONFIRMED 취소)");
+            LocalDate expires = run.market.calendar().addTradingDays(last.date(), RuleBookService.ORDER_EXPIRY_TRADING_DAYS);
+            long id = store.insertOrder(new Order(0, run.book.code(), null, holding.ticker, PaperBooks.SELL, null, null, null,
+                    PaperBooks.NEXT_OPEN, PaperBooks.SOURCE_STOP, PaperBooks.ORDER_PENDING, null, mapper.valueToTree(reason),
+                    last.date(), run.at, expires, null));
+            waiting.add(holding.ticker);
+            run.note("주문 " + id + " " + holding.ticker + " 트레일링 스탑 감지 −" + trim(stopPct) + "%: 최고가 "
+                    + won(holding.highWatermark) + " → " + last.date() + " 잠정 종가 " + won(close) + "("
+                    + last.priceSource() + ") ≤ 스탑가 " + won(stopPrice) + " — 다음 거래일 시가 매도(만료 " + expires + ")");
+        }
+    }
+
+    /**
+     * STOP 주문 체결 처리 때의 다시 판정(K30) — 결과와 근거에 남길 칸.
+     *
+     * @param basis        {@code FSC}·{@code FSC_ETF}(감지한 날 D의 금융위 확정 종가로 판정) 또는 {@value #STOP_BASIS_PROVISIONAL}(금융위 D 행이 아직 없음)
+     * @param cancelReason 취소 사유({@value #STOP_NOT_CONFIRMED} …) — 집행하면 null
+     */
+    private record StopCheck(String basis, BigDecimal confirmedClose, String cancelReason, String note) {
+
+        Map<String, Object> fields() {
+            Map<String, Object> out = new LinkedHashMap<>();
+            out.put("stopBasis", basis);
+            if (confirmedClose != null) {
+                out.put("confirmedClose", confirmedClose);
+            }
+            if (note != null) {
+                out.put("stopBasisNote", note);
+            }
+            return out;
+        }
+    }
+
+    /** 스탑 판정 근거 — 금융위 확정 종가가 아직 없어 잠정 판정대로 집행함. */
+    static final String STOP_BASIS_PROVISIONAL = "PROVISIONAL";
+    /** 스탑 취소 사유의 머리 — 확정 종가가 스탑가 위. */
+    static final String STOP_NOT_CONFIRMED = "STOP_NOT_CONFIRMED";
+
+    /**
+     * 감지한 날 D(주문의 기준 거래일)의 금융위 확정 종가(거래량 &gt; 0 행 — {@link KrConfirmed.Series#closeOn})로 다시 판정합니다. 금융위 D 종가는
+     * D 15:30에 공개된 값이라 D+1 밤의 체결 처리에서 써도 룩어헤드가 아닙니다. 감지 때 근거에 남긴 최고가·스탑 비율로 셉니다(그사이 최고가가 바뀌어도
+     * 그 감지의 스탑가). 스탑가 위면 취소({@value #STOP_NOT_CONFIRMED}), 이하면 집행. 금융위 D 행이 없거나(지연) 그날 거래가 없던 행이면(종가는 전날
+     * 값) 잠정 판정대로 집행합니다 — G2 통과 뒤에는 잠정 = KRX 종가라 판정이 같습니다. 근거에 최고가·비율이 없으면(손으로 넣은 주문) 다시 판정할
+     * 수 없어 잠정 판정대로 집행합니다.
+     */
+    private static StopCheck rejudgeStop(BookRun run, Order order) {
+        LocalDate detected = order.asOfTradingDate();
+        KrConfirmed.Series series = run.confirmed.of(order.ticker());
+        Optional<BigDecimal> close = detected == null ? Optional.empty() : series.closeOn(detected);
+        if (close.isEmpty()) {
+            return new StopCheck(STOP_BASIS_PROVISIONAL, null, null, "금융위 " + detected
+                    + " 확정 종가 없음(아직 들어오지 않음·그날 거래 없음) — 밤 잠정 종가의 판정대로 집행");
+        }
+        Double watermark = positive(order.reason(), "highWatermark");
+        Double pct = positive(order.reason(), "stopPct");
+        if (watermark == null || pct == null || pct >= 100) {
+            return new StopCheck(STOP_BASIS_PROVISIONAL, close.get(), null,
+                    "근거에 최고가·스탑 비율이 없어 금융위 종가로 다시 판정할 수 없음 — 잠정 판정대로 집행");
+        }
+        double confirmed = close.get().doubleValue();
+        if (TrailingStop.triggered(watermark, confirmed, pct)) {
+            return new StopCheck(series.source(), close.get(), null, null);
+        }
+        double stopPrice = TrailingStop.stopPrice(watermark, pct);
+        return new StopCheck(series.source(), close.get(), STOP_NOT_CONFIRMED + " — 금융위 " + detected + " 종가 "
+                + won(confirmed) + "원이 스탑가 " + won(stopPrice) + "원(최고가 " + won(watermark) + " × (1 − " + trim(pct)
+                + "%)) 위: 밤 잠정 종가 " + won(positive(order.reason(), "observedPrice")) + "원("
+                + Json.asText(order.reason(), "observedSource") + ")의 감지를 확정 종가가 뒷받침하지 않아 취소(재진입 금지 없음)",
+                null);
+    }
+
+    /** 근거 JSON의 양수 칸(아니면 null). */
+    private static Double positive(JsonNode node, String field) {
+        JsonNode value = node == null ? null : node.get(field);
+        return value != null && value.isNumber() && Double.isFinite(value.asDouble()) && value.asDouble() > 0
+                ? value.asDouble() : null;
+    }
+
+    /** 체결한 스탑의 재진입 금지 — 체결한 날(그 시가 봉 날짜)부터 {@code kr.lockoutTradingDays}거래일(K30 — 감지한 날이 아님). */
+    private void stopLockout(BookRun run, Order order, StopCheck stop, Bar bar, double price) {
+        LocalDate until = TrailingStop.lockoutUntil(run.market.calendar(), bar.date(), run.settings.lockoutTradingDays());
+        store.upsertLockout(new Lockout(run.book.code(), order.ticker(), until,
+                "트레일링 스탑 −%s%%: 최고가 %s → %s 잠정 종가 %s(판정 %s) · %s 시가 %s 체결".formatted(
+                        won(positive(order.reason(), "stopPct")), won(positive(order.reason(), "highWatermark")),
+                        order.asOfTradingDate(), won(positive(order.reason(), "observedPrice")), stop.basis(), bar.date(),
+                        won(price))));
+        run.lockouts.put(order.ticker(), until);
+        run.stopped++;
+        run.note("주문 " + order.id() + " " + order.ticker() + " 트레일링 스탑 체결 — 판정 " + stop.basis()
+                + (stop.confirmedClose() == null ? "" : "(금융위 " + order.asOfTradingDate() + " 종가 "
+                + stop.confirmedClose().stripTrailingZeros().toPlainString() + "원)")
+                + ", 재진입 금지 " + until + "까지(체결한 날부터)");
+    }
+
     /**
      * 그쪽(매도·매수)·그 묶음(시가 = {@code NEXT_OPEN}, 종가 = 그 밖의 시점)의 대기 주문을 만든 순서대로 — 현금성(설정 {@code kr.cashLikeTickers})이
      * 아닌 것 먼저, 현금성은 그 묶음 마지막(명세 §4-2, 미국 {@link #fill}의 이유와 같음 — 남는 현금 주문이 신호 종목과 현금을 다투지 않게).
@@ -927,6 +1096,12 @@ public class PaperLedgerService {
         if (!holding.verified) {
             return;
         }
+        StopCheck stop = PaperBooks.SOURCE_STOP.equals(order.source()) ? rejudgeStop(run, order) : null;
+        if (stop != null && stop.cancelReason() != null) {
+            store.updateOrderReason(order.id(), withFields(order, stop.fields()));
+            cancel(run, order, stop.cancelReason());   // 확정 종가가 감지를 뒷받침하지 않음 — 재진입 금지 없음(K30)
+            return;
+        }
         int qty = sellQty(run, order, holding);
         if (qty < 0) {
             return;
@@ -945,7 +1120,10 @@ public class PaperLedgerService {
             run.holdings.remove(holding.ticker);
             run.removed.add(holding.ticker);
         }
-        annotate(run, order, null, qty, terms.warnings());
+        annotate(run, order, null, qty, terms.warnings(), stop == null ? Map.of() : stop.fields());
+        if (stop != null) {
+            stopLockout(run, order, stop, choice.bar(), terms.price());
+        }
         run.filled++;
     }
 
@@ -1045,10 +1223,16 @@ public class PaperLedgerService {
      * @param requested 현금 부족으로 줄였을 때 요청 수량(아니면 null)
      */
     private void annotate(BookRun run, Order order, Integer requested, int filledQty, List<String> warnings) {
-        if (requested == null && warnings.isEmpty()) {
+        annotate(run, order, requested, filledQty, warnings, Map.of());
+    }
+
+    /** {@link #annotate(BookRun, Order, Integer, int, List)}에 더해 근거에 칸을 덧붙입니다(한국 스탑의 판정 근거 {@code stopBasis} 등). */
+    private void annotate(BookRun run, Order order, Integer requested, int filledQty, List<String> warnings,
+                          Map<String, Object> extra) {
+        if (requested == null && warnings.isEmpty() && extra.isEmpty()) {
             return;
         }
-        ObjectNode reason = order.reason() instanceof ObjectNode existing ? existing.deepCopy() : mapper.createObjectNode();
+        ObjectNode reason = withFields(order, extra);
         if (requested != null) {
             reason.put("cashLimited", true);
             reason.put("requestedQty", requested);
@@ -1062,6 +1246,13 @@ public class PaperLedgerService {
                     + text));
         }
         store.updateOrderReason(order.id(), reason);
+    }
+
+    /** 그 주문의 근거(JSON) 사본에 칸을 덧붙인 것(근거가 객체가 아니면 새 객체). */
+    private ObjectNode withFields(Order order, Map<String, Object> fields) {
+        ObjectNode reason = order.reason() instanceof ObjectNode existing ? existing.deepCopy() : mapper.createObjectNode();
+        fields.forEach((key, value) -> reason.set(key, mapper.valueToTree(value)));
+        return reason;
     }
 
     /** 체결하지 않고 기다리는 주문의 사유(1분봉 기다림 등) — 작업 기록에만(주문은 대기 그대로). 사유가 없는 기다림은 남기지 않습니다. */
@@ -1471,6 +1662,11 @@ public class PaperLedgerService {
         return BigDecimal.valueOf(value).stripTrailingZeros().toPlainString();
     }
 
+    /** 한국 금액·가격 표기(원 — 소수 끝 0을 뗀 십진수, 모르면 "모름"). */
+    private static String won(Double value) {
+        return value == null ? "모름" : trim(value);
+    }
+
     private static String appendNote(String existing, String note) {
         String joined = existing == null || existing.isBlank() ? note : existing + " · " + note;
         return joined.length() <= SPLIT_NOTE_MAX ? joined : joined.substring(joined.length() - SPLIT_NOTE_MAX);
@@ -1577,6 +1773,8 @@ public class PaperLedgerService {
         LocalDate splitFrom;
         /** 한국: 이번 관측치에서 새로 산 보유(since 봉은 체결 봉 그대로). */
         boolean opened;
+        /** 한국: 이번 관측치 시작 때의 since 날짜(최고가를 올리는 확정 종가의 첫 날 — 새 보유는 체결 봉 날짜). */
+        final LocalDate sinceAtStart;
 
         Holding(Position p) {
             this.ticker = p.ticker();
@@ -1592,6 +1790,7 @@ public class PaperLedgerService {
             this.fillRefDate = p.fillRefDate();
             this.fillRefClose = p.fillRefClose();
             this.splitNote = p.splitNote();
+            this.sinceAtStart = p.fillRefDate();
         }
 
         Holding(String ticker, int qty, double avgCost, LocalDate openedOn, Instant openedAt, double highWatermark,
@@ -1607,6 +1806,7 @@ public class PaperLedgerService {
             this.lastPriceAt = lastPriceAt;
             this.fillRefDate = fillRefDate;
             this.fillRefClose = fillRefClose;
+            this.sinceAtStart = fillRefDate;
         }
 
         /** 평가 가격: 마지막으로 본 가격, 한 번도 못 봤으면 평단(가격 없음 배지와 함께). */
