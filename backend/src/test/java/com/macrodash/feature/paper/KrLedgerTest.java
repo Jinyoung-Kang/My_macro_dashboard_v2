@@ -823,6 +823,40 @@ class KrLedgerTest {
         }
 
         @Test
+        @DisplayName("since는 거래량 0 봉으로 옮기지 않음(장부 경로, 두 밤) — 밤1 저장본의 마지막 봉이 정지일(거래량 0, 비율 그대로)이면 since 봉(날짜·원시 종가·거래량)이 그대로이고 오류 없음, 밤2 재상장 봉(비율 0.02 → 1)이 그 since 봉 P(창 밖 D)로 50:1 분할을 확인")
+        void sinceStaysOffTheSuspensionBar() {
+            book(BOOK, PaperBooks.KIND_CLAUDE, 0);
+            holdingSince(BOOK, "005930", 10, 2_600_000, D, 2_650_000, 300_000L);
+            KrFixtures.Payload night1 = new KrFixtures.Payload(D1);
+            night1.code("005930", FETCHED_D1).bar(D, 2_640_000, 2_650_000, 300_000).ratio(0.02)
+                    .bar(D1, 2_650_000, 2_650_000, 0).ratio(0.02);
+
+            Outcome first = process(night1, COLLECTED_D1);
+
+            assertThat(first.errors()).as("거래량 0을 since 거래량으로 쓰면 그 책이 되돌려짐(V15 CHECK > 0)").isEmpty();
+            assertThat(first.booksProcessed()).containsExactly(BOOK);
+            assertThat(first.splits()).isZero();
+            Position halted = position(BOOK, "005930");
+            assertThat(halted.qty()).isEqualTo(10);
+            assertThat(halted.fillRefDate()).as("정지 봉(D+1)이 아니라 마지막 관측 봉 D 그대로").isEqualTo(D);
+            assertThat(halted.fillRefClose()).isEqualTo(2_650_000);
+            assertThat(store.fillRefVolumes(BOOK)).containsEntry("005930", 300_000L);
+            assertThat(store.corpActionHolds(BOOK)).isEmpty();
+
+            KrFixtures.Payload night2 = new KrFixtures.Payload(D2);
+            night2.code("005930", kst("2026-11-04T21:57")).bar(D1, 2_650_000, 2_650_000, 0).ratio(0.02)
+                    .bar(D2, 52_000, 53_000, 20_000_000).ratio(1.0);
+            Outcome second = process(night2, kst("2026-11-04T22:01"));
+
+            assertThat(second.errors()).isEmpty();
+            assertThat(second.splits()).as("since 봉 P(D, 30만 주)로 3중 조건").isEqualTo(1);
+            assertThat(position(BOOK, "005930").qty()).isEqualTo(500);
+            assertThat(position(BOOK, "005930").fillRefDate()).isEqualTo(D2);
+            assertThat(store.fillRefVolumes(BOOK)).containsEntry("005930", 20_000_000L);
+            assertThat(store.corpActionHolds(BOOK)).isEmpty();
+        }
+
+        @Test
         @DisplayName("사라진 종목은 토스(이번 응답의 NO_BARS)·금융위(최신 기준일에 행 없음) 둘 다 없을 때만 미처리 — 한쪽만 없거나 모르면 '가격 없음'(price_stale)뿐")
         void vanishedOnlyWhenBothSourcesAnswerAbsent() {
             book(BOOK, PaperBooks.KIND_CLAUDE, 0);
