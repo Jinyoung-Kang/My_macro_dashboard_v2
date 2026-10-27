@@ -90,6 +90,31 @@ class KrQuotesTest {
         assertThat(halted.last().volume()).as("모르는 거래량").isNull();
         assertThat(halted.last().observed()).isFalse();
         assertThat(halted.last().open()).as("없는 시가").isNull();
+        assertThat(quotes.absent()).as("이번에 답했는데 봉 0개(NO_BARS)만 '응답에 없음' — 모르는 상태·봉 없음·이어받기는 아님")
+                .containsExactly("000660");
+    }
+
+    @Test
+    @DisplayName("이어받은 NO_BARS는 이번 응답이 아니라 모름 — '응답에 없음'에 넣지 않음, 미국 모양 관측치는 늘 빈 목록")
+    void carriedNoBarsIsNotAbsent() {
+        KrFixtures.Payload payload = new KrFixtures.Payload(TUE);
+        payload.code("005930", FETCHED).bar(TUE, 100, 100, 1);
+        payload.code("000660", FETCHED).stale().node.put("status", "NO_BARS");
+
+        Quotes quotes = KrQuotes.parse(payload.snapshot(COLLECTED)).orElseThrow();
+
+        assertThat(quotes.absent()).isEmpty();
+        assertThat(new Quotes(COLLECTED, java.util.Map.of()).absent()).isEmpty();
+        Quotes listed = KrPaperMarket.INSTANCE.withListings(new Quotes(COLLECTED, quotes.bars(), TUE,
+                java.util.Set.of("000660")), mockMarkets());
+        assertThat(listed.absent()).as("시장 구분을 덧붙여도 그대로").containsExactly("000660");
+    }
+
+    private static PaperMarketData mockMarkets() {
+        PaperMarketData data = org.mockito.Mockito.mock(PaperMarketData.class);
+        org.mockito.Mockito.when(data.fscMarkets(org.mockito.ArgumentMatchers.anyCollection()))
+                .thenReturn(java.util.Map.of("005930", "KOSPI"));
+        return data;
     }
 
     @Test

@@ -37,7 +37,8 @@ import java.util.regex.Pattern;
  * (관측이 아님 — 체결하지 않고 '가격 없음'으로 평가), 최근 봉 종가 이력({@code recent}), 그리고 한국 칸 전부({@link Quote} — 체결 봉
  * 고르기가 기준일 뒤 첫 관측 봉을 이 창에서 찾음). <b>빼는 종목</b>(관측치에 없음 = 보유는 마지막 가격 + '가격 없음'): 상태가 OK가 아님
  * ({@code NO_BARS} '응답에 없음'·모르는 상태), 봉이 없음, 날짜를 모르는 봉이 있거나 날짜가 오름차순이 아님(어느 값이 어느 날인지 믿을 수
- * 없음), 마지막 봉 종가가 없음(지금 값이 없음 — 직전 봉으로 대신하지 않음), 코드가 6자리 대문자·숫자가 아님. 가격은 양수만(아니면
+ * 없음), 마지막 봉 종가가 없음(지금 값이 없음 — 직전 봉으로 대신하지 않음), 코드가 6자리 대문자·숫자가 아님. 이번에 받은 {@code NO_BARS}
+ * 종목은 관측치의 '응답에 없음' 목록({@link Quotes#absent})에 따로 둡니다(기업행위 판정의 토스 상장 상태 — C2c). 가격은 양수만(아니면
  * null — 0원은 '체결 없음'), 거래량은 0 이상 정수만(모르면 null — 0으로 채우지 않음, 0은 정지일)입니다. 수집 시각을 모르거나 쓸 수 있는
  * 종목이 하나도 없으면 empty입니다.
  */
@@ -167,14 +168,29 @@ final class KrQuotes {
             return Optional.empty();
         }
         Map<String, Bar> bars = new LinkedHashMap<>();
+        java.util.Set<String> absent = new java.util.TreeSet<>();
         for (Map.Entry<String, JsonNode> entry : codes.properties()) {
-            Bar bar = CODE.matcher(entry.getKey()).matches() ? bar(entry.getKey(), entry.getValue()) : null;
+            if (!CODE.matcher(entry.getKey()).matches()) {
+                continue;
+            }
+            Bar bar = bar(entry.getKey(), entry.getValue());
             if (bar != null) {
                 bars.put(bar.ticker(), bar);
+            } else if (answeredWithoutBars(entry.getValue())) {
+                absent.add(entry.getKey());
             }
         }
         return bars.isEmpty() ? Optional.empty()
-                : Optional.of(new Quotes(snapshot.collectedAt(), bars, isoDate(Json.asText(payload, "session"))));
+                : Optional.of(new Quotes(snapshot.collectedAt(), bars, isoDate(Json.asText(payload, "session")), absent));
+    }
+
+    /**
+     * 토스가 이번에 답했는데 봉이 0개인 항목({@code NO_BARS}, 이어받은 항목 아님) — 기업행위 판정의 토스 상장 상태 '없음'(사라진 종목은 금융위도
+     * 없을 때만 — §4-2 'B7 구현에서 정한 것'). 이어받은 {@code NO_BARS}는 이번 응답이 아니라 모름입니다.
+     */
+    private static boolean answeredWithoutBars(JsonNode entry) {
+        return entry != null && entry.isObject() && STATUS_NO_BARS.equals(Json.asText(entry, "status"))
+                && !Json.asBoolean(entry, "isStale");
     }
 
     /** 종목 하나 → 장부 관측치의 봉. 쓸 수 없으면 null(클래스 설명의 '빼는 종목'). */

@@ -69,11 +69,19 @@ public class PaperMarketData {
      * 저장본 하나 = 관측치 하나. 티커 순.
      *
      * @param session 저장본 머리가 밝힌 대상 세션(한국 {@code paper.kr.quotes}의 {@code session} — 늦음 판정이 씀). 미국·모르면 null
+     * @param absent  출처가 이번에 답했는데 봉이 0개인 종목(한국 계약 1의 {@code NO_BARS} — '응답에 없음', 이어받은 항목은 빠짐). 관측치
+     *                봉에는 없고 기업행위 판정의 토스 상장 상태(사라진 종목 — 금융위도 없을 때만, §4-2 'B7 구현에서 정한 것')가 씁니다. 미국은 빈 집합
      */
-    public record Quotes(Instant collectedAt, Map<String, Bar> bars, LocalDate session) {
+    public record Quotes(Instant collectedAt, Map<String, Bar> bars, LocalDate session, Set<String> absent) {
 
         public Quotes {
             bars = Collections.unmodifiableMap(new TreeMap<>(bars));
+            absent = Collections.unmodifiableSet(new java.util.TreeSet<>(absent));
+        }
+
+        /** '응답에 없음' 종목이 없는 관측치. */
+        public Quotes(Instant collectedAt, Map<String, Bar> bars, LocalDate session) {
+            this(collectedAt, bars, session, Set.of());
         }
 
         /** 머리에 세션이 없는 관측치(미국). */

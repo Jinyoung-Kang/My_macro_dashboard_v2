@@ -385,7 +385,7 @@ final class KrPaperMarket implements PaperMarket {
         quotes.bars().forEach((code, bar) -> bars.put(code, bar.kr() == null ? bar
                 : new Bar(bar.ticker(), bar.date(), bar.close(), bar.stale(), bar.recent(),
                 bar.kr().withFscMarket(markets.get(code)))));
-        return new Quotes(quotes.collectedAt(), bars, quotes.session());
+        return new Quotes(quotes.collectedAt(), bars, quotes.session(), quotes.absent());
     }
 
     /**
