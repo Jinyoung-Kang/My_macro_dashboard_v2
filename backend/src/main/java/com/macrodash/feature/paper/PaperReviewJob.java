@@ -280,7 +280,7 @@ public class PaperReviewJob {
         if (!store.ready()) {
             return null;
         }
-        return market.dormantReason(config, () -> !store.books(market.code()).isEmpty());
+        return market.dormantReason(config, () -> store.books(market.code()));
     }
 
     /** 조건을 보고(클래스 설명) 복기합니다. {@code scheduled}가 거짓(수동)이면 토요일 시각 조건과 포기 횟수를 보지 않습니다. */

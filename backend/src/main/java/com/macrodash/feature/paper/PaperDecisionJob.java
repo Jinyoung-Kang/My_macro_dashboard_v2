@@ -408,7 +408,7 @@ public class PaperDecisionJob {
 
     /** 출발일·계좌가 갖춰지지 않은 시장이면 그 사유({@link PaperMarket#dormantReason}) — 실행을 열기 전에 봅니다(저장본을 읽지 않게). */
     private String dormantReason(PaperMarket market) {
-        return market.dormantReason(config, () -> !store.books(market.code()).isEmpty());
+        return market.dormantReason(config, () -> store.books(market.code()));
     }
 
     /**

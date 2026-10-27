@@ -19,7 +19,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
-import java.util.function.BooleanSupplier;
+import java.util.function.Supplier;
 
 /**
  * 🧪 실행 하나의 시장 문맥(2단계 명세 §9 묶음 A 리뷰 메모 'C1 — 시장 목록과 실행마다 달력 한 벌', C1a) — 시장 묶음 + 그 실행이 시작할 때
@@ -168,8 +168,8 @@ final class MarketRun implements PaperMarket {
     }
 
     @Override
-    public String dormantReason(PaperConfig config, BooleanSupplier hasBooks) {
-        return market.dormantReason(config, hasBooks);
+    public String dormantReason(PaperConfig config, Supplier<List<PaperStore.Book>> books) {
+        return market.dormantReason(config, books);
     }
 
     @Override

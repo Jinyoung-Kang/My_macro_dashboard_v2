@@ -25,7 +25,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.TreeMap;
-import java.util.function.BooleanSupplier;
+import java.util.function.Supplier;
 import java.util.regex.Pattern;
 
 /**
@@ -221,15 +221,21 @@ final class KrPaperMarket implements PaperMarket {
     }
 
     /**
-     * 출발일이 비었으면({@link PaperConfig#KR_START_MISSING}) 또는 한국 계좌가 하나도 없으면(한국 초기화 전 — {@link #NOT_INITIALIZED}) 정기
-     * 작업이 한국을 건너뜁니다(서버 안전 — {@link PaperMarket#dormantReason}).
+     * 한국 계좌가 하나도 없으면(한국 초기화 전 — {@link #NOT_INITIALIZED}), 또는 출발일이 비었는데({@link PaperConfig#KR_START_MISSING}) 출발한
+     * (운용·일시정지) 한국 계좌도 없으면 정기 작업이 한국을 건너뜁니다(서버 안전 — {@link PaperMarket#dormantReason}). 출발일은 출발(시작 전 → 운용)
+     * 하나만 정하므로, <b>이미 출발한 장부는 출발일이 비어도</b> 리스크 점검·확정 조정·결정·복기가 그대로 돕니다 — 배포 설정 한 줄이 빠졌다고 대기
+     * 주문이 체결되지 않고 만료되거나 확정 조정·순자산 줄이 소리 없이 멈추지 않게(묶음 C 리뷰). 그때 출발(모두 시작 전일 때)은 출발일이 없어 일어나지
+     * 않습니다(한국 초기화도 막힘).
      */
     @Override
-    public String dormantReason(PaperConfig config, BooleanSupplier hasBooks) {
+    public String dormantReason(PaperConfig config, Supplier<List<PaperStore.Book>> books) {
+        List<PaperStore.Book> found = books.get();
         if (!config.krStartConfigured()) {
-            return PaperConfig.KR_START_MISSING;
+            boolean started = found.stream().anyMatch(book -> PaperBooks.ACTIVE.equals(book.status())
+                    || PaperBooks.PAUSED.equals(book.status()));
+            return started ? null : PaperConfig.KR_START_MISSING;
         }
-        return hasBooks.getAsBoolean() ? null : NOT_INITIALIZED;
+        return found.isEmpty() ? NOT_INITIALIZED : null;
     }
 
     @Override

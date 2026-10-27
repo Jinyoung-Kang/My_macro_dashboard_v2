@@ -161,7 +161,7 @@ public class PaperRiskJob {
             return Outcome.skipped("모의 매매 테이블이 아직 없습니다(V8·V9 적용 전) — make up 후 다시 보세요");
         }
         // 출발일·계좌가 갖춰지지 않은 시장(한국 초기화 전)은 실행을 열지 않고 기록도 남기지 않습니다(PaperMarket#dormantReason).
-        String dormant = requested.dormantReason(config, () -> !store.books(requested.code()).isEmpty());
+        String dormant = requested.dormantReason(config, () -> store.books(requested.code()));
         if (dormant != null) {
             return Outcome.skipped(dormant);
         }

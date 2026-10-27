@@ -81,7 +81,34 @@ class KrMarketDormancyTest {
         runAll(config);
 
         verifyNoKrRead();
-        assertThat(KrPaperMarket.INSTANCE.dormantReason(config, () -> true)).isEqualTo(PaperConfig.KR_START_MISSING);
+        assertThat(KrPaperMarket.INSTANCE.dormantReason(config, () -> store.books("KR")))
+                .isEqualTo(PaperConfig.KR_START_MISSING);
+    }
+
+    @Test
+    @DisplayName("출발일이 비어도 이미 출발한(운용·일시정지) 한국 계좌가 있으면 쉬지 않는다 — 배포 설정 한 줄이 빠져 대기 주문·확정 조정·순자산 줄이 소리 없이 멈추지 않게(출발·초기화만 막힘)")
+    void startedBooksKeepRunningWithoutTheStartDate() {
+        PaperConfig config = PaperFixtures.config();
+        krBooks();
+        store.updateBookStatus(PaperBooks.KR_BENCH_K200, PaperBooks.ACTIVE);
+        store.updateBookStartedOn(PaperBooks.KR_BENCH_K200, S);
+
+        assertThat(KrPaperMarket.INSTANCE.dormantReason(config, () -> store.books("KR"))).isNull();
+        store.updateBookStatus(PaperBooks.KR_BENCH_K200, PaperBooks.PAUSED);
+        assertThat(KrPaperMarket.INSTANCE.dormantReason(config, () -> store.books("KR"))).as("일시정지도 출발한 장부").isNull();
+        store.updateBookStatus(PaperBooks.KR_BENCH_K200, PaperBooks.ACTIVE);
+
+        runAll(config);
+
+        verify(reader, org.mockito.Mockito.atLeastOnce())
+                .read(eq(Datasets.SNAP_KR_HOLIDAYS), anyLong(), nullable(String.class));
+        verify(reader, org.mockito.Mockito.atLeastOnce())
+                .read(eq(Datasets.SNAP_KR_PAPER_QUOTES), anyLong(), nullable(String.class));
+        Clock clock = Clock.fixed(NIGHT, ZoneOffset.UTC);
+        PaperLedgerService ledger = new PaperLedgerService(store, marketData, PaperFixtures.MAPPER);
+        PaperRiskJob risk = new PaperRiskJob(store, reader, marketData, ledger, config, PaperFixtures.MAPPER, clock);
+        assertThat(risk.runNow(KrPaperMarket.INSTANCE).skippedReason()).as("쉼이 아니라 그 실행의 사유(저장본 없음)")
+                .isNotEqualTo(PaperConfig.KR_START_MISSING).contains("paper.kr.quotes");
     }
 
     @Test
@@ -92,7 +119,7 @@ class KrMarketDormancyTest {
         runAll(krConfig(S));
 
         verifyNoKrRead();
-        assertThat(KrPaperMarket.INSTANCE.dormantReason(krConfig(S), () -> false))
+        assertThat(KrPaperMarket.INSTANCE.dormantReason(krConfig(S), java.util.List::of))
                 .isEqualTo(KrPaperMarket.NOT_INITIALIZED);
     }
 
