@@ -32,7 +32,7 @@ import java.util.concurrent.ConcurrentHashMap;
  *  D &lt; 출발일 S(dashboard.paper.kr.start-date)          → TOO_EARLY(기록 안 함)
  *  D 결정 시각(kr.decisionTimeKst 22:30) 전               → TOO_EARLY
  *  D 출발 기한(kr.decisionDeadlineKst 01:00 → D+1 01:00) 지남 → START_POSTPONED(D마다 한 번 기록 — 출발을 다음 KR 거래일로)
- *  자료 게이트(§4-9 ②④⑤⑥ — ③은 D1) 미달                   → START_WAITING(기록 안 함 — 다음 주기에 다시)
+ *  자료 게이트(§4-9 ②~⑥ — ①은 앞 주문이 없어 보지 않음) 미달 → START_WAITING(기록 안 함 — 다음 주기에 다시)
  *  계좌마다 출발 계획(규칙 D1b · Claude E2 · 벤치마크 둘) → 계획이 실패한 계좌가 있으면 START_POSTPONED(아무 계좌에도 쓰지 않음 — 그 세션은
  *                                                         다시 계획하지 않음)
  *  → 계획한 계좌의 결정(INITIAL)·주문(NEXT_OPEN, 기준 거래일 D)·운용 전환·D 순자산 줄을 한 트랜잭션으로 → STARTED(기록)
@@ -53,6 +53,11 @@ import java.util.concurrent.ConcurrentHashMap;
  * 정기 결정과 같은 패킷)는 아직 '없음'({@link Plan#notYet})입니다. 계획은 트랜잭션 밖에서 모두 만든 뒤(Claude 호출이 장부 잠금을 붙잡지 않게) 한
  * 번에 씁니다 — 한 계좌라도 실패({@link Plan#failed})하면 어느 계좌에도 쓰지 않습니다(K28 '네 계좌는 함께 출발'). 계좌 몫은 그 세션의 출발 기한을
  * 받고, 쓰기 트랜잭션은 그 안에서 지금 시각이 기한 전인지 다시 봅니다 — 계획이 기한을 넘겨 끝났으면 어느 계좌에도 쓰지 않고 미룹니다.
+ *
+ * <p><b>게이트와 입력은 한 읽기</b>(D1c, 결정 e5): 관측치 저장본·금융위 메타·규칙 계좌 입력(U·수급·DART — K26 동결)을 한 번 읽어
+ * ({@link KrDecisionGates.Inputs}) 게이트 ②~⑥을 판정하고, 계좌 몫은 그 판정과 같은 입력을 받습니다({@link KrDecisionGates.Checked}) — 게이트 ③이 본
+ * U·수급이 곧 규칙 계좌 INITIAL이 고르고 결정 행에 남기는 값입니다. U를 읽지 못함(D보다 이른 기준일의 U가 없음)은 ③ 미달이라 기다립니다(기한이
+ * 지나면 미룸 — 예전에는 규칙 계좌 몫의 계획 실패로 바로 미룸).
  *
  * <p><b>'아직 없음' 몫</b>(D1b에서 정함): 계획한 계좌만 한 트랜잭션으로 출발하고 {@link Plan#notYet} 계좌(E2 전의 Claude 계좌)는 시작 전 그대로입니다.
  * 출발 판정이 '모두 시작 전'이라 그 계좌는 <b>뒤따라 출발하지 않습니다</b>('한 계좌만 늦은 시작' 없음 — K28) — 그 몫이 생긴 뒤 네 계좌를 리셋해 다시
@@ -108,9 +113,9 @@ final class KrStartPipeline {
          * @param session  출발 결정의 기준 거래일 D
          * @param deadline 그 세션의 출발 기한(기본 D+1 01:00 — K28). 계획(E2의 Claude 호출)은 이 순간 안에 끝내야 하고, 넘기면 실패로 돌려줘도
          *                 됩니다. 계획이 기한을 넘겨 끝나면 파이프라인이 쓰기 트랜잭션 안에서 다시 보고 어느 계좌에도 쓰지 않습니다(출발 미룸)
-         * @param gates    그 실행의 자료 게이트 판정(결정 행에 남김)
+         * @param gates    그 실행의 자료 게이트 판정(결정 행에 남김)과 그 판정의 입력(규칙 계좌 몫이 같은 읽기로 계획 — 결정 e5)
          */
-        Plan plan(MarketRun run, LocalDate session, Instant deadline, List<Gate> gates);
+        Plan plan(MarketRun run, LocalDate session, Instant deadline, KrDecisionGates.Checked gates);
     }
 
     /**
@@ -141,33 +146,38 @@ final class KrStartPipeline {
     private final Map<LocalDate, String> lastWait = new ConcurrentHashMap<>();
 
     /** 규칙 계좌 몫 없이(시작 전 그대로 — 시험·벤치마크 몫 만들기) Claude 갈고리 + 벤치마크 둘, 시계는 시스템 시계. */
-    KrStartPipeline(PaperStore store, StoreReader reader, PaperLedgerService ledger, PaperConfig config,
-                    ObjectMapper mapper) {
-        this(store, reader, ledger, config, mapper, Clock.systemUTC(), null);
+    KrStartPipeline(PaperStore store, StoreReader reader, PaperMarketData marketData, PaperLedgerService ledger,
+                    PaperConfig config, ObjectMapper mapper) {
+        this(store, reader, marketData, ledger, config, mapper, Clock.systemUTC(), null);
     }
 
     /** 계좌 몫을 바꿉니다(시험 — E2의 실패 계획 자리), 시계는 시스템 시계. null이면 이 묶음의 몫. */
-    KrStartPipeline(PaperStore store, StoreReader reader, PaperLedgerService ledger, PaperConfig config,
-                    ObjectMapper mapper, List<Leg> legs) {
-        this(store, reader, ledger, config, mapper, Clock.systemUTC(), legs);
-    }
-
-    /** 시계와 계좌 몫을 정합니다(시험). null이면 규칙 계좌 몫 없이(시작 전 그대로) Claude 갈고리 + 벤치마크 둘. */
-    KrStartPipeline(PaperStore store, StoreReader reader, PaperLedgerService ledger, PaperConfig config,
-                    ObjectMapper mapper, Clock clock, List<Leg> legs) {
-        this(store, reader, ledger, config, mapper, clock, legs, null);
+    KrStartPipeline(PaperStore store, StoreReader reader, PaperMarketData marketData, PaperLedgerService ledger,
+                    PaperConfig config, ObjectMapper mapper, List<Leg> legs) {
+        this(store, reader, marketData, ledger, config, mapper, Clock.systemUTC(), legs);
     }
 
     /**
-     * 결정 작업의 출발 — 그 작업의 시계와 규칙 계좌 몫({@link KrRuleBookService#startLeg}), Claude 갈고리(E2) + 벤치마크 둘(클래스 설명).
+     * 시계와 계좌 몫을 정합니다(시험). null이면 규칙 계좌 몫 없이(시작 전 그대로) Claude 갈고리 + 벤치마크 둘. 게이트 ③의 읽기는 그 저장본으로 만든
+     * 규칙 계좌 입력 읽기({@link KrRuleBookService#readInputs}).
+     */
+    KrStartPipeline(PaperStore store, StoreReader reader, PaperMarketData marketData, PaperLedgerService ledger,
+                    PaperConfig config, ObjectMapper mapper, Clock clock, List<Leg> legs) {
+        this(store, ledger, config, mapper, clock, legs,
+                new KrDecisionGates(reader, new KrRuleBookService(store, reader, marketData, ledger, mapper, clock)), null);
+    }
+
+    /**
+     * 결정 작업의 출발 — 그 작업의 시계·자료 게이트(결정 작업과 같은 판정 — {@link KrDecisionGates})와 규칙 계좌 몫({@link KrRuleBookService#startLeg}),
+     * Claude 갈고리(E2) + 벤치마크 둘(클래스 설명).
      *
      * @param legs     계좌 몫을 통째로 바꿀 때(시험). null이면 규칙 몫 · Claude 갈고리 · 벤치마크 둘
      * @param rulesLeg 규칙 계좌 몫. null이면 규칙 계좌도 '아직 없음'(시작 전 그대로)
      */
-    KrStartPipeline(PaperStore store, StoreReader reader, PaperLedgerService ledger, PaperConfig config,
-                    ObjectMapper mapper, Clock clock, List<Leg> legs, Leg rulesLeg) {
+    KrStartPipeline(PaperStore store, PaperLedgerService ledger, PaperConfig config, ObjectMapper mapper, Clock clock,
+                    List<Leg> legs, KrDecisionGates decisionGates, Leg rulesLeg) {
         this.store = store;
-        this.decisionGates = new KrDecisionGates(reader);
+        this.decisionGates = Objects.requireNonNull(decisionGates, "decisionGates");
         this.ledger = ledger;
         this.config = config;
         this.mapper = mapper;
@@ -223,7 +233,9 @@ final class KrStartPipeline {
             return quiet(START_WAITING, d, d + " 출발 오류가 상한만큼 나 기한(" + Kst.stamp(window.deadline())
                     + ")까지 더 시도하지 않습니다 — 기한이 지나면 다음 KR 거래일로 미룹니다");
         }
-        List<Gate> gates = new ArrayList<>(gates(run, d));
+        // 게이트와 계좌 몫이 같은 읽기(클래스 설명 — 결정 e5). 읽은 순간 = 이 실행의 지금(규칙 계좌 입력은 그 뒤에 받은 기록을 빼고 읽음).
+        KrDecisionGates.Inputs inputs = decisionGates.withRules(run, decisionGates.readSession(run, d), now);
+        List<Gate> gates = decisionGates.start(run, inputs);
         String waiting = waitingReason(run, gates);
         if (waiting != null) {
             lastWait.keySet().removeIf(day -> !day.equals(d));
@@ -234,7 +246,7 @@ final class KrStartPipeline {
         // 계획은 트랜잭션 밖에서 모두 만든 뒤 한 번에(클래스 설명) — 한 계좌라도 실패하면 어느 계좌에도 쓰지 않습니다.
         List<Plan> plans = new ArrayList<>();
         for (Leg leg : legs) {
-            plans.add(leg.plan(run, d, window.deadline(), gates));
+            plans.add(leg.plan(run, d, window.deadline(), new KrDecisionGates.Checked(gates, inputs)));
         }
         List<Plan> failed = plans.stream().filter(Plan::failed).toList();
         if (!failed.isEmpty()) {
@@ -313,12 +325,6 @@ final class KrStartPipeline {
         return out;
     }
 
-    // ------------------------------------------------------------------ 자료 게이트(§4-9)
-    /** 출발 결정의 자료 게이트(§4-9 ②~⑥ — ①은 앞 주문이 없어 보지 않음, §4-8) — {@link KrDecisionGates#start}. */
-    List<Gate> gates(MarketRun run, LocalDate d) {
-        return decisionGates.start(run, d);
-    }
-
     /** 게이트·계좌·설정 판 중 막는 것이 있으면 그 사유(아니면 null). */
     private String waitingReason(MarketRun run, List<Gate> gates) {
         if (run.settingsVersion() == null) {
@@ -333,7 +339,7 @@ final class KrStartPipeline {
         if (!missing.isEmpty()) {
             return "한국 계좌 " + String.join("·", missing) + "가 없습니다 — 한국 초기화를 다시 누르세요";
         }
-        List<String> blocking = gates.stream().filter(Gate::blocks).map(g -> g.id() + " " + g.note()).toList();
+        List<String> blocking = KrDecisionGates.blocking(gates);
         return blocking.isEmpty() ? null : "자료 게이트 미달: " + String.join(" · ", blocking);
     }
 
@@ -347,7 +353,7 @@ final class KrStartPipeline {
             }
 
             @Override
-            public Plan plan(MarketRun run, LocalDate session, Instant deadline, List<Gate> gates) {
+            public Plan plan(MarketRun run, LocalDate session, Instant deadline, KrDecisionGates.Checked gates) {
                 return Plan.notYet(book, note);
             }
         };
@@ -368,7 +374,7 @@ final class KrStartPipeline {
             }
 
             @Override
-            public Plan plan(MarketRun run, LocalDate session, Instant deadline, List<Gate> gates) {
+            public Plan plan(MarketRun run, LocalDate session, Instant deadline, KrDecisionGates.Checked gates) {
                 double exposure = definition.weights().values().stream().mapToDouble(Double::doubleValue).sum();
                 Map<String, Object> response = new LinkedHashMap<>();
                 response.put("summary", definition.label() + " 출발 — " + weightsText(definition) + "를 " + session
@@ -381,7 +387,7 @@ final class KrStartPipeline {
                 response.put("timing", PaperBooks.NEXT_OPEN);
                 response.put("weights", definition.weights());
                 response.put("rebalancing", "없음 — 출발 뒤 그대로 보유(K2)");
-                response.put("gates", gates.stream().map(Gate::view).toList());
+                response.put("gates", gates.views());
                 response.put("note", "벤치마크 — 판단 없음. 목표 비중 주문이라 가격을 보지 않고 수량은 시가 체결 때 정합니다"
                         + "(사후 체결·출발일 종가 동결 없음, K28)");
                 Decision decision = new Decision(0, code, session, RuleBookService.INITIAL, null, "OK", null, null,

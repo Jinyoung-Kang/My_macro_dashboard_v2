@@ -104,6 +104,17 @@ final class KrRuleBookService {
     private static final int WINDOW_BACK = KrRules.FLOW_DAYS - 1;
 
     /**
+     * 그 세션의 U를 읽을 수 없음 — D보다 이른 기준일의 {@code kr_paper_universe}가 없거나 읽을 수 있는 종목이 없음(짐작한 U로 돌지 않음). 결정
+     * 게이트 ③의 미달입니다({@link KrDecisionGates#flows} — 수집기가 다음 주기에 U를 만들면 통과, 기한이 지나면 그 세션 NO_TRADE).
+     */
+    static final class InputUnavailable extends IllegalStateException {
+
+        InputUnavailable(String message) {
+            super(message);
+        }
+    }
+
+    /**
      * 한국 규칙 계좌가 결정에서 읽는 {@code kr.*} 키(장부가 그 계좌 체결·스탑에 읽는 키는 {@link #LEDGER_KEYS}) — 설정 키 표의 '규칙 계좌 영향'
      * 표시({@code affectsRules})가 이 둘의 합과 같아야 합니다({@code KrRuleBookServiceTest}).
      */
@@ -400,7 +411,8 @@ final class KrRuleBookService {
     // ------------------------------------------------------------------ 출발(e8)
     /**
      * 한국 출발({@link KrStartPipeline})의 규칙 계좌 몫 — S의 재선정과 같은 계산(입력 동결 K26, {@link KrReselection#initial}: cycleDate = r(S),
-     * selectionAsOf = S)으로 INITIAL 결정과 S+1 시가 주문을 계획합니다(쓰기는 파이프라인이 네 계좌 함께 한 트랜잭션으로). 입력 오류(U 없음 등)는
+     * selectionAsOf = S)으로 INITIAL 결정과 S+1 시가 주문을 계획합니다(쓰기는 파이프라인이 네 계좌 함께 한 트랜잭션으로). 입력은 파이프라인이 게이트 ③과
+     * 함께 읽은 것({@link KrDecisionGates.Checked} — 결정 e5)이라 U 없음은 여기까지 오지 않고 게이트에서 기다립니다. 계획 중 오류(계좌 상태 없음 등)는
      * 계획 실패({@link KrStartPipeline.Plan#failed}) — 어느 계좌에도 쓰지 않고 그 세션 출발을 미룹니다.
      */
     KrStartPipeline.Leg startLeg(PaperConfig config) {
@@ -412,7 +424,7 @@ final class KrRuleBookService {
 
             @Override
             public KrStartPipeline.Plan plan(MarketRun run, LocalDate session, Instant deadline,
-                                             List<KrDecisionGates.Gate> gates) {
+                                             KrDecisionGates.Checked gates) {
                 try {
                     return startPlan(run, session, gates, config);
                 } catch (RuntimeException e) {
@@ -424,15 +436,18 @@ final class KrRuleBookService {
         };
     }
 
-    private KrStartPipeline.Plan startPlan(MarketRun run, LocalDate session, List<KrDecisionGates.Gate> gates,
+    private KrStartPipeline.Plan startPlan(MarketRun run, LocalDate session, KrDecisionGates.Checked gates,
                                            PaperConfig config) {
         Instant started = clock.instant();
         int version = settingsVersion(run);
         Settings settings = Settings.from(run);
         KrReselection.Cycle cycle = KrReselection.initial(run.calendar(), settings.params().reselection(), session);
-        Optional<Quotes> quotes = reader.quietly(() -> marketData.quotes(run));
         Set<String> holdings = holdingCodes(settings);
-        Read read = read(run, session, started, quotes, holdings);
+        // 게이트 ③이 본 그 읽기(K26 동결과 같은 값 — 결정 e5). 게이트가 통과했으면 늘 있음.
+        Read read = gates.inputs().rules();
+        if (read == null || !session.equals(read.input().session())) {
+            throw new IllegalStateException("출발 결정의 규칙 계좌 입력이 게이트 판정과 함께 넘어오지 않았습니다(" + session + ")");
+        }
         KrRules.Selection selection = KrRules.select(run.calendar(), read.input(), settings.params());
         List<KrRules.HoldingCheck> checks = KrRules.holdingChecks(run.calendar(), session, holdings,
                 read.input().flows(), selection.candidateCodes(), settings.cashLike());
@@ -441,7 +456,7 @@ final class KrRuleBookService {
         Map<String, Object> start = new LinkedHashMap<>();
         start.put("configuredStartDate", String.valueOf(config.krStartDate()));
         start.put("postponed", !session.equals(config.krStartDate()));
-        start.put("gates", gates.stream().map(KrDecisionGates.Gate::view).toList());
+        start.put("gates", gates.views());
         Map<String, Object> response = response(session, RuleBookService.INITIAL, cycle, read, selection, checks, view,
                 draft, settings, version, start);
         Decision decision = new Decision(0, PaperBooks.KR_RULES, session, RuleBookService.INITIAL, null,
@@ -473,11 +488,21 @@ final class KrRuleBookService {
     record Stamp(String updatedAt, String fetchedAt, boolean detail) {
     }
 
+    /**
+     * 그 세션의 입력 읽기(K26) — 이 계좌 보유(현금성 빼고)를 그 실행의 설정 판으로 정해 {@link #read}. 결정 게이트 ③({@link KrDecisionGates})과 그
+     * 결정이 같은 읽기를 씁니다(D1c, 결정 e5).
+     *
+     * @throws InputUnavailable D보다 이른 기준일의 U가 없음·읽을 수 있는 종목이 없음
+     */
+    Read readInputs(MarketRun run, LocalDate session, Instant readAt, Optional<Quotes> quotes) {
+        return read(run, session, readAt, quotes, holdingCodes(Settings.from(run)));
+    }
+
     Read read(MarketRun run, LocalDate session, Instant readAt, Optional<Quotes> quotes, Collection<String> holdings) {
         TradingCalendar calendar = run.calendar();
         List<String> notes = new ArrayList<>();
         PaperMarketData.KrUniverseRows universe = reader.quietly(() -> marketData.krUniverseBefore(session))
-                .orElseThrow(() -> new IllegalStateException("한국 유니버스 저장본(kr_paper_universe)에 " + session
+                .orElseThrow(() -> new InputUnavailable("한국 유니버스 저장본(kr_paper_universe)에 " + session
                         + "보다 이른 기준일이 없습니다 — 수집기 kr_paper_universe가 먼저 돌아야 합니다(짐작한 U로 돌지 않음)"));
         List<KrRules.Member> members = new ArrayList<>();
         Set<String> rules = new TreeSet<>();
@@ -497,7 +522,7 @@ final class KrRuleBookService {
         }
         members.sort(java.util.Comparator.comparingInt(KrRules.Member::rank).thenComparing(KrRules.Member::code));
         if (members.isEmpty()) {
-            throw new IllegalStateException("한국 유니버스 기준일 " + universe.baseDate() + "에 읽을 수 있는 종목이 없습니다");
+            throw new InputUnavailable("한국 유니버스 기준일 " + universe.baseDate() + "에 읽을 수 있는 종목이 없습니다");
         }
         LocalDate previous = calendar.previousTradingDay(session);
         if (!universe.baseDate().equals(previous)) {

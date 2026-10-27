@@ -196,6 +196,8 @@ public class PaperDecisionJob {
     private final KrStartPipeline krStart;
     /** 한국 규칙 계좌의 정기 결정·기한 지남 행(클래스 설명 '시장마다 따로'). */
     private final KrRuleBookService krRules;
+    /** 한국 결정 자료 게이트(§4-9 ①~⑥ — 정기 결정·출발이 같은 판정, {@link KrDecisionGates}). */
+    private final KrDecisionGates krGates;
     /** 기한 지남({@value #PAST_DEADLINE})을 기록한 시장·세션 — 한 세션에 한 번(10분마다 같은 줄이 작업 기록을 밀어내지 않게). 재기동하면 처음부터. */
     private final Set<SessionKey> pastDeadlineRecorded = ConcurrentHashMap.newKeySet();
 
@@ -259,7 +261,8 @@ public class PaperDecisionJob {
         this.clock = clock;
         this.markets = markets;
         this.krRules = new KrRuleBookService(store, reader, marketData, ledger, mapper, clock);
-        this.krStart = new KrStartPipeline(store, reader, ledger, config, mapper, clock, null, krRules.startLeg(config));
+        this.krGates = new KrDecisionGates(reader, krRules);
+        this.krStart = new KrStartPipeline(store, ledger, config, mapper, clock, null, krGates, krRules.startLeg(config));
     }
 
     /**

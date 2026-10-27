@@ -192,7 +192,10 @@ class KrStartTest {
             assertThat(detail.path("books").path("kr_rules").path("orders").size()).isEqualTo(6);
             assertThat(detail.path("books").path("kr_claude").asString()).contains("E2").contains("따라 출발하지 않음");
             assertThat(detail.path("books").path("kr_bench_mix").path("orders").size()).isEqualTo(2);
-            assertThat(detail.path("gates").toString()).contains("\"③\"", "STUB");
+            assertThat(detail.path("gates").get(1).path("gate").asString()).isEqualTo("③");
+            assertThat(detail.path("gates").get(1).path("status").asString()).isEqualTo("PASS");
+            assertThat(detail.path("gates").get(1).path("note").asString())
+                    .as("규칙 계좌 입력과 같은 읽기 — U 기준일 11-27").contains("U 8/8").contains("U 기준일 2026-11-27");
         });
 
         // 같은 밤 다음 주기 — 출발한 장부라 다시 내지 않음(규칙 계좌는 출발일 = 초기 결정이 그날 결정, Claude는 시작 전).
@@ -223,6 +226,11 @@ class KrStartTest {
     void startInputsHaveNothingAfterTheDecision() {
         rulesData.member(S, 1, "999999", "미래종목", 1_000_000_000L);
         rulesData.flow("005930", S, 9_999_999L, 9_999_999L, "2026-12-01T06:50:04.000+09:00", kst("2026-11-30T23:00"));
+        // 게이트 ③(U 90%)이 005930 하나 빠진 채 통과하도록 U를 열 종목으로(9/10) — 더한 둘은 S까지 수급, 둘 다 순매도.
+        for (LocalDate base : rulesData.universe.keySet()) {
+            rulesData.member(base, 9, "035420", "NAVER", 160_000_000L).member(base, 10, "035720", "카카오", 440_000_000L);
+        }
+        rulesData.flows("035420", S, 30, -1_000, -1_000).flows("035720", S, 30, -1_000, -1_000);
 
         assertThat(runAt("2026-11-30T22:30").outcome()).isEqualTo(PaperDecisionJob.STARTED);
 
@@ -246,20 +254,90 @@ class KrStartTest {
     }
 
     @Test
-    @DisplayName("규칙 계좌 출발 계획이 실패하면(D 앞 기준일의 U 없음) 어느 계좌에도 쓰지 않고 그 세션을 미룸 — 사유에 규칙 계좌와 원인")
+    @DisplayName("규칙 계좌 출발 계획이 실패하면(계좌 상태 없음) 어느 계좌에도 쓰지 않고 그 세션을 미룸 — 사유에 규칙 계좌와 원인")
     void rulesLegFailurePostponesTheStart() {
-        rulesData.universe.clear();
+        store.states.remove(PaperBooks.KR_RULES);
 
         PaperDecisionJob.Result result = runAt("2026-11-30T22:30");
 
         assertThat(result.outcome()).isEqualTo(PaperDecisionJob.START_POSTPONED);
-        assertThat(result.message()).contains("kr_rules").contains("kr_paper_universe");
+        assertThat(result.message()).contains("kr_rules").contains("상태가 없습니다");
         assertThat(krDecisions()).isEmpty();
         assertThat(store.orders).isEmpty();
         assertThat(store.books.values()).filteredOn(b -> b.market().equals("KR"))
                 .allSatisfy(b -> assertThat(b.status()).isEqualTo(PaperBooks.NOT_STARTED));
         assertThat(krRuns()).singleElement().satisfies(run ->
                 assertThat(run.detail().path("reason").asString()).contains("규칙 계좌 출발 계획 실패"));
+    }
+
+    @Test
+    @DisplayName("게이트 ③ — D 앞 기준일의 U가 없으면(수집기 kr_paper_universe 전) 계획 실패가 아니라 기다림: 쓰기·기록 없음, U가 들어오면 그 창에서 출발, 끝내 없으면 기한 뒤 미룸(사유 ③)")
+    void missingUniverseWaitsAtGateThree() {
+        java.util.TreeMap<LocalDate, List<tools.jackson.databind.node.ObjectNode>> saved = new java.util.TreeMap<>(rulesData.universe);
+        rulesData.universe.clear();
+
+        PaperDecisionJob.Result waiting = runAt("2026-11-30T22:30");
+        assertThat(waiting.outcome()).isEqualTo(PaperDecisionJob.START_WAITING);
+        assertThat(waiting.message()).contains("③").contains("U·수급을 읽지 못함").contains("kr_paper_universe")
+                .doesNotContain("②").doesNotContain("④").doesNotContain("⑤");
+        assertThat(krDecisions()).isEmpty();
+        assertThat(krRuns()).as("기다림은 기록하지 않음").isEmpty();
+
+        PaperDecisionJob.Result postponed = runAt("2026-12-01T01:00");
+        assertThat(postponed.outcome()).isEqualTo(PaperDecisionJob.START_POSTPONED);
+        assertThat(krRuns()).singleElement().satisfies(run ->
+                assertThat(run.detail().path("reason").asString()).contains("③").contains("kr_paper_universe"));
+
+        // 다음 KR 거래일 창 — U가 들어와 있으면 출발(같은 읽기로 ③ 통과)
+        rulesData.universe.putAll(saved);
+        sessionData(NEXT, S, everyCodeOn(NEXT));
+        assertThat(runAt("2026-12-01T22:30").outcome()).isEqualTo(PaperDecisionJob.STARTED);
+    }
+
+    @Test
+    @DisplayName("게이트 ③ — U 90% 미만에 장 마감 뒤 판(15:35 이후)·세부 칸이 있으면 기다림: 장중 판 하나(7/8)·세부 칸 없는 판 하나는 미달, 저녁 판이 오면 같은 창에서 출발하고 결정 행 ③에 U 8/8")
+    void flowsGateNeedsTheEveningVersion() {
+        rulesData.flow("005930", S, 100_000L, 50_000L, "2026-11-30T14:58:03.000+09:00", kst("2026-11-30T21:18"));
+
+        PaperDecisionJob.Result intraday = runAt("2026-11-30T22:30");
+        assertThat(intraday.outcome()).isEqualTo(PaperDecisionJob.START_WAITING);
+        assertThat(intraday.message()).contains("③ U 7/8").contains("15:35 전 판 1(005930)").contains("90% 미만");
+
+        rulesData.flow("005930", S, 100_000L, 50_000L, "2026-11-30T20:21:26.000+09:00", kst("2026-11-30T22:31"));
+        rulesData.flows.get("005930").get(S).remove("breakdown");
+        PaperDecisionJob.Result noDetail = runAt("2026-11-30T22:40");
+        assertThat(noDetail.outcome()).isEqualTo(PaperDecisionJob.START_WAITING);
+        assertThat(noDetail.message()).contains("③ U 7/8").contains("세부 칸 없음 1(005930)");
+
+        rulesData.flow("005930", S, 100_000L, 50_000L, "2026-11-30T20:21:26.000+09:00", kst("2026-11-30T22:45"));
+        assertThat(runAt("2026-11-30T22:50").outcome()).isEqualTo(PaperDecisionJob.STARTED);
+        assertThat(krDecisions()).allSatisfy(d -> assertThat(d.response().path("gates").get(1).path("note").asString())
+                .contains("U 8/8"));
+        assertThat(krRuns()).as("기다림 둘은 기록하지 않음").extracting(JobRun::outcome)
+                .containsExactly(PaperDecisionJob.STARTED);
+    }
+
+    @Test
+    @DisplayName("게이트 ③ 문턱 — U 10종목 중 9(90%)에 저녁 판이면 통과(문턱 포함), 그 빠진 종목은 규칙 계좌 입력에서도 자료 부족(같은 읽기)")
+    void flowsGateAtNinetyPercentPasses() {
+        for (LocalDate base : rulesData.universe.keySet()) {
+            rulesData.member(base, 9, "035420", "NAVER", 160_000_000L).member(base, 10, "035720", "카카오", 440_000_000L);
+        }
+        rulesData.flows("035420", S, 30, -1_000, -1_000).flows("035720", PREV, 30, -1_000, -1_000);   // 카카오는 S 기록 없음
+
+        assertThat(runAt("2026-11-30T22:30").outcome()).isEqualTo(PaperDecisionJob.STARTED);
+        Decision rules = krDecisions().get(0);
+        assertThat(rules.response().path("gates").get(1).path("note").asString()).contains("U 9/10")
+                .contains("D 기록 없음 1(035720)");
+        JsonNode kakao = null;
+        for (JsonNode member : rules.response().path("input").path("members")) {
+            if ("035720".equals(member.path("code").asString())) {
+                kakao = member;
+            }
+        }
+        assertThat(kakao).isNotNull();
+        assertThat(kakao.path("candidate").asBoolean()).isFalse();
+        assertThat(kakao.path("reasons").toString()).contains("자료 부족");
     }
 
     @Test
@@ -415,7 +493,7 @@ class KrStartTest {
     @DisplayName("계좌 몫 하나라도 계획 실패(E2의 Claude 실패 자리) — 어느 계좌에도 쓰지 않고 그 세션을 미룸으로 기록")
     void failedLegPostponesAllBooks() {
         PaperLedgerService ledger = new PaperLedgerService(store, marketData, PaperFixtures.MAPPER);
-        KrStartPipeline plain = new KrStartPipeline(store, reader, ledger, config(), PaperFixtures.MAPPER);
+        KrStartPipeline plain = new KrStartPipeline(store, reader, marketData, ledger, config(), PaperFixtures.MAPPER);
         java.util.concurrent.atomic.AtomicInteger calls = new java.util.concurrent.atomic.AtomicInteger();
         KrStartPipeline.Leg claudeFails = new KrStartPipeline.Leg() {
             @Override
@@ -425,12 +503,12 @@ class KrStartTest {
 
             @Override
             public KrStartPipeline.Plan plan(MarketRun run, LocalDate session, Instant deadline,
-                                             List<KrDecisionGates.Gate> gates) {
+                                             KrDecisionGates.Checked gates) {
                 calls.incrementAndGet();
                 return KrStartPipeline.Plan.failed(PaperBooks.KR_CLAUDE, "시험용 호출 실패(재시도 1회 뒤)");
             }
         };
-        KrStartPipeline pipeline = new KrStartPipeline(store, reader, ledger, config(), PaperFixtures.MAPPER, List.of(
+        KrStartPipeline pipeline = new KrStartPipeline(store, reader, marketData, ledger, config(), PaperFixtures.MAPPER, List.of(
                 claudeFails, plain.benchmarkLeg(PaperBooks.KR_BENCH_K200), plain.benchmarkLeg(PaperBooks.KR_BENCH_MIX)));
         MarketRun run = new PaperMarkets(store, reader).open(KrPaperMarket.INSTANCE);
 
@@ -453,7 +531,7 @@ class KrStartTest {
     @DisplayName("계획이 기한(S+1 01:00)을 넘겨 끝나면(E2의 긴 Claude 호출 자리) 쓰기 트랜잭션이 다시 보고 어느 계좌에도 쓰지 않음 — 계좌 몫은 그 기한을 받음, 그 세션은 미룸")
     void slowPlanPastTheDeadlineWritesNothing() {
         PaperLedgerService ledger = new PaperLedgerService(store, marketData, PaperFixtures.MAPPER);
-        KrStartPipeline plain = new KrStartPipeline(store, reader, ledger, config(), PaperFixtures.MAPPER);
+        KrStartPipeline plain = new KrStartPipeline(store, reader, marketData, ledger, config(), PaperFixtures.MAPPER);
         List<Instant> deadlines = new java.util.ArrayList<>();
         KrStartPipeline.Leg slowClaude = new KrStartPipeline.Leg() {
             @Override
@@ -463,13 +541,13 @@ class KrStartTest {
 
             @Override
             public KrStartPipeline.Plan plan(MarketRun run, LocalDate session, Instant deadline,
-                                             List<KrDecisionGates.Gate> gates) {
+                                             KrDecisionGates.Checked gates) {
                 deadlines.add(deadline);
                 clock.set(kst("2026-12-01T01:02"));   // 호출이 기한을 넘겨 끝남
                 return KrStartPipeline.Plan.notYet(PaperBooks.KR_CLAUDE, "시험용 — 계획은 냈지만 늦음");
             }
         };
-        KrStartPipeline pipeline = new KrStartPipeline(store, reader, ledger, config(), PaperFixtures.MAPPER, clock,
+        KrStartPipeline pipeline = new KrStartPipeline(store, reader, marketData, ledger, config(), PaperFixtures.MAPPER, clock,
                 List.of(slowClaude, plain.benchmarkLeg(PaperBooks.KR_BENCH_K200), plain.benchmarkLeg(PaperBooks.KR_BENCH_MIX)));
         clock.set(kst("2026-11-30T22:30"));
         MarketRun run = new PaperMarkets(store, reader).open(KrPaperMarket.INSTANCE);
@@ -532,7 +610,7 @@ class KrStartTest {
     @DisplayName("출발 판정 — 한국 계좌가 모두 시작 전일 때만(한 계좌라도 운용·일시정지면 출발한 장부), 미국 묶음은 늘 아님")
     void pendingOnlyWhileEveryKoreanBookIsNotStarted() {
         PaperLedgerService ledger = new PaperLedgerService(store, marketData, PaperFixtures.MAPPER);
-        KrStartPipeline pipeline = new KrStartPipeline(store, reader, ledger, config(), PaperFixtures.MAPPER);
+        KrStartPipeline pipeline = new KrStartPipeline(store, reader, marketData, ledger, config(), PaperFixtures.MAPPER);
         assertThat(pipeline.pending(KrPaperMarket.INSTANCE)).isTrue();
         assertThat(pipeline.pending(UsPaperMarket.INSTANCE)).isFalse();
         assertThat(pipeline.pending(TestKrMarket.INSTANCE)).as("한국 묶음 그 자체일 때만").isFalse();
