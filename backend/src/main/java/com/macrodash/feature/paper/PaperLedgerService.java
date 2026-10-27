@@ -445,22 +445,13 @@ public class PaperLedgerService {
         }
     }
 
-    /** 이 주문을 이 관측치로 체결할 수 있으면 그 봉, 아니면 null(클래스 설명의 체결 조건 — ③은 그 시장 묶음의 {@link PaperMarket#fillable}). */
+    /**
+     * 이 주문을 이 관측치로 체결할 수 있으면 그 봉, 아니면 null — 클래스 설명의 체결 조건 ①~④를 그 시장 묶음이 봅니다
+     * ({@link PaperMarket#fillBar} — 미국은 그 봉 자신, ③은 {@link PaperMarket#fillable}). 이 관측치에 그 종목이 없으면 null.
+     */
     static Bar fillableBar(PaperMarket market, Order order, Quotes quotes) {
-        if (order.createdAt() == null || !quotes.collectedAt().isAfter(order.createdAt())) {
-            return null;                                   // ① 주문 뒤에 수집한 관측치만
-        }
         Bar bar = quotes.bars().get(order.ticker());
-        if (bar == null || bar.stale()) {
-            return null;                                   // ④ 새 값이 없음 — 다음 관측치
-        }
-        if (order.asOfTradingDate() == null || !bar.date().isAfter(order.asOfTradingDate())) {
-            return null;                                   // ② 결정이 이미 본 봉(주말 재저장)
-        }
-        if (!market.fillable(order, bar, quotes.collectedAt())) {
-            return null;                                   // ③ 그 시점의 체결 가격이 아직 없음(미국: NEXT_CLOSE의 확정 종가 전)
-        }
-        return bar;
+        return bar == null ? null : market.fillBar(order, bar, quotes.collectedAt(), market.calendar(), null).bar();
     }
 
     private void fillSell(BookRun run, Order order) {

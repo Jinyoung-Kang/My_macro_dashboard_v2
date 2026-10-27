@@ -39,6 +39,69 @@ interface FillTerms {
     Costs costs(int qty);
 
     /**
+     * 이 관측치로 체결하지 않고 주문을 대기로 두는 사유 — 체결하면 null(기본). 한국은 비용을 셀 수 없을 때(종목 구분 모름 — 코넥스·
+     * 시장 모름, 매도 세율 모름 — §4-3) 짐작하지 않고 보류합니다({@link Hold}). 장부는 이 값이 있으면 체결가·수량을 묻지 않습니다.
+     */
+    default String holdReason() {
+        return null;
+    }
+
+    /**
+     * 체결과 함께 남길 경고(값은 그대로 씀) — 한국: 시가 사다리를 내려감(1분봉 개장 봉 없음 → 토스 일봉 시가, §4-1·결정 d11)·호가 단위에 안
+     * 맞는 관측가(§4-3). 장부가 작업 기록과 그 주문의 근거에 남깁니다. 기본은 없음.
+     */
+    default java.util.List<String> warnings() {
+        return java.util.List.of();
+    }
+
+    /** 체결하지 않고 보류하는 체결 조건({@link #holdReason}) — 체결가·수량·비용을 물으면 던집니다(장부가 먼저 사유를 봄). */
+    record Hold(String reason) implements FillTerms {
+
+        public Hold {
+            Objects.requireNonNull(reason, "reason");
+        }
+
+        @Override
+        public String holdReason() {
+            return reason;
+        }
+
+        @Override
+        public double price() {
+            throw held();
+        }
+
+        @Override
+        public double rawPrice() {
+            throw held();
+        }
+
+        @Override
+        public String priceSource() {
+            throw held();
+        }
+
+        @Override
+        public double slippageBp() {
+            throw held();
+        }
+
+        @Override
+        public int affordableQty(double budget) {
+            throw held();
+        }
+
+        @Override
+        public Costs costs(int qty) {
+            throw held();
+        }
+
+        private IllegalStateException held() {
+            return new IllegalStateException("보류한 체결 조건입니다 — " + reason);
+        }
+    }
+
+    /**
      * 체결 한 건의 금액.
      *
      * @param gross        체결 금액({@code paper_fills.gross}) = 수량 × 체결가(소수 4자리)

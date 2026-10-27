@@ -191,6 +191,12 @@ final class MarketRun implements PaperMarket {
     }
 
     @Override
+    public FillChoice fillBar(Order order, Bar bar, Instant collectedAt, TradingCalendar calendar,
+                              JsonNode settingsBody) {
+        return market.fillBar(order, bar, collectedAt, calendar, settingsBody);
+    }
+
+    @Override
     public boolean pricesConfirmed(LocalDate barDate, Instant collectedAt, TradingCalendar calendar) {
         return market.pricesConfirmed(barDate, collectedAt, calendar);
     }

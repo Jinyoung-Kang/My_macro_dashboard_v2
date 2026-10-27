@@ -170,6 +170,55 @@ interface PaperMarket {
     }
 
     /**
+     * 체결 봉 고르기의 결과({@link #fillBar}) — 그 주문을 이 관측치로 체결할 봉, 또는 체결하지 않음.
+     *
+     * @param bar        체결할 봉(그 시장이 고른 날·가격을 담음 — 장부는 이 봉의 날짜를 체결 행의 관측일로 씀). null이면 이 관측치로는 체결하지 않음
+     * @param waitReason 체결하지 않는 사유 중 사람이 알아야 할 것(한국 1분봉 기다림 등 — 장부가 작업 기록에 남김). 아직 새 봉이 없는 것처럼
+     *                   늘 있는 기다림이면 null
+     */
+    record FillChoice(Bar bar, String waitReason) {
+
+        /** 이 관측치로는 체결하지 않음(남길 사유 없음). */
+        static final FillChoice NONE = new FillChoice(null, null);
+
+        static FillChoice of(Bar bar) {
+            return new FillChoice(java.util.Objects.requireNonNull(bar, "bar"), null);
+        }
+
+        static FillChoice waiting(String reason) {
+            return new FillChoice(null, java.util.Objects.requireNonNull(reason, "reason"));
+        }
+    }
+
+    /**
+     * 그 주문을 그 관측치(그 종목의 봉)로 체결할 봉을 고릅니다 — 장부의 체결 조건 ①~④({@code PaperLedgerService} 설명). 기본(관측치 = 그날
+     * 종가 하나 — 미국)은 그 봉 자신이고, 조건은 ① 관측치 수집 시각 &gt; 주문 생성 ④ 이어 쓴 봉 아님 ② 봉 날짜 &gt; 기준 거래일 ③ 그 시점의
+     * 체결 가격({@link #fillable}) — C2b 전 장부의 {@code fillableBar} 그대로입니다. 한국은 최근 봉 창에서 기준 거래일 뒤 첫 관측 봉과 그날
+     * 시가 사다리입니다({@code KrPaperMarket#fillBar}). 시장마다 다른 판정이라 달력을 인자로 받고, 실행({@link MarketRun})은 감싼 묶음에
+     * 맡깁니다.
+     *
+     * @param collectedAt  관측치 저장본의 수집 시각
+     * @param calendar     그 실행의 달력 한 벌
+     * @param settingsBody 그 실행이 읽은 설정 본문(한국 1분봉 기다림의 끝 = 그 밤 결정 기한 — 결정 d11; null이면 기본값). 미국은 보지 않음
+     */
+    default FillChoice fillBar(Order order, Bar bar, Instant collectedAt, TradingCalendar calendar,
+                               JsonNode settingsBody) {
+        if (order.createdAt() == null || !collectedAt.isAfter(order.createdAt())) {
+            return FillChoice.NONE;                        // ① 주문 뒤에 수집한 관측치만
+        }
+        if (bar.stale()) {
+            return FillChoice.NONE;                        // ④ 새 값이 없음 — 다음 관측치
+        }
+        if (order.asOfTradingDate() == null || !bar.date().isAfter(order.asOfTradingDate())) {
+            return FillChoice.NONE;                        // ② 결정이 이미 본 봉(주말 재저장)
+        }
+        if (!fillable(order, bar, collectedAt, calendar)) {
+            return FillChoice.NONE;                        // ③ 그 시점의 체결 가격이 아직 없음(미국: NEXT_CLOSE의 확정 종가 전)
+        }
+        return FillChoice.of(bar);
+    }
+
+    /**
      * 그 봉 날짜의 가격이 <b>확정</b>인가(ⓒ) — 순자산 줄의 {@code prices_final}, 결정 행·패킷의 {@code pricesFinal}이 씁니다. 미국은
      * 종가가 나왔으면 확정(옛 isFinal)입니다.
      *

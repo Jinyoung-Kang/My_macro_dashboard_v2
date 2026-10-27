@@ -249,6 +249,27 @@ class UsPaperMarketTest {
                 && !collectedAt.isBefore(UsMarketCalendar.closeInstant(barDate).plus(Duration.ofMinutes(15)));
     }
 
+    @Test
+    @DisplayName("체결 봉 고르기(C2b — 장부의 fillableBar를 시장 몫으로) = 그 봉 자신 또는 없음: ① 수집 시각 > 주문 생성 ④ 이어 쓴 봉 아님 ② 봉 날짜 > 기준 거래일 ③ fillable — 사유는 남기지 않음, 설정 본문은 보지 않음")
+    void fillBarIsTheLegacyRule() {
+        Instant created = Instant.parse("2026-10-22T00:00:00Z");   // order()의 생성 시각, 기준 거래일 10-22
+        Instant intraday = Instant.parse("2026-10-23T15:00:00Z");
+        PaperMarketData.Bar fresh = bar(FRI);
+        assertThat(US.fillBar(order(OrderValidator.NEXT_OBSERVATION), fresh, intraday, US.calendar(), null))
+                .isEqualTo(PaperMarket.FillChoice.of(fresh));
+        assertThat(US.fillBar(order(OrderValidator.NEXT_OBSERVATION), fresh, created, US.calendar(), null))
+                .as("① 주문과 같은 시각의 수집").isEqualTo(PaperMarket.FillChoice.NONE);
+        assertThat(US.fillBar(order(OrderValidator.NEXT_OBSERVATION), PaperFixtures.staleBar("AAA", FRI, 100.0), intraday,
+                US.calendar(), null)).as("④ 이어 쓴 봉").isEqualTo(PaperMarket.FillChoice.NONE);
+        assertThat(US.fillBar(order(OrderValidator.NEXT_OBSERVATION), bar(FRI.minusDays(1)), intraday, US.calendar(), null))
+                .as("② 기준 거래일 봉").isEqualTo(PaperMarket.FillChoice.NONE);
+        assertThat(US.fillBar(order(OrderValidator.NEXT_CLOSE), fresh, intraday, US.calendar(), null))
+                .as("③ NEXT_CLOSE 장중").isEqualTo(PaperMarket.FillChoice.NONE);
+        assertThat(US.fillBar(order(OrderValidator.NEXT_CLOSE), fresh, Instant.parse("2026-10-23T20:15:00Z"),
+                US.calendar(), PaperFixtures.MAPPER.createObjectNode().put("decisionDeadlineKst", "00:00")))
+                .as("③ 마감 + 15분, 설정 본문은 보지 않음").isEqualTo(PaperMarket.FillChoice.of(fresh));
+    }
+
     /** 체결 조건 ③만 보는 시험용 대기 주문(시점만 의미 있음). */
     private static PaperStore.Order order(String timing) {
         return new PaperStore.Order(1, PaperBooks.CLAUDE, null, "AAA", PaperBooks.BUY, null, 10.0, null, timing,
