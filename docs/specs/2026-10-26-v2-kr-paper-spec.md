@@ -222,7 +222,7 @@
     잠정 종가 ≤ 최고가 × (1 − `kr.trailingStopPct`%)(미국 `TrailingStop.triggered`)면 STOP 주문 — `SELL`·`NEXT_OPEN`·출처 `STOP`·`PENDING`·**수량·비율 null(체결 때 보유 전량 — 그사이
     분할로 수량이 바뀌어도)**·기준 거래일 = 감지한 봉 날짜 D·만료 D + 3거래일·생성 = 그 관측치 수집 시각, 근거 `trigger`·`stopPct`·`highWatermark`·`stopPrice`·`observedPrice`·
     `observedSource`(`TOSS_INTEGRATED`·`TOSS_DAILY`)·`barDate`. 그 책에 그 종목 대기 STOP이 있으면 다시 내지 않는다(같은 밤 다시 쓴 저장본). `Outcome.stopped`는 **체결한** 스탑만 센다(감지는
-    작업 기록). 결정이 대기 주문을 대신하는 규칙(`supersedePending`)은 CLAUDE 출처만이라 STOP을 지우지 않고, D 밤에 낸 STOP(기준일 D)은 게이트 ①(D1 — 기준일 < D)의 D 결정을 막지 않는다.
+    작업 기록, 그 체결은 대기 주문 체결이라 `filled`에도 들어감 — 미국 즉시 스탑은 대기 주문이 아니라 `stopped`에만). 결정이 대기 주문을 대신하는 규칙(`supersedePending`)은 CLAUDE 출처만이라 STOP을 지우지 않고, D 밤에 낸 STOP(기준일 D)은 게이트 ①(D1 — 기준일 < D)의 D 결정을 막지 않는다.
   - **체결 때 다시 판정**: 체결 봉을 고른 뒤(시가 사다리·1분봉 기다림·기업행위 보류 그대로) 근거의 최고가·비율로 감지한 날 D의 금융위 종가(거래량 > 0 행)를 본다 — 스탑가 이하 → 집행,
     근거에 `stopBasis` = `FSC`·`FSC_ETF`·`confirmedClose` · 위 → 취소(`reject_reason` `STOP_NOT_CONFIRMED — 금융위 D 종가 …원이 스탑가 …원 위 …`, 근거에 같은 칸, 재진입 금지 없음) ·
     D 행 없음(지연)·거래량 0 행 → 집행 `stopBasis=PROVISIONAL`·`stopBasisNote`. 근거에 최고가·비율이 없으면(손으로 넣은 주문) 잠정대로. **재진입 금지 = 체결한 시가 봉 날짜 +
