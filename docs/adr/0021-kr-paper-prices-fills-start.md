@@ -10,14 +10,17 @@
      - 있음: 수집기 `test_kr_paper_quotes.py::test_저장본은_계약_1의_모양이다`(봉 출처 `TOSS_DAILY`·`TOSS_INTEGRATED`, 1분봉 개장 봉 `TOSS_1M_OPEN`·라벨 `09:01`·`10:01`)·
        `test_1분봉_확정_결과는_다시_묻지_않고_실패는_다시_묻는다`, `test_fsc.py::test_시가_고가_저가가_없으면_None이다`·`test_거래가_없던_날의_시가_0은_None이다`,
        `test_fsc_etf.py::test_403_코드_30이면_호출_1회로_멈추고_활용신청_필요로_남긴다`·`test_거래가_없던_ETF의_시가_0은_None이고_영문_섞인_코드를_받는다`
-     - C2: 시가 사다리 갈래마다 하나(1분봉 '개장 + 1분' 봉 시가가 있으면 반드시 `TOSS_1M_OPEN` · 없을 때만 토스 일봉 시가 `TOSS_INTEGRATED` · `NEXT_CLOSE`는 일봉 종가로 체결하지 않음),
-       최고가가 `TOSS_INTEGRATED` 종가로 오르지 않음. C3: 확정값이 토스 재수집의 잠정값으로 덮이지 않음(`upsertNav`)
+     - 있음(C2b): `KrLedgerTest.Ladder` — `minuteOpenWins`(1분봉 '개장 + 1분' 봉 시가가 있으면 반드시 `TOSS_1M_OPEN`)·`dailyOpenOnlyWithoutMinuteBar`(없을 때만 토스 일봉 시가 —
+       NXT 종목 `TOSS_INTEGRATED`, KRX 단독 봉 `TOSS_DAILY`)·`nextCloseIsNeverFilledFromTheDailyClose`·`openTimeOverrideMovesTheLabel`, `KrLedgerTest.FailedMinute`(1분봉 `FAILED`는 기다림, 결정 기한 뒤 수집본에도 남으면 사다리 — 결정 d11),
+       `KrQuotesTest`(계약 1 파서)
+     - C2c: 최고가가 `TOSS_INTEGRATED` 종가로 오르지 않음. C3: 확정값이 토스 재수집의 잠정값으로 덮이지 않음(`upsertNav`)
   2. 체결 시점(K13)
      - 있음: `DecisionTimingsLockTest.schemaMarketAndPromptAgree`(운영 결정 문맥마다 스키마 timing enum = 시장 체결 시점 = 고정 문단 — E2가 한국 문맥을 운영 목록에 더하면 한국도 봄),
        `OrderValidatorMarketTest.timingsAreTheMarkets`·`singleTimingMarket`, `PaperStoreDbTest.v14TimingFillCostsAndCorpActionHold`(`paper_orders.timing`의 `NEXT_OPEN`),
        미국 쪽 그대로 `UsPaperMarketTest.timings`·`PaperLedgerServiceTest.nextCloseWaitsForFinalClose`
-     - C1: `KrPaperMarket` 값 고정(`ALLOW_NEXT_CLOSE = false`이면 시점은 `NEXT_OPEN` 하나). C2: `fillableBar` 한국판(봉 날짜 > 기준 거래일·관측 수집 시각 > 주문 생성·거래량 0 봉 아님),
-       스탑 → 다음 거래일 시가 `STOP` 주문, 확정 D 종가로 다시 판정해 `STOP_NOT_CONFIRMED`
+     - C1: `KrPaperMarket` 값 고정(`ALLOW_NEXT_CLOSE = false`이면 시점은 `NEXT_OPEN` 하나). 있음(C2b): `KrLedgerTest.Conditions`(`fillableBar` 한국판 — 봉 날짜 > 기준 거래일·
+       그 종목 수집 시각 > 주문 생성·거래량 0 봉과 이어받은 항목 아님·하룻밤 빠져도 기준일 다음 거래일 시가), `KrStartTest.benchmarksFillAtTheNextOpen`(벤치마크 두 계좌가 S+1 시가에 체결).
+       C2c: 스탑 → 다음 거래일 시가 `STOP` 주문, 확정 D 종가로 다시 판정해 `STOP_NOT_CONFIRMED`
   3. 확정 조정(K29)
      - 있음: `KrxCostsTest.confirmBuy`·`confirmSell`(명세 §5 손계산 현금 +1,000·+999)·`confirmNoChangeAndNegative`·`cashFlowFromStoredColumns`,
        `PaperStoreDbTest.fillConfirmationsOnePerFill`(체결마다 한 행, 추가만)·`v14TimingFillCostsAndCorpActionHold`
@@ -25,7 +28,8 @@
   4. 슬리피지(K31)
      - 있음: `KrxCostsTest.kospiBuy`·`kospiSell`·`kosdaqSell`·`etfBuy`·`etfSell`(§5 비용 다섯 건)·`affordableQuantity`·`costBpDoesNotJumpAtBandEdges`·`formerJumpPointsAreFlat`
        (호가 경계에서 실효 bp가 뛰지 않음)·`decimalNotDouble`
-     - C2: 장부가 쓰는 체결 행 `price` = 관측가, 비용은 `fee`·`tax`·`slippage_cost` 칸(§5 손계산을 장부 경로로)
+     - 있음(C2b): `KrLedgerTest.Costs`(§5 손계산 여섯 건을 장부 경로로 — 체결 행 `price` = 관측가, 비용은 `fee`·`tax`·`slippage_cost` 칸, 현금, 매수 가능 수량),
+       `PaperStoreDbTest.fillCostColumnsRoundTrip`(비용 칸 저장), `PaperMarketIsolationTest.costColumnsAreStored`
   5. 출발(K28)
      - 있음(미국 출발 경로가 그대로임): `PaperAdminServiceTest.initBackfillsBenchmarks`·`initBeforeFinalCloseSkips`, `PaperMarketIsolationTest.backfillIsUsOnly`
      - C1: 한국 초기화(`kr.start-date`가 비어도 미국 기동, `StoreReader.quietly` + `KrxCalendar` 거래일 검사)·벤치마크 두 계좌의 S+1 `NEXT_OPEN` 주문, 점검(§9) — QA 스택 복원 자료로
