@@ -481,8 +481,10 @@ public class PaperDecisionJob {
             }
         }
         List<KrDecisionGates.Gate> before = krGates.beforeLedger(market, session);
+        // 판정은 통과도 남깁니다 — 뒤의 장부 처리·입력 읽기가 예외로 끝나(세 번이면 포기) 기한이 지나도, 기한 지남 행이 앞 주기의 미달 판정
+        // (예: 22:30의 ⑤)이 아니라 이 판정(통과 — '기한 지남', 기다린 까닭 없음)을 쓰게.
+        rememberGates(market, d, before, now);
         if (!KrDecisionGates.blocking(before).isEmpty()) {
-            rememberGates(market, d, before, now);
             return dataNotReady(d, before, deadline);
         }
         Optional<Quotes> quotes = session.quotes();
@@ -509,8 +511,8 @@ public class PaperDecisionJob {
             return failed(market, now, d, pricesFinal, detail, List.of(message(e)),
                     List.of(market.rulesBook(), market.claudeBook()), null, null);
         }
+        rememberGates(market, d, data, now);
         if (!KrDecisionGates.blocking(data).isEmpty()) {
-            rememberGates(market, d, data, now);
             return dataNotReady(d, data, deadline);
         }
 

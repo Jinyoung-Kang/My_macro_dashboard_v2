@@ -701,6 +701,35 @@ class KrRulesJobTest {
     }
 
     @Test
+    @DisplayName("22:30에 ⑤로 기다린 뒤 22:40부터 ②④⑤⑥은 통과했는데 입력 읽기(수급)가 예외로 세 번 끝나 포기한 세션 — 기한 지남 행은 앞 주기의 ⑤ 기다림이 아니라 그 뒤 통과한 판정(사유 '기한 지남', waitedFor 빈 목록)")
+    void pastDeadlineAfterErrorsBeyondTheCheapGates() {
+        quotes(R, Set.of("069500"));
+        fsc(FRI);
+        assertThat(runAt("2026-11-02T22:30").message()).contains("⑤ 069500 2026-11-02 봉 없음");
+        quotes(R, Set.of());   // 22:40부터 069500 R 봉 — 싼 게이트는 통과하고, 그 뒤 수급 읽기가 일시 오류
+        org.mockito.Mockito.doThrow(new IllegalStateException("시험용 수급 읽기 오류")).when(repository).readObservationSeries(
+                eq(Datasets.OBS_KR_PAPER_FLOW), anyCollection(), org.mockito.ArgumentMatchers.any(LocalDate.class));
+
+        for (String at : List.of("2026-11-02T22:40", "2026-11-02T22:50", "2026-11-02T23:00")) {
+            PaperDecisionJob.Result failed = runAt(at);
+            assertThat(failed.outcome()).isEqualTo(PaperDecisionJob.ERROR);
+            assertThat(failed.message()).contains("시험용 수급 읽기 오류");
+        }
+        assertThat(runAt("2026-11-02T23:10").outcome()).isEqualTo(PaperDecisionJob.GAVE_UP);
+
+        PaperDecisionJob.Result late = runAt("2026-11-03T01:00");
+
+        assertThat(late.outcome()).isEqualTo(PaperDecisionJob.PAST_DEADLINE);
+        JsonNode row = late.rules().response();
+        assertThat(row.path("noTradeReason").asString()).as("⑤는 22:40부터 통과 — 오류로 결정하지 못함").isEqualTo("기한 지남");
+        assertThat(row.path("waitedFor").toString()).isEqualTo("[]");
+        assertThat(gateStatuses(row.path("gates"))).as("23:00 판정 — 장부 전 게이트 통과(①③은 그 뒤 오류로 판정 전)")
+                .containsExactly("② PASS", "④ PASS", "⑤ PASS", "⑥ PASS");
+        assertThat(row.path("gatesJudgedAtKst").asString()).isEqualTo("2026-11-02 23:00 KST");
+        assertThat(row.path("gatesBasis").asString()).isEqualTo("기한 전 마지막 판정");
+    }
+
+    @Test
     @DisplayName("계좌 상태가 없어 장부가 그 계좌를 처리하지 못하면 게이트 ①(처리하지 못함)로 기다림 — 결정 예외로 세지 않음")
     void missingStateWaitsAtGateOne() {
         session(R);
