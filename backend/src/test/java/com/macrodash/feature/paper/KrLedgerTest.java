@@ -427,7 +427,7 @@ class KrLedgerTest {
 
     // ------------------------------------------------------------------ 체결 조건
     @Nested
-    @DisplayName("체결 조건(§4-2 ①~④) — 다음 거래일 가격으로만")
+    @DisplayName("체결 조건(§4-2 ①~⑤) — 다음 거래일 가격으로만")
     class Conditions {
 
         @Test
@@ -456,6 +456,37 @@ class KrLedgerTest {
             process(payload, COLLECTED_D1);
 
             assertThat(store.fillsOf(BOOK)).isEmpty();
+        }
+
+        @Test
+        @DisplayName("⑤ 다음 세션 개장 뒤에 만든 주문(기준일 D, 생성 D+1 10:00)은 그 봉의 시가(09:00 단일가 — 주문보다 앞선 가격)로 체결하지 않고 다음 관측 봉(D+2) 시가로 — 스탑은 감지 근거가 기준일 종가라 그대로 D+1 시가")
+        void openBeforeTheOrderIsNotItsPrice() {
+            book(BOOK, PaperBooks.KIND_CLAUDE, 10_000_000);
+            Instant lateMorning = kst("2026-11-03T10:00");
+            long id = store.insertOrder(new Order(0, BOOK, null, "005930", PaperBooks.BUY, 10, null, null, PaperBooks.NEXT_OPEN,
+                    "CLAUDE", "PENDING", null, null, D, lateMorning, LocalDate.of(2026, 11, 5), null));
+            KrFixtures.Payload payload = new KrFixtures.Payload(D1);
+            payload.code("005930", FETCHED_D1).bar(D, 70_000, 70_100, 1_000).bar(D1, 70_500, 70_600, 1_000)
+                    .minute("OK", "09:01", 70_400, 9);
+
+            process(payload, COLLECTED_D1);
+
+            assertThat(store.fillsOf(BOOK)).as("D+1 시가는 주문 한 시간 전 가격").isEmpty();
+            assertThat(store.orders.get(id).status()).isEqualTo(PaperBooks.ORDER_PENDING);
+            Order stop = new Order(2, BOOK, null, "005930", PaperBooks.SELL, null, null, null, PaperBooks.NEXT_OPEN,
+                    PaperBooks.SOURCE_STOP, "PENDING", null, null, D, lateMorning, LocalDate.of(2026, 11, 5), null);
+            Quotes quotes = KrQuotes.parse(payload.snapshot(COLLECTED_D1)).orElseThrow();
+            MarketRun run = run();
+            assertThat(run.fillBar(stop, quotes.bars().get("005930"), COLLECTED_D1, run.calendar(), run.settingsBody())
+                    .bar().date()).as("스탑은 ⑤를 보지 않음").isEqualTo(D1);
+
+            KrFixtures.Payload next = new KrFixtures.Payload(D2);
+            next.code("005930", kst("2026-11-04T21:57")).bar(D1, 70_500, 70_600, 1_000).minute("OK", "09:01", 70_400, 9)
+                    .bar(D2, 71_000, 71_100, 1_000).minute("OK", "09:01", 70_900, 9);
+            process(next, kst("2026-11-04T22:01"));
+
+            assertThat(onlyFill().observationDate()).isEqualTo(D2);
+            assertThat(onlyFill().price()).isEqualTo(70_900);
         }
 
         @Test

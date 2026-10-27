@@ -30,9 +30,9 @@ import java.util.function.Function;
  * 🧪 한국 체결 — 체결 봉 고르기·시가 사다리·체결 조건(비용 칸)(2단계 명세 §4-1·§4-2·§4-3, 결정 d10·d11, C2b). 한국 시장 묶음
  * ({@link KrPaperMarket})이 이 함수들로 {@link PaperMarket#fillBar}·{@link PaperMarket#fillable}·{@link PaperMarket#fill}을 답합니다.
  *
- * <p><b>체결 봉</b>(조건 ①~④, 미국 {@code fillableBar}의 한국판): 그 종목 항목이 이번에 새로 받은 것이고(이어받은 {@code isStale}이 아님 — ④)
+ * <p><b>체결 봉</b>(조건 ①~⑤, 미국 {@code fillableBar}의 한국판): 그 종목 항목이 이번에 새로 받은 것이고(이어받은 {@code isStale}이 아님 — ④)
  * 그 종목을 받은 시각({@code fetchedAt})이 주문 생성보다 뒤일 때(①), 최근 봉 창에서 <b>기준 거래일 뒤 첫 관측 봉</b>(② 봉 날짜 &gt; 기준 거래일,
- * ④ 거래량 &gt; 0 — 0은 정지일, 모름은 체결이 있었는지 모름)입니다. 그 봉에 그 시점의 잠정가가 있어야 체결하고(③), 없으면 그 관측치로는
+ * ④ 거래량 &gt; 0 — 0은 정지일, 모름은 체결이 있었는지 모름, ⑤ 그날 개장 순간 &gt; 주문 생성 — 스탑 제외, {@link #opensAfterOrder})입니다. 그 봉에 그 시점의 잠정가가 있어야 체결하고(③), 없으면 그 관측치로는
  * 체결하지 않고 다음 관측치를 기다립니다(다음 봉으로 건너뛰지 않음 — 그날 시가가 그 주문의 가격). 서버가 하룻밤 꺼졌던 뒤에도 그 주문은
  * 기준일 다음 거래일 시가로 체결됩니다(마지막 봉이 아니라 창에서 고름). 만료(기준일 + 3거래일)는 장부가 체결 전에 정리합니다.
  *
@@ -88,6 +88,9 @@ final class KrFills {
             if (!day.observed()) {
                 continue;                                  // ④ 거래량 0(정지일)·모름 — 관측이 아님, 다음 봉
             }
+            if (!opensAfterOrder(order, day.date(), calendar)) {
+                continue;                                  // ⑤ 그날 시가는 주문 전 시각 — 다음 관측 봉의 시가
+            }
             Ladder ladder = price(order, day, collectedAt, calendar, deadline);   // ③
             return ladder.choice() == null ? FillChoice.waiting(ladder.reason())
                     : FillChoice.of(view(bar, quote, day, ladder.choice()));
@@ -106,8 +109,18 @@ final class KrFills {
             return false;
         }
         Optional<Day> day = quote.day(bar.date());
-        return day.isPresent() && day.get().observed()
+        return day.isPresent() && day.get().observed() && opensAfterOrder(order, bar.date(), calendar)
                 && price(order, day.get(), collectedAt, calendar, deadline).choice() != null;
+    }
+
+    /**
+     * ⑤ 그날 개장 순간(그 실행 달력 — 장 시간 변경일 포함)이 주문 생성보다 뒤인가 — 시가 체결가는 봉 날짜 개장(09:00) 단일가라, 다음 세션 개장 뒤에
+     * 만든 주문(기준일 D, 생성 D+1 10:00 — 수동 결정 등)이 결정 뒤 정보를 본 채 그 전 시각의 시가로 체결되지 않게 합니다(미국은 체결가가 관측치 자체라
+     * ①로 충분 — 묶음 C 리뷰). 스탑({@code STOP})은 감지 근거가 기준일 종가(그날 15:30에 공개)라 그 다음 시가에 팔 수 있던 정보이므로 보지 않습니다.
+     */
+    static boolean opensAfterOrder(Order order, LocalDate barDate, TradingCalendar calendar) {
+        return PaperBooks.SOURCE_STOP.equals(order.source()) || order.createdAt() == null
+                || calendar.openInstant(barDate).isAfter(order.createdAt());
     }
 
     /**
