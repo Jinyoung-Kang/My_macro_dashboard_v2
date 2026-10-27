@@ -5,7 +5,7 @@ tests/test_us_consensus.py
 고정하는 규칙
   1. 출처는 Nasdaq(TradingView는 이 PC에서 403 — G11). date=D는 동부 D−1의 행이라 동부 날짜 E는 date=E+1로 묻는다.
   2. 미국 행만, 값은 숫자 + 단위로 나누고 못 나누면 null(글자는 …Text에 그대로), 단위가 서로 다르면 숫자를 모두 null. 중요도는 null.
-  3. 동부 오늘부터 16일 안의 평일을 하루 한 번(같은 동부 날짜에 받은 날은 다시 묻지 않음). 날짜 하나의 실패는 직전 값을 isStale로 잇고,
+  3. 동부 오늘부터 18일 안의 평일을 하루 한 번(같은 동부 날짜에 받은 날은 다시 묻지 않음). 날짜 하나의 실패는 직전 값을 isStale로 잇고,
      하나도 못 받으면 EmptyResult. 출처 거부면 그 실행을 멈춘다. 실업수당 청구가 목요일에 없으면 날짜 어긋남이 바뀐 것으로 보고 저장하지 않는다.
   4. 백엔드·화면 코드는 이 저장본을 읽지 않는다(이름 상수만).
 
@@ -229,10 +229,22 @@ def test_받기_오류는_그_날짜의_실패(nasdaq):
     assert nasdaq.calls == ["2026-10-23"] * 3
 
 
-def test_창은_동부_오늘부터_16일_안의_평일():
+def test_창은_동부_오늘부터_18일_안의_평일():
     days = task_module.horizon_days(date(2026, 10, 27))
-    assert days[0] == date(2026, 10, 27) and days[-1] == date(2026, 11, 12)
-    assert len(days) == 13 and all(day.weekday() < 5 for day in days)
+    assert days[0] == date(2026, 10, 27) and days[-1] == date(2026, 11, 13)
+    assert len(days) == 14 and all(day.weekday() < 5 for day in days)
+
+
+def test_창은_패킷_창_끝을_공휴일_둘까지_덮는다():
+    """
+    패킷 창(백엔드 CalendarWindow)은 기준일 다음 세션 ~ 기준일 + 10거래일입니다. 미국 07:30 KST 결정 전 마지막 수집의 동부 오늘이
+    기준일일 수 있어, 16일이면 금요일 기준일에 공휴일 하나(추수감사절)·목·금 기준일에 공휴일 둘(성탄·신년)일 때 창 끝이 밖이었습니다.
+    끝 날짜는 NYSE 휴장(2026-11-26·12-25, 2027-01-01)으로 손으로 센 값입니다.
+    """
+    for basis, window_end in ((date(2026, 11, 13), date(2026, 11, 30)),    # 금 + 추수감사절 → 월(+17일)
+                              (date(2026, 12, 17), date(2027, 1, 4)),      # 목 + 성탄·신년 → 월(+18일)
+                              (date(2026, 12, 18), date(2027, 1, 5))):     # 금 + 성탄·신년 → 화(+18일)
+        assert window_end in task_module.horizon_days(basis), basis
 
 
 # ==============================================================================
@@ -247,10 +259,10 @@ def test_창의_평일마다_하루_뒤_date로_묻고_저장만_한다(store, n
 
     expected_days = [day.isoformat() for day in task_module.horizon_days(date(2026, 10, 27))]
     assert nasdaq.calls == [svc.query_date(date.fromisoformat(day)).isoformat() for day in expected_days]
-    assert nasdaq.sleeps == [task_module.SPACING_SECONDS] * 12
+    assert nasdaq.sleeps == [task_module.SPACING_SECONDS] * 13
     payload = _payload(store)
     assert list(payload["days"]) == expected_days
-    assert (payload["forDate"], payload["horizon"]) == ("2026-10-27", {"from": "2026-10-27", "to": "2026-11-12"})
+    assert (payload["forDate"], payload["horizon"]) == ("2026-10-27", {"from": "2026-10-27", "to": "2026-11-14"})
     assert (payload["source"], payload["queryOffsetDays"], payload["importance"]) == (svc.SOURCE, 1, None)
     assert payload["tradingView"]["status"] == "HTTP 403" and payload["failed"] == {}
     thursday = payload["days"]["2026-10-29"]
@@ -261,8 +273,8 @@ def test_창의_평일마다_하루_뒤_date로_묻고_저장만_한다(store, n
     assert payload["days"]["2026-10-28"]["rows"][8]["name"] == "Fed Interest Rate Decision"
     assert payload["days"]["2026-10-27"]["rows"] == []
     # 목 3일 × 11행 + 수 3일 × 10행, 컨센서스는 목 6행·수 4행.
-    assert detail == ("미국 컨센서스 13/13일 받음(호출 13회) · 미국 행 63개 · 컨센서스 있는 행 30개 · "
-                      "창 2026-10-27~2026-11-12(동부)")
+    assert detail == ("미국 컨센서스 14/14일 받음(호출 14회) · 미국 행 63개 · 컨센서스 있는 행 30개 · "
+                      "창 2026-10-27~2026-11-14(동부)")
 
 
 def test_같은_동부_날짜에는_다시_묻지_않는다(store, nasdaq):
@@ -273,7 +285,7 @@ def test_같은_동부_날짜에는_다시_묻지_않는다(store, nasdaq):
     nasdaq.clock["now"] = datetime(2026, 10, 27, 23, 0, tzinfo=timezone.utc)   # 동부 19:00(KST 다음 날 08:00 — 같은 서버 창)
     detail = task_module.task_us_calendar_consensus()
 
-    assert nasdaq.calls == [] and detail == "오늘(미국 동부 2026-10-27) 이미 받음 — 호출 0회 · 13일"
+    assert nasdaq.calls == [] and detail == "오늘(미국 동부 2026-10-27) 이미 받음 — 호출 0회 · 14일"
     assert _payload(store) == saved
 
     # 다음 동부 날짜(다음 서버 창)에는 창 전체를 다시 받습니다.
@@ -312,7 +324,7 @@ def test_하나도_못_받으면_EmptyResult이고_저장본을_덮지_않는다
     for day in task_module.horizon_days(date(2026, 10, 27)):
         nasdaq.outcomes[svc.query_date(day).isoformat()] = requests.ConnectionError("connection refused")
 
-    with pytest.raises(EmptyResult, match=r"새로 받은 날 없음\(0/13\) — 기존 저장본 유지 \(사유: ConnectionError"):
+    with pytest.raises(EmptyResult, match=r"새로 받은 날 없음\(0/14\) — 기존 저장본 유지 \(사유: ConnectionError"):
         task_module.task_us_calendar_consensus()
     assert _payload(store) == {"marker": "이전"}
 
@@ -325,9 +337,9 @@ def test_출처가_거부하면_그_실행을_멈춘다(store, nasdaq):
     assert nasdaq.calls == ["2026-10-28", "2026-10-29"]
     payload = _payload(store)
     assert list(payload["days"]) == ["2026-10-27"]
-    assert len(payload["failed"]) == 12 and set(payload["failed"].values()) == {
+    assert len(payload["failed"]) == 13 and set(payload["failed"].values()) == {
         "거부됨 — api.nasdaq.com HTTP 429 · 5분 동안 이 출처 호출을 멈춤"}
-    assert "미국 컨센서스 1/13일 받음(호출 2회)" in detail
+    assert "미국 컨센서스 1/14일 받음(호출 2회)" in detail
 
 
 def test_실업수당_청구가_목요일에_없으면_날짜가_밀린_것으로_보고_저장하지_않는다(store, nasdaq):
@@ -369,6 +381,6 @@ def test_시간_상한이_지나면_남은_날은_다음_실행(store, nasdaq, m
 
     assert len(nasdaq.calls) == 3   # 0·120·240초에 시작, 360초부터는 새 요청 없음
     payload = _payload(store)
-    assert len(payload["days"]) == 3 and len(payload["failed"]) == 10
+    assert len(payload["days"]) == 3 and len(payload["failed"]) == 11
     assert set(payload["failed"].values()) == {"시간 상한(240초) — 다음 실행"}
-    assert "미국 컨센서스 3/13일 받음(호출 3회)" in detail
+    assert "미국 컨센서스 3/14일 받음(호출 3회)" in detail

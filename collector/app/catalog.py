@@ -46,7 +46,7 @@ SNAP_US_CALENDAR = "calendar.us_events"
 SNAP_KR_CALENDAR = "calendar.kr_events"
 # 🧪 미국 경제 지표 컨센서스(v2 2단계 B9·K22 — Nasdaq api/calendar/economicevents, 비공식 참고). **저장만** — 패킷 1b_calendar에 싣는 것은
 # 설정 calendar.consensus를 한국 책 출발일에 켠 뒤(E1). {forDate, days: {동부 날짜: {rows: [{name, timeEt, forecast, previous, actual, unit,
-# …Text, importance null}], fetchedAt, isStale?}}, failed}. 미국 동부 오늘부터 16일 안의 평일, 하루 1회.
+# …Text, importance null}], fetchedAt, isStale?}}, failed}. 미국 동부 오늘부터 18일 안의 평일, 하루 1회.
 SNAP_US_CONSENSUS = "calendar.us_consensus"
 # 모의 매매 Claude 계좌 패킷 11b_events(2단계 B)의 수집 상태 — 피드별 성공·실패와 사유, 7일 보관 건수, 마지막 수집 시각.
 # 헤드라인 자체는 observations news_headline에 있습니다.
