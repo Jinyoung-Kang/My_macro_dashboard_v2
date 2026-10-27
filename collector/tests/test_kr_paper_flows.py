@@ -6,7 +6,8 @@ tests/test_kr_paper_flows.py
   1. payload = 레이더 수급(toss_stock_flow)과 같은 칸 + code + fetchedAt — 토스 updatedAt(판)을 그대로 남긴다(입력 동결 K26의 근거).
      null(당일 잠정치의 개인·기관 세부)을 0으로 바꾸지 않는다.
   2. 처음 보는 종목은 100거래일(스펙 상한), 그 뒤로는 20거래일. 같은 날짜는 나중 판으로 덮는다.
-  3. KR 거래일 D 20:30 KST 뒤 하루 1회 — 그 뒤에 받은 종목은 다시 부르지 않는다. D보다 늦은 날짜(오늘 장중 잠정치)는 쓰지 않는다.
+  3. KR 거래일 D 20:30 KST 뒤 하루 1회 — 그 뒤에 받았고 D 기록이 있는 종목은 다시 부르지 않는다(D 기록이 없으면 관측치의 069500에
+     D 봉이 있을 때만 하룻밤 3회까지 다시). D보다 늦은 날짜(오늘 장중 잠정치)는 쓰지 않는다.
   4. 일부 실패 → 기록은 지우지 않고 상태만 isStale로 잇는다. 전부 실패 → EmptyResult. 403이면 멈춘다. 기록 0건은 NO_RECORDS.
   5. 실행당 호출 예산 — 넘는 종목은 다음 주기에.
 """
@@ -86,7 +87,9 @@ def test_수급은_레이더와_같은_칸에_받은_시각을_더하고_null을
     assert entry["status"] == "OK" and entry["records"] == len(normalized)
     assert entry["latestDate"] == max(r["date"] for r in normalized)
     assert flows.calls == [("005930", kr_paper.KR_FLOW_FIRST_DAYS)]
-    assert detail == f"세션 2026-10-27 · 1/1 종목 · {len(normalized)}건 · 호출 1회"
+    # 고정본의 마지막 기록(2026-09-25)은 세션 D가 아님 — 관측치 저장본이 없어(069500 D 봉 모름) 다시 묻지 않는다고 적음
+    assert detail == (f"세션 2026-10-27 · 1/1 종목 · {len(normalized)}건 · 호출 1회"
+                      " · 세션 기록 없음 1(005930) — 069500 세션 봉이 없어 다시 묻지 않음")
 
 
 def test_처음은_100거래일_다음부터는_20거래일이고_같은_날짜는_나중_판으로_덮는다(store, flows, monkeypatch):
@@ -175,6 +178,57 @@ def test_기록이_0건이면_응답에_없음(store, flows, monkeypatch):
     entry = _status(store)["codes"]["999990"]
     assert entry["status"] == "NO_RECORDS" and entry["records"] == 0 and entry["latestDate"] is None
     assert "2/2 종목(기록 없음 1)" in detail
+
+
+def _quotes_anchor(store, last_day):
+    """관측치 저장본의 069500 — 마지막 봉 날짜로 그날 장이 열렸는지 봅니다(수급은 관측치 바로 뒤에 돔)."""
+    store.put_snapshot(catalog.SNAP_KR_PAPER_QUOTES, {"contract": 1, "codes": {
+        "069500": {"code": "069500", "status": "OK", "bars": [{"date": "2026-10-26"}, {"date": last_day}]}}})
+
+
+def test_D_기록이_없던_종목은_그날_장이_열렸으면_다음_주기에_다시_받는다(store, flows, monkeypatch):
+    """받은 시각만 보면 늦은 판(D 기록 없음)을 그날 다시 묻지 않아 결정 게이트 ③(U의 90% D 수급)이 기한까지 풀리지 않았습니다."""
+    _scope(monkeypatch, ["005930"])
+    _quotes_anchor(store, "2026-10-27")
+    flows.records["005930"] = [_record("2026-10-26", 7)]
+    detail = tasks.task_kr_paper_flows()
+
+    entry = _status(store)["codes"]["005930"]
+    assert entry["latestDate"] == "2026-10-26" and entry["sessionMiss"] == {"session": "2026-10-27", "attempts": 1}
+    assert "세션 기록 없음 1(005930) — 하룻밤 3회까지 다시" in detail
+
+    monkeypatch.setattr(kr_paper, "_now", lambda: datetime(2026, 10, 27, 22, 57, tzinfo=KST))
+    flows.records["005930"] = [_record("2026-10-27", 9), _record("2026-10-26", 7)]
+    flows.calls.clear()
+    tasks.task_kr_paper_flows()
+
+    assert flows.calls == [("005930", kr_paper.KR_FLOW_DAYS)]
+    entry = _status(store)["codes"]["005930"]
+    assert entry["latestDate"] == "2026-10-27" and "sessionMiss" not in entry
+    flows.calls.clear()
+    assert tasks.task_kr_paper_flows() == "최신 상태 (세션 2026-10-27, 1종목, 호출 0회)"
+    assert flows.calls == []
+
+
+def test_069500에_D_봉이_없으면_수급을_다시_묻지_않고_다시_물어도_하룻밤_3회까지(store, flows, monkeypatch):
+    _scope(monkeypatch, ["005930"])
+    _quotes_anchor(store, "2026-10-26")                                         # 늦게 지정된 휴장일처럼
+    flows.records["005930"] = [_record("2026-10-26", 7)]
+    tasks.task_kr_paper_flows()
+
+    monkeypatch.setattr(kr_paper, "_now", lambda: datetime(2026, 10, 27, 22, 57, tzinfo=KST))
+    flows.calls.clear()
+    assert tasks.task_kr_paper_flows() == "최신 상태 (세션 2026-10-27, 1종목, 호출 0회)"
+    assert flows.calls == []
+
+    _quotes_anchor(store, "2026-10-27")                                         # 그날 장이 열렸던 것으로 보이면 횟수 안에서
+    for when in (datetime(2026, 10, 27, 23, 10, tzinfo=KST), datetime(2026, 10, 27, 23, 57, tzinfo=KST)):
+        monkeypatch.setattr(kr_paper, "_now", lambda when=when: when)
+        tasks.task_kr_paper_flows()
+    assert len(flows.calls) == 2
+    assert _status(store)["codes"]["005930"]["sessionMiss"]["attempts"] == kr_paper.KR_SESSION_RETRY_LIMIT
+    monkeypatch.setattr(kr_paper, "_now", lambda: datetime(2026, 10, 28, 0, 30, tzinfo=KST))
+    assert tasks.task_kr_paper_flows() == "최신 상태 (세션 2026-10-27, 1종목, 호출 0회)"
 
 
 def test_예산이_모자라면_나머지는_다음_주기(store, flows, monkeypatch):

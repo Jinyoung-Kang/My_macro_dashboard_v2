@@ -175,6 +175,11 @@ def kr_scope() -> tuple[list[str], str | None]:
 # ==============================================================================
 # KR 거래일 D의 이 시각(KST) 뒤에 하루 한 번 받습니다(명세 K17). 통합(KRX+NXT) 세션 20:00 마감과 수급 저녁판(20:21~20:23) 뒤입니다.
 KR_COLLECT_AFTER = clock_time(20, 30)
+# 그날 받았는데 세션 D의 자료(관측치는 D 봉, 수급은 D 기록)가 없던 종목을 다시 묻는 하룻밤 종목당 횟수(첫 시도 포함) — 토스가 늦은 판을
+# 준 밤에 다음 slow 주기가 다시 묻되, 휴장일·거래가 끝난 종목을 매시 끝없이 부르지 않게. 다른 종목은 KR_SESSION_ANCHOR에 그날 봉이
+# 있을 때만 다시 묻습니다(069500 자신은 늘) — 069500에 D 봉이 없으면 늦게 지정된 휴장일일 수 있습니다(명세 §4-4, 결정 게이트 ⑤).
+KR_SESSION_RETRY_LIMIT = 3
+KR_SESSION_ANCHOR = "069500"
 # 매번 다시 받는 최근 일봉 수 — 토스가 지난 봉을 고치면 다음 날 흡수하고, 기업행위 감지(B7)가 이웃 봉의 수정 비율을 봅니다.
 # 호출은 한 봉 더(6개) 묻습니다 — 20:30 전 실행에서 오늘 장중 봉을 버려도 5봉이 남게.
 KR_QUOTES_BARS = 5
@@ -227,6 +232,35 @@ def collected_after(entry, after: datetime) -> bool:
     return at is not None and at >= after
 
 
+def _last_bar_date(entry) -> str | None:
+    bars = entry.get("bars") if isinstance(entry, dict) else None
+    dates = [bar["date"] for bar in bars or [] if isinstance(bar, dict) and bar.get("date")]
+    return max(dates) if dates else None
+
+
+def _has_session_bar(entry, session: str) -> bool:
+    """관측치 항목에 세션 D의 봉이 있는가(이어받은 isStale 항목은 아님) — 그날 장이 열렸다고 보는 근거(KR_SESSION_ANCHOR)."""
+    return isinstance(entry, dict) and not entry.get("isStale") and _last_bar_date(entry) == session
+
+
+def _session_attempts(entry, session: str) -> int:
+    """그날 받은 항목이 세션 자료 없이 받은 횟수 — 표시(sessionMiss)가 없으면 한 번."""
+    miss = entry.get("sessionMiss") if isinstance(entry, dict) else None
+    if isinstance(miss, dict) and miss.get("session") == session and isinstance(miss.get("attempts"), int):
+        return miss["attempts"]
+    return 1
+
+
+def _retry_session(entry, session: str, has_session: bool, market_open: bool) -> bool:
+    """그날 받았는데 세션 자료가 없어 이번 주기에 다시 물을까 — 장이 열렸다고 볼 때만, 종목당 KR_SESSION_RETRY_LIMIT회까지."""
+    return not has_session and market_open and _session_attempts(entry, session) < KR_SESSION_RETRY_LIMIT
+
+
+def _session_miss(entry: dict, session: str, attempt: int) -> dict:
+    """세션 자료 없이 받은 항목에 다시 물은 횟수를 남깁니다(sessionMiss) — 다음 주기의 _retry_session이 셉니다."""
+    return {**entry, "sessionMiss": {"session": session, "attempts": attempt}}
+
+
 class _TossRun:
     """한 실행의 토스 호출 예산·간격과 멈춤(403) 기록."""
 
@@ -266,11 +300,12 @@ def _static_info(info: dict | None, previous: dict | None) -> dict:
 
 
 def _daily(code: str, previous: dict | None, info: dict | None, run: _TossRun, fetched_at: str,
-           session: str) -> dict | None:
+           session: str, attempt: int = 1) -> dict | None:
     """
     종목 하나의 일봉 — 원시(adjusted=false) 최근 5봉 + 같은 날 수정(adjusted=true) 종가·수정 비율. 원시 호출이 실패하면 TossError를 그대로
     올립니다(그 종목은 이번에 못 받음 — 직전 값을 이음). 수정 호출만 실패하면 adjClose·adjRatio를 None으로 두고 사유를 남깁니다.
-    예산이 원시·수정 두 번에 모자라면 None(시작하지 않음).
+    예산이 원시·수정 두 번에 모자라면 None(시작하지 않음). 봉은 있는데 세션 D 봉이 없으면 ``sessionMiss``(이번이 그 세션의
+    ``attempt``번째 시도)를 남깁니다 — 다음 slow 주기가 다시 묻는 근거(_retry_session).
 
     대상 세션 ``session``보다 늦은 날짜의 봉은 버립니다 — 20:30 전에 돈 실행(로컬 맥의 낮, 손으로 켠 서버)에서 토스는 오늘의 장중 봉을
     주는데, 그 값은 그날 종가가 아닙니다(명세 §0 '장중 관측치 없음').
@@ -306,7 +341,8 @@ def _daily(code: str, previous: dict | None, info: dict | None, run: _TossRun, f
         bars.append({"date": day, "open": candle["open"], "high": candle["high"], "low": candle["low"],
                      "close": candle["close"], "volume": candle["volume"], "priceSource": source,
                      "adjClose": adj_close, "adjRatio": adj_close / candle["close"] if adj_close else None})
-    return {**entry, "status": "OK", "bars": bars}
+    entry = {**entry, "status": "OK", "bars": bars}
+    return entry if days[-1] == session else _session_miss(entry, session, attempt)
 
 
 def _probe_open(code: str, day: str) -> dict:
@@ -382,8 +418,10 @@ def task_kr_paper_quotes() -> str:
     (+ 수정 종가를 timeseries ``kr_close_adj``에 덧붙임). 모양은 명세 §9 'paper.kr.quotes 계약'(contract 1).
 
     규칙
-      - KR 세션 D(kr_target_session)의 20:30 KST 뒤에 받은 종목은 일봉을 다시 부르지 않습니다 — 모두 받았으면 호출 0회. 그중
-        1분봉 개장 봉이 FAILED로 남은 종목은 그 봉만 다시 묻습니다(_failed_probe_bars).
+      - KR 세션 D(kr_target_session)의 20:30 KST 뒤에 받았고 D 봉이 있는(또는 NO_BARS) 종목은 일봉을 다시 부르지 않습니다 — 모두
+        받았으면 호출 0회. 그중 1분봉 개장 봉이 FAILED로 남은 종목은 그 봉만 다시 묻습니다(_failed_probe_bars). 받았는데 D 봉이 없던
+        종목(토스의 늦은 판)은 다음 주기에 다시 받습니다 — 069500에 D 봉이 있을 때만(069500 자신은 늘), 종목당 하룻밤
+        KR_SESSION_RETRY_LIMIT회까지(늦게 지정된 휴장일에 범위 전체를 매시 부르지 않게).
       - 순서: 종목 상태(200종목에 1회) → 종목마다 일봉 원시·수정 → 1분봉 개장 봉. 일봉을 시작할 때마다 그 종목과 앞서 받은 종목의
         1분봉 몫(종목마다 가장 새 봉 1회)을 예산에서 떼어 두고, 1분봉은 종목마다 가장 새 봉부터 묻습니다(더 지난 봉은 남은 예산으로).
         실행당 KR_QUOTES_CALL_BUDGET·KR_QUOTES_TIME_LIMIT_SECONDS 안에서만, 넘는 종목·봉은 다음 주기에(결과 문구 '1분봉 미요청 N').
@@ -397,10 +435,22 @@ def task_kr_paper_quotes() -> str:
     after = datetime.combine(session, KR_COLLECT_AFTER, tzinfo=KST)
     scope, basis = kr_scope()
     previous = previous_payload(catalog.SNAP_KR_PAPER_QUOTES).get("codes") or {}
-    pending = [code for code in scope if not collected_after(previous.get(code), after)]
+    session_iso = session.isoformat()
+    market_open = _has_session_bar(previous.get(KR_SESSION_ANCHOR), session_iso)
+    # 받지 못한 종목(missing)과, 받았는데 D 봉이 없던 종목(retry — 토스의 늦은 판, 069500에 D 봉이 있을 때·횟수 안에서만).
+    missing: set[str] = set()
+    retry: dict[str, int] = {}               # 코드 → 이번이 그 세션의 몇 번째 시도
+    for code in scope:
+        entry = previous.get(code)
+        if not collected_after(entry, after):
+            missing.add(code)
+        elif _retry_session(entry, session_iso, entry.get("status") == "NO_BARS" or _last_bar_date(entry) == session_iso,
+                            market_open or code == KR_SESSION_ANCHOR):
+            retry[code] = _session_attempts(entry, session_iso) + 1
+    pending = [code for code in scope if code in missing or code in retry]
     # 그날 일봉은 받았는데 1분봉 개장 봉이 FAILED로 남은 종목 — 일봉은 다시 부르지 않고 그 봉만 묻습니다(직전 항목의 복사본을 고침).
     reprobe = {code: copy.deepcopy(previous[code]) for code in scope
-               if code not in pending and _failed_probe_bars(previous.get(code))}
+               if code not in missing and code not in retry and _failed_probe_bars(previous.get(code))}
     if not pending and not reprobe:
         return f"최신 상태 (세션 {session}, {len(scope)}종목, 호출 0회)"
 
@@ -424,6 +474,7 @@ def task_kr_paper_quotes() -> str:
     work: dict[str, list[dict]] = {code: _failed_probe_bars(entry) for code, entry in reprobe.items()}
     owed = len(work)
     fresh: dict[str, dict] = {}
+    retry_failed: list[str] = []
     stop = ""
     for code in pending:
         if run.forbidden:
@@ -435,12 +486,14 @@ def task_kr_paper_quotes() -> str:
             stop = "호출 예산 소진 — 나머지는 다음 주기"
             break
         try:
-            entry = _daily(code, previous.get(code), infos.get(code), run, fetched_at, session.isoformat())
+            entry = _daily(code, previous.get(code), infos.get(code), run, fetched_at, session_iso, retry.get(code, 1))
         except toss_service.TossForbidden as exc:
             run.forbidden = str(exc)
             break
         except toss_service.TossError as exc:
             run.reasons.append(f"{code}: {exc}")
+            if code in retry:
+                retry_failed.append(code)
             continue
         if entry is None:
             stop = "호출 예산 소진 — 나머지는 다음 주기"
@@ -494,7 +547,9 @@ def task_kr_paper_quotes() -> str:
     for entry in fresh.values():
         if entry["status"] == "OK":
             _append_adj_closes(entry)
-    codes = {code: previous[code] for code in scope if code not in pending and code in previous}
+    # 다시 묻다 실패한 종목은 그날 받은 직전 항목 그대로(이어받기 표시 없이) 두고 시도 수만 셉니다.
+    codes = {code: previous[code] for code in scope if code not in missing and code in previous}
+    codes.update({code: _session_miss(previous[code], session_iso, retry[code]) for code in retry_failed})
     codes.update(reprobe)
     codes.update(fresh)
     carried = carry_over_missing(codes, previous, scope, (run.reasons[0] if run.reasons else stop) or None, _has_quote)
@@ -519,6 +574,10 @@ def task_kr_paper_quotes() -> str:
         detail += " · 유니버스 저장본 없음 — ETF 2만"
     if rebase:
         detail += f" · 수정주가 기준 바뀜 {len(rebase)}({', '.join(rebase[:5])}) — kr_paper_price_history가 다시 받음"
+    late = [code for code in scope if code in fresh and fresh[code].get("sessionMiss")]
+    if late:
+        detail += (f" · 세션 봉 없음 {len(late)}({', '.join(late[:5])}{'…' if len(late) > 5 else ''}) — "
+                   f"하룻밤 {KR_SESSION_RETRY_LIMIT}회까지 다시")
     if stop:
         detail += f" · {stop}"
     if unasked:
@@ -551,8 +610,9 @@ def task_kr_paper_flows() -> str:
     결정 행에 동결합니다(명세 K26). 레이더 수급 수집(toss_stock_flows, 매시)과 따로 돕니다.
 
     규칙
-      - KR 세션 D(kr_target_session)의 20:30 KST 뒤에 받은 종목은 다시 부르지 않습니다. D보다 늦은 날짜의 기록(20:30 전 실행의 오늘
-        장중 잠정치)은 쓰지 않습니다.
+      - KR 세션 D(kr_target_session)의 20:30 KST 뒤에 받았고 D 기록이 있는(또는 NO_RECORDS) 종목은 다시 부르지 않습니다. 받았는데
+        D 기록이 없던 종목(토스의 늦은 판)은 다음 주기에 다시 받습니다 — 관측치 저장본의 069500에 D 봉이 있을 때만(늦게 지정된 휴장일이면
+        다시 묻지 않음), 종목당 하룻밤 KR_SESSION_RETRY_LIMIT회까지. D보다 늦은 날짜의 기록(20:30 전 실행의 오늘 장중 잠정치)은 쓰지 않습니다.
       - 실행당 KR_FLOWS_CALL_BUDGET·KR_FLOWS_TIME_LIMIT_SECONDS 안에서만, 넘는 종목은 다음 주기에. 403이면 멈춥니다.
       - 받지 못한 종목은 기록을 지우지 않고(저장된 날짜 행이 그대로) 상태 항목만 직전 것을 isStale로 잇습니다. 한 종목도 받지 못하면
         EmptyResult. 토스가 답했는데 기록이 0건이면 상태 NO_RECORDS('응답에 없음').
@@ -565,7 +625,19 @@ def task_kr_paper_flows() -> str:
     after = datetime.combine(session, KR_COLLECT_AFTER, tzinfo=KST)
     scope, basis = kr_scope()
     previous = previous_payload(catalog.SNAP_KR_PAPER_FLOWS_STATUS).get("codes") or {}
-    pending = [code for code in scope if not collected_after(previous.get(code), after)]
+    # 그날 장이 열렸는지는 같은 slow 주기에 먼저 도는 관측치의 069500 D 봉으로 봅니다(수집기 자기 저장본).
+    quotes = previous_payload(catalog.SNAP_KR_PAPER_QUOTES).get("codes") or {}
+    market_open = _has_session_bar(quotes.get(KR_SESSION_ANCHOR), session_iso)
+    missing: set[str] = set()
+    retry: dict[str, int] = {}
+    for code in scope:
+        entry = previous.get(code)
+        if not collected_after(entry, after):
+            missing.add(code)
+        elif _retry_session(entry, session_iso, entry.get("status") == "NO_RECORDS" or entry.get("latestDate") == session_iso,
+                            market_open):
+            retry[code] = _session_attempts(entry, session_iso) + 1
+    pending = [code for code in scope if code in missing or code in retry]
     if not pending:
         return f"최신 상태 (세션 {session}, {len(scope)}종목, 호출 0회)"
 
@@ -573,6 +645,7 @@ def task_kr_paper_flows() -> str:
     fetched_at = now.astimezone(timezone.utc).isoformat()
     by_date: dict[str, list[dict]] = {}
     fresh: dict[str, dict] = {}
+    retry_failed: list[str] = []
     stop = ""
     for code in pending:
         if _clock() - started >= KR_FLOWS_TIME_LIMIT_SECONDS:
@@ -591,14 +664,18 @@ def task_kr_paper_flows() -> str:
             break
         except toss_service.TossError as exc:
             run.reasons.append(f"{code}: {exc}")
+            if code in retry:
+                retry_failed.append(code)
             continue
         kept = [record for record in records if record.get("date") and record["date"] <= session_iso]
         for record in kept:
             by_date.setdefault(record["date"], []).append({**record, "code": code, "fetchedAt": fetched_at})
         latest = max(kept, key=lambda record: record["date"], default=None)
-        fresh[code] = {"code": code, "status": "OK" if kept else "NO_RECORDS", "fetchedAt": fetched_at, "records": len(kept),
-                       "latestDate": latest["date"] if latest else None,
-                       "latestUpdatedAt": latest.get("updatedAt") if latest else None}
+        entry = {"code": code, "status": "OK" if kept else "NO_RECORDS", "fetchedAt": fetched_at, "records": len(kept),
+                 "latestDate": latest["date"] if latest else None,
+                 "latestUpdatedAt": latest.get("updatedAt") if latest else None}
+        fresh[code] = entry if not latest or latest["date"] == session_iso else _session_miss(entry, session_iso,
+                                                                                           retry.get(code, 1))
 
     if run.forbidden:
         run.reasons.insert(0, run.forbidden)
@@ -611,7 +688,9 @@ def task_kr_paper_flows() -> str:
     cutoff = (now.astimezone(KST).date() - timedelta(days=KR_FLOW_RETENTION_DAYS)).isoformat()
     store.delete_observations_before(catalog.OBS_KR_PAPER_FLOW, cutoff)
 
-    codes = {code: previous[code] for code in scope if code not in pending and code in previous}
+    # 다시 묻다 실패한 종목은 그날 받은 직전 항목 그대로(이어받기 표시 없이) 두고 시도 수만 셉니다.
+    codes = {code: previous[code] for code in scope if code not in missing and code in previous}
+    codes.update({code: _session_miss(previous[code], session_iso, retry[code]) for code in retry_failed})
     codes.update(fresh)
     carried = carry_over_missing(codes, previous, scope, (run.reasons[0] if run.reasons else stop) or None,
                                  lambda entry: entry.get("status") in ("OK", "NO_RECORDS"))
@@ -625,6 +704,10 @@ def task_kr_paper_flows() -> str:
     empty = sum(1 for entry in fresh.values() if entry["status"] == "NO_RECORDS")
     detail = (f"세션 {session} · {len(fresh)}/{len(pending)} 종목" + (f"(기록 없음 {empty})" if empty else "")
               + f" · {saved}건 · 호출 {run.budget.used}회" + carried_suffix(carried))
+    late = [code for code in scope if code in fresh and fresh[code].get("sessionMiss")]
+    if late:
+        detail += (f" · 세션 기록 없음 {len(late)}({', '.join(late[:5])}{'…' if len(late) > 5 else ''}) — "
+                   + (f"하룻밤 {KR_SESSION_RETRY_LIMIT}회까지 다시" if market_open else "069500 세션 봉이 없어 다시 묻지 않음"))
     if stop:
         detail += f" · {stop}"
     return detail + _reason_suffix(run.reasons)

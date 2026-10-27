@@ -4,7 +4,8 @@ tests/test_kr_paper_quotes.py
 
 고정하는 규칙
   1. 저장본 모양 = 명세 §9 'paper.kr.quotes 계약' — 봉은 오래된 날부터 최근 5봉, 원시가·출처(NXT면 통합가)·수정 비율·종목별 받은 시각.
-  2. KR 거래일 D 20:30 KST 뒤 하루 1회 — 그 뒤에 받은 종목은 다시 부르지 않는다(호출 0회). 20:30 전에는 전 거래일이 대상이고 장중 봉은 버린다.
+  2. KR 거래일 D 20:30 KST 뒤 하루 1회 — 그 뒤에 받았고 D 봉이 있는 종목은 다시 부르지 않는다(호출 0회). D 봉이 없던 종목은 069500을
+     먼저, 069500에 D 봉이 있으면 나머지도 하룻밤 3회까지 다시. 20:30 전에는 전 거래일이 대상이고 장중 봉은 버린다.
   3. 일부 실패 → 그 종목만 직전 값을 isStale로 잇는다. 전부 실패 → EmptyResult(저장본 그대로). 403이면 멈춘다. 키가 없으면 EmptyResult.
   4. '응답에 없음'(봉 0개)은 NO_BARS로 '호출 실패'(이음·없음)와 가른다.
   5. 1분봉 개장 봉은 그날 09:01·10:01 라벨만, 처음 보는 종목은 최신 봉만, 확정된 결과는 다시 묻지 않고 FAILED는 다시 묻는다 —
@@ -168,6 +169,9 @@ def test_일부_실패는_그_종목만_직전_값을_isStale로_잇는다(store
     before = _payload(store)["codes"]["005930"]
 
     clock(datetime(2026, 10, 28, 21, 0, tzinfo=KST))
+    for code in ("069500", "005930"):
+        toss.raw[code].append(_bar("2026-10-28", 2000))
+        toss.adjusted[code].append(_bar("2026-10-28", 1000))
     toss.errors[("005930", "raw")] = toss_service.TossError("HTTP 500")
     detail = tasks.task_kr_paper_quotes()
 
@@ -301,6 +305,90 @@ def test_1분봉_확정_결과는_다시_묻지_않고_실패는_다시_묻는�
     second = _payload(store)["codes"]
     assert second["005930"]["bars"][-2]["minute"]["status"] == "OK"                 # 10-27 다시 물어 채움
     assert second["000660"]["bars"][-2]["minute"]["status"] == "NO_BAR"             # 확정 결과는 옮김
+
+
+def _late_board(fake, codes):
+    """토스가 늦은 판을 준 밤 — 세션 D(10-27) 봉이 아직 없음."""
+    for code in codes:
+        fake.raw[code] = [bar for bar in fake.raw[code] if bar["date"] < "2026-10-27"]
+        fake.adjusted[code] = [bar for bar in fake.adjusted[code] if bar["date"] < "2026-10-27"]
+
+
+def test_D_봉이_없던_종목은_069500에_D_봉이_생긴_뒤_다음_주기에_다시_받는다(store, toss, clock, monkeypatch):
+    """
+    받은 시각만 보면 21:57에 토스가 늦은 판(D 봉 없음)을 준 종목을 그날 다시 부르지 않아 결정 게이트(범위 90% D 봉·069500 D 봉)가
+    기한까지 풀리지 않았습니다. D 봉이 있어야 '받음'입니다 — 069500을 먼저 다시 묻고, 그날 장이 열렸으면(069500 D 봉) 나머지도.
+    """
+    _scope(monkeypatch, ["069500", "005930"])
+    _standard(toss, ["069500", "005930"])
+    _late_board(toss, ["069500", "005930"])
+    detail = tasks.task_kr_paper_quotes()
+
+    codes = _payload(store)["codes"]
+    assert {code: codes[code]["sessionMiss"] for code in codes} == {
+        code: {"session": "2026-10-27", "attempts": 1} for code in ("069500", "005930")}
+    assert "세션 봉 없음 2(069500, 005930) — 하룻밤 3회까지 다시" in detail
+
+    _standard(toss, ["069500", "005930"])                                       # 토스가 D 봉을 채움
+    clock(datetime(2026, 10, 27, 22, 57, tzinfo=KST))
+    toss.calls.clear()
+    tasks.task_kr_paper_quotes()
+    assert {c[0] for c in toss.calls if c[1] == "raw"} == {"069500"}             # 069500에 D 봉이 생기기 전이라 그것만
+    anchor = _payload(store)["codes"]["069500"]
+    assert anchor["bars"][-1]["date"] == "2026-10-27" and "sessionMiss" not in anchor
+    assert anchor["bars"][-1]["minute"]["status"] == "OK"
+
+    clock(datetime(2026, 10, 27, 23, 57, tzinfo=KST))
+    toss.calls.clear()
+    tasks.task_kr_paper_quotes()
+    assert {c[0] for c in toss.calls if c[1] == "raw"} == {"005930"}
+    assert _payload(store)["codes"]["005930"]["bars"][-1]["date"] == "2026-10-27"
+
+    toss.calls.clear()
+    assert tasks.task_kr_paper_quotes() == "최신 상태 (세션 2026-10-27, 2종목, 호출 0회)"
+    assert toss.calls == []
+
+
+def test_069500에도_D_봉이_없으면_069500만_하룻밤_3회까지_다시_묻는다(store, toss, clock, monkeypatch):
+    """늦게 지정된 휴장일이면 069500에 D 봉이 끝내 없습니다 — 범위 전체를 매시 다시 부르지 않고, 069500도 세 번에서 멈춥니다."""
+    _scope(monkeypatch, ["069500", "005930"])
+    _standard(toss, ["069500", "005930"])
+    _late_board(toss, ["069500", "005930"])
+    tasks.task_kr_paper_quotes()
+
+    for when in (datetime(2026, 10, 27, 22, 57, tzinfo=KST), datetime(2026, 10, 27, 23, 57, tzinfo=KST)):
+        clock(when)
+        toss.calls.clear()
+        tasks.task_kr_paper_quotes()
+        assert {c[0] for c in toss.calls if c[1] == "raw"} == {"069500"}
+    codes = _payload(store)["codes"]
+    assert codes["069500"]["sessionMiss"]["attempts"] == kr_paper.KR_SESSION_RETRY_LIMIT == 3
+    assert codes["005930"]["sessionMiss"]["attempts"] == 1
+
+    clock(datetime(2026, 10, 28, 0, 57, tzinfo=KST))                             # 자정 넘어도 세션은 10-27
+    toss.calls.clear()
+    assert tasks.task_kr_paper_quotes() == "최신 상태 (세션 2026-10-27, 2종목, 호출 0회)"
+    assert toss.calls == []
+
+
+def test_D_봉을_다시_묻다_실패하면_그날_받은_항목을_그대로_두고_횟수만_센다(store, toss, clock, monkeypatch):
+    _scope(monkeypatch, ["069500", "005930", "000660"])
+    _standard(toss, ["069500", "005930", "000660"])
+    _late_board(toss, ["005930"])
+    toss.errors[("000660", "raw")] = toss_service.TossError("HTTP 500")
+    tasks.task_kr_paper_quotes()
+    before = _payload(store)["codes"]["005930"]
+
+    clock(datetime(2026, 10, 27, 22, 57, tzinfo=KST))
+    toss.errors = {("005930", "raw"): toss_service.TossError("HTTP 502")}
+    detail = tasks.task_kr_paper_quotes()
+
+    codes = _payload(store)["codes"]
+    assert "isStale" not in codes["000660"] and codes["000660"]["bars"][-1]["date"] == "2026-10-27"
+    again = codes["005930"]
+    assert "isStale" not in again and again["fetchedAt"] == before["fetchedAt"] and again["bars"] == before["bars"]
+    assert again["sessionMiss"] == {"session": "2026-10-27", "attempts": 2}
+    assert "1/2 종목" in detail and "HTTP 502" in detail and "이전 값" not in detail
 
 
 def test_거래량_0인_봉은_1분봉을_묻지_않는다(store, toss, clock, monkeypatch):
