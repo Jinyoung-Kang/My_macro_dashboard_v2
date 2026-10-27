@@ -93,7 +93,7 @@ import java.util.concurrent.locks.ReentrantLock;
  * <p><b>실행 하나 = 달력 한 벌·설정 판 하나</b>(C1a): 정기·수동 실행은 시작할 때 그 시장의 실행 문맥({@link MarketRun})을 한 번 열어
  * ({@link PaperMarkets#open}) 세션 d·결정 시각과 기한·관측치 확정 판정·장부 처리·미확정 순자산 줄·Claude 결정에 그대로 넘깁니다 —
  * 그 사이 설정 탭에서 새 판을 저장해도 Claude 결정 행의 {@code settings_version}·패킷·시스템 프롬프트는 이 실행이 읽은 판이고,
- * 한국 달력(공휴일 저장본·설정 판으로 만듦, C1b)도 실행마다 한 벌입니다.
+ * 한국 달력(공휴일 저장본·설정 판으로 만듦, C1c)도 실행마다 한 벌입니다.
  */
 @Service
 public class PaperDecisionJob {

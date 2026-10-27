@@ -45,7 +45,7 @@ interface PaperMarket {
     /**
      * 세션 날짜를 정하고 체결·만료·재진입 금지·통계 표본을 세는 거래일 달력. 시장 묶음에서는 <b>고정 달력</b>(실행과 상관없이 늘 같음 —
      * 미국)이고, 실행({@link MarketRun})에서는 그 실행이 시작할 때 {@link #openCalendar}로 만든 한 벌입니다. 실행마다 저장본·설정
-     * 판으로 달력을 만드는 시장(한국 — C1b)의 묶음은 고정 달력이 없어 이 메서드가 던집니다 — 실행 밖에서 달력을 물은 코드 오류입니다.
+     * 판으로 달력을 만드는 시장(한국 — C1c의 KrPaperMarket)의 묶음은 고정 달력이 없어 이 메서드가 던집니다 — 실행 밖에서 달력을 물은 코드 오류입니다.
      *
      * @throws IllegalStateException 실행마다 달력을 만드는 시장의 묶음에 물음(실행 문맥을 넘기지 않은 코드)
      */
@@ -53,7 +53,7 @@ interface PaperMarket {
 
     /**
      * 실행 하나의 달력을 만듭니다 — 실행을 열 때 한 번({@link PaperMarkets#open}). 기본은 고정 달력({@link #calendar()}) 그대로입니다.
-     * 한국(C1b)은 그 실행이 조용히 읽은 공휴일 저장본({@code kr_holidays})과 그 실행이 읽은 설정 판(임시휴장)으로 새로 만듭니다 — 그래서
+     * 한국(C1c)은 그 실행이 조용히 읽은 공휴일 저장본({@code kr_holidays})과 그 실행이 읽은 설정 판(임시휴장)으로 새로 만듭니다 — 그래서
      * 한 실행 안의 달력 호출이 모두 같은 한 벌이고, 그 판이 결정 행의 {@code settings_version}과 같습니다.
      */
     default TradingCalendar openCalendar(MarketRun.Inputs inputs) {
@@ -146,7 +146,7 @@ interface PaperMarket {
     List<String> defaultCashLike();
 
     /**
-     * 설정에 최소 주문 금액 키(그 시장 접두어 + {@code minOrderNotional})가 없을 때의 값 — 장부 통화 단위(미국 $500, 한국은 C1b에서
+     * 설정에 최소 주문 금액 키(그 시장 접두어 + {@code minOrderNotional})가 없을 때의 값 — 장부 통화 단위(미국 $500, 한국은 C1c에서
      * 500,000원 — 명세 §4-7). 검증기 한도({@link PacketBuilder.Limits#from(JsonNode, PaperMarket)})의 기본값입니다.
      */
     double defaultMinOrderNotional();

@@ -89,7 +89,7 @@ final class TestKrMarket implements PaperMarket {
     }
 
     /**
-     * 실행마다 달력을 만드는 시험용 한국 묶음(C1a — 실제 한국 묶음 {@code KrPaperMarket}이 C1b에서 그렇게 됨): 고정 달력이 없어
+     * 실행마다 달력을 만드는 시험용 한국 묶음(C1a — 실제 한국 묶음 {@code KrPaperMarket}이 C1c에서 그렇게 됨): 고정 달력이 없어
      * {@link #calendar()}가 던지고, 실행을 열 때({@link PaperMarkets#open})만 {@code factory}가 달력을 만듭니다. 한 실행이 달력을 한
      * 벌만 쓰는지(실행 밖 경로가 달력을 묻지 않는지)를 보는 시험이 씁니다. 나머지는 {@link #INSTANCE}와 같습니다.
      */
