@@ -402,6 +402,48 @@ class KrRulesTest {
     }
 
     @Test
+    @DisplayName("후보 부호 경계 — 20일 합이 둘 다 > 0이어야(외국인 0·기관 +2,000도, 둘 다 0도 '수급 미달' — 0은 순매수가 아님), 점수 0인 종목만 남아도 점수 비례 비중이 0/0이 되지 않음")
+    void candidateSignBoundary() {
+        List<Member> universe = List.of(member("000010", 1, 1_000_000L), member("000020", 2, 1_000_000L),
+                member("000030", 3, 1_000_000L));
+        Map<String, List<FlowDay>> flows = Map.of("000010", daily(0, 100), "000020", daily(0, 0), "000030", daily(100, 100));
+        Map<String, Financials> fin = Map.of("000010", good(), "000020", good(), "000030", good());
+        Map<String, Evaluation> by = byCode(KrRules.evaluate(CAL, new Input(D, B, universe, flows, fin, Set.of(), Set.of()),
+                DEFAULTS));
+
+        assertThat(by.get("000010").flows().foreignNet20()).isZero();
+        assertThat(by.get("000010").flows().institutionNet20()).isEqualTo(2_000L);
+        assertThat(by.get("000010").exclusions()).extracting(Exclusion::reason).containsExactly(Reason.FLOWS_NOT_BOTH_POSITIVE);
+        assertThat(by.get("000020").exclusions()).extracting(Exclusion::reason).containsExactly(Reason.FLOWS_NOT_BOTH_POSITIVE);
+        assertThat(by.get("000020").score()).as("창이 차면 점수는 셈 — 0").isZero();
+        assertThat(by.get("000020").candidate()).isFalse();
+        assertThat(by.get("000030").candidate()).isTrue();
+
+        // 점수 0인 종목만 있는 U — 후보가 없어 종목 0%(점수 비례가 0 ÷ 0으로 NaN 비중을 만들지 않음).
+        Input zeroOnly = new Input(D, B, List.of(member("000020", 1, 1_000_000L)), Map.of("000020", daily(0, 0)),
+                Map.of("000020", good()), Set.of(), Set.of());
+        Selection score = KrRules.select(CAL, zeroOnly, params(15, Weighting.SCORE, 0, 10));
+        assertThat(score.targets()).isEmpty();
+        assertThat(score.stockWeightPct()).isZero();
+        assertThat(score.parkingWeightPct()).isEqualTo(100.0);
+    }
+
+    @Test
+    @DisplayName("매일 매도 신호 부호 경계 — 20일 합이 둘 다 < 0이어야(외국인 −2,000·기관 0도, 둘 다 0도 신호 없음)")
+    void dailySellSignBoundary() {
+        Map<String, List<FlowDay>> flows = Map.of("000010", daily(-100, 0), "000020", daily(0, 0), "000030", daily(-100, -1));
+        Map<String, KrRules.HoldingCheck> by = new LinkedHashMap<>();
+        KrRules.holdingChecks(CAL, D, List.of("000010", "000020", "000030"), flows, null, Set.of())
+                .forEach(c -> by.put(c.code(), c));
+
+        assertThat(by.get("000010").flows().foreignNet20()).isEqualTo(-2_000L);
+        assertThat(by.get("000010").flows().institutionNet20()).isZero();
+        assertThat(by.get("000010").sell()).as("기관 0 — 순매도가 아님").isFalse();
+        assertThat(by.get("000020").sell()).as("둘 다 0").isFalse();
+        assertThat(by.get("000030").reasons()).containsExactly(KrRules.SellReason.FLOWS_BOTH_NEGATIVE);
+    }
+
+    @Test
     @DisplayName("사유별 빠진 종목 수 — 화면의 '자료 없음' 사유 집계")
     void exclusionCounts() {
         Map<Reason, Integer> counts = KrRules.select(CAL, fixture(), DEFAULTS).exclusionCounts();
