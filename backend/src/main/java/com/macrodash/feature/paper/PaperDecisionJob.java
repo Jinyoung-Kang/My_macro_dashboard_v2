@@ -372,7 +372,7 @@ public class PaperDecisionJob {
             detail.put("rules", RULES_NOT_YET);
         } else {
             try {
-                decision = decideRules(d, pricesFinal, detail);
+                decision = decideRules(market, d, pricesFinal, detail);
                 failures.remove(new FailureKey(market.code(), d, market.rulesBook()));
             } catch (RuntimeException e) {
                 errors.add("규칙 계좌: " + message(e));
@@ -425,7 +425,7 @@ public class PaperDecisionJob {
      * 같은 거래일에 다시 돌 때(API 오류 재시도·Claude 오류), r 선정으로 낸 REBALANCE가 생긴 뒤라 {@link #rebalanceMissing}이 거짓이
      * 돼 SCHEDULED를 하나 더 내면 "거래일마다 책당 한 번"(C1·R5)이 깨집니다. 시작 전 책은 결정하지 않습니다(null).
      */
-    private Decision decideRules(LocalDate d, boolean pricesFinal, Map<String, Object> detail) {
+    private Decision decideRules(MarketRun market, LocalDate d, boolean pricesFinal, Map<String, Object> detail) {
         // 이 거래일 시점에 재선정이 지난 최신 분기의 재선정일 r — 오늘이 r이면 재선정, r을 놓쳤으면 따라잡기(클래스 설명).
         LocalDate reselectionDay = RuleBookService.reselectionDayAsOf(d);
         boolean reselection = reselectionDay.equals(d);
@@ -461,7 +461,8 @@ public class PaperDecisionJob {
             detail.put("rules", "시작 전 — 결정을 내지 않습니다");
             return null;
         }
-        Decision decision = rules.decide(d, rebalance ? RuleBookService.REBALANCE : RuleBookService.SCHEDULED,
+        // 그 실행의 설정 행 하나로(장부·결정 시각과 같은 판 — MarketRun).
+        Decision decision = rules.decide(market, d, rebalance ? RuleBookService.REBALANCE : RuleBookService.SCHEDULED,
                 pricesFinal);
         detail.put("rules", decisionDetail(decision));
         return decision;
@@ -590,7 +591,7 @@ public class PaperDecisionJob {
             quotes.ifPresent(q -> detail.put("ledger", ledgerDetail(ledger.process(market, q))));
             Decision decision = market.claudeBook().equals(code)
                     ? claude.decide(market, d, RuleBookService.MANUAL, pricesFinal)
-                    : rules.decide(d, RuleBookService.MANUAL, pricesFinal);
+                    : rules.decide(market, d, RuleBookService.MANUAL, pricesFinal);
             detail.put(code, decisionDetail(decision));
             record(market, now, DECIDED, detail);
             return decision;

@@ -267,6 +267,16 @@ public class RuleBookService {
      * @throws InvalidRequestException 규칙 책이 없음(초기화 전)·시작 전
      */
     public Decision decide(LocalDate asOf, String kind, boolean pricesFinal) {
+        return decide(null, asOf, kind, pricesFinal);
+    }
+
+    /**
+     * {@link #decide(LocalDate, String, boolean)}를 그 실행이 읽은 설정 행으로 — 결정 작업이 연 실행({@link MarketRun})을 받으면 결정 행의
+     * {@code settings_version}·{@link RuleSettings}·장부 설정(섞기 등)이 모두 그 실행의 판 하나입니다(같은 실행의 장부·결정 시각과 같은 판 —
+     * 실행 도중 설정을 저장해도 결정 행에 다음 판이 끼지 않게, 묶음 C 리뷰). 실행이 아니거나(null·시장 묶음) 그 실행에 행이 없으면 지금 행을 한 번
+     * 읽어 두 값을 모두 그 행에서 읽습니다.
+     */
+    Decision decide(PaperMarket run, LocalDate asOf, String kind, boolean pricesFinal) {
         if (asOf == null) {
             throw new IllegalArgumentException("기준 거래일이 없습니다");
         }
@@ -284,9 +294,9 @@ public class RuleBookService {
             throw new InvalidRequestException("규칙 계좌는 아직 시작 전입니다 — 개요의 '시작'으로 초기 결정을 먼저 내리세요.");
         }
         Instant started = clock.instant();
-        SettingsRow row = settingsRow();
+        SettingsRow row = run instanceof MarketRun opened ? opened.settingsRow().orElseGet(this::settingsRow) : settingsRow();
         RuleSettings rules = RuleSettings.from(row.body());
-        PaperSettings paper = settings.current().settings();
+        PaperSettings paper = PaperSettings.from(row.body(), UsPaperMarket.INSTANCE);
         Optional<Selection> effective = selection.selectionOn(asOf);
         // 13F 저장본 읽기는 장부와 상관없어 장부 잠금 밖에서 합니다(관측치 처리를 기다리게 하지 않게).
         SignalContext context = effective.map(s -> signals(s, rules, paper.blend())).orElse(null);

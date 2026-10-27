@@ -365,6 +365,26 @@ class RuleBookServiceTest {
     }
 
     @Test
+    @DisplayName("결정 작업이 연 실행의 설정 판 하나로 — 실행을 연 뒤 새 판(minHolders 1, v2)을 저장해도 결정 행의 settings_version·규칙 설정은 그 실행의 v1(ONE 매도 신호 없음), 실행 없이 부르면 지금 판")
+    void decideUsesTheRunsSettingsRow() {
+        noParking();
+        selection(FRI);
+        activeRules(PaperBooks.ACTIVE, 80_000, "OLD", 100, 100, "ONE", 100, 100);
+        MarketRun run = MarketRun.of(UsPaperMarket.INSTANCE, store);
+        ObjectNode next = ((ObjectNode) store.settings.body()).deepCopy();
+        next.put("minHolders", 1);
+        assertThat(store.saveSettings(next, java.util.List.of("minHolders"))).isEqualTo(2);
+
+        Decision decision = rules.decide(run, MON, RuleBookService.SCHEDULED, true);
+
+        assertThat(decision.settingsVersion()).as("그 실행이 읽은 판").isEqualTo(1);
+        assertThat(orders()).extracting(Order::ticker).as("v1의 minHolders 2 — ONE은 매도 신호가 아님").containsExactly("OLD");
+        Decision later = rules.decide(PaperFixtures.TUE, RuleBookService.SCHEDULED);
+        assertThat(later.settingsVersion()).isEqualTo(2);
+        assertThat(orders()).extracting(Order::ticker).containsExactly("OLD", "ONE");
+    }
+
+    @Test
     @DisplayName("재선정일에는 점수 순 후보를 확신도 비례로 산다(최고 점수 = 상한 10%, BBB 8%) — 이미 들고 있는 후보는 부족분만, 남는 현금은 SHY(여유 0.5%p)")
     void reselectionDayBuysTopsUpAndParksShy() {
         selection(Q2_RESELECTION);

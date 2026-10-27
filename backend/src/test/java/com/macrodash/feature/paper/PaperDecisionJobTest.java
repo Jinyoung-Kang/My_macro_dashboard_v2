@@ -102,10 +102,10 @@ class PaperDecisionJobTest {
         rules = mock(RuleBookService.class);
         decided = new ArrayList<>();
         calls = new ArrayList<>();
-        when(rules.decide(any(), anyString(), anyBoolean())).thenAnswer(invocation -> {
-            LocalDate d = invocation.getArgument(0);
-            String kind = invocation.getArgument(1);
-            boolean pricesFinal = invocation.getArgument(2);
+        when(rules.decide(any(PaperMarket.class), any(), anyString(), anyBoolean())).thenAnswer(invocation -> {
+            LocalDate d = invocation.getArgument(1);
+            String kind = invocation.getArgument(2);
+            boolean pricesFinal = invocation.getArgument(3);
             decided.add(d + " " + kind + " " + pricesFinal);
             calls.add("rules " + d + " " + kind + " " + pricesFinal);
             return new Decision(99, PaperBooks.RULES, d, kind, store.dbNow, "NO_TRADE", null, null, 1, null, null, null,
@@ -378,15 +378,15 @@ class PaperDecisionJobTest {
         LocalDate[] effective = {FRI};
         // doAnswer — when(rules.decide(…))로 다시 정하면 정하는 호출이 setUp의 답을 한 번 불러 decided에 남습니다.
         doAnswer(invocation -> {
-            LocalDate d = invocation.getArgument(0);
-            String kind = invocation.getArgument(1);
-            boolean pricesFinal = invocation.getArgument(2);
+            LocalDate d = invocation.getArgument(1);
+            String kind = invocation.getArgument(2);
+            boolean pricesFinal = invocation.getArgument(3);
             decided.add(d + " " + kind + " " + pricesFinal);
             store.insertDecisionIfAbsent(new Decision(0, PaperBooks.RULES, d, kind, null, "NO_TRADE", null, null, 1,
                     effective[0], null, null, null, null, MAPPER.valueToTree(Map.of("summary", "주문 없음")), null,
                     null, null, pricesFinal, 0L, 0));
             return store.decisionFor(PaperBooks.RULES, d, kind).orElseThrow();
-        }).when(rules).decide(any(), anyString(), anyBoolean());
+        }).when(rules).decide(any(PaperMarket.class), any(), anyString(), anyBoolean());
         String collecting = String.format(Locale.ROOT, PaperSelectionService.COLLECTING_SKIP_REASON, 3, 27);
         when(selection.select(RESELECTION))
                 .thenReturn(new PaperSelectionService.SelectionOutcome(RESELECTION, false, null, null, collecting))
@@ -462,7 +462,8 @@ class PaperDecisionJobTest {
     @DisplayName("같은 거래일에 오류가 세 번 나면 그날은 더 시도하지 않고, 수동 실행은 다시 시도한다")
     void givesUpAfterRepeatedErrors() {
         observed(Instant.parse("2026-10-23T20:30:00Z"), FRI);
-        when(rules.decide(eq(FRI), eq("SCHEDULED"), anyBoolean())).thenThrow(new IllegalStateException("고장"));
+        when(rules.decide(any(PaperMarket.class), eq(FRI), eq("SCHEDULED"), anyBoolean()))
+                .thenThrow(new IllegalStateException("고장"));
         PaperDecisionJob job = job(Instant.parse("2026-10-24T00:00:00Z"));
 
         for (int i = 0; i < PaperDecisionJob.MAX_ATTEMPTS; i++) {
@@ -590,15 +591,15 @@ class PaperDecisionJobTest {
     private void recordingRules(LocalDate[] effective) {
         // doAnswer — when(rules.decide(…))로 다시 정하면 정하는 호출이 setUp의 답을 한 번 불러 decided에 남습니다.
         doAnswer(invocation -> {
-            LocalDate d = invocation.getArgument(0);
-            String kind = invocation.getArgument(1);
-            boolean pricesFinal = invocation.getArgument(2);
+            LocalDate d = invocation.getArgument(1);
+            String kind = invocation.getArgument(2);
+            boolean pricesFinal = invocation.getArgument(3);
             decided.add(d + " " + kind + " " + pricesFinal);
             store.insertDecisionIfAbsent(new Decision(0, PaperBooks.RULES, d, kind, null, "NO_TRADE", null, null, 1,
                     effective[0], null, null, null, null, MAPPER.valueToTree(Map.of("summary", "주문 없음")), null,
                     null, null, pricesFinal, 0L, 0));
             return store.decisionFor(PaperBooks.RULES, d, kind).orElseThrow();
-        }).when(rules).decide(any(), anyString(), anyBoolean());
+        }).when(rules).decide(any(PaperMarket.class), any(), anyString(), anyBoolean());
     }
 
     /**
@@ -690,7 +691,7 @@ class PaperDecisionJobTest {
         recordingClaude("NO_TRADE");
         doAnswer(invocation -> {
             throw new IllegalStateException("13F 저장본 고장");
-        }).when(rules).decide(any(), anyString(), anyBoolean());
+        }).when(rules).decide(any(PaperMarket.class), any(), anyString(), anyBoolean());
         observed(Instant.parse("2026-10-26T20:30:00Z"), PaperFixtures.MON);
         PaperDecisionJob job = job(Instant.parse("2026-10-26T23:00:00Z"));
 
