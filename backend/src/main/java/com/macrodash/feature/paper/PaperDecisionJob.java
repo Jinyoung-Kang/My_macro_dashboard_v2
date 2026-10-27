@@ -101,7 +101,7 @@ import java.util.concurrent.locks.ReentrantLock;
  *
  * <p><b>한국 출발</b>(2단계 명세 §4-8·K28, C1c): 한국 실행에서 한국 계좌가 모두 시작 전이면 정기 결정 대신 {@link KrStartPipeline}이
  * 출발을 냅니다 — 출발일 S(배포 설정) 이후 세션 D의 결정 창(22:30 ~ D+1 01:00) 안에서 자료 게이트(§4-9 ②④⑤⑥, ③은 D1)를 통과하면 계좌마다
- * 출발 계획(벤치마크 둘 — 규칙 D1·Claude E2는 갈고리)을 한 트랜잭션으로 씁니다({@value #STARTED}). 게이트 미달은 {@value #START_WAITING}
+ * 출발 계획(규칙 계좌 INITIAL — 재선정과 같은 계산 · 벤치마크 둘, Claude E2는 갈고리)을 한 트랜잭션으로 씁니다({@value #STARTED}). 게이트 미달은 {@value #START_WAITING}
  * (기록 안 함), 기한이 지나면 {@value #START_POSTPONED}(그 세션에 한 번 기록 — 다음 KR 거래일 창에서 다시)입니다.
  *
  * <p><b>실행 하나 = 달력 한 벌·설정 판 하나</b>(C1a): 정기·수동 실행은 시작할 때 그 시장의 실행 문맥({@link MarketRun})을 한 번 열어
@@ -259,7 +259,7 @@ public class PaperDecisionJob {
         this.clock = clock;
         this.markets = markets;
         this.krRules = new KrRuleBookService(store, reader, marketData, ledger, mapper, clock);
-        this.krStart = new KrStartPipeline(store, reader, ledger, config, mapper, clock, null);
+        this.krStart = new KrStartPipeline(store, reader, ledger, config, mapper, clock, null, krRules.startLeg(config));
     }
 
     /**

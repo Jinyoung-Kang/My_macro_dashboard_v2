@@ -36,7 +36,7 @@ import java.util.concurrent.ConcurrentHashMap;
  *  D 결정 시각(kr.decisionTimeKst 22:30) 전               → TOO_EARLY
  *  D 출발 기한(kr.decisionDeadlineKst 01:00 → D+1 01:00) 지남 → START_POSTPONED(D마다 한 번 기록 — 출발을 다음 KR 거래일로)
  *  자료 게이트(§4-9 ②④⑤⑥ — ③은 D1) 미달                   → START_WAITING(기록 안 함 — 다음 주기에 다시)
- *  계좌마다 출발 계획(규칙 D1 · Claude E2 · 벤치마크 둘) → 계획이 실패한 계좌가 있으면 START_POSTPONED(아무 계좌에도 쓰지 않음 — 그 세션은
+ *  계좌마다 출발 계획(규칙 D1b · Claude E2 · 벤치마크 둘) → 계획이 실패한 계좌가 있으면 START_POSTPONED(아무 계좌에도 쓰지 않음 — 그 세션은
  *                                                         다시 계획하지 않음)
  *  → 계획한 계좌의 결정(INITIAL)·주문(NEXT_OPEN, 기준 거래일 D)·운용 전환·D 순자산 줄을 한 트랜잭션으로 → STARTED(기록)
  * </pre>
@@ -51,11 +51,15 @@ import java.util.concurrent.ConcurrentHashMap;
  * ({@code configuredStartDate})과 {@code postponed}를 남깁니다(§4-8 '바뀐 출발일을 화면·기록에'). 출발 기한이 지난 창에서는 어떤 경우에도 내지
  * 않습니다(그 시가에 체결될 주문이 개장 뒤 정보를 보지 않게 — 기한 규칙의 시장 이동은 D1).
  *
- * <p><b>계좌 몫(갈고리)</b>: 계좌마다 {@link Leg}가 출발 계획을 냅니다. 이 묶음(C)에서는 벤치마크 둘만 계획하고({@link #benchmarkLeg} —
- * 069500 100% · 069500 60% + 153130 40%, 리밸런싱 없음 K2), 규칙 계좌(D1 — 재선정과 같은 계산·입력 동결 K26)와 Claude 계좌(E2 — 정기 결정과
- * 같은 패킷)는 '아직 없음'({@link Plan#notYet})이라 시작 전 그대로 둡니다. 계획은 트랜잭션 밖에서 모두 만든 뒤(Claude 호출이 장부 잠금을
- * 붙잡지 않게) 한 번에 씁니다 — 한 계좌라도 실패({@link Plan#failed})하면 어느 계좌에도 쓰지 않습니다(K28 '네 계좌는 함께 출발'). 계좌 몫은 그 세션의
- * 출발 기한을 받고, 쓰기 트랜잭션은 그 안에서 지금 시각이 기한 전인지 다시 봅니다 — 계획이 기한을 넘겨 끝났으면 어느 계좌에도 쓰지 않고 미룹니다.
+ * <p><b>계좌 몫(갈고리)</b>: 계좌마다 {@link Leg}가 출발 계획을 냅니다 — 벤치마크 둘({@link #benchmarkLeg} — 069500 100% · 069500 60% + 153130 40%,
+ * 리밸런싱 없음 K2), 규칙 계좌(D1b — {@link KrRuleBookService#startLeg}: 재선정과 같은 계산·입력 동결 K26, INITIAL·S+1 시가 주문). Claude 계좌(E2 —
+ * 정기 결정과 같은 패킷)는 아직 '없음'({@link Plan#notYet})입니다. 계획은 트랜잭션 밖에서 모두 만든 뒤(Claude 호출이 장부 잠금을 붙잡지 않게) 한
+ * 번에 씁니다 — 한 계좌라도 실패({@link Plan#failed})하면 어느 계좌에도 쓰지 않습니다(K28 '네 계좌는 함께 출발'). 계좌 몫은 그 세션의 출발 기한을
+ * 받고, 쓰기 트랜잭션은 그 안에서 지금 시각이 기한 전인지 다시 봅니다 — 계획이 기한을 넘겨 끝났으면 어느 계좌에도 쓰지 않고 미룹니다.
+ *
+ * <p><b>'아직 없음' 몫</b>(D1b에서 정함): 계획한 계좌만 한 트랜잭션으로 출발하고 {@link Plan#notYet} 계좌(E2 전의 Claude 계좌)는 시작 전 그대로입니다.
+ * 출발 판정이 '모두 시작 전'이라 그 계좌는 <b>뒤따라 출발하지 않습니다</b>('한 계좌만 늦은 시작' 없음 — K28) — 그 몫이 생긴 뒤 네 계좌를 리셋해 다시
+ * 출발시킵니다. 서버는 4단계(E2 뒤)에만 출발하므로 운영에서는 네 계좌가 함께 출발합니다. 출발 기록({@code books})에 그 계좌의 사유가 남습니다.
  */
 final class KrStartPipeline {
 
@@ -157,7 +161,7 @@ final class KrStartPipeline {
     /** 세션마다 마지막 기다림 사유 — 미룸 기록에 '왜 못 냈나'를 남기려고(최근 하나만 지킴). */
     private final Map<LocalDate, String> lastWait = new ConcurrentHashMap<>();
 
-    /** 이 묶음(C)의 계좌 몫 — 규칙(D1)·Claude(E2) 갈고리 + 벤치마크 둘(클래스 설명), 시계는 시스템 시계. */
+    /** 규칙 계좌 몫 없이(시작 전 그대로 — 시험·벤치마크 몫 만들기) Claude 갈고리 + 벤치마크 둘, 시계는 시스템 시계. */
     KrStartPipeline(PaperStore store, StoreReader reader, PaperLedgerService ledger, PaperConfig config,
                     ObjectMapper mapper) {
         this(store, reader, ledger, config, mapper, Clock.systemUTC(), null);
@@ -169,9 +173,20 @@ final class KrStartPipeline {
         this(store, reader, ledger, config, mapper, Clock.systemUTC(), legs);
     }
 
-    /** 시계와 계좌 몫을 정합니다(결정 작업 — 그 작업의 시계, 시험). null이면 이 묶음의 몫. */
+    /** 시계와 계좌 몫을 정합니다(시험). null이면 규칙 계좌 몫 없이(시작 전 그대로) Claude 갈고리 + 벤치마크 둘. */
     KrStartPipeline(PaperStore store, StoreReader reader, PaperLedgerService ledger, PaperConfig config,
                     ObjectMapper mapper, Clock clock, List<Leg> legs) {
+        this(store, reader, ledger, config, mapper, clock, legs, null);
+    }
+
+    /**
+     * 결정 작업의 출발 — 그 작업의 시계와 규칙 계좌 몫({@link KrRuleBookService#startLeg}), Claude 갈고리(E2) + 벤치마크 둘(클래스 설명).
+     *
+     * @param legs     계좌 몫을 통째로 바꿀 때(시험). null이면 규칙 몫 · Claude 갈고리 · 벤치마크 둘
+     * @param rulesLeg 규칙 계좌 몫. null이면 규칙 계좌도 '아직 없음'(시작 전 그대로)
+     */
+    KrStartPipeline(PaperStore store, StoreReader reader, PaperLedgerService ledger, PaperConfig config,
+                    ObjectMapper mapper, Clock clock, List<Leg> legs, Leg rulesLeg) {
         this.store = store;
         this.reader = reader;
         this.ledger = ledger;
@@ -179,11 +194,16 @@ final class KrStartPipeline {
         this.mapper = mapper;
         this.clock = Objects.requireNonNull(clock, "clock");
         this.legs = legs != null ? List.copyOf(legs) : List.of(
-                hook(PaperBooks.KR_RULES, "규칙 계좌의 출발 계획(재선정과 같은 계산 · 입력 동결 K26)은 2단계 D1 — 이 묶음에서는 시작 전 그대로"),
-                hook(PaperBooks.KR_CLAUDE, "Claude 계좌의 출발 계획(정기 결정과 같은 패킷 · INITIAL)은 2단계 E2 — 이 묶음에서는 시작 전 그대로"),
+                rulesLeg != null ? rulesLeg
+                        : hook(PaperBooks.KR_RULES, "규칙 계좌의 출발 계획이 이 파이프라인에 없음 — 시작 전 그대로(시험)"),
+                hook(PaperBooks.KR_CLAUDE, CLAUDE_NOT_YET),
                 benchmarkLeg(PaperBooks.KR_BENCH_K200),
                 benchmarkLeg(PaperBooks.KR_BENCH_MIX));
     }
+
+    /** Claude 계좌 몫의 자리(E2 전) — 출발 기록 {@code books.kr_claude}에 남는 사유. */
+    static final String CLAUDE_NOT_YET = "Claude 계좌의 출발 계획(정기 결정과 같은 패킷 · INITIAL)은 2단계 E2 — 시작 전 그대로이고 이 출발 뒤 "
+            + "따라 출발하지 않음(네 계좌를 리셋해 다시 출발)";
 
     /**
      * 한국 출발이 남았나 — 한국 묶음의 실행이고, 한국 계좌가 있고 <b>모두 시작 전</b>(NOT_STARTED)입니다. 한 계좌라도 운용·일시정지면 출발한

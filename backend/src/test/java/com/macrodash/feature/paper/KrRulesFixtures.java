@@ -66,6 +66,14 @@ final class KrRulesFixtures {
      * 후보 = 000660(0.2) · 005930(0.1) · 105560(0.05, U 순위 7), 동일비중이면 종목마다 100 ÷ 15 = 6.6667%(상한 10% 안), 주식 20%·153130 80%.
      */
     static KrRulesFixtures standard(LocalDate... bases) {
+        return standardThrough(FLOWS_THROUGH, bases);
+    }
+
+    /**
+     * {@link #standard}과 같은 구성원·DART에 수급만 {@code through}까지 30 KR 거래일(출발 시험 — S = 11-30이면 창에 10-22가 없어 000270도,
+     * 접수일 11-04 ≤ S라 005380도 후보가 됨).
+     */
+    static KrRulesFixtures standardThrough(LocalDate through, LocalDate... bases) {
         KrRulesFixtures data = new KrRulesFixtures();
         LocalDate first = bases[0];
         data.member(first, 1, "005930", "삼성전자", 3_000_000_000L)
@@ -77,15 +85,17 @@ final class KrRulesFixtures {
                 .member(first, 7, "105560", "KB금융", 400_000_000L)
                 .member(first, 8, "000270", "기아", 400_000_000L);
         data.sameUniverse(first, java.util.Arrays.copyOfRange(bases, 1, bases.length));
-        data.flows("005930", FLOWS_THROUGH, 30, 100_000, 50_000)
-                .flows("000660", FLOWS_THROUGH, 30, 20_000, 10_000)
-                .flows("373220", FLOWS_THROUGH, 30, -10_000, -5_000)
-                .flows("207940", FLOWS_THROUGH, 30, 1_000, 1_000)
-                .flows("005380", FLOWS_THROUGH, 30, 3_000, 2_000)
-                .flows("068270", FLOWS_THROUGH, 30, 3_000, 2_000)
-                .flows("105560", FLOWS_THROUGH, 30, 5_000, 5_000)
-                .flows("000270", FLOWS_THROUGH, 30, 5_000, 5_000);
-        data.flows.get("000270").remove(LocalDate.of(2026, 10, 22));
+        data.flows("005930", through, 30, 100_000, 50_000)
+                .flows("000660", through, 30, 20_000, 10_000)
+                .flows("373220", through, 30, -10_000, -5_000)
+                .flows("207940", through, 30, 1_000, 1_000)
+                .flows("005380", through, 30, 3_000, 2_000)
+                .flows("068270", through, 30, 3_000, 2_000)
+                .flows("105560", through, 30, 5_000, 5_000)
+                .flows("000270", through, 30, 5_000, 5_000);
+        if (data.flows.get("000270") != null) {
+            data.flows.get("000270").remove(LocalDate.of(2026, 10, 22));
+        }
         data.dart("005930", "2025", "20260310002820", 300e12, 30e12, 300e12, 100e12)
                 .dart("000660", "2025", "20260312000111", 60e12, 10e12, 100e12, 50e12)
                 .dart("373220", "2025", "20260311000222", 25e12, 1e12, 100e12, 100e12)
@@ -93,6 +103,20 @@ final class KrRulesFixtures {
                 .dart("068270", "2025", "R2026031400", 3e12, 0.5e12, 20e12, 5e12)
                 .dart("105560", "2025", "20260619000333", null, 5e12, 50e12, 1_000e12)
                 .dart("000270", "2025", "20260313000444", 100e12, 9e12, 60e12, 40e12);
+        return data;
+    }
+
+    /**
+     * 후보가 없는 U — 두 종목 모두 20일 외국인·기관 둘 다 순매도(수급 미달). 규칙 계좌 출발은 주식 없이 남는 현금 99.5%를 153130에 둡니다
+     * (벤치마크 생애 시험 — 규칙 계좌가 함께 출발해도 ETF 둘만 봄).
+     */
+    static KrRulesFixtures noCandidates(LocalDate through, LocalDate... bases) {
+        KrRulesFixtures data = new KrRulesFixtures();
+        data.member(bases[0], 1, "005930", "삼성전자", 3_000_000_000L).member(bases[0], 2, "000660", "SK하이닉스", 300_000_000L);
+        data.sameUniverse(bases[0], java.util.Arrays.copyOfRange(bases, 1, bases.length));
+        data.flows("005930", through, 30, -100_000, -50_000).flows("000660", through, 30, -20_000, -10_000);
+        data.dart("005930", "2025", "20260310002820", 300e12, 30e12, 300e12, 100e12)
+                .dart("000660", "2025", "20260312000111", 60e12, 10e12, 100e12, 50e12);
         return data;
     }
 

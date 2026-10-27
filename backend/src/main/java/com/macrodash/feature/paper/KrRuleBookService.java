@@ -57,6 +57,7 @@ import java.util.TreeSet;
  *      아님   → SCHEDULED(매도 신호·남는 현금 153130만)
  *    입력 읽기 한 번(K26 동결과 같은 읽기) → KrRules.select(후보·점수·사유 — 매일 셈, 동결·화면) → 장부 잠금 안에서 주문 계획 → 결정 행 + 주문
  *  기한 지남(D+1 01:00, 결정 작업의 기한 뒤 갈고리) → 그 세션의 NO_TRADE 행(사유 '기한 지남' — 따라잡기의 근거, 주문 없음)
+ *  출발(S 22:30, KrStartPipeline 계좌 몫) → INITIAL = 재선정과 같은 계산(cycleDate = r(S), selectionAsOf = S), 주문은 S+1 시가
  * </pre>
  *
  * <p><b>입력 읽기</b>(K26, 그 실행에서 한 번 — {@link StoreReader#quietly}, 수집을 깨우지 않음): U(D) = D보다 이른 가장 최근 금융위 기준일 B의
@@ -394,6 +395,63 @@ final class KrRuleBookService {
                 latency(started), 0);
         return store.insertDecisionIfAbsent(decision).flatMap(store::decision)
                 .orElseGet(() -> decisionOn(d).orElseThrow());
+    }
+
+    // ------------------------------------------------------------------ 출발(e8)
+    /**
+     * 한국 출발({@link KrStartPipeline})의 규칙 계좌 몫 — S의 재선정과 같은 계산(입력 동결 K26, {@link KrReselection#initial}: cycleDate = r(S),
+     * selectionAsOf = S)으로 INITIAL 결정과 S+1 시가 주문을 계획합니다(쓰기는 파이프라인이 네 계좌 함께 한 트랜잭션으로). 입력 오류(U 없음 등)는
+     * 계획 실패({@link KrStartPipeline.Plan#failed}) — 어느 계좌에도 쓰지 않고 그 세션 출발을 미룹니다.
+     */
+    KrStartPipeline.Leg startLeg(PaperConfig config) {
+        return new KrStartPipeline.Leg() {
+            @Override
+            public String book() {
+                return PaperBooks.KR_RULES;
+            }
+
+            @Override
+            public KrStartPipeline.Plan plan(MarketRun run, LocalDate session, Instant deadline,
+                                             List<KrStartPipeline.Gate> gates) {
+                try {
+                    return startPlan(run, session, gates, config);
+                } catch (RuntimeException e) {
+                    log.warn("한국 규칙 계좌 출발 계획 실패({}): {}", session, e.toString());
+                    return KrStartPipeline.Plan.failed(PaperBooks.KR_RULES, "규칙 계좌 출발 계획 실패 — "
+                            + e.getClass().getSimpleName() + " " + e.getMessage());
+                }
+            }
+        };
+    }
+
+    private KrStartPipeline.Plan startPlan(MarketRun run, LocalDate session, List<KrStartPipeline.Gate> gates,
+                                           PaperConfig config) {
+        Instant started = clock.instant();
+        int version = settingsVersion(run);
+        Settings settings = Settings.from(run);
+        KrReselection.Cycle cycle = KrReselection.initial(run.calendar(), settings.params().reselection(), session);
+        Optional<Quotes> quotes = reader.quietly(() -> marketData.quotes(run));
+        Set<String> holdings = holdingCodes(settings);
+        Read read = read(run, session, started, quotes, holdings);
+        KrRules.Selection selection = KrRules.select(run.calendar(), read.input(), settings.params());
+        List<KrRules.HoldingCheck> checks = KrRules.holdingChecks(run.calendar(), session, holdings,
+                read.input().flows(), selection.candidateCodes(), settings.cashLike());
+        View view = view(PaperBooks.KR_RULES);
+        Draft draft = plan(RuleBookService.INITIAL, true, selection, checks, view, settings, read.tradable());
+        Map<String, Object> start = new LinkedHashMap<>();
+        start.put("configuredStartDate", String.valueOf(config.krStartDate()));
+        start.put("postponed", !session.equals(config.krStartDate()));
+        start.put("gates", gates.stream().map(KrStartPipeline.Gate::view).toList());
+        Map<String, Object> response = response(session, RuleBookService.INITIAL, cycle, read, selection, checks, view,
+                draft, settings, version, start);
+        Decision decision = new Decision(0, PaperBooks.KR_RULES, session, RuleBookService.INITIAL, null,
+                RuleBookService.STATUS_OK, null, null, version, session, round4(selection.stockWeightPct()), null, null,
+                null, mapper.valueToTree(response), null, null, null, false, latency(started), 0);
+        List<Order> orders = new ArrayList<>();
+        for (PlannedOrder order : draft.orders) {
+            orders.add(order(order, null, session, null));
+        }
+        return KrStartPipeline.Plan.of(PaperBooks.KR_RULES, decision, orders);
     }
 
     // ------------------------------------------------------------------ 입력 읽기(K26)

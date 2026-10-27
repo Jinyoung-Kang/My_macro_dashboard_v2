@@ -40,6 +40,9 @@ import static org.mockito.Mockito.when;
  * 저장본(관측치·공휴일·금융위 메타)과 가짜 관측치 표(증권상품시세)로 돌고, 시각은 움직이는 시계입니다.
  *
  * <p>시각표: S = 2026-11-30(월), S+1 = 12-01(화), S+2 = 12-02(수), S+3 = 12-03(목). 금융위 D 값은 D+1 밤 slow 첫머리(21:58), 토스 관측치는 그 뒤(22:01).
+ *
+ * <p>규칙 계좌도 함께 출발합니다(D1b — 네 계좌 함께, Claude는 E2 전이라 시작 전). 이 시험의 유니버스는 후보가 없어({@link KrRulesFixtures#noCandidates})
+ * 규칙 계좌는 남는 현금 99.5%를 153130에 두는 주문 하나뿐이라 ETF 둘만 봅니다 — 벤치마크 숫자는 그대로입니다.
  */
 class KrBenchmarkLifecycleTest {
 
@@ -75,6 +78,7 @@ class KrBenchmarkLifecycleTest {
         KrFixtures.stubHolidays(reader, KrFixtures.holidays(2026, 2027));
         StoreRepository repository = mock(StoreRepository.class);
         when(repository.latestObservationDate(Datasets.OBS_FSC_ETF_PRICE)).thenAnswer(invocation -> etfLatest);
+        KrRulesFixtures.noCandidates(S, LocalDate.of(2026, 11, 26), PREV).install(repository, reader);
         when(repository.readObservationSeries(eq(Datasets.OBS_FSC_ETF_PRICE), anyCollection(),
                 org.mockito.ArgumentMatchers.any())).thenAnswer(invocation -> {
                     Collection<String> codes = invocation.getArgument(1);
@@ -179,6 +183,7 @@ class KrBenchmarkLifecycleTest {
         at("2026-11-30T22:30");
         assertThat(decisions.run(KrPaperMarket.INSTANCE).outcome()).isEqualTo(PaperDecisionJob.STARTED);
         assertThat(store.orders.values()).extracting(Order::bookCode, Order::ticker, Order::timing).containsExactly(
+                org.assertj.core.groups.Tuple.tuple(PaperBooks.KR_RULES, "153130", PaperBooks.NEXT_OPEN),
                 org.assertj.core.groups.Tuple.tuple(K200, "069500", PaperBooks.NEXT_OPEN),
                 org.assertj.core.groups.Tuple.tuple(MIX, "069500", PaperBooks.NEXT_OPEN),
                 org.assertj.core.groups.Tuple.tuple(MIX, "153130", PaperBooks.NEXT_OPEN));
@@ -199,7 +204,7 @@ class KrBenchmarkLifecycleTest {
         Outcome opened = riskAt("2026-12-01T22:05");
 
         assertThat(opened.errors()).isEmpty();
-        assertThat(opened.filled()).isEqualTo(3);
+        assertThat(opened.filled()).as("벤치마크 셋 + 규칙 계좌 153130").isEqualTo(4);
         assertThat(store.fills.values()).allSatisfy(f -> {
             assertThat(f.priceSource()).isEqualTo(KrQuotes.SOURCE_1M_OPEN);
             assertThat(f.observationDate()).as("출발가 = S+1 시가").isEqualTo(S1);
@@ -220,7 +225,7 @@ class KrBenchmarkLifecycleTest {
         Outcome confirmed = riskAt("2026-12-02T22:00");
 
         assertThat(confirmed.errors()).isEmpty();
-        assertThat(confirmed.confirmed()).as("새 관측치 없이 체결마다 한 행").isEqualTo(3);
+        assertThat(confirmed.confirmed()).as("새 관측치 없이 체결마다 한 행(규칙 계좌 153130 포함)").isEqualTo(4);
         assertThat(store.fills.values()).as("체결 행은 그대로").containsExactlyElementsOf(provisionalFills);
         // KODEX 200 1,051주: 잠정 95,000(수수료 14,976·슬리피지 49,922) → 확정 94,950(14,968·49,896), 현금 +52,584.
         assertThat(store.fillConfirmations(K200)).singleElement().satisfies(c -> {
@@ -243,7 +248,7 @@ class KrBenchmarkLifecycleTest {
         assertThat(nav(MIX, S1).nav()).isEqualTo(169_704 + 631 * 95_380.0 + 369 * 108_015.0);
         assertThat(runs("kr.risk")).last().satisfies(run -> {
             assertThat(run.detail().path("confirmationOnly").asBoolean()).isTrue();
-            assertThat(run.detail().path("confirmed").asInt()).isEqualTo(3);
+            assertThat(run.detail().path("confirmed").asInt()).isEqualTo(4);
         });
 
         // S+2 관측치(잠정) → S+3 밤 금융위 S+2 → 그 줄도 확정(새 확정 조정 없이)
@@ -256,7 +261,8 @@ class KrBenchmarkLifecycleTest {
         fscEtf(S2, 95_600, 95_990, 108_020, 108_025);
         Outcome nextConfirm = riskAt("2026-12-03T22:00");
         assertThat(nextConfirm.confirmed()).isZero();
-        assertThat(nextConfirm.booksProcessed()).as("줄이 확정이 된 계좌").containsExactly(K200, MIX);
+        assertThat(nextConfirm.booksProcessed()).as("줄이 확정이 된 계좌(규칙 계좌 153130도)")
+                .containsExactly(PaperBooks.KR_RULES, K200, MIX);
 
         // ---------------------------------------------------------------- 수용 기준 1
         double startPrice = 94_950;   // 출발가 = 금융위 S+1 시가(확정 조정한 체결가)

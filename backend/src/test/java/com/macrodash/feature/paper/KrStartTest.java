@@ -26,8 +26,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.mock;
 
 /**
- * 한국 출발(2단계 명세 §4-8·K28, 결정 d13 — C1c): S 22:30 결정 작업이 벤치마크 두 계좌의 출발 결정·{@code NEXT_OPEN} 주문을 한 트랜잭션으로
- * 쓰고(규칙 D1·Claude E2는 갈고리), 자료 게이트(§4-9 ②④⑤⑥) 미달이면 기다리며, 기한 S+1 01:00이 지나면 내지 않고 다음 KR 거래일로 미룬다.
+ * 한국 출발(2단계 명세 §4-8·K28, 결정 d13 — C1c, 규칙 계좌 몫은 D1b): S 22:30 결정 작업이 규칙 계좌(INITIAL — 재선정과 같은 계산)와 벤치마크 두
+ * 계좌의 출발 결정·{@code NEXT_OPEN} 주문을 한 트랜잭션으로 쓰고(Claude E2는 갈고리 — 시작 전 그대로), 자료 게이트(§4-9 ②④⑤⑥) 미달이면 기다리며,
+ * 기한 S+1 01:00이 지나면 내지 않고 다음 KR 거래일로 미룬다. 규칙 계좌 재료는 {@link KrRulesFixtures#standardThrough}(S = 11-30이면 후보 다섯).
  */
 class KrStartTest {
 
@@ -42,6 +43,7 @@ class KrStartTest {
     private KrFixtures.MovableClock clock;
     private PaperDecisionJob job;
     private final AtomicBoolean failShortBond = new AtomicBoolean();
+    private KrRulesFixtures rulesData;
 
     private static Instant kst(String dateTime) {
         return ZonedDateTime.of(LocalDateTime.parse(dateTime), KrxCalendar.SEOUL).toInstant();
@@ -57,7 +59,8 @@ class KrStartTest {
         store = new FakePaperStore() {
             @Override
             public long insertOrder(Order o) {
-                if (failShortBond.get() && PaperBooks.KR_SHORT_BOND.equals(o.ticker())) {
+                if (failShortBond.get() && PaperBooks.KR_BENCH_MIX.equals(o.bookCode())
+                        && PaperBooks.KR_SHORT_BOND.equals(o.ticker())) {
                     throw new IllegalStateException("시험용 주문 실패");
                 }
                 return super.insertOrder(o);
@@ -65,7 +68,10 @@ class KrStartTest {
         };
         reader = PaperFixtures.quietReader();
         KrFixtures.stubHolidays(reader, KrFixtures.holidays(2026, 2027));
-        marketData = new PaperMarketData(reader, mock(com.macrodash.store.StoreRepository.class));
+        com.macrodash.store.StoreRepository repository = mock(com.macrodash.store.StoreRepository.class);
+        rulesData = KrRulesFixtures.standardThrough(NEXT, LocalDate.of(2026, 11, 26), PREV, S);
+        rulesData.install(repository, reader);
+        marketData = new PaperMarketData(reader, repository);
         PaperLedgerService ledger = new PaperLedgerService(store, marketData, PaperFixtures.MAPPER);
         clock = new KrFixtures.MovableClock(kst("2026-11-27T12:00"));
         // 한국 초기화(설정 행 판 1 — 한국 묶음 포함 · 네 계좌 시작 전).
@@ -77,11 +83,11 @@ class KrStartTest {
         sessionData(S, PREV, everyCodeOn(S));
     }
 
-    /** 수집 범위 열 종목(ETF 둘 + 주식 여덟) 모두 마지막 봉이 그날. */
+    /** 수집 범위 열 종목(ETF 둘 + 표준 U 중 주식 여덟) 모두 마지막 봉이 그날. */
     private static Map<String, LocalDate> everyCodeOn(LocalDate day) {
         Map<String, LocalDate> out = new LinkedHashMap<>();
         for (String code : List.of("069500", "153130", "005930", "000660", "373220", "207940", "005380", "000270",
-                "068270", "035420")) {
+                "068270", "105560")) {
             out.put(code, day);
         }
         return out;
@@ -108,19 +114,18 @@ class KrStartTest {
     }
 
     @Test
-    @DisplayName("S 22:30 — 벤치마크 두 계좌의 INITIAL 결정·NEXT_OPEN 주문(기준 거래일 S, 만료 S+3거래일)·운용 전환·S 순자산 1억(확정), 규칙·Claude는 시작 전(D1·E2 갈고리)")
-    void startsBothBenchmarksAtS2230() {
+    @DisplayName("S 22:30 — 규칙 계좌(재선정과 같은 계산)·벤치마크 두 계좌의 INITIAL 결정·NEXT_OPEN 주문(기준 거래일 S, 만료 S+3거래일)·운용 전환·S 순자산 1억(확정)을 한 트랜잭션으로, Claude는 시작 전(E2 갈고리)")
+    void startsRulesAndBenchmarksAtS2230() {
         PaperDecisionJob.Result result = runAt("2026-11-30T22:30");
 
         assertThat(result.outcome()).isEqualTo(PaperDecisionJob.STARTED);
         assertThat(result.tradingDate()).isEqualTo(S);
-        assertThat(krDecisions()).extracting(Decision::bookCode).containsExactly("kr_bench_k200", "kr_bench_mix");
+        assertThat(krDecisions()).extracting(Decision::bookCode).containsExactly("kr_rules", "kr_bench_k200", "kr_bench_mix");
         for (Decision d : krDecisions()) {
             assertThat(d.kind()).isEqualTo(RuleBookService.INITIAL);
             assertThat(d.status()).isEqualTo("OK");
             assertThat(d.asOfTradingDate()).isEqualTo(S);
             assertThat(d.settingsVersion()).as("그 실행이 읽은 판").isEqualTo(store.settings.version());
-            assertThat(d.targetExposurePct()).isEqualTo(100.0);
             assertThat(d.pricesFinal()).as("금융위 확정 전").isFalse();
             assertThat(d.model()).isNull();
             assertThat(d.response().path("timing").asString()).isEqualTo("NEXT_OPEN");
@@ -128,37 +133,54 @@ class KrStartTest {
             assertThat(d.response().path("postponed").asBoolean()).isFalse();
             assertThat(d.response().path("gates").size()).isEqualTo(5);
         }
-        List<Order> orders = store.orders.values().stream().toList();
+        assertThat(krDecisions()).extracting(Decision::targetExposurePct).as("규칙 = 후보 다섯 × 100/15, 벤치마크 = 비중 합")
+                .containsExactly(33.3333, 100.0, 100.0);
+        // 규칙 계좌 출발 = S의 재선정과 같은 계산 — 주기 r(S) = 11-02(11월 첫 거래일), 입력 S(U 기준일 11-27).
+        Decision rules = krDecisions().get(0);
+        assertThat(rules.selectionAsOf()).isEqualTo(S);
+        assertThat(rules.response().path("cycleDate").asString()).isEqualTo("2026-11-02");
+        assertThat(rules.response().path("selectionAsOf").asString()).isEqualTo("2026-11-30");
+        assertThat(rules.response().path("catchUp").asBoolean()).isFalse();
+        assertThat(rules.response().path("input").path("universe").path("baseDate").asString()).isEqualTo("2026-11-27");
+        List<Order> ruleOrders = store.orders.values().stream().filter(o -> o.bookCode().equals("kr_rules")).toList();
+        // 153130: 현금 1억 − 다섯 종목 6,666,700원 × (1 + 6.5bp) = 66,644,833.225원 → 66.644833225% − 여유 0.5%p = 66.1448%.
+        assertThat(ruleOrders).extracting(Order::ticker, Order::side, Order::targetWeightPct).containsExactly(
+                org.assertj.core.groups.Tuple.tuple("000660", "BUY", 6.6667),
+                org.assertj.core.groups.Tuple.tuple("005930", "BUY", 6.6667),
+                org.assertj.core.groups.Tuple.tuple("005380", "BUY", 6.6667),
+                org.assertj.core.groups.Tuple.tuple("105560", "BUY", 6.6667),
+                org.assertj.core.groups.Tuple.tuple("000270", "BUY", 6.6667),
+                org.assertj.core.groups.Tuple.tuple("153130", "BUY", 66.1448));
+        assertThat(ruleOrders).allSatisfy(o -> assertThat(o.source()).isEqualTo("RULE"));
+        List<Order> orders = store.orders.values().stream().filter(o -> o.bookCode().startsWith("kr_bench")).toList();
         assertThat(orders).extracting(Order::bookCode, Order::ticker, Order::targetWeightPct).containsExactly(
                 org.assertj.core.groups.Tuple.tuple("kr_bench_k200", "069500", 100.0),
                 org.assertj.core.groups.Tuple.tuple("kr_bench_mix", "069500", 60.0),
                 org.assertj.core.groups.Tuple.tuple("kr_bench_mix", "153130", 40.0));
-        assertThat(orders).allSatisfy(o -> {
-            assertThat(o.side()).isEqualTo("BUY");
+        assertThat(orders).allSatisfy(o -> assertThat(o.source()).isEqualTo("BENCHMARK"));
+        assertThat(store.orders.values()).allSatisfy(o -> {
             assertThat(o.timing()).isEqualTo("NEXT_OPEN");
-            assertThat(o.source()).isEqualTo("BENCHMARK");
             assertThat(o.status()).isEqualTo("PENDING");
             assertThat(o.asOfTradingDate()).isEqualTo(S);
             assertThat(o.expiresOn()).as("S + 3거래일").isEqualTo(LocalDate.of(2026, 12, 3));
             assertThat(o.qty()).as("수량은 시가 체결 때").isNull();
             assertThat(o.decisionId()).isNotNull();
         });
-        for (String bench : List.of("kr_bench_k200", "kr_bench_mix")) {
-            Book book = store.books.get(bench);
+        assertThat(orders).allSatisfy(o -> assertThat(o.side()).isEqualTo("BUY"));
+        for (String started : List.of("kr_rules", "kr_bench_k200", "kr_bench_mix")) {
+            Book book = store.books.get(started);
             assertThat(book.status()).isEqualTo(PaperBooks.ACTIVE);
             assertThat(book.startedOn()).isEqualTo(S);
-            assertThat(store.navSeries(bench)).singleElement().satisfies(row -> {
+            assertThat(store.navSeries(started)).singleElement().satisfies(row -> {
                 assertThat(row.tradingDate()).isEqualTo(S);
                 assertThat(row.nav()).isEqualTo(100_000_000);
                 assertThat(row.cash()).isEqualTo(100_000_000);
                 assertThat(row.pricesFinal()).isTrue();
             });
-            assertThat(store.states.get(bench).lastNavTradingDate()).isEqualTo(S);
+            assertThat(store.states.get(started).lastNavTradingDate()).isEqualTo(S);
         }
-        for (String hook : List.of("kr_rules", "kr_claude")) {
-            assertThat(store.books.get(hook).status()).isEqualTo(PaperBooks.NOT_STARTED);
-            assertThat(store.navSeries(hook)).isEmpty();
-        }
+        assertThat(store.books.get("kr_claude").status()).as("E2 전 — 시작 전 그대로").isEqualTo(PaperBooks.NOT_STARTED);
+        assertThat(store.navSeries("kr_claude")).isEmpty();
         assertThat(store.fills).as("사후 체결 없음(K28)").isEmpty();
 
         assertThat(krRuns()).singleElement().satisfies(run -> {
@@ -167,17 +189,77 @@ class KrStartTest {
             assertThat(detail.path("start").asBoolean()).isTrue();
             assertThat(detail.path("tradingDate").asString()).isEqualTo("2026-11-30");
             assertThat(detail.path("deadlineKst").asString()).contains("2026-12-01 01:00");
-            assertThat(detail.path("books").path("kr_rules").asString()).contains("D1");
-            assertThat(detail.path("books").path("kr_claude").asString()).contains("E2");
+            assertThat(detail.path("books").path("kr_rules").path("orders").size()).isEqualTo(6);
+            assertThat(detail.path("books").path("kr_claude").asString()).contains("E2").contains("따라 출발하지 않음");
             assertThat(detail.path("books").path("kr_bench_mix").path("orders").size()).isEqualTo(2);
             assertThat(detail.path("gates").toString()).contains("\"③\"", "STUB");
         });
 
-        // 같은 밤 다음 주기 — 출발한 장부라 다시 내지 않음(정기 결정 쪽은 한국 Claude 계좌가 시작 전이라 할 일 없음).
+        // 같은 밤 다음 주기 — 출발한 장부라 다시 내지 않음(규칙 계좌는 출발일 = 초기 결정이 그날 결정, Claude는 시작 전).
         PaperDecisionJob.Result again = runAt("2026-11-30T22:40");
         assertThat(again.outcome()).isEqualTo(PaperDecisionJob.ALREADY_DECIDED);
-        assertThat(krDecisions()).hasSize(2);
-        assertThat(store.orders).hasSize(3);
+        assertThat(krDecisions()).hasSize(3);
+        assertThat(store.orders).hasSize(9);
+    }
+
+    @Test
+    @DisplayName("Claude 몫이 '아직 없음'이면(E2 전) 규칙·벤치마크만 출발하고 Claude는 뒤따라 출발하지 않음 — 다음 밤은 정기 결정(규칙 계좌 12월 주기 REBALANCE)")
+    void claudeNotYetStaysNotStarted() {
+        assertThat(runAt("2026-11-30T22:30").outcome()).isEqualTo(PaperDecisionJob.STARTED);
+
+        sessionData(NEXT, S, everyCodeOn(NEXT));
+        PaperDecisionJob.Result next = runAt("2026-12-01T22:30");
+
+        assertThat(next.outcome()).as("출발 판정(모두 시작 전)이 거짓 — 정기 결정").isEqualTo(PaperDecisionJob.DECIDED);
+        assertThat(next.rules().kind()).as("12-01 = 12월 첫 거래일 — 새 주기").isEqualTo(RuleBookService.REBALANCE);
+        assertThat(next.rules().response().path("cycleDate").asString()).isEqualTo("2026-12-01");
+        assertThat(store.books.get("kr_claude").status()).isEqualTo(PaperBooks.NOT_STARTED);
+        assertThat(krRuns()).extracting(JobRun::outcome).containsExactly(PaperDecisionJob.STARTED, PaperDecisionJob.DECIDED);
+        assertThat(krRuns().get(1).detail().path("claude").asString()).contains("시작 전");
+    }
+
+    @Test
+    @DisplayName("출발 결정의 입력은 결정 시각(S 22:30) 전에 알 수 있던 것만 — S 당일 기준일 U·S 뒤 날짜·22:30 뒤에 다시 받은 수급은 쓰지 않음(initialPacketHasNothingAfterAsOf의 한국판)")
+    void startInputsHaveNothingAfterTheDecision() {
+        rulesData.member(S, 1, "999999", "미래종목", 1_000_000_000L);
+        rulesData.flow("005930", S, 9_999_999L, 9_999_999L, "2026-12-01T06:50:04.000+09:00", kst("2026-11-30T23:00"));
+
+        assertThat(runAt("2026-11-30T22:30").outcome()).isEqualTo(PaperDecisionJob.STARTED);
+
+        Decision rules = krDecisions().get(0);
+        JsonNode input = rules.response().path("input");
+        assertThat(input.path("readAtKst").asString()).isEqualTo("2026-11-30 22:30 KST");
+        assertThat(input.path("universe").path("baseDate").asString()).isEqualTo("2026-11-27");
+        assertThat(input.path("members")).extracting(m -> m.path("code").asString()).doesNotContain("999999");
+        assertThat(input.path("excludedFlowRecords").toString())
+                .as("12-01 기록 8종목, 22:30 뒤에 받은 S 기록 하나").isEqualTo("{\"afterSession\":8,\"fetchedAfterRead\":1}");
+        assertThat(rules.response().toString()).doesNotContain("9999999").doesNotContain("미래종목");
+        for (JsonNode member : input.path("members")) {
+            assertThat(member.path("flows").toString()).doesNotContain("2026-12-01");
+            if (member.path("flows").path("sessionFetchedAt").isString()) {
+                assertThat(Instant.parse(member.path("flows").path("sessionFetchedAt").asString()))
+                        .isBeforeOrEqualTo(kst("2026-11-30T22:30"));
+            }
+        }
+        assertThat(store.orders.values()).filteredOn(o -> o.bookCode().equals("kr_rules"))
+                .extracting(Order::ticker).as("005930은 S 기록이 결정 뒤 판뿐 — 자료 부족").doesNotContain("005930");
+    }
+
+    @Test
+    @DisplayName("규칙 계좌 출발 계획이 실패하면(D 앞 기준일의 U 없음) 어느 계좌에도 쓰지 않고 그 세션을 미룸 — 사유에 규칙 계좌와 원인")
+    void rulesLegFailurePostponesTheStart() {
+        rulesData.universe.clear();
+
+        PaperDecisionJob.Result result = runAt("2026-11-30T22:30");
+
+        assertThat(result.outcome()).isEqualTo(PaperDecisionJob.START_POSTPONED);
+        assertThat(result.message()).contains("kr_rules").contains("kr_paper_universe");
+        assertThat(krDecisions()).isEmpty();
+        assertThat(store.orders).isEmpty();
+        assertThat(store.books.values()).filteredOn(b -> b.market().equals("KR"))
+                .allSatisfy(b -> assertThat(b.status()).isEqualTo(PaperBooks.NOT_STARTED));
+        assertThat(krRuns()).singleElement().satisfies(run ->
+                assertThat(run.detail().path("reason").asString()).contains("규칙 계좌 출발 계획 실패"));
     }
 
     @Test
@@ -192,7 +274,7 @@ class KrStartTest {
     }
 
     @Test
-    @DisplayName("한 트랜잭션 — 두 번째 계좌의 주문을 넣다 실패하면 두 계좌의 결정·주문·운용 전환·순자산 줄 모두 되돌리고 ERROR 기록, 다음 주기에 출발")
+    @DisplayName("한 트랜잭션 — 마지막 계좌(60/40)의 주문을 넣다 실패하면 먼저 쓴 규칙·KODEX 200 계좌의 결정·주문·운용 전환·순자산 줄까지 모두 되돌리고 ERROR 기록, 다음 주기에 출발")
     void startIsAtomic() {
         failShortBond.set(true);
         PaperDecisionJob.Result failed = runAt("2026-11-30T22:30");
@@ -211,7 +293,7 @@ class KrStartTest {
 
         failShortBond.set(false);
         assertThat(runAt("2026-11-30T22:40").outcome()).isEqualTo(PaperDecisionJob.STARTED);
-        assertThat(store.orders).hasSize(3);
+        assertThat(store.orders).as("규칙 6 + 벤치마크 3").hasSize(9);
     }
 
     @Test
@@ -278,10 +360,12 @@ class KrStartTest {
             assertThat(d.response().path("postponed").asBoolean()).isTrue();
             assertThat(d.response().path("configuredStartDate").asString()).isEqualTo("2026-11-30");
         });
-        assertThat(store.orders.values()).allSatisfy(o -> {
+        assertThat(store.orders.values()).as("규칙 계좌 주문도").allSatisfy(o -> {
             assertThat(o.asOfTradingDate()).isEqualTo(NEXT);
             assertThat(o.expiresOn()).isEqualTo(LocalDate.of(2026, 12, 4));
         });
+        assertThat(krDecisions().get(0).response().path("input").path("universe").path("baseDate").asString())
+                .as("미룬 출발의 규칙 계좌 입력 = 그날(12-01) 자료").isEqualTo("2026-11-30");
         assertThat(store.books.get("kr_bench_k200").startedOn()).isEqualTo(NEXT);
         assertThat(krRuns()).extracting(JobRun::outcome)
                 .containsExactly(PaperDecisionJob.START_POSTPONED, PaperDecisionJob.STARTED);
@@ -420,7 +504,8 @@ class KrStartTest {
 
         assertThat(outcome.errors()).isEmpty();
         assertThat(outcome.booksProcessed()).contains("kr_bench_k200", "kr_bench_mix");
-        assertThat(store.orders.values()).allSatisfy(o -> assertThat(o.status()).isEqualTo(PaperBooks.ORDER_FILLED));
+        assertThat(store.orders.values()).filteredOn(o -> o.bookCode().startsWith("kr_bench"))
+                .allSatisfy(o -> assertThat(o.status()).isEqualTo(PaperBooks.ORDER_FILLED));
         // 069500 100%: 1억 안에서 비용 포함 → 1,051주(금액 99,845,000 · 수수료 14,976 · 슬리피지 49,922), 현금 90,102.
         assertThat(store.fillsOf("kr_bench_k200")).singleElement().satisfies(f -> {
             assertThat(f.qty()).isEqualTo(1_051);
