@@ -91,6 +91,11 @@ import java.util.concurrent.locks.ReentrantLock;
  * 돌고(한국은 게이트가 없고 규칙 책은 2단계 D1), Claude 책 결정은 그 시장 문맥으로 냅니다({@link ClaudeBookService}). 잠금은 시장과
  * 상관없이 하나입니다. 시장을 받지 않는 옛 시그니처(한 번 실행·수동 실행·시각 설정)는 미국 판입니다.
  *
+ * <p><b>한국 출발</b>(2단계 명세 §4-8·K28, C1c): 한국 실행에서 한국 계좌가 모두 시작 전이면 정기 결정 대신 {@link KrStartPipeline}이
+ * 출발을 냅니다 — 출발일 S(배포 설정) 이후 세션 D의 결정 창(22:30 ~ D+1 01:00) 안에서 자료 게이트(§4-9 ②④⑤⑥, ③은 D1)를 통과하면 계좌마다
+ * 출발 계획(벤치마크 둘 — 규칙 D1·Claude E2는 갈고리)을 한 트랜잭션으로 씁니다({@value #STARTED}). 게이트 미달은 {@value #START_WAITING}
+ * (기록 안 함), 기한이 지나면 {@value #START_POSTPONED}(그 세션에 한 번 기록 — 다음 KR 거래일 창에서 다시)입니다.
+ *
  * <p><b>실행 하나 = 달력 한 벌·설정 판 하나</b>(C1a): 정기·수동 실행은 시작할 때 그 시장의 실행 문맥({@link MarketRun})을 한 번 열어
  * ({@link PaperMarkets#open}) 세션 d·결정 시각과 기한·관측치 확정 판정·장부 처리·미확정 순자산 줄·Claude 결정에 그대로 넘깁니다 —
  * 그 사이 설정 탭에서 새 판을 저장해도 Claude 결정 행의 {@code settings_version}·패킷·시스템 프롬프트는 이 실행이 읽은 판이고,
@@ -122,6 +127,14 @@ public class PaperDecisionJob {
     public static final String NO_CALENDAR = CalendarGaps.NO_CALENDAR;
     /** 출발일·계좌가 갖춰지지 않은 시장 — 실행을 열지 않음(기록 안 함, {@link PaperMarket#dormantReason}). */
     public static final String DORMANT = "DORMANT";
+    /** 한국 출발을 냄(기록 — {@link KrStartPipeline}). */
+    public static final String STARTED = KrStartPipeline.STARTED;
+    /** 한국 출발의 자료 게이트 미달 — 다음 주기에 다시(기록 안 함). */
+    public static final String START_WAITING = KrStartPipeline.START_WAITING;
+    /** 한국 출발 기한이 지나 다음 KR 거래일로 미룸(그 세션에 한 번 기록). */
+    public static final String START_POSTPONED = KrStartPipeline.START_POSTPONED;
+    /** 출발 오류 횟수를 세는 자리(오류 횟수 표의 책 칸 — 계좌 코드와 겹치지 않음). */
+    private static final String START_FAILURES = "start";
     /** 미국 밖 시장의 규칙 책 결정 자리(작업 기록) — 그 시장 규칙 책은 2단계 D1에서 들어옵니다(클래스 설명). */
     static final String RULES_NOT_YET = "이 시장의 규칙 계좌 결정은 아직 없습니다(2단계 D1)";
 
@@ -161,6 +174,8 @@ public class PaperDecisionJob {
     private final Map<FailureKey, Integer> failures = new ConcurrentHashMap<>();
     /** '달력 없음'을 시장·날짜·빠진 해마다 한 번만 남기는 장부(클래스 설명). */
     private final CalendarGaps calendarGaps = new CalendarGaps();
+    /** 한국 네 계좌의 출발(클래스 설명 '한국 출발'). */
+    private final KrStartPipeline krStart;
 
     /** 오류 횟수를 세는 단위 — 시장 × 거래일(그 시장 세션) × 책 코드(그 시장의 규칙·Claude 책). */
     private record FailureKey(String market, LocalDate day, String book) {
@@ -217,6 +232,7 @@ public class PaperDecisionJob {
         this.mapper = mapper;
         this.clock = clock;
         this.markets = markets;
+        this.krStart = new KrStartPipeline(store, reader, ledger, config, mapper);
     }
 
     /**
@@ -236,6 +252,8 @@ public class PaperDecisionJob {
                     log.info("모의 매매 결정 작업: {}", result.message());
                 } else if (ERROR.equals(result.outcome())) {
                     log.warn("모의 매매 결정 작업 오류({}) — {}", result.tradingDate(), result.message());
+                } else if (STARTED.equals(result.outcome()) || START_POSTPONED.equals(result.outcome())) {
+                    log.info("모의 매매 결정 작업({}): {}", market.code(), result.message());
                 } else if (DECIDED.equals(result.outcome())) {
                     log.info("모의 매매 결정 작업: {} 규칙 책 {} · Claude 책 {}", result.tradingDate(),
                             result.rules() == null ? "결정 없음" : result.rules().status(),
@@ -288,6 +306,10 @@ public class PaperDecisionJob {
         LocalDate d = market.calendar().lastCompletedSession(now);
         if (store.books(market.code()).isEmpty()) {
             return new Result(NOT_INITIALIZED, d, null, null, null, "초기화 전입니다 — 계좌가 없습니다");
+        }
+        if (krStart.pending(market)) {
+            // 한국 계좌가 모두 시작 전 — 정기 결정 대신 출발(S 22:30 → S+1 시가, 클래스 설명 '한국 출발').
+            return startKr(market, now, d);
         }
         Times times = times(market, market.settingsBody());
         Instant decisionAt = market.decisionInstant(d, times.decision());
@@ -439,6 +461,34 @@ public class PaperDecisionJob {
                 pricesFinal);
         detail.put("rules", decisionDetail(decision));
         return decision;
+    }
+
+    /**
+     * 한국 출발 한 번({@link KrStartPipeline}) — STARTED와 처음 본 미룸만 기록합니다. 출발을 쓰다 예외가 나면 그 세션의 출발 오류 횟수를
+     * 올리고 ERROR로 기록하며, {@value #MAX_ATTEMPTS}번이면 그 세션 기한까지 더 시도하지 않습니다(기한이 지나면 미룸 — 수동 출발 단추는 E2).
+     */
+    private Result startKr(MarketRun market, Instant now, LocalDate d) {
+        FailureKey key = new FailureKey(market.code(), d, START_FAILURES);
+        KrStartPipeline.Result start;
+        try {
+            start = krStart.run(market, now, failures.getOrDefault(key, 0) >= MAX_ATTEMPTS);
+        } catch (RuntimeException e) {
+            int attempt = failures.merge(key, 1, Integer::sum);
+            Map<String, Object> detail = new LinkedHashMap<>();
+            detail.put("start", true);
+            detail.put("tradingDate", d.toString());
+            detail.put("error", message(e));
+            detail.put("attempt", attempt);
+            record(market, now, ERROR, detail);
+            return new Result(ERROR, d, null, null, null, message(e));
+        }
+        if (STARTED.equals(start.outcome())) {
+            failures.remove(key);
+        }
+        if (start.record()) {
+            record(market, now, start.outcome(), start.detail());
+        }
+        return new Result(start.outcome(), start.session(), null, null, null, start.message());
     }
 
     /**

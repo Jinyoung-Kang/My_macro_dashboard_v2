@@ -71,6 +71,70 @@ final class KrFixtures {
         when(reader.read(eq(dataset), anyLong(), nullable(String.class))).thenReturn(Optional.ofNullable(snapshot));
     }
 
+    /**
+     * {@code paper.kr.quotes} 저장본 본문 — 계약 1(명세 §9) 중 출발 게이트가 보는 칸: 머리 {@code contract}·{@code session}·{@code scope}(받은
+     * 순서), 종목마다 {@code status OK}·{@code fetchedAt}·최근 두 봉(전날·마지막 봉 날짜). 마지막 봉 날짜가 null인 종목은 범위에만 있고 항목이
+     * 없습니다('호출 실패, 이을 값도 없음').
+     */
+    static ObjectNode quotesPayload(java.time.LocalDate session, java.util.Map<String, java.time.LocalDate> lastBars) {
+        ObjectNode payload = PaperFixtures.MAPPER.createObjectNode();
+        payload.put("contract", 1);
+        payload.put("session", session.toString());
+        payload.put("universeDate", session.minusDays(1).toString());
+        ArrayNode scope = payload.putArray("scope");
+        ObjectNode codes = payload.putObject("codes");
+        lastBars.forEach((code, last) -> {
+            scope.add(code);
+            if (last == null) {
+                return;
+            }
+            ObjectNode entry = codes.putObject(code);
+            entry.put("status", "OK");
+            entry.put("fetchedAt", session + "T12:57:00Z");
+            ArrayNode bars = entry.putArray("bars");
+            bars.addObject().put("date", last.minusDays(1).toString()).put("close", 10_000).put("volume", 1_000);
+            bars.addObject().put("date", last.toString()).put("open", 10_100).put("close", 10_200).put("volume", 1_200);
+        });
+        return payload;
+    }
+
+    /** 금융위 메타 저장본 본문({@code kr.fsc_prices_meta} — 최신 기준일 {@code latestBasDt}). */
+    static ObjectNode fscMeta(java.time.LocalDate latest) {
+        ObjectNode payload = PaperFixtures.MAPPER.createObjectNode();
+        payload.put("latestBasDt", latest.toString());
+        payload.put("rows", 2_778);
+        return payload;
+    }
+
+    /** 시각을 움직이는 시계(같은 작업 인스턴스로 여러 주기를 돌리는 시험). */
+    static final class MovableClock extends java.time.Clock {
+
+        private Instant now;
+
+        MovableClock(Instant now) {
+            this.now = now;
+        }
+
+        void set(Instant next) {
+            now = next;
+        }
+
+        @Override
+        public java.time.ZoneId getZone() {
+            return java.time.ZoneOffset.UTC;
+        }
+
+        @Override
+        public java.time.Clock withZone(java.time.ZoneId zone) {
+            return this;
+        }
+
+        @Override
+        public Instant instant() {
+            return now;
+        }
+    }
+
     /** 실행을 열 때 시장 묶음이 받는 재료 — 그 설정 본문과 공휴일 저장본 하나(다른 데이터셋은 없음). */
     static MarketRun.Inputs inputs(JsonNode settingsBody, Snapshot holidays) {
         return new MarketRun.Inputs(settingsBody, (dataset, maxAgeSeconds, task) ->
