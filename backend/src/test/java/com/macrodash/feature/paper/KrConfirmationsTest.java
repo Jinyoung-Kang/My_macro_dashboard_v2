@@ -476,6 +476,37 @@ class KrConfirmationsTest {
     }
 
     @Test
+    @DisplayName("그날 이하 봉으로 나중에 체결될 수 있는 대기 주문이 있으면 그날 줄은 확정이 아님 — 1분봉 FAILED로 D 기준 매수가 기다리는 현금뿐인 D+1 줄은 관측치·확정 조정 모두 잠정, 다음 밤(기한 뒤) 저장본이 D+1 시가로 체결해도 그 체결이 빠진 '확정' D+1 줄이 남지 않음")
+    void pendingOrderKeepsTheLineProvisional() {
+        book(1_000_000);
+        long id = order("005930", PaperBooks.BUY, 10, D, CREATED);
+        KrFixtures.Payload failed = new KrFixtures.Payload(D1);
+        failed.code("005930", FETCHED_D1).bar(D, 71_000, 71_000, 1_000_000).bar(D1, 71_300, 71_400, 900_000)
+                .minute("FAILED");
+        process(failed, COLLECTED_D1);
+        assertThat(store.orders.get(id).status()).isEqualTo(PaperBooks.ORDER_PENDING);
+        assertThat(navOn(D1).nav()).isEqualTo(1_000_000);
+        assertThat(navOn(D1).pricesFinal()).as("현금뿐이지만 D 기준 매수가 D+1 봉으로 체결될 수 있음").isFalse();
+        fsc("005930", KrConfirmed.SOURCE_FSC, D1, day(D1, 71_200L, 71_000, 5_000_000, "KOSPI"));
+
+        Outcome waiting = confirm();
+
+        assertThat(navOn(D1).pricesFinal()).as("확정 조정도 대기 주문을 봄").isFalse();
+        assertThat(waiting.booksProcessed()).isEmpty();
+
+        KrFixtures.Payload d2 = new KrFixtures.Payload(D2);
+        d2.code("005930", FETCHED_D2).bar(D, 71_000, 71_000, 1_000_000).bar(D1, 71_300, 71_400, 900_000)
+                .minute("FAILED").bar(D2, 71_600, 71_500, 800_000).minute("OK", "09:01", 71_550, 40_000);
+        process(d2, COLLECTED_D2);
+
+        Fill fill = onlyFill();
+        assertThat(fill.observationDate()).as("기준일 뒤 첫 관측 봉 = D+1(기한 뒤 수집본에도 FAILED → 일봉 시가)").isEqualTo(D1);
+        assertThat(fill.priceSource()).isEqualTo(KrQuotes.SOURCE_INTEGRATED);
+        assertThat(navOn(D1).pricesFinal()).as("그 체결이 빠진 D+1 줄은 잠정으로 남음(확정 줄로 영구히 남지 않음)").isFalse();
+        assertThat(navOn(D2).pricesFinal()).isFalse();
+    }
+
+    @Test
     @DisplayName("미처리 기업행위 보유는 확정 줄에서도 묶인 평가 그대로(금융위 최신 종가로 덮지 않음) — 그 줄은 잠정")
     void heldValuationStaysBound() {
         book(1_000_000);

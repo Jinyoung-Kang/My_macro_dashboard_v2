@@ -1460,7 +1460,11 @@ public class PaperLedgerService {
                 && (run.book.startedOn() == null || !barDate.isBefore(run.book.startedOn()));
         if (started && sessionClose) {
             // 확정 조정 시장(한국)은 그날까지의 체결이 모두 확정됐을 때만 — 현금에 잠정 체결가가 남아 있으면 현금뿐인 줄도 잠정(K29, C3).
-            boolean pricesFinal = allFinal(run, barDate) && (!run.market.confirmsFills() || confirmedThrough(code, barDate));
+            // 그날 이하 봉으로 나중에 체결될 수 있는 대기 주문(기준일 < 그날 — 1분봉 FAILED 기다림·보류)이 있어도 잠정입니다: 그 체결이 뒤늦게
+            // 그날 날짜로 들어오면 그 줄에는 그 체결이 빠져 있는데, 확정 줄은 다시 쓰이지 않기 때문입니다(묶음 C 리뷰).
+            boolean pricesFinal = allFinal(run, barDate) && (!run.market.confirmsFills()
+                    || (confirmedThrough(code, barDate) && KrConfirmations.pendingThrough(store, run.market, code, barDate)
+                    .isEmpty()));
             store.upsertNav(new NavRow(code, barDate, PaperLedger.round4(valuation.nav()), PaperLedger.round4(run.cash),
                     PaperLedger.round4(valuation.equityValue()), PaperLedger.round4(valuation.exposurePct()),
                     pricesFinal));

@@ -8,6 +8,7 @@ import com.macrodash.store.PaperStore.BookState;
 import com.macrodash.store.PaperStore.Fill;
 import com.macrodash.store.PaperStore.FillConfirmation;
 import com.macrodash.store.PaperStore.NavRow;
+import com.macrodash.store.PaperStore.Order;
 import com.macrodash.store.PaperStore.Position;
 import com.macrodash.store.PaperStore.SettingsRow;
 import com.macrodash.store.PaperStore.UnconfirmedFill;
@@ -61,8 +62,9 @@ import java.util.TreeSet;
  * 확정({@code prices_final})이 되지 않습니다.
  *
  * <p><b>확정 순자산 줄</b>({@link #rewriteNav}): 체결을 확정한 뒤 그 책의 마지막 순자산 줄(거래일 D)을 금융위 D 종가로 다시 씁니다 — 장부 상태가 D
- * 마감일 때만(마지막 관측치의 세션 = D, D 뒤 체결 없음). 그날까지의 체결이 모두 확정되고 모든 보유가 금융위 D 종가로 평가되면 {@code prices_final =
- * true}, 아니면 잠정(이번에 확정한 체결이 있으면 고친 현금으로 다시 씀). 미처리 기업행위 보유는 묶인 평가 그대로라 그 줄은 잠정입니다.
+ * 마감일 때만(마지막 관측치의 세션 = D, D 뒤 체결 없음). 그날까지의 체결이 모두 확정되고 모든 보유가 금융위 D 종가로 평가되고 D 이하 봉으로 나중에
+ * 체결될 수 있는 대기 주문이 없으면({@link #pendingThrough}) {@code prices_final = true}, 아니면 잠정(이번에 확정한 체결이 있으면 고친 현금으로 다시 씀).
+ * 미처리 기업행위 보유는 묶인 평가 그대로라 그 줄은 잠정입니다.
  */
 final class KrConfirmations {
 
@@ -173,7 +175,7 @@ final class KrConfirmations {
      * <p>평가: 보유마다 그 종목 금융위 D 행의 종가(거래가 없던 날이면 그 행의 종가 = KRX 공식 종가인 전날 값 — 평가 가격으로는 그대로 씀; 체결가가
      * 아닐 뿐), 행이 없으면 마지막 평가 가격(토스 — 그 줄은 잠정), <b>미처리 기업행위 보유는 묶인 평가 그대로</b>(금융위 최신 종가로 덮지 않음 — 그 줄은
      * 잠정, 명세 §4-2 'C2c 구현에서 정한 것'이 넘긴 자리). 현금은 확정 조정을 반영한 지금 현금. 확정 = 그날까지(체결일 ≤ D) 확정 안 된 체결이 없고 모든
-     * 보유가 금융위 D 종가로 평가됨. 이번에 확정한 체결이 있으면 잠정이어도 다시 쓰고(고친 현금), 없으면 확정이 될 때만 씁니다. 확정 줄은 잠정 줄로
+     * 보유가 금융위 D 종가로 평가되고 D 이하 봉으로 나중에 체결될 수 있는 대기 주문이 없음({@link #pendingThrough}). 이번에 확정한 체결이 있으면 잠정이어도 다시 쓰고(고친 현금), 없으면 확정이 될 때만 씁니다. 확정 줄은 잠정 줄로
      * 덮이지 않습니다({@link PaperStore#upsertNav}).
      *
      * @return 이번에 확정이 된 줄의 거래일(아니면 null)
@@ -213,6 +215,7 @@ final class KrConfirmations {
                 provisional.add("체결 " + unconfirmed.fill().id() + " " + unconfirmed.fill().ticker() + "(" + filled + ") 확정 전");
             }
         }
+        provisional.addAll(pendingThrough(store, run, book.code(), day));
         boolean pricesFinal = provisional.isEmpty();
         if (!cashChanged && !pricesFinal) {
             return null;   // 고칠 현금도, 확정할 수도 없음 — 줄 그대로
@@ -228,6 +231,26 @@ final class KrConfirmations {
         notes.add("순자산 " + day + " 잠정으로 다시 씀(확정 현금 " + won(BigDecimal.valueOf(PaperLedger.round4(cash))) + "원) — "
                 + String.join("; ", provisional));
         return null;
+    }
+
+    /**
+     * 그 책의 대기 주문 중 그날({@code day}) 이하 봉으로 <b>나중에</b> 체결될 수 있는 것 — 기준 거래일 &lt; 그날이고 그 시장이 체결하는 시점
+     * ({@link PaperMarket#timings})인 대기 주문(사람이 읽을 한 줄씩). 한국 체결은 기준일 뒤 <b>첫 관측 봉</b>의 시가라(§4-2 'C2b') 1분봉 {@code FAILED}
+     * 기다림(결정 d11)·기업행위·종목 구분·세율 보류로 대기하던 주문이 다음 밤 저장본에서 그날 날짜로 체결될 수 있습니다. 그런 주문이 있는 날의
+     * 순자산 줄은 확정으로 쓰지 않습니다 — 확정 줄은 잠정 줄로 덮이지 않고 확정 조정은 마지막 줄만 다시 쓰므로, 그 체결이 빠진 확정 줄이 영구히
+     * 남기 때문입니다(묶음 C 리뷰 — 결정 d11의 '대기 주문 = 정리 안 됨'과 같은 뜻). 기준일 = 그날인 주문(그날 밤 결정·스탑 감지)은 그날 뒤 봉으로만
+     * 체결되므로 세지 않습니다.
+     */
+    static List<String> pendingThrough(PaperStore store, PaperMarket market, String bookCode, LocalDate day) {
+        List<String> out = new ArrayList<>();
+        for (Order order : store.ordersByStatus(bookCode, PaperBooks.ORDER_PENDING)) {
+            if (order.asOfTradingDate() != null && order.asOfTradingDate().isBefore(day)
+                    && market.timings().contains(order.timing())) {
+                out.add("주문 " + order.id() + " " + order.side() + " " + order.ticker() + "(기준일 " + order.asOfTradingDate()
+                        + ") 대기 — " + day + " 이하 봉으로 체결될 수 있음");
+            }
+        }
+        return out;
     }
 
     /**
