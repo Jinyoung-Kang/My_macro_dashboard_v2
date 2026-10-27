@@ -1004,23 +1004,64 @@ public class PaperLedgerService {
      * 최고가를 KRX 기준가로만 올립니다(K30 — 통합가 고점으로 되돌릴 수 없는 매도·재진입 금지가 나지 않게). G2(1분봉 15:30 단일가 봉 = 금융위 종가)
      * 판정 전이라 KRX 기준가는 금융위 확정 종가(주식 {@code clpr}·ETF 종가, 거래량 &gt; 0 행)뿐이고, 토스 종가로는 올리지 않습니다 — NXT 종목의
      * 통합가({@code TOSS_INTEGRATED})는 물론 KRX 단독 봉({@code TOSS_DAILY})의 잠정 종가도(확정값으로 다시 계산할 일을 만들지 않게). 금융위 D 종가는
-     * D+1 밤에 들어오므로 최고가는 하루 늦게 따라갑니다. 보는 날짜 = 그 보유가 이번 관측치 시작 때 반영한 마지막 관측(since) 이후 — 분할을 반영한
-     * 날은 비율이 바뀐 날 E 이후(그 전 가격은 옛 단위). 최고가는 max라 같은 종가를 다시 봐도 두 번 오르지 않습니다. 미처리 기업행위·판정 대기 보유는
-     * 올리지 않습니다. 새 보유의 처음 값은 체결가(C2b — 시가 사다리를 내려간 {@code TOSS_INTEGRATED} 체결이면 그 값; 금융위 확정 때 다시 계산하는 일은 C3).
+     * D+1 밤에 들어오므로 최고가는 하루 늦게 따라갑니다. 보는 날짜({@link #watermarkFrom}) = 그 보유가 이번 관측치 시작 때 반영한 마지막 관측(since)과
+     * 금융위 최신 기준일 − {@value KrConfirmed#LOOKBACK_DAYS}일(확정 시세가 늘 읽는 창) 중 이른 날부터 — 금융위 X 값이 토스 X+1 관측치 처리보다 늦게
+     * 들어와도(첫 slow의 {@code fsc_prices} 실패) since는 이미 X 뒤라 그 종가를 건너뛰었기 때문입니다(묶음 C 리뷰). 그 보유를 연 날 전, 분할·병합을
+     * 반영한 날 E 전(그 전 가격은 옛 단위)으로는 넘어가지 않습니다 — 이번 관측치에서 분할을 반영했으면 E부터. 최고가는 max라 같은 종가를 다시 봐도
+     * 두 번 오르지 않습니다. 미처리 기업행위·판정 대기 보유는 올리지 않습니다. 새 보유의 처음 값은 체결가(C2b — 시가 사다리를 내려간
+     * {@code TOSS_INTEGRATED} 체결이면 그 값; 금융위 확정 때 다시 계산 — C3 {@link KrConfirmations}).
      */
     private static void raiseKrxWatermarks(BookRun run) {
         for (Holding holding : run.holdings.values()) {
             if (holding.corpHold != null || holding.assessed == Kind.PENDING || holding.assessed == Kind.UNPROCESSED) {
                 continue;
             }
-            LocalDate from = holding.splitFrom != null ? holding.splitFrom : holding.sinceAtStart;
+            KrConfirmed.Series series = run.confirmed.of(holding.ticker);
+            LocalDate from = holding.splitFrom != null ? holding.splitFrom : watermarkFrom(holding, series);
             if (from == null) {
                 continue;
             }
-            for (KrConfirmed.Day day : run.confirmed.of(holding.ticker).observedFrom(from)) {
+            for (KrConfirmed.Day day : series.observedFrom(from)) {
                 raiseWatermark(holding, day.close().doubleValue(), run.at);
             }
         }
+    }
+
+    /** 한국 분할·병합을 반영한 기록의 머리({@link #applyKrSplit} — "E k:1 분할·병합 확인"). */
+    private static final java.util.regex.Pattern KR_SPLIT_NOTE =
+            java.util.regex.Pattern.compile("(\\d{4}-\\d{2}-\\d{2}) \\d+:\\d+ 분할·병합 확인");
+
+    /**
+     * 최고가를 올리는 금융위 종가를 읽기 시작할 날({@link #raiseKrxWatermarks}) — since와 (금융위 최신 기준일 − {@value KrConfirmed#LOOKBACK_DAYS}일) 중
+     * 이른 날, 단 그 보유를 연 날·마지막으로 반영한 분할의 E보다 앞으로는 가지 않음. 분할 기록이 있는데 E를 읽을 수 없으면(잘린 기록) 거슬러 읽지 않고
+     * since부터(옛 단위 가격을 섞지 않게). since가 없으면 null(올리지 않음).
+     */
+    static LocalDate watermarkFrom(LocalDate since, LocalDate openedOn, String splitNote, LocalDate fscLatest) {
+        if (since == null) {
+            return null;
+        }
+        LocalDate split = null;
+        if (splitNote != null && !splitNote.isBlank()) {
+            java.util.regex.Matcher matcher = KR_SPLIT_NOTE.matcher(splitNote);
+            while (matcher.find()) {
+                split = LocalDate.parse(matcher.group(1));
+            }
+            if (split == null) {
+                return since;
+            }
+        }
+        LocalDate from = fscLatest == null ? since : earlier(since, fscLatest.minusDays(KrConfirmed.LOOKBACK_DAYS));
+        if (openedOn != null && from.isBefore(openedOn)) {
+            from = openedOn;
+        }
+        if (split != null && from.isBefore(split)) {
+            from = split;
+        }
+        return from;
+    }
+
+    private static LocalDate watermarkFrom(Holding holding, KrConfirmed.Series series) {
+        return watermarkFrom(holding.sinceAtStart, holding.openedOn, holding.splitNote, series.datasetLatest());
     }
 
     /**

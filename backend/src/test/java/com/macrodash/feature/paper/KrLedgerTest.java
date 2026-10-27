@@ -1031,6 +1031,50 @@ class KrLedgerTest {
         }
 
         @Test
+        @DisplayName("늦게 들어온 금융위 종가도 최고가에 — 금융위 D+1이 D+2 관측치 처리보다 늦어 since가 이미 D+2여도, D+3 밤 D+1 종가 110,000으로 올라 D+3 잠정 종가 100,000에 스탑 감지(스탑가 101,200)")
+        void lateConfirmedCloseStillRaisesTheWatermark() {
+            book(BOOK, PaperBooks.KIND_CLAUDE, 0);
+            heldAtHundred(BOOK);
+            LocalDate d3 = LocalDate.of(2026, 11, 5);
+            fsc("005930", D, fscDay(D, 100_000, 1_000, null));
+            KrFixtures.Payload d1 = new KrFixtures.Payload(D1);
+            d1.code("005930", FETCHED_D1).bar(D, 100_000, 100_000, 1_000).bar(D1, 109_000, 110_000, 2_000);
+            process(d1, COLLECTED_D1);
+            KrFixtures.Payload d2 = new KrFixtures.Payload(D2);
+            d2.code("005930", kst("2026-11-04T21:57")).bar(D1, 109_000, 110_000, 2_000).bar(D2, 103_000, 102_000, 3_000);
+            process(d2, kst("2026-11-04T22:01"));   // 금융위 D+1은 아직(첫 slow 실패) — since는 D+2로
+            assertThat(store.positions(BOOK).get(0).fillRefDate()).isEqualTo(D2);
+            assertThat(position(BOOK, "005930").highWatermark()).isEqualTo(100_000);
+
+            fsc("005930", D2, fscDay(D, 100_000, 1_000, null), fscDay(D1, 110_000, 5_000, null),
+                    fscDay(D2, 102_000, 4_000, null));
+            KrFixtures.Payload night3 = new KrFixtures.Payload(d3);
+            night3.code("005930", kst("2026-11-05T21:57")).bar(D2, 103_000, 102_000, 3_000).bar(d3, 101_000, 100_000, 3_000);
+            process(night3, kst("2026-11-05T22:01"));
+
+            assertThat(position(BOOK, "005930").highWatermark()).as("D+1 종가 — since(D+2) 앞이지만 금융위 창 안").isEqualTo(110_000);
+            assertThat(store.orders.values()).filteredOn(o -> PaperBooks.SOURCE_STOP.equals(o.source())).singleElement()
+                    .satisfies(o -> assertThat(o.reason().path("stopPrice").asDouble()).isEqualTo(101_200));
+        }
+
+        @Test
+        @DisplayName("최고가를 읽기 시작할 날 — since와 금융위 최신 기준일 − 14일 중 이른 날, 보유를 연 날·마지막 분할 E 앞으로는 가지 않고, 분할 기록이 있는데 E를 못 읽으면 since부터")
+        void watermarkWindowBounds() {
+            LocalDate since = LocalDate.of(2026, 11, 10);
+            LocalDate opened = LocalDate.of(2026, 10, 20);
+            assertThat(PaperLedgerService.watermarkFrom(since, opened, null, since)).isEqualTo(LocalDate.of(2026, 10, 27));
+            assertThat(PaperLedgerService.watermarkFrom(since, LocalDate.of(2026, 11, 2), null, since))
+                    .as("보유를 연 날 앞으로는 가지 않음").isEqualTo(LocalDate.of(2026, 11, 2));
+            assertThat(PaperLedgerService.watermarkFrom(since, opened,
+                    "2026-10-28 2:1 분할·병합 확인 — 10주 → 20주 · 2026-11-06 50:1 분할·병합 확인 — 20주 → 1000주", since))
+                    .as("마지막 분할 E(그 전 가격은 옛 단위)").isEqualTo(LocalDate.of(2026, 11, 6));
+            assertThat(PaperLedgerService.watermarkFrom(since, opened, "…주 → 1000주, 평단 70000 → 1400", since))
+                    .as("E를 읽을 수 없는 분할 기록 — 거슬러 읽지 않음").isEqualTo(since);
+            assertThat(PaperLedgerService.watermarkFrom(since, opened, null, null)).as("금융위가 아무것도 받지 않음").isEqualTo(since);
+            assertThat(PaperLedgerService.watermarkFrom(null, opened, null, since)).isNull();
+        }
+
+        @Test
         @DisplayName("스탑을 보지 않는 보유: 현금성(153130)·벤치마크 계좌·미처리 기업행위 보유·이번 관측치의 마지막 봉이 정지일(거래량 0)")
         void noStopForCashLikeBenchmarkHeldOrHaltedBars() {
             book(BOOK, PaperBooks.KIND_CLAUDE, 0);
