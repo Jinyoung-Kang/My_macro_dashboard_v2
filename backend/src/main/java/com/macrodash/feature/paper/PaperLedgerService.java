@@ -1149,7 +1149,8 @@ public class PaperLedgerService {
     static final String STOP_NOT_CONFIRMED = "STOP_NOT_CONFIRMED";
     /**
      * STOP 근거의 칸 — 감지 뒤 금융위 확정 조정이 그 보유를 연 체결의 최고가를 <b>낮춰</b> 다시 센 값({@link KrConfirmations} — 감지 때 최고가는
-     * 잠정 체결가였음). 재판정은 감지 때 최고가와 이 값 중 낮은 쪽으로 셉니다({@link #rejudgeStop}).
+     * 잠정 체결가였음). 확정 체결가와 체결일부터 그 STOP의 감지일까지의 금융위 종가로만 셉니다(감지 뒤 종가는 섞지 않음). 재판정은 감지 때 최고가와
+     * 이 값 중 낮은 쪽으로 셉니다({@link #rejudgeStop}).
      */
     static final String STOP_CONFIRMED_WATERMARK = "confirmedHighWatermark";
 

@@ -51,7 +51,8 @@ import java.util.TreeSet;
  *       (가중 평균 원가 — 매도는 평단 그대로).</li>
  *   <li><b>최고가 다시 계산</b>(명세 §4-2 'C2c 구현에서 정한 것'이 넘긴 자리): 그 체결이 연 보유(분할을 반영한 적 없음)면 최고가 = max(확정가,
  *       체결일부터의 금융위 확정 종가 — 거래량 &gt; 0 행)로 바꿉니다. 새 보유의 최고가 처음 값은 잠정 체결가라 시가 사다리를 내려간
- *       {@code TOSS_INTEGRATED}(NXT 08:00 프리마켓 첫 체결일 수 있음)면 KRX 기준가가 아니기 때문입니다 — 확정값 우선(K30).</li>
+ *       {@code TOSS_INTEGRATED}(NXT 08:00 프리마켓 첫 체결일 수 있음)면 KRX 기준가가 아니기 때문입니다 — 확정값 우선(K30). 그 보유의 대기
+ *       STOP 근거에는 STOP마다 감지일까지의 확정값으로 따로 센 최고가를 남깁니다({@link #lowerPendingStops}).</li>
  * </ul>
  *
  * <p><b>멱등</b>: 행은 체결 번호가 기본키라 체결마다 한 번이고({@link PaperStore#insertFillConfirmationIfAbsent}), 현금·평단은 그 행을 새로 넣었을
@@ -447,10 +448,10 @@ final class KrConfirmations {
             if (recomputed != watermark) {
                 notes.add(fill.ticker() + " 최고가 다시 계산(확정값 우선) — " + won(BigDecimal.valueOf(watermark)) + " → "
                         + won(BigDecimal.valueOf(recomputed)) + "원(확정 체결가와 " + fill.observationDate() + "부터의 금융위 종가 중 최고)");
-                lowerPendingStops(book, fill.ticker(), recomputed, notes);
                 watermark = recomputed;
                 watermarkAt = clock.instant();
             }
+            lowerPendingStops(book, fill, confirmedPrice, series, notes);
         }
         Position moved = new Position(p.bookCode(), p.ticker(), p.qty(), avg, p.openedOn(), p.openedAt(), watermark,
                 watermarkAt, p.lastPrice(), p.lastPriceAt(), p.priceStale(), p.fillRefDate(), p.fillRefClose(), p.splitNote());
@@ -459,17 +460,35 @@ final class KrConfirmations {
     }
 
     /**
-     * 그 보유의 대기 STOP 주문 근거에 확정 조정이 낮춘 최고가를 남깁니다({@code PaperLedgerService.STOP_CONFIRMED_WATERMARK}) — 감지 때 근거의 최고가가
-     * 잠정 체결가(시가 사다리를 내려간 {@code TOSS_INTEGRATED} 등)였던 스탑을 체결 처리 때 확정값으로 다시 판정하게(K30, 묶음 C 리뷰). 감지 때 최고가보다
-     * 낮아졌을 때만이고(감지 뒤 오른 값으로 스탑가를 올리지 않음), 이미 남긴 값보다 낮을 때만 바꿉니다. 근거가 객체가 아니거나 최고가가 없는 주문(손으로
-     * 넣은 주문 — 다시 판정하지 않음)은 그대로 둡니다.
+     * 그 체결이 연 보유의 대기 STOP 주문 근거에 확정 조정이 낮춘 최고가를 남깁니다({@code PaperLedgerService.STOP_CONFIRMED_WATERMARK}) — 감지 때 근거의
+     * 최고가가 잠정 체결가(시가 사다리를 내려간 {@code TOSS_INTEGRATED} 등)였던 스탑을 체결 처리 때 확정값으로 다시 판정하게(K30, 묶음 C 리뷰). 값은
+     * STOP마다 따로 셉니다 — max(확정 체결가, 체결일 ≤ 날짜 ≤ 그 STOP의 기준일(감지일 D)인 금융위 종가 — 거래량 &gt; 0 행). 보유의 최고가 다시
+     * 계산({@link #moveAverage})은 최신까지 보지만, 재판정은 'D 기준 확정 최고가'라 D 뒤 종가를 섞지 않습니다: 금융위 D가 D+1과 함께 늦게 들어오고
+     * 그사이 STOP이 기다렸으면(1분봉 {@code FAILED} 등) D+1 종가가 스탑가를 올려, D 기준으로는 취소였을 매도·재진입 금지가 나기 때문입니다(2차 리뷰).
+     * 감지 때 최고가보다 낮아졌을 때만이고(감지 뒤 오른 값으로 스탑가를 올리지 않음), 이미 남긴 값보다 낮을 때만 바꿉니다. 기준일이 체결일보다
+     * 이른 STOP(그 보유가 열리기 전에 감지 — 그 최고가는 이 체결과 무관)과 근거가 객체가 아니거나 최고가가 없는 주문(손으로 넣은 주문 — 다시 판정하지
+     * 않음)은 그대로 둡니다.
      */
-    private void lowerPendingStops(Book book, String ticker, double recomputed, List<String> notes) {
+    private void lowerPendingStops(Book book, Fill fill, BigDecimal confirmedPrice, KrConfirmed.Series series,
+                                   List<String> notes) {
+        LocalDate filled = fill.observationDate();
         for (Order order : store.ordersByStatus(book.code(), PaperBooks.ORDER_PENDING)) {
-            if (!PaperBooks.SOURCE_STOP.equals(order.source()) || !ticker.equals(order.ticker())
+            if (!PaperBooks.SOURCE_STOP.equals(order.source()) || !fill.ticker().equals(order.ticker())
                     || !(order.reason() instanceof tools.jackson.databind.node.ObjectNode reason)) {
                 continue;
             }
+            LocalDate detectedOn = order.asOfTradingDate();
+            if (detectedOn == null || detectedOn.isBefore(filled)) {
+                continue;
+            }
+            BigDecimal high = confirmedPrice;
+            for (KrConfirmed.Day day : series.observedFrom(filled)) {
+                if (day.date().isAfter(detectedOn)) {
+                    break;   // 감지일 뒤 종가 — 재판정에 섞지 않음(오래된 날부터라 그 뒤도 모두)
+                }
+                high = high.max(day.close());
+            }
+            double recomputed = PaperLedger.round4(high.doubleValue());
             tools.jackson.databind.JsonNode detected = reason.get("highWatermark");
             tools.jackson.databind.JsonNode already = reason.get(PaperLedgerService.STOP_CONFIRMED_WATERMARK);
             if (detected == null || !detected.isNumber() || !(recomputed < detected.asDouble())
@@ -479,8 +498,9 @@ final class KrConfirmations {
             tools.jackson.databind.node.ObjectNode updated = reason.deepCopy();
             updated.put(PaperLedgerService.STOP_CONFIRMED_WATERMARK, recomputed);
             store.updateOrderReason(order.id(), updated);
-            notes.add("주문 " + order.id() + " " + ticker + " 스탑 재판정의 최고가 = 확정값 " + won(BigDecimal.valueOf(recomputed))
-                    + "원(감지 때 " + won(BigDecimal.valueOf(detected.asDouble())) + "원 — 잠정 체결가)");
+            notes.add("주문 " + order.id() + " " + fill.ticker() + " 스탑 재판정의 최고가 = 확정값 " + won(BigDecimal.valueOf(recomputed))
+                    + "원(확정 체결가와 " + filled + "부터 감지일 " + detectedOn + "까지의 금융위 종가 중 최고 — 감지 때 "
+                    + won(BigDecimal.valueOf(detected.asDouble())) + "원, 잠정 체결가)");
         }
     }
 

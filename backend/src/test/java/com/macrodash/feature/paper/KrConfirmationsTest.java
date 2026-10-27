@@ -766,6 +766,40 @@ class KrConfirmationsTest {
     }
 
     @Test
+    @DisplayName("재판정 최고가는 감지일까지의 확정값으로만 — D+1 TOSS_INTEGRATED 시가 110,000에 산 보유가 그 밤 종가 94,000으로 STOP(기준일 D+1), D+2 밤에는 금융위 D+1이 없고 STOP은 1분봉 FAILED로 기다림, D+3 밤 금융위 D+1(mkp 100,000·종가 94,000)과 D+2(종가 106,000)가 함께 들어오면 재판정 최고가 = max(100,000, 94,000) = 100,000(스탑가 92,000)이라 STOP_NOT_CONFIRMED — 감지 뒤 종가 106,000으로 스탑가 97,520을 만들어 집행·재진입 금지를 내지 않음, 보유의 최고가는 최신까지 106,000")
+    void rejudgeWatermarkStopsAtTheDetectionDate() {
+        book(2_000_000);
+        order("005930", PaperBooks.BUY, 10, D, CREATED);
+        process(integratedOpenD1(94_000), COLLECTED_D1);
+        assertThat(stopOrder().asOfTradingDate()).isEqualTo(D1);
+        assertThat(stopOrder().reason().path("highWatermark").asDouble()).as("감지 때 최고가 = 잠정 체결가").isEqualTo(110_000);
+        KrFixtures.Payload d2 = new KrFixtures.Payload(D2);
+        d2.code("005930", FETCHED_D2).bar(D1, 110_000, 94_000, 900_000).bar(D2, 95_000, 106_000, 800_000).minute("FAILED");
+        process(d2, COLLECTED_D2);
+        assertThat(stopOrder().status()).as("금융위 D+1 전, 1분봉 FAILED(기한 전 수집본) — 기다림").isEqualTo(PaperBooks.ORDER_PENDING);
+        LocalDate d3 = LocalDate.of(2026, 11, 5);
+        fsc("005930", KrConfirmed.SOURCE_FSC, D2, day(D1, 100_000L, 94_000, 5_000_000, "KOSPI"),
+                day(D2, 95_000L, 106_000, 4_000_000, "KOSPI"));
+        KrFixtures.Payload night3 = new KrFixtures.Payload(d3);
+        night3.code("005930", kst("2026-11-05T21:57")).bar(D2, 95_000, 106_000, 800_000).minute("OK", "09:01", 95_100, 30_000)
+                .bar(d3, 105_000, 105_500, 700_000).minute("OK", "09:01", 105_000, 30_000);
+
+        Outcome outcome = process(night3, kst("2026-11-05T22:01"));
+
+        assertThat(outcome.errors()).isEmpty();
+        Order stop = stopOrder();
+        assertThat(stop.reason().path(PaperLedgerService.STOP_CONFIRMED_WATERMARK).asDouble()).as("감지일(D+1)까지").isEqualTo(100_000);
+        assertThat(stop.status()).isEqualTo(PaperBooks.ORDER_CANCELLED);
+        assertThat(stop.rejectReason()).startsWith("STOP_NOT_CONFIRMED — 금융위 2026-11-03 종가 94000원이 스탑가 92000원");
+        assertThat(store.lockouts(BOOK)).isEmpty();
+        assertThat(position("005930").qty()).isEqualTo(10);
+        assertThat(position("005930").highWatermark()).as("보유의 최고가 다시 계산은 최신까지 — max(100,000, 94,000, 106,000)")
+                .isEqualTo(106_000);
+        assertThat(outcome.notes()).anySatisfy(n -> assertThat(n).contains("스탑 재판정의 최고가 = 확정값 100000원")
+                .contains("감지일 2026-11-03까지"));
+    }
+
+    @Test
     @DisplayName("미처리 기업행위 보유는 확정 줄에서도 묶인 평가 그대로(금융위 최신 종가로 덮지 않음) — 그 줄은 잠정")
     void heldValuationStaysBound() {
         book(1_000_000);
