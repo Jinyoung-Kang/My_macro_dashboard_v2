@@ -5,6 +5,7 @@ import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.EnumMap;
@@ -16,6 +17,7 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
+import java.util.TreeSet;
 
 /**
  * 🧪 한국 규칙 계좌({@code kr_rules}) 수급 규칙의 순수 계산 — 2단계 명세 2026-10-26-v2-kr-paper-spec.md §4-6·K7, §4-5 'B8 구현에서 정한 것'.
@@ -32,6 +34,8 @@ import java.util.Set;
  *  비중     EQUAL  종목마다 min(100 ÷ maxNames, 종목 상한)
  *           SCORE  예산 = 고른 수 × 100 ÷ maxNames를 점수에 비례해 나눈 뒤 종목 상한으로 자름
  *  남는 비중 = 100 − 종목 비중 합 → 153130(현금성)
+ *  매도     = 매일: 20일 외국인·기관 합이 둘 다 < 0 · 재선정한 날(따라잡기 포함): 후보 밖
+ *  남는 현금 = 재선정한 날은 여유 0.5%p를 넘는 만큼, 그 밖의 날은 kr.rules.parkCashThresholdPct를 넘을 때 153130에
  * </pre>
  *
  * <p><b>왜 이렇게</b>: 동조 가산을 따로 두지 않는 것은 '둘 다 양수'가 곧 동조라서입니다(K7). 후보가 maxNames보다 적으면 그만큼만 사고
@@ -57,6 +61,12 @@ public final class KrRules {
     public static final int SHORT_FLOW_DAYS = 5;
     /** 남는 비중을 두는 현금성 ETF(K2·§4-6 — 단기채 153130). */
     public static final String PARKING_CODE = "153130";
+    /**
+     * 남는 현금을 153130에 둘 때 현금으로 남기는 여유(순자산 %p) — 미국 규칙 책({@code RuleBookService.CASH_BUFFER_PCT})과 같은 값.
+     * 결정 때 어림한 금액과 체결 때 가격·비용·정수 주 절사가 조금 달라도 153130 매수가 종목 매수의 현금을 다투지 않게. 1억 원이면
+     * 50만 원 = {@code kr.minOrderNotional} 기본값.
+     */
+    public static final double CASH_BUFFER_PCT = 0.5;
 
     /** '자료 없음' 세부 사유(§4-6 'DART·ROE 없음은 자료 없음으로 빼고 사유를 보인다', B8 접수일 규칙). */
     public static final String NO_DART = "DART 없음";
@@ -575,6 +585,98 @@ public final class KrRules {
         }
         return new Selection(input.session(), input.universeDate(), params, evaluations, candidates, targets, stock,
                 parking);
+    }
+
+    // ------------------------------------------------------------------ 매도 신호·남는 현금
+
+    /** 보유 종목의 매도 신호(§4-6 '매도 신호(매일)' — 트레일링 스탑은 장부가 따로 봄). */
+    public enum SellReason {
+        /** 20일 외국인·기관 순매수 합이 둘 다 < 0 — 매일 봄. */
+        FLOWS_BOTH_NEGATIVE("20일 외국인·기관 둘 다 순매도"),
+        /** 재선정(따라잡기 포함)한 날에 후보 밖. */
+        OUT_OF_CANDIDATES("재선정 — 후보 밖");
+
+        private final String label;
+
+        SellReason(String label) {
+            this.label = label;
+        }
+
+        public String label() {
+            return label;
+        }
+    }
+
+    /**
+     * 보유 한 종목의 매도 판정(K26 동결 — 매도 근거의 수급 창도 함께).
+     *
+     * @param reasons 매도 사유(비어 있으면 그대로 보유). 창이 덜 찬 종목은 매일 신호를 볼 수 없어 사유가 없음(재선정일에는 후보가
+     *                아니므로 '후보 밖')
+     */
+    public record HoldingCheck(String code, FlowSummary flows, List<SellReason> reasons) {
+
+        public HoldingCheck {
+            reasons = List.copyOf(reasons);
+        }
+
+        public boolean sell() {
+            return !reasons.isEmpty();
+        }
+    }
+
+    /**
+     * 보유 종목마다 매도 판정(코드 순). 현금성 종목과 153130은 보지 않습니다(남는 현금 자리 — 신호가 아님). U 밖 보유도 수급이
+     * 있으면 매일 신호를 봅니다(수집 범위의 끈적 목록 — §4-5).
+     *
+     * @param candidateCodes 그날 재선정했으면 그 선정의 후보 코드({@link Selection#candidateCodes}), 재선정일이 아니면 null.
+     *                       후보이지만 상위 maxNames 밖인 보유는 팔지 않습니다 — 매도 조건은 '후보 밖'이고 상위 N은 매수 자리입니다
+     *                       (미국 규칙 책도 보유를 신호로만 팖)
+     * @param cashLike       현금성 코드({@code kr.cashLikeTickers}). null이면 없음
+     * @throws IllegalArgumentException     D가 거래일이 아님
+     * @throws CalendarUnavailableException 달력이 창의 해를 모름
+     */
+    public static List<HoldingCheck> holdingChecks(TradingCalendar calendar, LocalDate session, Collection<String> holdings,
+                                                   Map<String, List<FlowDay>> flows, Set<String> candidateCodes,
+                                                   Set<String> cashLike) {
+        Map<String, List<FlowDay>> byCode = flows == null ? Map.of() : flows;
+        Set<String> skip = cashLike == null ? Set.of() : cashLike;
+        List<HoldingCheck> out = new ArrayList<>();
+        for (String code : new TreeSet<>(holdings == null ? List.<String>of() : holdings)) {
+            if (code == null || PARKING_CODE.equals(code) || skip.contains(code)) {
+                continue;
+            }
+            FlowSummary summary = flows(calendar, session, byCode.get(code));
+            List<SellReason> reasons = new ArrayList<>();
+            if (summary.bothNegative()) {
+                reasons.add(SellReason.FLOWS_BOTH_NEGATIVE);
+            }
+            if (candidateCodes != null && !candidateCodes.contains(code)) {
+                reasons.add(SellReason.OUT_OF_CANDIDATES);
+            }
+            out.add(new HoldingCheck(code, summary, reasons));
+        }
+        return out;
+    }
+
+    /**
+     * 남는 현금을 153130에 두는 폭(순자산 %p) — 미국 규칙 책의 남는 현금 규칙과 같은 모양(R3, {@code parkIdleCash}). 어림한 남는 현금
+     * (현금 + 대기·이번 매도 대금 − 대기·이번 매수 금액)이 기준을 넘으면 {@value #CASH_BUFFER_PCT}%p를 현금으로 남기고 나머지를 둡니다.
+     * 재선정일(따라잡기·출발 포함)은 기준 없이 여유만 — 남는 비중을 모두 153130에 두는 날입니다. 그 밖의 날은
+     * max({@code kr.rules.parkCashThresholdPct}, 여유) — 매도 대금 몇십만 원마다 153130을 사고팔아 비용을 날마다 내지 않게.
+     *
+     * @param spareCashPct 어림한 남는 현금(순자산 %)
+     * @return 153130 매수 폭(%p, 0이면 사지 않음)
+     * @throws IllegalArgumentException 남는 현금이 유한한 수가 아니거나 기준이 0~100 밖
+     */
+    public static double parkingIncrementPct(double spareCashPct, boolean selectionDay, double thresholdPct) {
+        if (!Double.isFinite(spareCashPct)) {
+            throw new IllegalArgumentException("남는 현금(%)이 유한한 수가 아닙니다: " + spareCashPct);
+        }
+        if (!Double.isFinite(thresholdPct) || thresholdPct < 0 || thresholdPct > 100) {
+            throw new IllegalArgumentException("남는 현금 기준(%)은 0~100이어야 합니다: " + thresholdPct);
+        }
+        double trigger = selectionDay ? CASH_BUFFER_PCT : Math.max(thresholdPct, CASH_BUFFER_PCT);
+        return spareCashPct > trigger ? spareCashPct - CASH_BUFFER_PCT : 0.0;
     }
 
     // ------------------------------------------------------------------ 조각

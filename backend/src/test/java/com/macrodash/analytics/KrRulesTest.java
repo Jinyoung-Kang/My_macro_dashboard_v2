@@ -415,6 +415,75 @@ class KrRulesTest {
                 .doesNotContainKey(Reason.STREAK_SHORT);
     }
 
+    // ---- 매도 신호·남는 현금 -------------------------------------------------------------------------------------
+
+    /** 보유: 후보 000010·000040, 수급 미달 000030, U 밖 둘 다 순매도 000900, 창 덜 참 000070, 현금성 153130·069500. */
+    static Map<String, List<FlowDay>> holdingFlows() {
+        Map<String, List<FlowDay>> flows = new HashMap<>(fixture().flows());
+        flows.put("000900", daily(-100, -1));
+        flows.put("153130", daily(-500, -500));
+        flows.put("069500", daily(-500, -500));
+        return flows;
+    }
+
+    static final List<String> HOLDINGS = List.of("000900", "000010", "000030", "000070", "000040", "153130", "069500");
+
+    @Test
+    @DisplayName("매일 매도 신호 = 20일 외국인·기관 둘 다 < 0 — U 밖 보유도 봄, 창이 덜 차면 신호 없음, 153130·현금성은 보지 않음")
+    void dailySellSignals() {
+        List<KrRules.HoldingCheck> checks = KrRules.holdingChecks(CAL, D, HOLDINGS, holdingFlows(), null,
+                Set.of("069500"));
+
+        assertThat(checks.stream().map(KrRules.HoldingCheck::code))
+                .containsExactly("000010", "000030", "000040", "000070", "000900");
+        Map<String, KrRules.HoldingCheck> by = new LinkedHashMap<>();
+        checks.forEach(c -> by.put(c.code(), c));
+        assertThat(by.get("000900").reasons()).containsExactly(KrRules.SellReason.FLOWS_BOTH_NEGATIVE);
+        assertThat(by.get("000900").flows().foreignNet20()).isEqualTo(-2_000L);
+        assertThat(by.get("000900").flows().institutionNet20()).isEqualTo(-20L);
+        assertThat(by.get("000030").sell()).as("외국인 +60,000 · 기관 −2,000 — 둘 다 음수는 아님").isFalse();
+        assertThat(by.get("000070").sell()).as("창 19일 — 신호를 만들지 않음").isFalse();
+        assertThat(by.get("000070").flows().complete()).isFalse();
+        assertThat(by.get("000010").sell()).isFalse();
+    }
+
+    @Test
+    @DisplayName("재선정한 날 매도 = 후보 밖(수급 미달·창 덜 참·U 밖) — 후보인데 상위 maxNames 밖인 보유(000040)는 팔지 않음")
+    void selectionDaySellsOutsideCandidates() {
+        Selection top2 = KrRules.select(CAL, fixture(), params(2, Weighting.EQUAL, 0, 10));
+        assertThat(top2.notChosen().stream().map(Evaluation::code)).contains("000040");
+
+        Map<String, KrRules.HoldingCheck> by = new LinkedHashMap<>();
+        KrRules.holdingChecks(CAL, D, HOLDINGS, holdingFlows(), top2.candidateCodes(), Set.of("069500"))
+                .forEach(c -> by.put(c.code(), c));
+        assertThat(by.get("000010").sell()).isFalse();
+        assertThat(by.get("000040").sell()).isFalse();
+        assertThat(by.get("000030").reasons()).containsExactly(KrRules.SellReason.OUT_OF_CANDIDATES);
+        assertThat(by.get("000070").reasons()).containsExactly(KrRules.SellReason.OUT_OF_CANDIDATES);
+        assertThat(by.get("000900").reasons()).containsExactly(KrRules.SellReason.FLOWS_BOTH_NEGATIVE,
+                KrRules.SellReason.OUT_OF_CANDIDATES);
+        assertThat(by).doesNotContainKeys("153130", "069500");
+    }
+
+    @Test
+    @DisplayName("남는 현금 → 153130 — 재선정한 날은 여유 0.5%p 넘는 만큼, 그 밖의 날은 기준 2% 넘을 때만(같으면 안 삼)")
+    void parkingIncrement() {
+        assertThat(KrRules.parkingIncrementPct(80.9, true, 2)).isCloseTo(80.4, within(1e-12));
+        assertThat(KrRules.parkingIncrementPct(1.0, true, 2)).as("재선정일은 기준을 보지 않음").isCloseTo(0.5, within(1e-12));
+        assertThat(KrRules.parkingIncrementPct(0.5, true, 2)).isZero();
+        assertThat(KrRules.parkingIncrementPct(-3.0, true, 2)).as("모자란 현금은 이 함수의 몫이 아님").isZero();
+
+        assertThat(KrRules.parkingIncrementPct(1.9, false, 2)).isZero();
+        assertThat(KrRules.parkingIncrementPct(2.0, false, 2)).isZero();
+        assertThat(KrRules.parkingIncrementPct(2.5, false, 2)).isCloseTo(2.0, within(1e-12));
+        assertThat(KrRules.parkingIncrementPct(0.4, false, 0.2)).as("기준이 여유보다 낮아도 여유는 남김").isZero();
+        assertThat(KrRules.parkingIncrementPct(0.6, false, 0)).isCloseTo(0.1, within(1e-12));
+
+        assertThatThrownBy(() -> KrRules.parkingIncrementPct(Double.NaN, false, 2))
+                .isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> KrRules.parkingIncrementPct(1, false, -1)).isInstanceOf(IllegalArgumentException.class);
+    }
+
     // ---- 재무 입력 ----------------------------------------------------------------------------------------------
 
     @Test
