@@ -395,6 +395,34 @@ class KrLedgerTest {
             assertThat(onlyFill().price()).isEqualTo(70_500);
             assertThat(onlyFill().priceSource()).isEqualTo(KrQuotes.SOURCE_1M_OPEN);
         }
+
+        @Test
+        @DisplayName("개장 봉 라벨은 JVM 기본 로캘과 상관없이 ASCII 숫자 — 아랍어(ar-EG)·페르시아어(fa-IR)·태국 숫자(th-TH-u-nu-thai) 로캘에서도 \"09:01\"(수능일 \"10:01\"), 그 로캘의 체결도 TOSS_1M_OPEN")
+        void openLabelIgnoresTheDefaultLocale() {
+            ((ObjectNode) store.settings.body().get("kr").get("calendar")).putObject("openTimeOverrides")
+                    .putObject("2026-11-19").put("open", "10:00").put("close", "16:30");
+            java.util.Locale saved = java.util.Locale.getDefault();
+            try {
+                for (String tag : List.of("ar-EG", "fa-IR", "th-TH-u-nu-thai")) {
+                    java.util.Locale.setDefault(java.util.Locale.forLanguageTag(tag));
+                    assertThat(KrFills.openLabel(D1, run().calendar())).as(tag).isEqualTo("09:01");
+                    assertThat(KrFills.openLabel(LocalDate.of(2026, 11, 19), run().calendar())).as(tag)
+                            .isEqualTo("10:01");
+                }
+                book(BOOK, PaperBooks.KIND_CLAUDE, 10_000_000);
+                buy("005930", 10);
+                KrFixtures.Payload payload = new KrFixtures.Payload(D1);
+                openedAt(payload, "005930", 70_000);
+
+                process(payload, COLLECTED_D1);
+
+                assertThat(onlyFill().priceSource()).as("라벨 조회가 빗나가 사다리를 내려가지 않음")
+                        .isEqualTo(KrQuotes.SOURCE_1M_OPEN);
+                assertThat(onlyFill().price()).isEqualTo(70_000);
+            } finally {
+                java.util.Locale.setDefault(saved);
+            }
+        }
     }
 
     // ------------------------------------------------------------------ 체결 조건

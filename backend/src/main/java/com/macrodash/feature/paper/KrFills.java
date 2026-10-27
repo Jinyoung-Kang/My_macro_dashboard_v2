@@ -20,6 +20,7 @@ import java.time.LocalDate;
 import java.time.LocalTime;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
@@ -168,10 +169,14 @@ final class KrFills {
                 costRates.rates(settings.slippageBp()), warnings);
     }
 
-    /** 그날의 1분봉 개장 봉 라벨 — 그 실행 달력의 그날 개장 시각 + 1분(봉 끝 시각, KST {@code "HH:mm"}). */
+    /**
+     * 그날의 1분봉 개장 봉 라벨 — 그 실행 달력의 그날 개장 시각 + 1분(봉 끝 시각, KST {@code "HH:mm"}). 수집기 저장본의 키({@code minute.opens})와
+     * 글자로 맞추는 값이라 JVM 기본 로캘과 상관없이 ASCII 숫자입니다({@link Locale#ROOT} — 아랍어·페르시아어 로캘의 {@code formatted}는 그 지역 숫자를
+     * 써서 조회가 늘 빗나갔음).
+     */
     static String openLabel(LocalDate date, TradingCalendar calendar) {
         LocalTime open = calendar.openInstant(date).atZone(KrxCalendar.SEOUL).toLocalTime().plusMinutes(1);
-        return "%02d:%02d".formatted(open.getHour(), open.getMinute());
+        return String.format(Locale.ROOT, "%02d:%02d", open.getHour(), open.getMinute());
     }
 
     // ------------------------------------------------------------------ 시가 사다리
