@@ -272,17 +272,26 @@ class PaperMarketIsolationTest {
     }
 
     @Test
-    @DisplayName("체결 조건은 시장 몫(결정 d10) — 시장이 비용 칸을 내면 장부가 그 칸을 조용히 버리고 체결하지 않고, 그 책만 되돌려 오류로 남긴다(비용 칸 저장은 C2b)")
-    void costColumnsAreNotDroppedSilently() {
+    @DisplayName("체결 조건은 시장 몫(결정 d10) — 시장이 비용 칸을 내면 장부가 그 칸을 체결 행에 그대로 쓰고 현금에서도 같은 금액을 뺀다(C2b — 그 전에는 버리지 않고 되돌렸음)")
+    void costColumnsAreStored() {
         twoMarkets(store);
-        String krBefore = ledgerOf(store, KR_BOOK);
+        FakePaperStore plain = new FakePaperStore();
+        twoMarkets(plain);
+        new PaperLedgerService(plain, marketData, PaperFixtures.MAPPER).process(KR, krQuotes());
         String usBefore = ledgerOf(store, US_BOOK);
 
         Outcome outcome = ledger.process(TestKrMarket.withCostColumns(), krQuotes());
 
-        assertThat(outcome.booksProcessed()).isEmpty();
-        assertThat(outcome.errors()).singleElement().asString().startsWith(KR_BOOK + ": ").contains("비용 칸", "C2b");
-        assertThat(ledgerOf(store, KR_BOOK)).as("그 책은 되돌림 — 체결 행 없이 현금만 빠지지 않음").isEqualTo(krBefore);
+        assertThat(outcome.booksProcessed()).containsExactly(KR_BOOK);
+        assertThat(outcome.errors()).isEmpty();
+        assertThat(store.fillsOf(KR_BOOK)).singleElement().satisfies(fill -> {
+            assertThat(fill.fee()).isEqualByComparingTo("1");
+            assertThat(fill.tax()).isEqualByComparingTo("0");
+            assertThat(fill.slippageCost()).isEqualByComparingTo("0");
+            assertThat(fill.price()).as("체결가는 비용 칸과 상관없음").isEqualTo(plain.fillsOf(KR_BOOK).get(0).price());
+        });
+        assertThat(store.states.get(KR_BOOK).cash()).as("비용 칸(수수료 1)만큼 현금이 더 빠짐")
+                .isEqualTo(plain.states.get(KR_BOOK).cash() - 1);
         assertThat(ledgerOf(store, US_BOOK)).isEqualTo(usBefore);
     }
 

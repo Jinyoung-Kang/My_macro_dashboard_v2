@@ -183,7 +183,8 @@ class UsPaperMarketTest {
             double gross = PaperLedgerService.gross(7, legacy);
             assertThat(costs.gross()).isEqualTo(gross);
             assertThat(costs.cashDelta()).isEqualTo(PaperBooks.SELL.equals(side) ? gross : -gross);
-            assertThat(costs.hasCostColumns()).isFalse();
+            assertThat(List.of(costs.fee(), costs.tax(), costs.slippageCost())).as("미국은 비용 칸 0(슬리피지는 체결가에)")
+                    .allSatisfy(v -> assertThat(v).isEqualByComparingTo("0"));
         }
     }
 

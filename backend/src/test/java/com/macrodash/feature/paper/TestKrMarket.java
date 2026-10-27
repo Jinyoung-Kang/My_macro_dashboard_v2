@@ -110,8 +110,8 @@ final class TestKrMarket implements PaperMarket {
     }
 
     /**
-     * 체결 조건({@link #fill})이 비용 칸(체결마다 수수료 1원, 현금에서도 1원 더 빠짐)을 내는 시험용 한국 묶음 — 비용 칸을 저장하는 장부 코드
-     * (C2b) 전에 장부가 그 칸을 조용히 버리지 않는지 보는 시험이 씁니다. 나머지는 {@link #INSTANCE}와 같습니다.
+     * 체결 조건({@link #fill})이 비용 칸(체결마다 수수료 1원, 현금에서도 1원 더 빠짐)을 내는 시험용 한국 묶음 — 장부가 그 칸을 체결 행에
+     * 그대로 쓰는지(C2b) 보는 시험이 씁니다. 나머지는 {@link #INSTANCE}와 같습니다.
      */
     static TestKrMarket withCostColumns() {
         return new TestKrMarket(SEOUL_WEEKDAYS, null, true);

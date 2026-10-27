@@ -55,10 +55,6 @@ interface FillTerms {
             Objects.requireNonNull(slippageCost, "slippageCost");
         }
 
-        /** 비용 칸이 하나라도 0이 아닌가(미국은 늘 false). */
-        boolean hasCostColumns() {
-            return fee.signum() != 0 || tax.signum() != 0 || slippageCost.signum() != 0;
-        }
     }
 
     /**

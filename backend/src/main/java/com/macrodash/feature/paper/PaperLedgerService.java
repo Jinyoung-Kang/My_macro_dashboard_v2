@@ -933,18 +933,15 @@ public class PaperLedgerService {
     }
 
     /**
-     * 체결 행 한 줄 — 체결가·관측가·출처·슬리피지 기록값은 시장의 체결 조건({@link FillTerms}), 금액은 그 수량의 {@link FillTerms.Costs}.
-     *
-     * @throws IllegalStateException 비용 칸(수수료·세금·슬리피지 비용)이 0이 아님 — 그 칸을 쓰는 저장은 한국 체결(C2b)과 함께 들어옵니다
-     *                               (조용히 버리면 현금만 빠지고 체결 행에 비용이 남지 않음). 미국은 늘 0입니다
+     * 체결 행 한 줄 — 체결가·관측가·출처·슬리피지 기록값은 시장의 체결 조건({@link FillTerms}), 금액·비용 칸(수수료·세금·슬리피지 금액 —
+     * 한국 체결, 미국은 0)은 그 수량의 {@link FillTerms.Costs}. 현금 변화({@link FillTerms.Costs#cashDelta})에 든 비용이 체결 행에도 그대로
+     * 남습니다(C2b — 그 전에는 0이 아닌 비용 칸을 받으면 버리지 않고 그 책을 되돌렸음). 관측 시각은 그 관측치의 수집 시각, 관측일은 그 봉 날짜입니다.
      */
     private void recordFill(BookRun run, long orderId, String ticker, String side, int qty, FillTerms terms,
                             FillTerms.Costs costs, Bar bar) {
-        if (costs.hasCostColumns()) {
-            throw new IllegalStateException("체결 비용 칸(fee·tax·slippage_cost) 저장은 아직 없습니다(2단계 C2b) — " + ticker);
-        }
         store.insertFill(new Fill(0, orderId, run.book.code(), ticker, side, qty, terms.price(), terms.rawPrice(),
-                terms.slippageBp(), costs.gross(), run.at, bar.date(), terms.priceSource(), false, null));
+                terms.slippageBp(), costs.gross(), run.at, bar.date(), terms.priceSource(), false, null, costs.fee(),
+                costs.tax(), costs.slippageCost()));
     }
 
     private static void raiseWatermark(Holding holding, double price, Instant at) {
