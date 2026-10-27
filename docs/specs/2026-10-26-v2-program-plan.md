@@ -80,6 +80,7 @@ PRINCIPLES.md와 ADR 0001~0019 전부. 이 프로그램에서 특히 자주 걸�
    기능 74개 대조는 [이식 대조표](2026-10-26-v2-paper-us-port.md)
 6. **남음** 병행(백엔드·수집기, 작음): 경제 캘린더 컨센서스(TradingView `forecast`·`previous` 보강, D33 개정), 수집기 거부 래치·호스트 최소 간격·빈 티커 개별 재시도
    — **1단계 화면 브랜치(`claude/v2-ui-stage1-2026-10`)에서는 하지 않았다. 남은 일.** 같은 브랜치의 백엔드 일은 §6 위험 대응인 기동 로그(`PaperStartupLog`, `10c2b08`) 하나다
+   — 컨센서스 수집은 2단계 B9에서 **저장만** 넣었다(`us_calendar_consensus` → `calendar.us_consensus`, `8ab6538` — TradingView는 이 PC에서 403이라 Nasdaq, [명세](2026-10-26-v2-kr-paper-spec.md) §4-12 'B9에서 정한 것'). 패킷에 싣는 것은 한국 출발일 스위치 `calendar.consensus`(K22, E1)
 - 수용 기준: 두 화면이 데이터 없음·일부 실패·추정치·오래된 값 네 상태를 모두 바르게 보인다(스토리 고정). 옛 `/paper` 북마크는 새 경로로 리디렉션. `endpoints.test.ts`·`access.test.ts` 통과. 1단계 끝에 토큰·셸 시안을 사용자가 승인
 - 수용 기준 상태(2026-10-26):
   - 네 상태 — 충족: 홈 `HomeScreen.test.tsx`·`home.test.ts`, 모의매매 `paperOverviewStates.test.tsx`·`paperStateHandling.test.tsx`, 패턴마다 네 상태 테스트
