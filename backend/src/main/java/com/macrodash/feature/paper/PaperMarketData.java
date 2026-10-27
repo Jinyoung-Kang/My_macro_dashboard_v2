@@ -33,14 +33,14 @@ import java.util.TreeMap;
  *
  * <p><b>관측치</b> = 티커마다 저장본의 마지막 봉({@code dates[-1]}, {@code close[-1]})과 저장본 전체의 수집 시각. 장중에 수집한
  * 저장본이면 마지막 봉이 그날의 지연 시세이고, 장 마감 15분 뒤 이후에 수집했으면 그날 종가입니다(시장 묶음의
- * {@link PaperMarket#isFinal}).
+ * {@link PaperMarket#closeAvailable}).
  * 날짜·종가 개수가 다르거나 마지막 값이 비면 그 티커는 관측치에서 뺍니다 — 어느 값이 어느 날짜인지 모르거나 지금 값이 없는
  * 것이고, 0이나 직전 값으로 채우면 없는 체결가를 만들게 됩니다.
  *
  * <p><b>시장</b>: 관측치·이력은 시장 묶음({@link PaperMarket})의 데이터셋에서 읽습니다({@link #quotes(PaperMarket)}·
  * {@link #history(PaperMarket, Collection, LocalDate, LocalDate)} — 장부·리스크 점검이 씀, 2단계 명세 §9 A5). 시장을 받지 않는 옛
  * 판({@link #quotes()}·{@link #history(Collection, LocalDate, LocalDate)})과 사후 체결 종가 {@link #sourcedClosesOn}은 미국
- * 것입니다(미국 패킷·선정·결정·복기·관리가 씀). 확정 판정은 시장 묶음의 {@link PaperMarket#isFinal}입니다 — 미국 달력을 직접 부르던
+ * 것입니다(미국 패킷·선정·결정·복기·관리가 씀). 종가 판정은 시장 묶음의 {@link PaperMarket#closeAvailable}입니다(결정 d9) — 미국 달력을 직접 부르던
  * 옛 정적 판은 시험({@code UsPaperMarketTest})의 대조 기준으로 옮겼습니다(이 파일은 A8의 시장 중립 코어).
  */
 @Service
@@ -224,7 +224,8 @@ public class PaperMarketData {
     }
 
     /**
-     * {@link #sourcedClosesOn(Collection, LocalDate)}와 같은 규칙을 그 시장의 이력·관측치 데이터셋, 달력의 지금 세션, 확정 판정으로
+     * {@link #sourcedClosesOn(Collection, LocalDate)}와 같은 규칙을 그 시장의 이력·관측치 데이터셋, 달력의 지금 세션, 종가 판정
+     * ({@link PaperMarket#closeAvailable})으로
      * (2단계 명세 §9 A6 — 주간 복기의 기준일 종가). 출처 글자는 그 시장의 데이터셋 이름입니다(미국: {@code equity_close}·
      * {@code paper.quotes} — {@link PaperBooks#SOURCE_HISTORY}·{@link PaperBooks#SOURCE_QUOTES}와 같은 글자).
      */
@@ -246,7 +247,7 @@ public class PaperMarketData {
             return out;
         }
         Optional<Quotes> quotes = quotes(market);
-        if (quotes.isEmpty() || !market.isFinal(date, quotes.get().collectedAt())) {
+        if (quotes.isEmpty() || !market.closeAvailable(date, quotes.get().collectedAt())) {
             return out;
         }
         for (String ticker : wanted) {

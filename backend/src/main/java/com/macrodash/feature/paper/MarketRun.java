@@ -2,13 +2,14 @@ package com.macrodash.feature.paper;
 
 import com.macrodash.analytics.OrderValidator;
 import com.macrodash.analytics.TradingCalendar;
+import com.macrodash.feature.paper.PaperMarketData.Bar;
 import com.macrodash.store.PaperStore;
+import com.macrodash.store.PaperStore.Order;
 import com.macrodash.store.PaperStore.SettingsRow;
 import com.macrodash.store.Snapshot;
 import tools.jackson.databind.JsonNode;
 
 import java.time.DayOfWeek;
-import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalTime;
@@ -32,9 +33,10 @@ import java.util.function.BooleanSupplier;
  * </ul>
  *
  * <p>{@link PaperMarket}을 그대로 구현해 감싼 시장 묶음({@link #definition})에 맡깁니다 — 시장 묶음을 받던 코드가 실행을 받아도 그대로
- * 돌고, {@link #calendar()}만 그 실행의 달력입니다. <b>달력을 쓰는 기본 메서드</b>({@link #isFinal}·{@link #requireCalendarWindow})는
+ * 돌고, {@link #calendar()}만 그 실행의 달력입니다. <b>달력을 쓰는 기본 메서드</b>({@link #requireCalendarWindow}, 확정 판정 셋의
+ * 달력 없는 판 {@code closeAvailable(날짜, 수집 시각)}·{@code fillable(주문, 봉, 수집 시각)}·{@code pricesConfirmed(날짜, 수집 시각)})는
  * 이 실행의 달력으로 돕니다 — 시장 묶음이 그 기본 메서드를 덮어쓰면 여기서는 그 판을 부르지 않으므로, 시장마다 다른 판정은 달력을
- * 인자로 받는 메서드로 둡니다(C2의 확정 판정 나누기가 따를 규칙). 나머지 기본 메서드는 감싼 묶음의 것을 그대로 부릅니다.
+ * 인자로 받는 메서드로 둡니다(확정 판정 셋은 달력을 받는 판을 시장 묶음에 맡김 — C2a). 나머지 기본 메서드는 감싼 묶음의 것을 그대로 부릅니다.
  *
  * <p>시장 묶음을 받는 옛 경로(미국 판 시그니처·시험)는 {@link #of}로 고정 달력과 지금 설정 행의 실행을 그 자리에서 엽니다. 실행마다
  * 달력을 만드는 시장의 묶음은 고정 달력이 없어({@link PaperMarket#calendar()}가 던짐) 그 경로로는 돌 수 없습니다 — 실행을 넘겨야
@@ -173,8 +175,18 @@ final class MarketRun implements PaperMarket {
     }
 
     @Override
-    public Duration finalDelay() {
-        return market.finalDelay();
+    public boolean closeAvailable(LocalDate barDate, Instant collectedAt, TradingCalendar calendar) {
+        return market.closeAvailable(barDate, collectedAt, calendar);
+    }
+
+    @Override
+    public boolean fillable(Order order, Bar bar, Instant collectedAt, TradingCalendar calendar) {
+        return market.fillable(order, bar, collectedAt, calendar);
+    }
+
+    @Override
+    public boolean pricesConfirmed(LocalDate barDate, Instant collectedAt, TradingCalendar calendar) {
+        return market.pricesConfirmed(barDate, collectedAt, calendar);
     }
 
     @Override

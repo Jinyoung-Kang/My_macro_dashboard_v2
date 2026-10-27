@@ -346,7 +346,7 @@ public class PaperAdminService {
      */
     int captureStartPrices() {
         LocalDate start = config.startDate();
-        if (clock.instant().isBefore(US.calendar().closeInstant(start).plus(US.finalDelay()))) {
+        if (clock.instant().isBefore(US.calendar().closeInstant(start).plus(PaperMarketData.FINAL_DELAY))) {
             return 0;
         }
         Set<String> universe = new TreeSet<>();
@@ -475,7 +475,7 @@ public class PaperAdminService {
     private Optional<String> backfill(Book book, PaperBooks.Definition definition, PaperSettings current) {
         LocalDate start = config.startDate();
         Instant close = US.calendar().closeInstant(start);
-        if (clock.instant().isBefore(close.plus(US.finalDelay()))) {
+        if (clock.instant().isBefore(close.plus(PaperMarketData.FINAL_DELAY))) {
             return Optional.of(start + " 장 마감 15분 뒤부터 종가로 사후 체결할 수 있습니다.");
         }
         Map<String, PaperMarketData.SourcedClose> closes = new LinkedHashMap<>();

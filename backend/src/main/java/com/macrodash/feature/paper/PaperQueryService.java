@@ -908,7 +908,8 @@ public class PaperQueryService {
         out.put("ageSeconds", age);
         out.put("barDate", text(barDate));
         try {
-            out.put("finalClose", barDate != null && market.isFinal(barDate, quotes.collectedAt()));
+            // 그 봉의 종가가 나왔나(장중 값이 아님 — 시장의 closeAvailable, 결정 d9). 금융위 확정 여부가 아닙니다(순자산 줄의 prices_final).
+            out.put("finalClose", barDate != null && market.closeAvailable(barDate, quotes.collectedAt()));
         } catch (CalendarUnavailableException e) {
             // 봉 날짜의 해를 달력이 모름(명세 K35 — 그 계산만) — 확정 여부를 지어내지 않고 null + 사유. 미국은 생기지 않습니다.
             out.put("finalClose", null);

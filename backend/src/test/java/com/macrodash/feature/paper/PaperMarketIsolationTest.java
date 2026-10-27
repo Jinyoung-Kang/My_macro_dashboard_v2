@@ -276,9 +276,9 @@ class PaperMarketIsolationTest {
     @DisplayName("시험 전제: 10-26 21:00 KST는 시험용 한국 달력으로 그날 세션·확정, 미국 달력으로 직전 세션(10-23)·미확정")
     void premise() {
         assertThat(KR.calendar().currentOrLastSession(KR_EVENING)).isEqualTo(MON);
-        assertThat(KR.isFinal(MON, KR_EVENING)).isTrue();
+        assertThat(KR.closeAvailable(MON, KR_EVENING)).isTrue();
         assertThat(US.calendar().currentOrLastSession(KR_EVENING)).isEqualTo(LocalDate.of(2026, 10, 23));
-        assertThat(US.isFinal(MON, KR_EVENING)).isFalse();
+        assertThat(US.closeAvailable(MON, KR_EVENING)).isFalse();
     }
 
     @Test

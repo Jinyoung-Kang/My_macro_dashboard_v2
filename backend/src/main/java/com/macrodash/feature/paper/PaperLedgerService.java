@@ -45,8 +45,8 @@ import java.util.function.Supplier;
  * 🧪 관측치 하나를 그 시장 책들의 장부에 적용합니다(명세 L3~L9, 설계 §3-1) — 체결·트레일링 스탑·분할·평가·순자산.
  *
  * <p><b>시장마다 따로입니다</b>(2단계 명세 §9 A5). 관측치 처리·미확정 순자산 줄·'새 관측치가 있나'·오류 기억은 받은 시장
- * ({@link PaperMarket})의 책({@code paper_books.market})만 보고, 세션 날짜·확정 종가 판정·분할 기준 이력·체결 가격 출처·스탑 뒤
- * 재진입 금지 거래일도 그 시장 묶음에서 가져옵니다. 다른 시장 책은 읽지도 쓰지도 않습니다 — 그러지 않으면 미국 관측치가 한국 책의 멱등 키
+ * ({@link PaperMarket})의 책({@code paper_books.market})만 보고, 세션 날짜·확정 판정 셋(종가 나옴·그 시점 가격 있음·확정 — 결정 d9)·
+ * 분할 기준 이력·체결 가격 출처·스탑 뒤 재진입 금지 거래일도 그 시장 묶음에서 가져옵니다. 다른 시장 책은 읽지도 쓰지도 않습니다 — 그러지 않으면 미국 관측치가 한국 책의 멱등 키
  * ({@code lastProcessedCollectedAt})를 미국 수집 시각으로 밀어 한국 관측치가 '이미 처리함'으로 버려집니다. 시장을 받지 않는 옛
  * 시그니처는 미국 책만 처리합니다(결정 작업이 시장 문맥으로 옮겨 가는 A6 전까지 그대로 부름). 사후 체결({@link #backfill})은 미국
  * 책만 받습니다(한국은 출발일 사후 체결이 없음, 명세 K28). <b>설정과 달력은 실행 문맥에서</b>(C1a) — 슬리피지·트레일링 스탑·재진입 금지
@@ -78,18 +78,18 @@ import java.util.function.Supplier;
  * 일시정지(PAUSED) 책은 2·4의 최고가 갱신·6만(가격·분할·최고가는 따라가되 사고팔지 않음), 시작 전(NOT_STARTED) 책은 6의 상태만
  * (현금뿐이라 순자산 기록은 남기지 않음 — 시작하지 않은 책의 곡선이 평평하게 그려지지 않게).
  *
- * <p><b>순자산 줄</b>: 관측 시각의 세션(시장 달력의 {@code currentOrLastSession})이 다수 티커의 봉 날짜와 같고 그 봉이 확정
- * 종가일 때만 그 거래일 줄을 씁니다 — 다음 날 개장 직후에는 새 봉의 과반이 아직 전날 날짜라, 이 조건이 없으면 장중가와 그날
+ * <p><b>순자산 줄</b>: 관측 시각의 세션(시장 달력의 {@code currentOrLastSession})이 다수 티커의 봉 날짜와 같고 그 봉의 종가가
+ * 나왔을 때만({@link PaperMarket#closeAvailable}) 그 거래일 줄을 씁니다 — 다음 날 개장 직후에는 새 봉의 과반이 아직 전날 날짜라, 이 조건이 없으면 장중가와 그날
  * 체결이 섞인 평가가 전날 확정 줄을 덮습니다(주말·휴장일·개장 전 재저장은 세션이 그대로라 다시 씀). 확정 표시
- * ({@code prices_final})는 <b>책마다</b> 정합니다: 수량이 있는 보유가 모두 그 세션의 확정 봉(이어 쓴 봉 아님, 분할 확인됨)으로
- * 평가됐을 때만 true, 하나라도 마지막으로 본 값(장중 값일 수 있음)으로 평가했으면 false — 확정 줄은 미확정 값으로 덮이지
+ * ({@code prices_final})는 <b>책마다</b> 정합니다: 수량이 있는 보유가 모두 그 세션의 확정 봉(이어 쓴 봉 아님, 분할 확인됨, 시장의
+ * {@link PaperMarket#pricesConfirmed})으로 평가됐을 때만 true, 하나라도 마지막으로 본 값(장중 값일 수 있음)으로 평가했으면 false — 확정 줄은 미확정 값으로 덮이지
  * 않으므로({@link PaperStore#upsertNav}) 나중에 온전한 확정 관측치가 그 줄을 바로잡습니다.
  *
  * <p><b>체결 조건</b>(룩어헤드 방지, 설계 §3-1): ① 관측치 수집 시각 &gt; 주문 생성 시각, ② 봉 날짜 &gt; 주문의 기준 거래일 — 주말·휴장일에
- * 수집기가 직전 종가를 매시간 다시 저장하므로 ①만으로는 결정이 이미 본 종가로 체결됩니다, ③ {@code NEXT_CLOSE}면 확정 종가
- * (미국: 마감 + 15분 뒤 수집 — 시장 묶음의 {@code isFinal}), ④ 이어 쓴({@code isStale}) 봉은 다음 관측치를 기다립니다.
+ * 수집기가 직전 종가를 매시간 다시 저장하므로 ①만으로는 결정이 이미 본 종가로 체결됩니다, ③ 그 시점의 체결 가격이 있음(시장 묶음의
+ * {@link PaperMarket#fillable} — 미국: {@code NEXT_CLOSE}면 마감 + 15분 뒤 수집), ④ 이어 쓴({@code isStale}) 봉은 다음 관측치를 기다립니다.
  *
- * <p><b>분할 감지 기준(fill_ref_date·fill_ref_close)</b>: 늘 <b>확정 종가</b> 하나를 기준으로 둡니다. 장중에 체결하면 그 봉(지연 시세)이
+ * <p><b>분할 감지 기준(fill_ref_date·fill_ref_close)</b>: 늘 <b>종가</b> 하나(시장의 {@link PaperMarket#closeAvailable})를 기준으로 둡니다. 장중에 체결하면 그 봉(지연 시세)이
  * 아니라 직전 거래일 종가를 기준으로 삼습니다 — 장중 체결가와 그날 종가가 10% 넘게 벌어지면 '8:7 분할' 같은 가짜 분할로 읽히기
  * 때문입니다. 확정 종가 관측치가 오면 기준을 그날로 옮기고(분할이 없음을 확인한 뒤), 배당 조정으로 기준일 값이 조금 바뀌면 그 값을
  * 따라갑니다 — 차이가 몇 년 쌓여 3%를 넘으면 엉뚱한 비율로 감지되기 때문입니다. 그래서 기준일은 대개 며칠 안이고, 기준일 종가는
@@ -388,7 +388,7 @@ public class PaperLedgerService {
         holding.lastPrice = bar.close();
         holding.lastPriceAt = run.at;
         holding.priceStale = false;
-        if (run.market.isFinal(bar.date(), run.at) && bar.date().isAfter(holding.fillRefDate)) {
+        if (run.market.closeAvailable(bar.date(), run.at) && bar.date().isAfter(holding.fillRefDate)) {
             holding.fillRefDate = bar.date();
             holding.fillRefClose = bar.close();
         }
@@ -444,7 +444,7 @@ public class PaperLedgerService {
         }
     }
 
-    /** 이 주문을 이 관측치로 체결할 수 있으면 그 봉, 아니면 null(클래스 설명의 체결 조건 — 확정 종가 판정은 그 시장 묶음). */
+    /** 이 주문을 이 관측치로 체결할 수 있으면 그 봉, 아니면 null(클래스 설명의 체결 조건 — ③은 그 시장 묶음의 {@link PaperMarket#fillable}). */
     static Bar fillableBar(PaperMarket market, Order order, Quotes quotes) {
         if (order.createdAt() == null || !quotes.collectedAt().isAfter(order.createdAt())) {
             return null;                                   // ① 주문 뒤에 수집한 관측치만
@@ -456,8 +456,8 @@ public class PaperLedgerService {
         if (order.asOfTradingDate() == null || !bar.date().isAfter(order.asOfTradingDate())) {
             return null;                                   // ② 결정이 이미 본 봉(주말 재저장)
         }
-        if (PaperBooks.NEXT_CLOSE.equals(order.timing()) && !market.isFinal(bar.date(), quotes.collectedAt())) {
-            return null;                                   // ③ 확정 종가 전
+        if (!market.fillable(order, bar, quotes.collectedAt())) {
+            return null;                                   // ③ 그 시점의 체결 가격이 아직 없음(미국: NEXT_CLOSE의 확정 종가 전)
         }
         return bar;
     }
@@ -571,9 +571,9 @@ public class PaperLedgerService {
         run.filled++;
     }
 
-    /** 새 보유의 분할 감지 기준 — 확정 종가 하나(클래스 설명). 장중 체결이면 직전 거래일 종가, 그것도 없으면 그 봉. */
+    /** 새 보유의 분할 감지 기준 — 종가 하나(클래스 설명). 장중 체결이면 직전 거래일 종가, 그것도 없으면 그 봉. */
     static Reference referenceFor(PaperMarket market, Bar bar, Instant collectedAt) {
-        if (market.isFinal(bar.date(), collectedAt)) {
+        if (market.closeAvailable(bar.date(), collectedAt)) {
             return new Reference(bar.date(), bar.close());
         }
         LocalDate previous = bar.recent().floorDate(bar.date().minusDays(1));
@@ -658,7 +658,7 @@ public class PaperLedgerService {
         // 그 세션의 마감 뒤 관측치일 때만 그 거래일(다수 티커의 봉 날짜) 순자산을 남깁니다(L9, 클래스 설명의 '순자산 줄').
         // 관측 시각의 세션이 봉 날짜와 달라졌으면(다음 날 개장 뒤) 지난 줄을 다시 쓰지 않습니다. 출발일 전 날짜도 남기지 않습니다.
         boolean sessionClose = barDate != null && barDate.equals(run.session)
-                && run.market.isFinal(barDate, run.at)
+                && run.market.closeAvailable(barDate, run.at)
                 && (run.book.startedOn() == null || !barDate.isBefore(run.book.startedOn()));
         if (started && sessionClose) {
             store.upsertNav(new NavRow(code, barDate, PaperLedger.round4(valuation.nav()), PaperLedger.round4(run.cash),
@@ -673,13 +673,14 @@ public class PaperLedgerService {
 
     /**
      * 이 책의 보유가 모두 그 세션의 확정 봉으로 평가됐나 — 이번 관측치의 새 봉(이어 쓴 봉 아님)이고 분할을 확인했고 봉 날짜가
-     * 그 세션. 하나라도 마지막으로 본 값으로 평가했으면 false(클래스 설명). 보유가 없으면(현금뿐) true.
+     * 그 세션이고 그 가격이 확정({@link PaperMarket#pricesConfirmed}). 하나라도 마지막으로 본 값으로 평가했으면 false(클래스 설명).
+     * 보유가 없으면(현금뿐) true.
      */
     private static boolean allFinal(BookRun run, LocalDate session) {
         for (Holding holding : run.holdings.values()) {
             Bar bar = run.bar(holding.ticker);
             if (!holding.verified || bar == null || bar.stale() || !session.equals(bar.date())
-                    || !run.market.isFinal(bar.date(), run.at)) {
+                    || !run.market.pricesConfirmed(bar.date(), run.at)) {
                 return false;
             }
         }
@@ -970,7 +971,7 @@ public class PaperLedgerService {
     // ------------------------------------------------------------------ 작업 상태
     /** 책 하나를 처리하는 동안의 작업 상태(트랜잭션 안에서만 삶). */
     private static final class BookRun {
-        /** 그 책의 시장 — 세션 날짜·확정 종가 판정·분할 기준 이력·체결 가격 출처. */
+        /** 그 책의 시장 — 세션 날짜·확정 판정 셋·분할 기준 이력·체결 가격 출처. */
         final PaperMarket market;
         final Book book;
         final Quotes quotes;

@@ -484,7 +484,7 @@ public class PacketBuilder {
             out.put("pricesFinal", true);
             out.put("pricesNote", "기준일 종가(10년 이력·얼린 출발일 종가) 기준");
         } else {
-            boolean finalClose = quotes.map(q -> PaperDecisionJob.finalFor(q, asOf)).orElse(false);
+            boolean finalClose = quotes.map(q -> PaperDecisionJob.confirmedFor(q, asOf)).orElse(false);
             out.put("pricesFinal", finalClose);
             out.put("pricesNote", finalClose ? "기준 거래일 확정 종가 관측치"
                     : "기준 거래일 확정 종가 관측치가 아님 — 마지막 값이 장중 지연 시세이거나 이전 세션 값일 수 있음");

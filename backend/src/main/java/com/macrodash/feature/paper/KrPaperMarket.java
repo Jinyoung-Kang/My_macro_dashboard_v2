@@ -3,8 +3,10 @@ package com.macrodash.feature.paper;
 import com.macrodash.analytics.KrxCalendar;
 import com.macrodash.analytics.OrderValidator;
 import com.macrodash.analytics.TradingCalendar;
+import com.macrodash.feature.paper.PaperMarketData.Bar;
 import com.macrodash.store.Datasets;
 import com.macrodash.store.PaperStore;
+import com.macrodash.store.PaperStore.Order;
 import com.macrodash.store.Snapshot;
 import tools.jackson.databind.JsonNode;
 
@@ -33,7 +35,7 @@ import java.util.regex.Pattern;
  * <ul>
  *   <li>시장·통화 KR·KRW, 설정 접두어·작업 기록 접두어 {@code kr.}</li>
  *   <li>관측치 {@code paper.kr.quotes}(수집기 {@code kr_paper_quotes}, KR 거래일 D 20:30 뒤 하루 1회 — K17)·이력 {@code kr_close_adj};
- *       파싱과 체결 선택(결정 d10)·확정 판정 나누기(결정 d9)는 C2 — 그 전에는 미국 파서가 이 저장본에서 봉을 찾지 못해 장부가 한국
+ *       파싱과 체결 선택(결정 d10)은 C2 — 확정 판정 셋(결정 d9)은 아직 옛 기본 isFinal 식이고, 미국 파서가 이 저장본에서 봉을 찾지 못해 장부가 한국
  *       관측치를 처리하지 않습니다</li>
  *   <li>관측치 늦음 = 다음 수집 예정 + 여유(결정 d5, 명세 §4-9 'C1a에서 정한 것' — {@link #quotesLateAt})</li>
  *   <li>계좌 넷({@link PaperBooks#KR} — K1·§4-8), 비교 기준 {@code kr_bench_k200}, 현금성 기본 153130, 최소 주문 기본 500,000원</li>
@@ -70,9 +72,9 @@ final class KrPaperMarket implements PaperMarket {
      */
     static final Duration QUOTES_LATE_MARGIN = Duration.ofMinutes(125);
     /**
-     * 정규장 마감(15:30) 뒤 이만큼이면 그날 한국 수집 시각({@link #COLLECT_AFTER} 20:30)입니다 — 확정 판정 나누기(결정 d9) 전까지 기본
-     * {@link PaperMarket#isFinal}이 쓰는 값. 장 시간 변경일(수능일 마감 16:30)에는 21:30이 되어 수집 규칙(20:30 고정)과 어긋나므로 C2의
-     * {@code closeAvailable}이 수집 시각으로 다시 정합니다(지금 한국 관측치는 장부가 처리하지 않아 영향 없음 — 클래스 설명).
+     * 정규장 마감(15:30) 뒤 이만큼이면 그날 한국 수집 시각({@link #COLLECT_AFTER} 20:30)입니다 — 확정 판정 셋(결정 d9)이 옛 기본
+     * {@code isFinal} 그대로 쓰는 값. 장 시간 변경일(수능일 마감 16:30)에는 21:30이 되어 수집 규칙(20:30 고정)과 어긋나므로
+     * {@link #closeAvailable}을 수집 시각 규칙으로 바꿀 자리입니다(C2a — 지금 한국 관측치는 장부가 처리하지 않아 영향 없음, 클래스 설명).
      */
     static final Duration FINAL_DELAY = Duration.ofHours(5);
 
@@ -294,9 +296,23 @@ final class KrPaperMarket implements PaperMarket {
         return Datasets.TS_KR_CLOSE_ADJ;
     }
 
+    /** 봉 날짜가 거래일이고 그날 마감 + {@link #FINAL_DELAY}(5시간 — 정규장이면 20:30) 이후에 수집함 — 옛 기본 {@code isFinal} 그대로. */
     @Override
-    public Duration finalDelay() {
-        return FINAL_DELAY;
+    public boolean closeAvailable(LocalDate barDate, Instant collectedAt, TradingCalendar calendar) {
+        return calendar.isTradingDay(barDate)
+                && !collectedAt.isBefore(calendar.closeInstant(barDate).plus(FINAL_DELAY));
+    }
+
+    /** {@code NEXT_CLOSE}면 그 봉의 종가가 나왔을 때만, 그 밖의 시점은 늘 — 옛 장부 체결 조건 ③ 그대로. */
+    @Override
+    public boolean fillable(Order order, Bar bar, Instant collectedAt, TradingCalendar calendar) {
+        return !PaperBooks.NEXT_CLOSE.equals(order.timing()) || closeAvailable(bar.date(), collectedAt, calendar);
+    }
+
+    /** 종가가 나왔으면 확정 — 옛 기본 {@code isFinal} 그대로. */
+    @Override
+    public boolean pricesConfirmed(LocalDate barDate, Instant collectedAt, TradingCalendar calendar) {
+        return closeAvailable(barDate, collectedAt, calendar);
     }
 
     @Override

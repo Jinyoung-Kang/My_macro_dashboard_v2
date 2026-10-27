@@ -228,7 +228,8 @@ public class PaperRiskJob {
 
     /**
      * 관측치 요약 — 수집 시각·다수 티커의 봉 날짜·그 시각의 세션·확정 종가 여부(세션·확정은 그 시장 달력). {@code barDate ==
-     * session}인데 {@code finalClose == false}면 장중 봉(지연 시세)입니다.
+     * session}인데 {@code finalClose == false}면 장중 봉(지연 시세)입니다. {@code finalClose}는 그 봉의 종가가 나왔나(시장의
+     * {@link PaperMarket#closeAvailable}, 결정 d9)이고 금융위 확정 여부가 아닙니다.
      */
     static Map<String, Object> describe(PaperMarket market, Quotes quotes) {
         Map<String, Object> out = new LinkedHashMap<>();
@@ -245,7 +246,7 @@ public class PaperRiskJob {
             gap = e.getMessage();
         }
         try {
-            out.put("finalClose", barDate != null && market.isFinal(barDate, quotes.collectedAt()));
+            out.put("finalClose", barDate != null && market.closeAvailable(barDate, quotes.collectedAt()));
         } catch (CalendarUnavailableException e) {
             out.put("finalClose", null);
             gap = gap == null ? e.getMessage() : gap;

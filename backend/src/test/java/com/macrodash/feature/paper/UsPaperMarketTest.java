@@ -6,6 +6,7 @@ import com.macrodash.analytics.OrderValidator;
 import com.macrodash.analytics.ReviewFacts;
 import com.macrodash.analytics.UsMarketCalendar;
 import com.macrodash.store.Datasets;
+import com.macrodash.store.PaperStore;
 import com.macrodash.store.PaperStore.Book;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -147,19 +148,23 @@ class UsPaperMarketTest {
     }
 
     @Test
-    @DisplayName("확정 종가 = 거래일 봉 + 마감 15분 뒤 수집 — 보기(금요일·추수감사절 다음 날 조기 폐장·휴장일)와 2025~2027 모든 날에서 이 묶음 전 판정 식(옛 PaperMarketData.isFinal)과 같음")
-    void isFinal() {
-        assertThat(US.finalDelay()).isEqualTo(Duration.ofMinutes(15)).isEqualTo(PaperMarketData.FINAL_DELAY);
+    @DisplayName("확정 판정 셋(결정 d9 — 종가 나옴·그 시점 가격 있음·확정) = 거래일 봉 + 마감 15분 뒤 수집 — 보기(금요일·추수감사절 다음 날 조기 폐장·휴장일)와 2025~2027 모든 날에서 셋 다 이 묶음 전 판정 식(옛 PaperMarketData.isFinal)과 같음")
+    void finalJudgements() {
+        assertThat(PaperMarketData.FINAL_DELAY).isEqualTo(Duration.ofMinutes(15));
 
-        assertThat(US.isFinal(FRI, Instant.parse("2026-10-23T20:14:59Z"))).as("마감(20:00Z) + 15분 1초 전").isFalse();
-        assertThat(US.isFinal(FRI, Instant.parse("2026-10-23T20:15:00Z"))).as("마감 + 15분 그 순간").isTrue();
+        assertThat(US.closeAvailable(FRI, Instant.parse("2026-10-23T20:14:59Z"))).as("마감(20:00Z) + 15분 1초 전").isFalse();
+        assertThat(US.closeAvailable(FRI, Instant.parse("2026-10-23T20:15:00Z"))).as("마감 + 15분 그 순간").isTrue();
         LocalDate blackFriday = LocalDate.of(2026, 11, 27);
         assertThat(US.calendar().isEarlyClose(blackFriday)).isTrue();
-        assertThat(US.isFinal(blackFriday, Instant.parse("2026-11-27T18:14:59Z"))).as("조기 폐장 13:00 ET").isFalse();
-        assertThat(US.isFinal(blackFriday, Instant.parse("2026-11-27T18:15:00Z"))).isTrue();
-        assertThat(US.isFinal(LocalDate.of(2026, 11, 26), Instant.parse("2026-11-28T00:00:00Z"))).as("추수감사절 봉")
+        assertThat(US.closeAvailable(blackFriday, Instant.parse("2026-11-27T18:14:59Z"))).as("조기 폐장 13:00 ET").isFalse();
+        assertThat(US.closeAvailable(blackFriday, Instant.parse("2026-11-27T18:15:00Z"))).isTrue();
+        assertThat(US.closeAvailable(LocalDate.of(2026, 11, 26), Instant.parse("2026-11-28T00:00:00Z"))).as("추수감사절 봉")
                 .isFalse();
-        assertThat(US.isFinal(LocalDate.of(2026, 10, 24), Instant.parse("2026-10-26T00:00:00Z"))).as("토요일 봉").isFalse();
+        assertThat(US.closeAvailable(LocalDate.of(2026, 10, 24), Instant.parse("2026-10-26T00:00:00Z"))).as("토요일 봉")
+                .isFalse();
+        // NEXT_CLOSE가 아닌 시점(NEXT_OBSERVATION)은 늘 체결 가격이 있음 — 장부 체결 조건 ③은 NEXT_CLOSE에만 걸렸음(옛 fillableBar).
+        assertThat(US.fillable(order(OrderValidator.NEXT_OBSERVATION), bar(FRI), Instant.parse("2026-10-23T15:00:00Z")))
+                .as("장중 관측치의 NEXT_OBSERVATION").isTrue();
 
         int checked = 0;
         for (LocalDate d = FROM; !d.isAfter(TO); d = d.plusDays(1)) {
@@ -172,7 +177,12 @@ class UsPaperMarketTest {
                 }
             }
             for (Instant t : moments) {
-                assertThat(US.isFinal(d, t)).as(d + " " + t).isEqualTo(legacyIsFinal(d, t));
+                boolean legacy = legacyIsFinal(d, t);
+                assertThat(US.closeAvailable(d, t)).as("closeAvailable " + d + " " + t).isEqualTo(legacy);
+                assertThat(US.pricesConfirmed(d, t)).as("pricesConfirmed " + d + " " + t).isEqualTo(legacy);
+                assertThat(US.fillable(order(PaperBooks.NEXT_CLOSE), bar(d), t)).as("fillable NEXT_CLOSE " + d + " " + t)
+                        .isEqualTo(legacy);
+                assertThat(US.fillable(order(OrderValidator.NEXT_OBSERVATION), bar(d), t)).isTrue();
                 checked++;
             }
         }
@@ -185,7 +195,18 @@ class UsPaperMarketTest {
      */
     private static boolean legacyIsFinal(LocalDate barDate, Instant collectedAt) {
         return UsMarketCalendar.isTradingDay(barDate)
-                && !collectedAt.isBefore(UsMarketCalendar.closeInstant(barDate).plus(PaperMarketData.FINAL_DELAY));
+                && !collectedAt.isBefore(UsMarketCalendar.closeInstant(barDate).plus(Duration.ofMinutes(15)));
+    }
+
+    /** 체결 조건 ③만 보는 시험용 대기 주문(시점만 의미 있음). */
+    private static PaperStore.Order order(String timing) {
+        return new PaperStore.Order(1, PaperBooks.CLAUDE, null, "AAA", PaperBooks.BUY, null, 10.0, null, timing,
+                "CLAUDE", PaperBooks.ORDER_PENDING, null, null, FRI.minusDays(1),
+                Instant.parse("2026-10-22T00:00:00Z"), null, null);
+    }
+
+    private static PaperMarketData.Bar bar(LocalDate date) {
+        return PaperFixtures.bar("AAA", date, 100.0);
     }
 
     @Test

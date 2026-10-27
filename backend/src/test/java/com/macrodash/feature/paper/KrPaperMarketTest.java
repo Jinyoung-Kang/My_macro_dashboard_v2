@@ -211,12 +211,14 @@ class KrPaperMarketTest {
     }
 
     @Test
-    @DisplayName("확정 판정(나누기 d9는 C2) — 기본 isFinal이 15:30 + 5시간 = 그날 20:30 이후 수집을 확정으로 본다")
-    void finalDelayMeetsCollectionTime() {
+    @DisplayName("확정 판정 셋(결정 d9) — 아직 옛 기본 isFinal 식: 15:30 + 5시간 = 그날 20:30 이후 수집이면 셋 다 참")
+    void finalJudgementsMeetCollectionTime() {
         MarketRun run = new MarketRun(KR, calendar2026And2027(), null);
         LocalDate d = LocalDate.of(2026, 11, 2);
-        assertThat(run.isFinal(d, kst("2026-11-02T20:29"))).isFalse();
-        assertThat(run.isFinal(d, kst("2026-11-02T20:30"))).isTrue();
+        assertThat(run.closeAvailable(d, kst("2026-11-02T20:29"))).isFalse();
+        assertThat(run.closeAvailable(d, kst("2026-11-02T20:30"))).isTrue();
+        assertThat(run.pricesConfirmed(d, kst("2026-11-02T20:29"))).isFalse();
+        assertThat(run.pricesConfirmed(d, kst("2026-11-02T20:30"))).isTrue();
     }
 
     @Test

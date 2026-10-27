@@ -155,9 +155,22 @@ final class TestKrMarket implements PaperMarket {
         return HISTORY_DATASET;
     }
 
+    /** 시험용 종가 판정 — 미국과 같은 식(거래일 봉 + 마감 15분 뒤 수집)을 이 시장 달력으로(C2a 전 기본 isFinal과 같은 값). */
     @Override
-    public Duration finalDelay() {
-        return Duration.ofMinutes(15);
+    public boolean closeAvailable(LocalDate barDate, Instant collectedAt, TradingCalendar calendar) {
+        return calendar.isTradingDay(barDate)
+                && !collectedAt.isBefore(calendar.closeInstant(barDate).plus(Duration.ofMinutes(15)));
+    }
+
+    @Override
+    public boolean fillable(PaperStore.Order order, PaperMarketData.Bar bar, Instant collectedAt,
+                            TradingCalendar calendar) {
+        return !PaperBooks.NEXT_CLOSE.equals(order.timing()) || closeAvailable(bar.date(), collectedAt, calendar);
+    }
+
+    @Override
+    public boolean pricesConfirmed(LocalDate barDate, Instant collectedAt, TradingCalendar calendar) {
+        return closeAvailable(barDate, collectedAt, calendar);
     }
 
     @Override

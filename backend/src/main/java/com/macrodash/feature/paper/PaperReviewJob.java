@@ -385,7 +385,7 @@ public class PaperReviewJob {
         if (row.get().pricesFinal()) {
             return true;
         }
-        return reader.quietly(() -> marketData.quotes(market)).map(q -> PaperDecisionJob.finalFor(market, q, week))
+        return reader.quietly(() -> marketData.quotes(market)).map(q -> PaperDecisionJob.closesFor(market, q, week))
                 .orElse(false);
     }
 

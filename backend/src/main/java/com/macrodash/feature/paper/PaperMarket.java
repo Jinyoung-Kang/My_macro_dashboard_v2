@@ -5,10 +5,11 @@ import com.macrodash.analytics.CalendarUnavailableException;
 import com.macrodash.analytics.CalendarWindow;
 import com.macrodash.analytics.OrderValidator;
 import com.macrodash.analytics.TradingCalendar;
+import com.macrodash.feature.paper.PaperMarketData.Bar;
+import com.macrodash.store.PaperStore.Order;
 import tools.jackson.databind.JsonNode;
 
 import java.time.DayOfWeek;
-import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalTime;
@@ -122,17 +123,52 @@ interface PaperMarket {
     /** 종가 이력(timeseries)의 데이터셋 — 사후 체결·분할 감지·패킷 수익률. 그 이력으로 체결하면 가격 출처도 이 이름. */
     String historyDataset();
 
-    /** 마감 뒤 이만큼 지나 수집한 봉을 확정 종가로 봅니다. */
-    Duration finalDelay();
+    // ------------------------------------------------------------------ 확정 판정 셋(결정 d9, C2a)
+    // 옛 isFinal(봉 날짜, 수집 시각) 하나가 정하던 일을 셋으로 나눴습니다 — 한국은 ⓐ 밤 잠정 종가가 있음 ⓑ 그 체결 시점의 가격이 있음
+    // ⓒ 금융위 확정이 갈리기 때문입니다(명세 §9 묶음 A 리뷰 메모 'C2·C3 — 확정 판정 나누기'). 미국은 셋 다 옛 isFinal 그대로입니다
+    // (UsPaperMarketTest가 2025~2027 모든 날에서 대조). 시장마다 다른 판정이라 달력을 인자로 받고(MarketRun 설명의 규칙), 달력 없는
+    // 판은 이 문맥의 달력으로 부르는 기본 메서드입니다.
 
     /**
-     * 그 봉이 확정 종가인가: 봉 날짜가 거래일이고, 저장본을 그날 마감 + {@link #finalDelay} 이후에 수집함. 지난 세션의 봉
-     * (휴장·거래 정지로 오늘 봉이 없음)은 마감이 이미 지났으므로 확정입니다.
+     * 그 봉 날짜의 <b>종가가 나왔나</b>(ⓐ — 장중 값이 아님): 그 세션이 끝난 뒤(시장 규칙)에 수집한 저장본. 밤 순자산 줄 쓰기, 분할
+     * 감지 기준가, 결정 작업의 '종가 관측치를 기다림'·미확정 순자산 줄, 복기 여는 조건, 관측치 요약의 {@code finalClose}, 저장본에서
+     * 그날 종가 고르기가 씁니다. 지난 세션의 봉(휴장·거래 정지로 오늘 봉이 없음)은 마감이 이미 지났으므로 참입니다.
+     *
+     * @param calendar 그 실행의 달력 한 벌
      */
-    default boolean isFinal(LocalDate barDate, Instant collectedAt) {
-        TradingCalendar calendar = calendar();
-        return calendar.isTradingDay(barDate)
-                && !collectedAt.isBefore(calendar.closeInstant(barDate).plus(finalDelay()));
+    boolean closeAvailable(LocalDate barDate, Instant collectedAt, TradingCalendar calendar);
+
+    /** {@link #closeAvailable(LocalDate, Instant, TradingCalendar)}를 이 문맥의 달력({@link #calendar()} — 실행이면 그 실행의 한 벌)으로. */
+    default boolean closeAvailable(LocalDate barDate, Instant collectedAt) {
+        return closeAvailable(barDate, collectedAt, calendar());
+    }
+
+    /**
+     * 그 주문을 그 봉으로 체결할 <b>가격이 그 시점에 있나</b>(ⓑ — 장부 체결 조건 ③). 장부가 공통 조건(① 수집 시각 &gt; 주문 생성 ② 봉
+     * 날짜 &gt; 기준 거래일 ④ 이어 쓴 봉 아님)을 먼저 보고 이것을 묻습니다. 미국은 {@code NEXT_CLOSE}면 그 봉의 종가가 나왔을 때만
+     * (옛 isFinal), 그 밖의 시점은 늘 참입니다.
+     *
+     * @param collectedAt 관측치 저장본의 수집 시각
+     * @param calendar    그 실행의 달력 한 벌
+     */
+    boolean fillable(Order order, Bar bar, Instant collectedAt, TradingCalendar calendar);
+
+    /** {@link #fillable(Order, Bar, Instant, TradingCalendar)}를 이 문맥의 달력으로. */
+    default boolean fillable(Order order, Bar bar, Instant collectedAt) {
+        return fillable(order, bar, collectedAt, calendar());
+    }
+
+    /**
+     * 그 봉 날짜의 가격이 <b>확정</b>인가(ⓒ) — 순자산 줄의 {@code prices_final}, 결정 행·패킷의 {@code pricesFinal}이 씁니다. 미국은
+     * 종가가 나왔으면 확정(옛 isFinal)입니다.
+     *
+     * @param calendar 그 실행의 달력 한 벌
+     */
+    boolean pricesConfirmed(LocalDate barDate, Instant collectedAt, TradingCalendar calendar);
+
+    /** {@link #pricesConfirmed(LocalDate, Instant, TradingCalendar)}를 이 문맥의 달력으로. */
+    default boolean pricesConfirmed(LocalDate barDate, Instant collectedAt) {
+        return pricesConfirmed(barDate, collectedAt, calendar());
     }
 
     /** 이 시장의 책 정의 — 초기화가 만드는 책이고, 화면에 보이는 순서입니다. */

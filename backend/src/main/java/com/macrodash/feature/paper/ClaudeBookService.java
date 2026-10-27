@@ -596,7 +596,7 @@ public class ClaudeBookService {
         Book book = claudeBook(US);
         requireNotStarted(book);
         LocalDate start = config.startDate();
-        if (now.isBefore(US.calendar().closeInstant(start).plus(US.finalDelay()))) {
+        if (now.isBefore(US.calendar().closeInstant(start).plus(PaperMarketData.FINAL_DELAY))) {
             throw new InvalidRequestException(start + " 장 마감 15분 뒤부터 시작할 수 있습니다(그날 종가로 사후 체결).");
         }
         SettingsRow row = settingsRow();

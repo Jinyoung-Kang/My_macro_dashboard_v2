@@ -51,6 +51,9 @@ import java.util.concurrent.locks.ReentrantLock;
  *
  * <p>확정 종가 = 관측치의 다수 티커 봉 날짜가 d이고 마감 + 15분 뒤에 수집함. 기한을 넘기면 확정 종가 없이 진행하고 결정·순자산
  * 줄에 {@code prices_final = false}를 남깁니다(그날 결정을 아예 건너뛰지 않게 — 늦은 확정 관측치가 순자산 줄을 바로잡음).
+ * 시장 묶음에서는 이 판정이 둘로 갈립니다(결정 d9, C2a): 기다림·미확정 순자산 줄은 'd의 종가가 나왔나'({@link #closesFor} —
+ * {@link PaperMarket#closeAvailable}), 결정 행·패킷·작업 기록의 {@code pricesFinal}은 'd의 가격이 확정인가'({@link #confirmedFor} —
+ * {@link PaperMarket#pricesConfirmed}). 미국은 둘이 늘 같습니다.
  * 결정·게이트는 거래일마다 한 건이라(유일 제약) 같은 날 여러 번 돌아도 한 번입니다.
  *
  * <p>재선정일(공시 기한 다음 거래일, R5)이면 먼저 그날 기준으로 기관을 다시 선정하고 규칙 책은 REBALANCE(매수 포함), 그 외 날은
@@ -328,9 +331,10 @@ public class PaperDecisionJob {
                     + "수동 실행(POST /api/paper/run/decision)은 다시 시도합니다");
         }
         Optional<Quotes> quotes = reader.quietly(() -> marketData.quotes(market));
-        boolean pricesFinal = quotes.map(q -> finalFor(market, q, d)).orElse(false);
+        boolean closesIn = quotes.map(q -> closesFor(market, q, d)).orElse(false);
+        boolean pricesFinal = quotes.map(q -> confirmedFor(market, q, d)).orElse(false);
         Instant deadline = market.decisionInstant(d, times.deadline());
-        if (!pricesFinal && now.isBefore(deadline)) {
+        if (!closesIn && now.isBefore(deadline)) {
             return new Result(PRICES_NOT_FINAL, d, false, null, null, d + " 확정 종가 관측치를 기다립니다(기한 "
                     + Kst.stamp(deadline) + ")");
         }
@@ -346,7 +350,7 @@ public class PaperDecisionJob {
             boolean sameSession = quotes.map(q -> q.modalBarDate() == null || !q.modalBarDate().isAfter(d))
                     .orElse(true);
             if (sameSession) {
-                detail.put("navSettled", ledger.settleNav(market, d, pricesFinal));
+                detail.put("navSettled", ledger.settleNav(market, d, closesIn));
             }
             if (usSteps(market)) {
                 GateRow gate = recordGate(d);
@@ -577,7 +581,7 @@ public class PaperDecisionJob {
             }
             LocalDate d = market.calendar().lastCompletedSession(now);
             Optional<Quotes> quotes = reader.quietly(() -> marketData.quotes(market));
-            boolean pricesFinal = quotes.map(q -> finalFor(market, q, d)).orElse(false);
+            boolean pricesFinal = quotes.map(q -> confirmedFor(market, q, d)).orElse(false);
             Map<String, Object> detail = new LinkedHashMap<>();
             detail.put("manual", true);
             detail.put("book", code);
@@ -659,14 +663,25 @@ public class PaperDecisionJob {
                 List.of(RuleBookService.REBALANCE, RuleBookService.INITIAL), reselectionDay);
     }
 
-    /** 미국 관측치가 d의 확정 종가인가 — {@link #finalFor(PaperMarket, Quotes, LocalDate)}의 미국 판. */
-    static boolean finalFor(Quotes quotes, LocalDate d) {
-        return finalFor(UsPaperMarket.INSTANCE, quotes, d);
+    /**
+     * d의 종가 관측치인가 — 다수 티커의 봉 날짜가 d이고 그 봉의 종가가 나옴({@link PaperMarket#closeAvailable} — 미국: 마감 + 15분
+     * 뒤에 수집, 설계 §6-1). 결정 작업의 기다림({@value #PRICES_NOT_FINAL})·미확정 순자산 줄과 복기 여는 조건이 씁니다(결정 d9).
+     */
+    static boolean closesFor(PaperMarket market, Quotes quotes, LocalDate d) {
+        return d.equals(quotes.modalBarDate()) && market.closeAvailable(d, quotes.collectedAt());
     }
 
-    /** d의 확정 종가 관측치인가 — 다수 티커의 봉 날짜가 d이고 그 시장의 확정 판정(미국: 마감 + 15분 뒤에 수집, 설계 §6-1). */
-    static boolean finalFor(PaperMarket market, Quotes quotes, LocalDate d) {
-        return d.equals(quotes.modalBarDate()) && market.isFinal(d, quotes.collectedAt());
+    /** 미국 관측치가 d의 확정가 관측치인가 — {@link #confirmedFor(PaperMarket, Quotes, LocalDate)}의 미국 판(미국 패킷이 씀). */
+    static boolean confirmedFor(Quotes quotes, LocalDate d) {
+        return confirmedFor(UsPaperMarket.INSTANCE, quotes, d);
+    }
+
+    /**
+     * d의 확정가 관측치인가 — 다수 티커의 봉 날짜가 d이고 그 가격이 확정({@link PaperMarket#pricesConfirmed} — 미국은
+     * {@link #closesFor}와 같음). 결정 행·패킷·작업 기록의 {@code pricesFinal}이 씁니다(결정 d9).
+     */
+    static boolean confirmedFor(PaperMarket market, Quotes quotes, LocalDate d) {
+        return d.equals(quotes.modalBarDate()) && market.pricesConfirmed(d, quotes.collectedAt());
     }
 
     /** 미국 책의 결정 시각·마감 기한 — {@link #times(PaperMarket)}의 미국 판. */

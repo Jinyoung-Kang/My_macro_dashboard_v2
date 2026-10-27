@@ -5,12 +5,13 @@ import com.macrodash.analytics.OrderValidator;
 import com.macrodash.analytics.ReviewFacts;
 import com.macrodash.analytics.TradingCalendar;
 import com.macrodash.analytics.UsMarketCalendar;
+import com.macrodash.feature.paper.PaperMarketData.Bar;
 import com.macrodash.store.Datasets;
 import com.macrodash.store.PaperStore;
+import com.macrodash.store.PaperStore.Order;
 import tools.jackson.databind.JsonNode;
 
 import java.time.DayOfWeek;
-import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalTime;
@@ -24,8 +25,8 @@ import java.util.Map;
  *
  * <ul>
  *   <li>시장·통화 US·USD(V13 기본값), 달력 {@link UsMarketCalendar#CALENDAR}(뉴욕 세션 날짜)</li>
- *   <li>관측치 {@code paper.quotes}(수집기 태스크 {@code paper_quotes}, 3시간 넘게 묵으면 늦음)·이력 {@code equity_close}, 확정 종가 =
- *       마감 + 15분 뒤 수집</li>
+ *   <li>관측치 {@code paper.quotes}(수집기 태스크 {@code paper_quotes}, 3시간 넘게 묵으면 늦음)·이력 {@code equity_close}, 확정 판정 셋
+ *       (종가 나옴·그 시점 가격 있음·확정 — C2a)은 모두 옛 isFinal = 마감 + 15분 뒤 수집</li>
  *   <li>책 넷({@link PaperBooks#ALL} — 규칙·Claude·SPY 100%·SPY 60/SHY 40), 비교 기준 {@code bench_spy}, 현금성 기본 SHY, 최소 주문
  *       기본 $500</li>
  *   <li>Claude 체결 시점 NEXT_OBSERVATION·NEXT_CLOSE(이른 시점 NEXT_OBSERVATION), 검증기 시점 이름·금액 표기는
@@ -87,9 +88,26 @@ final class UsPaperMarket implements PaperMarket {
         return Datasets.TS_EQUITY_CLOSE;
     }
 
+    /**
+     * 봉 날짜가 거래일이고 저장본을 그날 마감 + {@link PaperMarketData#FINAL_DELAY}(15분) 이후에 수집함 — 옛 {@code isFinal} 그대로
+     * (C2a — 셋으로 나누기 전 판정 식, {@code UsPaperMarketTest}가 2025~2027 모든 날에서 대조).
+     */
     @Override
-    public Duration finalDelay() {
-        return PaperMarketData.FINAL_DELAY;
+    public boolean closeAvailable(LocalDate barDate, Instant collectedAt, TradingCalendar calendar) {
+        return calendar.isTradingDay(barDate)
+                && !collectedAt.isBefore(calendar.closeInstant(barDate).plus(PaperMarketData.FINAL_DELAY));
+    }
+
+    /** {@code NEXT_CLOSE}면 그 봉의 종가가 나왔을 때만({@link #closeAvailable}), 그 밖의 시점(NEXT_OBSERVATION)은 늘 — 옛 체결 조건 ③ 그대로. */
+    @Override
+    public boolean fillable(Order order, Bar bar, Instant collectedAt, TradingCalendar calendar) {
+        return !PaperBooks.NEXT_CLOSE.equals(order.timing()) || closeAvailable(bar.date(), collectedAt, calendar);
+    }
+
+    /** 종가가 나왔으면 확정({@link #closeAvailable}) — 미국은 잠정·확정 가격이 따로 없습니다(옛 {@code isFinal} 그대로). */
+    @Override
+    public boolean pricesConfirmed(LocalDate barDate, Instant collectedAt, TradingCalendar calendar) {
+        return closeAvailable(barDate, collectedAt, calendar);
     }
 
     @Override
