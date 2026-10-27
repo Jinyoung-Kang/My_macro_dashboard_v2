@@ -547,6 +547,11 @@ class KrRulesTest {
         bank.remove(KrFundamentals.REVENUE);
         assertThat(Financials.fromAccounts("2025", "20260619000667", bank).hasRevenueAccount()).isFalse();
 
+        // 매출액 계정은 있는데 당기 금액이 없음(전기만) — '매출액 계정(당기 금액)이 없는 회사' = 금융업으로 봄(부채비율 상한을 보지 않음).
+        Map<String, KrFundamentals.Amounts> noCurrent = new HashMap<>(nonFinancial);
+        noCurrent.put(KrFundamentals.REVENUE, new KrFundamentals.Amounts(null, 18_000.0));
+        assertThat(Financials.fromAccounts("2025", "20260619000667", noCurrent).hasRevenueAccount()).isFalse();
+
         Map<String, KrFundamentals.Amounts> impaired = new HashMap<>(nonFinancial);
         impaired.put(KrFundamentals.EQUITY, new KrFundamentals.Amounts(-1.0, 1.0));
         Financials bad = Financials.fromAccounts("2025", "20260310002820", impaired);
