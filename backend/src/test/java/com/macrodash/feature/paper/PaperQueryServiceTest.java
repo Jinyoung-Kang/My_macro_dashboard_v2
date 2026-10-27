@@ -716,5 +716,35 @@ class PaperQueryServiceTest {
         assertThat(us.get("statsReason")).isNull();
     }
 
+    @Test
+    @DisplayName("달력 없음(K35): 오늘 세션을 모르면(시계가 달력이 모르는 해) 보유 거래일이 전부 null + 그 해 사유 — 연 날이 없는 보유는 사유도 null")
+    @SuppressWarnings("unchecked")
+    void unknownCurrentSessionNullsEveryHoldingDays() {
+        // 2027년만 아는 한국 달력에 2028-01-05(수) 시계 — 보유를 연 날(2027년)은 알아도 오늘 세션을 셀 수 없음.
+        PaperMarket kr = TestKrMarket.withCalendar(new com.macrodash.analytics.KrxCalendar(Map.of(2027, List.of(
+                java.time.LocalDate.of(2027, 1, 1), java.time.LocalDate.of(2027, 2, 8), java.time.LocalDate.of(2027, 2, 9),
+                java.time.LocalDate.of(2027, 3, 1))), List.of()));
+        String krBook = TestKrMarket.CLAUDE_BOOK;
+        store.books.put(krBook, TestKrMarket.book(krBook, 100_000_000, FRI));
+        Instant opened = Instant.parse("2027-02-01T06:30:00Z");
+        store.upsertPosition(new com.macrodash.store.PaperStore.Position(krBook, "000660", 150, 200_000,
+                java.time.LocalDate.of(2027, 2, 1), opened, 200_000, opened, 200_000.0, opened, false,
+                java.time.LocalDate.of(2027, 2, 1), 200_000, null));
+        store.upsertPosition(new com.macrodash.store.PaperStore.Position(krBook, "005930", 10, 70_000,
+                null, null, 70_000, null, null, null, false, null, 70_000, null));
+        Clock january = Clock.fixed(Instant.parse("2028-01-05T12:00:00Z"), ZoneOffset.UTC);   // 2028-01-05(수) 21:00 KST
+        PaperQueryService both = new PaperQueryService(store, marketData, PaperFixtures.quietReader(),
+                PaperFixtures.settings(store), PaperFixtures.config(), january, List.of(UsPaperMarket.INSTANCE, kr));
+
+        List<Map<String, Object>> rows = (List<Map<String, Object>>) both.positions(krBook).get("positions");
+
+        Map<String, Object> held = rows.stream().filter(r -> "000660".equals(r.get("ticker"))).findFirst().orElseThrow();
+        assertThat(held.get("holdingTradingDays")).isNull();
+        assertThat((String) held.get("holdingTradingDaysReason")).startsWith("달력 없음 — 2028년");
+        Map<String, Object> noOpenDate = rows.stream().filter(r -> "005930".equals(r.get("ticker"))).findFirst().orElseThrow();
+        assertThat(noOpenDate.get("holdingTradingDays")).isNull();
+        assertThat(noOpenDate.get("holdingTradingDaysReason")).as("연 날이 없으면 셀 것이 없어 사유도 없음").isNull();
+    }
+
     private static final java.time.LocalDate TUE_EXPIRY = java.time.LocalDate.of(2026, 10, 29);
 }
