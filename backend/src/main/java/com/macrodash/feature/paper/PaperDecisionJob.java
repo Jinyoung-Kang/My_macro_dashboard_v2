@@ -235,7 +235,7 @@ public class PaperDecisionJob {
         this.mapper = mapper;
         this.clock = clock;
         this.markets = markets;
-        this.krStart = new KrStartPipeline(store, reader, ledger, config, mapper);
+        this.krStart = new KrStartPipeline(store, reader, ledger, config, mapper, clock, null);
     }
 
     /**

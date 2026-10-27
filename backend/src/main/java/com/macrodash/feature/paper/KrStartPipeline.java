@@ -14,6 +14,7 @@ import com.macrodash.store.Snapshot;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 
+import java.time.Clock;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.util.ArrayList;
@@ -53,7 +54,8 @@ import java.util.concurrent.ConcurrentHashMap;
  * <p><b>계좌 몫(갈고리)</b>: 계좌마다 {@link Leg}가 출발 계획을 냅니다. 이 묶음(C)에서는 벤치마크 둘만 계획하고({@link #benchmarkLeg} —
  * 069500 100% · 069500 60% + 153130 40%, 리밸런싱 없음 K2), 규칙 계좌(D1 — 재선정과 같은 계산·입력 동결 K26)와 Claude 계좌(E2 — 정기 결정과
  * 같은 패킷)는 '아직 없음'({@link Plan#notYet})이라 시작 전 그대로 둡니다. 계획은 트랜잭션 밖에서 모두 만든 뒤(Claude 호출이 장부 잠금을
- * 붙잡지 않게) 한 번에 씁니다 — 한 계좌라도 실패({@link Plan#failed})하면 어느 계좌에도 쓰지 않습니다(K28 '네 계좌는 함께 출발').
+ * 붙잡지 않게) 한 번에 씁니다 — 한 계좌라도 실패({@link Plan#failed})하면 어느 계좌에도 쓰지 않습니다(K28 '네 계좌는 함께 출발'). 계좌 몫은 그 세션의
+ * 출발 기한을 받고, 쓰기 트랜잭션은 그 안에서 지금 시각이 기한 전인지 다시 봅니다 — 계획이 기한을 넘겨 끝났으면 어느 계좌에도 쓰지 않고 미룹니다.
  */
 final class KrStartPipeline {
 
@@ -120,11 +122,13 @@ final class KrStartPipeline {
         String book();
 
         /**
-         * @param run     그 실행(달력 한 벌·설정 판 하나)
-         * @param session 출발 결정의 기준 거래일 D
-         * @param gates   그 실행의 자료 게이트 판정(결정 행에 남김)
+         * @param run      그 실행(달력 한 벌·설정 판 하나)
+         * @param session  출발 결정의 기준 거래일 D
+         * @param deadline 그 세션의 출발 기한(기본 D+1 01:00 — K28). 계획(E2의 Claude 호출)은 이 순간 안에 끝내야 하고, 넘기면 실패로 돌려줘도
+         *                 됩니다. 계획이 기한을 넘겨 끝나면 파이프라인이 쓰기 트랜잭션 안에서 다시 보고 어느 계좌에도 쓰지 않습니다(출발 미룸)
+         * @param gates    그 실행의 자료 게이트 판정(결정 행에 남김)
          */
-        Plan plan(MarketRun run, LocalDate session, List<Gate> gates);
+        Plan plan(MarketRun run, LocalDate session, Instant deadline, List<Gate> gates);
     }
 
     /**
@@ -145,26 +149,35 @@ final class KrStartPipeline {
     private final PaperLedgerService ledger;
     private final PaperConfig config;
     private final ObjectMapper mapper;
+    /** 쓰기 트랜잭션 안에서 출발 기한을 다시 보는 시계(결정 작업의 시계 — 계획이 길어 기한을 넘기면 쓰지 않음). */
+    private final Clock clock;
     private final List<Leg> legs;
     /** 미룸을 기록한 세션(한 세션에 한 번 — 10분마다 같은 줄이 작업 기록을 밀어내지 않게). 재기동하면 처음부터. */
     private final Set<LocalDate> postponedRecorded = ConcurrentHashMap.newKeySet();
     /** 세션마다 마지막 기다림 사유 — 미룸 기록에 '왜 못 냈나'를 남기려고(최근 하나만 지킴). */
     private final Map<LocalDate, String> lastWait = new ConcurrentHashMap<>();
 
-    /** 이 묶음(C)의 계좌 몫 — 규칙(D1)·Claude(E2) 갈고리 + 벤치마크 둘(클래스 설명). */
+    /** 이 묶음(C)의 계좌 몫 — 규칙(D1)·Claude(E2) 갈고리 + 벤치마크 둘(클래스 설명), 시계는 시스템 시계. */
     KrStartPipeline(PaperStore store, StoreReader reader, PaperLedgerService ledger, PaperConfig config,
                     ObjectMapper mapper) {
-        this(store, reader, ledger, config, mapper, null);
+        this(store, reader, ledger, config, mapper, Clock.systemUTC(), null);
     }
 
-    /** 계좌 몫을 바꿉니다(시험 — E2의 실패 계획 자리). null이면 이 묶음의 몫. */
+    /** 계좌 몫을 바꿉니다(시험 — E2의 실패 계획 자리), 시계는 시스템 시계. null이면 이 묶음의 몫. */
     KrStartPipeline(PaperStore store, StoreReader reader, PaperLedgerService ledger, PaperConfig config,
                     ObjectMapper mapper, List<Leg> legs) {
+        this(store, reader, ledger, config, mapper, Clock.systemUTC(), legs);
+    }
+
+    /** 시계와 계좌 몫을 정합니다(결정 작업 — 그 작업의 시계, 시험). null이면 이 묶음의 몫. */
+    KrStartPipeline(PaperStore store, StoreReader reader, PaperLedgerService ledger, PaperConfig config,
+                    ObjectMapper mapper, Clock clock, List<Leg> legs) {
         this.store = store;
         this.reader = reader;
         this.ledger = ledger;
         this.config = config;
         this.mapper = mapper;
+        this.clock = Objects.requireNonNull(clock, "clock");
         this.legs = legs != null ? List.copyOf(legs) : List.of(
                 hook(PaperBooks.KR_RULES, "규칙 계좌의 출발 계획(재선정과 같은 계산 · 입력 동결 K26)은 2단계 D1 — 이 묶음에서는 시작 전 그대로"),
                 hook(PaperBooks.KR_CLAUDE, "Claude 계좌의 출발 계획(정기 결정과 같은 패킷 · INITIAL)은 2단계 E2 — 이 묶음에서는 시작 전 그대로"),
@@ -222,7 +235,7 @@ final class KrStartPipeline {
         // 계획은 트랜잭션 밖에서 모두 만든 뒤 한 번에(클래스 설명) — 한 계좌라도 실패하면 어느 계좌에도 쓰지 않습니다.
         List<Plan> plans = new ArrayList<>();
         for (Leg leg : legs) {
-            plans.add(leg.plan(run, d, gates));
+            plans.add(leg.plan(run, d, window.deadline(), gates));
         }
         List<Plan> failed = plans.stream().filter(Plan::failed).toList();
         if (!failed.isEmpty()) {
@@ -234,7 +247,21 @@ final class KrStartPipeline {
                     plans.stream().map(p -> p.book() + ": " + p.note()).toList()));
         }
         Map<String, Object> books = new LinkedHashMap<>();
-        List<Decision> written = ledger.exclusively(() -> store.atomically(() -> write(run, d, plans, books)));
+        // 기한은 쓰기 트랜잭션 안에서 다시 봅니다 — 계획(E2의 Claude 호출)이 길어 기한을 넘겼으면 어느 계좌에도 쓰지 않습니다(K28 '기한으로 실패하면
+        // 어느 계좌에도 쓰지 않음', §4-8 '기한이 지난 창에서는 어떤 경우에도 출발을 내지 않는다').
+        java.util.concurrent.atomic.AtomicReference<Instant> late = new java.util.concurrent.atomic.AtomicReference<>();
+        List<Decision> written = ledger.exclusively(() -> store.atomically(() -> {
+            Instant at = clock.instant();
+            if (!at.isBefore(window.deadline())) {
+                late.set(at);
+                return null;
+            }
+            return write(run, d, plans, books);
+        }));
+        if (late.get() != null) {
+            return postponed(run, d, start, window, "출발 계획이 기한을 넘겨 끝남(" + Kst.stamp(late.get())
+                    + ") — 어느 계좌에도 쓰지 않음");
+        }
         if (written == null) {
             return quiet(PaperDecisionJob.ALREADY_DECIDED, d, "다른 실행이 이미 한국 계좌를 출발시켰습니다");
         }
@@ -396,7 +423,7 @@ final class KrStartPipeline {
             }
 
             @Override
-            public Plan plan(MarketRun run, LocalDate session, List<Gate> gates) {
+            public Plan plan(MarketRun run, LocalDate session, Instant deadline, List<Gate> gates) {
                 return Plan.notYet(book, note);
             }
         };
@@ -417,7 +444,7 @@ final class KrStartPipeline {
             }
 
             @Override
-            public Plan plan(MarketRun run, LocalDate session, List<Gate> gates) {
+            public Plan plan(MarketRun run, LocalDate session, Instant deadline, List<Gate> gates) {
                 double exposure = definition.weights().values().stream().mapToDouble(Double::doubleValue).sum();
                 Map<String, Object> response = new LinkedHashMap<>();
                 response.put("summary", definition.label() + " 출발 — " + weightsText(definition) + "를 " + session

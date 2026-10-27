@@ -312,7 +312,8 @@ class KrStartTest {
             }
 
             @Override
-            public KrStartPipeline.Plan plan(MarketRun run, LocalDate session, List<KrStartPipeline.Gate> gates) {
+            public KrStartPipeline.Plan plan(MarketRun run, LocalDate session, Instant deadline,
+                                             List<KrStartPipeline.Gate> gates) {
                 calls.incrementAndGet();
                 return KrStartPipeline.Plan.failed(PaperBooks.KR_CLAUDE, "시험용 호출 실패(재시도 1회 뒤)");
             }
@@ -334,6 +335,43 @@ class KrStartTest {
         assertThat(again.record()).as("그 세션 미룸은 한 번 기록").isFalse();
         assertThat(calls.get()).as("계획(Claude 호출 자리)은 한 번").isEqualTo(1);
         assertThat(krDecisions()).isEmpty();
+    }
+
+    @Test
+    @DisplayName("계획이 기한(S+1 01:00)을 넘겨 끝나면(E2의 긴 Claude 호출 자리) 쓰기 트랜잭션이 다시 보고 어느 계좌에도 쓰지 않음 — 계좌 몫은 그 기한을 받음, 그 세션은 미룸")
+    void slowPlanPastTheDeadlineWritesNothing() {
+        PaperLedgerService ledger = new PaperLedgerService(store, marketData, PaperFixtures.MAPPER);
+        KrStartPipeline plain = new KrStartPipeline(store, reader, ledger, config(), PaperFixtures.MAPPER);
+        List<Instant> deadlines = new java.util.ArrayList<>();
+        KrStartPipeline.Leg slowClaude = new KrStartPipeline.Leg() {
+            @Override
+            public String book() {
+                return PaperBooks.KR_CLAUDE;
+            }
+
+            @Override
+            public KrStartPipeline.Plan plan(MarketRun run, LocalDate session, Instant deadline,
+                                             List<KrStartPipeline.Gate> gates) {
+                deadlines.add(deadline);
+                clock.set(kst("2026-12-01T01:02"));   // 호출이 기한을 넘겨 끝남
+                return KrStartPipeline.Plan.notYet(PaperBooks.KR_CLAUDE, "시험용 — 계획은 냈지만 늦음");
+            }
+        };
+        KrStartPipeline pipeline = new KrStartPipeline(store, reader, ledger, config(), PaperFixtures.MAPPER, clock,
+                List.of(slowClaude, plain.benchmarkLeg(PaperBooks.KR_BENCH_K200), plain.benchmarkLeg(PaperBooks.KR_BENCH_MIX)));
+        clock.set(kst("2026-11-30T22:30"));
+        MarketRun run = new PaperMarkets(store, reader).open(KrPaperMarket.INSTANCE);
+
+        KrStartPipeline.Result result = pipeline.run(run, kst("2026-11-30T22:30"), false);
+
+        assertThat(deadlines).containsExactly(kst("2026-12-01T01:00"));
+        assertThat(result.outcome()).isEqualTo(KrStartPipeline.START_POSTPONED);
+        assertThat(result.record()).isTrue();
+        assertThat(result.detail().get("reason").toString()).contains("기한을 넘겨 끝남").contains("2026-12-01 01:02");
+        assertThat(krDecisions()).isEmpty();
+        assertThat(store.orders).isEmpty();
+        assertThat(store.books.get("kr_bench_k200").status()).isEqualTo(PaperBooks.NOT_STARTED);
+        assertThat(store.navSeries("kr_bench_k200")).isEmpty();
     }
 
     @Test
