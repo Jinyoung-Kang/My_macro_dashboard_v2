@@ -310,7 +310,7 @@ public class PaperLedgerService {
             }
             // 확정 조정을 먼저(K29, C3) — 금융위 D 값이 들어온 밤에 D+1 관측치보다 앞서 D 체결을 확정해야, 장부가 D+1로 넘어가기 전에 확정
             // 현금으로 D+1 시가 체결을 셉니다.
-            Outcome confirmation = confirmLocked(run);
+            Outcome confirmation = confirmLocked(run, false);
             return processLocked(run, quotes).after(confirmation);
         });
     }
@@ -319,17 +319,19 @@ public class PaperLedgerService {
      * 그 시장 책의 금융위 확정 조정만 한 번({@link KrConfirmations}, 명세 K29 — C3). 리스크 점검이 새 관측치가 없는 주기에 부릅니다(금융위 값은
      * 관측치와 따로 들어오므로). 확정 조정 시장이 아니면 아무것도 하지 않습니다. 한 책의 오류는 그 책만 되돌리고, 같은 오류는 결과에 다시
      * 올리지 않습니다({@link #confirmErrors}). 결과의 {@code booksProcessed}는 확정 조정 행을 썼거나 순자산 줄이 확정이 된 책, {@code confirmed}는 쓴 행
-     * 수이고, 한 일이 없으면 {@code skippedReason}이 있습니다.
+     * 수이고, 한 일이 없으면 {@code skippedReason}이 있습니다. 지난 주기와 입력이 같고 그때 할 일이 없었던 책은 금융위 시세를 다시 읽지 않습니다
+     * ({@link KrConfirmations#confirm(MarketRun, Book, boolean)} — 5분마다 범위 읽기가 쌓이지 않게).
      */
     Outcome confirm(PaperMarket market) {
         MarketRun run = MarketRun.of(market, store);
         if (!run.confirmsFills()) {
             return Outcome.skipped("확정 조정이 없는 시장입니다(" + run.code() + ")");
         }
-        return exclusively(() -> confirmLocked(run));
+        return exclusively(() -> confirmLocked(run, true));
     }
 
-    private Outcome confirmLocked(MarketRun market) {
+    /** @param reuseIdle 새 관측치가 없는 주기인가(지난 주기와 입력이 같으면 시세를 다시 읽지 않음 — 관측치 처리 앞에서는 false) */
+    private Outcome confirmLocked(MarketRun market, boolean reuseIdle) {
         if (!store.ready()) {
             return Outcome.skipped("모의 매매 테이블이 아직 없습니다(V8·V9 적용 전)");
         }
@@ -345,7 +347,7 @@ public class PaperLedgerService {
             }
             FailureKey key = new FailureKey(market.code(), book.code());
             try {
-                KrConfirmations.Result result = store.atomically(() -> confirmations.confirm(market, book));
+                KrConfirmations.Result result = store.atomically(() -> confirmations.confirm(market, book, reuseIdle));
                 confirmErrors.remove(key);
                 confirmed += result.confirmed();
                 if (result.worked()) {

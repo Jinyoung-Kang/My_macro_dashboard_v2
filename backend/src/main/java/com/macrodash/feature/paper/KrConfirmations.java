@@ -74,6 +74,21 @@ final class KrConfirmations {
     private final PaperStore store;
     private final PaperMarketData marketData;
     private final Clock clock;
+    /**
+     * 책 → 마지막으로 할 일이 없었던 주기의 입력({@link Inputs}). 리스크 점검은 새 관측치가 없어도 5분마다 확정 조정을 돌리는데, 보유가 있는 책의
+     * 관측치 줄은 금융위 그날 값이 오기 전까지 늘 잠정이라 그동안 매번 금융위 범위를 다시 읽었습니다(묶음 C 리뷰). 입력이 그대로면 결과도 그대로라
+     * 그 주기는 시세를 읽지 않습니다. 재기동하면 처음부터(한 번 더 읽음 — 무해).
+     */
+    private final Map<String, Inputs> idle = new java.util.concurrent.ConcurrentHashMap<>();
+
+    /**
+     * 확정 조정 한 번의 결과를 정하는 입력 — 계좌 상태(마지막 처리 관측치·현금·순자산 줄 날짜)·확정 안 된 체결·대기 주문·설정 판·금융위 두 데이터셋의
+     * 최신 기준일. 금융위가 같은 기준일의 행을 나중에 더 채우는 일(과거 쪽 메우기)은 이것으로 보지 못하지만, 다음 관측치 처리(이 기억을 쓰지 않음)가
+     * 다시 읽습니다.
+     */
+    private record Inputs(String status, java.time.Instant processedAt, double cash, LocalDate navDay, List<Long> fills,
+                          List<Long> orders, Integer settingsVersion, LocalDate fscStocks, LocalDate fscEtfs) {
+    }
 
     KrConfirmations(PaperStore store, PaperMarketData marketData, Clock clock) {
         this.store = store;
@@ -101,13 +116,21 @@ final class KrConfirmations {
         }
     }
 
+    /** 책 하나를 확정합니다 — {@link #confirm(MarketRun, Book, boolean)}를 지난 주기의 기억 없이(관측치 처리 앞의 길). */
+    Result confirm(MarketRun run, Book book) {
+        return confirm(run, book, false);
+    }
+
     /**
      * 책 하나를 확정합니다(클래스 설명) — 부르는 쪽이 장부 잠금과 {@link PaperStore#atomically} 안에서 부릅니다. 체결을 확정한 뒤 그 책의 마지막
      * 순자산 줄을 금융위 종가로 다시 씁니다({@link #rewriteNav}).
      *
-     * @param run 그 실행(시장 묶음·설정 판 — 확정 시세 읽기의 ETF 목록, 달력 — 장부 상태의 세션)
+     * @param run       그 실행(시장 묶음·설정 판 — 확정 시세 읽기의 ETF 목록, 달력 — 장부 상태의 세션)
+     * @param reuseIdle 새 관측치가 없는 주기(리스크 점검의 확정 조정만 — {@code PaperLedgerService.confirm})인가: 참이면 지난 주기와 입력({@link Inputs})이
+     *                  같고 그때 할 일이 없었으면 금융위 시세를 읽지 않고 끝냅니다. 관측치 처리 앞의 확정 조정은 늘 읽습니다(그 기록에 미보정 사유가
+     *                  남게)
      */
-    Result confirm(MarketRun run, Book book) {
+    Result confirm(MarketRun run, Book book, boolean reuseIdle) {
         List<UnconfirmedFill> pending = store.unconfirmedFills(book.code());
         Optional<BookState> stateRow = store.state(book.code());
         if (stateRow.isEmpty()) {
@@ -118,12 +141,42 @@ final class KrConfirmations {
         }
         BookState state = stateRow.get();
         LocalDate navDay = state.lastNavTradingDate();
-        Optional<NavRow> line = navDay == null ? Optional.empty() : store.navSeries(book.code()).stream()
-                .filter(row -> navDay.equals(row.tradingDate())).findFirst();
+        Optional<NavRow> line = navDay == null ? Optional.empty() : store.navRow(book.code(), navDay);
         boolean lineOpen = line.isPresent() && !line.get().pricesFinal();
         if (pending.isEmpty() && !lineOpen) {
+            idle.remove(book.code());
             return Result.NOTHING;   // 확정할 체결도, 확정을 기다리는 순자산 줄도 없음(5분마다 도는 길 — 시세를 읽지 않음)
         }
+        Inputs inputs = inputs(run, book, state, pending);
+        if (reuseIdle && inputs != null && inputs.equals(idle.get(book.code()))) {
+            return Result.NOTHING;   // 지난 주기와 입력이 같고 그때 할 일이 없었음 — 금융위 범위를 다시 읽지 않음
+        }
+        Result result = confirmRead(run, book, state, line, lineOpen, pending);
+        if (inputs != null && !result.worked()) {
+            idle.put(book.code(), inputs);
+        } else {
+            idle.remove(book.code());
+        }
+        return result;
+    }
+
+    /** 지난 주기와 견줄 입력 — 금융위 최신 기준일을 모르면(시세 읽기가 답하지 않음) null(늘 읽음). */
+    private Inputs inputs(MarketRun run, Book book, BookState state, List<UnconfirmedFill> pending) {
+        PaperMarketData.FscLatest fsc = marketData.fscLatest();
+        if (fsc == null) {
+            return null;
+        }
+        List<Long> fills = pending.stream().map(u -> u.fill().id()).sorted().toList();
+        List<Long> orders = store.ordersByStatus(book.code(), PaperBooks.ORDER_PENDING).stream().map(Order::id).sorted()
+                .toList();
+        return new Inputs(book.status(), state.lastProcessedCollectedAt(), state.cash(), state.lastNavTradingDate(), fills,
+                orders, run.settingsVersion(), fsc.stocks(), fsc.etfs());
+    }
+
+    /** {@link #confirm(MarketRun, Book, boolean)}의 읽고 쓰는 몫 — 금융위 시세를 읽어 체결마다 확정하고 마지막 줄을 다시 씀. */
+    private Result confirmRead(MarketRun run, Book book, BookState state, Optional<NavRow> line, boolean lineOpen,
+                               List<UnconfirmedFill> pending) {
+        LocalDate navDay = state.lastNavTradingDate();
         Map<String, Position> positions = new TreeMap<>();
         store.positions(book.code()).forEach(position -> positions.put(position.ticker(), position));
         Set<String> codes = new TreeSet<>(positions.keySet());

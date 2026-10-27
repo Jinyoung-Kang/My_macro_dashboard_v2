@@ -355,6 +355,34 @@ class KrConfirmationsTest {
     }
 
     @Test
+    @DisplayName("새 관측치가 없는 주기는 입력(계좌 상태·확정 안 된 체결·대기 주문·설정 판·금융위 최신 기준일)이 지난 주기와 같고 그때 할 일이 없었으면 금융위 범위를 다시 읽지 않음 — 금융위 최신 기준일이 바뀌면 다시 읽어 확정, 순자산 줄은 그날 한 줄만 읽음")
+    void idleCyclesDoNotRereadTheConfirmedPrices() {
+        PaperMarketData.FscLatest[] latest = {new PaperMarketData.FscLatest(D, null)};
+        when(marketData.fscLatest()).thenAnswer(invocation -> latest[0]);
+        book(1_000_000);
+        order("005930", PaperBooks.BUY, 10, D, CREATED);
+        process(nightD1("005930", 71_300), COLLECTED_D1);
+        fsc("005930", KrConfirmed.SOURCE_FSC, D, day(D, 71_000L, 71_000, 5_000_000, "KOSPI"));
+        org.mockito.Mockito.clearInvocations(marketData);
+
+        for (int i = 0; i < 3; i++) {
+            assertThat(confirm().confirmed()).isZero();
+        }
+        org.mockito.Mockito.verify(marketData, org.mockito.Mockito.times(1))
+                .krConfirmed(anyCollection(), anyCollection(), org.mockito.ArgumentMatchers.any());
+
+        latest[0] = new PaperMarketData.FscLatest(D1, null);
+        fsc("005930", KrConfirmed.SOURCE_FSC, D1, day(D1, 71_200L, 71_000, 5_000_000, "KOSPI"));
+        assertThat(confirm().confirmed()).as("금융위가 D+1을 냄 — 다시 읽어 확정").isEqualTo(1);
+        org.mockito.Mockito.verify(marketData, org.mockito.Mockito.times(2))
+                .krConfirmed(anyCollection(), anyCollection(), org.mockito.ArgumentMatchers.any());
+        assertThat(navOn(D1).pricesFinal()).isTrue();
+        assertThat(confirm().booksProcessed()).as("확정된 줄 — 할 일 없음(시세를 읽지 않음)").isEmpty();
+        org.mockito.Mockito.verify(marketData, org.mockito.Mockito.times(2))
+                .krConfirmed(anyCollection(), anyCollection(), org.mockito.ArgumentMatchers.any());
+    }
+
+    @Test
     @DisplayName("결과 JSON의 confirmed는 확정 조정이 있을 때만(0이면 칸 없음 — 미국 수동 실행 응답 그대로)")
     void confirmedFieldOnlyWhenNonZero() {
         Outcome none = new Outcome(1, 0, 0, 0, java.util.List.of("bench_spy"), null, java.util.List.of(),

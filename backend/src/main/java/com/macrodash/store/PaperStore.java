@@ -1098,6 +1098,12 @@ public class PaperStore {
                 navMapper(), code);
     }
 
+    /** 한 책의 그 거래일 순자산 줄 하나 — 없으면 empty(확정 조정이 마지막 줄만 볼 때 전체 이력을 읽지 않게). */
+    public Optional<NavRow> navRow(String code, LocalDate tradingDate) {
+        return jdbc.query("SELECT " + NAV_COLUMNS + " FROM paper_nav_daily WHERE book_code = ? AND trading_date = ?",
+                navMapper(), code, Date.valueOf(tradingDate)).stream().findFirst();
+    }
+
     /** 모든 책의 순자산, (책, 거래일) 순. */
     public List<NavRow> navSeriesAll() {
         return jdbc.query("SELECT " + NAV_COLUMNS + " FROM paper_nav_daily ORDER BY book_code, trading_date",

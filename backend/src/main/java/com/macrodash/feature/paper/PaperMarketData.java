@@ -234,6 +234,19 @@ public class PaperMarketData {
     }
 
     /**
+     * 금융위 두 데이터셋(주식시세·증권상품시세)의 저장된 최신 기준일 — 각각 받은 것이 없으면 null. 확정 조정이 '지난 주기와 금융위가 그대로인가'를
+     * 볼 때 범위 읽기 없이 이것만 읽습니다(묶음 C 리뷰).
+     */
+    record FscLatest(LocalDate stocks, LocalDate etfs) {
+    }
+
+    /** {@link FscLatest} — 수집기 테이블을 읽기만 하고 수집을 깨우지 않습니다. */
+    FscLatest fscLatest() {
+        return new FscLatest(repository.latestObservationDate(Datasets.OBS_FSC_PRICE),
+                repository.latestObservationDate(Datasets.OBS_FSC_ETF_PRICE));
+    }
+
+    /**
      * 한국 종목들의 금융위 확정 시세({@link KrConfirmed}, C2c) — 주식은 주식시세({@code fsc_price}: 종가·거래량·상장주식수·시가·시장 구분),
      * ETF는 증권상품시세({@code fsc_etf_price}: 종가·거래량·상장좌수·시가 — 시가는 확정 조정의 확정가, C3). 데이터셋마다 최신 기준일을 보고 {@code from}과 (최신 기준일 −
      * {@value KrConfirmed#LOOKBACK_DAYS}일) 중 이른 날부터 최신까지 읽습니다(직전 기준일 상장주식수를 찾으려고). 받은 종목은 행이 없어도

@@ -270,6 +270,23 @@ class PaperStoreDbTest {
     }
 
     @Test
+    @DisplayName("그날 순자산 줄 하나 읽기(navRow) — 이력 전체 읽기와 같은 행, 없는 날·다른 책은 empty")
+    void navRowReadsOneLine() {
+        store.insertBookIfAbsent(book(BOOK, "규칙 책"));
+        LocalDate next = DAY.plusDays(3);
+        store.upsertNav(nav(DAY, 100_000, true));
+        store.upsertNav(nav(next, 101_000, false));
+
+        assertThat(store.navRow(BOOK, next)).contains(store.navSeries(BOOK).get(1));
+        assertThat(store.navRow(BOOK, DAY)).get().satisfies(row -> {
+            assertThat(row.nav()).isEqualTo(100_000);
+            assertThat(row.pricesFinal()).isTrue();
+        });
+        assertThat(store.navRow(BOOK, DAY.plusDays(1))).isEmpty();
+        assertThat(store.navRow(OTHER_BOOK, DAY)).isEmpty();
+    }
+
+    @Test
     @DisplayName("atomically 안에서 예외가 나면 그 안의 쓰기가 모두 되돌려진다")
     void atomicallyRollsBackOnException() {
         assertThatThrownBy(() -> store.atomically(() -> {

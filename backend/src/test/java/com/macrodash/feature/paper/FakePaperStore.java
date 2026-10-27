@@ -390,6 +390,11 @@ class FakePaperStore extends PaperStore {
     }
 
     @Override
+    public Optional<NavRow> navRow(String code, LocalDate tradingDate) {
+        return Optional.ofNullable(nav.getOrDefault(code, new TreeMap<>()).get(tradingDate));
+    }
+
+    @Override
     public List<NavRow> navSeriesAll() {
         List<NavRow> out = new ArrayList<>();
         new TreeMap<>(nav).forEach((code, rows) -> out.addAll(rows.values()));
