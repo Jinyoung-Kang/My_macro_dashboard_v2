@@ -255,7 +255,8 @@ public class PaperDecisionJob {
                     log.info("모의 매매 결정 작업: {}", result.message());
                 } else if (ERROR.equals(result.outcome())) {
                     log.warn("모의 매매 결정 작업 오류({}) — {}", result.tradingDate(), result.message());
-                } else if (STARTED.equals(result.outcome()) || START_POSTPONED.equals(result.outcome())) {
+                } else if (STARTED.equals(result.outcome())) {
+                    // 출발 미룸은 startKr가 그 세션 처음 한 번만 INFO로 남깁니다(기한 뒤 10분마다 같은 줄이 나오지 않게).
                     log.info("모의 매매 결정 작업({}): {}", market.code(), result.message());
                 } else if (DECIDED.equals(result.outcome())) {
                     log.info("모의 매매 결정 작업: {} 규칙 책 {} · Claude 책 {}", result.tradingDate(),
@@ -492,6 +493,14 @@ public class PaperDecisionJob {
         }
         if (start.record()) {
             record(market, now, start.outcome(), start.detail());
+        }
+        if (START_POSTPONED.equals(start.outcome())) {
+            // 미룬 세션은 기한 뒤 서버 정지까지 10분마다 같은 결과가 나옵니다 — 작업 기록처럼 처음 한 번만 INFO, 나머지는 DEBUG.
+            if (start.record()) {
+                log.info("모의 매매 결정 작업({}): {}", market.code(), start.message());
+            } else {
+                log.debug("모의 매매 결정 작업({}): {}", market.code(), start.message());
+            }
         }
         return new Result(start.outcome(), start.session(), null, null, null, start.message());
     }

@@ -300,6 +300,34 @@ class KrStartTest {
     }
 
     @Test
+    @DisplayName("미룬 세션의 정기 실행 로그는 처음 한 번만 INFO — 기한 뒤 10분마다 나오는 같은 미룸은 DEBUG(작업 기록도 한 번)")
+    void postponedSessionLogsOnce() {
+        ch.qos.logback.classic.Logger logger = (ch.qos.logback.classic.Logger) org.slf4j.LoggerFactory
+                .getLogger(PaperDecisionJob.class);
+        ch.qos.logback.core.read.ListAppender<ch.qos.logback.classic.spi.ILoggingEvent> appender =
+                new ch.qos.logback.core.read.ListAppender<>();
+        appender.start();
+        logger.addAppender(appender);
+        ch.qos.logback.classic.Level saved = logger.getLevel();
+        logger.setLevel(ch.qos.logback.classic.Level.DEBUG);
+        try {
+            for (String at : List.of("2026-12-01T01:05", "2026-12-01T01:15", "2026-12-01T01:25")) {
+                clock.set(kst(at));
+                job.scheduledRun();
+            }
+
+            assertThat(appender.list).filteredOn(e -> e.getFormattedMessage().contains("미룹니다"))
+                    .extracting(ch.qos.logback.classic.spi.ILoggingEvent::getLevel).containsExactly(
+                            ch.qos.logback.classic.Level.INFO, ch.qos.logback.classic.Level.DEBUG,
+                            ch.qos.logback.classic.Level.DEBUG);
+            assertThat(krRuns()).extracting(JobRun::outcome).containsExactly(PaperDecisionJob.START_POSTPONED);
+        } finally {
+            logger.detachAppender(appender);
+            logger.setLevel(saved);
+        }
+    }
+
+    @Test
     @DisplayName("계좌 몫 하나라도 계획 실패(E2의 Claude 실패 자리) — 어느 계좌에도 쓰지 않고 그 세션을 미룸으로 기록")
     void failedLegPostponesAllBooks() {
         PaperLedgerService ledger = new PaperLedgerService(store, marketData, PaperFixtures.MAPPER);
