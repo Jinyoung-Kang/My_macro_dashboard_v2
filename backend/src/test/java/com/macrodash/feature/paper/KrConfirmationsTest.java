@@ -506,6 +506,78 @@ class KrConfirmationsTest {
         assertThat(navOn(D2).pricesFinal()).isFalse();
     }
 
+    // ------------------------------------------------------------------ 스탑 재판정과 확정 최고가(K30)
+    private Order stopOrder() {
+        return store.orders.values().stream().filter(o -> PaperBooks.SOURCE_STOP.equals(o.source())).findFirst()
+                .orElseThrow();
+    }
+
+    /** D+1 밤 — 1분봉 개장 봉 없음(NO_BAR) → NXT 종목 일봉 시가 110,000(TOSS_INTEGRATED — 08:00 프리마켓 첫 체결일 수 있음), 종가 {@code close}. */
+    private static KrFixtures.Payload integratedOpenD1(double close) {
+        KrFixtures.Payload payload = new KrFixtures.Payload(D1);
+        payload.code("005930", FETCHED_D1).bar(D, 100_000, 100_000, 1_000_000).bar(D1, 110_000, close, 900_000)
+                .minute("NO_BAR");
+        return payload;
+    }
+
+    @Test
+    @DisplayName("체결일 밤 감지 → 확정 조정 → 재판정: TOSS_INTEGRATED 시가 110,000에 산 보유가 그 밤 종가 100,500(≤ 101,200)로 STOP — 다음 밤 확정 조정이 최고가를 max(mkp 100,000, 금융위 종가 100,500) = 100,500으로 낮추면 재판정은 그 값(스탑가 92,460)으로 STOP_NOT_CONFIRMED(재진입 금지 없음)")
+    void rejudgeUsesTheConfirmedWatermark() {
+        book(2_000_000);
+        order("005930", PaperBooks.BUY, 10, D, CREATED);
+        process(integratedOpenD1(100_500), COLLECTED_D1);
+        assertThat(onlyFill().priceSource()).isEqualTo(KrQuotes.SOURCE_INTEGRATED);
+        Order detected = stopOrder();
+        assertThat(detected.reason().path("highWatermark").asDouble()).as("감지 때 최고가 = 잠정 체결가").isEqualTo(110_000);
+        assertThat(detected.asOfTradingDate()).isEqualTo(D1);
+        fsc("005930", KrConfirmed.SOURCE_FSC, D1, day(D1, 100_000L, 100_500, 5_000_000, "KOSPI"));
+        KrFixtures.Payload d2 = new KrFixtures.Payload(D2);
+        d2.code("005930", FETCHED_D2).bar(D1, 110_000, 100_500, 900_000).bar(D2, 101_000, 101_500, 800_000)
+                .minute("OK", "09:01", 101_000, 40_000);
+
+        Outcome outcome = process(d2, COLLECTED_D2);
+
+        assertThat(outcome.confirmed()).isEqualTo(1);
+        assertThat(position("005930").highWatermark()).isEqualTo(100_500);
+        Order stop = stopOrder();
+        assertThat(stop.status()).isEqualTo(PaperBooks.ORDER_CANCELLED);
+        assertThat(stop.rejectReason()).startsWith("STOP_NOT_CONFIRMED — 금융위 2026-11-03 종가 100500원이 스탑가 92460원")
+                .contains("최고가 100500");
+        assertThat(stop.reason().path(PaperLedgerService.STOP_CONFIRMED_WATERMARK).asDouble()).isEqualTo(100_500);
+        assertThat(stop.reason().path("stopBasisNote").asString()).contains("확정 조정").contains("110000");
+        assertThat(store.lockouts(BOOK)).as("통합가 고점으로 재진입 금지를 걸지 않음").isEmpty();
+        assertThat(position("005930").qty()).isEqualTo(10);
+        assertThat(outcome.notes()).anySatisfy(n -> assertThat(n).contains("스탑 재판정의 최고가 = 확정값 100500원"));
+    }
+
+    @Test
+    @DisplayName("금융위 감지일 행이 아직 없을 때(잠정 판정)도 낮아진 확정 최고가로 — D+2 밤 종가 100,000(감지 때 최고가 110,000 → 스탑가 101,200)의 STOP을, D+3 밤 확정 조정이 최고가를 105,000으로 낮추면 스탑가 96,600 위라 취소")
+    void provisionalRejudgeAlsoUsesTheConfirmedWatermark() {
+        book(2_000_000);
+        order("005930", PaperBooks.BUY, 10, D, CREATED);
+        process(integratedOpenD1(105_000), COLLECTED_D1);
+        assertThat(store.orders.values()).noneMatch(o -> PaperBooks.SOURCE_STOP.equals(o.source()));
+        KrFixtures.Payload d2 = new KrFixtures.Payload(D2);
+        d2.code("005930", FETCHED_D2).bar(D1, 110_000, 105_000, 900_000).bar(D2, 101_000, 100_000, 800_000)
+                .minute("OK", "09:01", 101_000, 40_000);
+        process(d2, COLLECTED_D2);
+        assertThat(stopOrder().reason().path("stopPrice").asDouble()).isEqualTo(101_200);
+        LocalDate d3 = LocalDate.of(2026, 11, 5);
+        fsc("005930", KrConfirmed.SOURCE_FSC, D1, day(D1, 100_000L, 105_000, 5_000_000, "KOSPI"));
+        KrFixtures.Payload night3 = new KrFixtures.Payload(d3);
+        night3.code("005930", kst("2026-11-05T21:57")).bar(D2, 101_000, 100_000, 800_000).bar(d3, 99_000, 99_500, 700_000)
+                .minute("OK", "09:01", 99_000, 30_000);
+
+        process(night3, kst("2026-11-05T22:01"));
+
+        Order stop = stopOrder();
+        assertThat(stop.status()).isEqualTo(PaperBooks.ORDER_CANCELLED);
+        assertThat(stop.rejectReason()).startsWith("STOP_NOT_CONFIRMED — 밤 잠정 종가 100000원이 확정 조정으로 낮아진 스탑가 96600원");
+        assertThat(stop.reason().path("stopBasis").asString()).isEqualTo(PaperLedgerService.STOP_BASIS_PROVISIONAL);
+        assertThat(store.lockouts(BOOK)).isEmpty();
+        assertThat(position("005930").qty()).isEqualTo(10);
+    }
+
     @Test
     @DisplayName("미처리 기업행위 보유는 확정 줄에서도 묶인 평가 그대로(금융위 최신 종가로 덮지 않음) — 그 줄은 잠정")
     void heldValuationStaysBound() {

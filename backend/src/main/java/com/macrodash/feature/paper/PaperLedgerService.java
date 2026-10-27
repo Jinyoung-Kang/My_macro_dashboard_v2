@@ -1104,38 +1104,57 @@ public class PaperLedgerService {
     static final String STOP_BASIS_PROVISIONAL = "PROVISIONAL";
     /** 스탑 취소 사유의 머리 — 확정 종가가 스탑가 위. */
     static final String STOP_NOT_CONFIRMED = "STOP_NOT_CONFIRMED";
+    /**
+     * STOP 근거의 칸 — 감지 뒤 금융위 확정 조정이 그 보유를 연 체결의 최고가를 <b>낮춰</b> 다시 센 값({@link KrConfirmations} — 감지 때 최고가는
+     * 잠정 체결가였음). 재판정은 감지 때 최고가와 이 값 중 낮은 쪽으로 셉니다({@link #rejudgeStop}).
+     */
+    static final String STOP_CONFIRMED_WATERMARK = "confirmedHighWatermark";
 
     /**
      * 감지한 날 D(주문의 기준 거래일)의 금융위 확정 종가(거래량 &gt; 0 행 — {@link KrConfirmed.Series#closeOn})로 다시 판정합니다. 금융위 D 종가는
-     * D 15:30에 공개된 값이라 D+1 밤의 체결 처리에서 써도 룩어헤드가 아닙니다. 감지 때 근거에 남긴 최고가·스탑 비율로 셉니다(그사이 최고가가 바뀌어도
-     * 그 감지의 스탑가). 스탑가 위면 취소({@value #STOP_NOT_CONFIRMED}), 이하면 집행. 금융위 D 행이 없거나(지연) 그날 거래가 없던 행이면(종가는 전날
-     * 값) 잠정 판정대로 집행합니다 — G2 통과 뒤에는 잠정 = KRX 종가라 판정이 같습니다. 근거에 최고가·비율이 없으면(손으로 넣은 주문) 다시 판정할
-     * 수 없어 잠정 판정대로 집행합니다.
+     * D 15:30에 공개된 값이라 D+1 밤의 체결 처리에서 써도 룩어헤드가 아닙니다. 감지 때 근거에 남긴 최고가·스탑 비율로 셉니다(그사이 오른 최고가로
+     * 스탑가를 올리지 않음). 단 감지 뒤 금융위 확정 조정이 그 보유를 연 체결의 최고가를 낮췄으면({@value #STOP_CONFIRMED_WATERMARK} — 감지 때 최고가가
+     * 잠정 체결가, 예: NXT 08:00 프리마켓 첫 체결가인 {@code TOSS_INTEGRATED} 시가) 그 낮아진 확정값으로 셉니다(K30 — 통합가 고점으로 되돌릴 수 없는
+     * 매도·재진입 금지를 내지 않게, 묶음 C 리뷰). 스탑가 위면 취소({@value #STOP_NOT_CONFIRMED}), 이하면 집행. 금융위 D 행이 없거나(지연) 그날 거래가
+     * 없던 행이면(종가는 전날 값) 잠정 판정대로 집행합니다 — G2 통과 뒤에는 잠정 = KRX 종가라 판정이 같습니다. 그때도 최고가가 낮아졌으면 밤 잠정 종가를
+     * 낮아진 스탑가로 다시 보고, 스탑가 위면 취소합니다. 근거에 최고가·비율이 없으면(손으로 넣은 주문) 다시 판정할 수 없어 잠정 판정대로 집행합니다.
      */
     private static StopCheck rejudgeStop(BookRun run, Order order) {
         LocalDate detected = order.asOfTradingDate();
         KrConfirmed.Series series = run.confirmed.of(order.ticker());
         Optional<BigDecimal> close = detected == null ? Optional.empty() : series.closeOn(detected);
-        if (close.isEmpty()) {
-            return new StopCheck(STOP_BASIS_PROVISIONAL, null, null, "금융위 " + detected
-                    + " 확정 종가 없음(아직 들어오지 않음·그날 거래 없음) — 밤 잠정 종가의 판정대로 집행");
-        }
-        Double watermark = positive(order.reason(), "highWatermark");
+        Double detectedWatermark = positive(order.reason(), "highWatermark");
+        Double corrected = positive(order.reason(), STOP_CONFIRMED_WATERMARK);
         Double pct = positive(order.reason(), "stopPct");
+        boolean lowered = detectedWatermark != null && corrected != null && corrected < detectedWatermark;
+        Double watermark = lowered ? corrected : detectedWatermark;
+        String watermarkNote = lowered ? "최고가는 감지 뒤 금융위 확정 조정이 다시 센 " + won(corrected) + "원(감지 때 "
+                + won(detectedWatermark) + "원 — 잠정 체결가)" : null;
+        if (close.isEmpty()) {
+            String note = "금융위 " + detected + " 확정 종가 없음(아직 들어오지 않음·그날 거래 없음) — 밤 잠정 종가의 판정대로 집행";
+            Double observed = positive(order.reason(), "observedPrice");
+            if (lowered && pct != null && pct < 100 && observed != null && !TrailingStop.triggered(watermark, observed, pct)) {
+                return new StopCheck(STOP_BASIS_PROVISIONAL, null, STOP_NOT_CONFIRMED + " — 밤 잠정 종가 " + won(observed)
+                        + "원이 확정 조정으로 낮아진 스탑가 " + won(TrailingStop.stopPrice(watermark, pct)) + "원(최고가 " + won(watermark)
+                        + " × (1 − " + trim(pct) + "%)) 위: 감지 때 최고가 " + won(detectedWatermark)
+                        + "원(잠정 체결가)의 판정이라 취소(재진입 금지 없음, 금융위 " + detected + " 종가는 아직 없음)", watermarkNote);
+            }
+            return new StopCheck(STOP_BASIS_PROVISIONAL, null, null, watermarkNote == null ? note : note + "; " + watermarkNote);
+        }
         if (watermark == null || pct == null || pct >= 100) {
             return new StopCheck(STOP_BASIS_PROVISIONAL, close.get(), null,
                     "근거에 최고가·스탑 비율이 없어 금융위 종가로 다시 판정할 수 없음 — 잠정 판정대로 집행");
         }
         double confirmed = close.get().doubleValue();
         if (TrailingStop.triggered(watermark, confirmed, pct)) {
-            return new StopCheck(series.source(), close.get(), null, null);
+            return new StopCheck(series.source(), close.get(), null, watermarkNote);
         }
         double stopPrice = TrailingStop.stopPrice(watermark, pct);
         return new StopCheck(series.source(), close.get(), STOP_NOT_CONFIRMED + " — 금융위 " + detected + " 종가 "
                 + won(confirmed) + "원이 스탑가 " + won(stopPrice) + "원(최고가 " + won(watermark) + " × (1 − " + trim(pct)
                 + "%)) 위: 밤 잠정 종가 " + won(positive(order.reason(), "observedPrice")) + "원("
                 + Json.asText(order.reason(), "observedSource") + ")의 감지를 확정 종가가 뒷받침하지 않아 취소(재진입 금지 없음)",
-                null);
+                watermarkNote);
     }
 
     /** 근거 JSON의 양수 칸(아니면 null). */

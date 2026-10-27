@@ -388,6 +388,7 @@ final class KrConfirmations {
             if (recomputed != watermark) {
                 notes.add(fill.ticker() + " 최고가 다시 계산(확정값 우선) — " + won(BigDecimal.valueOf(watermark)) + " → "
                         + won(BigDecimal.valueOf(recomputed)) + "원(확정 체결가와 " + fill.observationDate() + "부터의 금융위 종가 중 최고)");
+                lowerPendingStops(book, fill.ticker(), recomputed, notes);
                 watermark = recomputed;
                 watermarkAt = clock.instant();
             }
@@ -396,6 +397,32 @@ final class KrConfirmations {
                 watermarkAt, p.lastPrice(), p.lastPriceAt(), p.priceStale(), p.fillRefDate(), p.fillRefClose(), p.splitNote());
         store.upsertPosition(moved);
         positions.put(p.ticker(), moved);
+    }
+
+    /**
+     * 그 보유의 대기 STOP 주문 근거에 확정 조정이 낮춘 최고가를 남깁니다({@code PaperLedgerService.STOP_CONFIRMED_WATERMARK}) — 감지 때 근거의 최고가가
+     * 잠정 체결가(시가 사다리를 내려간 {@code TOSS_INTEGRATED} 등)였던 스탑을 체결 처리 때 확정값으로 다시 판정하게(K30, 묶음 C 리뷰). 감지 때 최고가보다
+     * 낮아졌을 때만이고(감지 뒤 오른 값으로 스탑가를 올리지 않음), 이미 남긴 값보다 낮을 때만 바꿉니다. 근거가 객체가 아니거나 최고가가 없는 주문(손으로
+     * 넣은 주문 — 다시 판정하지 않음)은 그대로 둡니다.
+     */
+    private void lowerPendingStops(Book book, String ticker, double recomputed, List<String> notes) {
+        for (Order order : store.ordersByStatus(book.code(), PaperBooks.ORDER_PENDING)) {
+            if (!PaperBooks.SOURCE_STOP.equals(order.source()) || !ticker.equals(order.ticker())
+                    || !(order.reason() instanceof tools.jackson.databind.node.ObjectNode reason)) {
+                continue;
+            }
+            tools.jackson.databind.JsonNode detected = reason.get("highWatermark");
+            tools.jackson.databind.JsonNode already = reason.get(PaperLedgerService.STOP_CONFIRMED_WATERMARK);
+            if (detected == null || !detected.isNumber() || !(recomputed < detected.asDouble())
+                    || (already != null && already.isNumber() && already.asDouble() <= recomputed)) {
+                continue;
+            }
+            tools.jackson.databind.node.ObjectNode updated = reason.deepCopy();
+            updated.put(PaperLedgerService.STOP_CONFIRMED_WATERMARK, recomputed);
+            store.updateOrderReason(order.id(), updated);
+            notes.add("주문 " + order.id() + " " + ticker + " 스탑 재판정의 최고가 = 확정값 " + won(BigDecimal.valueOf(recomputed))
+                    + "원(감지 때 " + won(BigDecimal.valueOf(detected.asDouble())) + "원 — 잠정 체결가)");
+        }
     }
 
     /** 잠정 체결의 비용 칸이 그 판의 요율로 잠정가를 다시 센 값과 같은가(체결 처리와 설정 저장이 겹쳤는지 알리는 점검). */
