@@ -49,6 +49,25 @@ def test_실제_이름으로_우선주_리츠_규칙을_잠근다():
     assert excluded == {"우선주": 3, "리츠": 2}
 
 
+def test_우선주의_두_규칙은_하나씩_따로_걸러낸다():
+    """
+    실제 우선주 세 행은 코드 끝자리와 이름 끝('우'·'우B')이 함께 걸려 한 규칙만 남아도 빠집니다 — 각 규칙만 잡는 합성 행으로 따로
+    잠급니다. 둘 다 DART 표에 넣어 DART 규칙이 대신 걸러 주지 않게 합니다.
+    """
+    rows = [
+        _row("100000", "보통주갑", 5e12),
+        _row("123450", "가상전자우C", 4e12),    # 코드 끝자리 0 — 이름('우C')만 잡음
+        _row("12345K", "새코드회사", 3e12),     # 이름은 보통주 꼴 — 코드 끝자리(≠ '0')만 잡음
+        _row("223450", "우리금융지주", 2e12),   # '우'로 시작하는 보통주 이름은 남음
+    ]
+    members, excluded = kr_paper.select_universe(rows, _dart(r["code"] for r in rows))
+
+    assert [m["code"] for m in members] == ["100000", "223450"]
+    assert excluded == {"우선주": 2}
+    assert kr_paper.universe_exclusion(rows[1], _dart(["123450"])) == "우선주"
+    assert kr_paper.universe_exclusion(rows[2], _dart(["12345K"])) == "우선주"
+
+
 def test_스팩_거래정지_DART_없음과_코스피_밖은_빠진다():
     rows = [
         _row("100000", "보통주갑", 5e12),
