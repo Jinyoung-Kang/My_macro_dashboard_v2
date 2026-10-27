@@ -1464,6 +1464,43 @@ class PaperStoreDbTest {
     }
 
     @Test
+    @DisplayName("체결 비용 칸(C2b): 한국 체결의 수수료·세금·슬리피지 금액을 넣고 그대로 읽음(소수 4자리), 비용 칸 없는 체결은 0 — 레코드가 음수·소수 5자리를 받지 않음")
+    void fillCostColumnsRoundTrip() {
+        store.insertBookIfAbsent(book(BOOK, "규칙 책"));
+        // §5 손계산 — 코스피 매도 10주 72,000: 수수료 108·슬리피지 360·세금 360 + 1,080, 체결가 = 관측가
+        long sell = store.insertOrder(pendingBuy(BOOK, "005930", null));
+        long fillId = store.insertFill(new PaperStore.Fill(0, sell, BOOK, "005930", "SELL", 10, 72_000, 72_000, 5,
+                720_000, CLOSE, DAY, "TOSS_1M_OPEN", false, null, java.math.BigDecimal.valueOf(108),
+                java.math.BigDecimal.valueOf(1_440), java.math.BigDecimal.valueOf(360)));
+        assertThat(jdbc.queryForMap("SELECT fee::text AS fee, tax::text AS tax, slippage_cost::text AS slippage_cost, "
+                + "price::text AS price FROM paper_fills WHERE id = ?", fillId))
+                .containsEntry("fee", "108.0000").containsEntry("tax", "1440.0000")
+                .containsEntry("slippage_cost", "360.0000").containsEntry("price", "72000.000000");
+        PaperStore.Fill read = store.recentFills(BOOK, 1).get(0);
+        assertThat(read.fee()).isEqualByComparingTo("108");
+        assertThat(read.tax()).isEqualByComparingTo("1440");
+        assertThat(read.slippageCost()).isEqualByComparingTo("360");
+        assertThat(read.priceSource()).isEqualTo("TOSS_1M_OPEN");
+        assertThat(new PaperStore.Fill(read.id(), read.orderId(), read.bookCode(), read.ticker(), read.side(), read.qty(),
+                read.price(), read.rawPrice(), read.slippageBp(), read.gross(), read.observedAt(), read.observationDate(),
+                read.priceSource(), read.backfill(), read.createdAt(), java.math.BigDecimal.valueOf(108),
+                java.math.BigDecimal.valueOf(1_440), java.math.BigDecimal.valueOf(360)))
+                .as("만든 값과 읽은 값이 같은 레코드(소수 4자리로 맞춤)").isEqualTo(read);
+
+        long plain = store.insertFill(fill(store.insertOrder(pendingBuy(BOOK, "SPY", null)), BOOK));
+        PaperStore.Fill us = store.recentFills(BOOK, 2).stream().filter(f -> f.id() == plain).findFirst().orElseThrow();
+        assertThat(List.of(us.fee(), us.tax(), us.slippageCost())).as("비용 칸 없는 체결(미국)은 0")
+                .allSatisfy(v -> assertThat(v).isEqualByComparingTo("0"));
+
+        assertThatThrownBy(() -> new PaperStore.Fill(0, 1, BOOK, "005930", "BUY", 1, 1, 1, 5, 1, CLOSE, DAY, "X", false,
+                null, java.math.BigDecimal.valueOf(-1), java.math.BigDecimal.ZERO, java.math.BigDecimal.ZERO))
+                .as("음수 비용").isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> new PaperStore.Fill(0, 1, BOOK, "005930", "BUY", 1, 1, 1, 5, 1, CLOSE, DAY, "X", false,
+                null, new java.math.BigDecimal("0.00001"), java.math.BigDecimal.ZERO, java.math.BigDecimal.ZERO))
+                .as("소수 5자리").isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
     @DisplayName("미처리 기업행위 표시(B7): 걸면 그 책 목록에만 나오고 다시 걸어도 처음 사유가 남음, 보유 갱신은 지우지 않음, 풀면 빠지고 다시 걸 수 있음, 보유 없는 종목·빈 사유, 보유를 지우면 표시도")
     void corpActionHoldIsSetOnceAndReleased() {
         store.insertBookIfAbsent(book(BOOK, "규칙 책"));

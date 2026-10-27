@@ -268,7 +268,7 @@ class FakePaperStore extends PaperStore {
         long id = ++sequence;
         fills.put(id, new Fill(id, f.orderId(), f.bookCode(), f.ticker(), f.side(), f.qty(), f.price(), f.rawPrice(),
                 f.slippageBp(), f.gross(), f.observedAt(), f.observationDate(), f.priceSource(), f.backfill(),
-                f.createdAt() == null ? dbNow : f.createdAt()));
+                f.createdAt() == null ? dbNow : f.createdAt(), f.fee(), f.tax(), f.slippageCost()));
         return id;
     }
 

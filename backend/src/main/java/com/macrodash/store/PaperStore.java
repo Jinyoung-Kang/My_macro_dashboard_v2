@@ -106,10 +106,48 @@ public class PaperStore {
                         LocalDate expiresOn, Instant filledAt) {
     }
 
-    /** 체결. 주문당 하나입니다({@code order_id} 유일). {@code price}는 슬리피지를 얹은 값, {@code rawPrice}는 관측치 그대로. */
+    /**
+     * 체결. 주문당 하나입니다({@code order_id} 유일). {@code price}는 체결가(미국: 관측가에 슬리피지를 얹은 값, 한국: 관측가 그대로 —
+     * 2단계 K31), {@code rawPrice}는 관측치 그대로입니다. 비용 칸(V14) {@code fee}·{@code tax}·{@code slippageCost}는 한국 체결의 수수료·
+     * 세금(증권거래세 + 농어촌특별세)·슬리피지 금액이고 미국은 0입니다(미국 슬리피지는 체결가에 들어 있음). 비용 칸은 DB 열과 같은
+     * 소수 4자리로 맞춰 둡니다(읽은 값과 만든 값이 같은 레코드가 되게) — 0 미만이거나 소수 4자리를 넘으면 받지 않습니다.
+     * 비용 칸을 받지 않는 생성자는 셋 다 0입니다(미국·사후 체결·시험).
+     */
     public record Fill(long id, long orderId, String bookCode, String ticker, String side, int qty, double price,
                        double rawPrice, double slippageBp, double gross, Instant observedAt, LocalDate observationDate,
-                       String priceSource, boolean backfill, Instant createdAt) {
+                       String priceSource, boolean backfill, Instant createdAt, BigDecimal fee, BigDecimal tax,
+                       BigDecimal slippageCost) {
+
+        /** 비용 칸의 소수 자릿수 — {@code paper_fills.fee}·{@code tax}·{@code slippage_cost} NUMERIC(18,4). */
+        public static final int COST_SCALE = 4;
+
+        public Fill {
+            fee = cost(fee, "fee");
+            tax = cost(tax, "tax");
+            slippageCost = cost(slippageCost, "slippage_cost");
+        }
+
+        /** 비용 칸이 없는 체결(셋 다 0) — 미국 체결·사후 체결의 모양. */
+        public Fill(long id, long orderId, String bookCode, String ticker, String side, int qty, double price,
+                    double rawPrice, double slippageBp, double gross, Instant observedAt, LocalDate observationDate,
+                    String priceSource, boolean backfill, Instant createdAt) {
+            this(id, orderId, bookCode, ticker, side, qty, price, rawPrice, slippageBp, gross, observedAt,
+                    observationDate, priceSource, backfill, createdAt, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO);
+        }
+
+        private static BigDecimal cost(BigDecimal value, String column) {
+            if (value == null) {
+                throw new IllegalArgumentException(column + " 값이 없습니다(비용이 없으면 0)");
+            }
+            if (value.signum() < 0) {
+                throw new IllegalArgumentException(column + "은(는) 음수일 수 없습니다(DB CHECK ≥ 0): " + value);
+            }
+            try {
+                return value.setScale(COST_SCALE, java.math.RoundingMode.UNNECESSARY);
+            } catch (ArithmeticException e) {
+                throw new IllegalArgumentException(column + "은(는) 소수 " + COST_SCALE + "자리까지입니다: " + value);
+            }
+        }
     }
 
     /** 거래일별 순자산. {@code pricesFinal}이면 확정 종가로 평가한 값입니다. */
@@ -423,7 +461,8 @@ public class PaperStore {
             + "sell_fraction, timing, source, status, reject_reason, reason::text AS reason, as_of_trading_date, "
             + "created_at, expires_on, filled_at";
     private static final String FILL_COLUMNS = "id, order_id, book_code, ticker, side, qty, price, raw_price, "
-            + "slippage_bp, gross, observed_at, observation_date, price_source, is_backfill, created_at";
+            + "slippage_bp, gross, observed_at, observation_date, price_source, is_backfill, created_at, fee, tax, "
+            + "slippage_cost";
     private static final String NAV_COLUMNS = "book_code, trading_date, nav, cash, equity_value, exposure_pct, "
             + "prices_final";
     private static final String JOB_COLUMNS = "id, job, started_at, finished_at, outcome, detail::text AS detail";
@@ -828,7 +867,8 @@ public class PaperStore {
 
     // ------------------------------------------------------------------ 체결
     /**
-     * 체결을 넣습니다. {@code id}는 DB가 매기고, {@code createdAt}이 null이면 지금입니다.
+     * 체결을 넣습니다. {@code id}는 DB가 매기고, {@code createdAt}이 null이면 지금입니다. 비용 칸(수수료·세금·슬리피지 금액 — 한국
+     * 체결, 미국은 0)도 함께 씁니다.
      *
      * @return 새 체결 번호
      * @throws org.springframework.dao.DuplicateKeyException 그 주문의 체결이 이미 있으면(주문당 하나 — 같은 주문을 두 번
@@ -837,8 +877,9 @@ public class PaperStore {
      */
     public long insertFill(Fill f) {
         List<Long> ids = jdbc.query("INSERT INTO paper_fills (order_id, book_code, ticker, side, qty, price, raw_price, "
-                        + "slippage_bp, gross, observed_at, observation_date, price_source, is_backfill, created_at) "
-                        + "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, COALESCE(CAST(? AS timestamptz), now())) "
+                        + "slippage_bp, gross, observed_at, observation_date, price_source, is_backfill, created_at, fee, "
+                        + "tax, slippage_cost) "
+                        + "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, COALESCE(CAST(? AS timestamptz), now()), ?, ?, ?) "
                         + "RETURNING id",
                 ps -> {
                     ps.setLong(1, f.orderId());
@@ -855,6 +896,9 @@ public class PaperStore {
                     ps.setString(12, f.priceSource());
                     ps.setBoolean(13, f.backfill());
                     setInstant(ps, 14, f.createdAt());
+                    ps.setBigDecimal(15, f.fee());
+                    ps.setBigDecimal(16, f.tax());
+                    ps.setBigDecimal(17, f.slippageCost());
                 },
                 (rs, rowNum) -> rs.getLong("id"));
         return single(ids, "체결");
@@ -868,7 +912,8 @@ public class PaperStore {
                         rs.getString("ticker"), rs.getString("side"), rs.getInt("qty"), rs.getDouble("price"),
                         rs.getDouble("raw_price"), rs.getDouble("slippage_bp"), rs.getDouble("gross"),
                         instant(rs, "observed_at"), date(rs, "observation_date"), rs.getString("price_source"),
-                        rs.getBoolean("is_backfill"), instant(rs, "created_at")),
+                        rs.getBoolean("is_backfill"), instant(rs, "created_at"), rs.getBigDecimal("fee"),
+                        rs.getBigDecimal("tax"), rs.getBigDecimal("slippage_cost")),
                 code, limit);
     }
 
