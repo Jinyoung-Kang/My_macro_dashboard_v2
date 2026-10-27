@@ -19,11 +19,13 @@ app/tasks/kr_paper.py
   모든 보유는 U에서 사므로 U를 벗어난 보유도 가격·수급을 계속 받습니다.
 [하루 1회 — 명세 K17·§4-9]
   토스 태스크는 KR 거래일 D의 20:30 KST 뒤 하루 한 번입니다(통합 세션 20:00 마감·수급 저녁판 20:21~20:23 뒤). 그 뒤에 받은 종목은
-  그날 다시 부르지 않고(호출 0회), 받지 못한 종목만 다음 slow 주기에 다시 받습니다. PAPER_ENABLED와 상관없이 돕니다(미국 paper_quotes와 같음).
+  그날 다시 부르지 않고(호출 0회), 받지 못한 종목만 다음 slow 주기에 다시 받습니다. 일봉은 받았는데 1분봉 개장 봉을 묻지 못한(FAILED)
+  종목은 다음 slow 주기에 그 봉만 다시 묻습니다. PAPER_ENABLED와 상관없이 돕니다(미국 paper_quotes와 같음).
   토큰은 services/toss 한 곳에서 발급·캐시하고(401이면 한 번만 재발급), 403(허용 IP)이면 남은 종목도 같은 답이라 그 실행을 멈춥니다.
 """
 from __future__ import annotations
 
+import copy
 import logging
 import re
 import time
@@ -177,7 +179,8 @@ KR_COLLECT_AFTER = clock_time(20, 30)
 # 호출은 한 봉 더(6개) 묻습니다 — 20:30 전 실행에서 오늘 장중 봉을 버려도 5봉이 남게.
 KR_QUOTES_BARS = 5
 # 실행당 토스 호출 상한 — 종목 상태(200종목에 1회) + 종목마다 일봉 원시 1·수정 1·1분봉 개장 1. 수집 범위 약 140종목이면 약 420회입니다.
-# 넘는 종목은 받지 않은 채로 남아 다음 slow 주기에 이어 받습니다. DATA_SOURCES.md '한국 책 호출 예산'과 같아야 합니다(test_toss_call_budget).
+# 일봉을 받은 종목마다 1분봉 1회를 떼어 두므로 한 실행에 (500 − 1) ÷ 3 ≈ 166종목까지 일봉·1분봉을 함께 받고, 넘는 종목은 받지 않은 채로
+# 남아 다음 slow 주기에 이어 받습니다. DATA_SOURCES.md '한국 책 호출 예산'과 같아야 합니다(test_toss_call_budget).
 KR_QUOTES_CALL_BUDGET = 500
 # 새 종목을 더 시작하지 않는 경과 시간(초, 태스크 시작부터). slow 상한 600초 안 — 남는 시간은 진행 중인 종목(호출마다 timeout 10초)의 여유.
 KR_QUOTES_TIME_LIMIT_SECONDS = 300.0
@@ -322,7 +325,7 @@ def _probe_targets(entry: dict, previous: dict | None) -> list[dict]:
         (그 전 날은 주문이 없던 때라 쓰일 데가 없음 — 첫 실행에 호출을 다섯 배로 쓰지 않게),
       - 직전에 FAILED였던 봉(최근 5봉 안에 있는 동안)
     입니다. 거래량이 0이거나 모르는 봉(정지일 — 시가 단일가 체결이 없음)은 묻지 않습니다. 물을 봉에는 먼저 FAILED('아직 묻지 못함')를
-    걸어 둡니다 — 이번 실행이 예산·시간 상한으로 그 봉까지 못 가도 다음 수집이 다시 묻게.
+    걸어 둡니다 — 이번 실행이 예산·시간 상한으로 그 봉까지 못 가도 다음 slow 주기가 그 봉만 다시 묻게(_failed_probe_bars).
     """
     previous_bars = [bar for bar in ((previous or {}).get("bars") or []) if isinstance(bar, dict) and bar.get("date")]
     carried = {bar["date"]: bar.get("minute") for bar in previous_bars}
@@ -340,6 +343,17 @@ def _probe_targets(entry: dict, previous: dict | None) -> list[dict]:
                 "status": "FAILED", "priceSource": "TOSS_1M_OPEN", "reason": "아직 묻지 못함 — 호출 예산·시간 상한"}
             targets.append(bar)
     return targets
+
+
+def _failed_probe_bars(entry) -> list[dict]:
+    """
+    그 항목에서 1분봉 개장 봉을 다시 물을 봉(최신 날부터) — ``minute``가 FAILED(호출 실패·'아직 묻지 못함')이고 거래량이 있는 봉.
+    그날 일봉을 이미 받은 종목은 일봉을 다시 부르지 않고 이 봉만 다음 slow 주기에 묻습니다 — 예산·시간 상한으로 못 물은 봉이 다음
+    날 밤(그 체결을 장부가 이미 처리한 뒤)까지 남지 않게.
+    """
+    bars = entry.get("bars") if isinstance(entry, dict) and not entry.get("isStale") else None
+    return [bar for bar in reversed(bars or []) if isinstance(bar, dict) and bar.get("volume")
+            and isinstance(bar.get("minute"), dict) and bar["minute"].get("status") == "FAILED"]
 
 
 def _append_adj_closes(entry: dict) -> None:
@@ -368,9 +382,11 @@ def task_kr_paper_quotes() -> str:
     (+ 수정 종가를 timeseries ``kr_close_adj``에 덧붙임). 모양은 명세 §9 'paper.kr.quotes 계약'(contract 1).
 
     규칙
-      - KR 세션 D(kr_target_session)의 20:30 KST 뒤에 받은 종목은 다시 부르지 않습니다 — 모두 받았으면 호출 0회.
-      - 순서: 종목 상태(200종목에 1회) → 종목마다 일봉 원시·수정 → 1분봉 개장 봉(일봉을 다 받은 뒤 남은 예산으로). 실행당
-        KR_QUOTES_CALL_BUDGET·KR_QUOTES_TIME_LIMIT_SECONDS 안에서만, 넘는 종목은 다음 주기에.
+      - KR 세션 D(kr_target_session)의 20:30 KST 뒤에 받은 종목은 일봉을 다시 부르지 않습니다 — 모두 받았으면 호출 0회. 그중
+        1분봉 개장 봉이 FAILED로 남은 종목은 그 봉만 다시 묻습니다(_failed_probe_bars).
+      - 순서: 종목 상태(200종목에 1회) → 종목마다 일봉 원시·수정 → 1분봉 개장 봉. 일봉을 시작할 때마다 그 종목과 앞서 받은 종목의
+        1분봉 몫(종목마다 가장 새 봉 1회)을 예산에서 떼어 두고, 1분봉은 종목마다 가장 새 봉부터 묻습니다(더 지난 봉은 남은 예산으로).
+        실행당 KR_QUOTES_CALL_BUDGET·KR_QUOTES_TIME_LIMIT_SECONDS 안에서만, 넘는 종목·봉은 다음 주기에(결과 문구 '1분봉 미요청 N').
       - 받지 못한 종목은 직전 항목을 isStale로 잇습니다(QA-032, 3일 지나면 뺌) — 장부는 isStale 봉으로 체결하지 않습니다. 한 종목도
         새로 받지 못하면 EmptyResult로 저장본을 그대로 둡니다. 토스가 답했는데 봉이 없으면 status NO_BARS('응답에 없음').
       - 403(허용 IP)이면 그 실행을 멈춥니다. 키가 없으면 EmptyResult.
@@ -382,7 +398,10 @@ def task_kr_paper_quotes() -> str:
     scope, basis = kr_scope()
     previous = previous_payload(catalog.SNAP_KR_PAPER_QUOTES).get("codes") or {}
     pending = [code for code in scope if not collected_after(previous.get(code), after)]
-    if not pending:
+    # 그날 일봉은 받았는데 1분봉 개장 봉이 FAILED로 남은 종목 — 일봉은 다시 부르지 않고 그 봉만 묻습니다(직전 항목의 복사본을 고침).
+    reprobe = {code: copy.deepcopy(previous[code]) for code in scope
+               if code not in pending and _failed_probe_bars(previous.get(code))}
+    if not pending and not reprobe:
         return f"최신 상태 (세션 {session}, {len(scope)}종목, 호출 0회)"
 
     run = _TossRun(KR_QUOTES_CALL_BUDGET, KR_CANDLE_SPACING)
@@ -400,6 +419,10 @@ def task_kr_paper_quotes() -> str:
     except toss_service.TossError as exc:
         run.reasons.append(f"종목 상태: {exc}")   # 일봉은 계속 받습니다 — 상태 칸은 직전 항목에서 잇고 정지 여부는 모름
 
+    # 1분봉을 물을 봉(종목 → 최신 날부터). 일봉을 시작할 때마다 이미 정해진 종목의 몫(종목마다 가장 새 봉 1회 — owed)과 그 종목의
+    # 일봉 2회·1분봉 1회가 남아 있어야 합니다 — 일봉만 다 받고 뒤쪽 종목(끈적 목록 = U를 벗어난 보유)의 개장 봉을 매번 못 묻지 않게.
+    work: dict[str, list[dict]] = {code: _failed_probe_bars(entry) for code, entry in reprobe.items()}
+    owed = len(work)
     fresh: dict[str, dict] = {}
     stop = ""
     for code in pending:
@@ -407,6 +430,9 @@ def task_kr_paper_quotes() -> str:
             break
         if _clock() - started >= KR_QUOTES_TIME_LIMIT_SECONDS:
             stop = f"시간 상한 {KR_QUOTES_TIME_LIMIT_SECONDS:.0f}초 — 나머지는 다음 주기"
+            break
+        if run.remaining < 3 + owed:
+            stop = "호출 예산 소진 — 나머지는 다음 주기"
             break
         try:
             entry = _daily(code, previous.get(code), infos.get(code), run, fetched_at, session.isoformat())
@@ -420,30 +446,56 @@ def task_kr_paper_quotes() -> str:
             stop = "호출 예산 소진 — 나머지는 다음 주기"
             break
         fresh[code] = entry
+        targets = _probe_targets(entry, previous.get(code))
+        if targets:
+            work[code] = targets
+            owed += 1
 
+    # 종목마다 가장 새 봉(보통 그날 하나)을 먼저, 서버가 며칠 꺼졌던 뒤의 더 지난 봉은 그다음에 남은 예산으로 — 범위 순서대로.
+    ordered = [code for code in scope if code in work]
+    queue = ([(code, bar) for code in ordered for bar in work[code][:1]]
+             + [(code, bar) for code in ordered for bar in work[code][1:]])
     probes = 0
-    for code, entry in fresh.items():
-        for bar in _probe_targets(entry, previous.get(code)):
-            if _clock() - started >= KR_QUOTES_TIME_LIMIT_SECONDS or not run.take():
-                break
-            try:
-                bar["minute"] = _probe_open(code, bar["date"])
-                probes += bar["minute"]["status"] == "OK"
-            except toss_service.TossForbidden as exc:
-                run.forbidden = str(exc)
-            except toss_service.TossError as exc:
-                bar["minute"] = {"status": "FAILED", "priceSource": "TOSS_1M_OPEN", "reason": str(exc)[:200]}
+    answered: set[str] = set()
+    probe_reasons: list[str] = []      # 결과 문구에만 — 이어받은 종목의 사유(carry_over_missing)는 일봉 쪽 사유 그대로
+    unasked = 0
+    probe_stop = ""
+    for index, (code, bar) in enumerate(queue):
+        if run.forbidden:
+            probe_stop = "토스 거부로 멈춤"
+        elif _clock() - started >= KR_QUOTES_TIME_LIMIT_SECONDS:
+            probe_stop = f"시간 상한 {KR_QUOTES_TIME_LIMIT_SECONDS:.0f}초"
+        elif not run.take():
+            probe_stop = "호출 예산 소진"
+        if probe_stop:
+            unasked = len(queue) - index
+            break
+        try:
+            bar["minute"] = _probe_open(code, bar["date"])
+            probes += bar["minute"]["status"] == "OK"
+            answered.add(code)
+        except toss_service.TossForbidden as exc:
+            run.forbidden = str(exc)
+            probe_stop = "토스 거부로 멈춤"
+            unasked = len(queue) - index
+            break
+        except toss_service.TossError as exc:
+            bar["minute"] = {"status": "FAILED", "priceSource": "TOSS_1M_OPEN", "reason": str(exc)[:200]}
+            probe_reasons.append(f"{code} 1분봉: {exc}")
 
     if run.forbidden:
         run.reasons.insert(0, run.forbidden)
-    if not fresh:
-        raise EmptyResult(f"0/{len(pending)} 종목 — 기존 저장본 유지" + (f" ({stop})" if stop else "")
-                          + _reason_suffix(run.reasons))
+    if not fresh and not answered & set(reprobe):
+        what = f"0/{len(pending)} 종목" if pending else f"1분봉만 다시 0/{len(reprobe)}종목"
+        stops = " · ".join(part for part in (stop, f"1분봉 미요청 {unasked}({probe_stop})" if unasked else "") if part)
+        raise EmptyResult(f"{what} — 기존 저장본 유지" + (f" ({stops})" if stops else "")
+                          + _reason_suffix(run.reasons + probe_reasons))
 
     for entry in fresh.values():
         if entry["status"] == "OK":
             _append_adj_closes(entry)
     codes = {code: previous[code] for code in scope if code not in pending and code in previous}
+    codes.update(reprobe)
     codes.update(fresh)
     carried = carry_over_missing(codes, previous, scope, (run.reasons[0] if run.reasons else stop) or None, _has_quote)
     store.put_snapshot(catalog.SNAP_KR_PAPER_QUOTES, {
@@ -457,15 +509,21 @@ def task_kr_paper_quotes() -> str:
 
     no_bars = sum(1 for entry in fresh.values() if entry["status"] == "NO_BARS")
     rebase = sorted(code for code, entry in fresh.items() if entry.get("adjBasisChanged"))
-    detail = (f"세션 {session} · {len(fresh)}/{len(pending)} 종목" + (f"(봉 없음 {no_bars})" if no_bars else "")
-              + f" · 1분봉 개장 {probes}건 · 호출 {run.budget.used}회" + carried_suffix(carried))
+    detail = f"세션 {session}"
+    if pending:
+        detail += f" · {len(fresh)}/{len(pending)} 종목" + (f"(봉 없음 {no_bars})" if no_bars else "")
+    if reprobe:
+        detail += f" · 1분봉만 다시 {len(reprobe)}종목"
+    detail += f" · 1분봉 개장 {probes}건 · 호출 {run.budget.used}회" + carried_suffix(carried)
     if basis is None:
         detail += " · 유니버스 저장본 없음 — ETF 2만"
     if rebase:
         detail += f" · 수정주가 기준 바뀜 {len(rebase)}({', '.join(rebase[:5])}) — kr_paper_price_history가 다시 받음"
     if stop:
         detail += f" · {stop}"
-    return detail + _reason_suffix(run.reasons)
+    if unasked:
+        detail += f" · 1분봉 미요청 {unasked}({probe_stop} — 다음 주기)"
+    return detail + _reason_suffix(run.reasons + probe_reasons)
 
 
 # ==============================================================================

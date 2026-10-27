@@ -7,9 +7,10 @@ tests/test_kr_paper_quotes.py
   2. KR 거래일 D 20:30 KST 뒤 하루 1회 — 그 뒤에 받은 종목은 다시 부르지 않는다(호출 0회). 20:30 전에는 전 거래일이 대상이고 장중 봉은 버린다.
   3. 일부 실패 → 그 종목만 직전 값을 isStale로 잇는다. 전부 실패 → EmptyResult(저장본 그대로). 403이면 멈춘다. 키가 없으면 EmptyResult.
   4. '응답에 없음'(봉 0개)은 NO_BARS로 '호출 실패'(이음·없음)와 가른다.
-  5. 1분봉 개장 봉은 그날 09:01·10:01 라벨만, 처음 보는 종목은 최신 봉만, 확정된 결과는 다시 묻지 않고 FAILED는 다시 묻는다.
+  5. 1분봉 개장 봉은 그날 09:01·10:01 라벨만, 처음 보는 종목은 최신 봉만, 확정된 결과는 다시 묻지 않고 FAILED는 다시 묻는다 —
+     그날 일봉을 받은 종목이면 같은 밤 다음 주기에 그 봉만(일봉을 다시 부르지 않음).
   6. 수정주가 기준이 바뀌면 kr_close_adj에 덧붙이지 않고 adjBasisChanged를 건다.
-  7. 실행당 호출 예산·시간 상한 — 일봉을 1분봉보다 먼저, 남은 종목은 다음 주기에.
+  7. 실행당 호출 예산·시간 상한 — 일봉을 받은 종목마다 1분봉 몫을 떼어 두고, 못 받은 종목은 다음 주기에. 못 물은 1분봉 수를 결과에 적는다.
 """
 from __future__ import annotations
 
@@ -313,24 +314,98 @@ def test_거래량_0인_봉은_1분봉을_묻지_않는다(store, toss, clock, m
     assert "minute" not in _payload(store)["codes"]["005930"]["bars"][-1]
 
 
-def test_예산이_모자라면_일봉을_먼저_받고_나머지는_다음_주기(store, toss, clock, monkeypatch):
+def test_예산은_일봉을_받은_종목의_1분봉_몫을_떼어_두고_나머지_종목은_다음_주기(store, toss, clock, monkeypatch):
+    """
+    일봉을 다 받고 남은 예산으로 1분봉을 물으면, 수집 범위가 약 166종목을 넘을 때 뒤쪽 종목(끈적 목록 = U를 벗어난 보유)은 밤마다
+    개장 봉을 받지 못했습니다. 일봉을 시작할 때마다 그 종목과 앞 종목들의 1분봉 몫을 떼어 둡니다 — 못 받은 종목은 일봉째 다음 주기에.
+    """
     _scope(monkeypatch, ["069500", "153130", "005930"])
     _standard(toss, ["069500", "153130", "005930"])
-    monkeypatch.setattr(kr_paper, "KR_QUOTES_CALL_BUDGET", 1 + 2 * 2 + 1)    # 상태 1 + 두 종목 일봉 + 1분봉 1
+    monkeypatch.setattr(kr_paper, "KR_QUOTES_CALL_BUDGET", 1 + 3 * 2 + 2)    # 상태 1 + 두 종목 × 3 + 남는 2(셋째 종목엔 모자람)
 
     detail = tasks.task_kr_paper_quotes()
 
     codes = _payload(store)["codes"]
     assert set(codes) == {"069500", "153130"}
-    assert [c[1] for c in toss.calls] == ["info", "raw", "adj", "raw", "adj", "1m"]
-    assert "2/3 종목" in detail and "호출 예산 소진" in detail and "호출 6회" in detail
-    assert codes["153130"]["bars"][-1]["minute"]["status"] == "FAILED"     # 못 물은 봉은 다음 수집이 다시 묻게
+    assert [c[1] for c in toss.calls] == ["info", "raw", "adj", "raw", "adj", "1m", "1m"]
+    assert "2/3 종목" in detail and "호출 예산 소진" in detail and "호출 7회" in detail
+    assert {codes[code]["bars"][-1]["minute"]["status"] for code in codes} == {"OK"}   # 받은 종목은 개장 봉까지
+    assert "1분봉 미요청" not in detail
 
     monkeypatch.setattr(kr_paper, "KR_QUOTES_CALL_BUDGET", 500)
     toss.calls.clear()
     tasks.task_kr_paper_quotes()
-    assert {c[0] for c in toss.calls if c[1] == "raw"} == {"005930"}
+    assert [(c[0], c[1]) for c in toss.calls if c[1] != "info"] == [("005930", "raw"), ("005930", "adj"), ("005930", "1m")]
     assert set(_payload(store)["codes"]) == {"069500", "153130", "005930"}
+
+
+def test_1분봉을_못_물은_봉은_같은_밤_다음_주기에_그_봉만_다시_묻는다(store, toss, clock, monkeypatch):
+    """FAILED 봉을 다음 날 밤에야 다시 물으면 장부(C2)가 그 체결을 이미 처리한 뒤입니다 — 일봉은 다시 부르지 않고 그 봉만."""
+    _scope(monkeypatch, ["069500", "005930"])
+    _standard(toss, ["069500", "005930"])
+    toss.errors[("005930", "1m")] = toss_service.TossError("HTTP 500")
+    tasks.task_kr_paper_quotes()
+    first = _payload(store)["codes"]["005930"]
+    assert first["bars"][-1]["minute"]["status"] == "FAILED"
+
+    clock(datetime(2026, 10, 27, 22, 57, tzinfo=KST))                         # 같은 밤 다음 slow 주기
+    toss.errors.clear()
+    toss.calls.clear()
+    detail = tasks.task_kr_paper_quotes()
+
+    assert toss.calls == [("005930", "1m", "2026-10-27T10:01:00+09:00")]
+    again = _payload(store)["codes"]["005930"]
+    assert again["bars"][-1]["minute"]["status"] == "OK"
+    assert again["fetchedAt"] == first["fetchedAt"] and again["bars"][:-1] == first["bars"][:-1]   # 일봉은 그대로
+    assert detail == "세션 2026-10-27 · 1분봉만 다시 1종목 · 1분봉 개장 1건 · 호출 1회"
+
+    toss.calls.clear()
+    assert tasks.task_kr_paper_quotes() == "최신 상태 (세션 2026-10-27, 2종목, 호출 0회)"
+    assert toss.calls == []
+
+
+def test_1분봉만_다시_물어도_전부_실패하면_EmptyResult이고_저장본은_그대로(store, toss, clock, monkeypatch):
+    _scope(monkeypatch, ["069500"])
+    _standard(toss, ["069500"])
+    toss.errors[("069500", "1m")] = toss_service.TossError("HTTP 500")
+    tasks.task_kr_paper_quotes()
+    before = _payload(store)
+
+    clock(datetime(2026, 10, 27, 22, 57, tzinfo=KST))
+    toss.errors[("069500", "1m")] = toss_service.TossError("HTTP 502")
+    with pytest.raises(tasks.EmptyResult) as exc:
+        tasks.task_kr_paper_quotes()
+
+    assert "1분봉만 다시 0/1종목" in str(exc.value) and "HTTP 502" in str(exc.value)
+    assert _payload(store) == before
+
+
+def test_며칠_꺼진_뒤의_지난_봉은_남은_예산으로_묻고_못_물은_수를_적는다(store, toss, clock, monkeypatch):
+    """종목마다 가장 새 봉을 먼저 묻고, 더 지난 봉(서버가 꺼졌던 날)은 남은 예산으로 — 못 물은 봉은 결과에 적고 다음 주기에 그 봉만."""
+    _scope(monkeypatch, ["005930"])
+    _standard(toss, ["005930"])
+    for day in DAYS[2:]:
+        toss.minute[("005930", day)] = [_bar(day, 1101, 777, "09:01")]
+    clock(datetime(2026, 10, 21, 21, 0, tzinfo=KST))
+    tasks.task_kr_paper_quotes()                                              # 10-21 밤에 받고 서버가 꺼짐
+
+    clock(NIGHT)
+    monkeypatch.setattr(kr_paper, "KR_QUOTES_CALL_BUDGET", 1 + 2 + 2)          # 1분봉은 넷 중 둘만
+    toss.calls.clear()
+    detail = tasks.task_kr_paper_quotes()
+
+    assert [c[2][:10] for c in toss.calls if c[1] == "1m"] == ["2026-10-27", "2026-10-26"]
+    minutes = {bar["date"]: bar["minute"]["status"] for bar in _payload(store)["codes"]["005930"]["bars"]}
+    assert minutes == {"2026-10-21": "NO_BAR", "2026-10-22": "FAILED", "2026-10-23": "FAILED",
+                       "2026-10-26": "OK", "2026-10-27": "OK"}
+    assert "1분봉 미요청 2(호출 예산 소진 — 다음 주기)" in detail
+
+    monkeypatch.setattr(kr_paper, "KR_QUOTES_CALL_BUDGET", 500)
+    clock(datetime(2026, 10, 27, 22, 57, tzinfo=KST))
+    toss.calls.clear()
+    tasks.task_kr_paper_quotes()
+    assert [(c[1], c[2][:10]) for c in toss.calls] == [("1m", "2026-10-23"), ("1m", "2026-10-22")]
+    assert {bar["minute"]["status"] for bar in _payload(store)["codes"]["005930"]["bars"][1:]} == {"OK"}
 
 
 def test_시간_상한이_지나면_새_종목을_시작하지_않는다(store, toss, clock, monkeypatch):
