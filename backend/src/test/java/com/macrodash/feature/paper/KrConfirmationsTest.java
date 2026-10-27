@@ -385,6 +385,95 @@ class KrConfirmationsTest {
         assertThat(position("005930").highWatermark()).as("둘째 체결은 그 보유를 열지 않음 — 그대로").isEqualTo(71_500);
     }
 
+    /** D+2 밤 저장본 — D+1·D+2 봉, D+2 봉의 1분봉 09:01 시가 72,000. */
+    private static KrFixtures.Payload nightD2At72000() {
+        KrFixtures.Payload payload = new KrFixtures.Payload(D2);
+        payload.code("005930", FETCHED_D2).bar(D1, 71_800, 71_400, 900_000).bar(D2, 72_100, 72_000, 800_000)
+                .minute("OK", "09:01", 72_000, 40_000);
+        return payload;
+    }
+
+    @Test
+    @DisplayName("결정 d14 — 그 체결로 연 보유를 일부 판 뒤의 확정(금융위 D+1이 D+2 시가 매도보다 늦음): 10주 71,300 → D+2 시가에 5주 매도 → 확정 71,200이면 남은 5주의 평단이 가격 차이만큼 71,200(= 71,300 − 100 × min(10, 5) ÷ 5 — 체결 수량 10으로 셌다면 71,100)")
+    void partialSellBeforeTheConfirmation() {
+        book(1_000_000);
+        order("005930", PaperBooks.BUY, 10, D, CREATED);
+        process(nightD1("005930", 71_300), COLLECTED_D1);
+        order("005930", PaperBooks.SELL, 5, D1, kst("2026-11-03T22:30"));
+        process(nightD2At72000(), COLLECTED_D2);   // 금융위 D+1은 아직(첫 slow의 fsc_prices 실패)
+        assertThat(position("005930").qty()).isEqualTo(5);
+        assertThat(position("005930").avgCost()).as("매도는 평단 그대로").isEqualTo(71_300);
+        double cashBefore = cash();
+        fsc("005930", KrConfirmed.SOURCE_FSC, D1, day(D1, 71_200L, 71_000, 5_000_000, "KOSPI"));
+
+        Outcome outcome = confirm();
+
+        assertThat(outcome.confirmed()).as("D+2 매도는 금융위 D+2 전 — 조용히 기다림").isEqualTo(1);
+        assertThat(position("005930").qty()).isEqualTo(5);
+        assertThat(position("005930").avgCost()).isEqualTo(71_200);
+        assertThat(cash()).as("현금은 체결 수량 전체의 차이").isEqualTo(cashBefore + 1_000);
+    }
+
+    @Test
+    @DisplayName("결정 d14 — 다 판 뒤 다시 산 보유는 그 체결을 담지 않음: 10주 71,300 → D+2 시가에 10주 매도·10주 매수(72,000, 새 보유) → 금융위 D+1 확정 71,200은 현금(+1,000)만, 새 보유의 평단·최고가는 그대로")
+    void soldOutThenReboughtKeepsTheNewAverage() {
+        book(1_000_000);
+        order("005930", PaperBooks.BUY, 10, D, CREATED);
+        process(nightD1("005930", 71_300), COLLECTED_D1);
+        order("005930", PaperBooks.SELL, 10, D1, kst("2026-11-03T22:30"));
+        order("005930", PaperBooks.BUY, 10, D1, kst("2026-11-03T22:31"));
+        process(nightD2At72000(), COLLECTED_D2);
+        Position reopened = position("005930");
+        assertThat(reopened.openedAt()).as("다시 연 보유 — 첫 체결 뒤").isEqualTo(COLLECTED_D2);
+        assertThat(reopened.avgCost()).isEqualTo(72_000);
+        double cashBefore = cash();
+        fsc("005930", KrConfirmed.SOURCE_FSC, D1, day(D1, 71_200L, 71_000, 5_000_000, "KOSPI"));
+
+        Outcome outcome = confirm();
+
+        assertThat(outcome.confirmed()).isEqualTo(1);
+        assertThat(cash()).isEqualTo(cashBefore + 1_000);
+        Position after = position("005930");
+        assertThat(after.qty()).isEqualTo(10);
+        assertThat(after.avgCost()).as("D+1 체결은 이 보유에 없음 — 평단 그대로").isEqualTo(72_000);
+        assertThat(after.highWatermark()).as("이 보유를 연 체결이 아님 — 최고가 그대로").isEqualTo(reopened.highWatermark());
+    }
+
+    @Test
+    @DisplayName("결정 d14 — 체결 뒤 50:1 분할을 반영한 보유의 확정(금융위 D+1이 분할 반영보다 늦음): 10주 2,650,000 → D+2 재상장 봉으로 500주·평단 53,000 → 확정 2,640,000이면 평단 += Δ ÷ 50 = 52,800, 최고가는 다시 세지 않음(분할 기록 — 옛 단위 금융위 종가로 덮지 않음)")
+    void splitAfterTheFillMovesTheAverageByDeltaOverK() {
+        book(30_000_000);
+        order("005930", PaperBooks.BUY, 10, D, CREATED);
+        KrFixtures.Payload d1 = new KrFixtures.Payload(D1);
+        d1.code("005930", FETCHED_D1).bar(D, 2_640_000, 2_650_000, 300_000).ratio(0.02)
+                .bar(D1, 2_650_000, 2_650_000, 300_000).ratio(0.02).minute("OK", "09:01", 2_650_000, 1_000);
+        process(d1, COLLECTED_D1);
+        assertThat(onlyFill().price()).isEqualTo(2_650_000);
+        KrFixtures.Payload d2 = new KrFixtures.Payload(D2);
+        d2.code("005930", FETCHED_D2).bar(D1, 2_650_000, 2_650_000, 300_000).ratio(0.02)
+                .bar(D2, 52_000, 53_000, 20_000_000).ratio(1.0);
+        Outcome splitNight = process(d2, COLLECTED_D2);
+        assertThat(splitNight.splits()).isEqualTo(1);
+        Position split = position("005930");
+        assertThat(split.qty()).isEqualTo(500);
+        assertThat(split.avgCost()).isEqualTo(53_000);
+        assertThat(split.highWatermark()).isEqualTo(53_000);
+        assertThat(split.splitNote()).contains("50:1");
+        double cashBefore = cash();
+        fsc("005930", KrConfirmed.SOURCE_FSC, D1, day(D1, 2_640_000L, 2_650_000, 300_000, "KOSPI"));
+
+        Outcome outcome = confirm();
+
+        assertThat(outcome.confirmed()).isEqualTo(1);
+        FillConfirmation row = store.fillConfirmations(BOOK).get(0);
+        assertThat(row.confirmedPrice()).isEqualByComparingTo("2640000");
+        assertThat(cash()).isEqualTo(cashBefore + row.cashDelta().doubleValue());
+        Position after = position("005930");
+        assertThat(after.qty()).isEqualTo(500);
+        assertThat(after.avgCost()).as("53,000 − 10,000 × min(10, 500) ÷ 500").isEqualTo(52_800);
+        assertThat(after.highWatermark()).as("분할을 반영한 보유 — 다시 세지 않음(2,650,000으로 덮지 않음)").isEqualTo(53_000);
+    }
+
     @Test
     @DisplayName("관측치 처리는 확정 조정을 먼저 — 금융위 D+1이 들어온 D+2 밤에 D+1 매수의 현금 +1,000이 D+2 시가 매수 전에 반영돼 4주를 삼(확정 전 현금이면 3주)")
     void processConfirmsBeforeTheObservation() {
