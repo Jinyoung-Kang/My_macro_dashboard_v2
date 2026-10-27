@@ -13,7 +13,7 @@
      - 있음(C2b): `KrLedgerTest.Ladder` — `minuteOpenWins`(1분봉 '개장 + 1분' 봉 시가가 있으면 반드시 `TOSS_1M_OPEN`)·`dailyOpenOnlyWithoutMinuteBar`(없을 때만 토스 일봉 시가 —
        NXT 종목 `TOSS_INTEGRATED`, KRX 단독 봉 `TOSS_DAILY`)·`nextCloseIsNeverFilledFromTheDailyClose`·`openTimeOverrideMovesTheLabel`, `KrLedgerTest.FailedMinute`(1분봉 `FAILED`는 기다림, 결정 기한 뒤 수집본에도 남으면 사다리 — 결정 d11),
        `KrQuotesTest`(계약 1 파서)
-     - C2c: 최고가가 `TOSS_INTEGRATED` 종가로 오르지 않음. C3: 확정값이 토스 재수집의 잠정값으로 덮이지 않음(`upsertNav`)
+     - C2c: 최고가가 `TOSS_INTEGRATED` 종가로 오르지 않음. 있음(C3): `KrConfirmationsTest.provisionalNeverOverwritesConfirmed`(확정값이 토스 재수집의 잠정값으로 덮이지 않음 — `upsertNav`)
   2. 체결 시점(K13)
      - 있음: `DecisionTimingsLockTest.schemaMarketAndPromptAgree`(운영 결정 문맥마다 스키마 timing enum = 시장 체결 시점 = 고정 문단 — E2가 한국 문맥을 운영 목록에 더하면 한국도 봄),
        `OrderValidatorMarketTest.timingsAreTheMarkets`·`singleTimingMarket`, `PaperStoreDbTest.v14TimingFillCostsAndCorpActionHold`(`paper_orders.timing`의 `NEXT_OPEN`),
@@ -24,7 +24,10 @@
   3. 확정 조정(K29)
      - 있음: `KrxCostsTest.confirmBuy`·`confirmSell`(명세 §5 손계산 현금 +1,000·+999)·`confirmNoChangeAndNegative`·`cashFlowFromStoredColumns`,
        `PaperStoreDbTest.fillConfirmationsOnePerFill`(체결마다 한 행, 추가만)·`v14TimingFillCostsAndCorpActionHold`
-     - C3: 확정 조정 손계산 두 건을 장부 경로로, 체결 행 불변, 그날까지 모든 체결·보유가 확정된 날만 `prices_final=true`, 확정값 불가침
+     - 있음(C3): `KrConfirmationsTest.buyConfirmation`·`kospiSellConfirmation`(확정 조정 손계산 두 건을 장부 경로로 — 현금 +1,000·+999, 체결 행 불변)·`idempotentAcrossRestarts`·
+       `fillTimeSettingsVersion`(체결 때 설정 판)·`averageAcrossLaterBuys`(평단은 가격 차이만큼)·`etfUncorrectedOnlyWhenTheRowIsMissing`·`navLineIsConfirmed`·`navWaitsForEveryHolding`·
+       `cashOnlyLineWaitsForTheSale`(그날까지 모든 체결·보유가 확정된 날만 `prices_final=true`)·`heldValuationStaysBound`·`provisionalNeverOverwritesConfirmed`(확정값 불가침)·
+       `riskJobConfirmsWithoutANewObservation`, `PaperStoreDbTest.fillConfirmationReadWrite`·`settingsInForceAt`
   4. 슬리피지(K31)
      - 있음: `KrxCostsTest.kospiBuy`·`kospiSell`·`kosdaqSell`·`etfBuy`·`etfSell`(§5 비용 다섯 건)·`affordableQuantity`·`costBpDoesNotJumpAtBandEdges`·`formerJumpPointsAreFlat`
        (호가 경계에서 실효 bp가 뛰지 않음)·`decimalNotDouble`
@@ -33,7 +36,8 @@
   5. 출발(K28)
      - 있음(미국 출발 경로가 그대로임): `PaperAdminServiceTest.initBackfillsBenchmarks`·`initBeforeFinalCloseSkips`, `PaperMarketIsolationTest.backfillIsUsOnly`
      - C1: 한국 초기화(`kr.start-date`가 비어도 미국 기동, `StoreReader.quietly` + `KrxCalendar` 거래일 검사)·벤치마크 두 계좌의 S+1 `NEXT_OPEN` 주문, 점검(§9) — QA 스택 복원 자료로
-       벤치마크 두 계좌가 S+1 시가 출발부터 끝까지 돎(수용 기준 1). E2: 출발 원자성(Claude 실패 → 네 계좌 모두 다음 KR 거래일), 출발 결정의 입력 ≤ 결정 시각
+       벤치마크 두 계좌가 S+1 시가 출발부터 끝까지 돎(수용 기준 1). 있음(C3): `KrBenchmarkLifecycleTest.benchmarksFromInitToConfirmedNav`(초기화 → S 22:30 출발 → 봉 ≤ S로는
+       체결 안 함 → S+1 시가 → S+2 밤 확정 조정 → 순자산 = 출발가 대비 ETF 가격 변화 − 비용, 결정적 시험 — QA 스택 점검은 따로 남음). E2: 출발 원자성(Claude 실패 → 네 계좌 모두 다음 KR 거래일), 출발 결정의 입력 ≤ 결정 시각
        (`PacketBuilderTest.initialPacketHasNothingAfterAsOf`의 한국판)
   6. 캘린더 컨센서스(K22)
      - 있음: `PacketBuilderTest.goldenUsPackets`(미국 `packetVersion` 5 패킷 고정본·해시), 수집기 `test_us_consensus.py::test_백엔드와_화면은_컨센서스_저장본을_읽지_않는다`
@@ -114,6 +118,9 @@ v2 2단계는 한국 증시 책이다 — 1억 원씩 네 계좌(수급 규칙 `
 - 지금(2026-10-27, 묶음 A·B 뒤): V14(`NEXT_OPEN`·비용 칸·확정 조정 표·`corp_action_hold`), `analytics.KrxCosts`(비용·매수 가능 수량·확정 조정 금액), `paper.kr.quotes` 계약 1
   (봉 출처·1분봉 개장 봉), `calendar.us_consensus`는 저장만. 미국 고정본(`backend/src/test/resources/paper/golden/`)과 패킷 해시는 바이트 그대로다.
   남은 일은 C1(`KrPaperMarket`·`kr.*` 설정·초기화·벤치마크 출발 주문), C2(체결·사다리·스탑), C3(확정 조정), E1(컨센서스 패킷), E2(네 계좌 함께 출발).
+- 묶음 C 뒤(2026-10-27, C3까지): 확정 조정은 장부가 관측치 처리 앞에서, 리스크 점검이 새 관측치가 없는 주기에도 돌린다. 요율은 그 체결 때 유효했던 설정 판, 평단은 가격 차이만큼,
+  확정 순자산 줄은 장부 상태가 그날 마감일 때만 다시 쓴다 — 금융위 값이 다음 관측치 처리보다 늦으면 그날 줄은 잠정으로 남고, 끝내 확정할 수 없는 체결이 남으면 그 뒤 줄이 확정되지 않는다
+  (명세 §4-1 'C3 구현에서 정한 것'·§6).
 - **G1·G2는 아직 판정하지 않았다**(1분봉 시가·종가 = 금융위, 표본 1). G1이 실패하면 NXT 종목의 잠정 체결가가 통합 시가로 내려가 확정 조정이 커진다(현금은 결국 금융위로 맞음).
   G2가 실패하면 `NEXT_CLOSE`가 없고 잠정 평가는 통합 종가다(최고가는 금융위 `clpr`로만, 스탑은 확정 재판정).
 - 잠정 순자산은 하루 뒤 다시 쓰인다 — 화면이 잠정·확정·확정 조정 합계를 보여야 한다(F2). 금융위 자료가 빠진 구간(수집기가 7거래일 넘게 꺼짐)의 체결은 확정되지 않은 채 남는다.
