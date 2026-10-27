@@ -467,20 +467,9 @@ public class PaperLedgerService {
         if (!holding.verified) {
             return;   // 분할 여부를 확인하지 못한 보유 — 수량을 믿을 수 없어 다음 관측치를 기다립니다
         }
-        int qty;
-        if (order.qty() != null) {
-            if (order.qty() <= 0) {
-                cancel(run, order, "매도 수량이 0 이하입니다");
-                return;
-            }
-            qty = Math.min(order.qty(), holding.qty);
-        } else {
-            Double fraction = order.sellFraction();
-            if (fraction != null && (!(fraction > 0) || fraction.isInfinite())) {
-                cancel(run, order, "매도 비율이 0 이하입니다");
-                return;
-            }
-            qty = PaperLedger.sellQty(holding.qty, fraction);
+        int qty = sellQty(run, order, holding);
+        if (qty < 0) {
+            return;
         }
         FillTerms terms = run.fill(order, bar);
         FillTerms.Costs costs = terms.costs(qty);
@@ -493,6 +482,23 @@ public class PaperLedgerService {
             run.removed.add(holding.ticker);
         }
         run.filled++;
+    }
+
+    /** 매도 수량(수량 주문은 보유까지, 비율 주문은 보유 × 비율 — null이면 전량). 수량·비율이 0 이하면 그 주문을 취소하고 −1. */
+    private int sellQty(BookRun run, Order order, Holding holding) {
+        if (order.qty() != null) {
+            if (order.qty() <= 0) {
+                cancel(run, order, "매도 수량이 0 이하입니다");
+                return -1;
+            }
+            return Math.min(order.qty(), holding.qty);
+        }
+        Double fraction = order.sellFraction();
+        if (fraction != null && (!(fraction > 0) || fraction.isInfinite())) {
+            cancel(run, order, "매도 비율이 0 이하입니다");
+            return -1;
+        }
+        return PaperLedger.sellQty(holding.qty, fraction);
     }
 
     private void fillBuy(BookRun run, Order order) {
