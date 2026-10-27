@@ -157,12 +157,18 @@ class KrRulesJobTest {
     @DisplayName("재선정일 r의 관측치가 기한까지 없음 → 기다림(DATA_NOT_READY, 기록 없음) → r NO_TRADE(사유 '069500 D 봉 없음(휴장 또는 지연)'·그 순간의 게이트) → r′에 r′ 자료로 REBALANCE(cycleDate r·selectionAsOf r′) → 그 뒤 SCHEDULED(다시 선정 안 함)")
     void catchUpThroughTheJob() {
         session(FRI);   // 11-02 밤 — 그날 관측치가 끝내 오지 않음(저장본은 10-30 판)
+        java.time.Instant processedBefore = store.state(PaperBooks.KR_RULES).orElseThrow().lastProcessedCollectedAt();
         PaperDecisionJob.Result waiting = runAt("2026-11-02T22:30");
         assertThat(waiting.outcome()).isEqualTo(PaperDecisionJob.DATA_NOT_READY);
         assertThat(waiting.message()).contains("②").contains("관측치 세션 2026-10-30").contains("⑤")
                 .contains("기한 2026-11-03 01:00 KST");
         assertThat(runAt("2026-11-03T00:50").outcome()).isEqualTo(PaperDecisionJob.DATA_NOT_READY);
         assertThat(krRuns()).as("기다림은 기록하지 않음").isEmpty();
+        // ②④⑤⑥ 미달이면 장부를 처리하지 않음 — 그날 관측치 전에 r의 미확정 순자산 줄을 쓰지 않게(D1c '정기 결정의 순서').
+        assertThat(store.navSeries(PaperBooks.KR_RULES)).extracting(com.macrodash.store.PaperStore.NavRow::tradingDate)
+                .as("r(11-02) 순자산 줄 없음").doesNotContain(R);
+        assertThat(store.state(PaperBooks.KR_RULES).orElseThrow().lastProcessedCollectedAt())
+                .as("10-30 관측치를 장부에 적용하지 않음").isEqualTo(processedBefore);
 
         PaperDecisionJob.Result missed = runAt("2026-11-03T01:00");
         assertThat(missed.outcome()).isEqualTo(PaperDecisionJob.PAST_DEADLINE);
