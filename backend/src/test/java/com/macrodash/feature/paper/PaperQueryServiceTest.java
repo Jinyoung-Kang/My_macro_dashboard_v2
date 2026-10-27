@@ -267,8 +267,13 @@ class PaperQueryServiceTest {
         assertThat((List<?>) detail.get("orders")).hasSize(1);
         assertThatThrownBy(() -> query.decision(12_345)).isInstanceOf(InvalidRequestException.class)
                 .hasMessageContaining("없는 결정");
-        assertThatThrownBy(() -> query.decisions("bench_spy", 50)).isInstanceOf(InvalidRequestException.class);
+        assertThatThrownBy(() -> query.decisions("bench_spy", 50)).isInstanceOf(InvalidRequestException.class)
+                .as("운영 시장 목록(미국 → 한국)의 결정 계좌 코드 — docs/API.md").hasMessageContaining(
+                        "book는 rules · claude · kr_rules · kr_claude 가운데 하나여야 합니다");
         assertThat(query.decisions("claude", 50).get("decisions")).isEqualTo(List.of());
+        assertThat(query.decisions(PaperBooks.KR_CLAUDE, 50)).containsEntry("available", true)
+                .containsEntry("decisions", List.of());
+        assertThat(query.decisions(PaperBooks.KR_RULES, 50).get("decisions")).isEqualTo(List.of());
     }
 
     @Test
