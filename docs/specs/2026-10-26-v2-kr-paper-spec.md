@@ -493,6 +493,7 @@
     그래서 한국 계좌 하나만 리셋하면 그 계좌는 시작 전으로 남고 다시 출발하지 않으며('한 계좌만 늦은 시작' 없음), 넷을 모두 리셋하면 다음 KR 거래일 창에서 다시 출발한다.
   - **창**: 세션 D(`lastCompletedSession`) ≥ S이고 그 실행 설정 판의 `kr.decisionTimeKst` ~ `kr.decisionDeadlineKst`(기한이 결정보다 이르거나 같으면 다음 날 — `KrPaperMarket.decisionWindow`, 기본 D 22:30 ~ D+1 01:00).
     정기 결정 작업의 기한 묶기(`PaperDecisionJob.times`가 01:00을 22:30으로 접음)는 D1 몫으로 그대로 두고, 출발만 이 창으로 본다. **기한이 지난 창에서는 어떤 경우에도 출발을 내지 않는다**(그 밤 첫 실행이 01:05여도).
+    → **D0**: 정기 결정 작업도 같은 기한 규칙(`PaperMarket.deadlineInstant`)과 같은 창 읽기를 쓴다 — 01:00을 접지 않음(§4-9 'D0 구현에서 정한 것').
   - **게이트**(§4-9 ②~⑥ — ①은 앞 주문이 없어 보지 않음): ② `paper.kr.quotes` 머리 `session` = D이고 `scope` 중 이어받지 않은 항목의 마지막 봉 날짜가 D인 비율 ≥ 90%(문턱 포함, 수집기 `_has_session_bar`와 같은 규칙) ·
     ④ `kr.fsc_prices_meta.latestBasDt` = D의 직전 KR 거래일 · ⑤ 069500 D 봉 · ⑥ D가 거래일. **③(U 90%의 D 수급)은 STUB — D1**: 유니버스·수급 읽기는 규칙 계좌의 입력 동결(K26)과 같은 한 번의 읽기여야 하므로
     그 읽기를 만드는 D1이 판정을 채운다(벤치마크만 출발하는 이 묶음은 수급을 쓰지 않음). 판정 다섯은 결정 응답 `gates`와 작업 기록에 남는다.
@@ -559,6 +560,28 @@
     → **묶음 C 리뷰**(`90f6ed3`): 출발일 없음의 쉼은 **한국 계좌가 모두 시작 전**일 때로 좁혔다(`dormantReason(설정, 계좌 목록)`). 출발일은 출발(시작 전 → 운용)만 정하므로, 이미 출발한
     (운용·일시정지) 계좌가 있으면 출발일이 비어도 장부·확정 조정·결정·복기가 돈다 — 로컬 `.env`를 서버로 보낼 때 그 줄이 빠져 대기 주문이 체결 없이 만료되고 확정 조정·순자산 줄이
     소리 없이 멈추지 않게. 출발·한국 초기화는 그대로 막힌다(README·`.env.example`).
+- **D0 구현에서 정한 것 — 결정 기한과 기한 뒤 동작**(2026-10-28, 결정 e2, 커밋 `a1ab61e`(옮기기)·`d8b490f`(한국 규칙)·`54798af`(기한 뒤 갈고리) — §9 'D1·E2 — 결정 기한'이 정하지 않은 자리.
+  미국 숫자 불변 — 고정본 `paper/golden/`·패킷·프롬프트 해시 그대로, 백엔드 시험 1,614 → 1,619):
+  - **기한 순간** `PaperMarket.deadlineInstant(세션, 결정 시각, 기한)` — 시장마다 반드시 정한다(기본 구현 없음, 실행 `MarketRun`은 감싼 묶음에 맡김).
+    미국 = 예전 묶기 그대로(기한 < 결정이면 결정 시각, **같으면 그 순간** — 다음 날로 넘기지 않음, `UsPaperMarketTest.deadlineInstantFoldsEarlierDeadlineToDecisionTime`).
+    한국 = 두 시각을 `decisionInstant`로 순간으로 만든 뒤 기한 순간이 결정 순간 뒤가 될 때까지 **달력 날**로 하루씩(`KrPaperMarket.nextDayDeadline` — 금요일 세션의 기한은 토요일 01:00, 같은 시각은 다음 날).
+    시험용 한국 묶음도 같은 함수를 쓴다(결정 순간 식은 그날 같은 시각이어도 같은 값).
+  - **읽기 하나**: `PaperDecisionJob.Times`는 설정에서 읽은 값 그대로(묶지 않음)이고, `KrPaperMarket.decisionWindow`(출발 창·한국 초기화의 출발 기한 검사·1분봉 기다림의 끝 d11)도
+    같은 읽기(`PaperDecisionJob.times(시장, 본문)`) + `deadlineInstant`로 센다 — 결정 작업과 출발이 한 규칙. [확인] 창 값은 저장 규칙이 받는 값에서 예전과 같다
+    (예전 창의 기한 읽기는 JSON 문자열만·앞뒤 공백 없이 읽었고 지금은 결정 작업처럼 앞뒤 공백을 지우고 읽음 — 설정 저장이 `HH:mm`만 받아 저장된 값에서는 차이가 없음).
+  - **기한 뒤 갈고리** `PaperMarket.afterDeadline()` = `PROCEED_UNCONFIRMED`(미국 — 예전처럼 확정 종가 없이 진행, `prices_final=false`) · `NO_TRADE`(한국·시험용 한국).
+    결정 작업에서 보는 자리는 **'결정 시각 전'·'그날 일 다 됨' 뒤, 오류 포기·관측치 읽기 앞**이다 — 그래서 그 세션 결정이 이미 있으면 기한 뒤에도 `ALREADY_DECIDED`(기록 없음),
+    오류로 포기한 세션도 기한이 지나면 `PAST_DEADLINE`이고, 그 밤 첫 실행이 기한 뒤여도·그날 종가 관측치가 있어도 결정하지 않는다(출발 §4-8과 같은 '기한은 끝' 규칙).
+  - **`NO_TRADE`일 때 하는 일**: Claude를 부르지 않고 관측치·장부·순자산 줄도 결정 작업에서 처리하지 않는다(리스크 점검이 5분마다 처리). 결과 `PAST_DEADLINE`
+    (거래일 D, `pricesFinal` null, 결정 없음). 작업 기록은 **시장·세션마다 한 번**(재기동하면 한 번 더 — 출발 미룸과 같은 메모리 장부) `{tradingDate, pastDeadline: true,
+    deadline: "… KST", rules, claude}`, 로그도 그때만 INFO(나머지 DEBUG). `claude` = 그날 결정할 차례였으면 '결정 기한이 지나 Claude를 부르지 않습니다', 아니면 평소의 건너뜀 사유.
+    `rules` = 지금은 '이 시장의 규칙 계좌 결정은 아직 없습니다(2단계 D1)' — **D1이 이 자리에서 그 세션의 규칙 계좌 `NO_TRADE` 결정 행(사유 '기한 지남')을 쓴다**(재선정 따라잡기 K33의 근거,
+    저장된 사실이라 재기동해도 다시 쓰지 않음). Claude 쪽 사유를 결정 행으로 남길지(미국 호출 상한의 `SKIPPED` 행처럼)는 E2.
+  - **수동 실행**(`runNow`)은 이 갈고리를 보지 않는다 — 한국 수동 결정의 창은 §9 'E2 — 한국 수동 결정의 기준일'이 정한다.
+  - **지금 운영에 미치는 것: 없음** — 한국 규칙·Claude 계좌가 시작 전이라(출발 갈고리 `Plan.notYet`) 한국 결정 작업에 그날 할 일이 생기지 않아 기한 판정 전에 `ALREADY_DECIDED`로 끝난다(출발 창은 예전과 같음).
+  - 시험: `PaperDecisionJobTest.krDeadlineIsNextDayWithRealDefaults`(실제 기본 본문 22:30·01:00에서 22:40·00:50 모두 기다림 — 예전 묶기면 22:40에 미확정 진행)·`krSkipsSessionAfterDeadline`
+    (01:00 `PAST_DEADLINE`·Claude·장부 없음·한 번 기록·같은 시각 미국은 미확정 진행)·`krDecidesBeforeDeadlineOnly`(00:59까지 기다림·종가가 오면 결정·결정 뒤 기한은 `ALREADY_DECIDED`)·
+    `decisionTimesPerMarket`, `KrPaperMarketTest.deadlineInstant`(경계 일곱·결정 창·시험용 묶음). 시험용 한국 묶음의 기한 규칙·기한 뒤 동작을 예전 묶기·미확정 진행으로 되돌리면 `PaperDecisionJobTest`의 다섯 시험이 실패함을 확인했다(되돌려 본 뒤 복원).
 
 ### 4-10. 호출 상한 (K18 — 권장안, 상한 20은 사용자 결정 V6)
 - 두 책이 `paper_api_usage` 한 줄을 그대로 공유한다(시장별 고정 몫 없음, 시장별 횟수는 결정·복기 행에서 셈).
@@ -704,6 +727,7 @@
     기한은 결정 시각 뒤의 첫 그 시각(이르거나 같으면 다음 날 — §4-13 '결정 시각보다 이르면 다음 날로 읽음'에 같은 시각도 넣음)이고 **D+1 08:30까지** — 기한 직전에 시작한 결정(규칙 → Claude, 호출 대기 300초 × 재시도 1회)이
     다음 개장 09:00 전에 끝나 그 시가에 체결될 주문이 개장 뒤 정보를 보지 않게 30분을 둔다. 미국 규칙('기한 ≥ 결정')은 미국 키에만 그대로다.
     [확인] 지금 `PaperDecisionJob.times`는 한국 기본 본문의 01:00을 22:30으로 접는다(§9 'D1·E2 — 결정 기한' 그대로) — 한국 묶음이 운영 목록에 들어가 결정 작업이 돌기 전에 D1의 시장 기한 규칙이 필요하다.
+    → **D0에서 끝남**: 기한 순간은 시장 규칙 `deadlineInstant`(한국은 기한 ≤ 결정이면 다음 날 — 위 '00:00~08:59는 D+1 아침'과 같은 뜻), `Times`는 읽은 값 그대로(§4-9 'D0 구현에서 정한 것').
   - **공유 키**: `apiScheduledReserve` INTEGER 0~50(상한과 같은 범위, 기본 7 — 예약 ≥ 상한이면 수동 호출은 늘 막힘, 상한과 엮는 검사는 두지 않음: 상한 0으로 끄는 저장을 막지 않게),
     `calendar.consensus`·`claude.schemaV3`·`claude.figureCheck` BOOLEAN 기본 false·규칙 계좌 영향 없음. **넷 다 아직 읽는 코드가 없다**(E1·E2·3단계) — 켠 설정으로 만든 미국 패킷·렌더링이 고정본과 바이트까지 같음을 시험으로 잠갔다
     (`goldenUsPacketsIgnoreStage2SharedKeys`·`goldenRenderIgnoresStage2SharedKeys` — 읽기 시작하는 커밋이 그 시험을 고침).
@@ -1100,6 +1124,8 @@ A8이 달력 없는 옛 시그니처 호출과 결정 작업·시세 저장본�
   한국은 규칙 `NO_TRADE`·Claude 미호출·사유(§4-9). D1 전에 기한 규칙을 시장으로 옮기고(`PaperMarket.deadlineInstant(session, 결정 시각, 기한)` — 한국은 기한 ≤ 결정이면 D+1,
   미국은 지금의 묶기) 기한 뒤 동작 훅을 둔다(미국 `pricesFinal=false`로 진행, 한국 `NO_TRADE` + 사유). 시험용 `TestKrMarket`은 기한 23:30으로 이 문제를 비켜 가므로
   22:30/01:00으로 바꾸고 회귀 시험을 더한다.
+  → **D0에서 정함**(`a1ab61e`·`d8b490f`·`54798af`, §4-9 'D0 구현에서 정한 것'): `deadlineInstant`(미국 묶기 그대로·한국 달력 날로 다음 날)·`afterDeadline()`
+  (`PROCEED_UNCONFIRMED`·`NO_TRADE` — 한국은 Claude·장부 없이 `PAST_DEADLINE`을 시장·세션마다 한 번 기록, 규칙 `NO_TRADE` 결정 행은 D1이 그 자리에서), 시험용 한국 묶음 22:30·01:00·한국 규칙, 회귀 시험 다섯.
 - **E2 — 한국 프롬프트 수용 기준(§5, K34)**: '한국 시스템 프롬프트에 `NEXT_OBSERVATION`·13F 문구가 없음'은 지금 `render(market, …)`로는 통과할 수 없다 —
   프레임 본문(DB 판, 두 시장 공유 K9)이 시장과 상관없이 들어가고 v0 시드에 '[E2-R3] 13F는…'·'[E5-R1] …(NEXT_OBSERVATION)…'이 있으며, K34③ 우선순위 문장이 `NEXT_OBSERVATION`을 직접 쓴다.
   E2를 시작할 때 둘 중 하나를 정해 §5를 고친다: ⓐ 시험 범위를 시장별 부분(하드 규칙 줄 + `KR_FIXED_RULES`, 우선순위 문장은 예외)으로 좁힘(제안 — 판 공유 K9와 맞고 판 비교가 흐려지지 않음)
