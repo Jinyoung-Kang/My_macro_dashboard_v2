@@ -2,6 +2,7 @@ package com.macrodash.feature.paper;
 
 import com.macrodash.analytics.KrxCosts;
 import com.macrodash.analytics.PaperLedger;
+import com.macrodash.analytics.TradingCalendar;
 import com.macrodash.store.PaperStore;
 import com.macrodash.store.PaperStore.Book;
 import com.macrodash.store.PaperStore.BookState;
@@ -268,7 +269,7 @@ final class KrConfirmations {
                 provisional.add("체결 " + unconfirmed.fill().id() + " " + unconfirmed.fill().ticker() + "(" + filled + ") 확정 전");
             }
         }
-        provisional.addAll(pendingThrough(store, run, book.code(), day));
+        provisional.addAll(pendingThrough(store, run, run.calendar(), book.code(), day));
         boolean pricesFinal = provisional.isEmpty();
         if (!cashChanged && !pricesFinal) {
             return null;   // 고칠 현금도, 확정할 수도 없음 — 줄 그대로
@@ -288,17 +289,22 @@ final class KrConfirmations {
 
     /**
      * 그 책의 대기 주문 중 그날({@code day}) 이하 봉으로 <b>나중에</b> 체결될 수 있는 것 — 기준 거래일 &lt; 그날이고 그 시장이 체결하는 시점
-     * ({@link PaperMarket#timings})인 대기 주문(사람이 읽을 한 줄씩). 한국 체결은 기준일 뒤 <b>첫 관측 봉</b>의 시가라(§4-2 'C2b') 1분봉 {@code FAILED}
-     * 기다림(결정 d11)·기업행위·종목 구분·세율 보류로 대기하던 주문이 다음 밤 저장본에서 그날 날짜로 체결될 수 있습니다. 그런 주문이 있는 날의
-     * 순자산 줄은 확정으로 쓰지 않습니다 — 확정 줄은 잠정 줄로 덮이지 않고 확정 조정은 마지막 줄만 다시 쓰므로, 그 체결이 빠진 확정 줄이 영구히
-     * 남기 때문입니다(묶음 C 리뷰 — 결정 d11의 '대기 주문 = 정리 안 됨'과 같은 뜻). 기준일 = 그날인 주문(그날 밤 결정·스탑 감지)은 그날 뒤 봉으로만
-     * 체결되므로 세지 않습니다.
+     * ({@link PaperMarket#timings})이고 그날 개장 순간이 주문 생성 뒤인(체결 조건 ⑤ {@link KrFills#opensAfterOrder} — 스탑 제외) 대기 주문(사람이
+     * 읽을 한 줄씩). 한국 체결은 기준일 뒤 <b>첫 관측 봉</b>의 시가라(§4-2 'C2b') 1분봉 {@code FAILED} 기다림(결정 d11)·기업행위·종목 구분·세율
+     * 보류로 대기하던 주문이 다음 밤 저장본에서 그날 날짜로 체결될 수 있습니다. 그런 주문이 있는 날의 순자산 줄은 확정으로 쓰지 않습니다 — 확정
+     * 줄은 잠정 줄로 덮이지 않고 확정 조정은 마지막 줄만 다시 쓰므로, 그 체결이 빠진 확정 줄이 영구히 남기 때문입니다(묶음 C 리뷰). 기준일 = 그날인
+     * 주문(그날 밤 결정·스탑 감지)은 그날 뒤 봉으로만 체결되므로 세지 않습니다. 그날 개장 뒤에 만든 주문(기준일 D, 생성 D+1 10:00 — 수동 결정 등)도
+     * ⑤ 때문에 그날 이하 봉으로는 체결될 수 없어(개장 순간은 날짜와 함께 늘어남) 세지 않습니다 — 세면 그 줄이 영구히 잠정으로 남습니다. 그래서 이
+     * 판정은 결정 게이트 ①('기준일 &lt; D인 대기 주문 = 정리 안 됨', 결정 d11)보다 좁습니다 — ⑤로 막힌 주문도 게이트 ①에는 대기입니다(D1).
+     *
+     * @param calendar 그 실행의 달력(장 시간 변경일 포함 — 체결 봉 고르기와 같은 개장 순간)
      */
-    static List<String> pendingThrough(PaperStore store, PaperMarket market, String bookCode, LocalDate day) {
+    static List<String> pendingThrough(PaperStore store, PaperMarket market, TradingCalendar calendar, String bookCode,
+                                       LocalDate day) {
         List<String> out = new ArrayList<>();
         for (Order order : store.ordersByStatus(bookCode, PaperBooks.ORDER_PENDING)) {
             if (order.asOfTradingDate() != null && order.asOfTradingDate().isBefore(day)
-                    && market.timings().contains(order.timing())) {
+                    && market.timings().contains(order.timing()) && KrFills.opensAfterOrder(order, day, calendar)) {
                 out.add("주문 " + order.id() + " " + order.side() + " " + order.ticker() + "(기준일 " + order.asOfTradingDate()
                         + ") 대기 — " + day + " 이하 봉으로 체결될 수 있음");
             }

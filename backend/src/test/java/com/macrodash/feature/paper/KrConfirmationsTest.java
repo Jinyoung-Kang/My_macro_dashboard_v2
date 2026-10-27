@@ -640,6 +640,59 @@ class KrConfirmationsTest {
         assertThat(navOn(D2).pricesFinal()).isFalse();
     }
 
+    /** 기준일 D, 생성 D+1 10:00(D+1 개장 뒤 — 수동 결정 자리)의 000660 매수 1주. */
+    private long orderAfterTheOpen() {
+        return order("000660", PaperBooks.BUY, 1, D, kst("2026-11-03T10:00"));
+    }
+
+    private static void add000660(KrFixtures.Payload payload, Instant fetched, LocalDate... days) {
+        KrFixtures.Entry entry = payload.code("000660", fetched);
+        for (LocalDate day : days) {
+            entry.bar(day, 50_500, 50_600, 900_000).minute("OK", "09:01", 50_400, 10_000);
+        }
+    }
+
+    @Test
+    @DisplayName("조건 ⑤로 그날 이하 봉으로는 체결될 수 없는 대기 주문(기준일 D, 생성 D+1 10:00 — D+1 개장 뒤)은 그날 줄을 잡지 않음 — 현금뿐인 D+1 관측치 줄은 확정, 그 주문은 대기로 남아 D+2 시가로 체결")
+    void orderCreatedAfterTheOpenDoesNotHoldTheCashLine() {
+        book(1_000_000);
+        long late = orderAfterTheOpen();
+        KrFixtures.Payload d1 = new KrFixtures.Payload(D1);
+        add000660(d1, FETCHED_D1, D, D1);
+
+        process(d1, COLLECTED_D1);
+
+        assertThat(store.orders.get(late).status()).as("⑤ — D+1 시가는 주문보다 앞선 가격").isEqualTo(PaperBooks.ORDER_PENDING);
+        assertThat(navOn(D1).nav()).isEqualTo(1_000_000);
+        assertThat(navOn(D1).pricesFinal()).as("D+1 이하 봉으로는 체결될 수 없는 주문 — D+1 줄을 잠정으로 붙잡지 않음").isTrue();
+
+        KrFixtures.Payload d2 = new KrFixtures.Payload(D2);
+        add000660(d2, FETCHED_D2, D1, D2);
+        process(d2, COLLECTED_D2);
+
+        assertThat(onlyFill().observationDate()).isEqualTo(D2);
+    }
+
+    @Test
+    @DisplayName("확정 조정도 같은 판정 — D+1 매수 보유의 D+1 줄은 금융위 D+1이 들어오면 확정, D+1 개장 뒤에 만든 다른 대기 주문(⑤)이 그 줄을 영구히 잠정으로 붙잡지 않음")
+    void orderCreatedAfterTheOpenDoesNotHoldTheConfirmedLine() {
+        book(1_000_000);
+        order("005930", PaperBooks.BUY, 10, D, CREATED);
+        long late = orderAfterTheOpen();
+        KrFixtures.Payload d1 = nightD1("005930", 71_300);
+        add000660(d1, FETCHED_D1, D, D1);
+        process(d1, COLLECTED_D1);
+        assertThat(store.orders.get(late).status()).isEqualTo(PaperBooks.ORDER_PENDING);
+        assertThat(navOn(D1).pricesFinal()).as("토스 평가 — 잠정").isFalse();
+        fsc("005930", KrConfirmed.SOURCE_FSC, D1, day(D1, 71_200L, 71_000, 5_000_000, "KOSPI"));
+
+        Outcome outcome = confirm();
+
+        assertThat(navOn(D1).pricesFinal()).isTrue();
+        assertThat(navOn(D1).nav()).isEqualTo(287_538 + 710_000);
+        assertThat(outcome.notes()).noneSatisfy(note -> assertThat(note).contains("대기 —"));
+    }
+
     // ------------------------------------------------------------------ 스탑 재판정과 확정 최고가(K30)
     private Order stopOrder() {
         return store.orders.values().stream().filter(o -> PaperBooks.SOURCE_STOP.equals(o.source())).findFirst()
