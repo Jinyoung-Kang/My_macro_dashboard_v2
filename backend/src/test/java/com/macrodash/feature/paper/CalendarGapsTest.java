@@ -176,6 +176,36 @@ class CalendarGapsTest {
         verifyNoInteractions(reviews);
     }
 
+    @Test
+    @DisplayName("앞 창은 그 실행 설정의 재진입 금지 거래일까지 — 2026-12-11 봉의 스탑 체결이 재진입 금지(20거래일)를 2027년으로 셈해 책을 되돌리고 ERROR가 되는 대신, 실행을 열 때 '달력 없음'으로 섬(재진입 금지 5거래일이면 창 10거래일로 그대로 체결)")
+    void calendarWindowCoversTheLockout() {
+        Instant dec11Evening = Instant.parse("2026-12-11T12:00:00Z");   // 12-11(금) 21:00 KST — +10거래일은 12-28, +20은 2027
+        LocalDate dec10 = LocalDate.of(2026, 12, 10);
+        LocalDate dec11 = LocalDate.of(2026, 12, 11);
+        clock.set(dec11Evening);
+        store.states.put(KR_BOOK, new BookState(KR_BOOK, 0, 1_000_000, 1_000_000, 100, null, null, null, null));
+        PaperFixtures.position(store, KR_BOOK, "005930", 10, 100_000, 100_000, 100_000.0, dec10, 100_000);
+        org.mockito.Mockito.when(marketData.quotes(PaperFixtures.market(KR))).thenReturn(java.util.Optional.of(
+                PaperFixtures.quotes(dec11Evening, PaperFixtures.bar("005930", dec10, 100_000, dec11, 80_000))));
+        MarketRun run = new PaperMarkets(store, PaperFixtures.quietReader(), List.of(KR)).open(KR);
+        assertThat(run.calendarWindowTradingDays()).as("max(10, kr.lockoutTradingDays 20)").isEqualTo(20);
+
+        PaperLedgerService.Outcome stopped = riskJob().run(KR, false);
+
+        assertThat(stopped.skippedReason()).startsWith(CalendarUnavailableException.REASON + " — 2027년");
+        assertThat(stopped.errors()).isEmpty();
+        assertThat(store.jobRuns).extracting(JobRun::outcome).containsExactly(CalendarGaps.NO_CALENDAR);
+        assertThat(store.fillsOf(KR_BOOK)).as("책 트랜잭션에 들어가지 않음").isEmpty();
+
+        ((tools.jackson.databind.node.ObjectNode) store.settings.body().get("kr")).put("lockoutTradingDays", 5);
+        PaperLedgerService.Outcome withShortLockout = riskJob().run(KR, false);
+
+        assertThat(withShortLockout.errors()).isEmpty();
+        assertThat(withShortLockout.stopped()).isEqualTo(1);
+        assertThat(store.lockouts(KR_BOOK)).singleElement()
+                .satisfies(lockout -> assertThat(lockout.untilTradingDate()).isEqualTo(LocalDate.of(2026, 12, 18)));
+    }
+
     private static void assertNoCalendarDetail(JsonNode detail) {
         assertThat(detail.path("reason").asString()).isEqualTo(CalendarUnavailableException.REASON);
         assertThat(detail.path("year").asInt()).isEqualTo(2027);

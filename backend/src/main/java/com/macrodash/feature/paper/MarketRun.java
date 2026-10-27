@@ -134,6 +134,23 @@ final class MarketRun implements PaperMarket {
         return calendar;
     }
 
+    /**
+     * 앞 창 확인({@link PaperMarket#requireCalendarWindow}) — 창은 {@value PaperMarket#CALENDAR_WINDOW_TRADING_DAYS}거래일과 그 실행 설정의 재진입
+     * 금지 거래일({@link PaperSettings#lockoutTradingDays} — 한국 {@code kr.lockoutTradingDays}, 기본 20) 중 긴 쪽입니다(묶음 C 리뷰). 스탑 체결의
+     * 재진입 금지(체결한 봉 날짜 + 그 거래일)는 책 트랜잭션 안에서 세므로, 그 계산이 다음 해 공휴일 목록이 없는 해에 닿으면 그 책 처리 전체(매도
+     * 체결 포함)가 되돌려지고 작업 기록이 '달력 없음'이 아니라 오류로 남으며 같은 주문이 밤마다 같은 예외를 냅니다 — 실행을 열 때 그 길이까지 보고
+     * 깔끔히 '달력 없음'으로 섭니다. 미국 달력은 늘 압니다.
+     */
+    @Override
+    public void requireCalendarWindow(Instant now) {
+        calendar.addTradingDays(calendar.lastCompletedSession(now), calendarWindowTradingDays());
+    }
+
+    /** 이 실행의 앞 창 거래일 수({@link #requireCalendarWindow}). */
+    int calendarWindowTradingDays() {
+        return Math.max(CALENDAR_WINDOW_TRADING_DAYS, settings.lockoutTradingDays());
+    }
+
     @Override
     public String toString() {
         return "MarketRun[" + market.code() + ", 설정 v" + settingsVersion() + "]";

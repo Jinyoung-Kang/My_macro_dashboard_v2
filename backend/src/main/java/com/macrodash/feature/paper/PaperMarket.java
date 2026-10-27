@@ -75,8 +75,9 @@ interface PaperMarket {
 
     /**
      * 정기 작업이 앞으로 쓸 창의 거래일 수 — 주문 만료(기준일 + {@value RuleBookService#ORDER_EXPIRY_TRADING_DAYS}거래일)와 패킷 일정
-     * 창({@code 1b_calendar}, 기준일 + {@value CalendarWindow#TRADING_DAYS}거래일) 중 긴 쪽(명세 §4-4·K35). 재진입 금지(관측일 +
-     * 20거래일)는 넣지 않았습니다 — 명세가 정한 창이 아니고, 그 계산이 모르는 해에 닿으면 장부 오류로 그 실행의 작업 기록에 남습니다.
+     * 창({@code 1b_calendar}, 기준일 + {@value CalendarWindow#TRADING_DAYS}거래일) 중 긴 쪽(명세 §4-4·K35). 재진입 금지(체결일 + 설정 거래일, 기본 20)는
+     * 설정 값이라 실행({@link MarketRun#requireCalendarWindow})이 그 실행 설정의 거래일만큼 창을 넓힙니다(묶음 C 리뷰 — 그 계산이 책 트랜잭션 안에서
+     * 모르는 해에 닿아 장부 오류가 되지 않게).
      */
     int CALENDAR_WINDOW_TRADING_DAYS = Math.max(RuleBookService.ORDER_EXPIRY_TRADING_DAYS, CalendarWindow.TRADING_DAYS);
 
