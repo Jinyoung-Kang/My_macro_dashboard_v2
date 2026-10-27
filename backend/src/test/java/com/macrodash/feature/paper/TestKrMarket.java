@@ -144,9 +144,10 @@ final class TestKrMarket implements PaperMarket {
         return QUOTES_TASK;
     }
 
+    /** 수집 + {@link #QUOTES_LATE} + 1초(미국 판과 같은 '나이가 그 시간을 넘음' 규칙). */
     @Override
-    public Duration quotesLateAfter() {
-        return QUOTES_LATE;
+    public Instant quotesLateAt(Instant collectedAt, LocalDate session, TradingCalendar calendar) {
+        return collectedAt.plus(QUOTES_LATE).plusSeconds(1);
     }
 
     @Override

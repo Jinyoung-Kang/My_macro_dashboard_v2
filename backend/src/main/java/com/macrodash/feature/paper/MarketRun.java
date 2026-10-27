@@ -157,8 +157,8 @@ final class MarketRun implements PaperMarket {
     }
 
     @Override
-    public Duration quotesLateAfter() {
-        return market.quotesLateAfter();
+    public Instant quotesLateAt(Instant collectedAt, LocalDate session, TradingCalendar calendar) {
+        return market.quotesLateAt(collectedAt, session, calendar);
     }
 
     @Override

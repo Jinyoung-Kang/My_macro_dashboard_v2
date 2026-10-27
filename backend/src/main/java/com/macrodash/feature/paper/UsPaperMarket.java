@@ -73,9 +73,13 @@ final class UsPaperMarket implements PaperMarket {
         return QUOTES_TASK;
     }
 
+    /**
+     * 수집 + {@link PaperQueryService#QUOTES_LATE}(3시간) + 1초 — 저장본 나이를 초로 버려 세어 3시간을 넘으면 늦음이던 규칙(C1c 전 화면
+     * 계산)과 같은 순간입니다(나이 ≥ 3시간 1초 ⇔ 버린 초 &gt; 3시간). 달력·세션은 보지 않습니다.
+     */
     @Override
-    public Duration quotesLateAfter() {
-        return PaperQueryService.QUOTES_LATE;
+    public Instant quotesLateAt(Instant collectedAt, LocalDate session, TradingCalendar calendar) {
+        return collectedAt.plus(PaperQueryService.QUOTES_LATE).plusSeconds(1);
     }
 
     @Override

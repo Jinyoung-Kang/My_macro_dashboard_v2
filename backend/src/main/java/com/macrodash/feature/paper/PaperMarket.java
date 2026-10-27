@@ -94,8 +94,17 @@ interface PaperMarket {
     /** 관측치 스냅샷을 채우는 수집기 태스크 이름 — 저장본 읽기의 수집 요청 대상이고, '저장본 없음' 안내 문구에 들어갑니다. */
     String quotesTask();
 
-    /** 관측치 저장본이 이보다 오래되면 화면(개요·상태의 관측치 요약)에 늦었다고 표시합니다 — 그 시장 관측치의 수집 주기에 맞춘 값. */
-    Duration quotesLateAfter();
+    /**
+     * 관측치 저장본이 '늦음'이 되는 순간 — 지금이 이 순간과 같거나 뒤면 화면(개요·상태의 관측치 요약)에 늦었다고 표시합니다. 그 시장
+     * 관측치의 수집 주기에 맞춘 규칙이고(미국: 수집 + 3시간을 넘김, 한국: 다음 수집 예정 + 여유 — 명세 §4-9 'C1a에서 정한 것'), 달력은 그
+     * 실행의 한 벌을 받습니다(시장마다 다른 판정은 달력을 인자로 — {@link MarketRun} 설명).
+     *
+     * @param collectedAt 저장본 수집 시각
+     * @param session     저장본이 덮는 세션(저장본 머리의 값 — 모르면 null, 시장이 수집 시각으로 셈)
+     * @param calendar    그 실행의 달력 한 벌
+     * @throws CalendarUnavailableException 규칙이 달력이 모르는 해에 닿음(부르는 쪽이 늦음을 null + 사유로)
+     */
+    Instant quotesLateAt(Instant collectedAt, LocalDate session, TradingCalendar calendar);
 
     /** 종가 이력(timeseries)의 데이터셋 — 사후 체결·분할 감지·패킷 수익률. 그 이력으로 체결하면 가격 출처도 이 이름. */
     String historyDataset();

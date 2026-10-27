@@ -119,9 +119,20 @@ class UsPaperMarketTest {
     }
 
     @Test
-    @DisplayName("관측치 늦음 기준 = 3시간(수집 주기 1시간의 세 배) — PaperQueryService.QUOTES_LATE 그대로")
-    void quotesLateAfter() {
-        assertThat(US.quotesLateAfter()).isEqualTo(Duration.ofHours(3)).isEqualTo(PaperQueryService.QUOTES_LATE);
+    @DisplayName("관측치 늦음 = 수집 + 3시간 1초부터(PaperQueryService.QUOTES_LATE) — 나이를 초로 버려 3시간을 넘으면 늦음이던 예전 규칙과 같은 순간")
+    void quotesLateAt() {
+        assertThat(PaperQueryService.QUOTES_LATE).isEqualTo(Duration.ofHours(3));
+        Instant collected = Instant.parse("2026-10-26T20:20:00.700Z");
+        Instant lateAt = US.quotesLateAt(collected, null, US.calendar());
+        assertThat(lateAt).isEqualTo(collected.plus(Duration.ofHours(3)).plusSeconds(1));
+        assertThat(US.quotesLateAt(collected, LocalDate.of(2026, 10, 26), US.calendar())).as("세션·달력은 보지 않음")
+                .isEqualTo(lateAt);
+        // 예전 규칙: max(0, 나이 초(버림)) > 3시간. 경계 앞뒤에서 같은 답.
+        for (long offsetMillis : new long[]{-1_000, 0, 10_800_000, 10_800_999, 10_801_000, 10_801_001, 20_000_000}) {
+            Instant now = collected.plusMillis(offsetMillis);
+            long age = Math.max(0, Duration.between(collected, now).getSeconds());
+            assertThat(!now.isBefore(lateAt)).as("+" + offsetMillis + "ms").isEqualTo(age > Duration.ofHours(3).getSeconds());
+        }
     }
 
     @Test

@@ -79,7 +79,7 @@ public class PaperQueryService {
     static final int MAX_LIMIT = 500;
     /**
      * 미국 관측치가 이보다 오래되면 늦었다고 표시합니다 — 수집 주기 1시간의 세 배(두 번 연속 못 받음). 미국 시장 묶음의
-     * {@link PaperMarket#quotesLateAfter} 값이고, 관측치 요약은 그 시장 묶음의 값을 씁니다.
+     * {@link PaperMarket#quotesLateAt}(늦음이 되는 순간)이 이 값으로 셈하고, 관측치 요약은 그 시장 묶음의 규칙을 씁니다.
      */
     static final Duration QUOTES_LATE = Duration.ofHours(3);
 
@@ -900,7 +900,8 @@ public class PaperQueryService {
             return null;
         }
         Quotes quotes = found.get();
-        long age = Math.max(0, Duration.between(quotes.collectedAt(), clock.instant()).getSeconds());
+        Instant now = clock.instant();
+        long age = Math.max(0, Duration.between(quotes.collectedAt(), now).getSeconds());
         LocalDate barDate = quotes.modalBarDate();
         Map<String, Object> out = new LinkedHashMap<>();
         out.put("collectedAtKst", Kst.stamp(quotes.collectedAt()));
@@ -909,7 +910,14 @@ public class PaperQueryService {
         out.put("finalClose", barDate != null && market.isFinal(barDate, quotes.collectedAt()));
         out.put("tickers", quotes.bars().size());
         out.put("staleTickers", quotes.staleTickers());
-        out.put("stale", age > market.quotesLateAfter().getSeconds());
+        try {
+            // 늦음이 되는 순간은 시장 규칙(그 실행의 달력) — 저장본 머리의 세션은 시장이 파싱할 때(C2)까지 수집 시각으로 셈.
+            out.put("stale", !now.isBefore(market.quotesLateAt(quotes.collectedAt(), null, market.calendar())));
+        } catch (CalendarUnavailableException e) {
+            // 그 계산만 모름(명세 K35) — 늦음을 지어내지 않고 null + 사유. 미국 달력은 늘 알아 이 칸이 생기지 않습니다.
+            out.put("stale", null);
+            out.put("staleReason", e.getMessage());
+        }
         return out;
     }
 
