@@ -145,6 +145,45 @@ class KrConfirmedTest {
     }
 
     @Test
+    @DisplayName("시가·시장 구분(C3 확정 조정의 재료): 주식시세 시가(mkp)·시장 구분(앞뒤 공백 무시), 증권상품시세 시가 — 거래 없던 날(수집기가 null로 저장)·칸 없음·빈 시장은 모름(0으로 채우지 않음)")
+    void openAndMarket() {
+        when(repository.latestObservationDate(Datasets.OBS_FSC_PRICE)).thenReturn(WED);
+        ObjectNode traded = (ObjectNode) row(WED, 71_300.0, 17_213_072.0, "listedShares", null);
+        traded.put("open", 71_200.0);
+        traded.put("market", " KOSPI ");
+        ObjectNode halted = (ObjectNode) row(TUE, 71_300.0, 0.0, "listedShares", null);
+        halted.putNull("open");
+        halted.put("market", "");
+        when(repository.readObservationSeries(eq(Datasets.OBS_FSC_PRICE), anyCollection(), eq(WED.minusDays(14))))
+                .thenReturn(Map.of("005930", List.of(traded, halted, row(MON, 70_000.0, 10.0, "listedShares", null))));
+        when(repository.latestObservationDate(Datasets.OBS_FSC_ETF_PRICE)).thenReturn(WED);
+        ObjectNode etf = (ObjectNode) row(WED, 87_075.0, 32_381_043.0, "listedUnits", null);
+        etf.put("open", 84_470.0);
+        when(repository.readObservationSeries(eq(Datasets.OBS_FSC_ETF_PRICE), anyCollection(), eq(WED.minusDays(14))))
+                .thenReturn(Map.of("069500", List.of(etf)));
+
+        KrConfirmed confirmed = data.krConfirmed(List.of("005930"), List.of("069500"), null);
+
+        KrConfirmed.Series samsung = confirmed.of("005930");
+        assertThat(samsung.on(WED)).hasValueSatisfying(day -> {
+            assertThat(day.open()).isEqualByComparingTo("71200");
+            assertThat(day.market()).isEqualTo("KOSPI");
+        });
+        assertThat(samsung.on(TUE)).hasValueSatisfying(day -> {
+            assertThat(day.open()).as("거래 없던 날 — 수집기가 null로 저장").isNull();
+            assertThat(day.market()).as("빈 시장 구분").isNull();
+        });
+        assertThat(samsung.on(MON)).hasValueSatisfying(day -> {
+            assertThat(day.open()).as("시가 칸이 없는 지난 저장본(B2 전)").isNull();
+            assertThat(day.market()).isNull();
+        });
+        assertThat(confirmed.of("069500").on(WED)).hasValueSatisfying(day -> {
+            assertThat(day.open()).isEqualByComparingTo("84470");
+            assertThat(day.market()).as("증권상품시세에는 시장 구분 칸이 없음").isNull();
+        });
+    }
+
+    @Test
     @DisplayName("한국 묶음은 ETF 목록(설정 현금성 ∪ 벤치마크 종목)을 증권상품시세로, 나머지를 주식시세로 읽음 — 비용 종목 구분과 같은 목록")
     void krMarketRoutesEtfs() {
         PaperMarketData spy = mock(PaperMarketData.class);

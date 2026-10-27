@@ -234,8 +234,8 @@ public class PaperMarketData {
     }
 
     /**
-     * 한국 종목들의 금융위 확정 시세({@link KrConfirmed}, C2c) — 주식은 주식시세({@code fsc_price}: 종가·거래량·상장주식수), ETF는
-     * 증권상품시세({@code fsc_etf_price}: 종가·거래량·상장좌수). 데이터셋마다 최신 기준일을 보고 {@code from}과 (최신 기준일 −
+     * 한국 종목들의 금융위 확정 시세({@link KrConfirmed}, C2c) — 주식은 주식시세({@code fsc_price}: 종가·거래량·상장주식수·시가·시장 구분),
+     * ETF는 증권상품시세({@code fsc_etf_price}: 종가·거래량·상장좌수·시가 — 시가는 확정 조정의 확정가, C3). 데이터셋마다 최신 기준일을 보고 {@code from}과 (최신 기준일 −
      * {@value KrConfirmed#LOOKBACK_DAYS}일) 중 이른 날부터 최신까지 읽습니다(직전 기준일 상장주식수를 찾으려고). 받은 종목은 행이 없어도
      * 결과에 있고(최신 기준일이 있으면 '없음'), 출처가 아무 기준일도 받지 않았으면 그 종목들은 '모름'입니다. 수집기 테이블을 읽기만 하고
      * 수집을 깨우지 않습니다(observations 직접 읽기 — {@link #fscMarkets}와 같음).
@@ -269,8 +269,10 @@ public class PaperMarketData {
             for (JsonNode row : rows.getOrDefault(code, List.of())) {
                 LocalDate date = Json.parseDate(Json.asText(row, "obsDate"));
                 if (date != null && !date.isAfter(latest)) {
+                    String market = Json.asText(row, "market");
                     days.put(date, new KrConfirmed.Day(date, positiveDecimal(row.get("close")),
-                            wholeNumber(row.get("volume"), false), wholeNumber(row.get(listedField), true)));
+                            wholeNumber(row.get("volume"), false), wholeNumber(row.get(listedField), true),
+                            positiveDecimal(row.get("open")), market == null || market.isBlank() ? null : market.strip()));
                 }
             }
             out.put(code, new KrConfirmed.Series(source, latest, days));

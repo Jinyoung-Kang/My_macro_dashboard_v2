@@ -16,7 +16,8 @@ import java.util.TreeMap;
 /**
  * 🧪 한국 확정 시세 — 금융위 주식시세({@code fsc_price}, 종가 {@code clpr})·증권상품시세({@code fsc_etf_price}, ETF 종가)의 종목별 기준일 값
  * (2단계 명세 §4-1 '확정가', §4-2 K30·K32, C2c). 장부의 시가 체결 경로({@link PaperMarket#auctionFills})가 책 하나를 처리할 때 한 번 읽어
- * ({@link PaperMarket#confirmedPrices}) 네 곳에 씁니다:
+ * ({@link PaperMarket#confirmedPrices}) 네 곳에 쓰고, 금융위 확정 조정(K29, C3 — {@code KrConfirmations})도 같은 읽기로 체결일의 시가·
+ * 시장 구분과 확정 순자산 줄의 그날 종가를 봅니다:
  *
  * <ul>
  *   <li><b>스탑 재판정</b> — 밤 잠정 종가로 감지한 날 D의 확정 종가. STOP 주문을 체결 처리하는 D+1 밤에는 이미 들어와 있습니다(slow 순서
@@ -53,11 +54,20 @@ final class KrConfirmed {
      * @param close  종가(양수, 모르면 null)
      * @param volume 거래량(0 이상 정수, 모르면 null). 0이면 그날 거래 없음 — 종가는 직전 값
      * @param listed 상장주식수(ETF 상장좌수, 양의 정수 — 모르면 null)
+     * @param open   시가({@code mkp}, 양수 — 모르면 null). 거래가 없던 날은 0으로 와 수집기가 null로 저장합니다(명세 §4-15 'B2 구현에서 정한 것' —
+     *               0원은 가격이 아니라 '체결 없음'). 확정 조정(K29, C3)의 시가 체결 확정가입니다
+     * @param market 금융위 시장 구분({@code mrktCtg} — {@code KOSPI}·{@code KOSDAQ}·{@code KONEX}, 주식시세만 — ETF·모르면 null). 확정 조정이 그
+     *               체결일 행으로 세율 종목 구분을 다시 셉니다
      */
-    record Day(LocalDate date, BigDecimal close, Long volume, Long listed) {
+    record Day(LocalDate date, BigDecimal close, Long volume, Long listed, BigDecimal open, String market) {
 
         Day {
             Objects.requireNonNull(date, "date");
+        }
+
+        /** 시가·시장 구분을 모르는 행(스탑 재판정·최고가·상장 상태만 보는 쪽의 모양). */
+        Day(LocalDate date, BigDecimal close, Long volume, Long listed) {
+            this(date, close, volume, listed, null, null);
         }
 
         /** 그날 종가로 쓸 수 있는 행인가 — 종가가 있고 거래량 &gt; 0(거래량 0 행의 종가는 직전 값, 모르면 쓰지 않음). */
