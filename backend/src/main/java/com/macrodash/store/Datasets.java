@@ -78,6 +78,13 @@ public final class Datasets {
      */
     public static final String SNAP_US_CALENDAR = "calendar.us_events";
     /**
+     * 🧪 한국 책 Claude 계좌 패킷 {@code 1b_calendar}의 한국 거시 일정(v2 2단계 B9·K20) — 금통위 상수와 연 1회 손으로 옮기는 주요 발표 상수
+     * (앞으로 45일, KST). {@link #SNAP_US_CALENDAR}와 같은 모양({@code macro.events}·{@code macro.horizon}, 금통위 {@code macro.bok}, 발표 상수
+     * {@code macro.releases} — 날짜를 옮기지 않은 발표는 {@code status} "일정 미확인"), {@code earnings}·{@code consensus}는 null + 사유.
+     * 창(다음 세션부터 10거래일, {@code KrxCalendar})은 백엔드가 자릅니다.
+     */
+    public static final String SNAP_KR_CALENDAR = "calendar.kr_events";
+    /**
      * 모의 매매 Claude 계좌 패킷 {@code 11b_events}(2단계 B)의 수집 상태 — 피드별 성공·실패와 사유({@code feeds}·{@code failedFeeds}),
      * {@code feedsOk}·{@code feedsTotal}, 7일 보관 건수 {@code stored7d}, 마지막 수집 시각 {@code generatedAt}(UTC). 헤드라인 자체는
      * {@link #OBS_NEWS_HEADLINE}에 있습니다.

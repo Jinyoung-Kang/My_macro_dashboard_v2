@@ -226,7 +226,7 @@ def test_시간_상한은_weekly_상한보다_짧다():
     assert kr_paper.KR_HISTORY_TIME_LIMIT_SECONDS < tasks.TASK_DEADLINE_SECONDS["weekly"]
 
 
-def test_weekly에_등록되고_태스크는_33개():
+def test_weekly에_등록되고_태스크는_34개():
     task = tasks.TASKS_BY_NAME["kr_paper_price_history"]
     assert task.speed == "weekly" and task.run is kr_paper.task_kr_paper_price_history
-    assert len(tasks.ALL_TASKS) == len(tasks.TASKS_BY_NAME) == 33
+    assert len(tasks.ALL_TASKS) == len(tasks.TASKS_BY_NAME) == 34

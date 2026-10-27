@@ -173,9 +173,9 @@ def test_유니버스_저장본이_없으면_범위는_ETF_둘뿐(store):
     assert tasks.kr_scope() == (["069500", "153130"], None)
 
 
-def test_slow에서_토스_태스크_뒤에_돌고_태스크는_33개():
+def test_slow에서_토스_태스크_뒤에_돌고_태스크는_34개():
     task = tasks.TASKS_BY_NAME["kr_paper_universe"]
     assert task.speed == "slow" and task.run is kr_paper.task_kr_paper_universe
     names = [t.name for t in tasks.ALL_TASKS]
     assert names.index("kr_paper_universe") == names.index("toss_radar_universe") + 1
-    assert len(tasks.ALL_TASKS) == len(tasks.TASKS_BY_NAME) == 33
+    assert len(tasks.ALL_TASKS) == len(tasks.TASKS_BY_NAME) == 34

@@ -40,6 +40,10 @@ SNAP_US_FUNDAMENTALS_STATUS = "us.fundamentals.status"  # 모의 매매 미국 �
 # 모의 매매 Claude 계좌 패킷 1b_calendar의 원자료(2단계 A) — 거시 발표일(FRED 릴리스·FOMC 상수, 앞으로 45일)과 유니버스 종목
 # (ETF 제외)의 다음 실적 발표일(yfinance). 기준일 창·보유·후보 고르기는 백엔드가 합니다.
 SNAP_US_CALENDAR = "calendar.us_events"
+# 🧪 모의 매매 한국 책 Claude 계좌 패킷 1b_calendar의 한국 거시 일정(v2 2단계 B9·K20) — 금통위 상수·연 1회 손으로 옮기는 주요 발표 상수
+# (앞으로 45일, KST). calendar.us_events와 같은 모양(macro.events·horizon, 금통위는 macro.bok, 발표 상수는 macro.releases — 날짜를 옮기지
+# 않은 발표는 status '일정 미확인'), 실적·컨센서스는 null + 사유. 외부 호출 없음.
+SNAP_KR_CALENDAR = "calendar.kr_events"
 # 모의 매매 Claude 계좌 패킷 11b_events(2단계 B)의 수집 상태 — 피드별 성공·실패와 사유, 7일 보관 건수, 마지막 수집 시각.
 # 헤드라인 자체는 observations news_headline에 있습니다.
 SNAP_NEWS_STATUS = "news.headlines.status"

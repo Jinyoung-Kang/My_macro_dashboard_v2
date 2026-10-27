@@ -8,7 +8,7 @@
 
 ---
 
-## 1. 수집 태스크 (33개)
+## 1. 수집 태스크 (34개)
 
 수집기가 세 그룹으로 나눠 돌립니다. 주기는 `.env`로 바꿀 수 있습니다.
 
@@ -41,6 +41,7 @@
 | `weekly` | 12시간 | `sec_13f` | SEC 13F 기관 포트폴리오 (분기 공시) |
 | | | `sec_13f_track_record` | 📒 트랙레코드 후보 기관 27곳의 13F를 기관당 30분기 → `sec.13f.{cik}.q30` + 후보 목록·진행률 `sec.13f.track_record_index`. 저장본에 없는 공시만, 실행당 예산(`TRACK_RECORD_FETCH_BUDGET`, 기본 400건) 안에서(§5 '모의 매매 트랙레코드 후보 기관') |
 | | | `kr_holidays` | 🔑 한국 공휴일 (천문연 특일정보, 올해·내년을 받아 2025년부터 보관 — 모의 매매 한국 책의 지난 거래일 계산, v2 명세 K35) |
+| | | `kr_calendar` | 🧪 한국 거시 일정 → 스냅샷 `calendar.kr_events`(`calendar.us_events`와 같은 모양, 앞으로 45일·KST). 외부 호출 없음 — 금통위 2026년 8회 상수(한국은행 '통화정책방향 결정회의 일정', 확인 2026-10-26, 끝 11-26 — 창 끝이 넘으면 `bok.status` '갱신 필요', 2027 표 미게시)와 연 1회 손으로 옮기는 주요 발표 상수(소비자물가·고용·GDP 속보·경상수지·수출입 — 아직 옮기지 않아 모두 `status` '일정 미확인', 날짜를 지어내지 않음, [명세 §7 G8](specs/2026-10-26-v2-kr-paper-spec.md)). 한국 실적·컨센서스는 출처가 없어 `earnings`·`consensus` null + 사유. 지금은 저장만(패킷 연결은 v2 E1) |
 | | | `dart_fundamentals` | 🔑 사업보고서 주요계정 (DART) — 한국 책 수집 범위(U 순위 → 끈적 목록, ETF 제외, 최대 250)를 먼저, 수급 레이더 종목(최근 30일 빈도순 + 화면, 최대 150)을 뒤에. 회사마다 마지막 보고서 하나(`rceptNo` 포함) — 한국 책은 접수일(`rceptNo` 앞 8자리) ≤ 기준일인 회사만 씀(`Datasets.SNAP_DART_FUNDAMENTALS`) |
 | | | `paper_price_history` | 📒 같은 유니버스의 10년 일별 종가(수정주가) → `timeseries` 데이터셋 `equity_close`(종목 = `series_id`, 이력 누적·지우지 않음) |
 | | | `kr_paper_price_history` | 🧪🅣 한국 책 종가 이력 — 수집 범위의 토스 수정주가(`adjusted=true`) 일봉 종가 → `timeseries` `kr_close_adj`(series = 코드, 지우지 않음). 저장 첫 날이 1년 전(상장일이 늦으면 상장일)보다 늦으면 그 앞을 `before`로 200봉씩 거슬러 메우고(종목마다 한 번 — 다 메우면 0회), `kr_paper_quotes`가 수정주가 기준 바뀜(분할·병합 뒤 과거 수정가가 다시 쓰임 — `adjBasisChanged`)을 걸었고 저장값이 옛 기준이면 저장 구간 전체를 새 기준으로 다시 받아 **끝까지 받았을 때만** 씀(옛·새 기준이 한 시계열에 섞이지 않게), 마지막 날이 일주일 넘게 오래되면 그 사이를 메움. 날마다의 최근 5봉은 `kr_paper_quotes`가 덧붙임. NXT 종목은 KRX+NXT 통합가 |
@@ -309,6 +310,7 @@ EQUITY_MAP = {
 | `sec.13f.track_record_index` (스냅샷, 12시간) | 기관 선정 탭의 수집 진행률 | 이번 실행에 못 돈(예산 소진)·실패한 기관은 저장본의 값과 `note` |
 | `us.fundamentals` (observations, 12시간) | Claude 계좌 패킷 `8b_fundamentals`(D28)만 — 규칙 계좌·검증기는 읽지 않음 | 아래 '미국 종목 재무' |
 | `calendar.us_events` (스냅샷, 1시간) | Claude 계좌 패킷 `1b_calendar`(2단계 A)·`/api/paper/status`의 `calendar`(개요의 일정 한 줄) — 규칙 계좌·검증기는 읽지 않음 | 아래 '미국 발표·실적 일정' |
+| `calendar.kr_events` (스냅샷, 12시간) | 🧪 한국 책 Claude 계좌 패킷 `1b_calendar` — 지금은 저장만(연결은 v2 E1) | 위 표 `kr_calendar` 줄. 상수라 임시 회의·바뀐 발표일은 들어오지 않음(손으로 갱신) |
 | `news_headline` (observations, 1시간) | Claude 계좌 패킷 `11b_events`(2단계 B)만 — 규칙 계좌·검증기는 읽지 않음 | 아래 '사건 뉴스 RSS' |
 | `news.headlines.status` (스냅샷, 1시간) | `/api/paper/status`의 `news`(개요의 사건 뉴스 한 줄), 정기·미리보기 패킷 `11b_events`의 `feedNote`(창 끝 3시간 전부터 실패 중인 피드) | 피드별 받은 항목·새 항목·건너뛴 수·마지막 성공 시각(`lastOkAt`)·실패 사유, 7일 보관 건수(`stored7d`). 피드가 모두 실패하면 쓰지 않음(직전 저장본 유지) |
 | `kr_news_headline`·`kr.news.headlines.status` (observations·스냅샷, 1시간) | 🧪 한국 책 Claude 계좌 패킷 `11b_events` — 지금은 저장만(연결은 v2 E1). 규칙 계좌·검증기는 읽지 않음 | 미국 두 저장본과 같은 규칙(제목 해시·7일·`feeds` 누적·전부 실패면 쓰지 않음)에 날짜만 KST. 상태에 피드별 `timeFormat`·`skippedBadTime` |

@@ -10,6 +10,7 @@ from .earnings_surprise import task_earnings_surprise
 from .filings import task_sec_13f, task_sec_13f_track_record
 from .fundamentals import task_sec_fundamentals
 from .korea_public import task_dart_fundamentals, task_fsc_etf_prices, task_fsc_prices, task_kr_holidays
+from .kr_calendar import task_kr_calendar
 from .kr_news import task_kr_news_headlines
 from .kr_paper import task_kr_paper_flows, task_kr_paper_price_history, task_kr_paper_quotes, task_kr_paper_universe
 from .maintenance import task_run_log_retention
@@ -61,6 +62,7 @@ ALL_TASKS: tuple[Task, ...] = (
     Task("sec_fundamentals", "weekly", task_sec_fundamentals, "미국 종목 재무 SEC XBRL (모의 매매 Claude 계좌 패킷, 실행당 200 CIK)"),
     Task("earnings_surprise", "weekly", task_earnings_surprise, "어닝 서프라이즈 — yfinance 최근 4분기 EPS 실제치·컨센서스, 지우지 않고 누적 (모의 매매 Claude 계좌 패킷, 실행당 100종목)"),
     Task("kr_holidays", "weekly", task_kr_holidays, "한국 공휴일 (천문연 특일정보)"),
+    Task("kr_calendar", "weekly", task_kr_calendar, "🧪 한국 거시 일정 — 금통위 상수·주요 발표 상수, 외부 호출 없음 (한국 책 Claude 계좌 패킷)"),
     Task("dart_fundamentals", "weekly", task_dart_fundamentals, "국내 종목 재무 (DART 사업보고서)"),
     Task("paper_price_history", "weekly", task_paper_price_history, "모의 매매 유니버스 10년 일별 종가 (이력 누적)"),
     Task("kr_paper_price_history", "weekly", task_kr_paper_price_history, "🧪 한국 책 종가 이력 — 수집 범위 토스 수정주가 1년 메우기·기준 바뀜 다시 받기"),

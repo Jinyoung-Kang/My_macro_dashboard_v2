@@ -65,6 +65,7 @@ def test_한국_책_수집_범위는_백엔드_표를_읽지_않는다():
 B9_WRITERS = {
     "OBS_KR_NEWS_HEADLINE": "tasks/kr_news.py",
     "SNAP_KR_NEWS_STATUS": "tasks/kr_news.py",
+    "SNAP_KR_CALENDAR": "tasks/kr_calendar.py",
 }
 B9_WRITE = re.compile(
     r"\b(put_snapshot|put_observations|put_entity_observations|replace_observations|insert_new_observations|"
