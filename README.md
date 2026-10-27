@@ -297,6 +297,7 @@ make test-frontend     # 자가검증 + 훅 테스트(vitest) + 린트 + 빌드(
 | AI 키 (`NVIDIA` / `CEREBRAS` / `CLOUDFLARE`) | AI 메뉴만 비활성화. 하나만 있어도 동작 |
 | `ANTHROPIC_API_KEY` | AI 리포트의 Claude 엔진을 건너뜀. 🧪 모의 매매 Claude 계좌(결정·프레임 제안·주간 복기)는 'API Key 누락'으로 실패하고 규칙 계좌·벤치마크는 그대로. Claude 계좌도 이 키를 씀(`AI_ENGINES`를 정했으면 그 목록의 모델만) |
 | `PAPER_ENABLED` | 비우면 `true`. `false`면 🧪 모의 매매 정기 작업(리스크 점검·하루 한 번 결정·출발일 종가 얼리기·주간 복기)이 쉼. 화면의 수동 실행은 그대로 |
+| `PAPER_KR_START_DATE` | 🧪 한국 책 출발 거래일(`yyyy-MM-dd`). 기본값 없음 — 비우면 한국 초기화·출발이 막히고 미국 책은 그대로. 형식이 틀리면 백엔드가 기동하지 않음(거래일 검사는 한국 초기화·출발 때) |
 | `TRACK_RECORD_FETCH_BUDGET` | 🧪 13F 트랙레코드 수집(`sec_13f_track_record`)이 한 번에 새로 받는 공시 수. 비우면 400(1~2000) |
 | `FUNDAMENTALS_FETCH_BUDGET` | 🧪 미국 종목 재무 수집(`sec_fundamentals`, SEC XBRL companyfacts)이 한 번에 보내는 요청(CIK) 수. 비우면 200(1~600) — 유니버스 약 570곳을 약 36시간에 한 바퀴 |
 | `US_CALENDAR_EARNINGS_BUDGET` | 🧪 발표·실적 일정 수집(`us_calendar`, 1시간마다)이 한 번에 yfinance에 묻는 실적 일정 종목 수. 비우면 120(1~600) — 종목마다 24시간 캐시라 처음 약 5시간에 유니버스(ETF 제외)를 채우고 그 뒤로는 하루에 한 바퀴 |

@@ -180,6 +180,8 @@ services:
       AI_ENGINES: "${AI_ENGINES:-}"
       # 🧪 모의 매매 정기 작업(리스크 점검·결정·출발일 종가). false면 멈춥니다(수동 실행 버튼은 그대로). 여기서 넘기지 않으면 .env의 값이 무시됩니다.
       PAPER_ENABLED: "${PAPER_ENABLED:-true}"
+      # 🧪 한국 책 출발 거래일(yyyy-MM-dd, 2단계 명세 K25). 비우면 한국 초기화·출발이 막히고 미국은 그대로 — 출발 절차에서 정합니다.
+      PAPER_KR_START_DATE: "${PAPER_KR_START_DATE:-}"
     ports:
       # 이 맥에서만 — 로그인 없이 운영자로 받는 API라 다른 기기에 열지 않습니다(위 머리말).
       - "127.0.0.1:${BACKEND_PORT:-8080}:8080"

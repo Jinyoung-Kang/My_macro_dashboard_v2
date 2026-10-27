@@ -86,7 +86,8 @@ class UsMarketCalendarAllowListTest {
         m.put("analytics/TrailingStop.java", "달력 인자 없는 옛 시그니처를 미국 달력으로 위임(A2)");
         m.put("analytics/TrackRecord13F.java", "13F 공시일 다음 거래일 기준 복제 수익률 — 미국 전용");
         m.put("feature/paper/UsPaperMarket.java", "미국 시장 묶음 — calendar()가 어댑터 CALENDAR를 돌려줌");
-        m.put("feature/paper/PaperConfig.java", "미국 출발일(dashboard.paper.start-date)이 미국 거래일인지 — 한국 출발일은 C1");
+        m.put("feature/paper/PaperConfig.java", "미국 출발일(dashboard.paper.start-date)이 미국 거래일인지 — 한국 출발일"
+                + "(kr.start-date)은 기동 때 형식만, 거래일은 한국 초기화·출발 때 KrxCalendar로(C1b)");
         m.put("feature/paper/PacketBuilder.java", "미국 결정 패킷(일정·휴장·조기 폐장·13F 분기·보유 거래일)");
         m.put("feature/paper/PaperGate.java", "미국 게이트 지표의 뉴욕 날짜");
         m.put("feature/paper/PaperSelectionService.java", "13F 기관 선정");

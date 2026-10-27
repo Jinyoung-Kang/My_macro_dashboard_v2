@@ -102,6 +102,9 @@ dashboard:
     enabled: ${PAPER_ENABLED:true}          # false면 정기 작업(리스크 점검·결정·출발일 종가 얼리기)이 일하지 않음(통합 테스트는 false). 수동 실행은 그대로
     start-date: "2026-10-23"                # 네 책의 출발(사후 체결) 거래일 — 명세 D2
     initial-cash: 100000                    # 책마다(달러) — D1
+    kr:                                     # 🇰🇷 한국 책(2단계 명세 K1·K25·K28) — 재기동해야 바뀌는 값
+      start-date: ${PAPER_KR_START_DATE:}   # 네 계좌의 출발 거래일 S(S 22:30 결정 → S+1 시가). 기본값 없음 — 비면 한국 초기화·출발 막힘(미국 기동은 그대로). 기동 때는 형식(yyyy-MM-dd)만, 거래일 검사는 한국 초기화·출발 때(kr_holidays + KrxCalendar)
+      initial-cash: 100000000               # 한국 계좌마다(원, 정수) — K1
     risk-interval-ms: 300000                # 리스크 점검 주기(5분). 새 관측치(paper.quotes, 1시간마다)가 있을 때만 일함
     risk-initial-delay-ms: 90000
     decision-interval-ms: 600000            # 결정 작업 주기(10분). 세션 다음 날 07:30 KST(설정 decisionTimeKst)부터 그 거래일 결정을 한 번
