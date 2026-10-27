@@ -26,8 +26,8 @@ import java.util.function.BooleanSupplier;
  * 따로 만듭니다. 비용(수수료·세금)·출발일·초기 현금은 그것을 쓰는 묶음(B6·C1)에서 정합니다. 검증기의 체결 시점·금액 표기는 A7에서
  * 더했습니다({@link #orderValidation}).
  *
- * <p>구현은 지금 미국 하나({@link UsPaperMarket#INSTANCE})이고 값은 이 묶음 전의 상수 그대로입니다({@code UsPaperMarketTest}가
- * 고정). 장부·관측치·리스크 점검(A5)과 결정 작업·Claude 결정·주간 복기·메모·조회·관리(A6)가 시장마다 이 묶음으로 돕니다(시장
+ * <p>구현은 미국({@link UsPaperMarket#INSTANCE} — 값은 이 묶음 전의 상수 그대로, {@code UsPaperMarketTest}가 고정)과 한국
+ * ({@link KrPaperMarket#INSTANCE} — C1c, {@code KrPaperMarketTest})입니다. 장부·관측치·리스크 점검(A5)과 결정 작업·Claude 결정·주간 복기·메모·조회·관리(A6)가 시장마다 이 묶음으로 돕니다(시장
  * 목록 — 주입 빈 {@link PaperMarkets}) — Claude 시스템 프롬프트의 시장별 부분(하드 규칙 줄·고정 문단)과 복기 여는 순간도 여기서 받습니다.
  * 게이트 지표·13F 재선정·규칙 책 결정·출발일 사후 체결은 미국 전용 단계로 남습니다.
  *
@@ -168,8 +168,8 @@ interface PaperMarket {
     List<String> defaultCashLike();
 
     /**
-     * 설정에 최소 주문 금액 키(그 시장 접두어 + {@code minOrderNotional})가 없을 때의 값 — 장부 통화 단위(미국 $500, 한국은 C1c에서
-     * 500,000원 — 명세 §4-7). 검증기 한도({@link PacketBuilder.Limits#from(JsonNode, PaperMarket)})의 기본값입니다.
+     * 설정에 최소 주문 금액 키(그 시장 접두어 + {@code minOrderNotional})가 없을 때의 값 — 장부 통화 단위(미국 $500, 한국 500,000원 —
+     * 명세 §4-7). 검증기 한도({@link PacketBuilder.Limits#from(JsonNode, PaperMarket)})의 기본값입니다.
      */
     double defaultMinOrderNotional();
 

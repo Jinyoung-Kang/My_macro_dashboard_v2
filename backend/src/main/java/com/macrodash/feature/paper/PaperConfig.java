@@ -77,7 +77,10 @@ public record PaperConfig(boolean enabled, LocalDate startDate, double initialCa
         this(enabled, parse(startDate), initialCash, parseKrStart(krStartDate), parseKrCash(krInitialCash));
     }
 
-    /** 한국 출발일이 정해졌는가 — 아니면 한국 초기화·출발을 막습니다(사유 {@link #KR_START_MISSING}, 막는 쪽은 C1c). */
+    /**
+     * 한국 출발일이 정해졌는가 — 아니면 한국 초기화({@code PaperAdminService.initKr})를 막고 한국 정기 작업이 쉽니다(사유
+     * {@link #KR_START_MISSING} — {@code KrPaperMarket.dormantReason}, C1c).
+     */
     public boolean krStartConfigured() {
         return krStartDate != null;
     }
