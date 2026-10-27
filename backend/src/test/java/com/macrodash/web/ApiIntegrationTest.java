@@ -1009,6 +1009,7 @@ class ApiIntegrationTest {
             JsonNode risk = authorizedExchange("/api/paper/run/risk", HttpMethod.POST).getBody();
             assertThat(risk.path("ok").asBoolean()).isTrue();
             assertThat(risk.path("outcome").path("skippedReason").asString()).contains("paper.quotes");
+            assertThat(risk.path("outcome").has("alerts")).as("운영 알림이 없으면 칸 없음 — 미국 응답 그대로(C2c)").isFalse();
             assertThat(authorizedExchange("/api/paper/books/nope/orders", HttpMethod.GET).getStatusCode())
                     .isEqualTo(HttpStatus.BAD_REQUEST);
 

@@ -30,6 +30,9 @@ import java.util.Optional;
  * 시장을 받지 않는 수동 실행·한 번 실행은 미국 판입니다.
  * 실행마다 그 시장의 실행 문맥({@link MarketRun} — 달력 한 벌·설정 행 하나)을 열어 앞 창 확인·장부·관측치 요약에 넘깁니다(C1a).
  *
+ * <p><b>운영 알림</b>: 장부가 낸 알림({@link Outcome#alerts} — 한국 '미처리 기업행위' 보류가 걸린 날 뒤 5거래일을 넘김, 명세 §4-2 K32)은 그
+ * 실행 기록의 {@code detail.alerts}와 경고 로그에 남습니다(알림 벨·알림함에는 넣지 않음 — 2단계 명세 §4-2 'C2c 구현에서 정한 것').
+ *
  * <p>관측치는 수집기가 1시간마다 저장하므로 대부분의 실행은 "새 저장본 없음"으로 끝나고, 그때는 기록을 남기지 않습니다
  * (5분마다 한 줄씩 쌓이면 작업 기록 200건이 17시간 치뿐입니다). 일했을 때와 오류일 때만 {@code paper_job_runs}에 남기고,
  * detail에 관측치 수집 시각·다수 티커의 봉 날짜·확정 종가 여부를 적습니다 — 장중 저장본의 마지막 봉이 정말 그날 지연 시세인지
@@ -112,6 +115,9 @@ public class PaperRiskJob {
         for (PaperMarket market : markets.all()) {
             try {
                 Outcome outcome = run(market, false);
+                if (!outcome.alerts().isEmpty()) {
+                    log.warn("모의 매매 운영 알림({}): {}", market.code(), outcome.alerts());
+                }
                 if (!outcome.errors().isEmpty()) {
                     log.warn("모의 매매 리스크 점검 중 오류 — 그 책은 같은 관측치로 다시 시도하지 않고 새 관측치에서 다시 시도합니다: {}",
                             outcome.errors());
@@ -208,6 +214,9 @@ public class PaperRiskJob {
         }
         if (!outcome.errors().isEmpty()) {
             detail.put("errors", outcome.errors());
+        }
+        if (!outcome.alerts().isEmpty()) {
+            detail.put("alerts", outcome.alerts());   // 운영 알림(한국 미처리 기업행위 보류 5거래일 넘음 — 미국은 생기지 않음)
         }
         write(market, started, outcome.errors().isEmpty() ? "OK" : "ERROR", detail);
     }

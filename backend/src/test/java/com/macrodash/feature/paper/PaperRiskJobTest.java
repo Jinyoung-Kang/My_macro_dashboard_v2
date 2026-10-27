@@ -106,6 +106,26 @@ class PaperRiskJobTest {
         // 같은 저장본을 다시 돌려도 기록이 늘지 않음(멱등)
         job(true).scheduledRun();
         assertThat(store.jobRuns).hasSize(1);
+        assertThat(store.jobRuns.get(0).detail().has("alerts")).as("운영 알림이 없으면 칸 없음(미국 기록 그대로)").isFalse();
+    }
+
+    @Test
+    @DisplayName("장부의 운영 알림(한국 미처리 기업행위 보류가 5거래일 넘음 — C2c)은 그 실행 기록의 detail.alerts에 남는다")
+    void alertsGoToTheJobRecord() {
+        activeBook(store, PaperBooks.CLAUDE, PaperBooks.KIND_CLAUDE, 100_000, null);
+        when(marketData.quotes(market(US))).thenReturn(Optional.of(quotes(MON_INTRADAY, bar("SPY", FRI, 500, MON, 501))));
+        PaperLedgerService ledger = mock(PaperLedgerService.class);
+        when(ledger.hasNewObservation(any(PaperMarket.class), any())).thenReturn(true);
+        String alert = "kr_claude: 005930 미처리 기업행위 보류 6거래일째(걸린 날 2026-11-02 — 5거래일 넘음): 사람이 확인하세요";
+        when(ledger.process(any(PaperMarket.class), any())).thenReturn(new Outcome(0, 0, 0, 0,
+                java.util.List.of("kr_claude"), null, java.util.List.of(), java.util.List.of(), java.util.List.of(alert)));
+
+        job(false, ledger).runNow();
+
+        assertThat(store.jobRuns).singleElement().satisfies(run -> {
+            assertThat(run.outcome()).isEqualTo("OK");
+            assertThat(run.detail().path("alerts").get(0).asString()).isEqualTo(alert);
+        });
     }
 
     @Test

@@ -176,6 +176,16 @@ final class KrFixtures {
             return this;
         }
 
+        /** 마지막 봉의 수정 비율(adjusted=true 종가 ÷ 원시 종가 — B7)과 그 수정 종가를 바꿉니다(기본 1.0). */
+        Entry ratio(double adjRatio) {
+            ObjectNode bar = (ObjectNode) bars.get(bars.size() - 1);
+            bar.put("adjRatio", adjRatio);
+            if (bar.path("close").isNumber()) {
+                bar.put("adjClose", bar.path("close").asDouble() * adjRatio);
+            }
+            return this;
+        }
+
         /** 마지막 봉의 1분봉 개장 봉 — 라벨·시가·거래량을 셋씩(라벨 없이 상태만이면 빈 opens). */
         Entry minute(String status, Object... labelOpenVolume) {
             ObjectNode minute = ((ObjectNode) bars.get(bars.size() - 1)).putObject("minute");

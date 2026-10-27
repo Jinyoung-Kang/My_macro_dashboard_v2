@@ -1,7 +1,15 @@
 package com.macrodash.feature.paper;
 
+import com.fasterxml.jackson.annotation.JsonInclude;
 import com.macrodash.Kst;
+import com.macrodash.analytics.CalendarUnavailableException;
 import com.macrodash.analytics.DailySeries;
+import com.macrodash.analytics.KrxCorporateActions;
+import com.macrodash.analytics.KrxCorporateActions.Assessment;
+import com.macrodash.analytics.KrxCorporateActions.DailyBar;
+import com.macrodash.analytics.KrxCorporateActions.Kind;
+import com.macrodash.analytics.KrxCorporateActions.Listing;
+import com.macrodash.analytics.KrxCorporateActions.Presence;
 import com.macrodash.analytics.PaperLedger;
 import com.macrodash.analytics.SplitDetector;
 import com.macrodash.analytics.TrailingStop;
@@ -37,6 +45,7 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.TreeMap;
+import java.util.TreeSet;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.function.Supplier;
@@ -79,8 +88,8 @@ import java.util.function.Supplier;
  * 일시정지(PAUSED) 책은 2·4의 최고가 갱신·6만(가격·분할·최고가는 따라가되 사고팔지 않음), 시작 전(NOT_STARTED) 책은 6의 상태만
  * (현금뿐이라 순자산 기록은 남기지 않음 — 시작하지 않은 책의 곡선이 평평하게 그려지지 않게).
  *
- * <p><b>한국 — 시가 체결 장부</b>({@link PaperMarket#auctionFills}, 2단계 C2b): 1 뒤 명세 §4-2 순서 — 기업행위(다음 단계) → 시가 매도(STOP
- * 포함) → 시가 매수 → 종가 매도 → 종가 매수(현금성은 각 묶음 마지막) → 최고가·스탑 감지(다음 단계) → 평가 → 6. 체결 봉·체결가·비용 칸은
+ * <p><b>한국 — 시가 체결 장부</b>({@link PaperMarket#auctionFills}, 2단계 C2b·C2c): 1 뒤 명세 §4-2 순서 — 기업행위(3중 조건, 결정 d12) → 시가
+ * 매도(STOP 포함) → 시가 매수 → 종가 매도 → 종가 매수(현금성은 각 묶음 마지막) → 최고가·스탑 감지 → 평가 → 6. 체결 봉·체결가·비용 칸은
  * 시장 몫이고({@link PaperMarket#fillBar} — 기준 거래일 뒤 첫 관측 봉의 시가 사다리, {@link PaperMarket#fill} — 비용 칸·보류), 체결 조건 ①은
  * 저장본이 아니라 그 종목을 받은 시각입니다. 미국식 분할 감지·관측가 최고가·즉시 스탑은 쓰지 않습니다({@code processAuction}).
  *
@@ -121,14 +130,25 @@ public class PaperLedgerService {
      * @param skippedReason  아무 책도 처리하지 않았을 때 그 이유(처리했으면 null)
      * @param notes          체결하지 못하고 취소한 주문·현금 부족으로 줄인 매수·분할처럼 사람이 알아야 할 일("책: 내용")
      * @param errors         오류로 되돌린 책("책: 오류") — 그 책은 같은 관측치로는 다시 시도하지 않고 새 관측치에서 다시 시도합니다
+     * @param alerts         운영 알림("책: 내용") — 한국 '미처리 기업행위' 보류가 걸린 날 뒤 5거래일을 넘김(명세 §4-2 K32 — 사람이 확인).
+     *                       정기·수동 작업이 작업 기록({@code paper_job_runs.detail.alerts})에 남깁니다. 미국은 늘 빈 목록이고, 비었으면 응답
+     *                       JSON(수동 실행 {@code POST /api/paper/run/risk})에 칸이 없습니다(미국 응답 그대로)
      */
     public record Outcome(int filled, int stopped, int expired, int splits, List<String> booksProcessed,
-                          String skippedReason, List<String> notes, List<String> errors) {
+                          String skippedReason, List<String> notes, List<String> errors,
+                          @JsonInclude(JsonInclude.Include.NON_EMPTY) List<String> alerts) {
 
         public Outcome {
             booksProcessed = List.copyOf(booksProcessed);
             notes = List.copyOf(notes);
             errors = List.copyOf(errors);
+            alerts = List.copyOf(alerts);
+        }
+
+        /** 운영 알림이 없는 결과. */
+        public Outcome(int filled, int stopped, int expired, int splits, List<String> booksProcessed,
+                       String skippedReason, List<String> notes, List<String> errors) {
+            this(filled, stopped, expired, splits, booksProcessed, skippedReason, notes, errors, List.of());
         }
 
         static Outcome skipped(String reason) {
@@ -266,6 +286,7 @@ public class PaperLedgerService {
         List<String> processed = new ArrayList<>();
         List<String> notes = new ArrayList<>();
         List<String> errors = new ArrayList<>();
+        List<String> alerts = new ArrayList<>();
         List<String> heldBack = new ArrayList<>();
         for (Book book : books) {
             FailureKey key = new FailureKey(market.code(), book.code());
@@ -285,6 +306,7 @@ public class PaperLedgerService {
                 expired += run.expired;
                 splits += run.splits;
                 run.notes.forEach(note -> notes.add(book.code() + ": " + note));
+                run.alerts.forEach(alert -> alerts.add(book.code() + ": " + alert));
             } catch (RuntimeException e) {
                 // 같은 관측치로는 다시 시도하지 않으니 이 경고는 관측치마다 한 번입니다.
                 failedObservations.put(key, quotes.collectedAt());
@@ -299,7 +321,7 @@ public class PaperLedgerService {
                     ? "이미 처리한 관측치입니다(수집 " + Kst.stamp(quotes.collectedAt()) + ")"
                     : heldBackReason(quotes, heldBack);
         }
-        return new Outcome(filled, stopped, expired, splits, processed, skipped, notes, errors);
+        return new Outcome(filled, stopped, expired, splits, processed, skipped, notes, errors, alerts);
     }
 
     /** 오류가 난 책만 남은 관측치의 사유 문구(정기 작업도 같은 문구를 씀). */
@@ -335,6 +357,7 @@ public class PaperLedgerService {
         boolean started = active || PaperBooks.PAUSED.equals(book.status());
         List<Order> pending = active ? store.ordersByStatus(book.code(), PaperBooks.ORDER_PENDING) : List.of();
         if (market.auctionFills()) {
+            loadAuction(run, pending);                              // 보유 쪽 칸(보류 표시·since 거래량)·확정 시세
             processAuction(run, pending, started);                  // 한국 — 시가 체결 장부(아래 '시가 체결 장부')
             settle(run, state, started);
             return run;
@@ -612,9 +635,18 @@ public class PaperLedgerService {
      * ({@link PaperMarket#fillBar}·{@link PaperMarket#fill} — {@code KrFills})입니다. 미국식 분할 감지(종가 하나의 비율)·관측가 최고가·즉시 스탑
      * ({@code IMMEDIATE})은 쓰지 않습니다(K30·K32 — 한국 스탑은 다음 거래일 시가 주문, 기업행위는 3중 조건).
      *
-     * <p><b>C2b에서 비워 둔 자리</b>: 기업행위 판정(결정 d12 — {@code KrxCorporateActions.assess}에 봉 창 + 그 보유가 반영한 마지막 관측)과
-     * 최고가 갱신·스탑 감지(K30 — KRX 기준가로만 올리고, 감지하면 다음 거래일 {@code NEXT_OPEN} {@code STOP} 매도 주문, 체결 때 금융위 확정 종가로
-     * 다시 판정)는 다음 단계입니다. 그때까지 한국 보유는 이번 관측치에 그 종목의 새 항목이 있으면 '확인됨'(매도 수량을 믿음)이고 스탑이 없습니다.
+     * <p><b>기업행위</b>({@link #corporateActions}, 결정 d12): 보유마다 저장본의 최근 봉 + 그 보유가 반영한 마지막 관측(since 봉 — 보유 쪽
+     * {@code fill_ref_date}·{@code fill_ref_close}·{@code fill_ref_volume})을 {@link KrxCorporateActions#assess}에 넘깁니다. 분할·병합이면 수량·평단·
+     * 최고가를 고치고 그날 그 종목 주문을 보류, 판정 대기면 그날 주문만 보류, 미처리면 보유에 '기업행위 확인 필요' 표시를 걸어(한 번 걸면 사람이
+     * 풀 때까지 남음) 평가를 마지막 확정가로 묶고 스탑을 보지 않으며 주문을 보류합니다. 보유가 없는 종목(주문만)은 그 주문의 기준 거래일 뒤를
+     * 판정해 그날 주문만 보류합니다. 보류가 걸린 날 뒤 5거래일을 넘기면 운영 알림({@link Outcome#alerts}). 한쪽 출처만 실패·모름이면(토스 항목이
+     * 없거나 이어받음, 금융위 모름) 사라진 종목이 아니라 '가격 없음'({@code price_stale})뿐입니다(§4-2 'B7 구현에서 정한 것').
+     *
+     * <p><b>since 봉</b>: 기업행위 판정이 그 보유에 새 사건이 없다고 본(또는 분할을 반영한) 관측치의 마지막 관측 봉(거래량 &gt; 0)으로 옮깁니다
+     * ({@link #advanceSince} — 거래량 0 봉에서는 옮기지 않음). 이번 관측치에서 새로 산 보유는 체결 봉 그대로 둡니다(C2b — 다음 관측치가 그 뒤를 판정).
+     *
+     * <p><b>최고가 갱신·스탑 감지</b>(K30 — KRX 기준가로만 올리고, 감지하면 다음 거래일 {@code NEXT_OPEN} {@code STOP} 매도 주문, 체결 때 금융위
+     * 확정 종가로 다시 판정)는 다음 단계입니다. 그때까지 한국 보유에는 스탑이 걸리지 않습니다.
      *
      * <p><b>순자산 기준</b>: 목표 비중 매수의 목표 금액 = 목표 비중 × 그 체결 직전 순자산 — 보유 평가는 직전 관측치의 가격(이번 관측치의 종가는
      * 평가 단계에서 반영), 같은 관측치에서 앞서 산 종목은 체결가입니다. 그래서 한 시가에 함께 사는 주문(벤치마크 60/40 등)이 그날 시가 뒤
@@ -622,7 +654,7 @@ public class PaperLedgerService {
      */
     private void processAuction(BookRun run, List<Order> pending, boolean started) {
         if (started) {
-            markAuctionHoldings(run);                                   // 2. 기업행위 자리(다음 단계)
+            corporateActions(run, pending);                             // 2. 기업행위(결정 d12)
         }
         auctionFills(run, pending, PaperBooks.SELL, true);              // 3. 시가 매도(STOP 포함)
         auctionFills(run, pending, PaperBooks.BUY, true);               // 4. 시가 매수
@@ -631,14 +663,227 @@ public class PaperLedgerService {
         // 7. 최고가 갱신·스탑 감지 — 다음 단계(K30, 위 설명)
         if (started) {
             revalueAuction(run);                                        // 8. 평가 가격 = 이번 관측치의 그 종목 마지막 봉 종가
+            advanceSince(run);                                          //    since 봉을 이번 관측치의 마지막 관측으로
         }
     }
 
-    /** 이번 관측치에 그 종목의 새 항목(이어받기 아님)이 있는 보유만 '확인됨' — 매도·추가 매수의 전제(C2b, 기업행위 판정은 다음 단계). */
-    private static void markAuctionHoldings(BookRun run) {
+    /** 시가 체결 장부가 쓰는 보유 쪽 칸(미처리 기업행위 표시·since 봉 거래량 — 보유 레코드 밖)과 그 책 종목의 확정 시세를 읽습니다. */
+    private void loadAuction(BookRun run, List<Order> pending) {
+        String code = run.book.code();
+        store.corpActionHolds(code).forEach(hold -> {
+            Holding holding = run.holdings.get(hold.ticker());
+            if (holding != null) {
+                holding.corpHold = hold.reason();
+            }
+        });
+        store.fillRefVolumes(code).forEach((ticker, volume) -> {
+            Holding holding = run.holdings.get(ticker);
+            if (holding != null) {
+                holding.fillRefVolume = volume;
+            }
+        });
+        Set<String> codes = new TreeSet<>(run.holdings.keySet());
+        LocalDate from = null;
         for (Holding holding : run.holdings.values()) {
+            from = earlier(from, holding.fillRefDate);
+        }
+        for (Order order : pending) {
+            codes.add(order.ticker());
+            if (PaperBooks.SOURCE_STOP.equals(order.source())) {
+                from = earlier(from, order.asOfTradingDate());
+            }
+        }
+        if (!codes.isEmpty()) {
+            run.confirmed = run.market.confirmedPrices(marketData, codes, run.settings, from);
+        }
+    }
+
+    private static LocalDate earlier(LocalDate a, LocalDate b) {
+        return a == null ? b : b == null || !b.isBefore(a) ? a : b;
+    }
+
+    // ------------------------------------------------------------------ 기업행위(한국 — 명세 §4-2 K32, 결정 d12)
+    /**
+     * 보유마다·주문만 있는 종목마다 기업행위 판정({@link #processAuction} 설명). 보유의 '확인됨'({@code verified} — 매도·추가 매수의 전제)은 이번
+     * 관측치에 그 종목의 새 항목이 있고 보류 표시가 없을 때입니다.
+     */
+    private void corporateActions(BookRun run, List<Order> pending) {
+        Map<String, LocalDate> orderOnly = new TreeMap<>();
+        for (Order order : pending) {
+            if (!run.holdings.containsKey(order.ticker()) && order.asOfTradingDate() != null) {
+                orderOnly.merge(order.ticker(), order.asOfTradingDate(), (a, b) -> a.isBefore(b) ? a : b);
+            }
+        }
+        for (Holding holding : new ArrayList<>(run.holdings.values())) {
+            if (holding.corpHold != null) {
+                // 이미 걸린 미처리 기업행위 — 평가 묶음·스탑 없음·주문 보류(사람이 풀 때까지), 다시 판정하지 않음.
+                holding.verified = false;
+                holding.assessed = Kind.UNPROCESSED;
+                run.orderHolds.put(holding.ticker, "미처리 기업행위 보유 — " + holding.corpHold);
+                alertIfDue(run, holding);
+                continue;
+            }
             Bar bar = run.bar(holding.ticker);
             holding.verified = bar != null && !bar.stale();
+            Assessment assessment = assess(run, holding.ticker, holding.fillRefDate, holding.qty, sinceBar(holding));
+            holding.assessed = assessment.kind();
+            switch (assessment.kind()) {
+                case NONE -> {
+                }
+                case PENDING -> holdOrders(run, holding.ticker, assessment);
+                case SPLIT -> applyKrSplit(run, holding, assessment);
+                case UNPROCESSED -> holdUnprocessed(run, holding, assessment);
+            }
+        }
+        orderOnly.forEach((ticker, since) -> {
+            Assessment assessment = assess(run, ticker, since, 0, null);
+            if (assessment.holdOrders()) {
+                holdOrders(run, ticker, assessment);
+            }
+        });
+    }
+
+    /** 그 종목의 기업행위 판정 — 저장본의 새 봉(이어받은 항목은 넘기지 않음) + since 봉, 토스·금융위 상장 상태. */
+    private static Assessment assess(BookRun run, String ticker, LocalDate since, int qty, DailyBar sinceBar) {
+        Bar bar = run.bar(ticker);
+        boolean fresh = bar != null && !bar.stale() && bar.kr() != null;
+        List<DailyBar> bars = new ArrayList<>();
+        if (fresh) {
+            for (KrQuotes.Day day : bar.kr().days()) {
+                if (day.close() != null) {
+                    bars.add(new DailyBar(day.date(), day.close().doubleValue(), day.volume(), day.adjRatio()));
+                }
+            }
+        }
+        if (sinceBar != null && bars.stream().noneMatch(b -> b.date().equals(sinceBar.date()))
+                && (bars.isEmpty() || sinceBar.date().isBefore(bars.get(bars.size() - 1).date()))) {
+            bars.add(sinceBar);   // 저장본 창 밖의 since 봉(결정 d12 — 정지 4봉 + 재상장 봉도 판정)
+        }
+        Presence toss = fresh ? Presence.LISTED
+                : run.quotes.absent().contains(ticker) ? Presence.ABSENT : Presence.UNKNOWN;
+        KrConfirmed.Series fsc = run.confirmed.of(ticker);
+        Listing listing = new Listing(toss, fsc.presence(), fsc.sharesBefore(), fsc.sharesAfter());
+        return KrxCorporateActions.assess(asOfOf(run, ticker), since, qty, bars, listing);
+    }
+
+    /** 보유가 반영한 마지막 관측(since 봉) — 거래량을 모르면(V15 전 보유) 관측이 아니라 3중 조건의 E 전 관측이 되지 못함. */
+    private static DailyBar sinceBar(Holding holding) {
+        if (holding.fillRefDate == null || !(holding.fillRefClose > 0) || Double.isInfinite(holding.fillRefClose)) {
+            return null;
+        }
+        return new DailyBar(holding.fillRefDate, holding.fillRefClose, holding.fillRefVolume, null);
+    }
+
+    /** 그날 그 종목 주문을 보류(대기 그대로 — 만료까지)하고 판정 근거를 작업 기록에. */
+    private static void holdOrders(BookRun run, String ticker, Assessment assessment) {
+        String reason = "기업행위 " + assessment.kind().label() + " — " + String.join("; ", assessment.details());
+        run.orderHolds.put(ticker, reason + " — 그날 그 종목 주문 보류");
+        run.note(ticker + " " + reason);
+    }
+
+    /**
+     * 3중 조건을 채운 분할·병합 — 수량 floor(수량 × k), 평단·최고가·마지막 가격 ÷ k(미국과 같은 {@link SplitDetector} 식), 분할 기록, 그날 주문 보류.
+     * since 봉은 평가 뒤 이번 관측치의 마지막 관측으로 옮겨 같은 비율 변화를 두 번 반영하지 않습니다({@link #advanceSince}).
+     */
+    private static void applyKrSplit(BookRun run, Holding holding, Assessment assessment) {
+        SplitDetector.Ratio ratio = assessment.ratio();
+        int before = holding.qty;
+        double avgBefore = holding.avgCost;
+        holding.qty = assessment.newQty();
+        holding.avgCost = SplitDetector.adjustPrice(holding.avgCost, ratio);
+        holding.highWatermark = SplitDetector.adjustPrice(holding.highWatermark, ratio);
+        if (holding.lastPrice != null) {
+            holding.lastPrice = SplitDetector.adjustPrice(holding.lastPrice, ratio);
+        }
+        holding.splitFrom = assessment.effectiveDate();
+        String note = "%s %s 분할·병합 확인 — %d주 → %d주, 평단 %s → %s".formatted(assessment.effectiveDate(),
+                ratio.label(), before, holding.qty, money(avgBefore), money(holding.avgCost));
+        holding.splitNote = appendNote(holding.splitNote, note);
+        run.splits++;
+        holdOrders(run, holding.ticker, assessment);
+    }
+
+    /**
+     * 미처리 기업행위 — 보유에 '기업행위 확인 필요' 표시({@link KrxCorporateActions#holdReason}, 머리 날짜 = 걸린 날)를 걸고, 평가를 마지막 확정가로
+     * 묶습니다: 그 보유가 반영한 마지막 관측 날짜의 금융위 종가(거래량 &gt; 0 행), 없으면 마지막 평가 가격 그대로. 스탑을 보지 않고 그 종목 주문을
+     * 보류합니다(사람이 풀 때까지 — 정리 기능은 2단계에 두지 않음, §4-2).
+     */
+    private void holdUnprocessed(BookRun run, Holding holding, Assessment assessment) {
+        String reason = KrxCorporateActions.holdReason(asOfOf(run, holding.ticker), assessment);
+        store.holdForCorpAction(run.book.code(), holding.ticker, reason);
+        holding.corpHold = reason;
+        holding.verified = false;
+        Optional<BigDecimal> confirmed = holding.fillRefDate == null ? Optional.empty()
+                : run.confirmed.of(holding.ticker).closeOn(holding.fillRefDate);
+        String valued;
+        if (confirmed.isPresent()) {
+            holding.lastPrice = confirmed.get().doubleValue();
+            holding.lastPriceAt = run.at;
+            holding.priceStale = false;
+            valued = "평가를 금융위 " + holding.fillRefDate + " 종가 " + money(holding.lastPrice) + "원으로 묶음";
+        } else {
+            valued = "금융위 " + holding.fillRefDate + " 확정 종가가 없어 마지막 평가 가격 "
+                    + (holding.lastPrice == null ? "없음(평단 " + money(holding.avgCost) + "원)" : money(holding.lastPrice) + "원")
+                    + "으로 묶음";
+        }
+        run.orderHolds.put(holding.ticker, "미처리 기업행위 보유 — " + reason);
+        run.note(holding.ticker + " " + reason + " — " + valued + ", 스탑 없음·주문 보류(사람이 확인)");
+    }
+
+    /** 판정의 기준 거래일 — 그 종목 새 항목의 마지막 봉 날짜, 새 항목이 없으면 그 관측치의 세션(보류 사유 머리의 걸린 날). */
+    private static LocalDate asOfOf(BookRun run, String ticker) {
+        Bar bar = run.bar(ticker);
+        return bar != null && !bar.stale() && bar.kr() != null ? bar.kr().last().date() : run.session;
+    }
+
+    /**
+     * 걸린 날(보류 사유 머리 날짜)은 빼고 센 거래일이 5를 넘은 미처리 기업행위 보유 — 운영 알림({@link KrxCorporateActions#alertDue}, 명세 §4-2
+     * 'B7 구현에서 정한 것'). 오늘 = 그 관측치의 세션. 걸린 날을 모르는 보류(사유 머리가 날짜가 아님)는 셀 수 없어 바로 알립니다.
+     */
+    private static void alertIfDue(BookRun run, Holding holding) {
+        Optional<LocalDate> since = KrxCorporateActions.holdSince(holding.corpHold);
+        if (since.isEmpty()) {
+            run.alerts.add(holding.ticker + " 미처리 기업행위 보류 — 걸린 날을 모름(사유 머리가 날짜가 아님): 사람이 확인하세요 — "
+                    + holding.corpHold);
+            return;
+        }
+        try {
+            if (KrxCorporateActions.alertDue(run.market.calendar(), since.get(), run.session)) {
+                run.alerts.add(holding.ticker + " 미처리 기업행위 보류 " + run.market.calendar().tradingDaysBetween(since.get(),
+                        run.session) + "거래일째(걸린 날 " + since.get() + " — " + KrxCorporateActions.ALERT_AFTER_TRADING_DAYS
+                        + "거래일 넘음): 사람이 확인하세요 — " + holding.corpHold);
+            }
+        } catch (CalendarUnavailableException e) {
+            run.note(holding.ticker + " 미처리 기업행위 알림 기한을 셀 수 없음 — " + e.getMessage());
+        }
+    }
+
+    /**
+     * since 봉을 이번 관측치의 마지막 관측(거래량 &gt; 0 봉)으로 옮깁니다 — 기업행위 판정이 새 사건 없음·분할 반영으로 본 보유만(판정 대기·미처리는
+     * 그대로, 거래량 0 봉에서는 옮기지 않음 — 정지 중 바뀐 비율이 다음 관측 때 판정되게). 이번 관측치에서 새로 산 보유는 체결 봉 그대로입니다.
+     */
+    private static void advanceSince(BookRun run) {
+        for (Holding holding : run.holdings.values()) {
+            if (holding.opened || holding.corpHold != null || !holding.verified
+                    || (holding.assessed != Kind.NONE && holding.assessed != Kind.SPLIT)) {
+                continue;
+            }
+            Bar bar = run.bar(holding.ticker);
+            if (bar == null || bar.kr() == null) {
+                continue;
+            }
+            List<KrQuotes.Day> days = bar.kr().days();
+            for (int i = days.size() - 1; i >= 0; i--) {
+                KrQuotes.Day day = days.get(i);
+                if (day.observed() && day.close() != null) {
+                    if (holding.fillRefDate == null || day.date().isAfter(holding.fillRefDate)) {
+                        holding.fillRefDate = day.date();
+                        holding.fillRefClose = day.close().doubleValue();
+                        holding.fillRefVolume = day.volume();
+                    }
+                    break;
+                }
+            }
         }
     }
 
@@ -665,6 +910,9 @@ public class PaperLedgerService {
         Bar observed = run.bar(order.ticker());
         if (observed == null) {
             return;   // 이번 관측치에 그 종목이 없음 — 다음 관측치
+        }
+        if (heldByCorporateAction(run, order)) {
+            return;
         }
         PaperMarket.FillChoice choice = run.chooseFill(order, observed);
         if (choice.bar() == null) {
@@ -704,6 +952,9 @@ public class PaperLedgerService {
     private void auctionBuy(BookRun run, Order order) {
         Bar observed = run.bar(order.ticker());
         if (observed == null) {
+            return;
+        }
+        if (heldByCorporateAction(run, order)) {
             return;
         }
         PaperMarket.FillChoice choice = run.chooseFill(order, observed);
@@ -752,10 +1003,12 @@ public class PaperLedgerService {
         double price = terms.price();
         if (holding == null) {
             // 평단 = 체결가(비용은 비용 칸 — 결정 d14), 평가 가격은 평가 단계 전까지 체결가, 최고가 처음 값 = 체결가(올리는 규칙은 다음 단계 —
-            // K30), 기준(fill_ref) = 체결한 관측 봉의 날짜·종가(기업행위 판정의 'since' 자리 — 결정 d12, 다음 단계).
+            // K30), since 봉(fill_ref) = 체결한 관측 봉의 날짜·원시 종가·거래량(기업행위 판정 — 결정 d12, 다음 관측치가 그 뒤를 판정).
             holding = new Holding(order.ticker(), qty, price, bar.date(), run.at, price, run.at, price, run.at, bar.date(),
                     bar.close());
+            holding.fillRefVolume = bar.kr() == null ? null : bar.kr().day(bar.date()).map(KrQuotes.Day::volume).orElse(null);
             holding.verified = true;
+            holding.opened = true;
             run.holdings.put(holding.ticker, holding);
         } else {
             holding.avgCost = PaperLedger.averageCost(holding.qty, holding.avgCost, qty, price);
@@ -765,9 +1018,15 @@ public class PaperLedgerService {
         run.filled++;
     }
 
-    /** 이번 관측치의 그 종목 마지막 봉 종가로 평가(이어받은 항목·없는 종목은 마지막 가격 + '가격 없음'). */
+    /**
+     * 이번 관측치의 그 종목 마지막 봉 종가로 평가(이어받은 항목·없는 종목은 마지막 가격 + '가격 없음' — 한쪽 출처만 실패·모름이면 사라진 종목이 아니라
+     * 이것뿐, §4-2 'B7 구현에서 정한 것'). 미처리 기업행위 보유는 묶인 평가 그대로입니다.
+     */
     private static void revalueAuction(BookRun run) {
         for (Holding holding : run.holdings.values()) {
+            if (holding.corpHold != null) {
+                continue;
+            }
             Bar bar = run.bar(holding.ticker);
             if (bar == null || bar.stale()) {
                 holding.priceStale = true;
@@ -810,6 +1069,19 @@ public class PaperLedgerService {
         if (reason != null) {
             run.note("주문 " + order.id() + " " + order.side() + " " + order.ticker() + " 체결 기다림 — " + reason);
         }
+    }
+
+    /**
+     * 기업행위로 그날 보류한 종목의 주문인가(판정 대기·분할을 반영한 날·미처리 기업행위 보유 — {@link #corporateActions}) — 그렇다면 체결하지
+     * 않고 대기 그대로(만료까지) 두고 작업 기록에 사유.
+     */
+    private static boolean heldByCorporateAction(BookRun run, Order order) {
+        String reason = run.orderHolds.get(order.ticker());
+        if (reason == null) {
+            return false;
+        }
+        holdNote(run, order, reason);
+        return true;
     }
 
     /** 비용을 셀 수 없어 보류한 주문(종목 구분 모름·세율 모름) — 작업 기록에만(주문은 대기 그대로 — 만료까지). */
@@ -879,6 +1151,9 @@ public class PaperLedgerService {
         }
         for (Holding holding : run.holdings.values()) {
             store.upsertPosition(holding.toPosition(code));
+            if (run.market.auctionFills()) {
+                store.updateFillRefVolume(code, holding.ticker, holding.fillRefVolume);   // since 봉 거래량(V15 — 보유 레코드 밖)
+            }
         }
         LocalDate navDate = state.lastNavTradingDate();
         LocalDate barDate = run.quotes.modalBarDate();
@@ -1219,6 +1494,12 @@ public class PaperLedgerService {
         final Set<String> removed = new LinkedHashSet<>();
         final Map<String, LocalDate> lockouts = new HashMap<>();
         final List<String> notes = new ArrayList<>();
+        /** 운영 알림(미처리 기업행위 보류가 5거래일 넘음 — {@link Outcome#alerts}). */
+        final List<String> alerts = new ArrayList<>();
+        /** 기업행위로 그날 보류한 종목 → 사유(시가 체결 장부). */
+        final Map<String, String> orderHolds = new HashMap<>();
+        /** 그 책 종목의 확정 시세(시가 체결 장부 — {@link PaperMarket#confirmedPrices}). */
+        KrConfirmed confirmed = KrConfirmed.NONE;
         int filled;
         int stopped;
         int expired;
@@ -1286,6 +1567,16 @@ public class PaperLedgerService {
         String splitNote;
         /** 이번 관측치의 가격을 믿을 수 있나(새 봉이 있고 분할 여부를 확인함) — 체결·스탑의 전제. */
         boolean verified;
+        /** 한국: since 봉(fill_ref)의 토스 원시 거래량(V15 — 보유 레코드 밖, 모르면 null). */
+        Long fillRefVolume;
+        /** 한국: '미처리 기업행위' 사유(corp_action_hold — 걸려 있으면 평가 묶음·스탑 없음·주문 보류). */
+        String corpHold;
+        /** 한국: 이번 관측치의 기업행위 판정 종류(판정하지 않았으면 null). */
+        Kind assessed;
+        /** 한국: 이번 관측치에서 분할·병합을 반영했으면 그 비율이 바뀐 날 E(그 전 가격은 옛 단위). */
+        LocalDate splitFrom;
+        /** 한국: 이번 관측치에서 새로 산 보유(since 봉은 체결 봉 그대로). */
+        boolean opened;
 
         Holding(Position p) {
             this.ticker = p.ticker();

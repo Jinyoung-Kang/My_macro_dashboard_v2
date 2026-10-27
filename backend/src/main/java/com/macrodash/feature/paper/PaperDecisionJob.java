@@ -783,6 +783,9 @@ public class PaperDecisionJob {
         if (!outcome.errors().isEmpty()) {
             out.put("errors", outcome.errors());
         }
+        if (!outcome.alerts().isEmpty()) {
+            out.put("alerts", outcome.alerts());
+        }
         return out;
     }
 

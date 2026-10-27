@@ -52,6 +52,8 @@ class KrLedgerTest {
     private PaperMarketData marketData;
     private PaperLedgerService ledger;
     private final Map<String, String> fscMarkets = new HashMap<>();
+    /** 금융위 확정 시세(가짜 시세 저장본이 답함 — 종목 → 기준일별 값). 비어 있으면 모든 종목이 '모름'. */
+    private final Map<String, KrConfirmed.Series> confirmed = new HashMap<>();
 
     private static Instant kst(String dateTime) {
         return ZonedDateTime.of(LocalDateTime.parse(dateTime), KrxCalendar.SEOUL).toInstant();
@@ -63,6 +65,8 @@ class KrLedgerTest {
         store.initSettingsIfAbsent(PaperFixtures.settings(store).defaultsJson());
         marketData = mock(PaperMarketData.class);
         when(marketData.fscMarkets(anyCollection())).thenAnswer(invocation -> Map.copyOf(fscMarkets));
+        when(marketData.krConfirmed(anyCollection(), anyCollection(), org.mockito.ArgumentMatchers.any()))
+                .thenAnswer(invocation -> new KrConfirmed(confirmed));
         ledger = new PaperLedgerService(store, marketData, PaperFixtures.MAPPER);
         fscMarkets.put("005930", "KOSPI");
         fscMarkets.put("000660", "KOSPI");
@@ -111,6 +115,33 @@ class KrLedgerTest {
     private static KrFixtures.Entry openedAt(KrFixtures.Payload payload, String ticker, double open) {
         return payload.code(ticker, FETCHED_D1).bar(D, open, open, 1_000_000).bar(D1, open + 500, open + 100, 900_000)
                 .minute("OK", "09:01", open, 50_000, "10:01", open + 50, 4_000);
+    }
+
+    /** 보유 + 그 보유가 반영한 마지막 관측(since 봉 — fill_ref_date·fill_ref_close·fill_ref_volume). 최고가 처음 값 = 평단. */
+    private void holdingSince(String code, String ticker, int qty, double avgCost, LocalDate since, double sinceClose,
+                              Long sinceVolume) {
+        store.upsertPosition(new Position(code, ticker, qty, avgCost, LocalDate.of(2026, 10, 27), CREATED, avgCost, CREATED,
+                avgCost, CREATED, false, since, sinceClose, null));
+        if (sinceVolume != null) {
+            store.updateFillRefVolume(code, ticker, sinceVolume);
+        }
+    }
+
+    /** 금융위 확정 시세 한 종목 — 그 데이터셋 최신 기준일과 행들(기준일·종가·거래량·상장주식수). */
+    private void fsc(String ticker, LocalDate latest, KrConfirmed.Day... days) {
+        java.util.TreeMap<LocalDate, KrConfirmed.Day> map = new java.util.TreeMap<>();
+        for (KrConfirmed.Day day : days) {
+            map.put(day.date(), day);
+        }
+        confirmed.put(ticker, new KrConfirmed.Series(KrConfirmed.SOURCE_FSC, latest, map));
+    }
+
+    private static KrConfirmed.Day fscDay(LocalDate date, long close, long volume, Long listed) {
+        return new KrConfirmed.Day(date, java.math.BigDecimal.valueOf(close), volume, listed);
+    }
+
+    private Position position(String code, String ticker) {
+        return store.positions(code).stream().filter(p -> p.ticker().equals(ticker)).findFirst().orElseThrow();
     }
 
     private Fill onlyFill() {
@@ -616,6 +647,189 @@ class KrLedgerTest {
             assertThat(store.fillsOf(BOOK).get(0).qty()).as("신호 종목은 다 삼").isEqualTo(10);
             assertThat(store.orders.get(signal).status()).isEqualTo(PaperBooks.ORDER_FILLED);
             assertThat(store.orders.get(park).reason().path("cashLimited").asBoolean()).as("남는 현금만큼").isTrue();
+        }
+    }
+
+    // ------------------------------------------------------------------ 기업행위(K32, 결정 d12 — C2c)
+    @Nested
+    @DisplayName("기업행위(§4-2 K32·§5) — 3중 조건을 채운 분할·병합만 수량을 고치고, 못 채운 큰 변동·사라진 종목은 '미처리 기업행위'(평가 묶음·스탑 없음·주문 보류)")
+    class CorporateActions {
+
+        /** 11-05(목)·11-06(금)·11-09(월)·11-10(화). */
+        private final LocalDate thu = LocalDate.of(2026, 11, 5);
+        private final LocalDate fri = LocalDate.of(2026, 11, 6);
+        private final LocalDate mon2 = LocalDate.of(2026, 11, 9);
+        private final LocalDate tue2 = LocalDate.of(2026, 11, 10);
+
+        /** 50:1 분할 꼴 — P(D) 2,650,000원·30만 주·비율 0.02, 정지 D+1(거래량 0), 재상장 D+2 53,000원·비율 1(거래량은 인자). */
+        private KrFixtures.Payload splitNight(long postVolume) {
+            KrFixtures.Payload payload = new KrFixtures.Payload(D2);
+            payload.code("005930", kst("2026-11-04T21:57"))
+                    .bar(D, 2_640_000, 2_650_000, 300_000).ratio(0.02)
+                    .bar(D1, 2_650_000, 2_650_000, 0).ratio(0.02)
+                    .bar(D2, 52_000, 53_000, postVolume).ratio(1.0).minute("OK", "09:01", 52_000, 1_000);
+            return payload;
+        }
+
+        @Test
+        @DisplayName("3중 조건(가격비 ×50·거래량비 ×66.7·순자산 ×1.0)을 채운 50:1 분할 — 수량 10 → 500, 평단·최고가 ÷ 50, 그날 그 종목 주문 보류, since 봉을 재상장 봉으로(다음 밤 다시 고치지 않음)")
+        void splitWithAllThreeConditions() {
+            book(BOOK, PaperBooks.KIND_CLAUDE, 0);
+            holdingSince(BOOK, "005930", 10, 2_600_000, D, 2_650_000, 300_000L);
+            long sell = sell("005930", 5);
+
+            Outcome outcome = process(splitNight(20_000_000), kst("2026-11-04T22:01"));
+
+            assertThat(outcome.errors()).isEmpty();
+            assertThat(outcome.splits()).isEqualTo(1);
+            Position split = position(BOOK, "005930");
+            assertThat(split.qty()).isEqualTo(500);
+            assertThat(split.avgCost()).isEqualTo(52_000);
+            assertThat(split.highWatermark()).as("최고가도 ÷ 50 — 가짜 스탑이 나지 않게").isEqualTo(52_000);
+            assertThat(split.lastPrice()).as("평가 = 재상장 봉 종가").isEqualTo(53_000);
+            assertThat(split.splitNote()).contains("2026-11-04 50:1 분할·병합 확인").contains("10주 → 500주");
+            assertThat(split.fillRefDate()).as("since 봉 = 이번 관측치의 마지막 관측").isEqualTo(D2);
+            assertThat(split.fillRefClose()).isEqualTo(53_000);
+            assertThat(store.fillRefVolumes(BOOK)).containsEntry("005930", 20_000_000L);
+            assertThat(store.corpActionHolds(BOOK)).as("분할은 미처리 표시가 아님").isEmpty();
+            assertThat(store.orders.get(sell).status()).as("그날 그 종목 주문 보류").isEqualTo(PaperBooks.ORDER_PENDING);
+            assertThat(store.fillsOf(BOOK)).isEmpty();
+            assertThat(outcome.notes()).anySatisfy(n -> assertThat(n).contains("분할·병합 확인").contains("가격비 ×50.00"))
+                    .anySatisfy(n -> assertThat(n).contains("보류").contains("기업행위 분할·병합"));
+
+            // 다음 밤 — 같은 비율 변화를 다시 반영하지 않음(since가 재상장 봉 뒤).
+            KrFixtures.Payload next = new KrFixtures.Payload(thu);
+            next.code("005930", kst("2026-11-05T21:57")).bar(D1, 2_650_000, 2_650_000, 0).ratio(0.02)
+                    .bar(D2, 52_000, 53_000, 20_000_000).bar(thu, 53_100, 53_500, 9_000_000)
+                    .minute("OK", "09:01", 53_100, 500);
+            Outcome again = process(next, kst("2026-11-05T22:01"));
+            assertThat(again.splits()).isZero();
+            assertThat(position(BOOK, "005930").qty()).as("매도 5주 뒤 495 — 분할을 두 번 반영하지 않음").isEqualTo(495);
+            assertThat(store.orders.get(sell).status()).isEqualTo(PaperBooks.ORDER_FILLED);
+        }
+
+        @Test
+        @DisplayName("3중 조건 중 거래량비가 모자라면(재상장 거래량 그대로) 미처리 — 보유에 '기업행위 확인 필요'(머리 날짜 = 걸린 날), 수량 그대로, 평가는 since 날짜의 금융위 확정 종가로 묶음, 주문 보류, 다음 밤에도 묶인 채")
+        void failedConditionIsUnprocessed() {
+            book(BOOK, PaperBooks.KIND_CLAUDE, 0);
+            holdingSince(BOOK, "005930", 10, 2_600_000, D, 2_650_000, 300_000L);
+            long sell = sell("005930", 5);
+            fsc("005930", D1, fscDay(D, 2_655_000, 120_000, null), fscDay(D1, 2_655_000, 0, null));
+
+            Outcome outcome = process(splitNight(300_000), kst("2026-11-04T22:01"));
+
+            assertThat(outcome.splits()).isZero();
+            assertThat(store.corpActionHolds(BOOK)).singleElement().satisfies(hold -> assertThat(hold.reason())
+                    .startsWith("2026-11-04 기업행위 확인 필요 — ").contains("3중 조건 불충족(거래량비)"));
+            Position held = position(BOOK, "005930");
+            assertThat(held.qty()).isEqualTo(10);
+            assertThat(held.lastPrice()).as("since 날짜(D)의 금융위 종가 — 거래량 > 0 행").isEqualTo(2_655_000);
+            assertThat(held.fillRefDate()).as("since 그대로").isEqualTo(D);
+            assertThat(store.orders.get(sell).status()).isEqualTo(PaperBooks.ORDER_PENDING);
+            assertThat(outcome.notes()).anySatisfy(n -> assertThat(n).contains("기업행위 확인 필요")
+                    .contains("금융위 2026-11-02 종가 2655000.00원으로 묶음").contains("스탑 없음·주문 보류"));
+
+            KrFixtures.Payload next = new KrFixtures.Payload(thu);
+            next.code("005930", kst("2026-11-05T21:57")).bar(D2, 52_000, 53_000, 300_000)
+                    .bar(thu, 53_100, 40_000, 9_000_000).minute("OK", "09:01", 53_100, 500);
+            Outcome again = process(next, kst("2026-11-05T22:01"));
+            assertThat(position(BOOK, "005930").lastPrice()).as("묶인 평가 그대로").isEqualTo(2_655_000);
+            assertThat(store.orders.get(sell).status()).isEqualTo(PaperBooks.ORDER_PENDING);
+            assertThat(again.notes()).anySatisfy(n -> assertThat(n).contains("보류").contains("미처리 기업행위 보유"));
+            assertThat(again.alerts()).as("걸린 날 뒤 1거래일 — 알림 아님").isEmpty();
+        }
+
+        @Test
+        @DisplayName("정지 4봉 + 재상장 봉(P가 5봉 창 밖) — 보유 쪽 since 봉(원시 종가·거래량, 결정 d12)을 이어 붙여 분할 확인, since 거래량을 모르면(V15 전 보유) 미처리")
+        void fourBarSuspensionResolvedThroughTheSinceBar() {
+            book(BOOK, PaperBooks.KIND_CLAUDE, 0);
+            book(PaperBooks.KR_RULES, PaperBooks.KIND_RULES, 0);
+            holdingSince(BOOK, "005930", 10, 2_600_000, D, 2_650_000, 300_000L);
+            holdingSince(PaperBooks.KR_RULES, "005930", 10, 2_600_000, D, 2_650_000, null);
+            KrFixtures.Payload payload = new KrFixtures.Payload(mon2);
+            KrFixtures.Entry entry = payload.code("005930", kst("2026-11-09T21:57"));
+            for (LocalDate day : List.of(D1, D2, thu, fri)) {
+                entry.bar(day, 2_650_000, 2_650_000, 0).ratio(0.02);
+            }
+            entry.bar(mon2, 52_000, 53_000, 20_000_000).ratio(1.0).minute("OK", "09:01", 52_000, 1_000);
+
+            Outcome outcome = process(payload, kst("2026-11-09T22:01"));
+
+            assertThat(outcome.errors()).isEmpty();
+            assertThat(position(BOOK, "005930").qty()).as("since 봉 P(11-02, 30만 주)로 3중 조건").isEqualTo(500);
+            assertThat(position(BOOK, "005930").fillRefDate()).isEqualTo(mon2);
+            assertThat(store.corpActionHolds(PaperBooks.KR_RULES)).singleElement().satisfies(hold -> assertThat(hold.reason())
+                    .contains("그 전 관측(거래량 > 0 봉)이 창에 없어 3중 조건을 볼 수 없음"));
+            assertThat(position(PaperBooks.KR_RULES, "005930").qty()).isEqualTo(10);
+        }
+
+        @Test
+        @DisplayName("사라진 종목은 토스(이번 응답의 NO_BARS)·금융위(최신 기준일에 행 없음) 둘 다 없을 때만 미처리 — 한쪽만 없거나 모르면 '가격 없음'(price_stale)뿐")
+        void vanishedOnlyWhenBothSourcesAnswerAbsent() {
+            book(BOOK, PaperBooks.KIND_CLAUDE, 0);
+            holdingSince(BOOK, "000660", 3, 500_000, D, 500_000, 1_000L);
+            holdingSince(BOOK, "035720", 3, 50_000, D, 50_000, 1_000L);
+            holdingSince(BOOK, "051910", 3, 300_000, D, 300_000, 1_000L);
+            holdingSince(BOOK, "005930", 3, 70_000, D, 70_000, 1_000L);
+            fsc("000660", D1);                                                  // 최신 기준일 D+1에 행 없음
+            fsc("035720", D1, fscDay(D1, 50_500, 900, null));                   // 금융위에는 있음
+            fsc("051910", D1);                                                  // 금융위 없음, 토스는 모름(항목 없음)
+            KrFixtures.Payload payload = new KrFixtures.Payload(D2);
+            payload.code("000660", kst("2026-11-04T21:57")).node.put("status", "NO_BARS");
+            payload.code("035720", kst("2026-11-04T21:57")).node.put("status", "NO_BARS");
+            ((tools.jackson.databind.node.ArrayNode) payload.payload.get("scope")).add("051910");   // 범위에만 — 호출 실패, 이을 값 없음
+            payload.code("005930", kst("2026-11-04T21:57")).bar(D2, 70_000, 70_500, 1_000);
+
+            Outcome outcome = process(payload, kst("2026-11-04T22:01"));
+
+            assertThat(store.corpActionHolds(BOOK)).singleElement().satisfies(hold -> {
+                assertThat(hold.ticker()).isEqualTo("000660");
+                assertThat(hold.reason()).contains("토스·금융위 모두 종목 없음");
+            });
+            assertThat(position(BOOK, "035720").priceStale()).as("토스만 없음").isTrue();
+            assertThat(position(BOOK, "051910").priceStale()).as("금융위만 없음(토스 모름)").isTrue();
+            assertThat(position(BOOK, "005930").priceStale()).isFalse();
+            assertThat(outcome.notes()).anySatisfy(n -> assertThat(n).contains("000660").contains("기업행위 확인 필요"));
+        }
+
+        @Test
+        @DisplayName("보유가 없는 종목(주문만)도 판정 — 정지 중 비율이 바뀌어 재상장 관측을 기다리면(판정 대기) 그날 그 매수 주문만 보류, 수량·표시 없음")
+        void orderOnlyTickerPendingHoldsTheBuy() {
+            book(BOOK, PaperBooks.KIND_CLAUDE, 10_000_000);
+            long buy = buy("005930", 1);
+            long other = buy("000660", 1);
+            KrFixtures.Payload payload = new KrFixtures.Payload(D2);
+            payload.code("005930", kst("2026-11-04T21:57")).bar(D, 2_640_000, 2_650_000, 300_000).ratio(0.02)
+                    .bar(D1, 2_650_000, 2_650_000, 0).ratio(0.02).bar(D2, 2_650_000, 2_650_000, 0).ratio(1.0);
+            openedAt(payload, "000660", 500_000);
+
+            Outcome outcome = process(payload, kst("2026-11-04T22:01"));
+
+            assertThat(store.orders.get(buy).status()).isEqualTo(PaperBooks.ORDER_PENDING);
+            assertThat(store.orders.get(other).status()).as("다른 종목은 체결").isEqualTo(PaperBooks.ORDER_FILLED);
+            assertThat(outcome.notes()).anySatisfy(n -> assertThat(n).contains("005930").contains("판정 대기"));
+            assertThat(store.corpActionHolds(BOOK)).isEmpty();
+        }
+
+        @Test
+        @DisplayName("미처리 기업행위 보류가 걸린 날 뒤 5거래일을 넘기면 운영 알림(11-02 월요일에 걸림 → 11-09는 아직, 11-10부터) — Outcome.alerts")
+        void alertAfterFiveTradingDays() {
+            book(BOOK, PaperBooks.KIND_CLAUDE, 0);
+            holdingSince(BOOK, "005930", 10, 70_000, D, 70_000, 1_000L);
+            store.holdForCorpAction(BOOK, "005930", "2026-11-02 기업행위 확인 필요 — 시험용 사유");
+
+            KrFixtures.Payload monday = new KrFixtures.Payload(mon2);
+            monday.code("005930", kst("2026-11-09T21:57")).bar(mon2, 71_000, 72_000, 5_000);
+            assertThat(process(monday, kst("2026-11-09T22:01")).alerts()).as("5거래일 — 아직").isEmpty();
+
+            KrFixtures.Payload tuesday = new KrFixtures.Payload(tue2);
+            tuesday.code("005930", kst("2026-11-10T21:57")).bar(mon2, 71_000, 72_000, 5_000)
+                    .bar(tue2, 72_000, 73_000, 5_000);
+            Outcome outcome = process(tuesday, kst("2026-11-10T22:01"));
+            assertThat(outcome.alerts()).singleElement().satisfies(alert -> assertThat(alert)
+                    .startsWith(BOOK + ": 005930 미처리 기업행위 보류 6거래일째(걸린 날 2026-11-02")
+                    .contains("사람이 확인하세요").contains("시험용 사유"));
+            assertThat(position(BOOK, "005930").lastPrice()).as("묶인 평가 — 새 봉으로 바꾸지 않음").isEqualTo(70_000);
         }
     }
 
