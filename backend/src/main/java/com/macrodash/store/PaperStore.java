@@ -153,6 +153,60 @@ public class PaperStore {
         }
     }
 
+    /**
+     * 확정 조정 한 행({@code paper_fill_confirmations}, V14 — 2단계 명세 K29). 한국 체결마다 금융위 확정가가 들어오면 한 번 씁니다(추가만 —
+     * 체결 행은 그대로). {@code fee}·{@code tax}·{@code slippageCost}는 확정가로 다시 계산한 비용 칸, {@code cashDelta}는 확정 기준 현금 흐름 −
+     * 잠정 기준 현금 흐름(음수 가능)이고, 장부가 같은 트랜잭션에서 계좌 현금에 더합니다. 금액은 DB 열과 같은 자리(가격 6, 금액 4)로 맞춰
+     * 둡니다(읽은 값과 만든 값이 같은 레코드가 되게) — 비용 음수·출처가 금융위 둘이 아님·자리 넘침은 받지 않습니다(DB CHECK와 같은 규칙).
+     *
+     * @param source       {@link #SOURCE_FSC}(주식시세) · {@link #SOURCE_FSC_ETF}(증권상품시세)
+     * @param reconciledAt 쓴 시각 — 넣을 때 null이면 DB의 now()
+     */
+    public record FillConfirmation(long fillId, String bookCode, BigDecimal confirmedPrice, BigDecimal fee,
+                                   BigDecimal tax, BigDecimal slippageCost, BigDecimal cashDelta, String source,
+                                   Instant reconciledAt) {
+
+        public static final String SOURCE_FSC = "FSC";
+        public static final String SOURCE_FSC_ETF = "FSC_ETF";
+        /** 확정가 열({@code confirmed_price} NUMERIC(18,6))의 소수 자릿수. */
+        public static final int PRICE_SCALE = 6;
+
+        public FillConfirmation {
+            if (bookCode == null || bookCode.isBlank()) {
+                throw new IllegalArgumentException("확정 조정의 책이 없습니다");
+            }
+            if (!SOURCE_FSC.equals(source) && !SOURCE_FSC_ETF.equals(source)) {
+                throw new IllegalArgumentException("확정 출처는 FSC·FSC_ETF만입니다(DB CHECK): " + source);
+            }
+            if (confirmedPrice == null || confirmedPrice.signum() <= 0) {
+                throw new IllegalArgumentException("확정가는 0보다 커야 합니다: " + confirmedPrice);
+            }
+            confirmedPrice = scaled(confirmedPrice, PRICE_SCALE, "confirmed_price");
+            fee = Fill.cost(fee, "fee");
+            tax = Fill.cost(tax, "tax");
+            slippageCost = Fill.cost(slippageCost, "slippage_cost");
+            if (cashDelta == null) {
+                throw new IllegalArgumentException("cash_delta 값이 없습니다(차이가 없으면 0)");
+            }
+            cashDelta = scaled(cashDelta, Fill.COST_SCALE, "cash_delta");
+        }
+
+        private static BigDecimal scaled(BigDecimal value, int scale, String column) {
+            try {
+                return value.setScale(scale, java.math.RoundingMode.UNNECESSARY);
+            } catch (ArithmeticException e) {
+                throw new IllegalArgumentException(column + "은(는) 소수 " + scale + "자리까지입니다: " + value);
+            }
+        }
+    }
+
+    /**
+     * 아직 확정 조정 행이 없는 체결과 그 주문의 체결 시점({@code paper_orders.timing}) — 확정가가 시가({@code NEXT_OPEN} → 금융위
+     * {@code mkp})인지 종가({@code NEXT_CLOSE} → {@code clpr})인지를 가릅니다.
+     */
+    public record UnconfirmedFill(Fill fill, String timing) {
+    }
+
     /** 거래일별 순자산. {@code pricesFinal}이면 확정 종가로 평가한 값입니다. */
     public record NavRow(String bookCode, LocalDate tradingDate, double nav, double cash, double equityValue,
                          double exposurePct, boolean pricesFinal) {
@@ -944,13 +998,75 @@ public class PaperStore {
     public List<Fill> recentFills(String code, int limit) {
         return jdbc.query("SELECT " + FILL_COLUMNS + " FROM paper_fills WHERE book_code = ? "
                         + "ORDER BY created_at DESC, id DESC LIMIT ?",
-                (rs, rowNum) -> new Fill(rs.getLong("id"), rs.getLong("order_id"), rs.getString("book_code"),
-                        rs.getString("ticker"), rs.getString("side"), rs.getInt("qty"), rs.getDouble("price"),
-                        rs.getDouble("raw_price"), rs.getDouble("slippage_bp"), rs.getDouble("gross"),
-                        instant(rs, "observed_at"), date(rs, "observation_date"), rs.getString("price_source"),
-                        rs.getBoolean("is_backfill"), instant(rs, "created_at"), rs.getBigDecimal("fee"),
-                        rs.getBigDecimal("tax"), rs.getBigDecimal("slippage_cost")),
-                code, limit);
+                (rs, rowNum) -> fillOf(rs), code, limit);
+    }
+
+    /** 한 책 체결 중 가장 늦은 관측일(체결 봉 날짜) — 체결이 없으면 empty. */
+    public Optional<LocalDate> latestFillDate(String code) {
+        List<LocalDate> rows = jdbc.query("SELECT max(observation_date) AS day FROM paper_fills WHERE book_code = ?",
+                (rs, rowNum) -> date(rs, "day"), code);
+        return rows.isEmpty() ? Optional.empty() : Optional.ofNullable(rows.get(0));
+    }
+
+    // ------------------------------------------------------------------ 확정 조정(V14 — K29)
+    /**
+     * 확정 조정 행이 아직 없는 그 책의 체결(사후 체결 제외 — 미국 출발 경로), 체결 순(번호 순)과 그 주문의 체결 시점.
+     */
+    public List<UnconfirmedFill> unconfirmedFills(String code) {
+        return jdbc.query("SELECT " + prefixed("f.", FILL_COLUMNS) + ", o.timing FROM paper_fills f "
+                        + "JOIN paper_orders o ON o.id = f.order_id "
+                        + "LEFT JOIN paper_fill_confirmations c ON c.fill_id = f.id "
+                        + "WHERE f.book_code = ? AND NOT f.is_backfill AND c.fill_id IS NULL ORDER BY f.id",
+                (rs, rowNum) -> new UnconfirmedFill(fillOf(rs), rs.getString("timing")), code);
+    }
+
+    /**
+     * 확정 조정 한 행을 넣습니다 — 그 체결에 이미 있으면(체결마다 한 행, 기본키 {@code fill_id}) 아무것도 바꾸지 않고 false. 장부는 true일
+     * 때만 같은 트랜잭션에서 현금·평단을 옮깁니다(그래서 재기동·같은 처리를 두 번 해도 현금이 두 번 움직이지 않음).
+     *
+     * @return 새로 넣었으면 true
+     */
+    public boolean insertFillConfirmationIfAbsent(FillConfirmation c) {
+        return jdbc.update("INSERT INTO paper_fill_confirmations (fill_id, book_code, confirmed_price, fee, tax, "
+                        + "slippage_cost, cash_delta, source, reconciled_at) "
+                        + "VALUES (?, ?, ?, ?, ?, ?, ?, ?, COALESCE(CAST(? AS timestamptz), now())) "
+                        + "ON CONFLICT (fill_id) DO NOTHING",
+                ps -> {
+                    ps.setLong(1, c.fillId());
+                    ps.setString(2, c.bookCode());
+                    ps.setBigDecimal(3, c.confirmedPrice());
+                    ps.setBigDecimal(4, c.fee());
+                    ps.setBigDecimal(5, c.tax());
+                    ps.setBigDecimal(6, c.slippageCost());
+                    ps.setBigDecimal(7, c.cashDelta());
+                    ps.setString(8, c.source());
+                    setInstant(ps, 9, c.reconciledAt());
+                }) == 1;
+    }
+
+    /** 한 책의 확정 조정 행, 체결 번호 순. */
+    public List<FillConfirmation> fillConfirmations(String code) {
+        return jdbc.query("SELECT fill_id, book_code, confirmed_price, fee, tax, slippage_cost, cash_delta, source, "
+                        + "reconciled_at FROM paper_fill_confirmations WHERE book_code = ? ORDER BY fill_id",
+                (rs, rowNum) -> new FillConfirmation(rs.getLong("fill_id"), rs.getString("book_code"),
+                        rs.getBigDecimal("confirmed_price"), rs.getBigDecimal("fee"), rs.getBigDecimal("tax"),
+                        rs.getBigDecimal("slippage_cost"), rs.getBigDecimal("cash_delta"), rs.getString("source"),
+                        instant(rs, "reconciled_at")),
+                code);
+    }
+
+    private static Fill fillOf(ResultSet rs) throws SQLException {
+        return new Fill(rs.getLong("id"), rs.getLong("order_id"), rs.getString("book_code"),
+                rs.getString("ticker"), rs.getString("side"), rs.getInt("qty"), rs.getDouble("price"),
+                rs.getDouble("raw_price"), rs.getDouble("slippage_bp"), rs.getDouble("gross"),
+                instant(rs, "observed_at"), date(rs, "observation_date"), rs.getString("price_source"),
+                rs.getBoolean("is_backfill"), instant(rs, "created_at"), rs.getBigDecimal("fee"),
+                rs.getBigDecimal("tax"), rs.getBigDecimal("slippage_cost"));
+    }
+
+    /** 열 목록({@code "a, b, c"})의 열마다 표 별칭을 붙입니다({@code "f.a, f.b, f.c"}) — 이름은 그대로 읽힙니다. */
+    private static String prefixed(String alias, String columns) {
+        return String.join(", ", java.util.Arrays.stream(columns.split(",\\s*")).map(column -> alias + column).toList());
     }
 
     // ------------------------------------------------------------------ 순자산
@@ -1080,6 +1196,17 @@ public class PaperStore {
         return jdbc.query("SELECT version, body::text AS body, created_at FROM paper_settings_history WHERE version = ?",
                 (rs, rowNum) -> new SettingsRow(rs.getInt("version"), json(rs, "body"), instant(rs, "created_at")),
                 version).stream().findFirst();
+    }
+
+    /**
+     * 그 시각에 유효했던 설정 판 — 변경 이력에서 그 시각 이전(같은 시각 포함)에 남긴 가장 늦은 판(2단계 명세 결정 d7: 한국 확정 조정은 그
+     * 체결 때의 비용 요율로 다시 셈). {@code updatedAt}에는 그 판을 남긴 시각이 들어갑니다. 그 시각 전에 남긴 판이 없으면 empty.
+     */
+    public Optional<SettingsRow> settingsInForceAt(Instant at) {
+        return jdbc.query("SELECT version, body::text AS body, created_at FROM paper_settings_history "
+                        + "WHERE created_at <= ? ORDER BY version DESC LIMIT 1",
+                (rs, rowNum) -> new SettingsRow(rs.getInt("version"), json(rs, "body"), instant(rs, "created_at")),
+                Timestamp.from(at)).stream().findFirst();
     }
 
     /** 설정 변경 이력 최근 {@code limit}건, 최근 버전 순(바뀐 키와 그 버전의 본문 전체). */

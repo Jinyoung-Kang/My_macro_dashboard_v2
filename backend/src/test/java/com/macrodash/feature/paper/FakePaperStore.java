@@ -43,6 +43,8 @@ class FakePaperStore extends PaperStore {
     Map<String, TreeMap<String, Long>> refVolumes = new HashMap<>();
     TreeMap<Long, Order> orders = new TreeMap<>();
     TreeMap<Long, Fill> fills = new TreeMap<>();
+    /** 체결 번호 → 확정 조정 행({@code paper_fill_confirmations}, V14 — 체결마다 한 행, 체결을 지우면 함께). */
+    TreeMap<Long, FillConfirmation> confirmations = new TreeMap<>();
     Map<String, TreeMap<LocalDate, NavRow>> nav = new HashMap<>();
     List<JobRun> jobRuns = new ArrayList<>();
     Map<String, StartPrice> startPrices = new TreeMap<>();
@@ -330,6 +332,39 @@ class FakePaperStore extends PaperStore {
                 .sorted(Comparator.comparing(Fill::createdAt).thenComparing(Fill::id).reversed()).limit(limit).toList();
     }
 
+    @Override
+    public Optional<LocalDate> latestFillDate(String code) {
+        return fills.values().stream().filter(f -> f.bookCode().equals(code)).map(Fill::observationDate)
+                .filter(java.util.Objects::nonNull).max(Comparator.naturalOrder());
+    }
+
+    @Override
+    public List<UnconfirmedFill> unconfirmedFills(String code) {
+        return fills.values().stream()
+                .filter(f -> f.bookCode().equals(code) && !f.backfill() && !confirmations.containsKey(f.id()))
+                .map(f -> new UnconfirmedFill(f, orders.get(f.orderId()).timing())).toList();
+    }
+
+    /** 체결이 없으면 외래키 위반, 이미 있으면 false(기본키 fill_id — ON CONFLICT DO NOTHING). */
+    @Override
+    public boolean insertFillConfirmationIfAbsent(FillConfirmation c) {
+        if (!fills.containsKey(c.fillId())) {
+            throw new org.springframework.dao.DataIntegrityViolationException("paper_fill_confirmations_fill_id_fkey: "
+                    + c.fillId());
+        }
+        if (confirmations.containsKey(c.fillId())) {
+            return false;
+        }
+        confirmations.put(c.fillId(), new FillConfirmation(c.fillId(), c.bookCode(), c.confirmedPrice(), c.fee(),
+                c.tax(), c.slippageCost(), c.cashDelta(), c.source(), c.reconciledAt() == null ? dbNow : c.reconciledAt()));
+        return true;
+    }
+
+    @Override
+    public List<FillConfirmation> fillConfirmations(String code) {
+        return confirmations.values().stream().filter(c -> c.bookCode().equals(code)).toList();
+    }
+
     List<Fill> fillsOf(String code) {
         return fills.values().stream().filter(f -> f.bookCode().equals(code)).toList();
     }
@@ -415,6 +450,13 @@ class FakePaperStore extends PaperStore {
     @Override
     public Optional<SettingsRow> settingsAt(int version) {
         return Optional.ofNullable(settingsHistory.get(version));
+    }
+
+    /** 그 시각 이전(같은 시각 포함)에 남긴 가장 늦은 판 — 이력 행의 시각은 남긴 때의 {@link #dbNow}. */
+    @Override
+    public Optional<SettingsRow> settingsInForceAt(Instant at) {
+        return new TreeMap<>(settingsHistory).descendingMap().values().stream()
+                .filter(row -> !row.updatedAt().isAfter(at)).findFirst();
     }
 
     /** 버전 → 그 버전에서 바뀐 키(처음 값은 빈 목록). */
@@ -926,6 +968,7 @@ class FakePaperStore extends PaperStore {
         decisions.values().removeIf(d -> d.bookCode().equals(code));
         orders.values().removeIf(o -> o.bookCode().equals(code));
         fills.values().removeIf(f -> f.bookCode().equals(code));
+        confirmations.keySet().removeIf(id -> !fills.containsKey(id));
         positions.remove(code);
         corpHolds.remove(code);
         refVolumes.remove(code);
@@ -939,7 +982,8 @@ class FakePaperStore extends PaperStore {
                             Map<String, TreeMap<String, Position>> positions,
                             Map<String, TreeMap<String, String>> corpHolds, Map<String, TreeMap<String, Long>> refVolumes,
                             Map<String, TreeMap<String, Lockout>> lockouts, TreeMap<Long, Order> orders,
-                            TreeMap<Long, Fill> fills, Map<String, TreeMap<LocalDate, NavRow>> nav,
+                            TreeMap<Long, Fill> fills, TreeMap<Long, FillConfirmation> confirmations,
+                            Map<String, TreeMap<LocalDate, NavRow>> nav,
                             List<JobRun> jobRuns, Map<String, StartPrice> startPrices, SettingsRow settings,
                             TreeMap<LocalDate, TreeMap<String, TrackRecordRow>> trackRecords,
                             TreeMap<LocalDate, Selection> selections, TreeMap<Long, Decision> decisions,
@@ -950,7 +994,8 @@ class FakePaperStore extends PaperStore {
         Snapshot(FakePaperStore s) {
             this(new TreeMap<>(s.books), new TreeMap<>(s.states), deep(s.positions), deep(s.corpHolds),
                     deep(s.refVolumes), deep(s.lockouts),
-                    new TreeMap<>(s.orders), new TreeMap<>(s.fills), deep(s.nav), new ArrayList<>(s.jobRuns),
+                    new TreeMap<>(s.orders), new TreeMap<>(s.fills), new TreeMap<>(s.confirmations), deep(s.nav),
+                    new ArrayList<>(s.jobRuns),
                     new TreeMap<>(s.startPrices), s.settings, deepDates(s.trackRecords), new TreeMap<>(s.selections),
                     new TreeMap<>(s.decisions), new TreeMap<>(s.gates), new TreeMap<>(s.frameworks),
                     new TreeMap<>(s.proposals), new TreeMap<>(s.notes), new TreeMap<>(s.apiUsage),
@@ -966,6 +1011,7 @@ class FakePaperStore extends PaperStore {
             s.lockouts = lockouts;
             s.orders = orders;
             s.fills = fills;
+            s.confirmations = confirmations;
             s.nav = nav;
             s.jobRuns = jobRuns;
             s.startPrices = startPrices;

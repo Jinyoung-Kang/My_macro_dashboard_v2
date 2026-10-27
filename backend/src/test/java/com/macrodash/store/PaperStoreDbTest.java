@@ -1620,6 +1620,92 @@ class PaperStoreDbTest {
     }
 
     @Test
+    @DisplayName("확정 조정 읽고 쓰기(C3): 확정 안 된 체결은 사후 체결을 빼고 체결 순·그 주문의 체결 시점과 함께, 두 번째 넣기는 false(현금을 두 번 옮기지 않게)·첫 값 그대로, 읽은 행 = 넣은 값(가격 6·금액 4자리), 가장 늦은 체결일, 초기화가 함께 지움")
+    void fillConfirmationReadWrite() {
+        store.insertBookIfAbsent(book(BOOK, "규칙 책"));
+        assertThat(store.latestFillDate(BOOK)).as("체결 없음").isEmpty();
+        store.insertFill(fill(store.insertOrder(pendingBuy(BOOK, "SPY", null)), BOOK));   // 사후 체결(미국 출발) — 확정 대상 아님
+        LocalDate fillDay = DAY.plusDays(4);
+        long buyOrder = store.insertOrder(new PaperStore.Order(0, BOOK, null, "005930", "BUY", 10, null, null, "NEXT_OPEN",
+                "CLAUDE", "FILLED", null, null, DAY, CLOSE, DAY.plusDays(7), CLOSE));
+        long buy = store.insertFill(new PaperStore.Fill(0, buyOrder, BOOK, "005930", "BUY", 10, 71_300, 71_300, 5, 713_000,
+                CLOSE, fillDay, "TOSS_1M_OPEN", false, null, java.math.BigDecimal.valueOf(106), java.math.BigDecimal.ZERO,
+                java.math.BigDecimal.valueOf(356)));
+        long sellOrder = store.insertOrder(new PaperStore.Order(0, BOOK, null, "000660", "SELL", 10, null, null,
+                "NEXT_OPEN", "STOP", "FILLED", null, null, DAY, CLOSE, DAY.plusDays(7), CLOSE));
+        long sell = store.insertFill(new PaperStore.Fill(0, sellOrder, BOOK, "000660", "SELL", 10, 72_000, 72_000, 5,
+                720_000, CLOSE, DAY.plusDays(3), "TOSS_INTEGRATED", false, null, java.math.BigDecimal.valueOf(108),
+                java.math.BigDecimal.valueOf(1_440), java.math.BigDecimal.valueOf(360)));
+
+        assertThat(store.unconfirmedFills(BOOK)).extracting(u -> u.fill().id(), PaperStore.UnconfirmedFill::timing)
+                .as("사후 체결 빼고 체결 순, 주문의 체결 시점").containsExactly(
+                        org.assertj.core.groups.Tuple.tuple(buy, "NEXT_OPEN"),
+                        org.assertj.core.groups.Tuple.tuple(sell, "NEXT_OPEN"));
+        assertThat(store.unconfirmedFills(BOOK).get(0).fill().fee()).isEqualByComparingTo("106");
+        assertThat(store.latestFillDate(BOOK)).contains(fillDay);
+
+        // §5 손계산 — 매수 10주 잠정 71,300 → 확정 71,200: 수수료 106·슬리피지 356 그대로, 현금 +1,000
+        PaperStore.FillConfirmation first = new PaperStore.FillConfirmation(buy, BOOK, java.math.BigDecimal.valueOf(71_200),
+                java.math.BigDecimal.valueOf(106), java.math.BigDecimal.ZERO, java.math.BigDecimal.valueOf(356),
+                java.math.BigDecimal.valueOf(1_000), PaperStore.FillConfirmation.SOURCE_FSC, null);
+        assertThat(store.insertFillConfirmationIfAbsent(first)).isTrue();
+        assertThat(store.insertFillConfirmationIfAbsent(new PaperStore.FillConfirmation(buy, BOOK,
+                java.math.BigDecimal.valueOf(71_100), java.math.BigDecimal.valueOf(106), java.math.BigDecimal.ZERO,
+                java.math.BigDecimal.valueOf(355), java.math.BigDecimal.valueOf(2_001), "FSC", null)))
+                .as("체결마다 한 행 — 두 번째는 false").isFalse();
+        assertThat(store.unconfirmedFills(BOOK)).extracting(u -> u.fill().id()).containsExactly(sell);
+        List<PaperStore.FillConfirmation> rows = store.fillConfirmations(BOOK);
+        assertThat(rows).singleElement().satisfies(row -> {
+            assertThat(row.reconciledAt()).as("DB now()").isNotNull();
+            assertThat(new PaperStore.FillConfirmation(row.fillId(), row.bookCode(), first.confirmedPrice(), first.fee(),
+                    first.tax(), first.slippageCost(), first.cashDelta(), first.source(), row.reconciledAt()))
+                    .as("읽은 값 = 넣은 값(첫 값 그대로)").isEqualTo(row);
+        });
+        assertThat(jdbc.queryForObject("SELECT price::text FROM paper_fills WHERE id = ?", String.class, buy))
+                .as("체결 행은 그대로").isEqualTo("71300.000000");
+
+        assertThatThrownBy(() -> new PaperStore.FillConfirmation(buy, BOOK, java.math.BigDecimal.ONE,
+                java.math.BigDecimal.ZERO, java.math.BigDecimal.ZERO, java.math.BigDecimal.ZERO, java.math.BigDecimal.ZERO,
+                "TOSS_DAILY", null)).as("확정 출처는 금융위 둘").isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> new PaperStore.FillConfirmation(buy, BOOK, java.math.BigDecimal.ONE,
+                java.math.BigDecimal.ZERO, java.math.BigDecimal.ZERO, java.math.BigDecimal.ZERO,
+                new java.math.BigDecimal("0.00001"), "FSC", null)).as("금액 소수 4자리까지")
+                .isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> new PaperStore.FillConfirmation(buy, BOOK, java.math.BigDecimal.ZERO,
+                java.math.BigDecimal.ZERO, java.math.BigDecimal.ZERO, java.math.BigDecimal.ZERO, java.math.BigDecimal.ZERO,
+                "FSC", null)).as("확정가 0").isInstanceOf(IllegalArgumentException.class);
+
+        store.resetBook(BOOK);
+        assertThat(store.fillConfirmations(BOOK)).as("초기화가 지운 체결의 확정 조정도 함께").isEmpty();
+    }
+
+    @Test
+    @DisplayName("그 시각에 유효했던 설정 판(결정 d7 — 확정 조정은 그 체결 때의 요율): 이력에서 그 시각 이전(같은 시각 포함)에 남긴 가장 늦은 판, 그 전이면 없음 — 시험 뒤 되돌림")
+    void settingsInForceAt() {
+        class Rollback extends RuntimeException {
+        }
+        assertThatThrownBy(() -> store.atomically(() -> {
+            jdbc.update("DELETE FROM paper_settings_history");
+            String insert = "INSERT INTO paper_settings_history (version, body, changed_keys, created_at) "
+                    + "VALUES (?, CAST(? AS jsonb), '{}', ?)";
+            jdbc.update(insert, 1, "{\"v\": 1}", Timestamp.from(Instant.parse("2026-10-01T00:00:00Z")));
+            jdbc.update(insert, 2, "{\"v\": 2}", Timestamp.from(Instant.parse("2026-11-01T00:00:00Z")));
+            assertThat(store.settingsInForceAt(Instant.parse("2026-09-30T23:59:59Z"))).as("첫 판 전").isEmpty();
+            assertThat(store.settingsInForceAt(Instant.parse("2026-10-01T00:00:00Z"))).as("같은 시각 포함")
+                    .hasValueSatisfying(row -> assertThat(row.version()).isEqualTo(1));
+            assertThat(store.settingsInForceAt(Instant.parse("2026-10-31T23:59:59Z")))
+                    .hasValueSatisfying(row -> {
+                        assertThat(row.version()).isEqualTo(1);
+                        assertThat(row.body().path("v").asInt()).isEqualTo(1);
+                        assertThat(row.updatedAt()).as("그 판을 남긴 시각").isEqualTo(Instant.parse("2026-10-01T00:00:00Z"));
+                    });
+            assertThat(store.settingsInForceAt(Instant.parse("2027-01-04T00:00:00Z")))
+                    .hasValueSatisfying(row -> assertThat(row.version()).isEqualTo(2));
+            throw new Rollback();
+        })).isInstanceOf(Rollback.class);
+    }
+
+    @Test
     @DisplayName("V14 복기 기본키 (market, week_ending): 같은 주의 미국·한국 행이 따로 들어가고(시장마다 두 번째는 false), 읽기·목록·재시도·제안 잇기가 그 시장 행만 — 시장을 받지 않는 옛 시그니처는 미국, 모르는 시장은 레코드·CHECK가 막음 — 시험 뒤 되돌림")
     void reviewsPerMarket() {
         class Rollback extends RuntimeException {
