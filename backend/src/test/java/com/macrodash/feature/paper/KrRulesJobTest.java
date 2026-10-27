@@ -354,6 +354,52 @@ class KrRulesJobTest {
     }
 
     @Test
+    @DisplayName("한국 수동 결정(Claude 계좌)도 결정 창·자료 게이트 안에서만(D1c) — 창 전·게이트 ④ 미달이면 400(Claude 부르지 않음), 통과하면 기준 거래일 D로 MANUAL·작업 기록에 게이트 ①(그 계좌)~⑥")
+    void manualDecisionNeedsWindowAndGates() {
+        ClaudeBookService claude = mock(ClaudeBookService.class);
+        List<String> calls = new ArrayList<>();
+        when(claude.decide(org.mockito.ArgumentMatchers.any(PaperMarket.class), org.mockito.ArgumentMatchers.any(),
+                org.mockito.ArgumentMatchers.anyString(), org.mockito.ArgumentMatchers.anyBoolean())).thenAnswer(invocation -> {
+                    LocalDate d = invocation.getArgument(1);
+                    String kind = invocation.getArgument(2);
+                    calls.add(d + " " + kind);
+                    return new Decision(0, PaperBooks.KR_CLAUDE, d, kind, null, "NO_TRADE", "claude-sonnet-5-5", null, 1, null,
+                            null, null, null, null, PaperFixtures.MAPPER.valueToTree(Map.of("summary", "주문 없음")), null,
+                            null, null, false, 0L, 0);
+                });
+        StoreRepository repository = repository();
+        data.install(repository, reader);
+        PaperMarketData marketData = new PaperMarketData(reader, repository);
+        job = new PaperDecisionJob(store, reader, marketData, new PaperLedgerService(store, marketData, PaperFixtures.MAPPER),
+                mock(PaperSelectionService.class), mock(RuleBookService.class), claude, PaperFixtures.settings(store),
+                KrRuleBookServiceTest.config(), PaperFixtures.MAPPER, clock);
+        quotes(R, Set.of());
+        fsc(LocalDate.of(2026, 10, 29));
+
+        clock.set(kst("2026-11-02T21:00"));
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> job.runNow(KrPaperMarket.INSTANCE, PaperBooks.KR_CLAUDE))
+                .isInstanceOf(com.macrodash.support.InvalidRequestException.class)
+                .hasMessageContaining("결정 창(2026-11-02 22:30 KST ~ 2026-11-03 01:00 KST 전)");
+        clock.set(kst("2026-11-02T22:40"));
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> job.runNow(KrPaperMarket.INSTANCE, PaperBooks.KR_CLAUDE))
+                .isInstanceOf(com.macrodash.support.InvalidRequestException.class)
+                .hasMessageContaining("자료 게이트 미달").hasMessageContaining("④ 금융위 기준일 2026-10-29");
+        assertThat(calls).isEmpty();
+        assertThat(krRuns()).isEmpty();
+
+        fsc(FRI);
+        Decision manual = job.runNow(KrPaperMarket.INSTANCE, PaperBooks.KR_CLAUDE);
+        assertThat(manual.asOfTradingDate()).isEqualTo(R);
+        assertThat(calls).containsExactly("2026-11-02 MANUAL");
+        assertThat(krRuns()).singleElement().satisfies(run -> {
+            assertThat(run.detail().path("manual").asBoolean()).isTrue();
+            assertThat(gateStatuses(run.detail().path("gates"))).containsExactly("① PASS", "② PASS", "③ PASS", "④ PASS",
+                    "⑤ PASS", "⑥ PASS");
+            assertThat(run.detail().path("gates").get(0).path("note").asString()).startsWith("kr_claude");
+        });
+    }
+
+    @Test
     @DisplayName("U 저장본이 없으면 게이트 ③ 미달 — 오류로 세지 않고 기다림(기록 없음, 포기 없음), 기한이 지나면 NO_TRADE(기한 지남, 기다린 까닭 ③)")
     void missingUniverseWaitsAtGateThree() {
         session(R);

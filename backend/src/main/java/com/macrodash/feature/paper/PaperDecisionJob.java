@@ -111,7 +111,7 @@ import java.util.concurrent.locks.ReentrantLock;
  * 계좌마다 ①(그 계좌의 기준일 &lt; D 대기 주문 없음 — 체결 조건 ⑤는 보지 않음)을 봅니다. 미달은 {@value #DATA_NOT_READY}(기록 안 함 — 다음
  * 주기에 다시)이고, 판정은 결정 행 응답과 작업 기록의 {@code gates}에 남습니다. 기한(D+1 01:00)이 지나면 규칙 계좌는 그 세션 NO_TRADE 행(그 순간의
  * 게이트와 사유 — ⑤ 미달이면 '069500 D 봉 없음(휴장 또는 지연)', 아니면 '기한 지남'), Claude는 부르지 않습니다. 자정을 넘긴 실행도 세션은
- * {@code lastCompletedSession}이라 D 그대로입니다.
+ * {@code lastCompletedSession}이라 D 그대로입니다. 수동 결정도 결정 창과 게이트 안에서만 받습니다({@link #runNow(PaperMarket, String)}).
  *
  * <p><b>실행 하나 = 달력 한 벌·설정 판 하나</b>(C1a): 정기·수동 실행은 시작할 때 그 시장의 실행 문맥({@link MarketRun})을 한 번 열어
  * ({@link PaperMarkets#open}) 세션 d·결정 시각과 기한·관측치 확정 판정·장부 처리·미확정 순자산 줄·Claude 결정에 그대로 넘깁니다 —
@@ -831,9 +831,14 @@ public class PaperDecisionJob {
      * 그 시장의 수동 결정 — {@link #runNow(String)}과 같되 책 코드·세션·관측치·장부·기록 이름이 그 시장 것. 규칙 책 수동 결정은 미국
      * 전용 단계라 미국 묶음에서만 받습니다(클래스 설명).
      *
+     * <p><b>결정 창</b>(D1c — 2단계 명세 §4-13 'C1b 구현에서 정한 것'·§9 'E2 — 한국 수동 결정의 기준일'): 기한이 지나면 그 세션을 결정하지 않는
+     * 시장({@link PaperMarket.AfterDeadline#NO_TRADE} — 한국)은 수동 결정도 그 세션의 결정 창(결정 시각 ~ 기한 — 기본 D 22:30 ~ D+1 01:00,
+     * 00:00~08:59 설정은 D+1 아침) 안에서만 받습니다 — 창 밖(D+1 낮이면 D+1 장중 정보를 본 결정이 '기준일 D'로 남음)은 400. 한국 묶음은 정기
+     * 결정과 같은 자료 게이트 ①(그 계좌)~⑥도 통과해야 합니다(미달이면 400 — 장부는 처리했을 수 있음, 리스크 점검과 같은 일).
+     *
      * @throws InvalidRequestException 책 코드가 그 시장의 규칙·Claude 책이 아님(미국 밖 시장은 Claude 책만), 그 시장이 쉬는 중(출발일·
      *                                 계좌 없음 — {@link PaperMarket#dormantReason}), 그 책이 시작 전, Claude 책이 일시정지 중, 그 시장
-     *                                 달력이 앞 창의 해를 모름('달력 없음' — 명세 K35)
+     *                                 달력이 앞 창의 해를 모름('달력 없음' — 명세 K35), 결정 창 밖·자료 게이트 미달(한국)
      */
     Decision runNow(PaperMarket requested, String book) {
         String code = Params.oneOf("book", book, usSteps(requested)
@@ -854,7 +859,14 @@ public class PaperDecisionJob {
                 throw new InvalidRequestException(e.getMessage());
             }
             LocalDate d = market.calendar().lastCompletedSession(now);
-            Optional<Quotes> quotes = reader.quietly(() -> marketData.quotes(market));
+            if (market.afterDeadline() == PaperMarket.AfterDeadline.NO_TRADE) {
+                requireDecisionWindow(market, now, d);
+            }
+            KrDecisionGates.Inputs session = krRulesSteps(market) ? krGates.readSession(market, d) : null;
+            if (session != null) {
+                requireGates(krGates.beforeLedger(market, session));
+            }
+            Optional<Quotes> quotes = session != null ? session.quotes() : reader.quietly(() -> marketData.quotes(market));
             boolean pricesFinal = quotes.map(q -> confirmedFor(market, q, d)).orElse(false);
             Map<String, Object> detail = new LinkedHashMap<>();
             detail.put("manual", true);
@@ -862,6 +874,13 @@ public class PaperDecisionJob {
             detail.put("tradingDate", d.toString());
             detail.put("pricesFinal", pricesFinal);
             quotes.ifPresent(q -> detail.put("ledger", ledgerDetail(ledger.process(market, q))));
+            if (session != null) {
+                // 장부를 처리한 뒤 ③(같은 읽기)과 그 계좌의 ① — 정기 결정과 같은 판정(클래스 설명 '한국 결정 게이트').
+                List<KrDecisionGates.Gate> gates = withFirst(KrDecisionGates.ledger(store, market, code, d),
+                        krGates.data(market, krGates.withRules(market, session, now)));
+                requireGates(gates);
+                detail.put("gates", views(gates));
+            }
             Decision decision = market.claudeBook().equals(code)
                     ? claude.decide(market, d, RuleBookService.MANUAL, pricesFinal)
                     : rules.decide(market, d, RuleBookService.MANUAL, pricesFinal);
@@ -870,6 +889,25 @@ public class PaperDecisionJob {
             return decision;
         } finally {
             running.unlock();
+        }
+    }
+
+    /** 수동 결정의 결정 창(위 설명 '결정 창') — 창 밖이면 400. */
+    private static void requireDecisionWindow(MarketRun market, Instant now, LocalDate d) {
+        Times times = times(market, market.settingsBody());
+        Instant opens = market.decisionInstant(d, times.decision());
+        Instant deadline = market.deadlineInstant(d, times.decision(), times.deadline());
+        if (now.isBefore(opens) || !now.isBefore(deadline)) {
+            throw new InvalidRequestException(market.code() + " 수동 결정은 그 세션의 결정 창(" + Kst.stamp(opens) + " ~ "
+                    + Kst.stamp(deadline) + " 전) 안에서만 받습니다 — 지금 " + Kst.stamp(now) + "(기준 거래일 " + d + ")");
+        }
+    }
+
+    /** 자료 게이트가 하나라도 미달이면 400(수동 결정 — 정기 결정은 기다림). */
+    private static void requireGates(List<KrDecisionGates.Gate> gates) {
+        List<String> blocking = KrDecisionGates.blocking(gates);
+        if (!blocking.isEmpty()) {
+            throw new InvalidRequestException("자료 게이트 미달 — 수동 결정을 내지 않았습니다: " + String.join(" · ", blocking));
         }
     }
 

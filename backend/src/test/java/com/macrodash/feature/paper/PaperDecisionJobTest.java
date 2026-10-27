@@ -1038,6 +1038,31 @@ class PaperDecisionJobTest {
     }
 
     @Test
+    @DisplayName("수동 결정의 결정 창(D1c — §4-13 'C1b'): 기한이 지나면 결정하지 않는 시장(시험용 한국)은 그 세션 창(D 22:30 ~ D+1 01:00) 안에서만 — 창 전·기한 순간·D+1 장중·D+1 마감 뒤는 400(Claude 부르지 않음), 창 안은 기준 거래일 D로 MANUAL · 미국은 창 없이 그대로")
+    void krManualDecisionOnlyInsideTheWindow() {
+        krBook(null);
+        Map<String, Instant> refused = new LinkedHashMap<>();
+        refused.put("창 전(월 22:00)", KR_22_00);
+        refused.put("기한 순간(화 01:00)", Instant.parse("2026-10-26T16:00:00Z"));
+        refused.put("D+1 장중(화 10:00 — 세션은 아직 월)", Instant.parse("2026-10-27T01:00:00Z"));
+        refused.put("D+1 마감 뒤(화 16:00 — 화 창 전)", Instant.parse("2026-10-27T07:00:00Z"));
+        refused.forEach((label, at) -> assertThatThrownBy(() -> job(at, List.of(KR)).runNow(KR, KR_BOOK)).as(label)
+                .isInstanceOf(InvalidRequestException.class).hasMessageContaining("결정 창"));
+        assertThat(calls).as("창 밖에서는 Claude를 부르지 않음").isEmpty();
+        assertThat(store.jobRuns).isEmpty();
+
+        Decision manual = job(Instant.parse("2026-10-26T13:30:00Z"), List.of(KR)).runNow(KR, KR_BOOK);   // 월 22:30 KST
+        assertThat(manual.asOfTradingDate()).isEqualTo(PaperFixtures.MON);
+        assertThat(calls).containsExactly("kr claude 2026-10-26 MANUAL true");
+        assertThat(job(Instant.parse("2026-10-26T15:59:00Z"), List.of(KR)).runNow(KR, KR_BOOK)).as("기한 직전(화 00:59)")
+                .isNotNull();
+
+        observed(FRI_INTRADAY, FRI);
+        assertThat(job(Instant.parse("2026-10-24T05:00:00Z")).runNow(PaperBooks.RULES)).as("미국 — 창 없음(토 14:00 KST)")
+                .isNotNull();
+    }
+
+    @Test
     @DisplayName("시장 격리(A6): 오류 횟수는 시장마다 — 다른 시장이 그날 포기해도 미국 실행은 그대로, 그 시장 수동 결정은 그 시장 Claude 책만 받고 그 시장 횟수만 지움")
     void failuresArePerMarket() {
         krBook(new IllegalStateException("한국 패킷 고장"));
