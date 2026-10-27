@@ -154,7 +154,7 @@ public class PaperDecisionJob {
                          String message) {
     }
 
-    /** 설정의 결정 시각과 마감 기한(KST). */
+    /** 설정의 결정 시각과 마감 기한(KST) — 읽은 값 그대로(기한의 순간은 시장 규칙 {@link PaperMarket#deadlineInstant}). */
     record Times(LocalTime decision, LocalTime deadline) {
     }
 
@@ -334,7 +334,7 @@ public class PaperDecisionJob {
         Optional<Quotes> quotes = reader.quietly(() -> marketData.quotes(market));
         boolean closesIn = quotes.map(q -> closesFor(market, q, d)).orElse(false);
         boolean pricesFinal = quotes.map(q -> confirmedFor(market, q, d)).orElse(false);
-        Instant deadline = market.decisionInstant(d, times.deadline());
+        Instant deadline = market.deadlineInstant(d, times.decision(), times.deadline());
         if (!closesIn && now.isBefore(deadline)) {
             return new Result(PRICES_NOT_FINAL, d, false, null, null, d + " 확정 종가 관측치를 기다립니다(기한 "
                     + Kst.stamp(deadline) + ")");
@@ -701,17 +701,17 @@ public class PaperDecisionJob {
 
     /**
      * 설정의 결정 시각·마감 기한(그 시장의 {@code decisionTimeKst}·{@code decisionDeadlineKst} 키, "HH:mm" — 미국은 접두어 없음).
-     * 없거나 틀리면 그 시장 기본값(미국 07:30·12:00), 기한이 결정 시각보다 앞이면 기한을 결정 시각으로 봅니다(기다리지 않고 바로 진행).
+     * 없거나 틀리면 그 시장 기본값(미국 07:30·12:00). 읽은 값 그대로이고, 기한이 결정 시각보다 앞일 때의 뜻은 시장 규칙입니다
+     * ({@link PaperMarket#deadlineInstant} — 미국은 결정 시각으로 봄: 기다리지 않고 바로 진행).
      */
     Times times(PaperMarket market) {
         return times(market, store.settings().map(PaperStore.SettingsRow::body).orElse(null));
     }
 
     /** 받은 설정 본문(실행이 읽은 판 — 없으면 null)의 결정 시각·마감 기한({@link #times(PaperMarket)}과 같은 규칙). */
-    private static Times times(PaperMarket market, JsonNode body) {
-        LocalTime decision = decisionTime(market, body);
-        LocalTime deadline = time(text(body, market.settingKey("decisionDeadlineKst")), market.defaultDeadline());
-        return new Times(decision, deadline.isBefore(decision) ? decision : deadline);
+    static Times times(PaperMarket market, JsonNode body) {
+        return new Times(decisionTime(market, body),
+                time(text(body, market.settingKey("decisionDeadlineKst")), market.defaultDeadline()));
     }
 
     /**

@@ -405,6 +405,19 @@ class UsPaperMarketTest {
     }
 
     @Test
+    @DisplayName("결정 기한 순간(시장으로 옮긴 결정 작업의 묶기 그대로) — 세션 다음 KST 날의 기한, 기한이 결정 시각보다 앞이면 결정 시각(다음 날로 넘기지 않음), 같으면 그 순간")
+    void deadlineInstantFoldsEarlierDeadlineToDecisionTime() {
+        assertThat(US.deadlineInstant(FRI, LocalTime.of(7, 30), LocalTime.of(12, 0)))
+                .isEqualTo(Instant.parse("2026-10-24T03:00:00Z"));
+        assertThat(US.deadlineInstant(FRI, LocalTime.of(7, 30), LocalTime.of(6, 0))).as("기한 < 결정 → 결정 시각")
+                .isEqualTo(Instant.parse("2026-10-23T22:30:00Z"));
+        assertThat(US.deadlineInstant(FRI, LocalTime.of(7, 30), LocalTime.of(0, 0))).as("자정도 같은 날의 앞 — 다음 날 아님")
+                .isEqualTo(Instant.parse("2026-10-23T22:30:00Z"));
+        assertThat(US.deadlineInstant(FRI, LocalTime.of(7, 30), LocalTime.of(7, 30))).as("기한 = 결정 → 그 순간")
+                .isEqualTo(Instant.parse("2026-10-23T22:30:00Z"));
+    }
+
+    @Test
     @DisplayName("결정 순간 = 세션 다음 KST 날의 그 시각 — 금요일 세션 07:30은 토요일 07:30 KST, 2025~2027 모든 거래일에서 사건 창(NewsEvents.window)의 양 끝과 같음")
     void decisionInstant() {
         assertThat(US.decisionInstant(FRI, LocalTime.of(7, 30))).isEqualTo(Instant.parse("2026-10-23T22:30:00Z"));

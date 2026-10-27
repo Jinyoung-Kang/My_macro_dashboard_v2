@@ -863,8 +863,11 @@ class PaperDecisionJobTest {
         tools.jackson.databind.node.ObjectNode body = (tools.jackson.databind.node.ObjectNode) store.settings.body();
         body.put("decisionTimeKst", "08:15");
         body.putObject("kr").put("decisionTimeKst", "21:50").put("decisionDeadlineKst", "21:00");
-        assertThat(job(FRI_CLOSE).times(KR)).as("기한이 결정 시각보다 앞이면 결정 시각").isEqualTo(
-                new PaperDecisionJob.Times(java.time.LocalTime.of(21, 50), java.time.LocalTime.of(21, 50)));
+        assertThat(job(FRI_CLOSE).times(KR)).as("읽은 값 그대로 — 기한의 순간은 시장 규칙").isEqualTo(
+                new PaperDecisionJob.Times(java.time.LocalTime.of(21, 50), java.time.LocalTime.of(21, 0)));
+        assertThat(KR.deadlineInstant(PaperFixtures.MON, java.time.LocalTime.of(21, 50), java.time.LocalTime.of(21, 0)))
+                .as("기한이 결정 시각보다 앞이면 결정 시각").isEqualTo(KR.decisionInstant(PaperFixtures.MON,
+                        java.time.LocalTime.of(21, 50)));
         assertThat(job(FRI_CLOSE).times()).isEqualTo(new PaperDecisionJob.Times(java.time.LocalTime.of(8, 15),
                 java.time.LocalTime.of(12, 0)));
         assertThat(PaperDecisionJob.decisionTime(KR, body)).isEqualTo(java.time.LocalTime.of(21, 50));

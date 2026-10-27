@@ -503,6 +503,12 @@ final class KrPaperMarket implements PaperMarket {
         return ZonedDateTime.of(day, kstTime, KrxCalendar.SEOUL).toInstant();
     }
 
+    /** 결정 작업의 예전 묶기 그대로(기한이 결정 시각보다 앞이면 결정 시각) — 시장으로 옮기기만 했습니다. 한국 규칙은 명세 §9 'D1·E2 — 결정 기한'. */
+    @Override
+    public Instant deadlineInstant(LocalDate session, LocalTime decisionTime, LocalTime deadline) {
+        return decisionInstant(session, deadline.isBefore(decisionTime) ? decisionTime : deadline);
+    }
+
     /** @throws IllegalStateException 늘 — 한국 하드 규칙 줄(₩·153130·NEXT_OPEN)은 E2(명세 K34). 한국 Claude 계좌는 그 전에 시작하지 않습니다. */
     @Override
     public List<String> promptHardRules(JsonNode settingsBody) {

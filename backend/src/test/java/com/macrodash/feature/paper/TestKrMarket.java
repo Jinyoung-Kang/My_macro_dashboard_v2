@@ -313,6 +313,12 @@ final class TestKrMarket implements PaperMarket {
         return ZonedDateTime.of(session, kstTime, Kst.ZONE).toInstant();
     }
 
+    /** 결정 작업의 예전 묶기 그대로(기한이 결정 시각보다 앞이면 결정 시각). */
+    @Override
+    public Instant deadlineInstant(LocalDate session, LocalTime decisionTime, LocalTime deadline) {
+        return decisionInstant(session, deadline.isBefore(decisionTime) ? decisionTime : deadline);
+    }
+
     /** 시험용 하드 규칙 줄 — 받은 설정 본문의 한 키를 그대로 적어, 렌더링이 결정의 설정을 넘기는지 보이게. */
     @Override
     public List<String> promptHardRules(JsonNode settingsBody) {

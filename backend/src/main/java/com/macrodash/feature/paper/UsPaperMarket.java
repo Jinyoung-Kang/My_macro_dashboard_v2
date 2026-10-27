@@ -196,6 +196,15 @@ final class UsPaperMarket implements PaperMarket {
         return ZonedDateTime.of(session.plusDays(1), kstTime, Kst.ZONE).toInstant();
     }
 
+    /**
+     * 기한이 결정 시각보다 앞이면 결정 시각(기다리지 않고 바로 진행), 아니면 그 기한 — 세션 d 다음 KST 날({@link #decisionInstant}).
+     * 결정 작업이 시각을 읽으며 하던 묶기를 그대로 옮겼습니다(설정 저장은 기한 &lt; 결정을 거절하므로 손으로 고친 행에서만 묶임).
+     */
+    @Override
+    public Instant deadlineInstant(LocalDate session, LocalTime decisionTime, LocalTime deadline) {
+        return decisionInstant(session, deadline.isBefore(decisionTime) ? decisionTime : deadline);
+    }
+
     @Override
     public List<String> promptHardRules(JsonNode settingsBody) {
         return FrameworkService.hardRules(this, settingsBody);

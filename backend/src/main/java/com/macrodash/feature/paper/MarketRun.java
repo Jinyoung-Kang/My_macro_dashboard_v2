@@ -325,6 +325,11 @@ final class MarketRun implements PaperMarket {
     }
 
     @Override
+    public Instant deadlineInstant(LocalDate session, LocalTime decisionTime, LocalTime deadline) {
+        return market.deadlineInstant(session, decisionTime, deadline);
+    }
+
+    @Override
     public List<String> promptHardRules(JsonNode settingsBody) {
         return market.promptHardRules(settingsBody);
     }

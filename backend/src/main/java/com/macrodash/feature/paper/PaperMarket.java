@@ -349,10 +349,20 @@ interface PaperMarket {
     LocalTime defaultDeadline();
 
     /**
-     * 세션 날짜에 딸린 KST 시각의 순간 — 그 세션의 결정 시각·확정 종가 기한·사건 창 끝이 이 식으로 순간이 됩니다(세션 날짜와 결정
-     * 시각의 관계가 시장마다 달라서).
+     * 세션 날짜에 딸린 KST 시각의 순간 — 그 세션의 결정 시각·사건 창 끝이 이 식으로 순간이 됩니다(세션 날짜와 결정 시각의 관계가
+     * 시장마다 달라서). 결정 기한은 결정 시각과의 관계까지 시장 규칙이라 {@link #deadlineInstant}로 셉니다.
      */
     Instant decisionInstant(LocalDate session, LocalTime kstTime);
+
+    /**
+     * 세션의 결정 기한 순간 — 그 실행이 읽은 결정 시각과 기한(설정 값, KST)으로(2단계 명세 §9 'D1·E2 — 결정 기한'). 결정 작업이 확정
+     * 종가를 기다리는 끝입니다. 기한이 결정 시각과 어떤 관계일 때 무슨 순간인가가 시장마다 다릅니다 — 미국은 기한이 결정 시각보다
+     * 앞이면 결정 시각(기다리지 않고 바로 진행 — 결정 작업의 예전 묶기 그대로).
+     *
+     * @param decisionTime 그 실행의 결정 시각(설정 값 — 없거나 틀리면 시장 기본값)
+     * @param deadline     그 실행의 기한(설정 값 — 없거나 틀리면 시장 기본값)
+     */
+    Instant deadlineInstant(LocalDate session, LocalTime decisionTime, LocalTime deadline);
 
     /**
      * Claude 시스템 프롬프트의 하드 규칙 줄 — 코드가 집행하는 한도를 그 시장의 설정 읽기로 적은 것(검증기·장부와 같은 키). 렌더링
