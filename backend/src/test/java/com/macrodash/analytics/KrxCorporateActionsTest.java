@@ -326,6 +326,31 @@ class KrxCorporateActionsTest {
     }
 
     @Test
+    @DisplayName("[한계] 정지 4봉 + 재상장 봉이 paper.kr.quotes 5봉에 다 들면 E 전 관측 P가 창 밖이라 미처리 — P(그 보유가 반영한 마지막 관측)를 이어 붙이면 분할 확인")
+    void fourBarSuspensionNeedsTheLastObservationBeyondTheFiveBarWindow() {
+        // 50:1 분할 꼴: P(11-02) 2,650,000원·30만 주, 정지 4봉(11-03~06, 거래량 0·비율 0.02), 재상장 Q(11-09) 53,000원·2천만 주·비율 1.
+        DailyBar p = new DailyBar(NOV_02, 2_650_000, 300_000L, 0.02);
+        List<DailyBar> window = new ArrayList<>();
+        for (LocalDate d : List.of(NOV_03, NOV_04, NOV_05, LocalDate.of(2026, 11, 6))) {
+            window.add(new DailyBar(d, 2_650_000, 0L, 0.02));
+        }
+        window.add(new DailyBar(LocalDate.of(2026, 11, 9), 53_000, 20_000_000L, 1.0));
+        assertThat(window).hasSize(5);   // collector KR_QUOTES_BARS — 스냅샷에 실리는 최근 봉 수
+
+        Assessment fromSnapshot = KrxCorporateActions.assess(LocalDate.of(2026, 11, 9), NOV_02, 10, window, Listing.UNKNOWN);
+        assertThat(fromSnapshot.kind()).isEqualTo(Kind.UNPROCESSED);
+        assertThat(fromSnapshot.details()).containsExactly(
+                "2026-11-09 50:1 분할·병합 신호 — 그 전 관측(거래량 > 0 봉)이 창에 없어 3중 조건을 볼 수 없음");
+
+        List<DailyBar> withLastObservation = new ArrayList<>(window);
+        withLastObservation.add(0, p);
+        Assessment withP = KrxCorporateActions.assess(LocalDate.of(2026, 11, 9), NOV_02, 10, withLastObservation, Listing.UNKNOWN);
+        assertThat(withP.kind()).isEqualTo(Kind.SPLIT);
+        assertThat(withP.ratio()).isEqualTo(new Ratio(50, 1));
+        assertThat(withP.newQty()).isEqualTo(500);
+    }
+
+    @Test
     @DisplayName("거래량을 모르는 봉(null)은 정지로 세지 않는다 — 최근 5봉이 모두 null이면 신호 없음, 정지 봉 뒤에 null이 오면 거기서 멈춤")
     void unknownVolumeIsNotASuspension() {
         List<LocalDate> days = List.of(NOV_03, NOV_04, NOV_05, LocalDate.of(2026, 11, 6), LocalDate.of(2026, 11, 9));
