@@ -210,6 +210,57 @@ public class PaperMarketData {
     }
 
     /**
+     * 한국 유니버스 한 기준일치(수집기 {@code kr_paper_universe} 행 그대로 — {@code {code, name, rank, marketCap, listedShares, close, rule}}
+     * + {@code obsDate}).
+     *
+     * @param baseDate 금융위 기준일 B
+     */
+    record KrUniverseRows(LocalDate baseDate, List<JsonNode> rows) {
+
+        KrUniverseRows {
+            rows = List.copyOf(rows);
+        }
+    }
+
+    /**
+     * 기준 세션 D의 한국 유니버스 U(D) — D보다 이른 가장 최근 금융위 기준일 B의 행(2단계 명세 §4-5 'U(D)는 기준일 B &lt; D'). D 당일·뒤 기준일의
+     * 행은 그 결정 때 알 수 없던 값이라 읽지 않습니다. 그런 기준일이 없거나 행이 없으면 empty. 수집기 테이블을 읽기만 하고 수집을 깨우지
+     * 않습니다(observations 직접 읽기).
+     */
+    Optional<KrUniverseRows> krUniverseBefore(LocalDate session) {
+        LocalDate base = repository.latestObservationDateBefore(Datasets.OBS_KR_PAPER_UNIVERSE, session);
+        if (base == null) {
+            return Optional.empty();
+        }
+        List<JsonNode> rows = repository.readObservations(Datasets.OBS_KR_PAPER_UNIVERSE, base, null, null);
+        return rows == null || rows.isEmpty() ? Optional.empty() : Optional.of(new KrUniverseRows(base, rows));
+    }
+
+    /**
+     * 한국 종목들의 수급 기록({@code kr_paper_flow}) — {@code from}(포함) 이후 날짜, 종목 → 기록(최신 날짜 먼저, 각 payload에 {@code obsDate}).
+     * 뒤쪽 날짜를 자르지 않습니다 — 기준 세션 뒤 날짜·결정 시각 뒤에 받은 기록을 빼는 것은 부르는 쪽(한국 규칙 계좌의 입력 읽기)이 하고 그 수를
+     * 결정 행에 남깁니다. 수집기 테이블을 읽기만 합니다.
+     */
+    Map<String, List<JsonNode>> krFlows(Collection<String> codes, LocalDate from) {
+        if (codes.isEmpty()) {
+            return Map.of();
+        }
+        Map<String, List<JsonNode>> rows = repository.readObservationSeries(Datasets.OBS_KR_PAPER_FLOW,
+                List.copyOf(new LinkedHashSet<>(codes)), from);
+        return rows == null ? Map.of() : rows;
+    }
+
+    /** DART 사업보고서 주요계정 저장본({@code kr.dart_fundamentals}) — 부르는 쪽이 {@link StoreReader#quietly} 안에서 부릅니다. */
+    Optional<Snapshot> krDartFundamentals() {
+        return store.read(Datasets.SNAP_DART_FUNDAMENTALS, Datasets.MAX_AGE_WEEKLY, "dart_fundamentals");
+    }
+
+    /** 한국 책 수급의 종목별 수집 상태 저장본({@code kr.paper_flows.status}) — 부르는 쪽이 {@link StoreReader#quietly} 안에서 부릅니다. */
+    Optional<Snapshot> krFlowsStatus() {
+        return store.read(Datasets.SNAP_KR_PAPER_FLOWS_STATUS, Datasets.MAX_AGE_DAILY, "kr_paper_flows");
+    }
+
+    /**
      * 한국 종목들의 금융위 시장 구분({@code fsc_price}의 {@code market} — {@code KOSPI}·{@code KOSDAQ}·{@code KONEX}, 금융위 {@code mrktCtg}) — 저장된
      * 가장 최근 기준일의 행에서. 그날 행이 없는 종목(상장폐지·새 상장 등)과 칸이 빈 종목은 결과에 없습니다(모름 — 비용 종목 구분이 주문을
      * 보류, §4-3). 수집기 테이블을 읽기만 하고 수집을 깨우지 않습니다(observations 직접 읽기).
