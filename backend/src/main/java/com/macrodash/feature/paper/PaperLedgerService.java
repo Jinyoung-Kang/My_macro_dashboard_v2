@@ -79,6 +79,11 @@ import java.util.function.Supplier;
  * 일시정지(PAUSED) 책은 2·4의 최고가 갱신·6만(가격·분할·최고가는 따라가되 사고팔지 않음), 시작 전(NOT_STARTED) 책은 6의 상태만
  * (현금뿐이라 순자산 기록은 남기지 않음 — 시작하지 않은 책의 곡선이 평평하게 그려지지 않게).
  *
+ * <p><b>한국 — 시가 체결 장부</b>({@link PaperMarket#auctionFills}, 2단계 C2b): 1 뒤 명세 §4-2 순서 — 기업행위(다음 단계) → 시가 매도(STOP
+ * 포함) → 시가 매수 → 종가 매도 → 종가 매수(현금성은 각 묶음 마지막) → 최고가·스탑 감지(다음 단계) → 평가 → 6. 체결 봉·체결가·비용 칸은
+ * 시장 몫이고({@link PaperMarket#fillBar} — 기준 거래일 뒤 첫 관측 봉의 시가 사다리, {@link PaperMarket#fill} — 비용 칸·보류), 체결 조건 ①은
+ * 저장본이 아니라 그 종목을 받은 시각입니다. 미국식 분할 감지·관측가 최고가·즉시 스탑은 쓰지 않습니다({@code processAuction}).
+ *
  * <p><b>순자산 줄</b>: 관측 시각의 세션(시장 달력의 {@code currentOrLastSession})이 다수 티커의 봉 날짜와 같고 그 봉의 종가가
  * 나왔을 때만({@link PaperMarket#closeAvailable}) 그 거래일 줄을 씁니다 — 다음 날 개장 직후에는 새 봉의 과반이 아직 전날 날짜라, 이 조건이 없으면 장중가와 그날
  * 체결이 섞인 평가가 전날 확정 줄을 덮습니다(주말·휴장일·개장 전 재저장은 세션이 그대로라 다시 씀). 확정 표시
@@ -250,6 +255,10 @@ public class PaperLedgerService {
                     current.fallbacks());
         }
 
+        // 그 시장이 체결 전에 덧붙이는 종목 정보(한국: 금융위 시장 구분 — 비용 종목 구분). 미국은 그대로입니다.
+        Quotes observed = market.withListings(quotes, marketData);
+        JsonNode settingsBody = market.settingsBody();
+
         int filled = 0;
         int stopped = 0;
         int expired = 0;
@@ -265,7 +274,7 @@ public class PaperLedgerService {
                 continue;
             }
             try {
-                BookRun run = store.atomically(() -> processBook(market, book, quotes, current));
+                BookRun run = store.atomically(() -> processBook(market, book, observed, current, settingsBody));
                 failedObservations.remove(key);
                 if (run == null) {
                     continue;
@@ -300,7 +309,8 @@ public class PaperLedgerService {
     }
 
     /** 책 하나(트랜잭션 안). 이미 처리한 관측치면 null. */
-    private BookRun processBook(PaperMarket market, Book book, Quotes quotes, PaperSettings current) {
+    private BookRun processBook(PaperMarket market, Book book, Quotes quotes, PaperSettings current,
+                                JsonNode settingsBody) {
         Optional<BookState> stateRow = store.state(book.code());
         if (stateRow.isEmpty()) {
             throw new IllegalStateException("계좌 상태(paper_book_state)가 없습니다 — 초기화를 다시 실행하세요");
@@ -309,7 +319,7 @@ public class PaperLedgerService {
         if (!isNew(quotes, state)) {
             return null;
         }
-        BookRun run = new BookRun(market, book, quotes, current, state.cash());
+        BookRun run = new BookRun(market, book, quotes, current, state.cash(), settingsBody);
 
         // 1. 만료·재진입 금지 정리
         run.expired = store.expireOrders(book.code(), run.session);
@@ -324,6 +334,11 @@ public class PaperLedgerService {
         boolean active = PaperBooks.ACTIVE.equals(book.status());
         boolean started = active || PaperBooks.PAUSED.equals(book.status());
         List<Order> pending = active ? store.ordersByStatus(book.code(), PaperBooks.ORDER_PENDING) : List.of();
+        if (market.auctionFills()) {
+            processAuction(run, pending, started);                  // 한국 — 시가 체결 장부(아래 '시가 체결 장부')
+            settle(run, state, started);
+            return run;
+        }
         if (started) {
             refreshHoldings(run);                                   // 2. 분할·가격
         }
@@ -588,6 +603,218 @@ public class PaperLedgerService {
     private void cancel(BookRun run, Order order, String reason) {
         store.markOrderStatus(order.id(), PaperBooks.ORDER_CANCELLED, reason);
         run.note("주문 " + order.id() + " " + order.side() + " " + order.ticker() + " 취소 — " + reason);
+    }
+
+    // ------------------------------------------------------------------ 시가 체결 장부(한국 — 명세 §4-2, C2b)
+    /**
+     * 한국 책 하나의 관측치 처리(만료·재진입 금지 정리 뒤, 평가·순자산 앞) — 명세 §4-2의 한 관측치 안 순서: 기업행위 → 시가 매도(STOP 포함) →
+     * 시가 매수 → 종가 매도 → 종가 매수(현금성은 각 묶음 마지막) → 최고가 갱신·스탑 감지 → 평가. 체결 봉·가격·비용 칸은 시장 몫
+     * ({@link PaperMarket#fillBar}·{@link PaperMarket#fill} — {@code KrFills})입니다. 미국식 분할 감지(종가 하나의 비율)·관측가 최고가·즉시 스탑
+     * ({@code IMMEDIATE})은 쓰지 않습니다(K30·K32 — 한국 스탑은 다음 거래일 시가 주문, 기업행위는 3중 조건).
+     *
+     * <p><b>C2b에서 비워 둔 자리</b>: 기업행위 판정(결정 d12 — {@code KrxCorporateActions.assess}에 봉 창 + 그 보유가 반영한 마지막 관측)과
+     * 최고가 갱신·스탑 감지(K30 — KRX 기준가로만 올리고, 감지하면 다음 거래일 {@code NEXT_OPEN} {@code STOP} 매도 주문, 체결 때 금융위 확정 종가로
+     * 다시 판정)는 다음 단계입니다. 그때까지 한국 보유는 이번 관측치에 그 종목의 새 항목이 있으면 '확인됨'(매도 수량을 믿음)이고 스탑이 없습니다.
+     *
+     * <p><b>순자산 기준</b>: 목표 비중 매수의 목표 금액 = 목표 비중 × 그 체결 직전 순자산 — 보유 평가는 직전 관측치의 가격(이번 관측치의 종가는
+     * 평가 단계에서 반영), 같은 관측치에서 앞서 산 종목은 체결가입니다. 그래서 한 시가에 함께 사는 주문(벤치마크 60/40 등)이 그날 시가 뒤
+     * 움직임과 상관없이 같은 기준으로 나뉩니다.
+     */
+    private void processAuction(BookRun run, List<Order> pending, boolean started) {
+        if (started) {
+            markAuctionHoldings(run);                                   // 2. 기업행위 자리(다음 단계)
+        }
+        auctionFills(run, pending, PaperBooks.SELL, true);              // 3. 시가 매도(STOP 포함)
+        auctionFills(run, pending, PaperBooks.BUY, true);               // 4. 시가 매수
+        auctionFills(run, pending, PaperBooks.SELL, false);             // 5. 종가 매도(NEXT_CLOSE — 지금은 체결하지 않음)
+        auctionFills(run, pending, PaperBooks.BUY, false);              // 6. 종가 매수
+        // 7. 최고가 갱신·스탑 감지 — 다음 단계(K30, 위 설명)
+        if (started) {
+            revalueAuction(run);                                        // 8. 평가 가격 = 이번 관측치의 그 종목 마지막 봉 종가
+        }
+    }
+
+    /** 이번 관측치에 그 종목의 새 항목(이어받기 아님)이 있는 보유만 '확인됨' — 매도·추가 매수의 전제(C2b, 기업행위 판정은 다음 단계). */
+    private static void markAuctionHoldings(BookRun run) {
+        for (Holding holding : run.holdings.values()) {
+            Bar bar = run.bar(holding.ticker);
+            holding.verified = bar != null && !bar.stale();
+        }
+    }
+
+    /**
+     * 그쪽(매도·매수)·그 묶음(시가 = {@code NEXT_OPEN}, 종가 = 그 밖의 시점)의 대기 주문을 만든 순서대로 — 현금성(설정 {@code kr.cashLikeTickers})이
+     * 아닌 것 먼저, 현금성은 그 묶음 마지막(명세 §4-2, 미국 {@link #fill}의 이유와 같음 — 남는 현금 주문이 신호 종목과 현금을 다투지 않게).
+     */
+    private void auctionFills(BookRun run, List<Order> pending, String side, boolean open) {
+        for (boolean cashLikePass : new boolean[]{false, true}) {
+            for (Order order : pending) {
+                if (side.equals(order.side()) && PaperBooks.NEXT_OPEN.equals(order.timing()) == open
+                        && run.settings.cashLike(order.ticker()) == cashLikePass) {
+                    if (PaperBooks.SELL.equals(side)) {
+                        auctionSell(run, order);
+                    } else {
+                        auctionBuy(run, order);
+                    }
+                }
+            }
+        }
+    }
+
+    private void auctionSell(BookRun run, Order order) {
+        Bar observed = run.bar(order.ticker());
+        if (observed == null) {
+            return;   // 이번 관측치에 그 종목이 없음 — 다음 관측치
+        }
+        PaperMarket.FillChoice choice = run.chooseFill(order, observed);
+        if (choice.bar() == null) {
+            waitNote(run, order, choice.waitReason());
+            return;
+        }
+        Holding holding = run.holdings.get(order.ticker());
+        if (holding == null) {
+            cancel(run, order, "체결 시점에 보유가 없습니다");
+            return;
+        }
+        if (!holding.verified) {
+            return;
+        }
+        int qty = sellQty(run, order, holding);
+        if (qty < 0) {
+            return;
+        }
+        FillTerms terms = run.fill(order, choice.bar());
+        if (terms.holdReason() != null) {
+            holdNote(run, order, terms.holdReason());
+            return;
+        }
+        FillTerms.Costs costs = terms.costs(qty);
+        recordFill(run, order.id(), order.ticker(), PaperBooks.SELL, qty, terms, costs, choice.bar());
+        store.markOrderFilled(order.id(), run.at);
+        run.cash = PaperLedger.round4(run.cash + costs.cashDelta());
+        holding.qty -= qty;
+        if (holding.qty == 0) {
+            run.holdings.remove(holding.ticker);
+            run.removed.add(holding.ticker);
+        }
+        annotate(run, order, null, qty, terms.warnings());
+        run.filled++;
+    }
+
+    private void auctionBuy(BookRun run, Order order) {
+        Bar observed = run.bar(order.ticker());
+        if (observed == null) {
+            return;
+        }
+        PaperMarket.FillChoice choice = run.chooseFill(order, observed);
+        if (choice.bar() == null) {
+            waitNote(run, order, choice.waitReason());
+            return;
+        }
+        Bar bar = choice.bar();
+        Holding holding = run.holdings.get(order.ticker());
+        if (holding != null && !holding.verified) {
+            return;
+        }
+        LocalDate until = run.lockouts.get(order.ticker());
+        if (TrailingStop.lockedOut(until, bar.date())) {
+            cancel(run, order, "재진입 금지 중입니다(" + until + "까지, 트레일링 스탑)");
+            return;
+        }
+        FillTerms terms = run.fill(order, bar);
+        if (terms.holdReason() != null) {
+            holdNote(run, order, terms.holdReason());
+            return;
+        }
+        int wanted;
+        if (order.qty() != null) {
+            wanted = order.qty();
+        } else if (order.targetWeightPct() != null && Double.isFinite(order.targetWeightPct())) {
+            // 목표 금액 = 목표 비중 × 체결 직전 순자산(processAuction 설명의 '순자산 기준'), 수수료·슬리피지 포함 유출이 그 안.
+            wanted = terms.affordableQty(order.targetWeightPct() / 100.0 * run.nav());
+        } else {
+            cancel(run, order, "매수 크기(수량·목표 비중)가 없습니다");
+            return;
+        }
+        if (wanted <= 0) {
+            cancel(run, order, "목표 금액으로 1주도 살 수 없습니다");
+            return;
+        }
+        int qty = Math.min(wanted, terms.affordableQty(run.cash));   // 현금 한도도 비용 포함 유출로
+        if (qty <= 0) {
+            cancel(run, order, "현금이 모자라 1주도 살 수 없습니다(현금 " + money(run.cash) + ")");
+            return;
+        }
+        FillTerms.Costs costs = terms.costs(qty);
+        recordFill(run, order.id(), order.ticker(), PaperBooks.BUY, qty, terms, costs, bar);
+        store.markOrderFilled(order.id(), run.at);
+        run.cash = PaperLedger.round4(run.cash + costs.cashDelta());
+        double price = terms.price();
+        if (holding == null) {
+            // 평단 = 체결가(비용은 비용 칸 — 결정 d14), 평가 가격은 평가 단계 전까지 체결가, 최고가 처음 값 = 체결가(올리는 규칙은 다음 단계 —
+            // K30), 기준(fill_ref) = 체결한 관측 봉의 날짜·종가(기업행위 판정의 'since' 자리 — 결정 d12, 다음 단계).
+            holding = new Holding(order.ticker(), qty, price, bar.date(), run.at, price, run.at, price, run.at, bar.date(),
+                    bar.close());
+            holding.verified = true;
+            run.holdings.put(holding.ticker, holding);
+        } else {
+            holding.avgCost = PaperLedger.averageCost(holding.qty, holding.avgCost, qty, price);
+            holding.qty += qty;
+        }
+        annotate(run, order, qty < wanted ? wanted : null, qty, terms.warnings());
+        run.filled++;
+    }
+
+    /** 이번 관측치의 그 종목 마지막 봉 종가로 평가(이어받은 항목·없는 종목은 마지막 가격 + '가격 없음'). */
+    private static void revalueAuction(BookRun run) {
+        for (Holding holding : run.holdings.values()) {
+            Bar bar = run.bar(holding.ticker);
+            if (bar == null || bar.stale()) {
+                holding.priceStale = true;
+                continue;
+            }
+            holding.lastPrice = bar.close();
+            holding.lastPriceAt = run.at;
+            holding.priceStale = false;
+        }
+    }
+
+    /**
+     * 체결한 주문의 근거에 남길 것 — 현금이 모자라 요청보다 적게 샀으면 {@code cashLimited}(미국과 같은 칸), 체결 경고(사다리를 내려감·호가에
+     * 안 맞는 관측가 — {@link FillTerms#warnings})는 {@code fillWarnings}. 경고는 작업 기록에도 남깁니다.
+     *
+     * @param requested 현금 부족으로 줄였을 때 요청 수량(아니면 null)
+     */
+    private void annotate(BookRun run, Order order, Integer requested, int filledQty, List<String> warnings) {
+        if (requested == null && warnings.isEmpty()) {
+            return;
+        }
+        ObjectNode reason = order.reason() instanceof ObjectNode existing ? existing.deepCopy() : mapper.createObjectNode();
+        if (requested != null) {
+            reason.put("cashLimited", true);
+            reason.put("requestedQty", requested);
+            reason.put("filledQty", filledQty);
+            run.note("주문 " + order.id() + " " + order.ticker() + " 현금 부족으로 " + requested + "주 중 " + filledQty
+                    + "주만 매수(cashLimited)");
+        }
+        if (!warnings.isEmpty()) {
+            warnings.forEach(reason.putArray("fillWarnings")::add);
+            warnings.forEach(text -> run.note("주문 " + order.id() + " " + order.side() + " " + order.ticker() + " 체결 경고 — "
+                    + text));
+        }
+        store.updateOrderReason(order.id(), reason);
+    }
+
+    /** 체결하지 않고 기다리는 주문의 사유(1분봉 기다림 등) — 작업 기록에만(주문은 대기 그대로). 사유가 없는 기다림은 남기지 않습니다. */
+    private static void waitNote(BookRun run, Order order, String reason) {
+        if (reason != null) {
+            run.note("주문 " + order.id() + " " + order.side() + " " + order.ticker() + " 체결 기다림 — " + reason);
+        }
+    }
+
+    /** 비용을 셀 수 없어 보류한 주문(종목 구분 모름·세율 모름) — 작업 기록에만(주문은 대기 그대로 — 만료까지). */
+    private static void holdNote(BookRun run, Order order, String reason) {
+        run.note("주문 " + order.id() + " " + order.side() + " " + order.ticker() + " 보류 — " + reason);
     }
 
     // ------------------------------------------------------------------ 4. 최고가·트레일링 스탑
@@ -982,6 +1209,8 @@ public class PaperLedgerService {
         final Book book;
         final Quotes quotes;
         final PaperSettings settings;
+        /** 그 실행이 읽은 설정 본문(시장의 체결 봉 고르기가 씀 — 한국 1분봉 기다림의 끝 = 결정 기한). 행이 없으면 null. */
+        final JsonNode settingsBody;
         final Instant at;
         /** 관측 시각의 세션 날짜(시장 달력 — 장중·마감 뒤면 그날, 개장 전·주말이면 직전 거래일). */
         final LocalDate session;
@@ -995,11 +1224,13 @@ public class PaperLedgerService {
         int expired;
         int splits;
 
-        BookRun(PaperMarket market, Book book, Quotes quotes, PaperSettings settings, double cash) {
+        BookRun(PaperMarket market, Book book, Quotes quotes, PaperSettings settings, double cash,
+                JsonNode settingsBody) {
             this.market = market;
             this.book = book;
             this.quotes = quotes;
             this.settings = settings;
+            this.settingsBody = settingsBody;
             this.at = quotes.collectedAt();
             this.session = market.calendar().currentOrLastSession(at);
             this.cash = cash;
@@ -1012,6 +1243,11 @@ public class PaperLedgerService {
         /** 그 주문을 그 봉으로 체결하는 조건 — 시장 몫(결정 d10), 이 실행이 읽은 설정과 그 실행의 달력으로. */
         FillTerms fill(Order order, Bar bar) {
             return market.fill(order, bar, settings, market.calendar());
+        }
+
+        /** 그 주문을 이 관측치(그 종목의 봉)로 체결할 봉 — 시장 몫({@link PaperMarket#fillBar}), 그 실행의 달력·설정 본문으로. */
+        PaperMarket.FillChoice chooseFill(Order order, Bar bar) {
+            return market.fillBar(order, bar, at, market.calendar(), settingsBody);
         }
 
         void note(String text) {

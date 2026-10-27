@@ -211,7 +211,7 @@ class KrPaperMarketTest {
     }
 
     @Test
-    @DisplayName("확정 판정 셋(결정 d9) — 종가 나옴 = 그날 20:30 KST(수집 규칙) 이후 수집(장 시간 변경일도 20:30), 체결 가격은 C2b·확정은 C3 전이라 늘 false")
+    @DisplayName("확정 판정 셋(결정 d9) — 종가 나옴 = 그날 20:30 KST(수집 규칙) 이후 수집(장 시간 변경일도 20:30), 체결 가격은 한국 칸이 있는 봉의 시가 사다리(C2b — KrLedgerTest), 확정은 C3 전이라 늘 false")
     void finalJudgementsFollowTheCollectionTime() {
         MarketRun run = new MarketRun(KR, calendar2026And2027(), null);
         LocalDate d = LocalDate.of(2026, 11, 2);
@@ -238,11 +238,17 @@ class KrPaperMarketTest {
                 100.0, null, PaperBooks.NEXT_OPEN, PaperBooks.SOURCE_BENCHMARK, PaperBooks.ORDER_PENDING, null, null,
                 LocalDate.of(2026, 10, 30), kst("2026-10-30T22:30"), LocalDate.of(2026, 11, 4), null);
         assertThat(run.fillable(order, PaperFixtures.bar("069500", d, 84_000), kst("2026-11-02T22:00")))
-                .as("시가 사다리 전(C2b)").isFalse();
+                .as("한국 칸(시가·1분봉)이 없는 봉 — 체결 가격 없음").isFalse();
         assertThat(run.pricesConfirmed(d, kst("2026-11-03T22:00"))).as("금융위 확정 조정 전(C3)").isFalse();
         assertThatThrownBy(() -> run.fill(order, PaperFixtures.bar("069500", d, 84_000), PaperSettings.defaults(KR),
-                run.calendar())).as("체결 선택(시가 사다리·비용 칸)은 C2b").isInstanceOf(IllegalStateException.class)
-                .hasMessageContaining("C2b");
+                run.calendar())).as("한국 칸이 없는 봉으로는 체결 조건을 만들지 않음")
+                .isInstanceOf(IllegalArgumentException.class).hasMessageContaining("한국 관측치 칸");
+        KrFixtures.Payload payload = new KrFixtures.Payload(d);
+        payload.etf("069500", kst("2026-11-02T21:57")).bar(d, 84_000.0, 84_500.0, 1_000).minute("OK", "09:01", 84_100.0, 9);
+        PaperMarketData.Bar quoted = KR.parse(payload.snapshot(kst("2026-11-02T22:00"))).orElseThrow().bars().get("069500");
+        assertThat(run.fillable(order, quoted, kst("2026-11-02T22:00"))).as("그 봉 날짜의 1분봉 개장 봉 시가").isTrue();
+        assertThat(run.fill(order, quoted, PaperSettings.defaults(KR), run.calendar()).price()).isEqualTo(84_100);
+        assertThat(run.auctionFills()).as("시가 체결 장부").isTrue();
     }
 
     @Test

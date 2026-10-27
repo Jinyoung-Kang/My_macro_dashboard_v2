@@ -207,6 +207,16 @@ final class MarketRun implements PaperMarket {
     }
 
     @Override
+    public boolean auctionFills() {
+        return market.auctionFills();
+    }
+
+    @Override
+    public Quotes withListings(Quotes quotes, PaperMarketData data) {
+        return market.withListings(quotes, data);
+    }
+
+    @Override
     public List<PaperBooks.Definition> books() {
         return market.books();
     }

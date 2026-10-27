@@ -337,6 +337,47 @@ class KrStartTest {
     }
 
     @Test
+    @DisplayName("출발 뒤 S+1 밤 관측치(계약 1, C2b) — 벤치마크 두 계좌가 S+1 시가(1분봉 09:01)에 체결: 069500 100% · 069500 60% → 153130 40%(현금성 마지막), 비용 칸, 그날 잠정 순자산 = 현금 + 수량 × 토스 종가")
+    void benchmarksFillAtTheNextOpen() {
+        store.dbNow = kst("2026-11-30T22:30");   // 주문 생성 = 출발 트랜잭션 시각
+        runAt("2026-11-30T22:30");
+        KrFixtures.Payload payload = new KrFixtures.Payload(NEXT);
+        payload.etf("069500", kst("2026-12-01T21:57")).bar(S, 94_000.0, 94_500.0, 30_000_000)
+                .bar(NEXT, 95_300.0, 95_400.0, 31_000_000).minute("OK", "09:01", 95_000.0, 380_000, "10:01", 95_100.0, 9_000);
+        payload.etf("153130", kst("2026-12-01T21:57")).bar(S, 107_990.0, 108_000.0, 40_000)
+                .bar(NEXT, 108_010.0, 108_020.0, 41_000).minute("OK", "09:01", 108_000.0, 2_000);
+        KrFixtures.stub(reader, Datasets.SNAP_KR_PAPER_QUOTES, payload.snapshot(kst("2026-12-01T22:01")));
+        MarketRun run = new PaperMarkets(store, reader, List.of(KrPaperMarket.INSTANCE)).open(KrPaperMarket.INSTANCE);
+        PaperLedgerService ledger = new PaperLedgerService(store, marketData, PaperFixtures.MAPPER);
+
+        PaperLedgerService.Outcome outcome = ledger.process(run, marketData.quotes(run).orElseThrow());
+
+        assertThat(outcome.errors()).isEmpty();
+        assertThat(outcome.booksProcessed()).contains("kr_bench_k200", "kr_bench_mix");
+        assertThat(store.orders.values()).allSatisfy(o -> assertThat(o.status()).isEqualTo(PaperBooks.ORDER_FILLED));
+        // 069500 100%: 1억 안에서 비용 포함 → 1,051주(금액 99,845,000 · 수수료 14,976 · 슬리피지 49,922), 현금 90,102.
+        assertThat(store.fillsOf("kr_bench_k200")).singleElement().satisfies(f -> {
+            assertThat(f.qty()).isEqualTo(1_051);
+            assertThat(f.price()).isEqualTo(95_000);
+            assertThat(f.priceSource()).isEqualTo("TOSS_1M_OPEN");
+            assertThat(f.observationDate()).isEqualTo(NEXT);
+            assertThat(f.fee()).isEqualByComparingTo("14976");
+            assertThat(f.slippageCost()).isEqualByComparingTo("49922");
+        });
+        assertThat(store.states.get("kr_bench_k200").cash()).isEqualTo(90_102);
+        // 60/40: 069500 6천만 원 안 631주(현금 40,016,037) → 153130은 그 뒤 순자산(평가 = 체결가) 99,961,037의 40% 안 369주.
+        assertThat(store.fillsOf("kr_bench_mix")).extracting(f -> f.ticker() + " " + f.qty())
+                .containsExactly("069500 631", "153130 369");
+        assertThat(store.states.get("kr_bench_mix").cash()).isEqualTo(138_134);
+        assertThat(store.navSeries("kr_bench_k200")).extracting(NavRow::tradingDate).containsExactly(S, NEXT);
+        NavRow next = store.navSeries("kr_bench_k200").get(1);
+        assertThat(next.nav()).as("현금 + 1,051주 × 95,400").isEqualTo(90_102 + 1_051 * 95_400.0);
+        assertThat(next.pricesFinal()).as("토스 잠정가 — 금융위 확정은 C3").isFalse();
+        assertThat(next.nav() / 100_000_000 - 1).as("출발가 대비 ETF 가격 변화(+0.42%)와 비용 오차 이내")
+                .isCloseTo(95_400.0 / 95_000 - 1, org.assertj.core.data.Offset.offset(0.001));
+    }
+
+    @Test
     @DisplayName("출발 판정 — 한국 계좌가 모두 시작 전일 때만(한 계좌라도 운용·일시정지면 출발한 장부), 미국 묶음은 늘 아님")
     void pendingOnlyWhileEveryKoreanBookIsNotStarted() {
         PaperLedgerService ledger = new PaperLedgerService(store, marketData, PaperFixtures.MAPPER);

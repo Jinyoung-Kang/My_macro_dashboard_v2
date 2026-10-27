@@ -38,8 +38,10 @@ import java.util.regex.Pattern;
  *   <li>시장·통화 KR·KRW, 설정 접두어·작업 기록 접두어 {@code kr.}</li>
  *   <li>관측치 {@code paper.kr.quotes}(수집기 {@code kr_paper_quotes}, KR 거래일 D 20:30 뒤 하루 1회 — K17)·이력 {@code kr_close_adj};
  *       파싱({@link #parse} — 계약 1, {@link KrQuotes})과 체결 선택(결정 d10)은 시장 몫(C2b)</li>
- *   <li>확정 판정 셋(결정 d9, C2a): 종가 나옴 = 그날 한국 수집 시각(20:30) 이후 수집({@link #closeAvailable}), 그 시점 가격 있음 = 아직
- *       없음(시가 사다리는 C2b — {@link #fillable}), 확정 = 아직 없음(금융위 확정 조정은 C3 — {@link #pricesConfirmed})</li>
+ *   <li>확정 판정 셋(결정 d9, C2a): 종가 나옴 = 그날 한국 수집 시각(20:30) 이후 수집({@link #closeAvailable}), 그 시점 가격 있음 = 시가
+ *       사다리(C2b — {@link #fillable}), 확정 = 아직 없음(금융위 확정 조정은 C3 — {@link #pricesConfirmed})</li>
+ *   <li>체결(C2b — {@link KrFills}): 기준 거래일 뒤 첫 관측 봉의 시가 사다리({@link #fillBar}, 1분봉 FAILED는 결정 기한 뒤 수집본까지
+ *       기다림 — 결정 d11), 체결가 = 관측가·비용 칸({@link #fill}), 시가 체결 장부 순서({@link #auctionFills})</li>
  *   <li>관측치 늦음 = 다음 수집 예정 + 여유(결정 d5, 명세 §4-9 'C1a에서 정한 것' — {@link #quotesLateAt})</li>
  *   <li>계좌 넷({@link PaperBooks#KR} — K1·§4-8), 비교 기준 {@code kr_bench_k200}, 현금성 기본 153130, 최소 주문 기본 500,000원</li>
  *   <li>체결 시점 {@code NEXT_OPEN}뿐 — {@code NEXT_CLOSE}는 G2 판정 뒤 정하는 코드 상수 {@link #ALLOW_NEXT_CLOSE}(지금 false, K13·K38)</li>
@@ -89,6 +91,14 @@ final class KrPaperMarket implements PaperMarket {
 
     /** 검증기 근거 문구의 금액 표기 — 원, 소수 없음. */
     static final OrderValidator.Money KRW = new OrderValidator.Money("", "원", 0);
+
+    /**
+     * 벤치마크 종목(한국 계좌 정의의 비중 종목 — 069500·153130) — 설정 현금성({@code kr.cashLikeTickers})과 함께 비용 계산의 ETF 목록(§4-3
+     * '시장 구분은 금융위, ETF는 설정 목록(kr.cashLikeTickers·벤치마크 종목)').
+     */
+    static final java.util.Set<String> BENCHMARK_TICKERS = PaperBooks.KR.stream()
+            .flatMap(definition -> definition.weights().keySet().stream())
+            .collect(java.util.stream.Collectors.toUnmodifiableSet());
 
     private static final List<String> TIMINGS = ALLOW_NEXT_CLOSE
             ? List.of(PaperBooks.NEXT_OPEN, PaperBooks.NEXT_CLOSE) : List.of(PaperBooks.NEXT_OPEN);
@@ -316,12 +326,24 @@ final class KrPaperMarket implements PaperMarket {
     }
 
     /**
-     * 늘 false — 한국 체결 가격(시가 사다리 {@code TOSS_1M_OPEN} → {@code TOSS_INTEGRATED}, 1분봉 {@code FAILED}는 기다림 — 결정 d11)은
-     * C2b입니다. 그 전에는 어떤 한국 주문도 체결하지 않습니다(fail-closed — 일봉 종가로 시가 주문을 채우지 않게).
+     * 그 봉 날짜에 그 주문 시점의 잠정가가 있는가(③ — 시가 사다리 {@code TOSS_1M_OPEN} → 토스 일봉 시가, 1분봉 {@code FAILED}는 결정 기한
+     * 뒤 수집본까지 기다림, {@code NEXT_CLOSE}는 없음 — {@link KrFills}, 결정 d11). 기다림의 끝은 기본 결정 기한(설정 판을 받는
+     * {@link #fillBar}가 장부의 경로)입니다. 거래량 0·모름 봉은 관측이 아니라 false입니다.
      */
     @Override
     public boolean fillable(Order order, Bar bar, Instant collectedAt, TradingCalendar calendar) {
-        return false;
+        return KrFills.fillable(order, bar, collectedAt, calendar, deadlines(null));
+    }
+
+    /**
+     * 체결 봉 고르기(한국판 체결 조건 ①~④ — {@link KrFills#choose}): 그 종목을 주문 뒤에 새로 받았을 때 최근 봉 창에서 기준 거래일 뒤 첫 관측
+     * 봉(거래량 &gt; 0)과 그날 시가 사다리. 1분봉 {@code FAILED}의 기다림은 그 봉 날짜 밤의 결정 기한(그 실행 설정 판 —
+     * {@link #decisionWindow}) 뒤 수집본에서 끝납니다(결정 d11 — 벽시계가 아니라 자료).
+     */
+    @Override
+    public FillChoice fillBar(Order order, Bar bar, Instant collectedAt, TradingCalendar calendar,
+                              JsonNode settingsBody) {
+        return KrFills.choose(order, bar, collectedAt, calendar, deadlines(settingsBody));
     }
 
     /**
@@ -334,13 +356,41 @@ final class KrPaperMarket implements PaperMarket {
     }
 
     /**
-     * @throws IllegalStateException 늘 — 한국 체결 선택(체결가 = 관측가: 1분봉 개장 봉 시가 {@code TOSS_1M_OPEN} → 토스 일봉 시가
-     *                               {@code TOSS_INTEGRATED}, 비용 칸은 {@code KrxCosts})은 C2b입니다. {@link #fillable}이 늘 false라 장부가
-     *                               부르지 않습니다.
+     * 한국 체결 조건(K31·§4-3 — {@link KrFills#terms}): 체결가 = 고른 관측가, 비용 칸은 {@code KrxCosts}(그 실행 설정 판의 수수료·슬리피지·
+     * 세율), 종목 구분은 ETF 목록(설정 현금성 + 벤치마크 종목 {@link #BENCHMARK_TICKERS}) → 금융위 시장 구분, 코넥스·모르는 시장·세율 모름은
+     * 보류({@link FillTerms.Hold}).
      */
     @Override
     public FillTerms fill(Order order, Bar bar, PaperSettings settings, TradingCalendar calendar) {
-        throw new IllegalStateException("한국 체결 선택(시가 사다리·비용 칸)은 아직 없습니다(2단계 C2b) — " + order.ticker());
+        return KrFills.terms(order, bar, settings, calendar, deadlines(null), BENCHMARK_TICKERS);
+    }
+
+    /**
+     * 시가 체결 장부(명세 §4-2의 한 관측치 안 순서: 만료 → 기업행위 → 시가 매도 → 시가 매수 → 종가 매도 → 종가 매수 → 최고가·스탑 감지 →
+     * 평가) — 장부의 한국 경로.
+     */
+    @Override
+    public boolean auctionFills() {
+        return true;
+    }
+
+    /**
+     * 관측치 종목마다 금융위 시장 구분({@code fsc_price.market}, 최신 기준일 — {@link PaperMarketData#fscMarkets})을 덧붙입니다. 비용 종목
+     * 구분(§4-3)이 씁니다 — 저장본(계약 1)에는 없는 칸이라 장부가 체결 전에 한 번 읽습니다.
+     */
+    @Override
+    public Quotes withListings(Quotes quotes, PaperMarketData data) {
+        Map<String, String> markets = data.fscMarkets(quotes.bars().keySet());
+        Map<String, Bar> bars = new LinkedHashMap<>();
+        quotes.bars().forEach((code, bar) -> bars.put(code, bar.kr() == null ? bar
+                : new Bar(bar.ticker(), bar.date(), bar.close(), bar.stale(), bar.recent(),
+                bar.kr().withFscMarket(markets.get(code)))));
+        return new Quotes(quotes.collectedAt(), bars, quotes.session());
+    }
+
+    /** 봉 날짜 → 그 밤 한국 결정 기한(그 설정 본문, null이면 기본 22:30 → D+1 01:00 — {@link #decisionWindow}). */
+    private java.util.function.Function<LocalDate, Instant> deadlines(JsonNode settingsBody) {
+        return day -> decisionWindow(this, settingsBody, day).deadline();
     }
 
     @Override

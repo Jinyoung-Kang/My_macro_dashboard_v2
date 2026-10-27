@@ -241,6 +241,23 @@ interface PaperMarket {
      */
     FillTerms fill(Order order, Bar bar, PaperSettings settings, TradingCalendar calendar);
 
+    /**
+     * 한 관측치 안 처리가 <b>시가 체결 장부</b>인가(한국 — 명세 §4-2: 만료 → 기업행위 → 시가 매도(STOP 포함) → 시가 매수 → 종가 매도 →
+     * 종가 매수(현금성은 각 묶음 마지막) → 최고가·스탑 감지 → 평가). 기본(false)은 관측치 = 그날 종가 하나인 미국식(분할·가격 → 매도 →
+     * 최고가·즉시 스탑 → 매수 → 평가)입니다. 장부({@code PaperLedgerService})가 이 값으로 경로를 고릅니다.
+     */
+    default boolean auctionFills() {
+        return false;
+    }
+
+    /**
+     * 장부가 관측치를 처리하기 전에 그 시장이 덧붙이는 종목 정보 — 기본은 그대로(미국). 한국은 금융위 시장 구분(비용 종목 구분, §4-3 —
+     * 저장본에 없는 칸)입니다. 한 번의 처리에 한 번 부릅니다.
+     */
+    default Quotes withListings(Quotes quotes, PaperMarketData data) {
+        return quotes;
+    }
+
     /** 이 시장의 책 정의 — 초기화가 만드는 책이고, 화면에 보이는 순서입니다. */
     List<PaperBooks.Definition> books();
 

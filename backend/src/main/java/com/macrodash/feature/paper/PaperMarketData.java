@@ -201,6 +201,30 @@ public class PaperMarketData {
         return new Bar(ticker, recent.lastDate(), recent.lastValue(), Json.asBoolean(frame, "isStale"), recent);
     }
 
+    /**
+     * 한국 종목들의 금융위 시장 구분({@code fsc_price}의 {@code market} — {@code KOSPI}·{@code KOSDAQ}·{@code KONEX}, 금융위 {@code mrktCtg}) — 저장된
+     * 가장 최근 기준일의 행에서. 그날 행이 없는 종목(상장폐지·새 상장 등)과 칸이 빈 종목은 결과에 없습니다(모름 — 비용 종목 구분이 주문을
+     * 보류, §4-3). 수집기 테이블을 읽기만 하고 수집을 깨우지 않습니다(observations 직접 읽기).
+     */
+    Map<String, String> fscMarkets(Collection<String> codes) {
+        Map<String, String> out = new TreeMap<>();
+        if (codes.isEmpty()) {
+            return out;
+        }
+        LocalDate latest = repository.latestObservationDate(Datasets.OBS_FSC_PRICE);
+        if (latest == null) {
+            return out;
+        }
+        repository.readObservationsFor(Datasets.OBS_FSC_PRICE, latest, List.copyOf(new LinkedHashSet<>(codes)))
+                .forEach((code, payload) -> {
+                    String market = Json.asText(payload, "market");
+                    if (market != null && !market.isBlank()) {
+                        out.put(code, market.strip());
+                    }
+                });
+        return out;
+    }
+
     /** 미국 종목들의 10년 종가 이력({@code equity_close}) — {@link #history(PaperMarket, Collection, LocalDate, LocalDate)}의 미국 판. */
     public Map<String, DailySeries> history(Collection<String> tickers, LocalDate from, LocalDate to) {
         return history(UsPaperMarket.INSTANCE, tickers, from, to);
