@@ -277,8 +277,10 @@ class PaperSettingsServiceTest {
         old.remove("claude");
         assertThat(service.current().version()).isEqualTo(1);
         assertThat(service.view().get("version")).isEqualTo(1);
-        Map<String, Object> out = update("calendar.consensus", true, "claude", Map.of("schemaV3", true, "figureCheck", true),
-                "apiScheduledReserve", 9);
+        Map<String, Object> switches = new LinkedHashMap<>();
+        switches.put("schemaV3", true);
+        switches.put("figureCheck", true);
+        Map<String, Object> out = update("calendar.consensus", true, "claude", switches, "apiScheduledReserve", 9);
         assertThat(out.get("version")).isEqualTo(2);
         assertThat(out.get("changedKeys")).isEqualTo(List.of("calendar.consensus", "claude.schemaV3", "claude.figureCheck",
                 "apiScheduledReserve"));
