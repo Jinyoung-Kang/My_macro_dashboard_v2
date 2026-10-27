@@ -217,6 +217,12 @@ final class MarketRun implements PaperMarket {
     }
 
     @Override
+    public KrConfirmed confirmedPrices(PaperMarketData data, java.util.Collection<String> codes, PaperSettings settings,
+                                       LocalDate from) {
+        return market.confirmedPrices(data, codes, settings, from);
+    }
+
+    @Override
     public List<PaperBooks.Definition> books() {
         return market.books();
     }

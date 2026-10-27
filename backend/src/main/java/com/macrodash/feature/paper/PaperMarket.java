@@ -258,6 +258,20 @@ interface PaperMarket {
         return quotes;
     }
 
+    /**
+     * 시가 체결 장부({@link #auctionFills})가 책 하나를 처리할 때 한 번 읽는 확정 시세 — 스탑 재판정(감지한 날의 확정 종가)·최고가(KRX 기준가로만)·
+     * 기업행위 판정의 상장 상태·미처리 기업행위 보유의 묶인 평가(2단계 명세 §4-2 K30·K32, C2c). 기본은 없음({@link KrConfirmed#NONE} — 미국 장부는
+     * 부르지 않음). 한국은 금융위 주식시세·증권상품시세({@code KrPaperMarket#confirmedPrices}).
+     *
+     * @param codes    그 책의 보유·대기 주문 종목
+     * @param settings 그 실행이 읽은 그 시장의 장부 설정(ETF 목록 — 현금성 종목)
+     * @param from     읽을 가장 이른 기준일(보유가 반영한 마지막 관측·스탑을 감지한 날 중 가장 이른 날, 없으면 null)
+     */
+    default KrConfirmed confirmedPrices(PaperMarketData data, java.util.Collection<String> codes, PaperSettings settings,
+                                        LocalDate from) {
+        return KrConfirmed.NONE;
+    }
+
     /** 이 시장의 책 정의 — 초기화가 만드는 책이고, 화면에 보이는 순서입니다. */
     List<PaperBooks.Definition> books();
 

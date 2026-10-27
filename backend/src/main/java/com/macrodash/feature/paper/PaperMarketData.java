@@ -225,6 +225,74 @@ public class PaperMarketData {
         return out;
     }
 
+    /**
+     * 한국 종목들의 금융위 확정 시세({@link KrConfirmed}, C2c) — 주식은 주식시세({@code fsc_price}: 종가·거래량·상장주식수), ETF는
+     * 증권상품시세({@code fsc_etf_price}: 종가·거래량·상장좌수). 데이터셋마다 최신 기준일을 보고 {@code from}과 (최신 기준일 −
+     * {@value KrConfirmed#LOOKBACK_DAYS}일) 중 이른 날부터 최신까지 읽습니다(직전 기준일 상장주식수를 찾으려고). 받은 종목은 행이 없어도
+     * 결과에 있고(최신 기준일이 있으면 '없음'), 출처가 아무 기준일도 받지 않았으면 그 종목들은 '모름'입니다. 수집기 테이블을 읽기만 하고
+     * 수집을 깨우지 않습니다(observations 직접 읽기 — {@link #fscMarkets}와 같음).
+     *
+     * @param from 읽을 가장 이른 기준일(null이면 최신 기준일 근처만)
+     */
+    KrConfirmed krConfirmed(Collection<String> stocks, Collection<String> etfs, LocalDate from) {
+        Map<String, KrConfirmed.Series> out = new TreeMap<>();
+        readConfirmed(Datasets.OBS_FSC_PRICE, "listedShares", KrConfirmed.SOURCE_FSC, stocks, from, out);
+        readConfirmed(Datasets.OBS_FSC_ETF_PRICE, "listedUnits", KrConfirmed.SOURCE_FSC_ETF, etfs, from, out);
+        return new KrConfirmed(out);
+    }
+
+    private void readConfirmed(String dataset, String listedField, String source, Collection<String> codes,
+                               LocalDate from, Map<String, KrConfirmed.Series> out) {
+        Set<String> wanted = new LinkedHashSet<>(codes);
+        if (wanted.isEmpty()) {
+            return;
+        }
+        LocalDate latest = repository.latestObservationDate(dataset);
+        Map<String, List<JsonNode>> rows = Map.of();
+        if (latest != null) {
+            LocalDate start = latest.minusDays(KrConfirmed.LOOKBACK_DAYS);
+            if (from != null && from.isBefore(start)) {
+                start = from;
+            }
+            rows = repository.readObservationSeries(dataset, List.copyOf(wanted), start);
+        }
+        for (String code : wanted) {
+            TreeMap<LocalDate, KrConfirmed.Day> days = new TreeMap<>();
+            for (JsonNode row : rows.getOrDefault(code, List.of())) {
+                LocalDate date = Json.parseDate(Json.asText(row, "obsDate"));
+                if (date != null && !date.isAfter(latest)) {
+                    days.put(date, new KrConfirmed.Day(date, positiveDecimal(row.get("close")),
+                            wholeNumber(row.get("volume"), false), wholeNumber(row.get(listedField), true)));
+                }
+            }
+            out.put(code, new KrConfirmed.Series(source, latest, days));
+        }
+    }
+
+    /** 양수 십진수(금융위 float 저장값 그대로), 아니면 null. */
+    private static java.math.BigDecimal positiveDecimal(JsonNode node) {
+        if (node == null || !node.isNumber() || !Double.isFinite(node.asDouble()) || !(node.asDouble() > 0)) {
+            return null;
+        }
+        return node.decimalValue();
+    }
+
+    /** 0 이상(또는 양의) 정수 — 소수가 붙었거나 범위 밖이면 null(모름 — 0으로 채우지 않음). */
+    private static Long wholeNumber(JsonNode node, boolean positive) {
+        if (node == null || !node.isNumber() || !Double.isFinite(node.asDouble())) {
+            return null;
+        }
+        java.math.BigDecimal value = node.decimalValue();
+        if (value.signum() < 0 || (positive && value.signum() == 0) || value.stripTrailingZeros().scale() > 0) {
+            return null;
+        }
+        try {
+            return value.longValueExact();
+        } catch (ArithmeticException e) {
+            return null;
+        }
+    }
+
     /** 미국 종목들의 10년 종가 이력({@code equity_close}) — {@link #history(PaperMarket, Collection, LocalDate, LocalDate)}의 미국 판. */
     public Map<String, DailySeries> history(Collection<String> tickers, LocalDate from, LocalDate to) {
         return history(UsPaperMarket.INSTANCE, tickers, from, to);

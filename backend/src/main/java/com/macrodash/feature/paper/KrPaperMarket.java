@@ -388,6 +388,29 @@ final class KrPaperMarket implements PaperMarket {
         return new Quotes(quotes.collectedAt(), bars, quotes.session());
     }
 
+    /**
+     * 금융위 확정 시세({@link PaperMarketData#krConfirmed} — C2c): ETF 목록({@link #etf} — 비용 종목 구분과 같은 규칙)은 증권상품시세, 나머지는
+     * 주식시세. 스탑 재판정·최고가·기업행위 상장 상태·묶인 평가가 씁니다({@link PaperMarket#confirmedPrices}).
+     */
+    @Override
+    public KrConfirmed confirmedPrices(PaperMarketData data, java.util.Collection<String> codes, PaperSettings settings,
+                                       LocalDate from) {
+        List<String> stocks = new ArrayList<>();
+        List<String> etfs = new ArrayList<>();
+        for (String code : new java.util.TreeSet<>(codes)) {
+            (etf(code, settings) ? etfs : stocks).add(code);
+        }
+        return data.krConfirmed(stocks, etfs, from);
+    }
+
+    /**
+     * 그 종목이 ETF인가 — 설정 현금성({@code kr.cashLikeTickers}) ∪ 벤치마크 종목({@link #BENCHMARK_TICKERS}). 비용 종목 구분(§4-3 — {@link KrFills})과
+     * 같은 목록이고, 확정 시세의 출처(증권상품시세)를 가릅니다.
+     */
+    static boolean etf(String code, PaperSettings settings) {
+        return settings.cashLike(code) || BENCHMARK_TICKERS.contains(code);
+    }
+
     /** 봉 날짜 → 그 밤 한국 결정 기한(그 설정 본문, null이면 기본 22:30 → D+1 01:00 — {@link #decisionWindow}). */
     private java.util.function.Function<LocalDate, Instant> deadlines(JsonNode settingsBody) {
         return day -> decisionWindow(this, settingsBody, day).deadline();
