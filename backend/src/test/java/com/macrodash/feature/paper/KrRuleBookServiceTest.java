@@ -215,6 +215,27 @@ class KrRuleBookServiceTest {
                 .isEqualTo("{\"자료 부족\":1,\"수급 미달\":1,\"자료 없음\":3}");
     }
 
+    @Test
+    @DisplayName("저장본의 순매수 칸이 비었거나(null — 토스 buy·sell 없음) 정수가 아니면(1.5) 그날은 기록 없음 — 0으로 세지 않아 창이 덜 참('자료 부족', 20거래일 중 18일), 합·점수 null")
+    void flowNetThatIsNotAWholeNumberIsMissing() {
+        data.flow("005930", LocalDate.of(2026, 10, 29), 100_000L, null, "2026-10-29T20:21:26.000+09:00",
+                kst("2026-10-29T21:18"));
+        ((ObjectNode) data.flows.get("005930").get(LocalDate.of(2026, 10, 27)).path("investors").path("foreigner"))
+                .put("net", 1.5);
+
+        Decision decision = decideAt(R, "22:30");
+
+        JsonNode samsung = member(decision, "005930");
+        assertThat(subReasons(samsung)).containsExactly("자료 부족/자료 부족");
+        assertThat(samsung.path("reasons").get(0).path("detail").asString()).contains("20거래일 중 18일");
+        assertThat(samsung.path("flows").path("days").asInt()).isEqualTo(18);
+        assertThat(samsung.path("flows").path("foreign20").isNull()).as("없는 숫자를 만들지 않음").isTrue();
+        assertThat(samsung.path("flows").path("institution20").isNull()).isTrue();
+        assertThat(samsung.path("score").isNull()).isTrue();
+        assertThat(decision.response().path("selection").path("candidates")).extracting(n -> n.path("code").asString())
+                .containsExactly("000660", "105560");
+    }
+
     // ------------------------------------------------------------------ 입력 동결(K26)·룩어헤드 없음
     @Test
     @DisplayName("입력 동결 — U 기준일 B < D·순위·상장주식수, 종목마다 20일·5일 합·연속일·D 기록의 판(updatedAt)·받은 시각, 읽은 순간, DART 저장본 시각")
