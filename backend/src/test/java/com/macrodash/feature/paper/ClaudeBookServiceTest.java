@@ -963,6 +963,31 @@ class ClaudeBookServiceTest {
     }
 
     @Test
+    @DisplayName("자정 넘은 한국 재시도(명세 §4-10·§5, D1c) — 화 00:10 KST 실행의 세션은 그 시장 달력의 lastCompletedSession = 월(기준 거래일 D 그대로), 호출 수는 다음 KST 날(화) 줄에 셈")
+    void midnightRetryCountsOnTheNextKstDay() throws Exception {
+        PaperFixtures.dropKrDefaults(store);   // 시험용 한국 묶음의 기본값(최소 주문 500원)으로
+        PaperMarket kr = TestKrMarket.INSTANCE;
+        String krBook = TestKrMarket.CLAUDE_BOOK;
+        LocalDate mon = PaperFixtures.MON;
+        LocalDate tue = mon.plusDays(1);
+        Instant now = Instant.parse("2026-10-26T15:10:00Z");   // 화 00:10 KST
+        activeCashOnly();
+        store.books.put(krBook, TestKrMarket.book(krBook, 100_000, FRI));
+        store.states.put(krBook, new BookState(krBook, 100_000, 100_000, 0, 0, FRI_CLOSE, FRI_CLOSE, FRI, null));
+        when(marketData.quotes(market(kr))).thenReturn(Optional.of(quotes(Instant.parse("2026-10-26T12:00:00Z"),
+                bar("KRA", FRI, 50, mon, 51))));
+        answerJson(decision(0, "시험 — 주문 없음"));
+        LocalDate session = kr.calendar().lastCompletedSession(now);
+
+        Decision d = serviceWithKr(now, new java.util.ArrayList<>()).decide(kr, session, RuleBookService.SCHEDULED, true);
+
+        assertThat(session).isEqualTo(mon);
+        assertThat(d.asOfTradingDate()).isEqualTo(mon);
+        assertThat(store.apiUsage(tue).map(ApiUsage::calls)).as("호출 상한 줄 = Kst.today() — 다음 KST 날").contains(1);
+        assertThat(store.apiUsage(mon)).as("세션 날 줄에는 세지 않음").isEmpty();
+    }
+
+    @Test
     @DisplayName("시장 표기(A7): 다른 시장 문맥의 결정은 그 시장의 받는 체결 시점·금액 표기로 검증 — 그 시장에 없는 시점(NEXT_OBSERVATION)은 MALFORMED, 근거 문구의 금액은 그 시장 표기('$' 없음)")
     void otherMarketValidatesWithItsTimingsAndMoney() throws Exception {
         PaperFixtures.dropKrDefaults(store);   // 시험용 한국 묶음의 기본값(최소 주문 500원)으로
