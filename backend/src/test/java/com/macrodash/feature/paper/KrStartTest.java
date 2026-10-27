@@ -425,7 +425,7 @@ class KrStartTest {
 
             @Override
             public KrStartPipeline.Plan plan(MarketRun run, LocalDate session, Instant deadline,
-                                             List<KrStartPipeline.Gate> gates) {
+                                             List<KrDecisionGates.Gate> gates) {
                 calls.incrementAndGet();
                 return KrStartPipeline.Plan.failed(PaperBooks.KR_CLAUDE, "시험용 호출 실패(재시도 1회 뒤)");
             }
@@ -463,7 +463,7 @@ class KrStartTest {
 
             @Override
             public KrStartPipeline.Plan plan(MarketRun run, LocalDate session, Instant deadline,
-                                             List<KrStartPipeline.Gate> gates) {
+                                             List<KrDecisionGates.Gate> gates) {
                 deadlines.add(deadline);
                 clock.set(kst("2026-12-01T01:02"));   // 호출이 기한을 넘겨 끝남
                 return KrStartPipeline.Plan.notYet(PaperBooks.KR_CLAUDE, "시험용 — 계획은 냈지만 늦음");

@@ -412,7 +412,7 @@ final class KrRuleBookService {
 
             @Override
             public KrStartPipeline.Plan plan(MarketRun run, LocalDate session, Instant deadline,
-                                             List<KrStartPipeline.Gate> gates) {
+                                             List<KrDecisionGates.Gate> gates) {
                 try {
                     return startPlan(run, session, gates, config);
                 } catch (RuntimeException e) {
@@ -424,7 +424,7 @@ final class KrRuleBookService {
         };
     }
 
-    private KrStartPipeline.Plan startPlan(MarketRun run, LocalDate session, List<KrStartPipeline.Gate> gates,
+    private KrStartPipeline.Plan startPlan(MarketRun run, LocalDate session, List<KrDecisionGates.Gate> gates,
                                            PaperConfig config) {
         Instant started = clock.instant();
         int version = settingsVersion(run);
@@ -441,7 +441,7 @@ final class KrRuleBookService {
         Map<String, Object> start = new LinkedHashMap<>();
         start.put("configuredStartDate", String.valueOf(config.krStartDate()));
         start.put("postponed", !session.equals(config.krStartDate()));
-        start.put("gates", gates.stream().map(KrStartPipeline.Gate::view).toList());
+        start.put("gates", gates.stream().map(KrDecisionGates.Gate::view).toList());
         Map<String, Object> response = response(session, RuleBookService.INITIAL, cycle, read, selection, checks, view,
                 draft, settings, version, start);
         Decision decision = new Decision(0, PaperBooks.KR_RULES, session, RuleBookService.INITIAL, null,

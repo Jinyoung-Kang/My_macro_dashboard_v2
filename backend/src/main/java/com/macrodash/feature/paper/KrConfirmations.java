@@ -303,11 +303,26 @@ final class KrConfirmations {
     static List<String> pendingThrough(PaperStore store, PaperMarket market, TradingCalendar calendar, String bookCode,
                                        LocalDate day) {
         List<String> out = new ArrayList<>();
-        for (Order order : store.ordersByStatus(bookCode, PaperBooks.ORDER_PENDING)) {
-            if (order.asOfTradingDate() != null && order.asOfTradingDate().isBefore(day)
-                    && market.timings().contains(order.timing()) && KrFills.opensAfterOrder(order, day, calendar)) {
+        for (Order order : pendingBefore(store, market, bookCode, day)) {
+            if (KrFills.opensAfterOrder(order, day, calendar)) {
                 out.add("주문 " + order.id() + " " + order.side() + " " + order.ticker() + "(기준일 " + order.asOfTradingDate()
                         + ") 대기 — " + day + " 이하 봉으로 체결될 수 있음");
+            }
+        }
+        return out;
+    }
+
+    /**
+     * 그 책의 대기 주문 중 기준 거래일 &lt; 그날({@code day})이고 그 시장이 체결하는 시점({@link PaperMarket#timings})인 것 — 확정 순자산 줄의 대기
+     * 주문 조건({@link #pendingThrough} — 여기에 체결 조건 ⑤를 더함)과 결정 게이트 ①('기준일 &lt; D인 대기 주문 = 정리 안 됨', 결정 d11 — ⑤는 보지
+     * 않음)이 함께 쓰는 거름입니다(명세 §9 'D1 — 게이트 ①과 확정 순자산 줄의 판정' — 둘이 다른 데서 갈라지지 않게).
+     */
+    static List<Order> pendingBefore(PaperStore store, PaperMarket market, String bookCode, LocalDate day) {
+        List<Order> out = new ArrayList<>();
+        for (Order order : store.ordersByStatus(bookCode, PaperBooks.ORDER_PENDING)) {
+            if (order.asOfTradingDate() != null && order.asOfTradingDate().isBefore(day)
+                    && market.timings().contains(order.timing())) {
+                out.add(order);
             }
         }
         return out;
