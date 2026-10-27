@@ -303,6 +303,41 @@ class KrRulesJobTest {
     }
 
     @Test
+    @DisplayName("게이트 ③ — 20거래일 창에 U 기록이 절반 미만인 날(달력이 모르는 휴장일·수집 구멍)이 있으면 미달: U 전 종목이 '자료 부족'인 채 재선정해 종목 0·153130 99.5%로 가지 않고 기다림 → 기한 뒤 NO_TRADE(③) → 그날을 임시휴장으로 저장하면 다음 KR 결정일에 따라잡기")
+    void windowHoleBlocksGateThree() {
+        LocalDate hole = LocalDate.of(2026, 10, 28);   // 달력은 거래일로 아는데 시장이 쉰 날(늦게 지정된 임시휴장) — 토스 기록 없음
+        data.flows.values().forEach(days -> days.remove(hole));
+        session(R);
+
+        PaperDecisionJob.Result waiting = runAt("2026-11-02T22:30");
+
+        assertThat(waiting.outcome()).isEqualTo(PaperDecisionJob.DATA_NOT_READY);
+        assertThat(waiting.message()).contains("③ U 8/8").contains("U 기록이 절반 미만인 날 1(2026-10-28 0/8)")
+                .contains("kr.calendar.extraClosures");
+        PaperDecisionJob.Result late = runAt("2026-11-03T01:00");
+        assertThat(late.outcome()).isEqualTo(PaperDecisionJob.PAST_DEADLINE);
+        assertThat(late.rules().kind()).isEqualTo(RuleBookService.REBALANCE);
+        assertThat(late.rules().status()).isEqualTo("NO_TRADE");
+        assertThat(late.rules().response().path("waitedFor").toString()).contains("③").contains("2026-10-28 0/8");
+
+        // 운영자가 그날을 임시휴장으로 저장 — 그 실행의 달력이 그날을 건너뛰어 창이 다시 참.
+        tools.jackson.databind.node.ObjectNode body = (tools.jackson.databind.node.ObjectNode) store.settings.body().deepCopy();
+        tools.jackson.databind.node.ObjectNode kr = (tools.jackson.databind.node.ObjectNode) body.path("kr");
+        tools.jackson.databind.node.ObjectNode calendar = kr.has("calendar")
+                ? (tools.jackson.databind.node.ObjectNode) kr.get("calendar") : kr.putObject("calendar");
+        calendar.putArray("extraClosures").add(hole.toString());
+        store.saveSettings(body, List.of("kr.calendar.extraClosures"));
+        session(R1);
+        PaperDecisionJob.Result caught = runAt("2026-11-03T22:30");
+
+        assertThat(caught.outcome()).isEqualTo(PaperDecisionJob.DECIDED);
+        assertThat(caught.rules().kind()).isEqualTo(RuleBookService.REBALANCE);
+        assertThat(caught.rules().response().path("catchUp").asBoolean()).isTrue();
+        assertThat(store.ordersByDecision(caught.rules().id())).extracting(Order::ticker)
+                .containsExactly("000660", "005930", "105560", "153130");
+    }
+
+    @Test
     @DisplayName("게이트 ⑥(D가 거래일) — 결정 작업의 D는 그 달력의 lastCompletedSession이라 늘 통과, 판정 자체는 달력이 휴장으로 아는 날을 막음")
     void gateSixJudgesTheCalendar() {
         assertThat(KrDecisionGates.tradingDay(KrRulesFixtures.CALENDAR, R).blocks()).isFalse();

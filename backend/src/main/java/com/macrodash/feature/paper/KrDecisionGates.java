@@ -40,7 +40,10 @@ import java.util.Optional;
  *   <li>③ U 90% 이상에 D 수급 — U 구성원 중 D 기록의 토스 판({@code updatedAt})이 D 15:35 KST 이후이고 기관 세부 칸이 채워진
  *       비율. <b>규칙 계좌의 입력 동결(K26)과 같은 읽기</b>({@link KrRuleBookService#readInputs} — 결정 시각 뒤에 받은 기록·받은 시각을 모르는
  *       기록은 빠진 채)로 셉니다: 게이트가 본 U·수급이 곧 그 결정이 쓰고 결정 행에 남기는 값입니다(D1c, 결정 e5). U를 읽지 못함(D보다 이른 기준일의
- *       U가 없음 — {@link KrRuleBookService.InputUnavailable})도 이 게이트의 미달입니다</li>
+ *       U가 없음 — {@link KrRuleBookService.InputUnavailable})도 이 게이트의 미달입니다. 그리고 <b>20거래일 창의 날마다 U의 절반 이상에
+ *       기록</b>이 있어야 합니다({@link #thinWindowDays}) — 달력이 거래일로 아는 날에 시장이 쉬었으면(늦게 지정된 임시휴장이 아직
+ *       {@code kr_holidays}·{@code kr.calendar.extraClosures}에 없음) 토스 기록이 통째로 없어 U 전 종목이 최대 19세션 '자료 부족'이 되고, 그
+ *       사이 재선정하면 종목 0·153130 99.5%로 보유를 다 팔게 됩니다. 신규 상장·정지 같은 종목 하나의 빈 날과는 이 문턱으로 가릅니다</li>
  *   <li>④ 금융위 기준일 = 직전 거래일 — {@code kr.fsc_prices_meta.latestBasDt} = D의 직전 KR 거래일</li>
  *   <li>⑤ 069500 D 봉 — 늦게 지정된 휴장일 대비(§4-4)</li>
  *   <li>⑥ D가 거래일 — 그 실행의 달력</li>
@@ -56,6 +59,11 @@ final class KrDecisionGates {
     /** 게이트 ③ — D 수급 기록의 토스 판이 이 시각(KST) 이후여야 장 마감 뒤 판(개인·기관 세부 칸이 차는 판, §4-9 · 조사 2026-10-26). */
     static final LocalTime FLOWS_FROM = LocalTime.of(15, 35);
     private static final String FLOWS_FROM_TEXT = "15:35";
+    /**
+     * 게이트 ③ — 20거래일 창의 날마다 그날 기록(외국인·기관 둘 다)이 있는 U 비율의 문턱(이상이면 통과). 달력이 모르는 휴장일은 0%라 통째로 걸리고,
+     * 종목 하나의 빈 날(신규 상장·정지·그 종목만 받지 못함)은 걸리지 않는 값[추정 — 2026-10-28 로컬 저장본은 창의 날마다 U 100/100].
+     */
+    static final double WINDOW_DAY_MIN = 0.5;
 
     /** 게이트 하나의 판정. {@code status}는 PASS·FAIL. */
     record Gate(String id, String status, String note) {
@@ -159,7 +167,7 @@ final class KrDecisionGates {
         TradingCalendar calendar = run.calendar();
         List<Gate> out = new ArrayList<>();
         out.add(coverage(in.quotesPayload(), in.session()));
-        out.add(flows(in));
+        out.add(flows(calendar, in));
         out.add(fsc(in.fscMeta(), calendar.previousTradingDay(in.session())));
         out.add(anchor(in.quotesPayload(), in.session()));
         out.add(tradingDay(calendar, in.session()));
@@ -239,9 +247,10 @@ final class KrDecisionGates {
 
     /**
      * ③ U 90% 이상에 D 수급(클래스 설명) — U 구성원마다 그 입력의 D 기록 판({@link KrRuleBookService.Stamp})을 봅니다: 기록 없음(빠진 기록 포함)·판
-     * 모름(토스 {@code updatedAt}을 읽지 못함)·15:35 전 판·세부 칸 없음은 세지 않습니다.
+     * 모름(토스 {@code updatedAt}을 읽지 못함)·15:35 전 판·세부 칸 없음은 세지 않습니다. 그리고 20거래일 창의 날마다 U 절반 이상에 기록이 있어야
+     * 합니다({@link #thinWindowDays}).
      */
-    static Gate flows(Inputs in) {
+    static Gate flows(TradingCalendar calendar, Inputs in) {
         if (in.rules() == null) {
             return new Gate("③", "FAIL", "U·수급을 읽지 못함 — " + in.rulesUnavailable());
         }
@@ -275,8 +284,51 @@ final class KrDecisionGates {
         miss(note, "판 모름", unknown);
         miss(note, FLOWS_FROM_TEXT + " 전 판", early);
         miss(note, "세부 칸 없음", noDetail);
-        return total > 0 && covered >= COVERAGE_MIN * total ? new Gate("③", "PASS", note.toString())
-                : new Gate("③", "FAIL", note + "(90% 미만)");
+        boolean session = total > 0 && covered >= COVERAGE_MIN * total;
+        if (!session) {
+            note.append("(90% 미만)");
+        }
+        List<String> thin = thinWindowDays(calendar, in.rules().input());
+        if (!thin.isEmpty()) {
+            note.append(" · 20거래일 창에 U 기록이 절반 미만인 날 ").append(thin.size()).append('(')
+                    .append(String.join(", ", thin.subList(0, Math.min(5, thin.size())))).append(thin.size() > 5 ? ", …" : "")
+                    .append(") — 달력이 모르는 휴장일이면 kr.calendar.extraClosures에 더함, 아니면 수집 구멍(창이 덜 찬 종목은 '자료 부족')");
+        }
+        return session && thin.isEmpty() ? new Gate("③", "PASS", note.toString()) : new Gate("③", "FAIL", note.toString());
+    }
+
+    /**
+     * D로 끝나는 20 KR 거래일 창({@link com.macrodash.analytics.KrRules#flows}와 같은 창)에서 그날 기록(외국인·기관 둘 다 — 같은 읽기의 거름 뒤)이
+     * 있는 U 비율이 {@link #WINDOW_DAY_MIN} 미만인 날("날짜 n/U", 오래된 날부터).
+     */
+    static List<String> thinWindowDays(TradingCalendar calendar, com.macrodash.analytics.KrRules.Input input) {
+        List<LocalDate> window = new ArrayList<>();
+        LocalDate day = input.session();
+        window.add(day);
+        while (window.size() < com.macrodash.analytics.KrRules.FLOW_DAYS) {
+            day = calendar.previousTradingDay(day);
+            window.add(day);
+        }
+        int total = input.universe().size();
+        Map<LocalDate, Integer> recorded = new LinkedHashMap<>();
+        window.forEach(d -> recorded.put(d, 0));
+        for (com.macrodash.analytics.KrRules.Member member : input.universe()) {
+            for (com.macrodash.analytics.KrRules.FlowDay flow : input.flows().getOrDefault(member.code(), List.of())) {
+                if (flow != null && flow.foreignNet() != null && flow.institutionNet() != null
+                        && recorded.containsKey(flow.date())) {
+                    recorded.merge(flow.date(), 1, Integer::sum);
+                }
+            }
+        }
+        List<String> out = new ArrayList<>();
+        for (int i = window.size() - 1; i >= 0; i--) {
+            LocalDate d = window.get(i);
+            int n = recorded.get(d);
+            if (total > 0 && n < WINDOW_DAY_MIN * total) {
+                out.add(d + " " + n + "/" + total);
+            }
+        }
+        return out;
     }
 
     /** ④ 금융위 기준일 = 직전 거래일(클래스 설명). */
