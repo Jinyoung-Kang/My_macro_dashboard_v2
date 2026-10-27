@@ -121,12 +121,16 @@ public class PaperMarketData {
         return quotes(UsPaperMarket.INSTANCE);
     }
 
-    /** 그 시장의 최신 관측치(시장의 관측치 데이터셋). 저장본이 없거나 쓸 수 있는 티커가 하나도 없으면 empty. */
+    /**
+     * 그 시장의 최신 관측치(시장의 관측치 데이터셋, 시장의 파서 {@link PaperMarket#parse} — 결정 d10). 저장본이 없거나 쓸 수 있는 티커가
+     * 하나도 없으면 empty.
+     */
     Optional<Quotes> quotes(PaperMarket market) {
         return store.read(market.quotesDataset(), Datasets.MAX_AGE_DAILY, market.quotesTask())
-                .flatMap(PaperMarketData::parse);
+                .flatMap(market::parse);
     }
 
+    /** 미국 관측치 저장본({@code paper.quotes})의 파서 — 미국 묶음의 {@link PaperMarket#parse}가 그대로 부릅니다(클래스 설명의 관측치). */
     static Optional<Quotes> parse(Snapshot snapshot) {
         if (snapshot.collectedAt() == null) {
             return Optional.empty();   // 수집 시각을 모르면 체결 순서(주문 뒤 관측치)를 판정할 수 없습니다

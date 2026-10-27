@@ -6,7 +6,9 @@ import com.macrodash.analytics.CalendarWindow;
 import com.macrodash.analytics.OrderValidator;
 import com.macrodash.analytics.TradingCalendar;
 import com.macrodash.feature.paper.PaperMarketData.Bar;
+import com.macrodash.feature.paper.PaperMarketData.Quotes;
 import com.macrodash.store.PaperStore.Order;
+import com.macrodash.store.Snapshot;
 import tools.jackson.databind.JsonNode;
 
 import java.time.DayOfWeek;
@@ -17,6 +19,7 @@ import java.time.ZonedDateTime;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.function.BooleanSupplier;
 
 /**
@@ -107,6 +110,14 @@ interface PaperMarket {
 
     /** 관측치 스냅샷을 채우는 수집기 태스크 이름 — 저장본 읽기의 수집 요청 대상이고, '저장본 없음' 안내 문구에 들어갑니다. */
     String quotesTask();
+
+    /**
+     * 관측치 저장본({@link #quotesDataset}) 하나 → 관측치(결정 d10, C2a). 저장본 모양이 시장마다 달라 시장이 읽습니다 — 미국은
+     * {@code paper.quotes}({@code tickers.{티커}.dates/close}, {@link PaperMarketData#parse} 그대로), 한국은 {@code paper.kr.quotes}
+     * 계약 1(명세 §9 묶음 A 리뷰 메모 'B4·C2'). 수집 시각을 모르거나 쓸 수 있는 봉이 하나도 없으면 empty — 0이나 다른 날 값으로 채우지
+     * 않습니다. {@link PaperMarketData#quotes(PaperMarket)}가 저장본을 읽어 이것으로 넘깁니다.
+     */
+    Optional<Quotes> parse(Snapshot snapshot);
 
     /**
      * 관측치 저장본이 '늦음'이 되는 순간 — 지금이 이 순간과 같거나 뒤면 화면(개요·상태의 관측치 요약)에 늦었다고 표시합니다. 그 시장

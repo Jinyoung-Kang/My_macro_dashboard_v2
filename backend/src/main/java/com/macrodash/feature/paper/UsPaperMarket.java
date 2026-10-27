@@ -6,9 +6,11 @@ import com.macrodash.analytics.ReviewFacts;
 import com.macrodash.analytics.TradingCalendar;
 import com.macrodash.analytics.UsMarketCalendar;
 import com.macrodash.feature.paper.PaperMarketData.Bar;
+import com.macrodash.feature.paper.PaperMarketData.Quotes;
 import com.macrodash.store.Datasets;
 import com.macrodash.store.PaperStore;
 import com.macrodash.store.PaperStore.Order;
+import com.macrodash.store.Snapshot;
 import tools.jackson.databind.JsonNode;
 
 import java.time.DayOfWeek;
@@ -18,6 +20,7 @@ import java.time.LocalTime;
 import java.time.ZonedDateTime;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 
 /**
  * 🧪 미국 책의 시장 묶음({@link PaperMarket}) — 값은 모두 이 묶음 전부터 있던 상수를 그대로 돌려줍니다(2단계 명세 §9 A4, 미국 숫자
@@ -72,6 +75,12 @@ final class UsPaperMarket implements PaperMarket {
     @Override
     public String quotesTask() {
         return QUOTES_TASK;
+    }
+
+    /** {@code paper.quotes}의 미국 모양 — {@link PaperMarketData#parse} 그대로(결정 d10 — 이 묶음 전 파서, 고정본 바이트 그대로). */
+    @Override
+    public Optional<Quotes> parse(Snapshot snapshot) {
+        return PaperMarketData.parse(snapshot);
     }
 
     /**

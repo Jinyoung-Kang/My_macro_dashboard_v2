@@ -3,6 +3,7 @@ package com.macrodash.feature.paper;
 import com.macrodash.analytics.OrderValidator;
 import com.macrodash.analytics.TradingCalendar;
 import com.macrodash.feature.paper.PaperMarketData.Bar;
+import com.macrodash.feature.paper.PaperMarketData.Quotes;
 import com.macrodash.store.PaperStore;
 import com.macrodash.store.PaperStore.Order;
 import com.macrodash.store.PaperStore.SettingsRow;
@@ -162,6 +163,11 @@ final class MarketRun implements PaperMarket {
     @Override
     public String quotesTask() {
         return market.quotesTask();
+    }
+
+    @Override
+    public Optional<Quotes> parse(Snapshot snapshot) {
+        return market.parse(snapshot);
     }
 
     @Override

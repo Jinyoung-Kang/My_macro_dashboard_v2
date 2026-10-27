@@ -243,6 +243,16 @@ class KrPaperMarketTest {
     }
 
     @Test
+    @DisplayName("관측치 파서(결정 d10)는 C2b — 계약 1 저장본도 지금은 empty(장부가 한국 관측치를 처리하지 않음, 미국 파서로 읽던 옛 결과와 같음)")
+    void parseIsC2b() {
+        LocalDate session = LocalDate.of(2026, 11, 2);
+        com.macrodash.store.Snapshot snapshot = KrFixtures.snapshot(Datasets.SNAP_KR_PAPER_QUOTES,
+                KrFixtures.quotesPayload(session, Map.of("069500", session, "153130", session)), kst("2026-11-02T22:00"));
+        assertThat(KR.parse(snapshot)).isEmpty();
+        assertThat(PaperMarketData.parse(snapshot)).as("미국 파서도 이 모양(tickers 없음)에서 봉을 찾지 못함").isEmpty();
+    }
+
+    @Test
     @DisplayName("한국 Claude 시스템 프롬프트(하드 규칙 줄·고정 문단)는 E2 — 그 전에 부르면 던진다")
     void promptPartsAreE2() {
         JsonNode body = PaperFixtures.MAPPER.createObjectNode();

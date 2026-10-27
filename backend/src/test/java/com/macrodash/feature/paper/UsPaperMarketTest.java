@@ -138,6 +138,28 @@ class UsPaperMarketTest {
     }
 
     @Test
+    @DisplayName("관측치 파서(결정 d10) = PaperMarketData.parse 그대로 — 같은 티커·봉 날짜·종가·이어 씀, 수집 시각이 없으면 empty")
+    void parseDelegatesToTheUsParser() throws IOException {
+        JsonNode payload = MAPPER.readTree("""
+                {"tickers":{"AAA":{"dates":["2026-10-22","2026-10-23"],"close":[100.0,101.5]},
+                  "BBB":{"dates":["2026-10-23"],"close":[null]},
+                  "CCC":{"dates":["2026-10-22"],"close":[5.5],"isStale":true}}}
+                """);
+        com.macrodash.store.Snapshot snapshot = new com.macrodash.store.Snapshot(Datasets.SNAP_PAPER_QUOTES, payload, "json",
+                "ok", null, Instant.parse("2026-10-23T20:20:00Z"));
+        PaperMarketData.Quotes mine = US.parse(snapshot).orElseThrow();
+        PaperMarketData.Quotes legacy = PaperMarketData.parse(snapshot).orElseThrow();
+        assertThat(mine.collectedAt()).isEqualTo(legacy.collectedAt());
+        assertThat(mine.bars().values()).extracting(PaperMarketData.Bar::ticker, PaperMarketData.Bar::date,
+                        PaperMarketData.Bar::close, PaperMarketData.Bar::stale)
+                .containsExactly(tuple("AAA", FRI, 101.5, false), tuple("CCC", LocalDate.of(2026, 10, 22), 5.5, true))
+                .isEqualTo(legacy.bars().values().stream().map(b -> tuple(b.ticker(), b.date(), b.close(), b.stale()))
+                        .toList());
+        assertThat(US.parse(new com.macrodash.store.Snapshot(Datasets.SNAP_PAPER_QUOTES, payload, "json", "ok", null,
+                null))).as("수집 시각 없음").isEmpty();
+    }
+
+    @Test
     @DisplayName("관측치를 채우는 수집기 태스크 = paper_quotes(A5 전 저장본 읽기·안내 문구의 글자) — 수집기 태스크 목록에 그 이름이 있음")
     void quotesTask() throws IOException {
         assertThat(US.quotesTask()).isEqualTo("paper_quotes");

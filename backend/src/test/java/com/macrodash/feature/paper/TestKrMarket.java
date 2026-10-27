@@ -144,6 +144,12 @@ final class TestKrMarket implements PaperMarket {
         return QUOTES_TASK;
     }
 
+    /** 시험용 관측치는 미국 모양({@code tickers.{티커}.dates/close}) — 미국 파서 그대로. */
+    @Override
+    public java.util.Optional<PaperMarketData.Quotes> parse(com.macrodash.store.Snapshot snapshot) {
+        return PaperMarketData.parse(snapshot);
+    }
+
     /** 수집 + {@link #QUOTES_LATE} + 1초(미국 판과 같은 '나이가 그 시간을 넘음' 규칙). */
     @Override
     public Instant quotesLateAt(Instant collectedAt, LocalDate session, TradingCalendar calendar) {
