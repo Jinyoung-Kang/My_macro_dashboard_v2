@@ -83,7 +83,8 @@ import java.util.concurrent.locks.ReentrantLock;
  * 되풀이될 때 유료 호출을 다시 부르게 됩니다. 재기동하면 처음부터 셉니다.
  * 정기 실행은 {@code dashboard.paper.enabled=false}면 아무것도 하지 않고, 수동 실행({@link #runNow})은 설정과 상관없이 돕니다.
  *
- * <p><b>시장마다 따로</b>입니다(2단계 명세 §9 A6). 정기 실행은 {@link PaperMarkets#all}을 차례로 돌고(지금 미국 하나), 시장마다 세션
+ * <p><b>시장마다 따로</b>입니다(2단계 명세 §9 A6). 정기 실행은 {@link PaperMarkets#all}을 차례로 돌고(미국 → 한국 — 한국은 출발일·한국
+ * 계좌가 갖춰질 때까지 {@value #DORMANT}로 건너뜀, {@link PaperMarket#dormantReason}), 시장마다 세션
  * d(그 시장 달력)·결정 시각과 기한(그 시장의 설정 키 — 미국은 접두어 없이 지금 키, 없으면 시장 기본값 — 을 그 시장의 '세션 → 결정
  * 순간' 식으로)·관측치와 확정 종가 판정·장부 처리·미확정 순자산 줄·책·오류 횟수(시장 × 거래일 × 책)·작업 기록 이름(시장 접두어 +
  * {@value #JOB})을 그 시장 것으로 씁니다. 게이트 지표·13F 재선정·규칙 책 결정({@link RuleBookService})은 미국 전용 단계라 미국 묶음에서만
@@ -119,6 +120,8 @@ public class PaperDecisionJob {
     public static final String BUSY = "BUSY";
     /** 그 시장 달력이 앞 창의 해를 모름 — 그 시장 결정을 내지 않음(명세 K35, {@link CalendarGaps}). */
     public static final String NO_CALENDAR = CalendarGaps.NO_CALENDAR;
+    /** 출발일·계좌가 갖춰지지 않은 시장 — 실행을 열지 않음(기록 안 함, {@link PaperMarket#dormantReason}). */
+    public static final String DORMANT = "DORMANT";
     /** 미국 밖 시장의 규칙 책 결정 자리(작업 기록) — 그 시장 규칙 책은 2단계 D1에서 들어옵니다(클래스 설명). */
     static final String RULES_NOT_YET = "이 시장의 규칙 계좌 결정은 아직 없습니다(2단계 D1)";
 
@@ -269,6 +272,10 @@ public class PaperDecisionJob {
         if (!store.ready()) {
             return new Result(NOT_READY, null, null, null, null, PaperQueryService.NOT_READY_MESSAGE);
         }
+        String dormant = dormantReason(requested);
+        if (dormant != null) {
+            return new Result(DORMANT, null, null, null, null, dormant);
+        }
         Instant now = clock.instant();
         // 이 실행의 시장 문맥 — 달력 한 벌과 설정 행 하나(시각·장부·Claude 결정이 같은 판, 클래스 설명).
         MarketRun market = markets.open(requested);
@@ -371,6 +378,11 @@ public class PaperDecisionJob {
         }
         record(market, now, DECIDED, detail);
         return new Result(DECIDED, d, pricesFinal, decision, claudeDecision, null);
+    }
+
+    /** 출발일·계좌가 갖춰지지 않은 시장이면 그 사유({@link PaperMarket#dormantReason}) — 실행을 열기 전에 봅니다(저장본을 읽지 않게). */
+    private String dormantReason(PaperMarket market) {
+        return market.dormantReason(config, () -> !store.books(market.code()).isEmpty());
     }
 
     /**
@@ -491,12 +503,17 @@ public class PaperDecisionJob {
      * 그 시장의 수동 결정 — {@link #runNow(String)}과 같되 책 코드·세션·관측치·장부·기록 이름이 그 시장 것. 규칙 책 수동 결정은 미국
      * 전용 단계라 미국 묶음에서만 받습니다(클래스 설명).
      *
-     * @throws InvalidRequestException 책 코드가 그 시장의 규칙·Claude 책이 아님(미국 밖 시장은 Claude 책만), 그 책이 시작 전, Claude 책이
-     *                                 일시정지 중, 그 시장 달력이 앞 창의 해를 모름('달력 없음' — 명세 K35)
+     * @throws InvalidRequestException 책 코드가 그 시장의 규칙·Claude 책이 아님(미국 밖 시장은 Claude 책만), 그 시장이 쉬는 중(출발일·
+     *                                 계좌 없음 — {@link PaperMarket#dormantReason}), 그 책이 시작 전, Claude 책이 일시정지 중, 그 시장
+     *                                 달력이 앞 창의 해를 모름('달력 없음' — 명세 K35)
      */
     Decision runNow(PaperMarket requested, String book) {
         String code = Params.oneOf("book", book, usSteps(requested)
                 ? List.of(requested.rulesBook(), requested.claudeBook()) : List.of(requested.claudeBook()));
+        String dormant = dormantReason(requested);
+        if (dormant != null) {
+            throw new InvalidRequestException(dormant);
+        }
         running.lock();
         try {
             // 그 책의 오류 횟수만 지웁니다(클래스 설명) — 다른 책·다른 시장의 포기 상태는 그대로.

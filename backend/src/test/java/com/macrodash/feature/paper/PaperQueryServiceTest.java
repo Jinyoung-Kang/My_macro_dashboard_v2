@@ -614,10 +614,12 @@ class PaperQueryServiceTest {
         assertThat(rows.get(0).get("holdingTradingDays")).isEqualTo(5);
         assertThat(((Map<String, Object>) positions.get("book")).get("benchmark")).isNull();
         assertThat(both.decisions(krBook, 10).get("available")).isEqualTo(true);
-        assertThatThrownBy(() -> query.decisions(krBook, 10)).as("모르는 시장의 책은 결정 목록에 받지 않음")
+        assertThatThrownBy(() -> query.decisions(krBook, 10)).as("그 시장 목록에 없는 책 코드는 결정 목록에 받지 않음")
                 .isInstanceOf(InvalidRequestException.class);
-        assertThatThrownBy(() -> query.positions(krBook)).as("모르는 시장의 책은 달력을 고를 수 없음")
-                .isInstanceOf(IllegalStateException.class);
+        // 운영 목록의 KR은 실제 한국 묶음(C1c) — 그 달력은 공휴일 저장본으로 만들어 저장본이 없으면 그 계산만 null + '달력 없음'(K35).
+        List<Map<String, Object>> production = (List<Map<String, Object>>) query.positions(krBook).get("positions");
+        assertThat(production.get(0).get("holdingTradingDays")).isNull();
+        assertThat((String) production.get(0).get("holdingTradingDaysReason")).startsWith("달력 없음");
     }
 
     @Test

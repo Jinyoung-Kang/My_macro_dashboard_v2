@@ -89,15 +89,16 @@ class UsPaperMarketTest {
     }
 
     @Test
-    @DisplayName("시장 목록(주입 빈) = 운영 목록 미국 하나, 책 행의 시장 코드로 찾음(모르는 코드는 없음) — 시험 목록은 받은 순서, 빈 목록·같은 코드 둘은 거절")
+    @DisplayName("시장 목록(주입 빈) = 운영 목록 미국 → 한국(C1c), 책 행의 시장 코드로 찾음(모르는 코드는 없음) — 시험 목록은 받은 순서, 빈 목록·같은 코드 둘은 거절")
     void marketsLookup() {
         FakePaperStore store = new FakePaperStore();
         com.macrodash.read.StoreReader reader = PaperFixtures.quietReader();
         PaperMarkets production = new PaperMarkets(store, reader);
-        assertThat(PaperMarkets.PRODUCTION).containsExactly(US);
-        assertThat(production.all()).containsExactly(US);
+        assertThat(PaperMarkets.PRODUCTION).containsExactly(US, KrPaperMarket.INSTANCE);
+        assertThat(production.all()).containsExactly(US, KrPaperMarket.INSTANCE);
         assertThat(production.of("US")).containsSame(US);
-        assertThat(production.of("KR")).isEmpty();
+        assertThat(production.of("KR")).containsSame(KrPaperMarket.INSTANCE);
+        assertThat(production.of("JP")).isEmpty();
         assertThat(production.of(null)).isEmpty();
 
         PaperMarkets both = new PaperMarkets(store, reader, List.of(TestKrMarket.INSTANCE, US));

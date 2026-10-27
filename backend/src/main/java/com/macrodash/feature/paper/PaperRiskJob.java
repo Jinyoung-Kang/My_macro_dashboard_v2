@@ -26,7 +26,8 @@ import java.util.Optional;
  *
  * <p>시장마다 따로 돕니다(2단계 명세 §9 A5): 정기 실행은 {@link PaperMarkets#all}을 차례로, 시장마다 그 시장의 관측치 저장본을
  * 읽어 그 시장 책에만 적용하고({@link PaperLedgerService} 설명), 작업 기록은 그 시장 이름({@link PaperMarket#jobName})으로
- * 남깁니다. 지금 목록은 미국 하나라 동작은 이 묶음 전과 같습니다. 시장을 받지 않는 수동 실행·한 번 실행은 미국 판입니다.
+ * 남깁니다. 한국은 출발일·한국 계좌가 갖춰질 때까지 건너뜁니다({@link PaperMarket#dormantReason} — 실행을 열지 않고 기록도 없음, C1c).
+ * 시장을 받지 않는 수동 실행·한 번 실행은 미국 판입니다.
  * 실행마다 그 시장의 실행 문맥({@link MarketRun} — 달력 한 벌·설정 행 하나)을 열어 앞 창 확인·장부·관측치 요약에 넘깁니다(C1a).
  *
  * <p>관측치는 수집기가 1시간마다 저장하므로 대부분의 실행은 "새 저장본 없음"으로 끝나고, 그때는 기록을 남기지 않습니다
@@ -147,6 +148,11 @@ public class PaperRiskJob {
     Outcome run(PaperMarket requested, boolean manual) {
         if (!store.ready()) {
             return Outcome.skipped("모의 매매 테이블이 아직 없습니다(V8·V9 적용 전) — make up 후 다시 보세요");
+        }
+        // 출발일·계좌가 갖춰지지 않은 시장(한국 초기화 전)은 실행을 열지 않고 기록도 남기지 않습니다(PaperMarket#dormantReason).
+        String dormant = requested.dormantReason(config, () -> !store.books(requested.code()).isEmpty());
+        if (dormant != null) {
+            return Outcome.skipped(dormant);
         }
         Instant started = clock.instant();
         // 이 실행의 시장 문맥 — 달력 한 벌과 설정 행 하나를 장부까지 넘깁니다(PaperMarkets#open).

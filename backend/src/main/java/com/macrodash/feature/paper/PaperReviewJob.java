@@ -57,7 +57,8 @@ import java.util.concurrent.locks.ReentrantLock;
  * 더 시도하지 않습니다(30분마다 같은 오류가 작업 기록을 밀어내지 않게 — 수동 실행은 다시 시도, 재기동하면 처음부터 셈).
  * {@code dashboard.paper.enabled=false}면 정기 실행은 아무것도 하지 않습니다.
  *
- * <p><b>시장마다 따로</b>입니다(2단계 명세 §9 A6). 정기 실행은 {@link PaperMarkets#all}을 차례로 돌고(지금 미국 하나), 시장마다 복기 주
+ * <p><b>시장마다 따로</b>입니다(2단계 명세 §9 A6). 정기 실행은 {@link PaperMarkets#all}을 차례로 돌고(미국 → 한국 — 한국은 출발일·한국
+ * 계좌가 갖춰질 때까지 {@value #DORMANT}로 건너뜀, {@link PaperMarket#dormantReason}), 시장마다 복기 주
  * (그 시장 달력)·여는 순간({@link PaperMarket#reviewOpening} — 시장별 요일·시각)·그 시장 Claude 책·확정 종가(그 시장 관측치와 확정
  * 판정)·오류 횟수(시장 × 주)·작업 기록 이름(시장 접두어 + {@value #JOB})을 그 시장 것으로 쓰고 그 시장 문맥으로 복기합니다
  * ({@link ReviewService}). 복기 행은 시장마다 한 주 한 행이라(V14 기본키 (market, week_ending)) '이미 복기함'·재시도 판정도 그 시장
@@ -89,6 +90,8 @@ public class PaperReviewJob {
     public static final String ERROR = "ERROR";
     /** 그 시장 달력이 앞 창의 해를 모름 — 그 시장 복기를 하지 않음(명세 K35, {@link CalendarGaps}). */
     public static final String NO_CALENDAR = CalendarGaps.NO_CALENDAR;
+    /** 출발일·계좌가 갖춰지지 않은 시장 — 실행을 열지 않음(기록 안 함, {@link PaperMarket#dormantReason}). */
+    public static final String DORMANT = "DORMANT";
 
     /**
      * 한 번 실행의 결과.
@@ -186,6 +189,10 @@ public class PaperReviewJob {
      * 시장·그 주의 오류 횟수를 올리고 {@value #ERROR}로 기록합니다.
      */
     Result run(PaperMarket market) {
+        String dormant = dormantReason(market);
+        if (dormant != null) {
+            return new Result(DORMANT, null, null, dormant);
+        }
         if (!running.tryLock()) {
             return new Result(BUSY, null, null, "수동 복기가 진행 중 — 이번 주기는 건너뛰고 다음 주기에 다시 봅니다");
         }
@@ -224,6 +231,10 @@ public class PaperReviewJob {
 
     /** 그 시장의 수동 복기 — {@link #runNow()}와 같되 그 시장의 주·책·관측치·기록 이름으로. */
     Map<String, Object> runNow(PaperMarket requested) {
+        String dormant = dormantReason(requested);
+        if (dormant != null) {
+            throw new InvalidRequestException(dormant);
+        }
         if (!running.tryLock()) {
             throw new TooManyRequestsException("다른 주간 복기가 진행 중입니다 — 끝난 뒤 다시 누르세요.", BUSY_RETRY);
         }
@@ -259,6 +270,17 @@ public class PaperReviewJob {
         } finally {
             running.unlock();
         }
+    }
+
+    /**
+     * 출발일·계좌가 갖춰지지 않은 시장이면 그 사유({@link PaperMarket#dormantReason}) — 실행을 열기 전에 봅니다(저장본을 읽지 않게). 테이블이
+     * 없으면 보지 않습니다(그 판정은 {@value #NOT_READY}).
+     */
+    private String dormantReason(PaperMarket market) {
+        if (!store.ready()) {
+            return null;
+        }
+        return market.dormantReason(config, () -> !store.books(market.code()).isEmpty());
     }
 
     /** 조건을 보고(클래스 설명) 복기합니다. {@code scheduled}가 거짓(수동)이면 토요일 시각 조건과 포기 횟수를 보지 않습니다. */

@@ -19,14 +19,17 @@ import java.util.Set;
  *
  * <p>정적 목록이 아니라 빈인 까닭: 한국 시장 묶음(C1c의 {@code KrPaperMarket})의 달력은 저장본({@code kr_holidays})과 설정 판에 기대므로
  * 상수로 만들 수 없습니다 — 목록이 그 재료를 읽는 자리를 갖고, 실행 하나의 문맥을 엽니다({@link #open} — 그 실행의 설정 행을 한 번
- * 읽고, 그 판과 조용히 읽은 저장본으로 달력을 한 번 만듦). 운영 목록은 {@link #PRODUCTION}(지금 미국 하나)이고, 시험은 시장 목록을
+ * 읽고, 그 판과 조용히 읽은 저장본으로 달력을 한 번 만듦). 운영 목록은 {@link #PRODUCTION}(미국·한국)이고, 시험은 시장 목록을
  * 받는 생성자로 시험용 한국 묶음을 넣습니다.
  */
 @Component
 final class PaperMarkets {
 
-    /** 운영에서 정기 작업이 도는 시장, 도는 순서. 한국 시장 묶음은 C1c에서 더합니다. */
-    static final List<PaperMarket> PRODUCTION = List.of(UsPaperMarket.INSTANCE);
+    /**
+     * 운영에서 정기 작업이 도는 시장, 도는 순서 — 미국 → 한국(C1c). 한국은 출발일·한국 계좌가 갖춰질 때까지 정기 작업이 건너뜁니다
+     * ({@link PaperMarket#dormantReason}).
+     */
+    static final List<PaperMarket> PRODUCTION = List.of(UsPaperMarket.INSTANCE, KrPaperMarket.INSTANCE);
 
     private final PaperStore store;
     private final StoreReader reader;

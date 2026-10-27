@@ -21,6 +21,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.TreeMap;
+import java.util.function.BooleanSupplier;
 import java.util.regex.Pattern;
 
 /**
@@ -84,6 +85,9 @@ final class KrPaperMarket implements PaperMarket {
     /** 한국 주간 복기 — 토요일 22:30 KST(K19, 미국 {@code ReviewFacts.OPENS_AT}처럼 코드 상수). */
     static final DayOfWeek REVIEW_OPENS_ON = DayOfWeek.SATURDAY;
     static final LocalTime REVIEW_OPENS_AT = LocalTime.of(22, 30);
+
+    /** 한국 계좌가 없을 때 정기 작업이 한국을 건너뛰는 사유({@link #dormantReason}). */
+    static final String NOT_INITIALIZED = "한국 계좌가 없습니다 — 한국 초기화 전에는 한국 정기 작업(리스크 점검·결정·복기)을 돌리지 않습니다";
 
     /** 검증기 근거 문구의 금액 표기 — 원, 소수 없음. */
     static final OrderValidator.Money KRW = new OrderValidator.Money("", "원", 0);
@@ -205,6 +209,18 @@ final class KrPaperMarket implements PaperMarket {
             out.put(date, new KrxCalendar.Hours(open, close));
         }
         return Collections.unmodifiableMap(out);
+    }
+
+    /**
+     * 출발일이 비었으면({@link PaperConfig#KR_START_MISSING}) 또는 한국 계좌가 하나도 없으면(한국 초기화 전 — {@link #NOT_INITIALIZED}) 정기
+     * 작업이 한국을 건너뜁니다(서버 안전 — {@link PaperMarket#dormantReason}).
+     */
+    @Override
+    public String dormantReason(PaperConfig config, BooleanSupplier hasBooks) {
+        if (!config.krStartConfigured()) {
+            return PaperConfig.KR_START_MISSING;
+        }
+        return hasBooks.getAsBoolean() ? null : NOT_INITIALIZED;
     }
 
     @Override

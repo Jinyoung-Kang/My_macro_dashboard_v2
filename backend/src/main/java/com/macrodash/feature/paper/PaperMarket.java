@@ -16,6 +16,7 @@ import java.time.ZonedDateTime;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
+import java.util.function.BooleanSupplier;
 
 /**
  * 🧪 모의 매매 시장 하나의 묶음 — 장부 코어가 시장마다 다르게 쓰는 값(달력·관측치·확정 판정·체결 시점·계좌 정의·결정 시각·
@@ -86,6 +87,18 @@ interface PaperMarket {
     default void requireCalendarWindow(Instant now) {
         TradingCalendar calendar = calendar();
         calendar.addTradingDays(calendar.lastCompletedSession(now), CALENDAR_WINDOW_TRADING_DAYS);
+    }
+
+    /**
+     * 정기 작업(리스크 점검·결정·주간 복기)이 이 시장을 건너뛰는 사유 — null이면 돕니다. 배포 설정·계좌가 갖춰지지 않은 시장은 실행을 열지
+     * 않으므로(저장본을 읽지 않음) 작업 기록도 남기지 않습니다. 한국은 출발일({@code dashboard.paper.kr.start-date})이 비었거나 한국 계좌가
+     * 없으면 쉽니다({@link KrPaperMarket#dormantReason} — 이 코드가 4단계 교체로 서버에 가도 한국 초기화 전에는 한국 일이 하나도 돌지 않게,
+     * C1c). 미국은 늘 돕니다(기본).
+     *
+     * @param hasBooks 그 시장 책이 하나라도 있나 — 시장이 물을 때만 읽습니다(미국은 묻지 않음)
+     */
+    default String dormantReason(PaperConfig config, BooleanSupplier hasBooks) {
+        return null;
     }
 
     /** 장부 관측치 스냅샷의 데이터셋 — 그 관측치로 체결하면 체결 가격 출처({@code paper_fills.price_source})도 이 이름. */
