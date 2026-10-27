@@ -315,7 +315,8 @@ def _daily(code: str, previous: dict | None, info: dict | None, run: _TossRun, f
     raw, _ = toss_service.fetch_candles(code, "1d", KR_QUOTES_BARS + 1, adjusted=False)
     static = _static_info(info, previous)
     entry = {"code": code, "fetchedAt": fetched_at, **static,
-             "adjBasisChanged": bool((previous or {}).get("adjBasisChanged"))}
+             "adjBasisChanged": bool((previous or {}).get("adjBasisChanged")),
+             "adjGap": bool((previous or {}).get("adjGap"))}
     by_date: dict[str, dict] = {}
     for candle in raw:                       # 최신순 — 같은 날짜가 두 번 오면 앞(최신) 것
         if candle["date"] <= session:
@@ -397,6 +398,10 @@ def _append_adj_closes(entry: dict) -> None:
     수정 종가를 timeseries ``kr_close_adj``에 덧붙입니다 — 같은 날짜의 저장값과 KR_ADJ_BASIS_TOLERANCE 넘게 다르면 수정주가 기준이 바뀐
     것이라(분할·병합 뒤 토스가 과거 수정가를 다시 씀) 덧붙이지 않고 ``adjBasisChanged``를 겁니다 — 옛 기준 값과 새 기준 값이 한
     시계열에 섞이지 않게. kr_paper_price_history가 그 종목의 저장 구간 전체를 새 기준으로 다시 받은 뒤 다음 수집에서 풀립니다.
+
+    저장된 마지막 날과 덧붙일 첫 날 사이에 빠진 거래일이 있으면(수집기가 최근 5봉보다 오래 꺼져 있었음) 역시 덧붙이지 않고 ``adjGap``을
+    겁니다 — 덧붙이면 저장된 마지막 날이 최신이 되어 이력 태스크의 '빈 구간'(마지막 날이 일주일 넘게 오래됨)이 걸리지 않고, 사이
+    날짜가 빈 채로 수익률·변동성이 조용히 계산됩니다. 이력 태스크가 그 사이를 메운 뒤 다음 수집에서 덧붙이고 풀립니다(_history_plan).
     수정 종가를 못 받았으면 아무것도 바꾸지 않습니다(직전 표시 유지).
     """
     points = [(bar["date"], bar["adjClose"]) for bar in entry.get("bars") or [] if bar.get("adjClose")]
@@ -408,8 +413,23 @@ def _append_adj_closes(entry: dict) -> None:
            for day, value in points):
         entry["adjBasisChanged"] = True
         return
+    if _adj_gap(store.latest_timeseries_date(catalog.TS_KR_CLOSE_ADJ, entry["code"]), points[0][0]):
+        entry["adjGap"] = True
+        return
     store.put_timeseries(catalog.TS_KR_CLOSE_ADJ, entry["code"], points)
     entry["adjBasisChanged"] = False
+    entry["adjGap"] = False
+
+
+def _adj_gap(latest: str | None, first: str) -> bool:
+    """
+    저장된 마지막 날 ``latest``와 덧붙일 첫 날 ``first`` 사이에 빠진 거래일이 있는가 — latest가 first의 직전 거래일(krcalendar)보다
+    앞이면 참. 저장본이 없거나 겹치면 거짓(처음 보는 종목은 이력 태스크가 그 앞을 메움). 달력이 모르는 공휴일이 끼면 거짓 양성이 날 수
+    있는데, 그때는 이력 태스크가 한 쪽(1회)을 다시 받고 이어집니다.
+    """
+    if not latest or latest >= first:
+        return False
+    return latest < krcalendar.previous_trading_day(date.fromisoformat(first)).isoformat()
 
 
 def task_kr_paper_quotes() -> str:
@@ -574,6 +594,10 @@ def task_kr_paper_quotes() -> str:
         detail += " · 유니버스 저장본 없음 — ETF 2만"
     if rebase:
         detail += f" · 수정주가 기준 바뀜 {len(rebase)}({', '.join(rebase[:5])}) — kr_paper_price_history가 다시 받음"
+    gaps = sorted(code for code, entry in fresh.items() if entry.get("adjGap"))
+    if gaps:
+        detail += (f" · 수정 종가 빈 구간 {len(gaps)}({', '.join(gaps[:5])}) — 덧붙이지 않음, "
+                   "kr_paper_price_history가 메운 뒤 덧붙임")
     late = [code for code in scope if code in fresh and fresh[code].get("sessionMiss")]
     if late:
         detail += (f" · 세션 봉 없음 {len(late)}({', '.join(late[:5])}{'…' if len(late) > 5 else ''}) — "
@@ -724,7 +748,7 @@ KR_HISTORY_CALL_BUDGET = 300
 # 새 종목을 더 시작하지 않는 경과 시간(초) — weekly 상한 1800초 안.
 KR_HISTORY_TIME_LIMIT_SECONDS = 900.0
 # 저장된 마지막 날이 이만큼(달력일) 넘게 오래되면 그 사이를 메웁니다 — kr_paper_quotes가 날마다 최근 5봉을 덧붙이므로, 수집기가 일주일
-# 넘게 꺼져 있었을 때만 생기는 빈 구간입니다.
+# 넘게 꺼져 있었을 때만 생기는 빈 구간입니다. kr_paper_quotes는 그런 빈 구간 너머로 덧붙이지 않아(adjGap) 마지막 날이 앞당겨지지 않습니다.
 KR_HISTORY_GAP_DAYS = 7
 
 
@@ -766,7 +790,9 @@ def _history_plan(code: str, entry: dict | None, floor: date, today: date) -> tu
     그 종목에 할 일 — (종류, 멈출 날짜, 시작 before) 또는 None(할 일 없음).
       다시 받기  관측치가 수정주가 기준 바뀜(adjBasisChanged)을 걸었고 저장값이 관측치의 수정 종가와 다름 → 최신부터 저장 첫 날까지 통째로
       메우기    저장 첫 날이 목표(1년 전, 상장일이 더 늦으면 상장일)보다 늦음 → 저장 첫 날 앞부터 목표까지
-      빈 구간   저장된 마지막 날이 KR_HISTORY_GAP_DAYS보다 오래됨 → 최신부터 그 날까지
+      빈 구간   저장된 마지막 날이 KR_HISTORY_GAP_DAYS보다 오래됐거나, 관측치의 최근 5봉 첫 날과 저장된 마지막 날 사이에 빠진 거래일이
+                있음(관측치가 그 너머로 덧붙이지 않음 — adjGap, _adj_gap) → 최신부터 그 날까지. 관측치가 이 태스크보다 먼저 돌아도
+                저장된 마지막 날이 앞당겨지지 않으므로 기동 때 순서와 상관없이 걸립니다.
     """
     earliest = store.earliest_timeseries_date(catalog.TS_KR_CLOSE_ADJ, code)
     latest = store.latest_timeseries_date(catalog.TS_KR_CLOSE_ADJ, code)
@@ -780,7 +806,9 @@ def _history_plan(code: str, entry: dict | None, floor: date, today: date) -> tu
     if earliest > target:
         before = (date.fromisoformat(earliest) - timedelta(days=1)).isoformat() + "T00:00:00+09:00"
         return "메우기", target, before
-    if latest and latest < (today - timedelta(days=KR_HISTORY_GAP_DAYS)).isoformat():
+    observed = [bar["date"] for bar in entry.get("bars") or [] if isinstance(bar, dict) and bar.get("date") and bar.get("adjClose")]
+    if latest and (latest < (today - timedelta(days=KR_HISTORY_GAP_DAYS)).isoformat()
+                   or (observed and _adj_gap(latest, min(observed)))):
         return "빈 구간", latest, None
     return None
 
@@ -803,7 +831,8 @@ def task_kr_paper_price_history() -> str:
         다 메우면 0회입니다. 받은 쪽은 바로 씁니다(다음 실행이 저장 첫 날 앞부터 이어 받음).
       - 다시 받기: 관측치가 수정주가 기준 바뀜(분할·병합 뒤 토스가 과거 수정가를 다시 씀)을 걸었고 저장값이 아직 옛 기준이면, 저장 구간
         전체를 새 기준으로 다시 받습니다. **끝까지 받았을 때만** 씁니다 — 반만 고친 시계열은 옛 기준과 새 기준이 섞입니다.
-      - 빈 구간: 저장된 마지막 날이 일주일 넘게 오래되면(수집기가 오래 꺼져 있었음) 최신부터 그 날까지.
+      - 빈 구간: 저장된 마지막 날이 일주일 넘게 오래됐거나 관측치의 최근 5봉과 이어지지 않으면(수집기가 오래 꺼져 있었음 — 관측치는
+        그 너머로 덧붙이지 않고 adjGap을 검) 최신부터 그 날까지.
       - 대상 세션(kr_target_session)보다 늦은 날짜(오늘 장중 봉)는 쓰지 않습니다. 기존 점은 지우지 않습니다(upsert).
       - 실행당 KR_HISTORY_CALL_BUDGET·KR_HISTORY_TIME_LIMIT_SECONDS 안에서만, 403이면 멈춥니다. 할 일이 있었는데 한 종목도 받지 못하면
         EmptyResult(기존 이력 유지).

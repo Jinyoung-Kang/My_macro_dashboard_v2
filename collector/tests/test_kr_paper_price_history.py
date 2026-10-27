@@ -5,7 +5,8 @@ tests/test_kr_paper_price_history.py
 고정하는 규칙
   1. 메우기: 저장 첫 날이 1년 전(상장일이 늦으면 상장일)보다 늦으면 그 앞을 before로 200봉씩 거슬러 받는다 — 다 메우면 호출 0회.
   2. 다시 받기: 관측치가 수정주가 기준 바뀜을 걸었고 저장값이 옛 기준이면 저장 구간 전체를 새 기준으로 — 끝까지 받았을 때만 쓴다.
-  3. 빈 구간: 저장된 마지막 날이 일주일 넘게 오래되면 최신부터 그 날까지.
+  3. 빈 구간: 저장된 마지막 날이 일주일 넘게 오래됐거나 관측치의 최근 5봉과 이어지지 않으면 최신부터 그 날까지 — 관측치가 먼저 돌아도
+     (관측치는 빈 구간 너머로 덧붙이지 않음).
   4. 오늘 장중 봉(대상 세션 뒤)은 쓰지 않는다. 기존 점은 지우지 않는다.
   5. 실행당 호출 예산, 403이면 멈춤, 한 종목 실패가 다른 종목을 막지 않음.
 """
@@ -172,6 +173,59 @@ def test_오래_꺼져_생긴_빈_구간을_메운다(store, history, monkeypatc
     assert history.calls == [("069500", None)]
     assert _stored(store, "069500")[-1][0] == "2026-10-27"
     assert "빈 구간 1(069500)" in detail
+
+
+def test_관측치가_먼저_돌아도_오래_꺼져_생긴_빈_구간을_메운다(store, history, monkeypatch):
+    """
+    기동 때 slow(관측치 kr_paper_quotes)가 weekly(이 태스크)보다 먼저 최근 5봉을 덧붙이면 저장된 마지막 날이 최신이 되어 '빈 구간'
+    (마지막 날이 일주일 넘게 오래됨)이 걸리지 않았고, 2026-10-02~10-20 평일 13일이 영영 비었습니다. 관측치는 빈 구간 너머로 덧붙이지
+    않고(adjGap) 이 태스크가 그 사이를 메운 뒤, 다음 관측치가 이어 덧붙입니다.
+    """
+    days = DAYS + ["2026-10-28"]
+    _scope(monkeypatch, ["069500"])
+    history.series["069500"] = [(d, 1.0) for d in days]
+    store.put_timeseries(catalog.TS_KR_CLOSE_ADJ, "069500", [(d, 1.0) for d in days if d <= "2026-10-01"])
+
+    def candles(symbol, interval, count, *, adjusted, before=None):
+        if interval == "1m":
+            return [], None
+        if adjusted:
+            return history.candles(symbol, interval, count, adjusted=True, before=before)
+        return [{"date": d, "time": "00:00", "open": 2.0, "high": 2.0, "low": 2.0, "close": 2.0, "volume": 5}
+                for d in reversed(days)][:count], None
+
+    monkeypatch.setattr(kr_paper.toss_service, "fetch_candles", candles)
+    monkeypatch.setattr(kr_paper.toss_service, "fetch_stock_infos", lambda codes: {})
+
+    quotes = tasks.task_kr_paper_quotes()                                        # 기동 직후 slow가 먼저
+
+    assert "수정 종가 빈 구간 1(069500)" in quotes
+    assert _stored(store, "069500")[-1][0] == "2026-10-01", "빈 구간 너머로 덧붙이지 않음"
+    assert store.read_snapshot(catalog.SNAP_KR_PAPER_QUOTES).payload["codes"]["069500"]["adjGap"] is True
+
+    history.calls.clear()
+    detail = tasks.task_kr_paper_price_history()                                # 그 뒤 weekly
+
+    assert "빈 구간 1(069500)" in detail and history.calls == [("069500", None)]
+    stored = [d for d, _ in _stored(store, "069500")]
+    assert [d for d in days if d <= "2026-10-27" and d not in stored] == []
+
+    monkeypatch.setattr(kr_paper, "_now", lambda: datetime(2026, 10, 28, 21, 0, tzinfo=KST))
+    tasks.task_kr_paper_quotes()                                                 # 다음 날 관측치가 이어 덧붙이고 표시를 푼다
+    assert _stored(store, "069500")[-1][0] == "2026-10-28"
+    assert store.read_snapshot(catalog.SNAP_KR_PAPER_QUOTES).payload["codes"]["069500"]["adjGap"] is False
+    history.calls.clear()
+    assert tasks.task_kr_paper_price_history() == "최신 상태 (1종목, 호출 0회)"
+
+
+def test_빈_구간은_달력의_직전_거래일로_가른다(monkeypatch):
+    monkeypatch.setattr(krcalendar, "_holidays", {"2026-10-09"})
+    assert kr_paper._adj_gap(None, "2026-10-21") is False                     # 저장본 없음 — 이력 태스크의 메우기
+    assert kr_paper._adj_gap("2026-10-27", "2026-10-21") is False             # 겹침
+    assert kr_paper._adj_gap("2026-10-20", "2026-10-21") is False             # 바로 앞 거래일
+    assert kr_paper._adj_gap("2026-10-23", "2026-10-26") is False             # 금 → 월
+    assert kr_paper._adj_gap("2026-10-08", "2026-10-12") is False             # 공휴일(10-09)·주말을 건너뜀
+    assert kr_paper._adj_gap("2026-10-16", "2026-10-21") is True              # 10-19·10-20이 빔
 
 
 def test_20시30분_전에는_오늘_장중_봉을_쓰지_않는다(store, history, monkeypatch):
