@@ -40,7 +40,13 @@ import java.util.stream.Collectors;
  * <p>순수 클래스입니다(이 패키지는 {@code java.*}만 — DB·설정을 읽지 않음). 공휴일은 수집기 {@code kr_holidays} 저장본에서,
  * 임시휴장은 설정 {@code kr.calendar.extraClosures}에서 부르는 쪽이 읽어 넘깁니다(그 연결은 C1). 장 시간 변경(수능일·신년
  * 10:00 개장)은 거래일을 바꾸지 않아 여기 두지 않습니다 — {@code kr.calendar.openTimeOverrides}는 1분봉 시가 봉 고르기(C2)의 몫.
- * 개장·마감 순간은 정규장 09:00·15:30(서울)이고 조기 폐장은 없습니다.
+ *
+ * <p><b>개장·마감 순간은 늘 정규장 09:00·15:30(서울)으로 답합니다</b> — 장 시간 변경을 반영하지 않습니다. 신년 첫 거래일은 개장만
+ * 10:00으로 늦춰지지만, <b>수능일은 마감도 16:30으로 늦춰집니다</b>([2차] 2025-11-13 정규시장 10:00~16:30, 2027학년도 수능
+ * 2026-11-19 — 조사 노트 rules-costs.md). 그날 09:00~10:00에는 {@link TradingCalendar#currentOrLastSession}이 아직 열리지 않은
+ * 그날을, 15:30~16:30에는 {@link TradingCalendar#lastCompletedSession}이 아직 장중인 그날을 돌려줍니다. 그래서 {@link #openInstant}·
+ * {@link #closeInstant}와 그것에 기댄 세션 판정을 <b>장중·확정 판정에 쓰지 마십시오</b>(지금 한국 작업은 20:30·22:30 뒤에만 돌아 영향
+ * 없음). 마감 덮어쓰기가 필요한지는 C2에서 {@code openTimeOverrides}와 함께 정합니다(명세 §9 C2 메모). 조기 폐장(마감을 앞당김)은 없습니다.
  */
 public final class KrxCalendar implements TradingCalendar {
 
@@ -48,7 +54,7 @@ public final class KrxCalendar implements TradingCalendar {
     public static final ZoneId SEOUL = ZoneId.of("Asia/Seoul");
     /** 정규장 시작(서울). */
     static final LocalTime OPEN = LocalTime.of(9, 0);
-    /** 정규장 마감(서울) — 15:20~15:30 종가 단일가 뒤. */
+    /** 정규장 마감(서울) — 15:20~15:30 종가 단일가 뒤. 수능일(16:30 마감)은 반영하지 않습니다(클래스 설명). */
     static final LocalTime CLOSE = LocalTime.of(15, 30);
     /** 5-1이 천문연 공휴일 목록(노동절)에 들어오기 시작한 해 — 그 전 해는 KRX 고유 휴장일로 더합니다. */
     static final int LABOR_DAY_LISTED_FROM = 2026;
@@ -170,7 +176,10 @@ public final class KrxCalendar implements TradingCalendar {
         return !isWeekend(d) && !isHoliday(d);
     }
 
-    /** KRX 정규장에는 조기 폐장이 없습니다(장 시간 변경은 개장을 늦춤 — 클래스 설명). */
+    /**
+     * KRX 정규장에는 조기 폐장(마감을 앞당김)이 없습니다. 장 시간 변경은 개장을 늦추고, 수능일에는 마감도 16:30으로 늦춥니다 — 이
+     * 달력은 둘 다 반영하지 않으므로 마감 순간을 장중·확정 판정에 쓰지 마십시오(클래스 설명).
+     */
     @Override
     public boolean isEarlyClose(LocalDate d) {
         return false;
