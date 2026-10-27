@@ -459,6 +459,13 @@ class KrRuleBookServiceTest {
                         .contains("지금은 체결할 수 없음(미처리 기업행위 보유").contains("게이트 ①은 그 주문을 기다리지 않음"))
                 .anySatisfy(note -> assertThat(note).startsWith("034020 매도 신호")
                         .contains("지금은 체결할 수 없음(이번 관측치에 그 종목 봉이 없음)"));
+        // 그 매도 대금도 현금 어림에 넣어 153130 매수 크기를 정했음 — 정지가 이어질 때의 결과(뒤쪽 매수가 줄어듦)를 같은 note에 적음.
+        assertThat(decision.response().path("notes")).extracting(JsonNode::asString)
+                .filteredOn(note -> note.contains("지금은 체결할 수 없음")).hasSize(2)
+                .allSatisfy(note -> assertThat(note).contains("그 매도 대금도 현금 어림에 넣었음")
+                        .contains("뒤쪽 매수(153130부터)는 체결 때 살 수 있는 만큼으로 줄고(cashLimited")
+                        .contains("다음 재선정까지 채우지 않음")
+                        .contains("남는 현금 규칙(기준 2.0%)으로 153130에"));
     }
 
     @Test
