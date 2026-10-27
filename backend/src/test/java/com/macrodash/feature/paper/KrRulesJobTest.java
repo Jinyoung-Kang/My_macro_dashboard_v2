@@ -506,6 +506,66 @@ class KrRulesJobTest {
     }
 
     @Test
+    @DisplayName("게이트 ①은 계좌마다(Claude 계좌 쪽) — Claude 계좌에만 기준일 < D 대기 주문이 있으면 규칙 계좌는 결정·DECIDED(Claude 칸에 ① 사유, Claude 부르지 않음), 다음 주기는 Claude만 남아 DATA_NOT_READY(기록 없음), 정리되면 그 주기에 Claude만 결정")
+    void gateOneHoldsTheClaudeBookAlone() {
+        ClaudeBookService claude = mock(ClaudeBookService.class);
+        List<String> calls = new ArrayList<>();
+        when(claude.decide(org.mockito.ArgumentMatchers.any(PaperMarket.class), org.mockito.ArgumentMatchers.any(),
+                org.mockito.ArgumentMatchers.anyString(), org.mockito.ArgumentMatchers.anyBoolean())).thenAnswer(invocation -> {
+                    LocalDate d = invocation.getArgument(1);
+                    String kind = invocation.getArgument(2);
+                    calls.add(d + " " + kind);
+                    // 실제 Claude 계좌처럼 결정 행을 씀(그 세션 일이 끝남 — 다음 주기 ALREADY_DECIDED).
+                    Decision row = new Decision(0, PaperBooks.KR_CLAUDE, d, kind, null, "NO_TRADE", "claude-sonnet-5-5", null, 1,
+                            null, null, null, null, null, PaperFixtures.MAPPER.valueToTree(Map.of("summary", "주문 없음")), null,
+                            null, null, false, 0L, 0);
+                    return store.insertDecisionIfAbsent(row).flatMap(store::decision).orElseThrow();
+                });
+        PaperMarketData marketData = new PaperMarketData(reader, repository);
+        job = new PaperDecisionJob(store, reader, marketData, new PaperLedgerService(store, marketData, PaperFixtures.MAPPER),
+                mock(PaperSelectionService.class), mock(RuleBookService.class), claude, PaperFixtures.settings(store),
+                KrRuleBookServiceTest.config(), PaperFixtures.MAPPER, clock);
+        store.updateBookStatus(PaperBooks.KR_CLAUDE, PaperBooks.ACTIVE);
+        store.updateBookStartedOn(PaperBooks.KR_CLAUDE, S);
+        session(R);
+        // R 개장 뒤에 만든 기준일 10-30 주문 — 체결 조건 ⑤로 R 시가에 체결되지 않아 대기(게이트 ①은 대기 그대로 셈, 결정 e3).
+        long held = store.insertOrder(new Order(0, PaperBooks.KR_CLAUDE, null, "005930", PaperBooks.BUY, null, 5.0, null,
+                PaperBooks.NEXT_OPEN, PacketBuilder.SOURCE_CLAUDE, PaperBooks.ORDER_PENDING, null, null, FRI,
+                kst("2026-11-02T10:00"), KrRulesFixtures.CALENDAR.addTradingDays(FRI, 3), null));
+
+        PaperDecisionJob.Result first = runAt("2026-11-02T22:30");
+
+        assertThat(first.outcome()).isEqualTo(PaperDecisionJob.DECIDED);
+        assertThat(first.rules().kind()).isEqualTo(RuleBookService.REBALANCE);
+        assertThat(first.claude()).isNull();
+        assertThat(calls).as("Claude를 부르지 않음").isEmpty();
+        assertThat(krRuns()).singleElement().satisfies(run -> {
+            assertThat(run.outcome()).isEqualTo(PaperDecisionJob.DECIDED);
+            assertThat(run.detail().path("claude").asString()).startsWith("자료 게이트 미달 — 다음 주기에 다시: ① kr_claude")
+                    .contains("#" + held + " BUY 005930(기준일 2026-10-30)");
+            assertThat(gateStatuses(run.detail().path("gates"))).as("규칙 계좌 ① · Claude 계좌 ① · ②~⑥")
+                    .containsExactly("① PASS", "① FAIL", "② PASS", "③ PASS", "④ PASS", "⑤ PASS", "⑥ PASS");
+        });
+
+        PaperDecisionJob.Result waiting = runAt("2026-11-02T22:40");
+        assertThat(waiting.outcome()).as("규칙 계좌는 이미 결정 — Claude만 ①로 기다림").isEqualTo(PaperDecisionJob.DATA_NOT_READY);
+        assertThat(waiting.message()).contains("① kr_claude").doesNotContain("kr_rules");
+        assertThat(krRuns()).as("기다림은 기록하지 않음").hasSize(1);
+        assertThat(rulesDecisions()).as("규칙 계좌 결정은 그 세션에 한 번").hasSize(2);
+
+        store.markOrderStatus(held, PaperBooks.ORDER_CANCELLED, "시험 — 정리됨");
+        PaperDecisionJob.Result decided = runAt("2026-11-02T22:50");
+        assertThat(decided.outcome()).isEqualTo(PaperDecisionJob.DECIDED);
+        assertThat(calls).containsExactly("2026-11-02 SCHEDULED");
+        assertThat(decided.rules().id()).as("규칙 계좌는 그 결정 그대로").isEqualTo(first.rules().id());
+        assertThat(krRuns()).last().satisfies(run -> {
+            assertThat(run.detail().path("rules").path("existing").asBoolean()).isTrue();
+            assertThat(run.detail().path("claude").path("status").asString()).isEqualTo("NO_TRADE");
+        });
+        assertThat(runAt("2026-11-02T23:00").outcome()).isEqualTo(PaperDecisionJob.ALREADY_DECIDED);
+    }
+
+    @Test
     @DisplayName("일시정지 규칙 계좌 — 장부가 사고팔지 않아 남은 기준일 < D 대기 주문이 그 세션을 막지 않고 SKIPPED(입력·게이트·주문 없음)")
     void pausedBookIsNotHeldByGateOne() {
         session(R);
