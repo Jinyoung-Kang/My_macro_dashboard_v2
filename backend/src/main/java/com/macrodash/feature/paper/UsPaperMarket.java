@@ -205,6 +205,12 @@ final class UsPaperMarket implements PaperMarket {
         return decisionInstant(session, deadline.isBefore(decisionTime) ? decisionTime : deadline);
     }
 
+    /** 기한이 지나면 확정 종가 없이 진행(결정 작업의 예전 동작 그대로 — {@code prices_final=false}). */
+    @Override
+    public AfterDeadline afterDeadline() {
+        return AfterDeadline.PROCEED_UNCONFIRMED;
+    }
+
     @Override
     public List<String> promptHardRules(JsonNode settingsBody) {
         return FrameworkService.hardRules(this, settingsBody);

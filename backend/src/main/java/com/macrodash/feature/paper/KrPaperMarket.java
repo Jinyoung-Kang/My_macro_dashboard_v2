@@ -507,6 +507,12 @@ final class KrPaperMarket implements PaperMarket {
         return nextDayDeadline(this, session, decisionTime, deadline);
     }
 
+    /** 기한(기본 D+1 01:00)이 지나면 그 세션은 결정하지 않음 — 규칙 NO_TRADE + 사유, Claude는 부르지 않음(명세 §4-9·§5). */
+    @Override
+    public AfterDeadline afterDeadline() {
+        return AfterDeadline.NO_TRADE;
+    }
+
     /**
      * '기한 ≤ 결정이면 다음 날' 규칙 — 두 시각을 그 시장의 {@link PaperMarket#decisionInstant}로 순간으로 만든 뒤, 기한 순간이 결정 순간
      * 뒤가 될 때까지 하루(달력 날, 거래일 아님)씩 미룹니다. 한국 묶음과 시험용 한국 묶음이 같은 규칙을 쓰게 둔 자리입니다.

@@ -330,6 +330,11 @@ final class MarketRun implements PaperMarket {
     }
 
     @Override
+    public AfterDeadline afterDeadline() {
+        return market.afterDeadline();
+    }
+
+    @Override
     public List<String> promptHardRules(JsonNode settingsBody) {
         return market.promptHardRules(settingsBody);
     }

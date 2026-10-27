@@ -904,6 +904,74 @@ class PaperDecisionJobTest {
     }
 
     @Test
+    @DisplayName("기한 뒤 동작(D0 — 명세 §4-9·§5): 한국 규칙은 기한(D+1 01:00)이 지나면 그 세션을 결정하지 않음 — Claude를 부르지 않고 관측치·장부도 처리하지 않으며 시장·세션마다 한 번 PAST_DEADLINE(사유·기한·계좌마다 한 일)을 기록, 다음 주기는 기록 없이 같은 결과 · 그 밤 첫 실행이 기한 뒤여도·종가 관측치가 있어도 같음 · 미국은 기한 뒤 확정 종가 없이 진행(prices_final=false) 그대로")
+    void krSkipsSessionAfterDeadline() {
+        krBook(null);
+        krIntradayQuotes();
+        PaperDecisionJob job = job(Instant.parse("2026-10-26T16:00:00Z"), List.of(UsPaperMarket.INSTANCE, KR));   // 화 01:00 KST
+
+        PaperDecisionJob.Result first = job.run(KR);
+
+        assertThat(first.outcome()).isEqualTo(PaperDecisionJob.PAST_DEADLINE);
+        assertThat(first.tradingDate()).isEqualTo(PaperFixtures.MON);
+        assertThat(first.pricesFinal()).isNull();
+        assertThat(first.claude()).isNull();
+        assertThat(first.message()).contains("결정 기한(2026-10-27 01:00 KST)");
+        assertThat(calls).as("Claude를 부르지 않음").isEmpty();
+        verify(marketData, never()).quotes(market(KR));
+        assertThat(store.states.get(KR_BOOK).lastProcessedCollectedAt()).as("장부를 처리하지 않음").isNull();
+        assertThat(store.navSeries(KR_BOOK)).isEmpty();
+        assertThat(store.jobRuns).singleElement().satisfies(run -> {
+            assertThat(run.job()).isEqualTo("kr.decision");
+            assertThat(run.outcome()).isEqualTo(PaperDecisionJob.PAST_DEADLINE);
+            assertThat(run.detail().path("tradingDate").asString()).isEqualTo("2026-10-26");
+            assertThat(run.detail().path("pastDeadline").asBoolean()).isTrue();
+            assertThat(run.detail().path("deadline").asString()).isEqualTo("2026-10-27 01:00 KST");
+            assertThat(run.detail().path("claude").asString()).isEqualTo(PaperDecisionJob.CLAUDE_PAST_DEADLINE);
+            assertThat(run.detail().path("rules").asString()).as("이 시장 규칙 계좌 결정은 아직(D1)")
+                    .isEqualTo(PaperDecisionJob.RULES_NOT_YET);
+        });
+
+        assertThat(job.run(KR).outcome()).as("다음 주기 — 같은 결과").isEqualTo(PaperDecisionJob.PAST_DEADLINE);
+        assertThat(store.jobRuns).as("시장·세션마다 한 번만 기록").hasSize(1);
+
+        // 그 밤 첫 실행이 기한 뒤(재기동한 작업)이고 종가 관측치가 있어도 — 결정하지 않음(재기동이라 기록은 한 번 더)
+        krBook(null);
+        PaperDecisionJob restarted = job(Instant.parse("2026-10-26T16:05:00Z"), List.of(KR));
+        assertThat(restarted.run(KR).outcome()).isEqualTo(PaperDecisionJob.PAST_DEADLINE);
+        assertThat(calls).isEmpty();
+        assertThat(store.jobRuns).extracting(PaperStore.JobRun::outcome)
+                .containsExactly(PaperDecisionJob.PAST_DEADLINE, PaperDecisionJob.PAST_DEADLINE);
+
+        // 미국은 같은 시각에도 미국 규칙 — 금요일 세션 기한(토 12:00 KST)이 지나 확정 종가 없이 진행
+        PaperDecisionJob.Result us = job.run();
+        assertThat(us.outcome()).isEqualTo(PaperDecisionJob.DECIDED);
+        assertThat(us.pricesFinal()).isFalse();
+        assertThat(decided).containsExactly("2026-10-23 SCHEDULED false");
+        assertThat(store.jobRuns.get(store.jobRuns.size() - 1).detail().path("pastDeadline").asBoolean()).isTrue();
+    }
+
+    @Test
+    @DisplayName("기한 뒤 동작(D0): 기한 직전(00:59)까지는 한국도 기다리고, 그날 종가 관측치가 들어오면 기한 전에 결정 — 기한 뒤 규칙은 기한이 지난 실행에만")
+    void krDecidesBeforeDeadlineOnly() {
+        krBook(null);
+        krIntradayQuotes();
+        assertThat(job(Instant.parse("2026-10-26T15:59:00Z"), List.of(KR)).run(KR).outcome())
+                .isEqualTo(PaperDecisionJob.PRICES_NOT_FINAL);
+
+        krBook(null);   // 서울 21:00 수집 — 그날 종가 관측치
+        PaperDecisionJob.Result decided = job(Instant.parse("2026-10-26T15:59:00Z"), List.of(KR)).run(KR);
+
+        assertThat(decided.outcome()).isEqualTo(PaperDecisionJob.DECIDED);
+        assertThat(calls).containsExactly("kr claude 2026-10-26 SCHEDULED true");
+        assertThat(store.jobRuns).singleElement().satisfies(run ->
+                assertThat(run.detail().path("pastDeadline").asBoolean(true)).isFalse());
+        assertThat(job(Instant.parse("2026-10-26T16:00:00Z"), List.of(KR)).run(KR).outcome())
+                .as("그 세션 결정이 이미 있으면 기한 뒤에도 ALREADY_DECIDED(기록 없음)").isEqualTo(PaperDecisionJob.ALREADY_DECIDED);
+        assertThat(store.jobRuns).hasSize(1);
+    }
+
+    @Test
     @DisplayName("시장 격리(A6): 정기 실행은 시장마다 차례로 — 다른 시장은 그 시장 달력의 세션·결정 시각·관측치·확정 판정으로 그 시장 Claude 책만 결정하고, 게이트 지표·13F 선정·규칙 책(미국 전용 단계)은 돌지 않으며 기록 이름은 시장 접두어 · 미국 실행은 그 시장 책을 건드리지 않음")
     void eachMarketRunsOnlyItsBooks() {
         krBook(null);

@@ -365,6 +365,26 @@ interface PaperMarket {
      */
     Instant deadlineInstant(LocalDate session, LocalTime decisionTime, LocalTime deadline);
 
+    /** 결정 기한({@link #deadlineInstant})이 지난 정기 결정 실행이 할 일({@link #afterDeadline}). */
+    enum AfterDeadline {
+        /**
+         * 확정 종가 없이 진행 — 결정 행·그날 순자산 줄·작업 기록에 {@code prices_final=false}(그날 결정을 건너뛰지 않게 — 늦은 확정
+         * 관측치가 순자산 줄을 바로잡음). 미국(결정 작업의 예전 동작 그대로).
+         */
+        PROCEED_UNCONFIRMED,
+        /**
+         * 그 세션은 결정하지 않음 — 규칙 계좌는 NO_TRADE + 사유, Claude 계좌는 부르지 않고 사유만(2단계 명세 §4-9·§5). 한국 — 정기
+         * 결정의 입력 시점을 결정 창(D 22:30 ~ D+1 01:00) 안으로 묶습니다(그 밤 첫 실행이 기한 뒤여도 같음 — 출발과 같은 규칙, §4-8).
+         */
+        NO_TRADE
+    }
+
+    /**
+     * 결정 기한이 지난 정기 결정 실행이 할 일(D0 — 명세 §9 'D1·E2 — 결정 기한'). 결정 작업이 그날 할 일이 남았고 지금이 기한 이후일 때
+     * 봅니다. 미국은 {@link AfterDeadline#PROCEED_UNCONFIRMED}, 한국은 {@link AfterDeadline#NO_TRADE}.
+     */
+    AfterDeadline afterDeadline();
+
     /**
      * Claude 시스템 프롬프트의 하드 규칙 줄 — 코드가 집행하는 한도를 그 시장의 설정 읽기로 적은 것(검증기·장부와 같은 키). 렌더링
      * ({@link FrameworkService#render(PaperMarket, JsonNode, int, JsonNode)})이 '## 하드 규칙' 제목 아래에 이 줄을 그대로 넣습니다

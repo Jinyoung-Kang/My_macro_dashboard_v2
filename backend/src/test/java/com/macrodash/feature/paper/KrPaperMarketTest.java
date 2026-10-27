@@ -70,6 +70,7 @@ class KrPaperMarketTest {
         assertThat(KR.money().suffix()).isEqualTo("원");
         assertThat(KR.defaultDecisionTime()).isEqualTo(LocalTime.of(22, 30));
         assertThat(KR.defaultDeadline()).isEqualTo(LocalTime.of(1, 0));
+        assertThat(KR.afterDeadline()).as("기한 뒤에는 결정하지 않음(§4-9·§5)").isEqualTo(PaperMarket.AfterDeadline.NO_TRADE);
         assertThat(KR.reviewOpensOn()).isEqualTo(DayOfWeek.SATURDAY);
         assertThat(KR.reviewOpensAt()).isEqualTo(LocalTime.of(22, 30));
         assertThat(KR.reviewOpening(LocalDate.of(2026, 11, 6))).isEqualTo(kst("2026-11-07T22:30"));

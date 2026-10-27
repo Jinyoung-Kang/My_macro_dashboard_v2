@@ -391,6 +391,8 @@ class UsPaperMarketTest {
         assertThat(US.defaultDecisionTime()).isEqualTo(LocalTime.of(7, 30))
                 .isEqualTo(PaperDecisionJob.DEFAULT_DECISION_TIME);
         assertThat(US.defaultDeadline()).isEqualTo(LocalTime.of(12, 0)).isEqualTo(PaperDecisionJob.DEFAULT_DEADLINE);
+        assertThat(US.afterDeadline()).as("기한 뒤에는 확정 종가 없이 진행(예전 그대로)")
+                .isEqualTo(PaperMarket.AfterDeadline.PROCEED_UNCONFIRMED);
 
         JsonNode defaults = PaperFixtures.settings(new FakePaperStore()).defaultsJson();
         assertThat(US.settingKey("decisionTimeKst")).isEqualTo("decisionTimeKst");

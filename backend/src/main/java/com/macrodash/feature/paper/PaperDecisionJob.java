@@ -33,6 +33,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.locks.ReentrantLock;
 
@@ -44,13 +45,15 @@ import java.util.concurrent.locks.ReentrantLock;
  *  d = 마감이 끝난 가장 최근 세션
  *  d 다음 날 decisionTimeKst(07:30) 전           → TOO_EARLY(기록 안 함)
  *  그날 할 일(게이트 지표·규칙 책 결정·Claude 책 결정)이 다 됨 → ALREADY_DECIDED(기록 안 함)
+ *  기한이 지났고 그 시장 규칙이 '결정하지 않음'(한국)  → PAST_DEADLINE(시장·세션마다 한 번 기록 — Claude를 부르지 않음)
  *  관측치가 d의 확정 종가가 아님 && decisionDeadlineKst(12:00) 전 → PRICES_NOT_FINAL(기록 안 함 — 다음 주기에 다시)
  *  관측치 처리 → (확정이 아니면) d의 미확정 순자산 줄 → 게이트 지표 → 재선정일이면 선정 → 규칙 책 결정
  *  → Claude 책 결정(운용 중일 때만) → 작업 기록     (두 책 모두 출발일 뒤 거래일만 — 출발일은 초기 결정이 그날 결정)
  * </pre>
  *
  * <p>확정 종가 = 관측치의 다수 티커 봉 날짜가 d이고 마감 + 15분 뒤에 수집함. 기한을 넘기면 확정 종가 없이 진행하고 결정·순자산
- * 줄에 {@code prices_final = false}를 남깁니다(그날 결정을 아예 건너뛰지 않게 — 늦은 확정 관측치가 순자산 줄을 바로잡음).
+ * 줄에 {@code prices_final = false}를 남깁니다(그날 결정을 아예 건너뛰지 않게 — 늦은 확정 관측치가 순자산 줄을 바로잡음). 기한 뒤에 할
+ * 일은 시장 규칙입니다({@link PaperMarket#afterDeadline} — 미국은 이렇게 진행, 한국은 그 세션을 결정하지 않음: {@value #PAST_DEADLINE}).
  * 시장 묶음에서는 이 판정이 둘로 갈립니다(결정 d9, C2a): 기다림·미확정 순자산 줄은 'd의 종가가 나왔나'({@link #closesFor} —
  * {@link PaperMarket#closeAvailable}), 결정 행·패킷·작업 기록의 {@code pricesFinal}은 'd의 가격이 확정인가'({@link #confirmedFor} —
  * {@link PaperMarket#pricesConfirmed}). 미국은 둘이 늘 같습니다.
@@ -137,6 +140,15 @@ public class PaperDecisionJob {
     public static final String START_WAITING = KrStartPipeline.START_WAITING;
     /** 한국 출발 기한이 지나 다음 KR 거래일로 미룸(그 세션에 한 번 기록). */
     public static final String START_POSTPONED = KrStartPipeline.START_POSTPONED;
+    /**
+     * 결정 기한이 지나 그 세션을 결정하지 않음(그 시장 규칙 {@link PaperMarket.AfterDeadline#NO_TRADE} — 한국). 시장·세션마다 한 번
+     * 기록합니다(재기동하면 한 번 더).
+     */
+    public static final String PAST_DEADLINE = "PAST_DEADLINE";
+    /** 기한이 지나 Claude 계좌를 부르지 않음(작업 기록 — 그 시장 Claude 계좌가 그날 결정할 차례였을 때). */
+    static final String CLAUDE_PAST_DEADLINE = "결정 기한이 지나 Claude를 부르지 않습니다";
+    /** 기한이 지나 규칙 계좌를 결정하지 않음(작업 기록 — NO_TRADE 결정 행은 그 시장 규칙 계좌 결정이 씁니다). */
+    static final String RULES_PAST_DEADLINE = "결정 기한이 지나 결정하지 않습니다(NO_TRADE)";
     /** 출발 오류 횟수를 세는 자리(오류 횟수 표의 책 칸 — 계좌 코드와 겹치지 않음). */
     private static final String START_FAILURES = "start";
     /** 미국 밖 시장의 규칙 책 결정 자리(작업 기록) — 그 시장 규칙 책은 2단계 D1에서 들어옵니다(클래스 설명). */
@@ -145,7 +157,8 @@ public class PaperDecisionJob {
     /**
      * 한 번 실행의 결과.
      *
-     * @param outcome     위 상수 중 하나. DECIDED·ERROR만 작업 기록을 남깁니다(NO_CALENDAR는 시장·KST 날짜·빠진 해마다 한 번)
+     * @param outcome     위 상수 중 하나. DECIDED·ERROR만 작업 기록을 남깁니다(NO_CALENDAR는 시장·KST 날짜·빠진 해마다 한 번,
+     *                    PAST_DEADLINE은 시장·세션마다 한 번)
      * @param tradingDate 결정 대상 거래일(테이블이 없으면 null)
      * @param pricesFinal 확정 종가로 결정했나(결정 전에 끝났으면 null)
      * @param rules       규칙 책 결정(내지 않았으면 null)
@@ -180,6 +193,12 @@ public class PaperDecisionJob {
     private final CalendarGaps calendarGaps = new CalendarGaps();
     /** 한국 네 계좌의 출발(클래스 설명 '한국 출발'). */
     private final KrStartPipeline krStart;
+    /** 기한 지남({@value #PAST_DEADLINE})을 기록한 시장·세션 — 한 세션에 한 번(10분마다 같은 줄이 작업 기록을 밀어내지 않게). 재기동하면 처음부터. */
+    private final Set<SessionKey> pastDeadlineRecorded = ConcurrentHashMap.newKeySet();
+
+    /** 시장 × 세션. */
+    private record SessionKey(String market, LocalDate day) {
+    }
 
     /** 오류 횟수를 세는 단위 — 시장 × 거래일(그 시장 세션) × 책 코드(그 시장의 규칙·Claude 책). */
     private record FailureKey(String market, LocalDate day, String book) {
@@ -325,6 +344,11 @@ public class PaperDecisionJob {
         if (!work.any()) {
             return new Result(ALREADY_DECIDED, d, null, null, null, d + " 결정·게이트 지표를 이미 남겼습니다");
         }
+        Instant deadline = market.deadlineInstant(d, times.decision(), times.deadline());
+        if (!now.isBefore(deadline) && market.afterDeadline() == PaperMarket.AfterDeadline.NO_TRADE) {
+            // 기한이 지난 세션은 그 시장 규칙상 결정하지 않습니다 — 관측치·장부도 여기서 처리하지 않음(리스크 점검의 몫).
+            return pastDeadline(market, now, d, deadline);
+        }
         boolean rulesGaveUp = gaveUp(market, d, market.rulesBook());
         boolean claudeGaveUp = gaveUp(market, d, market.claudeBook());
         // 게이트 지표는 두 책이 함께 기다리는 일입니다(그 단계 오류는 두 책 모두에 셈).
@@ -335,7 +359,6 @@ public class PaperDecisionJob {
         Optional<Quotes> quotes = reader.quietly(() -> marketData.quotes(market));
         boolean closesIn = quotes.map(q -> closesFor(market, q, d)).orElse(false);
         boolean pricesFinal = quotes.map(q -> confirmedFor(market, q, d)).orElse(false);
-        Instant deadline = market.deadlineInstant(d, times.decision(), times.deadline());
         if (!closesIn && now.isBefore(deadline)) {
             return new Result(PRICES_NOT_FINAL, d, false, null, null, d + " 확정 종가 관측치를 기다립니다(기한 "
                     + Kst.stamp(deadline) + ")");
@@ -406,6 +429,31 @@ public class PaperDecisionJob {
         }
         record(market, now, DECIDED, detail);
         return new Result(DECIDED, d, pricesFinal, decision, claudeDecision, null);
+    }
+
+    /**
+     * 기한이 지난 세션을 결정하지 않음({@link PaperMarket.AfterDeadline#NO_TRADE} — 한국, 명세 §4-9·§5). Claude 계좌는 부르지 않고(그날
+     * 결정할 차례였으면 사유 {@value #CLAUDE_PAST_DEADLINE}), 규칙 계좌도 결정하지 않습니다 — 그 시장 규칙 계좌 결정이 생기면(한국 D1) 이
+     * 자리에서 그 세션의 NO_TRADE 결정 행을 씁니다(재선정 따라잡기 K33의 근거). 관측치·장부·순자산 줄은 이 작업에서 처리하지 않습니다(리스크
+     * 점검이 5분마다 처리). 작업 기록은 시장·세션마다 한 번 {@value #PAST_DEADLINE}(사유·기한·계좌마다 한 일)이고 로그도 그때만 INFO입니다.
+     */
+    private Result pastDeadline(MarketRun market, Instant now, LocalDate d, Instant deadline) {
+        String message = d + " 결정 기한(" + Kst.stamp(deadline) + ")이 지나 그 세션은 결정하지 않습니다 — Claude를 부르지 않음";
+        boolean first = pastDeadlineRecorded.add(new SessionKey(market.code(), d));
+        if (first) {
+            Map<String, Object> detail = new LinkedHashMap<>();
+            detail.put("tradingDate", d.toString());
+            detail.put("pastDeadline", true);
+            detail.put("deadline", Kst.stamp(deadline));
+            detail.put("rules", usSteps(market) ? RULES_PAST_DEADLINE : RULES_NOT_YET);
+            String claudeSkip = claudeSkipReason(market, store.book(market.claudeBook()), d);
+            detail.put("claude", claudeSkip == null ? CLAUDE_PAST_DEADLINE : claudeSkip);
+            record(market, now, PAST_DEADLINE, detail);
+            log.info("모의 매매 결정 작업({}): {}", market.code(), message);
+        } else {
+            log.debug("모의 매매 결정 작업({}): {}", market.code(), message);
+        }
+        return new Result(PAST_DEADLINE, d, null, null, null, message);
     }
 
     /** 출발일·계좌가 갖춰지지 않은 시장이면 그 사유({@link PaperMarket#dormantReason}) — 실행을 열기 전에 봅니다(저장본을 읽지 않게). */

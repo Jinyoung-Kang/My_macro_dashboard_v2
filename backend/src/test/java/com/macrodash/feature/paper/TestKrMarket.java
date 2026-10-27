@@ -25,7 +25,7 @@ import java.util.function.Function;
  *
  * <p>미국과 일부러 갈리게 골랐습니다 — 서울 21:00(UTC 12:00)은 이 달력으로는 그날 세션의 확정 종가 뒤지만 미국 달력으로는 개장
  * 전(직전 세션)입니다. 장부가 미국 달력을 썼다면 세션·확정 여부·순자산 줄이 달라집니다. 결정 시각·기한은 실제 한국 기본값과 같은
- * 22:30·01:00이고 기한 규칙도 한국 것(기한 ≤ 결정이면 다음 날)입니다(D0).
+ * 22:30·01:00이고 기한 규칙·기한 뒤 동작도 한국 것(기한 ≤ 결정이면 다음 날, 지나면 결정하지 않음)입니다(D0).
  */
 final class TestKrMarket implements PaperMarket {
 
@@ -319,6 +319,12 @@ final class TestKrMarket implements PaperMarket {
     @Override
     public Instant deadlineInstant(LocalDate session, LocalTime decisionTime, LocalTime deadline) {
         return KrPaperMarket.nextDayDeadline(this, session, decisionTime, deadline);
+    }
+
+    /** 실제 한국 묶음과 같이 기한이 지나면 결정하지 않음. */
+    @Override
+    public AfterDeadline afterDeadline() {
+        return AfterDeadline.NO_TRADE;
     }
 
     /** 시험용 하드 규칙 줄 — 받은 설정 본문의 한 키를 그대로 적어, 렌더링이 결정의 설정을 넘기는지 보이게. */
