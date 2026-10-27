@@ -342,7 +342,10 @@
     - obs_date·7일 보관·미래 판정은 **KST 날짜**(미국은 UTC 날짜). 날짜만 있는 항목은 그 날짜가 (지금 + 1일)의 KST 날짜보다 뒤면 미래로 건너뛴다.
     - [확인] 국가데이터처는 게시 시각이 보도 시각(엠바고)보다 앞설 수 있다(`202610251905` 게시, 본문 '보도일시 2026.10.26.(월) 12:00'). 제목은 게시 때 공개라 `knownAt`은 게시 시각 그대로 둔다(본문은 받지 않음).
     - **G12 [확인] 연합뉴스 마켓+ 채널의 `<copyright>`가 "저작권자(c) 연합뉴스, 무단 전재-재배포, AI 학습 및 활용 금지"**(2026-10-26 응답). Claude 패킷에 싣는 것은 'AI 활용'에 해당할 수 있어
-      G12는 통과하기 어렵다고 본다[추정]. B9는 명세대로 받아 두기만 하고(제목·링크·시각, 로컬 7일 — 패킷 연결 없음), **E1은 `kr.news.feeds` 기본값에서 `yna_market`을 빼고 시작할 것을 제안**한다(사용자 확인 전까지).
+      G12는 통과하기 어렵다고 본다[추정]. B9는 명세대로 받아 두기만 하고(제목·링크·시각, 로컬 7일 — 패킷 연결 없음), E1은 `kr.news.feeds` 기본값에서 `yna_market`을 빼고 시작할 것을 제안했다.
+      → **사용자 결정(2026-10-27, C0): 빼지 않는다 — 위 제안(권장)을 뒤집은 사용자 결정이다.** E1은 `kr.news.feeds` 기본값에 `yna_market`을 둔 채(4개 모두) 패킷 `11b_events`에 싣는다.
+      위험은 그대로 남는다: 채널의 '무단 전재-재배포, AI 학습 및 활용 금지' 문구상 제목을 Claude 패킷 입력으로 쓰는 것이 'AI 활용'에 해당할 수 있다[추정]. 저장은 제목·링크·시각만(로컬 7일, 본문 없음).
+      피드를 빼는 일은 설정 `kr.news.feeds`에서 `yna_market`을 지우는 저장 한 번이다([decisions.md](../decisions.md) 2026-10-27).
       시험 고정본의 연합뉴스 피드는 구조만 같은 합성 자료다(공개 저장소에 제목을 싣지 않음 — `collector/tests/fixtures/news_kr/README.md`).
   - **한국 일정 `kr_calendar`**(weekly, `kr_holidays` 바로 뒤, 외부 호출 0):
     - 상수는 `collector/app/services/kr_calendar.py`(금통위 8회·출처·확인일 2026-10-26·through 2026-11-26). 창은 KST 오늘부터 45일(미국 `us_calendar`와 같음), 실행마다 다시 씀.
@@ -376,7 +379,7 @@
   + **3단계 스위치 `claude.schemaV3`·`claude.figureCheck`**(BOOLEAN, 기본 false, `affectsRules=false`, 두 책 공통 — K37, 권장안. 3단계 명세가 이 이름을 쓴다).
 - 한국 키(기본값): `kr.slippageBp` 5 · `kr.commissionBp` 1.5 · `kr.tax.*`(§4-3) · `kr.minOrderNotional` 500000 · `kr.rulesMaxNames` 15 · `kr.rules.weighting` EQUAL · `kr.rules.minStreakDays` 0 · `kr.rules.debtRatioMaxPct` 200 ·
   `kr.rules.reselection` MONTHLY_FIRST · `kr.trailingStopPct` 8 · `kr.lockoutTradingDays` 20 · `kr.rules.parkCashThresholdPct` 2 · `kr.cashLikeTickers` [153130] · `kr.universeExtraTickers` [] ·
-  `kr.decisionTimeKst` 22:30(TIME — 미국 `decisionTimeKst`와 같은 형) · `kr.decisionDeadlineKst` 01:00(TIME — 결정 시각보다 이르면 다음 날로 읽음, 범위 테스트) · `kr.calendar.extraClosures` [] · `kr.calendar.openTimeOverrides` {} · `kr.news.enabled/feeds/keywords/aliases/maxPerDay`.
+  `kr.decisionTimeKst` 22:30(TIME — 미국 `decisionTimeKst`와 같은 형) · `kr.decisionDeadlineKst` 01:00(TIME — 결정 시각보다 이르면 다음 날로 읽음, 범위 테스트) · `kr.calendar.extraClosures` [] · `kr.calendar.openTimeOverrides` {} · `kr.news.enabled/feeds/keywords/aliases/maxPerDay`(`feeds` 기본 = 피드 4개 모두, `yna_market` 포함 — G12 사용자 결정 2026-10-27).
   비중 상한·최대 보유 수·최소 보유일·월 재량 주문 수는 미국 값과 같은 값으로 `kr.*`에 둔다.
 - **설정이 아닌 것**(K38, 권장안): 한국 주간 복기 시각(토 22:30 — 미국 `ReviewFacts.OPENS_AT`처럼 시장별 코드 상수)과 `NEXT_CLOSE` 허용(`KrPaperMarket.ALLOW_NEXT_CLOSE`, G2 판정 뒤 정하는 코드 상수 —
   런타임 설정이면 정적 `kr-decision.schema.json`의 timing enum·프롬프트 문장을 맞출 방법이 없음). 초안의 `kr.reviewTimeKst`·`kr.allowNextClose`는 뺐다.
@@ -580,7 +583,7 @@
 | G9 | 2027 금통위 일정 | 2026-12 중순까지 | '갱신 필요 — 2027 일정 미게시' |
 | G10 | 금융위 RSS 복구 | 구현 날 1회 | 피드에서 뺌. **[확인] 2026-10-27 08:34 KST(B9) 다시 503 '현재 RSS 서비스 점검 중입니다.' → 뺌** |
 | G11 | TradingView 403 원인 | 교체 뒤 서버에서 기본 요청 1회(머리글 변형 시험은 사용자 허락 뒤에만) | Nasdaq만. **[확인] 2026-10-27 08:3x KST(B9) 이 PC 기본 요청 1회도 403 → `us_calendar_consensus`는 Nasdaq만**(서버 확인은 교체 뒤 그대로) |
-| G12 | 연합뉴스 RSS 이용 조건 | 출발 전, 제목·링크·시각만 저장 | 연합뉴스를 빼고 공식 3곳만(종목 사건이 얇아짐을 화면에 적음). **[확인] 채널 `<copyright>` "저작권자(c) 연합뉴스, 무단 전재-재배포, AI 학습 및 활용 금지"** — 패킷 입력이 'AI 활용'일 수 있어 통과가 어렵다고 봄[추정], E1은 `yna_market`을 기본 피드에서 빼고 시작할 것을 제안(§4-12 'B9에서 정한 것') |
+| G12 | 연합뉴스 RSS 이용 조건 | 출발 전, 제목·링크·시각만 저장 | 연합뉴스를 빼고 공식 3곳만(종목 사건이 얇아짐을 화면에 적음). **[확인] 채널 `<copyright>` "저작권자(c) 연합뉴스, 무단 전재-재배포, AI 학습 및 활용 금지"** — 패킷 입력이 'AI 활용'일 수 있어 통과가 어렵다고 봄[추정], E1은 `yna_market`을 기본 피드에서 빼고 시작할 것을 제안(§4-12 'B9에서 정한 것'). **[사용자 결정] 2026-10-27 — 남긴다**: 권장(빼기)을 뒤집어 `kr.news.feeds` 기본값에 `yna_market`을 두고 패킷에 싣는다. 위 위험 문장은 그대로 유효하다(저장은 제목·링크·시각만, 빼기는 설정 저장 한 번 — [decisions.md](../decisions.md) 2026-10-27) |
 | G13 | 2027 증권거래세율 | 2026-12 세법 개정 확인 | `effectiveFrom`을 붙인 새 값으로 설정 저장 |
 | G14 | 서버에서 기동 직후 slow 소요·수집기 메모리(상한 1g) | 교체 뒤 첫 주 | 한국 태스크를 weekly·별도 시각으로 나눔, 결정 게이트가 기다림 |
 | G15 | 토스 수급에 NXT 체결이 들어 있는가 | 문서·고객센터 확인 | 규칙 정의에 '토스 집계 기준'으로 적음(지금도 그렇게 표시). **[확인 — 문서] 2026-10-27 B4: 공식 스펙 1.2.24 `GET /api/v1/stocks/{symbol}/investor-trading` 설명 '거래량은 KRX·NXT 통합 기준'** — 수급은 통합 집계다(고객센터 확인은 하지 않음) |
@@ -612,7 +615,7 @@
 | K18 | 호출 상한 배분 | 두 책 합 20 공유, 정기 몫 예약 **7**(교정 재호출 켜면 9 — 토요일 최악 셈), 시장별 몫 없음, 한국 결정 기준일 = `lastCompletedSession(now)`, 자정 넘은 재시도는 다음 날 줄 | 상한 20은 사용자 결정 V6, 배분 **권장안** — 초안 4는 토요일(정기 3종 × 재시도)을 못 덮음 |
 | K19 | 한국 복기 | 토 22:30 KST(시장별 코드 상수), 금요일은 잠정가, 기본키 (market, week_ending) — B1에서 `PaperStore` 복기 SQL과 같은 커밋 | **권장안** |
 | K20 | `1b_calendar` 한국 | 금통위 상수 + 연 1회 발표 상수, 실적·컨센서스 null + 사유 | **권장안** — 한국 컨센서스 출처 없음 |
-| K21 | `11b_events` 한국 | 한국은행·재정경제부·국가데이터처·연합뉴스 마켓+, 별도 데이터셋, 피드별 시간대·형식 | **권장안** |
+| K21 | `11b_events` 한국 | 한국은행·재정경제부·국가데이터처·연합뉴스 마켓+, 별도 데이터셋, 피드별 시간대·형식. 연합뉴스는 G12 이용 조건 위험에도 기본 피드에 남김 | **권장안**, 연합뉴스를 남기는 것은 **사용자 결정**(2026-10-27 — 빼자는 권장을 뒤집음, §7 G12) |
 | K22 | 캘린더 컨센서스 | `calendar.consensus` 하나로 한국 출발일 S(21:55~22:30)에 두 책 함께, 3단계 스위치(K37)와 같은 저장 한 번, 미국 `packetVersion` 5 → 6(S+1 07:30부터)·한국은 처음부터 6, 프레임 판 그대로, Nasdaq 먼저 | **권장안** — ADR 0018 실험 조건을 한 날 한 번만 바꿈([decisions.md](../decisions.md) 2026-10-27) |
 | K23 | 스키마 | V14 하나(§4-14), 설정은 같은 행 `kr.*` | **권장안** |
 | K24 | 데이터셋·태스크 | §4-15의 8개 태스크·9개 데이터셋 | **권장안** |
