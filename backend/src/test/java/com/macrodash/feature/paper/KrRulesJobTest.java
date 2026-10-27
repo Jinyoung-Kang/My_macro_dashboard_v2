@@ -309,8 +309,9 @@ class KrRulesJobTest {
         data.flow("005930", R, 100_000L, 50_000L, "2026-11-02T20:21:26.000+09:00", kst("2026-11-02T21:18"));
         long stale = pending("005930", PaperBooks.BUY, PaperBooks.NEXT_OPEN, RuleBookService.SOURCE_RULE, FRI,
                 "2026-10-30T22:30");
-        // 1분봉 FAILED 기다림 같은 자리 — 이 저장본에 그 종목 R 봉이 없어 기준일 10-30 주문이 체결되지 않고 대기(②는 9/10 통과).
-        quotes(R, Set.of("005930"));
+        // 1분봉 FAILED 기다림 — 그 종목 R 봉(관측 봉)의 1분봉 개장 봉을 아직 받지 못해 기준일 10-30 주문이 체결되지 않고 대기(장부가 아직 일하는
+        // 주문 — 봉이 없는 주문은 ①이 기다리지 않음, 사용자 결정 u2).
+        KrFixtures.stub(reader, Datasets.SNAP_KR_PAPER_QUOTES, KrRulesFixtures.minuteFailed(KrRulesFixtures.quotes(R), "005930"));
         PaperDecisionJob.Result ledger = runAt("2026-11-02T23:10");
         assertThat(ledger.outcome()).isEqualTo(PaperDecisionJob.DATA_NOT_READY);
         assertThat(ledger.message()).contains("① kr_rules").contains("#" + stale + " BUY 005930(기준일 2026-10-30)")
@@ -488,9 +489,10 @@ class KrRulesJobTest {
     }
 
     @Test
-    @DisplayName("게이트 ①은 결정하는 계좌의 주문만 — 벤치마크 계좌(60/40)의 기준일 < D 대기 주문(153130 R 봉 없음으로 체결 못 함)이 있어도 규칙 계좌는 결정, 그 주문은 대기 그대로")
+    @DisplayName("게이트 ①은 결정하는 계좌의 주문만 — 벤치마크 계좌(60/40)의 기준일 < D 대기 주문(153130 R 봉의 1분봉 FAILED로 장부가 기다림)이 있어도 규칙 계좌는 결정, 그 주문은 대기 그대로")
     void gateOneIsPerAccount() {
-        quotes(R, Set.of("153130"));   // ②는 9/10 통과 — 153130만 R 봉이 없어 그 시가 주문이 체결되지 않음
+        // 153130 R 봉은 관측 봉인데 1분봉 개장 봉을 아직 받지 못함 — 장부가 아직 일하는 주문(그 계좌의 ①이라면 막는 주문)
+        KrFixtures.stub(reader, Datasets.SNAP_KR_PAPER_QUOTES, KrRulesFixtures.minuteFailed(KrRulesFixtures.quotes(R), "153130"));
         fsc(FRI);
         long bench = store.insertOrder(new Order(0, PaperBooks.KR_BENCH_MIX, null, "153130", PaperBooks.BUY, null, 40.0, null,
                 PaperBooks.NEXT_OPEN, PaperBooks.SOURCE_BENCHMARK, PaperBooks.ORDER_PENDING, null, null, FRI,
@@ -642,6 +644,107 @@ class KrRulesJobTest {
         assertThat(next.rules().kind()).isEqualTo(RuleBookService.SCHEDULED);
         assertThat(next.rules().response().path("gates").get(0).path("status").asString()).isEqualTo("PASS");
         assertThat(store.positions(PaperBooks.KR_RULES)).extracting(Position::ticker).contains("000660");
+    }
+
+    @Test
+    @DisplayName("주문 뒤에 시작된 정지(사용자 결정 u2 ⓑ) — R 결정의 매도가 R1부터 정지된 종목에 걸려도 R1 게이트 ①은 그 주문을 기다리지 않고 정기 결정(주문은 대기 그대로, 다시 내지 않음), 확정 순자산 줄 조건은 그 주문을 셈(R1 줄 잠정), 정지가 만료 안에 풀리면 재개일(R2) 시가에 체결")
+    void suspensionAfterTheOrderDoesNotHoldGateOne() {
+        holding("373220", 100, 10_000);   // 20일 외국인·기관 둘 다 순매도 — 매일 매도 신호
+        store.upsertState(new BookState(PaperBooks.KR_RULES, 99_000_000, 100_000_000, 1_000_000, 1.0, null, null, S, null));
+        session(R);
+        PaperDecisionJob.Result placed = runAt("2026-11-02T22:30");
+        assertThat(placed.outcome()).isEqualTo(PaperDecisionJob.DECIDED);
+        Order sell = store.ordersByDecision(placed.rules().id()).stream()
+                .filter(o -> "373220".equals(o.ticker()) && PaperBooks.SELL.equals(o.side())).findFirst().orElseThrow();
+
+        // R1 — 373220 거래정지(KRX 매매정지·R1 봉 거래량 0). 다른 R 주문은 R1 시가에 체결.
+        KrFixtures.stub(reader, Datasets.SNAP_KR_PAPER_QUOTES,
+                KrRulesFixtures.suspend(KrRulesFixtures.quotes(R1), "373220", true));
+        fsc(R);
+        PaperDecisionJob.Result next = runAt("2026-11-03T22:30");
+
+        assertThat(next.outcome()).isEqualTo(PaperDecisionJob.DECIDED);
+        assertThat(next.rules().kind()).isEqualTo(RuleBookService.SCHEDULED);
+        JsonNode first = next.rules().response().path("gates").get(0);
+        assertThat(first.path("status").asString()).isEqualTo("PASS");
+        assertThat(first.path("note").asString()).startsWith("kr_rules")
+                .contains("#" + sell.id() + " SELL 373220(기준일 2026-11-02)").contains("기준일 뒤 관측 봉(거래량 > 0)이 없음")
+                .contains("기다리지 않음").contains("대기 그대로");
+        assertThat(store.orders.get(sell.id()).status()).as("주문은 살아 있음").isEqualTo(PaperBooks.ORDER_PENDING);
+        assertThat(store.ordersByDecision(placed.rules().id())).filteredOn(o -> o.id() != sell.id())
+                .allSatisfy(o -> assertThat(o.status()).isEqualTo("FILLED"));
+        assertThat(store.ordersByDecision(next.rules().id())).as("대기 매도가 있어 다시 내지 않음")
+                .noneMatch(o -> "373220".equals(o.ticker()));
+        assertThat(KrConfirmations.pendingThrough(store, KrPaperMarket.INSTANCE, KrRulesFixtures.CALENDAR,
+                PaperBooks.KR_RULES, R1)).as("확정 순자산 줄 조건은 ①의 면제를 쓰지 않음 — 다음 저장본이 지난 봉을 채우면 R1 날짜로 체결될 수 있음")
+                .singleElement(org.assertj.core.api.InstanceOfAssertFactories.STRING)
+                .contains("주문 " + sell.id() + " SELL 373220");
+
+        // R2 — 정지가 풀림(R1 봉은 정지일 봉 그대로, R2 봉 관측). 만료(R + 3거래일) 안이라 R2 시가에 체결.
+        KrFixtures.stub(reader, Datasets.SNAP_KR_PAPER_QUOTES,
+                KrRulesFixtures.suspendedOn(KrRulesFixtures.quotes(R2), "373220", R1));
+        fsc(R1);
+        PaperDecisionJob.Result lifted = runAt("2026-11-04T22:30");
+
+        assertThat(lifted.outcome()).isEqualTo(PaperDecisionJob.DECIDED);
+        assertThat(store.orders.get(sell.id()).status()).isEqualTo("FILLED");
+        assertThat(store.fillsOf(PaperBooks.KR_RULES)).filteredOn(f -> "373220".equals(f.ticker())).singleElement()
+                .satisfies(f -> assertThat(f.observationDate()).as("재개일 시가").isEqualTo(R2));
+        assertThat(store.positions(PaperBooks.KR_RULES)).extracting(Position::ticker).doesNotContain("373220");
+    }
+
+    @Test
+    @DisplayName("1분봉 FAILED 기다림은 게이트 ①을 그대로 막음(관측 봉이 있음 — 장부가 아직 일하는 주문), 같은 밤 정지 종목의 대기 주문은 막지 않음 — 그 밤 다음 slow가 1분봉을 받아 장부가 체결하면 ① 통과")
+    void minuteFailedWaitStillHoldsGateOne() {
+        long waiting = pending("005930", PaperBooks.BUY, PaperBooks.NEXT_OPEN, RuleBookService.SOURCE_RULE, FRI,
+                "2026-10-30T22:30");
+        long suspended = pending("373220", PaperBooks.SELL, PaperBooks.NEXT_OPEN, RuleBookService.SOURCE_RULE, FRI,
+                "2026-10-30T22:30");
+        KrFixtures.stub(reader, Datasets.SNAP_KR_PAPER_QUOTES, KrRulesFixtures.minuteFailed(
+                KrRulesFixtures.suspend(KrRulesFixtures.quotes(R), "373220", true), "005930"));
+        fsc(FRI);
+
+        PaperDecisionJob.Result blocked = runAt("2026-11-02T22:30");
+
+        assertThat(blocked.outcome()).isEqualTo(PaperDecisionJob.DATA_NOT_READY);
+        assertThat(blocked.message()).contains("① kr_rules — 기준일 < 2026-11-02인 대기 주문 1건 #" + waiting + " BUY 005930")
+                .contains("그 밖의 대기 주문 1건은 장부가 이번 관측치로 체결할 수 없어 기다리지 않음 #" + suspended + " SELL 373220");
+        assertThat(store.orders.get(waiting).status()).isEqualTo(PaperBooks.ORDER_PENDING);
+
+        // 그 밤 다음 slow(22:57 저장)가 그 봉을 다시 받아 FAILED가 풀린 판(여기서는 1분봉 칸 없이 — 일봉 시가 사다리) — 새 수집 시각이라 장부가
+        // 다시 처리해 체결.
+        KrFixtures.stub(reader, Datasets.SNAP_KR_PAPER_QUOTES,
+                KrRulesFixtures.recollected(KrRulesFixtures.suspend(KrRulesFixtures.quotes(R), "373220", true),
+                        kst("2026-11-02T22:57")));
+        PaperDecisionJob.Result decided = runAt("2026-11-02T23:00");
+
+        assertThat(decided.outcome()).isEqualTo(PaperDecisionJob.DECIDED);
+        assertThat(store.orders.get(waiting).status()).isEqualTo("FILLED");
+        assertThat(store.orders.get(suspended).status()).isEqualTo(PaperBooks.ORDER_PENDING);
+        JsonNode first = decided.rules().response().path("gates").get(0);
+        assertThat(first.path("status").asString()).isEqualTo("PASS");
+        assertThat(first.path("note").asString()).contains("#" + suspended + " SELL 373220").contains("기다리지 않음");
+    }
+
+    @Test
+    @DisplayName("미처리 기업행위 보유(장부가 그 종목 주문을 보류)의 대기 주문은 게이트 ①을 막지 않음 — 그 종목 R 봉이 관측 봉이어도, 주문은 대기 그대로")
+    void corporateActionHoldDoesNotHoldGateOne() {
+        holding("000660", 100, 10_000);
+        store.holdForCorpAction(PaperBooks.KR_RULES, "000660", "큰 변동 — 3중 조건 미충족");
+        store.upsertState(new BookState(PaperBooks.KR_RULES, 99_000_000, 100_000_000, 1_000_000, 1.0, null, null, S, null));
+        long held = pending("000660", PaperBooks.SELL, PaperBooks.NEXT_OPEN, RuleBookService.SOURCE_RULE, FRI,
+                "2026-10-30T22:30");
+        session(R);
+
+        PaperDecisionJob.Result decided = runAt("2026-11-02T22:30");
+
+        assertThat(decided.outcome()).isEqualTo(PaperDecisionJob.DECIDED);
+        assertThat(decided.rules().kind()).isEqualTo(RuleBookService.REBALANCE);
+        JsonNode first = decided.rules().response().path("gates").get(0);
+        assertThat(first.path("status").asString()).isEqualTo("PASS");
+        assertThat(first.path("note").asString()).contains("#" + held + " SELL 000660").contains("미처리 기업행위 보유(큰 변동")
+                .contains("기다리지 않음");
+        assertThat(store.orders.get(held).status()).as("장부가 보류 — 대기 그대로").isEqualTo(PaperBooks.ORDER_PENDING);
     }
 
     @Test

@@ -167,6 +167,38 @@ final class KrRulesFixtures {
         return snapshot;
     }
 
+    /**
+     * 그 저장본 {@code code} 종목의 {@code date} 봉을 정지일 봉(거래량 0)으로 — 정지가 풀린 뒤의 저장본에 남은 지난 정지일(수집기는 최근 봉을
+     * 다시 받음). 같은 저장본을 고쳐 돌려줍니다.
+     */
+    static com.macrodash.store.Snapshot suspendedOn(com.macrodash.store.Snapshot snapshot, String code, LocalDate date) {
+        for (JsonNode bar : snapshot.payload().path("codes").path(code).path("bars")) {
+            if (date.toString().equals(bar.path("date").asString())) {
+                ((ObjectNode) bar).put("volume", 0);
+                return snapshot;
+            }
+        }
+        throw new IllegalArgumentException(code + "에 " + date + " 봉이 없습니다");
+    }
+
+    /**
+     * 그 저장본 {@code code} 종목 마지막 봉(그날)의 1분봉 개장 봉을 {@code FAILED}로 — 수집기가 같은 밤 다시 묻는 중이라 장부가 그 시가 주문을
+     * 기다림(결정 d11, 관측 봉은 있음). 같은 저장본을 고쳐 돌려줍니다.
+     */
+    static com.macrodash.store.Snapshot minuteFailed(com.macrodash.store.Snapshot snapshot, String code) {
+        JsonNode bars = snapshot.payload().path("codes").path(code).path("bars");
+        ObjectNode minute = ((ObjectNode) bars.get(bars.size() - 1)).putObject("minute");
+        minute.put("status", "FAILED");
+        minute.put("priceSource", "TOSS_1M_OPEN");
+        minute.put("reason", "아직 묻지 못함 — 호출 예산·시간 상한");
+        return snapshot;
+    }
+
+    /** 같은 본문을 다른 수집 시각에 저장한 저장본(그 밤 다음 slow가 다시 쓴 판 — 장부가 새 관측치로 다시 처리). */
+    static com.macrodash.store.Snapshot recollected(com.macrodash.store.Snapshot snapshot, Instant collectedAt) {
+        return KrFixtures.snapshot(Datasets.SNAP_KR_PAPER_QUOTES, snapshot.payload(), collectedAt);
+    }
+
     /** 그 기준일 U 한 종목(수집기 select_universe 모양). */
     KrRulesFixtures member(LocalDate base, int rank, String code, String name, long listedShares) {
         ObjectNode row = PaperFixtures.MAPPER.createObjectNode();
