@@ -1,14 +1,18 @@
 package com.macrodash.feature.paper;
 
 import com.macrodash.analytics.GateIndicator;
+import com.macrodash.analytics.KrxCosts;
 import com.macrodash.analytics.Signal13F;
 import com.macrodash.support.Json;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.node.JsonNodeFactory;
 
+import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
+import java.util.Objects;
 import java.util.function.DoublePredicate;
 
 /**
@@ -36,10 +40,12 @@ import java.util.function.DoublePredicate;
  *                           따로 있습니다 — 장부는 그 키를 읽지 않으므로 장부 경로의 경고에 섞지 않습니다
  * @param blend              두 기관 그룹 섞기(D27) — 규칙 책·기관 선정이 읽는 값
  * @param rules              규칙 책의 {@code rules.*} 묶음(매일 남는 현금 SHY 기준) — 규칙 책이 읽는 값
+ * @param costRates          한국 체결 비용 요율({@code kr.commissionBp}·{@code kr.tax.*} — 한국 장부의 비용 칸, C2b). 한국 시장(KR)만 읽고
+ *                           다른 시장은 null — 미국은 수수료·세금이 모형에 없음(슬리피지는 체결가에)
  */
 public record PaperSettings(double slippageBp, double trailingStopPct, int lockoutTradingDays,
                             List<String> cashLikeTickers, GateIndicator.Thresholds gate, List<String> fallbacks,
-                            Blend blend, Rules rules) {
+                            Blend blend, Rules rules, CostRates costRates) {
 
     public static final double DEFAULT_SLIPPAGE_BP = 5;
     public static final double DEFAULT_TRAILING_STOP_PCT = 8;
@@ -60,7 +66,7 @@ public record PaperSettings(double slippageBp, double trailingStopPct, int locko
     static PaperSettings defaults(PaperMarket market) {
         return new PaperSettings(DEFAULT_SLIPPAGE_BP, DEFAULT_TRAILING_STOP_PCT, DEFAULT_LOCKOUT_TRADING_DAYS,
                 market.defaultCashLike(), GateIndicator.Thresholds.defaults(), List.of(), Blend.defaults(),
-                Rules.defaults());
+                Rules.defaults(), CostRates.readsCostRates(market) ? CostRates.defaults() : null);
     }
 
     /** 스탑을 걸지 않는 현금성 종목인가. */
@@ -115,7 +121,97 @@ public record PaperSettings(double slippageBp, double trailingStopPct, int locko
         }
         Rules rules = Rules.from(scoped);
         return new PaperSettings(slippage, stop, (int) lockout, cashLike, thresholds, fallbacks, Blend.from(body),
-                new Rules(rules.parkCashThresholdPct(), rules.fallbacks().stream().map(key -> prefix + key).toList()));
+                new Rules(rules.parkCashThresholdPct(), rules.fallbacks().stream().map(key -> prefix + key).toList()),
+                CostRates.readsCostRates(market) ? CostRates.from(scoped, prefix) : null);
+    }
+
+    /**
+     * 한국 체결 비용 요율(명세 §4-3·K5 — 비용 칸 {@code fee}·{@code tax}, C2b). 슬리피지는 장부 키 {@link #slippageBp}({@code kr.slippageBp})를
+     * 그대로 씁니다. 키가 없거나 범위 밖(0 이상 10,000bp 미만 — {@code KrxCosts}가 받는 범위, 설정 API는 더 좁게 0~100)이면 그 키만 기본값
+     * (수수료 1.5bp·세율 {@link KrxCosts.TaxRates#KRX_2026})으로 읽고 {@link #fallbacks}에 접두어를 붙인 이름({@code kr.commissionBp}·
+     * {@code kr.tax.kospi.sttBp} …)으로 남깁니다 — 장부 키의 fallbacks와 따로 둡니다(설정 화면은 한국 읽기에 함께 보임). 시행일
+     * ({@code kr.tax.effectiveFrom})은 {@code yyyy-MM-dd}만 받습니다.
+     *
+     * <p><b>판</b>: 잠정 체결은 그 체결을 쓰는 실행이 읽은 설정 판으로 셉니다(결정 행의 {@code settings_version}과 같은 규칙 — 명세 §4-2
+     * 'C2b 구현에서 정한 것'). 확정 조정이 그 체결 때의 판을 이력에서 고르는 것은 C3입니다(결정 d7).
+     *
+     * @param commissionBp 수수료(bp, 매수·매도 각각, 최소 수수료 없음 — 가정)
+     * @param tax          매도 세율과 시행일
+     */
+    public record CostRates(double commissionBp, KrxCosts.TaxRates tax, List<String> fallbacks) {
+
+        public CostRates {
+            Objects.requireNonNull(tax, "tax");
+            fallbacks = List.copyOf(fallbacks);
+        }
+
+        /** 한국 시장(KR)만 비용 요율을 읽습니다(클래스 설명의 {@link PaperSettings#costRates}). */
+        static boolean readsCostRates(PaperMarket market) {
+            return com.macrodash.store.PaperStore.Book.MARKET_KR.equals(market.code());
+        }
+
+        /** 설정 행이 없을 때 — 수수료 1.5bp, 2026-01-01 시행 세율(fallbacks 없음). */
+        static CostRates defaults() {
+            return new CostRates(PaperSettingsService.KR_DEFAULT_COMMISSION_BP, KrxCosts.TaxRates.KRX_2026, List.of());
+        }
+
+        /** 그 시장 묶음({@code kr.} 아래)에서 읽습니다. */
+        static CostRates from(JsonNode scoped, String prefix) {
+            List<String> fallbacks = new ArrayList<>();
+            DoublePredicate bp = v -> v >= 0 && v < 10_000;
+            double commission = number(scoped, "commissionBp", PaperSettingsService.KR_DEFAULT_COMMISSION_BP, bp,
+                    fallbacks, "commissionBp");
+            KrxCosts.TaxRates base = KrxCosts.TaxRates.KRX_2026;
+            JsonNode tax = Json.child(scoped, "tax");
+            List<String> taxFallbacks = new ArrayList<>();
+            double kospiStt = number(Json.child(tax, "kospi"), "sttBp", base.kospiSttBp().doubleValue(), bp, taxFallbacks,
+                    "kospi.sttBp");
+            double kospiRural = number(Json.child(tax, "kospi"), "ruralBp", base.kospiRuralBp().doubleValue(), bp,
+                    taxFallbacks, "kospi.ruralBp");
+            double kosdaqStt = number(Json.child(tax, "kosdaq"), "sttBp", base.kosdaqSttBp().doubleValue(), bp,
+                    taxFallbacks, "kosdaq.sttBp");
+            double etf = number(tax, "etfBp", base.etfBp().doubleValue(), bp, taxFallbacks, "etfBp");
+            LocalDate effectiveFrom = date(Json.asText(tax, "effectiveFrom"));
+            if (effectiveFrom == null) {
+                effectiveFrom = base.effectiveFrom();
+                taxFallbacks.add("effectiveFrom");
+            }
+            taxFallbacks.forEach(key -> fallbacks.add("tax." + key));
+            KrxCosts.TaxRates rates = new KrxCosts.TaxRates(effectiveFrom, decimal(kospiStt), decimal(kospiRural),
+                    decimal(kosdaqStt), decimal(etf));
+            return new CostRates(commission, rates, fallbacks.stream().map(key -> prefix + key).toList());
+        }
+
+        /** 한 체결에 쓰는 요율 판 — 이 수수료·세율에 그 시장의 슬리피지({@link PaperSettings#slippageBp}). */
+        KrxCosts.Rates rates(double slippageBp) {
+            return new KrxCosts.Rates(decimal(commissionBp), decimal(slippageBp), tax);
+        }
+
+        /** bp 값 → 십진수(정수면 정수 자리로 — 5.0과 5가 같은 세율 레코드가 되게). */
+        private static BigDecimal decimal(double bp) {
+            return bp == Math.rint(bp) && Math.abs(bp) < 1e15 ? BigDecimal.valueOf((long) bp) : BigDecimal.valueOf(bp);
+        }
+
+        private static double number(JsonNode node, String key, double fallback, DoublePredicate valid,
+                                     List<String> fallbacks, String name) {
+            Double value = Json.asDouble(node, key);
+            if (value == null || !Double.isFinite(value) || !valid.test(value)) {
+                fallbacks.add(name);
+                return fallback;
+            }
+            return value;
+        }
+
+        private static LocalDate date(String text) {
+            if (text == null || !text.matches("\\d{4}-\\d{2}-\\d{2}")) {
+                return null;
+            }
+            try {
+                return LocalDate.parse(text);
+            } catch (java.time.format.DateTimeParseException e) {
+                return null;
+            }
+        }
     }
 
     /**

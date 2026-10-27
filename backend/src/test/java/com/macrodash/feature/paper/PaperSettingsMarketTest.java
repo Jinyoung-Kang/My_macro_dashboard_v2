@@ -140,6 +140,41 @@ class PaperSettingsMarketTest {
     }
 
     @Test
+    @DisplayName("한국 비용 요율(C2b — kr.commissionBp·kr.tax.*): 기본 본문은 1.5bp·2026 세율 그대로(fallbacks 없음), 한국 묶음이 없으면 키마다 기본값과 접두어 이름, 틀린 값은 그 키만 — 미국은 읽지 않음(null)")
+    void krCostRates() {
+        PaperMarket kr = KrPaperMarket.INSTANCE;
+        PaperSettings.CostRates read = PaperSettings.from(defaults(), kr).costRates();
+        assertThat(read.fallbacks()).isEmpty();
+        assertThat(read.commissionBp()).isEqualTo(1.5);
+        assertThat(read.tax()).isEqualTo(com.macrodash.analytics.KrxCosts.TaxRates.KRX_2026);
+        assertThat(read.rates(5).slippageBp()).isEqualByComparingTo("5");
+        assertThat(PaperSettings.defaults(kr).costRates()).isEqualTo(PaperSettings.CostRates.defaults());
+        assertThat(PaperSettings.from(null, kr).costRates()).isEqualTo(PaperSettings.CostRates.defaults());
+
+        PaperSettings.CostRates missing = PaperSettings.from(withoutKr(), kr).costRates();
+        assertThat(missing.commissionBp()).isEqualTo(1.5);
+        assertThat(missing.tax()).isEqualTo(com.macrodash.analytics.KrxCosts.TaxRates.KRX_2026);
+        assertThat(missing.fallbacks()).containsExactly("kr.commissionBp", "kr.tax.kospi.sttBp", "kr.tax.kospi.ruralBp",
+                "kr.tax.kosdaq.sttBp", "kr.tax.etfBp", "kr.tax.effectiveFrom");
+
+        ObjectNode body = defaults();
+        ObjectNode krBody = (ObjectNode) body.get("kr");
+        krBody.put("commissionBp", -1);
+        ObjectNode tax = (ObjectNode) krBody.get("tax");
+        tax.put("effectiveFrom", "2026/01/01");
+        ((ObjectNode) tax.get("kospi")).put("sttBp", 7);
+        PaperSettings.CostRates wrong = PaperSettings.from(body, kr).costRates();
+        assertThat(wrong.commissionBp()).as("음수 수수료 → 기본값").isEqualTo(1.5);
+        assertThat(wrong.tax().kospiSttBp()).as("맞는 키는 그 값").isEqualByComparingTo("7");
+        assertThat(wrong.tax().effectiveFrom()).isEqualTo(java.time.LocalDate.of(2026, 1, 1));
+        assertThat(wrong.fallbacks()).containsExactly("kr.commissionBp", "kr.tax.effectiveFrom");
+
+        assertThat(PaperSettings.from(defaults(), US).costRates()).as("미국은 수수료·세금이 모형에 없음").isNull();
+        assertThat(PaperSettings.defaults().costRates()).isNull();
+        assertThat(PaperSettings.from(defaults(), US).fallbacks()).as("미국 fallbacks는 그대로").isEmpty();
+    }
+
+    @Test
     @DisplayName("실행의 설정 = 그 실행이 읽은 행을 그 시장 판으로 — 시험용 한국 실행은 kr. 아래, 미국 실행은 루트")
     void runSettingsUseTheMarketsKeys() {
         FakePaperStore store = new FakePaperStore();

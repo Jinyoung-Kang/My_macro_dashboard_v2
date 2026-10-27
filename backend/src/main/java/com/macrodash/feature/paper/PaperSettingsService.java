@@ -203,7 +203,8 @@ public class PaperSettingsService {
      * GET /api/paper/settings — {@code {available, version, updatedAtKst, body, defaults, keys:[{key, type, min, max, affectsRules,
      * market, description, options}], fallbacks}}({@code market} = 그 키를 읽는 책 US·KR, 두 책 공통이면 null). 행이 없으면(초기화 전) {@code version:null}이고 {@code body}는 기본값입니다.
      * {@code fallbacks}는 지금 본문에서 없거나 범위 밖이라 기본값으로 읽는 키(장부·섞기·규칙 책 묶음·Claude 책·추정 비용 단가·사건 뉴스 +
-     * 한국 장부 키·{@code kr.rules} — 한국 키를 아직 쓰지 않은 행이면 {@code kr.slippageBp} 같은 접두어 이름, 한국 초기화가 채우면 사라짐).
+     * 한국 장부 키·{@code kr.rules}·비용 요율 {@code kr.commissionBp}·{@code kr.tax.*} — 한국 키를 아직 쓰지 않은 행이면 {@code kr.slippageBp} 같은
+     * 접두어 이름, 한국 초기화가 채우면 사라짐).
      */
     public Map<String, Object> view() {
         if (!store.ready()) {
@@ -218,11 +219,13 @@ public class PaperSettingsService {
         fallbacks.addAll(ClaudeBookService.ClaudeSettings.from(body).fallbacks());
         fallbacks.addAll(PaperApiCalls.Pricing.from(body).fallbacks());
         fallbacks.addAll(EventsSection.settings(body).fallbacks());
-        // 한국 읽기(C1c — 한국 묶음이 생긴 뒤): 장부 키·rules.* 묶음의 kr. 접두어 이름만(게이트는 설정 루트라 위 미국 읽기와 같음).
+        // 한국 읽기(C1c — 한국 묶음이 생긴 뒤): 장부 키·rules.* 묶음·비용 요율(C2b)의 kr. 접두어 이름만(게이트는 설정 루트라 위 미국
+        // 읽기와 같음).
         PaperSettings kr = PaperSettings.from(body, KrPaperMarket.INSTANCE);
         kr.fallbacks().stream().filter(key -> key.startsWith(KrPaperMarket.INSTANCE.settingsPrefix()))
                 .forEach(fallbacks::add);
         fallbacks.addAll(kr.rules().fallbacks());
+        fallbacks.addAll(kr.costRates().fallbacks());
         Map<String, Object> out = new LinkedHashMap<>();
         out.put("available", true);
         out.put("version", row.map(PaperStore.SettingsRow::version).orElse(null));

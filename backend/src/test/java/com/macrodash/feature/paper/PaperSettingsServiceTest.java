@@ -385,6 +385,16 @@ class PaperSettingsServiceTest {
                     java.time.LocalDate.parse(tax.path("effectiveFrom").asString()),
                     tax.path("kospi").path("sttBp").decimalValue(), tax.path("kospi").path("ruralBp").decimalValue(),
                     tax.path("kosdaq").path("sttBp").decimalValue(), tax.path("etfBp").decimalValue()));
+            // 장부가 읽는 한국 비용 요율(C2b)도 기본값으로 바꾸지 않고 그 값 그대로.
+            assertThat(kr.costRates().fallbacks()).as("한국 비용 요율 " + (useMax ? "최댓값" : "최솟값")).isEmpty();
+            com.macrodash.analytics.KrxCosts.Rates read = kr.costRates().rates(kr.slippageBp());
+            assertThat(read.commissionBp()).isEqualByComparingTo(krBody.path("commissionBp").decimalValue());
+            assertThat(read.slippageBp()).isEqualByComparingTo(krBody.path("slippageBp").decimalValue());
+            assertThat(read.tax().kospiSttBp()).isEqualByComparingTo(tax.path("kospi").path("sttBp").decimalValue());
+            assertThat(read.tax().kospiRuralBp()).isEqualByComparingTo(tax.path("kospi").path("ruralBp").decimalValue());
+            assertThat(read.tax().kosdaqSttBp()).isEqualByComparingTo(tax.path("kosdaq").path("sttBp").decimalValue());
+            assertThat(read.tax().etfBp()).isEqualByComparingTo(tax.path("etfBp").decimalValue());
+            assertThat(read.tax().effectiveFrom()).isEqualTo(java.time.LocalDate.parse(tax.path("effectiveFrom").asString()));
         }
     }
 
