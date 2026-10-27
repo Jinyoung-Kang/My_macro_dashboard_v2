@@ -357,6 +357,21 @@ class KrRulesJobTest {
     }
 
     @Test
+    @DisplayName("게이트 ③의 판 문턱은 D 15:35 KST 포함 — 15:34:59 판은 장중 판(7/8 기다림), 15:35:00 정각 판은 셈(U 8/8 결정)")
+    void gateThreeEveningVersionBoundary() {
+        session(R);
+        data.flow("005930", R, 100_000L, 50_000L, "2026-11-02T15:34:59.000+09:00", kst("2026-11-02T21:18"));
+        PaperDecisionJob.Result before = runAt("2026-11-02T22:30");
+        assertThat(before.outcome()).isEqualTo(PaperDecisionJob.DATA_NOT_READY);
+        assertThat(before.message()).contains("③ U 7/8").contains("15:35 전 판 1(005930)");
+
+        data.flow("005930", R, 100_000L, 50_000L, "2026-11-02T15:35:00.000+09:00", kst("2026-11-02T21:18"));
+        PaperDecisionJob.Result at = runAt("2026-11-02T22:40");
+        assertThat(at.outcome()).isEqualTo(PaperDecisionJob.DECIDED);
+        assertThat(at.rules().response().path("gates").get(2).path("note").asString()).contains("U 8/8");
+    }
+
+    @Test
     @DisplayName("게이트 ⑥(D가 거래일) — 결정 작업의 D는 그 달력의 lastCompletedSession이라 늘 통과, 판정 자체는 달력이 휴장으로 아는 날을 막음")
     void gateSixJudgesTheCalendar() {
         assertThat(KrDecisionGates.tradingDay(KrRulesFixtures.CALENDAR, R).blocks()).isFalse();
