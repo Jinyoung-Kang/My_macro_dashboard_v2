@@ -1008,6 +1008,28 @@ class PaperStoreDbTest {
     }
 
     @Test
+    @DisplayName("결정 날짜(한국 재선정 따라잡기) — 그 종류·상태만, 오름차순, from(포함) 뒤만, 다른 책·빈 종류는 없음")
+    void decisionDatesByKindAndStatus() {
+        store.insertBookIfAbsent(book(BOOK, "규칙 책"));
+        store.insertBookIfAbsent(book(OTHER_BOOK, "다른 책"));
+        store.insertDecisionIfAbsent(decision(DAY.plusDays(10), "REBALANCE", "OK", null));
+        store.insertDecisionIfAbsent(decision(DAY, "INITIAL", "OK", null));
+        store.insertDecisionIfAbsent(decision(DAY.plusDays(3), "REBALANCE", "NO_TRADE", null));
+        store.insertDecisionIfAbsent(decision(DAY.plusDays(4), "SCHEDULED", "OK", null));
+        store.insertDecisionIfAbsent(new PaperStore.Decision(0, OTHER_BOOK, DAY.plusDays(5), "REBALANCE", null, "OK",
+                null, null, 3, null, null, null, null, null, null, null, null, null, false, null, 0));
+
+        assertThat(store.decisionDates(BOOK, List.of("REBALANCE", "INITIAL"), "OK", null))
+                .as("NO_TRADE·SCHEDULED·다른 책은 빠짐").containsExactly(DAY, DAY.plusDays(10));
+        assertThat(store.decisionDates(BOOK, List.of("REBALANCE", "INITIAL"), "OK", DAY.plusDays(1)))
+                .containsExactly(DAY.plusDays(10));
+        assertThat(store.decisionDates(BOOK, List.of("REBALANCE", "INITIAL"), "OK", DAY.plusDays(10)))
+                .as("from 당일 포함").containsExactly(DAY.plusDays(10));
+        assertThat(store.decisionDates(BOOK, List.of("REBALANCE"), "NO_TRADE", null)).containsExactly(DAY.plusDays(3));
+        assertThat(store.decisionDates(BOOK, List.of(), "OK", null)).isEmpty();
+    }
+
+    @Test
     @DisplayName("게이트 지표: 거래일마다 한 번(두 번째 넣기는 처음 값 그대로), 직전 기록·최근 순 — 시험 뒤 되돌림")
     void gateLogOncePerTradingDay() {
         class Rollback extends RuntimeException {

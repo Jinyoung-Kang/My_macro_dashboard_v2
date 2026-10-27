@@ -651,6 +651,13 @@ class FakePaperStore extends PaperStore {
     }
 
     @Override
+    public List<LocalDate> decisionDates(String code, java.util.Collection<String> kinds, String status, LocalDate from) {
+        return decisions.values().stream().filter(d -> d.bookCode().equals(code) && kinds.contains(d.kind())
+                        && d.status().equals(status) && (from == null || !d.asOfTradingDate().isBefore(from)))
+                .map(Decision::asOfTradingDate).distinct().sorted().toList();
+    }
+
+    @Override
     public List<DecisionSummary> decisions(String code, int limit) {
         return decisions.values().stream().filter(d -> d.bookCode().equals(code))
                 .sorted(Comparator.comparing(Decision::asOfTradingDate).thenComparing(Decision::decidedAt)

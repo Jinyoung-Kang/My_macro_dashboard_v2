@@ -1555,6 +1555,30 @@ public class PaperStore {
         return Boolean.TRUE.equals(found);
     }
 
+    /**
+     * 한 책에서 그 종류·상태의 결정이 있는 기준 거래일(오름차순, 같은 날은 한 번) — 한국 규칙 계좌의 재선정 따라잡기(2단계 명세 K33)가 "그 주기에
+     * 매수 결정(상태 OK인 REBALANCE·INITIAL)을 냈나"를 날짜 범위로 봅니다({@code analytics.KrReselection}). {@code from}이 있으면 그날(포함)
+     * 뒤만 — 리셋 전의 다른 출발 기록을 세지 않게 출발일을 넘깁니다. 종류가 비었으면 빈 목록.
+     */
+    public List<LocalDate> decisionDates(String code, Collection<String> kinds, String status, LocalDate from) {
+        if (kinds == null || kinds.isEmpty()) {
+            return List.of();
+        }
+        List<Object> args = new ArrayList<>();
+        args.add(code);
+        args.add(status);
+        args.addAll(kinds);
+        String marks = String.join(", ", Collections.nCopies(kinds.size(), "?"));
+        String since = "";
+        if (from != null) {
+            since = " AND as_of_trading_date >= ?";
+            args.add(Date.valueOf(from));
+        }
+        return jdbc.query("SELECT DISTINCT as_of_trading_date FROM paper_decisions WHERE book_code = ? AND status = ? "
+                        + "AND kind IN (" + marks + ")" + since + " ORDER BY as_of_trading_date",
+                (rs, rowNum) -> rs.getDate("as_of_trading_date").toLocalDate(), args.toArray());
+    }
+
     /** 한 책의 최근 결정 {@code limit}건 — 기준 거래일 최근 순(같은 날이면 나중에 낸 것 먼저). */
     public List<DecisionSummary> decisions(String code, int limit) {
         return jdbc.query("SELECT " + DECISION_SUMMARY_COLUMNS + " FROM paper_decisions d WHERE d.book_code = ? "

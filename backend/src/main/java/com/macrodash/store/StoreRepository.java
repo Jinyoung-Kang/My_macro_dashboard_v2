@@ -534,6 +534,17 @@ public class StoreRepository {
         return out;
     }
 
+    /**
+     * 그 데이터셋에서 {@code before}보다 이른(같은 날 제외) 가장 최근 obs_date. 없으면 null. 한국 규칙 계좌가 결정의 기준 세션 D에 쓸 유니버스
+     * U(D)의 금융위 기준일 B(&lt; D — 2단계 명세 §4-5)를 고릅니다 — D 당일·뒤의 기준일 행은 결정 때 알 수 없던 값이라 보지 않습니다.
+     */
+    public LocalDate latestObservationDateBefore(String dataset, LocalDate before) {
+        java.sql.Date date = jdbc.queryForObject(
+                "SELECT MAX(obs_date) FROM observations WHERE dataset = ? AND obs_date < ?", java.sql.Date.class,
+                dataset, java.sql.Date.valueOf(before));
+        return date == null ? null : date.toLocalDate();
+    }
+
     /** 그 데이터셋의 가장 최근 obs_date. 없으면 null. */
     public LocalDate latestObservationDate(String dataset) {
         java.sql.Date date = jdbc.queryForObject(

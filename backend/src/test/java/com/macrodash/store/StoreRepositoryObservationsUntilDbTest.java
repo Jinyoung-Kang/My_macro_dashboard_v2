@@ -71,4 +71,21 @@ class StoreRepositoryObservationsUntilDbTest {
                 assertThat(node.path("cik").get(0).asString()).isEqualTo("0000019617"));
         assertThat(repository.readObservationsUntil(DATASET, List.of(), LocalDate.of(2026, 10, 23))).isEmpty();
     }
+
+    @Test
+    @DisplayName("기준일 앞 최신 obs_date — 같은 날·뒤 날은 빼고(한국 유니버스 U(D)의 기준일 B < D), 다른 데이터셋은 보지 않음, 없으면 null")
+    void latestDateStrictlyBefore() {
+        String universe = "t.kr.universe";
+        put(universe, "2026-10-26", "005930", "{\"rank\":1}");
+        put(universe, "2026-10-27", "005930", "{\"rank\":1}");
+        put(universe, "2026-10-28", "005930", "{\"rank\":1}");
+        put("t.other", "2026-10-27", "005930", "{}");
+
+        assertThat(repository.latestObservationDateBefore(universe, LocalDate.of(2026, 10, 28)))
+                .as("D 당일 행은 쓰지 않음").isEqualTo(LocalDate.of(2026, 10, 27));
+        assertThat(repository.latestObservationDateBefore(universe, LocalDate.of(2026, 10, 30)))
+                .isEqualTo(LocalDate.of(2026, 10, 28));
+        assertThat(repository.latestObservationDateBefore(universe, LocalDate.of(2026, 10, 26))).isNull();
+        assertThat(repository.latestObservationDateBefore("t.none", LocalDate.of(2026, 10, 30))).isNull();
+    }
 }
