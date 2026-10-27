@@ -47,13 +47,15 @@ class KrRulesJobTest {
     private KrFixtures.MovableClock clock;
     private PaperDecisionJob job;
     private KrRulesFixtures data;
+    /** 가짜 저장소(유니버스·수급 읽기 — 읽은 횟수를 보는 시험이 씀). */
+    private StoreRepository repository;
 
     @BeforeEach
     void setUp() {
         store = new FakePaperStore();
         reader = PaperFixtures.quietReader();
         KrFixtures.stubHolidays(reader, KrFixtures.holidays(2026, 2027));
-        StoreRepository repository = repository();
+        repository = repository();
         clock = new KrFixtures.MovableClock(kst("2026-10-28T12:00"));
         PaperMarketData marketData = new PaperMarketData(reader, repository);
         KrRuleBookServiceTest.startedBooks(store, reader, marketData, clock);
@@ -315,7 +317,7 @@ class KrRulesJobTest {
     }
 
     @Test
-    @DisplayName("일시정지 규칙 계좌 — 장부가 사고팔지 않아 남은 기준일 < D 대기 주문이 게이트 ①을 막지 않고 그 세션은 SKIPPED(입력·주문 없음)")
+    @DisplayName("일시정지 규칙 계좌 — 장부가 사고팔지 않아 남은 기준일 < D 대기 주문이 그 세션을 막지 않고 SKIPPED(입력·게이트·주문 없음)")
     void pausedBookIsNotHeldByGateOne() {
         session(R);
         long stale = pending("005930", PaperBooks.BUY, PaperBooks.NEXT_OPEN, RuleBookService.SOURCE_RULE, FRI,
@@ -327,8 +329,36 @@ class KrRulesJobTest {
         assertThat(result.outcome()).isEqualTo(PaperDecisionJob.DECIDED);
         assertThat(result.rules().status()).isEqualTo(RuleBookService.STATUS_SKIPPED);
         assertThat(store.orders.get(stale).status()).isEqualTo(PaperBooks.ORDER_PENDING);
-        assertThat(krRuns()).singleElement().satisfies(run -> assertThat(run.detail().path("gates").get(0).path("note")
-                .asString()).contains("일시정지"));
+        assertThat(krRuns()).singleElement().satisfies(run -> {
+            assertThat(run.detail().path("rules").path("status").asString()).isEqualTo(RuleBookService.STATUS_SKIPPED);
+            assertThat(run.detail().has("gates")).as("입력·게이트를 읽지 않음").isFalse();
+        });
+    }
+
+    @Test
+    @DisplayName("일시정지 규칙 계좌는 자료 게이트를 기다리지 않음 — ④ 미달인 밤에도 22:30에 SKIPPED(U·수급을 읽지 않음), 기한 뒤 첫 실행이어도 NO_TRADE가 아니라 SKIPPED")
+    void pausedBookSkipsWithoutGates() {
+        store.updateBookStatus(PaperBooks.KR_RULES, PaperBooks.PAUSED);
+        quotes(R, Set.of());
+        fsc(LocalDate.of(2026, 10, 29));   // ④ 미달
+
+        PaperDecisionJob.Result skipped = runAt("2026-11-02T22:30");
+
+        assertThat(skipped.outcome()).isEqualTo(PaperDecisionJob.DECIDED);
+        assertThat(skipped.rules().status()).isEqualTo(RuleBookService.STATUS_SKIPPED);
+        assertThat(skipped.rules().kind()).as("재선정일 — 종류는 REBALANCE(따라잡기가 세지 않음)").isEqualTo(RuleBookService.REBALANCE);
+        org.mockito.Mockito.verify(repository, org.mockito.Mockito.never()).readObservationSeries(
+                eq(Datasets.OBS_KR_PAPER_FLOW), anyCollection(), org.mockito.ArgumentMatchers.any(LocalDate.class));
+
+        // 다음 세션은 그 밤 첫 실행이 기한 뒤 — 일시정지 계좌는 기한 지남 NO_TRADE가 아니라 SKIPPED.
+        PaperDecisionJob.Result late = runAt("2026-11-04T01:00");
+        assertThat(late.outcome()).isEqualTo(PaperDecisionJob.PAST_DEADLINE);
+        assertThat(late.tradingDate()).isEqualTo(R1);
+        assertThat(late.rules().status()).isEqualTo(RuleBookService.STATUS_SKIPPED);
+        assertThat(late.rules().response().path("pastDeadline").asBoolean()).isTrue();
+        assertThat(late.rules().response().has("noTradeReason")).isFalse();
+        assertThat(rulesDecisions()).extracting(d -> d.asOfTradingDate() + " " + d.status())
+                .containsExactly("2026-10-29 OK", "2026-11-02 SKIPPED", "2026-11-03 SKIPPED");
     }
 
     @Test

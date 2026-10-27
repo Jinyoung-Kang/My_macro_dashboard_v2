@@ -465,6 +465,14 @@ public class PaperDecisionJob {
     private Result decideKr(MarketRun market, Instant now, LocalDate d, Instant deadline, boolean rulesGaveUp,
                             boolean claudeGaveUp) {
         KrDecisionGates.Inputs session = krGates.readSession(market, d);
+        if (!rulesGaveUp && krRules.due(d) && krRules.paused()) {
+            // 일시정지 규칙 계좌 — 입력·자료 게이트 없이 그 세션 SKIPPED(주문을 내지 않으니 가격·수급을 기다릴 까닭이 없음). Claude 쪽 일이
+            // 남았으면 아래 게이트 경로가 이어서 봅니다(규칙 계좌는 '이미 결정함').
+            Result paused = skipPausedRules(market, now, d, session, claudeGaveUp);
+            if (paused != null) {
+                return paused;
+            }
+        }
         List<KrDecisionGates.Gate> before = krGates.beforeLedger(market, session);
         if (!KrDecisionGates.blocking(before).isEmpty()) {
             return dataNotReady(d, before, deadline);
@@ -575,6 +583,36 @@ public class PaperDecisionJob {
         return new Result(DECIDED, d, pricesFinal, decision, claudeDecision, null);
     }
 
+    /**
+     * 일시정지 한국 규칙 계좌의 그 세션 SKIPPED({@link KrRuleBookService#skipPaused} — 입력·게이트 없이). Claude 계좌도 그날 할 일이 없으면 그
+     * 결정으로 끝내고(기록 DECIDED), 할 일이 있으면 null(게이트 경로로 이어감). 쓰다 예외가 나면 규칙 계좌 오류로 셉니다.
+     */
+    private Result skipPausedRules(MarketRun market, Instant now, LocalDate d, KrDecisionGates.Inputs session,
+                                   boolean claudeGaveUp) {
+        boolean pricesFinal = session.quotes().map(q -> confirmedFor(market, q, d)).orElse(false);
+        Map<String, Object> detail = new LinkedHashMap<>();
+        detail.put("tradingDate", d.toString());
+        detail.put("pricesFinal", pricesFinal);
+        detail.put("pastDeadline", false);
+        Decision skipped;
+        try {
+            skipped = krRules.skipPaused(market, d, pricesFinal);
+            failures.remove(new FailureKey(market.code(), d, market.rulesBook()));
+        } catch (RuntimeException e) {
+            detail.put("rulesError", message(e));
+            return failed(market, now, d, pricesFinal, detail, List.of("규칙 계좌: " + message(e)),
+                    List.of(market.rulesBook()), null, null);
+        }
+        String claudeSkip = claudeGaveUp ? gaveUpNote() : claudeSkipReason(market, store.book(market.claudeBook()), d);
+        if (claudeSkip == null) {
+            return null;
+        }
+        detail.put("rules", krDecisionDetail(skipped));
+        detail.put("claude", claudeSkip);
+        record(market, now, DECIDED, detail);
+        return new Result(DECIDED, d, pricesFinal, skipped, null, null);
+    }
+
     /** 자료 게이트 미달 — 결정·기록 없이 다음 주기에 다시({@value #DATA_NOT_READY}). */
     private static Result dataNotReady(LocalDate d, List<KrDecisionGates.Gate> gates, Instant deadline) {
         return new Result(DATA_NOT_READY, d, null, null, null, "자료 게이트 미달: "
@@ -612,7 +650,8 @@ public class PaperDecisionJob {
                 rulesView = skip;
             } else {
                 // 그 순간의 자료 게이트(① 규칙 계좌 · ②~⑥) — NO_TRADE 행의 사유(⑤ 미달이면 '069500 D 봉 없음', 결정 e4)와 기다린 까닭.
-                gates = deadlineGates(market, d, now);
+                // 일시정지 계좌는 입력·게이트 없이 SKIPPED 행(KrRuleBookService.pastDeadline).
+                gates = krRules.paused() ? null : deadlineGates(market, d, now);
                 try {
                     rulesRow = krRules.pastDeadline(market, d, deadline, gates);
                     rulesView = decisionDetail(rulesRow);

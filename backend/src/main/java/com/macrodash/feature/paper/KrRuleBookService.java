@@ -85,7 +85,8 @@ import java.util.TreeSet;
  *
  * <p><b>상태</b>: 선정한 결정(REBALANCE·INITIAL)은 주문이 없어도 {@code OK}입니다 — 그 주기의 매수 결정이라 따라잡기가 다시 고르지 않게(K33,
  * {@link KrReselection}은 OK만 셈). SCHEDULED는 주문이 있으면 OK, 없으면 {@code NO_TRADE}(미국과 같은 뜻). 기한이 지나 결정하지 않은 세션도
- * {@code NO_TRADE}이고 응답의 {@code noTradeReason}으로 가립니다. 일시정지 계좌는 입력을 읽지 않고 {@code SKIPPED}입니다.
+ * {@code NO_TRADE}이고 응답의 {@code noTradeReason}으로 가립니다. 일시정지 계좌는 입력을 읽지 않고 {@code SKIPPED}입니다 — 결정 작업은 자료
+ * 게이트·장부 처리 전에 그 행을 쓰고({@link #skipPaused}), 기한이 지난 세션도 NO_TRADE가 아니라 SKIPPED입니다.
  *
  * <p><b>설정</b>(e6): 결정 작업이 연 실행({@link MarketRun})의 설정 행 하나를 {@code kr.} 접두어로 읽습니다 — 결정 행의 {@code settings_version}이
  * 그 판입니다. 없거나 틀린 키는 기본값으로 읽고 응답 {@code settings.fallbacks}에 실제 키 이름으로 남깁니다.
@@ -290,6 +291,36 @@ final class KrRuleBookService {
         return skipReason(d) == null;
     }
 
+    /** 이 계좌가 일시정지 중인가 — 그 세션 결정은 입력·자료 게이트 없이 {@code SKIPPED}({@link #skipPaused}). */
+    boolean paused() {
+        return store.book(PaperBooks.KR_RULES).map(b -> PaperBooks.PAUSED.equals(b.status())).orElse(false);
+    }
+
+    /**
+     * 일시정지 계좌의 그 세션 결정 — 입력을 읽지 않고 주문 없는 {@code SKIPPED}(클래스 설명 '상태'). 결정 작업이 자료 게이트·장부 처리 전에
+     * 부릅니다(그 결정은 가격·수급을 보지 않으므로 기다릴 까닭이 없음 — 미국 규칙 책도 일시정지는 SKIPPED). 이미 있으면 그 행.
+     *
+     * @throws IllegalStateException 낼 차례가 아니거나(시작 전·출발일 이하) 일시정지가 아님, 설정 행 없음
+     */
+    Decision skipPaused(MarketRun run, LocalDate d, boolean pricesFinal) {
+        Optional<Decision> existing = decisionOn(d);
+        if (existing.isPresent()) {
+            return existing.get();
+        }
+        String skip = skipReason(d);
+        if (skip != null) {
+            throw new IllegalStateException("한국 규칙 계좌 결정을 낼 차례가 아닙니다: " + skip);
+        }
+        if (!paused()) {
+            throw new IllegalStateException("한국 규칙 계좌가 일시정지가 아닙니다 — 정기 결정(자료 게이트)으로 냅니다");
+        }
+        Instant started = clock.instant();
+        int version = settingsVersion(run);
+        Optional<KrReselection.Cycle> cycle = selectionOn(run, d, Settings.from(run));
+        String kind = cycle.isPresent() ? RuleBookService.REBALANCE : RuleBookService.SCHEDULED;
+        return writeSkipped(run, d, kind, version, cycle.orElse(null), pricesFinal, started, null);
+    }
+
     /**
      * 그 세션의 선정 — 이 계좌의 매수 결정(상태 OK인 REBALANCE·INITIAL, 출발일 이후)을 넘겨 {@link KrReselection#selectionOn}. 선정하면
      * 그 주기(r)와 기준일 D, 아니면 empty.
@@ -344,7 +375,7 @@ final class KrRuleBookService {
         String kind = cycle.isPresent() ? RuleBookService.REBALANCE : RuleBookService.SCHEDULED;
         Book book = store.book(PaperBooks.KR_RULES).orElseThrow();
         if (PaperBooks.PAUSED.equals(book.status())) {
-            return writeSkipped(run, d, kind, version, cycle.orElse(null), pricesFinal, started);
+            return writeSkipped(run, d, kind, version, cycle.orElse(null), pricesFinal, started, null);
         }
         Set<String> holdings = holdingCodes(settings);
         Read read = given != null ? given : read(run, d, started, quotes, holdings);
@@ -388,7 +419,8 @@ final class KrRuleBookService {
     /**
      * 기한이 지나 결정하지 않은 세션의 행(결정 작업의 기한 뒤 갈고리 — §4-9 'D0 구현에서 정한 것'). 그날이 선정할 날이었으면 REBALANCE, 아니면
      * SCHEDULED 종류로 {@code NO_TRADE}·주문 없음 — 따라잡기(K33)는 OK만 세므로 다음 KR 결정일에 그날 자료로 다시 선정합니다. 저장된 사실이라
-     * 재기동해도 다시 쓰지 않습니다(이미 있으면 그 행).
+     * 재기동해도 다시 쓰지 않습니다(이미 있으면 그 행). 일시정지 계좌는 기한과 상관없이 {@code SKIPPED}(응답에 {@code pastDeadline} — 정기
+     * 결정과 같은 행, 클래스 설명 '상태').
      */
     Decision pastDeadline(MarketRun run, LocalDate d, Instant deadline) {
         return pastDeadline(run, d, deadline, null);
@@ -410,6 +442,9 @@ final class KrRuleBookService {
         Settings settings = Settings.from(run);
         Optional<KrReselection.Cycle> cycle = selectionOn(run, d, settings);
         String kind = cycle.isPresent() ? RuleBookService.REBALANCE : RuleBookService.SCHEDULED;
+        if (paused()) {
+            return writeSkipped(run, d, kind, version, cycle.orElse(null), false, clock.instant(), deadline);
+        }
         boolean anchorMissing = KrDecisionGates.anchorMissing(gates);
         Map<String, Object> response = new LinkedHashMap<>();
         response.put("summary", "결정 기한(" + Kst.stamp(deadline) + ")이 지나 " + d + " 세션은 결정하지 않습니다(NO_TRADE)"
@@ -433,13 +468,18 @@ final class KrRuleBookService {
                 .orElseGet(() -> decisionOn(d).orElseThrow());
     }
 
+    /** 일시정지 계좌의 SKIPPED 행. {@code deadline}이 있으면 기한 뒤에 쓴 행(응답 {@code pastDeadline}·{@code deadlineKst}). */
     private Decision writeSkipped(MarketRun run, LocalDate d, String kind, int version, KrReselection.Cycle cycle,
-                                  boolean pricesFinal, Instant started) {
+                                  boolean pricesFinal, Instant started, Instant deadline) {
         Map<String, Object> response = new LinkedHashMap<>();
         response.put("summary", "일시정지 중 — 주문을 내지 않습니다");
         response.put("book", PaperBooks.KR_RULES);
         response.put("kind", kind);
         response.put("asOfTradingDate", d.toString());
+        if (deadline != null) {
+            response.put("pastDeadline", true);
+            response.put("deadlineKst", Kst.stamp(deadline));
+        }
         response.put("selectionDay", cycle != null);
         response.put("cycleDate", cycle == null ? null : cycle.cycleDate().toString());
         response.put("orders", List.of());
