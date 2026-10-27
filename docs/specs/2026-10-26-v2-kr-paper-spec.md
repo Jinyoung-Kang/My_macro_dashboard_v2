@@ -115,6 +115,34 @@
     - **남은 위험**: 1:1 무상증자(k = 2)는 이 규칙으로 2:1 분할과 가르지 못한다(수량을 두 배로 고침 — 가치는 이어지지만 신주 상장 전에도 팔 수 있게 됨). [확인] 2018 분할에는 매매거래정지(거래량 0 봉)가 있었으므로,
       G16 때 무상증자 권리락일 1건도 함께 보고 '거래정지가 끼어 있음'을 조건에 더할지 정한다(제안). 배당이 조정되면(G16 실패) 배당락일마다 0.5%를 넘는 비율 변화(±10% 안이라 분할로 읽히지 않음)가 미처리가 된다 — 그때의 대안은 §7 G16 그대로.
 - 배당·분배금은 반영하지 않는다(미국 책과 같은 조건) — 화면에 적는다.
+- **C2a 구현에서 정한 것**(2026-10-27, 커밋 `c2ca4b0`·`f1a8ed3`(d9)·`e8a8d15`·`bee81e8`(d10) — §9 메모 'C2·C3 — 확정 판정 나누기'·'B4·C2 — 관측치 파싱과 체결 선택의 시장 몫'이
+  모양을 정하지 않은 자리. 미국 숫자 불변 — 고정본 `paper/golden/`·패킷·프롬프트·스키마 해시·`PaperLedgerServiceTest` 그대로, 백엔드 시험 1,507 → 1,511):
+  - **확정 판정 셋**(결정 d9): `PaperMarket.closeAvailable(봉 날짜, 수집 시각, 달력)`(ⓐ 그 날짜의 종가가 나옴 — 장중 값이 아님) · `fillable(주문, 봉, 수집 시각, 달력)`(ⓑ 그 주문 시점의
+    체결 가격이 있음 = 장부 체결 조건 ③) · `pricesConfirmed(봉 날짜, 수집 시각, 달력)`(ⓒ 확정). 시장마다 다른 판정이라 달력을 인자로 받고(§4-13 'C1a 구현에서 정한 것'의 규칙),
+    달력 없는 판은 그 문맥(실행이면 그 실행)의 달력으로 부르는 기본 메서드다. `closeAvailable`·`pricesConfirmed`는 봉이 아니라 **봉 날짜**를 받는다 — 순자산 줄·결정 작업·관측치 요약은
+    다수 티커의 봉 날짜(`modalBarDate`)만 갖는다. `fillable`의 수집 시각은 저장본 수집 시각을 넘긴다(미국 봉에는 시각이 없음 — 한국은 C2b가 종목별 `fetchedAt`을 봉에서 읽을 수 있음).
+    옛 `isFinal`과 `finalDelay()`는 인터페이스에서 뺐다(미국 출발 경로 셋은 `PaperMarketData.FINAL_DELAY` 15분을 그대로 씀).
+  - **시장별 값**: 미국은 셋 다 옛 `isFinal`(거래일 봉 + 마감 15분 뒤 수집, `fillable`은 `NEXT_CLOSE`일 때만 그 조건 — `UsPaperMarketTest`가 2025~2027 모든 날에서 대조).
+    한국 `closeAvailable` = 봉 날짜가 KR 거래일이고 **그날 20:30 KST(수집 규칙 K17) 이후 수집** — 마감 + 5시간이 아니라 수집 시각이라 수능일(마감 16:30)에도 20:30이다(§4-9 'C1c에서 정한 것'이 넘긴 자리, `KrPaperMarket.FINAL_DELAY` 지움).
+    한국 `fillable`은 **늘 false**(시가 사다리·결정 d11은 C2b — 그 전에는 한국 주문을 체결하지 않음), `pricesConfirmed`는 **늘 false**(금융위 확정 조정 K29는 C3 — 토스 잠정가를 확정으로 적지 않음;
+    보유가 없는 현금뿐인 순자산 줄은 장부가 따로 확정으로 둠).
+  - **호출부**(§9 메모가 꼽은 자리 + `sourcedClosesOn`·미국 패킷): `closeAvailable` — 장부 `refresh`(분할 기준을 그 봉으로 옮김)·`referenceFor`(새 보유의 분할 기준)·`settle`(밤 순자산 줄 쓰기), 결정 작업 `closesFor`
+    (`PRICES_NOT_FINAL` 기다림·미확정 순자산 줄 `settleNav`), 복기 `finalCloseIn`, `PaperMarketData.sourcedClosesOn`(저장본에서 그날 종가 고르기 — 복기 기준일·미국 사후 체결 종가), 조회·리스크 기록의
+    관측치 요약 `finalClose` · `fillable` — 장부 `fillableBar` 조건 ③ · `pricesConfirmed` — 장부 `allFinal`(순자산 `prices_final`), 결정 작업 `confirmedFor`(정기·수동 결정 행·작업 기록·결과의 `pricesFinal`), 미국 패킷 `1_basis.pricesFinal`.
+  - **결정 작업의 두 판정**(명세가 열어 둔 자리): 미국에서 한 변수였던 `pricesFinal`을 둘로 나눴다 — 기다림과 `settleNav`는 '그날 종가가 나왔나'(`closesFor`), 결정 행·패킷의 `pricesFinal`은
+    '확정인가'(`confirmedFor`). 그래서 한국은 밤 잠정 종가로 기다림을 끝내고(매일 기한까지 기다리지 않음) 결정 행은 `prices_final=false`다(C1c 출발 결정 행과 같은 뜻). 정기 결정의 한국 게이트(§4-9 ①~⑥)는 D1.
+  - **관측치 요약 `finalClose`**(조회·리스크 기록)는 '그 봉의 종가가 나왔나'(`closeAvailable`)다 — 금융위 확정 여부가 아니다(그것은 순자산 줄 `prices_final`·확정 조정 행, 화면 F2).
+  - **파싱**(결정 d10): `PaperMarket.parse(Snapshot)` → `Optional<Quotes>`, `PaperMarketData.quotes(market)`가 저장본을 그 시장의 파서로 읽는다. 미국은 `PaperMarketData.parse` 그대로. 한국은
+    계약 1 파서(C2b) 전까지 **늘 empty** — 미국 파서가 `tickers`를 찾지 못해 empty이던 옛 결과와 같아 장부·조회·리스크 점검이 한국 관측치를 처리하지 않는다. `Bar`는 넓히지 않았다(한국 봉의 칸은 C2b).
+  - **체결 선택**(결정 d10): `PaperMarket.fill(주문, 봉, 설정, 달력)` → `FillTerms` = 체결가(`paper_fills.price`, 평단·최고가의 기준 — 결정 d14)·관측가·가격 출처·슬리피지 기록값 +
+    `affordableQty(예산)`(예산 = 목표 금액 또는 현금, 부르는 쪽이 정함 — 비용 포함 수량) + `costs(수량)` = 체결 금액·비용 칸(`fee`·`tax`·`slippage_cost`, `BigDecimal`)·현금 변화(매수 음수).
+    설정·달력을 인자로 받는다(그 실행이 읽은 판 — 한국 개장 봉 고르기에 장 시간 변경일이 듦). 장부는 `BookRun.fill(주문, 봉)`으로 그 실행의 설정·달력을 넘긴다.
+    대기 매도·매수와 **미국 트레일링 스탑 `IMMEDIATE`** 모두 이 길로 간다(스탑 주문 행을 먼저 만들어 넘김). 미국은 `FillTerms.SlippageInPrice`(옛 `fillPrice`·`price6`·`buyQty`·`gross`, 출처 `paper.quotes`, 비용 칸 0).
+    한국 `fill`은 C2b(지금은 부르면 던짐 — `fillable`이 false라 부르지 않음). 미국 사후 체결(`backfill`)은 미국 전용 경로라 이 길을 쓰지 않는다.
+  - **비용 칸 저장**: `PaperStore.Fill`·`insertFill`은 아직 비용 칸을 쓰지 않는다(그 값을 처음 쓰는 C2b). 그 전에 시장이 0이 아닌 비용 칸을 내면 장부가 **버리지 않고 예외로 그 책을 되돌린다**
+    (현금만 빠지고 체결 행에 비용이 남지 않는 일을 막음 — `PaperMarketIsolationTest.costColumnsAreNotDroppedSilently`). 미국은 늘 0이다.
+  - **C2b에 넘김**: 한국 파서(계약 1 → 한국 봉: 시가·종가·거래량·출처·1분봉 개장 봉, 종목별 `fetchedAt`·상태), 한국 `fillable`(시가 사다리·`FAILED` 기다림 d11·거래량 0 봉)·`fill`(`KrxCosts` 비용 칸, 체결일에 맞는 설정 판 —
+    §4-13 'C1b 구현에서 정한 것'의 남은 위험), 비용 칸 저장, 한 관측치 안 순서·스탑 다음 날 시가·최고가 KRX 기준·B7 봉 창(d12). C3: 한국 `pricesConfirmed`(금융위 확정)·`upsertNav` 확정값 불가침.
 
 ### 4-3. 비용 (K5 — 법령 확인 + 권장안)
 
@@ -351,6 +379,7 @@
     한국 = 위 식 그대로 D′+1 00:00 KST(`KrPaperMarket.QUOTES_LATE_MARGIN` 2시간 5분). 머리의 `session`은 한국 파싱(C2)이 생길 때까지 받지 않으므로 지금은 수집 시각으로(`kr_target_session`과 같은 식) 센다.
     D′이 모르는 해면 `stale` null + `staleReason`('달력 없음').
   - **확정 판정 자리**: 결정 d9 나누기(C2) 전까지 한국 기본 `isFinal`은 15:30 + 5시간 = 그날 20:30 이후 수집(수집 규칙 K17과 같은 순간). 장 시간 변경일(마감 16:30)에는 21:30이 되어 어긋나므로 C2의 `closeAvailable`이 수집 시각으로 다시 정한다
+    → **C2a에서 정함**(`f1a8ed3`): 한국 `closeAvailable` = 그날 20:30 KST 이후 수집(수능일도 20:30), 체결 가격·확정은 C2b·C3 전까지 없음(§4-2 'C2a 구현에서 정한 것').
     (지금 한국 관측치는 미국 파서가 봉을 찾지 못해 장부가 처리하지 않음 — 파싱은 d10, C2).
   - **결정 순간**: `KrPaperMarket.decisionInstant(D, t)` = 09:00 전 시각은 D+1 아침, 나머지는 D 그날 — 설정 저장 규칙(§4-13 'C1b 구현에서 정한 것')으로 받는 값이면 '결정 시각 뒤의 첫 그 시각'과 같은 순간이다.
   - **정기 작업 쉼(서버 안전)**: `PaperMarket.dormantReason(설정, 계좌 있음)` — 한국은 `kr.start-date`가 비었거나(`KR_START_MISSING`) 한국 계좌가 없으면 리스크 점검·결정·복기가 **실행을 열지 않는다**
@@ -805,7 +834,7 @@
 | | B8 DART 대상에 한국 범위 우선 | 대상 순서 테스트 | S |
 | | B9 `kr_news_headlines`·`kr_calendar`·`us_calendar_consensus`(저장만, 1단계 남은 일 포함) | 시각 형식 3종 고정본, 날짜만 항목의 알 수 있는 시각, 미국 `NewsFeedsParityTest` 그대로 | M |
 | **C. 계좌·장부** | C1 `KrPaperMarket`·`kr.*` 키·새 설정 형 4개·3단계 스위치 키·4계좌·초기화(`kr.start-date` quietly + `KrxCalendar` 검사)·벤치마크 출발 주문(S 22:30 → S+1 `NEXT_OPEN`) — 셋으로 나눔: C1a 시장 목록·실행 문맥·시장별 설정 읽기, C1b 설정(`kr.*`·새 형·공유 스위치·`kr.start-date`·`kr.initial-cash`), C1c 한국 묶음·계좌·초기화·출발(벤치마크 둘 — 규칙·Claude는 D1·E2 갈고리, §4-8 'C1c 구현에서 정한 것') | 설정 키 범위·모르는 키 거절·새 형 형식, `kr.start-date` 비어도 미국 기동, `AccessPolicyTest`, 초기화 테스트 | M~L |
-| | C2 한국 체결: 가격 사다리·비용 칸·fee/tax/slippage_cost 행·한 관측치 안 순서·스탑 → 다음 날 시가·확정 재판정·최고가 KRX 기준 | `fillableBar` 한국판(봉 날짜·수집 시각·거래량 0), 사다리 갈래 3건, 손계산, `STOP_NOT_CONFIRMED`, 통합가로 최고가 안 오름 | M |
+| | C2 한국 체결: 가격 사다리·비용 칸·fee/tax/slippage_cost 행·한 관측치 안 순서·스탑 → 다음 날 시가·확정 재판정·최고가 KRX 기준 — 둘로 나눔: C2a 확정 판정 셋(d9)·파싱과 체결 선택을 시장으로(d10, 미국 바이트 그대로 — §4-2 'C2a 구현에서 정한 것'), C2b 한국 체결 | `fillableBar` 한국판(봉 날짜·수집 시각·거래량 0), 사다리 갈래 3건, 손계산, `STOP_NOT_CONFIRMED`, 통합가로 최고가 안 오름 | M |
 | | C3 금융위 확정: 확정 조정 행·현금·평단·`prices_final`·ETF 미보정 | 확정 조정 손계산 2건·체결 행 불변·확정값 불가침 테스트 | M |
 | | (점검) QA 스택 복원 자료로 벤치마크 두 계좌가 S+1 시가 출발부터 끝까지 돈다 — 수용 기준 1 | | |
 | **D. 규칙 계좌** | D1 유니버스 동결·후보·점수·재무·재선정·**따라잡기**·매도 신호·남는 현금·결정 게이트·기한·규칙 `INITIAL`(S 22:30, 입력 동결) | 후보 손계산 고정본, 재선정일만 매수, **재선정일 게이트 실패 → 다음 KR 결정일 `REBALANCE`(cycleDate·selectionAsOf)**, '자료 없음' 사유, 게이트·기한, 초기 결정 입력의 수집 시각 ≤ 결정 시각, `affectsRules` 경고 | L |
@@ -840,7 +869,7 @@ A8이 달력 없는 옛 시그니처 호출과 결정 작업·시세 저장본�
   `PaperSettings.from(body, market)`(접두어 `settingsPrefix()`, 현금성 기본 `defaultCashLike()` — A에서는 읽는 곳 없이 남김)을 두고 다섯 곳이 쓴다. 그 전에는 한국 책을 장부에 돌리지 않는다.
 - **C1 — 관측치 늦음 기준의 한국 값**(→ **C1a에서 정함**, §4-9 'C1a에서 정한 것' — D′ 21:55 + 2시간 5분 = D′+1 00:00 KST, 코드는 C1c `56ffacf`·`aef2eaa` — §4-9 'C1c에서 정한 것'): A에서 `PaperMarket.quotesLateAfter()`(미국 3시간)로 옮겼다. 한국은 하루 1회 수집(K17)이라 고정 시간보다
   '다음 수집 예정(KR 거래일 D 20:30 뒤 첫 slow) + 여유'가 맞다 — C1에서 정한다.
-- **C2·C3 — 확정 판정 나누기**: `PaperMarket.isFinal(봉 날짜, 수집 시각)` 하나가 `NEXT_CLOSE` 체결 가능·분할 기준가·밤 순자산 줄 쓰기·순자산 `prices_final`·
+- **C2·C3 — 확정 판정 나누기**(→ **C2a에서 정함**, §4-2 'C2a 구현에서 정한 것' — 셋의 모양·시장별 값·호출부, `upsertNav` 확정값 불가침은 C3 그대로): `PaperMarket.isFinal(봉 날짜, 수집 시각)` 하나가 `NEXT_CLOSE` 체결 가능·분할 기준가·밤 순자산 줄 쓰기·순자산 `prices_final`·
   결정의 `pricesFinal`과 `PRICES_NOT_FINAL` 대기·복기 `finalCloseIn`·조회와 리스크 기록의 `finalClose`를 함께 정한다. 한국은 셋으로 갈린다 —
   ⓐ 밤 잠정 종가가 있음(순자산 줄은 씀) ⓑ `NEXT_CLOSE`는 1분봉 15:30 봉이 있을 때만(시각이 아니라 봉, G2) ⓒ `prices_final`은 금융위 확정 뒤(K29).
   기본 판정을 그대로 쓰면 한국 토스 순자산·결정이 `prices_final=true`가 되고, false로 덮으면 순자산 줄·`NEXT_CLOSE`가 막히고 결정 작업이 매일 기한까지 기다린다.
@@ -851,6 +880,7 @@ A8이 달력 없는 옛 시그니처 호출과 결정 작업·시세 저장본�
   B4가 `paper.kr.quotes` 모양을 정하기 전에 '시장이 파싱(`PaperMarket.parse(Snapshot)`)과 체결 선택(`fill(order, bar)` → 가격·출처·비용 칸)을 갖는가'를 정한다 —
   아니면 B4는 미국 모양 dates/close를 내고 C2가 `Bar`를 넓힌다. 어느 쪽이든 미국 경로는 어댑터로 바이트 그대로.
   - **정함 — 시장이 파싱과 체결 선택을 갖는다.** C2에서 `PaperMarket.parse(Snapshot)`·`fill(order, bar)`(가격·출처·비용 칸)를 시장 묶음에 두고, 미국은 지금의 `PaperMarketData.parse`·`fillPrice`로 위임한다(고정본 바이트 그대로).
+    → **C2a에서 옮김**(`e8a8d15`·`bee81e8` — `fill`은 그 실행의 설정·달력도 받음, 결과 `FillTerms`, 한국 판은 C2b; §4-2 'C2a 구현에서 정한 것').
     한국 저장본은 미국 모양을 흉내 내지 않고 아래 자기 모양을 낸다 — 미국 `paper.quotes`·`PaperMarketData.parse`·`Bar`·`paper/golden/` 고정본은 B4에서 손대지 않는다.
     이유: 미국 모양(dates/close)에 시가·거래량·출처·1분봉·수정 비율을 끼우면 `Bar`를 넓히는 C2가 미국 파서와 고정본까지 건드려야 하고, 한국 봉의 '응답에 없음'·'호출 실패' 구분(B7이 넘긴 모양)이 미국 모양에 자리가 없다.
   - **`paper.kr.quotes` 계약**(스냅샷, 쓰는 곳은 수집기 `kr_paper_quotes` 하나, 판 `contract: 1`):
