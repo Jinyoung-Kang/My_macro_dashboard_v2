@@ -54,8 +54,9 @@ import java.util.concurrent.ConcurrentHashMap;
  * 번에 씁니다 — 한 계좌라도 실패({@link Plan#failed})하면 어느 계좌에도 쓰지 않습니다(K28 '네 계좌는 함께 출발'). 계좌 몫은 그 세션의 출발 기한을
  * 받고, 쓰기 트랜잭션은 그 안에서 지금 시각이 기한 전인지 다시 봅니다 — 계획이 기한을 넘겨 끝났으면 어느 계좌에도 쓰지 않고 미룹니다.
  *
- * <p><b>게이트와 입력은 한 읽기</b>(D1c, 결정 e5): 관측치 저장본·금융위 메타·규칙 계좌 입력(U·수급·DART — K26 동결)을 한 번 읽어
- * ({@link KrDecisionGates.Inputs}) 게이트 ②~⑥을 판정하고, 계좌 몫은 그 판정과 같은 입력을 받습니다({@link KrDecisionGates.Checked}) — 게이트 ③이 본
+ * <p><b>게이트와 입력은 한 읽기</b>(D1c, 결정 e5): 관측치 저장본·금융위 메타를 읽어 싼 게이트 ②④⑤⑥을 먼저 보고(미달이면 규칙 계좌 입력을 읽지
+ * 않고 기다림 — 정기 결정과 같은 순서), 통과하면 규칙 계좌 입력(U·수급·DART — K26 동결)을 한 번 읽어({@link KrDecisionGates.Inputs}) 게이트
+ * ②~⑥을 판정하고, 계좌 몫은 그 판정과 같은 입력을 받습니다({@link KrDecisionGates.Checked}) — 게이트 ③이 본
  * U·수급이 곧 규칙 계좌 INITIAL이 고르고 결정 행에 남기는 값입니다. U를 읽지 못함(D보다 이른 기준일의 U가 없음)은 ③ 미달이라 기다립니다(기한이
  * 지나면 미룸 — 예전에는 규칙 계좌 몫의 계획 실패로 바로 미룸).
  *
@@ -233,10 +234,17 @@ final class KrStartPipeline {
             return quiet(START_WAITING, d, d + " 출발 오류가 상한만큼 나 기한(" + Kst.stamp(window.deadline())
                     + ")까지 더 시도하지 않습니다 — 기한이 지나면 다음 KR 거래일로 미룹니다");
         }
-        // 게이트와 계좌 몫이 같은 읽기(클래스 설명 — 결정 e5). 읽은 순간 = 이 실행의 지금(규칙 계좌 입력은 그 뒤에 받은 기록을 빼고 읽음).
-        KrDecisionGates.Inputs inputs = decisionGates.withRules(run, decisionGates.readSession(run, d), now);
-        List<Gate> gates = decisionGates.data(run, inputs);
-        String waiting = waitingReason(run, gates);
+        // 싼 게이트 ②④⑤⑥(관측치 저장본·금융위 메타·달력)을 먼저 — 미달이면 규칙 계좌 입력(U·20일 수급·DART)을 읽지 않고 기다림(정기 결정과
+        // 같은 순서, 10분마다 큰 읽기를 되풀이하지 않게). 통과하면 게이트 ③과 계좌 몫이 같은 읽기(클래스 설명 — 결정 e5), 읽은 순간 = 이 실행의 지금.
+        KrDecisionGates.Inputs session = decisionGates.readSession(run, d);
+        String waiting = waitingReason(run, decisionGates.beforeLedger(run, session));
+        KrDecisionGates.Inputs inputs = null;
+        List<Gate> gates = null;
+        if (waiting == null) {
+            inputs = decisionGates.withRules(run, session, now);
+            gates = decisionGates.data(run, inputs);
+            waiting = waitingReason(run, gates);
+        }
         if (waiting != null) {
             lastWait.keySet().removeIf(day -> !day.equals(d));
             lastWait.put(d, waiting);

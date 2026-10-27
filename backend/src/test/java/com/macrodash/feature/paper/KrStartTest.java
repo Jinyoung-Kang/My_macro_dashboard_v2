@@ -48,6 +48,8 @@ class KrStartTest {
     private PaperDecisionJob job;
     private final AtomicBoolean failShortBond = new AtomicBoolean();
     private KrRulesFixtures rulesData;
+    /** 가짜 저장소(유니버스·수급 읽기 — 읽은 횟수를 보는 시험이 씀). */
+    private com.macrodash.store.StoreRepository repository;
 
     private static Instant kst(String dateTime) {
         return ZonedDateTime.of(LocalDateTime.parse(dateTime), KrxCalendar.SEOUL).toInstant();
@@ -72,7 +74,7 @@ class KrStartTest {
         };
         reader = PaperFixtures.quietReader();
         KrFixtures.stubHolidays(reader, KrFixtures.holidays(2026, 2027));
-        com.macrodash.store.StoreRepository repository = mock(com.macrodash.store.StoreRepository.class);
+        repository = mock(com.macrodash.store.StoreRepository.class);
         // 금융위 시장 구분(체결 비용의 종목 구분) — 표준 U 주식 모두 코스피(S+1 시가 체결 — 다음 밤 정기 결정의 게이트 ①).
         when(repository.latestObservationDate(Datasets.OBS_FSC_PRICE)).thenReturn(PREV);
         when(repository.readObservationsFor(eq(Datasets.OBS_FSC_PRICE), any(LocalDate.class), anyCollection()))
@@ -412,6 +414,26 @@ class KrStartTest {
         assertThat(runAt("2026-11-30T23:00").message()).contains("④").contains("2026-11-26");
         assertThat(krDecisions()).isEmpty();
         assertThat(krRuns()).as("기다림은 기록하지 않음").isEmpty();
+    }
+
+    @Test
+    @DisplayName("출발도 싼 게이트 ②④⑤⑥ 먼저 — 관측치 세션이 S가 아닌 주기(10분마다)에는 규칙 계좌 입력(U·20일 수급·DART)을 읽지 않고 기다림, 통과하면 그 주기에 한 번 읽음")
+    void cheapGatesFirstAtStart() {
+        sessionData(PREV, PREV, everyCodeOn(PREV));
+        for (String at : List.of("2026-11-30T22:30", "2026-11-30T22:40")) {
+            PaperDecisionJob.Result waiting = runAt(at);
+            assertThat(waiting.outcome()).isEqualTo(PaperDecisionJob.START_WAITING);
+            assertThat(waiting.message()).contains("②").contains("관측치 세션 2026-11-27");
+        }
+        org.mockito.Mockito.verify(repository, org.mockito.Mockito.never()).readObservationSeries(
+                eq(Datasets.OBS_KR_PAPER_FLOW), anyCollection(), any(LocalDate.class));
+        org.mockito.Mockito.verify(repository, org.mockito.Mockito.never()).latestObservationDateBefore(
+                eq(Datasets.OBS_KR_PAPER_UNIVERSE), any(LocalDate.class));
+
+        sessionData(S, PREV, everyCodeOn(S));
+        assertThat(runAt("2026-11-30T22:50").outcome()).isEqualTo(PaperDecisionJob.STARTED);
+        org.mockito.Mockito.verify(repository, org.mockito.Mockito.times(1)).readObservationSeries(
+                eq(Datasets.OBS_KR_PAPER_FLOW), anyCollection(), any(LocalDate.class));
     }
 
     @Test
