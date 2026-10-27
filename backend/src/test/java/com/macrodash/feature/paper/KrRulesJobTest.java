@@ -613,8 +613,8 @@ class KrRulesJobTest {
     }
 
     @Test
-    @DisplayName("보유 종목이 재선정일에 거래정지(KRX 매매정지·그날 거래량 0)면 '후보 밖' 매도 주문을 내지 않고 skipped에 사유 — 체결될 수 없는 주문이 만료(기준일 + 3거래일)까지 다음 결정의 게이트 ①을 막지 않게, 정지가 이어진 다음 밤도 정기 결정")
-    void suspendedHoldingIsNotSoldIntoGateOne() {
+    @DisplayName("보유 종목이 재선정일에 거래정지(KRX 매매정지·그날 거래량 0)여도 '후보 밖' 매도 주문을 냄(사용자 결정 u2 — 52db145의 매도 쪽 되돌림, 지금 체결할 수 없는 사유는 notes) — 정지가 이어진 다음 밤 게이트 ①은 그 주문을 기다리지 않고 정기 결정, 정지가 만료 안에 풀리면 재개일 시가에 팔림(K10 이탈이 다음 재선정까지 미뤄지지 않음)")
+    void suspendedHoldingIsSoldWithoutHoldingGateOne() {
         holding("000660", 100, 10_000);
         store.upsertState(new BookState(PaperBooks.KR_RULES, 99_000_000, 100_000_000, 1_000_000, 1.0, null, null, S, null));
         KrFixtures.stub(reader, Datasets.SNAP_KR_PAPER_QUOTES,
@@ -625,16 +625,19 @@ class KrRulesJobTest {
 
         assertThat(decided.outcome()).isEqualTo(PaperDecisionJob.DECIDED);
         assertThat(decided.rules().kind()).isEqualTo(RuleBookService.REBALANCE);
-        assertThat(store.ordersByDecision(decided.rules().id())).extracting(Order::ticker)
-                .as("000660은 거래정지로 후보 밖이지만 그날 체결할 수 없어 매도하지 않음").containsExactly("005930", "105560", "153130");
-        JsonNode skipped = decided.rules().response().path("skipped");
-        assertThat(skipped).anySatisfy(row -> {
-            assertThat(row.path("ticker").asString()).isEqualTo("000660");
-            assertThat(row.path("reason").asString()).contains("재선정 — 후보 밖").contains("거래정지")
-                    .contains("매도 주문을 내지 않음");
-        });
+        assertThat(store.ordersByDecision(decided.rules().id())).extracting(Order::ticker, Order::side)
+                .as("000660은 거래정지로 후보 밖 — 그날 체결할 수 없어도 매도 주문").containsExactly(
+                        org.assertj.core.groups.Tuple.tuple("000660", "SELL"),
+                        org.assertj.core.groups.Tuple.tuple("005930", "BUY"),
+                        org.assertj.core.groups.Tuple.tuple("105560", "BUY"),
+                        org.assertj.core.groups.Tuple.tuple("153130", "BUY"));
+        Order sell = store.ordersByDecision(decided.rules().id()).get(0);
+        assertThat(sell.reason().path("reasons").toString()).contains("OUT_OF_CANDIDATES");
+        assertThat(decided.rules().response().path("skipped")).noneMatch(row -> "000660".equals(row.path("ticker").asString()));
+        assertThat(decided.rules().response().path("notes")).extracting(JsonNode::asString).anySatisfy(note ->
+                assertThat(note).startsWith("000660 매도 신호(재선정 — 후보 밖)").contains("지금은 체결할 수 없음(2026-11-02 거래정지"));
 
-        // 다음 밤 — 정지가 이어짐. 앞 결정의 다른 주문은 R1 시가에 체결되고, 체결될 수 없는 대기 주문이 없어 ①이 통과.
+        // 다음 밤 — 정지가 이어짐. 앞 결정의 다른 주문은 R1 시가에 체결되고, 000660 매도는 체결할 수 없어 ①이 기다리지 않음.
         KrFixtures.stub(reader, Datasets.SNAP_KR_PAPER_QUOTES,
                 KrRulesFixtures.suspend(KrRulesFixtures.quotes(R1), "000660", true));
         fsc(R);
@@ -642,8 +645,19 @@ class KrRulesJobTest {
 
         assertThat(next.outcome()).isEqualTo(PaperDecisionJob.DECIDED);
         assertThat(next.rules().kind()).isEqualTo(RuleBookService.SCHEDULED);
-        assertThat(next.rules().response().path("gates").get(0).path("status").asString()).isEqualTo("PASS");
+        JsonNode first = next.rules().response().path("gates").get(0);
+        assertThat(first.path("status").asString()).isEqualTo("PASS");
+        assertThat(first.path("note").asString()).contains("#" + sell.id() + " SELL 000660").contains("기다리지 않음");
+        assertThat(store.orders.get(sell.id()).status()).isEqualTo(PaperBooks.ORDER_PENDING);
         assertThat(store.positions(PaperBooks.KR_RULES)).extracting(Position::ticker).contains("000660");
+
+        // R2 — 정지가 풀림(R1 봉은 정지일 봉 그대로). 만료(R + 3거래일) 안이라 R2 시가에 팔림.
+        KrFixtures.stub(reader, Datasets.SNAP_KR_PAPER_QUOTES,
+                KrRulesFixtures.suspendedOn(KrRulesFixtures.quotes(R2), "000660", R1));
+        fsc(R1);
+        assertThat(runAt("2026-11-04T22:30").outcome()).isEqualTo(PaperDecisionJob.DECIDED);
+        assertThat(store.orders.get(sell.id()).status()).isEqualTo("FILLED");
+        assertThat(store.positions(PaperBooks.KR_RULES)).extracting(Position::ticker).doesNotContain("000660");
     }
 
     @Test

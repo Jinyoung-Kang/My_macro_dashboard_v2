@@ -79,10 +79,11 @@ import java.util.TreeSet;
  * 여유 0.5%p를 넘는 만큼(모자라면 153130을 팔아 메움), 그 밖의 날은 {@code kr.rules.parkCashThresholdPct}를 넘을 때만. 선정한 날은 앞선 날의
  * 대기 중인 남는 현금 주문({@code park_cash})을 먼저 취소합니다(미국 규칙 책 {@code replaceParkingOrders}와 같은 까닭). 비중은 마지막 평가 가격
  * (없으면 평단)으로, 현금 어림은 대기·이번 주문을 비용 요율(수수료 + 슬리피지 + 매도세)로 줄여 셉니다(어림 — 체결은 장부가 {@code KrxCosts}로).
- * <b>체결될 수 없는 종목에는 주문을 내지 않습니다</b>(매수·매도·153130 모두 — {@link Fillable}): 그 실행 관측치에 봉이 없음, D 거래정지,
- * 미처리 기업행위 보유(장부가 주문을 보류). 그런 주문은 만료(기준일 + 3거래일)까지 대기로 남아 결정 게이트 ①이 그 계좌의 다음 결정을 막기
- * 때문입니다(결정 e3 — ①은 대기 주문을 그대로 셈). 매도 신호는 {@code skipped}에 사유와 함께 남고, 매일 신호는 다음 결정에서 다시 보며
- * 재선정의 '후보 밖'은 다음 재선정에서 다시 봅니다.
+ * <b>체결될 수 없는 종목은 사지 않습니다</b>(종목·153130 매수 — {@link Fillable}): 그 실행 관측치에 봉이 없음, D 거래정지, 미처리 기업행위
+ * 보유(장부가 주문을 보류) — 사유는 {@code skipped}·{@code notes}. <b>매도는 그래도 냅니다</b>(보유 종목 신호 매도·153130 일부 매도 — 사용자
+ * 결정 2026-10-28 u2): 결정 게이트 ①은 장부가 그 관측치로 체결할 수 없는 대기 주문을 기다리지 않으므로({@link KrDecisionGates#unworkable})
+ * 그 주문이 다음 결정을 막지 않고, 정지가 만료(기준일 + 3거래일) 전에 풀리면 재개일 시가에 팔립니다. 내지 않으면 재선정일의 K10 '후보 밖'
+ * 매도는 그날의 신호라 다음 재선정까지 사라집니다. 지금 체결할 수 없는 매도는 {@code notes}에 그 사유를 남깁니다.
  *
  * <p><b>상태</b>: 선정한 결정(REBALANCE·INITIAL)은 주문이 없어도 {@code OK}입니다 — 그 주기의 매수 결정이라 따라잡기가 다시 고르지 않게(K33,
  * {@link KrReselection}은 OK만 셈). SCHEDULED는 주문이 있으면 OK, 없으면 {@code NO_TRADE}(미국과 같은 뜻). 기한이 지나 결정하지 않은 세션도
@@ -827,8 +828,8 @@ final class KrRuleBookService {
     }
 
     /**
-     * 그 결정의 주문이 체결될 수 있나(클래스 설명 '체결될 수 없는 종목') — 그 실행 관측치에 봉이 있는 코드({@code tradable}, 관측치를 읽지
-     * 못했으면 null — 판정하지 않음), D 거래정지({@code suspended} — {@link KrRules.Input#suspended}와 같은 판정), 미처리 기업행위 보유
+     * 그 결정의 주문이 지금 체결될 수 있나(클래스 설명 '체결될 수 없는 종목' — 매수는 내지 않고, 매도는 내되 사유를 남김) — 그 실행 관측치에
+     * 봉이 있는 코드({@code tradable}, 관측치를 읽지 못했으면 null — 판정하지 않음), D 거래정지({@code suspended} — {@link KrRules.Input#suspended}와 같은 판정), 미처리 기업행위 보유
      * ({@code holds} — 코드 → 사유, 장부가 그 종목 주문을 보류).
      */
     record Fillable(LocalDate session, Set<String> tradable, Set<String> suspended, Map<String, String> holds) {
@@ -863,7 +864,7 @@ final class KrRuleBookService {
 
     /**
      * 주문 계획(클래스 설명의 '주문') — ① 매도 신호(보유 전량) ② 선정한 날만 매수(목표 − 지금) ③ 남는 현금 153130. 체결될 수 없는 종목
-     * ({@link Fillable})에는 어느 쪽 주문도 내지 않습니다.
+     * ({@link Fillable})은 사지 않고, 매도는 그래도 냅니다(u2 — 사유는 {@code notes}).
      */
     private Draft plan(String kind, boolean selectionDay, KrRules.Selection selection, List<KrRules.HoldingCheck> checks,
                        View view, Settings settings, Fillable fillable) {
@@ -884,10 +885,9 @@ final class KrRuleBookService {
             List<String> labels = check.reasons().stream().map(KrRules.SellReason::label).toList();
             String blocked = fillable.blocked(ticker);
             if (blocked != null) {
-                // 체결될 수 없는 매도 주문은 만료까지 대기로 남아 게이트 ①이 다음 결정을 막음(결정 e3) — 내지 않고 사유만.
-                draft.skip(ticker, "매도 신호(" + String.join(" · ", labels) + ") — " + blocked
-                        + " — 체결할 수 없어 매도 주문을 내지 않음(매일 신호는 다음 결정에서, '후보 밖'은 다음 재선정에서 다시 봄)");
-                continue;
+                // 지금은 체결할 수 없어도 매도는 냄(u2) — 게이트 ①은 그 주문을 기다리지 않고, 만료 전에 풀리면 재개일 시가에 팔림.
+                draft.notes.add(ticker + " 매도 신호(" + String.join(" · ", labels) + ") — 지금은 체결할 수 없음(" + blocked
+                        + ") — 주문은 대기로 두고 만료(기준일 + 3거래일) 전에 풀리면 체결(게이트 ①은 그 주문을 기다리지 않음)");
             }
             Map<String, Object> reason = new LinkedHashMap<>();
             reason.put("rule", RULE_SIGNAL);
@@ -991,12 +991,15 @@ final class KrRuleBookService {
             if (available.signum() <= 0) {
                 draft.notes.add(String.format(Locale.ROOT, "현금이 순자산의 %.2f%%만큼 모자라는데 팔 %s가 없습니다 — 뒤쪽 매수는 체결 때 "
                         + "살 수 있는 만큼으로 줄어듭니다(cashLimited)", -spare, parking));
-            } else if (parkingBlocked != null) {
-                draft.notes.add(String.format(Locale.ROOT, "현금이 순자산의 %.2f%%만큼 모자라는데 %s를 체결할 수 없음(%s) — 뒤쪽 매수는 "
-                        + "체결 때 살 수 있는 만큼으로 줄어듭니다(cashLimited)", -spare, parking, parkingBlocked));
             } else if (view.pendingSells().containsKey(parking)) {
                 draft.skip(parking, "모자란 현금 — 이미 대기 중인 매도 주문이 있음");
             } else {
+                if (parkingBlocked != null) {
+                    // 지금은 체결할 수 없어도 매도는 냄(u2 — 위 신호 매도와 같음). 그동안 뒤쪽 매수는 체결 때 살 수 있는 만큼으로 줄어듦.
+                    draft.notes.add(String.format(Locale.ROOT, "현금이 순자산의 %.2f%%만큼 모자라 %s를 파는데 지금은 체결할 수 없음(%s) — "
+                            + "주문은 대기로 두고 풀리면 체결, 그 전의 뒤쪽 매수는 살 수 있는 만큼으로 줄어듭니다(cashLimited)", -spare, parking,
+                            parkingBlocked));
+                }
                 BigDecimal need = pct(nav, KrRules.CASH_BUFFER_PCT - spare);
                 Double fraction = need.compareTo(available) >= 0 ? null
                         : round6(need.divide(available, MathContext.DECIMAL64).doubleValue());

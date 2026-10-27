@@ -368,6 +368,29 @@ class KrRuleBookServiceTest {
     }
 
     @Test
+    @DisplayName("모자란 현금의 153130 일부 매도는 153130이 그날 거래정지여도 냄(사용자 결정 u2 — 매도는 체결할 수 없어도 주문) — 같은 손계산 비율 0.176464, 지금 체결할 수 없는 사유는 notes")
+    void parkingSellIsPlacedEvenWhenUnfillable() {
+        holding("373220", 100, 10_000);
+        holding("207940", 100, 10_000);
+        holding("000660", 100, 10_000);
+        holding("153130", 965, 100_000);
+        store.upsertState(new BookState(PaperBooks.KR_RULES, 500_000, NAV, 99_500_000, 99.5, null, null, S, null));
+        com.macrodash.store.Snapshot snapshot = KrRulesFixtures.suspend(KrRulesFixtures.quotes(R), "153130", true);
+        clock.set(kst("2026-11-02T22:30"));
+        store.dbNow = clock.instant();
+
+        Decision rebalance = service.decide(run(), R, false, KrPaperMarket.INSTANCE.parse(snapshot));
+
+        assertThat(ordersOf(rebalance)).filteredOn(o -> "153130".equals(o.ticker())).singleElement()
+                .satisfies(o -> {
+                    assertThat(o.side()).isEqualTo(PaperBooks.SELL);
+                    assertThat(o.sellFraction()).isEqualTo(0.176464);
+                });
+        assertThat(rebalance.response().path("notes")).extracting(JsonNode::asString).anySatisfy(note ->
+                assertThat(note).contains("153130를 파는데 지금은 체결할 수 없음(2026-11-02 거래정지").contains("cashLimited"));
+    }
+
+    @Test
     @DisplayName("재진입 금지 — 체결될 날(D 다음 KR 거래일)에도 금지인 종목은 후보에서 '재진입 금지'로 빠지고 사지 않음, 끝난 금지는 보지 않음")
     void lockoutIsRespected() {
         store.upsertLockout(new Lockout(PaperBooks.KR_RULES, "105560", R1, "트레일링 스탑"));
@@ -411,8 +434,8 @@ class KrRuleBookServiceTest {
     }
 
     @Test
-    @DisplayName("체결될 수 없는 종목에는 주문을 내지 않음 — 미처리 기업행위 보유(장부가 보류)의 '후보 밖' 매도와 후보 보유의 더 사기, 관측치에 봉이 없는 보유의 매도는 skipped에 사유")
-    void unfillableOrdersAreNotPlaced() {
+    @DisplayName("체결될 수 없는 종목은 사지 않고 매도는 냄(사용자 결정 u2) — 미처리 기업행위 보유(장부가 보류)의 '후보 밖' 매도·관측치에 봉이 없는 보유의 매도는 주문(지금 체결할 수 없는 사유는 notes), 미처리 기업행위인 후보 보유의 더 사기는 skipped에 사유")
+    void unfillableBuysAreSkippedButSellsArePlaced() {
         holding("207940", 100, 10_000);    // DART 없음 — 후보 밖, 미처리 기업행위 보유
         holding("000660", 100, 10_000);    // 후보 — 모자란 만큼 더 살 차례지만 미처리 기업행위 보유
         holding("034020", 100, 10_000);    // U 밖 보유 — 이번 관측치에 봉이 없음(수집 범위 밖)
@@ -422,20 +445,20 @@ class KrRuleBookServiceTest {
 
         Decision decision = decideAt(R, "22:30");
 
-        assertThat(ordersOf(decision)).extracting(Order::ticker, Order::side)
-                .containsExactly(tuple("005930", "BUY"), tuple("105560", "BUY"), tuple("153130", "BUY"));
+        assertThat(ordersOf(decision)).extracting(Order::ticker, Order::side).containsExactly(
+                tuple("034020", "SELL"), tuple("207940", "SELL"), tuple("005930", "BUY"), tuple("105560", "BUY"),
+                tuple("153130", "BUY"));
         JsonNode skipped = decision.response().path("skipped");
-        assertThat(skipped).extracting(row -> row.path("ticker").asString()).contains("207940", "000660", "034020");
-        for (JsonNode row : skipped) {
-            String reason = row.path("reason").asString();
-            switch (row.path("ticker").asString()) {
-                case "207940" -> assertThat(reason).contains("매도 신호(재선정 — 후보 밖)").contains("미처리 기업행위 보유")
-                        .contains("매도 주문을 내지 않음");
-                case "000660" -> assertThat(reason).contains("미처리 기업행위 보유(판정 대기)").contains("사지 않음");
-                case "034020" -> assertThat(reason).contains("이번 관측치에 그 종목 봉이 없음").contains("매도 주문을 내지 않음");
-                default -> { }
-            }
-        }
+        assertThat(skipped).extracting(row -> row.path("ticker").asString()).contains("000660")
+                .doesNotContain("207940", "034020");
+        assertThat(skipped).filteredOn(row -> "000660".equals(row.path("ticker").asString())).singleElement()
+                .satisfies(row -> assertThat(row.path("reason").asString()).contains("미처리 기업행위 보유(판정 대기)")
+                        .contains("사지 않음"));
+        assertThat(decision.response().path("notes")).extracting(JsonNode::asString)
+                .anySatisfy(note -> assertThat(note).startsWith("207940 매도 신호(재선정 — 후보 밖)")
+                        .contains("지금은 체결할 수 없음(미처리 기업행위 보유").contains("게이트 ①은 그 주문을 기다리지 않음"))
+                .anySatisfy(note -> assertThat(note).startsWith("034020 매도 신호")
+                        .contains("지금은 체결할 수 없음(이번 관측치에 그 종목 봉이 없음)"));
     }
 
     @Test
