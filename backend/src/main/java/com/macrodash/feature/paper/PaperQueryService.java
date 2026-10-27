@@ -918,8 +918,8 @@ public class PaperQueryService {
         out.put("tickers", quotes.bars().size());
         out.put("staleTickers", quotes.staleTickers());
         try {
-            // 늦음이 되는 순간은 시장 규칙(그 실행의 달력) — 저장본 머리의 세션은 시장이 파싱할 때(C2)까지 수집 시각으로 셈.
-            out.put("stale", !now.isBefore(market.quotesLateAt(quotes.collectedAt(), null, market.calendar())));
+            // 늦음이 되는 순간은 시장 규칙(그 실행의 달력) — 저장본 머리가 밝힌 세션(한국 계약 1의 session, C2b)으로, 없으면(미국) 수집 시각으로.
+            out.put("stale", !now.isBefore(market.quotesLateAt(quotes.collectedAt(), quotes.session(), market.calendar())));
         } catch (CalendarUnavailableException e) {
             // 그 계산만 모름(명세 K35) — 늦음을 지어내지 않고 null + 사유. 미국 달력은 늘 알아 이 칸이 생기지 않습니다.
             out.put("stale", null);

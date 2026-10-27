@@ -37,8 +37,7 @@ import java.util.regex.Pattern;
  * <ul>
  *   <li>시장·통화 KR·KRW, 설정 접두어·작업 기록 접두어 {@code kr.}</li>
  *   <li>관측치 {@code paper.kr.quotes}(수집기 {@code kr_paper_quotes}, KR 거래일 D 20:30 뒤 하루 1회 — K17)·이력 {@code kr_close_adj};
- *       파싱({@link #parse})과 체결 선택(결정 d10)은 시장 몫이고 한국 판은 C2b — 그 전에는 관측치가 늘 empty라 장부가 한국 관측치를
- *       처리하지 않습니다</li>
+ *       파싱({@link #parse} — 계약 1, {@link KrQuotes})과 체결 선택(결정 d10)은 시장 몫(C2b)</li>
  *   <li>확정 판정 셋(결정 d9, C2a): 종가 나옴 = 그날 한국 수집 시각(20:30) 이후 수집({@link #closeAvailable}), 그 시점 가격 있음 = 아직
  *       없음(시가 사다리는 C2b — {@link #fillable}), 확정 = 아직 없음(금융위 확정 조정은 C3 — {@link #pricesConfirmed})</li>
  *   <li>관측치 늦음 = 다음 수집 예정 + 여유(결정 d5, 명세 §4-9 'C1a에서 정한 것' — {@link #quotesLateAt})</li>
@@ -233,12 +232,12 @@ final class KrPaperMarket implements PaperMarket {
     }
 
     /**
-     * 늘 empty — 한국 관측치({@code paper.kr.quotes} 계약 1 → 한국 봉: 시가·종가·거래량·출처·1분봉 개장 봉) 파서는 C2b입니다. 그 전에는
-     * 장부·조회·리스크 점검이 한국 관측치를 처리하지 않습니다(미국 파서가 이 저장본에서 {@code tickers}를 찾지 못해 empty이던 것과 같은 결과).
+     * 한국 관측치({@code paper.kr.quotes} 계약 1 → 한국 봉: 시가·종가·거래량·출처·1분봉 개장 봉·종목 수집 시각 — {@link KrQuotes#parse}, 결정 d10,
+     * C2b). 계약 판이 1이 아니거나 쓸 수 있는 종목이 없으면 empty입니다.
      */
     @Override
     public Optional<Quotes> parse(Snapshot snapshot) {
-        return Optional.empty();
+        return KrQuotes.parse(snapshot);
     }
 
     /**

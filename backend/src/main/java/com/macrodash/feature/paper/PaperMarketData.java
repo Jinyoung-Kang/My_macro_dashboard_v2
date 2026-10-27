@@ -53,16 +53,32 @@ public class PaperMarketData {
      * 티커 하나의 마지막 봉.
      *
      * @param stale  수집기가 이번에 받지 못해 직전 저장본 값을 이어 쓴 봉({@code isStale}) — 체결하지 않습니다
-     * @param recent 같은 저장본의 최근 3개월 일봉(분할 감지의 참조일 종가를 여기서 먼저 찾음)
+     * @param recent 같은 저장본의 최근 일봉 종가(미국 3개월 — 분할 감지의 참조일 종가를 여기서 먼저 찾음, 한국 최근 5봉)
+     * @param kr     한국 관측치의 칸(시가·거래량·출처·1분봉 개장 봉·종목 수집 시각 — {@link KrQuotes#parse}, C2b). 미국은 null
      */
-    public record Bar(String ticker, LocalDate date, double close, boolean stale, DailySeries recent) {
+    public record Bar(String ticker, LocalDate date, double close, boolean stale, DailySeries recent,
+                      KrQuotes.Quote kr) {
+
+        /** 미국 모양의 봉(한국 칸 없음). */
+        public Bar(String ticker, LocalDate date, double close, boolean stale, DailySeries recent) {
+            this(ticker, date, close, stale, recent, null);
+        }
     }
 
-    /** 저장본 하나 = 관측치 하나. 티커 순. */
-    public record Quotes(Instant collectedAt, Map<String, Bar> bars) {
+    /**
+     * 저장본 하나 = 관측치 하나. 티커 순.
+     *
+     * @param session 저장본 머리가 밝힌 대상 세션(한국 {@code paper.kr.quotes}의 {@code session} — 늦음 판정이 씀). 미국·모르면 null
+     */
+    public record Quotes(Instant collectedAt, Map<String, Bar> bars, LocalDate session) {
 
         public Quotes {
             bars = Collections.unmodifiableMap(new TreeMap<>(bars));
+        }
+
+        /** 머리에 세션이 없는 관측치(미국). */
+        public Quotes(Instant collectedAt, Map<String, Bar> bars) {
+            this(collectedAt, bars, null);
         }
 
         /**
