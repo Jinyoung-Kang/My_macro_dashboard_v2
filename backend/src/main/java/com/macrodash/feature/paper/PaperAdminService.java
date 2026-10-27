@@ -97,7 +97,7 @@ public class PaperAdminService {
     /** 테스트용 — 시계를 움직입니다(시장 목록은 운영 목록). */
     PaperAdminService(PaperStore store, PaperMarketData marketData, StoreReader reader, PaperSettingsService settings,
                       PaperLedgerService ledger, PaperConfig config, ObjectMapper mapper, Clock clock) {
-        this(store, marketData, reader, settings, ledger, config, mapper, clock, new PaperMarkets());
+        this(store, marketData, reader, settings, ledger, config, mapper, clock, new PaperMarkets(store, reader));
     }
 
     private PaperAdminService(PaperStore store, PaperMarketData marketData, StoreReader reader,
@@ -130,7 +130,7 @@ public class PaperAdminService {
      * @throws IllegalArgumentException 초기 현금·출발일 설정이 없는 시장(미국 밖 — 한국은 C1)
      */
     InitResult init(PaperMarket market) {
-        if (market != US) {
+        if (market.definition() != US) {
             throw new IllegalArgumentException(market.code() + " 시장 초기화는 아직 없습니다 — 초기 현금·출발일 설정이 미국뿐입니다"
                     + "(2단계 명세 §9 C1)");
         }
@@ -362,7 +362,8 @@ public class PaperAdminService {
             store.updateBookStartedOn(code, null);
             store.upsertState(cashOnly(code, book.initialCash()));
             // 벤치마크를 다시 사후 체결하는 것은 미국 책뿐입니다(클래스 설명 — 한국은 출발일 사후 체결이 없음, K28).
-            Optional<PaperBooks.Definition> definition = market == US ? PaperBooks.find(code) : Optional.empty();
+            Optional<PaperBooks.Definition> definition = market != null && market.definition() == US
+                    ? PaperBooks.find(code) : Optional.empty();
             if (definition.isEmpty() || !definition.get().benchmark()) {
                 return new ResetResult(code, false, null);
             }

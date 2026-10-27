@@ -61,7 +61,8 @@ import java.util.concurrent.locks.ReentrantLock;
  * (그 시장 달력)·여는 순간({@link PaperMarket#reviewOpening} — 시장별 요일·시각)·그 시장 Claude 책·확정 종가(그 시장 관측치와 확정
  * 판정)·오류 횟수(시장 × 주)·작업 기록 이름(시장 접두어 + {@value #JOB})을 그 시장 것으로 쓰고 그 시장 문맥으로 복기합니다
  * ({@link ReviewService}). 복기 행은 시장마다 한 주 한 행이라(V14 기본키 (market, week_ending)) '이미 복기함'·재시도 판정도 그 시장
- * 행으로 봅니다. 시장을 받지 않는 옛 시그니처(한 번 실행·수동 실행)는 미국 판입니다.
+ * 행으로 봅니다. 시장을 받지 않는 옛 시그니처(한 번 실행·수동 실행)는 미국 판입니다. 실행마다 그 시장의 실행 문맥({@link MarketRun} —
+ * 달력 한 벌)을 열어 복기 주·여는 순간·확정 종가 판정과 복기 서비스에 같은 한 벌을 넘깁니다(C1a).
  */
 @Service
 public class PaperReviewJob {
@@ -128,13 +129,13 @@ public class PaperReviewJob {
     /** 테스트용 — 시계를 움직입니다(시장 목록은 운영 목록). */
     PaperReviewJob(PaperStore store, StoreReader reader, PaperMarketData marketData, ReviewService reviews,
                    PaperConfig config, ObjectMapper mapper, Clock clock) {
-        this(store, reader, marketData, reviews, config, mapper, clock, new PaperMarkets());
+        this(store, reader, marketData, reviews, config, mapper, clock, new PaperMarkets(store, reader));
     }
 
     /** 테스트용 — 시계와 시장 목록을 바꿉니다(시장 격리 시험이 시험용 한국 시장을 넣음). */
     PaperReviewJob(PaperStore store, StoreReader reader, PaperMarketData marketData, ReviewService reviews,
                    PaperConfig config, ObjectMapper mapper, Clock clock, List<PaperMarket> markets) {
-        this(store, reader, marketData, reviews, config, mapper, clock, new PaperMarkets(markets));
+        this(store, reader, marketData, reviews, config, mapper, clock, new PaperMarkets(store, reader, markets));
     }
 
     private PaperReviewJob(PaperStore store, StoreReader reader, PaperMarketData marketData, ReviewService reviews,
@@ -189,10 +190,13 @@ public class PaperReviewJob {
             return new Result(BUSY, null, null, "수동 복기가 진행 중 — 이번 주기는 건너뛰고 다음 주기에 다시 봅니다");
         }
         Instant now = clock.instant();
+        MarketRun run = null;
         try {
-            return runLocked(market, now, true);
+            // 이 실행의 시장 문맥 — 복기 주·여는 순간·확정 종가 판정·복기 입력이 같은 달력 한 벌(PaperMarkets#open).
+            run = markets.open(market);
+            return runLocked(run, now, true);
         } catch (RuntimeException e) {
-            LocalDate week = ReviewFacts.latestCompletedWeekEnding(market.calendar(), now);
+            LocalDate week = ReviewFacts.latestCompletedWeekEnding((run != null ? run : market).calendar(), now);
             int attempt = failures.merge(new FailureKey(market.code(), week), 1, Integer::sum);
             Map<String, Object> detail = new LinkedHashMap<>();
             detail.put("weekEnding", week.toString());
@@ -219,12 +223,13 @@ public class PaperReviewJob {
     }
 
     /** 그 시장의 수동 복기 — {@link #runNow()}와 같되 그 시장의 주·책·관측치·기록 이름으로. */
-    Map<String, Object> runNow(PaperMarket market) {
+    Map<String, Object> runNow(PaperMarket requested) {
         if (!running.tryLock()) {
             throw new TooManyRequestsException("다른 주간 복기가 진행 중입니다 — 끝난 뒤 다시 누르세요.", BUSY_RETRY);
         }
         try {
             Instant now = clock.instant();
+            MarketRun market = markets.open(requested);
             // 그 주의 오류 횟수를 지웁니다 — 수동 실행은 포기한 주도 다시 시도합니다(결정 작업의 수동 실행과 같음).
             LocalDate week;
             try {

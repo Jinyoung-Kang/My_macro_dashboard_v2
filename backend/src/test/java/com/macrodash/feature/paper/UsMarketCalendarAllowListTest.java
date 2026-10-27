@@ -59,6 +59,7 @@ class UsMarketCalendarAllowListTest {
             "analytics/PaperLedger.java",
             "feature/paper/PaperMarket.java",
             "feature/paper/PaperMarkets.java",
+            "feature/paper/MarketRun.java",
             "feature/paper/PaperLedgerService.java",
             "feature/paper/PaperRiskJob.java",
             "feature/paper/PaperMarketData.java",

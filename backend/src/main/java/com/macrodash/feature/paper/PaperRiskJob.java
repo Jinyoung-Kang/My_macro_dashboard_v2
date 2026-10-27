@@ -27,6 +27,7 @@ import java.util.Optional;
  * <p>시장마다 따로 돕니다(2단계 명세 §9 A5): 정기 실행은 {@link PaperMarkets#all}을 차례로, 시장마다 그 시장의 관측치 저장본을
  * 읽어 그 시장 책에만 적용하고({@link PaperLedgerService} 설명), 작업 기록은 그 시장 이름({@link PaperMarket#jobName})으로
  * 남깁니다. 지금 목록은 미국 하나라 동작은 이 묶음 전과 같습니다. 시장을 받지 않는 수동 실행·한 번 실행은 미국 판입니다.
+ * 실행마다 그 시장의 실행 문맥({@link MarketRun} — 달력 한 벌·설정 행 하나)을 열어 앞 창 확인·장부·관측치 요약에 넘깁니다(C1a).
  *
  * <p>관측치는 수집기가 1시간마다 저장하므로 대부분의 실행은 "새 저장본 없음"으로 끝나고, 그때는 기록을 남기지 않습니다
  * (5분마다 한 줄씩 쌓이면 작업 기록 200건이 17시간 치뿐입니다). 일했을 때와 오류일 때만 {@code paper_job_runs}에 남기고,
@@ -76,13 +77,13 @@ public class PaperRiskJob {
     /** 테스트용 — 시계를 움직입니다(시장 목록은 운영 목록). */
     PaperRiskJob(PaperStore store, StoreReader reader, PaperMarketData marketData, PaperLedgerService ledger,
                  PaperConfig config, ObjectMapper mapper, Clock clock) {
-        this(store, reader, marketData, ledger, config, mapper, clock, new PaperMarkets());
+        this(store, reader, marketData, ledger, config, mapper, clock, new PaperMarkets(store, reader));
     }
 
     /** 테스트용 — 시계와 시장 목록을 바꿉니다(시장 격리 시험이 시험용 한국 시장을 넣음). */
     PaperRiskJob(PaperStore store, StoreReader reader, PaperMarketData marketData, PaperLedgerService ledger,
                  PaperConfig config, ObjectMapper mapper, Clock clock, List<PaperMarket> markets) {
-        this(store, reader, marketData, ledger, config, mapper, clock, new PaperMarkets(markets));
+        this(store, reader, marketData, ledger, config, mapper, clock, new PaperMarkets(store, reader, markets));
     }
 
     private PaperRiskJob(PaperStore store, StoreReader reader, PaperMarketData marketData, PaperLedgerService ledger,
@@ -143,11 +144,13 @@ public class PaperRiskJob {
     }
 
     /** 그 시장 한 번 실행(정기·수동 공통) — 그 시장의 관측치를 그 시장 책에만 적용하고, 그 시장 이름으로 기록합니다. */
-    Outcome run(PaperMarket market, boolean manual) {
+    Outcome run(PaperMarket requested, boolean manual) {
         if (!store.ready()) {
             return Outcome.skipped("모의 매매 테이블이 아직 없습니다(V8·V9 적용 전) — make up 후 다시 보세요");
         }
         Instant started = clock.instant();
+        // 이 실행의 시장 문맥 — 달력 한 벌과 설정 행 하나를 장부까지 넘깁니다(PaperMarkets#open).
+        MarketRun market = markets.open(requested);
         try {
             market.requireCalendarWindow(started);
             calendarGaps.clear(market);

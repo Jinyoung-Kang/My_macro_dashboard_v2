@@ -40,6 +40,7 @@ import static com.macrodash.feature.paper.PaperFixtures.FRI_CLOSE;
 import static com.macrodash.feature.paper.PaperFixtures.MAPPER;
 import static com.macrodash.feature.paper.PaperFixtures.bar;
 import static com.macrodash.feature.paper.PaperFixtures.quotes;
+import static com.macrodash.feature.paper.PaperFixtures.market;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.junit.jupiter.api.Assertions.assertTimeoutPreemptively;
@@ -113,7 +114,7 @@ class PaperDecisionJobTest {
         });
         claude = mock(ClaudeBookService.class);
         claudeDecided = new ArrayList<>();
-        when(claude.decide(eq(US), any(), anyString(), anyBoolean())).thenAnswer(invocation -> {
+        when(claude.decide(market(US), any(), anyString(), anyBoolean())).thenAnswer(invocation -> {
             LocalDate d = invocation.getArgument(1);
             String kind = invocation.getArgument(2);
             boolean pricesFinal = invocation.getArgument(3);
@@ -139,12 +140,12 @@ class PaperDecisionJobTest {
     private PaperDecisionJob job(Instant now) {
         PaperSettingsService settings = PaperFixtures.settings(store);
         return new PaperDecisionJob(store, reader, marketData,
-                new PaperLedgerService(store, marketData, settings, MAPPER), selection, rules, claude, settings,
+                new PaperLedgerService(store, marketData, MAPPER), selection, rules, claude, settings,
                 PaperFixtures.config(), MAPPER, Clock.fixed(now, ZoneOffset.UTC));
     }
 
     private void observed(Instant collectedAt, LocalDate barDate) {
-        when(marketData.quotes(US)).thenReturn(Optional.of(quotes(collectedAt,
+        when(marketData.quotes(market(US))).thenReturn(Optional.of(quotes(collectedAt,
                 bar("SPY", barDate.minusDays(1), 499, barDate, 500))));
     }
 
@@ -626,7 +627,7 @@ class PaperDecisionJobTest {
                         MAPPER.valueToTree(Map.of("summary", "주문 없음")), null, null, null, pricesFinal, 10L, 0));
             }
             return store.decision(old.id()).orElseThrow();
-        }).when(claude).decide(eq(US), any(), anyString(), anyBoolean());
+        }).when(claude).decide(market(US), any(), anyString(), anyBoolean());
     }
 
     @Test
@@ -673,7 +674,7 @@ class PaperDecisionJobTest {
             claudeDecided.add("retry");
             return new Decision(97, PaperBooks.CLAUDE, wednesday, "SCHEDULED", store.dbNow, "NO_TRADE",
                     "claude-sonnet-5-5", null, 1, null, null, null, null, null, null, null, null, null, true, 0L, 0);
-        }).when(claude).decide(eq(US), any(), anyString(), anyBoolean());
+        }).when(claude).decide(market(US), any(), anyString(), anyBoolean());
         observed(Instant.parse("2026-11-18T21:30:00Z"), wednesday);
         assertThat(job(Instant.parse("2026-11-18T23:00:00Z")).run().outcome()).isEqualTo(PaperDecisionJob.ERROR);
         assertThat(decided).containsExactly("2026-11-18 REBALANCE true");
@@ -738,7 +739,7 @@ class PaperDecisionJobTest {
             release.await(10, TimeUnit.SECONDS);
             return new Decision(96, PaperBooks.CLAUDE, PaperFixtures.MON, "MANUAL", store.dbNow, "NO_TRADE",
                     "claude-sonnet-5-5", null, 1, null, null, null, null, null, null, null, null, null, true, 0L, 0);
-        }).when(claude).decide(eq(US), any(), eq("MANUAL"), anyBoolean());
+        }).when(claude).decide(market(US), any(), eq("MANUAL"), anyBoolean());
         Thread manual = new Thread(() -> job.runNow("claude"));
         manual.start();
         try {
@@ -763,7 +764,7 @@ class PaperDecisionJobTest {
         doAnswer(invocation -> {
             claudeDecided.add("scheduled");
             throw new IllegalStateException("저장 고장");
-        }).when(claude).decide(eq(US), any(), eq("SCHEDULED"), anyBoolean());
+        }).when(claude).decide(market(US), any(), eq("SCHEDULED"), anyBoolean());
         observed(Instant.parse("2026-10-26T20:30:00Z"), PaperFixtures.MON);
         PaperDecisionJob job = job(Instant.parse("2026-10-26T23:00:00Z"));
 
@@ -794,7 +795,7 @@ class PaperDecisionJobTest {
     private PaperDecisionJob job(Instant now, List<PaperMarket> markets) {
         PaperSettingsService settings = PaperFixtures.settings(store);
         return new PaperDecisionJob(store, reader, marketData,
-                new PaperLedgerService(store, marketData, settings, MAPPER), selection, rules, claude, settings,
+                new PaperLedgerService(store, marketData, MAPPER), selection, rules, claude, settings,
                 PaperFixtures.config(), MAPPER, Clock.fixed(now, ZoneOffset.UTC), markets);
     }
 
@@ -805,7 +806,7 @@ class PaperDecisionJobTest {
     private void krBook(RuntimeException failure) {
         store.books.put(KR_BOOK, TestKrMarket.book(KR_BOOK, 100_000_000, FRI));
         store.states.put(KR_BOOK, new BookState(KR_BOOK, 100_000_000, 100_000_000, 0, 0, null, null, null, null));
-        when(marketData.quotes(KR)).thenReturn(Optional.of(quotes(Instant.parse("2026-10-26T12:00:00Z"),
+        when(marketData.quotes(market(KR))).thenReturn(Optional.of(quotes(Instant.parse("2026-10-26T12:00:00Z"),
                 bar("005930", FRI, 70_000, PaperFixtures.MON, 71_000))));
         doAnswer(invocation -> {
             LocalDate d = invocation.getArgument(1);
@@ -819,7 +820,7 @@ class PaperDecisionJobTest {
                     1, null, 30.0, null, null, null, MAPPER.valueToTree(Map.of("summary", "주문 없음")), null, null,
                     null, pricesFinal, 0L, 0));
             return store.decisionFor(KR_BOOK, d, kind).orElseThrow();
-        }).when(claude).decide(eq(KR), any(), anyString(), anyBoolean());
+        }).when(claude).decide(market(KR), any(), anyString(), anyBoolean());
     }
 
     @Test

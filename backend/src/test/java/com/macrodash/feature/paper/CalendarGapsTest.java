@@ -69,7 +69,7 @@ class CalendarGapsTest {
     }
 
     private PaperLedgerService ledger() {
-        return new PaperLedgerService(store, marketData, PaperFixtures.settings(store), MAPPER);
+        return new PaperLedgerService(store, marketData, MAPPER);
     }
 
     private PaperRiskJob riskJob() {

@@ -21,6 +21,7 @@ import static com.macrodash.feature.paper.PaperFixtures.MON_FINAL;
 import static com.macrodash.feature.paper.PaperFixtures.bar;
 import static com.macrodash.feature.paper.PaperFixtures.quotes;
 import static com.macrodash.feature.paper.PaperFixtures.staleBar;
+import static com.macrodash.feature.paper.PaperFixtures.market;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
@@ -46,7 +47,7 @@ class PaperQueryServiceTest {
         marketData = mock(PaperMarketData.class);
         when(marketData.history(anyCollection(), any(), any())).thenReturn(Map.of());
         when(marketData.sourcedCloseOn(anyString(), any())).thenReturn(Optional.empty());
-        when(marketData.quotes(UsPaperMarket.INSTANCE)).thenReturn(Optional.empty());
+        when(marketData.quotes(market(UsPaperMarket.INSTANCE))).thenReturn(Optional.empty());
         query = new PaperQueryService(store, marketData, PaperFixtures.quietReader(), PaperFixtures.settings(store),
                 PaperFixtures.config(), NOW);
     }
@@ -54,8 +55,7 @@ class PaperQueryServiceTest {
     private void initWithBenchmarks() {
         when(marketData.sourcedCloseOn("SPY", FRI)).thenReturn(Optional.of(new SourcedClose(500, "equity_close")));
         when(marketData.sourcedCloseOn("SHY", FRI)).thenReturn(Optional.of(new SourcedClose(82.5, "equity_close")));
-        PaperLedgerService ledger = new PaperLedgerService(store, marketData, PaperFixtures.settings(store),
-                PaperFixtures.MAPPER);
+        PaperLedgerService ledger = new PaperLedgerService(store, marketData, PaperFixtures.MAPPER);
         new PaperAdminService(store, marketData, PaperFixtures.quietReader(), PaperFixtures.settings(store), ledger,
                 PaperFixtures.config(), PaperFixtures.MAPPER, NOW).init();
     }
@@ -100,7 +100,7 @@ class PaperQueryServiceTest {
     void overviewAfterInit() {
         initWithBenchmarks();
         store.upsertNav(new NavRow("bench_spy", MON, 101_000, 450.25, 100_549.75, 99.55, true));
-        when(marketData.quotes(UsPaperMarket.INSTANCE)).thenReturn(Optional.of(quotes(MON_FINAL,
+        when(marketData.quotes(market(UsPaperMarket.INSTANCE))).thenReturn(Optional.of(quotes(MON_FINAL,
                 bar("SPY", FRI, 500, MON, 505), staleBar("QQQ", FRI, 400))));
 
         Map<String, Object> overview = query.overview();
@@ -146,8 +146,7 @@ class PaperQueryServiceTest {
     @Test
     @DisplayName("종가를 받기 전에 초기화했으면 initialized는 true여도 pendingBackfill에 벤치마크가 남고, 다시 초기화하면 빈다")
     void pendingBackfillUntilBenchmarksStart() {
-        PaperLedgerService ledger = new PaperLedgerService(store, marketData, PaperFixtures.settings(store),
-                PaperFixtures.MAPPER);
+        PaperLedgerService ledger = new PaperLedgerService(store, marketData, PaperFixtures.MAPPER);
         PaperAdminService admin = new PaperAdminService(store, marketData, PaperFixtures.quietReader(),
                 PaperFixtures.settings(store), ledger, PaperFixtures.config(), PaperFixtures.MAPPER, NOW);
         admin.init();   // 종가 없음 — 벤치마크는 시작 전으로 남음
@@ -560,7 +559,7 @@ class PaperQueryServiceTest {
         java.time.LocalDate krOnly = java.time.LocalDate.of(2026, 10, 21);   // 미국 책에는 없는 날
         store.upsertNav(new NavRow(krBook, krOnly, 100_000_000, 100_000_000, 0, 0, true));
         store.upsertNav(new NavRow("bench_spy", MON, 101_000, 450.25, 100_549.75, 99.55, true));
-        when(marketData.quotes(kr)).thenReturn(Optional.of(quotes(Instant.parse("2026-10-26T12:00:00Z"),
+        when(marketData.quotes(market(kr))).thenReturn(Optional.of(quotes(Instant.parse("2026-10-26T12:00:00Z"),
                 bar("005930", FRI, 70_000, MON, 71_000))));
         PaperQueryService both = new PaperQueryService(store, marketData, PaperFixtures.quietReader(),
                 PaperFixtures.settings(store), PaperFixtures.config(), NOW, List.of(UsPaperMarket.INSTANCE, kr));
@@ -634,7 +633,7 @@ class PaperQueryServiceTest {
         java.time.LocalDate fri = java.time.LocalDate.of(2026, 11, 27);
         store.upsertNav(new NavRow(krBook, wed, 100_000_000, 100_000_000, 0, 0, true));
         store.upsertNav(new NavRow(krBook, fri, 101_000_000, 101_000_000, 0, 0, true));
-        when(marketData.quotes(kr)).thenReturn(Optional.empty());
+        when(marketData.quotes(market(kr))).thenReturn(Optional.empty());
         PaperQueryService both = new PaperQueryService(store, marketData, PaperFixtures.quietReader(),
                 PaperFixtures.settings(store), PaperFixtures.config(), NOW, List.of(UsPaperMarket.INSTANCE, kr));
 
@@ -652,9 +651,9 @@ class PaperQueryServiceTest {
     void quotesLatenessPerMarket() {
         PaperMarket kr = TestKrMarket.INSTANCE;
         Instant fourHoursAgo = Instant.parse("2026-10-26T17:00:00Z");   // NOW 21:00Z의 4시간 전
-        when(marketData.quotes(UsPaperMarket.INSTANCE)).thenReturn(Optional.of(quotes(fourHoursAgo,
+        when(marketData.quotes(market(UsPaperMarket.INSTANCE))).thenReturn(Optional.of(quotes(fourHoursAgo,
                 bar("SPY", FRI, 500, MON, 505))));
-        when(marketData.quotes(kr)).thenReturn(Optional.of(quotes(fourHoursAgo,
+        when(marketData.quotes(market(kr))).thenReturn(Optional.of(quotes(fourHoursAgo,
                 bar("005930", FRI, 70_000, MON, 71_000))));
         PaperQueryService both = new PaperQueryService(store, marketData, PaperFixtures.quietReader(),
                 PaperFixtures.settings(store), PaperFixtures.config(), NOW, List.of(UsPaperMarket.INSTANCE, kr));
@@ -689,7 +688,7 @@ class PaperQueryServiceTest {
         store.upsertPosition(new com.macrodash.store.PaperStore.Position(krBook, "000660", 150, 200_000,
                 java.time.LocalDate.of(2027, 2, 1), opened, 200_000, opened, 200_000.0, opened, false,
                 java.time.LocalDate.of(2027, 2, 1), 200_000, null));
-        when(marketData.quotes(kr)).thenReturn(Optional.empty());
+        when(marketData.quotes(market(kr))).thenReturn(Optional.empty());
         Clock march = Clock.fixed(Instant.parse("2027-03-02T12:00:00Z"), ZoneOffset.UTC);   // 03-02(화) 21:00 KST
         PaperQueryService both = new PaperQueryService(store, marketData, PaperFixtures.quietReader(),
                 PaperFixtures.settings(store), PaperFixtures.config(), march, List.of(UsPaperMarket.INSTANCE, kr));

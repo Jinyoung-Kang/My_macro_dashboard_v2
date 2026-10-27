@@ -69,6 +69,9 @@ import static com.macrodash.feature.paper.ClaudeBookService.noPriceTickers;
  * 이름과 금액 표기는 그 시장 묶음의 것이고({@link PaperMarket#orderValidation}, A7), 검증기 한도는 아직 미국 설정 키입니다(C1에서
  * 시장별로). 미국 문맥은 이 묶음 전의 값 그대로입니다({@link UsPaperMarket}·{@link PacketBuilder#build}·
  * {@value ClaudeBookService#SCHEMA_RESOURCE}).
+ *
+ * <p>서비스가 만들어 쥐는 파이프라인은 시장 묶음에 묶이고, 하루 결정은 그 실행({@link MarketRun})에 묶은 사본({@link #bind})으로 돕니다
+ * — 보유 거래일·주문 만료·재진입 금지를 보는 다음 세션이 결정 작업이 연 달력 한 벌로 셉니다(C1a).
  */
 final class ClaudeDecisionPipeline {
 
@@ -114,7 +117,34 @@ final class ClaudeDecisionPipeline {
         this.schema = StructuredSchema.load(context.schemaResource());
     }
 
-    /** 이 파이프라인의 시장 묶음. */
+    /** {@link #bind} — 같은 문맥·협력 객체·읽어 둔 스키마에 시장 문맥만 그 실행으로. */
+    private ClaudeDecisionPipeline(ClaudeDecisionPipeline base, MarketRun run) {
+        this.market = run;
+        this.store = base.store;
+        this.packets = base.packets;
+        this.framework = base.framework;
+        this.calls = base.calls;
+        this.ai = base.ai;
+        this.mapper = base.mapper;
+        this.clock = base.clock;
+        this.timeoutSeconds = base.timeoutSeconds;
+        this.schema = base.schema;
+    }
+
+    /**
+     * 이 파이프라인을 실행 하나({@link MarketRun})에 묶은 사본 — 보유 거래일·주문 만료·재진입 금지를 보는 다음 세션이 그 실행의 달력
+     * 한 벌로 셉니다(C1a). 실행의 시장 묶음이 이 파이프라인의 시장 묶음이어야 합니다.
+     *
+     * @throws IllegalArgumentException 다른 시장의 실행
+     */
+    ClaudeDecisionPipeline bind(MarketRun run) {
+        if (run.definition() != market.definition()) {
+            throw new IllegalArgumentException("다른 시장의 실행입니다: " + run + " — 이 파이프라인은 " + market.code());
+        }
+        return new ClaudeDecisionPipeline(this, run);
+    }
+
+    /** 이 파이프라인의 시장 문맥 — 서비스가 만든 것은 시장 묶음, {@link #bind}한 사본은 그 실행. */
     PaperMarket market() {
         return market;
     }

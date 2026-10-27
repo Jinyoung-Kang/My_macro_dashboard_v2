@@ -102,6 +102,10 @@ import static com.macrodash.feature.paper.ClaudeDecisionPipeline.usageView;
  * 결정 파이프라인(패킷·응답 스키마·시스템 프롬프트의 시장별 부분 — {@link ClaudeDecisionPipeline.MarketContext})으로 냅니다. 다른 시장
  * 책은 건드리지 않습니다. 시장을 받지 않는 옛 시그니처는 미국입니다. 지금 문맥은 미국 하나이고(한국은 E2), 시작·미리보기는 미국
  * 것입니다(13F 출발일 선정·출발일 종가 사후 체결 — 한국은 출발일 사후 체결이 없음, 명세 K28).
+ *
+ * <p>하루 결정은 결정 작업이 연 실행 문맥({@link MarketRun})을 받아 그 실행이 읽은 설정 행으로 결정 행({@code settings_version})·패킷·
+ * 시스템 프롬프트·검증을 하고, 그 실행의 달력으로 주문 만료·재진입 금지를 셉니다(C1a). 시장 묶음을 받으면(옛 시그니처·시험) 고정
+ * 달력과 지금 설정 행으로 실행을 그 자리에서 엽니다({@link MarketRun#of}).
  */
 @Service
 public class ClaudeBookService {
@@ -299,7 +303,7 @@ public class ClaudeBookService {
      * @throws IllegalArgumentException 결정 문맥이 없는 시장
      */
     Decision decide(PaperMarket market, LocalDate asOf, String kind, boolean pricesFinal) {
-        ClaudeDecisionPipeline pipeline = pipeline(market);
+        ClaudeDecisionPipeline base = pipeline(market);
         if (asOf == null) {
             throw new IllegalArgumentException("기준 거래일이 없습니다");
         }
@@ -307,6 +311,10 @@ public class ClaudeBookService {
             throw new IllegalArgumentException("Claude 계좌 결정 종류는 SCHEDULED · MANUAL입니다(초기 결정은 start): " + kind);
         }
         requireReady();
+        // 그 실행의 시장 문맥(결정 작업이 연 실행 — 시장 묶음을 받으면 고정 달력과 지금 설정 행으로 엶): 파이프라인의 달력·설정 판이
+        // 이 실행 하나입니다(클래스 설명).
+        MarketRun run = MarketRun.of(market, store);
+        ClaudeDecisionPipeline pipeline = base.bind(run);
         Decision retrying = null;
         Optional<Decision> existing = store.decisionFor(market.claudeBook(), asOf, kind);
         if (existing.isPresent()) {
@@ -320,7 +328,8 @@ public class ClaudeBookService {
             throw new InvalidRequestException("Claude 계좌는 아직 시작 전입니다 — 개요의 'Claude 계좌 시작'으로 초기 결정을 먼저 "
                     + "내리세요.");
         }
-        SettingsRow row = settingsRow();
+        // 결정 기록의 settings_version = 그 실행이 읽은 판(행이 없을 때만 지금 만듦 — 초기화 전에는 책이 없어 여기까지 오지 않음).
+        SettingsRow row = run.settingsRow().orElseGet(this::settingsRow);
         ClaudeSettings claude = ClaudeSettings.from(row.body());
         if (PaperBooks.PAUSED.equals(book.status())) {
             if (RuleBookService.MANUAL.equals(kind)) {
@@ -738,7 +747,7 @@ public class ClaudeBookService {
     /** 그 시장의 결정 파이프라인(클래스 설명의 시장 문맥). */
     private ClaudeDecisionPipeline pipeline(PaperMarket market) {
         ClaudeDecisionPipeline pipeline = pipelines.get(market.code());
-        if (pipeline == null || pipeline.market() != market) {
+        if (pipeline == null || pipeline.market() != market.definition()) {
             throw new IllegalArgumentException("Claude 결정 문맥이 없는 시장입니다: " + market.code());
         }
         return pipeline;

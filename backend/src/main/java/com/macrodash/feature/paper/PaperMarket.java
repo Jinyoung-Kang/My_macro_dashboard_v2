@@ -29,6 +29,10 @@ import java.util.Map;
  * 고정). 장부·관측치·리스크 점검(A5)과 결정 작업·Claude 결정·주간 복기·메모·조회·관리(A6)가 시장마다 이 묶음으로 돕니다(시장
  * 목록 — 주입 빈 {@link PaperMarkets}) — Claude 시스템 프롬프트의 시장별 부분(하드 규칙 줄·고정 문단)과 복기 여는 순간도 여기서 받습니다.
  * 게이트 지표·13F 재선정·규칙 책 결정·출발일 사후 체결은 미국 전용 단계로 남습니다.
+ *
+ * <p><b>실행 문맥</b>(C1a): 정기 작업 한 번·조회 한 번은 시작할 때 이 묶음으로 {@link MarketRun}(그 실행의 달력 한 벌 + 읽은 설정 행)을
+ * 하나 열어({@link PaperMarkets#open}) 장부·결정 파이프라인·조회에 넘깁니다. 실행도 이 인터페이스를 구현하므로 시장 묶음을 받던 코드가
+ * 그대로 돌고, 미국 전용 단계 판정(동일성)은 {@link #definition()}으로 합니다.
  */
 interface PaperMarket {
 
@@ -38,8 +42,31 @@ interface PaperMarket {
     /** 장부 통화 — {@code paper_books.currency}(USD·KRW, V13)와 같은 문자열. */
     String currency();
 
-    /** 세션 날짜를 정하고 체결·만료·재진입 금지·통계 표본을 세는 거래일 달력. */
+    /**
+     * 세션 날짜를 정하고 체결·만료·재진입 금지·통계 표본을 세는 거래일 달력. 시장 묶음에서는 <b>고정 달력</b>(실행과 상관없이 늘 같음 —
+     * 미국)이고, 실행({@link MarketRun})에서는 그 실행이 시작할 때 {@link #openCalendar}로 만든 한 벌입니다. 실행마다 저장본·설정
+     * 판으로 달력을 만드는 시장(한국 — C1b)의 묶음은 고정 달력이 없어 이 메서드가 던집니다 — 실행 밖에서 달력을 물은 코드 오류입니다.
+     *
+     * @throws IllegalStateException 실행마다 달력을 만드는 시장의 묶음에 물음(실행 문맥을 넘기지 않은 코드)
+     */
     TradingCalendar calendar();
+
+    /**
+     * 실행 하나의 달력을 만듭니다 — 실행을 열 때 한 번({@link PaperMarkets#open}). 기본은 고정 달력({@link #calendar()}) 그대로입니다.
+     * 한국(C1b)은 그 실행이 조용히 읽은 공휴일 저장본({@code kr_holidays})과 그 실행이 읽은 설정 판(임시휴장)으로 새로 만듭니다 — 그래서
+     * 한 실행 안의 달력 호출이 모두 같은 한 벌이고, 그 판이 결정 행의 {@code settings_version}과 같습니다.
+     */
+    default TradingCalendar openCalendar(MarketRun.Inputs inputs) {
+        return calendar();
+    }
+
+    /**
+     * 시장 묶음 자신(정의) — 실행({@link MarketRun})은 감싼 묶음을 돌려줍니다. 미국 전용 단계(게이트·13F·규칙 책 결정·미국 전용 칸)
+     * 판정은 이 값과 {@link UsPaperMarket#INSTANCE}의 동일성으로 합니다(실행을 받아도 갈리지 않게).
+     */
+    default PaperMarket definition() {
+        return this;
+    }
 
     /**
      * 정기 작업이 앞으로 쓸 창의 거래일 수 — 주문 만료(기준일 + {@value RuleBookService#ORDER_EXPIRY_TRADING_DAYS}거래일)와 패킷 일정

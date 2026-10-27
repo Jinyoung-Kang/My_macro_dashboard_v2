@@ -115,7 +115,7 @@ class RuleBookServiceTest {
 
         PaperSettingsService settings = PaperFixtures.settings(store);
         PaperSelectionService selection = new PaperSelectionService(store, reader, marketData, settings, MAPPER, NOW);
-        PaperLedgerService ledger = new PaperLedgerService(store, marketData, settings, MAPPER);
+        PaperLedgerService ledger = new PaperLedgerService(store, marketData, MAPPER);
         PaperAdminService admin = new PaperAdminService(store, marketData, reader, settings, ledger,
                 PaperFixtures.config(), MAPPER, NOW);
         rules = new RuleBookService(store, reader, marketData, selection, settings, ledger, admin,
@@ -776,7 +776,7 @@ class RuleBookServiceTest {
         activeRules(PaperBooks.ACTIVE, 51_000, "OLD", 100, 100, "SHY", 300, 80);
         PaperSettingsService settings = PaperFixtures.settings(store);
         boolean[] reset = {false};
-        PaperLedgerService racing = new PaperLedgerService(store, marketData, settings, MAPPER) {
+        PaperLedgerService racing = new PaperLedgerService(store, marketData, MAPPER) {
             @Override
             <T> T exclusively(Supplier<T> work) {
                 if (!reset[0]) {

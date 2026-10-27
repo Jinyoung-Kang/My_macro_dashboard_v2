@@ -49,9 +49,9 @@ import java.util.function.Supplier;
  * 재진입 금지 거래일도 그 시장 묶음에서 가져옵니다. 다른 시장 책은 읽지도 쓰지도 않습니다 — 그러지 않으면 미국 관측치가 한국 책의 멱등 키
  * ({@code lastProcessedCollectedAt})를 미국 수집 시각으로 밀어 한국 관측치가 '이미 처리함'으로 버려집니다. 시장을 받지 않는 옛
  * 시그니처는 미국 책만 처리합니다(결정 작업이 시장 문맥으로 옮겨 가는 A6 전까지 그대로 부름). 사후 체결({@link #backfill})은 미국
- * 책만 받습니다(한국은 출발일 사후 체결이 없음, 명세 K28). <b>설정은 아직 시장별이 아닙니다</b> — 슬리피지·트레일링 스탑·재진입 금지
- * 거래일·현금성 종목(기본 SHY)을 설정 루트의 미국 키로 시장과 상관없이 읽습니다. 시장별 설정 읽기는 C1입니다(명세 §9 묶음 A 리뷰
- * 메모 — 그 전에 한국 책을 이 장부에 돌리지 않음).
+ * 책만 받습니다(한국은 출발일 사후 체결이 없음, 명세 K28). <b>설정과 달력은 실행 문맥에서</b>(C1a) — 슬리피지·트레일링 스탑·재진입 금지
+ * 거래일·현금성 종목은 그 실행({@link MarketRun})이 읽은 설정 행으로, 세션·확정 판정은 그 실행의 달력 한 벌로 셉니다. 장부가 설정을
+ * 따로 읽지 않습니다. 설정 키는 아직 설정 루트(미국)의 키입니다 — 시장별 접두어 읽기는 다음 커밋(C1a).
  *
  * <p><b>책마다 한 트랜잭션입니다</b>({@link PaperStore#atomically}). 한 책에서 오류가 나면 그 책만 되돌리고 다른 책은 계속합니다.
  * 그 책은 상태(멱등 키)가 바뀌지 않아 그대로 두면 정기 작업이 같은 저장본으로 5분마다 다시 돌며 같은 오류를 기록합니다(입력이
@@ -135,7 +135,6 @@ public class PaperLedgerService {
 
     private final PaperStore store;
     private final PaperMarketData marketData;
-    private final PaperSettingsService settings;
     private final ObjectMapper mapper;
     /** 장부를 바꾸는 일(관측치 처리·초기화·리셋·일시정지)을 한 줄로 세웁니다(클래스 설명). 시장이 여럿이어도 잠금은 하나입니다. */
     private final ReentrantLock lock = new ReentrantLock();
@@ -148,11 +147,10 @@ public class PaperLedgerService {
     private record FailureKey(String market, String book) {
     }
 
-    public PaperLedgerService(PaperStore store, PaperMarketData marketData, PaperSettingsService settings,
-                              ObjectMapper mapper) {
+    /** 설정은 실행이 읽은 행으로 받습니다({@link MarketRun#settings}) — 장부가 따로 읽지 않습니다. */
+    public PaperLedgerService(PaperStore store, PaperMarketData marketData, ObjectMapper mapper) {
         this.store = store;
         this.marketData = marketData;
-        this.settings = settings;
         this.mapper = mapper;
     }
 
@@ -224,12 +222,17 @@ public class PaperLedgerService {
         return process(UsPaperMarket.INSTANCE, quotes);
     }
 
-    /** 그 시장의 관측치 하나를 그 시장 책 모두에 적용합니다(클래스 설명). 다른 시장 책은 건드리지 않습니다. */
+    /**
+     * 그 시장의 관측치 하나를 그 시장 책 모두에 적용합니다(클래스 설명). 다른 시장 책은 건드리지 않습니다. 실행({@link MarketRun})을 받으면
+     * 그 실행의 달력·설정 행으로, 시장 묶음을 받으면(미국 판·시험) 고정 달력과 지금 설정 행으로 실행을 그 자리에서 엽니다
+     * ({@link MarketRun#of}).
+     */
     Outcome process(PaperMarket market, Quotes quotes) {
-        return exclusively(() -> processLocked(market, quotes));
+        MarketRun run = MarketRun.of(market, store);
+        return exclusively(() -> processLocked(run, quotes));
     }
 
-    private Outcome processLocked(PaperMarket market, Quotes quotes) {
+    private Outcome processLocked(MarketRun market, Quotes quotes) {
         if (!store.ready()) {
             return Outcome.skipped("모의 매매 테이블이 아직 없습니다(V8·V9 적용 전)");
         }
@@ -238,8 +241,12 @@ public class PaperLedgerService {
             return Outcome.skipped("초기화 전입니다 — 계좌가 없습니다");
         }
         books.sort(Comparator.comparing(Book::code, market.bookOrder()));
-        // 설정 루트(미국) 키 — 시장별 읽기는 C1(클래스 설명).
-        PaperSettings current = settings.current().settings();
+        // 그 실행이 읽은 설정 행(클래스 설명의 설정).
+        PaperSettings current = market.settings();
+        if (market.settingsRow().isPresent() && !current.fallbacks().isEmpty()) {
+            log.warn("모의 매매 설정 v{}의 키 {}가 없거나 범위 밖이라 기본값으로 읽습니다", market.settingsVersion(),
+                    current.fallbacks());
+        }
 
         int filled = 0;
         int stopped = 0;

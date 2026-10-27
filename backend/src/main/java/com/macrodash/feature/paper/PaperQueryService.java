@@ -63,7 +63,8 @@ import java.util.TreeSet;
  * 관측치(확정 판정 포함)·그 시장 Claude 책의 노출 추이와 프레임 경계·초기화 판정(그 시장 책 정의)만 씁니다. 13F 선정·게이트 지표·
  * 한계 문구·출발일·초기 현금은 미국 전용이라 미국 밖 시장에는 싣지 않습니다(null·빈 목록 — 한국 값은 C1·F2). 작업 기록·설정·호출
  * 사용량·수집 상태는 시장과 상관없이 하나입니다. 계좌 코드 경로(보유·주문·체결·순자산)는 그 책의 시장({@code paper_books.market})
- * 달력·비교 기준을 씁니다. 시장을 받지 않는 옛 시그니처는 미국입니다.
+ * 달력·비교 기준을 씁니다. 시장을 받지 않는 옛 시그니처는 미국입니다. 조회 한 번은 그 시장의 실행 문맥({@link MarketRun} — 달력 한 벌·
+ * 설정 행 하나)을 한 번 열어 씁니다(C1a).
  */
 @Service
 public class PaperQueryService {
@@ -100,13 +101,13 @@ public class PaperQueryService {
     /** 테스트용 — 시계를 움직입니다(시장 목록은 운영 목록). */
     PaperQueryService(PaperStore store, PaperMarketData marketData, StoreReader reader, PaperSettingsService settings,
                       PaperConfig config, Clock clock) {
-        this(store, marketData, reader, settings, config, clock, new PaperMarkets());
+        this(store, marketData, reader, settings, config, clock, new PaperMarkets(store, reader));
     }
 
     /** 테스트용 — 시계와 시장 목록을 바꿉니다(시장 격리 시험이 시험용 한국 시장을 넣음). */
     PaperQueryService(PaperStore store, PaperMarketData marketData, StoreReader reader, PaperSettingsService settings,
                       PaperConfig config, Clock clock, List<PaperMarket> markets) {
-        this(store, marketData, reader, settings, config, clock, new PaperMarkets(markets));
+        this(store, marketData, reader, settings, config, clock, new PaperMarkets(store, reader, markets));
     }
 
     private PaperQueryService(PaperStore store, PaperMarketData marketData, StoreReader reader,
@@ -155,10 +156,12 @@ public class PaperQueryService {
     }
 
     /** 그 시장의 개요(클래스 설명의 시장 문맥). */
-    Map<String, Object> overview(PaperMarket market) {
+    Map<String, Object> overview(PaperMarket requested) {
         if (!ready()) {
             return notReady();
         }
+        // 이 조회의 시장 문맥 — 통계 표본·관측치 확정 판정이 같은 달력 한 벌(PaperMarkets#open).
+        MarketRun market = markets.open(requested);
         boolean us = usOnly(market);
         List<Book> books = sortedBooks(market);
         Set<String> codes = new HashSet<>();
@@ -193,7 +196,7 @@ public class PaperQueryService {
 
     /** 미국 전용 칸(13F 선정·게이트 지표·한계 문구·출발일·초기 현금)을 싣는 시장인가 — 미국 묶음 그 자체일 때만(클래스 설명). */
     private static boolean usOnly(PaperMarket market) {
-        return market == UsPaperMarket.INSTANCE;
+        return market.definition() == UsPaperMarket.INSTANCE;
     }
 
     // ------------------------------------------------------------------ 결정
@@ -302,7 +305,7 @@ public class PaperQueryService {
     }
 
     /** 그 시장의 상태 — 초기화 판정·관측치는 그 시장 것, 출발일·초기 현금은 미국만(클래스 설명), 나머지는 시장과 상관없이 하나. */
-    Map<String, Object> status(PaperMarket market) {
+    Map<String, Object> status(PaperMarket requested) {
         Map<String, Object> out = new LinkedHashMap<>();
         if (!ready()) {
             out.putAll(notReady());
@@ -310,6 +313,7 @@ public class PaperQueryService {
             out.put("enabled", config.enabled());
             return out;
         }
+        MarketRun market = markets.open(requested);
         out.put("available", true);
         out.put("schemaReady", true);
         out.put("initialized", initialized(market, sortedBooks(market)));
@@ -586,7 +590,11 @@ public class PaperQueryService {
     /** 책 하나의 요약(BookSummary) — 버튼 응답이 바뀐 책을 다시 그릴 때. */
     public Map<String, Object> bookSummary(String code) {
         Book book = existing(code);
-        PaperMarket market = marketOf(book);
+        return bookSummary(book, markets.open(marketOf(book)));
+    }
+
+    /** {@link #bookSummary(String)} — 이미 연 조회의 시장 문맥으로(한 조회가 달력을 두 번 만들지 않게). */
+    private Map<String, Object> bookSummary(Book book, MarketRun market) {
         Map<String, List<NavRow>> navByBook = new HashMap<>();
         navByBook.put(book.code(), store.navSeries(book.code()));
         String benchmark = market.benchmarkOf(book.code());
@@ -603,11 +611,13 @@ public class PaperQueryService {
             return notReady();
         }
         Book book = existing(code);
+        // 이 조회의 시장 문맥(그 책의 시장) — 보유 거래일의 달력 한 벌.
+        MarketRun run = markets.open(marketOf(book));
         Optional<BookState> state = store.state(code);
         PaperSettings current = settings.current().settings();
         boolean benchmark = PaperBooks.KIND_BENCHMARK.equals(book.kind());
         Double nav = state.map(BookState::nav).orElse(null);
-        TradingCalendar calendar = marketOf(book).calendar();
+        TradingCalendar calendar = run.calendar();
         // 달력이 모르는 해(공휴일 목록 없음)에 닿으면 보유 거래일만 null + 사유 — 응답 전체를 실패시키지 않습니다(명세 K35).
         LocalDate session = null;
         String calendarGap = null;
@@ -675,7 +685,7 @@ public class PaperQueryService {
         }
         Map<String, Object> out = new LinkedHashMap<>();
         out.put("available", true);
-        out.put("book", bookSummary(code));
+        out.put("book", bookSummary(book, run));
         out.put("positions", rows);
         out.put("lockouts", lockouts);
         out.put("cash", state.map(s -> round2(s.cash())).orElse(null));

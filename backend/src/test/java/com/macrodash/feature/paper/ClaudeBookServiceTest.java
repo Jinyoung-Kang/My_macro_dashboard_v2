@@ -46,6 +46,7 @@ import static com.macrodash.feature.paper.PaperFixtures.MON;
 import static com.macrodash.feature.paper.PaperFixtures.MON_FINAL;
 import static com.macrodash.feature.paper.PaperFixtures.bar;
 import static com.macrodash.feature.paper.PaperFixtures.quotes;
+import static com.macrodash.feature.paper.PaperFixtures.market;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.assertj.core.api.Assertions.within;
@@ -105,7 +106,7 @@ class ClaudeBookServiceTest {
         store.dbNow = NOW;
         reader = PaperFixtures.quietReader();
         marketData = mock(PaperMarketData.class);
-        when(marketData.quotes(UsPaperMarket.INSTANCE)).thenReturn(Optional.of(quotes(MON_FINAL,
+        when(marketData.quotes(market(UsPaperMarket.INSTANCE))).thenReturn(Optional.of(quotes(MON_FINAL,
                 bar("AAA", FRI, 99, MON, 100), bar("HELD", FRI, 99, MON, 100), bar("SHY", FRI, 82, MON, 82.5),
                 bar("SPY", FRI, 680, MON, 681), bar("XLK", FRI, 200, MON, 201), bar("XLF", FRI, 50, MON, 51),
                 bar("XLE", FRI, 90, MON, 91), bar("XLV", FRI, 140, MON, 141), bar("XLI", FRI, 130, MON, 131),
@@ -119,7 +120,7 @@ class ClaudeBookServiceTest {
                 MEASURE));
         settings = PaperFixtures.settings(store);
         store.initSettingsIfAbsent(settings.defaultsJson());
-        ledger = new PaperLedgerService(store, marketData, settings, MAPPER);
+        ledger = new PaperLedgerService(store, marketData, MAPPER);
 
         server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
         server.createContext("/v1/messages", exchange -> {
@@ -911,7 +912,7 @@ class ClaudeBookServiceTest {
                 FRI_CLOSE);
         // 재진입 금지 11-26까지 — 한국 달력의 다음 세션(11-26)이면 막히고, 미국 달력이었다면 다음 세션이 11-27이라 풀립니다.
         store.upsertLockout(new PaperStore.Lockout(krBook, "KRL", LocalDate.of(2026, 11, 26), "STOP"));
-        when(marketData.quotes(kr)).thenReturn(Optional.of(quotes(Instant.parse("2026-11-25T12:00:00Z"),
+        when(marketData.quotes(market(kr))).thenReturn(Optional.of(quotes(Instant.parse("2026-11-25T12:00:00Z"),
                 bar("KRA", LocalDate.of(2026, 11, 24), 50, wed, 51), bar("KRB", LocalDate.of(2026, 11, 24), 30, wed, 31),
                 bar("KRL", LocalDate.of(2026, 11, 24), 20, wed, 21))));
         store.apiUsage.put(todayKst, new ApiUsage(todayKst, 19, 0, 0, 0, 0));
@@ -970,7 +971,7 @@ class ClaudeBookServiceTest {
         activeCashOnly();
         store.books.put(krBook, TestKrMarket.book(krBook, 100_000, FRI));
         store.states.put(krBook, new BookState(krBook, 100_000, 100_000, 0, 0, FRI_CLOSE, FRI_CLOSE, FRI, null));
-        when(marketData.quotes(kr)).thenReturn(Optional.of(quotes(Instant.parse("2026-11-25T12:00:00Z"),
+        when(marketData.quotes(market(kr))).thenReturn(Optional.of(quotes(Instant.parse("2026-11-25T12:00:00Z"),
                 bar("KRA", LocalDate.of(2026, 11, 24), 50, wed, 51), bar("KRB", LocalDate.of(2026, 11, 24), 30, wed, 31),
                 bar("KRC", LocalDate.of(2026, 11, 24), 20, wed, 21))));
         answerJson(decision(8, null, order("KRA", "BUY", 8.0, null, "NEXT_CLOSE"),
@@ -1012,7 +1013,7 @@ class ClaudeBookServiceTest {
                 FRI_CLOSE, 51.0, FRI_CLOSE, false, LocalDate.of(2025, 12, 15), 50, null));
         store.upsertPosition(new PaperStore.Position(krBook, "KRB", 300, 30, LocalDate.of(2026, 11, 2), FRI_CLOSE, 31,
                 FRI_CLOSE, 31.0, FRI_CLOSE, false, LocalDate.of(2026, 11, 2), 30, null));
-        when(marketData.quotes(kr)).thenReturn(Optional.of(quotes(Instant.parse("2026-11-25T12:00:00Z"),
+        when(marketData.quotes(market(kr))).thenReturn(Optional.of(quotes(Instant.parse("2026-11-25T12:00:00Z"),
                 bar("KRA", LocalDate.of(2026, 11, 24), 50, wed, 51), bar("KRB", LocalDate.of(2026, 11, 24), 30, wed, 31))));
         answerJson(decision(10, null, order("KRA", "SELL", null, 1.0, "NEXT_CLOSE"),
                 order("KRB", "SELL", null, 1.0, "NEXT_CLOSE")));
@@ -1037,6 +1038,57 @@ class ClaudeBookServiceTest {
                 .isInstanceOf(IllegalArgumentException.class).hasMessageContaining("KR");
         assertThat(store.decisions).isEmpty();
         assertThat(hits.get()).isZero();
+    }
+
+    @Test
+    @DisplayName("한 실행 = 달력 한 벌·설정 판 하나(C1a): 결정 작업 한 번이 그 시장 달력을 한 번만 만들어 장부·관측치 요약·Claude 파이프라인(주문 만료)이 그 한 벌을 쓰고, 실행을 연 뒤 저장된 새 설정 판이 끼어도 결정 행의 settings_version·패킷·시스템 프롬프트는 그 실행이 읽은 판")
+    void decisionRunUsesOneCalendarAndTheSettingsVersionItRead() throws Exception {
+        List<CountingCalendar> opened = new java.util.ArrayList<>();
+        TestKrMarket kr = TestKrMarket.perRun(CountingCalendar.factory(opened, new java.util.ArrayList<>()));
+        String krBook = TestKrMarket.CLAUDE_BOOK;
+        store.books.put(krBook, TestKrMarket.book(krBook, 100_000, FRI));
+        store.states.put(krBook, new BookState(krBook, 100_000, 100_000, 0, 0, null, null, null, null));
+        int version = store.settings().orElseThrow().version();
+        Instant collected = Instant.parse("2026-10-26T12:00:00Z");   // 월 21:00 KST — 시험용 한국 달력으로 확정 종가 뒤
+        // 실행을 연 뒤(결정 작업이 관측치를 읽는 순간) 설정 탭에서 새 판을 저장 — 최대 종목 수 20 → 7.
+        AtomicInteger quoteReads = new AtomicInteger();
+        when(marketData.quotes(PaperFixtures.market(kr))).thenAnswer(invocation -> {
+            if (quoteReads.getAndIncrement() == 0) {
+                ObjectNode saved = ((ObjectNode) store.settings.body()).deepCopy();
+                saved.put("maxPositions", 7);
+                store.saveSettings(saved, List.of("maxPositions"));
+            }
+            return Optional.of(quotes(collected, bar("KRA", FRI, 50, MON, 51)));
+        });
+        answerJson(decision(8, null, order("KRA", "BUY", 8.0, null, "NEXT_CLOSE")));
+        List<String> krPacketCalls = new java.util.ArrayList<>();
+        Instant now = Instant.parse("2026-10-26T13:40:00Z");   // 월 22:40 KST — 시험용 한국 결정 시각(22:30) 뒤
+        ClaudeBookService service = serviceWithKr(kr, now, krPacketCalls);
+        PaperDecisionJob job = new PaperDecisionJob(store, reader, marketData, ledger, selection,
+                mock(RuleBookService.class), service, settings, PaperFixtures.config(), MAPPER,
+                Clock.fixed(now, ZoneOffset.UTC), List.of(kr));
+
+        PaperDecisionJob.Result result = job.run(kr);
+
+        assertThat(result.outcome()).isEqualTo(PaperDecisionJob.DECIDED);
+        assertThat(quoteReads.get()).as("결정 작업·결정 저장 두 번 읽음").isEqualTo(2);
+        assertThat(store.settings().orElseThrow().version()).as("실행 도중 새 판이 저장됨").isEqualTo(version + 1);
+        Decision d = result.claude();
+        assertThat(d.status()).isEqualTo(ClaudeBookService.STATUS_OK);
+        assertThat(d.settingsVersion()).as("결정 행의 settings_version = 그 실행이 읽은 판").isEqualTo(version);
+        assertThat(krPacketCalls).as("패킷도 그 판으로").containsExactly(MON + " SCHEDULED false v0 s" + version);
+        assertThat(systemText(requests.get(0))).as("시스템 프롬프트의 하드 규칙도 그 판(20종목)")
+                .contains("- 시험용 한국 하드 규칙 — 최대 20종목").doesNotContain("최대 7종목");
+        assertThat(opened).as("결정 작업 한 번에 달력 한 벌 — 실행 밖에서 달력을 물으면 이 시장 묶음은 던짐").hasSize(1);
+        assertThat(opened.get(0).calls()).isPositive();
+        assertThat(store.states.get(krBook).lastProcessedCollectedAt()).as("장부도 그 실행으로 돎").isEqualTo(collected);
+        assertThat(store.navSeries(krBook)).extracting(PaperStore.NavRow::tradingDate, PaperStore.NavRow::pricesFinal)
+                .containsExactly(org.assertj.core.groups.Tuple.tuple(MON, true));
+        assertThat(store.ordersOf(krBook)).filteredOn(o -> Long.valueOf(d.id()).equals(o.decisionId()))
+                .extracting(Order::ticker, Order::status, Order::expiresOn)
+                .as("주문 만료 = 그 실행 달력의 3거래일 뒤(서울 평일 목요일)")
+                .containsExactly(org.assertj.core.groups.Tuple.tuple("KRA", "PENDING", LocalDate.of(2026, 10, 29)));
+        assertThat(store.jobRuns).extracting(PaperStore.JobRun::job).containsExactly("kr.decision");
     }
 
     // ------------------------------------------------------------------ 호출하는 사이의 변화·응답 뒤 오류

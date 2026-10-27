@@ -25,6 +25,7 @@ import static com.macrodash.feature.paper.PaperFixtures.bar;
 import static com.macrodash.feature.paper.PaperFixtures.pending;
 import static com.macrodash.feature.paper.PaperFixtures.position;
 import static com.macrodash.feature.paper.PaperFixtures.quotes;
+import static com.macrodash.feature.paper.PaperFixtures.market;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
@@ -56,7 +57,7 @@ class PaperMarketIsolationTest {
     void setUp() {
         store = new FakePaperStore();
         marketData = mock(PaperMarketData.class);
-        ledger = new PaperLedgerService(store, marketData, PaperFixtures.settings(store), PaperFixtures.MAPPER);
+        ledger = new PaperLedgerService(store, marketData, PaperFixtures.MAPPER);
     }
 
     /** 미국 Claude 책(대기 매수 AAA)과 시험용 한국 책(보유 005930·대기 매수 000660)을 같은 저장소에. */
@@ -152,8 +153,7 @@ class PaperMarketIsolationTest {
             }
         };
         twoMarkets(failing);
-        PaperLedgerService service = new PaperLedgerService(failing, marketData, PaperFixtures.settings(failing),
-                PaperFixtures.MAPPER);
+        PaperLedgerService service = new PaperLedgerService(failing, marketData, PaperFixtures.MAPPER);
         Quotes kr = krQuotes();
         Quotes us = usQuotes(KR_EVENING);   // 수집 시각까지 같은 미국 관측치(최악의 경우)
 
@@ -179,8 +179,8 @@ class PaperMarketIsolationTest {
     @DisplayName("리스크 점검 정기 실행은 시장마다 그 시장 저장본을 읽어 그 시장 책에만 적용하고, 그 시장 이름(kr.risk)과 그 시장 달력으로 기록한다")
     void riskJobRunsEachMarketSeparately() {
         twoMarkets(store);
-        when(marketData.quotes(US)).thenReturn(Optional.of(usQuotes(MON_INTRADAY)));
-        when(marketData.quotes(KR)).thenReturn(Optional.of(krQuotes()));
+        when(marketData.quotes(market(US))).thenReturn(Optional.of(usQuotes(MON_INTRADAY)));
+        when(marketData.quotes(market(KR))).thenReturn(Optional.of(krQuotes()));
         PaperRiskJob job = new PaperRiskJob(store, PaperFixtures.quietReader(), marketData, ledger,
                 PaperFixtures.config(), PaperFixtures.MAPPER, Clock.fixed(MON_INTRADAY.plusSeconds(30), ZoneOffset.UTC),
                 List.of(US, KR));
@@ -197,7 +197,7 @@ class PaperMarketIsolationTest {
         assertThat(store.fillsOf(KR_BOOK)).extracting(fill -> fill.ticker()).containsExactly("000660");
 
         // 한 시장의 '저장본 없음'이 다른 시장을 막지 않음 — 안내 문구는 그 시장의 데이터셋·태스크
-        when(marketData.quotes(KR)).thenReturn(Optional.empty());
+        when(marketData.quotes(market(KR))).thenReturn(Optional.empty());
         assertThat(job.runNow(KR).skippedReason()).contains(TestKrMarket.QUOTES_DATASET)
                 .contains(TestKrMarket.QUOTES_TASK);
         verify(marketData, never()).quotes();

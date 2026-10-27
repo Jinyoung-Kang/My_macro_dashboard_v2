@@ -91,19 +91,21 @@ class UsPaperMarketTest {
     @Test
     @DisplayName("시장 목록(주입 빈) = 운영 목록 미국 하나, 책 행의 시장 코드로 찾음(모르는 코드는 없음) — 시험 목록은 받은 순서, 빈 목록·같은 코드 둘은 거절")
     void marketsLookup() {
-        PaperMarkets production = new PaperMarkets();
+        FakePaperStore store = new FakePaperStore();
+        com.macrodash.read.StoreReader reader = PaperFixtures.quietReader();
+        PaperMarkets production = new PaperMarkets(store, reader);
         assertThat(PaperMarkets.PRODUCTION).containsExactly(US);
         assertThat(production.all()).containsExactly(US);
         assertThat(production.of("US")).containsSame(US);
         assertThat(production.of("KR")).isEmpty();
         assertThat(production.of(null)).isEmpty();
 
-        PaperMarkets both = new PaperMarkets(List.of(TestKrMarket.INSTANCE, US));
+        PaperMarkets both = new PaperMarkets(store, reader, List.of(TestKrMarket.INSTANCE, US));
         assertThat(both.all()).containsExactly(TestKrMarket.INSTANCE, US);
         assertThat(both.of("KR")).containsSame(TestKrMarket.INSTANCE);
-        org.assertj.core.api.Assertions.assertThatThrownBy(() -> new PaperMarkets(List.of()))
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> new PaperMarkets(store, reader, List.of()))
                 .isInstanceOf(IllegalArgumentException.class);
-        org.assertj.core.api.Assertions.assertThatThrownBy(() -> new PaperMarkets(List.of(US, US)))
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> new PaperMarkets(store, reader, List.of(US, US)))
                 .isInstanceOf(IllegalArgumentException.class).hasMessageContaining("US");
     }
 

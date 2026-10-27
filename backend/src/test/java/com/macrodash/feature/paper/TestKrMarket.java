@@ -16,6 +16,7 @@ import java.time.ZoneId;
 import java.time.ZonedDateTime;
 import java.util.List;
 import java.util.Map;
+import java.util.function.Function;
 
 /**
  * 시험용 한국 시장 묶음 — 시장 격리 시험(2단계 명세 §9 A5)이 "받은 시장의 책·달력·데이터셋만 쓰는가"를 보려고 씁니다. 실제 한국
@@ -40,7 +41,8 @@ final class TestKrMarket implements PaperMarket {
     /** 시험용 시스템 프롬프트 고정 문단 — 미국 고정 문단과 일부러 다른 글자(줄 끝 공백·빈 줄은 렌더링이 정리). */
     static final String FIXED_RULES = "## 시험용 한국 고정(고정)   \n- 시험용 체결 시점 문장\n\n";
 
-    private static final TradingCalendar SEOUL_WEEKDAYS = new TradingCalendar() {
+    /** 주말만 쉬는 서울 09:00~15:30 장(시험용 — 실제 KRX 달력 아님). */
+    static final TradingCalendar SEOUL_WEEKDAYS = new TradingCalendar() {
         @Override
         public ZoneId zone() {
             return Kst.ZONE;
@@ -74,12 +76,25 @@ final class TestKrMarket implements PaperMarket {
     };
 
     /** 주말만 쉬는 달력의 시험용 한국 묶음(아래 상수 뒤에 둬야 달력이 먼저 만들어짐). */
-    static final TestKrMarket INSTANCE = new TestKrMarket(SEOUL_WEEKDAYS);
+    static final TestKrMarket INSTANCE = new TestKrMarket(SEOUL_WEEKDAYS, null);
 
+    /** 고정 달력 — 실행마다 달력을 만드는 판({@link #perRun})이면 null. */
     private final TradingCalendar calendar;
+    /** 실행마다 달력을 만드는 함수({@link #perRun}) — 고정 달력 판이면 null. */
+    private final Function<MarketRun.Inputs, TradingCalendar> perRun;
 
-    private TestKrMarket(TradingCalendar calendar) {
+    private TestKrMarket(TradingCalendar calendar, Function<MarketRun.Inputs, TradingCalendar> perRun) {
         this.calendar = calendar;
+        this.perRun = perRun;
+    }
+
+    /**
+     * 실행마다 달력을 만드는 시험용 한국 묶음(C1a — 실제 한국 묶음 {@code KrPaperMarket}이 C1b에서 그렇게 됨): 고정 달력이 없어
+     * {@link #calendar()}가 던지고, 실행을 열 때({@link PaperMarkets#open})만 {@code factory}가 달력을 만듭니다. 한 실행이 달력을 한
+     * 벌만 쓰는지(실행 밖 경로가 달력을 묻지 않는지)를 보는 시험이 씁니다. 나머지는 {@link #INSTANCE}와 같습니다.
+     */
+    static TestKrMarket perRun(Function<MarketRun.Inputs, TradingCalendar> factory) {
+        return new TestKrMarket(null, java.util.Objects.requireNonNull(factory));
     }
 
     /**
@@ -87,7 +102,7 @@ final class TestKrMarket implements PaperMarket {
      * 시각)는 {@link #INSTANCE}와 같습니다.
      */
     static TestKrMarket withCalendar(TradingCalendar calendar) {
-        return new TestKrMarket(calendar);
+        return new TestKrMarket(calendar, null);
     }
 
     /** 시험용 한국 책 한 권(운용 중) — 시장·통화가 KR·KRW. */
@@ -108,7 +123,15 @@ final class TestKrMarket implements PaperMarket {
 
     @Override
     public TradingCalendar calendar() {
+        if (calendar == null) {
+            throw new IllegalStateException("시험용 한국 묶음(실행마다 달력) — 실행 문맥(MarketRun) 밖에서 달력을 물었습니다");
+        }
         return calendar;
+    }
+
+    @Override
+    public TradingCalendar openCalendar(MarketRun.Inputs inputs) {
+        return perRun == null ? calendar() : perRun.apply(inputs);
     }
 
     @Override

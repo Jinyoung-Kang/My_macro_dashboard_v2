@@ -35,6 +35,7 @@ import static com.macrodash.feature.paper.PaperFixtures.pending;
 import static com.macrodash.feature.paper.PaperFixtures.position;
 import static com.macrodash.feature.paper.PaperFixtures.quotes;
 import static com.macrodash.feature.paper.PaperFixtures.staleBar;
+import static com.macrodash.feature.paper.PaperFixtures.market;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.data.Offset.offset;
 import static org.mockito.ArgumentMatchers.any;
@@ -61,7 +62,7 @@ class PaperLedgerServiceTest {
         store = new FakePaperStore();
         marketData = mock(PaperMarketData.class);
         when(marketData.history(anyCollection(), any(), any())).thenReturn(Map.of());
-        ledger = new PaperLedgerService(store, marketData, PaperFixtures.settings(store), PaperFixtures.MAPPER);
+        ledger = new PaperLedgerService(store, marketData, PaperFixtures.MAPPER);
     }
 
     private List<Fill> fills() {
@@ -517,8 +518,8 @@ class PaperLedgerServiceTest {
             activeBook(store, BOOK, PaperBooks.KIND_CLAUDE, 0, null);
             LocalDate old = LocalDate.of(2026, 6, 1);
             position(store, BOOK, "XYZ", 10, 300, 300, 300.0, old, 300);
-            when(marketData.history(eq(UsPaperMarket.INSTANCE), anyCollection(), eq(old), eq(old))).thenReturn(Map.of(
-                    "XYZ", new DailySeries(new int[]{(int) old.toEpochDay()}, new double[]{100})));
+            when(marketData.history(market(UsPaperMarket.INSTANCE), anyCollection(), eq(old), eq(old)))
+                    .thenReturn(Map.of("XYZ", new DailySeries(new int[]{(int) old.toEpochDay()}, new double[]{100})));
 
             ledger.process(quotes(MON_INTRADAY, bar("XYZ", FRI, 101, MON, 102)));
 
@@ -737,8 +738,7 @@ class PaperLedgerServiceTest {
                     super.upsertState(s);
                 }
             };
-            PaperLedgerService service = new PaperLedgerService(failing, marketData, PaperFixtures.settings(failing),
-                    PaperFixtures.MAPPER);
+            PaperLedgerService service = new PaperLedgerService(failing, marketData, PaperFixtures.MAPPER);
             activeBook(failing, PaperBooks.CLAUDE, PaperBooks.KIND_CLAUDE, 100_000, null);
             activeBook(failing, PaperBooks.BENCH_SPY, PaperBooks.KIND_BENCHMARK, 100_000, null);
             pending(failing, PaperBooks.CLAUDE, "AAA", "BUY", 10, null, null, "NEXT_OBSERVATION", FRI, SAT);
@@ -922,7 +922,7 @@ class PaperLedgerServiceTest {
 
     /** 관측치 하나를 리스크 작업(정기 실행 경로)으로 — 작업 시계는 수집 30초 뒤. 결과와 책마다 상태 한 줄. */
     private void risk(StringBuilder out, String step, java.time.Instant at, PaperMarketData.Quotes quotes) {
-        when(marketData.quotes(UsPaperMarket.INSTANCE)).thenReturn(java.util.Optional.of(quotes));
+        when(marketData.quotes(market(UsPaperMarket.INSTANCE))).thenReturn(java.util.Optional.of(quotes));
         PaperRiskJob job = new PaperRiskJob(store, PaperFixtures.quietReader(), marketData, ledger,
                 PaperFixtures.config(), PaperFixtures.MAPPER, java.time.Clock.fixed(at.plusSeconds(30),
                 java.time.ZoneOffset.UTC));

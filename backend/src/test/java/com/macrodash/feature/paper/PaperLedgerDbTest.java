@@ -79,7 +79,7 @@ class PaperLedgerDbTest {
         reader = PaperFixtures.quietReader();
         marketData = new PaperMarketData(reader, new StoreRepository(jdbc, MAPPER), AFTER_START);
         PaperSettingsService settings = new PaperSettingsService(store, MAPPER);
-        ledger = new PaperLedgerService(store, marketData, settings, MAPPER);
+        ledger = new PaperLedgerService(store, marketData, MAPPER);
         admin = new PaperAdminService(store, marketData, reader, settings, ledger, PaperFixtures.config(), MAPPER,
                 AFTER_START);
     }

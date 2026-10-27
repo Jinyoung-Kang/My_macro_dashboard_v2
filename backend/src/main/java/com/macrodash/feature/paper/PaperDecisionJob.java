@@ -89,6 +89,11 @@ import java.util.concurrent.locks.ReentrantLock;
  * {@value #JOB})을 그 시장 것으로 씁니다. 게이트 지표·13F 재선정·규칙 책 결정({@link RuleBookService})은 미국 전용 단계라 미국 묶음에서만
  * 돌고(한국은 게이트가 없고 규칙 책은 2단계 D1), Claude 책 결정은 그 시장 문맥으로 냅니다({@link ClaudeBookService}). 잠금은 시장과
  * 상관없이 하나입니다. 시장을 받지 않는 옛 시그니처(한 번 실행·수동 실행·시각 설정)는 미국 판입니다.
+ *
+ * <p><b>실행 하나 = 달력 한 벌·설정 판 하나</b>(C1a): 정기·수동 실행은 시작할 때 그 시장의 실행 문맥({@link MarketRun})을 한 번 열어
+ * ({@link PaperMarkets#open}) 세션 d·결정 시각과 기한·관측치 확정 판정·장부 처리·미확정 순자산 줄·Claude 결정에 그대로 넘깁니다 —
+ * 그 사이 설정 탭에서 새 판을 저장해도 Claude 결정 행의 {@code settings_version}·패킷·시스템 프롬프트는 이 실행이 읽은 판이고,
+ * 한국 달력(공휴일 저장본·설정 판으로 만듦, C1b)도 실행마다 한 벌입니다.
  */
 @Service
 public class PaperDecisionJob {
@@ -181,7 +186,7 @@ public class PaperDecisionJob {
                      PaperSelectionService selection, RuleBookService rules, ClaudeBookService claude,
                      PaperSettingsService settings, PaperConfig config, ObjectMapper mapper, Clock clock) {
         this(store, reader, marketData, ledger, selection, rules, claude, settings, config, mapper, clock,
-                new PaperMarkets());
+                new PaperMarkets(store, reader));
     }
 
     /** 테스트용 — 시계와 시장 목록을 바꿉니다(시장 격리 시험이 시험용 한국 시장을 넣음). */
@@ -190,7 +195,7 @@ public class PaperDecisionJob {
                      PaperSettingsService settings, PaperConfig config, ObjectMapper mapper, Clock clock,
                      List<PaperMarket> markets) {
         this(store, reader, marketData, ledger, selection, rules, claude, settings, config, mapper, clock,
-                new PaperMarkets(markets));
+                new PaperMarkets(store, reader, markets));
     }
 
     private PaperDecisionJob(PaperStore store, StoreReader reader, PaperMarketData marketData,
@@ -260,11 +265,13 @@ public class PaperDecisionJob {
         }
     }
 
-    private Result runLocked(PaperMarket market) {
+    private Result runLocked(PaperMarket requested) {
         if (!store.ready()) {
             return new Result(NOT_READY, null, null, null, null, PaperQueryService.NOT_READY_MESSAGE);
         }
         Instant now = clock.instant();
+        // 이 실행의 시장 문맥 — 달력 한 벌과 설정 행 하나(시각·장부·Claude 결정이 같은 판, 클래스 설명).
+        MarketRun market = markets.open(requested);
         try {
             market.requireCalendarWindow(now);
             calendarGaps.clear(market);
@@ -275,7 +282,7 @@ public class PaperDecisionJob {
         if (store.books(market.code()).isEmpty()) {
             return new Result(NOT_INITIALIZED, d, null, null, null, "초기화 전입니다 — 계좌가 없습니다");
         }
-        Times times = times(market);
+        Times times = times(market, market.settingsBody());
         Instant decisionAt = market.decisionInstant(d, times.decision());
         if (now.isBefore(decisionAt)) {
             return new Result(TOO_EARLY, d, null, null, null, "결정 시각 " + Kst.stamp(decisionAt) + " 전");
@@ -371,7 +378,7 @@ public class PaperDecisionJob {
      * 때만 참입니다.
      */
     private static boolean usSteps(PaperMarket market) {
-        return market == UsPaperMarket.INSTANCE;
+        return market.definition() == UsPaperMarket.INSTANCE;
     }
 
     /**
@@ -487,14 +494,15 @@ public class PaperDecisionJob {
      * @throws InvalidRequestException 책 코드가 그 시장의 규칙·Claude 책이 아님(미국 밖 시장은 Claude 책만), 그 책이 시작 전, Claude 책이
      *                                 일시정지 중, 그 시장 달력이 앞 창의 해를 모름('달력 없음' — 명세 K35)
      */
-    Decision runNow(PaperMarket market, String book) {
-        String code = Params.oneOf("book", book, usSteps(market) ? List.of(market.rulesBook(), market.claudeBook())
-                : List.of(market.claudeBook()));
+    Decision runNow(PaperMarket requested, String book) {
+        String code = Params.oneOf("book", book, usSteps(requested)
+                ? List.of(requested.rulesBook(), requested.claudeBook()) : List.of(requested.claudeBook()));
         running.lock();
         try {
             // 그 책의 오류 횟수만 지웁니다(클래스 설명) — 다른 책·다른 시장의 포기 상태는 그대로.
-            failures.keySet().removeIf(key -> key.market().equals(market.code()) && key.book().equals(code));
+            failures.keySet().removeIf(key -> key.market().equals(requested.code()) && key.book().equals(code));
             Instant now = clock.instant();
+            MarketRun market = markets.open(requested);
             try {
                 market.requireCalendarWindow(now);
             } catch (CalendarUnavailableException e) {
@@ -604,7 +612,11 @@ public class PaperDecisionJob {
      * 없거나 틀리면 그 시장 기본값(미국 07:30·12:00), 기한이 결정 시각보다 앞이면 기한을 결정 시각으로 봅니다(기다리지 않고 바로 진행).
      */
     Times times(PaperMarket market) {
-        var body = store.settings().map(PaperStore.SettingsRow::body).orElse(null);
+        return times(market, store.settings().map(PaperStore.SettingsRow::body).orElse(null));
+    }
+
+    /** 받은 설정 본문(실행이 읽은 판 — 없으면 null)의 결정 시각·마감 기한({@link #times(PaperMarket)}과 같은 규칙). */
+    private static Times times(PaperMarket market, JsonNode body) {
         LocalTime decision = decisionTime(market, body);
         LocalTime deadline = time(text(body, market.settingKey("decisionDeadlineKst")), market.defaultDeadline());
         return new Times(decision, deadline.isBefore(decision) ? decision : deadline);

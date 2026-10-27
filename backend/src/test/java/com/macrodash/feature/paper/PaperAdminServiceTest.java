@@ -60,7 +60,7 @@ class PaperAdminServiceTest {
         marketData = mock(PaperMarketData.class);
         when(marketData.history(anyCollection(), any(), any())).thenReturn(Map.of());
         when(marketData.sourcedCloseOn(anyString(), any())).thenReturn(Optional.empty());
-        ledger = new PaperLedgerService(store, marketData, PaperFixtures.settings(store), PaperFixtures.MAPPER);
+        ledger = new PaperLedgerService(store, marketData, PaperFixtures.MAPPER);
     }
 
     private PaperAdminService admin(Clock clock) {
