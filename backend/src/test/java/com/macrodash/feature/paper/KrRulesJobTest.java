@@ -307,6 +307,23 @@ class KrRulesJobTest {
     }
 
     @Test
+    @DisplayName("일시정지 규칙 계좌 — 장부가 사고팔지 않아 남은 기준일 < D 대기 주문이 게이트 ①을 막지 않고 그 세션은 SKIPPED(입력·주문 없음)")
+    void pausedBookIsNotHeldByGateOne() {
+        session(R);
+        long stale = pending("005930", PaperBooks.BUY, PaperBooks.NEXT_OPEN, RuleBookService.SOURCE_RULE, FRI,
+                "2026-10-30T22:30");
+        store.updateBookStatus(PaperBooks.KR_RULES, PaperBooks.PAUSED);
+
+        PaperDecisionJob.Result result = runAt("2026-11-02T22:30");
+
+        assertThat(result.outcome()).isEqualTo(PaperDecisionJob.DECIDED);
+        assertThat(result.rules().status()).isEqualTo(RuleBookService.STATUS_SKIPPED);
+        assertThat(store.orders.get(stale).status()).isEqualTo(PaperBooks.ORDER_PENDING);
+        assertThat(krRuns()).singleElement().satisfies(run -> assertThat(run.detail().path("gates").get(0).path("note")
+                .asString()).contains("일시정지"));
+    }
+
+    @Test
     @DisplayName("기한이 지났는데 ⑤는 통과(④만 미달) — NO_TRADE 사유는 '기한 지남', 기다린 까닭은 waitedFor에")
     void pastDeadlineWithoutAnchorProblem() {
         quotes(R, Set.of());

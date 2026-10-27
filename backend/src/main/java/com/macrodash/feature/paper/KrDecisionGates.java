@@ -31,7 +31,7 @@ import java.util.Optional;
  *       없음(결정 d11 '대기 = 정리 안 됨'). 확정 순자산 줄의 대기 주문 조건과 같은 거름({@link KrConfirmations#pendingBefore})이되 체결 조건 ⑤
  *       (D 개장 순간 &gt; 주문 생성)는 보지 않습니다 — D 개장 뒤에 만든 주문도 아직 체결되지 않은 대기입니다(결정 e3). 결정하는 계좌마다 따로
  *       봅니다(그 계좌의 주문 — 한 계좌의 대기 주문이 다른 계좌 결정을 막지 않게, 두 책은 따로). 정기 결정 작업이 그 실행에서 장부를 처리한
- *       뒤에 봅니다</li>
+ *       뒤에 봅니다. 일시정지 계좌는 보지 않습니다(장부가 사고팔지 않아 정리되지 않고, 그 결정은 주문 없는 SKIPPED)</li>
  *   <li>② 수집 범위 90% 이상에 D 봉 — {@code paper.kr.quotes} 머리 {@code session} = D이고, {@code scope}의 종목 중 이어받지 않은 항목의
  *       마지막 봉 날짜가 D인 비율(수집기 {@code _has_session_bar}와 같은 규칙)</li>
  *   <li>③ U 90% 이상에 D 수급 — U 구성원 중 D 기록의 토스 판({@code updatedAt})이 D 15:35 KST 이후이고 기관 세부 칸이 채워진
@@ -162,6 +162,10 @@ final class KrDecisionGates {
      * ① 그 계좌의 장부가 앞 결정의 주문을 정리함(클래스 설명) — 기준 거래일 &lt; D·체결하는 시점인 대기 주문이 없음. 판정 문구 머리에 계좌 코드.
      */
     static Gate ledger(PaperStore store, PaperMarket market, String book, LocalDate d) {
+        if (store.book(book).map(b -> PaperBooks.PAUSED.equals(b.status())).orElse(false)) {
+            // 일시정지 계좌는 장부가 사고팔지 않아 대기 주문이 정리되지 않고, 그 결정은 주문을 내지 않습니다(SKIPPED) — 막을 까닭이 없음.
+            return new Gate("①", "PASS", book + " — 일시정지 중(주문을 내지 않음 — 대기 주문을 보지 않음)");
+        }
         List<Order> pending = KrConfirmations.pendingBefore(store, market, book, d);
         if (pending.isEmpty()) {
             return new Gate("①", "PASS", book + " — 기준일 < " + d + "인 대기 주문 없음(앞 결정의 주문이 정리됨)");
