@@ -66,6 +66,7 @@ B9_WRITERS = {
     "OBS_KR_NEWS_HEADLINE": "tasks/kr_news.py",
     "SNAP_KR_NEWS_STATUS": "tasks/kr_news.py",
     "SNAP_KR_CALENDAR": "tasks/kr_calendar.py",
+    "SNAP_US_CONSENSUS": "tasks/us_consensus.py",
 }
 B9_WRITE = re.compile(
     r"\b(put_snapshot|put_observations|put_entity_observations|replace_observations|insert_new_observations|"

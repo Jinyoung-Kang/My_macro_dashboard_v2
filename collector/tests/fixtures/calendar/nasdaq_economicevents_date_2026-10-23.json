@@ -1,0 +1,139 @@
+{
+ "data": {
+  "asOf": "Mon, Oct 26, 2026",
+  "headers": {
+   "gmt": "Time",
+   "country": "Country",
+   "eventName": "Event",
+   "actual": "Actual",
+   "consensus": "Consensus",
+   "previous": "Previous",
+   "description": "Description"
+  },
+  "rows": [
+   {
+    "gmt": "24H",
+    "country": "United Kingdom",
+    "eventName": "Car Registration",
+    "actual": "12.0%",
+    "consensus": " ",
+    "previous": "13.7%",
+    "description": "(생략)"
+   },
+   {
+    "gmt": "24H",
+    "country": "United Kingdom",
+    "eventName": "Car Registration",
+    "actual": "272.0%",
+    "consensus": " ",
+    "previous": "-39.8%",
+    "description": "(생략)"
+   },
+   {
+    "gmt": "08:30",
+    "country": "United States",
+    "eventName": "Continuing Jobless Claims",
+    "actual": "1,728K",
+    "consensus": "1,720K",
+    "previous": "1,703K",
+    "description": "(생략)"
+   },
+   {
+    "gmt": "08:30",
+    "country": "United States",
+    "eventName": "Initial Jobless Claims",
+    "actual": "194K",
+    "consensus": "200K",
+    "previous": "200K",
+    "description": "(생략)"
+   },
+   {
+    "gmt": "08:30",
+    "country": "United States",
+    "eventName": "Jobless Claims 4-Week Avg.",
+    "actual": "197.75K",
+    "consensus": "200.00K",
+    "previous": "198.75K",
+    "description": "(생략)"
+   },
+   {
+    "gmt": "10:00",
+    "country": "United States",
+    "eventName": "US Leading Index",
+    "actual": "0.0%",
+    "consensus": "-0.1%",
+    "previous": "-0.1%",
+    "description": "(생략)"
+   },
+   {
+    "gmt": "10:30",
+    "country": "United States",
+    "eventName": "Natural Gas Storage",
+    "actual": "77B",
+    "consensus": "80B",
+    "previous": "67B",
+    "description": "(생략)"
+   },
+   {
+    "gmt": "11:00",
+    "country": "United States",
+    "eventName": "KC Fed Composite Index",
+    "actual": "11",
+    "consensus": "12",
+    "previous": "14",
+    "description": "(생략)"
+   },
+   {
+    "gmt": "11:00",
+    "country": "United States",
+    "eventName": "KC Fed Manufacturing Index",
+    "actual": "16",
+    "consensus": " ",
+    "previous": "20",
+    "description": "(생략)"
+   },
+   {
+    "gmt": "11:30",
+    "country": "United States",
+    "eventName": "4-Week Bill Auction",
+    "actual": "3.945%",
+    "consensus": " ",
+    "previous": "4.000%",
+    "description": "(생략)"
+   },
+   {
+    "gmt": "11:30",
+    "country": "United States",
+    "eventName": "8-Week Bill Auction",
+    "actual": "4.015%",
+    "consensus": " ",
+    "previous": "4.050%",
+    "description": "(생략)"
+   },
+   {
+    "gmt": "16:30",
+    "country": "United States",
+    "eventName": "Fed's Balance Sheet",
+    "actual": "6,754B",
+    "consensus": " ",
+    "previous": "6,756B",
+    "description": "(생략)"
+   },
+   {
+    "gmt": "16:30",
+    "country": "United States",
+    "eventName": "Reserve Balances with Federal Reserve Banks",
+    "actual": "2.969T",
+    "consensus": " ",
+    "previous": "3.030T",
+    "description": "(생략)"
+   }
+  ]
+ },
+ "message": null,
+ "status": {
+  "rCode": 200,
+  "bCodeMessage": null,
+  "developerMessage": null
+ }
+}

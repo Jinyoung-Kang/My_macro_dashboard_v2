@@ -367,10 +367,10 @@ def test_시간_상한은_slow_태스크_상한보다_짧다():
     assert task_module.FRED_TIME_LIMIT_SECONDS < task_module.TIME_LIMIT_SECONDS < tasks.TASK_DEADLINE_SECONDS["slow"]
 
 
-def test_slow에_등록되고_태스크는_34개():
+def test_slow에_등록되고_태스크는_35개():
     task = tasks.TASKS_BY_NAME["us_calendar"]
     assert task.speed == "slow" and task.run is task_module.task_us_calendar
-    assert len(tasks.ALL_TASKS) == len(tasks.TASKS_BY_NAME) == 34  # 2단계 B의 news_headlines·C의 earnings_surprise·v2 B3의 fsc_etf_prices·v2 B4의 kr_paper_universe·kr_paper_quotes·kr_paper_flows·kr_paper_price_history·v2 B9의 kr_news_headlines·kr_calendar까지
+    assert len(tasks.ALL_TASKS) == len(tasks.TASKS_BY_NAME) == 35  # 2단계 B의 news_headlines·C의 earnings_surprise·v2 B3의 fsc_etf_prices·v2 B4의 kr_paper_universe·kr_paper_quotes·kr_paper_flows·kr_paper_price_history·v2 B9의 kr_news_headlines·kr_calendar·us_calendar_consensus까지
 
 
 def test_데이터셋_이름():

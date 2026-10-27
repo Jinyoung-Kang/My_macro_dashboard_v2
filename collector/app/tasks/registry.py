@@ -23,6 +23,7 @@ from .series import (
 )
 from .toss import task_toss_market_flows, task_toss_radar_universe, task_toss_stock_flows
 from .us_calendar import task_us_calendar
+from .us_consensus import task_us_calendar_consensus
 
 logger = logging.getLogger(__name__)
 
@@ -42,6 +43,7 @@ ALL_TASKS: tuple[Task, ...] = (
     Task("equity_history", "slow", task_equity_history, "13F 매핑 종목 일별 종가"),
     Task("paper_quotes", "slow", task_paper_quotes, "모의 매매 유니버스 최근 3개월 일봉 (장부 관측치)"),
     Task("us_calendar", "slow", task_us_calendar, "미국 발표·실적 일정 — FRED 릴리스·FOMC 상수·yfinance 실적일 (모의 매매 Claude 계좌 패킷)"),
+    Task("us_calendar_consensus", "slow", task_us_calendar_consensus, "🧪 미국 지표 컨센서스 — Nasdaq 경제 캘린더, 동부 하루 1회·저장만 (패킷은 calendar.consensus를 켠 뒤)"),
     Task("news_headlines", "slow", task_news_headlines, "사건 뉴스 RSS 헤드라인 — 인베스팅닷컴·연준·BLS·SEC, 7일 보관 (모의 매매 Claude 계좌 패킷)"),
     Task("kr_news_headlines", "slow", task_kr_news_headlines, "🧪 한국 사건 뉴스 RSS 헤드라인 — 한국은행·재정경제부·국가데이터처·연합뉴스 마켓+, 7일 보관 (한국 책 Claude 계좌 패킷)"),
     Task("volatility_history", "slow", task_volatility_history, "VIX·MOVE 변동성 시계열"),

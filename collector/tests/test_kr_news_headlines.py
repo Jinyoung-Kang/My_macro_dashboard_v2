@@ -285,13 +285,13 @@ def _status(store) -> dict:
     return store.read_snapshot(catalog.SNAP_KR_NEWS_STATUS).payload
 
 
-def test_slow에서_미국_뉴스_바로_뒤에_돌고_태스크는_34개():
+def test_slow에서_미국_뉴스_바로_뒤에_돌고_태스크는_35개():
     task = tasks.TASKS_BY_NAME["kr_news_headlines"]
     assert task.speed == "slow" and task.run is task_module.task_kr_news_headlines
     names = [t.name for t in tasks.ALL_TASKS]
     assert names.index("kr_news_headlines") == names.index("news_headlines") + 1
     assert task_module.TIME_LIMIT_SECONDS < tasks.TASK_DEADLINE_SECONDS["slow"]
-    assert len(tasks.ALL_TASKS) == len(tasks.TASKS_BY_NAME) == 34
+    assert len(tasks.ALL_TASKS) == len(tasks.TASKS_BY_NAME) == 35
 
 
 def test_데이터셋_이름은_미국과_따로다():

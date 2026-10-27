@@ -85,6 +85,13 @@ public final class Datasets {
      */
     public static final String SNAP_KR_CALENDAR = "calendar.kr_events";
     /**
+     * 🧪 미국 경제 지표 컨센서스(v2 2단계 B9·K22 — Nasdaq {@code api/calendar/economicevents}, 비공식 참고). <b>저장만</b> — 패킷
+     * {@code 1b_calendar}에 싣는 것은 설정 {@code calendar.consensus}를 한국 책 출발일에 켠 뒤(E1)이고, 그 전에는 어떤 코드도 읽지 않습니다.
+     * {@code {forDate, days: {동부 날짜: {rows: [{name, timeEt, forecast, previous, actual, unit, forecastText, previousText, actualText,
+     * importance}], fetchedAt, isStale?}}, failed}} — 날짜는 공식 출처(FRED·FOMC)가 정하고 이 값은 이름 대응표로 그 줄에 붙이는 층입니다.
+     */
+    public static final String SNAP_US_CONSENSUS = "calendar.us_consensus";
+    /**
      * 모의 매매 Claude 계좌 패킷 {@code 11b_events}(2단계 B)의 수집 상태 — 피드별 성공·실패와 사유({@code feeds}·{@code failedFeeds}),
      * {@code feedsOk}·{@code feedsTotal}, 7일 보관 건수 {@code stored7d}, 마지막 수집 시각 {@code generatedAt}(UTC). 헤드라인 자체는
      * {@link #OBS_NEWS_HEADLINE}에 있습니다.

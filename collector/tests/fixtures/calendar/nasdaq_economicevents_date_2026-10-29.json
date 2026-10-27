@@ -1,0 +1,121 @@
+{
+ "data": {
+  "asOf": "Mon, Oct 26, 2026",
+  "headers": {
+   "gmt": "Time",
+   "country": "Country",
+   "eventName": "Event",
+   "actual": "Actual",
+   "consensus": "Consensus",
+   "previous": "Previous",
+   "description": "Description"
+  },
+  "rows": [
+   {
+    "gmt": "24H",
+    "country": "United Kingdom",
+    "eventName": "Car Registration",
+    "actual": "12.0%",
+    "consensus": " ",
+    "previous": "13.7%",
+    "description": "(생략)"
+   },
+   {
+    "gmt": "07:00",
+    "country": "United States",
+    "eventName": "MBA 30-Year Mortgage Rate",
+    "actual": "&nbsp;",
+    "consensus": " ",
+    "previous": "7.41%",
+    "description": "(생략)"
+   },
+   {
+    "gmt": "07:00",
+    "country": "United States",
+    "eventName": "MBA Mortgage Applications",
+    "actual": "&nbsp;",
+    "consensus": " ",
+    "previous": "-5.3%",
+    "description": "(생략)"
+   },
+   {
+    "gmt": "08:30",
+    "country": "United States",
+    "eventName": "Goods Trade Balance",
+    "actual": "&nbsp;",
+    "consensus": "-130.80B",
+    "previous": "-132.07B",
+    "description": "(생략)"
+   },
+   {
+    "gmt": "08:30",
+    "country": "United States",
+    "eventName": "Wholesale Inventories",
+    "actual": "&nbsp;",
+    "consensus": "0.4%",
+    "previous": "0.5%",
+    "description": "(생략)"
+   },
+   {
+    "gmt": "10:00",
+    "country": "United States",
+    "eventName": "Atlanta Fed GDPNow",
+    "actual": "&nbsp;",
+    "consensus": " ",
+    "previous": "&nbsp;",
+    "description": "(생략)"
+   },
+   {
+    "gmt": "10:30",
+    "country": "United States",
+    "eventName": "Crude Oil Inventories",
+    "actual": "&nbsp;",
+    "consensus": "-0.300M",
+    "previous": "-3.060M",
+    "description": "(생략)"
+   },
+   {
+    "gmt": "10:30",
+    "country": "United States",
+    "eventName": "EIA Refinery Crude Runs ",
+    "actual": "&nbsp;",
+    "consensus": " ",
+    "previous": "0.034M",
+    "description": "(생략)"
+   },
+   {
+    "gmt": "14:00",
+    "country": "United States",
+    "eventName": "FOMC Statement",
+    "actual": "&nbsp;",
+    "consensus": " ",
+    "previous": "&nbsp;",
+    "description": "(생략)"
+   },
+   {
+    "gmt": "14:00",
+    "country": "United States",
+    "eventName": "Fed Interest Rate Decision",
+    "actual": "&nbsp;",
+    "consensus": "4.00%",
+    "previous": "4.00%",
+    "description": "(생략)"
+   },
+   {
+    "gmt": "14:30",
+    "country": "United States",
+    "eventName": "FOMC Press Conference",
+    "actual": "&nbsp;",
+    "consensus": " ",
+    "previous": "&nbsp;",
+    "description": "(생략)"
+   }
+  ]
+ },
+ "message": null,
+ "status": {
+  "rCode": 200,
+  "bCodeMessage": null,
+  "developerMessage": null
+ }
+}

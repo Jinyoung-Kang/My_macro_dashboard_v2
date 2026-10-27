@@ -207,9 +207,9 @@ def test_시간_상한은_slow_상한보다_짧다():
     assert kr_paper.KR_FLOWS_TIME_LIMIT_SECONDS < tasks.TASK_DEADLINE_SECONDS["slow"]
 
 
-def test_slow에서_관측치_바로_뒤에_돌고_태스크는_34개():
+def test_slow에서_관측치_바로_뒤에_돌고_태스크는_35개():
     task = tasks.TASKS_BY_NAME["kr_paper_flows"]
     assert task.speed == "slow" and task.run is kr_paper.task_kr_paper_flows
     names = [t.name for t in tasks.ALL_TASKS]
     assert names.index("kr_paper_flows") == names.index("kr_paper_quotes") + 1
-    assert len(tasks.ALL_TASKS) == len(tasks.TASKS_BY_NAME) == 34
+    assert len(tasks.ALL_TASKS) == len(tasks.TASKS_BY_NAME) == 35

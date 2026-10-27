@@ -5,7 +5,7 @@ app/tasks/ — 수집 작업 정의(패키지).
 모듈들의 이름을 다시 내보냅니다. 테스트가 모듈 전역(store·상수)을 바꿔 끼울 때는 그 이름이 실제로 쓰이는
 모듈(`app.tasks.toss` 등)을 대상으로 해야 합니다.
 
-  base · markets(fast) · series · filings · fundamentals · korea_public · toss · kr_paper · kr_news · kr_calendar · maintenance · registry · runner
+  base · markets(fast) · series · filings · fundamentals · korea_public · toss · kr_paper · kr_news · kr_calendar · us_consensus · maintenance · registry · runner
 
 [작업군과 주기 — 구버전과 동일]
   fast   (5분)  : scraper_markets · macro_collected · radar_rankings
@@ -140,6 +140,9 @@ from .maintenance import (  # noqa: F401
 from .us_calendar import (  # noqa: F401
     task_us_calendar,
 )
+from .us_consensus import (  # noqa: F401
+    task_us_calendar_consensus,
+)
 from .news import (  # noqa: F401
     task_news_headlines,
 )
@@ -173,4 +176,4 @@ from .runner import (  # noqa: F401
     _log_late_finish,
     run_group,
 )
-from . import base, earnings_surprise, filings, fundamentals, korea_public, kr_calendar, kr_news, kr_paper, maintenance, markets, news, registry, runner, series, toss, us_calendar  # noqa: F401,E402
+from . import base, earnings_surprise, filings, fundamentals, korea_public, kr_calendar, kr_news, kr_paper, maintenance, markets, news, registry, runner, series, toss, us_calendar, us_consensus  # noqa: F401,E402
