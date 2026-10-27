@@ -322,6 +322,30 @@ class KrRulesJobTest {
     }
 
     @Test
+    @DisplayName("관측치 저장본을 시장 파서가 읽지 못하면(계약 판 2 — 수집기와 백엔드를 따로 배포하는 사이) 게이트 ② 미달 — 원문 머리·봉으로는 ②⑤가 통과해도 장부가 처리하지 않는 관측치로 결정하지 않음(입력도 읽지 않음), 판이 맞는 저장본이 오면 결정")
+    void unreadableObservationBlocksGateTwo() {
+        com.macrodash.store.Snapshot two = KrRulesFixtures.quotes(R);
+        ((tools.jackson.databind.node.ObjectNode) two.payload()).put("contract", 2);
+        KrFixtures.stub(reader, Datasets.SNAP_KR_PAPER_QUOTES, two);
+        fsc(FRI);
+
+        PaperDecisionJob.Result waiting = runAt("2026-11-02T22:30");
+
+        assertThat(waiting.outcome()).isEqualTo(PaperDecisionJob.DATA_NOT_READY);
+        assertThat(waiting.message()).contains("② 관측치 저장본(paper.kr.quotes)을 장부가 읽지 못함").contains("계약 판 2")
+                .doesNotContain("⑤");
+        org.mockito.Mockito.verify(repository, org.mockito.Mockito.never()).readObservationSeries(
+                eq(Datasets.OBS_KR_PAPER_FLOW), anyCollection(), org.mockito.ArgumentMatchers.any(LocalDate.class));
+        assertThat(rulesDecisions()).as("출발 INITIAL뿐").hasSize(1);
+        assertThat(krRuns()).isEmpty();
+
+        session(R);   // 판 1 저장본
+        PaperDecisionJob.Result decided = runAt("2026-11-02T22:40");
+        assertThat(decided.outcome()).isEqualTo(PaperDecisionJob.DECIDED);
+        assertThat(decided.rules().response().path("gates").get(1).path("status").asString()).isEqualTo("PASS");
+    }
+
+    @Test
     @DisplayName("게이트 ③ — 20거래일 창에 U 기록이 절반 미만인 날(달력이 모르는 휴장일·수집 구멍)이 있으면 미달: U 전 종목이 '자료 부족'인 채 재선정해 종목 0·153130 99.5%로 가지 않고 기다림 → 기한 뒤 NO_TRADE(③) → 그날을 임시휴장으로 저장하면 다음 KR 결정일에 따라잡기")
     void windowHoleBlocksGateThree() {
         LocalDate hole = LocalDate.of(2026, 10, 28);   // 달력은 거래일로 아는데 시장이 쉰 날(늦게 지정된 임시휴장) — 토스 기록 없음

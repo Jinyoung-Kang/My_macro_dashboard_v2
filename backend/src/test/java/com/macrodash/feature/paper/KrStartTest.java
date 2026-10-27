@@ -437,6 +437,20 @@ class KrStartTest {
     }
 
     @Test
+    @DisplayName("출발도 관측치 저장본을 시장 파서가 읽지 못하면(계약 판 2) ② 미달로 기다림 — 원문 머리·봉으로는 ②⑤가 통과해도 그 저장본으로 출발하지 않음(기록·쓰기 없음)")
+    void unreadableObservationWaitsAtStart() {
+        KrFixtures.stub(reader, Datasets.SNAP_KR_PAPER_QUOTES, KrFixtures.snapshot(Datasets.SNAP_KR_PAPER_QUOTES,
+                KrFixtures.quotesPayload(S, everyCodeOn(S)).put("contract", 2), kst(S + "T21:57")));
+
+        PaperDecisionJob.Result waiting = runAt("2026-11-30T22:30");
+
+        assertThat(waiting.outcome()).isEqualTo(PaperDecisionJob.START_WAITING);
+        assertThat(waiting.message()).contains("②").contains("계약 판 2").doesNotContain("⑤");
+        assertThat(krDecisions()).isEmpty();
+        assertThat(krRuns()).isEmpty();
+    }
+
+    @Test
     @DisplayName("게이트 ② 문턱 — 수집 범위 9/10(90%)에 S 봉이면 통과(문턱 포함)")
     void coverageAtNinetyPercentPasses() {
         Map<String, LocalDate> nine = everyCodeOn(S);

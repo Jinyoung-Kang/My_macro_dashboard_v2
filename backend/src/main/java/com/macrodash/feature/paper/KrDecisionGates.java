@@ -36,7 +36,9 @@ import java.util.Optional;
  *       봅니다(그 계좌의 주문 — 한 계좌의 대기 주문이 다른 계좌 결정을 막지 않게, 두 책은 따로). 정기 결정 작업이 그 실행에서 장부를 처리한
  *       뒤에 봅니다. 일시정지 계좌는 보지 않습니다(장부가 사고팔지 않아 정리되지 않고, 그 결정은 주문 없는 SKIPPED)</li>
  *   <li>② 수집 범위 90% 이상에 D 봉 — {@code paper.kr.quotes} 머리 {@code session} = D이고, {@code scope}의 종목 중 이어받지 않은 항목의
- *       마지막 봉 날짜가 D인 비율(수집기 {@code _has_session_bar}와 같은 규칙)</li>
+ *       마지막 봉 날짜가 D인 비율(수집기 {@code _has_session_bar}와 같은 규칙). 그 저장본을 <b>시장 파서가 읽지 못하면</b>(계약 판이 다름 —
+ *       수집기와 백엔드를 따로 배포하는 사이 — 수집 시각·쓸 수 있는 봉 없음) 원문 봉을 세지 않고 미달입니다: 장부가 처리하지 않는(체결·만료·
+ *       평가가 없는) 관측치이고, 규칙 계좌의 체결 가능·거래정지 판정도 그 관측치로 하기 때문입니다</li>
  *   <li>③ U 90% 이상에 D 수급 — U 구성원 중 D 기록의 토스 판({@code updatedAt})이 D 15:35 KST 이후이고 기관 세부 칸이 채워진
  *       비율. <b>규칙 계좌의 입력 동결(K26)과 같은 읽기</b>({@link KrRuleBookService#readInputs} — 결정 시각 뒤에 받은 기록·받은 시각을 모르는
  *       기록은 빠진 채)로 셉니다: 게이트가 본 U·수급이 곧 그 결정이 쓰고 결정 행에 남기는 값입니다(D1c, 결정 e5). U를 읽지 못함(D보다 이른 기준일의
@@ -166,7 +168,7 @@ final class KrDecisionGates {
     List<Gate> data(MarketRun run, Inputs in) {
         TradingCalendar calendar = run.calendar();
         List<Gate> out = new ArrayList<>();
-        out.add(coverage(in.quotesPayload(), in.session()));
+        out.add(coverage(in));
         out.add(flows(calendar, in));
         out.add(fsc(in.fscMeta(), calendar.previousTradingDay(in.session())));
         out.add(anchor(in.quotesPayload(), in.session()));
@@ -180,15 +182,15 @@ final class KrDecisionGates {
      */
     List<Gate> beforeLedger(MarketRun run, Inputs in) {
         TradingCalendar calendar = run.calendar();
-        return List.of(coverage(in.quotesPayload(), in.session()),
+        return List.of(coverage(in),
                 fsc(in.fscMeta(), calendar.previousTradingDay(in.session())),
                 anchor(in.quotesPayload(), in.session()),
                 tradingDay(calendar, in.session()));
     }
 
     /**
-     * ① 그 계좌의 장부가 앞 결정의 주문을 정리함(클래스 설명) — 그 실행의 관측치({@code in}의 관측치 — 없으면 그 판정 없이)를 처리했고, 기준
-     * 거래일 &lt; D·체결하는 시점인 대기 주문이 없음. 판정 문구 머리에 계좌 코드.
+     * ① 그 계좌의 장부가 앞 결정의 주문을 정리함(클래스 설명) — 그 실행의 관측치({@code in}의 관측치 — ②는 시장 파서가 읽은 저장본에서만 통과하므로
+     * ② 뒤에는 늘 있음, 없으면 그 판정 없이)를 처리했고, 기준 거래일 &lt; D·체결하는 시점인 대기 주문이 없음. 판정 문구 머리에 계좌 코드.
      */
     static Gate ledger(PaperStore store, PaperMarket market, String book, LocalDate d, Inputs in) {
         if (store.book(book).map(b -> PaperBooks.PAUSED.equals(b.status())).orElse(false)) {
@@ -221,7 +223,18 @@ final class KrDecisionGates {
         return gates != null && gates.stream().anyMatch(g -> "⑤".equals(g.id()) && g.blocks());
     }
 
-    /** ② 수집 범위 90% 이상에 D 봉(클래스 설명). */
+    /** ② 그 실행의 입력으로 — 저장본을 시장 파서가 읽지 못했으면 원문 봉을 세지 않고 미달(클래스 설명), 읽었으면 {@link #coverage(JsonNode, LocalDate)}. */
+    static Gate coverage(Inputs in) {
+        if (in.quotesSnapshot() != null && in.quotes().isEmpty()) {
+            JsonNode contract = in.quotesPayload() == null ? null : in.quotesPayload().get("contract");
+            return new Gate("②", "FAIL", "관측치 저장본(paper.kr.quotes)을 장부가 읽지 못함(계약 판 "
+                    + (contract == null || contract.isNull() ? "없음" : contract.toString()) + " — 이 백엔드가 읽는 판 "
+                    + KrQuotes.CONTRACT + ", 또는 수집 시각·쓸 수 있는 봉 없음) — 장부가 처리하지 않는 관측치로 결정하지 않음");
+        }
+        return coverage(in.quotesPayload(), in.session());
+    }
+
+    /** ② 수집 범위 90% 이상에 D 봉(클래스 설명 — 저장본 원문의 머리·봉). */
     static Gate coverage(JsonNode quotes, LocalDate d) {
         if (quotes == null) {
             return new Gate("②", "FAIL", "관측치 저장본(paper.kr.quotes)이 없음");
