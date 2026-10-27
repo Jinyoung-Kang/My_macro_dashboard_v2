@@ -32,7 +32,7 @@ KR_HOLIDAYS_KEEP_FROM = 2025
 
 def task_kr_holidays() -> str:
     """
-    📅 한국 공휴일 (천문연 특일정보) — 올해·내년을 받아 2025년부터 남김.
+    📅 한국 공휴일 (천문연 특일정보) — 올해·내년(+ 저장본에 없는 지난 해)을 받아 2025년부터 남김.
 
     저장 규칙
       - 연도별로 합칩니다. 이번에 받지 못한 해는 이전 저장본을 그대로 둡니다.
@@ -42,12 +42,16 @@ def task_kr_holidays() -> str:
       - **KR_HOLIDAYS_KEEP_FROM(2025)년부터** 남깁니다. 시계는 올해·내년만 보지만, 모의 매매 한국 책
         (백엔드 KrxCalendar)은 출발일부터의 통계 표본·보유 거래일을 지난 해 목록으로 셉니다 — 예전 규칙
         ('지난해까지')이면 2028-01-01에 2026년 목록이 사라졌습니다(v2 2단계 명세 K35).
+      - 보존 하한부터 작년까지 중 **저장본에 없거나 빈 해는 한 번 받습니다**(받은 뒤로는 0회). 받는 해가 올해·내년뿐이면
+        2025년 목록(토스 1년 이력·금융위 과거 쪽 메우기의 범위)이 영영 생기지 않아, 백엔드 KrxCalendar는 2025년 평일에 '달력 없음'을
+        내고 금융위 과거 쪽 메우기는 2025년 공휴일을 '자료 없는 날'로 실행마다 다시 물었습니다.
     """
     now = datetime.now(KST)
-    years = (now.year, now.year + 1)
-
     previous = store.read_snapshot(catalog.SNAP_KR_HOLIDAYS)
     stored: dict = dict(((previous.payload or {}).get("years") or {}) if previous else {})
+    missing_past = [year for year in range(KR_HOLIDAYS_KEEP_FROM, now.year)
+                    if not ((stored.get(str(year)) or {}).get("holidays"))]
+    years = (*missing_past, now.year, now.year + 1)
 
     fetched, kept, reasons = [], [], []
     for year in years:
@@ -73,7 +77,7 @@ def task_kr_holidays() -> str:
         fetched.append(year)
 
     if not fetched:
-        raise EmptyResult("0/2 연도 — 기존 저장본 유지" + _reason_suffix(reasons))
+        raise EmptyResult(f"0/{len(years)} 연도 — 기존 저장본 유지" + _reason_suffix(reasons))
 
     stored = {y: v for y, v in stored.items() if y.isdigit() and int(y) >= KR_HOLIDAYS_KEEP_FROM}
     store.put_snapshot(catalog.SNAP_KR_HOLIDAYS, {

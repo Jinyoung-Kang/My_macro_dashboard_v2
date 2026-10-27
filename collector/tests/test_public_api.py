@@ -9,6 +9,7 @@ tests/test_public_api.py
   3. 게이트웨이 오류 봉투(OpenAPI_ServiceResponse)를 HTTP 상태와 무관하게 잡는다.
   4. 특일정보 실제 응답(2026)을 날짜·이름으로 옮기고, 발표 전 연도(0건)는 빈 목록.
   5. 0건 응답이 이미 받아 둔 해를 지우지 않는다.
+  6. 2025년부터 남기고, 저장본에 없는 지난 해(2025년~작년)는 한 번 받는다(K35).
 
 응답 표본은 tests/fixtures/public/ 에 있고 출처는 그 폴더의 README에 있습니다.
 """
@@ -210,6 +211,49 @@ def test_공휴일은_2025년부터_남긴다_2029년에도_2026년이_있다(mo
     assert sorted(fake.saved["years"]) == ["2025", "2026", "2027", "2028", "2029", "2030"]
     assert fake.saved["years"]["2026"]["holidays"] == [{"date": "2026-01-01", "name": "1월1일"}]
     assert tasks.korea_public.KR_HOLIDAYS_KEEP_FROM == 2025
+
+
+class _Fixed2026(dt.datetime):
+    """2026-10-27 22:00 KST에 멈춘 시계 — 로컬 저장본이 2026·2027년뿐이던 때."""
+
+    @classmethod
+    def now(cls, tz=None):
+        return cls(2026, 10, 27, 22, 0, tzinfo=tz)
+
+
+def test_저장본에_없는_지난_해는_한_번_받고_그_뒤로는_묻지_않는다(monkeypatch):
+    """
+    받는 해가 올해·내년뿐이면 2025년 목록(K35의 근거 — 토스 1년 이력·금융위 과거 쪽 메우기의 범위)이 영영 생기지 않았습니다.
+    받은 뒤에는 금융위 과거 쪽 메우기의 후보일에서 2025년 공휴일이 빠집니다('자료 없는 날'로 실행마다 다시 묻지 않음).
+    """
+    from app import krcalendar
+
+    def year(y, days):
+        return {"holidays": [{"date": d, "name": "공휴일"} for d in days], "announced": True}
+
+    fake = _FakeStore({"years": {"2026": year(2026, ["2026-01-01"]), "2027": year(2027, ["2027-01-01"])}})
+    monkeypatch.setattr(tasks.korea_public, "store", fake)
+    monkeypatch.setattr(tasks.korea_public, "datetime", _Fixed2026)
+    monkeypatch.setattr(krcalendar, "_holidays", set())          # 태스크가 바꾸는 전역 — 시험 뒤 되돌림
+    fetched = []
+
+    def fetch(y):
+        fetched.append(y)
+        return [{"date": "2025-12-25", "name": "기독탄신일"}] if y == 2025 else [{"date": f"{y}-01-01", "name": "1월1일"}]
+
+    monkeypatch.setattr(tasks.kasi_service, "fetch_year", fetch)
+
+    tasks.task_kr_holidays()
+
+    assert fetched == [2025, 2026, 2027]
+    assert fake.saved["years"]["2025"]["holidays"] == [{"date": "2025-12-25", "name": "기독탄신일"}]
+    assert [d.isoformat() for d in tasks._fsc_backfill_dates(dt.date(2025, 12, 29), dt.date(2025, 12, 22))] == [
+        "2025-12-26", "2025-12-24", "2025-12-23", "2025-12-22"]   # 12-25(공휴일)·주말을 건너뜀
+
+    fake.payload = fake.saved
+    fetched.clear()
+    tasks.task_kr_holidays()
+    assert fetched == [2026, 2027], "한 번 받은 지난 해는 다시 묻지 않습니다"
 
 
 def test_키가_없으면_EmptyResult(monkeypatch):
