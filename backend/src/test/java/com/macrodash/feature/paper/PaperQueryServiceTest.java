@@ -678,6 +678,37 @@ class PaperQueryServiceTest {
     }
 
     @Test
+    @DisplayName("관측치 요약 finalClose는 '그 봉의 종가가 나왔나'(closeAvailable — 결정 d9) — 확정 판정이 늘 거짓인 시장(실제 한국처럼)도 종가 뒤 수집본이면 조회 상태·리스크 점검 기록 모두 true, 같은 실행의 순자산 줄은 잠정(prices_final=false)")
+    @SuppressWarnings("unchecked")
+    void finalCloseIsTheCloseNotTheConfirmation() {
+        PaperMarket kr = TestKrMarket.provisionalOnly();
+        String krBook = TestKrMarket.CLAUDE_BOOK;
+        Instant evening = Instant.parse("2026-10-26T12:00:00Z");   // 10-26 21:00 KST — 시험용 달력으로 그날 종가 뒤
+        PaperMarketData.Quotes observed = quotes(evening, bar("005930", FRI, 70_000, MON, 71_000));
+        when(marketData.quotes(market(kr))).thenReturn(Optional.of(observed));
+        store.books.put(krBook, TestKrMarket.book(krBook, 100_000_000, FRI));
+        store.states.put(krBook, new com.macrodash.store.PaperStore.BookState(krBook, 30_000_000, 100_700_000, 70_700_000,
+                70.2, null, null, FRI, null));
+        PaperFixtures.position(store, krBook, "005930", 1_000, 70_000, 72_000, 70_700.0, FRI, 70_000);
+        PaperQueryService query = new PaperQueryService(store, marketData, PaperFixtures.quietReader(),
+                PaperFixtures.settings(store), PaperFixtures.config(), NOW, List.of(UsPaperMarket.INSTANCE, kr));
+
+        Map<String, Object> summary = (Map<String, Object>) query.status(kr).get("quotes");
+        assertThat(summary).containsEntry("finalClose", true);
+        assertThat(PaperRiskJob.describe(kr, observed)).containsEntry("finalClose", true);
+
+        PaperRiskJob job = new PaperRiskJob(store, PaperFixtures.quietReader(), marketData,
+                new PaperLedgerService(store, marketData, PaperFixtures.MAPPER), PaperFixtures.config(), PaperFixtures.MAPPER,
+                Clock.fixed(evening.plusSeconds(600), ZoneOffset.UTC), List.of(kr));
+        assertThat(job.run(kr, false).errors()).isEmpty();
+
+        assertThat(store.jobRuns).singleElement()
+                .satisfies(run -> assertThat(run.detail().path("finalClose").asBoolean()).isTrue());
+        assertThat(store.navSeries(krBook)).extracting(NavRow::tradingDate, NavRow::pricesFinal)
+                .containsExactly(org.assertj.core.groups.Tuple.tuple(MON, false));
+    }
+
+    @Test
     @DisplayName("시장 격리: 관측치 '늦음'은 그 시장 묶음의 기준으로 — 4시간 묵은 저장본이 미국(3시간)에서는 늦음, 시험용 한국(26시간)에서는 아님")
     @SuppressWarnings("unchecked")
     void quotesLatenessPerMarket() {

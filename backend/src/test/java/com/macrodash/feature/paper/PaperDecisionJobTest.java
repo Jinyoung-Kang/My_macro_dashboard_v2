@@ -805,9 +805,14 @@ class PaperDecisionJobTest {
      * Claude 결정(부른 인자를 calls에 남기고 결정 행을 저장 — 같은 거래일 두 번째 실행은 할 일이 없게).
      */
     private void krBook(RuntimeException failure) {
+        krBook(KR, failure);
+    }
+
+    /** {@link #krBook(RuntimeException)}를 그 시험용 한국 묶음으로(가짜 결정·관측치가 그 묶음에 맞춤). */
+    private void krBook(PaperMarket kr, RuntimeException failure) {
         store.books.put(KR_BOOK, TestKrMarket.book(KR_BOOK, 100_000_000, FRI));
         store.states.put(KR_BOOK, new BookState(KR_BOOK, 100_000_000, 100_000_000, 0, 0, null, null, null, null));
-        when(marketData.quotes(market(KR))).thenReturn(Optional.of(quotes(Instant.parse("2026-10-26T12:00:00Z"),
+        when(marketData.quotes(market(kr))).thenReturn(Optional.of(quotes(Instant.parse("2026-10-26T12:00:00Z"),
                 bar("005930", FRI, 70_000, PaperFixtures.MON, 71_000))));
         doAnswer(invocation -> {
             LocalDate d = invocation.getArgument(1);
@@ -821,7 +826,30 @@ class PaperDecisionJobTest {
                     1, null, 30.0, null, null, null, MAPPER.valueToTree(Map.of("summary", "주문 없음")), null, null,
                     null, pricesFinal, 0L, 0));
             return store.decisionFor(KR_BOOK, d, kind).orElseThrow();
-        }).when(claude).decide(market(KR), any(), anyString(), anyBoolean());
+        }).when(claude).decide(market(kr), any(), anyString(), anyBoolean());
+    }
+
+    @Test
+    @DisplayName("결정 작업의 두 판정(결정 d9) — 종가는 나왔지만 확정은 아닌 시장(실제 한국처럼): 그날 종가 뒤 수집본이면 기한 전에도 PRICES_NOT_FINAL로 기다리지 않고 결정, Claude 결정·작업 기록의 pricesFinal=false·관측치 요약 finalClose=true, 그날 순자산 줄은 관측치가 잠정으로 씀(settleNav는 쓸 것 없음)")
+    void closeAvailableButNotConfirmed() {
+        PaperMarket provisional = TestKrMarket.provisionalOnly();
+        krBook(provisional, null);
+        PaperFixtures.position(store, KR_BOOK, "005930", 10, 70_000, 70_000, 70_000.0, FRI, 70_000);
+        ((tools.jackson.databind.node.ObjectNode) store.settings.body()).putObject("kr").put("decisionTimeKst",
+                "21:50");
+
+        PaperDecisionJob.Result result = job(KR_22_00, List.of(provisional)).run(provisional);
+
+        assertThat(result.outcome()).as("기한(23:30) 전이지만 종가가 나옴 — 기다리지 않음").isEqualTo(PaperDecisionJob.DECIDED);
+        assertThat(result.pricesFinal()).isFalse();
+        assertThat(calls).containsExactly("kr claude 2026-10-26 SCHEDULED false");
+        JsonNode detail = store.jobRuns.get(0).detail();
+        assertThat(detail.path("pricesFinal").asBoolean(true)).isFalse();
+        assertThat(detail.path("pastDeadline").asBoolean()).isFalse();
+        assertThat(detail.path("quotes").path("finalClose").asBoolean()).as("종가가 나왔나 — 확정 여부가 아님").isTrue();
+        assertThat(detail.path("navSettled")).as("관측치가 그날 줄을 씀 — 결정 작업이 채울 줄 없음").isEmpty();
+        assertThat(store.navSeries(KR_BOOK)).extracting(NavRow::tradingDate, NavRow::pricesFinal)
+                .containsExactly(org.assertj.core.groups.Tuple.tuple(PaperFixtures.MON, false));
     }
 
     @Test

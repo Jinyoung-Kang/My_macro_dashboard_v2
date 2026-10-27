@@ -76,7 +76,7 @@ final class TestKrMarket implements PaperMarket {
     };
 
     /** 주말만 쉬는 달력의 시험용 한국 묶음(아래 상수 뒤에 둬야 달력이 먼저 만들어짐). */
-    static final TestKrMarket INSTANCE = new TestKrMarket(SEOUL_WEEKDAYS, null, false);
+    static final TestKrMarket INSTANCE = new TestKrMarket(SEOUL_WEEKDAYS, null, false, true);
 
     /** 고정 달력 — 실행마다 달력을 만드는 판({@link #perRun})이면 null. */
     private final TradingCalendar calendar;
@@ -84,12 +84,15 @@ final class TestKrMarket implements PaperMarket {
     private final Function<MarketRun.Inputs, TradingCalendar> perRun;
     /** 체결 조건이 비용 칸(수수료 1)을 내는 판({@link #withCostColumns}). */
     private final boolean costColumns;
+    /** 종가가 나오면 확정인가 — 거짓이면 확정 판정이 늘 거짓인 판({@link #provisionalOnly}). */
+    private final boolean confirms;
 
     private TestKrMarket(TradingCalendar calendar, Function<MarketRun.Inputs, TradingCalendar> perRun,
-                         boolean costColumns) {
+                         boolean costColumns, boolean confirms) {
         this.calendar = calendar;
         this.perRun = perRun;
         this.costColumns = costColumns;
+        this.confirms = confirms;
     }
 
     /**
@@ -98,7 +101,7 @@ final class TestKrMarket implements PaperMarket {
      * 벌만 쓰는지(실행 밖 경로가 달력을 묻지 않는지)를 보는 시험이 씁니다. 나머지는 {@link #INSTANCE}와 같습니다.
      */
     static TestKrMarket perRun(Function<MarketRun.Inputs, TradingCalendar> factory) {
-        return new TestKrMarket(null, java.util.Objects.requireNonNull(factory), false);
+        return new TestKrMarket(null, java.util.Objects.requireNonNull(factory), false, true);
     }
 
     /**
@@ -106,7 +109,7 @@ final class TestKrMarket implements PaperMarket {
      * 시각)는 {@link #INSTANCE}와 같습니다.
      */
     static TestKrMarket withCalendar(TradingCalendar calendar) {
-        return new TestKrMarket(calendar, null, false);
+        return new TestKrMarket(calendar, null, false, true);
     }
 
     /**
@@ -114,7 +117,16 @@ final class TestKrMarket implements PaperMarket {
      * 그대로 쓰는지(C2b) 보는 시험이 씁니다. 나머지는 {@link #INSTANCE}와 같습니다.
      */
     static TestKrMarket withCostColumns() {
-        return new TestKrMarket(SEOUL_WEEKDAYS, null, true);
+        return new TestKrMarket(SEOUL_WEEKDAYS, null, true, true);
+    }
+
+    /**
+     * 종가가 나와도 확정이 아닌 시험용 한국 묶음 — 실제 한국 묶음처럼 확정 판정({@link #pricesConfirmed})이 늘 거짓이고 종가 판정
+     * ({@link #closeAvailable})은 그대로라, 두 판정을 나눠 쓰는 곳(결정 작업의 기다림·결정 행, 관측치 요약의 {@code finalClose}, 순자산 줄 — 결정 d9)이
+     * 맞는 쪽을 쓰는지 봅니다. 나머지는 {@link #INSTANCE}와 같습니다.
+     */
+    static TestKrMarket provisionalOnly() {
+        return new TestKrMarket(SEOUL_WEEKDAYS, null, false, false);
     }
 
     /** 시험용 한국 책 한 권(운용 중) — 시장·통화가 KR·KRW. */
@@ -188,7 +200,7 @@ final class TestKrMarket implements PaperMarket {
 
     @Override
     public boolean pricesConfirmed(LocalDate barDate, Instant collectedAt, TradingCalendar calendar) {
-        return closeAvailable(barDate, collectedAt, calendar);
+        return confirms && closeAvailable(barDate, collectedAt, calendar);
     }
 
     /** 시험용 체결 — 미국과 같은 '종가 + 슬리피지' 식, 가격 출처는 이 시장의 관측치 데이터셋({@link #QUOTES_DATASET}). */
