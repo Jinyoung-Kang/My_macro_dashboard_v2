@@ -204,6 +204,46 @@ class KrxCalendarTest {
     }
 
     @Test
+    @DisplayName("장 시간 변경일(결정 d8) — 수능일 2026-11-19 10:00~16:30이면 그날 개장·마감·세션 판정이 그 쌍, 다른 날·쌍 없는 판은 정규장")
+    void sessionHoursOverrides() {
+        LocalDate suneung = LocalDate.of(2026, 11, 19);
+        LocalDate before = LocalDate.of(2026, 11, 18);
+        KrxCalendar plain = kasi2026And2027();
+        KrxCalendar cal = new KrxCalendar(Map.of(2026, KrxFixtures.kasiHolidays(2026), 2027, KrxFixtures.kasiHolidays(2027)),
+                List.of(), Map.of(suneung, new KrxCalendar.Hours(LocalTime.of(10, 0), LocalTime.of(16, 30))));
+
+        assertThat(cal.isTradingDay(suneung)).as("거래일은 그대로").isTrue();
+        assertThat(cal.openInstant(suneung)).isEqualTo(seoul(suneung, 10, 0));
+        assertThat(cal.closeInstant(suneung)).isEqualTo(seoul(suneung, 16, 30));
+        assertThat(cal.openInstant(before)).as("다른 날은 정규장").isEqualTo(seoul(before, 9, 0));
+        assertThat(cal.closeInstant(before)).isEqualTo(seoul(before, 15, 30));
+        assertThat(cal.isEarlyClose(suneung)).isFalse();
+        assertThat(cal.sessionHours()).containsOnlyKeys(suneung);
+
+        // 그날 16:00은 아직 장중 — 마감이 끝난 최근 세션은 전 거래일. 쌍이 없는 판은 15:30에 끝난 것으로 봅니다.
+        assertThat(cal.lastCompletedSession(seoul(suneung, 16, 0))).isEqualTo(before);
+        assertThat(cal.lastCompletedSession(seoul(suneung, 16, 30))).as("마감 그 순간은 끝남").isEqualTo(suneung);
+        assertThat(plain.lastCompletedSession(seoul(suneung, 16, 0))).isEqualTo(suneung);
+        // 09:30은 아직 개장 전 — 지금(또는 직전) 세션은 전 거래일.
+        assertThat(cal.currentOrLastSession(seoul(suneung, 9, 30))).isEqualTo(before);
+        assertThat(cal.currentOrLastSession(seoul(suneung, 10, 0))).isEqualTo(suneung);
+        assertThat(plain.currentOrLastSession(seoul(suneung, 9, 30))).isEqualTo(suneung);
+
+        assertThatThrownBy(() -> new KrxCalendar.Hours(LocalTime.of(16, 30), LocalTime.of(10, 0)))
+                .isInstanceOf(IllegalArgumentException.class).hasMessageContaining("16:30");
+        assertThatThrownBy(() -> new KrxCalendar.Hours(LocalTime.of(10, 0), LocalTime.of(10, 0)))
+                .isInstanceOf(IllegalArgumentException.class);
+        Map<LocalDate, KrxCalendar.Hours> withNull = new HashMap<>();
+        withNull.put(suneung, null);
+        assertThat(new KrxCalendar(Map.of(2026, KrxFixtures.kasiHolidays(2026)), null, withNull).sessionHours())
+                .as("null 값은 버림").isEmpty();
+    }
+
+    private static Instant seoul(LocalDate day, int hour, int minute) {
+        return ZonedDateTime.of(day, LocalTime.of(hour, minute), KrxCalendar.SEOUL).toInstant();
+    }
+
+    @Test
     @DisplayName("입력 점검 — 다른 해의 날이 섞인 목록은 거절, null 목록·null 임시휴장은 없음으로")
     void inputChecks() {
         assertThatThrownBy(() -> new KrxCalendar(Map.of(2026, dates("2026-01-01", "2027-01-01")), List.of()))

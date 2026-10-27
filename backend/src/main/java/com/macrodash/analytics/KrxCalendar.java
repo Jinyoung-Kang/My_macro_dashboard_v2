@@ -38,15 +38,15 @@ import java.util.stream.Collectors;
  * 메서드)도 모르는 해의 평일에 닿으면 같은 예외로 멈춥니다.
  *
  * <p>순수 클래스입니다(이 패키지는 {@code java.*}만 — DB·설정을 읽지 않음). 공휴일은 수집기 {@code kr_holidays} 저장본에서,
- * 임시휴장은 설정 {@code kr.calendar.extraClosures}에서 부르는 쪽이 읽어 넘깁니다(그 연결은 C1). 장 시간 변경(수능일·신년
- * 10:00 개장)은 거래일을 바꾸지 않아 여기 두지 않습니다 — {@code kr.calendar.openTimeOverrides}는 1분봉 시가 봉 고르기(C2)의 몫.
+ * 임시휴장은 설정 {@code kr.calendar.extraClosures}에서, 장 시간 변경일은 설정 {@code kr.calendar.openTimeOverrides}에서 부르는 쪽이
+ * 읽어 넘깁니다(한국 시장 묶음이 실행마다 한 벌 — C1c). 장 시간 변경(수능일·신년 10:00 개장)은 거래일을 바꾸지 않습니다.
  *
- * <p><b>개장·마감 순간은 늘 정규장 09:00·15:30(서울)으로 답합니다</b> — 장 시간 변경을 반영하지 않습니다. 신년 첫 거래일은 개장만
- * 10:00으로 늦춰지지만, <b>수능일은 마감도 16:30으로 늦춰집니다</b>([2차] 2025-11-13 정규시장 10:00~16:30, 2027학년도 수능
- * 2026-11-19 — 조사 노트 rules-costs.md). 그날 09:00~10:00에는 {@link TradingCalendar#currentOrLastSession}이 아직 열리지 않은
- * 그날을, 15:30~16:30에는 {@link TradingCalendar#lastCompletedSession}이 아직 장중인 그날을 돌려줍니다. 그래서 {@link #openInstant}·
- * {@link #closeInstant}와 그것에 기댄 세션 판정을 <b>장중·확정 판정에 쓰지 마십시오</b>(지금 한국 작업은 20:30·22:30 뒤에만 돌아 영향
- * 없음). 마감 덮어쓰기가 필요한지는 C2에서 {@code openTimeOverrides}와 함께 정합니다(명세 §9 C2 메모). 조기 폐장(마감을 앞당김)은 없습니다.
+ * <p><b>개장·마감 순간</b>은 정규장 09:00·15:30(서울)이고, 장 시간 변경일({@link Hours} — 결정 d8, 날짜마다 개장·마감 쌍)은 그날 쌍으로
+ * 답합니다. 신년 첫 거래일은 개장만 10:00으로 늦춰지고, <b>수능일은 마감도 16:30으로 늦춰집니다</b>([2차] 2025-11-13 정규시장
+ * 10:00~16:30, 2027학년도 수능 2026-11-19 — 조사 노트 rules-costs.md). 쌍을 받은 날은 09:00~10:00에
+ * {@link TradingCalendar#currentOrLastSession}이 전 거래일을, 15:30~16:30에 {@link TradingCalendar#lastCompletedSession}이 전 거래일을
+ * 돌려줍니다(아직 장중). <b>설정에 쌍이 없는 날은 정규장으로 답합니다</b> — 등록하지 않은 장 시간 변경일에는 그 둘이 틀리므로, 장중 판정이
+ * 필요한 곳은 그날을 설정에 넣어야 합니다(지금 한국 작업은 20:30·22:30 뒤에만 돌아 영향 없음). 조기 폐장(마감을 앞당김)은 없습니다.
  */
 public final class KrxCalendar implements TradingCalendar {
 
@@ -54,7 +54,7 @@ public final class KrxCalendar implements TradingCalendar {
     public static final ZoneId SEOUL = ZoneId.of("Asia/Seoul");
     /** 정규장 시작(서울). */
     static final LocalTime OPEN = LocalTime.of(9, 0);
-    /** 정규장 마감(서울) — 15:20~15:30 종가 단일가 뒤. 수능일(16:30 마감)은 반영하지 않습니다(클래스 설명). */
+    /** 정규장 마감(서울) — 15:20~15:30 종가 단일가 뒤. 장 시간 변경일(수능일 16:30 등)은 받은 쌍으로(클래스 설명). */
     static final LocalTime CLOSE = LocalTime.of(15, 30);
     /** 5-1이 천문연 공휴일 목록(노동절)에 들어오기 시작한 해 — 그 전 해는 KRX 고유 휴장일로 더합니다. */
     static final int LABOR_DAY_LISTED_FROM = 2026;
@@ -65,8 +65,29 @@ public final class KrxCalendar implements TradingCalendar {
     private final Set<LocalDate> extraClosures;
     /** 해 → 연말휴장일(아는 해만, 만들 때 한 번 계산). */
     private final Map<Integer, LocalDate> yearEnd;
+    /** 장 시간 변경일 → 그날 개장·마감(서울). 없는 날은 정규장. */
+    private final Map<LocalDate, Hours> sessionHours;
 
     /**
+     * 장 시간 변경일 하루의 정규장 개장·마감(서울) — 설정 {@code kr.calendar.openTimeOverrides}의 값 하나({@code {"open": "10:00",
+     * "close": "16:30"}}, 결정 d8). 거래일 여부는 바꾸지 않습니다.
+     *
+     * @throws IllegalArgumentException 개장이나 마감이 없거나, 개장이 마감보다 이르지 않음
+     */
+    public record Hours(LocalTime open, LocalTime close) {
+
+        public Hours {
+            Objects.requireNonNull(open, "open");
+            Objects.requireNonNull(close, "close");
+            if (!open.isBefore(close)) {
+                throw new IllegalArgumentException("개장(" + open + ")이 마감(" + close + ")보다 일러야 합니다");
+            }
+        }
+    }
+
+    /**
+     * 장 시간 변경일 없이(모든 날 정규장 09:00·15:30) — {@link #KrxCalendar(Map, Collection, Map)}의 빈 표 판.
+     *
      * @param holidaysByYear 해 → 그해 천문연 공휴일({@code isHoliday=Y}, 주말에 걸린 날 포함 그대로). 빈 목록·null인 해는 모르는 해로
      *                       둡니다(발표 전 해는 0건이 옴)
      * @param extraClosures  설정의 임시휴장일(null이면 없음)
@@ -74,6 +95,18 @@ public final class KrxCalendar implements TradingCalendar {
      */
     public KrxCalendar(Map<Integer, ? extends Collection<LocalDate>> holidaysByYear,
                        Collection<LocalDate> extraClosures) {
+        this(holidaysByYear, extraClosures, null);
+    }
+
+    /**
+     * @param holidaysByYear 해 → 그해 천문연 공휴일({@code isHoliday=Y}, 주말에 걸린 날 포함 그대로). 빈 목록·null인 해는 모르는 해로
+     *                       둡니다(발표 전 해는 0건이 옴)
+     * @param extraClosures  설정의 임시휴장일(null이면 없음)
+     * @param sessionHours   설정의 장 시간 변경일 → 그날 개장·마감(null이면 없음 — 모든 날 정규장). null 키·값은 버립니다
+     * @throws IllegalArgumentException 공휴일의 해가 그 키의 해와 다름(부르는 쪽 오류)
+     */
+    public KrxCalendar(Map<Integer, ? extends Collection<LocalDate>> holidaysByYear,
+                       Collection<LocalDate> extraClosures, Map<LocalDate, Hours> sessionHours) {
         Map<Integer, Set<LocalDate>> byYear = new HashMap<>();
         if (holidaysByYear != null) {
             holidaysByYear.forEach((year, days) -> {
@@ -103,6 +136,15 @@ public final class KrxCalendar implements TradingCalendar {
             ends.put(e.getKey(), yearEndClosure(e.getKey(), closed));
         }
         this.yearEnd = Collections.unmodifiableMap(ends);
+        Map<LocalDate, Hours> hours = new HashMap<>();
+        if (sessionHours != null) {
+            sessionHours.forEach((day, pair) -> {
+                if (day != null && pair != null) {
+                    hours.put(day, pair);
+                }
+            });
+        }
+        this.sessionHours = Collections.unmodifiableMap(hours);
     }
 
     /**
@@ -177,22 +219,31 @@ public final class KrxCalendar implements TradingCalendar {
     }
 
     /**
-     * KRX 정규장에는 조기 폐장(마감을 앞당김)이 없습니다. 장 시간 변경은 개장을 늦추고, 수능일에는 마감도 16:30으로 늦춥니다 — 이
-     * 달력은 둘 다 반영하지 않으므로 마감 순간을 장중·확정 판정에 쓰지 마십시오(클래스 설명).
+     * KRX 정규장에는 조기 폐장(마감을 앞당김)이 없습니다. 장 시간 변경은 개장을 늦추고, 수능일에는 마감도 16:30으로 늦춥니다 — 그날은
+     * {@link #closeInstant}가 받은 쌍으로 답합니다(클래스 설명).
      */
     @Override
     public boolean isEarlyClose(LocalDate d) {
         return false;
     }
 
+    /** 그날 개장(서울) — 장 시간 변경일이면 그 쌍의 개장, 아니면 09:00. */
     @Override
     public Instant openInstant(LocalDate tradingDate) {
-        return ZonedDateTime.of(tradingDate, OPEN, SEOUL).toInstant();
+        Hours hours = sessionHours.get(tradingDate);
+        return ZonedDateTime.of(tradingDate, hours == null ? OPEN : hours.open(), SEOUL).toInstant();
     }
 
+    /** 그날 마감(서울) — 장 시간 변경일이면 그 쌍의 마감(수능일 16:30), 아니면 15:30. */
     @Override
     public Instant closeInstant(LocalDate tradingDate) {
-        return ZonedDateTime.of(tradingDate, CLOSE, SEOUL).toInstant();
+        Hours hours = sessionHours.get(tradingDate);
+        return ZonedDateTime.of(tradingDate, hours == null ? CLOSE : hours.close(), SEOUL).toInstant();
+    }
+
+    /** 받은 장 시간 변경일(날짜 → 개장·마감, 읽기 전용). */
+    public Map<LocalDate, Hours> sessionHours() {
+        return sessionHours;
     }
 
     @Override
