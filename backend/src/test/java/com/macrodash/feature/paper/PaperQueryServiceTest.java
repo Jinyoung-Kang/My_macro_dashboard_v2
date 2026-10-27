@@ -648,6 +648,36 @@ class PaperQueryServiceTest {
     }
 
     @Test
+    @DisplayName("달력 없음(K35, C1c): 관측치 요약의 확정 판정·리스크 기록의 세션이 모르는 해에 닿으면 그 칸만 null + 사유 — 미국 요약에는 그 칸이 없음")
+    @SuppressWarnings("unchecked")
+    void quotesSummaryCalendarGap() {
+        com.macrodash.analytics.KrxCalendar only2026 = new com.macrodash.analytics.KrxCalendar(
+                KrPaperMarket.holidaysByYear(KrFixtures.holidaysPayload(2026)), List.of());
+        PaperMarket kr = TestKrMarket.withCalendar(only2026);
+        Instant collected = Instant.parse("2025-12-30T12:00:00Z");   // 2025년 목록이 없는 달력
+        PaperMarketData.Quotes oldYear = quotes(collected, bar("005930", java.time.LocalDate.of(2025, 12, 29), 70_000,
+                java.time.LocalDate.of(2025, 12, 30), 71_000));
+        when(marketData.quotes(market(kr))).thenReturn(Optional.of(oldYear));
+        when(marketData.quotes(market(UsPaperMarket.INSTANCE))).thenReturn(Optional.of(quotes(MON_FINAL,
+                bar("SPY", FRI, 500, MON, 505))));
+        PaperQueryService both = new PaperQueryService(store, marketData, PaperFixtures.quietReader(),
+                PaperFixtures.settings(store), PaperFixtures.config(), NOW, List.of(UsPaperMarket.INSTANCE, kr));
+
+        Map<String, Object> summary = (Map<String, Object>) both.status(kr).get("quotes");
+        assertThat(summary).containsEntry("finalClose", null);
+        assertThat((String) summary.get("finalCloseReason")).startsWith("달력 없음");
+        assertThat(summary.get("barDate")).isEqualTo("2025-12-30");
+        Map<String, Object> us = (Map<String, Object>) both.status().get("quotes");
+        assertThat(us).doesNotContainKeys("finalCloseReason", "staleReason").containsEntry("finalClose", true);
+
+        Map<String, Object> described = PaperRiskJob.describe(kr, oldYear);
+        assertThat(described).containsEntry("session", null).containsEntry("finalClose", null);
+        assertThat((String) described.get("calendarReason")).startsWith("달력 없음");
+        assertThat(PaperRiskJob.describe(UsPaperMarket.INSTANCE, quotes(MON_FINAL, bar("SPY", FRI, 500, MON, 505))))
+                .doesNotContainKey("calendarReason").containsEntry("finalClose", true);
+    }
+
+    @Test
     @DisplayName("시장 격리: 관측치 '늦음'은 그 시장 묶음의 기준으로 — 4시간 묵은 저장본이 미국(3시간)에서는 늦음, 시험용 한국(26시간)에서는 아님")
     @SuppressWarnings("unchecked")
     void quotesLatenessPerMarket() {

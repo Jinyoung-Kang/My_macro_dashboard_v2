@@ -236,8 +236,23 @@ public class PaperRiskJob {
         out.put("collectedAt", quotes.collectedAt().toString());
         out.put("collectedAtKst", Kst.stamp(quotes.collectedAt()));
         out.put("barDate", barDate == null ? null : barDate.toString());
-        out.put("session", market.calendar().currentOrLastSession(quotes.collectedAt()).toString());
-        out.put("finalClose", barDate != null && market.isFinal(barDate, quotes.collectedAt()));
+        // 세션·확정 판정이 달력이 모르는 해에 닿으면 그 칸만 null + 사유(명세 K35 — 기록을 실패시키지 않음, 미국은 생기지 않음).
+        String gap = null;
+        try {
+            out.put("session", market.calendar().currentOrLastSession(quotes.collectedAt()).toString());
+        } catch (CalendarUnavailableException e) {
+            out.put("session", null);
+            gap = e.getMessage();
+        }
+        try {
+            out.put("finalClose", barDate != null && market.isFinal(barDate, quotes.collectedAt()));
+        } catch (CalendarUnavailableException e) {
+            out.put("finalClose", null);
+            gap = gap == null ? e.getMessage() : gap;
+        }
+        if (gap != null) {
+            out.put("calendarReason", gap);
+        }
         out.put("tickers", quotes.bars().size());
         out.put("staleTickers", quotes.staleTickers().size());
         return out;

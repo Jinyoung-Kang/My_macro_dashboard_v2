@@ -907,7 +907,13 @@ public class PaperQueryService {
         out.put("collectedAtKst", Kst.stamp(quotes.collectedAt()));
         out.put("ageSeconds", age);
         out.put("barDate", text(barDate));
-        out.put("finalClose", barDate != null && market.isFinal(barDate, quotes.collectedAt()));
+        try {
+            out.put("finalClose", barDate != null && market.isFinal(barDate, quotes.collectedAt()));
+        } catch (CalendarUnavailableException e) {
+            // 봉 날짜의 해를 달력이 모름(명세 K35 — 그 계산만) — 확정 여부를 지어내지 않고 null + 사유. 미국은 생기지 않습니다.
+            out.put("finalClose", null);
+            out.put("finalCloseReason", e.getMessage());
+        }
         out.put("tickers", quotes.bars().size());
         out.put("staleTickers", quotes.staleTickers());
         try {
