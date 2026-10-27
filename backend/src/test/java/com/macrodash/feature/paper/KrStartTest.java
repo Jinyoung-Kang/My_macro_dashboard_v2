@@ -389,6 +389,5 @@ class KrStartTest {
         assertThat(pipeline.pending(KrPaperMarket.INSTANCE)).isFalse();
         store.books.clear();
         assertThat(pipeline.pending(KrPaperMarket.INSTANCE)).as("계좌 없음").isFalse();
-        assertThat(NavRow.class).isNotNull();
     }
 }

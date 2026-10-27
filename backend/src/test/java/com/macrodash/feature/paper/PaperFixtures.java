@@ -100,8 +100,6 @@ final class PaperFixtures {
         return store.orders.get(id);
     }
 
-    /** quietly는 받은 일을 그대로 합니다(테스트에는 수집 요청이 없음). */
-    @SuppressWarnings("unchecked")
     /**
      * 가짜(mock) 협력 객체의 시장 인자 맞춤 — 그 시장 묶음 자신이든 그 묶음으로 연 실행({@link MarketRun})이든 받습니다(C1a: 작업·조회가
      * 시장 묶음 대신 실행을 넘김). Mockito 맞춤이라 같은 호출의 다른 인자도 맞춤(eq·any)이어야 합니다.
@@ -110,6 +108,8 @@ final class PaperFixtures {
         return argThat(m -> m != null && m.definition() == definition);
     }
 
+    /** quietly는 받은 일을 그대로 합니다(테스트에는 수집 요청이 없음). */
+    @SuppressWarnings("unchecked")
     static StoreReader quietReader() {
         StoreReader reader = mock(StoreReader.class);
         when(reader.quietly(any())).thenAnswer(invocation -> ((Supplier<Object>) invocation.getArgument(0)).get());
