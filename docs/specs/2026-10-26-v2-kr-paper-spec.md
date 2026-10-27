@@ -438,6 +438,7 @@
     다중회사 주요계정이 정정 보고서의 접수번호를 주는 것으로 보인다 [추정]. 그래서 다시 계산하면 원래 제출일과 정정일 사이의 기준일에서 그 회사는 '자료 없음'이 된다(정정 전 숫자는 저장본에 없음).
     정기 밤 결정은 그때 받은 판만 보므로 보통 걸리지 않는다(접수일 ≤ 그날).
   - **남은 일(제안, D1·E1)**: 결정 행 동결(K26)에 회사별 `bsnsYear`·`rceptNo`를 함께 남기면 정정으로 판이 바뀐 뒤에도 그 결정이 어느 보고서를 썼는지 안다.
+    → **D1b**: 규칙 계좌 결정 행 `response.input.members[].dart`에 남긴다(§4-6 'D1b 구현에서 정한 것'). Claude 패킷 `8b_fundamentals`는 E1.
 
 ### 4-6. 규칙 계좌 `kr_rules` (K7·K10)
 - 후보 = U 중 **외국인·기관 20거래일 누적 순매수(주)가 둘 다 > 0**, 재무 통과, 재진입 금지·거래정지 아님. 20거래일이 안 차면 null → 후보 아님('자료 부족').
@@ -473,7 +474,7 @@
   - **비중**: 동일비중 = min(100 ÷ `kr.rulesMaxNames`, `kr.maxWeightStockPct`) — 미국 EQUAL과 같은 식. **점수 비례(SCORE)** = 예산(고른 수 × 100 ÷ `kr.rulesMaxNames`)을 점수에 비례해 나눈 뒤
     종목 상한으로 자르고, **잘린 몫은 다른 종목에 돌리지 않고 153130에** 남긴다 — 두 방식의 주식 노출이 같아(나누는 방식만 다름) 노출 맞춘 참고선(K40)이 배분 방식에 따라 흔들리지 않는다.
     남는 비중 = 100 − 종목 합(→ 153130). **ETF 상한(`kr.maxWeightEtfPct`)은 규칙 계좌에 쓰일 자리가 없다**(U는 보통주뿐, 153130은 현금성이라 상한 제외) — C1b가 남긴 '규칙 계좌 영향' 표시는
-    설정을 읽는 D1b(e6)에서 내린다(제안 — 설정 키 표·저장 경고 시험이 함께 바뀜).
+    설정을 읽는 D1b(e6)에서 내린다(제안 — 설정 키 표·저장 경고 시험이 함께 바뀜). → **D1b에서 내림**(`564f13b`).
   - **U 기준일 B ≥ D면 입력 오류**(그 결정이 기준일 뒤 금융위 값을 쓰는 룩어헤드) — 결정 오류로 남고 짐작해 돌지 않는다.
   - **매도 신호**: 매일 = 20일 합이 둘 다 < 0(U 밖 보유도 수급이 있으면 봄 — 끈적 수집 범위), 재선정한 날(따라잡기 포함) = 후보 밖. **후보인데 상위 `kr.rulesMaxNames` 밖인 보유는 팔지 않는다**
     (매도 조건은 '후보 밖', 상위 N은 매수 자리 — 미국 규칙 책도 보유는 신호로만 판다). 창이 덜 찬 보유는 매일 신호를 만들지 않고(없는 숫자로 팔지 않음) 재선정한 날에는 후보가 아니라 판다.
@@ -491,6 +492,50 @@
   - 달력이 모르는 해(창·주기)는 `CalendarUnavailableException` 그대로(K35 — 결정 작업이 '달력 없음'으로 기록, B5 규칙).
   - [확인] 2026-10-28 로컬 v2 DB 읽기 전용 SELECT(D = 2026-10-27, 창 09-28~10-27, U 기준일 10-26): U 100종목 모두 20일 기록이 있고 둘 다 > 0이 16, 둘 다 < 0이 19.
     재무로 4종목이 빠져(한화오션 부채비율 226.2%·한국항공우주 446.6%·하이브 ROE −7.16%·SK이노베이션 ROE −14.94% — 우리금융지주는 매출액 없음으로 통과) **후보 12** → 동일비중이면 주식 80%·153130 20%.
+- **D1b 구현에서 정한 것 — 규칙 계좌를 저장본·장부·결정 작업에 잇기**(2026-10-28, 결정 e6·e7·e8, 커밋 `d0c3363`(읽는 자리 둘)·`f973565`(정기 결정·기한 지남 행)·
+  `a1aabb9`(출발 몫)·`564f13b`(규칙 계좌 영향 표시) — 위 줄들·D1a·K26·K28·K33이 정하지 않은 자리. 미국 13F 규칙 책·결정 경로는 손대지 않음 — 고정본 `paper/golden/`·
+  패킷·프롬프트 해시 그대로, 백엔드 시험 1,650 → 1,673):
+  - **자리**: `feature.paper.KrRuleBookService`(정기 결정·기한 지남 행·출발 몫). 결정 작업은 시장 묶음이 `KrPaperMarket` 그 자체일 때만 부른다(시험용 한국 묶음은
+    예전처럼 '규칙 계좌 결정 없음'). 그 세션에 낼 차례 = 계좌가 운용·일시정지이고 D > 출발일이고 그날 정기 결정(REBALANCE·SCHEDULED)이 없음 — 결정 작업의 '남은 일'에 들고,
+    오류는 규칙 계좌 오류로 셈(세 번이면 그날 쉼, 수동 실행은 한국 규칙 계좌에 없음).
+  - **입력 읽기(K26, 그 실행에서 한 번 — `StoreReader.quietly`)**: U(D) = **D보다 이른 가장 최근 기준일 B**의 `kr_paper_universe`(`StoreRepository.latestObservationDateBefore` —
+    D 당일·뒤 기준일 행은 보지 않으므로 'B ≥ D'는 생길 수 없음, B가 직전 KR 거래일이 아니면 그대로 쓰고 `notes`에 남김). 그런 U가 없으면 **예외**(짐작한 U로 돌지 않음 —
+    정기 결정은 오류·기한이 지나면 NO_TRADE, 출발은 계획 실패 → 미룸). 수급 = U ∪ 보유(현금성 빼고)의 `kr_paper_flow`, D로 끝나는 20 KR 거래일 창.
+    **결정 시각 뒤에 알 수 있던 값은 빼고 그 수를 남긴다**(`input.excludedFlowRecords`): D 뒤 날짜(`afterSession`), 읽는 순간 뒤에 받은 기록(`fetchedAfterRead` — 우리
+    `fetchedAt` > 읽은 순간), 받은 시각을 모르는 기록(`unknownFetchedAt`). 빠진 날은 '자료 부족'이고 다른 판으로 채우지 않는다. DART = `kr.dart_fundamentals`(접수일 규칙은 D1a 그대로),
+    재진입 금지 = **체결될 날(D 다음 KR 거래일)에도** 금지인 종목(미국 규칙 책과 같은 날), 거래정지 = 그 실행 관측치(`paper.kr.quotes` — 결정 작업이 장부에 쓴 같은 읽기)의
+    `krxTradingSuspended` 또는 D 봉 거래량 0. 관측치에 봉이 없는 종목은 체결할 수 없어 사지 않는다(`skipped`).
+    [확인] 2026-10-28 로컬 v2 DB 읽기 전용 SELECT: 10-27 기록 103종목 중 102종목은 21:18 KST에, 1종목은 22:30 뒤(다시 묻기)에 받았다 — 정기 22:30 결정에서는 그 종목이 '자료 부족'이고,
+    지금 다시 계산하면(읽는 순간 = 지금) D1a의 [확인]과 같은 16종목이 둘 다 > 0(U 기준일 10-26, 자료 부족 0).
+  - **결정 행 동결(e7, 응답 JSON)**: `input` = {`session`, `readAtKst`, `universe`{`baseDate`, `rule`(수집기 규칙 판), `size`}, `flowsWindow`{`from`, `to`, `tradingDays`},
+    `flowsStatus`·`dart`(저장본 수집 시각·회사 수), `excludedFlowRecords`, `lockedOut`[{`code`, `until`}], `suspended`, `members`[U 순위 순 — `rank`·`code`·`name`·`marketCap`·
+    `listedShares`·`flows`{`days`, `foreign20`, `institution20`, `foreign5`, `institution5`, `streak`, `sessionUpdatedAt`(D 기록의 토스 판), `sessionFetchedAt`, `sessionDetail`(기관 세부 칸 유무)}·
+    `dart`{`bsnsYear`, `rceptNo`, `receiptDate`, `roePct`, `debtRatioPct`, `hasRevenueAccount`, `capitalImpaired`}(없으면 null)·`score`·`candidate`·`reasons`[{`reason`, `sub`, `detail`}]],
+    `outsideUniverse`[U 밖 보유의 수급]}, `selection` = {`maxNames`, `weighting`, `candidates`[{`code`, `universeRank`, `score`}](매일), `exclusionCounts`, 선정한 날만 `targets`·`notChosen`·
+    `stockWeightPct`·`parkingWeightPct`}, `holdings`(보유마다 매도 판정), `cycleDate`·`selectionAsOf`·`catchUp`, `valuation`, `orders`, `skipped`, `notes`, `settings`(쓴 값·판·`fallbacks`).
+    `paper_decisions.selection_as_of` 열 = 선정한 날의 D(그 밖 null), `cycleDate`는 응답에만(열 없음), `target_exposure_pct` = 선정의 주식 비중(선정한 날만 — 관측치에 없어 건너뛴 종목이
+    있어도 선정 값). 후보·점수는 **매일** 센다(재선정일이 아니면 '참고 — 사지 않음').
+  - **종류·상태**: 선정하면 REBALANCE(예정일 당일·따라잡기 모두), 아니면 SCHEDULED. **선정한 결정(REBALANCE·INITIAL)은 주문이 없어도 `OK`** — 따라잡기가 OK만 세므로
+    (D1a) 'NO_TRADE = 주문 없음'으로 두면 이미 목표 비중인 날 선정을 매일 되풀이한다. SCHEDULED는 주문이 있으면 OK, 없으면 `NO_TRADE`(미국과 같은 뜻). 기한이 지난 세션은
+    `NO_TRADE`·`noTradeReason` '기한 지남'(종류는 그날 선정할 날이었으면 REBALANCE — 화면에서 놓친 재선정이 보임), 일시정지는 입력을 읽지 않고 `SKIPPED`. 따라잡기가 세는 매수 결정은
+    출발일 이후의 OK인 REBALANCE·INITIAL(`PaperStore.decisionDates` — 리셋 전 다른 출발 기록을 세지 않게).
+  - **주문 계획**: 매도 = 보유 전량(`sellFraction` null — 체결 때의 보유 전부), 대기 매도가 있으면 다시 내지 않음. 매수 = 목표 − 지금 비중(마지막 평가 가격, 없으면 평단),
+    `kr.minOrderNotional` 미만·대기 매수/매도가 있는 종목은 건너뜀. 남는 현금: 선정한 날은 앞선 날의 대기 `park_cash` 153130 주문을 먼저 취소하고(미국 `replaceParkingOrders`와 같은 까닭)
+    여유 0.5%p를 넘는 만큼 153130 매수(`rule` `K7-park`) 또는 모자라면 153130 일부 매도, 그 밖의 날은 `kr.rules.parkCashThresholdPct`를 넘을 때만 매수(`park_cash`, 모자랄 때 팔지 않음 —
+    매수가 없는 날). 현금 어림은 대기·이번 주문을 비용 요율로 줄인 원 금액(`BigDecimal` — 매수 수수료 + 슬리피지, 매도 + 코스피 거래세·농특세, 153130은 ETF 세금)이고 비중만 double.
+  - **설정(e6)**: 그 실행의 설정 행을 `kr.` 접두어로 — 결정이 읽는 키 `KrRuleBookService.DECISION_KEYS`(종목 수·`kr.rules.*`·종목 상한·최소 주문·현금성·슬리피지·수수료·코스피·ETF 세율),
+    없거나 틀린 키는 기본값과 `settings.fallbacks`(실제 키 이름). **규칙 계좌 영향 표시 = 결정이 읽는 키 ∪ 장부가 그 계좌에 읽는 키(`LEDGER_KEYS`)** — `kr.maxWeightEtfPct`는 내렸다
+    (`KrRuleBookServiceTest.affectsRulesMatchesTheKeysRead`가 대조).
+  - **출발(e8)**: 규칙 계좌 몫 `KrRuleBookService.startLeg` = 정기 재선정과 같은 읽기·동결·선정(`KrReselection.initial` — `cycleDate` = r(S), `selectionAsOf` = S), 출발 응답에
+    `gates`·`configuredStartDate`·`postponed`. **Claude 몫이 '아직 없음'(E2 전)이면 규칙·벤치마크만 한 트랜잭션으로 출발하고 Claude는 시작 전 그대로이며 뒤따라 출발하지 않는다**
+    (출발 판정이 '넷 모두 시작 전' — '한 계좌만 늦은 시작' 없음, K28. 그 몫이 생긴 뒤 넷을 리셋해 다시 출발). 서버는 4단계(E2 뒤)에만 출발하므로 운영에서는 넷이 함께 출발한다.
+    출발 바로 다음 KR 거래일이 다음 주기 예정일이면 그날 재선정한다(S = 11-30 → 12-01 REBALANCE — 출발은 앞 주기의 매수 결정).
+  - **남은 것(D1c 이후)**: 정기 결정 경로의 자료 게이트 ①③⑤(e3·e4·e5 — 지금은 '그날 종가 관측치'(D 20:30 뒤 수집, 다수 봉 = D)만 기다림)와 출발 게이트 ③ STUB, 결정 기록 API 문서(F1).
+  - 시험: `KrRuleBookServiceTest`(재선정일 매수 손계산 79.4869%·재선정일 아닌 날 종목 매수 없음·주기당 한 번·'자료 없음' 사유·동결·결정 시각 뒤 값 없음·매도 전량과 153130 일부 매도
+    손계산·재진입 금지·거래정지·일시정지·설정 판·fallbacks·기한 지남 행과 따라잡기·U 없음 오류·영향 표시 대조), `KrRulesJobTest`(결정 작업으로 r NO_TRADE → r′ REBALANCE → SCHEDULED·
+    당일 재선정·입력 오류 세 번과 기한 뒤 행), `KrStartTest`(규칙·벤치마크 한 트랜잭션·마지막 계좌 실패 되돌림·Claude 시작 전·규칙 몫 실패 미룸·출발 입력에 결정 시각 뒤 값 없음),
+    `KrStartDbTest`(실제 표 제약), `KrBenchmarkLifecycleTest`(규칙 계좌도 함께 출발 — 벤치마크 숫자 그대로). 받은 시각 거름을 빼거나 NO_TRADE를 매수 결정으로 세게 바꾸면
+    `KrRuleBookServiceTest`·`KrRulesJobTest`의 세 시험이 실패함을 확인했다(되돌려 본 뒤 복원).
 
 ### 4-7. Claude 계좌 `kr_claude` (K8·K9)
 - 패킷 섹션(미국과 같은 번호 체계): `0_instructions`(한국 규칙·정수 주·호가·세금·허용 시점) · `1_basis`(`market: "KR"`·`currency: "KRW"`·`packetVersion` 6, KOSPI·KOSDAQ·원/달러·엔/원·코스피200 야간·KRX 선물 투자주체·국면 —
@@ -545,6 +590,8 @@
     주문 BUY·목표 비중(069500 100 / 069500 60·153130 40)·`NEXT_OPEN`·출처 `BENCHMARK`·`PENDING`·기준 거래일 D·만료 D + 3거래일·수량 null(시가 체결 때 — C2)·생성 시각 = 트랜잭션 시각;
     계좌 `ACTIVE`·`started_on` D; 상태 `last_nav_trading_date` D; **순자산 줄 D = 현금 1억 원, `prices_final=true`**(보유가 없어 가격이 들지 않음 — 수익률 기준 'S 마감 순자산 1억').
   - **갈고리**: 계좌마다 `KrStartPipeline.Leg`가 `Plan`을 낸다 — 규칙·Claude는 `Plan.notYet`(시작 전 그대로, 작업 기록 `books`에 'D1'·'E2' 사유), 벤치마크는 `Plan.of`, 실패는 `Plan.failed`. 계획은 트랜잭션 밖에서 모두 만든 뒤 한 번에 쓴다(E2의 Claude 호출이 장부 잠금을 붙잡지 않게).
+    → **D1b**(`a1aabb9`): 규칙 계좌 몫 = `KrRuleBookService.startLeg`(INITIAL — 재선정과 같은 계산·입력 동결, 입력 오류는 `Plan.failed`). Claude만 `notYet`이면 규칙·벤치마크가
+    한 트랜잭션으로 출발하고 Claude는 뒤따라 출발하지 않는다(§4-6 'D1b 구현에서 정한 것' '출발').
     → **묶음 C 리뷰**(`9d2d64d`): `Leg.plan(실행, 세션, 기한, 게이트)` — 계좌 몫이 그 세션 출발 기한을 받고, 쓰기 트랜잭션이 결정 작업의 시계로 지금 < 기한을 다시 봐 넘었으면
     어느 계좌에도 쓰지 않고 `START_POSTPONED`(사유 '출발 계획이 기한을 넘겨 끝남')로 돌린다 — 긴 Claude 출발 계획이 01:00을 넘겨도 기한 뒤 출발이 써지지 않게(K28).
   - **계좌 이름**: 한국 규칙 계좌 · 한국 Claude 계좌 · KODEX 200 계좌 · 한국 60/40 계좌(미국 계좌와 한 목록에 보여도 가려지게). 계좌 정의는 `PaperBooks.KR`이고 한국 초기화만 만든다.
@@ -616,6 +663,8 @@
     deadline: "… KST", rules, claude}`, 로그도 그때만 INFO(나머지 DEBUG). `claude` = 그날 결정할 차례였으면 '결정 기한이 지나 Claude를 부르지 않습니다', 아니면 평소의 건너뜀 사유.
     `rules` = 지금은 '이 시장의 규칙 계좌 결정은 아직 없습니다(2단계 D1)' — **D1이 이 자리에서 그 세션의 규칙 계좌 `NO_TRADE` 결정 행(사유 '기한 지남')을 쓴다**(재선정 따라잡기 K33의 근거,
     저장된 사실이라 재기동해도 다시 쓰지 않음). Claude 쪽 사유를 결정 행으로 남길지(미국 호출 상한의 `SKIPPED` 행처럼)는 E2.
+    → **D1b에서 끝남**(`f973565`): 행은 기록 한 번과 따로 쓴다(쓰기가 실패하면 다음 주기에 다시 — 경고 로그), 작업 기록 `rules` = 그 행의 요약, 결과 `Result.rules` = 그 행.
+    행을 쓴 뒤의 같은 세션 실행은 규칙 계좌 일이 끝나 `ALREADY_DECIDED`(Claude가 시작 전일 때).
   - **수동 실행**(`runNow`)은 이 갈고리를 보지 않는다 — 한국 수동 결정의 창은 §9 'E2 — 한국 수동 결정의 기준일'이 정한다.
   - **지금 운영에 미치는 것: 없음** — 한국 규칙·Claude 계좌가 시작 전이라(출발 갈고리 `Plan.notYet`) 한국 결정 작업에 그날 할 일이 생기지 않아 기한 판정 전에 `ALREADY_DECIDED`로 끝난다(출발 창은 예전과 같음).
   - 시험: `PaperDecisionJobTest.krDeadlineIsNextDayWithRealDefaults`(실제 기본 본문 22:30·01:00에서 22:40·00:50 모두 기다림 — 예전 묶기면 22:40에 미확정 진행)·`krSkipsSessionAfterDeadline`
@@ -757,6 +806,7 @@
     아님: 종목 수·월 재량 주문·최소 보유일(Claude 검증기), `kr.universeExtraTickers`(Claude 유니버스 — 규칙 계좌는 U만), 결정 시각·기한(미국과 같음), 달력 두 키(실제 휴장·장 시간을 알리는 값 — 실험 조건이 아님), `kr.news.*`.
     비중 상한 둘을 규칙 계좌 영향으로 둔 것은 미국 표시를 따른 것이다 — D1이 한국 규칙 계좌에 적용하지 않기로 하면 그때 내린다.
     → **D1a**: 종목 상한은 규칙 계좌 비중에 쓰고, ETF 상한은 쓰일 자리가 없다(U는 보통주뿐·153130은 현금성) — 그 표시를 내리는 것은 설정을 읽는 D1b(§4-6 'D1a 구현에서 정한 것').
+    → **D1b에서 내림**(`564f13b`): `kr.maxWeightEtfPct` 규칙 계좌 영향 아님(Claude 검증기만), 영향 표시 = 규칙 계좌가 결정·장부에서 읽는 키의 합(시험으로 대조).
   - **키마다의 저장 규칙**(`PaperSettingKeys.policy` — 형·범위 검사 뒤): `kr.universeExtraTickers`는 **빈 목록만**(결정 d6 — 수집기가 설정을 읽지 않아 그 종목에 시세·수급이 없음, ADR 0008).
     `kr.cashLikeTickers`는 **수집기가 늘 받는 ETF(069500·153130)만** — 같은 까닭으로 더한 규칙이다(다른 코드는 U를 벗어나면 시세가 없어 남는 현금 주문이 체결되지 않음, 빈 목록 = 현금성 없음은 받음).
     `kr.tax.effectiveFrom`은 **오늘(KST, `Kst.today(clock)`) 이하만**(결정 d7 — 새 세율은 시행일 당일에 저장, 서버 시간대가 아니라 KST 자정에 바뀜).
@@ -1232,6 +1282,7 @@ QA 스택 점검을 F1 뒤로(§4-1 'C3'·§9 표), §4-2 'C2a'의 바뀐 시험
   결정 창(D 22:30 ~ D+1 01:00) 안으로 막을지, 창 밖이면 기준일을 그 시각의 마감 끝난 세션으로 두고 체결은 ⑤에 맡길지 정한다(제안: 창 안으로 막음 — 정기 결정과 같은 입력 시점).
 - **D1 — 규칙 계좌 결정의 설정 판**: 미국 `RuleBookService.decide`는 이제 실행의 설정 행 하나를 쓴다(`decide(실행, …)` — `70fa5b7`). 한국 규칙 계좌는 같은 행을 `kr.` 접두어로
   읽는다(`MarketRun.settings()` — 미국 판 `PaperSettings.from(행, US)`를 그대로 옮기지 않음, §4-13 'C1a').
+  → **D1b에서 정함**(`f973565`): `KrRuleBookService.Settings.from(실행)` — 결정 행 `settings_version` = 그 실행의 판, 실행을 연 뒤 저장한 판은 끼지 않음(시험 `readsTheRunSettingsVersion`).
 - **D1 — 게이트 ①과 확정 순자산 줄의 판정**: 결정 게이트 ①('기준일 < D인 한국 대기 주문 = 정리 안 됨', 결정 d11)과 확정 순자산 줄의 대기 주문 조건
   (`KrConfirmations.pendingThrough` — `faafcf1`)은 뿌리가 같지만 2차 리뷰(`7971266`)로 순자산 쪽이 좁아졌다: 순자산 쪽은 조건 ⑤(D 개장 순간 > 주문 생성, 스탑 제외 —
   `KrFills.opensAfterOrder`)도 본다 — D 개장 뒤에 만든 주문은 D 이하 봉으로 체결될 수 없어 D 줄을 잡지 않는다. 게이트 ①에는 그 주문도 아직 체결되지 않은 대기다(다음 관측 봉
