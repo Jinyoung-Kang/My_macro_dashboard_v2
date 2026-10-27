@@ -24,7 +24,7 @@ import java.util.Optional;
 /**
  * 🧪 리스크 점검 정기 작업(설계 §6-3) — 5분마다 새 관측치({@code paper.quotes})가 있으면 장부에 적용합니다(체결·스탑·분할·평가).
  *
- * <p>시장마다 따로 돕니다(2단계 명세 §9 A5): 정기 실행은 {@link PaperMarkets#ALL}을 차례로, 시장마다 그 시장의 관측치 저장본을
+ * <p>시장마다 따로 돕니다(2단계 명세 §9 A5): 정기 실행은 {@link PaperMarkets#all}을 차례로, 시장마다 그 시장의 관측치 저장본을
  * 읽어 그 시장 책에만 적용하고({@link PaperLedgerService} 설명), 작업 기록은 그 시장 이름({@link PaperMarket#jobName})으로
  * 남깁니다. 지금 목록은 미국 하나라 동작은 이 묶음 전과 같습니다. 시장을 받지 않는 수동 실행·한 번 실행은 미국 판입니다.
  *
@@ -62,26 +62,31 @@ public class PaperRiskJob {
     private final PaperConfig config;
     private final ObjectMapper mapper;
     private final Clock clock;
-    /** 정기 실행이 도는 시장, 도는 순서. */
-    private final List<PaperMarket> markets;
+    /** 정기 실행이 도는 시장 목록(도는 순서 — {@link PaperMarkets#all}). */
+    private final PaperMarkets markets;
     /** '달력 없음'을 시장·날짜·빠진 해마다 한 번만 남기는 장부(클래스 설명). */
     private final CalendarGaps calendarGaps = new CalendarGaps();
 
     @Autowired
-    public PaperRiskJob(PaperStore store, StoreReader reader, PaperMarketData marketData, PaperLedgerService ledger,
-                        PaperConfig config, ObjectMapper mapper) {
-        this(store, reader, marketData, ledger, config, mapper, Clock.systemUTC());
+    PaperRiskJob(PaperStore store, StoreReader reader, PaperMarketData marketData, PaperLedgerService ledger,
+                 PaperConfig config, ObjectMapper mapper, PaperMarkets markets) {
+        this(store, reader, marketData, ledger, config, mapper, Clock.systemUTC(), markets);
     }
 
-    /** 테스트용 — 시계를 움직입니다. */
+    /** 테스트용 — 시계를 움직입니다(시장 목록은 운영 목록). */
     PaperRiskJob(PaperStore store, StoreReader reader, PaperMarketData marketData, PaperLedgerService ledger,
                  PaperConfig config, ObjectMapper mapper, Clock clock) {
-        this(store, reader, marketData, ledger, config, mapper, clock, PaperMarkets.ALL);
+        this(store, reader, marketData, ledger, config, mapper, clock, new PaperMarkets());
     }
 
     /** 테스트용 — 시계와 시장 목록을 바꿉니다(시장 격리 시험이 시험용 한국 시장을 넣음). */
     PaperRiskJob(PaperStore store, StoreReader reader, PaperMarketData marketData, PaperLedgerService ledger,
                  PaperConfig config, ObjectMapper mapper, Clock clock, List<PaperMarket> markets) {
+        this(store, reader, marketData, ledger, config, mapper, clock, new PaperMarkets(markets));
+    }
+
+    private PaperRiskJob(PaperStore store, StoreReader reader, PaperMarketData marketData, PaperLedgerService ledger,
+                         PaperConfig config, ObjectMapper mapper, Clock clock, PaperMarkets markets) {
         this.store = store;
         this.reader = reader;
         this.marketData = marketData;
@@ -89,11 +94,11 @@ public class PaperRiskJob {
         this.config = config;
         this.mapper = mapper;
         this.clock = clock;
-        this.markets = List.copyOf(markets);
+        this.markets = markets;
     }
 
     /**
-     * 정기 실행 — 시장마다 차례로 한 번({@link PaperMarkets#ALL}, 2단계 명세 §9 A5). 한 시장의 예외는 그 시장만 로그로 남기고 다음
+     * 정기 실행 — 시장마다 차례로 한 번({@link PaperMarkets#all}, 2단계 명세 §9 A5). 한 시장의 예외는 그 시장만 로그로 남기고 다음
      * 시장으로 넘어갑니다. 꺼져 있으면 아무것도 하지 않습니다.
      */
     @Scheduled(initialDelayString = "${dashboard.paper.risk-initial-delay-ms:90000}",
@@ -102,7 +107,7 @@ public class PaperRiskJob {
         if (!config.enabled()) {
             return;
         }
-        for (PaperMarket market : markets) {
+        for (PaperMarket market : markets.all()) {
             try {
                 Outcome outcome = run(market, false);
                 if (!outcome.errors().isEmpty()) {

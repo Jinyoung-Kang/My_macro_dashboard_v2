@@ -83,19 +83,27 @@ public class PaperAdminService {
     private final PaperConfig config;
     private final ObjectMapper mapper;
     private final Clock clock;
+    /** 계좌 행의 시장 코드로 시장 묶음을 찾는 목록(리셋 — 그 책 시장의 기억만 지움). */
+    private final PaperMarkets markets;
     /** 출발일 종가·벤치마크 사후 체결·옛 시그니처의 시장(클래스 설명). */
     private static final PaperMarket US = UsPaperMarket.INSTANCE;
 
     @Autowired
-    public PaperAdminService(PaperStore store, PaperMarketData marketData, StoreReader reader,
-                             PaperSettingsService settings, PaperLedgerService ledger, PaperConfig config,
-                             ObjectMapper mapper) {
-        this(store, marketData, reader, settings, ledger, config, mapper, Clock.systemUTC());
+    PaperAdminService(PaperStore store, PaperMarketData marketData, StoreReader reader, PaperSettingsService settings,
+                      PaperLedgerService ledger, PaperConfig config, ObjectMapper mapper, PaperMarkets markets) {
+        this(store, marketData, reader, settings, ledger, config, mapper, Clock.systemUTC(), markets);
     }
 
-    /** 테스트용 — 시계를 움직입니다. */
+    /** 테스트용 — 시계를 움직입니다(시장 목록은 운영 목록). */
     PaperAdminService(PaperStore store, PaperMarketData marketData, StoreReader reader, PaperSettingsService settings,
                       PaperLedgerService ledger, PaperConfig config, ObjectMapper mapper, Clock clock) {
+        this(store, marketData, reader, settings, ledger, config, mapper, clock, new PaperMarkets());
+    }
+
+    private PaperAdminService(PaperStore store, PaperMarketData marketData, StoreReader reader,
+                              PaperSettingsService settings, PaperLedgerService ledger, PaperConfig config,
+                              ObjectMapper mapper, Clock clock, PaperMarkets markets) {
+        this.markets = markets;
         this.store = store;
         this.marketData = marketData;
         this.reader = reader;
@@ -341,7 +349,7 @@ public class PaperAdminService {
             throw new InvalidRequestException("초기화하려면 확인 문구로 계좌 코드(" + code + ")를 그대로 입력하세요.");
         }
         PaperSettings current = settings.current().settings();
-        PaperMarket market = PaperMarkets.of(book.market()).orElse(null);
+        PaperMarket market = markets.of(book.market()).orElse(null);
         // 비운 책은 같은 관측치로 다시 처리해도 됩니다 — 그 책 시장의 기억만(모르는 시장이면 전부) 지웁니다.
         if (market == null) {
             ledger.forgetFailures();

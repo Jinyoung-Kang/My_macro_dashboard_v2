@@ -89,30 +89,35 @@ public class PaperQueryService {
     private final PaperConfig config;
     private final Clock clock;
     /** 이 서비스가 아는 시장 — 계좌 코드 경로가 책의 시장 묶음을 찾는 목록이고, 결정 목록이 받는 책 코드의 출처. */
-    private final List<PaperMarket> markets;
+    private final PaperMarkets markets;
 
     @Autowired
-    public PaperQueryService(PaperStore store, PaperMarketData marketData, StoreReader reader,
-                             PaperSettingsService settings, PaperConfig config) {
-        this(store, marketData, reader, settings, config, Clock.systemUTC());
+    PaperQueryService(PaperStore store, PaperMarketData marketData, StoreReader reader, PaperSettingsService settings,
+                      PaperConfig config, PaperMarkets markets) {
+        this(store, marketData, reader, settings, config, Clock.systemUTC(), markets);
     }
 
-    /** 테스트용 — 시계를 움직입니다. */
+    /** 테스트용 — 시계를 움직입니다(시장 목록은 운영 목록). */
     PaperQueryService(PaperStore store, PaperMarketData marketData, StoreReader reader, PaperSettingsService settings,
                       PaperConfig config, Clock clock) {
-        this(store, marketData, reader, settings, config, clock, PaperMarkets.ALL);
+        this(store, marketData, reader, settings, config, clock, new PaperMarkets());
     }
 
     /** 테스트용 — 시계와 시장 목록을 바꿉니다(시장 격리 시험이 시험용 한국 시장을 넣음). */
     PaperQueryService(PaperStore store, PaperMarketData marketData, StoreReader reader, PaperSettingsService settings,
                       PaperConfig config, Clock clock, List<PaperMarket> markets) {
+        this(store, marketData, reader, settings, config, clock, new PaperMarkets(markets));
+    }
+
+    private PaperQueryService(PaperStore store, PaperMarketData marketData, StoreReader reader,
+                              PaperSettingsService settings, PaperConfig config, Clock clock, PaperMarkets markets) {
         this.store = store;
         this.marketData = marketData;
         this.reader = reader;
         this.settings = settings;
         this.config = config;
         this.clock = clock;
-        this.markets = List.copyOf(markets);
+        this.markets = markets;
     }
 
     public boolean ready() {
@@ -201,7 +206,7 @@ public class PaperQueryService {
             return notReady();
         }
         Set<String> deciding = new LinkedHashSet<>();
-        markets.forEach(market -> {
+        markets.all().forEach(market -> {
             deciding.add(market.rulesBook());
             deciding.add(market.claudeBook());
         });
@@ -965,12 +970,8 @@ public class PaperQueryService {
 
     /** 그 책의 시장 묶음({@code paper_books.market}). 이 서비스가 모르는 시장이면 IllegalStateException(코드·자료 오류). */
     private PaperMarket marketOf(Book book) {
-        for (PaperMarket market : markets) {
-            if (market.code().equals(book.market())) {
-                return market;
-            }
-        }
-        throw new IllegalStateException("모르는 시장의 계좌입니다: " + book.code() + " (" + book.market() + ")");
+        return markets.of(book.market()).orElseThrow(() -> new IllegalStateException(
+                "모르는 시장의 계좌입니다: " + book.code() + " (" + book.market() + ")"));
     }
 
     /**

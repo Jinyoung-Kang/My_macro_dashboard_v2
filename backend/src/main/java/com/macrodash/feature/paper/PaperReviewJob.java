@@ -57,7 +57,7 @@ import java.util.concurrent.locks.ReentrantLock;
  * 더 시도하지 않습니다(30분마다 같은 오류가 작업 기록을 밀어내지 않게 — 수동 실행은 다시 시도, 재기동하면 처음부터 셈).
  * {@code dashboard.paper.enabled=false}면 정기 실행은 아무것도 하지 않습니다.
  *
- * <p><b>시장마다 따로</b>입니다(2단계 명세 §9 A6). 정기 실행은 {@link PaperMarkets#ALL}을 차례로 돌고(지금 미국 하나), 시장마다 복기 주
+ * <p><b>시장마다 따로</b>입니다(2단계 명세 §9 A6). 정기 실행은 {@link PaperMarkets#all}을 차례로 돌고(지금 미국 하나), 시장마다 복기 주
  * (그 시장 달력)·여는 순간({@link PaperMarket#reviewOpening} — 시장별 요일·시각)·그 시장 Claude 책·확정 종가(그 시장 관측치와 확정
  * 판정)·오류 횟수(시장 × 주)·작업 기록 이름(시장 접두어 + {@value #JOB})을 그 시장 것으로 쓰고 그 시장 문맥으로 복기합니다
  * ({@link ReviewService}). 복기 행은 시장마다 한 주 한 행이라(V14 기본키 (market, week_ending)) '이미 복기함'·재시도 판정도 그 시장
@@ -106,8 +106,8 @@ public class PaperReviewJob {
     private final PaperConfig config;
     private final ObjectMapper mapper;
     private final Clock clock;
-    /** 정기 실행이 도는 시장, 도는 순서. */
-    private final List<PaperMarket> markets;
+    /** 정기 실행이 도는 시장 목록(도는 순서 — {@link PaperMarkets#all}). */
+    private final PaperMarkets markets;
     /** 정기·수동 실행이 겹치지 않게(한 주에 한 행 — 유일 제약이 마지막 방어선, 한 번의 유료 호출). 시장이 여럿이어도 하나. */
     private final ReentrantLock running = new ReentrantLock();
     /** (시장, 복기 주) → 오류 난 횟수(클래스 설명). 재기동하면 사라집니다. */
@@ -120,20 +120,25 @@ public class PaperReviewJob {
     }
 
     @Autowired
-    public PaperReviewJob(PaperStore store, StoreReader reader, PaperMarketData marketData, ReviewService reviews,
-                          PaperConfig config, ObjectMapper mapper) {
-        this(store, reader, marketData, reviews, config, mapper, Clock.systemUTC());
+    PaperReviewJob(PaperStore store, StoreReader reader, PaperMarketData marketData, ReviewService reviews,
+                   PaperConfig config, ObjectMapper mapper, PaperMarkets markets) {
+        this(store, reader, marketData, reviews, config, mapper, Clock.systemUTC(), markets);
     }
 
-    /** 테스트용 — 시계를 움직입니다. */
+    /** 테스트용 — 시계를 움직입니다(시장 목록은 운영 목록). */
     PaperReviewJob(PaperStore store, StoreReader reader, PaperMarketData marketData, ReviewService reviews,
                    PaperConfig config, ObjectMapper mapper, Clock clock) {
-        this(store, reader, marketData, reviews, config, mapper, clock, PaperMarkets.ALL);
+        this(store, reader, marketData, reviews, config, mapper, clock, new PaperMarkets());
     }
 
     /** 테스트용 — 시계와 시장 목록을 바꿉니다(시장 격리 시험이 시험용 한국 시장을 넣음). */
     PaperReviewJob(PaperStore store, StoreReader reader, PaperMarketData marketData, ReviewService reviews,
                    PaperConfig config, ObjectMapper mapper, Clock clock, List<PaperMarket> markets) {
+        this(store, reader, marketData, reviews, config, mapper, clock, new PaperMarkets(markets));
+    }
+
+    private PaperReviewJob(PaperStore store, StoreReader reader, PaperMarketData marketData, ReviewService reviews,
+                           PaperConfig config, ObjectMapper mapper, Clock clock, PaperMarkets markets) {
         this.store = store;
         this.reader = reader;
         this.marketData = marketData;
@@ -141,11 +146,11 @@ public class PaperReviewJob {
         this.config = config;
         this.mapper = mapper;
         this.clock = clock;
-        this.markets = List.copyOf(markets);
+        this.markets = markets;
     }
 
     /**
-     * 정기 실행 — 시장마다 차례로 한 번({@link PaperMarkets#ALL}, 클래스 설명). 꺼져 있으면 아무것도 하지 않습니다. 예외는 삼키고
+     * 정기 실행 — 시장마다 차례로 한 번({@link PaperMarkets#all}, 클래스 설명). 꺼져 있으면 아무것도 하지 않습니다. 예외는 삼키고
      * 로그만(결정 작업과 같은 관례) — 한 시장의 예외가 다음 시장을 막지 않습니다.
      */
     @Scheduled(initialDelayString = "${dashboard.paper.review-initial-delay-ms:180000}",
@@ -154,7 +159,7 @@ public class PaperReviewJob {
         if (!config.enabled()) {
             return;
         }
-        for (PaperMarket market : markets) {
+        for (PaperMarket market : markets.all()) {
             try {
                 Result result = run(market);
                 switch (result.outcome()) {

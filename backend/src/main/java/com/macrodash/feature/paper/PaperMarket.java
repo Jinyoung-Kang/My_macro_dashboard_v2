@@ -27,7 +27,7 @@ import java.util.Map;
  *
  * <p>구현은 지금 미국 하나({@link UsPaperMarket#INSTANCE})이고 값은 이 묶음 전의 상수 그대로입니다({@code UsPaperMarketTest}가
  * 고정). 장부·관측치·리스크 점검(A5)과 결정 작업·Claude 결정·주간 복기·메모·조회·관리(A6)가 시장마다 이 묶음으로 돕니다(시장
- * 목록 {@link PaperMarkets#ALL}) — Claude 시스템 프롬프트의 시장별 부분(하드 규칙 줄·고정 문단)과 복기 여는 순간도 여기서 받습니다.
+ * 목록 — 주입 빈 {@link PaperMarkets}) — Claude 시스템 프롬프트의 시장별 부분(하드 규칙 줄·고정 문단)과 복기 여는 순간도 여기서 받습니다.
  * 게이트 지표·13F 재선정·규칙 책 결정·출발일 사후 체결은 미국 전용 단계로 남습니다.
  */
 interface PaperMarket {

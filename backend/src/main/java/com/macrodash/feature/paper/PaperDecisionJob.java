@@ -83,7 +83,7 @@ import java.util.concurrent.locks.ReentrantLock;
  * 되풀이될 때 유료 호출을 다시 부르게 됩니다. 재기동하면 처음부터 셉니다.
  * 정기 실행은 {@code dashboard.paper.enabled=false}면 아무것도 하지 않고, 수동 실행({@link #runNow})은 설정과 상관없이 돕니다.
  *
- * <p><b>시장마다 따로</b>입니다(2단계 명세 §9 A6). 정기 실행은 {@link PaperMarkets#ALL}을 차례로 돌고(지금 미국 하나), 시장마다 세션
+ * <p><b>시장마다 따로</b>입니다(2단계 명세 §9 A6). 정기 실행은 {@link PaperMarkets#all}을 차례로 돌고(지금 미국 하나), 시장마다 세션
  * d(그 시장 달력)·결정 시각과 기한(그 시장의 설정 키 — 미국은 접두어 없이 지금 키, 없으면 시장 기본값 — 을 그 시장의 '세션 → 결정
  * 순간' 식으로)·관측치와 확정 종가 판정·장부 처리·미확정 순자산 줄·책·오류 횟수(시장 × 거래일 × 책)·작업 기록 이름(시장 접두어 +
  * {@value #JOB})을 그 시장 것으로 씁니다. 게이트 지표·13F 재선정·규칙 책 결정({@link RuleBookService})은 미국 전용 단계라 미국 묶음에서만
@@ -145,8 +145,8 @@ public class PaperDecisionJob {
     private final PaperConfig config;
     private final ObjectMapper mapper;
     private final Clock clock;
-    /** 정기 실행이 도는 시장, 도는 순서. */
-    private final List<PaperMarket> markets;
+    /** 정기 실행이 도는 시장 목록(도는 순서 — {@link PaperMarkets#all}). */
+    private final PaperMarkets markets;
     /** 정기 실행과 수동 실행이 겹치지 않게(같은 거래일 결정을 동시에 만들지 않게 — 유일 제약이 마지막 방어선). 시장이 여럿이어도 하나. */
     private final ReentrantLock running = new ReentrantLock();
     /** (시장, 거래일, 책) → 오류 난 횟수(클래스 설명). 재기동하면 사라집니다. */
@@ -169,18 +169,19 @@ public class PaperDecisionJob {
     }
 
     @Autowired
-    public PaperDecisionJob(PaperStore store, StoreReader reader, PaperMarketData marketData, PaperLedgerService ledger,
-                            PaperSelectionService selection, RuleBookService rules, ClaudeBookService claude,
-                            PaperSettingsService settings, PaperConfig config, ObjectMapper mapper) {
-        this(store, reader, marketData, ledger, selection, rules, claude, settings, config, mapper, Clock.systemUTC());
+    PaperDecisionJob(PaperStore store, StoreReader reader, PaperMarketData marketData, PaperLedgerService ledger,
+                     PaperSelectionService selection, RuleBookService rules, ClaudeBookService claude,
+                     PaperSettingsService settings, PaperConfig config, ObjectMapper mapper, PaperMarkets markets) {
+        this(store, reader, marketData, ledger, selection, rules, claude, settings, config, mapper, Clock.systemUTC(),
+                markets);
     }
 
-    /** 테스트용 — 시계를 움직입니다. */
+    /** 테스트용 — 시계를 움직입니다(시장 목록은 운영 목록). */
     PaperDecisionJob(PaperStore store, StoreReader reader, PaperMarketData marketData, PaperLedgerService ledger,
                      PaperSelectionService selection, RuleBookService rules, ClaudeBookService claude,
                      PaperSettingsService settings, PaperConfig config, ObjectMapper mapper, Clock clock) {
         this(store, reader, marketData, ledger, selection, rules, claude, settings, config, mapper, clock,
-                PaperMarkets.ALL);
+                new PaperMarkets());
     }
 
     /** 테스트용 — 시계와 시장 목록을 바꿉니다(시장 격리 시험이 시험용 한국 시장을 넣음). */
@@ -188,6 +189,14 @@ public class PaperDecisionJob {
                      PaperSelectionService selection, RuleBookService rules, ClaudeBookService claude,
                      PaperSettingsService settings, PaperConfig config, ObjectMapper mapper, Clock clock,
                      List<PaperMarket> markets) {
+        this(store, reader, marketData, ledger, selection, rules, claude, settings, config, mapper, clock,
+                new PaperMarkets(markets));
+    }
+
+    private PaperDecisionJob(PaperStore store, StoreReader reader, PaperMarketData marketData,
+                             PaperLedgerService ledger, PaperSelectionService selection, RuleBookService rules,
+                             ClaudeBookService claude, PaperSettingsService settings, PaperConfig config,
+                             ObjectMapper mapper, Clock clock, PaperMarkets markets) {
         this.store = store;
         this.reader = reader;
         this.marketData = marketData;
@@ -199,11 +208,11 @@ public class PaperDecisionJob {
         this.config = config;
         this.mapper = mapper;
         this.clock = clock;
-        this.markets = List.copyOf(markets);
+        this.markets = markets;
     }
 
     /**
-     * 정기 실행 — 시장마다 차례로 한 번({@link PaperMarkets#ALL}, 클래스 설명). 한 시장의 예외는 그 시장만 로그로 남기고 다음 시장으로
+     * 정기 실행 — 시장마다 차례로 한 번({@link PaperMarkets#all}, 클래스 설명). 한 시장의 예외는 그 시장만 로그로 남기고 다음 시장으로
      * 넘어갑니다. 꺼져 있으면 아무것도 하지 않습니다. 예외는 삼키고 로그만(RegimeLogService 관례).
      */
     @Scheduled(initialDelayString = "${dashboard.paper.decision-initial-delay-ms:120000}",
@@ -212,7 +221,7 @@ public class PaperDecisionJob {
         if (!config.enabled()) {
             return;
         }
-        for (PaperMarket market : markets) {
+        for (PaperMarket market : markets.all()) {
             try {
                 Result result = run(market);
                 if (BUSY.equals(result.outcome())) {
