@@ -822,6 +822,28 @@ class KrRulesJobTest {
     }
 
     @Test
+    @DisplayName("관측치에 그 종목 항목이 아예 없는 대기 주문(수집 범위 밖 — U 밖 보유 034020의 매도)은 게이트 ①을 막지 않음 — 그 밤 정기 결정, 주문은 대기 그대로")
+    void outOfScopeOrderDoesNotHoldGateOne() {
+        store.upsertPosition(new Position(PaperBooks.KR_RULES, "034020", 100, 10_000, S, kst("2026-10-30T09:00"), 10_000,
+                kst("2026-10-30T09:00"), 10_000.0, kst("2026-10-30T21:57"), false, S, 10_000, null));
+        store.upsertState(new BookState(PaperBooks.KR_RULES, 99_000_000, 100_000_000, 1_000_000, 1.0, null, null, S, null));
+        long out = pending("034020", PaperBooks.SELL, PaperBooks.NEXT_OPEN, RuleBookService.SOURCE_RULE, FRI,
+                "2026-10-30T22:30");
+        session(R);
+        assertThat(KrRulesFixtures.quotes(R).payload().path("codes").has("034020")).as("수집 범위 밖").isFalse();
+
+        PaperDecisionJob.Result decided = runAt("2026-11-02T22:30");
+
+        assertThat(decided.outcome()).isEqualTo(PaperDecisionJob.DECIDED);
+        assertThat(decided.rules().kind()).isEqualTo(RuleBookService.REBALANCE);
+        JsonNode first = decided.rules().response().path("gates").get(0);
+        assertThat(first.path("status").asString()).isEqualTo("PASS");
+        assertThat(first.path("note").asString()).contains("#" + out + " SELL 034020").contains("수집 범위 밖·봉 없음")
+                .contains("기다리지 않음");
+        assertThat(store.orders.get(out).status()).isEqualTo(PaperBooks.ORDER_PENDING);
+    }
+
+    @Test
     @DisplayName("기한이 지났는데 ⑤는 통과(④만 미달) — NO_TRADE 사유는 '기한 지남', 기다린 까닭은 waitedFor에")
     void pastDeadlineWithoutAnchorProblem() {
         quotes(R, Set.of());
