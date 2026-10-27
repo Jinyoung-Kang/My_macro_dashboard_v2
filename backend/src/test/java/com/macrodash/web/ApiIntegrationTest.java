@@ -1010,6 +1010,7 @@ class ApiIntegrationTest {
             assertThat(risk.path("ok").asBoolean()).isTrue();
             assertThat(risk.path("outcome").path("skippedReason").asString()).contains("paper.quotes");
             assertThat(risk.path("outcome").has("alerts")).as("운영 알림이 없으면 칸 없음 — 미국 응답 그대로(C2c)").isFalse();
+            assertThat(risk.path("outcome").has("confirmed")).as("확정 조정이 없으면 칸 없음 — 미국 응답 그대로(C3)").isFalse();
             assertThat(authorizedExchange("/api/paper/books/nope/orders", HttpMethod.GET).getStatusCode())
                     .isEqualTo(HttpStatus.BAD_REQUEST);
 

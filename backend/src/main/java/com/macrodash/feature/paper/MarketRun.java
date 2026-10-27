@@ -223,6 +223,11 @@ final class MarketRun implements PaperMarket {
     }
 
     @Override
+    public boolean confirmsFills() {
+        return market.confirmsFills();
+    }
+
+    @Override
     public List<PaperBooks.Definition> books() {
         return market.books();
     }

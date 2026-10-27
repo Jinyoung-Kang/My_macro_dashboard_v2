@@ -272,6 +272,15 @@ interface PaperMarket {
         return KrConfirmed.NONE;
     }
 
+    /**
+     * 잠정 체결을 공식가로 확정 조정하는 시장인가(2단계 명세 K29, C3 — {@code KrConfirmations}). 참이면 장부가 관측치를 처리하기 전에(그리고
+     * 리스크 점검이 새 관측치가 없는 주기에도) 확정 안 된 체결마다 공식가가 들어왔는지 보고 확정 조정 행·현금·평단을 씁니다. 기본(false)은
+     * 확정 조정이 없는 시장(미국 — 체결가가 곧 관측치 종가)입니다. 확정가는 {@link #confirmedPrices}로 읽습니다.
+     */
+    default boolean confirmsFills() {
+        return false;
+    }
+
     /** 이 시장의 책 정의 — 초기화가 만드는 책이고, 화면에 보이는 순서입니다. */
     List<PaperBooks.Definition> books();
 

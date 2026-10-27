@@ -134,10 +134,13 @@ public class PaperLedgerService {
      * @param alerts         운영 알림("책: 내용") — 한국 '미처리 기업행위' 보류가 걸린 날 뒤 5거래일을 넘김(명세 §4-2 K32 — 사람이 확인).
      *                       정기·수동 작업이 작업 기록({@code paper_job_runs.detail.alerts})에 남깁니다. 미국은 늘 빈 목록이고, 비었으면 응답
      *                       JSON(수동 실행 {@code POST /api/paper/run/risk})에 칸이 없습니다(미국 응답 그대로)
+     * @param confirmed      이번에 쓴 확정 조정 행 수(한국 금융위 확정 — K29, C3 {@link KrConfirmations}). 미국은 늘 0이고, 0이면 응답 JSON에 칸이
+     *                       없습니다(미국 응답 그대로)
      */
     public record Outcome(int filled, int stopped, int expired, int splits, List<String> booksProcessed,
                           String skippedReason, List<String> notes, List<String> errors,
-                          @JsonInclude(JsonInclude.Include.NON_EMPTY) List<String> alerts) {
+                          @JsonInclude(JsonInclude.Include.NON_EMPTY) List<String> alerts,
+                          @JsonInclude(JsonInclude.Include.NON_DEFAULT) int confirmed) {
 
         public Outcome {
             booksProcessed = List.copyOf(booksProcessed);
@@ -146,10 +149,31 @@ public class PaperLedgerService {
             alerts = List.copyOf(alerts);
         }
 
+        /** 확정 조정이 없는 결과. */
+        public Outcome(int filled, int stopped, int expired, int splits, List<String> booksProcessed,
+                       String skippedReason, List<String> notes, List<String> errors, List<String> alerts) {
+            this(filled, stopped, expired, splits, booksProcessed, skippedReason, notes, errors, alerts, 0);
+        }
+
         /** 운영 알림이 없는 결과. */
         public Outcome(int filled, int stopped, int expired, int splits, List<String> booksProcessed,
                        String skippedReason, List<String> notes, List<String> errors) {
             this(filled, stopped, expired, splits, booksProcessed, skippedReason, notes, errors, List.of());
+        }
+
+        /**
+         * 확정 조정({@code confirmation})을 먼저 한 뒤 관측치를 처리한 결과({@code this}) — 셈·처리한 책·건너뛴 사유는 관측치 처리 쪽, 확정 조정
+         * 행 수는 확정 쪽, 기록(notes·errors·alerts)은 확정 쪽이 앞입니다.
+         */
+        Outcome after(Outcome confirmation) {
+            List<String> mergedNotes = new ArrayList<>(confirmation.notes());
+            mergedNotes.addAll(notes);
+            List<String> mergedErrors = new ArrayList<>(confirmation.errors());
+            mergedErrors.addAll(errors);
+            List<String> mergedAlerts = new ArrayList<>(confirmation.alerts());
+            mergedAlerts.addAll(alerts);
+            return new Outcome(filled, stopped, expired, splits, booksProcessed, skippedReason, mergedNotes, mergedErrors,
+                    mergedAlerts, confirmed + confirmation.confirmed());
         }
 
         static Outcome skipped(String reason) {
@@ -175,11 +199,26 @@ public class PaperLedgerService {
     private record FailureKey(String market, String book) {
     }
 
+    /** 한국 금융위 확정 조정(K29, C3) — 확정 조정 시장({@link PaperMarket#confirmsFills})의 책마다 관측치 처리 앞에서 돕니다. */
+    private final KrConfirmations confirmations;
+    /**
+     * (시장, 책) → 확정 조정에서 마지막으로 난 오류 문구. 확정 조정은 새 관측치가 없어도 5분마다 돌므로, 같은 오류를 결과({@link Outcome#errors})에
+     * 다시 올리지 않습니다(작업 기록 200건이 같은 오류로 밀리지 않게 — 관측치 처리 오류의 기억과 같은 뜻). 성공하면 지우고, 수동 실행이 지웁니다.
+     */
+    private final Map<FailureKey, String> confirmErrors = new ConcurrentHashMap<>();
+
     /** 설정은 실행이 읽은 행으로 받습니다({@link MarketRun#settings}) — 장부가 따로 읽지 않습니다. */
+    @org.springframework.beans.factory.annotation.Autowired
     public PaperLedgerService(PaperStore store, PaperMarketData marketData, ObjectMapper mapper) {
+        this(store, marketData, mapper, java.time.Clock.systemUTC());
+    }
+
+    /** 시험용 — 시계(확정 조정이 최고가를 다시 셀 때의 시각)를 정합니다. */
+    PaperLedgerService(PaperStore store, PaperMarketData marketData, ObjectMapper mapper, java.time.Clock clock) {
         this.store = store;
         this.marketData = marketData;
         this.mapper = mapper;
+        this.confirmations = new KrConfirmations(store, marketData, clock);
     }
 
     /** 장부를 바꾸는 다른 일(관리 서비스)도 이 잠금 안에서 합니다. */
@@ -229,11 +268,13 @@ public class PaperLedgerService {
     /** 모든 시장의 오류 난 관측치 기억을 지웁니다 — 초기화·리셋 뒤 같은 관측치로 다시 처리해도 되게. */
     public void forgetFailures() {
         failedObservations.clear();
+        confirmErrors.clear();
     }
 
     /** 그 시장의 오류 난 관측치 기억만 지웁니다 — 수동 실행이 같은 관측치로 한 번 더 시도하게(다른 시장의 기억은 그대로). */
     void forgetFailures(PaperMarket market) {
         failedObservations.keySet().removeIf(key -> key.market().equals(market.code()));
+        confirmErrors.keySet().removeIf(key -> key.market().equals(market.code()));
     }
 
     private boolean failedOn(PaperMarket market, String code, Quotes quotes) {
@@ -257,7 +298,64 @@ public class PaperLedgerService {
      */
     Outcome process(PaperMarket market, Quotes quotes) {
         MarketRun run = MarketRun.of(market, store);
-        return exclusively(() -> processLocked(run, quotes));
+        return exclusively(() -> {
+            if (!run.confirmsFills()) {
+                return processLocked(run, quotes);
+            }
+            // 확정 조정을 먼저(K29, C3) — 금융위 D 값이 들어온 밤에 D+1 관측치보다 앞서 D 체결을 확정해야, 장부가 D+1로 넘어가기 전에 확정
+            // 현금으로 D+1 시가 체결을 셉니다.
+            Outcome confirmation = confirmLocked(run);
+            return processLocked(run, quotes).after(confirmation);
+        });
+    }
+
+    /**
+     * 그 시장 책의 금융위 확정 조정만 한 번({@link KrConfirmations}, 명세 K29 — C3). 리스크 점검이 새 관측치가 없는 주기에 부릅니다(금융위 값은
+     * 관측치와 따로 들어오므로). 확정 조정 시장이 아니면 아무것도 하지 않습니다. 한 책의 오류는 그 책만 되돌리고, 같은 오류는 결과에 다시
+     * 올리지 않습니다({@link #confirmErrors}).
+     */
+    Outcome confirm(PaperMarket market) {
+        MarketRun run = MarketRun.of(market, store);
+        if (!run.confirmsFills()) {
+            return Outcome.skipped("확정 조정이 없는 시장입니다(" + run.code() + ")");
+        }
+        return exclusively(() -> confirmLocked(run));
+    }
+
+    private Outcome confirmLocked(MarketRun market) {
+        if (!store.ready()) {
+            return Outcome.skipped("모의 매매 테이블이 아직 없습니다(V8·V9 적용 전)");
+        }
+        List<Book> books = new ArrayList<>(store.books(market.code()));
+        books.sort(Comparator.comparing(Book::code, market.bookOrder()));
+        int confirmed = 0;
+        List<String> worked = new ArrayList<>();
+        List<String> notes = new ArrayList<>();
+        List<String> errors = new ArrayList<>();
+        for (Book book : books) {
+            if (!PaperBooks.ACTIVE.equals(book.status()) && !PaperBooks.PAUSED.equals(book.status())) {
+                continue;   // 시작 전 책은 체결이 없음
+            }
+            FailureKey key = new FailureKey(market.code(), book.code());
+            try {
+                KrConfirmations.Result result = store.atomically(() -> confirmations.confirm(market, book));
+                confirmErrors.remove(key);
+                confirmed += result.confirmed();
+                if (result.worked()) {
+                    worked.add(book.code());
+                }
+                result.notes().forEach(note -> notes.add(book.code() + ": " + note));
+            } catch (RuntimeException e) {
+                String message = book.code() + ": 확정 조정 " + e.getClass().getSimpleName() + " " + e.getMessage();
+                if (!message.equals(confirmErrors.put(key, message))) {
+                    log.warn("모의 매매 확정 조정 실패({}) — 이 책만 되돌렸고 다음 주기에 다시 시도합니다(같은 오류는 다시 올리지 않음): {}",
+                            book.code(), e.toString());
+                    errors.add(message);
+                }
+            }
+        }
+        String skipped = confirmed == 0 && errors.isEmpty() ? "새로 확정할 체결이 없습니다" : null;
+        return new Outcome(0, 0, 0, 0, worked, skipped, notes, errors, List.of(), confirmed);
     }
 
     private Outcome processLocked(MarketRun market, Quotes quotes) {

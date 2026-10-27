@@ -39,7 +39,8 @@ import java.util.regex.Pattern;
  *   <li>관측치 {@code paper.kr.quotes}(수집기 {@code kr_paper_quotes}, KR 거래일 D 20:30 뒤 하루 1회 — K17)·이력 {@code kr_close_adj};
  *       파싱({@link #parse} — 계약 1, {@link KrQuotes})과 체결 선택(결정 d10)은 시장 몫(C2b)</li>
  *   <li>확정 판정 셋(결정 d9, C2a): 종가 나옴 = 그날 한국 수집 시각(20:30) 이후 수집({@link #closeAvailable}), 그 시점 가격 있음 = 시가
- *       사다리(C2b — {@link #fillable}), 확정 = 아직 없음(금융위 확정 조정은 C3 — {@link #pricesConfirmed})</li>
+ *       사다리(C2b — {@link #fillable}), 확정 = 토스 관측치로는 늘 아님({@link #pricesConfirmed}) — 금융위 확정 조정이 확정 순자산 줄을 씀
+ *       (K29, C3 — {@link #confirmsFills})</li>
  *   <li>체결(C2b — {@link KrFills}): 기준 거래일 뒤 첫 관측 봉의 시가 사다리({@link #fillBar}, 1분봉 FAILED는 결정 기한 뒤 수집본까지
  *       기다림 — 결정 d11), 체결가 = 관측가·비용 칸({@link #fill}), 시가 체결 장부 순서({@link #auctionFills})</li>
  *   <li>관측치 늦음 = 다음 수집 예정 + 여유(결정 d5, 명세 §4-9 'C1a에서 정한 것' — {@link #quotesLateAt})</li>
@@ -347,12 +348,20 @@ final class KrPaperMarket implements PaperMarket {
     }
 
     /**
-     * 늘 false — 한국 가격의 확정은 금융위 값으로 하는 확정 조정(K29, C3)입니다. 그 전의 순자산 줄·결정 행은 잠정({@code prices_final =
-     * false})이고, 토스 잠정 종가를 확정으로 적지 않습니다(보유가 없는 현금뿐인 줄은 장부가 따로 확정으로 둠).
+     * 늘 false — 토스 관측치(밤 잠정 종가)는 어느 날짜든 확정가가 아닙니다. 한국 가격의 확정은 금융위 값으로 하는 확정 조정(K29, C3 —
+     * {@link #confirmsFills}, {@code KrConfirmations})이고, 확정 순자산 줄({@code prices_final = true})은 그 확정 조정이 금융위 종가로 다시 씁니다.
+     * 그래서 관측치로 쓰는 순자산 줄·결정 행(D 밤의 결정 — 금융위 D 값은 D+1 밤에 들어옴)은 잠정입니다(보유가 없는 현금뿐인 줄은 장부가 그날까지의
+     * 체결이 모두 확정됐을 때만 확정으로 둠).
      */
     @Override
     public boolean pricesConfirmed(LocalDate barDate, Instant collectedAt, TradingCalendar calendar) {
         return false;
+    }
+
+    /** 금융위 확정 조정을 함(K29, C3 — 주식은 주식시세 {@code mkp}, ETF는 증권상품시세 시가). */
+    @Override
+    public boolean confirmsFills() {
+        return true;
     }
 
     /**
