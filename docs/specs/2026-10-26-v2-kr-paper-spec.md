@@ -300,6 +300,22 @@
 - **한국 결정 자료 게이트**(모두 충족해야 부름): ① KR 장부가 D 20:30 이후 수집된 `paper.kr.quotes`를 처리함(= 앞 결정의 D 대상 주문이 체결·불가 판정으로 정리됨, 출발일 S에는 보지 않음) ② 수집 범위 90% 이상에 D 봉 ③ U의 90% 이상에 D 수급 `updatedAt` ≥ 15:35·세부 칸 채움 ④ 금융위 기준일 = 직전 거래일 ⑤ 069500 D 봉 있음 ⑥ D가 `KrxCalendar` 거래일.
 - 한국 수집 태스크는 **KR 거래일 D의 20:30 뒤 하루 1회**(이미 받았으면 호출 0, 일봉은 최근 5봉 다시 받기). 20:30은 통합 세션 마감(20:00)과 수급 저녁판(20:21~20:23) 뒤다. 미국 `paper_quotes`처럼 `PAPER_ENABLED`와 무관하게 돈다.
 - 22:30을 고른 이유: 22:00은 기동 직후 수집과 겹치고, 다음 날 07:00 안은 06:57 slow 한 번에 기대며 미국 07:30 결정·08:00 정지 사이에 낀다. **재검토 규칙**: G4에서 20:2x판과 06:50판 사이 순매수 부호가 바뀐 종목이 5%를 넘으면 07:00 D+1 안을 다시 본다.
+- **C1a에서 정한 것 — 한국 관측치 '늦음' 기준**(2026-10-27, §9 묶음 A 리뷰 메모 'C1 — 관측치 늦음 기준의 한국 값'. 설계만 — 값을 쓰는 코드는 C1c):
+  - 미국처럼 '저장본 나이 > 고정 시간'(미국 3시간 = 수집 주기 1시간 × 3)이 아니라 **'다음 수집 예정 + 여유'를 지났는가**로 본다. `paper.kr.quotes`는 KR 거래일마다
+    한 번이고 한 번 다 받으면 그 밤 남은 slow는 저장본을 다시 쓰지 않으므로([확인] `kr_paper_quotes` — 할 일이 없으면 '최신 상태 … 호출 0회'로 끝나고 `put_snapshot`을 하지 않음)
+    수집 시각이 하루 넘게 그대로인 것이 정상이다. 고정 시간(시험용 묶음의 26시간)은 주말·연휴 내내 '늦음'을 띄운다.
+  - **식**: 저장본이 덮는 세션 S = 머리의 `session`(계약 1, D 20:30 KST 뒤 대상 세션) — 없으면 수집 시각 t로 수집기 `kr_target_session`과 같은 식(t의 KST 날짜가
+    거래일이고 20:30 뒤면 그날, 아니면 직전 거래일)을 그 실행의 `KrxCalendar`로 셈. 다음 세션 D′ = S 다음 KR 거래일. 다음 수집 예정 E(D′) = max(D′ 20:30, D′ 서버 창 기동 21:55) KST
+    = **D′ 21:55**(서버 창은 매일 21:55에 열림 — 그 뒤 첫 slow). **늦음 ⇔ 지금 ≥ E(D′) + 2시간 5분 = D′+1 00:00 KST**.
+  - **여유 2시간 5분**의 근거: 기동 직후 첫 slow가 ≈21:57~22:05에 끝나고([확인] slow p90 185초, 한국 태스크 +1~3분 [추정] — §4-9 표), 그 뒤 slow는 1시간마다다. 00:00은 그 밤
+    ≈21:55·≈22:55에 시작한 두 slow가 연달아 새 저장본을 내지 못한 뒤라(세 번째 ≈23:55 slow는 도는 중일 수 있음) 미국 규칙의 '두 번 연속 못 받음'과 같은 뜻이고, 토스의 늦은 판 다시 묻기(`sessionMiss` 하룻밤 3회)·1분봉 `FAILED`
+    다시 묻기도 그 주기들에서 돈다. 그리고 한국 결정 기한(D′+1 01:00)보다 한 시간 앞이라 배지를 보고 손쓸 시간이 남는다. 서버의 기동 직후 slow 소요는 아직 재지 않았다(G14) —
+    첫 slow가 22:30에 끝나도 여유는 1시간 30분이다.
+  - 주말·휴장: S = 금요일이면 D′ = 다음 월요일이라 그 사이(토·일 밤)는 늦음이 아니고 화요일 00:00 KST부터 늦음. 로컬 맥처럼 늘 켜진 스택은 D′ 20:30 뒤 첫 slow(≈21:30 전)에
+    받으므로 이 기준이 넉넉한 쪽으로만 틀린다(거짓 '늦음' 없음).
+  - D′이 달력이 모르는 해면 늦음 = null + 사유 '달력 없음'(K35 '그 계산만 null').
+  - **모양(C1c)**: `PaperMarket.quotesLateAfter()`(Duration)를 '늦음이 되는 순간'을 돌려주는 메서드로 바꾸고 달력을 인자로 받는다(그 실행의 달력 한 벌 — §4-13 'C1a 구현에서 정한 것'의
+    규칙). 미국은 수집 시각 + 3시간 그대로(`UsPaperMarketTest`·`PaperQueryServiceTest` 고정).
 
 ### 4-10. 호출 상한 (K18 — 권장안, 상한 20은 사용자 결정 V6)
 - 두 책이 `paper_api_usage` 한 줄을 그대로 공유한다(시장별 고정 몫 없음, 시장별 횟수는 결정·복기 행에서 셈).
@@ -387,6 +403,34 @@
   `DATE_TIME_MAP`(`kr.calendar.openTimeOverrides`)·`ALIAS_MAP`(`kr.news.aliases`)을 더한다 — 범위·형식 테스트와 화면 `settingKind`까지.
 - 출발일·초기 자본은 설정이 아니라 `dashboard.paper.kr.start-date`·`kr.initial-cash`(`PaperConfig`). **`kr.start-date`는 기본값 없이 비워 둘 수 있다**(비면 한국 초기화·출발이 막히고 미국 기동은 그대로).
   기동 때는 형식만 보고, 거래일 검사는 한국 초기화와 출발 작업 때 `StoreReader.quietly`로 읽은 `kr_holidays` + `KrxCalendar`로 한다(수집 유발 금지). [확인] 지금 `PaperConfig`는 기동 때 `UsMarketCalendar.isTradingDay`로 검사하고 실패하면 기동을 멈춘다 — 이 검사는 미국 키에만 남긴다.
+- **C1a 구현에서 정한 것**(2026-10-27, 커밋 `be35b8e`·`ec69433`·`6f53609` — §9 묶음 A 리뷰 메모 'C1 — 시장 목록과 실행마다 달력 한 벌'·'C1 — 시장별 설정 읽기'가 정하지 않은 자리.
+  미국 숫자 불변 — 고정본 `paper/golden/`·패킷·프롬프트 해시 그대로, 백엔드 시험 1,431 → 1,444):
+  - **시장 목록 = 주입 빈** `PaperMarkets`(운영 목록 `PRODUCTION` = 미국 하나 — 한국 묶음은 C1b에서 더함). 결정·리스크·복기 작업, 조회, 관리가 정적 `PaperMarkets.ALL`·`of` 대신 받는다.
+  - **실행 문맥 `MarketRun`** = 시장 묶음 + 그 실행이 시작할 때 **한 번** 만든 달력 + 그 실행이 읽은 설정 행. `PaperMarkets.open(market)`이 설정 행을 한 번 읽고(테이블이 없으면 행 없이),
+    그 본문과 저장본 읽기(`StoreReader.quietly` — 수집을 깨우지 않음)를 `MarketRun.Inputs`로 시장 묶음에 넘겨 `PaperMarket.openCalendar(inputs)`가 달력을 만든다(미국은 고정 달력
+    `UsMarketCalendar.CALENDAR` 그대로, 저장본을 읽지 않음). 한국 묶음(C1b)이 이 자리에서 `kr_holidays` 저장본(`announced=false`·빈 해는 모르는 해)과 그 판의
+    `kr.calendar.extraClosures`로 `KrxCalendar`를 만든다 — 저장본 해석·설정 형(`DATE_LIST`)은 C1b.
+  - **여는 곳**: 정기·수동 결정 작업 한 번, 리스크 점검 한 번, 복기 작업 한 번(수동 실행은 복기 주를 정할 때와 복기할 때가 같은 실행), 조회 한 번(개요·상태·보유·책 요약·순자산 —
+    보유 응답 안의 책 요약도 같은 실행). 실행은 장부(`process` — 장부는 이제 설정을 따로 읽지 않아 `PaperLedgerService` 생성자에서 설정 서비스를 뺐다)·관측치 요약·Claude 결정
+    (`ClaudeBookService.decide` → 결정 파이프라인을 그 실행에 묶은 사본 `bind`)·복기 서비스로 그대로 넘어간다. 이미 연 실행을 다시 열면 그대로 돌려준다(한 실행이 달력을 두 번 만들지 않음).
+  - **결정 행 `settings_version` = 그 실행이 읽은 판**: 결정 작업이 시각·기한을 정하고 장부를 돌린 판과 Claude 결정의 패킷·시스템 프롬프트·검증·결정 행이 한 판이다(그 사이 설정 탭 저장은
+    다음 실행부터). 실행이 설정 행 없이 열렸을 때만 결정이 행을 만든다(초기화 전에는 책이 없어 실제로는 오지 않음). 시험: `ClaudeBookServiceTest.decisionRunUsesOneCalendarAndTheSettingsVersionItRead`
+    (실행을 연 뒤 저장된 새 판이 결정 행·패킷·프롬프트에 끼지 않음 — 결정이 설정을 다시 읽게 바꾸면 실패함을 확인), `MarketRunTest`(리스크·복기·조회도 실행마다 달력 한 벌).
+  - **실행 밖에서 달력을 묻지 못하게**: 실행마다 달력을 만드는 시장 묶음은 고정 달력이 없어 `calendar()`가 던진다(시험용 `TestKrMarket.perRun`이 그 판 — 회귀 시험이 이것으로 '실행 밖 경로 없음'을 본다).
+    시장 묶음을 받는 옛 경로(미국 판 시그니처·시험)는 `MarketRun.of(market, store)`가 고정 달력과 지금 설정 행으로 그 자리에서 연다 — 한국 묶음은 이 경로로 돌 수 없다.
+  - `MarketRun`은 `PaperMarket`을 구현해 감싼 묶음에 맡기므로 시장 묶음을 받던 코드가 그대로 돈다. 미국 전용 단계 판정은 `definition() == UsPaperMarket.INSTANCE`(동일성). **달력을 쓰는 기본 메서드**
+    (`isFinal`·`requireCalendarWindow`)는 그 실행의 달력으로 돈다 — 시장 묶음이 그 기본 메서드를 덮어쓰면 실행에서는 그 판이 불리지 않으므로, **시장마다 다른 판정은 달력을 인자로 받는 메서드로 둔다**
+    (C2의 확정 판정 나누기 `closeAvailable`·`fillable`·`pricesConfirmed`가 따를 규칙). 가짜 협력 객체의 시장 인자는 시험 도우미 `PaperFixtures.market(묶음)`으로 맞춘다.
+  - **시장별 설정 읽기** `PaperSettings.from(body, market)`: 장부 키(`slippageBp`·`trailingStopPct`·`lockoutTradingDays`·`cashLikeTickers`)와 `rules.*`는 그 시장 접두어 아래(미국은 접두어 없이 지금 키,
+    한국 `kr.` → 본문의 `kr` 묶음), 현금성이 없으면 그 시장 기본값(`defaultCashLike` — 미국 SHY, 한국 153130은 C1b의 `KrPaperMarket`). `gate.*`·`blend.*`(13F·OS 게이트)는 미국 전용 단계가 읽는 자리라 시장과 상관없이
+    설정 루트. 접두어 묶음이 통째로 없거나 객체가 아니면 그 키들을 모두 기본값으로 읽고 fallbacks에 **접두어를 붙인 실제 키 이름**(`kr.slippageBp`·`kr.rules` …)을 남긴다.
+    검증기 한도 `PacketBuilder.Limits.from(body, market)`도 같은 묶음에서 읽고, 최소 주문 금액이 없으면 새 `PaperMarket.defaultMinOrderNotional()`(미국 $500 — 한국 500,000원은 C1b의
+    `KrPaperMarket`), 나머지 한도 기본값은 두 시장 같다(§4-13 '미국 값과 같은 값으로 `kr.*`에').
+  - **쓰는 곳**(명세가 꼽은 다섯 + 하나): 장부(실행의 설정)·결정 파이프라인 `plan`(현금성 → 검증기 문맥)·검증기 한도·`FrameworkService.hardRules(market, body)`(미국 묶음이 자신을 넘김 — 문구는 미국 것,
+    한국 하드 규칙 줄은 E2)·관리 초기화와 리셋(`PaperSettingsService.current(market)` — 리셋한 책의 시장을 모르면 미국 판, 그 경우 다시 사후 체결하지 않음) + 조회 보유 표(스탑가·현금성).
+    미국 전용 경로(규칙 책·13F 선정·미국 출발 사후 체결·미국 패킷)는 시장 없는 옛 판(= 미국)을 그대로 쓴다.
+  - **아직 실행을 받지 않는 곳**(넘김): 메모(`NoteService` 목록·작성 — 지금 미국 화면 경로뿐, `?market`은 F1), 복기 프롬프트의 설정 읽기(`ReviewService` — 복기 행에 설정 판 칸이 없음, E3),
+    §4-4 'B5 구현에서 정한 것'의 '관측치 요약 `finalClose`·메모 만료·조회의 최근 세션이 모르는 해에서 예외' — 한국 묶음이 운영 목록에 들어가는 C1b에서 그 경로를 null + 사유로 막는다.
 
 ### 4-14. 스키마 V14 (K23 — 권장안; V13 `market`·`currency`는 0단계에서 끝남)
 - `paper_orders.timing` CHECK에 `NEXT_OPEN` 추가.
@@ -686,16 +730,16 @@ A8이 달력 없는 옛 시그니처 호출과 결정 작업·시세 저장본�
   B5에서 정할 것: `KrxCalendar`가 공휴일 목록 없는 해에 던질 전용 예외(가칭 `CalendarUnavailableException`, analytics) 또는 `covers(LocalDate)`(미국은 늘 참),
   정기 작업(결정·리스크·복기)이 그 예외를 작업 기록의 '달력 없음' 사유로 남기기(지금은 `log.warn`뿐), 조회의 통계·보유 거래일은 null + 사유
   (K35 '지난 해는 그 계산만 null' — 지금 `PaperQueryService.stats`는 `IllegalArgumentException`만 잡는다).
-- **C1 — 시장 목록과 실행마다 달력 한 벌**: 한국 달력은 `kr_holidays`(`StoreReader.quietly`)와 설정 `kr.calendar.extraClosures`·`openTimeOverrides`에 기대므로
+- **C1 — 시장 목록과 실행마다 달력 한 벌**(→ **C1a에서 정함**, §4-13 'C1a 구현에서 정한 것' — 주입 빈 `PaperMarkets`·실행 문맥 `MarketRun`): 한국 달력은 `kr_holidays`(`StoreReader.quietly`)와 설정 `kr.calendar.extraClosures`·`openTimeOverrides`에 기대므로
   정적 `PaperMarkets.ALL`·인자 없는 `PaperMarket.calendar()`로는 만들 수 없다. 시장 목록을 주입 빈으로 바꾸거나(`KrPaperMarket` @Component + StoreReader),
   실행 시작 때 한 번 만든 `MarketRun`(그때 읽은 공휴일 + 그 결정이 읽은 설정 판으로 만든 달력)을 장부·결정 파이프라인·조회에 넘긴다 — 결정 행의
   `settings_version`과 달력이 같은 판이 되고, 한 실행 안의 `calendar()` 호출(약 27곳, `isFinal`은 봉마다)이 한 인스턴스를 쓰게.
   바꿀 곳: `PaperDecisionJob`·`PaperRiskJob`·`PaperReviewJob`·`PaperQueryService` 기본 생성자의 `PaperMarkets.ALL`, `PaperAdminService`의 `PaperMarkets.of`.
   `UsPaperMarket.INSTANCE`는 동일성 비교(미국 전용 단계 판정)에 남긴다.
-- **C1 — 시장별 설정 읽기**: 장부(`processLocked`)·결정 파이프라인 `plan`·검증기 한도·`FrameworkService` 하드 규칙·관리 리셋이 설정 루트(미국) 키를 읽는다
+- **C1 — 시장별 설정 읽기**(→ **C1a에서 정함**, §4-13 'C1a 구현에서 정한 것' — `PaperSettings.from(body, market)`·`Limits.from(body, market)`): 장부(`processLocked`)·결정 파이프라인 `plan`·검증기 한도·`FrameworkService` 하드 규칙·관리 리셋이 설정 루트(미국) 키를 읽는다
   (슬리피지·스탑·재진입 금지·`cashLikeTickers` 기본 SHY). 그대로면 한국 책의 153130이 현금성이 아니어서 스탑·비중 상한·종목 수에 걸린다.
   `PaperSettings.from(body, market)`(접두어 `settingsPrefix()`, 현금성 기본 `defaultCashLike()` — A에서는 읽는 곳 없이 남김)을 두고 다섯 곳이 쓴다. 그 전에는 한국 책을 장부에 돌리지 않는다.
-- **C1 — 관측치 늦음 기준의 한국 값**: A에서 `PaperMarket.quotesLateAfter()`(미국 3시간)로 옮겼다. 한국은 하루 1회 수집(K17)이라 고정 시간보다
+- **C1 — 관측치 늦음 기준의 한국 값**(→ **C1a에서 정함**, §4-9 'C1a에서 정한 것' — D′ 21:55 + 2시간 5분 = D′+1 00:00 KST, 코드는 C1c): A에서 `PaperMarket.quotesLateAfter()`(미국 3시간)로 옮겼다. 한국은 하루 1회 수집(K17)이라 고정 시간보다
   '다음 수집 예정(KR 거래일 D 20:30 뒤 첫 slow) + 여유'가 맞다 — C1에서 정한다.
 - **C2·C3 — 확정 판정 나누기**: `PaperMarket.isFinal(봉 날짜, 수집 시각)` 하나가 `NEXT_CLOSE` 체결 가능·분할 기준가·밤 순자산 줄 쓰기·순자산 `prices_final`·
   결정의 `pricesFinal`과 `PRICES_NOT_FINAL` 대기·복기 `finalCloseIn`·조회와 리스크 기록의 `finalClose`를 함께 정한다. 한국은 셋으로 갈린다 —
