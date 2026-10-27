@@ -19,6 +19,7 @@ tests/test_fsc.py
 from __future__ import annotations
 
 import contextlib
+from datetime import date, datetime
 from types import SimpleNamespace
 
 import pytest
@@ -427,12 +428,52 @@ class _HistoryStore(_FakeStore):
         return len(gone)
 
 
+# B2 시험의 '오늘'과 달력 — 실제 시계·전역 공휴일(다른 시험이 바꿔 둘 수 있음)에 기대면 보존 하한(오늘 − 400일)과 기대 날짜가 실행하는
+# 날마다 달라져, 날짜 목록이 틀려도 같은 함수로 만든 기대값이 그대로 받아들였습니다. 2026년 공휴일은 천문연 실제 응답
+# (fixtures/public/kasi_getRestDeInfo_2026.xml)이고, 2025년 목록은 두지 않습니다(로컬 저장본이 2026·2027년뿐이던 때 — 명세 §4-15 B2).
+B2_TODAY = date(2026, 10, 27)
+B2_HOLIDAYS_2026 = (
+    "2026-01-01", "2026-02-16", "2026-02-17", "2026-02-18", "2026-03-01", "2026-03-02", "2026-05-01", "2026-05-05", "2026-05-24",
+    "2026-05-25", "2026-06-03", "2026-06-06", "2026-07-17", "2026-08-15", "2026-08-17", "2026-09-24", "2026-09-25", "2026-09-26",
+    "2026-10-03", "2026-10-05", "2026-10-09", "2026-12-25",
+)
+
+
+class _B2Clock(datetime):
+    """2026-10-27(화) 22:00 KST에 멈춘 시계(korea_public.datetime 자리)."""
+
+    @classmethod
+    def now(cls, tz=None):
+        return cls(2026, 10, 27, 22, 0, tzinfo=tz)
+
+
+@pytest.fixture()
+def b2_day(monkeypatch):
+    from app import krcalendar, tasks
+
+    monkeypatch.setattr(tasks.korea_public, "datetime", _B2Clock)
+    monkeypatch.setattr(krcalendar, "_holidays", set(B2_HOLIDAYS_2026))
+
+
 def _today():
-    from datetime import datetime
+    return B2_TODAY
 
-    from app import tasks
 
-    return datetime.now(tasks.KST).date()
+def test_B2_과거_쪽_후보일은_거래일만_최근_날부터_하한까지_고정_날짜로():
+    """
+    후보일 규칙 두 가지(거래일만 — 주말·공휴일을 건너뜀, 보존 하한 포함)를 같은 함수로 만든 기대값이 아니라 날짜 그대로 잠급니다.
+    """
+    from app import krcalendar, tasks
+
+    saved = krcalendar.holidays()
+    krcalendar.set_holidays({"2026-10-05", "2026-10-09"})
+    try:
+        assert [d.isoformat() for d in tasks._fsc_backfill_dates(date(2026, 10, 14), date(2026, 10, 2))] == [
+            "2026-10-13", "2026-10-12", "2026-10-08", "2026-10-07", "2026-10-06", "2026-10-02"]   # 하한(금) 포함
+        assert [d.isoformat() for d in tasks._fsc_backfill_dates(date(2026, 10, 7), date(2026, 10, 4))] == ["2026-10-06"]
+        assert tasks._fsc_backfill_dates(date(2026, 10, 2), date(2026, 10, 2)) == []
+    finally:
+        krcalendar.set_holidays(saved)
 
 
 def _up_to_date(monkeypatch, *older_days):
@@ -470,7 +511,7 @@ def _ymd(day) -> str:
     return day.strftime("%Y%m%d")
 
 
-def test_B2_과거_쪽을_최근_날부터_메우고_메타의_최신_기준일은_건드리지_않는다(monkeypatch):
+def test_B2_과거_쪽을_최근_날부터_메우고_메타의_최신_기준일은_건드리지_않는다(b2_day, monkeypatch):
     """
     저장본이 최근 며칠뿐이면(2026-10-21부터) 보존 창 400일이 차는 데 1년 넘게 걸렸습니다 — 최신 쪽만 메웠기 때문입니다.
     저장 첫 기준일 바로 앞 거래일부터 거슬러 가며 하루치(종목 + 시장 합계)를 저장하고, 메타 스냅샷(latestBasDt = 최신 기준일)은 쓰지 않습니다.
@@ -484,6 +525,7 @@ def test_B2_과거_쪽을_최근_날부터_메우고_메타의_최신_기준일�
     result = tasks.task_fsc_prices()
 
     expected = tasks._fsc_backfill_dates(latest, _today() - timedelta(days=tasks.FSC_RETENTION_DAYS))[:30]
+    assert (latest, expected[0], expected[-1]) == (date(2026, 10, 26), date(2026, 10, 23), date(2026, 9, 8))   # 추석·개천절 대체 건너뜀
     assert [d for d, _ in fake.observations] == [d.isoformat() for d in expected], "최근 날부터 30기준일(90회 ÷ 3쪽)"
     assert [c for c in calls if c[1] == 1] == [(_ymd(d), 1) for d in expected], "최신 쪽은 호출 0회"
     assert len(calls) == tasks.FSC_BACKFILL_CALL_BUDGET == 90
@@ -493,7 +535,7 @@ def test_B2_과거_쪽을_최근_날부터_메우고_메타의_최신_기준일�
     assert f"과거 쪽 30일 보충, 가장 이른 기준일 {expected[-1].isoformat()}" in result and "호출 90회" in result
 
 
-def test_B2_과거_쪽_예산은_최신_쪽과_따로_센다(monkeypatch):
+def test_B2_과거_쪽_예산은_최신_쪽과_따로_센다(b2_day, monkeypatch):
     """최신 쪽 보충(예산 12)이 호출을 쓴 실행에서도 과거 쪽은 제 예산 90을 다 씁니다 — 한쪽이 다른 쪽을 굶기지 않습니다."""
     from app import tasks
 
@@ -510,7 +552,7 @@ def test_B2_과거_쪽_예산은_최신_쪽과_따로_센다(monkeypatch):
     assert result.startswith(f"{candidates[0].isoformat()} 3종목 · 2일 보충 (호출 6회) · 과거 쪽 30일 보충")
 
 
-def test_B2_새_기준일이_아직_없어도_과거_쪽을_저장했으면_수집_결과_없음이_아니다(monkeypatch):
+def test_B2_새_기준일이_아직_없어도_과거_쪽을_저장했으면_수집_결과_없음이_아니다(b2_day, monkeypatch):
     """최신 쪽이 '발표 전'(빈 날)이어도 과거 쪽에서 진짜 데이터를 저장했으면 성공입니다 — 수집 결과 없음(EmptyResult)은 아무것도 쓰지 않은 실행만."""
     from app import tasks
 
@@ -525,7 +567,7 @@ def test_B2_새_기준일이_아직_없어도_과거_쪽을_저장했으면_수�
     assert result.startswith("새 기준일 데이터 없음 (호출 1회) · 과거 쪽 30일 보충")
 
 
-def test_B2_과거_쪽은_하루치를_다_받지_못하고_예산이_떨어진_날은_저장하지_않고_실패로도_세지_않는다(monkeypatch):
+def test_B2_과거_쪽은_하루치를_다_받지_못하고_예산이_떨어진_날은_저장하지_않고_실패로도_세지_않는다(b2_day, monkeypatch):
     """하루치가 4쪽이면 90회로 22일(88회)을 받고 23번째 날은 2쪽에서 예산이 떨어집니다 — 잘린 하루치는 버리고 다음 실행이 그날부터."""
     from datetime import timedelta
 
@@ -546,7 +588,7 @@ def test_B2_과거_쪽은_하루치를_다_받지_못하고_예산이_떨어진_
     assert calls[0] == (_ymd(pending[22]), 1), "다음 실행은 그날부터"
 
 
-def test_B2_과거_쪽은_실패한_날에서_멈추고_다음_실행이_그날부터_다시_받는다(monkeypatch):
+def test_B2_과거_쪽은_실패한_날에서_멈추고_다음_실행이_그날부터_다시_받는다(b2_day, monkeypatch):
     """
     QA-034를 과거 쪽으로 뒤집은 규칙 — 실패한 날보다 오래된 날을 먼저 저장하면 저장 첫 기준일이 그날을 앞질러 다시 받지 않습니다.
     받은 날은 진짜 데이터라 저장하고(태스크는 성공), 사유를 남깁니다.
@@ -571,7 +613,7 @@ def test_B2_과거_쪽은_실패한_날에서_멈추고_다음_실행이_그날�
     assert pending[2].isoformat() in fake.days
 
 
-def test_B2_과거_쪽은_자료_없는_날을_건너뛰고_더_거슬러_간다(monkeypatch):
+def test_B2_과거_쪽은_자료_없는_날을_건너뛰고_더_거슬러_간다(b2_day, monkeypatch):
     """
     지난 날에 1쪽이 비고 totalCount 0이면 '발표 전'이 아니라 달력이 모르는 휴장일입니다(저장된 공휴일 목록에 없는 해 — 2025년).
     그날에서 멈추면 영영 막히므로 건너뛰고, 그보다 오래된 날을 저장하면 다시 묻지 않습니다.
@@ -596,7 +638,7 @@ def test_B2_과거_쪽은_자료_없는_날을_건너뛰고_더_거슬러_간다
     assert all(c[0] != _ymd(pending[1]) for c in calls), "더 오래된 날을 저장했으면 그 빈 날은 다시 묻지 않습니다"
 
 
-def test_B2_과거_쪽은_보존_창_안까지만_메우고_다_메우면_호출_0회다(monkeypatch):
+def test_B2_과거_쪽은_보존_창_안까지만_메우고_다_메우면_호출_0회다(b2_day, monkeypatch):
     """보존 하한(오늘 − 400일)보다 이른 날은 받지 않습니다(받아도 바로 지워짐). 끝까지 메운 뒤에는 몇 번 돌아도 호출 0회 — 같은 저장본입니다."""
     from datetime import timedelta
 
@@ -609,7 +651,7 @@ def test_B2_과거_쪽은_보존_창_안까지만_메우고_다_메우면_호출
     result = tasks.task_fsc_prices()
 
     remaining = tasks._fsc_backfill_dates(near_floor, floor)
-    assert len(remaining) == 2 and all(d >= floor for d in remaining)
+    assert floor == date(2025, 9, 22) and remaining == [date(2025, 9, 23), date(2025, 9, 22)], "하한 날(월)이 거래일이면 포함"
     assert [d for d, _ in fake.observations] == [d.isoformat() for d in remaining]
     assert len(calls) == 6 and "보존 창 끝까지 메움" in result
     assert fake.deleted_before == [floor.isoformat()], "정리는 같은 하한으로"
@@ -621,7 +663,7 @@ def test_B2_과거_쪽은_보존_창_안까지만_메우고_다_메우면_호출
     assert result == f"최신 상태 (기준일 {latest.isoformat()}, 호출 0회)"
 
 
-def test_B2_과거_쪽은_시간_상한을_넘기면_새_기준일을_시작하지_않는다(monkeypatch):
+def test_B2_과거_쪽은_시간_상한을_넘기면_새_기준일을_시작하지_않는다(b2_day, monkeypatch):
     """slow 상한(600초)에 닿으면 '시간 초과'로 받은 것도 기록이 흐려집니다. 태스크 시작부터 300초가 지나면 새 날을 더 시작하지 않습니다."""
     from app import tasks
 
@@ -642,7 +684,7 @@ def test_B2_과거_쪽은_시간_상한을_넘기면_새_기준일을_시작하�
     assert f"시간 상한 {tasks.FSC_BACKFILL_TIME_LIMIT_SECONDS:.0f}초 — 나머지는 다음 실행" in result
 
 
-def test_B2_과거_쪽에서_키가_없으면_수집_결과_없음이다(monkeypatch):
+def test_B2_과거_쪽에서_키가_없으면_수집_결과_없음이다(b2_day, monkeypatch):
     """최신 쪽이 할 일 없어도 과거 쪽이 부르려다 키가 없으면 '키 미설정'으로 남깁니다(최신 쪽과 같은 문구)."""
     from app import tasks
 
@@ -652,7 +694,7 @@ def test_B2_과거_쪽에서_키가_없으면_수집_결과_없음이다(monkeyp
         tasks.task_fsc_prices()
 
 
-def test_B2_과거_쪽_메우기는_실제_저장본에서_멱등이다(store, monkeypatch):
+def test_B2_과거_쪽_메우기는_실제_저장본에서_멱등이다(b2_day, store, monkeypatch):
     """
     실제 PostgreSQL에서 — 첫 기준일(MIN)을 읽어 하한까지 메우고, 다시 돌면 호출 0회·행 그대로입니다.
     시장 합계는 날마다 하나씩, 메타 스냅샷의 latestBasDt는 최신 기준일 그대로입니다.
@@ -669,7 +711,8 @@ def test_B2_과거_쪽_메우기는_실제_저장본에서_멱등이다(store, m
     tasks.task_fsc_prices()
     floor = _today() - timedelta(days=20)
     expected = tasks._fsc_backfill_dates(latest, floor)
-    assert len(expected) >= 10 and len(calls) == len(expected)
+    assert (len(expected), expected[0], expected[-1]) == (12, date(2026, 10, 23), date(2026, 10, 7))   # 10-09(한글날) 건너뜀
+    assert len(calls) == len(expected)
     assert store.earliest_observation_date(catalog.OBS_FSC_PRICE) == expected[-1].isoformat()
     assert store.list_observation_dates(catalog.OBS_FSC_PRICE) == sorted(d.isoformat() for d in [latest, *expected])
     assert len(store.read_timeseries(catalog.TS_FSC_MARKET, "KOSPI.marketCap")) == len(expected) + 1
