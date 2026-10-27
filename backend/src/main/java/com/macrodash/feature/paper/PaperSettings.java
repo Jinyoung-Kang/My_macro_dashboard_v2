@@ -4,6 +4,7 @@ import com.macrodash.analytics.GateIndicator;
 import com.macrodash.analytics.Signal13F;
 import com.macrodash.support.Json;
 import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.node.JsonNodeFactory;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -15,9 +16,16 @@ import java.util.function.DoublePredicate;
  *
  * <p>나머지 키(모델·상한·트랙레코드 등)는 본문에 그대로 있고 뒤 단계의 서비스가 읽습니다.
  *
+ * <p><b>시장마다 읽습니다</b>(C1a, 2단계 명세 §9 묶음 A 리뷰 메모 'C1 — 시장별 설정 읽기'): 장부 키(슬리피지·스탑·재진입 금지·현금성)와
+ * {@code rules.*}는 그 시장의 설정 접두어 아래({@link PaperMarket#settingsPrefix} — 미국은 접두어 없이 지금 키, 한국은 {@code kr.})에서
+ * 읽고, 현금성 키가 없으면 그 시장의 현금성 기본값({@link PaperMarket#defaultCashLike} — 미국 SHY)입니다. 13F·OS 게이트 키
+ * ({@code gate.*}·{@code blend.*})는 미국 전용 단계가 읽는 자리라 시장과 상관없이 설정 루트에서 읽습니다(미국 판과 같은 값).
+ * 시장을 받지 않는 {@link #from(JsonNode)}·{@link #defaults()}는 미국입니다. 장부·결정 파이프라인·검증기·프롬프트 하드 규칙·관리
+ * 리셋이 시장 판({@link #from(JsonNode, PaperMarket)})을 씁니다.
+ *
  * <p><b>키가 없거나 값이 틀리면 그 키만 기본값으로 읽습니다.</b> 설정 쓰기 API(단계 3a)가 검사하기 전의 행이나 손으로 고친
  * 행이 있어도 장부가 멈추지 않게 — 예컨대 스탑 비율 0은 모든 보유를 바로 팔게 만들고, 슬리피지 음수는 '유리한 체결'이 됩니다.
- * 기본값으로 읽은 키는 {@link #fallbacks}에 남아 화면·로그가 알 수 있습니다.
+ * 기본값으로 읽은 키는 {@link #fallbacks}에 남아 화면·로그가 알 수 있습니다(시장 접두어를 붙인 실제 키 이름 — 한국은 {@code kr.slippageBp}).
  *
  * @param slippageBp         체결가에 얹는 슬리피지(bp, 0 이상 10000 미만, 기본 5 — D9)
  * @param trailingStopPct    트레일링 스탑(%, 0 초과 100 미만, 기본 8 — D10)
@@ -43,10 +51,16 @@ public record PaperSettings(double slippageBp, double trailingStopPct, int locko
         fallbacks = List.copyOf(fallbacks);
     }
 
-    /** 설정 행이 아직 없을 때(초기화 전). */
+    /** 설정 행이 아직 없을 때(초기화 전) — 미국({@link #defaults(PaperMarket)}의 미국 판). */
     public static PaperSettings defaults() {
+        return defaults(UsPaperMarket.INSTANCE);
+    }
+
+    /** 설정 행이 아직 없을 때의 그 시장 값 — 현금성은 그 시장의 기본값({@link PaperMarket#defaultCashLike}). */
+    static PaperSettings defaults(PaperMarket market) {
         return new PaperSettings(DEFAULT_SLIPPAGE_BP, DEFAULT_TRAILING_STOP_PCT, DEFAULT_LOCKOUT_TRADING_DAYS,
-                DEFAULT_CASH_LIKE, GateIndicator.Thresholds.defaults(), List.of(), Blend.defaults(), Rules.defaults());
+                market.defaultCashLike(), GateIndicator.Thresholds.defaults(), List.of(), Blend.defaults(),
+                Rules.defaults());
     }
 
     /** 스탑을 걸지 않는 현금성 종목인가. */
@@ -54,17 +68,32 @@ public record PaperSettings(double slippageBp, double trailingStopPct, int locko
         return cashLikeTickers.contains(ticker);
     }
 
-    /** DB 본문에서 읽습니다. null이면 기본값 그대로. */
+    /** DB 본문에서 미국 값을 읽습니다({@link #from(JsonNode, PaperMarket)}의 미국 판). null이면 기본값 그대로. */
     static PaperSettings from(JsonNode body) {
+        return from(body, UsPaperMarket.INSTANCE);
+    }
+
+    /**
+     * DB 본문에서 그 시장 값을 읽습니다(클래스 설명 — 장부 키·{@code rules.*}는 그 시장 접두어 아래, {@code gate.*}·{@code blend.*}는
+     * 설정 루트). null이면 그 시장 기본값 그대로. 접두어 묶음이 통째로 없으면(한국 키를 아직 쓰지 않은 행) 그 묶음의 키를 모두
+     * 기본값으로 읽고 {@link #fallbacks}에 접두어를 붙인 이름으로 남깁니다.
+     */
+    static PaperSettings from(JsonNode body, PaperMarket market) {
         if (body == null) {
-            return defaults();
+            return defaults(market);
         }
+        String prefix = market.settingsPrefix();
+        JsonNode scoped = scoped(body, prefix);
+        List<String> marketFallbacks = new ArrayList<>();
+        double slippage = number(scoped, "slippageBp", DEFAULT_SLIPPAGE_BP, v -> v >= 0 && v < 10_000,
+                marketFallbacks);
+        double stop = number(scoped, "trailingStopPct", DEFAULT_TRAILING_STOP_PCT, v -> v > 0 && v < 100,
+                marketFallbacks);
+        double lockout = number(scoped, "lockoutTradingDays", DEFAULT_LOCKOUT_TRADING_DAYS,
+                v -> v >= 0 && v <= 1000 && v == Math.rint(v), marketFallbacks);
+        List<String> cashLike = tickers(scoped, "cashLikeTickers", market.defaultCashLike(), marketFallbacks);
         List<String> fallbacks = new ArrayList<>();
-        double slippage = number(body, "slippageBp", DEFAULT_SLIPPAGE_BP, v -> v >= 0 && v < 10_000, fallbacks);
-        double stop = number(body, "trailingStopPct", DEFAULT_TRAILING_STOP_PCT, v -> v > 0 && v < 100, fallbacks);
-        double lockout = number(body, "lockoutTradingDays", DEFAULT_LOCKOUT_TRADING_DAYS,
-                v -> v >= 0 && v <= 1000 && v == Math.rint(v), fallbacks);
-        List<String> cashLike = tickers(body, "cashLikeTickers", fallbacks);
+        marketFallbacks.forEach(key -> fallbacks.add(prefix + key));
 
         GateIndicator.Thresholds base = GateIndicator.Thresholds.defaults();
         JsonNode gate = Json.child(body, "gate");
@@ -84,8 +113,23 @@ public record PaperSettings(double slippageBp, double trailingStopPct, int locko
         } else {
             fallbacks.add("gate");
         }
+        Rules rules = Rules.from(scoped);
         return new PaperSettings(slippage, stop, (int) lockout, cashLike, thresholds, fallbacks, Blend.from(body),
-                Rules.from(body));
+                new Rules(rules.parkCashThresholdPct(), rules.fallbacks().stream().map(key -> prefix + key).toList()));
+    }
+
+    /**
+     * 그 시장 접두어 아래 묶음({@code kr.} → 본문의 {@code kr}, 점 경로) — 접두어가 없으면 본문 그대로. 묶음이 없거나 객체가 아니면 빈
+     * 객체(그 묶음의 키가 모두 '없음'으로 읽혀 기본값과 fallbacks에 남게 — null로 두면 {@link Rules#from}이 '설정 행 없음'으로 읽음).
+     * 검증기 한도({@link PacketBuilder.Limits#from(JsonNode, PaperMarket)})도 같은 묶음을 읽습니다.
+     */
+    static JsonNode scoped(JsonNode body, String prefix) {
+        if (prefix.isEmpty()) {
+            return body;
+        }
+        JsonNode node = PaperSettingsService.valueAt(body, prefix.endsWith(".")
+                ? prefix.substring(0, prefix.length() - 1) : prefix);
+        return node != null && node.isObject() ? node : JsonNodeFactory.instance.objectNode();
     }
 
     private static double number(JsonNode body, String key, double fallback, DoublePredicate valid,
@@ -221,11 +265,11 @@ public record PaperSettings(double slippageBp, double trailingStopPct, int locko
         }
     }
 
-    private static List<String> tickers(JsonNode body, String key, List<String> fallbacks) {
+    private static List<String> tickers(JsonNode body, String key, List<String> fallback, List<String> fallbacks) {
         JsonNode node = Json.child(body, key);
         if (node == null || !node.isArray()) {
             fallbacks.add(key);
-            return DEFAULT_CASH_LIKE;
+            return fallback;
         }
         List<String> out = new ArrayList<>();
         for (JsonNode item : node) {

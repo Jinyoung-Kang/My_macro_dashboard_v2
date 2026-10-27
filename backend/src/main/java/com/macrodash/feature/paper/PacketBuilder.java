@@ -1861,14 +1861,29 @@ public class PacketBuilder {
     record Limits(double maxWeightStockPct, double maxWeightEtfPct, int maxPositions, double minOrderNotional,
                   int maxDiscretionaryOrdersPerMonth, int minHoldTradingDaysForSell) {
 
+        /** 미국 최소 주문 금액 기본값($) — {@link UsPaperMarket#defaultMinOrderNotional}. */
+        static final double DEFAULT_MIN_ORDER_NOTIONAL = 500;
+
+        /** 미국 한도 — {@link #from(JsonNode, PaperMarket)}의 미국 판(미국 패킷 12_hardRules가 씀). */
         static Limits from(JsonNode body) {
-            return new Limits(number(body, "maxWeightStockPct", 10, v -> v > 0 && v <= 100),
-                    number(body, "maxWeightEtfPct", 20, v -> v > 0 && v <= 100),
-                    (int) number(body, "maxPositions", 20, v -> v >= 1 && v <= 200 && v == Math.rint(v)),
-                    number(body, "minOrderNotional", 500, v -> v >= 0),
-                    (int) number(body, "maxDiscretionaryOrdersPerMonth", 20,
+            return from(body, UsPaperMarket.INSTANCE);
+        }
+
+        /**
+         * 그 시장의 검증기 한도(C1a) — 키는 그 시장 접두어 아래({@link PaperMarket#settingsPrefix}, 미국은 접두어 없이 지금 키), 없거나
+         * 범위 밖이면 그 키만 기본값(최소 주문 금액은 그 시장 통화의 {@link PaperMarket#defaultMinOrderNotional}, 나머지는 두 시장 같음
+         * — 명세 §4-13 '미국 값과 같은 값으로 kr.*에').
+         */
+        static Limits from(JsonNode body, PaperMarket market) {
+            JsonNode scoped = body == null ? null : PaperSettings.scoped(body, market.settingsPrefix());
+            return new Limits(number(scoped, "maxWeightStockPct", 10, v -> v > 0 && v <= 100),
+                    number(scoped, "maxWeightEtfPct", 20, v -> v > 0 && v <= 100),
+                    (int) number(scoped, "maxPositions", 20, v -> v >= 1 && v <= 200 && v == Math.rint(v)),
+                    number(scoped, "minOrderNotional", market.defaultMinOrderNotional(), v -> v >= 0),
+                    (int) number(scoped, "maxDiscretionaryOrdersPerMonth", 20,
                             v -> v >= 0 && v <= 1000 && v == Math.rint(v)),
-                    (int) number(body, "minHoldTradingDaysForSell", 5, v -> v >= 0 && v <= 250 && v == Math.rint(v)));
+                    (int) number(scoped, "minHoldTradingDaysForSell", 5,
+                            v -> v >= 0 && v <= 250 && v == Math.rint(v)));
         }
 
         private static double number(JsonNode body, String key, double fallback,

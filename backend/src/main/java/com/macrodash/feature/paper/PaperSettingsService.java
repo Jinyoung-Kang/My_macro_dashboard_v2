@@ -64,21 +64,29 @@ public class PaperSettingsService {
         this.mapper = mapper;
     }
 
-    /** 지금 설정. 테이블이 없거나 행이 없으면 기본값(버전 null). */
+    /** 지금 설정(미국 — {@link #current(PaperMarket)}의 미국 판). 테이블이 없거나 행이 없으면 기본값(버전 null). */
     public Current current() {
+        return current(UsPaperMarket.INSTANCE);
+    }
+
+    /**
+     * 지금 설정을 그 시장의 키(접두어·현금성 기본값 — {@link PaperSettings#from(JsonNode, PaperMarket)})로. 테이블이 없거나 행이 없으면
+     * 그 시장 기본값(버전 null).
+     */
+    Current current(PaperMarket market) {
         if (!store.ready()) {
-            return new Current(null, PaperSettings.defaults());
+            return new Current(null, PaperSettings.defaults(market));
         }
         return store.settings()
                 .map(row -> {
-                    PaperSettings settings = PaperSettings.from(row.body());
+                    PaperSettings settings = PaperSettings.from(row.body(), market);
                     if (!settings.fallbacks().isEmpty()) {
                         log.warn("모의 매매 설정 v{}의 키 {}가 없거나 범위 밖이라 기본값으로 읽습니다", row.version(),
                                 settings.fallbacks());
                     }
                     return new Current(row.version(), settings);
                 })
-                .orElseGet(() -> new Current(null, PaperSettings.defaults()));
+                .orElseGet(() -> new Current(null, PaperSettings.defaults(market)));
     }
 
     /** 설정 행이 없으면 기본값으로 만듭니다(버전 1). 이미 있으면 그대로 둡니다. @return 이번에 만들었으면 true */

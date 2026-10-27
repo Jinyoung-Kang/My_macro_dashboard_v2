@@ -285,12 +285,13 @@ public class FrameworkService {
     }
 
     /**
-     * 미국 책의 하드 규칙 줄(계약 3b B) — 검증기·장부가 읽는 것과 같은 설정 읽기({@link PacketBuilder.Limits}·{@link PaperSettings}).
-     * 미국 시장 묶음이 렌더링에 내주는 줄입니다({@link PaperMarket#promptHardRules}).
+     * 미국 책의 하드 규칙 줄(계약 3b B) — 검증기·장부가 읽는 것과 같은 설정 읽기({@link PacketBuilder.Limits}·{@link PaperSettings}를
+     * 그 시장 판으로 — C1a). 미국 시장 묶음이 자신을 넘겨 렌더링에 내주는 줄입니다({@link PaperMarket#promptHardRules}). 문구($·
+     * 시점)는 미국 것이라 다른 시장은 자기 줄을 따로 만듭니다(명세 K34 — 한국은 E2).
      */
-    static List<String> hardRules(JsonNode settingsBody) {
-        PacketBuilder.Limits limits = PacketBuilder.Limits.from(settingsBody);
-        PaperSettings paper = PaperSettings.from(settingsBody);
+    static List<String> hardRules(PaperMarket market, JsonNode settingsBody) {
+        PacketBuilder.Limits limits = PacketBuilder.Limits.from(settingsBody, market);
+        PaperSettings paper = PaperSettings.from(settingsBody, market);
         String cashLike = String.join(", ", paper.cashLikeTickers());
         List<String> out = new ArrayList<>();
         out.add("- 종목 비중 ≤ " + plain(limits.maxWeightStockPct()) + "%, ETF ≤ " + plain(limits.maxWeightEtfPct())

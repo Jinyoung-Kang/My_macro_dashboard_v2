@@ -280,4 +280,38 @@ class PaperMarketIsolationTest {
         assertThat(US.calendar().currentOrLastSession(KR_EVENING)).isEqualTo(LocalDate.of(2026, 10, 23));
         assertThat(US.isFinal(MON, KR_EVENING)).isFalse();
     }
+
+    @Test
+    @DisplayName("시장별 설정 읽기(C1a): 한국 책 장부는 그 시장 키(kr.)의 스탑 비율·재진입 금지·슬리피지·현금성을 쓴다 — 설정 루트(미국)의 8%·20거래일·5bp·SHY가 새면 현금성 153130과 −11% 종목에 가짜 스탑이 난다")
+    void ledgerReadsThatMarketsSettings() {
+        tools.jackson.databind.node.ObjectNode body =
+                (tools.jackson.databind.node.ObjectNode) PaperFixtures.settings(store).defaultsJson();
+        tools.jackson.databind.node.ObjectNode kr = body.putObject("kr");
+        kr.put("trailingStopPct", 12).put("lockoutTradingDays", 10).put("slippageBp", 2);
+        kr.putArray("cashLikeTickers").add("153130");
+        store.initSettingsIfAbsent(body);
+        store.books.put(KR_BOOK, TestKrMarket.book(KR_BOOK, 100_000_000, FRI));
+        Instant krFriday = Instant.parse("2026-10-23T13:30:00Z");
+        store.states.put(KR_BOOK, new BookState(KR_BOOK, 80_000_000, 100_000_000, 20_000_000, 20, krFriday, krFriday,
+                FRI, null));
+        position(store, KR_BOOK, "005930", 100, 75_000, 80_000, 72_000.0, FRI, 72_000);    // 최고가 대비 −11.25%
+        position(store, KR_BOOK, "000660", 10, 190_000, 200_000, 180_000.0, FRI, 180_000);  // −15%
+        position(store, KR_BOOK, "153130", 100, 110_000, 120_000, 105_000.0, FRI, 105_000); // −16.7%, 현금성
+        Quotes quotes = quotes(KR_EVENING, bar("005930", FRI, 72_000, MON, 71_000),
+                bar("000660", FRI, 180_000, MON, 170_000), bar("153130", FRI, 105_000, MON, 100_000));
+
+        Outcome outcome = ledger.process(KR, quotes);
+
+        assertThat(outcome.errors()).isEmpty();
+        assertThat(outcome.stopped()).as("kr.trailingStopPct 12% — −15%만, 현금성 153130은 스탑 없음").isEqualTo(1);
+        assertThat(store.fillsOf(KR_BOOK)).singleElement().satisfies(fill -> {
+            assertThat(fill.ticker()).isEqualTo("000660");
+            assertThat(fill.slippageBp()).as("kr.slippageBp").isEqualTo(2);
+            assertThat(fill.price()).isEqualTo(169_966.0);
+        });
+        assertThat(store.lockouts(KR_BOOK)).singleElement().satisfies(lockout -> assertThat(
+                lockout.untilTradingDate()).as("kr.lockoutTradingDays 10 — 그 시장 달력으로")
+                .isEqualTo(com.macrodash.analytics.TrailingStop.lockoutUntil(KR.calendar(), MON, 10)));
+        assertThat(store.positions(KR_BOOK)).extracting(p -> p.ticker()).containsExactlyInAnyOrder("005930", "153130");
+    }
 }

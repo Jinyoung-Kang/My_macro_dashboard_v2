@@ -142,7 +142,7 @@ public class PaperAdminService {
         return ledger.exclusively(() -> {
             boolean settingsCreated = settings.ensureInitialized();
             int captured = captureStartPrices();
-            PaperSettings current = settings.current().settings();
+            PaperSettings current = settings.current(market).settings();
             List<String> created = new ArrayList<>();
             List<String> backfilled = new ArrayList<>();
             List<Map<String, String>> skipped = new ArrayList<>();
@@ -348,8 +348,9 @@ public class PaperAdminService {
         if (confirm == null || !confirm.equals(code)) {
             throw new InvalidRequestException("초기화하려면 확인 문구로 계좌 코드(" + code + ")를 그대로 입력하세요.");
         }
-        PaperSettings current = settings.current().settings();
         PaperMarket market = markets.of(book.market()).orElse(null);
+        // 그 책 시장의 설정 읽기(C1a) — 모르는 시장의 책이면 다시 사후 체결하지 않으므로(아래) 미국 판으로 둡니다.
+        PaperSettings current = market == null ? settings.current().settings() : settings.current(market).settings();
         // 비운 책은 같은 관측치로 다시 처리해도 됩니다 — 그 책 시장의 기억만(모르는 시장이면 전부) 지웁니다.
         if (market == null) {
             ledger.forgetFailures();

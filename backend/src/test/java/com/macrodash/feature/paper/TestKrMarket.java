@@ -184,6 +184,12 @@ final class TestKrMarket implements PaperMarket {
         return List.of();
     }
 
+    /** 시험용 최소 주문 금액 기본값 — 미국 값과 같은 숫자(원)로 두어 앞선 시험의 검증 문구('최소 500원')를 그대로 둡니다. */
+    @Override
+    public double defaultMinOrderNotional() {
+        return 500;
+    }
+
     @Override
     public List<String> timings() {
         return List.of(PaperBooks.NEXT_CLOSE);

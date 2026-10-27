@@ -998,6 +998,37 @@ class ClaudeBookServiceTest {
     }
 
     @Test
+    @DisplayName("시장별 설정 읽기(C1a): 다른 시장의 결정은 검증기 한도·현금성을 그 시장 키(kr.)로 — 설정 루트(미국)의 최소 금액 500·현금성 SHY가 새지 않아, 현금성 KRC 30%는 비중 상한 없이 통과하고 8,000원 매수는 kr.minOrderNotional 9,000원에 걸림")
+    void otherMarketValidatesWithItsSettingKeys() throws Exception {
+        LocalDate wed = LocalDate.of(2026, 11, 25);
+        Instant now = Instant.parse("2026-11-25T13:30:00Z");   // KST 11-25 22:30
+        PaperMarket kr = TestKrMarket.INSTANCE;
+        String krBook = TestKrMarket.CLAUDE_BOOK;
+        ObjectNode body = (ObjectNode) store.settings.body();
+        ObjectNode krKeys = body.putObject("kr");
+        krKeys.put("minOrderNotional", 9_000);
+        krKeys.putArray("cashLikeTickers").add("KRC");
+        store.books.put(krBook, TestKrMarket.book(krBook, 100_000, FRI));
+        store.states.put(krBook, new BookState(krBook, 100_000, 100_000, 0, 0, FRI_CLOSE, FRI_CLOSE, FRI, null));
+        when(marketData.quotes(PaperFixtures.market(kr))).thenReturn(Optional.of(quotes(
+                Instant.parse("2026-11-25T12:00:00Z"), bar("KRA", LocalDate.of(2026, 11, 24), 50, wed, 51),
+                bar("KRC", LocalDate.of(2026, 11, 24), 100, wed, 101))));
+        answerJson(decision(38, null, order("KRA", "BUY", 8.0, null, "NEXT_CLOSE"),
+                order("KRC", "BUY", 30.0, null, "NEXT_CLOSE")));
+
+        Decision d = serviceWithKr(now, new java.util.ArrayList<>()).decide(kr, wed, RuleBookService.SCHEDULED, true);
+
+        assertThat(store.ordersOf(krBook)).filteredOn(o -> Long.valueOf(d.id()).equals(o.decisionId()))
+                .extracting(Order::ticker, Order::status, Order::rejectReason)
+                .containsExactly(
+                        org.assertj.core.groups.Tuple.tuple("KRA", "REJECTED", OrderValidator.MIN_NOTIONAL),
+                        org.assertj.core.groups.Tuple.tuple("KRC", "PENDING", null));
+        assertThat(d.response().path("validation").get(0).path("detail").asString()).contains("최소 9,000원");
+        assertThat(d.response().path("settings").toString()).as("결정 응답의 설정 요약도 그 시장 값")
+                .contains("KRC").doesNotContain("SHY");
+    }
+
+    @Test
     @DisplayName("달력 없음(K35): 보유를 연 해의 공휴일 목록이 없으면 그 보유 거래일만 모름 — 결정은 이어 가고 그 종목 재량 매도는 MIN_HOLD('보유 거래일을 알 수 없음')")
     void unknownHoldingYearRejectsOnlyThatSell() throws Exception {
         LocalDate wed = LocalDate.of(2026, 11, 25);

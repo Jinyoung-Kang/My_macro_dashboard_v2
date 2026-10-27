@@ -66,8 +66,8 @@ import static com.macrodash.feature.paper.ClaudeBookService.noPriceTickers;
  * 재진입 금지를 보는 다음 세션)·시스템 프롬프트의 시장별 부분({@link FrameworkService#render(PaperMarket, JsonNode, int, JsonNode)})·
  * 패킷·응답 스키마를 그 문맥에서 가져오고, 다른 시장 책은 읽지도 쓰지도 않습니다. 프레임 판(두 시장이 함께 씀, 명세 K9)과 하루 호출
  * 상한({@link PaperApiCalls} — 두 책 합 20, K18)은 시장과 상관없이 하나입니다. 검증기의 받는 체결 시점·이른 시점·근거 문구의 시점
- * 이름과 금액 표기는 그 시장 묶음의 것이고({@link PaperMarket#orderValidation}, A7), 검증기 한도는 아직 미국 설정 키입니다(C1에서
- * 시장별로). 미국 문맥은 이 묶음 전의 값 그대로입니다({@link UsPaperMarket}·{@link PacketBuilder#build}·
+ * 이름과 금액 표기는 그 시장 묶음의 것이고({@link PaperMarket#orderValidation}, A7), 검증기 한도·현금성은 그 시장의 설정 키입니다
+ * (C1a — {@link PaperSettings#from(JsonNode, PaperMarket)}·{@link PacketBuilder.Limits#from(JsonNode, PaperMarket)}). 미국 문맥은 이 묶음 전의 값 그대로입니다({@link UsPaperMarket}·{@link PacketBuilder#build}·
  * {@value ClaudeBookService#SCHEMA_RESOURCE}).
  *
  * <p>서비스가 만들어 쥐는 파이프라인은 시장 묶음에 묶이고, 하루 결정은 그 실행({@link MarketRun})에 묶은 사본({@link #bind})으로 돕니다
@@ -272,9 +272,10 @@ final class ClaudeDecisionPipeline {
                       ClaudeSettings claude, Optional<Quotes> quotes, Set<String> universe,
                       Map<String, PaperMarketData.SourcedClose> closes) {
         JsonNode body = row.body();
-        PaperSettings paper = PaperSettings.from(body);
+        // 그 시장의 설정 읽기(접두어·현금성 기본값 — C1a): 현금성(비중 상한·종목 수에서 빠짐)과 검증기 한도가 그 시장 키.
+        PaperSettings paper = PaperSettings.from(body, market);
         RuleSettings ruleSettings = RuleSettings.from(body);
-        PacketBuilder.Limits packetLimits = PacketBuilder.Limits.from(body);
+        PacketBuilder.Limits packetLimits = PacketBuilder.Limits.from(body, market);
         OrderValidator.Limits limits = new OrderValidator.Limits(packetLimits.maxWeightStockPct(),
                 packetLimits.maxWeightEtfPct(), packetLimits.maxPositions(), packetLimits.minOrderNotional(),
                 packetLimits.maxDiscretionaryOrdersPerMonth(), packetLimits.minHoldTradingDaysForSell());

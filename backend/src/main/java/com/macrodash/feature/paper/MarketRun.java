@@ -78,7 +78,8 @@ final class MarketRun implements PaperMarket {
         this.market = market;
         this.calendar = Objects.requireNonNull(calendar, "calendar");
         this.settingsRow = settingsRow;
-        this.settings = settingsRow == null ? PaperSettings.defaults() : PaperSettings.from(settingsRow.body());
+        this.settings = settingsRow == null ? PaperSettings.defaults(market)
+                : PaperSettings.from(settingsRow.body(), market);
     }
 
     /**
@@ -110,7 +111,10 @@ final class MarketRun implements PaperMarket {
         return settingsRow == null ? null : settingsRow.body();
     }
 
-    /** 장부가 읽는 값(슬리피지·스탑·재진입 금지·현금성) — 그 실행이 읽은 설정 행으로. */
+    /**
+     * 장부가 읽는 값(슬리피지·스탑·재진입 금지·현금성) — 그 실행이 읽은 설정 행을 그 시장 접두어·현금성 기본값으로 읽은 것
+     * ({@link PaperSettings#from(JsonNode, PaperMarket)}).
+     */
     PaperSettings settings() {
         return settings;
     }
@@ -200,6 +204,11 @@ final class MarketRun implements PaperMarket {
     @Override
     public List<String> defaultCashLike() {
         return market.defaultCashLike();
+    }
+
+    @Override
+    public double defaultMinOrderNotional() {
+        return market.defaultMinOrderNotional();
     }
 
     @Override

@@ -614,7 +614,8 @@ public class PaperQueryService {
         // 이 조회의 시장 문맥(그 책의 시장) — 보유 거래일의 달력 한 벌.
         MarketRun run = markets.open(marketOf(book));
         Optional<BookState> state = store.state(code);
-        PaperSettings current = settings.current().settings();
+        // 그 책 시장의 설정(현금성·스탑 비율 — 그 실행이 읽은 판, C1a).
+        PaperSettings current = run.settings();
         boolean benchmark = PaperBooks.KIND_BENCHMARK.equals(book.kind());
         Double nav = state.map(BookState::nav).orElse(null);
         TradingCalendar calendar = run.calendar();

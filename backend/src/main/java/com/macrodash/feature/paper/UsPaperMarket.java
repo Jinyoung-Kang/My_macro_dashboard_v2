@@ -26,7 +26,8 @@ import java.util.Map;
  *   <li>시장·통화 US·USD(V13 기본값), 달력 {@link UsMarketCalendar#CALENDAR}(뉴욕 세션 날짜)</li>
  *   <li>관측치 {@code paper.quotes}(수집기 태스크 {@code paper_quotes}, 3시간 넘게 묵으면 늦음)·이력 {@code equity_close}, 확정 종가 =
  *       마감 + 15분 뒤 수집</li>
- *   <li>책 넷({@link PaperBooks#ALL} — 규칙·Claude·SPY 100%·SPY 60/SHY 40), 비교 기준 {@code bench_spy}, 현금성 기본 SHY</li>
+ *   <li>책 넷({@link PaperBooks#ALL} — 규칙·Claude·SPY 100%·SPY 60/SHY 40), 비교 기준 {@code bench_spy}, 현금성 기본 SHY, 최소 주문
+ *       기본 $500</li>
  *   <li>Claude 체결 시점 NEXT_OBSERVATION·NEXT_CLOSE(이른 시점 NEXT_OBSERVATION), 검증기 시점 이름·금액 표기는
  *       {@link OrderValidator.Market#US}(다음 관측치·확정 종가, 달러) 그대로</li>
  *   <li>결정 07:30·기한 12:00 KST, 세션 <b>다음 KST 날</b>의 그 시각(미국 마감이 KST 새벽이라)</li>
@@ -113,6 +114,11 @@ final class UsPaperMarket implements PaperMarket {
     }
 
     @Override
+    public double defaultMinOrderNotional() {
+        return PacketBuilder.Limits.DEFAULT_MIN_ORDER_NOTIONAL;
+    }
+
+    @Override
     public List<String> timings() {
         return TIMINGS;
     }
@@ -150,7 +156,7 @@ final class UsPaperMarket implements PaperMarket {
 
     @Override
     public List<String> promptHardRules(JsonNode settingsBody) {
-        return FrameworkService.hardRules(settingsBody);
+        return FrameworkService.hardRules(this, settingsBody);
     }
 
     @Override
