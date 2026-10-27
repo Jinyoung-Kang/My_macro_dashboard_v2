@@ -9,8 +9,9 @@ import java.util.Optional;
 /**
  * 🧪 네 책의 정의와 장부에서 쓰는 상태 값(DB CHECK와 같은 문자열, V8).
  *
- * <p>책은 넷으로 고정입니다(명세 L1): 규칙 책(대조군) · Claude 재량 책(실험군) · 벤치마크 둘. 벤치마크는 시작할 때 정한 비중으로
- * 한 번 사고 그대로 들고 갑니다(단계 1은 리밸런싱하지 않음 — bench_mix의 60/40은 시간이 지나며 벌어집니다).
+ * <p>책은 시장마다 넷으로 고정입니다(명세 L1, 2단계 명세 K1): 규칙 책(대조군) · Claude 재량 책(실험군) · 벤치마크 둘. 벤치마크는 시작할 때 정한 비중으로
+ * 한 번 사고 그대로 들고 갑니다(단계 1은 리밸런싱하지 않음 — bench_mix의 60/40은 시간이 지나며 벌어집니다). 미국 넷은 {@link #ALL},
+ * 한국 넷은 {@link #KR}(2단계 C1c — 한국 초기화만 만듦, 벤치마크는 S+1 시가 출발 뒤 리밸런싱 없음, K2·K28)입니다.
  */
 final class PaperBooks {
 
@@ -37,8 +38,9 @@ final class PaperBooks {
     static final String ORDER_FILLED = "FILLED";
     static final String ORDER_CANCELLED = "CANCELLED";
 
-    /** 주문 시점(paper_orders.timing). */
+    /** 주문 시점(paper_orders.timing). {@link #NEXT_OPEN}은 한국 책의 다음 거래일 시가(V14, 2단계 K13). */
     static final String NEXT_CLOSE = "NEXT_CLOSE";
+    static final String NEXT_OPEN = "NEXT_OPEN";
     static final String IMMEDIATE = "IMMEDIATE";
     static final String BACKFILL = "BACKFILL";
 
@@ -89,6 +91,33 @@ final class PaperBooks {
             new Definition(CLAUDE, KIND_CLAUDE, CLAUDE_LABEL, Map.of()),
             new Definition(BENCH_SPY, KIND_BENCHMARK, BENCH_SPY_LABEL, weights("SPY", 100.0)),
             new Definition(BENCH_MIX, KIND_BENCHMARK, BENCH_MIX_LABEL, weights("SPY", 60.0, "SHY", 40.0)));
+
+    // ------------------------------------------------------------------ 한국 책(2단계 명세 K1·§4-8, C1c)
+    static final String KR_RULES = "kr_rules";
+    static final String KR_CLAUDE = "kr_claude";
+    static final String KR_BENCH_K200 = "kr_bench_k200";
+    static final String KR_BENCH_MIX = "kr_bench_mix";
+
+    /** 한국 벤치마크 종목 — KODEX 200(069500)·단기채 ETF(153130, 한국 현금성도 맡음 — 명세 §3·§4-8). */
+    static final String KODEX_200 = "069500";
+    static final String KR_SHORT_BOND = "153130";
+
+    /**
+     * 한국 계좌의 화면 이름 — 미국 계좌와 한 목록(홈 히어로·작업 기록)에 함께 보여도 가려지게 시장을 붙입니다. 미국 이름처럼 초기화 때 행에
+     * 들어가고 그 뒤로는 다시 쓰지 않습니다(바꾸려면 {@link #LEGACY_LABELS}와 같은 옛 이름 맞추기가 필요).
+     */
+    static final String KR_RULES_LABEL = "한국 규칙 계좌";
+    static final String KR_CLAUDE_LABEL = "한국 Claude 계좌";
+    static final String KR_BENCH_K200_LABEL = "KODEX 200 계좌";
+    static final String KR_BENCH_MIX_LABEL = "한국 60/40 계좌";
+
+    /** 한국 네 계좌, 화면에 보이는 순서 — 069500 100% · 069500 60% + 153130 40%(K2). */
+    static final List<Definition> KR = List.of(
+            new Definition(KR_RULES, KIND_RULES, KR_RULES_LABEL, Map.of()),
+            new Definition(KR_CLAUDE, KIND_CLAUDE, KR_CLAUDE_LABEL, Map.of()),
+            new Definition(KR_BENCH_K200, KIND_BENCHMARK, KR_BENCH_K200_LABEL, weights(KODEX_200, 100.0)),
+            new Definition(KR_BENCH_MIX, KIND_BENCHMARK, KR_BENCH_MIX_LABEL,
+                    weights(KODEX_200, 60.0, KR_SHORT_BOND, 40.0)));
 
     static Optional<Definition> find(String code) {
         return ALL.stream().filter(d -> d.code().equals(code)).findFirst();
