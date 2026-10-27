@@ -758,6 +758,40 @@ class KrRulesJobTest {
     }
 
     @Test
+    @DisplayName("기한 지남 NO_TRADE 행 쓰기가 실패하면 다음 주기에 다시 씀 — 작업 기록 PAST_DEADLINE은 그 세션에 한 번(01:00 행 없음·기록 → 01:10 행 씀·기록 그대로 → 01:20 ALREADY_DECIDED)")
+    void pastDeadlineRowIsRetriedAfterAWriteError() {
+        quotes(R, Set.of("069500"));
+        fsc(FRI);
+        assertThat(runAt("2026-11-02T23:00").outcome()).isEqualTo(PaperDecisionJob.DATA_NOT_READY);
+        failRulesDecision = true;
+
+        PaperDecisionJob.Result first = runAt("2026-11-03T01:00");
+
+        assertThat(first.outcome()).isEqualTo(PaperDecisionJob.PAST_DEADLINE);
+        assertThat(first.rules()).as("행을 쓰지 못함").isNull();
+        assertThat(rulesDecisions()).as("출발 INITIAL뿐").hasSize(1);
+        assertThat(krRuns()).singleElement().satisfies(run -> {
+            assertThat(run.outcome()).isEqualTo(PaperDecisionJob.PAST_DEADLINE);
+            assertThat(run.detail().path("rules").asString()).contains("기한 지남 NO_TRADE 행을 쓰지 못함")
+                    .contains("다음 주기에 다시");
+        });
+
+        failRulesDecision = false;
+        PaperDecisionJob.Result retry = runAt("2026-11-03T01:10");
+
+        assertThat(retry.outcome()).isEqualTo(PaperDecisionJob.PAST_DEADLINE);
+        assertThat(retry.rules()).as("다음 주기에 다시 씀").isNotNull();
+        assertThat(retry.rules().status()).isEqualTo("NO_TRADE");
+        assertThat(retry.rules().response().path("noTradeReason").asString()).as("기한 전 마지막 판정(23:00 ⑤)")
+                .isEqualTo("069500 D 봉 없음(휴장 또는 지연)");
+        assertThat(rulesDecisions()).extracting(d -> d.asOfTradingDate() + " " + d.kind() + " " + d.status())
+                .containsExactly("2026-10-29 INITIAL OK", "2026-11-02 REBALANCE NO_TRADE");
+        assertThat(krRuns()).as("작업 기록은 그 세션에 한 번").hasSize(1);
+        assertThat(runAt("2026-11-03T01:20").outcome()).isEqualTo(PaperDecisionJob.ALREADY_DECIDED);
+        assertThat(krRuns()).hasSize(1);
+    }
+
+    @Test
     @DisplayName("22:30에 ⑤로 기다린 뒤 22:40부터 ②④⑤⑥은 통과했는데 입력 읽기(수급)가 예외로 세 번 끝나 포기한 세션 — 기한 지남 행은 앞 주기의 ⑤ 기다림이 아니라 그 뒤 통과한 판정(사유 '기한 지남', waitedFor 빈 목록)")
     void pastDeadlineAfterErrorsBeyondTheCheapGates() {
         quotes(R, Set.of("069500"));
