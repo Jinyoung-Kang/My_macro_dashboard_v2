@@ -397,6 +397,24 @@ class KrRulesJobTest {
     }
 
     @Test
+    @DisplayName("게이트 ①은 결정하는 계좌의 주문만 — 벤치마크 계좌(60/40)의 기준일 < D 대기 주문(153130 R 봉 없음으로 체결 못 함)이 있어도 규칙 계좌는 결정, 그 주문은 대기 그대로")
+    void gateOneIsPerAccount() {
+        quotes(R, Set.of("153130"));   // ②는 9/10 통과 — 153130만 R 봉이 없어 그 시가 주문이 체결되지 않음
+        fsc(FRI);
+        long bench = store.insertOrder(new Order(0, PaperBooks.KR_BENCH_MIX, null, "153130", PaperBooks.BUY, null, 40.0, null,
+                PaperBooks.NEXT_OPEN, PaperBooks.SOURCE_BENCHMARK, PaperBooks.ORDER_PENDING, null, null, FRI,
+                kst("2026-10-30T22:30"), KrRulesFixtures.CALENDAR.addTradingDays(FRI, 3), null));
+
+        PaperDecisionJob.Result decided = runAt("2026-11-02T22:30");
+
+        assertThat(decided.outcome()).isEqualTo(PaperDecisionJob.DECIDED);
+        JsonNode first = decided.rules().response().path("gates").get(0);
+        assertThat(first.path("status").asString()).isEqualTo("PASS");
+        assertThat(first.path("note").asString()).startsWith("kr_rules").contains("대기 주문 없음");
+        assertThat(store.orders.get(bench).status()).as("다른 계좌의 대기 주문은 그대로").isEqualTo(PaperBooks.ORDER_PENDING);
+    }
+
+    @Test
     @DisplayName("일시정지 규칙 계좌 — 장부가 사고팔지 않아 남은 기준일 < D 대기 주문이 그 세션을 막지 않고 SKIPPED(입력·게이트·주문 없음)")
     void pausedBookIsNotHeldByGateOne() {
         session(R);
