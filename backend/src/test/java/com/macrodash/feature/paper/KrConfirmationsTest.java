@@ -223,6 +223,112 @@ class KrConfirmationsTest {
     }
 
     @Test
+    @DisplayName("멱등의 DB 쪽 장치 — 다른 쓰기가 그 체결의 확정 조정 행을 먼저 넣었으면(insert가 false) 확정 안 된 체결로 읽혀도 현금·순자산·평단을 옮기지 않고 쓴 행 0")
+    void insertConflictMovesNothing() {
+        FakePaperStore racing = new FakePaperStore() {
+            @Override
+            public boolean insertFillConfirmationIfAbsent(FillConfirmation c) {
+                return false;   // 같은 트랜잭션 밖에서 먼저 넣음(ON CONFLICT DO NOTHING) — 이 읽기에는 아직 보이지 않음
+            }
+        };
+        racing.initSettingsIfAbsent(PaperFixtures.settings(racing).defaultsJson());
+        store = racing;
+        ledger = new PaperLedgerService(store, marketData, PaperFixtures.MAPPER);
+        book(1_000_000);
+        order("005930", PaperBooks.BUY, 10, D, CREATED);
+        process(nightD1("005930", 71_300), COLLECTED_D1);
+        double navBefore = store.states.get(BOOK).nav();
+        fsc("005930", KrConfirmed.SOURCE_FSC, D1, day(D1, 71_200L, 71_000, 5_000_000, "KOSPI"));
+
+        Outcome outcome = confirm();
+
+        assertThat(store.unconfirmedFills(BOOK)).as("이 읽기에는 확정 안 된 체결").hasSize(1);
+        assertThat(outcome.confirmed()).isZero();
+        assertThat(cash()).isEqualTo(286_538);
+        assertThat(store.states.get(BOOK).nav()).isEqualTo(navBefore);
+        assertThat(position("005930").avgCost()).isEqualTo(71_300);
+        assertThat(position("005930").highWatermark()).isEqualTo(71_300);
+    }
+
+    @Test
+    @DisplayName("'주의' — 실행이 설정(v1, 수수료 1.5bp)을 읽은 뒤 그 책 트랜잭션 전에 v2(3bp)가 저장되면 체결 행을 쓴 시각의 판은 v2: 확정 조정은 v2 요율로 쓰되(수수료 213) 잠정 비용 칸(106)과 어긋남을 작업 기록에 남김")
+    void warnsWhenTheStoredCostsDoNotMatchTheVersion() {
+        book(1_000_000);
+        order("005930", PaperBooks.BUY, 10, D, CREATED);
+        MarketRun readV1 = run();
+        store.dbNow = kst("2026-11-03T22:00");
+        ObjectNode next = (ObjectNode) store.settings.body().deepCopy();
+        ((ObjectNode) next.path("kr")).put("commissionBp", 3);
+        assertThat(store.saveSettings(next, java.util.List.of("kr.commissionBp"))).isEqualTo(2);
+        store.dbNow = kst("2026-11-03T22:01");
+        ledger.process(readV1, KrQuotes.parse(nightD1("005930", 71_300).snapshot(COLLECTED_D1)).orElseThrow());
+        assertThat(onlyFill().fee()).as("그 실행이 읽은 v1").isEqualByComparingTo("106");
+        fsc("005930", KrConfirmed.SOURCE_FSC, D1, day(D1, 71_200L, 71_000, 5_000_000, "KOSPI"));
+
+        Outcome outcome = confirm();
+
+        assertThat(store.fillConfirmations(BOOK)).singleElement().satisfies(c -> {
+            assertThat(c.fee()).as("체결 행을 쓴 시각(22:01)에 유효한 v2 — 3bp").isEqualByComparingTo("213");
+            assertThat(c.cashDelta()).as("−(712,000 + 213 + 356) − (−713,462)").isEqualByComparingTo("893");
+        });
+        assertThat(outcome.notes()).anySatisfy(note -> assertThat(note).contains("설정 v2").contains("주의")
+                .contains("비용 칸"));
+    }
+
+    /** 체결 시점 {@code timing}의 주문과 그 체결(D+1, 10주 71,300 — 수수료 106·슬리피지 356)을 장부를 거치지 않고 넣습니다. */
+    private Fill directFill(String timing) {
+        long orderId = store.insertOrder(new Order(0, BOOK, null, "005930", PaperBooks.BUY, 10, null, null, timing, "CLAUDE",
+                PaperBooks.ORDER_FILLED, null, null, D, CREATED, D.plusDays(4), COLLECTED_D1));
+        long id = store.insertFill(new Fill(0, orderId, BOOK, "005930", PaperBooks.BUY, 10, 71_300, 71_300, 5, 713_000,
+                COLLECTED_D1, D1, KrQuotes.SOURCE_DAILY, false, null, BigDecimal.valueOf(106), BigDecimal.ZERO,
+                BigDecimal.valueOf(356)));
+        return store.fills.get(id);
+    }
+
+    @Test
+    @DisplayName("NEXT_CLOSE 체결의 확정가 = 그날 금융위 종가 중 거래량 > 0 행만 — 거래량 0 행(종가는 전날 값)이면 행을 쓰지 않고 사유만, 거래가 있는 행이 들어오면 종가 71,000으로 확정(현금 +3,001)")
+    void nextCloseConfirmsOnlyFromAnObservedClose() {
+        book(1_000_000 - 713_462);
+        Fill fill = directFill(PaperBooks.NEXT_CLOSE);
+        fsc("005930", KrConfirmed.SOURCE_FSC, D1, day(D1, null, 71_000, 0, "KOSPI"));
+
+        Outcome quiet = confirm();
+
+        assertThat(quiet.confirmed()).isZero();
+        assertThat(store.fillConfirmations(BOOK)).isEmpty();
+        assertThat(quiet.notes()).singleElement().satisfies(note -> assertThat(note)
+                .contains("체결 " + fill.id()).contains("주식시세 2026-11-03 종가 없음(거래량 0"));
+
+        fsc("005930", KrConfirmed.SOURCE_FSC, D1, day(D1, 71_100L, 71_000, 5_000_000, "KOSPI"));
+        Outcome confirmed = confirm();
+
+        assertThat(confirmed.confirmed()).isEqualTo(1);
+        assertThat(store.fillConfirmations(BOOK)).singleElement().satisfies(c -> {
+            assertThat(c.confirmedPrice()).as("시가 71,100이 아니라 종가").isEqualByComparingTo("71000");
+            assertThat(c.fee()).isEqualByComparingTo("106");
+            assertThat(c.slippageCost()).isEqualByComparingTo("355");
+            assertThat(c.cashDelta()).isEqualByComparingTo("3001");
+        });
+        assertThat(confirmed.notes()).anySatisfy(note -> assertThat(note).contains("2026-11-03 종가)"));
+    }
+
+    @Test
+    @DisplayName("시가·종가가 아닌 체결 시점(손으로 넣은 NEXT_OBSERVATION 등)은 확정 조정하지 않고 사유만 — 금융위 행이 있어도")
+    void otherTimingsAreNotConfirmed() {
+        book(1_000_000 - 713_462);
+        directFill(RuleBookService.NEXT_OBSERVATION);
+        fsc("005930", KrConfirmed.SOURCE_FSC, D1, day(D1, 71_200L, 71_000, 5_000_000, "KOSPI"));
+
+        Outcome outcome = confirm();
+
+        assertThat(outcome.confirmed()).isZero();
+        assertThat(store.fillConfirmations(BOOK)).isEmpty();
+        assertThat(outcome.notes()).singleElement().satisfies(note -> assertThat(note)
+                .contains("확정 조정 안 함 — 체결 시점 NEXT_OBSERVATION"));
+        assertThat(cash()).isEqualTo(1_000_000 - 713_462);
+    }
+
+    @Test
     @DisplayName("결정 d7 — 확정 조정은 체결 때 유효했던 설정 판(v1: 수수료 1.5bp·세율 2026-01-01)으로 다시 셈: 체결 뒤 v2(수수료 3bp·세율 시행일 11-04)를 저장해도 수수료 차이가 섞이지 않고 11-03 매도가 '세율 모름'이 되지 않음")
     void fillTimeSettingsVersion() {
         book(0);
