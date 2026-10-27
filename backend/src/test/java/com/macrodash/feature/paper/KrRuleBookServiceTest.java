@@ -186,6 +186,31 @@ class KrRuleBookServiceTest {
         assertThat(ordersOf(next)).noneMatch(o -> "BUY".equals(o.side()) && !"153130".equals(o.ticker()));
     }
 
+    @Test
+    @DisplayName("이미 목표 비중이면 재선정일 결정은 주문 0건이어도 REBALANCE OK(그 주기 매수 결정) — 다음 KR 거래일은 SCHEDULED(따라잡기로 다시 선정하지 않음)")
+    void selectionWithoutOrdersIsStillTheCycleBuy() {
+        // 후보 셋 각 667주 × 10,000 = 6.67%(목표 6.6667% 이상) · 153130 795주 × 100,000 = 79.5% · 현금 490,000 = 0.49%(여유 0.5%p 이하).
+        holding("000660", 667, 10_000);
+        holding("005930", 667, 10_000);
+        holding("105560", 667, 10_000);
+        holding("153130", 795, 100_000);
+        store.upsertState(new BookState(PaperBooks.KR_RULES, 490_000, NAV, 99_510_000, 99.51, null, null, S, null));
+
+        Decision rebalance = decideAt(R, "22:30");
+
+        assertThat(rebalance.kind()).isEqualTo(RuleBookService.REBALANCE);
+        assertThat(rebalance.status()).as("선정한 결정은 주문이 없어도 OK — 따라잡기가 세는 매수 결정").isEqualTo("OK");
+        assertThat(ordersOf(rebalance)).isEmpty();
+        assertThat(rebalance.response().path("skipped")).extracting(row -> row.path("ticker").asString())
+                .containsExactly("000660", "005930", "105560");
+        assertThat(rebalance.response().path("selection").path("targets")).hasSize(3);
+
+        Decision next = decideAt(R1, "22:30");
+        assertThat(next.kind()).as("그 주기 매수 결정이 있음 — 다시 선정하지 않음").isEqualTo(RuleBookService.SCHEDULED);
+        assertThat(next.response().path("catchUp").asBoolean()).isFalse();
+        assertThat(ordersOf(next)).isEmpty();
+    }
+
     // ------------------------------------------------------------------ 자료 없음 사유
     @Test
     @DisplayName("'자료 없음' 사유가 결정 행에 — DART 없음·접수일이 기준일 뒤·접수일 모름, 자료 부족(19/20일)·수급 미달, 금융업(매출액 없음)은 부채비율로 빠지지 않음")
