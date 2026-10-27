@@ -308,6 +308,24 @@ def test_토스_유형이_STOCK이_아닌_U_종목은_결과_문구에_확인_�
         " (U 계산에는 쓰지 않음 — 제외 코드 표에 더할지 확인)")
 
 
+def test_최신_상태의_확인_필요_경고도_저장본_코드_순이_아니라_순위_순이다(store):
+    day = _days_ago(1)
+    # 코드 순서와 순위가 엇갈림 — 2위 444440, 3위 333330(저장본은 코드 순으로 읽힘). 이름에 '리츠'가 없어 U에 듦
+    _seed(store, day, [_row("222220", "큰회사", 3e12), _row("444440", "둘째리얼티", 2e12), _row("333330", "셋째인프라", 1e12)],
+          ["222220", "333330", "444440"])
+    store.put_snapshot(catalog.SNAP_KR_PAPER_QUOTES, _quotes({
+        "333330": {"securityType": "INFRASTRUCTURE_FUND"},
+        "444440": {"securityType": "REIT"},
+    }))
+    tail = (" · 확인 필요 — 토스 유형이 STOCK이 아닌 U 종목 2: 444440 둘째리얼티(REIT), 333330 셋째인프라(INFRASTRUCTURE_FUND)"
+            " (U 계산에는 쓰지 않음 — 제외 코드 표에 더할지 확인)")
+
+    assert tasks.task_kr_paper_universe().endswith(tail)
+    assert [r["code"] for r in store.read_observations(catalog.OBS_KR_PAPER_UNIVERSE, obs_date=day)] == \
+        ["222220", "333330", "444440"]
+    assert tasks.task_kr_paper_universe() == f"최신 상태 (기준일 {day}, 3종목)" + tail
+
+
 def test_관측치_저장본이_없거나_유형이_STOCK이거나_모르면_경고가_없다(store):
     day = _days_ago(1)
     _seed(store, day, [_row("222220", "큰회사", 3e12), _row("333330", "작은회사", 1e12)], ["222220", "333330"])
