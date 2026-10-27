@@ -160,6 +160,23 @@ class PaperAdminKrInitTest {
     }
 
     @Test
+    @DisplayName("설정 화면 fallbacks(C1c) — 한국 키가 없는 행이면 kr. 접두어 이름(장부 키·kr.rules), 한국 초기화가 채우면 사라짐(미국 이름은 그대로)")
+    @SuppressWarnings("unchecked")
+    void settingsViewListsKrFallbacksUntilInit() {
+        preC1bSettingsRow();
+        PaperSettingsService settings = PaperFixtures.settings(store);
+        List<String> before = (List<String>) settings.view().get("fallbacks");
+        assertThat(before).contains("kr.slippageBp", "kr.trailingStopPct", "kr.lockoutTradingDays", "kr.cashLikeTickers",
+                "kr.rules").noneMatch(key -> key.startsWith("kr.gate"));
+
+        admin(S, BEFORE).initKr();
+
+        List<String> after = (List<String>) settings.view().get("fallbacks");
+        assertThat(after).noneMatch(key -> key.startsWith("kr."));
+        assertThat(after).containsExactlyElementsOf(before.stream().filter(key -> !key.startsWith("kr.")).toList());
+    }
+
+    @Test
     @DisplayName("먼저 저장한 한국 키는 그대로 — 빠진 키만 채움, 설정 행이 없으면 기본 본문(한국 묶음 포함)으로 판 1을 만들고 더 쓰지 않음")
     void keepsSavedKrKeysAndCreatesMissingRow() {
         preC1bSettingsRow();
