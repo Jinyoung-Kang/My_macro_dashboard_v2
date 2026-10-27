@@ -104,7 +104,8 @@ export function SettingsSection() {
       >
         <p className="text-xs leading-relaxed text-muted">
           형·범위는 저장할 때 서버가 검사합니다. <span className={`rounded-sm border px-1 ${RULES_BADGE}`}>규칙 계좌 영향</span>이 붙은
-          키는 규칙 계좌(동결된 대조군)의 조건을 바꿉니다 — 저장 전에 한 번 더 묻습니다. 결정 기록마다 그때의 설정 버전이 남습니다.
+          키는 규칙 계좌(동결된 대조군)의 조건을 바꿉니다(한국 키 kr.*는 한국 규칙 계좌) — 저장 전에 한 번 더 묻습니다. 결정 기록마다 그때의
+          설정 버전이 남습니다.
           계좌 일시정지·재개는 보유·체결 탭에서 합니다.
         </p>
 
@@ -118,7 +119,11 @@ export function SettingsSection() {
                 <li key={change.key} className="flex flex-wrap items-center gap-1">
                   <code className="text-bright">{change.key}</code>
                   <span>: {change.from} → {change.to}</span>
-                  {change.affectsRules && <span className={`rounded-sm border px-1 text-[10px] ${RULES_BADGE}`}>규칙 계좌 영향</span>}
+                  {change.affectsRules && (
+                    <span className={`rounded-sm border px-1 text-[10px] ${RULES_BADGE}`}>
+                      {change.market === "KR" ? "한국 규칙 계좌 영향" : "규칙 계좌 영향"}
+                    </span>
+                  )}
                 </li>
               ))}
             </ul>
@@ -241,10 +246,12 @@ function SettingField({
           <label htmlFor={id} className="break-all font-mono text-xs font-semibold text-bright">{row.key}</label>
           {row.affectsRules && (
             <span
-              title="규칙 계좌(동결된 대조군)의 조건을 바꾸는 키입니다 — 저장 전에 한 번 더 묻습니다."
+              title={row.market === "KR"
+                ? "한국 규칙 계좌(kr_rules, 동결된 대조군)의 조건을 바꾸는 키입니다 — 저장 전에 한 번 더 묻습니다."
+                : "규칙 계좌(동결된 대조군)의 조건을 바꾸는 키입니다 — 저장 전에 한 번 더 묻습니다."}
               className={`whitespace-nowrap rounded-sm border px-1.5 py-px text-[10px] ${RULES_BADGE}`}
             >
-              규칙 계좌 영향
+              {row.market === "KR" ? "한국 규칙 계좌 영향" : "규칙 계좌 영향"}
             </span>
           )}
           {changed && <span className={`whitespace-nowrap rounded-sm border px-1.5 py-px text-[10px] ${CHANGED_BADGE}`}>바꿈</span>}
@@ -260,9 +267,19 @@ function SettingField({
   );
 }
 
+/** 여러 줄 상자 아래 안내 — 그 형을 어떻게 나눠 읽는지. */
+const MULTILINE_HINT: Partial<Record<SettingRow["kind"], string>> = {
+  list: "쉼표·공백으로 나눕니다.",
+  phrases: "쉼표·줄바꿈으로 나눕니다(항목 안의 공백은 그대로 — 예: rate decision).",
+  dates: "날짜(yyyy-MM-dd)를 쉼표·공백으로 나눕니다 — 예: 2026-11-02, 2026-12-30.",
+  dateTimeMap: "한 줄에 날짜 하나 — '날짜 개장~마감'(예: 2026-11-19 10:00~16:30). 비우면 변경일 없음.",
+  aliasMap: "한 줄에 종목 하나 — '종목 코드: 별칭, 별칭'(예: 000660: 하이닉스, SK하이닉스). 비우면 별칭 없음.",
+};
+
 /**
  * 키의 형에 맞는 입력 — 숫자는 글자 상자(숫자 상자는 "abc"를 빈 값으로 바꿔 무엇이 틀렸는지 보이지 않음), 참·거짓은 체크 상자,
- * 선택지가 있으면 선택 상자, 목록은 여러 줄 상자(쉼표·공백으로 나눔). 형을 모르는 값은 바꾸지 않고 원문만 보입니다.
+ * 선택지가 있으면 선택 상자, 목록은 여러 줄 상자(쉼표·공백으로 나눔), 표(날짜별 개장·마감·별칭 — 한국 키)는 한 줄에 한 항목인 여러 줄
+ * 상자, 날짜 하나는 글자 상자(yyyy-MM-dd — 형식은 서버가 봄). 형을 모르는 값은 바꾸지 않고 원문만 보입니다.
  */
 function SettingInput({
   row,
@@ -307,22 +324,27 @@ function SettingInput({
       );
     case "list":
     case "phrases":
+    case "dates":
+    case "dateTimeMap":
+    case "aliasMap": {
+      // 표는 한 줄에 한 항목이라 줄 수만큼(적어도 두 줄) — 목록은 글자 길이로.
+      const table = row.kind === "dateTimeMap" || row.kind === "aliasMap";
+      const lines = value.split("\n").length;
       return (
         <>
           <textarea
             id={id}
             value={value}
-            rows={value.length > 80 ? 4 : value.length > 40 ? 2 : 1}
+            rows={table ? Math.min(Math.max(lines + 1, 2), 8) : value.length > 80 ? 4 : value.length > 40 ? 2 : 1}
             spellCheck={false}
             aria-describedby={describedBy}
             onChange={(event) => onChange(event.target.value)}
             className={`${INPUT} font-mono text-xs`}
           />
-          <p className="text-[11px] text-muted">
-            {row.kind === "phrases" ? "쉼표·줄바꿈으로 나눕니다(항목 안의 공백은 그대로 — 예: rate decision)." : "쉼표·공백으로 나눕니다."}
-          </p>
+          <p className="text-[11px] text-muted">{MULTILINE_HINT[row.kind]}</p>
         </>
       );
+    }
     case "json":
       return (
         <p className="text-xs text-muted">
@@ -334,6 +356,7 @@ function SettingInput({
         <input
           id={id}
           type="text"
+          placeholder={row.kind === "date" ? "yyyy-MM-dd" : undefined}
           inputMode={row.kind === "integer" ? "numeric" : row.kind === "number" ? "decimal" : undefined}
           value={value}
           autoComplete="off"

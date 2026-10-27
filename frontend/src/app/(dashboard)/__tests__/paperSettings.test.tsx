@@ -26,6 +26,7 @@ vi.mock("@/components/charts", () => ({
 import PaperPage from "@/components/screens/paper/PaperScreen";
 
 const WARNING = "규칙 계좌는 동결된 대조군입니다 — 이 변경은 실험 조건을 바꿉니다";
+const KR_WARNING = "한국 규칙 계좌(kr_rules)는 동결된 대조군입니다 — 이 변경은 한국 책의 실험 조건을 바꿉니다";
 
 const SETTINGS = {
   available: true,
@@ -132,6 +133,58 @@ describe("설정 탭", () => {
     // 끄려고 한 번 누르면 false가 바뀐 값으로 잡힙니다(예전에는 체크가 풀린 채로 보여 오히려 true가 저장됨).
     fireEvent.click(enabled);
     expect(changes()).toEqual(["news.enabled: 예 (설정 행에 없음 — 기본값으로 읽음) → 아니오"]);
+  });
+
+  it("한국 키(2단계 C1b) — 날짜는 yyyy-MM-dd 글자 상자, 장 시간 변경일은 한 줄에 한 날짜인 여러 줄 상자, 한국 규칙 계좌 배지·확인 문구는 한국 문장", async () => {
+    const kr = { slippageBp: 5, tax: { effectiveFrom: "2026-01-01" }, calendar: { openTimeOverrides: {} } };
+    reads["/api/paper/settings"] = () => Promise.resolve({
+      ...SETTINGS,
+      body: { ...SETTINGS.body, kr },
+      defaults: { ...SETTINGS.defaults, kr },
+      keys: [
+        ...SETTINGS.keys,
+        { key: "kr.slippageBp", type: "number", min: 0, max: 100, affectsRules: true, market: "KR", description: "한국 슬리피지(bp)" },
+        { key: "kr.tax.effectiveFrom", type: "date", min: null, max: null, affectsRules: true, market: "KR", description: "세율 시행일" },
+        {
+          key: "kr.calendar.openTimeOverrides", type: "dateTimeMap", min: null, max: null, affectsRules: false, market: "KR",
+          description: "장 시간 변경일",
+        },
+      ],
+    });
+    api.apiPost.mockResolvedValue({ version: 4, changedKeys: ["kr.slippageBp", "kr.calendar.openTimeOverrides"], warning: KR_WARNING });
+    await openSettingsTab();
+
+    expect(screen.getByText("한국 책 — 비용 · 장부 · 검증기 · 규칙 계좌 · 결정 시각(kr.*)")).toBeTruthy();
+    expect(screen.getByText("한국 책 — 거래일 달력(임시휴장 · 장 시간 변경일)")).toBeTruthy();
+    const date = screen.getByLabelText("kr.tax.effectiveFrom") as HTMLInputElement;
+    expect(date.value).toBe("2026-01-01");
+    expect(date.placeholder).toBe("yyyy-MM-dd");
+    const overrides = screen.getByLabelText("kr.calendar.openTimeOverrides") as HTMLTextAreaElement;
+    expect(overrides.tagName).toBe("TEXTAREA");
+    expect(overrides.value).toBe("");
+    expect(within(overrides.closest("div.grid") as HTMLElement).getByText(/한 줄에 날짜 하나/)).toBeTruthy();
+    const slippage = screen.getByLabelText("kr.slippageBp") as HTMLInputElement;
+    expect(within(slippage.closest("div.grid") as HTMLElement).getByText("한국 규칙 계좌 영향")).toBeTruthy();
+
+    fireEvent.change(slippage, { target: { value: "7" } });
+    fireEvent.change(overrides, { target: { value: "2026-11-19 10:00~16:30" } });
+    expect(changes()).toEqual([
+      "kr.slippageBp: 5 → 7한국 규칙 계좌 영향",
+      "kr.calendar.openTimeOverrides: (없음) → 2026-11-19 10:00~16:30",
+    ]);
+
+    fireEvent.click(saveButton());
+    expect(api.apiPost).not.toHaveBeenCalled();
+    const dialog = screen.getByRole("dialog", { name: "규칙 계좌 영향 설정 저장" });
+    const confirm = within(dialog).getByText(/바꾸는 규칙 계좌 영향 키: kr\.slippageBp\./);
+    expect(confirm.textContent).toContain(KR_WARNING);
+    expect(confirm.textContent).not.toContain(WARNING);
+    fireEvent.click(within(dialog).getByRole("button", { name: "저장 확인" }));
+
+    expect(api.apiPost).toHaveBeenCalledWith("/api/paper/settings", {
+      "kr.slippageBp": 7, "kr.calendar.openTimeOverrides": { "2026-11-19": { open: "10:00", close: "16:30" } },
+    });
+    expect((await screen.findByText(KR_WARNING)).className).toContain("text-warn");
   });
 
   it("키마다 지금 값·기본값·범위·설명·규칙 책 영향 배지, 바꾼 기록 표 — 자리 문구는 없다", async () => {

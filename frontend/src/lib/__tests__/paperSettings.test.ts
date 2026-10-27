@@ -4,6 +4,7 @@
  */
 import { describe, expect, it } from "vitest";
 import {
+  KR_RULES_FROZEN_WARNING,
   PAPER_TABS,
   parseSettingInput,
   RULES_FROZEN_WARNING,
@@ -197,9 +198,9 @@ describe("입력 읽기·바뀐 값", () => {
       parkCashInShy: "false",
     });
     expect(view.changes).toEqual([
-      { key: "model", from: "claude-sonnet-5-5", to: "claude-haiku-5-5", value: "claude-haiku-5-5", affectsRules: false },
-      { key: "parkCashInShy", from: "예", to: "아니오", value: false, affectsRules: true },
-      { key: "trackRecord.windowYears", from: "5", to: "6", value: 6, affectsRules: true },
+      { key: "model", from: "claude-sonnet-5-5", to: "claude-haiku-5-5", value: "claude-haiku-5-5", affectsRules: false, market: null },
+      { key: "parkCashInShy", from: "예", to: "아니오", value: false, affectsRules: true, market: null },
+      { key: "trackRecord.windowYears", from: "5", to: "6", value: 6, affectsRules: true, market: null },
     ]);
     expect(view.errors).toEqual({ maxPositions: "숫자가 아닙니다." });
   });
@@ -286,5 +287,146 @@ describe("구절 목록(사건 뉴스 키워드, 2단계 B)", () => {
     const view = settingsDraftView(groups, { "news.keywords": "Fed, rate decision", "news.feeds": "sec_press, bls_cpi" });
     expect(view.changes.map((change) => change.key)).toEqual(["news.feeds"]);
     expect(view.changes[0].value).toEqual(["sec_press", "bls_cpi"]);
+  });
+});
+
+describe("한국 키(2단계 C1b — kr.*·공유 스위치)", () => {
+  const KR = {
+    available: true,
+    version: 5,
+    body: {
+      apiScheduledReserve: 7,
+      claude: { schemaV3: false },
+      kr: {
+        slippageBp: 5,
+        tax: { kospi: { sttBp: 5 }, effectiveFrom: "2026-01-01" },
+        rules: { weighting: "EQUAL" },
+        calendar: {
+          extraClosures: ["2026-11-02"],
+          openTimeOverrides: { "2026-11-19": { open: "10:00", close: "16:30" }, "2027-01-04": { open: "10:00", close: "15:30" } },
+        },
+        news: { aliases: { "000660": ["하이닉스", "SK 하이닉스"], "005930": ["삼전"] } },
+      },
+    },
+    defaults: {
+      apiScheduledReserve: 7,
+      claude: { schemaV3: false },
+      kr: {
+        slippageBp: 5,
+        tax: { kospi: { sttBp: 5 }, effectiveFrom: "2026-01-01" },
+        rules: { weighting: "EQUAL" },
+        calendar: { extraClosures: [], openTimeOverrides: {} },
+        news: { aliases: {} },
+      },
+    },
+    keys: [
+      key("apiScheduledReserve", { type: "integer", min: 0, max: 50, market: null }),
+      key("claude.schemaV3", { type: "boolean", market: null }),
+      key("kr.slippageBp", { min: 0, max: 100, affectsRules: true, market: "KR" }),
+      key("kr.tax.kospi.sttBp", { min: 0, max: 100, affectsRules: true, market: "KR" }),
+      key("kr.tax.effectiveFrom", { type: "date", affectsRules: true, market: "KR" }),
+      key("kr.rules.weighting", { type: "string", options: ["EQUAL", "SCORE"], affectsRules: true, market: "KR" }),
+      key("kr.calendar.extraClosures", { type: "dates", market: "KR" }),
+      key("kr.calendar.openTimeOverrides", { type: "dateTimeMap", market: "KR" }),
+      key("kr.news.aliases", { type: "aliasMap", market: "KR" }),
+    ],
+  } satisfies PaperSettingsResponse;
+  const groups = settingGroups(KR);
+  const row = (name: string) => groups.flatMap((group) => group.rows).find((entry) => entry.key === name)!;
+
+  it("묶음 — 공유 키는 그 첫 마디, 한국 키는 둘째 마디까지(kr·kr.tax·kr.rules·kr.calendar·kr.news), 이름표가 있다", () => {
+    expect(groups.map((group) => [group.key, group.title])).toEqual([
+      ["", "일반 — Claude 계좌 · 장부 · 검증기 · 규칙 계좌 · 메모"],
+      ["claude", "Claude 계좌 3단계 스위치 — 두 책 공통(규칙 계좌 영향 없음)"],
+      ["kr", "한국 책 — 비용 · 장부 · 검증기 · 규칙 계좌 · 결정 시각(kr.*)"],
+      ["kr.tax", "한국 책 — 매도 세금(세율 · 시행일)"],
+      ["kr.rules", "한국 책 — 규칙 계좌(수급 신호 · 재선정)"],
+      ["kr.calendar", "한국 책 — 거래일 달력(임시휴장 · 장 시간 변경일)"],
+      ["kr.news", "한국 책 — 사건 뉴스(Claude 계좌 패킷 11b, 규칙 계좌 영향 없음)"],
+    ]);
+    expect(groups.find((group) => group.key === "kr.tax")!.rows.map((entry) => entry.key))
+      .toEqual(["kr.tax.kospi.sttBp", "kr.tax.effectiveFrom"]);
+  });
+
+  it("입력 종류 — 서버 형 date·dates·dateTimeMap·aliasMap(대소문자 무시), 시장은 서버 market 그대로", () => {
+    expect(row("kr.tax.effectiveFrom").kind).toBe("date");
+    expect(row("kr.calendar.extraClosures").kind).toBe("dates");
+    expect(row("kr.calendar.openTimeOverrides").kind).toBe("dateTimeMap");
+    expect(row("kr.news.aliases").kind).toBe("aliasMap");
+    expect(settingGroups({ ...KR, keys: [key("kr.calendar.openTimeOverrides", { type: "DATETIMEMAP" })] })[0].rows[0].kind)
+      .toBe("dateTimeMap");
+    expect(row("kr.slippageBp").market).toBe("KR");
+    expect(row("apiScheduledReserve").market).toBeNull();
+  });
+
+  it("표기·입력 글자 — 날짜별 개장·마감은 '날짜 개장~마감', 별칭은 '코드: 별칭, 별칭', 빈 표는 (없음) · 입력은 한 줄에 한 항목", () => {
+    const overrides = row("kr.calendar.openTimeOverrides");
+    expect(overrides.current).toBe("2026-11-19 10:00~16:30, 2027-01-04 10:00~15:30");
+    expect(overrides.initial).toBe("2026-11-19 10:00~16:30\n2027-01-04 10:00~15:30");
+    expect(overrides).toMatchObject({ defaultText: "(없음)", isDefault: false });
+    const aliases = row("kr.news.aliases");
+    expect(aliases.current).toBe("000660: 하이닉스, SK 하이닉스 · 005930: 삼전");
+    expect(aliases.initial).toBe("000660: 하이닉스, SK 하이닉스\n005930: 삼전");
+    expect(row("kr.calendar.extraClosures")).toMatchObject({ initial: "2026-11-02", defaultText: "(없음)" });
+    expect(row("kr.tax.effectiveFrom")).toMatchObject({ initial: "2026-01-01", isDefault: true });
+    expect(settingText({})).toBe("(없음)");
+    expect(settingText({ "2026-11-19": { open: "10:00" } })).toBe('{"2026-11-19":{"open":"10:00"}}');
+  });
+
+  it("읽기 — 날짜 하나는 글자 그대로(형식은 서버), 날짜 목록은 쉼표·공백, 표는 줄마다(키 순서로 맞춤) — 줄 모양이 틀리거나 같은 키가 두 줄이면 오류", () => {
+    expect(parseSettingInput({ kind: "date" }, " 2026-10-27 ")).toEqual({ ok: true, value: "2026-10-27" });
+    expect(parseSettingInput({ kind: "date" }, " ")).toEqual({ ok: false, error: "값을 넣으세요." });
+    expect(parseSettingInput({ kind: "dates" }, "2026-12-30, 2026-11-02\n2026-12-30")).toEqual({
+      ok: true, value: ["2026-11-02", "2026-12-30"],
+    });
+    expect(parseSettingInput({ kind: "dateTimeMap" }, " 2027-01-04 10:00 ~ 15:30\n\n2026-11-19 10:00~16:30 ")).toEqual({
+      ok: true,
+      value: { "2026-11-19": { open: "10:00", close: "16:30" }, "2027-01-04": { open: "10:00", close: "15:30" } },
+    });
+    expect(parseSettingInput({ kind: "dateTimeMap" }, "")).toEqual({ ok: true, value: {} });
+    expect(parseSettingInput({ kind: "dateTimeMap" }, "2026-11-19 10:00")).toMatchObject({ ok: false });
+    expect(parseSettingInput({ kind: "dateTimeMap" }, "2026-11-19 10:00~16:30\n2026-11-19 09:00~15:30"))
+      .toEqual({ ok: false, error: "같은 날짜가 두 줄에 있습니다 — 2026-11-19" });
+    expect(parseSettingInput({ kind: "aliasMap" }, "005930: 삼전\n000660 : 하이닉스,  SK   하이닉스 ,")).toEqual({
+      ok: true, value: { "000660": ["하이닉스", "SK 하이닉스"], "005930": ["삼전"] },
+    });
+    expect(parseSettingInput({ kind: "aliasMap" }, "")).toEqual({ ok: true, value: {} });
+    expect(parseSettingInput({ kind: "aliasMap" }, "하이닉스")).toMatchObject({ ok: false });
+    expect(parseSettingInput({ kind: "aliasMap" }, "000660: a\n000660: b"))
+      .toEqual({ ok: false, error: "같은 종목 코드가 두 줄에 있습니다 — 000660" });
+  });
+
+  it("바뀐 값 — 줄 순서만 바꾸면 바뀐 것이 아님, 고치면 표 통째로(시장 KR), 비우면 빈 표", () => {
+    expect(settingsDraftView(groups, {
+      "kr.calendar.openTimeOverrides": "2027-01-04 10:00~15:30\n2026-11-19 10:00~16:30",
+      "kr.news.aliases": "005930: 삼전\n000660: 하이닉스, SK 하이닉스",
+    }).changes).toEqual([]);
+    const view = settingsDraftView(groups, { "kr.calendar.openTimeOverrides": "2026-11-19 10:00~16:30", "kr.news.aliases": "" });
+    expect(view.changes).toEqual([
+      {
+        key: "kr.calendar.openTimeOverrides", from: "2026-11-19 10:00~16:30, 2027-01-04 10:00~15:30", to: "2026-11-19 10:00~16:30",
+        value: { "2026-11-19": { open: "10:00", close: "16:30" } }, affectsRules: false, market: "KR",
+      },
+      {
+        key: "kr.news.aliases", from: "000660: 하이닉스, SK 하이닉스 · 005930: 삼전", to: "(없음)", value: {}, affectsRules: false,
+        market: "KR",
+      },
+    ]);
+    expect(settingsPatch(view.changes)).toEqual({
+      "kr.calendar.openTimeOverrides": { "2026-11-19": { open: "10:00", close: "16:30" } }, "kr.news.aliases": {},
+    });
+  });
+
+  it("저장 전 확인 — 한국 규칙 계좌 영향 키는 한국 문장, 미국 키와 함께면 미국 · 한국(서버 warning과 같은 순서), 미국 키만이면 예전 문장 그대로", () => {
+    const kr = settingsDraftView(groups, { "kr.slippageBp": "7", "kr.rules.weighting": "SCORE" }).changes;
+    const text = settingsConfirmText(kr)!;
+    expect(text.startsWith(`${KR_RULES_FROZEN_WARNING}. 바꾸는 규칙 계좌 영향 키: kr.slippageBp, kr.rules.weighting.`)).toBe(true);
+    expect(text).not.toContain(RULES_FROZEN_WARNING);
+    const both = settingsConfirmText([...kr, { key: "slippageBp", from: "5", to: "6", value: 6, affectsRules: true, market: "US" }])!;
+    expect(both.startsWith(`${RULES_FROZEN_WARNING} · ${KR_RULES_FROZEN_WARNING}.`)).toBe(true);
+    expect(settingsDraftView(groups, { "kr.calendar.extraClosures": "2026-11-02" }).changes).toEqual([]);
+    expect(settingsConfirmText(settingsDraftView(groups, { "kr.calendar.extraClosures": "2026-12-30, 2026-11-02" }).changes))
+      .toBeNull();
+    expect(KR_RULES_FROZEN_WARNING).toBe("한국 규칙 계좌(kr_rules)는 동결된 대조군입니다 — 이 변경은 한국 책의 실험 조건을 바꿉니다");
   });
 });

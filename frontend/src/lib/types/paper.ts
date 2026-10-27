@@ -1088,13 +1088,18 @@ export interface PaperInitialDecisionResult {
  */
 export interface PaperSettingKey {
   key: string;
-  /** 값의 형(서버 표기 그대로 — number · integer · string · boolean · list · phrases(공백이 든 구절 목록 — 사건 뉴스 키워드) 등). */
+  /**
+   * 값의 형(서버 표기 그대로 — number · integer · string · boolean · list · phrases(공백이 든 구절 목록 — 사건 뉴스 키워드) ·
+   * date · dates · dateTimeMap · aliasMap(한국 키 — 2단계 C1b) 등).
+   */
   type: string;
   /** 서버가 검사하는 범위(숫자 키). 없으면 null. */
   min: number | null;
   max: number | null;
-  /** 규칙 책(동결된 대조군)에 영향을 주는 키 — 바꾸면 저장 전에 한 번 더 확인합니다(명세 S3). */
+  /** 규칙 책(동결된 대조군)에 영향을 주는 키 — 바꾸면 저장 전에 한 번 더 확인합니다(명세 S3). 그 키 시장(market)의 규칙 계좌. */
   affectsRules: boolean;
+  /** 그 키를 읽는 책 — "US"·"KR", 두 책 공통이면 null(2단계 명세 §4-13). 예전 응답에는 없음. */
+  market?: string | null;
   description: string | null;
   /** 고를 수 있는 값(모델·effort·순위 기준 등). 서버가 보내면 선택 상자, 아니면 글자 입력(서버가 다시 검사). */
   options?: string[] | null;

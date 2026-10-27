@@ -2990,8 +2990,12 @@ export function apiUsageView(usage: unknown): ApiUsageView | null {
 /**
  * 설정 입력의 종류. json은 이 화면에서 바꾸지 않는 값입니다(서버 형 이름도 값 모양도 알 수 없음 — 원문만 보임).
  * 서버가 보낸 형 이름(keys[].type)을 먼저 보고, 모르는 이름이면 지금 값의 모양으로 정합니다.
+ * 2단계(C1b, 명세 K38)의 한국 키 형: date(yyyy-MM-dd 하나 — kr.tax.effectiveFrom) · dates(날짜 목록 — kr.calendar.extraClosures) ·
+ * dateTimeMap(날짜 → 개장·마감 — kr.calendar.openTimeOverrides) · aliasMap(종목 코드 → 별칭 목록 — kr.news.aliases).
  */
-export type SettingKind = "number" | "integer" | "boolean" | "list" | "phrases" | "text" | "choice" | "json";
+export type SettingKind =
+  | "number" | "integer" | "boolean" | "list" | "phrases" | "text" | "choice" | "json"
+  | "date" | "dates" | "dateTimeMap" | "aliasMap";
 
 /** 설정 키 묶음(점 경로의 첫 마디) 이름. 모르는 묶음은 이름 그대로. */
 const SETTING_GROUP: Record<string, string> = {
@@ -3001,7 +3005,21 @@ const SETTING_GROUP: Record<string, string> = {
   rules: "규칙 계좌",
   gate: "OS 게이트 지표 — 참고 임계치(구속하지 않음)",
   news: "사건 뉴스 — Claude 계좌 패킷 11b(2단계 B, 규칙 계좌 영향 없음)",
+  calendar: "발표 일정 — 캘린더 컨센서스(3단계 스위치, 두 책 공통)",
+  claude: "Claude 계좌 3단계 스위치 — 두 책 공통(규칙 계좌 영향 없음)",
+  kr: "한국 책 — 비용 · 장부 · 검증기 · 규칙 계좌 · 결정 시각(kr.*)",
+  "kr.tax": "한국 책 — 매도 세금(세율 · 시행일)",
+  "kr.rules": "한국 책 — 규칙 계좌(수급 신호 · 재선정)",
+  "kr.calendar": "한국 책 — 거래일 달력(임시휴장 · 장 시간 변경일)",
+  "kr.news": "한국 책 — 사건 뉴스(Claude 계좌 패킷 11b, 규칙 계좌 영향 없음)",
 };
+
+/** 한국 키는 둘째 마디까지 묶습니다(kr.tax.kospi.sttBp → kr.tax) — 서른 개 넘는 kr.* 키가 한 묶음에 몰리지 않게. 나머지는 첫 마디. */
+function settingGroupKey(key: string): string {
+  const parts = key.split(".");
+  if (parts[0] === "kr" && parts.length >= 3) return `kr.${parts[1]}`;
+  return parts.length > 1 ? parts[0] : "";
+}
 
 /** 설정 한 줄(표시·입력용). */
 export interface SettingRow {
@@ -3030,6 +3048,8 @@ export interface SettingRow {
   min: number | null;
   max: number | null;
   affectsRules: boolean;
+  /** 그 키를 읽는 책(서버 keys[].market — US·KR, 두 책 공통이면 null). 규칙 계좌 영향 경고를 이 시장의 규칙 계좌로 적습니다. */
+  market: string | null;
   description: string | null;
   /** 선택 상자의 선택지(choice만). 지금 값이 목록에 없으면 뒤에 붙입니다(선택 상자가 다른 값을 가리키지 않게). */
   options: string[];
@@ -3056,20 +3076,52 @@ export function settingValueAt(body: unknown, key: string): unknown {
   return node;
 }
 
-/** 설정 값 표기 — 참·거짓은 "예"·"아니오", 목록은 쉼표로, 빈 목록은 "(없음)", 모르면 "—". 숫자는 입력 상자와 같은 글자(천 단위 쉼표 없음). */
+/** 날짜 → {open, close} 표의 줄들("2026-11-19 10:00~16:30") — 그 모양이 아니면 null. */
+function dateTimeMapLines(value: unknown): string[] | null {
+  if (!isRecord(value)) return null;
+  const lines: string[] = [];
+  for (const [date, pair] of Object.entries(value)) {
+    if (!isRecord(pair) || typeof pair.open !== "string" || typeof pair.close !== "string") return null;
+    lines.push(`${date} ${pair.open}~${pair.close}`);
+  }
+  return lines;
+}
+
+/** 종목 코드 → 별칭 목록 표의 줄들("000660: 하이닉스, SK 하이닉스") — 그 모양이 아니면 null. */
+function aliasMapLines(value: unknown): string[] | null {
+  if (!isRecord(value)) return null;
+  const lines: string[] = [];
+  for (const [code, aliases] of Object.entries(value)) {
+    if (!Array.isArray(aliases) || !aliases.every((alias) => typeof alias === "string")) return null;
+    lines.push(`${code}: ${aliases.join(", ")}`);
+  }
+  return lines;
+}
+
+/**
+ * 설정 값 표기 — 참·거짓은 "예"·"아니오", 목록은 쉼표로, 빈 목록·빈 표는 "(없음)", 모르면 "—". 숫자는 입력 상자와 같은 글자(천 단위 쉼표 없음).
+ * 날짜별 개장·마감 표는 "날짜 개장~마감"을 쉼표로, 별칭 표는 "코드: 별칭, 별칭"을 " · "로(한국 키, C1b) — 그 밖의 객체는 원문.
+ */
 export function settingText(value: unknown): string {
   if (value === null || value === undefined) return EMPTY;
   if (typeof value === "boolean") return value ? "예" : "아니오";
   if (Array.isArray(value)) return value.length > 0 ? value.map((entry) => settingText(entry)).join(", ") : "(없음)";
   if (typeof value === "number") return Number.isFinite(value) ? String(value) : EMPTY;
   if (typeof value === "string") return value || "(빈 글자)";
+  if (isRecord(value) && Object.keys(value).length === 0) return "(없음)";
+  const times = dateTimeMapLines(value);
+  if (times) return times.join(", ");
+  const aliases = aliasMapLines(value);
+  if (aliases) return aliases.join(" · ");
   return jsonTitle(value) ?? EMPTY;
 }
 
-/** 입력 상자에 넣을 글자 — 참·거짓은 "true"·"false"(선택용), 목록은 쉼표로, 없으면 빈 글자. */
+/** 입력 상자에 넣을 글자 — 참·거짓은 "true"·"false"(선택용), 목록은 쉼표로, 표(한국 키)는 한 줄에 한 항목, 없으면 빈 글자. */
 function settingInputText(value: unknown, kind: SettingKind): string {
   if (value === null || value === undefined) return "";
   if (kind === "boolean") return value === true ? "true" : value === false ? "false" : "";
+  if (kind === "dateTimeMap") return (dateTimeMapLines(value) ?? []).join("\n");
+  if (kind === "aliasMap") return (aliasMapLines(value) ?? []).join("\n");
   if (Array.isArray(value)) return value.map((entry) => (typeof entry === "string" ? entry : String(entry))).join(", ");
   if (typeof value === "number" || typeof value === "string") return String(value);
   return jsonTitle(value) ?? "";
@@ -3083,6 +3135,11 @@ function settingKind(type: unknown, options: readonly string[], value: unknown):
   if (["boolean", "bool"].includes(name)) return "boolean";
   // 구절 목록(사건 뉴스 키워드) — 항목 안에 공백이 있어("rate decision") 공백으로 나누면 안 됩니다.
   if (name === "phrases") return "phrases";
+  // 한국 키의 형(C1b) — 서버 이름 date·dates·dateTimeMap·aliasMap(소문자로 비교).
+  if (name === "date") return "date";
+  if (name === "dates") return "dates";
+  if (name === "datetimemap") return "dateTimeMap";
+  if (name === "aliasmap") return "aliasMap";
   if (name.startsWith("list") || name.startsWith("array") || name.endsWith("[]")) return "list";
   if (["string", "text", "time", "enum"].includes(name)) return "text";
   // 서버 형 이름을 모르면 지금 값의 모양으로 — 정수인지 소수인지는 값 하나로 알 수 없어 숫자는 모두 number입니다.
@@ -3124,7 +3181,7 @@ export function settingGroups(response: PaperSettingsResponse | null | undefined
     const options = listOf(meta.options).filter((option): option is string => typeof option === "string" && option.length > 0);
     const kind = settingKind(meta.type, options, value);
     const choices = typeof value === "string" && kind === "choice" && value && !options.includes(value) ? [...options, value] : options;
-    const groupKey = key.includes(".") ? key.slice(0, key.indexOf(".")) : "";
+    const groupKey = settingGroupKey(key);
     const row: SettingRow = {
       key,
       group: groupKey,
@@ -3139,6 +3196,7 @@ export function settingGroups(response: PaperSettingsResponse | null | undefined
       min: numberOf(meta.min),
       max: numberOf(meta.max),
       affectsRules: meta.affectsRules === true,
+      market: textOf(meta.market),
       description: textOf(meta.description),
       options: choices,
     };
@@ -3152,10 +3210,44 @@ export function settingGroups(response: PaperSettingsResponse | null | undefined
 /** 입력 글자를 설정 값으로 읽은 결과. */
 export type SettingParse = { ok: true; value: unknown } | { ok: false; error: string };
 
+/** 한 줄에 한 항목인 표 입력(한국 키, C1b)의 줄들 — 앞뒤 공백을 빼고 빈 줄은 건너뜁니다. */
+function tableLines(text: string): string[] {
+  return text.split("\n").map((line) => line.trim()).filter(Boolean);
+}
+
+/** 키 순서를 맞춘 객체 — 서버가 키 오름차순으로 저장하므로, 줄 순서만 바꾼 입력이 '바뀐 값'으로 잡히지 않게. */
+function sortedRecord<T>(entries: Array<[string, T]>): Record<string, T> {
+  return Object.fromEntries([...entries].sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)));
+}
+
+/** 날짜별 개장·마감 표 입력 — 줄마다 "2026-11-19 10:00~16:30". 날짜·시각이 맞는지는 서버가 봅니다(줄 모양만 읽음). */
+function parseDateTimeMap(text: string): SettingParse {
+  const entries: Array<[string, { open: string; close: string }]> = [];
+  for (const line of tableLines(text)) {
+    const match = /^(\S+)\s+(\S+?)\s*~\s*(\S+)$/.exec(line);
+    if (!match) return { ok: false, error: `한 줄에 '날짜 개장~마감'(예: 2026-11-19 10:00~16:30)으로 적으세요 — ${line}` };
+    if (entries.some(([date]) => date === match[1])) return { ok: false, error: `같은 날짜가 두 줄에 있습니다 — ${match[1]}` };
+    entries.push([match[1], { open: match[2], close: match[3] }]);
+  }
+  return { ok: true, value: sortedRecord(entries) };
+}
+
+/** 별칭 표 입력 — 줄마다 "000660: 하이닉스, SK하이닉스". 별칭은 쉼표로 나누고 안의 공백은 한 칸으로(구절 목록과 같음). */
+function parseAliasMap(text: string): SettingParse {
+  const entries: Array<[string, string[]]> = [];
+  for (const line of tableLines(text)) {
+    const match = /^([^:]+?)\s*:\s*(.*)$/.exec(line);
+    if (!match) return { ok: false, error: `한 줄에 '종목 코드: 별칭, 별칭'(예: 000660: 하이닉스)으로 적으세요 — ${line}` };
+    if (entries.some(([code]) => code === match[1])) return { ok: false, error: `같은 종목 코드가 두 줄에 있습니다 — ${match[1]}` };
+    entries.push([match[1], match[2].split(",").map((alias) => alias.replace(/\s+/g, " ").trim()).filter(Boolean)]);
+  }
+  return { ok: true, value: sortedRecord(entries) };
+}
+
 /**
- * 입력 글자를 그 키의 형으로 읽습니다 — 숫자는 숫자로(정수 키는 정수만), 참·거짓은 그대로, 목록은 쉼표·공백·줄바꿈으로 나눠
- * 빈 칸을 빼고, 구절 목록(phrases)은 쉼표·줄바꿈으로만 나눕니다. 범위는 검사하지 않습니다(서버 몫 — 같은 규칙을 두 곳에 두면
- * 갈라집니다). 형으로 읽을 수 없으면 오류 문구.
+ * 입력 글자를 그 키의 형으로 읽습니다 — 숫자는 숫자로(정수 키는 정수만), 참·거짓은 그대로, 목록·날짜 목록은 쉼표·공백·줄바꿈으로 나눠
+ * 빈 칸을 빼고, 구절 목록(phrases)은 쉼표·줄바꿈으로만 나누고, 표(날짜별 개장·마감·별칭)는 한 줄에 한 항목으로 읽습니다. 범위·날짜
+ * 형식은 검사하지 않습니다(서버 몫 — 같은 규칙을 두 곳에 두면 갈라집니다). 형으로 읽을 수 없으면 오류 문구.
  */
 export function parseSettingInput(row: Pick<SettingRow, "kind">, text: string): SettingParse {
   const trimmed = text.trim();
@@ -3174,11 +3266,19 @@ export function parseSettingInput(row: Pick<SettingRow, "kind">, text: string): 
         : { ok: false, error: "예·아니오를 고르세요." };
     case "list":
       return { ok: true, value: trimmed.split(/[\s,]+/).filter(Boolean) };
+    case "dates":
+      // 서버가 날짜 묶음을 중복 없이 오름차순으로 저장하므로 같은 모양으로 — 순서만 바꾼 입력이 '바뀐 값'으로 잡히지 않게.
+      return { ok: true, value: [...new Set(trimmed.split(/[\s,]+/).filter(Boolean))].sort() };
+    case "dateTimeMap":
+      return parseDateTimeMap(text);
+    case "aliasMap":
+      return parseAliasMap(text);
     case "phrases":
       // 쉼표·줄바꿈으로만 나누고 항목 안의 공백은 한 칸으로 — 정규화·중복 제거는 서버가 다시 합니다(같은 규칙을 두 곳에 두지 않음).
       return { ok: true, value: trimmed.split(/[,\n]+/).map((item) => item.replace(/\s+/g, " ").trim()).filter(Boolean) };
     case "choice":
     case "text":
+    case "date":
       return trimmed ? { ok: true, value: trimmed } : { ok: false, error: "값을 넣으세요." };
     default:
       return { ok: false, error: "이 화면에서 바꾸지 않는 값입니다." };
@@ -3192,6 +3292,8 @@ export interface SettingChange {
   to: string;
   value: unknown;
   affectsRules: boolean;
+  /** 그 키를 읽는 책(US·KR, 공통이면 null) — 규칙 계좌 영향 경고의 시장. */
+  market: string | null;
 }
 
 /** 입력 중인 값의 상태 — 바뀐 값(저장할 것)과 형으로 읽지 못한 키의 오류 문구. */
@@ -3219,7 +3321,10 @@ export function settingsDraftView(
       continue;
     }
     if (sameSettingValue(parsed.value, row.value)) continue;
-    changes.push({ key: row.key, from: row.current, to: settingText(parsed.value), value: parsed.value, affectsRules: row.affectsRules });
+    changes.push({
+      key: row.key, from: row.current, to: settingText(parsed.value), value: parsed.value, affectsRules: row.affectsRules,
+      market: row.market,
+    });
   }
   return { changes, errors };
 }
@@ -3229,17 +3334,26 @@ export function settingsPatch(changes: readonly SettingChange[]): Record<string,
   return Object.fromEntries(changes.map((change) => [change.key, change.value]));
 }
 
-/** 규칙 책 영향 키를 바꿀 때의 경고 — 서버 warning과 같은 문장(명세 S3). */
+/** 규칙 책 영향 키를 바꿀 때의 경고 — 서버 warning과 같은 문장(명세 S3). 미국 규칙 계좌. */
 export const RULES_FROZEN_WARNING = "규칙 계좌는 동결된 대조군입니다 — 이 변경은 실험 조건을 바꿉니다";
+
+/** 한국 규칙 계좌(kr_rules) 영향 키(market KR)를 바꿀 때의 경고 — 서버 warning과 같은 문장(2단계 명세 §4-13, C1b). */
+export const KR_RULES_FROZEN_WARNING = "한국 규칙 계좌(kr_rules)는 동결된 대조군입니다 — 이 변경은 한국 책의 실험 조건을 바꿉니다";
 
 /**
  * 저장 전 확인 문구 — 바뀐 값에 규칙 책 영향 키(서버 keys[].affectsRules)가 있을 때만, 없으면 null(바로 저장).
  * 규칙 책은 대조군이라 조건을 바꾸면 그 앞뒤 기록이 다른 실험이 됩니다 — 그래서 한 번 더 묻습니다(S3).
+ * 경고 문장은 그 키 시장의 규칙 계좌(미국 키만이면 예전 문장 그대로, 한국 키는 한국 문장, 둘 다면 미국 · 한국 — 서버 warning과 같은 순서).
  */
 export function settingsConfirmText(changes: readonly SettingChange[]): string | null {
-  const keys = changes.filter((change) => change.affectsRules).map((change) => change.key);
-  if (keys.length === 0) return null;
-  return `${RULES_FROZEN_WARNING}. 바꾸는 규칙 계좌 영향 키: ${keys.join(", ")}. 이 뒤의 규칙 계좌 결정은 다른 조건으로 낸 것이 됩니다`
+  const affected = changes.filter((change) => change.affectsRules);
+  if (affected.length === 0) return null;
+  const warnings = [
+    ...(affected.some((change) => change.market !== "KR") ? [RULES_FROZEN_WARNING] : []),
+    ...(affected.some((change) => change.market === "KR") ? [KR_RULES_FROZEN_WARNING] : []),
+  ];
+  const keys = affected.map((change) => change.key);
+  return `${warnings.join(" · ")}. 바꾸는 규칙 계좌 영향 키: ${keys.join(", ")}. 이 뒤의 규칙 계좌 결정은 다른 조건으로 낸 것이 됩니다`
     + "(결정 기록마다 설정 버전이 남습니다). 그래도 저장할까요?";
 }
 
