@@ -433,6 +433,30 @@ class KrRuleBookServiceTest {
         assertThat(service.decisionOn(R)).isEmpty();
     }
 
+    // ------------------------------------------------------------------ 규칙 계좌 영향 표시
+    @Test
+    @DisplayName("설정 키 표의 '한국 규칙 계좌 영향'(affectsRules) = 이 계좌 결정이 읽는 kr.* 키 ∪ 장부가 이 계좌 체결·스탑에 읽는 kr.* 키 — ETF 상한은 아님")
+    void affectsRulesMatchesTheKeysRead() {
+        java.util.Set<String> marked = new java.util.TreeSet<>();
+        for (PaperSettingKeys.Spec spec : PaperSettingKeys.ALL) {
+            if (spec.scope() == PaperSettingKeys.Scope.KR && spec.affectsRules()) {
+                marked.add(spec.key());
+            }
+        }
+        java.util.Set<String> read = new java.util.TreeSet<>(KrRuleBookService.DECISION_KEYS);
+        read.addAll(KrRuleBookService.LEDGER_KEYS);
+
+        assertThat(marked).isEqualTo(read);
+        assertThat(marked).doesNotContain("kr.maxWeightEtfPct");
+        // 결정이 읽는 키는 결정 행 settings에 값이 남음(그 실행의 판).
+        JsonNode used = decideAt(R, "22:30").response().path("settings");
+        for (String key : List.of("rulesMaxNames", "weighting", "minStreakDays", "debtRatioMaxPct", "reselection",
+                "parkCashThresholdPct", "maxWeightStockPct", "minOrderNotional", "cashLikeTickers", "slippageBp",
+                "commissionBp", "stockSellCostBp")) {
+            assertThat(used.has(key)).as(key).isTrue();
+        }
+    }
+
     private void holding(String code, int qty, double price) {
         store.upsertPosition(new Position(PaperBooks.KR_RULES, code, qty, price, S, kst("2026-10-30T09:00"), price,
                 kst("2026-10-30T09:00"), price, kst("2026-10-30T21:57"), false, S, price, null));

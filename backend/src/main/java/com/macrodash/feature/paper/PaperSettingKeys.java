@@ -276,7 +276,8 @@ final class PaperSettingKeys {
                             + "않음 — 새 세율은 시행일 당일에 저장(G13)"),
             number("kr.minOrderNotional", 0, 100_000_000, true, "주문 최소 금액(원) — Claude 검증기·한국 규칙 계좌 매수(1억의 0.5%)"),
             number("kr.maxWeightStockPct", 1, 100, true, "한국 종목당 비중 상한(%) — Claude 검증기·한국 규칙 계좌(미국과 같은 값)"),
-            number("kr.maxWeightEtfPct", 1, 100, true, "한국 ETF 비중 상한(%) — Claude 검증기·한국 규칙 계좌(미국과 같은 값)"),
+            number("kr.maxWeightEtfPct", 1, 100, false, "한국 ETF 비중 상한(%) — Claude 검증기(미국과 같은 값). 한국 규칙 계좌에는 쓰일 자리가 "
+                    + "없음(U는 보통주뿐, 153130은 현금성 — 명세 §4-6 'D1a')"),
             integer("kr.maxPositions", 1, 100, false, "한국 매수 뒤 최대 종목 수(현금성 제외) — Claude 검증기"),
             integer("kr.maxDiscretionaryOrdersPerMonth", 0, 200, false, "한국 Claude 재량 주문 월 상한"),
             integer("kr.minHoldTradingDaysForSell", 0, 60, false, "한국 Claude 재량 매도 전 최소 보유 거래일(KRX 거래일, 스탑 제외)"),

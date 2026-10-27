@@ -144,15 +144,16 @@ class PaperSettingsKrTest {
         assertThat(key("kr.news.feeds").path("description").asString()).contains("yna_market").contains("사용자 결정");
         assertThat(key("kr.minOrderNotional").path("max").asDouble()).isEqualTo(100_000_000);
 
-        // 규칙 계좌 영향 — 한국 규칙 계좌(kr_rules)가 읽는 키만
+        // 규칙 계좌 영향 — 한국 규칙 계좌(kr_rules)가 읽는 키만(결정 KrRuleBookService + 장부 — D1b, KrRuleBookServiceTest가 대조)
         for (String rules : List.of("kr.slippageBp", "kr.commissionBp", "kr.tax.kospi.sttBp", "kr.tax.kospi.ruralBp",
                 "kr.tax.kosdaq.sttBp", "kr.tax.etfBp", "kr.tax.effectiveFrom", "kr.minOrderNotional", "kr.maxWeightStockPct",
-                "kr.maxWeightEtfPct", "kr.trailingStopPct", "kr.lockoutTradingDays", "kr.rulesMaxNames",
+                "kr.trailingStopPct", "kr.lockoutTradingDays", "kr.rulesMaxNames",
                 "kr.rules.weighting", "kr.rules.minStreakDays", "kr.rules.debtRatioMaxPct", "kr.rules.reselection",
                 "kr.rules.parkCashThresholdPct", "kr.cashLikeTickers")) {
             assertThat(key(rules).path("affectsRules").asBoolean()).as(rules).isTrue();
         }
-        for (String plain : List.of("kr.maxPositions", "kr.maxDiscretionaryOrdersPerMonth", "kr.minHoldTradingDaysForSell",
+        // ETF 상한은 한국 규칙 계좌에 쓰일 자리가 없음(U는 보통주뿐·153130은 현금성 — D1a, D1b에서 표시를 내림).
+        for (String plain : List.of("kr.maxWeightEtfPct", "kr.maxPositions", "kr.maxDiscretionaryOrdersPerMonth", "kr.minHoldTradingDaysForSell",
                 "kr.universeExtraTickers", "kr.decisionTimeKst", "kr.decisionDeadlineKst", "kr.calendar.extraClosures",
                 "kr.calendar.openTimeOverrides", "kr.news.enabled", "kr.news.maxPerDay", "kr.news.keywords",
                 "kr.news.feeds", "kr.news.aliases")) {
