@@ -133,6 +133,42 @@ class ReviewViewsMarketTest {
     }
 
     @Test
+    @DisplayName("GET /api/paper/reviews/{weekEnding} 컨트롤러가 market을 넘김(F1 리뷰) — KR은 한국 행(한국에만 있는 10-08, 두 시장에 다 있는 10-02도 market:KR·한국 retryable), 값 없음·US는 미국 행 그대로(한국에만 있는 주는 미국 문구 400), 모르는 값은 400")
+    @SuppressWarnings("unchecked")
+    void detailRoutePassesTheMarket() {
+        krBooks();
+        PaperReviewController route = new PaperReviewController(reviews, mock(PaperReviewJob.class),
+                new PaperMarkets(store, reader), krConfig());
+
+        Map<String, Object> krOnly = route.review("2026-10-08", "KR");
+        assertThat(krOnly).containsEntry("market", "KR");
+        assertThat((Map<String, Object>) krOnly.get("review")).containsEntry("weekEnding", "2026-10-08")
+                .containsEntry("status", Review.API_ERROR).containsEntry("retryable", true);
+        assertThat(route.review("2026-10-02", "KR")).as("두 시장에 다 있는 주 — 한국 행")
+                .containsEntry("market", "KR").containsEntry("dormantReason", null);
+        assertThatThrownBy(() -> route.review("2026-10-09", "KR")).isInstanceOf(InvalidRequestException.class)
+                .hasMessage("없는 복기입니다: KR 2026-10-09");
+
+        Map<String, Object> us = route.review("2026-10-09", null);
+        assertThat(us).doesNotContainKeys("market", "dormantReason");
+        assertThat((Map<String, Object>) us.get("review")).containsEntry("weekEnding", "2026-10-09")
+                .containsEntry("retryable", true);
+        assertThat(MAPPER.writeValueAsString(us)).as("값 없음 = 서비스의 미국 판")
+                .isEqualTo(MAPPER.writeValueAsString(reviews.detailView("2026-10-09")));
+        assertThat(MAPPER.writeValueAsString(route.review("2026-10-09", "US"))).as("US = 값 없음")
+                .isEqualTo(MAPPER.writeValueAsString(us));
+        assertThat(route.review("2026-10-02", "US")).doesNotContainKeys("market");
+        for (String market : new String[]{null, "US"}) {
+            assertThatThrownBy(() -> route.review("2026-10-08", market)).as("미국에 없는 한국 주: " + market)
+                    .isInstanceOf(InvalidRequestException.class).hasMessage("없는 복기입니다: 2026-10-08");
+        }
+        for (String market : new String[]{"JP", "kr", ""}) {
+            assertThatThrownBy(() -> route.review("2026-10-08", market)).as(market)
+                    .isInstanceOf(InvalidRequestException.class).hasMessageContaining("US · KR");
+        }
+    }
+
+    @Test
     @DisplayName("쉬는 한국(출발일 없음): 목록은 예외 없이 쉬는 사유와 함께, 없는 주의 400 문구에도 그 사유")
     void dormantKoreaCarriesTheReason() {
         Map<String, Object> kr = reviews.listView(scope(PaperFixtures.config()));

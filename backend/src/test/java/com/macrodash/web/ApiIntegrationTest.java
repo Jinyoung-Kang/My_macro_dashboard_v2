@@ -987,8 +987,26 @@ class ApiIntegrationTest {
             assertThat(unknown.getBody().path("message").asString()).contains("market", "US · KR");
         }
         assertThat(authorizedGet("/api/paper/overview?market=KR").path("currency").asString()).isEqualTo("KRW");
-        assertThat(authorizedExchange("/api/paper/reviews/1999-01-08?market=KR", HttpMethod.GET).getStatusCode())
-                .as("없는 한국 복기 주").isEqualTo(HttpStatus.BAD_REQUEST);
+        // 복기 한 건: 컨트롤러가 market을 넘기는지는 문구로 봅니다(미국 갈래도 없는 주는 400이라 상태 코드만으로는 못 가름 — F1 리뷰).
+        ResponseEntity<JsonNode> krWeek = authorizedExchange("/api/paper/reviews/1999-01-08?market=KR", HttpMethod.GET);
+        assertThat(krWeek.getStatusCode()).as("없는 한국 복기 주").isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(krWeek.getBody().path("message").asString()).as("한국 행에서 찾음 — 시장을 적음")
+                .startsWith("없는 복기입니다: KR 1999-01-08");
+        if (!krStarted) {
+            assertThat(krWeek.getBody().path("message").asString()).isEqualTo("없는 복기입니다: KR 1999-01-08 — "
+                    + com.macrodash.feature.paper.PaperConfig.KR_START_MISSING);
+        }
+        ResponseEntity<JsonNode> usWeek = authorizedExchange("/api/paper/reviews/1999-01-08", HttpMethod.GET);
+        assertThat(usWeek.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(usWeek.getBody().path("message").asString()).isEqualTo("없는 복기입니다: 1999-01-08");
+        ResponseEntity<JsonNode> usWeekExplicit = authorizedExchange("/api/paper/reviews/1999-01-08?market=US",
+                HttpMethod.GET);
+        assertThat(usWeekExplicit.getStatusCode()).as("?market=US = 시장 값 없음").isEqualTo(usWeek.getStatusCode());
+        assertThat(usWeekExplicit.getBody()).as("?market=US = 시장 값 없음").isEqualTo(usWeek.getBody());
+        ResponseEntity<JsonNode> unknownWeek = authorizedExchange("/api/paper/reviews/1999-01-08?market=JP",
+                HttpMethod.GET);
+        assertThat(unknownWeek.getStatusCode()).as("복기 한 건 ?market=JP").isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(unknownWeek.getBody().path("message").asString()).contains("market", "US · KR");
         assertThat(authorizedGet("/api/paper/decisions?book=kr_rules&limit=5").path("available").asBoolean())
                 .as("결정 목록은 계좌 코드로 시장을 고름").isTrue();
     }
