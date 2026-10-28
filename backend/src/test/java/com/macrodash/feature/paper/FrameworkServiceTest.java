@@ -232,7 +232,7 @@ class FrameworkServiceTest {
     }
 
     @Test
-    @DisplayName("고정본: 2단계 공유 키(예약·컨센서스·3단계 스위치)를 켠 설정으로 렌더링해도 미국 시스템 프롬프트가 바이트까지 같다(C1b — 읽는 코드 없음)")
+    @DisplayName("고정본: 2단계 공유 키(예약·컨센서스·3단계 스위치)를 켠 설정으로 렌더링해도 미국 시스템 프롬프트가 바이트까지 같다(렌더링은 읽지 않음 — calendar.consensus는 패킷만 바꿈, E1b)")
     void goldenRenderIgnoresStage2SharedKeys() {
         ObjectNode switched = (ObjectNode) settings.defaultsJson().deepCopy();
         switched.put("apiScheduledReserve", 9);

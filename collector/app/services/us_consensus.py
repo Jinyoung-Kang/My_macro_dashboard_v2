@@ -2,9 +2,9 @@
 app/services/us_consensus.py
 🧪 미국 경제 지표 컨센서스 — 모의 매매 캘린더 컨센서스 층의 원자료(v2 2단계 명세 §4-12·K22·B9). **저장만** 합니다.
 
-패킷 ``1b_calendar``에 싣는 것은 설정 ``calendar.consensus``를 한국 책 출발일에 켠 뒤이고(K22 — E1에서 연결), 그 전에는 어떤 패킷·화면도
-이 저장본을 읽지 않습니다. 발표 날짜는 공식 출처(FRED·FOMC 상수)가 정하고, 컨센서스는 그 줄에 값만 붙이는 층입니다 — 이름 대응표
-(Nasdaq 이름 ↔ FRED 릴리스)는 패킷을 만드는 E1이 정합니다. 수집기는 미국 행을 받은 그대로 남깁니다.
+패킷 ``1b_calendar``에 싣는 것은 설정 ``calendar.consensus``를 한국 책 출발일에 켠 뒤이고(K22 — 백엔드 미국 패킷이 켜졌을 때만 읽음, E1b),
+화면은 읽지 않습니다. 발표 날짜는 공식 출처(FRED·FOMC 상수)가 정하고, 컨센서스는 그 줄에 값만 붙이는 층입니다 — 이름 대응표
+(Nasdaq 이름 ↔ FRED 릴리스·FOMC)는 백엔드 ``analytics.CalendarConsensus``에 있습니다(E1b). 수집기는 미국 행을 받은 그대로 남깁니다.
 
 [출처 — Nasdaq ``api/calendar/economicevents``, ADR 0017과 같은 '비공식 참고']
 - TradingView 경제 캘린더(``economic-calendar.tradingview.com/events``)는 이 PC에서 HTTP 403입니다(2026-10-26 두 번·10-27 한 번, 기본 요청).

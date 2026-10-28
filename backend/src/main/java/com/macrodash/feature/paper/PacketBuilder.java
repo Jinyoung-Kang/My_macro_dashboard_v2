@@ -165,8 +165,15 @@ public class PacketBuilder {
     /**
      * 패킷 모양의 판 — 섹션·칸을 바꾸면 올립니다(결정 기록끼리 비교할 때 같은 모양인지 알게). 2 = 재무 섹션 8b(D28), 3 = 일정 섹션
      * 1b(2단계 A), 4 = 사건 섹션 11b(2단계 B), 5 = 8b 줄의 어닝 서프라이즈 {@code eps}와 머리말 {@code epsColumns}·{@code epsNote}(2단계 C).
+     * 설정 {@code calendar.consensus}가 꺼져 있으면 늘 이 판입니다({@link #PACKET_VERSION_CONSENSUS}).
      */
     static final int PACKET_VERSION = 5;
+    /**
+     * 컨센서스 층을 켠 판(v2 2단계 명세 §4-12·K22, E1b) — 6 = {@code 1b_calendar}의 머리말 {@code consensus}와 거시 줄의 컨센서스 열
+     * ({@link CalendarSection}). 설정 {@code calendar.consensus}(두 책 공통, 기본 false)를 한국 책 출발일에 켠 결정부터이고, 판은 상수가 아니라
+     * 실린 기능으로 정합니다 — 꺼진 동안 미국 패킷은 판 5 그대로(같은 입력이면 같은 해시). 한국 패킷은 처음부터 6({@code KrPacketBuilder}).
+     */
+    static final int PACKET_VERSION_CONSENSUS = 6;
     /**
      * 목표 크기(설계 §5-2). {@link #estimateTokens}의 어림으로 잽니다. D28 전 25,000 — 재무 25종목 × 약 30칸을 더해 올렸고, 메모
      * 6,000자를 포함한 최대치 기준입니다. 상한을 꽉 채운 시험 패킷은 D28 전 약 24,900 → 약 29,100토큰(8b 약 4,200 — 줄마다 계산
@@ -184,9 +191,17 @@ public class PacketBuilder {
      * 모양). 보통 모양(USD, 작은 추정치 없음, AAPL 같은 자릿수)이면 eps는 약 1,760(머리말 약 310 포함 — 출처 구분 문구 약 60)입니다. 실제 티커가 5자면
      * {@code epsSmallBase}·{@code epsCurrency}에서 약 40이 더 붙습니다. {@code news.maxPerDay}를 기본보다 올리거나 {@code news.keywords}에
      * 긴 구절(60자까지)을 넣으면 넘을 수 있습니다(경고 로그만). 1b는 실적 대상을 8b와 같은 25종목으로 두어 따로 늘지 않습니다
-     * ({@link #calendar}).
+     * ({@link #calendar}). 컨센서스 층을 켠 판 6은 {@link #TARGET_TOKENS_CONSENSUS}로 잽니다(이 값은 판 5와 한국 패킷 예산 그대로).
      */
     static final int TARGET_TOKENS = 35_500;
+    /**
+     * 컨센서스 층을 켠 판 6의 목표 크기(E1b — 명세 §4-12 '{@code TARGET_TOKENS}는 다시 잰다'). 위 가장 큰 모양(판 5 약 35,425)에 1b 거시
+     * 6줄의 컨센서스 층을 가장 크게 더한 모양 — 한 줄은 붙이고(가장 긴 자릿수 −130.875B 꼴 + 결정 전 발표치라 {@code actual} 열이 생김 +
+     * 이어받은 날 주의), 다섯 줄은 사유가 가장 긴 '같은 이름 두 줄'(가장 긴 대응 이름 금리 결정 — 칸 다섯 null + notes 한 줄) — 이면 1b가
+     * 약 798 → 1,274로 늘어 시험 패킷이 약 35,900, 여유 약 100입니다(PacketBuilderTest.fitsTokenBudgetWithConsensus, 2026-10-28). 줄마다
+     * 붙인 보통 모양이면 늘어나는 몫은 약 250입니다. 넘으면 경고 로그만(판 5와 같음).
+     */
+    static final int TARGET_TOKENS_CONSENSUS = 36_000;
 
     /** 결정 종류(paper_decisions.kind). */
     static final List<String> KINDS = List.of(RuleBookService.SCHEDULED, RuleBookService.MANUAL,
@@ -400,12 +415,16 @@ public class PacketBuilder {
         // 재무(8b)와 일정(1b)의 종목 대상은 같은 목록입니다 — 보유·후보·watchlist를 두 섹션이 따로 고르면 "재무는 있는데 실적일은
         // 없는" 종목이 생기고, 1b가 상한 없는 목록을 받으면 패킷이 목표 크기를 넘습니다.
         FundamentalsTargets stockTargets = fundamentalsTargets(ledger, context, universe, prior, paper, ruleSettings);
-        CalendarSection.Built calendar = calendar(asOf, initial, stockTargets);
+        // 컨센서스 층(E1b)은 이 결정이 읽은 설정 행의 calendar.consensus가 켜졌을 때만 — 꺼지면 저장본을 읽지도 않습니다(판 5 그대로).
+        boolean consensus = consensusEnabled(settingsBody);
+        CalendarSection.Built calendar = calendar(asOf, initial, stockTargets,
+                consensus ? NewsEvents.window(asOf, PaperDecisionJob.decisionTime(settingsBody)).to() : null);
         EventsSection.Built events = events(asOf, initial, settingsBody, stockTargets);
 
         Map<String, Object> root = new LinkedHashMap<>();
         root.put(INSTRUCTIONS, instructions(asOf, initial));
-        root.put(BASIS, basis(asOf, kind, initial, quotes, frameworkVersion, settingsVersion, chosen));
+        root.put(BASIS, basis(asOf, kind, initial, quotes, frameworkVersion, settingsVersion, chosen,
+                consensus ? PACKET_VERSION_CONSENSUS : PACKET_VERSION));
         root.put(CALENDAR, calendar.section());
         root.put(MACRO, macroCards(asOf, initial, macro, fx));
         root.put(FRED, fredSection(fred));
@@ -431,9 +450,10 @@ public class PacketBuilder {
         JsonNode body = toNode(root);
         String text = mapper.writer().without(SerializationFeature.INDENT_OUTPUT).writeValueAsString(body);
         int tokens = estimateTokens(text);
-        if (tokens > TARGET_TOKENS) {
+        int target = consensus ? TARGET_TOKENS_CONSENSUS : TARGET_TOKENS;
+        if (tokens > target) {
             log.warn("Claude 패킷이 목표보다 큽니다: {} {} 약 {}토큰(목표 {}) — 목록 상한을 확인하세요", asOf, kind, tokens,
-                    TARGET_TOKENS);
+                    target);
         }
         return new Packet(body, text, sha256(text), packetNotes.ids(),
                 calendar.measure().withEvents(events.result()).withEarnings(fundamentals.earnings()));
@@ -460,7 +480,8 @@ public class PacketBuilder {
     }
 
     private Map<String, Object> basis(LocalDate asOf, String kind, boolean initial, Optional<Quotes> quotes,
-                                      Integer frameworkVersion, Integer settingsVersion, Selection chosen) {
+                                      Integer frameworkVersion, Integer settingsVersion, Selection chosen,
+                                      int packetVersion) {
         LocalDate next = UsMarketCalendar.nextTradingDay(asOf);
         List<String> holidays = new ArrayList<>();
         for (int i = 1; i <= HOLIDAY_HORIZON_DAYS; i++) {
@@ -470,7 +491,7 @@ public class PacketBuilder {
             }
         }
         Map<String, Object> out = new LinkedHashMap<>();
-        out.put("packetVersion", PACKET_VERSION);
+        out.put("packetVersion", packetVersion);
         out.put("book", PaperBooks.CLAUDE);
         out.put("asOfTradingDate", asOf.toString());
         out.put("decisionKind", kind);
@@ -506,11 +527,30 @@ public class PacketBuilder {
      *
      * <p>저장본은 {@code quietly} 안에서 읽어(이 메서드는 {@link #assemble} 안) 수집을 깨우지 않습니다. 앞날 일정은 지금 수집본뿐이라
      * 초기 결정 패킷은 매크로 카드처럼 {@code asOfMismatch:true}입니다. 저장본이 없으면 일정을 지어내지 않고 "자료 없음"입니다.
+     *
+     * <p><b>컨센서스 층</b>(E1b, {@code consensusKnownBy} ≠ null — 설정 {@code calendar.consensus} 켜짐): 미국 컨센서스 저장본(수집기
+     * {@code us_calendar_consensus})도 같은 {@code quietly} 안에서 읽어 거시 줄에 붙입니다. 결정 순간은 재무 8b의 어닝 서프라이즈·사건 11b와
+     * 같은 값({@link NewsEvents#window}의 끝 — 기준일 다음 KST 날짜의 {@code decisionTimeKst})이고, 그 순간 뒤에 받은 날의 발표치는 싣지
+     * 않습니다(시계를 읽지 않아 결정적). 예상치·직전 값은 일정과 같은 '지금 수집본'이라 초기 결정에서도 같은 {@code asOfMismatch} 아래에 둡니다.
      */
-    private CalendarSection.Built calendar(LocalDate asOf, boolean initial, FundamentalsTargets targets) {
+    private CalendarSection.Built calendar(LocalDate asOf, boolean initial, FundamentalsTargets targets,
+                                           Instant consensusKnownBy) {
         Optional<Snapshot> snapshot = reader.read(Datasets.SNAP_US_CALENDAR, Datasets.MAX_AGE_SLOW, "us_calendar");
         List<String> tickers = targets.shown().stream().map(FundamentalsSection.Target::ticker).toList();
-        return CalendarSection.build(Datasets.SNAP_US_CALENDAR, snapshot, asOf, tickers, initial);
+        CalendarSection.Consensus consensus = consensusKnownBy == null ? null
+                : new CalendarSection.Consensus(Datasets.SNAP_US_CONSENSUS,
+                        reader.read(Datasets.SNAP_US_CONSENSUS, Datasets.MAX_AGE_SLOW, "us_calendar_consensus"),
+                        consensusKnownBy);
+        return CalendarSection.build(Datasets.SNAP_US_CALENDAR, snapshot, asOf, tickers, initial, consensus);
+    }
+
+    /**
+     * 설정 {@code calendar.consensus}(공유 BOOLEAN, 기본 false — {@link PaperSettingKeys}) — 이 결정이 읽은 설정 행에서. 묶음이 없거나
+     * 불이 아니면 꺼짐(기본값 — 층을 지어 켜지 않음).
+     */
+    static boolean consensusEnabled(JsonNode settingsBody) {
+        JsonNode value = Json.child(Json.child(settingsBody, "calendar"), "consensus");
+        return value != null && value.isBoolean() && value.booleanValue();
     }
 
     // ------------------------------------------------------------------ 11b 사건

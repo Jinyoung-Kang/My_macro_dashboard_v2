@@ -1,0 +1,2 @@
+initial sha256=86b297016ec9a2ee4360b46c04805f033ec625fda904404869c612ebdea8fe92 chars=21687 noteIds=[1] measure={"hasCalendar":true,"calendarItems":6,"hasEvents":1,"eventIds":["4ddb7e8c36c67690"],"hasEarnings":true,"earningsRows":2}
+scheduled sha256=291f3cbb84934bd7681692a3680717f24c28f69a6915a7833e6e34d3f7fc62cb chars=23494 noteIds=[1] measure={"hasCalendar":true,"calendarItems":6,"hasEvents":5,"eventIds":["90b9c1cdf558e875","2188c827fe3a0c44","80201954563cda55","d225a2242af0d564","f0c3b79eccacf306"],"hasEarnings":true,"earningsRows":2}

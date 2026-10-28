@@ -85,8 +85,9 @@ public final class Datasets {
      */
     public static final String SNAP_KR_CALENDAR = "calendar.kr_events";
     /**
-     * 🧪 미국 경제 지표 컨센서스(v2 2단계 B9·K22 — Nasdaq {@code api/calendar/economicevents}, 비공식 참고). <b>저장만</b> — 패킷
-     * {@code 1b_calendar}에 싣는 것은 설정 {@code calendar.consensus}를 한국 책 출발일에 켠 뒤(E1)이고, 그 전에는 어떤 코드도 읽지 않습니다.
+     * 🧪 미국 경제 지표 컨센서스(v2 2단계 B9·K22 — Nasdaq {@code api/calendar/economicevents}, 비공식 참고). 미국 패킷({@code PacketBuilder})이
+     * 설정 {@code calendar.consensus}가 켜졌을 때만 읽어 {@code 1b_calendar} 거시 줄에 붙입니다(E1b — 대응표 {@code analytics.CalendarConsensus}).
+     * 그 밖의 코드는 읽지 않습니다(수집기 시험 {@code test_us_consensus}가 대조).
      * {@code {forDate, days: {동부 날짜: {rows: [{name, timeEt, forecast, previous, actual, unit, forecastText, previousText, actualText,
      * importance}], fetchedAt, isStale?}}, failed}} — 날짜는 공식 출처(FRED·FOMC)가 정하고 이 값은 이름 대응표로 그 줄에 붙이는 층입니다.
      */

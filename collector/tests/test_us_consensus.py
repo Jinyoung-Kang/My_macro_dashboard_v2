@@ -1,13 +1,13 @@
 """
 tests/test_us_consensus.py
-미국 경제 지표 컨센서스(태스크 us_calendar_consensus, v2 2단계 명세 §4-12·K22·B9) — **저장만**, 패킷은 calendar.consensus를 켠 뒤(E1).
+미국 경제 지표 컨센서스(태스크 us_calendar_consensus, v2 2단계 명세 §4-12·K22·B9) — 수집기는 **저장만**, 패킷은 calendar.consensus를 켠 뒤(E1b).
 
 고정하는 규칙
   1. 출처는 Nasdaq(TradingView는 이 PC에서 403 — G11). date=D는 동부 D−1의 행이라 동부 날짜 E는 date=E+1로 묻는다.
   2. 미국 행만, 값은 숫자 + 단위로 나누고 못 나누면 null(글자는 …Text에 그대로), 단위가 서로 다르면 숫자를 모두 null. 중요도는 null.
   3. 동부 오늘부터 18일 안의 평일을 하루 한 번(같은 동부 날짜에 받은 날은 다시 묻지 않음). 날짜 하나의 실패는 직전 값을 isStale로 잇고,
      하나도 못 받으면 EmptyResult. 출처 거부면 그 실행을 멈춘다. 실업수당 청구가 목요일에 없으면 날짜 어긋남이 바뀐 것으로 보고 저장하지 않는다.
-  4. 백엔드·화면 코드는 이 저장본을 읽지 않는다(이름 상수만).
+  4. 이 저장본을 읽는 백엔드 코드는 미국 패킷(PacketBuilder — calendar.consensus를 켰을 때만, E1b)뿐이고 화면은 읽지 않는다.
 
 외부 네트워크를 쓰지 않습니다 — 고정본은 tests/fixtures/calendar/nasdaq_*.json(README). 태스크 테스트는 PostgreSQL이 필요합니다.
 """
@@ -50,7 +50,7 @@ def test_데이터셋_이름():
 
 
 def test_백엔드와_화면은_컨센서스_저장본을_읽지_않는다():
-    """저장만(명세 K22) — 패킷 스위치 calendar.consensus는 E1. 이름 상수 말고 읽는 코드가 생기면 그 커밋이 이 시험을 고친다."""
+    """읽는 곳은 미국 패킷 하나(명세 K22 — calendar.consensus를 켰을 때만, E1b). 이름 상수와 그 패킷 말고 읽는 코드가 생기면 그 커밋이 이 시험을 고친다."""
     readers = []
     for folder in (ROOT / "backend/src/main/java", ROOT / "frontend/src"):
         if not folder.exists():
@@ -60,7 +60,8 @@ def test_백엔드와_화면은_컨센서스_저장본을_읽지_않는다():
                 text = path.read_text(encoding="utf-8")
                 if "SNAP_US_CONSENSUS" in text or "calendar.us_consensus" in text:
                     readers.append(path.relative_to(ROOT).as_posix())
-    assert readers == ["backend/src/main/java/com/macrodash/store/Datasets.java"]
+    assert sorted(readers) == ["backend/src/main/java/com/macrodash/feature/paper/PacketBuilder.java",
+                               "backend/src/main/java/com/macrodash/store/Datasets.java"]
 
 
 # ==============================================================================

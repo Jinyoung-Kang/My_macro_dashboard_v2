@@ -254,11 +254,12 @@ final class PaperSettingKeys {
             new Spec("news.feeds", Type.FEEDS, null, null, NewsEvents.DEFAULT_FEEDS, false,
                     "패킷에 넣을 피드 키(수집은 여덟 피드 모두) — " + String.join(" · ", NewsEvents.DEFAULT_FEEDS), Scope.US),
             // 3단계 스위치(2단계 명세 K22·K37) — 한국 책 출발일 S에 설정 저장 한 번으로 함께 켜 두 책이 같은 날 같은 판이 됩니다.
-            // 지금은 읽는 코드가 없습니다(꺼짐 = 미국 packetVersion 5·스키마·프롬프트 바이트 그대로 — PacketBuilderTest·FrameworkServiceTest).
+            // calendar.consensus는 미국 패킷이 읽습니다(E1b — 켜면 packetVersion 6, 꺼짐 = 판 5 바이트 그대로 — PacketBuilderTest).
+            // claude.* 둘은 아직 읽는 코드가 없습니다(꺼짐 = 스키마·프롬프트 바이트 그대로 — FrameworkServiceTest).
             shared(of("calendar.consensus", Type.BOOLEAN, false,
-                    "Claude 패킷 1b_calendar에 미국 컨센서스(Nasdaq — forecast·previous·unit) 열을 실음(2단계 K22, 두 책 공통) — "
-                            + "켜면 미국 packetVersion 6. 한국 책 출발일에 claude.* 스위치와 같은 저장으로 켬. 지금은 읽는 코드가 "
-                            + "없음(E1에서 연결)")),
+                    "Claude 패킷 1b_calendar에 미국 컨센서스(Nasdaq — forecast·previous·unit, 결정 전에 받은 발표치) 열을 실음"
+                            + "(2단계 K22, 두 책 공통) — 켜면 미국 packetVersion 6(한국 패킷은 처음부터 6, 한국 컨센서스 출처 없음). "
+                            + "한국 책 출발일에 claude.* 스위치와 같은 저장으로 켬")),
             shared(of("claude.schemaV3", Type.BOOLEAN, false,
                     "Claude 결정 스키마 v3(bearCase, 3단계 — 2단계 K37, 두 책 공통). 한국 책 출발일에 함께 켬. 지금은 읽는 코드가 없음")),
             shared(of("claude.figureCheck", Type.BOOLEAN, false,

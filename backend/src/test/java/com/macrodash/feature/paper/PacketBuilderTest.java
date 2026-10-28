@@ -648,6 +648,8 @@ class PacketBuilderTest {
 
         // 일정(1b): 수집기 us_calendar 모양(collector/app/tasks/us_calendar.py) — 10-27 06:40 KST 수집, 단계 0 날짜.
         snapshot(Datasets.SNAP_US_CALENDAR, calendarPayload("ok"), CALENDAR_AT);
+        // 컨센서스(1b 층, E1b): 수집기 us_calendar_consensus 모양 — calendar.consensus를 켠 패킷만 읽습니다(꺼진 패킷은 읽지도 않음).
+        snapshot(Datasets.SNAP_US_CONSENSUS, consensusPayload(CONSENSUS_FETCHED), CONSENSUS_AT);
 
         // 사건(11b): 수집기 news_headlines 모양(collector/app/tasks/news.py). 정기 MON 창 = (10-23 22:30Z, 10-26 22:30Z] —
         // 월요일 세션이라 금요일 결정 뒤 주말 전부, 초기 FRI 창 = (10-22 22:30Z, 10-23 22:30Z]. 수집은 10-25 06:00Z에 시작(초기
@@ -814,6 +816,76 @@ class PacketBuilderTest {
         return out;
     }
 
+    /** 컨센서스 저장본 수집 시각 — 동부 10-26 17:39(KST 10-27 06:39, 일정 저장본 1분 전). */
+    private static final Instant CONSENSUS_AT = Instant.parse("2026-10-26T21:39:30Z");
+    private static final String CONSENSUS_FETCHED = "2026-10-26T21:39:00+00:00";
+
+    /** Nasdaq 미국 행 하나(수집기 services/us_consensus.us_row 모양). */
+    private static Map<String, Object> nasdaqRow(String name, String timeEt, Double forecast, Double previous,
+                                                 Double actual, String unit) {
+        Map<String, Object> r = new LinkedHashMap<>();
+        r.put("name", name);
+        r.put("timeEt", timeEt);
+        r.put("timeText", timeEt);
+        r.put("forecast", forecast);
+        r.put("previous", previous);
+        r.put("actual", actual);
+        r.put("unit", unit);
+        r.put("importance", null);
+        return r;
+    }
+
+    private static Map<String, Object> consensusDay(String date, String fetchedAt, List<Map<String, Object>> rows) {
+        Map<String, Object> d = new LinkedHashMap<>();
+        d.put("date", date);
+        d.put("queryDate", LocalDate.parse(date).plusDays(1).toString());
+        d.put("status", "ok");
+        d.put("fetchedAt", fetchedAt);
+        d.put("rows", rows);
+        d.put("count", rows.size());
+        return d;
+    }
+
+    /**
+     * 컨센서스 저장본(동부 10-26부터 18일 — collector/app/tasks/us_consensus.py). 줄 이름·값은 2026-10-28 로컬 저장본의 Nasdaq 미국 행:
+     * FOMC 10-28 금리 결정 4.00%, 10-29 GDP 3.2%·Core PCE 두 줄(전월비·전년비 — 가를 수 없음), 11-06 비농업 고용(예상 아직 없음),
+     * 11-10 CPI 두 줄. 10-27은 받지 못함(failed).
+     */
+    private static Map<String, Object> consensusPayload(String fetchedAt) {
+        Map<String, Object> days = new LinkedHashMap<>();
+        days.put("2026-10-26", consensusDay("2026-10-26", fetchedAt, List.of()));
+        days.put("2026-10-28", consensusDay("2026-10-28", fetchedAt, List.of(
+                nasdaqRow("FOMC Statement", "14:00", null, null, null, null),
+                nasdaqRow("Fed Interest Rate Decision", "14:00", 4.0, 4.0, null, "%"),
+                nasdaqRow("FOMC Press Conference", "14:30", null, null, null, null))));
+        days.put("2026-10-29", consensusDay("2026-10-29", fetchedAt, List.of(
+                nasdaqRow("Core PCE Price Index", "08:30", 0.3, 0.2, null, "%"),
+                nasdaqRow("Core PCE Price Index", "08:30", 3.1, 3.0, null, "%"),
+                nasdaqRow("GDP", "08:30", 3.2, 2.2, null, "%"),
+                nasdaqRow("GDP Price Index", "08:30", 3.5, 6.1, null, "%"))));
+        days.put("2026-11-06", consensusDay("2026-11-06", fetchedAt, List.of(
+                nasdaqRow("Nonfarm Payrolls", "09:30", null, 29.0, null, "K"),
+                nasdaqRow("Unemployment Rate", "09:30", null, 4.2, null, "%"))));
+        days.put("2026-11-10", consensusDay("2026-11-10", fetchedAt, List.of(
+                nasdaqRow("CPI", "09:30", null, 0.6, null, "%"),
+                nasdaqRow("CPI", "09:30", null, 3.7, null, "%"))));
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("generatedAt", fetchedAt);
+        out.put("forDate", "2026-10-26");
+        out.put("source", "Nasdaq api/calendar/economicevents");
+        out.put("queryOffsetDays", 1);
+        out.put("horizon", linked("from", "2026-10-26", "to", "2026-11-13"));
+        out.put("importance", null);
+        out.put("days", days);
+        out.put("failed", linked("2026-10-27", "HTTP 503"));
+        return out;
+    }
+
+    /** 이 시험의 설정 행에 calendar.consensus를 켬(공유 키 — 결정이 읽는 행). */
+    private void consensusOn() {
+        ((ObjectNode) store.settings.body()).putObject("calendar").put("consensus", true);
+    }
+
     /** 1b_calendar의 표(macro·earnings) 한 열의 값. */
     private static List<String> calendarColumn(JsonNode body, String table, int column) {
         List<String> out = new ArrayList<>();
@@ -947,20 +1019,123 @@ class PacketBuilderTest {
     }
 
     @Test
-    @DisplayName("고정본: 2단계 공유 키(예약·컨센서스·3단계 스위치)를 켠 설정 행으로 만들어도 미국 초기·정기 패킷은 바이트까지 같다 — 지금은 읽는 코드가 없음(C1b)")
+    @DisplayName("고정본: 컨센서스를 끈 채 2단계 공유 키(예약·3단계 스위치)를 켠 설정 행으로 만들어도 미국 초기·정기 패킷은 바이트까지 같다 — 패킷은 그 키를 읽지 않음(C1b)")
     void goldenUsPacketsIgnoreStage2SharedKeys() {
         store.insertNote(new Note(0, NoteService.MARKET, FRI, TUE, "금요일 시황", "10년물 4.6%·브렌트 88", false, null));
         ObjectNode body = (ObjectNode) store.settings.body();
         body.put("apiScheduledReserve", 9);
-        body.putObject("calendar").put("consensus", true);
+        body.putObject("calendar").put("consensus", false);
         body.putObject("claude").put("schemaV3", true).put("figureCheck", true);
         Packet initial = builder.build(FRI, RuleBookService.INITIAL, true, 0, store.settings);
         activeClaude();
         Packet scheduled = builder.build(MON, RuleBookService.SCHEDULED, false, 0, store.settings);
 
-        // E1이 calendar.consensus를 읽기 시작하면(켜짐 = packetVersion 6) 이 시험을 그 커밋이 고칩니다 — 꺼짐 판은 goldenUsPackets가 지킴.
+        // calendar.consensus는 E1b부터 읽습니다(켜짐 = 판 6 — goldenUsPacketsWithConsensus). 꺼짐이면 판 5 그대로입니다.
         assertThat(initial.sha256()).isEqualTo(GOLDEN_INITIAL_SHA256);
         assertThat(scheduled.sha256()).isEqualTo(GOLDEN_SCHEDULED_SHA256);
+        // 불이 아닌 값("true" 글자)은 켬으로 읽지 않습니다(기본값 — 층을 지어 켜지 않음).
+        body.putObject("calendar").put("consensus", "true");
+        assertThat(builder.build(MON, RuleBookService.SCHEDULED, false, 0, store.settings).sha256())
+                .isEqualTo(GOLDEN_SCHEDULED_SHA256);
+        verify(reader, never()).read(eq(Datasets.SNAP_US_CONSENSUS), anyLong(), any());
+    }
+
+    /** 컨센서스 층을 켠 미국 초기 패킷(판 6)의 SHA-256 — 고정본 packet-us-v6-initial.json 글자의 해시. */
+    private static final String GOLDEN_V6_INITIAL_SHA256 =
+            "86b297016ec9a2ee4360b46c04805f033ec625fda904404869c612ebdea8fe92";
+    /** 컨센서스 층을 켠 미국 정기 패킷(판 6)의 SHA-256 — 고정본 packet-us-v6-scheduled.json 글자의 해시. */
+    private static final String GOLDEN_V6_SCHEDULED_SHA256 =
+            "291f3cbb84934bd7681692a3680717f24c28f69a6915a7833e6e34d3f7fc62cb";
+
+    @Test
+    @DisplayName("고정본(판 6, E1b): calendar.consensus를 켜면 미국 초기·정기 패킷이 packetVersion 6 — 1b_calendar에 컨센서스 층이 붙고 다른 섹션은 판 5와 같다")
+    void goldenUsPacketsWithConsensus() {
+        store.insertNote(new Note(0, NoteService.MARKET, FRI, TUE, "금요일 시황", "10년물 4.6%·브렌트 88", false, null));
+        Packet initialV5 = builder.build(FRI, RuleBookService.INITIAL, true, 0, store.settings);
+        consensusOn();
+        Packet initial = builder.build(FRI, RuleBookService.INITIAL, true, 0, store.settings);
+        activeClaude();
+        Packet scheduled = builder.build(MON, RuleBookService.SCHEDULED, false, 0, store.settings);
+        ((ObjectNode) store.settings.body()).putObject("calendar").put("consensus", false);
+        Packet scheduledV5 = builder.build(MON, RuleBookService.SCHEDULED, false, 0, store.settings);
+
+        Golden.assertMatches("packet-us-v6-initial.json", initial.text());
+        Golden.assertMatches("packet-us-v6-scheduled.json", scheduled.text());
+        Golden.assertMatches("packet-us-v6-meta.txt", String.join("\n",
+                "initial sha256=" + initial.sha256() + " chars=" + initial.text().length() + " noteIds="
+                        + initial.noteIds() + " measure=" + MAPPER.writeValueAsString(initial.measure()),
+                "scheduled sha256=" + scheduled.sha256() + " chars=" + scheduled.text().length() + " noteIds="
+                        + scheduled.noteIds() + " measure=" + MAPPER.writeValueAsString(scheduled.measure())));
+        assertThat(initial.sha256()).isEqualTo(Golden.sha256(initial.text())).isEqualTo(GOLDEN_V6_INITIAL_SHA256);
+        assertThat(scheduled.sha256()).isEqualTo(Golden.sha256(scheduled.text())).isEqualTo(GOLDEN_V6_SCHEDULED_SHA256);
+        // 꺼짐 판은 그대로 판 5 고정본입니다(같은 재료).
+        assertThat(initialV5.sha256()).isEqualTo(GOLDEN_INITIAL_SHA256);
+        assertThat(scheduledV5.sha256()).isEqualTo(GOLDEN_SCHEDULED_SHA256);
+
+        for (Packet[] pair : List.of(new Packet[]{initialV5, initial}, new Packet[]{scheduledV5, scheduled})) {
+            JsonNode v5 = pair[0].body();
+            JsonNode v6 = pair[1].body();
+            assertThat(v5.get(PacketBuilder.BASIS).get("packetVersion").asInt()).isEqualTo(PacketBuilder.PACKET_VERSION)
+                    .isEqualTo(5);
+            assertThat(v6.get(PacketBuilder.BASIS).get("packetVersion").asInt())
+                    .isEqualTo(PacketBuilder.PACKET_VERSION_CONSENSUS).isEqualTo(6);
+            // 바뀌는 것은 판 번호와 1b의 컨센서스 층뿐 — 다른 섹션·1b의 나머지 칸·측정 태그는 같습니다.
+            for (String key : PacketBuilder.SECTION_KEYS) {
+                if (!key.equals(PacketBuilder.BASIS) && !key.equals(PacketBuilder.CALENDAR)) {
+                    assertThat(v6.get(key)).as(key).isEqualTo(v5.get(key));
+                }
+            }
+            ObjectNode basis = ((ObjectNode) v6.get(PacketBuilder.BASIS).deepCopy()).put("packetVersion", 5);
+            assertThat(basis).isEqualTo(v5.get(PacketBuilder.BASIS));
+            ObjectNode calendar = (ObjectNode) v6.get(PacketBuilder.CALENDAR).deepCopy();
+            calendar.remove("consensus");
+            ObjectNode macro = (ObjectNode) calendar.get("macro");
+            macro.set("columns", MAPPER.valueToTree(CalendarSection.MACRO_COLUMNS));
+            ArrayNode trimmed = MAPPER.createArrayNode();
+            macro.get("rows").forEach(r -> {
+                ArrayNode row = trimmed.addArray();
+                for (int i = 0; i < CalendarSection.MACRO_COLUMNS.size(); i++) {
+                    row.add(r.get(i));
+                }
+            });
+            macro.set("rows", trimmed);
+            assertThat(calendar).isEqualTo(v5.get(PacketBuilder.CALENDAR));
+            assertThat(pair[1].measure()).isEqualTo(pair[0].measure());
+        }
+
+        // 창(정기 10-27~11-09, 초기 10-26~11-06)의 거시 넷 — FOMC·GDP는 붙고, PCE는 Core PCE 두 줄이라 가를 수 없음, 고용은 예상 아직 없음.
+        JsonNode macro = scheduled.body().get(PacketBuilder.CALENDAR).get("macro");
+        assertThat(macro.get("columns").toString()).isEqualTo("[\"date\",\"kind\",\"name\",\"source\",\"forecast\","
+                + "\"previous\",\"unit\",\"consensusSource\"]");
+        List<String> attached = new ArrayList<>();
+        macro.get("rows").forEach(r -> attached.add(r.get(7).isNull() ? null : r.get(7).asString()));
+        assertThat(attached).containsExactly("Fed Interest Rate Decision", "GDP", null, "Nonfarm Payrolls");
+        assertThat(scheduled.body().get(PacketBuilder.CALENDAR).get("consensus").get("notes").toString())
+                .contains("Nasdaq 'Core PCE Price Index' 2줄");
+        verify(reader, org.mockito.Mockito.times(2)).read(eq(Datasets.SNAP_US_CONSENSUS), anyLong(), any());
+    }
+
+    @Test
+    @DisplayName("컨센서스 층의 발표치 — 결정 순간 전에 받은 날만(정기 10-27 07:30 KST 전에 받은 값은 싣고, 같은 저장본으로 만든 초기 결정 10-23 패킷에는 없음)")
+    void consensusActualOnlyBeforeTheDecisionInstant() {
+        consensusOn();
+        Map<String, Object> payload = consensusPayload(CONSENSUS_FETCHED);
+        @SuppressWarnings("unchecked")
+        Map<String, Object> fomcDay = (Map<String, Object>) ((Map<String, Object>) payload.get("days")).get("2026-10-28");
+        // 시험용 모양 — 받은 시각(10-26 21:39Z)에 발표치가 있다고 둡니다(정기 결정 순간 10-26 22:30Z 전, 초기 결정 순간 10-23 22:30Z 뒤).
+        fomcDay.put("rows", List.of(nasdaqRow("Fed Interest Rate Decision", "14:00", 4.0, 4.0, 3.75, "%")));
+        snapshot(Datasets.SNAP_US_CONSENSUS, payload, CONSENSUS_AT);
+
+        Packet initial = builder.build(FRI, RuleBookService.INITIAL, true);
+        activeClaude();
+        Packet scheduled = builder.build(MON, RuleBookService.SCHEDULED, false);
+        JsonNode scheduledMacro = scheduled.body().get(PacketBuilder.CALENDAR).get("macro");
+        assertThat(scheduledMacro.get("columns").toString()).contains("\"previous\",\"actual\",\"unit\"");
+        assertThat(scheduledMacro.get("rows").get(0).toString())
+                .isEqualTo("[\"2026-10-28\",\"FOMC\",\"FOMC 성명\",\"s1\",4,4,3.75,\"%\",\"Fed Interest Rate Decision\"]");
+        JsonNode initialMacro = initial.body().get(PacketBuilder.CALENDAR).get("macro");
+        assertThat(initialMacro.get("columns").toString()).doesNotContain("actual");
+        assertThat(initial.text()).doesNotContain("3.75");
     }
 
     @Test
@@ -2195,6 +2370,57 @@ class PacketBuilderTest {
                 PacketBuilder.estimateTokens(calendar.toString()), PacketBuilder.estimateTokens(events.toString()))
                 .isLessThanOrEqualTo(PacketBuilder.TARGET_TOKENS);
         assertThat(PacketBuilder.estimateTokens("가나다abc")).isEqualTo(4);
+    }
+
+    @Test
+    @DisplayName("크기(판 6, E1b): 위 가장 큰 패킷에 컨센서스 층을 가장 크게(거시 6줄 — 한 줄은 결정 전 발표치·이어받음, 다섯 줄은 가장 긴 사유) 켜도 36,000토큰(어림) 이하")
+    void fitsTokenBudgetWithConsensus() {
+        largeFixture();
+        String market = "유가와 10년물 금리, 달러/엔 흐름을 다시 확인했다. 브렌트는 88달러 근처에서 막혔고 디젤 마진은 줄었다. ";
+        for (int i = 0; i < 2; i++) {
+            store.insertNote(new Note(0, NoteService.MARKET, MON, TUE, "시황 점검 " + i,
+                    market.repeat(80).substring(0, 2_900), false, null));
+        }
+        Packet v5 = builder.build(MON, RuleBookService.SCHEDULED, false);
+        // 정기 MON 창(10-27~11-09)의 거시 6줄(largeCalendar). 가장 긴 줄 모양: 사유가 '같은 이름 두 줄'(가장 긴 대응 이름 — 금리 결정)이면
+        // 칸 다섯이 null + notes 한 줄(약 60), 붙인 줄은 가장 긴 자릿수 + 결정 전 발표치(actual 열을 만듦) + 이어받은 날의 주의.
+        String early = "2026-10-26T21:00:00+00:00";
+        Map<String, Object> days = new LinkedHashMap<>();
+        Map<String, Object> fomcDay = consensusDay("2026-10-28", early, List.of(
+                nasdaqRow("Fed Interest Rate Decision", "14:00", -130.875, -132.0725, -130.4375, "B")));
+        fomcDay.put("isStale", true);
+        days.put("2026-10-28", fomcDay);
+        List<Map<String, Object>> twice = List.of(
+                nasdaqRow("Fed Interest Rate Decision", "14:00", 1.0, 1.0, null, "%"),
+                nasdaqRow("Fed Interest Rate Decision", "14:00", 2.0, 2.0, null, "%"),
+                nasdaqRow("Core PCE Price Index", "08:30", 1.0, 1.0, null, "%"),
+                nasdaqRow("Core PCE Price Index", "08:30", 2.0, 2.0, null, "%"),
+                nasdaqRow("GDP", "08:30", 1.0, 1.0, null, "%"),
+                nasdaqRow("GDP", "08:30", 2.0, 2.0, null, "%"),
+                nasdaqRow("Nonfarm Payrolls", "08:30", 1.0, 1.0, null, "K"),
+                nasdaqRow("Nonfarm Payrolls", "08:30", 2.0, 2.0, null, "K"),
+                nasdaqRow("CPI", "08:30", 1.0, 1.0, null, "%"),
+                nasdaqRow("CPI", "08:30", 2.0, 2.0, null, "%"));
+        for (String day : List.of("2026-10-29", "2026-11-04", "2026-11-06", "2026-11-09")) {
+            days.put(day, consensusDay(day, early, twice));
+        }
+        Map<String, Object> payload = consensusPayload(early);
+        payload.put("days", days);
+        snapshot(Datasets.SNAP_US_CONSENSUS, payload, Instant.parse("2026-10-26T21:00:30Z"));
+        consensusOn();
+        Packet packet = builder.build(MON, RuleBookService.SCHEDULED, false);
+
+        JsonNode calendar = packet.body().get(PacketBuilder.CALENDAR);
+        assertThat(packet.body().get(PacketBuilder.BASIS).get("packetVersion").asInt()).isEqualTo(6);
+        assertThat(calendar.get("macro").get("rows")).hasSize(6);
+        assertThat(calendar.get("macro").get("columns")).hasSize(9);
+        assertThat(calendar.get("consensus").get("notes")).as("붙인 줄의 주의 1 + 가를 수 없는 줄 5").hasSize(6);
+        int tokens = PacketBuilder.estimateTokens(packet.text());
+        int v5Tokens = PacketBuilder.estimateTokens(v5.text());
+        assertThat(tokens).as("큰 패킷 판 6 약 %d토큰(판 5 약 %d, 1b 약 %d)", tokens, v5Tokens,
+                        PacketBuilder.estimateTokens(calendar.toString()))
+                .isGreaterThan(PacketBuilder.TARGET_TOKENS)
+                .isLessThanOrEqualTo(PacketBuilder.TARGET_TOKENS_CONSENSUS);
     }
 
     /**
