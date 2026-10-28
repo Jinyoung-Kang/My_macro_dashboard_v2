@@ -675,6 +675,25 @@ class KrRuleBookServiceTest {
     }
 
     @Test
+    @DisplayName("매일 결정(SCHEDULED)의 체결할 수 있는 새 매도 신호 대금은 남는 현금 어림에 셈(u4 ⑤는 체결할 수 없는 것만 뺌) — FRI 봉이 정상인 보유의 '둘 다 순매도' 매도 2백만으로 153130 park_cash 2.4947%(빼면 1% — 사지 않음, 손계산)")
+    void dailyDecisionCountsFillableNewSellProceeds() {
+        holding("373220", 200, 10_000);     // 2,000,000원 — 20일 둘 다 순매도(매일 신호), FRI 봉 정상 → 새 매도, 대금 셈
+        holding("153130", 970, 100_000);    // 97,000,000원
+        store.upsertState(new BookState(PaperBooks.KR_RULES, 1_000_000, NAV, 99_000_000, 99.0, null, null, S, null));
+
+        Decision daily = decideWith(FRI, KrRulesFixtures.quotes(FRI));
+
+        // 어림 = 현금 1,000,000 + 2,000,000 × (1 − 26.5bp) = 2,994,700원 = 2.9947% > 기준 2% → 여유 0.5%p를 남기고 2.4947%를 153130에
+        // (그 대금을 빼면 1% — 기준 아래라 사지 않음).
+        assertThat(daily.kind()).isEqualTo(RuleBookService.SCHEDULED);
+        assertThat(ordersOf(daily)).extracting(Order::ticker, Order::side, Order::targetWeightPct)
+                .containsExactly(tuple("373220", "SELL", null), tuple("153130", "BUY", 2.4947));
+        assertThat(ordersOf(daily).get(1).reason().path("rule").asString()).isEqualTo(KrRuleBookService.RULE_PARK_DAILY);
+        assertThat(daily.response().path("notes")).extracting(JsonNode::asString)
+                .noneSatisfy(note -> assertThat(note).contains("지금은 체결할 수 없음"));
+    }
+
+    @Test
     @DisplayName("따라잡기 재선정(r′ = 11-03)도 같은 규칙(u3) — 거래정지 보유의 '후보 밖' 매도 대금과 앞선 날(FRI)의 체결할 수 없는 대기 매도 대금을 모두 빼고 153130 56.1579%(넣으면 86.0784% — 손계산)")
     void catchUpLeavesOutUnfillablePendingAndNewSells() {
         clock.set(kst("2026-11-03T01:00"));
