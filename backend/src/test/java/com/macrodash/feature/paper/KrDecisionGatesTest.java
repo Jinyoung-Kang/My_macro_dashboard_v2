@@ -8,6 +8,7 @@ import org.junit.jupiter.api.Test;
 
 import java.time.Instant;
 import java.time.LocalDate;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 
@@ -54,5 +55,26 @@ class KrDecisionGatesTest {
                 .isEqualTo("이번 관측치에 그 종목 봉이 없음(수집 범위 밖·봉 없음)");
         assertThat(KrDecisionGates.unworkable(sell("005930", FRI), krQuotes(), Map.of(), Map.of()))
                 .as("기준일 뒤 R 봉이 관측 봉 — 장부가 일하는 주문").isNull();
+    }
+
+    @Test
+    @DisplayName("기한 전 판정의 저장 모양(E0, 사용자 결정 v3) — 작업 기록에 남긴 판정을 다시 읽으면 같은 게이트·순간·'기한 전 마지막 판정', 없거나 모양이 틀리면 null(짐작하지 않음)")
+    void judgedViewRoundTrips() {
+        KrDecisionGates.Judged judged = new KrDecisionGates.Judged(List.of(new KrDecisionGates.Gate("②", "PASS", "범위 10/10"),
+                new KrDecisionGates.Gate("⑤", "FAIL", "069500 봉 없음")), Instant.parse("2026-11-02T15:50:00.123456Z"), true);
+        tools.jackson.databind.JsonNode stored = PaperFixtures.MAPPER.valueToTree(judged.view());
+        assertThat(stored.path("judgedAtKst").asString()).isEqualTo("2026-11-03 00:50 KST");
+
+        KrDecisionGates.Judged back = KrDecisionGates.Judged.fromView(stored);
+        assertThat(back).isEqualTo(judged);
+        assertThat(back.basis()).isEqualTo("기한 전 마지막 판정");
+        assertThat(KrDecisionGates.Judged.fromView(null)).isNull();
+        assertThat(KrDecisionGates.Judged.fromView(PaperFixtures.MAPPER.createObjectNode())).as("게이트 없음").isNull();
+        tools.jackson.databind.node.ObjectNode badTime = (tools.jackson.databind.node.ObjectNode) stored.deepCopy();
+        badTime.put("judgedAt", "어제");
+        assertThat(KrDecisionGates.Judged.fromView(badTime)).isNull();
+        tools.jackson.databind.node.ObjectNode badStatus = (tools.jackson.databind.node.ObjectNode) stored.deepCopy();
+        ((tools.jackson.databind.node.ObjectNode) badStatus.path("gates").get(0)).put("status", "WAIT");
+        assertThat(KrDecisionGates.Judged.fromView(badStatus)).isNull();
     }
 }

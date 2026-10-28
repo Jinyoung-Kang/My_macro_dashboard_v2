@@ -954,13 +954,12 @@ class PaperDecisionJobTest {
         assertThat(job.run(KR).outcome()).as("다음 주기 — 같은 결과").isEqualTo(PaperDecisionJob.PAST_DEADLINE);
         assertThat(store.jobRuns).as("시장·세션마다 한 번만 기록").hasSize(1);
 
-        // 그 밤 첫 실행이 기한 뒤(재기동한 작업)이고 종가 관측치가 있어도 — 결정하지 않음(재기동이라 기록은 한 번 더)
+        // 그 밤 첫 실행이 기한 뒤(재기동한 작업)이고 종가 관측치가 있어도 — 결정하지 않음, 기록은 재기동해도 한 번(저장된 그 세션 기록으로 셈 — E0)
         krBook(null);
         PaperDecisionJob restarted = job(Instant.parse("2026-10-26T16:05:00Z"), List.of(KR));
         assertThat(restarted.run(KR).outcome()).isEqualTo(PaperDecisionJob.PAST_DEADLINE);
         assertThat(calls).isEmpty();
-        assertThat(store.jobRuns).extracting(PaperStore.JobRun::outcome)
-                .containsExactly(PaperDecisionJob.PAST_DEADLINE, PaperDecisionJob.PAST_DEADLINE);
+        assertThat(store.jobRuns).extracting(PaperStore.JobRun::outcome).containsExactly(PaperDecisionJob.PAST_DEADLINE);
 
         // 미국은 같은 시각에도 미국 규칙 — 금요일 세션 기한(토 12:00 KST)이 지나 확정 종가 없이 진행
         PaperDecisionJob.Result us = job.run();

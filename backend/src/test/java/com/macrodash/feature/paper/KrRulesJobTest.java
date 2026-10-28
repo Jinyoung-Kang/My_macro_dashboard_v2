@@ -36,7 +36,7 @@ import static org.mockito.Mockito.when;
 
 /**
  * 한국 규칙 계좌를 결정 작업으로 끝까지(2단계 명세 §4-6·§4-9·§5 'K33', D1b·D1c): 자료 게이트 ①~⑥(§4-9 — 하나라도 미달이면 결정하지 않고
- * {@code DATA_NOT_READY}, 기록 없음), 재선정일 r(11-02)의 자료가 기한(11-03 01:00)까지 오지 않으면 기한 지남 NO_TRADE 행(그 순간의 게이트와 사유)이
+ * {@code DATA_NOT_READY}, 이어진 기다림은 기록 한 줄 — E0), 재선정일 r(11-02)의 자료가 기한(11-03 01:00)까지 오지 않으면 기한 지남 NO_TRADE 행(그 순간의 게이트와 사유)이
  * 남고, 다음 KR 결정일 r′(11-03)에 r′ 자료로 REBALANCE(cycleDate r·selectionAsOf r′)를 내며, 그 뒤(11-04)에는 다시 선정하지 않는다. 외부 호출
  * 없음 — 가짜 저장소·가짜 저장본 읽기·움직이는 시계.
  */
@@ -154,7 +154,7 @@ class KrRulesJobTest {
     }
 
     @Test
-    @DisplayName("재선정일 r의 관측치가 기한까지 없음 → 기다림(DATA_NOT_READY, 기록 없음) → r NO_TRADE(사유 '069500 D 봉 없음(휴장 또는 지연)'·그 순간의 게이트) → r′에 r′ 자료로 REBALANCE(cycleDate r·selectionAsOf r′) → 그 뒤 SCHEDULED(다시 선정 안 함)")
+    @DisplayName("재선정일 r의 관측치가 기한까지 없음 → 기다림(DATA_NOT_READY, 기다림 한 줄) → r NO_TRADE(사유 '069500 D 봉 없음(휴장 또는 지연)'·그 순간의 게이트) → r′에 r′ 자료로 REBALANCE(cycleDate r·selectionAsOf r′) → 그 뒤 SCHEDULED(다시 선정 안 함)")
     void catchUpThroughTheJob() {
         session(FRI);   // 11-02 밤 — 그날 관측치가 끝내 오지 않음(저장본은 10-30 판)
         java.time.Instant processedBefore = store.state(PaperBooks.KR_RULES).orElseThrow().lastProcessedCollectedAt();
@@ -163,7 +163,14 @@ class KrRulesJobTest {
         assertThat(waiting.message()).contains("②").contains("관측치 세션 2026-10-30").contains("⑤")
                 .contains("기한 2026-11-03 01:00 KST");
         assertThat(runAt("2026-11-03T00:50").outcome()).isEqualTo(PaperDecisionJob.DATA_NOT_READY);
-        assertThat(krRuns()).as("기다림은 기록하지 않음").isEmpty();
+        assertThat(krRuns()).as("이어진 기다림 둘은 한 줄(E0) — 끝 시각·마지막 판정은 00:50").singleElement().satisfies(run -> {
+            assertThat(run.outcome()).isEqualTo(PaperDecisionJob.DATA_NOT_READY);
+            assertThat(run.detail().path("checks").asInt()).isEqualTo(2);
+            assertThat(run.startedAt()).isEqualTo(kst("2026-11-02T22:30"));
+            assertThat(run.finishedAt()).isEqualTo(kst("2026-11-03T00:50"));
+            assertThat(run.detail().path(PaperDecisionJob.RULES_GATES).path("judgedAtKst").asString())
+                    .isEqualTo("2026-11-03 00:50 KST");
+        });
         // ②④⑤⑥ 미달이면 장부를 처리하지 않음 — 그날 관측치 전에 r의 미확정 순자산 줄을 쓰지 않게(D1c '정기 결정의 순서').
         assertThat(store.navSeries(PaperBooks.KR_RULES)).extracting(com.macrodash.store.PaperStore.NavRow::tradingDate)
                 .as("r(11-02) 순자산 줄 없음").doesNotContain(R);
@@ -188,7 +195,9 @@ class KrRulesJobTest {
         });
         assertThat(store.ordersByDecision(missed.rules().id())).isEmpty();
         assertThat(runAt("2026-11-03T01:10").outcome()).as("규칙 계좌 일은 행으로 끝남").isEqualTo(PaperDecisionJob.ALREADY_DECIDED);
-        assertThat(krRuns()).singleElement().satisfies(run -> {
+        assertThat(krRuns()).extracting(JobRun::outcome)
+                .containsExactly(PaperDecisionJob.DATA_NOT_READY, PaperDecisionJob.PAST_DEADLINE);
+        assertThat(krRuns().get(1)).satisfies(run -> {
             assertThat(run.outcome()).isEqualTo(PaperDecisionJob.PAST_DEADLINE);
             assertThat(run.detail().path("rules").path("status").asString()).isEqualTo("NO_TRADE");
             assertThat(run.detail().path("rules").path("kind").asString()).isEqualTo("REBALANCE");
@@ -281,7 +290,7 @@ class KrRulesJobTest {
     }
 
     @Test
-    @DisplayName("게이트 하나씩 미달이면 결정하지 않음(DATA_NOT_READY, 결정·기록 없음) — ② 범위 8/10 · ④ 금융위 기준일 · ⑤ 069500 D 봉(②는 9/10 통과) · ③ U 7/8(장중 판) · ① 기준일 < D 대기 주문; 다 고치면 그 창에서 결정")
+    @DisplayName("게이트 하나씩 미달이면 결정하지 않음(DATA_NOT_READY, 결정 없음·이어진 기다림은 기록 한 줄) — ② 범위 8/10 · ④ 금융위 기준일 · ⑤ 069500 D 봉(②는 9/10 통과) · ③ U 7/8(장중 판) · ① 기준일 < D 대기 주문; 다 고치면 그 창에서 결정")
     void eachGateAloneBlocks() {
         quotes(R, Set.of("005930", "000660"));
         fsc(FRI);
@@ -317,7 +326,13 @@ class KrRulesJobTest {
         assertThat(ledger.message()).contains("① kr_rules").contains("#" + stale + " BUY 005930(기준일 2026-10-30)")
                 .contains("정리 안 됨");
         assertThat(rulesDecisions()).as("출발 INITIAL뿐").hasSize(1);
-        assertThat(krRuns()).as("기다림은 기록하지 않음").isEmpty();
+        assertThat(krRuns()).as("이어진 기다림 다섯은 한 줄(E0) — 마지막 판정 ①").singleElement().satisfies(run -> {
+            assertThat(run.outcome()).isEqualTo(PaperDecisionJob.DATA_NOT_READY);
+            assertThat(run.detail().path("checks").asInt()).isEqualTo(5);
+            assertThat(run.detail().path("waiting").asString()).contains("① kr_rules").contains("#" + stale);
+            assertThat(gateStatuses(run.detail().path(PaperDecisionJob.RULES_GATES).path("gates")))
+                    .containsExactly("① FAIL", "② PASS", "③ PASS", "④ PASS", "⑤ PASS", "⑥ PASS");
+        });
 
         store.markOrderStatus(stale, PaperBooks.ORDER_CANCELLED, "시험 — 정리됨");
         quotes(R, Set.of());
@@ -325,7 +340,10 @@ class KrRulesJobTest {
         assertThat(decided.outcome()).isEqualTo(PaperDecisionJob.DECIDED);
         assertThat(decided.rules().kind()).isEqualTo(RuleBookService.REBALANCE);
         assertThat(decided.rules().response().path("catchUp").asBoolean()).as("기다림은 그 세션 안 — 따라잡기 아님").isFalse();
-        assertThat(krRuns()).singleElement().satisfies(run -> assertThat(run.outcome()).isEqualTo(PaperDecisionJob.DECIDED));
+        assertThat(krRuns()).extracting(JobRun::outcome)
+                .containsExactly(PaperDecisionJob.DATA_NOT_READY, PaperDecisionJob.DECIDED);
+        assertThat(krRuns().get(1).detail().has(PaperDecisionJob.RULES_GATES)).as("결정한 실행은 판정을 남기지 않음(결정 행이 사실)")
+                .isFalse();
     }
 
     @Test
@@ -344,7 +362,7 @@ class KrRulesJobTest {
         org.mockito.Mockito.verify(repository, org.mockito.Mockito.never()).readObservationSeries(
                 eq(Datasets.OBS_KR_PAPER_FLOW), anyCollection(), org.mockito.ArgumentMatchers.any(LocalDate.class));
         assertThat(rulesDecisions()).as("출발 INITIAL뿐").hasSize(1);
-        assertThat(krRuns()).isEmpty();
+        assertThat(krRuns()).extracting(JobRun::outcome).containsExactly(PaperDecisionJob.DATA_NOT_READY);
 
         session(R);   // 판 1 저장본
         PaperDecisionJob.Result decided = runAt("2026-11-02T22:40");
@@ -455,7 +473,8 @@ class KrRulesJobTest {
             assertThat(runAt(at).outcome()).isEqualTo(PaperDecisionJob.DATA_NOT_READY);
         }
         assertThat(rulesDecisions()).as("출발 INITIAL뿐").hasSize(1);
-        assertThat(krRuns()).as("기다림은 기록하지 않음").isEmpty();
+        assertThat(krRuns()).as("이어진 기다림 셋은 한 줄(E0)").singleElement()
+                .satisfies(run -> assertThat(run.detail().path("checks").asInt()).isEqualTo(3));
 
         job = job(new PaperMarketData(reader, repository));   // 백엔드 재기동 — 장부의 오류 기억이 지워짐
         PaperDecisionJob.Result decided = runAt("2026-11-03T00:00");
@@ -508,7 +527,7 @@ class KrRulesJobTest {
     }
 
     @Test
-    @DisplayName("게이트 ①은 계좌마다(Claude 계좌 쪽) — Claude 계좌에만 기준일 < D 대기 주문이 있으면 규칙 계좌는 결정·DECIDED(Claude 칸에 ① 사유, Claude 부르지 않음), 다음 주기는 Claude만 남아 DATA_NOT_READY(기록 없음), 정리되면 그 주기에 Claude만 결정")
+    @DisplayName("게이트 ①은 계좌마다(Claude 계좌 쪽) — Claude 계좌에만 기준일 < D 대기 주문이 있으면 규칙 계좌는 결정·DECIDED(Claude 칸에 ① 사유, Claude 부르지 않음), 다음 주기는 Claude만 남아 DATA_NOT_READY(기다림 한 줄 — 규칙 계좌 판정은 남기지 않음), 정리되면 그 주기에 Claude만 결정")
     void gateOneHoldsTheClaudeBookAlone() {
         ClaudeBookService claude = mock(ClaudeBookService.class);
         List<String> calls = new ArrayList<>();
@@ -552,7 +571,11 @@ class KrRulesJobTest {
         PaperDecisionJob.Result waiting = runAt("2026-11-02T22:40");
         assertThat(waiting.outcome()).as("규칙 계좌는 이미 결정 — Claude만 ①로 기다림").isEqualTo(PaperDecisionJob.DATA_NOT_READY);
         assertThat(waiting.message()).contains("① kr_claude").doesNotContain("kr_rules");
-        assertThat(krRuns()).as("기다림은 기록하지 않음").hasSize(1);
+        assertThat(krRuns()).as("기다림 한 줄(E0)").extracting(JobRun::outcome)
+                .containsExactly(PaperDecisionJob.DECIDED, PaperDecisionJob.DATA_NOT_READY);
+        assertThat(krRuns().get(1).detail().has(PaperDecisionJob.RULES_GATES)).as("규칙 계좌는 이미 결정 — 그 판정은 남기지 않음")
+                .isFalse();
+        assertThat(gateStatuses(krRuns().get(1).detail().path("gates"))).contains("① FAIL");
         assertThat(rulesDecisions()).as("규칙 계좌 결정은 그 세션에 한 번").hasSize(2);
 
         store.markOrderStatus(held, PaperBooks.ORDER_CANCELLED, "시험 — 정리됨");
@@ -1136,7 +1159,9 @@ class KrRulesJobTest {
         assertThat(row.path("waitedFor").toString()).contains("⑤");
         assertThat(row.path("gatesJudgedAtKst").asString()).isEqualTo("2026-11-03 00:50 KST");
         assertThat(row.path("gatesBasis").asString()).isEqualTo("기한 전 마지막 판정");
-        assertThat(krRuns()).singleElement().satisfies(run -> {
+        assertThat(krRuns()).extracting(JobRun::outcome)
+                .containsExactly(PaperDecisionJob.DATA_NOT_READY, PaperDecisionJob.PAST_DEADLINE);
+        assertThat(krRuns().get(1)).satisfies(run -> {
             assertThat(gateStatuses(run.detail().path("gates"))).contains("⑤ FAIL");
             assertThat(run.detail().path("gatesBasis").asString()).isEqualTo("기한 전 마지막 판정");
         });
@@ -1150,6 +1175,38 @@ class KrRulesJobTest {
         assertThat(first.rules().response().path("gatesJudgedAtKst").asString()).isEqualTo("2026-11-04 01:00 KST");
         assertThat(first.rules().response().path("gatesBasis").asString()).startsWith("기한 뒤 판정");
         assertThat(gateStatuses(first.rules().response().path("gates"))).hasSize(6);
+    }
+
+    @Test
+    @DisplayName("E0(사용자 결정 v3) 재기동 — 기한 지남 행은 저장된 기한 전 마지막 판정으로: 00:50까지 ⑤로 기다린 뒤 백엔드를 다시 띄우고 기한 직후 069500 D 봉이 들어와도 사유 '069500 D 봉 없음'·'기한 전 마지막 판정'(00:50), 행 쓰기가 실패해 다시 띄운 뒤 쓴 행도 같고 기한 지남 기록은 그 세션에 한 번")
+    void pastDeadlineUsesTheStoredJudgementAfterARestart() {
+        quotes(R, Set.of("069500"));
+        fsc(FRI);
+        assertThat(runAt("2026-11-02T22:30").outcome()).isEqualTo(PaperDecisionJob.DATA_NOT_READY);
+        assertThat(runAt("2026-11-03T00:50").outcome()).isEqualTo(PaperDecisionJob.DATA_NOT_READY);
+        quotes(R, Set.of());   // 기한 직후 069500 R 봉이 들어옴 — 지금 판정하면 ⑤ 통과
+        failRulesDecision = true;
+
+        job = job(new PaperMarketData(reader, repository));   // 재기동 — 결정 작업의 메모리가 빔
+        PaperDecisionJob.Result first = runAt("2026-11-03T01:00");
+        assertThat(first.outcome()).isEqualTo(PaperDecisionJob.PAST_DEADLINE);
+        assertThat(first.rules()).as("행을 쓰지 못함 — 다음 주기에 다시").isNull();
+
+        failRulesDecision = false;
+        job = job(new PaperMarketData(reader, repository));   // 다시 재기동
+        PaperDecisionJob.Result retry = runAt("2026-11-03T01:10");
+
+        assertThat(retry.outcome()).isEqualTo(PaperDecisionJob.PAST_DEADLINE);
+        JsonNode row = retry.rules().response();
+        assertThat(row.path("noTradeReason").asString()).as("기한까지 ⑤로 기다렸음(저장된 판정)")
+                .isEqualTo("069500 D 봉 없음(휴장 또는 지연)");
+        assertThat(row.path("waitedFor").toString()).contains("⑤");
+        assertThat(row.path("gatesJudgedAtKst").asString()).isEqualTo("2026-11-03 00:50 KST");
+        assertThat(row.path("gatesBasis").asString()).isEqualTo("기한 전 마지막 판정");
+        assertThat(gateStatuses(row.path("gates"))).as("00:50 판정 — 장부 전 게이트(②는 9/10 통과)").containsExactly("② PASS", "④ PASS", "⑤ FAIL", "⑥ PASS");
+        assertThat(krRuns()).extracting(JobRun::outcome).as("기한 지남 기록은 재기동을 넘어 한 번")
+                .containsExactly(PaperDecisionJob.DATA_NOT_READY, PaperDecisionJob.PAST_DEADLINE);
+        assertThat(krRuns().get(1).detail().path("gatesBasis").asString()).isEqualTo("기한 전 마지막 판정");
     }
 
     @Test
@@ -1170,7 +1227,9 @@ class KrRulesJobTest {
         assertThat(retry.rules().response().path("catchUp").asBoolean()).isFalse();
         assertThat(retry.rules().response().path("input").path("readAtKst").asString()).isEqualTo("2026-11-03 00:10 KST");
         assertThat(retry.rules().response().path("input").path("flowsWindow").path("to").asString()).isEqualTo("2026-11-02");
-        assertThat(krRuns()).singleElement().satisfies(run -> {
+        assertThat(krRuns()).extracting(JobRun::outcome)
+                .containsExactly(PaperDecisionJob.DATA_NOT_READY, PaperDecisionJob.DECIDED);
+        assertThat(krRuns().get(1)).satisfies(run -> {
             assertThat(run.detail().path("tradingDate").asString()).isEqualTo("2026-11-02");
             assertThat(run.startedAt().atZone(Kst.ZONE).toLocalDate()).as("작업 기록은 다음 KST 날").isEqualTo(R1);
         });
@@ -1229,7 +1288,7 @@ class KrRulesJobTest {
     }
 
     @Test
-    @DisplayName("U 저장본이 없으면 게이트 ③ 미달 — 오류로 세지 않고 기다림(기록 없음, 포기 없음), 기한이 지나면 NO_TRADE(기한 지남, 기다린 까닭 ③)")
+    @DisplayName("U 저장본이 없으면 게이트 ③ 미달 — 오류로 세지 않고 기다림(기다림 한 줄, 포기 없음), 기한이 지나면 NO_TRADE(기한 지남, 기다린 까닭 ③)")
     void missingUniverseWaitsAtGateThree() {
         session(R);
         StoreRepository repository = repository();
@@ -1242,7 +1301,10 @@ class KrRulesJobTest {
             assertThat(waiting.message()).contains("③ U·수급을 읽지 못함").contains("kr_paper_universe");
         }
         assertThat(rulesDecisions()).hasSize(1);
-        assertThat(krRuns()).isEmpty();
+        assertThat(krRuns()).as("오류 기록 없이 기다림 한 줄").singleElement().satisfies(run -> {
+            assertThat(run.outcome()).isEqualTo(PaperDecisionJob.DATA_NOT_READY);
+            assertThat(run.detail().path("checks").asInt()).isEqualTo(4);
+        });
 
         PaperDecisionJob.Result late = runAt("2026-11-03T01:00");
         assertThat(late.outcome()).isEqualTo(PaperDecisionJob.PAST_DEADLINE);
@@ -1289,7 +1351,9 @@ class KrRulesJobTest {
         assertThat(first.outcome()).isEqualTo(PaperDecisionJob.PAST_DEADLINE);
         assertThat(first.rules()).as("행을 쓰지 못함").isNull();
         assertThat(rulesDecisions()).as("출발 INITIAL뿐").hasSize(1);
-        assertThat(krRuns()).singleElement().satisfies(run -> {
+        assertThat(krRuns()).extracting(JobRun::outcome)
+                .containsExactly(PaperDecisionJob.DATA_NOT_READY, PaperDecisionJob.PAST_DEADLINE);
+        assertThat(krRuns().get(1)).satisfies(run -> {
             assertThat(run.outcome()).isEqualTo(PaperDecisionJob.PAST_DEADLINE);
             assertThat(run.detail().path("rules").asString()).contains("기한 지남 NO_TRADE 행을 쓰지 못함")
                     .contains("다음 주기에 다시");
@@ -1305,9 +1369,9 @@ class KrRulesJobTest {
                 .isEqualTo("069500 D 봉 없음(휴장 또는 지연)");
         assertThat(rulesDecisions()).extracting(d -> d.asOfTradingDate() + " " + d.kind() + " " + d.status())
                 .containsExactly("2026-10-29 INITIAL OK", "2026-11-02 REBALANCE NO_TRADE");
-        assertThat(krRuns()).as("작업 기록은 그 세션에 한 번").hasSize(1);
+        assertThat(krRuns()).as("기한 지남 기록은 그 세션에 한 번(기다림 한 줄 + 기한 지남)").hasSize(2);
         assertThat(runAt("2026-11-03T01:20").outcome()).isEqualTo(PaperDecisionJob.ALREADY_DECIDED);
-        assertThat(krRuns()).hasSize(1);
+        assertThat(krRuns()).hasSize(2);
     }
 
     @Test

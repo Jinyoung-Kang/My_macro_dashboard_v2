@@ -110,6 +110,8 @@ final class KrDecisionGates {
     /**
      * 한 세션에서 판정한 게이트와 그 순간 — 기한 지남 행의 사유·기다린 까닭(결정 e4)을 기한 전 마지막 판정으로 남기는지
      * ({@code beforeDeadline}), 그 기록이 없어 기한 뒤에 판정했는지. 장부 처리 전 게이트(②④⑤⑥)에서 멈췄으면 그 넷뿐입니다(①③은 판정 전).
+     * 기한 전 판정은 결정 작업이 그 실행의 작업 기록에 {@link #view}로 남기고 기한 뒤 첫 실행이 {@link #fromView}로 다시 읽습니다(재기동해도 같음 —
+     * 2단계 명세 §4-9 'E0', 사용자 결정 v3).
      */
     record Judged(List<Gate> gates, Instant at, boolean beforeDeadline) {
 
@@ -120,7 +122,38 @@ final class KrDecisionGates {
         /** 결정 행 응답의 판정 근거 문구. */
         String basis() {
             return beforeDeadline ? "기한 전 마지막 판정"
-                    : "기한 뒤 판정 — 기한 전 판정 기록이 없음(재기동했거나 그 밤 첫 실행이 기한 뒤)";
+                    : "기한 뒤 판정 — 기한 전 판정 기록이 없음(그 밤 첫 실행이 기한 뒤이거나 그 기록을 쓰지 못함)";
+        }
+
+        /** 작업 기록 상세에 남기는 모양 — {@code judgedAt}(ISO 순간)·{@code judgedAtKst}·{@code gates}. */
+        Map<String, Object> view() {
+            Map<String, Object> out = new LinkedHashMap<>();
+            out.put("judgedAt", at.toString());
+            out.put("judgedAtKst", Kst.stamp(at));
+            out.put("gates", gates.stream().map(Gate::view).toList());
+            return out;
+        }
+
+        /** {@link #view}로 남긴 기한 전 판정을 다시 읽음 — 없거나 모양이 틀리면 null(짐작하지 않음). */
+        static Judged fromView(JsonNode view) {
+            if (view == null || !view.isObject() || !view.path("gates").isArray()) {
+                return null;
+            }
+            try {
+                Instant at = Instant.parse(view.path("judgedAt").asString(""));
+                List<Gate> gates = new ArrayList<>();
+                for (JsonNode gate : view.path("gates")) {
+                    String id = gate.path("gate").asString("");
+                    String status = gate.path("status").asString("");
+                    if (id.isEmpty() || !("PASS".equals(status) || "FAIL".equals(status))) {
+                        return null;
+                    }
+                    gates.add(new Gate(id, status, gate.path("note").asString("")));
+                }
+                return new Judged(gates, at, true);
+            } catch (DateTimeParseException e) {
+                return null;
+            }
         }
     }
 
