@@ -895,7 +895,7 @@ final class KrPacketBuilder {
                 + "flowScore 높은 순). close = 기준일 "
                 + "잠정 종가(원, priceSource TOSS_DAILY = KRX 단독·TOSS_INTEGRATED = KRX+NXT 통합가), 관측치에 없으면 수정 종가 이력의 "
                 + "마지막 값(priceSource kr_close_adj). stale = 이번 관측치에서 받지 못해 이어 쓴 항목. unfillable = 지금 체결할 수 없는 사유"
-                + "(이번 관측치에 봉 없음·기준일 거래정지·미처리 기업행위 보유 — 그 종목 주문은 거절, 12_hardRules). ret = 1·3·6·12개월"
+                + "(이번 관측치에 봉 없음·기준일 거래정지·미처리 기업행위 보유 — 그 종목 매수는 거절, 12_hardRules). ret = 1·3·6·12개월"
                 + "(21·63·126·252거래일) 수정 종가 수익률(%), vs200dPct = 200일 평균 대비, vs52wHighPct = 52주 고점 대비(이력이 짧으면 null)");
         out.put("flowsNote", "flowDays = 20거래일 창(" + read.windowStart() + "~" + asOf + ") 중 외국인·기관 기록이 모두 있는 날 수, "
                 + "foreign20·institution20 = 창 합(주, 창이 덜 차면 null), foreign5·institution5 = 마지막 5거래일 합, streakDays = 기준일부터 "
@@ -1255,7 +1255,8 @@ final class KrPacketBuilder {
                 plain(paper.trailingStopPct()), paper.lockoutTradingDays()));
         lines.add("유니버스(universe — U = 코스피 시가총액 상위 100 보통주, 금융위 기준일 universeAsOf ∪ etfTickers) 밖·같은 티커 두 번·"
                 + "재진입 금지 종목의 주문은 거절. 보유 종목은 U 밖이어도 팔 수 있다. unfillableTickers(지금 체결할 수 없는 종목 — 이번 관측치에 "
-                + "봉 없음·기준 거래일 거래정지·미처리 기업행위 보유, 규칙 계좌와 같은 판정)의 주문은 거절.");
+                + "봉 없음·기준 거래일 거래정지·미처리 기업행위 보유, 규칙 계좌와 같은 판정)의 매수는 UNFILLABLE로 거절. 그 종목 보유의 "
+                + "매도는 받아 대기로 두고, 만료 전에 풀리면 그 뒤 첫 시가에 체결된다(규칙 계좌와 같음).");
         lines.add("주문은 기준 거래일 뒤 첫 관측 봉(거래량 > 0)의 시가로 체결된다 — 기준 거래일 이하 봉·주문보다 먼저 받은 관측치·거래정지일"
                 + "(거래량 0) 봉으로는 체결되지 않고, 체결되지 않은 주문은 기준일 + 3거래일에 만료된다.");
         if (!initial) {

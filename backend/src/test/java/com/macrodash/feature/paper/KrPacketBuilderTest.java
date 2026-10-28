@@ -623,7 +623,7 @@ class KrPacketBuilderTest {
         assertThat(rules.path("unfillableTickers").path("373220").asString()).contains("거래정지");
         String lines = rules.path("lines").toString();
         assertThat(lines).contains("BUY_BELOW_ONE_SHARE").contains("500,000원").contains("주식 2,000원 미만 1원")
-                .contains("코스피 거래세 5bp + 농특세 15bp");
+                .contains("코스피 거래세 5bp + 농특세 15bp").contains("매수는 UNFILLABLE로 거절").contains("매도는 받아 대기로 두고");
         assertThat(packet.text()).doesNotContain("$").doesNotContain("SHY").doesNotContain("NEXT_OBSERVATION")
                 .doesNotContain("13F").doesNotContain("5_gate").doesNotContain("6_trackRecord");
         assertThat(rules.path("universe").asString()).isEqualTo(
