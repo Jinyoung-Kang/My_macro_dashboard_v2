@@ -5,15 +5,17 @@
  * 모르는 값은 "—"로 둡니다(0이나 다른 날로 채우지 않음). 한국만의 표기라 lib/paper(미국과 공용)를 크게 만들지 않고 따로 둡니다 —
  * 이 파일이 lib/paper를 가져오고 lib/paper는 이 파일을 가져오지 않습니다(순환 방지).
  */
-import { EMPTY, formatKst, formatNumber, formatSigned } from "./format";
+import { EMPTY, formatKst, formatNumber, formatPercent, formatSigned } from "./format";
 import {
   type Badge,
   decisionKindLabel,
   jsonSummary,
   positionBadges,
+  rejectReasonText,
   type RiskResultView,
   riskResultView,
   settingValueAt,
+  sideLabel,
   toneClass,
 } from "./paper";
 import { formatMoney, type PaperMarketCode } from "./paperMarket";
@@ -994,4 +996,112 @@ export function krLatestJudgedGates(jobs: readonly PaperJobRun[] | null | undefi
     });
   }
   return out;
+}
+
+// ---------------------------------------------------------------- 주간 복기(2단계 명세 §3 D1~D6 한국 판 — E3, F2)
+
+/** 한국 복기가 언제 생기는지(서버 PaperReviewJob의 한국 조건). 미국 문구(lib/paper REVIEW_SCHEDULE_NOTE)는 그대로입니다. */
+export const KR_REVIEW_SCHEDULE_NOTE =
+  "토요일 22:30 KST — 그 주 마지막 KR 거래일(금요일, 휴장이면 목요일)의 잠정 종가 순자산 줄로 열리고, 놓치면 다음 기동 첫 주기에 한 번 — "
+  + "지난 4주(입력이 크면 2주) 한국 Claude 계좌 결정을 그 뒤 가격과 대조합니다. 수익률·낙폭·스탑·가정 진입은 서버가 계산하고 Claude는 "
+  + "판정만 합니다. 제안은 프레임 탭에 '승인 대기'로 들어가고 자동 반영은 없습니다. 규칙 계좌는 바꾸지 않습니다.";
+
+/** 한국 수동 복기 확인 창의 문턱 문장 — 수동 문턱(상태 응답 manualLimit)을 그대로(모르면 "—"). */
+export function krManualReviewNote(manualLimit: number | null | undefined): string {
+  const limit = typeof manualLimit === "number" ? `${formatNumber(manualLimit, 0)}회` : EMPTY;
+  return `수동 복기는 그날 호출이 수동 문턱(${limit} — 하루 상한 − 정기 몫 예약) 미만일 때만 부릅니다(토요일 22:30 시각 조건 없음 — 나머지 조건은 `
+    + "정기 복기와 같음). 아니면 서버가 거절하고 그 문구가 아래에 보입니다.";
+}
+
+/** 한국 복기 목록이 비었을 때. */
+export const KR_REVIEW_EMPTY =
+  "아직 한국 복기가 없습니다 — 한국 Claude 계좌가 출발한 다음 토요일 22:30(KST) 뒤에 첫 복기가 생깁니다.";
+
+/** 가장 최근 복기 주를 셀 수 없을 때(달력 없음)의 한 줄 — 사유가 없으면 null. */
+export function krLatestWeekReasonText(latestWeekEnding: string | null | undefined, reason: string | null | undefined): string | null {
+  if (latestWeekEnding || !reason) return null;
+  return `가장 최근 복기 주 ${EMPTY} — ${reason}`;
+}
+
+/** 가정 진입 출처 배지 — 금융위 확정 시가(FSC·FSC_ETF)·토스 잠정 시가(TOSS_*), 모르면 없음. */
+function entrySourceBadge(source: string | null): Badge | null {
+  if (source === "FSC" || source === "FSC_ETF") {
+    return { key: "fsc", label: "금융위 확정 시가", className: toneClass("ok"),
+      title: `${source === "FSC_ETF" ? "금융위 증권상품시세" : "금융위 주식시세"} 시가(확정)` };
+  }
+  if (source && source.startsWith("TOSS_")) {
+    return { key: "toss", label: "토스 잠정 시가", className: toneClass("info"),
+      title: `${krPriceSourceLabel(source)} — 금융위 확정 전 값(확정가와 조금 다를 수 있음)` };
+  }
+  return null;
+}
+
+/** 복기 입력의 가정 진입 한 줄(거절 주문을 결정 다음 세션 시가에 샀다고 가정한 값 — 비용 제외). */
+export interface KrReviewEntryRow {
+  key: string;
+  decision: string;
+  ticker: string;
+  side: string;
+  status: string;
+  rejectReason: string;
+  entryDate: string;
+  entryPrice: string;
+  returnPct: string;
+  badges: Badge[];
+}
+
+/**
+ * 한국 복기 입력(`review.input`)의 결정별 주문 가운데 가정 진입(`hypothetical` — 거절 주문)이 있는 것 → 표의 줄. 진입가는 원, 수익률은 서버 값
+ * 그대로이고, 출처 배지(금융위 확정 시가·토스 잠정 시가)와 '종가 근사'(isProxy — 그 세션 시가가 없어 종가로 근사)를 붙입니다. 모양이 틀리면 빈 목록.
+ */
+export function krReviewInputRows(input: unknown): KrReviewEntryRow[] {
+  if (!isRecord(input)) return [];
+  const rows: KrReviewEntryRow[] = [];
+  listOf(input.decisions).filter(isRecord).forEach((decision) => {
+    listOf(decision.orders).filter(isRecord).forEach((order) => {
+      const hypo = isRecord(order.hypothetical) ? order.hypothetical : null;
+      if (!hypo) return;
+      const badges: Badge[] = [];
+      const source = entrySourceBadge(textOf(hypo.entrySource));
+      if (source) badges.push(source);
+      if (hypo.isProxy === true) {
+        badges.push({ key: "proxy", label: "종가 근사", className: toneClass("warn"),
+          title: "결정 다음 세션 시가가 없어 그 세션 종가로 근사했습니다(isProxy)." });
+      }
+      rows.push({
+        key: `${numberOf(decision.id) ?? "?"}-${numberOf(order.id) ?? rows.length}`,
+        decision: `#${numberOf(decision.id) ?? EMPTY} (${textOf(decision.asOf) ?? EMPTY})`,
+        ticker: textOf(order.ticker) ?? EMPTY,
+        side: sideLabel(textOf(order.side)),
+        status: textOf(order.status) ?? EMPTY,
+        rejectReason: rejectReasonText(textOf(order.rejectReason)).label,
+        entryDate: textOf(hypo.entryDate) ?? EMPTY,
+        entryPrice: won(numberOf(hypo.entryPrice)),
+        returnPct: formatPercent(numberOf(hypo.returnPct)),
+        badges,
+      });
+    });
+  });
+  return rows;
+}
+
+/** 복기 입력의 계좌 수익률 비교(`comparison`) — 구간·설명·계좌별 수익률과 '잠정 줄 포함'(isEstimated) 배지. 없으면 null. */
+export function krReviewComparison(input: unknown): {
+  range: string; note: string | null; rows: { key: string; book: string; returnPct: string; badges: Badge[] }[];
+} | null {
+  const comparison = isRecord(input) && isRecord(input.comparison) ? input.comparison : null;
+  if (!comparison) return null;
+  return {
+    range: `${textOf(comparison.from) ?? EMPTY} → ${textOf(comparison.to) ?? EMPTY}`,
+    note: textOf(comparison.note),
+    rows: listOf(comparison.books).filter(isRecord).map((row, index) => ({
+      key: `${index}-${textOf(row.book) ?? ""}`,
+      book: textOf(row.book) ?? EMPTY,
+      returnPct: formatPercent(numberOf(row.returnPct)),
+      badges: row.isEstimated === true
+        ? [{ key: "estimated", label: "잠정 줄 포함", className: toneClass("warn"),
+          title: "금융위 확정 종가가 아닌(토스 잠정) 순자산 줄을 썼습니다 — 확정되면 값이 조금 바뀔 수 있습니다." }]
+        : [],
+    })),
+  };
 }

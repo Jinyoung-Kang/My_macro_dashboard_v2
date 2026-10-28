@@ -1608,8 +1608,14 @@ export interface PaperReviewsResponse {
   reviews?: PaperReviewSummary[];
   /** 지금 마감이 끝난 가장 최근 복기 주 — 수동 실행이 도는 주. */
   latestWeekEnding?: string | null;
-  /** 그 주 정기 복기가 열리는 시각(토요일 09:00 KST). */
+  /** 그 주 정기 복기가 열리는 시각(미국 토요일 09:00 KST, 한국 토요일 22:30 KST). */
   latestOpensAtKst?: string | null;
+  /** 한국 응답만 — 최근 복기 주를 셀 수 없는 사유('달력 없음 — …', 그 실행 KRX 달력이 그 해를 모름). 보통 null. */
+  latestWeekEndingReason?: string | null;
+  /** 한국 응답만 — "KR". */
+  market?: PaperMarketCode;
+  /** 한국 응답만 — 한국 정기 작업이 쉬는 사유(돌면 null). */
+  dormantReason?: string | null;
 }
 
 /** 판정 한 줄 — 날짜·종류·상태는 서버가 입력의 결정에서 찾아 붙인 값(없는 id면 null). */

@@ -8,6 +8,7 @@ import {
   proposalView,
   resolveReviewWeek,
   REVIEW_COST_NOTE,
+  REVIEW_SCHEDULE_NOTE,
   reviewDetailView,
   reviewProposalText,
   reviewRowSignature,
@@ -19,6 +20,13 @@ import {
   thesisHeldBadge,
   verdictCountsText,
 } from "../paper";
+import {
+  KR_REVIEW_SCHEDULE_NOTE,
+  krLatestWeekReasonText,
+  krManualReviewNote,
+  krReviewComparison,
+  krReviewInputRows,
+} from "../paperKr";
 import type { PaperFrameworkProposal, PaperReviewDetail, PaperReviewSummary } from "../types";
 
 function summary(over: Partial<PaperReviewSummary> = {}): PaperReviewSummary {
@@ -195,5 +203,59 @@ describe("프레임 탭의 복기 제안", () => {
     const view = proposalView(proposal, null);
     expect(view.meta.find((cell) => cell.key === "review")?.value).toBe("주간 복기 2026-10-30");
     expect(view.meta.find((cell) => cell.key === "noteId")).toBeUndefined();
+  });
+});
+
+describe("한국 복기(F2 — 일정·가정 진입 출처·근사·잠정 배지)", () => {
+  it("일정 문구 — 미국은 그대로(토요일 09:00), 한국은 토요일 22:30·잠정 종가 순자산 줄·다음 기동 첫 주기", () => {
+    expect(REVIEW_SCHEDULE_NOTE.startsWith("매주 토요일 09:00(KST) 뒤 그 주 마지막 거래일(금요일, 휴장이면 목요일)의 확정 종가가 들어오면")).toBe(true);
+    expect(KR_REVIEW_SCHEDULE_NOTE).toContain("토요일 22:30 KST — 그 주 마지막 KR 거래일(금요일, 휴장이면 목요일)의 잠정 종가 순자산 줄로 열리고, 놓치면 다음 기동 첫 주기");
+    expect(krManualReviewNote(13)).toContain("수동 문턱(13회");
+    expect(krManualReviewNote(undefined)).toContain("수동 문턱(— —");
+    expect(krLatestWeekReasonText(null, "달력 없음 — 2027년")).toBe("가장 최근 복기 주 — — 달력 없음 — 2027년");
+    expect(krLatestWeekReasonText("2026-11-06", "달력 없음")).toBeNull();
+    expect(krLatestWeekReasonText(null, null)).toBeNull();
+  });
+
+  const INPUT = {
+    decisions: [
+      { id: 1, asOf: "2026-11-02", orders: [
+        { id: 2, ticker: "005930", side: "BUY", status: "FILLED", fill: { date: "2026-11-03", price: 50_000 } },
+        { id: 4, ticker: "000660", side: "BUY", status: "REJECTED", rejectReason: "UNFILLABLE",
+          hypothetical: { basis: "가정", entryDate: "2026-11-03", entryPrice: 180_000, entrySource: "FSC", isProxy: false, returnPct: 10 } },
+        { id: 5, ticker: "207940", side: "BUY", status: "REJECTED", rejectReason: "MONTHLY_CAP",
+          hypothetical: { basis: "가정", entryDate: "2026-11-03", entryPrice: 1_000_000, entrySource: null, isProxy: true, returnPct: 5 } },
+      ] },
+      { id: 6, asOf: "2026-11-05", orders: [
+        { id: 7, ticker: "035720", side: "BUY", status: "REJECTED", rejectReason: "MONTHLY_CAP",
+          hypothetical: { entryDate: "2026-11-06", entryPrice: 40_000, entrySource: "TOSS_1M_OPEN", isProxy: false, returnPct: null } },
+      ] },
+    ],
+    comparison: { from: "2026-10-30", to: "2026-11-06", note: "순자산 수익률(%)", books: [
+      { book: "kr_rules", returnPct: 0.5, isEstimated: true }, { book: "kr_bench_k200", returnPct: 2, isEstimated: false },
+    ] },
+  };
+
+  it("가정 진입 줄 — 거절 주문의 hypothetical만, 진입가 원·수익률, 출처 배지(금융위 확정·토스 잠정)·종가 근사, 모르는 값은 —", () => {
+    const rows = krReviewInputRows(INPUT);
+    expect(rows.map((row) => [row.decision, row.ticker, row.rejectReason, row.entryPrice, row.returnPct, row.badges.map((b) => b.label)]))
+      .toEqual([
+        ["#1 (2026-11-02)", "000660", "지금 체결할 수 없는 종목 매수 (UNFILLABLE)", "180,000원", "+10.00%", ["금융위 확정 시가"]],
+        ["#1 (2026-11-02)", "207940", "월 주문 상한 (MONTHLY_CAP)", "1,000,000원", "+5.00%", ["종가 근사"]],
+        ["#6 (2026-11-05)", "035720", "월 주문 상한 (MONTHLY_CAP)", "40,000원", "—", ["토스 잠정 시가"]],
+      ]);
+    expect(krReviewInputRows(null)).toEqual([]);
+    expect(krReviewInputRows({ decisions: "글" })).toEqual([]);
+    expect(krReviewInputRows({ decisions: [{ id: 1, orders: [{ hypothetical: "글" }] }] })).toEqual([]);
+  });
+
+  it("계좌 수익률 비교 — 구간·계좌별 수익률과 '잠정 줄 포함', 없으면 null", () => {
+    const view = krReviewComparison(INPUT);
+    expect(view?.range).toBe("2026-10-30 → 2026-11-06");
+    expect(view?.rows.map((row) => [row.book, row.returnPct, row.badges.map((b) => b.label)])).toEqual([
+      ["kr_rules", "+0.50%", ["잠정 줄 포함"]], ["kr_bench_k200", "+2.00%", []],
+    ]);
+    expect(krReviewComparison({ decisions: [] })).toBeNull();
+    expect(krReviewComparison("글")).toBeNull();
   });
 });

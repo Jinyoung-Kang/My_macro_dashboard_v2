@@ -159,11 +159,11 @@ export function DecisionsSection({
       })}
     </div>
   );
-  if (view === "reviews" && !korea) {
+  if (view === "reviews") {
     return (
       <>
         {views}
-        <ReviewsSection onOpenProposal={onOpenProposal} />
+        <ReviewsSection onOpenProposal={onOpenProposal} market={market} />
       </>
     );
   }
@@ -193,7 +193,7 @@ export function DecisionsSection({
 
   return (
     <>
-      {!korea && views}
+      {views}
       <Card
         title="결정"
         source={korea ? PAPER_SOURCES.krDecisions : PAPER_SOURCES.decisions}

@@ -206,8 +206,8 @@ describe("불러오는 중", () => {
     expect(screen.getByRole("tab", { name: "결정 로그" }).getAttribute("aria-selected")).toBe("true");
     await waitFor(() => expect(requested()).toContain("/api/paper/decisions?book=kr_rules&limit=50"));
     expect(requested()).toContain("/api/paper/status?market=KR");
-    // 주간 복기 보기는 한국에서 아직 숨김(미국 복기가 섞이지 않게).
-    expect(screen.queryByRole("group", { name: "결정 로그 보기" })).toBeNull();
+    // 결정 기록 · 주간 복기 보기 — 한국 복기는 ?market=KR 경로(paperKrReviews.test).
+    expect(screen.getByRole("group", { name: "결정 로그 보기" })).toBeTruthy();
   });
 });
 

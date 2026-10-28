@@ -102,6 +102,8 @@ export const PAPER_SOURCES = {
   krLedger: "대시보드 모의 장부(한국, PostgreSQL paper_*) — 잠정 체결가·평가 토스증권, 확정가 금융위원회(공공데이터포털)",
   krDecisions: "대시보드 결정·작업 기록(한국, PostgreSQL paper_decisions·paper_orders·paper_job_runs) — 출발 결정은 정기 결정 작업 또는 "
     + "출발 단추, 결정 창은 설정 kr.decisionTimeKst~kr.decisionDeadlineKst",
+  krReviews: "대시보드 주간 복기(한국, PostgreSQL paper_reviews — 수익률·낙폭·스탑·가정 진입은 대시보드 백엔드 계산(장부·토스증권 잠정 시가·"
+    + "금융위원회(공공데이터포털) 확정 시가), 판정·반복 오류·제안은 Claude 응답, Anthropic API)",
   krCollection: "토스증권 Open API(관측치·수급) · 금융위원회(공공데이터포털 — 유니버스·확정 시세) · 금융감독원 Open DART · RSS(한국은행·"
     + "재정경제부·국가데이터처·연합뉴스) · 상수(금통위·주요 발표 일정) — 수집기 저장본 읽기만(수집 요청 없음)",
 } as const;
