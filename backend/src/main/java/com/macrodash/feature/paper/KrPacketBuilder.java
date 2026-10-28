@@ -309,7 +309,14 @@ final class KrPacketBuilder {
         }
 
         List<DecisionSummary> prior = priorDecisions(asOf, kind, initial);
+        // DART 저장본도 읽은 순간 뒤에 수집된 판이면 쓰지 않습니다(규칙 계좌 입력은 그대로 — 접수일 규칙이 같은 시점을 지킴).
         Snapshot dart = read.dart();
+        String dartMissing = dart == null ? "DART 주요계정 저장본이 없습니다"
+                : dart.collectedAt() != null && dart.collectedAt().isAfter(readAt)
+                ? LATE_SNAPSHOT + "(" + dart.collectedAtKst() + ")" : null;
+        if (dartMissing != null) {
+            dart = null;
+        }
         JsonNode companies = dart == null ? null : Json.child(dart.payload(), "companies");
 
         // 섹션 — 8_prices·8b만 크기 예산으로 잘릴 수 있어 나머지는 한 번 만듭니다.
@@ -326,29 +333,33 @@ final class KrPacketBuilder {
         Map<String, Object> hardRules = hardRules(run, asOf, initial, limits, paper, etfs, universe, lockedOut,
                 unfillable, quotes, input.universeDate());
 
-        int stockRows = universeRows.size();
+        Map<String, Object> fixed = new LinkedHashMap<>();
+        fixed.put(INSTRUCTIONS, instructions);
+        fixed.put(BASIS, basis);
+        fixed.put(CALENDAR, calendarSection.section());
+        fixed.put(KR_MACRO, macro);
+        fixed.put(PORTFOLIO, portfolio);
+        fixed.put(DECISIONS, decisions);
+        fixed.put(NOTES, notesSection);
+        fixed.put(EVENTS, events.section());
+        fixed.put(HARD_RULES, hardRules);
+        Rows rows = new Rows(lines, universeRows, quotes, history, flows, scores, unfillable, members, companies, dart,
+                dartMissing, asOf, read, paper);
         int cut = 0;
-        String text = render(instructions, basis, calendarSection, macro, portfolio, decisions, notesSection, events,
-                hardRules, lines, universeRows, 0, quotes, history, flows, scores, unfillable, members, companies, asOf,
-                read, paper);
-        if (PacketBuilder.estimateTokens(text) > targetTokens && stockRows > 0) {
+        String text = render(fixed, rows, 0);
+        if (PacketBuilder.estimateTokens(text) > targetTokens && !universeRows.isEmpty()) {
             int low = 1;
-            int high = stockRows;
+            int high = universeRows.size();
             while (low < high) {
                 int mid = (low + high) >>> 1;
-                String trial = render(instructions, basis, calendarSection, macro, portfolio, decisions, notesSection,
-                        events, hardRules, lines, universeRows, mid, quotes, history, flows, scores, unfillable, members,
-                        companies, asOf, read, paper);
-                if (PacketBuilder.estimateTokens(trial) > targetTokens) {
+                if (PacketBuilder.estimateTokens(render(fixed, rows, mid)) > targetTokens) {
                     low = mid + 1;
                 } else {
                     high = mid;
                 }
             }
             cut = low;
-            text = render(instructions, basis, calendarSection, macro, portfolio, decisions, notesSection, events,
-                    hardRules, lines, universeRows, cut, quotes, history, flows, scores, unfillable, members, companies,
-                    asOf, read, paper);
+            text = render(fixed, rows, cut);
         }
         int tokens = PacketBuilder.estimateTokens(text);
         if (tokens > targetTokens) {
@@ -371,28 +382,31 @@ final class KrPacketBuilder {
         return new Packet(node, text, PacketBuilder.sha256(text), packetNotes.ids(), measure);
     }
 
-    /** 섹션을 이어 글로 — U 줄을 뒤에서 {@code cut}만큼 뺀 8_prices·8b와 나머지 섹션. */
-    private String render(Map<String, Object> instructions, Map<String, Object> basis, KrCalendarSection.Built calendar,
-                          Map<String, Object> macro, Map<String, Object> portfolio, Map<String, Object> decisions,
-                          Map<String, Object> notesSection, KrEventsSection.Built events, Map<String, Object> hardRules,
-                          Map<String, Line> lines, List<String> universeRows, int cut, Optional<Quotes> quotes,
-                          Map<String, DailySeries> history, Map<String, KrRules.FlowSummary> flows,
-                          Map<String, Double> scores, Map<String, String> unfillable, Map<String, KrRules.Member> members,
-                          JsonNode companies, LocalDate asOf, KrRuleBookService.Read read, PaperSettings paper) {
+    /** 8_prices·8b의 재료(크기 예산으로 U 줄을 자를 때 다시 만듦). */
+    private record Rows(Map<String, Line> lines, List<String> universeRows, Optional<Quotes> quotes,
+                        Map<String, DailySeries> history, Map<String, KrRules.FlowSummary> flows, Map<String, Double> scores,
+                        Map<String, String> unfillable, Map<String, KrRules.Member> members, JsonNode companies,
+                        Snapshot dart, String dartMissing, LocalDate asOf, KrRuleBookService.Read read,
+                        PaperSettings paper) {
+    }
+
+    /** 섹션을 이어 글로 — U 줄을 뒤에서 {@code cut}만큼 뺀 8_prices·8b와 나머지(한 번 만든) 섹션, 읽는 순서대로. */
+    private String render(Map<String, Object> fixed, Rows r, int cut) {
+        List<String> universeRows = r.universeRows();
         Set<String> dropped = new LinkedHashSet<>(universeRows.subList(universeRows.size() - cut, universeRows.size()));
-        List<Line> shown = lines.values().stream().filter(l -> !dropped.contains(l.code())).toList();
+        List<Line> shown = r.lines().values().stream().filter(l -> !dropped.contains(l.code())).toList();
         Map<String, Object> root = new LinkedHashMap<>();
-        root.put(INSTRUCTIONS, instructions);
-        root.put(BASIS, basis);
-        root.put(CALENDAR, calendar.section());
-        root.put(KR_MACRO, macro);
-        root.put(PRICES, priceSection(shown, cut, quotes, history, flows, scores, unfillable, asOf, read));
-        root.put(FUNDAMENTALS, fundamentalsSection(shown, cut, members, companies, asOf, read.dart(), paper));
-        root.put(PORTFOLIO, portfolio);
-        root.put(DECISIONS, decisions);
-        root.put(NOTES, notesSection);
-        root.put(EVENTS, events.section());
-        root.put(HARD_RULES, hardRules);
+        for (String key : SECTION_KEYS) {
+            if (PRICES.equals(key)) {
+                root.put(key, priceSection(shown, cut, r.quotes(), r.history(), r.flows(), r.scores(), r.unfillable(),
+                        r.asOf(), r.read()));
+            } else if (FUNDAMENTALS.equals(key)) {
+                root.put(key, fundamentalsSection(shown, cut, r.members(), r.companies(), r.asOf(), r.dart(),
+                        r.dartMissing(), r.paper()));
+            } else {
+                root.put(key, fixed.get(key));
+            }
+        }
         return mapper.writer().without(SerializationFeature.INDENT_OUTPUT).writeValueAsString(PacketBuilder.toNode(root));
     }
 
@@ -918,7 +932,7 @@ final class KrPacketBuilder {
     // ------------------------------------------------------------------ 8b 재무
     private Map<String, Object> fundamentalsSection(List<Line> shown, int cut, Map<String, KrRules.Member> members,
                                                     JsonNode companies, LocalDate asOf, Snapshot dart,
-                                                    PaperSettings paper) {
+                                                    String dartMissing, PaperSettings paper) {
         Map<String, Object> out = new LinkedHashMap<>();
         out.put("source", "snapshot " + Datasets.SNAP_DART_FUNDAMENTALS + " — DART 사업보고서 주요계정(회사마다 마지막 보고서 하나)");
         out.put("rule", "접수일(rceptNo 앞 8자리) ≤ 기준일(" + asOf + ")인 보고서만 — 아니면 값 없이 status에 사유");
@@ -926,7 +940,7 @@ final class KrPacketBuilder {
                 + "당기순이익·자본총계(배 — 시점이 다름)");
         out.put("financialSectorNote", "financialSector = 금융업 코드 표(" + KrFinancialSector.VERSION + ")의 회사 — 부채비율이 커도 정상");
         if (dart == null) {
-            out.put("missing", "DART 주요계정 저장본이 없습니다");
+            out.put("missing", dartMissing == null ? "DART 주요계정 저장본이 없습니다" : dartMissing);
             return out;
         }
         List<List<Object>> rows = new ArrayList<>();
