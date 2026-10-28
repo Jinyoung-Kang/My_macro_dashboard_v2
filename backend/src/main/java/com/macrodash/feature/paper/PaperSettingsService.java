@@ -220,13 +220,7 @@ public class PaperSettingsService {
         fallbacks.addAll(ClaudeBookService.ClaudeSettings.from(body).fallbacks());
         fallbacks.addAll(PaperApiCalls.Pricing.from(body).fallbacks());
         fallbacks.addAll(EventsSection.settings(body).fallbacks());
-        // 한국 읽기(C1c — 한국 묶음이 생긴 뒤): 장부 키·rules.* 묶음·비용 요율(C2b)의 kr. 접두어 이름만(게이트는 설정 루트라 위 미국
-        // 읽기와 같음).
-        PaperSettings kr = PaperSettings.from(body, KrPaperMarket.INSTANCE);
-        kr.fallbacks().stream().filter(key -> key.startsWith(KrPaperMarket.INSTANCE.settingsPrefix()))
-                .forEach(fallbacks::add);
-        fallbacks.addAll(kr.rules().fallbacks());
-        fallbacks.addAll(kr.costRates().fallbacks());
+        fallbacks.addAll(krFallbacks(body));
         Map<String, Object> out = new LinkedHashMap<>();
         out.put("available", true);
         out.put("version", row.map(PaperStore.SettingsRow::version).orElse(null));
@@ -236,6 +230,20 @@ public class PaperSettingsService {
         out.put("keys", PaperSettingKeys.views());
         out.put("fallbacks", row.isPresent() ? fallbacks : List.of());
         return out;
+    }
+
+    /**
+     * 한국 읽기(C1c — 한국 묶음이 생긴 뒤)가 기본값으로 읽는 키 — 장부 키·{@code rules.*} 묶음·비용 요율(C2b)의 {@code kr.} 접두어 이름만(게이트는
+     * 설정 루트라 미국 읽기와 같음). 설정 화면({@link #view})의 {@code fallbacks} 뒤쪽이 이 목록입니다.
+     */
+    static List<String> krFallbacks(JsonNode body) {
+        PaperSettings kr = PaperSettings.from(body, KrPaperMarket.INSTANCE);
+        List<String> fallbacks = new ArrayList<>();
+        kr.fallbacks().stream().filter(key -> key.startsWith(KrPaperMarket.INSTANCE.settingsPrefix()))
+                .forEach(fallbacks::add);
+        fallbacks.addAll(kr.rules().fallbacks());
+        fallbacks.addAll(kr.costRates().fallbacks());
+        return fallbacks;
     }
 
     /**
