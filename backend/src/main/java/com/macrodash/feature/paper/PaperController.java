@@ -15,8 +15,8 @@ import java.util.Map;
  * 🧪 모의 알고리즘 매매(운영자 전용) — 장부 조회와 관리 버튼.
  *
  * <pre>
- *  GET  /api/paper/overview                       네 책 요약·순자산 곡선·관측치 신선도·한계 문구·작업 기록
- *  GET  /api/paper/status                         스키마·초기화·정기 작업 상태
+ *  GET  /api/paper/overview?market=US            네 책 요약·순자산 곡선·관측치 신선도·한계 문구·작업 기록(시장 US·KR, 없으면 US)
+ *  GET  /api/paper/status?market=US              스키마·초기화·정기 작업 상태(시장 US·KR, 없으면 US)
  *  GET  /api/paper/books/{code}/positions         보유·재진입 금지·현금
  *  GET  /api/paper/books/{code}/orders?limit=50   주문(최근 순, 1–500)
  *  GET  /api/paper/books/{code}/fills?limit=50    체결(최근 순, 1–500)
@@ -58,14 +58,15 @@ public class PaperController {
     public record RerankRequest(String asOf) {
     }
 
+    /** {@code market}이 없으면 미국(시장을 받기 전 응답 그대로), 모르는 값은 400(2단계 명세 §4-16). */
     @GetMapping("/overview")
-    public Map<String, Object> overview() {
-        return query.overview();
+    public Map<String, Object> overview(@RequestParam(required = false) String market) {
+        return query.overview(market);
     }
 
     @GetMapping("/status")
-    public Map<String, Object> status() {
-        return query.status();
+    public Map<String, Object> status(@RequestParam(required = false) String market) {
+        return query.status(market);
     }
 
     @GetMapping("/books/{code}/positions")

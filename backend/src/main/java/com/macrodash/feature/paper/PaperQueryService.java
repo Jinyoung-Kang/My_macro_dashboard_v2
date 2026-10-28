@@ -61,10 +61,11 @@ import java.util.TreeSet;
  *
  * <p><b>시장 문맥</b>(2단계 명세 §9 A6): 개요·상태는 시장 묶음({@link PaperMarket})을 받아 그 시장 책·그 책들의 순자산 줄·그 시장
  * 관측치(확정 판정 포함)·그 시장 Claude 책의 노출 추이와 프레임 경계·초기화 판정(그 시장 책 정의)만 씁니다. 13F 선정·게이트 지표·
- * 한계 문구·출발일·초기 현금은 미국 전용이라 미국 밖 시장에는 싣지 않습니다(null·빈 목록 — 한국 값은 C1·F2). 작업 기록·설정·호출
- * 사용량·수집 상태는 시장과 상관없이 하나입니다. 계좌 코드 경로(보유·주문·체결·순자산)는 그 책의 시장({@code paper_books.market})
- * 달력·비교 기준을 씁니다. 시장을 받지 않는 옛 시그니처는 미국입니다. 조회 한 번은 그 시장의 실행 문맥({@link MarketRun} — 달력 한 벌·
- * 설정 행 하나)을 한 번 열어 씁니다(C1a).
+ * 한계 문구는 미국 전용이라 미국 밖 시장에는 싣지 않습니다(null·빈 목록 — 한국 한계 문구는 F2). 화면 경로는 {@code ?market}(F1, 명세 §4-16 —
+ * 없으면 미국, {@link PaperMarkets#requested})으로 시장을 고르고, 미국 밖 시장 응답에는 시장·통화·정기 작업이 쉬는 사유와 그 시장의 출발일·
+ * 초기 현금·작업 기록·설정 키가 실립니다({@link #overview(PaperMarket)}·{@link #status(PaperMarket)}). 호출 사용량은 시장과 상관없이 하나(상한
+ * 공유)입니다. 계좌 코드 경로(보유·주문·체결·순자산)는 그 책의 시장({@code paper_books.market}) 달력·비교 기준을 씁니다. 시장을 받지 않는
+ * 옛 시그니처는 미국입니다. 조회 한 번은 그 시장의 실행 문맥({@link MarketRun} — 달력 한 벌·설정 행 하나)을 한 번 열어 씁니다(C1a).
  */
 @Service
 public class PaperQueryService {
@@ -155,13 +156,27 @@ public class PaperQueryService {
         return overview(UsPaperMarket.INSTANCE);
     }
 
-    /** 그 시장의 개요(클래스 설명의 시장 문맥). */
+    /**
+     * GET /api/paper/overview?market= (2단계 명세 §4-16, F1) — 시장 값이 없으면(null) 미국 판({@link #overview()}와 같은 응답), US·KR이면 그 시장
+     * ({@link #overview(PaperMarket)}), 그 밖은 400({@link PaperMarkets#requested}).
+     */
+    public Map<String, Object> overview(String market) {
+        return overview(markets.requested(market));
+    }
+
+    /**
+     * 그 시장의 개요(클래스 설명의 시장 문맥). 미국 밖 시장은 {@code available} 뒤에 {@code market}·{@code currency}·{@code dormantReason}(그 시장
+     * 정기 작업이 쉬는 사유 — 한국 출발일·한국 계좌가 갖춰지지 않음, 돌면 null)을 싣고, 출발일은 그 시장 배포 설정(한국
+     * {@code dashboard.paper.kr.start-date}, 없으면 null), 작업 기록은 그 시장 것만({@link PaperMarket#jobPrefix})입니다. 미국 응답은 이 칸들이
+     * 없는 그대로입니다.
+     */
     Map<String, Object> overview(PaperMarket requested) {
         if (!ready()) {
             return notReady();
         }
-        // 이 조회의 시장 문맥 — 통계 표본·관측치 확정 판정이 같은 달력 한 벌(PaperMarkets#open).
-        MarketRun market = markets.open(requested);
+        // 이 조회의 시장 문맥 — 통계 표본·관측치 확정 판정이 같은 달력 한 벌(PaperMarkets#open), 쉬는 시장도 엶(PaperMarkets#scope).
+        PaperMarkets.Scope scope = markets.scope(requested, config);
+        MarketRun market = scope.run();
         boolean us = usOnly(market);
         List<Book> books = sortedBooks(market);
         Set<String> codes = new HashSet<>();
@@ -173,9 +188,12 @@ public class PaperQueryService {
 
         Map<String, Object> out = new LinkedHashMap<>();
         out.put("available", true);
+        if (!us) {
+            putMarket(out, market, scope.dormantReason());
+        }
         out.put("initialized", initialized(market, books));
         out.put("pendingBackfill", pendingBackfill(books));
-        out.put("startDate", us ? config.startDate().toString() : null);
+        out.put("startDate", startDate(market));
         List<Map<String, Object>> summaries = new ArrayList<>();
         for (Book book : books) {
             summaries.add(summary(market, book, navByBook));
@@ -190,13 +208,41 @@ public class PaperQueryService {
                 navByBook.getOrDefault(market.claudeBook(), List.of())));
         out.put("frameworkBoundaries", frameworkBoundaries(market));
         out.put("limits", us ? limits() : List.of());
-        out.put("jobs", jobs(OVERVIEW_JOBS));
+        out.put("jobs", jobs(market, OVERVIEW_JOBS));
         return out;
     }
 
     /** 미국 전용 칸(13F 선정·게이트 지표·한계 문구·출발일·초기 현금)을 싣는 시장인가 — 미국 묶음 그 자체일 때만(클래스 설명). */
     private static boolean usOnly(PaperMarket market) {
         return market.definition() == UsPaperMarket.INSTANCE;
+    }
+
+    /** 미국 밖 시장 응답의 머리 칸 — 시장·장부 통화·정기 작업이 쉬는 사유(돌면 null). 미국 응답에는 싣지 않습니다(옛 응답 그대로). */
+    private static void putMarket(Map<String, Object> out, PaperMarket market, String dormantReason) {
+        out.put("market", market.code());
+        out.put("currency", market.currency());
+        out.put("dormantReason", dormantReason);
+    }
+
+    /** 한국 책 묶음 그 자체인가 — 한국 배포 설정(출발일·초기 현금)·{@code kr.*} 설정 키를 싣는 시장(시험용 한국 묶음은 아님). */
+    private static boolean korea(PaperMarket market) {
+        return market.definition() == KrPaperMarket.INSTANCE;
+    }
+
+    /** 그 시장의 출발일(배포 설정) — 미국 {@code dashboard.paper.start-date}, 한국 {@code dashboard.paper.kr.start-date}(비었으면 null). */
+    private String startDate(PaperMarket market) {
+        if (usOnly(market)) {
+            return config.startDate().toString();
+        }
+        return korea(market) && config.krStartDate() != null ? config.krStartDate().toString() : null;
+    }
+
+    /** 그 시장 계좌마다 시작 현금(배포 설정) — 미국 달러(소수 2자리), 한국 원(정수). 그 밖 시장은 null. */
+    private Object initialCash(PaperMarket market) {
+        if (usOnly(market)) {
+            return round2(config.initialCash());
+        }
+        return korea(market) ? config.krInitialCash().longValueExact() : null;
     }
 
     // ------------------------------------------------------------------ 결정
@@ -304,7 +350,20 @@ public class PaperQueryService {
         return status(UsPaperMarket.INSTANCE);
     }
 
-    /** 그 시장의 상태 — 초기화 판정·관측치는 그 시장 것, 출발일·초기 현금은 미국만(클래스 설명), 나머지는 시장과 상관없이 하나. */
+    /**
+     * GET /api/paper/status?market= (2단계 명세 §4-16, F1) — 시장 값이 없으면(null) 미국 판({@link #status()}와 같은 응답), US·KR이면 그 시장,
+     * 그 밖은 400({@link PaperMarkets#requested}).
+     */
+    public Map<String, Object> status(String market) {
+        return status(markets.requested(market));
+    }
+
+    /**
+     * 그 시장의 상태 — 초기화 판정·관측치·출발일·초기 현금·작업 기록은 그 시장 것, 호출 사용량(상한 공유)은 시장과 상관없이 하나. 미국 밖 시장은
+     * {@link #overview(PaperMarket)}처럼 머리 칸({@code market}·{@code currency}·{@code dormantReason})을 싣고, 설정 판·기본값으로 읽은 키는 그 조회
+     * 실행이 읽은 설정 행의 그 시장 키(한국 {@code kr.*} — 설정 화면의 한국 읽기와 같은 목록, {@link PaperSettingsService#krFallbacks}), 미국 수집
+     * 상태 넷({@code fundamentals}·{@code calendar}·{@code news}·{@code earnings} — 미국 패킷의 자료)은 null입니다.
+     */
     Map<String, Object> status(PaperMarket requested) {
         Map<String, Object> out = new LinkedHashMap<>();
         if (!ready()) {
@@ -313,28 +372,40 @@ public class PaperQueryService {
             out.put("enabled", config.enabled());
             return out;
         }
-        MarketRun market = markets.open(requested);
+        PaperMarkets.Scope scope = markets.scope(requested, config);
+        MarketRun market = scope.run();
+        boolean us = usOnly(market);
         out.put("available", true);
+        if (!us) {
+            putMarket(out, market, scope.dormantReason());
+        }
         out.put("schemaReady", true);
         out.put("initialized", initialized(market, sortedBooks(market)));
         out.put("enabled", config.enabled());
-        out.put("startDate", usOnly(market) ? config.startDate().toString() : null);
-        out.put("initialCash", usOnly(market) ? round2(config.initialCash()) : null);
+        out.put("startDate", startDate(market));
+        out.put("initialCash", initialCash(market));
         out.put("quotes", quotesSummary(market));
-        out.put("jobs", jobs(STATUS_JOBS));
-        PaperSettingsService.Current current = settings.current();
-        out.put("settingsVersion", current.version());
-        // 장부 키와 섞기 키(blend.*)·규칙 책 묶음(rules.*) — 둘 다 단계 2 전 설정 행에는 없음 — 를 함께, 어느 키를 기본값으로
-        // 읽고 있는지 화면이 한 곳에서 보게.
-        List<String> fallbacks = new ArrayList<>(current.settings().fallbacks());
-        fallbacks.addAll(current.settings().blend().fallbacks());
-        fallbacks.addAll(current.settings().rules().fallbacks());
-        out.put("settingsFallbacks", fallbacks);
+        out.put("jobs", jobs(market, STATUS_JOBS));
+        if (us) {
+            PaperSettingsService.Current current = settings.current();
+            out.put("settingsVersion", current.version());
+            // 장부 키와 섞기 키(blend.*)·규칙 책 묶음(rules.*) — 둘 다 단계 2 전 설정 행에는 없음 — 를 함께, 어느 키를 기본값으로
+            // 읽고 있는지 화면이 한 곳에서 보게.
+            List<String> fallbacks = new ArrayList<>(current.settings().fallbacks());
+            fallbacks.addAll(current.settings().blend().fallbacks());
+            fallbacks.addAll(current.settings().rules().fallbacks());
+            out.put("settingsFallbacks", fallbacks);
+        } else {
+            out.put("settingsVersion", market.settingsVersion());
+            out.put("settingsFallbacks", korea(market)
+                    ? market.settingsRow().map(row -> PaperSettingsService.krFallbacks(row.body())).orElse(List.of())
+                    : List.of());
+        }
         out.put("apiUsage", apiUsage());
-        out.put("fundamentals", fundamentalsStatus());
-        out.put("calendar", calendarStatus());
-        out.put("news", newsStatus());
-        out.put("earnings", earningsStatus());
+        out.put("fundamentals", us ? fundamentalsStatus() : null);
+        out.put("calendar", us ? calendarStatus() : null);
+        out.put("news", us ? newsStatus() : null);
+        out.put("earnings", us ? earningsStatus() : null);
         return out;
     }
 
@@ -973,9 +1044,15 @@ public class PaperQueryService {
         return out;
     }
 
-    private List<Map<String, Object>> jobs(int limit) {
+    /**
+     * 최근 작업 기록 — 미국 응답은 모든 작업(시장을 나누기 전 그대로), 미국 밖 시장은 그 시장 작업 기록 이름의 접두어로 시작하는 것만
+     * ({@link PaperMarket#jobPrefix} — 한국 {@code kr.}).
+     */
+    private List<Map<String, Object>> jobs(PaperMarket market, int limit) {
         List<Map<String, Object>> out = new ArrayList<>();
-        for (JobRun run : store.recentJobRuns(limit)) {
+        List<JobRun> runs = usOnly(market) ? store.recentJobRuns(limit)
+                : store.recentJobRuns(market.jobPrefix(), limit);
+        for (JobRun run : runs) {
             Map<String, Object> row = new LinkedHashMap<>();
             row.put("job", run.job());
             row.put("startedAtKst", stamp(run.startedAt()));
