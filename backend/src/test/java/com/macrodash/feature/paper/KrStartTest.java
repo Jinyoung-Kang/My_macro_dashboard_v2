@@ -856,6 +856,31 @@ class KrStartTest {
     }
 
     @Test
+    @DisplayName("C1c·사용자 결정 v3(묶음 E 2차 리뷰) — 출발 오류 횟수는 그 세션의 저장된 출발 ERROR 기록 수: 쓰기 오류 세 번(과금 몫 없음 — attempt 1·2·3) 뒤에는 쓰기가 나아도 기한까지 쉬고, 같은 창에서 재기동해도 다시 시도하지 않음, 기한 뒤 미룸")
+    void startErrorCountSurvivesARestart() {
+        failShortBond.set(true);
+        for (String at : List.of("2026-11-30T22:30", "2026-11-30T22:40", "2026-11-30T22:50")) {
+            assertThat(runAt(at).outcome()).as(at).isEqualTo(PaperDecisionJob.ERROR);
+        }
+        assertThat(krRuns()).extracting(run -> run.detail().path("attempt").asInt()).containsExactly(1, 2, 3);
+
+        failShortBond.set(false);
+        assertThat(runAt("2026-11-30T23:00").message()).contains("출발 오류가 상한만큼");
+        restart();   // 같은 창에서 재기동 — 오류 세 번은 저장된 기록이라 그대로
+        PaperDecisionJob.Result rested = runAt("2026-11-30T23:10");
+        assertThat(rested.outcome()).isEqualTo(PaperDecisionJob.START_WAITING);
+        assertThat(rested.message()).contains("출발 오류가 상한만큼");
+        assertThat(krDecisions()).isEmpty();
+        assertNotStarted(store);
+
+        assertThat(runAt("2026-12-01T01:10").outcome()).isEqualTo(PaperDecisionJob.START_POSTPONED);
+        assertThat(krRuns()).extracting(JobRun::outcome).containsExactly(PaperDecisionJob.ERROR, PaperDecisionJob.ERROR,
+                PaperDecisionJob.ERROR, PaperDecisionJob.START_POSTPONED);
+        sessionData(NEXT, S, everyCodeOn(NEXT));
+        assertThat(runAt("2026-12-01T22:30").outcome()).as("다음 세션은 오류 횟수 0부터").isEqualTo(PaperDecisionJob.STARTED);
+    }
+
+    @Test
     @DisplayName("자료 게이트 — ⑤ 069500 S 봉 없음·② 범위 90% 미만·② 관측치 세션이 S가 아님·④ 금융위 기준일이 직전 거래일이 아님이면 기다림(쓰기 없음, 이어진 기다림은 기록 한 줄)")
     void waitsForSessionData() {
         Map<String, LocalDate> noAnchor = everyCodeOn(S);
@@ -1035,7 +1060,7 @@ class KrStartTest {
                 claudeFails, plain.benchmarkLeg(PaperBooks.KR_BENCH_K200), plain.benchmarkLeg(PaperBooks.KR_BENCH_MIX)));
         MarketRun run = new PaperMarkets(store, reader).open(KrPaperMarket.INSTANCE);
 
-        KrStartPipeline.Result result = pipeline.run(run, kst("2026-11-30T22:30"), false);
+        KrStartPipeline.Result result = pipeline.run(run, kst("2026-11-30T22:30"));
 
         assertThat(result.outcome()).isEqualTo(KrStartPipeline.START_POSTPONED);
         assertThat(result.record()).isTrue();
@@ -1043,12 +1068,12 @@ class KrStartTest {
         assertThat(krDecisions()).isEmpty();
         assertThat(store.orders).isEmpty();
         assertThat(store.books.get("kr_bench_k200").status()).isEqualTo(PaperBooks.NOT_STARTED);
-        KrStartPipeline.Result unrecorded = pipeline.run(run, kst("2026-11-30T22:40"), false);
+        KrStartPipeline.Result unrecorded = pipeline.run(run, kst("2026-11-30T22:40"));
         assertThat(unrecorded.outcome()).as("그 세션은 다시 계획하지 않음(이 프로세스의 방어선 — 미룸 기록을 아직 쓰지 못함)")
                 .isEqualTo(KrStartPipeline.START_POSTPONED);
         assertThat(unrecorded.record()).as("저장된 미룸 기록이 없으면 다음 주기에 다시 남김").isTrue();
         recordAsTheJob(unrecorded, kst("2026-11-30T22:40"));   // 결정 작업이 남기는 미룸 기록
-        KrStartPipeline.Result again = pipeline.run(run, kst("2026-11-30T22:50"), false);
+        KrStartPipeline.Result again = pipeline.run(run, kst("2026-11-30T22:50"));
         assertThat(again.outcome()).isEqualTo(KrStartPipeline.START_POSTPONED);
         assertThat(again.record()).as("그 세션 미룸은 한 번 기록(저장된 기록이 판정)").isFalse();
         assertThat(calls.get()).as("계획(Claude 호출 자리)은 한 번").isEqualTo(1);
@@ -1080,7 +1105,7 @@ class KrStartTest {
         clock.set(kst("2026-11-30T22:30"));
         MarketRun run = new PaperMarkets(store, reader).open(KrPaperMarket.INSTANCE);
 
-        KrStartPipeline.Result result = pipeline.run(run, kst("2026-11-30T22:30"), false);
+        KrStartPipeline.Result result = pipeline.run(run, kst("2026-11-30T22:30"));
 
         assertThat(deadlines).containsExactly(kst("2026-12-01T01:00"));
         assertThat(result.outcome()).isEqualTo(KrStartPipeline.START_POSTPONED);

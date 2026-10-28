@@ -252,11 +252,11 @@ final class KrStartPipeline {
     }
 
     /**
-     * 출발 한 번(클래스 설명의 순서). 쓰는 일은 장부 잠금 안의 한 트랜잭션입니다 — 그 안에서 다시 '모두 시작 전'인지 봅니다.
-     *
-     * @param gaveUp 그 세션에 출발 오류가 상한만큼 났음(결정 작업이 셈) — 기한 전이면 기다리고, 기한이 지나면 미룸으로
+     * 출발 한 번(클래스 설명의 순서). 쓰는 일은 장부 잠금 안의 한 트랜잭션입니다 — 그 안에서 다시 '모두 시작 전'인지 봅니다. 그 세션에 출발 오류가
+     * 상한({@value PaperDecisionJob#MAX_ATTEMPTS}번 — 저장된 출발 오류 기록 수, {@link #startErrors})만큼 났으면 기한 전이면 기다리고, 기한이 지나면
+     * 미룹니다.
      */
-    Result run(MarketRun run, Instant now, boolean gaveUp) {
+    Result run(MarketRun run, Instant now) {
         LocalDate start = Objects.requireNonNull(config.krStartDate(), "한국 출발일");
         TradingCalendar calendar = run.calendar();
         LocalDate d = calendar.lastCompletedSession(now);
@@ -276,7 +276,8 @@ final class KrStartPipeline {
             // K28 '다음 KR 거래일로').
             return postponed(run, d, start, window, "그 세션은 이미 미뤘음", records);
         }
-        if (gaveUp) {
+        if (startErrors(records) >= PaperDecisionJob.MAX_ATTEMPTS) {
+            // 출발 오류 횟수는 그 세션의 저장된 출발 오류 기록 수 — 재기동해도 같습니다(사용자 결정 v3, 묶음 E 2차 리뷰).
             return quiet(START_WAITING, d, d + " 출발 오류가 상한만큼 나 기한(" + Kst.stamp(window.deadline())
                     + ")까지 더 시도하지 않습니다 — 기한이 지나면 다음 KR 거래일로 미룹니다");
         }
@@ -551,6 +552,17 @@ final class KrStartPipeline {
                     result.decisions(), result.waiting());
         }
         return result;
+    }
+
+    /**
+     * 그 세션의 출발 오류 횟수 — 결정 작업이 남긴 그 세션의 출발 오류 기록({@code ERROR}·상세 {@code start=true}) 수(2단계 명세 §4-9 'E0', 사용자 결정
+     * v3 — 메모리 대신 저장된 기록이라 재기동해도 같음, 묶음 E 2차 리뷰). 정기 결정의 오류 기록(상세에 {@code start} 없음)은 세지 않습니다.
+     *
+     * @param records 그 세션의 {@code kr.decision} 작업 기록({@link PaperStore#jobRunsFor})
+     */
+    static int startErrors(List<PaperStore.JobRun> records) {
+        return (int) records.stream().filter(r -> PaperDecisionJob.ERROR.equals(r.outcome()))
+                .filter(r -> com.macrodash.support.Json.asBoolean(r.detail(), "start")).count();
     }
 
     /** 그 세션의 미룸 기록(없으면 null). */

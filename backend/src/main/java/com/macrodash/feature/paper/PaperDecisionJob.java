@@ -168,8 +168,6 @@ public class PaperDecisionJob {
     static final String CLAUDE_PAST_DEADLINE = "결정 기한이 지나 Claude를 부르지 않습니다";
     /** 기한이 지나 규칙 계좌를 결정하지 않음(작업 기록 — NO_TRADE 결정 행은 그 시장 규칙 계좌 결정이 씁니다). */
     static final String RULES_PAST_DEADLINE = "결정 기한이 지나 결정하지 않습니다(NO_TRADE)";
-    /** 출발 오류 횟수를 세는 자리(오류 횟수 표의 책 칸 — 계좌 코드와 겹치지 않음). */
-    private static final String START_FAILURES = "start";
     /** 규칙 계좌 결정이 없는 시장 묶음의 자리(작업 기록 — 미국·한국 밖, 시험용 묶음, 클래스 설명). */
     static final String RULES_NOT_YET = "이 시장의 규칙 계좌 결정은 아직 없습니다(2단계 D1)";
 
@@ -951,28 +949,27 @@ public class PaperDecisionJob {
 
     /**
      * 한국 출발 한 번({@link KrStartPipeline}) — STARTED와 그 세션 기록이 아직 없는 미룸을 기록하고, 자료 게이트 기다림은 그 세션 기다림 한 줄로
-     * 남깁니다({@link #recordWait}). 출발을 쓰다 예외가 나면 그 세션의 출발 오류 횟수를 올리고 ERROR로 기록하며, {@value #MAX_ATTEMPTS}번이면 그 세션
-     * 기한까지 더 시도하지 않습니다(기한이 지나면 미룸 — 수동 출발 단추는 E2). 과금된 Claude 계획이 든 출발의 쓰기 오류는 오류가 아니라 그 세션
-     * 미룸입니다(파이프라인이 돌림 — 다음 주기에 Claude를 다시 부르지 않게, 묶음 E 2차 리뷰).
+     * 남깁니다({@link #recordWait}). 출발을 쓰다 예외가 나면 ERROR로 기록하고(그 기록이 곧 그 세션 출발 오류 횟수 — 저장된 기록이라 재기동해도 같음,
+     * {@link KrStartPipeline#startErrors}, 묶음 E 2차 리뷰), {@value #MAX_ATTEMPTS}번이면 그 세션 기한까지 더 시도하지 않습니다(기한이 지나면 미룸 —
+     * 수동 출발 단추는 E2). 과금된 Claude 계획이 든 출발의 쓰기 오류는 오류가 아니라 그 세션 미룸입니다(파이프라인이 돌림 — 다음 주기에 Claude를
+     * 다시 부르지 않게, 묶음 E 2차 리뷰).
      */
     private Result startKr(MarketRun market, Instant now, LocalDate d) {
-        FailureKey key = new FailureKey(market.code(), d, START_FAILURES);
         KrStartPipeline.Result start;
         try {
-            start = krStart.run(market, now, failures.getOrDefault(key, 0) >= MAX_ATTEMPTS);
+            start = krStart.run(market, now);
         } catch (RuntimeException e) {
             // 과금된 계획(Claude)이 든 출발의 쓰기 오류는 파이프라인이 미룸으로 돌립니다 — 여기 오는 오류에는 과금 호출이 없습니다.
-            int attempt = failures.merge(key, 1, Integer::sum);
             Map<String, Object> detail = new LinkedHashMap<>();
             detail.put("start", true);
             detail.put("tradingDate", d.toString());
             detail.put("error", message(e));
-            detail.put("attempt", attempt);
+            Integer attempt = startAttempt(market, d);
+            if (attempt != null) {
+                detail.put("attempt", attempt);
+            }
             record(market, now, ERROR, detail);
             return new Result(ERROR, d, null, null, null, message(e));
-        }
-        if (STARTED.equals(start.outcome())) {
-            failures.remove(key);
         }
         if (start.waiting()) {
             recordWait(market, now, d, start.outcome(), start.detail());
@@ -988,6 +985,19 @@ public class PaperDecisionJob {
             }
         }
         return new Result(start.outcome(), start.session(), null, null, null, start.message());
+    }
+
+    /**
+     * 이번 출발 오류가 그 세션의 몇 번째인가 — 저장된 출발 오류 기록 수 + 1(기록의 {@code attempt} 칸 — 판정은 기록 수로 함). 기록을 읽지 못하면
+     * null(칸을 두지 않음 — 그때는 이 오류 기록도 대개 남지 않음).
+     */
+    private Integer startAttempt(MarketRun market, LocalDate d) {
+        try {
+            return KrStartPipeline.startErrors(store.jobRunsFor(market.jobName(JOB), d)) + 1;
+        } catch (RuntimeException e) {
+            log.warn("모의 매매 결정 작업의 출발 오류 횟수를 읽지 못했습니다: {}", e.toString());
+            return null;
+        }
     }
 
     /**
