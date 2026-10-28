@@ -820,6 +820,12 @@ public class PaperQueryService {
             }
         }
 
+        // 한국 계좌의 미처리 기업행위 보류(종목 → 사유) — 미국 계좌는 null(칸을 싣지 않음, 미국 응답 그대로).
+        Map<String, String> holds = korea(run) ? new HashMap<>() : null;
+        if (holds != null) {
+            store.corpActionHolds(code).forEach(hold -> holds.put(hold.ticker(), hold.reason()));
+        }
+
         List<Map<String, Object>> rows = new ArrayList<>();
         for (Position p : store.positions(code)) {
             boolean cashLike = current.cashLike(p.ticker());
@@ -858,6 +864,10 @@ public class PaperQueryService {
             row.put("splitNote", p.splitNote());
             row.put("cashLike", cashLike);
             row.put("backfilled", p.openedAt() != null && p.openedAt().equals(backfillOpened.get(p.ticker())));
+            if (holds != null) {
+                // 한국 계좌만 — 미처리 기업행위 보류 사유(화면 배지 '기업행위 확인 필요', 명세 §4-2 'C2c'). 미국 행에는 칸이 없습니다.
+                row.put("corpActionHold", holds.get(p.ticker()));
+            }
             rows.add(row);
         }
         List<Map<String, Object>> lockouts = new ArrayList<>();
@@ -914,20 +924,130 @@ public class PaperQueryService {
         return row;
     }
 
-    /** GET /api/paper/books/{code}/fills?limit= (1–500, 최근 순) */
+    /**
+     * GET /api/paper/books/{code}/fills?limit= (1–500, 최근 순). 한국 계좌({@link #krFills})는 {@code confirmationTotal}과 행마다 비용 칸·실효 비용 bp·
+     * 확정 조정·확정 상태가 더 붙고, 미국 계좌는 예전 그대로입니다.
+     */
     public Map<String, Object> fills(String code, int limit) {
         if (!ready()) {
             return notReady();
         }
-        existing(code);
+        Book book = existing(code);
+        List<Fill> recent = store.recentFills(code, Params.clamp(limit, 1, MAX_LIMIT));
+        PaperMarket market = marketOf(book);
+        if (korea(market)) {
+            return krFills(book, markets.open(market), recent);
+        }
         List<Map<String, Object>> rows = new ArrayList<>();
-        for (Fill f : store.recentFills(code, Params.clamp(limit, 1, MAX_LIMIT))) {
+        for (Fill f : recent) {
             rows.add(fillRow(f));
         }
         Map<String, Object> out = new LinkedHashMap<>();
         out.put("available", true);
         out.put("fills", rows);
         return out;
+    }
+
+    /** 한국 체결의 확정 상태 — 확정 조정 행 있음 · 금융위가 그날을 아직 내지 않음 · 그날을 냈는데 행 없음(명세 §4-1 'C3'). */
+    static final String CONFIRMED = "CONFIRMED";
+    static final String WAITING = "WAITING";
+    static final String UNCORRECTED = "UNCORRECTED";
+
+    /**
+     * 한국 계좌 체결 목록(2단계 명세 §4-16 F2 — 화면의 잠정·확정·확정 조정·실효 비용 bp). 행은 미국 칸 뒤에 비용 칸({@code fee}·{@code tax}·
+     * {@code slippageCost}, 원)·{@code costBp}(비용 합 ÷ (체결가 × 수량) × 10⁴, 소수 2자리)·{@code confirmation}(확정 조정 행 — 없으면 null)·
+     * {@code confirmationState}·{@code confirmationNote}를 싣고, 맨 위 {@code confirmationTotal}은 그 계좌 전체(목록 상한과 무관)의 확정 조정 행 수·
+     * 현금 차이 합(행이 없으면 null — 0과 구분)·아직 확정 안 된 체결 수입니다.
+     *
+     * <p>확정 상태는 장부의 확정 조정({@link KrConfirmations})과 같은 판정을 저장된 사실만으로 합니다 — 확정 조정 행이 있으면 {@value #CONFIRMED}, 없고
+     * 그 종목 데이터셋(ETF — 그 실행 설정의 {@link KrPaperMarket#etf} — 는 증권상품시세, 나머지는 주식시세)의 최신 기준일 &lt; 체결일이면
+     * {@value #WAITING}(조용히 기다림), 그날을 냈는데 행이 없으면 {@value #UNCORRECTED}(라벨은 장부 기록과 같은 '금융위 확정 미보정(ETF)'·
+     * '금융위 확정 못 함' — 그 까닭(행 없음·시가 칸 없음·설정 판 없음 등)은 그 계좌 리스크 점검의 작업 기록 {@code kr.risk}에 있음). 금융위 값이
+     * 들어온 뒤 장부가 다음 주기(리스크 점검 5분)에 확정하기 전의 짧은 동안도 {@value #UNCORRECTED}로 보입니다. 금융위 시세는 데이터셋의 최신
+     * 기준일만 읽습니다({@link PaperMarketData#fscLatest} — 수집 유발 없음).
+     */
+    private Map<String, Object> krFills(Book book, MarketRun run, List<Fill> recent) {
+        Map<Long, PaperStore.FillConfirmation> confirmations = new HashMap<>();
+        BigDecimal cashDelta = BigDecimal.ZERO;
+        for (PaperStore.FillConfirmation c : store.fillConfirmations(book.code())) {
+            confirmations.put(c.fillId(), c);
+            cashDelta = cashDelta.add(c.cashDelta());
+        }
+        Map<Long, String> unconfirmedTiming = new HashMap<>();
+        store.unconfirmedFills(book.code()).forEach(u -> unconfirmedTiming.put(u.fill().id(), u.timing()));
+        PaperMarketData.FscLatest latest = marketData.fscLatest();
+        List<Map<String, Object>> rows = new ArrayList<>();
+        for (Fill f : recent) {
+            Map<String, Object> row = fillRow(f);
+            row.put("fee", money(f.fee()));
+            row.put("tax", money(f.tax()));
+            row.put("slippageCost", money(f.slippageCost()));
+            row.put("costBp", costBp(f.fee().add(f.tax()).add(f.slippageCost()), BigDecimal.valueOf(f.price()), f.qty()));
+            PaperStore.FillConfirmation c = confirmations.get(f.id());
+            row.put("confirmation", c == null ? null : confirmationRow(c, f));
+            boolean etf = KrPaperMarket.etf(f.ticker(), run.settings());
+            String uncorrected = etf ? "금융위 확정 미보정(ETF)" : "금융위 확정 못 함";
+            LocalDate published = latest == null ? null : etf ? latest.etfs() : latest.stocks();
+            String timing = unconfirmedTiming.get(f.id());
+            String state;
+            String note;
+            if (c != null) {
+                state = CONFIRMED;
+                note = null;
+            } else if (f.observationDate() == null || (timing != null && !PaperBooks.NEXT_OPEN.equals(timing)
+                    && !PaperBooks.NEXT_CLOSE.equals(timing))) {
+                state = UNCORRECTED;   // 체결일·체결 시점으로는 금융위 확정가(시가·종가)가 정해지지 않음 — 장부도 확정하지 않음
+                note = uncorrected;
+            } else if (published == null || published.isBefore(f.observationDate())) {
+                state = WAITING;
+                note = published == null ? "금융위 값을 아직 받지 못함 — 그날 값 기다림"
+                        : "금융위 " + published + "까지 냄 — 그날 값 기다림";
+            } else {
+                state = UNCORRECTED;
+                note = uncorrected;
+            }
+            row.put("confirmationState", state);
+            row.put("confirmationNote", note);
+            rows.add(row);
+        }
+        Map<String, Object> total = new LinkedHashMap<>();
+        total.put("rows", confirmations.size());
+        total.put("cashDelta", confirmations.isEmpty() ? null : money(cashDelta));
+        total.put("unconfirmed", unconfirmedTiming.size());
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("available", true);
+        out.put("confirmationTotal", total);
+        out.put("fills", rows);
+        return out;
+    }
+
+    /** 확정 조정 한 행(한국 체결 목록) — 확정가·잠정 대비 가격 차이·확정가로 다시 센 비용 칸과 실효 비용 bp·현금 차이·출처·쓴 시각. */
+    private static Map<String, Object> confirmationRow(PaperStore.FillConfirmation c, Fill f) {
+        Map<String, Object> row = new LinkedHashMap<>();
+        row.put("confirmedPrice", round4(c.confirmedPrice().doubleValue()));
+        row.put("priceDiff", round4(c.confirmedPrice().subtract(BigDecimal.valueOf(f.price())).doubleValue()));
+        row.put("fee", money(c.fee()));
+        row.put("tax", money(c.tax()));
+        row.put("slippageCost", money(c.slippageCost()));
+        row.put("costBp", costBp(c.fee().add(c.tax()).add(c.slippageCost()), c.confirmedPrice(), f.qty()));
+        row.put("cashDelta", money(c.cashDelta()));
+        row.put("source", c.source());
+        row.put("reconciledAtKst", stamp(c.reconciledAt()));
+        return row;
+    }
+
+    /** 원 금액(비용 칸·현금 차이 — 저장은 소수 4자리) → 소수 2자리. */
+    private static Double money(BigDecimal value) {
+        return value == null ? null : round2(value.doubleValue());
+    }
+
+    /** 실효 비용 bp = 비용 합 ÷ (가격 × 수량) × 10⁴, 소수 2자리(반올림). 체결 금액이 0 이하면 null. */
+    static Double costBp(BigDecimal costs, BigDecimal price, int qty) {
+        BigDecimal notional = price.multiply(BigDecimal.valueOf(qty));
+        if (notional.signum() <= 0) {
+            return null;
+        }
+        return costs.multiply(BigDecimal.valueOf(10_000)).divide(notional, 2, RoundingMode.HALF_UP).doubleValue();
     }
 
     /** 체결 한 줄(체결 목록·시작 응답이 같은 모양). */
