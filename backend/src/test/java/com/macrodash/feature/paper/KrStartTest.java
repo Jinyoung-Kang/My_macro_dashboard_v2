@@ -460,6 +460,28 @@ class KrStartTest {
     }
 
     @Test
+    @DisplayName("K28(묶음 E 리뷰) — Claude 출발 API 오류의 재시도는 첫 호출의 패킷을 그대로 다시 보냄: 첫 호출 중에 매크로 카드가 다시 수집돼(22:35 — 읽은 순간 뒤) 저장본이 바뀌어도 재시도 패킷 = 첫 패킷(카드 넷), 결정 행 동결본도 같음")
+    void claudeStartRetrySendsTheFirstPacket() {
+        KrClaudeFixtures.FakeAi fake = new KrClaudeFixtures.FakeAi();
+        fake.fail("API_ERROR", "overloaded").answer(KrClaudeFixtures.decision(0, "관망"));
+        macroCards(S, kst("2026-11-30T22:25"));
+        fake.duringCall = () -> macroCards(S, kst("2026-11-30T22:35"));   // fast 그룹이 첫 호출 중에 카드 저장본을 다시 씀
+        realClaude(fake);
+
+        PaperDecisionJob.Result result = runAt("2026-11-30T22:30");
+
+        assertThat(result.outcome()).isEqualTo(PaperDecisionJob.STARTED);
+        assertThat(fake.requests).as("첫 호출 + 재시도 1회").hasSize(2);
+        assertThat(fake.requests.get(1).user()).as("재시도 패킷 = 첫 패킷").isEqualTo(fake.requests.get(0).user());
+        assertThat(fake.requests.get(1).system()).isEqualTo(fake.requests.get(0).system());
+        Decision claude = krDecisions().get(1);
+        assertThat(claude.bookCode()).isEqualTo("kr_claude");
+        assertThat(claude.retryCount()).isEqualTo(1);
+        assertThat(claude.packetText()).isEqualTo(fake.requests.get(0).user());
+        assertThat(claude.packet().path("1_basis").path("markets").path("cards")).as("읽은 순간에 있던 카드").hasSize(4);
+    }
+
+    @Test
     @DisplayName("K28·§9 'E2 — 출발 갈고리의 기한'(E2b) — Claude 출발 호출의 대기 한도는 기한까지 남은 시간(00:58이면 120초)으로 묶이고, 호출이 기한을 넘겨 끝나면 쓰기 트랜잭션이 막아 어느 계좌에도 쓰지 않음, 기한까지 1초도 남지 않았으면 부르지 않고 미룸")
     void claudeStartCallIsBoundedByTheDeadline() {
         KrClaudeFixtures.FakeAi fake = new KrClaudeFixtures.FakeAi();

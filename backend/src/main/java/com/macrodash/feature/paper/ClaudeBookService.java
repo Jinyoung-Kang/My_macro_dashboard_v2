@@ -678,7 +678,8 @@ public class ClaudeBookService {
      * {@code postponed}·자료 게이트). 통과 주문이 없으면 현금만 든 채 출발합니다(미국 시작과 같음).
      *
      * <p><b>실패</b>({@link KrStartPipeline.Plan#failed} — 어느 계좌에도 쓰지 않고 그 세션 출발을 다음 KR 거래일로 미룸, 그 세션은 다시 계획하지 않음):
-     * 하루 상한(정기 작업 몫까지 다 씀) · API 오류는 같은 계획 안에서 한 번 더 부른 뒤에도 · 거절·형식 오류(같은 입력이면 같은 답이라 다시 부르지 않음) ·
+     * 하루 상한(정기 작업 몫까지 다 씀) · API 오류는 같은 계획 안에서 한 번 더(첫 호출의 패킷 그대로 — {@link ClaudeDecisionPipeline#again}) 부른 뒤에도 ·
+     * 거절·형식 오류(같은 입력이면 같은 답이라 다시 부르지 않음) ·
      * <b>기한</b> — 호출마다 대기 한도를 min(설정 대기 한도, 출발 기한 − 지금)으로 묶고(초 단위 내림), 1초도 남지 않았으면 부르지 않습니다(기한을 넘겨
      * 끝난 계획은 쓰기 트랜잭션이 다시 막음 — 마지막 방어선) · 응답을 받은 뒤 검증 예외. 실패의 사유는 작업 기록(출발 미룸)에 남고, 과금된 호출은 그날
      * 사용량에 셉니다.
@@ -736,9 +737,12 @@ public class ClaudeBookService {
                         + (calls == 0 ? "부르지 않음" : "다시 부르지 않음(첫 호출 " + statusLabel(attempt.status()) + ")"));
             }
             LocalDate today = Kst.today(clock);
+            int bound = (int) Math.min(Integer.MAX_VALUE, left);
+            // 재시도는 첫 호출의 패킷 그대로(읽은 순간의 판 — 첫 호출 동안 다시 쓰인 저장본이 빠지지 않게, 묶음 E 리뷰).
             Attempt next = pipeline.callsLeft(today, claude, true) <= 0 ? null
-                    : pipeline.attempt(session, RuleBookService.INITIAL, true, row, claude, today, true, observed,
-                    (int) Math.min(Integer.MAX_VALUE, left));
+                    : attempt == null
+                    ? pipeline.attempt(session, RuleBookService.INITIAL, true, row, claude, today, true, observed, bound)
+                    : pipeline.again(attempt, row, claude, today, true, bound);
             if (next == null) {
                 return KrStartPipeline.Plan.failed(book, capMessage(claude, today, true)
                         + (calls == 0 ? "" : "(첫 호출 " + statusLabel(attempt.status()) + " 뒤 재시도)"));

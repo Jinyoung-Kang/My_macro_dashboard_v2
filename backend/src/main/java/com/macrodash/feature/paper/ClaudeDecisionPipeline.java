@@ -245,10 +245,27 @@ final class ClaudeDecisionPipeline {
      */
     Attempt attempt(LocalDate asOf, String kind, boolean initial, SettingsRow row, ClaudeSettings claude,
                     LocalDate today, boolean scheduled, Observed observed, Integer maxTimeoutSeconds) {
-        int timeout = maxTimeoutSeconds == null ? timeoutSeconds : Math.max(1, Math.min(timeoutSeconds, maxTimeoutSeconds));
         FrameworkService.Frame frame = framework.current();
-        String system = FrameworkService.render(market, frame.body(), frame.version(), row.body());
         Packet packet = packet(asOf, kind, initial, frame.version(), row, observed);
+        return send(frame, packet, row, claude, today, scheduled, maxTimeoutSeconds);
+    }
+
+    /**
+     * 앞 호출과 <b>같은 패킷·같은 프레임 판</b>으로 한 번 더 — 한국 출발의 API 오류 재시도(같은 계획 안, 2단계 명세 §4-8 'E2b')가 첫 호출이 보낸
+     * 글자를 그대로 다시 보냅니다. 패킷을 다시 만들면 첫 호출(최대 대기 한도) 동안 다시 쓰인 단일 판 저장본(매크로 카드는 5분마다)이 '읽은 순간 뒤
+     * 수집본'이 되어 빠져, 읽은 순간에 있던 자료가 재시도 패킷에서 사라집니다(묶음 E 리뷰). 호출 상한·대기 한도·사용량·분류는
+     * {@link #attempt(LocalDate, String, boolean, SettingsRow, ClaudeSettings, LocalDate, boolean, Observed, Integer)}와 같습니다.
+     */
+    Attempt again(Attempt previous, SettingsRow row, ClaudeSettings claude, LocalDate today, boolean scheduled,
+                  Integer maxTimeoutSeconds) {
+        return send(previous.frame(), previous.packet(), row, claude, today, scheduled, maxTimeoutSeconds);
+    }
+
+    /** 만든 패킷으로 호출 한 번 — 시스템 프롬프트(그 판·그 설정 행), 호출 한 번 잡기, 부르기, 사용량, 형식 검사. */
+    private Attempt send(FrameworkService.Frame frame, Packet packet, SettingsRow row, ClaudeSettings claude,
+                         LocalDate today, boolean scheduled, Integer maxTimeoutSeconds) {
+        int timeout = maxTimeoutSeconds == null ? timeoutSeconds : Math.max(1, Math.min(timeoutSeconds, maxTimeoutSeconds));
+        String system = FrameworkService.render(market, frame.body(), frame.version(), row.body());
         // 정기 작업은 상한까지, 수동 호출은 정기 작업 몫을 남긴 문턱까지(2단계 명세 §4-10 — 같은 SQL의 문턱만 다름).
         if (calls.reserve(today, claude.callLimit(scheduled)).isEmpty()) {
             return null;
