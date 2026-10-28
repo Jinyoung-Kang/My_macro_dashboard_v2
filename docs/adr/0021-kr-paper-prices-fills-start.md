@@ -62,6 +62,10 @@
        60초면 대기 한도 60초로 출발)·`claudeStartRateLimitWaitsThirtySecondsThenRetriesOnce`(429는 30초 기다린 뒤 첫 패킷 그대로 한 번 — 가짜 기다림, 실제로 기다리지 않음)·
        `claudeStartRateLimitNearTheDeadlineIsNotRetried`(기한까지 90초 미만의 429는 기다리지 않고 미룸)·`claudeStartServerErrorRetriesAtOnce`(그 밖의 API 오류는 바로 — 재시도에도 60초),
        정기 결정은 그대로 `KrRulesJobTest.regularKrClaudeDecisionDoesNotWaitAfterRateLimit`
+     - 있음(w12 구현 리뷰 — 묶음 E 3차 리뷰): `KrStartTest.claudeStartMeasuresTheDeadlineRightBeforeTheRequest`(60초·대기 한도는 패킷 조립 뒤 요청 직전에 잼 — 가짜 시계를 조립 중에
+       옮김)·`claudeStartRateLimitOnTheLastCallOfTheDayDoesNotWait`·`claudeStartRateLimitBeforeMidnightRetriesOnTheNewDay`(429 뒤 하루 상한은 기다리기 전에, 기다린 뒤 KST 날짜로)·
+       `claudeStartRateLimitTwiceIsNotRetriedAgain`(429 재시도는 한 번만)·`claudeStartRateLimitWaitThatEndsLateIsMeasuredAgain`(늦게 끝난 기다림 뒤 다시 잼)·
+       `claudeStartInterruptedWaitPostponesTheSession`(끊긴 기다림 → 저장된 미룸 — 사용자 확인 필요, 한국 책 명세 §9 '묶음 E 3차 리뷰 메모')
   6. 캘린더 컨센서스(K22)
      - 있음: `PacketBuilderTest.goldenUsPackets`(꺼짐 — 미국 `packetVersion` 5 패킷 고정본·해시 그대로), 수집기 `test_us_consensus.py::test_백엔드와_화면은_컨센서스_저장본을_읽지_않는다`
        (읽는 곳은 미국 패킷 `PacketBuilder` 하나 — 이름 상수 `Datasets` 말고, E1b)

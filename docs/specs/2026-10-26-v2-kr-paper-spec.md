@@ -815,13 +815,21 @@
     '다시 부르지 않음(첫 호출 API 오류)') ② **429(`RATE_LIMIT`)만 30초 기다린 뒤 한 번**(`KR_START_RATE_LIMIT_WAIT`) — 기다린 뒤에도 60초가 남을 때만이라 기한까지 90초 미만이면 기다리지
     않고 바로 실패(사유 '… 429 속도 제한, 출발 기한(…)까지 n초라 30초 기다린 뒤 최소 대기 한도 60초가 남지 않아 다시 부르지 않음'), 기다린 뒤에는 그 시각으로 ①과 대기 한도를 다시 셈
     (90초면 첫 호출 90초 → 재시도 60초). 그 밖의 API 오류(5xx·529·연결·시간 초과)는 예전처럼 바로 한 번 더. 기다리는 동안 결정 작업 잠금을 쥐고(출발 한 번에 30초), 기다림이 끊기면(종료)
-    다시 부르지 않고 실패다. 기다림은 바꿔 끼울 수 있는 `ClaudeBookService.Sleeper`(시험은 시계만 옮기는 `KrClaudeFixtures.FakeSleeper` — 실제로 기다리지 않음). 429도 하루 호출 수에
+    다시 부르지 않고 실패다(이것은 w12가 정한 것이 아니라 구현에서 정한 것 — (사용자 확인 필요) §9 '묶음 E 3차 리뷰 메모'). 기다림은 바꿔 끼울 수 있는 `ClaudeBookService.Sleeper`(시험은 시계만 옮기는 `KrClaudeFixtures.FakeSleeper` — 실제로 기다리지 않음). 429도 하루 호출 수에
     세는 것(과금은 안 됨)과 재시도 패킷 = 첫 패킷은 그대로. **한국 정기 결정은 그대로**(w12는 출발 호출만 — 정기 결정은 API 오류를 그 행에 남기고 다음 주기에 같은 행으로 한 번 재시도하며
     대기 한도는 설정 300초, 기한 판정은 결정 작업 몫 — `KrRulesJobTest.regularKrClaudeDecisionDoesNotWaitAfterRateLimit`). 시험 `KrStartTest.claudeStartNeedsSixtySecondsBeforeTheDeadline`
     (59초 → 부르지 않고 미룸·기록 한 번·재기동 뒤에도 부르지 않음, 정확히 60초 → 대기 한도 60초로 네 계좌 출발)·`claudeStartRateLimitWaitsThirtySecondsThenRetriesOnce`(22:30 → 30초 기다림 한 번·
     재시도 1·호출 2회)·`claudeStartRateLimitNearTheDeadlineIsNotRetried`(89초 → 기다리지 않고 미룸·`calls`에 429 한 번, 정확히 90초 → 90초·60초로 출발)·`claudeStartServerErrorRetriesAtOnce`
     (5xx·529는 기다리지 않고 바로 — 그 재시도에도 60초). ①을 되돌리면 `claudeStartNeedsSixtySecondsBeforeTheDeadline`·`claudeStartCallIsBoundedByTheDeadline`(문구)이, ②의 429 갈래를 끄면
     429 시험 둘이 실패하고 5xx 시험은 통과함을 확인했다(되돌려 본 뒤 복원).
+    → **묶음 E 3차 리뷰(w12 구현 리뷰)에서 고친 것**: ① 최소 대기 한도와 대기 한도는 **요청을 보내기 직전**(프레임 판 읽기·패킷 조립·호출 한 번 잡기 뒤)에 잰다
+    (`ClaudeDecisionPipeline.CallWindow`, `03027a7` — 예전에는 계획 루프 맨 앞에서 재서 패킷을 만드는 동안 흐른 시간만큼 60초 아래로 보낼 수 있었고 대기 한도도 기한을 넘길 수
+    있었음. 그때 60초 미만이면 잡은 호출을 돌려놓고 같은 사유로 미룸, 시험 `claudeStartMeasuresTheDeadlineRightBeforeTheRequest` — 패킷을 만드는 동안 70초 → 55초면 부르지 않음,
+    120초 → 90초면 대기 한도 90초) ② 429 뒤 **기다리기 전에 하루 상한(정기 몫)**을 본다 — 창이 KST 자정을 넘으므로 기다린 뒤의 날짜로(`51c31bd` — 그 429가 그날 마지막 자리를 썼으면
+    30초 기다리지 않고 상한 문구 '…(첫 호출 API 오류 뒤 재시도)'로 미룸, 시험 `claudeStartRateLimitOnTheLastCallOfTheDayDoesNotWait`·`claudeStartRateLimitBeforeMidnightRetriesOnTheNewDay`)
+    ③ 빠져 있던 시험: 429 → 기다린 재시도 → 429면 더 부르지 않음(`claudeStartRateLimitTwiceIsNotRetriedAgain`, `8d80f01`), 기다림이 늦게 끝나면 그때 시계로 다시 잼
+    (`claudeStartRateLimitWaitThatEndsLateIsMeasuredAgain` — 90초 → 31초 기다림 → 59초면 미룸)·기다림이 끊기면 저장된 미룸(`claudeStartInterruptedWaitPostponesTheSession` — 지금 구현,
+    호출 1회·인터럽트 표시를 되살림·재기동 뒤에도 다시 부르지 않음)(`17496d3` — `KrClaudeFixtures.FakeSleeper`의 `overshoot`·`interrupt`).
     → **묶음 E 리뷰에서 정한 것**: ① 재시도는 **첫 호출의 패킷·프레임 판 그대로** 다시 보낸다(`ClaudeDecisionPipeline.again`, `67be2d8` — 다시 조립하면 첫 호출(최대 300초) 동안
     다시 쓰인 단일 판 저장본(매크로 카드는 5분마다)이 '읽은 순간 뒤 수집본'으로 빠졌음, 시험 `KrStartTest.claudeStartRetrySendsTheFirstPacket`) ② **과금되는 Claude 몫은 다른 몫(규칙·
     벤치마크)을 모두 계획한 뒤 그것들이 하나도 실패하지 않았을 때만** 부른다(`KrStartPipeline.Leg.charges`, `985d956` — 쓰는 순서는 그대로, 미룸 사유에 '부르지 않음: kr_claude',
@@ -2175,3 +2183,13 @@ QA 번호 없이 코드 결함은 `fix`(수정 전 실패하는 재현 시험과
 | w10 | 남은 메모리 판정('묶음 E 2차 리뷰 메모') | ⓐ 정기 결정 오류 횟수·장부 실패 기억은 메모리 — 구현 그대로 |
 | w11 | 과금된 출발 계획 뒤 쓰기 실패·'v3 밖' 분류('묶음 E 리뷰 메모') | ⓑ 그 세션 미룸 + 출발 오류 횟수는 저장된 기록 수 — 구현 그대로(`09010cf`·`3dc5c4a`) |
 | w12 | 출발 호출의 최소 대기 한도와 오류 뒤 간격('묶음 E 리뷰 메모'·'E2b 메모') | **바꿈** — 최소 대기 한도 60초(첫 호출·재시도), 429만 30초 기다린 뒤 한 번(기다린 뒤 60초가 남을 때만), 그 밖의 API 오류는 바로 한 번 그대로(§4-8 'E2b' 화살표) |
+
+**묶음 E 3차 리뷰 메모(w12 구현 리뷰, 2026-10-29)** — w12 구현(`9ab3b44`·`6c39c2c`)을 다시 본 리뷰의 확인된 지적 다섯을 고쳤다(§4-8 'E2b'의 '3차 리뷰' 화살표).
+동작이 바뀐 것은 둘이다 — 60초·대기 한도를 요청 직전에 잼(`03027a7`), 429 뒤 기다리기 전에 기다린 뒤 날짜의 하루 상한을 봄(`51c31bd`). 나머지 셋은 빠져 있던 시험이다
+(429 두 번 `8d80f01`·늦게 끝난 기다림·끊긴 기다림 `17496d3`). 미국 고정본 `paper/golden/`·패킷·프롬프트·스키마 해시 그대로, 백엔드 시험 1,869 → 1,875, 수집기·화면 그대로.
+- **(사용자 확인 필요) 429 뒤 기다림이 끊긴 출발**(w12가 정하지 않은 갈래 — 구현에서 정한 것): 지금은 다시 부르지 않고 `Plan.failed` → 그 세션 저장된 미룸(`START_POSTPONED`, 사유
+  '… 429 뒤 재시도를 기다리다 끊겨 다시 부르지 않음', `calls`에 429 한 번)이라 같은 창에서 재기동해도 다시 계획하지 않고 네 계좌 출발이 다음 KR 거래일로 밀린다. 429는 과금되지 않는다(호출 수는 셈).
+  ⓐ 그대로(구현 — 최대 300초 호출 도중 끊겨도 IO 오류 → 바로 재시도 → 실패로 같은 미룸이 되고(추정 — SDK의 끊김 처리는 확인하지 않음), 30초 기다림은 그보다 좁은 창이다) ⓑ 끊기면 기록 없이 끝내 재기동 뒤 같은 창에서
+  다시 계획(429만 있었으므로 과금 없음 — `KrStartPipeline`에 '기록 없는 중단' 결과를 새로 둠) ⓒ 끊김을 출발 오류(`ERROR`)로 남겨 출발 오류 횟수(세 번이면 기한까지 쉼)에 셈.
+  **권장 ⓐ** — 30초 창에 종료·재배포가 겹칠 때만 생기고, 결과는 E0의 다른 출발 실패와 같은 '하루 미룸'이며, ⓑ는 드문 갈래 하나에 새 결과 종류를 더한다. 종료 순서에 따라서는 미룸 기록을
+  쓰기 전에 프로세스가 끝나(기록 없음) 재기동 뒤 다시 계획할 수도 있다(추정 — 확인하지 않음). 어느 쪽이든 출발 밤 22:30~01:00에는 배포하지 않는 것이 안전하다.
