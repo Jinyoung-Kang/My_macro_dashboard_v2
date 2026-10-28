@@ -123,7 +123,7 @@ class PaperQueryMarketTest {
     }
 
     @Test
-    @DisplayName("쉬는 한국(출발일·한국 계좌 없음): 예외가 아니라 쉬는 사유 — 계좌 없음·초기화 전, 미국 전용 칸은 비우고 작업 기록은 kr.만, 상태는 원 초기 현금·공유 호출 사용량")
+    @DisplayName("쉬는 한국(출발일·한국 계좌 없음): 예외가 아니라 쉬는 사유 — 계좌 없음·초기화 전, 미국 전용 칸(선정·게이트)은 비우고 한계 문구는 한국 것, 작업 기록은 kr.만, 상태는 원 초기 현금·공유 호출 사용량")
     @SuppressWarnings("unchecked")
     void dormantKoreaCarriesTheReason() {
         PaperQueryService query = query(PaperFixtures.config());
@@ -135,7 +135,8 @@ class PaperQueryMarketTest {
                 .containsEntry("currency", "KRW").containsEntry("dormantReason", PaperConfig.KR_START_MISSING)
                 .containsEntry("initialized", false).containsEntry("startDate", null)
                 .containsEntry("quotes", null).containsEntry("selection", null).containsEntry("gate", null)
-                .containsEntry("limits", List.of()).containsEntry("pendingBackfill", List.of());
+                .containsEntry("pendingBackfill", List.of());
+        assertThat((List<?>) overview.get("limits")).as("한국 한계 문구(§6, F2 — PaperQueryKrLimitsTest)는 쉬어도 실림").isNotEmpty();
         assertThat((List<?>) overview.get("books")).isEmpty();
         assertThat(jobNames(overview)).containsExactly("kr.decision");
 

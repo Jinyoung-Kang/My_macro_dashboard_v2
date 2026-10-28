@@ -3,6 +3,7 @@ package com.macrodash.feature.paper;
 import com.macrodash.Kst;
 import com.macrodash.analytics.CalendarUnavailableException;
 import com.macrodash.analytics.CalendarWindow;
+import com.macrodash.analytics.KrFinancialSector;
 import com.macrodash.analytics.PaperStats;
 import com.macrodash.analytics.TradingCalendar;
 import com.macrodash.analytics.TrailingStop;
@@ -60,8 +61,8 @@ import java.util.TreeSet;
  * 장부는 백엔드 테이블이라 응답 캐시(ComputedCache)도 쓰지 않습니다.
  *
  * <p><b>시장 문맥</b>(2단계 명세 §9 A6): 개요·상태는 시장 묶음({@link PaperMarket})을 받아 그 시장 책·그 책들의 순자산 줄·그 시장
- * 관측치(확정 판정 포함)·그 시장 Claude 책의 노출 추이와 프레임 경계·초기화 판정(그 시장 책 정의)만 씁니다. 13F 선정·게이트 지표·
- * 한계 문구는 미국 전용이라 미국 밖 시장에는 싣지 않습니다(null·빈 목록 — 한국 한계 문구는 F2). 화면 경로는 {@code ?market}(F1, 명세 §4-16 —
+ * 관측치(확정 판정 포함)·그 시장 Claude 책의 노출 추이와 프레임 경계·초기화 판정(그 시장 책 정의)만 씁니다. 13F 선정·게이트 지표는
+ * 미국 전용이라 미국 밖 시장에는 싣지 않습니다(null), 한계 문구는 시장마다 다릅니다(한국 §6 — {@link #krLimits}, F2). 화면 경로는 {@code ?market}(F1, 명세 §4-16 —
  * 없으면 미국, {@link PaperMarkets#requested})으로 시장을 고르고, 미국 밖 시장 응답에는 시장·통화·정기 작업이 쉬는 사유와 그 시장의 출발일·
  * 초기 현금·작업 기록·설정 키가 실립니다({@link #overview(PaperMarket)}·{@link #status(PaperMarket)}). 호출 사용량은 시장과 상관없이 하나(상한
  * 공유)입니다. 계좌 코드 경로(보유·주문·체결·순자산)는 그 책의 시장({@code paper_books.market}) 달력·비교 기준을 씁니다. 시장을 받지 않는
@@ -150,6 +151,55 @@ public class PaperQueryService {
                 "Claude 계좌는 같은 입력에도 답이 달라질 수 있습니다. 재현은 기록으로만 합니다.");
     }
 
+    /**
+     * 한국 개요의 한계 문구(2단계 명세 §6 "화면에 반드시 적을 한계", F2) — 순서대로. 설정에서 오는 숫자(수수료·슬리피지 bp·세율 시행일)는 그
+     * 조회 실행의 설정 판에서 넣습니다({@link MarketRun#settings} — 미국 {@link #limits()}가 출발일을 배포 설정에서 넣는 것과 같은 방식, 설정을
+     * 바꾸면 문장도 바뀜). 금융업 코드 표의 회사 수는 그 표({@link KrFinancialSector#table})에서 셉니다. 쉬는 한국(출발 전)에도 같은 문구입니다.
+     */
+    static List<String> krLimits(MarketRun market) {
+        PaperSettings settings = market.settings();
+        PaperSettings.CostRates costs = settings.costRates() != null ? settings.costRates()
+                : PaperSettings.CostRates.defaults();
+        return List.of(
+                "모의 매매입니다. 어떤 주문도 밖으로 나가지 않습니다.",
+                "장중 관측치가 없습니다(서버는 밤에만 켜짐). 주문은 다음 KR 거래일 시가(KRX 시가 단일가)에 체결합니다.",
+                "잠정 체결가·평가는 토스증권, 확정가는 금융위원회(공공데이터포털)입니다 — 금융위 값은 하루 늦게 들어오고, 체결 행은 "
+                        + "고치지 않은 채 체결마다 '확정 조정' 행으로 현금·평단을 맞춥니다(차이를 표시).",
+                "순자산 줄은 그날까지의 체결이 모두 금융위로 확정되고 모든 보유가 금융위 그날 종가로 평가되며 그날 이하 봉으로 체결될 수 "
+                        + "있는 대기 주문(1분봉 실패로 기다리는 시가 주문·거래정지 종목의 대기 매도 등)이 없는 날만 확정입니다. 금융위 값이 다음 "
+                        + "세션 관측치 처리보다 늦게 들어오면 그날 줄은 잠정으로 남고(현금은 고쳐짐) 다음 줄부터 확정되며, 금융위 행이 끝내 "
+                        + "없는 체결이 남으면 그 뒤 줄은 잠정으로 남습니다. 확정 조정의 평단 이동은 병합·일부 매도가 끼면 근사입니다(현금은 정확).",
+                "종가·시가는 KRX 정규장 단일가 기준이고 NXT·애프터마켓(16~20시) 체결은 반영하지 않습니다 — 예외: 1분봉을 못 받은 날의 "
+                        + "시가 체결과 G2 미통과 때의 잠정 평가는 토스 통합가('KRX+NXT 통합가')이고 금융위 확정 때 고칩니다.",
+                "G2 미통과 기간의 잠정 순자산은 주식(KRX+NXT 통합가)과 ETF(KRX 종가)의 시각이 섞입니다 — 확정 때 금융위 값으로 다시 씁니다.",
+                "한국 스탑은 다음 거래일 시가에 체결합니다(갭 손실 가능, 체결 때 확정 종가로 다시 판정) — 미국은 걸린 관측치에서 바로 "
+                        + "체결합니다. 한국 최고가는 금융위 확정 종가로만 올라 하루 늦게 따라가고, 금융위 값이 아직 없을 때의 스탑은 잠정 "
+                        + "판정대로 집행합니다.",
+                "미국·한국 책은 출발일·비용 모형·체결 시점·스탑 집행·통화가 달라 수익률을 서로 비교하지 않습니다.",
+                "ETF는 금융위 증권상품시세로 확정하고, 그 값이 없는 체결은 '금융위 확정 미보정'으로 남습니다. 배당·분배금·ETF 소득세는 "
+                        + "반영하지 않습니다.",
+                "분할·병합 밖의 기업행위(인적분할·유무상증자 권리·합병·상장폐지)는 자동 반영하지 않습니다 — '기업행위 확인 필요' 배지를 "
+                        + "달고, 그동안 평가는 마지막 확정가입니다.",
+                "수수료 " + bp(costs.commissionBp()) + "bp는 가정이고, 세율은 " + costs.tax().effectiveFrom() + " 시행 기준(설정값), 슬리피지 "
+                        + bp(settings.slippageBp()) + "bp는 체결가가 아니라 비용 칸입니다(실제 체결가는 단일가 그대로) — 실제 증권사와 다를 수 "
+                        + "있습니다.",
+                "규칙 계좌 결과는 종목 신호와 주식 노출(후보가 모자란 만큼 153130)이 섞인 값입니다 — 노출 맞춘 참고선과 함께 보세요.",
+                "규칙 유니버스는 코스피 시총 상위 100 보통주(코스닥 없음)입니다. 수급은 토스증권 자료(NXT 체결 포함 여부 미확인)이고 수급 "
+                        + "이력은 수집을 시작한 뒤부터입니다. Claude 패킷의 국면은 전날 밤 판정입니다.",
+                "규칙 계좌의 금융업(부채비율 상한을 보지 않음)은 DART 업종으로 만든 코드 표 " + KrFinancialSector.table().size() + "곳입니다(판 "
+                        + KrFinancialSector.VERSION + ") — 표 밖의 금융사(그 뒤 상장·업종이 바뀐 회사 포함)는 표를 고칠 때까지 비금융으로 "
+                        + "보고(상한 적용), '유동자산' 계정이 없으면 빠진 사유에 '금융업 코드 표 확인 필요'를 보입니다.",
+                "가격 이력은 토스 수정주가 1년 백필(통합가)·금융위 400일이라 장기 통계는 표본 부족입니다. 규칙 계좌 백테스트는 수급 이력이 "
+                        + "쌓인 뒤입니다.",
+                "U를 벗어난 지 400일이 지난 보유는 한국 수집 범위에서 빠져 시가 체결(매도 포함)·스탑 감지를 받지 못하고, 평가는 마지막 "
+                        + "가격에 '가격 없음' 배지로 묶입니다(그 종목 매도 주문은 기준일 + 3거래일에 만료).");
+    }
+
+    /** bp 숫자 — 소수 끝 0을 뗀 글자(1.5 → "1.5", 5.0 → "5"). */
+    private static String bp(double value) {
+        return BigDecimal.valueOf(value).stripTrailingZeros().toPlainString();
+    }
+
     // ------------------------------------------------------------------ 개요·상태
     /** GET /api/paper/overview — {@link #overview(PaperMarket)}의 미국 판. */
     public Map<String, Object> overview() {
@@ -207,7 +257,7 @@ public class PaperQueryService {
         out.put("claudeExposureSeries", claudeExposureSeries(market,
                 navByBook.getOrDefault(market.claudeBook(), List.of())));
         out.put("frameworkBoundaries", frameworkBoundaries(market));
-        out.put("limits", us ? limits() : List.of());
+        out.put("limits", us ? limits() : korea(market) ? krLimits(market) : List.of());
         out.put("jobs", jobs(market, OVERVIEW_JOBS));
         return out;
     }
