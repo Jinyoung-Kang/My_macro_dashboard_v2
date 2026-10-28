@@ -51,6 +51,12 @@ import java.util.concurrent.locks.ReentrantLock;
  * 행), 금요일 체결·스탑도 빠집니다. 장부가 그 관측치에서 오류를 내 줄을 못 쓰면 결정 작업이 기한(KST 12:00)에 남기는 확정 아닌
  * 줄({@code settleNav})로 열립니다. 저장본은 {@link StoreReader#quietly}로만 읽습니다(정기 작업이 수집을 깨우지 않게).
  *
+ * <p><b>확정 조정 시장</b>(한국 — {@link PaperMarket#confirmsFills}, 2단계 명세 K19·K29, E3)은 <b>w 잠정 종가 순자산 줄</b>로 엽니다(금요일은
+ * 잠정가): 관측치가 쓰는 순자산 줄은 늘 잠정이고(확정은 금융위 값이 들어오는 다음 거래일 밤 뒤 — 증권상품시세가 없으면 ETF 보유 계좌는 끝내
+ * 확정이 아님), 장부는 그 세션 마감 뒤 수집한 관측치로만 그날 줄을 씁니다({@link PaperMarket#closeAvailable}). 그래서 Claude 계좌의 w 줄이
+ * 있으면 관측치 저장본을 보지 않고 엽니다 — 토요일을 놓쳐 다음 세션 관측치가 들어온 뒤(월요일 밤 기동)에도 그 주 복기가 다음 기동 첫
+ * 주기에 돌고, 미확정 줄을 기다리다 주를 넘기지 않게. 미국 판정은 그대로입니다.
+ *
  * <p>정기 실행과 수동 실행({@link #runNow} — 토요일 시각 조건만 빼고 같은 조건)은 한 잠금을 씁니다. 정기 실행은 잠금을 기다리지 않고
  * {@value #BUSY}로 넘어가고(Claude 호출이 몇 분 걸릴 수 있음 — 스케줄러 스레드를 붙잡지 않게), 수동 실행은 429로 답합니다(두 번 눌러
  * 두 번 과금되지 않게 — 끝난 뒤 다시 누르면 남은 행을 돌려줌). 같은 주에 오류(예외)가 {@value #MAX_ATTEMPTS}번 나면 그 주는 정기 실행이
@@ -329,8 +335,7 @@ public class PaperReviewJob {
             return new Result(NOT_ACTIVE, week, null, inactive);
         }
         if (!finalCloseIn(market, week)) {
-            return new Result(WAITING_FINAL_CLOSE, week, null, week + " 확정 종가가 아직 없습니다 — 장부의 확정 순자산 줄이나, "
-                    + "마감 뒤 수집한 관측치를 장부가 반영해 그날 순자산 줄을 남긴 뒤 복기합니다(장중 값으로 금요일 수익률을 만들지 않게)");
+            return new Result(WAITING_FINAL_CLOSE, week, null, waitingMessage(market, week));
         }
         if (scheduled && failures.getOrDefault(new FailureKey(market.code(), week), 0) >= MAX_ATTEMPTS) {
             return new Result(GAVE_UP, week, null, week + " 복기 오류가 " + MAX_ATTEMPTS + "번 나 정기 실행은 더 시도하지 않습니다 "
@@ -390,7 +395,8 @@ public class PaperReviewJob {
 
     /**
      * 그 주 기준일의 확정 종가가 들어왔나(클래스 설명) — 그 시장 Claude 계좌의 w 확정 순자산 줄, 또는 그 시장 관측치 저장본의 확정 종가 +
-     * 장부가 남긴 w 순자산 줄(확정이 아니어도).
+     * 장부가 남긴 w 순자산 줄(확정이 아니어도). 확정 조정 시장(한국)은 장부가 남긴 w 순자산 줄(잠정)이면 됩니다 — 그 줄은 그 세션 마감 뒤
+     * 관측치로만 써지고 확정은 금융위 값이 들어온 뒤라서(클래스 설명 '확정 조정 시장', K19 '금요일은 잠정가').
      */
     boolean finalCloseIn(PaperMarket market, LocalDate week) {
         Optional<PaperStore.NavRow> row = store.navSeries(market.claudeBook()).stream()
@@ -398,11 +404,21 @@ public class PaperReviewJob {
         if (row.isEmpty()) {
             return false;   // 장부가 아직 그 세션을 반영하지 않음 — 지금 열면 계좌 비교가 전부 null로 굳습니다(클래스 설명)
         }
-        if (row.get().pricesFinal()) {
+        if (row.get().pricesFinal() || market.confirmsFills()) {
             return true;
         }
         return reader.quietly(() -> marketData.quotes(market)).map(q -> PaperDecisionJob.closesFor(market, q, week))
                 .orElse(false);
+    }
+
+    /** 기준일 종가를 기다리는 사유 — 미국은 이 묶음 전 문구 그대로, 확정 조정 시장(한국)은 잠정 종가 순자산 줄을 기다림. */
+    private static String waitingMessage(PaperMarket market, LocalDate week) {
+        if (market.confirmsFills()) {
+            return week + " 잠정 종가 순자산 줄이 아직 없습니다 — 장부가 그 세션 마감 뒤 수집한 관측치를 반영해 Claude 계좌의 그날 "
+                    + "순자산 줄을 남긴 뒤 복기합니다(금요일은 잠정가 — 금융위 확정을 기다리지 않음)";
+        }
+        return week + " 확정 종가가 아직 없습니다 — 장부의 확정 순자산 줄이나, "
+                + "마감 뒤 수집한 관측치를 장부가 반영해 그날 순자산 줄을 남긴 뒤 복기합니다(장중 값으로 금요일 수익률을 만들지 않게)";
     }
 
     private void record(PaperMarket market, Instant started, String outcome, Map<String, Object> detail) {
