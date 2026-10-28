@@ -241,8 +241,7 @@ public class ReviewService {
             return new Outcome(Kind.CAP_REACHED, null, ClaudeBookService.capMessage(claude, today)
                     + " — 주간 복기도 같은 상한을 씁니다(D4). 다음 기회에 다시 봅니다");
         }
-        String system = ClaudePrompts.REVIEW
-                + FrameworkService.render(market, frame.body(), frame.version(), settingsBody);
+        String system = systemPrompt(market, frame.body(), frame.version(), settingsBody);
         AiService.StructuredResult result;
         try {
             result = ai.structured(claude.model(), system, userMessage(built.text()), schema.forApi(), claude.effort(),
@@ -265,6 +264,14 @@ public class ReviewService {
             recordAfterResponse(market, weekEnding, frame, claude, built, result, usage, retrying, e);
             throw e;
         }
+    }
+
+    /**
+     * 복기의 시스템 프롬프트 — {@link ClaudePrompts#REVIEW} + 그 시장의 프레임 판 렌더링({@link FrameworkService#render(PaperMarket,
+     * JsonNode, int, JsonNode)} — 하드 규칙 줄과 끝 고정 문단이 그 시장 것, 명세 K34). 시장마다 같은 지시문입니다.
+     */
+    static String systemPrompt(PaperMarket market, JsonNode frameBody, int frameVersion, JsonNode settingsBody) {
+        return ClaudePrompts.REVIEW + FrameworkService.render(market, frameBody, frameVersion, settingsBody);
     }
 
     /** 사용자 메시지 — 구분자로 감싼 입력 JSON(자료). 안내 문장에는 구분자를 그대로 쓰지 않습니다(구분자는 메시지에 한 번씩만). */
