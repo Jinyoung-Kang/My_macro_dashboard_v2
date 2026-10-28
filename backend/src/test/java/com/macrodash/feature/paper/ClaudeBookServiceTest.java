@@ -917,6 +917,19 @@ class ClaudeBookServiceTest {
         assertThat(reserved.callLimit(false)).isEqualTo(11);
         assertThat(ClaudeBookService.ClaudeSettings.from(MAPPER.valueToTree(Map.of("apiScheduledReserve", 2.5)))
                 .scheduledReserve()).isEqualTo(7);
+        // 범위(0~50) 밖은 아래·위 모두 기본 7 — 음수 예약을 받으면 수동 문턱이 상한을 넘음(20 − (−1) = 21).
+        for (int outside : new int[] {-1, 51}) {
+            ClaudeBookService.ClaudeSettings clamped = ClaudeBookService.ClaudeSettings.from(MAPPER.valueToTree(Map.of(
+                    "apiDailyCallCap", 20, "apiScheduledReserve", outside)));
+            assertThat(clamped.scheduledReserve()).as("apiScheduledReserve " + outside).isEqualTo(7);
+            assertThat(clamped.callLimit(false)).as("apiScheduledReserve " + outside).isEqualTo(13);
+            assertThat(clamped.callLimit(true)).isEqualTo(20);
+        }
+        ClaudeBookService.ClaudeSettings edges = ClaudeBookService.ClaudeSettings.from(MAPPER.valueToTree(Map.of(
+                "apiDailyCallCap", 50, "apiScheduledReserve", 50)));
+        assertThat(edges.scheduledReserve()).as("끝값 50은 받음").isEqualTo(50);
+        assertThat(ClaudeBookService.ClaudeSettings.from(MAPPER.valueToTree(Map.of("apiScheduledReserve", 0)))
+                .scheduledReserve()).as("끝값 0은 받음").isZero();
         assertThat(bad.fallbacks()).doesNotContain("apiScheduledReserve");
     }
 
