@@ -216,7 +216,7 @@ GET·OPTIONS 밖(쓰기·HEAD)은 경로와 상관없이 403 `{"error":"demo_rea
 
 ### 🧪 모의 매매(미국, 운영자 전용)
 
-모든 경로가 운영자 전용입니다. 테이블(V8)이나 V9~V11의 열(`paper_track_record.group_code`·`data_source`, `paper_decisions.packet_text`, `paper_api_usage.est_cost_calls`), V12의 `paper_reviews`가 아직 없으면 `{available:false, message}`(POST·DELETE는 `ok:false`도)로 답합니다.
+모든 경로가 운영자 전용입니다. 테이블(V8)이나 V9~V11의 열(`paper_track_record.group_code`·`data_source`, `paper_decisions.packet_text`, `paper_api_usage.est_cost_calls`), V12의 `paper_reviews`, V13~V16의 열(`paper_books.market`·`currency`(V13), `paper_reviews.market`·`paper_notes.market`(V14), `paper_positions.fill_ref_volume`(V15), `paper_orders.ledger_hold_reason`(V16))이 아직 없으면 `{available:false, message}`(POST·DELETE는 `ok:false`도)로 답합니다(`PaperStore.ready` — 백엔드만 새로 띄워 마이그레이션이 빠졌을 때, QA-016).
 계좌 코드 `{code}`는 `rules`·`claude`·`bench_spy`·`bench_mix`이고, 없는 코드는 400입니다. 시각은 KST 문자열, 거래일은 미국 동부
 세션 날짜입니다. 총액(현금·순자산·평가액·체결 금액)은 소수 2자리, 주당 가격(평단·체결가·최고가·스탑가)은 4자리, 비율(%)은
 2자리로 서버가 반올림해 보냅니다. 모르는 값은 `null`입니다.
