@@ -712,6 +712,29 @@
   - 시험: `KrRulesJobTest.gateOneHoldsTheClaudeBookAlone`(가짜 Claude 서비스 대신 **실제 `ClaudeBookService`** — ①로 기다린 뒤 정리되면 Claude만 결정, 동결본 = 보낸 패킷, 한국
     렌더링·스키마·읽은 순간·응답 `gates`)·`manualDecisionNeedsWindowAndGates`(실제 경로 + 수동 문턱 13)·`krClaudeMidnightRetryKeepsTheSessionAndCountsOnTheNextDay`, 재료 `KrClaudeFixtures`
     (실제 서비스 + Mockito 가짜 AI — 외부 호출 없음).
+- **E3 구현에서 정한 것 — 한국 주간 복기(입력·프롬프트)**(2026-10-28, 사용자 결정 v5, 커밋 `eef912f`(가정 진입 규칙)·`5494b17`(한국 시가 표·한국판 시험)·
+  `3ed33e5`(실행의 설정 판) — 위 '한국 주간 복기 프롬프트' 줄·§9 'E3 — 복기의 가정 진입가'·§4-13 'C1a'가 E3로 넘긴 '복기 프롬프트의 설정 읽기'가 정하지 않은 자리.
+  미국 복기 입력·프롬프트·고정본 `paper/golden/review-*-us*`·패킷·스키마 해시 그대로, 백엔드 시험 1,832 → 1,849(E3 전체). 여는 시각·조건은 §4-9 'E3'):
+  - **프롬프트**: `REVIEW` + 한국 렌더링(E2a의 `ReviewService.systemPrompt(market, …)` 그대로 — 고정본 `review-system-kr.txt`가 실제 한국 복기 요청의 시스템 블록과 같음).
+    설정은 **그 실행이 읽은 판**(`MarketRun.settingsBody` — 그 실행의 달력·가정 진입 시가의 장부 설정과 같은 판, 실행 문맥이 아니면 예전처럼 지금 설정 — `3ed33e5`).
+    복기 행에 설정 판 칸은 더하지 않았다(설정 이력 `settingsInForceAt`으로 행의 시각에서 찾음 — §9 'E3 메모'의 사용자 확인 항목).
+  - **가정 진입가(사용자 결정 v5)**: 시장 묶음의 `PaperMarket.reviewEntry()`(미국 `NEXT_CLOSE` — 결정 다음 세션 종가, 이 묶음 전 그대로 · 한국 `NEXT_OPEN`)와 시가 표
+    `reviewOpens`(`ReviewFacts.Entry`·`EntryOpen`). 한국 = 결정 다음 KR 세션(그 실행 달력) 시가, 출처 순서(`KrReviewOpens`): ① 금융위 확정 시가(주식시세 `mkp`·증권상품시세 시가 —
+    확정 조정이 시가 체결을 확정하는 값, 출처 `FSC`·`FSC_ETF`) ② 금융위가 그날을 아직 내지 않았으면(금요일 시가는 다음 거래일 밤) 토스 관측치의 그날 봉 — 장부 사다리와 같은 순서
+    (거래량 > 0 봉의 1분봉 '개장 + 1분' 봉 시가 `TOSS_1M_OPEN` → 일봉 시가 `TOSS_DAILY`·`TOSS_INTEGRATED`; 1분봉 `FAILED`는 기다리지 않고 일봉 시가, 이어받은 항목은 쓰지 않음)
+    ③ 둘 다 없으면 **그 세션 종가로 근사하고 `isProxy: true`** + 사유('시가 없음 — 그 세션 종가로 근사(isProxy)'), 종가도 없으면 null + 사유. 시가는 원시 가격이고 이력은 수정 종가라
+    시가 ÷ 그날 이력 종가가 0.8~1.25 밖이면 분할·병합 의심으로 수익률을 내지 않는다(체결가의 기준 띠 `BASIS_LOW`·`BASIS_HIGH`와 같은 값). 비용(수수료·세금·슬리피지)은 넣지 않는다.
+    읽는 종목은 창 안 **거절 주문** 종목뿐이고 조용히 읽는다(`StoreReader.quietly`).
+  - **입력 모양**(한국만): `hypothetical` = `basis`·`entryDate`·`entryPrice`·`entrySource`(근사면 null)·`isProxy`·`returnPct`(매도면 `afterSellLabel`) — 미국은 `entryClose` 그대로.
+    `note`는 시장별(`ReviewFacts.NEXT_OPEN_NOTE` — 다음 세션 시가·출처 글자·종가 근사, 체결가는 관측가이고 비용은 장부 칸, 기준일 종가는 토스 잠정·그 전 종가는 `kr_close_adj`,
+    'SPY 대비' 대신 '지수·KODEX 200 대비'). `inputVersion`은 1 그대로(미국 입력 모양이 바뀌지 않음 — 한국 행은 처음부터 이 모양). 계좌 비교는 한국 네 계좌(`kr_rules`·`kr_bench_k200`·
+    `kr_bench_mix`·`kr_claude` — A6 `comparedBooks`, 시작일은 그 실행 달력 — 창 시작 10-09가 한글날이면 10-08), 금요일 줄은 잠정이라 `isEstimated` 참.
+  - **기준일 종가**(금요일은 잠정가): 토요일 실행이면 그날이 그 실행 달력의 지금 세션이라 이력의 그날 값을 믿지 않고 관측치의 금요일 토스 잠정 종가(A6 `sourcedClosesOn` 그대로 — 20:30 뒤
+    수집이 `closeAvailable`), 놓쳐 다음 세션 뒤에 돌면 `kr_close_adj`의 그날 값.
+  - 시험: `ReviewFactsTest.nextOpenEntryUsesTheNextSessionOpen`·`nextOpenEntryFallsBackToTheCloseAsAProxy`·`nextOpenEntryRejectsABasisMismatch`·`nextCloseEntryIsUnchanged`·
+    `nextOpenNoteSpeaksTheMarket`, `KrReviewOpensTest`(출처 순서), `KrReviewServiceTest`(`ReviewServiceTest`의 한국판 — 실제 한국 실행·`PaperMarketData` + 가짜 저장소·가짜 Claude 서버
+    127.0.0.1: 손계산 `krInputMatchesHandComputation`(금융위 시가 180,000·토스 1분봉 40,000·일봉 95,000·종가 근사 1,000,000), 고정본 `goldenKrReviewRequest`(`review-user-kr.txt`·
+    `review-request-kr.json`), 기본키 `krRowIsKeyedByMarketAndWeek`, `promptUsesTheRunsSettingsVersion`, 작업 → 실제 서비스 `scheduledKrReviewEndToEnd`).
 
 ### 4-8. 벤치마크와 출발 (K2·K25·K28)
 - `kr_bench_k200`: KODEX 200(069500) 100%. `kr_bench_mix`: 069500 60% · 153130 40%. [확인] 토스 `/api/v1/stocks`에서 두 종목 모두 `securityType: ETF`.
@@ -1111,6 +1134,17 @@
     '기한 뒤 판정'과 같은 성질).
   - 시험: `KrRulesJobTest.claudePastDeadlineRowUsesTheStoredClaudeJudgement`(22:30 규칙 계좌 결정·Claude ① 기다림 → 00:50 기다림 → 01:00 SKIPPED 행 — 판정 00:50·'기한 지남'·① kr_claude,
     재기동해도 행 하나·기한 지남 기록 한 번)·`claudePastDeadlineJudgesNowOrConsumesTheRetry`(그 밤 첫 실행이 01:05면 '기한 뒤 판정'·⑤ 사유, API 오류 재시도 차례면 기한이 그 재시도를 씀).
+- **E3 구현에서 정한 것 — 한국 주간 복기의 시각·여는 조건**(2026-10-28, K19, 커밋 `0983a23` — 위 표 '토 22:30' 줄이 정하지 않은 자리. 입력·프롬프트는 §4-7 'E3'):
+  - **시각**: `KrPaperMarket.REVIEW_OPENS_ON`·`REVIEW_OPENS_AT` = 토요일 22:30 KST(C1c부터 있던 코드 상수 — 설정 아님, K38). 복기 작업(`PaperReviewJob` — 30분 주기, 첫 주기는 기동 뒤 180초)이
+    그 실행 달력의 복기 주 w(그 ISO 주의 마지막 KR 거래일 — 2026-10-09 한글날처럼 금요일이 휴장이면 목요일)로 연다.
+  - **금요일은 잠정가**: 확정 조정 시장(`PaperMarket.confirmsFills` — 한국)은 Claude 계좌의 w 순자산 줄이 있으면 확정이 아니어도 **관측치 저장본을 보지 않고** 연다. 그 줄은 장부가 그 세션
+    마감 뒤(20:30 뒤 수집) 관측치로만 쓰고 확정(`prices_final`)은 금융위 값이 들어오는 다음 거래일 밤 뒤(증권상품시세 활용신청 전이면 ETF를 든 계좌는 끝내 확정 아님)라, 미국식('확정 줄,
+    또는 지금 관측치가 w 확정 종가')으로 두면 토요일을 놓친 뒤 월요일 관측치가 들어오는 순간부터 그 주를 넘길 때까지 기다린다. 줄이 없으면 `WAITING_FINAL_CLOSE`(한국 문구 '… 잠정 종가
+    순자산 줄이 아직 없습니다 … 금융위 확정을 기다리지 않음'). 미국 판정·문구는 그대로.
+  - **놓친 토요일**: w는 다음 금요일 15:30(KR 마감 — `lastCompletedSession`) 전까지 그대로라 일요일 밤 기동(21:55 + 180초)·월요일 밤 기동의 첫 주기가 그 주를 복기하고, 그 뒤에는 새 주를
+    기다린다(미국과 같은 규칙 — 지난 주는 다시 보지 않음). 호출 문턱은 E2b 그대로(정기 복기는 상한까지, 수동 실행은 상한 − 예약).
+  - 시험: `KrReviewJobTest`(실제 `KrPaperMarket` — 토 09:00·22:29:59 `TOO_EARLY`, 22:30 잠정 줄로 복기·관측치 안 읽음, 줄 없으면 기다림, 일요일·월요일 밤 기동, 다음 금요일 15:29·15:31,
+    한글날 주, 미국은 그대로)·`KrReviewServiceTest.scheduledKrReviewEndToEnd`(작업 → 실제 복기 서비스).
 
 ### 4-10. 호출 상한 (K18 — 권장안, 상한 20은 사용자 결정 V6)
 - 두 책이 `paper_api_usage` 한 줄을 그대로 공유한다(시장별 고정 몫 없음, 시장별 횟수는 결정·복기 행에서 셈).
@@ -1273,6 +1307,7 @@
   - **아직 실행을 받지 않는 곳**(넘김): 메모(`NoteService` 목록·작성 — 지금 미국 화면 경로뿐, `?market`은 F1), 복기 프롬프트의 설정 읽기(`ReviewService` — 복기 행에 설정 판 칸이 없음, E3),
     §4-4 'B5 구현에서 정한 것'의 '관측치 요약 `finalClose`·메모 만료·조회의 최근 세션이 모르는 해에서 예외' — 한국 묶음이 운영 목록에 들어가는 C1c에서 그 경로를 null + 사유로 막는다.
     → **C1c**: 관측치 요약 두 곳(조회·리스크 기록)은 막음, 조회의 최근 세션(보유 거래일)은 B5에서 이미 막혀 있음, 메모는 실행을 받지 않아 F1·E1(§4-4 'C1c 구현에서 정한 것').
+    → **E3**(`3ed33e5`): 복기 프롬프트는 그 실행이 읽은 판으로(실행이 아니면 지금 설정), 복기 행의 설정 판 칸은 더하지 않음(§4-7 'E3 구현에서 정한 것').
 - **C1b 구현에서 정한 것**(2026-10-27, 커밋 `cbd1f5d`·`0ef93c8`·`9573ef9`·`0162544`·`c9f26c6`·`a0c3e3f`·`bbd33a9`·`fa14681` — 위 키 목록·K37·K38과 §9 메모가 정하지 않은 자리.
   미국 숫자 불변 — 고정본 `paper/golden/`·패킷·프롬프트·스키마 해시 그대로, 백엔드 시험 1,444 → 1,472, 화면 1,126 → 1,133. C1b는 **설정만**이다: 한국 묶음 `KrPaperMarket`·네 계좌·초기화·출발은 C1c):
   - **시장 범위** `PaperSettingKeys.Scope`(공유·US·KR, 화면 응답 `keys[].market` = `US`·`KR`·null): 공유 = 위 목록(`model`·`effort`·`apiDailyCallCap`·`pricing.*`·`frameworkTokenBudget`)
@@ -1506,6 +1541,10 @@
   자정 넘은 한국 재시도는 다음 KST 날 줄에 세지고 기준 거래일은 D 그대로다(테스트).
 - **재기동**(E0, 사용자 결정 v3): 결정 창 안에서 백엔드를 다시 띄워도 판정이 같다 — 계획 실패로 미룬 출발 세션은 다시 계획하지 않고, 미룸 사유는 그 창의 마지막 기다림이며, 기한 지남 행은
   기한 전 마지막 판정으로 사유·`waitedFor`를 정하고, 장부가 그 밤 관측치에서 보류한 대기 주문은 게이트 ①이 기다리지 않으며, 미룸·기한 지남 기록은 세션마다 한 번이다(테스트, §4-9 'E0').
+- **한국 주간 복기**(K19·사용자 결정 v5, E3): 토요일 22:30 KST(코드 상수)에 Claude 계좌의 금요일 잠정 종가 순자산 줄로 열리고(금융위 확정을 기다리지 않음), 놓친 토요일은 다음 금요일 마감 전까지
+  다음 기동 첫 주기에 그 주를 복기하며(다음 세션 관측치가 들어온 뒤에도), 금요일이 휴장이면 목요일이 기준일이다. 거절 주문의 가정 진입은 결정 다음 세션 시가(금융위 확정 시가, 아직 없으면 토스
+  잠정 시가)이고 시가가 없으면 그 세션 종가로 근사해 `isProxy`를 단다. 프롬프트는 `REVIEW` + 한국 렌더링(고정본 `review-system-kr.txt`), 복기 행은 (market, week_ending)마다 하나다
+  (손계산·고정본 테스트 — `KrReviewJobTest`·`KrReviewServiceTest`·`ReviewFactsTest`, §4-7·§4-9 'E3'). 미국 복기 입력·프롬프트·고정본은 바이트 그대로다.
 - 미국 책 테스트가 전부 그대로 통과하고, `calendar.consensus=false`에서 미국 패킷이 `packetVersion` 5·같은 해시, 미국 스키마·`ROLE`·`FIXED_RULES`·`render`가 바이트 그대로다(`Market` 추상화 뒤 회귀 0). 켜면 6(고정본 `packet-us-v6-*` — 바뀌는 것은 판 번호와 `1b_calendar` 컨센서스 층뿐, E1b).
   **3단계 코드가 배포돼도 `claude.schemaV3`·`claude.figureCheck`가 꺼져 있으면 미국 스키마·프롬프트·패킷 해시가 바이트 그대로다**(테스트, K37). V14 뒤에도 미국 복기 삽입·재시도가 그대로 돈다(`PaperStoreDbTest`).
 - 한국 시스템 프롬프트(결정·복기)의 **시장별 부분**(`kr.*`로 만든 한국 하드 규칙 줄 + `KR_FIXED_RULES`)에 `$`·`SHY`·`NEXT_OBSERVATION`·`5_gate`·`6_trackRecord`·`6b`·13F 문구가 없다 —
@@ -1654,7 +1693,7 @@
 | **E. Claude 계좌** | E0 메모리 판정 저장(사용자 결정 v3 — 출발 미룸·기한 전 마지막 판정·기한 지남 기록 한 번은 그 세션 작업 기록, 장부의 그날 보류는 V16 주문 행 표시) | 재기동 시험(출발 다시 계획 안 함·미룸 사유·기한 지남 사유와 기록 한 번·게이트 ① 면제), V16 DB 시험 | M |
 | | E1 한국 패킷(국면 전날 판정 표기) + 미국 컨센서스 열(`calendar.consensus`) | 꺼짐 = 미국 v5 해시 그대로·켜짐 = v6 고정본, 한국 패킷 고정본, `TARGET_TOKENS` | L |
 | | E2 `kr-decision.schema.json`·한국 render(K34)·한국 검증기·`apiScheduledReserve` 7·22:30 결정(기준일 `lastCompletedSession`)·**네 계좌 함께 출발**(K28) | 스키마 테스트, 한국 프롬프트에 `$`·`SHY`·`NEXT_OBSERVATION`·`5_gate` 없음, 상한 공유·예약·자정 넘은 재시도, 출발 원자성(Claude 실패 → 네 계좌 모두 다음 거래일), 초기 결정 입력 ≤ 결정 시각, 미국 스키마·프롬프트 바이트 불변 | L |
-| | E3 한국 복기 토 22:30(코드 상수) | `ReviewServiceTest` 한국판(기본키는 B1에서 바뀜) | M |
+| | E3 한국 복기 토 22:30(코드 상수) | `ReviewServiceTest` 한국판(기본키는 B1에서 바뀜) → `KrReviewServiceTest`·`KrReviewJobTest`(E3) | M |
 | **F. API·화면·문서** | F1 `?market=KR`(메모 포함)·`AccessPolicy`·API.md | `RouteInventoryTest`·`endpoints.test.ts` | M |
 | | (점검, F1 뒤 — C에서 옮김) 벤치마크 두 계좌가 S+1 시가 출발부터 S+2 확정 순자산 줄까지 돈다 — 수용 기준 1(스택과 방법은 F1에서 정함 — §4-1 'C3' '수용 기준 1') | | |
 | | F2 `/paper/kr/*`·홈 히어로 한국 탭(비교 불가 문구)·잠정/확정·확정 조정·실효 비용 bp·미보정·기업행위·가격 없음 배지·노출 맞춘 참고선·미국 화면 노출 문구 | 네 상태 스토리, `access.test.ts` | L |
@@ -1729,6 +1768,8 @@ A8이 달력 없는 옛 시그니처 호출과 결정 작업·시세 저장본�
   → **사용자 결정(2026-10-28, v1): ⓐ** — §5를 고쳐 쓰고 E2a에서 구현(`819eb9f`, §4-7 'E2a 구현에서 정한 것').
 - **E3 — 복기의 가정 진입가**: `ReviewFacts.hypothetical`은 거절 주문의 가정 진입을 다음 세션 **종가**로 두고 NOTE도 '결정 다음 세션 종가에 체결됐다고 가정'·'SPY 대비'로 적는다
   (미국 `NEXT_OBSERVATION` 근사). 한국 주문은 `NEXT_OPEN`이므로 E3에서 가정 진입을 시장이 정하고(한국: 다음 세션 시가, 못 구하면 종가 근사라고 표시) 시장별 NOTE를 둔다. 미국 문구는 그대로.
+  → **사용자 결정 v5 → E3에서 정함**(`eef912f`·`5494b17` — `PaperMarket.reviewEntry`·`reviewOpens`, 금융위 확정 시가 → 토스 잠정 시가 → 종가 근사 `isProxy`, `NEXT_OPEN_NOTE`;
+  §4-7 'E3 구현에서 정한 것', 출처 순서는 §9 'E3 메모'의 사용자 확인 항목).
 
 **묶음 B 리뷰 메모(2026-10-27)** — 리뷰 지적 12건(데이터 6·백엔드 3·시험 3)을 확인하고 B 범위는 코드·시험으로 고쳤다(미국 고정본·해시 불변):
 1분봉 `FAILED`를 같은 밤 그 봉만 다시 묻기와 1분봉 몫 떼어 두기 `e17ff8e`, 그 세션 자료가 있을 때만 '받음' `7494c3f`, 수정 종가 빈 구간 `a42d6b4`,
@@ -1977,3 +2018,18 @@ QA 스택 점검을 F1 뒤로(§4-1 'C3'·§9 표), §4-2 'C2a'의 바뀐 시험
   서비스를 건드리지 않음 — `CalendarGapsTest`의 '호출 없음'). [decisions.md](../decisions.md) 2026-10-28 항목에 남겼다.
 - **남은 것(이 묶음 밖)**: 한국 수동 출발 단추 `run/initial-decision?market=KR`(§4-8 — 같은 게이트·기한 안에서 정기 작업을 앞당김)은 HTTP 경로와 함께 F1이 만든다(그 단추는 수동 호출 문턱
   13을 씀 — 위 나누기). 개요·상태 응답의 사용량 칸(`apiUsage.today.cap`)은 상한만 보이고 수동 문턱(13)은 보이지 않는다(F2). 한국 주간 복기(v5)는 E3.
+  → **E3에서 끝남**(§4-7·§4-9 'E3 구현에서 정한 것', 아래 'E3 메모').
+
+**E3 메모(2026-10-28, 한국 주간 복기 구현 뒤)** — 구현 자체는 §4-7·§4-9의 'E3 구현에서 정한 것'(커밋 `0983a23`·`eef912f`·`5494b17`·`3ed33e5`). 미국 복기 입력·프롬프트·
+고정본 `paper/golden/review-*-us*`·패킷·스키마 해시 그대로, 백엔드 시험 1,832 → 1,849, 수집기·화면 손대지 않음. 명세·사용자 결정 v1~v6이 정하지 않아 고른 것:
+- **(사용자 확인 필요) 가정 진입 시가의 출처**: v5는 '다음 세션 시가, 없으면 종가 근사'만 정했다. ⓐ 금융위 확정 시가 → 아직 없으면 토스 잠정 시가(1분봉 개장 봉 → 일봉) → 종가 근사(구현)
+  ⓑ 금융위 시가만(없으면 종가 근사 — 목요일 결정의 금요일 진입은 토요일 복기에서 늘 근사, 그 수익률은 금요일 하루 장중 변화를 잃음) ⓒ 토스 사다리만(장부 체결 행과 같은 잠정 출처 — 토스
+  관측치는 최근 5봉뿐이라 창 앞쪽은 근사). **권장 ⓐ** — 공식값이 있으면 그것, 없으면 장부가 그 주문을 체결했을 값. 맞바꿈: 금요일 진입은 토요일 복기에서 토스, 놓쳐 월요일 밤 뒤에 돌면
+  금융위라 실행 시각에 따라 출처(와 값 — [확인] G1 표본 1에서는 1분봉 09:01 시가 = 금융위 시가)가 다를 수 있다(입력에 `entrySource`로 남음).
+- **(사용자 확인 필요) 복기 행의 설정 판 칸**(§4-13 'C1a'가 E3에 넘긴 자리): ⓐ 칸 없음(구현 — 그 실행의 판을 쓰고, 판은 설정 이력 `settingsInForceAt`으로 행의 시각에서 찾음) ⓑ V17
+  `paper_reviews.settings_version`(결정 행처럼 판을 행에 남김). **권장 ⓐ** — 복기 프롬프트에서 설정이 닿는 곳은 하드 규칙 줄·모델·호출 상한뿐이고 스키마를 바꾸지 않는다.
+- **정한 것(사용자 확인 없이 — 명세·K19·v5의 뜻대로)**: 확정 조정 시장은 잠정 줄로 엶(관측치 안 봄 — K19 '금요일은 잠정가'·'놓치면 다음 기동 첫 주기'), 시가 ÷ 그날 이력 종가 기준 띠
+  (0.8~1.25 — 체결가와 같은 값) 밖이면 수익률 없음, 1분봉 `FAILED`는 기다리지 않고 일봉 시가, 이어받은 항목 제외, 비용 제외, 다음 세션이 거래정지(거래량 0)여도 그 세션으로(장부처럼
+  다음 관측 봉으로 옮기지 않음 — v5 '다음 세션 시가, 없으면 종가'), 읽는 종목은 거절 주문 종목뿐, 시장별 `note`, `inputVersion` 1 그대로, 복기 프롬프트는 그 실행의 설정 판.
+  [decisions.md](../decisions.md) 2026-10-28 항목에 남겼다.
+- **남은 것(이 묶음 밖)**: 한국 복기 목록·한 건·수동 실행 HTTP 경로(`?market=KR` — 지금 화면 응답은 미국 행만)는 F1, 화면은 F2(입력의 `entrySource`·`isProxy`·`isEstimated` 배지).
