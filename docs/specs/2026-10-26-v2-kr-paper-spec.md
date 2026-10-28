@@ -619,12 +619,13 @@
 - Claude 유니버스 = U ∪ {069500, 153130} ∪ `kr.universeExtraTickers`(기본 빈 목록).
 - 검증기: 공통 + 한국 추가 `BUY_BELOW_ONE_SHARE`(증가분 금액 < 1주 체결가, 호가·수수료 포함 — 한국만 켬), `kr.minOrderNotional` 500,000원(1억의 0.5%, 미국 $500/$100,000와 같은 비율).
 - **E1a 구현에서 정한 것 — 한국 패킷**(2026-10-28, 커밋 `f892e0f`(메모 키 공유, 사용자 결정 v6)·`d9efdfb`(한국 사건 거르기)·`d389ace`(호가표 글)·`20dda6b`(점수 식
-  떼어 냄 — 옮기기)·`5bcc442`(1b·11b 섹션)·`bf5fb97`(패킷)·`3efe22d`(체결할 수 없는 종목은 매수만 거절, 사용자 결정 v2) — 위 섹션 목록·§4-11·§4-13 'C1b'·§9 메모가 정하지 않은 자리.
+  떼어 냄 — 옮기기)·`5bcc442`(1b·11b 섹션)·`bf5fb97`(패킷)·`3efe22d`(체결할 수 없는 종목은 매수만 거절, 사용자 결정 v2)·`8beeb1b`(읽은 순간 뒤 DART 저장본) — 위 섹션 목록·§4-11·§4-13 'C1b'·§9 메모가 정하지 않은 자리.
   미국 `PacketBuilder`·고정본 `paper/golden/`·패킷·프롬프트·스키마 해시 그대로(미국 패킷은 한 글자도 바꾸지 않음), 백엔드 시험 1,748 → 1,784. 결정 파이프라인에 잇는 것은 E2):
   - **자리**: 새 클래스 `KrPacketBuilder`(미국 패킷을 시장 인자로 가르지 않음 — 미국 고정본을 건드릴 일이 없게, 묶음 A 조사의 R1). 직렬화·반올림·토큰 어림·해시는 미국과 같은
     함수(`PacketBuilder.toNode`·`decimal`·`estimateTokens`·`sha256`). 인자는 한국 실행(`MarketRun` — 그 실행의 달력·설정 판), 기준 세션 D, 종류, 출발 여부, 프레임 판, **그 실행의 관측치**(결정 게이트가
     본 것), **읽은 순간 `readAt`**. 섹션 = `0_instructions`·`1_basis`·`1b_calendar`·`3_kr_macro`·`8_prices`·`8b_fundamentals`·`9_portfolio`·`10_recentDecisions`·`11_notes`·`11b_events`·`12_hardRules`.
-  - **시점(한국판 `initialPacketHasNothingAfterAsOf`)**: 모든 저장본은 **수집 시각 ≤ 읽은 순간**일 때만 쓴다(넘으면 그 저장본은 없는 것 — 사유 '저장본이 읽은 순간 뒤에 수집됨', 관측치도 같음).
+  - **시점(한국판 `initialPacketHasNothingAfterAsOf`)**: 모든 저장본은 **수집 시각 ≤ 읽은 순간**일 때만 쓴다(넘으면 그 저장본은 없는 것 — 사유 '저장본이 읽은 순간 뒤에 수집됨', 관측치·DART도 같음 —
+    규칙 계좌 입력의 DART는 그대로 쓰고 접수일 규칙이 시점을 지킴. 수정 종가 이력 `kr_close_adj`의 행은 받은 시각이 없어 날짜 ≤ D로만 자름).
     날짜가 있는 값은 D 이하(수정 종가 이력·금융위 시장 합계·선물 일봉·시장 매매대금 기록·환율 일봉), 수급은 규칙 계좌와 **같은 읽기**(`KrRuleBookService.read` — D 뒤 날짜·읽은 순간 뒤에 받은 기록·받은
     시각 모름은 빠지고 그 수를 `8_prices.flowsExcluded`에), DART는 접수일 ≤ D, 사건은 알 수 있는 시각이 결정 순간 이하이고 받은 시각 ≤ 읽은 순간. 한국 출발(INITIAL)도 같은 조립이라
     `asOfMismatch`가 없다(§4-8 '지금 수집본이 곧 S 밤 판'). 시험 `KrPacketBuilderTest.initialPacketHasNothingAfterTheReadInstant`(가짜 저장소가 기준일 뒤 값·읽은 순간 뒤 수집본을 일부러 줌)·
