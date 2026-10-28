@@ -1,6 +1,7 @@
 package com.macrodash.feature.paper;
 
 import com.macrodash.Kst;
+import com.macrodash.analytics.CalendarUnavailableException;
 import com.macrodash.analytics.DailySeries;
 import com.macrodash.analytics.ReviewFacts;
 import com.macrodash.feature.ai.AiService;
@@ -694,8 +695,56 @@ public class ReviewService {
             return notReady();
         }
         LocalDate latest = ReviewFacts.latestCompletedWeekEnding(US.calendar(), clock.instant());
+        List<Map<String, Object>> rows = summaryRows(US, latest);
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("available", true);
+        out.put("reviews", rows);
+        out.put("latestWeekEnding", latest.toString());
+        out.put("latestOpensAtKst", Kst.stamp(US.reviewOpening(latest)));
+        return out;
+    }
+
+    /**
+     * GET /api/paper/reviews?market= — 미국 밖 시장의 복기 목록(2단계 명세 §4-16, F1). {@link #listView()}와 같은 모양에 {@code available} 뒤
+     * {@code market}·{@code dormantReason}(그 시장 정기 작업이 쉬는 사유, 돌면 null)을 싣고, 목록은 그 시장 행만, 최근 복기 주·여는 시각은 그 조회
+     * 실행의 달력과 그 시장의 여는 순간({@link PaperMarket#reviewOpening} — 한국 토요일 22:30 KST)입니다. 그 달력이 지금의 해를 모르면(공휴일 저장본
+     * 없음 — 명세 K35) 최근 복기 주·여는 시각은 null이고 {@code latestWeekEndingReason}에 사유, 다시 부를 수 있음({@code retryable})은 모두 false입니다.
+     */
+    Map<String, Object> listView(PaperMarkets.Scope scope) {
+        if (!store.ready()) {
+            return notReady();
+        }
+        PaperMarket market = scope.market();
+        Latest latest = latest(scope.run());
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("available", true);
+        out.put("market", market.code());
+        out.put("dormantReason", scope.dormantReason());
+        out.put("reviews", summaryRows(market, latest.week()));
+        out.put("latestWeekEnding", latest.week() == null ? null : latest.week().toString());
+        out.put("latestOpensAtKst", latest.week() == null ? null : Kst.stamp(market.reviewOpening(latest.week())));
+        if (latest.reason() != null) {
+            out.put("latestWeekEndingReason", latest.reason());
+        }
+        return out;
+    }
+
+    /** 그 조회 실행 달력의 마감이 끝난 최근 복기 주 — 모르는 해면 주 null + 사유(명세 K35). */
+    private record Latest(LocalDate week, String reason) {
+    }
+
+    private Latest latest(MarketRun run) {
+        try {
+            return new Latest(ReviewFacts.latestCompletedWeekEnding(run.calendar(), clock.instant()), null);
+        } catch (CalendarUnavailableException e) {
+            return new Latest(null, e.getMessage());
+        }
+    }
+
+    /** 그 시장의 복기 목록 줄(주 최근 순) — {@code latest}가 null이면(모르는 해) 다시 부를 수 있음은 false. */
+    private List<Map<String, Object>> summaryRows(PaperMarket market, LocalDate latest) {
         List<Map<String, Object>> rows = new ArrayList<>();
-        for (ReviewSummary s : store.reviews(US.code(), LIST_LIMIT)) {
+        for (ReviewSummary s : store.reviews(market.code(), LIST_LIMIT)) {
             Map<String, Object> row = new LinkedHashMap<>();
             row.put("weekEnding", s.weekEnding().toString());
             row.put("status", s.status());
@@ -711,12 +760,7 @@ public class ReviewService {
             row.put("frameworkVersion", s.frameworkVersion());
             rows.add(row);
         }
-        Map<String, Object> out = new LinkedHashMap<>();
-        out.put("available", true);
-        out.put("reviews", rows);
-        out.put("latestWeekEnding", latest.toString());
-        out.put("latestOpensAtKst", Kst.stamp(US.reviewOpening(latest)));
-        return out;
+        return rows;
     }
 
     /**
@@ -740,6 +784,31 @@ public class ReviewService {
     }
 
     /**
+     * GET /api/paper/reviews/{weekEnding}?market= — 미국 밖 시장의 복기 한 건(F1). {@link #detailView(String)}와 같은 모양에 {@code available} 뒤
+     * {@code market}·{@code dormantReason}을 싣고, 그 시장 행만 찾으며, {@code retryable}은 그 조회 실행 달력의 최근 복기 주로 봅니다(모르는 해면 false).
+     *
+     * @throws InvalidRequestException 날짜 형식이 틀림·그 시장·그 주의 복기가 없음(그 시장이 정기 작업을 쉬고 있으면 그 사유를 문구에 붙임)
+     */
+    Map<String, Object> detailView(PaperMarkets.Scope scope, String weekEnding) {
+        if (!store.ready()) {
+            return notReady();
+        }
+        LocalDate day = Params.optionalDate("weekEnding", weekEnding);
+        if (day == null) {
+            throw new InvalidRequestException("weekEnding(복기 기준일, 예: 2026-10-30)을 보내세요.");
+        }
+        PaperMarket market = scope.market();
+        Review r = store.review(market.code(), day).orElseThrow(() -> new InvalidRequestException("없는 복기입니다: "
+                + market.code() + " " + day + (scope.dormantReason() == null ? "" : " — " + scope.dormantReason())));
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("available", true);
+        out.put("market", market.code());
+        out.put("dormantReason", scope.dormantReason());
+        out.put("review", reviewView(r, latest(scope.run()).week()));
+        return out;
+    }
+
+    /**
      * 복기 한 건 — {@code {weekEnding, status, windowWeeks, trimmedReason, model, frameworkVersion, retryCount, retryable,
      * createdAtKst, error, verdictCounts, verdicts:[{decisionId, asOf, kind, status, thesisHeld, note}], missingDecisionIds,
      * recurringErrors, keep, proposal:{id, status, summary, operationsCount, baseVersion, resultVersion, error}|null, input, response,
@@ -747,6 +816,14 @@ public class ReviewService {
      * 찾아 붙인 것(없는 id면 null), {@code missingDecisionIds}는 입력에 있는데 판정이 없는 결정.
      */
     public Map<String, Object> reviewView(Review r) {
+        return reviewView(r, ReviewFacts.latestCompletedWeekEnding(US.calendar(), clock.instant()));
+    }
+
+    /**
+     * 복기 한 건({@link #reviewView(Review)}) — 다시 부를 수 있음({@code retryable})을 그 시장의 마감이 끝난 최근 복기 주 {@code latest}로 봅니다
+     * (null이면 — 그 시장 달력이 모르는 해 — false).
+     */
+    Map<String, Object> reviewView(Review r, LocalDate latest) {
         boolean ok = Review.OK.equals(r.status());
         JsonNode response = r.response();
         Map<Long, JsonNode> inputDecisions = new LinkedHashMap<>();
@@ -799,8 +876,7 @@ public class ReviewService {
         out.put("model", r.model());
         out.put("frameworkVersion", r.frameworkVersion());
         out.put("retryCount", r.retryCount());
-        out.put("retryable", retryableNow(r.weekEnding(), r.status(), r.retryCount(),
-                ReviewFacts.latestCompletedWeekEnding(US.calendar(), clock.instant())));
+        out.put("retryable", retryableNow(r.weekEnding(), r.status(), r.retryCount(), latest));
         out.put("createdAtKst", stamp(r.createdAt()));
         out.put("error", r.error());
         out.put("verdictCounts", ok ? verdictCounts(held, refuted, undetermined) : null);
