@@ -991,6 +991,60 @@ class KrRulesJobTest {
     }
 
     @Test
+    @DisplayName("E0(사용자 결정 v3) 재기동 — 장부가 그 밤 관측치에서 그날 보류한 주문(분할 재상장 밤의 '후보 밖' 매도)은 주문 행 표시(V16)로 남아, 백엔드를 다시 띄운 뒤(장부는 그 관측치를 다시 처리하지 않음)에도 게이트 ①이 기다리지 않고 그 창에서 정기 결정, 다음 관측치 처리가 표시를 지움")
+    void ledgerHoldSurvivesARestart() {
+        holding("000660", 100, 10_000);
+        store.upsertState(new BookState(PaperBooks.KR_RULES, 99_000_000, 100_000_000, 1_000_000, 1.0, null, null, S, null));
+        KrFixtures.stub(reader, Datasets.SNAP_KR_PAPER_QUOTES,
+                KrRulesFixtures.suspend(KrRulesFixtures.quotes(R), "000660", true));
+        fsc(FRI);
+        PaperDecisionJob.Result placed = runAt("2026-11-02T22:30");
+        Order sell = store.ordersByDecision(placed.rules().id()).stream()
+                .filter(o -> "000660".equals(o.ticker()) && PaperBooks.SELL.equals(o.side())).findFirst().orElseThrow();
+
+        // R1 — 2:1 분할 재상장 밤. 22:30 실행이 장부를 처리(분할 반영·그 매도 그날 보류)했는데 ③(005930 R1 수급이 장중 판)으로 기다림.
+        KrFixtures.stub(reader, Datasets.SNAP_KR_PAPER_QUOTES, KrRulesFixtures.rebar(
+                KrRulesFixtures.rebar(KrRulesFixtures.quotes(R1), "000660", R, 10_050, 10_050, 0, 0.5),
+                "000660", R1, 5_000, 5_050, 200_000, 1.0));
+        fsc(R);
+        data.flow("005930", R1, 100_000L, 50_000L, "2026-11-03T14:58:03.000+09:00", kst("2026-11-03T21:18"));
+        PaperDecisionJob.Result waiting = runAt("2026-11-03T22:30");
+        assertThat(waiting.outcome()).isEqualTo(PaperDecisionJob.DATA_NOT_READY);
+        assertThat(waiting.message()).contains("③ U 7/8").doesNotContain("①");
+        assertThat(store.positions(PaperBooks.KR_RULES)).filteredOn(p -> "000660".equals(p.ticker())).singleElement()
+                .satisfies(p -> assertThat(p.qty()).as("장부가 그 관측치를 처리함(분할 반영)").isEqualTo(200));
+        assertThat(store.ledgerHolds(PaperBooks.KR_RULES)).singleElement().satisfies(hold -> {
+            assertThat(hold.orderId()).isEqualTo(sell.id());
+            assertThat(hold.collectedAt()).as("그 관측치의 수집 시각").isEqualTo(kst("2026-11-03T21:57"));
+            assertThat(hold.reason()).contains("분할·병합");
+        });
+
+        // 재기동 — 새 장부·결정 작업(메모리 비움), 같은 저장소. 저녁 판 수급이 들어옴.
+        job = job(new PaperMarketData(reader, repository));
+        data.flow("005930", R1, 100_000L, 50_000L, "2026-11-03T20:21:26.000+09:00", kst("2026-11-03T22:35"));
+        PaperDecisionJob.Result decided = runAt("2026-11-03T22:40");
+
+        assertThat(decided.outcome()).isEqualTo(PaperDecisionJob.DECIDED);
+        assertThat(decided.rules().kind()).isEqualTo(RuleBookService.SCHEDULED);
+        JsonNode first = decided.rules().response().path("gates").get(0);
+        assertThat(first.path("status").asString()).isEqualTo("PASS");
+        assertThat(first.path("note").asString()).contains("#" + sell.id() + " SELL 000660")
+                .contains("장부가 이번 관측치로는 보류").contains("분할·병합").contains("기다리지 않음");
+        assertThat(store.positions(PaperBooks.KR_RULES)).filteredOn(p -> "000660".equals(p.ticker())).singleElement()
+                .satisfies(p -> assertThat(p.qty()).as("그 관측치를 다시 처리하지 않음(분할을 두 번 반영하지 않음)").isEqualTo(200));
+        assertThat(store.orders.get(sell.id()).status()).isEqualTo(PaperBooks.ORDER_PENDING);
+
+        // R2 — 분할 뒤 첫 밤. 새 관측치 처리가 보류를 풀고(표시를 지움) 분할 뒤 수량 전부를 팖.
+        KrFixtures.stub(reader, Datasets.SNAP_KR_PAPER_QUOTES, KrRulesFixtures.rebar(
+                KrRulesFixtures.rebar(KrRulesFixtures.quotes(R2), "000660", R1, 5_000, 5_050, 200_000, 1.0),
+                "000660", R2, 5_050, 5_100, 150_000, 1.0));
+        fsc(R1);
+        assertThat(runAt("2026-11-04T22:30").outcome()).isEqualTo(PaperDecisionJob.DECIDED);
+        assertThat(store.orders.get(sell.id()).status()).isEqualTo("FILLED");
+        assertThat(store.ledgerHoldMarks).as("다음 처리가 표시를 지움").isEmpty();
+    }
+
+    @Test
     @DisplayName("보유 없는 주문 종목의 기업행위 신호(장부가 그날 그 종목 주문을 보류 — since가 주문 기준일로 고정돼 만료까지 밤마다 되풀이)도 게이트 ①을 막지 않음 — 기준일 FRI 대기 매수 005930의 R 봉이 가격제한폭 밖이면 R 정기 결정, 주문은 대기 그대로")
     void orderOnlyCorporateActionHoldDoesNotHoldGateOne() {
         long held = pending("005930", PaperBooks.BUY, PaperBooks.NEXT_OPEN, RuleBookService.SOURCE_RULE, FRI,

@@ -35,6 +35,7 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.Instant;
 import java.time.LocalDate;
+import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
@@ -215,17 +216,6 @@ public class PaperLedgerService {
      */
     private final Map<FailureKey, String> confirmErrors = new ConcurrentHashMap<>();
 
-    /**
-     * (시장, 책) → 그 책이 마지막으로 처리한 관측치의 수집 시각과, 그 처리에서 장부가 그날 보류한 주문 종목(시가 체결 장부 — 기업행위 판정 대기·
-     * 분할·병합을 반영한 밤·보유 없는 주문 종목의 신호·미처리 기업행위 보유, {@link BookRun#orderHolds}). 저장하지 않는 그날의 판정이라 메모리에만
-     * 둡니다 — 한국 결정 게이트 ①이 장부가 그 관측치로 체결하지 않기로 한 주문을 기다리지 않게({@link #orderHolds(PaperMarket, String, Instant)}).
-     * 재기동하면 비고(그 관측치는 이미 처리해 다시 처리하지 않음), 그 밤 ①은 그 주문을 기다립니다.
-     */
-    private final Map<FailureKey, OrderHolds> orderHolds = new ConcurrentHashMap<>();
-
-    private record OrderHolds(Instant collectedAt, Map<String, String> byTicker) {
-    }
-
     /** 설정은 실행이 읽은 행으로 받습니다({@link MarketRun#settings}) — 장부가 따로 읽지 않습니다. */
     @org.springframework.beans.factory.annotation.Autowired
     public PaperLedgerService(PaperStore store, PaperMarketData marketData, ObjectMapper mapper) {
@@ -298,13 +288,22 @@ public class PaperLedgerService {
 
     /**
      * 그 시장 책이 수집 시각 {@code collectedAt}의 관측치를 처리하면서 그날 보류한 주문 종목(코드 → 사유 — 시가 체결 장부의 기업행위 판정,
-     * 그 종목 주문은 대기 그대로). 이 프로세스가 그 관측치로 그 책을 처리하지 않았으면(재기동 뒤·다른 관측치를 처리함) 빈 표입니다 — 모르는
-     * 보류를 짐작하지 않습니다.
+     * 그 종목 주문은 대기 그대로). 장부가 처리할 때 그 대기 주문 행에 남긴 표시({@code paper_orders.ledger_hold_*}, V16 — 사용자 결정 v3,
+     * 2단계 명세 §4-9 'E0')를 읽으므로 백엔드를 재기동해도 같습니다(그 관측치는 이미 처리해 다시 처리하지 않음). 표시의 수집 시각이 그 관측치와
+     * 다르면(장부가 그 관측치로 그 책을 처리하지 못했거나 다른 관측치를 처리함) 빈 표입니다 — 모르는 보류를 짐작하지 않습니다.
      */
     Map<String, String> orderHolds(PaperMarket market, String book, Instant collectedAt) {
-        OrderHolds holds = orderHolds.get(new FailureKey(market.code(), book));
-        return holds == null || collectedAt == null || !collectedAt.equals(holds.collectedAt()) ? Map.of()
-                : holds.byTicker();
+        if (collectedAt == null) {
+            return Map.of();
+        }
+        Instant observed = collectedAt.truncatedTo(ChronoUnit.MICROS);   // timestamptz는 마이크로초까지
+        Map<String, String> out = new LinkedHashMap<>();
+        for (PaperStore.LedgerHold hold : store.ledgerHolds(book)) {
+            if (hold.collectedAt() != null && observed.equals(hold.collectedAt().truncatedTo(ChronoUnit.MICROS))) {
+                out.putIfAbsent(hold.ticker(), hold.reason());
+            }
+        }
+        return out;
     }
 
     private boolean failedOn(PaperMarket market, String code, Quotes quotes) {
@@ -432,9 +431,6 @@ public class PaperLedgerService {
                 if (run == null) {
                     continue;
                 }
-                if (market.auctionFills()) {
-                    orderHolds.put(key, new OrderHolds(quotes.collectedAt(), Map.copyOf(run.orderHolds)));
-                }
                 processed.add(book.code());
                 filled += run.filled;
                 stopped += run.stopped;
@@ -444,8 +440,7 @@ public class PaperLedgerService {
                 run.alerts.forEach(alert -> alerts.add(book.code() + ": " + alert));
             } catch (RuntimeException e) {
                 // 같은 관측치로는 다시 시도하지 않으니 이 경고는 관측치마다 한 번입니다.
-                failedObservations.put(key, quotes.collectedAt());
-                orderHolds.remove(key);   // 되돌린 처리의 보류는 장부에 남지 않음
+                failedObservations.put(key, quotes.collectedAt());   // 되돌린 처리의 보류 표시도 앞 그대로(앞 관측치의 수집 시각)
                 log.warn("모의 매매 장부 처리 실패({}, 관측치 {}) — 이 책만 되돌렸고, 같은 관측치로는 다시 시도하지 않고 "
                         + "새 관측치에서 다시 시도합니다: {}", book.code(), Kst.stamp(quotes.collectedAt()), e.toString());
                 errors.add(book.code() + ": " + e.getClass().getSimpleName() + " " + e.getMessage());
@@ -496,6 +491,9 @@ public class PaperLedgerService {
             loadAuction(run, pending);                              // 보유 쪽 칸(보류 표시·since 거래량)·확정 시세
             processAuction(run, pending, started);                  // 한국 — 시가 체결 장부(아래 '시가 체결 장부')
             settle(run, state, started);
+            // 그날 보류한 종목의 대기 주문 표시(V16 — 결정 게이트 ①이 이 관측치로 판정할 때 읽음, 재기동해도 남음). 같은 트랜잭션이라
+            // 처리를 되돌리면 표시도 앞 그대로입니다.
+            store.markLedgerHolds(book.code(), quotes.collectedAt(), run.orderHolds);
             return run;
         }
         if (started) {
