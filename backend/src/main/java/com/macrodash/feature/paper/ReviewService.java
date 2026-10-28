@@ -72,7 +72,9 @@ import java.util.regex.Pattern;
  *
  * <p><b>시장 문맥</b>(2단계 명세 §9 A6): 입력 조립·호출은 시장 묶음({@link PaperMarket})을 받아 그 시장 Claude 책의 결정·주문·체결,
  * 그 시장 계좌 비교({@link #comparedBooks}), 그 시장 달력(가정 수익률·계좌 비교의 거래일, 체결 날짜의 시간대), 그 시장 종가 이력·기준일
- * 종가({@link PaperMarketData#sourcedClosesOn(PaperMarket, java.util.Collection, LocalDate)}), 시스템 프롬프트의 시장별 부분을 씁니다. 복기
+ * 종가({@link PaperMarketData#sourcedClosesOn(PaperMarket, java.util.Collection, LocalDate)}), 거절 주문의 가정 진입 규칙과 그 시가
+ * ({@link PaperMarket#reviewEntry}·{@link PaperMarket#reviewOpens} — 한국은 다음 세션 시가, 사용자 결정 v5), 시스템 프롬프트의 시장별 부분을
+ * 씁니다. 복기
  * 행({@code paper_reviews})은 시장마다 한 주 한 행이라(V14 기본키 (market, week_ending)) 같은 주의 다른 시장 행을 읽지도 덮지도
  * 않습니다. 시장을 받지 않는 옛 시그니처와 화면 응답은 미국입니다.
  */
@@ -303,15 +305,16 @@ public class ReviewService {
     /** 그 시장의 그 주 복기 입력({@link #build(LocalDate, FrameworkService.Frame)}의 시장 판 — 사실 계산의 거래일은 그 시장 달력). */
     Built build(PaperMarket market, LocalDate weekEnding, FrameworkService.Frame frame) {
         ReviewFacts.Inputs in = inputs(market, weekEnding, frame);
-        ReviewFacts.Facts full = ReviewFacts.build(market.calendar(), in, weekEnding, ReviewFacts.DEFAULT_WEEKS, null);
+        ReviewFacts.Facts full = ReviewFacts.build(market.calendar(), market.reviewEntry(), in, weekEnding,
+                ReviewFacts.DEFAULT_WEEKS, null);
         String fullText = json(full);
         int fullEst = PacketBuilder.estimateTokens(fullText);
         String trimmed = ReviewFacts.trimmedReason(fullEst);
         if (trimmed == null) {
             return new Built(full, fullText, fullEst, null);
         }
-        ReviewFacts.Facts shorter = ReviewFacts.build(market.calendar(), in, weekEnding, ReviewFacts.FALLBACK_WEEKS,
-                trimmed);
+        ReviewFacts.Facts shorter = ReviewFacts.build(market.calendar(), market.reviewEntry(), in, weekEnding,
+                ReviewFacts.FALLBACK_WEEKS, trimmed);
         String text = json(shorter);
         log.info("주간 복기 {}: {}", weekEnding, trimmed);
         return new Built(shorter, text, PacketBuilder.estimateTokens(text), fullEst);
@@ -349,7 +352,10 @@ public class ReviewService {
         return inputs(US, weekEnding, frame);
     }
 
-    /** 그 시장의 조립 재료 — 그 시장 Claude 책·계좌 비교·체결 날짜 시간대·종가({@link #inputs(LocalDate, FrameworkService.Frame)}의 시장 판). */
+    /**
+     * 그 시장의 조립 재료 — 그 시장 Claude 책·계좌 비교·체결 날짜 시간대·종가({@link #inputs(LocalDate, FrameworkService.Frame)}의 시장 판),
+     * 시가 진입 시장(한국 — {@link PaperMarket#reviewEntry})이면 거절 주문 종목의 창 안 세션 시가({@link #opens}).
+     */
     ReviewFacts.Inputs inputs(PaperMarket market, LocalDate weekEnding, FrameworkService.Frame frame) {
         ReviewFacts.Window window = ReviewFacts.window(weekEnding, ReviewFacts.DEFAULT_WEEKS);
         ZoneId zone = market.calendar().zone();
@@ -359,6 +365,7 @@ public class ReviewService {
         }
         List<ReviewFacts.Decision> decisions = new ArrayList<>();
         Set<String> tickers = new TreeSet<>();
+        Set<String> rejected = new TreeSet<>();
         for (DecisionSummary s : store.decisions(market.claudeBook(), DECISION_SCAN)) {
             if (!window.contains(s.asOfTradingDate())) {
                 continue;
@@ -380,6 +387,9 @@ public class ReviewService {
             for (Order o : store.ordersByDecision(d.id())) {
                 orders.add(order(o, fillsByOrder.get(o.id()), zone));
                 tickers.add(o.ticker());
+                if (ReviewFacts.REJECTED.equals(o.status())) {
+                    rejected.add(o.ticker());
+                }
             }
             JsonNode response = d.response();
             decisions.add(new ReviewFacts.Decision(d.id(), d.kind(), d.asOfTradingDate(), d.status(),
@@ -413,7 +423,20 @@ public class ReviewService {
             books.add(new ReviewFacts.BookNav(code, rows));
         }
         return new ReviewFacts.Inputs(decisions, closes(market, tickers, weekEnding), stops, fullSells, books,
-                frame.version(), frame.status());
+                frame.version(), frame.status(), opens(market, rejected, window.after()));
+    }
+
+    /**
+     * 거절 주문 종목의 세션 시가 — 시가 진입 시장({@link PaperMarket#reviewEntry} {@code NEXT_OPEN} — 한국)만 그 실행의 장부 설정·달력으로
+     * 읽고({@link PaperMarket#reviewOpens}), 그 밖(미국)은 읽지 않고 빈 표입니다. 저장본은 조용히 읽습니다(수집을 깨우지 않음).
+     */
+    private Map<String, Map<LocalDate, ReviewFacts.EntryOpen>> opens(PaperMarket market, Set<String> tickers,
+                                                                     LocalDate from) {
+        if (tickers.isEmpty() || market.reviewEntry() != ReviewFacts.Entry.NEXT_OPEN) {
+            return Map.of();
+        }
+        MarketRun run = MarketRun.of(market, store);
+        return reader.quietly(() -> run.reviewOpens(marketData, tickers, from, run.settings(), run.calendar()));
     }
 
     /**

@@ -175,7 +175,7 @@ public final class ReviewFacts {
      * 출처·종가 근사)·체결가(관측가 — 비용은 장부 칸)·기준일 종가(토스 잠정)를 그 시장 말로 적습니다(2단계 명세 §9 'E3 — 복기의 가정 진입가',
      * 사용자 결정 v5).
      */
-    static final String NEXT_OPEN_NOTE = "수익률·낙폭은 %, 가격은 원. returnSinceFillPct = 복기 기준일 종가 ÷ 체결가 − 1(그 뒤 매도·스탑과 "
+    public static final String NEXT_OPEN_NOTE = "수익률·낙폭은 %, 가격은 원. returnSinceFillPct = 복기 기준일 종가 ÷ 체결가 − 1(그 뒤 매도·스탑과 "
             + "무관하게 계속 들고 있었다면, 체결가는 관측가 — 수수료·세금·슬리피지는 장부의 비용 칸이라 빠짐). maxDrawdownPct = 체결일부터 "
             + "기준일까지 종가의 고점 대비 최대 낙폭(체결가를 첫 고점으로, 0 이하). stop = 체결 뒤 그 종목의 트레일링 스탑 체결(returnPct = "
             + "스탑 체결가 ÷ 체결가 − 1, 그 전에 전량 매도했으면 다시 산 포지션의 스탑이라 triggered=false). 매도는 afterSellPct = 기준일 "

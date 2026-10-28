@@ -1,6 +1,7 @@
 package com.macrodash.feature.paper;
 
 import com.macrodash.analytics.OrderValidator;
+import com.macrodash.analytics.ReviewFacts;
 import com.macrodash.analytics.TradingCalendar;
 import com.macrodash.feature.paper.PaperMarketData.Bar;
 import com.macrodash.feature.paper.PaperMarketData.Quotes;
@@ -357,6 +358,19 @@ final class MarketRun implements PaperMarket {
     @Override
     public Instant reviewOpening(LocalDate weekEnding) {
         return market.reviewOpening(weekEnding);
+    }
+
+    @Override
+    public ReviewFacts.Entry reviewEntry() {
+        return market.reviewEntry();
+    }
+
+    @Override
+    public Map<String, Map<LocalDate, ReviewFacts.EntryOpen>> reviewOpens(PaperMarketData data,
+                                                                        java.util.Collection<String> tickers,
+                                                                        LocalDate from, PaperSettings settings,
+                                                                        TradingCalendar calendar) {
+        return market.reviewOpens(data, tickers, from, settings, calendar);
     }
 
     @Override

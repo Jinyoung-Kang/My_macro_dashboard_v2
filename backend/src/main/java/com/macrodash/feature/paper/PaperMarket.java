@@ -4,6 +4,7 @@ import com.macrodash.Kst;
 import com.macrodash.analytics.CalendarUnavailableException;
 import com.macrodash.analytics.CalendarWindow;
 import com.macrodash.analytics.OrderValidator;
+import com.macrodash.analytics.ReviewFacts;
 import com.macrodash.analytics.TradingCalendar;
 import com.macrodash.feature.paper.PaperMarketData.Bar;
 import com.macrodash.feature.paper.PaperMarketData.Quotes;
@@ -412,6 +413,30 @@ interface PaperMarket {
      */
     default Instant reviewOpening(LocalDate weekEnding) {
         return ZonedDateTime.of(weekEnding.with(reviewOpensOn()), reviewOpensAt(), Kst.ZONE).toInstant();
+    }
+
+    /**
+     * 주간 복기에서 거절 주문의 가정 진입 규칙(2단계 명세 §9 'E3 — 복기의 가정 진입가', 사용자 결정 v5) — 그 시장 주문의 체결 시점을 따릅니다.
+     * 기본은 결정 다음 세션 종가(미국 — {@code NEXT_OBSERVATION}의 근사, 이 묶음 전 그대로). 한국은 다음 세션 시가({@code NEXT_OPEN}).
+     */
+    default ReviewFacts.Entry reviewEntry() {
+        return ReviewFacts.Entry.NEXT_CLOSE;
+    }
+
+    /**
+     * 가정 진입 시가 표 — 종목 → 세션 날짜 → 시가·출처({@link #reviewEntry}가 {@code NEXT_OPEN}인 시장만). 기본은 빈 표(시가를 쓰지 않는
+     * 시장). 한국은 금융위 확정 시가, 아직 없으면 토스 잠정 시가({@code KrReviewOpens}). 관측치 저장본 읽기는 부르는 쪽이
+     * {@code StoreReader.quietly}로 감쌉니다.
+     *
+     * @param from     읽을 가장 이른 세션(복기 창 시작)
+     * @param settings 그 실행이 읽은 그 시장의 장부 설정(ETF 목록 — 확정 시세 출처)
+     * @param calendar 그 실행의 달력
+     */
+    default Map<String, Map<LocalDate, ReviewFacts.EntryOpen>> reviewOpens(PaperMarketData data,
+                                                                         java.util.Collection<String> tickers,
+                                                                         LocalDate from, PaperSettings settings,
+                                                                         TradingCalendar calendar) {
+        return Map.of();
     }
 
     /** 설정 키의 접두어(같은 설정 한 행 안의 묶음). */

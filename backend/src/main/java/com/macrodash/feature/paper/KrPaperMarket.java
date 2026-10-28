@@ -2,6 +2,7 @@ package com.macrodash.feature.paper;
 
 import com.macrodash.analytics.KrxCalendar;
 import com.macrodash.analytics.OrderValidator;
+import com.macrodash.analytics.ReviewFacts;
 import com.macrodash.analytics.TradingCalendar;
 import com.macrodash.feature.paper.PaperMarketData.Bar;
 import com.macrodash.feature.paper.PaperMarketData.Quotes;
@@ -48,7 +49,8 @@ import java.util.regex.Pattern;
  *   <li>체결 시점 {@code NEXT_OPEN}뿐 — {@code NEXT_CLOSE}는 G2 판정 뒤 정하는 코드 상수 {@link #ALLOW_NEXT_CLOSE}(지금 false, K13·K38)</li>
  *   <li>결정 22:30·기한 01:00 KST(K6), 세션 D <b>그날</b>의 그 시각 — 09:00 전 시각은 D+1 아침(설정 저장 규칙과 같은 뜻, 명세 §4-13
  *       'C1b 구현에서 정한 것')</li>
- *   <li>복기 토요일 22:30 KST(K19 코드 상수)</li>
+ *   <li>복기 토요일 22:30 KST(K19 코드 상수) — 금요일 잠정 종가 순자산 줄로 엶({@link #confirmsFills} — 복기 작업), 거절 주문의 가정 진입은
+ *       다음 세션 시가({@link #reviewEntry} — 금융위 확정 시가, 아직 없으면 토스 잠정 시가 {@link KrReviewOpens}, 사용자 결정 v5)</li>
  *   <li>Claude 시스템 프롬프트의 하드 규칙 줄({@link FrameworkService#krHardRules} — {@code kr.*}·원·153130·NEXT_OPEN)·고정 문단
  *       ({@link ClaudePrompts#KR_FIXED_RULES} — 첫 줄 우선순위 문장, E2a)</li>
  * </ul>
@@ -548,6 +550,25 @@ final class KrPaperMarket implements PaperMarket {
     @Override
     public LocalTime reviewOpensAt() {
         return REVIEW_OPENS_AT;
+    }
+
+    /** 다음 세션 시가 — 한국 주문의 체결 시점({@code NEXT_OPEN}, 사용자 결정 v5). */
+    @Override
+    public ReviewFacts.Entry reviewEntry() {
+        return ReviewFacts.Entry.NEXT_OPEN;
+    }
+
+    /** 금융위 확정 시가({@link #confirmedPrices}), 아직 없는 날은 토스 관측치의 잠정 시가({@link KrReviewOpens}). */
+    @Override
+    public Map<String, Map<LocalDate, ReviewFacts.EntryOpen>> reviewOpens(PaperMarketData data,
+                                                                        java.util.Collection<String> tickers,
+                                                                        LocalDate from, PaperSettings settings,
+                                                                        TradingCalendar calendar) {
+        if (tickers.isEmpty()) {
+            return Map.of();
+        }
+        return KrReviewOpens.read(confirmedPrices(data, tickers, settings, from), data.quotes(this), tickers, from,
+                calendar);
     }
 
     @Override
