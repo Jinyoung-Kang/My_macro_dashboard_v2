@@ -764,8 +764,8 @@ class KrRulesJobTest {
     }
 
     @Test
-    @DisplayName("선정한 날 뒤 매일 결정은 대기 중인 정지 매도의 대금도 남는 현금 어림에 넣음(u3 범위 밖 — 명세 §9 알림) — R1 결정이 그 대금으로 153130 park_cash 20.206%, 정지가 R2에도 이어지면 그 매수는 현금 한도로 5주(cashLimited)만 체결돼 현금이 여유 아래로 내려가고 R2 결정이 같은 주문(19.6673%)을 다시 냄(손계산)")
-    void dailyDecisionsAfterTheSelectionCountThePendingSuspendedSell() {
+    @DisplayName("선정한 날 뒤 매일 결정도 대기 중인 정지 매도의 대금은 남는 현금 어림에서 뺌(사용자 결정 u4 ⑤) — 정지가 이어진 R1 결정은 그 대금으로 153130을 사지 않음(현금 0.62% — NO_TRADE, 매도는 대기 그대로), 정지가 풀린 R2 시가에 그 매도가 체결되면 R2 결정이 남는 현금 규칙(기준 2% 넘음)으로 153130 park_cash 20.059%(손계산)")
+    void dailyDecisionsLeaveOutThePendingSuspendedSellUntilItFills() {
         List<Order> orders = suspendedHoldingOnTheReselectionDay(2_000, 80_000_000);
 
         // R1 — 정지가 이어짐(R 결정의 매수는 R1 시가에 모두 체결 → 현금 620,438원, 위 시험).
@@ -775,29 +775,36 @@ class KrRulesJobTest {
         PaperDecisionJob.Result r1 = runAt("2026-11-03T22:30");
         assertThat(r1.outcome()).isEqualTo(PaperDecisionJob.DECIDED);
         assertThat(r1.rules().kind()).isEqualTo(RuleBookService.SCHEDULED);
-        // R1 매일 결정: 현금 620,438 + 000660 대기 매도 20,200,000 × (1 − 26.5bp) = 20,146,470 → 20,766,908원 ÷ 순자산 100,294,058
-        // = 20.7060% > 기준 2% → 여유 0.5%p를 남기고 20.2060%를 153130에(선정한 날이 아니라 그 대금도 넣음).
-        List<Order> parked = store.ordersByDecision(r1.rules().id());
-        assertThat(parked).extracting(Order::ticker, Order::side, Order::targetWeightPct)
-                .containsExactly(org.assertj.core.groups.Tuple.tuple("153130", "BUY", 20.206));
-        assertThat(parked.get(0).reason().path("rule").asString()).isEqualTo(KrRuleBookService.RULE_PARK_DAILY);
+        // R1 매일 결정: 000660 대기 매도(20,200,000 × (1 − 26.5bp) = 20,146,470원)는 지금 체결할 수 없어 뺌 → 현금 620,438원 ÷ 순자산
+        // 100,294,058 = 0.6186% ≤ 기준 2% — 153130을 사지 않음(넣으면 20.7060% → 153130 20.206%를 내고, 정지가 R2에도 이어지면 그 매수가
+        // 현금 한도로 5주만 체결돼 R2 결정이 같은 주문을 되풀이했음).
+        assertThat(r1.rules().status()).isEqualTo("NO_TRADE");
+        assertThat(store.ordersByDecision(r1.rules().id())).isEmpty();
+        assertThat(store.orders.get(orders.get(0).id()).status()).as("매도는 대기 그대로").isEqualTo(PaperBooks.ORDER_PENDING);
+        assertThat(store.state(PaperBooks.KR_RULES).orElseThrow().cash()).isEqualTo(620_438.0);
+        assertThat(r1.rules().response().path("notes")).extracting(JsonNode::asString).anySatisfy(note ->
+                assertThat(note).startsWith("000660 대기 매도 — 지금은 체결할 수 없음(2026-11-03 거래정지")
+                        .contains("그 대금을 현금 어림에서 뺐음"));
 
-        // R2 — 정지가 이어짐(R1·R2 봉 모두 정지일 봉). 000660 매도는 대기 그대로, 153130 매수는 R2 시가에 현금 한도로.
-        KrFixtures.stub(reader, Datasets.SNAP_KR_PAPER_QUOTES, KrRulesFixtures.suspendedOn(
-                KrRulesFixtures.suspend(KrRulesFixtures.quotes(R2), "000660", true), "000660", R1));
+        // R2 — 정지가 풀림(R1 봉은 정지일 봉 그대로, R2 봉 관측 — 시가 10,000). 만료(R + 3거래일) 안이라 R2 시가에 팔림.
+        KrFixtures.stub(reader, Datasets.SNAP_KR_PAPER_QUOTES,
+                KrRulesFixtures.suspendedOn(KrRulesFixtures.quotes(R2), "000660", R1));
         fsc(R1);
         PaperDecisionJob.Result r2 = runAt("2026-11-04T22:30");
         assertThat(r2.outcome()).isEqualTo(PaperDecisionJob.DECIDED);
-        assertThat(store.orders.get(orders.get(0).id()).status()).isEqualTo(PaperBooks.ORDER_PENDING);
-        Order filled = store.orders.get(parked.get(0).id());
-        assertThat(filled.status()).isEqualTo("FILLED");
-        assertThat(filled.reason().path("cashLimited").asBoolean()).as("현금 한도로 줄어 체결").isTrue();
+        assertThat(store.orders.get(orders.get(0).id()).status()).isEqualTo("FILLED");
+        // R2 시가: 000660 2,000주 × 10,000 매도 +19,947,000(수수료 3,000·슬리피지 10,000·거래세 10,000·농특세 30,000) → 현금 20,567,438원.
         assertThat(store.fillsOf(PaperBooks.KR_RULES)).filteredOn(f -> f.observationDate().equals(R2))
-                .extracting(f -> f.ticker() + " " + f.side() + " " + f.qty()).containsExactly("153130 BUY 5");
-        assertThat(store.state(PaperBooks.KR_RULES).orElseThrow().cash()).as("여유 0.5%p 아래").isEqualTo(80_087.0);
-        // R2 매일 결정: 현금 80,087 + 같은 대기 매도 대금 20,146,470 → 19.6673%를 153130에 다시.
-        assertThat(store.ordersByDecision(r2.rules().id())).extracting(Order::ticker, Order::side, Order::targetWeightPct)
-                .containsExactly(org.assertj.core.groups.Tuple.tuple("153130", "BUY", 19.6673));
+                .extracting(f -> f.ticker() + " " + f.side() + " " + f.qty()).containsExactly("000660 SELL 2000");
+        assertThat(store.state(PaperBooks.KR_RULES).orElseThrow().cash()).isEqualTo(20_567_438.0);
+        // R2 매일 결정: 남는 현금 20,567,438 ÷ 순자산 100,041,058(R2 종가 평가 — 10,100 × 1,334 + 108,020 × 611) = 20.5590% > 기준 2%
+        // → 여유 0.5%p를 남기고 20.0590%를 153130에(park_cash — 신호 매수가 아닌 현금 관리).
+        assertThat(r2.rules().kind()).isEqualTo(RuleBookService.SCHEDULED);
+        List<Order> parked = store.ordersByDecision(r2.rules().id());
+        assertThat(parked).extracting(Order::ticker, Order::side, Order::targetWeightPct)
+                .containsExactly(org.assertj.core.groups.Tuple.tuple("153130", "BUY", 20.059));
+        assertThat(parked.get(0).reason().path("rule").asString()).isEqualTo(KrRuleBookService.RULE_PARK_DAILY);
+        assertThat(parked.get(0).reason().path("thresholdPct").asDouble()).isEqualTo(2.0);
     }
 
     @Test
