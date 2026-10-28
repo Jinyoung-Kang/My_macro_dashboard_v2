@@ -1,0 +1,46 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "stance", "targetEquityExposurePct", "exposureRationale", "summary", "orders", "noTradeReason", "confidence"],
+  "properties": {
+    "schemaVersion": {"const": 2},
+    "stance": {"enum": ["RISK_ON", "RISK_OFF", "NEUTRAL", "UNCERTAIN"]},
+    "targetEquityExposurePct": {"type": "number", "minimum": 0, "maximum": 100},
+    "exposureRationale": {"type": "string", "maxLength": 600},
+    "summary": {"type": "string", "maxLength": 1200},
+    "orders": {
+      "type": "array",
+      "maxItems": 12,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["ticker", "side", "timing", "thesis", "labels", "invalidation"],
+        "properties": {
+          "ticker": {"type": "string", "pattern": "^[0-9A-Z]{6}$"},
+          "side": {"enum": ["BUY", "SELL"]},
+          "targetWeightPct": {"type": ["number", "null"], "minimum": 0, "maximum": 100},
+          "sellFraction": {"type": ["number", "null"], "minimum": 0, "maximum": 1},
+          "timing": {"enum": ["NEXT_OPEN"]},
+          "thesis": {"type": "string", "maxLength": 600},
+          "labels": {"type": "array", "items": {"enum": ["사실", "해석", "가설", "확인 필요", "결정"]}},
+          "invalidation": {"type": "string", "maxLength": 300}
+        }
+      }
+    },
+    "noTradeReason": {"type": ["string", "null"], "maxLength": 600},
+    "watchlist": {
+      "type": "array",
+      "maxItems": 10,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["ticker", "condition"],
+        "properties": {
+          "ticker": {"type": "string"},
+          "condition": {"type": "string", "maxLength": 300}
+        }
+      }
+    },
+    "confidence": {"type": "number", "minimum": 0, "maximum": 1}
+  }
+}

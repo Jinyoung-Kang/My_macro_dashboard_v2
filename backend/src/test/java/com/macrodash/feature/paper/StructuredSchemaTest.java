@@ -382,6 +382,93 @@ class StructuredSchemaTest {
         assertThat(DECISION.name()).isEqualTo("paper/decision.schema.json");
     }
 
+    // ── 한국 결정 스키마(2단계 명세 §4-7·K34, E2a) ──────────────────────────
+
+    private static final StructuredSchema KR_DECISION = StructuredSchema.load(ClaudeBookService.KR_SCHEMA_RESOURCE);
+    private static final String KR_TIMING = "/properties/orders/items/properties/timing/enum";
+    private static final String KR_TICKER = "/properties/orders/items/properties/ticker/pattern";
+
+    /** 한국 정상 응답 — 6자리 코드 주문 둘(매수·매도, NEXT_OPEN), 관심 목록 하나. */
+    private static ObjectNode validKr() throws Exception {
+        ObjectNode response = valid();
+        ObjectNode buy = firstOrder(response);
+        buy.put("ticker", "005930");
+        buy.put("timing", "NEXT_OPEN");
+        ObjectNode sell = (ObjectNode) response.get("orders").get(1);
+        sell.put("ticker", "069500");
+        sell.put("timing", "NEXT_OPEN");
+        ((ObjectNode) response.get("watchlist").get(0)).put("ticker", "000660");
+        return response;
+    }
+
+    @Test
+    @DisplayName("한국 결정 스키마: 미국 파일과 다른 곳은 주문 timing enum(= 한국 시장 체결 시점, NEXT_OPEN뿐)과 주문 티커 패턴(6자리 코드) 둘뿐 — schemaVersion·나머지 키·관심 목록 티커는 같다")
+    void krSchemaDiffersOnlyInTimingAndTicker() throws Exception {
+        tools.jackson.databind.JsonNode us = rawSchema(ClaudeBookService.SCHEMA_RESOURCE);
+        tools.jackson.databind.JsonNode kr = rawSchema(ClaudeBookService.KR_SCHEMA_RESOURCE);
+
+        List<String> timings = new ArrayList<>();
+        kr.at(KR_TIMING).forEach(node -> timings.add(node.asString()));
+        assertThat(timings).as("ALLOW_NEXT_CLOSE=false면 NEXT_OPEN뿐 — 시장 묶음의 체결 시점과 같음")
+                .isEqualTo(KrPaperMarket.INSTANCE.timings()).containsExactly(PaperBooks.NEXT_OPEN);
+        assertThat(KrPaperMarket.ALLOW_NEXT_CLOSE).isFalse();
+        assertThat(kr.at(KR_TICKER).asString()).isEqualTo("^[0-9A-Z]{6}$");
+        assertThat(kr.at("/properties/schemaVersion")).isEqualTo(us.at("/properties/schemaVersion"));
+        assertThat(kr.at("/properties/watchlist")).as("관심 목록 티커는 미국처럼 패턴 없음").isEqualTo(us.at("/properties/watchlist"));
+
+        ObjectNode patched = (ObjectNode) us.deepCopy();
+        ObjectNode orderProps = (ObjectNode) patched.at("/properties/orders/items/properties");
+        orderProps.set("timing", kr.at("/properties/orders/items/properties/timing").deepCopy());
+        orderProps.set("ticker", kr.at("/properties/orders/items/properties/ticker").deepCopy());
+        assertThat(kr).as("두 칸을 미국 파일에 덮으면 한국 파일과 같음").isEqualTo(patched);
+        List<String> krKeys = new ArrayList<>();
+        kr.at("/properties/orders/items/properties").properties().forEach(e -> krKeys.add(e.getKey()));
+        List<String> usKeys = new ArrayList<>();
+        us.at("/properties/orders/items/properties").properties().forEach(e -> usKeys.add(e.getKey()));
+        assertThat(krKeys).as("주문 칸 순서까지 같음").isEqualTo(usKeys);
+    }
+
+    @Test
+    @DisplayName("한국 결정 스키마: 6자리 코드·NEXT_OPEN 응답은 통과, 미국 시점(NEXT_OBSERVATION·NEXT_CLOSE)·미국 티커·자리 수가 틀린 코드·소문자는 잡는다")
+    void krSchemaValidatesKoreanOrders() throws Exception {
+        assertThat(KR_DECISION.validate(validKr())).isEmpty();
+        assertThat(DECISION.validate(validKr())).as("미국 스키마는 6자리 코드·NEXT_OPEN을 받지 않음").isNotEmpty();
+
+        for (String timing : List.of("NEXT_OBSERVATION", "NEXT_CLOSE", "BACKFILL")) {
+            ObjectNode response = validKr();
+            firstOrder(response).put("timing", timing);
+            assertThat(KR_DECISION.validate(response)).as(timing).hasSize(1)
+                    .allMatch(v -> v.startsWith("$.orders[0].timing: "));
+        }
+        for (String ticker : List.of("BRK.B", "SPY", "05930", "0059300", "00593a", " 005930")) {
+            ObjectNode response = validKr();
+            firstOrder(response).put("ticker", ticker);
+            assertThat(KR_DECISION.validate(response)).as(ticker).hasSize(1)
+                    .allMatch(v -> v.startsWith("$.orders[0].ticker: "));
+        }
+        ObjectNode letters = validKr();
+        firstOrder(letters).put("ticker", "0000J0");
+        assertThat(KR_DECISION.validate(letters)).as("영문 대문자가 든 6자리 코드도 패턴 안(수집기·설정의 코드 규칙과 같음)").isEmpty();
+    }
+
+    @Test
+    @DisplayName("고정본: API에 보내는 한국 결정 스키마 — 미국 API 사본과 같은 걷어 내기(숫자 범위·길이·개수 없음, 모든 객체 닫힘)")
+    void goldenKrSchemaForApi() {
+        List<String> found = new ArrayList<>();
+        List<String> open = new ArrayList<>();
+        walkSchemas(KR_DECISION.forApi(), "$", (path, schema) -> {
+            schema.keySet().stream().filter(StructuredSchema.API_UNSUPPORTED::contains)
+                    .forEach(key -> found.add(path + "." + key));
+            if (("object".equals(schema.get("type")) || schema.containsKey("properties"))
+                    && !Boolean.FALSE.equals(schema.get("additionalProperties"))) {
+                open.add(path);
+            }
+        });
+        assertThat(found).isEmpty();
+        assertThat(open).isEmpty();
+        Golden.assertMatches("decision-schema-forapi-kr.json", Golden.prettyJson(KR_DECISION.forApi()));
+    }
+
     // ── 주간 복기 스키마(2단계 D) ─────────────────────────────────────────
 
     private static final StructuredSchema REVIEW = StructuredSchema.load("paper/review.schema.json");

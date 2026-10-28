@@ -133,6 +133,12 @@ public class ClaudeBookService {
 
     /** 응답 스키마(설계 §5-3) — API용(제약을 걷어 낸 것)과 검사용(전체)이 같은 파일입니다(D26). */
     static final String SCHEMA_RESOURCE = "paper/decision.schema.json";
+    /**
+     * 한국 Claude 계좌의 응답 스키마(2단계 명세 §4-7·K34, E2a) — 미국 파일과 같은 {@code schemaVersion}이고 다른 점은 주문의 {@code timing}
+     * enum({@link KrPaperMarket#timings} — {@code ALLOW_NEXT_CLOSE}가 거짓이면 {@code NEXT_OPEN}뿐)과 주문 티커 패턴({@code ^[0-9A-Z]{6}$} — 6자리
+     * 종목 코드)뿐입니다. 미국 파일은 바이트 그대로입니다({@code StructuredSchemaTest}).
+     */
+    static final String KR_SCHEMA_RESOURCE = "paper/kr-decision.schema.json";
     /** 목표 노출과 주문 반영 뒤 예상 노출의 차이가 이보다 크면 exposureMismatch(설계 §5-3). */
     static final double MISMATCH_PCT = 15;
     /** 종목 저장본이 이보다 오래되면 그날 재량 주문 전부 STALE_INPUT(설계 §5-4). */
