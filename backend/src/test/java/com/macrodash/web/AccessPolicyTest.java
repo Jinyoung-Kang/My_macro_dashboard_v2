@@ -35,7 +35,7 @@ class AccessPolicyTest {
     }
 
     @Test
-    @DisplayName("🧪 모의 매매 경로는 모두 운영자만(ADR 0010·0018) — 시장 단위 조회(?market, 2단계 F1)는 경로가 같아 같은 정책")
+    @DisplayName("🧪 모의 매매 경로는 모두 운영자만(ADR 0010·0018) — 시장 단위 조회·실행(?market·본문 market, 2단계 F1)은 경로가 같아 같은 정책")
     void paperRoutesAreOwnerOnly() {
         java.util.List<String> paper = AccessPolicy.routes().keySet().stream()
                 .filter(route -> route.split(" ")[1].startsWith("/api/paper/")).toList();
@@ -45,6 +45,11 @@ class AccessPolicyTest {
         for (String path : java.util.List.of("/api/paper/overview", "/api/paper/status", "/api/paper/reviews",
                 "/api/paper/reviews/2026-10-31", "/api/paper/notes", "/api/paper/decisions")) {
             assertThat(AccessPolicy.required("GET", path)).as("GET " + path).isEqualTo(AccessPolicy.Access.OWNER);
+        }
+        // 쓰기·실행 POST(F1b — 초기화·리스크 점검·수동 결정·출발·복기 실행·메모 쓰기).
+        for (String path : java.util.List.of("/api/paper/init", "/api/paper/run/risk", "/api/paper/run/decision",
+                "/api/paper/run/initial-decision", "/api/paper/reviews/run", "/api/paper/notes")) {
+            assertThat(AccessPolicy.required("POST", path)).as("POST " + path).isEqualTo(AccessPolicy.Access.OWNER);
         }
     }
 

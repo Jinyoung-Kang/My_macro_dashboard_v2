@@ -994,6 +994,77 @@ class ApiIntegrationTest {
     }
 
     @Test
+    @DisplayName("🧪 모의 매매 POST의 시장 값(2단계 F1b): 회원은 403, 모르는 값은 400(쓰기 없음), 시장 값 없음·US는 같은 응답, 한국은 테스트 배포 설정에 출발일이 없어 초기화·수동 결정·출발·복기가 그 사유로 400, 리스크 점검은 ok:false·쉬는 사유, 한국 메모는 달력 저장본이 없어 400")
+    void paperMarketWriteRoutes() {
+        assumePaperSchema();
+        HttpHeaders member = new HttpHeaders();
+        member.add(HttpHeaders.COOKIE, login(MEMBER, "test-password"));
+        member.setContentType(MediaType.APPLICATION_JSON);
+        List<String> posts = List.of("/api/paper/init", "/api/paper/run/risk", "/api/paper/run/decision",
+                "/api/paper/run/initial-decision", "/api/paper/reviews/run");
+        for (String path : posts) {
+            ResponseEntity<JsonNode> denied = rest.exchange(url(path + "?market=KR"), HttpMethod.POST,
+                    new HttpEntity<>(Map.of("book", "kr_claude"), member), JsonNode.class);
+            assertThat(denied.getStatusCode()).as("회원 POST " + path + "?market=KR").isEqualTo(HttpStatus.FORBIDDEN);
+            assertThat(denied.getBody().path("required").asString()).isEqualTo("OWNER");
+        }
+        assertThat(rest.exchange(url("/api/paper/notes"), HttpMethod.POST, new HttpEntity<>(Map.of("kind", "INSIGHT",
+                "title", "t", "body", "b", "market", "KR"), member), JsonNode.class).getStatusCode())
+                .as("회원 POST 메모(market KR)").isEqualTo(HttpStatus.FORBIDDEN);
+
+        HttpHeaders owner = new HttpHeaders();
+        owner.add(HttpHeaders.COOKIE, sessionCookie);
+        owner.setContentType(MediaType.APPLICATION_JSON);
+        long notesBefore = jdbc.queryForObject("SELECT COUNT(*) FROM paper_notes", Long.class);
+        long jobRunsBefore = jdbc.queryForObject("SELECT COUNT(*) FROM paper_job_runs", Long.class);
+        for (String path : posts) {
+            ResponseEntity<JsonNode> unknown = rest.exchange(url(path + "?market=JP"), HttpMethod.POST,
+                    new HttpEntity<>(Map.of("book", "kr_claude"), owner), JsonNode.class);
+            assertThat(unknown.getStatusCode()).as(path + "?market=JP").isEqualTo(HttpStatus.BAD_REQUEST);
+            assertThat(unknown.getBody().path("message").asString()).contains("market", "US · KR");
+        }
+        ResponseEntity<JsonNode> unknownNote = rest.exchange(url("/api/paper/notes"), HttpMethod.POST,
+                new HttpEntity<>(Map.of("kind", "INSIGHT", "title", "t", "body", "b", "market", "kr"), owner), JsonNode.class);
+        assertThat(unknownNote.getStatusCode()).as("메모 market kr").isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM paper_notes", Long.class)).isEqualTo(notesBefore);
+
+        JsonNode risk = authorizedExchange("/api/paper/run/risk", HttpMethod.POST).getBody();
+        assertThat(authorizedExchange("/api/paper/run/risk?market=US", HttpMethod.POST).getBody())
+                .as("?market=US = 시장 값 없음").isEqualTo(risk);
+        assertThat(risk.has("market")).isFalse();
+
+        boolean krStarted = jdbc.queryForObject("SELECT COUNT(*) FROM paper_books WHERE market = 'KR' "
+                + "AND status IN ('ACTIVE', 'PAUSED')", Long.class) > 0;
+        ResponseEntity<JsonNode> init = authorizedExchange("/api/paper/init?market=KR", HttpMethod.POST);
+        assertThat(init.getStatusCode()).as("출발일 없는 한국 초기화").isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(init.getBody().path("message").asString())
+                .isEqualTo(com.macrodash.feature.paper.PaperConfig.KR_START_MISSING);
+        if (!krStarted) {
+            JsonNode krRisk = authorizedExchange("/api/paper/run/risk?market=KR", HttpMethod.POST).getBody();
+            assertThat(krRisk.path("ok").asBoolean(true)).isFalse();
+            assertThat(krRisk.path("market").asString()).isEqualTo("KR");
+            assertThat(krRisk.path("dormantReason").asString())
+                    .isEqualTo(com.macrodash.feature.paper.PaperConfig.KR_START_MISSING);
+            for (String path : List.of("/api/paper/run/decision", "/api/paper/run/initial-decision", "/api/paper/reviews/run")) {
+                ResponseEntity<JsonNode> dormant = rest.exchange(url(path + "?market=KR"), HttpMethod.POST,
+                        new HttpEntity<>(path.endsWith("/run/decision") ? Map.of("book", "kr_claude") : Map.of(), owner),
+                        JsonNode.class);
+                assertThat(dormant.getStatusCode()).as(path + "?market=KR — 쉬는 한국").isEqualTo(HttpStatus.BAD_REQUEST);
+                assertThat(dormant.getBody().path("message").asString()).as(path)
+                        .isEqualTo(com.macrodash.feature.paper.PaperConfig.KR_START_MISSING);
+            }
+        }
+        ResponseEntity<JsonNode> krNote = rest.exchange(url("/api/paper/notes"), HttpMethod.POST, new HttpEntity<>(
+                Map.of("kind", "INSIGHT", "title", "t", "body", "b", "market", "KR"), owner), JsonNode.class);
+        assertThat(krNote.getStatusCode()).as("공휴일 저장본 없음(setUp이 snapshots를 비움) — 한국 메모는 기준일을 셀 수 없음")
+                .isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(krNote.getBody().path("message").asString()).contains("메모의 기준일·만료일을 셀 수 없습니다");
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM paper_notes", Long.class)).isEqualTo(notesBefore);
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM paper_job_runs", Long.class))
+                .as("쉬는 한국·거절된 요청은 작업 기록을 남기지 않음").isEqualTo(jobRunsBefore);
+    }
+
+    @Test
     @DisplayName("🧪 모의 매매 초기화: 가격 없는 테스트 DB에서도 500이 아니라 벤치마크를 사유와 함께 건너뛰고, 두 번 눌러도 한 번")
     void paperInitWithoutPricesSkipsBenchmarks() {
         assumePaperSchema();
@@ -1021,6 +1092,8 @@ class ApiIntegrationTest {
             ResponseEntity<JsonNode> second = authorizedExchange("/api/paper/init", HttpMethod.POST);
             assertThat(second.getStatusCode()).isEqualTo(HttpStatus.OK);
             assertThat(second.getBody().path("created").size()).as("멱등").isZero();
+            assertThat(authorizedExchange("/api/paper/init?market=US", HttpMethod.POST).getBody())
+                    .as("?market=US = 시장 값 없음(F1b)").isEqualTo(second.getBody());
             assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM paper_books WHERE code IN "
                     + "('rules', 'claude', 'bench_spy', 'bench_mix')", Long.class)).isEqualTo(4);
 
