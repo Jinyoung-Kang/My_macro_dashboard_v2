@@ -68,6 +68,25 @@ class KrReviewOpensTest {
     }
 
     @Test
+    @DisplayName("1분봉 MINUTE_OK여도 개장 라벨 봉의 거래량이 0이면 그 시가를 쓰지 않고 일봉 시가로(장부 사다리와 같은 '거래량 > 0 봉' — 사용자 결정 v5 출처 순서)")
+    void zeroVolumeOpeningMinuteFallsBackToTheDailyOpen() {
+        KrFixtures.Payload payload = new KrFixtures.Payload(FRI);
+        Instant fetched = kst("2026-11-06T21:58");
+        payload.code("000660", fetched).bar(THU, 179_000, 182_000, 9_000).bar(FRI, 195_000, 198_000, 9_500)
+                .minute("OK", "09:01", 194_000, 0);
+        payload.etf("069500", fetched).bar(FRI, 95_200, 95_300, 3_100_000).minute("OK", "09:01", 95_100, 0);
+        Optional<PaperMarketData.Quotes> quotes = KrPaperMarket.INSTANCE.parse(payload.snapshot(kst("2026-11-06T22:00")));
+
+        Map<String, Map<LocalDate, EntryOpen>> opens = KrReviewOpens.read(fsc("000660", THU, "180000"), quotes,
+                List.of("000660", "069500"), THU, calendar());
+
+        assertThat(opens.get("000660").get(FRI)).as("거래량 0 개장 봉 194,000 대신 일봉 시가(통합가)")
+                .isEqualTo(new EntryOpen(195_000, KrQuotes.SOURCE_INTEGRATED));
+        assertThat(opens.get("069500").get(FRI)).as("ETF는 일봉 출처 TOSS_DAILY")
+                .isEqualTo(new EntryOpen(95_200, KrQuotes.SOURCE_DAILY));
+    }
+
+    @Test
     @DisplayName("금융위 행의 시가 칸이 없으면(거래 없던 날) 토스로, 이어받은 항목(isStale — 이번에 받지 못함)은 쓰지 않음, 관측치가 없으면 금융위만")
     void missingFscOpenStaleItemsAndNoQuotes() {
         KrFixtures.Payload payload = new KrFixtures.Payload(FRI);
