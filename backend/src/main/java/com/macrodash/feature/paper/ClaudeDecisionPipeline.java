@@ -274,7 +274,6 @@ final class ClaudeDecisionPipeline {
         JsonNode body = row.body();
         // 그 시장의 설정 읽기(접두어·현금성 기본값 — C1a): 현금성(비중 상한·종목 수에서 빠짐)과 검증기 한도가 그 시장 키.
         PaperSettings paper = PaperSettings.from(body, market);
-        RuleSettings ruleSettings = RuleSettings.from(body);
         PacketBuilder.Limits packetLimits = PacketBuilder.Limits.from(body, market);
         OrderValidator.Limits limits = new OrderValidator.Limits(packetLimits.maxWeightStockPct(),
                 packetLimits.maxWeightEtfPct(), packetLimits.maxPositions(), packetLimits.minOrderNotional(),
@@ -306,24 +305,12 @@ final class ClaudeDecisionPipeline {
                 }
             }
         }
-        Set<String> noPrice = new TreeSet<>();
-        boolean stale;
-        if (initial) {
-            for (Proposed p : proposed) {
-                if (p.ticker() != null && !closes.containsKey(p.ticker())) {
-                    noPrice.add(p.ticker());
-                }
-            }
-            stale = false;   // 초기 결정은 얼린 출발일 확정 종가로 체결합니다
-        } else {
-            noPrice.addAll(noPriceTickers(quotes, heldQty.keySet()));
-            stale = inputsStale(quotes, clock.instant());
-        }
-        int monthly = initial ? 0 : PacketBuilder.monthlyDiscretionaryOrders(
-                store.recentOrders(market.claudeBook(), PacketBuilder.MONTHLY_SCAN), asOf);
-        OrderValidator.Context ctx = new OrderValidator.Context(view.nav(), view.cash(), weights, heldDays, universe,
-                ruleSettings.etfs(), Set.copyOf(paper.cashLikeTickers()), lockedOut(asOf), noPrice, monthly, stale,
-                heldQty);
+        MarketChecks checks = usChecks(asOf, initial, body, quotes, universe, closes, proposed, heldQty.keySet());
+        boolean stale = checks.stale();
+        int monthly = checks.monthly();
+        OrderValidator.Context ctx = new OrderValidator.Context(view.nav(), view.cash(), weights, heldDays,
+                checks.universe(), checks.etfs(), Set.copyOf(paper.cashLikeTickers()), checks.lockedOut(),
+                checks.noPrice(), monthly, stale, heldQty, checks.unfillable(), checks.wholeShares());
         List<Verdict> verdicts = OrderValidator.validate(proposed, ctx, limits, market.orderValidation());
 
         // 주문을 반영한 예상 노출(클래스 설명) — 통과한 매도·매수만.
@@ -376,6 +363,42 @@ final class ClaudeDecisionPipeline {
         response.set("settings", mapper.valueToTree(settingsView(claude, limits, paper)));
         putMeasure(response, attempt);
         return new Plan(verdicts, planned, target, expected, mismatch, accepted, status, response);
+    }
+
+    /**
+     * 검증기 문맥의 시장별 칸 — 살 수 있는 종목·ETF·재진입 금지·가격 없음·이달 재량 주문 수·신선도와 한국만의 칸(지금 체결할 수 없는 종목·
+     * 정수 주 재료 — 미국은 null). 장부 쪽 칸(순자산·현금·비중·보유 거래일·수량)·현금성·한도는 시장과 상관없이 {@link #plan}이 채웁니다.
+     */
+    record MarketChecks(Set<String> universe, Set<String> etfs, Set<String> lockedOut, Set<String> noPrice,
+                        int monthly, boolean stale, Map<String, String> unfillable,
+                        OrderValidator.WholeShares wholeShares) {
+    }
+
+    /**
+     * 미국 칸 — 초기 결정은 패킷이 보인 유니버스·얼린 출발일 종가({@code closes} — 없으면 가격 없음)·신선도 판정 없음(얼린 확정 종가로
+     * 체결), 정기 결정은 관측치 저장본의 종목·이어 쓴 봉과 봉 없는 보유(가격 없음)·24시간 신선도. ETF는 규칙 책 설정의 목록, 이달 재량 주문
+     * 수는 {@link PacketBuilder#monthlyDiscretionaryOrders}.
+     */
+    private MarketChecks usChecks(LocalDate asOf, boolean initial, JsonNode body, Optional<Quotes> quotes,
+                                  Set<String> universe, Map<String, PaperMarketData.SourcedClose> closes,
+                                  List<Proposed> proposed, Set<String> heldTickers) {
+        Set<String> noPrice = new TreeSet<>();
+        boolean stale;
+        if (initial) {
+            for (Proposed p : proposed) {
+                if (p.ticker() != null && !closes.containsKey(p.ticker())) {
+                    noPrice.add(p.ticker());
+                }
+            }
+            stale = false;   // 초기 결정은 얼린 출발일 확정 종가로 체결합니다
+        } else {
+            noPrice.addAll(noPriceTickers(quotes, heldTickers));
+            stale = inputsStale(quotes, clock.instant());
+        }
+        int monthly = initial ? 0 : PacketBuilder.monthlyDiscretionaryOrders(
+                store.recentOrders(market.claudeBook(), PacketBuilder.MONTHLY_SCAN), asOf);
+        return new MarketChecks(universe, RuleSettings.from(body).etfs(), lockedOut(asOf), noPrice, monthly, stale,
+                null, null);
     }
 
     /**
