@@ -1,6 +1,6 @@
 "use client";
 
-import { useId } from "react";
+import { useId, useState } from "react";
 import { AssetRow, ChangeChip, Empty, Hero, ProvenanceBadge, Skeleton, StaleBadge } from "@/components/patterns";
 import { Freshness } from "@/components/ui";
 import { useApi } from "@/hooks/useApi";
@@ -9,6 +9,7 @@ import { isOwner } from "@/lib/access";
 import { endpoints } from "@/lib/endpoints";
 import { HOME_REFRESH_MS, paperHomeModel } from "@/lib/home";
 import { PAPER_SOURCES } from "@/lib/paper";
+import type { PaperMarketCode } from "@/lib/paperMarket";
 import type { PaperOverviewResponse, PaperStatusResponse } from "@/lib/types";
 import { HomeCard, SectionError } from "./HomeCard";
 
@@ -17,15 +18,26 @@ import { HomeCard, SectionError } from "./HomeCard";
 const TITLE = "모의매매 · Claude 계좌 순자산";
 
 /**
- * ② 모의매매(미국) 히어로 — 운영자 전용(/api/paper/* 전부 OWNER). 운영자가 아니면 요청하지 않고(null 경로) 그리지 않습니다.
+ * ② 모의매매 히어로 — 운영자 전용(/api/paper/* 전부 OWNER). 운영자가 아니면 요청하지 않고(null 경로) 그리지 않습니다.
  *
  * 히어로 값은 Claude 계좌 순자산과 그 평가 시각(마지막 관측), 아래로 네 계좌 행(값 = 순자산, 변화율 = 출발 대비 — 일간 변화 필드는
  * 응답에 없어 만들지 않음). 쓰기 버튼(초기화·리스크 실행 등)은 두지 않습니다 — 홈은 읽기만 하고, 조작은 모의매매 화면에서 합니다.
+ *
+ * 미국 | 한국 탭(2단계 명세 §4-16): 미국이 기본이고, 한국을 고를 때만 `?market=KR` 개요·상태를 읽습니다(고르기 전에는 한국 요청 없음 — 미국 값은
+ * 계속 읽어 두어 되돌아오면 바로 보임). 한국은 원 단위 정수, 행 링크 /paper/kr. 두 탭 모두 '두 책 수익률은 서로 비교하지 않음' 문구를 적습니다
+ * (§3 '탭마다'). 한국을 읽는 중·실패에도 탭은 남아 미국으로 돌아갈 수 있습니다.
  */
 export function PaperHero() {
   const owner = isOwner(useSessionUser());
-  const overview = useApi<PaperOverviewResponse>(owner ? endpoints.paper.overview : null, HOME_REFRESH_MS.paper);
-  const status = useApi<PaperStatusResponse>(owner ? endpoints.paper.status : null, HOME_REFRESH_MS.paper);
+  const [market, setMarket] = useState<PaperMarketCode>("US");
+  const korea = market === "KR";
+  const usOverview = useApi<PaperOverviewResponse>(owner ? endpoints.paper.overview : null, HOME_REFRESH_MS.paper);
+  const usStatus = useApi<PaperStatusResponse>(owner ? endpoints.paper.status : null, HOME_REFRESH_MS.paper);
+  const krPaths = endpoints.paper.market("KR");
+  const krOverview = useApi<PaperOverviewResponse>(owner && korea ? krPaths.overview : null, HOME_REFRESH_MS.paper);
+  const krStatus = useApi<PaperStatusResponse>(owner && korea ? krPaths.status : null, HOME_REFRESH_MS.paper);
+  const overview = korea ? krOverview : usOverview;
+  const status = korea ? krStatus : usStatus;
 
   if (!owner) {
     return null;
@@ -36,13 +48,15 @@ export function PaperHero() {
         {overview.error ? (
           <SectionError message={overview.error} onRetry={() => void overview.reload()} />
         ) : (
-          <Skeleton lines={5} label="모의매매 계좌를 불러오는 중" />
+          <Skeleton lines={5} label={korea ? "한국 모의매매 계좌를 불러오는 중" : "모의매매 계좌를 불러오는 중"} />
         )}
+        {/* 한국을 고른 뒤 읽는 중·실패여도 미국으로 돌아갈 수 있게 탭을 남깁니다(미국을 처음 읽는 동안은 고를 것이 없어 그리지 않음 — 예전 그대로). */}
+        {korea ? <div className="mt-4"><MarketSwitch value={market} onChange={setMarket} /></div> : null}
       </HomeCard>
     );
   }
 
-  const model = paperHomeModel(overview.data, status.data);
+  const model = paperHomeModel(overview.data, status.data, { market });
   return (
     <Hero
       label={TITLE}
@@ -63,12 +77,12 @@ export function PaperHero() {
             {model.heroCaption} · 마지막 관측 <span className="tabular-nums">{model.heroAsOf ?? <Empty />}</span>
           </span>
           <StaleBadge stale={model.heroStale} reason={model.heroStaleReason} />
-          <ProvenanceBadge source={PAPER_SOURCES.ledger} />
+          <ProvenanceBadge source={korea ? PAPER_SOURCES.krLedger : PAPER_SOURCES.ledger} />
           {/* 다시 읽기가 실패하면 앞서 받은 값을 두고 '새로 읽지 못함'을 붙입니다(QA-067). */}
           <Freshness refreshError={overview.refreshError ?? status.refreshError} />
         </>
       }
-      tabs={<MarketSwitch />}
+      tabs={<MarketSwitch value={market} onChange={setMarket} />}
     >
       {model.message ? (
         <p className="text-sm text-text-2">{model.message}</p>
@@ -84,6 +98,13 @@ export function PaperHero() {
         </ul>
       )}
       {model.available ? <p className="mt-3 text-xs leading-relaxed text-text-3">{model.startLine}</p> : null}
+      {model.dormantNote ? (
+        <p className="mt-1 text-xs leading-relaxed text-warn">
+          <span aria-hidden="true">⚠️ </span>
+          <span className="sr-only">주의: </span>
+          {model.dormantNote}
+        </p>
+      ) : null}
       {model.disabledNote ? (
         <p className="mt-1 text-xs leading-relaxed text-warn">
           <span aria-hidden="true">⚠️ </span>
@@ -95,29 +116,44 @@ export function PaperHero() {
       {!status.data && status.error ? (
         <p className="mt-1 text-xs text-text-3">정기 작업 상태를 확인하지 못했습니다 — {status.error}</p>
       ) : null}
+      <p className="mt-1 text-xs leading-relaxed text-text-3">{model.compareNote}</p>
     </Hero>
   );
 }
 
 /**
- * 미국 | 한국 · 준비 중 — 한국 증시 책은 2단계(계획서 §4)라 고를 수 없게 막아 두고, 무엇이 올지는 보입니다.
- *
- * 화면 테마 전환(ThemeSwitch)과 같은 브라우저 기본 라디오 묶음입니다 — 미국이 골라져 있고 한국은 사용 불가(disabled)라 낭독기가
- * "선택됨" / "사용 불가"로 읽습니다(예전 aria-pressed 토글은 눌러도 아무 일이 없어 읽는 말과 동작이 달랐음). 사유("준비 중")는
- * title이 아니라 보이는 글이라 키보드·터치 사용자도 봅니다. 고를 것이 하나뿐이라 상태를 들지 않습니다(defaultChecked).
+ * 미국 | 한국 — 화면 테마 전환(ThemeSwitch)과 같은 브라우저 기본 라디오 묶음입니다(고른 시장이 "선택됨"으로 읽힘). 고르면 그 시장의 개요를
+ * 히어로에 그립니다(한국 2단계 명세 §4-16 — 예전 '한국 · 준비 중' 막힘 해제).
  */
-function MarketSwitch() {
+function MarketSwitch({ value, onChange }: { value: PaperMarketCode; onChange: (market: PaperMarketCode) => void }) {
   const name = useId();
+  const options: { market: PaperMarketCode; label: string }[] = [
+    { market: "US", label: "미국" },
+    { market: "KR", label: "한국" },
+  ];
   return (
     <div role="radiogroup" aria-label="모의매매 시장" className="inline-flex rounded-lg border border-border p-0.5 text-sm">
-      <label className="inline-flex min-h-11 items-center rounded-md bg-surface-2 px-3 py-1 font-semibold text-text lg:min-h-0 has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-offset-2 has-[:focus-visible]:outline-focus">
-        <input type="radio" name={name} value="us" defaultChecked className="sr-only" />
-        미국
-      </label>
-      <label className="inline-flex min-h-11 cursor-not-allowed items-center rounded-md px-3 py-1 text-text-3 lg:min-h-0">
-        <input type="radio" name={name} value="kr" disabled className="sr-only" />
-        한국 · 준비 중<span className="sr-only"> (2단계에서 엽니다)</span>
-      </label>
+      {options.map((option) => {
+        const checked = option.market === value;
+        return (
+          <label
+            key={option.market}
+            className={`inline-flex min-h-11 cursor-pointer items-center rounded-md px-3 py-1 lg:min-h-0 has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-offset-2 has-[:focus-visible]:outline-focus ${
+              checked ? "bg-surface-2 font-semibold text-text" : "text-text-2 hover:text-text"
+            }`}
+          >
+            <input
+              type="radio"
+              name={name}
+              value={option.market.toLowerCase()}
+              checked={checked}
+              onChange={() => onChange(option.market)}
+              className="sr-only"
+            />
+            {option.label}
+          </label>
+        );
+      })}
     </div>
   );
 }

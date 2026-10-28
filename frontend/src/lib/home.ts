@@ -9,7 +9,9 @@ import { delayLabel, EMPTY, formatDate, formatKst, formatNumber, formatSigned, f
 import { MARKETS, sessionStatus, tradeDayFrom, tradeTimeFrom } from "./marketSessions";
 import { TABS } from "./nav";
 import { formatDollars } from "./paper";
+import { formatMoney, marketMeta, type PaperMarketCode } from "./paperMarket";
 import { bookAssetRow, type BookRow } from "./paperOverview";
+import { paperMarketPath } from "./paperRoutes";
 import { presentText } from "./patterns";
 import type {
   InboxResponse,
@@ -300,22 +302,34 @@ export function marketGroups(
   }));
 }
 
-// ---------------------------------------------------------------- ② 모의매매(미국)
+// ---------------------------------------------------------------- ② 모의매매(미국·한국)
 
 /** 정기 작업이 꺼진 사본에서 홈이 적는 안내(로컬 v2는 PAPER_ENABLED=false 고정 — 상태는 AWS 한 곳에만). */
 export const PAPER_DISABLED_NOTE = "정기 작업 꺼짐(PAPER_ENABLED=false) — 이 화면은 읽기 전용 사본";
+
+/**
+ * 두 책을 견주지 않는다는 문구 — 홈 히어로 탭마다(미국·한국 모두) 적습니다(2단계 명세 §3·§6, K40). 같은 문장이 한국 개요의 한계 문구 첫 줄에
+ * 있습니다(서버).
+ */
+export const PAPER_COMPARE_NOTE =
+  "미국·한국 책은 출발일·비용 모형·체결 시점·스탑 집행·통화가 달라 수익률을 서로 비교하지 않습니다";
+
+/** 한국 탭의 계좌 행이 가는 화면 — 모의매매(한국) 개요. */
+export const PAPER_KR_HREF = paperMarketPath("KR");
 
 /** 홈의 계좌 행 — 모의매매 개요와 같은 행 규칙(lib/paperOverview bookAssetRow) + 모의매매 화면으로 가는 링크. */
 export type PaperHomeRow = BookRow & { href: string };
 
 export type PaperHomeModel = {
+  /** 이 모델의 시장(히어로 탭). */
+  market: PaperMarketCode;
   /** 장부를 읽을 수 있는가(테이블이 없으면 false). */
   available: boolean;
   /** 장부를 못 읽거나 계좌가 없을 때의 안내. 행이 있으면 null. */
   message: string | null;
   /** 히어로 값이 무엇인지 — "Claude 계좌 순자산"(구역 제목에도 있지만, 평가 시각 줄에 서버가 붙인 계좌 이름으로 다시 적습니다). */
   heroCaption: string;
-  /** Claude 계좌 순자산(달러, 소수 둘째). 모르면 null("—"). */
+  /** Claude 계좌 순자산(미국 달러 소수 둘째 · 한국 원 정수). 모르면 null("—"). */
   heroValueText: string | null;
   heroUnit: string;
   /** Claude 계좌 출발 대비 수익률(백엔드 returnPct). 일간 변화 필드는 응답에 없어 만들지 않습니다. */
@@ -325,10 +339,14 @@ export type PaperHomeModel = {
   heroStale: boolean;
   heroStaleReason: string | null;
   rows: PaperHomeRow[];
-  /** "출발 2026-10-23 · 처음 현금 100,000 달러 · 변화율은 출발 대비" */
+  /** "출발 2026-10-23 · 처음 현금 100,000 달러 · 변화율은 출발 대비"(한국은 "… 100,000,000원 …"). */
   startLine: string;
   /** 정기 작업이 꺼져 있으면 그 안내, 아니면(켜짐·모름) null. */
   disabledNote: string | null;
+  /** 한국 정기 작업이 쉬는 사유(서버 dormantReason) — 계좌 행이 있을 때만(행이 없으면 message가 그 사유). 미국은 늘 null. */
+  dormantNote: string | null;
+  /** 두 책을 견주지 않는다는 문구 — 탭마다 같은 글(PAPER_COMPARE_NOTE). */
+  compareNote: string;
 };
 
 /** 모든 계좌의 처음 현금이 같으면 그 값, 다르거나 하나라도 모르면 null(한 숫자로 적을 수 없음). */
@@ -339,21 +357,29 @@ function sharedInitialCash(books: readonly PaperBookSummary[]): number | null {
 }
 
 /**
- * 모의매매 히어로 모델 — Claude 계좌 순자산(히어로)·평가 시각·네 계좌 행·출발 줄·정기 작업 꺼짐 안내.
+ * 모의매매 히어로 모델 — Claude 계좌 순자산(히어로)·평가 시각·네 계좌 행·출발 줄·정기 작업 꺼짐 안내·두 책 비교하지 않음 문구.
  *
  * - 행: 모의매매 개요의 계좌 행과 같은 규칙(lib/paperOverview bookAssetRow — 이름·종류·상태·소개, 순자산, 출발 대비 수익률,
  *   가격 없는 보유·늦은 관측치의 "이전 값" + 사유, 사후 체결 대기 경고)에 링크만 더합니다. 규칙을 두 곳에 두지 않습니다(ADR 0004).
  * - 히어로의 이전 값 배지는 Claude 계좌 행의 것 그대로입니다.
  * - 처음 현금은 상태 응답(설정값)이 우선이고, 없으면 계좌들의 값이 모두 같을 때만 그 값.
+ * - 한국(`market` "KR" — 2단계 명세 §4-16): 같은 규칙을 원 단위 정수로(한국 Claude 계좌 순자산·처음 현금 "100,000,000원"), 행 링크는 /paper/kr,
+ *   사후 체결 대기 경고 없음(bookAssetRow 한국 규칙). 정기 작업이 쉬면 그 사유 — 계좌가 없으면 안내 자리에, 있으면 행 아래 한 줄.
+ *   미국 모델은 인자 없이 예전 그대로입니다(두 책 비교하지 않음 문구만 더함).
  */
 export function paperHomeModel(
   overview: PaperOverviewResponse | null | undefined,
   status: PaperStatusResponse | null | undefined,
-  href: string = PAPER_HREF,
+  options: { market?: PaperMarketCode; href?: string } = {},
 ): PaperHomeModel {
+  const market = options.market ?? "US";
+  const korea = market === "KR";
+  const href = options.href ?? (korea ? PAPER_KR_HREF : PAPER_HREF);
   const available = overview?.available === true;
   const books = available ? (overview?.books ?? []) : [];
-  const context = available ? { pendingBackfill: overview?.pendingBackfill ?? [], quotes: overview?.quotes ?? null } : {};
+  const context = available
+    ? { pendingBackfill: overview?.pendingBackfill ?? [], quotes: overview?.quotes ?? null, ...(korea ? { market } : {}) }
+    : {};
   const rows: PaperHomeRow[] = books.map((book) => ({ ...bookAssetRow(book, context), href }));
 
   const claude = books.find((book) => book.kind === "CLAUDE") ?? null;
@@ -361,23 +387,30 @@ export function paperHomeModel(
   const nav = finite(claude?.nav);
   const observed = presentText(claude?.lastObservedAtKst);
 
+  const dormant = korea && available ? presentText(overview?.dormantReason) : null;
   let message: string | null = null;
   if (overview && !available) {
     message = presentText(overview.message) ?? "모의매매 장부를 아직 읽을 수 없습니다.";
   } else if (available && rows.length === 0) {
-    message = "아직 계좌가 없습니다 — 모의매매 화면에서 초기화합니다.";
+    message = dormant
+      ? `한국 책이 쉬고 있습니다 — ${dormant}`
+      : korea
+        ? "아직 한국 계좌가 없습니다 — 모의매매(한국) 화면에서 한국 초기화를 합니다."
+        : "아직 계좌가 없습니다 — 모의매매 화면에서 초기화합니다.";
   }
 
   const startDate = presentText(overview?.startDate) ?? presentText(status?.startDate);
   const initialCash = finite(status?.initialCash) ?? sharedInitialCash(books);
-  const startLine = `출발 ${startDate ?? EMPTY} · 처음 현금 ${formatDollars(initialCash, 0)} · 변화율은 출발 대비`;
+  const cashText = korea ? formatMoney(initialCash, "KR") : formatDollars(initialCash, 0);
+  const startLine = `출발 ${startDate ?? EMPTY} · 처음 현금 ${cashText} · 변화율은 출발 대비`;
 
   return {
+    market,
     available,
     message,
-    heroCaption: `${presentText(claude?.label) ?? "Claude 계좌"} 순자산`,
-    heroValueText: nav === null ? null : formatNumber(nav, 2),
-    heroUnit: "달러",
+    heroCaption: `${presentText(claude?.label) ?? (korea ? "한국 Claude 계좌" : "Claude 계좌")} 순자산`,
+    heroValueText: nav === null ? null : formatNumber(nav, korea ? 0 : 2),
+    heroUnit: marketMeta(market).unitLabel,
     heroReturnPct: finite(claude?.returnPct),
     heroAsOf: observed === null ? null : formatKst(observed),
     heroStale: claudeRow?.isStale === true,
@@ -385,6 +418,8 @@ export function paperHomeModel(
     rows,
     startLine,
     disabledNote: status?.enabled === false ? PAPER_DISABLED_NOTE : null,
+    dormantNote: dormant && rows.length > 0 ? `한국 정기 작업이 쉬고 있습니다 — ${dormant}` : null,
+    compareNote: PAPER_COMPARE_NOTE,
   };
 }
 

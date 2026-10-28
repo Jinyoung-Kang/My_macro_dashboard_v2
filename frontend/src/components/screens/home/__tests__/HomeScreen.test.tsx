@@ -13,7 +13,7 @@ import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testi
 import type { ReactElement } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { SessionUserProvider } from "@/hooks/useSessionUser";
-import { COLLECTOR_UNREACHABLE_NOTE, PAPER_HREF } from "@/lib/home";
+import { COLLECTOR_UNREACHABLE_NOTE, PAPER_COMPARE_NOTE, PAPER_HREF, PAPER_KR_HREF } from "@/lib/home";
 import { PAPER_SOURCES } from "@/lib/paper";
 import { SOURCES } from "@/lib/sources";
 import type { SessionUser } from "@/lib/types";
@@ -23,7 +23,10 @@ import {
   macroItem,
   macroOverview,
   paperOverview,
+  paperOverviewKr,
+  paperOverviewKrDormant,
   paperStatus,
+  paperStatusKr,
   regimeExpansion,
   regimeUnknown,
 } from "@/lib/__tests__/homeFixtures";
@@ -43,6 +46,8 @@ import HomeScreen from "../HomeScreen";
 const REGIME = "/api/analytics/regime?years=5";
 const PAPER_OVERVIEW = "/api/paper/overview";
 const PAPER_STATUS = "/api/paper/status";
+const PAPER_KR_OVERVIEW = "/api/paper/overview?market=KR";
+const PAPER_KR_STATUS = "/api/paper/status?market=KR";
 // live 없이 — live=true면 신선도 기준이 60초로 내려가 Yahoo 수집이 잦아집니다.
 const MACRO = "/api/macro/overview";
 const UNREAD = "/api/alerts/unread-count";
@@ -162,14 +167,17 @@ describe("홈 — 값 있음(운영자)", () => {
     expect(within(hero).getByText("출발 2026-10-23 · 처음 현금 100,000 달러 · 변화율은 출발 대비")).toBeTruthy();
     expect(within(hero).getByText("정기 작업 꺼짐(PAPER_ENABLED=false) — 이 화면은 읽기 전용 사본")).toBeTruthy();
 
-    // 미국 | 한국 · 준비 중 — 라디오 묶음(화면 테마 전환과 같은 뜻): 미국이 골라져 있고, 한국은 사용 불가 + 2단계라고 알립니다.
+    // 미국 | 한국 — 라디오 묶음(화면 테마 전환과 같은 뜻): 미국이 골라져 있고, 한국은 고를 수 있습니다(2단계 명세 §4-16 — '준비 중' 해제).
     const switcher = within(hero).getByRole("radiogroup", { name: "모의매매 시장" });
     const us = within(switcher).getByRole("radio", { name: "미국" }) as HTMLInputElement;
     expect(us.checked).toBe(true);
-    const korea = within(switcher).getByRole("radio", { name: /^한국 · 준비 중/ }) as HTMLInputElement;
-    expect(korea.closest("label")?.textContent).toBe("한국 · 준비 중 (2단계에서 엽니다)");
-    expect(korea.disabled).toBe(true);
+    const korea = within(switcher).getByRole("radio", { name: "한국" }) as HTMLInputElement;
+    expect(korea.disabled).toBe(false);
     expect(korea.checked).toBe(false);
+    // 두 책을 견주지 않는다는 문구는 미국 탭에도(탭마다 — 2단계 명세 §3).
+    expect(within(hero).getByText(PAPER_COMPARE_NOTE)).toBeTruthy();
+    // 한국을 고르기 전에는 한국 요청이 없습니다.
+    expect(requested().filter((path) => path.includes("market=KR"))).toEqual([]);
 
     // 홈에는 쓰기 버튼(초기화·리스크 실행·시작 등)이 없습니다 — 버튼이 하나도 없습니다.
     expect(screen.queryAllByRole("button")).toHaveLength(0);
@@ -457,6 +465,70 @@ describe("홈 — 추정·오래됨 배지", () => {
     const paper = await paperHero();
     // 네 행 + 히어로
     expect(within(paper).getAllByText("· 관측치 저장본이 늦음 · 마지막 관측 2026-10-26 04:56")).toHaveLength(5);
+  });
+});
+
+describe("홈 — 모의매매 한국 탭", () => {
+  /** 미국 히어로가 그려진 뒤 한국을 고릅니다. */
+  async function pickKorea() {
+    const hero = await paperHero();
+    fireEvent.click(within(hero).getByRole("radio", { name: "한국" }));
+  }
+
+  it("불러오는 중: 한국을 고르면 그때 ?market=KR을 읽고 자리표시 — 탭은 남아 미국으로 돌아갈 수 있다", async () => {
+    reads = happyReads();
+    renderHome(OWNER);
+    await pickKorea();
+    expect(await screen.findByRole("status", { name: "한국 모의매매 계좌를 불러오는 중" })).toBeTruthy();
+    expect(requested()).toEqual(expect.arrayContaining([PAPER_KR_OVERVIEW, PAPER_KR_STATUS]));
+    const card = region(PAPER_REGION);
+    fireEvent.click(within(card).getByRole("radio", { name: "미국" }));
+    expect(await screen.findByText(/^Claude 계좌 순자산 · 마지막 관측/)).toBeTruthy();
+  });
+
+  it("쉬는 한국: 계좌 없이 그 사유, 두 책 비교하지 않음 문구", async () => {
+    const reason = "한국 책 출발일(dashboard.paper.kr.start-date — .env PAPER_KR_START_DATE)이 비어 있어 한국 초기화·출발을 하지 않습니다";
+    reads = { ...happyReads(), [PAPER_KR_OVERVIEW]: paperOverviewKrDormant(reason), [PAPER_KR_STATUS]: { ...paperStatusKr(false), dormantReason: reason } };
+    renderHome(OWNER);
+    await pickKorea();
+    expect(await screen.findByText(`한국 책이 쉬고 있습니다 — ${reason}`)).toBeTruthy();
+    const hero = region(PAPER_REGION);
+    expect(within(hero).queryAllByRole("link")).toHaveLength(0);
+    expect(within(hero).getByText(PAPER_COMPARE_NOTE)).toBeTruthy();
+    expect((within(hero).getByRole("radio", { name: "한국" }) as HTMLInputElement).checked).toBe(true);
+  });
+
+  it("오류: 한국 개요를 못 읽으면 그 구역만 오류 + 다시 시도, 탭은 남는다", async () => {
+    reads = { ...happyReads(), [PAPER_KR_OVERVIEW]: new Error("한국 개요 응답 500"), [PAPER_KR_STATUS]: paperStatusKr(false) };
+    renderHome(OWNER);
+    await pickKorea();
+    const alert = await screen.findByRole("alert");
+    expect(within(alert).getByText("한국 개요 응답 500")).toBeTruthy();
+    expect(within(alert).getByRole("button", { name: "다시 시도" })).toBeTruthy();
+    expect(within(region(PAPER_REGION)).getByRole("radiogroup", { name: "모의매매 시장" })).toBeTruthy();
+  });
+
+  it("자료: 한국 Claude 계좌 순자산(원 정수)·출발 대비·네 계좌 행(원, 링크 /paper/kr)·출발 줄(원)·비교하지 않음 문구·한국 출처", async () => {
+    reads = { ...happyReads(), [PAPER_KR_OVERVIEW]: paperOverviewKr(), [PAPER_KR_STATUS]: paperStatusKr(false) };
+    renderHome(OWNER);
+    await pickKorea();
+    await screen.findByText(/^한국 Claude 계좌 순자산 · 마지막 관측/);
+    const hero = region(PAPER_REGION);
+    // 히어로 값과 한국 Claude 계좌 행이 같은 원 단위 정수를 적습니다(소수 없음).
+    expect(within(hero).getAllByText("100,312,450")).toHaveLength(2);
+    expect(within(hero).getAllByText("원").length).toBeGreaterThan(0);
+    expect(within(hero).getByText(/^한국 Claude 계좌 순자산 · 마지막 관측/).textContent).toBe("한국 Claude 계좌 순자산 · 마지막 관측 2026-11-03 21:57");
+    const rows = within(hero).getAllByRole("link");
+    expect(rows.map((row) => row.getAttribute("href"))).toEqual([PAPER_KR_HREF, PAPER_KR_HREF, PAPER_KR_HREF, PAPER_KR_HREF]);
+    expect(PAPER_KR_HREF).toBe("/paper/kr");
+    expect(within(rows[2]).getByText("KODEX 200 계좌")).toBeTruthy();
+    expect(within(rows[2]).getByText("100,528,900")).toBeTruthy();
+    expect(within(hero).getByText("출발 2026-10-29 · 처음 현금 100,000,000원 · 변화율은 출발 대비")).toBeTruthy();
+    expect(within(hero).getByText(PAPER_COMPARE_NOTE)).toBeTruthy();
+    expect(within(hero).getByText(PAPER_SOURCES.krLedger)).toBeTruthy();
+    // 사후 체결 대기 경고는 한국에 없습니다(네 계좌가 S+1 시가에 함께 출발).
+    expect(within(hero).queryByText(/출발일 종가 대기/)).toBeNull();
+    expect(screen.queryAllByRole("button")).toHaveLength(0);
   });
 });
 

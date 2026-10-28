@@ -21,8 +21,10 @@ import {
   type MarketClock,
   MARKET_HREF,
   marketGroups,
+  PAPER_COMPARE_NOTE,
   PAPER_DISABLED_NOTE,
   PAPER_HREF,
+  PAPER_KR_HREF,
   paperHomeModel,
   regimeHeroModel,
   storeStatusModel,
@@ -39,7 +41,10 @@ import {
   macroItem,
   macroOverview,
   paperOverview,
+  paperOverviewKr,
+  paperOverviewKrDormant,
   paperStatus,
+  paperStatusKr,
   regimeExpansion,
   regimeUnknown,
 } from "./homeFixtures";
@@ -259,6 +264,47 @@ describe("marketGroups", () => {
   it("응답이 없으면 빈 목록", () => {
     expect(marketGroups(null, { now: MON_1651 })).toEqual([]);
     expect(marketGroups({ categories: [] }, { now: MON_1651 })).toEqual([]);
+  });
+});
+
+describe("paperHomeModel — 모의매매(한국 탭, 2단계 명세 §4-16)", () => {
+  it("미국 모델은 인자 없이 예전 그대로 — 두 책 비교하지 않음 문구만 더함, 한국 사유 칸은 늘 null", () => {
+    const model = paperHomeModel(paperOverview(), paperStatus(true));
+    expect(model.market).toBe("US");
+    expect(model.compareNote).toBe(PAPER_COMPARE_NOTE);
+    expect(PAPER_COMPARE_NOTE).toBe("미국·한국 책은 출발일·비용 모형·체결 시점·스탑 집행·통화가 달라 수익률을 서로 비교하지 않습니다");
+    expect(model.dormantNote).toBeNull();
+    expect(paperHomeModel(paperOverview(), paperStatus(true), { market: "US" })).toEqual(model);
+  });
+
+  it("한국: 히어로는 한국 Claude 계좌 순자산(원 정수), 행은 원·링크 /paper/kr·사후 체결 경고 없음, 출발 줄은 원", () => {
+    const overview = paperOverviewKr();
+    overview.pendingBackfill = ["kr_bench_k200"];
+    const model = paperHomeModel(overview, paperStatusKr(true), { market: "KR" });
+    expect(model).toMatchObject({
+      market: "KR", available: true, message: null, heroCaption: "한국 Claude 계좌 순자산", heroValueText: "100,312,450", heroUnit: "원",
+      heroReturnPct: 0.31, heroAsOf: "2026-11-03 21:57", dormantNote: null, disabledNote: null, compareNote: PAPER_COMPARE_NOTE,
+      startLine: "출발 2026-10-29 · 처음 현금 100,000,000원 · 변화율은 출발 대비",
+    });
+    expect(model.rows.map((row) => [row.id, row.valueText, row.unit, row.href, row.warning])).toEqual([
+      ["kr_rules", "99,874,120", "원", PAPER_KR_HREF, null],
+      ["kr_claude", "100,312,450", "원", PAPER_KR_HREF, null],
+      ["kr_bench_k200", "100,528,900", "원", PAPER_KR_HREF, null],
+      ["kr_bench_mix", "100,211,300", "원", PAPER_KR_HREF, null],
+    ]);
+  });
+
+  it("쉬는 한국: 계좌가 없으면 안내 자리에 사유, 계좌가 있으면 행 아래 한 줄 — 모르는 처음 현금은 '—'(1억을 짓지 않음)", () => {
+    const reason = "한국 책 출발일이 비어 있어 한국 초기화·출발을 하지 않습니다";
+    const empty = paperHomeModel(paperOverviewKrDormant(reason), null, { market: "KR" });
+    expect(empty.message).toBe(`한국 책이 쉬고 있습니다 — ${reason}`);
+    expect(empty.dormantNote).toBeNull();
+    expect(empty.startLine).toBe("출발 — · 처음 현금 — · 변화율은 출발 대비");
+    const started = paperHomeModel({ ...paperOverviewKr(), dormantReason: reason }, paperStatusKr(), { market: "KR" });
+    expect(started.message).toBeNull();
+    expect(started.dormantNote).toBe(`한국 정기 작업이 쉬고 있습니다 — ${reason}`);
+    const none = paperHomeModel({ ...paperOverviewKr(), books: [] }, null, { market: "KR" });
+    expect(none.message).toBe("아직 한국 계좌가 없습니다 — 모의매매(한국) 화면에서 한국 초기화를 합니다.");
   });
 });
 

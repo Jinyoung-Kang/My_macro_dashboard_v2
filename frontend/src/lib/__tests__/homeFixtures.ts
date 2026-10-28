@@ -170,6 +170,44 @@ export function paperStatus(enabled = false): PaperStatusResponse {
   return { available: true, schemaReady: true, initialized: true, enabled, startDate: "2026-10-23", initialCash: 100000 };
 }
 
+/** 한국 책 개요(`?market=KR`) — 출발한 네 계좌, 원 단위 정수(2단계 명세 §4-16). */
+export function paperOverviewKr(): PaperOverviewResponse {
+  const kr = (overrides: Partial<PaperBookSummary> & Pick<PaperBookSummary, "code" | "kind" | "label">) => book({
+    startedOn: "2026-10-30", initialCash: 100_000_000, cash: 340_000, nav: 100_000_000, equityValue: 99_660_000, exposurePct: 99.66,
+    returnPct: 0, lastObservedAtKst: "2026-11-03 21:57 KST", positions: 3, benchmark: "kr_bench_k200", ...overrides,
+  });
+  return {
+    available: true,
+    market: "KR",
+    currency: "KRW",
+    dormantReason: null,
+    initialized: true,
+    pendingBackfill: [],
+    startDate: "2026-10-29",
+    books: [
+      kr({ code: "kr_rules", kind: "RULES", label: "한국 규칙 계좌", nav: 99_874_120, returnPct: -0.13 }),
+      kr({ code: "kr_claude", kind: "CLAUDE", label: "한국 Claude 계좌", nav: 100_312_450, returnPct: 0.31 }),
+      kr({ code: "kr_bench_k200", kind: "BENCHMARK", label: "KODEX 200 계좌", nav: 100_528_900, returnPct: 0.53, benchmark: null }),
+      kr({ code: "kr_bench_mix", kind: "BENCHMARK", label: "한국 60/40 계좌", nav: 100_211_300, returnPct: 0.21 }),
+    ],
+    navSeries: { dates: [], books: {} },
+    quotes: null,
+  };
+}
+
+/** 한국 상태(`?market=KR`). */
+export function paperStatusKr(enabled = false): PaperStatusResponse {
+  return {
+    available: true, schemaReady: true, initialized: true, enabled, startDate: "2026-10-29", initialCash: 100_000_000,
+    market: "KR", currency: "KRW", dormantReason: null,
+  };
+}
+
+/** 쉬는 한국(출발일 없음 — 한국 초기화 전): 계좌가 없고 사유만. */
+export function paperOverviewKrDormant(reason: string): PaperOverviewResponse {
+  return { ...paperOverviewKr(), initialized: false, startDate: null, books: [], dormantReason: reason };
+}
+
 export function inbox(): InboxResponse {
   return {
     unread: 2,
