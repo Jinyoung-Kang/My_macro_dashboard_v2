@@ -48,4 +48,34 @@ class DecisionTimingsLockTest {
             }
         }
     }
+
+    /**
+     * 한국 문맥(E2a — 결정 문맥 목록에 오르는 것은 E2b)도 같은 잠금: 한국 스키마의 timing enum = 한국 시장 체결 시점({@code ALLOW_NEXT_CLOSE}가
+     * 정함), 고정 문단·하드 규칙 줄이 받는 시점을 말하고 받지 않는 시점(지금 NEXT_CLOSE)은 말하지 않음. G2 뒤 상수를 켜는 판의 문단도 미리 봄.
+     */
+    @Test
+    @DisplayName("한국: 스키마 timing enum = 한국 체결 시점, 고정 문단·하드 규칙 줄에 받는 시점만(NEXT_CLOSE는 ALLOW_NEXT_CLOSE일 때만)")
+    void krSchemaMarketAndPromptAgree() throws IOException {
+        KrPaperMarket market = KrPaperMarket.INSTANCE;
+        JsonNode schema;
+        try (InputStream in = DecisionTimingsLockTest.class.getResourceAsStream("/" + ClaudeBookService.KR_SCHEMA_RESOURCE)) {
+            assertThat(in).isNotNull();
+            schema = MAPPER.readTree(in);
+        }
+        List<String> schemaTimings = new ArrayList<>();
+        schema.path("properties").path("orders").path("items").path("properties").path("timing").path("enum")
+                .forEach(node -> schemaTimings.add(node.asString()));
+        assertThat(schemaTimings).isEqualTo(market.timings()).isEqualTo(market.orderValidation().timings());
+        assertThat(market.earlyTiming()).isEqualTo(market.timings().get(0)).isEqualTo(PaperBooks.NEXT_OPEN);
+        String hardRules = String.join("\n", market.promptHardRules(null));
+        for (String timing : List.of(PaperBooks.NEXT_OPEN, PaperBooks.NEXT_CLOSE)) {
+            boolean accepted = market.timings().contains(timing);
+            assertThat(market.promptFixedRules().contains(timing)).as("고정 문단에 " + timing).isEqualTo(accepted);
+            assertThat(hardRules.contains(timing)).as("하드 규칙 줄에 " + timing).isEqualTo(accepted);
+        }
+        assertThat(KrPaperMarket.ALLOW_NEXT_CLOSE).isEqualTo(market.timings().contains(PaperBooks.NEXT_CLOSE));
+        assertThat(ClaudePrompts.krFixedRules(true)).as("G2 통과 뒤 판").contains("NEXT_OPEN·NEXT_CLOSE")
+                .contains("또는 NEXT_CLOSE(다음 KRX 거래일의 정규장 종가 단일가)");
+        assertThat(ClaudePrompts.krFixedRules(false)).isEqualTo(ClaudePrompts.KR_FIXED_RULES).doesNotContain("NEXT_CLOSE");
+    }
 }

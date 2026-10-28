@@ -303,10 +303,13 @@ class KrPaperMarketTest {
     }
 
     @Test
-    @DisplayName("한국 Claude 시스템 프롬프트(하드 규칙 줄·고정 문단)는 E2 — 그 전에 부르면 던진다")
-    void promptPartsAreE2() {
+    @DisplayName("한국 Claude 시스템 프롬프트의 시장별 부분(E2a, K34) — 하드 규칙 줄은 kr.* 읽기(FrameworkService.krHardRules), 고정 문단은 KR_FIXED_RULES 그 자체")
+    void promptPartsAreKorean() {
         JsonNode body = PaperFixtures.MAPPER.createObjectNode();
-        assertThatThrownBy(() -> KR.promptHardRules(body)).isInstanceOf(IllegalStateException.class).hasMessageContaining("E2");
-        assertThatThrownBy(KR::promptFixedRules).isInstanceOf(IllegalStateException.class).hasMessageContaining("E2");
+        assertThat(KR.promptFixedRules()).isSameAs(ClaudePrompts.KR_FIXED_RULES);
+        assertThat(KR.promptHardRules(body)).isEqualTo(FrameworkService.krHardRules(KR, body))
+                .isEqualTo(KR.promptHardRules(null)).anySatisfy(line -> assertThat(line).contains("현금성(153130)"))
+                .anySatisfy(line -> assertThat(line).contains("500,000원"))
+                .anySatisfy(line -> assertThat(line).contains("NEXT_OPEN"));
     }
 }

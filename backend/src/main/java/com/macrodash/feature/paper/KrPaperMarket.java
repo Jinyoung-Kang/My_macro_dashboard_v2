@@ -49,8 +49,8 @@ import java.util.regex.Pattern;
  *   <li>결정 22:30·기한 01:00 KST(K6), 세션 D <b>그날</b>의 그 시각 — 09:00 전 시각은 D+1 아침(설정 저장 규칙과 같은 뜻, 명세 §4-13
  *       'C1b 구현에서 정한 것')</li>
  *   <li>복기 토요일 22:30 KST(K19 코드 상수)</li>
- *   <li>Claude 시스템 프롬프트의 하드 규칙 줄·고정 문단은 E2({@code KR_FIXED_RULES}) — 그 전에 부르면 던집니다(한국 Claude 계좌는 E2까지
- *       시작하지 않음)</li>
+ *   <li>Claude 시스템 프롬프트의 하드 규칙 줄({@link FrameworkService#krHardRules} — {@code kr.*}·원·153130·NEXT_OPEN)·고정 문단
+ *       ({@link ClaudePrompts#KR_FIXED_RULES} — 첫 줄 우선순위 문장, E2a)</li>
  * </ul>
  */
 final class KrPaperMarket implements PaperMarket {
@@ -528,16 +528,16 @@ final class KrPaperMarket implements PaperMarket {
         return due;
     }
 
-    /** @throws IllegalStateException 늘 — 한국 하드 규칙 줄(₩·153130·NEXT_OPEN)은 E2(명세 K34). 한국 Claude 계좌는 그 전에 시작하지 않습니다. */
+    /** 한국 하드 규칙 줄 — {@code kr.*} 한도·원 표기·현금성 153130·NEXT_OPEN·정수 주({@link FrameworkService#krHardRules}, 명세 K34 ①, E2a). */
     @Override
     public List<String> promptHardRules(JsonNode settingsBody) {
-        throw new IllegalStateException("한국 Claude 시스템 프롬프트의 하드 규칙 줄은 아직 없습니다(2단계 E2, 명세 K34)");
+        return FrameworkService.krHardRules(this, settingsBody);
     }
 
-    /** @throws IllegalStateException 늘 — 한국 고정 문단 {@code KR_FIXED_RULES}는 E2(명세 K34). */
+    /** 한국 고정 문단 — 첫 줄이 우선순위 문장({@link ClaudePrompts#KR_FIXED_RULES}, 명세 K34 ②③·사용자 결정 v1, E2a). */
     @Override
     public String promptFixedRules() {
-        throw new IllegalStateException("한국 Claude 시스템 프롬프트의 고정 문단(KR_FIXED_RULES)은 아직 없습니다(2단계 E2, 명세 K34)");
+        return ClaudePrompts.KR_FIXED_RULES;
     }
 
     @Override
