@@ -76,7 +76,8 @@ import java.util.TreeSet;
  * <p><b>주문</b>(장부가 다음 거래일 시가에 체결): 출처 {@code RULE}, 시점 {@code NEXT_OPEN}, 기준 거래일 D, 만료 D + 3거래일. 매도 = 보유 전량
  * ({@code sellFraction} null — 체결 때의 보유 전부), 매수 = 목표 비중 − 지금 비중만큼(순자산 대비 %, {@code kr.minOrderNotional} 미만은 내지 않음).
  * 매수는 선정한 날(REBALANCE·INITIAL)에만, 매도 신호는 매일(20일 외국인·기관 둘 다 순매도) + 선정한 날 후보 밖. 남는 현금은 153130 — 선정한 날은
- * 여유 0.5%p를 넘는 만큼(모자라면 153130을 팔아 메움), 그 밖의 날은 {@code kr.rules.parkCashThresholdPct}를 넘을 때만. 선정한 날은 앞선 날의
+ * 여유 0.5%p를 넘는 만큼(모자라면 153130을 팔아 메우고, 그래도 모자라면 종목 매수를 줄임 — 아래 u3), 그 밖의 날은
+ * {@code kr.rules.parkCashThresholdPct}를 넘을 때만. 선정한 날은 앞선 날의
  * 대기 중인 남는 현금 주문({@code park_cash})을 먼저 취소합니다(미국 규칙 책 {@code replaceParkingOrders}와 같은 까닭). 비중은 마지막 평가 가격
  * (없으면 평단)으로, 현금 어림은 대기·이번 주문을 비용 요율(수수료 + 슬리피지 + 매도세)로 줄여 셉니다(어림 — 체결은 장부가 {@code KrxCosts}로).
  * <b>체결될 수 없는 종목은 사지 않습니다</b>(종목·153130 매수 — {@link Fillable}): 그 실행 관측치에 봉이 없음, D 거래정지, 미처리 기업행위
@@ -86,7 +87,10 @@ import java.util.TreeSet;
  * 매도는 그날의 신호라 다음 재선정까지 사라집니다. 지금 체결할 수 없는 매도는 {@code notes}에 그 사유를 남깁니다.
  * <b>선정한 날(REBALANCE·INITIAL — 따라잡기 포함)의 현금 어림에는 지금 체결할 수 없는 매도(이번 신호 매도·앞선 날의 대기 매도 — 같은
  * {@link Fillable} 판정)의 대금을 넣지 않습니다</b>(사용자 결정 2026-10-28 u3): 종목·153130 매수와 모자란 현금의 153130 일부 매도를 다음 시가에
- * 실제로 있을 현금으로 정해, 정지가 이어져도 그 매수가 장부의 현금 한도로 줄지 않게. 풀려서 팔리면 그 대금은 현금으로 남아 다음 결정의 남는 현금
+ * 실제로 있을 현금으로 정해, 정지가 이어져도 그 매수가 장부의 현금 한도로 줄지 않게. <b>153130 매도로도 모자라면</b>(팔 153130가 모자라거나
+ * 153130 자체를 지금 체결할 수 없음 — 그 매도는 내되(u2) 대금은 셈하지 않음) <b>종목 매수를 낮은 순위부터 줄이거나 빼고</b>({@link #trimStockBuys}
+ * — 여유 0.5%p를 남김, 사유는 {@code skipped}·{@code notes}, 줄인 목표는 다음 재선정까지 채우지 않음). 장부도 매수를 낸 순서대로 체결하므로 그
+ * 종목은 줄이지 않았으면 장부의 현금 한도에 걸렸을 종목입니다. 풀려서 팔리면 그 대금은 현금으로 남아 다음 결정의 남는 현금
  * 규칙({@code kr.rules.parkCashThresholdPct}을 넘을 때만 153130)을 따릅니다. 그 밖의 날은 그 대금도 어림에 넣습니다(그날 매수는 남는 현금
  * 153130뿐 — 정지가 이어지면 그 매수가 장부의 현금 한도로 줄어듦). note에 어느 쪽인지 적습니다.
  *
@@ -870,7 +874,7 @@ final class KrRuleBookService {
     /**
      * 주문 계획(클래스 설명의 '주문') — ① 매도 신호(보유 전량) ② 선정한 날만 매수(목표 − 지금) ③ 남는 현금 153130. 체결될 수 없는 종목
      * ({@link Fillable})은 사지 않고, 매도는 그래도 냅니다(u2 — 사유는 {@code notes}). 선정한 날은 체결될 수 없는 매도(이번·대기)의 대금을
-     * 현금 어림에 넣지 않습니다(u3).
+     * 현금 어림에 넣지 않고, 153130 매도로도 다음 시가 현금이 모자라면 종목 매수를 줄입니다(u3).
      */
     private Draft plan(String kind, boolean selectionDay, KrRules.Selection selection, List<KrRules.HoldingCheck> checks,
                        View view, Settings settings, Fillable fillable) {
@@ -995,20 +999,27 @@ final class KrRuleBookService {
                 }
             }
         } else if (spare < 0) {
+            // 다음 시가에 여유 0.5%p를 남기려고 메울 현금 — 153130 매도로 메우고, 그 대금이 모자라거나 지금 체결할 수 없으면 종목 매수를 줄임(u3).
+            BigDecimal need = pct(nav, KrRules.CASH_BUFFER_PCT - spare);
             BigDecimal available = afterCost(view.value(parking), -settings.etfSellCostBp());
+            BigDecimal covered = BigDecimal.ZERO;   // 다음 시가에 153130 매도로 생길 것으로 셈한 현금
             if (available.signum() <= 0) {
-                draft.notes.add(String.format(Locale.ROOT, "현금이 순자산의 %.2f%%만큼 모자라는데 팔 %s가 없습니다 — 뒤쪽 매수는 체결 때 "
-                        + "살 수 있는 만큼으로 줄어듭니다(cashLimited)", -spare, parking));
+                // 팔 153130가 없음 — 아래에서 종목 매수를 줄임.
             } else if (view.pendingSells().containsKey(parking)) {
                 draft.skip(parking, "모자란 현금 — 이미 대기 중인 매도 주문이 있음");
+                if (parkingBlocked == null) {
+                    // 그 대기 매도의 몫(파는 비율)만 다음 시가에 생김 — 더 팔 주문은 내지 않으므로 나머지는 종목 매수를 줄여 메움.
+                    covered = available.multiply(BigDecimal.valueOf(view.pendingSells().get(parking))).min(need);
+                }
             } else {
                 if (parkingBlocked != null) {
-                    // 지금은 체결할 수 없어도 매도는 냄(u2 — 위 신호 매도와 같음). 그동안 뒤쪽 매수는 체결 때 살 수 있는 만큼으로 줄어듦.
+                    // 지금은 체결할 수 없어도 매도는 냄(u2 — 위 신호 매도와 같음). 선정한 날이라 그 대금은 셈하지 않음(u3) — 종목 매수를 줄임.
                     draft.notes.add(String.format(Locale.ROOT, "현금이 순자산의 %.2f%%만큼 모자라 %s를 파는데 지금은 체결할 수 없음(%s) — "
-                            + "주문은 대기로 두고 풀리면 체결, 그 전의 뒤쪽 매수는 살 수 있는 만큼으로 줄어듭니다(cashLimited)", -spare, parking,
-                            parkingBlocked));
+                            + "주문은 대기로 두고 풀리면 체결하되, 선정한 날이라 그 대금은 다음 시가 현금 어림에서 뺐음(종목 매수를 그만큼 줄임). "
+                            + "풀려서 팔리면 그 대금은 현금으로 남아 다음 결정의 남는 현금 규칙을 따름", -spare, parking, parkingBlocked));
+                } else {
+                    covered = need.min(available);
                 }
-                BigDecimal need = pct(nav, KrRules.CASH_BUFFER_PCT - spare);
                 Double fraction = need.compareTo(available) >= 0 ? null
                         : round6(need.divide(available, MathContext.DECIMAL64).doubleValue());
                 Map<String, Object> reason = parkingReason(RULE_PARK_SELECTION, kind, spare, parkingWeight);
@@ -1017,8 +1028,66 @@ final class KrRuleBookService {
                 reason.put("sellFraction", fraction);
                 draft.orders.add(new PlannedOrder(parking, PaperBooks.SELL, null, fraction, reason, true));
             }
+            BigDecimal gap = need.subtract(covered);
+            if (gap.signum() > 0) {
+                trimStockBuys(draft, gap, covered, spare, nav, settings);
+            }
         }
         return draft;
+    }
+
+    /**
+     * 선정한 날 종목 매수가 다음 시가에 있을 현금(현금 + 체결할 수 있는 매도 대금 − 대기 매수 + 153130 매도로 셀 수 있는 대금, 여유 0.5%p를 남김)을
+     * 넘는 만큼({@code gap}, 비용 포함 유출 원) 낮은 순위부터(계획의 뒤에서부터) 줄이거나 뺍니다(사용자 결정 u3 — 그날 매수가 장부의 현금 한도로 줄지
+     * 않게). 장부도 매수를 낸 순서대로 체결하므로 줄이는 종목은 줄이지 않았으면 현금 한도에 걸렸을 종목입니다. 줄인 비중은 넷째 자리에서 내리고
+     * ({@code orderWeightPct}, 원래 비중은 {@code trimmedFromPct}), {@code kr.minOrderNotional} 미만이 되면 뺍니다. 줄인 K10 목표는 다음 재선정까지
+     * 채우지 않습니다(종목 매수는 선정한 날에만).
+     */
+    private static void trimStockBuys(Draft draft, BigDecimal gap, BigDecimal covered, double spare, BigDecimal nav,
+                                      Settings settings) {
+        BigDecimal rate = BigDecimal.ONE.add(BigDecimal.valueOf(settings.buyCostBp()).divide(BigDecimal.valueOf(10_000),
+                MathContext.DECIMAL64));
+        List<String> changes = new ArrayList<>();
+        BigDecimal left = gap;
+        for (int i = draft.orders.size() - 1; i >= 0 && left.signum() > 0; i--) {
+            PlannedOrder order = draft.orders.get(i);
+            if (!PaperBooks.BUY.equals(order.side()) || order.parking()) {
+                continue;
+            }
+            double weight = order.targetWeightPct();
+            BigDecimal outflow = afterCost(pct(nav, weight), settings.buyCostBp());
+            if (outflow.compareTo(left) <= 0) {
+                draft.orders.remove(i);
+                draft.skip(order.ticker(), String.format(Locale.ROOT, "현금이 모자라 사지 않음(매수 %.4f%%) — 선정한 날 매수는 다음 시가에 "
+                        + "있을 현금 안으로, 낮은 순위부터 줄임", weight));
+                changes.add(order.ticker() + " 뺌");
+                left = left.subtract(outflow);
+                continue;
+            }
+            BigDecimal kept = outflow.subtract(left).divide(rate, MathContext.DECIMAL64);
+            double trimmed = kept.multiply(BigDecimal.valueOf(100)).divide(nav, 4, RoundingMode.DOWN).doubleValue();
+            left = BigDecimal.ZERO;
+            if (belowMinimum(draft, order.ticker(), pct(nav, trimmed), settings)) {
+                draft.orders.remove(i);
+                changes.add(order.ticker() + " 뺌(줄이면 최소 금액 미만)");
+                continue;
+            }
+            order.reason().put("orderWeightPct", trimmed);
+            order.reason().put("trimmedFromPct", weight);
+            draft.orders.set(i, new PlannedOrder(order.ticker(), order.side(), trimmed, null, order.reason(), false));
+            changes.add(String.format(Locale.ROOT, "%s %.4f%% → %.4f%%", order.ticker(), weight, trimmed));
+        }
+        StringBuilder note = new StringBuilder(String.format(Locale.ROOT, "현금이 순자산의 %.2f%%만큼 모자라 153130 매도로 메울 수 있는 "
+                + "%,.0f원을 넘는 %,.0f원만큼 종목 매수를 낮은 순위부터 줄임(선정한 날 매수는 다음 시가에 있을 현금 안 — 여유 %.1f%%p, 사용자 결정 "
+                + "u3)", -spare, covered, gap, KrRules.CASH_BUFFER_PCT));
+        if (!changes.isEmpty()) {
+            note.append(": ").append(String.join(", ", changes)).append(" — 줄인 목표는 다음 재선정까지 채우지 않음");
+        }
+        if (left.signum() > 0) {
+            note.append(String.format(Locale.ROOT, ". 이번 종목 매수를 모두 빼도 %,.0f원 모자람 — 앞선 날의 대기 매수는 체결 때 살 수 있는 "
+                    + "만큼으로 줄어듦(cashLimited)", left));
+        }
+        draft.notes.add(note.toString());
     }
 
     /** 선정하지 않은 날의 남는 현금 — 어림한 남는 현금이 기준(kr.rules.parkCashThresholdPct, 여유 이상)을 넘으면 153130 매수 한 건. */
@@ -1100,8 +1169,8 @@ final class KrRuleBookService {
         String head = ticker + " 매도 신호(" + String.join(" · ", labels) + ") — 지금은 체결할 수 없음(" + blocked
                 + ") — 주문은 대기로 두고 만료(기준일 + 3거래일) 전에 풀리면 체결(게이트 ①은 그 주문을 기다리지 않음). ";
         if (selectionDay) {
-            return head + "선정한 날이라 그 매도 대금은 현금 어림에서 뺐음 — 종목·153130 매수(모자라면 153130 일부 매도)는 다음 시가에 있을 "
-                    + "현금으로 정함. 풀려서 팔리면 그 대금은 현금으로 남아 다음 결정의 남는 현금 규칙(기준 "
+            return head + "선정한 날이라 그 매도 대금은 현금 어림에서 뺐음 — 종목·153130 매수(모자라면 153130 일부 매도, 그래도 모자라면 종목 "
+                    + "매수를 낮은 순위부터 줄임)는 다음 시가에 있을 현금으로 정함. 풀려서 팔리면 그 대금은 현금으로 남아 다음 결정의 남는 현금 규칙(기준 "
                     + String.format(Locale.ROOT, "%.1f%%", settings.params().parkCashThresholdPct()) + "를 넘을 때만 153130)을 따름";
         }
         return head + "선정한 날이 아니라 그 매도 대금도 남는 현금 어림에 넣었음 — 정지가 이어지면 그 어림으로 낸 153130 매수는 체결 때 살 수 "

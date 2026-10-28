@@ -815,6 +815,41 @@ class KrRulesJobTest {
     }
 
     @Test
+    @DisplayName("153130으로 모자란 현금을 다 메울 수 없는 재선정일(u3 — 종목 매수도 다음 시가에 있을 현금으로) — 정지 보유의 대금을 빼고 153130을 전량 팔아도 모자라 105560 매수를 줄여 내고, 정지가 R1에도 이어져도 그 매수는 R1 시가에 요청 수량대로 체결(cashLimited 없음)")
+    void trimmedStockBuyFillsInFullWhenTheSuspensionContinues() {
+        holding("000660", 2_000, 10_000);   // R 거래정지 — 후보 밖, 매도는 대기로 남음
+        holding("005930", 7_500, 10_000);   // 후보지만 이미 목표 이상
+        holding("153130", 20, 108_000);     // 2,160,000원 — 전량 팔아도 모자람
+        store.upsertState(new BookState(PaperBooks.KR_RULES, 3_000_000, 100_160_000, 97_160_000, 97.0048, null, null, S, null));
+        KrFixtures.stub(reader, Datasets.SNAP_KR_PAPER_QUOTES,
+                KrRulesFixtures.suspend(KrRulesFixtures.quotes(R), "000660", true));
+        fsc(FRI);
+        PaperDecisionJob.Result decided = runAt("2026-11-02T22:30");
+        assertThat(decided.outcome()).isEqualTo(PaperDecisionJob.DECIDED);
+        List<Order> orders = store.ordersByDecision(decided.rules().id());
+        // R 장부 평가(종목 10,100·153130 108,020) → 순자산 101,110,400. 어림 = 3,000,000 − 105560 6,740,727.0368 × (1 + 6.5bp)
+        // = −3,745,108.5094원 → 메울 현금 4,250,660.5094원 중 153130 전량 2,160,400 × (1 − 6.5bp) = 2,158,995.74원만 셈 → 남은 2,091,664.7694원을
+        // 105560에서: (6,745,108.5094 − 2,091,664.7694) ÷ (1 + 6.5bp) = 4,650,420.97원 → 4.5993%(내림, 고치기 전 6.6667%).
+        assertThat(orders).extracting(Order::ticker, Order::side, Order::targetWeightPct).containsExactly(
+                org.assertj.core.groups.Tuple.tuple("000660", "SELL", null),
+                org.assertj.core.groups.Tuple.tuple("105560", "BUY", 4.5993),
+                org.assertj.core.groups.Tuple.tuple("153130", "SELL", null));
+
+        KrFixtures.stub(reader, Datasets.SNAP_KR_PAPER_QUOTES,
+                KrRulesFixtures.suspend(KrRulesFixtures.quotes(R1), "000660", true));
+        fsc(R);
+        assertThat(runAt("2026-11-03T22:30").outcome()).isEqualTo(PaperDecisionJob.DECIDED);
+
+        assertThat(store.orders.get(orders.get(0).id()).status()).isEqualTo(PaperBooks.ORDER_PENDING);
+        assertThat(store.orders.get(orders.get(2).id()).status()).isEqualTo("FILLED");
+        everyBuyFilledInFull(orders);
+        // R1 시가: 153130 20주 매도(현금 3,000,000 + 그 대금) → 105560 464주(4.5993% × 체결 직전 순자산) → 현금 515,580원(여유 약 0.5%p).
+        assertThat(store.fillsOf(PaperBooks.KR_RULES)).extracting(f -> f.ticker() + " " + f.side() + " " + f.qty())
+                .containsExactly("153130 SELL 20", "105560 BUY 464");
+        assertThat(store.state(PaperBooks.KR_RULES).orElseThrow().cash()).as("R1 시가 체결 뒤 현금").isEqualTo(515_580.0);
+    }
+
+    @Test
     @DisplayName("1분봉 FAILED 기다림은 게이트 ①을 그대로 막음(관측 봉이 있음 — 장부가 아직 일하는 주문), 같은 밤 정지 종목의 대기 주문은 막지 않음 — 그 밤 다음 slow가 1분봉을 받아 장부가 체결하면 ① 통과")
     void minuteFailedWaitStillHoldsGateOne() {
         long waiting = pending("005930", PaperBooks.BUY, PaperBooks.NEXT_OPEN, RuleBookService.SOURCE_RULE, FRI,

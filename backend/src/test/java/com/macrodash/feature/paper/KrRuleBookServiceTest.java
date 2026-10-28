@@ -387,7 +387,7 @@ class KrRuleBookServiceTest {
     }
 
     @Test
-    @DisplayName("모자란 현금의 153130 일부 매도는 153130이 그날 거래정지여도 냄(사용자 결정 u2 — 매도는 체결할 수 없어도 주문) — 같은 손계산 비율 0.176464, 지금 체결할 수 없는 사유는 notes")
+    @DisplayName("모자란 현금의 153130 일부 매도는 153130이 그날 거래정지여도 냄(사용자 결정 u2) — 같은 손계산 비율 0.176464. 선정한 날이라 그 대금은 다음 시가 현금에서 빼고(u3) 종목 매수를 낮은 순위부터 줄임: 105560·005930 뺌, 000660 5.6667% → 1.9934%(손계산)")
     void parkingSellIsPlacedEvenWhenUnfillable() {
         holding("373220", 100, 10_000);
         holding("207940", 100, 10_000);
@@ -400,13 +400,23 @@ class KrRuleBookServiceTest {
 
         Decision rebalance = service.decide(run(), R, false, KrPaperMarket.INSTANCE.parse(snapshot));
 
-        assertThat(ordersOf(rebalance)).filteredOn(o -> "153130".equals(o.ticker())).singleElement()
-                .satisfies(o -> {
-                    assertThat(o.side()).isEqualTo(PaperBooks.SELL);
-                    assertThat(o.sellFraction()).isEqualTo(0.176464);
-                });
-        assertThat(rebalance.response().path("notes")).extracting(JsonNode::asString).anySatisfy(note ->
-                assertThat(note).contains("153130를 파는데 지금은 체결할 수 없음(2026-11-02 거래정지").contains("cashLimited"));
+        // 어림 = 현금 500,000 + 매도 둘 1,994,700 − 매수 19,012,450.065 = −16,517,750.065원 → 메울 현금 17,017,750.065원(여유 0.5%p 포함).
+        // 153130은 지금 체결할 수 없어 그 대금을 셈하지 않으므로(u3) 종목 매수를 뒤에서부터: 105560·005930(6,671,033.355원씩)을 빼고 남은
+        // 3,675,683.355원을 000660에서 — 5,670,383.355 − 3,675,683.355 = 1,994,700원 ÷ (1 + 6.5bp) = 1,993,404.29원 → 1.9934%(내림).
+        assertThat(ordersOf(rebalance)).extracting(Order::ticker, Order::side, Order::targetWeightPct, Order::sellFraction)
+                .containsExactly(tuple("207940", "SELL", null, null), tuple("373220", "SELL", null, null),
+                        tuple("000660", "BUY", 1.9934, null), tuple("153130", "SELL", null, 0.176464));
+        // 다음 시가 현금(153130 매도 없이) 500,000 + 1,994,700 − 여유 500,000 ≥ 000660 유출 1,994,695.71원.
+        assertThat(buyOutflow(ordersOf(rebalance))).isEqualByComparingTo("1994695.71")
+                .isLessThanOrEqualTo(java.math.BigDecimal.valueOf(1_994_700));
+        assertThat(ordersOf(rebalance).get(2).reason().path("trimmedFromPct").asDouble()).isEqualTo(5.6667);
+        assertThat(rebalance.response().path("skipped")).filteredOn(row -> row.path("reason").asString().contains("현금이 모자라"))
+                .extracting(row -> row.path("ticker").asString()).containsExactly("105560", "005930");
+        assertThat(rebalance.response().path("notes")).extracting(JsonNode::asString)
+                .anySatisfy(note -> assertThat(note).contains("153130를 파는데 지금은 체결할 수 없음(2026-11-02 거래정지")
+                        .contains("그 대금은 다음 시가 현금 어림에서 뺐음").doesNotContain("cashLimited"))
+                .anySatisfy(note -> assertThat(note).contains("종목 매수를 낮은 순위부터 줄임")
+                        .contains("000660 5.6667% → 1.9934%").contains("005930 뺌").contains("105560 뺌"));
     }
 
     @Test
@@ -530,6 +540,78 @@ class KrRuleBookServiceTest {
                 .multiply(java.math.BigDecimal.valueOf(0.167934)).multiply(new java.math.BigDecimal("0.99935"));
         assertThat(buyOutflow(ordersOf(rebalance))).isEqualByComparingTo("13342066.71")
                 .isLessThanOrEqualTo(parkingSale.add(java.math.BigDecimal.valueOf(500_000)));
+    }
+
+    @Test
+    @DisplayName("153130 매도로도 다음 시가 현금이 모자라면 종목 매수를 낮은 순위부터 줄임(u3 — 선정한 날 매수는 다음 시가에 있을 현금 안) — 거래정지 보유의 대금은 빼고 153130 2백만 원을 전량 팔아도 모자라 105560 6.6667% → 4.4957%(손계산)")
+    void stockBuysAreTrimmedWhenParkingCannotCoverTheShortfall() {
+        holding("000660", 2_000, 10_000);   // 2천만 원 — R 거래정지라 후보 밖(그 대금은 어림 밖)
+        holding("005930", 7_500, 10_000);   // 7천5백만 원 — 후보지만 이미 목표 비중 이상
+        holding("153130", 20, 100_000);     // 2백만 원
+        store.upsertState(new BookState(PaperBooks.KR_RULES, 3_000_000, NAV, 97_000_000, 97.0, null, null, S, null));
+
+        Decision rebalance = decideWith(R, KrRulesFixtures.suspend(KrRulesFixtures.quotes(R), "000660", true));
+
+        // 어림 = 현금 3,000,000 − 105560 6,666,700 × (1 + 6.5bp) = 6,671,033.355 → −3,671,033.355원 → 메울 현금 4,171,033.355원(여유 0.5%p 포함).
+        // 153130 전량 2,000,000 × (1 − 6.5bp) = 1,998,700원으로 모자란 2,172,333.355원을 105560에서: 6,671,033.355 − 2,172,333.355 = 4,498,700원
+        // ÷ (1 + 6.5bp) = 4,495,777.74원 → 4.4957%(내림). 고치기 전에는 6.6667%를 내고 R1에 정지가 이어지면 장부가 현금 한도로 줄였음(cashLimited).
+        assertThat(ordersOf(rebalance)).extracting(Order::ticker, Order::side, Order::targetWeightPct, Order::sellFraction)
+                .containsExactly(tuple("000660", "SELL", null, null), tuple("105560", "BUY", 4.4957, null),
+                        tuple("153130", "SELL", null, null));
+        // 다음 시가 현금 = 3,000,000 + 1,998,700 = 4,998,700원 − 여유 500,000 ≥ 105560 유출 4,498,622.205원.
+        assertThat(buyOutflow(ordersOf(rebalance))).isEqualByComparingTo("4498622.205")
+                .isLessThanOrEqualTo(java.math.BigDecimal.valueOf(4_498_700));
+        JsonNode reason = ordersOf(rebalance).get(1).reason();
+        assertThat(reason.path("targetWeightPct").asDouble()).as("K10 목표는 그대로").isEqualTo(6.6667);
+        assertThat(reason.path("orderWeightPct").asDouble()).isEqualTo(4.4957);
+        assertThat(reason.path("trimmedFromPct").asDouble()).isEqualTo(6.6667);
+        assertThat(rebalance.response().path("notes")).extracting(JsonNode::asString).anySatisfy(note ->
+                assertThat(note).contains("153130 매도로 메울 수 있는 1,998,700원").contains("종목 매수를 낮은 순위부터 줄임")
+                        .contains("105560 6.6667% → 4.4957%").contains("다음 재선정까지 채우지 않음"));
+    }
+
+    @Test
+    @DisplayName("앞선 날의 대기 153130 매도가 있으면 다시 내지 않고 그 몫(파는 비율)만 다음 시가 현금으로 셈 — 모자란 만큼 종목 매수를 줄이고, 줄인 매수가 최소 금액 미만이면 뺌(105560 0.2996% < 50만 원 — 손계산)")
+    void pendingParkingSellCountsOnlyItsShareAndSmallRemaindersAreDropped() {
+        holding("000660", 2_000, 10_000);   // R 거래정지 — 후보 밖
+        holding("005930", 7_740, 10_000);   // 77,400,000원 — 이미 목표 이상
+        holding("153130", 20, 100_000);     // 2백만 원 — 그중 10%를 파는 대기 매도
+        store.insertOrder(new Order(0, PaperBooks.KR_RULES, null, "153130", PaperBooks.SELL, null, null, 0.1,
+                PaperBooks.NEXT_OPEN, RuleBookService.SOURCE_RULE, PaperBooks.ORDER_PENDING, null, null, FRI,
+                kst("2026-10-30T22:30"), LocalDate.of(2026, 11, 4), null));
+        store.upsertState(new BookState(PaperBooks.KR_RULES, 600_000, NAV, 99_400_000, 99.4, null, null, S, null));
+
+        Decision rebalance = decideWith(R, KrRulesFixtures.suspend(KrRulesFixtures.quotes(R), "000660", true));
+
+        // 어림 = 600,000 − 6,671,033.355 = −6,071,033.355원 → 메울 현금 6,571,033.355원. 대기 매도 몫 1,998,700 × 0.1 = 199,870원만 셈 →
+        // 105560에 남는 유출 6,671,033.355 − 6,371,163.355 = 299,870원 ÷ (1 + 6.5bp) → 0.2996% = 299,600원 < 최소 50만 원 → 뺌.
+        assertThat(ordersOf(rebalance)).extracting(Order::ticker, Order::side).containsExactly(tuple("000660", "SELL"));
+        assertThat(rebalance.response().path("skipped")).extracting(row -> row.path("ticker").asString() + " "
+                + row.path("reason").asString()).anySatisfy(row -> assertThat(row)
+                        .startsWith("153130 모자란 현금 — 이미 대기 중인 매도 주문이 있음"))
+                .anySatisfy(row -> assertThat(row).startsWith("105560 최소 금액 미만(299,600원"));
+        assertThat(rebalance.response().path("notes")).extracting(JsonNode::asString).anySatisfy(note ->
+                assertThat(note).contains("153130 매도로 메울 수 있는 199,870원").contains("105560 뺌"));
+    }
+
+    @Test
+    @DisplayName("이번 종목 매수를 모두 빼도 모자라면(앞선 날의 대기 매수가 현금보다 큼) 그 차이를 note에 — 대기 매수는 체결 때 살 수 있는 만큼으로 줄어듦(cashLimited)")
+    void pendingBuysBeyondCashAreLeftToTheLedger() {
+        holding("005930", 9_000, 10_000);   // 9천만 원 — 이미 목표 이상
+        store.insertOrder(new Order(0, PaperBooks.KR_RULES, null, "373220", PaperBooks.BUY, null, 30.0, null,
+                PaperBooks.NEXT_OPEN, RuleBookService.SOURCE_RULE, PaperBooks.ORDER_PENDING, null, null, FRI,
+                kst("2026-10-30T22:30"), LocalDate.of(2026, 11, 4), null));
+        store.upsertState(new BookState(PaperBooks.KR_RULES, 10_000_000, NAV, 90_000_000, 90.0, null, null, S, null));
+
+        Decision rebalance = decideWith(R, KrRulesFixtures.quotes(R));
+
+        // 어림 = 10,000,000 − 대기 매수 30,019,500 − 000660·105560 13,342,066.71 = −33,361,566.71원 → 메울 현금 33,861,566.71원,
+        // 팔 153130 없음 → 105560·000660을 빼도 20,519,500원 모자람.
+        assertThat(ordersOf(rebalance)).isEmpty();
+        assertThat(rebalance.response().path("skipped")).filteredOn(row -> row.path("reason").asString().contains("현금이 모자라"))
+                .extracting(row -> row.path("ticker").asString()).containsExactly("105560", "000660");
+        assertThat(rebalance.response().path("notes")).extracting(JsonNode::asString).anySatisfy(note ->
+                assertThat(note).contains("이번 종목 매수를 모두 빼도 20,519,500원 모자람").contains("cashLimited"));
     }
 
     @Test
