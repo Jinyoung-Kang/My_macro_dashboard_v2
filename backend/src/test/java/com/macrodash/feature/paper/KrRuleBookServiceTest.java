@@ -683,6 +683,36 @@ class KrRuleBookServiceTest {
     }
 
     @Test
+    @DisplayName("재선정일의 앞선 날 대기 매도 — Fillable로 체결할 수 있는 것은 대금을 셈: R 봉이 정상인 것(결정 작업에서는 장부의 그날 보류 orderHolds), R 봉이 아직 없는 것(직전 거래일 봉만 — 게이트 ①은 면제하지만 자료 지연이라 셈). 거래정지인 것만 뺌(153130 76.1049% — 손계산)")
+    void selectionDayCountsFillablePendingSellsAndLeavesOutSuspendedOnes() {
+        holding("373220", 1_000, 10_000);   // 1천만 원 — 대기 매도, R 봉 정상
+        holding("000660", 1_000, 10_000);   // 1천만 원 — 대기 매도, R 거래정지(후보 밖이기도 함)
+        holding("068270", 1_000, 10_000);   // 1천만 원 — 대기 매도, R 봉이 아직 없음(토스가 직전 거래일 봉까지만 줌)
+        for (String code : List.of("373220", "000660", "068270")) {
+            store.insertOrder(new Order(0, PaperBooks.KR_RULES, null, code, PaperBooks.SELL, null, null, null,
+                    PaperBooks.NEXT_OPEN, RuleBookService.SOURCE_RULE, PaperBooks.ORDER_PENDING, null, null, FRI,
+                    kst("2026-10-30T22:30"), LocalDate.of(2026, 11, 4), null));
+        }
+        store.upsertState(new BookState(PaperBooks.KR_RULES, 70_000_000, NAV, 30_000_000, 30.0, null, null, S, null));
+
+        Decision rebalance = decideWith(R, KrRulesFixtures.suspend(
+                KrRulesFixtures.quotes(R, java.util.Set.of("068270")), "000660", true));
+
+        // 153130: 7천만 + 373220·068270 대기 매도 1천만 × (1 − 26.5bp) × 2 = 19,947,000 − 005930·105560 13,342,066.71
+        // = 76,604,933.29원 → 76.1049%(체결할 수 있는 대기 매도까지 빼면 56.1579%, 068270만 빼면 66.1314%, 000660까지 넣으면 86.0784%).
+        assertThat(ordersOf(rebalance)).extracting(Order::ticker, Order::side, Order::targetWeightPct)
+                .containsExactly(tuple("005930", "BUY", 6.6667), tuple("105560", "BUY", 6.6667),
+                        tuple("153130", "BUY", 76.1049));
+        assertThat(rebalance.response().path("skipped")).filteredOn(row -> row.path("reason").asString()
+                        .contains("이미 대기 중인 매도 주문이 있어 다시 내지 않음"))
+                .extracting(row -> row.path("ticker").asString()).containsExactlyInAnyOrder("000660", "068270", "373220");
+        assertThat(rebalance.response().path("notes")).extracting(JsonNode::asString)
+                .filteredOn(note -> note.contains("대기 매도 — 지금은 체결할 수 없음")).singleElement(
+                        org.assertj.core.api.InstanceOfAssertFactories.STRING)
+                .startsWith("000660 대기 매도 — 지금은 체결할 수 없음(2026-11-02 거래정지");
+    }
+
+    @Test
     @DisplayName("출발(INITIAL) 계획도 같은 어림(u3) — 출발은 초기화 뒤라 실제로는 보유·대기 주문이 없지만, 보유를 심으면 재선정일과 같은 손계산(153130 66.1579%)이 나옴(출발 = S의 재선정과 같은 계산)")
     void startPlanUsesTheSameSelectionProjection() {
         holding("000660", 2_000, 10_000);   // 심은 보유 — S 거래정지라 후보 밖
