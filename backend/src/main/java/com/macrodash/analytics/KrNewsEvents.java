@@ -30,10 +30,13 @@ import java.util.regex.Pattern;
  * 블록 구분자의 모양을 그대로 따르되 맞추기 규칙만 한국어에 맞춥니다.
  *
  * <p><b>창</b>: {@link NewsEvents.Window} — (직전 KR 거래일 결정 순간, 기준 세션 결정 순간]({@link NewsEvents#window(TradingCalendar, LocalDate,
- * java.util.function.Function)}에 한국 달력과 한국 결정 순간을 넘김 — 월요일 세션은 금요일 22:30부터). 제목은 <b>알 수 있는 시각</b>
- * ({@code knownAt} — 수집기가 처음 넣을 때 정함: 시각이 있으면 발행 시각, 날짜만이면 min(처음 받은 시각, 그 KST 날짜 다음 자정), 명세 §4-11
- * 'B9')이 창 안이고, <b>받은 시각이 읽은 순간 이하</b>({@code fetchedAt ≤ readAt} — 받은 시각을 모르면 넣지 않음)인 것만 넣습니다. 그래서 같은
- * 저장본·같은 읽은 순간이면 같은 줄이고, 결정 순간 뒤에 알게 된 제목은 들지 않습니다.
+ * java.util.function.Function)}에 한국 달력과 한국 결정 순간을 넘김 — 월요일 세션은 금요일 22:30부터). 제목은 <b>시스템이 알게 된 시각</b>
+ * ({@link #learnedAt} = max(알 수 있는 시각, 처음 받은 시각) — 알 수 있는 시각 {@code knownAt}은 수집기가 처음 넣을 때 정함: 시각이 있으면 발행
+ * 시각, 날짜만이면 min(처음 받은 시각, 그 KST 날짜 다음 자정), 명세 §4-11 'B9')이 창 안이고, <b>받은 시각이 읽은 순간 이하</b>({@code fetchedAt ≤
+ * readAt} — 받은 시각을 모르면 넣지 않음)인 것만 넣습니다. 그래서 같은 저장본·같은 읽은 순간이면 같은 줄이고, 결정 순간 뒤에 알게 된 제목은 들지
+ * 않습니다. 창을 알 수 있는 시각만으로 가르면 결정 순간 직전에 나왔지만 그 뒤에 처음 받은 제목(수집은 1시간마다 — 21:55 기동 뒤 첫 바퀴 다음은
+ * 22:5x)이 그 창에서는 받은 시각 때문에, 다음 창에서는 알 수 있는 시각 때문에 빠져 어느 패킷에도 실리지 않았습니다(묶음 E 리뷰) — 이제 모든 제목이
+ * 정확히 한 창에 들고(룩어헤드 없음), 블록의 시각은 알 수 있는 시각 그대로입니다.
  *
  * <p><b>맞추기</b>(E1a에서 정함 — 명세 §4-11 '한글 키워드는 부분 문자열·영문은 낱말 경계'를 이 규칙으로 채움):
  * <ul>
@@ -372,7 +375,7 @@ public final class KrNewsEvents {
 
         Map<Object, Headline> distinct = new LinkedHashMap<>();
         known.stream()
-                .filter(h -> window.contains(h.knownAt()))
+                .filter(h -> window.contains(learnedAt(h)))
                 .filter(h -> s.feeds() == null || h.carriers().stream().anyMatch(s.feeds()::contains))
                 .sorted(ORDER)
                 .forEach(h -> distinct.putIfAbsent(h.entity() == null ? new Object() : h.entity(), h));
@@ -395,6 +398,17 @@ public final class KrNewsEvents {
         List<Item> shown = hits.subList(0, Math.min(cap, hits.size()));
         return new Result(hits.isEmpty() ? NONE : OK, window, shown, distinct.size(), hits.size(),
                 hits.size() - shown.size(), cap, coverage, since, last);
+    }
+
+    /**
+     * 시스템이 그 제목을 알게 된 시각 = max(알 수 있는 시각, 처음 받은 시각) — 창 판정에 씁니다(클래스 설명 '창'). 알 수 있는 시각이 없으면 null(창에
+     * 들지 않음).
+     */
+    static Instant learnedAt(Headline h) {
+        if (h.knownAt() == null) {
+            return null;
+        }
+        return h.fetchedAt() != null && h.fetchedAt().isAfter(h.knownAt()) ? h.fetchedAt() : h.knownAt();
     }
 
     /** 알 수 있는 시각 내림차순 → entity → 피드 → 링크 → 제목(null은 뒤). */

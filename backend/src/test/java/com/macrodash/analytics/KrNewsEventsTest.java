@@ -137,12 +137,14 @@ class KrNewsEventsTest {
     }
 
     @Test
-    @DisplayName("창 — 알 수 있는 시각이 (직전 결정, 이번 결정] 안이고 읽은 순간까지 받은 행만, 최신순·상한")
+    @DisplayName("창 — 알게 된 시각(알 수 있는 시각·받은 시각 중 늦은 것)이 (직전 결정, 이번 결정] 안이고 읽은 순간까지 받은 행만, 최신순·상한")
     void windowAndReadInstant() {
         List<Headline> rows = new ArrayList<>(List.of(FRESH, OLD));
         rows.add(h("a", "한은 기준금리 동결", "2026-10-28T10:00"));
-        rows.add(h("b", "환율 하락", "2026-10-28T22:30"));                       // 창 끝 포함
-        rows.add(h("c", "물가 상승", "2026-10-27T22:30"));                       // 창 앞 끝 — 빠짐
+        rows.add(new Headline("b", "환율 하락", null, "시험 통신", "yna_market", null, LocalDate.parse("2026-10-28"), "second",
+                kst("2026-10-28T22:30"), kst("2026-10-28T22:30")));                // 창 끝 포함(그 순간에 받음)
+        rows.add(new Headline("c", "물가 상승", null, "시험 통신", "yna_market", null, LocalDate.parse("2026-10-27"), "second",
+                kst("2026-10-27T22:30"), kst("2026-10-27T22:30")));                // 창 앞 끝(그 순간에 받음) — 빠짐
         rows.add(h("d", "관세 협상", "2026-10-28T22:31"));                       // 창 뒤 — 빠짐
         Instant known = kst("2026-10-28T21:00");
         rows.add(new Headline("e", "수출 증가", null, "시험 통신", "yna_market", null, LocalDate.parse("2026-10-28"),
@@ -160,6 +162,26 @@ class KrNewsEventsTest {
         assertThat(capped.omitted()).isEqualTo(1);
         Result zero = KrNewsEvents.compute(rows, W, READ_AT, new Settings(true, 0, DEFAULT_KEYWORDS, null), null, SAME);
         assertThat(zero.text()).isEqualTo("상한 0건(설정 kr.news.maxPerDay) — 걸린 2건은 싣지 않음");
+    }
+
+    @Test
+    @DisplayName("창은 시스템이 알게 된 시각 max(알 수 있는 시각, 받은 시각)으로 — 결정 순간 직전에 나왔지만 그 뒤에 처음 받은 제목은 다음 창에 한 번 들고(빠지지 않음), 결정 순간 전에 받은 제목은 그 창에만")
+    void headlinesFetchedAfterTheDecisionGoToTheNextWindow() {
+        Headline lateFetch = new Headline("g", "환율 급등", null, "시험 통신", "yna_market", null, LocalDate.parse("2026-10-28"),
+                "second", kst("2026-10-28T22:20"), kst("2026-10-28T22:56"));   // 22:20 발행 · 22:56 수집(slow 1시간)
+        Headline inTime = h("a", "한은 기준금리 동결", "2026-10-28T10:00");
+        Headline freshNext = new Headline("zz-next", "주간 정리", null, "시험 통신", "yna_market", null,
+                LocalDate.parse("2026-10-29"), "second", kst("2026-10-29T10:00"), kst("2026-10-29T22:20"));
+        List<Headline> rows = List.of(lateFetch, inTime, FRESH, OLD, freshNext);
+        Settings on = new Settings(true, 10, DEFAULT_KEYWORDS, null);
+
+        Result d = KrNewsEvents.compute(rows, W, READ_AT, on, null, SAME);
+        assertThat(d.items()).extracting(KrNewsEvents.Item::entity).as("D 패킷 — 22:56 수집은 읽은 순간 뒤").containsExactly("a");
+
+        NewsEvents.Window next = new NewsEvents.Window(W.to(), kst("2026-10-29T22:30"));
+        Result d1 = KrNewsEvents.compute(rows, next, kst("2026-10-29T22:31"), on, null, SAME);
+        assertThat(d1.items()).extracting(KrNewsEvents.Item::entity).as("D+1 패킷 — 결정 순간 뒤에 알게 된 제목").containsExactly("g");
+        assertThat(d1.items().get(0).block()).as("블록 시각은 알 수 있는 시각(발행) 그대로").contains("2026-10-28 22:20 KST");
     }
 
     @Test
