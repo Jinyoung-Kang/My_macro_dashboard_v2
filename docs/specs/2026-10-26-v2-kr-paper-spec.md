@@ -779,6 +779,12 @@
     정기 실행 로그도 그 세션 처음 미룸만 INFO, 나머지는 DEBUG(묶음 C 리뷰 `2a163f2` — 기한 뒤 10분마다 하룻밤 약 42줄이던 것).
     → **E0**(사용자 결정 v3, `0a70366`): '이미 미룸 — 다시 계획하지 않음'·'미룸 기록은 세션마다 한 번'·미룸 사유(마지막 기다림)는 메모리 대신 그 세션의 저장된 작업 기록으로 정한다 —
     재기동해도 다시 계획하지 않고 기록도 한 번('재기동하면 한 번 더'를 바꿈). 게이트 기다림은 그 세션 기다림 한 줄로 남는다(§4-9 'E0 구현에서 정한 것').
+    → **묶음 E 2차 리뷰에서 정한 것**(사용자 결정 v3, §9 '묶음 E 리뷰 메모' 두 항목의 권장 ⓑ): ① **과금된 계획(Claude)이 든 출발의 쓰기 예외는 `ERROR`가 아니라 그 세션 미룸**
+    (`09010cf` — `START_POSTPONED`, 사유 '출발 쓰기 오류(…) — 과금된 Claude 계획을 같은 창에서 다시 부르지 않게 미룸'·`error`·`calls`, 그 뒤는 위 E0의 저장된 미룸이라 같은 창·재기동 뒤에
+    다시 계획하지 않음 — 예전에는 다음 주기마다 다시 계획해 Claude를 다시 불렀음, 세션당 최대 6회·재기동마다 3회 더). 과금 몫이 없는 쓰기 예외는 그대로 `ERROR`·다음 주기 재시도
+    ② **출발 오류 횟수 = 그 세션의 저장된 출발 오류 기록(`ERROR`·상세 `start=true`) 수**(`3dc5c4a` — `KrStartPipeline.startErrors`, 이미 읽는 `jobRunsFor`, 기록의 `attempt` = 그 수 + 1,
+    스키마 변경 없음) — 세 번이면 재기동해도 기한까지 쉰다. 시험 `KrStartTest.chargedStartWriteFailurePostponesTheSession`(22:30·22:40·재기동 뒤 22:50에 가짜 AI 호출 1회)·
+    `startErrorCountSurvivesARestart`.
     **실제 출발일은 결정 행의 기준 거래일 D**이고, 결정 응답·작업 기록에 설정 출발일 `configuredStartDate`와 `postponed`를 남긴다(§4-8 '바뀐 출발일을 화면·기록에' — 화면 표시는 F2).
   - **쓰는 것**(장부 잠금 안의 한 트랜잭션 — 그 안에서 '모두 시작 전'을 다시 봄): 벤치마크마다 결정 `INITIAL`·`OK`·모델 없음·`settings_version` = 그 실행의 판·`target_exposure_pct` 100·**`prices_final=false`**
     (한국 결정의 가격은 금융위 확정 전 잠정가 — d9 `pricesConfirmed` 뜻. 벤치마크 결정은 가격을 보지 않음)·응답(summary·weights·gates·timing·rebalancing '없음'·configuredStartDate·postponed);
@@ -809,6 +815,7 @@
     벤치마크)을 모두 계획한 뒤 그것들이 하나도 실패하지 않았을 때만** 부른다(`KrStartPipeline.Leg.charges`, `985d956` — 쓰는 순서는 그대로, 미룸 사유에 '부르지 않음: kr_claude',
     시험 `claudeIsNotCalledWhenAnotherLegFails`) ③ 결정 행 없이 끝난 출발(미룸·쓰기 오류)의 과금 호출은 그 작업 기록의 `calls.{계좌}` = `{calls, attempts:[{status(RESPONDED·
     실패 상태), model, effort, 토큰 넷, latencyMs, stopReason, charged, errorKind, estCostUsd}], isEstimated}`(`f0e5826`, §4-10, 시험 `startRecordsCountTheChargedClaudeCalls`).
+    → **2차 리뷰**: 과금 호출이 있는 쓰기 오류는 이제 `ERROR`가 아니라 그 세션 미룸 기록이다(위 'C1c' '기다림·미룸'의 2차 리뷰 화살표 — `calls`는 그 미룸 기록에).
   - **실패 = `Plan.failed`** — 상한·재시도 1회 뒤 오류·거절·형식 오류·기한·응답을 받은 뒤 검증 예외. 어느 계좌에도 쓰지 않고 그 세션을 미루며(E0의 저장된 미룸 — 같은 창에서 재기동해도
     다시 부르지 않음), 사유가 작업 기록 `START_POSTPONED`의 `reason`에 남는다('출발 계획 실패 — kr_claude: Claude 출발 호출 실패(API 오류, 재시도 1회 뒤): …'). 과금된 호출은 그날
     사용량에 세고 그 응답은 결정 행으로 남지 않는다(출발하지 않은 계좌에 행을 두지 않음).
@@ -1103,6 +1110,8 @@
     → **묶음 E 리뷰**: 이 'v3 밖' 분류는 재기동하면 판정이 실제로 바뀌는 두 곳(장부 실패 기억 → 그 밤 NO_TRADE 대신 결정, 출발 오류 세 번 포기 → 재기동마다 과금 출발 시도 다시)을
     남겨 사용자 확인 항목으로 올렸다(§9 '묶음 E 리뷰 메모'). 기한 지남 기록 한 번은 행을 쓴 뒤 기록만 못 썼어도(기록 실패·그 사이 재기동) 다음 주기에 기록만 남긴다(`a0bf529`·
     시험 `KrRulesJobTest.pastDeadlineRecordIsWrittenNextCycleWhenOnlyTheRecordFailed` — 예전에는 다음 주기가 할 일 없음으로 끝나 끝내 생기지 않았음).
+    → **묶음 E 2차 리뷰**: 출발 오류 횟수는 그 세션의 저장된 출발 오류 기록 수로 옮겼다(`3dc5c4a` — §4-8 'C1c' 2차 리뷰 화살표, 권장 ⓑ). 정기 결정의 오류 횟수(세 번이면 그날 포기 —
+    수동 실행이 지움)와 장부 실패 기억(`failedObservations`)은 그대로 메모리다(재기동 = 복구 경로 — §9 '묶음 E 2차 리뷰 메모'의 사용자 확인 항목).
   - **그 세션의 기록 읽기**: `PaperStore.jobRunsFor(작업, 거래일)` = 상세 `tradingDate`가 그 날인 기록(최근 순). 작업마다 최근 200건만 남지만 한 결정 창(22:30~01:00, 15주기)의 기록은
     많아야 십여 줄이라 그 안에 있다.
   - **기다림 한 줄**(정함 — v3의 '작업 기록으로 판정'을 채우려면 기다림의 판정이 기록에 있어야 함, 사용자 확인 항목 §9 'E0 메모'): 자료 게이트 미달 `DATA_NOT_READY`와 출발의 게이트·계좌
@@ -1167,7 +1176,7 @@
 
 ### 4-10. 호출 상한 (K18 — 권장안, 상한 20은 사용자 결정 V6)
 - 두 책이 `paper_api_usage` 한 줄을 그대로 공유한다(시장별 고정 몫 없음, 시장별 횟수는 결정·복기 행에서 셈 — 결정 행 없이 끝난 한국 출발의 호출은 그 작업 기록
-  `START_POSTPONED`·`ERROR`의 `calls`에서 셈, 묶음 E 리뷰 `f0e5826`).
+  `START_POSTPONED`의 `calls`에서 셈 — 과금된 계획 뒤 쓰기 오류도 미룸 기록, 묶음 E 리뷰 `f0e5826`·2차 리뷰 `09010cf`).
 - **정기 작업 몫 예약** `apiScheduledReserve`(기본 **7**, 3단계 교정 재호출 `claude.figureCheck`를 켜면 **9** — 권장안): 수동 호출(미리보기·프레임 제안·수동 실행)은 그날 총 호출이 `상한 − 예약` 미만일 때만, 정기 작업은 상한까지. 같은 SQL의 문턱만 다르다(스키마 변경 없음).
   → C1b에서 설정 키(공유, INTEGER 0~50, 기본 7)만 더했다 — 읽는 코드는 E2라 그 전까지 미국 호출 상한 동작은 그대로다(§4-13 'C1b 구현에서 정한 것').
   → **E2b에서 읽기 시작함**(아래 'E2b 구현에서 정한 것').
