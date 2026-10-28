@@ -323,6 +323,9 @@ class PaperQueryServiceTest {
                 .isEqualTo("2026-10-27");
         assertThat(usage.path("today").path("calls").asInt()).isEqualTo(2);
         assertThat(usage.path("today").path("cap").asInt()).as("기본 상한 20(v2)").isEqualTo(20);
+        assertThat(usage.path("today").path("scheduledReserve").asInt()).as("정기 작업 몫 예약 기본 7(§4-10)").isEqualTo(7);
+        assertThat(usage.path("today").path("manualLimit").asInt()).as("수동 호출 문턱 = 상한 − 예약(묶음 E 리뷰)")
+                .isEqualTo(13);
         assertThat(usage.path("month").path("calls").asInt()).isEqualTo(3);
         assertThat(usage.path("month").path("inputTokens").asLong()).isEqualTo(60_000);
         assertThat(usage.path("month").path("days").asInt()).isEqualTo(2);

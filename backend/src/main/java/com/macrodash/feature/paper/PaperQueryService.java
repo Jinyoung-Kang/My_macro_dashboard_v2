@@ -501,19 +501,24 @@ public class PaperQueryService {
     }
 
     /**
-     * Claude 호출 사용량(명세 C8) — 오늘(KST)의 호출 수·상한·토큰·추정 비용과 이달(KST) 누적. 추정 비용({@code estCostUsd})은 호출
+     * Claude 호출 사용량(명세 C8) — 오늘(KST)의 호출 수·상한·정기 작업 몫 예약·수동 호출 문턱(상한 − 예약)·토큰·추정 비용과 이달(KST) 누적. 추정 비용({@code estCostUsd})은 호출
      * 때의 설정 단가({@code pricing.*})로 낸 값의 합이고 {@code estimatedCalls}회만 셉니다(단가를 모르는 모델·토큰을 모르는 호출·단가
      * 도입(V11) 전 호출은 빠짐 — {@link PaperApiCalls}). 추정한 호출이 없으면 null(0달러로 채우지 않음), 늘 {@code isEstimated:true}.
      */
     private Map<String, Object> apiUsage() {
         LocalDate today = Kst.today(clock);
         JsonNode body = store.settings().map(PaperStore.SettingsRow::body).orElse(null);
-        int cap = ClaudeBookService.ClaudeSettings.from(body == null ? settings.defaultsJson() : body).dailyCallCap();
+        ClaudeBookService.ClaudeSettings claude = ClaudeBookService.ClaudeSettings.from(
+                body == null ? settings.defaultsJson() : body);
         Optional<PaperStore.ApiUsage> day = store.apiUsage(today);
         Map<String, Object> todayView = new LinkedHashMap<>();
         todayView.put("day", today.toString());
         todayView.put("calls", day.map(PaperStore.ApiUsage::calls).orElse(0));
-        todayView.put("cap", cap);
+        todayView.put("cap", claude.dailyCallCap());
+        // 수동 호출(미리보기·시작·수동 결정·프레임 제안·수동 복기)은 정기 작업 몫을 남긴 문턱까지(2단계 명세 §4-10) — 상한만 보이면 남은 몫을
+        // 잘못 읽습니다(묶음 E 리뷰).
+        todayView.put("scheduledReserve", claude.scheduledReserve());
+        todayView.put("manualLimit", claude.callLimit(false));
         todayView.put("inputTokens", day.map(PaperStore.ApiUsage::inputTokens).orElse(0L));
         todayView.put("outputTokens", day.map(PaperStore.ApiUsage::outputTokens).orElse(0L));
         todayView.put("cacheReadTokens", day.map(PaperStore.ApiUsage::cacheReadTokens).orElse(0L));
