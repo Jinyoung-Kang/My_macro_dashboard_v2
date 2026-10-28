@@ -76,7 +76,8 @@ import java.util.concurrent.ConcurrentHashMap;
  * <p><b>저장된 판정</b>(2단계 명세 §4-9 'E0', 사용자 결정 v3 — 재기동해도 판정이 같게): '그 세션은 이미 미룸'(계획 실패 뒤 같은 창에서 다시
  * 계획하지 않음)과 '미룸 기록은 세션마다 한 번'은 그 세션의 {@code kr.decision} 작업 기록({@value #START_POSTPONED} — 결정 작업이 남김,
  * {@link PaperStore#jobRunsFor})으로, 미룸 기록의 사유(그 창의 마지막 기다림 사유)는 그 세션 기다림 한 줄({@value #START_WAITING} — 결정 작업이
- * 남기고 이어지는 동안 늘림)로 정합니다. 이 프로세스가 미룬 세션의 기억({@link #postponedHere})은 미룸 기록을 쓰지 못했을 때(DB 오류)도 같은 창에서
+ * 남기고 이어지는 동안 늘림)로, 출발 오류 횟수(상한이면 기한까지 쉼)는 그 세션의 출발 오류 기록 수({@link #startErrors} — 묶음 E 2차 리뷰)로
+ * 정합니다. 이 프로세스가 미룬 세션의 기억({@link #postponedHere})은 미룸 기록을 쓰지 못했을 때(DB 오류)도 같은 창에서
  * 다시 계획하지 않게(E2의 Claude 호출을 되풀이하지 않게) 막는 방어선일 뿐입니다.
  */
 final class KrStartPipeline {
