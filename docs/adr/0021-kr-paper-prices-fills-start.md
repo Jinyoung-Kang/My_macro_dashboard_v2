@@ -15,7 +15,8 @@
        `KrQuotesTest`(계약 1 파서)
      - 있음(C2c): `KrLedgerTest.Stops.watermarkRisesOnlyOnConfirmedCloses`(최고가가 `TOSS_INTEGRATED`·`TOSS_DAILY` 종가로 오르지 않고 금융위 종가로만). 있음(C3): `KrConfirmationsTest.provisionalNeverOverwritesConfirmed`(확정값이 토스 재수집의 잠정값으로 덮이지 않음 — `upsertNav`)
   2. 체결 시점(K13)
-     - 있음: `DecisionTimingsLockTest.schemaMarketAndPromptAgree`(운영 결정 문맥마다 스키마 timing enum = 시장 체결 시점 = 고정 문단 — E2가 한국 문맥을 운영 목록에 더하면 한국도 봄),
+     - 있음: `DecisionTimingsLockTest.schemaMarketAndPromptAgree`(운영 결정 문맥마다 스키마 timing enum = 시장 체결 시점 = 고정 문단 — E2b부터 운영 목록이 미국·한국이라 한국도 봄)·
+       `krSchemaMarketAndPromptAgree`(한국 스키마·고정 문단·하드 규칙 줄은 받는 시점 `NEXT_OPEN`만),
        `OrderValidatorMarketTest.timingsAreTheMarkets`·`singleTimingMarket`, `PaperStoreDbTest.v14TimingFillCostsAndCorpActionHold`(`paper_orders.timing`의 `NEXT_OPEN`),
        미국 쪽 그대로 `UsPaperMarketTest.timings`·`PaperLedgerServiceTest.nextCloseWaitsForFinalClose`
      - 있음(C1): `KrPaperMarketTest.values`(`KrPaperMarket` 값 고정 — `ALLOW_NEXT_CLOSE = false`이면 시점은 `NEXT_OPEN` 하나). 있음(C2b): `KrLedgerTest.Conditions`(`fillableBar` 한국판 — 봉 날짜 > 기준 거래일·
@@ -45,8 +46,14 @@
        `startInputsHaveNothingAfterTheDecision`(출발 입력 ≤ 결정 시각 — `PacketBuilderTest.initialPacketHasNothingAfterAsOf`의 규칙 계좌판)·
        `rulesLegFailurePostponesTheStart`(규칙 몫 실패 → 어느 계좌에도 쓰지 않고 다음 KR 거래일로 미룸)·`claudeNotYetStaysNotStarted`(Claude 몫이 아직 없으면
        규칙·벤치마크 셋만 출발하고 Claude는 뒤따라 출발하지 않음)
-     - E2: 출발 원자성의 Claude 몫(Claude 실패 → 네 계좌 모두 다음 KR 거래일), 출발 결정의 입력 ≤ 결정 시각(Claude 패킷 — `PacketBuilderTest.initialPacketHasNothingAfterAsOf`의
-       한국판)
+     - 있음(E2b — 네 계좌 함께 출발, 실제 한국 Claude 경로 `KrClaudeFixtures`): `KrStartTest.fourBooksStartTogether`(S 22:30 네 계좌 `INITIAL`·S+1 `NEXT_OPEN` 주문·운용 전환·
+       S 순자산 1억을 한 트랜잭션으로 — Claude 결정 행 동결본 = 보낸 패킷, 카드 `asOfMismatch=false`, 읽은 순간 = 그 실행의 지금, 정기 작업 몫으로 부름)·
+       `claudeStartPacketLeavesOutSnapshotsAfterTheReadInstant`(출발 결정의 입력 ≤ 결정 시각 — 읽은 순간 뒤 수집본은 빠짐, 패킷 자체는
+       `KrPacketBuilderTest.initialPacketHasNothingAfterTheReadInstant` — `PacketBuilderTest.initialPacketHasNothingAfterAsOf`의 한국판)·
+       `claudeCapPostponesAllFourBooks`(Claude 상한 → 네 계좌 모두 쓰지 않고 다음 KR 거래일에 넷이 함께)·`claudeErrorAfterOneRetryPostponesAndIsNotReplanned`(API 오류 재시도 1회 뒤 실패 →
+       미룸, 같은 창에서 재기동해도 다시 부르지 않음 — E0 저장된 미룸, 거절은 다시 부르지 않음)·`claudeStartCallIsBoundedByTheDeadline`(호출 대기 한도 = 기한 − 지금, 기한을 넘겨 끝난
+       호출은 쓰기 트랜잭션이 막음, 1초도 없으면 부르지 않음). 가짜 몫으로 보는 파이프라인 규칙은 그대로 `failedLegPostponesAllBooks`·`slowPlanPastTheDeadlineWritesNothing`·
+       `claudeNotYetStaysNotStarted`(몫이 없는 파이프라인 — 시험).
   6. 캘린더 컨센서스(K22)
      - 있음: `PacketBuilderTest.goldenUsPackets`(미국 `packetVersion` 5 패킷 고정본·해시), 수집기 `test_us_consensus.py::test_백엔드와_화면은_컨센서스_저장본을_읽지_않는다`
        (저장만 — 읽기 시작하는 E1 커밋이 이 시험을 고침)
