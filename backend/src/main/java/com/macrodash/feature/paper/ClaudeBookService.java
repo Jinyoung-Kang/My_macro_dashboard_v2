@@ -707,8 +707,8 @@ public class ClaudeBookService {
      *
      * <p><b>실패</b>({@link KrStartPipeline.Plan#failed} — 어느 계좌에도 쓰지 않고 그 세션 출발을 다음 KR 거래일로 미룸, 그 세션은 다시 계획하지 않음):
      * 하루 상한(정기 작업 몫까지 다 씀) · API 오류는 같은 계획 안에서 한 번 더(첫 호출의 패킷 그대로 — {@link ClaudeDecisionPipeline#again}) 부른 뒤에도
-     * — 429({@value #RATE_LIMIT_KIND})면 {@link #KR_START_RATE_LIMIT_WAIT} 기다린 뒤에, 그 기다림 뒤에도 최소 대기 한도가 남을 때만(아니면 기다리지 않고
-     * 바로 실패), 그 밖의 API 오류는 바로(사용자 결정 w12). 기다리는 동안 결정 작업 잠금을 쥐고, 기다림이 끊기면(종료) 다시 부르지 않고 실패 ·
+     * — 429({@value #RATE_LIMIT_KIND})면 {@link #KR_START_RATE_LIMIT_WAIT} 기다린 뒤에, 그 기다림 뒤에도 최소 대기 한도와 (기다린 뒤 KST 날짜의) 하루
+     * 상한이 남을 때만(아니면 기다리지 않고 바로 실패), 그 밖의 API 오류는 바로(사용자 결정 w12). 기다리는 동안 결정 작업 잠금을 쥐고, 기다림이 끊기면(종료) 다시 부르지 않고 실패 ·
      * 거절·형식 오류(같은 입력이면 같은 답이라 다시 부르지 않음) ·
      * <b>기한</b> — 호출마다 대기 한도를 min(설정 대기 한도, 출발 기한 − 지금)으로 묶고(초 단위 내림), 기한까지 최소 대기 한도
      * {@value #KR_START_MIN_CALL_SECONDS}초가 남지 않았으면 부르지 않습니다 — 둘 다 요청을 보내기 직전(패킷 조립·호출 한 번 잡기 뒤)에 잼
@@ -839,6 +839,15 @@ public class ClaudeBookService {
                             + " — 429 속도 제한, 출발 기한(" + Kst.stamp(deadline) + ")까지 " + Math.max(0, leftNow) + "초라 " + waitSeconds
                             + "초 기다린 뒤 최소 대기 한도 " + KR_START_MIN_CALL_SECONDS + "초가 남지 않아 다시 부르지 않음): "
                             + clip(attempt.error(), 400)).withCalls(callsView(trace));
+                }
+                // 하루 상한(정기 작업 몫)도 기다리기 전에 — 그 429가 마지막 자리를 썼으면 기다려 봐야 상한 문구로 끝남. 창이 KST 자정을 넘으므로
+                // 기다린 뒤의 날짜로 봄(23:59:3x의 429는 기다린 뒤 새 날 상한으로 부를 수 있음). 기다린 뒤에는 루프 맨 앞이 다시 봄.
+                LocalDate afterWait = LocalDate.ofInstant(clock.instant().plus(KR_START_RATE_LIMIT_WAIT), Kst.ZONE);
+                if (pipeline.callsLeft(afterWait, claude, true) <= 0) {
+                    log.warn("한국 Claude 계좌 출발 호출 429 — 하루 상한이 남지 않아 {}초 기다린 재시도를 하지 않습니다({}): {}", waitSeconds,
+                            session, attempt.error());
+                    return KrStartPipeline.Plan.failed(book, capMessage(claude, afterWait, true)
+                            + "(첫 호출 " + statusLabel(attempt.status()) + " 뒤 재시도)").withCalls(callsView(trace));
                 }
                 log.warn("한국 Claude 계좌 출발 호출 429 — {}초 기다린 뒤 한 번 더 부릅니다({}): {}", waitSeconds, session, attempt.error());
                 try {

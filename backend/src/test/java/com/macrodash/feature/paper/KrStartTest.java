@@ -629,6 +629,49 @@ class KrStartTest {
     }
 
     @Test
+    @DisplayName("K28·사용자 결정 w12(묶음 E 3차 리뷰) — 429 뒤 기다리기 전에 하루 상한(정기 작업 몫)을 먼저 봄: 그 429가 그날 마지막 자리(20회째)를 썼으면 잠금을 쥔 채 30초 기다리지 않고 바로 네 계좌 모두 미룸(호출 1회)")
+    void claudeStartRateLimitOnTheLastCallOfTheDayDoesNotWait() {
+        KrClaudeFixtures.FakeAi fake = new KrClaudeFixtures.FakeAi();
+        fake.rateLimited().answer(KrClaudeFixtures.decision(0, "관망"));
+        realClaude(fake);
+        store.apiUsage.put(S, new com.macrodash.store.PaperStore.ApiUsage(S, 19, 0, 0, 0, 0));
+
+        PaperDecisionJob.Result capped = runAt("2026-11-30T22:30");
+
+        assertThat(capped.outcome()).isEqualTo(PaperDecisionJob.START_POSTPONED);
+        assertThat(sleeper.sleeps).as("상한이 남지 않아 기다리지 않음").isEmpty();
+        assertThat(fake.requests).as("429 한 번").hasSize(1);
+        assertThat(capped.message()).contains("kr_claude")
+                .contains("일일 호출 상한(20회, KST 2026-11-30)에 닿아 Claude를 부르지 않았습니다")
+                .contains("(첫 호출 API 오류 뒤 재시도)");
+        assertThat(store.apiUsage(S).map(com.macrodash.store.PaperStore.ApiUsage::calls)).contains(20);
+        assertThat(krDecisions()).isEmpty();
+        assertNotStarted(store);
+        assertThat(krRuns()).singleElement().satisfies(run ->
+                assertThat(run.detail().path("calls").path("kr_claude").path("calls").asInt()).isEqualTo(1));
+    }
+
+    @Test
+    @DisplayName("K28·사용자 결정 w12(묶음 E 3차 리뷰) — 기다리기 전의 상한은 기다린 뒤의 KST 날짜로 봄: 23:59:45의 429가 11-30의 마지막 자리를 썼어도 30초 뒤(12-01)는 새 날 상한이라 기다려 다시 부르고 네 계좌가 출발(호출 수 11-30에 20·12-01에 1)")
+    void claudeStartRateLimitBeforeMidnightRetriesOnTheNewDay() {
+        KrClaudeFixtures.FakeAi fake = new KrClaudeFixtures.FakeAi();
+        fake.rateLimited().answer(KrClaudeFixtures.decision(0, "관망"));
+        realClaude(fake);
+        store.apiUsage.put(S, new com.macrodash.store.PaperStore.ApiUsage(S, 19, 0, 0, 0, 0));
+
+        PaperDecisionJob.Result started = runAt("2026-11-30T23:59:45");
+
+        assertThat(started.outcome()).isEqualTo(PaperDecisionJob.STARTED);
+        assertThat(sleeper.sleeps).containsExactly(java.time.Duration.ofSeconds(30));
+        assertThat(fake.requests).as("429 + 자정 뒤 재시도").hasSize(2);
+        assertThat(store.apiUsage(S).map(com.macrodash.store.PaperStore.ApiUsage::calls)).contains(20);
+        assertThat(store.apiUsage(NEXT).map(com.macrodash.store.PaperStore.ApiUsage::calls)).as("재시도는 새 날에 셈").contains(1);
+        assertThat(krDecisions()).extracting(Decision::bookCode)
+                .containsExactly("kr_rules", "kr_claude", "kr_bench_k200", "kr_bench_mix");
+        assertThat(store.books.get("kr_claude").startedOn()).isEqualTo(S);
+    }
+
+    @Test
     @DisplayName("K28·사용자 결정 w12 — 429가 기한까지 90초(기다림 30초 + 최소 대기 한도 60초) 미만에 나면 기다리지 않고 다시 부르지 않으며 네 계좌 모두 미룸(사유·호출 기록과 함께 저장 — 재기동 뒤에도 다시 부르지 않음), 정확히 90초면 30초 기다려 대기 한도 60초로 다시 불러 출발")
     void claudeStartRateLimitNearTheDeadlineIsNotRetried() {
         KrClaudeFixtures.FakeAi fake = new KrClaudeFixtures.FakeAi();
