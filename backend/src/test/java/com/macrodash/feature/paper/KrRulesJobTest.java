@@ -1627,7 +1627,6 @@ class KrRulesJobTest {
     }
 
     @Test
-    @org.junit.jupiter.api.Disabled("F1 리뷰 재현 — 고치기 전(다음 커밋에서 켬)")
     @DisplayName("한국 출발 전(네 계좌 모두 시작 전 — 출발이 미뤄진 R)의 수동 결정 run/decision?market=KR은 결정 창 안·자료가 신선해도 장부를 처리하기 전에 400 — 안내는 한국 출발 단추(run/initial-decision?market=KR)·정기 출발이고 미국 'Claude 계좌 시작'이 아님, Claude·장부·결정·작업 기록 그대로")
     void manualKrDecisionBeforeTheStartPointsToTheStartButton() {
         KrClaudeFixtures.FakeAi fake = new KrClaudeFixtures.FakeAi();

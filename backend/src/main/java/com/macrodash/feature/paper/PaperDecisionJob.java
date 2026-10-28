@@ -1208,9 +1208,13 @@ public class PaperDecisionJob {
      * 00:00~08:59 설정은 D+1 아침) 안에서만 받습니다 — 창 밖(D+1 낮이면 D+1 장중 정보를 본 결정이 '기준일 D'로 남음)은 400. 한국 묶음은 정기
      * 결정과 같은 자료 게이트 ①(그 계좌)~⑥도 통과해야 합니다(미달이면 400 — 장부는 처리했을 수 있음, 리스크 점검과 같은 일).
      *
+     * <p><b>한국 출발 전</b>(네 계좌 모두 시작 전 — {@link KrStartPipeline#pending}): 한국에는 계좌별 시작이 없고 네 계좌가 출발 단추
+     * ({@code run/initial-decision?market=KR})나 정기 출발로 함께 출발하므로, 창 검사 뒤·장부 처리와 자료 게이트 읽기 전에 그 경로를 안내하는 400으로
+     * 거절합니다(Claude 책 서비스의 미국 문구 '개요의 Claude 계좌 시작'까지 가지 않음 — F1 리뷰).
+     *
      * @throws InvalidRequestException 책 코드가 그 시장의 규칙·Claude 책이 아님(미국 밖 시장은 Claude 책만), 그 시장이 쉬는 중(출발일·
-     *                                 계좌 없음 — {@link PaperMarket#dormantReason}), 그 책이 시작 전, Claude 책이 일시정지 중, 그 시장
-     *                                 달력이 앞 창의 해를 모름('달력 없음' — 명세 K35), 결정 창 밖·자료 게이트 미달(한국)
+     *                                 계좌 없음 — {@link PaperMarket#dormantReason}), 그 책이 시작 전(한국은 출발 전), Claude 책이 일시정지
+     *                                 중, 그 시장 달력이 앞 창의 해를 모름('달력 없음' — 명세 K35), 결정 창 밖·자료 게이트 미달(한국)
      */
     Decision runNow(PaperMarket requested, String book) {
         String code = Params.oneOf("book", book, usSteps(requested)
@@ -1233,6 +1237,12 @@ public class PaperDecisionJob {
             LocalDate d = market.calendar().lastCompletedSession(now);
             if (market.afterDeadline() == PaperMarket.AfterDeadline.NO_TRADE) {
                 requireDecisionWindow(market, now, d);
+            }
+            if (krStart.pending(market)) {
+                // 한국 출발 전 — 장부·자료 게이트 전에 거절(위 설명 '한국 출발 전').
+                throw new InvalidRequestException("한국 계좌는 아직 출발 전입니다(네 계좌 모두 시작 전) — 한국은 계좌별 시작 없이 "
+                        + "네 계좌가 함께 출발합니다. POST /api/paper/run/initial-decision?market=" + market.code()
+                        + "(출발 단추) 또는 결정 작업의 정기 출발(그 세션 결정 시각) 뒤에 수동 결정을 누르세요.");
             }
             KrDecisionGates.Inputs session = krRulesSteps(market) ? krGates.readSession(market, d) : null;
             if (session != null) {
