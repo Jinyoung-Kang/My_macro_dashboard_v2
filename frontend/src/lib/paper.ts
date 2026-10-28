@@ -137,6 +137,11 @@ const TONE = {
 
 export type BadgeTone = keyof typeof TONE;
 
+/** 배지 색 이름 → 클래스(lib/paperKr의 한국 배지가 같은 팔레트를 쓰게). */
+export function toneClass(tone: BadgeTone): string {
+  return TONE[tone];
+}
+
 export interface Badge {
   key: string;
   label: string;
@@ -1104,23 +1109,34 @@ export function fillBadges(fill: { backfill: boolean }): Badge[] {
     : [];
 }
 
-/** 스탑 칸 — 현금성은 적용 안 함, 값이 없으면 "—". */
-export function stopText(position: Pick<PaperPosition, "cashLike" | "stopPrice" | "stopDistancePct">): string {
+/** 스탑 칸 — 현금성은 적용 안 함, 값이 없으면 "—". 주당 가격 자릿수는 시장 표기(미국 4자리, 한국 0자리). */
+export function stopText(
+  position: Pick<PaperPosition, "cashLike" | "stopPrice" | "stopDistancePct">,
+  market: PaperMarketCode = "US",
+): string {
   if (position.cashLike) return "적용 안 함";
   if (position.stopPrice === null || position.stopPrice === undefined) return EMPTY;
   const distance = position.stopDistancePct === null || position.stopDistancePct === undefined
     ? ""
     : ` · 거리 ${formatWithUnit(position.stopDistancePct, 1, "%")}`;
-  return `${formatSharePrice(position.stopPrice)}${distance}`;
+  return `${formatSharePrice(position.stopPrice, market)}${distance}`;
 }
 
-/** 보유 기간 칸 — "2026-10-23부터 · 3거래일". 모르는 부분은 "—". */
-export function heldText(position: Pick<PaperPosition, "openedOn" | "holdingTradingDays">): string {
+/**
+ * 보유 기간 칸 — "2026-10-23부터 · 3거래일"(한국은 "3 KR 거래일" — 두 시장 달력이 다름). 모르는 부분은 "—"이고, 한국은 거래일을 셀 수
+ * 없는 사유(`holdingTradingDaysReason` — '달력 없음 — …')가 있으면 괄호로 붙입니다(미국 글자는 그대로).
+ */
+export function heldText(
+  position: Pick<PaperPosition, "openedOn" | "holdingTradingDays" | "holdingTradingDaysReason">,
+  market: PaperMarketCode = "US",
+): string {
   const since = position.openedOn ? `${position.openedOn}부터` : EMPTY;
+  const korea = market === "KR";
   const days = position.holdingTradingDays === null || position.holdingTradingDays === undefined
     ? EMPTY
-    : `${formatNumber(position.holdingTradingDays, 0)}거래일`;
-  return `${since} · ${days}`;
+    : `${formatNumber(position.holdingTradingDays, 0)}${korea ? " KR 거래일" : "거래일"}`;
+  const reason = korea && days === EMPTY && position.holdingTradingDaysReason ? `(${position.holdingTradingDaysReason})` : "";
+  return `${since} · ${days}${reason}`;
 }
 
 /**

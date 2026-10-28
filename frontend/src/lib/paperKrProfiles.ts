@@ -200,17 +200,13 @@ export interface KrPendingTab {
 }
 
 /**
- * 한국 탭 중 아직 열지 않은 것(2단계 명세 §9 F2 — 다음 화면 커밋이 하나씩 엽니다). 개요는 열렸고, 프레임·설정은 두 시장이 함께 쓰는 화면이라
+ * 한국 탭 중 아직 열지 않은 것(2단계 명세 §9 F2 — 다음 화면 커밋이 하나씩 엽니다). 개요·보유·체결은 열렸고, 프레임·설정은 두 시장이 함께 쓰는 화면이라
  * 시장을 밝힌 안내와 함께 그대로 보입니다(사용자 결정 2026-10-29).
  */
 export const KR_PENDING_TABS: Readonly<Partial<Record<PaperTabKey, KrPendingTab>>> = {
   selection: {
     opensIn: "2단계 F2 화면 묶음",
     upcoming: "한국 규칙 재선정 — 유니버스·수급 신호·제외 표·DART/ROE '자료 없음' 사유·'금융업 코드 표 확인 필요' 경고",
-  },
-  holdings: {
-    opensIn: "2단계 F2 화면 묶음",
-    upcoming: "한국 보유·체결 — 잠정·확정 가격과 확정 조정 행·실효 비용 bp·'금융위 확정 미보정'·'기업행위 확인 필요'·'가격 없음' 배지",
   },
   decisions: {
     opensIn: "2단계 F2 화면 묶음",

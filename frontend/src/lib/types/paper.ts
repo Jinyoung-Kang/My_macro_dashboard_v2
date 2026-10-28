@@ -519,6 +519,11 @@ export interface PaperPosition {
   cashLike: boolean;
   /** 사후 체결(출발일 종가)로 연 보유인가 — 보유를 연 시각이 그 종목의 사후 매수 체결 시각과 같으면 true. */
   backfilled: boolean;
+  /**
+   * 한국 계좌만 — 미처리 기업행위 보류 사유(화면 배지 '기업행위 확인 필요', 2단계 명세 §4-2 'C2c'). 보류가 없으면 null, 미국 행에는 칸이 없음.
+   * 보류 중인 보유는 평가가 묶이고 스탑·주문이 보류됩니다.
+   */
+  corpActionHold?: string | null;
 }
 
 /** 재진입 금지(트레일링 스탑 뒤 N거래일). */
@@ -588,12 +593,57 @@ export interface PaperFill {
   priceSource: string | null;
   /** 사후 체결(그날 종가로 나중에 기록). */
   backfill: boolean;
+  /** 한국 계좌만 — 수수료(원, 소수 2자리). 한국 슬리피지는 체결가가 아니라 비용 칸입니다(`price` = 잠정 체결가 그대로). */
+  fee?: number | null;
+  /** 한국 계좌만 — 세금(증권거래세 + 농어촌특별세, 원). */
+  tax?: number | null;
+  /** 한국 계좌만 — 슬리피지 금액(원). */
+  slippageCost?: number | null;
+  /** 한국 계좌만 — 실효 비용 bp = (수수료 + 세금 + 슬리피지) ÷ (체결가 × 수량) × 10⁴(서버 계산, 소수 2자리). */
+  costBp?: number | null;
+  /** 한국 계좌만 — 금융위 확정 조정 행(없으면 null). */
+  confirmation?: PaperFillConfirmation | null;
+  /** 한국 계좌만 — 확정 상태(CONFIRMED 행 있음 · WAITING 금융위가 그날을 아직 안 냄 · UNCORRECTED 그날을 냈는데 행 없음). */
+  confirmationState?: PaperFillConfirmationState | string | null;
+  /** 한국 계좌만 — 확정 상태 문구('금융위 확정 미보정(ETF)'·'금융위 확정 못 함'·'금융위 {기준일}까지 냄 — 그날 값 기다림', 확정이면 null). */
+  confirmationNote?: string | null;
+}
+
+export type PaperFillConfirmationState = "CONFIRMED" | "WAITING" | "UNCORRECTED";
+
+/**
+ * 한국 체결의 금융위 확정 조정 한 행(paper_fill_confirmations) — 체결 행은 그대로 두고 이 행으로 현금·평단을 맞춥니다(2단계 명세 §4-1·K29).
+ * 비용 칸은 확정가로 다시 센 값, `cashDelta` = 확정 기준 현금 흐름 − 잠정 기준 현금 흐름(음수 가능).
+ */
+export interface PaperFillConfirmation {
+  confirmedPrice: number | null;
+  /** 확정가 − 잠정 체결가(원). */
+  priceDiff: number | null;
+  fee: number | null;
+  tax: number | null;
+  slippageCost: number | null;
+  /** 확정가 기준 실효 비용 bp. */
+  costBp: number | null;
+  cashDelta: number | null;
+  /** FSC(주식시세) · FSC_ETF(증권상품시세). */
+  source: string | null;
+  reconciledAtKst: string | null;
+}
+
+/** 한국 계좌의 확정 조정 합계 — 그 계좌 전체(목록 상한과 무관). 행이 없으면 cashDelta는 null(0과 구분). */
+export interface PaperConfirmationTotal {
+  rows: number;
+  cashDelta: number | null;
+  /** 아직 확정 조정 행이 없는 체결 수. */
+  unconfirmed: number;
 }
 
 /** GET /api/paper/books/{code}/fills */
 export interface PaperFillsResponse {
   available: boolean;
   message?: string;
+  /** 한국 계좌만 — 확정 조정 합계(미국 응답에는 칸이 없음). */
+  confirmationTotal?: PaperConfirmationTotal | null;
   fills?: PaperFill[];
 }
 

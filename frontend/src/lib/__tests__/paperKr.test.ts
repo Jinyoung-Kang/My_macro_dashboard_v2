@@ -8,10 +8,21 @@
  */
 import { describe, expect, it } from "vitest";
 
+import { heldText, stopText } from "../paper";
 import {
   chargedCalls,
   jobsEmptyMessage,
   krCollectionRows,
+  krConfirmationCautions,
+  krConfirmationCells,
+  krConfirmationTotalText,
+  krFillBadges,
+  krNavProvisionalReason,
+  krNavRows,
+  krOrderRejectText,
+  krPositionBadges,
+  krPriceSourceLabel,
+  krStopBasisText,
   krDecisionWindowText,
   krJobDetailText,
   krInitResultText,
@@ -26,7 +37,7 @@ import {
   marketJobs,
   withKrReference,
 } from "../paperKr";
-import type { PaperBookSummary } from "../types";
+import type { PaperBookSummary, PaperJobRun, PaperPosition } from "../types";
 
 const book = (code: string, status: PaperBookSummary["status"]): PaperBookSummary => ({
   code, kind: "BENCHMARK", label: code, status, startedOn: null, initialCash: 100_000_000, cash: 100_000_000, nav: 100_000_000,
@@ -235,5 +246,120 @@ describe("노출 맞춘 참고선(K40)", () => {
     expect(notes).toContain("멈춤: 2026-10-30 규칙 계좌 주식 비중을 모릅니다");
     expect(krReferenceNotes({ ...REFERENCE, asOfDate: null, stoppedReason: null })?.[1]).toContain("아직 값이 없습니다");
     expect(krReferenceNotes(null)).toBeNull();
+  });
+});
+
+describe("보유·체결(F2 — 세 배지·확정 조정·실효 비용·스탑 근거·잠정 사유)", () => {
+  const position = (over: Partial<PaperPosition> = {}): PaperPosition => ({
+    ticker: "005930", qty: 10, avgCost: 71_300, lastPrice: 71_500, lastPriceAtKst: "2026-11-03 21:57 KST", marketValue: 715_000,
+    weightPct: 0.71, unrealizedPct: 0.28, highWatermark: 71_500, stopPrice: 65_780, stopDistancePct: 8.7, openedOn: "2026-11-03",
+    holdingTradingDays: 1, holdingTradingDaysReason: null, priceStale: false, splitNote: null, cashLike: false, backfilled: false,
+    corpActionHold: null, ...over,
+  });
+
+  it("보유 배지 — '기업행위 확인 필요'(사유는 title)가 맨 앞, '가격 없음'·현금성은 미국과 같은 배지, 사후 체결 배지는 없음", () => {
+    const held = krPositionBadges(position({ corpActionHold: "2026-11-03 상장주식수 변동 — 확인 필요", priceStale: true,
+      backfilled: true }));
+    expect(held.map((badge) => badge.label)).toEqual(["기업행위 확인 필요", "가격 없음 · 지난 값"]);
+    expect(held[0].title).toContain("2026-11-03 상장주식수 변동 — 확인 필요");
+    expect(krPositionBadges(position({ lastPrice: null })).map((badge) => badge.label)).toEqual(["가격 없음 · 평단 평가"]);
+    expect(krPositionBadges(position({ ticker: "153130", cashLike: true })).map((badge) => badge.label)).toEqual(["현금성"]);
+    expect(krPositionBadges(position())).toEqual([]);
+  });
+
+  it("체결 배지 — 확정·확정 대기·미보정(서버 문구 그대로), 통합가는 '잠정' 배지, 상태를 모르면 배지 없음", () => {
+    expect(krFillBadges({ confirmationState: "CONFIRMED", confirmationNote: null, priceSource: "TOSS_1M_OPEN", confirmation: {
+      confirmedPrice: 71_200, priceDiff: -100, fee: 106, tax: 0, slippageCost: 356, costBp: 6.49, cashDelta: 1_000, source: "FSC",
+      reconciledAtKst: "2026-11-04 22:05 KST" } }).map((badge) => [badge.label, badge.title]))
+      .toEqual([["확정", "금융위 주식시세 확정가 71,200원 — 2026-11-04 22:05에 확정 조정"]]);
+    expect(krFillBadges({ confirmationState: "WAITING", confirmationNote: "금융위 2026-11-02까지 냄 — 그날 값 기다림",
+      priceSource: "TOSS_INTEGRATED" }).map((badge) => badge.label)).toEqual(["확정 대기", "KRX+NXT 통합가 · 잠정"]);
+    expect(krFillBadges({ confirmationState: "UNCORRECTED", confirmationNote: "금융위 확정 미보정(ETF)", priceSource: "TOSS_DAILY" })
+      .map((badge) => badge.label)).toEqual(["금융위 확정 미보정(ETF)"]);
+    expect(krFillBadges({ confirmationState: "UNCORRECTED", confirmationNote: null, priceSource: null })[0].label).toBe("금융위 확정 못 함");
+    expect(krFillBadges({ priceSource: "TOSS_1M_OPEN" })).toEqual([]);
+    expect(krPriceSourceLabel("TOSS_1M_OPEN")).toBe("KRX 시가 단일가(1분봉)");
+    expect(krPriceSourceLabel("NEW_SOURCE")).toBe("NEW_SOURCE");
+    expect(krPriceSourceLabel(null)).toBe("—");
+  });
+
+  it("확정 칸·합계 — 차이·현금 차이는 부호, 행이 없으면 '—'(0원으로 쓰지 않음), 칸이 없는 서버면 합계 줄 없음", () => {
+    expect(krConfirmationCells({ confirmation: { confirmedPrice: 71_200, priceDiff: -100, fee: 106, tax: 0, slippageCost: 356,
+      costBp: 6.49, cashDelta: 1_000, source: "FSC", reconciledAtKst: null } })).toEqual({ price: "71,200원", diff: "-100원", cash: "+1,000원" });
+    expect(krConfirmationCells({ confirmation: null })).toEqual({ price: "—", diff: "—", cash: "—" });
+    expect(krConfirmationTotalText({ rows: 2, cashDelta: 503, unconfirmed: 1 })).toBe("확정 조정 합계 +503원 · 확정 2건 · 남음 1건");
+    expect(krConfirmationTotalText({ rows: 0, cashDelta: null, unconfirmed: 3 }))
+      .toBe("확정 조정 합계 —(확정 조정 행 없음) · 확정 0건 · 남음 3건");
+    expect(krConfirmationTotalText(undefined)).toBeNull();
+  });
+
+  it("스탑 근거 — 감지(잠정 종가·출처·봉 날짜)·확정값으로 낮춘 최고가·재판정 근거·stopBasisNote, 스탑이 아닌 근거는 null", () => {
+    const detected = { trigger: "TRAILING_STOP", stopPct: 8, highWatermark: 75_000, stopPrice: 69_000, observedPrice: 68_500,
+      observedSource: "TOSS_INTEGRATED", barDate: "2026-11-05" };
+    expect(krStopBasisText(detected)).toBe("감지 2026-11-05 잠정 종가 68,500원(KRX+NXT 통합가) ≤ 스탑가 69,000원(최고가 75,000원 −8.0%) · "
+      + "재판정 전 — 체결 때 금융위 확정 종가로 다시 판정");
+    expect(krStopBasisText({ ...detected, confirmedHighWatermark: 72_000, stopBasis: "FSC", confirmedClose: 68_700,
+      stopBasisNote: "최고가는 감지 뒤 금융위 확정 조정이 다시 센 72,000원(감지 때 75,000원 — 잠정 체결가)" }))
+      .toBe("감지 2026-11-05 잠정 종가 68,500원(KRX+NXT 통합가) ≤ 스탑가 69,000원(최고가 75,000원 −8.0%) · 확정값으로 낮춘 최고가 72,000원 · "
+        + "재판정: 금융위 주식시세 확정 종가 68,700원 · 최고가는 감지 뒤 금융위 확정 조정이 다시 센 72,000원(감지 때 75,000원 — 잠정 체결가)");
+    expect(krStopBasisText({ ...detected, stopBasis: "PROVISIONAL" })).toContain("재판정: 금융위 확정 종가 없음 — 잠정 판정대로");
+    expect(krStopBasisText({ rule: "kr_rules", text: "재선정" })).toBeNull();
+    expect(krStopBasisText(null)).toBeNull();
+    expect(krOrderRejectText("STOP_NOT_CONFIRMED — 금융위 2026-11-05 종가 70,000원이 스탑가 69,000원 위"))
+      .toEqual({ label: "스탑 취소 — 확정 종가가 뒷받침하지 않음", detail: "금융위 2026-11-05 종가 70,000원이 스탑가 69,000원 위" });
+    expect(krOrderRejectText("최소 금액 미만")).toEqual({ label: null, detail: "최소 금액 미만" });
+    expect(krOrderRejectText(null)).toEqual({ label: null, detail: null });
+  });
+
+  it("보유 기간·스탑 칸 — 한국은 'KR 거래일'·원 단위, 셀 수 없으면 사유를 괄호로(미국 글자는 그대로)", () => {
+    expect(heldText(position({ holdingTradingDays: 3 }), "KR")).toBe("2026-11-03부터 · 3 KR 거래일");
+    expect(heldText(position({ holdingTradingDays: null, holdingTradingDaysReason: "달력 없음 — 2028년" }), "KR"))
+      .toBe("2026-11-03부터 · —(달력 없음 — 2028년)");
+    expect(heldText(position({ holdingTradingDays: 3 }))).toBe("2026-11-03부터 · 3거래일");
+    expect(heldText(position({ holdingTradingDays: null, holdingTradingDaysReason: "달력 없음" }))).toBe("2026-11-03부터 · —");
+    expect(stopText(position(), "KR")).toBe("65,780 · 거리 8.7%");
+  });
+
+  const risk = (notes: unknown): PaperJobRun => ({ job: "kr.risk", startedAtKst: null, finishedAtKst: null, outcome: "OK",
+    detail: { notes } });
+
+  it("잠정 사유 — 그 계좌 리스크 점검 메모의 '순자산 {날} 잠정으로 다시 씀 — 사유'(최근 것), 다시 쓰지 않음, 없거나 모양이 틀리면 null", () => {
+    const jobs = [
+      risk(["kr_rules: 순자산 2026-11-03 잠정으로 다시 씀(확정 현금 30,000,000원) — 주문 12 SELL 005930(기준일 2026-11-02) 대기 — "
+        + "2026-11-03 이하 봉으로 체결될 수 있음", "kr_claude: 순자산 2026-11-03 확정(금융위 종가) 100,000,000원 — …"]),
+      risk(["kr_rules: 순자산 2026-11-03 잠정으로 다시 씀(확정 현금 1원) — 옛 사유"]),
+      { job: "kr.decision", startedAtKst: null, finishedAtKst: null, outcome: "OK", detail: { notes: ["kr_rules: 순자산 2026-11-02 잠정으로 다시 씀 — 다른 작업"] } },
+      risk(["kr_rules: 순자산 2026-11-04 줄은 다시 쓰지 않음 — 마지막으로 처리한 관측치의 세션이 2026-11-05(그 줄 2026-11-04이 아님)(확정 현금은 상태에 반영, 그 줄은 잠정 그대로)"]),
+    ];
+    expect(krNavProvisionalReason(jobs, "kr_rules", "2026-11-03"))
+      .toBe("주문 12 SELL 005930(기준일 2026-11-02) 대기 — 2026-11-03 이하 봉으로 체결될 수 있음");
+    expect(krNavProvisionalReason(jobs, "kr_rules", "2026-11-04")).toContain("줄을 다시 쓰지 않음 — 마지막으로 처리한 관측치의 세션이 2026-11-05");
+    expect(krNavProvisionalReason(jobs, "kr_rules", "2026-11-02")).toBeNull();
+    expect(krNavProvisionalReason(jobs, "kr_claude", "2026-11-03")).toBeNull();
+    expect(krNavProvisionalReason([risk("문자열"), risk([3, null]), { ...risk([]), detail: null }], "kr_rules", "2026-11-03")).toBeNull();
+    expect(krNavProvisionalReason(null, "kr_rules", "2026-11-03")).toBeNull();
+  });
+
+  it("순자산 기록 줄 — 최근 거래일부터, 확정은 사유 없음, 잠정은 사유(없으면 '—'), 원 정수", () => {
+    const rows = krNavRows([
+      { tradingDate: "2026-11-02", nav: 100_000_000, cash: 100_000_000, equityValue: 0, exposurePct: 0, pricesFinal: true },
+      { tradingDate: "2026-11-03", nav: 100_312_450, cash: 340_000, equityValue: 99_972_450, exposurePct: 99.66, pricesFinal: false },
+    ], [risk(["kr_rules: 순자산 2026-11-03 잠정으로 다시 씀(확정 현금 340,000원) — 005930 금융위 2026-11-03 종가 없음 — 마지막 평가 가격 71,500원"])],
+    "kr_rules");
+    expect(rows).toEqual([
+      { tradingDate: "2026-11-03", nav: "100,312,450원", cash: "340,000원", exposure: "99.7%", pricesFinal: false,
+        reason: "005930 금융위 2026-11-03 종가 없음 — 마지막 평가 가격 71,500원" },
+      { tradingDate: "2026-11-02", nav: "100,000,000원", cash: "100,000,000원", exposure: "0.0%", pricesFinal: true, reason: null },
+    ]);
+    expect(krNavRows([{ tradingDate: "2026-11-03", nav: null, cash: null, equityValue: null, exposurePct: null, pricesFinal: false }], null,
+      "kr_rules")[0]).toMatchObject({ nav: "—", exposure: "—", reason: "—" });
+    expect(krNavRows(undefined, null, "kr_rules")).toEqual([]);
+  });
+
+  it("확정 조정 '주의' — 그 계좌 메모 가운데 '— 주의:'가 붙은 것만, 같은 글은 한 번", () => {
+    const caution = "체결 7 BUY 005930 10주(2026-11-03) 확정(FSC 2026-11-03 시가): … — 주의: 잠정 체결의 비용 칸이 이 판의 요율로 다시 센 값과 다름";
+    const jobs = [risk([`kr_rules: ${caution}`, "kr_rules: 체결 8 확정"]), risk([`kr_rules: ${caution}`, `kr_claude: ${caution}`])];
+    expect(krConfirmationCautions(jobs, "kr_rules")).toEqual([caution]);
+    expect(krConfirmationCautions(null, "kr_rules")).toEqual([]);
   });
 });

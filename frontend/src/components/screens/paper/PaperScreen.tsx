@@ -174,7 +174,7 @@ export default function PaperPage({
             )}
             {current.opensIn === null && current.key === "selection" && <SelectionSection />}
             {current.opensIn === null && current.key === "holdings" && (
-              <HoldingsSection books={data.books ?? []} onChanged={reload} initialBook={preselect} />
+              <HoldingsSection books={data.books ?? []} onChanged={reload} initialBook={preselect} market={market} />
             )}
             {current.opensIn === null && current.key === "decisions" && (
               <DecisionsSection books={data.books ?? []} onChanged={reload} initialBook={preselect} onOpenProposal={openProposal} />

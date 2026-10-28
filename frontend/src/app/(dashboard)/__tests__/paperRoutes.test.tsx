@@ -247,14 +247,14 @@ describe("한국 화면(/paper/kr)", () => {
     expect(window.location.pathname).toBe("/paper/kr");
   });
 
-  it("아직 한국 몫이 없는 네 탭은 '다음 단계' 안내만(미국 화면을 한국 계좌로 그리지 않음), 프레임·설정은 두 시장 공용 안내와 함께", async () => {
-    render(<PaperScreen market="KR" initialTab="holdings" />);
-    const holdings = await screen.findByRole("tab", { name: "보유·체결(준비 중)" });
-    expect(holdings.getAttribute("aria-selected")).toBe("true");
+  it("아직 한국 몫이 없는 탭은 '다음 단계' 안내만(미국 화면을 한국 계좌로 그리지 않음), 프레임·설정은 두 시장 공용 안내와 함께", async () => {
+    render(<PaperScreen market="KR" initialTab="selection" />);
+    const selection = await screen.findByRole("tab", { name: "기관 선정(준비 중)" });
+    expect(selection.getAttribute("aria-selected")).toBe("true");
     expect(screen.getByText(/탭은 다음 단계에서 엽니다/)).toBeTruthy();
     expect(screen.queryByLabelText("계좌 고르기")).toBeNull();
     expect(screen.getAllByRole("tab").map((tab) => tab.textContent)).toEqual([
-      "개요", "기관 선정(준비 중)", "보유·체결(준비 중)", "결정 로그(준비 중)", "프레임", "메모(준비 중)", "설정",
+      "개요", "기관 선정(준비 중)", "보유·체결", "결정 로그(준비 중)", "프레임", "메모(준비 중)", "설정",
     ]);
 
     fireEvent.click(screen.getByRole("tab", { name: "설정" }));

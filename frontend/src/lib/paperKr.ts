@@ -5,14 +5,26 @@
  * 모르는 값은 "—"로 둡니다(0이나 다른 날로 채우지 않음). 한국만의 표기라 lib/paper(미국과 공용)를 크게 만들지 않고 따로 둡니다 —
  * 이 파일이 lib/paper를 가져오고 lib/paper는 이 파일을 가져오지 않습니다(순환 방지).
  */
-import { EMPTY, formatKst, formatNumber } from "./format";
-import { jsonSummary, type RiskResultView, riskResultView, settingValueAt } from "./paper";
-import type { PaperMarketCode } from "./paperMarket";
+import { EMPTY, formatKst, formatNumber, formatSigned } from "./format";
+import {
+  type Badge,
+  jsonSummary,
+  positionBadges,
+  type RiskResultView,
+  riskResultView,
+  settingValueAt,
+  toneClass,
+} from "./paper";
+import { formatMoney, type PaperMarketCode } from "./paperMarket";
 import type {
   PaperBookSummary,
+  PaperConfirmationTotal,
   PaperExposureReference,
+  PaperFill,
   PaperJobRun,
   PaperKrCollection,
+  PaperNavRow,
+  PaperPosition,
   PaperQuotesSummary,
   PaperKrInitResult,
   PaperKrRiskResult,
@@ -410,3 +422,208 @@ export function krReferenceNotes(reference: PaperExposureReference | null | unde
   notes.push("규칙 계좌의 후보 수·'자료 없음' 사유는 종목 선정 탭(한국 몫은 다음 단계)에 있습니다.");
   return notes;
 }
+
+// ---------------------------------------------------------------- 보유·체결(2단계 명세 §4-16 F2 — 잠정·확정·확정 조정·실효 비용 bp·세 배지)
+
+/** 원 금액·주당 가격(원 단위 정수) — "71,300원". 모르면 "—". */
+const won = (value: number | null | undefined) => formatMoney(value, "KR");
+/** 부호 있는 원 금액 — "+1,000원"·"−100원"이 아니라 "-100원"(lib/format formatSigned 그대로). 모르면 "—". */
+const signedWon = (value: number | null | undefined) => formatSigned(value, 0, "원");
+
+/** 한국 체결가·관측가 출처 이름표(paper_fills.price_source — 백엔드 KrQuotes). 모르는 값은 받은 글자 그대로. */
+const KR_PRICE_SOURCE: Readonly<Record<string, string>> = {
+  TOSS_1M_OPEN: "KRX 시가 단일가(1분봉)",
+  TOSS_DAILY: "KRX 일봉 시가",
+  TOSS_INTEGRATED: "KRX+NXT 통합가",
+};
+
+export function krPriceSourceLabel(source: string | null | undefined): string {
+  return source ? (KR_PRICE_SOURCE[source] ?? source) : EMPTY;
+}
+
+/**
+ * 한국 보유 한 줄의 배지 — '기업행위 확인 필요'(미처리 기업행위 보류 — 사유는 마우스를 올려 봄)를 맨 앞에, 그 뒤로 미국과 같은 '가격 없음'·
+ * 분할 조정·현금성(한국에는 사후 체결이 없어 그 배지는 뺌).
+ */
+export function krPositionBadges(position: PaperPosition): Badge[] {
+  const badges: Badge[] = [];
+  const hold = textOf(position.corpActionHold);
+  if (hold) {
+    badges.push({
+      key: "corpAction", label: "기업행위 확인 필요", className: toneClass("warn"),
+      title: `${hold} — 평가는 묶인 값 그대로이고 스탑·주문은 보류됩니다(사람이 확인한 뒤 풂). 그동안 이 계좌 순자산 줄은 잠정입니다.`,
+    });
+  }
+  return [...badges, ...positionBadges(position).filter((badge) => badge.key !== "backfill")];
+}
+
+/** 확정 조정 출처 이름(FSC·FSC_ETF). */
+function fscDatasetLabel(source: string | null | undefined): string {
+  return source === "FSC_ETF" ? "금융위 증권상품시세" : source === "FSC" ? "금융위 주식시세" : (source ?? EMPTY);
+}
+
+/**
+ * 한국 체결 한 줄의 배지 — 확정 상태(확정 · 확정 대기 · 금융위 확정 미보정(ETF) · 금융위 확정 못 함)와, 잠정가가 KRX+NXT 통합가(`TOSS_INTEGRATED`)면
+ * '잠정' 배지. 상태를 모르면(이 칸을 보내지 않는 서버) 상태 배지는 없습니다.
+ */
+export function krFillBadges(fill: Pick<PaperFill, "confirmationState" | "confirmationNote" | "confirmation" | "priceSource">): Badge[] {
+  const badges: Badge[] = [];
+  const state = fill.confirmationState ?? null;
+  if (state === "CONFIRMED") {
+    const c = fill.confirmation;
+    badges.push({
+      key: "confirmed", label: "확정", className: toneClass("ok"),
+      title: c ? `${fscDatasetLabel(c.source)} 확정가 ${won(c.confirmedPrice)} — ${formatKst(c.reconciledAtKst)}에 확정 조정` : undefined,
+    });
+  } else if (state === "WAITING") {
+    badges.push({
+      key: "waiting", label: "확정 대기", className: toneClass("muted"),
+      title: fill.confirmationNote ?? "금융위 그날 값이 아직 없습니다 — 들어오면 확정 조정 행으로 맞춥니다(보통 다음 영업일 13시 뒤).",
+    });
+  } else if (state === "UNCORRECTED") {
+    badges.push({
+      key: "uncorrected", label: fill.confirmationNote ?? "금융위 확정 못 함", className: toneClass("warn"),
+      title: "금융위가 그날 값을 냈지만 이 체결의 확정 조정 행이 없습니다 — 잠정가 그대로이고, 그날까지의 이 계좌 순자산 줄은 확정되지 "
+        + "않습니다. 까닭(그 종목 행 없음·시가 칸 없음 등)은 작업 기록 kr.risk에 있습니다.",
+    });
+  } else if (state) {
+    badges.push({ key: "state", label: state, className: toneClass("muted"), title: fill.confirmationNote ?? undefined });
+  }
+  if (fill.priceSource === "TOSS_INTEGRATED") {
+    badges.push({
+      key: "integrated", label: "KRX+NXT 통합가 · 잠정", className: toneClass("warn"),
+      title: "NXT 시간외 체결을 포함한 통합 일봉 시가입니다 — KRX 시가 단일가가 아닐 수 있어 금융위 확정가로 맞춥니다.",
+    });
+  }
+  return badges;
+}
+
+/**
+ * 체결 표 위의 확정 조정 합계 — "확정 조정 합계 +1,000원 · 확정 2건 · 남음 1건". 확정 조정 행이 없으면 합계는 "—"(0원으로 적지 않음 — 아직 맞춘
+ * 것이 없음). 이 칸을 보내지 않는 서버면 null(줄 없음).
+ */
+export function krConfirmationTotalText(total: PaperConfirmationTotal | null | undefined): string | null {
+  if (!total) return null;
+  const sum = total.rows > 0 ? signedWon(total.cashDelta) : `${EMPTY}(확정 조정 행 없음)`;
+  return `확정 조정 합계 ${sum} · 확정 ${formatNumber(total.rows, 0)}건 · 남음 ${formatNumber(total.unconfirmed, 0)}건`;
+}
+
+/** 한국 체결 표의 확정 칸 — 확정가·차이·현금 차이(확정 조정 행이 없으면 셋 다 "—"). */
+export function krConfirmationCells(fill: Pick<PaperFill, "confirmation">): { price: string; diff: string; cash: string } {
+  const c = fill.confirmation;
+  return {
+    price: won(c?.confirmedPrice),
+    diff: signedWon(c?.priceDiff),
+    cash: signedWon(c?.cashDelta),
+  };
+}
+
+/**
+ * 한국 STOP 주문 근거 한 줄 — 감지(잠정 종가·출처·봉 날짜·스탑가·최고가) · 확정값으로 낮춘 최고가(`confirmedHighWatermark`) · 재판정 근거
+ * (`stopBasis` — FSC·FSC_ETF는 금융위 확정 종가, PROVISIONAL은 잠정 판정대로) · `stopBasisNote`. 트레일링 스탑 근거가 아니면 null(호출한 쪽이
+ * 미국과 같은 근거 문장으로).
+ */
+export function krStopBasisText(reason: unknown): string | null {
+  if (!isRecord(reason) || reason.trigger !== "TRAILING_STOP") return null;
+  const pct = numberOf(reason.stopPct);
+  const parts = [
+    `감지 ${textOf(reason.barDate) ?? EMPTY} 잠정 종가 ${won(numberOf(reason.observedPrice))}(${krPriceSourceLabel(textOf(reason.observedSource))}) `
+      + `≤ 스탑가 ${won(numberOf(reason.stopPrice))}(최고가 ${won(numberOf(reason.highWatermark))} −${pct === null ? EMPTY : formatNumber(pct, 1)}%)`,
+  ];
+  const corrected = numberOf(reason.confirmedHighWatermark);
+  if (corrected !== null) parts.push(`확정값으로 낮춘 최고가 ${won(corrected)}`);
+  const basis = textOf(reason.stopBasis);
+  if (basis === "PROVISIONAL") parts.push("재판정: 금융위 확정 종가 없음 — 잠정 판정대로");
+  else if (basis) parts.push(`재판정: ${fscDatasetLabel(basis)} 확정 종가 ${won(numberOf(reason.confirmedClose))}`);
+  else parts.push("재판정 전 — 체결 때 금융위 확정 종가로 다시 판정");
+  const note = textOf(reason.stopBasisNote);
+  if (note) parts.push(note);
+  return parts.join(" · ");
+}
+
+/** 한국 주문 거절·취소 사유 — 스탑 재판정 취소(`STOP_NOT_CONFIRMED — …`)는 이름표와 나머지 문장으로 나눕니다. 그 밖은 받은 글 그대로. */
+export function krOrderRejectText(text: string | null | undefined): { label: string | null; detail: string | null } {
+  if (!text) return { label: null, detail: null };
+  const head = "STOP_NOT_CONFIRMED";
+  if (!text.startsWith(head)) return { label: null, detail: text };
+  const rest = text.slice(head.length).replace(/^\s*—\s*/, "");
+  return { label: "스탑 취소 — 확정 종가가 뒷받침하지 않음", detail: rest || null };
+}
+
+/** 그 계좌의 리스크 점검 기록 메모(`kr.risk` 상세 `notes` — 줄마다 "계좌 코드: …"), 최근 기록부터. */
+function riskNotes(jobs: readonly PaperJobRun[] | null | undefined, code: string): string[] {
+  const prefix = `${code}: `;
+  const out: string[] = [];
+  for (const job of jobs ?? []) {
+    if (job.job !== "kr.risk" || !isRecord(job.detail) || !Array.isArray(job.detail.notes)) continue;
+    for (const note of job.detail.notes) {
+      if (typeof note === "string" && note.startsWith(prefix)) out.push(note.slice(prefix.length));
+    }
+  }
+  return out;
+}
+
+/**
+ * 잠정으로 남은 순자산 줄의 사유 — 그 계좌 리스크 점검 기록(상태 응답 작업 기록, 최근 30건)의 확정 조정 메모 '순자산 {날} 잠정으로 다시 씀(…) —
+ * 사유'(금융위 종가 없음·체결 확정 전·'주문 … 대기 — D 이하 봉으로 체결될 수 있음'·미처리 기업행위)나 '순자산 {날} 줄은 다시 쓰지 않음 — 까닭' 가운데
+ * 가장 최근 것. 장부가 그 줄을 다시 쓰지 않은 주기에는 메모가 없어 null입니다(화면은 '—'과 '최근 작업 기록에 사유 없음').
+ */
+export function krNavProvisionalReason(jobs: readonly PaperJobRun[] | null | undefined, code: string, tradingDate: string): string | null {
+  const head = `순자산 ${tradingDate} `;
+  for (const note of riskNotes(jobs, code)) {
+    if (!note.startsWith(head)) continue;
+    const rest = note.slice(head.length);
+    const cut = rest.indexOf(" — ");
+    if (rest.startsWith("잠정으로 다시 씀")) return cut >= 0 ? rest.slice(cut + 3) : rest;
+    if (rest.startsWith("줄은 다시 쓰지 않음")) return `줄을 다시 쓰지 않음 — ${cut >= 0 ? rest.slice(cut + 3) : rest}`;
+  }
+  return null;
+}
+
+/**
+ * 확정 조정의 '주의' 줄 — 잠정 체결의 비용 칸이 그 판의 요율로 다시 센 값과 다름(체결 처리 중에 설정이 저장됨 등). 그 계좌 리스크 점검 기록의
+ * 확정 메모 가운데 '— 주의:'가 붙은 것, 같은 글은 한 번(최근 기록부터).
+ */
+export function krConfirmationCautions(jobs: readonly PaperJobRun[] | null | undefined, code: string): string[] {
+  return [...new Set(riskNotes(jobs, code).filter((note) => note.includes("— 주의:")))];
+}
+
+/** 한국 순자산 기록 표의 한 줄. */
+export interface KrNavRow {
+  tradingDate: string;
+  nav: string;
+  cash: string;
+  exposure: string;
+  pricesFinal: boolean;
+  /** 잠정 줄의 사유(확정 줄은 null, 잠정인데 최근 기록에 없으면 "—"). */
+  reason: string | null;
+}
+
+/** 순자산 기록 → 표의 줄(최근 거래일부터). 숫자는 서버 값 그대로(원 정수·노출 %), 잠정 줄은 사유를 붙입니다({@link krNavProvisionalReason}). */
+export function krNavRows(series: readonly PaperNavRow[] | null | undefined, jobs: readonly PaperJobRun[] | null | undefined,
+  code: string): KrNavRow[] {
+  return [...(series ?? [])].reverse().map((row) => ({
+    tradingDate: row.tradingDate,
+    nav: won(row.nav),
+    cash: won(row.cash),
+    exposure: row.exposurePct === null || row.exposurePct === undefined ? EMPTY : `${formatNumber(row.exposurePct, 1)}%`,
+    pricesFinal: row.pricesFinal === true,
+    reason: row.pricesFinal === true ? null : (krNavProvisionalReason(jobs, code, row.tradingDate) ?? EMPTY),
+  }));
+}
+
+/**
+ * 시작 전인 한국 계좌에 버튼 대신 적는 안내 — 한국은 계좌별 시작이 없고(K28) 네 계좌가 출발일 밤 결정으로 함께 다음 KR 거래일 시가에 출발합니다.
+ */
+export function krNotStartedNote(): string {
+  return "시작 전인 한국 계좌는 따로 시작하지 않습니다 — 네 계좌가 출발일 밤 결정(정기 작업 또는 개요의 '출발 지금 실행')으로 함께 다음 KR "
+    + "거래일 시가에 출발합니다(사후 체결 없음). 지금은 현금만 듭니다.";
+}
+
+/**
+ * 한국 계좌 초기화(리셋)의 뜻(2단계 명세 §4-8 'C1c') — 사후 체결이 없고, 한 계좌만 지우면 그 계좌는 '시작 전'으로 남아 다시 출발하지 않으며, 네
+ * 계좌를 모두 지우면 다음 KR 거래일 결정 창에서 넷이 함께 다시 출발합니다.
+ */
+export const KR_RESET_NOTE =
+  "한국 계좌에는 사후 체결이 없습니다 — 이 계좌만 지우면 현금만 든 '시작 전'으로 남고 다시 출발하지 않습니다(한 계좌만 늦게 출발하는 길 없음). "
+  + "네 계좌를 모두 지우면 다음 KR 거래일 결정 창에서 네 계좌가 함께 다시 출발합니다.";
