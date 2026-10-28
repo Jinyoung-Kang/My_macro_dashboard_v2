@@ -295,7 +295,7 @@ class PaperSettingsServiceTest {
     }
 
     @Test
-    @DisplayName("시장 범위(2단계 §4-13) — 공유 키는 market null·나머지는 US, 규칙 계좌 경고는 그 시장 문장(미국 키만이면 지금 문장 그대로)")
+    @DisplayName("시장 범위(2단계 §4-13) — 공유 키는 market null(메모 두 키 포함 — 사용자 결정 v6)·나머지는 US, 규칙 계좌 경고는 그 시장 문장(미국 키만이면 지금 문장 그대로)")
     void marketScopeAndRulesWarningPerMarket() {
         JsonNode keys = MAPPER.valueToTree(service.view().get("keys"));
         List<String> shared = new ArrayList<>();
@@ -310,7 +310,7 @@ class PaperSettingsServiceTest {
             }
         }
         assertThat(shared).containsExactly("model", "effort", "apiDailyCallCap", "apiScheduledReserve",
-                "frameworkTokenBudget",
+                "notesDefaultExpiryTradingDays", "notesMaxCharsInPacket", "frameworkTokenBudget",
                 "pricing.sonnet.inputUsdPerMTok", "pricing.sonnet.outputUsdPerMTok", "pricing.sonnet.cacheReadUsdPerMTok",
                 "pricing.sonnet.cacheWriteUsdPerMTok", "pricing.haiku.inputUsdPerMTok", "pricing.haiku.outputUsdPerMTok",
                 "pricing.haiku.cacheReadUsdPerMTok", "pricing.haiku.cacheWriteUsdPerMTok",

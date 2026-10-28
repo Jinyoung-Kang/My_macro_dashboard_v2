@@ -201,8 +201,11 @@ final class PaperSettingKeys {
             of("parkCashInShy", Type.BOOLEAN, true, "규칙 계좌가 남는 현금을 SHY에 둠(R3)"),
             of("universeExtraTickers", Type.TICKERS, true, "유니버스에 늘 넣는 ETF(D8) — ETF 비중 상한을 받는 종목"),
             of("cashLikeTickers", Type.TICKERS, true, "현금성 종목(스탑·비중 상한·종목 수 제외, 기본 SHY)"),
-            integer("notesDefaultExpiryTradingDays", 1, 60, false, "시황 메모 기본 만료(거래일, F6)"),
-            integer("notesMaxCharsInPacket", 0, 20_000, false, "패킷에 싣는 유효 메모 합계 글자 수(F6)"),
+            // 메모 두 키는 두 책 공통(2단계 사용자 결정 v6 — kr.notes* 키를 따로 두지 않음, 명세 §4-13 'E1a 구현에서 정한 것').
+            shared(integer("notesDefaultExpiryTradingDays", 1, 60, false,
+                    "시황 메모 기본 만료(거래일, F6) — 두 책 공통, 그 메모 시장의 거래일로 셈")),
+            shared(integer("notesMaxCharsInPacket", 0, 20_000, false,
+                    "패킷에 싣는 유효 메모 합계 글자 수(F6) — 두 책 공통, 패킷마다 그 시장 메모만 셈")),
             shared(integer("frameworkTokenBudget", 1_000, 50_000, false,
                     "프레임 렌더링 크기 예산(토큰 어림, F4 — 넘으면 경고)")),
             shared(number("pricing.sonnet.inputUsdPerMTok", 0, PaperApiCalls.MAX_PRICE, false,
