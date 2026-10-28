@@ -10,6 +10,8 @@ import com.macrodash.store.PaperStore.BookState;
 import com.macrodash.store.PaperStore.Decision;
 import com.macrodash.store.PaperStore.NavRow;
 import com.macrodash.store.PaperStore.Order;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import tools.jackson.databind.ObjectMapper;
 
 import java.time.Clock;
@@ -37,6 +39,8 @@ import java.util.concurrent.ConcurrentHashMap;
  *  계좌마다 출발 계획(규칙 D1b · Claude E2b · 벤치마크 둘) → 계획이 실패한 계좌가 있으면 START_POSTPONED(아무 계좌에도 쓰지 않음 — 그 세션은
  *                                                         다시 계획하지 않음)
  *  → 계획한 계좌의 결정(INITIAL)·주문(NEXT_OPEN, 기준 거래일 D)·운용 전환·D 순자산 줄을 한 트랜잭션으로 → STARTED(기록)
+ *    그 쓰기가 예외로 끝남 — 과금된 계획(Claude)이 있으면 START_POSTPONED(그 세션은 다시 계획하지 않음 — Claude를 다시 부르지 않게),
+ *                         없으면 예외 그대로(결정 작업의 ERROR·출발 오류 횟수 — 다음 주기에 다시)
  * </pre>
  *
  * <p><b>출발은 사후 체결이 아닙니다</b>(K28): 주문은 D+1 시가({@code NEXT_OPEN})에 체결되고(그 체결은 C2 장부), 수익률의 기준은 D 마감 순자산
@@ -54,7 +58,8 @@ import java.util.concurrent.ConcurrentHashMap;
  * {@link ClaudeBookService#krStartLeg}: 정기 결정과 같은 조립의 출발 패킷·한국 스키마·한국 검증기, 통과 주문은 S+1 시가 대기 주문 — 상한·재시도 1회 뒤
  * 오류·거절·형식 오류·기한은 실패). 계획은 트랜잭션 밖에서 모두 만든 뒤(Claude 호출이 장부 잠금을 붙잡지 않게) 한 번에 씁니다 — 한 계좌라도
  * 실패({@link Plan#failed})하면 어느 계좌에도 쓰지 않습니다(K28 '네 계좌는 함께 출발'). 과금되는 몫({@link Leg#charges} — Claude)은 다른 몫을 모두
- * 계획한 뒤 그것들이 하나도 실패하지 않았을 때만 부릅니다(규칙 몫이 실패한 밤에 Claude 호출을 쓰고 버리지 않게, 묶음 E 리뷰). 계좌 몫은 그 세션의 출발 기한을 받고(Claude 몫은 호출 대기
+ * 계획한 뒤 그것들이 하나도 실패하지 않았을 때만 부릅니다(규칙 몫이 실패한 밤에 Claude 호출을 쓰고 버리지 않게, 묶음 E 리뷰). 그렇게 과금된 계획이 든
+ * 출발의 쓰기가 실패하면 그 세션을 미룹니다(같은 창에서 다시 계획하면 Claude를 다시 부르므로 — 묶음 E 2차 리뷰). 계좌 몫은 그 세션의 출발 기한을 받고(Claude 몫은 호출 대기
  * 한도를 기한 안으로 묶음), 쓰기 트랜잭션은 그 안에서 지금 시각이 기한 전인지 다시 봅니다 — 계획이 기한을 넘겨 끝났으면 어느 계좌에도 쓰지 않고
  * 미룹니다.
  *
@@ -76,6 +81,8 @@ import java.util.concurrent.ConcurrentHashMap;
  */
 final class KrStartPipeline {
 
+    private static final Logger log = LoggerFactory.getLogger(KrStartPipeline.class);
+
     static final String STARTED = "STARTED";
     static final String START_WAITING = "START_WAITING";
     static final String START_POSTPONED = "START_POSTPONED";
@@ -88,8 +95,9 @@ final class KrStartPipeline {
      * @param orders   쓸 주문(결정 번호 없음 — 쓸 때 채움)
      * @param note     계획이 없을 때·실패했을 때의 사유
      * @param failed   실패 — 네 계좌 모두 쓰지 않고 출발을 미룸
-     * @param calls    그 계획이 한 과금 호출의 기록(Claude 몫 — {@code {calls, attempts:[…], isEstimated}}), 호출이 없으면 null. 출발이 미뤄지거나
-     *                 쓰기 오류로 끝나 결정 행이 없을 때 작업 기록에 남깁니다(2단계 명세 §4-10 — 시장별 횟수를 셀 수 있게, 묶음 E 리뷰)
+     * @param calls    그 계획이 한 과금 호출의 기록(Claude 몫 — {@code {calls, attempts:[…], isEstimated}}), 호출이 없으면 null. 출발이 미뤄져
+     *                 (계획 실패·기한·과금된 계획 뒤 쓰기 오류) 결정 행이 없을 때 미룸 기록에 남깁니다(2단계 명세 §4-10 — 시장별 횟수를 셀 수 있게,
+     *                 묶음 E 리뷰)
      */
     record Plan(String book, Decision decision, List<Order> orders, String note, boolean failed,
                 Map<String, Object> calls) {
@@ -120,30 +128,6 @@ final class KrStartPipeline {
 
         boolean planned() {
             return decision != null;
-        }
-    }
-
-    /**
-     * 계획을 다 만든 뒤 쓰기 트랜잭션이 예외로 끝남 — 원래 예외({@link #getCause})에 그 계획들의 과금 호출 기록을 실어 결정 작업이 오류 기록에 남기게
-     * 합니다(결정 행이 없는 호출을 셀 수 있게, 2단계 명세 §4-10). 결정 작업은 원래 예외의 문구로 기록합니다.
-     */
-    static final class WriteFailed extends RuntimeException {
-
-        private final transient Map<String, Object> calls;
-
-        WriteFailed(RuntimeException cause, Map<String, Object> calls) {
-            super(cause.getMessage(), cause);
-            this.calls = calls;
-        }
-
-        /** 계좌 코드 → 그 계획의 과금 호출 기록(호출이 없으면 빈 맵). */
-        Map<String, Object> calls() {
-            return calls;
-        }
-
-        /** 원래 예외. */
-        RuntimeException original() {
-            return (RuntimeException) getCause();
         }
     }
 
@@ -363,8 +347,21 @@ final class KrStartPipeline {
                 return write(run, d, plans, books);
             }));
         } catch (RuntimeException e) {
-            // 쓰지 못한 계획의 과금 호출을 오류 기록에 남기게 실어 보냅니다(결정 행이 없음 — §4-10).
-            throw new WriteFailed(e, calls);
+            if (calls.isEmpty()) {
+                // 과금된 계획이 없는 쓰기 오류 — 결정 작업이 ERROR 기록·그 세션 출발 오류 횟수로 셉니다(다음 주기에 다시).
+                throw e;
+            }
+            // 과금된 계획(Claude)이 든 출발의 쓰기가 실패 — 그 세션을 저장된 미룸으로(K28 'Claude 실패 → 다음 KR 거래일'과 같은 처리, 묶음 E 2차
+            // 리뷰). 다음 주기에 다시 계획하면 Claude를 다시 부르는데, 쓰기 오류(DB 일시 오류·코드 결함)는 같은 밤 같은 결과인 일이 잦고 과금은
+            // 되돌릴 수 없습니다. 그 호출은 미룸 기록의 calls에 남습니다(결정 행이 없음 — §4-10).
+            String error = e.getClass().getSimpleName() + " " + e.getMessage();
+            log.warn("한국 출발 쓰기 실패({}) — 과금된 Claude 계획이 있어 그 세션을 다음 KR 거래일로 미룹니다: {}", d, error);
+            Result result = withCalls(postponed(run, d, start, window, "출발 쓰기 오류(" + error
+                    + ") — 과금된 Claude 계획을 같은 창에서 다시 부르지 않게 미룸", records), calls);
+            Map<String, Object> detail = new LinkedHashMap<>(result.detail());
+            detail.put("error", error);
+            return new Result(result.outcome(), result.session(), result.message(), result.record(), detail,
+                    result.decisions(), result.waiting());
         }
         if (late.get() != null) {
             return withCalls(postponed(run, d, start, window, "출발 계획이 기한을 넘겨 끝남(" + Kst.stamp(late.get())

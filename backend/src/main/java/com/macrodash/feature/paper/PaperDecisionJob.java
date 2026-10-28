@@ -952,7 +952,8 @@ public class PaperDecisionJob {
     /**
      * 한국 출발 한 번({@link KrStartPipeline}) — STARTED와 그 세션 기록이 아직 없는 미룸을 기록하고, 자료 게이트 기다림은 그 세션 기다림 한 줄로
      * 남깁니다({@link #recordWait}). 출발을 쓰다 예외가 나면 그 세션의 출발 오류 횟수를 올리고 ERROR로 기록하며, {@value #MAX_ATTEMPTS}번이면 그 세션
-     * 기한까지 더 시도하지 않습니다(기한이 지나면 미룸 — 수동 출발 단추는 E2).
+     * 기한까지 더 시도하지 않습니다(기한이 지나면 미룸 — 수동 출발 단추는 E2). 과금된 Claude 계획이 든 출발의 쓰기 오류는 오류가 아니라 그 세션
+     * 미룸입니다(파이프라인이 돌림 — 다음 주기에 Claude를 다시 부르지 않게, 묶음 E 2차 리뷰).
      */
     private Result startKr(MarketRun market, Instant now, LocalDate d) {
         FailureKey key = new FailureKey(market.code(), d, START_FAILURES);
@@ -960,19 +961,15 @@ public class PaperDecisionJob {
         try {
             start = krStart.run(market, now, failures.getOrDefault(key, 0) >= MAX_ATTEMPTS);
         } catch (RuntimeException e) {
+            // 과금된 계획(Claude)이 든 출발의 쓰기 오류는 파이프라인이 미룸으로 돌립니다 — 여기 오는 오류에는 과금 호출이 없습니다.
             int attempt = failures.merge(key, 1, Integer::sum);
-            // 쓰기 오류면 원래 예외의 문구로, 쓰지 못한 계획의 과금 호출 기록(결정 행이 없음 — 명세 §4-10)과 함께.
-            RuntimeException cause = e instanceof KrStartPipeline.WriteFailed failed ? failed.original() : e;
             Map<String, Object> detail = new LinkedHashMap<>();
             detail.put("start", true);
             detail.put("tradingDate", d.toString());
-            detail.put("error", message(cause));
+            detail.put("error", message(e));
             detail.put("attempt", attempt);
-            if (e instanceof KrStartPipeline.WriteFailed failed && !failed.calls().isEmpty()) {
-                detail.put("calls", failed.calls());
-            }
             record(market, now, ERROR, detail);
-            return new Result(ERROR, d, null, null, null, message(cause));
+            return new Result(ERROR, d, null, null, null, message(e));
         }
         if (STARTED.equals(start.outcome())) {
             failures.remove(key);

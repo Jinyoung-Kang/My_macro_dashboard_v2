@@ -772,7 +772,7 @@ class KrStartTest {
     }
 
     @Test
-    @DisplayName("§4-10(묶음 E 리뷰) — 결정 행 없이 끝난 출발의 과금된 Claude 호출은 그 작업 기록에서 셈: 미룸(API 오류 두 번)·쓰기 오류(ERROR) 기록의 calls.kr_claude = 호출 수·호출마다 상태·과금·토큰·추정 비용")
+    @DisplayName("§4-10(묶음 E 리뷰) — 결정 행 없이 끝난 출발의 과금된 Claude 호출은 그 작업 기록에서 셈: 미룸(API 오류 두 번)·쓰기 오류 뒤 미룸(묶음 E 2차 리뷰) 기록의 calls.kr_claude = 호출 수·호출마다 상태·과금·토큰·추정 비용")
     void startRecordsCountTheChargedClaudeCalls() {
         KrClaudeFixtures.FakeAi fake = new KrClaudeFixtures.FakeAi();
         fake.fail("API_ERROR", "overloaded").fail("API_ERROR", "overloaded again");
@@ -791,13 +791,13 @@ class KrStartTest {
             });
         });
 
-        // 다음 KR 거래일 — Claude 응답을 받은 뒤 쓰기 트랜잭션이 실패(ERROR): 기록에 그 호출(토큰·추정 비용).
+        // 다음 KR 거래일 — Claude 응답을 받은 뒤 쓰기 트랜잭션이 실패(그 세션 미룸 — chargedStartWriteFailurePostponesTheSession): 기록에 그 호출(토큰·추정 비용).
         fake.answer(KrClaudeFixtures.decision(0, "관망"));
         failShortBond.set(true);
         sessionData(NEXT, S, everyCodeOn(NEXT));
-        assertThat(runAt("2026-12-01T22:30").outcome()).isEqualTo(PaperDecisionJob.ERROR);
+        assertThat(runAt("2026-12-01T22:30").outcome()).isEqualTo(PaperDecisionJob.START_POSTPONED);
         assertThat(krRuns()).last().satisfies(run -> {
-            assertThat(run.outcome()).isEqualTo(PaperDecisionJob.ERROR);
+            assertThat(run.outcome()).isEqualTo(PaperDecisionJob.START_POSTPONED);
             assertThat(run.detail().path("error").asString()).as("오류 문구는 그대로").startsWith("IllegalStateException 시험용 주문 실패");
             JsonNode calls = run.detail().path("calls").path("kr_claude");
             assertThat(calls.path("calls").asInt()).isEqualTo(1);
@@ -809,6 +809,50 @@ class KrStartTest {
                     .isCloseTo(0.07378, org.assertj.core.api.Assertions.within(1e-9));
         });
         assertNotStarted(store);
+    }
+
+    @Test
+    @DisplayName("K28·사용자 결정 v3(묶음 E 2차 리뷰) — 과금된 Claude 출발 계획 뒤 쓰기가 실패하면 그 세션을 저장된 미룸으로: ERROR 대신 START_POSTPONED(사유 '출발 쓰기 오류'·오류 문구·calls), 22:40과 재기동 뒤 22:50에도 다시 계획하지 않아 Claude 호출은 1회, 미룸 기록 한 번, 다음 KR 거래일 창에서 네 계좌 출발")
+    void chargedStartWriteFailurePostponesTheSession() {
+        KrClaudeFixtures.FakeAi fake = new KrClaudeFixtures.FakeAi();
+        fake.answer(KrClaudeFixtures.decision(0, "관망")).answer(KrClaudeFixtures.decision(0, "관망"))
+                .answer(KrClaudeFixtures.decision(0, "관망"));
+        realClaude(fake);
+        failShortBond.set(true);
+
+        PaperDecisionJob.Result failed = runAt("2026-11-30T22:30");
+
+        assertThat(failed.outcome()).isEqualTo(PaperDecisionJob.START_POSTPONED);
+        assertThat(failed.message()).contains("출발 쓰기 오류").contains("시험용 주문 실패").contains("2026-12-01");
+        assertThat(fake.requests).hasSize(1);
+        assertThat(krDecisions()).isEmpty();
+        assertThat(store.orders).isEmpty();
+        assertNotStarted(store);
+        assertThat(krRuns()).singleElement().satisfies(run -> {
+            assertThat(run.outcome()).isEqualTo(PaperDecisionJob.START_POSTPONED);
+            assertThat(run.detail().path("reason").asString()).contains("출발 쓰기 오류")
+                    .contains("IllegalStateException 시험용 주문 실패");
+            assertThat(run.detail().path("postponedTo").asString()).isEqualTo("2026-12-01");
+            assertThat(run.detail().path("calls").path("kr_claude").path("calls").asInt()).isEqualTo(1);
+        });
+
+        assertThat(runAt("2026-11-30T22:40").outcome()).isEqualTo(PaperDecisionJob.START_POSTPONED);
+        assertThat(fake.requests).as("같은 창에서 다시 계획하지 않음").hasSize(1);
+        realClaude(fake);   // 같은 창에서 재기동
+        PaperDecisionJob.Result again = runAt("2026-11-30T22:50");
+        assertThat(again.outcome()).isEqualTo(PaperDecisionJob.START_POSTPONED);
+        assertThat(again.message()).contains("그 세션은 이미 미뤘음");
+        assertThat(fake.requests).as("재기동해도 Claude를 다시 부르지 않음").hasSize(1);
+        assertThat(krRuns()).as("미룸 기록은 재기동을 넘어 한 번").extracting(JobRun::outcome)
+                .containsExactly(PaperDecisionJob.START_POSTPONED);
+        assertThat(store.apiUsage(S).map(com.macrodash.store.PaperStore.ApiUsage::calls)).contains(1);
+
+        failShortBond.set(false);
+        sessionData(NEXT, S, everyCodeOn(NEXT));
+        assertThat(runAt("2026-12-01T22:30").outcome()).isEqualTo(PaperDecisionJob.STARTED);
+        assertThat(krDecisions()).extracting(Decision::bookCode)
+                .containsExactly("kr_rules", "kr_claude", "kr_bench_k200", "kr_bench_mix");
+        assertThat(fake.requests).hasSize(2);
     }
 
     @Test
