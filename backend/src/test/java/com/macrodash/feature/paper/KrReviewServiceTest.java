@@ -449,6 +449,30 @@ class KrReviewServiceTest {
         assertThat(hits.get()).isEqualTo(1);
     }
 
+    @Test
+    @DisplayName("복기 프롬프트의 설정은 그 실행이 읽은 판(달력·장부 설정과 같은 판, E3) — 실행을 연 뒤 저장한 kr.maxPositions는 그 복기의 한국 하드 규칙 줄에 들지 않고, 다음 실행부터 들어감")
+    void promptUsesTheRunsSettingsVersion() throws Exception {
+        long[] ids = scene();
+        answerJson(reviewJson(ids[0], ids[1]));
+        answerJson(reviewJson(ids[0], ids[1]));
+        MarketRun opened = run();
+        ObjectNode body = (ObjectNode) settings.defaultsJson().deepCopy();
+        ((ObjectNode) body.get("kr")).put("maxPositions", 17);
+        store.saveSettings(body, List.of("kr.maxPositions"));
+        ReviewService service = service();
+
+        service.review(opened, WE);
+
+        String first = requests.get(0).path("system").get(0).path("text").asString();
+        assertThat(first).as("실행을 연 판(기본값)").isEqualTo(ReviewService.systemPrompt(KrPaperMarket.INSTANCE,
+                FrameworkService.interimBody(MAPPER), 0, settings.defaultsJson())).contains("최대 20종목(현금성 제외)");
+
+        store.otherReviews.clear();
+        service.review(run(), WE);
+        String second = requests.get(1).path("system").get(0).path("text").asString();
+        assertThat(second).as("새 실행은 새 판").contains("최대 17종목(현금성 제외)").doesNotContain("최대 20종목");
+    }
+
     private int callsToday() {
         return store.apiUsage(TODAY_KST).map(ApiUsage::calls).orElse(0);
     }

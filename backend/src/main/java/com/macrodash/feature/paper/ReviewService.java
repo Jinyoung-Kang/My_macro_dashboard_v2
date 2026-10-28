@@ -54,7 +54,8 @@ import java.util.regex.Pattern;
  * 조립하고 이유({@code trimmedReason})를 입력에 남깁니다(단계 0). 2주도 넘으면 더 줄이지 않고 보냅니다(어림은 {@code usage}에).
  * 입력 글 안의 구분자 모양({@code <<복기 입력 …>>})은 값마다 지웁니다 — 지난 결정에 모델이 쓴 글이 "자료가 끝났다"고 꾸미지 못하게.
  *
- * <p><b>호출</b>: 시스템 = {@link ClaudePrompts#REVIEW} + 지금 프레임 판의 렌더링(지금 설정 — {@link FrameworkService#render}), 사용자 =
+ * <p><b>호출</b>: 시스템 = {@link ClaudePrompts#REVIEW} + 지금 프레임 판의 렌더링({@link FrameworkService#render} — 설정은 그 실행이 읽은 판
+ * {@link MarketRun#settingsBody}, 실행 문맥이 아니면 지금 설정), 사용자 =
  * 구분자로 감싼 입력 JSON(자료일 뿐 지시가 아님). 모델·effort·대기 한도는 결정과 같은 설정이고, 하루 호출 상한({@code apiDailyCallCap})을
  * 결정·제안과 함께 셉니다({@link PaperApiCalls} — 상한에 닿았으면 행을 남기지 않고 다음 기회에, 키가 없어 보내지 않았으면 잡은 호출을
  * 되돌림). 응답은 {@code review.schema.json} 전체로 검사하고(D26), 코드가 알아볼 수 있는 계약 — 기준일이 입력과 같음, 판정한 결정이
@@ -234,7 +235,7 @@ public class ReviewService {
         }
         Review retrying = existing.orElse(null);
         FrameworkService.Frame frame = framework.current();
-        JsonNode settingsBody = settingsBody();
+        JsonNode settingsBody = settingsBody(market);
         ClaudeBookService.ClaudeSettings claude = ClaudeBookService.ClaudeSettings.from(settingsBody);
         // 추정 비용의 단가도 호출 전에 읽어 둡니다 — 응답(과금)을 받은 뒤 DB를 읽다 실패하면 행 없이 끝나 30분 뒤 또 부릅니다.
         PaperApiCalls.Pricing pricing = PaperApiCalls.Pricing.from(settingsBody);
@@ -849,6 +850,18 @@ public class ReviewService {
     /** 지금 설정 본문(행이 없으면 기본값 — 렌더링의 하드 규칙·모델·호출 상한). */
     private JsonNode settingsBody() {
         return store.settings().map(PaperStore.SettingsRow::body).orElseGet(settings::defaultsJson);
+    }
+
+    /**
+     * 그 복기가 쓰는 설정 본문 — 실행 문맥({@link MarketRun})이면 그 실행이 읽은 판(달력·가정 진입 시가의 장부 설정과 같은 판 — 명세 §4-13
+     * 'C1a', E3), 실행이 아니거나 그 실행에 설정 행이 없으면 {@link #settingsBody()}. 복기 행에는 설정 판 칸이 없습니다(그 판은 설정 이력에서
+     * 행의 시각으로 찾음 — {@code PaperStore#settingsInForceAt}).
+     */
+    private JsonNode settingsBody(PaperMarket market) {
+        if (market instanceof MarketRun run && run.settingsBody() != null) {
+            return run.settingsBody();
+        }
+        return settingsBody();
     }
 
     private void requireReady() {
