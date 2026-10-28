@@ -1569,6 +1569,17 @@
   규칙 계좌 주식 비중·후보 수·'자료 없음' 사유·노출 맞춘 참고선(§3). 홈 히어로·개요에 '두 책 수익률은 서로 비교하지 않음'(§6). 미국 화면에도 같은 노출 문구(남는 현금 SHY)를 단다.
 - 시장 단위 API는 `?market=KR`(기본 US): overview·status·init·run/risk·run/decision·run/initial-decision·reviews·**notes**(GET `?market`, POST 본문 `market`, 기본 US — [확인] 지금 `/api/paper/notes`는 시장을 받지 않음).
   계좌 코드 경로(`/books/{code}/…`)와 메모 보관(`DELETE /notes/{id}`)은 그대로. 화면 출처 표기 "금융위원회(공공데이터포털)"·"토스증권".
+- **F1a 구현에서 정한 것 — 읽기 경로의 `?market`**(2026-10-29, `d082fd1`·`448d47c`·`9e6649c`·`b1528d4` — GET 개요·상태·복기 목록·한 건·메모 목록. 결정 목록·결정 한 건·계좌 코드
+  경로는 계좌 코드가 시장을 정해 그대로, POST 여섯(초기화·리스크 점검·수동 결정·출발·복기 실행·메모 쓰기의 `market`)은 F1b):
+  - **시장 값**(`PaperMarkets.requested`): 없으면 US — 응답이 시장을 받기 전 글자 그대로(`PaperQueryMarketTest`·`ApiIntegrationTest.paperMarketParameter`가 `?market=US`와 대조).
+    `US`·`KR`만 받고 빈 값·소문자·공백 붙은 값은 400(틀린 값을 미국으로 읽어 한국 화면에 미국 숫자를 보이지 않게).
+  - **쉬는 한국**: 정기 작업과 같은 판정의 `dormantReason`을 싣고 200. 조회는 쉬어도 그 조회의 실행을 연다(`PaperMarkets.scope` — 공휴일·관측치 저장본을 `StoreReader.quietly`로
+    읽기만 하고 수집 요청·작업 기록·장부 쓰기가 없어 정기 작업의 '실행을 열지 않음'과 다름) — 한국 초기화 전에도 한국 관측치 신선도·메모 기준일·최근 복기 주가 보인다.
+  - **한국 칸**: 개요·상태 머리에 `market`·`currency`·`dormantReason`, 한국 출발일·원 초기 현금(정수), 작업 기록은 `kr.`만(`PaperStore.recentJobRuns(접두어, n)`), 상태의 설정 판·
+    `kr.*` 기본값 키는 그 조회 실행의 설정 행(설정 화면의 한국 읽기와 같은 목록 — `PaperSettingsService.krFallbacks`), 미국 수집 상태 넷(`fundamentals`·`calendar`·`news`·`earnings`)은 null,
+    호출 사용량은 공유. 한계 문구(`[]`)·`selection`·`gate`(null)는 A6 그대로(한국 한계 문구는 F2). 미국 응답의 작업 기록은 지금처럼 모든 작업(한국 기록 포함 — 글자 그대로를 지킴).
+  - **달력이 모르는 해**(K35): 통계·관측치 확정·늦음은 A6 그대로 그 칸만 null + 사유, 메모 기준일·최근 복기 주도 null + 사유(`referenceDateReason`·`latestWeekEndingReason`) — 그때 메모 목록은
+    만료를 가를 수 없어 보관하지 않은 것 전부(MARKET `active` null), 복기 `retryable`은 false. 결정 기록의 한국 두 계좌 `response` 모양은 `docs/API.md` 결정 한 건에 옮겼다(§4-6 'D1b'의 F1 몫).
 
 ## 5. 수용 기준
 - **출발**(K28): 네 계좌가 S 22:30 결정으로 S+1 시가에 함께 출발하고(사후 체결 없음), 벤치마크 두 계좌의 순자산이 출발가 대비 ETF 가격 변화와 일치한다(비용 오차 이내).
