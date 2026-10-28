@@ -27,13 +27,13 @@ export type NavTab = {
   href: string;
   /** 이 탭에 속하는 화면(하위 메뉴 순서). */
   items: readonly NavItem[];
-  /** 하위 화면 말고도 이 탭에 속하는 경로의 앞부분 — 모의매매는 /paper 아래 전부(2단계의 /paper/kr까지). */
+  /** 하위 화면 말고도 이 탭에 속하는 경로의 앞부분 — 모의매매는 /paper 아래 전부(옛 /paper 포함). */
   section?: string;
   /** 아직 없는 하위 화면 — 하위 메뉴에 표시만 하고 링크는 없습니다. */
   upcoming?: readonly UpcomingItem[];
 };
 
-/** 하위 메뉴의 준비 중 표시 하나 — "한국 · 준비 중" + 언제 여는지("2단계", 보이는 글). */
+/** 하위 메뉴의 준비 중 표시 하나 — 예: "한국 · 준비 중" + 언제 여는지("2단계", 보이는 글). 지금은 쓰는 탭이 없습니다(모의매매 한국은 열림). */
 export type UpcomingItem = { label: string; note: string; opensIn?: string };
 
 export const TABS: readonly NavTab[] = [
@@ -74,14 +74,15 @@ export const TABS: readonly NavTab[] = [
   {
     key: "paper",
     label: "모의매매",
-    // 미국 책 화면은 /paper/us(개요)와 그 아래 탭 주소(/paper/us/holdings 등 — 하위 화면 하나가 덮음)입니다. 옛 /paper는
-    // next.config가 /paper/us로 보내고, 탭 영역(section)은 /paper 아래 전부라 2단계의 /paper/kr도 이 탭입니다.
+    // 시장마다 화면은 /paper/us·/paper/kr(개요)와 그 아래 탭 주소(/paper/kr/holdings 등 — 하위 화면 하나가 덮음)입니다. 옛 /paper는
+    // next.config가 /paper/us로 보내고, 탭 영역(section)은 /paper 아래 전부입니다. 이 하위 메뉴 줄이 모의매매의 시장 고르기입니다
+    // (화면 안에 같은 고르기를 또 두지 않음 — 두 줄로 겹쳐 보였음). 한국 책은 2단계 명세 §4-16(F2)에서 열었습니다.
     href: "/paper/us",
     section: "/paper",
-    items: [{ href: "/paper/us", label: "미국", title: "모의매매(미국)", keywords: ["모의 알고리즘 매매(미국)"] }],
-    // 한국 증시 책은 2단계(계획서 §4) — 그때 /paper/kr 하위 메뉴가 됩니다. 이 하위 메뉴 줄이 모의매매의 시장 고르기입니다
-    // (화면 안에 같은 고르기를 또 두지 않음 — 두 줄로 겹쳐 보였음).
-    upcoming: [{ label: "한국", note: "준비 중", opensIn: "2단계" }],
+    items: [
+      { href: "/paper/us", label: "미국", title: "모의매매(미국)", keywords: ["모의 알고리즘 매매(미국)"] },
+      { href: "/paper/kr", label: "한국", title: "모의매매(한국)", keywords: ["모의 알고리즘 매매(한국)", "한국 증시 모의매매"] },
+    ],
   },
   {
     key: "more",

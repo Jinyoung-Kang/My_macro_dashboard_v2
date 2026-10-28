@@ -281,6 +281,10 @@ export type MultiSeries = {
    * 이 프로젝트의 규칙(차트는 축부터 정직해야 합니다)에 맞춰 축을 나눕니다.
    */
   axis?: "left" | "right";
+  /**
+   * 툴팁 값의 소수 자릿수(기본 2). 원 단위 정수 금액(모의매매 한국 책 순자산)은 0 — 기본 2자리면 "100,312,450.00"처럼 없는 자리가 보입니다.
+   */
+  valueDigits?: number;
 };
 
 /** 여러 시계열 비교. 단위가 다른 계열은 축을 나눠 그립니다. */
@@ -296,6 +300,7 @@ export function MultiLineSeries({
   domain,
   markers = [],
   ariaLabel,
+  axisWidth = 64,
 }: {
   data: Record<string, unknown>[];
   series: MultiSeries[];
@@ -327,6 +332,10 @@ export function MultiLineSeries({
    * 응용 프로그램으로 읽습니다(새 LineChart·도넛과 같은 이유).
    */
   ariaLabel?: string;
+  /**
+   * 왼쪽 축 폭(px, 기본 64). 눈금 글자가 긴 계열(원 단위 정수 금액 "100,000,000" — 11px 글자로 약 70px)은 넓혀야 눈금이 잘리지 않습니다.
+   */
+  axisWidth?: number;
 }) {
   if (data.length === 0) {
     return <div className="py-10 text-center text-sm text-muted">표시할 시계열이 없습니다.</div>;
@@ -335,6 +344,7 @@ export function MultiLineSeries({
   const usesRight = series.some((entry) => entry.axis === "right");
   const unitOf = (name: string) =>
     series.find((entry) => entry.name === name)?.axis === "right" ? rightUnit : unit;
+  const digitsOf = (name: string) => series.find((entry) => entry.name === name)?.valueDigits ?? 2;
 
   return (
     <ResponsiveContainer width="100%" height={height}>
@@ -347,7 +357,7 @@ export function MultiLineSeries({
           stroke={AXIS_LINE}
           tick={AXIS}
           tickLine={false}
-          width={64}
+          width={axisWidth}
           domain={domain ?? ["auto", "auto"]}
           tickFormatter={(value: number) => `${formatNumber(value, precision)}${unit}`}
         />
@@ -373,7 +383,7 @@ export function MultiLineSeries({
           formatter={(value, name) => [
             value === null || value === undefined
               ? EMPTY
-              : `${formatNumber(Number(value), 2)}${unitOf(String(name))}`,
+              : `${formatNumber(Number(value), digitsOf(String(name)))}${unitOf(String(name))}`,
             String(name),
           ]}
         />

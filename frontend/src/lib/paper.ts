@@ -6,6 +6,7 @@
  * 모르는 값(null)은 "—"로 둡니다. 0으로 채우지 않습니다.
  */
 import { EMPTY, formatKst, formatLatency, formatNumber, formatPercent, formatSigned, formatWithUnit } from "./format";
+import { KR_ACCOUNT_PROFILES } from "./paperKrProfiles";
 import { formatMoney, formatSharePriceFor, type PaperMarketCode } from "./paperMarket";
 import type {
   PaperBookResetResult,
@@ -97,6 +98,9 @@ export const PAPER_SOURCES = {
   boundaries: "대시보드 결정 기록 (PostgreSQL paper_decisions.framework_version — Claude 계좌 결정이 판마다 처음 쓴 거래일)",
   reviews: "대시보드 주간 복기 (PostgreSQL paper_reviews — 수익률·낙폭·스탑·200일선·무효화 평가는 대시보드 백엔드 계산(장부·Yahoo Finance "
     + "equity_close 수정주가), 판정·반복 오류·제안은 Claude 응답, Anthropic API)",
+  // 한국 책(2단계 명세 §4-16 — 화면 출처 표기 "금융위원회(공공데이터포털)"·"토스증권").
+  krLedger: "대시보드 모의 장부(한국, PostgreSQL paper_*) — 잠정 체결가·평가 토스증권, 확정가 금융위원회(공공데이터포털)",
+  krQuotes: "토스증권 Open API — 한국 책 관측치(일봉 원시·수정·1분봉 개장 봉, 저장본 paper.kr.quotes — KR 거래일 20:30 KST 뒤 하루 1회)",
 } as const;
 
 /**
@@ -279,6 +283,8 @@ export interface AccountSettingSpec {
   label: string;
   /** 값 뒤에 붙일 단위(예: "%", "거래일", " 달러"). 없으면 값만. */
   unit?: string;
+  /** 고르는 값(글자)의 이름표 — 예: 한국 배분 EQUAL → "동일 비중(EQUAL)". 표에 없는 값은 받은 글자 그대로. */
+  labels?: Readonly<Record<string, string>>;
 }
 
 /** 계좌 하나의 소개 — 카드에 적는 한 줄(summary)과 상세 패널의 정의·관련 설정. */
@@ -467,9 +473,11 @@ export const ACCOUNT_PROFILES: Readonly<Record<string, AccountProfile>> = {
   },
 };
 
-/** 계좌 코드의 소개. 모르는 코드(정의가 없는 계좌)는 null — 지어내지 않습니다. */
+/** 계좌 코드의 소개 — 미국 표, 없으면 한국 표(lib/paperKrProfiles). 모르는 코드(정의가 없는 계좌)는 null — 지어내지 않습니다. */
 export function accountProfile(code: string | null | undefined): AccountProfile | null {
-  return code && Object.hasOwn(ACCOUNT_PROFILES, code) ? ACCOUNT_PROFILES[code] : null;
+  if (!code) return null;
+  if (Object.hasOwn(ACCOUNT_PROFILES, code)) return ACCOUNT_PROFILES[code];
+  return Object.hasOwn(KR_ACCOUNT_PROFILES, code) ? KR_ACCOUNT_PROFILES[code] : null;
 }
 
 /** 배분 방식(blend.allocation) 이름. */
@@ -494,6 +502,7 @@ export function accountSettingRows(code: string | null | undefined, body: unknow
     let text: string;
     if (value === null || value === undefined) text = EMPTY;
     else if (spec.key === "blend.allocation" && typeof value === "string") text = ALLOCATION_LABEL[value] ?? value;
+    else if (spec.labels && typeof value === "string") text = spec.labels[value] ?? value;
     else if (typeof value === "number") text = Number.isFinite(value) ? `${settingText(value)}${spec.unit ?? ""}` : EMPTY;
     else text = settingText(value);
     return { key: spec.key, label: spec.label, value: text };
@@ -592,7 +601,9 @@ export function accountComposition(
   positions: readonly PaperPosition[] | null | undefined,
   cash: number | null | undefined,
   nav: number | null | undefined,
+  market: PaperMarketCode = "US",
 ): AccountComposition {
+  const money = (value: number | null | undefined) => formatMoney(value, market);
   const navValue = isNumber(nav) && nav > 0 ? nav : null;
   const entries = (positions ?? []).map((position) => ({
     position,
@@ -611,11 +622,11 @@ export function accountComposition(
   const segmentOf = (index: number) => (index < COMPOSITION_TOP_N ? `holding:${stocks[index].ticker}` : "other");
 
   const rows: CompositionRow[] = [
-    ...stocks.map((entry, index) => holdingRow(entry.position, entry.share, segmentOf(index))),
-    ...cashLike.map((entry) => holdingRow(entry.position, entry.share, "cash")),
+    ...stocks.map((entry, index) => holdingRow(entry.position, entry.share, segmentOf(index), market)),
+    ...cashLike.map((entry) => holdingRow(entry.position, entry.share, "cash", market)),
     {
       key: "cash", label: "현금", segmentKey: "cash", cashLike: false, isCash: true,
-      shareText: formatWithUnit(cashShare, 1, "%"), valueText: formatDollars(cashValue),
+      shareText: formatWithUnit(cashShare, 1, "%"), valueText: money(cashValue),
       unrealizedPct: null, unrealizedText: EMPTY, qtyText: EMPTY,
     },
   ];
@@ -641,7 +652,7 @@ export function accountComposition(
     short: entry.ticker,
     sharePct: entry.share as number,
     shareText: formatWithUnit(entry.share, 1, "%"),
-    valueText: formatDollars(entry.position.marketValue),
+    valueText: money(entry.position.marketValue),
     detail: null,
   }));
   if (rest.length > 0) {
@@ -657,7 +668,7 @@ export function accountComposition(
       short: single ?? "기타",
       sharePct: share,
       shareText: formatWithUnit(share, 1, "%"),
-      valueText: formatDollars(rest.reduce((sum, entry) => sum + valueOf(entry.position), 0)),
+      valueText: money(rest.reduce((sum, entry) => sum + valueOf(entry.position), 0)),
       detail: single ? null : `${names}${more}`,
     });
   }
@@ -673,9 +684,9 @@ export function accountComposition(
       short: tickers.length > 0 ? "현금·현금성" : "현금",
       sharePct: cashSegmentShare,
       shareText: formatWithUnit(cashSegmentShare, 1, "%"),
-      valueText: formatDollars((cashValue as number) + cashLike.reduce((sum, entry) => sum + valueOf(entry.position), 0)),
+      valueText: money((cashValue as number) + cashLike.reduce((sum, entry) => sum + valueOf(entry.position), 0)),
       detail: tickers.length > 0
-        ? [`현금 ${formatDollars(cashValue)}`, ...cashLike.map((entry) => `${entry.ticker} ${formatDollars(entry.position.marketValue)}`)]
+        ? [`현금 ${money(cashValue)}`, ...cashLike.map((entry) => `${entry.ticker} ${money(entry.position.marketValue)}`)]
           .join(" + ")
         : null,
     });
@@ -695,8 +706,8 @@ export function accountComposition(
   };
 }
 
-/** 구성 표의 보유 한 줄. 평가 손익(평단 대비)은 장부 값 그대로. */
-function holdingRow(position: PaperPosition, share: number | null, segmentKey: string): CompositionRow {
+/** 구성 표의 보유 한 줄. 평가 손익(평단 대비)은 장부 값 그대로. 평가액은 그 계좌 시장의 통화. */
+function holdingRow(position: PaperPosition, share: number | null, segmentKey: string, market: PaperMarketCode): CompositionRow {
   return {
     key: `position:${position.ticker}`,
     label: position.ticker,
@@ -704,7 +715,7 @@ function holdingRow(position: PaperPosition, share: number | null, segmentKey: s
     cashLike: position.cashLike,
     isCash: false,
     shareText: formatWithUnit(share, 1, "%"),
-    valueText: formatDollars(position.marketValue),
+    valueText: formatMoney(position.marketValue, market),
     unrealizedPct: isNumber(position.unrealizedPct) ? position.unrealizedPct : null,
     unrealizedText: formatPercent(position.unrealizedPct),
     qtyText: formatNumber(position.qty, 0),
@@ -810,13 +821,16 @@ export function navAxis(chart: { rows: readonly Record<string, unknown>[]; serie
  * 장부 관측치 한 줄 — 봉 날짜·티커 수·이어받은 값 수. 저장본이 없으면 그렇다고 적습니다.
  * tickers는 개수, staleTickers는 티커 이름 목록으로 옵니다(PaperQueryService.quotesSummary).
  */
-export function quotesLine(quotes: PaperQuotesSummary | null | undefined): string {
+export function quotesLine(quotes: PaperQuotesSummary | null | undefined, market: PaperMarketCode = "US"): string {
+  const korea = market === "KR";
   if (!quotes) {
-    return "장부 관측치(paper.quotes) 저장본이 아직 없습니다 — 수집기의 paper_quotes 태스크가 한 번 돌면 생깁니다.";
+    return korea
+      ? "한국 관측치(paper.kr.quotes) 저장본이 아직 없습니다 — 수집기의 kr_paper_quotes 태스크가 KR 거래일 20:30 KST 뒤에 돌면 생깁니다."
+      : "장부 관측치(paper.quotes) 저장본이 아직 없습니다 — 수집기의 paper_quotes 태스크가 한 번 돌면 생깁니다.";
   }
   return [
-    `봉 날짜 ${quotes.barDate ?? EMPTY}(미국 동부)`,
-    `티커 ${formatWithUnit(quotes.tickers, 0, "개")}`,
+    `봉 날짜 ${quotes.barDate ?? EMPTY}(${korea ? "KR 거래일" : "미국 동부"})`,
+    `${korea ? "종목" : "티커"} ${formatWithUnit(quotes.tickers, 0, "개")}`,
     `지난 값 이어받음 ${formatNumber(quotes.staleTickers.length, 0)}개`,
   ].join(" · ");
 }

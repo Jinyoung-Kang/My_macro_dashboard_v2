@@ -109,9 +109,10 @@ function staleCell(book: PaperBookSummary): ComparisonCell {
  * (`sampleNotes`)에 둡니다.
  *
  * 초과 수익률·베타의 비교 기준은 계좌마다 다를 수 있어(SPY 계좌 자신은 기준 없음) 항목 이름에 적지 않고 "비교 기준" 줄로 따로 둡니다.
+ * 돈 칸은 그 개요 시장의 통화입니다(`market` — 기본 미국 달러, 한국은 원 정수).
  */
-export function accountComparisonRows(books: readonly PaperBookSummary[]): ComparisonRow[] {
-  const cards = books.map((book) => ({ book, card: bookCard(book, books) }));
+export function accountComparisonRows(books: readonly PaperBookSummary[], market: PaperMarketCode = "US"): ComparisonRow[] {
+  const cards = books.map((book) => ({ book, card: bookCard(book, books, market) }));
   const row = (key: string, label: string, cell: (entry: (typeof cards)[number]) => ComparisonCell, badge = false): ComparisonRow => ({
     key,
     label,

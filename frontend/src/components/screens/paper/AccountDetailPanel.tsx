@@ -20,6 +20,7 @@ import {
   sideClass,
   sideLabel,
 } from "@/lib/paper";
+import { marketMeta, type PaperMarketCode } from "@/lib/paperMarket";
 import type {
   PaperBookSummary,
   PaperFill,
@@ -66,6 +67,8 @@ export const accountDetailTitleId = (id: string) => `${id}-title`;
  *
  * 보유·체결은 이미 있는 계좌별 응답(positions·fills)을 그대로 읽습니다 — 숫자는 장부 값이고, 묶음·비중 표기는 lib가 만듭니다(ADR 0004).
  * 보유 응답의 계좌 요약이 개요보다 새것이면(버튼 뒤 다시 읽음) 그것을 씁니다.
+ *
+ * 한국 계좌(`market` "KR")는 돈을 원 단위 정수, 주당 가격을 0자리로 적고 현금성 종목은 153130입니다(lib/paperMarket).
  */
 export function AccountDetailPanel({
   id,
@@ -73,24 +76,29 @@ export function AccountDetailPanel({
   books,
   onClose,
   onOpenTab,
+  market = "US",
 }: {
   id: string;
   book: PaperBookSummary;
   books: readonly PaperBookSummary[];
   onClose: () => void;
   onOpenTab?: (tab: "holdings" | "decisions", code: string) => void;
+  /** 이 계좌의 시장(기본 미국). */
+  market?: PaperMarketCode;
 }) {
+  const meta = marketMeta(market);
+  const korea = market === "KR";
   const positions = useApi<PaperPositionsResponse>(endpoints.paper.positions(book.code), 60_000);
   const fills = useApi<PaperFillsResponse>(endpoints.paper.fills(book.code, RECENT_FILLS), 60_000);
   // 설정은 자주 바뀌지 않아 열 때 한 번만 읽습니다. 못 읽으면 정의 문장만 보입니다(숫자를 지어내지 않음).
   const settings = useApi<PaperSettingsResponse>(endpoints.paper.settings);
 
   const current = positions.data?.available && positions.data.book ? positions.data.book : book;
-  const card = bookCard(current, books);
+  const card = bookCard(current, books, market);
   const profile = accountProfile(book.code);
   const settingRows = accountSettingRows(book.code, settings.data?.available ? settings.data.body : null);
   const composition = positions.data?.available
-    ? accountComposition(positions.data.positions ?? [], positions.data.cash ?? null, current.nav)
+    ? accountComposition(positions.data.positions ?? [], positions.data.cash ?? null, current.nav, market)
     : null;
   const decides = book.kind === "RULES" || book.kind === "CLAUDE";
   const titleId = accountDetailTitleId(id);
@@ -157,13 +165,13 @@ export function AccountDetailPanel({
             <Tile label="수익률(출발 이후)" value={card.returnPct} tone={deltaColor(current.returnPct)} />
             <Tile label="현금" value={card.cash} />
             {/* 장부의 주식 노출은 평가액 ÷ 순자산이라 현금성(SHY)도 들어갑니다 — 구성 차트의 '현금·현금성'과 같은 SHY를 두 번 읽지 않게 적습니다. */}
-            <Tile label="주식 노출" value={card.exposure} caption="현금성(SHY) 포함" />
+            <Tile label="주식 노출" value={card.exposure} caption={`현금성(${meta.cashLike}) 포함`} />
             <Tile label="보유 종목 수" value={card.positions} />
             <Tile label="출발일" value={card.startedOn} />
             <Tile label="마지막 평가" value={card.lastObserved} />
           </dl>
           {card.staleWarning && <p className="text-[11px] text-warn">{card.staleWarning}</p>}
-          <SourceLine>{PAPER_SOURCES.ledger}</SourceLine>
+          <SourceLine>{korea ? PAPER_SOURCES.krLedger : PAPER_SOURCES.ledger}</SourceLine>
         </section>
       </div>
 
@@ -171,8 +179,8 @@ export function AccountDetailPanel({
         <div>
           <h4 className="text-xs font-semibold text-bright">구성 — 순자산 대비 비중</h4>
           <p className="mt-0.5 text-[11px] text-muted">
-            상위 {COMPOSITION_TOP_N}종목은 따로, 나머지 종목은 &quot;기타&quot;(하나뿐이면 그 종목 이름), 현금과 현금성 종목(SHY 등 — 설정
-            cashLikeTickers)은 한 묶음입니다. 비중은 장부의 평가액 ÷ 순자산입니다.
+            상위 {COMPOSITION_TOP_N}종목은 따로, 나머지 종목은 &quot;기타&quot;(하나뿐이면 그 종목 이름), 현금과 현금성 종목({meta.cashLike} 등 — 설정
+            {korea ? "kr.cashLikeTickers" : "cashLikeTickers"})은 한 묶음입니다. 비중은 장부의 평가액 ÷ 순자산입니다.
           </p>
         </div>
         {positions.loading && !positions.data && <Loading label="보유를 읽는 중…" />}
@@ -210,8 +218,19 @@ export function AccountDetailPanel({
               },
               { key: "side", header: "방향", render: (row) => <span className={sideClass(row.side)}>{sideLabel(row.side)}</span> },
               { key: "qty", header: "수량", align: "right", render: (row) => formatNumber(row.qty, 0) },
-              { key: "price", header: "체결가(달러)", align: "right", render: (row) => formatSharePrice(row.price) },
-              { key: "gross", header: "금액(달러)", align: "right", render: (row) => formatNumber(row.gross, 2) },
+              {
+                key: "price",
+                header: `체결가(${meta.unitLabel})`,
+                align: "right",
+                render: (row) => formatSharePrice(row.price, market),
+              },
+              {
+                key: "gross",
+                header: `금액(${meta.unitLabel})`,
+                align: "right",
+                // 한국은 원 단위 정수, 미국은 예전처럼 소수 2자리(단위는 머리에).
+                render: (row) => formatNumber(row.gross, meta.moneyDigits),
+              },
             ]}
           />
         )}

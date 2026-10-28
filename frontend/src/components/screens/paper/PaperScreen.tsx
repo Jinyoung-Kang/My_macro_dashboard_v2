@@ -6,6 +6,8 @@ import { Banner, Card, ErrorState, Freshness, Loading } from "@/components/ui";
 import { useApi } from "@/hooks/useApi";
 import { endpoints } from "@/lib/endpoints";
 import { PAPER_SOURCES, PAPER_TABS, type PaperTabKey } from "@/lib/paper";
+import { KR_PENDING_TABS } from "@/lib/paperKrProfiles";
+import { formatMoney, type PaperMarketCode } from "@/lib/paperMarket";
 import { paperTabFromPath, paperTabPath } from "@/lib/paperRoutes";
 import type { PaperOverviewResponse } from "@/lib/types";
 import { DecisionsSection } from "./DecisionsSection";
@@ -35,19 +37,36 @@ import { SettingsSection } from "./SettingsSection";
  * 바꾸면 window.history.replaceState로 주소만 그 탭의 것으로 바꿉니다 — 라우터 이동(useRouter)을 쓰지 않아 섹션이 다시 읽히지 않고,
  * 새로고침·링크 공유는 그 탭으로 열립니다(뒤로 가기 기록은 쌓지 않음). 반대로 같은 화면을 띄운 채 셸의 링크(예: 모의매매 탭 → /paper/us)로
  * 주소가 바뀌면 그 주소의 탭으로 맞춥니다.
+ *
+ * <p><b>한국</b>(`market` "KR", 2단계 명세 §4-16 — /paper/kr·/paper/kr/&lt;탭&gt;): 같은 일곱 탭이고 개요는 `?market=KR` 응답(원 단위 정수,
+ * 네 계좌 kr_rules·kr_claude·kr_bench_k200·kr_bench_mix)입니다. 정기 작업이 쉬면 그 사유(dormantReason)를 맨 위에 적습니다. 프레임·설정은 두
+ * 시장이 함께 쓰는 화면이라 시장을 밝힌 안내와 함께 그대로, 아직 한국 몫을 만들지 않은 탭(lib/paperKrProfiles KR_PENDING_TABS)은 미국 화면을
+ * 한국 계좌로 그리지 않고 "다음 단계에서 엽니다"만 보입니다. 주소 맞추기는 그 시장의 주소만 봅니다(다른 시장 주소는 무시).
  */
-export default function PaperPage({ initialTab = "overview" }: { initialTab?: PaperTabKey }) {
+export default function PaperPage({
+  initialTab = "overview",
+  market = "US",
+}: {
+  initialTab?: PaperTabKey;
+  market?: PaperMarketCode;
+}) {
+  const korea = market === "KR";
   const [tab, setTab] = useState<PaperTabKey>(initialTab);
   const [preselect, setPreselect] = useState("");
   // 결정 로그의 주간 복기에서 누른 제안 번호 — 프레임 탭이 그 제안으로 스크롤해 강조합니다(탭 단추로 옮기면 지움).
   const [focusProposal, setFocusProposal] = useState<number | null>(null);
-  const { data, loading, error, reload, refreshError } = useApi<PaperOverviewResponse>(endpoints.paper.overview, 60_000);
-  const current = PAPER_TABS.find((entry) => entry.key === tab) ?? PAPER_TABS[0];
+  const { data, loading, error, reload, refreshError } = useApi<PaperOverviewResponse>(endpoints.paper.market(market).overview, 60_000);
+  // 한국 화면은 아직 한국 몫을 만들지 않은 탭을 '다음 단계' 안내로 둡니다(미국 화면은 PAPER_TABS 그대로 — 모두 열림).
+  const tabs = PAPER_TABS.map((entry) => {
+    const pending = korea ? KR_PENDING_TABS[entry.key] : undefined;
+    return pending ? { ...entry, opensIn: pending.opensIn, upcoming: pending.upcoming } : entry;
+  });
+  const current = tabs.find((entry) => entry.key === tab) ?? tabs[0];
   // 라우터 밖(테스트)에서는 null입니다 — 그때는 주소를 따라가지 않습니다.
   const pathname = usePathname();
 
   useEffect(() => {
-    const fromPath = paperTabFromPath(pathname);
+    const fromPath = paperTabFromPath(pathname, market);
     // 이 화면이 방금 바꾼 주소(replaceState)는 지금 탭과 같아 아무 일도 없습니다. 라우터가 아직 옛 주소를 들고 있는 동안(탭을 막
     // 바꾼 직후)은 브라우저의 지금 주소와 달라 무시합니다 — 그러지 않으면 방금 고른 탭을 옛 주소의 탭으로 되돌립니다.
     if (fromPath === null || fromPath === tab || pathname !== window.location.pathname) return;
@@ -55,12 +74,12 @@ export default function PaperPage({ initialTab = "overview" }: { initialTab?: Pa
     setPreselect("");
     setFocusProposal(null);
     setTab(fromPath);
-  }, [pathname, tab]);
+  }, [pathname, tab, market]);
 
   /** 탭을 바꾸고 주소를 그 탭의 것으로 — 기록을 쌓지 않는 replaceState(Next 라우터가 usePathname을 맞춰 줌). */
   const showTab = (key: PaperTabKey) => {
     setTab(key);
-    const path = paperTabPath(key);
+    const path = paperTabPath(key, market);
     if (window.location.pathname !== path) window.history.replaceState(null, "", path);
   };
   const openTab = (key: "holdings" | "decisions", code: string) => {
@@ -80,11 +99,19 @@ export default function PaperPage({ initialTab = "overview" }: { initialTab?: Pa
     <div className="flex flex-col gap-6">
       <header className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h1 className="text-xl font-bold text-bright">모의 알고리즘 매매(미국)</h1>
-          <p className="mt-1 text-xs text-muted">
-            같은 돈·같은 날 출발한 네 계좌 — 규칙 · Claude · SPY(100%) · 60/40(SPY 60%·SHY 40%)
-            {data?.startDate ? ` · 출발 ${data.startDate}` : ""}
-          </p>
+          <h1 className="text-xl font-bold text-bright">모의 알고리즘 매매({korea ? "한국" : "미국"})</h1>
+          {korea ? (
+            <p className="mt-1 text-xs text-muted">
+              같은 돈·같은 날 출발한 네 계좌 — 규칙 · Claude · KODEX 200(069500) · 한국 60/40(069500 60%·153130 40%)
+              {krInitialCash(data) ? ` · 계좌마다 ${krInitialCash(data)}` : ""}
+              {data?.startDate ? ` · 출발 ${data.startDate}` : ""} · 출발일 밤 결정으로 다음 KR 거래일 시가에 함께 출발
+            </p>
+          ) : (
+            <p className="mt-1 text-xs text-muted">
+              같은 돈·같은 날 출발한 네 계좌 — 규칙 · Claude · SPY(100%) · 60/40(SPY 60%·SHY 40%)
+              {data?.startDate ? ` · 출발 ${data.startDate}` : ""}
+            </p>
+          )}
         </div>
         {/* 자동 갱신이 실패하면 앞서 받은 값을 그대로 보이므로 '새로 읽지 못함'을 붙입니다(QA-104, QA-067과 같음). */}
         <Freshness refreshError={refreshError} />
@@ -95,11 +122,17 @@ export default function PaperPage({ initialTab = "overview" }: { initialTab?: Pa
       {error && <ErrorState message={error} onRetry={reload} />}
       {/* 테이블이 아직 없으면 서버 문구 그대로 — 무엇을 하면 생기는지까지 서버가 적어 보냅니다. */}
       {data && !data.available && <Banner tone="warn">{data.message ?? "모의 매매 장부를 읽을 수 없습니다."}</Banner>}
+      {/* 한국 정기 작업(리스크 점검·결정·복기)이 쉬는 사유 — 서버 문구 그대로(출발일 없음·한국 초기화 전). 쉬어도 조회는 저장본으로 답합니다. */}
+      {korea && data?.available && data.dormantReason && (
+        <Banner tone="warn">
+          <strong>한국 책이 쉬고 있습니다</strong> — {data.dormantReason}
+        </Banner>
+      )}
 
       {data?.available && (
         <>
           {(data.limits ?? []).length > 0 && (
-            <Card title="이 장부의 한계" source={PAPER_SOURCES.ledger}>
+            <Card title="이 장부의 한계" source={korea ? PAPER_SOURCES.krLedger : PAPER_SOURCES.ledger}>
               <ol className="list-decimal space-y-1 pl-5 text-xs leading-relaxed text-body">
                 {(data.limits ?? []).map((limit) => (
                   <li key={limit}>{limit}</li>
@@ -109,7 +142,7 @@ export default function PaperPage({ initialTab = "overview" }: { initialTab?: Pa
           )}
 
           <div role="tablist" aria-label="모의 매매 화면" className="flex flex-wrap gap-1 rounded-lg border border-border bg-surface p-1">
-            {PAPER_TABS.map((entry) => {
+            {tabs.map((entry) => {
               const active = entry.key === tab;
               return (
                 <button
@@ -136,14 +169,21 @@ export default function PaperPage({ initialTab = "overview" }: { initialTab?: Pa
           </div>
 
           <div role="tabpanel" id="paper-tabpanel" aria-labelledby={`paper-tab-${current.key}`} className="flex flex-col gap-6">
-            {current.key === "overview" && <OverviewSection overview={data} onChanged={reload} onOpenTab={openTab} />}
-            {current.key === "selection" && <SelectionSection />}
-            {current.key === "holdings" && <HoldingsSection books={data.books ?? []} onChanged={reload} initialBook={preselect} />}
-            {current.key === "decisions" && (
+            {current.key === "overview" && (
+              <OverviewSection overview={data} onChanged={reload} onOpenTab={openTab} market={market} />
+            )}
+            {current.opensIn === null && current.key === "selection" && <SelectionSection />}
+            {current.opensIn === null && current.key === "holdings" && (
+              <HoldingsSection books={data.books ?? []} onChanged={reload} initialBook={preselect} />
+            )}
+            {current.opensIn === null && current.key === "decisions" && (
               <DecisionsSection books={data.books ?? []} onChanged={reload} initialBook={preselect} onOpenProposal={openProposal} />
             )}
+            {korea && (current.key === "framework" || current.key === "settings") && (
+              <Banner tone="info">{SHARED_TAB_NOTE[current.key]}</Banner>
+            )}
             {current.key === "framework" && <FrameworkSection focusProposalId={focusProposal} />}
-            {current.key === "notes" && <NotesSection startDate={data.startDate ?? null} />}
+            {current.opensIn === null && current.key === "notes" && <NotesSection startDate={data.startDate ?? null} />}
             {current.key === "settings" && <SettingsSection />}
             {current.opensIn && (
               <Banner tone="info">
@@ -156,4 +196,20 @@ export default function PaperPage({ initialTab = "overview" }: { initialTab?: Pa
       )}
     </div>
   );
+}
+
+/**
+ * 두 시장이 함께 쓰는 탭을 한국 화면에서 열 때의 안내(사용자 결정 2026-10-29 — 시장을 밝힘). 화면은 미국 화면의 그 탭과 같습니다.
+ */
+const SHARED_TAB_NOTE: Record<"framework" | "settings", string> = {
+  framework: "프레임(투자 OS)은 미국·한국 Claude 계좌가 함께 쓰는 판 하나입니다 — 한국 결정에는 이 본문 위에 한국 하드 규칙 줄(kr.*)과 "
+    + "한국 고정 문단이 덮입니다(미국 문장보다 우선). 미국 화면의 프레임 탭과 같은 화면입니다.",
+  settings: "설정은 두 시장이 한 행을 함께 씁니다 — 한국 책은 kr.* 키(한국 규칙 계좌 영향 키는 '한국 규칙 계좌 영향' 표시)를 읽고, 모델·"
+    + "하루 호출 상한·정기 작업 몫 예약은 두 책 공용입니다. 미국 화면의 설정 탭과 같은 화면입니다.",
+};
+
+/** 한국 계좌마다의 처음 현금(원 정수) — 개요 책 목록의 값(배포 설정). 모르면 null(문장에서 뺌 — 1억 원을 지어내지 않음). */
+function krInitialCash(data: PaperOverviewResponse | null | undefined): string | null {
+  const cash = data?.books?.find((book) => typeof book.initialCash === "number")?.initialCash;
+  return typeof cash === "number" ? formatMoney(cash, "KR") : null;
 }

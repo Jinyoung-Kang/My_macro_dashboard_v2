@@ -37,6 +37,16 @@ describe("메뉴 고르기", () => {
       .toEqual(["/paper", "/paper/us", "/paper/us/settings", "/macro"]);
   });
 
+  it("한국 모의매매(/paper/kr·/paper/kr/settings, 2단계 명세 §4-16)도 운영자 전용 — 회원·데모·로그인 전에는 숨김", () => {
+    const menus = [{ href: "/paper/kr" }, { href: "/paper/kr/settings" }, { href: "/paper/kr/holdings" }, { href: "/radar" }];
+    const member = { email: "m@x", role: "MEMBER", tier: "PRO" } as const;
+    expect(visibleMenus(menus, member).map((m) => m.href)).toEqual(["/radar"]);
+    expect(visibleMenus(menus, { email: null, role: "MEMBER", tier: "PRO", demo: true }).map((m) => m.href)).toEqual(["/radar"]);
+    expect(visibleMenus(menus, undefined).map((m) => m.href)).toEqual(["/radar"]);
+    expect(visibleMenus(menus, { email: "o@x", role: "OWNER", tier: "PRO" }).map((m) => m.href))
+      .toEqual(["/paper/kr", "/paper/kr/settings", "/paper/kr/holdings", "/radar"]);
+  });
+
   it("저장소 상태·사용자 관리는 그 경로와 아래 경로를 숨기고, 경계는 '/'로만 자른다(/statusx·/paperclip은 다른 화면)", () => {
     const menus = [
       { href: "/status" }, { href: "/status/history" }, { href: "/admin/users" }, { href: "/admin/users/7" },

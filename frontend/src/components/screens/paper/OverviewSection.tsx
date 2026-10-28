@@ -46,6 +46,7 @@ import {
   navSeriesWindow,
   sampleNotes,
 } from "@/lib/paperOverview";
+import { marketMeta, type PaperMarketCode } from "@/lib/paperMarket";
 import { allowedRangeKey } from "@/lib/patternRows";
 import type {
   PaperInitialDecisionResult,
@@ -71,6 +72,11 @@ const BOOK_COLORS: Record<string, string> = {
   claude: SERIES_COLORS.orange,
   bench_spy: SERIES_COLORS.green,
   bench_mix: "#6b727e",
+  // 한국 네 계좌 — 미국과 같은 자리(규칙 파랑·Claude 주황·지수 초록·60/40 회색)라 같은 검증 결과를 그대로 씁니다.
+  kr_rules: SERIES_COLORS.blue,
+  kr_claude: SERIES_COLORS.orange,
+  kr_bench_k200: SERIES_COLORS.green,
+  kr_bench_mix: "#6b727e",
 };
 const SPARE_COLORS = ["#a371f7", "#22a2bd", "#db6d28"];
 
@@ -95,22 +101,31 @@ const accountToggleId = (code: string) => `paper-account-toggle-${code}`;
  *
  * 숫자는 개요 응답 그대로 그립니다(행·표의 글은 lib/paperOverview가 bookCard에서 만듦). 버튼이 성공하면 onChanged(개요 다시 읽기)를
  * 불러 행·곡선·표를 새 장부로 바꿉니다.
+ *
+ * 한국(`market` "KR", 2단계 명세 §4-16): 계좌 행·순자산 곡선·비교 표·Claude 노출 추이·사용량은 같은 패턴을 원 단위 정수로 그리고, 미국 전용
+ * 카드(초기화·사후 체결 대기·규칙/Claude 계좌 시작·신호 기관·OS 게이트)는 그리지 않습니다 — 한국 네 계좌는 출발일 밤 결정으로 함께 출발하고
+ * 13F·게이트 지표가 없습니다. 상태·리스크 점검은 `?market=KR` 경로입니다.
  */
 export function OverviewSection({
   overview,
   onChanged,
   onOpenTab,
+  market = "US",
 }: {
   overview: PaperOverviewResponse;
   onChanged: () => void;
   /** 상세 패널의 "보유·체결 탭에서 전체 보기"·"결정 로그 보기" — 그 탭으로 바꾸며 이 계좌를 미리 고릅니다(page.tsx). */
   onOpenTab?: (tab: "holdings" | "decisions", code: string) => void;
+  /** 이 개요의 시장(기본 미국). */
+  market?: PaperMarketCode;
 }) {
+  const korea = market === "KR";
+  const paths = endpoints.paper.market(market);
   // 정기 작업이 꺼져 있는지·설정 버전·Claude 호출 사용량·재무 수집 범위는 개요 응답에 없어 상태 응답에서 읽습니다(실패해도 개요는 그대로).
-  const status = useApi<PaperStatusResponse>(endpoints.paper.status, 60_000);
+  const status = useApi<PaperStatusResponse>(paths.status, 60_000);
 
-  const init = useAsyncAction(() => apiPost<PaperInitResult>(endpoints.paper.init), "초기화하지 못했습니다.");
-  const risk = useAsyncAction(() => apiPost<PaperRiskResult>(endpoints.paper.runRisk), "리스크 작업을 실행하지 못했습니다.");
+  const init = useAsyncAction(() => apiPost<PaperInitResult>(paths.init), "초기화하지 못했습니다.");
+  const risk = useAsyncAction(() => apiPost<PaperRiskResult>(paths.runRisk), "리스크 작업을 실행하지 못했습니다.");
   const initElapsed = useElapsedSeconds(init.busy);
   const riskElapsed = useElapsedSeconds(risk.busy);
   // 규칙 책 시작(초기 결정) — 선정·트랙레코드 계산과 사후 체결을 한 번에 하므로 오래 걸릴 수 있어 경과 초를 셉니다.
@@ -168,14 +183,17 @@ export function OverviewSection({
   const series = chart.series.map((line, index) => ({
     ...line,
     color: BOOK_COLORS[line.key] ?? SPARE_COLORS[index % SPARE_COLORS.length],
+    // 원 단위 정수 장부 — 툴팁에 없는 소수 자리를 붙이지 않음(미국은 기본 2자리 그대로).
+    ...(korea ? { valueDigits: 0 } : {}),
   }));
   const quotes = overview.quotes ?? null;
   const staleNames = quotes?.staleTickers ?? [];
-  const prompt = initPrompt(overview);
+  // 미국 전용 — 출발일 종가 사후 체결 초기화(한국은 출발 상태 카드가 맡음).
+  const prompt = korea ? null : initPrompt(overview);
   const initResult = init.result && (
     <Banner tone={init.result.skipped?.length ? "warn" : "info"}>초기화 — {initResultText(init.result)}</Banner>
   );
-  const startPrompt = rulesStartPrompt(overview);
+  const startPrompt = korea ? null : rulesStartPrompt(overview);
   const startView = start.result ? initialDecisionResultView(start.result) : null;
   const startResult = startView && <Banner tone={startView.tone}>{startView.text}</Banner>;
   const selection = selectedFilersView(overview.selection);
@@ -191,7 +209,7 @@ export function OverviewSection({
   const news = status.data?.available ? newsLine(status.data.news) : null;
   // 어닝 서프라이즈(2단계 C, 패킷 8b eps) — 같은 규칙(필드가 없는 백엔드면 그리지 않음).
   const earnings = status.data?.available ? earningsLine(status.data.earnings) : null;
-  const observationSource = [
+  const observationSource = korea ? PAPER_SOURCES.krQuotes : [
     PAPER_SOURCES.quotes,
     fundamentals ? `재무: ${PAPER_SOURCES.fundamentals}` : null,
     calendar ? `일정: ${PAPER_SOURCES.calendar}` : null,
@@ -202,7 +220,8 @@ export function OverviewSection({
   // 한 줄 글은 전체 기록 기준(기간 밖의 경계를 '그날 기록 없음'으로 적지 않게), 세로선은 고른 기간 안의 날짜만.
   const boundaries = frameworkBoundaryView(overview.frameworkBoundaries, overview.navSeries?.dates ?? []);
   const markers = markersInWindow(boundaries.markers, navWindow);
-  const comparison = accountComparisonRows(books);
+  const comparison = accountComparisonRows(books, market);
+  const ledgerSource = korea ? PAPER_SOURCES.krLedger : PAPER_SOURCES.ledger;
   const comparisonColumns: Column<ComparisonRow>[] = [
     // 줄이 항목이라 항목 이름 칸을 행 머리(th scope=row)로 — 낭독기가 칸마다 "순자산 · 규칙 계좌"처럼 항목과 계좌를 함께 읽습니다.
     { key: "label", header: "항목", rowHeader: true, cell: (row) => row.label, className: "whitespace-nowrap text-text-2" },
@@ -267,14 +286,14 @@ export function OverviewSection({
       {/* 시작한 뒤(개요를 다시 읽어 카드가 사라짐)에도 결과는 남깁니다 — 주문·사후 체결 수를 읽을 수 있게. */}
       {!startPrompt && startResult}
 
-      <ClaudeStartSection overview={overview} onChanged={onChanged} />
+      {!korea && <ClaudeStartSection overview={overview} onChanged={onChanged} />}
 
       <Card
         title="계좌"
         subtitle={`순자산·수익률(출발 이후)은 마지막 관측치 기준 · 행을 누르면 그 계좌의 상세${
           status.data?.settingsVersion ? ` · 설정 v${status.data.settingsVersion}` : ""
         }`}
-        source={PAPER_SOURCES.ledger}
+        source={ledgerSource}
         actions={
           overview.initialized !== false && (
             <Button onClick={() => void runRisk()} disabled={risk.busy}>
@@ -286,7 +305,11 @@ export function OverviewSection({
         {risk.error && <div className="mb-3"><Banner tone="warn">{risk.error}</Banner></div>}
         {risk.result && <div className="mb-3"><RiskResult result={risk.result} /></div>}
         {books.length === 0 ? (
-          <p className="text-sm text-muted">계좌가 없습니다. 초기화하면 생깁니다.</p>
+          <p className="text-sm text-muted">
+            {korea
+              ? "한국 계좌가 없습니다 — 한국 초기화를 하면 네 계좌가 현금만 든 '시작 전'으로 생깁니다(쉬는 사유는 화면 위)."
+              : "계좌가 없습니다. 초기화하면 생깁니다."}
+          </p>
         ) : (
           <>
             {/* 계좌 행(설계서 §7) — 행 전체가 펼침 단추(aria-expanded·aria-controls)라 어디를 눌러도 상세가 열리고 다시 누르면 닫힙니다. */}
@@ -296,7 +319,7 @@ export function OverviewSection({
                 return (
                   <li key={book.code} className="border-t border-border first:border-t-0">
                     <AssetRow
-                      row={bookAssetRow(book, { pendingBackfill: overview.pendingBackfill, quotes })}
+                      row={bookAssetRow(book, { pendingBackfill: overview.pendingBackfill, quotes, market })}
                       onSelect={toggleAccount}
                       selected={open}
                       disclosure={{
@@ -318,6 +341,7 @@ export function OverviewSection({
                 books={books}
                 onClose={closeAccount}
                 onOpenTab={onOpenTab}
+                market={market}
               />
             )}
           </>
@@ -326,8 +350,8 @@ export function OverviewSection({
 
       <Card
         title="순자산 곡선"
-        subtitle="거래일별 순자산(달러). 그날 기록이 없는 계좌는 선을 끊어 그립니다 — 시작 전인 계좌는 선이 없습니다."
-        source={boundaries.text ? `${PAPER_SOURCES.ledger} · 프레임 경계는 ${PAPER_SOURCES.boundaries}` : PAPER_SOURCES.ledger}
+        subtitle={`${korea ? "KR 거래일" : "거래일"}별 순자산(${marketMeta(market).unitLabel}). 그날 기록이 없는 계좌는 선을 끊어 그립니다 — 시작 전인 계좌는 선이 없습니다.`}
+        source={boundaries.text ? `${ledgerSource} · 프레임 경계는 ${PAPER_SOURCES.boundaries}` : ledgerSource}
         actions={
           // 기간이 '전체' 하나뿐이면(출발 직후) 탭을 그리지 않습니다 — 고를 것이 없는 탭은 소음입니다.
           navRanges.length > 1 && (
@@ -343,6 +367,8 @@ export function OverviewSection({
           height={300}
           markers={markers}
           ariaLabel="순자산 곡선"
+          // 원 단위 정수 눈금("100,000,000")은 기본 폭(64px)에서 잘립니다 — 한국만 넓힙니다.
+          axisWidth={korea ? 84 : undefined}
         />
         {boundaries.text && <p className="mt-2 text-xs text-muted">{boundaries.text}</p>}
       </Card>
@@ -351,7 +377,7 @@ export function OverviewSection({
         <Card
           title="계좌 비교"
           subtitle="네 계좌를 항목별로 나란히 — 순자산·수익률·노출은 마지막 관측치 기준 · 통계는 거래일별 순자산 기준(초과 수익률·베타는 '비교 기준' 줄의 계좌 대비)"
-          source={PAPER_SOURCES.ledger}
+          source={ledgerSource}
         >
           <DataTable<ComparisonRow>
             columns={comparisonColumns}
@@ -415,6 +441,7 @@ export function OverviewSection({
         </Card>
       )}
 
+      {!korea && (
       <div className="grid gap-6 lg:grid-cols-2">
         <Card
           title="신호 기관"
@@ -469,10 +496,13 @@ export function OverviewSection({
           <GateIndicatorBody gate={overview.gate} />
         </Card>
       </div>
+      )}
 
       <Card
         title="장부 관측치"
-        subtitle="체결·스탑·평가에 쓰는 저장본입니다. 장중이면 마지막 봉이 지연 시세입니다."
+        subtitle={korea
+          ? "체결·스탑·잠정 평가에 쓰는 토스증권 저장본입니다 — KR 거래일 20:30 KST 뒤 하루 한 번(장중 관측치 없음)."
+          : "체결·스탑·평가에 쓰는 저장본입니다. 장중이면 마지막 봉이 지연 시세입니다."}
         source={observationSource}
         actions={
           quotes && (
@@ -480,9 +510,9 @@ export function OverviewSection({
           )
         }
       >
-        <p className="text-sm text-body">{quotesLine(quotes)}</p>
+        <p className="text-sm text-body">{quotesLine(quotes, market)}</p>
         {staleNames.length > 0 && (
-          <p className="mt-1 text-xs text-warn">지난 값을 이어 쓴 티커: {staleNames.join(", ")}</p>
+          <p className="mt-1 text-xs text-warn">지난 값을 이어 쓴 {korea ? "종목" : "티커"}: {staleNames.join(", ")}</p>
         )}
         {fundamentals && <p className="mt-1 text-xs text-muted">{fundamentals}</p>}
         {calendar && <p className="mt-1 text-xs text-muted">{calendar}</p>}

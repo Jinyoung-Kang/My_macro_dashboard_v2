@@ -1,5 +1,7 @@
 /**
  * 🧪 모의매매(미국) 경로 — /paper/us(개요)·/paper/us/[tab](여섯 탭)과 화면의 주소 맞추기.
+ * 🧪 모의매매(한국) 경로 — /paper/kr·/paper/kr/[tab](미국과 같은 탭 키, 2단계 명세 §4-16): 같은 규칙, 아직 한국 몫이 없는 탭은 '다음 단계' 안내,
+ *    프레임·설정은 두 시장 공용 안내와 함께 그대로, 주소 맞추기는 그 시장 주소만
  *
  *  - [tab] 라우트: 여섯 키만 만들고(generateStaticParams), 그 탭을 처음 탭으로 넘긴다 — 모르는 조각·overview는 404(notFound)
  *  - 처음 탭(initialTab)으로 그 탭이 열린다(눌러 보지 않아도) — 7탭 마크업(role=tab·paper-tab-*·aria-controls)은 그대로
@@ -33,6 +35,11 @@ vi.mock("next/navigation", () => ({
   },
 }));
 
+import PaperKrTabPage, {
+  dynamicParams as krDynamicParams,
+  generateStaticParams as krStaticParams,
+} from "../paper/kr/[tab]/page";
+import PaperKrPage from "../paper/kr/page";
 import PaperUsTabPage, { dynamicParams, generateStaticParams } from "../paper/us/[tab]/page";
 import PaperUsPage from "../paper/us/page";
 import PaperScreen from "@/components/screens/paper/PaperScreen";
@@ -198,5 +205,78 @@ describe("주소 → 탭(셸의 링크로 주소가 바뀔 때)", () => {
     router.pathname = "/paper/kr";
     render(<PaperScreen initialTab="notes" />);
     expect((await screen.findByRole("tab", { name: "메모" })).getAttribute("aria-selected")).toBe("true");
+  });
+});
+
+const KR_BOOKS = [
+  book("kr_rules", { kind: "RULES", label: "한국 규칙 계좌", initialCash: 100_000_000, nav: 100_000_000 }),
+  book("kr_claude", { kind: "CLAUDE", label: "한국 Claude 계좌", initialCash: 100_000_000, nav: 100_000_000 }),
+  book("kr_bench_k200", { label: "KODEX 200 계좌", initialCash: 100_000_000, nav: 100_000_000 }),
+  book("kr_bench_mix", { label: "한국 60/40 계좌", initialCash: 100_000_000, nav: 100_000_000 }),
+];
+
+describe("한국 화면(/paper/kr)", () => {
+  beforeEach(() => {
+    window.history.replaceState(null, "", "/paper/kr");
+    reads["/api/paper/overview?market=KR"] = () => Promise.resolve({
+      ...OVERVIEW, market: "KR", currency: "KRW", dormantReason: null, startDate: "2026-10-29", books: KR_BOOKS,
+    });
+  });
+
+  it("라우트 파일: [tab]은 미국과 같은 여섯 키·404 규칙, 개요·탭 모두 한국 화면(market KR)", async () => {
+    expect(krDynamicParams).toBe(false);
+    expect(krStaticParams()).toEqual(generateStaticParams());
+    const element = await PaperKrTabPage({ params: Promise.resolve({ tab: "settings" }) });
+    expect(isValidElement(element) && element.type).toBe(PaperScreen);
+    expect(element.props as { initialTab: string; market: string }).toMatchObject({ initialTab: "settings", market: "KR" });
+    expect(element.key).toBe("settings");
+    for (const tab of ["overview", "reviews", "Settings", ""]) {
+      await expect(PaperKrTabPage({ params: Promise.resolve({ tab }) }), tab).rejects.toThrow("NEXT_NOT_FOUND");
+    }
+    const root = PaperKrPage();
+    expect(root.type).toBe(PaperScreen);
+    expect(root.props as { initialTab: string; market: string }).toMatchObject({ initialTab: "overview", market: "KR" });
+  });
+
+  it("탭을 누르면 /paper/kr/<키>로(기록을 쌓지 않음) — 개요는 /paper/kr, 출발일·처음 현금은 머리글에", async () => {
+    render(<PaperScreen market="KR" />);
+    expect(await screen.findByText(/계좌마다 100,000,000원 · 출발 2026-10-29/)).toBeTruthy();
+    fireEvent.click(await screen.findByRole("tab", { name: "설정" }));
+    expect(window.location.pathname).toBe("/paper/kr/settings");
+    fireEvent.click(screen.getByRole("tab", { name: "개요" }));
+    expect(window.location.pathname).toBe("/paper/kr");
+  });
+
+  it("아직 한국 몫이 없는 네 탭은 '다음 단계' 안내만(미국 화면을 한국 계좌로 그리지 않음), 프레임·설정은 두 시장 공용 안내와 함께", async () => {
+    render(<PaperScreen market="KR" initialTab="holdings" />);
+    const holdings = await screen.findByRole("tab", { name: "보유·체결(준비 중)" });
+    expect(holdings.getAttribute("aria-selected")).toBe("true");
+    expect(screen.getByText(/탭은 다음 단계에서 엽니다/)).toBeTruthy();
+    expect(screen.queryByLabelText("계좌 고르기")).toBeNull();
+    expect(screen.getAllByRole("tab").map((tab) => tab.textContent)).toEqual([
+      "개요", "기관 선정(준비 중)", "보유·체결(준비 중)", "결정 로그(준비 중)", "프레임", "메모(준비 중)", "설정",
+    ]);
+
+    fireEvent.click(screen.getByRole("tab", { name: "설정" }));
+    expect(screen.getByText(/설정은 두 시장이 한 행을 함께 씁니다/)).toBeTruthy();
+    fireEvent.click(screen.getByRole("tab", { name: "프레임" }));
+    expect(screen.getByText(/미국·한국 Claude 계좌가 함께 쓰는 판 하나/)).toBeTruthy();
+  });
+
+  it("주소 맞추기는 그 시장 주소만 — 한국 화면에서 /paper/kr/notes는 메모로, /paper/us/…는 무시", async () => {
+    window.history.replaceState(null, "", "/paper/kr/settings");
+    router.pathname = "/paper/kr/settings";
+    const view = render(<PaperScreen market="KR" initialTab="settings" />);
+    expect((await screen.findByRole("tab", { name: "설정" })).getAttribute("aria-selected")).toBe("true");
+
+    window.history.pushState(null, "", "/paper/kr/notes");
+    router.pathname = "/paper/kr/notes";
+    view.rerender(<PaperScreen market="KR" initialTab="settings" />);
+    expect(selectedTab()).toBe("메모(준비 중)");
+
+    window.history.pushState(null, "", "/paper/us/holdings");
+    router.pathname = "/paper/us/holdings";
+    view.rerender(<PaperScreen market="KR" initialTab="settings" />);
+    expect(selectedTab()).toBe("메모(준비 중)");
   });
 });

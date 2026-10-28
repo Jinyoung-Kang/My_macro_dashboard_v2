@@ -48,8 +48,9 @@ describe("탭 표(브리프 §1.3 그대로)", () => {
       "13F 포트폴리오 /institutions", "Money 교집합 /consensus", "스타일·위험 /style", "종목 스코어카드 /scorecard",
     ]);
     expect(items("korea")).toEqual(["수급 레이더 /radar", "파생·투기세력(KRX) /krx"]);
-    expect(items("paper")).toEqual(["미국 /paper/us"]);
-    expect(tab("paper").upcoming).toEqual([{ label: "한국", note: "준비 중", opensIn: "2단계" }]);
+    // 한국 책 화면(2단계 명세 §4-16, F2) — 예전 '한국 · 준비 중' 표시는 없어지고 링크가 됨.
+    expect(items("paper")).toEqual(["미국 /paper/us", "한국 /paper/kr"]);
+    expect(tab("paper").upcoming).toBeUndefined();
     expect(items("more")).toEqual([
       "알림 /alerts", "AI 종합 분석 /ai/report", "데이터 저장소 상태 /status", "외부 API 연결 테스트 /connections",
       "사용자 관리 /admin/users", "내 계정 /account",
@@ -138,10 +139,10 @@ describe("하위 메뉴 줄", () => {
     expect(subNav("/login", OWNER)).toBeNull();
   });
 
-  it("모의매매: 운영자에게는 미국 + '한국 · 준비 중'(링크 없음), 주소로 연 회원에게는 줄이 없다", () => {
+  it("모의매매: 운영자에게는 미국 + 한국(둘 다 링크), 주소로 연 회원에게는 줄이 없다", () => {
     const paper = subNav("/paper/us", OWNER);
-    expect(paper?.items.map((item) => item.href)).toEqual(["/paper/us"]);
-    expect(paper?.upcoming).toEqual([{ label: "한국", note: "준비 중", opensIn: "2단계" }]);
+    expect(paper?.items.map((item) => item.href)).toEqual(["/paper/us", "/paper/kr"]);
+    expect(paper?.upcoming).toEqual([]);
     expect(paper?.current).toBe("/paper/us");
     expect(paper?.currentAria).toBe("page");
     // 탭 주소(/paper/us/settings)에서도 미국이 지금 화면입니다 — 다만 "미국" 링크는 개요(/paper/us)로 가므로 "현재 페이지"가 아니라
@@ -150,6 +151,12 @@ describe("하위 메뉴 줄", () => {
     expect(settings?.current).toBe("/paper/us");
     expect(settings?.currentAria).toBe("true");
     expect(subNav("/paper/us", MEMBER)).toBeNull();
+    // 한국 화면과 그 탭 주소 — 지금 화면은 "한국", 탭 주소에서는 aria-current true(미국과 같은 규칙).
+    expect(subNav("/paper/kr", OWNER)?.current).toBe("/paper/kr");
+    expect(subNav("/paper/kr", OWNER)?.currentAria).toBe("page");
+    expect(subNav("/paper/kr/holdings", OWNER)?.current).toBe("/paper/kr");
+    expect(subNav("/paper/kr/holdings", OWNER)?.currentAria).toBe("true");
+    expect(subNav("/paper/kr", MEMBER)).toBeNull();
   });
 
   it("더보기: 회원에게는 운영자 화면이 빠지고, 더보기 화면 자체(/more)에서는 고른 것이 없다", () => {
@@ -173,6 +180,8 @@ describe("브라우저 탭 제목", () => {
     expect(menuTitle("/paper/us")).toBe("모의매매(미국)");
     expect(documentTitle("/paper/us")).toBe("모의매매(미국) · 매크로 대시보드");
     expect(documentTitle("/paper/us/decisions")).toBe("모의매매(미국) · 매크로 대시보드");
+    expect(menuTitle("/paper/kr")).toBe("모의매매(한국)");
+    expect(documentTitle("/paper/kr/holdings")).toBe("모의매매(한국) · 매크로 대시보드");
   });
 
   it("메뉴에 없는 경로는 앱 이름만", () => {
@@ -207,6 +216,8 @@ describe("통합 검색의 메뉴 항목", () => {
   it("운영자에게는 모의매매(미국)와 운영자 화면도 — 이름은 제목용 이름", () => {
     const items = navSearchItems(OWNER);
     expect(items.find((item) => item.href === "/paper/us")?.label).toBe("모의매매(미국)");
+    expect(items.find((item) => item.href === "/paper/kr")?.label).toBe("모의매매(한국)");
+    expect(navSearchItems(MEMBER).map((item) => item.href)).not.toContain("/paper/kr");
     expect(items.map((item) => item.href)).toEqual(expect.arrayContaining(["/status", "/connections", "/admin/users"]));
     expect(navSearchItems(DEMO).map((item) => item.href)).not.toContain("/status");
     expect(navSearchItems(DEMO).map((item) => item.href)).not.toContain("/account");
