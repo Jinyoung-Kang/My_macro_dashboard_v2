@@ -100,7 +100,8 @@ export const PAPER_SOURCES = {
     + "equity_close 수정주가), 판정·반복 오류·제안은 Claude 응답, Anthropic API)",
   // 한국 책(2단계 명세 §4-16 — 화면 출처 표기 "금융위원회(공공데이터포털)"·"토스증권").
   krLedger: "대시보드 모의 장부(한국, PostgreSQL paper_*) — 잠정 체결가·평가 토스증권, 확정가 금융위원회(공공데이터포털)",
-  krQuotes: "토스증권 Open API — 한국 책 관측치(일봉 원시·수정·1분봉 개장 봉, 저장본 paper.kr.quotes — KR 거래일 20:30 KST 뒤 하루 1회)",
+  krCollection: "토스증권 Open API(관측치·수급) · 금융위원회(공공데이터포털 — 유니버스·확정 시세) · 금융감독원 Open DART · RSS(한국은행·"
+    + "재정경제부·국가데이터처·연합뉴스) · 상수(금통위·주요 발표 일정) — 수집기 저장본 읽기만(수집 요청 없음)",
 } as const;
 
 /**
@@ -2925,6 +2926,11 @@ export interface ApiUsageView {
   note: string | null;
   /** 추정 비용의 뜻과, 추정에서 빠진 호출이 있으면 그 사실. */
   costNote: string;
+  /**
+   * 오늘 호출이 수동 호출 문턱(manualLimit)에 닿았나 — `manual` 선택을 준 카드(한국 개요)만 이 칸이 있습니다. 닿으면 수동 호출(미리보기·시작·수동
+   * 결정·프레임 제안·수동 복기·한국 출발 단추)은 서버가 거절하고 정기 작업은 상한까지 부릅니다(2단계 명세 §4-10).
+   */
+  manualReached?: boolean;
 }
 
 /** 추정 비용의 뜻 — 설정 단가 × 토큰의 어림이고 청구액이 아닙니다(명세 C8, 보충 계약 §3). */
@@ -2958,7 +2964,7 @@ function usageCostText(row: Record<string, unknown> | null): string {
  * 상태 응답의 apiUsage → 사용량 카드. 숫자는 서버 값 그대로(호출 수·토큰 합·추정 비용)이고, 모르는 값은 "—"입니다(0으로 채우지 않음).
  * 응답에 사용량이 없으면(구 서버·테이블 없음) null — 화면은 카드를 그리지 않습니다.
  */
-export function apiUsageView(usage: unknown): ApiUsageView | null {
+export function apiUsageView(usage: unknown, options: { manual?: boolean } = {}): ApiUsageView | null {
   if (!isRecord(usage)) return null;
   const today = isRecord(usage.today) ? usage.today : null;
   const month = isRecord(usage.month) ? usage.month : null;
@@ -2973,6 +2979,13 @@ export function apiUsageView(usage: unknown): ApiUsageView | null {
   const cost = (row: Record<string, unknown> | null): DecisionMetaCell => ({ key: "estCost", label: "추정 비용", value: usageCostText(row) });
   const calls = numberOf(today?.calls);
   const cap = numberOf(today?.cap);
+  // 수동 호출 문턱(상한 − 정기 작업 몫 예약) — `manual` 선택을 준 카드만, 서버가 보낸 값 그대로(화면이 상한 − 7로 셈하지 않음). 모르면 칸 없음.
+  const manualLimit = options.manual ? numberOf(today?.manualLimit) : null;
+  const manualCell = (limit: number): DecisionMetaCell => ({
+    key: "manualLimit",
+    label: "수동 호출 문턱",
+    value: `${count(limit)}회(하루 상한 ${count(cap)} − 정기 작업 몫 ${count(today?.scheduledReserve)})`,
+  });
   // 추정 필드를 하나라도 보내면 3b 백엔드입니다. 그때 추정에서 빠진 호출(단가 도입 전·토큰 모름)이 있으면 그 사실을 적습니다.
   const rows = [today, month].filter((row): row is Record<string, unknown> => row !== null);
   const sent = rows.some((row) => "estCostUsd" in row || "estimatedCalls" in row);
@@ -2990,6 +3003,7 @@ export function apiUsageView(usage: unknown): ApiUsageView | null {
     todayLabel: `오늘(KST ${textOf(today?.day) ?? EMPTY})`,
     today: [
       { key: "calls", label: "호출 / 하루 상한", value: `${count(calls)} / ${count(cap)}회` },
+      ...(manualLimit !== null ? [manualCell(manualLimit)] : []),
       ...(sent ? [cost(today)] : []),
       ...tokens(today),
     ],
@@ -3002,6 +3016,7 @@ export function apiUsageView(usage: unknown): ApiUsageView | null {
     capReached: calls !== null && cap !== null && calls >= cap,
     note: textOf(usage.note),
     costNote,
+    ...(options.manual ? { manualReached: calls !== null && manualLimit !== null && calls >= manualLimit } : {}),
   };
 }
 

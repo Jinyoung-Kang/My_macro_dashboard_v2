@@ -440,4 +440,21 @@ describe("Claude 호출 사용량(명세 C8)", () => {
     expect(apiUsageView(undefined)).toBeNull();
     expect(apiUsageView({ note: "x" })).toBeNull();
   });
+
+  it("수동 호출 문턱(manual — 한국 카드): 상한 − 예약 칸과 문턱 닿음, 미국 기본(인자 없음)은 칸·판정이 예전 그대로", () => {
+    const withReserve = { ...USAGE, today: { ...USAGE.today, cap: 20, calls: 13, scheduledReserve: 7, manualLimit: 13 } };
+    const us = apiUsageView(withReserve);
+    expect(us?.today.map((cell) => cell.key)).toEqual(["calls", "estCost", "inputTokens", "outputTokens", "cacheReadTokens", "cacheWriteTokens"]);
+    expect(us).not.toHaveProperty("manualReached");
+
+    const kr = apiUsageView(withReserve, { manual: true });
+    expect(kr?.today[1]).toEqual({ key: "manualLimit", label: "수동 호출 문턱", value: "13회(하루 상한 20 − 정기 작업 몫 7)" });
+    expect(kr?.manualReached).toBe(true);
+    expect(kr?.capReached).toBe(false);
+    expect(apiUsageView({ ...withReserve, today: { ...withReserve.today, calls: 12 } }, { manual: true })?.manualReached).toBe(false);
+    // 문턱을 보내지 않는 서버 — 칸을 그리지 않고 닿음도 모름(false)
+    const old = apiUsageView(USAGE, { manual: true });
+    expect(old?.today.some((cell) => cell.key === "manualLimit")).toBe(false);
+    expect(old?.manualReached).toBe(false);
+  });
 });

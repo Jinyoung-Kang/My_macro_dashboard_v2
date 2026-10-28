@@ -69,6 +69,7 @@ import type {
 import { AccountDetailPanel, accountDetailTitleId } from "./AccountDetailPanel";
 import { ClaudeStartSection } from "./ClaudeStartSection";
 import { GateIndicatorBody } from "./GateIndicatorBody";
+import { KrCollectionCard } from "./KrCollectionCard";
 import { KrStartSection } from "./KrStartSection";
 
 /**
@@ -212,7 +213,8 @@ export function OverviewSection({
   const hasClaude = books.some((book) => book.kind === "CLAUDE");
   const exposure = claudeExposureChart(overview.claudeExposureSeries);
   const exposureSeries = exposure.series.map((line) => ({ ...line, color: EXPOSURE_COLORS[line.key] ?? SPARE_COLORS[0] }));
-  const usage = status.data?.available ? apiUsageView(status.data.apiUsage) : null;
+  // 한국 카드는 수동 호출 문턱(상한 − 정기 작업 몫 예약)을 함께 — 한국 출발 단추·수동 결정이 그 문턱에서 막힙니다(미국 카드는 그대로).
+  const usage = status.data?.available ? apiUsageView(status.data.apiUsage, korea ? { manual: true } : {}) : null;
   // 재무 수집 범위(D28) — 상태 응답에만 있고, 이 필드를 보내지 않는 백엔드면 줄을 그리지 않습니다.
   const fundamentals = status.data?.available ? fundamentalsLine(status.data.fundamentals) : null;
   // 발표·실적 일정(2단계 A, 패킷 1b_calendar) — 재무 줄과 같은 규칙(필드가 없는 백엔드면 그리지 않음).
@@ -221,7 +223,8 @@ export function OverviewSection({
   const news = status.data?.available ? newsLine(status.data.news) : null;
   // 어닝 서프라이즈(2단계 C, 패킷 8b eps) — 같은 규칙(필드가 없는 백엔드면 그리지 않음).
   const earnings = status.data?.available ? earningsLine(status.data.earnings) : null;
-  const observationSource = korea ? PAPER_SOURCES.krQuotes : [
+  // 미국 '장부 관측치' 카드의 출처(한국 개요는 이 카드 대신 한국 수집 상태 카드 — 출처를 그 카드가 적음).
+  const observationSource = [
     PAPER_SOURCES.quotes,
     fundamentals ? `재무: ${PAPER_SOURCES.fundamentals}` : null,
     calendar ? `일정: ${PAPER_SOURCES.calendar}` : null,
@@ -441,7 +444,9 @@ export function OverviewSection({
       {hasClaude && usage && (
         <Card
           title="Claude 호출 사용량"
-          subtitle="결정·미리보기·시작·재시도·프레임 제안의 호출 수·토큰·추정 비용(KST 날짜 기준) — 하루 상한에 닿으면 그날은 Claude를 부르지 않습니다"
+          subtitle={korea
+            ? "결정·출발·재시도·프레임 제안·복기의 호출 수·토큰·추정 비용(KST 날짜 기준) — 하루 상한은 미국·한국 책이 함께 쓰고, 수동 호출은 정기 작업 몫을 남긴 문턱까지입니다"
+            : "결정·미리보기·시작·재시도·프레임 제안의 호출 수·토큰·추정 비용(KST 날짜 기준) — 하루 상한에 닿으면 그날은 Claude를 부르지 않습니다"}
           source={PAPER_SOURCES.apiUsage}
         >
           <div className="grid gap-4 sm:grid-cols-2">
@@ -450,6 +455,12 @@ export function OverviewSection({
           </div>
           {usage.capReached && (
             <p className="mt-2 text-xs text-warn">오늘 호출이 하루 상한에 닿았습니다 — 오늘 남은 결정은 Claude를 부르지 않고 건너뛰고, 미리보기·프레임 제안도 서버가 거절합니다.</p>
+          )}
+          {!usage.capReached && usage.manualReached && (
+            <p className="mt-2 text-xs text-warn">
+              오늘 호출이 수동 호출 문턱에 닿았습니다 — 수동 호출(미리보기·시작·수동 결정·프레임 제안·수동 복기·한국 출발 단추)은 서버가 거절하고,
+              정기 작업은 하루 상한까지 부릅니다.
+            </p>
           )}
           <p className="mt-2 text-xs text-muted">{usage.costNote}</p>
           {usage.note && <p className="mt-1 text-xs text-muted">{usage.note}</p>}
@@ -513,27 +524,29 @@ export function OverviewSection({
       </div>
       )}
 
-      <Card
-        title="장부 관측치"
-        subtitle={korea
-          ? "체결·스탑·잠정 평가에 쓰는 토스증권 저장본입니다 — KR 거래일 20:30 KST 뒤 하루 한 번(장중 관측치 없음)."
-          : "체결·스탑·평가에 쓰는 저장본입니다. 장중이면 마지막 봉이 지연 시세입니다."}
-        source={observationSource}
-        actions={
-          quotes && (
-            <Freshness collectedAt={quotes.collectedAtKst} ageSeconds={quotes.ageSeconds ?? undefined} stale={quotes.stale} />
-          )
-        }
-      >
-        <p className="text-sm text-body">{quotesLine(quotes, market)}</p>
-        {staleNames.length > 0 && (
-          <p className="mt-1 text-xs text-warn">지난 값을 이어 쓴 {korea ? "종목" : "티커"}: {staleNames.join(", ")}</p>
-        )}
-        {fundamentals && <p className="mt-1 text-xs text-muted">{fundamentals}</p>}
-        {calendar && <p className="mt-1 text-xs text-muted">{calendar}</p>}
-        {news && <p className="mt-1 text-xs text-muted">{news}</p>}
-        {earnings && <p className="mt-1 text-xs text-muted">{earnings}</p>}
-      </Card>
+      {korea ? (
+        <KrCollectionCard status={status} quotes={quotes} />
+      ) : (
+        <Card
+          title="장부 관측치"
+          subtitle="체결·스탑·평가에 쓰는 저장본입니다. 장중이면 마지막 봉이 지연 시세입니다."
+          source={observationSource}
+          actions={
+            quotes && (
+              <Freshness collectedAt={quotes.collectedAtKst} ageSeconds={quotes.ageSeconds ?? undefined} stale={quotes.stale} />
+            )
+          }
+        >
+          <p className="text-sm text-body">{quotesLine(quotes)}</p>
+          {staleNames.length > 0 && (
+            <p className="mt-1 text-xs text-warn">지난 값을 이어 쓴 티커: {staleNames.join(", ")}</p>
+          )}
+          {fundamentals && <p className="mt-1 text-xs text-muted">{fundamentals}</p>}
+          {calendar && <p className="mt-1 text-xs text-muted">{calendar}</p>}
+          {news && <p className="mt-1 text-xs text-muted">{news}</p>}
+          {earnings && <p className="mt-1 text-xs text-muted">{earnings}</p>}
+        </Card>
+      )}
 
       <Card title="작업 기록" subtitle={jobsCardSubtitle(market)} source={PAPER_SOURCES.jobs}>
         <Table<PaperJobRun>

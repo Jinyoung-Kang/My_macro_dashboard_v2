@@ -11,6 +11,8 @@ import type { PaperMarketCode } from "./paperMarket";
 import type {
   PaperBookSummary,
   PaperJobRun,
+  PaperKrCollection,
+  PaperQuotesSummary,
   PaperKrInitResult,
   PaperKrRiskResult,
   PaperKrStartResult,
@@ -232,4 +234,129 @@ export function jobsEmptyMessage(market: PaperMarketCode, all: readonly PaperJob
   return market === "KR"
     ? "아직 한국 작업 기록이 없습니다. 한국 리스크 점검이 새 관측치를 처리하거나 결정·출발이 자료를 기다리면 생깁니다."
     : "아직 작업 기록이 없습니다. 리스크 작업이 새 관측치를 처리하면 생깁니다.";
+}
+
+// ---------------------------------------------------------------- 한국 수집 상태 카드(2단계 명세 §9 x4)
+
+/** 수집 상태 한 줄의 판정 — 정상·늦음·뒤처짐·없음·모름. 색만으로 뜻을 나르지 않게 글로 적습니다. */
+export type KrCollectionState = "정상" | "늦음" | "뒤처짐" | "없음" | "모름";
+
+/** 한국 수집 상태 표의 한 줄(항목 하나). 모르는 칸은 "—". */
+export interface KrCollectionRow {
+  key: string;
+  item: string;
+  /** 출처·수집기 태스크(작은 글). */
+  source: string;
+  basis: string;
+  collectedAt: string;
+  scope: string;
+  state: KrCollectionState;
+  /** 판정의 까닭(늦음·뒤처짐·없음·실패 피드) — 없으면 null. */
+  reason: string | null;
+}
+
+const count = (value: number | null | undefined) => formatNumber(value, 0);
+const dateOr = (value: string | null | undefined) => value ?? EMPTY;
+
+/** 늦음 칸 → 판정. 저장본이 없으면 '없음', 늦음 true면 '늦음'(사유), false면 '정상', null이면 '모름'(서버가 준 사유). */
+function lateState(
+  available: boolean | undefined,
+  stale: boolean | null | undefined,
+  staleReason: string | null | undefined,
+  lateText: string,
+): Pick<KrCollectionRow, "state" | "reason"> {
+  if (!available) return { state: "없음", reason: "저장본이 아직 없습니다" };
+  if (stale === true) return { state: "늦음", reason: lateText };
+  if (stale === false) return { state: "정상", reason: null };
+  return { state: "모름", reason: staleReason ?? null };
+}
+
+/**
+ * 상태 응답의 한국 수집 상태(`collection`) → 표의 줄(관측치·수급·유니버스·DART·사건 뉴스·거시 일정·금융위). 관측치 줄에는 개요의 관측치 요약
+ * (`quotes` — 받은 종목·이어받은 종목)을 함께 적습니다(한국 개요는 미국의 '장부 관측치' 카드 대신 이 표). 숫자는 서버 값 그대로이고 모르는 칸은
+ * "—"(0으로 채우지 않음). `collection`이 없으면(이 칸을 보내지 않는 서버) 빈 목록.
+ */
+export function krCollectionRows(
+  collection: PaperKrCollection | null | undefined,
+  quotes: PaperQuotesSummary | null | undefined,
+): KrCollectionRow[] {
+  if (!collection) return [];
+  const rows: KrCollectionRow[] = [];
+  const q = collection.quotes;
+  if (q) {
+    const received = quotes
+      ? ` · 받은 ${count(quotes.tickers)}종목 · 이어받음 ${count(quotes.staleTickers.length)}${quotes.barDate ? ` · 봉 ${quotes.barDate}` : ""}`
+      : "";
+    rows.push({
+      key: "quotes", item: "관측치", source: "토스증권 · kr_paper_quotes",
+      basis: `세션 ${dateOr(q.session)} · U 기준일 ${dateOr(q.universeDate)}`,
+      collectedAt: formatKst(q.collectedAtKst), scope: `범위 ${count(q.scope)}종목${received}`,
+      ...lateState(q.available, q.stale, q.staleReason, "다음 수집 예정(다음 KR 거래일 서버 창) + 2시간 5분을 넘김"),
+    });
+  }
+  const f = collection.flows;
+  if (f) {
+    rows.push({
+      key: "flows", item: "수급", source: "토스증권 · kr_paper_flows",
+      basis: `세션 ${dateOr(f.session)} · U 기준일 ${dateOr(f.universeDate)}`,
+      collectedAt: formatKst(f.collectedAtKst),
+      scope: `범위 ${count(f.scope)} · 정상 ${count(f.ok)}(세션 기록 없음 ${count(f.sessionMiss)}) · 기록 없음 ${count(f.noRecords)} · `
+        + `이어받음 ${count(f.carried)} · 항목 없음 ${count(f.missing)}`,
+      ...lateState(f.available, f.stale, f.staleReason, "다음 수집 예정(다음 KR 거래일 서버 창) + 2시간 5분을 넘김"),
+    });
+  }
+  const u = collection.universe;
+  if (u) {
+    rows.push({
+      key: "universe", item: "유니버스", source: "금융위원회(공공데이터포털) · kr_paper_universe",
+      basis: `기준일 ${dateOr(u.baseDate)}`, collectedAt: EMPTY, scope: `${count(u.size)}종목`,
+      ...(!u.available ? { state: "없음" as const, reason: "저장된 기준일이 아직 없습니다" }
+        : u.behind === true ? { state: "뒤처짐" as const, reason: u.behindReason ?? "금융위 주식시세보다 이른 기준일" }
+          : u.behind === false ? { state: "정상" as const, reason: null }
+            : { state: "모름" as const, reason: "금융위 주식시세 기준일을 몰라 비교하지 못함" }),
+    });
+  }
+  const d = collection.dart;
+  if (d) {
+    rows.push({
+      key: "dart", item: "재무(DART)", source: "금융감독원 Open DART · dart_fundamentals",
+      basis: EMPTY, collectedAt: formatKst(d.collectedAtKst),
+      scope: `대상 ${count(d.universe)}(한국 범위 ${count(d.krScope)}) · 고유번호 없음 ${count(d.unmapped)}`,
+      ...lateState(d.available, d.stale, null, "7일 넘게 새 저장본이 없음"),
+    });
+  }
+  const n = collection.news;
+  if (n) {
+    const failed = (n.failedFeeds ?? []).map((feed) => `${feed.feed ?? EMPTY}(${feed.reason ?? EMPTY})`);
+    const late = lateState(n.available, n.stale, null, "24시간 넘게 피드를 받지 못함");
+    rows.push({
+      key: "news", item: "사건 뉴스", source: "RSS(한국은행·재정경제부·국가데이터처·연합뉴스) · kr_news_headlines",
+      basis: `7일 ${count(n.stored7d)}건`, collectedAt: formatKst(n.lastFetchKst),
+      scope: `피드 ${count(n.feedsOk)}/${count(n.feedsTotal)}`,
+      state: late.state,
+      reason: [late.reason, failed.length > 0 ? `실패 피드 ${failed.join(" · ")}` : null].filter(Boolean).join(" · ") || null,
+    });
+  }
+  const c = collection.calendar;
+  if (c) {
+    rows.push({
+      key: "calendar", item: "거시 일정", source: "상수(금통위·주요 발표) · kr_calendar",
+      basis: `창 끝 ${dateOr(c.horizonTo)}`, collectedAt: formatKst(c.generatedAtKst),
+      scope: `일정 ${count(c.macroCount)}건 · 날짜 미확인 발표 ${count(c.unconfirmed)}`,
+      ...lateState(c.available, c.stale, null, "7일 넘게 새 저장본이 없음"),
+    });
+  }
+  const s = collection.fsc;
+  if (s) {
+    rows.push({
+      key: "fsc", item: "확정 시세", source: "금융위원회(공공데이터포털) · fsc_prices·fsc_etf_prices",
+      basis: `주식 ${dateOr(s.stocksLatestBasDt)} · ETF ${dateOr(s.etfsLatestBasDt)}`, collectedAt: formatKst(s.metaCollectedAtKst),
+      scope: "확정가·확정 조정의 자료(다음 영업일 13시 뒤 공개)",
+      ...(!s.available ? { state: "없음" as const, reason: "받은 기준일이 아직 없습니다" }
+        : s.etfBehind === true ? { state: "뒤처짐" as const, reason: "증권상품시세(ETF) 기준일이 주식시세보다 이릅니다" }
+          : s.etfBehind === false ? { state: "정상" as const, reason: null }
+            : { state: "모름" as const, reason: "주식·ETF 중 한쪽 기준일을 몰라 비교하지 못함" }),
+    });
+  }
+  return rows;
 }

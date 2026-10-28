@@ -286,6 +286,55 @@ export interface PaperStatusResponse {
    * 보내지 않는 백엔드에서는 없습니다.
    */
   earnings?: PaperEarningsStatus | null;
+  /**
+   * 한국 응답만 — 한국 수집 상태 요약(2단계 명세 §9 x4): 한국 책이 읽는 저장본 일곱 묶음의 수집 시각·세션/기준일·늦음/뒤처짐. 서버가 저장본만
+   * 읽어 만들고(수집 유발 없음) 모르는 값은 null입니다. 이 칸을 보내지 않는 백엔드(F2 전)에서는 없습니다.
+   */
+  collection?: PaperKrCollection | null;
+}
+
+/** 한국 수집 상태의 공통 칸 — 수집기 태스크·저장본 이름·저장본이 있나. */
+export interface PaperKrCollectionHead {
+  task?: string;
+  dataset?: string;
+  available: boolean;
+}
+
+/**
+ * 늦음 판정 — true 늦음·false 아님·null 모름(저장본 없음 또는 달력이 그 해를 모름 — 그때 `staleReason`). 관측치·수급은 다음 수집 예정 + 2시간
+ * 5분, DART·일정 7일, 뉴스 24시간(서버 규칙).
+ */
+export interface PaperKrLateness {
+  stale: boolean | null;
+  staleReason?: string | null;
+}
+
+/** GET /api/paper/status?market=KR의 collection(docs/API.md 상태 행). */
+export interface PaperKrCollection {
+  quotes?: PaperKrCollectionHead & PaperKrLateness & {
+    collectedAtKst: string | null; session: string | null; universeDate: string | null; scope: number | null;
+  };
+  flows?: PaperKrCollectionHead & PaperKrLateness & {
+    collectedAtKst: string | null; session: string | null; universeDate: string | null; scope: number | null;
+    ok: number | null; sessionMiss?: number | null; noRecords: number | null; carried: number | null; missing: number | null;
+  };
+  universe?: PaperKrCollectionHead & {
+    baseDate: string | null; size: number | null; behind: boolean | null; behindReason: string | null;
+  };
+  dart?: PaperKrCollectionHead & {
+    collectedAtKst: string | null; universe: number | null; krScope: number | null; unmapped: number | null; stale: boolean | null;
+  };
+  news?: PaperKrCollectionHead & {
+    lastFetchKst: string | null; stored7d: number | null; feedsOk: number | null; feedsTotal: number | null;
+    failedFeeds: PaperNewsFailedFeed[] | null; stale: boolean | null;
+  };
+  calendar?: PaperKrCollectionHead & {
+    generatedAtKst: string | null; macroCount: number | null; unconfirmed: number | null; horizonTo: string | null; stale: boolean | null;
+  };
+  fsc?: {
+    tasks?: string[]; available: boolean; stocksLatestBasDt: string | null; etfsLatestBasDt: string | null;
+    metaCollectedAtKst: string | null; etfBehind: boolean | null;
+  };
 }
 
 /**

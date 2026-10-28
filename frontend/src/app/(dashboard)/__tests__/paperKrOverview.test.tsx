@@ -188,8 +188,9 @@ describe("자료", () => {
       expect(screen.queryByText(title), title).toBeNull();
     }
     expect(screen.queryByRole("button", { name: /Claude 계좌 시작|미리보기/ })).toBeNull();
-    // 관측치 줄은 한국 표기(KR 거래일·종목)
-    expect(screen.getByText("봉 날짜 2026-10-30(KR 거래일) · 종목 103개 · 지난 값 이어받음 0개")).toBeTruthy();
+    // 한국 수집 상태 카드 — 이 상태 응답에는 collection이 없어(F2 전 서버) 관측치 한 줄만, 한국 표기(KR 거래일·종목)
+    expect(await screen.findByText(/관측치 한 줄만: 봉 날짜 2026-10-30\(KR 거래일\) · 종목 103개 · 지난 값 이어받음 0개/)).toBeTruthy();
+    expect(screen.queryByText("장부 관측치")).toBeNull();
     await waitFor(() => expect(requested()).toContain("/api/paper/status?market=KR"));
     expect(requested()).not.toContain("/api/paper/status");
   });
@@ -338,5 +339,60 @@ describe("작업 기록 카드(한국)", () => {
     expect(within(table).getByText("세션 2026-10-30 · 이어진 주기 5번 · 자료 게이트 미달: ② — 기한까지 다음 주기에 다시 봅니다")).toBeTruthy();
     expect(within(table).getByText(/다음 KR 거래일 2026-10-30로 미룸 · 사유 출발 계획 실패 · 과금 호출 kr_claude 2회/)).toBeTruthy();
     expect(screen.getByText(/한국 결정·출발이 자료를 기다린 세션마다 한 줄/)).toBeTruthy();
+  });
+});
+
+describe("한국 수집 상태 카드(x4)", () => {
+  const COLLECTION = {
+    quotes: { task: "kr_paper_quotes", dataset: "paper.kr.quotes", available: true, collectedAtKst: "2026-10-30 22:05 KST",
+      session: "2026-10-30", universeDate: "2026-10-29", scope: 103, stale: false, staleReason: null },
+    flows: { task: "kr_paper_flows", dataset: "kr.paper_flows.status", available: true, collectedAtKst: "2026-10-30 22:10 KST",
+      session: "2026-10-30", universeDate: "2026-10-29", scope: 103, ok: 101, sessionMiss: 0, noRecords: 1, carried: 0, missing: 1,
+      stale: true, staleReason: null },
+    universe: { available: true, baseDate: "2026-10-29", size: 100, behind: false, behindReason: null },
+    dart: { available: true, collectedAtKst: "2026-10-29 01:10 KST", universe: 174, krScope: 101, unmapped: 44, stale: false },
+    news: { available: true, lastFetchKst: "2026-10-30 21:58 KST", stored7d: 387, feedsOk: 4, feedsTotal: 4, failedFeeds: [], stale: false },
+    calendar: { available: false, generatedAtKst: null, macroCount: null, unconfirmed: null, horizonTo: null, stale: null },
+    fsc: { tasks: ["fsc_prices", "fsc_etf_prices"], available: true, stocksLatestBasDt: "2026-10-29", etfsLatestBasDt: "2026-10-29",
+      metaCollectedAtKst: "2026-10-30 22:00 KST", etfBehind: false },
+  };
+
+  it("미국 '장부 관측치' 자리에 일곱 줄 표 — 상태 글(정상·늦음·없음)과 사유, 출처는 토스증권·금융위원회(공공데이터포털)", async () => {
+    reads["/api/paper/overview?market=KR"] = () => Promise.resolve(KR_OVERVIEW);
+    reads["/api/paper/status?market=KR"] = () => Promise.resolve({ ...KR_STATUS, collection: COLLECTION });
+    render(<PaperPage market="KR" />);
+
+    const table = await screen.findByRole("region", { name: "한국 수집 상태 (좌우 스크롤)" });
+    expect(within(table).getAllByRole("rowheader").map((th) => th.textContent?.replace(/(토스증권|금융위원회|금융감독원|RSS|상수).*/, "")))
+      .toEqual(["관측치", "수급", "유니버스", "재무(DART)", "사건 뉴스", "거시 일정", "확정 시세"]);
+    expect(within(table).getAllByText("정상")).toHaveLength(5);
+    expect(within(table).getByText("늦음")).toBeTruthy();
+    expect(within(table).getByText("없음")).toBeTruthy();
+    expect(within(table).getByText("범위 103종목 · 받은 103종목 · 이어받음 0 · 봉 2026-10-30")).toBeTruthy();
+    expect(screen.getByText(/토스증권 Open API\(관측치·수급\) · 금융위원회\(공공데이터포털/)).toBeTruthy();
+  });
+
+  it("상태 응답이 실패하면 이 카드만 오류·다시 시도 — 계좌 행은 개요 그대로", async () => {
+    reads["/api/paper/overview?market=KR"] = () => Promise.resolve(KR_OVERVIEW);
+    reads["/api/paper/status?market=KR"] = () => Promise.reject(new Error("상태를 읽지 못했습니다."));
+    render(<PaperPage market="KR" />);
+
+    expect(await screen.findByText("한국 수집 상태를 읽지 못했습니다 — 상태를 읽지 못했습니다.")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "한국 규칙 계좌 상세 보기" })).toBeTruthy();
+    expect(screen.getAllByRole("button", { name: "다시 시도" }).length).toBeGreaterThan(0);
+  });
+
+  it("사용량 카드: 수동 호출 문턱 칸, 문턱에 닿으면 수동 호출 거절 안내", async () => {
+    reads["/api/paper/overview?market=KR"] = () => Promise.resolve(KR_OVERVIEW);
+    reads["/api/paper/status?market=KR"] = () => Promise.resolve({
+      ...KR_STATUS, apiUsage: { today: { day: "2026-10-30", calls: 13, cap: 20, scheduledReserve: 7, manualLimit: 13, inputTokens: 0,
+        outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 }, month: { month: "2026-10", days: 2, calls: 15, inputTokens: 0,
+        outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 } },
+    });
+    render(<PaperPage market="KR" />);
+
+    expect(await screen.findByText("13회(하루 상한 20 − 정기 작업 몫 7)")).toBeTruthy();
+    expect(screen.getByText(/오늘 호출이 수동 호출 문턱에 닿았습니다/)).toBeTruthy();
+    expect(screen.getByText(/하루 상한은 미국·한국 책이 함께 쓰고/)).toBeTruthy();
   });
 });

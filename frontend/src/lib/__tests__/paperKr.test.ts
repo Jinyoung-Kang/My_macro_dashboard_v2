@@ -11,6 +11,7 @@ import { describe, expect, it } from "vitest";
 import {
   chargedCalls,
   jobsEmptyMessage,
+  krCollectionRows,
   krDecisionWindowText,
   krJobDetailText,
   krInitResultText,
@@ -156,5 +157,47 @@ describe("작업 기록 카드(x3)", () => {
       + "과금 호출 kr_claude 1회(결정 행 없음 — 사용량에 셈)");
     expect(krJobDetailText(job("kr.risk", { filled: 0, barDate: "2026-10-28" }))).toBe("filled: 0 · barDate: 2026-10-28");
     expect(krJobDetailText(job("kr.risk", null))).toBe("—");
+  });
+});
+
+describe("한국 수집 상태 줄(x4)", () => {
+  const QUOTES = { collectedAtKst: "2026-10-30 22:05 KST", ageSeconds: 60, barDate: "2026-10-30", finalClose: true, tickers: 102,
+    staleTickers: ["005930"], stale: false };
+
+  it("일곱 줄 — 정상·늦음(사유)·뒤처짐(사유)·없음, 관측치 줄에 받은 종목·이어받음", () => {
+    const rows = krCollectionRows({
+      quotes: { available: true, collectedAtKst: "2026-10-30 22:05 KST", session: "2026-10-30", universeDate: "2026-10-29", scope: 103,
+        stale: false, staleReason: null },
+      flows: { available: true, collectedAtKst: "2026-10-30 22:10 KST", session: "2026-10-30", universeDate: "2026-10-29", scope: 103,
+        ok: 100, sessionMiss: 2, noRecords: 1, carried: 1, missing: 1, stale: true, staleReason: null },
+      universe: { available: true, baseDate: "2026-10-28", size: 100, behind: true, behindReason: "유니버스 기준일이 이릅니다" },
+      dart: { available: false, collectedAtKst: null, universe: null, krScope: null, unmapped: null, stale: null },
+      news: { available: true, lastFetchKst: "2026-10-30 21:58 KST", stored7d: 387, feedsOk: 3, feedsTotal: 4,
+        failedFeeds: [{ feed: "yna_market", source: "연합뉴스", reason: "HTTP 503" }], stale: false },
+      calendar: { available: true, generatedAtKst: "2026-10-29 01:10 KST", macroCount: 1, unconfirmed: 5, horizonTo: "2026-12-13", stale: false },
+      fsc: { available: true, stocksLatestBasDt: "2026-10-29", etfsLatestBasDt: "2026-10-28", metaCollectedAtKst: null, etfBehind: true },
+    }, QUOTES);
+
+    expect(rows.map((row) => [row.key, row.state])).toEqual([
+      ["quotes", "정상"], ["flows", "늦음"], ["universe", "뒤처짐"], ["dart", "없음"], ["news", "정상"], ["calendar", "정상"], ["fsc", "뒤처짐"],
+    ]);
+    expect(rows[0]).toMatchObject({ basis: "세션 2026-10-30 · U 기준일 2026-10-29", collectedAt: "2026-10-30 22:05",
+      scope: "범위 103종목 · 받은 102종목 · 이어받음 1 · 봉 2026-10-30", reason: null });
+    expect(rows[1].scope).toBe("범위 103 · 정상 100(세션 기록 없음 2) · 기록 없음 1 · 이어받음 1 · 항목 없음 1");
+    expect(rows[1].reason).toContain("2시간 5분을 넘김");
+    expect(rows[2].reason).toBe("유니버스 기준일이 이릅니다");
+    expect(rows[3]).toMatchObject({ collectedAt: "—", scope: "대상 —(한국 범위 —) · 고유번호 없음 —", reason: "저장본이 아직 없습니다" });
+    expect(rows[4]).toMatchObject({ state: "정상", reason: "실패 피드 yna_market(HTTP 503)" });
+    expect(rows[6]).toMatchObject({ basis: "주식 2026-10-29 · ETF 2026-10-28", collectedAt: "—" });
+  });
+
+  it("늦음을 모르면(달력 없음) '모름'과 서버 사유, collection이 없으면 빈 목록", () => {
+    const rows = krCollectionRows({
+      quotes: { available: true, collectedAtKst: null, session: null, universeDate: null, scope: null, stale: null, staleReason: "달력 없음 — 2027" },
+    }, null);
+    expect(rows).toEqual([expect.objectContaining({ key: "quotes", state: "모름", reason: "달력 없음 — 2027", basis: "세션 — · U 기준일 —",
+      scope: "범위 —종목" })]);
+    expect(krCollectionRows(null, null)).toEqual([]);
+    expect(krCollectionRows(undefined, null)).toEqual([]);
   });
 });
