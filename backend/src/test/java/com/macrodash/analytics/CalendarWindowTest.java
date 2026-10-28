@@ -165,6 +165,8 @@ class CalendarWindowTest {
         assertThat(r.rows().get(0).session()).isNull();
         assertThat(r.rows().get(0).isEstimated()).isNull();
         assertThat(r.rows().get(0).source()).isEqualTo(FOMC_URL);
+        // 발표일 줄은 저장본의 FRED 릴리스 번호를 그대로 들고(컨센서스 층의 열쇠 — E1b), FOMC·실적 줄은 null.
+        assertThat(r.rows()).extracting(CalendarWindow.Row::releaseId).containsExactly(null, 53, 54, null, null, 50);
     }
 
     @Test

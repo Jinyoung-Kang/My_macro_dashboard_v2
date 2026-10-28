@@ -115,9 +115,17 @@ public final class CalendarWindow {
      * @param name        거시 일정 이름 또는 티커(실적)
      * @param session     실적만(BMO·AMC·null). 거시 일정은 null
      * @param isEstimated 실적만. 거시 일정은 null(공식 일정표)
+     * @param releaseId   FRED 릴리스 번호(발표일 줄만 — 저장본 {@code releaseId}). FOMC·실적·모르면 null. 패킷 열이 아니라 컨센서스 층이
+     *                    그 줄의 발표를 가리는 열쇠입니다(2단계 명세 K22·E1b — 표시 이름보다 바뀌지 않는 값)
      */
     public record Row(LocalDate date, String kind, String name, String session, Boolean isEstimated, String source,
-                      Boolean isStale) {
+                      Boolean isStale, Integer releaseId) {
+
+        /** 릴리스 번호 없는 줄(실적·시험). */
+        public Row(LocalDate date, String kind, String name, String session, Boolean isEstimated, String source,
+                   Boolean isStale) {
+            this(date, kind, name, session, isEstimated, source, isStale, null);
+        }
     }
 
     /**
@@ -200,7 +208,7 @@ public final class CalendarWindow {
             if (Boolean.TRUE.equals(e.sep()) && name != null && !name.contains("SEP")) {
                 name = name + SEP_SUFFIX;
             }
-            rows.add(new Row(e.date(), e.kind(), name, null, null, e.source(), e.isStale()));
+            rows.add(new Row(e.date(), e.kind(), name, null, null, e.source(), e.isStale(), e.releaseId()));
         }
 
         // 같은 종목이 대소문자만 달리 두 번 들어와도 한 줄 — 티커 순으로 돌아 목록 순서도 입력 순서와 무관합니다.
