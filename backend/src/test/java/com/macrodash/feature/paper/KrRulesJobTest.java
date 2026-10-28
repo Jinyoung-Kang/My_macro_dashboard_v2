@@ -1627,6 +1627,36 @@ class KrRulesJobTest {
     }
 
     @Test
+    @org.junit.jupiter.api.Disabled("F1 리뷰 재현 — 고치기 전(다음 커밋에서 켬)")
+    @DisplayName("한국 출발 전(네 계좌 모두 시작 전 — 출발이 미뤄진 R)의 수동 결정 run/decision?market=KR은 결정 창 안·자료가 신선해도 장부를 처리하기 전에 400 — 안내는 한국 출발 단추(run/initial-decision?market=KR)·정기 출발이고 미국 'Claude 계좌 시작'이 아님, Claude·장부·결정·작업 기록 그대로")
+    void manualKrDecisionBeforeTheStartPointsToTheStartButton() {
+        KrClaudeFixtures.FakeAi fake = new KrClaudeFixtures.FakeAi();
+        fake.answer(KrClaudeFixtures.decision(0, "관망"));
+        realClaude(fake);
+        for (String code : List.of(PaperBooks.KR_RULES, PaperBooks.KR_CLAUDE, PaperBooks.KR_BENCH_K200,
+                PaperBooks.KR_BENCH_MIX)) {
+            store.updateBookStatus(code, PaperBooks.NOT_STARTED);
+            store.updateBookStartedOn(code, null);
+        }
+        quotes(R, Set.of());
+        fsc(FRI);
+        clock.set(kst("2026-11-02T22:40"));
+        BookState before = store.state(PaperBooks.KR_CLAUDE).orElseThrow();
+
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> job.runNow(KrPaperMarket.INSTANCE, PaperBooks.KR_CLAUDE))
+                .isInstanceOf(com.macrodash.support.InvalidRequestException.class)
+                .hasMessageContaining("한국 계좌는 아직 출발 전입니다")
+                .hasMessageContaining("POST /api/paper/run/initial-decision?market=KR")
+                .hasMessageNotContaining("Claude 계좌 시작");
+
+        assertThat(fake.requests).as("Claude를 부르지 않음").isEmpty();
+        assertThat(store.decisionsOf(PaperBooks.KR_CLAUDE)).isEmpty();
+        assertThat(krRuns()).as("작업 기록 없음").isEmpty();
+        assertThat(store.state(PaperBooks.KR_CLAUDE).orElseThrow().lastProcessedCollectedAt())
+                .as("장부를 처리하기 전에 거절 — 그 관측치는 처리하지 않음").isEqualTo(before.lastProcessedCollectedAt());
+    }
+
+    @Test
     @DisplayName("한국 수동 결정(Claude 계좌)도 결정 창·자료 게이트 안에서만(D1c) — 창 전·게이트 ④ 미달이면 400(Claude 부르지 않음), 통과하면 기준 거래일 D로 MANUAL·작업 기록에 게이트 ①(그 계좌)~⑥, 실제 한국 경로(E2b — 그 실행의 관측치·읽은 순간, 수동 호출이라 상한 − 예약 문턱)")
     void manualDecisionNeedsWindowAndGates() {
         KrClaudeFixtures.FakeAi fake = new KrClaudeFixtures.FakeAi();
