@@ -54,11 +54,17 @@
        미룸, 같은 창에서 재기동해도 다시 부르지 않음 — E0 저장된 미룸, 거절은 다시 부르지 않음)·`claudeStartCallIsBoundedByTheDeadline`(호출 대기 한도 = 기한 − 지금, 기한을 넘겨 끝난
        호출은 쓰기 트랜잭션이 막음, 1초도 없으면 부르지 않음). 가짜 몫으로 보는 파이프라인 규칙은 그대로 `failedLegPostponesAllBooks`·`slowPlanPastTheDeadlineWritesNothing`·
        `claudeNotYetStaysNotStarted`(몫이 없는 파이프라인 — 시험).
+     - 있음(묶음 E 리뷰 — 과금 호출을 버리거나 되풀이하지 않게): `KrStartTest.claudeStartRetrySendsTheFirstPacket`(API 오류 재시도는 첫 호출의 패킷 그대로)·
+       `claudeIsNotCalledWhenAnotherLegFails`(과금 몫은 규칙·벤치마크 몫이 하나도 실패하지 않았을 때만 부름)·`startRecordsCountTheChargedClaudeCalls`(결정 행 없이 끝난 출발의
+       과금 호출을 미룸 기록 `calls`에), 2차 리뷰 `chargedStartWriteFailurePostponesTheSession`(과금된 Claude 계획 뒤 쓰기 오류 → 그 세션 미룸, 같은 창·재기동 뒤에도 다시 부르지
+       않음 — 호출 1회)·`startErrorCountSurvivesARestart`(과금 몫 없는 쓰기 오류 세 번이면 기한까지 쉼 — 저장된 오류 기록 수라 재기동해도 같음)
   6. 캘린더 컨센서스(K22)
-     - 있음: `PacketBuilderTest.goldenUsPackets`(미국 `packetVersion` 5 패킷 고정본·해시), 수집기 `test_us_consensus.py::test_백엔드와_화면은_컨센서스_저장본을_읽지_않는다`
-       (저장만 — 읽기 시작하는 E1 커밋이 이 시험을 고침)
-     - E1: `calendar.consensus` 꺼짐 = 미국 v5 해시 그대로 · 켜짐 = v6 고정본, 한국 패킷은 처음부터 6. 3단계 스위치(`claude.schemaV3`·`claude.figureCheck`)가 꺼져 있으면
-       미국 스키마·프롬프트·패킷 해시가 바이트 그대로(K37)
+     - 있음: `PacketBuilderTest.goldenUsPackets`(꺼짐 — 미국 `packetVersion` 5 패킷 고정본·해시 그대로), 수집기 `test_us_consensus.py::test_백엔드와_화면은_컨센서스_저장본을_읽지_않는다`
+       (읽는 곳은 미국 패킷 `PacketBuilder` 하나 — 이름 상수 `Datasets` 말고, E1b)
+     - 있음(E1b): `PacketBuilderTest.goldenUsPacketsWithConsensus`(켜짐 = 판 6 고정본 — 1b 컨센서스 층만 다름)·`consensusSwitchIsRecordedInTheSettingsHistory`(스위치 저장 한 번이
+       설정 판 +1·`changed_keys`, 끄면 다시 5)·`goldenUsPacketsIgnoreStage2SharedKeys`, `FrameworkServiceTest.goldenRenderIgnoresStage2SharedKeys`(컨센서스를 끈 채 2단계 공유 키 —
+       예약·3단계 스위치 `claude.schemaV3`·`claude.figureCheck` — 를 켜도 미국 패킷·시스템 프롬프트가 바이트 그대로, K37), `KrPacketBuilderTest.krPacketIsVersion6RegardlessOfTheConsensusSwitch`
+       (한국 패킷은 스위치와 상관없이 판 6 — 1b 컨센서스 null + '한국 컨센서스 출처 없음')
 
 ## 배경
 
@@ -95,7 +101,7 @@ v2 2단계는 한국 증시 책이다 — 1억 원씩 네 계좌(수급 규칙 `
    `slippage_cost` = 체결 금액 × bp(원 미만 절사)로 현금에서 뺀다. 미국 책은 지금처럼 체결가에 얹는다(미국 행의 `slippage_cost`는 0).
 5. **출발(K28)** — 출발일 S의 22:30 한국 결정 작업이 출발을 낸다. 입력은 그때 수집된 S 밤 판(결정 행에 동결), 네 계좌 주문은 모두 `NEXT_OPEN`·기준 거래일 S → **S+1 시가 체결**.
    규칙 계획과 Claude 응답이 모두 준비된 뒤 네 계좌의 결정·주문을 **한 트랜잭션**으로 쓰고, Claude가 상한·오류(재시도 1회 뒤)·기한(S+1 01:00)으로 실패하면 어느 계좌에도 쓰지 않고
-   출발을 다음 KR 거래일로 미룬다. 사후 체결·출발일 종가 동결·`paper_start_prices`·`backfill`은 한국에 없다. 수익률의 기준은 S 마감 순자산 1억 원(전액 현금).
+   출발을 다음 KR 거래일로 미룬다(Claude 응답을 받은 뒤 그 쓰기가 실패해도 같음 — 같은 창에서 다시 계획하면 과금 호출을 되풀이하므로, 묶음 E 2차 리뷰). 사후 체결·출발일 종가 동결·`paper_start_prices`·`backfill`은 한국에 없다. 수익률의 기준은 S 마감 순자산 1억 원(전액 현금).
    벤치마크는 069500 100% · 069500 60% + 153130 40%, 출발 뒤 리밸런싱 없음. 묶음 C에서는 벤치마크 두 계좌만 주문을 내고 규칙 계획(D1)·Claude 계획(E2)이 들어갈 자리를 두었다.
    D1부터 규칙 계좌 몫은 S 재선정과 같은 계산(입력 동결 K26)으로 `INITIAL`을 낸다. Claude 몫이 아직 없으면(E2 전) 규칙·벤치마크 셋만 한 트랜잭션으로 출발하고 Claude는
    시작 전 그대로 뒤따라 출발하지 않는다(출발 판정 = 넷 모두 시작 전 — 그 몫이 생긴 뒤 넷을 리셋해 다시 출발). 서버는 E2 뒤에만 출발하므로 운영에서는 넷이 함께 출발한다.
@@ -138,6 +144,9 @@ v2 2단계는 한국 증시 책이다 — 1억 원씩 네 계좌(수급 규칙 `
 - 묶음 C 뒤(2026-10-27, C3까지): 확정 조정은 장부가 관측치 처리 앞에서, 리스크 점검이 새 관측치가 없는 주기에도 돌린다. 요율은 그 체결 때 유효했던 설정 판, 평단은 가격 차이만큼,
   확정 순자산 줄은 장부 상태가 그날 마감일 때만 다시 쓴다 — 금융위 값이 다음 관측치 처리보다 늦으면 그날 줄은 잠정으로 남고, 끝내 확정할 수 없는 체결이 남으면 그 뒤 줄이 확정되지 않는다
   (명세 §4-1 'C3 구현에서 정한 것'·§6).
+- 묶음 E 뒤(2026-10-28, E0~E3·리뷰 두 차례 — 이 브랜치 병합 전): 네 계좌 몫이 모두 있어 운영에서는 네 계좌가 함께 출발하고(E2b), 과금되는 Claude 몫은 다른 몫이 모두 계획된 뒤에만
+  부르며 그 계획 뒤 쓰기가 실패해도 그 세션을 미뤄(같은 창·재기동 뒤에 다시 부르지 않음) 출발 한 세션의 과금 호출은 1~2회다. 미룸·출발 오류 횟수는 그 세션의 저장된 작업 기록으로 판정한다
+  (사용자 결정 v3). `calendar.consensus`를 켜면 미국 패킷 판 6(E1b), 한국 패킷은 늘 판 6. 남은 일은 F(한국 HTTP 경로·화면·QA 스택 출발 점검).
 - **G1·G2는 아직 판정하지 않았다**(1분봉 시가·종가 = 금융위, 표본 1). G1이 실패하면 NXT 종목의 잠정 체결가가 통합 시가로 내려가 확정 조정이 커진다(현금은 결국 금융위로 맞음).
   G2가 실패하면 `NEXT_CLOSE`가 없고 잠정 평가는 통합 종가다(최고가는 금융위 `clpr`로만, 스탑은 확정 재판정).
 - 잠정 순자산은 하루 뒤 다시 쓰인다 — 화면이 잠정·확정·확정 조정 합계를 보여야 한다(F2). 금융위 자료가 빠진 구간(수집기가 7거래일 넘게 꺼짐)의 체결은 확정되지 않은 채 남는다.
