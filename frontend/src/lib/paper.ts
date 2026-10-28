@@ -106,6 +106,8 @@ export const PAPER_SOURCES = {
     + "금융위원회(공공데이터포털) 확정 시가), 판정·반복 오류·제안은 Claude 응답, Anthropic API)",
   krCollection: "토스증권 Open API(관측치·수급) · 금융위원회(공공데이터포털 — 유니버스·확정 시세) · 금융감독원 Open DART · RSS(한국은행·"
     + "재정경제부·국가데이터처·연합뉴스) · 상수(금통위·주요 발표 일정) — 수집기 저장본 읽기만(수집 요청 없음)",
+  krSelection: "대시보드 결정 기록(한국 규칙 계좌, PostgreSQL paper_decisions — 결정 때 읽은 입력 그대로) — 유니버스·상장주식수 "
+    + "금융위원회(공공데이터포털) · 수급 토스증권 · 재무 금융감독원 Open DART",
 } as const;
 
 /**

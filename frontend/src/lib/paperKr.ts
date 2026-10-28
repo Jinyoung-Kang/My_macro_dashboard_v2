@@ -5,7 +5,7 @@
  * 모르는 값은 "—"로 둡니다(0이나 다른 날로 채우지 않음). 한국만의 표기라 lib/paper(미국과 공용)를 크게 만들지 않고 따로 둡니다 —
  * 이 파일이 lib/paper를 가져오고 lib/paper는 이 파일을 가져오지 않습니다(순환 방지).
  */
-import { EMPTY, formatKst, formatNumber, formatPercent, formatSigned } from "./format";
+import { EMPTY, formatKrw, formatKst, formatNumber, formatPercent, formatShares, formatSigned } from "./format";
 import {
   type Badge,
   decisionKindLabel,
@@ -22,6 +22,8 @@ import { formatMoney, type PaperMarketCode } from "./paperMarket";
 import type {
   PaperBookSummary,
   PaperConfirmationTotal,
+  PaperDecisionDetail,
+  PaperDecisionSummary,
   PaperExposureReference,
   PaperFill,
   PaperJobRun,
@@ -422,7 +424,7 @@ export function krReferenceNotes(reference: PaperExposureReference | null | unde
       : "아직 값이 없습니다 — 금융위 확정 종가가 들어온 날부터 그립니다(보통 하루 늦음).",
   ];
   if (reference.stoppedReason) notes.push(`멈춤: ${reference.stoppedReason}`);
-  notes.push("규칙 계좌의 후보 수·'자료 없음' 사유는 종목 선정 탭(한국 몫은 다음 단계)에 있습니다.");
+  notes.push("규칙 계좌의 후보 수·'자료 없음' 사유는 종목 선정 탭에 있습니다.");
   return notes;
 }
 
@@ -1104,4 +1106,309 @@ export function krReviewComparison(input: unknown): {
         : [],
     })),
   };
+}
+
+// ---------------------------------------------------------------- 종목 선정 탭(2단계 명세 §4-6·§5·§6 — 한국 규칙 계좌 재선정)
+
+/** 종목 선정 탭이 읽는 결정 기록 수(최근 순) — 재선정은 한 달에 한두 번이라 50건이면 가장 최근 선정이 들어 있습니다. */
+export const KR_SELECTION_LIMIT = 50;
+
+/** '자료 없음' 사유 이름(백엔드 KrRules.Reason.NO_DATA의 이름표). */
+const NO_DATA_REASON = "자료 없음";
+/** 부채비율로 빠진 표 밖 회사에 '유동자산' 계정이 없을 때 사유에 붙는 경고(백엔드 KrRules.FINANCIAL_TABLE_CHECK). */
+export const KR_FINANCIAL_TABLE_CHECK = "금융업 코드 표 확인 필요";
+
+/** 종목 선정 탭이 읽는 두 결정 — 선정한 가장 최근 결정(재선정·출발)과 가장 최근 결정(목록 첫 줄). */
+export interface KrSelectionPicks {
+  selection: PaperDecisionSummary | null;
+  latest: PaperDecisionSummary | null;
+}
+
+/**
+ * 한국 규칙 계좌 결정 목록(최근 순) → 선정한 가장 최근 결정과 가장 최근 결정. 선정한 결정은 결정 행의 `selectionAsOf`가 있는 것입니다(서버가 선정한
+ * 결정 — 재선정 REBALANCE·출발 INITIAL — 에만 채움, docs/API.md 결정 목록). 번호가 없는 줄은 건너뜁니다.
+ */
+export function krSelectionPicks(decisions: readonly PaperDecisionSummary[] | null | undefined): KrSelectionPicks {
+  const list = listOf(decisions).filter(isRecord).filter((row) => numberOf(row.id) !== null) as unknown as PaperDecisionSummary[];
+  return {
+    selection: list.find((row) => textOf(row.selectionAsOf) !== null) ?? null,
+    latest: list[0] ?? null,
+  };
+}
+
+/** 구성원의 빠진 사유 하나(서버 문장 그대로). */
+export interface KrMemberReason {
+  reason: string;
+  sub: string;
+  detail: string;
+}
+
+/** 유니버스 구성원 한 줄 — 정렬용 원래 값과 화면 글(`text`). 모르는 값은 null·"—". */
+export interface KrMemberRow {
+  key: string;
+  rank: number | null;
+  code: string;
+  name: string;
+  marketCap: number | null;
+  foreign20: number | null;
+  institution20: number | null;
+  foreign5: number | null;
+  institution5: number | null;
+  streak: number | null;
+  /** 20거래일 창에서 수급 기록이 있는 날 수. */
+  flowDays: number | null;
+  roePct: number | null;
+  debtRatioPct: number | null;
+  /** 금융업 코드 표의 회사인가(부채비율 상한을 보지 않음). DART 칸이 없으면 null. */
+  financialSector: boolean | null;
+  score: number | null;
+  candidate: boolean | null;
+  /** 이번 선정의 목표(산 종목)인가. */
+  target: boolean;
+  reasons: KrMemberReason[];
+  /** 사유에 '금융업 코드 표 확인 필요'가 든 줄. */
+  financialCheck: boolean;
+  text: {
+    rank: string;
+    marketCap: string;
+    foreign20: string;
+    institution20: string;
+    foreign5: string;
+    institution5: string;
+    streak: string;
+    roe: string;
+    debtRatio: string;
+    financial: string;
+    score: string;
+    candidate: string;
+    reasons: string;
+  };
+}
+
+/** 구성원 사유 한 줄 — "수급 미달 — 문장"(세부 사유는 문장 앞머리에 이미 있음). */
+function memberReasonText(reason: KrMemberReason): string {
+  return reason.detail ? `${reason.reason} — ${reason.detail}` : reason.reason;
+}
+
+/** 한 종목의 짧은 이름표("005930 삼성전자", 이름을 모르면 코드만). */
+function codeName(code: string, names: ReadonlyMap<string, string>): string {
+  const name = names.get(code);
+  return name ? `${code} ${name}` : code;
+}
+
+/** 결정 입력의 구성원(`input.members`) → 줄. 모양이 틀린 줄은 건너뜁니다. 목표 종목은 `targets`의 코드로 표시합니다. */
+function krMemberRows(members: unknown, targetCodes: ReadonlySet<string>): KrMemberRow[] {
+  return listOf(members).filter(isRecord).flatMap((member, index) => {
+    const code = textOf(member.code);
+    if (!code) return [];
+    const flows = isRecord(member.flows) ? member.flows : {};
+    const dart = isRecord(member.dart) ? member.dart : null;
+    const reasons: KrMemberReason[] = listOf(member.reasons).filter(isRecord).map((entry) => ({
+      reason: textOf(entry.reason) ?? EMPTY,
+      sub: textOf(entry.sub) ?? "",
+      detail: textOf(entry.detail) ?? "",
+    }));
+    const rank = numberOf(member.rank);
+    const streak = numberOf(flows.streak);
+    const roePct = numberOf(dart?.roePct);
+    const debtRatioPct = numberOf(dart?.debtRatioPct);
+    const financialSector = dart && typeof dart.financialSector === "boolean" ? dart.financialSector : null;
+    const score = numberOf(member.score);
+    const candidate = typeof member.candidate === "boolean" ? member.candidate : null;
+    const row: KrMemberRow = {
+      key: `${index}-${code}`,
+      rank,
+      code,
+      name: textOf(member.name) ?? EMPTY,
+      marketCap: numberOf(member.marketCap),
+      foreign20: numberOf(flows.foreign20),
+      institution20: numberOf(flows.institution20),
+      foreign5: numberOf(flows.foreign5),
+      institution5: numberOf(flows.institution5),
+      streak,
+      flowDays: numberOf(flows.days),
+      roePct,
+      debtRatioPct,
+      financialSector,
+      score,
+      candidate,
+      target: targetCodes.has(code),
+      reasons,
+      financialCheck: reasons.some((entry) => entry.detail.includes(KR_FINANCIAL_TABLE_CHECK)),
+      text: {
+        rank: formatNumber(rank, 0),
+        marketCap: formatKrw(numberOf(member.marketCap)),
+        foreign20: formatShares(numberOf(flows.foreign20)),
+        institution20: formatShares(numberOf(flows.institution20)),
+        foreign5: formatShares(numberOf(flows.foreign5)),
+        institution5: formatShares(numberOf(flows.institution5)),
+        streak: streak === null ? EMPTY : `${formatNumber(streak, 0)}일`,
+        roe: pct(roePct, 1),
+        debtRatio: pct(debtRatioPct, 1),
+        financial: financialSector === true ? "금융업 표" : financialSector === false ? "표 밖" : EMPTY,
+        score: formatNumber(score, 4),
+        candidate: targetCodes.has(code) ? "매수 목표" : candidate === true ? "후보" : candidate === false ? "제외" : EMPTY,
+        reasons: reasons.length > 0 ? reasons.map(memberReasonText).join(" · ") : EMPTY,
+      },
+    };
+    return [row];
+  });
+}
+
+/** 종목 하나에 붙는 사유 줄(경고·자료 없음 목록). */
+export interface KrMemberNote {
+  key: string;
+  label: string;
+  detail: string;
+}
+
+/** 종목 선정 탭 본문. */
+export interface KrSelectionView {
+  /** 한국 규칙 계좌 결정이고 입력 구성원(`input.members`)이 있나 — 아니면 화면은 '모양이 다름'만 적습니다. */
+  recognized: boolean;
+  /** 머리 칸 — 결정 번호·기준 거래일·종류·선정 기준일·결정 시각. */
+  head: KrCell[];
+  /** 결정 행 요약(서버 문장). */
+  summary: string | null;
+  /** 선정 요약 칸(재선정일·주기·선정 기준일·따라잡기·후보 수·상한·배분·주식/153130 비중 — krRuleDecisionView 그대로). */
+  cells: KrCell[];
+  /** 선정 안내(재선정일이 아닌 날 — '후보·점수는 참고'). */
+  cellsNote: string | null;
+  targets: { key: string; rank: string; code: string; name: string; score: string; weight: string }[];
+  /** 후보였지만 고르지 않은 종목(상한·배분 밖). */
+  notChosen: string[];
+  exclusions: { key: string; reason: string; count: string }[];
+  /** 입력 칸(유니버스·수급 창·수급 저장본·DART·금융업 표 판·뺀 수급 기록·거래정지·재진입 금지). */
+  input: KrCell[];
+  members: KrMemberRow[];
+  /** 사유에 '금융업 코드 표 확인 필요'가 든 종목 — 위에 경고로 모읍니다. */
+  financialChecks: KrMemberNote[];
+  /** '자료 없음'(DART·접수일·ROE·부채비율·상장주식수)으로 빠진 종목과 사유. */
+  noData: KrMemberNote[];
+  /** 처리 메모(서버 문장 그대로). */
+  notes: string[];
+}
+
+const EMPTY_SELECTION: Omit<KrSelectionView, "recognized" | "head" | "summary"> = {
+  cells: [], cellsNote: null, targets: [], notChosen: [], exclusions: [], input: [], members: [], financialChecks: [], noData: [], notes: [],
+};
+
+/**
+ * 한국 규칙 계좌의 선정한 결정(재선정·출발) 한 건 → 종목 선정 탭 본문(docs/API.md 결정 한 건의 '한국 규칙 계좌' — 입력 동결본
+ * `input.members`·선정 `selection`). 숫자·판정은 서버 값 그대로이고, 화면은 고르고 이름을 붙여 늘어놓기만 합니다. 모양이 틀린 칸은 "—"·빈 목록.
+ */
+export function krSelectionView(decision: PaperDecisionDetail | null | undefined): KrSelectionView {
+  const record = isRecord(decision?.response) ? (decision?.response as Record<string, unknown>) : {};
+  const input = isRecord(record.input) ? record.input : null;
+  const selection = isRecord(record.selection) ? record.selection : null;
+  const head: KrCell[] = decision
+    ? [
+      { key: "id", label: "결정", value: `#${formatNumber(numberOf(decision.id), 0)}` },
+      { key: "asOf", label: "기준 거래일", value: textOf(decision.asOfTradingDate) ?? EMPTY },
+      { key: "kind", label: "종류", value: krDecisionKindLabel(textOf(decision.kind)) },
+      { key: "selectionAsOf", label: "선정 기준일", value: textOf(decision.selectionAsOf) ?? EMPTY },
+      { key: "decidedAt", label: "결정 시각", value: formatKst(textOf(decision.decidedAtKst)) },
+    ]
+    : [];
+  const summary = textOf(decision?.summary);
+  const recognized = decision?.book === "kr_rules" && input !== null && Array.isArray(input.members);
+  if (!recognized) return { recognized: false, head, summary, ...EMPTY_SELECTION };
+
+  const rules = krRuleDecisionView("kr_rules", record);
+  const targetCodes = new Set(listOf(selection?.targets).filter(isRecord).map((target) => textOf(target.code)).filter(
+    (code): code is string => code !== null,
+  ));
+  const members = krMemberRows(input.members, targetCodes);
+  const names = new Map(members.filter((row) => row.name !== EMPTY).map((row) => [row.code, row.name]));
+
+  const inputCells: KrCell[] = [...rules.input];
+  const flowsStatus = isRecord(input.flowsStatus) ? input.flowsStatus : null;
+  inputCells.push({
+    key: "flowsStatus",
+    label: "수급 저장본",
+    value: flowsStatus
+      ? `수집 ${formatKst(textOf(flowsStatus.collectedAtKst))} · 세션 ${textOf(flowsStatus.session) ?? EMPTY} · U 기준일 `
+        + `${textOf(flowsStatus.universeDate) ?? EMPTY}`
+      : EMPTY,
+  });
+  const dart = isRecord(input.dart) ? input.dart : null;
+  inputCells.push({
+    key: "dart",
+    label: "DART 저장본",
+    value: dart
+      ? `수집 ${formatKst(textOf(dart.collectedAtKst))} · ${formatNumber(numberOf(dart.companies), 0)}개사`
+        + `${textOf(dart.receiptRule) ? ` · ${textOf(dart.receiptRule)}` : ""}`
+      : EMPTY,
+  });
+  const rule = isRecord(input.universe) ? textOf(input.universe.rule) : null;
+  if (rule) inputCells.push({ key: "universeRule", label: "U 규칙 판", value: rule });
+  const lockedOut = listOf(input.lockedOut).filter(isRecord).map((entry) => {
+    const code = textOf(entry.code) ?? EMPTY;
+    return `${codeName(code, names)}(~${textOf(entry.until) ?? EMPTY})`;
+  });
+  inputCells.push({ key: "lockedOut", label: "재진입 금지", value: lockedOut.length > 0 ? lockedOut.join(", ") : "없음" });
+
+  return {
+    recognized: true,
+    head,
+    summary,
+    cells: rules.selection,
+    cellsNote: rules.selectionNote,
+    targets: listOf(selection?.targets).filter(isRecord).map((target, index) => {
+      const code = textOf(target.code) ?? EMPTY;
+      return {
+        key: `${index}-${code}`,
+        rank: formatNumber(numberOf(target.rankInPlan), 0),
+        code,
+        name: names.get(code) ?? EMPTY,
+        score: formatNumber(numberOf(target.score), 4),
+        weight: pct(numberOf(target.weightPct), 2),
+      };
+    }),
+    notChosen: stringsOf(selection?.notChosen).map((code) => codeName(code, names)),
+    exclusions: rules.exclusions,
+    input: inputCells,
+    members,
+    financialChecks: members.filter((row) => row.financialCheck).map((row) => ({
+      key: row.key,
+      label: codeName(row.code, names),
+      detail: row.reasons.filter((entry) => entry.detail.includes(KR_FINANCIAL_TABLE_CHECK)).map(memberReasonText).join(" · "),
+    })),
+    noData: members.flatMap((row) => {
+      const missing = row.reasons.filter((entry) => entry.reason === NO_DATA_REASON);
+      return missing.length > 0
+        ? [{ key: row.key, label: codeName(row.code, names), detail: missing.map((entry) => entry.detail || entry.sub || NO_DATA_REASON).join(" · ") }]
+        : [];
+    }),
+    notes: rules.notes,
+  };
+}
+
+/**
+ * 가장 최근 결정이 선정한 결정이 아닐 때의 참고 한 줄 — 그 결정의 후보(점수 순, 매일 셈)는 '참고 — 매수하지 않음'입니다(재선정일·출발 때만 삼).
+ * 선정 칸이 없는 결정(기한 지남·일시정지)은 그 사실과 서버 요약을. 결정이 없으면 null.
+ */
+export function krSelectionReference(decision: PaperDecisionDetail | null | undefined): string | null {
+  if (!decision) return null;
+  const record = isRecord(decision.response) ? (decision.response as Record<string, unknown>) : {};
+  const selection = isRecord(record.selection) ? record.selection : null;
+  const input = isRecord(record.input) ? record.input : null;
+  const head = `가장 최근 결정 ${textOf(decision.asOfTradingDate) ?? EMPTY}(#${formatNumber(numberOf(decision.id), 0)})`;
+  if (!selection) {
+    return `${head}은 선정 칸이 없습니다(기한 지남·일시정지 등) — ${textOf(decision.summary) ?? EMPTY}`;
+  }
+  const names = new Map(
+    listOf(input?.members).filter(isRecord).flatMap((member) => {
+      const code = textOf(member.code);
+      const name = textOf(member.name);
+      return code && name ? [[code, name] as [string, string]] : [];
+    }),
+  );
+  const candidates = listOf(selection.candidates).filter(isRecord).map((entry) => textOf(entry.code)).filter(
+    (code): code is string => code !== null,
+  );
+  const shown = candidates.slice(0, KR_CANDIDATES_SHOWN).map((code) => codeName(code, names));
+  const more = candidates.length - shown.length;
+  const list = candidates.length === 0 ? "후보 없음" : `${shown.join(", ")}${more > 0 ? ` 외 ${formatNumber(more, 0)}` : ""}`;
+  return `참고 — 매수하지 않음: ${head}의 후보 ${formatNumber(candidates.length, 0)}종목(점수 순, 매일 셈 — 재선정일·출발 때만 삼) — ${list}`;
 }

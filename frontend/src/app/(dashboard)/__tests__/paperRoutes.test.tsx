@@ -1,6 +1,7 @@
 /**
  * 🧪 모의매매(미국) 경로 — /paper/us(개요)·/paper/us/[tab](여섯 탭)과 화면의 주소 맞추기.
  * 🧪 모의매매(한국) 경로 — /paper/kr·/paper/kr/[tab](미국과 같은 탭 키, 2단계 명세 §4-16): 같은 규칙, 아직 한국 몫이 없는 탭은 '다음 단계' 안내,
+ *    selection 키의 이름은 '종목 선정',
  *    프레임·설정은 두 시장 공용 안내와 함께 그대로, 주소 맞추기는 그 시장 주소만
  *
  *  - [tab] 라우트: 여섯 키만 만들고(generateStaticParams), 그 탭을 처음 탭으로 넘긴다 — 모르는 조각·overview는 404(notFound)
@@ -248,13 +249,14 @@ describe("한국 화면(/paper/kr)", () => {
   });
 
   it("아직 한국 몫이 없는 탭은 '다음 단계' 안내만(미국 화면을 한국 계좌로 그리지 않음), 프레임·설정은 두 시장 공용 안내와 함께", async () => {
-    render(<PaperScreen market="KR" initialTab="selection" />);
-    const selection = await screen.findByRole("tab", { name: "기관 선정(준비 중)" });
-    expect(selection.getAttribute("aria-selected")).toBe("true");
+    render(<PaperScreen market="KR" initialTab="notes" />);
+    const notes = await screen.findByRole("tab", { name: "메모(준비 중)" });
+    expect(notes.getAttribute("aria-selected")).toBe("true");
     expect(screen.getByText(/탭은 다음 단계에서 엽니다/)).toBeTruthy();
     expect(screen.queryByLabelText("계좌 고르기")).toBeNull();
+    // 종목 선정(키 selection — 미국 '기관 선정' 자리)은 한국 몫이 열렸고 이름만 다릅니다.
     expect(screen.getAllByRole("tab").map((tab) => tab.textContent)).toEqual([
-      "개요", "기관 선정(준비 중)", "보유·체결", "결정 로그", "프레임", "메모(준비 중)", "설정",
+      "개요", "종목 선정", "보유·체결", "결정 로그", "프레임", "메모(준비 중)", "설정",
     ]);
 
     fireEvent.click(screen.getByRole("tab", { name: "설정" }));

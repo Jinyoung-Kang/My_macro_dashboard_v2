@@ -22,6 +22,9 @@ import {
   krManualDecisionNote,
   krPricesFinalText,
   krRuleDecisionView,
+  krSelectionPicks,
+  krSelectionReference,
+  krSelectionView,
   krStartRecords,
   krConfirmationCautions,
   krConfirmationCells,
@@ -47,7 +50,7 @@ import {
   marketJobs,
   withKrReference,
 } from "../paperKr";
-import type { PaperBookSummary, PaperJobRun, PaperPosition } from "../types";
+import type { PaperBookSummary, PaperDecisionDetail, PaperDecisionSummary, PaperJobRun, PaperPosition } from "../types";
 
 const book = (code: string, status: PaperBookSummary["status"]): PaperBookSummary => ({
   code, kind: "BENCHMARK", label: code, status, startedOn: null, initialCash: 100_000_000, cash: 100_000_000, nav: 100_000_000,
@@ -519,5 +522,75 @@ describe("결정 로그(F2 — 여섯 게이트·기한 지남·출발·사건 �
     expect(krPricesFinalText(null).label).toBe("—");
     expect(krManualDecisionNote(13, "22:30 ~ 01:00(다음 날) KST")).toContain("수동 문턱(13회 — 하루 상한 − 정기 몫 예약)");
     expect(krManualDecisionNote(null, "— ~ — KST")).toContain("수동 문턱(— — 하루 상한");
+  });
+});
+
+describe("종목 선정 탭", () => {
+  const row = (id: number, selectionAsOf: string | null): PaperDecisionSummary => ({
+    id, book: "kr_rules", asOfTradingDate: "2026-11-02", kind: selectionAsOf ? "REBALANCE" : "SCHEDULED", status: "OK",
+    decidedAtKst: null, model: null, frameworkVersion: null, settingsVersion: 4, selectionAsOf, targetExposurePct: null, summary: null,
+    orderCount: 0, rejectedCount: 0, pricesFinal: false, error: null,
+  });
+  const detail = (response: unknown, over: Partial<PaperDecisionDetail> = {}): PaperDecisionDetail => ({
+    ...row(40, "2026-11-02"), packet: null, packetHash: null, response, usage: null, noteIds: [], latencyMs: null, retryCount: 0, ...over,
+  });
+
+  it("고르기 — 선정한 가장 최근 결정(selectionAsOf)과 목록 첫 줄, 번호 없는 줄은 건너뜀", () => {
+    const picks = krSelectionPicks([row(45, null), row(40, "2026-11-02"), row(30, "2026-10-30")]);
+    expect([picks.selection?.id, picks.latest?.id]).toEqual([40, 45]);
+    expect(krSelectionPicks([{ id: "x" } as unknown as PaperDecisionSummary, row(30, null)])).toMatchObject({ selection: null, latest: { id: 30 } });
+    expect(krSelectionPicks(null)).toEqual({ selection: null, latest: null });
+  });
+
+  it("모양 틀린 응답은 recognized:false·빈 목록(지어내지 않음), 미국 계좌 결정도 읽지 않음", () => {
+    expect(krSelectionView(detail({ selection: {} }))).toMatchObject({ recognized: false, members: [], targets: [], exclusions: [] });
+    expect(krSelectionView(detail({ input: { members: [] } }, { book: "rules" })).recognized).toBe(false);
+    expect(krSelectionView(null)).toMatchObject({ recognized: false, head: [] });
+  });
+
+  it("구성원 — 모르는 값은 '—'(0으로 채우지 않음), 금융업 표·경고·자료 없음 사유, 목표 종목", () => {
+    const view = krSelectionView(detail({
+      input: {
+        members: [
+          { rank: 1, code: "005930", name: "삼성전자", marketCap: null, flows: { foreign20: null }, dart: null, score: null, candidate: true, reasons: [] },
+          {
+            rank: 3, code: "105560", name: "KB금융", marketCap: 30e12, flows: {}, dart: { roePct: 9.5, debtRatioPct: null, financialSector: true },
+            score: 0.001, candidate: false, reasons: [{ reason: "자료 없음", sub: "ROE 없음", detail: "" }],
+          },
+          {
+            rank: 9, code: "999999", name: "어느 지주", flows: {}, dart: { financialSector: false }, candidate: false,
+            reasons: [{ reason: "자료 없음", sub: "부채비율 없음", detail: "부채비율 없음(…) — '유동자산' 계정 없음: 금융업 코드 표 확인 필요" }],
+          },
+          { code: null },
+        ],
+      },
+      selection: { targets: [{ code: "005930", rankInPlan: 1, weightPct: 70 }] },
+    }));
+    expect(view.recognized).toBe(true);
+    expect(view.members.map((member) => member.code)).toEqual(["005930", "105560", "999999"]);
+    const [first, second, third] = view.members;
+    expect(first.text).toMatchObject({ marketCap: "—", foreign20: "—", roe: "—", financial: "—", score: "—", candidate: "매수 목표", reasons: "—" });
+    expect(second.text).toMatchObject({ marketCap: "30.000조 원", roe: "9.5%", debtRatio: "—", financial: "금융업 표", candidate: "제외" });
+    expect(third.financialCheck).toBe(true);
+    expect(view.financialChecks.map((note) => note.label)).toEqual(["999999 어느 지주"]);
+    expect(view.noData.map((note) => `${note.label} — ${note.detail}`)).toEqual([
+      "105560 KB금융 — ROE 없음",
+      "999999 어느 지주 — 부채비율 없음(…) — '유동자산' 계정 없음: 금융업 코드 표 확인 필요",
+    ]);
+    expect(view.targets).toEqual([{ key: "0-005930", rank: "1", code: "005930", name: "삼성전자", score: "—", weight: "70.00%" }]);
+  });
+
+  it("참고 한 줄 — 후보(이름과 함께, 10종목까지), 선정 칸 없는 결정은 그 사실과 요약, 결정이 없으면 null", () => {
+    const candidates = Array.from({ length: 12 }, (_, index) => ({ code: String(100000 + index) }));
+    expect(krSelectionReference(detail({
+      selection: { candidates }, input: { members: [{ code: "100000", name: "가나" }] },
+    }, { id: 45, asOfTradingDate: "2026-11-04" }))).toBe(
+      "참고 — 매수하지 않음: 가장 최근 결정 2026-11-04(#45)의 후보 12종목(점수 순, 매일 셈 — 재선정일·출발 때만 삼) — "
+        + "100000 가나, 100001, 100002, 100003, 100004, 100005, 100006, 100007, 100008, 100009 외 2",
+    );
+    expect(krSelectionReference(detail({ pastDeadline: true }, { id: 41, summary: "기한 지남" }))).toBe(
+      "가장 최근 결정 2026-11-02(#41)은 선정 칸이 없습니다(기한 지남·일시정지 등) — 기한 지남",
+    );
+    expect(krSelectionReference(null)).toBeNull();
   });
 });

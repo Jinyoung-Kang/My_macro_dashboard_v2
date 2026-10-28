@@ -200,16 +200,20 @@ export interface KrPendingTab {
 }
 
 /**
- * 한국 탭 중 아직 열지 않은 것(2단계 명세 §9 F2 — 다음 화면 커밋이 하나씩 엽니다). 개요·보유·체결·결정 로그는 열렸고, 프레임·설정은 두 시장이 함께 쓰는 화면이라
- * 시장을 밝힌 안내와 함께 그대로 보입니다(사용자 결정 2026-10-29).
+ * 한국 탭 중 아직 열지 않은 것(2단계 명세 §9 F2 — 다음 화면 커밋이 하나씩 엽니다). 개요·종목 선정·보유·체결·결정 로그는 열렸고, 프레임·설정은 두
+ * 시장이 함께 쓰는 화면이라 시장을 밝힌 안내와 함께 그대로 보입니다(사용자 결정 2026-10-29).
  */
 export const KR_PENDING_TABS: Readonly<Partial<Record<PaperTabKey, KrPendingTab>>> = {
-  selection: {
-    opensIn: "2단계 F2 화면 묶음",
-    upcoming: "한국 규칙 재선정 — 유니버스·수급 신호·제외 표·DART/ROE '자료 없음' 사유·'금융업 코드 표 확인 필요' 경고",
-  },
   notes: {
     opensIn: "2단계 F2 화면 묶음",
     upcoming: "한국 시황 메모 — KRX 달력으로 센 기준일·만료",
   },
+};
+
+/**
+ * 한국 화면의 탭 이름 중 미국과 다른 것 — 키(주소 조각)는 같고 이름만 바꿉니다. 미국 '기관 선정'(13F 기관)이 한국에서는 규칙 계좌의 종목
+ * 재선정(코스피 시총 상위 100 · 외국인·기관 수급)이라 '종목 선정'입니다.
+ */
+export const KR_TAB_LABELS: Readonly<Partial<Record<PaperTabKey, string>>> = {
+  selection: "종목 선정",
 };
