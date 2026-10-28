@@ -42,6 +42,8 @@ class FakePaperStore extends PaperStore {
     /** 책 → (종목 → since 봉 거래량) — {@code paper_positions.fill_ref_volume}(V15, 보유 레코드에 없는 칸). */
     Map<String, TreeMap<String, Long>> refVolumes = new HashMap<>();
     TreeMap<Long, Order> orders = new TreeMap<>();
+    /** 주문 번호 → 장부의 그날 보류 표시({@code paper_orders.ledger_hold_*}, V16 — 주문 레코드에 없는 칸). */
+    TreeMap<Long, LedgerHold> ledgerHoldMarks = new TreeMap<>();
     TreeMap<Long, Fill> fills = new TreeMap<>();
     /** 체결 번호 → 확정 조정 행({@code paper_fill_confirmations}, V14 — 체결마다 한 행, 체결을 지우면 함께). */
     TreeMap<Long, FillConfirmation> confirmations = new TreeMap<>();
@@ -291,6 +293,31 @@ class FakePaperStore extends PaperStore {
             }
         }
         return n;
+    }
+
+    @Override
+    public List<LedgerHold> ledgerHolds(String code) {
+        return ledgerHoldMarks.values().stream().filter(h -> h.bookCode().equals(code))
+                .filter(h -> orders.containsKey(h.orderId()) && "PENDING".equals(orders.get(h.orderId()).status())).toList();
+    }
+
+    @Override
+    public void markLedgerHolds(String code, Instant collectedAt, Map<String, String> byTicker) {
+        if (!byTicker.isEmpty() && collectedAt == null) {
+            throw new IllegalArgumentException("장부 보류 표시에 관측치 수집 시각이 없습니다: " + code);
+        }
+        byTicker.forEach((ticker, reason) -> {
+            if (reason == null || reason.isBlank()) {
+                throw new IllegalArgumentException("장부 보류 사유가 비었습니다: " + code + " " + ticker);
+            }
+        });
+        ledgerHoldMarks.values().removeIf(h -> h.bookCode().equals(code));
+        for (Order o : orders.values()) {
+            String reason = byTicker.get(o.ticker());
+            if (o.bookCode().equals(code) && "PENDING".equals(o.status()) && reason != null) {
+                ledgerHoldMarks.put(o.id(), new LedgerHold(o.id(), code, o.ticker(), reason, collectedAt));
+            }
+        }
     }
 
     @Override
@@ -979,6 +1006,7 @@ class FakePaperStore extends PaperStore {
     public void resetBook(String code) {
         decisions.values().removeIf(d -> d.bookCode().equals(code));
         orders.values().removeIf(o -> o.bookCode().equals(code));
+        ledgerHoldMarks.keySet().removeIf(id -> !orders.containsKey(id));
         fills.values().removeIf(f -> f.bookCode().equals(code));
         confirmations.keySet().removeIf(id -> !fills.containsKey(id));
         positions.remove(code);
@@ -994,7 +1022,7 @@ class FakePaperStore extends PaperStore {
                             Map<String, TreeMap<String, Position>> positions,
                             Map<String, TreeMap<String, String>> corpHolds, Map<String, TreeMap<String, Long>> refVolumes,
                             Map<String, TreeMap<String, Lockout>> lockouts, TreeMap<Long, Order> orders,
-                            TreeMap<Long, Fill> fills, TreeMap<Long, FillConfirmation> confirmations,
+                            TreeMap<Long, LedgerHold> ledgerHoldMarks, TreeMap<Long, Fill> fills, TreeMap<Long, FillConfirmation> confirmations,
                             Map<String, TreeMap<LocalDate, NavRow>> nav,
                             List<JobRun> jobRuns, Map<String, StartPrice> startPrices, SettingsRow settings,
                             TreeMap<LocalDate, TreeMap<String, TrackRecordRow>> trackRecords,
@@ -1006,7 +1034,7 @@ class FakePaperStore extends PaperStore {
         Snapshot(FakePaperStore s) {
             this(new TreeMap<>(s.books), new TreeMap<>(s.states), deep(s.positions), deep(s.corpHolds),
                     deep(s.refVolumes), deep(s.lockouts),
-                    new TreeMap<>(s.orders), new TreeMap<>(s.fills), new TreeMap<>(s.confirmations), deep(s.nav),
+                    new TreeMap<>(s.orders), new TreeMap<>(s.ledgerHoldMarks), new TreeMap<>(s.fills), new TreeMap<>(s.confirmations), deep(s.nav),
                     new ArrayList<>(s.jobRuns),
                     new TreeMap<>(s.startPrices), s.settings, deepDates(s.trackRecords), new TreeMap<>(s.selections),
                     new TreeMap<>(s.decisions), new TreeMap<>(s.gates), new TreeMap<>(s.frameworks),
@@ -1022,6 +1050,7 @@ class FakePaperStore extends PaperStore {
             s.refVolumes = refVolumes;
             s.lockouts = lockouts;
             s.orders = orders;
+            s.ledgerHoldMarks = ledgerHoldMarks;
             s.fills = fills;
             s.confirmations = confirmations;
             s.nav = nav;

@@ -95,6 +95,13 @@ public class PaperStore {
     public record CorpActionHold(String bookCode, String ticker, String reason) {
     }
 
+    /**
+     * 한국 장부가 그 관측치(수집 시각 {@code collectedAt})를 처리하며 그날 보류한 대기 주문의 표시({@code paper_orders.ledger_hold_reason}·
+     * {@code ledger_hold_collected_at}, V16 — 2단계 명세 §4-9 'E0'). 결정 게이트 ①이 같은 관측치로 판정할 때 그 주문을 기다리지 않습니다.
+     */
+    public record LedgerHold(long orderId, String bookCode, String ticker, String reason, Instant collectedAt) {
+    }
+
     /** 재진입 금지. {@code untilTradingDate}까지(포함) 다시 사지 않습니다. */
     public record Lockout(String bookCode, String ticker, LocalDate untilTradingDate, String reason) {
     }
@@ -580,15 +587,16 @@ public class PaperStore {
     }
 
     /**
-     * 테이블이 있는가. 수집기가 아직 V8~V15를 적용하지 않았으면 false입니다 — V8이 마지막에 만드는 테이블과 V9~V11이 더하는
+     * 테이블이 있는가. 수집기가 아직 V8~V16을 적용하지 않았으면 false입니다 — V8이 마지막에 만드는 테이블과 V9~V11이 더하는
      * 열({@code paper_track_record.data_source}·{@code paper_decisions.packet_text}·{@code paper_api_usage.est_cost_calls}),
      * V12의 {@code paper_reviews} 테이블, V13이 더하는 {@code paper_books.market}·{@code currency} 열, V14가 더하는
-     * {@code paper_reviews.market}·{@code paper_notes.market} 열, V15가 더하는 {@code paper_positions.fill_ref_volume} 열로 봅니다.
+     * {@code paper_reviews.market}·{@code paper_notes.market} 열, V15가 더하는 {@code paper_positions.fill_ref_volume} 열, V16이 더하는
+     * {@code paper_orders.ledger_hold_reason} 열로 봅니다.
      * V8만 있는 DB(백엔드만 새로 띄운 경우, QA-016)에서 참이면
      * 트랙레코드 읽기·쓰기가 {@code group_code}·{@code data_source} 열과 새 기본키에서, 결정 읽기·쓰기가 {@code packet_text} 열에서,
      * 사용량 읽기·쓰기가 추정 비용 열에서, 주간 복기 작업·화면이 없는 테이블에서, 책 읽기·쓰기가 시장·통화 열에서, 복기·메모
-     * 읽기·쓰기가 시장 열과 새 기본키({@code ON CONFLICT (market, week_ending)})에서, 한국 장부가 since 봉 거래량 열에서 SQL 오류(500)를
-     * 냅니다.
+     * 읽기·쓰기가 시장 열과 새 기본키({@code ON CONFLICT (market, week_ending)})에서, 한국 장부가 since 봉 거래량 열·주문의 그날 보류
+     * 표시 열에서 SQL 오류(500)를 냅니다.
      */
     public boolean ready() {
         return schema.tableExists("paper_api_usage") && schema.columnExists("paper_track_record", "data_source")
@@ -597,7 +605,8 @@ public class PaperStore {
                 && schema.tableExists("paper_reviews")
                 && schema.columnExists("paper_books", "market") && schema.columnExists("paper_books", "currency")
                 && schema.columnExists("paper_reviews", "market") && schema.columnExists("paper_notes", "market")
-                && schema.columnExists("paper_positions", "fill_ref_volume");
+                && schema.columnExists("paper_positions", "fill_ref_volume")
+                && schema.columnExists("paper_orders", "ledger_hold_reason");
     }
 
     /**
@@ -953,6 +962,49 @@ public class PaperStore {
     public int cancelPendingOrders(String code) {
         return jdbc.update("UPDATE paper_orders SET status = 'CANCELLED' "
                 + "WHERE book_code = ? AND status IN ('PENDING', 'PROPOSED')", code);
+    }
+
+    // ------------------------------------------------------------------ 장부의 그날 보류 표시(한국, V16)
+    /**
+     * 한 책 대기 주문(PENDING)의 장부 그날 보류 표시({@link LedgerHold}), 주문 번호 순. 표시가 없는 주문은 빠집니다. 주문 레코드
+     * ({@link Order})에는 이 칸이 없습니다 — {@link #insertOrder}가 쓰지 않는 칸이라(미국 주문 경로 그대로) 한국 장부가
+     * {@link #markLedgerHolds}로 따로 씁니다.
+     */
+    public List<LedgerHold> ledgerHolds(String code) {
+        return jdbc.query("SELECT id, book_code, ticker, ledger_hold_reason, ledger_hold_collected_at FROM paper_orders "
+                        + "WHERE book_code = ? AND status = 'PENDING' AND ledger_hold_reason IS NOT NULL ORDER BY id",
+                (rs, rowNum) -> new LedgerHold(rs.getLong("id"), rs.getString("book_code"), rs.getString("ticker"),
+                        rs.getString("ledger_hold_reason"), instant(rs, "ledger_hold_collected_at")),
+                code);
+    }
+
+    /**
+     * 장부가 수집 시각 {@code collectedAt}의 관측치로 그 책을 처리하며 그날 보류한 종목(코드 → 사유)을 그 종목의 대기 주문(PENDING)에
+     * 표시하고, 그 책의 다른 표시는 모두 지웁니다(보류가 풀렸거나 주문이 대기를 벗어남). 장부 처리 트랜잭션 안에서 부릅니다 — 처리를
+     * 되돌리면 표시도 앞 그대로입니다. 보류가 없으면 지우기만 합니다.
+     *
+     * @throws IllegalArgumentException 보류가 있는데 수집 시각이 없거나 사유가 비었음
+     */
+    public void markLedgerHolds(String code, Instant collectedAt, Map<String, String> byTicker) {
+        if (!byTicker.isEmpty() && collectedAt == null) {
+            throw new IllegalArgumentException("장부 보류 표시에 관측치 수집 시각이 없습니다: " + code);
+        }
+        for (Map.Entry<String, String> hold : byTicker.entrySet()) {
+            if (hold.getValue() == null || hold.getValue().isBlank()) {
+                throw new IllegalArgumentException("장부 보류 사유가 비었습니다: " + code + " " + hold.getKey());
+            }
+        }
+        jdbc.update("UPDATE paper_orders SET ledger_hold_reason = NULL, ledger_hold_collected_at = NULL "
+                + "WHERE book_code = ? AND ledger_hold_reason IS NOT NULL", code);
+        for (Map.Entry<String, String> hold : byTicker.entrySet()) {
+            jdbc.update("UPDATE paper_orders SET ledger_hold_reason = ?, ledger_hold_collected_at = ? "
+                    + "WHERE book_code = ? AND status = 'PENDING' AND ticker = ?", ps -> {
+                        ps.setString(1, hold.getValue());
+                        setInstant(ps, 2, collectedAt);
+                        ps.setString(3, code);
+                        ps.setString(4, hold.getKey());
+                    });
+        }
     }
 
     // ------------------------------------------------------------------ 체결

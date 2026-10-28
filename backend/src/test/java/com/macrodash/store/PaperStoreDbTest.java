@@ -93,9 +93,9 @@ class PaperStoreDbTest {
     }
 
     @Test
-    @DisplayName("테이블이 있다 — V8이 마지막에 만드는 paper_api_usage, V9~V11이 더하는 열, V12의 paper_reviews, V13의 paper_books 시장·통화 열, V14의 복기·메모 시장 열, V15의 since 봉 거래량 열로 준비 여부를 본다")
+    @DisplayName("테이블이 있다 — V8이 마지막에 만드는 paper_api_usage, V9~V11이 더하는 열, V12의 paper_reviews, V13의 paper_books 시장·통화 열, V14의 복기·메모 시장 열, V15의 since 봉 거래량 열, V16의 주문 그날 보류 표시 열로 준비 여부를 본다")
     void ready() {
-        assertThat(store.ready()).as("make db-test로 V8~V15를 적용했는가").isTrue();
+        assertThat(store.ready()).as("make db-test로 V8~V16을 적용했는가").isTrue();
         assertThat(new SchemaCheck(jdbc).columnExists("paper_decisions", "packet_text")).isTrue();
         assertThat(new SchemaCheck(jdbc).tableExists("paper_reviews")).isTrue();
     }
@@ -1576,6 +1576,67 @@ class PaperStoreDbTest {
         assertThatThrownBy(() -> store.atomically(() -> {
             jdbc.execute("ALTER TABLE paper_positions DROP COLUMN fill_ref_volume");
             assertThat(new PaperStore(jdbc, MAPPER, new SchemaCheck(jdbc)).ready()).as("V15 열이 없으면 준비 안 됨").isFalse();
+            throw new Rollback();
+        })).isInstanceOf(Rollback.class);
+        assertThat(new PaperStore(jdbc, MAPPER, new SchemaCheck(jdbc)).ready()).as("되돌린 뒤").isTrue();
+    }
+
+    @Test
+    @DisplayName("V16 장부의 그날 보류 표시(E0, 사용자 결정 v3): 그 책 그 종목의 대기 주문에만 사유·수집 시각(마이크로초까지), 다음 처리는 그 책 표시를 지우고 다시 씀, 대기를 벗어난 주문은 목록에서 빠짐, 빈 사유·수집 시각 없음은 코드가, 한쪽만 값은 CHECK가 막음")
+    void ledgerHoldMarksRoundTrip() {
+        store.insertBookIfAbsent(book(BOOK, "규칙 책"));
+        store.insertBookIfAbsent(book(OTHER_BOOK, "벤치마크"));
+        long sell = store.insertOrder(pendingBuy(BOOK, "000660", null));
+        long buy = store.insertOrder(pendingBuy(BOOK, "000660", null));
+        long other = store.insertOrder(pendingBuy(BOOK, "005930", null));
+        long filled = store.insertOrder(pendingBuy(BOOK, "000660", null));
+        store.markOrderFilled(filled, CLOSE);
+        store.insertOrder(pendingBuy(OTHER_BOOK, "000660", null));
+        assertThat(store.ledgerHolds(BOOK)).as("새 주문·미국 주문은 표시 없음").isEmpty();
+
+        Instant collected = Instant.parse("2026-11-03T12:57:12.345678Z");
+        String reason = "기업행위 분할·병합 — 2:1 — 그날 그 종목 주문 보류";
+        store.markLedgerHolds(BOOK, collected, Map.of("000660", reason));
+        assertThat(store.ledgerHolds(BOOK)).extracting(PaperStore.LedgerHold::orderId).containsExactly(sell, buy);
+        assertThat(store.ledgerHolds(BOOK)).allSatisfy(h -> {
+            assertThat(h.ticker()).isEqualTo("000660");
+            assertThat(h.reason()).isEqualTo(reason);
+            assertThat(h.collectedAt()).as("수집 시각 그대로(마이크로초)").isEqualTo(collected);
+        });
+        assertThat(jdbc.queryForObject("SELECT ledger_hold_reason FROM paper_orders WHERE id = ?", String.class, filled))
+                .as("체결된 주문은 표시하지 않음").isNull();
+        assertThat(store.ledgerHolds(OTHER_BOOK)).as("다른 책의 같은 종목").isEmpty();
+
+        store.markOrderStatus(buy, "CANCELLED", "시험");
+        assertThat(store.ledgerHolds(BOOK)).as("대기를 벗어난 주문은 목록에서 빠짐").extracting(PaperStore.LedgerHold::orderId)
+                .containsExactly(sell);
+
+        Instant next = collected.plusSeconds(86_400);
+        store.markLedgerHolds(BOOK, next, Map.of("005930", "미처리 기업행위 보유 — 시험"));
+        assertThat(store.ledgerHolds(BOOK)).as("다음 처리 — 풀린 보류는 지우고 이번 보류만").extracting(PaperStore.LedgerHold::orderId,
+                PaperStore.LedgerHold::collectedAt).containsExactly(org.assertj.core.groups.Tuple.tuple(other, next));
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM paper_orders WHERE book_code = ? AND ledger_hold_reason IS NOT NULL",
+                Integer.class, BOOK)).as("취소된 주문의 표시도 지움").isEqualTo(1);
+        store.markLedgerHolds(BOOK, next, Map.of());
+        assertThat(store.ledgerHolds(BOOK)).as("보류 없는 처리 — 지우기만").isEmpty();
+
+        assertThatThrownBy(() -> store.markLedgerHolds(BOOK, next, Map.of("000660", " ")))
+                .isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> store.markLedgerHolds(BOOK, null, Map.of("000660", reason)))
+                .isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> jdbc.update("UPDATE paper_orders SET ledger_hold_reason = 'x' WHERE id = ?", sell))
+                .as("CHECK — 사유와 수집 시각은 함께").isInstanceOf(org.springframework.dao.DataIntegrityViolationException.class);
+        assertThat(store.ledgerHolds(OTHER_BOOK)).isEmpty();
+    }
+
+    @Test
+    @DisplayName("V16 전 DB(paper_orders.ledger_hold_reason 열 없음)는 준비 안 됨 — 한국 장부의 SQL 오류 대신 안내 문구, 시험 뒤 되돌림")
+    void readyRequiresV16() {
+        class Rollback extends RuntimeException {
+        }
+        assertThatThrownBy(() -> store.atomically(() -> {
+            jdbc.execute("ALTER TABLE paper_orders DROP COLUMN ledger_hold_reason");
+            assertThat(new PaperStore(jdbc, MAPPER, new SchemaCheck(jdbc)).ready()).as("V16 열이 없으면 준비 안 됨").isFalse();
             throw new Rollback();
         })).isInstanceOf(Rollback.class);
         assertThat(new PaperStore(jdbc, MAPPER, new SchemaCheck(jdbc)).ready()).as("되돌린 뒤").isTrue();
