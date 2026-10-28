@@ -30,6 +30,7 @@ import {
   PAPER_SOURCES,
   type PoolRow,
   quotesLine,
+  type RiskResultView,
   riskResultView,
   rulesStartPrompt,
   type SelectedFilerRow,
@@ -46,12 +47,14 @@ import {
   navSeriesWindow,
   sampleNotes,
 } from "@/lib/paperOverview";
+import { KR_RISK_RUN_NOTE, krRiskResultView } from "@/lib/paperKr";
 import { marketMeta, type PaperMarketCode } from "@/lib/paperMarket";
 import { allowedRangeKey } from "@/lib/patternRows";
 import type {
   PaperInitialDecisionResult,
   PaperInitResult,
   PaperJobRun,
+  PaperKrRiskResult,
   PaperOverviewResponse,
   PaperRiskResult,
   PaperStatusResponse,
@@ -59,6 +62,7 @@ import type {
 import { AccountDetailPanel, accountDetailTitleId } from "./AccountDetailPanel";
 import { ClaudeStartSection } from "./ClaudeStartSection";
 import { GateIndicatorBody } from "./GateIndicatorBody";
+import { KrStartSection } from "./KrStartSection";
 
 /**
  * 책 코드별 선 색. 앞 셋은 charts의 검증된 팔레트, 혼합 벤치마크는 회색입니다
@@ -125,7 +129,8 @@ export function OverviewSection({
   const status = useApi<PaperStatusResponse>(paths.status, 60_000);
 
   const init = useAsyncAction(() => apiPost<PaperInitResult>(paths.init), "초기화하지 못했습니다.");
-  const risk = useAsyncAction(() => apiPost<PaperRiskResult>(paths.runRisk), "리스크 작업을 실행하지 못했습니다.");
+  // 한국은 `?market=KR` — 한국 장부의 실패 기억을 지우고 같은 관측치를 다시 처리(쉬면 ok:false·dormantReason).
+  const risk = useAsyncAction(() => apiPost<PaperKrRiskResult>(paths.runRisk), "리스크 작업을 실행하지 못했습니다.");
   const initElapsed = useElapsedSeconds(init.busy);
   const riskElapsed = useElapsedSeconds(risk.busy);
   // 규칙 책 시작(초기 결정) — 선정·트랙레코드 계산과 사후 체결을 한 번에 하므로 오래 걸릴 수 있어 경과 초를 셉니다.
@@ -287,12 +292,13 @@ export function OverviewSection({
       {!startPrompt && startResult}
 
       {!korea && <ClaudeStartSection overview={overview} onChanged={onChanged} />}
+      {korea && <KrStartSection overview={overview} status={status.data ?? null} onChanged={onChanged} />}
 
       <Card
         title="계좌"
         subtitle={`순자산·수익률(출발 이후)은 마지막 관측치 기준 · 행을 누르면 그 계좌의 상세${
           status.data?.settingsVersion ? ` · 설정 v${status.data.settingsVersion}` : ""
-        }`}
+        }${korea && overview.initialized !== false ? ` · ${KR_RISK_RUN_NOTE}` : ""}`}
         source={ledgerSource}
         actions={
           overview.initialized !== false && (
@@ -303,7 +309,9 @@ export function OverviewSection({
         }
       >
         {risk.error && <div className="mb-3"><Banner tone="warn">{risk.error}</Banner></div>}
-        {risk.result && <div className="mb-3"><RiskResult result={risk.result} /></div>}
+        {risk.result && (
+          <div className="mb-3"><RiskResult view={korea ? krRiskResultView(risk.result) : riskResultView(risk.result)} /></div>
+        )}
         {books.length === 0 ? (
           <p className="text-sm text-muted">
             {korea
@@ -555,8 +563,7 @@ export function OverviewSection({
  * 리스크 작업 결과. ok:false(한 책이 오류로 되돌려짐)면 경고 배너에 오류를, 성공이든 아니든 처리 메모를 목록으로 보입니다 —
  * HTTP 200이라 버튼은 성공으로 끝나므로, 응답의 ok를 보지 않으면 실패가 정상 완료 문구로 보였습니다.
  */
-function RiskResult({ result }: { result: PaperRiskResult }) {
-  const view = riskResultView(result);
+function RiskResult({ view }: { view: RiskResultView }) {
   return (
     <Banner tone={view.tone}>
       {view.warning && <p className="font-semibold">{view.warning}</p>}

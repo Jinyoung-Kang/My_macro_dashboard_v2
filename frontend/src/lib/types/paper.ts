@@ -602,6 +602,47 @@ export interface PaperRiskResult {
   message?: string;
 }
 
+/**
+ * POST /api/paper/run/risk?market=KR — 미국과 같은 `outcome`에 시장·쉬는 사유. 한국이 쉬면 예외가 아니라 `ok:false`·`dormantReason`과 그 사유로
+ * 건너뛴 `outcome`입니다(docs/API.md '시장 단위 실행'). 금융위 확정 조정만 했으면 `outcome.confirmed`(행 수).
+ */
+export interface PaperKrRiskResult extends PaperRiskResult {
+  market?: PaperMarketCode;
+  dormantReason?: string | null;
+}
+
+/** POST /api/paper/init?market=KR — 한국 초기화(멱등). 출발일 없음·달력 없음·거래일 아님·출발 기한 지남은 400(서버 문구). */
+export interface PaperKrInitResult {
+  ok: boolean;
+  market?: PaperMarketCode;
+  startDate?: string | null;
+  /** 이번에 만든 한국 계좌 코드(이미 있으면 빈 목록). */
+  created?: string[];
+  settingsCreated?: boolean;
+  settingsVersion?: number | null;
+  /** 설정 행에 없어 기본값으로 채운 kr.* 키(채운 키가 없으면 빈 목록 — 판을 올리지 않음). */
+  settingsKeysWritten?: string[];
+  message?: string;
+}
+
+/** 한국 출발 단추의 결과(STARTED·ALREADY_STARTED·START_POSTPONED·ERROR). 모르는 값은 받은 글자 그대로 보입니다. */
+export type PaperKrStartOutcome = "STARTED" | "ALREADY_STARTED" | "START_POSTPONED" | "ERROR";
+
+/**
+ * POST /api/paper/run/initial-decision?market=KR(본문 없음) — 정기 출발을 같은 창·같은 게이트·같은 네 계좌 몫으로 앞당김. 창 밖·게이트 미달·
+ * 이미 미룬 세션은 400(서버 문구). `record`는 그 출발의 작업 기록 상세(JSON 그대로 — 화면은 아는 칸만 고름).
+ */
+export interface PaperKrStartResult {
+  ok: boolean;
+  market?: PaperMarketCode;
+  outcome?: PaperKrStartOutcome | string | null;
+  tradingDate?: string | null;
+  message?: string | null;
+  decisions?: PaperDecisionSummary[] | null;
+  books?: PaperBookSummary[] | null;
+  record?: unknown;
+}
+
 /** 트랙레코드 순위 기준(설정 `trackRecord.metric`, 명세 R10·D20). 기본 CAGR. */
 export type PaperTrackRecordMetric = "CAGR" | "EXCESS_VS_SPY" | "SHARPE";
 

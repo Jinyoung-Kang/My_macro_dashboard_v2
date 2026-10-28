@@ -225,3 +225,95 @@ describe("자료", () => {
     expect(await within(panel).findByText("1.5bp")).toBeTruthy();
   });
 });
+
+const WAITING_BOOKS = KR_BOOKS.map((entry) => ({
+  ...entry, status: "NOT_STARTED", startedOn: null, nav: 100_000_000, cash: 100_000_000, returnPct: null, stats: null,
+}));
+
+describe("출발 상태(초기화·출발 단추)", () => {
+  it("초기화 전(출발일은 있음)에만 '한국 초기화' — POST init?market=KR, 결과 줄", async () => {
+    reads["/api/paper/overview?market=KR"] = () => Promise.resolve({ ...DORMANT, dormantReason: "한국 계좌가 없습니다 — 한국 초기화를 누르세요", startDate: "2026-10-29" });
+    api.apiPost.mockResolvedValue({ ok: true, market: "KR", startDate: "2026-10-29", created: ["kr_rules", "kr_claude", "kr_bench_k200", "kr_bench_mix"],
+      settingsCreated: false, settingsVersion: 4, settingsKeysWritten: [] });
+    render(<PaperPage market="KR" />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "한국 초기화" }));
+    await waitFor(() => expect(api.apiPost).toHaveBeenCalledWith("/api/paper/init?market=KR"));
+    expect(await screen.findByText(/만든 계좌 kr_rules, kr_claude, kr_bench_k200, kr_bench_mix · 설정 그대로\(v4\)/)).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "출발 지금 실행" })).toBeNull();
+  });
+
+  it("초기화 400은 서버 문구 그대로", async () => {
+    reads["/api/paper/overview?market=KR"] = () => Promise.resolve({ ...DORMANT, startDate: "2026-10-31" });
+    api.apiPost.mockRejectedValue(new Error("한국 출발일 2026-10-31은 KRX 거래일이 아닙니다"));
+    render(<PaperPage market="KR" />);
+    fireEvent.click(await screen.findByRole("button", { name: "한국 초기화" }));
+    expect(await screen.findByText("한국 출발일 2026-10-31은 KRX 거래일이 아닙니다")).toBeTruthy();
+  });
+
+  it("쉬는 한국(출발일 없음)에는 초기화·출발 단추가 없다", async () => {
+    reads["/api/paper/overview?market=KR"] = () => Promise.resolve(DORMANT);
+    render(<PaperPage market="KR" />);
+    expect(await screen.findByText("쉬는 동안에는 초기화·출발 단추가 없습니다")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /한국 초기화|출발 지금 실행|리스크 지금 실행/ })).toBeNull();
+  });
+
+  it("출발 대기: 결정 창(설정)·최근 출발 기록·수동 문턱, 확인 뒤 본문 없이 POST initial-decision?market=KR — ALREADY_STARTED 표시", async () => {
+    reads["/api/paper/overview?market=KR"] = () => Promise.resolve({
+      ...KR_OVERVIEW, books: WAITING_BOOKS, pendingBackfill: ["kr_bench_k200", "kr_bench_mix"],
+      jobs: [{ job: "kr.decision", startedAtKst: "2026-10-29 22:30 KST", finishedAtKst: "2026-10-29 22:50 KST", outcome: "START_WAITING",
+        detail: { start: true, tradingDate: "2026-10-29", checks: 3, reason: "⑤ 069500 D 봉 없음" } }],
+    });
+    reads["/api/paper/status?market=KR"] = () => Promise.resolve({
+      ...KR_STATUS, apiUsage: { today: { day: "2026-10-29", calls: 2, cap: 20, scheduledReserve: 7, manualLimit: 13, inputTokens: 0,
+        outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 }, month: { month: "2026-10", days: 1, calls: 2, inputTokens: 0,
+        outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 } },
+    });
+    reads["/api/paper/settings"] = () => Promise.resolve({ available: true, version: 4,
+      body: { kr: { decisionTimeKst: "22:30", decisionDeadlineKst: "01:00" } } });
+    api.apiPost.mockResolvedValue({ ok: true, market: "KR", outcome: "ALREADY_STARTED", tradingDate: "2026-10-29", message: null,
+      decisions: [], books: [], record: null });
+    render(<PaperPage market="KR" />);
+
+    expect(await screen.findByText("출발일 2026-10-29 · 결정 창 22:30 ~ 01:00(다음 날) KST")).toBeTruthy();
+    expect(screen.getByText(/최근 출발 기록: 2026-10-29 22:30 START_WAITING · 세션 2026-10-29 · 이어진 주기 3번 · 사유 ⑤ 069500 D 봉 없음/))
+      .toBeTruthy();
+    expect(screen.queryByText("벤치마크 사후 체결 대기")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "출발 지금 실행" }));
+    const dialog = await screen.findByRole("dialog", { name: "한국 출발을 지금 실행할까요?" });
+    await waitFor(() => expect(within(dialog).getByText(/수동 문턱 13회 안에서만, 오늘 2회 씀/)).toBeTruthy());
+    expect(api.apiPost).not.toHaveBeenCalled();
+    fireEvent.click(within(dialog).getByRole("button", { name: "출발 실행" }));
+
+    await waitFor(() => expect(api.apiPost).toHaveBeenCalledTimes(1));
+    expect(api.apiPost.mock.calls[0]).toEqual(["/api/paper/run/initial-decision?market=KR"]);
+    expect(await screen.findByText("이미 출발했습니다(2026-10-29) — 아무것도 하지 않았습니다")).toBeTruthy();
+  });
+
+  it("출발이 미뤄지면 경고색으로 서버 문구와 미룬 날·과금 호출", async () => {
+    reads["/api/paper/overview?market=KR"] = () => Promise.resolve({ ...KR_OVERVIEW, books: WAITING_BOOKS });
+    reads["/api/paper/status?market=KR"] = () => Promise.resolve(KR_STATUS);
+    api.apiPost.mockResolvedValue({ ok: false, market: "KR", outcome: "START_POSTPONED", tradingDate: "2026-10-29",
+      message: "Claude 출발 호출 실패 — 다음 KR 거래일로", decisions: [], books: [],
+      record: { start: true, tradingDate: "2026-10-29", postponedTo: "2026-10-30", calls: { kr_claude: { calls: 2 } } } });
+    render(<PaperPage market="KR" />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "출발 지금 실행" }));
+    fireEvent.click(within(await screen.findByRole("dialog")).getByRole("button", { name: "출발 실행" }));
+    expect(await screen.findByText("출발을 다음 KR 거래일로 미뤘습니다(2026-10-29) — Claude 출발 호출 실패 — 다음 KR 거래일로")).toBeTruthy();
+    expect(screen.getByText(/다음 KR 거래일 2026-10-30로 미룸 · 과금 호출 kr_claude 2회/)).toBeTruthy();
+  });
+
+  it("리스크 지금 실행은 한국 경로 — 쉬는 사유면 그 사유를 경고로, 단추 설명(실패 기억 복구 경로)", async () => {
+    reads["/api/paper/overview?market=KR"] = () => Promise.resolve({ ...KR_OVERVIEW, books: WAITING_BOOKS });
+    reads["/api/paper/status?market=KR"] = () => Promise.resolve(KR_STATUS);
+    api.apiPost.mockResolvedValue({ ok: false, market: "KR", dormantReason: "한국 계좌가 없습니다",
+      outcome: { filled: 0, stopped: 0, expired: 0, splits: 0, booksProcessed: [], skippedReason: "쉼", notes: [], errors: [] } });
+    render(<PaperPage market="KR" />);
+
+    expect(await screen.findByText(/한국 장부의 실패 기억을 지우고 같은 관측치를 다시 처리합니다/)).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "리스크 지금 실행" }));
+    await waitFor(() => expect(api.apiPost).toHaveBeenCalledWith("/api/paper/run/risk?market=KR"));
+    expect(await screen.findByText("한국 책이 쉬고 있어 리스크 점검을 하지 않았습니다 — 한국 계좌가 없습니다")).toBeTruthy();
+  });
+});
