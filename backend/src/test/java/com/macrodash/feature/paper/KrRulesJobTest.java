@@ -852,6 +852,39 @@ class KrRulesJobTest {
     }
 
     @Test
+    @DisplayName("사용자 결정 w12는 출발 호출만 — 한국 정기 Claude 결정의 429는 그 실행에서 기다리거나 다시 부르지 않고 API_ERROR 행(재시도 0)으로 남고, 재시도는 예전처럼 다음 주기(22:40)에 같은 행으로 한 번")
+    void regularKrClaudeDecisionDoesNotWaitAfterRateLimit() {
+        KrClaudeFixtures.FakeAi fake = new KrClaudeFixtures.FakeAi();
+        fake.rateLimited().answer(KrClaudeFixtures.decision(0, "관망"));
+        KrClaudeFixtures.FakeSleeper sleeper = new KrClaudeFixtures.FakeSleeper(clock);
+        PaperMarketData marketData = new PaperMarketData(reader, repository);
+        PaperLedgerService ledger = new PaperLedgerService(store, marketData, PaperFixtures.MAPPER);
+        job = new PaperDecisionJob(store, reader, marketData, ledger, mock(PaperSelectionService.class),
+                mock(RuleBookService.class), KrClaudeFixtures.service(store, reader, repository, marketData, ledger,
+                KrRuleBookServiceTest.config(), clock, fake.ai, sleeper), PaperFixtures.settings(store),
+                KrRuleBookServiceTest.config(), PaperFixtures.MAPPER, clock);
+        store.updateBookStatus(PaperBooks.KR_CLAUDE, PaperBooks.ACTIVE);
+        store.updateBookStartedOn(PaperBooks.KR_CLAUDE, S);
+        session(R);
+
+        PaperDecisionJob.Result first = runAt("2026-11-02T22:30");
+
+        assertThat(first.claude().status()).isEqualTo(ClaudeBookService.STATUS_API_ERROR);
+        assertThat(first.claude().error()).contains("[RATE_LIMIT]");
+        assertThat(first.claude().retryCount()).isZero();
+        assertThat(fake.requests).as("그 실행에서 다시 부르지 않음").hasSize(1);
+        assertThat(fake.requests.get(0).timeoutSeconds()).as("대기 한도는 설정 값 그대로").isEqualTo(300);
+        assertThat(sleeper.sleeps).as("기다리지 않음").isEmpty();
+
+        PaperDecisionJob.Result retried = runAt("2026-11-02T22:40");
+        assertThat(retried.claude().id()).as("같은 행을 다시 냄").isEqualTo(first.claude().id());
+        assertThat(retried.claude().status()).isEqualTo(ClaudeBookService.STATUS_NO_TRADE);
+        assertThat(retried.claude().retryCount()).isEqualTo(1);
+        assertThat(fake.requests).hasSize(2);
+        assertThat(sleeper.sleeps).isEmpty();
+    }
+
+    @Test
     @DisplayName("일시정지 규칙 계좌 — 장부가 사고팔지 않아 남은 기준일 < D 대기 주문이 그 세션을 막지 않고 SKIPPED(입력·게이트·주문 없음)")
     void pausedBookIsNotHeldByGateOne() {
         session(R);
