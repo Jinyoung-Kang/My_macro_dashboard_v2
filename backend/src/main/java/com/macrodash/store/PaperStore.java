@@ -1188,9 +1188,38 @@ public class PaperStore {
     /** 모든 작업의 최근 기록 {@code limit}건, 최근 순(시작 시각). */
     public List<JobRun> recentJobRuns(int limit) {
         return jdbc.query("SELECT " + JOB_COLUMNS + " FROM paper_job_runs ORDER BY started_at DESC, id DESC LIMIT ?",
-                (rs, rowNum) -> new JobRun(rs.getLong("id"), rs.getString("job"), instant(rs, "started_at"),
-                        instant(rs, "finished_at"), rs.getString("outcome"), json(rs, "detail")),
-                limit);
+                jobRunMapper(), limit);
+    }
+
+    /**
+     * 그 작업의 기록 중 상세 {@code tradingDate}가 그 날인 것, 최근 순(시작 시각, 번호). 작업마다 최근 {@value #JOB_RUNS_KEPT}건만
+     * 남으므로({@link #recordJobRun}) 그 안에서만 찾습니다 — 한국 결정 작업이 그 세션의 출발 미룸·기한 지남·기다림 판정을 재기동해도 같게
+     * 다시 읽습니다(2단계 명세 §4-9 'E0', 사용자 결정 v3).
+     */
+    public List<JobRun> jobRunsFor(String job, LocalDate tradingDate) {
+        return jdbc.query("SELECT " + JOB_COLUMNS + " FROM paper_job_runs WHERE job = ? AND detail->>'tradingDate' = ? "
+                + "ORDER BY started_at DESC, id DESC", jobRunMapper(), job, tradingDate.toString());
+    }
+
+    /**
+     * 작업 기록 한 건의 끝 시각과 상세를 바꿉니다(시작 시각·결과는 그대로, {@code detail}이 null이면 {@code {}}) — 같은 기다림이 다음
+     * 주기에도 이어질 때 그 줄을 늘립니다(한국 결정 작업의 '기다림 한 줄', 2단계 명세 §4-9 'E0').
+     *
+     * @return 그 기록이 있어 바꿨으면 true
+     */
+    public boolean updateJobRun(long id, Instant finishedAt, JsonNode detail) {
+        String detailJson = detail == null ? null : mapper.writeValueAsString(detail);
+        return jdbc.update("UPDATE paper_job_runs SET finished_at = ?, detail = COALESCE(CAST(? AS jsonb), '{}'::jsonb) "
+                + "WHERE id = ?", ps -> {
+                    setInstant(ps, 1, finishedAt);
+                    ps.setString(2, detailJson);
+                    ps.setLong(3, id);
+                }) == 1;
+    }
+
+    private RowMapper<JobRun> jobRunMapper() {
+        return (rs, rowNum) -> new JobRun(rs.getLong("id"), rs.getString("job"), instant(rs, "started_at"),
+                instant(rs, "finished_at"), rs.getString("outcome"), json(rs, "detail"));
     }
 
     // ------------------------------------------------------------------ 설정

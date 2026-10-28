@@ -440,6 +440,26 @@ class FakePaperStore extends PaperStore {
         return out.stream().limit(limit).toList();
     }
 
+    @Override
+    public List<JobRun> jobRunsFor(String job, LocalDate tradingDate) {
+        return jobRuns.stream().filter(r -> r.job().equals(job))
+                .filter(r -> tradingDate.toString().equals(com.macrodash.support.Json.asText(r.detail(), "tradingDate")))
+                .sorted(Comparator.comparing(JobRun::startedAt).thenComparing(JobRun::id).reversed()).toList();
+    }
+
+    @Override
+    public boolean updateJobRun(long id, Instant finishedAt, JsonNode detail) {
+        for (int i = 0; i < jobRuns.size(); i++) {
+            JobRun r = jobRuns.get(i);
+            if (r.id() == id) {
+                jobRuns.set(i, new JobRun(r.id(), r.job(), r.startedAt(), finishedAt, r.outcome(),
+                        detail == null ? new ObjectMapper().createObjectNode() : detail));
+                return true;
+            }
+        }
+        return false;
+    }
+
     // ------------------------------------------------------------------ 출발일 종가
     @Override
     public Optional<StartPrice> startPrice(String ticker) {

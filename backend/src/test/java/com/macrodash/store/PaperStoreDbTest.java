@@ -414,6 +414,40 @@ class PaperStoreDbTest {
     }
 
     @Test
+    @DisplayName("그 세션의 작업 기록(E0, 사용자 결정 v3): 그 작업·상세 tradingDate가 그 날인 기록만 최근 순(시작 시각, 번호), 줄 늘리기는 끝 시각·상세만 바꾸고 시작 시각·결과는 그대로, 없는 번호는 false")
+    void jobRunsForTheSessionAndExtendingALine() {
+        Instant base = Instant.parse("2099-02-01T13:30:00Z");
+        store.recordJobRun("t_decision", base, base.plusSeconds(1), "DATA_NOT_READY",
+                MAPPER.valueToTree(Map.of("tradingDate", "2099-02-01", "checks", 1)));
+        store.recordJobRun("t_decision", base.plusSeconds(600), base.plusSeconds(601), "DECIDED",
+                MAPPER.valueToTree(Map.of("tradingDate", "2099-02-01")));
+        store.recordJobRun("t_decision", base.plusSeconds(1_200), base.plusSeconds(1_201), "DECIDED",
+                MAPPER.valueToTree(Map.of("tradingDate", "2099-02-02")));
+        store.recordJobRun("t_other", base.plusSeconds(1_800), base.plusSeconds(1_801), "DECIDED",
+                MAPPER.valueToTree(Map.of("tradingDate", "2099-02-01")));
+        store.recordJobRun("t_decision", base.plusSeconds(2_400), base.plusSeconds(2_401), "NO_CALENDAR", null);
+
+        List<PaperStore.JobRun> session = store.jobRunsFor("t_decision", LocalDate.of(2099, 2, 1));
+        assertThat(session).extracting(PaperStore.JobRun::outcome).as("다른 날·다른 작업·날짜 없는 기록은 빠짐, 최근 순")
+                .containsExactly("DECIDED", "DATA_NOT_READY");
+        assertThat(store.jobRunsFor("t_decision", LocalDate.of(2099, 2, 3))).isEmpty();
+
+        PaperStore.JobRun line = session.get(1);
+        assertThat(store.updateJobRun(line.id(), base.plusSeconds(1_500),
+                MAPPER.valueToTree(Map.of("tradingDate", "2099-02-01", "checks", 3)))).isTrue();
+        PaperStore.JobRun extended = store.jobRunsFor("t_decision", LocalDate.of(2099, 2, 1)).get(1);
+        assertThat(extended.id()).isEqualTo(line.id());
+        assertThat(extended.startedAt()).as("시작 시각 그대로").isEqualTo(base);
+        assertThat(extended.finishedAt()).isEqualTo(base.plusSeconds(1_500));
+        assertThat(extended.outcome()).isEqualTo("DATA_NOT_READY");
+        assertThat(extended.detail().path("checks").asInt()).isEqualTo(3);
+        assertThat(store.updateJobRun(line.id(), base.plusSeconds(1_600), null)).isTrue();
+        assertThat(store.jobRunsFor("t_decision", LocalDate.of(2099, 2, 1))).as("상세가 null이면 {} — 날짜가 없어 빠짐")
+                .extracting(PaperStore.JobRun::outcome).containsExactly("DECIDED");
+        assertThat(store.updateJobRun(-1, base, null)).isFalse();
+    }
+
+    @Test
     @DisplayName("주문: 넣은 값이 그대로 돌아오고, 만료·취소·체결 표시는 조건에 맞는 것만 바꾼다")
     void ordersLifecycle() {
         store.insertBookIfAbsent(book(BOOK, "규칙 책"));
