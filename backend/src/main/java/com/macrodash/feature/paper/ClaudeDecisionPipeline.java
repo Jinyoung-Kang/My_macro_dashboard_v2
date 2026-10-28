@@ -27,6 +27,7 @@ import tools.jackson.databind.ObjectMapper;
 import tools.jackson.databind.node.ObjectNode;
 
 import java.time.Clock;
+import java.time.Instant;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -85,15 +86,51 @@ final class ClaudeDecisionPipeline {
     }
 
     /**
-     * Claude 결정 한 번이 시장마다 다르게 쓰는 것(2단계 명세 §9 A6) — 시장 묶음(책·달력·관측치·프롬프트의 시장별 부분), 패킷, 응답
-     * 스키마 파일(API용과 검사용이 같은 파일 — D26).
+     * 그 실행의 관측치·읽은 순간까지 받는 패킷 — 한국({@link KrPacketBuilder#build}, 2단계 명세 §4-7 'E1a 구현에서 정한 것'). 결정 게이트가 본
+     * 관측치로 만들고 읽은 순간 뒤에 수집된 값은 쓰지 않습니다(그래서 결정 행의 동결본 = 보낸 패킷이 그 순간의 판입니다).
      */
-    record MarketContext(PaperMarket market, PacketSource packets, String schemaResource) {
+    @FunctionalInterface
+    interface RunPacketSource {
+        Packet build(MarketRun run, LocalDate asOf, String kind, boolean initial, Integer frameworkVersion,
+                     Optional<Quotes> quotes, Instant readAt);
+    }
+
+    /**
+     * 그 결정이 본 그 실행의 재료(한국 — E2b): 결정 게이트가 본 관측치(장부·체결 가능 판정이 쓴 것 — 패킷 {@code 8_prices}·정수 주 기준 가격이
+     * 같은 값), 읽은 순간(그 실행의 지금 — 규칙 계좌 입력 동결과 같은 순간), 결정 행 응답에 남길 자료 게이트 판정(① 그 계좌 · ②~⑥, 없으면 null).
+     * 미국 결정은 이것 없이(null) 패킷·검증이 저장본을 그때 읽습니다.
+     */
+    record Observed(Optional<Quotes> quotes, Instant readAt, List<Map<String, Object>> gates) {
+
+        Observed {
+            quotes = quotes == null ? Optional.empty() : quotes;
+            java.util.Objects.requireNonNull(readAt, "readAt");
+            gates = gates == null ? null : List.copyOf(gates);
+        }
+    }
+
+    /**
+     * Claude 결정 한 번이 시장마다 다르게 쓰는 것(2단계 명세 §9 A6) — 시장 묶음(책·달력·관측치·프롬프트의 시장별 부분), 패킷, 응답
+     * 스키마 파일(API용과 검사용이 같은 파일 — D26). 패킷은 둘 중 하나입니다: 설정 행만 받는 {@code packets}(미국), 그 실행의 관측치·읽은 순간까지
+     * 받는 {@code runPackets}(한국 — 결정이 {@link Observed}를 넘겨야 함).
+     */
+    record MarketContext(PaperMarket market, PacketSource packets, RunPacketSource runPackets, String schemaResource) {
+
+        MarketContext {
+            if ((packets == null) == (runPackets == null)) {
+                throw new IllegalArgumentException("결정 문맥의 패킷은 packets·runPackets 중 하나입니다: " + market);
+            }
+        }
+
+        MarketContext(PaperMarket market, PacketSource packets, String schemaResource) {
+            this(market, packets, null, schemaResource);
+        }
     }
 
     private final PaperMarket market;
     private final PaperStore store;
     private final PacketSource packets;
+    private final RunPacketSource runPackets;
     private final FrameworkService framework;
     private final PaperApiCalls calls;
     private final AiService ai;
@@ -107,6 +144,7 @@ final class ClaudeDecisionPipeline {
         this.market = context.market();
         this.store = store;
         this.packets = context.packets();
+        this.runPackets = context.runPackets();
         this.framework = framework;
         this.calls = calls;
         this.ai = ai;
@@ -122,6 +160,7 @@ final class ClaudeDecisionPipeline {
         this.market = run;
         this.store = base.store;
         this.packets = base.packets;
+        this.runPackets = base.runPackets;
         this.framework = base.framework;
         this.calls = base.calls;
         this.ai = base.ai;
@@ -147,6 +186,11 @@ final class ClaudeDecisionPipeline {
     /** 이 파이프라인의 시장 문맥 — 서비스가 만든 것은 시장 묶음, {@link #bind}한 사본은 그 실행. */
     PaperMarket market() {
         return market;
+    }
+
+    /** 결정마다 그 실행의 재료({@link Observed})가 있어야 하는 문맥인가 — 패킷이 그 실행의 관측치·읽은 순간을 받는 시장(한국). */
+    boolean needsObservation() {
+        return runPackets != null;
     }
 
     // ------------------------------------------------------------------ 호출
@@ -179,9 +223,20 @@ final class ClaudeDecisionPipeline {
      */
     Attempt attempt(LocalDate asOf, String kind, boolean initial, SettingsRow row, ClaudeSettings claude,
                     LocalDate today, boolean scheduled) {
+        return attempt(asOf, kind, initial, row, claude, today, scheduled, null);
+    }
+
+    /**
+     * {@link #attempt(LocalDate, String, boolean, SettingsRow, ClaudeSettings, LocalDate, boolean)}에 그 실행의 재료를 더한 것 — 패킷이 그 실행의
+     * 관측치·읽은 순간을 받는 문맥(한국 — {@link #needsObservation})이면 {@code observed}가 있어야 합니다(실행에 묶은 사본 — {@link #bind}).
+     *
+     * @throws IllegalStateException 그런 문맥인데 재료가 없거나 실행에 묶지 않은 파이프라인
+     */
+    Attempt attempt(LocalDate asOf, String kind, boolean initial, SettingsRow row, ClaudeSettings claude,
+                    LocalDate today, boolean scheduled, Observed observed) {
         FrameworkService.Frame frame = framework.current();
         String system = FrameworkService.render(market, frame.body(), frame.version(), row.body());
-        Packet packet = packets.build(asOf, kind, initial, frame.version(), row);
+        Packet packet = packet(asOf, kind, initial, frame.version(), row, observed);
         // 정기 작업은 상한까지, 수동 호출은 정기 작업 몫을 남긴 문턱까지(2단계 명세 §4-10 — 같은 SQL의 문턱만 다름).
         if (calls.reserve(today, claude.callLimit(scheduled)).isEmpty()) {
             return null;
@@ -198,6 +253,21 @@ final class ClaudeDecisionPipeline {
         // 키가 없어 보내지 않았으면 잡은 호출을 돌려놓고, 아니면 토큰·추정 비용을 더합니다(기록 실패는 로그만 — 받은 응답을 버리지 않음).
         calls.record(today, claude.model(), result);
         return classify(packet, frame, result, claude);
+    }
+
+    /** 그 문맥의 패킷 — 미국은 설정 행으로, 한국은 그 실행·관측치·읽은 순간으로({@link MarketContext}). */
+    private Packet packet(LocalDate asOf, String kind, boolean initial, Integer frameworkVersion, SettingsRow row,
+                          Observed observed) {
+        if (runPackets == null) {
+            return packets.build(asOf, kind, initial, frameworkVersion, row);
+        }
+        if (observed == null) {
+            throw new IllegalStateException(market.code() + " Claude 결정은 그 실행의 관측치·읽은 순간이 필요합니다(결정 작업이 넘김)");
+        }
+        if (!(market instanceof MarketRun run)) {
+            throw new IllegalStateException(market.code() + " Claude 결정 파이프라인이 실행에 묶이지 않았습니다");
+        }
+        return runPackets.build(run, asOf, kind, initial, frameworkVersion, observed.quotes(), observed.readAt());
     }
 
     /** 결과 → 상태(클래스 설명의 실패 분류). 성공이면 JSON으로 읽고 스키마 전체로 검사합니다. */

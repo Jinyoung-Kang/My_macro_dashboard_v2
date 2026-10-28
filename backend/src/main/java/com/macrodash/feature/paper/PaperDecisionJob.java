@@ -573,7 +573,10 @@ public class PaperDecisionJob {
                         waiting.add(first.id() + " " + first.note());
                         detail.put("claude", "자료 게이트 미달 — 다음 주기에 다시: " + first.id() + " " + first.note());
                     } else {
-                        claudeDecision = claude.decide(market, d, RuleBookService.SCHEDULED, pricesFinal);
+                        // 한국 Claude 계좌 — 그 실행의 관측치(게이트·장부가 본 것)와 읽은 순간(이 실행의 지금 — 규칙 계좌 입력 동결과 같음)으로
+                        // 패킷을 만들고 같은 관측치로 검증합니다(E2b). 결정 행 응답에 그 계좌의 ① + ②~⑥.
+                        claudeDecision = claude.decide(market, d, RuleBookService.SCHEDULED, pricesFinal,
+                                new ClaudeDecisionPipeline.Observed(inputs.quotes(), now, views(withFirst(first, data))));
                         detail.put("claude", decisionDetail(claudeDecision));
                     }
                 }
@@ -983,6 +986,7 @@ public class PaperDecisionJob {
             if (session != null) {
                 requireGates(krGates.beforeLedger(market, session));
             }
+            ClaudeDecisionPipeline.Observed observed = null;
             Optional<Quotes> quotes = session != null ? session.quotes() : reader.quietly(() -> marketData.quotes(market));
             boolean pricesFinal = quotes.map(q -> confirmedFor(market, q, d)).orElse(false);
             Map<String, Object> detail = new LinkedHashMap<>();
@@ -998,10 +1002,17 @@ public class PaperDecisionJob {
                         krGates.data(market, inputs));
                 requireGates(gates);
                 detail.put("gates", views(gates));
+                // 한국 Claude 수동 결정도 정기 결정과 같은 재료 — 이 실행의 관측치·읽은 순간(E2b).
+                observed = new ClaudeDecisionPipeline.Observed(inputs.quotes(), now, views(gates));
             }
-            Decision decision = market.claudeBook().equals(code)
-                    ? claude.decide(market, d, RuleBookService.MANUAL, pricesFinal)
-                    : rules.decide(market, d, RuleBookService.MANUAL, pricesFinal);
+            Decision decision;
+            if (!market.claudeBook().equals(code)) {
+                decision = rules.decide(market, d, RuleBookService.MANUAL, pricesFinal);
+            } else if (observed != null) {
+                decision = claude.decide(market, d, RuleBookService.MANUAL, pricesFinal, observed);
+            } else {
+                decision = claude.decide(market, d, RuleBookService.MANUAL, pricesFinal);
+            }
             detail.put(code, decisionDetail(decision));
             record(market, now, DECIDED, detail);
             return decision;

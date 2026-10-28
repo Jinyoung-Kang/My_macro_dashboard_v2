@@ -527,25 +527,17 @@ class KrRulesJobTest {
     }
 
     @Test
-    @DisplayName("게이트 ①은 계좌마다(Claude 계좌 쪽) — Claude 계좌에만 기준일 < D 대기 주문이 있으면 규칙 계좌는 결정·DECIDED(Claude 칸에 ① 사유, Claude 부르지 않음), 다음 주기는 Claude만 남아 DATA_NOT_READY(기다림 한 줄 — 규칙 계좌 판정은 남기지 않음), 정리되면 그 주기에 Claude만 결정")
+    @DisplayName("게이트 ①은 계좌마다(Claude 계좌 쪽, 실제 한국 Claude 경로 — E2b) — Claude 계좌에만 기준일 < D 대기 주문이 있으면 규칙 계좌는 결정·DECIDED(Claude 칸에 ① 사유, Claude 부르지 않음), 다음 주기는 Claude만 남아 DATA_NOT_READY(기다림 한 줄 — 규칙 계좌 판정은 남기지 않음), 정리되면 그 주기에 Claude만 결정(한국 패킷·한국 스키마·한국 렌더링, 동결본 = 보낸 패킷, 응답에 그 계좌 ① + ②~⑥)")
     void gateOneHoldsTheClaudeBookAlone() {
-        ClaudeBookService claude = mock(ClaudeBookService.class);
-        List<String> calls = new ArrayList<>();
-        when(claude.decide(org.mockito.ArgumentMatchers.any(PaperMarket.class), org.mockito.ArgumentMatchers.any(),
-                org.mockito.ArgumentMatchers.anyString(), org.mockito.ArgumentMatchers.anyBoolean())).thenAnswer(invocation -> {
-                    LocalDate d = invocation.getArgument(1);
-                    String kind = invocation.getArgument(2);
-                    calls.add(d + " " + kind);
-                    // 실제 Claude 계좌처럼 결정 행을 씀(그 세션 일이 끝남 — 다음 주기 ALREADY_DECIDED).
-                    Decision row = new Decision(0, PaperBooks.KR_CLAUDE, d, kind, null, "NO_TRADE", "claude-sonnet-5-5", null, 1,
-                            null, null, null, null, null, PaperFixtures.MAPPER.valueToTree(Map.of("summary", "주문 없음")), null,
-                            null, null, false, 0L, 0);
-                    return store.insertDecisionIfAbsent(row).flatMap(store::decision).orElseThrow();
-                });
+        KrClaudeFixtures.FakeAi fake = new KrClaudeFixtures.FakeAi();
+        fake.answer(KrClaudeFixtures.decision(0, "관망 — 수급 확인 전"));
         PaperMarketData marketData = new PaperMarketData(reader, repository);
-        job = new PaperDecisionJob(store, reader, marketData, new PaperLedgerService(store, marketData, PaperFixtures.MAPPER),
-                mock(PaperSelectionService.class), mock(RuleBookService.class), claude, PaperFixtures.settings(store),
-                KrRuleBookServiceTest.config(), PaperFixtures.MAPPER, clock);
+        PaperLedgerService ledger = new PaperLedgerService(store, marketData, PaperFixtures.MAPPER);
+        ClaudeBookService claude = KrClaudeFixtures.service(store, reader, repository, marketData, ledger,
+                KrRuleBookServiceTest.config(), clock, fake.ai);
+        job = new PaperDecisionJob(store, reader, marketData, ledger, mock(PaperSelectionService.class),
+                mock(RuleBookService.class), claude, PaperFixtures.settings(store), KrRuleBookServiceTest.config(),
+                PaperFixtures.MAPPER, clock);
         store.updateBookStatus(PaperBooks.KR_CLAUDE, PaperBooks.ACTIVE);
         store.updateBookStartedOn(PaperBooks.KR_CLAUDE, S);
         session(R);
@@ -559,7 +551,7 @@ class KrRulesJobTest {
         assertThat(first.outcome()).isEqualTo(PaperDecisionJob.DECIDED);
         assertThat(first.rules().kind()).isEqualTo(RuleBookService.REBALANCE);
         assertThat(first.claude()).isNull();
-        assertThat(calls).as("Claude를 부르지 않음").isEmpty();
+        assertThat(fake.requests).as("Claude를 부르지 않음").isEmpty();
         assertThat(krRuns()).singleElement().satisfies(run -> {
             assertThat(run.outcome()).isEqualTo(PaperDecisionJob.DECIDED);
             assertThat(run.detail().path("claude").asString()).startsWith("자료 게이트 미달 — 다음 주기에 다시: ① kr_claude")
@@ -577,17 +569,71 @@ class KrRulesJobTest {
                 .isFalse();
         assertThat(gateStatuses(krRuns().get(1).detail().path("gates"))).contains("① FAIL");
         assertThat(rulesDecisions()).as("규칙 계좌 결정은 그 세션에 한 번").hasSize(2);
+        assertThat(fake.requests).isEmpty();
 
         store.markOrderStatus(held, PaperBooks.ORDER_CANCELLED, "시험 — 정리됨");
         PaperDecisionJob.Result decided = runAt("2026-11-02T22:50");
         assertThat(decided.outcome()).isEqualTo(PaperDecisionJob.DECIDED);
-        assertThat(calls).containsExactly("2026-11-02 SCHEDULED");
         assertThat(decided.rules().id()).as("규칙 계좌는 그 결정 그대로").isEqualTo(first.rules().id());
+        Decision row = decided.claude();
+        assertThat(row.bookCode()).isEqualTo(PaperBooks.KR_CLAUDE);
+        assertThat(row.kind()).isEqualTo(RuleBookService.SCHEDULED);
+        assertThat(row.asOfTradingDate()).as("기준 거래일 = lastCompletedSession(그날)").isEqualTo(R);
+        assertThat(row.status()).isEqualTo(ClaudeBookService.STATUS_NO_TRADE);
+        assertThat(row.settingsVersion()).as("그 실행이 읽은 판").isEqualTo(store.settings.version());
+        assertThat(fake.requests).singleElement().satisfies(request -> {
+            assertThat(request.user()).as("결정 행 동결본 = 보낸 패킷 글자").isEqualTo(row.packetText());
+            assertThat(request.system()).as("한국 렌더링(K34)").contains("우선순위(고정)").doesNotContain("주문 최소 $");
+            assertThat(request.schema().toString()).as("한국 스키마 — timing은 NEXT_OPEN뿐").contains("NEXT_OPEN")
+                    .doesNotContain("NEXT_OBSERVATION");
+            assertThat(request.timeoutSeconds()).isEqualTo(ClaudeBookService.DEFAULT_TIMEOUT_SECONDS);
+        });
+        assertThat(row.packet().path("1_basis").path("market").asString()).isEqualTo("KR");
+        assertThat(row.packet().path("1_basis").path("packetVersion").asInt()).isEqualTo(KrPacketBuilder.PACKET_VERSION);
+        assertThat(row.packet().path("1_basis").path("readAtKst").asString()).as("읽은 순간 = 그 실행의 지금")
+                .isEqualTo("2026-11-02 22:50 KST");
+        assertThat(gateStatuses(row.response().path("gates"))).as("결정 행에 그 계좌 ① + ②~⑥")
+                .containsExactly("① PASS", "② PASS", "③ PASS", "④ PASS", "⑤ PASS", "⑥ PASS");
         assertThat(krRuns()).last().satisfies(run -> {
             assertThat(run.detail().path("rules").path("existing").asBoolean()).isTrue();
             assertThat(run.detail().path("claude").path("status").asString()).isEqualTo("NO_TRADE");
         });
         assertThat(runAt("2026-11-02T23:00").outcome()).isEqualTo(PaperDecisionJob.ALREADY_DECIDED);
+        assertThat(fake.requests).as("그 세션에 한 번").hasSize(1);
+    }
+
+    @Test
+    @DisplayName("자정 넘은 한국 Claude 재시도(2단계 명세 §4-10·§5, 실제 한국 경로 — E2b): 22:30 API 오류 → D+1 00:10 실행의 기준 거래일은 lastCompletedSession = D 그대로 같은 행을 다시 내고(재시도 1회), 호출 수는 다음 KST 날 줄에 셈")
+    void krClaudeMidnightRetryKeepsTheSessionAndCountsOnTheNextDay() {
+        KrClaudeFixtures.FakeAi fake = new KrClaudeFixtures.FakeAi();
+        fake.fail("API_ERROR", "overloaded").answer(KrClaudeFixtures.decision(0, "관망"));
+        PaperMarketData marketData = new PaperMarketData(reader, repository);
+        PaperLedgerService ledger = new PaperLedgerService(store, marketData, PaperFixtures.MAPPER);
+        job = new PaperDecisionJob(store, reader, marketData, ledger, mock(PaperSelectionService.class),
+                mock(RuleBookService.class), KrClaudeFixtures.service(store, reader, repository, marketData, ledger,
+                KrRuleBookServiceTest.config(), clock, fake.ai), PaperFixtures.settings(store),
+                KrRuleBookServiceTest.config(), PaperFixtures.MAPPER, clock);
+        store.updateBookStatus(PaperBooks.KR_CLAUDE, PaperBooks.ACTIVE);
+        store.updateBookStartedOn(PaperBooks.KR_CLAUDE, S);
+        session(R);
+
+        PaperDecisionJob.Result first = runAt("2026-11-02T22:30");
+        assertThat(first.claude().status()).isEqualTo(ClaudeBookService.STATUS_API_ERROR);
+        assertThat(first.claude().retryCount()).isZero();
+        assertThat(store.apiUsage(R).map(com.macrodash.store.PaperStore.ApiUsage::calls)).contains(1);
+
+        PaperDecisionJob.Result retried = runAt("2026-11-03T00:10");
+        assertThat(retried.tradingDate()).as("자정 넘은 실행도 세션 D").isEqualTo(R);
+        assertThat(retried.claude().id()).as("같은 행을 다시 냄").isEqualTo(first.claude().id());
+        assertThat(retried.claude().asOfTradingDate()).isEqualTo(R);
+        assertThat(retried.claude().status()).isEqualTo(ClaudeBookService.STATUS_NO_TRADE);
+        assertThat(retried.claude().retryCount()).isEqualTo(1);
+        assertThat(store.apiUsage(LocalDate.of(2026, 11, 3)).map(com.macrodash.store.PaperStore.ApiUsage::calls))
+                .as("호출 상한 줄 = Kst.today() — 다음 KST 날").contains(1);
+        assertThat(store.apiUsage(R).map(com.macrodash.store.PaperStore.ApiUsage::calls)).as("세션 날 줄은 그대로").contains(1);
+        assertThat(retried.claude().packet().path("1_basis").path("readAtKst").asString()).isEqualTo("2026-11-03 00:10 KST");
+        assertThat(fake.requests).hasSize(2);
+        assertThat(runAt("2026-11-03T00:20").outcome()).isEqualTo(PaperDecisionJob.ALREADY_DECIDED);
     }
 
     @Test
@@ -1242,25 +1288,21 @@ class KrRulesJobTest {
     }
 
     @Test
-    @DisplayName("한국 수동 결정(Claude 계좌)도 결정 창·자료 게이트 안에서만(D1c) — 창 전·게이트 ④ 미달이면 400(Claude 부르지 않음), 통과하면 기준 거래일 D로 MANUAL·작업 기록에 게이트 ①(그 계좌)~⑥")
+    @DisplayName("한국 수동 결정(Claude 계좌)도 결정 창·자료 게이트 안에서만(D1c) — 창 전·게이트 ④ 미달이면 400(Claude 부르지 않음), 통과하면 기준 거래일 D로 MANUAL·작업 기록에 게이트 ①(그 계좌)~⑥, 실제 한국 경로(E2b — 그 실행의 관측치·읽은 순간, 수동 호출이라 상한 − 예약 문턱)")
     void manualDecisionNeedsWindowAndGates() {
-        ClaudeBookService claude = mock(ClaudeBookService.class);
-        List<String> calls = new ArrayList<>();
-        when(claude.decide(org.mockito.ArgumentMatchers.any(PaperMarket.class), org.mockito.ArgumentMatchers.any(),
-                org.mockito.ArgumentMatchers.anyString(), org.mockito.ArgumentMatchers.anyBoolean())).thenAnswer(invocation -> {
-                    LocalDate d = invocation.getArgument(1);
-                    String kind = invocation.getArgument(2);
-                    calls.add(d + " " + kind);
-                    return new Decision(0, PaperBooks.KR_CLAUDE, d, kind, null, "NO_TRADE", "claude-sonnet-5-5", null, 1, null,
-                            null, null, null, null, PaperFixtures.MAPPER.valueToTree(Map.of("summary", "주문 없음")), null,
-                            null, null, false, 0L, 0);
-                });
+        KrClaudeFixtures.FakeAi fake = new KrClaudeFixtures.FakeAi();
+        fake.answer(KrClaudeFixtures.decision(0, "관망"));
         StoreRepository repository = repository();
         data.install(repository, reader);
         PaperMarketData marketData = new PaperMarketData(reader, repository);
-        job = new PaperDecisionJob(store, reader, marketData, new PaperLedgerService(store, marketData, PaperFixtures.MAPPER),
-                mock(PaperSelectionService.class), mock(RuleBookService.class), claude, PaperFixtures.settings(store),
-                KrRuleBookServiceTest.config(), PaperFixtures.MAPPER, clock);
+        PaperLedgerService ledger = new PaperLedgerService(store, marketData, PaperFixtures.MAPPER);
+        ClaudeBookService claude = KrClaudeFixtures.service(store, reader, repository, marketData, ledger,
+                KrRuleBookServiceTest.config(), clock, fake.ai);
+        job = new PaperDecisionJob(store, reader, marketData, ledger, mock(PaperSelectionService.class),
+                mock(RuleBookService.class), claude, PaperFixtures.settings(store), KrRuleBookServiceTest.config(),
+                PaperFixtures.MAPPER, clock);
+        store.updateBookStatus(PaperBooks.KR_CLAUDE, PaperBooks.ACTIVE);
+        store.updateBookStartedOn(PaperBooks.KR_CLAUDE, S);
         quotes(R, Set.of());
         fsc(LocalDate.of(2026, 10, 29));
 
@@ -1272,19 +1314,36 @@ class KrRulesJobTest {
         org.assertj.core.api.Assertions.assertThatThrownBy(() -> job.runNow(KrPaperMarket.INSTANCE, PaperBooks.KR_CLAUDE))
                 .isInstanceOf(com.macrodash.support.InvalidRequestException.class)
                 .hasMessageContaining("자료 게이트 미달").hasMessageContaining("④ 금융위 기준일 2026-10-29");
-        assertThat(calls).isEmpty();
+        assertThat(fake.requests).isEmpty();
         assertThat(krRuns()).isEmpty();
 
         fsc(FRI);
         Decision manual = job.runNow(KrPaperMarket.INSTANCE, PaperBooks.KR_CLAUDE);
         assertThat(manual.asOfTradingDate()).isEqualTo(R);
-        assertThat(calls).containsExactly("2026-11-02 MANUAL");
+        assertThat(manual.kind()).isEqualTo(RuleBookService.MANUAL);
+        assertThat(manual.status()).isEqualTo(ClaudeBookService.STATUS_NO_TRADE);
+        assertThat(fake.requests).singleElement().satisfies(request ->
+                assertThat(request.user()).isEqualTo(manual.packetText()));
+        assertThat(manual.packet().path("1_basis").path("readAtKst").asString()).isEqualTo("2026-11-02 22:40 KST");
+        assertThat(gateStatuses(manual.response().path("gates"))).containsExactly("① PASS", "② PASS", "③ PASS",
+                "④ PASS", "⑤ PASS", "⑥ PASS");
         assertThat(krRuns()).singleElement().satisfies(run -> {
             assertThat(run.detail().path("manual").asBoolean()).isTrue();
             assertThat(gateStatuses(run.detail().path("gates"))).containsExactly("① PASS", "② PASS", "③ PASS", "④ PASS",
                     "⑤ PASS", "⑥ PASS");
             assertThat(run.detail().path("gates").get(0).path("note").asString()).startsWith("kr_claude");
         });
+
+        // 수동 호출은 상한 20 − 정기 작업 몫 7 = 13 미만일 때만(2단계 명세 §4-10) — 다음 KR 세션의 수동 결정은 부르지 않고 SKIPPED.
+        session(R1);
+        java.time.LocalDate today = java.time.LocalDate.of(2026, 11, 3);
+        clock.set(kst("2026-11-03T22:40"));
+        store.apiUsage.put(today, new com.macrodash.store.PaperStore.ApiUsage(today, 13, 0, 0, 0, 0));
+        Decision capped = job.runNow(KrPaperMarket.INSTANCE, PaperBooks.KR_CLAUDE);
+        assertThat(capped.asOfTradingDate()).isEqualTo(R1);
+        assertThat(capped.status()).isEqualTo(ClaudeBookService.STATUS_SKIPPED);
+        assertThat(capped.response().path("summary").asString()).contains("정기 작업 몫 7회를 남겨 수동 호출은 13회까지");
+        assertThat(fake.requests).hasSize(1);
     }
 
     @Test

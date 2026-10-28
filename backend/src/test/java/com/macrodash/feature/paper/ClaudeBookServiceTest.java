@@ -1153,6 +1153,25 @@ class ClaudeBookServiceTest {
     }
 
     @Test
+    @DisplayName("한국 운영 문맥(E2b): 한국 Claude 결정은 그 실행의 관측치·읽은 순간이 있어야 함 — 없으면 아무것도 읽거나 쓰기 전에 거절(결정 작업이 넘김)")
+    void krDecisionNeedsTheRunInputs() {
+        activeCashOnly();
+        Clock clock = Clock.fixed(NOW, ZoneOffset.UTC);
+        AiService ai = ai(KEY);
+        PaperApiCalls calls = new PaperApiCalls(store, settings);
+        ClaudeBookService service = new ClaudeBookService(store, reader, marketData, selection, ledger,
+                new PaperAdminService(store, marketData, reader, settings, ledger, PaperFixtures.config(), MAPPER, clock),
+                packets, new FrameworkService(store, ai, settings, calls, MAPPER, 30, clock), calls, ai, settings,
+                PaperFixtures.config(), MAPPER, 30, clock, mock(KrPacketBuilder.class));
+
+        assertThatThrownBy(() -> service.decide(KrPaperMarket.INSTANCE, MON, RuleBookService.SCHEDULED, true))
+                .isInstanceOf(IllegalArgumentException.class).hasMessageContaining("관측치·읽은 순간");
+        assertThat(store.decisions).isEmpty();
+        assertThat(hits.get()).isZero();
+        assertThat(callsToday()).isZero();
+    }
+
+    @Test
     @DisplayName("시장 격리(A6): 결정 문맥이 없는 시장이면 아무것도 읽거나 쓰기 전에 거절(코드 오류)")
     void unknownMarketIsRejected() {
         activeCashOnly();
