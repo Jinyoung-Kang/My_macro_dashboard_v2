@@ -359,6 +359,18 @@ public final class KrxCosts {
         return price.remainder(tickSize(instrument, price)).signum() == 0;
     }
 
+    /**
+     * 1주를 살 때의 현금 유출 = 가격 + 수수료 + 슬리피지(비용마다 원 미만 절사) — {@link #affordableQty}가 1 이상이 되는 가장 작은 예산.
+     * 검증기의 정수 주 매수 문구(OrderValidator {@code BUY_BELOW_ONE_SHARE})가 씁니다. 예: 49,950원 → 49,981(수수료 7·슬리피지 24).
+     *
+     * @throws IllegalArgumentException 가격 0 이하
+     */
+    public static BigDecimal oneShareOutflow(BigDecimal price, Rates rates) {
+        Objects.requireNonNull(rates, "요율이 없습니다");
+        requirePrice(price);
+        return buyOutflow(1, price, rates);
+    }
+
     /** 매수 현금 유출 = 금액 + 수수료 + 슬리피지(절사 뒤). */
     private static BigDecimal buyOutflow(long qty, BigDecimal price, Rates rates) {
         BigDecimal notional = price.multiply(BigDecimal.valueOf(qty));

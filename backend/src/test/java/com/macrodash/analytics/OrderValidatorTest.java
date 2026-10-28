@@ -738,6 +738,170 @@ class OrderValidatorTest {
         Golden.assertMatches("order-validator-us.txt", out.toString().stripTrailing());
     }
 
+    // ------------------------------------------------------------------ 한국 칸(2단계 명세 §4-7·사용자 결정 v2, E2a)
+    /** 한국 1억 원 — 비중 1% = 1,000,000원. */
+    private static final double KR_NAV = 100_000_000;
+    /** 한국 기본 한도 — 미국과 같은 비율·값, 최소 주문 500,000원. */
+    private static final Limits KR_LIMITS = new Limits(10, 20, 20, 500_000, 20, 5);
+    /** 한국 시장 — 체결 시점 NEXT_OPEN뿐(ALLOW_NEXT_CLOSE=false), 원 표기(소수 없음). */
+    private static final OrderValidator.Market KR_MARKET = new OrderValidator.Market(List.of("NEXT_OPEN"), "NEXT_OPEN",
+            Map.of("NEXT_OPEN", "다음 거래일 시가"), new OrderValidator.Money("", "원", 0));
+    /** 한국 기본 요율 — 수수료 1.5bp·슬리피지 5bp(설정 kr.commissionBp·kr.slippageBp 기본값). */
+    private static final KrxCosts.Rates KR_RATES = new KrxCosts.Rates(new java.math.BigDecimal("1.5"),
+            java.math.BigDecimal.valueOf(5), KrxCosts.TaxRates.KRX_2026);
+
+    private static Proposed krBuy(String code, double targetWeightPct) {
+        return new Proposed(code, OrderValidator.BUY, targetWeightPct, null, "NEXT_OPEN");
+    }
+
+    private static Proposed krSell(String code, Double sellFraction) {
+        return new Proposed(code, OrderValidator.SELL, null, sellFraction, "NEXT_OPEN");
+    }
+
+    /** 한국 장부 — 현금 1억, U 셋 + ETF 둘(153130 현금성), 기준 가격은 종목마다. */
+    private static final class KrBook {
+        double cash = KR_NAV;
+        final Map<String, Double> weights = new LinkedHashMap<>();
+        final Map<String, Integer> days = new LinkedHashMap<>();
+        final Map<String, Integer> qty = new LinkedHashMap<>();
+        final Set<String> universe = new LinkedHashSet<>(List.of("005930", "000660", "207940", "069500", "153130"));
+        final Set<String> locked = new LinkedHashSet<>();
+        final Set<String> noPrice = new LinkedHashSet<>();
+        final Map<String, String> unfillable = new LinkedHashMap<>();
+        final Map<String, java.math.BigDecimal> prices = new LinkedHashMap<>(Map.of(
+                "005930", java.math.BigDecimal.valueOf(49_950), "000660", java.math.BigDecimal.valueOf(180_000),
+                "207940", java.math.BigDecimal.valueOf(1_200_000), "069500", java.math.BigDecimal.valueOf(95_000),
+                "153130", java.math.BigDecimal.valueOf(108_000)));
+        boolean wholeShares = true;
+        int monthly;
+
+        KrBook hold(String code, double weightPct, int heldDays, int shares) {
+            weights.put(code, weightPct);
+            days.put(code, heldDays);
+            qty.put(code, shares);
+            cash -= weightPct / 100.0 * KR_NAV;
+            return this;
+        }
+
+        Context context() {
+            return new Context(KR_NAV, cash, weights, days, universe, Set.of("069500", "153130"), Set.of("153130"),
+                    locked, noPrice, monthly, false, qty, unfillable,
+                    wholeShares ? new OrderValidator.WholeShares(prices, KR_RATES) : null);
+        }
+    }
+
+    private static List<Verdict> runKr(KrBook book, Limits limits, Proposed... orders) {
+        return OrderValidator.validate(Arrays.asList(orders), book.context(), limits, KR_MARKET);
+    }
+
+    @Test
+    @DisplayName("BUY_BELOW_ONE_SHARE(한국): 최소 금액은 넘어도 1주 체결 금액(가격 + 수수료·슬리피지)보다 작은 증가분은 거절 — 손계산 1,200,000원 → 1,200,780원")
+    void krBuyBelowOneShare() {
+        KrBook book = new KrBook();
+
+        List<Verdict> verdicts = runKr(book, KR_LIMITS, krBuy("207940", 0.6), krBuy("207940", 1.2007),
+                krBuy("000660", 0.6));
+
+        assertRejected(verdicts.get(0), OrderValidator.BUY_BELOW_ONE_SHARE);
+        assertThat(verdicts.get(0).detail()).isEqualTo("매수 증가분 약 600,000원 < 1주 체결 금액 1,200,780원(기준 가격 "
+                + "1,200,000원 + 수수료·슬리피지) — 정수 주라 1주도 살 수 없음(현재 0.00% → 목표 0.60%)");
+        assertRejected(verdicts.get(1), OrderValidator.DUPLICATE_TICKER);
+        assertAccepted(verdicts.get(2));
+        assertThat(KrxCosts.oneShareOutflow(java.math.BigDecimal.valueOf(1_200_000), KR_RATES))
+                .isEqualByComparingTo("1200780");   // 수수료 180 + 슬리피지 600
+
+        assertRejected(runKr(book, KR_LIMITS, krBuy("207940", 1.2007)).get(0), OrderValidator.BUY_BELOW_ONE_SHARE);
+        assertAccepted(runKr(book, KR_LIMITS, krBuy("207940", 1.2008)).get(0));   // 1,200,800 ≥ 1,200,780
+    }
+
+    @Test
+    @DisplayName("BUY_BELOW_ONE_SHARE(한국): 장부와 같은 절사 규칙 — 49,950원 1주 = 49,981원(수수료 7·슬리피지 24), 절사 전 49,982.47원보다 작아도 1주는 산다")
+    void krBuyBelowOneShareUsesLedgerTruncation() {
+        KrBook book = new KrBook();
+        Limits noMinimum = new Limits(10, 20, 20, 0, 20, 5);
+
+        assertRejected(runKr(book, noMinimum, krBuy("005930", 0.04998)).get(0), OrderValidator.BUY_BELOW_ONE_SHARE);
+        assertAccepted(runKr(book, noMinimum, krBuy("005930", 0.049982)).get(0));   // 약 49,982원 ≥ 49,981
+        assertAccepted(runKr(book, noMinimum, krBuy("005930", 0.04999)).get(0));
+        assertThat(KrxCosts.oneShareOutflow(java.math.BigDecimal.valueOf(49_950), KR_RATES)).isEqualByComparingTo("49981");
+        assertThat(KrxCosts.affordableQty(java.math.BigDecimal.valueOf(49_981), java.math.BigDecimal.valueOf(49_950),
+                KR_RATES)).isEqualTo(1);
+        assertThat(KrxCosts.affordableQty(java.math.BigDecimal.valueOf(49_980), java.math.BigDecimal.valueOf(49_950),
+                KR_RATES)).isZero();
+    }
+
+    @Test
+    @DisplayName("BUY_BELOW_ONE_SHARE(한국): 최소 금액(MIN_NOTIONAL)이 먼저, 거절된 매수는 월 상한 자리를 쓰지 않음, 이미 보유한 종목은 증가분으로 셈")
+    void krBuyBelowOneShareOrderAndSlots() {
+        KrBook book = new KrBook().hold("207940", 1.0, 30, 1);
+        book.monthly = 19;
+
+        List<Verdict> verdicts = runKr(book, KR_LIMITS, krBuy("000660", 0.4), krBuy("207940", 2.1),
+                krBuy("005930", 2));
+
+        assertRejected(verdicts.get(0), OrderValidator.MIN_NOTIONAL);
+        assertRejected(verdicts.get(1), OrderValidator.BUY_BELOW_ONE_SHARE);   // 증가분 1.1% = 1,100,000 < 1,200,780
+        assertThat(verdicts.get(1).detail()).contains("현재 1.00% → 목표 2.10%");
+        assertAccepted(verdicts.get(2));   // 남은 월 자리 1을 거절된 주문이 쓰지 않음
+    }
+
+    @Test
+    @DisplayName("UNFILLABLE(한국, 사용자 결정 v2): 지금 체결할 수 없는 종목의 매수는 사유와 함께 거절, 그 종목 보유의 매도는 받음 — 검사 순서는 유니버스·재진입 금지 뒤, 가격 없음 앞")
+    void krUnfillableRejectsBuysOnly() {
+        KrBook book = new KrBook().hold("000660", 5, 30, 27);
+        book.unfillable.put("000660", "2026-11-03 거래정지(KRX 매매정지 또는 그날 거래량 0)");
+        book.unfillable.put("005930", "이번 관측치에 그 종목 봉이 없음");
+        book.unfillable.put("999999", "이번 관측치에 그 종목 봉이 없음");
+        book.locked.add("207940");
+        book.unfillable.put("207940", "미처리 기업행위 보유(분할 확인 필요) — 장부가 그 종목 주문을 보류");
+        book.noPrice.add("005930");
+
+        List<Verdict> verdicts = runKr(book, KR_LIMITS, krBuy("005930", 3), krSell("000660", null),
+                krBuy("999999", 3), krBuy("207940", 3), krBuy("069500", 10));
+
+        assertRejected(verdicts.get(0), OrderValidator.UNFILLABLE);
+        assertThat(verdicts.get(0).detail()).isEqualTo("지금 체결할 수 없는 종목 — 이번 관측치에 그 종목 봉이 없음 · 매수만 거절(보유 매도는 받음)");
+        assertAccepted(verdicts.get(1));
+        assertRejected(verdicts.get(2), OrderValidator.OUT_OF_UNIVERSE);
+        assertRejected(verdicts.get(3), OrderValidator.LOCKED_OUT);
+        assertAccepted(verdicts.get(4));
+
+        KrBook staleHeld = new KrBook().hold("000660", 5, 30, 27);
+        staleHeld.unfillable.put("000660", "이번 관측치에 그 종목 봉이 없음");
+        assertRejected(runKr(staleHeld, KR_LIMITS, krBuy("000660", 8)).get(0), OrderValidator.UNFILLABLE);
+    }
+
+    @Test
+    @DisplayName("NO_PRICE(한국 정수 주): 기준 가격이 없는 종목의 매수는 1주 금액을 정할 수 없어 거절 — 매도는 가격을 보지 않음")
+    void krBuyWithoutReferencePriceIsNoPrice() {
+        KrBook book = new KrBook().hold("000660", 5, 30, 27);
+        book.prices.remove("005930");
+        book.prices.remove("000660");
+        book.prices.put("069500", java.math.BigDecimal.ZERO);
+
+        List<Verdict> verdicts = runKr(book, KR_LIMITS, krBuy("005930", 3), krSell("000660", 0.5),
+                krBuy("069500", 5));
+
+        assertRejected(verdicts.get(0), OrderValidator.NO_PRICE);
+        assertThat(verdicts.get(0).detail()).contains("1주 체결 금액을 정할 수 없음");
+        assertAccepted(verdicts.get(1));
+        assertRejected(verdicts.get(2), OrderValidator.NO_PRICE);
+    }
+
+    @Test
+    @DisplayName("한국 칸이 비면(미국 문맥) 검사 그대로 — 정수 주·체결 불가 칸이 없는 문맥은 1주 미만 매수도 통과(장부가 체결 때 취소하던 예전 동작)")
+    void emptyKoreanFieldsKeepTheCommonChecks() {
+        KrBook book = new KrBook();
+        book.wholeShares = false;
+
+        assertAccepted(runKr(book, KR_LIMITS, krBuy("207940", 0.6)).get(0));
+        Context us = new Book().context();
+        assertThat(us.unfillable()).isEmpty();
+        assertThat(us.wholeShares()).isNull();
+        assertThatThrownBy(() -> new OrderValidator.WholeShares(Map.of(), null))
+                .isInstanceOf(IllegalArgumentException.class);
+    }
+
     private static void golden(StringBuilder out, String scene, Book book, Limits limits, Proposed... orders) {
         golden(out, scene, book.context(), limits, Arrays.asList(orders));
     }

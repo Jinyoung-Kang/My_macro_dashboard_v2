@@ -33,12 +33,14 @@ import java.util.TreeSet;
  *       보고 뒤의 것은 거절합니다(앞 주문이 거절됐어도 마찬가지 — 결과가 앞 주문의 판정에 따라 바뀌지 않게).</li>
  *   <li>{@link #OUT_OF_UNIVERSE} — 유니버스 밖. 단 <b>보유 중인 종목의 매도</b>는 예외입니다 — 설정에서 유니버스를 줄여도 이미
  *       든 종목에서 빠져나올 수 있어야 해서입니다.</li>
- *   <li>{@link #NOT_HELD}(매도: 보유 없음) / {@link #LOCKED_OUT}(매수: 트레일링 스탑 뒤 재진입 금지 중).</li>
- *   <li>{@link #NO_PRICE} — 가격이 없거나 오래된 티커(매수·매도 모두 — 체결 가격을 정할 수 없음).</li>
+ *   <li>{@link #NOT_HELD}(매도: 보유 없음) / {@link #LOCKED_OUT}(매수: 트레일링 스탑 뒤 재진입 금지 중) → {@link #UNFILLABLE}(매수:
+ *       지금 체결할 수 없는 종목 — 한국만, 아래 "한국 칸").</li>
+ *   <li>{@link #NO_PRICE} — 가격이 없거나 오래된 티커(매수·매도 모두 — 체결 가격을 정할 수 없음). 한국 정수 주 칸이 있으면 기준 가격이
+ *       없는 매수도.</li>
  *   <li>{@link #MIN_HOLD}(매도: 보유 거래일 &lt; 최소 보유일, 보유 거래일을 모르면 거절) → {@link #BELOW_ONE_SHARE}(매도: 아래
  *       "매도 비율"의 1주 미만) / {@link #WEIGHT_CAP}(매수: 목표 비중 &gt; 종목 상한, ETF면 ETF 상한).</li>
  *   <li>{@link #MIN_NOTIONAL}(매수: 증가분 금액 = (목표 − 현재 비중) × 순자산이 최소 금액 미만, 또는 목표가 현재 비중 이하라 살
- *       금액이 없음).</li>
+ *       금액이 없음) → {@link #BUY_BELOW_ONE_SHARE}(매수: 증가분 금액으로 1주도 못 삼 — 한국만, 아래 "한국 칸").</li>
  * </ol>
  * 2단계 — 1단계를 통과한 주문 사이(처리 순서 = <b>매도를 목록 순으로 먼저</b>, 그다음 <b>매수를 목표 비중 큰 순</b>, 같으면 목록 순):
  * <ol start="8">
@@ -79,6 +81,14 @@ import java.util.TreeSet;
  * <p><b>검사하지 않는 것(D7)</b>: 현금 비중·주식 노출(0%든 100%든 거절 사유가 아님), 매크로 게이트 조건, 응답의
  * targetEquityExposurePct와 주문의 어긋남(서비스가 exposureMismatch로 기록 — 숫자를 맞추지 않음). 노출은 Claude가 정합니다(C11).
  *
+ * <p><b>한국 칸</b>(2단계 명세 §4-7·사용자 결정 v2, E2a): 문맥의 {@code unfillable}·{@code wholeShares}는 한국 Claude 계좌만 채웁니다
+ * (미국 문맥은 비워 두어 검사 순서·결과·문구가 이 묶음 전 그대로). {@code unfillable}(종목 → 사유)의 <b>매수</b>는 {@link #UNFILLABLE} —
+ * 규칙 계좌의 매수 건너뛰기와 같은 판정(이번 관측치에 봉 없음·기준 거래일 거래정지·미처리 기업행위 보유)이고, 그 종목 보유의 매도는 받습니다
+ * (장부가 대기로 두고 풀리면 체결 — 규칙 계좌와 같은 조건). {@code wholeShares}(기준 가격·요율)가 있으면 매수는 정수 주로 체결되므로
+ * 증가분 금액으로 살 수 있는 수량({@link KrxCosts#affordableQty} — 장부가 체결 때 쓰는 함수, 수수료·슬리피지 원 미만 절사)이 1주 미만이면
+ * {@link #BUY_BELOW_ONE_SHARE}, 기준 가격이 없으면 {@link #NO_PRICE}입니다. 예전에는 장부가 체결 때 '목표 금액으로 1주도 살 수 없습니다'로
+ * 취소했습니다 — 검증 때 거절해야 결정 기록에 사유가 남습니다. 매도는 정수 주 칸을 보지 않습니다(1주 미만 부분 매도는 {@link #BELOW_ONE_SHARE}).
+ *
  * <p><b>시장</b>(2단계 명세 §9 A7): 검사 계산은 시장 중립이고, 받는 체결 시점·이른 시점·근거 문구의 시점 이름과 금액 표기만
  * 시장이 정합니다({@link Market}). 위 설명의 NEXT_OBSERVATION·NEXT_CLOSE·'$'는 미국 값({@link Market#US})이고, 시장을 받지 않는
  * {@link #validate(List, Context, Limits)}가 그 값으로 검사합니다. 다른 시장에서는 NEXT_OBSERVATION 자리가 그 시장의 이른 시점,
@@ -110,6 +120,10 @@ public final class OrderValidator {
     public static final String MONTHLY_CAP = "MONTHLY_CAP";
     public static final String MAX_POSITIONS = "MAX_POSITIONS";
     public static final String OVER_ALLOCATED = "OVER_ALLOCATED";
+    /** 한국만(클래스 설명의 "한국 칸") — 지금 체결할 수 없는 종목의 매수. */
+    public static final String UNFILLABLE = "UNFILLABLE";
+    /** 한국만(클래스 설명의 "한국 칸") — 매수 증가분 금액이 1주 체결 금액(수수료·슬리피지 포함)보다 작음. */
+    public static final String BUY_BELOW_ONE_SHARE = "BUY_BELOW_ONE_SHARE";
 
     /**
      * 비중(%p) 비교 여유. 비중은 평가액/순자산 × 100이라 끝자리 잡음이 있고(예: 합이 100.00000000000001), Claude가 정확히 상한
@@ -228,6 +242,29 @@ public final class OrderValidator {
     }
 
     /**
+     * 정수 주 매수의 재료(클래스 설명의 "한국 칸") — 종목마다 1주 체결 금액을 셀 기준 가격과 체결 비용 요율.
+     *
+     * @param prices 종목 → 기준 가격(원 — 결정이 본 관측치의 기준 거래일 종가, 패킷 8_prices와 같은 값). 없거나 0 이하이면 그 종목 매수는
+     *               {@link #NO_PRICE}. 복사해 둡니다
+     * @param rates  체결 비용 요율(장부가 체결 때 쓰는 판 — 수수료·슬리피지)
+     * @throws IllegalArgumentException 요율이 없음
+     */
+    public record WholeShares(Map<String, BigDecimal> prices, KrxCosts.Rates rates) {
+        public WholeShares {
+            if (rates == null) {
+                throw new IllegalArgumentException("정수 주 검사의 체결 비용 요율이 없습니다");
+            }
+            prices = copy(prices);
+        }
+
+        /** 기준 가격(0보다 큰 값만). 없으면 null. */
+        BigDecimal price(String ticker) {
+            BigDecimal price = prices.get(ticker);
+            return price != null && price.signum() > 0 ? price : null;
+        }
+    }
+
+    /**
      * Claude가 제안한 주문 한 줄(decision.schema.json의 orders[] 중 검사에 쓰는 필드).
      *
      * @param targetWeightPct 매수: 체결 뒤 목표 비중(순자산 대비 %, 0~100). 매도에는 쓰지 않음(클래스 설명의 "매도 비율")
@@ -255,11 +292,14 @@ public final class OrderValidator {
      * @param inputsStale        종목 저장본 24시간 초과 또는 확정 종가 전(blockWhenNotFinal) — true면 전부 STALE_INPUT
      * @param heldQty            티커 → 보유 수량(주, 1주 미만 매도 검사 — 클래스 설명의 "매도 비율"). null이거나 그 티커가 없으면(또는 0
      *                           이하) 수량을 모르는 것으로 보고 그 검사를 하지 않습니다
+     * @param unfillable         티커 → 지금 체결할 수 없는 사유(한국만 — 클래스 설명의 "한국 칸"). null이면 없음(미국)
+     * @param wholeShares        정수 주 매수 검사의 재료(한국만). null이면 그 검사를 하지 않음(미국)
      */
     public record Context(double nav, double cash, Map<String, Double> currentWeightPct,
                           Map<String, Integer> heldTradingDays, Set<String> universe, Set<String> etfs,
                           Set<String> cashLike, Set<String> lockedOut, Set<String> noPrice, int monthlyOrdersSoFar,
-                          boolean inputsStale, Map<String, Integer> heldQty) {
+                          boolean inputsStale, Map<String, Integer> heldQty, Map<String, String> unfillable,
+                          WholeShares wholeShares) {
         public Context {
             if (!(nav > 0) || Double.isInfinite(nav)) {
                 throw new IllegalArgumentException("순자산은 0보다 큰 숫자여야 합니다: " + nav);
@@ -281,6 +321,16 @@ public final class OrderValidator {
             lockedOut = copy(lockedOut);
             noPrice = copy(noPrice);
             heldQty = copy(heldQty);
+            unfillable = copy(unfillable);
+        }
+
+        /** 한국 칸 없이(미국 — 클래스 설명의 "한국 칸"). */
+        public Context(double nav, double cash, Map<String, Double> currentWeightPct,
+                       Map<String, Integer> heldTradingDays, Set<String> universe, Set<String> etfs,
+                       Set<String> cashLike, Set<String> lockedOut, Set<String> noPrice, int monthlyOrdersSoFar,
+                       boolean inputsStale, Map<String, Integer> heldQty) {
+            this(nav, cash, currentWeightPct, heldTradingDays, universe, etfs, cashLike, lockedOut, noPrice,
+                    monthlyOrdersSoFar, inputsStale, heldQty, null, null);
         }
 
         /** 보유 수량 없이(1주 미만 매도 검사를 하지 않음 — 수량을 모르는 호출·시험). */
@@ -564,8 +614,16 @@ public final class OrderValidator {
         if (!buy && current == null) {
             return Verdict.reject(order, NOT_HELD, "보유하지 않은 종목은 팔 수 없음");
         }
+        String unfillable = buy ? ctx.unfillable().get(ticker) : null;
+        if (unfillable != null) {
+            return Verdict.reject(order, UNFILLABLE, "지금 체결할 수 없는 종목 — " + unfillable
+                    + " · 매수만 거절(보유 매도는 받음)");
+        }
         if (ctx.noPrice().contains(ticker)) {
             return Verdict.reject(order, NO_PRICE, "가격이 없거나 오래됨 — 체결 가격을 정할 수 없음");
+        }
+        if (buy && ctx.wholeShares() != null && ctx.wholeShares().price(ticker) == null) {
+            return Verdict.reject(order, NO_PRICE, "기준 가격이 없음 — 정수 주로 살 1주 체결 금액을 정할 수 없음");
         }
         boolean cashLike = ctx.cashLike().contains(ticker);
         if (!buy) {
@@ -611,6 +669,18 @@ public final class OrderValidator {
             return Verdict.reject(order, MIN_NOTIONAL, String.format(Locale.ROOT,
                     "매수 증가분 약 %s < 최소 %s(현재 %.2f%% → 목표 %.2f%%)", market.money().exact(amount),
                     market.money().exact(limits.minOrderNotional()), now, target));
+        }
+        WholeShares shares = ctx.wholeShares();
+        if (shares != null) {
+            BigDecimal price = shares.price(ticker);
+            // 장부가 체결 때 쓰는 것과 같은 함수(PaperLedgerService — 목표 금액으로 살 수 있는 수량, 비용 원 미만 절사)로 셉니다.
+            if (KrxCosts.affordableQty(BigDecimal.valueOf(amount), price, shares.rates()) < 1) {
+                return Verdict.reject(order, BUY_BELOW_ONE_SHARE, String.format(Locale.ROOT,
+                        "매수 증가분 약 %s < 1주 체결 금액 %s(기준 가격 %s + 수수료·슬리피지) — 정수 주라 1주도 살 수 없음"
+                                + "(현재 %.2f%% → 목표 %.2f%%)", market.money().exact(amount),
+                        market.money().exact(KrxCosts.oneShareOutflow(price, shares.rates()).doubleValue()),
+                        market.money().exact(price.doubleValue()), now, target));
+            }
         }
         return null;
     }
