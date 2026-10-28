@@ -81,18 +81,21 @@ import java.util.TreeSet;
  * 대기 중인 남는 현금 주문({@code park_cash})을 먼저 취소합니다(미국 규칙 책 {@code replaceParkingOrders}와 같은 까닭). 비중은 마지막 평가 가격
  * (없으면 평단)으로, 현금 어림은 대기·이번 주문을 비용 요율(수수료 + 슬리피지 + 매도세)로 줄여 셉니다(어림 — 체결은 장부가 {@code KrxCosts}로).
  * <b>체결될 수 없는 종목은 사지 않습니다</b>(종목·153130 매수 — {@link Fillable}): 그 실행 관측치에 봉이 없음, D 거래정지, 미처리 기업행위
- * 보유(장부가 주문을 보류) — 사유는 {@code skipped}·{@code notes}. <b>매도는 그래도 냅니다</b>(보유 종목 신호 매도·153130 일부 매도 — 사용자
- * 결정 2026-10-28 u2): 결정 게이트 ①은 장부가 그 관측치로 체결할 수 없는 대기 주문을 기다리지 않으므로({@link KrDecisionGates#unworkable})
- * 그 주문이 다음 결정을 막지 않고, 정지가 만료(기준일 + 3거래일) 전에 풀리면 재개일 시가에 팔립니다. 내지 않으면 재선정일의 K10 '후보 밖'
- * 매도는 그날의 신호라 다음 재선정까지 사라집니다. 지금 체결할 수 없는 매도는 {@code notes}에 그 사유를 남깁니다.
+ * 보유(장부가 주문을 보류) — 사유는 {@code skipped}·{@code notes}. <b>보유 종목 신호 매도는 그래도 냅니다</b>(사용자 결정 2026-10-28 u2 —
+ * 선정한 날 모자란 현금의 153130 일부 매도는 153130 자체를 지금 체결할 수 없으면 내지 않음, 아래 u4 ③): 결정 게이트 ①은 장부가 그
+ * 관측치로 체결할 수 없는 대기 주문을 기다리지 않으므로({@link KrDecisionGates#unworkable}) 그 주문이 다음 결정을 막지 않고, 정지가
+ * 만료(기준일 + 3거래일) 전에 풀리면 재개일 시가에 팔립니다. 내지 않으면 재선정일의 K10 '후보 밖' 매도는 그날의 신호라 다음 재선정까지
+ * 사라집니다. 지금 체결할 수 없는 매도는 {@code notes}에 그 사유를 남깁니다.
  * <b>선정한 날(REBALANCE·INITIAL — 따라잡기 포함)의 현금 어림에는 지금 체결할 수 없는 매도(이번 신호 매도·앞선 날의 대기 매도 — 같은
  * {@link Fillable} 판정)의 대금을 넣지 않습니다</b>(사용자 결정 2026-10-28 u3): 종목·153130 매수와 모자란 현금의 153130 일부 매도를 다음 시가에
  * 실제로 있을 현금으로 정해, 정지가 이어져도 그 매수가 장부의 현금 한도로 줄지 않게. <b>153130 매도로도 모자라면</b>(팔 153130가 모자라거나
- * 153130 자체를 지금 체결할 수 없음 — 그 매도는 내되(u2) 대금은 셈하지 않음) <b>종목 매수를 낮은 순위부터 줄이거나 빼고</b>({@link #trimStockBuys}
- * — 여유 0.5%p를 남김, 사유는 {@code skipped}·{@code notes}, 줄인 목표는 다음 재선정까지 채우지 않음). 장부도 매수를 낸 순서대로 체결하므로 그
- * 종목은 줄이지 않았으면 장부의 현금 한도에 걸렸을 종목입니다. 풀려서 팔리면 그 대금은 현금으로 남아 다음 결정의 남는 현금
- * 규칙({@code kr.rules.parkCashThresholdPct}을 넘을 때만 153130)을 따릅니다. 그 밖의 날은 그 대금도 어림에 넣습니다(그날 매수는 남는 현금
- * 153130뿐 — 정지가 이어지면 그 매수가 장부의 현금 한도로 줄어듦). note에 어느 쪽인지 적습니다.
+ * 153130 자체를 지금 체결할 수 없음) <b>종목 매수를 낮은 순위부터 줄이거나 빼고</b>({@link #trimStockBuys} — 여유 0.5%p를 남김, 사유는
+ * {@code skipped}·{@code notes}, 줄인 목표는 다음 재선정까지 채우지 않음). 장부도 매수를 낸 순서대로 체결하므로 그 종목은 줄이지 않았으면
+ * 장부의 현금 한도에 걸렸을 종목입니다. 153130 자체를 지금 체결할 수 없는 날은 그 일부 매도를 내지 않습니다(사용자 결정 2026-10-28 u4 ③ —
+ * 종목 매수를 그 대금 없이 줄였으므로 내면 풀려서 팔린 대금이 쓰이지 않는 현금으로 남아 153130을 되사는 왕복 비용만 듦, 사유는 {@code notes}).
+ * 풀려서 팔리면 그 대금은 현금으로 남아 다음 결정의 남는 현금 규칙({@code kr.rules.parkCashThresholdPct}을 넘을 때만 153130)을 따릅니다.
+ * 그 밖의 날은 그 대금도 어림에 넣습니다(그날 매수는 남는 현금 153130뿐 — 정지가 이어지면 그 매수가 장부의 현금 한도로 줄어듦). note에
+ * 어느 쪽인지 적습니다.
  *
  * <p><b>상태</b>: 선정한 결정(REBALANCE·INITIAL)은 주문이 없어도 {@code OK}입니다 — 그 주기의 매수 결정이라 따라잡기가 다시 고르지 않게(K33,
  * {@link KrReselection}은 OK만 셈). SCHEDULED는 주문이 있으면 OK, 없으면 {@code NO_TRADE}(미국과 같은 뜻). 기한이 지나 결정하지 않은 세션도
@@ -873,8 +876,9 @@ final class KrRuleBookService {
 
     /**
      * 주문 계획(클래스 설명의 '주문') — ① 매도 신호(보유 전량) ② 선정한 날만 매수(목표 − 지금) ③ 남는 현금 153130. 체결될 수 없는 종목
-     * ({@link Fillable})은 사지 않고, 매도는 그래도 냅니다(u2 — 사유는 {@code notes}). 선정한 날은 체결될 수 없는 매도(이번·대기)의 대금을
-     * 현금 어림에 넣지 않고, 153130 매도로도 다음 시가 현금이 모자라면 종목 매수를 줄입니다(u3).
+     * ({@link Fillable})은 사지 않고, 신호 매도는 그래도 냅니다(u2 — 사유는 {@code notes}). 선정한 날은 체결될 수 없는 매도(이번·대기)의 대금을
+     * 현금 어림에 넣지 않고, 153130 매도로도 다음 시가 현금이 모자라면 종목 매수를 줄입니다(u3). 153130 자체를 지금 체결할 수 없으면 그 일부
+     * 매도는 내지 않습니다(u4 ③).
      */
     private Draft plan(String kind, boolean selectionDay, KrRules.Selection selection, List<KrRules.HoldingCheck> checks,
                        View view, Settings settings, Fillable fillable) {
@@ -1011,15 +1015,14 @@ final class KrRuleBookService {
                     // 그 대기 매도의 몫(파는 비율)만 다음 시가에 생김 — 더 팔 주문은 내지 않으므로 나머지는 종목 매수를 줄여 메움.
                     covered = available.multiply(BigDecimal.valueOf(view.pendingSells().get(parking))).min(need);
                 }
+            } else if (parkingBlocked != null) {
+                // 153130 자체를 지금 체결할 수 없음 — 그 대금은 셈하지 않고(u3) 아래에서 종목 매수를 줄이므로 일부 매도는 내지 않음(u4 ③):
+                // 내면 풀려서 팔린 대금이 쓰이지 않는 현금으로 남고 기준을 넘으면 153130을 되사는 왕복 비용만 듦.
+                draft.notes.add(String.format(Locale.ROOT, "현금이 순자산의 %.2f%%만큼 모자라는데 %s은 지금 체결할 수 없음(%s) — 그 "
+                        + "대금 없이 종목 매수를 줄이므로 %s 일부 매도를 내지 않음(사용자 결정 u4 ③ — 내면 풀려서 팔린 대금이 종목 매수에 쓰이지 "
+                        + "않고 남는 현금 규칙으로 %s을 되사는 왕복 비용만 듦)", -spare, parking, parkingBlocked, parking, parking));
             } else {
-                if (parkingBlocked != null) {
-                    // 지금은 체결할 수 없어도 매도는 냄(u2 — 위 신호 매도와 같음). 선정한 날이라 그 대금은 셈하지 않음(u3) — 종목 매수를 줄임.
-                    draft.notes.add(String.format(Locale.ROOT, "현금이 순자산의 %.2f%%만큼 모자라 %s를 파는데 지금은 체결할 수 없음(%s) — "
-                            + "주문은 대기로 두고 풀리면 체결하되, 선정한 날이라 그 대금은 다음 시가 현금 어림에서 뺐음(종목 매수를 그만큼 줄임). "
-                            + "풀려서 팔리면 그 대금은 현금으로 남아 다음 결정의 남는 현금 규칙을 따름", -spare, parking, parkingBlocked));
-                } else {
-                    covered = need.min(available);
-                }
+                covered = need.min(available);
                 Double fraction = need.compareTo(available) >= 0 ? null
                         : round6(need.divide(available, MathContext.DECIMAL64).doubleValue());
                 Map<String, Object> reason = parkingReason(RULE_PARK_SELECTION, kind, spare, parkingWeight);

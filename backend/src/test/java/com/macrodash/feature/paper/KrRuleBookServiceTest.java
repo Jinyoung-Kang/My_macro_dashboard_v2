@@ -387,8 +387,8 @@ class KrRuleBookServiceTest {
     }
 
     @Test
-    @DisplayName("모자란 현금의 153130 일부 매도는 153130이 그날 거래정지여도 냄(사용자 결정 u2) — 같은 손계산 비율 0.176464. 선정한 날이라 그 대금은 다음 시가 현금에서 빼고(u3) 종목 매수를 낮은 순위부터 줄임: 105560·005930 뺌, 000660 5.6667% → 1.9934%(손계산)")
-    void parkingSellIsPlacedEvenWhenUnfillable() {
+    @DisplayName("선정한 날 153130 자체를 지금 체결할 수 없으면 모자란 현금의 153130 일부 매도를 내지 않음(사용자 결정 u4 ③ — 종목 매수를 이미 그 매도 없이 줄였으므로 내면 쓰이지 않는 현금과 왕복 비용만 남김) — 종목 매수는 전과 같이 낮은 순위부터 줄임: 105560·005930 뺌, 000660 5.6667% → 1.9934%(손계산), 사유는 note")
+    void unfillableParkingIsNotSoldAndStockBuysAreTrimmed() {
         holding("373220", 100, 10_000);
         holding("207940", 100, 10_000);
         holding("000660", 100, 10_000);
@@ -403,20 +403,24 @@ class KrRuleBookServiceTest {
         // 어림 = 현금 500,000 + 매도 둘 1,994,700 − 매수 19,012,450.065 = −16,517,750.065원 → 메울 현금 17,017,750.065원(여유 0.5%p 포함).
         // 153130은 지금 체결할 수 없어 그 대금을 셈하지 않으므로(u3) 종목 매수를 뒤에서부터: 105560·005930(6,671,033.355원씩)을 빼고 남은
         // 3,675,683.355원을 000660에서 — 5,670,383.355 − 3,675,683.355 = 1,994,700원 ÷ (1 + 6.5bp) = 1,993,404.29원 → 1.9934%(내림).
+        // 153130 일부 매도(비율 0.176464 — 체결할 수 있었다면 낼 크기)는 내지 않음(u4 ③).
         assertThat(ordersOf(rebalance)).extracting(Order::ticker, Order::side, Order::targetWeightPct, Order::sellFraction)
                 .containsExactly(tuple("207940", "SELL", null, null), tuple("373220", "SELL", null, null),
-                        tuple("000660", "BUY", 1.9934, null), tuple("153130", "SELL", null, 0.176464));
+                        tuple("000660", "BUY", 1.9934, null));
         // 다음 시가 현금(153130 매도 없이) 500,000 + 1,994,700 − 여유 500,000 ≥ 000660 유출 1,994,695.71원.
         assertThat(buyOutflow(ordersOf(rebalance))).isEqualByComparingTo("1994695.71")
                 .isLessThanOrEqualTo(java.math.BigDecimal.valueOf(1_994_700));
         assertThat(ordersOf(rebalance).get(2).reason().path("trimmedFromPct").asDouble()).isEqualTo(5.6667);
         assertThat(rebalance.response().path("skipped")).filteredOn(row -> row.path("reason").asString().contains("현금이 모자라"))
                 .extracting(row -> row.path("ticker").asString()).containsExactly("105560", "005930");
+        assertThat(rebalance.response().path("summary").asString()).doesNotContain("153130");
         assertThat(rebalance.response().path("notes")).extracting(JsonNode::asString)
-                .anySatisfy(note -> assertThat(note).contains("153130를 파는데 지금은 체결할 수 없음(2026-11-02 거래정지")
-                        .contains("그 대금은 다음 시가 현금 어림에서 뺐음").doesNotContain("cashLimited"))
-                .anySatisfy(note -> assertThat(note).contains("종목 매수를 낮은 순위부터 줄임")
-                        .contains("000660 5.6667% → 1.9934%").contains("005930 뺌").contains("105560 뺌"));
+                .anySatisfy(note -> assertThat(note).startsWith("현금이 순자산의 16.52%만큼 모자라는데 153130은 지금 체결할 수 없음(2026-11-02 거래정지")
+                        .contains("153130 일부 매도를 내지 않음").contains("사용자 결정 u4 ③").doesNotContain("cashLimited"))
+                .anySatisfy(note -> assertThat(note).contains("153130 매도로 메울 수 있는 0원")
+                        .contains("종목 매수를 낮은 순위부터 줄임")
+                        .contains("000660 5.6667% → 1.9934%").contains("005930 뺌").contains("105560 뺌"))
+                .noneSatisfy(note -> assertThat(note).contains("주문은 대기로 두고 풀리면 체결하되"));
     }
 
     @Test
