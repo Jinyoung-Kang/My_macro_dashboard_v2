@@ -387,13 +387,31 @@ class KrPacketBuilderTest {
                 LocalDate.of(2026, 10, 30), avg, null));
     }
 
-    /** 정기 결정 D의 관측치 — 373220 거래정지(KRX 표시), 000270 항목 없음. */
+    /**
+     * 정기 결정 D의 관측치 — 373220 거래정지(KRX 표시), 000270 항목 없음, 005930에는 기준일 뒤(D+1 = 11-04) 봉도 있음(종가 20,000 — 패킷이 D 이하
+     * 봉만 쓰는지 봄: 잠정 종가·수정 비율 이력 점).
+     */
     private Optional<PaperMarketData.Quotes> quotesD() {
+        return quotesD(true);
+    }
+
+    /** {@link #quotesD()} — {@code afterSession}이 거짓이면 005930의 D+1 봉 없이(대조용). */
+    private Optional<PaperMarketData.Quotes> quotesD(boolean afterSession) {
         Snapshot snapshot = KrRulesFixtures.quotes(D);
         KrRulesFixtures.suspend(snapshot, "373220", true);
         ((ObjectNode) snapshot.payload().path("codes")).remove("000270");
+        if (afterSession) {
+            ArrayNode bars = (ArrayNode) snapshot.payload().path("codes").path("005930").path("bars");
+            ObjectNode after = (ObjectNode) bars.get(bars.size() - 1).deepCopy();
+            after.put("date", D_PLUS_1.toString()).put("open", 19_000).put("high", 20_500).put("low", 18_900)
+                    .put("close", 20_000).put("adjClose", 20_000).put("volume", 150_000);
+            bars.add(after);
+        }
         return KrPaperMarket.INSTANCE.parse(snapshot);
     }
+
+    /** 정기 결정 D 다음 거래일(관측치의 '기준일 뒤' 봉 날짜). */
+    static final LocalDate D_PLUS_1 = LocalDate.of(2026, 11, 4);
 
     private Packet scheduled() {
         clock.set(READ_D);
@@ -495,8 +513,21 @@ class KrPacketBuilderTest {
         int unfillable = columns.indexOf("unfillable");
         int foreign20 = columns.indexOf("foreign20");
         int score = columns.indexOf("flowScore");
-        assertThat(rows.get("005930").get(close).asLong()).isEqualTo(10_100);
+        assertThat(rows.get("005930").get(close).asLong()).as("관측치 D 이하 마지막 봉 — D+1 봉(20,000)은 쓰지 않음")
+                .isEqualTo(10_100);
+        assertThat(rows.get("005930").get(columns.indexOf("date")).asString()).isEqualTo(D.toString());
         assertThat(rows.get("005930").get(source).asString()).isEqualTo("TOSS_INTEGRATED");
+        clock.set(READ_D);
+        JsonNode without = builder.build(run(), D, RuleBookService.SCHEDULED, false, 3, quotesD(false), READ_D).body()
+                .path("8_prices");
+        JsonNode same = null;
+        for (JsonNode r : without.path("rows")) {
+            if ("005930".equals(r.get(0).asString())) {
+                same = r;
+            }
+        }
+        assertThat(rows.get("005930")).as("005930 줄 전체(날짜·잠정 종가·수익률·200일 평균·52주 고점 대비)가 D+1 봉이 없을 때와 같음")
+                .isEqualTo(same);
         assertThat(rows.get("069500").get(source).asString()).isEqualTo("TOSS_DAILY");
         // 20일 창(10-06~11-03) 합 — 11-04·11-05 기록(기준일 뒤)은 빠짐: 005930 하루 100,000주 × 20 = 2,000,000.
         assertThat(rows.get("005930").get(foreign20).asLong()).isEqualTo(2_000_000);
