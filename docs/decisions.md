@@ -237,3 +237,10 @@
 - 문제: C1b가 `notesDefaultExpiryTradingDays`·`notesMaxCharsInPacket`을 미국 범위로 두고 한국이 같은 키를 쓸지 `kr.notes*`를 둘지는 E1에 넘겼다.
 - 선택: 사용자 결정 v6대로 두 책 공통(설정 화면 범위 US → 공통, `f892e0f`) — 메모는 시장마다 따로지만 만료 거래일 수(그 메모 시장의 달력으로 셈)·패킷 글자 상한은 한 값.
 - 이유: 메모는 사용자가 쓰는 자료라 시장마다 다른 상한을 둘 까닭이 없고, 키를 늘리면 설정 화면·검사만 늘어난다.
+
+## 2026-10-28 · 미국 컨센서스는 FOMC·FRED 릴리스 번호마다 Nasdaq 머리 지표 하나에 붙이고, 같은 이름 두 줄은 붙이지 않음
+
+- 문제: `calendar.consensus`(K22)를 켜면 미국 `1b_calendar` 공식 일정 줄에 Nasdaq 컨센서스를 붙여야 하는데, 이름 대응표는 E1에 넘겨져 있었고 Nasdaq은 전월비·전년비를 라벨 없이 같은 이름 두 줄로 준다(`CPI`·`Core PCE Price Index` — 2026-10-28 로컬 저장본).
+- 원인: 비공식 출처(Nasdaq `economicevents`)라 이름·순서가 지표마다 다르고, 공식 일정(FRED·FOMC)과 열쇠가 없다.
+- 선택: 백엔드 `analytics.CalendarConsensus`에 종류·FRED 릴리스 번호 → 머리 지표 하나(FOMC `Fed Interest Rate Decision`·CPI `CPI`·고용 `Nonfarm Payrolls`·GDP `GDP`·PCE `Core PCE Price Index`)를 두고, 같은 날 그 이름이 한 줄일 때만 붙이며(두 줄 이상·없음·범위 밖은 null + 사유, `consensusSource` = 붙인 줄 이름), 발표치는 결정 순간 전에 받은 날만, 판 6 목표 크기는 따로 36,000(`5d2f78a`).
+- 이유: 날짜는 공식 출처가 정하고 값은 지어내지 않는다(K22·PRINCIPLES) — 순서·크기로 전월비를 고르면 지어낸 라벨이다. 그래서 지금은 CPI·PCE 줄이 비고, 라벨을 얻는 길(수집기가 설명문에서 가름)은 사용자 확인 항목 — 근거는 [한국 책 명세](specs/2026-10-26-v2-kr-paper-spec.md) §4-12 'E1b'·§9 'E1b 메모'.

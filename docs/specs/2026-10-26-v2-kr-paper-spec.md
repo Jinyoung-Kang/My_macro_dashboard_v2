@@ -1097,10 +1097,43 @@
     - 저장 모양: 날짜별 **미국 행 전부**(Nasdaq 이름 그대로) — 이름 대응표(Nasdaq ↔ FRED 릴리스·FOMC)는 수집기에 두지 않고 패킷을 만드는 E1이 정한다([확인]한 이름은 `FOMC Statement`·`Fed Interest Rate Decision`뿐, CPI·고용·GDP·PCE 줄의 이름은 아직 못 봄).
       행 = `name`·`timeEt`·`timeText`·`forecast`(Nasdaq `consensus`)·`previous`·`actual`·`unit`·`forecastText`·`previousText`·`actualText`·`importance`. 숫자는 `부호·$·숫자(천 단위 쉼표)·%·K·M·B·T` 모양만 나누고
       세 값의 단위가 서로 다르면 숫자를 모두 null(`unitMismatch`). 빈 값(`' '`·`&nbsp;`)은 null. 제3자 설명문(`description`)은 저장하지 않는다. `actual`도 저장한다(패킷에는 싣지 않음 — §4-12).
-    - 실패: 날짜 하나의 실패는 직전 값을 `isStale`로 잇고(3일 기한), 출처 거부(403·429)면 남은 날을 묻지 않고, 하나도 못 받으면 EmptyResult. 백엔드·화면 코드가 이 저장본을 읽기 시작하면 `test_us_consensus`가 막는다(그 커밋이 시험을 고침).
+    - 실패: 날짜 하나의 실패는 직전 값을 `isStale`로 잇고(3일 기한), 출처 거부(403·429)면 남은 날을 묻지 않고, 하나도 못 받으면 EmptyResult. 백엔드·화면 코드가 이 저장본을 읽기 시작하면 `test_us_consensus`가 막는다(그 커밋이 시험을 고침). → E1b `5d2f78a`가 읽는 곳에 `PacketBuilder`를 더함.
   - **공통**: 세 태스크의 데이터셋마다 쓰는 모듈 하나(`test_table_ownership`), `catalog.py`·`Datasets.java` 양쪽(`DatasetsParityTest`), 태스크 32 → 35개(DATA_SOURCES·README·CLAUDE.md — F3의 숫자 35와 같음).
   - **남은 위험**: (1) 연합뉴스 120건이 41시간을 덮어 서버 창 밖 낮을 메운다는 것은 하루 표본(10-26). (2) Nasdaq은 비공식 엔드포인트라 모양·날짜 어긋남이 예고 없이 바뀔 수 있다(그때는 EmptyResult로 직전 값 유지).
     (3) G8 전까지 한국 `1b_calendar`의 거시 줄은 금통위뿐이다. (4) 금통위 임시 회의·발표일 변경은 상수라 들어오지 않는다(미국 FOMC 상수와 같음).
+- **E1b 구현에서 정한 것 — 미국 컨센서스 열**(2026-10-28, 커밋 `7ff989d`(일정 줄에 FRED 릴리스 번호)·`ff0ac58`(대응표·붙이기 `CalendarConsensus`)·`99be380`(그 커밋의
+  클래스 설명이 수집기 읽기 대조 시험을 깸 — 고침)·`bc8165c`(1b 컨센서스 열)·`c054acc`(사유 글 줄임)·`5d2f78a`(패킷 연결·판 6·고정본)·`c38ae2e`(설정 이력·한국 판 6 시험) —
+  위 K22와 'B9 구현에서 정한 것'이 E1에 넘긴 자리. **꺼짐 = 미국 패킷 판 5·고정본 `paper/golden/packet-us-*`·해시 상수 그대로**, 시스템 프롬프트·스키마는 이 키를 읽지 않아
+  켜도 바이트 그대로. 백엔드 시험 1,784 → 1,801, 수집기 1,146(시험 하나 고침)):
+  - **대응표**(백엔드 `analytics.CalendarConsensus` — 수집기에는 두지 않음): 공식 줄의 열쇠는 표시 이름이 아니라 종류(FOMC)와 FRED 릴리스 번호(`CalendarWindow.Row.releaseId`),
+    값은 그 발표의 머리 지표 하나의 Nasdaq 이름 — FOMC → `Fed Interest Rate Decision`(`FOMC Statement`·`FOMC Press Conference`는 값이 없음) · CPI(10) → `CPI` ·
+    고용(50) → `Nonfarm Payrolls` · GDP(53) → `GDP` · PCE(54) → `Core PCE Price Index`. [확인] 2026-10-28 로컬 저장본(읽기 전용, 동부 10-28~11-13의 미국 행) — 다섯 이름 모두
+    그 발표 날에 있다(FOMC 10-28 예상 4.00%·GDP 10-29 예상 3.2%·고용 11-06·CPI 11-10). 대응표 밖 발표·실적 줄에는 붙이지 않고, Nasdaq에만 있는 발표를 줄로 더하지 않는다.
+  - **맞추기**: 같은 동부 날짜의 줄 가운데 이름이 대소문자·공백만 빼고 같은 줄이 **하나일 때만** 붙인다. [확인] 같은 저장본에서 Nasdaq은 전월비·전년비를 라벨 없이 같은 이름 두 줄로
+    준다(`CPI`·`Core CPI`·`Core PCE Price Index`·`PPI`, `PCE price index`·`PCE Price index`는 대소문자만 다름). 응답 순서도 이름마다 달라(CPI는 전월비 먼저, Core CPI는
+    전년비 먼저) 순서·크기로 가르면 지어낸 라벨이 되므로 **두 줄 이상이면 붙이지 않고 사유**("Nasdaq 'CPI' 2줄(전월비·전년비 라벨 없음) — 가를 수 없음")를 남긴다 —
+    그래서 **지금 저장본이면 CPI·PCE 줄은 늘 null**이다(사용자 확인 항목 — §9 'E1b 메모'). 그 밖의 사유: 수집 범위 밖(저장본 `horizon`)·그 날 받지 못함·그 이름 없음·대응표 밖.
+  - **패킷 모양(판 6)**: `1b_calendar` 머리말 `units` 뒤에 `consensus` {`source`(저장본 — Nasdaq 경제 캘린더, 비공식 참고)·`generatedAtKst`·`note`·`notes`([날짜, 이름, 사유] —
+    못 붙인 줄·이어받은 날·단위 어긋남, 있을 때만)}, 거시 줄 끝에 `forecast`·`previous`·`unit`·`consensusSource` — **`consensusSource`는 붙인 Nasdaq 줄 이름**(명세의 열 이름
+    그대로, 출처 자체는 머리말 하나 — 그 숫자가 어느 지표인지가 줄마다 다름). 값은 소수 넷째 자리 반올림(Nasdaq 글자는 셋째 자리까지), 예상치 null = 아직 없음(직전 값만 있는
+    줄이 흔함). 저장본이 없으면 머리말 `missing` + 칸 null(열은 그대로 — 0으로 채우지 않음), 일정 저장본이 없으면 1b 전체가 '자료 없음'이라 층도 없다. 측정 태그는 그대로.
+  - **발표치(`actual`)**: 그 날을 받은 시각(`fetchedAt`) ≤ 결정 순간(8b 어닝 서프라이즈·11b와 같은 `NewsEvents.window`의 끝 — 기준일 다음 KST 날짜의 `decisionTimeKst`)일 때만
+    싣고, 실을 값이 한 줄이라도 있을 때만 `previous` 뒤에 열을 둔다. 창이 기준일 다음 세션부터라 정기 결정에서는 늘 없어 열도 없고(위 'actual은 늘 비어 싣지 않음'), 결정
+    순간 뒤에 다시 받은 저장본으로 만든 패킷(수동 실행 등)에 그 뒤 발표치가 섞이지 않게 거르는 자리다(시계를 읽지 않아 결정적). 예상·직전 값은 일정과 같은 '지금 수집본'이라
+    초기 결정에서도 1b의 `asOfMismatch` 아래에 둔다.
+  - **판·스위치**: 결정이 읽은 설정 행의 `calendar.consensus`가 불 true일 때만 저장본을 읽고(`quietly` — 꺼지면 읽지도 않음, 불이 아닌 값은 꺼짐) `packetVersion` 6
+    (`PacketBuilder.PACKET_VERSION_CONSENSUS`). 판 6 고정본 `packet-us-v6-initial.json`·`packet-us-v6-scheduled.json`·`packet-us-v6-meta.txt` — 판 5 고정본과 같은 재료이고,
+    바뀌는 것은 판 번호와 1b 층뿐임을 시험이 대조한다(`goldenUsPacketsWithConsensus`, 꺼진 판은 `goldenUsPackets`·`goldenUsPacketsIgnoreStage2SharedKeys` 그대로).
+    출발일 저장 한 번(세 스위치·예약 9)이 판 +1·`changed_keys`로 남고 그 뒤 패킷의 `settingsVersion`이 새 판, 그 전 판의 행으로는 판 5 그대로(`consensusSwitchIsRecordedInTheSettingsHistory`).
+    한국 패킷은 스위치와 상관없이 판 6·같은 글자이고 미국 저장본을 읽지 않는다(`krPacketIsVersion6RegardlessOfTheConsensusSwitch`).
+  - **`TARGET_TOKENS` 다시 잼**(위 '`TARGET_TOKENS`는 다시 잰다'): 판 5 목표와 한국 자르기 예산 35,500은 그대로 두고 판 6 목표 `TARGET_TOKENS_CONSENSUS` 36,000을 따로 둔다 —
+    가장 큰 시험 패킷(판 5 약 35,425)에 층을 가장 크게(한 줄은 붙임 + 결정 전 발표치 + 이어받은 날, 다섯 줄은 가장 긴 사유) 켜면 1b 약 798 → 1,274, 패킷 약 35,900(여유 약 100).
+    넷을 붙인 보통 모양이면 +약 250. 넘으면 경고 로그만(판 5와 같음). 한 값을 올리면 한국 예산도 함께 움직여 꺼진 판·한국 동작이 바뀌므로 나눴다.
+  - **수집기**: 저장 모양·태스크 그대로. `test_us_consensus`의 '읽는 백엔드 파일' 대조에 `PacketBuilder`를 더했다. [확인] `ff0ac58`은 클래스 설명에 저장본 이름을 적어 그 커밋
+    하나만 `make test-collector`에서 그 시험이 실패한다(다음 커밋 `99be380`이 고침 — 이력은 바꾸지 않음). 대조는 주석까지 글자로 보므로 저장본 이름은 읽는 쪽에만 적는다.
+  - **남은 위험**: (1) [확인] 2026-10-28(EDT)에 받은 11월(EST) 줄의 `gmt`(수집기 `timeEt`)가 한 시간 늦다(CPI·고용·생산성 09:30, ADP 09:15 — 실제는 08:30·08:15 ET)[추정: 받은 날의
+    동부 시차로 고정된 시각]. 패킷은 시각을 싣지 않아 영향이 없고, B9의 '`gmt` 칸은 동부 시각'은 서머타임이 같은 날에만 맞다. (2) 대응 이름은 Nasdaq이 바꾸면 'Nasdaq에 X 없음'으로
+    비고 사유가 남는다(지어내지 않음). (3) 비공식 출처라 예상치가 늦게 채워지거나 빠질 수 있다.
 
 ### 4-13. 설정 (같은 한 행, `kr.*` 묶음 — K7·K23 권장안)
 - `paper_settings`는 한 행(`CHECK id = 1`)이라 초안의 '한국 설정 행'은 두지 않고 같은 본문에 `kr.*` 키를 더한다. `Spec`에 시장 범위를 두고 `affectsRules` 경고는 그 시장 규칙 계좌 기준. 한국 초기화 때 `kr.*` 기본값을 행에 써 판을 올린다(코드 기본값에만 기대지 않음).
@@ -1180,6 +1213,8 @@
   - **공유 키**: `apiScheduledReserve` INTEGER 0~50(상한과 같은 범위, 기본 7 — 예약 ≥ 상한이면 수동 호출은 늘 막힘, 상한과 엮는 검사는 두지 않음: 상한 0으로 끄는 저장을 막지 않게),
     `calendar.consensus`·`claude.schemaV3`·`claude.figureCheck` BOOLEAN 기본 false·규칙 계좌 영향 없음. **넷 다 아직 읽는 코드가 없다**(E1·E2·3단계) — 켠 설정으로 만든 미국 패킷·렌더링이 고정본과 바이트까지 같음을 시험으로 잠갔다
     (`goldenUsPacketsIgnoreStage2SharedKeys`·`goldenRenderIgnoresStage2SharedKeys` — 읽기 시작하는 커밋이 그 시험을 고침).
+    → **E1b**(`5d2f78a`): `calendar.consensus`는 미국 패킷이 읽는다(켜면 판 6) — `goldenUsPacketsIgnoreStage2SharedKeys`는 '컨센서스를 끈 채'로 고치고 켠 판은
+    `goldenUsPacketsWithConsensus`(판 6 고정본)가 지킨다. 렌더링은 여전히 넷 다 읽지 않는다(§4-12 'E1b 구현에서 정한 것').
   - **기본값과 판**: 새 키는 기본 본문(`defaultsJson`)에만 더했다 — 저장된 행은 고쳐 쓰지 않아 판이 오르지 않고(서버의 지금 행 = 공유 키·한국 묶음 없음), 화면은 그 키를 '설정 행에 없음 — 기본값으로 읽음'으로 보인다.
     그 행에 한국 키를 처음 저장하면 판이 오르고 `kr` 묶음에 그 키만 생긴다(나머지는 읽는 쪽 기본값). §4-13 '한국 초기화 때 `kr.*` 기본값을 행에 써 판을 올린다'는 C1c 초기화의 몫.
     `GET /api/paper/settings`의 `fallbacks`는 지금처럼 미국 읽기만 — 한국 읽기의 fallbacks는 한국 묶음(C1c)이 생긴 뒤.
@@ -1375,7 +1410,7 @@
   자정 넘은 한국 재시도는 다음 KST 날 줄에 세지고 기준 거래일은 D 그대로다(테스트).
 - **재기동**(E0, 사용자 결정 v3): 결정 창 안에서 백엔드를 다시 띄워도 판정이 같다 — 계획 실패로 미룬 출발 세션은 다시 계획하지 않고, 미룸 사유는 그 창의 마지막 기다림이며, 기한 지남 행은
   기한 전 마지막 판정으로 사유·`waitedFor`를 정하고, 장부가 그 밤 관측치에서 보류한 대기 주문은 게이트 ①이 기다리지 않으며, 미룸·기한 지남 기록은 세션마다 한 번이다(테스트, §4-9 'E0').
-- 미국 책 테스트가 전부 그대로 통과하고, `calendar.consensus=false`에서 미국 패킷이 `packetVersion` 5·같은 해시, 미국 스키마·`ROLE`·`FIXED_RULES`·`render`가 바이트 그대로다(`Market` 추상화 뒤 회귀 0). 켜면 6(고정본).
+- 미국 책 테스트가 전부 그대로 통과하고, `calendar.consensus=false`에서 미국 패킷이 `packetVersion` 5·같은 해시, 미국 스키마·`ROLE`·`FIXED_RULES`·`render`가 바이트 그대로다(`Market` 추상화 뒤 회귀 0). 켜면 6(고정본 `packet-us-v6-*` — 바뀌는 것은 판 번호와 `1b_calendar` 컨센서스 층뿐, E1b).
   **3단계 코드가 배포돼도 `claude.schemaV3`·`claude.figureCheck`가 꺼져 있으면 미국 스키마·프롬프트·패킷 해시가 바이트 그대로다**(테스트, K37). V14 뒤에도 미국 복기 삽입·재시도가 그대로 돈다(`PaperStoreDbTest`).
 - 한국 시스템 프롬프트(결정·복기)에 `$`·`SHY`·`NEXT_OBSERVATION`·`5_gate`·`6_trackRecord`·`6b`·13F 문구가 없고, 우선순위 문장과 한국 하드 규칙 줄이 있다(고정본 테스트, K34).
 - 새 경로 전부 운영자 전용(`AccessPolicyTest`), `DatasetsParityTest`·`RouteInventoryTest`·`endpoints.test.ts` 통과, `make test` 통과, CI 녹색.
@@ -1792,3 +1827,13 @@ QA 스택 점검을 F1 뒤로(§4-1 'C3'·§9 표), §4-2 'C2a'의 바뀐 시험
   일(한국은행 ECOS 등 — 키·이용 조건 확인 필요)은 이 묶음 밖이다.
 - **E2에 넘김**: 결정 파이프라인 연결(`ClaudeDecisionPipeline.PacketSource`는 실행을 받지 않음 — 한국 문맥은 실행·관측치·읽은 순간을 넘겨야 함), 사용자 결정 v1(§5 프롬프트 수용 기준 고쳐 쓰기)·
   v2(검증기)·v4(기한 뒤 Claude 결정 행)·v5는 E2·E3 몫이라 E1a에서 손대지 않았다. 미국 컨센서스 열(`calendar.consensus`, E1의 다른 몫)도 E1a 밖이다.
+  → E1b에서 끝남(§4-12 'E1b 구현에서 정한 것', 아래 'E1b 메모').
+
+**E1b 메모(2026-10-28, 미국 컨센서스 열 구현 뒤)** — 명세·사용자 결정 v1~v6이 정하지 않아 고른 것:
+- **(사용자 확인 필요) CPI·PCE 줄의 컨센서스**: Nasdaq은 전월비·전년비를 라벨 없이 같은 이름 두 줄로 줘 대응표의 CPI(`CPI`)·PCE(`Core PCE Price Index`) 줄은 늘 붙지 않는다
+  (FOMC·GDP·고용만 붙음). ⓐ 붙이지 않고 사유(구현 — 지어내지 않음, 가장 보수적) ⓑ 같은 이름 줄을 모두 값 목록으로 싣기(라벨 없이 — 어느 것이 전월비인지는 Claude가 크기로
+  읽게 됨, 패킷 모양이 줄마다 목록) ⓒ 수집기가 Nasdaq 응답의 `description`(제3자 설명문 — 지금은 저장하지 않음)에서 전월비·전년비만 가려 라벨 칸을 저장(수집기 계약 변경, 설명문
+  모양을 먼저 확인해야 함 — 외부 호출 몇 회). **권장 ⓐ 유지 + 출발 전 ⓒ 확인**: 물가 컨센서스가 실험에 중요하면 ⓒ로 라벨을 얻은 뒤 대응표를 '이름 + 라벨'로 넓힌다.
+- **정한 것(사용자 확인 없이 — 가장 보수적)**: `consensusSource` 칸 = 붙인 Nasdaq 줄 이름, `actual` 열은 결정 순간 전에 받은 발표치가 있을 때만, 판 6 목표 크기 36,000은 판 5·한국 예산과 따로
+  (§4-12 'E1b 구현에서 정한 것'). 이 셋은 [decisions.md](../decisions.md) 2026-10-28 항목에 함께 남겼다.
+- **수집기 시각 칸**: `timeEt`가 서머타임이 바뀐 뒤 날짜에 한 시간 어긋나 보인다(§4-12 'E1b' 남은 위험 (1)) — 패킷이 쓰지 않아 고치지 않았다(수집기 B9 몫, 쓰기 시작하는 쪽이 고침).
