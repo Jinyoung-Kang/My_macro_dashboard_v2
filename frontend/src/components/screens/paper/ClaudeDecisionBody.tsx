@@ -4,6 +4,8 @@ import type { ReactNode } from "react";
 import { Table } from "@/components/ui";
 import { EMPTY } from "@/lib/format";
 import { type Badge, type ClaudeDecisionView, type ClaudeOrderRow, sideClass, type ValidationRow, type WatchRow } from "@/lib/paper";
+import type { KrDecisionExtras } from "@/lib/paperKr";
+import { KrDecisionExtrasParts, KrEventsPart } from "./KrRuleDecisionBody";
 
 /**
  * Claude 책 결정의 본문 — 판단(자세·목표 노출·확신도·요약·노출 근거), 모델이 제안한 주문(근거·라벨·무효화 조건), 검증 결과
@@ -12,10 +14,21 @@ import { type Badge, type ClaudeDecisionView, type ClaudeOrderRow, sideClass, ty
  * 값은 claudeDecisionView가 고른 표시 문자열 그대로이고, 화면은 늘어놓기만 합니다(ADR 0004). 응답이 없으면(형식 오류·거절·API 오류,
  * Claude를 부르지 않은 기록) 판단 칸 대신 상태에 맞는 한 줄(건너뛴 기록은 서버가 남긴 사유)을 적습니다 — 빈 표를 그리면 "주문이 없다고
  * 판단했다"로 읽힙니다.
+ *
+ * 한국 Claude 계좌(kr_claude)는 `kr`를 넘깁니다 — 기한 지남(건너뜀)·출발(설정 출발일·미룸·출발 호출 수)·자료 게이트 표를 맨 위에, 패킷의 사건
+ * 줄(11b_events)을 관찰 목록 뒤에 더하고, 검증 설명에 한국 사유를 적습니다.
  */
-export function ClaudeDecisionBody({ view }: { view: ClaudeDecisionView }) {
+export function ClaudeDecisionBody({
+  view,
+  kr,
+}: {
+  view: ClaudeDecisionView;
+  /** 한국 Claude 계좌 결정의 공통 칸(lib/paperKr krDecisionExtras)과 입력 패킷 — 미국 결정은 없음. */
+  kr?: { extras: KrDecisionExtras; packet: unknown };
+}) {
   return (
     <div className="flex flex-col gap-4">
+      {kr && <KrDecisionExtrasParts extras={kr.extras} />}
       <Part title="판단" note="목표 주식 노출은 Claude가 정한 값이고 기록·표시용입니다 — 집행은 아래 주문(검증 통과분) 기준입니다.">
         {view.hasResponse ? (
           <>
@@ -74,7 +87,11 @@ export function ClaudeDecisionBody({ view }: { view: ClaudeDecisionView }) {
       {(view.hasResponse || view.validation.length > 0) && (
         <Part
           title="검증"
-          note="검증기(하드 규칙)가 주문마다 통과·거절을 정했습니다 — 유니버스·비중 상한·최대 종목 수·배분 합·최소 금액·월 상한·최소 보유일·재진입 금지·자료 신선도. 현금 비중·매크로 조건은 검사하지 않습니다(명세 D7)."
+          note={kr
+            ? "검증기(한국 하드 규칙)가 주문마다 통과·거절을 정했습니다 — 유니버스·비중 상한·최대 종목 수·배분 합·최소 금액·월 상한·최소 보유일·"
+              + "재진입 금지·체결할 수 없는 종목 매수(UNFILLABLE — 봉 없음·거래정지·기업행위 보류)·증가분 1주 미만(BUY_BELOW_ONE_SHARE). 현금 비중·"
+              + "매크로 조건은 검사하지 않습니다."
+            : "검증기(하드 규칙)가 주문마다 통과·거절을 정했습니다 — 유니버스·비중 상한·최대 종목 수·배분 합·최소 금액·월 상한·최소 보유일·재진입 금지·자료 신선도. 현금 비중·매크로 조건은 검사하지 않습니다(명세 D7)."}
         >
           <Table<ValidationRow>
             label="검증"
@@ -110,6 +127,8 @@ export function ClaudeDecisionBody({ view }: { view: ClaudeDecisionView }) {
           />
         </Part>
       )}
+
+      {kr && <KrEventsPart packet={kr.packet} />}
 
       {view.usage.length > 0 && (
         <Part title="사용량" note="이 호출 한 번의 토큰입니다(시스템 프롬프트는 캐시 블록 — 다시 부르면 캐시 읽기로 셉니다).">

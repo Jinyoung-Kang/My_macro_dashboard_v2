@@ -8,6 +8,7 @@
 import { EMPTY, formatKst, formatNumber, formatSigned } from "./format";
 import {
   type Badge,
+  decisionKindLabel,
   jsonSummary,
   positionBadges,
   type RiskResultView,
@@ -627,3 +628,370 @@ export function krNotStartedNote(): string {
 export const KR_RESET_NOTE =
   "한국 계좌에는 사후 체결이 없습니다 — 이 계좌만 지우면 현금만 든 '시작 전'으로 남고 다시 출발하지 않습니다(한 계좌만 늦게 출발하는 길 없음). "
   + "네 계좌를 모두 지우면 다음 KR 거래일 결정 창에서 네 계좌가 함께 다시 출발합니다.";
+
+// ---------------------------------------------------------------- 결정 로그(2단계 명세 §4-6·§4-9·§4-16 F2 — 여섯 게이트·기한 지남·출발)
+
+const listOf = (value: unknown): unknown[] => (Array.isArray(value) ? value : []);
+const stringsOf = (value: unknown): string[] => listOf(value).filter((entry): entry is string => typeof entry === "string" && entry.length > 0);
+const pct = (value: number | null, digits = 1) => (value === null ? EMPTY : `${formatNumber(value, digits)}%`);
+
+/** 결정 종류 이름 — 한국 출발 결정(INITIAL)은 '출발(초기 결정)', 그 밖은 미국과 같은 이름. */
+export function krDecisionKindLabel(kind: string | null | undefined): string {
+  return kind === "INITIAL" ? "출발(초기 결정)" : decisionKindLabel(kind);
+}
+
+/**
+ * 결정 목록의 가격 칸(한국) — 한국 결정은 늘 금융위 확정 전 토스 잠정가로 냅니다(`pricesFinal:false`가 정상 — 미국의 '확정 전 값' 경고색이
+ * 아님). true면 받은 그대로 '확정', 모르면 "—".
+ */
+export function krPricesFinalText(value: boolean | null | undefined): { label: string; className: string; title?: string } {
+  if (value === false) {
+    return { label: "잠정(토스)", className: "text-text-3", title: "한국 결정은 늘 금융위 확정 전 — 토스 잠정 관측치로 냅니다(확정은 체결 뒤 확정 조정)." };
+  }
+  if (value === true) return { label: "확정", className: "text-body" };
+  return { label: EMPTY, className: "text-muted" };
+}
+
+/** 결정 탭 계좌 소개(한국) — 결정 창은 설정 값이라 숫자를 박지 않습니다. */
+export function krDecisionBookNote(kind: string | null | undefined): string {
+  if (kind === "CLAUDE") {
+    return "한국 Claude 계좌는 KR 거래일마다 결정 창(설정 kr.decisionTimeKst~kr.decisionDeadlineKst) 안에서 자료 게이트 ①~⑥이 모두 통과하면 한국 "
+      + "패킷을 Claude에 보내 주문과 목표 주식 노출을 받습니다. 검증기(하드 규칙 — 체결할 수 없는 종목 매수 UNFILLABLE·1주 미만 증가분 "
+      + "BUY_BELOW_ONE_SHARE 포함)가 통과시킨 주문만 다음 KR 거래일 시가에 체결합니다. 기한이 지나면 그 세션은 부르지 않고 '건너뜀'(기한 지남)으로 "
+      + "남깁니다. '지금 결정 실행'은 같은 창·같은 게이트 안에서만 받고, 수동 호출 문턱(상한 − 정기 몫 예약)까지입니다.";
+  }
+  return "한국 규칙 계좌는 KR 거래일마다 결정 창 안에서 자료 게이트 ①~⑥이 모두 통과하면 한 번 결정합니다 — 재선정일(설정 주기)과 출발 때만 "
+    + "사고, 그 밖의 날은 보유의 매도 판정(20일 누적 순매도·후보 밖)과 남는 현금만 봅니다. 기한이 지나면 그 세션은 '주문 없음'(기한 지남)이고 "
+    + "재선정은 다음 KR 결정일에 따라잡습니다. 동결된 대조군이라 수동 결정 단추는 없습니다.";
+}
+
+/**
+ * 한국 수동 결정을 막는 이유 — 규칙 계좌(수동 결정 없음)·시작 전(네 계좌가 함께 출발하기 전)·일시정지 중인 Claude 계좌. 아니면 null. 창 밖·게이트
+ * 미달·수동 문턱은 서버가 400으로 답하고 그 문구가 그대로 보입니다.
+ */
+export function krDecisionRunBlocked(book: Pick<PaperBookSummary, "status" | "kind"> | null | undefined): string | null {
+  if (!book) return "계좌가 없습니다.";
+  if (book.kind !== "CLAUDE") return "한국 규칙 계좌는 수동 결정이 없습니다(동결된 대조군 — 정기 결정만).";
+  if (book.status === "NOT_STARTED") {
+    return "시작 전인 한국 계좌는 결정을 내지 않습니다 — 네 계좌가 함께 출발한 뒤(개요의 '출발 지금 실행' 또는 출발일 밤 정기 출발) 누르세요.";
+  }
+  if (book.status === "PAUSED") return "일시정지 중인 계좌는 결정을 내지 않습니다(Claude를 부르지 않음) — 보유·체결 탭에서 재개한 뒤 누르세요.";
+  return null;
+}
+
+/** 한국 수동 결정 확인 창의 문턱 문장 — 수동 문턱(상태 응답 manualLimit)과 결정 창(설정)을 그대로 적습니다(모르면 "—"). */
+export function krManualDecisionNote(manualLimit: number | null | undefined, windowText: string): string {
+  const limit = typeof manualLimit === "number" ? `${formatNumber(manualLimit, 0)}회` : EMPTY;
+  return `수동 호출은 그날 호출이 수동 문턱(${limit} — 하루 상한 − 정기 몫 예약) 미만일 때만, 결정 창(${windowText}) 안에서 같은 자료 게이트를 `
+    + "통과해야 부릅니다 — 아니면 서버가 거절하고 그 문구가 아래에 보입니다.";
+}
+
+/** 자료 게이트 한 줄(①~⑥ — 서버 판정 그대로). */
+export interface KrGateRow {
+  key: string;
+  gate: string;
+  /** PASS·FAIL(모르는 값은 받은 글자). */
+  status: string;
+  badge: Badge;
+  note: string;
+  /** ③의 창 구멍 문구('kr.calendar.extraClosures에 더함')가 있나 — 화면이 설정 탭 링크를 붙입니다. */
+  extraClosures: boolean;
+}
+
+/** 게이트 판정 목록(`[{gate, status, note}]`) → 줄. 모양이 틀린 항목은 건너뜁니다. */
+export function krGateRows(value: unknown): KrGateRow[] {
+  return listOf(value).filter(isRecord).flatMap((gate, index) => {
+    const id = textOf(gate.gate);
+    if (!id) return [];
+    const status = textOf(gate.status) ?? EMPTY;
+    const note = textOf(gate.note) ?? EMPTY;
+    return [{
+      key: `${index}-${id}`,
+      gate: id,
+      status,
+      badge: status === "PASS"
+        ? { key: "pass", label: "통과", className: toneClass("ok") }
+        : status === "FAIL"
+          ? { key: "fail", label: "미달", className: toneClass("warn") }
+          : { key: "unknown", label: status, className: toneClass("muted") },
+      note,
+      extraClosures: note.includes("kr.calendar.extraClosures"),
+    }];
+  });
+}
+
+/** 한국 결정 응답의 공통 칸 — 자료 게이트·기한 지남·출발(규칙·Claude 계좌가 같은 이름으로 남김). */
+export interface KrDecisionExtras {
+  gates: KrGateRow[];
+  /** 기한이 지난 세션의 행(`pastDeadline:true`) — 아니면 null. */
+  pastDeadline: {
+    deadline: string;
+    /** 그 판정이 무엇이었나(gatesBasis — '기한 전 마지막 판정' 등). 일시정지 SKIPPED처럼 없으면 null. */
+    basis: string | null;
+    judgedAt: string | null;
+    /** 기다린 게이트(미달 게이트의 '번호 사유'). */
+    waitedFor: string[];
+    /** 규칙 계좌 noTradeReason · Claude skippedReason. */
+    reason: string | null;
+  } | null;
+  /** 출발 결정(INITIAL)의 칸 — 설정 출발일·미룸·출발 호출 수(Claude). 출발이 아니면 null. */
+  start: { configuredStartDate: string; postponed: boolean | null; startCalls: number | null } | null;
+}
+
+/** 한국 결정 응답 → 공통 칸. 모르는 값은 "—"(0·다른 날로 채우지 않음). */
+export function krDecisionExtras(response: unknown): KrDecisionExtras {
+  const record = isRecord(response) ? response : {};
+  const past = record.pastDeadline === true;
+  const configured = textOf(record.configuredStartDate);
+  return {
+    gates: krGateRows(record.gates),
+    pastDeadline: past
+      ? {
+        deadline: formatKst(textOf(record.deadlineKst)),
+        basis: textOf(record.gatesBasis),
+        judgedAt: textOf(record.gatesJudgedAtKst) ? formatKst(textOf(record.gatesJudgedAtKst)) : null,
+        waitedFor: stringsOf(record.waitedFor),
+        reason: textOf(record.noTradeReason) ?? textOf(record.skippedReason),
+      }
+      : null,
+    start: configured !== null || typeof record.postponed === "boolean"
+      ? {
+        configuredStartDate: configured ?? EMPTY,
+        postponed: typeof record.postponed === "boolean" ? record.postponed : null,
+        startCalls: numberOf(record.startCalls),
+      }
+      : null,
+  };
+}
+
+/** 한국 규칙 계좌 결정의 선정 요약 칸 하나. */
+export interface KrCell {
+  key: string;
+  label: string;
+  value: string;
+}
+
+/** 한국 규칙 계좌 결정 상세. */
+export interface KrRuleDecisionView {
+  recognized: boolean;
+  extras: KrDecisionExtras;
+  /** 선정 요약 칸(재선정일·주기·선정 기준일·따라잡기·주식/153130 비중·후보 수) — 선정 칸이 없으면 빈 목록. */
+  selection: KrCell[];
+  /** 선정 칸의 안내(재선정일이 아닌 날 — '후보·점수는 참고'). */
+  selectionNote: string | null;
+  targets: { key: string; code: string; rank: string; score: string; weight: string }[];
+  candidates: { key: string; code: string; rank: string; score: string }[];
+  /** 후보를 다 보이지 않을 때 뺀 수. */
+  candidatesMore: number;
+  exclusions: { key: string; reason: string; count: string }[];
+  holdings: { key: string; code: string; qty: string; weight: string; sell: string; reasons: string }[];
+  skipped: { key: string; ticker: string; reason: string }[];
+  /** 처리 메모 — 서버 문장 그대로('지금은 체결할 수 없음' 등). */
+  notes: string[];
+  /** 입력 요약(세션·읽은 시각·U 기준일·수급 창·금융업 표 판). 입력 칸이 없으면 빈 목록. */
+  input: KrCell[];
+}
+
+/** 결정 상세에 보일 후보 수(점수 순 앞부분 — 나머지는 수만, 전체는 종목 선정 탭). */
+const KR_CANDIDATES_SHOWN = 10;
+
+/**
+ * 한국 규칙 계좌(`kr_rules`) 결정 응답 → 상세(docs/API.md 결정 한 건의 '한국 규칙 계좌'). 숫자·판정은 서버 값 그대로이고 모양이 틀린 칸은 "—"·빈
+ * 목록입니다. 책 코드가 kr_rules가 아니면 recognized:false.
+ */
+export function krRuleDecisionView(book: string | null | undefined, response: unknown): KrRuleDecisionView {
+  const record = isRecord(response) ? response : {};
+  const selection = isRecord(record.selection) ? record.selection : null;
+  const input = isRecord(record.input) ? record.input : null;
+  const candidatesAll = listOf(selection?.candidates).filter(isRecord);
+  const selectionDay = record.selectionDay === true;
+
+  const cells: KrCell[] = [];
+  // 선정 칸이 없는 행(기한 지남·일시정지)은 그날이 재선정일이었을 때만 그 사실을 적습니다(아니면 '재선정일 아니오'만 남아 선정이 있었던 듯 읽힘).
+  if (selection || selectionDay) {
+    cells.push({ key: "selectionDay", label: "재선정일", value: selectionDay ? "예" : "아니오" });
+    if (selectionDay) {
+      cells.push({ key: "cycleDate", label: "재선정 주기 예정일", value: textOf(record.cycleDate) ?? EMPTY });
+      cells.push({ key: "selectionAsOf", label: "선정 기준일", value: textOf(record.selectionAsOf) ?? EMPTY });
+      cells.push({ key: "catchUp", label: "따라잡기", value: record.catchUp === true ? "예(놓친 재선정을 이 결정일에)" : "아니오" });
+    }
+    if (selection) {
+      cells.push({ key: "candidates", label: "후보 수", value: `${formatNumber(candidatesAll.length, 0)}종목` });
+      const maxNames = numberOf(selection.maxNames);
+      cells.push({ key: "maxNames", label: "매수 종목 수 상한", value: maxNames === null ? EMPTY : `${formatNumber(maxNames, 0)}종목` });
+      cells.push({ key: "weighting", label: "배분", value: textOf(selection.weighting) ?? EMPTY });
+      if (selectionDay) {
+        cells.push({ key: "stockWeight", label: "주식 비중", value: pct(numberOf(selection.stockWeightPct), 2) });
+        cells.push({ key: "parkingWeight", label: "153130 비중", value: pct(numberOf(selection.parkingWeightPct), 2) });
+      }
+    }
+  }
+
+  const exclusions = isRecord(selection?.exclusionCounts)
+    ? Object.entries(selection.exclusionCounts).map(([reason, count], index) => ({
+      key: `${index}-${reason}`, reason, count: `${formatNumber(numberOf(count), 0)}종목`,
+    }))
+    : [];
+
+  const inputCells: KrCell[] = [];
+  if (input) {
+    const universe = isRecord(input.universe) ? input.universe : null;
+    const window = isRecord(input.flowsWindow) ? input.flowsWindow : null;
+    const excluded = isRecord(input.excludedFlowRecords) ? input.excludedFlowRecords : null;
+    inputCells.push({ key: "session", label: "세션", value: textOf(input.session) ?? EMPTY });
+    inputCells.push({ key: "readAt", label: "입력을 읽은 순간", value: formatKst(textOf(input.readAtKst)) });
+    inputCells.push({
+      key: "universe", label: "유니버스 U",
+      value: `기준일 ${textOf(universe?.baseDate) ?? EMPTY} · ${formatNumber(numberOf(universe?.size), 0)}종목`,
+    });
+    inputCells.push({
+      key: "flowsWindow", label: "수급 창",
+      value: `${textOf(window?.from) ?? EMPTY} ~ ${textOf(window?.to) ?? EMPTY}(${formatNumber(numberOf(window?.tradingDays), 0)} KR 거래일)`,
+    });
+    inputCells.push({ key: "financialSectorTable", label: "금융업 코드 표 판", value: textOf(input.financialSectorTable) ?? EMPTY });
+    if (excluded) {
+      const parts = Object.entries(excluded).map(([name, count]) => `${name} ${formatNumber(numberOf(count), 0)}`);
+      inputCells.push({ key: "excluded", label: "결정 뒤에 알 수 있던 수급 기록(뺌)", value: parts.length > 0 ? parts.join(" · ") : EMPTY });
+    }
+    const suspended = stringsOf(input.suspended);
+    inputCells.push({ key: "suspended", label: "거래정지", value: suspended.length > 0 ? suspended.join(", ") : "없음" });
+  }
+
+  return {
+    recognized: book === "kr_rules",
+    extras: krDecisionExtras(record),
+    selection: cells,
+    selectionNote: textOf(selection?.note)
+      ?? (!selection && selectionDay ? "이 세션은 선정하지 않음 — 재선정은 다음 KR 결정일에 그날 자료로(따라잡기)" : null),
+    targets: listOf(selection?.targets).filter(isRecord).map((target, index) => ({
+      key: `${index}-${textOf(target.code) ?? ""}`,
+      code: textOf(target.code) ?? EMPTY,
+      rank: formatNumber(numberOf(target.rankInPlan), 0),
+      score: formatNumber(numberOf(target.score), 4),
+      weight: pct(numberOf(target.weightPct), 2),
+    })),
+    candidates: candidatesAll.slice(0, KR_CANDIDATES_SHOWN).map((candidate, index) => ({
+      key: `${index}-${textOf(candidate.code) ?? ""}`,
+      code: textOf(candidate.code) ?? EMPTY,
+      rank: formatNumber(numberOf(candidate.universeRank), 0),
+      score: formatNumber(numberOf(candidate.score), 4),
+    })),
+    candidatesMore: Math.max(0, candidatesAll.length - KR_CANDIDATES_SHOWN),
+    exclusions,
+    holdings: listOf(record.holdings).filter(isRecord).map((holding, index) => ({
+      key: `${index}-${textOf(holding.code) ?? ""}`,
+      code: textOf(holding.code) ?? EMPTY,
+      qty: formatNumber(numberOf(holding.qty), 0),
+      weight: pct(numberOf(holding.weightPct), 2),
+      sell: holding.sell === true ? "매도" : holding.sell === false ? "보유" : EMPTY,
+      reasons: stringsOf(holding.reasons).join(" · ") || EMPTY,
+    })),
+    skipped: listOf(record.skipped).filter(isRecord).map((entry, index) => ({
+      key: `${index}-${textOf(entry.ticker) ?? ""}`,
+      ticker: textOf(entry.ticker) ?? EMPTY,
+      reason: textOf(entry.reason) ?? EMPTY,
+    })),
+    notes: stringsOf(record.notes),
+    input: inputCells,
+  };
+}
+
+/** 한국 사건 줄(패킷 11b_events.items) 하나. 제목은 패킷 글(`text`)에만 있어 여기에는 없습니다. */
+export interface KrEventRow {
+  key: string;
+  k: string;
+  source: string;
+  /** 알 수 있는 시각(KST) 또는 발행 날짜(날짜만 주는 피드). */
+  when: string;
+  matched: string;
+  /** 시각이 창 시작보다 앞인 줄 — 결정 순간 뒤에 받아 이번 창에 든 제목(블록 시각은 발행 시각이라 창 앞일 수 있음). */
+  beforeWindow: boolean;
+}
+
+/** 문자열 JSON — 읽지 못하면 null. */
+function parseJson(text: string): unknown {
+  try {
+    return JSON.parse(text);
+  } catch {
+    return null;
+  }
+}
+
+/** 한국 Claude 결정 패킷(객체 또는 보낸 문자열)의 사건 섹션(11b_events) → 창·시각 문구·줄. 섹션이 없으면 null. */
+export function krEventsView(packet: unknown): {
+  window: string; timeNote: string | null; text: string | null; rows: KrEventRow[];
+} | null {
+  const parsed = typeof packet === "string" ? parseJson(packet) : packet;
+  const section = isRecord(parsed) && isRecord(parsed["11b_events"]) ? parsed["11b_events"] : null;
+  if (!section) return null;
+  const window = isRecord(section.window) ? section.window : null;
+  const from = textOf(window?.from);
+  const fromTime = from ? Date.parse(from) : Number.NaN;
+  return {
+    window: `${from ? formatKst(from) : EMPTY} ~ ${textOf(window?.to) ? formatKst(textOf(window?.to)) : EMPTY}`,
+    timeNote: textOf(section.timeNote),
+    text: textOf(section.text),
+    rows: listOf(section.items).filter(isRecord).map((item, index) => {
+      const known = textOf(item.knownAtKst);
+      const published = textOf(item.publishedDate);
+      const knownTime = known ? Date.parse(known) : Number.NaN;
+      const matched = stringsOf(item.matched);
+      const more = numberOf(item.matchedMore);
+      return {
+        key: `${index}-${textOf(item.entity) ?? ""}`,
+        k: `#${formatNumber(numberOf(item.k), 0)}`,
+        source: textOf(item.source) ?? EMPTY,
+        when: known ? formatKst(known) : published ? `${published}(날짜만)` : EMPTY,
+        matched: matched.length > 0 ? `${matched.join(", ")}${more !== null && more > 0 ? ` 외 ${formatNumber(more, 0)}` : ""}` : EMPTY,
+        beforeWindow: Number.isFinite(knownTime) && Number.isFinite(fromTime) && knownTime < fromTime,
+      };
+    }),
+  };
+}
+
+/** 출발·게이트 기록 카드의 한 줄. */
+export interface KrStartRecordRow {
+  key: string;
+  at: string;
+  outcome: string;
+  parts: string[];
+}
+
+/**
+ * 출발 작업 기록(`kr.decision` 중 상세 `start:true` — 기다림 START_WAITING·미룸 START_POSTPONED·오류 ERROR·출발 STARTED)을 최근 순으로 —
+ * 미룬 날·사유·과금 호출(결정 행 없이 과금된 호출)·시도 번호({@link krStartRecordParts}).
+ */
+export function krStartRecords(jobs: readonly PaperJobRun[] | null | undefined): KrStartRecordRow[] {
+  return (jobs ?? []).filter((job) => job.job === "kr.decision" && isRecord(job.detail) && job.detail.start === true)
+    .map((job, index) => ({
+      key: `${index}-${job.startedAtKst ?? ""}`,
+      at: formatKst(job.startedAtKst),
+      outcome: job.outcome || EMPTY,
+      parts: krStartRecordParts(job.detail),
+    }));
+}
+
+/** 작업 기록에 남은 그 세션 마지막 게이트 판정(규칙 계좌 몫 rulesGates·Claude 계좌 몫 claudeGates — 기한 지남 행이 다시 읽는 칸). */
+export interface KrJudgedGates {
+  label: string;
+  session: string;
+  judgedAt: string;
+  rows: KrGateRow[];
+}
+
+/** 가장 최근 kr.decision 기록의 rulesGates·claudeGates(각각 있는 것 중 가장 최근). 없으면 빈 목록. */
+export function krLatestJudgedGates(jobs: readonly PaperJobRun[] | null | undefined): KrJudgedGates[] {
+  const out: KrJudgedGates[] = [];
+  for (const [key, label] of [["rulesGates", "규칙 계좌 몫"], ["claudeGates", "Claude 계좌 몫"]] as const) {
+    const job = (jobs ?? []).find((entry) => entry.job === "kr.decision" && isRecord(entry.detail) && isRecord(entry.detail[key]));
+    if (!job || !isRecord(job.detail)) continue;
+    const judged = job.detail[key] as Record<string, unknown>;
+    out.push({
+      label,
+      session: textOf(job.detail.tradingDate) ?? EMPTY,
+      judgedAt: formatKst(textOf(judged.judgedAtKst)),
+      rows: krGateRows(judged.gates),
+    });
+  }
+  return out;
+}

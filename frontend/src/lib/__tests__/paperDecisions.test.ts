@@ -19,6 +19,7 @@ import {
   PAPER_TABS,
   prettyJson,
   pricesFinalText,
+  rejectReasonText,
   resolveDecisionBook,
   ruleDecisionView,
   rulesStartPrompt,
@@ -477,5 +478,17 @@ describe("개요의 선정 기관", () => {
     expect(view?.groupB).toEqual([]);
     expect(view?.pool).toEqual([]);
     expect(selectedFilersView({ asOfDate: "2026-10-23", groupA: [], groupB: [], pool: [] })?.groupA).toEqual([]);
+  });
+});
+
+describe("거절 사유 이름표 — 한국 검증기 코드 둘(F2), 미국 코드는 그대로", () => {
+  it("UNFILLABLE·BUY_BELOW_ONE_SHARE는 이름표와 설명, 미국 코드·모르는 코드·없음은 예전 그대로", () => {
+    expect(rejectReasonText("UNFILLABLE").label).toBe("지금 체결할 수 없는 종목 매수 (UNFILLABLE)");
+    expect(rejectReasonText("UNFILLABLE").title).toContain("기업행위 보류");
+    expect(rejectReasonText("BUY_BELOW_ONE_SHARE").label).toBe("증가분 1주 미만 (BUY_BELOW_ONE_SHARE)");
+    expect(rejectReasonText("BELOW_ONE_SHARE").label).toBe("1주 미만 부분 매도 (BELOW_ONE_SHARE)");
+    expect(rejectReasonText("MIN_NOTIONAL").label).toBe("최소 금액 미만 (MIN_NOTIONAL)");
+    expect(rejectReasonText("NEW_CODE")).toEqual({ label: "NEW_CODE" });
+    expect(rejectReasonText(null)).toEqual({ label: "—" });
   });
 });

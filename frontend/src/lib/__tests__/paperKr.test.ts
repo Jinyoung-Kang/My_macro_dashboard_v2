@@ -13,6 +13,16 @@ import {
   chargedCalls,
   jobsEmptyMessage,
   krCollectionRows,
+  krDecisionExtras,
+  krDecisionKindLabel,
+  krDecisionRunBlocked,
+  krEventsView,
+  krGateRows,
+  krLatestJudgedGates,
+  krManualDecisionNote,
+  krPricesFinalText,
+  krRuleDecisionView,
+  krStartRecords,
   krConfirmationCautions,
   krConfirmationCells,
   krConfirmationTotalText,
@@ -361,5 +371,153 @@ describe("보유·체결(F2 — 세 배지·확정 조정·실효 비용·스탑
     const jobs = [risk([`kr_rules: ${caution}`, "kr_rules: 체결 8 확정"]), risk([`kr_rules: ${caution}`, `kr_claude: ${caution}`])];
     expect(krConfirmationCautions(jobs, "kr_rules")).toEqual([caution]);
     expect(krConfirmationCautions(null, "kr_rules")).toEqual([]);
+  });
+});
+
+describe("결정 로그(F2 — 여섯 게이트·기한 지남·출발·사건 줄·출발 기록)", () => {
+  const GATES = [
+    { gate: "①", status: "PASS", note: "kr_rules — 기준일 < 2026-11-03인 대기 주문 없음" },
+    { gate: "③", status: "FAIL", note: "U 98/100에 2026-11-03 수급 · 20거래일 창에 U 기록이 절반 미만인 날 1(2026-10-15) — 달력이 모르는 휴장일이면 kr.calendar.extraClosures에 더함, 아니면 수집 구멍" },
+    { gate: "⑤", status: "FAIL", note: "069500 2026-11-03 봉 없음(휴장 또는 지연)" },
+    "모양 틀림",
+    { status: "PASS" },
+  ];
+
+  it("게이트 줄 — 통과·미달 배지, ③ 창 구멍 문구에 extraClosures 표시, 모양이 틀린 항목은 건너뜀", () => {
+    const rows = krGateRows(GATES);
+    expect(rows.map((row) => [row.gate, row.badge.label, row.extraClosures])).toEqual([
+      ["①", "통과", false], ["③", "미달", true], ["⑤", "미달", false],
+    ]);
+    expect(krGateRows(null)).toEqual([]);
+  });
+
+  it("규칙 계좌 기한 지남 — 기한·판정 근거·판정 시각·기다린 게이트·사유, Claude SKIPPED는 skippedReason, 일시정지 SKIPPED는 근거 없음", () => {
+    const rules = krDecisionExtras({
+      pastDeadline: true, deadlineKst: "2026-11-04 01:00 KST", noTradeReason: "069500 D 봉 없음(휴장 또는 지연)",
+      gates: GATES, waitedFor: ["⑤ 069500 2026-11-03 봉 없음(휴장 또는 지연)"], gatesJudgedAtKst: "2026-11-04 00:50 KST",
+      gatesBasis: "기한 전 마지막 판정",
+    });
+    expect(rules.pastDeadline).toEqual({
+      deadline: "2026-11-04 01:00", basis: "기한 전 마지막 판정", judgedAt: "2026-11-04 00:50",
+      waitedFor: ["⑤ 069500 2026-11-03 봉 없음(휴장 또는 지연)"], reason: "069500 D 봉 없음(휴장 또는 지연)",
+    });
+    expect(rules.gates).toHaveLength(3);
+    expect(rules.start).toBeNull();
+    expect(krDecisionExtras({ pastDeadline: true, deadlineKst: "2026-11-04 01:00 KST", skippedReason: "기한 지남" }).pastDeadline)
+      .toEqual({ deadline: "2026-11-04 01:00", basis: null, judgedAt: null, waitedFor: [], reason: "기한 지남" });
+    expect(krDecisionExtras({ summary: "일시정지 중" }).pastDeadline).toBeNull();
+    expect(krDecisionExtras(null)).toEqual({ gates: [], pastDeadline: null, start: null });
+  });
+
+  it("출발 INITIAL — 설정 출발일·미룸·출발 호출 수(Claude), 모르면 —", () => {
+    expect(krDecisionExtras({ configuredStartDate: "2026-10-29", postponed: true, startCalls: 2, gates: [] }).start)
+      .toEqual({ configuredStartDate: "2026-10-29", postponed: true, startCalls: 2 });
+    expect(krDecisionExtras({ postponed: false }).start).toEqual({ configuredStartDate: "—", postponed: false, startCalls: null });
+  });
+
+  it("규칙 계좌 상세 — 선정 요약·목표·후보(앞 20)·제외·보유 매도 판정·메모, kr_rules가 아니면 recognized:false", () => {
+    const candidates = Array.from({ length: 23 }, (_, i) => ({ code: `0000${String(i).padStart(2, "0")}`, universeRank: i + 1, score: 0.01 }));
+    const view = krRuleDecisionView("kr_rules", {
+      kind: "REBALANCE", selectionDay: true, cycleDate: "2026-11-02", selectionAsOf: "2026-11-02", catchUp: true,
+      selection: { maxNames: 10, weighting: "EQUAL", candidates, exclusionCounts: { "ROE ≤ 0": 4, "자료 없음(DART)": 2 },
+        targets: [{ code: "005930", rankInPlan: 1, score: 0.123456, weightPct: 8 }], notChosen: [], stockWeightPct: 80, parkingWeightPct: 20 },
+      holdings: [{ code: "000660", qty: 50, weightPct: 10.02, sell: true, reasons: ["20일 누적 순매도", "후보 밖"] }],
+      skipped: [{ ticker: "035420", reason: "지금은 체결할 수 없음(거래정지)" }],
+      notes: ["035720 매도 주문 — 지금은 체결할 수 없음(D 거래정지)"],
+      input: { session: "2026-11-02", readAtKst: "2026-11-02 22:31 KST", universe: { baseDate: "2026-10-30", size: 100 },
+        flowsWindow: { from: "2026-10-06", to: "2026-11-02", tradingDays: 20 }, financialSectorTable: "2026-10", suspended: [] },
+    });
+    expect(view.recognized).toBe(true);
+    expect(view.selection.map((cell) => [cell.label, cell.value])).toEqual([
+      ["재선정일", "예"], ["재선정 주기 예정일", "2026-11-02"], ["선정 기준일", "2026-11-02"], ["따라잡기", "예(놓친 재선정을 이 결정일에)"],
+      ["후보 수", "23종목"], ["매수 종목 수 상한", "10종목"], ["배분", "EQUAL"], ["주식 비중", "80.00%"], ["153130 비중", "20.00%"],
+    ]);
+    expect(view.targets).toEqual([{ key: "0-005930", code: "005930", rank: "1", score: "0.1235", weight: "8.00%" }]);
+    expect(view.candidates).toHaveLength(10);
+    expect(view.candidatesMore).toBe(13);
+    expect(view.exclusions.map((row) => `${row.reason} ${row.count}`)).toEqual(["ROE ≤ 0 4종목", "자료 없음(DART) 2종목"]);
+    expect(view.holdings[0]).toMatchObject({ code: "000660", sell: "매도", reasons: "20일 누적 순매도 · 후보 밖", weight: "10.02%" });
+    expect(view.notes).toEqual(["035720 매도 주문 — 지금은 체결할 수 없음(D 거래정지)"]);
+    expect(view.input.find((cell) => cell.key === "universe")?.value).toBe("기준일 2026-10-30 · 100종목");
+    expect(view.input.find((cell) => cell.key === "suspended")?.value).toBe("없음");
+
+    const plain = krRuleDecisionView("kr_rules", { selectionDay: false, selection: { candidates: [], note: "재선정일이 아님 — 후보·점수는 참고(매수하지 않음)" } });
+    expect(plain.selection.map((cell) => cell.label)).toEqual(["재선정일", "후보 수", "매수 종목 수 상한", "배분"]);
+    expect(plain.selectionNote).toBe("재선정일이 아님 — 후보·점수는 참고(매수하지 않음)");
+    expect(krRuleDecisionView("kr_claude", {}).recognized).toBe(false);
+    // 기한 지남 행 — 선정 칸이 없으면 재선정일이었을 때만 그 사실과 안내, 아니면 선정 칸 없음.
+    const missed = krRuleDecisionView("kr_rules", { pastDeadline: true, selectionDay: true, cycleDate: "2026-11-02" });
+    expect(missed.selection.map((cell) => [cell.label, cell.value])).toEqual([["재선정일", "예"], ["재선정 주기 예정일", "2026-11-02"],
+      ["선정 기준일", "—"], ["따라잡기", "아니오"]]);
+    expect(missed.selectionNote).toContain("재선정은 다음 KR 결정일에 그날 자료로");
+    expect(krRuleDecisionView("kr_rules", { pastDeadline: true, selectionDay: false }).selection).toEqual([]);
+    const broken = krRuleDecisionView("kr_rules", "글");
+    expect([broken.selection, broken.targets, broken.holdings, broken.notes, broken.input]).toEqual([[], [], [], [], []]);
+  });
+
+  it("사건 줄 — 시각이 창 시작보다 앞이면 '창 앞' 표시, 날짜만 주는 피드는 날짜, 패킷이 문자열이어도 읽음, 섹션이 없으면 null", () => {
+    const packet = { "11b_events": {
+      window: { from: "2026-11-02T22:30:00+09:00", to: "2026-11-03T22:30:00+09:00" }, timeNote: "시각 = 알 수 있는 시각",
+      text: "<<사건 #1 시작>> …", items: [
+        { k: 1, entity: "a", source: "연합뉴스", knownAtKst: "2026-11-03T09:10:00+09:00", matched: ["code 005930"] },
+        { k: 2, entity: "b", source: "한국은행", knownAtKst: "2026-11-02T21:50:00+09:00", matched: ["keyword 기준금리", "keyword 금통위"], matchedMore: 1 },
+        { k: 3, entity: "c", source: "재정경제부", publishedDate: "2026-11-03", matched: [] },
+      ],
+    } };
+    const view = krEventsView(packet);
+    expect(view?.window).toBe("2026-11-02 22:30 ~ 2026-11-03 22:30");
+    expect(view?.rows.map((row) => [row.k, row.when, row.matched, row.beforeWindow])).toEqual([
+      ["#1", "2026-11-03 09:10", "code 005930", false],
+      ["#2", "2026-11-02 21:50", "keyword 기준금리, keyword 금통위 외 1", true],
+      ["#3", "2026-11-03(날짜만)", "—", false],
+    ]);
+    expect(krEventsView(JSON.stringify(packet))?.rows).toHaveLength(3);
+    expect(krEventsView({ "1_basis": {} })).toBeNull();
+    expect(krEventsView("{깨짐")).toBeNull();
+  });
+
+  const job = (detail: unknown, outcome = "START_WAITING", name = "kr.decision") => ({
+    job: name, startedAtKst: "2026-10-29 22:40 KST", finishedAtKst: null, outcome, detail,
+  });
+
+  it("출발 기록 — start:true인 kr.decision만, 미룬 날·사유·과금 호출·시도", () => {
+    const rows = krStartRecords([
+      job({ start: true, tradingDate: "2026-10-29", configuredStartDate: "2026-10-29", postponed: false, postponedTo: "2026-10-30",
+        reason: "Claude 출발 호출 실패", calls: { kr_claude: { calls: 2 } }, attempt: 1 }, "START_POSTPONED"),
+      job({ tradingDate: "2026-10-29", waiting: "자료 게이트 미달" }, "DATA_NOT_READY"),
+      job({ start: true }, "STARTED", "kr.risk"),
+    ]);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ at: "2026-10-29 22:40", outcome: "START_POSTPONED" });
+    expect(rows[0].parts).toEqual(["세션 2026-10-29", "다음 KR 거래일 2026-10-30로 미룸", "사유 Claude 출발 호출 실패",
+      "과금 호출 kr_claude 2회(결정 행 없음 — 사용량에 셈)", "시도 1번째"]);
+    expect(krStartRecords(null)).toEqual([]);
+  });
+
+  it("마지막 게이트 판정 — rulesGates·claudeGates 각각 가장 최근 기록, 없으면 빈 목록", () => {
+    const judged = krLatestJudgedGates([
+      job({ tradingDate: "2026-11-03", claudeGates: { judgedAtKst: "2026-11-03 23:10 KST", gates: GATES.slice(0, 1) } }, "DATA_NOT_READY"),
+      job({ tradingDate: "2026-11-03", rulesGates: { judgedAtKst: "2026-11-03 23:00 KST", gates: GATES } }, "DATA_NOT_READY"),
+      job({ tradingDate: "2026-11-02", rulesGates: { judgedAtKst: "2026-11-02 23:00 KST", gates: [] } }, "DATA_NOT_READY"),
+    ]);
+    expect(judged.map((entry) => [entry.label, entry.session, entry.judgedAt, entry.rows.length])).toEqual([
+      ["규칙 계좌 몫", "2026-11-03", "2026-11-03 23:00", 3],
+      ["Claude 계좌 몫", "2026-11-03", "2026-11-03 23:10", 1],
+    ]);
+    expect(krLatestJudgedGates([job({ start: true })])).toEqual([]);
+  });
+
+  it("단추·이름 — 수동 결정은 운용 중 Claude만, 출발(초기 결정) 이름, 가격 칸은 잠정(토스), 문턱 문장은 받은 값 그대로", () => {
+    expect(krDecisionRunBlocked({ kind: "RULES", status: "ACTIVE" })).toContain("수동 결정이 없습니다");
+    expect(krDecisionRunBlocked({ kind: "CLAUDE", status: "NOT_STARTED" })).toContain("네 계좌가 함께 출발한 뒤");
+    expect(krDecisionRunBlocked({ kind: "CLAUDE", status: "PAUSED" })).toContain("재개한 뒤");
+    expect(krDecisionRunBlocked({ kind: "CLAUDE", status: "ACTIVE" })).toBeNull();
+    expect(krDecisionRunBlocked(null)).toBe("계좌가 없습니다.");
+    expect(krDecisionKindLabel("INITIAL")).toBe("출발(초기 결정)");
+    expect(krDecisionKindLabel("SCHEDULED")).toBe("정기");
+    expect(krPricesFinalText(false).label).toBe("잠정(토스)");
+    expect(krPricesFinalText(null).label).toBe("—");
+    expect(krManualDecisionNote(13, "22:30 ~ 01:00(다음 날) KST")).toContain("수동 문턱(13회 — 하루 상한 − 정기 몫 예약)");
+    expect(krManualDecisionNote(null, "— ~ — KST")).toContain("수동 문턱(— — 하루 상한");
   });
 });

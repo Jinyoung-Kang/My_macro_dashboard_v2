@@ -2545,6 +2545,12 @@ const REJECT_REASON: Record<string, { label: string; title: string }> = {
   MIN_HOLD: { label: "최소 보유일 전", title: "보유한 지 설정 minHoldTradingDaysForSell 거래일이 안 된 재량 매도입니다(트레일링 스탑은 예외)." },
   STALE_INPUT: { label: "입력 자료 오래됨", title: "가격 저장본이 오래돼 그날 주문을 모두 거절했습니다." },
   NO_PRICE: { label: "가격 없음", title: "그 종목의 가격이 없거나 지난 값이라 금액을 정할 수 없습니다." },
+  // 한국 검증기(2단계 명세 §4-7 E2a) — 체결할 수 없는 종목의 매수, 증가분이 1주에 못 미치는 매수.
+  UNFILLABLE: {
+    label: "지금 체결할 수 없는 종목 매수",
+    title: "그 실행 관측치에 봉이 없거나 D 거래정지·미처리 기업행위 보류인 종목의 매수입니다(그 보유의 매도는 받음).",
+  },
+  BUY_BELOW_ONE_SHARE: { label: "증가분 1주 미만", title: "목표 비중까지 늘릴 금액으로 1주도 살 수 없는 매수입니다(정수 주)." },
 };
 
 /** 거절 사유 칸 — "비중 상한 초과 (WEIGHT_CAP)"와 설명. 사유가 없으면 "—", 모르는 코드는 받은 글자 그대로. */
@@ -2689,6 +2695,7 @@ export function claudeDecisionView(source: ClaudeDecisionSource): ClaudeDecision
   const verdicts = Array.isArray(source.validation) ? source.validation : listOf(record?.validation);
   const usage = isRecord(source.usage) ? source.usage : null;
   const recognized = source.book === "claude"
+    || source.book === "kr_claude"
     || Array.isArray(source.validation)
     || Array.isArray(record?.validation)
     || isNumber(record?.targetEquityExposurePct);

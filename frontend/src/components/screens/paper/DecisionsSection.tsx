@@ -46,16 +46,33 @@ import {
   type SkippedRow,
   timingLabel,
 } from "@/lib/paper";
+import {
+  krDecisionBookNote,
+  krDecisionExtras,
+  krDecisionKindLabel,
+  krDecisionRunBlocked,
+  krDecisionWindowText,
+  krLatestJudgedGates,
+  krManualDecisionNote,
+  krPricesFinalText,
+  krRuleDecisionView,
+  krStartRecords,
+} from "@/lib/paperKr";
+import type { PaperMarketCode } from "@/lib/paperMarket";
 import type {
   PaperBookSummary,
   PaperDecisionDetailResponse,
   PaperDecisionsResponse,
   PaperDecisionSummary,
+  PaperJobRun,
   PaperOrder,
   PaperRunDecisionResult,
+  PaperSettingsResponse,
+  PaperStatusResponse,
 } from "@/lib/types";
 import { ClaudeDecisionBody } from "./ClaudeDecisionBody";
 import { GateIndicatorBody } from "./GateIndicatorBody";
+import { KrGateTable, KrRuleDecisionBody } from "./KrRuleDecisionBody";
 import { ReviewsSection } from "./ReviewsSection";
 
 /** 결정 목록에 보일 최근 건수. */
@@ -73,12 +90,17 @@ const RECENT_LIMIT = 50;
  *
  * 탭 맨 위의 '결정 기록 · 주간 복기'로 Claude 계좌의 주간 복기({@link ReviewsSection}, 2단계 D)를 봅니다 — 복기는 계좌를 고르지 않습니다
  * (Claude 계좌만). 복기가 낸 제안을 누르면 프레임 탭으로 옮겨 그 제안을 강조합니다(onOpenProposal, page.tsx).
+ *
+ * <b>한국</b>(`market` "KR", 2단계 명세 §4-16 F2): 계좌는 kr_rules·kr_claude, 수동 결정은 kr_claude만(확인 창에 수동 호출 문턱·결정 창 —
+ * POST run/decision?market=KR). 상세는 한국 규칙 계좌 본문(KrRuleDecisionBody — 여섯 게이트·기한 지남·선정·보유 매도 판정)과 Claude 본문에 한국
+ * 칸(게이트·기한 지남 건너뜀·출발·사건 줄)을 더하고, 결정 목록 아래 '출발·게이트 기록'(상태 응답 작업 기록)을 둡니다.
  */
 export function DecisionsSection({
   books,
   onChanged,
   initialBook = "",
   onOpenProposal,
+  market = "US",
 }: {
   books: PaperBookSummary[];
   onChanged: () => void;
@@ -86,14 +108,19 @@ export function DecisionsSection({
   initialBook?: string;
   /** 주간 복기의 제안 링크 — 프레임 탭으로 옮겨 그 제안을 강조합니다. */
   onOpenProposal?: (id: number) => void;
+  /** 화면의 시장 — 한국은 한국 계좌·수동 결정 경로(?market=KR)·한국 상세. 미국 화면은 예전 그대로. */
+  market?: PaperMarketCode;
 }) {
+  const korea = market === "KR";
   const [view, setView] = useState<DecisionViewKey>("decisions");
   const [picked, setPicked] = useState(initialBook);
   const code = resolveDecisionBook(picked, books);
   const list = useApi<PaperDecisionsResponse>(code ? endpoints.paper.decisions(code, RECENT_LIMIT) : null, 60_000);
 
   const run = useAsyncAction(
-    (book: string) => apiPost<PaperRunDecisionResult>(endpoints.paper.runDecision, { book }),
+    (book: string) => apiPost<PaperRunDecisionResult>(
+      korea ? endpoints.paper.market("KR").runDecision : endpoints.paper.runDecision, { book },
+    ),
     "결정을 내지 못했습니다.",
   );
   const elapsed = useElapsedSeconds(run.busy);
@@ -102,6 +129,10 @@ export function DecisionsSection({
   const [open, setOpen] = useState<number[]>([]);
   // Claude 책 수동 결정의 확인 단계 — 어느 책에서 열었는지(책을 바꾸면 닫힌 것으로 봄).
   const [confirmingFor, setConfirmingFor] = useState<string | null>(null);
+  // 한국만 — 출발·게이트 기록(작업 기록)과 수동 호출 문턱(호출 사용량), 확인 창의 결정 창(설정).
+  const status = useApi<PaperStatusResponse>(korea ? endpoints.paper.market("KR").status : null, 60_000);
+  const settings = useApi<PaperSettingsResponse>(korea && confirmingFor !== null && confirmingFor === code
+    ? endpoints.paper.settings : null);
 
   if (!code) {
     return <Banner tone="info">결정을 내는 계좌가 아직 없습니다 — 개요 탭에서 초기화하면 규칙 계좌·Claude 계좌가 생깁니다.</Banner>;
@@ -128,7 +159,7 @@ export function DecisionsSection({
       })}
     </div>
   );
-  if (view === "reviews") {
+  if (view === "reviews" && !korea) {
     return (
       <>
         {views}
@@ -138,11 +169,15 @@ export function DecisionsSection({
   }
 
   const book = books.find((entry) => entry.code === code) ?? null;
-  const blocked = decisionRunBlocked(book);
+  const blocked = korea ? krDecisionRunBlocked(book) : decisionRunBlocked(book);
   const runView = run.result && ranFor === code ? runDecisionResultView(run.result) : null;
   const runError = run.error && ranFor === code ? run.error : null;
   const claude = book?.kind === "CLAUDE";
   const confirming = claude && confirmingFor === code;
+  // 한국 규칙 계좌는 수동 결정이 없어 단추를 그리지 않습니다(막힌 까닭은 아래 안내).
+  const showRun = !korea || claude;
+  const statusJobs = status.data?.available ? (status.data.jobs ?? []) : null;
+  const manualLimit = status.data?.available ? (status.data.apiUsage?.today?.manualLimit ?? null) : null;
 
   const runNow = async () => {
     setRanFor(code);
@@ -158,8 +193,12 @@ export function DecisionsSection({
 
   return (
     <>
-      {views}
-      <Card title="결정" source={PAPER_SOURCES.decisions} actions={<Freshness refreshError={list.refreshError} />}>
+      {!korea && views}
+      <Card
+        title="결정"
+        source={korea ? PAPER_SOURCES.krDecisions : PAPER_SOURCES.decisions}
+        actions={<Freshness refreshError={list.refreshError} />}
+      >
         <div className="flex flex-wrap items-end gap-4">
           <Select
             label="계좌 고르기"
@@ -170,18 +209,25 @@ export function DecisionsSection({
             }}
             options={bookOptions(decisionBooks(books))}
           />
-          <Button
-            onClick={() => (claude ? setConfirmingFor(code) : void runNow())}
-            disabled={run.busy || blocked !== null || confirming}
-          >
-            {run.busy ? `결정 중… ${elapsed}초` : "지금 결정 실행"}
-          </Button>
+          {showRun && (
+            <Button
+              onClick={() => (claude ? setConfirmingFor(code) : void runNow())}
+              disabled={run.busy || blocked !== null || confirming}
+            >
+              {run.busy ? `결정 중… ${elapsed}초` : "지금 결정 실행"}
+            </Button>
+          )}
         </div>
-        <p className="mt-3 text-xs leading-relaxed text-muted">{decisionBookNote(book?.kind)}</p>
-        {blocked && <p className="mt-2 text-xs text-warn">{blocked}</p>}
+        <p className="mt-3 text-xs leading-relaxed text-muted">{korea ? krDecisionBookNote(book?.kind) : decisionBookNote(book?.kind)}</p>
+        {blocked && showRun && <p className="mt-2 text-xs text-warn">{blocked}</p>}
         {confirming && (
           <div className="mt-3 flex flex-col gap-3 rounded-md border border-warn/40 bg-warn/10 px-3 py-3">
             <p className="text-sm leading-relaxed text-warn">Claude를 지금 부를까요? {CLAUDE_COST_NOTE}</p>
+            {korea && (
+              <p className="text-xs leading-relaxed text-warn">
+                {krManualDecisionNote(manualLimit, krDecisionWindowText(settings.data?.available ? settings.data.body : null))}
+              </p>
+            )}
             <div className="flex flex-wrap items-center gap-2">
               <Button variant="primary" onClick={() => void runNow()} disabled={run.busy}>
                 {run.busy ? `결정 중… ${elapsed}초` : "결정 실행 확인"}
@@ -196,17 +242,82 @@ export function DecisionsSection({
 
       <Card
         title={`결정 기록 (최근 ${RECENT_LIMIT}건)`}
-        subtitle="거래일마다 종류별로 한 건(같은 날 다시 돌아도 새로 만들지 않음). 행의 '상세 펼치기'로 선정·신호·주문·게이트(참고)를 봅니다."
-        source={PAPER_SOURCES.decisions}
+        subtitle={korea
+          ? "KR 거래일마다 종류별로 한 건(같은 세션 다시 돌아도 새로 만들지 않음). 행의 '상세 펼치기'로 자료 게이트·기한 지남·선정·주문을 봅니다."
+          : "거래일마다 종류별로 한 건(같은 날 다시 돌아도 새로 만들지 않음). 행의 '상세 펼치기'로 선정·신호·주문·게이트(참고)를 봅니다."}
+        source={korea ? PAPER_SOURCES.krDecisions : PAPER_SOURCES.decisions}
       >
         {list.loading && !list.data && <Loading label="결정 기록을 읽는 중…" />}
         {list.error && <ErrorState message={list.error} onRetry={list.reload} />}
         {list.data && !list.data.available && <Banner tone="warn">{list.data.message ?? "결정 기록을 읽을 수 없습니다."}</Banner>}
         {list.data?.available && (
-          <DecisionTable rows={list.data.decisions ?? []} open={open} onToggle={toggle} showExposure={claude} />
+          <DecisionTable rows={list.data.decisions ?? []} open={open} onToggle={toggle} showExposure={claude} market={market} />
         )}
       </Card>
+
+      {korea && (
+        <KrStartRecordsCard
+          jobs={statusJobs}
+          loading={status.loading && !status.data}
+          error={status.error}
+          onRetry={status.reload}
+        />
+      )}
     </>
+  );
+}
+
+/**
+ * 한국 출발·게이트 기록(작업 기록 — 상태 응답 최근 30건): 출발 기록(`kr.decision` 상세 `start:true` — 기다림·미룸·오류·출발)의 미룬 날·사유·과금
+ * 호출(결정 행 없이 과금된 Claude 호출)·시도 번호와, 그 세션 마지막 게이트 판정(규칙 계좌 몫 rulesGates·Claude 계좌 몫 claudeGates — 기한 지남 행이
+ * 다시 읽는 칸). 값은 기록 그대로입니다.
+ */
+function KrStartRecordsCard({
+  jobs,
+  loading,
+  error,
+  onRetry,
+}: {
+  jobs: readonly PaperJobRun[] | null;
+  loading: boolean;
+  error: string | null;
+  onRetry: () => void;
+}) {
+  const records = krStartRecords(jobs);
+  const judged = krLatestJudgedGates(jobs);
+  return (
+    <Card
+      title="출발·게이트 기록"
+      subtitle="작업 기록(최근 30건)의 출발 기록 — 출발이 자료를 기다리거나 미뤄진 세션·사유·과금 호출(결정 행 없이 과금된 호출 — 사용량에 셈)과, 그 세션 마지막 자료 게이트 판정입니다."
+      source={`${PAPER_SOURCES.krDecisions} · ${PAPER_SOURCES.jobs}`}
+    >
+      {loading && <Loading label="작업 기록을 읽는 중…" />}
+      {error && <ErrorState message={error} onRetry={onRetry} />}
+      {jobs && (
+        <div className="flex flex-col gap-4">
+          {records.length === 0 ? (
+            <p className="text-sm text-text-3">출발 기록이 없습니다 — 출발일 밤 결정 창에서 출발이 자료를 기다리거나 미뤄지면 여기에 남습니다.</p>
+          ) : (
+            <ul aria-label="출발 기록" className="flex flex-col gap-1.5 text-xs">
+              {records.map((record) => (
+                <li key={record.key} className="leading-relaxed text-body">
+                  <span className="whitespace-nowrap font-semibold text-bright">{record.at} {record.outcome}</span>
+                  {record.parts.length > 0 && <span> · {record.parts.join(" · ")}</span>}
+                </li>
+              ))}
+            </ul>
+          )}
+          {judged.map((entry) => (
+            <section key={entry.label} aria-label={`${entry.label} 마지막 게이트 판정`} className="flex flex-col gap-1">
+              <h3 className="text-sm font-semibold text-bright">
+                {entry.label} 마지막 게이트 판정 — 세션 {entry.session} · {entry.judgedAt}
+              </h3>
+              <KrGateTable rows={entry.rows} label={`${entry.label} 게이트`} />
+            </section>
+          ))}
+        </div>
+      )}
+    </Card>
   );
 }
 
@@ -223,17 +334,23 @@ function DecisionTable({
   open,
   onToggle,
   showExposure,
+  market,
 }: {
   rows: PaperDecisionSummary[];
   open: readonly number[];
   onToggle: (id: number) => void;
   /** Claude 책이면 목표 노출 칸을 더합니다(규칙 책은 늘 비어 있는 칸이라 그리지 않음). */
   showExposure: boolean;
+  market: PaperMarketCode;
 }) {
+  const korea = market === "KR";
+  const kindLabel = korea ? krDecisionKindLabel : decisionKindLabel;
   if (rows.length === 0) {
     return (
       <p className="text-sm text-muted">
-        아직 결정 기록이 없습니다 — 계좌를 시작한 뒤 거래일마다(KST 07:30 이후) 결정 작업이 남깁니다.
+        {korea
+          ? "아직 결정 기록이 없습니다 — 한국 네 계좌가 출발하면(개요의 '출발 지금 실행' 또는 출발일 밤 정기 출발) 출발 결정부터 KR 거래일마다 결정 창에서 남깁니다."
+          : "아직 결정 기록이 없습니다 — 계좌를 시작한 뒤 거래일마다(KST 07:30 이후) 결정 작업이 남깁니다."}
       </p>
     );
   }
@@ -254,7 +371,7 @@ function DecisionTable({
         );
       },
     },
-    { key: "kind", header: "종류", render: (row) => <span className="whitespace-nowrap">{decisionKindLabel(row.kind)}</span> },
+    { key: "kind", header: "종류", render: (row) => <span className="whitespace-nowrap">{kindLabel(row.kind)}</span> },
     {
       key: "status",
       header: "상태",
@@ -279,8 +396,9 @@ function DecisionTable({
       key: "prices",
       header: "가격",
       render: (row) => {
-        const prices = pricesFinalText(row.pricesFinal);
-        return <span className={`whitespace-nowrap text-xs ${prices.className}`}>{prices.label}</span>;
+        const prices: { label: string; className: string; title?: string } = korea
+          ? krPricesFinalText(row.pricesFinal) : pricesFinalText(row.pricesFinal);
+        return <span className={`whitespace-nowrap text-xs ${prices.className}`} title={prices.title}>{prices.label}</span>;
       },
     },
     { key: "decidedAt", header: "결정 시각", render: (row) => <span className="whitespace-nowrap">{formatKst(row.decidedAtKst)}</span> },
@@ -304,7 +422,7 @@ function DecisionTable({
               <Fragment key={row.id}>
                 <tr
                   className="border-b border-border/50 align-top hover:bg-surface-hover/60"
-                  aria-label={`${row.asOfTradingDate} ${decisionKindLabel(row.kind)}`}
+                  aria-label={`${row.asOfTradingDate} ${kindLabel(row.kind)}`}
                 >
                   {columns.map((column) => (
                     <td key={column.key} className={`px-3 py-2 tabular-nums ${align(column)}`}>{column.render(row)}</td>
@@ -313,7 +431,7 @@ function DecisionTable({
                 {open.includes(row.id) && (
                   <tr className="border-b border-border/50 bg-canvas">
                     <td colSpan={columns.length} className="px-3 py-3">
-                      <DecisionDetail id={row.id} />
+                      <DecisionDetail id={row.id} market={market} />
                     </td>
                   </tr>
                 )}
@@ -331,7 +449,8 @@ function DecisionTable({
  * Claude 책 기록이면 판단·제안 주문·검증·사용량을, 규칙 책 기록이면 선정·신호 표를 그립니다. 둘 다 아닌 모양이면 표 대신 원본 JSON만
  * 보입니다 — 모르는 모양을 빈 표로 그리면 "신호 없음"으로 읽힙니다.
  */
-function DecisionDetail({ id }: { id: number }) {
+function DecisionDetail({ id, market }: { id: number; market: PaperMarketCode }) {
+  const korea = market === "KR";
   const { data, loading, error, reload } = useApi<PaperDecisionDetailResponse>(endpoints.paper.decision(id));
 
   if (loading && !data) return <Loading label="결정 상세를 읽는 중…" />;
@@ -350,19 +469,25 @@ function DecisionDetail({ id }: { id: number }) {
     exposureMismatch: decision.exposureMismatch,
   });
   const view = ruleDecisionView(decision.response);
+  // 한국 규칙 계좌 기록은 한국 본문(KrRuleDecisionBody — 메모 포함)으로 그립니다. 미국 신호 표(13F)는 한국 기록에 그리지 않습니다.
+  const krRules = korea ? krRuleDecisionView(decision.book, decision.response) : null;
   // 규칙 책 표(선정·신호·게이트)는 규칙 책 기록에만 — Claude 기록에 참고용 gate 같은 키가 있어도 빈 신호 표를 그리지 않습니다.
   // 처리 메모(notes)는 두 책 모두 그대로 보입니다.
-  const rules = view.recognized && !claude.recognized;
-  const selection = claude.recognized ? null : view.selection;
+  const rules = !korea && view.recognized && !claude.recognized;
+  const selection = claude.recognized || korea ? null : view.selection;
+  const kindLabel = korea ? krDecisionKindLabel : decisionKindLabel;
+  const meta = decisionMeta(decision).map((cell) => (korea && cell.key === "pricesFinal"
+    ? { ...cell, value: krPricesFinalText(decision.pricesFinal).label, title: krPricesFinalText(decision.pricesFinal).title }
+    : cell));
   const orders = data.orders ?? [];
   const response = prettyJson(decision.response);
   const packet = prettyJson(decision.packet);
   const raw = typeof decision.responseRaw === "string" && decision.responseRaw ? decision.responseRaw : null;
 
   return (
-    <section aria-label={`${decision.asOfTradingDate} ${decisionKindLabel(decision.kind)} 상세`} className="flex flex-col gap-4">
+    <section aria-label={`${decision.asOfTradingDate} ${kindLabel(decision.kind)} 상세`} className="flex flex-col gap-4">
       <dl className="flex flex-wrap gap-x-5 gap-y-1 text-xs">
-        {decisionMeta(decision).map((cell) => (
+        {meta.map((cell) => (
           <div key={cell.key}>
             <dt className="text-muted">{cell.label}</dt>
             <dd className="tabular-nums font-semibold text-bright" title={cell.title}>{cell.value}</dd>
@@ -371,9 +496,16 @@ function DecisionDetail({ id }: { id: number }) {
       </dl>
       {decision.error && <Banner tone="warn">오류 — {decision.error}</Banner>}
 
-      {claude.recognized && <ClaudeDecisionBody view={claude} />}
+      {claude.recognized && (
+        <ClaudeDecisionBody
+          view={claude}
+          kr={korea ? { extras: krDecisionExtras(decision.response), packet: decision.packet } : undefined}
+        />
+      )}
 
-      {view.notes.length > 0 && (
+      {krRules?.recognized && <KrRuleDecisionBody view={krRules} />}
+
+      {view.notes.length > 0 && !krRules?.recognized && (
         <Part title="처리 메모">
           <ul aria-label="결정 메모" className="list-disc space-y-0.5 pl-5 text-xs text-body">
             {view.notes.map((note, index) => <li key={`${index}-${note}`}>{note}</li>)}
@@ -520,7 +652,9 @@ function DecisionDetail({ id }: { id: number }) {
         note={claude.recognized
           ? "이 결정이 장부에 남긴 주문입니다 — 검증을 통과한 주문은 대기(체결 전), 거절된 주문은 거절과 사유로 남습니다. 대기 주문이 "
             + "집행 전에 취소되면(다음 결정이 대신함·일시정지) 취소와 사유가 보입니다. 근거는 모델이 쓴 문장입니다."
-          : "이 결정이 낸 주문입니다. 근거에 어느 기관(그룹·순위·가중)의 어떤 행동이 이 주문을 냈는지가 남습니다."}
+          : korea
+            ? "이 결정이 낸 주문입니다 — 다음 KR 거래일 시가(KRX 시가 단일가)에 체결합니다. 근거에 점수(순위)·매도 사유·남는 현금이 남습니다."
+            : "이 결정이 낸 주문입니다. 근거에 어느 기관(그룹·순위·가중)의 어떤 행동이 이 주문을 냈는지가 남습니다."}
       >
         <Table<PaperOrder>
           label="주문"
@@ -554,7 +688,7 @@ function DecisionDetail({ id }: { id: number }) {
         />
       </Part>
 
-      {view.skipped.length > 0 && (
+      {view.skipped.length > 0 && !krRules?.recognized && (
         <Part title="고르지 못한 후보" note="매수 후보였지만 주문을 내지 않은 종목과 서버가 남긴 사유입니다.">
           <Table<SkippedRow>
             label="고르지 못한 후보"

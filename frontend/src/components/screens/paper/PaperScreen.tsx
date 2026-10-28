@@ -177,7 +177,13 @@ export default function PaperPage({
               <HoldingsSection books={data.books ?? []} onChanged={reload} initialBook={preselect} market={market} />
             )}
             {current.opensIn === null && current.key === "decisions" && (
-              <DecisionsSection books={data.books ?? []} onChanged={reload} initialBook={preselect} onOpenProposal={openProposal} />
+              <DecisionsSection
+                books={data.books ?? []}
+                onChanged={reload}
+                initialBook={preselect}
+                onOpenProposal={openProposal}
+                market={market}
+              />
             )}
             {korea && (current.key === "framework" || current.key === "settings") && (
               <Banner tone="info">{SHARED_TAB_NOTE[current.key]}</Banner>
