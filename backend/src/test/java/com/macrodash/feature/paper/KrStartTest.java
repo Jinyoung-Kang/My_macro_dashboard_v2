@@ -489,7 +489,7 @@ class KrStartTest {
     }
 
     @Test
-    @DisplayName("K28·§9 'E2 — 출발 갈고리의 기한'(E2b) — Claude 출발 호출의 대기 한도는 기한까지 남은 시간(00:58이면 120초)으로 묶이고, 호출이 기한을 넘겨 끝나면 쓰기 트랜잭션이 막아 어느 계좌에도 쓰지 않음, 기한까지 1초도 남지 않았으면 부르지 않고 미룸")
+    @DisplayName("K28·§9 'E2 — 출발 갈고리의 기한'(E2b) — Claude 출발 호출의 대기 한도는 기한까지 남은 시간(00:58이면 120초)으로 묶이고, 호출이 기한을 넘겨 끝나면 쓰기 트랜잭션이 막아 어느 계좌에도 쓰지 않음, 기한까지 최소 대기 한도 60초가 남지 않았으면(0.6초) 부르지 않고 미룸(w12)")
     void claudeStartCallIsBoundedByTheDeadline() {
         KrClaudeFixtures.FakeAi fake = new KrClaudeFixtures.FakeAi();
         fake.answer(KrClaudeFixtures.decision(0, "관망"));
@@ -510,9 +510,53 @@ class KrStartTest {
         clock.set(kst("2026-12-02T00:59").plusMillis(59_400));   // 기한(12-02 01:00)까지 0.6초
         PaperDecisionJob.Result noTime = job.run(KrPaperMarket.INSTANCE);
         assertThat(noTime.outcome()).isEqualTo(PaperDecisionJob.START_POSTPONED);
-        assertThat(noTime.message()).contains("kr_claude").contains("남은 시간이 없어 Claude를 부르지 않음");
+        assertThat(noTime.message()).contains("kr_claude").contains("까지 0초 — 최소 대기 한도 60초보다 짧아 Claude를 부르지 않음");
         assertThat(fake.requests).as("부르지 않음").hasSize(1);
         assertNotStarted(store);
+    }
+
+    @Test
+    @DisplayName("K28·사용자 결정 w12 — Claude 출발 호출의 최소 대기 한도 60초: 기한(S+1 01:00)까지 59초면 부르지 않고 네 계좌 모두 미룸(사유와 함께 저장 — 같은 창에서 재기동해도 다시 부르지 않음), 다음 KR 거래일 기한까지 정확히 60초면 대기 한도 60초로 불러 네 계좌가 함께 출발")
+    void claudeStartNeedsSixtySecondsBeforeTheDeadline() {
+        KrClaudeFixtures.FakeAi fake = new KrClaudeFixtures.FakeAi();
+        fake.answer(KrClaudeFixtures.decision(0, "관망"));
+        realClaude(fake);
+
+        PaperDecisionJob.Result tooLate = runAt("2026-12-01T00:59:01");   // 기한 12-01 01:00까지 59초
+
+        assertThat(tooLate.outcome()).isEqualTo(PaperDecisionJob.START_POSTPONED);
+        assertThat(fake.requests).as("부르지 않음").isEmpty();
+        assertThat(tooLate.message()).contains("kr_claude")
+                .contains("출발 기한(2026-12-01 01:00 KST)까지 59초 — 최소 대기 한도 60초보다 짧아 Claude를 부르지 않음");
+        assertThat(krDecisions()).isEmpty();
+        assertThat(store.orders).isEmpty();
+        assertNotStarted(store);
+        assertThat(store.apiUsage(NEXT)).as("호출 수를 잡지 않음").isEmpty();
+        assertThat(krRuns()).singleElement().satisfies(run -> {
+            assertThat(run.outcome()).isEqualTo(PaperDecisionJob.START_POSTPONED);
+            assertThat(run.detail().path("reason").asString()).contains("출발 계획 실패").contains("kr_claude")
+                    .contains("최소 대기 한도 60초보다 짧아 Claude를 부르지 않음");
+            assertThat(run.detail().path("postponedTo").asString()).isEqualTo("2026-12-01");
+            assertThat(run.detail().has("calls")).as("과금 호출 없음").isFalse();
+        });
+
+        realClaude(fake);   // 같은 창에서 재기동
+        PaperDecisionJob.Result again = runAt("2026-12-01T00:59:30");
+        assertThat(again.outcome()).isEqualTo(PaperDecisionJob.START_POSTPONED);
+        assertThat(again.message()).contains("그 세션은 이미 미뤘음");
+        assertThat(fake.requests).isEmpty();
+        assertThat(krRuns()).as("미룸 기록은 한 번").hasSize(1);
+
+        sessionData(NEXT, S, everyCodeOn(NEXT));
+        PaperDecisionJob.Result started = runAt("2026-12-02T00:59:00");   // 기한 12-02 01:00까지 정확히 60초
+
+        assertThat(started.outcome()).isEqualTo(PaperDecisionJob.STARTED);
+        assertThat(fake.requests).singleElement().satisfies(request ->
+                assertThat(request.timeoutSeconds()).as("대기 한도 = 기한까지 남은 60초").isEqualTo(60));
+        assertThat(krDecisions()).extracting(Decision::bookCode)
+                .containsExactly("kr_rules", "kr_claude", "kr_bench_k200", "kr_bench_mix");
+        assertThat(krDecisions()).allSatisfy(d -> assertThat(d.asOfTradingDate()).isEqualTo(NEXT));
+        assertThat(store.books.get("kr_claude").startedOn()).isEqualTo(NEXT);
     }
 
     @Test

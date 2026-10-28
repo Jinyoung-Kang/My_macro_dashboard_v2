@@ -667,6 +667,11 @@ public class ClaudeBookService {
     // ------------------------------------------------------------------ 한국 출발(K28)
     /** 한국 출발의 Claude 몫이 한 계획 안에서 부르는 최대 횟수 — 첫 호출 + API 오류의 재시도 한 번(명세 C7과 같은 '한 번'). */
     static final int KR_START_CALLS = 2;
+    /**
+     * 한국 출발 호출의 최소 대기 한도(초) — 출발 기한까지 이보다 적게 남았으면 그 호출(첫 호출·재시도 모두)을 부르지 않고 계획 실패(그 세션 미룸)입니다
+     * (사용자 결정 2026-10-28 w12 — 기한 직전 몇 초로 부르는 호출은 거의 늘 시간 초과인데 하루 상한 하나를 잡고 과금될 수 있음).
+     */
+    static final long KR_START_MIN_CALL_SECONDS = 60;
 
     /**
      * 한국 네 계좌 출발({@link KrStartPipeline})의 Claude 계좌 몫(2단계 명세 §4-8·K28·§9 'E2 — 출발 갈고리의 기한', E2b) — 한국 결정 문맥이 없으면
@@ -680,8 +685,9 @@ public class ClaudeBookService {
      * <p><b>실패</b>({@link KrStartPipeline.Plan#failed} — 어느 계좌에도 쓰지 않고 그 세션 출발을 다음 KR 거래일로 미룸, 그 세션은 다시 계획하지 않음):
      * 하루 상한(정기 작업 몫까지 다 씀) · API 오류는 같은 계획 안에서 한 번 더(첫 호출의 패킷 그대로 — {@link ClaudeDecisionPipeline#again}) 부른 뒤에도 ·
      * 거절·형식 오류(같은 입력이면 같은 답이라 다시 부르지 않음) ·
-     * <b>기한</b> — 호출마다 대기 한도를 min(설정 대기 한도, 출발 기한 − 지금)으로 묶고(초 단위 내림), 1초도 남지 않았으면 부르지 않습니다(기한을 넘겨
-     * 끝난 계획은 쓰기 트랜잭션이 다시 막음 — 마지막 방어선) · 응답을 받은 뒤 검증 예외. 실패의 사유는 작업 기록(출발 미룸)에 남고, 과금된 호출은 그날
+     * <b>기한</b> — 호출마다 대기 한도를 min(설정 대기 한도, 출발 기한 − 지금)으로 묶고(초 단위 내림), 기한까지 최소 대기 한도
+     * {@value #KR_START_MIN_CALL_SECONDS}초가 남지 않았으면 부르지 않습니다(사용자 결정 w12 — 예전에는 1초. 기한을 넘겨 끝난 계획은 쓰기 트랜잭션이
+     * 다시 막음 — 마지막 방어선) · 응답을 받은 뒤 검증 예외. 실패의 사유는 작업 기록(출발 미룸)에 남고, 과금된 호출은 그날
      * 사용량에 셉니다.
      */
     KrStartPipeline.Leg krStartLeg() {
@@ -755,8 +761,10 @@ public class ClaudeBookService {
         List<Map<String, Object>> trace = new ArrayList<>();
         while (true) {
             long left = Duration.between(clock.instant(), deadline).getSeconds();
-            if (left < 1) {
-                return KrStartPipeline.Plan.failed(book, "출발 기한(" + Kst.stamp(deadline) + ")까지 남은 시간이 없어 Claude를 "
+            if (left < KR_START_MIN_CALL_SECONDS) {
+                // 최소 대기 한도(w12): 기한 직전 몇 초로 부르는 호출은 거의 늘 시간 초과 — 부르지 않고 그 세션을 미룸(재시도도 같음).
+                return KrStartPipeline.Plan.failed(book, "출발 기한(" + Kst.stamp(deadline) + ")까지 " + Math.max(0, left)
+                        + "초 — 최소 대기 한도 " + KR_START_MIN_CALL_SECONDS + "초보다 짧아 Claude를 "
                         + (calls == 0 ? "부르지 않음" : "다시 부르지 않음(첫 호출 " + statusLabel(attempt.status()) + ")"))
                         .withCalls(callsView(trace));
             }
