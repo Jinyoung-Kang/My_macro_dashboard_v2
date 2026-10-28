@@ -707,7 +707,10 @@ class KrRulesJobTest {
         assertThat(store.positions(PaperBooks.KR_RULES)).extracting(Position::ticker).doesNotContain("373220");
     }
 
-    /** 재선정일 R — 000660(2,000주, 순자산의 약 20%)이 R 거래정지라 후보 밖. 결정 작업이 R 22:30에 낸 규칙 계좌 주문(매도 000660 · 매수 둘 · 153130). */
+    /**
+     * 재선정일 R — 보유 000660({@code qty}주, 평단 10,000)과 현금 {@code cash}, 000660이 R 거래정지라 후보 밖. 결정 작업이 R 22:30에 낸 규칙 계좌
+     * 주문(매도 000660 · 매수 둘 · 153130).
+     */
     private List<Order> suspendedHoldingOnTheReselectionDay(int qty, double cash) {
         holding("000660", qty, 10_000);
         store.upsertState(new BookState(PaperBooks.KR_RULES, cash, cash + qty * 10_000.0, qty * 10_000.0,
