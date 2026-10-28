@@ -856,6 +856,25 @@ final class ClaudeDecisionPipeline {
         };
     }
 
+    /**
+     * 호출 한 번의 작업 기록용 사용 — {@code status}(응답을 받았으면 {@code RESPONDED}, 아니면 실패 상태)·{@link #usageView}·{@code estCostUsd}(지금
+     * 설정 단가 — {@link PaperApiCalls#estimateCostUsd}, 모르면 null). 결정 행 없이 끝난 한국 출발의 호출을 작업 기록에서 셀 수 있게 합니다(2단계 명세
+     * §4-10, 묶음 E 리뷰).
+     */
+    Map<String, Object> callView(Attempt attempt) {
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("status", attempt.succeeded() ? "RESPONDED" : attempt.status());
+        out.putAll(usageView(attempt));
+        Double cost = null;
+        try {
+            cost = calls.estimateCostUsd(attempt.model(), attempt.result());
+        } catch (RuntimeException e) {
+            log.warn("출발 호출의 추정 비용을 셀 수 없습니다 — 비워 둡니다: {}", e.toString());
+        }
+        out.put("estCostUsd", cost);
+        return out;
+    }
+
     static Map<String, Object> usageView(Attempt attempt) {
         AiService.StructuredResult r = attempt.result();
         Map<String, Object> out = new LinkedHashMap<>();

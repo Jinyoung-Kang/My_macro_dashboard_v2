@@ -88,29 +88,62 @@ final class KrStartPipeline {
      * @param orders   쓸 주문(결정 번호 없음 — 쓸 때 채움)
      * @param note     계획이 없을 때·실패했을 때의 사유
      * @param failed   실패 — 네 계좌 모두 쓰지 않고 출발을 미룸
+     * @param calls    그 계획이 한 과금 호출의 기록(Claude 몫 — {@code {calls, attempts:[…], isEstimated}}), 호출이 없으면 null. 출발이 미뤄지거나
+     *                 쓰기 오류로 끝나 결정 행이 없을 때 작업 기록에 남깁니다(2단계 명세 §4-10 — 시장별 횟수를 셀 수 있게, 묶음 E 리뷰)
      */
-    record Plan(String book, Decision decision, List<Order> orders, String note, boolean failed) {
+    record Plan(String book, Decision decision, List<Order> orders, String note, boolean failed,
+                Map<String, Object> calls) {
 
         Plan {
             orders = orders == null ? List.of() : List.copyOf(orders);
+            calls = calls == null ? null : java.util.Collections.unmodifiableMap(new LinkedHashMap<>(calls));
         }
 
         static Plan of(String book, Decision decision, List<Order> orders) {
-            return new Plan(book, Objects.requireNonNull(decision, "decision"), orders, null, false);
+            return new Plan(book, Objects.requireNonNull(decision, "decision"), orders, null, false, null);
         }
 
         /** 이 묶음에서는 그 계좌의 출발 계획이 아직 없음 — 그 계좌는 시작 전 그대로(실패가 아님). */
         static Plan notYet(String book, String note) {
-            return new Plan(book, null, List.of(), note, false);
+            return new Plan(book, null, List.of(), note, false, null);
         }
 
         /** 계획 실패(Claude 상한·오류 등, E2) — 어느 계좌에도 쓰지 않고 출발을 다음 KR 거래일로 미룸. */
         static Plan failed(String book, String note) {
-            return new Plan(book, null, List.of(), note, true);
+            return new Plan(book, null, List.of(), note, true, null);
+        }
+
+        /** 같은 계획에 과금 호출 기록을 붙인 것(null이면 그대로). */
+        Plan withCalls(Map<String, Object> calls) {
+            return new Plan(book, decision, orders, note, failed, calls);
         }
 
         boolean planned() {
             return decision != null;
+        }
+    }
+
+    /**
+     * 계획을 다 만든 뒤 쓰기 트랜잭션이 예외로 끝남 — 원래 예외({@link #getCause})에 그 계획들의 과금 호출 기록을 실어 결정 작업이 오류 기록에 남기게
+     * 합니다(결정 행이 없는 호출을 셀 수 있게, 2단계 명세 §4-10). 결정 작업은 원래 예외의 문구로 기록합니다.
+     */
+    static final class WriteFailed extends RuntimeException {
+
+        private final transient Map<String, Object> calls;
+
+        WriteFailed(RuntimeException cause, Map<String, Object> calls) {
+            super(cause.getMessage(), cause);
+            this.calls = calls;
+        }
+
+        /** 계좌 코드 → 그 계획의 과금 호출 기록(호출이 없으면 빈 맵). */
+        Map<String, Object> calls() {
+            return calls;
+        }
+
+        /** 원래 예외. */
+        RuntimeException original() {
+            return (RuntimeException) getCause();
         }
     }
 
@@ -304,11 +337,12 @@ final class KrStartPipeline {
             }
         }
         List<Plan> plans = java.util.Arrays.stream(planned).filter(Objects::nonNull).toList();
+        Map<String, Object> calls = calls(plans);
         List<Plan> failed = plans.stream().filter(Plan::failed).toList();
         if (!failed.isEmpty()) {
             String reason = String.join(" · ", failed.stream().map(p -> p.book() + ": " + p.note()).toList())
                     + (skipped.isEmpty() ? "" : " · 다른 계좌의 출발 계획이 실패해 부르지 않음: " + String.join("·", skipped));
-            return postponed(run, d, start, window, "출발 계획 실패 — " + reason, records);
+            return withCalls(postponed(run, d, start, window, "출발 계획 실패 — " + reason, records), calls);
         }
         if (plans.stream().noneMatch(Plan::planned)) {
             return quiet(START_WAITING, d, "출발 계획을 낸 계좌가 없습니다 — " + String.join(" · ",
@@ -318,17 +352,23 @@ final class KrStartPipeline {
         // 기한은 쓰기 트랜잭션 안에서 다시 봅니다 — 계획(E2의 Claude 호출)이 길어 기한을 넘겼으면 어느 계좌에도 쓰지 않습니다(K28 '기한으로 실패하면
         // 어느 계좌에도 쓰지 않음', §4-8 '기한이 지난 창에서는 어떤 경우에도 출발을 내지 않는다').
         java.util.concurrent.atomic.AtomicReference<Instant> late = new java.util.concurrent.atomic.AtomicReference<>();
-        List<Decision> written = ledger.exclusively(() -> store.atomically(() -> {
-            Instant at = clock.instant();
-            if (!at.isBefore(window.deadline())) {
-                late.set(at);
-                return null;
-            }
-            return write(run, d, plans, books);
-        }));
+        List<Decision> written;
+        try {
+            written = ledger.exclusively(() -> store.atomically(() -> {
+                Instant at = clock.instant();
+                if (!at.isBefore(window.deadline())) {
+                    late.set(at);
+                    return null;
+                }
+                return write(run, d, plans, books);
+            }));
+        } catch (RuntimeException e) {
+            // 쓰지 못한 계획의 과금 호출을 오류 기록에 남기게 실어 보냅니다(결정 행이 없음 — §4-10).
+            throw new WriteFailed(e, calls);
+        }
         if (late.get() != null) {
-            return postponed(run, d, start, window, "출발 계획이 기한을 넘겨 끝남(" + Kst.stamp(late.get())
-                    + ") — 어느 계좌에도 쓰지 않음", records);
+            return withCalls(postponed(run, d, start, window, "출발 계획이 기한을 넘겨 끝남(" + Kst.stamp(late.get())
+                    + ") — 어느 계좌에도 쓰지 않음", records), calls);
         }
         if (written == null) {
             return quiet(PaperDecisionJob.ALREADY_DECIDED, d, "다른 실행이 이미 한국 계좌를 출발시켰습니다");
@@ -492,6 +532,28 @@ final class KrStartPipeline {
         detail.put("postponedTo", next.toString());
         detail.put("reason", reason);
         return new Result(START_POSTPONED, d, message, first, detail, List.of());
+    }
+
+    /** 계좌 코드 → 그 계획의 과금 호출 기록(호출이 있던 계획만, 몫의 순서). */
+    private static Map<String, Object> calls(List<Plan> plans) {
+        Map<String, Object> out = new LinkedHashMap<>();
+        for (Plan plan : plans) {
+            if (plan.calls() != null) {
+                out.put(plan.book(), plan.calls());
+            }
+        }
+        return out;
+    }
+
+    /** 미룸 결과의 작업 기록에 과금 호출 기록을 더함(없으면 그대로) — 결정 행이 없는 호출을 그 기록에서 셈(§4-10). */
+    private static Result withCalls(Result result, Map<String, Object> calls) {
+        if (!calls.isEmpty()) {
+            Map<String, Object> detail = new LinkedHashMap<>(result.detail());
+            detail.put("calls", calls);
+            return new Result(result.outcome(), result.session(), result.message(), result.record(), detail,
+                    result.decisions(), result.waiting());
+        }
+        return result;
     }
 
     /** 그 세션의 미룸 기록(없으면 null). */

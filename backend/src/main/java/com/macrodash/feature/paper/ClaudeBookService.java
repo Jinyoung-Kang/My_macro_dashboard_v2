@@ -707,11 +707,27 @@ public class ClaudeBookService {
                     return krStartPlan(base, run, session, deadline, gates);
                 } catch (RuntimeException e) {
                     log.warn("한국 Claude 계좌 출발 계획 실패({}): {}", session, e.toString());
-                    return KrStartPipeline.Plan.failed(book(), "Claude 계좌 출발 계획 실패 — "
-                            + e.getClass().getSimpleName() + " " + clip(e.getMessage(), 400));
+                    return KrStartPipeline.Plan.failed(book(), startFailure(e));
                 }
             }
         };
+    }
+
+    /** 출발 계획 실패의 사유(예외). */
+    private static String startFailure(RuntimeException e) {
+        return "Claude 계좌 출발 계획 실패 — " + e.getClass().getSimpleName() + " " + clip(e.getMessage(), 400);
+    }
+
+    /** 출발 계획의 과금 호출 기록({@link KrStartPipeline.Plan#calls}) — 호출이 없으면 null. */
+    private static Map<String, Object> callsView(List<Map<String, Object>> trace) {
+        if (trace.isEmpty()) {
+            return null;
+        }
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("calls", trace.size());
+        out.put("attempts", List.copyOf(trace));
+        out.put("isEstimated", true);
+        return out;
     }
 
     private KrStartPipeline.Plan krStartPlan(ClaudeDecisionPipeline base, MarketRun run, LocalDate session,
@@ -735,11 +751,14 @@ public class ClaudeBookService {
                 gates.views());
         Attempt attempt = null;
         int calls = 0;
+        // 호출마다의 사용(작업 기록용 — 결정 행 없이 끝나도 과금된 호출을 셀 수 있게, §4-10).
+        List<Map<String, Object>> trace = new ArrayList<>();
         while (true) {
             long left = Duration.between(clock.instant(), deadline).getSeconds();
             if (left < 1) {
                 return KrStartPipeline.Plan.failed(book, "출발 기한(" + Kst.stamp(deadline) + ")까지 남은 시간이 없어 Claude를 "
-                        + (calls == 0 ? "부르지 않음" : "다시 부르지 않음(첫 호출 " + statusLabel(attempt.status()) + ")"));
+                        + (calls == 0 ? "부르지 않음" : "다시 부르지 않음(첫 호출 " + statusLabel(attempt.status()) + ")"))
+                        .withCalls(callsView(trace));
             }
             LocalDate today = Kst.today(clock);
             int bound = (int) Math.min(Integer.MAX_VALUE, left);
@@ -750,10 +769,12 @@ public class ClaudeBookService {
                     : pipeline.again(attempt, row, claude, today, true, bound);
             if (next == null) {
                 return KrStartPipeline.Plan.failed(book, capMessage(claude, today, true)
-                        + (calls == 0 ? "" : "(첫 호출 " + statusLabel(attempt.status()) + " 뒤 재시도)"));
+                        + (calls == 0 ? "" : "(첫 호출 " + statusLabel(attempt.status()) + " 뒤 재시도)"))
+                        .withCalls(callsView(trace));
             }
             attempt = next;
             calls++;
+            trace.add(pipeline.callView(attempt));
             if (attempt.succeeded() || !STATUS_API_ERROR.equals(attempt.status()) || calls >= KR_START_CALLS) {
                 break;
             }
@@ -762,8 +783,23 @@ public class ClaudeBookService {
         if (!attempt.succeeded()) {
             log.warn("한국 Claude 계좌 출발 호출 실패({}, {}회): {} — 네 계좌 모두 출발을 미룹니다", session, calls, attempt.error());
             return KrStartPipeline.Plan.failed(book, "Claude 출발 호출 실패(" + statusLabel(attempt.status())
-                    + (calls > 1 ? ", 재시도 1회 뒤" : "") + "): " + clip(attempt.error(), 400));
+                    + (calls > 1 ? ", 재시도 1회 뒤" : "") + "): " + clip(attempt.error(), 400)).withCalls(callsView(trace));
         }
+        try {
+            return krStartPlanned(pipeline, session, book, state, row, claude, inputs, gates, attempt, calls)
+                    .withCalls(callsView(trace));
+        } catch (RuntimeException e) {
+            // 응답을 받은 뒤의 검증 예외도 실패(과금된 응답은 행으로 남기지 않음) — 호출 기록은 실어 보냄.
+            log.warn("한국 Claude 계좌 출발 계획 실패({}): {}", session, e.toString());
+            return KrStartPipeline.Plan.failed(book, startFailure(e)).withCalls(callsView(trace));
+        }
+    }
+
+    /** 받은 응답으로 출발 결정·주문을 계획(검증 — 그 실행의 관측치·출발 현금). */
+    private KrStartPipeline.Plan krStartPlanned(ClaudeDecisionPipeline pipeline, LocalDate session, String book,
+                                                BookState state, SettingsRow row, ClaudeSettings claude,
+                                                KrDecisionGates.Inputs inputs, KrDecisionGates.Checked gates,
+                                                Attempt attempt, int calls) {
         Plan plan = pipeline.plan(session, RuleBookService.INITIAL, true, attempt, cashOnly(state.cash()), row, claude,
                 inputs.quotes(), Set.of(), Map.of());
         ObjectNode response = plan.response();

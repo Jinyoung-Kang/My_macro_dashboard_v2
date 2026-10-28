@@ -765,6 +765,46 @@ class KrStartTest {
     }
 
     @Test
+    @DisplayName("§4-10(묶음 E 리뷰) — 결정 행 없이 끝난 출발의 과금된 Claude 호출은 그 작업 기록에서 셈: 미룸(API 오류 두 번)·쓰기 오류(ERROR) 기록의 calls.kr_claude = 호출 수·호출마다 상태·과금·토큰·추정 비용")
+    void startRecordsCountTheChargedClaudeCalls() {
+        KrClaudeFixtures.FakeAi fake = new KrClaudeFixtures.FakeAi();
+        fake.fail("API_ERROR", "overloaded").fail("API_ERROR", "overloaded again");
+        realClaude(fake);
+
+        assertThat(runAt("2026-11-30T22:30").outcome()).isEqualTo(PaperDecisionJob.START_POSTPONED);
+
+        assertThat(krRuns()).singleElement().satisfies(run -> {
+            JsonNode calls = run.detail().path("calls").path("kr_claude");
+            assertThat(calls.path("calls").asInt()).isEqualTo(2);
+            assertThat(calls.path("isEstimated").asBoolean()).isTrue();
+            assertThat(calls.path("attempts")).hasSize(2).allSatisfy(a -> {
+                assertThat(a.path("status").asString()).isEqualTo(ClaudeBookService.STATUS_API_ERROR);
+                assertThat(a.path("charged").asBoolean()).isTrue();
+                assertThat(a.path("errorKind").asString()).isEqualTo("API_ERROR");
+            });
+        });
+
+        // 다음 KR 거래일 — Claude 응답을 받은 뒤 쓰기 트랜잭션이 실패(ERROR): 기록에 그 호출(토큰·추정 비용).
+        fake.answer(KrClaudeFixtures.decision(0, "관망"));
+        failShortBond.set(true);
+        sessionData(NEXT, S, everyCodeOn(NEXT));
+        assertThat(runAt("2026-12-01T22:30").outcome()).isEqualTo(PaperDecisionJob.ERROR);
+        assertThat(krRuns()).last().satisfies(run -> {
+            assertThat(run.outcome()).isEqualTo(PaperDecisionJob.ERROR);
+            assertThat(run.detail().path("error").asString()).as("오류 문구는 그대로").startsWith("IllegalStateException 시험용 주문 실패");
+            JsonNode calls = run.detail().path("calls").path("kr_claude");
+            assertThat(calls.path("calls").asInt()).isEqualTo(1);
+            JsonNode attempt = calls.path("attempts").get(0);
+            assertThat(attempt.path("status").asString()).isEqualTo("RESPONDED");
+            assertThat(attempt.path("inputTokens").asLong()).isEqualTo(21_000);
+            assertThat(attempt.path("outputTokens").asLong()).isEqualTo(3_100);
+            assertThat(attempt.path("estCostUsd").asDouble()).as("기본 sonnet 단가 (21,000×2 + 3,100×10 + 7,800×0.1)/1e6")
+                    .isCloseTo(0.07378, org.assertj.core.api.Assertions.within(1e-9));
+        });
+        assertNotStarted(store);
+    }
+
+    @Test
     @DisplayName("자료 게이트 — ⑤ 069500 S 봉 없음·② 범위 90% 미만·② 관측치 세션이 S가 아님·④ 금융위 기준일이 직전 거래일이 아님이면 기다림(쓰기 없음, 이어진 기다림은 기록 한 줄)")
     void waitsForSessionData() {
         Map<String, LocalDate> noAnchor = everyCodeOn(S);

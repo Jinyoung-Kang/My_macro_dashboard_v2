@@ -939,13 +939,18 @@ public class PaperDecisionJob {
             start = krStart.run(market, now, failures.getOrDefault(key, 0) >= MAX_ATTEMPTS);
         } catch (RuntimeException e) {
             int attempt = failures.merge(key, 1, Integer::sum);
+            // 쓰기 오류면 원래 예외의 문구로, 쓰지 못한 계획의 과금 호출 기록(결정 행이 없음 — 명세 §4-10)과 함께.
+            RuntimeException cause = e instanceof KrStartPipeline.WriteFailed failed ? failed.original() : e;
             Map<String, Object> detail = new LinkedHashMap<>();
             detail.put("start", true);
             detail.put("tradingDate", d.toString());
-            detail.put("error", message(e));
+            detail.put("error", message(cause));
             detail.put("attempt", attempt);
+            if (e instanceof KrStartPipeline.WriteFailed failed && !failed.calls().isEmpty()) {
+                detail.put("calls", failed.calls());
+            }
             record(market, now, ERROR, detail);
-            return new Result(ERROR, d, null, null, null, message(e));
+            return new Result(ERROR, d, null, null, null, message(cause));
         }
         if (STARTED.equals(start.outcome())) {
             failures.remove(key);
