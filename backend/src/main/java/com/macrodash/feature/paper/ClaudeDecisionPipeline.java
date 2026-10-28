@@ -267,6 +267,10 @@ final class ClaudeDecisionPipeline {
     /**
      * 검증기 문맥·판정·노출 비교·결정 응답. 초기 결정이면 보유 없이(출발 현금), 유니버스는 패킷이 보인 것({@link ClaudeBookService#initialUniverse}),
      * 가격은 출발일 종가({@code closes})로 봅니다. 정기 결정은 관측치 저장본으로 유니버스·가격 없음·신선도를 봅니다.
+     *
+     * <p>한국 실행(시장 묶음이 {@link KrPaperMarket#INSTANCE})이면 시장별 칸을 {@link KrClaudeValidation#checks}로 만듭니다 — 유니버스·ETF·재진입
+     * 금지·지금 체결할 수 없는 종목은 그 결정이 보낸 패킷의 {@code 12_hardRules}(+ 지금 장부), 정수 주는 {@code quotes}(그 결정의 관측치)의 기준
+     * 거래일 종가, 이달 재량 주문 수는 출발 결정 주문을 빼고 셉니다. 그때 {@code universe}·{@code closes}는 쓰지 않습니다(미국 칸의 인자).
      */
     Plan plan(LocalDate asOf, String kind, boolean initial, Attempt attempt, LedgerView view, SettingsRow row,
                       ClaudeSettings claude, Optional<Quotes> quotes, Set<String> universe,
@@ -305,7 +309,11 @@ final class ClaudeDecisionPipeline {
                 }
             }
         }
-        MarketChecks checks = usChecks(asOf, initial, body, quotes, universe, closes, proposed, heldQty.keySet());
+        // 시장별 칸 — 한국 실행이면 패킷 12_hardRules·관측치·장부로(KrClaudeValidation, E2a), 그 밖은 미국 칸(이 묶음 전 그대로).
+        MarketChecks checks = market.definition() == KrPaperMarket.INSTANCE
+                ? KrClaudeValidation.checks(market, store, asOf, initial, attempt.packet().body(), paper, quotes,
+                        lockedOut(asOf), clock.instant())
+                : usChecks(asOf, initial, body, quotes, universe, closes, proposed, heldQty.keySet());
         boolean stale = checks.stale();
         int monthly = checks.monthly();
         OrderValidator.Context ctx = new OrderValidator.Context(view.nav(), view.cash(), weights, heldDays,

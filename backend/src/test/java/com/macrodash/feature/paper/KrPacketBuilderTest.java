@@ -631,6 +631,45 @@ class KrPacketBuilderTest {
     }
 
     @Test
+    @DisplayName("한국 검증기 칸(E2a)은 이 패킷이 보인 하드 규칙 그대로 — 유니버스·ETF·재진입 금지·체결할 수 없는 종목(사유까지)·이달 재량 주문 수, 정수 주 기준 가격 = 8_prices 잠정 종가")
+    void validatorChecksAreThePacketHardRules() {
+        Packet packet = scheduled();
+        JsonNode rules = packet.body().path("12_hardRules");
+        MarketRun run = run();
+        ClaudeDecisionPipeline.MarketChecks checks = KrClaudeValidation.checks(run, store, D, false, packet.body(),
+                run.settings(), quotesD(), Set.of(), READ_D);
+
+        assertThat(String.join(",", checks.universe())).isEqualTo(rules.path("universe").asString());
+        assertThat(checks.etfs()).containsExactlyElementsOf(
+                rules.path("etfTickers").valueStream().map(JsonNode::asString).toList());
+        assertThat(checks.lockedOut()).containsExactlyElementsOf(
+                rules.path("lockedOut").valueStream().map(JsonNode::asString).toList()).contains("000660");
+        Map<String, String> shown = new LinkedHashMap<>();
+        rules.path("unfillableTickers").properties().forEach(e -> shown.put(e.getKey(), e.getValue().asString()));
+        assertThat(checks.unfillable()).isEqualTo(shown).containsOnlyKeys("000270", "207940", "373220");
+        assertThat(checks.monthly()).isEqualTo(packet.body().path("9_portfolio").path("monthlyDiscretionaryOrders")
+                .path("used").asInt());
+
+        List<String> columns = new ArrayList<>();
+        packet.body().path("8_prices").path("columns").forEach(c -> columns.add(c.asString()));
+        int close = columns.indexOf("close");
+        int source = columns.indexOf("priceSource");
+        int compared = 0;
+        for (JsonNode row : packet.body().path("8_prices").path("rows")) {
+            String code = row.get(0).asString();
+            if (row.get(source).asString("").startsWith("TOSS_")) {
+                assertThat(checks.wholeShares().prices().get(code)).as(code)
+                        .isEqualByComparingTo(row.get(close).decimalValue());
+                compared++;
+            } else {
+                assertThat(checks.wholeShares().prices()).as(code + " — 관측치에 없는 종목은 기준 가격 없음")
+                        .doesNotContainKey(code);
+            }
+        }
+        assertThat(compared).isPositive();
+    }
+
+    @Test
     @DisplayName("한국판 initialPacketHasNothingAfterAsOf — 출발 패킷의 모든 날짜·시각이 기준일·읽은 순간 이하(일정·규칙이 정한 미래 날짜 빼고)")
     void initialPacketHasNothingAfterTheReadInstant() {
         Packet packet = initial();
