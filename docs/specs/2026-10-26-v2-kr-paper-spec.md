@@ -1593,6 +1593,9 @@
     (22:30 장부 오류 → 원인을 고쳐도 22:40 기다림 → 22:45 수동 점검이 kr_rules를 다시 처리 → 22:50 재기동 없이 DECIDED).
   - **초기화**: `PaperAdminService.initKr` 그대로(멱등 — 출발한 뒤 다시 눌러도 계좌·상태·설정 판을 건드리지 않음, `krInitAfterTheStartChangesNothing`).
   - **수동 결정**: `PaperDecisionJob.runNow(KR, kr_claude)` 그대로(D1c 창·게이트 ①~⑥, E2b 수동 문턱) — 본문 `book`은 `kr_claude`만, 같은 세션 다시 누르면 그 결정.
+    → **F1 리뷰**(`5335c06` 재현 → `38bc148`): 한국 출발 전(네 계좌 모두 시작 전 — `KrStartPipeline.pending`)이면 창 검사 뒤·장부 처리와 자료 게이트 읽기 전에 400이고, 문구가
+    출발 단추 `run/initial-decision?market=KR`·정기 출발을 안내한다(예전에는 장부를 처리한 뒤 Claude 계좌 서비스의 미국 문구 '개요의 Claude 계좌 시작'으로 거절 — 한국에는 계좌별 시작이 없음).
+    시험 `KrRulesJobTest.manualKrDecisionBeforeTheStartPointsToTheStartButton`(거절을 장부 처리 뒤로 옮기면 실패함을 확인).
   - **출발 단추**(`PaperDecisionJob.startNow` — §4-8 '같은 게이트·같은 기한 안에서 정기 작업을 앞당기는 수동 단추'): 결정 작업 잠금을 기다린 뒤 정기 출발과 같은
     `KrStartPipeline.run(…, scheduled=false)` — 같은 창·게이트 ②~⑥·네 계좌 몫·한 트랜잭션·쓰기 안 기한 재확인. 다른 것은 셋: ① Claude 몫이 **수동 호출 문턱**(상한 − 예약 — §9 'E2b 메모'의
     '그 단추는 수동 문턱을 씀', `Leg.plan(…, scheduled)`로 넘김) ② 출발 기한 뒤·이미 미룬 세션은 미룸을 만들지 않고 400(`MANUAL_REFUSED` — 미룸 기록·기억 없음, 기한 뒤 미룸 기록은 정기
@@ -2250,3 +2253,12 @@ QA 번호 없이 코드 결함은 `fix`(수정 전 실패하는 재현 시험과
 - **정한 것(사용자 확인 없이 — 명세의 뜻대로)**: 출발 단추의 Claude 몫 = 수동 문턱(§9 'E2b 메모' '그 단추는 수동 문턱 13을 씀'), 한국 수동 결정 본문 `book`은 `kr_claude`만(D1b — 미국처럼
   필수), 출발 단추 본문 `book`·`preview`는 400(조용히 무시하지 않음), 복기 실행의 `retryable` = 그 실행 한국 달력, 한국 메모의 달력이 모르는 해는 400(C1c '같은 규칙으로 막음'),
   수용 기준 1 점검은 안 (가)(QA 전용 경로 없음 — §4-16 'F1b').
+
+**F1 리뷰 메모(2026-10-29, F1a·F1b 리뷰 뒤)** — 고친 것 넷, 미국 응답·기존 고정본·패킷·프롬프트·스키마 해시 그대로, 백엔드 시험 1,920 → 1,926, 수집기·화면 손대지 않음:
+- **한국 출발 전 수동 결정**(`5335c06` 재현 → `38bc148`): 위 §4-16 'F1b' '수동 결정'의 화살표. `docs/API.md` 한국 `run/decision` 행에 '출발 전 400'.
+- **미국 개요·상태 고정본**(`199df09`): `PaperQueryMarketTest.usResponsesAreUnchanged`는 새 코드끼리 견줘 미국 갈래 안의 변화를 잡지 못했다 — main(`7c32e46`) 트리에 같은 재료를 넣어 뜬
+  `paper/golden/paper-overview-us.json`·`paper-status-us.json`(두 번 떠 같은 글자)과 옛 시그니처·시장 값 없음·US를 견주는 `PaperQueryUsGoldenTest`(상태의 `settingsFallbacks` 장부·blend·rules 순서 포함 —
+  순서를 바꾸면 실패함을 확인).
+- **복기 한 건의 market 전달**(`1131e34`): HTTP 시험이 상태 코드만 봐 컨트롤러가 market을 버려도 통과했다 — 컨트롤러 시험(`ReviewViewsMarketTest.detailRoutePassesTheMarket`)과 HTTP 한국 문구·`?market=US`·`?market=JP`.
+- **POST 세 경로의 market=US·한국 메모 목록 includeExpired**(`cf93cac`): `PaperMarketWriteRoutesTest.usMarketTakesTheUsBranch`(미국 서비스 메서드만 부름)·`NoteListMarketTest.listRoutePassesIncludeExpiredAndMarket`,
+  HTTP의 `?market=US` = 값 없음. 미국 수동 결정·복기 실행은 시장 판(`runNow(US, …)`)이 옛 시그니처와 같은 일을 해 HTTP 응답만으로는 갈래를 가를 수 없어 컨트롤러 시험이 갈래를 본다.
