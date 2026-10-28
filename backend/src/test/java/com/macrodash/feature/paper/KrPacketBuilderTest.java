@@ -833,6 +833,11 @@ class KrPacketBuilderTest {
      * 패킷의 모든 날짜가 기준일 이하이고(일정 1b·달력·규칙이 정한 미래 날짜 키 빼고) 모든 시각(ISO·"… KST")이 읽은 순간 이하인지.
      */
     private static void assertNothingAfter(JsonNode body, LocalDate asOf, Instant readAt) {
+        assertThat(problemsAfter(body, asOf, readAt)).as("기준일·읽은 순간 뒤 값").isEmpty();
+    }
+
+    /** {@link #assertNothingAfter}가 찾은 자리(경로 = 글) — 비어 있으면 없음. */
+    private static List<String> problemsAfter(JsonNode body, LocalDate asOf, Instant readAt) {
         List<String> problems = new ArrayList<>();
         Iterator<String> names = body.propertyNames().iterator();
         while (names.hasNext()) {
@@ -842,10 +847,29 @@ class KrPacketBuilderTest {
             }
             walk(section, null, body.get(section), asOf, readAt, problems);
         }
-        assertThat(problems).as("기준일·읽은 순간 뒤 값").isEmpty();
+        return problems;
     }
 
-    private static final Pattern ISO = Pattern.compile("\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}(:\\d{2})?([+-]\\d{2}:\\d{2}|Z)");
+    @Test
+    @DisplayName("assertNothingAfter 도우미 자체 — 소수 초가 붙은 시각(토스 sessionUpdatedAt 모양)·시간대 없는 시각(KST로 읽음)·초 없는 시각도 읽은 순간 뒤면 잡음, 앞이면 통과")
+    void nothingAfterCatchesEveryIsoShape() {
+        ObjectNode body = MAPPER.createObjectNode();
+        ObjectNode section = body.putObject("3_kr_macro");
+        section.put("fraction", "2026-11-03T22:40:03.000+09:00");
+        section.put("local", "2026-11-03T22:40");
+        section.put("localSeconds", "2026-11-03T22:40:03.5");
+        section.put("utc", "2026-11-03T13:40:00Z");
+        section.put("before", "2026-11-03T20:06:03.000+09:00");
+        section.put("beforeLocal", "2026-11-03T22:31");
+
+        assertThat(problemsAfter(body, D, READ_D)).containsExactly(
+                "3_kr_macro.fraction = 2026-11-03T22:40:03.000+09:00", "3_kr_macro.local = 2026-11-03T22:40",
+                "3_kr_macro.localSeconds = 2026-11-03T22:40:03.5", "3_kr_macro.utc = 2026-11-03T13:40:00Z");
+    }
+
+    /** ISO 시각 — 초·소수 초·시간대는 있을 수도 없을 수도(시간대가 없으면 KST로 읽음). */
+    private static final Pattern ISO = Pattern.compile(
+            "\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}(:\\d{2}(\\.\\d+)?)?([+-]\\d{2}:\\d{2}|Z)?");
     private static final Pattern KST_STAMP = Pattern.compile("(\\d{4}-\\d{2}-\\d{2}) (\\d{2}:\\d{2}) KST");
 
     private static void walk(String path, String key, JsonNode node, LocalDate asOf, Instant readAt, List<String> problems) {
@@ -871,8 +895,10 @@ class KrPacketBuilderTest {
         }
         Matcher iso = ISO.matcher(text);
         while (iso.find()) {
-            if (OffsetDateTime.parse(iso.group().length() == 16 ? iso.group() + ":00Z" : iso.group()).toInstant()
-                    .isAfter(readAt)) {
+            Instant at = iso.group(3) == null
+                    ? LocalDateTime.parse(iso.group()).atZone(KrxCalendar.SEOUL).toInstant()
+                    : OffsetDateTime.parse(iso.group()).toInstant();
+            if (at.isAfter(readAt)) {
                 problems.add(path + " = " + text);
             }
         }
