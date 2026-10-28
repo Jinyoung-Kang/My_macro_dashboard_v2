@@ -1192,6 +1192,15 @@ public class PaperStore {
     }
 
     /**
+     * 이름이 {@code jobPrefix}로 시작하는 작업의 최근 기록 {@code limit}건, 최근 순(시작 시각, 번호) — 한 시장의 작업 기록(작업 기록 이름의 시장
+     * 접두어, 한국 {@code kr.} — 2단계 F1의 한국 개요·상태). 접두어는 글자 그대로 봅니다(LIKE·정규식의 특수 글자로 읽지 않음).
+     */
+    public List<JobRun> recentJobRuns(String jobPrefix, int limit) {
+        return jdbc.query("SELECT " + JOB_COLUMNS + " FROM paper_job_runs WHERE starts_with(job, ?) "
+                + "ORDER BY started_at DESC, id DESC LIMIT ?", jobRunMapper(), jobPrefix, limit);
+    }
+
+    /**
      * 그 작업의 기록 중 상세 {@code tradingDate}가 그 날인 것, 최근 순(시작 시각, 번호). 작업마다 최근 {@value #JOB_RUNS_KEPT}건만
      * 남으므로({@link #recordJobRun}) 그 안에서만 찾습니다 — 한국 결정 작업이 그 세션의 출발 미룸·기한 지남·기다림 판정을 재기동해도 같게
      * 다시 읽습니다(2단계 명세 §4-9 'E0', 사용자 결정 v3).

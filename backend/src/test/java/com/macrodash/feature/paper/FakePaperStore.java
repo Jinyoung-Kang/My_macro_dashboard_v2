@@ -441,6 +441,13 @@ class FakePaperStore extends PaperStore {
     }
 
     @Override
+    public List<JobRun> recentJobRuns(String jobPrefix, int limit) {
+        List<JobRun> out = new ArrayList<>(jobRuns);
+        java.util.Collections.reverse(out);
+        return out.stream().filter(r -> r.job().startsWith(jobPrefix)).limit(limit).toList();
+    }
+
+    @Override
     public List<JobRun> jobRunsFor(String job, LocalDate tradingDate) {
         return jobRuns.stream().filter(r -> r.job().equals(job))
                 .filter(r -> tradingDate.toString().equals(com.macrodash.support.Json.asText(r.detail(), "tradingDate")))

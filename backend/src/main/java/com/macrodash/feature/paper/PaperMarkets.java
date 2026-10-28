@@ -4,6 +4,8 @@ import com.macrodash.analytics.TradingCalendar;
 import com.macrodash.read.StoreReader;
 import com.macrodash.store.PaperStore;
 import com.macrodash.store.PaperStore.SettingsRow;
+import com.macrodash.support.InvalidRequestException;
+import com.macrodash.support.Params;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
@@ -72,6 +74,50 @@ final class PaperMarkets {
     /** 시장 코드({@code paper_books.market})의 시장 묶음 — 목록에 없으면 empty. */
     Optional<PaperMarket> of(String code) {
         return markets.stream().filter(market -> market.code().equals(code)).findFirst();
+    }
+
+    /**
+     * 화면 경로가 받은 시장 값({@code ?market}·본문 {@code market} — 2단계 명세 §4-16, F1) → 시장 묶음. 값이 없으면(null) 미국입니다 — 시장을
+     * 받기 전의 경로 그대로. 이 목록의 시장 코드(US·KR, 대소문자·공백 그대로)면 그 시장이고, 빈 값을 포함한 그 밖의 값은 400입니다(받는 값을
+     * 적어 알림 — 틀린 값을 미국으로 읽어 다른 시장 화면에 미국 숫자를 보이지 않게).
+     *
+     * @throws InvalidRequestException 목록에 없는 시장 값
+     */
+    PaperMarket requested(String code) {
+        if (code == null) {
+            return UsPaperMarket.INSTANCE;
+        }
+        String known = Params.oneOf("market", code, markets.stream().map(PaperMarket::code).toList());
+        return of(known).orElseThrow();
+    }
+
+    /**
+     * 화면 조회 한 번의 시장 문맥(F1) — 그 조회의 실행({@link #open}: 달력 한 벌·설정 행 하나)과 그 시장이 정기 작업을 쉬는 사유.
+     *
+     * @param run           그 조회의 실행
+     * @param dormantReason 그 시장이 정기 작업을 쉬는 사유({@link PaperMarket#dormantReason} — 한국 출발일·한국 계좌가 갖춰지지 않음). null이면
+     *                      돎(미국은 늘 null). 테이블이 없으면 보지 않아 null
+     */
+    record Scope(MarketRun run, String dormantReason) {
+
+        Scope {
+            java.util.Objects.requireNonNull(run, "run");
+        }
+
+        /** 그 조회의 시장 묶음(실행이 감싼 정의). */
+        PaperMarket market() {
+            return run.definition();
+        }
+    }
+
+    /**
+     * 화면 조회 한 번의 시장 문맥을 엽니다({@link Scope}). 쉬는 시장도 실행을 엽니다 — 조회는 공휴일·관측치 저장본을 조용히 읽기만 하고({@link #open}
+     * — 수집 요청·작업 기록·장부 쓰기 없음) 정기 작업의 '쉬는 시장은 실행을 열지 않음'은 일을 하지 않으려는 규칙이라, 조회는 한국 초기화 전에도
+     * 그 시장 달력의 기준일·관측치를 쉬는 사유와 함께 보입니다. 쉬는 사유는 실행을 열기 전에 그 시장 책으로 봅니다(테이블이 없으면 보지 않음).
+     */
+    Scope scope(PaperMarket market, PaperConfig config) {
+        String dormant = store.ready() ? market.dormantReason(config, () -> store.books(market.code())) : null;
+        return new Scope(open(market), dormant);
     }
 
     /**

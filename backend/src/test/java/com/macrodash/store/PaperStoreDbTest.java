@@ -448,6 +448,26 @@ class PaperStoreDbTest {
     }
 
     @Test
+    @DisplayName("한 시장의 작업 기록(F1): 이름이 그 접두어로 시작하는 작업만 최근 순(시작 시각, 번호)으로 limit건 — 접두어의 '_'·'.'은 글자 그대로")
+    void recentJobRunsOfOneMarketPrefix() {
+        // 다른 테스트가 지금 시각으로 남긴 기록보다 뒤에 오도록 먼 미래 시각을 씁니다(최근 순 조회 검사).
+        // 접두어 "t_a_b."의 '_'(LIKE의 아무 한 글자)·'.'(정규식의 아무 한 글자)을 글자 그대로 보는지 — 미끼 둘은 그렇게 읽으면 걸리는 이름.
+        Instant base = Instant.parse("2099-03-01T13:30:00Z");
+        store.recordJobRun("t_a_b.risk", base, base.plusSeconds(1), "ok", null);
+        store.recordJobRun("t_risk", base.plusSeconds(60), base.plusSeconds(61), "ok", null);
+        store.recordJobRun("t_a_b.decision", base.plusSeconds(120), base.plusSeconds(121), "DECIDED", null);
+        store.recordJobRun("t_aXb.risk", base.plusSeconds(180), base.plusSeconds(181), "ok", null);
+        store.recordJobRun("t_a_bXrisk", base.plusSeconds(240), base.plusSeconds(241), "ok", null);
+        store.recordJobRun("t_a_b.review", base.plusSeconds(300), base.plusSeconds(301), "SKIPPED", null);
+
+        assertThat(store.recentJobRuns("t_a_b.", 10)).extracting(PaperStore.JobRun::job)
+                .as("다른 이름·미끼는 빠짐, 최근 순")
+                .containsExactly("t_a_b.review", "t_a_b.decision", "t_a_b.risk");
+        assertThat(store.recentJobRuns("t_a_b.", 2)).extracting(PaperStore.JobRun::job)
+                .containsExactly("t_a_b.review", "t_a_b.decision");
+    }
+
+    @Test
     @DisplayName("주문: 넣은 값이 그대로 돌아오고, 만료·취소·체결 표시는 조건에 맞는 것만 바꾼다")
     void ordersLifecycle() {
         store.insertBookIfAbsent(book(BOOK, "규칙 책"));
