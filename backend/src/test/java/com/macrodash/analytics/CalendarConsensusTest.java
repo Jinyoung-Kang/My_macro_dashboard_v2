@@ -97,8 +97,9 @@ class CalendarConsensusTest {
         assertThat(cpi.name()).isNull();
         assertThat(cpi.forecast()).isNull();
         assertThat(cpi.previous()).isNull();
-        assertThat(cpi.note()).isEqualTo("그 날 Nasdaq 'CPI' 줄 2개(전월비·전년비 같은 라벨 없음) — 어느 값인지 가를 수 없어 붙이지 않음");
-        assertThat(CalendarConsensus.match(stored(), release(GDP_DAY, 54), DECISION).note()).contains("'Core PCE Price Index' 줄 2개");
+        assertThat(cpi.note()).isEqualTo("Nasdaq 'CPI' 2줄(전월비·전년비 라벨 없음) — 가를 수 없음");
+        assertThat(CalendarConsensus.match(stored(), release(GDP_DAY, 54), DECISION).note())
+                .isEqualTo("Nasdaq 'Core PCE Price Index' 2줄(전월비·전년비 라벨 없음) — 가를 수 없음");
         // 'PCE price index'·'PCE Price index'는 대소문자만 다름 — 같은 이름으로 셉니다(대소문자로 전월비·전년비를 가르지 않음).
         assertThat(CalendarConsensus.normalize("PCE price index")).isEqualTo(CalendarConsensus.normalize(" PCE  Price index "));
     }
@@ -108,18 +109,17 @@ class CalendarConsensusTest {
     void reasons() {
         CalendarConsensus.Stored s = stored();
         assertThat(CalendarConsensus.match(s, fomc(LocalDate.of(2026, 12, 9)), DECISION))
-                .isEqualTo(new CalendarConsensus.Match(null, null, null, null, null, "컨센서스 수집 범위 밖(2026-10-28~2026-11-15)"));
+                .isEqualTo(new CalendarConsensus.Match(null, null, null, null, null, "수집 범위 밖(2026-10-28~2026-11-15)"));
         assertThat(CalendarConsensus.match(s, release(LocalDate.of(2026, 11, 13), 10), DECISION).note())
-                .isEqualTo("그 날 컨센서스를 받지 못함");
-        assertThat(CalendarConsensus.match(s, release(FOMC_DAY, 53), DECISION).note()).isEqualTo("그 날 Nasdaq에 'GDP' 줄 없음");
-        assertThat(CalendarConsensus.match(s, release(GDP_DAY, 99), DECISION).note())
-                .isEqualTo("대응표에 없는 발표 — 컨센서스를 붙이지 않음");
+                .isEqualTo("그 날 받지 못함");
+        assertThat(CalendarConsensus.match(s, release(FOMC_DAY, 53), DECISION).note()).isEqualTo("Nasdaq에 'GDP' 없음");
+        assertThat(CalendarConsensus.match(s, release(GDP_DAY, 99), DECISION).note()).isEqualTo("대응표에 없는 발표");
         assertThat(CalendarConsensus.match(null, fomc(FOMC_DAY), DECISION))
                 .isEqualTo(new CalendarConsensus.Match(null, null, null, null, null, null));
         // 범위를 모르면 '범위 밖'을 지어내지 않고 그 날이 없다고만 적습니다.
         CalendarConsensus.Stored noHorizon = new CalendarConsensus.Stored(s.days(), null);
         assertThat(CalendarConsensus.match(noHorizon, fomc(LocalDate.of(2026, 12, 9)), DECISION).note())
-                .isEqualTo("그 날 컨센서스를 받지 못함");
+                .isEqualTo("그 날 받지 못함");
     }
 
     @Test
@@ -150,11 +150,11 @@ class CalendarConsensusTest {
                 line("Fed Interest Rate Decision", 4.0, 4.0, "%")), FETCHED, true)), HORIZON);
         assertThat(CalendarConsensus.match(stale, fomc(FOMC_DAY), DECISION))
                 .isEqualTo(new CalendarConsensus.Match("Fed Interest Rate Decision", 4.0, 4.0, null, "%",
-                        "그 날 이번 수집이 실패해 직전 수집본의 값"));
+                        "직전 수집본(그 날 이번 수집 실패)"));
         CalendarConsensus.Stored mismatch = new CalendarConsensus.Stored(Map.of(GDP_DAY, new CalendarConsensus.Day(List.of(
                 new CalendarConsensus.Line("GDP", 3.2, 2.2, null, "%", true)), FETCHED, true)), HORIZON);
         assertThat(CalendarConsensus.match(mismatch, release(GDP_DAY, 53), DECISION))
                 .isEqualTo(new CalendarConsensus.Match("GDP", null, null, null, null,
-                        "그 날 이번 수집이 실패해 직전 수집본의 값 · Nasdaq 값의 단위가 서로 달라 숫자를 싣지 않음"));
+                        "직전 수집본(그 날 이번 수집 실패) · 단위가 서로 달라 숫자 없음"));
     }
 }

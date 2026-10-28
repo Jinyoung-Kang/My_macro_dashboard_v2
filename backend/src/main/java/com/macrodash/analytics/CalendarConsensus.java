@@ -52,12 +52,12 @@ public final class CalendarConsensus {
         RELEASE_NAMES = Collections.unmodifiableMap(names);
     }
 
-    // ------------------------------------------------------------------ 사유(패킷에 그대로)
-    static final String NO_MAPPING = "대응표에 없는 발표 — 컨센서스를 붙이지 않음";
-    static final String OUTSIDE = "컨센서스 수집 범위 밖";
-    static final String NO_DAY = "그 날 컨센서스를 받지 못함";
-    static final String UNIT_MISMATCH = "Nasdaq 값의 단위가 서로 달라 숫자를 싣지 않음";
-    static final String STALE = "그 날 이번 수집이 실패해 직전 수집본의 값";
+    // ------------------------------------------------------------------ 사유(패킷에 그대로 — 줄마다 붙어 짧게: 한글 한 자 ≈ 1토큰)
+    static final String NO_MAPPING = "대응표에 없는 발표";
+    static final String OUTSIDE = "수집 범위 밖";
+    static final String NO_DAY = "그 날 받지 못함";
+    static final String UNIT_MISMATCH = "단위가 서로 달라 숫자 없음";
+    static final String STALE = "직전 수집본(그 날 이번 수집 실패)";
 
     /**
      * Nasdaq 줄 하나(저장본 {@code days[날짜].rows[]}).
@@ -151,11 +151,10 @@ public final class CalendarConsensus {
             }
         }
         if (found.isEmpty()) {
-            return Match.none("그 날 Nasdaq에 '" + target + "' 줄 없음");
+            return Match.none("Nasdaq에 '" + target + "' 없음");
         }
         if (found.size() > 1) {
-            return Match.none("그 날 Nasdaq '" + target + "' 줄 " + found.size()
-                    + "개(전월비·전년비 같은 라벨 없음) — 어느 값인지 가를 수 없어 붙이지 않음");
+            return Match.none("Nasdaq '" + target + "' " + found.size() + "줄(전월비·전년비 라벨 없음) — 가를 수 없음");
         }
         Line line = found.get(0);
         boolean known = day.fetchedAt() != null && knownBy != null && !day.fetchedAt().isAfter(knownBy);

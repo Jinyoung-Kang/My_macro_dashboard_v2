@@ -492,7 +492,7 @@ class CalendarSectionTest {
                 + "[\"2026-10-29\",\"RELEASE\",\"" + PCE + "\",\"s2\",null,null,null,null],"
                 + "[\"2026-11-06\",\"RELEASE\",\"" + JOBS + "\",\"s4\",null,29,\"K\",\"Nonfarm Payrolls\"]]}");
         assertThat(header.get("notes")).isEqualTo(List.of(List.of("2026-10-29", PCE,
-                "그 날 Nasdaq 'Core PCE Price Index' 줄 2개(전월비·전년비 같은 라벨 없음) — 어느 값인지 가를 수 없어 붙이지 않음")));
+                "Nasdaq 'Core PCE Price Index' 2줄(전월비·전년비 라벨 없음) — 가를 수 없음")));
         // 실적 표·출처 범례·측정 태그는 층과 상관없이 그대로입니다.
         Map<String, Object> off = build(snapshot(payload("ok", true)), List.of("AMZN"), false).section();
         assertThat(s.get("earnings")).isEqualTo(off.get("earnings"));
@@ -570,7 +570,7 @@ class CalendarSectionTest {
                 .isEqualTo(Instant.parse("2026-10-26T12:57:00Z"));
         Map<String, Object> s = withConsensus(p, KNOWN_BY).section();
         assertThat(rows(s, "macro").get(0).subList(4, 8)).as("받지 못한 날(10-28 실패)").containsOnlyNulls();
-        assertThat(table(s, "consensus").get("notes").toString()).contains("[2026-10-28, FOMC 성명, 그 날 컨센서스를 받지 못함]");
+        assertThat(table(s, "consensus").get("notes").toString()).contains("[2026-10-28, FOMC 성명, 그 날 받지 못함]");
     }
 
     @Test
