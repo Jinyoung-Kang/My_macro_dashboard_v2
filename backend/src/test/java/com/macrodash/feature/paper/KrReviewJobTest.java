@@ -222,4 +222,30 @@ class KrReviewJobTest {
         assertThat(UsPaperMarket.INSTANCE.confirmsFills()).isFalse();
         assertThat(KR.confirmsFills()).isTrue();
     }
+    @Test
+    @DisplayName("POST /api/paper/reviews/run?market=KR(F1b) — 컨트롤러가 한국 수동 복기를 불러 {ok, market:KR, outcome, review}(토요일 시각 조건 없이), 한 건의 retryable은 그 실행 한국 달력의 최근 복기 주로(미국 달력 판이 아님), 모르는 시장 값은 부르기 전에 400")
+    void manualKrReviewRoute() {
+        provisionalNav(WE);
+        answers(WE);
+        java.util.Map<String, Object> view = java.util.Map.of("weekEnding", WE.toString());
+        when(reviews.reviewView(any(Review.class), eq(WE))).thenReturn(view);
+        PaperConfig config = new PaperConfig(true, PaperFixtures.FRI, 100_000, LocalDate.of(2026, 10, 29),
+                PaperConfig.DEFAULT_KR_INITIAL_CASH);
+        PaperReviewController route = new PaperReviewController(reviews, job(kst("2026-11-07T12:00")),
+                new PaperMarkets(store, reader), config);
+
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> route.run("kr"))
+                .isInstanceOf(com.macrodash.support.InvalidRequestException.class).hasMessageContaining("US · KR");
+        verify(reviews, never()).review(any(), any(), anyBoolean());
+
+        java.util.Map<String, Object> out = route.run("KR");
+
+        assertThat(out.keySet()).containsExactly("ok", "market", "outcome", "review");
+        assertThat(out).containsEntry("ok", true).containsEntry("market", "KR")
+                .containsEntry("outcome", PaperReviewJob.REVIEWED).containsEntry("review", view);
+        verify(reviews, times(1)).review(market(KR), eq(WE), eq(false));
+        verify(reviews).reviewView(any(Review.class), eq(WE));
+        verify(reviews, never()).reviewView(any(Review.class));
+        assertThat(store.jobRuns).singleElement().satisfies(run -> assertThat(run.job()).isEqualTo("kr.review"));
+    }
 }

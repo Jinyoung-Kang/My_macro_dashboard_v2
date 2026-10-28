@@ -16,7 +16,7 @@ import java.util.Map;
  * <pre>
  *  GET  /api/paper/reviews?market=US                 복기 목록(주 최근 순, 판정 수·연결된 제안 상태 — 시장 US·KR, 없으면 US)
  *  GET  /api/paper/reviews/{weekEnding}?market=US    복기 한 건(입력·응답·사용량·판정 표·연결된 제안)
- *  POST /api/paper/reviews/run             가장 최근 주를 지금 복기(토요일 시각 조건만 빼고 정기 실행과 같은 조건, 있으면 그 행)
+ *  POST /api/paper/reviews/run?market=US   가장 최근 주를 지금 복기(토요일 시각 조건만 빼고 정기 실행과 같은 조건, 있으면 그 행 — 시장 US·KR, 없으면 US)
  * </pre>
  *
  * <p>{@code market}(2단계 명세 §4-16, F1)이 없거나 US면 미국 응답 그대로({@link ReviewService#listView()}), KR이면 그 조회의 시장 문맥
@@ -55,8 +55,10 @@ public class PaperReviewController {
                 : reviews.detailView(markets.scope(requested, config), weekEnding);
     }
 
+    /** {@code market}이 KR이면 그 시장의 수동 복기({@link PaperReviewJob#runNow(PaperMarket)}), 없거나 US면 미국 응답 그대로. */
     @PostMapping("/reviews/run")
-    public Map<String, Object> run() {
-        return job.runNow();
+    public Map<String, Object> run(@RequestParam(required = false) String market) {
+        PaperMarket requested = markets.requested(market);
+        return requested == UsPaperMarket.INSTANCE ? job.runNow() : job.runNow(requested);
     }
 }

@@ -241,7 +241,11 @@ public class PaperReviewJob {
         return runNow(UsPaperMarket.INSTANCE);
     }
 
-    /** 그 시장의 수동 복기 — {@link #runNow()}와 같되 그 시장의 주·책·관측치·기록 이름으로. */
+    /**
+     * 그 시장의 수동 복기 — {@link #runNow()}와 같되 그 시장의 주·책·관측치·기록 이름으로(POST /api/paper/reviews/run?market= — 2단계 명세 §4-16,
+     * F1). 미국 밖 시장 응답은 {@code ok} 뒤에 {@code market}을 싣고, 복기 한 건의 {@code retryable}은 그 실행 달력의 최근 복기 주로 봅니다
+     * ({@link ReviewService#reviewView(Review, LocalDate)} — 미국 달력이 아니라). 그 시장이 쉬면(한국 출발일·한국 계좌 없음) 그 사유로 400입니다.
+     */
     Map<String, Object> runNow(PaperMarket requested) {
         String dormant = dormantReason(requested);
         if (dormant != null) {
@@ -272,10 +276,15 @@ public class PaperReviewJob {
                 case NOT_ACTIVE, WAITING_FINAL_CLOSE, CAP_REACHED, NO_CALENDAR ->
                         throw new InvalidRequestException(result.message());
                 default -> {
+                    boolean us = market.definition() == UsPaperMarket.INSTANCE;
                     Map<String, Object> out = new LinkedHashMap<>();
                     out.put("ok", true);
+                    if (!us) {
+                        out.put("market", market.code());
+                    }
                     out.put("outcome", result.outcome());
-                    out.put("review", result.review() == null ? null : reviews.reviewView(result.review()));
+                    out.put("review", result.review() == null ? null
+                            : us ? reviews.reviewView(result.review()) : reviews.reviewView(result.review(), week));
                     return out;
                 }
             }
