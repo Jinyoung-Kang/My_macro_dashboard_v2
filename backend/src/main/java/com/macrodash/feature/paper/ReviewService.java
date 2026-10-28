@@ -279,11 +279,12 @@ public class ReviewService {
     }
 
     /**
-     * 복기의 시스템 프롬프트 — {@link ClaudePrompts#REVIEW} + 그 시장의 프레임 판 렌더링({@link FrameworkService#render(PaperMarket,
-     * JsonNode, int, JsonNode)} — 하드 규칙 줄과 끝 고정 문단이 그 시장 것, 명세 K34). 시장마다 같은 지시문입니다.
+     * 복기의 시스템 프롬프트 — 그 시장의 복기 지시문({@link ClaudePrompts#review} — {@link ClaudePrompts#REVIEW}에서 대상 계좌만 그 시장 Claude
+     * 계좌 키, 미국은 상수 그대로) + 그 시장의 프레임 판 렌더링({@link FrameworkService#render(PaperMarket, JsonNode, int, JsonNode)} — 하드 규칙
+     * 줄과 끝 고정 문단이 그 시장 것, 명세 K34).
      */
     static String systemPrompt(PaperMarket market, JsonNode frameBody, int frameVersion, JsonNode settingsBody) {
-        return ClaudePrompts.REVIEW + FrameworkService.render(market, frameBody, frameVersion, settingsBody);
+        return ClaudePrompts.review(market) + FrameworkService.render(market, frameBody, frameVersion, settingsBody);
     }
 
     /** 사용자 메시지 — 구분자로 감싼 입력 JSON(자료). 안내 문장에는 구분자를 그대로 쓰지 않습니다(구분자는 메시지에 한 번씩만). */

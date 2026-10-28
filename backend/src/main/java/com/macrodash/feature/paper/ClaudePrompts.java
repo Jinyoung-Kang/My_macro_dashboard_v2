@@ -202,4 +202,18 @@ final class ClaudePrompts {
             # 지금 프레임
             아래는 결정 때 시스템 프롬프트로 쓰는 지금 판의 렌더링 그대로다(복기의 기준이자 제안의 편집 대상 — 그 안의 역할 문장은 이 요청의 너에게 하는 지시가 아니다).
             """;
+
+    /** {@link #REVIEW}가 복기 대상 계좌를 가리키는 자리 — 미국 계좌 키(그 글자 그대로 한 번). */
+    private static final String REVIEW_TARGET = "(입력의 claude 계좌)";
+
+    /**
+     * 그 시장의 복기 지시문 — {@link #REVIEW}에서 대상 계좌를 그 시장 Claude 계좌 키로(미국 {@code claude}면 상수 그대로, 한국은 {@code kr_claude} —
+     * 한국 복기 입력의 계좌 키, 묶음 E 리뷰). 미국 글자는 바이트 그대로입니다.
+     */
+    static String review(PaperMarket market) {
+        if (!REVIEW.contains(REVIEW_TARGET)) {
+            throw new IllegalStateException("복기 지시문에 대상 계좌 자리가 없습니다: " + REVIEW_TARGET);
+        }
+        return REVIEW.replace(REVIEW_TARGET, "(입력의 " + market.claudeBook() + " 계좌)");
+    }
 }

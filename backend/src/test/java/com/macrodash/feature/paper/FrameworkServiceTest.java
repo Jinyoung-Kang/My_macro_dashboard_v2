@@ -289,7 +289,10 @@ class FrameworkServiceTest {
         Golden.assertMatches("render-kr-v0-default.txt", decision);
         String review = ReviewService.systemPrompt(KrPaperMarket.INSTANCE, body, 0, settings.defaultsJson());
         Golden.assertMatches("review-system-kr.txt", review);
-        assertThat(review).isEqualTo(ClaudePrompts.REVIEW + decision);
+        assertThat(review).isEqualTo(ClaudePrompts.review(KrPaperMarket.INSTANCE) + decision);
+        assertThat(review).as("복기 대상 계좌는 한국 입력의 계좌 키(review-user-kr.txt의 kr_claude — 묶음 E 리뷰)")
+                .contains("'Claude 재량 책'(입력의 kr_claude 계좌)").doesNotContain("(입력의 claude 계좌)");
+        assertThat(ClaudePrompts.review(UsPaperMarket.INSTANCE)).as("미국은 상수 그대로").isEqualTo(ClaudePrompts.REVIEW);
         assertThat(FrameworkService.render(KrPaperMarket.INSTANCE, body, 0, null)).as("설정 행이 없으면 한국 기본값으로")
                 .isEqualTo(decision);
     }
