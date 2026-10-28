@@ -562,6 +562,49 @@ class KrStartTest {
         assertThat(store.books.get("kr_claude").startedOn()).isEqualTo(NEXT);
     }
 
+    /** 한국 출발 패킷을 만드는 동안(매크로 카드 저장본 읽기 — 한국 패킷만 읽음) 시계를 {@code to}로 한 번 옮김(저장본은 없음). */
+    private void clockMovesWhileBuildingThePacket(Instant to) {
+        AtomicBoolean moved = new AtomicBoolean();
+        when(reader.read(eq(Datasets.SNAP_MACRO_COLLECTED), org.mockito.ArgumentMatchers.anyLong(),
+                org.mockito.ArgumentMatchers.nullable(String.class))).thenAnswer(invocation -> {
+                    if (moved.compareAndSet(false, true)) {
+                        clock.set(to);
+                    }
+                    return java.util.Optional.empty();
+                });
+    }
+
+    @Test
+    @DisplayName("K28·사용자 결정 w12(묶음 E 3차 리뷰) — 최소 대기 한도 60초와 대기 한도는 요청을 보내기 직전에 잼: 계획을 시작할 때 70초였어도 패킷을 만드는 동안 55초가 되면 부르지 않고(잡은 호출을 돌려놓음) 미룸, 120초에서 시작해 패킷을 만드는 동안 90초가 되면 대기 한도 90초")
+    void claudeStartMeasuresTheDeadlineRightBeforeTheRequest() {
+        KrClaudeFixtures.FakeAi fake = new KrClaudeFixtures.FakeAi();
+        fake.answer(KrClaudeFixtures.decision(0, "관망"));
+        realClaude(fake);
+        clockMovesWhileBuildingThePacket(kst("2026-12-01T00:59:05"));   // 기한 12-01 01:00까지 55초
+
+        PaperDecisionJob.Result tooLate = runAt("2026-12-01T00:58:50");   // 계획을 시작할 때는 70초
+
+        assertThat(tooLate.outcome()).isEqualTo(PaperDecisionJob.START_POSTPONED);
+        assertThat(fake.requests).as("요청 직전에 55초 — 부르지 않음").isEmpty();
+        assertThat(tooLate.message()).contains("kr_claude")
+                .contains("출발 기한(2026-12-01 01:00 KST)까지 55초 — 최소 대기 한도 60초보다 짧아 Claude를 부르지 않음");
+        assertThat(store.apiUsage(NEXT).map(com.macrodash.store.PaperStore.ApiUsage::calls).orElse(0))
+                .as("잡은 호출을 돌려놓음").isZero();
+        assertThat(krDecisions()).isEmpty();
+        assertNotStarted(store);
+        assertThat(krRuns()).singleElement().satisfies(run ->
+                assertThat(run.detail().has("calls")).as("과금 호출 없음").isFalse());
+
+        sessionData(NEXT, S, everyCodeOn(NEXT));
+        clockMovesWhileBuildingThePacket(kst("2026-12-02T00:58:30"));   // 기한 12-02 01:00까지 90초
+        PaperDecisionJob.Result started = runAt("2026-12-02T00:58:00");   // 계획을 시작할 때는 120초
+
+        assertThat(started.outcome()).isEqualTo(PaperDecisionJob.STARTED);
+        assertThat(fake.requests).singleElement().satisfies(request ->
+                assertThat(request.timeoutSeconds()).as("요청 직전에 잰 남은 시간").isEqualTo(90));
+        assertThat(store.books.get("kr_claude").startedOn()).isEqualTo(NEXT);
+    }
+
     @Test
     @DisplayName("K28·사용자 결정 w12 — Claude 출발 호출이 429(RATE_LIMIT)면 30초 기다린 뒤(가짜 기다림 — 시계만 옮김) 첫 호출의 패킷 그대로 한 번만 다시 부르고, 성공하면 네 계좌가 함께 출발(결정 행 재시도 1·호출 2회)")
     void claudeStartRateLimitWaitsThirtySecondsThenRetriesOnce() {

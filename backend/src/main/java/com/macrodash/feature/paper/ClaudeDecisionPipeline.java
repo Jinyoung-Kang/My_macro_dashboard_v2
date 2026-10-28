@@ -28,6 +28,7 @@ import tools.jackson.databind.ObjectMapper;
 import tools.jackson.databind.node.ObjectNode;
 
 import java.time.Clock;
+import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.util.ArrayList;
@@ -35,6 +36,7 @@ import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.TreeMap;
@@ -239,36 +241,81 @@ final class ClaudeDecisionPipeline {
     }
 
     /**
-     * {@link #attempt(LocalDate, String, boolean, SettingsRow, ClaudeSettings, LocalDate, boolean, Observed)}에 호출 대기 한도의 상한을 더한 것 —
-     * 대기 한도 = min(설정 대기 한도, {@code maxTimeoutSeconds})(1초 아래로는 내리지 않음). 한국 출발의 Claude 몫이 그 세션 출발 기한 안에 호출을
-     * 끝내려고 씁니다(2단계 명세 §9 'E2 — 출발 갈고리의 기한'). null이면 설정 대기 한도.
+     * 호출 창 — 기한({@code deadline})과 최소 대기 한도({@code minSeconds}, 초). 한국 출발의 Claude 몫이 그 세션 출발 기한 안에 호출을 끝내려고
+     * 씁니다(2단계 명세 §4-8 'E2b'·사용자 결정 w12). 남은 시간은 <b>요청을 보내기 직전</b>(프레임 판 읽기·패킷 조립·호출 한 번 잡기 뒤)에 재고 —
+     * 그 앞에서 재면 패킷을 만드는 동안 흐른 시간만큼 기한에 더 가까이 보내게 됩니다(묶음 E 3차 리뷰) — 대기 한도 = min(설정 대기 한도, 남은 초)
+     * (초 단위 내림), 남은 초가 최소 대기 한도보다 짧으면 잡은 호출을 돌려놓고 부르지 않습니다({@link WindowClosed}).
+     */
+    record CallWindow(Instant deadline, long minSeconds) {
+
+        CallWindow {
+            Objects.requireNonNull(deadline, "deadline");
+        }
+
+        /** 기한까지 남은 초(초 단위 내림 — 지났으면 음수). */
+        long secondsLeft(Clock clock) {
+            return Duration.between(clock.instant(), deadline).getSeconds();
+        }
+    }
+
+    /** 호출 창({@link CallWindow})이 요청 직전에 닫혀 부르지 않음 — 잡은 호출은 돌려놓았고, {@code secondsLeft}는 그때 잰 남은 초. */
+    static final class WindowClosed extends RuntimeException {
+
+        private final long secondsLeft;
+
+        WindowClosed(long secondsLeft, long minSeconds) {
+            super("기한까지 " + secondsLeft + "초 — 최소 대기 한도 " + minSeconds + "초보다 짧아 부르지 않음");
+            this.secondsLeft = secondsLeft;
+        }
+
+        long secondsLeft() {
+            return secondsLeft;
+        }
+    }
+
+    /**
+     * {@link #attempt(LocalDate, String, boolean, SettingsRow, ClaudeSettings, LocalDate, boolean, Observed)}에 호출 창({@link CallWindow})을 더한
+     * 것 — null이면 설정 대기 한도.
+     *
+     * @throws WindowClosed 요청 직전에 기한까지 최소 대기 한도가 남지 않음(부르지 않았고 잡은 호출은 돌려놓음)
      */
     Attempt attempt(LocalDate asOf, String kind, boolean initial, SettingsRow row, ClaudeSettings claude,
-                    LocalDate today, boolean scheduled, Observed observed, Integer maxTimeoutSeconds) {
+                    LocalDate today, boolean scheduled, Observed observed, CallWindow window) {
         FrameworkService.Frame frame = framework.current();
         Packet packet = packet(asOf, kind, initial, frame.version(), row, observed);
-        return send(frame, packet, row, claude, today, scheduled, maxTimeoutSeconds);
+        return send(frame, packet, row, claude, today, scheduled, window);
     }
 
     /**
      * 앞 호출과 <b>같은 패킷·같은 프레임 판</b>으로 한 번 더 — 한국 출발의 API 오류 재시도(같은 계획 안, 2단계 명세 §4-8 'E2b')가 첫 호출이 보낸
      * 글자를 그대로 다시 보냅니다. 패킷을 다시 만들면 첫 호출(최대 대기 한도) 동안 다시 쓰인 단일 판 저장본(매크로 카드는 5분마다)이 '읽은 순간 뒤
-     * 수집본'이 되어 빠져, 읽은 순간에 있던 자료가 재시도 패킷에서 사라집니다(묶음 E 리뷰). 호출 상한·대기 한도·사용량·분류는
-     * {@link #attempt(LocalDate, String, boolean, SettingsRow, ClaudeSettings, LocalDate, boolean, Observed, Integer)}와 같습니다.
+     * 수집본'이 되어 빠져, 읽은 순간에 있던 자료가 재시도 패킷에서 사라집니다(묶음 E 리뷰). 호출 상한·호출 창·사용량·분류는
+     * {@link #attempt(LocalDate, String, boolean, SettingsRow, ClaudeSettings, LocalDate, boolean, Observed, CallWindow)}와 같습니다.
+     *
+     * @throws WindowClosed 요청 직전에 기한까지 최소 대기 한도가 남지 않음
      */
     Attempt again(Attempt previous, SettingsRow row, ClaudeSettings claude, LocalDate today, boolean scheduled,
-                  Integer maxTimeoutSeconds) {
-        return send(previous.frame(), previous.packet(), row, claude, today, scheduled, maxTimeoutSeconds);
+                  CallWindow window) {
+        return send(previous.frame(), previous.packet(), row, claude, today, scheduled, window);
     }
 
-    /** 만든 패킷으로 호출 한 번 — 시스템 프롬프트(그 판·그 설정 행), 호출 한 번 잡기, 부르기, 사용량, 형식 검사. */
+    /** 만든 패킷으로 호출 한 번 — 시스템 프롬프트(그 판·그 설정 행), 호출 한 번 잡기, (호출 창이면 남은 시간 재기), 부르기, 사용량, 형식 검사. */
     private Attempt send(FrameworkService.Frame frame, Packet packet, SettingsRow row, ClaudeSettings claude,
-                         LocalDate today, boolean scheduled, Integer maxTimeoutSeconds) {
-        int timeout = maxTimeoutSeconds == null ? timeoutSeconds : Math.max(1, Math.min(timeoutSeconds, maxTimeoutSeconds));
+                         LocalDate today, boolean scheduled, CallWindow window) {
         String system = FrameworkService.render(market, frame.body(), frame.version(), row.body());
         // 정기 작업은 상한까지, 수동 호출은 정기 작업 몫을 남긴 문턱까지(2단계 명세 §4-10 — 같은 SQL의 문턱만 다름).
         if (calls.reserve(today, claude.callLimit(scheduled)).isEmpty()) {
             return null;
+        }
+        int timeout = timeoutSeconds;
+        if (window != null) {
+            // 요청 직전(호출 한 번을 잡은 뒤)에 잼 — 그 앞의 조립 시간만큼 기한에 다가간 것을 빼지 않으려고(CallWindow).
+            long left = window.secondsLeft(clock);
+            if (left < window.minSeconds()) {
+                calls.release(today);
+                throw new WindowClosed(left, window.minSeconds());
+            }
+            timeout = (int) Math.max(1, Math.min(timeoutSeconds, left));
         }
         AiService.StructuredResult result;
         try {

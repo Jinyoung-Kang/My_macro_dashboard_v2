@@ -711,7 +711,8 @@ public class ClaudeBookService {
      * 바로 실패), 그 밖의 API 오류는 바로(사용자 결정 w12). 기다리는 동안 결정 작업 잠금을 쥐고, 기다림이 끊기면(종료) 다시 부르지 않고 실패 ·
      * 거절·형식 오류(같은 입력이면 같은 답이라 다시 부르지 않음) ·
      * <b>기한</b> — 호출마다 대기 한도를 min(설정 대기 한도, 출발 기한 − 지금)으로 묶고(초 단위 내림), 기한까지 최소 대기 한도
-     * {@value #KR_START_MIN_CALL_SECONDS}초가 남지 않았으면 부르지 않습니다(사용자 결정 w12 — 예전에는 1초. 기한을 넘겨 끝난 계획은 쓰기 트랜잭션이
+     * {@value #KR_START_MIN_CALL_SECONDS}초가 남지 않았으면 부르지 않습니다 — 둘 다 요청을 보내기 직전(패킷 조립·호출 한 번 잡기 뒤)에 잼
+     * ({@link ClaudeDecisionPipeline.CallWindow})(사용자 결정 w12 — 예전에는 1초. 기한을 넘겨 끝난 계획은 쓰기 트랜잭션이
      * 다시 막음 — 마지막 방어선) · 응답을 받은 뒤 검증 예외. 실패의 사유는 작업 기록(출발 미룸)에 남고, 과금된 호출은 그날
      * 사용량에 셉니다.
      */
@@ -761,6 +762,18 @@ public class ClaudeBookService {
         return out;
     }
 
+    /**
+     * 최소 대기 한도(w12)가 남지 않아 부르지 않은 출발 계획 실패 — 기한 직전 몇 초로 부르는 호출은 거의 늘 시간 초과라 부르지 않고 그 세션을 미룸
+     * (재시도도 같음 — {@code previous}가 있으면 '다시 부르지 않음'과 첫 호출의 상태).
+     */
+    private static KrStartPipeline.Plan tooLateToCall(String book, Instant deadline, long left, Attempt previous,
+                                                      List<Map<String, Object>> trace) {
+        return KrStartPipeline.Plan.failed(book, "출발 기한(" + Kst.stamp(deadline) + ")까지 " + Math.max(0, left)
+                + "초 — 최소 대기 한도 " + KR_START_MIN_CALL_SECONDS + "초보다 짧아 Claude를 "
+                + (previous == null ? "부르지 않음" : "다시 부르지 않음(첫 호출 " + statusLabel(previous.status()) + ")"))
+                .withCalls(callsView(trace));
+    }
+
     private KrStartPipeline.Plan krStartPlan(ClaudeDecisionPipeline base, MarketRun run, LocalDate session,
                                              Instant deadline, KrDecisionGates.Checked gates) {
         requireReady();
@@ -785,22 +798,25 @@ public class ClaudeBookService {
         boolean waited = false;   // 429 뒤 기다린 재시도(w12) — 실패 사유 문구에만
         // 호출마다의 사용(작업 기록용 — 결정 행 없이 끝나도 과금된 호출을 셀 수 있게, §4-10).
         List<Map<String, Object>> trace = new ArrayList<>();
+        // 최소 대기 한도(w12)·대기 한도는 요청을 보내기 직전에 잼(파이프라인 — 패킷 조립 뒤, 묶음 E 3차 리뷰).
+        ClaudeDecisionPipeline.CallWindow window = new ClaudeDecisionPipeline.CallWindow(deadline, KR_START_MIN_CALL_SECONDS);
         while (true) {
-            long left = Duration.between(clock.instant(), deadline).getSeconds();
+            long left = window.secondsLeft(clock);
             if (left < KR_START_MIN_CALL_SECONDS) {
-                // 최소 대기 한도(w12): 기한 직전 몇 초로 부르는 호출은 거의 늘 시간 초과 — 부르지 않고 그 세션을 미룸(재시도도 같음).
-                return KrStartPipeline.Plan.failed(book, "출발 기한(" + Kst.stamp(deadline) + ")까지 " + Math.max(0, left)
-                        + "초 — 최소 대기 한도 " + KR_START_MIN_CALL_SECONDS + "초보다 짧아 Claude를 "
-                        + (calls == 0 ? "부르지 않음" : "다시 부르지 않음(첫 호출 " + statusLabel(attempt.status()) + ")"))
-                        .withCalls(callsView(trace));
+                // 이미 짧으면 패킷도 만들지 않음(아래 호출 창이 요청 직전에 다시 봄).
+                return tooLateToCall(book, deadline, left, attempt, trace);
             }
             LocalDate today = Kst.today(clock);
-            int bound = (int) Math.min(Integer.MAX_VALUE, left);
             // 재시도는 첫 호출의 패킷 그대로(읽은 순간의 판 — 첫 호출 동안 다시 쓰인 저장본이 빠지지 않게, 묶음 E 리뷰).
-            Attempt next = pipeline.callsLeft(today, claude, true) <= 0 ? null
-                    : attempt == null
-                    ? pipeline.attempt(session, RuleBookService.INITIAL, true, row, claude, today, true, observed, bound)
-                    : pipeline.again(attempt, row, claude, today, true, bound);
+            Attempt next;
+            try {
+                next = pipeline.callsLeft(today, claude, true) <= 0 ? null
+                        : attempt == null
+                        ? pipeline.attempt(session, RuleBookService.INITIAL, true, row, claude, today, true, observed, window)
+                        : pipeline.again(attempt, row, claude, today, true, window);
+            } catch (ClaudeDecisionPipeline.WindowClosed closed) {
+                return tooLateToCall(book, deadline, closed.secondsLeft(), attempt, trace);
+            }
             if (next == null) {
                 return KrStartPipeline.Plan.failed(book, capMessage(claude, today, true)
                         + (calls == 0 ? "" : "(첫 호출 " + statusLabel(attempt.status()) + " 뒤 재시도)"))
@@ -814,7 +830,7 @@ public class ClaudeBookService {
             }
             if (RATE_LIMIT_KIND.equals(attempt.result().errorKind())) {
                 // 429(w12): 기다린 뒤 한 번만 — 기다린 뒤에도 최소 대기 한도가 남을 때만(아니면 잠금을 쥔 채 기다리지 않고 바로 실패).
-                long leftNow = Duration.between(clock.instant(), deadline).getSeconds();
+                long leftNow = window.secondsLeft(clock);
                 long waitSeconds = KR_START_RATE_LIMIT_WAIT.getSeconds();
                 if (leftNow < waitSeconds + KR_START_MIN_CALL_SECONDS) {
                     log.warn("한국 Claude 계좌 출발 호출 429 — 기한까지 {}초라 {}초 기다린 재시도를 하지 않습니다({}): {}", Math.max(0, leftNow),
