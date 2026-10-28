@@ -21,7 +21,7 @@ import java.util.Map;
  *  GET  /api/paper/books/{code}/orders?limit=50   주문(최근 순, 1–500)
  *  GET  /api/paper/books/{code}/fills?limit=50    체결(최근 순, 1–500)
  *  GET  /api/paper/books/{code}/nav               거래일별 순자산
- *  POST /api/paper/init                           네 책 만들기 + 벤치마크 사후 체결(멱등)
+ *  POST /api/paper/init?market=US                 네 책 만들기 + 벤치마크 사후 체결(멱등 — 한국은 출발일 검사 뒤 네 계좌 '시작 전'만)
  *  POST /api/paper/books/{code}/status            {"status":"ACTIVE"|"PAUSED"}
  *  POST /api/paper/books/{code}/reset             {"confirm":"<code>"}
  *  POST /api/paper/run/risk?market=US            리스크 점검 한 번(설정과 상관없이 — 그 시장 장부 실패 기억을 지우고, 시장 US·KR, 없으면 US)
@@ -92,10 +92,28 @@ public class PaperController {
         return query.nav(code);
     }
 
+    /**
+     * {@code market}이 KR이면 한국 초기화({@link PaperAdminService#initKr} — 멱등, 출발일이 비었거나 달력이 그해를 모르거나 KRX 거래일이 아니거나
+     * 처음 만들 때 출발 기한이 지났으면 400, 사후 체결·출발일 종가 없음), 없거나 US면 미국 응답 그대로.
+     */
     @PostMapping("/init")
-    public Map<String, Object> init() {
+    public Map<String, Object> init(@RequestParam(required = false) String market) {
+        PaperMarket requested = markets.requested(market);
         if (!query.ready()) {
             return notReady();
+        }
+        if (requested != UsPaperMarket.INSTANCE) {
+            // 운영 시장 목록은 미국·한국 둘(PaperMarkets.PRODUCTION) — 미국 밖은 한국 초기화.
+            PaperAdminService.KrInitResult result = admin.initKr();
+            Map<String, Object> out = new LinkedHashMap<>();
+            out.put("ok", true);
+            out.put("market", requested.code());
+            out.put("startDate", result.startDate().toString());
+            out.put("created", result.created());
+            out.put("settingsCreated", result.settingsCreated());
+            out.put("settingsVersion", result.settingsVersion());
+            out.put("settingsKeysWritten", result.settingsKeysWritten());
+            return out;
         }
         PaperAdminService.InitResult result = admin.init();
         Map<String, Object> out = new LinkedHashMap<>();
