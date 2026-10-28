@@ -9,6 +9,12 @@
  * 그래서 `available` 밖의 필드는 선택(`?`)입니다.
  */
 
+/**
+ * 모의매매 책의 시장(2단계 명세 §4-16) — 개요·상태 등 시장 단위 경로의 `?market=` 값이자 한국 응답의 `market` 칸. 값이 없으면 미국입니다
+ * (미국 응답에는 `market` 칸이 없음 — 시장을 받기 전 글자 그대로). 표기 규칙은 lib/paperMarket.
+ */
+export type PaperMarketCode = "US" | "KR";
+
 /** 책 종류 — 규칙 책 · Claude 재량 책 · 벤치마크(SPY 100%, SPY 60%·SHY 40%). */
 export type PaperBookKind = "RULES" | "CLAUDE" | "BENCHMARK";
 
@@ -85,10 +91,19 @@ export interface PaperJobRun {
   detail: unknown;
 }
 
-/** GET /api/paper/overview */
+/** GET /api/paper/overview(?market=KR) */
 export interface PaperOverviewResponse {
   available: boolean;
   message?: string;
+  /** 한국 응답만 — "KR"(미국 응답에는 칸이 없음). */
+  market?: PaperMarketCode;
+  /** 한국 응답만 — 장부 통화 "KRW". */
+  currency?: string;
+  /**
+   * 한국 응답만 — 한국 정기 작업(리스크 점검·결정·복기)이 쉬는 사유(출발일이 비었음·한국 초기화 전), 돌면 null. 쉬어도 200이고 조회는
+   * 저장본을 읽기만 합니다(docs/API.md '시장 단위 조회').
+   */
+  dormantReason?: string | null;
   initialized?: boolean;
   /** 네 책의 출발(사후 체결) 거래일 — 설정 dashboard.paper.start-date. */
   startDate?: string | null;
@@ -236,6 +251,10 @@ export interface PaperGateIndicator {
 export interface PaperStatusResponse {
   available: boolean;
   message?: string;
+  /** 한국 응답만 — 개요와 같은 머리 칸(시장·통화·쉬는 사유). */
+  market?: PaperMarketCode;
+  currency?: string;
+  dormantReason?: string | null;
   schemaReady?: boolean;
   initialized?: boolean;
   /** dashboard.paper.enabled — false면 정기 작업(리스크·결정)이 일하지 않습니다. 테이블이 없을 때도 옵니다. */
@@ -372,6 +391,13 @@ export interface PaperApiUsageDay extends PaperApiUsageCost {
   calls: number;
   /** 하루 호출 상한(설정 apiDailyCallCap). */
   cap: number;
+  /** 정기 작업 몫 예약(설정 apiScheduledReserve, 기본 7 — 2단계 명세 §4-10). 예전 응답에는 없음. */
+  scheduledReserve?: number | null;
+  /**
+   * 수동 호출 문턱 = max(0, cap − scheduledReserve)(기본 13) — 미리보기·시작·수동 결정·프레임 제안·수동 복기는 그날 호출이 이 값 미만일 때만,
+   * 정기 작업은 cap까지. 예전 응답에는 없음.
+   */
+  manualLimit?: number | null;
   inputTokens: number;
   outputTokens: number;
   cacheReadTokens: number;
@@ -456,7 +482,8 @@ export interface PaperOrder {
    */
   targetWeightPct: number | null;
   sellFraction: number | null;
-  timing: "NEXT_OBSERVATION" | "NEXT_CLOSE" | "IMMEDIATE" | "BACKFILL";
+  /** 체결 시점 — 한국 책은 NEXT_OPEN(다음 KR 거래일 시가)뿐입니다(명세 §4-6). */
+  timing: "NEXT_OBSERVATION" | "NEXT_CLOSE" | "IMMEDIATE" | "BACKFILL" | "NEXT_OPEN";
   source: "RULE" | "CLAUDE" | "STOP" | "BENCHMARK" | "INITIAL";
   status: PaperOrderStatus;
   rejectReason: string | null;

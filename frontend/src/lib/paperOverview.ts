@@ -6,14 +6,20 @@
  */
 import { deltaColor, EMPTY, formatKst, formatNumber } from "./format";
 import { accountProfile, benchmarkLabel, bookCard, statCells } from "./paper";
+import { marketMeta, type PaperMarketCode } from "./paperMarket";
 import type { PaperBookSummary, PaperOverviewResponse, PaperQuotesSummary } from "./types";
 
 // ---------------------------------------------------------------- 계좌 행(AssetRow)
 
-/** 계좌 행이 개요에서 함께 읽는 것 — 사후 체결 대기 목록과 장부 관측치 신선도. */
+/** 계좌 행이 개요에서 함께 읽는 것 — 사후 체결 대기 목록과 장부 관측치 신선도, 그 개요의 시장(기본 미국). */
 export interface BookRowContext {
   pendingBackfill?: readonly string[] | null;
   quotes?: Pick<PaperQuotesSummary, "stale"> | null;
+  /**
+   * 그 개요의 시장. 한국("KR")이면 순자산을 원 단위 정수로 적고, 사후 체결 대기 경고를 달지 않습니다 — 한국 네 계좌는 S+1 시가에 함께
+   * 출발하고 초기화를 다시 눌러 체결하지 않습니다(명세 §2·K28, API.md 개요 행 — 한국 `pendingBackfill`은 '시작 전 벤치마크'일 뿐).
+   */
+  market?: PaperMarketCode;
 }
 
 /** 사후 체결을 기다리는 벤치마크 행의 경고(초기화 카드가 사유와 다시 누를 단추를 보입니다). */
@@ -28,6 +34,8 @@ export interface BookRow {
   name: string;
   sub: string;
   value: number | null;
+  /** 서식된 값 — 한국 계좌만(원 단위 정수, 모르면 null → "—"). 미국 행에는 이 칸이 없어 자산 행이 value를 소수 둘째 자리로 찍습니다. */
+  valueText?: string | null;
   unit: string;
   changePct: number | null;
   isStale: boolean;
@@ -44,22 +52,26 @@ export interface BookRow {
  * - 경고: 벤치마크가 출발일 종가를 기다리면(pendingBackfill) 그 사실. 추정 배지는 없습니다(장부 값은 추정이 아님).
  */
 export function bookAssetRow(book: PaperBookSummary, context: BookRowContext = {}): BookRow {
-  const card = bookCard(book, []);
+  const market = context.market ?? "US";
+  const card = bookCard(book, [], market);
   const summary = accountProfile(book.code)?.summary ?? null;
   const staleReasons = [
     card.staleWarning,
     context.quotes?.stale === true && book.lastObservedAtKst ? `관측치 저장본이 늦음 · 마지막 관측 ${formatKst(book.lastObservedAtKst)}` : null,
   ].filter((reason): reason is string => reason !== null);
+  const korea = market === "KR";
+  const nav = korea ? formatNumber(book.nav, 0) : null;
   return {
     id: book.code,
     name: book.label,
     sub: [card.kind, card.status.label, summary].filter((part) => part && part !== EMPTY).join(" · "),
     value: book.nav,
-    unit: "달러",
+    ...(korea ? { valueText: nav === EMPTY ? null : nav } : {}),
+    unit: marketMeta(market).unitLabel,
     changePct: book.returnPct,
     isStale: staleReasons.length > 0,
     staleReason: staleReasons.length > 0 ? staleReasons.join(" · ") : null,
-    warning: (context.pendingBackfill ?? []).includes(book.code) ? PENDING_BACKFILL_WARNING : null,
+    warning: !korea && (context.pendingBackfill ?? []).includes(book.code) ? PENDING_BACKFILL_WARNING : null,
   };
 }
 

@@ -6,6 +6,7 @@
  * 모르는 값(null)은 "—"로 둡니다. 0으로 채우지 않습니다.
  */
 import { EMPTY, formatKst, formatLatency, formatNumber, formatPercent, formatSigned, formatWithUnit } from "./format";
+import { formatMoney, formatSharePriceFor, type PaperMarketCode } from "./paperMarket";
 import type {
   PaperBookResetResult,
   PaperBookStatusResult,
@@ -180,11 +181,12 @@ export function formatDollars(value: number | null | undefined, digits = 2): str
 }
 
 /**
- * 주당 가격(평단·현재가·최고가·스탑가·체결가·관측가) — 소수 4자리. 백엔드가 4자리로 보내는 까닭이 5bp 슬리피지를 싼
+ * 주당 가격(평단·현재가·최고가·스탑가·체결가·관측가) — 미국은 소수 4자리. 백엔드가 4자리로 보내는 까닭이 5bp 슬리피지를 싼
  * 종목에서도 보이게 하려는 것이라, 2자리로 자르면 관측가 9.00과 체결가 9.0045가 둘 다 "9.00"이 됩니다. 총액·비율은 2자리 그대로.
+ * 한국(`market` "KR")은 원 단위 호가라 0자리입니다(lib/paperMarket — 슬리피지는 체결가가 아니라 비용 칸).
  */
-export function formatSharePrice(value: number | null | undefined): string {
-  return formatNumber(value, 4);
+export function formatSharePrice(value: number | null | undefined, market: PaperMarketCode = "US"): string {
+  return formatSharePriceFor(value, market);
 }
 
 /** 비교 기준 책의 이름(통계의 초과·베타 기준). 기준이 없으면 null, 목록에 없으면 코드 그대로. */
@@ -239,17 +241,19 @@ export function sampleNote(stats: PaperStats | null | undefined): string {
   return base;
 }
 
-/** 책 카드에 적을 값(전부 표시 문자열). */
-export function bookCard(book: PaperBookSummary, books: readonly PaperBookSummary[]) {
+/**
+ * 책 카드에 적을 값(전부 표시 문자열). 돈은 그 책 시장의 통화(`market` — 기본 미국 달러, 한국은 원 정수, lib/paperMarket)입니다.
+ */
+export function bookCard(book: PaperBookSummary, books: readonly PaperBookSummary[], market: PaperMarketCode = "US") {
   const stale = book.staleCount ?? null;
   return {
     status: bookStatusBadge(book.status),
     kind: bookKindLabel(book.kind),
-    nav: formatDollars(book.nav),
+    nav: formatMoney(book.nav, market),
     returnPct: formatPercent(book.returnPct),
     exposure: formatWithUnit(book.exposurePct, 1, "%"),
-    cash: formatDollars(book.cash),
-    initialCash: formatDollars(book.initialCash, 0),
+    cash: formatMoney(book.cash, market),
+    initialCash: formatMoney(book.initialCash, market, 0),
     positions: book.positions === null || book.positions === undefined ? EMPTY : `${formatNumber(book.positions, 0)}종목`,
     startedOn: book.startedOn ?? "시작 전",
     lastObserved: formatKst(book.lastObservedAtKst),
@@ -989,6 +993,8 @@ const ORDER_STATUS: Record<string, { label: string; tone: BadgeTone }> = {
 };
 const TIMING: Record<string, string> = {
   NEXT_OBSERVATION: "다음 관측치",
+  // 한국 책의 체결 시점(명세 §4-1 — 다음 KR 거래일 시가 단일가, 잠정가는 토스 1분봉 개장 봉).
+  NEXT_OPEN: "다음 거래일 시가",
   NEXT_CLOSE: "다음 종가",
   IMMEDIATE: "즉시",
   BACKFILL: "사후 체결",
