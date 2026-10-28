@@ -126,7 +126,7 @@ export function KrStartSection({
   const record = latestStartRecord(overview.jobs);
   const windowText = settings.data?.available ? krDecisionWindowText(settings.data.body) : `${EMPTY} ~ ${EMPTY} KST`;
   return (
-    <Card title="한국 출발 대기" subtitle={`출발일 ${state.startDate} · 결정 창 ${windowText}`} source={PAPER_SOURCES.decisions}>
+    <Card title="한국 출발 대기" subtitle={`출발일 ${state.startDate} · 결정 창 ${windowText}`} source={PAPER_SOURCES.krDecisions}>
       <p className="text-sm leading-relaxed text-body">
         네 계좌가 모두 &apos;시작 전&apos;입니다. 출발일 밤 결정 창에서 정기 결정 작업이 자료 게이트를 기다려 네 계좌를 한 번에 출발시키고(다음 KR
         거래일 시가 체결), 아래 단추는 같은 창·같은 게이트·같은 네 계좌 몫으로 그것을 앞당깁니다. 창 밖·게이트 미달·이미 미룬 세션이면 서버가

@@ -265,8 +265,11 @@ export function OverviewSection({
     <>
       {status.data?.available && status.data.enabled === false && (
         <Banner tone="warn">
-          정기 작업이 꺼져 있습니다(<code>PAPER_ENABLED=false</code>) — 리스크 작업(체결·스탑·평가)은 아래 &quot;리스크 지금 실행&quot;을
-          누를 때만 돕니다.
+          정기 작업이 꺼져 있습니다(<code>PAPER_ENABLED=false</code>) —{" "}
+          {korea && overview.initialized === false
+            // 한국 계좌가 없으면 '리스크 지금 실행' 단추도 없습니다(화면 확인 — 없는 단추를 가리키지 않게).
+            ? "한국 리스크 점검·결정·출발도 정기적으로 돌지 않습니다."
+            : <>리스크 작업(체결·스탑·평가)은 아래 &quot;리스크 지금 실행&quot;을 누를 때만 돕니다.</>}
         </Banner>
       )}
       {/* 상태를 읽지 못하면 꺼짐·켜짐을 모릅니다 — 배너가 조용히 사라지면 켜져 있는 것으로 읽히므로 그렇다고 적습니다(홈과 같은 문구). */}
@@ -440,7 +443,9 @@ export function OverviewSection({
         >
           {exposure.rows.length === 0 ? (
             <p className="text-sm text-muted">
-              아직 Claude 결정 기록이 없습니다 — Claude 계좌를 시작하면 결정마다 정한 목표 노출과 그 거래일의 실제 노출을 그립니다.
+              {korea
+                ? "아직 한국 Claude 결정 기록이 없습니다 — 한국 네 계좌가 출발하면 결정마다 정한 목표 노출과 그 KR 거래일의 실제 노출을 그립니다."
+                : "아직 Claude 결정 기록이 없습니다 — Claude 계좌를 시작하면 결정마다 정한 목표 노출과 그 거래일의 실제 노출을 그립니다."}
             </p>
           ) : (
             <>

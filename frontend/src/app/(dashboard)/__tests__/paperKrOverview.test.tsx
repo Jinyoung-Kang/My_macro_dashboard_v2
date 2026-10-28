@@ -199,6 +199,9 @@ describe("자료", () => {
     expect(screen.queryByText("장부 관측치")).toBeNull();
     await waitFor(() => expect(requested()).toContain("/api/paper/status?market=KR"));
     expect(requested()).not.toContain("/api/paper/status");
+    // 미국 책 낱말(13F·SHY·SPY·사후 체결)이 한국 개요에 섞이지 않음 — 출처·안내 문구까지.
+    expect(document.body.textContent).not.toMatch(/13F|SHY|SPY|사후 체결/);
+    expect(screen.getByText(/아직 한국 Claude 결정 기록이 없습니다/)).toBeTruthy();
   });
 
   it("계좌 상세: 한국 정의·원 단위 체결 머리·현금성 153130", async () => {
@@ -258,11 +261,14 @@ describe("출발 상태(초기화·출발 단추)", () => {
     expect(await screen.findByText("한국 출발일 2026-10-31은 KRX 거래일이 아닙니다")).toBeTruthy();
   });
 
-  it("쉬는 한국(출발일 없음)에는 초기화·출발 단추가 없다", async () => {
+  it("쉬는 한국(출발일 없음)에는 초기화·출발 단추가 없다 — 정기 작업 꺼짐 배너도 없는 단추를 가리키지 않음", async () => {
     reads["/api/paper/overview?market=KR"] = () => Promise.resolve(DORMANT);
+    reads["/api/paper/status?market=KR"] = () => Promise.resolve({ ...KR_STATUS, initialized: false, enabled: false });
     render(<PaperPage market="KR" />);
     expect(await screen.findByText("쉬는 동안에는 초기화·출발 단추가 없습니다")).toBeTruthy();
     expect(screen.queryByRole("button", { name: /한국 초기화|출발 지금 실행|리스크 지금 실행/ })).toBeNull();
+    expect(await screen.findByText(/한국 리스크 점검·결정·출발도 정기적으로 돌지 않습니다/)).toBeTruthy();
+    expect(screen.queryByText(/리스크 지금 실행.을 누를 때만/)).toBeNull();
   });
 
   it("출발 대기: 결정 창(설정)·최근 출발 기록·수동 문턱, 확인 뒤 본문 없이 POST initial-decision?market=KR — ALREADY_STARTED 표시", async () => {
@@ -286,6 +292,7 @@ describe("출발 상태(초기화·출발 단추)", () => {
     expect(screen.getByText(/최근 출발 기록: 2026-10-29 22:30 START_WAITING · 세션 2026-10-29 · 이어진 주기 3번 · 사유 ⑤ 069500 D 봉 없음/))
       .toBeTruthy();
     expect(screen.queryByText("벤치마크 사후 체결 대기")).toBeNull();
+    expect(document.body.textContent).not.toMatch(/13F|SHY|SPY|사후 체결/);
     fireEvent.click(screen.getByRole("button", { name: "출발 지금 실행" }));
     const dialog = await screen.findByRole("dialog", { name: "한국 출발을 지금 실행할까요?" });
     await waitFor(() => expect(within(dialog).getByText(/수동 문턱 13회 안에서만, 오늘 2회 씀/)).toBeTruthy());

@@ -17,11 +17,13 @@ const STATE_TONE: Record<KrCollectionState, string> = {
 
 
 const COLUMNS: Column<KrCollectionRow>[] = [
+  // 열 폭: 출처 글이 긴 항목 열이 한 줄로 늘어나면 범위·상태 열이 몇 글자 폭으로 눌렸습니다(1280px 스크린숏) — 줄바꿈을 허용하고 열마다
+  // 최소 폭을 둡니다(좁은 화면은 표가 가로로 넘어감 — scrollHint).
   {
     key: "item",
     header: "항목",
     rowHeader: true,
-    className: "whitespace-nowrap",
+    className: "min-w-[9rem] align-top",
     cell: (row) => (
       <span className="flex flex-col">
         <span className="font-medium text-text">{row.item}</span>
@@ -29,12 +31,13 @@ const COLUMNS: Column<KrCollectionRow>[] = [
       </span>
     ),
   },
-  { key: "basis", header: "기준(세션·기준일)", cell: (row) => row.basis },
-  { key: "collectedAt", header: "수집 시각(KST)", className: "whitespace-nowrap", cell: (row) => row.collectedAt },
-  { key: "scope", header: "범위·개수", cell: (row) => row.scope },
+  { key: "basis", header: "기준(세션·기준일)", className: "min-w-[9rem] align-top", cell: (row) => row.basis },
+  { key: "collectedAt", header: "수집 시각(KST)", className: "whitespace-nowrap align-top", cell: (row) => row.collectedAt },
+  { key: "scope", header: "범위·개수", className: "min-w-[14rem] align-top", cell: (row) => row.scope },
   {
     key: "state",
     header: "상태",
+    className: "min-w-[12rem] align-top",
     cell: (row) => (
       <span className="flex flex-col gap-0.5">
         <span className={`w-fit whitespace-nowrap rounded-sm border px-1.5 py-px text-[11px] ${STATE_TONE[row.state]}`}>{row.state}</span>

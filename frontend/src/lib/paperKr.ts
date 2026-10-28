@@ -331,7 +331,7 @@ export function krCollectionRows(
     const failed = (n.failedFeeds ?? []).map((feed) => `${feed.feed ?? EMPTY}(${feed.reason ?? EMPTY})`);
     const late = lateState(n.available, n.stale, null, "24시간 넘게 피드를 받지 못함");
     rows.push({
-      key: "news", item: "사건 뉴스", source: "RSS(한국은행·재정경제부·국가데이터처·연합뉴스) · kr_news_headlines",
+      key: "news", item: "사건 뉴스", source: "RSS 4곳 · kr_news_headlines",
       basis: `7일 ${count(n.stored7d)}건`, collectedAt: formatKst(n.lastFetchKst),
       scope: `피드 ${count(n.feedsOk)}/${count(n.feedsTotal)}`,
       state: late.state,
