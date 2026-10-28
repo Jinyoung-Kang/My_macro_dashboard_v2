@@ -735,6 +735,40 @@ class KrRulesJobTest {
     }
 
     @Test
+    @DisplayName("E2b — 한국 정기 결정은 검증도 패킷을 만든 그 실행의 관측치로: Claude를 부르는 사이에 관측치 저장본이 다시 쓰여(005930 R 종가 2,000,000) 그 값으로는 1주 체결 금액이 매수 증가분(1,000,000원)을 넘어도 판정은 패킷 8_prices 잠정 종가(10,100) 기준 — BUY_BELOW_ONE_SHARE 아님")
+    void krValidationUsesTheObservationThePacketSaw() {
+        KrClaudeFixtures.FakeAi fake = new KrClaudeFixtures.FakeAi();
+        fake.answer(KrClaudeFixtures.decision(1, null, KrClaudeFixtures.order("005930", "BUY", 1.0, null)));
+        realClaude(fake);
+        session(R);
+        fake.duringCall = () -> KrFixtures.stub(reader, Datasets.SNAP_KR_PAPER_QUOTES,
+                KrRulesFixtures.rebar(KrRulesFixtures.quotes(R), "005930", R, 2_000_000, 2_000_000, 120_000, 1.0));
+
+        PaperDecisionJob.Result result = runAt("2026-11-02T22:30");
+
+        assertThat(result.outcome()).isEqualTo(PaperDecisionJob.DECIDED);
+        Decision row = result.claude();
+        assertThat(row.bookCode()).isEqualTo(PaperBooks.KR_CLAUDE);
+        assertThat(row.status()).isEqualTo(ClaudeBookService.STATUS_OK);
+        assertThat(row.response().path("inputsStale").asBoolean()).isFalse();
+        int close = KrPacketBuilder.PRICE_COLUMNS.indexOf("close");
+        JsonNode line = null;
+        for (JsonNode r : row.packet().path("8_prices").path("rows")) {
+            if ("005930".equals(r.get(0).asString())) {
+                line = r;
+            }
+        }
+        assertThat(line).isNotNull();
+        assertThat(line.get(close).asLong()).as("패킷이 본 잠정 종가").isEqualTo(10_100);
+        assertThat(store.orders.values()).filteredOn(o -> o.bookCode().equals(PaperBooks.KR_CLAUDE)
+                && o.decisionId() != null && o.decisionId() == row.id()).singleElement().satisfies(o -> {
+                    assertThat(o.ticker()).isEqualTo("005930");
+                    assertThat(o.status()).as("패킷 가격으로는 1주 이상 — 대기 주문").isEqualTo(PaperBooks.ORDER_PENDING);
+                    assertThat(o.rejectReason()).isNull();
+                });
+    }
+
+    @Test
     @DisplayName("자정 넘은 한국 Claude 재시도(2단계 명세 §4-10·§5, 실제 한국 경로 — E2b): 22:30 API 오류 → D+1 00:10 실행의 기준 거래일은 lastCompletedSession = D 그대로 같은 행을 다시 내고(재시도 1회), 호출 수는 다음 KST 날 줄에 셈")
     void krClaudeMidnightRetryKeepsTheSessionAndCountsOnTheNextDay() {
         KrClaudeFixtures.FakeAi fake = new KrClaudeFixtures.FakeAi();
