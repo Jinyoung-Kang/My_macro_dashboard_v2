@@ -16,7 +16,13 @@ import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
 /**
  * 화면 경로의 쓰기·실행 POST가 받는 시장 값(2단계 명세 §4-16, F1b) — 컨트롤러를 실제 서비스(가짜 저장소·가짜 저장본 읽기)로 부릅니다. 값이 없거나 US면
@@ -153,5 +159,37 @@ class PaperMarketWriteRoutesTest {
         Map<String, Object> us = paper.runRisk(null);
         assertThat(us.keySet()).as("미국 응답 그대로").containsExactly("ok", "outcome");
         assertThat(paper.runRisk("US")).isEqualTo(us);
+    }
+
+    @Test
+    @DisplayName("POST run/decision·run/initial-decision·reviews/run — market=US는 시장 값 없음과 같은 미국 갈래(F1 리뷰): 미국 서비스 메서드(옛 시그니처)만 부르고 시장 판·한국 출발 단추는 부르지 않음, 같은 응답·같은 400")
+    void usMarketTakesTheUsBranch() {
+        PaperDecisionJob job = mock(PaperDecisionJob.class);
+        when(job.runNow(anyString())).thenThrow(new InvalidRequestException("미국 수동 결정"));
+        PaperDecisionController decisions = new PaperDecisionController(new PaperQueryService(store, marketData, reader,
+                PaperFixtures.settings(store), krConfig(S), BEFORE), job, mock(RuleBookService.class),
+                mock(ClaudeBookService.class), new PaperMarkets(store, reader));
+        PaperReviewJob reviewJob = mock(PaperReviewJob.class);
+        Map<String, Object> usReview = Map.of("ok", true, "outcome", "SKIPPED");
+        when(reviewJob.runNow()).thenReturn(usReview);
+        PaperReviewController reviews = new PaperReviewController(mock(ReviewService.class), reviewJob,
+                new PaperMarkets(store, reader), krConfig(S));
+
+        for (String market : new String[]{null, "US"}) {
+            assertThatThrownBy(() -> decisions.runDecision(market, new PaperDecisionController.DecisionRequest("claude")))
+                    .as("run/decision market=" + market).isInstanceOf(InvalidRequestException.class)
+                    .hasMessage("미국 수동 결정");
+            assertThatThrownBy(() -> decisions.runInitialDecision(market,
+                    new PaperDecisionController.InitialDecisionRequest(null, null)))
+                    .as("run/initial-decision market=" + market + " — 미국 계좌별 시작이라 book 필수")
+                    .isInstanceOf(InvalidRequestException.class).hasMessageContaining("book")
+                    .hasMessageContaining("rules").hasMessageNotContaining("네 계좌");
+            assertThat(reviews.run(market)).as("reviews/run market=" + market).isSameAs(usReview);
+        }
+        verify(job, times(2)).runNow("claude");
+        verify(job, never()).runNow(any(PaperMarket.class), any());
+        verify(job, never()).startNow(any());
+        verify(reviewJob, times(2)).runNow();
+        verify(reviewJob, never()).runNow(any(PaperMarket.class));
     }
 }

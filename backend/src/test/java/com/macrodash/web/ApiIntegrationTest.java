@@ -1007,6 +1007,11 @@ class ApiIntegrationTest {
                 HttpMethod.GET);
         assertThat(unknownWeek.getStatusCode()).as("복기 한 건 ?market=JP").isEqualTo(HttpStatus.BAD_REQUEST);
         assertThat(unknownWeek.getBody().path("message").asString()).contains("market", "US · KR");
+        // 메모 목록: includeExpired와 market을 함께 받음(F1 리뷰).
+        assertThat(authorizedGet("/api/paper/notes?includeExpired=true&market=KR").path("market").asString())
+                .as("includeExpired=true&market=KR").isEqualTo("KR");
+        assertThat(authorizedGet("/api/paper/notes?includeExpired=true&market=US")).as("includeExpired=true&market=US = 값 없음")
+                .isEqualTo(authorizedGet("/api/paper/notes?includeExpired=true"));
         assertThat(authorizedGet("/api/paper/decisions?book=kr_rules&limit=5").path("available").asBoolean())
                 .as("결정 목록은 계좌 코드로 시장을 고름").isTrue();
     }
@@ -1050,6 +1055,17 @@ class ApiIntegrationTest {
         assertThat(authorizedExchange("/api/paper/run/risk?market=US", HttpMethod.POST).getBody())
                 .as("?market=US = 시장 값 없음").isEqualTo(risk);
         assertThat(risk.has("market")).isFalse();
+        // 수동 결정·시작은 book 없이 보내 미국 갈래의 첫 검사(400, 아무것도 쓰지 않음)를 견줍니다 — 같은 문구면 같은 갈래(F1 리뷰).
+        for (String path : List.of("/api/paper/run/decision", "/api/paper/run/initial-decision")) {
+            ResponseEntity<JsonNode> plain = rest.exchange(url(path), HttpMethod.POST, new HttpEntity<>(Map.of(), owner),
+                    JsonNode.class);
+            ResponseEntity<JsonNode> us = rest.exchange(url(path + "?market=US"), HttpMethod.POST,
+                    new HttpEntity<>(Map.of(), owner), JsonNode.class);
+            assertThat(plain.getStatusCode()).as(path + " book 없음").isEqualTo(HttpStatus.BAD_REQUEST);
+            assertThat(plain.getBody().path("message").asString()).as(path).contains("book", "rules · claude");
+            assertThat(us.getStatusCode()).as(path + "?market=US = 시장 값 없음").isEqualTo(plain.getStatusCode());
+            assertThat(us.getBody()).as(path + "?market=US = 시장 값 없음").isEqualTo(plain.getBody());
+        }
 
         boolean krStarted = jdbc.queryForObject("SELECT COUNT(*) FROM paper_books WHERE market = 'KR' "
                 + "AND status IN ('ACTIVE', 'PAUSED')", Long.class) > 0;
@@ -1426,10 +1442,15 @@ class ApiIntegrationTest {
             ResponseEntity<JsonNode> noBook = authorizedExchange("/api/paper/reviews/run", HttpMethod.POST);
             assertThat(noBook.getStatusCode()).as("계좌 없음 — 부르지 않음").isEqualTo(HttpStatus.BAD_REQUEST);
             assertThat(noBook.getBody().path("message").asString()).contains("Claude 계좌");
+            ResponseEntity<JsonNode> noBookUs = authorizedExchange("/api/paper/reviews/run?market=US", HttpMethod.POST);
+            assertThat(noBookUs.getStatusCode()).as("?market=US = 시장 값 없음(F1 리뷰)").isEqualTo(noBook.getStatusCode());
+            assertThat(noBookUs.getBody()).as("?market=US = 시장 값 없음(F1 리뷰)").isEqualTo(noBook.getBody());
             assertThat(authorizedExchange("/api/paper/init", HttpMethod.POST).getStatusCode()).isEqualTo(HttpStatus.OK);
             ResponseEntity<JsonNode> notStarted = authorizedExchange("/api/paper/reviews/run", HttpMethod.POST);
             assertThat(notStarted.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
             assertThat(notStarted.getBody().path("message").asString()).contains("시작 전");
+            assertThat(authorizedExchange("/api/paper/reviews/run?market=US", HttpMethod.POST).getBody())
+                    .as("?market=US = 시장 값 없음(F1 리뷰)").isEqualTo(notStarted.getBody());
 
             jdbc.update("UPDATE paper_books SET status = 'ACTIVE', started_on = ? WHERE code = 'claude'",
                     java.sql.Date.valueOf(week.minusWeeks(2)));

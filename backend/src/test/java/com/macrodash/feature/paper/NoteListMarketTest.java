@@ -15,6 +15,8 @@ import java.util.List;
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.Mockito.mock;
 
 /**
  * 메모 목록의 시장 값(2단계 명세 §4-16 '?market', F1) — 미국 목록은 그대로(미국 메모·미국 달력 기준일), 한국은 한국 메모만, 만료·{@code active}의
@@ -97,6 +99,25 @@ class NoteListMarketTest {
         assertThat(rows(kr)).containsExactly("한국 유효 true", "한국 방법론 true");
         assertThat(rows(notes.list(scope(krConfig()), true)))
                 .containsExactly("한국 유효 true", "한국 방법론 true", "한국 만료 false", "한국 보관 false");
+    }
+
+    @Test
+    @DisplayName("GET /api/paper/notes 컨트롤러가 includeExpired와 market을 함께 넘김(F1 리뷰) — KR은 한국 메모(만료·보관은 includeExpired=true일 때만), 값 없음·US는 미국 목록 그대로, 모르는 값은 400")
+    void listRoutePassesIncludeExpiredAndMarket() {
+        krBooks();
+        PaperFrameworkController route = new PaperFrameworkController(mock(FrameworkService.class), notes,
+                new PaperMarkets(store, reader), krConfig());
+
+        Map<String, Object> krAll = route.notes(true, "KR");
+        assertThat(krAll).containsEntry("market", "KR").containsEntry("referenceDate", "2026-10-08");
+        assertThat(rows(krAll)).containsExactly("한국 유효 true", "한국 방법론 true", "한국 만료 false", "한국 보관 false");
+        assertThat(rows(route.notes(false, "KR"))).containsExactly("한국 유효 true", "한국 방법론 true");
+
+        Map<String, Object> us = route.notes(true, null);
+        assertThat(us).doesNotContainKeys("market", "dormantReason").isEqualTo(notes.list(true));
+        assertThat(route.notes(true, "US")).isEqualTo(us);
+        assertThat(route.notes(false, "US")).isEqualTo(notes.list(false));
+        assertThatThrownBy(() -> route.notes(true, "JP")).hasMessageContaining("US · KR");
     }
 
     @Test
