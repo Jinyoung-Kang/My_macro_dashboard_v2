@@ -1573,6 +1573,60 @@ class KrRulesJobTest {
     }
 
     @Test
+    @DisplayName("POST /api/paper/run/decision?market=KR(F1b) — 한국 Claude 계좌만·결정 창 안에서만(밖이면 400, 부르지 않음), 통과하면 {ok, market:KR, decision}(MANUAL·기준 거래일 D), 같은 세션 다시 누르면 그 결정(호출 한 번 그대로) — 시장 값 없는 경로는 미국 계좌 코드만 받음")
+    void manualKrDecisionRoute() {
+        KrClaudeFixtures.FakeAi fake = new KrClaudeFixtures.FakeAi();
+        fake.answer(KrClaudeFixtures.decision(0, "관망"));
+        StoreRepository repository = repository();
+        data.install(repository, reader);
+        PaperMarketData marketData = new PaperMarketData(reader, repository);
+        PaperLedgerService ledger = new PaperLedgerService(store, marketData, PaperFixtures.MAPPER);
+        ClaudeBookService claude = KrClaudeFixtures.service(store, reader, repository, marketData, ledger,
+                KrRuleBookServiceTest.config(), clock, fake.ai);
+        job = new PaperDecisionJob(store, reader, marketData, ledger, mock(PaperSelectionService.class),
+                mock(RuleBookService.class), claude, PaperFixtures.settings(store), KrRuleBookServiceTest.config(),
+                PaperFixtures.MAPPER, clock);
+        PaperDecisionController route = new PaperDecisionController(new PaperQueryService(store, marketData, reader,
+                PaperFixtures.settings(store), KrRuleBookServiceTest.config(), clock), job, mock(RuleBookService.class), claude,
+                new PaperMarkets(store, reader));
+        store.updateBookStatus(PaperBooks.KR_CLAUDE, PaperBooks.ACTIVE);
+        store.updateBookStartedOn(PaperBooks.KR_CLAUDE, S);
+        quotes(R, Set.of());
+        fsc(FRI);
+        PaperDecisionController.DecisionRequest krClaude = new PaperDecisionController.DecisionRequest(PaperBooks.KR_CLAUDE);
+
+        clock.set(kst("2026-11-02T21:00"));
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> route.runDecision("KR", krClaude))
+                .isInstanceOf(com.macrodash.support.InvalidRequestException.class).hasMessageContaining("결정 창");
+        clock.set(kst("2026-11-02T22:40"));
+        for (String book : new String[]{null, PaperBooks.KR_RULES, PaperBooks.CLAUDE}) {
+            org.assertj.core.api.Assertions.assertThatThrownBy(() -> route.runDecision("KR",
+                    new PaperDecisionController.DecisionRequest(book))).as("한국 수동 결정은 kr_claude만: " + book)
+                    .isInstanceOf(com.macrodash.support.InvalidRequestException.class).hasMessageContaining("kr_claude");
+        }
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> route.runDecision(null, krClaude))
+                .as("시장 값이 없으면 미국 — 한국 계좌 코드는 400").isInstanceOf(com.macrodash.support.InvalidRequestException.class);
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> route.runDecision("kr", krClaude))
+                .isInstanceOf(com.macrodash.support.InvalidRequestException.class).hasMessageContaining("US · KR");
+        assertThat(fake.requests).isEmpty();
+        assertThat(store.decisionsOf(PaperBooks.KR_CLAUDE)).isEmpty();
+
+        Map<String, Object> out = route.runDecision("KR", krClaude);
+
+        assertThat(out.keySet()).containsExactly("ok", "market", "decision");
+        assertThat(out).containsEntry("ok", true).containsEntry("market", "KR");
+        @SuppressWarnings("unchecked")
+        Map<String, Object> decision = (Map<String, Object>) out.get("decision");
+        assertThat(decision).containsEntry("book", PaperBooks.KR_CLAUDE).containsEntry("kind", RuleBookService.MANUAL)
+                .containsEntry("asOfTradingDate", R.toString()).containsEntry("status", ClaudeBookService.STATUS_NO_TRADE);
+        assertThat(fake.requests).hasSize(1);
+
+        Map<String, Object> again = route.runDecision("KR", krClaude);
+        assertThat(((Map<?, ?>) again.get("decision")).get("id")).as("같은 세션 — 그 결정").isEqualTo(decision.get("id"));
+        assertThat(fake.requests).as("다시 부르지 않음").hasSize(1);
+    }
+
+    @Test
     @DisplayName("한국 수동 결정(Claude 계좌)도 결정 창·자료 게이트 안에서만(D1c) — 창 전·게이트 ④ 미달이면 400(Claude 부르지 않음), 통과하면 기준 거래일 D로 MANUAL·작업 기록에 게이트 ①(그 계좌)~⑥, 실제 한국 경로(E2b — 그 실행의 관측치·읽은 순간, 수동 호출이라 상한 − 예약 문턱)")
     void manualDecisionNeedsWindowAndGates() {
         KrClaudeFixtures.FakeAi fake = new KrClaudeFixtures.FakeAi();
