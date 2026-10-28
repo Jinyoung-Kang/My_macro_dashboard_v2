@@ -482,13 +482,21 @@ final class ClaudeDecisionPipeline {
     }
 
     /**
-     * 판정을 주문 행으로 남깁니다. 통과한 주문은 {@code accepted}가 PENDING이면 대기(기준 거래일 + 3거래일까지), CANCELLED면 취소
+     * 판정을 주문 행으로 남깁니다({@link #orderRows}). 통과한 주문은 {@code accepted}가 PENDING이면 대기(기준 거래일 + 3거래일까지), CANCELLED면 취소
      * ({@value #PAUSED_DURING_CALL} — 호출 중 일시정지, 집행하지 않음), null이면(초기 결정 — 사후 체결 함수가 FILLED 행을 따로 만듦)
      * 남기지 않습니다. 거절한 주문은 늘 REJECTED와 사유로 남깁니다(무엇을 왜 거절했나).
      */
     void insertOrders(long decisionId, LocalDate asOf, Plan plan, String accepted) {
+        for (Order order : orderRows(decisionId, asOf, plan, accepted)) {
+            store.insertOrder(order);
+        }
+    }
+
+    /** {@link #insertOrders}가 남길 주문 행(번호 없음) — 같은 규칙으로 만들기만 하고 쓰지 않습니다. */
+    List<Order> orderRows(long decisionId, LocalDate asOf, Plan plan, String accepted) {
         boolean pending = PaperBooks.ORDER_PENDING.equals(accepted);
         LocalDate expires = market.calendar().addTradingDays(asOf, RuleBookService.ORDER_EXPIRY_TRADING_DAYS);
+        List<Order> out = new ArrayList<>();
         for (Planned p : plan.planned()) {
             Verdict v = p.verdict();
             Proposed o = v.order();
@@ -497,16 +505,17 @@ final class ClaudeDecisionPipeline {
                 if (accepted == null) {
                     continue;
                 }
-                store.insertOrder(new Order(0, market.claudeBook(), decisionId, o.ticker(), o.side(), null,
+                out.add(new Order(0, market.claudeBook(), decisionId, o.ticker(), o.side(), null,
                         buy ? p.orderWeightPct() : null, buy ? null : p.sellFraction(), o.timing(),
                         PacketBuilder.SOURCE_CLAUDE, accepted, pending ? null : PAUSED_DURING_CALL, p.reason(), asOf,
                         null, pending ? expires : null, null));
             } else {
-                store.insertOrder(new Order(0, market.claudeBook(), decisionId, o.ticker(), o.side(), null,
+                out.add(new Order(0, market.claudeBook(), decisionId, o.ticker(), o.side(), null,
                         buy ? o.targetWeightPct() : null, buy ? null : o.sellFraction(), o.timing(),
                         PacketBuilder.SOURCE_CLAUDE, "REJECTED", v.rejectReason(), p.reason(), asOf, null, null, null));
             }
         }
+        return out;
     }
 
     /** 앞선 결정이 남긴 대기 주문을 "다음 결정이 대신함"으로 취소합니다(클래스 설명). 취소한 주문 번호. */
