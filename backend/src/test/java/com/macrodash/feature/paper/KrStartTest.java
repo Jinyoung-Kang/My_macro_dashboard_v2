@@ -142,12 +142,40 @@ class KrStartTest {
                 PaperFixtures.settings(store), config(), PaperFixtures.MAPPER, clock);
     }
 
+    /**
+     * 실제 한국 Claude 경로(E2b — {@link KrClaudeFixtures})의 결정 작업으로 바꿈(네 계좌 몫 모두 운영 것). 재기동을 흉내 낼 때도 같은 가짜 AI로 새
+     * 작업·새 서비스를 만듭니다(메모리 비움).
+     */
+    private void realClaude(KrClaudeFixtures.FakeAi fake) {
+        PaperLedgerService ledger = new PaperLedgerService(store, marketData, PaperFixtures.MAPPER);
+        job = new PaperDecisionJob(store, reader, marketData, ledger, mock(PaperSelectionService.class),
+                mock(RuleBookService.class), KrClaudeFixtures.service(store, reader, repository, marketData, ledger,
+                config(), clock, fake.ai), PaperFixtures.settings(store), config(), PaperFixtures.MAPPER, clock);
+    }
+
+    /** 매크로 카드 저장본 — 한국 패킷 1_basis.markets.cards 네 장(카드 시각 = 그날 22:25 KST), 수집 시각 {@code collectedAt}. */
+    private void macroCards(LocalDate day, Instant collectedAt) {
+        tools.jackson.databind.node.ObjectNode macro = PaperFixtures.MAPPER.createObjectNode();
+        tools.jackson.databind.node.ArrayNode items = macro.putArray("categories").addObject().putArray("items");
+        for (String key : KrPacketBuilder.CARD_KEYS) {
+            items.addObject().put("key", key).put("name", key).put("price", 100.0).put("prevValue", 99.0).put("pct", 1.01)
+                    .put("lastTs", day + " 22:25 KST").put("isStale", false).put("source", "시험용");
+        }
+        KrFixtures.stub(reader, Datasets.SNAP_MACRO_COLLECTED, KrFixtures.snapshot(Datasets.SNAP_MACRO_COLLECTED, macro,
+                collectedAt));
+    }
+
+    private static void assertNotStarted(FakePaperStore store) {
+        assertThat(store.books.values()).filteredOn(b -> b.market().equals("KR"))
+                .allSatisfy(b -> assertThat(b.status()).as(b.code()).isEqualTo(PaperBooks.NOT_STARTED));
+    }
+
     private List<Decision> krDecisions() {
         return store.decisions.values().stream().filter(d -> d.bookCode().startsWith("kr_")).toList();
     }
 
     @Test
-    @DisplayName("S 22:30 — 규칙 계좌(재선정과 같은 계산)·벤치마크 두 계좌의 INITIAL 결정·NEXT_OPEN 주문(기준 거래일 S, 만료 S+3거래일)·운용 전환·S 순자산 1억(확정)을 한 트랜잭션으로, Claude는 시작 전(E2 갈고리)")
+    @DisplayName("S 22:30 — 규칙 계좌(재선정과 같은 계산)·벤치마크 두 계좌의 INITIAL 결정·NEXT_OPEN 주문(기준 거래일 S, 만료 S+3거래일)·운용 전환·S 순자산 1억(확정)을 한 트랜잭션으로, Claude는 시작 전(가짜 Claude 서비스라 그 몫 없음 — 네 계좌는 fourBooksStartTogether)")
     void startsRulesAndBenchmarksAtS2230() {
         PaperDecisionJob.Result result = runAt("2026-11-30T22:30");
 
@@ -212,7 +240,8 @@ class KrStartTest {
             });
             assertThat(store.states.get(started).lastNavTradingDate()).isEqualTo(S);
         }
-        assertThat(store.books.get("kr_claude").status()).as("E2 전 — 시작 전 그대로").isEqualTo(PaperBooks.NOT_STARTED);
+        assertThat(store.books.get("kr_claude").status()).as("Claude 몫 없음(가짜 Claude 서비스 — 실제 경로는 fourBooksStartTogether)")
+                .isEqualTo(PaperBooks.NOT_STARTED);
         assertThat(store.navSeries("kr_claude")).isEmpty();
         assertThat(store.fills).as("사후 체결 없음(K28)").isEmpty();
 
@@ -223,7 +252,7 @@ class KrStartTest {
             assertThat(detail.path("tradingDate").asString()).isEqualTo("2026-11-30");
             assertThat(detail.path("deadlineKst").asString()).contains("2026-12-01 01:00");
             assertThat(detail.path("books").path("kr_rules").path("orders").size()).isEqualTo(6);
-            assertThat(detail.path("books").path("kr_claude").asString()).contains("E2").contains("따라 출발하지 않음");
+            assertThat(detail.path("books").path("kr_claude").asString()).contains("이 파이프라인에 없음").contains("따라 출발하지 않음");
             assertThat(detail.path("books").path("kr_bench_mix").path("orders").size()).isEqualTo(2);
             assertThat(detail.path("gates").get(1).path("gate").asString()).isEqualTo("③");
             assertThat(detail.path("gates").get(1).path("status").asString()).isEqualTo("PASS");
@@ -239,7 +268,200 @@ class KrStartTest {
     }
 
     @Test
-    @DisplayName("Claude 몫이 '아직 없음'이면(E2 전) 규칙·벤치마크만 출발하고 Claude는 뒤따라 출발하지 않음 — 다음 밤은 정기 결정(규칙 계좌 12월 주기 REBALANCE)")
+    @DisplayName("K28(E2b) — S 22:30 결정 작업이 네 계좌(규칙·Claude·벤치마크 둘)를 한 트랜잭션으로 출발: Claude는 정기 결정과 같은 조립의 출발 패킷(INITIAL — S 밤 판, 동결본 = 보낸 패킷, 카드 asOfMismatch=false·읽은 순간 22:30)으로 정기 작업 몫(수동 13회째 뒤에도)을 써 한 번 부르고, 통과 주문은 S+1 시가 대기·거절은 사유, 네 계좌 운용·출발일 S·S 순자산 1억")
+    void fourBooksStartTogether() {
+        KrClaudeFixtures.FakeAi fake = new KrClaudeFixtures.FakeAi();
+        fake.answer(KrClaudeFixtures.decision(8, null, KrClaudeFixtures.order("005930", "BUY", 8.0, null),
+                KrClaudeFixtures.order("999999", "BUY", 5.0, null)));
+        realClaude(fake);
+        macroCards(S, kst("2026-11-30T22:25"));
+        LocalDate todayKst = S;
+        store.apiUsage.put(todayKst, new com.macrodash.store.PaperStore.ApiUsage(todayKst, 13, 0, 0, 0, 0));
+
+        PaperDecisionJob.Result result = runAt("2026-11-30T22:30");
+
+        assertThat(result.outcome()).isEqualTo(PaperDecisionJob.STARTED);
+        assertThat(krDecisions()).extracting(Decision::bookCode)
+                .containsExactly("kr_rules", "kr_claude", "kr_bench_k200", "kr_bench_mix");
+        assertThat(krDecisions()).allSatisfy(d -> {
+            assertThat(d.kind()).isEqualTo(RuleBookService.INITIAL);
+            assertThat(d.asOfTradingDate()).isEqualTo(S);
+            assertThat(d.settingsVersion()).isEqualTo(store.settings.version());
+            assertThat(d.pricesFinal()).isFalse();
+            assertThat(d.response().path("configuredStartDate").asString()).isEqualTo("2026-11-30");
+            assertThat(d.response().path("postponed").asBoolean()).isFalse();
+            assertThat(d.response().path("gates").size()).isEqualTo(5);
+        });
+        Decision claude = krDecisions().get(1);
+        assertThat(claude.status()).isEqualTo(ClaudeBookService.STATUS_OK);
+        assertThat(claude.model()).isEqualTo("claude-sonnet-5-5");
+        assertThat(claude.retryCount()).isZero();
+        assertThat(claude.response().path("startCalls").asInt()).isEqualTo(1);
+        assertThat(fake.requests).singleElement().satisfies(request -> {
+            assertThat(request.user()).as("결정 행 동결본 = 보낸 패킷 글자").isEqualTo(claude.packetText());
+            assertThat(request.system()).contains("우선순위(고정)").doesNotContain("주문 최소 $");
+            assertThat(request.schema().toString()).contains("NEXT_OPEN").doesNotContain("NEXT_OBSERVATION");
+            assertThat(request.timeoutSeconds()).as("기한(01:00)까지 2시간 반 — 설정 대기 한도 그대로")
+                    .isEqualTo(ClaudeBookService.DEFAULT_TIMEOUT_SECONDS);
+        });
+        JsonNode basis = claude.packet().path("1_basis");
+        assertThat(basis.path("market").asString()).isEqualTo("KR");
+        assertThat(basis.path("readAtKst").asString()).as("읽은 순간 = 그 실행의 지금(규칙 계좌 입력과 같음)")
+                .isEqualTo("2026-11-30 22:30 KST");
+        assertThat(basis.path("markets").path("cards")).hasSize(4).allSatisfy(card ->
+                assertThat(card.path("asOfMismatch").asBoolean()).as(card.path("key").asString() + " — S 밤 판").isFalse());
+        assertThat(store.apiUsage(todayKst).map(com.macrodash.store.PaperStore.ApiUsage::calls))
+                .as("정기 작업 — 상한 − 예약(13) 뒤에도 부름").contains(14);
+        List<Order> claudeOrders = store.orders.values().stream().filter(o -> o.bookCode().equals("kr_claude")).toList();
+        assertThat(claudeOrders).extracting(Order::ticker, Order::status, Order::rejectReason, Order::timing,
+                Order::targetWeightPct, Order::expiresOn).containsExactly(
+                org.assertj.core.groups.Tuple.tuple("005930", "PENDING", null, "NEXT_OPEN", 8.0, LocalDate.of(2026, 12, 3)),
+                org.assertj.core.groups.Tuple.tuple("999999", "REJECTED", "OUT_OF_UNIVERSE", "NEXT_OPEN", 5.0, null));
+        assertThat(claudeOrders).allSatisfy(o -> {
+            assertThat(o.decisionId()).isEqualTo(claude.id());
+            assertThat(o.source()).isEqualTo("CLAUDE");
+            assertThat(o.asOfTradingDate()).isEqualTo(S);
+        });
+        for (String code : List.of("kr_rules", "kr_claude", "kr_bench_k200", "kr_bench_mix")) {
+            assertThat(store.books.get(code).status()).as(code).isEqualTo(PaperBooks.ACTIVE);
+            assertThat(store.books.get(code).startedOn()).as(code).isEqualTo(S);
+            assertThat(store.navSeries(code)).as(code + " S 마감 순자산 1억").singleElement()
+                    .satisfies(nav -> assertThat(nav.nav()).isEqualTo(100_000_000.0));
+        }
+        assertThat(krRuns()).singleElement().satisfies(run -> {
+            assertThat(run.outcome()).isEqualTo(PaperDecisionJob.STARTED);
+            assertThat(run.detail().path("books").path("kr_claude").path("decisionId").asLong()).isEqualTo(claude.id());
+            assertThat(run.detail().path("books").path("kr_claude").path("orders").size()).isEqualTo(2);
+        });
+
+        assertThat(runAt("2026-11-30T22:40").outcome()).as("출발한 장부 — 같은 밤 다시 내지 않음")
+                .isEqualTo(PaperDecisionJob.ALREADY_DECIDED);
+        assertThat(fake.requests).hasSize(1);
+    }
+
+    @Test
+    @DisplayName("K28(E2b) — 출발 패킷은 읽은 순간(S 22:30) 뒤에 수집된 저장본을 쓰지 않음: 22:31에 수집된 매크로 카드는 빠지고 사유가 남음(결정 시각 전 S 밤 판만 — §5 출발)")
+    void claudeStartPacketLeavesOutSnapshotsAfterTheReadInstant() {
+        KrClaudeFixtures.FakeAi fake = new KrClaudeFixtures.FakeAi();
+        fake.answer(KrClaudeFixtures.decision(0, "관망"));
+        realClaude(fake);
+        macroCards(S, kst("2026-11-30T22:31"));
+
+        assertThat(runAt("2026-11-30T22:30").outcome()).isEqualTo(PaperDecisionJob.STARTED);
+
+        Decision claude = krDecisions().get(1);
+        assertThat(claude.bookCode()).isEqualTo("kr_claude");
+        assertThat(claude.status()).as("통과 주문 없음 — 현금만 든 채 출발").isEqualTo(ClaudeBookService.STATUS_NO_TRADE);
+        assertThat(claude.packet().path("1_basis").path("markets").path("missing").asString()).contains("읽은 순간 뒤에 수집됨");
+        assertThat(claude.packet().path("1_basis").path("markets").has("cards")).isFalse();
+        assertThat(store.books.get("kr_claude").status()).isEqualTo(PaperBooks.ACTIVE);
+    }
+
+    @Test
+    @DisplayName("K28(E2b) — Claude 출발이 하루 상한(정기 작업 몫까지 20회)에 막히면 부르지 않고 네 계좌 모두 출발하지 않음(쓰기 없음) → 미룸 한 번, 다음 KR 거래일 22:30에 네 계좌가 함께 출발(바뀐 출발일 = 결정 행 기준 거래일, postponed)")
+    void claudeCapPostponesAllFourBooks() {
+        KrClaudeFixtures.FakeAi fake = new KrClaudeFixtures.FakeAi();
+        realClaude(fake);
+        store.apiUsage.put(S, new com.macrodash.store.PaperStore.ApiUsage(S, 20, 0, 0, 0, 0));
+
+        PaperDecisionJob.Result capped = runAt("2026-11-30T22:30");
+
+        assertThat(capped.outcome()).isEqualTo(PaperDecisionJob.START_POSTPONED);
+        assertThat(capped.message()).contains("kr_claude").contains("일일 호출 상한(20회").contains("2026-12-01");
+        assertThat(fake.requests).isEmpty();
+        assertThat(krDecisions()).isEmpty();
+        assertThat(store.orders).isEmpty();
+        assertNotStarted(store);
+        assertThat(store.navSeries("kr_bench_k200")).isEmpty();
+        assertThat(krRuns()).singleElement().satisfies(run -> {
+            assertThat(run.outcome()).isEqualTo(PaperDecisionJob.START_POSTPONED);
+            assertThat(run.detail().path("reason").asString()).contains("출발 계획 실패").contains("kr_claude")
+                    .contains("일일 호출 상한");
+            assertThat(run.detail().path("postponedTo").asString()).isEqualTo("2026-12-01");
+        });
+        assertThat(runAt("2026-11-30T22:40").outcome()).as("그 세션은 다시 계획하지 않음").isEqualTo(PaperDecisionJob.START_POSTPONED);
+
+        fake.answer(KrClaudeFixtures.decision(0, "관망"));
+        sessionData(NEXT, S, everyCodeOn(NEXT));
+        PaperDecisionJob.Result started = runAt("2026-12-01T22:30");
+
+        assertThat(started.outcome()).isEqualTo(PaperDecisionJob.STARTED);
+        assertThat(krDecisions()).extracting(Decision::bookCode)
+                .containsExactly("kr_rules", "kr_claude", "kr_bench_k200", "kr_bench_mix");
+        assertThat(krDecisions()).allSatisfy(d -> {
+            assertThat(d.asOfTradingDate()).isEqualTo(NEXT);
+            assertThat(d.response().path("postponed").asBoolean()).isTrue();
+            assertThat(d.response().path("configuredStartDate").asString()).isEqualTo("2026-11-30");
+        });
+        assertThat(store.books.get("kr_claude").startedOn()).isEqualTo(NEXT);
+        assertThat(store.apiUsage(NEXT).map(com.macrodash.store.PaperStore.ApiUsage::calls)).contains(1);
+    }
+
+    @Test
+    @DisplayName("K28(E2b) — Claude 출발 API 오류는 같은 계획 안에서 한 번 더 부르고(재시도 1회), 그래도 실패면 네 계좌 모두 미룸(사유에 재시도 1회 뒤) — 같은 창에서 재기동해도 다시 계획하지 않고(Claude를 다시 부르지 않음, 미룸 기록 한 번), 거절(refusal)은 다시 부르지 않음")
+    void claudeErrorAfterOneRetryPostponesAndIsNotReplanned() {
+        KrClaudeFixtures.FakeAi fake = new KrClaudeFixtures.FakeAi();
+        fake.fail("API_ERROR", "overloaded").fail("API_ERROR", "overloaded again");
+        realClaude(fake);
+
+        PaperDecisionJob.Result failed = runAt("2026-11-30T22:30");
+
+        assertThat(failed.outcome()).isEqualTo(PaperDecisionJob.START_POSTPONED);
+        assertThat(fake.requests).as("첫 호출 + 재시도 1회").hasSize(2);
+        assertThat(failed.message()).contains("Claude 출발 호출 실패(API 오류, 재시도 1회 뒤)").contains("overloaded again");
+        assertThat(krDecisions()).isEmpty();
+        assertThat(store.orders).isEmpty();
+        assertNotStarted(store);
+        assertThat(store.apiUsage(S).map(com.macrodash.store.PaperStore.ApiUsage::calls)).as("과금됐을 수 있는 호출 둘").contains(2);
+
+        realClaude(fake);   // 같은 창에서 재기동
+        PaperDecisionJob.Result again = runAt("2026-11-30T22:40");
+        assertThat(again.outcome()).isEqualTo(PaperDecisionJob.START_POSTPONED);
+        assertThat(again.message()).contains("그 세션은 이미 미뤘음");
+        assertThat(fake.requests).as("Claude를 다시 부르지 않음(K28 '다음 KR 거래일로')").hasSize(2);
+        assertThat(krRuns()).as("미룸 기록은 재기동을 넘어 한 번").extracting(JobRun::outcome)
+                .containsExactly(PaperDecisionJob.START_POSTPONED);
+        assertThat(krRuns().get(0).detail().path("reason").asString()).contains("재시도 1회 뒤");
+
+        // 다음 KR 거래일 — 거절은 같은 입력이면 같은 답이라 다시 부르지 않고 바로 미룸.
+        fake.fail("REFUSAL", "안전 분류기 거절");
+        sessionData(NEXT, S, everyCodeOn(NEXT));
+        PaperDecisionJob.Result refused = runAt("2026-12-01T22:30");
+        assertThat(refused.outcome()).isEqualTo(PaperDecisionJob.START_POSTPONED);
+        assertThat(refused.message()).contains("Claude가 거절함(refusal)").doesNotContain("재시도");
+        assertThat(fake.requests).hasSize(3);
+        assertNotStarted(store);
+    }
+
+    @Test
+    @DisplayName("K28·§9 'E2 — 출발 갈고리의 기한'(E2b) — Claude 출발 호출의 대기 한도는 기한까지 남은 시간(00:58이면 120초)으로 묶이고, 호출이 기한을 넘겨 끝나면 쓰기 트랜잭션이 막아 어느 계좌에도 쓰지 않음, 기한까지 1초도 남지 않았으면 부르지 않고 미룸")
+    void claudeStartCallIsBoundedByTheDeadline() {
+        KrClaudeFixtures.FakeAi fake = new KrClaudeFixtures.FakeAi();
+        fake.answer(KrClaudeFixtures.decision(0, "관망"));
+        fake.duringCall = () -> clock.set(kst("2026-12-01T01:01"));   // 호출이 기한을 넘겨 끝남
+        realClaude(fake);
+
+        PaperDecisionJob.Result late = runAt("2026-12-01T00:58");
+
+        assertThat(late.outcome()).isEqualTo(PaperDecisionJob.START_POSTPONED);
+        assertThat(fake.requests).singleElement().satisfies(request ->
+                assertThat(request.timeoutSeconds()).as("기한 01:00 − 00:58").isEqualTo(120));
+        assertThat(late.message()).contains("출발 계획이 기한을 넘겨 끝남(2026-12-01 01:01 KST)");
+        assertThat(krDecisions()).isEmpty();
+        assertThat(store.orders).isEmpty();
+        assertNotStarted(store);
+
+        sessionData(NEXT, S, everyCodeOn(NEXT));
+        clock.set(kst("2026-12-02T00:59").plusMillis(59_400));   // 기한(12-02 01:00)까지 0.6초
+        PaperDecisionJob.Result noTime = job.run(KrPaperMarket.INSTANCE);
+        assertThat(noTime.outcome()).isEqualTo(PaperDecisionJob.START_POSTPONED);
+        assertThat(noTime.message()).contains("kr_claude").contains("남은 시간이 없어 Claude를 부르지 않음");
+        assertThat(fake.requests).as("부르지 않음").hasSize(1);
+        assertNotStarted(store);
+    }
+
+    @Test
+    @DisplayName("Claude 몫이 '아직 없음'이면(가짜 Claude 서비스) 규칙·벤치마크만 출발하고 Claude는 뒤따라 출발하지 않음 — 다음 밤은 정기 결정(규칙 계좌 12월 주기 REBALANCE)")
     void claudeNotYetStaysNotStarted() {
         assertThat(runAt("2026-11-30T22:30").outcome()).isEqualTo(PaperDecisionJob.STARTED);
 

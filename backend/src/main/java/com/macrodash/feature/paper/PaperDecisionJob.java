@@ -288,7 +288,30 @@ public class PaperDecisionJob {
         this.markets = markets;
         this.krRules = new KrRuleBookService(store, reader, marketData, ledger, mapper, clock);
         this.krGates = new KrDecisionGates(reader, krRules);
-        this.krStart = new KrStartPipeline(store, ledger, config, mapper, clock, null, krGates, krRules.startLeg(config));
+        // 네 계좌 출발의 몫 — 규칙 계좌(D1b)·Claude 계좌(E2b)·벤치마크 둘.
+        this.krStart = new KrStartPipeline(store, ledger, config, mapper, clock, null, krGates, krRules.startLeg(config),
+                claudeStartLeg());
+    }
+
+    /**
+     * 한국 출발의 Claude 계좌 몫 — 출발을 계획할 때 Claude 계좌 서비스의 몫({@link ClaudeBookService#krStartLeg})을 불러 맡깁니다(만들 때 그 서비스를
+     * 건드리지 않음). 그 서비스에 한국 결정 문맥이 없으면(시험) '아직 없음'({@link KrStartPipeline#CLAUDE_NOT_YET}).
+     */
+    private KrStartPipeline.Leg claudeStartLeg() {
+        return new KrStartPipeline.Leg() {
+            @Override
+            public String book() {
+                return PaperBooks.KR_CLAUDE;
+            }
+
+            @Override
+            public KrStartPipeline.Plan plan(MarketRun run, LocalDate session, Instant deadline,
+                                             KrDecisionGates.Checked gates) {
+                KrStartPipeline.Leg leg = claude.krStartLeg();
+                return leg == null ? KrStartPipeline.Plan.notYet(book(), KrStartPipeline.CLAUDE_NOT_YET)
+                        : leg.plan(run, session, deadline, gates);
+            }
+        };
     }
 
     /**

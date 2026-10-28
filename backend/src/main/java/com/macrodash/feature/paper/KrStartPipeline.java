@@ -34,7 +34,7 @@ import java.util.concurrent.ConcurrentHashMap;
  *  D 출발 기한(kr.decisionDeadlineKst 01:00 → D+1 01:00) 지남 → START_POSTPONED(D마다 한 번 기록 — 출발을 다음 KR 거래일로)
  *  그 세션 미룸 기록이 이미 있음(계획 실패 — 저장된 기록, 재기동해도 같음) → START_POSTPONED(다시 계획하지 않음)
  *  자료 게이트(§4-9 ②~⑥ — ①은 앞 주문이 없어 보지 않음) 미달 → START_WAITING(그 세션 기다림 한 줄 — 다음 주기에 다시)
- *  계좌마다 출발 계획(규칙 D1b · Claude E2 · 벤치마크 둘) → 계획이 실패한 계좌가 있으면 START_POSTPONED(아무 계좌에도 쓰지 않음 — 그 세션은
+ *  계좌마다 출발 계획(규칙 D1b · Claude E2b · 벤치마크 둘) → 계획이 실패한 계좌가 있으면 START_POSTPONED(아무 계좌에도 쓰지 않음 — 그 세션은
  *                                                         다시 계획하지 않음)
  *  → 계획한 계좌의 결정(INITIAL)·주문(NEXT_OPEN, 기준 거래일 D)·운용 전환·D 순자산 줄을 한 트랜잭션으로 → STARTED(기록)
  * </pre>
@@ -50,10 +50,12 @@ import java.util.concurrent.ConcurrentHashMap;
  * 않습니다(그 시가에 체결될 주문이 개장 뒤 정보를 보지 않게 — 기한 규칙의 시장 이동은 D1).
  *
  * <p><b>계좌 몫(갈고리)</b>: 계좌마다 {@link Leg}가 출발 계획을 냅니다 — 벤치마크 둘({@link #benchmarkLeg} — 069500 100% · 069500 60% + 153130 40%,
- * 리밸런싱 없음 K2), 규칙 계좌(D1b — {@link KrRuleBookService#startLeg}: 재선정과 같은 계산·입력 동결 K26, INITIAL·S+1 시가 주문). Claude 계좌(E2 —
- * 정기 결정과 같은 패킷)는 아직 '없음'({@link Plan#notYet})입니다. 계획은 트랜잭션 밖에서 모두 만든 뒤(Claude 호출이 장부 잠금을 붙잡지 않게) 한
- * 번에 씁니다 — 한 계좌라도 실패({@link Plan#failed})하면 어느 계좌에도 쓰지 않습니다(K28 '네 계좌는 함께 출발'). 계좌 몫은 그 세션의 출발 기한을
- * 받고, 쓰기 트랜잭션은 그 안에서 지금 시각이 기한 전인지 다시 봅니다 — 계획이 기한을 넘겨 끝났으면 어느 계좌에도 쓰지 않고 미룹니다.
+ * 리밸런싱 없음 K2), 규칙 계좌(D1b — {@link KrRuleBookService#startLeg}: 재선정과 같은 계산·입력 동결 K26, INITIAL·S+1 시가 주문), Claude 계좌(E2b —
+ * {@link ClaudeBookService#krStartLeg}: 정기 결정과 같은 조립의 출발 패킷·한국 스키마·한국 검증기, 통과 주문은 S+1 시가 대기 주문 — 상한·재시도 1회 뒤
+ * 오류·거절·형식 오류·기한은 실패). 계획은 트랜잭션 밖에서 모두 만든 뒤(Claude 호출이 장부 잠금을 붙잡지 않게) 한 번에 씁니다 — 한 계좌라도
+ * 실패({@link Plan#failed})하면 어느 계좌에도 쓰지 않습니다(K28 '네 계좌는 함께 출발'). 계좌 몫은 그 세션의 출발 기한을 받고(Claude 몫은 호출 대기
+ * 한도를 기한 안으로 묶음), 쓰기 트랜잭션은 그 안에서 지금 시각이 기한 전인지 다시 봅니다 — 계획이 기한을 넘겨 끝났으면 어느 계좌에도 쓰지 않고
+ * 미룹니다.
  *
  * <p><b>게이트와 입력은 한 읽기</b>(D1c, 결정 e5): 관측치 저장본·금융위 메타를 읽어 싼 게이트 ②④⑤⑥을 먼저 보고(미달이면 규칙 계좌 입력을 읽지
  * 않고 기다림 — 정기 결정과 같은 순서), 통과하면 규칙 계좌 입력(U·수급·DART — K26 동결)을 한 번 읽어({@link KrDecisionGates.Inputs}) 게이트
@@ -61,9 +63,9 @@ import java.util.concurrent.ConcurrentHashMap;
  * U·수급이 곧 규칙 계좌 INITIAL이 고르고 결정 행에 남기는 값입니다. U를 읽지 못함(D보다 이른 기준일의 U가 없음)은 ③ 미달이라 기다립니다(기한이
  * 지나면 미룸 — 예전에는 규칙 계좌 몫의 계획 실패로 바로 미룸).
  *
- * <p><b>'아직 없음' 몫</b>(D1b에서 정함): 계획한 계좌만 한 트랜잭션으로 출발하고 {@link Plan#notYet} 계좌(E2 전의 Claude 계좌)는 시작 전 그대로입니다.
- * 출발 판정이 '모두 시작 전'이라 그 계좌는 <b>뒤따라 출발하지 않습니다</b>('한 계좌만 늦은 시작' 없음 — K28) — 그 몫이 생긴 뒤 네 계좌를 리셋해 다시
- * 출발시킵니다. 서버는 4단계(E2 뒤)에만 출발하므로 운영에서는 네 계좌가 함께 출발합니다. 출발 기록({@code books})에 그 계좌의 사유가 남습니다.
+ * <p><b>'아직 없음' 몫</b>(D1b에서 정함): 계획한 계좌만 한 트랜잭션으로 출발하고 {@link Plan#notYet} 계좌(몫이 없는 시험 파이프라인의 계좌)는 시작 전
+ * 그대로입니다. 출발 판정이 '모두 시작 전'이라 그 계좌는 <b>뒤따라 출발하지 않습니다</b>('한 계좌만 늦은 시작' 없음 — K28). 운영(E2b 뒤)에서는 네
+ * 계좌 몫이 모두 있어 네 계좌가 함께 출발합니다. 출발 기록({@code books})에 그 계좌의 사유가 남습니다.
  *
  * <p><b>저장된 판정</b>(2단계 명세 §4-9 'E0', 사용자 결정 v3 — 재기동해도 판정이 같게): '그 세션은 이미 미룸'(계획 실패 뒤 같은 창에서 다시
  * 계획하지 않음)과 '미룸 기록은 세션마다 한 번'은 그 세션의 {@code kr.decision} 작업 기록({@value #START_POSTPONED} — 결정 작업이 남김,
@@ -179,18 +181,20 @@ final class KrStartPipeline {
     KrStartPipeline(PaperStore store, StoreReader reader, PaperMarketData marketData, PaperLedgerService ledger,
                     PaperConfig config, ObjectMapper mapper, Clock clock, List<Leg> legs) {
         this(store, ledger, config, mapper, clock, legs,
-                new KrDecisionGates(reader, new KrRuleBookService(store, reader, marketData, ledger, mapper, clock)), null);
+                new KrDecisionGates(reader, new KrRuleBookService(store, reader, marketData, ledger, mapper, clock)), null,
+                null);
     }
 
     /**
      * 결정 작업의 출발 — 그 작업의 시계·자료 게이트(결정 작업과 같은 판정 — {@link KrDecisionGates})와 규칙 계좌 몫({@link KrRuleBookService#startLeg}),
-     * Claude 갈고리(E2) + 벤치마크 둘(클래스 설명).
+     * Claude 계좌 몫({@link ClaudeBookService#krStartLeg} — E2b) + 벤치마크 둘(클래스 설명).
      *
-     * @param legs     계좌 몫을 통째로 바꿀 때(시험). null이면 규칙 몫 · Claude 갈고리 · 벤치마크 둘
-     * @param rulesLeg 규칙 계좌 몫. null이면 규칙 계좌도 '아직 없음'(시작 전 그대로)
+     * @param legs      계좌 몫을 통째로 바꿀 때(시험). null이면 규칙 몫 · Claude 몫 · 벤치마크 둘
+     * @param rulesLeg  규칙 계좌 몫. null이면 규칙 계좌도 '아직 없음'(시작 전 그대로)
+     * @param claudeLeg Claude 계좌 몫. null이면 '아직 없음'(시작 전 그대로 — 한국 결정 문맥이 없는 시험)
      */
     KrStartPipeline(PaperStore store, PaperLedgerService ledger, PaperConfig config, ObjectMapper mapper, Clock clock,
-                    List<Leg> legs, KrDecisionGates decisionGates, Leg rulesLeg) {
+                    List<Leg> legs, KrDecisionGates decisionGates, Leg rulesLeg, Leg claudeLeg) {
         this.store = store;
         this.decisionGates = Objects.requireNonNull(decisionGates, "decisionGates");
         this.ledger = ledger;
@@ -200,14 +204,14 @@ final class KrStartPipeline {
         this.legs = legs != null ? List.copyOf(legs) : List.of(
                 rulesLeg != null ? rulesLeg
                         : hook(PaperBooks.KR_RULES, "규칙 계좌의 출발 계획이 이 파이프라인에 없음 — 시작 전 그대로(시험)"),
-                hook(PaperBooks.KR_CLAUDE, CLAUDE_NOT_YET),
+                claudeLeg != null ? claudeLeg : hook(PaperBooks.KR_CLAUDE, CLAUDE_NOT_YET),
                 benchmarkLeg(PaperBooks.KR_BENCH_K200),
                 benchmarkLeg(PaperBooks.KR_BENCH_MIX));
     }
 
-    /** Claude 계좌 몫의 자리(E2 전) — 출발 기록 {@code books.kr_claude}에 남는 사유. */
-    static final String CLAUDE_NOT_YET = "Claude 계좌의 출발 계획(정기 결정과 같은 패킷 · INITIAL)은 2단계 E2 — 시작 전 그대로이고 이 출발 뒤 "
-            + "따라 출발하지 않음(네 계좌를 리셋해 다시 출발)";
+    /** Claude 계좌 몫이 없을 때의 자리(한국 결정 문맥이 없는 시험) — 출발 기록 {@code books.kr_claude}에 남는 사유. */
+    static final String CLAUDE_NOT_YET = "Claude 계좌의 출발 계획(정기 결정과 같은 패킷 · INITIAL)이 이 파이프라인에 없음 — 시작 전 그대로이고 이 출발 "
+            + "뒤 따라 출발하지 않음(네 계좌를 리셋해 다시 출발)";
 
     /**
      * 한국 출발이 남았나 — 한국 묶음의 실행이고, 한국 계좌가 있고 <b>모두 시작 전</b>(NOT_STARTED)입니다. 한 계좌라도 운용·일시정지면 출발한
@@ -329,9 +333,11 @@ final class KrStartPipeline {
                     plan.book() + "에 " + d + " 출발 결정이 이미 있습니다"));
             List<Long> orderIds = new ArrayList<>();
             for (Order o : plan.orders()) {
+                // 만료는 대기 주문만(거절 주문 — Claude 몫의 REJECTED — 은 만료가 없음, 결정 파이프라인과 같음).
+                boolean pending = PaperBooks.ORDER_PENDING.equals(o.status());
                 orderIds.add(store.insertOrder(new Order(0, o.bookCode(), id, o.ticker(), o.side(), o.qty(),
                         o.targetWeightPct(), o.sellFraction(), o.timing(), o.source(), o.status(), o.rejectReason(),
-                        o.reason(), d, o.createdAt(), expires, null)));
+                        o.reason(), d, o.createdAt(), pending ? expires : null, null)));
             }
             store.updateBookStatus(book.code(), PaperBooks.ACTIVE);
             store.updateBookStartedOn(book.code(), d);

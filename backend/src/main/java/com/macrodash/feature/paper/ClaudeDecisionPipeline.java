@@ -234,6 +234,17 @@ final class ClaudeDecisionPipeline {
      */
     Attempt attempt(LocalDate asOf, String kind, boolean initial, SettingsRow row, ClaudeSettings claude,
                     LocalDate today, boolean scheduled, Observed observed) {
+        return attempt(asOf, kind, initial, row, claude, today, scheduled, observed, null);
+    }
+
+    /**
+     * {@link #attempt(LocalDate, String, boolean, SettingsRow, ClaudeSettings, LocalDate, boolean, Observed)}에 호출 대기 한도의 상한을 더한 것 —
+     * 대기 한도 = min(설정 대기 한도, {@code maxTimeoutSeconds})(1초 아래로는 내리지 않음). 한국 출발의 Claude 몫이 그 세션 출발 기한 안에 호출을
+     * 끝내려고 씁니다(2단계 명세 §9 'E2 — 출발 갈고리의 기한'). null이면 설정 대기 한도.
+     */
+    Attempt attempt(LocalDate asOf, String kind, boolean initial, SettingsRow row, ClaudeSettings claude,
+                    LocalDate today, boolean scheduled, Observed observed, Integer maxTimeoutSeconds) {
+        int timeout = maxTimeoutSeconds == null ? timeoutSeconds : Math.max(1, Math.min(timeoutSeconds, maxTimeoutSeconds));
         FrameworkService.Frame frame = framework.current();
         String system = FrameworkService.render(market, frame.body(), frame.version(), row.body());
         Packet packet = packet(asOf, kind, initial, frame.version(), row, observed);
@@ -243,8 +254,7 @@ final class ClaudeDecisionPipeline {
         }
         AiService.StructuredResult result;
         try {
-            result = ai.structured(claude.model(), system, packet.text(), schema.forApi(), claude.effort(),
-                    timeoutSeconds);
+            result = ai.structured(claude.model(), system, packet.text(), schema.forApi(), claude.effort(), timeout);
         } catch (RuntimeException e) {
             // 요청을 보내기 전에 멈춘 경우(인자 검사 — 코드 오류)라 잡은 호출을 돌려놓고 그대로 던집니다.
             calls.release(today);

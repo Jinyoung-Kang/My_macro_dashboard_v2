@@ -664,6 +664,112 @@ public class ClaudeBookService {
         }
     }
 
+    // ------------------------------------------------------------------ 한국 출발(K28)
+    /** 한국 출발의 Claude 몫이 한 계획 안에서 부르는 최대 횟수 — 첫 호출 + API 오류의 재시도 한 번(명세 C7과 같은 '한 번'). */
+    static final int KR_START_CALLS = 2;
+
+    /**
+     * 한국 네 계좌 출발({@link KrStartPipeline})의 Claude 계좌 몫(2단계 명세 §4-8·K28·§9 'E2 — 출발 갈고리의 기한', E2b) — 한국 결정 문맥이 없으면
+     * (미국만 둔 시험 생성자) null이고, 출발 파이프라인은 그 계좌를 '아직 없음'으로 둡니다.
+     *
+     * <p>계획: 정기 결정과 같은 조립의 출발 패킷(INITIAL — 그 실행의 관측치와 읽은 순간 = 게이트 ③이 본 규칙 계좌 입력의 읽은 순간, 그래서 S 밤 판이고
+     * {@code asOfMismatch}가 없음)으로 Claude를 부르고(정기 작업 — 하루 상한까지), 통과 주문은 S+1 시가({@code NEXT_OPEN}) 대기 주문, 거절 주문은
+     * 사유와 함께 계획합니다(쓰기는 파이프라인이 네 계좌 함께 한 트랜잭션으로 — 결정 행 INITIAL·{@code prices_final=false}·응답에 설정 출발일·
+     * {@code postponed}·자료 게이트). 통과 주문이 없으면 현금만 든 채 출발합니다(미국 시작과 같음).
+     *
+     * <p><b>실패</b>({@link KrStartPipeline.Plan#failed} — 어느 계좌에도 쓰지 않고 그 세션 출발을 다음 KR 거래일로 미룸, 그 세션은 다시 계획하지 않음):
+     * 하루 상한(정기 작업 몫까지 다 씀) · API 오류는 같은 계획 안에서 한 번 더 부른 뒤에도 · 거절·형식 오류(같은 입력이면 같은 답이라 다시 부르지 않음) ·
+     * <b>기한</b> — 호출마다 대기 한도를 min(설정 대기 한도, 출발 기한 − 지금)으로 묶고(초 단위 내림), 1초도 남지 않았으면 부르지 않습니다(기한을 넘겨
+     * 끝난 계획은 쓰기 트랜잭션이 다시 막음 — 마지막 방어선) · 응답을 받은 뒤 검증 예외. 실패의 사유는 작업 기록(출발 미룸)에 남고, 과금된 호출은 그날
+     * 사용량에 셉니다.
+     */
+    KrStartPipeline.Leg krStartLeg() {
+        ClaudeDecisionPipeline base = pipelines.get(KrPaperMarket.INSTANCE.code());
+        if (base == null || base.market() != KrPaperMarket.INSTANCE) {
+            return null;
+        }
+        return new KrStartPipeline.Leg() {
+            @Override
+            public String book() {
+                return KrPaperMarket.INSTANCE.claudeBook();
+            }
+
+            @Override
+            public KrStartPipeline.Plan plan(MarketRun run, LocalDate session, Instant deadline,
+                                             KrDecisionGates.Checked gates) {
+                try {
+                    return krStartPlan(base, run, session, deadline, gates);
+                } catch (RuntimeException e) {
+                    log.warn("한국 Claude 계좌 출발 계획 실패({}): {}", session, e.toString());
+                    return KrStartPipeline.Plan.failed(book(), "Claude 계좌 출발 계획 실패 — "
+                            + e.getClass().getSimpleName() + " " + clip(e.getMessage(), 400));
+                }
+            }
+        };
+    }
+
+    private KrStartPipeline.Plan krStartPlan(ClaudeDecisionPipeline base, MarketRun run, LocalDate session,
+                                             Instant deadline, KrDecisionGates.Checked gates) {
+        requireReady();
+        ClaudeDecisionPipeline pipeline = base.bind(run);
+        String book = run.claudeBook();
+        Book current = claudeBook(run);
+        if (!PaperBooks.NOT_STARTED.equals(current.status())) {
+            throw new IllegalStateException("한국 Claude 계좌가 시작 전이 아닙니다(상태 " + current.status() + ")");
+        }
+        BookState state = store.state(book).orElseThrow(() -> new IllegalStateException(
+                "한국 Claude 계좌 상태(paper_book_state)가 없습니다 — 한국 초기화를 다시 누르세요"));
+        SettingsRow row = run.settingsRow().orElseThrow(() -> new IllegalStateException(
+                "설정 행이 없습니다 — 한국 초기화를 다시 누르세요"));
+        ClaudeSettings claude = ClaudeSettings.from(row.body());
+        KrDecisionGates.Inputs inputs = gates.inputs();
+        // 읽은 순간 = 게이트 ③과 규칙 계좌 출발이 쓴 그 읽기의 순간(같은 실행의 지금) — 출발 패킷도 그 순간 뒤에 수집된 값을 쓰지 않음(K28 'S 밤 판').
+        Instant readAt = inputs.rules() != null ? inputs.rules().readAt() : clock.instant();
+        ClaudeDecisionPipeline.Observed observed = new ClaudeDecisionPipeline.Observed(inputs.quotes(), readAt,
+                gates.views());
+        Attempt attempt = null;
+        int calls = 0;
+        while (true) {
+            long left = Duration.between(clock.instant(), deadline).getSeconds();
+            if (left < 1) {
+                return KrStartPipeline.Plan.failed(book, "출발 기한(" + Kst.stamp(deadline) + ")까지 남은 시간이 없어 Claude를 "
+                        + (calls == 0 ? "부르지 않음" : "다시 부르지 않음(첫 호출 " + statusLabel(attempt.status()) + ")"));
+            }
+            LocalDate today = Kst.today(clock);
+            Attempt next = pipeline.callsLeft(today, claude, true) <= 0 ? null
+                    : pipeline.attempt(session, RuleBookService.INITIAL, true, row, claude, today, true, observed,
+                    (int) Math.min(Integer.MAX_VALUE, left));
+            if (next == null) {
+                return KrStartPipeline.Plan.failed(book, capMessage(claude, today, true)
+                        + (calls == 0 ? "" : "(첫 호출 " + statusLabel(attempt.status()) + " 뒤 재시도)"));
+            }
+            attempt = next;
+            calls++;
+            if (attempt.succeeded() || !STATUS_API_ERROR.equals(attempt.status()) || calls >= KR_START_CALLS) {
+                break;
+            }
+            log.warn("한국 Claude 계좌 출발 호출 {} — 한 번 더 부릅니다({}): {}", attempt.status(), session, attempt.error());
+        }
+        if (!attempt.succeeded()) {
+            log.warn("한국 Claude 계좌 출발 호출 실패({}, {}회): {} — 네 계좌 모두 출발을 미룹니다", session, calls, attempt.error());
+            return KrStartPipeline.Plan.failed(book, "Claude 출발 호출 실패(" + statusLabel(attempt.status())
+                    + (calls > 1 ? ", 재시도 1회 뒤" : "") + "): " + clip(attempt.error(), 400));
+        }
+        Plan plan = pipeline.plan(session, RuleBookService.INITIAL, true, attempt, cashOnly(state.cash()), row, claude,
+                inputs.quotes(), Set.of(), Map.of());
+        ObjectNode response = plan.response();
+        response.put("configuredStartDate", String.valueOf(config.krStartDate()));
+        response.put("postponed", !session.equals(config.krStartDate()));
+        response.put("startCalls", calls);
+        response.set("gates", mapper.valueToTree(gates.views()));
+        Decision decision = pipeline.decisionRow(0, session, RuleBookService.INITIAL, plan.status(), row, claude,
+                attempt, plan.target(), response, null, false, calls - 1);
+        List<PaperStore.Order> orders = pipeline.orderRows(0, session, plan, PaperBooks.ORDER_PENDING);
+        log.info("한국 Claude 계좌 출발 계획 {}: {} — 통과 {} · 거절 {}(호출 {}회)", session, plan.status(), plan.accepted(),
+                plan.verdicts().size() - plan.accepted(), calls);
+        return KrStartPipeline.Plan.of(book, decision, orders);
+    }
+
     /**
      * 초기 결정 미리보기 — 시작과 같은 초기 패킷으로 Claude를 부르고 검증까지 하지만 <b>장부·결정·주문 표에 쓰지 않습니다</b>.
      * 남기는 것은 셋입니다: 사용량(호출 수·토큰), 출발일 기관 선정(없을 때만 — 시작과 같은 조건(수집 완료)으로. 선정은 기준일마다
