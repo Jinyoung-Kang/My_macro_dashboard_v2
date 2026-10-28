@@ -10,8 +10,9 @@ import java.util.Map;
 import java.util.TreeMap;
 
 /**
- * 🧪 미국 Claude 패킷 {@code 1b_calendar} 거시 줄에 붙이는 컨센서스 층(v2 2단계 명세 §4-12·K22, E1b) — 저장본
- * {@code calendar.us_consensus}(수집기 {@code us_calendar_consensus}, Nasdaq 경제 캘린더 — ADR 0017과 같은 '비공식 참고')에서 그 줄의
+ * 🧪 미국 Claude 패킷 {@code 1b_calendar} 거시 줄에 붙이는 컨센서스 층(v2 2단계 명세 §4-12·K22, E1b) — 미국 컨센서스 저장본
+ * (수집기 {@code us_calendar_consensus}, Nasdaq 경제 캘린더 — ADR 0017과 같은 '비공식 참고'. 저장본 이름은 읽는 쪽인 패킷 조립에만 적음 —
+ * 수집기 시험 {@code test_us_consensus}가 그 이름이 나오는 백엔드 파일을 대조)에서 그 줄의
  * 날짜(미국 동부)에 받은 줄 가운데 <b>대응표 이름의 줄 하나</b>를 공식 일정 줄(FRED 릴리스·FOMC 상수)에 붙입니다.
  *
  * <p><b>날짜는 공식 출처만 정합니다</b>: 이 층은 이미 창에 든 공식 줄({@link CalendarWindow.Row})에 값만 붙이고, Nasdaq에만 있는 발표를 줄로
