@@ -7,11 +7,13 @@ import { presentText } from "@/lib/patterns";
  *
  * - "—"는 읽어 주기에서 빼고(aria-hidden) 대신 "값 없음"을 읽습니다. 기호만 읽으면 뜻이 전해지지 않습니다.
  * - 크기·색은 놓인 자리(타일·히어로·표 칸)를 따릅니다. 사유만 늘 작은 보조 글자입니다.
+ * - 바깥 span은 `relative`입니다 — 안의 sr-only(절대 위치)가 가로 스크롤 상자(DataTable) 밖으로 빠져 문서 폭을 넓히지 않게. 그러지 않으면
+ *   390px에서 넘겨야 보이는 칸의 "값 없음"이 페이지 전체를 가로로 넘치게 했습니다(한국 종목 선정 표, 화면 확인 2026-10-29).
  */
 export function Empty({ reason }: { reason?: string | null }) {
   const why = presentText(reason);
   return (
-    <span className="inline-flex flex-wrap items-baseline gap-x-1">
+    <span className="relative inline-flex flex-wrap items-baseline gap-x-1">
       <span aria-hidden="true">{EMPTY}</span>
       <span className="sr-only">값 없음</span>
       {why ? <span className="text-xs font-normal text-text-3">{why}</span> : null}

@@ -22,6 +22,8 @@ describe("Empty", () => {
     expect(screen.getByText("값 없음").className).toContain("sr-only");
     expect(container.textContent).toBe("—값 없음");
     expect(container.textContent).not.toContain("0");
+    // 바깥 span이 sr-only(절대 위치)의 기준 상자 — 가로 스크롤 표 칸 밖으로 빠져 문서 폭을 넓히지 않게(390px 화면 확인, 2026-10-29).
+    expect((container.firstElementChild as HTMLElement).className).toContain("relative");
   });
 
   it("사유가 있으면 작은 보조 글자로 보인다", () => {
