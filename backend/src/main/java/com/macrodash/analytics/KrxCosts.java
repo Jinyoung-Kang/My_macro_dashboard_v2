@@ -5,6 +5,7 @@ import com.macrodash.analytics.PaperLedger.Side;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.LocalDate;
+import java.util.Locale;
 import java.util.Objects;
 import java.util.Optional;
 
@@ -329,6 +330,24 @@ public final class KrxCosts {
             band++;
         }
         return BigDecimal.valueOf(STOCK_TICKS[band]);
+    }
+
+    /**
+     * 호가표를 글로(한국 Claude 패킷 {@code 0_instructions}·{@code 12_hardRules}, E1a — 표를 두 곳에 적지 않게 이 상수에서 만듦):
+     * {@code 주식 2,000원 미만 1원 · 2,000원 이상 5원 · … · 500,000원 이상 1,000원 / ETF 2,000원 미만 1원 · 이상 5원}.
+     */
+    public static String tickTableText() {
+        StringBuilder out = new StringBuilder("주식 ");
+        for (int band = 0; band < STOCK_TICKS.length; band++) {
+            if (band > 0) {
+                out.append(" · ");
+            }
+            out.append(band == 0 ? String.format(Locale.ROOT, "%,d원 미만", STOCK_BAND_FLOORS[0])
+                    : String.format(Locale.ROOT, "%,d원 이상", STOCK_BAND_FLOORS[band - 1]));
+            out.append(String.format(Locale.ROOT, " %,d원", STOCK_TICKS[band]));
+        }
+        out.append(String.format(Locale.ROOT, " / ETF %,d원 미만 1원 · 이상 5원", ETF_BAND_FLOOR));
+        return out.toString();
     }
 
     /**

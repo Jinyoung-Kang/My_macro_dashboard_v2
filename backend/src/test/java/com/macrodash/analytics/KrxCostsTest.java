@@ -350,6 +350,13 @@ class KrxCostsTest {
     }
 
     @Test
+    @DisplayName("호가표 글(한국 패킷) — 위 두 표와 같은 가격대·호가")
+    void tickTableText() {
+        assertThat(KrxCosts.tickTableText()).isEqualTo("주식 2,000원 미만 1원 · 2,000원 이상 5원 · 5,000원 이상 10원 · "
+                + "20,000원 이상 50원 · 50,000원 이상 100원 · 200,000원 이상 500원 · 500,000원 이상 1,000원 / ETF 2,000원 미만 1원 · 이상 5원");
+    }
+
+    @Test
     @DisplayName("호가 점검: 호가에 맞는 관측가만 참, 안 맞아도 체결가는 관측가 그대로(경고는 부르는 쪽)")
     void onTickCheck() {
         assertThat(KrxCosts.onTick(Instrument.KOSPI, won(71_300))).isTrue();
