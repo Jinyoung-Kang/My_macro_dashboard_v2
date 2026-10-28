@@ -636,6 +636,55 @@ class KrRulesJobTest {
     }
 
     @Test
+    @DisplayName("게이트 ①의 체결할 수 없는 주문 면제는 Claude 계좌도 같음(D2b·사용자 결정 v2, 실제 한국 Claude 경로 — 묶음 E 2차 리뷰): R에 거래정지인 보유 000660의 Claude 매도는 대기로 받고, 정지가 이어진 R1 밤 ① kr_claude는 그 매도를 기다리지 않아 PASS('기다리지 않음') → Claude 정기 결정(앞 대기 매도는 '다음 결정이 대신함')")
+    void unfillableClaudeSellDoesNotHoldGateOne() {
+        KrClaudeFixtures.FakeAi fake = new KrClaudeFixtures.FakeAi();
+        fake.answer(KrClaudeFixtures.decision(0, null, KrClaudeFixtures.order("000660", "SELL", null, 1.0)))
+                .answer(KrClaudeFixtures.decision(0, "관망 — 정지 해제 확인 전"));
+        realClaude(fake);
+        // 최소 보유 5거래일(MIN_HOLD)을 넘긴 보유 — 10-22 시가에 산 것(그날 출발한 Claude 계좌).
+        LocalDate opened = LocalDate.of(2026, 10, 22);
+        store.updateBookStartedOn(PaperBooks.KR_CLAUDE, opened);
+        store.upsertPosition(new Position(PaperBooks.KR_CLAUDE, "000660", 100, 10_000, opened, kst("2026-10-22T09:00"),
+                10_000, kst("2026-10-22T09:00"), 10_000.0, kst("2026-10-30T21:57"), false, opened, 10_000, null));
+        store.upsertState(new BookState(PaperBooks.KR_CLAUDE, 99_000_000, 100_000_000, 1_000_000, 1.0, null, null, S, null));
+        KrFixtures.stub(reader, Datasets.SNAP_KR_PAPER_QUOTES,
+                KrRulesFixtures.suspend(KrRulesFixtures.quotes(R), "000660", true));
+        fsc(FRI);
+
+        PaperDecisionJob.Result placed = runAt("2026-11-02T22:30");
+
+        assertThat(placed.outcome()).isEqualTo(PaperDecisionJob.DECIDED);
+        assertThat(placed.claude()).isNotNull();
+        Order sell = store.ordersByDecision(placed.claude().id()).stream()
+                .filter(o -> "000660".equals(o.ticker()) && PaperBooks.SELL.equals(o.side())).findFirst().orElseThrow();
+        assertThat(sell.status()).as("체결할 수 없는 보유의 매도는 거절하지 않고 대기(a2683bc)").isEqualTo(PaperBooks.ORDER_PENDING);
+        assertThat(sell.asOfTradingDate()).isEqualTo(R);
+
+        // R1 — 정지가 이어짐: 000660 R1 봉도 거래량 0. 그 매도는 R1 시가에 체결되지 않고 대기 그대로.
+        KrFixtures.stub(reader, Datasets.SNAP_KR_PAPER_QUOTES,
+                KrRulesFixtures.suspend(KrRulesFixtures.quotes(R1), "000660", true));
+        fsc(R);
+        PaperDecisionJob.Result next = runAt("2026-11-03T22:30");
+
+        assertThat(next.outcome()).isEqualTo(PaperDecisionJob.DECIDED);
+        Decision row = next.claude();
+        assertThat(row).as("Claude 계좌가 ①로 기다리지 않고 그 밤 결정").isNotNull();
+        assertThat(row.kind()).isEqualTo(RuleBookService.SCHEDULED);
+        assertThat(row.asOfTradingDate()).isEqualTo(R1);
+        JsonNode first = row.response().path("gates").get(0);
+        assertThat(first.path("gate").asString()).isEqualTo("①");
+        assertThat(first.path("status").asString()).isEqualTo("PASS");
+        assertThat(first.path("note").asString()).startsWith("kr_claude")
+                .contains("#" + sell.id() + " SELL 000660(기준일 2026-11-02)").contains("기준일 뒤 관측 봉(거래량 > 0)이 없음")
+                .contains("기다리지 않음");
+        assertThat(fake.requests).hasSize(2);
+        assertThat(store.orders.get(sell.id()).status()).isEqualTo(PaperBooks.ORDER_CANCELLED);
+        assertThat(store.orders.get(sell.id()).rejectReason()).isEqualTo("다음 결정이 대신함");
+        assertThat(store.positions(PaperBooks.KR_CLAUDE)).extracting(Position::ticker).contains("000660");
+    }
+
+    @Test
     @DisplayName("사용자 결정 v4(E2b) — 기한 지난 세션의 Claude 계좌는 부르지 않고 SKIPPED 행: 규칙 계좌는 22:30에 결정했고 Claude만 ①로 00:50까지 기다렸으면 그 행의 판정은 저장된 Claude 몫의 기한 전 마지막 판정(00:50 — ① kr_claude FAIL, 사유 '기한 지남'), 재기동해도 다시 쓰지 않고 기한 지남 기록은 한 번")
     void claudePastDeadlineRowUsesTheStoredClaudeJudgement() {
         KrClaudeFixtures.FakeAi fake = new KrClaudeFixtures.FakeAi();
