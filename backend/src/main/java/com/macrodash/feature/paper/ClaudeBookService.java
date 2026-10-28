@@ -672,6 +672,29 @@ public class ClaudeBookService {
      * (사용자 결정 2026-10-28 w12 — 기한 직전 몇 초로 부르는 호출은 거의 늘 시간 초과인데 하루 상한 하나를 잡고 과금될 수 있음).
      */
     static final long KR_START_MIN_CALL_SECONDS = 60;
+    /**
+     * 429(속도 제한 — {@link AiService.StructuredResult#errorKind} {@value #RATE_LIMIT_KIND}) 뒤 한국 출발 재시도 전에 기다리는 시간(사용자 결정 w12 —
+     * 바로 다시 부르면 같은 답일 가능성이 높음). 다른 API 오류(5xx·529·연결·시간 초과)는 기다리지 않고 바로 다시 부릅니다.
+     */
+    static final Duration KR_START_RATE_LIMIT_WAIT = Duration.ofSeconds(30);
+    /** 속도 제한 오류의 종류 이름({@link AiService}의 분류 — 429). */
+    static final String RATE_LIMIT_KIND = "RATE_LIMIT";
+
+    /** 출발 재시도 전 기다림(429 뒤 {@link #KR_START_RATE_LIMIT_WAIT}) — 시험이 실제로 기다리지 않게 바꿔 끼웁니다({@link #sleeper(Sleeper)}). */
+    interface Sleeper {
+
+        /** 실제로 기다림(운영). */
+        Sleeper REAL = duration -> Thread.sleep(duration.toMillis());
+
+        void sleep(Duration duration) throws InterruptedException;
+    }
+
+    private volatile Sleeper sleeper = Sleeper.REAL;
+
+    /** 시험용 — 출발 재시도 전 기다림을 바꿔 끼움(시계를 옮기는 가짜 등 — 시험은 실제로 기다리지 않음). */
+    void sleeper(Sleeper sleeper) {
+        this.sleeper = Objects.requireNonNull(sleeper, "sleeper");
+    }
 
     /**
      * 한국 네 계좌 출발({@link KrStartPipeline})의 Claude 계좌 몫(2단계 명세 §4-8·K28·§9 'E2 — 출발 갈고리의 기한', E2b) — 한국 결정 문맥이 없으면
@@ -683,7 +706,9 @@ public class ClaudeBookService {
      * {@code postponed}·자료 게이트). 통과 주문이 없으면 현금만 든 채 출발합니다(미국 시작과 같음).
      *
      * <p><b>실패</b>({@link KrStartPipeline.Plan#failed} — 어느 계좌에도 쓰지 않고 그 세션 출발을 다음 KR 거래일로 미룸, 그 세션은 다시 계획하지 않음):
-     * 하루 상한(정기 작업 몫까지 다 씀) · API 오류는 같은 계획 안에서 한 번 더(첫 호출의 패킷 그대로 — {@link ClaudeDecisionPipeline#again}) 부른 뒤에도 ·
+     * 하루 상한(정기 작업 몫까지 다 씀) · API 오류는 같은 계획 안에서 한 번 더(첫 호출의 패킷 그대로 — {@link ClaudeDecisionPipeline#again}) 부른 뒤에도
+     * — 429({@value #RATE_LIMIT_KIND})면 {@link #KR_START_RATE_LIMIT_WAIT} 기다린 뒤에, 그 기다림 뒤에도 최소 대기 한도가 남을 때만(아니면 기다리지 않고
+     * 바로 실패), 그 밖의 API 오류는 바로(사용자 결정 w12). 기다리는 동안 결정 작업 잠금을 쥐고, 기다림이 끊기면(종료) 다시 부르지 않고 실패 ·
      * 거절·형식 오류(같은 입력이면 같은 답이라 다시 부르지 않음) ·
      * <b>기한</b> — 호출마다 대기 한도를 min(설정 대기 한도, 출발 기한 − 지금)으로 묶고(초 단위 내림), 기한까지 최소 대기 한도
      * {@value #KR_START_MIN_CALL_SECONDS}초가 남지 않았으면 부르지 않습니다(사용자 결정 w12 — 예전에는 1초. 기한을 넘겨 끝난 계획은 쓰기 트랜잭션이
@@ -757,6 +782,7 @@ public class ClaudeBookService {
                 gates.views());
         Attempt attempt = null;
         int calls = 0;
+        boolean waited = false;   // 429 뒤 기다린 재시도(w12) — 실패 사유 문구에만
         // 호출마다의 사용(작업 기록용 — 결정 행 없이 끝나도 과금된 호출을 셀 수 있게, §4-10).
         List<Map<String, Object>> trace = new ArrayList<>();
         while (true) {
@@ -786,12 +812,38 @@ public class ClaudeBookService {
             if (attempt.succeeded() || !STATUS_API_ERROR.equals(attempt.status()) || calls >= KR_START_CALLS) {
                 break;
             }
+            if (RATE_LIMIT_KIND.equals(attempt.result().errorKind())) {
+                // 429(w12): 기다린 뒤 한 번만 — 기다린 뒤에도 최소 대기 한도가 남을 때만(아니면 잠금을 쥔 채 기다리지 않고 바로 실패).
+                long leftNow = Duration.between(clock.instant(), deadline).getSeconds();
+                long waitSeconds = KR_START_RATE_LIMIT_WAIT.getSeconds();
+                if (leftNow < waitSeconds + KR_START_MIN_CALL_SECONDS) {
+                    log.warn("한국 Claude 계좌 출발 호출 429 — 기한까지 {}초라 {}초 기다린 재시도를 하지 않습니다({}): {}", Math.max(0, leftNow),
+                            waitSeconds, session, attempt.error());
+                    return KrStartPipeline.Plan.failed(book, "Claude 출발 호출 실패(" + statusLabel(attempt.status())
+                            + " — 429 속도 제한, 출발 기한(" + Kst.stamp(deadline) + ")까지 " + Math.max(0, leftNow) + "초라 " + waitSeconds
+                            + "초 기다린 뒤 최소 대기 한도 " + KR_START_MIN_CALL_SECONDS + "초가 남지 않아 다시 부르지 않음): "
+                            + clip(attempt.error(), 400)).withCalls(callsView(trace));
+                }
+                log.warn("한국 Claude 계좌 출발 호출 429 — {}초 기다린 뒤 한 번 더 부릅니다({}): {}", waitSeconds, session, attempt.error());
+                try {
+                    sleeper.sleep(KR_START_RATE_LIMIT_WAIT);
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    return KrStartPipeline.Plan.failed(book, "Claude 출발 호출 실패(" + statusLabel(attempt.status())
+                            + " — 429 뒤 재시도를 기다리다 끊겨 다시 부르지 않음): " + clip(attempt.error(), 400))
+                            .withCalls(callsView(trace));
+                }
+                waited = true;
+                continue;   // 기다린 뒤 지금 시각으로 최소 대기 한도·대기 한도를 다시 셈(위)
+            }
             log.warn("한국 Claude 계좌 출발 호출 {} — 한 번 더 부릅니다({}): {}", attempt.status(), session, attempt.error());
         }
         if (!attempt.succeeded()) {
             log.warn("한국 Claude 계좌 출발 호출 실패({}, {}회): {} — 네 계좌 모두 출발을 미룹니다", session, calls, attempt.error());
-            return KrStartPipeline.Plan.failed(book, "Claude 출발 호출 실패(" + statusLabel(attempt.status())
-                    + (calls > 1 ? ", 재시도 1회 뒤" : "") + "): " + clip(attempt.error(), 400)).withCalls(callsView(trace));
+            String retried = calls <= 1 ? ""
+                    : waited ? ", 429 뒤 " + KR_START_RATE_LIMIT_WAIT.getSeconds() + "초 기다린 재시도 1회 뒤" : ", 재시도 1회 뒤";
+            return KrStartPipeline.Plan.failed(book, "Claude 출발 호출 실패(" + statusLabel(attempt.status()) + retried + "): "
+                    + clip(attempt.error(), 400)).withCalls(callsView(trace));
         }
         try {
             return krStartPlanned(pipeline, session, book, state, row, claude, inputs, gates, attempt, calls)

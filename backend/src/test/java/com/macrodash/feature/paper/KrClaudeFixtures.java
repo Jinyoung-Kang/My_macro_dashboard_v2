@@ -6,6 +6,7 @@ import com.macrodash.store.RegimeLogStore;
 import com.macrodash.store.StoreRepository;
 
 import java.time.Clock;
+import java.time.Duration;
 import java.util.ArrayDeque;
 import java.util.Deque;
 import java.util.List;
@@ -78,6 +79,15 @@ final class KrClaudeFixtures {
             return this;
         }
 
+        /** 429 하나 — 운영 분류({@code RATE_LIMIT}, 과금 안 됨)와 같은 모양(사용자 결정 w12의 기다린 재시도 시험). */
+        FakeAi rateLimited() {
+            synchronized (answers) {
+                answers.add(new AiService.StructuredResult(false, null, null, ClaudeBookService.RATE_LIMIT_KIND,
+                        "호출 한도에 걸렸습니다(429). 잠시 후 다시 시도하거나 다른 엔진을 고르세요.", false, null, null, null, null, 40L));
+            }
+            return this;
+        }
+
         private static AiService.StructuredResult failure(String kind, String message) {
             return new AiService.StructuredResult(false, null, null, kind, message, true, null, null, null, null, 50L);
         }
@@ -91,6 +101,16 @@ final class KrClaudeFixtures {
     static ClaudeBookService service(FakePaperStore store, StoreReader reader, StoreRepository repository,
                                      PaperMarketData marketData, PaperLedgerService ledger, PaperConfig config,
                                      Clock clock, AiService ai) {
+        return service(store, reader, repository, marketData, ledger, config, clock, ai, new FakeSleeper(clock));
+    }
+
+    /**
+     * {@link #service(FakePaperStore, StoreReader, StoreRepository, PaperMarketData, PaperLedgerService, PaperConfig, Clock, AiService)}에
+     * 출발 재시도 전 기다림({@link ClaudeBookService.Sleeper})을 넘긴 것 — 시험이 기다린 시간을 봅니다(실제로 기다리지 않음).
+     */
+    static ClaudeBookService service(FakePaperStore store, StoreReader reader, StoreRepository repository,
+                                     PaperMarketData marketData, PaperLedgerService ledger, PaperConfig config,
+                                     Clock clock, AiService ai, FakeSleeper sleeper) {
         PaperSettingsService settings = PaperFixtures.settings(store);
         PaperApiCalls calls = new PaperApiCalls(store, settings);
         RegimeLogStore regimeLog = mock(RegimeLogStore.class);
@@ -98,9 +118,33 @@ final class KrClaudeFixtures {
                 new NoteService(store, settings), ledger, config, MAPPER, clock);
         PaperAdminService admin = new PaperAdminService(store, marketData, reader, settings, ledger, config, MAPPER,
                 clock);
-        return new ClaudeBookService(store, reader, marketData, mock(PaperSelectionService.class), ledger, admin,
-                mock(PacketBuilder.class), new FrameworkService(store, ai, settings, calls, MAPPER, 30, clock), calls, ai,
-                settings, config, MAPPER, ClaudeBookService.DEFAULT_TIMEOUT_SECONDS, clock, packets);
+        ClaudeBookService service = new ClaudeBookService(store, reader, marketData, mock(PaperSelectionService.class),
+                ledger, admin, mock(PacketBuilder.class), new FrameworkService(store, ai, settings, calls, MAPPER, 30, clock),
+                calls, ai, settings, config, MAPPER, ClaudeBookService.DEFAULT_TIMEOUT_SECONDS, clock, packets);
+        service.sleeper(sleeper);
+        return service;
+    }
+
+    /**
+     * 가짜 기다림 — 실제로 기다리지 않고 받은 기다림을 차례로 남기며, 시계가 {@link KrFixtures.MovableClock}이면 그만큼 옮깁니다(429 뒤 30초 —
+     * 사용자 결정 w12. 기다린 뒤의 남은 시간을 시험이 시계로 봄).
+     */
+    static final class FakeSleeper implements ClaudeBookService.Sleeper {
+
+        final List<Duration> sleeps = new CopyOnWriteArrayList<>();
+        private final Clock clock;
+
+        FakeSleeper(Clock clock) {
+            this.clock = clock;
+        }
+
+        @Override
+        public void sleep(Duration duration) {
+            sleeps.add(duration);
+            if (clock instanceof KrFixtures.MovableClock movable) {
+                movable.set(movable.instant().plus(duration));
+            }
+        }
     }
 
     /** 한국 결정 응답(결정 스키마 v2 — 한국 파일 {@value ClaudeBookService#KR_SCHEMA_RESOURCE}). */

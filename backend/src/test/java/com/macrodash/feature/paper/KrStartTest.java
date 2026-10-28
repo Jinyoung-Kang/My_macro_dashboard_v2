@@ -48,6 +48,8 @@ class KrStartTest {
     private PaperDecisionJob job;
     private final AtomicBoolean failShortBond = new AtomicBoolean();
     private KrRulesFixtures rulesData;
+    /** 실제 한국 Claude 경로({@link #realClaude})의 출발 재시도 전 기다림 — 실제로 기다리지 않고 시계를 옮기며 남김(사용자 결정 w12). */
+    private KrClaudeFixtures.FakeSleeper sleeper;
     /** 가짜 저장소(유니버스·수급 읽기 — 읽은 횟수를 보는 시험이 씀). */
     private com.macrodash.store.StoreRepository repository;
 
@@ -148,9 +150,10 @@ class KrStartTest {
      */
     private void realClaude(KrClaudeFixtures.FakeAi fake) {
         PaperLedgerService ledger = new PaperLedgerService(store, marketData, PaperFixtures.MAPPER);
+        sleeper = new KrClaudeFixtures.FakeSleeper(clock);
         job = new PaperDecisionJob(store, reader, marketData, ledger, mock(PaperSelectionService.class),
                 mock(RuleBookService.class), KrClaudeFixtures.service(store, reader, repository, marketData, ledger,
-                config(), clock, fake.ai), PaperFixtures.settings(store), config(), PaperFixtures.MAPPER, clock);
+                config(), clock, fake.ai, sleeper), PaperFixtures.settings(store), config(), PaperFixtures.MAPPER, clock);
     }
 
     /** 매크로 카드 저장본 — 한국 패킷 1_basis.markets.cards 네 장(카드 시각 = 그날 22:25 KST), 수집 시각 {@code collectedAt}. */
@@ -556,6 +559,100 @@ class KrStartTest {
         assertThat(krDecisions()).extracting(Decision::bookCode)
                 .containsExactly("kr_rules", "kr_claude", "kr_bench_k200", "kr_bench_mix");
         assertThat(krDecisions()).allSatisfy(d -> assertThat(d.asOfTradingDate()).isEqualTo(NEXT));
+        assertThat(store.books.get("kr_claude").startedOn()).isEqualTo(NEXT);
+    }
+
+    @Test
+    @DisplayName("K28·사용자 결정 w12 — Claude 출발 호출이 429(RATE_LIMIT)면 30초 기다린 뒤(가짜 기다림 — 시계만 옮김) 첫 호출의 패킷 그대로 한 번만 다시 부르고, 성공하면 네 계좌가 함께 출발(결정 행 재시도 1·호출 2회)")
+    void claudeStartRateLimitWaitsThirtySecondsThenRetriesOnce() {
+        KrClaudeFixtures.FakeAi fake = new KrClaudeFixtures.FakeAi();
+        fake.rateLimited().answer(KrClaudeFixtures.decision(0, "관망"));
+        realClaude(fake);
+
+        PaperDecisionJob.Result result = runAt("2026-11-30T22:30");
+
+        assertThat(result.outcome()).isEqualTo(PaperDecisionJob.STARTED);
+        assertThat(sleeper.sleeps).as("429 뒤 한 번 30초").containsExactly(java.time.Duration.ofSeconds(30));
+        assertThat(fake.requests).as("첫 호출 + 기다린 재시도 1회").hasSize(2);
+        assertThat(fake.requests.get(1).user()).as("재시도 패킷 = 첫 패킷").isEqualTo(fake.requests.get(0).user());
+        assertThat(fake.requests).extracting(KrClaudeFixtures.Request::timeoutSeconds).containsExactly(300, 300);
+        Decision claude = krDecisions().get(1);
+        assertThat(claude.bookCode()).isEqualTo("kr_claude");
+        assertThat(claude.retryCount()).isEqualTo(1);
+        assertThat(claude.response().path("startCalls").asInt()).isEqualTo(2);
+        assertThat(krDecisions()).extracting(Decision::bookCode)
+                .containsExactly("kr_rules", "kr_claude", "kr_bench_k200", "kr_bench_mix");
+        assertThat(store.apiUsage(S).map(com.macrodash.store.PaperStore.ApiUsage::calls)).as("429도 호출 수에 셈").contains(2);
+    }
+
+    @Test
+    @DisplayName("K28·사용자 결정 w12 — 429가 기한까지 90초(기다림 30초 + 최소 대기 한도 60초) 미만에 나면 기다리지 않고 다시 부르지 않으며 네 계좌 모두 미룸(사유·호출 기록과 함께 저장 — 재기동 뒤에도 다시 부르지 않음), 정확히 90초면 30초 기다려 대기 한도 60초로 다시 불러 출발")
+    void claudeStartRateLimitNearTheDeadlineIsNotRetried() {
+        KrClaudeFixtures.FakeAi fake = new KrClaudeFixtures.FakeAi();
+        fake.rateLimited();
+        realClaude(fake);
+
+        PaperDecisionJob.Result postponed = runAt("2026-12-01T00:58:31");   // 기한 12-01 01:00까지 89초
+
+        assertThat(postponed.outcome()).isEqualTo(PaperDecisionJob.START_POSTPONED);
+        assertThat(fake.requests).singleElement().satisfies(request ->
+                assertThat(request.timeoutSeconds()).as("첫 호출의 대기 한도 = 남은 89초").isEqualTo(89));
+        assertThat(sleeper.sleeps).as("기다리지 않음").isEmpty();
+        assertThat(postponed.message()).contains("kr_claude").contains("Claude 출발 호출 실패(API 오류 — 429 속도 제한, "
+                + "출발 기한(2026-12-01 01:00 KST)까지 89초라 30초 기다린 뒤 최소 대기 한도 60초가 남지 않아 다시 부르지 않음)");
+        assertThat(krDecisions()).isEmpty();
+        assertThat(store.orders).isEmpty();
+        assertNotStarted(store);
+        assertThat(krRuns()).singleElement().satisfies(run -> {
+            assertThat(run.outcome()).isEqualTo(PaperDecisionJob.START_POSTPONED);
+            assertThat(run.detail().path("reason").asString()).contains("429 속도 제한");
+            assertThat(run.detail().path("calls").path("kr_claude").path("calls").asInt()).isEqualTo(1);
+            assertThat(run.detail().path("calls").path("kr_claude").path("attempts").get(0).path("errorKind").asString())
+                    .isEqualTo("RATE_LIMIT");
+        });
+
+        realClaude(fake);   // 같은 창에서 재기동
+        assertThat(runAt("2026-12-01T00:59:00").message()).contains("그 세션은 이미 미뤘음");
+        assertThat(fake.requests).as("다시 부르지 않음").hasSize(1);
+
+        fake.rateLimited().answer(KrClaudeFixtures.decision(0, "관망"));
+        sessionData(NEXT, S, everyCodeOn(NEXT));
+        PaperDecisionJob.Result started = runAt("2026-12-02T00:58:30");   // 기한 12-02 01:00까지 정확히 90초
+
+        assertThat(started.outcome()).isEqualTo(PaperDecisionJob.STARTED);
+        assertThat(sleeper.sleeps).containsExactly(java.time.Duration.ofSeconds(30));
+        assertThat(fake.requests.subList(1, 3)).extracting(KrClaudeFixtures.Request::timeoutSeconds)
+                .as("90초 → 기다린 뒤 60초").containsExactly(90, 60);
+        assertThat(krDecisions()).allSatisfy(d -> assertThat(d.asOfTradingDate()).isEqualTo(NEXT));
+        assertThat(store.books.get("kr_claude").startedOn()).isEqualTo(NEXT);
+    }
+
+    @Test
+    @DisplayName("K28·사용자 결정 w12 — 429가 아닌 API 오류(5xx·529)는 예전처럼 기다리지 않고 바로 한 번 더 부름 — 그 재시도에도 최소 대기 한도 60초(첫 호출이 끝났을 때 55초면 다시 부르지 않고 미룸)")
+    void claudeStartServerErrorRetriesAtOnce() {
+        KrClaudeFixtures.FakeAi fake = new KrClaudeFixtures.FakeAi();
+        fake.fail("HTTP", "HTTP 500 (api_error)");
+        fake.duringCall = () -> clock.set(kst("2026-12-01T00:59:05"));   // 첫 호출이 00:59:05에 끝남 — 기한까지 55초
+        realClaude(fake);
+
+        PaperDecisionJob.Result postponed = runAt("2026-12-01T00:58:50");
+
+        assertThat(postponed.outcome()).isEqualTo(PaperDecisionJob.START_POSTPONED);
+        assertThat(fake.requests).hasSize(1);
+        assertThat(sleeper.sleeps).isEmpty();
+        assertThat(postponed.message()).contains("까지 55초 — 최소 대기 한도 60초보다 짧아 Claude를 다시 부르지 않음(첫 호출 API 오류)");
+        assertNotStarted(store);
+
+        fake.fail("HTTP", "HTTP 529 (overloaded_error) — Anthropic 서버가 과부하입니다. 잠시 후 다시 시도하세요.")
+                .answer(KrClaudeFixtures.decision(0, "관망"));
+        sessionData(NEXT, S, everyCodeOn(NEXT));
+        PaperDecisionJob.Result started = runAt("2026-12-01T22:30");
+
+        assertThat(started.outcome()).isEqualTo(PaperDecisionJob.STARTED);
+        assertThat(fake.requests).as("첫 호출 + 바로 재시도").hasSize(3);
+        assertThat(sleeper.sleeps).as("기다리지 않음").isEmpty();
+        assertThat(fake.requests.get(2).user()).isEqualTo(fake.requests.get(1).user());
+        assertThat(krDecisions().get(1).retryCount()).isEqualTo(1);
         assertThat(store.books.get("kr_claude").startedOn()).isEqualTo(NEXT);
     }
 
