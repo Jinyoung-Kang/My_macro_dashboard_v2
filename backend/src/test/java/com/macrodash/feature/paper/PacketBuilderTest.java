@@ -1116,6 +1116,50 @@ class PacketBuilderTest {
     }
 
     @Test
+    @DisplayName("스위치는 설정 이력에 남는다(K22) — 출발일 저장 한 번(컨센서스·3단계 스위치·예약 9)이 판 +1·changed_keys, 그 판으로 만든 패킷은 settingsVersion = 새 판·packetVersion 6, 끄면 다시 5")
+    void consensusSwitchIsRecordedInTheSettingsHistory() {
+        activeClaude();
+        PaperSettingsService settings = PaperFixtures.settings(store);
+        int before = store.settings().orElseThrow().version();
+        Packet v5Packet = builder.build(MON, RuleBookService.SCHEDULED, false, 0, store.settings().orElseThrow());
+        JsonNode v5 = v5Packet.body().get(PacketBuilder.BASIS);
+        assertThat(v5.get("settingsVersion").asInt()).isEqualTo(before);
+        assertThat(v5.get("packetVersion").asInt()).isEqualTo(5);
+
+        // 명세 §4-12·§9 '출발' — S 21:55~22:30에 세 스위치와 예약 9를 한 번에 저장(설정 화면 PATCH와 같은 경로).
+        ObjectNode patch = MAPPER.createObjectNode();
+        patch.putObject("calendar").put("consensus", true);
+        patch.putObject("claude").put("schemaV3", true).put("figureCheck", true);
+        patch.put("apiScheduledReserve", 9);
+        Map<String, Object> saved = settings.update(patch);
+        assertThat(saved.get("ok")).isEqualTo(true);
+        assertThat(saved.get("version")).isEqualTo(before + 1);
+        assertThat(saved.get("changedKeys")).isEqualTo(List.of("calendar.consensus", "claude.schemaV3",
+                "claude.figureCheck", "apiScheduledReserve"));
+        assertThat(store.settingsHistory(1)).singleElement().satisfies(row -> {
+            assertThat(row.version()).isEqualTo(before + 1);
+            assertThat(row.changedKeys()).contains("calendar.consensus");
+            assertThat(row.body().path("calendar").path("consensus").asBoolean()).isTrue();
+        });
+        JsonNode v6 = builder.build(MON, RuleBookService.SCHEDULED, false, 0, store.settings().orElseThrow()).body()
+                .get(PacketBuilder.BASIS);
+        assertThat(v6.get("settingsVersion").asInt()).isEqualTo(before + 1);
+        assertThat(v6.get("packetVersion").asInt()).isEqualTo(6);
+        // 그 판 전의 행으로 다시 만든 패킷(결정이 읽은 판)은 판 5 그대로 — 판은 저장일에만 바뀜.
+        assertThat(builder.build(MON, RuleBookService.SCHEDULED, false, 0, store.settingsAt(before).orElseThrow())
+                .sha256()).isEqualTo(v5Packet.sha256());
+
+        ObjectNode off = MAPPER.createObjectNode();
+        off.putObject("calendar").put("consensus", false);
+        Map<String, Object> reverted = settings.update(off);
+        assertThat(reverted.get("changedKeys")).isEqualTo(List.of("calendar.consensus"));
+        JsonNode back = builder.build(MON, RuleBookService.SCHEDULED, false, 0, store.settings().orElseThrow()).body()
+                .get(PacketBuilder.BASIS);
+        assertThat(back.get("settingsVersion").asInt()).isEqualTo(before + 2);
+        assertThat(back.get("packetVersion").asInt()).isEqualTo(5);
+    }
+
+    @Test
     @DisplayName("컨센서스 층의 발표치 — 결정 순간 전에 받은 날만(정기 10-27 07:30 KST 전에 받은 값은 싣고, 같은 저장본으로 만든 초기 결정 10-23 패킷에는 없음)")
     void consensusActualOnlyBeforeTheDecisionInstant() {
         consensusOn();

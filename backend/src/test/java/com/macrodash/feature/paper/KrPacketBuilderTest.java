@@ -689,6 +689,29 @@ class KrPacketBuilderTest {
     }
 
     @Test
+    @DisplayName("판 6은 늘 — 두 책 공통 스위치 calendar.consensus를 켜도 꺼도 한국 패킷은 같은 글자, 1b 컨센서스는 null + '한국 컨센서스 출처 없음'(K20·K22, E1b)")
+    void krPacketIsVersion6RegardlessOfTheConsensusSwitch() {
+        ObjectNode body = (ObjectNode) store.settings.body();
+        body.putObject("calendar").put("consensus", false);
+        Packet off = scheduled();
+        body.putObject("calendar").put("consensus", true);
+        clock.set(READ_D);
+        Packet on = builder.build(run(), D, RuleBookService.SCHEDULED, false, 3, quotesD(), READ_D);
+
+        assertThat(on.text()).isEqualTo(off.text());
+        assertThat(on.sha256()).isEqualTo(off.sha256());
+        assertThat(on.body().path("1_basis").path("packetVersion").asInt()).isEqualTo(KrPacketBuilder.PACKET_VERSION)
+                .isEqualTo(PacketBuilder.PACKET_VERSION_CONSENSUS).isEqualTo(6);
+        JsonNode calendar = on.body().path("1b_calendar");
+        assertThat(calendar.has("consensus")).isTrue();
+        assertThat(calendar.path("consensus").isNull()).isTrue();
+        assertThat(calendar.path("consensusNote").asString()).isEqualTo(KrCalendarSection.NO_CONSENSUS);
+        // 미국 컨센서스 저장본(Nasdaq — 한국 0행)은 한국 패킷이 읽지 않습니다.
+        verify(reader, never()).read(eq(Datasets.SNAP_US_CONSENSUS), org.mockito.ArgumentMatchers.anyLong(), any());
+        verify(reader, never()).readStored(Datasets.SNAP_US_CONSENSUS);
+    }
+
+    @Test
     @DisplayName("크기 예산 — 넘으면 U 줄을 점수 낮은 쪽부터 8_prices·8b에서 함께 자르고(가장 적게) 잘린 수를 적음, 보유·ETF는 남음")
     void trimsUniverseRowsToTheTokenBudget() {
         Packet full = scheduled();
