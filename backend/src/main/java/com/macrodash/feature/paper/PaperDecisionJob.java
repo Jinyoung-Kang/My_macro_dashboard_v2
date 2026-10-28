@@ -403,10 +403,15 @@ public class PaperDecisionJob {
             return new Result(TOO_EARLY, d, null, null, null, "결정 시각 " + Kst.stamp(decisionAt) + " 전");
         }
         Work work = pendingWork(market, d);
+        Instant deadline = market.deadlineInstant(d, times.decision(), times.deadline());
         if (!work.any()) {
+            if (!now.isBefore(deadline) && market.afterDeadline() == PaperMarket.AfterDeadline.NO_TRADE
+                    && pastDeadlineRecordMissing(market, d)) {
+                // 기한 지남 행은 썼는데 그 기록만 못 썼음(기록 실패·그 사이 재기동) — 행은 다시 쓰지 않고 기록만 남깁니다(재기동해도 한 번).
+                return pastDeadline(market, now, d, deadline);
+            }
             return new Result(ALREADY_DECIDED, d, null, null, null, d + " 결정·게이트 지표를 이미 남겼습니다");
         }
-        Instant deadline = market.deadlineInstant(d, times.decision(), times.deadline());
         if (!now.isBefore(deadline) && market.afterDeadline() == PaperMarket.AfterDeadline.NO_TRADE) {
             // 기한이 지난 세션은 그 시장 규칙상 결정하지 않습니다 — 관측치·장부도 여기서 처리하지 않음(리스크 점검의 몫).
             return pastDeadline(market, now, d, deadline);
@@ -821,6 +826,23 @@ public class PaperDecisionJob {
             log.debug("모의 매매 결정 작업({}): {}", market.code(), message);
         }
         return new Result(PAST_DEADLINE, d, null, rulesRow, claudeRow, message);
+    }
+
+    /**
+     * 그 세션에 기한 지남 행(응답 {@code pastDeadline} — 규칙 계좌 NO_TRADE·SKIPPED, Claude 계좌 SKIPPED)이 있는데 그 세션 {@value #PAST_DEADLINE}
+     * 기록이 없음 — 행을 쓴 뒤 기록을 쓰지 못함(기록은 실패를 삼킴, 또는 그 사이 재기동). 다음 주기가 기록만 남깁니다({@value #PAST_DEADLINE}
+     * 설명의 '쓰지 못했으면 다음 주기에 다시').
+     */
+    private boolean pastDeadlineRecordMissing(MarketRun market, LocalDate d) {
+        boolean row = false;
+        for (String book : List.of(market.rulesBook(), market.claudeBook())) {
+            for (String kind : List.of(RuleBookService.SCHEDULED, RuleBookService.REBALANCE)) {
+                row |= store.decisionFor(book, d, kind).map(Decision::response)
+                        .map(response -> response.path("pastDeadline").asBoolean(false)).orElse(false);
+            }
+        }
+        return row && store.jobRunsFor(market.jobName(JOB), d).stream()
+                .noneMatch(r -> PAST_DEADLINE.equals(r.outcome()));
     }
 
     /** 그 세션 작업 기록 중 가장 최근의 그 계좌 몫 판정({@value #RULES_GATES}·{@value #CLAUDE_GATES} — 기한 전), 없으면 null. */

@@ -53,6 +53,8 @@ class KrRulesJobTest {
     private String failLedgerFor;
     /** 규칙 계좌 결정 행 쓰기를 실패시킴(시험 — 게이트를 통과한 뒤의 결정 예외). */
     private boolean failRulesDecision;
+    /** 기한 지남(PAST_DEADLINE) 작업 기록 쓰기를 실패시킴(시험 — 행은 썼는데 기록만 못 씀). */
+    private boolean failPastDeadlineRecord;
 
     @BeforeEach
     void setUp() {
@@ -71,6 +73,15 @@ class KrRulesJobTest {
                     throw new IllegalStateException("시험용 결정 쓰기 오류");
                 }
                 return super.insertDecisionIfAbsent(d);
+            }
+
+            @Override
+            public void recordJobRun(String job, java.time.Instant startedAt, java.time.Instant finishedAt, String outcome,
+                                     JsonNode detail) {
+                if (failPastDeadlineRecord && PaperDecisionJob.PAST_DEADLINE.equals(outcome)) {
+                    throw new IllegalStateException("시험용 작업 기록 오류");
+                }
+                super.recordJobRun(job, startedAt, finishedAt, outcome, detail);
             }
         };
         reader = PaperFixtures.quietReader();
@@ -1552,6 +1563,34 @@ class KrRulesJobTest {
         assertThat(krRuns()).as("기한 지남 기록은 그 세션에 한 번(기다림 한 줄 + 기한 지남)").hasSize(2);
         assertThat(runAt("2026-11-03T01:20").outcome()).isEqualTo(PaperDecisionJob.ALREADY_DECIDED);
         assertThat(krRuns()).hasSize(2);
+    }
+
+    @Test
+    @DisplayName("기한 지남 행은 썼는데 PAST_DEADLINE 기록만 못 썼으면(DB 오류·그 사이 재기동) 다음 주기에 기록만 남김 — 행은 다시 쓰지 않고 기록은 그 세션에 한 번, 그 뒤는 ALREADY_DECIDED")
+    void pastDeadlineRecordIsWrittenNextCycleWhenOnlyTheRecordFailed() {
+        quotes(R, Set.of("069500"));
+        fsc(FRI);
+        assertThat(runAt("2026-11-02T23:00").outcome()).isEqualTo(PaperDecisionJob.DATA_NOT_READY);
+        failPastDeadlineRecord = true;
+
+        PaperDecisionJob.Result first = runAt("2026-11-03T01:00");
+
+        assertThat(first.outcome()).isEqualTo(PaperDecisionJob.PAST_DEADLINE);
+        assertThat(first.rules()).as("행은 씀").isNotNull();
+        assertThat(krRuns()).extracting(JobRun::outcome).as("기록은 못 씀").containsExactly(PaperDecisionJob.DATA_NOT_READY);
+
+        failPastDeadlineRecord = false;
+        job = job(new PaperMarketData(reader, repository));   // 그 사이 재기동해도 같음(저장된 행·기록으로 판정)
+        PaperDecisionJob.Result retry = runAt("2026-11-03T01:10");
+
+        assertThat(retry.outcome()).isEqualTo(PaperDecisionJob.PAST_DEADLINE);
+        assertThat(rulesDecisions()).extracting(d -> d.asOfTradingDate() + " " + d.kind() + " " + d.status())
+                .as("행은 다시 쓰지 않음").containsExactly("2026-10-29 INITIAL OK", "2026-11-02 REBALANCE NO_TRADE");
+        assertThat(krRuns()).extracting(JobRun::outcome)
+                .containsExactly(PaperDecisionJob.DATA_NOT_READY, PaperDecisionJob.PAST_DEADLINE);
+        assertThat(krRuns().get(1).detail().path("tradingDate").asString()).isEqualTo(R.toString());
+        assertThat(runAt("2026-11-03T01:20").outcome()).isEqualTo(PaperDecisionJob.ALREADY_DECIDED);
+        assertThat(krRuns()).as("기록은 그 세션에 한 번").hasSize(2);
     }
 
     @Test
