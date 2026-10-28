@@ -1,11 +1,15 @@
 package com.macrodash.feature.paper;
 
+import com.macrodash.analytics.CalendarConsensus;
 import com.macrodash.analytics.CalendarWindow;
 import com.macrodash.store.Snapshot;
 import com.macrodash.support.Json;
 import tools.jackson.databind.JsonNode;
 
+import java.time.Instant;
 import java.time.LocalDate;
+import java.time.OffsetDateTime;
+import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashSet;
@@ -33,6 +37,11 @@ import java.util.TreeMap;
  * 적습니다. 출처 코드는 날짜 순으로 처음 나온 순서(s1, s2 …)라 같은 입력이면 같은 코드입니다.
  *
  * <p>초기 결정(기준일 2026-10-23)에도 앞날 일정은 지금 수집본뿐이라 매크로 카드처럼 {@code asOfMismatch:true}를 붙입니다.
+ *
+ * <p><b>컨센서스 층</b>(2단계 명세 §4-12·K22, E1b — 설정 {@code calendar.consensus}가 켜졌을 때만, {@link Consensus}): 거시 줄에
+ * {@code forecast}·{@code previous}·{@code unit}·{@code consensusSource} 열을 더하고({@link CalendarConsensus}가 같은 날 Nasdaq 줄 하나를 붙임 —
+ * 못 붙인 줄은 값 null + {@code consensus.notes}의 사유), 결정 순간 전에 받은 발표치가 한 줄이라도 있으면 {@code actual} 열도 둡니다(늘 비는
+ * 열을 싣지 않음 — 창이 기준일 다음 세션부터라 정기 결정에서는 없음). 꺼져 있으면 섹션은 한 글자도 다르지 않습니다(미국 판 5 고정본).
  */
 final class CalendarSection {
 
@@ -60,6 +69,24 @@ final class CalendarSection {
     static final String HORIZON_NOTE = "거시 일정은 이 기간에 수집한 것뿐 — 창 중 이 밖의 날짜는 확인하지 못함(일정 없음이 아님)";
     /** 열·목록 설명 — 창(from·to)과 열 이름이 말하는 것은 빼고 헷갈릴 것만. */
     static final String UNITS = "미국 동부 날짜, FOMC는 성명일. nextDateUnknown = 지난 실적일만 있음";
+    /** 컨센서스 층을 켰을 때 거시 줄 끝에 더하는 열(E1b) — {@code actual}은 결정 순간 전에 받은 발표치가 있을 때만 {@code previous} 뒤에. */
+    static final List<String> CONSENSUS_COLUMNS = List.of("forecast", "previous", "unit", "consensusSource");
+    static final String ACTUAL_COLUMN = "actual";
+    /** 컨센서스 출처 — 수집기 us_calendar_consensus(B9)가 받는 곳. */
+    static final String CONSENSUS_PROVIDER = "Nasdaq 경제 캘린더(비공식 참고)";
+    static final String CONSENSUS_NOTE = "날짜는 공식 일정(FRED·FOMC)이 정하고 값은 같은 날 Nasdaq 줄 하나를 대응표로 붙임"
+            + "(consensusSource = 그 줄 이름). forecast = 예상치(null이면 아직 없음), previous = 직전 발표치. 못 붙인 줄은 notes";
+    static final String CONSENSUS_MISSING = "자료 없음 — 컨센서스 저장본이 없습니다";
+
+    /**
+     * 컨센서스 층 입력 — 설정 {@code calendar.consensus}가 켜졌을 때만 넘깁니다(꺼짐 = null — 섹션 그대로).
+     *
+     * @param dataset  저장본 이름(출처 문구 — {@code Datasets})
+     * @param snapshot 읽은 저장본(없으면 빈 Optional — "자료 없음", 거시 줄의 컨센서스 칸은 null)
+     * @param knownBy  결정 순간 — 받은 시각이 이 이하인 날의 발표치만 실음({@link CalendarConsensus#match})
+     */
+    record Consensus(String dataset, Optional<Snapshot> snapshot, Instant knownBy) {
+    }
 
     /** 섹션 본문과 결정 기록의 측정 태그. */
     record Built(Map<String, Object> section, DecisionMeasure measure, CalendarWindow.Result result) {
@@ -132,6 +159,16 @@ final class CalendarSection {
      */
     static Built build(String dataset, Optional<Snapshot> snapshot, LocalDate asOf, Collection<String> targets,
                        boolean initial) {
+        return build(dataset, snapshot, asOf, targets, initial, null);
+    }
+
+    /**
+     * 섹션 본문 — 컨센서스 층을 켰으면({@code consensus} ≠ null) 거시 줄에 컨센서스 열을 더합니다(클래스 설명).
+     *
+     * @param consensus 컨센서스 층 입력. null이면 층 없음(설정 {@code calendar.consensus} 꺼짐 — 섹션은 판 5 그대로)
+     */
+    static Built build(String dataset, Optional<Snapshot> snapshot, LocalDate asOf, Collection<String> targets,
+                       boolean initial, Consensus consensus) {
         Snapshot snap = snapshot == null ? null : snapshot.orElse(null);
         CalendarWindow.Stored stored = stored(snap == null ? null : snap.payload());
         CalendarWindow.Result r = CalendarWindow.compute(stored, asOf, targets);
@@ -183,9 +220,27 @@ final class CalendarSection {
                 : r.fomcPastConstant() ? FOMC_NEEDS_UPDATE : FOMC_OK);
         out.put("fomc", fomc);
         out.put("units", UNITS);
+        Snapshot consensusSnap = consensus == null || consensus.snapshot() == null ? null
+                : consensus.snapshot().orElse(null);
+        CalendarConsensus.Stored consensusStored = consensus == null ? null
+                : consensusStored(consensusSnap == null ? null : consensusSnap.payload());
+        Map<String, Object> consensusOut = null;
+        if (consensus != null) {
+            consensusOut = new LinkedHashMap<>();
+            consensusOut.put("source", "snapshot " + consensus.dataset() + " — " + CONSENSUS_PROVIDER);
+            if (consensusStored == null) {
+                consensusOut.put("missing", CONSENSUS_MISSING + "(" + consensus.dataset() + ")");
+            } else {
+                consensusOut.put("generatedAtKst", consensusSnap.collectedAt() == null ? null
+                        : consensusSnap.collectedAtKst());
+                consensusOut.put("note", CONSENSUS_NOTE);
+            }
+            out.put("consensus", consensusOut);
+        }
 
         Map<String, String> codes = new LinkedHashMap<>();
         List<List<Object>> macroRows = new ArrayList<>();
+        List<CalendarConsensus.Match> matches = new ArrayList<>();
         List<List<Object>> earningsRows = new ArrayList<>();
         List<String> stale = new ArrayList<>();
         for (CalendarWindow.Row row : r.rows()) {
@@ -204,13 +259,16 @@ final class CalendarSection {
                 values.add(row.name());
                 values.add(code);
                 macroRows.add(values);
+                if (consensus != null) {
+                    matches.add(CalendarConsensus.match(consensusStored, row, consensus.knownBy()));
+                }
             }
             if (Boolean.TRUE.equals(row.isStale())) {
                 stale.add(row.name());
             }
         }
         Map<String, Object> macro = new LinkedHashMap<>();
-        macro.put("columns", MACRO_COLUMNS);
+        macro.put("columns", consensus == null ? MACRO_COLUMNS : withConsensus(macroRows, matches, consensusOut));
         macro.put("rows", macroRows);
         out.put("macro", macro);
         Map<String, Object> earnings = new LinkedHashMap<>();
@@ -236,6 +294,97 @@ final class CalendarSection {
         codes.forEach((source, code) -> sources.put(code, source));
         out.put("sources", sources);
         return new Built(out, DecisionMeasure.ofCalendar(r), r);
+    }
+
+    /**
+     * 거시 줄 끝에 컨센서스 칸을 붙이고 열 이름을 돌려줍니다 — {@code actual}은 실을 값이 한 줄이라도 있을 때만 열로 둡니다. 못 붙인 줄·주의가
+     * 있는 줄은 {@code consensus.notes}에 [날짜, 이름, 사유]로 적습니다(값 칸에 사유 글을 섞지 않음).
+     */
+    private static List<String> withConsensus(List<List<Object>> macroRows, List<CalendarConsensus.Match> matches,
+                                              Map<String, Object> consensusOut) {
+        boolean anyActual = matches.stream().anyMatch(m -> m.actual() != null);
+        List<String> columns = new ArrayList<>(MACRO_COLUMNS);
+        columns.add(CONSENSUS_COLUMNS.get(0));
+        columns.add(CONSENSUS_COLUMNS.get(1));
+        if (anyActual) {
+            columns.add(ACTUAL_COLUMN);
+        }
+        columns.addAll(CONSENSUS_COLUMNS.subList(2, CONSENSUS_COLUMNS.size()));
+        List<List<Object>> notes = new ArrayList<>();
+        for (int i = 0; i < macroRows.size(); i++) {
+            List<Object> values = macroRows.get(i);
+            CalendarConsensus.Match m = matches.get(i);
+            values.add(PacketBuilder.decimal(m.forecast(), CONSENSUS_SCALE));
+            values.add(PacketBuilder.decimal(m.previous(), CONSENSUS_SCALE));
+            if (anyActual) {
+                values.add(PacketBuilder.decimal(m.actual(), CONSENSUS_SCALE));
+            }
+            values.add(m.unit());
+            values.add(m.name());
+            if (m.note() != null) {
+                List<Object> note = new ArrayList<>(3);   // 이름이 null일 수 있어 List.of를 쓰지 않음
+                note.add(values.get(0));
+                note.add(values.get(2));
+                note.add(m.note());
+                notes.add(note);
+            }
+        }
+        if (!notes.isEmpty()) {
+            consensusOut.put("notes", notes);
+        }
+        return List.copyOf(columns);
+    }
+
+    /** 컨센서스 값의 자릿수 — Nasdaq 글자는 소수 셋째 자리까지(4.000%·0.034M·43.281K, 2026-10-28 저장본). */
+    static final int CONSENSUS_SCALE = 4;
+
+    /**
+     * 컨센서스 저장본 payload → 계산 입력. {@code days}가 객체가 아니면 null("자료 없음"). 날마다 {@code status} "ok"인 것만,
+     * 줄의 숫자·단위는 형이 맞을 때만(틀리면 null — 0으로 채우지 않음), 받은 시각은 ISO 시각일 때만.
+     */
+    static CalendarConsensus.Stored consensusStored(JsonNode payload) {
+        if (payload == null || !payload.isObject()) {
+            return null;
+        }
+        JsonNode days = Json.child(payload, "days");
+        if (days == null || !days.isObject()) {
+            return null;
+        }
+        Map<LocalDate, CalendarConsensus.Day> out = new TreeMap<>();
+        for (Map.Entry<String, JsonNode> entry : days.properties()) {
+            LocalDate date = Json.parseDate(entry.getKey());
+            JsonNode day = entry.getValue();
+            if (date == null || day == null || !day.isObject() || !"ok".equals(string(day, "status"))) {
+                continue;
+            }
+            List<CalendarConsensus.Line> lines = new ArrayList<>();
+            for (JsonNode row : Json.array(day, "rows")) {
+                if (row == null || !row.isObject()) {
+                    continue;
+                }
+                lines.add(new CalendarConsensus.Line(string(row, "name"), Json.asDouble(row, "forecast"),
+                        Json.asDouble(row, "previous"), Json.asDouble(row, "actual"), string(row, "unit"),
+                        Boolean.TRUE.equals(bool(row, "unitMismatch"))));
+            }
+            out.put(date, new CalendarConsensus.Day(lines, instant(string(day, "fetchedAt")),
+                    Boolean.TRUE.equals(bool(day, "isStale"))));
+        }
+        JsonNode horizonNode = Json.child(payload, "horizon");
+        LocalDate from = Json.parseDate(string(horizonNode, "from"));
+        LocalDate to = Json.parseDate(string(horizonNode, "to"));
+        return new CalendarConsensus.Stored(out, from == null || to == null ? null : new CalendarWindow.Window(from, to));
+    }
+
+    /** ISO 시각(오프셋 포함, 수집기의 {@code datetime.isoformat()}). 없거나 읽을 수 없으면 null. */
+    private static Instant instant(String text) {
+        if (text == null || text.isBlank()) {
+            return null;
+        }
+        try {
+            return OffsetDateTime.parse(text.strip()).toInstant();
+        } catch (DateTimeParseException e) {
+            return null;
+        }
     }
 
     /** 날짜 지도 → 글자 지도(이름 순, null 값 유지). */

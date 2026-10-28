@@ -389,4 +389,229 @@ class CalendarSectionTest {
         assertThat(rows(built.section(), "earnings")).hasSize(FundamentalsSection.MAX_ROWS);
         assertThat(tokens).as("1b_calendar 어림 토큰").isLessThanOrEqualTo(750);
     }
+
+    // ------------------------------------------------------------------ 컨센서스 층(E1b — calendar.consensus 켜짐)
+    private static final String CONSENSUS = "calendar.us_consensus";
+    /** 동부 10-26 08:57에 받은 저장본(KST 21:57). */
+    private static final String CONSENSUS_FETCHED = "2026-10-26T12:57:00+00:00";
+    /** 기준일 10-23의 미국 결정 순간(10-24 07:30 KST) — NewsEvents.window(10-23, 07:30)의 끝. */
+    private static final Instant KNOWN_BY = Instant.parse("2026-10-23T22:30:00Z");
+
+    private static ObjectNode nasdaq(ArrayNode rows, String name, String timeEt, Double forecast, Double previous,
+                                     Double actual, String unit) {
+        ObjectNode r = rows.addObject();
+        r.put("name", name);
+        r.put("timeEt", timeEt);
+        r.put("timeText", timeEt);
+        if (forecast == null) {
+            r.putNull("forecast");
+        } else {
+            r.put("forecast", forecast);
+        }
+        if (previous == null) {
+            r.putNull("previous");
+        } else {
+            r.put("previous", previous);
+        }
+        if (actual == null) {
+            r.putNull("actual");
+        } else {
+            r.put("actual", actual);
+        }
+        if (unit == null) {
+            r.putNull("unit");
+        } else {
+            r.put("unit", unit);
+        }
+        r.putNull("importance");
+        return r;
+    }
+
+    private static ArrayNode day(ObjectNode days, String date, String fetchedAt) {
+        ObjectNode d = days.putObject(date);
+        d.put("date", date);
+        d.put("queryDate", LocalDate.parse(date).plusDays(1).toString());
+        d.put("status", "ok");
+        d.put("fetchedAt", fetchedAt);
+        return d.putArray("rows");
+    }
+
+    /**
+     * 수집기 us_calendar_consensus의 저장본 모양(collector/app/tasks/us_consensus.py 설명) — 동부 10-26부터 18일. 줄 이름·값은 2026-10-28
+     * 로컬 저장본의 Nasdaq 미국 행(FOMC 10-28·GDP와 PCE 10-29·고용 11-06), 10-27은 그 날 받지 못함(직전 값도 없어 빠짐).
+     */
+    private static ObjectNode consensusPayload() {
+        ObjectNode p = MAPPER.createObjectNode();
+        p.put("generatedAt", CONSENSUS_FETCHED);
+        p.put("forDate", "2026-10-26");
+        p.put("source", "Nasdaq api/calendar/economicevents");
+        p.put("queryOffsetDays", 1);
+        ObjectNode horizon = p.putObject("horizon");
+        horizon.put("from", "2026-10-26");
+        horizon.put("to", "2026-11-13");
+        p.putNull("importance");
+        ObjectNode days = p.putObject("days");
+        day(days, "2026-10-26", CONSENSUS_FETCHED);
+        ArrayNode fomc = day(days, "2026-10-28", CONSENSUS_FETCHED);
+        nasdaq(fomc, "FOMC Statement", "14:00", null, null, null, null);
+        nasdaq(fomc, "Fed Interest Rate Decision", "14:00", 4.0, 4.0, null, "%");
+        nasdaq(fomc, "FOMC Press Conference", "14:30", null, null, null, null);
+        ArrayNode gdp = day(days, "2026-10-29", CONSENSUS_FETCHED);
+        nasdaq(gdp, "Core PCE Price Index", "08:30", 0.3, 0.2, null, "%");
+        nasdaq(gdp, "Core PCE Price Index", "08:30", 3.1, 3.0, null, "%");
+        nasdaq(gdp, "GDP", "08:30", 3.2, 2.2, null, "%");
+        ArrayNode jobs = day(days, "2026-11-06", CONSENSUS_FETCHED);
+        nasdaq(jobs, "Nonfarm Payrolls", "09:30", null, 29.0, null, "K");
+        p.putObject("failed").put("2026-10-27", "HTTP 503");
+        return p;
+    }
+
+    private static CalendarSection.Built withConsensus(JsonNode consensus, Instant knownBy) {
+        Optional<Snapshot> snap = consensus == null ? Optional.empty()
+                : Optional.of(new Snapshot(CONSENSUS, consensus, "json", "ok", null, Instant.parse("2026-10-26T12:57:30Z")));
+        return CalendarSection.build(DATASET, snapshot(payload("ok", true)), AS_OF, List.of("AMZN"), false,
+                new CalendarSection.Consensus(CONSENSUS, snap, knownBy));
+    }
+
+    @Test
+    @DisplayName("컨센서스 층 — 머리말 consensus(출처·수집 시각·설명), 거시 줄 끝에 forecast·previous·unit·consensusSource, 못 붙인 줄은 notes")
+    void consensusLayer() {
+        Map<String, Object> s = withConsensus(consensusPayload(), KNOWN_BY).section();
+        assertThat(s.keySet()).containsExactly("source", "generatedAtKst", "window", "note", "asOfMismatch",
+                "fredStatus", "lastKnownDate", "fomc", "units", "consensus", "macro", "earnings", "sources");
+        Map<String, Object> header = table(s, "consensus");
+        assertThat(header.keySet()).containsExactly("source", "generatedAtKst", "note", "notes");
+        assertThat(header.get("source")).isEqualTo("snapshot calendar.us_consensus — Nasdaq 경제 캘린더(비공식 참고)");
+        assertThat(header.get("generatedAtKst")).isEqualTo("2026-10-26 21:57 KST");
+        assertThat(header.get("note")).isEqualTo(CalendarSection.CONSENSUS_NOTE);
+        assertThat(table(s, "macro").get("columns")).isEqualTo(List.of("date", "kind", "name", "source", "forecast",
+                "previous", "unit", "consensusSource"));
+        assertThat(json(Map.of("rows", rows(s, "macro")))).isEqualTo("{\"rows\":["
+                + "[\"2026-10-28\",\"FOMC\",\"FOMC 성명\",\"s1\",4,4,\"%\",\"Fed Interest Rate Decision\"],"
+                + "[\"2026-10-29\",\"RELEASE\",\"" + GDP + "\",\"s2\",3.2,2.2,\"%\",\"GDP\"],"
+                + "[\"2026-10-29\",\"RELEASE\",\"" + PCE + "\",\"s2\",null,null,null,null],"
+                + "[\"2026-11-06\",\"RELEASE\",\"" + JOBS + "\",\"s4\",null,29,\"K\",\"Nonfarm Payrolls\"]]}");
+        assertThat(header.get("notes")).isEqualTo(List.of(List.of("2026-10-29", PCE,
+                "그 날 Nasdaq 'Core PCE Price Index' 줄 2개(전월비·전년비 같은 라벨 없음) — 어느 값인지 가를 수 없어 붙이지 않음")));
+        // 실적 표·출처 범례·측정 태그는 층과 상관없이 그대로입니다.
+        Map<String, Object> off = build(snapshot(payload("ok", true)), List.of("AMZN"), false).section();
+        assertThat(s.get("earnings")).isEqualTo(off.get("earnings"));
+        assertThat(s.get("sources")).isEqualTo(off.get("sources"));
+        assertThat(withConsensus(consensusPayload(), KNOWN_BY).measure())
+                .isEqualTo(build(snapshot(payload("ok", true)), List.of("AMZN"), false).measure());
+    }
+
+    @Test
+    @DisplayName("층을 끄면(null) 섹션은 한 글자도 다르지 않다 — 다섯 인자 build와 같은 글자, consensus 키·열 없음")
+    void consensusOffIsUnchanged() {
+        String five = json(build(snapshot(payload("ok", true)), List.of("AMZN"), false).section());
+        String off = json(CalendarSection.build(DATASET, snapshot(payload("ok", true)), AS_OF, List.of("AMZN"), false,
+                null).section());
+        assertThat(off).isEqualTo(five).doesNotContain("consensus").doesNotContain("forecast");
+    }
+
+    @Test
+    @DisplayName("발표치 열 — 결정 순간 전에 받은 발표치가 한 줄이라도 있을 때만 previous 뒤에 actual, 결정 뒤에 받은 발표치는 싣지 않음")
+    void actualColumnOnlyWhenKnownByTheDecision() {
+        ObjectNode early = consensusPayload();
+        ObjectNode gdp = (ObjectNode) early.get("days").get("2026-10-29");
+        gdp.put("fetchedAt", "2026-10-23T21:00:00+00:00");
+        ((ObjectNode) gdp.get("rows").get(2)).put("actual", 3.0);
+        Map<String, Object> s = withConsensus(early, KNOWN_BY).section();
+        assertThat(table(s, "macro").get("columns")).isEqualTo(List.of("date", "kind", "name", "source", "forecast",
+                "previous", "actual", "unit", "consensusSource"));
+        assertThat(rows(s, "macro").get(1).subList(4, 9)).containsExactly(new java.math.BigDecimal("3.2"),
+                new java.math.BigDecimal("2.2"), new java.math.BigDecimal("3"), "%", "GDP");
+        assertThat(rows(s, "macro").get(0).get(6)).as("발표치가 없는 줄은 null").isNull();
+
+        // 같은 발표치를 결정 순간 뒤에 받았으면 그 결정은 볼 수 없었으므로 열째 싣지 않습니다(늘 비는 열을 두지 않음).
+        gdp.put("fetchedAt", "2026-10-23T22:30:01+00:00");
+        Map<String, Object> late = withConsensus(early, KNOWN_BY).section();
+        assertThat(table(late, "macro").get("columns")).isEqualTo(List.of("date", "kind", "name", "source", "forecast",
+                "previous", "unit", "consensusSource"));
+        assertThat(json(late)).doesNotContain("actual");
+    }
+
+    @Test
+    @DisplayName("컨센서스 저장본 없음 — 머리말에 '자료 없음'(설명·notes 없음), 열은 그대로 두고 칸은 null(0으로 채우지 않음)")
+    void consensusMissing() {
+        for (JsonNode payload : java.util.Arrays.<JsonNode>asList(null, MAPPER.createArrayNode(),
+                MAPPER.createObjectNode().put("days", "x"))) {
+            Map<String, Object> s = withConsensus(payload, KNOWN_BY).section();
+            assertThat(table(s, "consensus")).isEqualTo(Map.of("source",
+                    "snapshot calendar.us_consensus — Nasdaq 경제 캘린더(비공식 참고)",
+                    "missing", "자료 없음 — 컨센서스 저장본이 없습니다(calendar.us_consensus)"));
+            assertThat(table(s, "macro").get("columns")).isEqualTo(List.of("date", "kind", "name", "source", "forecast",
+                    "previous", "unit", "consensusSource"));
+            rows(s, "macro").forEach(r -> assertThat(r.subList(4, 8)).containsOnlyNulls());
+        }
+        // 일정 저장본이 없으면 거시 표가 없어 컨센서스 머리말도 두지 않습니다('자료 없음' 사유만).
+        Map<String, Object> noCalendar = CalendarSection.build(DATASET, Optional.empty(), AS_OF, List.of(), false,
+                new CalendarSection.Consensus(CONSENSUS, Optional.empty(), KNOWN_BY)).section();
+        assertThat(noCalendar).doesNotContainKey("consensus").containsKey("missing");
+    }
+
+    @Test
+    @DisplayName("저장본 읽기 — status가 ok가 아닌 날·틀린 형의 값은 쓰지 않고(null), 범위를 못 읽으면 범위 밖을 지어내지 않음")
+    void consensusStoredParsing() {
+        ObjectNode p = consensusPayload();
+        ((ObjectNode) p.get("days").get("2026-10-28")).put("status", "failed");
+        ObjectNode gdp = (ObjectNode) ((ObjectNode) p.get("days").get("2026-10-29")).get("rows").get(2);
+        gdp.put("forecast", "3.2%");
+        gdp.put("unit", 7);
+        ((ObjectNode) p.get("horizon")).put("to", "모름");
+        com.macrodash.analytics.CalendarConsensus.Stored stored = CalendarSection.consensusStored(p);
+        assertThat(stored.horizon()).isNull();
+        assertThat(stored.days()).containsOnlyKeys(LocalDate.parse("2026-10-26"), LocalDate.parse("2026-10-29"),
+                LocalDate.parse("2026-11-06"));
+        com.macrodash.analytics.CalendarConsensus.Line line = stored.days().get(LocalDate.parse("2026-10-29")).lines().get(2);
+        assertThat(line).isEqualTo(new com.macrodash.analytics.CalendarConsensus.Line("GDP", null, 2.2, null, null, false));
+        assertThat(stored.days().get(LocalDate.parse("2026-10-29")).fetchedAt())
+                .isEqualTo(Instant.parse("2026-10-26T12:57:00Z"));
+        Map<String, Object> s = withConsensus(p, KNOWN_BY).section();
+        assertThat(rows(s, "macro").get(0).subList(4, 8)).as("받지 못한 날(10-28 실패)").containsOnlyNulls();
+        assertThat(table(s, "consensus").get("notes").toString()).contains("[2026-10-28, FOMC 성명, 그 날 컨센서스를 받지 못함]");
+    }
+
+    @Test
+    @DisplayName("결정적 + 크기 — 같은 저장본이면 같은 글자, 거시 6건 모두 컨센서스를 붙인 섹션은 1,000토큰(어림) 이하(층 없이 약 730)")
+    void consensusDeterministicAndSize() {
+        assertThat(json(withConsensus(consensusPayload(), KNOWN_BY).section()))
+                .isEqualTo(json(withConsensus(consensusPayload(), KNOWN_BY).section()));
+        ObjectNode p = payload("ok", true);
+        ArrayNode events = (ArrayNode) p.get("macro").get("events");
+        event(events, "FOMC 성명 (경제전망 SEP 포함)", "2026-11-04", "FOMC", null, FOMC_URL).put("sep", true);
+        event(events, "CPI (Consumer Price Index)", "2026-11-05", "RELEASE", 10, BLS);
+        ObjectNode items = (ObjectNode) p.get("earnings").get("items");
+        List<String> targets = new ArrayList<>();
+        for (int i = 0; i < FundamentalsSection.MAX_ROWS; i++) {
+            String ticker = "T" + (char) ('A' + i) + "XQ";
+            item(items, ticker, "2026-10-" + (26 + i % 5), i % 3 == 0 ? null : (i % 2 == 0 ? "BMO" : "AMC"), i % 3 == 0);
+            targets.add(ticker);
+        }
+        // 가장 큰 칸: 줄마다 붙였고(사유 없음) 결정 전 발표치까지 — 값은 Nasdaq에서 본 가장 긴 모양(-130.8B·-132.07B 등).
+        ObjectNode c = MAPPER.createObjectNode();
+        ObjectNode h = c.putObject("horizon");
+        h.put("from", "2026-10-26");
+        h.put("to", "2026-11-13");
+        ObjectNode days = c.putObject("days");
+        String early = "2026-10-23T21:00:00+00:00";
+        nasdaq(day(days, "2026-10-28", early), "Fed Interest Rate Decision", "14:00", -130.875, -132.0725, -130.4375, "B");
+        ArrayNode gdpDay = day(days, "2026-10-29", early);
+        nasdaq(gdpDay, "GDP", "08:30", -130.875, -132.0725, -130.4375, "B");
+        nasdaq(gdpDay, "Core PCE Price Index", "08:30", -130.875, -132.0725, -130.4375, "B");
+        nasdaq(day(days, "2026-11-04", early), "Fed Interest Rate Decision", "14:00", -130.875, -132.0725, -130.4375, "B");
+        nasdaq(day(days, "2026-11-05", early), "CPI", "08:30", -130.875, -132.0725, -130.4375, "B");
+        nasdaq(day(days, "2026-11-06", early), "Nonfarm Payrolls", "08:30", -130.875, -132.0725, -130.4375, "B");
+        Optional<Snapshot> snap = Optional.of(new Snapshot(CONSENSUS, c, "json", "ok", null, Instant.parse("2026-10-23T21:00:30Z")));
+        CalendarSection.Built built = CalendarSection.build(DATASET, snapshot(p), AS_OF, targets, true,
+                new CalendarSection.Consensus(CONSENSUS, snap, KNOWN_BY));
+        assertThat(rows(built.section(), "macro")).hasSize(6).allSatisfy(r -> assertThat(r).hasSize(9));
+        int tokens = PacketBuilder.estimateTokens(json(built.section()));
+        int off = PacketBuilder.estimateTokens(json(CalendarSection.build(DATASET, snapshot(p), AS_OF, targets, true)
+                .section()));
+        // 2026-10-28 잰 값: 층 없이 730 → 층을 켜면 984(+254 — 머리말 설명 약 70·줄마다 약 16·열 이름 약 14). 패킷 목표는
+        // 패킷 목표 크기는 층을 켠 가장 큰 패킷으로 다시 잽니다(PacketBuilder 쪽).
+        assertThat(tokens).as("1b_calendar 어림 토큰 — 층 없이 %d", off).isLessThanOrEqualTo(1_000);
+    }
 }
