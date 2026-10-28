@@ -672,6 +672,33 @@ class KrStartTest {
     }
 
     @Test
+    @DisplayName("K28·사용자 결정 w12(묶음 E 3차 리뷰) — 429 뒤 30초 기다린 재시도가 다시 429면 더 기다리거나 부르지 않고 네 계좌 모두 미룸: 호출 2회·기다림 한 번, 사유 '429 뒤 30초 기다린 재시도 1회 뒤', 미룸 기록의 calls에 429 둘")
+    void claudeStartRateLimitTwiceIsNotRetriedAgain() {
+        KrClaudeFixtures.FakeAi fake = new KrClaudeFixtures.FakeAi();
+        // 세 번째 답(정상)은 '한 번만'이 깨지면 출발해 버리게 둔 덫.
+        fake.rateLimited().rateLimited().answer(KrClaudeFixtures.decision(0, "관망"));
+        realClaude(fake);
+
+        PaperDecisionJob.Result postponed = runAt("2026-11-30T22:30");
+
+        assertThat(postponed.outcome()).isEqualTo(PaperDecisionJob.START_POSTPONED);
+        assertThat(fake.requests).as("첫 호출 + 기다린 재시도 1회").hasSize(2);
+        assertThat(sleeper.sleeps).as("기다림 한 번").containsExactly(java.time.Duration.ofSeconds(30));
+        assertThat(postponed.message()).contains("kr_claude")
+                .contains("Claude 출발 호출 실패(API 오류, 429 뒤 30초 기다린 재시도 1회 뒤)");
+        assertThat(krDecisions()).isEmpty();
+        assertThat(store.orders).isEmpty();
+        assertNotStarted(store);
+        assertThat(krRuns()).singleElement().satisfies(run -> {
+            assertThat(run.outcome()).isEqualTo(PaperDecisionJob.START_POSTPONED);
+            JsonNode claude = run.detail().path("calls").path("kr_claude");
+            assertThat(claude.path("calls").asInt()).isEqualTo(2);
+            assertThat(claude.path("attempts")).extracting(a -> a.path("errorKind").asString())
+                    .containsExactly("RATE_LIMIT", "RATE_LIMIT");
+        });
+    }
+
+    @Test
     @DisplayName("K28·사용자 결정 w12 — 429가 기한까지 90초(기다림 30초 + 최소 대기 한도 60초) 미만에 나면 기다리지 않고 다시 부르지 않으며 네 계좌 모두 미룸(사유·호출 기록과 함께 저장 — 재기동 뒤에도 다시 부르지 않음), 정확히 90초면 30초 기다려 대기 한도 60초로 다시 불러 출발")
     void claudeStartRateLimitNearTheDeadlineIsNotRetried() {
         KrClaudeFixtures.FakeAi fake = new KrClaudeFixtures.FakeAi();
