@@ -84,7 +84,10 @@ import java.util.TreeSet;
  * <p><b>한국 칸</b>(2단계 명세 §4-7·사용자 결정 v2, E2a): 문맥의 {@code unfillable}·{@code wholeShares}는 한국 Claude 계좌만 채웁니다
  * (미국 문맥은 비워 두어 검사 순서·결과·문구가 이 묶음 전 그대로). {@code unfillable}(종목 → 사유)의 <b>매수</b>는 {@link #UNFILLABLE} —
  * 규칙 계좌의 매수 건너뛰기와 같은 판정(이번 관측치에 봉 없음·기준 거래일 거래정지·미처리 기업행위 보유)이고, 그 종목 보유의 매도는 받습니다
- * (장부가 대기로 두고 풀리면 체결 — 규칙 계좌와 같은 조건). {@code wholeShares}(기준 가격·요율)가 있으면 매수는 정수 주로 체결되므로
+ * (장부가 대기로 두고 풀리면 체결 — 규칙 계좌와 같은 조건). 그 매도는 다음 시가에 체결되지 않으므로 2단계의 비중 합·종목 수에서 <b>자리를
+ * 만들지 않습니다</b>(위 "체결 시점"의 늦은 매도와 같은 방식 — 규칙 계좌가 그 매도 대금을 다음 시가 현금 어림에서 빼는 것과 같은 조건, 사용자 결정 v2
+ * '같은 조건', 묶음 E 리뷰). 장부는 그런 매도가 비울 자리를 쓴 매수를 현금 부족으로 줄이거나 취소하고 종목 수 상한을 보지 않으므로, 받으면 실제와
+ * 어긋납니다. {@code wholeShares}(기준 가격·요율)가 있으면 매수는 정수 주로 체결되므로
  * 증가분 금액으로 살 수 있는 수량({@link KrxCosts#affordableQty} — 장부가 체결 때 쓰는 함수, 수수료·슬리피지 원 미만 절사)이 1주 미만이면
  * {@link #BUY_BELOW_ONE_SHARE}, 기준 가격이 없으면 {@link #NO_PRICE}입니다. 예전에는 장부가 체결 때 '목표 금액으로 1주도 살 수 없습니다'로
  * 취소했습니다 — 검증 때 거절해야 결정 기록에 사유가 남습니다. 매도는 정수 주 칸을 보지 않습니다(1주 미만 부분 매도는 {@link #BELOW_ONE_SHARE}).
@@ -459,6 +462,9 @@ public final class OrderValidator {
         Map<String, Double> soldFraction = new HashMap<>();
         // 이른 시점(미국 NEXT_OBSERVATION)에 체결되는 매도만 — 같은 시점 매수의 자리를 만드는 매도(클래스 설명의 "체결 시점").
         Map<String, Double> earlySoldFraction = new HashMap<>();
+        // 받았지만 지금 체결할 수 없어 자리를 만들지 않는 매도(한국 칸 — 거절 문구용): 그 비중(%p)과 전량 매도 종목 수.
+        double blockedFreedPct = 0;
+        int blockedPositions = 0;
         List<Integer> buys = new ArrayList<>();
         for (int i = 0; i < n; i++) {
             if (out[i] != null) {
@@ -475,6 +481,17 @@ public final class OrderValidator {
             }
             used++;
             double fraction = order.sellFraction() == null ? 1.0 : Math.min(1.0, order.sellFraction());
+            if (ctx.unfillable().containsKey(order.ticker())) {
+                // 한국 칸 — 지금 체결할 수 없는 보유의 매도는 받아 대기로 두지만 그 시점에 체결되지 않으므로 같은 시점 매수의 현금·종목
+                // 자리를 만들지 않습니다(클래스 설명의 "한국 칸" — 규칙 계좌가 그 매도 대금을 현금 어림에서 빼는 것과 같은 조건).
+                Double weight = ctx.weightOf(order.ticker());
+                blockedFreedPct += weight == null ? 0.0 : weight * fraction;
+                if (fraction >= 1.0 && !ctx.cashLike().contains(order.ticker())) {
+                    blockedPositions++;
+                }
+                out[i] = Verdict.accept(order, sellDetail(weight, fraction) + UNFILLABLE_SELL_NOTE);
+                continue;
+            }
             soldFraction.put(order.ticker(), fraction);
             if (market.isEarly(order.timing())) {
                 earlySoldFraction.put(order.ticker(), fraction);
@@ -527,17 +544,19 @@ public final class OrderValidator {
                 out[i] = Verdict.reject(order, MONTHLY_CAP, monthlyDetail(ctx, limits, used));
             } else if (newName && positions + 1 > limits.maxPositions()) {
                 out[i] = Verdict.reject(order, MAX_POSITIONS, String.format(Locale.ROOT,
-                        "매수 뒤 종목 수 %d > 상한 %d(현금성 제외)", positions + 1, limits.maxPositions()));
+                        "매수 뒤 종목 수 %d > 상한 %d(현금성 제외)", positions + 1, limits.maxPositions())
+                        + blockedPositionsNote(blockedPositions));
             } else if (newName && early && positionsEarly + 1 > limits.maxPositions()) {
                 out[i] = Verdict.reject(order, MAX_POSITIONS, String.format(Locale.ROOT,
                         "%s 매수인데 %s 전량 매도 %d종목은 그 뒤에 체결돼 자리를 "
                                 + "비우지 못함 — 그 시점 종목 수 %d > 상한 %d(현금성 제외)",
                         market.label(market.earlyTiming()), market.lateLabel(), lateFreed, positionsEarly + 1,
-                        limits.maxPositions()));
+                        limits.maxPositions()) + blockedPositionsNote(blockedPositions));
             } else if (allocated + increment > 100.0 + WEIGHT_EPSILON) {
                 out[i] = Verdict.reject(order, OVER_ALLOCATED, String.format(Locale.ROOT,
                         "매도 뒤 남는 보유 %.2f%% + 앞서 받은 매수 %.2f%%p + 이 주문 %.2f%%p = %.2f%% > 100%% (현재 현금 %.2f%%)",
-                        residual, allocated - residual, increment, allocated + increment, cashPct));
+                        residual, allocated - residual, increment, allocated + increment, cashPct)
+                        + blockedFreedNote(blockedFreedPct));
             } else if (early && allocatedEarly + increment > 100.0 + WEIGHT_EPSILON) {
                 out[i] = Verdict.reject(order, OVER_ALLOCATED, String.format(Locale.ROOT,
                         "%s 매수인데 %s 매도 %.2f%%p는 그 뒤에 체결돼 자리를 만들지 "
@@ -545,7 +564,7 @@ public final class OrderValidator {
                                 + "> 100%% (현재 현금 %.2f%%)",
                         market.label(market.earlyTiming()), market.lateLabel(), residualEarly - residual,
                         residualEarly, market.timingNames().get(market.earlyTiming()), allocatedEarly - residualEarly,
-                        increment, allocatedEarly + increment, cashPct));
+                        increment, allocatedEarly + increment, cashPct) + blockedFreedNote(blockedFreedPct));
             } else {
                 used++;
                 allocated += increment;
@@ -729,6 +748,20 @@ public final class OrderValidator {
             }
         }
         return tickers;
+    }
+
+    /** 받은 매도의 근거 문구 뒤 — 지금 체결할 수 없는 보유의 매도(한국 칸): 대기로 두고 같은 시점 매수의 자리를 만들지 않음. */
+    static final String UNFILLABLE_SELL_NOTE = " — 지금 체결할 수 없어 대기(풀리면 그 뒤 체결) · 이번 매수의 현금·종목 자리를 만들지 않음";
+
+    /** OVER_ALLOCATED 문구 뒤 — 지금 체결할 수 없는 매도가 있었으면 그 비중이 자리를 만들지 못했다고(없으면 빈 글자 — 미국 문구 그대로). */
+    private static String blockedFreedNote(double pct) {
+        return pct > WEIGHT_EPSILON
+                ? String.format(Locale.ROOT, " · 지금 체결할 수 없는 매도 %.2f%%p는 자리를 만들지 못함", pct) : "";
+    }
+
+    /** MAX_POSITIONS 문구 뒤 — 지금 체결할 수 없는 전량 매도가 있었으면 그 종목 수(없으면 빈 글자 — 미국 문구 그대로). */
+    private static String blockedPositionsNote(int count) {
+        return count > 0 ? " · 지금 체결할 수 없는 전량 매도 " + count + "종목은 자리를 비우지 못함" : "";
     }
 
     private static String monthlyDetail(Context ctx, Limits limits, int used) {

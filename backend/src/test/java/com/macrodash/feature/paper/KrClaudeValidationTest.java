@@ -253,6 +253,55 @@ class KrClaudeValidationTest {
     }
 
     @Test
+    @DisplayName("사용자 결정 v2 '같은 조건' — 지금 체결할 수 없는 보유(051910 거래정지)의 매도는 받아 대기로 두되 같은 시가 매수의 현금(OVER_ALLOCATED)·종목 자리(MAX_POSITIONS)를 만들지 않음(규칙 계좌가 그 매도 대금을 현금 어림에서 빼는 것과 같음)")
+    void unfillableSellFreesNoRoomForTheSameOpenBuys() {
+        // 051910 9%(30주 × 300,000 — 거래정지) + 153130 90.936%(842주 × 108,000) + 현금 64,000 = 순자산 1억.
+        LedgerView full = ledger(64_000, position("051910", 30, 300_000), position("153130", 842, 108_000));
+        Plan cash = plan(false, attempt(packet(), "051910", "SELL", null, "005930", "BUY", 9.0), full, quotes());
+
+        assertThat(reasons(cash)).containsExactly("OK", OrderValidator.OVER_ALLOCATED);
+        assertThat(cash.verdicts().get(0).detail()).isEqualTo("보유 9.00% 전량 매도 — 지금 체결할 수 없어 대기(풀리면 그 뒤 체결)"
+                + " · 이번 매수의 현금·종목 자리를 만들지 않음");
+        assertThat(cash.verdicts().get(1).detail()).isEqualTo("매도 뒤 남는 보유 99.94% + 앞서 받은 매수 0.00%p + 이 주문 9.00%p = "
+                + "108.94% > 100% (현재 현금 0.06%) · 지금 체결할 수 없는 매도 9.00%p는 자리를 만들지 못함");
+        Plan alone = plan(false, attempt(packet(), "005930", "BUY", 9.0), full, quotes());
+        assertThat(reasons(alone)).as("그 매도가 없을 때와 같은 판정").containsExactly(OrderValidator.OVER_ALLOCATED);
+
+        // 051910 + 다른 보유 19종목 = 20종목(상한) — 거래정지 종목의 전량 매도는 신규 매수의 자리를 비우지 못함.
+        List<Position> twenty = new ArrayList<>();
+        twenty.add(position("051910", 30, 300_000));
+        for (int i = 1; i <= 19; i++) {
+            twenty.add(position(String.format("9%05d", i), 10, 100_000));
+        }
+        LedgerView crowded = ledger(100_000_000 - 9_000_000 - 19 * 1_000_000, twenty.toArray(Position[]::new));
+        Plan slots = plan(false, attempt(packet(), "051910", "SELL", null, "005930", "BUY", 3.0), crowded, quotes());
+        assertThat(reasons(slots)).containsExactly("OK", OrderValidator.MAX_POSITIONS);
+        assertThat(slots.verdicts().get(1).detail()).isEqualTo("매수 뒤 종목 수 21 > 상한 20(현금성 제외)"
+                + " · 지금 체결할 수 없는 전량 매도 1종목은 자리를 비우지 못함");
+
+        // 체결할 수 있는 보유(207940)의 매도는 그대로 같은 시가 매수의 자리를 만듦.
+        LedgerView fillable = ledger(64_000, position("207940", 7, 1_200_000), position("153130", 842, 108_000),
+                position("000660", 3, 200_000));
+        Plan freed = plan(false, attempt(packet(), "207940", "SELL", null, "005930", "BUY", 8.4), fillable, quotes());
+        assertThat(reasons(freed)).containsExactly("OK", "OK");
+        assertThat(freed.verdicts().get(0).detail()).isEqualTo("보유 8.40% 전량 매도");
+    }
+
+    /** 운용 장부(Claude 계좌) — 보유를 저장소에도 넣고(보유 거래일·기업행위 판정이 읽음) 순자산·비중을 장부와 같은 계산으로. */
+    private LedgerView ledger(double cash, Position... positions) {
+        Map<String, Double> price = new java.util.HashMap<>();
+        Map<String, Integer> qty = new java.util.HashMap<>();
+        for (Position p : positions) {
+            store.upsertPosition(p);
+            price.put(p.ticker(), p.lastPrice());
+            qty.put(p.ticker(), p.qty());
+        }
+        com.macrodash.analytics.PaperLedger.Valuation valuation = com.macrodash.analytics.PaperLedger.value(cash, qty,
+                price);
+        return new LedgerView(cash, valuation.nav(), valuation.exposurePct(), List.of(positions), price);
+    }
+
+    @Test
     @DisplayName("관측치가 없으면 한국 결정도 전부 STALE_INPUT(매도 포함)")
     void missingQuotesRejectEverything() {
         Plan plan = plan(false, attempt(packet(), "005930", "BUY", 3.0, "051910", "SELL", null), view(), Optional.empty());
