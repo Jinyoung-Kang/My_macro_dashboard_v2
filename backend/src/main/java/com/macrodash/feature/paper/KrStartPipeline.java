@@ -53,7 +53,8 @@ import java.util.concurrent.ConcurrentHashMap;
  * 리밸런싱 없음 K2), 규칙 계좌(D1b — {@link KrRuleBookService#startLeg}: 재선정과 같은 계산·입력 동결 K26, INITIAL·S+1 시가 주문), Claude 계좌(E2b —
  * {@link ClaudeBookService#krStartLeg}: 정기 결정과 같은 조립의 출발 패킷·한국 스키마·한국 검증기, 통과 주문은 S+1 시가 대기 주문 — 상한·재시도 1회 뒤
  * 오류·거절·형식 오류·기한은 실패). 계획은 트랜잭션 밖에서 모두 만든 뒤(Claude 호출이 장부 잠금을 붙잡지 않게) 한 번에 씁니다 — 한 계좌라도
- * 실패({@link Plan#failed})하면 어느 계좌에도 쓰지 않습니다(K28 '네 계좌는 함께 출발'). 계좌 몫은 그 세션의 출발 기한을 받고(Claude 몫은 호출 대기
+ * 실패({@link Plan#failed})하면 어느 계좌에도 쓰지 않습니다(K28 '네 계좌는 함께 출발'). 과금되는 몫({@link Leg#charges} — Claude)은 다른 몫을 모두
+ * 계획한 뒤 그것들이 하나도 실패하지 않았을 때만 부릅니다(규칙 몫이 실패한 밤에 Claude 호출을 쓰고 버리지 않게, 묶음 E 리뷰). 계좌 몫은 그 세션의 출발 기한을 받고(Claude 몫은 호출 대기
  * 한도를 기한 안으로 묶음), 쓰기 트랜잭션은 그 안에서 지금 시각이 기한 전인지 다시 봅니다 — 계획이 기한을 넘겨 끝났으면 어느 계좌에도 쓰지 않고
  * 미룹니다.
  *
@@ -126,6 +127,14 @@ final class KrStartPipeline {
          * @param gates    그 실행의 자료 게이트 판정(결정 행에 남김)과 그 판정의 입력(규칙 계좌 몫이 같은 읽기로 계획 — 결정 e5)
          */
         Plan plan(MarketRun run, LocalDate session, Instant deadline, KrDecisionGates.Checked gates);
+
+        /**
+         * 계획이 과금되는 호출을 하는가(Claude 몫) — 그런 몫은 다른 몫을 모두 계획한 뒤, 그것들이 하나도 실패하지 않았을 때만 부릅니다(클래스 설명
+         * '계좌 몫' — 어차피 미룰 출발에 호출을 쓰지 않게, 묶음 E 리뷰).
+         */
+        default boolean charges() {
+            return false;
+        }
     }
 
     /**
@@ -274,14 +283,31 @@ final class KrStartPipeline {
                     false, detail, List.of(), true);
         }
 
-        // 계획은 트랜잭션 밖에서 모두 만든 뒤 한 번에(클래스 설명) — 한 계좌라도 실패하면 어느 계좌에도 쓰지 않습니다.
-        List<Plan> plans = new ArrayList<>();
-        for (Leg leg : legs) {
-            plans.add(leg.plan(run, d, window.deadline(), new KrDecisionGates.Checked(gates, inputs)));
+        // 계획은 트랜잭션 밖에서 모두 만든 뒤 한 번에(클래스 설명) — 한 계좌라도 실패하면 어느 계좌에도 쓰지 않습니다. 과금되는 몫(Claude)은 다른
+        // 몫을 모두 계획한 뒤 그것들이 실패하지 않았을 때만 부릅니다(어차피 미룰 출발에 호출을 쓰지 않게). 계획의 자리는 몫의 순서 그대로(쓰는 순서).
+        KrDecisionGates.Checked checked = new KrDecisionGates.Checked(gates, inputs);
+        Plan[] planned = new Plan[legs.size()];
+        for (int i = 0; i < legs.size(); i++) {
+            if (!legs.get(i).charges()) {
+                planned[i] = legs.get(i).plan(run, d, window.deadline(), checked);
+            }
         }
+        boolean cheapFailed = java.util.Arrays.stream(planned).anyMatch(p -> p != null && p.failed());
+        List<String> skipped = new ArrayList<>();
+        for (int i = 0; i < legs.size(); i++) {
+            if (legs.get(i).charges()) {
+                if (cheapFailed) {
+                    skipped.add(legs.get(i).book());
+                } else {
+                    planned[i] = legs.get(i).plan(run, d, window.deadline(), checked);
+                }
+            }
+        }
+        List<Plan> plans = java.util.Arrays.stream(planned).filter(Objects::nonNull).toList();
         List<Plan> failed = plans.stream().filter(Plan::failed).toList();
         if (!failed.isEmpty()) {
-            String reason = String.join(" · ", failed.stream().map(p -> p.book() + ": " + p.note()).toList());
+            String reason = String.join(" · ", failed.stream().map(p -> p.book() + ": " + p.note()).toList())
+                    + (skipped.isEmpty() ? "" : " · 다른 계좌의 출발 계획이 실패해 부르지 않음: " + String.join("·", skipped));
             return postponed(run, d, start, window, "출발 계획 실패 — " + reason, records);
         }
         if (plans.stream().noneMatch(Plan::planned)) {

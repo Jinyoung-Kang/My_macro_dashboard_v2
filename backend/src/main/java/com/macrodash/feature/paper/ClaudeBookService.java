@@ -696,6 +696,11 @@ public class ClaudeBookService {
             }
 
             @Override
+            public boolean charges() {
+                return true;
+            }
+
+            @Override
             public KrStartPipeline.Plan plan(MarketRun run, LocalDate session, Instant deadline,
                                              KrDecisionGates.Checked gates) {
                 try {

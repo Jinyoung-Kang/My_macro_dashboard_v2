@@ -304,6 +304,12 @@ public class PaperDecisionJob {
                 return PaperBooks.KR_CLAUDE;
             }
 
+            /** 과금되는 몫 — 다른 몫을 모두 계획한 뒤에만 부름({@link KrStartPipeline.Leg#charges}). */
+            @Override
+            public boolean charges() {
+                return true;
+            }
+
             @Override
             public KrStartPipeline.Plan plan(MarketRun run, LocalDate session, Instant deadline,
                                              KrDecisionGates.Checked gates) {

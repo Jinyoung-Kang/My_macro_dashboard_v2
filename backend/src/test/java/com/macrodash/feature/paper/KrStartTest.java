@@ -578,6 +578,31 @@ class KrStartTest {
     }
 
     @Test
+    @DisplayName("K28(묶음 E 리뷰) — 과금되는 Claude 몫은 다른 몫(규칙·벤치마크)을 모두 계획한 뒤에 부름: 규칙 계좌 계획이 실패하면 Claude를 부르지 않고(호출 0·사용량 0) 미룸, 사유에 '부르지 않음', 다음 KR 거래일에 네 계좌가 함께 출발(결정 행 순서는 그대로)")
+    void claudeIsNotCalledWhenAnotherLegFails() {
+        KrClaudeFixtures.FakeAi fake = new KrClaudeFixtures.FakeAi();
+        realClaude(fake);
+        com.macrodash.store.PaperStore.BookState rulesState = store.states.remove(PaperBooks.KR_RULES);
+
+        PaperDecisionJob.Result result = runAt("2026-11-30T22:30");
+
+        assertThat(result.outcome()).isEqualTo(PaperDecisionJob.START_POSTPONED);
+        assertThat(fake.requests).as("Claude를 부르지 않음").isEmpty();
+        assertThat(store.apiUsage(S)).isEmpty();
+        assertThat(result.message()).contains("kr_rules").contains("상태가 없습니다")
+                .contains("다른 계좌의 출발 계획이 실패해 부르지 않음: kr_claude");
+        assertNotStarted(store);
+
+        store.states.put(PaperBooks.KR_RULES, rulesState);
+        fake.answer(KrClaudeFixtures.decision(0, "관망"));
+        sessionData(NEXT, S, everyCodeOn(NEXT));
+        assertThat(runAt("2026-12-01T22:30").outcome()).isEqualTo(PaperDecisionJob.STARTED);
+        assertThat(krDecisions()).extracting(Decision::bookCode)
+                .containsExactly("kr_rules", "kr_claude", "kr_bench_k200", "kr_bench_mix");
+        assertThat(fake.requests).hasSize(1);
+    }
+
+    @Test
     @DisplayName("E0(사용자 결정 v3) 재기동 — 계획 실패로 미룬 세션은 같은 창에서 백엔드를 다시 띄워도 다시 계획하지 않음(저장된 미룸 기록): 계좌 상태가 돌아와도 그 세션은 출발하지 않고 미룸 기록도 한 번, 다음 KR 거래일 창에서 출발")
     void postponedSessionIsNotReplannedAfterARestart() {
         com.macrodash.store.PaperStore.BookState saved = store.states.remove(PaperBooks.KR_RULES);
