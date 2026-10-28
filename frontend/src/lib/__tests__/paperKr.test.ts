@@ -20,8 +20,11 @@ import {
   krStartRecordParts,
   krStartResultView,
   krStartState,
+  KR_REFERENCE_KEY,
+  krReferenceNotes,
   latestStartRecord,
   marketJobs,
+  withKrReference,
 } from "../paperKr";
 import type { PaperBookSummary } from "../types";
 
@@ -199,5 +202,38 @@ describe("한국 수집 상태 줄(x4)", () => {
       scope: "범위 —종목" })]);
     expect(krCollectionRows(null, null)).toEqual([]);
     expect(krCollectionRows(undefined, null)).toEqual([]);
+  });
+});
+
+describe("노출 맞춘 참고선(K40)", () => {
+  const REFERENCE = {
+    label: "노출 맞춘 참고선 — 계좌 아님", basis: "…", note: "…",
+    dates: ["2026-10-29", "2026-10-30", "2026-11-02", "2026-11-03"],
+    values: [100_000_000, 100_100_000, null, null],
+    stockWeightPct: [null, 0, null, null],
+    asOfDate: "2026-10-30",
+    stoppedReason: "2026-10-30 규칙 계좌 주식 비중을 모릅니다",
+  };
+
+  it("날짜로 맞춰 칸을 더하고 null은 그대로(기간으로 줄인 행에도 맞음) — 참고선이 없거나 모양이 다르면 계열 없음", () => {
+    const rows = [{ date: "2026-10-30", kr_rules: 100_312_450 }, { date: "2026-11-02", kr_rules: 100_500_000 }];
+    const merged = withKrReference(rows, REFERENCE);
+    expect(merged.series).toEqual([{ key: KR_REFERENCE_KEY, name: "노출 맞춘 참고선(계좌 아님)" }]);
+    expect(merged.rows).toEqual([
+      { date: "2026-10-30", kr_rules: 100_312_450, [KR_REFERENCE_KEY]: 100_100_000 },
+      { date: "2026-11-02", kr_rules: 100_500_000, [KR_REFERENCE_KEY]: null },
+    ]);
+    expect(rows[0]).not.toHaveProperty(KR_REFERENCE_KEY);
+    expect(withKrReference(rows, null)).toEqual({ rows, series: [] });
+    expect(withKrReference(rows, { ...REFERENCE, values: [1] }).series).toEqual([]);
+  });
+
+  it("곡선 아래 글 — 정의·마지막 값의 날과 그날 쓴 비중·멈춘 사유, 참고선이 없으면 null", () => {
+    const notes = krReferenceNotes(REFERENCE);
+    expect(notes?.[0]).toContain("069500 x% + 153130 (100−x)%");
+    expect(notes?.[1]).toBe("마지막 값 2026-10-30(그날 쓴 전날 규칙 계좌 주식 비중 0.00%) — 금융위 확정 종가가 들어온 날까지라 보통 하루 늦습니다.");
+    expect(notes).toContain("멈춤: 2026-10-30 규칙 계좌 주식 비중을 모릅니다");
+    expect(krReferenceNotes({ ...REFERENCE, asOfDate: null, stoppedReason: null })?.[1]).toContain("아직 값이 없습니다");
+    expect(krReferenceNotes(null)).toBeNull();
   });
 });

@@ -285,6 +285,11 @@ export type MultiSeries = {
    * 툴팁 값의 소수 자릿수(기본 2). 원 단위 정수 금액(모의매매 한국 책 순자산)은 0 — 기본 2자리면 "100,312,450.00"처럼 없는 자리가 보입니다.
    */
   valueDigits?: number;
+  /**
+   * 점선으로 그림(strokeDasharray "6 4") — 계좌·관측이 아니라 계산한 참고선(모의매매 한국의 노출 맞춘 참고선)을 실제 계열과 갈라 보이게.
+   * 이름(범례·툴팁)이 함께 뜻을 나릅니다(선 모양만으로 전하지 않음).
+   */
+  dashed?: boolean;
 };
 
 /** 여러 시계열 비교. 단위가 다른 계열은 축을 나눠 그립니다. */
@@ -411,6 +416,7 @@ export function MultiLineSeries({
             name={entry.name}
             stroke={entry.color}
             strokeWidth={1.8}
+            strokeDasharray={entry.dashed ? "6 4" : undefined}
             dot={false}
             connectNulls={false}
           />

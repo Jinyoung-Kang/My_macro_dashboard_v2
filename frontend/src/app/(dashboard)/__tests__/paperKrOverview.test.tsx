@@ -22,10 +22,16 @@ vi.mock("@/hooks/useRefreshSignal", () => ({ useRefreshSignal: () => signal }));
 vi.mock("@/components/charts", () => ({
   SERIES_COLORS: { blue: "#3987e5", orange: "#d95926", green: "#199e70" },
   MultiLineSeries: ({ data, series, unit, axisWidth }: {
-    data: { date: string }[]; series: { key: string; name: string; valueDigits?: number }[]; unit?: string; axisWidth?: number;
+    data: Record<string, unknown>[]; series: { key: string; name: string; valueDigits?: number; dashed?: boolean }[]; unit?: string;
+    axisWidth?: number;
   }) => (
     <ul aria-label={unit === "%" ? "노출 계열" : "순자산 계열"} data-rows={data.length} data-axis-width={axisWidth ?? ""}>
-      {series.map((entry) => <li key={entry.key} data-digits={entry.valueDigits ?? ""}>{entry.name}</li>)}
+      {series.map((entry) => (
+        <li key={entry.key} data-digits={entry.valueDigits ?? ""} data-dashed={entry.dashed ? "yes" : "no"}
+          data-values={data.map((row) => String(row[entry.key] ?? "null")).join(",")}>
+          {entry.name}
+        </li>
+      ))}
     </ul>
   ),
   DonutChart: () => null,
@@ -394,5 +400,37 @@ describe("한국 수집 상태 카드(x4)", () => {
     expect(await screen.findByText("13회(하루 상한 20 − 정기 작업 몫 7)")).toBeTruthy();
     expect(screen.getByText(/오늘 호출이 수동 호출 문턱에 닿았습니다/)).toBeTruthy();
     expect(screen.getByText(/하루 상한은 미국·한국 책이 함께 쓰고/)).toBeTruthy();
+  });
+});
+
+describe("노출 맞춘 참고선(K40)", () => {
+  it("순자산 곡선에 점선 계열 '노출 맞춘 참고선(계좌 아님)' — 날짜로 맞춘 값·멈춘 사유 글, 참고선이 null이면 계열·글 없음", async () => {
+    reads["/api/paper/overview?market=KR"] = () => Promise.resolve({
+      ...KR_OVERVIEW,
+      exposureReference: {
+        label: "노출 맞춘 참고선 — 계좌 아님", basis: "…", note: "…", dates: ["2026-10-29", "2026-10-30"],
+        values: [100_000_000, 100_100_000], stockWeightPct: [null, 0], asOfDate: "2026-10-30",
+        stoppedReason: "2026-10-30 규칙 계좌 주식 비중을 모릅니다(그날 규칙 계좌 결정의 보유 비중이 없음 — 기한 지남·일시정지·비중 모름 등) — 그 뒤는 그리지 않습니다",
+      },
+    });
+    reads["/api/paper/status?market=KR"] = () => Promise.resolve(KR_STATUS);
+    const view = render(<PaperPage market="KR" />);
+
+    const nav = await screen.findByRole("list", { name: "순자산 계열" });
+    const reference = within(nav).getByText("노출 맞춘 참고선(계좌 아님)");
+    expect(reference.getAttribute("data-dashed")).toBe("yes");
+    expect(reference.getAttribute("data-digits")).toBe("0");
+    expect(reference.getAttribute("data-values")).toBe("100000000,100100000");
+    expect(within(nav).getByText("한국 규칙 계좌").getAttribute("data-dashed")).toBe("no");
+    const notes = screen.getByRole("list", { name: "노출 맞춘 참고선 설명" });
+    expect(within(notes).getByText(/^멈춤: 2026-10-30 규칙 계좌 주식 비중을 모릅니다/)).toBeTruthy();
+    expect(within(notes).getByText(/전날 규칙 계좌 주식 비중 0\.00%/)).toBeTruthy();
+    view.unmount();
+
+    reads["/api/paper/overview?market=KR"] = () => Promise.resolve({ ...KR_OVERVIEW, exposureReference: null });
+    render(<PaperPage market="KR" />);
+    const plain = await screen.findByRole("list", { name: "순자산 계열" });
+    expect(within(plain).queryByText("노출 맞춘 참고선(계좌 아님)")).toBeNull();
+    expect(screen.queryByRole("list", { name: "노출 맞춘 참고선 설명" })).toBeNull();
   });
 });

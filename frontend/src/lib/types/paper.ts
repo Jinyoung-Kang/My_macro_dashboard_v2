@@ -138,6 +138,27 @@ export interface PaperOverviewResponse {
    * 보내지 않는 백엔드에서는 없습니다(화면은 경계선을 그리지 않음).
    */
   frameworkBoundaries?: PaperFrameworkBoundary[] | null;
+  /**
+   * 한국 응답만 — 노출 맞춘 참고선(2단계 명세 §3·K40, 계산만 하고 계좌가 아님). 규칙 계좌 출발 전이면 null, 이 칸을 보내지 않는 백엔드(F2 전)에서는
+   * 없습니다.
+   */
+  exposureReference?: PaperExposureReference | null;
+}
+
+/**
+ * 노출 맞춘 참고선 — 전날 규칙 계좌 주식 비중 x%를 069500 x% + 153130 (100−x)%로 맞춰 이은 선(금융위 확정 종가, 비용 없음). `dates`는 순자산
+ * 곡선과 같은 줄이고 `values`(원 정수)·`stockWeightPct`(그날 값에 쓴 앞 날의 비중)는 같은 길이, 모르는 날은 null. 빈 비중·종가로 멈췄으면
+ * `stoppedReason`(그날부터 끝까지 null), 금융위가 아직 내지 않은 마지막 날은 그날만 null입니다.
+ */
+export interface PaperExposureReference {
+  label: string;
+  basis: string;
+  note: string;
+  dates: string[];
+  values: (number | null)[];
+  stockWeightPct: (number | null)[];
+  asOfDate: string | null;
+  stoppedReason: string | null;
 }
 
 /** 프레임 판 경계 하나 — 그 판(version, status)을 Claude 책 결정이 처음 쓴 거래일. */

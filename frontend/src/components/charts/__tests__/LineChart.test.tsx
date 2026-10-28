@@ -13,7 +13,7 @@
 import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { LineChart, SERIES_COLORS } from "@/components/charts";
+import { LineChart, MultiLineSeries, SERIES_COLORS } from "@/components/charts";
 import { lineYAxis } from "@/lib/lineChart";
 
 function observeAs(width: number, height: number) {
@@ -242,5 +242,32 @@ describe("LineChart — 추정 · 오래됨 배지", () => {
     expect(screen.getByText("표시할 시계열이 없습니다.")).toBeTruthy();
     expect(screen.getByText("추정")).toBeTruthy();
     expect(screen.getByText("이전 값")).toBeTruthy();
+  });
+});
+
+describe("여러 계열(MultiLineSeries) — 점선 참고선", () => {
+  it("dashed 계열만 strokeDasharray(6 4), 기본 계열에는 없음 — 왼쪽 축 폭은 axisWidth", () => {
+    observeAs(600, 300);
+    const { container } = render(
+      <MultiLineSeries
+        data={[
+          { date: "2026-10-29", a: 100_000_000, ref: 100_000_000 },
+          { date: "2026-10-30", a: 100_312_450, ref: 100_100_000 },
+          { date: "2026-11-02", a: 100_500_000, ref: null },
+        ]}
+        series={[
+          { key: "a", name: "한국 규칙 계좌", color: SERIES_COLORS.blue, valueDigits: 0 },
+          { key: "ref", name: "노출 맞춘 참고선(계좌 아님)", color: "#a371f7", dashed: true, valueDigits: 0 },
+        ]}
+        precision={0}
+        axisWidth={84}
+        ariaLabel="순자산 곡선"
+      />,
+    );
+    const curves = [...container.querySelectorAll("path.recharts-line-curve")];
+    expect(curves).toHaveLength(2);
+    const byColor = (color: string) => curves.find((path) => path.getAttribute("stroke") === color);
+    expect(byColor("#a371f7")?.getAttribute("stroke-dasharray")).toBe("6 4");
+    expect(byColor(SERIES_COLORS.blue)?.getAttribute("stroke-dasharray")).toBeNull();
   });
 });

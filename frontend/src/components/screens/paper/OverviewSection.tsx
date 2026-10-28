@@ -50,10 +50,13 @@ import {
 import {
   jobsCardSubtitle,
   jobsEmptyMessage,
+  KR_REFERENCE_KEY,
   KR_RISK_RUN_NOTE,
   krJobDetailText,
+  krReferenceNotes,
   krRiskResultView,
   marketJobs,
+  withKrReference,
 } from "@/lib/paperKr";
 import { marketMeta, type PaperMarketCode } from "@/lib/paperMarket";
 import { allowedRangeKey } from "@/lib/patternRows";
@@ -91,6 +94,11 @@ const BOOK_COLORS: Record<string, string> = {
   kr_bench_mix: "#6b727e",
 };
 const SPARE_COLORS = ["#a371f7", "#22a2bd", "#db6d28"];
+/**
+ * 한국 노출 맞춘 참고선(K40)의 색 — 남는 색의 첫 보라(#a371f7, KRX 화면과 같은 검증된 계열 색)를 점선으로. 계좌 넷(파랑·주황·초록·회색) 뒤에
+ * 놓여 계좌 선과 색·선 모양 둘 다 다르고, 범례 이름 '…(계좌 아님)'이 함께 뜻을 나릅니다.
+ */
+const REFERENCE_COLOR = SPARE_COLORS[0];
 
 /**
  * Claude 노출 추이의 두 선 — 목표는 순자산 곡선의 Claude 책 색(주황), 실제는 검증된 팔레트의 다음 색(파랑). 두 색은 charts의
@@ -190,14 +198,19 @@ export function OverviewSection({
   const navRanges = navRangeKeys(overview.navSeries);
   const range = allowedRangeKey(navRange, NAV_RANGES, navRanges) ?? "all";
   const navWindow = navSeriesWindow(overview.navSeries, range);
-  const chart = navChart(navWindow, books);
-  // 하루 움직임이 1달러 미만이면 정수 눈금이 같은 숫자로 반복됩니다 — 축을 조금 펼치고 자릿수를 간격에 맞춥니다.
+  const accounts = navChart(navWindow, books);
+  // 한국은 노출 맞춘 참고선(K40 — 계산만, 계좌 아님)을 같은 축의 점선 계열로 더합니다(출발 전·F2 전 서버면 계열 없음).
+  const reference = korea ? withKrReference(accounts.rows, overview.exposureReference) : { rows: accounts.rows, series: [] };
+  const chart = { rows: reference.rows, series: [...accounts.series, ...reference.series] };
+  const referenceNotes = korea ? krReferenceNotes(overview.exposureReference) : null;
+  // 하루 움직임이 1달러 미만이면 정수 눈금이 같은 숫자로 반복됩니다 — 축을 조금 펼치고 자릿수를 간격에 맞춥니다(참고선도 축 범위에 넣음).
   const navY = navAxis(chart);
   const series = chart.series.map((line, index) => ({
     ...line,
-    color: BOOK_COLORS[line.key] ?? SPARE_COLORS[index % SPARE_COLORS.length],
+    color: line.key === KR_REFERENCE_KEY ? REFERENCE_COLOR : BOOK_COLORS[line.key] ?? SPARE_COLORS[index % SPARE_COLORS.length],
     // 원 단위 정수 장부 — 툴팁에 없는 소수 자리를 붙이지 않음(미국은 기본 2자리 그대로).
     ...(korea ? { valueDigits: 0 } : {}),
+    ...(line.key === KR_REFERENCE_KEY ? { dashed: true } : {}),
   }));
   const quotes = overview.quotes ?? null;
   const staleNames = quotes?.staleTickers ?? [];
@@ -389,6 +402,11 @@ export function OverviewSection({
           axisWidth={korea ? 84 : undefined}
         />
         {boundaries.text && <p className="mt-2 text-xs text-muted">{boundaries.text}</p>}
+        {referenceNotes && (
+          <ul aria-label="노출 맞춘 참고선 설명" className="mt-2 flex flex-col gap-0.5 text-xs text-muted">
+            {referenceNotes.map((note) => <li key={note}>{note}</li>)}
+          </ul>
+        )}
       </Card>
 
       {books.length > 0 && (

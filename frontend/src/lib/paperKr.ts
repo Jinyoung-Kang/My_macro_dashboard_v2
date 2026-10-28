@@ -10,6 +10,7 @@ import { jsonSummary, type RiskResultView, riskResultView, settingValueAt } from
 import type { PaperMarketCode } from "./paperMarket";
 import type {
   PaperBookSummary,
+  PaperExposureReference,
   PaperJobRun,
   PaperKrCollection,
   PaperQuotesSummary,
@@ -359,4 +360,53 @@ export function krCollectionRows(
     });
   }
   return rows;
+}
+
+// ---------------------------------------------------------------- 노출 맞춘 참고선(2단계 명세 §3·K40)
+
+/** 참고선 계열의 키(순자산 곡선 행의 칸 이름 — 계좌 코드와 겹치지 않게). */
+export const KR_REFERENCE_KEY = "kr_exposure_reference";
+/** 참고선 계열 이름(범례·툴팁) — 계좌가 아니라는 것을 이름이 함께 말합니다. */
+export const KR_REFERENCE_NAME = "노출 맞춘 참고선(계좌 아님)";
+
+/**
+ * 순자산 곡선 행에 참고선 칸을 더합니다 — 참고선의 `dates`·`values`(순자산 곡선과 같은 날짜 줄)를 날짜로 맞춰 넣고(기간을 골라 줄인 행에도
+ * 맞음), 모르는 날은 null 그대로(선이 끊김 — 앞 값으로 채우지 않음). 참고선이 없거나(출발 전·F2 전 서버) 모양이 다르면 받은 행 그대로·계열 없음.
+ */
+export function withKrReference(
+  rows: readonly Record<string, string | number | null>[],
+  reference: PaperExposureReference | null | undefined,
+): { rows: Record<string, string | number | null>[]; series: { key: string; name: string }[] } {
+  const dates = Array.isArray(reference?.dates) ? reference.dates : null;
+  const values = Array.isArray(reference?.values) ? reference.values : null;
+  if (!dates || !values || dates.length !== values.length) {
+    return { rows: rows.map((row) => ({ ...row })), series: [] };
+  }
+  const byDate = new Map<string, number | null>();
+  dates.forEach((date, index) => byDate.set(date, numberOf(values[index])));
+  return {
+    rows: rows.map((row) => ({ ...row, [KR_REFERENCE_KEY]: byDate.get(String(row.date)) ?? null })),
+    series: [{ key: KR_REFERENCE_KEY, name: KR_REFERENCE_NAME }],
+  };
+}
+
+/**
+ * 곡선 아래 참고선 설명 — 정의 한 줄과 마지막 값의 날·그날 쓴 규칙 계좌 주식 비중, 멈췄으면 그 사유. 참고선이 없으면 null(글 없음).
+ */
+export function krReferenceNotes(reference: PaperExposureReference | null | undefined): string[] | null {
+  if (!reference) return null;
+  const weights = Array.isArray(reference.stockWeightPct) ? reference.stockWeightPct : [];
+  const lastIndex = reference.asOfDate ? reference.dates.indexOf(reference.asOfDate) : -1;
+  const weight = lastIndex >= 0 ? numberOf(weights[lastIndex]) : null;
+  const notes = [
+    "점선 = 노출 맞춘 참고선 — 전날 규칙 계좌 주식 비중 x%를 069500 x% + 153130 (100−x)%로 맞춰 이은 선입니다(계산만 하고 계좌가 아님, "
+      + "비용 없음, 금융위원회 증권상품시세 확정 종가). 규칙 계좌 결과에서 주식 노출 몫을 떼어 종목 신호 몫을 보려는 선입니다.",
+    reference.asOfDate
+      ? `마지막 값 ${reference.asOfDate}(그날 쓴 전날 규칙 계좌 주식 비중 ${weight === null ? EMPTY : `${formatNumber(weight, 2)}%`}) — `
+        + "금융위 확정 종가가 들어온 날까지라 보통 하루 늦습니다."
+      : "아직 값이 없습니다 — 금융위 확정 종가가 들어온 날부터 그립니다(보통 하루 늦음).",
+  ];
+  if (reference.stoppedReason) notes.push(`멈춤: ${reference.stoppedReason}`);
+  notes.push("규칙 계좌의 후보 수·'자료 없음' 사유는 종목 선정 탭(한국 몫은 다음 단계)에 있습니다.");
+  return notes;
 }
