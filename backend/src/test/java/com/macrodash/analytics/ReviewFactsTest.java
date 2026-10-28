@@ -5,6 +5,8 @@ import com.macrodash.analytics.ReviewFacts.BookReturn;
 import com.macrodash.analytics.ReviewFacts.Comparison;
 import com.macrodash.analytics.ReviewFacts.Decision;
 import com.macrodash.analytics.ReviewFacts.DecisionFacts;
+import com.macrodash.analytics.ReviewFacts.Entry;
+import com.macrodash.analytics.ReviewFacts.EntryOpen;
 import com.macrodash.analytics.ReviewFacts.Evidence;
 import com.macrodash.analytics.ReviewFacts.Facts;
 import com.macrodash.analytics.ReviewFacts.Fill;
@@ -725,5 +727,131 @@ class ReviewFactsTest {
         Comparison weekdays = ReviewFacts.comparison(WeekdaysCalendar.INSTANCE, books, window);
         assertThat(weekdays.from()).isEqualTo(d("2026-07-03"));
         assertThat(weekdays.books().get(0).returnPct()).isEqualTo(-20.0);
+    }
+
+    // ------------------------------------------------------------------ 가정 진입을 시장이 정함(2단계 명세 §9 'E3', 사용자 결정 v5)
+    @SuppressWarnings("unchecked")
+    private static Map<String, Object> orderMap(Facts facts, int decision, int order) {
+        return (Map<String, Object>) ((List<Object>) ((Map<String, Object>) ((List<Object>) facts.toMap().get("decisions"))
+                .get(decision)).get("orders")).get(order);
+    }
+
+    @Test
+    @DisplayName("시가 진입(NEXT_OPEN — 한국): 거절 주문의 가정 진입 = 결정 다음 세션 시가(금융위 확정·토스 잠정 출처 그대로) → 금요일 종가, 손계산과 같다")
+    void nextOpenEntryUsesTheNextSessionOpen() {
+        Map<String, DailySeries> closes = Map.of(
+                "GGG", series("2026-10-27", 82, "2026-10-30", 88),
+                "HHH", series("2026-10-27", 51, "2026-10-30", 45));
+        Map<String, Map<LocalDate, EntryOpen>> opens = Map.of(
+                "GGG", Map.of(d("2026-10-27"), new EntryOpen(80.0, "FSC")),
+                "HHH", Map.of(d("2026-10-27"), new EntryOpen(50.0, "TOSS_1M_OPEN")));
+        Inputs in = new Inputs(List.of(ok(1, d("2026-10-26"), rejected(11, "GGG", "BUY"), rejected(12, "HHH", "SELL"))),
+                closes, List.of(), List.of(), List.of(), 3, "현행", opens);
+
+        Facts facts = ReviewFacts.build(UsMarketCalendar.CALENDAR, Entry.NEXT_OPEN, in, WE, 4, null);
+
+        OrderFacts ggg = facts.decisions().get(0).orders().get(0);
+        assertThat(ggg.hypothetical().entryDate()).isEqualTo(d("2026-10-27"));
+        assertThat(ggg.hypothetical().entryPrice()).as("그 세션 종가 82가 아니라 시가").isEqualTo(80.0);
+        assertThat(ggg.hypothetical().returnPct()).isEqualTo(10.0);            // 88 / 80 − 1
+        assertThat(ggg.hypothetical().entrySource()).isEqualTo("FSC");
+        assertThat(ggg.hypothetical().isProxy()).isFalse();
+        OrderFacts hhh = facts.decisions().get(0).orders().get(1);
+        assertThat(hhh.hypothetical().returnPct()).isEqualTo(-10.0);           // 45 / 50 − 1
+        assertThat(hhh.hypothetical().afterSellLabel()).isEqualTo(ReviewFacts.AVOIDED);
+        assertThat(hhh.hypothetical().entrySource()).isEqualTo("TOSS_1M_OPEN");
+        assertThat(ggg.notes()).noneSatisfy(n -> assertThat(n).contains("가정 수익률"));
+
+        Map<String, Object> order = orderMap(facts, 0, 0);
+        assertThat((Map<String, Object>) order.get("hypothetical")).containsExactly(
+                Map.entry("basis", ReviewFacts.HYPOTHETICAL), Map.entry("entryDate", "2026-10-27"),
+                Map.entry("entryPrice", 80.0), Map.entry("entrySource", "FSC"), Map.entry("isProxy", false),
+                Map.entry("returnPct", 10.0));
+        assertThat((Map<String, Object>) orderMap(facts, 0, 1).get("hypothetical")).containsKeys("afterSellLabel")
+                .doesNotContainKey("entryClose");
+        assertThat(facts.toMap().get("note")).isEqualTo(ReviewFacts.NEXT_OPEN_NOTE);
+    }
+
+    @Test
+    @DisplayName("시가 진입: 그 세션 시가가 없으면 그 세션 종가로 근사하고 isProxy=true·이유, 시가·종가 모두 없으면 null, 다음 세션이 기준일 뒤면 null")
+    void nextOpenEntryFallsBackToTheCloseAsAProxy() {
+        Map<String, DailySeries> closes = Map.of(
+                "III", series("2026-10-27", 40, "2026-10-30", 44),
+                "KKK", series("2026-10-29", 70, "2026-10-30", 77));
+        Inputs in = new Inputs(List.of(ok(1, d("2026-10-26"), rejected(11, "III", "BUY"), rejected(12, "KKK", "BUY")),
+                ok(2, WE, rejected(13, "III", "BUY"))), closes, List.of(), List.of(), List.of(), 3, "현행", Map.of());
+
+        Facts facts = ReviewFacts.build(UsMarketCalendar.CALENDAR, Entry.NEXT_OPEN, in, WE, 4, null);
+
+        OrderFacts proxy = facts.decisions().get(0).orders().get(0);
+        assertThat(proxy.hypothetical().entryPrice()).isEqualTo(40.0);
+        assertThat(proxy.hypothetical().returnPct()).isEqualTo(10.0);          // 44 / 40 − 1(종가 근사)
+        assertThat(proxy.hypothetical().isProxy()).isTrue();
+        assertThat(proxy.hypothetical().entrySource()).isNull();
+        assertThat(proxy.notes()).contains("가정 수익률: 결정 다음 세션(2026-10-27) 시가 없음 — 그 세션 종가로 근사(isProxy)");
+        @SuppressWarnings("unchecked")
+        Map<String, Object> proxyMap = (Map<String, Object>) orderMap(facts, 0, 0).get("hypothetical");
+        assertThat(proxyMap).containsEntry("isProxy", true).containsEntry("entrySource", null)
+                .containsEntry("entryPrice", 40.0);
+
+        OrderFacts none = facts.decisions().get(0).orders().get(1);
+        assertThat(none.hypothetical().entryPrice()).isNull();
+        assertThat(none.hypothetical().returnPct()).isNull();
+        assertThat(none.hypothetical().isProxy()).isNull();
+        assertThat(none.notes()).contains("가정 수익률: 결정 다음 세션(2026-10-27) 시가·종가 없음");
+
+        OrderFacts late = facts.decisions().get(1).orders().get(0);
+        assertThat(late.hypothetical().entryDate()).isEqualTo(d("2026-11-02"));
+        assertThat(late.hypothetical().entryPrice()).isNull();
+        assertThat(late.notes()).anySatisfy(n -> assertThat(n).contains("기준일 뒤"));
+    }
+
+    @Test
+    @DisplayName("시가 진입: 시가가 그날 이력 종가와 0.8~1.25 밖이면(분할·병합 뒤 수정주가 의심 — 시가는 원시, 이력은 수정 종가) 수익률을 내지 않음")
+    void nextOpenEntryRejectsABasisMismatch() {
+        Map<String, DailySeries> closes = Map.of("JJJ", series("2026-10-27", 50, "2026-10-30", 55));
+        Inputs in = new Inputs(List.of(ok(1, d("2026-10-26"), rejected(11, "JJJ", "BUY"))), closes, List.of(), List.of(),
+                List.of(), 3, "현행", Map.of("JJJ", Map.of(d("2026-10-27"), new EntryOpen(100.0, "FSC"))));
+
+        OrderFacts jjj = single(ReviewFacts.build(UsMarketCalendar.CALENDAR, Entry.NEXT_OPEN, in, WE, 4, null));
+
+        assertThat(jjj.hypothetical().entryPrice()).isEqualTo(100.0);
+        assertThat(jjj.hypothetical().returnPct()).isNull();
+        assertThat(jjj.notes()).anySatisfy(n -> assertThat(n).contains("시가 100.0 ÷ 그날 이력 종가 50.0 = 2.0")
+                .contains("분할·병합"));
+        assertThatThrownBy(() -> new EntryOpen(0.0, "FSC")).isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
+    @DisplayName("종가 진입(NEXT_CLOSE — 미국)은 그대로: 시가 표를 받아도 읽지 않고, 입력 모양(entryClose)·설명(NOTE)이 옛 판과 같다")
+    void nextCloseEntryIsUnchanged() {
+        Map<String, DailySeries> closes = Map.of("GGG", series("2026-10-27", 80, "2026-10-30", 88));
+        Decision decision = ok(1, d("2026-10-26"), rejected(11, "GGG", "BUY"));
+        Inputs plain = new Inputs(List.of(decision), closes, List.of(), List.of(), List.of(), 3, "현행");
+        Inputs withOpens = new Inputs(List.of(decision), closes, List.of(), List.of(), List.of(), 3, "현행",
+                Map.of("GGG", Map.of(d("2026-10-27"), new EntryOpen(70.0, "FSC"))));
+
+        Facts us = ReviewFacts.build(plain, WE, 4, null);
+        assertThat(ReviewFacts.build(UsMarketCalendar.CALENDAR, Entry.NEXT_CLOSE, withOpens, WE, 4, null).toMap())
+                .isEqualTo(us.toMap());
+        assertThat(us.entry()).isEqualTo(Entry.NEXT_CLOSE);
+        assertThat(us.toMap().get("note")).isEqualTo(ReviewFacts.NOTE);
+        @SuppressWarnings("unchecked")
+        Map<String, Object> hypothetical = (Map<String, Object>) orderMap(us, 0, 0).get("hypothetical");
+        assertThat(hypothetical).containsExactly(Map.entry("basis", ReviewFacts.HYPOTHETICAL),
+                Map.entry("entryDate", "2026-10-27"), Map.entry("entryClose", 80.0), Map.entry("returnPct", 10.0));
+        assertThat(single(us).hypothetical().entrySource()).isNull();
+        assertThat(single(us).hypothetical().isProxy()).isNull();
+    }
+
+    @Test
+    @DisplayName("시가 진입 설명(NEXT_OPEN_NOTE): 다음 세션 시가·출처·종가 근사(isProxy)·토스 잠정 종가를 적고, 미국 말(SPY·NEXT_OBSERVATION·종가 진입)은 없음")
+    void nextOpenNoteSpeaksTheMarket() {
+        assertThat(ReviewFacts.NEXT_OPEN_NOTE).contains("결정 다음 세션 시가(NEXT_OPEN)").contains("isProxy=true")
+                .contains("FSC·FSC_ETF는 금융위 확정 시가").contains("토스 잠정 종가").contains("KODEX 200 대비")
+                .contains("가격은 원").doesNotContain("SPY").doesNotContain("NEXT_OBSERVATION")
+                .doesNotContain("다음 세션 종가에 체결됐다고");
+        assertThat(ReviewFacts.NOTE).as("미국 설명은 그대로").contains("결정 다음 세션 종가에 체결됐다고 가정한 값(가정)")
+                .contains("SPY 대비");
     }
 }

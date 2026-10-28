@@ -37,7 +37,8 @@ import java.util.regex.Pattern;
  *       전량 매도했으면 그 스탑은 다시 산 포지션의 것이라 발동 아님).</li>
  *   <li>매도 체결: 판 뒤 가격 변화 = 기준일 종가 ÷ 매도 체결가 − 1 — 음수면 {@link #AVOIDED}(피한 하락), 양수면 {@link #MISSED}
  *       (놓친 상승). 판 종목의 낙폭·스탑은 해당이 없습니다.</li>
- *   <li>거절 주문: 결정 다음 세션 종가에 체결됐다고 <b>가정</b>한 수익률(그 세션 종가 → 기준일 종가). 매도면 위와 같은 표시.</li>
+ *   <li>거절 주문: 결정 다음 세션에 체결됐다고 <b>가정</b>한 수익률(진입가 → 기준일 종가). 진입가는 시장이 정합니다({@link Entry} —
+ *       미국은 그 세션 종가, 한국은 그 세션 시가이고 시가가 없으면 그 세션 종가로 근사해 {@code isProxy}). 매도면 위와 같은 표시.</li>
  *   <li>모든 주문: 기준일 종가와 200거래일 단순 이동평균(PacketBuilder의 {@code vs200dPct}와 같은 식 — 마지막 200개 점). 상태는
  *       기준일 시점 값입니다({@link #statusAt} — 기준일 뒤 체결·만료는 PENDING).</li>
  * </ul>
@@ -169,9 +170,56 @@ public final class ReviewFacts {
             + "등의 −N%는 읽지 않음)만 조건별로 평가하고 그 밖은 '평가 불가' — 문장의 다른 조건은 위 사실로 판단. null은 값 "
             + "없음(이유는 notes), 0이 아님. 가격은 수정주가 이력이라 배당락이 끼면 낙폭이 배당만큼 커 보일 수 있음.";
 
+    /**
+     * 시가 진입 시장(한국 — {@link Entry#NEXT_OPEN})의 입력 설명. 미국 {@link #NOTE}와 같은 사실 정의에 거절 주문의 가정 진입(다음 세션 시가·
+     * 출처·종가 근사)·체결가(관측가 — 비용은 장부 칸)·기준일 종가(토스 잠정)를 그 시장 말로 적습니다(2단계 명세 §9 'E3 — 복기의 가정 진입가',
+     * 사용자 결정 v5).
+     */
+    static final String NEXT_OPEN_NOTE = "수익률·낙폭은 %, 가격은 원. returnSinceFillPct = 복기 기준일 종가 ÷ 체결가 − 1(그 뒤 매도·스탑과 "
+            + "무관하게 계속 들고 있었다면, 체결가는 관측가 — 수수료·세금·슬리피지는 장부의 비용 칸이라 빠짐). maxDrawdownPct = 체결일부터 "
+            + "기준일까지 종가의 고점 대비 최대 낙폭(체결가를 첫 고점으로, 0 이하). stop = 체결 뒤 그 종목의 트레일링 스탑 체결(returnPct = "
+            + "스탑 체결가 ÷ 체결가 − 1, 그 전에 전량 매도했으면 다시 산 포지션의 스탑이라 triggered=false). 매도는 afterSellPct = 기준일 "
+            + "종가 ÷ 매도 체결가 − 1 — 음수면 avoided(피한 하락), 양수면 missed(놓친 상승). 거절 주문의 hypothetical은 결정 다음 세션 "
+            + "시가(NEXT_OPEN)에 체결됐다고 가정한 값(가정, 비용 제외) — entrySource FSC·FSC_ETF는 금융위 확정 시가, TOSS_1M_OPEN·"
+            + "TOSS_DAILY·TOSS_INTEGRATED는 토스 잠정 시가, 그 세션 시가가 없으면 그 세션 종가로 근사하고 isProxy=true. ma200 = 기준일 "
+            + "종가와 200거래일 단순 이동평균. status는 복기 기준일 장 마감 시점의 상태. invalidationCheck는 코드가 읽을 수 있는 조건(스탑 "
+            + "언급·200일선 바로 뒤의 이탈·주가의 N% 하락 — 매출·EPS·가이던스·지수·KODEX 200 대비 등의 −N%는 읽지 않음)만 조건별로 평가하고 "
+            + "그 밖은 '평가 불가' — 문장의 다른 조건은 위 사실로 판단. null은 값 없음(이유는 notes), 0이 아님. 기준일 종가는 토스 잠정 "
+            + "종가(금융위 확정 전 — 확정가와 조금 다를 수 있음), 그 전 종가는 수정 종가 이력(kr_close_adj)이라 분할·병합 같은 수정이 끼면 "
+            + "과거 값이 다시 쓰일 수 있음.";
+
+    /**
+     * 거절 주문의 가정 진입 규칙 — 시장이 정합니다(2단계 명세 §9 'E3 — 복기의 가정 진입가', 사용자 결정 v5). 결정 다음 세션(그 시장
+     * 달력)에 체결됐다고 가정하는 가격입니다.
+     */
+    public enum Entry {
+        /** 그 세션 종가(미국 — 체결 시점 NEXT_OBSERVATION의 근사, 이 묶음 전 그대로). 입력 설명은 {@link #NOTE}. */
+        NEXT_CLOSE,
+        /**
+         * 그 세션 시가(한국 — 체결 시점 NEXT_OPEN, {@link Inputs#opens}). 그 세션 시가가 없으면 그 세션 종가로 근사하고 {@code isProxy}를
+         * 답니다. 시가가 그날 이력 종가와 {@link #BASIS_LOW}~{@link #BASIS_HIGH} 밖이면(분할·병합 뒤 수정주가 의심) 수익률을 내지 않습니다.
+         * 입력 설명은 {@link #NEXT_OPEN_NOTE}.
+         */
+        NEXT_OPEN
+    }
+
     // ------------------------------------------------------------------ 입력
     /** 체결 한 건 — 장부의 체결가(슬리피지 포함)와 그 관측일(미국 동부 세션 날짜). */
     public record Fill(LocalDate date, double price) {
+    }
+
+    /**
+     * 한 세션의 시가와 출처({@link Entry#NEXT_OPEN}의 가정 진입가) — 출처 글자는 부르는 쪽이 정합니다(한국: 금융위 확정 시가 {@code FSC}·
+     * {@code FSC_ETF}, 아직 없으면 토스 잠정 시가 {@code TOSS_1M_OPEN}·{@code TOSS_DAILY}·{@code TOSS_INTEGRATED}).
+     *
+     * @param price 양수
+     */
+    public record EntryOpen(double price, String source) {
+        public EntryOpen {
+            if (!(price > 0) || !Double.isFinite(price)) {
+                throw new IllegalArgumentException("시가는 양수여야 합니다: " + price);
+            }
+        }
     }
 
     /**
@@ -232,16 +280,28 @@ public final class ReviewFacts {
      * @param closes    티커 → 일별 종가(수정주가 이력 + 기준일 확정 종가). 없는 티커는 가격 사실이 null
      * @param fullSells 전량 매도 체결(스탑 제외 — 스탑이 어느 포지션의 것인지 가르는 데만 씀)
      * @param books     비교할 계좌(이 순서로 실음 — rules·bench_spy·bench_mix·claude 등)
+     * @param opens     티커 → 세션 날짜 → 시가({@link Entry#NEXT_OPEN}의 가정 진입가 — 시가 진입 시장만, 그 밖은 빈 표). 없는 날은 종가 근사
      */
     public record Inputs(List<Decision> decisions, Map<String, DailySeries> closes, List<StopFill> stops,
                          List<FullSell> fullSells, List<BookNav> books, Integer frameworkVersion,
-                         String frameworkStatus) {
+                         String frameworkStatus, Map<String, Map<LocalDate, EntryOpen>> opens) {
         public Inputs {
             decisions = decisions == null ? List.of() : List.copyOf(decisions);
             closes = closes == null ? Map.of() : Collections.unmodifiableMap(new HashMap<>(closes));
             stops = stops == null ? List.of() : List.copyOf(stops);
             fullSells = fullSells == null ? List.of() : List.copyOf(fullSells);
             books = books == null ? List.of() : List.copyOf(books);
+            Map<String, Map<LocalDate, EntryOpen>> copied = new HashMap<>();
+            if (opens != null) {
+                opens.forEach((ticker, days) -> copied.put(ticker, days == null ? Map.of() : Map.copyOf(days)));
+            }
+            opens = Collections.unmodifiableMap(copied);
+        }
+
+        /** 시가 없는 재료(종가 진입 시장 — 미국). */
+        public Inputs(List<Decision> decisions, Map<String, DailySeries> closes, List<StopFill> stops,
+                      List<FullSell> fullSells, List<BookNav> books, Integer frameworkVersion, String frameworkStatus) {
+            this(decisions, closes, stops, fullSells, books, frameworkVersion, frameworkStatus, Map.of());
         }
     }
 
@@ -261,8 +321,25 @@ public final class ReviewFacts {
     public record Ma200(double close, double average, double vsPct, boolean below) {
     }
 
-    /** 거절 주문의 가정 체결(결정 다음 세션 종가). 못 구하면 가격·수익률이 null(이유는 주문의 notes). */
-    public record Hypothetical(LocalDate entryDate, Double entryClose, Double returnPct, String afterSellLabel) {
+    /**
+     * 거절 주문의 가정 체결(결정 다음 세션 — 진입가는 {@link Entry}). 못 구하면 가격·수익률이 null(이유는 주문의 notes).
+     *
+     * @param entryPrice  진입가 — 종가 진입이면 그 세션 종가, 시가 진입이면 그 세션 시가(근사면 그 세션 종가)
+     * @param entrySource 시가 진입의 시가 출처({@link EntryOpen#source}). 종가 진입·근사·가격 없음이면 null
+     * @param isProxy     시가 진입에서 시가가 없어 종가로 근사했으면 참, 시가면 거짓. 종가 진입·가격 없음이면 null
+     */
+    public record Hypothetical(LocalDate entryDate, Double entryPrice, Double returnPct, String afterSellLabel,
+                               String entrySource, Boolean isProxy) {
+
+        /** 종가 진입(미국)의 가정 체결. */
+        public Hypothetical(LocalDate entryDate, Double entryClose, Double returnPct, String afterSellLabel) {
+            this(entryDate, entryClose, returnPct, afterSellLabel, null, null);
+        }
+
+        /** 종가 진입(미국)의 진입가 — 그 세션 종가({@link #entryPrice}와 같은 값, 입력의 {@code entryClose}). */
+        public Double entryClose() {
+            return entryPrice;
+        }
     }
 
     /** 코드가 평가할 사실 — 해당이 없거나 못 구했으면 값이 null이고 그 이유. */
@@ -332,13 +409,15 @@ public final class ReviewFacts {
      *
      * @param trimmedReason      2주로 줄였으면 그 이유(아니면 null)
      * @param omittedDecisions   사실을 만들지 않은 결정의 상태 → 건수(이름 순)
+     * @param entry              거절 주문의 가정 진입 규칙(입력 설명 note와 hypothetical의 모양이 따름)
      */
     public record Facts(LocalDate weekEnding, Window window, String trimmedReason, Integer frameworkVersion,
                         String frameworkStatus, List<DecisionFacts> decisions, Map<String, Integer> omittedDecisions,
-                        Comparison comparison) {
+                        Comparison comparison, Entry entry) {
         public Facts {
             decisions = List.copyOf(decisions);
             omittedDecisions = Collections.unmodifiableMap(new TreeMap<>(omittedDecisions));
+            Objects.requireNonNull(entry, "entry");
         }
 
         /** 창 안에 복기할 결정(OK·NO_TRADE)이 있는지 — 없으면 서비스는 호출 없이 SKIPPED로 남깁니다. */
@@ -463,7 +542,19 @@ public final class ReviewFacts {
      */
     public static Facts build(TradingCalendar calendar, Inputs in, LocalDate weekEnding, int weeks,
                               String trimmedReason) {
+        return build(calendar, Entry.NEXT_CLOSE, in, weekEnding, weeks, trimmedReason);
+    }
+
+    /**
+     * 복기 입력을 조립합니다 — 거절 주문의 가정 진입을 그 시장 규칙({@link Entry})으로. 종가 진입({@link Entry#NEXT_CLOSE})이면
+     * {@link #build(TradingCalendar, Inputs, LocalDate, int, String)}와 같은 결과이고 {@link Inputs#opens}를 읽지 않습니다.
+     *
+     * @param entry 그 시장의 가정 진입 규칙
+     */
+    public static Facts build(TradingCalendar calendar, Entry entry, Inputs in, LocalDate weekEnding, int weeks,
+                              String trimmedReason) {
         Objects.requireNonNull(calendar, "거래일 달력이 없습니다");
+        Objects.requireNonNull(entry, "가정 진입 규칙이 없습니다");
         Objects.requireNonNull(in, "in");
         Objects.requireNonNull(weekEnding, "weekEnding");
         if (!weekEnding.equals(weekEnding(calendar, weekEnding))) {
@@ -486,19 +577,18 @@ public final class ReviewFacts {
         Map<String, Integer> omitted = new TreeMap<>();
         for (Decision d : inWindow) {
             if (OK.equals(d.status()) || NO_TRADE.equals(d.status())) {
-                decisions.add(decision(calendar, d, weekEnding, in.closes(), stops, fullSells));
+                decisions.add(decision(calendar, entry, d, weekEnding, in, stops, fullSells));
             } else {
                 // 오류·거부·건너뜀은 논거가 없어 판정할 것이 없습니다 — 건수만 실어 '결정이 빠진 날'이 있었음을 알립니다.
                 omitted.merge(String.valueOf(d.status()), 1, Integer::sum);
             }
         }
         return new Facts(weekEnding, window, trimmedReason, in.frameworkVersion(), in.frameworkStatus(), decisions,
-                omitted, comparison(calendar, in.books(), window));
+                omitted, comparison(calendar, in.books(), window), entry);
     }
 
-    private static DecisionFacts decision(TradingCalendar calendar, Decision d, LocalDate weekEnding,
-                                          Map<String, DailySeries> closes, List<StopFill> stops,
-                                          List<FullSell> fullSells) {
+    private static DecisionFacts decision(TradingCalendar calendar, Entry entry, Decision d, LocalDate weekEnding,
+                                          Inputs in, List<StopFill> stops, List<FullSell> fullSells) {
         if (NO_TRADE.equals(d.status()) && d.orders().isEmpty()) {
             // 관망 결정은 짧게: 노출과 관망 사유만(주문이 없어 대조할 가격 사실이 없음).
             return new DecisionFacts(d.id(), d.kind(), d.asOf(), d.status(), d.stance(), d.targetExposurePct(), null,
@@ -510,16 +600,22 @@ public final class ReviewFacts {
         orders.sort(Comparator.comparingLong(Order::id));
         List<OrderFacts> facts = new ArrayList<>(orders.size());
         for (Order o : orders) {
-            facts.add(order(calendar, o, d.asOf(), weekEnding, closes.get(o.ticker()), stops, fullSells));
+            facts.add(order(calendar, entry, o, d.asOf(), weekEnding, in.closes().get(o.ticker()),
+                    entry == Entry.NEXT_OPEN ? in.opens().get(o.ticker()) : null, stops, fullSells));
         }
         return new DecisionFacts(d.id(), d.kind(), d.asOf(), d.status(), d.stance(), d.targetExposurePct(),
                 clip(d.summary(), SUMMARY_CHARS), clip(d.exposureRationale(), RATIONALE_CHARS),
                 clip(d.noTradeReason(), NO_TRADE_CHARS), d.frameworkVersion(), facts);
     }
 
-    /** 주문 하나의 사실(클래스 설명의 목록). */
-    static OrderFacts order(TradingCalendar calendar, Order o, LocalDate asOf, LocalDate weekEnding,
-                            DailySeries series, List<StopFill> stops, List<FullSell> fullSells) {
+    /**
+     * 주문 하나의 사실(클래스 설명의 목록).
+     *
+     * @param opens 그 종목의 세션 날짜 → 시가(시가 진입만 — 종가 진입이면 null)
+     */
+    static OrderFacts order(TradingCalendar calendar, Entry entry, Order o, LocalDate asOf, LocalDate weekEnding,
+                            DailySeries series, Map<LocalDate, EntryOpen> opens, List<StopFill> stops,
+                            List<FullSell> fullSells) {
         List<String> notes = new ArrayList<>();
         boolean buy = BUY.equals(o.side());
         boolean sell = SELL.equals(o.side());
@@ -570,8 +666,9 @@ public final class ReviewFacts {
             afterSellLabel = sellLabel(afterSell);
         }
 
-        Hypothetical hypothetical = rejected && (buy || sell)
-                ? hypothetical(calendar, asOf, weekEnding, series, close, sell, notes) : null;
+        Hypothetical hypothetical = !rejected || !(buy || sell) ? null
+                : entry == Entry.NEXT_OPEN ? openHypothetical(calendar, asOf, weekEnding, series, opens, close, sell, notes)
+                : hypothetical(calendar, asOf, weekEnding, series, close, sell, notes);
         Ma200 ma200 = ma200(series, weekEnding, close, notes);
         Evidence evidence = evidence(fill, buy, sell, stop, maxDrawdown, ma200);
         return new OrderFacts(o.id(), o.ticker(), o.side(), o.targetWeightPct(), o.sellFraction(), o.timing(),
@@ -689,6 +786,55 @@ public final class ReviewFacts {
         }
         Double r = pct(close / entryClose - 1.0);
         return new Hypothetical(entry, round(entryClose, 4), r, sell ? sellLabel(r) : null);
+    }
+
+    /**
+     * 거절 주문, 시가 진입({@link Entry#NEXT_OPEN}): 결정 다음 세션 시가 → 기준일 종가. 그 세션 시가가 없으면 그 세션 종가로 근사하고
+     * {@code isProxy}(notes에 이유), 둘 다 없으면 null. 시가가 그날 이력 종가와 기준 띠 밖이면 분할·병합 뒤 수정주가로 의심해 수익률을 내지
+     * 않습니다(시가는 원시 가격이고 이력은 수정 종가 — 체결가의 {@link #basisMatches}와 같은 띠).
+     */
+    private static Hypothetical openHypothetical(TradingCalendar calendar, LocalDate asOf, LocalDate weekEnding,
+                                                 DailySeries series, Map<LocalDate, EntryOpen> opens, Double close,
+                                                 boolean sell, List<String> notes) {
+        LocalDate entry = calendar.nextTradingDay(asOf);
+        if (entry.isAfter(weekEnding)) {
+            notes.add("가정 수익률: 결정 다음 세션(" + entry + ")이 복기 기준일 뒤");
+            return new Hypothetical(entry, null, null, null, null, null);
+        }
+        EntryOpen open = opens == null ? null : opens.get(entry);
+        Double reference = series == null ? null : series.valueOn(entry);
+        double price;
+        String source;
+        boolean proxy;
+        if (open != null) {
+            if (reference != null && reference > 0) {
+                double ratio = open.price() / reference;
+                if (ratio < BASIS_LOW || ratio > BASIS_HIGH) {
+                    notes.add("가정 수익률: 결정 다음 세션(" + entry + ") 시가 " + round(open.price(), 4) + " ÷ 그날 이력 종가 "
+                            + round(reference, 4) + " = " + round(ratio, 2) + " — " + BASIS_LOW + "~" + BASIS_HIGH
+                            + " 밖이라 분할·병합 뒤 수정주가로 의심, 가정 수익률을 내지 않음");
+                    return new Hypothetical(entry, round(open.price(), 4), null, null, open.source(), false);
+                }
+            }
+            price = open.price();
+            source = open.source();
+            proxy = false;
+        } else if (reference != null && reference > 0) {
+            notes.add("가정 수익률: 결정 다음 세션(" + entry + ") 시가 없음 — 그 세션 종가로 근사(isProxy)");
+            price = reference;
+            source = null;
+            proxy = true;
+        } else {
+            if (series != null && !series.isEmpty()) {
+                notes.add("가정 수익률: 결정 다음 세션(" + entry + ") 시가·종가 없음");
+            }
+            return new Hypothetical(entry, null, null, null, null, null);
+        }
+        if (close == null) {
+            return new Hypothetical(entry, round(price, 4), null, null, source, proxy);
+        }
+        Double r = pct(close / price - 1.0);
+        return new Hypothetical(entry, round(price, 4), r, sell ? sellLabel(r) : null, source, proxy);
     }
 
     /**
@@ -924,16 +1070,16 @@ public final class ReviewFacts {
         framework.put("version", f.frameworkVersion());
         framework.put("status", f.frameworkStatus());
         out.put("framework", framework);
-        out.put("note", NOTE);
+        out.put("note", f.entry() == Entry.NEXT_OPEN ? NEXT_OPEN_NOTE : NOTE);
         List<Object> decisions = new ArrayList<>();
-        f.decisions().forEach(d -> decisions.add(decisionMap(d)));
+        f.decisions().forEach(d -> decisions.add(decisionMap(d, f.entry())));
         out.put("decisions", decisions);
         out.put("omittedDecisions", new LinkedHashMap<>(f.omittedDecisions()));
         out.put("comparison", comparisonMap(f.comparison()));
         return out;
     }
 
-    private static Map<String, Object> decisionMap(DecisionFacts d) {
+    private static Map<String, Object> decisionMap(DecisionFacts d, Entry entry) {
         Map<String, Object> m = new LinkedHashMap<>();
         m.put("id", d.id());
         m.put("kind", d.kind());
@@ -953,12 +1099,12 @@ public final class ReviewFacts {
         }
         m.put("frameworkVersion", d.frameworkVersion());
         List<Object> orders = new ArrayList<>();
-        d.orders().forEach(o -> orders.add(orderMap(o)));
+        d.orders().forEach(o -> orders.add(orderMap(o, entry)));
         m.put("orders", orders);
         return m;
     }
 
-    private static Map<String, Object> orderMap(OrderFacts o) {
+    private static Map<String, Object> orderMap(OrderFacts o, Entry entry) {
         boolean buy = BUY.equals(o.side());
         boolean sell = SELL.equals(o.side());
         Map<String, Object> m = new LinkedHashMap<>();
@@ -1006,7 +1152,13 @@ public final class ReviewFacts {
             Map<String, Object> h = new LinkedHashMap<>();
             h.put("basis", HYPOTHETICAL);
             h.put("entryDate", text(o.hypothetical().entryDate()));
-            h.put("entryClose", o.hypothetical().entryClose());
+            if (entry == Entry.NEXT_OPEN) {
+                h.put("entryPrice", o.hypothetical().entryPrice());
+                h.put("entrySource", o.hypothetical().entrySource());
+                h.put("isProxy", o.hypothetical().isProxy());
+            } else {
+                h.put("entryClose", o.hypothetical().entryClose());
+            }
             h.put("returnPct", o.hypothetical().returnPct());
             if (sell) {
                 h.put("afterSellLabel", o.hypothetical().afterSellLabel());
