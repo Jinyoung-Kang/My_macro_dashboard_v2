@@ -306,3 +306,26 @@ describe("시장 고르기", () => {
     expect(screen.getByRole("heading", { level: 1, name: "모의 알고리즘 매매(미국)" })).toBeTruthy();
   });
 });
+
+describe("작업 기록 카드(x3 — 미국 응답은 그대로, 화면이 kr. 줄을 뺌)", () => {
+  const run = (job: string, outcome = "OK") => ({ job, startedAtKst: "2026-10-29 22:40 KST", finishedAtKst: "2026-10-29 22:41 KST",
+    outcome, detail: { filled: 0 } });
+
+  it("미국 개요 jobs에 kr.risk·kr.decision이 섞여도 표에는 미국 줄만 — 부제에 한국 작업은 한국 개요라고 적음", async () => {
+    reads["/api/paper/overview"] = () => Promise.resolve({
+      ...OVERVIEW, jobs: [run("kr.decision", "DATA_NOT_READY"), run("risk"), run("kr.risk"), run("decision", "DECIDED")],
+    });
+    render(<PaperPage />);
+
+    const table = await screen.findByRole("region", { name: "작업 기록 (좌우 스크롤)" });
+    const jobs = within(table).getAllByRole("row").slice(1).map((tr) => tr.children[0]?.textContent);
+    expect(jobs).toEqual(["risk", "decision"]);
+    expect(screen.getByText(/최근 10건 중 미국 작업 — 한국 작업 kr\.\*은 한국 개요/)).toBeTruthy();
+  });
+
+  it("받은 줄이 모두 kr.이면 '미국 작업이 없음' 안내", async () => {
+    reads["/api/paper/overview"] = () => Promise.resolve({ ...OVERVIEW, jobs: [run("kr.risk"), run("kr.decision")] });
+    render(<PaperPage />);
+    expect(await screen.findByText("최근 10건 가운데 미국 작업이 없습니다 — 한국 작업은 한국 개요에 있습니다.")).toBeTruthy();
+  });
+});

@@ -6,7 +6,8 @@
  * 이 파일이 lib/paper를 가져오고 lib/paper는 이 파일을 가져오지 않습니다(순환 방지).
  */
 import { EMPTY, formatKst, formatNumber } from "./format";
-import { type RiskResultView, riskResultView, settingValueAt } from "./paper";
+import { jsonSummary, type RiskResultView, riskResultView, settingValueAt } from "./paper";
+import type { PaperMarketCode } from "./paperMarket";
 import type {
   PaperBookSummary,
   PaperJobRun,
@@ -172,3 +173,63 @@ export function krRiskResultView(result: PaperKrRiskResult): RiskResultView {
 export const KR_RISK_RUN_NOTE =
   "'리스크 지금 실행'은 한국 장부의 실패 기억을 지우고 같은 관측치를 다시 처리합니다 — 장부 오류 원인을 고친 뒤 결정 게이트 ①을 푸는 창 안의 "
   + "복구 경로(재기동 대신)";
+
+// ---------------------------------------------------------------- 작업 기록 카드(2단계 명세 §9 x3·E0 메모)
+
+/** 한국 작업 기록 이름의 접두어(백엔드 PaperMarket.jobPrefix). */
+const KR_JOB_PREFIX = "kr.";
+
+/**
+ * 그 개요 시장의 작업 기록만. 미국 개요 응답의 작업 기록은 모든 작업(한국 `kr.*` 포함 — 미국 응답 글자를 지키려고 서버는 거르지 않음, 사용자
+ * 결정 2026-10-29 x3)이라 미국 카드는 화면에서 `kr.` 줄을 뺍니다. 한국 응답은 서버가 이미 `kr.`만 주지만 같은 규칙으로 한 번 더 거릅니다.
+ */
+export function marketJobs(jobs: readonly PaperJobRun[] | null | undefined, market: PaperMarketCode): PaperJobRun[] {
+  const korean = (job: PaperJobRun) => typeof job.job === "string" && job.job.startsWith(KR_JOB_PREFIX);
+  return (jobs ?? []).filter((job) => (market === "KR" ? korean(job) : !korean(job)));
+}
+
+/**
+ * 한국 작업 기록 상세의 아는 칸 — 기한 지남·세션·설정 출발일/미룸·이어진 주기·사유·과금 호출·시도·오류({@link krStartRecordParts})에 기다림 문구
+ * (`waiting`)·미달 게이트(`gates`의 FAIL)·판정 근거(`gatesBasis`)를 더합니다. 순서는 읽는 순서(무엇이 → 왜).
+ */
+export function krJobDetailParts(detail: unknown): string[] {
+  if (!isRecord(detail)) return [];
+  const parts: string[] = [];
+  if (detail.pastDeadline === true) parts.push("기한 지남");
+  parts.push(...krStartRecordParts(detail));
+  const waiting = textOf(detail.waiting);
+  if (waiting) parts.push(waiting);
+  const failed = (Array.isArray(detail.gates) ? detail.gates : [])
+    .filter((gate): gate is Record<string, unknown> => isRecord(gate) && gate.status === "FAIL")
+    .map((gate) => textOf(gate.gate) ?? EMPTY);
+  if (failed.length > 0 && !waiting) parts.push(`미달 게이트 ${failed.join("·")}`);
+  const basis = textOf(detail.gatesBasis);
+  if (basis) parts.push(`판정 ${basis}`);
+  return parts;
+}
+
+/**
+ * 한국 작업 기록 상세 한 줄 — 아는 칸이 있으면 그것을 앞에(자르지 않음), 없으면(리스크 점검의 체결 수 등) 미국 카드와 같은 키: 값 요약. 전체
+ * JSON은 마우스를 올려 봅니다(lib/paper jsonTitle).
+ */
+export function krJobDetailText(job: Pick<PaperJobRun, "detail">): string {
+  const parts = krJobDetailParts(job.detail);
+  return parts.length > 0 ? parts.join(" · ") : jsonSummary(job.detail);
+}
+
+/** 작업 기록 카드의 부제 — 무엇을 남기는지(시장마다 다름). */
+export function jobsCardSubtitle(market: PaperMarketCode): string {
+  return market === "KR"
+    ? "일했을 때·오류일 때, 그리고 한국 결정·출발이 자료를 기다린 세션마다 한 줄(이어진 주기 수 — 이어진 기다림은 그 줄만 늘림)을 "
+      + "남깁니다(최근 10건). 상세에는 세션·사유·미달 게이트·미룬 날·과금 호출이 앞에 있고, 전체는 마우스를 올려 봅니다."
+    : "정기·수동 작업이 일했을 때·오류일 때만 남깁니다(최근 10건 중 미국 작업 — 한국 작업 kr.*은 한국 개요). 상세에는 처리한 관측치의 "
+      + "수집 시각·봉 날짜·티커 수가 있습니다.";
+}
+
+/** 작업 기록 카드가 비었을 때 — 미국 카드는 서버가 준 최근 10건이 모두 한국 작업이면 그렇다고 적습니다(빈 표를 '기록 없음'으로 읽지 않게). */
+export function jobsEmptyMessage(market: PaperMarketCode, all: readonly PaperJobRun[] | null | undefined): string {
+  if (market === "US" && (all ?? []).length > 0) return "최근 10건 가운데 미국 작업이 없습니다 — 한국 작업은 한국 개요에 있습니다.";
+  return market === "KR"
+    ? "아직 한국 작업 기록이 없습니다. 한국 리스크 점검이 새 관측치를 처리하거나 결정·출발이 자료를 기다리면 생깁니다."
+    : "아직 작업 기록이 없습니다. 리스크 작업이 새 관측치를 처리하면 생깁니다.";
+}

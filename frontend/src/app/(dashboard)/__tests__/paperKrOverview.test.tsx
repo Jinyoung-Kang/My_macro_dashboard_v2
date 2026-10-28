@@ -317,3 +317,26 @@ describe("출발 상태(초기화·출발 단추)", () => {
     expect(await screen.findByText("한국 책이 쉬고 있어 리스크 점검을 하지 않았습니다 — 한국 계좌가 없습니다")).toBeTruthy();
   });
 });
+
+describe("작업 기록 카드(한국)", () => {
+  it("기다림 줄의 이어진 주기·사유, 출발 미룸의 과금 호출·미룬 날이 상세 앞에 — 부제는 기다림 줄도 남긴다고", async () => {
+    reads["/api/paper/overview?market=KR"] = () => Promise.resolve({
+      ...KR_OVERVIEW,
+      jobs: [
+        { job: "kr.decision", startedAtKst: "2026-10-30 22:30 KST", finishedAtKst: "2026-10-30 23:10 KST", outcome: "DATA_NOT_READY",
+          detail: { tradingDate: "2026-10-30", checks: 5, waiting: "자료 게이트 미달: ② — 기한까지 다음 주기에 다시 봅니다",
+            gates: [{ gate: "②", status: "FAIL", note: "관측치 없음" }] } },
+        { job: "kr.decision", startedAtKst: "2026-10-30 01:00 KST", finishedAtKst: "2026-10-30 01:00 KST", outcome: "START_POSTPONED",
+          detail: { start: true, tradingDate: "2026-10-29", configuredStartDate: "2026-10-29", postponed: false,
+            postponedTo: "2026-10-30", reason: "출발 계획 실패", calls: { kr_claude: { calls: 2 } } } },
+      ],
+    });
+    reads["/api/paper/status?market=KR"] = () => Promise.resolve(KR_STATUS);
+    render(<PaperPage market="KR" />);
+
+    const table = await screen.findByRole("region", { name: "작업 기록 (좌우 스크롤)" });
+    expect(within(table).getByText("세션 2026-10-30 · 이어진 주기 5번 · 자료 게이트 미달: ② — 기한까지 다음 주기에 다시 봅니다")).toBeTruthy();
+    expect(within(table).getByText(/다음 KR 거래일 2026-10-30로 미룸 · 사유 출발 계획 실패 · 과금 호출 kr_claude 2회/)).toBeTruthy();
+    expect(screen.getByText(/한국 결정·출발이 자료를 기다린 세션마다 한 줄/)).toBeTruthy();
+  });
+});

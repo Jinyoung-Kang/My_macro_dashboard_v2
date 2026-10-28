@@ -47,7 +47,14 @@ import {
   navSeriesWindow,
   sampleNotes,
 } from "@/lib/paperOverview";
-import { KR_RISK_RUN_NOTE, krRiskResultView } from "@/lib/paperKr";
+import {
+  jobsCardSubtitle,
+  jobsEmptyMessage,
+  KR_RISK_RUN_NOTE,
+  krJobDetailText,
+  krRiskResultView,
+  marketJobs,
+} from "@/lib/paperKr";
 import { marketMeta, type PaperMarketCode } from "@/lib/paperMarket";
 import { allowedRangeKey } from "@/lib/patternRows";
 import type {
@@ -528,12 +535,13 @@ export function OverviewSection({
         {earnings && <p className="mt-1 text-xs text-muted">{earnings}</p>}
       </Card>
 
-      <Card title="작업 기록" subtitle="정기·수동 작업이 일했을 때·오류일 때만 남깁니다(최근 10건). 상세에는 처리한 관측치의 수집 시각·봉 날짜·티커 수가 있습니다." source={PAPER_SOURCES.jobs}>
+      <Card title="작업 기록" subtitle={jobsCardSubtitle(market)} source={PAPER_SOURCES.jobs}>
         <Table<PaperJobRun>
           label="작업 기록"
-          rows={overview.jobs ?? []}
+          // 미국 개요 응답의 작업 기록은 한국 kr.* 줄도 담아(미국 응답 글자 그대로 — x3) 화면에서 그 시장 줄만 남깁니다.
+          rows={marketJobs(overview.jobs, market)}
           rowKey={(row, index) => `${row.job}-${row.startedAtKst ?? index}-${index}`}
-          emptyMessage="아직 작업 기록이 없습니다. 리스크 작업이 새 관측치를 처리하면 생깁니다."
+          emptyMessage={jobsEmptyMessage(market, overview.jobs)}
           columns={[
             { key: "job", header: "작업", render: (row) => row.job },
             { key: "startedAt", header: "시작", render: (row) => formatKst(row.startedAtKst) },
@@ -548,7 +556,7 @@ export function OverviewSection({
               header: "상세",
               render: (row) => (
                 <span className="text-xs text-muted" title={jsonTitle(row.detail)}>
-                  {jsonSummary(row.detail)}
+                  {korea ? krJobDetailText(row) : jsonSummary(row.detail)}
                 </span>
               ),
             },

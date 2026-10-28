@@ -10,7 +10,9 @@ import { describe, expect, it } from "vitest";
 
 import {
   chargedCalls,
+  jobsEmptyMessage,
   krDecisionWindowText,
+  krJobDetailText,
   krInitResultText,
   krRiskResultView,
   krStartRecordLine,
@@ -18,6 +20,7 @@ import {
   krStartResultView,
   krStartState,
   latestStartRecord,
+  marketJobs,
 } from "../paperKr";
 import type { PaperBookSummary } from "../types";
 
@@ -118,5 +121,40 @@ describe("리스크 점검", () => {
       .toBe("한국 책이 쉬고 있어 리스크 점검을 하지 않았습니다 — 출발일 없음");
     expect(krRiskResultView({ ok: true, market: "KR", dormantReason: null, outcome: { ...outcome, skippedReason: null } }))
       .toMatchObject({ tone: "info", warning: null });
+  });
+});
+
+describe("작업 기록 카드(x3)", () => {
+  const job = (name: string, detail: unknown = {}) => ({ job: name, startedAtKst: null, finishedAtKst: null, outcome: "OK", detail });
+
+  it("미국 카드는 kr. 줄을 빼고, 한국 카드는 kr.만", () => {
+    const jobs = [job("decision"), job("kr.risk"), job("risk"), job("kr.decision"), job("krx-like")];
+    expect(marketJobs(jobs, "US").map((row) => row.job)).toEqual(["decision", "risk", "krx-like"]);
+    expect(marketJobs(jobs, "KR").map((row) => row.job)).toEqual(["kr.risk", "kr.decision"]);
+    expect(marketJobs(null, "US")).toEqual([]);
+  });
+
+  it("비었을 때 — 미국은 받은 줄이 모두 한국 작업이면 그렇다고", () => {
+    expect(jobsEmptyMessage("US", [job("kr.risk")])).toBe("최근 10건 가운데 미국 작업이 없습니다 — 한국 작업은 한국 개요에 있습니다.");
+    expect(jobsEmptyMessage("US", [])).toContain("아직 작업 기록이 없습니다");
+    expect(jobsEmptyMessage("KR", [])).toContain("아직 한국 작업 기록이 없습니다");
+  });
+
+  it("한국 상세 — 기다림 줄(이어진 주기·기다림 문구), 기한 지남(미달 게이트·판정 근거), 출발 미룸(미룬 날·과금 호출), 모르는 모양은 키: 값", () => {
+    expect(krJobDetailText(job("kr.decision", {
+      tradingDate: "2026-10-29", checks: 4, waiting: "자료 게이트 미달: ⑤ — 기한 2026-10-30 01:00 KST까지 다음 주기에 다시 봅니다",
+      gates: [{ gate: "⑤", status: "FAIL", note: "069500 D 봉 없음" }],
+    }))).toBe("세션 2026-10-29 · 이어진 주기 4번 · 자료 게이트 미달: ⑤ — 기한 2026-10-30 01:00 KST까지 다음 주기에 다시 봅니다");
+    expect(krJobDetailText(job("kr.decision", {
+      tradingDate: "2026-10-29", pastDeadline: true, gatesBasis: "기한 전 마지막 판정 2026-10-30 00:50 KST",
+      gates: [{ gate: "③", status: "FAIL", note: "창 구멍" }, { gate: "②", status: "PASS", note: null }],
+    }))).toBe("기한 지남 · 세션 2026-10-29 · 미달 게이트 ③ · 판정 기한 전 마지막 판정 2026-10-30 00:50 KST");
+    expect(krJobDetailText(job("kr.decision", {
+      start: true, tradingDate: "2026-10-30", configuredStartDate: "2026-10-29", postponed: true, postponedTo: "2026-11-02",
+      reason: "출발 계획 실패", calls: { kr_claude: { calls: 1 } },
+    }))).toBe("세션 2026-10-30 · 설정 출발일 2026-10-29에서 미뤄짐 · 다음 KR 거래일 2026-11-02로 미룸 · 사유 출발 계획 실패 · "
+      + "과금 호출 kr_claude 1회(결정 행 없음 — 사용량에 셈)");
+    expect(krJobDetailText(job("kr.risk", { filled: 0, barDate: "2026-10-28" }))).toBe("filled: 0 · barDate: 2026-10-28");
+    expect(krJobDetailText(job("kr.risk", null))).toBe("—");
   });
 });
