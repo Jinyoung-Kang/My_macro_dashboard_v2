@@ -6,7 +6,7 @@
  *    계좌 상세의 보유 응답이 실패하면 그 칸만 오류 + 다시 시도, 나머지(정의·핵심 숫자)는 개요 값으로
  *  - 추정에 가까운 상태: 사후 체결을 기다리는 벤치마크 행에 경고, 가격 없는 보유가 있으면 비교 표 '가격 없음'이 경고색
  *  - 오래됨: 가격 없는 보유·늦은 관측치 저장본이면 계좌 행에 '이전 값' 배지와 사유(숨기는 옵션 없음)
- *  - 기간별 순자산 곡선: 저장된 기록보다 긴 기간 탭은 없고, 고르면 그 기간만(경계선도 그 기간 안의 것만)
+ *  - 기간별 순자산 곡선: 저장된 기록보다 긴 기간 탭은 없고, 고르면 그 기간만(경계선도 그 기간 안의 것만), 곡선 아래 노출 문구(남는 현금 SHY)
  *  - 시장 고르기: 화면 안에는 없다 — 셸의 하위 메뉴 줄(미국 | 한국 · 준비 중 · 2단계)이 맡는다(Shell.test.tsx), 제목은 '(미국)'
  */
 import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
@@ -262,6 +262,17 @@ describe("기간별 순자산 곡선", () => {
     render(<PaperPage />);
     await screen.findByRole("list", { name: "순자산 계열" });
     expect(screen.queryByRole("tablist", { name: "순자산 곡선 기간" })).toBeNull();
+  });
+
+  it("곡선 아래 노출 문구 — 규칙 계좌 결과는 13F 종목 신호와 주식 노출(남는 현금 SHY)이 섞인 값(2단계 명세 §4-16, 미국 응답·한계 문구는 그대로)", async () => {
+    reads["/api/paper/overview"] = () => Promise.resolve(OVERVIEW);
+    render(<PaperPage />);
+    await screen.findByRole("list", { name: "순자산 계열" });
+    expect(screen.getByText(
+      "규칙 계좌 결과는 13F 종목 신호와 주식 노출(남는 현금은 SHY)이 섞인 값입니다 — 주식 비중이 낮은 날은 SHY 수익이 섞입니다",
+    )).toBeTruthy();
+    // 한국 문구(153130·참고선)는 미국 화면에 없습니다.
+    expect(screen.queryByText(/153130|노출 맞춘 참고선/)).toBeNull();
   });
 
   it("기록이 길면 저장 구간 안의 기간만 — 고르면 그 기간의 행만, 경계선도 그 기간 안의 것만(한 줄 글은 전체 기준)", async () => {

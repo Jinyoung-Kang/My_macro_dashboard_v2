@@ -14,6 +14,7 @@ import {
   formatSharePrice,
   calendarLine,
   earningsLine,
+  exposureNote,
   fundamentalsLine,
   heldText,
   initPrompt,
@@ -722,5 +723,17 @@ describe("메모 안내 — 시장 인자(미국 문구 그대로, 한국은 KRX
     expect(noteStateBadge({ kind: "MARKET", archived: false, active: false }).label).toBe("패킷 밖 — 만료·기준일 전");
     expect(noteStateBadge({ kind: "MARKET", archived: false }).label).toBe("패킷 밖 — 만료·기준일 전");
     expect(noteStateBadge({ kind: "INSIGHT", archived: false, active: null }).label).toBe("프레임 제안용");
+  });
+});
+
+describe("노출 문구(2단계 명세 §4-16 — 미국 화면에도)", () => {
+  it("미국은 13F 종목 신호 + 남는 현금 SHY, 한국은 153130과 노출 맞춘 참고선 — 인자 없음은 미국", () => {
+    expect(exposureNote()).toBe(exposureNote("US"));
+    expect(exposureNote("US")).toBe(
+      "규칙 계좌 결과는 13F 종목 신호와 주식 노출(남는 현금은 SHY)이 섞인 값입니다 — 주식 비중이 낮은 날은 SHY 수익이 섞입니다",
+    );
+    expect(exposureNote("KR")).toContain("(후보가 모자란 만큼과 남는 현금은 153130)");
+    expect(exposureNote("KR")).toContain("점선(노출 맞춘 참고선)");
+    expect(exposureNote("KR")).not.toContain("SHY");
   });
 });

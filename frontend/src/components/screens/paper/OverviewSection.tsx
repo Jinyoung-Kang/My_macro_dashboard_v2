@@ -16,6 +16,7 @@ import {
   calendarLine,
   claudeExposureChart,
   earningsLine,
+  exposureNote,
   frameworkBoundaryView,
   fundamentalsLine,
   initialDecisionResultView,
@@ -405,6 +406,8 @@ export function OverviewSection({
           axisWidth={korea ? 84 : undefined}
         />
         {boundaries.text && <p className="mt-2 text-xs text-muted">{boundaries.text}</p>}
+        {/* 규칙 계좌 결과는 종목 신호와 주식 노출이 섞인 값 — 미국(남는 현금 SHY)·한국(153130, 참고선과 함께) 같은 함수(2단계 명세 §4-16). */}
+        <p className="mt-2 text-xs text-muted">{exposureNote(market)}</p>
         {referenceNotes && (
           <ul aria-label="노출 맞춘 참고선 설명" className="mt-2 flex flex-col gap-0.5 text-xs text-muted">
             {referenceNotes.map((note) => <li key={note}>{note}</li>)}

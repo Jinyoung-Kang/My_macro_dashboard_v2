@@ -429,6 +429,8 @@ describe("노출 맞춘 참고선(K40)", () => {
     expect(reference.getAttribute("data-digits")).toBe("0");
     expect(reference.getAttribute("data-values")).toBe("100000000,100100000");
     expect(within(nav).getByText("한국 규칙 계좌").getAttribute("data-dashed")).toBe("no");
+    // 곡선 아래 노출 문구(미국과 같은 함수 — 한국은 153130·참고선).
+    expect(screen.getByText(/^규칙 계좌 결과는 종목 신호와 주식 노출\(후보가 모자란 만큼과 남는 현금은 153130\)이 섞인 값입니다/)).toBeTruthy();
     const notes = screen.getByRole("list", { name: "노출 맞춘 참고선 설명" });
     expect(within(notes).getByText(/^멈춤: 2026-10-30 규칙 계좌 주식 비중을 모릅니다/)).toBeTruthy();
     expect(within(notes).getByText(/전날 규칙 계좌 주식 비중 0\.00%/)).toBeTruthy();

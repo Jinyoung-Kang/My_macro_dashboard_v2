@@ -416,8 +416,9 @@ export function krReferenceNotes(reference: PaperExposureReference | null | unde
   const lastIndex = reference.asOfDate ? reference.dates.indexOf(reference.asOfDate) : -1;
   const weight = lastIndex >= 0 ? numberOf(weights[lastIndex]) : null;
   const notes = [
+    // 왜 보는지(규칙 계좌 결과의 노출 혼합)는 곡선 아래 노출 문구(lib/paper exposureNote)가 한 줄로 적습니다 — 여기서는 정의만.
     "점선 = 노출 맞춘 참고선 — 전날 규칙 계좌 주식 비중 x%를 069500 x% + 153130 (100−x)%로 맞춰 이은 선입니다(계산만 하고 계좌가 아님, "
-      + "비용 없음, 금융위원회 증권상품시세 확정 종가). 규칙 계좌 결과에서 주식 노출 몫을 떼어 종목 신호 몫을 보려는 선입니다.",
+      + "비용 없음, 금융위원회 증권상품시세 확정 종가).",
     reference.asOfDate
       ? `마지막 값 ${reference.asOfDate}(그날 쓴 전날 규칙 계좌 주식 비중 ${weight === null ? EMPTY : `${formatNumber(weight, 2)}%`}) — `
         + "금융위 확정 종가가 들어온 날까지라 보통 하루 늦습니다."
