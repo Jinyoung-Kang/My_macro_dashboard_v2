@@ -133,7 +133,9 @@ describe("한국 메모 탭", () => {
     reads[LIST] = () => Promise.resolve({ available: true, market: "KR", dormantReason: reason, referenceDate: "2026-10-28", notes: [] });
     renderNotes();
     expect(await screen.findByText(/한국 책이 쉬는 동안에도 메모는 쓸 수 있습니다/)).toBeTruthy();
-    await waitFor(() => expect(screen.getAllByText(new RegExp("PAPER_KR_START_DATE")).length).toBeGreaterThanOrEqual(2));
-    expect(screen.getByText(/출발일 — 밤의 출발 결정도 같은 규칙/)).toBeTruthy();
+    // 사유는 화면 맨 위 배너 한 곳(메모 카드에서 되풀이하지 않음).
+    await waitFor(() => expect(screen.getAllByText(new RegExp("PAPER_KR_START_DATE"))).toHaveLength(1));
+    // 출발일이 없으면 날짜 없이 '출발 결정도 같은 규칙'.
+    expect(screen.getByText(/\(출발 결정도 같은 규칙\)/)).toBeTruthy();
   });
 });

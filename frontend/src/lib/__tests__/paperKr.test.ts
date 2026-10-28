@@ -570,7 +570,7 @@ describe("종목 선정 탭", () => {
     expect(view.members.map((member) => member.code)).toEqual(["005930", "105560", "999999"]);
     const [first, second, third] = view.members;
     expect(first.text).toMatchObject({ marketCap: "—", foreign20: "—", roe: "—", financial: "—", score: "—", candidate: "매수 목표", reasons: "—" });
-    expect(second.text).toMatchObject({ marketCap: "30.000조 원", roe: "9.5%", debtRatio: "—", financial: "금융업 표", candidate: "제외" });
+    expect(second.text).toMatchObject({ marketCap: "30.00", roe: "9.5%", debtRatio: "—", financial: "금융업 표", candidate: "제외" });
     expect(third.financialCheck).toBe(true);
     expect(view.financialChecks.map((note) => note.label)).toEqual(["999999 어느 지주"]);
     expect(view.noData.map((note) => `${note.label} — ${note.detail}`)).toEqual([

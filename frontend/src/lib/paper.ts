@@ -4496,7 +4496,7 @@ export function notesIntro(startDate: string | null | undefined, market: PaperMa
     return "한국 시황 메모(MARKET)는 기준일~만료일 사이 한국 Claude 계좌 결정 패킷(섹션 11)에만 구분자로 감싼 자료로 실립니다 — 지시가 아니고, "
       + "메모의 숫자보다 패킷의 숫자가 우선합니다. 미국 메모와 따로라 이 목록은 한국 메모뿐입니다(미국 메모는 미국 화면의 메모 탭). 유효한 메모는 "
       + "최신부터 합계 글자 수 상한(설정 notesMaxCharsInPacket — 두 책 공용)까지 싣습니다. 한국 결정은 KR 거래일 밤에 그날 세션 D를 기준 "
-      + `거래일로 보므로 기준일 ≤ D ≤ 만료일인 메모가 실립니다(출발일 ${startDate ?? EMPTY} 밤의 출발 결정도 같은 규칙). 방법론 메모(INSIGHT)는 `
+      + `거래일로 보므로 기준일 ≤ D ≤ 만료일인 메모가 실립니다(${startDate ? `출발일 ${startDate} 밤의 ` : ""}출발 결정도 같은 규칙). 방법론 메모(INSIGHT)는 `
       + "패킷에 싣지 않고 프레임 제안에만 씁니다(프레임은 두 시장 공용). 한국 규칙 계좌는 메모를 읽지 않습니다.";
   }
   return "시황 메모(MARKET)는 기준일~만료일 사이 Claude 결정 패킷(섹션 11)에 구분자로 감싼 자료로 실립니다 — 지시가 아니고, 메모의 숫자보다 "
@@ -4568,8 +4568,8 @@ export function noteArchiveConfirm(row: Pick<NoteRow, "id" | "title">): string {
 export function exposureNote(market: PaperMarketCode = "US"): string {
   const cashLike = marketMeta(market).cashLike;
   return market === "KR"
-    ? `규칙 계좌 결과는 종목 신호와 주식 노출(후보가 모자란 만큼과 남는 현금은 ${cashLike})이 섞인 값입니다 — 점선(노출 맞춘 참고선)과 `
-      + "함께 보면 주식 노출 몫을 뗀 종목 신호 몫이 보입니다"
+    ? `규칙 계좌 결과는 종목 신호와 주식 노출(후보가 모자란 만큼과 남는 현금은 ${cashLike})이 섞인 값입니다 — 점선(노출 맞춘 참고선 — 출발 뒤 `
+      + "금융위 확정 종가가 들어온 날부터 그림)과 함께 보면 주식 노출 몫을 뗀 종목 신호 몫이 보입니다"
     : `규칙 계좌 결과는 13F 종목 신호와 주식 노출(남는 현금은 ${cashLike})이 섞인 값입니다 — 주식 비중이 낮은 날은 ${cashLike} 수익이 섞입니다`;
 }
 

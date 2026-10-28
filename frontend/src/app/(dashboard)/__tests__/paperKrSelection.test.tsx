@@ -239,8 +239,11 @@ describe("한국 종목 선정 탭", () => {
     const rows = within(table).getAllByRole("row");
     expect(rows).toHaveLength(MEMBERS.length + 1);
     expect(within(rows[1]).getByText("매수 목표")).toBeTruthy();
-    expect(within(rows[1]).getByText("512.3조 원")).toBeTruthy();
-    expect(within(rows[1]).getByText("+1,234.0만 주")).toBeTruthy();
+    // 한 열은 한 단위 — 시총은 조 원(머리), 순매수는 주 정수에 부호(작은 값의 부호를 잃지 않게).
+    expect(within(table).getByRole("button", { name: /시총\(조 원\)/ })).toBeTruthy();
+    expect(within(rows[1]).getByText("512.35")).toBeTruthy();
+    expect(within(rows[1]).getByText("+12,340,000")).toBeTruthy();
+    expect(within(rows[4]).getByText("-320,000")).toBeTruthy();
     expect(within(rows[4]).getByText(/수급 미달 — 20일 외국인/)).toBeTruthy();
     fireEvent.click(within(table).getByRole("button", { name: /점수/ }));
     await waitFor(() => expect(within(within(table).getAllByRole("row")[1]).getByText("323410")).toBeTruthy());
@@ -253,6 +256,7 @@ describe("한국 종목 선정 탭", () => {
     expect(screen.getByText(/기준일 2026-10-30 · 100종목/)).toBeTruthy();
     expect(screen.getByText(/접수일\(rceptNo 앞 8자리\) ≤ 기준 세션 2026-11-02만/)).toBeTruthy();
     expect(screen.getByText("000660 SK하이닉스(~2026-11-10)")).toBeTruthy();
+    expect(screen.getByText("기준 세션 뒤 날짜 0 · 읽은 순간 뒤에 받음 2 · 받은 시각 모름 0")).toBeTruthy();
   });
 
   it("선정한 결정이 가장 최근 결정이면 상세를 한 번만 읽고 참고 줄이 없다", async () => {

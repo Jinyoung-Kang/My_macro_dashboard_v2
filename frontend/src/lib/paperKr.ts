@@ -5,7 +5,7 @@
  * 모르는 값은 "—"로 둡니다(0이나 다른 날로 채우지 않음). 한국만의 표기라 lib/paper(미국과 공용)를 크게 만들지 않고 따로 둡니다 —
  * 이 파일이 lib/paper를 가져오고 lib/paper는 이 파일을 가져오지 않습니다(순환 방지).
  */
-import { EMPTY, formatKrw, formatKst, formatNumber, formatPercent, formatShares, formatSigned } from "./format";
+import { EMPTY, formatKst, formatNumber, formatPercent, formatSigned } from "./format";
 import {
   type Badge,
   decisionKindLabel,
@@ -797,6 +797,13 @@ export interface KrRuleDecisionView {
   input: KrCell[];
 }
 
+/** 결정 시각 뒤에 알 수 있던 수급 기록(입력 동결에서 뺀 것)의 갈래 이름 — 서버 키(excludedFlowRecords)를 사람이 읽는 말로. 모르는 키는 그대로. */
+const EXCLUDED_FLOW_LABELS: Readonly<Record<string, string>> = {
+  afterSession: "기준 세션 뒤 날짜",
+  fetchedAfterRead: "읽은 순간 뒤에 받음",
+  unknownFetchedAt: "받은 시각 모름",
+};
+
 /** 결정 상세에 보일 후보 수(점수 순 앞부분 — 나머지는 수만, 전체는 종목 선정 탭). */
 const KR_CANDIDATES_SHOWN = 10;
 
@@ -855,7 +862,7 @@ export function krRuleDecisionView(book: string | null | undefined, response: un
     });
     inputCells.push({ key: "financialSectorTable", label: "금융업 코드 표 판", value: textOf(input.financialSectorTable) ?? EMPTY });
     if (excluded) {
-      const parts = Object.entries(excluded).map(([name, count]) => `${name} ${formatNumber(numberOf(count), 0)}`);
+      const parts = Object.entries(excluded).map(([name, count]) => `${EXCLUDED_FLOW_LABELS[name] ?? name} ${formatNumber(numberOf(count), 0)}`);
       inputCells.push({ key: "excluded", label: "결정 뒤에 알 수 있던 수급 기록(뺌)", value: parts.length > 0 ? parts.join(" · ") : EMPTY });
     }
     const suspended = stringsOf(input.suspended);
@@ -1186,6 +1193,9 @@ export interface KrMemberRow {
   };
 }
 
+/** 값 ÷ 단위(모르면 null). */
+const scaled = (value: number | null, unit: number) => (value === null ? null : value / unit);
+
 /** 구성원 사유 한 줄 — "수급 미달 — 문장"(세부 사유는 문장 앞머리에 이미 있음). */
 function memberReasonText(reason: KrMemberReason): string {
   return reason.detail ? `${reason.reason} — ${reason.detail}` : reason.reason;
@@ -1238,11 +1248,13 @@ function krMemberRows(members: unknown, targetCodes: ReadonlySet<string>): KrMem
       financialCheck: reasons.some((entry) => entry.detail.includes(KR_FINANCIAL_TABLE_CHECK)),
       text: {
         rank: formatNumber(rank, 0),
-        marketCap: formatKrw(numberOf(member.marketCap)),
-        foreign20: formatShares(numberOf(flows.foreign20)),
-        institution20: formatShares(numberOf(flows.institution20)),
-        foreign5: formatShares(numberOf(flows.foreign5)),
-        institution5: formatShares(numberOf(flows.institution5)),
+        // 한 열은 한 단위(PRINCIPLES — 같은 화면은 같은 단위): 시총은 조 원 소수 둘째, 순매수는 주 정수에 부호(만 주로 줄이면 작은 값의 부호가
+        // 사라져 '둘 다 0보다 큼' 판정을 읽을 수 없음).
+        marketCap: formatNumber(scaled(numberOf(member.marketCap), 1e12), 2),
+        foreign20: formatSigned(numberOf(flows.foreign20), 0),
+        institution20: formatSigned(numberOf(flows.institution20), 0),
+        foreign5: formatSigned(numberOf(flows.foreign5), 0),
+        institution5: formatSigned(numberOf(flows.institution5), 0),
         streak: streak === null ? EMPTY : `${formatNumber(streak, 0)}일`,
         roe: pct(roePct, 1),
         debtRatio: pct(debtRatioPct, 1),

@@ -109,9 +109,10 @@ export function NotesSection({ startDate, market = "US" }: { startDate: string |
             </Banner>
           </div>
         )}
+        {/* 쉬는 사유는 화면 맨 위 배너가 적습니다(PaperScreen) — 여기서는 메모를 써도 되는지만. */}
         {dormantReason && (
           <p className="mb-3 text-xs leading-relaxed text-muted">
-            한국 책이 쉬는 동안에도 메모는 쓸 수 있습니다(글일 뿐) — 한국 결정이 돌기 시작하면 그 거래일에 유효한 메모가 실립니다. 쉬는 사유: {dormantReason}
+            한국 책이 쉬는 동안에도 메모는 쓸 수 있습니다(글일 뿐) — 한국 결정이 돌기 시작하면 그 거래일에 유효한 메모가 실립니다.
           </p>
         )}
         {notes.loading && !notes.data && <Loading label="메모를 읽는 중…" />}

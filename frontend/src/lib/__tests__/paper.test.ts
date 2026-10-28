@@ -733,7 +733,7 @@ describe("노출 문구(2단계 명세 §4-16 — 미국 화면에도)", () => {
       "규칙 계좌 결과는 13F 종목 신호와 주식 노출(남는 현금은 SHY)이 섞인 값입니다 — 주식 비중이 낮은 날은 SHY 수익이 섞입니다",
     );
     expect(exposureNote("KR")).toContain("(후보가 모자란 만큼과 남는 현금은 153130)");
-    expect(exposureNote("KR")).toContain("점선(노출 맞춘 참고선)");
+    expect(exposureNote("KR")).toContain("점선(노출 맞춘 참고선 — 출발 뒤 금융위 확정 종가가 들어온 날부터 그림)");
     expect(exposureNote("KR")).not.toContain("SHY");
   });
 });

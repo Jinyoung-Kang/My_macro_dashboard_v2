@@ -4,7 +4,7 @@
  *  - 프레임: 불러오는 중·오류·자료 모두 맨 위에 '두 시장 공용 프레임' 안내, 방법론 메모 고르기는 한국 메모 목록(?market=KR), 저장은 본문
  *    market:"KR", 제안은 같은 공용 경로
  *  - 설정: 불러오는 중·오류·자료 모두 맨 위에 '한 행을 함께 씀' 안내, 보기 기본 '한국 + 공용'(미국 키 숨김) → '전체'로 바꾸면 미국 키,
- *    키마다 '한국 책'·'미국 책'(공용은 표시 없음), 숨긴 키에 고친 값도 바꿀 값에 남음, 빈 설정 행(초기화 전)은 기본값으로 읽는다는 안내
+ *    미국 키에만 '미국 책'(kr.*·공용은 표시 없음), 숨긴 키에 고친 값도 바꿀 값에 남음, 빈 설정 행(초기화 전)은 기본값으로 읽는다는 안내
  *  - 미국 화면은 안내·보기 고르기가 없음
  */
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
@@ -142,7 +142,7 @@ describe("한국 설정 탭(두 시장 공용)", () => {
     expect(screen.getByText(SETTINGS_NOTE)).toBeTruthy();
   });
 
-  it("자료: 보기 기본 '한국 + 공용'(미국 키 숨김) → '전체'면 미국 키, 키마다 책 표시, 숨긴 키의 고친 값도 남음", async () => {
+  it("자료: 보기 기본 '한국 + 공용'(미국 키 숨김) → '전체'면 미국 키('미국 책' 표시), 숨긴 키의 고친 값도 남음", async () => {
     reads["/api/paper/settings"] = () => Promise.resolve(SETTINGS);
     render(<PaperPage market="KR" initialTab="settings" />);
     expect(await screen.findByLabelText("kr.rulesMaxNames")).toBeTruthy();
@@ -153,8 +153,8 @@ describe("한국 설정 탭(두 시장 공용)", () => {
     expect(within(view).getAllByRole("option").map((option) => option.textContent)).toEqual([
       "한국 + 공용 (4개)", "전체 — 미국 키 포함 (5개)",
     ]);
-    // 한국 키에는 '한국 책', 공용 키에는 표시 없음.
-    expect(screen.getAllByText("한국 책")).toHaveLength(2);
+    // 표시는 미국 키의 '미국 책'뿐 — kr.* 키는 이름이 말하고 공용 키는 표시 없음(안내 글과 같은 규칙).
+    expect(screen.queryByText("한국 책")).toBeNull();
     expect(screen.queryByText("미국 책")).toBeNull();
 
     fireEvent.change(view, { target: { value: "all" } });

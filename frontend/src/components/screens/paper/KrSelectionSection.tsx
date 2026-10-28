@@ -191,19 +191,19 @@ const MEMBER_COLUMNS: Column<KrMemberRow>[] = [
     cell: (row) => <CodeName code={row.code} name={row.name} />,
     sortValue: (row) => row.code,
   },
-  { key: "marketCap", header: "시총", align: "right", cell: (row) => row.text.marketCap, sortValue: (row) => row.marketCap },
-  { key: "foreign20", header: "외국인 20일", align: "right", cell: (row) => signed(row.text.foreign20, row.foreign20), sortValue: (row) => row.foreign20 },
+  { key: "marketCap", header: "시총(조 원)", align: "right", cell: (row) => row.text.marketCap, sortValue: (row) => row.marketCap },
+  { key: "foreign20", header: "외국인 20일(주)", align: "right", cell: (row) => signed(row.text.foreign20, row.foreign20), sortValue: (row) => row.foreign20 },
   {
     key: "institution20",
-    header: "기관 20일",
+    header: "기관 20일(주)",
     align: "right",
     cell: (row) => signed(row.text.institution20, row.institution20),
     sortValue: (row) => row.institution20,
   },
-  { key: "foreign5", header: "외국인 5일", align: "right", cell: (row) => signed(row.text.foreign5, row.foreign5), sortValue: (row) => row.foreign5 },
+  { key: "foreign5", header: "외국인 5일(주)", align: "right", cell: (row) => signed(row.text.foreign5, row.foreign5), sortValue: (row) => row.foreign5 },
   {
     key: "institution5",
-    header: "기관 5일",
+    header: "기관 5일(주)",
     align: "right",
     cell: (row) => signed(row.text.institution5, row.institution5),
     sortValue: (row) => row.institution5,
@@ -227,7 +227,8 @@ const MEMBER_COLUMNS: Column<KrMemberRow>[] = [
     header: "사유",
     className: "min-w-64",
     cell: (row) => (
-      <span className={`text-xs ${row.financialCheck ? "text-warn" : "text-text-2"}`}>
+      // relative — 안의 sr-only(절대 위치)가 가로 스크롤 상자 밖 문서 폭을 넓히지 않게(가려진 칸에서도 상자 안에 머묾).
+      <span className={`relative text-xs ${row.financialCheck ? "text-warn" : "text-text-2"}`}>
         {row.financialCheck && <span className="sr-only">주의: </span>}
         {row.text.reasons}
       </span>
