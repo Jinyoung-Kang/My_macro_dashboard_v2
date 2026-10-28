@@ -52,12 +52,16 @@
        `KrPacketBuilderTest.initialPacketHasNothingAfterTheReadInstant` — `PacketBuilderTest.initialPacketHasNothingAfterAsOf`의 한국판)·
        `claudeCapPostponesAllFourBooks`(Claude 상한 → 네 계좌 모두 쓰지 않고 다음 KR 거래일에 넷이 함께)·`claudeErrorAfterOneRetryPostponesAndIsNotReplanned`(API 오류 재시도 1회 뒤 실패 →
        미룸, 같은 창에서 재기동해도 다시 부르지 않음 — E0 저장된 미룸, 거절은 다시 부르지 않음)·`claudeStartCallIsBoundedByTheDeadline`(호출 대기 한도 = 기한 − 지금, 기한을 넘겨 끝난
-       호출은 쓰기 트랜잭션이 막음, 1초도 없으면 부르지 않음). 가짜 몫으로 보는 파이프라인 규칙은 그대로 `failedLegPostponesAllBooks`·`slowPlanPastTheDeadlineWritesNothing`·
+       호출은 쓰기 트랜잭션이 막음, 기한까지 최소 대기 한도 60초가 없으면 부르지 않음 — 사용자 결정 w12, 예전 1초). 가짜 몫으로 보는 파이프라인 규칙은 그대로 `failedLegPostponesAllBooks`·`slowPlanPastTheDeadlineWritesNothing`·
        `claudeNotYetStaysNotStarted`(몫이 없는 파이프라인 — 시험).
      - 있음(묶음 E 리뷰 — 과금 호출을 버리거나 되풀이하지 않게): `KrStartTest.claudeStartRetrySendsTheFirstPacket`(API 오류 재시도는 첫 호출의 패킷 그대로)·
        `claudeIsNotCalledWhenAnotherLegFails`(과금 몫은 규칙·벤치마크 몫이 하나도 실패하지 않았을 때만 부름)·`startRecordsCountTheChargedClaudeCalls`(결정 행 없이 끝난 출발의
        과금 호출을 미룸 기록 `calls`에), 2차 리뷰 `chargedStartWriteFailurePostponesTheSession`(과금된 Claude 계획 뒤 쓰기 오류 → 그 세션 미룸, 같은 창·재기동 뒤에도 다시 부르지
        않음 — 호출 1회)·`startErrorCountSurvivesARestart`(과금 몫 없는 쓰기 오류 세 번이면 기한까지 쉼 — 저장된 오류 기록 수라 재기동해도 같음)
+     - 있음(사용자 결정 2026-10-28 w12 — 기한 직전·429 직후의 헛호출을 줄임): `KrStartTest.claudeStartNeedsSixtySecondsBeforeTheDeadline`(기한까지 59초면 부르지 않고 미룸 — 저장,
+       60초면 대기 한도 60초로 출발)·`claudeStartRateLimitWaitsThirtySecondsThenRetriesOnce`(429는 30초 기다린 뒤 첫 패킷 그대로 한 번 — 가짜 기다림, 실제로 기다리지 않음)·
+       `claudeStartRateLimitNearTheDeadlineIsNotRetried`(기한까지 90초 미만의 429는 기다리지 않고 미룸)·`claudeStartServerErrorRetriesAtOnce`(그 밖의 API 오류는 바로 — 재시도에도 60초),
+       정기 결정은 그대로 `KrRulesJobTest.regularKrClaudeDecisionDoesNotWaitAfterRateLimit`
   6. 캘린더 컨센서스(K22)
      - 있음: `PacketBuilderTest.goldenUsPackets`(꺼짐 — 미국 `packetVersion` 5 패킷 고정본·해시 그대로), 수집기 `test_us_consensus.py::test_백엔드와_화면은_컨센서스_저장본을_읽지_않는다`
        (읽는 곳은 미국 패킷 `PacketBuilder` 하나 — 이름 상수 `Datasets` 말고, E1b)
