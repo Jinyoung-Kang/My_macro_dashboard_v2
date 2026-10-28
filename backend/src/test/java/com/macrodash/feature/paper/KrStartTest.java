@@ -340,6 +340,32 @@ class KrStartTest {
     }
 
     @Test
+    @DisplayName("K28(E2b) — 네 계좌 출발 다음 밤(S+1 22:30)이 Claude 계좌의 첫 정기 결정: 출발 주문이 S+1 시가에 체결된 뒤(게이트 ① 통과) 그 실행의 관측치로 SCHEDULED, 출발 결정 주문은 이달 재량 주문에 세지 않음")
+    void firstScheduledClaudeDecisionFollowsTheStart() {
+        KrClaudeFixtures.FakeAi fake = new KrClaudeFixtures.FakeAi();
+        fake.answer(KrClaudeFixtures.decision(8, null, KrClaudeFixtures.order("005930", "BUY", 8.0, null)));
+        realClaude(fake);
+        assertThat(runAt("2026-11-30T22:30").outcome()).isEqualTo(PaperDecisionJob.STARTED);
+
+        fake.answer(KrClaudeFixtures.decision(8, "관망"));
+        sessionData(NEXT, S, everyCodeOn(NEXT));
+        PaperDecisionJob.Result next = runAt("2026-12-01T22:30");
+
+        assertThat(next.outcome()).isEqualTo(PaperDecisionJob.DECIDED);
+        assertThat(store.orders.values()).filteredOn(o -> o.bookCode().equals("kr_claude") && o.asOfTradingDate().equals(S))
+                .as("출발 주문은 S+1 시가에 체결된 뒤").singleElement()
+                .satisfies(o -> assertThat(o.status()).isEqualTo(PaperBooks.ORDER_FILLED));
+        Decision claude = next.claude();
+        assertThat(claude.kind()).isEqualTo(RuleBookService.SCHEDULED);
+        assertThat(claude.asOfTradingDate()).isEqualTo(NEXT);
+        assertThat(claude.status()).isEqualTo(ClaudeBookService.STATUS_NO_TRADE);
+        assertThat(claude.response().path("gates").get(0).path("status").asString()).as("① kr_claude").isEqualTo("PASS");
+        assertThat(claude.response().path("monthlyDiscretionaryOrders").asInt()).as("출발 결정 주문은 세지 않음(E1a)").isZero();
+        assertThat(claude.packet().path("9_portfolio").toString()).contains("005930");
+        assertThat(fake.requests).hasSize(2);
+    }
+
+    @Test
     @DisplayName("K28(E2b) — 출발 패킷은 읽은 순간(S 22:30) 뒤에 수집된 저장본을 쓰지 않음: 22:31에 수집된 매크로 카드는 빠지고 사유가 남음(결정 시각 전 S 밤 판만 — §5 출발)")
     void claudeStartPacketLeavesOutSnapshotsAfterTheReadInstant() {
         KrClaudeFixtures.FakeAi fake = new KrClaudeFixtures.FakeAi();
