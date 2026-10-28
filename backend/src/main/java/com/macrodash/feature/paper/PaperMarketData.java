@@ -237,6 +237,28 @@ public class PaperMarketData {
     }
 
     /**
+     * 한국 유니버스의 저장된 최신 기준일과 그날 행 수(상태 응답의 한국 수집 상태 — {@link KrCollectionStatus}).
+     *
+     * @param baseDate 저장된 가장 최근 금융위 기준일 B
+     * @param size     그 기준일의 행 수(규칙대로면 100)
+     */
+    record KrUniverseLatest(LocalDate baseDate, int size) {
+    }
+
+    /**
+     * {@link KrUniverseLatest} — 저장된 기준일이 없으면 null(0행으로 채우지 않음). 결정이 쓰는 {@link #krUniverseBefore}(기준일 &lt; D)와 달리
+     * 오늘 기준일까지 봅니다(수집이 따라왔는지 보는 자리). 수집기 테이블을 읽기만 하고 수집을 깨우지 않습니다(observations 직접 읽기).
+     */
+    KrUniverseLatest krUniverseLatest() {
+        LocalDate base = repository.latestObservationDate(Datasets.OBS_KR_PAPER_UNIVERSE);
+        if (base == null) {
+            return null;
+        }
+        List<JsonNode> rows = repository.readObservations(Datasets.OBS_KR_PAPER_UNIVERSE, base, null, null);
+        return new KrUniverseLatest(base, rows == null ? 0 : rows.size());
+    }
+
+    /**
      * 한국 종목들의 수급 기록({@code kr_paper_flow}) — {@code from}(포함) 이후 날짜, 종목 → 기록(최신 날짜 먼저, 각 payload에 {@code obsDate}).
      * 뒤쪽 날짜를 자르지 않습니다 — 기준 세션 뒤 날짜·결정 시각 뒤에 받은 기록을 빼는 것은 부르는 쪽(한국 규칙 계좌의 입력 읽기)이 하고 그 수를
      * 결정 행에 남깁니다. 수집기 테이블을 읽기만 합니다.

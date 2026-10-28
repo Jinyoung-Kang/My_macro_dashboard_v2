@@ -362,7 +362,8 @@ public class PaperQueryService {
      * 그 시장의 상태 — 초기화 판정·관측치·출발일·초기 현금·작업 기록은 그 시장 것, 호출 사용량(상한 공유)은 시장과 상관없이 하나. 미국 밖 시장은
      * {@link #overview(PaperMarket)}처럼 머리 칸({@code market}·{@code currency}·{@code dormantReason})을 싣고, 설정 판·기본값으로 읽은 키는 그 조회
      * 실행이 읽은 설정 행의 그 시장 키(한국 {@code kr.*} — 설정 화면의 한국 읽기와 같은 목록, {@link PaperSettingsService#krFallbacks}), 미국 수집
-     * 상태 넷({@code fundamentals}·{@code calendar}·{@code news}·{@code earnings} — 미국 패킷의 자료)은 null입니다.
+     * 상태 넷({@code fundamentals}·{@code calendar}·{@code news}·{@code earnings} — 미국 패킷의 자료)은 null입니다. 한국은 그 뒤에 한국 수집 상태
+     * 요약 {@code collection}({@link KrCollectionStatus}, 2단계 명세 §9 x4)을 싣습니다.
      */
     Map<String, Object> status(PaperMarket requested) {
         Map<String, Object> out = new LinkedHashMap<>();
@@ -406,6 +407,10 @@ public class PaperQueryService {
         out.put("calendar", us ? calendarStatus() : null);
         out.put("news", us ? newsStatus() : null);
         out.put("earnings", us ? earningsStatus() : null);
+        if (korea(market)) {
+            // 한국 수집 상태 요약(x4 — 사용자 결정 2026-10-29): 저장본·최신 기준일만 읽음(수집 유발 없음), 미국 응답에는 이 칸이 없음.
+            out.put("collection", KrCollectionStatus.view(reader, marketData, market, clock.instant()));
+        }
         return out;
     }
 

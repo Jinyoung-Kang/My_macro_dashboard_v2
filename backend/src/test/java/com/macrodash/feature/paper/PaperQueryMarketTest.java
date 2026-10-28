@@ -203,6 +203,24 @@ class PaperQueryMarketTest {
     }
 
     @Test
+    @DisplayName("한국 상태는 earnings 뒤에 한국 수집 상태 요약 collection(x4) — 쉬어도 실림, 미국 상태에는 칸이 없음")
+    @SuppressWarnings("unchecked")
+    void koreaStatusCarriesTheCollectionSummary() {
+        krBooks();
+        PaperQueryService query = query(krConfig(S));
+
+        Map<String, Object> status = query.status("KR");
+        List<String> keys = List.copyOf(status.keySet());
+        assertThat(keys.subList(keys.size() - 2, keys.size())).containsExactly("earnings", "collection");
+        Map<String, Object> collection = (Map<String, Object>) status.get("collection");
+        assertThat(collection.keySet()).containsExactly("quotes", "flows", "universe", "dart", "news", "calendar", "fsc");
+        assertThat((Map<String, Object>) collection.get("quotes")).containsEntry("available", false);
+        assertThat(query(PaperFixtures.config()).status("KR")).as("쉬는 한국에도").containsKey("collection");
+        assertThat(query.status("US")).doesNotContainKey("collection");
+        assertThat(query.status()).doesNotContainKey("collection");
+    }
+
+    @Test
     @DisplayName("한국 달력이 순자산 줄의 해를 모르면(공휴일 저장본 없음) 통계·관측치 확정만 null + 사유 — 응답은 실패하지 않는다")
     @SuppressWarnings("unchecked")
     void unknownKoreanYearIsNullWithReason() {
