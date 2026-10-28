@@ -127,22 +127,30 @@ final class KrClaudeFixtures {
 
     /**
      * 가짜 기다림 — 실제로 기다리지 않고 받은 기다림을 차례로 남기며, 시계가 {@link KrFixtures.MovableClock}이면 그만큼 옮깁니다(429 뒤 30초 —
-     * 사용자 결정 w12. 기다린 뒤의 남은 시간을 시험이 시계로 봄).
+     * 사용자 결정 w12. 기다린 뒤의 남은 시간을 시험이 시계로 봄). {@link #overshoot}만큼 더 옮기면 늦게 끝난 기다림(운영의 {@code Thread.sleep}),
+     * {@link #interrupt}면 기다리다 끊김({@link InterruptedException} — 종료·재배포)을 흉내 냅니다.
      */
     static final class FakeSleeper implements ClaudeBookService.Sleeper {
 
         final List<Duration> sleeps = new CopyOnWriteArrayList<>();
         private final Clock clock;
+        /** 요청받은 시간보다 더 흐르는 시간(기본 0 — 기다림이 늦게 끝남). */
+        volatile Duration overshoot = Duration.ZERO;
+        /** true면 기다림을 남긴 뒤 시계를 옮기지 않고 끊김. */
+        volatile boolean interrupt;
 
         FakeSleeper(Clock clock) {
             this.clock = clock;
         }
 
         @Override
-        public void sleep(Duration duration) {
+        public void sleep(Duration duration) throws InterruptedException {
             sleeps.add(duration);
+            if (interrupt) {
+                throw new InterruptedException("시험용 — 기다리다 끊김");
+            }
             if (clock instanceof KrFixtures.MovableClock movable) {
-                movable.set(movable.instant().plus(duration));
+                movable.set(movable.instant().plus(duration).plus(overshoot));
             }
         }
     }

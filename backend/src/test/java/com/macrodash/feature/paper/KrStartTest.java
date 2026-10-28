@@ -741,6 +741,64 @@ class KrStartTest {
     }
 
     @Test
+    @DisplayName("K28·사용자 결정 w12(묶음 E 3차 리뷰) — 기다린 뒤에는 미리 센 값이 아니라 그때의 시계로 최소 대기 한도를 다시 잼: 90초에서 난 429 뒤 기다림이 1초 늦게 끝나(31초) 59초가 남으면 다시 부르지 않고 미룸(호출 1회)")
+    void claudeStartRateLimitWaitThatEndsLateIsMeasuredAgain() {
+        KrClaudeFixtures.FakeAi fake = new KrClaudeFixtures.FakeAi();
+        fake.rateLimited().answer(KrClaudeFixtures.decision(0, "관망"));
+        realClaude(fake);
+        sleeper.overshoot = java.time.Duration.ofSeconds(1);
+
+        PaperDecisionJob.Result postponed = runAt("2026-12-01T00:58:30");   // 기한 12-01 01:00까지 정확히 90초
+
+        assertThat(postponed.outcome()).isEqualTo(PaperDecisionJob.START_POSTPONED);
+        assertThat(sleeper.sleeps).as("90초라 기다림").containsExactly(java.time.Duration.ofSeconds(30));
+        assertThat(fake.requests).as("기다린 뒤 59초 — 다시 부르지 않음").singleElement()
+                .satisfies(request -> assertThat(request.timeoutSeconds()).isEqualTo(90));
+        assertThat(postponed.message()).contains("kr_claude").contains(
+                "출발 기한(2026-12-01 01:00 KST)까지 59초 — 최소 대기 한도 60초보다 짧아 Claude를 다시 부르지 않음(첫 호출 API 오류)");
+        assertNotStarted(store);
+        assertThat(krRuns()).singleElement().satisfies(run ->
+                assertThat(run.detail().path("calls").path("kr_claude").path("calls").asInt()).isEqualTo(1));
+    }
+
+    @Test
+    @DisplayName("K28·사용자 결정 w12(묶음 E 3차 리뷰) — 429 뒤 기다림이 끊기면(InterruptedException — 종료·재배포) 다시 부르지 않고 그 세션을 미룸(지금 구현 — 저장된 미룸, 호출 1회, 인터럽트 표시를 되살림), 같은 창에서 재기동해도 다시 부르지 않음")
+    void claudeStartInterruptedWaitPostponesTheSession() {
+        KrClaudeFixtures.FakeAi fake = new KrClaudeFixtures.FakeAi();
+        fake.rateLimited().answer(KrClaudeFixtures.decision(0, "관망"));
+        realClaude(fake);
+        sleeper.interrupt = true;
+
+        PaperDecisionJob.Result postponed;
+        boolean interrupted;
+        try {
+            postponed = runAt("2026-11-30T22:30");
+        } finally {
+            interrupted = Thread.interrupted();   // 읽고 지움 — 같은 스레드의 다음 시험에 남기지 않음
+        }
+
+        assertThat(interrupted).as("인터럽트 표시를 되살림").isTrue();
+        assertThat(postponed.outcome()).isEqualTo(PaperDecisionJob.START_POSTPONED);
+        assertThat(sleeper.sleeps).containsExactly(java.time.Duration.ofSeconds(30));
+        assertThat(fake.requests).as("429 한 번 — 다시 부르지 않음").hasSize(1);
+        assertThat(postponed.message()).contains("kr_claude")
+                .contains("Claude 출발 호출 실패(API 오류 — 429 뒤 재시도를 기다리다 끊겨 다시 부르지 않음)");
+        assertThat(krDecisions()).isEmpty();
+        assertNotStarted(store);
+        assertThat(krRuns()).singleElement().satisfies(run -> {
+            assertThat(run.outcome()).isEqualTo(PaperDecisionJob.START_POSTPONED);
+            assertThat(run.detail().path("calls").path("kr_claude").path("calls").asInt()).isEqualTo(1);
+        });
+
+        realClaude(fake);   // 같은 창에서 재기동(새 기다림 — 끊기지 않음)
+        PaperDecisionJob.Result again = runAt("2026-11-30T22:40");
+        assertThat(again.message()).contains("그 세션은 이미 미뤘음");
+        assertThat(fake.requests).as("다시 부르지 않음").hasSize(1);
+        assertThat(sleeper.sleeps).isEmpty();
+        assertThat(krRuns()).as("미룸 기록은 한 번").hasSize(1);
+    }
+
+    @Test
     @DisplayName("K28·사용자 결정 w12 — 429가 아닌 API 오류(5xx·529)는 예전처럼 기다리지 않고 바로 한 번 더 부름 — 그 재시도에도 최소 대기 한도 60초(첫 호출이 끝났을 때 55초면 다시 부르지 않고 미룸)")
     void claudeStartServerErrorRetriesAtOnce() {
         KrClaudeFixtures.FakeAi fake = new KrClaudeFixtures.FakeAi();
