@@ -779,7 +779,10 @@ public class PaperDecisionJob {
         Decision claudeRow = null;
         if (claudeSkip == null) {
             KrDecisionGates.Judged claudeJudged = null;
-            if (krRulesSteps(market)) {
+            // 재시도 차례인 API 오류 행이면 기한이 그 재시도를 쓸 뿐이라(행에 판정을 더하지 않음) 판정을 읽거나 만들지 않습니다.
+            boolean retrying = store.decisionFor(market.claudeBook(), d, RuleBookService.SCHEDULED)
+                    .filter(ClaudeBookService::retryable).isPresent();
+            if (krRulesSteps(market) && !retrying) {
                 claudeJudged = storedGates(records, CLAUDE_GATES);
                 if (claudeJudged == null) {
                     List<KrDecisionGates.Gate> current = deadlineGates(market, market.claudeBook(), d, now);

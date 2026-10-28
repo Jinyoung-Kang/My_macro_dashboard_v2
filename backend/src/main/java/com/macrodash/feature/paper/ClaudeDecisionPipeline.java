@@ -1,5 +1,6 @@
 package com.macrodash.feature.paper;
 
+import com.macrodash.Kst;
 import com.macrodash.analytics.CalendarUnavailableException;
 import com.macrodash.analytics.OrderValidator;
 import com.macrodash.analytics.OrderValidator.Proposed;
@@ -793,11 +794,11 @@ final class ClaudeDecisionPipeline {
      * @param judged 그 세션 Claude 계좌 몫의 기한 전 마지막 판정(없으면 기한 뒤 판정), 판정하지 못했으면 null
      */
     Decision deadlineSkipped(LocalDate asOf, String kind, SettingsRow row, ClaudeSettings claude, Decision retrying,
-                             java.time.Instant deadline, KrDecisionGates.Judged judged) {
+                             Instant deadline, KrDecisionGates.Judged judged) {
         List<KrDecisionGates.Gate> gates = judged == null ? null : judged.gates();
         boolean anchorMissing = KrDecisionGates.anchorMissing(gates);
         String reason = anchorMissing ? KrRuleBookService.ANCHOR_MISSING_REASON : KrRuleBookService.PAST_DEADLINE_REASON;
-        String message = "결정 기한(" + com.macrodash.Kst.stamp(deadline) + ")이 지나 Claude를 부르지 않았습니다"
+        String message = "결정 기한(" + Kst.stamp(deadline) + ")이 지나 Claude를 부르지 않았습니다"
                 + (anchorMissing ? " — " + reason : "");
         if (retrying != null) {
             String error = clip((retrying.error() == null ? "" : retrying.error() + " · ") + "재시도 안 함: " + message,
@@ -814,10 +815,10 @@ final class ClaudeDecisionPipeline {
         Map<String, Object> extra = new LinkedHashMap<>();
         extra.put("skippedReason", reason);
         extra.put("pastDeadline", true);
-        extra.put("deadlineKst", com.macrodash.Kst.stamp(deadline));
+        extra.put("deadlineKst", Kst.stamp(deadline));
         extra.put("gates", gates == null ? null : gates.stream().map(KrDecisionGates.Gate::view).toList());
         extra.put("waitedFor", gates == null ? null : KrDecisionGates.blocking(gates));
-        extra.put("gatesJudgedAtKst", judged == null ? null : com.macrodash.Kst.stamp(judged.at()));
+        extra.put("gatesJudgedAtKst", judged == null ? null : Kst.stamp(judged.at()));
         extra.put("gatesBasis", judged == null ? null : judged.basis());
         log.info("Claude 책 결정 {} {}: {}", asOf, kind, message);
         return recordSkipped(asOf, kind, row, claude, false, message + " — 그날 재량 주문 없음", extra);
