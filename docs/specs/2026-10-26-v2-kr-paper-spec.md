@@ -697,6 +697,21 @@
     `NO_PRICE`, 사용자 확인 항목 §9 'E2a 메모'). 이달 재량 주문 수 = `KrPacketBuilder.monthlyDiscretionaryOrders`(출발 결정 주문 제외, 출발 결정 자신은 0부터), 신선도는 미국과 같은
     24시간(관측치 없음 → 전부 `STALE_INPUT`, 한국 출발도 같음). 한도·현금성·최소 500,000원은 `plan`이 `kr.*`로 읽는다. 시험 `KrClaudeValidationTest`(파이프라인 판정 9갈래)·
     `KrPacketBuilderTest.validatorChecksAreThePacketHardRules`(실제 한국 패킷의 칸과 같음).
+- **E2b 구현에서 정한 것 — 한국 결정 문맥과 결정 작업 연결**(2026-10-28, 커밋 `4f8f104`(주문 행 만들기 떼어 냄 — 옮기기)·`b518e67`(한국 문맥·정기·수동 결정) —
+  위 E2a가 'E2 뒤 몫'으로 넘긴 자리. 미국 패킷·스키마·`ROLE`·`FIXED_RULES`·렌더링·고정본 `paper/golden/`·해시 상수 그대로, 백엔드 시험 1,819 → 1,831(E2b 전체)):
+  - **운영 결정 문맥 둘**: `ClaudeBookService.marketContexts(미국 패킷, 한국 패킷)` = 미국(`PacketBuilder`·`decision.schema.json`) + 한국(`KrPaperMarket`·`KrPacketBuilder`·
+    `kr-decision.schema.json`). 한국 패킷 빌더는 빈이 아니라 서비스가 만든다(`ClaudeBookService.krPackets` — 수급·U·DART는 규칙 계좌와 같은 읽기, 상태 없는
+    `KrRuleBookService` 하나). 시험 생성자(미국만)는 그대로이고, 한국 문맥을 넣는 시험 생성자를 더했다. `DecisionTimingsLockTest.schemaMarketAndPromptAgree`가 이제 한국 문맥도 본다.
+  - **패킷 자리**: 문맥의 패킷은 설정 행만 받는 `PacketSource`(미국) 또는 그 실행·관측치·읽은 순간까지 받는 `RunPacketSource`(한국) 하나. 한국 결정은 그 재료
+    `ClaudeDecisionPipeline.Observed`(관측치·읽은 순간·게이트 판정)가 있어야 하고, 없으면 아무것도 읽거나 쓰기 전에 거절한다(`ClaudeBookServiceTest.krDecisionNeedsTheRunInputs`).
+  - **정기 결정**(`PaperDecisionJob` 한국 경로 — 22:30부터 10분마다, 기준 거래일 D = 그 실행 달력의 `lastCompletedSession(now)`): Claude 계좌 ①을 통과하면 그 실행이 장부를 처리한
+    관측치(게이트 ②⑤·장부·체결 가능 판정이 본 것)와 **읽은 순간 = 그 실행의 지금**(규칙 계좌 입력 동결 D1c와 같은 순간)으로 한국 패킷을 만들어 보내고, **검증도 같은 관측치**로
+    한다(미국 `persist`는 그때 저장본을 다시 읽음 — 한국은 정수 주 기준 가격이 패킷 `8_prices`와 갈리지 않게). 결정 행 응답 `gates` = 그 계좌 ① + ②~⑥(규칙 계좌 행과 같은 모양).
+    자정 넘은 재시도(API 오류의 재시도 한 번 — 미국과 같은 규칙)는 같은 행·기준 거래일 D, 호출 수는 다음 KST 날 줄(`Kst.today()`).
+  - **수동 결정**(`runNow(KR, kr_claude)` — 결정 창·게이트 D1c 그대로): 같은 재료(그 실행 관측치·지금)와 수동 호출 문턱(§4-10 'E2b').
+  - 시험: `KrRulesJobTest.gateOneHoldsTheClaudeBookAlone`(가짜 Claude 서비스 대신 **실제 `ClaudeBookService`** — ①로 기다린 뒤 정리되면 Claude만 결정, 동결본 = 보낸 패킷, 한국
+    렌더링·스키마·읽은 순간·응답 `gates`)·`manualDecisionNeedsWindowAndGates`(실제 경로 + 수동 문턱 13)·`krClaudeMidnightRetryKeepsTheSessionAndCountsOnTheNextDay`, 재료 `KrClaudeFixtures`
+    (실제 서비스 + Mockito 가짜 AI — 외부 호출 없음).
 
 ### 4-8. 벤치마크와 출발 (K2·K25·K28)
 - `kr_bench_k200`: KODEX 200(069500) 100%. `kr_bench_mix`: 069500 60% · 153130 40%. [확인] 토스 `/api/v1/stocks`에서 두 종목 모두 `securityType: ETF`.
@@ -736,6 +751,7 @@
     주문 BUY·목표 비중(069500 100 / 069500 60·153130 40)·`NEXT_OPEN`·출처 `BENCHMARK`·`PENDING`·기준 거래일 D·만료 D + 3거래일·수량 null(시가 체결 때 — C2)·생성 시각 = 트랜잭션 시각;
     계좌 `ACTIVE`·`started_on` D; 상태 `last_nav_trading_date` D; **순자산 줄 D = 현금 1억 원, `prices_final=true`**(보유가 없어 가격이 들지 않음 — 수익률 기준 'S 마감 순자산 1억').
   - **갈고리**: 계좌마다 `KrStartPipeline.Leg`가 `Plan`을 낸다 — 규칙·Claude는 `Plan.notYet`(시작 전 그대로, 작업 기록 `books`에 'D1'·'E2' 사유), 벤치마크는 `Plan.of`, 실패는 `Plan.failed`. 계획은 트랜잭션 밖에서 모두 만든 뒤 한 번에 쓴다(E2의 Claude 호출이 장부 잠금을 붙잡지 않게).
+    → **E2b**(`bb0b38f`): Claude 계좌 몫 = `ClaudeBookService.krStartLeg`(아래 'E2b 구현에서 정한 것') — 운영에서는 네 계좌 몫이 모두 계획을 낸다.
     → **D1b**(`a1aabb9`): 규칙 계좌 몫 = `KrRuleBookService.startLeg`(INITIAL — 재선정과 같은 계산·입력 동결, 입력 오류는 `Plan.failed`). Claude만 `notYet`이면 규칙·벤치마크가
     한 트랜잭션으로 출발하고 Claude는 뒤따라 출발하지 않는다(§4-6 'D1b 구현에서 정한 것' '출발').
     → **묶음 C 리뷰**(`9d2d64d`): `Leg.plan(실행, 세션, 기한, 게이트)` — 계좌 몫이 그 세션 출발 기한을 받고, 쓰기 트랜잭션이 결정 작업의 시계로 지금 < 기한을 다시 봐 넘었으면
@@ -744,6 +760,22 @@
   - **경로**: 이 묶음은 HTTP 경로를 더하지 않는다 — 한국 초기화 `POST /api/paper/init?market=KR`과 수동 출발 `run/initial-decision?market=KR`은 F1·E2(AccessPolicy·API.md·`RouteInventoryTest` 변경 없음).
   - **남은 위험**: C1c 코드만으로 출발한 장부(QA 점검)는 규칙·Claude 계좌가 시작 전으로 남아 D1·E2가 들어와도 따라 출발하지 않는다(출발 판정 = 넷 모두 시작 전) — 네 계좌를 리셋해 다시 출발시킨다. 서버는 4단계(D1·E2 뒤)에만 출발하므로 생기지 않는다.
     → **2차 리뷰**: 그 QA 점검은 F1 뒤로 옮겼다(§4-1 'C3' '수용 기준 1') — C1c 코드만으로는 출발시키지 않는다.
+    → **E2b**: 운영 파이프라인은 Claude 몫까지 넷이 모두 있어 네 계좌가 함께 출발한다(아래 'E2b 구현에서 정한 것'). 이 위험은 C1c·D1 코드로 출발시킨 QA 장부에만 남는다.
+- **E2b 구현에서 정한 것 — Claude 출발 몫과 네 계좌 함께 출발**(2026-10-28, 커밋 `bb0b38f` — 위 'C1c' '갈고리'·§9 'E2 — 출발 갈고리의 기한'이 정하지 않은 자리, K28):
+  - **몫**: `ClaudeBookService.krStartLeg()`(결정 작업이 계획할 때 불러 맡김 — 한국 문맥이 없는 서비스면 '아직 없음'). 출발 패킷은 정기 결정과 같은 조립의 `INITIAL`이고, 관측치 = 게이트가
+    본 그 실행의 관측치, **읽은 순간 = 게이트 ③과 규칙 계좌 출발이 쓴 그 읽기의 순간**(그 실행의 지금) — 그래서 S 밤 판이고 카드 `asOfMismatch=false`이며, 읽은 순간 뒤에 수집된 저장본은
+    빠진다(§5 출발). 검증은 같은 관측치·출발 현금(이달 재량 주문 0부터 — E2a). 통과 주문은 S+1 시가 `NEXT_OPEN` 대기 주문(만료 S + 3거래일), 거절 주문은 사유와 함께(만료 없음 —
+    출발 쓰기가 대기 주문에만 만료를 둠), 결정 행 `INITIAL`·`prices_final=false`·응답에 `configuredStartDate`·`postponed`·`gates`(②~⑥)·`startCalls`(호출 횟수). **통과 주문이 없으면
+    현금만 든 채 출발**한다(미국 시작과 같음 — 노출 0%도 판단).
+  - **호출**: 정기 작업(하루 상한까지 — 수동 문턱 13 뒤에도 부름, §4-10 'E2b'). **API 오류는 같은 계획 안에서 바로 한 번 더**(재시도 1회 — 계획 실패는 그 세션을 바로 미루므로
+    다음 주기 재시도 자리가 없음), 거절·형식 오류는 다시 부르지 않음(미국 규칙). 호출마다 **대기 한도 = min(설정 대기 한도 300초, 출발 기한 − 지금)(초 단위 내림)**, 1초도 남지 않았으면
+    부르지 않는다. 기한을 넘겨 끝난 호출은 쓰기 트랜잭션의 재확인(C1c 리뷰 `9d2d64d`)이 막는다.
+  - **실패 = `Plan.failed`** — 상한·재시도 1회 뒤 오류·거절·형식 오류·기한·응답을 받은 뒤 검증 예외. 어느 계좌에도 쓰지 않고 그 세션을 미루며(E0의 저장된 미룸 — 같은 창에서 재기동해도
+    다시 부르지 않음), 사유가 작업 기록 `START_POSTPONED`의 `reason`에 남는다('출발 계획 실패 — kr_claude: Claude 출발 호출 실패(API 오류, 재시도 1회 뒤): …'). 과금된 호출은 그날
+    사용량에 세고 그 응답은 결정 행으로 남지 않는다(출발하지 않은 계좌에 행을 두지 않음).
+  - 시험: `KrStartTest.fourBooksStartTogether`·`claudeStartPacketLeavesOutSnapshotsAfterTheReadInstant`·`claudeCapPostponesAllFourBooks`·
+    `claudeErrorAfterOneRetryPostponesAndIsNotReplanned`·`claudeStartCallIsBoundedByTheDeadline`(ADR 0021 '지키는 방법' 5). 가짜 Claude 서비스로 도는 출발 시험(규칙·벤치마크 셋 출발)은
+    그 몫을 '아직 없음'으로 보아 그대로다.
 
 ### 4-9. 시각표 (K6·K17·K19 — 권장안, KST, 서버 창 21:55~08:00·토 ~10:00)
 
@@ -752,7 +784,7 @@
 | 21:55 | 서버 기동, 수집기 fast·slow·weekly 동시 시작 | [확인] `main.py:126-141` |
 | ≈21:57~22:05 | slow 첫 바퀴: `fsc_prices`(D−1) → `fsc_etf_prices` → 토스 3종 → `kr_paper_universe` → `kr_paper_quotes` → `kr_paper_flows` | [확인] slow p90 185초. 한국 태스크 +1~3분([추정]) |
 | 5분마다 | `PaperRiskJob`이 시장을 차례로: 한국은 앞 결정의 `NEXT_OPEN` 체결(STOP 확정 재판정 포함)·평가·스탑 감지·금융위 확정 조정 | 새 `@Scheduled` 없음(풀 4에 11개) |
-| **22:30**, 10분 주기 | **한국 결정**(규칙 → Claude), 기준 거래일 D = `KrxCalendar.lastCompletedSession(now)`(자정 넘은 재시도도 D — 미국 `PaperDecisionJob`과 같은 패턴). 출발일 S에는 출발 결정(§4-8) | 기한 **D+1 01:00** — 넘으면 규칙 `NO_TRADE`, Claude는 부르지 않고 사유만 |
+| **22:30**, 10분 주기 | **한국 결정**(규칙 → Claude), 기준 거래일 D = `KrxCalendar.lastCompletedSession(now)`(자정 넘은 재시도도 D — 미국 `PaperDecisionJob`과 같은 패턴). 출발일 S에는 출발 결정(§4-8) | 기한 **D+1 01:00** — 넘으면 규칙 `NO_TRADE`, Claude는 부르지 않고 사유만(→ E2b: 그 세션 `SKIPPED` 행 — 사용자 결정 v4) |
 | 22:30(11-01까지)·23:30 | 미국 정규장 시작(미국 리스크 점검) | [확인] tzdata 서머타임 종료 11-01 |
 | 23:00 | 국면 판정 기록(23:2x) | 기존 — 그래서 22:30 한국 결정은 전날 판정을 읽는다(K39) |
 | 06:10 | 백업 | 기존 |
@@ -809,6 +841,7 @@
     deadline: "… KST", rules, claude}`, 로그도 그때만 INFO(나머지 DEBUG). `claude` = 그날 결정할 차례였으면 '결정 기한이 지나 Claude를 부르지 않습니다', 아니면 평소의 건너뜀 사유.
     `rules` = 지금은 '이 시장의 규칙 계좌 결정은 아직 없습니다(2단계 D1)' — **D1이 이 자리에서 그 세션의 규칙 계좌 `NO_TRADE` 결정 행(사유 '기한 지남')을 쓴다**(재선정 따라잡기 K33의 근거,
     저장된 사실이라 재기동해도 다시 쓰지 않음). Claude 쪽 사유를 결정 행으로 남길지(미국 호출 상한의 `SKIPPED` 행처럼)는 E2.
+    → **E2b(사용자 결정 v4)**: 그 세션 Claude 계좌 `SKIPPED` 행을 쓴다(아래 'E2b 구현에서 정한 것 — 기한 지난 세션의 Claude 계좌 행').
     → **D1b에서 끝남**(`f973565`): 행은 기록 한 번과 따로 쓴다(쓰기가 실패하면 다음 주기에 다시 — 경고 로그), 작업 기록 `rules` = 그 행의 요약, 결과 `Result.rules` = 그 행.
     행을 쓴 뒤의 같은 세션 실행은 규칙 계좌 일이 끝나 `ALREADY_DECIDED`(Claude가 시작 전일 때).
   - **수동 실행**(`runNow`)은 이 갈고리를 보지 않는다 — 한국 수동 결정의 창은 §9 'E2 — 한국 수동 결정의 기준일'이 정한다.
@@ -884,6 +917,7 @@
     그대로(창 없음). HTTP 경로(`?market=KR`)는 F1이고 한국 수동 결정은 Claude 계좌만이라(D1b) 운영에서 닿는 것은 E2부터다.
   - **자정 넘은 재시도**: 세션은 `lastCompletedSession(now)`라 D+1 00:10 실행도 D를 결정하고(동결 `readAtKst`·작업 기록 시각은 D+1), 다음 밤 D+1 결정은 따로 낸다. 하루 호출 상한 줄은
     `Kst.today()`라 그 시각의 Claude 호출은 D+1 줄에 세진다(§4-10 — 시험용 한국 Claude 결정으로 시험).
+    → **E2b**: 실제 한국 Claude 경로로도 — `KrRulesJobTest.krClaudeMidnightRetryKeepsTheSessionAndCountsOnTheNextDay`(22:30 API 오류 → D+1 00:10 같은 행 재시도·기준 거래일 D·호출은 D+1 줄).
   - **지금 운영에 미치는 것: 없음** — 서버는 v1이고(교체 전), v2 로컬은 `PAPER_ENABLED=false`라 정기 작업이 돌지 않는다.
   - [확인] 2026-10-28 로컬 v2 DB 읽기 전용 SELECT(D = 2026-10-27): ② 수집 범위 102/102에 D 봉 · ④ 금융위 기준일 10-26 = 직전 거래일 · ⑤ 069500 10-27 봉 · ③ U(기준일 10-26) 100 중
     저녁 판·세부 칸 100, 22:30에 읽으면 99(한 종목은 22:30 뒤 다시 받음 — D1b의 [확인]과 같은 종목) — 그날 22:30 결정이었다면 모두 통과.
@@ -1059,13 +1093,43 @@
     단언하던 열넷(`KrRulesJobTest` 아홉·`KrStartTest` 다섯)은 기다림 한 줄(`checks`·마지막 판정·끝 시각)로, `KrStartTest.failedLegPostponesAllBooks`는 결정 작업이 남기는 미룸 기록을 흉내 낸 뒤
     '기록 한 번'을, `PaperDecisionJobTest.krSkipsSessionAfterDeadline`은 '재기동하면 한 번 더'를 '재기동해도 한 번'으로.
 
+- **E2b 구현에서 정한 것 — 기한 지난 세션의 Claude 계좌 행**(2026-10-28, 사용자 결정 v4, 커밋 `9842245`·`10c3db5` — 위 'D0'의 'Claude 쪽 사유를 결정 행으로 남길지는 E2'와
+  §9 'E0 메모'의 'E2에 남긴 것'):
+  - **행**: 기한이 지났고 그 세션 Claude 계좌가 정기 결정을 낼 차례였으면(운용·출발일 뒤·결정 없음 — 일시정지면 행 없음, 기한 전과 같음) Claude를 부르지 않고 그 세션 `SCHEDULED`·
+    **`SKIPPED`** 행(`ClaudeBookService.pastDeadline`)을 쓴다 — 미국 호출 상한의 SKIPPED 행과 같은 모양(모델·패킷 없음·`prices_final=false`)에 `skippedReason`(규칙 계좌 기한 지남 행의
+    `noTradeReason`과 같은 판정 — ⑤ 미달이면 '069500 D 봉 없음(휴장 또는 지연)', 아니면 '기한 지남')·`pastDeadline`·`deadlineKst`·`gates`·`waitedFor`·`gatesJudgedAtKst`·`gatesBasis`.
+    저장된 사실이라 재기동해도 다시 쓰지 않고(그 세션 Claude 일이 끝나 다음 실행은 `ALREADY_DECIDED`), 쓰기가 실패하면 경고 로그·다음 주기에 다시. 작업 기록 `PAST_DEADLINE`의
+    `claude` = 그 행의 요약, 결과 `Result.claude` = 그 행.
+  - **재시도 차례인 API 오류 행**(22:30 오류 뒤 재시도 전에 기한)이면 새 행 대신 그 재시도를 쓴 것으로 남긴다(호출 상한과 같음 — 상태는 API 오류 그대로·`retry_count` 1·사유를 덧붙임,
+    판정은 읽지 않음 — `10c3db5`).
+  - **판정의 자리**(§9 'E0 메모'가 남긴 두 안 중 'Claude 몫 판정 칸을 더한다'): 작업 기록 상세의 새 칸 **`claudeGates`**(`rulesGates`와 같은 모양 — 그 계좌 ① + ②~⑥, 장부 전 게이트에서
+    멈췄으면 ②④⑤⑥) — 그 세션 Claude 정기 결정이 남았고 그 실행이 Claude 결정을 내지 않았을 때(기다림 줄·DECIDED·ERROR) 남긴다. 규칙 계좌가 이미 결정한 밤에 Claude만 ①로 기다린
+    까닭도 남는다(`rulesGates`는 그 밤 없음). 기한 지남 행은 그 세션의 가장 최근 `claudeGates`를 읽고, 없으면 지금 판정(① Claude 계좌 · ②~⑥)에 '기한 뒤 판정'. 기다림 줄의 `gates`
+    (계좌마다의 ①이 섞인 목록)를 거르는 안은 고르지 않았다 — 그 목록에서 Claude ①을 고르려면 문구를 읽어야 한다.
+  - [확인 — 시험] 기한 뒤 '지금 판정'의 ①은 대개 미달이다 — 이 작업은 기한 뒤 장부를 처리하지 않아 그 계좌 상태의 마지막 처리 수집 시각이 그 실행 관측치보다 이를 수 있다(규칙 계좌
+    '기한 뒤 판정'과 같은 성질).
+  - 시험: `KrRulesJobTest.claudePastDeadlineRowUsesTheStoredClaudeJudgement`(22:30 규칙 계좌 결정·Claude ① 기다림 → 00:50 기다림 → 01:00 SKIPPED 행 — 판정 00:50·'기한 지남'·① kr_claude,
+    재기동해도 행 하나·기한 지남 기록 한 번)·`claudePastDeadlineJudgesNowOrConsumesTheRetry`(그 밤 첫 실행이 01:05면 '기한 뒤 판정'·⑤ 사유, API 오류 재시도 차례면 기한이 그 재시도를 씀).
+
 ### 4-10. 호출 상한 (K18 — 권장안, 상한 20은 사용자 결정 V6)
 - 두 책이 `paper_api_usage` 한 줄을 그대로 공유한다(시장별 고정 몫 없음, 시장별 횟수는 결정·복기 행에서 셈).
 - **정기 작업 몫 예약** `apiScheduledReserve`(기본 **7**, 3단계 교정 재호출 `claude.figureCheck`를 켜면 **9** — 권장안): 수동 호출(미리보기·프레임 제안·수동 실행)은 그날 총 호출이 `상한 − 예약` 미만일 때만, 정기 작업은 상한까지. 같은 SQL의 문턱만 다르다(스키마 변경 없음).
   → C1b에서 설정 키(공유, INTEGER 0~50, 기본 7)만 더했다 — 읽는 코드는 E2라 그 전까지 미국 호출 상한 동작은 그대로다(§4-13 'C1b 구현에서 정한 것').
+  → **E2b에서 읽기 시작함**(아래 'E2b 구현에서 정한 것').
 - 이유: 밤에 미리보기를 많이 누르면 실험군 정기 결정·복기가 상한에 막힐 수 있다. [셈] 정기 필요량은 월 1 · 화~금 2 · 토 3 · 일 0, 한 달 약 52회.
   재시도(`API_ERROR` 1회)까지 넣은 하루 최대: **토요일 = 금요일 한국 결정의 자정 넘은 재시도 1 + 미국 결정 2 + 미국 복기 2 + 한국 복기 2 = 7**, 화~금 = 전날 한국 재시도 1 + 미국 결정 2 + 한국 결정 2 = 5. 교정 재호출(결정마다 +1)을 켜면 토요일 9.
 - 상한 줄은 KST 날 하나(`paper_api_usage.day` = `Kst.today()`)라 **자정 넘은 한국 결정 재시도는 다음 날 줄에 세진다**. 결정의 기준 거래일은 `KrxCalendar.lastCompletedSession(now)`로 정하므로 D 그대로다(§4-9).
+- **E2b 구현에서 정한 것 — 예약을 읽는 코드**(2026-10-28, 커밋 `f1a3b9a`):
+  - **문턱**: `ClaudeBookService.ClaudeSettings.callLimit(정기 작업인가)` = 정기 작업이면 `apiDailyCallCap`, 수동 호출이면 max(0, 상한 − `apiScheduledReserve`). 같은
+    `reserveApiCallNumber`(검사와 증가가 한 문장)에 넘기는 문턱만 다르다(스키마 변경 없음). 기본 20·7이면 수동은 그날 13회째까지(12회 뒤 한 번 더), 정기는 20회째까지.
+  - **나눈 것**: 정기 작업 = 정기 결정(`SCHEDULED` — 결정 작업이 내는 API 오류 재시도 포함)·한국 출발(결정 작업)·정기 주간 복기. 수동 호출 = 수동 결정(`MANUAL` — 그 행의 재시도도)·
+    미국 미리보기·시작·프레임 제안·수동 복기 실행. 두 책 공통이라 미국 수동 호출도 13회에서 멈춘다(§9 'E2b 메모'의 사용자 확인 항목). 미국 정기 결정·복기의 상한 동작과 문구는 그대로다.
+  - **읽기**: 키가 없거나 범위(0~50 정수) 밖이면 기본 7. 결정 응답 `settings.fallbacks`에는 넣지 않았다 — 이 키가 생기기 전의 행(서버의 지금 행)으로 낸 미국 결정 응답이 예전과 같게
+    (설정 화면은 행에 없는 키를 따로 보임). 수동 문턱에 막힌 문구는 '일일 호출 상한(20회, KST …) 중 정기 작업 몫 7회를 남겨 수동 호출은 13회까지라 Claude를 부르지 않았습니다 — 설정
+    apiDailyCallCap·apiScheduledReserve'(정기 작업 문구는 그대로).
+  - 시험: `ClaudeBookServiceTest.manualCallsStopAtCapMinusReserveScheduledGoToCap`·`previewStopsAtCapMinusReserve`·`claudeSettingsFallBackToDefaults`, `FrameworkServiceTest`(제안 13회),
+    `ReviewServiceTest.manualReviewStopsAtCapMinusReserve`, `PaperReviewJobTest`(정기 = 정기 문턱·수동 실행 = 수동 문턱), `KrRulesJobTest.manualDecisionNeedsWindowAndGates`(한국 수동 13),
+    `KrStartTest.fourBooksStartTogether`(한국 출발은 13회 뒤에도). 미국 시험은 기대값을 바꾸지 않고 모두 통과한다(상한 20에 닿은 시험은 두 문턱 모두에서 막힘).
 
 ### 4-11. `1b_calendar`·`11b_events` 출처 (K20·K21 — 권장안)
 - **`1b_calendar` 한국**: 금통위 상수(2026년 8회 01-15·02-26·04-10·05-28·07-16·08-27·10-22·11-26, 출처 bok.or.kr 통화정책방향 결정회의 연도별 페이지·checkedAt 2026-10-26·through 2026-11-26, [확인] 2027 표는 미게시) +
@@ -1241,7 +1305,7 @@
     [확인] 지금 `PaperDecisionJob.times`는 한국 기본 본문의 01:00을 22:30으로 접는다(§9 'D1·E2 — 결정 기한' 그대로) — 한국 묶음이 운영 목록에 들어가 결정 작업이 돌기 전에 D1의 시장 기한 규칙이 필요하다.
     → **D0에서 끝남**: 기한 순간은 시장 규칙 `deadlineInstant`(한국은 기한 ≤ 결정이면 다음 날 — 위 '00:00~08:59는 D+1 아침'과 같은 뜻), `Times`는 읽은 값 그대로(§4-9 'D0 구현에서 정한 것').
   - **공유 키**: `apiScheduledReserve` INTEGER 0~50(상한과 같은 범위, 기본 7 — 예약 ≥ 상한이면 수동 호출은 늘 막힘, 상한과 엮는 검사는 두지 않음: 상한 0으로 끄는 저장을 막지 않게),
-    `calendar.consensus`·`claude.schemaV3`·`claude.figureCheck` BOOLEAN 기본 false·규칙 계좌 영향 없음. **넷 다 아직 읽는 코드가 없다**(E1·E2·3단계) — 켠 설정으로 만든 미국 패킷·렌더링이 고정본과 바이트까지 같음을 시험으로 잠갔다
+    `calendar.consensus`·`claude.schemaV3`·`claude.figureCheck` BOOLEAN 기본 false·규칙 계좌 영향 없음. **넷 다 아직 읽는 코드가 없다**(E1·E2·3단계 — → E2b: `apiScheduledReserve`는 호출 문턱이 읽음, §4-10 'E2b') — 켠 설정으로 만든 미국 패킷·렌더링이 고정본과 바이트까지 같음을 시험으로 잠갔다
     (`goldenUsPacketsIgnoreStage2SharedKeys`·`goldenRenderIgnoresStage2SharedKeys` — 읽기 시작하는 커밋이 그 시험을 고침).
     → **E1b**(`5d2f78a`): `calendar.consensus`는 미국 패킷이 읽는다(켜면 판 6) — `goldenUsPacketsIgnoreStage2SharedKeys`는 '컨센서스를 끈 채'로 고치고 켠 판은
     `goldenUsPacketsWithConsensus`(판 6 고정본)가 지킨다. 렌더링은 여전히 넷 다 읽지 않는다(§4-12 'E1b 구현에서 정한 것').
@@ -1430,7 +1494,8 @@
 - 한국 거래일 달력: 2026 KRX 휴장 17일·2027 16일과 일치(KRX JSON 고정본), 연말휴장 대체 2022-12-30·2023-12-29·2028-12-29, 2027-05-03 휴장, 앞으로 쓸 창의 해에 목록이 없으면 fail-closed,
   지난 해 목록이 없으면 그 계산만 null(테스트). 2029년 시각에서 2026년 거래일 계산이 된다(수집기 보존 2025년~, 테스트 — K35).
 - **시장 격리**: 미국 관측치가 한국 계좌 상태(`last_processed_collected_at` 등)를 바꾸지 않고 그 반대도 같다(첫 리팩터 커밋의 회귀 테스트).
-- 결정 게이트: 자료가 하나라도 모자라면 결정을 부르지 않고, 기한(D+1 01:00)이 지나면 규칙 `NO_TRADE`·Claude 미호출·사유가 남는다(테스트).
+- 결정 게이트: 자료가 하나라도 모자라면 결정을 부르지 않고, 기한(D+1 01:00)이 지나면 규칙 `NO_TRADE`·Claude 미호출·사유가 남는다(테스트 — Claude 계좌는 그 세션 `SKIPPED` 행과
+  기한 전 마지막 판정, 사용자 결정 v4·§4-9 'E2b').
   게이트 ①은 장부가 그 관측치로 체결할 수 없는 앞 주문(기준일 뒤 관측 봉 없음 — 거래정지·범위 밖·봉 없음, 미처리 기업행위 보유, 장부가 그 관측치에서 그날 보류한 주문 — 분할 확인 밤·판정 대기)을 기다리지 않고 그 주문은 대기로 남아
   만료 안에 풀리면 체결되며, 1분봉 `FAILED` 기다림은 막는다. 재선정일에 정지인 보유의 '후보 밖' 매도도 주문이 나간다(테스트 — 사용자 결정 2026-10-28 u2, §4-9 'D2b').
   현금 어림은 날마다 지금 체결할 수 없는 매도(이번 신호 매도·앞선 날의 대기 매도 — 같은 `Fillable` 판정)의 대금을 빼고 체결할 수 있는 매도의 대금은 그대로 세어, 선정한 날(재선정·따라잡기·출발)은 그날
@@ -1720,6 +1785,7 @@ QA 스택 점검을 F1 뒤로(§4-1 'C3'·§9 표), §4-2 'C2a'의 바뀐 시험
   → **E0에서 끝남**(사용자 결정 v3, `0a70366`): 작업 기록(첫 안) — 그 세션 `START_POSTPONED` 기록이 '다시 계획하지 않음'과 '기록 한 번'을, 기다림 한 줄이 미룸 사유를 정한다(§4-9 'E0').
 - **E2 — 출발 갈고리의 기한**: 계좌 몫은 그 세션 출발 기한을 받는다(`Leg.plan(실행, 세션, 기한, 게이트)` — `9d2d64d`). Claude 출발 계획은 그 기한 안에 호출을 끝내거나(호출 상한 시간 =
   기한 − 지금) 넘으면 `Plan.failed`로 돌려준다 — 쓰기 트랜잭션의 재확인은 마지막 방어선이고, 기한 뒤에 끝난 유료 호출은 버려진다.
+  → **E2b에서 끝남**(`bb0b38f`): 호출 대기 한도 = min(설정 300초, 기한 − 지금), 1초도 없으면 부르지 않음(§4-8 'E2b 구현에서 정한 것', `KrStartTest.claudeStartCallIsBoundedByTheDeadline`).
 - **E2 — 한국 수동 결정의 기준일**: `PaperDecisionJob.runNow`는 기준일을 `lastCompletedSession(now)`로 정해, D+1 낮에 누르면 기준일 D·생성 D+1 낮의 주문이 된다. 조건 ⑤(`ec6e9d7`)로
   D+1 시가(주문보다 앞선 가격)로는 체결되지 않고 다음 관측 봉(D+2) 시가로 가지만, D+1 장중 정보를 본 결정이 '기준일 D'로 남고 D+1 수급·종가는 아직 없다. E2는 한국 수동 결정을
   결정 창(D 22:30 ~ D+1 01:00) 안으로 막을지, 창 밖이면 기준일을 그 시각의 마감 끝난 세션으로 두고 체결은 ⑤에 맡길지 정한다(제안: 창 안으로 막음 — 정기 결정과 같은 입력 시점).
@@ -1769,6 +1835,7 @@ QA 스택 점검을 F1 뒤로(§4-1 'C3'·§9 표), §4-2 'C2a'의 바뀐 시험
   → **E0에서 끝남**(사용자 결정 v3, `ee08748`): 작업 기록 상세 `rulesGates`(규칙 계좌 몫 ①·②~⑥)로 — 재기동해도 같다(§4-9 'E0'). **E2에 남긴 것**: Claude 계좌의 기한 뒤 행(사용자 결정 v4)은
   같은 `rulesGates`를 함께 쓰되, 규칙 계좌가 이미 결정한 세션에서 Claude만 ①로 기다린 밤은 `rulesGates`가 없으므로(규칙 계좌 결정이 있으면 남기지 않음) 그 세션 기다림 줄의 `gates`(Claude ①
   포함)를 읽거나 Claude 몫 판정 칸을 더한다 — E2가 정한다.
+  → **E2b에서 정함**(`9842245`): Claude 몫 판정 칸 `claudeGates`를 더함(§4-9 'E2b 구현에서 정한 것 — 기한 지난 세션의 Claude 계좌 행').
 - **F2 — 화면에 보일 것**: 기한 지남 행의 `gatesBasis`·`gatesJudgedAtKst`·`waitedFor`, ③의 창 구멍 문구(그날 n/U — 임시휴장이면 `kr.calendar.extraClosures`에 더하라는 안내),
   ~~`skipped`의 '체결할 수 없어 매도 주문을 내지 않음'(정지·기업행위 보류 보유가 남아 있는 까닭)~~ → D2b(u2): 매도는 내므로 `notes`의 '지금은 체결할 수 없음'과
   게이트 ① 문구의 '체결할 수 없어 기다리지 않음'(정지·기업행위 보류 보유의 대기 매도가 남아 있는 까닭, 그 동안 순자산 줄이 잠정인 까닭), 일시정지 SKIPPED의 `pastDeadline`.
@@ -1787,6 +1854,7 @@ QA 스택 점검을 F1 뒤로(§4-1 'C3'·§9 표), §4-2 'C2a'의 바뀐 시험
   더한다. 정기 결정이 세션마다 한 번 기억을 지우고 다시 시도할지(같은 예외면 경고가 한 번 더)도 그때 정한다.
 - **E2 — ① Claude 갈래를 지키는 시험**: `KrRulesJobTest.gateOneHoldsTheClaudeBookAlone`은 Claude 계좌를 흉내 낸다(결정 행을 쓰는 가짜). E2가 한국 Claude 결정을 넣으면 같은
   흐름(Claude 계좌에만 기준일 < D 대기 주문 → 규칙 계좌 결정·DECIDED·Claude 호출 없음 → 다음 주기 Claude만 DATA_NOT_READY → 정리 뒤 Claude만 결정)을 실제 `ClaudeBookService`로도 본다.
+  → **E2b에서 끝남**(`b518e67`): 그 시험이 가짜 대신 실제 `ClaudeBookService`(한국 문맥 + 가짜 AI `KrClaudeFixtures`)로 돈다(§4-7 'E2b 구현에서 정한 것').
 
 **묶음 D 3차 리뷰 메모(2026-10-28, 사용자 결정 u1·u2 구현 뒤)** — 리뷰 지적 5건(규칙 3 · 시험 2)을 확인했고 모두 성립했다. 이 브랜치(병합 전) 안의 것이라 QA 번호 없이:
 게이트 ①이 장부의 그날 보류(분할 확인 밤·판정 대기·보유 없는 주문 종목)를 기다리던 것 `6d8d88a`(재현 시험 둘 — 고치기 전 실패, §4-9 'D2b' '장부의 그날 보류도 면제'),
@@ -1850,7 +1918,7 @@ QA 스택 점검을 F1 뒤로(§4-1 'C3'·§9 표), §4-2 'C2a'의 바뀐 시험
   다른 안: ⓑ 기다림은 그대로 기록하지 않고 같은 표에 화면 목록에서 빼는 별도 작업 이름(`kr.decision.gates`)으로 판정만 한 줄 — 화면은 그대로지만 작업 기록 표를 상태 저장소로 쓰고 목록
   조회가 그 이름을 거른다. ⓒ V16에 판정 표 하나(시장 × 세션 → 마지막 판정) — 가장 깔끔하나 v3의 '작업 기록으로'와 다르다. **권장 ⓐ**(구현함): 작업 기록이 곧 '왜 늦었나'의 기록이고,
   10분마다 새 줄은 없으며 자료가 22:30에 와 있는 밤에는 줄이 없다. 맞바꿈: 화면 '작업 기록' 카드(최근 10건)에 한국 기다림 줄이 보인다(부제 '일했을 때·오류일 때만'은 F2가 고침).
-- **E2에 남긴 것**: Claude 계좌의 기한 뒤 행(v4)이 읽을 판정 — 위 'E2 — 메모리에 기대는 판정'의 끝 줄.
+- **E2에 남긴 것**: Claude 계좌의 기한 뒤 행(v4)이 읽을 판정 — 위 'E2 — 메모리에 기대는 판정'의 끝 줄. → **E2b에서 끝남**(`claudeGates`).
 - **v3 밖이라 그대로**: 오류 횟수(세 번이면 그날 포기)·장부의 실패 기억(그 밤 복구가 재기동 — F1의 한국 수동 리스크 실행이 대신할 자리)은 재기동하면 처음부터다.
 
 **E1a 메모(2026-10-28, 한국 패킷 구현 뒤)** — 패킷 자체는 §4-7 'E1a 구현에서 정한 것'. 명세·사용자 결정 v1~v6이 정하지 않아 고른 것과 E2가 맞출 자리:
@@ -1888,3 +1956,23 @@ QA 스택 점검을 F1 뒤로(§4-1 'C3'·§9 표), §4-2 'C2a'의 바뀐 시험
 - **E2 뒤 몫에 넘김**: 한국 결정 문맥(`ClaudeBookService.marketContexts`에 `KrPaperMarket`·`KrPacketBuilder`·`KR_SCHEMA_RESOURCE` — 그때 `DecisionTimingsLockTest`의 운영 문맥 대조가 한국도 봄),
   `plan`에 넘길 관측치는 패킷을 만든 그 실행의 관측치여야 한다(정수 주 기준 가격이 패킷 8_prices와 같게 — 미국 `persist`처럼 다시 읽으면 수집이 그 사이 돌았을 때 갈릴 수 있음), 한국 실행에서는
   `plan`의 `universe`·`closes` 인자를 쓰지 않는다. 화면의 거절 사유 이름표(`rejectReasonText`)에 `UNFILLABLE`·`BUY_BELOW_ONE_SHARE`가 없어 코드 그대로 보인다(F2).
+  → **E2b에서 끝남**(`b518e67`): 운영 문맥에 한국을 더했고 `plan`은 패킷을 만든 그 실행의 관측치로 검증한다(§4-7 'E2b 구현에서 정한 것'). 이름표는 F2 그대로.
+
+**E2b 메모(2026-10-28, 한국 Claude 결정 연결·호출 상한 예약·기한 뒤 행·Claude 출발 몫 구현 뒤)** — 구현 자체는 §4-7·§4-8·§4-9·§4-10의 'E2b 구현에서 정한 것'(커밋
+`4f8f104`·`f1a3b9a`·`b518e67`·`9842245`·`bb0b38f`·`10c3db5`). 미국 고정본 `paper/golden/`·패킷·프롬프트·스키마 해시 그대로, 백엔드 시험 1,819 → 1,831, 수집기·화면 손대지 않음.
+명세·사용자 결정 v1~v6이 정하지 않아 고른 것:
+- **(사용자 확인 필요) 예약이 미국 수동 호출에도 걸림**: §4-10의 문장대로 수동 호출(미리보기·시작·수동 결정·프레임 제안·수동 복기)은 시장과 상관없이 상한 − 예약(기본 13) 미만일 때만이다 —
+  그래서 한국 책이 쉬는 동안(출발 전·`kr.start-date` 없음)에도 미국 수동 호출이 20이 아니라 13에서 멈춘다(미국 정기 결정·복기는 그대로 상한까지, 미국 시험은 기대값을 바꾸지 않고 통과).
+  ⓐ 늘 적용(구현 — 명세 문장 그대로, 미국 토요일 복기·재시도도 지킴) ⓑ 한국 책이 돌 때만(한국 묶음이 쉬지 않을 때 — 그 전에는 예약 0) ⓒ 한국 출발(K25) 때 설정 저장으로만 켬(기본
+  예약 0, 출발일 저장 한 번에 7·9 — 컨센서스·3단계 스위치와 같은 저장). **권장 ⓐ** — 하루 상한 20 중 미국 정기 사용은 많아야 4라 13은 넉넉하고, ⓑ는 '한국이 도는가'를 호출마다 판정해야 한다.
+- **(사용자 확인 필요) 한국 출발의 API 오류 재시도 간격**: 같은 계획 안에서 바로 한 번 더 부른다(대기 없음 — 계획 실패는 그 세션을 바로 미루므로 다음 주기 재시도 자리가 없음).
+  429(속도 제한)도 API 오류라 바로 다시 부르면 같은 답일 수 있다. ⓐ 바로(구현) ⓑ 짧게 기다린 뒤(예: 30초 — 기한 안으로 묶음). **권장 ⓐ** — 출발은 한 번뿐이고 밤 22:30의 호출량이 적어
+  429 가능성이 낮으며, 기다리는 동안 결정 작업 잠금을 더 오래 쥔다. 출발이 미뤄져도 다음 KR 거래일에 네 계좌가 함께 출발한다(K28).
+- **정한 것(사용자 확인 없이 — 명세·K28·v4의 뜻대로)**: 호출 나누기(정기 = 정기 결정·결정 작업의 재시도·한국 출발·정기 복기, 수동 = 수동 결정과 그 재시도·미국 미리보기·시작·프레임 제안·
+  수동 복기), 예약 키는 결정 응답 `settings.fallbacks`에 넣지 않음, 한국 결정의 읽은 순간 = 그 실행의 지금·검증 관측치 = 패킷 관측치·결정 응답 `gates`, 기한 지남 Claude 행 = `SKIPPED`·
+  `SCHEDULED`·`prices_final=false`·`skippedReason`(규칙 계좌 사유와 같은 판정)·판정은 새 작업 기록 칸 `claudeGates`(기다림 줄의 섞인 `gates`를 거르지 않음)·재시도 차례면 그 재시도를 씀,
+  한국 출발의 읽은 순간 = 게이트 ③ 읽기의 순간·통과 주문 없으면 현금만 든 채 출발(미국 시작과 같음)·거절·형식 오류는 다시 부르지 않음·응답 뒤 검증 예외도 실패(과금된 응답은 행으로 남기지 않음 —
+  출발하지 않은 계좌에 행을 두지 않음)·결정 행 `retry_count` = 호출 수 − 1·응답 `startCalls`, 출발 쓰기는 대기 주문에만 만료, 결정 작업은 Claude 출발 몫을 계획할 때 불러 맡김(만들 때 그
+  서비스를 건드리지 않음 — `CalendarGapsTest`의 '호출 없음'). [decisions.md](../decisions.md) 2026-10-28 항목에 남겼다.
+- **남은 것(이 묶음 밖)**: 한국 수동 출발 단추 `run/initial-decision?market=KR`(§4-8 — 같은 게이트·기한 안에서 정기 작업을 앞당김)은 HTTP 경로와 함께 F1이 만든다(그 단추는 수동 호출 문턱
+  13을 씀 — 위 나누기). 개요·상태 응답의 사용량 칸(`apiUsage.today.cap`)은 상한만 보이고 수동 문턱(13)은 보이지 않는다(F2). 한국 주간 복기(v5)는 E3.
