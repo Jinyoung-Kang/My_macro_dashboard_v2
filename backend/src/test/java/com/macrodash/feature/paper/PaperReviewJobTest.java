@@ -84,7 +84,7 @@ class PaperReviewJobTest {
     }
 
     private void answers(LocalDate week) {
-        when(reviews.review(market(US), eq(week))).thenReturn(new ReviewService.Outcome(ReviewService.Kind.CALLED,
+        when(reviews.review(market(US), eq(week), org.mockito.ArgumentMatchers.anyBoolean())).thenReturn(new ReviewService.Outcome(ReviewService.Kind.CALLED,
                 row(week, Review.OK, 0), null));
     }
 
@@ -98,13 +98,13 @@ class PaperReviewJobTest {
         assertThat(job(Instant.parse("2026-10-30T21:00:00Z")).run().outcome()).as("금요일 마감 뒤(KST 토 06:00)도 아직")
                 .isEqualTo(PaperReviewJob.TOO_EARLY);
         verify(reviews, never()).review(any());
-        verify(reviews, never()).review(any(), any());
+        verify(reviews, never()).review(any(), any(), org.mockito.ArgumentMatchers.anyBoolean());
 
         PaperReviewJob.Result result = job(OPENS).run();
 
         assertThat(result.outcome()).isEqualTo(PaperReviewJob.REVIEWED);
         assertThat(result.weekEnding()).isEqualTo(WE);
-        verify(reviews, times(1)).review(market(US), eq(WE));
+        verify(reviews, times(1)).review(market(US), eq(WE), eq(true));   // 정기 복기 — 하루 상한까지(2단계 명세 §4-10)
         assertThat(store.jobRuns).hasSize(1);
         assertThat(store.jobRuns.get(0).job()).isEqualTo("review");
         assertThat(store.jobRuns.get(0).outcome()).isEqualTo(PaperReviewJob.REVIEWED);
@@ -125,7 +125,7 @@ class PaperReviewJobTest {
         PaperReviewJob.Result result = job(Instant.parse("2027-03-27T00:00:00Z")).run();
         assertThat(result.outcome()).isEqualTo(PaperReviewJob.REVIEWED);
         assertThat(result.weekEnding()).isEqualTo(thursday);
-        verify(reviews).review(market(US), eq(thursday));
+        verify(reviews).review(market(US), eq(thursday), org.mockito.ArgumentMatchers.anyBoolean());
     }
 
     @Test
@@ -140,13 +140,13 @@ class PaperReviewJobTest {
                 bar("AAA", LocalDate.of(2026, 10, 29), 99, WE, 100))));
         assertThat(job(OPENS).run().outcome()).isEqualTo(PaperReviewJob.WAITING_FINAL_CLOSE);
         verify(reviews, never()).review(any());
-        verify(reviews, never()).review(any(), any());
+        verify(reviews, never()).review(any(), any(), org.mockito.ArgumentMatchers.anyBoolean());
 
         // 마감 20분 뒤 수집한 관측치 — 확정 종가.
         when(marketData.quotes(market(US))).thenReturn(Optional.of(quotes(Instant.parse("2026-10-30T20:20:00Z"),
                 bar("AAA", LocalDate.of(2026, 10, 29), 99, WE, 100))));
         assertThat(job(OPENS).run().outcome()).isEqualTo(PaperReviewJob.REVIEWED);
-        verify(reviews).review(market(US), eq(WE));
+        verify(reviews).review(market(US), eq(WE), org.mockito.ArgumentMatchers.anyBoolean());
     }
 
     @Test
@@ -163,12 +163,12 @@ class PaperReviewJobTest {
         assertThat(waiting.outcome()).isEqualTo(PaperReviewJob.WAITING_FINAL_CLOSE);
         assertThat(waiting.message()).contains("장부가 반영");
         verify(reviews, never()).review(any());
-        verify(reviews, never()).review(any(), any());
+        verify(reviews, never()).review(any(), any(), org.mockito.ArgumentMatchers.anyBoolean());
 
         // 장부가 반영 — 보유 하나가 이어 쓴 봉이면 그날 줄은 확정이 아닌 채로 남습니다.
         finalNav(WE, false);
         assertThat(job(now).run().outcome()).isEqualTo(PaperReviewJob.REVIEWED);
-        verify(reviews).review(market(US), eq(WE));
+        verify(reviews).review(market(US), eq(WE), org.mockito.ArgumentMatchers.anyBoolean());
     }
 
     @Test
@@ -187,7 +187,7 @@ class PaperReviewJobTest {
         assertThat(job(OPENS).run().outcome()).isEqualTo(PaperReviewJob.NOT_ACTIVE);
 
         verify(reviews, never()).review(any());
-        verify(reviews, never()).review(any(), any());
+        verify(reviews, never()).review(any(), any(), org.mockito.ArgumentMatchers.anyBoolean());
         assertThat(store.jobRuns).as("기록 안 함").isEmpty();
     }
 
@@ -201,11 +201,11 @@ class PaperReviewJobTest {
         store.reviews.put(WE, row(WE, Review.API_ERROR, 1));
         assertThat(job(OPENS).run().outcome()).isEqualTo(PaperReviewJob.ALREADY_REVIEWED);
         verify(reviews, never()).review(any());
-        verify(reviews, never()).review(any(), any());
+        verify(reviews, never()).review(any(), any(), org.mockito.ArgumentMatchers.anyBoolean());
 
         store.reviews.put(WE, row(WE, Review.API_ERROR, 0));
         assertThat(job(OPENS).run().outcome()).isEqualTo(PaperReviewJob.REVIEWED);
-        verify(reviews).review(market(US), eq(WE));
+        verify(reviews).review(market(US), eq(WE), org.mockito.ArgumentMatchers.anyBoolean());
     }
 
     @Test
@@ -221,19 +221,19 @@ class PaperReviewJobTest {
         PaperReviewJob.Result nextWeek = job(Instant.parse("2026-11-06T21:30:00Z")).run();   // 11-06(금) 마감 뒤(EST)
         assertThat(nextWeek.weekEnding()).isEqualTo(LocalDate.of(2026, 11, 6));
         assertThat(nextWeek.outcome()).isEqualTo(PaperReviewJob.TOO_EARLY);
-        verify(reviews, times(1)).review(any(), any());
+        verify(reviews, times(1)).review(any(), any(), org.mockito.ArgumentMatchers.anyBoolean());
     }
 
     @Test
     @DisplayName("창 안에 결정이 없어 건너뜀(SKIPPED)도 작업 기록, 하루 상한(CAP_REACHED)은 기록 없이 다음 주기에")
     void skippedAndCapOutcomes() {
         finalNav(WE, true);
-        when(reviews.review(market(US), eq(WE))).thenReturn(new ReviewService.Outcome(ReviewService.Kind.CAP_REACHED,
+        when(reviews.review(market(US), eq(WE), org.mockito.ArgumentMatchers.anyBoolean())).thenReturn(new ReviewService.Outcome(ReviewService.Kind.CAP_REACHED,
                 null, "상한"));
         assertThat(job(OPENS).run().outcome()).isEqualTo(PaperReviewJob.CAP_REACHED);
         assertThat(store.jobRuns).isEmpty();
 
-        when(reviews.review(market(US), eq(WE))).thenReturn(new ReviewService.Outcome(ReviewService.Kind.SKIPPED,
+        when(reviews.review(market(US), eq(WE), org.mockito.ArgumentMatchers.anyBoolean())).thenReturn(new ReviewService.Outcome(ReviewService.Kind.SKIPPED,
                 row(WE, Review.SKIPPED, 0), ReviewService.NO_DECISIONS));
         assertThat(job(OPENS).run().outcome()).isEqualTo(PaperReviewJob.SKIPPED);
         assertThat(store.jobRuns).extracting(r -> r.outcome()).containsExactly(PaperReviewJob.SKIPPED);
@@ -243,7 +243,7 @@ class PaperReviewJobTest {
     @DisplayName("같은 주에 오류가 3번 나면 정기 실행은 그 주를 포기(GAVE_UP), 수동 실행은 다시 시도")
     void givesUpAfterThreeErrorsButManualRetries() {
         finalNav(WE, true);
-        when(reviews.review(market(US), eq(WE))).thenThrow(new IllegalStateException("자료 오류"));
+        when(reviews.review(market(US), eq(WE), org.mockito.ArgumentMatchers.anyBoolean())).thenThrow(new IllegalStateException("자료 오류"));
         PaperReviewJob job = job(OPENS);
         for (int i = 0; i < 3; i++) {
             assertThat(job.run().outcome()).isEqualTo(PaperReviewJob.ERROR);
@@ -252,7 +252,7 @@ class PaperReviewJobTest {
         assertThat(store.jobRuns).extracting(r -> r.outcome()).containsOnly(PaperReviewJob.ERROR).hasSize(3);
 
         assertThatThrownBy(job::runNow).isInstanceOf(IllegalStateException.class).hasMessageContaining("자료 오류");
-        verify(reviews, times(4)).review(market(US), eq(WE));
+        verify(reviews, times(4)).review(market(US), eq(WE), org.mockito.ArgumentMatchers.anyBoolean());
     }
 
     @Test
@@ -267,7 +267,7 @@ class PaperReviewJobTest {
         Map<String, Object> out = job(saturdayEarly).runNow();
 
         assertThat(out).containsEntry("ok", true).containsEntry("outcome", PaperReviewJob.REVIEWED);
-        verify(reviews).review(market(US), eq(WE));
+        verify(reviews).review(market(US), eq(WE), eq(false));   // 수동 실행 — 정기 작업 몫을 남긴 문턱(2단계 명세 §4-10)
         assertThat(store.jobRuns.get(0).detail().path("manual").asBoolean()).isTrue();
 
         claudeBook(PaperBooks.PAUSED, PaperFixtures.FRI);
@@ -284,9 +284,9 @@ class PaperReviewJobTest {
         answers(WE);
         job(OPENS, new PaperConfig(false, PaperFixtures.FRI, 100_000)).scheduledRun();
         verify(reviews, never()).review(any());
-        verify(reviews, never()).review(any(), any());
+        verify(reviews, never()).review(any(), any(), org.mockito.ArgumentMatchers.anyBoolean());
         job(OPENS).scheduledRun();
-        verify(reviews).review(market(US), eq(WE));
+        verify(reviews).review(market(US), eq(WE), org.mockito.ArgumentMatchers.anyBoolean());
     }
 
     // ------------------------------------------------------------------ 시장 격리(2단계 명세 §9 A6)
@@ -310,7 +310,7 @@ class PaperReviewJobTest {
 
         Review krRow = new Review(WE, 4, MAPPER.createObjectNode(), null, null, null, null, null, Review.OK, null, null,
                 0, 0, null, Book.MARKET_KR);
-        when(reviews.review(market(kr), eq(WE))).thenReturn(new ReviewService.Outcome(ReviewService.Kind.CALLED, krRow,
+        when(reviews.review(market(kr), eq(WE), org.mockito.ArgumentMatchers.anyBoolean())).thenReturn(new ReviewService.Outcome(ReviewService.Kind.CALLED, krRow,
                 null));
         Instant krOpen = Instant.parse("2026-10-31T14:00:00Z");   // 토 23:00 KST
         PaperReviewJob job = new PaperReviewJob(store, reader, marketData, reviews, PaperFixtures.config(), MAPPER,
@@ -321,13 +321,13 @@ class PaperReviewJobTest {
                 .containsExactly("kr.review");
         assertThat(store.jobRuns.get(0).outcome()).isEqualTo(PaperReviewJob.REVIEWED);
         assertThat(store.jobRuns.get(0).detail().path("weekEnding").asString()).isEqualTo("2026-10-30");
-        verify(reviews, times(1)).review(market(kr), eq(WE));
-        verify(reviews, never()).review(market(US), eq(WE));
+        verify(reviews, times(1)).review(market(kr), eq(WE), org.mockito.ArgumentMatchers.anyBoolean());
+        verify(reviews, never()).review(market(US), eq(WE), org.mockito.ArgumentMatchers.anyBoolean());
 
         assertThat(store.insertReviewIfAbsent(krRow)).as("같은 주 미국 행과 부딪치지 않음").isTrue();
         assertThat(job.run(kr).outcome()).as("그 시장 행이 있으면").isEqualTo(PaperReviewJob.ALREADY_REVIEWED);
         assertThat(job.run().outcome()).isEqualTo(PaperReviewJob.ALREADY_REVIEWED);
-        verify(reviews, times(1)).review(market(kr), eq(WE));
+        verify(reviews, times(1)).review(market(kr), eq(WE), org.mockito.ArgumentMatchers.anyBoolean());
         assertThat(store.reviews).containsOnlyKeys(WE);
         assertThat(store.reviews.get(WE).market()).isEqualTo(Book.MARKET_US);
         assertThat(store.otherReviews.get(Book.MARKET_KR)).containsOnlyKeys(WE);
@@ -359,6 +359,6 @@ class PaperReviewJobTest {
             assertThat(run.detail().path("weekEnding").isNull()).isTrue();
             assertThat(run.detail().path("stage").asString()).isEqualTo("실행 열기");
         });
-        verify(reviews, never()).review(any(), any());
+        verify(reviews, never()).review(any(), any(), org.mockito.ArgumentMatchers.anyBoolean());
     }
 }

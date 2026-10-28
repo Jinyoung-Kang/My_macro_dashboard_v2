@@ -182,8 +182,8 @@ final class PaperSettingKeys {
                     "하루(KST) Claude 호출 상한(D18) — 정기·수동 결정·재시도·미리보기·시작을 모두 셈. 0이면 부르지 않음")),
             shared(integer("apiScheduledReserve", 0, ClaudeBookService.MAX_DAILY_CALL_CAP, false,
                     "정기 작업 몫 예약(2단계 K18, 두 책 공통) — 수동 호출(미리보기·프레임 제안·수동 실행)은 그날 호출이 상한 − 예약 "
-                            + "미만일 때만, 정기 작업은 상한까지. 기본 7, claude.figureCheck를 켜면 9 권장. 예약이 상한 이상이면 수동 "
-                            + "호출은 늘 막힘. 지금은 읽는 코드가 없음(한국 Claude 계좌 E2에서 연결 — 그 전에는 바꿔도 동작 같음)")),
+                            + "미만일 때만, 정기 작업(정기 결정·재시도·한국 출발·정기 복기)은 상한까지. 기본 7, claude.figureCheck를 켜면 "
+                            + "9 권장. 예약이 상한 이상이면 수동 호출은 늘 막힘")),
             of("decisionTimeKst", Type.TIME, false, "결정 시각(KST, HH:mm) — 미국 세션 다음 날 이 시각부터 그 거래일 결정(C1)"),
             of("decisionDeadlineKst", Type.TIME, false,
                     "확정 종가를 기다리는 기한(KST, HH:mm) — 지나면 있는 값으로 진행하고 pricesFinal=false"),

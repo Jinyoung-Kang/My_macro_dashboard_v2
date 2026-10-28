@@ -230,7 +230,7 @@ class MarketRunTest {
         List<PaperMarket> received = new ArrayList<>();
         Review krRow = new Review(week, 4, MAPPER.createObjectNode(), null, null, null, null, null, Review.OK, null,
                 null, 0, 0, null, Book.MARKET_KR);
-        when(reviews.review(market(kr), eq(week))).thenAnswer(invocation -> {
+        when(reviews.review(market(kr), eq(week), org.mockito.ArgumentMatchers.anyBoolean())).thenAnswer(invocation -> {
             received.add(invocation.getArgument(0));
             return new ReviewService.Outcome(ReviewService.Kind.CALLED, krRow, null);
         });

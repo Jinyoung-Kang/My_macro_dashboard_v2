@@ -815,8 +815,9 @@ public class FrameworkService {
             JsonNode settingsBody = settingsBody();
             ClaudeBookService.ClaudeSettings claude = ClaudeBookService.ClaudeSettings.from(settingsBody);
             LocalDate today = Kst.today(clock);
-            if (calls.reserve(today, claude.dailyCallCap()).isEmpty()) {
-                throw new InvalidRequestException(ClaudeBookService.capMessage(claude, today)
+            // 프레임 제안은 수동 호출입니다 — 정기 작업 몫을 남긴 문턱까지(2단계 명세 §4-10).
+            if (calls.reserve(today, claude.callLimit(false)).isEmpty()) {
+                throw new InvalidRequestException(ClaudeBookService.capMessage(claude, today, false)
                         + " — 프레임 제안도 같은 상한을 씁니다(F7).");
             }
             String system = ClaudePrompts.PROPOSAL + render(base.body(), base.version(), settingsBody);

@@ -57,7 +57,8 @@ public class PaperSettingsService {
 
     /**
      * 정기 작업 몫 예약 기본값(2단계 명세 §4-10·K18) — 토요일 최악(금요일 한국 결정의 자정 넘은 재시도 1 + 미국 결정 2 + 미국 복기 2 + 한국
-     * 복기 2). 교정 재호출({@code claude.figureCheck})을 켜면 9를 권장합니다(출발일 저장 — 기본값은 7 그대로). 읽는 곳은 E2입니다.
+     * 복기 2). 교정 재호출({@code claude.figureCheck})을 켜면 9를 권장합니다(출발일 저장 — 기본값은 7 그대로). 읽는 곳은
+     * {@link ClaudeBookService.ClaudeSettings#callLimit}(E2b — 수동 호출은 상한 − 예약 미만일 때만, 정기 작업은 상한까지).
      */
     static final int DEFAULT_API_SCHEDULED_RESERVE = 7;
 

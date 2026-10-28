@@ -336,7 +336,8 @@ public class PaperReviewJob {
             return new Result(GAVE_UP, week, null, week + " 복기 오류가 " + MAX_ATTEMPTS + "번 나 정기 실행은 더 시도하지 않습니다 "
                     + "— 수동 실행(POST /api/paper/reviews/run)은 다시 시도합니다");
         }
-        ReviewService.Outcome outcome = reviews.review(market, week);
+        // 정기 복기는 하루 상한까지, 수동 실행은 정기 작업 몫을 남긴 문턱까지(2단계 명세 §4-10).
+        ReviewService.Outcome outcome = reviews.review(market, week, scheduled);
         failures.remove(new FailureKey(market.code(), week));
         return switch (outcome.kind()) {
             case EXISTING -> new Result(ALREADY_REVIEWED, week, outcome.review(), week + " 복기를 이미 남겼습니다");

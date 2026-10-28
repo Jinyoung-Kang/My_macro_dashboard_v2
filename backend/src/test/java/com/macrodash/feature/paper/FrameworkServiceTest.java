@@ -644,6 +644,17 @@ class FrameworkServiceTest {
                 .hasMessageContaining("일일 호출 상한").hasMessageContaining("F7");
         assertThat(hits.get()).isEqualTo(2);
         assertThat(store.proposals).hasSize(3);
+
+        // 프레임 제안은 수동 호출 — 정기 작업 몫 예약(기본 7)을 남긴 13회까지(2단계 명세 §4-10, E2b).
+        store.apiUsage.put(TODAY_KST, new ApiUsage(TODAY_KST, 13, 0, 0, 0, 0));
+        assertThatThrownBy(() -> service.propose(null, "글")).isInstanceOf(InvalidRequestException.class)
+                .hasMessageContaining("정기 작업 몫 7회를 남겨 수동 호출은 13회까지").hasMessageContaining("F7");
+        assertThat(hits.get()).isEqualTo(2);
+        store.apiUsage.put(TODAY_KST, new ApiUsage(TODAY_KST, 12, 0, 0, 0, 0));
+        answerJson(proposal(op("ADD_RULE", "E2", "집중형 기관의 신규 편입은 두 그룹 확인 없이도 후보로 본다.")));
+        service.propose(null, "글");
+        assertThat(hits.get()).as("12회면 13회째 수동 호출").isEqualTo(3);
+        assertThat(callsToday()).isEqualTo(13);
     }
 
     @Test

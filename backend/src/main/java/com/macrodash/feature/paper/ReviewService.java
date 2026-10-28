@@ -213,9 +213,18 @@ public class ReviewService {
     }
 
     /**
-     * 그 시장의 그 주 복기 — {@link #review(LocalDate)}와 같되 입력·프롬프트·복기 행이 그 시장 것(클래스 설명의 시장 문맥).
+     * 그 시장의 그 주 복기 — {@link #review(LocalDate)}와 같되 입력·프롬프트·복기 행이 그 시장 것(클래스 설명의 시장 문맥). 정기 복기의 호출 문턱
+     * ({@link #review(PaperMarket, LocalDate, boolean)}).
      */
     Outcome review(PaperMarket market, LocalDate weekEnding) {
+        return review(market, weekEnding, true);
+    }
+
+    /**
+     * 그 시장의 그 주 복기 — 호출 문턱만 부르는 쪽이 정합니다: 정기 복기({@code scheduled})는 하루 상한까지, 수동 실행은 정기 작업 몫 예약을 남긴
+     * 문턱까지({@code apiScheduledReserve} — 2단계 명세 §4-10, {@link ClaudeBookService.ClaudeSettings#callLimit}).
+     */
+    Outcome review(PaperMarket market, LocalDate weekEnding, boolean scheduled) {
         requireReady();
         Optional<Review> existing = store.review(market.code(), weekEnding);
         if (existing.isPresent() && !retryable(existing.get())) {
@@ -237,8 +246,8 @@ public class ReviewService {
             return new Outcome(Kind.SKIPPED, saved, NO_DECISIONS);
         }
         LocalDate today = Kst.today(clock);
-        if (calls.reserve(today, claude.dailyCallCap()).isEmpty()) {
-            return new Outcome(Kind.CAP_REACHED, null, ClaudeBookService.capMessage(claude, today)
+        if (calls.reserve(today, claude.callLimit(scheduled)).isEmpty()) {
+            return new Outcome(Kind.CAP_REACHED, null, ClaudeBookService.capMessage(claude, today, scheduled)
                     + " — 주간 복기도 같은 상한을 씁니다(D4). 다음 기회에 다시 봅니다");
         }
         String system = systemPrompt(market, frame.body(), frame.version(), settingsBody);

@@ -57,7 +57,8 @@ import static com.macrodash.feature.paper.ClaudeDecisionPipeline.usageView;
  * 통과·거절합니다(명세 C1~C11·D5·D7·D18·D26, 설계 §5-1~§5-6).
  *
  * <p><b>결정 한 번</b>({@link #decide}): ① 일일 호출 상한(설정 {@code apiDailyCallCap}, 기본 20(2026-10-26 v2, 처음은 6) — KST 하루, 결정·미리보기·시작·재시도와
- * 프레임 제안을 모두 셈 — {@link PaperApiCalls}) → ② 시스템 프롬프트(지금 프레임 판을 결정 시점 설정으로 렌더링한 것 —
+ * 프레임 제안을 모두 셈 — {@link PaperApiCalls}. 두 책이 한 줄을 함께 쓰고, 수동 호출(미리보기·시작·수동 결정·프레임 제안·수동 복기)은 정기 작업 몫
+ * {@code apiScheduledReserve}(기본 7)를 남긴 문턱까지, 정기 작업은 상한까지 — 2단계 명세 §4-10, {@link ClaudeSettings#callLimit}) → ② 시스템 프롬프트(지금 프레임 판을 결정 시점 설정으로 렌더링한 것 —
  * {@link FrameworkService#render}, 판이 없으면 임시 v0을 시드) → ③ 패킷({@link PacketBuilder}, 섹션 1에 그 판 번호) →
  * ④ 구조화 출력 호출 한 번({@link AiService#structured}, 설정 {@code model}·{@code effort}, 자동 전환 없음 — D5) → ⑤ 사용량 기록
  * (성공·실패 모두 호출 +1, 토큰·추정 비용 합산) → ⑥ 스키마 전체 검사({@link StructuredSchema#validate} — API에는 보낼 수 없는 범위·길이·개수
@@ -161,14 +162,28 @@ public class ClaudeBookService {
      * ({@link PaperSettings}와 같은 방식 — 손으로 고친 행이 있어도 결정이 멈추지 않게. 쓰기 API는 {@link PaperSettingsService#update}가
      * 같은 목록으로 막습니다).
      *
-     * @param model        모델 ID(claude-sonnet-5-5 · claude-haiku-5-5)
-     * @param effort       low · medium · high · xhigh · max
-     * @param dailyCallCap 하루(KST) 호출 상한(0~{@value #MAX_DAILY_CALL_CAP}, 0이면 부르지 않음)
+     * @param model            모델 ID(claude-sonnet-5-5 · claude-haiku-5-5)
+     * @param effort           low · medium · high · xhigh · max
+     * @param dailyCallCap     하루(KST) 호출 상한(0~{@value #MAX_DAILY_CALL_CAP}, 0이면 부르지 않음)
+     * @param scheduledReserve 정기 작업 몫 예약(설정 {@code apiScheduledReserve}, 0~{@value #MAX_DAILY_CALL_CAP}, 기본
+     *                         {@value PaperSettingsService#DEFAULT_API_SCHEDULED_RESERVE} — 2단계 명세 §4-10·K18): 수동 호출은 그날 호출이
+     *                         상한 − 예약 미만일 때만, 정기 작업은 상한까지({@link #callLimit}). 없거나 범위 밖이면 기본값으로 읽되
+     *                         {@link #fallbacks}에는 넣지 않습니다 — 결정 응답의 {@code settings.fallbacks}가 이 키가 생기기 전의 행(서버의 지금
+     *                         행)에서도 예전 그대로이게(설정 화면은 행에 없는 키를 따로 보임)
      */
-    record ClaudeSettings(String model, String effort, int dailyCallCap, List<String> fallbacks) {
+    record ClaudeSettings(String model, String effort, int dailyCallCap, int scheduledReserve, List<String> fallbacks) {
 
         ClaudeSettings {
             fallbacks = List.copyOf(fallbacks);
+        }
+
+        /**
+         * 이 호출이 잡을 수 있는 그날 호출 수의 문턱(그날 호출이 이 값 미만일 때만 잡음) — 정기 작업(정기 결정·재시도·한국 출발·정기 복기)은
+         * 상한까지, 수동 호출(미리보기·시작·수동 결정·프레임 제안·수동 복기)은 상한 − 예약(0 아래면 0 — 늘 막힘). 같은 SQL의 문턱만 다릅니다
+         * (2단계 명세 §4-10 — 밤에 미리보기를 많이 눌러도 실험군 정기 결정·복기가 상한에 막히지 않게).
+         */
+        int callLimit(boolean scheduled) {
+            return scheduled ? dailyCallCap : Math.max(0, dailyCallCap - scheduledReserve);
         }
 
         static ClaudeSettings from(JsonNode body) {
@@ -191,7 +206,11 @@ public class ClaudeBookService {
             } else {
                 fallbacks.add("apiDailyCallCap");
             }
-            return new ClaudeSettings(model.strip(), normalized, dailyCap, fallbacks);
+            Double reserve = Json.asDouble(body, "apiScheduledReserve");
+            int scheduledReserve = reserve != null && Double.isFinite(reserve) && reserve >= 0
+                    && reserve <= MAX_DAILY_CALL_CAP && reserve == Math.rint(reserve) ? reserve.intValue()
+                    : PaperSettingsService.DEFAULT_API_SCHEDULED_RESERVE;
+            return new ClaudeSettings(model.strip(), normalized, dailyCap, scheduledReserve, fallbacks);
         }
     }
 
@@ -351,13 +370,15 @@ public class ClaudeBookService {
                     "일시정지 중 — Claude를 부르지 않고 주문을 내지 않습니다(재개한 뒤의 결정부터 다시 부릅니다)");
         }
         LocalDate today = Kst.today(clock);
-        if (pipeline.callsLeft(today, claude) <= 0) {
-            return pipeline.capSkipped(asOf, kind, row, claude, pricesFinal, retrying, today);
+        // 정기 결정(재시도 포함)은 상한까지, 수동 결정은 정기 작업 몫을 남긴 문턱까지(2단계 명세 §4-10 — ClaudeSettings.callLimit).
+        boolean scheduled = RuleBookService.SCHEDULED.equals(kind);
+        if (pipeline.callsLeft(today, claude, scheduled) <= 0) {
+            return pipeline.capSkipped(asOf, kind, row, claude, pricesFinal, retrying, today, scheduled);
         }
         Generation before = generation(book);
-        Attempt attempt = pipeline.attempt(asOf, kind, false, row, claude, today);
+        Attempt attempt = pipeline.attempt(asOf, kind, false, row, claude, today, scheduled);
         if (attempt == null) {
-            return pipeline.capSkipped(asOf, kind, row, claude, pricesFinal, retrying, today);
+            return pipeline.capSkipped(asOf, kind, row, claude, pricesFinal, retrying, today, scheduled);
         }
         if (!attempt.succeeded()) {
             return pipeline.recordFailure(asOf, kind, row, claude, pricesFinal, attempt, retrying);
@@ -462,10 +483,11 @@ public class ClaudeBookService {
         try {
             Prepared prepared = prepareInitial();
             ClaudeDecisionPipeline pipeline = pipeline(US);
+            // 미국 시작·미리보기는 수동 호출입니다(정기 작업 몫을 남긴 문턱 — 2단계 명세 §4-10).
             Attempt attempt = pipeline.attempt(prepared.start(), RuleBookService.INITIAL, true, prepared.row(),
-                    prepared.claude(), prepared.today());
+                    prepared.claude(), prepared.today(), false);
             if (attempt == null) {
-                throw new InvalidRequestException(capMessage(prepared.claude(), prepared.today()));
+                throw new InvalidRequestException(capMessage(prepared.claude(), prepared.today(), false));
             }
             if (!attempt.succeeded()) {
                 log.warn("Claude 책 시작: 호출 실패({}) — 시작하지 않았습니다: {}", attempt.status(), attempt.error());
@@ -551,10 +573,11 @@ public class ClaudeBookService {
         try {
             Prepared prepared = prepareInitial();
             ClaudeDecisionPipeline pipeline = pipeline(US);
+            // 미국 시작·미리보기는 수동 호출입니다(정기 작업 몫을 남긴 문턱 — 2단계 명세 §4-10).
             Attempt attempt = pipeline.attempt(prepared.start(), RuleBookService.INITIAL, true, prepared.row(),
-                    prepared.claude(), prepared.today());
+                    prepared.claude(), prepared.today(), false);
             if (attempt == null) {
-                throw new InvalidRequestException(capMessage(prepared.claude(), prepared.today()));
+                throw new InvalidRequestException(capMessage(prepared.claude(), prepared.today(), false));
             }
             Map<String, Object> out = new LinkedHashMap<>();
             out.put("ok", true);
@@ -608,8 +631,8 @@ public class ClaudeBookService {
         SettingsRow row = settingsRow();
         ClaudeSettings claude = ClaudeSettings.from(row.body());
         LocalDate today = Kst.today(clock);
-        if (pipeline(US).callsLeft(today, claude) <= 0) {
-            throw new InvalidRequestException(capMessage(claude, today));
+        if (pipeline(US).callsLeft(today, claude, false) <= 0) {
+            throw new InvalidRequestException(capMessage(claude, today, false));
         }
         ensureStartSelection(start, row);
         return new Prepared(start, book, row, claude, today);
@@ -727,6 +750,19 @@ public class ClaudeBookService {
     static String capMessage(ClaudeSettings claude, LocalDate today) {
         return "일일 호출 상한(" + claude.dailyCallCap() + "회, KST " + today + ")에 닿아 Claude를 부르지 않았습니다"
                 + " — 설정 apiDailyCallCap";
+    }
+
+    /**
+     * 호출 상한 문구 — 정기 작업이면 {@link #capMessage(ClaudeSettings, LocalDate)} 그대로, 수동 호출이면 정기 작업 몫을 남긴 문턱
+     * ({@link ClaudeSettings#callLimit}, 2단계 명세 §4-10).
+     */
+    static String capMessage(ClaudeSettings claude, LocalDate today, boolean scheduled) {
+        if (scheduled) {
+            return capMessage(claude, today);
+        }
+        return "일일 호출 상한(" + claude.dailyCallCap() + "회, KST " + today + ") 중 정기 작업 몫 " + claude.scheduledReserve()
+                + "회를 남겨 수동 호출은 " + claude.callLimit(false) + "회까지라 Claude를 부르지 않았습니다"
+                + " — 설정 apiDailyCallCap·apiScheduledReserve";
     }
 
 

@@ -839,6 +839,57 @@ class ClaudeBookServiceTest {
     }
 
     @Test
+    @DisplayName("정기 작업 몫 예약(2단계 명세 §4-10·§5, E2b): 수동 호출(미리보기·시작·수동 결정)은 그날 호출이 상한 20 − 예약 7 = 13 미만일 때만, 정기 결정은 상한까지 — 13회째 뒤에도 정기 결정은 부르고 19회면 20회째를 씀")
+    void manualCallsStopAtCapMinusReserveScheduledGoToCap() throws Exception {
+        activeWithHolding();
+        store.apiUsage.put(TODAY_KST, new ApiUsage(TODAY_KST, 13, 0, 0, 0, 0));
+
+        Decision manual = service().decide(MON, RuleBookService.MANUAL, true);
+        assertThat(manual.status()).isEqualTo(ClaudeBookService.STATUS_SKIPPED);
+        assertThat(manual.response().path("summary").asString()).contains("일일 호출 상한(20회")
+                .contains("정기 작업 몫 7회를 남겨 수동 호출은 13회까지").contains("apiScheduledReserve");
+        assertThat(hits.get()).as("수동 결정은 부르지 않음").isZero();
+        assertThat(callsToday()).isEqualTo(13);
+
+        answerJson(decision(5, "관망"));
+        Decision scheduled = service().decide(MON, RuleBookService.SCHEDULED, true);
+        assertThat(scheduled.status()).as("정기 결정은 예약 몫을 씀").isEqualTo(ClaudeBookService.STATUS_NO_TRADE);
+        assertThat(hits.get()).isEqualTo(1);
+        assertThat(callsToday()).isEqualTo(14);
+
+        store.apiUsage.put(TODAY_KST, new ApiUsage(TODAY_KST, 19, 0, 0, 0, 0));
+        answerJson(decision(5, "관망"));
+        assertThat(service().decide(PaperFixtures.TUE, RuleBookService.SCHEDULED, true).status())
+                .as("상한까지 — 20회째").isEqualTo(ClaudeBookService.STATUS_NO_TRADE);
+        assertThat(callsToday()).isEqualTo(20);
+        assertThat(hits.get()).isEqualTo(2);
+    }
+
+    @Test
+    @DisplayName("정기 작업 몫 예약: 미리보기·시작은 수동 호출 — 12회면 부르고 13회면 400(예약 문구), 예약이 상한 이상이면 수동 호출은 늘 막힘")
+    void previewStopsAtCapMinusReserve() throws Exception {
+        notStartedWithStartPrices();
+        store.apiUsage.put(TODAY_KST, new ApiUsage(TODAY_KST, 13, 0, 0, 0, 0));
+        assertThatThrownBy(() -> service().preview()).isInstanceOf(InvalidRequestException.class)
+                .hasMessageContaining("정기 작업 몫 7회를 남겨 수동 호출은 13회까지");
+        assertThatThrownBy(() -> service().start()).isInstanceOf(InvalidRequestException.class)
+                .hasMessageContaining("정기 작업 몫 7회를 남겨 수동 호출은 13회까지");
+        assertThat(hits.get()).isZero();
+
+        store.apiUsage.put(TODAY_KST, new ApiUsage(TODAY_KST, 12, 0, 0, 0, 0));
+        answerJson(decision(0, "관망"));
+        assertThat(service().preview()).containsEntry("preview", true);
+        assertThat(hits.get()).as("12회 — 13회째 수동 호출").isEqualTo(1);
+        assertThat(callsToday()).isEqualTo(13);
+
+        store.apiUsage.clear();
+        ((ObjectNode) store.settings.body()).put("apiScheduledReserve", 20);
+        assertThatThrownBy(() -> service().preview()).isInstanceOf(InvalidRequestException.class)
+                .hasMessageContaining("수동 호출은 0회까지");
+        assertThat(hits.get()).isEqualTo(1);
+    }
+
+    @Test
     @DisplayName("설정의 모델·effort·상한을 읽고, 목록 밖이면 기본값(sonnet·high·20)")
     void claudeSettingsFallBackToDefaults() {
         JsonNode body = MAPPER.valueToTree(Map.of("model", "claude-haiku-5-5", "effort", "MAX", "apiDailyCallCap", 2));
@@ -854,6 +905,19 @@ class ClaudeBookServiceTest {
         assertThat(bad.effort()).isEqualTo("high");
         assertThat(bad.dailyCallCap()).isEqualTo(20);
         assertThat(bad.fallbacks()).containsExactly("model", "effort", "apiDailyCallCap");
+
+        // 정기 작업 몫 예약(E2b) — 없거나 범위 밖이면 기본 7(fallbacks에는 넣지 않음 — 결정 응답의 settings.fallbacks가 그 키 전의 행에서도 그대로).
+        assertThat(read.scheduledReserve()).isEqualTo(7);
+        assertThat(read.callLimit(true)).isEqualTo(2);
+        assertThat(read.callLimit(false)).as("예약이 상한 이상 — 수동 호출은 늘 막힘").isZero();
+        ClaudeBookService.ClaudeSettings reserved = ClaudeBookService.ClaudeSettings.from(MAPPER.valueToTree(Map.of(
+                "apiDailyCallCap", 20, "apiScheduledReserve", 9)));
+        assertThat(reserved.scheduledReserve()).isEqualTo(9);
+        assertThat(reserved.callLimit(true)).isEqualTo(20);
+        assertThat(reserved.callLimit(false)).isEqualTo(11);
+        assertThat(ClaudeBookService.ClaudeSettings.from(MAPPER.valueToTree(Map.of("apiScheduledReserve", 2.5)))
+                .scheduledReserve()).isEqualTo(7);
+        assertThat(bad.fallbacks()).doesNotContain("apiScheduledReserve");
     }
 
     // ------------------------------------------------------------------ 시장 격리(2단계 명세 §9 A6)

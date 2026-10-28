@@ -168,7 +168,8 @@ final class ClaudeDecisionPipeline {
 
     /**
      * 지금 프레임 판을 읽고(없으면 임시 v0 시드), 패킷을 만들고, 호출 한 번을 잡고(일일 상한 — 잡지 못하면 null), 부르고, 사용량을
-     * 남기고, 형식을 검사합니다. 패킷을 먼저 만드는 것은 패킷이 실패하면(자료 오류) 호출 한 번을 쓰지 않으려는 것입니다.
+     * 남기고, 형식을 검사합니다. 패킷을 먼저 만드는 것은 패킷이 실패하면(자료 오류) 호출 한 번을 쓰지 않으려는 것입니다. 상한의 문턱은
+     * {@code scheduled}(정기 작업 — 상한까지, 아니면 수동 호출 — 상한 − 정기 작업 몫 예약, {@link ClaudeSettings#callLimit})가 정합니다.
      *
      * <p>시스템 프롬프트는 그 판의 본문을 <b>이 결정이 읽은 설정 행</b>({@code row} — 결정 기록의 settings_version)으로 다시
      * 렌더링합니다. 판 행의 {@code rendered}(판을 만들 때의 설정)를 쓰면 그 뒤 바뀐 하드 규칙 수치가 프롬프트에 남아 검증기와
@@ -177,11 +178,12 @@ final class ClaudeDecisionPipeline {
      * 1_basis.settingsVersion이 서로 다른 판을 말합니다(FW-5).
      */
     Attempt attempt(LocalDate asOf, String kind, boolean initial, SettingsRow row, ClaudeSettings claude,
-                    LocalDate today) {
+                    LocalDate today, boolean scheduled) {
         FrameworkService.Frame frame = framework.current();
         String system = FrameworkService.render(market, frame.body(), frame.version(), row.body());
         Packet packet = packets.build(asOf, kind, initial, frame.version(), row);
-        if (calls.reserve(today, claude.dailyCallCap()).isEmpty()) {
+        // 정기 작업은 상한까지, 수동 호출은 정기 작업 몫을 남긴 문턱까지(2단계 명세 §4-10 — 같은 SQL의 문턱만 다름).
+        if (calls.reserve(today, claude.callLimit(scheduled)).isEmpty()) {
             return null;
         }
         AiService.StructuredResult result;
@@ -676,8 +678,8 @@ final class ClaudeDecisionPipeline {
      * 오류 그대로, 사유를 덧붙임) — 남겨 두면 결정 작업이 10분마다 다시 와서 같은 이유로 건너뜁니다.
      */
     Decision capSkipped(LocalDate asOf, String kind, SettingsRow row, ClaudeSettings claude, boolean pricesFinal,
-                                Decision retrying, LocalDate today) {
-        String message = capMessage(claude, today);
+                                Decision retrying, LocalDate today, boolean scheduled) {
+        String message = capMessage(claude, today, scheduled);
         if (retrying == null) {
             log.info("Claude 책 결정 {} {}: {}", asOf, kind, message);
             return recordSkipped(asOf, kind, row, claude, pricesFinal, message + " — 그날 재량 주문 없음");
@@ -694,9 +696,10 @@ final class ClaudeDecisionPipeline {
         return store.decision(retrying.id()).orElseThrow();
     }
 
-    int callsLeft(LocalDate today, ClaudeSettings claude) {
+    /** 그날 이 호출에 남은 횟수 — 정기 작업은 상한까지, 수동 호출은 정기 작업 몫을 남긴 문턱까지({@link ClaudeSettings#callLimit}). */
+    int callsLeft(LocalDate today, ClaudeSettings claude, boolean scheduled) {
         int used = store.apiUsage(today).map(PaperStore.ApiUsage::calls).orElse(0);
-        return claude.dailyCallCap() - used;
+        return claude.callLimit(scheduled) - used;
     }
 
     static String statusLabel(String status) {
