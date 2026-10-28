@@ -4338,6 +4338,13 @@ export function noteStateBadge(note: { kind?: unknown; archived?: unknown; activ
       title: "기준일~만료일 안이라 다음 Claude 결정 패킷에 자료로 실립니다(최신부터 합계 글자 수 상한 — 설정 notesMaxCharsInPacket — 까지).",
     };
   }
+  // 한국 달력이 지금의 해를 모르면 서버가 유효 여부를 가르지 못해 null을 보냅니다(docs/API.md 메모 목록 '한국') — '패킷 밖'으로 읽지 않습니다.
+  if (note.active === null) {
+    return {
+      key: "note-unknown", label: "유효 여부 모름", className: TONE.warn,
+      title: "기준 거래일을 셀 달력이 없어 서버가 유효 여부를 가르지 못했습니다(그 동안 쓰기도 서버가 거절).",
+    };
+  }
   return { key: "note-inactive", label: "패킷 밖 — 만료·기준일 전", className: TONE.muted };
 }
 
@@ -4421,11 +4428,15 @@ export function noteDraftCheck(draft: NoteDraft): { errors: string[]; canSave: b
   return { errors, canSave: errors.length === 0, bodyCount };
 }
 
-/** 저장 본문 — 비운 날짜는 보내지 않습니다(서버 기본값). 방법론 메모는 만료일을 보내지 않습니다(만료 없음). */
-export function notePayload(draft: NoteDraft): Record<string, unknown> {
+/**
+ * 저장 본문 — 비운 날짜는 보내지 않습니다(서버 기본값). 방법론 메모는 만료일을 보내지 않습니다(만료 없음). 한국 메모는 본문에 `market:"KR"`
+ * (docs/API.md 메모 쓰기 — 경로는 같고 시장은 본문), 미국은 예전 그대로 시장 값을 보내지 않습니다(없으면 미국).
+ */
+export function notePayload(draft: NoteDraft, market: PaperMarketCode = "US"): Record<string, unknown> {
   const payload: Record<string, unknown> = { kind: draft.kind, title: draft.title.trim(), body: draft.body.trim() };
   if (draft.asOfDate.trim()) payload.asOfDate = draft.asOfDate.trim();
   if (draft.kind === "MARKET" && draft.expiresOn.trim()) payload.expiresOn = draft.expiresOn.trim();
+  if (market === "KR") payload.market = "KR";
   return payload;
 }
 
@@ -4433,15 +4444,28 @@ export function notePayload(draft: NoteDraft): Record<string, unknown> {
  * 만료일 칸의 안내 — 비우면 기준일 + 설정 notesDefaultExpiryTradingDays 거래일(기본 3). 설정을 읽었으면 지금 값, 못 읽었으면 기본값이라고
  * 적습니다(지금 설정과 다를 수 있음).
  */
-export function noteExpiryHint(settingsBody: unknown): string {
+export function noteExpiryHint(settingsBody: unknown, market: PaperMarketCode = "US"): string {
   const days = numberOf(settingValueAt(settingsBody, "notesDefaultExpiryTradingDays"));
+  // 한국 메모는 KRX 달력으로 셉니다(설정 키는 두 책 공용 — 사용자 결정 v6). 미국 문구는 예전 그대로.
+  const unit = market === "KR" ? " KRX 거래일" : "거래일";
+  const shared = market === "KR" ? ", 두 책 공용" : "";
   return days === null
-    ? "비우면 기본 +3거래일(기준일부터 — 설정 notesDefaultExpiryTradingDays의 기본값)"
-    : `비우면 기본 +${formatNumber(days, 0)}거래일(기준일부터 — 설정 notesDefaultExpiryTradingDays)`;
+    ? `비우면 기본 +3${unit}(기준일부터 — 설정 notesDefaultExpiryTradingDays의 기본값${shared})`
+    : `비우면 기본 +${formatNumber(days, 0)}${unit}(기준일부터 — 설정 notesDefaultExpiryTradingDays${shared})`;
 }
 
-/** 메모 탭 머리의 설명 — 메모는 자료일 뿐 지시가 아니고, 시작(초기 결정) 패킷에는 출발일 이하 기준일 메모만 실립니다(PIT). */
-export function notesIntro(startDate: string | null | undefined): string {
+/**
+ * 메모 탭 머리의 설명 — 메모는 자료일 뿐 지시가 아니고, 시작(초기 결정) 패킷에는 출발일 이하 기준일 메모만 실립니다(PIT). 한국("KR")은 한국 메모만
+ * 한국 Claude 계좌 결정 패킷 섹션 11에 실리고(미국 메모와 따로), 출발 결정도 그 세션 D 기준의 같은 규칙입니다(한국 패킷 KrPacketBuilder).
+ */
+export function notesIntro(startDate: string | null | undefined, market: PaperMarketCode = "US"): string {
+  if (market === "KR") {
+    return "한국 시황 메모(MARKET)는 기준일~만료일 사이 한국 Claude 계좌 결정 패킷(섹션 11)에만 구분자로 감싼 자료로 실립니다 — 지시가 아니고, "
+      + "메모의 숫자보다 패킷의 숫자가 우선합니다. 미국 메모와 따로라 이 목록은 한국 메모뿐입니다(미국 메모는 미국 화면의 메모 탭). 유효한 메모는 "
+      + "최신부터 합계 글자 수 상한(설정 notesMaxCharsInPacket — 두 책 공용)까지 싣습니다. 한국 결정은 KR 거래일 밤에 그날 세션 D를 기준 "
+      + `거래일로 보므로 기준일 ≤ D ≤ 만료일인 메모가 실립니다(출발일 ${startDate ?? EMPTY} 밤의 출발 결정도 같은 규칙). 방법론 메모(INSIGHT)는 `
+      + "패킷에 싣지 않고 프레임 제안에만 씁니다(프레임은 두 시장 공용). 한국 규칙 계좌는 메모를 읽지 않습니다.";
+  }
   return "시황 메모(MARKET)는 기준일~만료일 사이 Claude 결정 패킷(섹션 11)에 구분자로 감싼 자료로 실립니다 — 지시가 아니고, 메모의 숫자보다 "
     + "패킷의 숫자가 우선합니다. 유효한 메모는 최신부터 합계 글자 수 상한(설정 notesMaxCharsInPacket)까지 싣습니다. 방법론 메모(INSIGHT)는 "
     + "패킷에 싣지 않고 프레임 제안에만 씁니다. "
@@ -4453,8 +4477,13 @@ export function notesIntro(startDate: string | null | undefined): string {
  * 결정 전 아침에 오늘(KST) 날짜를 고르면 그날 결정에서 빠지고 하루 늦게 실립니다. 화면은 날짜를 다시 비교하지 않고 기본값의 뜻만 적습니다
  * (실리는지는 저장 결과의 서버 판정 active).
  */
-export function noteAsOfHint(referenceDate: string | null | undefined): string {
+export function noteAsOfHint(referenceDate: string | null | undefined, market: PaperMarketCode = "US"): string {
   const day = textOf(referenceDate);
+  if (market === "KR") {
+    // 한국 결정은 그날 밤(결정 창)에 그날 세션을 봅니다 — 아침에 오늘(KST) 날짜로 쓴 메모도 오늘 밤 결정에 실립니다(미국 아침 결정과 다름).
+    const where = day ? `${day}(마지막으로 끝난 한국 세션 — KRX 달력)` : "마지막으로 끝난 한국 세션(KRX 달력)";
+    return `비우면 ${where}. 오늘(KST) 날짜를 고르면 오늘 밤 결정(기준 거래일 = 오늘 세션)부터 실립니다. 오늘보다 뒤 날짜는 서버가 거절합니다.`;
+  }
   const where = day ? `${day}(마지막으로 끝난 미국 세션 — Claude 결정이 보는 거래일)` : "마지막으로 끝난 미국 세션(Claude 결정이 보는 거래일)";
   return `비우면 ${where}. 그보다 뒤 날짜(예: 오늘 KST)를 고르면 그 거래일의 결정부터 실려, 결정 전 아침에 쓴 메모가 그날 결정에서 빠집니다.`;
 }

@@ -22,6 +22,11 @@ import {
   navAxis,
   navChart,
   newsLine,
+  noteAsOfHint,
+  noteExpiryHint,
+  notePayload,
+  notesIntro,
+  noteStateBadge,
   notStartedNote,
   orderSizeText,
   PAPER_TABS,
@@ -685,5 +690,37 @@ describe("기관 선정 — 트랙레코드 표기", () => {
     })).toEqual({ tone: "warn", text: `2026-10-23 기준 — 계산하지 못했습니다: ${reason}` });
     expect(rerankResultView({ ok: true, asOfDate: "2026-10-23", computed: 0, skippedReason: null }).text)
       .toBe("2026-10-23 기준 — 계산할 후보가 없었습니다. 수집 진행률을 보세요.");
+  });
+});
+
+describe("메모 안내 — 시장 인자(미국 문구 그대로, 한국은 KRX 달력)", () => {
+  it("미국: 인자 없음과 \"US\"가 예전 글자 그대로", () => {
+    expect(notesIntro("2026-10-23", "US")).toBe(notesIntro("2026-10-23"));
+    expect(notesIntro("2026-10-23")).toContain("기준일이 출발일(2026-10-23) 이하인 메모만 실립니다. 규칙 계좌는 메모를 읽지 않습니다.");
+    expect(noteAsOfHint("2026-10-26", "US")).toBe(noteAsOfHint("2026-10-26"));
+    expect(noteAsOfHint("2026-10-26")).toContain("(마지막으로 끝난 미국 세션 — Claude 결정이 보는 거래일)");
+    expect(noteExpiryHint({ notesDefaultExpiryTradingDays: 5 }, "US")).toBe("비우면 기본 +5거래일(기준일부터 — 설정 notesDefaultExpiryTradingDays)");
+    const draft = { kind: "MARKET" as const, asOfDate: "", expiresOn: "", title: "t", body: "b" };
+    expect(notePayload(draft)).toEqual({ kind: "MARKET", title: "t", body: "b" });
+    expect(notePayload(draft, "US")).toEqual({ kind: "MARKET", title: "t", body: "b" });
+  });
+
+  it("한국: 한국 결정 패킷에만·그날 세션 D 기준·KRX 거래일, 본문에 market:\"KR\"", () => {
+    const intro = notesIntro("2026-10-29", "KR");
+    expect(intro).toContain("한국 Claude 계좌 결정 패킷(섹션 11)에만");
+    expect(intro).toContain("기준일 ≤ D ≤ 만료일인 메모가 실립니다(출발일 2026-10-29 밤의 출발 결정도 같은 규칙)");
+    expect(intro).not.toContain("미국 세션");
+    expect(noteAsOfHint("2026-10-28", "KR")).toMatch(/^비우면 2026-10-28\(마지막으로 끝난 한국 세션 — KRX 달력\)\. 오늘\(KST\) 날짜를 고르면 오늘 밤 결정/);
+    expect(noteAsOfHint(null, "KR")).toMatch(/^비우면 마지막으로 끝난 한국 세션\(KRX 달력\)\./);
+    expect(noteExpiryHint(null, "KR")).toBe("비우면 기본 +3 KRX 거래일(기준일부터 — 설정 notesDefaultExpiryTradingDays의 기본값, 두 책 공용)");
+    expect(notePayload({ kind: "INSIGHT", asOfDate: "", expiresOn: "2026-11-02", title: "t", body: "b" }, "KR"))
+      .toEqual({ kind: "INSIGHT", title: "t", body: "b", market: "KR" });
+  });
+
+  it("유효 여부 모름 — 한국 달력이 모르는 해의 active:null은 '패킷 밖'이 아님(미국의 false·없음은 그대로)", () => {
+    expect(noteStateBadge({ kind: "MARKET", archived: false, active: null }).label).toBe("유효 여부 모름");
+    expect(noteStateBadge({ kind: "MARKET", archived: false, active: false }).label).toBe("패킷 밖 — 만료·기준일 전");
+    expect(noteStateBadge({ kind: "MARKET", archived: false }).label).toBe("패킷 밖 — 만료·기준일 전");
+    expect(noteStateBadge({ kind: "INSIGHT", archived: false, active: null }).label).toBe("프레임 제안용");
   });
 });

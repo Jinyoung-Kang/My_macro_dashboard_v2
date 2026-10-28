@@ -1543,7 +1543,8 @@ export interface PaperNote {
   title: string;
   body: string;
   archived: boolean;
-  active: boolean;
+  /** 패킷에 실리는가(서버 판정). 한국 메모는 KRX 달력이 지금의 해를 모르면 MARKET 메모가 null(가를 수 없음). */
+  active: boolean | null;
   createdAtKst: string | null;
 }
 
@@ -1553,12 +1554,19 @@ export interface PaperNotesResponse {
   message?: string;
   /** 유효(active) 판정의 기준일(서버 — 계약 밖). */
   referenceDate?: string | null;
+  /** 한국(`?market=KR`) — 시장·쉬는 사유, 달력이 지금의 해를 몰라 기준일을 셀 수 없을 때의 사유(그때 referenceDate는 null). */
+  market?: PaperMarketCode;
+  dormantReason?: string | null;
+  referenceDateReason?: string | null;
   notes?: PaperNote[];
 }
 
 /** POST /api/paper/notes `{kind, asOfDate?, expiresOn?, title, body}` — 기준일·만료일을 비우면 서버가 기본값으로 채웁니다. */
 export interface PaperNoteCreateResult {
   ok: boolean;
+  /** 한국(본문 market:"KR") — 시장·쉬는 사유(쉬어도 메모는 받음). */
+  market?: PaperMarketCode;
+  dormantReason?: string | null;
   note?: PaperNote | null;
   message?: string;
 }

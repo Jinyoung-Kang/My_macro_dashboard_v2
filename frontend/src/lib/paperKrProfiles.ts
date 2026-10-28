@@ -1,5 +1,5 @@
 /**
- * 🧪 모의매매(한국) 화면의 고정 표 — 네 계좌의 정의(계좌 상세 패널)와 아직 열지 않은 한국 탭. React를 모르는 순수 모듈(ADR 0004).
+ * 🧪 모의매매(한국) 화면의 고정 표 — 네 계좌의 정의(계좌 상세 패널)와 한국 탭 이름. React를 모르는 순수 모듈(ADR 0004).
  *
  * 문장은 백엔드 한국 규칙(KrRuleBookService·KrStartPipeline·KrPaperMarket·KrFills·KrConfirmations — 2단계 명세 §4-1·§4-6~§4-9)을 옮긴
  * 것이고, **설정에서 오는 숫자는 문장에 적지 않습니다**(미국 ACCOUNT_PROFILES와 같은 규칙) — 숫자는 `settings`의 `kr.*` 키로 설정 응답에서
@@ -190,23 +190,6 @@ export const KR_ACCOUNT_PROFILES: Readonly<Record<string, AccountProfile>> = {
       { key: "kr.commissionBp", label: "수수료(가정)", unit: "bp" },
       { key: "kr.cashLikeTickers", label: "현금성 종목" },
     ],
-  },
-};
-
-/** 한국 화면에서 아직 열지 않은 탭 — 그 탭은 미국 화면을 한국 계좌로 그리지 않고 "다음 단계에서 엽니다"만 보입니다. */
-export interface KrPendingTab {
-  opensIn: string;
-  upcoming: string;
-}
-
-/**
- * 한국 탭 중 아직 열지 않은 것(2단계 명세 §9 F2 — 다음 화면 커밋이 하나씩 엽니다). 개요·종목 선정·보유·체결·결정 로그는 열렸고, 프레임·설정은 두
- * 시장이 함께 쓰는 화면이라 시장을 밝힌 안내와 함께 그대로 보입니다(사용자 결정 2026-10-29).
- */
-export const KR_PENDING_TABS: Readonly<Partial<Record<PaperTabKey, KrPendingTab>>> = {
-  notes: {
-    opensIn: "2단계 F2 화면 묶음",
-    upcoming: "한국 시황 메모 — KRX 달력으로 센 기준일·만료",
   },
 };
 

@@ -6,7 +6,7 @@ import { Banner, Card, ErrorState, Freshness, Loading } from "@/components/ui";
 import { useApi } from "@/hooks/useApi";
 import { endpoints } from "@/lib/endpoints";
 import { PAPER_SOURCES, PAPER_TABS, type PaperTabKey } from "@/lib/paper";
-import { KR_PENDING_TABS, KR_TAB_LABELS } from "@/lib/paperKrProfiles";
+import { KR_TAB_LABELS } from "@/lib/paperKrProfiles";
 import { formatMoney, type PaperMarketCode } from "@/lib/paperMarket";
 import { paperTabFromPath, paperTabPath } from "@/lib/paperRoutes";
 import type { PaperOverviewResponse } from "@/lib/types";
@@ -41,9 +41,8 @@ import { SettingsSection } from "./SettingsSection";
  *
  * <p><b>한국</b>(`market` "KR", 2단계 명세 §4-16 — /paper/kr·/paper/kr/&lt;탭&gt;): 같은 일곱 탭이고 개요는 `?market=KR` 응답(원 단위 정수,
  * 네 계좌 kr_rules·kr_claude·kr_bench_k200·kr_bench_mix)입니다. 정기 작업이 쉬면 그 사유(dormantReason)를 맨 위에 적습니다. 종목 선정 탭(키
- * selection — 미국 '기관 선정' 자리)은 한국 규칙 계좌의 재선정 기록(KrSelectionSection)입니다. 프레임·설정은 두
- * 시장이 함께 쓰는 화면이라 시장을 밝힌 안내와 함께 그대로, 아직 한국 몫을 만들지 않은 탭(lib/paperKrProfiles KR_PENDING_TABS)은 미국 화면을
- * 한국 계좌로 그리지 않고 "다음 단계에서 엽니다"만 보입니다. 주소 맞추기는 그 시장의 주소만 봅니다(다른 시장 주소는 무시).
+ * selection — 미국 '기관 선정' 자리)은 한국 규칙 계좌의 재선정 기록(KrSelectionSection), 메모 탭은 한국 메모(`?market=KR`)입니다. 프레임·설정은
+ * 두 시장이 함께 쓰는 화면이라 시장을 밝힌 안내와 함께 그대로입니다. 주소 맞추기는 그 시장의 주소만 봅니다(다른 시장 주소는 무시).
  */
 export default function PaperPage({
   initialTab = "overview",
@@ -58,13 +57,8 @@ export default function PaperPage({
   // 결정 로그의 주간 복기에서 누른 제안 번호 — 프레임 탭이 그 제안으로 스크롤해 강조합니다(탭 단추로 옮기면 지움).
   const [focusProposal, setFocusProposal] = useState<number | null>(null);
   const { data, loading, error, reload, refreshError } = useApi<PaperOverviewResponse>(endpoints.paper.market(market).overview, 60_000);
-  // 한국 화면은 아직 한국 몫을 만들지 않은 탭을 '다음 단계' 안내로 두고, 이름이 다른 탭(종목 선정)은 한국 이름으로 — 미국 화면은 PAPER_TABS
-  // 그대로(모두 열림).
-  const tabs = PAPER_TABS.map((entry) => {
-    const pending = korea ? KR_PENDING_TABS[entry.key] : undefined;
-    const label = (korea ? KR_TAB_LABELS[entry.key] : undefined) ?? entry.label;
-    return pending ? { ...entry, label, opensIn: pending.opensIn, upcoming: pending.upcoming } : { ...entry, label };
-  });
+  // 한국 화면은 이름이 다른 탭(종목 선정)만 한국 이름으로 — 일곱 탭 모두 열림(미국 화면은 PAPER_TABS 그대로).
+  const tabs = PAPER_TABS.map((entry) => ({ ...entry, label: (korea ? KR_TAB_LABELS[entry.key] : undefined) ?? entry.label }));
   const current = tabs.find((entry) => entry.key === tab) ?? tabs[0];
   // 라우터 밖(테스트)에서는 null입니다 — 그때는 주소를 따라가지 않습니다.
   const pathname = usePathname();
@@ -193,7 +187,7 @@ export default function PaperPage({
               <Banner tone="info">{SHARED_TAB_NOTE[current.key]}</Banner>
             )}
             {current.key === "framework" && <FrameworkSection focusProposalId={focusProposal} />}
-            {current.opensIn === null && current.key === "notes" && <NotesSection startDate={data.startDate ?? null} />}
+            {current.opensIn === null && current.key === "notes" && <NotesSection startDate={data.startDate ?? null} market={market} />}
             {current.key === "settings" && <SettingsSection />}
             {current.opensIn && (
               <Banner tone="info">
