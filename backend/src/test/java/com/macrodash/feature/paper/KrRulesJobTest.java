@@ -707,6 +707,113 @@ class KrRulesJobTest {
         assertThat(store.positions(PaperBooks.KR_RULES)).extracting(Position::ticker).doesNotContain("373220");
     }
 
+    /** 재선정일 R — 000660(2,000주, 순자산의 약 20%)이 R 거래정지라 후보 밖. 결정 작업이 R 22:30에 낸 규칙 계좌 주문(매도 000660 · 매수 둘 · 153130). */
+    private List<Order> suspendedHoldingOnTheReselectionDay(int qty, double cash) {
+        holding("000660", qty, 10_000);
+        store.upsertState(new BookState(PaperBooks.KR_RULES, cash, cash + qty * 10_000.0, qty * 10_000.0,
+                qty * 10_000.0 / (cash + qty * 10_000.0) * 100, null, null, S, null));
+        KrFixtures.stub(reader, Datasets.SNAP_KR_PAPER_QUOTES,
+                KrRulesFixtures.suspend(KrRulesFixtures.quotes(R), "000660", true));
+        fsc(FRI);
+        PaperDecisionJob.Result decided = runAt("2026-11-02T22:30");
+        assertThat(decided.outcome()).isEqualTo(PaperDecisionJob.DECIDED);
+        assertThat(decided.rules().kind()).isEqualTo(RuleBookService.REBALANCE);
+        List<Order> orders = store.ordersByDecision(decided.rules().id());
+        assertThat(orders).extracting(Order::ticker, Order::side).containsExactly(
+                org.assertj.core.groups.Tuple.tuple("000660", "SELL"), org.assertj.core.groups.Tuple.tuple("005930", "BUY"),
+                org.assertj.core.groups.Tuple.tuple("105560", "BUY"), org.assertj.core.groups.Tuple.tuple("153130", "BUY"));
+        return orders;
+    }
+
+    /** 그 주문들의 매수가 모두 요청대로 체결됐나 — FILLED이고 현금 한도로 줄지 않음(cashLimited 없음). */
+    private void everyBuyFilledInFull(List<Order> orders) {
+        for (Order planned : orders) {
+            if (PaperBooks.BUY.equals(planned.side())) {
+                Order now = store.orders.get(planned.id());
+                assertThat(now.status()).as(planned.ticker()).isEqualTo("FILLED");
+                assertThat(now.reason().has("cashLimited")).as(planned.ticker() + " — 현금 한도로 줄지 않음").isFalse();
+            }
+        }
+    }
+
+    @Test
+    @DisplayName("재선정일에 거래정지인 보유의 '후보 밖' 매도 대금은 선정의 현금 어림에서 뺌(사용자 결정 u3) — 정지가 R1에도 이어져 그 매도가 대기로 남아도 R 결정의 종목 둘·153130 매수는 R1 시가에 요청 수량대로 모두 체결(cashLimited 없음 — 손계산)")
+    void unfillableSellLeftOutSoEveryBuyFillsAtTheNextOpen() {
+        List<Order> orders = suspendedHoldingOnTheReselectionDay(2_000, 80_000_000);
+        // R 장부가 000660을 R 종가 10,100으로 평가 → 순자산 100,200,000. 종목 둘 = 6,680,033.40원 × (1 + 6.5bp) × 2 = 13,368,750.8434원,
+        // 153130 = (80,000,000 − 13,368,750.8434) ÷ 100,200,000 − 여유 0.5%p = 65.9983%
+        // (000660 대금 20,200,000 × (1 − 26.5bp) = 20,146,470원을 넣으면 86.1045% — R1 시가 현금으로는 그만큼 못 삼).
+        assertThat(orders).extracting(Order::targetWeightPct).containsExactly(null, 6.6667, 6.6667, 65.9983);
+
+        // R1 — 정지가 이어짐. 000660 매도는 대기 그대로(① 면제), 나머지는 R1 시가에.
+        KrFixtures.stub(reader, Datasets.SNAP_KR_PAPER_QUOTES,
+                KrRulesFixtures.suspend(KrRulesFixtures.quotes(R1), "000660", true));
+        fsc(R);
+        assertThat(runAt("2026-11-03T22:30").outcome()).isEqualTo(PaperDecisionJob.DECIDED);
+
+        assertThat(store.orders.get(orders.get(0).id()).status()).isEqualTo(PaperBooks.ORDER_PENDING);
+        everyBuyFilledInFull(orders);
+        // R1 시가(종목 10,000·153130 108,000, 비용 원 미만 절사): 005930 667주 6,674,335 · 105560 667주 6,674,335 ·
+        // 153130 611주(65.9983% × 순자산 100,191,330 ÷ 108,070.2) 66,030,892 → 현금 80,000,000 − 79,379,562 = 620,438원.
+        assertThat(store.fillsOf(PaperBooks.KR_RULES)).extracting(f -> f.ticker() + " " + f.qty())
+                .containsExactly("005930 667", "105560 667", "153130 611");
+        assertThat(store.state(PaperBooks.KR_RULES).orElseThrow().cash()).as("R1 시가 체결 뒤 현금").isEqualTo(620_438.0);
+    }
+
+    @Test
+    @DisplayName("정지가 R1에 풀리면(u3의 맞바꿈) — 어림에 넣지 않은 000660 매도가 R1 시가에 체결되고 그 대금은 현금으로 남아, R1 정기 결정이 남는 현금 규칙(기준 2% 넘음)으로 153130 park_cash 매수(손계산)")
+    void liftedSuspensionSellsAndTheProceedsFollowTheParkCashRule() {
+        List<Order> orders = suspendedHoldingOnTheReselectionDay(2_000, 80_000_000);
+
+        // R1 — 정지가 풀림(R 봉은 정지일 봉 그대로, R1 봉 관측 — 시가 10,000).
+        KrFixtures.stub(reader, Datasets.SNAP_KR_PAPER_QUOTES,
+                KrRulesFixtures.suspendedOn(KrRulesFixtures.quotes(R1), "000660", R));
+        fsc(R);
+        PaperDecisionJob.Result next = runAt("2026-11-03T22:30");
+
+        assertThat(next.outcome()).isEqualTo(PaperDecisionJob.DECIDED);
+        assertThat(store.orders.get(orders.get(0).id()).status()).isEqualTo("FILLED");
+        assertThat(store.fillsOf(PaperBooks.KR_RULES)).filteredOn(f -> "000660".equals(f.ticker())).singleElement()
+                .satisfies(f -> assertThat(f.observationDate()).as("재개일 시가").isEqualTo(R1));
+        everyBuyFilledInFull(orders);
+        // R1 시가: 000660 2,000주 × 10,000 매도 +19,947,000(수수료 3,000·슬리피지 10,000·거래세 10,000·농특세 30,000) → 현금 99,947,000,
+        // 005930·105560 665주씩 6,654,322원씩, 153130 610주 65,922,822원 → 현금 20,715,534원.
+        assertThat(store.fillsOf(PaperBooks.KR_RULES)).extracting(f -> f.ticker() + " " + f.side() + " " + f.qty())
+                .containsExactly("000660 SELL 2000", "005930 BUY 665", "105560 BUY 665", "153130 BUY 610");
+        assertThat(store.state(PaperBooks.KR_RULES).orElseThrow().cash()).isEqualTo(20_715_534.0);
+        // R1 정기 결정: 남는 현금 20,715,534 ÷ 순자산 100,040,734(R1 종가 평가 — 10,100 × 1,330 + 108,020 × 610) = 20.7071% > 기준 2%
+        // → 여유 0.5%p를 남기고 20.2071%를 153130에(park_cash — 신호 매수가 아닌 현금 관리).
+        assertThat(next.rules().kind()).isEqualTo(RuleBookService.SCHEDULED);
+        List<Order> parked = store.ordersByDecision(next.rules().id());
+        assertThat(parked).extracting(Order::ticker, Order::side, Order::targetWeightPct)
+                .containsExactly(org.assertj.core.groups.Tuple.tuple("153130", "BUY", 20.2071));
+        assertThat(parked.get(0).reason().path("rule").asString()).isEqualTo(KrRuleBookService.RULE_PARK_DAILY);
+        assertThat(parked.get(0).reason().path("thresholdPct").asDouble()).isEqualTo(2.0);
+    }
+
+    @Test
+    @DisplayName("정지가 R1에 풀렸는데 그 대금이 작으면(1%) 현금으로 남음(u3의 맞바꿈 — 남는 현금이 기준 2% 이하라 153130을 사지 않음, R1 정기 결정 NO_TRADE)")
+    void liftedSuspensionBelowTheThresholdStaysCash() {
+        List<Order> orders = suspendedHoldingOnTheReselectionDay(100, 99_000_000);
+
+        KrFixtures.stub(reader, Datasets.SNAP_KR_PAPER_QUOTES,
+                KrRulesFixtures.suspendedOn(KrRulesFixtures.quotes(R1), "000660", R));
+        fsc(R);
+        PaperDecisionJob.Result next = runAt("2026-11-03T22:30");
+
+        assertThat(store.orders.get(orders.get(0).id()).status()).isEqualTo("FILLED");
+        everyBuyFilledInFull(orders);
+        assertThat(next.rules().kind()).isEqualTo(RuleBookService.SCHEDULED);
+        assertThat(next.rules().status()).isEqualTo("NO_TRADE");
+        assertThat(store.ordersByDecision(next.rules().id())).isEmpty();
+        // R1 시가: 000660 100주 매도 +997,350 → 현금 99,997,350, 005930·105560 666주씩 6,664,329원씩, 153130 787주(85.1480%) 85,051,247원
+        // → 현금 1,617,445원 ÷ 순자산 100,082,385(R1 종가 평가) = 1.6161% ≤ 기준 2% — 153130을 사지 않고 현금으로 둠.
+        BookState state = store.state(PaperBooks.KR_RULES).orElseThrow();
+        assertThat(state.cash()).isEqualTo(1_617_445.0);
+        assertThat(state.cash() / state.nav() * 100).as("남는 현금(순자산 %)")
+                .isCloseTo(1.6161, org.assertj.core.data.Offset.offset(0.0001)).isLessThan(2.0);
+    }
+
     @Test
     @DisplayName("1분봉 FAILED 기다림은 게이트 ①을 그대로 막음(관측 봉이 있음 — 장부가 아직 일하는 주문), 같은 밤 정지 종목의 대기 주문은 막지 않음 — 그 밤 다음 slow가 1분봉을 받아 장부가 체결하면 ① 통과")
     void minuteFailedWaitStillHoldsGateOne() {
