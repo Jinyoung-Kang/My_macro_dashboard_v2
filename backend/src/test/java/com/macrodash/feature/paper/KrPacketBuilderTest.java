@@ -459,6 +459,24 @@ class KrPacketBuilderTest {
     }
 
     @Test
+    @DisplayName("국면(K39) — 전날 판정이 빠진 밤(서버가 23시 기록 전에 꺼짐 등)은 D 앞 날짜의 가장 최근 판정에 'n일 전 판정'(3일 전 10-31), D 판정만 있으면 available false와 사유")
+    void regimeOlderVerdictAndNoEarlierVerdict() {
+        when(regimeLog.recent(anyInt())).thenReturn(List.of(regime(D), regime(LocalDate.of(2026, 10, 31))));
+        JsonNode older = scheduled().body().path("1_basis").path("regime");
+        assertThat(older.path("available").asBoolean()).isTrue();
+        assertThat(older.path("verdictDate").asString()).isEqualTo("2026-10-31");
+        assertThat(older.path("relation").asString()).isEqualTo("3일 전 판정");
+
+        when(regimeLog.recent(anyInt())).thenReturn(List.of(regime(D)));
+        clock.set(READ_D);
+        JsonNode none = builder.build(run(), D, RuleBookService.SCHEDULED, false, 3, quotesD(), READ_D).body()
+                .path("1_basis").path("regime");
+        assertThat(none.path("available").asBoolean()).isFalse();
+        assertThat(none.path("note").asString()).isEqualTo("기준 거래일 앞 날짜의 국면 판정 기록이 없습니다");
+        assertThat(none.has("verdictDate")).isFalse();
+    }
+
+    @Test
     @DisplayName("1_basis 시장 — 코스피·야간선물·원/달러·엔/원 카드(asOfMismatch false), 코스닥 지수 null + 금융위 합계(isProxy), 선물 일봉·투자주체는 기준일 이하")
     void basisMarkets() {
         JsonNode basis = scheduled().body().path("1_basis");
