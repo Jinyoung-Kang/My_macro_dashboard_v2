@@ -220,6 +220,38 @@ class PaperQueryMarketTest {
         assertThat((String) quotes.get("finalCloseReason")).isNotBlank();
     }
 
+    @Test
+    @DisplayName("결정 목록(계좌 코드 경로 그대로 — ?market 없음): book=kr_rules·kr_claude는 그 계좌 결정만, 쉬는 한국은 빈 목록, 미국 book은 그대로, 모르는 값은 네 코드를 적은 400")
+    @SuppressWarnings("unchecked")
+    void decisionsTakeKoreanBookCodes() {
+        PaperQueryService query = query(PaperFixtures.config());
+        assertThat((List<?>) query.decisions(PaperBooks.KR_RULES, 50).get("decisions")).as("쉬는 한국 — 결정 없음").isEmpty();
+        assertThat((List<?>) query.decisions(PaperBooks.KR_CLAUDE, 50).get("decisions")).isEmpty();
+
+        decision(PaperBooks.RULES, LocalDate.of(2026, 10, 12), "SCHEDULED", null, null);
+        decision(PaperBooks.KR_RULES, S, "INITIAL", S, 79.4869);
+        decision(PaperBooks.KR_RULES, LocalDate.of(2026, 12, 1), "REBALANCE", LocalDate.of(2026, 12, 1), 80.0);
+        decision(PaperBooks.KR_CLAUDE, S, "INITIAL", null, 60.0);
+
+        List<Map<String, Object>> rules = (List<Map<String, Object>>) query.decisions(PaperBooks.KR_RULES, 50)
+                .get("decisions");
+        assertThat(rules).extracting(r -> r.get("book") + " " + r.get("asOfTradingDate") + " " + r.get("kind") + " "
+                        + r.get("selectionAsOf") + " " + r.get("targetExposurePct"))
+                .containsExactly("kr_rules 2026-12-01 REBALANCE 2026-12-01 80.0", "kr_rules 2026-11-30 INITIAL 2026-11-30 79.49");
+        assertThat((List<Map<String, Object>>) query.decisions(PaperBooks.KR_CLAUDE, 1).get("decisions"))
+                .extracting(r -> r.get("book")).containsExactly("kr_claude");
+        assertThat((List<Map<String, Object>>) query.decisions(PaperBooks.RULES, 50).get("decisions"))
+                .extracting(r -> r.get("book")).containsExactly("rules");
+        assertThatThrownBy(() -> query.decisions("kr_bench_k200", 50)).isInstanceOf(InvalidRequestException.class)
+                .hasMessage("book는 rules · claude · kr_rules · kr_claude 가운데 하나여야 합니다: kr_bench_k200");
+    }
+
+    private void decision(String book, LocalDate asOf, String kind, LocalDate selectionAsOf, Double exposure) {
+        store.insertDecisionIfAbsent(new com.macrodash.store.PaperStore.Decision(0, book, asOf, kind, null, "OK", null,
+                null, 1, selectionAsOf, exposure, null, null, null, MAPPER.createObjectNode().put("summary", kind), null,
+                null, null, false, 5L, 0));
+    }
+
     @SuppressWarnings("unchecked")
     private static List<Object> jobNames(Map<String, Object> body) {
         return ((List<Map<String, Object>>) body.get("jobs")).stream().map(row -> row.get("job")).toList();

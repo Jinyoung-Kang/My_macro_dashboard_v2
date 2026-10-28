@@ -35,6 +35,20 @@ class AccessPolicyTest {
     }
 
     @Test
+    @DisplayName("🧪 모의 매매 경로는 모두 운영자만(ADR 0010·0018) — 시장 단위 조회(?market, 2단계 F1)는 경로가 같아 같은 정책")
+    void paperRoutesAreOwnerOnly() {
+        java.util.List<String> paper = AccessPolicy.routes().keySet().stream()
+                .filter(route -> route.split(" ")[1].startsWith("/api/paper/")).toList();
+        assertThat(paper).hasSizeGreaterThan(30);
+        paper.forEach(route -> assertThat(AccessPolicy.routes().get(route)).as(route)
+                .isEqualTo(AccessPolicy.Access.OWNER));
+        for (String path : java.util.List.of("/api/paper/overview", "/api/paper/status", "/api/paper/reviews",
+                "/api/paper/reviews/2026-10-31", "/api/paper/notes", "/api/paper/decisions")) {
+            assertThat(AccessPolicy.required("GET", path)).as("GET " + path).isEqualTo(AccessPolicy.Access.OWNER);
+        }
+    }
+
+    @Test
     @DisplayName("운영자는 모든 등급 경로를, 무료 회원은 운영·유료 경로를 못 쓴다")
     void allows() {
         assertThat(AccessPolicy.allows(AccessPolicy.Access.OWNER, "MEMBER", "PRO")).isFalse();

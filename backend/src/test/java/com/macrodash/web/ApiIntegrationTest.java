@@ -55,6 +55,7 @@ import static org.assertj.core.api.Assertions.assertThat;
         "dashboard.ai.demo-daily-limit=7",
         "dashboard.scheduler.enabled=false",             // 정기 작업이 테스트 DB에 쓰면 결과가 실행 시각에 따라 달라짐
         "dashboard.paper.enabled=false",                 // 모의 매매 리스크 점검도(스케줄러를 켜는 테스트가 생겨도 장부를 건드리지 않게)
+        "dashboard.paper.kr.start-date=",                // 한국 출발일은 셸 환경과 상관없이 비움(한국 계좌 경로는 '출발일 없음'으로 쉼)
         "dashboard.scheduler.regime-record-hour-kst=17", // 설정 주입이 실제로 먹는지 확인용(QA-093, AWS 배포값)
         // 데모 열람(ADR 0013)을 켜 둡니다 — 헤더를 보내지 않는 다른 테스트는 평소와 같습니다(그것도 함께 확인됨).
         "dashboard.demo-viewer-token=" + ApiIntegrationTest.DEMO_TOKEN
@@ -948,6 +949,48 @@ class ApiIntegrationTest {
                 .as("끝나지 않은 세션").isEqualTo(HttpStatus.BAD_REQUEST);
         assertThat(authorizedExchange("/api/paper/track-record?asOf=2026-13-01", HttpMethod.GET).getStatusCode())
                 .isEqualTo(HttpStatus.BAD_REQUEST);
+    }
+
+    @Test
+    @DisplayName("🧪 모의 매매 ?market(2단계 F1): 없거나 US면 같은 응답, KR은 쉬는 사유와 함께 200(테스트 배포 설정에 한국 출발일 없음), 모르는 값은 400, 일반 회원은 403")
+    void paperMarketParameter() {
+        assumePaperSchema();
+        HttpHeaders member = new HttpHeaders();
+        member.add(HttpHeaders.COOKIE, login(MEMBER, "test-password"));
+        List<String> scoped = List.of("/api/paper/overview", "/api/paper/status", "/api/paper/reviews",
+                "/api/paper/notes");
+        for (String path : List.of(scoped.get(0), scoped.get(1), scoped.get(2), scoped.get(3),
+                "/api/paper/reviews/2026-10-30")) {
+            ResponseEntity<JsonNode> denied = rest.exchange(url(path + "?market=KR"), HttpMethod.GET,
+                    new HttpEntity<>(null, member), JsonNode.class);
+            assertThat(denied.getStatusCode()).as("회원 GET " + path + "?market=KR").isEqualTo(HttpStatus.FORBIDDEN);
+            assertThat(denied.getBody().path("required").asString()).isEqualTo("OWNER");
+        }
+
+        // 한국 출발일이 없는 배포 설정 — 이미 출발한(운용·일시정지) 한국 계좌가 없으면 정기 작업이 쉬는 사유(출발일 없음).
+        boolean krStarted = jdbc.queryForObject("SELECT COUNT(*) FROM paper_books WHERE market = 'KR' "
+                + "AND status IN ('ACTIVE', 'PAUSED')", Long.class) > 0;
+        for (String path : scoped) {
+            JsonNode plain = authorizedGet(path);
+            assertThat(authorizedGet(path + "?market=US")).as(path + "?market=US = 시장 값 없음").isEqualTo(plain);
+            assertThat(plain.has("market")).as(path + " 미국 응답에 한국 칸 없음").isFalse();
+            JsonNode kr = authorizedGet(path + "?market=KR");
+            assertThat(kr.path("available").asBoolean()).as(path).isTrue();
+            assertThat(kr.path("market").asString()).as(path).isEqualTo("KR");
+            assertThat(kr.has("dormantReason")).as(path).isTrue();
+            if (!krStarted) {
+                assertThat(kr.path("dormantReason").asString()).as(path)
+                        .isEqualTo(com.macrodash.feature.paper.PaperConfig.KR_START_MISSING);
+            }
+            ResponseEntity<JsonNode> unknown = authorizedExchange(path + "?market=JP", HttpMethod.GET);
+            assertThat(unknown.getStatusCode()).as(path + "?market=JP").isEqualTo(HttpStatus.BAD_REQUEST);
+            assertThat(unknown.getBody().path("message").asString()).contains("market", "US · KR");
+        }
+        assertThat(authorizedGet("/api/paper/overview?market=KR").path("currency").asString()).isEqualTo("KRW");
+        assertThat(authorizedExchange("/api/paper/reviews/1999-01-08?market=KR", HttpMethod.GET).getStatusCode())
+                .as("없는 한국 복기 주").isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(authorizedGet("/api/paper/decisions?book=kr_rules&limit=5").path("available").asBoolean())
+                .as("결정 목록은 계좌 코드로 시장을 고름").isTrue();
     }
 
     @Test
