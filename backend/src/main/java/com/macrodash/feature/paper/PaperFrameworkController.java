@@ -25,7 +25,7 @@ import java.util.Map;
  *  POST   /api/paper/framework/proposals/{id}/approve   제안 승인 → 새 판
  *  POST   /api/paper/framework/proposals/{id}/reject    제안 거절
  *  GET    /api/paper/notes?includeExpired=false&market=US   메모 목록(시장 US·KR, 없으면 US)
- *  POST   /api/paper/notes                              {"kind", "asOfDate"?, "expiresOn"?, "title", "body"} 메모 쓰기
+ *  POST   /api/paper/notes                              {"kind", "asOfDate"?, "expiresOn"?, "title", "body", "market"?} 메모 쓰기(시장 US·KR, 없으면 US)
  *  DELETE /api/paper/notes/{id}                         메모 보관(지우지 않음)
  * </pre>
  *
@@ -60,7 +60,8 @@ public class PaperFrameworkController {
     public record ProposalRequest(Long noteId, String text) {
     }
 
-    public record NoteRequest(String kind, String asOfDate, String expiresOn, String title, String body) {
+    /** {@code market}(2단계 명세 §4-16, F1)이 없거나 US면 미국 메모, KR이면 한국 메모({@link #createNote}). */
+    public record NoteRequest(String kind, String asOfDate, String expiresOn, String title, String body, String market) {
     }
 
     @GetMapping("/framework")
@@ -113,10 +114,19 @@ public class PaperFrameworkController {
                 : notes.list(markets.scope(requested, config), includeExpired);
     }
 
+    /**
+     * 본문 {@code market}(2단계 명세 §4-16, F1)이 없거나 US면 미국 메모 그대로, KR이면 그 조회의 시장 문맥({@link PaperMarkets#scope} — 그 실행의 한국
+     * 달력으로 기준일·만료일, 응답 머리에 {@code market}·{@code dormantReason})으로 한국 메모를, 그 밖 값은 쓰기 전에 400입니다.
+     */
     @PostMapping("/notes")
     public Map<String, Object> createNote(@RequestBody(required = false) NoteRequest request) {
         if (request == null) {
             return notes.create(null, null, null, null, null);
+        }
+        PaperMarket requested = markets.requested(request.market());
+        if (requested != UsPaperMarket.INSTANCE) {
+            return notes.create(markets.scope(requested, config), request.kind(), request.asOfDate(), request.expiresOn(),
+                    request.title(), request.body());
         }
         return notes.create(request.kind(), request.asOfDate(), request.expiresOn(), request.title(), request.body());
     }

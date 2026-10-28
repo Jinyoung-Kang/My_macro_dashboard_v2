@@ -42,9 +42,9 @@ import java.util.regex.Pattern;
  * <p><b>시장 문맥</b>(2단계 명세 §9 A6): 목록·작성은 시장 묶음({@link PaperMarket})을 받아 기준일(그 시장의 마감이 끝난 최근 세션)과
  * 기본 만료일(그 시장 달력의 n거래일 뒤)을 그 시장 달력으로 셉니다. 메모는 시장을 하나 갖고({@code paper_notes.market}, V14 — 작성한
  * 시장), 목록·패킷 섹션은 그 시장 메모만 봅니다. 번호로 찾는 보관·프레임 제안의 INSIGHT 메모는 시장을 가리지 않습니다. 만료 거래일 수·패킷
- * 글자 상한 설정은 두 시장이 같은 키입니다. 시장을 받지 않는 옛 시그니처는 미국입니다. 화면 목록은 {@code ?market}(F1, 명세 §4-16)으로 시장을
- * 고르고, 미국 밖 시장은 그 조회의 실행({@link PaperMarkets#scope} — 한국 달력은 실행마다 만듦)을 받아 그 달력으로 기준일을 셉니다
- * ({@link #list(PaperMarkets.Scope, boolean)}).
+ * 글자 상한 설정은 두 시장이 같은 키입니다. 시장을 받지 않는 옛 시그니처는 미국입니다. 화면 목록은 {@code ?market}, 쓰기는 본문 {@code market}
+ * (F1, 명세 §4-16)으로 시장을 고르고, 미국 밖 시장은 그 조회의 실행({@link PaperMarkets#scope} — 한국 달력은 실행마다 만듦)을 받아 그 달력으로 기준일·
+ * 기본 만료일을 셉니다({@link #list(PaperMarkets.Scope, boolean)}·{@link #create(PaperMarkets.Scope, String, String, String, String, String)}).
  */
 @Service
 public class NoteService {
@@ -183,6 +183,48 @@ public class NoteService {
      */
     Map<String, Object> create(PaperMarket market, String kind, String asOfDate, String expiresOn, String title,
                                String body) {
+        return create(market, null, kind, asOfDate, expiresOn, title, body);
+    }
+
+    /**
+     * POST /api/paper/notes(본문 {@code market}) — 미국 밖 시장의 메모 한 건(2단계 명세 §4-16, F1). {@link #create(String, String, String, String,
+     * String)}와 같은 규칙이되 기본 기준일(마지막으로 끝난 그 시장 세션)·기본 만료일(그 시장 n거래일 뒤)·응답의 {@code active}를 그 조회 실행의 달력
+     * ({@link PaperMarkets#scope} — 한국은 실행마다 만든 KRX 달력)으로 세고, 메모의 시장은 그 시장입니다. 응답은 {@code {ok, market, dormantReason, note}}
+     * — 그 시장이 정기 작업을 쉬어도(한국 초기화 전) 메모는 받습니다(쉬는 사유를 함께 싣고, 작업을 돌리지 않음). 그 달력이 지금의 해나 만료일의 해를
+     * 모르면(공휴일 저장본 없음 — 명세 K35) 아무것도 쓰기 전에 400입니다(기준일을 셀 수 없는 메모를 남기지 않음 — 2단계 명세 §4-4 'C1c' '같은 규칙으로 막음').
+     *
+     * @throws InvalidRequestException {@link #create(String, String, String, String, String)}와 같은 형식 오류 · 그 실행 달력이 그 해를 모름
+     */
+    Map<String, Object> create(PaperMarkets.Scope scope, String kind, String asOfDate, String expiresOn, String title,
+                               String body) {
+        if (!store.ready()) {
+            Map<String, Object> out = notReady();
+            out.put("ok", false);
+            return out;
+        }
+        MarketRun run = scope.run();
+        Map<String, Object> created;
+        try {
+            // 기준일을 먼저 셉니다 — 달력이 지금의 해를 모르면 아무것도 쓰기 전에 거절(만료일의 해는 아래 create가 쓰기 전에 셈).
+            LocalDate reference = referenceDate(run);
+            created = create(run, reference, kind, asOfDate, expiresOn, title, body);
+        } catch (CalendarUnavailableException e) {
+            throw new InvalidRequestException(scope.market().code() + " 메모의 기준일·만료일을 셀 수 없습니다 — " + e.getMessage());
+        }
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("ok", created.get("ok"));
+        out.put("market", scope.market().code());
+        out.put("dormantReason", scope.dormantReason());
+        out.put("note", created.get("note"));
+        return out;
+    }
+
+    /**
+     * 메모 한 건 쓰기의 본체 — {@code reference}(그 시장의 마지막으로 끝난 세션)를 부르는 쪽이 이미 셌으면 그 값으로 기본 기준일·응답의 {@code active}를,
+     * null이면 여기서 셉니다(시장을 받기 전 그대로 — 쓴 뒤 응답을 만들 때 다시 셈). 달력을 쓰는 일(기준일·기본 만료일)은 모두 쓰기 전에 합니다.
+     */
+    private Map<String, Object> create(PaperMarket market, LocalDate reference, String kind, String asOfDate,
+                                       String expiresOn, String title, String body) {
         if (!store.ready()) {
             Map<String, Object> out = notReady();
             out.put("ok", false);
@@ -194,7 +236,7 @@ public class NoteService {
         if (asOf == null) {
             // 기본은 마지막으로 끝난 미국 세션 — KST 오늘로 두면 결정(07:30) 전 아침에 쓴 시황 메모가 그날 결정 패킷(거래일 d ≤ 어제)에서
             // 빠지고 하루 늦게 실립니다.
-            asOf = referenceDate(market);
+            asOf = reference != null ? reference : referenceDate(market);
         }
         if (asOf.isAfter(today)) {
             throw new InvalidRequestException("asOfDate(" + asOf + ")가 오늘(KST " + today + ")보다 뒤입니다 — 메모의 기준일은 "
@@ -231,7 +273,7 @@ public class NoteService {
         log.info("메모 #{} ({}, 기준일 {}{}) {}자", id, k, asOf, expires == null ? "" : ", 만료 " + expires, chars);
         Map<String, Object> out = new LinkedHashMap<>();
         out.put("ok", true);
-        out.put("note", view(store.note(id).orElseThrow(), referenceDate(market)));
+        out.put("note", view(store.note(id).orElseThrow(), reference != null ? reference : referenceDate(market)));
         return out;
     }
 
