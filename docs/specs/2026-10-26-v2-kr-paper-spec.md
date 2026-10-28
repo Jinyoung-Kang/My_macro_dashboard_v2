@@ -698,7 +698,7 @@
     24시간(관측치 없음 → 전부 `STALE_INPUT`, 한국 출발도 같음). 한도·현금성·최소 500,000원은 `plan`이 `kr.*`로 읽는다. 시험 `KrClaudeValidationTest`(파이프라인 판정 9갈래)·
     `KrPacketBuilderTest.validatorChecksAreThePacketHardRules`(실제 한국 패킷의 칸과 같음).
 - **E2b 구현에서 정한 것 — 한국 결정 문맥과 결정 작업 연결**(2026-10-28, 커밋 `4f8f104`(주문 행 만들기 떼어 냄 — 옮기기)·`b518e67`(한국 문맥·정기·수동 결정) —
-  위 E2a가 'E2 뒤 몫'으로 넘긴 자리. 미국 패킷·스키마·`ROLE`·`FIXED_RULES`·렌더링·고정본 `paper/golden/`·해시 상수 그대로, 백엔드 시험 1,819 → 1,831(E2b 전체)):
+  위 E2a가 'E2 뒤 몫'으로 넘긴 자리. 미국 패킷·스키마·`ROLE`·`FIXED_RULES`·렌더링·고정본 `paper/golden/`·해시 상수 그대로, 백엔드 시험 1,819 → 1,832(E2b 전체)):
   - **운영 결정 문맥 둘**: `ClaudeBookService.marketContexts(미국 패킷, 한국 패킷)` = 미국(`PacketBuilder`·`decision.schema.json`) + 한국(`KrPaperMarket`·`KrPacketBuilder`·
     `kr-decision.schema.json`). 한국 패킷 빌더는 빈이 아니라 서비스가 만든다(`ClaudeBookService.krPackets` — 수급·U·DART는 규칙 계좌와 같은 읽기, 상태 없는
     `KrRuleBookService` 하나). 시험 생성자(미국만)는 그대로이고, 한국 문맥을 넣는 시험 생성자를 더했다. `DecisionTimingsLockTest.schemaMarketAndPromptAgree`가 이제 한국 문맥도 본다.
@@ -773,7 +773,8 @@
   - **실패 = `Plan.failed`** — 상한·재시도 1회 뒤 오류·거절·형식 오류·기한·응답을 받은 뒤 검증 예외. 어느 계좌에도 쓰지 않고 그 세션을 미루며(E0의 저장된 미룸 — 같은 창에서 재기동해도
     다시 부르지 않음), 사유가 작업 기록 `START_POSTPONED`의 `reason`에 남는다('출발 계획 실패 — kr_claude: Claude 출발 호출 실패(API 오류, 재시도 1회 뒤): …'). 과금된 호출은 그날
     사용량에 세고 그 응답은 결정 행으로 남지 않는다(출발하지 않은 계좌에 행을 두지 않음).
-  - 시험: `KrStartTest.fourBooksStartTogether`·`claudeStartPacketLeavesOutSnapshotsAfterTheReadInstant`·`claudeCapPostponesAllFourBooks`·
+  - 시험: `KrStartTest.fourBooksStartTogether`·`firstScheduledClaudeDecisionFollowsTheStart`(S+1 22:30 첫 정기 결정 — 출발 주문 체결 뒤 ① 통과)·
+    `claudeStartPacketLeavesOutSnapshotsAfterTheReadInstant`·`claudeCapPostponesAllFourBooks`·
     `claudeErrorAfterOneRetryPostponesAndIsNotReplanned`·`claudeStartCallIsBoundedByTheDeadline`(ADR 0021 '지키는 방법' 5). 가짜 Claude 서비스로 도는 출발 시험(규칙·벤치마크 셋 출발)은
     그 몫을 '아직 없음'으로 보아 그대로다.
 
@@ -1959,7 +1960,7 @@ QA 스택 점검을 F1 뒤로(§4-1 'C3'·§9 표), §4-2 'C2a'의 바뀐 시험
   → **E2b에서 끝남**(`b518e67`): 운영 문맥에 한국을 더했고 `plan`은 패킷을 만든 그 실행의 관측치로 검증한다(§4-7 'E2b 구현에서 정한 것'). 이름표는 F2 그대로.
 
 **E2b 메모(2026-10-28, 한국 Claude 결정 연결·호출 상한 예약·기한 뒤 행·Claude 출발 몫 구현 뒤)** — 구현 자체는 §4-7·§4-8·§4-9·§4-10의 'E2b 구현에서 정한 것'(커밋
-`4f8f104`·`f1a3b9a`·`b518e67`·`9842245`·`bb0b38f`·`10c3db5`). 미국 고정본 `paper/golden/`·패킷·프롬프트·스키마 해시 그대로, 백엔드 시험 1,819 → 1,831, 수집기·화면 손대지 않음.
+`4f8f104`·`f1a3b9a`·`b518e67`·`9842245`·`bb0b38f`·`10c3db5`·시험 보강 `80ea6c0`). 미국 고정본 `paper/golden/`·패킷·프롬프트·스키마 해시 그대로, 백엔드 시험 1,819 → 1,832, 수집기·화면 손대지 않음.
 명세·사용자 결정 v1~v6이 정하지 않아 고른 것:
 - **(사용자 확인 필요) 예약이 미국 수동 호출에도 걸림**: §4-10의 문장대로 수동 호출(미리보기·시작·수동 결정·프레임 제안·수동 복기)은 시장과 상관없이 상한 − 예약(기본 13) 미만일 때만이다 —
   그래서 한국 책이 쉬는 동안(출발 전·`kr.start-date` 없음)에도 미국 수동 호출이 20이 아니라 13에서 멈춘다(미국 정기 결정·복기는 그대로 상한까지, 미국 시험은 기대값을 바꾸지 않고 통과).
