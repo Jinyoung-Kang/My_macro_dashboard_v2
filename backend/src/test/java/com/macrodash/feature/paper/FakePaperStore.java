@@ -821,6 +821,37 @@ class FakePaperStore extends PaperStore {
         return out;
     }
 
+    /**
+     * 거래일별 주식 비중 — 실제 저장소의 SQL과 같은 규칙: 응답에 holdings 배열이 있는 결정만, 같은 날은 나중 결정(결정 시각 → 번호), 현금성 제외 합,
+     * 현금성 밖 줄의 비중이 숫자가 아니면 그날은 뺌, 보유가 없으면 0.
+     */
+    @Override
+    public java.util.NavigableMap<LocalDate, java.math.BigDecimal> ruleStockWeights(String bookCode,
+                                                                                 java.util.Collection<String> cashLike) {
+        TreeMap<LocalDate, Decision> latest = new TreeMap<>();
+        decisions.values().stream()
+                .filter(d -> d.bookCode().equals(bookCode) && d.response() != null && d.response().path("holdings").isArray())
+                .sorted(Comparator.comparing(Decision::decidedAt, Comparator.nullsFirst(Comparator.naturalOrder()))
+                        .thenComparing(Decision::id))
+                .forEach(d -> latest.put(d.asOfTradingDate(), d));
+        TreeMap<LocalDate, java.math.BigDecimal> out = new TreeMap<>();
+        latest.forEach((date, d) -> {
+            java.math.BigDecimal sum = java.math.BigDecimal.ZERO;
+            for (JsonNode holding : d.response().get("holdings")) {
+                if (cashLike.contains(holding.path("code").asString(""))) {
+                    continue;
+                }
+                JsonNode weight = holding.get("weightPct");
+                if (weight == null || !weight.isNumber()) {
+                    return;
+                }
+                sum = sum.add(weight.decimalValue());
+            }
+            out.put(date, sum);
+        });
+        return out;
+    }
+
     /** 판마다 그 책 결정에 처음 쓰인 거래일(같으면 번호 순). */
     @Override
     public List<FrameworkBoundary> frameworkBoundaries(String bookCode) {

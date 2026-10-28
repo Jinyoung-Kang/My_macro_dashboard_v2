@@ -1670,6 +1670,37 @@ public class PaperStore {
     }
 
     /** 한 책의 최근 결정 {@code limit}건 — 기준 거래일 최근 순(같은 날이면 나중에 낸 것 먼저). */
+    /**
+     * 한국 규칙 계좌의 거래일별 주식 비중(%) — 그날 결정 응답 {@code holdings[]}의 {@code weightPct} 합에서 현금성 종목을 뺀 값(2단계 명세 §3·K40의
+     * '전날 규칙 계좌 주식 비중', 노출 맞춘 참고선이 씀). 결정 응답 전체를 읽지 않고 DB에서 합만 읽습니다(개요를 60초마다 읽어도 가볍게). 같은 날
+     * 결정이 여럿이면 나중 결정(결정 시각·번호 순)입니다. 응답에 {@code holdings} 배열이 없는 결정(기한 지남 NO_TRADE·일시정지 SKIPPED 등)은
+     * 세지 않고, 현금성 밖 보유에 비중을 모르는(숫자가 아닌) 줄이 있으면 그날은 뺍니다(모르는 비중을 0으로 채우지 않음). 보유가 없으면 0.
+     *
+     * @param cashLike 뺄 현금성 종목 코드(설정 {@code kr.cashLikeTickers})
+     * @return 거래일 → 주식 비중(%), 거래일 오름차순
+     */
+    public java.util.NavigableMap<LocalDate, BigDecimal> ruleStockWeights(String bookCode, Collection<String> cashLike) {
+        String[] excluded = cashLike.toArray(String[]::new);
+        TreeMap<LocalDate, BigDecimal> out = new TreeMap<>();
+        jdbc.query("""
+                SELECT trading_date, stock_weight FROM (
+                  SELECT DISTINCT ON (d.as_of_trading_date) d.as_of_trading_date AS trading_date,
+                         (SELECT CASE WHEN bool_or(jsonb_typeof(h->'weightPct') IS DISTINCT FROM 'number') THEN NULL
+                                      ELSE COALESCE(SUM((h->>'weightPct')::numeric), 0) END
+                            FROM jsonb_array_elements(d.response->'holdings') h
+                           WHERE NOT (COALESCE(h->>'code', '') = ANY(?))) AS stock_weight
+                    FROM paper_decisions d
+                   WHERE d.book_code = ? AND jsonb_typeof(d.response->'holdings') = 'array'
+                   ORDER BY d.as_of_trading_date, d.decided_at DESC, d.id DESC
+                ) latest WHERE stock_weight IS NOT NULL ORDER BY trading_date
+                """, ps -> {
+                    ps.setArray(1, ps.getConnection().createArrayOf("text", excluded));
+                    ps.setString(2, bookCode);
+                }, (RowCallbackHandler) rs ->
+                        out.put(rs.getDate("trading_date").toLocalDate(), rs.getBigDecimal("stock_weight")));
+        return out;
+    }
+
     public List<DecisionSummary> decisions(String code, int limit) {
         return jdbc.query("SELECT " + DECISION_SUMMARY_COLUMNS + " FROM paper_decisions d WHERE d.book_code = ? "
                         + "ORDER BY d.as_of_trading_date DESC, d.decided_at DESC, d.id DESC LIMIT ?",

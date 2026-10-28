@@ -743,6 +743,39 @@ class PaperStoreDbTest {
     }
 
     @Test
+    @DisplayName("규칙 계좌 주식 비중(K40 참고선): holdings[].weightPct 합에서 현금성을 빼고, 같은 날 두 결정이면 나중 결정, holdings 없는 결정·비중 모르는 날은 빠지고 보유 없음은 0")
+    void ruleStockWeightsSumTheLatestHoldings() throws Exception {
+        store.insertBookIfAbsent(book(BOOK, "한국 규칙 시험"));
+        LocalDate d1 = LocalDate.of(2026, 10, 29);
+        LocalDate d2 = LocalDate.of(2026, 10, 30);
+        LocalDate d3 = LocalDate.of(2026, 11, 2);
+        LocalDate d4 = LocalDate.of(2026, 11, 3);
+        LocalDate d5 = LocalDate.of(2026, 11, 4);
+        Instant early = Instant.parse("2026-10-30T13:30:00Z");
+        weightDecision(d1, "INITIAL", null, "{\"holdings\":[]}");
+        weightDecision(d2, "SCHEDULED", early, "{\"holdings\":[{\"code\":\"005930\",\"weightPct\":10.0}]}");
+        weightDecision(d2, "REBALANCE", early.plusSeconds(60), "{\"holdings\":[{\"code\":\"005930\",\"weightPct\":20.25},"
+                + "{\"code\":\"000660\",\"weightPct\":5},{\"code\":\"153130\",\"weightPct\":70.5}]}");
+        weightDecision(d3, "SCHEDULED", null, "{\"summary\":\"기한 지남\",\"pastDeadline\":true}");
+        weightDecision(d4, "SCHEDULED", null, "{\"holdings\":[{\"code\":\"005930\",\"weightPct\":null},"
+                + "{\"code\":\"153130\",\"weightPct\":90}]}");
+        weightDecision(d5, "SCHEDULED", null, "{\"holdings\":[{\"code\":\"153130\",\"weightPct\":null},"
+                + "{\"code\":\"005930\",\"weightPct\":33.3333}]}");
+
+        java.util.NavigableMap<LocalDate, java.math.BigDecimal> weights = store.ruleStockWeights(BOOK, List.of("153130"));
+        assertThat(weights.keySet()).containsExactly(d1, d2, d5);
+        assertThat(weights.get(d1)).isEqualByComparingTo("0");
+        assertThat(weights.get(d2)).as("같은 날 나중 결정(REBALANCE), 153130 제외").isEqualByComparingTo("25.25");
+        assertThat(weights.get(d5)).as("현금성 줄의 비중은 몰라도 뺌").isEqualByComparingTo("33.3333");
+        assertThat(store.ruleStockWeights(OTHER_BOOK, List.of("153130"))).isEmpty();
+    }
+
+    private void weightDecision(LocalDate day, String kind, Instant decidedAt, String response) throws Exception {
+        store.insertDecisionIfAbsent(new PaperStore.Decision(0, BOOK, day, kind, decidedAt, "OK", null, null, 1, null, null,
+                null, null, null, MAPPER.readTree(response), null, null, null, false, 1L, 0)).orElseThrow();
+    }
+
+    @Test
     @DisplayName("결정 재시도: API 오류·재시도 전 행만 통째로 바꾸고 재시도 수 1 — 두 번째·다른 상태는 바꾸지 않음")
     void decisionRetryUpdatesOnlyOnce() throws Exception {
         store.insertBookIfAbsent(book(BOOK, "Claude 책 시험"));

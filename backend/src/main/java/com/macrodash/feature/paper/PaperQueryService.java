@@ -3,6 +3,7 @@ package com.macrodash.feature.paper;
 import com.macrodash.Kst;
 import com.macrodash.analytics.CalendarUnavailableException;
 import com.macrodash.analytics.CalendarWindow;
+import com.macrodash.analytics.KrExposureReference;
 import com.macrodash.analytics.KrFinancialSector;
 import com.macrodash.analytics.PaperStats;
 import com.macrodash.analytics.TradingCalendar;
@@ -257,6 +258,10 @@ public class PaperQueryService {
         out.put("claudeExposureSeries", claudeExposureSeries(market,
                 navByBook.getOrDefault(market.claudeBook(), List.of())));
         out.put("frameworkBoundaries", frameworkBoundaries(market));
+        if (korea(market)) {
+            // 노출 맞춘 참고선(K40) — 한국 응답에만(미국 응답에는 칸이 없음), 규칙 계좌 출발 전이면 null.
+            out.put("exposureReference", exposureReference(market, books, navByBook));
+        }
         out.put("limits", us ? limits() : korea(market) ? krLimits(market) : List.of());
         out.put("jobs", jobs(market, OVERVIEW_JOBS));
         return out;
@@ -686,6 +691,54 @@ public class PaperQueryService {
             row.put("status", b.status());
             out.add(row);
         }
+        return out;
+    }
+
+    /**
+     * 노출 맞춘 참고선(2단계 명세 §3·K40 — 계산만 하고 계좌가 아님, {@link KrExposureReference}) {@code {label, basis, note, dates, values, stockWeightPct,
+     * asOfDate, stoppedReason}}. 날짜는 순자산 곡선({@code navSeries.dates})과 같은 줄, 값은 원 단위 정수(모르면 null), 주식 비중은 그날 값에 쓴
+     * 앞 날의 규칙 계좌 주식 비중(그날 결정 {@code holdings[].weightPct} 합 − 현금성, {@link PaperStore#ruleStockWeights} — DB에서 합만 읽음).
+     * 종가는 금융위 증권상품시세 확정 종가(069500·153130 — 출발일부터 한 번 읽음, 수집 유발 없음)이고 비용은 넣지 않습니다. 규칙 계좌가 출발
+     * 전(시작 전·출발일 없음)이면 null입니다.
+     */
+    private Map<String, Object> exposureReference(MarketRun market, List<Book> books, Map<String, List<NavRow>> navByBook) {
+        Book rules = books.stream().filter(book -> book.code().equals(market.rulesBook())).findFirst().orElse(null);
+        if (rules == null || rules.startedOn() == null || PaperBooks.NOT_STARTED.equals(rules.status())) {
+            return null;
+        }
+        LocalDate start = rules.startedOn();
+        TreeSet<LocalDate> union = new TreeSet<>();
+        navByBook.values().forEach(rows -> rows.forEach(row -> union.add(row.tradingDate())));
+        List<LocalDate> dates = List.copyOf(union);
+        BigDecimal startNav = navByBook.getOrDefault(rules.code(), List.of()).stream()
+                .filter(row -> start.equals(row.tradingDate())).findFirst()
+                .map(row -> BigDecimal.valueOf(row.nav())).orElse(null);
+        Map<LocalDate, BigDecimal> weights = store.ruleStockWeights(rules.code(), market.settings().cashLikeTickers());
+        KrConfirmed confirmed = marketData.krConfirmed(List.of(),
+                List.of(KrExposureReference.STOCK_ETF, KrExposureReference.BOND_ETF), start);
+        KrConfirmed.Series stock = confirmed.of(KrExposureReference.STOCK_ETF);
+        KrConfirmed.Series bond = confirmed.of(KrExposureReference.BOND_ETF);
+        KrExposureReference.Result result = KrExposureReference.compute(dates, start, startNav, weights, closes(stock),
+                closes(bond), stock.datasetLatest());
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("label", "노출 맞춘 참고선 — 계좌 아님");
+        out.put("basis", "전날 규칙 계좌 주식 비중 x%를 " + KrExposureReference.STOCK_ETF + " x% + " + KrExposureReference.BOND_ETF
+                + " (100−x)%로 맞춰 거래일마다 이은 선 — 금융위 증권상품시세 확정 종가의 날 대 날 수익률, 비용 없음, 출발일은 규칙 계좌 출발 순자산");
+        out.put("note", "계산만 하고 계좌가 아닙니다. 주식 비중은 그날 규칙 계좌 결정의 보유 비중 합(현금성 제외)이고 출발일은 0%입니다. "
+                + "금융위 값은 보통 하루 늦게(다음 영업일 13시 뒤) 들어와 마지막 날은 비어 있을 수 있습니다.");
+        out.put("dates", dates.stream().map(LocalDate::toString).toList());
+        out.put("values", result.values());
+        out.put("stockWeightPct", result.stockWeightPct().stream()
+                .map(weight -> weight == null ? null : weight.doubleValue()).toList());
+        out.put("asOfDate", text(result.asOfDate()));
+        out.put("stoppedReason", result.stoppedReason());
+        return out;
+    }
+
+    /** 금융위 확정 종가(거래량 &gt; 0 행만 — {@link KrConfirmed.Day#observed}) 기준일 → 종가. */
+    private static Map<LocalDate, BigDecimal> closes(KrConfirmed.Series series) {
+        Map<LocalDate, BigDecimal> out = new HashMap<>();
+        series.days().values().stream().filter(KrConfirmed.Day::observed).forEach(day -> out.put(day.date(), day.close()));
         return out;
     }
 

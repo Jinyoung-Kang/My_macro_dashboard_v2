@@ -23,7 +23,10 @@ import java.util.Map;
 import static com.macrodash.feature.paper.PaperFixtures.MAPPER;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 /**
  * 개요·상태의 시장 값(2단계 명세 §4-16 '?market', F1) — 값이 없거나 US면 미국 응답이 시장을 받기 전과 같고, 모르는 값은 400, 한국은 그 조회
@@ -41,6 +44,7 @@ class PaperQueryMarketTest {
 
     private FakePaperStore store;
     private StoreReader reader;
+    private StoreRepository repository;
     private PaperMarketData marketData;
 
     @BeforeEach
@@ -49,7 +53,8 @@ class PaperQueryMarketTest {
         store.initSettingsIfAbsent(PaperFixtures.settings(store).defaultsJson());
         reader = PaperFixtures.quietReader();
         KrFixtures.stubHolidays(reader, KrFixtures.holidays(2026, 2027));
-        marketData = new PaperMarketData(reader, mock(StoreRepository.class), Clock.fixed(NOW, ZoneOffset.UTC));
+        repository = mock(StoreRepository.class);
+        marketData = new PaperMarketData(reader, repository, Clock.fixed(NOW, ZoneOffset.UTC));
         store.recordJobRun("risk", NOW.minusSeconds(600), NOW.minusSeconds(590), "ok", null);
         store.recordJobRun("kr.decision", NOW.minusSeconds(300), NOW.minusSeconds(290), "DORMANT", null);
         store.recordJobRun("decision", NOW.minusSeconds(60), NOW.minusSeconds(50), "DECIDED", null);
@@ -201,6 +206,48 @@ class PaperQueryMarketTest {
 
         assertThat(fallbacks).isEqualTo(PaperSettingsService.krFallbacks(store.settings().orElseThrow().body()))
                 .contains("kr.slippageBp", "kr.trailingStopPct", "kr.commissionBp").allMatch(k -> k.startsWith("kr."));
+    }
+
+    @Test
+    @DisplayName("한국 개요는 frameworkBoundaries 뒤에 노출 맞춘 참고선(K40) — 규칙 계좌 출발 전이면 null, 출발 뒤면 순자산 날짜 줄에 원 정수 값, 미국 개요에는 칸이 없음")
+    @SuppressWarnings("unchecked")
+    void koreaOverviewCarriesTheExposureReference() {
+        krBooks();
+        PaperQueryService query = query(krConfig(S));
+        Map<String, Object> before = query.overview("KR");
+        List<String> keys = List.copyOf(before.keySet());
+        assertThat(keys.get(keys.indexOf("frameworkBoundaries") + 1)).isEqualTo("exposureReference");
+        assertThat(before.get("exposureReference")).as("규칙 계좌 시작 전").isNull();
+        assertThat(query.overview("US")).doesNotContainKey("exposureReference");
+        assertThat(query.overview()).doesNotContainKey("exposureReference");
+
+        // 규칙 계좌가 10-08 출발(1억 현금) → 10-12: 출발일 비중 0%라 153130 확정 종가(+0.1%)만 따라감.
+        LocalDate start = LocalDate.of(2026, 10, 8);
+        Book rules = store.books.get(PaperBooks.KR_RULES);
+        store.books.put(rules.code(), new Book(rules.code(), rules.kind(), rules.label(), rules.initialCash(), start,
+                PaperBooks.ACTIVE, rules.createdAt(), Book.MARKET_KR, Book.CURRENCY_KRW));
+        store.upsertNav(new NavRow(PaperBooks.KR_RULES, start, 100_000_000, 100_000_000, 0, 0, true));
+        store.upsertNav(new NavRow(PaperBooks.KR_RULES, KR_SESSION, 100_050_000, 50_000, 100_000_000, 99.95, false));
+        store.insertDecisionIfAbsent(new com.macrodash.store.PaperStore.Decision(0, PaperBooks.KR_RULES, start, "INITIAL", null,
+                "OK", null, null, 1, start, 0.0, null, null, null, MAPPER.readTree("{\"holdings\":[]}"), null, null, null, true,
+                5L, 0));
+        when(repository.latestObservationDate(Datasets.OBS_FSC_ETF_PRICE)).thenReturn(KR_SESSION);
+        when(repository.readObservationSeries(eq(Datasets.OBS_FSC_ETF_PRICE), any(), any())).thenReturn(Map.of(
+                "069500", List.of(etfRow(start, 30_000), etfRow(KR_SESSION, 30_300)),
+                "153130", List.of(etfRow(start, 110_000), etfRow(KR_SESSION, 110_110))));
+
+        Map<String, Object> reference = (Map<String, Object>) query.overview("KR").get("exposureReference");
+        assertThat(reference).containsEntry("label", "노출 맞춘 참고선 — 계좌 아님")
+                .containsEntry("dates", List.of("2026-10-08", "2026-10-12"))
+                .containsEntry("values", List.of(100_000_000L, 100_100_000L))
+                .containsEntry("stockWeightPct", java.util.Arrays.asList(null, 0.0))
+                .containsEntry("asOfDate", "2026-10-12").containsEntry("stoppedReason", null);
+        assertThat((String) reference.get("basis")).contains("069500 x% + 153130 (100−x)%").contains("비용 없음");
+    }
+
+    private static tools.jackson.databind.JsonNode etfRow(LocalDate date, long close) {
+        return MAPPER.createObjectNode().put("obsDate", date.toString()).put("close", close).put("volume", 1_000_000L)
+                .put("listedUnits", 10_000_000L);
     }
 
     @Test
