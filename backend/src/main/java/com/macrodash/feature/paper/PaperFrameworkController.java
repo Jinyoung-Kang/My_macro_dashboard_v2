@@ -24,7 +24,7 @@ import java.util.Map;
  *  POST   /api/paper/framework/proposals                {"noteId"?, "text"?} Claude에 갱신안 요청(자동 반영 없음)
  *  POST   /api/paper/framework/proposals/{id}/approve   제안 승인 → 새 판
  *  POST   /api/paper/framework/proposals/{id}/reject    제안 거절
- *  GET    /api/paper/notes?includeExpired=false         메모 목록
+ *  GET    /api/paper/notes?includeExpired=false&market=US   메모 목록(시장 US·KR, 없으면 US)
  *  POST   /api/paper/notes                              {"kind", "asOfDate"?, "expiresOn"?, "title", "body"} 메모 쓰기
  *  DELETE /api/paper/notes/{id}                         메모 보관(지우지 않음)
  * </pre>
@@ -39,10 +39,15 @@ public class PaperFrameworkController {
 
     private final FrameworkService framework;
     private final NoteService notes;
+    private final PaperMarkets markets;
+    private final PaperConfig config;
 
-    public PaperFrameworkController(FrameworkService framework, NoteService notes) {
+    public PaperFrameworkController(FrameworkService framework, NoteService notes, PaperMarkets markets,
+                                    PaperConfig config) {
         this.framework = framework;
         this.notes = notes;
+        this.markets = markets;
+        this.config = config;
     }
 
     /**
@@ -96,9 +101,16 @@ public class PaperFrameworkController {
         return framework.reject(id);
     }
 
+    /**
+     * {@code market}(2단계 명세 §4-16, F1)이 없거나 US면 미국 목록 그대로, KR이면 그 조회의 시장 문맥({@link PaperMarkets#scope} — 쉬는 사유·그
+     * 실행의 한국 달력)으로 그 시장 메모를, 그 밖 값은 400입니다.
+     */
     @GetMapping("/notes")
-    public Map<String, Object> notes(@RequestParam(defaultValue = "false") boolean includeExpired) {
-        return notes.list(includeExpired);
+    public Map<String, Object> notes(@RequestParam(defaultValue = "false") boolean includeExpired,
+                                     @RequestParam(required = false) String market) {
+        PaperMarket requested = markets.requested(market);
+        return requested == UsPaperMarket.INSTANCE ? notes.list(includeExpired)
+                : notes.list(markets.scope(requested, config), includeExpired);
     }
 
     @PostMapping("/notes")

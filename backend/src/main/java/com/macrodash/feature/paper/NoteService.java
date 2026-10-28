@@ -1,6 +1,7 @@
 package com.macrodash.feature.paper;
 
 import com.macrodash.Kst;
+import com.macrodash.analytics.CalendarUnavailableException;
 import com.macrodash.store.PaperStore;
 import com.macrodash.store.PaperStore.Note;
 import com.macrodash.support.InvalidRequestException;
@@ -41,7 +42,9 @@ import java.util.regex.Pattern;
  * <p><b>시장 문맥</b>(2단계 명세 §9 A6): 목록·작성은 시장 묶음({@link PaperMarket})을 받아 기준일(그 시장의 마감이 끝난 최근 세션)과
  * 기본 만료일(그 시장 달력의 n거래일 뒤)을 그 시장 달력으로 셉니다. 메모는 시장을 하나 갖고({@code paper_notes.market}, V14 — 작성한
  * 시장), 목록·패킷 섹션은 그 시장 메모만 봅니다. 번호로 찾는 보관·프레임 제안의 INSIGHT 메모는 시장을 가리지 않습니다. 만료 거래일 수·패킷
- * 글자 상한 설정은 두 시장이 같은 키입니다. 시장을 받지 않는 옛 시그니처는 미국입니다.
+ * 글자 상한 설정은 두 시장이 같은 키입니다. 시장을 받지 않는 옛 시그니처는 미국입니다. 화면 목록은 {@code ?market}(F1, 명세 §4-16)으로 시장을
+ * 고르고, 미국 밖 시장은 그 조회의 실행({@link PaperMarkets#scope} — 한국 달력은 실행마다 만듦)을 받아 그 달력으로 기준일을 셉니다
+ * ({@link #list(PaperMarkets.Scope, boolean)}).
  */
 @Service
 public class NoteService {
@@ -120,6 +123,44 @@ public class NoteService {
         Map<String, Object> out = new LinkedHashMap<>();
         out.put("available", true);
         out.put("referenceDate", reference.toString());
+        out.put("notes", rows);
+        return out;
+    }
+
+    /**
+     * GET /api/paper/notes?market= — 미국 밖 시장의 메모 목록(2단계 명세 §4-16, F1). {@link #list(boolean)}와 같은 모양에 {@code available} 뒤
+     * {@code market}·{@code dormantReason}(그 시장 정기 작업이 쉬는 사유, 돌면 null)을 싣고, 그 시장 메모만, 만료·{@code active}의 기준일은 그 조회
+     * 실행의 달력으로 센 마지막으로 끝난 그 시장 세션입니다(한국 — 다음 한국 결정 패킷이 보는 거래일). 그 달력이 지금의 해를 모르면(공휴일
+     * 저장본 없음 — 명세 K35) 기준일은 null이고 {@code referenceDateReason}에 사유, 목록은 만료를 가를 수 없어 보관하지 않은 메모 전부
+     * ({@code includeExpired=true}면 전부)이며 MARKET 메모의 {@code active}는 null입니다(INSIGHT는 보관 안 함이면 true).
+     */
+    Map<String, Object> list(PaperMarkets.Scope scope, boolean includeExpired) {
+        if (!store.ready()) {
+            return notReady();
+        }
+        PaperMarket market = scope.market();
+        LocalDate reference = null;
+        String referenceReason = null;
+        try {
+            reference = referenceDate(scope.run());
+        } catch (CalendarUnavailableException e) {
+            referenceReason = e.getMessage();
+        }
+        List<Note> notes = reference != null ? store.notes(market.code(), includeExpired, reference)
+                : store.notes(market.code(), true, Kst.today(clock)).stream()
+                        .filter(n -> includeExpired || !n.archived()).toList();
+        List<Map<String, Object>> rows = new ArrayList<>();
+        for (Note n : notes) {
+            rows.add(view(n, reference));
+        }
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("available", true);
+        out.put("market", market.code());
+        out.put("dormantReason", scope.dormantReason());
+        out.put("referenceDate", reference == null ? null : reference.toString());
+        if (referenceReason != null) {
+            out.put("referenceDateReason", referenceReason);
+        }
         out.put("notes", rows);
         return out;
     }
@@ -300,9 +341,17 @@ public class NoteService {
         row.put("title", n.title());
         row.put("body", n.body());
         row.put("archived", n.archived());
-        row.put("active", active(n, reference));
+        row.put("active", reference == null ? activeWithoutReference(n) : (Boolean) active(n, reference));
         row.put("createdAtKst", stamp(n.createdAt()));
         return row;
+    }
+
+    /** 기준일을 모를 때(그 시장 달력이 모르는 해)의 {@code active} — 보관했으면 false, INSIGHT면 true, MARKET은 모름(null). */
+    private static Boolean activeWithoutReference(Note n) {
+        if (n.archived()) {
+            return false;
+        }
+        return INSIGHT.equals(n.kind()) ? true : null;
     }
 
     /** 그 거래일 기준으로 쓰이는 메모인가(MARKET은 패킷에 들어감, INSIGHT는 보관 안 함). */
