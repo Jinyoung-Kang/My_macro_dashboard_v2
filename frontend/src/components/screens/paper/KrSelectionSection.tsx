@@ -2,7 +2,7 @@
 
 import type { ReactNode } from "react";
 import { type Column, DataTable } from "@/components/patterns";
-import { Banner, Card, ErrorState, Freshness, Loading, Table } from "@/components/ui";
+import { Banner, Card, ErrorState, Freshness, Loading } from "@/components/ui";
 import { useApi } from "@/hooks/useApi";
 import { endpoints } from "@/lib/endpoints";
 import { PAPER_SOURCES } from "@/lib/paper";
@@ -15,6 +15,7 @@ import {
   krSelectionPicks,
   krSelectionReference,
   krSelectionView,
+  type KrSelectionView,
 } from "@/lib/paperKr";
 import type { PaperDecisionDetailResponse, PaperDecisionsResponse } from "@/lib/types";
 
@@ -98,15 +99,16 @@ export function KrSelectionSection() {
           )}
           {view.targets.length > 0 && (
             <Part title="매수 목표" note="배분 순서·점수·목표 비중 — 남는 비중은 153130(현금성)입니다.">
-              <Table
-                label="매수 목표"
+              {/* 열이 넷뿐이라 폭을 강제하지 않는 DataTable(390px에서도 한 화면) — ui Table은 최소 640px라 좁은 화면에서 비중이 가려짐. */}
+              <DataTable<KrSelectionView["targets"][number]>
+                caption="매수 목표"
                 rows={view.targets}
                 rowKey={(row) => row.key}
                 columns={[
-                  { key: "rank", header: "순서", align: "right", render: (row) => row.rank },
-                  { key: "code", header: "종목", render: (row) => <CodeName code={row.code} name={row.name} /> },
-                  { key: "score", header: "점수", align: "right", render: (row) => row.score },
-                  { key: "weight", header: "목표 비중", align: "right", render: (row) => row.weight },
+                  { key: "rank", header: "순서", align: "right", cell: (row) => row.rank },
+                  { key: "code", header: "종목", rowHeader: true, cell: (row) => <CodeName code={row.code} name={row.name} /> },
+                  { key: "score", header: "점수", align: "right", cell: (row) => row.score },
+                  { key: "weight", header: "목표 비중", align: "right", cell: (row) => row.weight },
                 ]}
               />
             </Part>
@@ -124,14 +126,14 @@ export function KrSelectionSection() {
       {view.recognized && (
         <Card title="제외" subtitle="후보에서 빠진 사유별 종목 수(남기는 순서 — 거래정지 → 재진입 금지 → 자료 부족 → 수급 미달 → 연속 순매수 미달 → 자료 없음 → 재무 미달)">
           <div className="flex flex-col gap-4">
-            <Table
-              label="제외"
+            <DataTable<KrSelectionView["exclusions"][number]>
+              caption="제외"
               rows={view.exclusions}
               rowKey={(row) => row.key}
-              emptyMessage="빠진 종목이 없습니다."
+              emptyText="빠진 종목이 없습니다."
               columns={[
-                { key: "reason", header: "사유", render: (row) => row.reason },
-                { key: "count", header: "종목 수", align: "right", render: (row) => row.count },
+                { key: "reason", header: "사유", rowHeader: true, cell: (row) => row.reason },
+                { key: "count", header: "종목 수", align: "right", cell: (row) => row.count },
               ]}
             />
             <Part
@@ -243,10 +245,11 @@ function signed(text: string, value: number | null) {
   return <span className={value === null ? "text-text-3" : "text-text"}>{text}</span>;
 }
 
+/** 코드(줄바꿈 없음) + 이름 — 좁은 화면에서는 이름이 다음 줄로 내려갑니다(구성원 표는 열이 whitespace-nowrap이라 한 줄). */
 function CodeName({ code, name }: { code: string; name: string }) {
   return (
-    <span className="whitespace-nowrap">
-      <span className="font-semibold text-bright">{code}</span>
+    <span>
+      <span className="whitespace-nowrap font-semibold text-bright">{code}</span>
       {name && name !== "—" && <span className="ml-1 text-xs text-text-2">{name}</span>}
     </span>
   );
