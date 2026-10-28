@@ -39,7 +39,9 @@ import java.util.regex.Pattern;
  * <ul>
  *   <li><b>종목</b>({@link Targets#names} — 금융위 종목명·DART 회사명·설정 {@code kr.news.aliases}의 별칭): 앞은 글자·숫자가 아니어야 하고(글 처음·
  *       공백·구두점), 뒤는 글 끝·글자 아닌 것, 또는 <b>조사</b>({@link #PARTICLES}) 다음 글 끝·글자 아닌 것 — '삼성전자가'·'SK하이닉스·'는 걸리고
- *       '삼성전자우'(우선주)·'한화에어로스페이스'의 '한화'·'LG전자'의 'LG'는 걸리지 않습니다. 대소문자는 가리지 않습니다(영문 이름 'kt'·'NAVER').</li>
+ *       '삼성전자우'(우선주)·'한화에어로스페이스'의 '한화'·'LG전자'의 'LG'는 걸리지 않습니다. 대소문자는 가리지 않습니다(영문 이름 'kt'·'NAVER').
+ *       또 <b>다른 대상의 더 긴 이름</b>이 그 자리에서 시작하면 걸리지 않습니다 — 'KT&G'의 'KT'·'LS ELECTRIC'의 'LS'·'SK hynix'의 'SK'·'LG CNS'의
+ *       'LG'('&'·공백은 경계라 위 규칙만으로는 걸림, 묶음 E 리뷰). 가릴 이름은 대상 목록에서 저절로 정합니다(같은 종목의 다른 이름은 가리지 않음).</li>
  *   <li><b>6자리 코드</b>: 앞뒤가 영문·숫자가 아님.</li>
  *   <li><b>한글이 든 키워드</b>: 부분 문자열(대소문자 무시, 키워드 안 공백은 공백 0개 이상 — '부동산 PF'는 '부동산PF'도 걸림) — '국제유가'·'외국인투자'·
  *       '반도체주'처럼 붙여 쓴 합성어를 놓치지 않게. 다만 키워드가 <b>다른 뜻의 낱말 안에만</b> 있으면 걸리지 않습니다({@link #MASKED_WORDS} —
@@ -417,30 +419,65 @@ public final class KrNewsEvents {
 
     /** 제목에 그 종목 이름이 걸리나(클래스 설명 '맞추기' — 조사 허용). 걸린 첫 자리, 없으면 −1. */
     public static int nameAt(String title, String name) {
+        return nameAt(title, name, List.of());
+    }
+
+    /**
+     * {@link #nameAt(String, String)}에 다른 대상의 이름을 더한 것 — 그중 이 이름으로 시작하는 더 긴 이름('KT'에 'KT&G')이 그 자리에서 시작하면 그
+     * 자리는 건너뜁니다(클래스 설명 '맞추기'의 '다른 대상의 더 긴 이름').
+     */
+    public static int nameAt(String title, String name, Collection<String> otherNames) {
         String t = clean(Normalizer.normalize(title == null ? "" : title, Normalizer.Form.NFC));
         String n = clean(Normalizer.normalize(name == null ? "" : name, Normalizer.Form.NFC));
         if (n.isEmpty()) {
             return -1;
         }
-        return find(namePattern(n), t, null);
+        List<String> others = new ArrayList<>();
+        if (otherNames != null) {
+            otherNames.forEach(o -> others.add(clean(Normalizer.normalize(o == null ? "" : o, Normalizer.Form.NFC))));
+        }
+        return find(namePattern(n), t, null, longerNames(n, others));
     }
 
-    /** 맞출 패턴 하나 — 종류·값·코드·패턴, 한글 키워드면 가림 판정에 쓰는 키워드 글. */
-    private record Compiled(String kind, String value, String code, Pattern pattern, String hangulKeyword) {
+    /**
+     * 맞출 패턴 하나 — 종류·값·코드·패턴, 한글 키워드면 가림 판정에 쓰는 키워드 글, 이름이면 그 이름으로 시작하는 다른 대상의 더 긴 이름(그 자리에서
+     * 시작하면 건너뜀).
+     */
+    private record Compiled(String kind, String value, String code, Pattern pattern, String hangulKeyword,
+                            List<String> longer) {
     }
 
     private static List<Compiled> compile(Targets targets, List<String> keywords) {
         List<Compiled> out = new ArrayList<>();
         targets.names().forEach((code, names) -> {
+            // 다른 대상(다른 코드)의 이름 — 같은 종목의 다른 이름은 가리지 않습니다(그 이름이 걸리지 않으면 종목을 놓침).
+            List<String> others = new ArrayList<>();
+            targets.names().forEach((other, list) -> {
+                if (!other.equals(code)) {
+                    others.addAll(list);
+                }
+            });
             for (String name : names) {
-                out.add(new Compiled(NAME, name, code, namePattern(name), null));
+                out.add(new Compiled(NAME, name, code, namePattern(name), null, longerNames(name, others)));
             }
             out.add(new Compiled(CODE, code, code,
-                    Pattern.compile("(?<![0-9A-Za-z])" + Pattern.quote(code) + "(?![0-9A-Za-z])"), null));
+                    Pattern.compile("(?<![0-9A-Za-z])" + Pattern.quote(code) + "(?![0-9A-Za-z])"), null, List.of()));
         });
         for (String keyword : keywords) {
             boolean hangul = HANGUL.matcher(keyword).find();
-            out.add(new Compiled(KEYWORD, keyword, null, keywordPattern(keyword), hangul ? keyword : null));
+            out.add(new Compiled(KEYWORD, keyword, null, keywordPattern(keyword), hangul ? keyword : null, List.of()));
+        }
+        return out;
+    }
+
+    /** {@code name}으로 시작하는(대소문자 무시) 더 긴 이름 — 'KT' → 'KT&G', 'LS' → 'LS ELECTRIC'. */
+    private static List<String> longerNames(String name, Collection<String> others) {
+        String prefix = name.toLowerCase(Locale.ROOT);
+        List<String> out = new ArrayList<>();
+        for (String other : others) {
+            if (other.length() > name.length() && other.toLowerCase(Locale.ROOT).startsWith(prefix)) {
+                out.add(other);
+            }
         }
         return out;
     }
@@ -464,13 +501,27 @@ public final class KrNewsEvents {
 
     /** 패턴이 처음 걸린 자리 — 한글 키워드면 {@link #MASKED_WORDS} 안에만 있는 자리는 건너뜀. 없으면 −1. */
     private static int find(Pattern pattern, String title, String hangulKeyword) {
+        return find(pattern, title, hangulKeyword, List.of());
+    }
+
+    /** {@link #find(Pattern, String, String)}에 더해 {@code longer}의 이름 하나가 그 자리에서 시작하면(대소문자 무시) 건너뜀. */
+    private static int find(Pattern pattern, String title, String hangulKeyword, List<String> longer) {
         Matcher m = pattern.matcher(title);
         while (m.find()) {
-            if (hangulKeyword == null || !masked(title, m.start(), m.end())) {
+            if ((hangulKeyword == null || !masked(title, m.start(), m.end())) && !startsLonger(title, m.start(), longer)) {
                 return m.start();
             }
         }
         return -1;
+    }
+
+    private static boolean startsLonger(String title, int at, List<String> longer) {
+        for (String name : longer) {
+            if (title.regionMatches(true, at, name, 0, name.length())) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /** [start, end)가 가림 낱말 하나의 안에 들어가나. */
@@ -492,7 +543,7 @@ public final class KrNewsEvents {
         }
         List<Hit> hits = new ArrayList<>();
         for (Compiled c : patterns) {
-            int at = find(c.pattern(), title, c.hangulKeyword());
+            int at = find(c.pattern(), title, c.hangulKeyword(), c.longer());
             if (at >= 0) {
                 hits.add(new Hit(new Match(c.kind(), c.value(), c.code()), KIND_ORDER.indexOf(c.kind()), at));
             }

@@ -107,6 +107,25 @@ class KrNewsEventsTest {
     }
 
     @Test
+    @DisplayName("다른 대상 이름의 앞부분인 짧은 이름 — 'KT'는 'KT&G' 안·'LS'는 'LS ELECTRIC' 안·'SK'는 'SK hynix' 안·'LG'는 'LG CNS' 안에서 걸리지 않고(긴 이름 쪽만), 따로 나오면 걸림")
+    void shorterNamesInsideLongerTargetNamesDoNotMatch() {
+        Map<String, List<String>> names = Map.of("030200", List.of("KT"), "033780", List.of("KT&G"),
+                "006260", List.of("LS"), "010120", List.of("LS ELECTRIC"), "034730", List.of("SK"),
+                "000660", List.of("SK hynix", "SK하이닉스"), "003550", List.of("LG"), "064400", List.of("LG CNS"));
+        assertThat(labels("KT&G, 3분기 영업이익 증가", names, List.of())).containsExactly("name KT&G (033780)");
+        assertThat(labels("LS ELECTRIC 수주 확대", names, List.of())).containsExactly("name LS ELECTRIC (010120)");
+        assertThat(labels("SK hynix HBM 공급", names, List.of())).containsExactly("name SK hynix (000660)");
+        assertThat(labels("LG CNS 상장 1년", names, List.of())).containsExactly("name LG CNS (064400)");
+        assertThat(labels("kt&g 배당", names, List.of())).as("대소문자 무시").containsExactly("name KT&G (033780)");
+        assertThat(labels("KT&G와 KT 동반 강세", names, List.of())).as("따로 나온 KT는 걸림")
+                .containsExactly("name KT&G (033780)", "name KT (030200)");
+        assertThat(labels("LS, 자회사 지분 매각", names, List.of())).containsExactly("name LS (006260)");
+        assertThat(labels("SK 주가 급등", names, List.of())).containsExactly("name SK (034730)");
+        assertThat(KrNewsEvents.nameAt("KT&G, 3분기 영업이익 증가", "KT", List.of("KT&G"))).isEqualTo(-1);
+        assertThat(KrNewsEvents.nameAt("KT&G, 3분기 영업이익 증가", "KT")).as("가릴 이름을 주지 않으면 그대로").isZero();
+    }
+
+    @Test
     @DisplayName("이유 순서 — 이름 → 코드 → 키워드, 같은 종류는 제목에 먼저 나온 순")
     void matchOrder() {
         Map<String, List<String>> names = Map.of("005930", List.of("삼성전자"), "000660", List.of("SK하이닉스", "하이닉스"));
