@@ -727,12 +727,19 @@ final class ClaudeDecisionPipeline {
     /** Claude를 부르지 않은 결정(일시정지·호출 상한) — 패킷·모델 없이 사유만. */
     Decision recordSkipped(LocalDate asOf, String kind, SettingsRow row, ClaudeSettings claude,
                                    boolean pricesFinal, String reason) {
+        return recordSkipped(asOf, kind, row, claude, pricesFinal, reason, Map.of());
+    }
+
+    /** {@link #recordSkipped(LocalDate, String, SettingsRow, ClaudeSettings, boolean, String)}에 응답 칸({@code extra}, 사유 뒤·설정 앞)을 더한 것. */
+    private Decision recordSkipped(LocalDate asOf, String kind, SettingsRow row, ClaudeSettings claude,
+                                   boolean pricesFinal, String reason, Map<String, Object> extra) {
         Map<String, Object> response = new LinkedHashMap<>();
         response.put("summary", reason);
         response.put("book", market.claudeBook());
         response.put("kind", kind);
         response.put("asOfTradingDate", asOf.toString());
         response.put("skipped", reason);
+        response.putAll(extra);
         response.put("settings", claudeView(claude));
         return store.atomically(() -> {
             Optional<Long> id = store.insertDecisionIfAbsent(new Decision(0, market.claudeBook(), asOf, kind, null,
@@ -764,6 +771,46 @@ final class ClaudeDecisionPipeline {
                 retrying.packetText()));
         log.info("Claude 책 결정 {} {}: 재시도하지 않음 — {}", asOf, kind, message);
         return store.decision(retrying.id()).orElseThrow();
+    }
+
+    /**
+     * 결정 기한이 지나 Claude를 부르지 않은 그 세션의 행(사용자 결정 v4, E2b — 기한 뒤 그 세션을 결정하지 않는 시장, 한국). 새 결정이면 호출 상한의
+     * {@code SKIPPED} 행과 같은 모양(패킷·모델 없음)에 기한({@code pastDeadline}·{@code deadlineKst})·사유 구분({@code skippedReason} — 규칙 계좌 기한
+     * 지남 행의 {@code noTradeReason}과 같은 판정: ⑤ 미달이면 '069500 D 봉 없음(휴장 또는 지연)', 아니면 '기한 지남')·그 판정
+     * ({@code gates}·{@code waitedFor}·{@code gatesJudgedAtKst}·{@code gatesBasis})을 더해 남기고, 재시도 차례였으면 그 행의 재시도를 쓴 것으로 남깁니다
+     * (호출 상한과 같음 — 상태는 API 오류 그대로, 사유를 덧붙임). 가격을 보지 않아 {@code prices_final}은 거짓입니다.
+     *
+     * @param judged 그 세션 Claude 계좌 몫의 기한 전 마지막 판정(없으면 기한 뒤 판정), 판정하지 못했으면 null
+     */
+    Decision deadlineSkipped(LocalDate asOf, String kind, SettingsRow row, ClaudeSettings claude, Decision retrying,
+                             java.time.Instant deadline, KrDecisionGates.Judged judged) {
+        List<KrDecisionGates.Gate> gates = judged == null ? null : judged.gates();
+        boolean anchorMissing = KrDecisionGates.anchorMissing(gates);
+        String reason = anchorMissing ? KrRuleBookService.ANCHOR_MISSING_REASON : KrRuleBookService.PAST_DEADLINE_REASON;
+        String message = "결정 기한(" + com.macrodash.Kst.stamp(deadline) + ")이 지나 Claude를 부르지 않았습니다"
+                + (anchorMissing ? " — " + reason : "");
+        if (retrying != null) {
+            String error = clip((retrying.error() == null ? "" : retrying.error() + " · ") + "재시도 안 함: " + message,
+                    ERROR_CHARS);
+            store.updateDecisionRetry(new Decision(retrying.id(), retrying.bookCode(), retrying.asOfTradingDate(),
+                    retrying.kind(), retrying.decidedAt(), retrying.status(), retrying.model(),
+                    retrying.frameworkVersion(), retrying.settingsVersion(), retrying.selectionAsOf(),
+                    retrying.targetExposurePct(), retrying.packet(), retrying.packetHash(), retrying.responseRaw(),
+                    retrying.response(), retrying.usage(), error, retrying.noteIds(), retrying.pricesFinal(),
+                    retrying.latencyMs(), retrying.retryCount(), retrying.packetText()));
+            log.info("Claude 책 결정 {} {}: 재시도하지 않음 — {}", asOf, kind, message);
+            return store.decision(retrying.id()).orElseThrow();
+        }
+        Map<String, Object> extra = new LinkedHashMap<>();
+        extra.put("skippedReason", reason);
+        extra.put("pastDeadline", true);
+        extra.put("deadlineKst", com.macrodash.Kst.stamp(deadline));
+        extra.put("gates", gates == null ? null : gates.stream().map(KrDecisionGates.Gate::view).toList());
+        extra.put("waitedFor", gates == null ? null : KrDecisionGates.blocking(gates));
+        extra.put("gatesJudgedAtKst", judged == null ? null : com.macrodash.Kst.stamp(judged.at()));
+        extra.put("gatesBasis", judged == null ? null : judged.basis());
+        log.info("Claude 책 결정 {} {}: {}", asOf, kind, message);
+        return recordSkipped(asOf, kind, row, claude, false, message + " — 그날 재량 주문 없음", extra);
     }
 
     /** 그날 이 호출에 남은 횟수 — 정기 작업은 상한까지, 수동 호출은 정기 작업 몫을 남긴 문턱까지({@link ClaudeSettings#callLimit}). */

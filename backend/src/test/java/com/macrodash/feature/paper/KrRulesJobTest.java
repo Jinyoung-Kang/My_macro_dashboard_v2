@@ -105,6 +105,28 @@ class KrRulesJobTest {
                 KrRuleBookServiceTest.config(), PaperFixtures.MAPPER, clock);
     }
 
+    /**
+     * 실제 한국 Claude 경로(E2b — {@link KrClaudeFixtures})의 결정 작업으로 바꾸고 Claude 계좌를 운용(출발 S)으로 둡니다. 재기동을 흉내 낼 때도
+     * 같은 가짜 AI로 새 작업·새 서비스를 만듭니다.
+     */
+    private void realClaude(KrClaudeFixtures.FakeAi fake) {
+        PaperMarketData marketData = new PaperMarketData(reader, repository);
+        PaperLedgerService ledger = new PaperLedgerService(store, marketData, PaperFixtures.MAPPER);
+        job = new PaperDecisionJob(store, reader, marketData, ledger, mock(PaperSelectionService.class),
+                mock(RuleBookService.class), KrClaudeFixtures.service(store, reader, repository, marketData, ledger,
+                KrRuleBookServiceTest.config(), clock, fake.ai), PaperFixtures.settings(store),
+                KrRuleBookServiceTest.config(), PaperFixtures.MAPPER, clock);
+        store.updateBookStatus(PaperBooks.KR_CLAUDE, PaperBooks.ACTIVE);
+        store.updateBookStartedOn(PaperBooks.KR_CLAUDE, S);
+    }
+
+    /** Claude 계좌의 기준일 FRI 대기 주문 — R 개장 뒤에 만들어 체결 조건 ⑤로 R 시가에 체결되지 않음(게이트 ①이 기다림, 결정 e3). */
+    private long claudeOrderAfterTheOpen() {
+        return store.insertOrder(new Order(0, PaperBooks.KR_CLAUDE, null, "005930", PaperBooks.BUY, null, 5.0, null,
+                PaperBooks.NEXT_OPEN, PacketBuilder.SOURCE_CLAUDE, PaperBooks.ORDER_PENDING, null, null, FRI,
+                kst("2026-11-02T10:00"), KrRulesFixtures.CALENDAR.addTradingDays(FRI, 3), null));
+    }
+
     /** 그 세션 밤의 자료 — 관측치(그날 봉 모두)와 금융위 메타(기준일 = 직전 거래일, 게이트 ④). */
     private void session(LocalDate session) {
         quotes(session, Set.of());
@@ -600,6 +622,105 @@ class KrRulesJobTest {
         });
         assertThat(runAt("2026-11-02T23:00").outcome()).isEqualTo(PaperDecisionJob.ALREADY_DECIDED);
         assertThat(fake.requests).as("그 세션에 한 번").hasSize(1);
+    }
+
+    @Test
+    @DisplayName("사용자 결정 v4(E2b) — 기한 지난 세션의 Claude 계좌는 부르지 않고 SKIPPED 행: 규칙 계좌는 22:30에 결정했고 Claude만 ①로 00:50까지 기다렸으면 그 행의 판정은 저장된 Claude 몫의 기한 전 마지막 판정(00:50 — ① kr_claude FAIL, 사유 '기한 지남'), 재기동해도 다시 쓰지 않고 기한 지남 기록은 한 번")
+    void claudePastDeadlineRowUsesTheStoredClaudeJudgement() {
+        KrClaudeFixtures.FakeAi fake = new KrClaudeFixtures.FakeAi();
+        realClaude(fake);
+        session(R);
+        long held = claudeOrderAfterTheOpen();
+
+        assertThat(runAt("2026-11-02T22:30").outcome()).isEqualTo(PaperDecisionJob.DECIDED);
+        assertThat(krRuns()).singleElement().satisfies(run -> {
+            assertThat(run.detail().has(PaperDecisionJob.RULES_GATES)).as("규칙 계좌는 결정 — 그 판정은 남기지 않음").isFalse();
+            assertThat(gateStatuses(run.detail().path(PaperDecisionJob.CLAUDE_GATES).path("gates")))
+                    .as("Claude 몫 판정(① 그 계좌 · ②~⑥)").containsExactly("① FAIL", "② PASS", "③ PASS", "④ PASS", "⑤ PASS", "⑥ PASS");
+        });
+        assertThat(runAt("2026-11-03T00:50").outcome()).isEqualTo(PaperDecisionJob.DATA_NOT_READY);
+        quotes(R, Set.of("069500"));   // 기한 직후 069500 R 봉이 빠진 저장본 — 지금 판정하면 ⑤ 미달이지만 기한 전 판정을 씀
+
+        PaperDecisionJob.Result missed = runAt("2026-11-03T01:00");
+
+        assertThat(missed.outcome()).isEqualTo(PaperDecisionJob.PAST_DEADLINE);
+        assertThat(missed.rules()).as("규칙 계좌는 22:30 결정 — 기한 지남 행 없음").isNull();
+        Decision row = missed.claude();
+        assertThat(row.bookCode()).isEqualTo(PaperBooks.KR_CLAUDE);
+        assertThat(row.asOfTradingDate()).isEqualTo(R);
+        assertThat(row.kind()).isEqualTo(RuleBookService.SCHEDULED);
+        assertThat(row.status()).isEqualTo(ClaudeBookService.STATUS_SKIPPED);
+        assertThat(row.model()).as("Claude를 부르지 않음").isNull();
+        assertThat(row.packet()).isNull();
+        assertThat(row.pricesFinal()).isFalse();
+        assertThat(row.response().path("summary").asString())
+                .isEqualTo("결정 기한(2026-11-03 01:00 KST)이 지나 Claude를 부르지 않았습니다 — 그날 재량 주문 없음");
+        assertThat(row.response().path("skippedReason").asString()).isEqualTo("기한 지남");
+        assertThat(row.response().path("pastDeadline").asBoolean()).isTrue();
+        assertThat(row.response().path("deadlineKst").asString()).isEqualTo("2026-11-03 01:00 KST");
+        assertThat(row.response().path("gatesJudgedAtKst").asString()).isEqualTo("2026-11-03 00:50 KST");
+        assertThat(row.response().path("gatesBasis").asString()).isEqualTo("기한 전 마지막 판정");
+        assertThat(gateStatuses(row.response().path("gates"))).containsExactly("① FAIL", "② PASS", "③ PASS", "④ PASS",
+                "⑤ PASS", "⑥ PASS");
+        assertThat(row.response().path("waitedFor").toString()).contains("① kr_claude").contains("#" + held);
+        assertThat(fake.requests).isEmpty();
+        assertThat(store.ordersByDecision(row.id())).isEmpty();
+        assertThat(store.orders.get(held).status()).as("대기 주문은 장부 몫 그대로").isEqualTo(PaperBooks.ORDER_PENDING);
+        assertThat(krRuns()).last().satisfies(run -> {
+            assertThat(run.outcome()).isEqualTo(PaperDecisionJob.PAST_DEADLINE);
+            assertThat(run.detail().path("claude").path("status").asString()).isEqualTo(ClaudeBookService.STATUS_SKIPPED);
+        });
+
+        assertThat(runAt("2026-11-03T01:10").outcome()).as("그 세션 일이 행으로 끝남").isEqualTo(PaperDecisionJob.ALREADY_DECIDED);
+        realClaude(fake);   // 재기동
+        assertThat(runAt("2026-11-03T01:20").outcome()).isEqualTo(PaperDecisionJob.ALREADY_DECIDED);
+        assertThat(store.decisionsOf(PaperBooks.KR_CLAUDE)).as("그 세션 Claude 행은 하나").hasSize(1);
+        assertThat(krRuns()).extracting(JobRun::outcome).containsExactly(PaperDecisionJob.DECIDED,
+                PaperDecisionJob.DATA_NOT_READY, PaperDecisionJob.PAST_DEADLINE);
+    }
+
+    @Test
+    @DisplayName("사용자 결정 v4(E2b) — 그 밤 첫 실행이 기한 뒤면 Claude 행의 판정은 그 순간의 판정('기한 뒤 판정', ⑤ 미달이면 사유 '069500 D 봉 없음'), 재시도 차례인 API 오류 행이 있으면 기한이 그 재시도를 씀(같은 행·재시도 1회·사유 덧붙임, 부르지 않음)")
+    void claudePastDeadlineJudgesNowOrConsumesTheRetry() {
+        KrClaudeFixtures.FakeAi fake = new KrClaudeFixtures.FakeAi();
+        realClaude(fake);
+        quotes(R, Set.of("069500"));
+        fsc(FRI);
+
+        PaperDecisionJob.Result late = runAt("2026-11-03T01:05");
+
+        assertThat(late.outcome()).isEqualTo(PaperDecisionJob.PAST_DEADLINE);
+        assertThat(late.rules().status()).isEqualTo("NO_TRADE");
+        Decision row = late.claude();
+        assertThat(row.status()).isEqualTo(ClaudeBookService.STATUS_SKIPPED);
+        assertThat(row.response().path("skippedReason").asString()).isEqualTo("069500 D 봉 없음(휴장 또는 지연)");
+        assertThat(row.response().path("summary").asString()).contains("— 069500 D 봉 없음(휴장 또는 지연)");
+        assertThat(row.response().path("gatesBasis").asString()).startsWith("기한 뒤 판정");
+        assertThat(row.response().path("gatesJudgedAtKst").asString()).isEqualTo("2026-11-03 01:05 KST");
+        assertThat(gateStatuses(row.response().path("gates")))
+                .as("① Claude 계좌(기한 뒤 작업은 장부를 처리하지 않아 이번 관측치 처리 전 — 미달) · ②~⑥ — 지금 판정")
+                .containsExactly("① FAIL", "② PASS", "③ PASS", "④ PASS", "⑤ FAIL", "⑥ PASS");
+        assertThat(row.response().path("gates").get(0).path("note").asString()).startsWith("kr_claude");
+        assertThat(fake.requests).isEmpty();
+
+        // 다음 세션: 22:30 API 오류 → 재시도 차례인 채 기한이 지남 → 기한이 그 재시도를 씀.
+        fake.fail("API_ERROR", "overloaded");
+        session(R1);
+        PaperDecisionJob.Result failed = runAt("2026-11-03T22:30");
+        assertThat(failed.claude().status()).isEqualTo(ClaudeBookService.STATUS_API_ERROR);
+        assertThat(failed.claude().retryCount()).isZero();
+
+        // 그 사이 결정 작업이 돌지 못함(서버 지연 등) — 다음 실행이 기한 순간.
+        PaperDecisionJob.Result consumed = runAt("2026-11-04T01:00");
+
+        assertThat(consumed.outcome()).isEqualTo(PaperDecisionJob.PAST_DEADLINE);
+        assertThat(consumed.claude().id()).as("같은 행").isEqualTo(failed.claude().id());
+        assertThat(consumed.claude().status()).isEqualTo(ClaudeBookService.STATUS_API_ERROR);
+        assertThat(consumed.claude().retryCount()).isEqualTo(1);
+        assertThat(consumed.claude().error()).contains("[API_ERROR] overloaded")
+                .contains("재시도 안 함: 결정 기한(2026-11-04 01:00 KST)이 지나 Claude를 부르지 않았습니다");
+        assertThat(fake.requests).as("22:30 한 번뿐").hasSize(1);
+        assertThat(runAt("2026-11-04T01:10").outcome()).isEqualTo(PaperDecisionJob.ALREADY_DECIDED);
     }
 
     @Test

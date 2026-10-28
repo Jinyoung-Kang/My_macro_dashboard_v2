@@ -465,6 +465,44 @@ public class ClaudeBookService {
     }
 
     /**
+     * 결정 기한이 지나 그 시장 규칙상 그 세션을 결정하지 않을 때({@link PaperMarket.AfterDeadline#NO_TRADE} — 한국)의 Claude 계좌 정기 결정 행(사용자
+     * 결정 v4, 2단계 명세 §4-9 'E2b 구현에서 정한 것'): Claude를 부르지 않고 장부를 건드리지 않으며, 미국 호출 상한의 {@code SKIPPED} 행처럼 사유를
+     * 남깁니다 — 저장된 사실이라 재기동해도 다시 쓰지 않고 그 세션 Claude 일이 끝납니다. 재시도 차례인 API 오류 행이 있으면 그 재시도를 쓴 것으로
+     * 남깁니다. 결정 작업이 그 세션 Claude 계좌가 정기 결정을 낼 차례일 때만 부릅니다.
+     *
+     * @param judged 그 세션 Claude 계좌 몫의 기한 전 마지막 자료 게이트 판정(결정 작업의 작업 기록 — 없으면 기한 뒤 판정), 판정하지 못했으면 null
+     * @return 그 세션 정기 결정 행(이미 있으면 — 재시도 차례가 아니면 — 그 행)
+     * @throws IllegalArgumentException 결정 문맥이 없는 시장, 기한 뒤에도 결정하는 시장
+     * @throws InvalidRequestException  Claude 계좌가 없음·시작 전
+     */
+    Decision pastDeadline(PaperMarket market, LocalDate asOf, Instant deadline, KrDecisionGates.Judged judged) {
+        ClaudeDecisionPipeline base = pipeline(market);
+        if (market.afterDeadline() != PaperMarket.AfterDeadline.NO_TRADE) {
+            throw new IllegalArgumentException(market.code() + "은 기한 뒤에도 결정하는 시장입니다 — 기한 지남 행을 쓰지 않습니다");
+        }
+        Objects.requireNonNull(asOf, "asOf");
+        Objects.requireNonNull(deadline, "deadline");
+        requireReady();
+        MarketRun run = MarketRun.of(market, store);
+        ClaudeDecisionPipeline pipeline = base.bind(run);
+        Decision retrying = null;
+        Optional<Decision> existing = store.decisionFor(market.claudeBook(), asOf, RuleBookService.SCHEDULED);
+        if (existing.isPresent()) {
+            if (!retryable(existing.get())) {
+                return existing.get();
+            }
+            retrying = existing.get();
+        }
+        Book book = claudeBook(market);
+        if (PaperBooks.NOT_STARTED.equals(book.status())) {
+            throw new InvalidRequestException("Claude 계좌는 아직 시작 전입니다 — 기한 지남 행을 쓰지 않습니다");
+        }
+        SettingsRow row = run.settingsRow().orElseGet(this::settingsRow);
+        return pipeline.deadlineSkipped(asOf, RuleBookService.SCHEDULED, row, ClaudeSettings.from(row.body()), retrying,
+                deadline, judged);
+    }
+
+    /**
      * 받은 응답을 잠금 안에서 그때의 장부로 검증하고 결정·주문을 한 트랜잭션으로 남깁니다. 호출하는 사이의 초기화·재시작은 400,
      * 일시정지는 주문을 집행하지 않는 {@code SKIPPED}(클래스 설명). 검증의 관측치는 그 실행의 재료가 있으면 그것(패킷을 만든 관측치 — 그사이 수집이
      * 돌아도 갈리지 않게), 없으면(미국) 지금 저장본입니다.
