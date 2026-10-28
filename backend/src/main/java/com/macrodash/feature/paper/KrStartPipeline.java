@@ -43,6 +43,9 @@ import java.util.concurrent.ConcurrentHashMap;
  *                         없으면 예외 그대로(결정 작업의 ERROR·출발 오류 횟수 — 다음 주기에 다시)
  * </pre>
  *
+ * <p><b>수동 출발 단추</b>({@code POST /api/paper/run/initial-decision?market=KR} — F1, {@link #run(MarketRun, Instant, boolean)}의 {@code scheduled=false}):
+ * 위 순서 그대로 돌되 출발 기한 뒤·이미 미룬 세션은 미룸 대신 {@value #MANUAL_REFUSED}(기록·미룸 기억 없음)이고, Claude 몫은 수동 호출 문턱(상한 − 예약)을 씁니다.
+ *
  * <p><b>출발은 사후 체결이 아닙니다</b>(K28): 주문은 D+1 시가({@code NEXT_OPEN})에 체결되고(그 체결은 C2 장부), 수익률의 기준은 D 마감 순자산
  * = 초기 현금 전액(그래서 D 줄을 {@code prices_final=true}로 씀 — 보유가 없어 가격이 들지 않음). {@code paper_start_prices}·사후 체결·출발일 종가
  * 동결은 없습니다. 벤치마크 결정은 판단이 없어 가격을 보지 않고 목표 비중 주문만 냅니다(수량은 시가 체결 때) — 결정 행의
@@ -87,6 +90,11 @@ final class KrStartPipeline {
     static final String STARTED = "STARTED";
     static final String START_WAITING = "START_WAITING";
     static final String START_POSTPONED = "START_POSTPONED";
+    /**
+     * 수동 출발 단추({@link #run(MarketRun, Instant, boolean)}의 {@code scheduled=false})가 받지 않는 자리 — 그 세션 출발 기한이 지남·그 세션은 이미
+     * 미룸. 정기 출발이면 미룸 기록이 되는 자리지만 단추는 정기 작업의 기록을 대신 쓰지 않고(기록 없음 — 미룸 기억도 남기지 않음) 사유만 돌려줍니다.
+     */
+    static final String MANUAL_REFUSED = "MANUAL_REFUSED";
 
     /**
      * 계좌 하나의 출발 계획.
@@ -147,8 +155,21 @@ final class KrStartPipeline {
         Plan plan(MarketRun run, LocalDate session, Instant deadline, KrDecisionGates.Checked gates);
 
         /**
+         * 정기 출발인지 수동 출발 단추인지를 받는 계획({@link #plan(MarketRun, LocalDate, Instant, KrDecisionGates.Checked)}와 같은 인자 +
+         * {@code scheduled}). 과금되는 몫(Claude)은 정기 출발이면 하루 상한까지, 수동 출발 단추({@code run/initial-decision?market=KR} — F1)면
+         * 수동 호출 문턱(상한 − 정기 작업 몫 예약, 2단계 명세 §4-10)까지 부르므로 이것을 다시 정의합니다. 기본은 과금이 없는 몫이라 둘이 같습니다.
+         *
+         * @param scheduled 정기 출발(결정 작업)이면 참, 수동 출발 단추면 거짓
+         */
+        default Plan plan(MarketRun run, LocalDate session, Instant deadline, KrDecisionGates.Checked gates,
+                          boolean scheduled) {
+            return plan(run, session, deadline, gates);
+        }
+
+        /**
          * 계획이 과금되는 호출을 하는가(Claude 몫) — 그런 몫은 다른 몫을 모두 계획한 뒤, 그것들이 하나도 실패하지 않았을 때만 부릅니다(클래스 설명
-         * '계좌 몫' — 어차피 미룰 출발에 호출을 쓰지 않게, 묶음 E 리뷰).
+         * '계좌 몫' — 어차피 미룰 출발에 호출을 쓰지 않게, 묶음 E 리뷰). 그런 몫은 수동 출발의 호출 문턱을 지키도록
+         * {@link #plan(MarketRun, LocalDate, Instant, KrDecisionGates.Checked, boolean)}을 다시 정의합니다.
          */
         default boolean charges() {
             return false;
@@ -258,6 +279,18 @@ final class KrStartPipeline {
      * 미룹니다.
      */
     Result run(MarketRun run, Instant now) {
+        return run(run, now, true);
+    }
+
+    /**
+     * 출발 한 번 — 정기 출발({@code scheduled}, 결정 작업) 또는 수동 출발 단추({@code run/initial-decision?market=KR}, 2단계 명세 §4-8 '같은 게이트·같은
+     * 기한 안에서 정기 작업을 앞당기는 수동 단추' — F1). 단추도 같은 창·같은 게이트·같은 계좌 몫·같은 한 트랜잭션이고, 다른 것은 둘입니다: 과금되는
+     * 몫(Claude)이 수동 호출 문턱(상한 − 예약)을 쓰고({@link Leg#plan(MarketRun, LocalDate, Instant, KrDecisionGates.Checked, boolean)}), 그 세션
+     * 출발 기한이 지났거나 그 세션을 이미 미뤘으면 미룸을 만들지 않고 {@value #MANUAL_REFUSED}입니다(미룸 기록은 정기 작업이 남기는 기록 — 단추는
+     * 창 밖에서 어떤 경우에도 출발을 내지 않고 기록도 남기지 않음). 게이트 기다림·출발 전 시각·오류 상한은 정기 출발과 같은 결과를 돌려주고 부르는
+     * 쪽(결정 작업의 수동 출발)이 거절로 답합니다.
+     */
+    Result run(MarketRun run, Instant now, boolean scheduled) {
         LocalDate start = Objects.requireNonNull(config.krStartDate(), "한국 출발일");
         TradingCalendar calendar = run.calendar();
         LocalDate d = calendar.lastCompletedSession(now);
@@ -270,11 +303,20 @@ final class KrStartPipeline {
         }
         List<PaperStore.JobRun> records = store.jobRunsFor(run.jobName(PaperDecisionJob.JOB), d);
         if (!now.isBefore(window.deadline())) {
+            if (!scheduled) {
+                // 수동 단추는 기한이 지난 창에서 출발을 내지 않고 미룸 기록·기억도 남기지 않습니다(정기 작업의 몫).
+                return quiet(MANUAL_REFUSED, d, d + " 출발 결정 창(" + Kst.stamp(window.opens()) + " ~ " + Kst.stamp(window.deadline())
+                        + " 전)이 지났습니다 — 수동 출발은 창 안에서만, 출발은 다음 KR 거래일 창(정기 작업이 미룸을 기록)");
+            }
             return postponed(run, d, start, window, lastWaitReason(records), records);
         }
         if (postponedHere.contains(d) || postponedRecord(records) != null) {
             // 그 세션은 이미 미룸(계획 실패 — 저장된 기록) — 같은 창에서 다시 계획하지 않습니다(재기동한 뒤에도, Claude를 다시 부르지 않게,
-            // K28 '다음 KR 거래일로').
+            // K28 '다음 KR 거래일로'). 수동 단추도 같음.
+            if (!scheduled) {
+                return quiet(MANUAL_REFUSED, d, d + " 출발은 이미 다음 KR 거래일로 미뤘습니다(그 세션은 다시 계획하지 않음 — Claude를 다시 "
+                        + "부르지 않게) — 다음 KR 거래일 창에서 다시 누르세요");
+            }
             return postponed(run, d, start, window, "그 세션은 이미 미뤘음", records);
         }
         if (startErrors(records) >= PaperDecisionJob.MAX_ATTEMPTS) {
@@ -308,7 +350,7 @@ final class KrStartPipeline {
         Plan[] planned = new Plan[legs.size()];
         for (int i = 0; i < legs.size(); i++) {
             if (!legs.get(i).charges()) {
-                planned[i] = legs.get(i).plan(run, d, window.deadline(), checked);
+                planned[i] = legs.get(i).plan(run, d, window.deadline(), checked, scheduled);
             }
         }
         boolean cheapFailed = java.util.Arrays.stream(planned).anyMatch(p -> p != null && p.failed());
@@ -318,7 +360,7 @@ final class KrStartPipeline {
                 if (cheapFailed) {
                     skipped.add(legs.get(i).book());
                 } else {
-                    planned[i] = legs.get(i).plan(run, d, window.deadline(), checked);
+                    planned[i] = legs.get(i).plan(run, d, window.deadline(), checked, scheduled);
                 }
             }
         }

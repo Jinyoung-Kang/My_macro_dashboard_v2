@@ -140,6 +140,11 @@ class KrMarketDormancyTest {
                 .isInstanceOf(InvalidRequestException.class).hasMessage(PaperConfig.KR_START_MISSING);
         assertThatThrownBy(() -> review.runNow(KrPaperMarket.INSTANCE))
                 .isInstanceOf(InvalidRequestException.class).hasMessage(PaperConfig.KR_START_MISSING);
+        // 수동 출발 단추(run/initial-decision?market=KR, F1b) — 출발일이 없으면 그 사유로 400(파이프라인의 출발일 null 예외까지 가지 않음).
+        assertThatThrownBy(() -> decision.startNow(KrPaperMarket.INSTANCE))
+                .isInstanceOf(InvalidRequestException.class).hasMessage(PaperConfig.KR_START_MISSING);
+        assertThatThrownBy(() -> decision.startNow(UsPaperMarket.INSTANCE)).as("미국은 계좌별 시작")
+                .isInstanceOf(InvalidRequestException.class).hasMessageContaining("계좌마다 시작");
         assertThat(risk.runNow(KrPaperMarket.INSTANCE).skippedReason()).isEqualTo(PaperConfig.KR_START_MISSING);
         // 화면 경로 응답(POST /api/paper/run/risk?market=KR, F1) — 예외가 아니라 ok:false와 쉬는 사유, 실행은 열지 않음.
         java.util.Map<String, Object> view = risk.runNowView(KrPaperMarket.INSTANCE);

@@ -1484,4 +1484,176 @@ class KrStartTest {
         store.books.clear();
         assertThat(pipeline.pending(KrPaperMarket.INSTANCE)).as("계좌 없음").isFalse();
     }
+
+    // ------------------------------------------------------------------ 수동 출발 단추(F1b)
+
+    /** 출발 단추 경로(POST /api/paper/run/initial-decision?market=KR — 2단계 명세 §4-8, F1b) — 지금의 결정 작업으로. */
+    private PaperDecisionController route() {
+        return new PaperDecisionController(new PaperQueryService(store, marketData, reader, PaperFixtures.settings(store),
+                config(), clock), job, mock(RuleBookService.class), mock(ClaudeBookService.class),
+                new PaperMarkets(store, reader));
+    }
+
+    private Map<String, Object> pressAt(String kstDateTime) {
+        clock.set(kst(kstDateTime));
+        return route().runInitialDecision("KR", null);
+    }
+
+    @SuppressWarnings("unchecked")
+    private static List<Object> decisionIds(Map<String, Object> out) {
+        return ((List<Map<String, Object>>) out.get("decisions")).stream().map(d -> d.get("id")).toList();
+    }
+
+    private static void assertRefused(Runnable press, String message) {
+        org.assertj.core.api.Assertions.assertThatThrownBy(press::run)
+                .isInstanceOf(com.macrodash.support.InvalidRequestException.class).hasMessageContaining(message);
+    }
+
+    @Test
+    @DisplayName("F1b 수동 출발 단추 — 창 안(S 22:35)에서 정기 출발과 같은 파이프라인(게이트 ②~⑥·한 트랜잭션)으로 출발: {ok, market, outcome STARTED, decisions, books, record(manual)}, 작업 기록은 STARTED 한 줄(manual:true). 다시 누르면 아무것도 하지 않고 그 출발 기록(ALREADY_STARTED — 같은 결정·같은 기록), 정기 작업도 ALREADY_DECIDED")
+    void manualStartIsTheScheduledStartAndIsIdempotent() {
+        Map<String, Object> out = pressAt("2026-11-30T22:35");
+
+        assertThat(out.keySet()).containsExactly("ok", "market", "outcome", "tradingDate", "message", "decisions", "books",
+                "record");
+        assertThat(out).containsEntry("ok", true).containsEntry("market", "KR")
+                .containsEntry("outcome", PaperDecisionJob.STARTED).containsEntry("tradingDate", "2026-11-30");
+        assertThat(krDecisions()).extracting(Decision::bookCode).containsExactly("kr_rules", "kr_bench_k200", "kr_bench_mix");
+        assertThat(decisionIds(out)).containsExactlyElementsOf(krDecisions().stream().map(d -> (Object) d.id()).toList());
+        assertThat(((List<?>) out.get("books")).stream().map(b -> String.valueOf(((Map<?, ?>) b).get("code"))).toList())
+                .containsExactly("kr_rules", "kr_claude", "kr_bench_k200", "kr_bench_mix");
+        JsonNode record = (JsonNode) out.get("record");
+        assertThat(record.path("manual").asBoolean()).isTrue();
+        assertThat(record.path("start").asBoolean()).isTrue();
+        assertThat(gateStatuses(record.path("gates"))).containsExactly("② PASS", "③ PASS", "④ PASS", "⑤ PASS", "⑥ PASS");
+        assertThat(krRuns()).singleElement().satisfies(run -> {
+            assertThat(run.outcome()).isEqualTo(PaperDecisionJob.STARTED);
+            assertThat(run.detail().path("manual").asBoolean()).isTrue();
+        });
+        int orders = store.orders.size();
+
+        Map<String, Object> again = pressAt("2026-11-30T22:40");
+        assertThat(again).containsEntry("ok", true).containsEntry("outcome", PaperDecisionJob.ALREADY_STARTED)
+                .containsEntry("tradingDate", "2026-11-30");
+        assertThat(decisionIds(again)).isEqualTo(decisionIds(out));
+        assertThat(again.get("record")).as("남아 있는 STARTED 기록 그대로").isEqualTo(krRuns().get(0).detail());
+        assertThat(store.orders).hasSize(orders);
+        assertThat(krRuns()).as("다시 누름은 기록하지 않음").hasSize(1);
+        assertThat(runAt("2026-11-30T22:50").outcome()).isEqualTo(PaperDecisionJob.ALREADY_DECIDED);
+        assertThat(pressAt("2026-12-02T12:00")).as("다음 날 낮에 눌러도 그 출발 기록")
+                .containsEntry("outcome", PaperDecisionJob.ALREADY_STARTED).containsEntry("tradingDate", "2026-11-30");
+    }
+
+    @Test
+    @DisplayName("F1b 수동 출발 단추는 창 밖에서 어떤 경우에도 출발을 내지 않음 — 출발일 전·결정 시각 전·출발 기한(S+1 01:00) 뒤는 400이고 기록도 남기지 않음(미룸 기록은 정기 작업이 한 번), 미룬 세션은 단추도 400")
+    void manualStartOnlyInsideTheWindow() {
+        sessionData(PREV, LocalDate.of(2026, 11, 26), everyCodeOn(PREV));
+        assertRefused(() -> pressAt("2026-11-27T22:40"), "한국 출발일 2026-11-30 전");
+        sessionData(S, PREV, everyCodeOn(S));
+        assertRefused(() -> pressAt("2026-11-30T21:00"), "출발 결정 시각 2026-11-30 22:30 KST 전");
+        assertRefused(() -> pressAt("2026-12-01T01:00"), "출발 결정 창(2026-11-30 22:30 KST ~ 2026-12-01 01:00 KST 전)이 지났습니다");
+        assertThat(krDecisions()).isEmpty();
+        assertNotStarted(store);
+        assertThat(krRuns()).as("단추는 미룸을 기록하지 않음").isEmpty();
+
+        assertThat(runAt("2026-12-01T01:05").outcome()).isEqualTo(PaperDecisionJob.START_POSTPONED);
+        assertThat(krRuns()).singleElement().satisfies(run -> {
+            assertThat(run.outcome()).isEqualTo(PaperDecisionJob.START_POSTPONED);
+            assertThat(run.detail().has("manual")).isFalse();
+        });
+        assertRefused(() -> pressAt("2026-12-01T01:10"), "창");
+        assertThat(krRuns()).hasSize(1);
+    }
+
+    @Test
+    @DisplayName("F1b 수동 출발 단추 — 자료 게이트 미달이면 400(쓰기·기다림 줄 없음), 자료가 오면 같은 창에서 출발. book·preview를 보내면 400(네 계좌 함께 — 미리보기 없음)")
+    void manualStartNeedsTheGates() {
+        sessionData(S, LocalDate.of(2026, 11, 26), everyCodeOn(S));
+        assertRefused(() -> pressAt("2026-11-30T22:35"), "자료 게이트 미달");
+        assertRefused(() -> pressAt("2026-11-30T22:35"), "④");
+        assertThat(krRuns()).isEmpty();
+        assertThat(krDecisions()).isEmpty();
+        for (PaperDecisionController.InitialDecisionRequest body : List.of(
+                new PaperDecisionController.InitialDecisionRequest(PaperBooks.KR_RULES, null),
+                new PaperDecisionController.InitialDecisionRequest(null, true),
+                new PaperDecisionController.InitialDecisionRequest(null, false))) {
+            assertRefused(() -> route().runInitialDecision("KR", body), "book·preview 없이");
+        }
+
+        sessionData(S, PREV, everyCodeOn(S));
+        assertThat(pressAt("2026-11-30T22:45")).containsEntry("outcome", PaperDecisionJob.STARTED);
+    }
+
+    @Test
+    @DisplayName("F1b 수동 출발 단추의 Claude 몫은 수동 호출 문턱(상한 20 − 예약 7 = 13): 그날 13회를 썼으면 부르지 않고 네 계좌 모두 미룸(ok:false·START_POSTPONED, 기록 manual:true — 정기 출발은 13 뒤에도 부름, fourBooksStartTogether), 그 세션은 단추도 정기 작업도 다시 계획하지 않음")
+    void manualStartUsesTheManualCallLimit() {
+        KrClaudeFixtures.FakeAi fake = new KrClaudeFixtures.FakeAi();
+        fake.answer(KrClaudeFixtures.decision(0, "관망"));
+        realClaude(fake);
+        macroCards(S, kst("2026-11-30T22:25"));
+        store.apiUsage.put(S, new com.macrodash.store.PaperStore.ApiUsage(S, 13, 0, 0, 0, 0));
+
+        Map<String, Object> out = pressAt("2026-11-30T22:35");
+
+        assertThat(out).containsEntry("ok", false).containsEntry("outcome", PaperDecisionJob.START_POSTPONED);
+        assertThat((String) out.get("message")).contains("kr_claude").contains("수동 호출은 13회까지")
+                .contains("apiScheduledReserve").contains("2026-12-01");
+        assertThat(fake.requests).isEmpty();
+        assertThat(krDecisions()).isEmpty();
+        assertNotStarted(store);
+        assertThat(krRuns()).singleElement().satisfies(run -> {
+            assertThat(run.outcome()).isEqualTo(PaperDecisionJob.START_POSTPONED);
+            assertThat(run.detail().path("manual").asBoolean()).isTrue();
+            assertThat(run.detail().path("reason").asString()).contains("정기 작업 몫 7회");
+        });
+
+        assertRefused(() -> pressAt("2026-11-30T22:40"), "이미 다음 KR 거래일로 미뤘습니다");
+        assertThat(runAt("2026-11-30T22:50").outcome()).as("정기 작업도 다시 계획하지 않음(E0)")
+                .isEqualTo(PaperDecisionJob.START_POSTPONED);
+        assertThat(fake.requests).isEmpty();
+        assertThat(krRuns()).hasSize(1);
+    }
+
+    @Test
+    @DisplayName("F1b 수동 출발 단추 — 그날 12회를 썼으면 13회째로 Claude를 한 번 불러 네 계좌가 함께 출발(실제 한국 Claude 경로)")
+    void manualStartStartsFourBooksUnderTheManualLimit() {
+        KrClaudeFixtures.FakeAi fake = new KrClaudeFixtures.FakeAi();
+        fake.answer(KrClaudeFixtures.decision(0, "관망"));
+        realClaude(fake);
+        macroCards(S, kst("2026-11-30T22:25"));
+        store.apiUsage.put(S, new com.macrodash.store.PaperStore.ApiUsage(S, 12, 0, 0, 0, 0));
+
+        Map<String, Object> out = pressAt("2026-11-30T22:35");
+
+        assertThat(out).containsEntry("ok", true).containsEntry("outcome", PaperDecisionJob.STARTED);
+        assertThat(krDecisions()).extracting(Decision::bookCode)
+                .containsExactly("kr_rules", "kr_claude", "kr_bench_k200", "kr_bench_mix");
+        assertThat(fake.requests).hasSize(1);
+        assertThat(store.apiUsage(S).map(com.macrodash.store.PaperStore.ApiUsage::calls)).contains(13);
+        for (String code : List.of("kr_rules", "kr_claude", "kr_bench_k200", "kr_bench_mix")) {
+            assertThat(store.books.get(code).status()).as(code).isEqualTo(PaperBooks.ACTIVE);
+        }
+    }
+
+    @Test
+    @DisplayName("F1b 수동 출발 단추 — 과금 몫 없는 쓰기 오류는 정기 출발과 같은 출발 오류 기록(ERROR·start·attempt 1·manual — 그 세션 출발 오류 횟수에 셈, ok:false), 오류가 풀리면 다시 눌러 출발")
+    void manualStartWriteErrorIsAStartError() {
+        failShortBond.set(true);
+
+        Map<String, Object> failed = pressAt("2026-11-30T22:35");
+
+        assertThat(failed).containsEntry("ok", false).containsEntry("outcome", PaperDecisionJob.ERROR);
+        assertThat((String) failed.get("message")).contains("시험용 주문 실패");
+        assertThat(krRuns()).singleElement().satisfies(run -> {
+            assertThat(run.outcome()).isEqualTo(PaperDecisionJob.ERROR);
+            assertThat(run.detail().path("start").asBoolean()).isTrue();
+            assertThat(run.detail().path("manual").asBoolean()).isTrue();
+            assertThat(run.detail().path("attempt").asInt()).isEqualTo(1);
+        });
+        assertThat(KrStartPipeline.startErrors(krRuns())).isEqualTo(1);
+        assertThat(krDecisions()).as("한 트랜잭션 — 되돌림").isEmpty();
+
+        failShortBond.set(false);
+        assertThat(pressAt("2026-11-30T22:40")).containsEntry("outcome", PaperDecisionJob.STARTED);
+    }
 }

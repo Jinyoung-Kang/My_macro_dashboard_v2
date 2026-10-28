@@ -185,6 +185,28 @@ public class PaperDecisionJob {
                          String message) {
     }
 
+    /** 수동 출발 단추가 받은 장부가 이미 출발했음 — 그 출발 기록을 돌려줌({@link #startNow}). */
+    public static final String ALREADY_STARTED = "ALREADY_STARTED";
+
+    /**
+     * 수동 출발 단추({@link #startNow}) 한 번의 결과.
+     *
+     * @param outcome     {@value #STARTED}(이번에 출발) · {@value #ALREADY_STARTED}(이미 출발 — 그 기록) · {@value #START_POSTPONED}(계획 실패로 그
+     *                    세션을 미룸 — 저장된 미룸 기록) · {@value #ERROR}(출발 쓰기 오류 — 출발 오류 기록)
+     * @param tradingDate 출발 결정의 기준 거래일 D(이미 출발이면 그 출발일, 모르면 null)
+     * @param decisions   출발 결정(INITIAL — 이번에 쓴 것 또는 이미 있는 것, 계좌 정의 순)
+     * @param books       그 시장의 계좌 코드(정의 순 — 있는 것만)
+     * @param record      그 출발의 작업 기록 상세({@code kr.decision} — 이번에 남긴 것, 이미 출발이면 남아 있는 STARTED 기록, 없으면 null)
+     */
+    public record StartNow(String outcome, LocalDate tradingDate, String message, List<Decision> decisions,
+                           List<String> books, JsonNode record) {
+
+        public StartNow {
+            decisions = List.copyOf(decisions);
+            books = List.copyOf(books);
+        }
+    }
+
     /** 설정의 결정 시각과 마감 기한(KST) — 읽은 값 그대로(기한의 순간은 시장 규칙 {@link PaperMarket#deadlineInstant}). */
     record Times(LocalTime decision, LocalTime deadline) {
     }
@@ -311,9 +333,16 @@ public class PaperDecisionJob {
             @Override
             public KrStartPipeline.Plan plan(MarketRun run, LocalDate session, Instant deadline,
                                              KrDecisionGates.Checked gates) {
+                return plan(run, session, deadline, gates, true);
+            }
+
+            /** 수동 출발 단추면 그 서비스 몫도 수동 호출 문턱으로({@link KrStartPipeline.Leg#plan(MarketRun, LocalDate, Instant, KrDecisionGates.Checked, boolean)}). */
+            @Override
+            public KrStartPipeline.Plan plan(MarketRun run, LocalDate session, Instant deadline,
+                                             KrDecisionGates.Checked gates, boolean scheduled) {
                 KrStartPipeline.Leg leg = claude.krStartLeg();
                 return leg == null ? KrStartPipeline.Plan.notYet(book(), KrStartPipeline.CLAUDE_NOT_YET)
-                        : leg.plan(run, session, deadline, gates);
+                        : leg.plan(run, session, deadline, gates, scheduled);
             }
         };
     }
@@ -951,7 +980,7 @@ public class PaperDecisionJob {
      * 한국 출발 한 번({@link KrStartPipeline}) — STARTED와 그 세션 기록이 아직 없는 미룸을 기록하고, 자료 게이트 기다림은 그 세션 기다림 한 줄로
      * 남깁니다({@link #recordWait}). 출발을 쓰다 예외가 나면 ERROR로 기록하고(그 기록이 곧 그 세션 출발 오류 횟수 — 저장된 기록이라 재기동해도 같음,
      * {@link KrStartPipeline#startErrors}, 묶음 E 2차 리뷰), {@value #MAX_ATTEMPTS}번이면 그 세션 기한까지 더 시도하지 않습니다(기한이 지나면 미룸 —
-     * 수동 출발 단추는 E2). 과금된 Claude 계획이 든 출발의 쓰기 오류는 오류가 아니라 그 세션 미룸입니다(파이프라인이 돌림 — 다음 주기에 Claude를
+     * 수동 출발 단추는 {@link #startNow}가 같은 파이프라인을 창 안에서만 돌림). 과금된 Claude 계획이 든 출발의 쓰기 오류는 오류가 아니라 그 세션 미룸입니다(파이프라인이 돌림 — 다음 주기에 Claude를
      * 다시 부르지 않게, 묶음 E 2차 리뷰).
      */
     private Result startKr(MarketRun market, Instant now, LocalDate d) {
@@ -985,6 +1014,118 @@ public class PaperDecisionJob {
             }
         }
         return new Result(start.outcome(), start.session(), null, null, null, start.message());
+    }
+
+    /**
+     * 수동 출발 단추(POST /api/paper/run/initial-decision?market=KR — 2단계 명세 §4-8 '같은 게이트·같은 기한 안에서 정기 작업을 앞당기는 수동 단추', F1).
+     * 결정 작업의 잠금을 기다린 뒤({@link #runNow(PaperMarket, String)}와 같음) 한국 계좌가 모두 시작 전이면 정기 출발과 같은 파이프라인
+     * ({@link KrStartPipeline#run(MarketRun, Instant, boolean)} — 같은 창·같은 자료 게이트 ②~⑥·같은 네 계좌 몫·한 트랜잭션, Claude 몫은 수동 호출 문턱
+     * 상한 − 예약)을 한 번 돌립니다.
+     *
+     * <ul>
+     *   <li>한 계좌라도 운용·일시정지면(이미 출발) 아무것도 하지 않고 그 출발 기록({@value #ALREADY_STARTED} — 출발 결정 INITIAL과 남아 있는 STARTED
+     *       작업 기록)을 돌려줍니다 — 몇 번 눌러도 같음(멱등)</li>
+     *   <li>출발하면 {@value #STARTED} — 작업 기록은 정기 출발과 같은 STARTED 줄에 {@code manual:true}</li>
+     *   <li>계좌 몫의 계획이 실패하면(Claude 상한·오류·기한) 정기 출발과 같이 그 세션을 미루고 그 미룸을 기록합니다({@value #START_POSTPONED}, {@code manual:true}
+     *       — 그 세션은 정기 작업도 다시 계획하지 않음, E0)</li>
+     *   <li>과금 몫 없는 쓰기 오류는 정기 출발과 같은 출발 오류 기록({@value #ERROR}·{@code start:true}·{@code attempt}, {@code manual:true} — 그 세션 출발 오류
+     *       횟수에 셈)</li>
+     * </ul>
+     *
+     * @throws InvalidRequestException 한국 출발이 없는 시장(미국은 계좌별 시작 — {@code book})·그 시장이 쉬는 중(출발일·계좌 없음)·그 시장 달력이 앞 창의
+     *                                 해를 모름 · 출발 결정 창 밖(출발일 전·창이 열리기 전·출발 기한 뒤 — 미룸 기록을 쓰지 않음) · 그 세션은 이미 미룸 ·
+     *                                 그 세션 출발 오류가 상한 · 자료 게이트 미달 · 설정 행·계좌 없음 — 모두 아무것도 쓰지 않고 부르지 않음
+     */
+    StartNow startNow(PaperMarket requested) {
+        if (requested.definition() != KrPaperMarket.INSTANCE) {
+            throw new InvalidRequestException(requested.code() + " 시장에는 네 계좌 함께 출발이 없습니다 — 계좌마다 시작(book)을 보내세요");
+        }
+        String dormant = dormantReason(requested);
+        if (dormant != null) {
+            throw new InvalidRequestException(dormant);
+        }
+        running.lock();
+        try {
+            Instant now = clock.instant();
+            MarketRun market = markets.open(requested);
+            try {
+                market.requireCalendarWindow(now);
+            } catch (CalendarUnavailableException e) {
+                throw new InvalidRequestException(e.getMessage());
+            }
+            LocalDate d = market.calendar().lastCompletedSession(now);
+            if (!krStart.pending(market)) {
+                return alreadyStarted(market);
+            }
+            KrStartPipeline.Result start;
+            try {
+                start = krStart.run(market, now, false);
+            } catch (RuntimeException e) {
+                // 과금된 계획(Claude)이 든 쓰기 오류는 파이프라인이 미룸으로 돌립니다 — 여기 오는 오류에는 과금 호출이 없습니다(startKr와 같음).
+                Map<String, Object> detail = new LinkedHashMap<>();
+                detail.put("start", true);
+                detail.put("manual", true);
+                detail.put("tradingDate", d.toString());
+                detail.put("error", message(e));
+                Integer attempt = startAttempt(market, d);
+                if (attempt != null) {
+                    detail.put("attempt", attempt);
+                }
+                record(market, now, ERROR, detail);
+                return new StartNow(ERROR, d, message(e), List.of(), bookCodes(market), mapper.valueToTree(detail));
+            }
+            switch (start.outcome()) {
+                case STARTED, START_POSTPONED -> {
+                    Map<String, Object> detail = new LinkedHashMap<>(start.detail());
+                    detail.put("manual", true);
+                    if (start.record()) {
+                        record(market, now, start.outcome(), detail);
+                    }
+                    if (START_POSTPONED.equals(start.outcome())) {
+                        log.info("모의 매매 수동 출발({}): {}", market.code(), start.message());
+                    }
+                    return new StartNow(start.outcome(), start.session(), start.message(), start.decisions(),
+                            bookCodes(market), mapper.valueToTree(detail));
+                }
+                case ALREADY_DECIDED -> {
+                    // 그사이 다른 실행이 출발시킴(쓰기 트랜잭션 안의 다시 보기) — 그 출발 기록.
+                    return alreadyStarted(market);
+                }
+                default -> throw new InvalidRequestException("수동 출발을 내지 않았습니다(" + start.outcome() + ") — "
+                        + start.message());
+            }
+        } finally {
+            running.unlock();
+        }
+    }
+
+    /** 이미 출발한 한국 장부의 출발 기록 — 계좌마다 출발일의 INITIAL 결정, 그 출발일의 STARTED 작업 기록(남아 있으면). */
+    private StartNow alreadyStarted(MarketRun market) {
+        List<Decision> decisions = new ArrayList<>();
+        LocalDate session = null;
+        for (PaperBooks.Definition definition : market.books()) {
+            Optional<Book> book = store.book(definition.code());
+            if (book.isEmpty() || book.get().startedOn() == null) {
+                continue;
+            }
+            LocalDate startedOn = book.get().startedOn();
+            store.decisionFor(definition.code(), startedOn, RuleBookService.INITIAL).ifPresent(decisions::add);
+            session = session == null || startedOn.isBefore(session) ? startedOn : session;
+        }
+        JsonNode record = null;
+        if (session != null) {
+            record = store.jobRunsFor(market.jobName(JOB), session).stream()
+                    .filter(run -> STARTED.equals(run.outcome())).findFirst().map(PaperStore.JobRun::detail).orElse(null);
+        }
+        String message = session == null ? "한국 계좌가 이미 시작 전이 아닙니다 — 다시 출발하지 않습니다"
+                : "한국 계좌는 " + session + "에 출발했습니다 — 다시 출발하지 않고 그 출발 기록을 돌려줍니다";
+        return new StartNow(ALREADY_STARTED, session, message, decisions, bookCodes(market), record);
+    }
+
+    /** 그 시장 계좌 중 있는 것의 코드(정의 순). */
+    private List<String> bookCodes(MarketRun market) {
+        return market.books().stream().map(PaperBooks.Definition::code).filter(code -> store.book(code).isPresent())
+                .toList();
     }
 
     /**

@@ -1,5 +1,6 @@
 package com.macrodash.feature.paper;
 
+import com.macrodash.support.InvalidRequestException;
 import com.macrodash.support.Params;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -21,7 +22,8 @@ import java.util.Map;
  *  GET  /api/paper/decisions?book=rules&amp;limit=50  결정 목록(최근 순, 1–500)
  *  GET  /api/paper/decisions/{id}                    결정 한 건(선정·신호·주문·게이트 참고)과 그 주문
  *  POST /api/paper/run/decision?market=US            {"book"} 수동 결정(MANUAL — 미국은 시각 조건 없이 한 번, 한국은 kr_claude만·결정 창·자료 게이트 안에서)
- *  POST /api/paper/run/initial-decision              {"book", "preview"?} 시작(초기 결정 + 출발일 사후 체결)
+ *  POST /api/paper/run/initial-decision?market=US    {"book", "preview"?} 시작(초기 결정 + 출발일 사후 체결) — 한국은 본문 없이 네 계좌 함께
+ *                                                    출발(정기 출발과 같은 창·게이트, 이미 출발했으면 그 기록)
  * </pre>
  *
  * <p>Claude 책({@code book:"claude"})의 수동 결정·미리보기·시작은 Claude를 한 번 부릅니다(하루 호출 상한에 셈, 설정
@@ -93,10 +95,18 @@ public class PaperDecisionController {
         return out;
     }
 
+    /**
+     * {@code market}이 KR이면 한국 수동 출발 단추({@link #krStart} — 네 계좌 함께, 본문 없이), 없거나 US면 미국 응답 그대로(계좌별 시작·미리보기).
+     */
     @PostMapping("/run/initial-decision")
-    public Map<String, Object> runInitialDecision(@RequestBody(required = false) InitialDecisionRequest body) {
+    public Map<String, Object> runInitialDecision(@RequestParam(required = false) String market,
+                                                  @RequestBody(required = false) InitialDecisionRequest body) {
+        PaperMarket requested = markets.requested(market);
         if (!query.ready()) {
             return notReady();
+        }
+        if (requested != UsPaperMarket.INSTANCE) {
+            return krStart(requested, body);
         }
         String book = Params.oneOf("book", body == null ? null : body.book(),
                 List.of(PaperBooks.RULES, PaperBooks.CLAUDE));
@@ -118,6 +128,31 @@ public class PaperDecisionController {
         out.put("decision", query.decisionSummary(result.decision()));
         out.put("fills", query.fillRows(result.fills()));
         out.put("book", query.bookSummary(PaperBooks.RULES));
+        return out;
+    }
+
+    /**
+     * 한국 수동 출발(2단계 명세 §4-8, F1 — {@link PaperDecisionJob#startNow}) → {@code {ok, market, outcome, tradingDate, message, decisions:[목록 한 줄],
+     * books:[BookSummary], record}}. 정기 출발과 같은 창·게이트·기한 안에서 네 계좌를 함께 출발시키고, 이미 출발했으면 그 출발 기록
+     * ({@code ALREADY_STARTED})을 돌려줍니다. {@code ok}는 출발함·이미 출발함이면 참, 그 세션을 미룸·쓰기 오류면 거짓. 미국 시작의 {@code book}·
+     * {@code preview}는 받지 않습니다(400 — 네 계좌가 함께 출발하고 한국 미리보기는 없음). 창 밖·이미 미룸·게이트 미달·쉬는 한국도 400.
+     */
+    private Map<String, Object> krStart(PaperMarket market, InitialDecisionRequest body) {
+        if (body != null && (body.book() != null || body.preview() != null)) {
+            throw new InvalidRequestException(market.code() + " 출발은 네 계좌가 함께 냅니다 — book·preview 없이 보내세요(미리보기 없음)");
+        }
+        var started = job.startNow(market);
+        boolean ok = PaperDecisionJob.STARTED.equals(started.outcome())
+                || PaperDecisionJob.ALREADY_STARTED.equals(started.outcome());
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("ok", ok);
+        out.put("market", market.code());
+        out.put("outcome", started.outcome());
+        out.put("tradingDate", started.tradingDate() == null ? null : started.tradingDate().toString());
+        out.put("message", started.message());
+        out.put("decisions", started.decisions().stream().map(query::decisionSummary).toList());
+        out.put("books", started.books().stream().map(query::bookSummary).toList());
+        out.put("record", started.record());
         return out;
     }
 

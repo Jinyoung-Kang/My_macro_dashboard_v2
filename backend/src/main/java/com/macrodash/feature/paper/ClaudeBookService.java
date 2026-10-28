@@ -715,6 +715,9 @@ public class ClaudeBookService {
      * ({@link ClaudeDecisionPipeline.CallWindow})(사용자 결정 w12 — 예전에는 1초. 기한을 넘겨 끝난 계획은 쓰기 트랜잭션이
      * 다시 막음 — 마지막 방어선) · 응답을 받은 뒤 검증 예외. 실패의 사유는 작업 기록(출발 미룸)에 남고, 과금된 호출은 그날
      * 사용량에 셉니다.
+     *
+     * <p><b>수동 출발 단추</b>({@code run/initial-decision?market=KR} — F1, 계획의 {@code scheduled=false}): 같은 계획이되 호출 문턱이 수동 호출의
+     * 상한 − 정기 작업 몫 예약입니다(2단계 명세 §4-10·§9 'E2b 메모' — 그 단추는 수동 문턱을 씀). 문턱에 막힌 문구도 수동 호출의 것입니다.
      */
     KrStartPipeline.Leg krStartLeg() {
         ClaudeDecisionPipeline base = pipelines.get(KrPaperMarket.INSTANCE.code());
@@ -735,8 +738,14 @@ public class ClaudeBookService {
             @Override
             public KrStartPipeline.Plan plan(MarketRun run, LocalDate session, Instant deadline,
                                              KrDecisionGates.Checked gates) {
+                return plan(run, session, deadline, gates, true);
+            }
+
+            @Override
+            public KrStartPipeline.Plan plan(MarketRun run, LocalDate session, Instant deadline,
+                                             KrDecisionGates.Checked gates, boolean scheduled) {
                 try {
-                    return krStartPlan(base, run, session, deadline, gates);
+                    return krStartPlan(base, run, session, deadline, gates, scheduled);
                 } catch (RuntimeException e) {
                     log.warn("한국 Claude 계좌 출발 계획 실패({}): {}", session, e.toString());
                     return KrStartPipeline.Plan.failed(book(), startFailure(e));
@@ -774,8 +783,11 @@ public class ClaudeBookService {
                 .withCalls(callsView(trace));
     }
 
+    /**
+     * @param scheduled 정기 출발(하루 상한까지)이면 참, 수동 출발 단추(상한 − 정기 작업 몫 예약까지)면 거짓
+     */
     private KrStartPipeline.Plan krStartPlan(ClaudeDecisionPipeline base, MarketRun run, LocalDate session,
-                                             Instant deadline, KrDecisionGates.Checked gates) {
+                                             Instant deadline, KrDecisionGates.Checked gates, boolean scheduled) {
         requireReady();
         ClaudeDecisionPipeline pipeline = base.bind(run);
         String book = run.claudeBook();
@@ -810,15 +822,15 @@ public class ClaudeBookService {
             // 재시도는 첫 호출의 패킷 그대로(읽은 순간의 판 — 첫 호출 동안 다시 쓰인 저장본이 빠지지 않게, 묶음 E 리뷰).
             Attempt next;
             try {
-                next = pipeline.callsLeft(today, claude, true) <= 0 ? null
+                next = pipeline.callsLeft(today, claude, scheduled) <= 0 ? null
                         : attempt == null
-                        ? pipeline.attempt(session, RuleBookService.INITIAL, true, row, claude, today, true, observed, window)
-                        : pipeline.again(attempt, row, claude, today, true, window);
+                        ? pipeline.attempt(session, RuleBookService.INITIAL, true, row, claude, today, scheduled, observed, window)
+                        : pipeline.again(attempt, row, claude, today, scheduled, window);
             } catch (ClaudeDecisionPipeline.WindowClosed closed) {
                 return tooLateToCall(book, deadline, closed.secondsLeft(), attempt, trace);
             }
             if (next == null) {
-                return KrStartPipeline.Plan.failed(book, capMessage(claude, today, true)
+                return KrStartPipeline.Plan.failed(book, capMessage(claude, today, scheduled)
                         + (calls == 0 ? "" : "(첫 호출 " + statusLabel(attempt.status()) + " 뒤 재시도)"))
                         .withCalls(callsView(trace));
             }
@@ -843,10 +855,10 @@ public class ClaudeBookService {
                 // 하루 상한(정기 작업 몫)도 기다리기 전에 — 그 429가 마지막 자리를 썼으면 기다려 봐야 상한 문구로 끝남. 창이 KST 자정을 넘으므로
                 // 기다린 뒤의 날짜로 봄(23:59:3x의 429는 기다린 뒤 새 날 상한으로 부를 수 있음). 기다린 뒤에는 루프 맨 앞이 다시 봄.
                 LocalDate afterWait = LocalDate.ofInstant(clock.instant().plus(KR_START_RATE_LIMIT_WAIT), Kst.ZONE);
-                if (pipeline.callsLeft(afterWait, claude, true) <= 0) {
+                if (pipeline.callsLeft(afterWait, claude, scheduled) <= 0) {
                     log.warn("한국 Claude 계좌 출발 호출 429 — 하루 상한이 남지 않아 {}초 기다린 재시도를 하지 않습니다({}): {}", waitSeconds,
                             session, attempt.error());
-                    return KrStartPipeline.Plan.failed(book, capMessage(claude, afterWait, true)
+                    return KrStartPipeline.Plan.failed(book, capMessage(claude, afterWait, scheduled)
                             + "(첫 호출 " + statusLabel(attempt.status()) + " 뒤 재시도)").withCalls(callsView(trace));
                 }
                 log.warn("한국 Claude 계좌 출발 호출 429 — {}초 기다린 뒤 한 번 더 부릅니다({}): {}", waitSeconds, session, attempt.error());
