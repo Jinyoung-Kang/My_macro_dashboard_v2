@@ -126,6 +126,23 @@ const CASES: Case[] = [
   })),
   { name: "paper.archiveNote", before: `/api/paper/notes/${9}`, after: endpoints.paper.archiveNote(9) },
   { name: "paper.review", before: `/api/paper/reviews/${"2026-10-30"}`, after: endpoints.paper.review("2026-10-30") },
+  // 시장 단위 경로(2단계 명세 §4-16): 미국은 옛 주소 그대로(?market 없음), 한국은 ?market=KR(메모 목록은 includeExpired 뒤).
+  { name: "paper.market(US).overview", before: "/api/paper/overview", after: endpoints.paper.market("US").overview },
+  { name: "paper.market(KR).overview", before: "/api/paper/overview?market=KR", after: endpoints.paper.market("KR").overview },
+  { name: "paper.market(KR).status", before: "/api/paper/status?market=KR", after: endpoints.paper.market("KR").status },
+  { name: "paper.market(KR).init", before: "/api/paper/init?market=KR", after: endpoints.paper.market("KR").init },
+  { name: "paper.market(KR).runRisk", before: "/api/paper/run/risk?market=KR", after: endpoints.paper.market("KR").runRisk },
+  { name: "paper.market(KR).runInitialDecision", before: "/api/paper/run/initial-decision?market=KR",
+    after: endpoints.paper.market("KR").runInitialDecision },
+  ...[true, false].map((includeExpired) => ({
+    name: `paper.market(KR).notes includeExpired=${includeExpired}`,
+    before: `/api/paper/notes?includeExpired=${includeExpired}&market=KR`,
+    after: endpoints.paper.market("KR").notes(includeExpired),
+  })),
+  { name: "paper.market(KR).reviews", before: "/api/paper/reviews?market=KR", after: endpoints.paper.market("KR").reviews },
+  { name: "paper.market(KR).review", before: `/api/paper/reviews/${"2026-10-30"}?market=KR`,
+    after: endpoints.paper.market("KR").review("2026-10-30") },
+  { name: "paper.market(KR).runReview", before: "/api/paper/reviews/run?market=KR", after: endpoints.paper.market("KR").runReview },
 ];
 
 describe("API 경로 — 예전 조립식과 서버가 받는 값이 같다", () => {
@@ -164,6 +181,31 @@ describe("모의 매매 프레임·메모 경로", () => {
     expect(endpoints.paper.createNote).toBe("/api/paper/notes");
     expect(endpoints.paper.archiveNote(12)).toBe("/api/paper/notes/12");
     expect(endpoints.paper.approveProposal(12)).toBe("/api/paper/framework/proposals/12/approve");
+  });
+});
+
+describe("모의 매매 시장 단위 경로", () => {
+  it("미국(market('US'))은 옛 키와 글자까지 같다 — 미국 화면 호출부·테스트 mock이 경로로 맞춤", () => {
+    const us = endpoints.paper.market("US");
+    expect(us.overview).toBe(endpoints.paper.overview);
+    expect(us.status).toBe(endpoints.paper.status);
+    expect(us.init).toBe(endpoints.paper.init);
+    expect(us.runRisk).toBe(endpoints.paper.runRisk);
+    expect(us.runDecision).toBe(endpoints.paper.runDecision);
+    expect(us.runInitialDecision).toBe(endpoints.paper.runInitialDecision);
+    expect(us.reviews).toBe(endpoints.paper.reviews);
+    expect(us.runReview).toBe(endpoints.paper.runReview);
+    for (const includeExpired of [true, false]) expect(us.notes(includeExpired)).toBe(endpoints.paper.notes(includeExpired));
+    expect(us.review("2026-10-30")).toBe(endpoints.paper.review("2026-10-30"));
+  });
+
+  it("한국은 끝에 ?market=KR — 같은 경로에 시장 값만 더함(메모 쓰기는 본문 market이라 createNote 그대로)", () => {
+    const kr = endpoints.paper.market("KR");
+    expect(kr.overview).toBe("/api/paper/overview?market=KR");
+    expect(kr.runDecision).toBe("/api/paper/run/decision?market=KR");
+    expect(kr.notes(true)).toBe("/api/paper/notes?includeExpired=true&market=KR");
+    expect(kr.review("2026-10-30")).toBe("/api/paper/reviews/2026-10-30?market=KR");
+    expect(endpoints.paper.createNote).toBe("/api/paper/notes");
   });
 });
 
@@ -207,6 +249,6 @@ describe("docs/API.md 백엔드 표와 대조", () => {
     const paths = [...strings, ...CASES.map(({ after }) => after)].map(documentedForm);
     expect(paths.filter((path) => !documented.has(path))).toEqual([]);
     // 경로를 만드는 함수는 모두 위 CASES에 한 줄 이상 있습니다. 새 함수를 만들었다면 CASES에 추가하고 이 숫자를 고치세요.
-    expect(functions).toBe(53);
+    expect(functions).toBe(54);
   });
 });

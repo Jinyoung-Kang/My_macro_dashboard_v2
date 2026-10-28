@@ -168,8 +168,31 @@ export const endpoints = {
     test: (engineId: string, prompt: string) => withQuery("/api/ai/test", { engineId, prompt }),
   },
 
-  // 🧪 모의 알고리즘 매매(운영자 전용). code는 책 코드(rules · claude · bench_spy · bench_mix).
+  // 🧪 모의 알고리즘 매매(운영자 전용). code는 책 코드(rules · claude · bench_spy · bench_mix · kr_rules · kr_claude · kr_bench_k200 · kr_bench_mix).
   paper: {
+    /**
+     * 시장 단위 경로(2단계 명세 §4-16, docs/API.md '시장 단위 조회·실행') — 개요·상태·초기화·리스크 점검·수동 결정·시작·메모 목록·복기.
+     * 미국("US")은 아래 옛 키와 글자까지 같은 주소(`?market` 없음 — 서버는 없으면 미국), 한국("KR")은 끝에 `?market=KR`
+     * (메모 목록은 includeExpired 뒤). 메모 쓰기는 본문 `market`이라 `createNote` 그대로, 계좌 코드 경로(/books/{code}/…)와 결정
+     * 목록·한 건은 계좌 코드가 시장을 정해 그대로입니다.
+     */
+    market: (m: "US" | "KR") => {
+      const korea = m === "KR";
+      const scoped = (path: string) => (korea ? withQuery(path, { market: "KR" }) : path);
+      return {
+        overview: scoped("/api/paper/overview"),
+        status: scoped("/api/paper/status"),
+        init: scoped("/api/paper/init"),
+        runRisk: scoped("/api/paper/run/risk"),
+        runDecision: scoped("/api/paper/run/decision"),
+        runInitialDecision: scoped("/api/paper/run/initial-decision"),
+        notes: (includeExpired: boolean) =>
+          withQuery("/api/paper/notes", { includeExpired, market: korea ? "KR" : undefined }),
+        reviews: scoped("/api/paper/reviews"),
+        review: (weekEnding: string) => scoped(`/api/paper/reviews/${segment(weekEnding)}`),
+        runReview: scoped("/api/paper/reviews/run"),
+      };
+    },
     overview: "/api/paper/overview",
     status: "/api/paper/status",
     init: "/api/paper/init",
