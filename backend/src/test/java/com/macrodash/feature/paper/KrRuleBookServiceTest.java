@@ -492,13 +492,15 @@ class KrRuleBookServiceTest {
                         .contains("지금은 체결할 수 없음(미처리 기업행위 보유").contains("게이트 ①은 그 주문을 기다리지 않음"))
                 .anySatisfy(note -> assertThat(note).startsWith("034020 매도 신호")
                         .contains("지금은 체결할 수 없음(이번 관측치에 그 종목 봉이 없음)"));
-        // 그 매도 대금은 현금 어림에서 뺐음(u3·u4 ⑤) — 선정한 날이라 종목·153130 매수를 다음 시가 현금으로 정한다는 것과 풀려서 팔린 뒤의
-        // 대금이 갈 곳(남는 현금 규칙)을 같은 note에 적음.
+        // 그 매도 대금은 현금 어림에서 뺐음(u3·u4 ⑤) — 선정한 날이라 종목·153130 매수를 다음 시가 현금으로 정한다는 것(매일 결정의
+        // '남는 현금 153130 매수는' 꼬리가 아님)과 풀려서 팔린 뒤의 대금이 갈 곳(남는 현금 규칙)을 같은 note에 적음.
         assertThat(decision.response().path("notes")).extracting(JsonNode::asString)
                 .filteredOn(note -> note.contains("지금은 체결할 수 없음")).hasSize(2)
                 .allSatisfy(note -> assertThat(note).contains("그 매도 대금은 현금 어림에서 뺐음")
-                        .contains("다음 시가에 있을 현금으로 정함")
+                        .contains("종목·153130 매수(모자라면 153130 일부 매도, 그래도 모자라면 종목 매수를 낮은 순위부터 줄임)는 "
+                                + "다음 시가에 있을 현금으로 정함")
                         .contains("다음 결정의 남는 현금 규칙(기준 2.0%를 넘을 때만 153130)")
+                        .doesNotContain("남는 현금 153130 매수는")
                         .doesNotContain("현금 어림에 넣었음"));
     }
 
@@ -522,7 +524,8 @@ class KrRuleBookServiceTest {
                 .isLessThanOrEqualTo(java.math.BigDecimal.valueOf(80_000_000));
         assertThat(rebalance.response().path("notes")).extracting(JsonNode::asString).anySatisfy(note ->
                 assertThat(note).startsWith("000660 매도 신호(재선정 — 후보 밖)").contains("2026-11-02 거래정지")
-                        .contains("그 매도 대금은 현금 어림에서 뺐음"));
+                        .contains("그 매도 대금은 현금 어림에서 뺐음").contains("종목·153130 매수(모자라면 153130 일부 매도")
+                        .doesNotContain("남는 현금 153130 매수는"));
     }
 
     @Test
@@ -699,7 +702,8 @@ class KrRuleBookServiceTest {
                 .anySatisfy(note -> assertThat(note).startsWith("373220 대기 매도 — 지금은 체결할 수 없음(2026-11-03 거래정지")
                         .contains("그 대금을 현금 어림에서 뺐음"))
                 .anySatisfy(note -> assertThat(note).startsWith("000660 매도 신호(재선정 — 후보 밖)")
-                        .contains("그 매도 대금은 현금 어림에서 뺐음"));
+                        .contains("그 매도 대금은 현금 어림에서 뺐음").contains("종목·153130 매수(모자라면 153130 일부 매도")
+                        .doesNotContain("남는 현금 153130 매수는"));
     }
 
     @Test
