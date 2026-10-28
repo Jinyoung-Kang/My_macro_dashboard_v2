@@ -366,12 +366,17 @@ class KrStartTest {
     }
 
     @Test
-    @DisplayName("K28(E2b) — 출발 패킷은 읽은 순간(S 22:30) 뒤에 수집된 저장본을 쓰지 않음: 22:31에 수집된 매크로 카드는 빠지고 사유가 남음(결정 시각 전 S 밤 판만 — §5 출발)")
+    @DisplayName("K28(E2b) — 출발 패킷은 읽은 순간(S 22:30) 뒤에 수집된 저장본을 쓰지 않음: 22:31에 수집된 매크로 카드·선물 일봉은 빠지고 사유가 남음(결정 시각 전 S 밤 판만 — §5 출발)")
     void claudeStartPacketLeavesOutSnapshotsAfterTheReadInstant() {
         KrClaudeFixtures.FakeAi fake = new KrClaudeFixtures.FakeAi();
         fake.answer(KrClaudeFixtures.decision(0, "관망"));
         realClaude(fake);
         macroCards(S, kst("2026-11-30T22:31"));
+        tools.jackson.databind.node.ObjectNode futures = PaperFixtures.MAPPER.createObjectNode();
+        futures.putArray("rows").addObject().put("date", S.toString()).put("contractName", "코스피200 F 202612 (주간)")
+                .put("futuresClose", 560.0);
+        KrFixtures.stub(reader, Datasets.SNAP_KRX_FUTURES, KrFixtures.snapshot(Datasets.SNAP_KRX_FUTURES, futures,
+                kst("2026-11-30T22:31")));
 
         assertThat(runAt("2026-11-30T22:30").outcome()).isEqualTo(PaperDecisionJob.STARTED);
 
@@ -380,6 +385,8 @@ class KrStartTest {
         assertThat(claude.status()).as("통과 주문 없음 — 현금만 든 채 출발").isEqualTo(ClaudeBookService.STATUS_NO_TRADE);
         assertThat(claude.packet().path("1_basis").path("markets").path("missing").asString()).contains("읽은 순간 뒤에 수집됨");
         assertThat(claude.packet().path("1_basis").path("markets").has("cards")).isFalse();
+        assertThat(claude.packet().path("1_basis").path("futures").path("daily").path("missing").asString())
+                .startsWith(KrPacketBuilder.LATE_SNAPSHOT);
         assertThat(store.books.get("kr_claude").status()).isEqualTo(PaperBooks.ACTIVE);
     }
 

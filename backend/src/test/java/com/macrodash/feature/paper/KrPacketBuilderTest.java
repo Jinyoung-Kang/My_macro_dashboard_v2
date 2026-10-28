@@ -694,7 +694,7 @@ class KrPacketBuilderTest {
     }
 
     @Test
-    @DisplayName("읽은 순간 뒤에 수집된 저장본은 없는 것 — 카드·환율·DART·관측치는 사유와 함께 빠짐")
+    @DisplayName("읽은 순간 뒤에 수집된 저장본은 없는 것 — 카드·환율·DART·관측치·선물 일봉·선물 투자주체·시장 매매대금·사건 피드 상태는 사유와 함께 빠짐")
     void snapshotsCollectedAfterTheReadInstantAreLeftOut() {
         Snapshot late = snapshots.get(Datasets.SNAP_MACRO_COLLECTED);
         KrFixtures.stub(reader, Datasets.SNAP_MACRO_COLLECTED,
@@ -703,6 +703,13 @@ class KrPacketBuilderTest {
                 snapshots.get(Datasets.SNAP_FX_HISTORY).payload(), kst("2026-11-03T22:40")));
         KrFixtures.stub(reader, Datasets.SNAP_DART_FUNDAMENTALS,
                 KrFixtures.snapshot(Datasets.SNAP_DART_FUNDAMENTALS, data.dart, kst("2026-11-03T22:45")));
+        for (String name : List.of(Datasets.SNAP_KRX_FUTURES, Datasets.daumFuturesTrend(Datasets.DAUM_TREND_LOOKBACK),
+                Datasets.SNAP_TOSS_MARKET_FLOWS)) {
+            KrFixtures.stub(reader, name, KrFixtures.snapshot(name, snapshots.get(name).payload(), kst("2026-11-03T22:36")));
+        }
+        Snapshot status = reader.readStored(Datasets.SNAP_KR_NEWS_STATUS).orElseThrow();
+        when(reader.readStored(eq(Datasets.SNAP_KR_NEWS_STATUS))).thenReturn(Optional.of(
+                KrFixtures.snapshot(Datasets.SNAP_KR_NEWS_STATUS, status.payload(), kst("2026-11-03T22:36"))));
         clock.set(READ_D);
         activeClaude();
         Snapshot quotes = KrRulesFixtures.recollected(KrRulesFixtures.quotes(D), kst("2026-11-03T22:33"));
@@ -714,6 +721,16 @@ class KrPacketBuilderTest {
         assertThat(body.path("8b_fundamentals").has("rows")).isFalse();
         assertThat(body.path("1_basis").path("notes").toString()).contains("paper.kr.quotes");
         assertThat(body.path("1_basis").path("quotesSession").isNull()).isTrue();
+        JsonNode futures = body.path("1_basis").path("futures");
+        assertThat(futures.path("daily").path("missing").asString()).startsWith(KrPacketBuilder.LATE_SNAPSHOT);
+        assertThat(futures.path("daily").has("date")).isFalse();
+        assertThat(futures.path("investors").path("missing").asString()).startsWith(KrPacketBuilder.LATE_SNAPSHOT);
+        assertThat(futures.path("investors").has("rows")).isFalse();
+        JsonNode flows = body.path("3_kr_macro").path("investorFlows");
+        assertThat(flows.path("missing").asString()).startsWith(KrPacketBuilder.LATE_SNAPSHOT);
+        assertThat(flows.has("rows")).isFalse();
+        assertThat(body.path("11b_events").has("feedNote")).as("읽은 순간 뒤의 피드 상태는 쓰지 않음(실패 중 mods_press도 적지 않음)")
+                .isFalse();
         // 관측치 없이도 가격은 수정 종가 이력의 마지막 값(출처 kr_close_adj)으로.
         JsonNode first = body.path("8_prices").path("rows").get(0);
         assertThat(first.get(KrPacketBuilder.PRICE_COLUMNS.indexOf("priceSource")).asString()).isEqualTo("kr_close_adj");
