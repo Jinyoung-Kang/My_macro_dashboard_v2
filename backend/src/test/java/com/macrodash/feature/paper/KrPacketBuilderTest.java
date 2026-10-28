@@ -661,6 +661,29 @@ class KrPacketBuilderTest {
     }
 
     @Test
+    @DisplayName("11b 읽는 범위(묶음 E 2차 리뷰) — 저장본은 발행 KST 날짜(obs_date)가 창 시작 하루 앞(11-01) 이후인 행만: 11-01 발행·창 안에서 처음 받은 제목은 알게 된 시각대로 싣고, 10-31 발행은 처음 받은 시각이 창 안이어도 싣지 않음(수집 회복·첫 수집의 묵은 항목)")
+    void eventsReadOnlyFromTheDayBeforeTheWindow() {
+        headline("n-recovered", "한은 총재 주말 간담회", "bok_press", "한국은행", "2026-11-01T10:00", D + "T22:20", "second");
+        headline("n-stale", "한은 지난주 보도자료", "bok_press", "한국은행", "2026-10-31T10:00", D + "T22:20", "second");
+        // 저장소와 같은 범위(obs_date >= from — StoreRepository.readObservationsBetween).
+        when(repository.readObservationsBetween(eq(Datasets.OBS_KR_NEWS_HEADLINE), any(LocalDate.class), isNull()))
+                .thenAnswer(invocation -> {
+                    LocalDate from = invocation.getArgument(1);
+                    List<JsonNode> out = new ArrayList<>();
+                    news.stream().filter(row -> !LocalDate.parse(row.path("obsDate").asString()).isBefore(from))
+                            .forEach(row -> out.add(row.deepCopy()));
+                    return out;
+                });
+
+        JsonNode section = scheduled().body().path("11b_events");
+
+        verify(repository).readObservationsBetween(Datasets.OBS_KR_NEWS_HEADLINE, LocalDate.of(2026, 11, 1), null);
+        assertThat(section.path("items")).extracting(i -> i.path("entity").asString()).contains("n-recovered", "n1")
+                .doesNotContain("n-stale");
+        assertThat(section.path("text").asString()).contains("한은 총재 주말 간담회").doesNotContain("한은 지난주 보도자료");
+    }
+
+    @Test
     @DisplayName("12 한국 하드 규칙 — NEXT_OPEN뿐·최소 500,000원·정수 주·호가표·비용·체결할 수 없는 종목, 미국 문구($·SHY·NEXT_OBSERVATION·13F) 없음")
     void hardRules() {
         Packet packet = scheduled();
