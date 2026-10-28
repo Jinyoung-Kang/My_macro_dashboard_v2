@@ -230,6 +230,22 @@ describe("빈 상태(출발 전)", () => {
   });
 });
 
+const DORMANT = {
+  available: true, market: "KR", currency: "KRW",
+  dormantReason: "한국 책 출발일(dashboard.paper.kr.start-date — .env PAPER_KR_START_DATE)이 비어 있어 한국 초기화·출발을 하지 않습니다",
+  initialized: false, pendingBackfill: [], startDate: null, books: [], navSeries: { dates: [], books: {} }, quotes: null,
+  selection: null, gate: null, claudeExposureSeries: [], frameworkBoundaries: [], limits: [], jobs: [],
+};
+
+describe("쉬는 한국(계좌 없음)", () => {
+  it("결정 탭은 한국 초기화 안내 — 결정 기록을 읽지 않는다", async () => {
+    reads["/api/paper/overview?market=KR"] = () => Promise.resolve(DORMANT);
+    render(<PaperPage market="KR" initialTab="decisions" />);
+    expect(await screen.findByText(/결정을 내는 한국 계좌가 아직 없습니다 — 출발일이 정해지면 개요 탭의 '한국 초기화'로/)).toBeTruthy();
+    expect(requested().some((path) => path.startsWith("/api/paper/decisions"))).toBe(false);
+  });
+});
+
 describe("오류", () => {
   it("결정 기록·작업 기록을 못 읽으면 오류 + 다시 시도(누르면 다시 읽음)", async () => {
     reads["/api/paper/overview?market=KR"] = () => Promise.resolve(overview(BOOKS));

@@ -135,7 +135,13 @@ export function DecisionsSection({
     ? endpoints.paper.settings : null);
 
   if (!code) {
-    return <Banner tone="info">결정을 내는 계좌가 아직 없습니다 — 개요 탭에서 초기화하면 규칙 계좌·Claude 계좌가 생깁니다.</Banner>;
+    return (
+      <Banner tone="info">
+        {korea
+          ? "결정을 내는 한국 계좌가 아직 없습니다 — 출발일이 정해지면 개요 탭의 '한국 초기화'로 규칙·Claude 계좌가 생깁니다(쉬는 사유는 위 경고)."
+          : "결정을 내는 계좌가 아직 없습니다 — 개요 탭에서 초기화하면 규칙 계좌·Claude 계좌가 생깁니다."}
+      </Banner>
+    );
   }
 
   const views = (

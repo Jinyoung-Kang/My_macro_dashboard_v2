@@ -403,7 +403,13 @@ export function HoldingsSection({
   };
 
   if (!code) {
-    return <Banner tone="info">아직 계좌가 없습니다 — 개요 탭에서 초기화하면 생깁니다.</Banner>;
+    return (
+      <Banner tone="info">
+        {korea
+          ? "아직 한국 계좌가 없습니다 — 출발일이 정해지면 개요 탭의 '한국 초기화'로 네 계좌가 생깁니다(쉬는 사유는 위 경고)."
+          : "아직 계좌가 없습니다 — 개요 탭에서 초기화하면 생깁니다."}
+      </Banner>
+    );
   }
 
   // 보유 응답의 책 요약이 가장 새것입니다(버튼 뒤 다시 읽음). 아직 없으면 개요의 책 요약을 씁니다.
