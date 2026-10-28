@@ -32,7 +32,8 @@ import java.util.concurrent.ConcurrentHashMap;
  *  D &lt; 출발일 S(dashboard.paper.kr.start-date)          → TOO_EARLY(기록 안 함)
  *  D 결정 시각(kr.decisionTimeKst 22:30) 전               → TOO_EARLY
  *  D 출발 기한(kr.decisionDeadlineKst 01:00 → D+1 01:00) 지남 → START_POSTPONED(D마다 한 번 기록 — 출발을 다음 KR 거래일로)
- *  자료 게이트(§4-9 ②~⑥ — ①은 앞 주문이 없어 보지 않음) 미달 → START_WAITING(기록 안 함 — 다음 주기에 다시)
+ *  그 세션 미룸 기록이 이미 있음(계획 실패 — 저장된 기록, 재기동해도 같음) → START_POSTPONED(다시 계획하지 않음)
+ *  자료 게이트(§4-9 ②~⑥ — ①은 앞 주문이 없어 보지 않음) 미달 → START_WAITING(그 세션 기다림 한 줄 — 다음 주기에 다시)
  *  계좌마다 출발 계획(규칙 D1b · Claude E2 · 벤치마크 둘) → 계획이 실패한 계좌가 있으면 START_POSTPONED(아무 계좌에도 쓰지 않음 — 그 세션은
  *                                                         다시 계획하지 않음)
  *  → 계획한 계좌의 결정(INITIAL)·주문(NEXT_OPEN, 기준 거래일 D)·운용 전환·D 순자산 줄을 한 트랜잭션으로 → STARTED(기록)
@@ -63,6 +64,12 @@ import java.util.concurrent.ConcurrentHashMap;
  * <p><b>'아직 없음' 몫</b>(D1b에서 정함): 계획한 계좌만 한 트랜잭션으로 출발하고 {@link Plan#notYet} 계좌(E2 전의 Claude 계좌)는 시작 전 그대로입니다.
  * 출발 판정이 '모두 시작 전'이라 그 계좌는 <b>뒤따라 출발하지 않습니다</b>('한 계좌만 늦은 시작' 없음 — K28) — 그 몫이 생긴 뒤 네 계좌를 리셋해 다시
  * 출발시킵니다. 서버는 4단계(E2 뒤)에만 출발하므로 운영에서는 네 계좌가 함께 출발합니다. 출발 기록({@code books})에 그 계좌의 사유가 남습니다.
+ *
+ * <p><b>저장된 판정</b>(2단계 명세 §4-9 'E0', 사용자 결정 v3 — 재기동해도 판정이 같게): '그 세션은 이미 미룸'(계획 실패 뒤 같은 창에서 다시
+ * 계획하지 않음)과 '미룸 기록은 세션마다 한 번'은 그 세션의 {@code kr.decision} 작업 기록({@value #START_POSTPONED} — 결정 작업이 남김,
+ * {@link PaperStore#jobRunsFor})으로, 미룸 기록의 사유(그 창의 마지막 기다림 사유)는 그 세션 기다림 한 줄({@value #START_WAITING} — 결정 작업이
+ * 남기고 이어지는 동안 늘림)로 정합니다. 이 프로세스가 미룬 세션의 기억({@link #postponedHere})은 미룸 기록을 쓰지 못했을 때(DB 오류)도 같은 창에서
+ * 다시 계획하지 않게(E2의 Claude 호출을 되풀이하지 않게) 막는 방어선일 뿐입니다.
  */
 final class KrStartPipeline {
 
@@ -122,13 +129,19 @@ final class KrStartPipeline {
     /**
      * 출발 한 번의 결과.
      *
-     * @param record 작업 기록을 남길 결과인가(STARTED·처음 본 START_POSTPONED)
+     * @param record  작업 기록을 남길 결과인가(STARTED·그 세션 기록이 아직 없는 START_POSTPONED)
+     * @param waiting 그 세션 기다림 한 줄로 남길 결과인가(자료 게이트·계좌 미달의 START_WAITING — 결정 작업이 이어지는 기다림은 그 줄을 늘림)
      */
     record Result(String outcome, LocalDate session, String message, boolean record, Map<String, Object> detail,
-                  List<Decision> decisions) {
+                  List<Decision> decisions, boolean waiting) {
 
         Result {
             decisions = decisions == null ? List.of() : List.copyOf(decisions);
+        }
+
+        Result(String outcome, LocalDate session, String message, boolean record, Map<String, Object> detail,
+               List<Decision> decisions) {
+            this(outcome, session, message, record, detail, decisions, false);
         }
     }
 
@@ -141,10 +154,11 @@ final class KrStartPipeline {
     /** 쓰기 트랜잭션 안에서 출발 기한을 다시 보는 시계(결정 작업의 시계 — 계획이 길어 기한을 넘기면 쓰지 않음). */
     private final Clock clock;
     private final List<Leg> legs;
-    /** 미룸을 기록한 세션(한 세션에 한 번 — 10분마다 같은 줄이 작업 기록을 밀어내지 않게). 재기동하면 처음부터. */
-    private final Set<LocalDate> postponedRecorded = ConcurrentHashMap.newKeySet();
-    /** 세션마다 마지막 기다림 사유 — 미룸 기록에 '왜 못 냈나'를 남기려고(최근 하나만 지킴). */
-    private final Map<LocalDate, String> lastWait = new ConcurrentHashMap<>();
+    /**
+     * 이 프로세스가 미룬 세션 — 판정은 저장된 미룸 기록(클래스 설명 '저장된 판정')이고, 이것은 그 기록을 쓰지 못했을 때도 같은 창에서 다시
+     * 계획하지 않게 막는 방어선입니다(재기동하면 비지만 그때는 저장된 기록이 판정).
+     */
+    private final Set<LocalDate> postponedHere = ConcurrentHashMap.newKeySet();
 
     /** 규칙 계좌 몫 없이(시작 전 그대로 — 시험·벤치마크 몫 만들기) Claude 갈고리 + 벤치마크 둘, 시계는 시스템 시계. */
     KrStartPipeline(PaperStore store, StoreReader reader, PaperMarketData marketData, PaperLedgerService ledger,
@@ -223,12 +237,14 @@ final class KrStartPipeline {
         if (now.isBefore(window.opens())) {
             return quiet(PaperDecisionJob.TOO_EARLY, d, "출발 결정 시각 " + Kst.stamp(window.opens()) + " 전");
         }
+        List<PaperStore.JobRun> records = store.jobRunsFor(run.jobName(PaperDecisionJob.JOB), d);
         if (!now.isBefore(window.deadline())) {
-            return postponed(run, d, start, window, lastWait.getOrDefault(d, "그 창에서 출발 결정을 내지 못함"));
+            return postponed(run, d, start, window, lastWaitReason(records), records);
         }
-        if (postponedRecorded.contains(d)) {
-            // 그 세션은 이미 미룸(계획 실패) — 같은 창에서 다시 계획하지 않습니다(Claude를 다시 부르지 않게, K28 '다음 KR 거래일로').
-            return postponed(run, d, start, window, "그 세션은 이미 미뤘음");
+        if (postponedHere.contains(d) || postponedRecord(records) != null) {
+            // 그 세션은 이미 미룸(계획 실패 — 저장된 기록) — 같은 창에서 다시 계획하지 않습니다(재기동한 뒤에도, Claude를 다시 부르지 않게,
+            // K28 '다음 KR 거래일로').
+            return postponed(run, d, start, window, "그 세션은 이미 미뤘음", records);
         }
         if (gaveUp) {
             return quiet(START_WAITING, d, d + " 출발 오류가 상한만큼 나 기한(" + Kst.stamp(window.deadline())
@@ -237,7 +253,8 @@ final class KrStartPipeline {
         // 싼 게이트 ②④⑤⑥(관측치 저장본·금융위 메타·달력)을 먼저 — 미달이면 규칙 계좌 입력(U·20일 수급·DART)을 읽지 않고 기다림(정기 결정과
         // 같은 순서, 10분마다 큰 읽기를 되풀이하지 않게). 통과하면 게이트 ③과 계좌 몫이 같은 읽기(클래스 설명 — 결정 e5), 읽은 순간 = 이 실행의 지금.
         KrDecisionGates.Inputs session = decisionGates.readSession(run, d);
-        String waiting = waitingReason(run, decisionGates.beforeLedger(run, session));
+        List<Gate> before = decisionGates.beforeLedger(run, session);
+        String waiting = waitingReason(run, before);
         KrDecisionGates.Inputs inputs = null;
         List<Gate> gates = null;
         if (waiting == null) {
@@ -246,9 +263,11 @@ final class KrStartPipeline {
             waiting = waitingReason(run, gates);
         }
         if (waiting != null) {
-            lastWait.keySet().removeIf(day -> !day.equals(d));
-            lastWait.put(d, waiting);
-            return quiet(START_WAITING, d, waiting + " — 기한 " + Kst.stamp(window.deadline()) + "까지 다음 주기에 다시 봅니다");
+            // 그 세션 기다림 한 줄(결정 작업이 남기고, 이어지는 기다림은 그 줄을 늘림) — 기한 뒤 미룸 기록의 사유가 재기동해도 같게.
+            Map<String, Object> detail = detail(d, start, window, gates != null ? gates : before);
+            detail.put("reason", waiting);
+            return new Result(START_WAITING, d, waiting + " — 기한 " + Kst.stamp(window.deadline()) + "까지 다음 주기에 다시 봅니다",
+                    false, detail, List.of(), true);
         }
 
         // 계획은 트랜잭션 밖에서 모두 만든 뒤 한 번에(클래스 설명) — 한 계좌라도 실패하면 어느 계좌에도 쓰지 않습니다.
@@ -259,7 +278,7 @@ final class KrStartPipeline {
         List<Plan> failed = plans.stream().filter(Plan::failed).toList();
         if (!failed.isEmpty()) {
             String reason = String.join(" · ", failed.stream().map(p -> p.book() + ": " + p.note()).toList());
-            return postponed(run, d, start, window, "출발 계획 실패 — " + reason);
+            return postponed(run, d, start, window, "출발 계획 실패 — " + reason, records);
         }
         if (plans.stream().noneMatch(Plan::planned)) {
             return quiet(START_WAITING, d, "출발 계획을 낸 계좌가 없습니다 — " + String.join(" · ",
@@ -279,13 +298,12 @@ final class KrStartPipeline {
         }));
         if (late.get() != null) {
             return postponed(run, d, start, window, "출발 계획이 기한을 넘겨 끝남(" + Kst.stamp(late.get())
-                    + ") — 어느 계좌에도 쓰지 않음");
+                    + ") — 어느 계좌에도 쓰지 않음", records);
         }
         if (written == null) {
             return quiet(PaperDecisionJob.ALREADY_DECIDED, d, "다른 실행이 이미 한국 계좌를 출발시켰습니다");
         }
-        postponedRecorded.remove(d);
-        lastWait.remove(d);
+        postponedHere.remove(d);
         Map<String, Object> detail = detail(d, start, window, gates);
         detail.put("books", books);
         return new Result(STARTED, d, d + " 한국 출발 — " + String.join(" · ", written.stream().map(Decision::bookCode)
@@ -425,17 +443,35 @@ final class KrStartPipeline {
     }
 
     // ------------------------------------------------------------------ 결과
+    /**
+     * 그 세션을 미룸 — 작업 기록은 그 세션 미룸 기록이 아직 없을 때만 남깁니다(저장된 기록이 '세션마다 한 번'의 판정이라 재기동해도 다시 남기지
+     * 않고, 기록을 쓰지 못했으면 다음 주기에 다시 남김).
+     *
+     * @param records 그 세션의 {@code kr.decision} 작업 기록(최근 순 — 이 실행이 읽은 것)
+     */
     private Result postponed(MarketRun run, LocalDate d, LocalDate start, KrPaperMarket.DecisionWindow window,
-                             String reason) {
+                             String reason, List<PaperStore.JobRun> records) {
         LocalDate next = run.calendar().nextTradingDay(d);
         String message = d + " 출발 기한(" + Kst.stamp(window.deadline()) + ")까지 출발하지 못해 다음 KR 거래일 " + next
                 + "로 미룹니다 — " + reason;
-        boolean first = postponedRecorded.add(d);
+        boolean first = postponedRecord(records) == null;
+        postponedHere.add(d);
         Map<String, Object> detail = detail(d, start, window, null);
         detail.put("postponedTo", next.toString());
         detail.put("reason", reason);
-        lastWait.remove(d);
         return new Result(START_POSTPONED, d, message, first, detail, List.of());
+    }
+
+    /** 그 세션의 미룸 기록(없으면 null). */
+    private static PaperStore.JobRun postponedRecord(List<PaperStore.JobRun> records) {
+        return records.stream().filter(r -> START_POSTPONED.equals(r.outcome())).findFirst().orElse(null);
+    }
+
+    /** 그 세션 기다림 한 줄의 마지막 사유 — 없으면(그 창에서 기다린 기록 없음 — 그 밤 첫 실행이 기한 뒤 등) 그렇다고. */
+    private static String lastWaitReason(List<PaperStore.JobRun> records) {
+        return records.stream().filter(r -> START_WAITING.equals(r.outcome()))
+                .map(r -> com.macrodash.support.Json.asText(r.detail(), "reason")).filter(Objects::nonNull).findFirst()
+                .orElse("그 창에서 출발 결정을 내지 못함");
     }
 
     private Map<String, Object> detail(LocalDate d, LocalDate start, KrPaperMarket.DecisionWindow window,

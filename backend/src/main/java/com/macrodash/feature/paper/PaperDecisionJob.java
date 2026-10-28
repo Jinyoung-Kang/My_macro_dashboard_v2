@@ -103,7 +103,8 @@ import java.util.concurrent.locks.ReentrantLock;
  * <p><b>한국 출발</b>(2단계 명세 §4-8·K28, C1c): 한국 실행에서 한국 계좌가 모두 시작 전이면 정기 결정 대신 {@link KrStartPipeline}이
  * 출발을 냅니다 — 출발일 S(배포 설정) 이후 세션 D의 결정 창(22:30 ~ D+1 01:00) 안에서 자료 게이트(§4-9 ②~⑥)를 통과하면 계좌마다
  * 출발 계획(규칙 계좌 INITIAL — 재선정과 같은 계산 · 벤치마크 둘, Claude E2는 갈고리)을 한 트랜잭션으로 씁니다({@value #STARTED}). 게이트 미달은 {@value #START_WAITING}
- * (기록 안 함), 기한이 지나면 {@value #START_POSTPONED}(그 세션에 한 번 기록 — 다음 KR 거래일 창에서 다시)입니다.
+ * (그 세션 기다림 한 줄 — {@link #recordWait}), 기한이 지나면 {@value #START_POSTPONED}(그 세션에 한 번 기록 — 다음 KR 거래일 창에서 다시)입니다.
+ * 미룸 여부·기록 한 번·미룸 사유는 저장된 그 세션 작업 기록으로 정해 재기동해도 같습니다(2단계 명세 §4-9 'E0', 사용자 결정 v3).
  *
  * <p><b>한국 결정 게이트</b>(2단계 명세 §4-9·§5, D1c — {@link KrDecisionGates}): 한국 묶음의 정기 결정은 '그날 종가 관측치' 기다림 대신 자료
  * 게이트 ①~⑥을 모두 통과해야 냅니다. ②④⑤⑥(관측치 저장본의 D 봉 90%·금융위 기준일·069500 D 봉·거래일)이 미달이면 장부를 처리하지 않고,
@@ -148,9 +149,9 @@ public class PaperDecisionJob {
     public static final String DORMANT = "DORMANT";
     /** 한국 출발을 냄(기록 — {@link KrStartPipeline}). */
     public static final String STARTED = KrStartPipeline.STARTED;
-    /** 한국 출발의 자료 게이트 미달 — 다음 주기에 다시(기록 안 함). */
+    /** 한국 출발의 자료 게이트 미달 — 다음 주기에 다시(그 세션 기다림 한 줄 — {@link #recordWait}). */
     public static final String START_WAITING = KrStartPipeline.START_WAITING;
-    /** 한국 출발 기한이 지나 다음 KR 거래일로 미룸(그 세션에 한 번 기록). */
+    /** 한국 출발 기한이 지나 다음 KR 거래일로 미룸(그 세션에 한 번 기록 — 저장된 기록으로 셈, 재기동해도 한 번). */
     public static final String START_POSTPONED = KrStartPipeline.START_POSTPONED;
     /**
      * 결정 기한이 지나 그 세션을 결정하지 않음(그 시장 규칙 {@link PaperMarket.AfterDeadline#NO_TRADE} — 한국). 시장·세션마다 한 번
@@ -811,8 +812,9 @@ public class PaperDecisionJob {
     }
 
     /**
-     * 한국 출발 한 번({@link KrStartPipeline}) — STARTED와 처음 본 미룸만 기록합니다. 출발을 쓰다 예외가 나면 그 세션의 출발 오류 횟수를
-     * 올리고 ERROR로 기록하며, {@value #MAX_ATTEMPTS}번이면 그 세션 기한까지 더 시도하지 않습니다(기한이 지나면 미룸 — 수동 출발 단추는 E2).
+     * 한국 출발 한 번({@link KrStartPipeline}) — STARTED와 그 세션 기록이 아직 없는 미룸을 기록하고, 자료 게이트 기다림은 그 세션 기다림 한 줄로
+     * 남깁니다({@link #recordWait}). 출발을 쓰다 예외가 나면 그 세션의 출발 오류 횟수를 올리고 ERROR로 기록하며, {@value #MAX_ATTEMPTS}번이면 그 세션
+     * 기한까지 더 시도하지 않습니다(기한이 지나면 미룸 — 수동 출발 단추는 E2).
      */
     private Result startKr(MarketRun market, Instant now, LocalDate d) {
         FailureKey key = new FailureKey(market.code(), d, START_FAILURES);
@@ -832,7 +834,9 @@ public class PaperDecisionJob {
         if (STARTED.equals(start.outcome())) {
             failures.remove(key);
         }
-        if (start.record()) {
+        if (start.waiting()) {
+            recordWait(market, now, d, start.outcome(), start.detail());
+        } else if (start.record()) {
             record(market, now, start.outcome(), start.detail());
         }
         if (START_POSTPONED.equals(start.outcome())) {
@@ -1160,6 +1164,31 @@ public class PaperDecisionJob {
         } catch (RuntimeException e) {
             // 기록 실패가 결정(이미 커밋됨)을 오류로 바꾸지 않게 로그만 남깁니다.
             log.warn("모의 매매 결정 작업 기록을 남기지 못했습니다: {}", e.toString());
+        }
+    }
+
+    /**
+     * 그 세션 기다림 한 줄(2단계 명세 §4-9 'E0', 사용자 결정 v3 — 한국 결정 작업의 {@value #START_WAITING}·{@value #DATA_NOT_READY}). 그 세션의
+     * 가장 최근 작업 기록이 같은 결과의 기다림이면 그 줄의 끝 시각·상세(마지막 판정)만 바꾸고 {@code checks}(이어진 주기 수)를 하나 올립니다 —
+     * 10분마다 같은 줄이 작업 기록 200건을 밀어내지 않게. 다른 결과 뒤의 기다림(처음·결정·오류 뒤)은 새 줄입니다. 기한 뒤 판정(출발 미룸의 사유·
+     * 기한 지남 행의 게이트)이 이 줄을 다시 읽으므로 재기동해도 같습니다. 기록 실패는 로그만 남깁니다.
+     */
+    private void recordWait(PaperMarket market, Instant started, LocalDate d, String outcome, Map<String, Object> detail) {
+        try {
+            String job = market.jobName(JOB);
+            List<PaperStore.JobRun> records = store.jobRunsFor(job, d);
+            PaperStore.JobRun last = records.isEmpty() ? null : records.get(0);
+            Map<String, Object> body = new LinkedHashMap<>(detail);
+            if (last != null && outcome.equals(last.outcome())) {
+                JsonNode checks = last.detail() == null ? null : last.detail().get("checks");
+                body.put("checks", (checks != null && checks.isInt() ? Math.max(1, checks.intValue()) : 1) + 1);
+                store.updateJobRun(last.id(), clock.instant(), mapper.valueToTree(body));
+            } else {
+                body.put("checks", 1);
+                store.recordJobRun(job, started, clock.instant(), outcome, mapper.valueToTree(body));
+            }
+        } catch (RuntimeException e) {
+            log.warn("모의 매매 결정 작업의 기다림 기록을 남기지 못했습니다: {}", e.toString());
         }
     }
 
