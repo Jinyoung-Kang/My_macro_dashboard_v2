@@ -623,7 +623,10 @@ class KrPacketBuilderTest {
         assertThat(rules.path("unfillableTickers").path("373220").asString()).contains("거래정지");
         String lines = rules.path("lines").toString();
         assertThat(lines).contains("BUY_BELOW_ONE_SHARE").contains("500,000원").contains("주식 2,000원 미만 1원")
-                .contains("코스피 거래세 5bp + 농특세 15bp").contains("매수는 UNFILLABLE로 거절").contains("매도는 받아 대기로 두고");
+                .contains("코스피 거래세 5bp + 농특세 15bp").contains("매수는 UNFILLABLE로 거절").contains("매도는 받아 대기로 두고")
+                .as("체결할 수 없는 보유의 매도는 같은 시가 매수의 자리를 만들지 못함(검증기와 같음 — 묶음 E 리뷰)")
+                .contains("단 unfillableTickers 종목의 매도는 그 시가에 체결되지 않으므로 현금(OVER_ALLOCATED)·종목 자리"
+                        + "(MAX_POSITIONS)를 만들지 못한다");
         assertThat(packet.text()).doesNotContain("$").doesNotContain("SHY").doesNotContain("NEXT_OBSERVATION")
                 .doesNotContain("13F").doesNotContain("5_gate").doesNotContain("6_trackRecord");
         assertThat(rules.path("universe").asString()).isEqualTo(

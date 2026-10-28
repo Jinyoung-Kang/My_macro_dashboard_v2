@@ -1252,9 +1252,12 @@ final class KrPacketBuilder {
         lines.add(KrPaperMarket.ALLOW_NEXT_CLOSE
                 ? "매수 목표 합 + 매도 뒤 남는 보유 비중이 100%를 넘으면 목표 비중이 큰 주문부터 받고 넘치는 주문은 거절(OVER_ALLOCATED). "
                         + "매도는 같은 시점이거나 더 늦은 매수의 자리만 만든다 — NEXT_CLOSE 매도는 NEXT_OPEN 매수보다 늦게 체결되므로 "
-                        + "NEXT_OPEN 매수의 현금(비중 합, OVER_ALLOCATED)·종목 자리(최대 종목 수, MAX_POSITIONS)를 비우지 못한다."
+                        + "NEXT_OPEN 매수의 현금(비중 합, OVER_ALLOCATED)·종목 자리(최대 종목 수, MAX_POSITIONS)를 비우지 못한다. "
+                        + "unfillableTickers 종목의 매도는 어느 시점 매수의 자리도 만들지 못한다."
                 : "매수 목표 합 + 매도 뒤 남는 보유 비중이 100%를 넘으면 목표 비중이 큰 주문부터 받고 넘치는 주문은 거절(OVER_ALLOCATED). "
-                        + "매도와 매수가 모두 같은 다음 거래일 시가에 체결되므로 매도는 그 매수들의 현금·종목 자리를 만든다.");
+                        + "매도와 매수가 모두 같은 다음 거래일 시가에 체결되므로 매도는 그 매수들의 현금·종목 자리를 만든다 — 단 "
+                        + "unfillableTickers 종목의 매도는 그 시가에 체결되지 않으므로 현금(OVER_ALLOCATED)·종목 자리(MAX_POSITIONS)를 "
+                        + "만들지 못한다.");
         lines.add(String.format(Locale.ROOT, "매수 증가분 금액 < %s원 거절. ", won(limits.minOrderNotional()))
                 + (initial
                 ? String.format(Locale.ROOT, "재량 주문 월 %d건 상한은 출발 결정에도 걸린다 — 이번 결정 안에서 %d건까지만 받고(매도 먼저 목록 순, "
