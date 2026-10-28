@@ -452,8 +452,8 @@ public final class KrRules {
             if (member.listedShares() == null || member.listedShares() <= 0) {
                 exclusions.add(new Exclusion(Reason.NO_DATA, NO_LISTED_SHARES, NO_LISTED_SHARES + "(금융위, U 기준일 "
                         + input.universeDate() + ")"));
-            } else if (flows.complete()) {
-                score = (double) (flows.foreignNet20() + flows.institutionNet20()) / member.listedShares() * 100.0;
+            } else {
+                score = score(flows, member.listedShares());
             }
             Financials financials = input.financials().get(code);
             LocalDate receipt = financials == null ? null : financials.receiptDate();
@@ -461,6 +461,17 @@ public final class KrRules {
             out.add(new Evaluation(member, flows, financials, receipt, score, exclusions));
         }
         return out;
+    }
+
+    /**
+     * 점수(K7) = 20거래일 외국인 + 기관 순매수(주) ÷ 상장주식수 × 100 — 창이 다 차고 상장주식수가 양수일 때만, 아니면 null. 규칙 계좌 판정
+     * ({@link #evaluate})과 한국 Claude 패킷 {@code 8_prices}(E1a — 같은 숫자를 다르게 세지 않게)가 함께 씁니다.
+     */
+    public static Double score(FlowSummary flows, Long listedShares) {
+        if (flows == null || !flows.complete() || listedShares == null || listedShares <= 0) {
+            return null;
+        }
+        return (double) (flows.foreignNet20() + flows.institutionNet20()) / listedShares * 100.0;
     }
 
     /** 재무 필터(클래스 설명) — 사유를 {@code out}에 더합니다. */
