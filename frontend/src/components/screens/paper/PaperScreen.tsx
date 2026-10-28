@@ -42,7 +42,7 @@ import { SettingsSection } from "./SettingsSection";
  * <p><b>한국</b>(`market` "KR", 2단계 명세 §4-16 — /paper/kr·/paper/kr/&lt;탭&gt;): 같은 일곱 탭이고 개요는 `?market=KR` 응답(원 단위 정수,
  * 네 계좌 kr_rules·kr_claude·kr_bench_k200·kr_bench_mix)입니다. 정기 작업이 쉬면 그 사유(dormantReason)를 맨 위에 적습니다. 종목 선정 탭(키
  * selection — 미국 '기관 선정' 자리)은 한국 규칙 계좌의 재선정 기록(KrSelectionSection), 메모 탭은 한국 메모(`?market=KR`)입니다. 프레임·설정은
- * 두 시장이 함께 쓰는 화면이라 시장을 밝힌 안내와 함께 그대로입니다. 주소 맞추기는 그 시장의 주소만 봅니다(다른 시장 주소는 무시).
+ * 두 시장이 함께 쓰는 화면이라 같은 섹션에 시장을 넘겨 공용임을 밝힙니다(설정은 '한국 + 공용' 보기가 기본). 주소 맞추기는 그 시장의 주소만 봅니다(다른 시장 주소는 무시).
  */
 export default function PaperPage({
   initialTab = "overview",
@@ -183,12 +183,10 @@ export default function PaperPage({
                 market={market}
               />
             )}
-            {korea && (current.key === "framework" || current.key === "settings") && (
-              <Banner tone="info">{SHARED_TAB_NOTE[current.key]}</Banner>
-            )}
-            {current.key === "framework" && <FrameworkSection focusProposalId={focusProposal} />}
+            {/* 프레임·설정은 두 시장이 함께 쓰는 화면 — 한국 화면에서는 섹션이 맨 위에 공용임을 밝힙니다(사용자 결정 2026-10-29). */}
+            {current.key === "framework" && <FrameworkSection focusProposalId={focusProposal} market={market} />}
             {current.opensIn === null && current.key === "notes" && <NotesSection startDate={data.startDate ?? null} market={market} />}
-            {current.key === "settings" && <SettingsSection />}
+            {current.key === "settings" && <SettingsSection market={market} />}
             {current.opensIn && (
               <Banner tone="info">
                 <strong>{current.label}</strong> 탭은 다음 단계에서 엽니다 — {current.opensIn}.
@@ -201,16 +199,6 @@ export default function PaperPage({
     </div>
   );
 }
-
-/**
- * 두 시장이 함께 쓰는 탭을 한국 화면에서 열 때의 안내(사용자 결정 2026-10-29 — 시장을 밝힘). 화면은 미국 화면의 그 탭과 같습니다.
- */
-const SHARED_TAB_NOTE: Record<"framework" | "settings", string> = {
-  framework: "프레임(투자 OS)은 미국·한국 Claude 계좌가 함께 쓰는 판 하나입니다 — 한국 결정에는 이 본문 위에 한국 하드 규칙 줄(kr.*)과 "
-    + "한국 고정 문단이 덮입니다(미국 문장보다 우선). 미국 화면의 프레임 탭과 같은 화면입니다.",
-  settings: "설정은 두 시장이 한 행을 함께 씁니다 — 한국 책은 kr.* 키(한국 규칙 계좌 영향 키는 '한국 규칙 계좌 영향' 표시)를 읽고, 모델·"
-    + "하루 호출 상한·정기 작업 몫 예약은 두 책 공용입니다. 미국 화면의 설정 탭과 같은 화면입니다.",
-};
 
 /** 한국 계좌마다의 처음 현금(원 정수) — 개요 책 목록의 값(배포 설정). 모르면 null(문장에서 뺌 — 1억 원을 지어내지 않음). */
 function krInitialCash(data: PaperOverviewResponse | null | undefined): string | null {

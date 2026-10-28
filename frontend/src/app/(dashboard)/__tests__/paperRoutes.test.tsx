@@ -258,9 +258,9 @@ describe("한국 화면(/paper/kr)", () => {
     ]);
 
     fireEvent.click(screen.getByRole("tab", { name: "설정" }));
-    expect(screen.getByText(/설정은 두 시장이 한 행을 함께 씁니다/)).toBeTruthy();
+    expect(screen.getByText(/설정은 두 시장이 한 행\(한 버전\)을 함께 씁니다/)).toBeTruthy();
     fireEvent.click(screen.getByRole("tab", { name: "프레임" }));
-    expect(screen.getByText(/미국·한국 Claude 계좌가 함께 쓰는 판 하나/)).toBeTruthy();
+    expect(screen.getByText(/두 시장 공용 프레임 — 미국·한국 Claude 계좌가 같은 판을 씁니다/)).toBeTruthy();
   });
 
   it("주소 맞추기는 그 시장 주소만 — 한국 화면에서 /paper/kr/notes는 메모로, /paper/us/…는 무시", async () => {

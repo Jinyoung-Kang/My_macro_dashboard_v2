@@ -3229,13 +3229,21 @@ const sameSettingValue = (left: unknown, right: unknown) => JSON.stringify(left 
 /**
  * 설정 응답을 묶음별 줄로 — 키 순서는 서버가 보낸 keys 순서 그대로이고, 값은 본문(body)·기본값(defaults)에서 점 경로로 찾습니다.
  * 범위는 서버 값 그대로 적기만 하고 화면이 검사하지 않습니다(서버가 저장할 때 검사하고, 틀리면 400 문구를 그대로 보임).
+ *
+ * `filter.market`을 주면 그 시장의 키와 공용 키(keys[].market이 null·없음)만 남깁니다 — 한국 화면의 기본 보기 '한국 + 공용'(설정은 두 시장이 한
+ * 행을 함께 씀). 주지 않으면 전부(미국 화면 — 예전 그대로).
  */
-export function settingGroups(response: PaperSettingsResponse | null | undefined): SettingGroup[] {
+export function settingGroups(
+  response: PaperSettingsResponse | null | undefined,
+  filter: { market?: PaperMarketCode } = {},
+): SettingGroup[] {
   const groups: SettingGroup[] = [];
   for (const meta of response?.keys ?? []) {
     if (!isRecord(meta)) continue;
     const key = textOf(meta.key);
     if (!key) continue;
+    const keyMarket = textOf(meta.market);
+    if (filter.market && keyMarket !== null && keyMarket !== filter.market) continue;
     const stored = settingValueAt(response?.body, key);
     const fallback = settingValueAt(response?.defaults, key);
     // 본문에 없는 키는 서버가 기본값으로 읽습니다 — 빈 칸·'아니오'로 그리면 실제로 쓰는 값과 반대로 보이고(켜진 news.enabled가 꺼짐으로),
@@ -3269,6 +3277,25 @@ export function settingGroups(response: PaperSettingsResponse | null | undefined
     else groups.push({ key: groupKey, title: SETTING_GROUP[groupKey] ?? groupKey, rows: [row] });
   }
   return groups;
+}
+
+/** 한국 설정 화면의 보기 — 한국 키와 공용 키(기본) 또는 전체(미국 키 포함). */
+export type SettingsScope = "market" | "all";
+
+/** 한국 설정 화면의 보기 고르기 — 그 보기에서 보이는 키 수를 함께 적습니다(모르는 키는 세지 않음). */
+export function settingsScopeOptions(response: PaperSettingsResponse | null | undefined): { value: SettingsScope; label: string }[] {
+  const count = (groups: SettingGroup[]) => groups.reduce((sum, group) => sum + group.rows.length, 0);
+  return [
+    { value: "market", label: `한국 + 공용 (${formatNumber(count(settingGroups(response, { market: "KR" })), 0)}개)` },
+    { value: "all", label: `전체 — 미국 키 포함 (${formatNumber(count(settingGroups(response)), 0)}개)` },
+  ];
+}
+
+/** 설정 키가 어느 책의 것인지 — 한국 화면에서 키마다 붙이는 이름표(공용은 두 책이 함께 읽음). 모르는 값은 받은 글자. */
+export function settingMarketLabel(market: string | null | undefined): string {
+  if (market === "KR") return "한국 책";
+  if (market === "US") return "미국 책";
+  return market ? market : "두 책 공용";
 }
 
 /** 입력 글자를 설정 값으로 읽은 결과. */
@@ -4253,8 +4280,14 @@ export function insightNotePayload(
   title: string,
   body: string,
   defaultTitle = "투자 OS 원문",
-): { kind: "INSIGHT"; title: string; body: string } {
-  return { kind: "INSIGHT", title: title.trim() || defaultTitle, body: body.trim() };
+  market: PaperMarketCode = "US",
+): { kind: "INSIGHT"; title: string; body: string; market?: "KR" } {
+  const payload: { kind: "INSIGHT"; title: string; body: string; market?: "KR" } = {
+    kind: "INSIGHT", title: title.trim() || defaultTitle, body: body.trim(),
+  };
+  // 한국 화면의 프레임 탭은 방법론 메모를 한국 메모로 남깁니다(한국 메모 목록에서 다시 고를 수 있게 — 제안은 번호로 찾아 시장을 가리지 않음).
+  if (market === "KR") payload.market = "KR";
+  return payload;
 }
 
 /** 제안 요청 카드의 문구 — 지금 판이 임시인가(OS 원문을 옮길 차례) 사용자 판인가(방법론 글로 갱신)에 따라. */

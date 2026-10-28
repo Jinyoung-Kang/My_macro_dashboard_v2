@@ -18,6 +18,7 @@ import {
   settingText,
   settingValueAt,
 } from "../paper";
+import { settingMarketLabel, settingsScopeOptions } from "../paper";
 import type { PaperSettingKey, PaperSettingsResponse } from "../types";
 
 function key(name: string, over: Partial<PaperSettingKey> = {}): PaperSettingKey {
@@ -428,5 +429,35 @@ describe("한국 키(2단계 C1b — kr.*·공유 스위치)", () => {
     expect(settingsConfirmText(settingsDraftView(groups, { "kr.calendar.extraClosures": "2026-12-30, 2026-11-02" }).changes))
       .toBeNull();
     expect(KR_RULES_FROZEN_WARNING).toBe("한국 규칙 계좌(kr_rules)는 동결된 대조군입니다 — 이 변경은 한국 책의 실험 조건을 바꿉니다");
+  });
+});
+
+describe("설정 보기 거르기 — 한국 화면 '한국 + 공용'(사용자 결정 2026-10-29)", () => {
+  const key = (name: string, market: string | null | undefined): PaperSettingKey => ({
+    key: name, type: "integer", min: null, max: null, affectsRules: false, ...(market === undefined ? {} : { market }), description: null,
+  });
+  const MIXED: PaperSettingsResponse = {
+    available: true, version: 3, body: { model: "m", rulesMaxNames: 15, kr: { rulesMaxNames: 12 }, old: 1 }, defaults: {},
+    keys: [key("model", null), key("rulesMaxNames", "US"), key("kr.rulesMaxNames", "KR"), key("old", undefined)],
+  };
+  const keysOf = (groups: ReturnType<typeof settingGroups>) => groups.flatMap((group) => group.rows.map((row) => row.key));
+
+  it("미국(인자 없음)은 예전 그대로 전부, KR은 한국 키 + 공용(market null·없음), 빈 묶음은 만들지 않음", () => {
+    // 묶음 순서(일반 → kr) 안에서 서버 keys 순서.
+    expect(keysOf(settingGroups(MIXED))).toEqual(["model", "rulesMaxNames", "old", "kr.rulesMaxNames"]);
+    expect(settingGroups(MIXED, {})).toEqual(settingGroups(MIXED));
+    expect(keysOf(settingGroups(MIXED, { market: "KR" }))).toEqual(["model", "old", "kr.rulesMaxNames"]);
+    expect(keysOf(settingGroups(MIXED, { market: "US" }))).toEqual(["model", "rulesMaxNames", "old"]);
+    expect(settingGroups({ ...MIXED, keys: [key("rulesMaxNames", "US")] }, { market: "KR" })).toEqual([]);
+  });
+
+  it("보기 이름에 키 수, 키마다 책 이름(공용은 '두 책 공용')", () => {
+    expect(settingsScopeOptions(MIXED)).toEqual([
+      { value: "market", label: "한국 + 공용 (3개)" },
+      { value: "all", label: "전체 — 미국 키 포함 (4개)" },
+    ]);
+    expect(settingsScopeOptions(null).map((option) => option.label)).toEqual(["한국 + 공용 (0개)", "전체 — 미국 키 포함 (0개)"]);
+    expect([settingMarketLabel("KR"), settingMarketLabel("US"), settingMarketLabel(null), settingMarketLabel("JP")])
+      .toEqual(["한국 책", "미국 책", "두 책 공용", "JP"]);
   });
 });

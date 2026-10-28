@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { Banner, Button, Card, ErrorState, Loading, Table } from "@/components/ui";
+import { Banner, Button, Card, ErrorState, Loading, Select, Table } from "@/components/ui";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { useApi } from "@/hooks/useApi";
 import { useAsyncAction } from "@/hooks/useAsyncAction";
@@ -12,6 +12,9 @@ import {
   PAPER_SOURCES,
   type SettingRow,
   settingGroups,
+  settingMarketLabel,
+  type SettingsScope,
+  settingsScopeOptions,
   type SettingsHistoryRow,
   settingsConfirmText,
   settingsDraftView,
@@ -19,6 +22,7 @@ import {
   settingsPatch,
   settingsSaveResultView,
 } from "@/lib/paper";
+import type { PaperMarketCode } from "@/lib/paperMarket";
 import type { PaperSettingsHistoryResponse, PaperSettingsResponse, PaperSettingsSaveResult } from "@/lib/types";
 
 /** 배지 색 — lib/paper의 배지와 같은 팔레트. */
@@ -37,8 +41,15 @@ const INPUT = "w-full rounded-md border border-border bg-canvas px-3 py-2 text-s
  * 입력 중에는 설정을 자동으로 다시 읽지 않습니다 — 저장이 성공하면 설정과 이력을 다시 읽고 입력을 비웁니다.
  * 성공하면 초점을 저장 결과로 옮깁니다 — 바꿀 값이 비어 "설정 저장" 단추가 막히므로, 확인 창이 연 단추로 초점을 돌려주지 못하고
  * 초점이 문서 처음(body)으로 떨어지던 것을 막습니다(실패하면 단추가 살아 있어 확인 창이 그 단추로 돌려줌).
+ *
+ * <p><b>한국 화면</b>(`market` "KR" — 사용자 결정 2026-10-29: 설정은 두 시장 공용 화면): 같은 한 행·같은 저장이고, 맨 위에 공용 행이라는 것을
+ * 적고(어느 상태에서든), 보기를 '한국 + 공용'(기본 — keys[].market이 KR이거나 없음)·'전체'로 고릅니다. 키마다 '한국 책'·'미국 책'을 붙이고 공용
+ * 키는 표시가 없습니다. 바꿀 값·확인 창은 보기와 관계없이 손댄 키 전부입니다(보기를 바꿔도 고친 값이 빠지지 않음).
  */
-export function SettingsSection() {
+export function SettingsSection({ market = "US" }: { market?: PaperMarketCode }) {
+  const korea = market === "KR";
+  const [scope, setScope] = useState<SettingsScope>("market");
+  const banner = korea ? <Banner tone="info">{KR_SETTINGS_NOTE}</Banner> : null;
   const settings = useApi<PaperSettingsResponse>(endpoints.paper.settings);
   const history = useApi<PaperSettingsHistoryResponse>(endpoints.paper.settingsHistory);
   // 손댄 키만 담습니다(키 → 입력 글자). 손대지 않은 키는 지금 값을 그대로 보입니다.
@@ -55,16 +66,18 @@ export function SettingsSection() {
     if (saved > 0) resultRef.current?.focus();
   }, [saved]);
 
-  if (settings.loading && !settings.data) return <Loading label="설정을 읽는 중…" />;
-  if (settings.error) return <ErrorState message={settings.error} onRetry={settings.reload} />;
-  if (!settings.data) return null;
+  if (settings.loading && !settings.data) return <>{banner}<Loading label="설정을 읽는 중…" /></>;
+  if (settings.error) return <>{banner}<ErrorState message={settings.error} onRetry={settings.reload} /></>;
+  if (!settings.data) return banner;
   if (!settings.data.available) {
-    return <Banner tone="warn">{settings.data.message ?? "설정을 읽을 수 없습니다."}</Banner>;
+    return <>{banner}<Banner tone="warn">{settings.data.message ?? "설정을 읽을 수 없습니다."}</Banner></>;
   }
 
   const data = settings.data;
-  const groups = settingGroups(data);
-  const { changes, errors } = settingsDraftView(groups, draft);
+  const allGroups = settingGroups(data);
+  // 한국 화면의 기본 보기는 한국 + 공용 키 — 바꿀 값은 보기와 관계없이 전체 키로 셉니다(숨긴 키에 고친 값이 있어도 빠지지 않게).
+  const groups = korea && scope === "market" ? settingGroups(data, { market: "KR" }) : allGroups;
+  const { changes, errors } = settingsDraftView(allGroups, draft);
   const changedKeys = new Set(changes.map((change) => change.key));
   const errorCount = Object.keys(errors).length;
   const confirmText = settingsConfirmText(changes);
@@ -95,6 +108,7 @@ export function SettingsSection() {
 
   return (
     <>
+      {banner}
       <Card
         title="설정"
         subtitle={typeof data.version === "number"
@@ -108,6 +122,16 @@ export function SettingsSection() {
           설정 버전이 남습니다.
           계좌 일시정지·재개는 보유·체결 탭에서 합니다.
         </p>
+        {korea && (
+          <div className="mt-3">
+            <Select
+              label="보기"
+              value={scope}
+              onChange={(value) => setScope(value === "all" ? "all" : "market")}
+              options={settingsScopeOptions(data)}
+            />
+          </div>
+        )}
 
         <section aria-label="바꿀 값" className="mt-4 flex flex-col gap-2">
           <h3 className="text-sm font-semibold text-bright">바꿀 값 ({changes.length})</h3>
@@ -172,6 +196,7 @@ export function SettingsSection() {
                 <SettingField
                   key={row.key}
                   row={row}
+                  marketLabel={korea && row.market ? settingMarketLabel(row.market) : null}
                   value={draft[row.key] ?? row.initial}
                   changed={changedKeys.has(row.key)}
                   error={errors[row.key] ?? null}
@@ -214,15 +239,26 @@ export function SettingsSection() {
   );
 }
 
+/**
+ * 한국 화면 설정 탭 머리의 안내 — 두 시장이 한 행을 함께 씀(사용자 결정 2026-10-29). 보이는 글이 키마다의 '한국 책'·'미국 책' 표시와 맞습니다.
+ */
+const KR_SETTINGS_NOTE =
+  "설정은 두 시장이 한 행(한 버전)을 함께 씁니다 — kr.* 키는 한국 책, '미국 책' 표시 키는 미국 책, 표시 없는 키(모델·하루 호출 상한·정기 작업 몫 "
+  + "예약·메모·단가 등)는 두 책 공용입니다. 저장하면 버전이 하나 오르고 두 책 모두 다음 작업부터 그 판을 읽습니다. 한국 규칙 계좌 영향 키는 저장 "
+  + "전에 한 번 더 묻습니다.";
+
 /** 설정 키 하나 — 이름·설명·배지, 입력, 기본값·범위, 형 오류. */
 function SettingField({
   row,
+  marketLabel,
   value,
   changed,
   error,
   onChange,
 }: {
   row: SettingRow;
+  /** 한국 화면에서 그 키를 읽는 책('한국 책'·'미국 책') — 공용 키·미국 화면은 null(표시 없음). */
+  marketLabel: string | null;
   value: string;
   changed: boolean;
   error: string | null;
@@ -244,6 +280,9 @@ function SettingField({
       <div className="min-w-0">
         <div className="flex flex-wrap items-center gap-1">
           <label htmlFor={id} className="break-all font-mono text-xs font-semibold text-bright">{row.key}</label>
+          {marketLabel && (
+            <span className="whitespace-nowrap rounded-sm border border-border px-1.5 py-px text-[10px] text-text-2">{marketLabel}</span>
+          )}
           {row.affectsRules && (
             <span
               title={row.market === "KR"

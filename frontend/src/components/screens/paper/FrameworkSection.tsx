@@ -47,6 +47,7 @@ import {
   renderedCompare,
   textLength,
 } from "@/lib/paper";
+import type { PaperMarketCode } from "@/lib/paperMarket";
 import type {
   PaperFrameworkMaxIds,
   PaperFrameworkProposal,
@@ -78,8 +79,34 @@ const INPUT = "w-full rounded-md border border-border bg-canvas px-3 py-2 text-s
  *
  * 결정 로그 탭의 주간 복기에서 제안 링크를 누르고 오면({@code focusProposalId}) 제안 목록의 그 제안으로 스크롤하고 테두리로 강조합니다
  * (2단계 D — 복기가 낸 제안도 같은 목록·같은 승인 흐름).
+ *
+ * <p><b>한국 화면</b>(`market` "KR" — 사용자 결정 2026-10-29: 프레임은 두 시장 공용 화면): 같은 판·같은 쓰기 경로(편집·제안·승인)이고, 맨 위에
+ * 공용 판이라는 것과 한국 프롬프트에서 무엇이 본문보다 앞서는지를 적습니다(어느 상태에서든 — 읽는 중·오류에도). 방법론 메모 고르기·저장만 한국
+ * 메모(`?market=KR`·본문 market:"KR")입니다.
  */
-export function FrameworkSection({ focusProposalId = null }: { focusProposalId?: number | null }) {
+export function FrameworkSection({
+  focusProposalId = null,
+  market = "US",
+}: {
+  focusProposalId?: number | null;
+  market?: PaperMarketCode;
+}) {
+  const banner = market === "KR" ? <Banner tone="info">{KR_FRAMEWORK_NOTE}</Banner> : null;
+  return (
+    <>
+      {banner}
+      <FrameworkBody focusProposalId={focusProposalId} market={market} />
+    </>
+  );
+}
+
+/** 한국 화면 프레임 탭 머리의 안내 — 두 시장 공용 판과 한국 프롬프트의 우선순위(2단계 명세 §5 K34, 사용자 결정 v1 ⓐ). */
+const KR_FRAMEWORK_NOTE =
+  "두 시장 공용 프레임 — 미국·한국 Claude 계좌가 같은 판을 씁니다. 한국 결정·복기 프롬프트에서는 한국 고정 문단(KR_FIXED_RULES) 첫 줄의 우선순위 "
+  + "문장과 한국 하드 규칙 줄(kr.*)이 이 본문보다 앞섭니다(본문의 미국 문장 — NEXT_OBSERVATION·SHY·13F 등 — 은 한국에서 그 문장이 덮음). 판을 "
+  + "바꾸면(직접 고치기·제안 승인) 두 책의 다음 결정부터 바뀝니다. 아래 방법론 메모 고르기·저장은 한국 메모입니다.";
+
+function FrameworkBody({ focusProposalId, market }: { focusProposalId: number | null; market: PaperMarketCode }) {
   const framework = useApi<PaperFrameworkResponse>(endpoints.paper.framework);
   const proposals = useApi<PaperProposalsResponse>(endpoints.paper.proposals);
   // 예산(frameworkTokenBudget)이 판 응답에 없을 때만 설정 값을 씁니다(계약에 없는 필드) — 실패해도 토큰 어림은 그대로 보입니다.
@@ -114,7 +141,7 @@ export function FrameworkSection({ focusProposalId = null }: { focusProposalId?:
     <>
       <CurrentCard view={view} />
 
-      <OsSourceCard current={current} proposals={proposalList} onChanged={reloadAll} />
+      <OsSourceCard current={current} proposals={proposalList} onChanged={reloadAll} market={market} />
 
       <Card
         title="제안"
@@ -202,13 +229,16 @@ function OsSourceCard({
   current,
   proposals,
   onChanged,
+  market,
 }: {
   current: PaperFrameworkVersion | null;
   proposals: readonly PaperFrameworkProposal[];
   onChanged: () => void;
+  market: PaperMarketCode;
 }) {
   const card = frameworkSourceCardView(current?.status);
-  const notes = useApi<PaperNotesResponse>(endpoints.paper.notes(false));
+  // 한국 화면은 한국 메모 목록 — 미국 화면은 예전 그대로(endpoints.paper.market("US").notes는 옛 주소와 같은 글자).
+  const notes = useApi<PaperNotesResponse>(endpoints.paper.market(market).notes(false));
   const noteOptions = insightNoteOptions(notes.data?.available ? notes.data.notes : null);
   const [title, setTitle] = useState("");
   const [body, setBody] = useState("");
@@ -244,7 +274,7 @@ function OsSourceCard({
 
   const runSave = async () => {
     // 저장한 메모가 고르기 목록에도 보이게 다시 읽습니다("다른 글로 다시 쓰기" 뒤 그 메모를 다시 고를 수 있게).
-    if (await saveNote.run(insightNotePayload(title, body, card.defaultTitle))) void notes.reload();
+    if (await saveNote.run(insightNotePayload(title, body, card.defaultTitle, market))) void notes.reload();
   };
   const runPropose = async () => {
     if (noteId === null) return;
