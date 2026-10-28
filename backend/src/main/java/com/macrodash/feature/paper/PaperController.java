@@ -24,12 +24,13 @@ import java.util.Map;
  *  POST /api/paper/init                           네 책 만들기 + 벤치마크 사후 체결(멱등)
  *  POST /api/paper/books/{code}/status            {"status":"ACTIVE"|"PAUSED"}
  *  POST /api/paper/books/{code}/reset             {"confirm":"<code>"}
- *  POST /api/paper/run/risk                       리스크 점검 한 번(설정과 상관없이)
+ *  POST /api/paper/run/risk?market=US            리스크 점검 한 번(설정과 상관없이 — 그 시장 장부 실패 기억을 지우고, 시장 US·KR, 없으면 US)
  *  GET  /api/paper/track-record?asOf=             13F 트랙레코드·순위·선정·수집 진행률(없으면 가장 최근 계산)
  *  POST /api/paper/run/rerank                     {"asOf"?} 트랙레코드 수동 재계산(선정은 그대로)
  * </pre>
  *
  * <p>모든 경로는 운영자만 부릅니다(AccessPolicy). 테이블이 없으면 500이 아니라 {@code available:false}(+ POST는 {@code ok:false})입니다.
+ * {@code market}(2단계 명세 §4-16, F1)이 없거나 US면 미국 응답 그대로, KR이면 그 시장 판({@link PaperMarkets#requested}), 그 밖 값은 400입니다.
  */
 @RestController
 @RequestMapping("/api/paper")
@@ -39,13 +40,15 @@ public class PaperController {
     private final PaperAdminService admin;
     private final PaperRiskJob risk;
     private final PaperSelectionService selection;
+    private final PaperMarkets markets;
 
     public PaperController(PaperQueryService query, PaperAdminService admin, PaperRiskJob risk,
-                           PaperSelectionService selection) {
+                           PaperSelectionService selection, PaperMarkets markets) {
         this.query = query;
         this.admin = admin;
         this.risk = risk;
         this.selection = selection;
+        this.markets = markets;
     }
 
     public record StatusRequest(String status) {
@@ -133,10 +136,18 @@ public class PaperController {
         return out;
     }
 
+    /**
+     * {@code market}이 KR이면 한국 수동 리스크 점검({@link PaperRiskJob#runNowView} — 한국 장부 실패 기억을 지우는 창 안의 복구 단추, 쉬는 한국은
+     * {@code ok:false}·{@code dormantReason}), 없거나 US면 미국 응답 그대로.
+     */
     @PostMapping("/run/risk")
-    public Map<String, Object> runRisk() {
+    public Map<String, Object> runRisk(@RequestParam(required = false) String market) {
+        PaperMarket requested = markets.requested(market);
         if (!query.ready()) {
             return notReady();
+        }
+        if (requested != UsPaperMarket.INSTANCE) {
+            return risk.runNowView(requested);
         }
         PaperLedgerService.Outcome outcome = risk.runNow();
         Map<String, Object> out = new LinkedHashMap<>();

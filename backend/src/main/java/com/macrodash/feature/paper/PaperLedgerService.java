@@ -71,7 +71,8 @@ import java.util.function.Supplier;
  * 같으면 대개 같은 예외 — 작업 기록 200건이 오류로 밀림). 그래서 실패한 (책, 수집 시각)을 메모리에 기억해 <b>같은 관측치로는
  * 다시 시도하지 않고</b>, 새 관측치가 오면 다시 시도합니다(미국 {@code paper.quotes}는 수집기가 1시간마다 저장, 한국 {@code paper.kr.quotes}는
  * KR 거래일마다 한 번이라 그 밤에는 새 관측치가 없음 — 한국 결정 게이트 ①이 그 계좌를 기한까지 기다리게 함, {@link KrDecisionGates}). 수동
- * 실행은 기억을 지우고 한 번 더 시도합니다({@link #forgetFailures} — 미국 {@code POST /api/paper/run/risk}, 한국 수동 리스크 실행은 2단계 F1).
+ * 실행은 그 시장 기억을 지우고 한 번 더 시도합니다({@link #forgetFailures(PaperMarket)} — 미국 {@code POST /api/paper/run/risk}, 한국
+ * {@code POST /api/paper/run/risk?market=KR} — 2단계 F1).
  * 기억은 재기동하면 사라집니다 — 그때 한 번 더 시도하는 것은 괜찮습니다.
  *
  * <p><b>멱등</b>: 저장본 수집 시각이 그 책의 {@code lastProcessedCollectedAt} 이하이면 건너뜁니다. 같은 저장본을 두 번 넣어도

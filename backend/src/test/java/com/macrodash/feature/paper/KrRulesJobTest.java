@@ -55,6 +55,9 @@ class KrRulesJobTest {
     private boolean failRulesDecision;
     /** 기한 지남(PAST_DEADLINE) 작업 기록 쓰기를 실패시킴(시험 — 행은 썼는데 기록만 못 씀). */
     private boolean failPastDeadlineRecord;
+    /** {@link #job(PaperMarketData)}가 만든 결정 작업의 장부·저장본 읽기(같은 프로세스의 리스크 점검이 같은 장부를 쓰는 시험 — 운영의 빈 하나). */
+    private PaperLedgerService jobLedger;
+    private PaperMarketData jobMarketData;
 
     @BeforeEach
     void setUp() {
@@ -111,6 +114,8 @@ class KrRulesJobTest {
 
     private PaperDecisionJob job(PaperMarketData marketData) {
         PaperLedgerService ledger = new PaperLedgerService(store, marketData, PaperFixtures.MAPPER);
+        jobLedger = ledger;
+        jobMarketData = marketData;
         return new PaperDecisionJob(store, reader, marketData, ledger, mock(PaperSelectionService.class),
                 mock(RuleBookService.class), mock(ClaudeBookService.class), PaperFixtures.settings(store),
                 KrRuleBookServiceTest.config(), PaperFixtures.MAPPER, clock);
@@ -500,7 +505,7 @@ class KrRulesJobTest {
         assertThat(failed.outcome()).isEqualTo(PaperDecisionJob.DATA_NOT_READY);
         assertThat(failed.message()).contains("① kr_rules").contains("처리하지 못함")
                 .contains("수집 2026-11-02 21:57 KST").contains("그 밤 새로 저장되지 않음").contains("백엔드 재기동")
-                .doesNotContain("새 관측치에서");
+                .contains("수동 리스크 점검 " + KrDecisionGates.LEDGER_RECOVERY).doesNotContain("새 관측치에서");
         failLedgerFor = null;   // 원인은 풀렸지만 같은 관측치(운영 수집기는 '최신 상태'면 저장본을 다시 쓰지 않음)
         for (String at : List.of("2026-11-02T22:40", "2026-11-02T23:50")) {
             assertThat(runAt(at).outcome()).isEqualTo(PaperDecisionJob.DATA_NOT_READY);
@@ -512,6 +517,38 @@ class KrRulesJobTest {
         job = job(new PaperMarketData(reader, repository));   // 백엔드 재기동 — 장부의 오류 기억이 지워짐
         PaperDecisionJob.Result decided = runAt("2026-11-03T00:00");
         assertThat(decided.outcome()).isEqualTo(PaperDecisionJob.DECIDED);
+        assertThat(decided.tradingDate()).isEqualTo(R);
+        assertThat(decided.rules().response().path("gates").get(0).path("status").asString()).isEqualTo("PASS");
+    }
+
+    @Test
+    @DisplayName("F1 — 한국 수동 리스크 점검(POST /api/paper/run/risk?market=KR)이 게이트 ①의 창 안 복구 경로: 장부 오류 뒤 원인을 고쳐도 같은 관측치라 기다리지만, 수동 점검이 한국 장부 실패 기억을 지우고 같은 관측치를 다시 처리하면 재기동 없이 그 창의 다음 주기에 결정")
+    void manualKrRiskRunClearsTheLedgerFailureMemory() {
+        session(R);
+        failLedgerFor = PaperBooks.KR_RULES;
+        PaperDecisionJob.Result failed = runAt("2026-11-02T22:30");
+        assertThat(failed.outcome()).isEqualTo(PaperDecisionJob.DATA_NOT_READY);
+        assertThat(failed.message()).contains("① kr_rules").contains(KrDecisionGates.LEDGER_RECOVERY);
+        failLedgerFor = null;   // 원인을 고침 — 같은 관측치라 장부는 아직 다시 시도하지 않음
+        assertThat(runAt("2026-11-02T22:40").outcome()).isEqualTo(PaperDecisionJob.DATA_NOT_READY);
+
+        // 같은 프로세스의 리스크 점검(운영에서는 장부 빈이 하나) — 한국 수동 실행.
+        PaperRiskJob risk = new PaperRiskJob(store, reader, jobMarketData, jobLedger, KrRuleBookServiceTest.config(),
+                PaperFixtures.MAPPER, clock);
+        clock.set(kst("2026-11-02T22:45"));
+        store.dbNow = clock.instant();
+        Map<String, Object> view = risk.runNowView(KrPaperMarket.INSTANCE);
+
+        assertThat(view.keySet()).containsExactly("ok", "market", "dormantReason", "outcome");
+        assertThat(view).containsEntry("ok", true).containsEntry("market", "KR").containsEntry("dormantReason", null);
+        PaperLedgerService.Outcome outcome = (PaperLedgerService.Outcome) view.get("outcome");
+        assertThat(outcome.errors()).isEmpty();
+        assertThat(outcome.booksProcessed()).as("오류로 되돌렸던 계좌를 같은 관측치로 다시 처리").contains(PaperBooks.KR_RULES);
+        assertThat(store.jobRuns).filteredOn(run -> run.job().equals("kr.risk")).last()
+                .satisfies(run -> assertThat(run.detail().path("manual").asBoolean()).isTrue());
+
+        PaperDecisionJob.Result decided = runAt("2026-11-02T22:50");
+        assertThat(decided.outcome()).as("재기동 없이 그 창에서").isEqualTo(PaperDecisionJob.DECIDED);
         assertThat(decided.tradingDate()).isEqualTo(R);
         assertThat(decided.rules().response().path("gates").get(0).path("status").asString()).isEqualTo("PASS");
     }

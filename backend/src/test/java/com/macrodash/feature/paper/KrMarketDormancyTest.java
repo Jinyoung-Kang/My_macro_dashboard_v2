@@ -141,6 +141,12 @@ class KrMarketDormancyTest {
         assertThatThrownBy(() -> review.runNow(KrPaperMarket.INSTANCE))
                 .isInstanceOf(InvalidRequestException.class).hasMessage(PaperConfig.KR_START_MISSING);
         assertThat(risk.runNow(KrPaperMarket.INSTANCE).skippedReason()).isEqualTo(PaperConfig.KR_START_MISSING);
+        // 화면 경로 응답(POST /api/paper/run/risk?market=KR, F1) — 예외가 아니라 ok:false와 쉬는 사유, 실행은 열지 않음.
+        java.util.Map<String, Object> view = risk.runNowView(KrPaperMarket.INSTANCE);
+        assertThat(view).containsEntry("ok", false).containsEntry("market", "KR")
+                .containsEntry("dormantReason", PaperConfig.KR_START_MISSING);
+        assertThat(((PaperLedgerService.Outcome) view.get("outcome")).skippedReason())
+                .isEqualTo(PaperConfig.KR_START_MISSING);
         assertThat(decision.run(KrPaperMarket.INSTANCE).outcome()).isEqualTo(PaperDecisionJob.DORMANT);
         assertThat(review.run(KrPaperMarket.INSTANCE).outcome()).isEqualTo(PaperReviewJob.DORMANT);
         verifyNoKrRead();

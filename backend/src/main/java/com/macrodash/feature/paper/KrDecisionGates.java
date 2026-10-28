@@ -30,8 +30,8 @@ import java.util.Optional;
  * <ul>
  *   <li>① 장부가 앞 결정의 주문을 정리함 — 그 계좌 장부가 그 실행의 관측치를 처리했고(상태의 마지막 처리 수집 시각 ≥ 그 관측치의 수집 시각 —
  *       장부가 그 관측치에서 오류로 그 계좌를 되돌렸으면 같은 관측치로는 다시 시도하지 않으므로, D 체결·만료·스탑 감지·평가 전 장부로 결정하지
- *       않게. 한국 관측치는 KR 거래일마다 한 번이라 그 밤 새 관측치가 오지 않습니다 — 복구는 원인을 고친 뒤 백엔드 재기동, 아니면 기한 뒤
- *       NO_TRADE), 그 계좌에 기준 거래일 &lt; D이고 그 시장이 체결하는 시점({@link PaperMarket#timings})인 대기 주문이
+ *       않게. 한국 관측치는 KR 거래일마다 한 번이라 그 밤 새 관측치가 오지 않습니다 — 복구는 원인을 고친 뒤 한국 수동 리스크 점검
+ *       {@value #LEDGER_RECOVERY}(그 시장 실패 기억을 지우고 같은 관측치를 다시 처리 — F1)이나 백엔드 재기동, 아니면 기한 뒤 NO_TRADE), 그 계좌에 기준 거래일 &lt; D이고 그 시장이 체결하는 시점({@link PaperMarket#timings})인 대기 주문이
  *       없음(결정 d11 '대기 = 정리 안 됨'). 확정 순자산 줄의 대기 주문 조건과 같은 거름({@link KrConfirmations#pendingBefore})이되 체결 조건 ⑤
  *       (D 개장 순간 &gt; 주문 생성)는 보지 않습니다 — D 개장 뒤에 만든 주문도 아직 체결되지 않은 대기입니다(결정 e3). <b>장부가 그 실행의
  *       관측치로 체결할 수 없는 주문은 기다리지 않습니다</b>(사용자 결정 2026-10-28 u2 — 명세 §9 '주문 뒤에 시작된 정지와 게이트 ①'의 ⓑ,
@@ -73,6 +73,11 @@ final class KrDecisionGates {
      * 종목 하나의 빈 날(신규 상장·정지·그 종목만 받지 못함)은 걸리지 않는 값[추정 — 2026-10-28 로컬 저장본은 창의 날마다 U 100/100].
      */
     static final double WINDOW_DAY_MIN = 0.5;
+    /**
+     * 게이트 ①의 '장부가 이 실행의 관측치를 처리하지 못함'을 그 창 안에서 푸는 경로 — 한국 수동 리스크 점검(그 시장 장부 실패 기억을 지우고 같은
+     * 관측치를 다시 처리, {@link PaperRiskJob#runNowView} — 2단계 명세 §9 'F1 — 한국 장부 실패 기억 지우기').
+     */
+    static final String LEDGER_RECOVERY = "POST /api/paper/run/risk?market=KR";
 
     /** 게이트 하나의 판정. {@code status}는 PASS·FAIL. */
     record Gate(String id, String status, String note) {
@@ -246,12 +251,14 @@ final class KrDecisionGates {
         if (observed != null) {
             Instant processed = store.state(book).map(PaperStore.BookState::lastProcessedCollectedAt).orElse(null);
             if (processed == null || processed.isBefore(observed)) {
-                // 복구 경로(명세 §4-9 'D1c'): 장부는 오류 난 관측치로 다시 시도하지 않고, paper.kr.quotes는 KR 거래일마다 한 번이라 그 밤
-                // 새 관측치가 오지 않습니다 — 원인을 고친 뒤 재기동(오류 기억이 메모리라 지워짐)하거나, 기한 뒤 NO_TRADE.
+                // 복구 경로(명세 §4-9 'D1c'·§9 'F1'): 장부는 오류 난 관측치로 다시 시도하지 않고, paper.kr.quotes는 KR 거래일마다 한 번이라 그
+                // 밤 새 관측치가 오지 않습니다 — 원인을 고친 뒤 한국 수동 리스크 점검(그 시장 오류 기억을 지우고 같은 관측치를 다시 처리)이나
+                // 재기동(오류 기억이 메모리라 지워짐), 아니면 기한 뒤 NO_TRADE.
                 return new Gate("①", "FAIL", book + " — 장부가 이 실행의 관측치(수집 " + Kst.stamp(observed) + ")를 처리하지 못함(마지막 처리 "
                         + (processed == null ? "없음" : Kst.stamp(processed)) + ") — D 체결·만료·스탑 감지·평가 전 장부로 결정하지 않음. "
                         + "장부 오류였으면 같은 관측치로는 다시 시도하지 않고 한국 관측치는 그 밤 새로 저장되지 않음(다음은 다음 KR 거래일 "
-                        + "20:30 뒤) — 원인을 고친 뒤 백엔드 재기동(오류 기억이 지워져 리스크 점검이 다시 처리), 아니면 기한 뒤 NO_TRADE");
+                        + "20:30 뒤) — 원인을 고친 뒤 수동 리스크 점검 " + LEDGER_RECOVERY + "(한국 장부 오류 기억을 지우고 같은 관측치를 "
+                        + "다시 처리 — 다음 결정 주기가 그 창에서 결정)이나 백엔드 재기동, 아니면 기한 뒤 NO_TRADE");
             }
         }
         List<Order> pending = KrConfirmations.pendingBefore(store, market, book, d);

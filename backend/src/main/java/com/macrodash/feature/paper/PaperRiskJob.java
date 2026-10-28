@@ -47,7 +47,8 @@ import java.util.Optional;
  *
  * <p>한 책이 오류로 되돌려지면 그 관측치는 그 책에 대해 다시 돌리지 않습니다({@link PaperLedgerService} 설명) — 같은 저장본으로
  * 5분마다 같은 오류를 내고 ERROR 기록이 쌓여 장중 봉 확인용 기록을 밀어내지 않게. 새 관측치가 오면 다시 시도하고, 수동 실행은
- * 같은 관측치로 한 번 더 시도합니다.
+ * 같은 관측치로 한 번 더 시도합니다(미국 {@code POST /api/paper/run/risk}, 한국 {@code ?market=KR} — 한국은 그 밤 새 관측치가 오지 않아 이것이
+ * 재기동 말고 창 안의 복구 경로, {@link #runNowView}).
  *
  * <p>그 시장 달력이 앞으로 쓸 창의 해를 모르면(공휴일 목록 없음 — 명세 K35) 관측치를 읽지 않고 그 시장 실행을 멈추며, 작업 기록에
  * {@value CalendarGaps#NO_CALENDAR}('달력 없음' 사유·빠진 해)를 남깁니다 — 정기 실행은 그 시장·KST 날짜·빠진 해마다 한 번,
@@ -143,11 +144,31 @@ public class PaperRiskJob {
 
     /**
      * 그 시장의 수동 실행 — {@code dashboard.paper.enabled}와 상관없이 한 번. 그 시장에서 오류가 났던 관측치도 한 번 더
-     * 시도합니다(사람이 원인을 고친 뒤 누르는 버튼이라). 기록은 누른 만큼만 남습니다.
+     * 시도합니다(사람이 원인을 고친 뒤 누르는 버튼이라). 기록은 누른 만큼만 남습니다. 지우는 기억은 그 시장 것뿐입니다
+     * ({@link PaperLedgerService#forgetFailures(PaperMarket)} — 다른 시장 책은 같은 관측치로 다시 시도하지 않은 채 그대로).
      */
     Outcome runNow(PaperMarket market) {
         ledger.forgetFailures(market);
         return run(market, true);
+    }
+
+    /**
+     * POST /api/paper/run/risk?market= — 미국 밖 시장의 수동 실행 응답(2단계 명세 §4-16·§9 'F1 — 한국 장부 실패 기억 지우기'):
+     * {@code {ok, market, dormantReason, outcome}}. 한국 관측치는 KR 거래일마다 한 번이라 장부가 그 관측치에서 오류를 내면 그 밤 새 관측치가
+     * 오지 않습니다 — 이 실행이 그 시장의 실패 기억을 지우고 같은 관측치를 다시 처리하는 창 안의 복구 단추입니다(결정 게이트 ①의 미달 문구가 이
+     * 경로를 안내 — {@link KrDecisionGates#ledger}). 그 시장이 정기 작업을 쉬면(한국 출발일·한국 계좌 없음 — {@link PaperMarket#dormantReason})
+     * 실행을 열지 않고 {@code ok:false}·{@code dormantReason}과 그 사유로 건너뛴 결과입니다(예외가 아님). {@code ok}는 쉬지 않고 오류가 없을 때
+     * 참입니다. 미국 응답({@code {ok, outcome}})은 시장을 받기 전 그대로입니다(부르는 쪽이 {@link #runNow()}).
+     */
+    Map<String, Object> runNowView(PaperMarket market) {
+        String dormant = store.ready() ? market.dormantReason(config, () -> store.books(market.code())) : null;
+        Outcome outcome = dormant != null ? Outcome.skipped(dormant) : runNow(market);
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("ok", dormant == null && outcome.errors().isEmpty());
+        out.put("market", market.code());
+        out.put("dormantReason", dormant);
+        out.put("outcome", outcome);
+        return out;
     }
 
     /** 미국 책 한 번 실행 — {@link #run(PaperMarket, boolean)}의 미국 판. 테스트가 부릅니다. */
