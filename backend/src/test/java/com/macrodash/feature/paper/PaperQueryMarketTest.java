@@ -91,7 +91,7 @@ class PaperQueryMarketTest {
     }
 
     @Test
-    @DisplayName("시장 값이 없거나 US면 개요·상태가 시장을 받기 전 미국 응답과 글자 하나까지 같다 — 한국 칸(market·dormantReason)이 붙지 않고 작업 기록은 모든 작업")
+    @DisplayName("시장 값이 없거나 US면 개요·상태가 옛 시그니처(미국 판)의 응답과 글자 하나까지 같다 — 한국 칸(market·dormantReason)이 붙지 않고 작업 기록은 모든 작업(main 응답과 같은지는 PaperQueryUsGoldenTest의 고정본)")
     void usResponsesAreUnchanged() {
         krBooks();
         krQuotes();

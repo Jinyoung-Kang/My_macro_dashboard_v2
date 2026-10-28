@@ -1,0 +1,101 @@
+{
+  "available" : true,
+  "schemaReady" : true,
+  "initialized" : true,
+  "enabled" : true,
+  "startDate" : "2026-10-23",
+  "initialCash" : 100000.0,
+  "quotes" : {
+    "collectedAtKst" : "2026-10-27 05:20 KST",
+    "ageSeconds" : 2400,
+    "barDate" : "2026-10-26",
+    "finalClose" : true,
+    "tickers" : 3,
+    "staleTickers" : [ "QQQ" ],
+    "stale" : false
+  },
+  "jobs" : [ {
+    "job" : "decision",
+    "startedAtKst" : "2026-10-27 05:55 KST",
+    "finishedAtKst" : "2026-10-27 05:56 KST",
+    "outcome" : "DECIDED",
+    "detail" : {
+      "tradingDate" : "2026-10-26"
+    }
+  }, {
+    "job" : "kr.decision",
+    "startedAtKst" : "2026-10-27 05:50 KST",
+    "finishedAtKst" : "2026-10-27 05:50 KST",
+    "outcome" : "DORMANT",
+    "detail" : null
+  }, {
+    "job" : "risk",
+    "startedAtKst" : "2026-10-27 05:45 KST",
+    "finishedAtKst" : "2026-10-27 05:45 KST",
+    "outcome" : "ok",
+    "detail" : null
+  } ],
+  "settingsVersion" : 1,
+  "settingsFallbacks" : [ "slippageBp", "blend.minTargetPct", "rules" ],
+  "apiUsage" : {
+    "today" : {
+      "day" : "2026-10-27",
+      "calls" : 3,
+      "cap" : 20,
+      "scheduledReserve" : 7,
+      "manualLimit" : 13,
+      "inputTokens" : 12000,
+      "outputTokens" : 2400,
+      "cacheReadTokens" : 8000,
+      "cacheWriteTokens" : 1000,
+      "estCostUsd" : 0.0912,
+      "estimatedCalls" : 3,
+      "isEstimated" : true
+    },
+    "month" : {
+      "month" : "2026-10",
+      "days" : 1,
+      "calls" : 3,
+      "inputTokens" : 12000,
+      "outputTokens" : 2400,
+      "cacheReadTokens" : 8000,
+      "cacheWriteTokens" : 1000,
+      "estCostUsd" : 0.0912,
+      "estimatedCalls" : 3,
+      "isEstimated" : true
+    },
+    "note" : "호출 수는 성공·실패를 모두 셉니다. 토큰은 응답이 알려 준 값의 합입니다. 추정 비용은 설정의 단가(pricing.*)로 낸 어림이고 estimatedCalls회만 셉니다 — 단가를 모르는 모델·토큰을 모르는 호출·단가 도입 전 호출은 추정에서 빠졌습니다."
+  },
+  "fundamentals" : {
+    "available" : false,
+    "universe" : null,
+    "mapped" : null,
+    "covered" : null,
+    "latestFetchKst" : null,
+    "staleCompanies" : null,
+    "note" : "재무 상태 저장본(us.fundamentals.status)이 아직 없습니다 — 수집기의 sec_fundamentals 태스크가 한 번 돌면 생깁니다."
+  },
+  "calendar" : {
+    "available" : false,
+    "macroCount" : null,
+    "earningsCovered" : null,
+    "universe" : null,
+    "generatedAtKst" : null,
+    "fredStatus" : null
+  },
+  "news" : {
+    "available" : false,
+    "stored7d" : null,
+    "lastFetchKst" : null,
+    "feedsOk" : null,
+    "feedsTotal" : null,
+    "failedFeeds" : null
+  },
+  "earnings" : {
+    "available" : false,
+    "covered" : null,
+    "universe" : null,
+    "withEstimate4" : null,
+    "generatedAtKst" : null
+  }
+}
