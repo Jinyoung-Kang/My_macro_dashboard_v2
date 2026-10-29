@@ -470,7 +470,8 @@ function fscDatasetLabel(source: string | null | undefined): string {
 
 /**
  * 한국 체결 한 줄의 배지 — 확정 상태(확정 · 확정 대기 · 금융위 확정 미보정(ETF) · 금융위 확정 못 함)와, 잠정가가 KRX+NXT 통합가(`TOSS_INTEGRATED`)면
- * '잠정' 배지. 상태를 모르면(이 칸을 보내지 않는 서버) 상태 배지는 없습니다.
+ * 그 표시 — 아직 확정되지 않은 행은 경고색 '잠정', 확정 행은 무채색 '확정 조정됨'(이미 금융위 확정가로 맞춤). 상태를 모르면(이 칸을 보내지 않는
+ * 서버) 상태 배지는 없고 통합가 표시는 '잠정'입니다.
  */
 export function krFillBadges(fill: Pick<PaperFill, "confirmationState" | "confirmationNote" | "confirmation" | "priceSource">): Badge[] {
   const badges: Badge[] = [];
@@ -496,10 +497,18 @@ export function krFillBadges(fill: Pick<PaperFill, "confirmationState" | "confir
     badges.push({ key: "state", label: state, className: toneClass("muted"), title: fill.confirmationNote ?? undefined });
   }
   if (fill.priceSource === "TOSS_INTEGRATED") {
-    badges.push({
-      key: "integrated", label: "KRX+NXT 통합가 · 잠정", className: toneClass("warn"),
-      title: "NXT 시간외 체결을 포함한 통합 일봉 시가입니다 — KRX 시가 단일가가 아닐 수 있어 금융위 확정가로 맞춥니다.",
-    });
+    const integrated = "NXT 시간외 체결을 포함한 통합 일봉 시가";
+    badges.push(state === "CONFIRMED"
+      ? {
+        key: "integrated", label: "KRX+NXT 통합가 · 확정 조정됨", className: toneClass("muted"),
+        title: `잠정 체결가는 ${integrated}였고(KRX 시가 단일가가 아닐 수 있음), 금융위 확정가로 확정 조정했습니다 — 현금·평단은 확정 기준입니다.`,
+      }
+      : {
+        key: "integrated", label: "KRX+NXT 통합가 · 잠정", className: toneClass("warn"),
+        title: state === "UNCORRECTED"
+          ? `${integrated}입니다 — KRX 시가 단일가가 아닐 수 있는데, 이 체결은 확정 조정 행이 없어 잠정가 그대로입니다.`
+          : `${integrated}입니다 — KRX 시가 단일가가 아닐 수 있어, 금융위 그날 값이 들어오면 금융위 확정가로 맞춥니다.`,
+      });
   }
   return badges;
 }

@@ -299,8 +299,8 @@ describe("보유·체결(F2 — 세 배지·확정 조정·실효 비용·스탑
     expect(krPriceSourceLabel(null)).toBe("—");
   });
 
-  // 수정 전에는 확정된 통합가 체결에도 경고색 'KRX+NXT 통합가 · 잠정'과 '맞춥니다'(앞으로 할 일) 툴팁이 붙었습니다(it.fails).
-  it.fails("통합가 배지 — 확정 행은 경고 없이 '확정 조정됨'(지난 일), 확정 대기·미보정 행만 경고색 '잠정'", () => {
+  // 예전에는 확정된 통합가 체결에도 경고색 'KRX+NXT 통합가 · 잠정'과 '맞춥니다'(앞으로 할 일) 툴팁이 붙었습니다.
+  it("통합가 배지 — 확정 행은 경고 없이 '확정 조정됨'(지난 일), 확정 대기·미보정 행만 경고색 '잠정'", () => {
     const confirmation = { confirmedPrice: 71_200, priceDiff: -100, fee: 106, tax: 0, slippageCost: 356, costBp: 6.49, cashDelta: 1_000,
       source: "FSC", reconciledAtKst: "2026-11-04 22:05 KST" };
     const confirmed = krFillBadges({ confirmationState: "CONFIRMED", confirmationNote: null, priceSource: "TOSS_INTEGRATED", confirmation });
