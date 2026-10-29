@@ -267,10 +267,15 @@ function ReviewBody({
               { key: "decision", header: "결정", render: (row) => <span className="whitespace-nowrap text-xs text-body">{row.decision}</span> },
               { key: "ticker", header: "종목", render: (row) => <span className="font-semibold text-bright">{row.ticker}</span> },
               // 방향이 있어야 변화의 부호를 읽을 수 있습니다 — 매도의 음수는 피한 하락(손실이 아님).
-              { key: "side", header: "방향", render: (row) => <span className={`whitespace-nowrap text-xs ${sideClass(row.sideCode)}`}>{row.side}</span> },
+              {
+                key: "side",
+                header: "방향",
+                className: "whitespace-nowrap",
+                render: (row) => <span className={`text-xs ${sideClass(row.sideCode)}`}>{row.side}</span>,
+              },
               { key: "reject", header: "거절 사유", render: (row) => <span className="text-xs text-warn">{row.rejectReason}</span> },
               { key: "entryDate", header: "진입일", render: (row) => <span className="whitespace-nowrap text-xs text-body">{row.entryDate}</span> },
-              { key: "entryPrice", header: "진입가(원)", align: "right", render: (row) => row.entryPrice },
+              { key: "entryPrice", header: "진입가(원)", align: "right", className: "whitespace-nowrap", render: (row) => row.entryPrice },
               {
                 key: "source",
                 header: "진입가 출처",
