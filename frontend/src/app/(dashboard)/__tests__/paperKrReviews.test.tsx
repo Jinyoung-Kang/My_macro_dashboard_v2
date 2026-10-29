@@ -68,9 +68,16 @@ const INPUT = {
         hypothetical: { basis: "가정", entryDate: "2026-11-06", entryPrice: 72_000, entrySource: "FSC", isProxy: false, returnPct: -3,
           afterSellLabel: "avoided" } },
     ] },
+    // 값이 없는 가정 진입 — 그 이유는 주문 notes의 '가정 수익률:' 줄(서버 ReviewFacts)입니다.
+    { id: 9, asOf: "2026-11-06", orders: [
+      { id: 10, ticker: "051910", side: "BUY", status: "REJECTED", rejectReason: "MONTHLY_CAP",
+        hypothetical: { basis: "가정", entryDate: "2026-11-09", entryPrice: null, entrySource: null, isProxy: null, returnPct: null },
+        notes: ["가정 수익률: 결정 다음 세션(2026-11-09)이 복기 기준일 뒤"] },
+    ] },
   ],
   comparison: { from: "2026-10-30", to: "2026-11-06", note: "순자산 수익률(%) — isEstimated = 확정 종가가 아닌 줄을 씀", books: [
     { book: "kr_rules", returnPct: 0.5, isEstimated: true }, { book: "kr_claude", returnPct: 1, isEstimated: true },
+    { book: "kr_bench_mix", returnPct: null, isEstimated: null, reason: "복기 기준일(2026-11-06) 순자산 없음" },
   ] },
 };
 
@@ -192,6 +199,19 @@ describe("자료", () => {
     expect(within(buy).queryByText(/피한 하락|놓친 상승/)).toBeNull();
     expect(screen.getByText(/거절된 주문\(매수·매도\)이 결정 다음 세션 시가에 체결됐다고 가정한 값/)).toBeTruthy();
     expect(screen.queryByText(/샀다고 가정/)).toBeNull();
+  });
+
+  // 수정 전에는 서버가 보낸 값 없음의 이유(비교 줄 reason·주문 notes의 '가정 수익률:')를 버리고 '—'만 그렸습니다(it.fails).
+  it.fails("값이 없으면 서버가 보낸 이유를 곁에 — 가정 진입은 주문 notes의 '가정 수익률:' 줄, 계좌 수익률 비교는 reason", async () => {
+    await openReviews();
+    const entries = await screen.findByRole("region", { name: "가정 진입 (좌우 스크롤)" });
+    const row = within(entries).getAllByRole("row").find((tr) => tr.textContent?.includes("051910")) as HTMLElement;
+    expect(within(row).getByText("결정 다음 세션(2026-11-09)이 복기 기준일 뒤")).toBeTruthy();
+    // 값이 있는 줄에는 이유를 붙이지 않습니다.
+    const filled = within(entries).getAllByRole("row").find((tr) => tr.textContent?.includes("000660")) as HTMLElement;
+    expect(within(filled).queryByText(/복기 기준일 뒤/)).toBeNull();
+    const comparison = screen.getByRole("list", { name: "계좌 수익률 비교" });
+    expect(within(comparison).getByText("복기 기준일(2026-11-06) 순자산 없음")).toBeTruthy();
   });
 
   it("수동 실행은 확인 창에 수동 문턱 → POST /api/paper/reviews/run?market=KR", async () => {
