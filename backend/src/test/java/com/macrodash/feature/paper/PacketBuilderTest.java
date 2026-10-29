@@ -70,6 +70,7 @@ import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -1201,6 +1202,147 @@ class PacketBuilderTest {
                 .get("frameworkVersion").asInt()).isEqualTo(3);
     }
 
+    // ------------------------------------------------------------------ 입력 동결(계좌2 명세 §9-1)
+    /**
+     * 시장 입력을 함께 쓰는 두 번째 미국 Claude 계좌(시험용 — 계좌2의 정의는 단계 1의 1-5) — 계좌1과 같은 시장·스키마·고정 문단·시점, 코드만
+     * 다릅니다.
+     */
+    private static final ClaudeBookProfile OTHER_BOOK = new ClaudeBookProfile(UsPaperMarket.INSTANCE, "claude_twin",
+            ClaudeBookProfile.US_CLAUDE.schemaResource(), ClaudeBookProfile.US_CLAUDE.fixedRules(), null,
+            ClaudeBookProfile.US_CLAUDE.timings(), ClaudeBookProfile.US_CLAUDE.timingRanks(), null);
+
+    /**
+     * 두 번째 계좌의 장부 — EEE 500주(평단 28, 마지막 30 — 계좌1은 BBB), 재진입 금지 없음, 앞선 결정 하나(watchlist DDD)와 그 사후 체결
+     * 주문(이달 누계에 세지 않음), 대기 주문 CCC 하나.
+     */
+    private void otherBook() {
+        String code = OTHER_BOOK.code();
+        store.books.put(code, new Book(code, PaperBooks.KIND_CLAUDE, "시험용 두 번째 Claude 계좌", 100_000, FRI,
+                PaperBooks.ACTIVE, FRI_CLOSE));
+        store.states.put(code, new BookState(code, 85_000, 100_000, 15_000, 15, QUOTES_AT, QUOTES_AT, FRI, null));
+        store.upsertPosition(new Position(code, "EEE", 500, 28, FRI, FRI_CLOSE, 31, FRI_CLOSE, 30.0, QUOTES_AT, false,
+                FRI, 28, null));
+        long decision = store.insertDecisionIfAbsent(new Decision(0, code, FRI, RuleBookService.INITIAL, null, "OK",
+                "claude-sonnet-5-5", null, 1, FRI, 15.0, null, null, null,
+                MAPPER.valueToTree(Map.of("schemaVersion", 2, "stance", "DEFENSIVE", "summary", "두 번째 계좌",
+                        "watchlist", List.of(Map.of("ticker", "DDD")))), null, null, List.of(), true, 900L, 0))
+                .orElseThrow();
+        store.insertOrder(new Order(0, code, decision, "EEE", "BUY", null, 15.0, null, "BACKFILL", "CLAUDE", "FILLED",
+                null, null, FRI, FRI_CLOSE, null, FRI_CLOSE));
+        store.insertOrder(new Order(0, code, decision, "CCC", "BUY", null, 4.0, null, "NEXT_CLOSE", "CLAUDE", "PENDING",
+                null, null, FRI, FRI_CLOSE, TUE, null));
+    }
+
+    @Test
+    @DisplayName("입력 동결(계좌2 명세 §9-1): 시장 입력 하나로 두 계좌를 조립하면 계좌 비의존 섹션 일곱이 바이트까지 같고(해시도), 계좌1 조립은 build와 같은 글자(고정본)")
+    void marketSectionsAreSharedAcrossBooks() {
+        store.insertNote(new Note(0, NoteService.MARKET, FRI, TUE, "금요일 시황", "10년물 4.6%·브렌트 88", false, null));
+        activeClaude();
+        otherBook();
+        PacketBuilder.MarketInputs inputs = builder.read(MON, false, store.settings);
+        Packet claude = builder.assemble(inputs, ClaudeBookProfile.US_CLAUDE, RuleBookService.SCHEDULED, 0);
+        Packet other = builder.assemble(inputs, OTHER_BOOK, RuleBookService.SCHEDULED, 0);
+
+        // 계좌1 조립 = 나눔 전 패킷 그대로(고정본 packet-us-scheduled.json의 해시) — 다른 계좌의 장부가 끼어들지 않음.
+        assertThat(claude.sha256()).isEqualTo(GOLDEN_SCHEDULED_SHA256);
+        assertThat(claude.text()).isEqualTo(builder.build(MON, RuleBookService.SCHEDULED, false, 0, store.settings).text());
+        assertThat(other.noteIds()).isEqualTo(claude.noteIds()).hasSize(1);
+
+        assertThat(PacketBuilder.MARKET_SECTION_KEYS).containsExactly(PacketBuilder.MACRO, PacketBuilder.FRED,
+                PacketBuilder.REGIME, PacketBuilder.GATE, PacketBuilder.TRACK_RECORD, PacketBuilder.PROFILES,
+                PacketBuilder.NOTES);
+        for (String key : PacketBuilder.MARKET_SECTION_KEYS) {
+            assertThat(MAPPER.writeValueAsString(other.body().get(key))).as(key)
+                    .isEqualTo(MAPPER.writeValueAsString(claude.body().get(key)));
+        }
+        String hash = PacketBuilder.marketSectionsSha256(claude.body(), MAPPER);
+        assertThat(hash).matches("[0-9a-f]{64}").isEqualTo(PacketBuilder.marketSectionsSha256(other.body(), MAPPER));
+        // 보낸 글자를 다시 읽은 트리(결정 행의 packet_text)로도 같은 값.
+        assertThat(PacketBuilder.marketSectionsSha256(MAPPER.readTree(other.text()), MAPPER)).isEqualTo(hash);
+
+        // 계좌에 기대는 섹션은 그 계좌의 것 — 섹션 1·9의 계좌 코드, 장부, 이달 누계, 대기 주문, 최근 결정, 가격 대상, 13F 후보의 보유 표시.
+        JsonNode basis = other.body().get(PacketBuilder.BASIS);
+        assertThat(claude.body().get(PacketBuilder.BASIS).get("book").asString()).isEqualTo(PaperBooks.CLAUDE);
+        assertThat(basis.get("book").asString()).isEqualTo(OTHER_BOOK.code());
+        assertThat(basis.get("decisionKind").asString()).isEqualTo(RuleBookService.SCHEDULED);
+        JsonNode portfolio = other.body().get(PacketBuilder.PORTFOLIO);
+        assertThat(portfolio.get("book").asString()).isEqualTo(OTHER_BOOK.code());
+        assertThat(portfolio.get("positions")).hasSize(1);
+        assertThat(row(portfolio.get("positions"), "ticker", "EEE").get("qty").asInt()).isEqualTo(500);
+        assertThat(portfolio.get("lockouts")).isEmpty();
+        assertThat(portfolio.get("monthlyDiscretionaryOrders").get("used").asInt()).as("사후 체결은 세지 않음").isZero();
+        assertThat(claude.body().get(PacketBuilder.PORTFOLIO).get("monthlyDiscretionaryOrders").get("used").asInt())
+                .isEqualTo(1);
+        assertThat(portfolio.get("pendingOrders").get("rows").toString())
+                .isEqualTo("[[\"CCC\",\"BUY\",null,4,null,\"NEXT_CLOSE\",\"2026-10-23\",\"INITIAL\",\"2026-10-27\"]]");
+        assertThat(other.body().get(PacketBuilder.DECISIONS).get("decisions").get(0).get("stance").asString())
+                .isEqualTo("DEFENSIVE");
+        assertThat(priceRow(other.body(), "EEE").get("role").asString()).isEqualTo("HOLDING");
+        assertThat(other.body().get(PacketBuilder.HARD_RULES).get("lockedOut")).isEmpty();
+        for (String key : List.of(PacketBuilder.BASIS, PacketBuilder.CHANGES, PacketBuilder.PRICES,
+                PacketBuilder.PORTFOLIO, PacketBuilder.DECISIONS, PacketBuilder.HARD_RULES)) {
+            assertThat(MAPPER.writeValueAsString(other.body().get(key))).as(key)
+                    .isNotEqualTo(MAPPER.writeValueAsString(claude.body().get(key)));
+        }
+    }
+
+    @Test
+    @DisplayName("입력 동결: 시장 입력은 한 번 읽고(매크로 카드·사건 저장본 한 번), 읽은 뒤 저장본·메모가 바뀌어도 그 입력으로 조립한 계좌 비의존 섹션은 그대로 — 새로 읽은 패킷만 바뀜")
+    void marketInputsAreReadOnceAndFrozen() {
+        activeClaude();
+        otherBook();
+        PacketBuilder.MarketInputs inputs = builder.read(MON, false, store.settings);
+        Packet first = builder.assemble(inputs, ClaudeBookProfile.US_CLAUDE, RuleBookService.SCHEDULED, 0);
+        String hash = PacketBuilder.marketSectionsSha256(first.body(), MAPPER);
+
+        // 읽은 뒤 매크로 카드 수집본이 다시 쓰이고 메모가 하나 생김.
+        snapshot(Datasets.SNAP_MACRO_COLLECTED, Map.of("categories", List.of(category("ust",
+                List.of(card("us10y", "미국채 10년물 수익률(%)", 5.30, 5.05, "2026-10-27 05:30"))))),
+                Instant.parse("2026-10-27T06:36:00Z"));
+        store.insertNote(new Note(0, NoteService.MARKET, FRI, TUE, "늦은 메모", "읽은 뒤 쓴 메모", false, null));
+        Packet later = builder.assemble(inputs, OTHER_BOOK, RuleBookService.SCHEDULED, 0);
+
+        assertThat(PacketBuilder.marketSectionsSha256(later.body(), MAPPER)).isEqualTo(hash);
+        assertThat(later.noteIds()).isEmpty();
+        assertThat(later.body().get(PacketBuilder.MACRO).get("cards").get("items")).hasSize(4);
+        verify(reader, times(1)).read(eq(Datasets.SNAP_MACRO_COLLECTED), anyLong(), any());
+        verify(reader, times(1)).read(eq(Datasets.SNAP_US_CALENDAR), anyLong(), any());
+        assertThat(newsReads).as("사건 저장본도 한 번").isEqualTo(1);
+
+        // 새로 읽으면 바뀐 저장본·메모 — 해시가 실제로 시장 입력을 가리킴.
+        Packet fresh = builder.build(MON, RuleBookService.SCHEDULED, false, 0, store.settings);
+        assertThat(fresh.body().get(PacketBuilder.MACRO).get("cards").get("items")).hasSize(1);
+        assertThat(fresh.noteIds()).hasSize(1);
+        assertThat(PacketBuilder.marketSectionsSha256(fresh.body(), MAPPER)).isNotEqualTo(hash);
+    }
+
+    @Test
+    @DisplayName("시장 섹션 해시: 계좌에 기대는 섹션은 들지 않고, 섹션이 하나라도 없으면 null, 섹션 안 키 순서가 바뀐 트리(JSONB 모양)는 다른 값")
+    void marketSectionsSha256() {
+        ObjectNode body = (ObjectNode) builder.build(FRI, RuleBookService.INITIAL, true).body().deepCopy();
+        String hash = PacketBuilder.marketSectionsSha256(body, MAPPER);
+        assertThat(hash).matches("[0-9a-f]{64}");
+
+        body.put(PacketBuilder.BASIS, "다른 계좌");
+        body.remove(PacketBuilder.PORTFOLIO);
+        body.remove(PacketBuilder.CALENDAR);
+        body.remove(PacketBuilder.EVENTS);
+        assertThat(PacketBuilder.marketSectionsSha256(body, MAPPER)).as("계좌 몫·1b·11b는 해시 밖").isEqualTo(hash);
+
+        // JSONB처럼 섹션 안 키를 다시 정렬한 트리 — 보낸 글자(packet_text)를 읽어 써야 하는 이유.
+        ObjectNode fred = (ObjectNode) body.get(PacketBuilder.FRED);
+        ObjectNode sorted = MAPPER.createObjectNode();
+        new TreeSet<>(fred.propertyNames()).forEach(key -> sorted.set(key, fred.get(key)));
+        ObjectNode reordered = body.deepCopy();
+        reordered.set(PacketBuilder.FRED, sorted);
+        assertThat(PacketBuilder.marketSectionsSha256(reordered, MAPPER)).isNotEqualTo(hash);
+
+        body.remove(PacketBuilder.NOTES);
+        assertThat(PacketBuilder.marketSectionsSha256(body, MAPPER)).as("섹션이 빠지면 지어내지 않음").isNull();
+        assertThat(PacketBuilder.marketSectionsSha256(null, MAPPER)).isNull();
+        assertThat(PacketBuilder.marketSectionsSha256(MAPPER.createArrayNode(), MAPPER)).isNull();
+    }
+
     // ------------------------------------------------------------------ 초기 결정 Point-in-Time
     @Test
     @DisplayName("초기 패킷에는 기준일(10-23) 뒤 날짜의 값이 없다 — 카드만 asOfMismatch로 현재 수집본")
@@ -1744,9 +1886,17 @@ class PacketBuilderTest {
         assertThatThrownBy(() -> builder.build(null, RuleBookService.SCHEDULED, false))
                 .isInstanceOf(IllegalArgumentException.class);
         assertThatThrownBy(() -> builder.build(FRI, "DAILY", false)).isInstanceOf(IllegalArgumentException.class);
+        // 나눈 읽기·조립도 같은 거절 — 조립은 미국 Claude 계좌만(한국 계좌는 KrPacketBuilder).
+        PacketBuilder.MarketInputs inputs = builder.read(FRI, true, null);
+        assertThatThrownBy(() -> builder.read(null, false, null)).isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> builder.assemble(inputs, ClaudeBookProfile.US_CLAUDE, "DAILY", null))
+                .isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> builder.assemble(inputs, ClaudeBookProfile.KR_CLAUDE, RuleBookService.INITIAL, null))
+                .isInstanceOf(IllegalArgumentException.class).hasMessageContaining(PaperBooks.KR_CLAUDE);
         store.ready = false;
         assertThatThrownBy(() -> builder.build(FRI, RuleBookService.SCHEDULED, false))
                 .isInstanceOf(IllegalStateException.class);
+        assertThatThrownBy(() -> builder.read(FRI, false, null)).isInstanceOf(IllegalStateException.class);
     }
 
     // ------------------------------------------------------------------ 조각

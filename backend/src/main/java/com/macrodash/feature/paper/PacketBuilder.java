@@ -65,6 +65,7 @@ import java.time.YearMonth;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.Collections;
 import java.util.Comparator;
 import java.util.HexFormat;
 import java.util.LinkedHashMap;
@@ -73,6 +74,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.NavigableMap;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.TreeMap;
@@ -119,6 +121,11 @@ import java.util.function.Function;
  *
  * <p>읽기만 합니다 — 선정·트랙레코드를 새로 계산하거나 게이트 기록을 남기지 않습니다(같은 입력 같은 패킷). 저장본은 모두
  * {@link StoreReader#quietly} 안에서 읽어 수집을 깨우지 않습니다.
+ *
+ * <p><b>읽기와 조립</b>(계좌2 명세 §9-1 '입력 동결'): 한 번의 패킷은 <b>읽기</b>({@link #read} — 그 실행에서 한 번 읽은 시장 입력
+ * {@link MarketInputs})와 <b>조립</b>({@link #assemble} — 계좌 인자로 그 계좌의 장부를 읽어 패킷 하나)입니다. 같은 실행의 Claude 계좌들이 시장
+ * 입력 하나로 조립하면 계좌에 기대지 않는 섹션({@link #MARKET_SECTION_KEYS})이 바이트까지 같습니다. {@link #build}는 미국 계좌1
+ * ({@link ClaudeBookProfile#US_CLAUDE})의 읽기 + 조립이라 이 나눔 전과 같은 글자입니다(고정본 시험).
  */
 @Service
 public class PacketBuilder {
@@ -161,6 +168,12 @@ public class PacketBuilder {
     static final String HARD_RULES = "12_hardRules";
     static final List<String> SECTION_KEYS = List.of(INSTRUCTIONS, BASIS, CALENDAR, MACRO, FRED, REGIME, GATE,
             TRACK_RECORD, PROFILES, CHANGES, PRICES, FUNDAMENTALS, PORTFOLIO, DECISIONS, NOTES, EVENTS, HARD_RULES);
+    /**
+     * 계좌에 기대지 않는 섹션(계좌2 명세 §9-1, 읽는 순서) — 시장 입력({@link MarketInputs})만으로 만들어, 같은 시장 입력으로 조립한 계좌들의
+     * 패킷에서 바이트까지 같습니다({@link #marketSectionsSha256}). 일부만 계좌에 기대는 {@code 1_basis}(계좌·결정 종류 칸)·{@code 1b_calendar}·
+     * {@code 11b_events}(실적·종목 사건 줄은 그 계좌의 대상 종목)는 넣지 않습니다.
+     */
+    static final List<String> MARKET_SECTION_KEYS = List.of(MACRO, FRED, REGIME, GATE, TRACK_RECORD, PROFILES, NOTES);
 
     /**
      * 패킷 모양의 판 — 섹션·칸을 바꾸면 올립니다(결정 기록끼리 비교할 때 같은 모양인지 알게). 2 = 재무 섹션 8b(D28), 3 = 일정 섹션
@@ -344,7 +357,8 @@ public class PacketBuilder {
     }
 
     /**
-     * 그 거래일의 패킷(클래스 설명).
+     * 그 거래일의 미국 계좌1({@link ClaudeBookProfile#US_CLAUDE}) 패킷(클래스 설명) — 시장 입력 읽기({@link #read})와 그 계좌의 조립
+     * ({@link #assemble})을 한 {@code quietly} 안에서 합니다.
      *
      * @param asOf             기준 거래일(미국 동부 세션 날짜). 초기 결정이면 출발일
      * @param kind             결정 종류(SCHEDULED·MANUAL·INITIAL·REBALANCE) — 섹션 1에 그대로
@@ -366,10 +380,94 @@ public class PacketBuilder {
         if (!store.ready()) {
             throw new IllegalStateException(PaperQueryService.NOT_READY_MESSAGE);
         }
-        return reader.quietly(() -> assemble(asOf, kind, initial, frameworkVersion, settingsRow));
+        return reader.quietly(() -> assembleFor(readInputs(asOf, initial, settingsRow), ClaudeBookProfile.US_CLAUDE,
+                kind, frameworkVersion));
     }
 
-    private Packet assemble(LocalDate asOf, String kind, boolean initial, Integer frameworkVersion, SettingsRow given) {
+    /**
+     * 그 실행에서 한 번 읽은 시장 입력(계좌2 명세 §9-1 '입력 동결') — 결정이 읽은 설정 행, 관측치 저장본과 그것으로 정한 유니버스·묵은 입력
+     * 판정(시계는 여기서 한 번), 13F 선정(신호·기관 이름), 일정·컨센서스 저장본, 사건 헤드라인과 수집 상태, 메모, 그리고 시장 입력만으로 만든
+     * 계좌 비의존 섹션({@link #MARKET_SECTION_KEYS} — 매크로 카드·환율·FRED·국면·게이트·트랙레코드·전략 프로필·메모). 계좌 비의존 섹션은 JSON
+     * 트리로 얼려 두고 조립이 복사해 넣으므로({@link #toNode}) 같은 시장 입력이면 어느 계좌의 패킷이든 그 섹션이 바이트까지 같습니다. 일부만
+     * 계좌에 기대는 1b·11b는 저장본만 여기서 읽고 그 계좌의 종목 대상으로 조립이 만듭니다.
+     *
+     * <p>장부(보유·재진입 금지·대기 주문·이달 주문 수)와 최근 결정, 그 계좌의 종목 대상으로 읽는 가격 이력·재무는 계좌마다 다르므로 조립이
+     * 그 계좌로 읽습니다({@link #assemble}). 만든 뒤 바꾸지 않습니다.
+     *
+     * @param asOf            기준 거래일(미국 동부 세션 날짜)
+     * @param initial         초기 결정 패킷의 읽기(기준일 뒤 값을 하나도 넣지 않음 — 클래스 설명의 Point-in-Time)
+     * @param settingsBody    결정이 읽은 설정 행의 본문(없으면 기본값) — 한도·현금성·ETF 순서·결정 시각은 여기서
+     * @param settingsVersion 결정이 읽은 설정 판(없으면 null — 기본값)
+     * @param universe        살 수 있는 종목(이름 순 — {@link #universe})
+     * @param inputsStale     정기 결정의 입력이 묵었나({@link #inputsStale} — 초기 결정은 false)
+     * @param consensus       컨센서스 층을 켰나(설정 {@code calendar.consensus} — 패킷 판 6)
+     * @param calendar        일정 저장본({@code us.calendar})
+     * @param consensusLayer  컨센서스 층의 재료 — 꺼졌으면 null(저장본을 읽지 않음)
+     * @param newsWindow      사건 창(직전 결정 이후 — {@link NewsEvents#window})
+     * @param news            사건 설정
+     * @param newsRows        사건 창의 헤드라인 행(꺼졌으면 빈 목록 — 읽지 않음)
+     * @param newsStatus      사건 수집 상태(꺼졌거나 초기 결정이면 null)
+     * @param notes           섹션 11에 실을 메모
+     * @param marketSections  계좌 비의존 섹션 — 키 {@link #MARKET_SECTION_KEYS}, 그 순서
+     */
+    record MarketInputs(LocalDate asOf, boolean initial, JsonNode settingsBody, Integer settingsVersion,
+                        PaperSettings paper, RuleSettings ruleSettings, Limits limits, Selection chosen,
+                        SignalContext context, Names names, Optional<Quotes> quotes, Set<String> universe,
+                        boolean inputsStale, boolean consensus, Optional<Snapshot> calendar,
+                        CalendarSection.Consensus consensusLayer, NewsEvents.Window newsWindow,
+                        NewsEvents.Settings news, List<JsonNode> newsRows, JsonNode newsStatus,
+                        NoteService.PacketNotes notes, Map<String, JsonNode> marketSections) {
+
+        MarketInputs {
+            // 유니버스는 이름 순(TreeSet)이 패킷의 universe 글자 순서라 정렬을 지킨 채 얼립니다.
+            universe = Collections.unmodifiableSortedSet(new TreeSet<>(universe));
+            newsRows = Collections.unmodifiableList(new ArrayList<>(newsRows));
+            marketSections = Collections.unmodifiableMap(new LinkedHashMap<>(marketSections));
+        }
+    }
+
+    /**
+     * 시장 입력 읽기({@link MarketInputs}) — 저장본은 {@link StoreReader#quietly} 안에서 읽습니다(수집을 깨우지 않음).
+     *
+     * @param asOf        기준 거래일(미국 동부 세션 날짜). 초기 결정이면 출발일
+     * @param initial     초기 결정 패킷의 읽기(기준일 뒤 값을 하나도 넣지 않음, 매크로 카드 asOfMismatch)
+     * @param settingsRow 결정이 읽은 설정 행({@link #build(LocalDate, String, boolean, Integer, SettingsRow)}와 같은 뜻). null이면 지금 행
+     * @throws IllegalArgumentException 기준일이 없음
+     * @throws IllegalStateException    모의 매매 테이블이 없음
+     */
+    MarketInputs read(LocalDate asOf, boolean initial, SettingsRow settingsRow) {
+        if (asOf == null) {
+            throw new IllegalArgumentException("기준 거래일이 없습니다");
+        }
+        if (!store.ready()) {
+            throw new IllegalStateException(PaperQueryService.NOT_READY_MESSAGE);
+        }
+        return reader.quietly(() -> readInputs(asOf, initial, settingsRow));
+    }
+
+    /**
+     * 시장 입력 하나로 그 계좌의 패킷을 조립합니다 — 장부·최근 결정·이달 재량 주문 수·가격 이력·재무는 그 계좌({@code book})로 읽고, 섹션 1의
+     * {@code book}·{@code decisionKind}와 섹션 9의 {@code book}은 인자 그대로입니다. 계좌 비의존 섹션({@link #MARKET_SECTION_KEYS})은 시장 입력의
+     * 것을 그대로 넣습니다. 장부는 {@link StoreReader#quietly} 안에서 읽습니다.
+     *
+     * @param inputs           그 실행의 시장 입력({@link #read})
+     * @param book             패킷을 받을 미국 Claude 계좌
+     * @param kind             결정 종류(SCHEDULED·MANUAL·INITIAL·REBALANCE) — 섹션 1에 그대로
+     * @param frameworkVersion 시스템 프롬프트로 쓴 프레임 판(섹션 1). 모르면 null
+     * @throws IllegalArgumentException 모르는 종류·미국 계좌가 아님
+     */
+    Packet assemble(MarketInputs inputs, ClaudeBookProfile book, String kind, Integer frameworkVersion) {
+        Objects.requireNonNull(inputs, "inputs");
+        if (!KINDS.contains(kind)) {
+            throw new IllegalArgumentException("결정 종류는 " + KINDS + " 중 하나입니다: " + kind);
+        }
+        if (book.market().definition() != UsPaperMarket.INSTANCE) {
+            throw new IllegalArgumentException("미국 Claude 계좌의 패킷만 만듭니다: " + book.code());
+        }
+        return reader.quietly(() -> assembleFor(inputs, book, kind, frameworkVersion));
+    }
+
+    private MarketInputs readInputs(LocalDate asOf, boolean initial, SettingsRow given) {
         Optional<SettingsRow> settingsRow = given != null ? Optional.of(given) : store.settings();
         JsonNode settingsBody = settingsRow.map(SettingsRow::body).orElseGet(settings::defaultsJson);
         Integer settingsVersion = settingsRow.map(SettingsRow::version).orElse(null);
@@ -385,78 +483,135 @@ public class PacketBuilder {
 
         Optional<Quotes> quotes = marketData.quotes();
         Set<String> universe = universe(quotes, asOf, initial);
-        LedgerView ledger = ledger(asOf, initial);
-        Set<String> lockedOut = lockedOut(ledger.lockouts(), asOf);
-        // 검증기가 NO_PRICE·STALE_INPUT으로 거절할 종목·상태 — 패킷이 거래할 수 있는 것처럼 보이면 모델이 거절될 주문을 냅니다.
-        Set<String> noPrice = initial ? null : noPriceTickers(quotes, ledger.positions());
+        // 검증기가 STALE_INPUT으로 거절할 상태 — 시계는 이 한 번만 읽습니다(같은 시장 입력이면 계좌마다 같은 판정).
         boolean inputsStale = !initial && inputsStale(quotes);
         Optional<Snapshot> macro = reader.read(Datasets.SNAP_MACRO_COLLECTED, Datasets.MAX_AGE_REALTIME,
                 "macro_collected");
         Map<String, FredPoint> fred = fred(asOf);
         Map<String, FxPoint> fx = fx(asOf);
 
+        // 컨센서스 층(E1b)은 이 결정이 읽은 설정 행의 calendar.consensus가 켜졌을 때만 — 꺼지면 저장본을 읽지도 않습니다(판 5 그대로).
+        boolean consensus = consensusEnabled(settingsBody);
+        Optional<Snapshot> calendar = reader.read(Datasets.SNAP_US_CALENDAR, Datasets.MAX_AGE_SLOW, "us_calendar");
+        CalendarSection.Consensus consensusLayer = consensus
+                ? new CalendarSection.Consensus(Datasets.SNAP_US_CONSENSUS,
+                        reader.read(Datasets.SNAP_US_CONSENSUS, Datasets.MAX_AGE_SLOW, "us_calendar_consensus"),
+                        NewsEvents.window(asOf, PaperDecisionJob.decisionTime(settingsBody)).to())
+                : null;
+        NewsEvents.Window newsWindow = NewsEvents.window(asOf, PaperDecisionJob.decisionTime(settingsBody));
+        NewsEvents.Settings news = EventsSection.settings(settingsBody).settings();
+        List<JsonNode> newsRows = news.enabled()
+                ? repository.readObservationsBetween(Datasets.OBS_NEWS_HEADLINE, EventsSection.readFrom(newsWindow), null)
+                : List.of();
+        JsonNode newsStatus = news.enabled() && !initial
+                ? reader.readStored(Datasets.SNAP_NEWS_STATUS).map(Snapshot::payload).orElse(null)
+                : null;
+        // 메모는 기준일(as_of) ≤ 기준 거래일인 것만 — 초기 결정 패킷도 같은 거름으로 출발일 이하 메모만 봅니다(PIT, 계약 보충 §5).
+        NoteService.PacketNotes packetNotes = notes.activeMarketNotes(asOf, settingsBody);
+
+        Map<String, JsonNode> sections = new LinkedHashMap<>();
+        sections.put(MACRO, toNode(macroCards(asOf, initial, macro, fx)));
+        sections.put(FRED, toNode(fredSection(fred)));
+        sections.put(REGIME, toNode(regime(asOf)));
+        sections.put(GATE, toNode(gate(asOf, initial, paper, fred.get("DGS10"), fx.get("usdjpy"), macro)));
+        Map<String, TrackRecordRow> trackA = trackRecordByCik(chosen, TrackRecordRow.GROUP_A);
+        Map<String, TrackRecordRow> trackB = trackRecordByCik(chosen, TrackRecordRow.GROUP_B);
+        sections.put(TRACK_RECORD, toNode(trackRecord(chosen, pool, names)));
+        sections.put(PROFILES, toNode(profiles(chosen, pool, names, trackA, trackB)));
+        sections.put(NOTES, toNode(notesSection(packetNotes)));
+        return new MarketInputs(asOf, initial, settingsBody, settingsVersion, paper, ruleSettings, limits, chosen,
+                context, names, quotes, universe, inputsStale, consensus, calendar, consensusLayer, newsWindow, news,
+                newsRows, newsStatus, packetNotes, sections);
+    }
+
+    private Packet assembleFor(MarketInputs in, ClaudeBookProfile book, String kind, Integer frameworkVersion) {
+        LocalDate asOf = in.asOf();
+        boolean initial = in.initial();
+        LedgerView ledger = ledger(book.code(), asOf, initial);
+        Set<String> lockedOut = lockedOut(ledger.lockouts(), asOf);
+        // 검증기가 NO_PRICE·STALE_INPUT으로 거절할 종목·상태 — 패킷이 거래할 수 있는 것처럼 보이면 모델이 거절될 주문을 냅니다.
+        Set<String> noPrice = initial ? null : noPriceTickers(in.quotes(), ledger.positions());
+
         // 가격 대상: 보유 → 교집합 후보(점수 순, 유니버스 안) → 유니버스 ETF(설정 순 + SPY·QQQ), 겹치면 앞의 역할, 60개까지.
         Map<String, String> priceTickers = new LinkedHashMap<>();
         ledger.positions().forEach(p -> priceTickers.putIfAbsent(p.ticker(), "HOLDING"));
-        if (context != null) {
-            for (Signal13F.Candidate candidate : context.signals().buyCandidates()) {
-                if (universe.contains(candidate.ticker())) {
+        if (in.context() != null) {
+            for (Signal13F.Candidate candidate : in.context().signals().buyCandidates()) {
+                if (in.universe().contains(candidate.ticker())) {
                     priceTickers.putIfAbsent(candidate.ticker(), "CANDIDATE");
                 }
             }
         }
-        for (String etf : etfOrder(settingsBody)) {
+        for (String etf : etfOrder(in.settingsBody())) {
             priceTickers.putIfAbsent(etf, "ETF");
         }
         Map<String, String> shownPrices = new LinkedHashMap<>();
         priceTickers.entrySet().stream().limit(MAX_PRICE_ROWS).forEach(e -> shownPrices.put(e.getKey(), e.getValue()));
-        Map<String, DailySeries> prices = prices(shownPrices.keySet(), asOf, quotes, initial);
-        List<DecisionSummary> prior = priorDecisions(asOf, kind, initial);
+        Map<String, DailySeries> prices = prices(shownPrices.keySet(), asOf, in.quotes(), initial);
+        List<DecisionSummary> prior = priorDecisions(book.code(), asOf, kind, initial);
         // 재무(8b)와 일정(1b)의 종목 대상은 같은 목록입니다 — 보유·후보·watchlist를 두 섹션이 따로 고르면 "재무는 있는데 실적일은
         // 없는" 종목이 생기고, 1b가 상한 없는 목록을 받으면 패킷이 목표 크기를 넘습니다.
-        FundamentalsTargets stockTargets = fundamentalsTargets(ledger, context, universe, prior, paper, ruleSettings);
-        // 컨센서스 층(E1b)은 이 결정이 읽은 설정 행의 calendar.consensus가 켜졌을 때만 — 꺼지면 저장본을 읽지도 않습니다(판 5 그대로).
-        boolean consensus = consensusEnabled(settingsBody);
-        CalendarSection.Built calendar = calendar(asOf, initial, stockTargets,
-                consensus ? NewsEvents.window(asOf, PaperDecisionJob.decisionTime(settingsBody)).to() : null);
-        EventsSection.Built events = events(asOf, initial, settingsBody, stockTargets);
+        FundamentalsTargets stockTargets = fundamentalsTargets(ledger, in.context(), in.universe(), prior, in.paper(),
+                in.ruleSettings());
+        CalendarSection.Built calendar = calendar(in, stockTargets);
+        EventsSection.Built events = events(in, stockTargets);
 
         Map<String, Object> root = new LinkedHashMap<>();
         root.put(INSTRUCTIONS, instructions(asOf, initial));
-        root.put(BASIS, basis(asOf, kind, initial, quotes, frameworkVersion, settingsVersion, chosen,
-                consensus ? PACKET_VERSION_CONSENSUS : PACKET_VERSION));
+        root.put(BASIS, basis(book.code(), asOf, kind, initial, in.quotes(), frameworkVersion, in.settingsVersion(),
+                in.chosen(), in.consensus() ? PACKET_VERSION_CONSENSUS : PACKET_VERSION));
         root.put(CALENDAR, calendar.section());
-        root.put(MACRO, macroCards(asOf, initial, macro, fx));
-        root.put(FRED, fredSection(fred));
-        root.put(REGIME, regime(asOf));
-        root.put(GATE, gate(asOf, initial, paper, fred.get("DGS10"), fx.get("usdjpy"), macro));
-        Map<String, TrackRecordRow> trackA = trackRecordByCik(chosen, TrackRecordRow.GROUP_A);
-        Map<String, TrackRecordRow> trackB = trackRecordByCik(chosen, TrackRecordRow.GROUP_B);
-        root.put(TRACK_RECORD, trackRecord(chosen, pool, names));
-        root.put(PROFILES, profiles(chosen, pool, names, trackA, trackB));
-        root.put(CHANGES, changes(chosen, context, ruleSettings, names, universe, ledger, lockedOut));
+        root.put(MACRO, in.marketSections().get(MACRO));
+        root.put(FRED, in.marketSections().get(FRED));
+        root.put(REGIME, in.marketSections().get(REGIME));
+        root.put(GATE, in.marketSections().get(GATE));
+        root.put(TRACK_RECORD, in.marketSections().get(TRACK_RECORD));
+        root.put(PROFILES, in.marketSections().get(PROFILES));
+        root.put(CHANGES, changes(in.chosen(), in.context(), in.ruleSettings(), in.names(), in.universe(), ledger,
+                lockedOut));
         root.put(PRICES, priceSection(shownPrices, prices, asOf, initial, noPrice));
-        FundamentalsSection.Built fundamentals = fundamentals(asOf, stockTargets, settingsBody);
+        FundamentalsSection.Built fundamentals = fundamentals(asOf, stockTargets, in.settingsBody());
         root.put(FUNDAMENTALS, fundamentals.section());
-        root.put(PORTFOLIO, portfolio(asOf, initial, ledger, paper, limits));
+        root.put(PORTFOLIO, portfolio(book.code(), asOf, initial, ledger, in.paper(), in.limits()));
         root.put(DECISIONS, recentDecisions(prior));
-        // 메모는 기준일(as_of) ≤ 기준 거래일인 것만 — 초기 결정 패킷도 같은 거름으로 출발일 이하 메모만 봅니다(PIT, 계약 보충 §5).
-        NoteService.PacketNotes packetNotes = notes.activeMarketNotes(asOf, settingsBody);
-        root.put(NOTES, notesSection(packetNotes));
+        root.put(NOTES, in.marketSections().get(NOTES));
         root.put(EVENTS, events.section());
-        root.put(HARD_RULES, hardRules(asOf, initial, limits, paper, ruleSettings, universe, lockedOut, noPrice,
-                inputsStale, initial ? null : quotes.map(Quotes::collectedAt).orElse(null)));
+        root.put(HARD_RULES, hardRules(asOf, initial, in.limits(), in.paper(), in.ruleSettings(), in.universe(),
+                lockedOut, noPrice, in.inputsStale(), initial ? null : in.quotes().map(Quotes::collectedAt).orElse(null)));
 
         JsonNode body = toNode(root);
         String text = mapper.writer().without(SerializationFeature.INDENT_OUTPUT).writeValueAsString(body);
         int tokens = estimateTokens(text);
-        int target = consensus ? TARGET_TOKENS_CONSENSUS : TARGET_TOKENS;
+        int target = in.consensus() ? TARGET_TOKENS_CONSENSUS : TARGET_TOKENS;
         if (tokens > target) {
             log.warn("Claude 패킷이 목표보다 큽니다: {} {} 약 {}토큰(목표 {}) — 목록 상한을 확인하세요", asOf, kind, tokens,
                     target);
         }
-        return new Packet(body, text, sha256(text), packetNotes.ids(),
+        return new Packet(body, text, sha256(text), in.notes().ids(),
                 calendar.measure().withEvents(events.result()).withEarnings(fundamentals.earnings()));
+    }
+
+    /**
+     * 패킷 본문의 계좌 비의존 섹션({@link #MARKET_SECTION_KEYS})의 SHA-256(소문자 16진수) — 그 섹션들을 이 순서로 담은 객체 하나를 패킷 글자와
+     * 같은 직렬화(들여쓰기 없이 — {@link #assemble})로 적은 글자의 해시입니다. 같은 시장 입력({@link MarketInputs})으로 조립한 계좌들의 패킷은
+     * 같은 값이라(계좌2 명세 §9-1) 결정 행에 남겨 두 계좌가 같은 시장 입력을 봤는지 대조합니다. 본문은 보낸 글자를 읽은 트리여야 합니다 — 결정
+     * 행의 {@code packet}(JSONB)은 키를 다시 정렬해 다른 값이 되므로 {@code packet_text}를 읽어 씁니다(V10).
+     *
+     * @return 해시. 본문이 없거나 그 섹션이 하나라도 없으면 null(지어내지 않음)
+     */
+    static String marketSectionsSha256(JsonNode body, ObjectMapper mapper) {
+        if (body == null || !body.isObject()) {
+            return null;
+        }
+        ObjectNode sections = JsonNodeFactory.instance.objectNode();
+        for (String key : MARKET_SECTION_KEYS) {
+            JsonNode section = body.get(key);
+            if (section == null) {
+                return null;
+            }
+            sections.set(key, section.deepCopy());
+        }
+        return sha256(mapper.writer().without(SerializationFeature.INDENT_OUTPUT).writeValueAsString(sections));
     }
 
     // ------------------------------------------------------------------ 0·1 지시·기준
@@ -479,9 +634,9 @@ public class PacketBuilder {
         return out;
     }
 
-    private Map<String, Object> basis(LocalDate asOf, String kind, boolean initial, Optional<Quotes> quotes,
-                                      Integer frameworkVersion, Integer settingsVersion, Selection chosen,
-                                      int packetVersion) {
+    private Map<String, Object> basis(String book, LocalDate asOf, String kind, boolean initial,
+                                      Optional<Quotes> quotes, Integer frameworkVersion, Integer settingsVersion,
+                                      Selection chosen, int packetVersion) {
         LocalDate next = UsMarketCalendar.nextTradingDay(asOf);
         List<String> holidays = new ArrayList<>();
         for (int i = 1; i <= HOLIDAY_HORIZON_DAYS; i++) {
@@ -492,7 +647,7 @@ public class PacketBuilder {
         }
         Map<String, Object> out = new LinkedHashMap<>();
         out.put("packetVersion", packetVersion);
-        out.put("book", PaperBooks.CLAUDE);
+        out.put("book", book);
         out.put("asOfTradingDate", asOf.toString());
         out.put("decisionKind", kind);
         out.put("initial", initial);
@@ -525,23 +680,19 @@ public class PacketBuilder {
      * 30,000토큰까지 약 900토큰 — {@link #TARGET_TOKENS}), 수집기는 유니버스 주식 전부를 받아 두므로 대상이 바뀌어도 다시 수집할
      * 일이 없습니다.
      *
-     * <p>저장본은 {@code quietly} 안에서 읽어(이 메서드는 {@link #assemble} 안) 수집을 깨우지 않습니다. 앞날 일정은 지금 수집본뿐이라
+     * <p>저장본은 시장 입력({@link MarketInputs#calendar}·{@link MarketInputs#consensusLayer} — {@code quietly} 안에서 읽음)의 것이라 수집을
+     * 깨우지 않고, 같은 시장 입력이면 계좌마다 같은 저장본입니다(종목 줄만 그 계좌의 대상). 앞날 일정은 지금 수집본뿐이라
      * 초기 결정 패킷은 매크로 카드처럼 {@code asOfMismatch:true}입니다. 저장본이 없으면 일정을 지어내지 않고 "자료 없음"입니다.
      *
-     * <p><b>컨센서스 층</b>(E1b, {@code consensusKnownBy} ≠ null — 설정 {@code calendar.consensus} 켜짐): 미국 컨센서스 저장본(수집기
-     * {@code us_calendar_consensus})도 같은 {@code quietly} 안에서 읽어 거시 줄에 붙입니다. 결정 순간은 재무 8b의 어닝 서프라이즈·사건 11b와
-     * 같은 값({@link NewsEvents#window}의 끝 — 기준일 다음 KST 날짜의 {@code decisionTimeKst})이고, 그 순간 뒤에 받은 날의 발표치는 싣지
+     * <p><b>컨센서스 층</b>(E1b, {@link MarketInputs#consensusLayer} ≠ null — 설정 {@code calendar.consensus} 켜짐): 미국 컨센서스
+     * 저장본(수집기 {@code us_calendar_consensus})도 시장 입력을 읽을 때 같은 {@code quietly} 안에서 읽어 거시 줄에 붙입니다. 결정 순간은
+     * 재무 8b의 어닝 서프라이즈·사건 11b와 같은 값({@link NewsEvents#window}의 끝 — 기준일 다음 KST 날짜의 {@code decisionTimeKst})이고, 그 순간 뒤에 받은 날의 발표치는 싣지
      * 않습니다(시계를 읽지 않아 결정적). 예상치·직전 값은 일정과 같은 '지금 수집본'이라 초기 결정에서도 같은 {@code asOfMismatch} 아래에 둡니다.
      */
-    private CalendarSection.Built calendar(LocalDate asOf, boolean initial, FundamentalsTargets targets,
-                                           Instant consensusKnownBy) {
-        Optional<Snapshot> snapshot = reader.read(Datasets.SNAP_US_CALENDAR, Datasets.MAX_AGE_SLOW, "us_calendar");
+    private static CalendarSection.Built calendar(MarketInputs in, FundamentalsTargets targets) {
         List<String> tickers = targets.shown().stream().map(FundamentalsSection.Target::ticker).toList();
-        CalendarSection.Consensus consensus = consensusKnownBy == null ? null
-                : new CalendarSection.Consensus(Datasets.SNAP_US_CONSENSUS,
-                        reader.read(Datasets.SNAP_US_CONSENSUS, Datasets.MAX_AGE_SLOW, "us_calendar_consensus"),
-                        consensusKnownBy);
-        return CalendarSection.build(Datasets.SNAP_US_CALENDAR, snapshot, asOf, tickers, initial, consensus);
+        return CalendarSection.build(Datasets.SNAP_US_CALENDAR, in.calendar(), in.asOf(), tickers, in.initial(),
+                in.consensusLayer());
     }
 
     /**
@@ -562,22 +713,14 @@ public class PacketBuilder {
      * 제외)입니다: 25종목 상한은 표 크기 때문이고, 거르기는 줄 수가 늘지 않아(상한 {@code news.maxPerDay}) 자를 이유가 없습니다. 회사
      * 이름 표(티커 → 이름)는 백엔드에 없어 티커만 맞춥니다 — 13F 종목명(nameOfIssuer)은 제출 기관마다 다른 자유 기재라 제목과 맞출 수 없음.
      *
-     * <p>설정으로 꺼 두면({@code news.enabled=false}) 저장본을 읽지 않고 "꺼짐(설정)"만 적습니다(수집은 계속 — 명세 B5). 저장본은
-     * {@code quietly} 안에서 읽습니다(이 메서드는 {@link #assemble} 안). 수집 상태({@code news.headlines.status} — 실패 중인 피드 메모,
-     * {@link EventsSection#feedNote})도 저장본만 읽고(수집 요청 없음), 초기 결정 패킷에는 쓰지 않습니다(상태가 기준일의 것이 아님).
+     * <p>설정으로 꺼 두면({@code news.enabled=false}) 저장본을 읽지 않고 "꺼짐(설정)"만 적습니다(수집은 계속 — 명세 B5). 헤드라인 행과
+     * 수집 상태({@code news.headlines.status} — 실패 중인 피드 메모, {@link EventsSection#feedNote})는 시장 입력({@link MarketInputs#newsRows}·
+     * {@link MarketInputs#newsStatus} — {@code quietly} 안에서 저장본만 읽음, 수집 요청 없음)의 것이라 같은 시장 입력이면 계좌마다 같은 행이고
+     * 걸리는 종목만 그 계좌의 대상입니다. 수집 상태는 초기 결정 패킷에는 쓰지 않습니다(상태가 기준일의 것이 아님).
      */
-    private EventsSection.Built events(LocalDate asOf, boolean initial, JsonNode settingsBody,
-                                       FundamentalsTargets targets) {
-        NewsEvents.Window window = NewsEvents.window(asOf, PaperDecisionJob.decisionTime(settingsBody));
-        NewsEvents.Settings news = EventsSection.settings(settingsBody).settings();
-        List<JsonNode> rows = news.enabled()
-                ? repository.readObservationsBetween(Datasets.OBS_NEWS_HEADLINE, EventsSection.readFrom(window), null)
-                : List.of();
-        JsonNode status = news.enabled() && !initial
-                ? reader.readStored(Datasets.SNAP_NEWS_STATUS).map(Snapshot::payload).orElse(null)
-                : null;
+    private static EventsSection.Built events(MarketInputs in, FundamentalsTargets targets) {
         List<String> tickers = targets.all().stream().map(FundamentalsSection.Target::ticker).toList();
-        return EventsSection.build(rows, window, news, tickers, initial, status);
+        return EventsSection.build(in.newsRows(), in.newsWindow(), in.news(), tickers, in.initial(), in.newsStatus());
     }
 
     // ------------------------------------------------------------------ 2 매크로 카드·환율
@@ -893,7 +1036,7 @@ public class PacketBuilder {
 
     // ------------------------------------------------------------------ 6 트랙레코드
     /** 기관 이름·스타일·메뉴 설명·풀 표시("A1·B2"). */
-    private record Names(Map<String, String> names, Map<String, String> styles, Map<String, String> descs,
+    record Names(Map<String, String> names, Map<String, String> styles, Map<String, String> descs,
                          Map<String, String> labels) {
         String name(String cik) {
             return names.get(cik);
@@ -1684,14 +1827,14 @@ public class PacketBuilder {
     }
 
     // ------------------------------------------------------------------ 9 포트폴리오
-    /** Claude 책 장부(초기 결정이면 출발 현금만). pending = 앞선 결정이 남긴 대기 주문(출처 CLAUDE, 만든 순). */
+    /** 그 Claude 계좌의 장부(초기 결정이면 출발 현금만). pending = 앞선 결정이 남긴 대기 주문(출처 CLAUDE, 만든 순). */
     private record LedgerView(boolean exists, String status, double cash, double nav, double equityValue,
                               double exposurePct, List<Position> positions, List<Lockout> lockouts, int monthlyOrders,
                               List<Order> pending) {
     }
 
-    private LedgerView ledger(LocalDate asOf, boolean initial) {
-        Optional<Book> book = store.book(PaperBooks.CLAUDE);
+    private LedgerView ledger(String code, LocalDate asOf, boolean initial) {
+        Optional<Book> book = store.book(code);
         if (initial) {
             // 초기 결정은 "출발일에 출발 현금으로 무엇을 사나"라 장부 상태와 상관없이 현금만입니다(시작 전 책은 어차피 현금만).
             // 대기 주문도 없습니다 — 시작이 초기 배분 전에 남은 대기 주문을 취소합니다(ClaudeBookService.start).
@@ -1699,18 +1842,18 @@ public class PacketBuilder {
             return new LedgerView(book.isPresent(), book.map(Book::status).orElse(null), cash, cash, 0, 0, List.of(),
                     List.of(), 0, List.of());
         }
-        Optional<BookState> state = store.state(PaperBooks.CLAUDE);
+        Optional<BookState> state = store.state(code);
         if (book.isEmpty() || state.isEmpty()) {
             double cash = config.initialCash();
             return new LedgerView(false, null, cash, cash, 0, 0, List.of(), List.of(), 0, List.of());
         }
-        int monthly = monthlyDiscretionaryOrders(store.recentOrders(PaperBooks.CLAUDE, MONTHLY_SCAN), asOf);
+        int monthly = monthlyDiscretionaryOrders(store.recentOrders(code, MONTHLY_SCAN), asOf);
         // 결정 서비스가 검증을 마친 결정마다 취소하는 것과 같은 묶음(ClaudeDecisionPipeline.supersedePending: CLAUDE 출처의 PENDING).
-        List<Order> pending = store.ordersByStatus(PaperBooks.CLAUDE, PaperBooks.ORDER_PENDING).stream()
+        List<Order> pending = store.ordersByStatus(code, PaperBooks.ORDER_PENDING).stream()
                 .filter(o -> SOURCE_CLAUDE.equals(o.source())).toList();
         BookState s = state.get();
         return new LedgerView(true, book.get().status(), s.cash(), s.nav(), s.equityValue(), s.exposurePct(),
-                store.positions(PaperBooks.CLAUDE), store.lockouts(PaperBooks.CLAUDE), monthly, pending);
+                store.positions(code), store.lockouts(code), monthly, pending);
     }
 
     /**
@@ -1747,10 +1890,10 @@ public class PacketBuilder {
         return out;
     }
 
-    private Map<String, Object> portfolio(LocalDate asOf, boolean initial, LedgerView ledger,
+    private Map<String, Object> portfolio(String book, LocalDate asOf, boolean initial, LedgerView ledger,
                                           PaperSettings paper, Limits limits) {
         Map<String, Object> out = new LinkedHashMap<>();
-        out.put("book", PaperBooks.CLAUDE);
+        out.put("book", book);
         out.put("status", ledger.status());
         if (initial) {
             out.put("note", "초기 결정 — 출발 현금만(보유 없음)");
@@ -1838,11 +1981,11 @@ public class PacketBuilder {
 
     // ------------------------------------------------------------------ 10·11 최근 결정·메모
     /**
-     * 기준일 앞의 Claude 책 결정(같은 날의 다른 종류 포함, 최근 순 5건) — 같은 (날, 종류)의 결정은 지금 다시 만드는 그 결정(재시도)이라
+     * 기준일 앞의 그 Claude 계좌 결정(같은 날의 다른 종류 포함, 최근 순 5건) — 같은 (날, 종류)의 결정은 지금 다시 만드는 그 결정(재시도)이라
      * 뺍니다. 섹션 10과 재무 섹션의 watchlist(8b)가 같은 목록을 봅니다.
      */
-    private List<DecisionSummary> priorDecisions(LocalDate asOf, String kind, boolean initial) {
-        return store.decisions(PaperBooks.CLAUDE, MAX_RECENT_DECISIONS * 4).stream()
+    private List<DecisionSummary> priorDecisions(String book, LocalDate asOf, String kind, boolean initial) {
+        return store.decisions(book, MAX_RECENT_DECISIONS * 4).stream()
                 .filter(d -> d.asOfTradingDate().isBefore(asOf)
                         || !initial && d.asOfTradingDate().equals(asOf) && !d.kind().equals(kind))
                 .limit(MAX_RECENT_DECISIONS).toList();
