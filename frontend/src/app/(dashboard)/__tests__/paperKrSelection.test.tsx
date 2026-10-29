@@ -236,6 +236,9 @@ describe("한국 종목 선정 탭", () => {
 
     // 구성원 표 — 정렬 단추가 있고 모르는 값은 "—", 매수 목표는 '매수 목표'.
     const table = screen.getByRole("table", { name: "유니버스 구성원" });
+    // 판정과 그 까닭(후보·점수·사유)이 종목 바로 뒤 — 열 열넷이라 데스크톱에서도 넘쳐, 넘겨 보지 않아도 보이게.
+    expect(within(table).getAllByRole("columnheader").slice(0, 5).map((th) => th.textContent?.replace(/[↕↑↓]/g, "")))
+      .toEqual(["순위", "종목", "후보", "점수", "사유"]);
     const rows = within(table).getAllByRole("row");
     expect(rows).toHaveLength(MEMBERS.length + 1);
     expect(within(rows[1]).getByText("매수 목표")).toBeTruthy();

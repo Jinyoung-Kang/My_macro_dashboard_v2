@@ -182,7 +182,10 @@ export function KrSelectionSection() {
   );
 }
 
-/** 구성원 표의 열 — 숫자 열은 오른쪽 정렬·정렬 단추, 모르는 값은 "—"(DataTable이 그림). */
+/**
+ * 구성원 표의 열 — 숫자 열은 오른쪽 정렬·정렬 단추, 모르는 값은 "—"(DataTable이 그림). 순서는 순위·종목 다음에 후보·점수·사유(판정과 그 까닭)를
+ * 먼저 두고 수급·재무 원자료를 뒤에 — 열 열넷이라 1280px 카드에서도 가로로 넘치므로, 넘겨 보지 않아도 판정과 사유가 보이게.
+ */
 const MEMBER_COLUMNS: Column<KrMemberRow>[] = [
   { key: "rank", header: "순위", align: "right", cell: (row) => row.text.rank, sortValue: (row) => row.rank },
   {
@@ -192,6 +195,28 @@ const MEMBER_COLUMNS: Column<KrMemberRow>[] = [
     className: "whitespace-nowrap",
     cell: (row) => <CodeName code={row.code} name={row.name} />,
     sortValue: (row) => row.code,
+  },
+  {
+    key: "candidate",
+    header: "후보",
+    className: "whitespace-nowrap",
+    cell: (row) => (
+      <span className={row.target ? "font-semibold text-text" : row.candidate === false ? "text-text-3" : "text-text-2"}>{row.text.candidate}</span>
+    ),
+    sortValue: (row) => (row.target ? 0 : row.candidate === true ? 1 : row.candidate === false ? 2 : null),
+  },
+  { key: "score", header: "점수", align: "right", cell: (row) => row.text.score, sortValue: (row) => row.score },
+  {
+    key: "reasons",
+    header: "사유",
+    className: "min-w-64",
+    cell: (row) => (
+      // relative — 안의 sr-only(절대 위치)가 가로 스크롤 상자 밖 문서 폭을 넓히지 않게(가려진 칸에서도 상자 안에 머묾).
+      <span className={`relative text-xs ${row.financialCheck ? "text-warn" : "text-text-2"}`}>
+        {row.financialCheck && <span className="sr-only">주의: </span>}
+        {row.text.reasons}
+      </span>
+    ),
   },
   { key: "marketCap", header: "시총(조 원)", align: "right", cell: (row) => row.text.marketCap, sortValue: (row) => row.marketCap },
   { key: "foreign20", header: "외국인 20일(주)", align: "right", cell: (row) => signed(row.text.foreign20, row.foreign20), sortValue: (row) => row.foreign20 },
@@ -214,28 +239,6 @@ const MEMBER_COLUMNS: Column<KrMemberRow>[] = [
   { key: "roe", header: "ROE", align: "right", cell: (row) => row.text.roe, sortValue: (row) => row.roePct },
   { key: "debtRatio", header: "부채비율", align: "right", cell: (row) => row.text.debtRatio, sortValue: (row) => row.debtRatioPct },
   { key: "financial", header: "금융업", cell: (row) => row.text.financial, className: "whitespace-nowrap" },
-  { key: "score", header: "점수", align: "right", cell: (row) => row.text.score, sortValue: (row) => row.score },
-  {
-    key: "candidate",
-    header: "후보",
-    className: "whitespace-nowrap",
-    cell: (row) => (
-      <span className={row.target ? "font-semibold text-text" : row.candidate === false ? "text-text-3" : "text-text-2"}>{row.text.candidate}</span>
-    ),
-    sortValue: (row) => (row.target ? 0 : row.candidate === true ? 1 : row.candidate === false ? 2 : null),
-  },
-  {
-    key: "reasons",
-    header: "사유",
-    className: "min-w-64",
-    cell: (row) => (
-      // relative — 안의 sr-only(절대 위치)가 가로 스크롤 상자 밖 문서 폭을 넓히지 않게(가려진 칸에서도 상자 안에 머묾).
-      <span className={`relative text-xs ${row.financialCheck ? "text-warn" : "text-text-2"}`}>
-        {row.financialCheck && <span className="sr-only">주의: </span>}
-        {row.text.reasons}
-      </span>
-    ),
-  },
 ];
 
 /**
