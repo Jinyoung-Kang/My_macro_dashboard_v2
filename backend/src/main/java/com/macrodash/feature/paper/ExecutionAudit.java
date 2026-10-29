@@ -4,6 +4,7 @@ import com.macrodash.analytics.OrderValidator;
 import com.macrodash.analytics.TradingCalendar;
 import com.macrodash.feature.paper.PaperMarketData.Bar;
 import com.macrodash.feature.paper.PaperMarketData.Quotes;
+import com.macrodash.store.PaperStore.ExecFill;
 import com.macrodash.store.PaperStore.Fill;
 import com.macrodash.store.PaperStore.Order;
 import com.macrodash.support.Json;
@@ -214,6 +215,29 @@ final class ExecutionAudit {
             return null;
         }
         return new Price(fill.rawPrice(), fill.observedAt(), RUNG_OBSERVATION);
+    }
+
+    /**
+     * 늦게 풀었나({@code paper_order_exec.late_resolved}, 명세 §10-4·M4) — 시각 지정 체결(사다리 칸이 있는 체결 — 장부 2b·3a, {@link UsTimedFills})만
+     * 셉니다. 대체 칸(R2b·R3·종가 — {@link UsTimedFills#FALLBACK_RUNGS})이면 참, 아니면 장부 반영 시각(그 체결을 적은 관측치 W의 수집 시각
+     * {@code observed_at})이 기준 시각 T + {@link UsTimedFills#ONE_ROUND}(slow 한 회차 + 여유)보다 뒤일 때 참입니다 — T 뒤 첫 처리 회차보다 늦게 체결된
+     * 것(1분봉이 한 회차 넘게 늦음·서버가 꺼졌던 뒤의 2b)입니다. 1분봉 기다림(최대 15분)은 W의 수집 시각을 바꾸지 않으므로 늦음으로 세지 않습니다.
+     * 시각 지정 체결이 아니거나(계좌1 주문·사다리 칸 없음) 체결이 없으면(대기·만료·취소) null — 모르는 값을 짓지 않습니다.
+     *
+     * @param fill 그 주문의 체결과 체결 봉(없으면 null)
+     */
+    static Boolean lateResolved(Order order, ExecFill fill, TradingCalendar calendar) {
+        if (fill == null || fill.fillRung() == null || fill.fill().observedAt() == null) {
+            return null;
+        }
+        if (UsTimedFills.FALLBACK_RUNGS.contains(fill.fillRung())) {
+            return true;
+        }
+        Instant target = targetAt(order.timing(), targetSession(order, calendar), calendar);
+        if (target == null) {
+            return null;
+        }
+        return fill.fill().observedAt().isAfter(target.plus(UsTimedFills.ONE_ROUND));
     }
 
     /**

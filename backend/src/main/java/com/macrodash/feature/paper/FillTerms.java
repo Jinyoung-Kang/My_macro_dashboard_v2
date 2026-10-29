@@ -140,6 +140,17 @@ interface FillTerms {
             return new SlippageInPrice(side, price, bar.close(), priceSource, slippageBp);
         }
 
+        /**
+         * 원가격에 슬리피지를 얹은 체결 — 미국 시각 지정 체결(1분봉 봉 시가·관측 종가, {@code UsTimedFills})이 씁니다. 식은 {@link #ofClose}와 같습니다.
+         *
+         * @throws IllegalArgumentException 원가격 ≤ 0·슬리피지 범위 밖({@link PaperLedger#fillPrice})
+         */
+        static SlippageInPrice ofRaw(String side, double raw, double slippageBp, String priceSource) {
+            PaperLedger.Side direction = PaperBooks.SELL.equals(side) ? PaperLedger.Side.SELL : PaperLedger.Side.BUY;
+            double price = PaperLedgerService.price6(PaperLedger.fillPrice(raw, direction, slippageBp));
+            return new SlippageInPrice(side, price, raw, priceSource, slippageBp);
+        }
+
         @Override
         public int affordableQty(double budget) {
             return PaperLedger.buyQty(budget, price);

@@ -37,6 +37,10 @@ import java.util.Optional;
  * 관측치가 없는 주기에도 장부의 확정 조정만 돌립니다({@link PaperLedgerService#confirm}). 확정 조정 행을 썼거나 순자산 줄이 확정이 됐거나 새 오류가
  * 났을 때만 기록하고({@code detail.confirmationOnly}), 새 관측치가 있으면 장부가 그 처리 앞에서 확정 조정을 함께 합니다({@code detail.confirmed}).
  *
+ * <p><b>1분봉 기다림</b>(미국 시각 지정 주문 — 명세 2026-10-30 §10-2): 장부가 그 책의 관측치 처리를 미루면({@link Outcome#waiting}) 그 책의 멱등 키가
+ * 그대로라 다음 주기가 같은 관측치로 다시 부릅니다. 처음 미룬 주기와 풀린 주기(장부 notes의 '1분봉 기다림 풀림')만 기록하고, 같은 관측치를 다시
+ * 미루기만 한 정기 주기({@link Outcome#stillWaiting}만)는 기록하지 않습니다. 미룸은 오류가 아닙니다(실패 기억에 들지 않음).
+ *
  * <p>관측치는 수집기가 1시간마다 저장하므로 대부분의 실행은 "새 저장본 없음"으로 끝나고, 그때는 기록을 남기지 않습니다
  * (5분마다 한 줄씩 쌓이면 작업 기록 200건이 17시간 치뿐입니다). 일했을 때와 오류일 때만 {@code paper_job_runs}에 남기고,
  * detail에 관측치 수집 시각·다수 티커의 봉 날짜·확정 종가 여부를 적습니다 — 장중 저장본의 마지막 봉이 정말 그날 지연 시세인지
@@ -227,6 +231,11 @@ public class PaperRiskJob {
         } catch (RuntimeException e) {
             outcome = Outcome.failed(e.getClass().getSimpleName() + " " + e.getMessage());
         }
+        if (!manual && outcome.booksProcessed().isEmpty() && outcome.errors().isEmpty() && outcome.waiting().isEmpty()
+                && !outcome.stillWaiting().isEmpty()) {
+            // 1분봉 기다림을 같은 관측치로 다시 미루기만 한 주기 — 기록하지 않습니다(첫 미룸·풀림만, 명세 2026-10-30 §10-2).
+            return outcome;
+        }
         record(market, started, manual, quotes.get(), outcome);
         return outcome;
     }
@@ -253,6 +262,12 @@ public class PaperRiskJob {
         }
         if (outcome.confirmed() > 0) {
             detail.put("confirmed", outcome.confirmed());   // 금융위 확정 조정 행(한국 — 미국은 생기지 않음)
+        }
+        if (!outcome.waiting().isEmpty()) {
+            detail.put("barsWait", outcome.waiting());   // 1분봉 기다림으로 처음 미룬 계좌(미국 시각 지정 주문 — 풀림은 notes)
+        }
+        if (!outcome.stillWaiting().isEmpty()) {
+            detail.put("barsStillWaiting", outcome.stillWaiting());   // 수동 실행에서만(정기 실행은 이것만이면 기록하지 않음)
         }
         write(market, started, outcome.errors().isEmpty() ? "OK" : "ERROR", detail);
     }

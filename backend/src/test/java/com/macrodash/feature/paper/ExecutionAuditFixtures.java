@@ -61,7 +61,10 @@ final class ExecutionAuditFixtures {
         return ZonedDateTime.of(day, LocalTime.of(hour, minute), UsMarketCalendar.NEW_YORK).toInstant();
     }
 
-    /** 1분봉 저장본(수집기 contract 1 모양)을 만드는 도우미. 봉은 넣은 순서와 상관없이 창·마지막 봉에 들어갑니다. */
+    /**
+     * 1분봉 저장본(수집기 contract 1 모양)을 만드는 도우미. 봉은 넣은 순서와 상관없이 창·마지막 봉에 들어가고, 창 시각마다 T 뒤(T 포함) 그 세션의 첫
+     * 거래 봉({@code firstTradeAfter} — 수집기 {@code session_entries}와 같은 규칙, 거래량 &gt; 0만)을 다시 셉니다.
+     */
     static final class Bars {
 
         private final ObjectNode root = MAPPER.createObjectNode();
@@ -100,6 +103,13 @@ final class ExecutionAuditFixtures {
             return this;
         }
 
+        /** 첫 거래 봉 칸을 직접 정합니다 — 수집기 값이 틀린 저장본(장부 재검사 시험). */
+        Bars firstTradeAfter(String label, String ticker, LocalDate day, Instant start, double open, double volume) {
+            ((ObjectNode) session(ticker, day).get("firstTradeAfter")).set(label, MAPPER.createObjectNode()
+                    .put("t", start.toString()).put("o", open).put("v", volume));
+            return this;
+        }
+
         JsonNode payload() {
             return root;
         }
@@ -128,6 +138,20 @@ final class ExecutionAuditFixtures {
                 session.set("lastBar", bar.deepCopy());
             }
             session.put("barCount", session.path("barCount").asInt(0) + 1);
+            ObjectNode first = (ObjectNode) session.get("firstTradeAfter");
+            boolean traded = volume != null && volume > 0;
+            for (LocalTime at : ExecutionAudit.MENU.values()) {
+                String key = ExecutionAudit.label(at);
+                Instant begin = ZonedDateTime.of(day, at, UsMarketCalendar.NEW_YORK).toInstant();
+                JsonNode current = first.get(key);
+                boolean earlier = current == null || current.isNull()
+                        || start.isBefore(Instant.parse(current.get("t").asString()));
+                if (traded && !start.isBefore(begin) && earlier) {
+                    first.set(key, MAPPER.createObjectNode().put("t", start.toString()).put("o", open).put("v", volume));
+                } else if (current == null) {
+                    first.putNull(key);
+                }
+            }
             return this;
         }
 

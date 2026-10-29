@@ -148,7 +148,7 @@ class PaperExecutionAuditJobTest {
         assertThat(row.timing()).isEqualTo("NEXT_OBSERVATION");
         assertThat(row.targetAt()).as("계좌1식에는 정해진 시각이 없음").isNull();
         assertThat(row.lagSeconds()).isEqualTo(90);
-        assertThat(row.lateResolved()).as("시각 지정 체결이 생기는 단계 1까지는 모름").isNull();
+        assertThat(row.lateResolved()).as("계좌1식 체결(사다리 칸 없음)은 늦게 풂을 세지 않음").isNull();
         JsonNode cf = row.cf();
         assertThat(cf.properties()).extracting(Map.Entry::getKey).containsExactlyElementsOf(ExecutionAudit.TIMINGS);
         assertThat(cf.get("NEXT_OBSERVATION").path("raw").asDouble()).isEqualTo(99.5);
@@ -375,5 +375,32 @@ class PaperExecutionAuditJobTest {
         assertThat(store.jobRuns).isEmpty();
         verify(reader).read(eq(Datasets.SNAP_PAPER_BARS_US), eq(Datasets.MAX_AGE_BARS_US), isNull());
         verify(reader, org.mockito.Mockito.atLeast(2)).quietly(any());
+    }
+
+    @Test
+    @DisplayName("시각 지정 체결의 늦게 풂 — 체결 행(사다리 칸·장부 반영 시각)으로 한 번 셈: 대체 칸 참·제때 1분봉 거짓, 반사실을 이미 적은 행에도 나중에 채움")
+    void lateResolvedFromTimedFills() {
+        long late = order("MSFT", "AT_1000", "FILLED", MON, MON_DECIDED);
+        long onTime = order("AAPL", "AT_1000", "FILLED", MON, MON_DECIDED);
+        bars(tuesdayMorning());
+        observed(quotes(et(TUE, 10, 57), bar("AAPL", MON, 98, TUE, 102)));
+        PaperExecutionAuditJob.Outcome before = job(true, et(TUE, 11, 0)).run();
+        assertThat(before.rowsWritten()).isEqualTo(2);
+        assertThat(store.execs.get(onTime).lateResolved()).as("아직 체결 없음").isNull();
+        assertThat(store.execs.get(late).lateResolved()).isNull();
+
+        long lateFill = store.insertFill(observationFill(late, "MSFT", PaperBooks.BUY, 1, 300, et(TUE, 11, 20), TUE));
+        store.fillBars.put(lateFill, new com.macrodash.store.PaperStore.ExecFill(store.fills.get(lateFill), et(TUE, 10, 37),
+                "Y1M_LATE"));
+        long onTimeFill = store.insertFill(observationFill(onTime, "AAPL", PaperBooks.BUY, 1, 101.5, et(TUE, 10, 20), TUE));
+        store.fillBars.put(onTimeFill, new com.macrodash.store.PaperStore.ExecFill(store.fills.get(onTimeFill),
+                et(TUE, 10, 1), "Y1M_NEXT"));
+
+        PaperExecutionAuditJob.Outcome after = job(true, et(TUE, 11, 25)).run();
+
+        assertThat(after.rowsWritten()).isEqualTo(2);
+        assertThat(store.execs.get(late).lateResolved()).isTrue();
+        assertThat(store.execs.get(onTime).lateResolved()).as("반사실은 그대로 두고 늦게 풂만 채움").isFalse();
+        assertThat(cf(onTime).get("NEXT_OPEN").path("raw").asDouble()).isEqualTo(100.0);
     }
 }

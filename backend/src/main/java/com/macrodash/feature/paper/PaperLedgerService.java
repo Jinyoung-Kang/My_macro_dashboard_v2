@@ -84,6 +84,11 @@ import java.util.function.Supplier;
  *   <li>만료(기준 거래일 + 3거래일이 지난 대기 주문)·지난 재진입 금지 정리 — 체결보다 먼저(만료된 주문이 오늘 봉으로 체결되지 않게)</li>
  *   <li>분할 감지·가격 갱신 — <b>체결·스탑보다 먼저</b>. 그러지 않으면 2:1 분할 뒤 반값이 된 관측가가 분할 전 최고가와 비교돼
  *       가짜 스탑이 나고, 매도 수량도 분할 전 수량으로 계산됩니다.</li>
+ *   <li>(미국 시각 지정 주문 — 명세 2026-10-30 §10-1, {@link UsTimedFills}) 2b 시각 지정 체결(기준 시각 T가 이 관측치 전인 주문을 1분봉 저장본의
+ *       T 봉으로, T 순) → 3a 끝난 세션의 남은 주문을 그 세션 종가 또는 만료로 → 3b 새 보유의 평가 가격을 이 관측치로. 시각 지정 주문은 1의 만료에서
+ *       빼고 여기서 만료하며, 시간별 체결(아래 매도·매수)은 그 주문을 보지 않습니다({@link UsPaperMarket#fillable}). 그런 주문이 있는 책은 이 관측치
+ *       뒤의 1분봉 저장본을 최대 {@link UsTimedFills#BARS_WAIT} 기다립니다(그동안 그 책은 처리하지 않고 멱등 키 그대로 — 오류가 아님,
+ *       {@link Outcome#waiting}). 그런 주문이 없는 책은 이 단계가 아무 일도 하지 않습니다.</li>
  *   <li>대기 매도 체결</li>
  *   <li>최고가 갱신 → 트레일링 스탑 — 그 관측치로 즉시 전량 매도 + 재진입 금지</li>
  *   <li>대기 매수 체결 — <b>스탑 뒤</b>. 이번 관측치에서 스탑에 걸린 종목의 대기 매수는 방금 건 재진입 금지로 취소됩니다
@@ -141,22 +146,38 @@ public class PaperLedgerService {
      * @param skippedReason  아무 책도 처리하지 않았을 때 그 이유(처리했으면 null)
      * @param notes          체결하지 못하고 취소한 주문·현금 부족으로 줄인 매수·분할처럼 사람이 알아야 할 일("책: 내용")
      * @param errors         오류로 되돌린 책("책: 오류") — 그 책은 같은 관측치로는 다시 시도하지 않고 새 관측치에서 다시 시도합니다
-     * @param alerts         운영 알림("책: 내용") — 한국 '미처리 기업행위' 보류가 걸린 날 뒤 5거래일을 넘김(명세 §4-2 K32 — 사람이 확인).
-     *                       정기·수동 작업이 작업 기록({@code paper_job_runs.detail.alerts})에 남깁니다. 미국은 늘 빈 목록이고, 비었으면 응답
-     *                       JSON(수동 실행 {@code POST /api/paper/run/risk})에 칸이 없습니다(미국 응답 그대로)
+     * @param alerts         운영 알림("책: 내용") — 한국 '미처리 기업행위' 보류가 걸린 날 뒤 5거래일을 넘김(명세 §4-2 K32 — 사람이 확인), 미국
+     *                       시각 지정 체결의 장부 재검사가 주문·1분봉 봉을 거절함({@link UsTimedFills} — 시각 지정 주문이 있는 계좌만).
+     *                       정기·수동 작업이 작업 기록({@code paper_job_runs.detail.alerts})에 남깁니다. 비었으면 응답 JSON(수동 실행
+     *                       {@code POST /api/paper/run/risk})에 칸이 없습니다(시각 지정 주문이 없는 미국 응답 그대로)
      * @param confirmed      이번에 쓴 확정 조정 행 수(한국 금융위 확정 — K29, C3 {@link KrConfirmations}). 미국은 늘 0이고, 0이면 응답 JSON에 칸이
      *                       없습니다(미국 응답 그대로)
+     * @param waiting        1분봉 기다림으로 이번에 처음 미룬 책("책: 사유" — 미국 시각 지정 주문, 명세 2026-10-30 §10-2). 그 책은 멱등 키가 그대로라
+     *                       다음 점검이 같은 관측치로 다시 봅니다(오류가 아님 — 실패 기억에 넣지 않음). 비었으면 응답 JSON에 칸이 없습니다
+     * @param stillWaiting   같은 관측치로 다시 미룬 책("책: 사유") — 정기 작업은 이것만 있는 주기를 기록하지 않습니다(첫 미룸·풀림만). 비었으면 칸 없음
      */
     public record Outcome(int filled, int stopped, int expired, int splits, List<String> booksProcessed,
                           String skippedReason, List<String> notes, List<String> errors,
                           @JsonInclude(JsonInclude.Include.NON_EMPTY) List<String> alerts,
-                          @JsonInclude(JsonInclude.Include.NON_DEFAULT) int confirmed) {
+                          @JsonInclude(JsonInclude.Include.NON_DEFAULT) int confirmed,
+                          @JsonInclude(JsonInclude.Include.NON_EMPTY) List<String> waiting,
+                          @JsonInclude(JsonInclude.Include.NON_EMPTY) List<String> stillWaiting) {
 
         public Outcome {
             booksProcessed = List.copyOf(booksProcessed);
             notes = List.copyOf(notes);
             errors = List.copyOf(errors);
             alerts = List.copyOf(alerts);
+            waiting = List.copyOf(waiting);
+            stillWaiting = List.copyOf(stillWaiting);
+        }
+
+        /** 1분봉 기다림이 없는 결과. */
+        public Outcome(int filled, int stopped, int expired, int splits, List<String> booksProcessed,
+                       String skippedReason, List<String> notes, List<String> errors, List<String> alerts,
+                       int confirmed) {
+            this(filled, stopped, expired, splits, booksProcessed, skippedReason, notes, errors, alerts, confirmed,
+                    List.of(), List.of());
         }
 
         /** 확정 조정이 없는 결과. */
@@ -183,7 +204,7 @@ public class PaperLedgerService {
             List<String> mergedAlerts = new ArrayList<>(confirmation.alerts());
             mergedAlerts.addAll(alerts);
             return new Outcome(filled, stopped, expired, splits, booksProcessed, skippedReason, mergedNotes, mergedErrors,
-                    mergedAlerts, confirmed + confirmation.confirmed());
+                    mergedAlerts, confirmed + confirmation.confirmed(), waiting, stillWaiting);
         }
 
         static Outcome skipped(String reason) {
@@ -217,18 +238,31 @@ public class PaperLedgerService {
      */
     private final Map<FailureKey, String> confirmErrors = new ConcurrentHashMap<>();
 
+    /** 미국 시각 지정 체결(2b·3a·3b — 미국 Claude 계좌2 실험, 명세 2026-10-30 §10-1) — 시각 지정 주문이 있는 미국 책에서만 일합니다. */
+    private final UsTimedFills timedFills;
+    /**
+     * (시장, 책) → 1분봉 기다림으로 미룬 관측치의 수집 시각(명세 2026-10-30 §10-2). 같은 관측치를 다시 미룬 주기는 기록하지 않으려고({@link Outcome#stillWaiting})
+     * 기억합니다 — 오류 기억({@link #failedObservations})과 따로라 미룬 책은 '오류 난 책'으로 세지 않습니다. 풀리면 지웁니다. 재기동하면 사라집니다(그때 한 번
+     * 더 기록하는 것은 괜찮음).
+     */
+    private final Map<FailureKey, Instant> barsWaits = new ConcurrentHashMap<>();
+    /** 지금 시각 — 1분봉 기다림의 상한(관측치 수집 + {@link UsTimedFills#BARS_WAIT})을 셉니다. */
+    private final java.time.Clock clock;
+
     /** 설정은 실행이 읽은 행으로 받습니다({@link MarketRun#settings}) — 장부가 따로 읽지 않습니다. */
     @org.springframework.beans.factory.annotation.Autowired
     public PaperLedgerService(PaperStore store, PaperMarketData marketData, ObjectMapper mapper) {
         this(store, marketData, mapper, java.time.Clock.systemUTC());
     }
 
-    /** 시험용 — 시계(확정 조정이 최고가를 다시 셀 때의 시각)를 정합니다. */
+    /** 시험용 — 시계(확정 조정이 최고가를 다시 셀 때의 시각·1분봉 기다림의 상한)를 정합니다. */
     PaperLedgerService(PaperStore store, PaperMarketData marketData, ObjectMapper mapper, java.time.Clock clock) {
         this.store = store;
         this.marketData = marketData;
         this.mapper = mapper;
+        this.clock = clock;
         this.confirmations = new KrConfirmations(store, marketData, clock);
+        this.timedFills = new UsTimedFills(store, mapper);
     }
 
     /** 장부를 바꾸는 다른 일(관리 서비스)도 이 잠금 안에서 합니다. */
@@ -279,6 +313,7 @@ public class PaperLedgerService {
     public void forgetFailures() {
         failedObservations.clear();
         confirmErrors.clear();
+        barsWaits.clear();
     }
 
     /** 그 시장의 오류 난 관측치 기억만 지웁니다 — 수동 실행이 같은 관측치로 한 번 더 시도하게(다른 시장의 기억은 그대로). */
@@ -410,6 +445,9 @@ public class PaperLedgerService {
         // 그 시장이 체결 전에 덧붙이는 종목 정보(한국: 금융위 시장 구분 — 비용 종목 구분). 미국은 그대로입니다.
         Quotes observed = market.withListings(quotes, marketData);
         JsonNode settingsBody = market.settingsBody();
+        // 미국 시각 지정 체결의 1분봉 저장본 — 풀어야 할 시각 지정 주문이 있는 책이 처음 물을 때 한 번만 읽습니다(그 밖에는 읽지 않음).
+        Supplier<UsTimedFills.Bars> bars = market.definition() == UsPaperMarket.INSTANCE ? once(
+                () -> UsTimedFills.Bars.of(marketData.barsUs())) : null;
 
         int filled = 0;
         int stopped = 0;
@@ -420,6 +458,8 @@ public class PaperLedgerService {
         List<String> errors = new ArrayList<>();
         List<String> alerts = new ArrayList<>();
         List<String> heldBack = new ArrayList<>();
+        List<String> waiting = new ArrayList<>();
+        List<String> stillWaiting = new ArrayList<>();
         for (Book book : books) {
             FailureKey key = new FailureKey(market.code(), book.code());
             if (failedOn(market, book.code(), quotes)) {
@@ -427,10 +467,21 @@ public class PaperLedgerService {
                 continue;
             }
             try {
-                BookRun run = store.atomically(() -> processBook(market, book, observed, current, settingsBody));
+                BookRun run = store.atomically(() -> processBook(market, book, observed, current, settingsBody, bars));
                 failedObservations.remove(key);
                 if (run == null) {
                     continue;
+                }
+                if (run.barsWait != null) {
+                    // 1분봉 기다림(명세 2026-10-30 §10-2) — 아무것도 쓰지 않았고 멱등 키도 그대로라 다음 점검이 같은 관측치로 다시 봅니다. 오류가
+                    // 아니므로 실패 기억에 넣지 않습니다. 같은 관측치를 다시 미룬 것이면 stillWaiting(정기 작업이 기록하지 않음).
+                    boolean first = !quotes.collectedAt().equals(barsWaits.put(key, quotes.collectedAt()));
+                    (first ? waiting : stillWaiting).add(book.code() + ": " + run.barsWait);
+                    continue;
+                }
+                Instant waited = barsWaits.remove(key);
+                if (quotes.collectedAt().equals(waited) && run.barsReleased != null) {
+                    notes.add(book.code() + ": 1분봉 기다림 풀림 — " + run.barsReleased);   // 미뤘던 그 관측치를 처리함
                 }
                 processed.add(book.code());
                 filled += run.filled;
@@ -449,11 +500,39 @@ public class PaperLedgerService {
         }
         String skipped = null;
         if (processed.isEmpty() && errors.isEmpty()) {
-            skipped = heldBack.isEmpty()
-                    ? "이미 처리한 관측치입니다(수집 " + Kst.stamp(quotes.collectedAt()) + ")"
-                    : heldBackReason(quotes, heldBack);
+            List<String> deferred = new ArrayList<>(waiting);
+            deferred.addAll(stillWaiting);
+            skipped = !heldBack.isEmpty() ? heldBackReason(quotes, heldBack)
+                    : !deferred.isEmpty() ? barsWaitReason(quotes, deferred)
+                    : "이미 처리한 관측치입니다(수집 " + Kst.stamp(quotes.collectedAt()) + ")";
         }
-        return new Outcome(filled, stopped, expired, splits, processed, skipped, notes, errors, alerts);
+        return new Outcome(filled, stopped, expired, splits, processed, skipped, notes, errors, alerts, 0, waiting,
+                stillWaiting);
+    }
+
+    /** 1분봉 기다림으로 미룬 책만 남은 관측치의 사유 문구(명세 2026-10-30 §10-2). */
+    static String barsWaitReason(Quotes quotes, List<String> deferred) {
+        List<String> codes = deferred.stream().map(entry -> entry.substring(0, entry.indexOf(':'))).toList();
+        return "수집 " + Kst.stamp(quotes.collectedAt()) + " 관측치는 1분봉 기다림 중인 계좌(" + String.join(", ", codes)
+                + ")만 남았습니다 — 그 관측치 뒤의 1분봉 저장본이 들어오거나 " + UsTimedFills.BARS_WAIT.toMinutes()
+                + "분이 지나면 처리합니다";
+    }
+
+    /** 한 번만 계산하는 공급자(한 처리 안 — 잠금 안이라 동기화하지 않음). */
+    private static <T> Supplier<T> once(Supplier<T> work) {
+        return new Supplier<>() {
+            private T value;
+            private boolean done;
+
+            @Override
+            public T get() {
+                if (!done) {
+                    value = work.get();
+                    done = true;
+                }
+                return value;
+            }
+        };
     }
 
     /** 오류가 난 책만 남은 관측치의 사유 문구(정기 작업도 같은 문구를 씀). */
@@ -462,9 +541,13 @@ public class PaperLedgerService {
                 + ")는 같은 관측치로 다시 시도하지 않습니다 — 새 관측치에서 다시 시도합니다(수동 실행은 한 번 더 시도)";
     }
 
-    /** 책 하나(트랜잭션 안). 이미 처리한 관측치면 null. */
+    /**
+     * 책 하나(트랜잭션 안). 이미 처리한 관측치면 null, 1분봉 기다림으로 미뤘으면 {@code barsWait}가 든 실행(아무것도 쓰지 않음).
+     *
+     * @param bars 미국 시각 지정 체결의 1분봉 저장본(한 처리에 한 번 읽음) — 미국이 아니면 null
+     */
     private BookRun processBook(PaperMarket market, Book book, Quotes quotes, PaperSettings current,
-                                JsonNode settingsBody) {
+                                JsonNode settingsBody, Supplier<UsTimedFills.Bars> bars) {
         Optional<BookState> stateRow = store.state(book.code());
         if (stateRow.isEmpty()) {
             throw new IllegalStateException("계좌 상태(paper_book_state)가 없습니다 — 초기화를 다시 실행하세요");
@@ -475,8 +558,27 @@ public class PaperLedgerService {
         }
         BookRun run = new BookRun(market, book, quotes, current, state.cash(), settingsBody);
 
-        // 1. 만료·재진입 금지 정리
-        run.expired = store.expireOrders(book.code(), run.session);
+        // 0. 미국 시각 지정 주문(명세 2026-10-30 §10-2): 기준 시각이 이 관측치 전인 대기 주문이 있으면 이 관측치 뒤의 1분봉 저장본을 기다립니다
+        //    (최대 UsTimedFills.BARS_WAIT) — 그러지 않으면 아래 시간별 스탑이 그 앞 시각의 시각 지정 매도보다 먼저 돕니다. 미루면 아무것도 쓰지
+        //    않습니다(멱등 키 그대로). 그런 주문이 없는 책(지금 모든 계좌)은 묻지 않고 지금처럼 처리합니다.
+        if (bars != null && PaperBooks.ACTIVE.equals(book.status()) && !UsTimedFills.due(
+                store.ordersByStatus(book.code(), PaperBooks.ORDER_PENDING), run.at, market.calendar()).isEmpty()) {
+            UsTimedFills.BarsWait wait = UsTimedFills.barsWait(bars.get(), run.at, clock.instant());
+            if (wait.waiting()) {
+                run.barsWait = wait.text();
+                return run;
+            }
+            run.barsReleased = wait.text();
+            run.timedDue = true;
+            // 2b의 재진입 금지는 목표 세션 E로 판정합니다 — 늦게 푸는 E 주문(서버가 꺼졌던 뒤)이 아래에서 지운 지난 금지에 걸리도록 지우기 전에 읽음.
+            for (Lockout lockout : store.lockouts(book.code())) {
+                run.timedLockouts.put(lockout.ticker(), lockout.untilTradingDate());
+            }
+        }
+
+        // 1. 만료·재진입 금지 정리 — 미국 시각 지정 주문은 여기서 만료하지 않고 2b 뒤(3a)에(UsTimedFills)
+        run.expired = bars != null ? store.expireOrders(book.code(), run.session, UsTimedFills.TIMINGS)
+                : store.expireOrders(book.code(), run.session);
         store.deleteLockoutsBefore(book.code(), run.session);
         for (Lockout lockout : store.lockouts(book.code())) {
             run.lockouts.put(lockout.ticker(), lockout.untilTradingDate());
@@ -498,7 +600,10 @@ public class PaperLedgerService {
             return run;
         }
         if (started) {
-            refreshHoldings(run);                                   // 2. 분할·가격
+            refreshHoldings(run);                                   // 2. 분할·가격(갱신 전 평가 가격은 Holding.priceBefore)
+        }
+        if (run.timedDue) {
+            timedFills.process(run, pending, bars.get());           // 2b. 시각 지정 체결 → 3a. 끝난 세션 정리 → 3b. 평가 가격
         }
         fill(run, pending, PaperBooks.SELL);                        // 3. 매도
         if (started) {
@@ -578,6 +683,7 @@ public class PaperLedgerService {
         if (holding.lastPrice != null) {
             holding.lastPrice = SplitDetector.adjustPrice(holding.lastPrice, ratio);
         }
+        holding.priceBefore = SplitDetector.adjustPrice(holding.priceBefore, ratio);
         holding.fillRefClose = refNow;
         String note = "%s %s 분할 감지 — %d주 → %d주, 평단 %.2f → %.2f".formatted(
                 seenOn, ratio.label(), before, holding.qty, avgBefore, holding.avgCost);
@@ -1845,7 +1951,7 @@ public class PaperLedgerService {
                 costs.tax(), costs.slippageCost()));
     }
 
-    private static void raiseWatermark(Holding holding, double price, Instant at) {
+    static void raiseWatermark(Holding holding, double price, Instant at) {
         double raised = TrailingStop.raiseWatermark(holding.highWatermark, price);
         if (raised > holding.highWatermark) {
             holding.highWatermark = raised;
@@ -1865,7 +1971,7 @@ public class PaperLedgerService {
                 .doubleValue();
     }
 
-    private static String money(double value) {
+    static String money(double value) {
         return BigDecimal.valueOf(value).setScale(2, RoundingMode.HALF_UP).toPlainString();
     }
 
@@ -1884,8 +1990,8 @@ public class PaperLedgerService {
     }
 
     // ------------------------------------------------------------------ 작업 상태
-    /** 책 하나를 처리하는 동안의 작업 상태(트랜잭션 안에서만 삶). */
-    private static final class BookRun {
+    /** 책 하나를 처리하는 동안의 작업 상태(트랜잭션 안에서만 삶). 미국 시각 지정 체결({@link UsTimedFills})도 이 상태로 일합니다. */
+    static final class BookRun {
         /** 그 책의 시장 — 세션 날짜·확정 판정 셋·분할 기준 이력·체결 가격 출처. */
         final PaperMarket market;
         final Book book;
@@ -1907,6 +2013,14 @@ public class PaperLedgerService {
         final Map<String, String> orderHolds = new HashMap<>();
         /** 그 책 종목의 확정 시세(시가 체결 장부 — {@link PaperMarket#confirmedPrices}). */
         KrConfirmed confirmed = KrConfirmed.NONE;
+        /** 미국: 1분봉 기다림으로 이 관측치를 미룬 사유 — 있으면 이 책은 아무것도 쓰지 않았습니다({@link UsTimedFills#barsWait}). */
+        String barsWait;
+        /** 미국: 1분봉 기다림이 풀린 사유(미뤘던 관측치를 처리할 때 작업 기록에 한 줄). */
+        String barsReleased;
+        /** 미국: 이 관측치에서 풀어야 할 시각 지정 주문이 있음(2b를 돌림). */
+        boolean timedDue;
+        /** 미국: 만료 단계가 지난 재진입 금지를 지우기 전의 금지(종목 → 마지막 날) — 2b가 목표 세션 E로 판정. */
+        final Map<String, LocalDate> timedLockouts = new HashMap<>();
         int filled;
         int stopped;
         int expired;
@@ -1958,7 +2072,7 @@ public class PaperLedgerService {
     }
 
     /** 보유 한 건의 작업 사본. 끝에 {@link #toPosition}으로 저장합니다. */
-    private static final class Holding {
+    static final class Holding {
         final String ticker;
         int qty;
         double avgCost;
@@ -1986,6 +2100,11 @@ public class PaperLedgerService {
         boolean opened;
         /** 한국: 이번 관측치 시작 때의 since 날짜(최고가를 올리는 확정 종가의 첫 날 — 새 보유는 체결 봉 날짜). */
         final LocalDate sinceAtStart;
+        /**
+         * 이번 관측치로 가격을 갱신하기 전의 평가 가격(분할을 반영한 단위) — 미국 시각 지정 체결이 T 시각의 순자산을 셀 때 그 종목의 T 창 가격이
+         * 없으면 씁니다(W의 관측가로 T의 수량을 정하지 않게, 명세 2026-10-30 §10-3). 이번 2b에서 산 보유는 그 체결 원가격.
+         */
+        double priceBefore;
 
         Holding(Position p) {
             this.ticker = p.ticker();
@@ -2002,6 +2121,7 @@ public class PaperLedgerService {
             this.fillRefClose = p.fillRefClose();
             this.splitNote = p.splitNote();
             this.sinceAtStart = p.fillRefDate();
+            this.priceBefore = valuationPrice();
         }
 
         Holding(String ticker, int qty, double avgCost, LocalDate openedOn, Instant openedAt, double highWatermark,
@@ -2018,6 +2138,7 @@ public class PaperLedgerService {
             this.fillRefDate = fillRefDate;
             this.fillRefClose = fillRefClose;
             this.sinceAtStart = fillRefDate;
+            this.priceBefore = lastPrice;
         }
 
         /** 평가 가격: 마지막으로 본 가격, 한 번도 못 봤으면 평단(가격 없음 배지와 함께). */

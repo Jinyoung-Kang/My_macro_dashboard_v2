@@ -44,7 +44,7 @@ import static org.mockito.Mockito.when;
  * (rules·claude·bench_spy·bench_mix)라 통합 테스트(ApiIntegrationTest)와 같은 행을 쓰므로 시작·끝에 그 네 책만 지웁니다 —
  * 책을 지우면 장부가 외래키로 함께 지워집니다. 설정 행은 이 테스트가 만들었을 때만 지웁니다. 초기화가 얼리는 출발일 종가
  * ({@code paper_start_prices})도 이 테스트가 쓰는 종목만 지웁니다 — 남겨 두면 다른 테스트의 초기화가 그 값으로 사후 체결합니다.
- * 시장 격리 시험의 시험용 한국 책({@value #KR_BOOK})과 그 시험이 남긴 리스크 점검 기록도 지웁니다.
+ * 시장 격리 시험의 시험용 한국 책({@value #KR_BOOK})과 그 시험이 남긴 리스크 점검 기록, 시각 지정 체결 시험의 계좌({@value #TIMED_BOOK})도 지웁니다.
  */
 class PaperLedgerDbTest {
 
@@ -52,6 +52,11 @@ class PaperLedgerDbTest {
 
     /** 시장 격리 시험의 시험용 한국 책 — 실제 한국 계좌 코드(kr_*)와 겹치지 않는 시험 접두어(PaperStoreDbTest도 t_로 지움). */
     private static final String KR_BOOK = "t_kr_claude";
+    /**
+     * 시각 지정 체결 시험의 계좌 — 계좌2 자리(정의는 단계 1-5). AT_* 주문 행이 남으면 make db-test가 V14를 다시 돌릴 때 옛 timing CHECK에 걸리므로
+     * 시작·끝에 지웁니다(ADR 0022 '스키마 다시 실행').
+     */
+    private static final String TIMED_BOOK = "claude2";
 
     private JdbcTemplate jdbc;
     private PaperStore store;
@@ -100,7 +105,8 @@ class PaperLedgerDbTest {
     }
 
     private void deleteBooks() {
-        jdbc.update("DELETE FROM paper_books WHERE code IN ('rules', 'claude', 'bench_spy', 'bench_mix', ?)", KR_BOOK);
+        jdbc.update("DELETE FROM paper_books WHERE code IN ('rules', 'claude', 'bench_spy', 'bench_mix', ?, ?)", KR_BOOK,
+                TIMED_BOOK);
         jdbc.update("DELETE FROM paper_start_prices WHERE ticker IN ('SPY', 'SHY', 'AAA')");
     }
 
@@ -214,6 +220,45 @@ class PaperLedgerDbTest {
         assertThat(jdbc.queryForList("SELECT ticker || ' ' || qty || ' ' || raw_price::text FROM paper_fills "
                 + "WHERE book_code = 'bench_mix' ORDER BY ticker", String.class))
                 .containsExactly("SHY 484 82.500000", "SPY 119 500.000000");
+    }
+
+    @Test
+    @DisplayName("미국 시각 지정 체결(1-4)을 실제 표로 — AT_1000 매수는 1분봉 T 봉으로 체결(bar_at·fill_rung·출처), 종일 거래 없는 AT_1100은 마감 뒤 NO_TRADE_AFTER_T 만료")
+    void timedFillsOnRealTables() {
+        assertThat(store.insertBookIfAbsent(new PaperStore.Book(TIMED_BOOK, PaperBooks.KIND_CLAUDE, "시험용 계좌2", 100_000,
+                FRI, PaperBooks.ACTIVE, null))).isTrue();
+        store.upsertState(new PaperStore.BookState(TIMED_BOOK, 100_000, 100_000, 0, 0, null, null, null, null));
+        Instant decided = Instant.parse("2026-10-26T22:31:00Z");
+        LocalDate tue = LocalDate.of(2026, 10, 27);
+        long ten = store.insertOrder(new PaperStore.Order(0, TIMED_BOOK, null, "AAA", "BUY", 10, null, null, "AT_1000",
+                "CLAUDE", "PENDING", null, null, MON, decided, tue, null));
+        long halted = store.insertOrder(new PaperStore.Order(0, TIMED_BOOK, null, "BBB", "BUY", 5, null, null, "AT_1100",
+                "CLAUDE", "PENDING", null, null, MON, decided, tue, null));
+        Instant w = Instant.parse("2026-10-27T20:20:00Z");   // 16:20 EDT — 화요일 확정 종가 관측치
+        ExecutionAuditFixtures.Bars bars = new ExecutionAuditFixtures.Bars(w.plusSeconds(60))
+                .bar("AAA", tue, Instant.parse("2026-10-27T14:00:00Z"), 100.0, 500.0)
+                .bar("AAA", tue, Instant.parse("2026-10-27T19:59:00Z"), 101.0, 500.0)
+                .bar("BBB", MON, Instant.parse("2026-10-26T19:59:00Z"), 50.0, 100.0)
+                .bar("SPY", tue, Instant.parse("2026-10-27T19:59:00Z"), 507.0, 9000.0);
+        when(reader.read(eq(Datasets.SNAP_PAPER_BARS_US), anyLong(), any())).thenReturn(Optional.of(bars.snapshot()));
+        Snapshot quotes = new Snapshot(Datasets.SNAP_PAPER_QUOTES, MAPPER.valueToTree(Map.of("tickers", Map.of(
+                "AAA", Map.of("dates", List.of("2026-10-26", "2026-10-27"), "close", List.of(99.0, 101.0)),
+                "BBB", Map.of("dates", List.of("2026-10-26", "2026-10-27"), "close", List.of(50.0, 50.0)),
+                "SPY", Map.of("dates", List.of("2026-10-26", "2026-10-27"), "close", List.of(505.0, 507.0))))),
+                "json", "ok", null, w);
+        when(reader.read(eq(Datasets.SNAP_PAPER_QUOTES), anyLong(), any())).thenReturn(Optional.of(quotes));
+
+        PaperLedgerService.Outcome outcome = processLatest();
+
+        assertThat(outcome.errors()).isEmpty();
+        assertThat(outcome.booksProcessed()).contains(TIMED_BOOK);
+        assertThat(jdbc.queryForMap("SELECT raw_price::text AS raw, price_source, fill_rung, bar_at = TIMESTAMPTZ "
+                + "'2026-10-27 14:00:00+00' AS at_target, observation_date::text AS day FROM paper_fills WHERE order_id = ?",
+                ten)).containsEntry("raw", "100.000000").containsEntry("price_source", "paper.bars.us")
+                .containsEntry("fill_rung", "Y1M_AT").containsEntry("at_target", true).containsEntry("day", "2026-10-27");
+        assertThat(jdbc.queryForMap("SELECT status, split_part(reject_reason, ' ', 1) AS code FROM paper_orders "
+                + "WHERE id = ?", halted)).containsEntry("status", "EXPIRED").containsEntry("code", "NO_TRADE_AFTER_T");
+        assertThat(count("SELECT COUNT(*) FROM paper_fills WHERE order_id = ?", halted)).isZero();
     }
 
     /**

@@ -37,6 +37,7 @@ final class PaperBooks {
     static final String ORDER_PENDING = "PENDING";
     static final String ORDER_FILLED = "FILLED";
     static final String ORDER_CANCELLED = "CANCELLED";
+    static final String ORDER_EXPIRED = "EXPIRED";
 
     /** 주문 시점(paper_orders.timing). {@link #NEXT_OPEN}은 한국 책의 다음 거래일 시가(V14, 2단계 K13). */
     static final String NEXT_CLOSE = "NEXT_CLOSE";

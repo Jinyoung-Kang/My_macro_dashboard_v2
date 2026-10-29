@@ -108,9 +108,16 @@ final class UsPaperMarket implements PaperMarket {
                 && !collectedAt.isBefore(calendar.closeInstant(barDate).plus(PaperMarketData.FINAL_DELAY));
     }
 
-    /** {@code NEXT_CLOSE}면 그 봉의 종가가 나왔을 때만({@link #closeAvailable}), 그 밖의 시점(NEXT_OBSERVATION)은 늘 — 옛 체결 조건 ③ 그대로. */
+    /**
+     * {@code NEXT_CLOSE}면 그 봉의 종가가 나왔을 때만({@link #closeAvailable}), 그 밖의 시점(NEXT_OBSERVATION)은 늘 — 옛 체결 조건 ③ 그대로.
+     * 시각 지정 시점({@link UsTimedFills#TIMINGS} — NEXT_OPEN·AT_1000~AT_1500, 미국 Claude 계좌2)은 <b>늘 아님</b>: 그 주문은 1분봉의 그 시각 봉으로만
+     * 체결합니다(장부 2b — 명세 2026-10-30 §10-1). 그러지 않으면 시간별 매도·매수가 이 주문을 그 시간의 관측가로 체결합니다.
+     */
     @Override
     public boolean fillable(Order order, Bar bar, Instant collectedAt, TradingCalendar calendar) {
+        if (UsTimedFills.timed(order.timing())) {
+            return false;
+        }
         return !PaperBooks.NEXT_CLOSE.equals(order.timing()) || closeAvailable(bar.date(), collectedAt, calendar);
     }
 

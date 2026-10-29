@@ -275,6 +275,33 @@ class ExecutionAuditTest {
         assertThat(ExecutionAudit.auditedBooks()).as("미국 Claude 계좌 — 지금은 계좌1 하나").containsExactly(PaperBooks.CLAUDE);
     }
 
+    // ------------------------------------------------------------------ 늦게 풂(late_resolved)
+    @Test
+    @DisplayName("늦게 풂 — 대체 칸(R2b·R3·종가)은 참, 1분봉 칸은 장부 반영이 T + 65분 뒤일 때만 참, 사다리 칸 없는 체결·체결 없음은 null")
+    void lateResolvedComesFromTheFill() {
+        Order order = buy("AT_1000", MON, MON_DECIDED);
+        Instant target = et(TUE, 10, 0);
+        com.macrodash.store.PaperStore.Fill inTime = observationFill(7, "AAPL", PaperBooks.BUY, 1, 100, target.plusSeconds(20 * 60),
+                TUE);
+        com.macrodash.store.PaperStore.Fill late = observationFill(7, "AAPL", PaperBooks.BUY, 1, 100, target.plusSeconds(65 * 60 + 1),
+                TUE);
+
+        assertThat(ExecutionAudit.lateResolved(order, new com.macrodash.store.PaperStore.ExecFill(inTime, target, "Y1M_AT"), US))
+                .isFalse();
+        assertThat(ExecutionAudit.lateResolved(order, new com.macrodash.store.PaperStore.ExecFill(
+                observationFill(7, "AAPL", PaperBooks.BUY, 1, 100, target.plusSeconds(65 * 60), TUE), target, "Y1M_NEXT"),
+                US)).as("정확히 T + 65분은 아직 한 회차 안").isFalse();
+        assertThat(ExecutionAudit.lateResolved(order, new com.macrodash.store.PaperStore.ExecFill(late, target, "Y1M_AT"), US))
+                .as("서버가 꺼졌던 뒤의 2b·1분봉이 한 회차 넘게 늦음").isTrue();
+        for (String rung : List.of("Y1M_LATE", "QUOTES_FALLBACK", "QUOTES_CLOSE")) {
+            assertThat(ExecutionAudit.lateResolved(order, new com.macrodash.store.PaperStore.ExecFill(inTime, null, rung), US))
+                    .as(rung).isTrue();
+        }
+        assertThat(ExecutionAudit.lateResolved(MON_ORDER, new com.macrodash.store.PaperStore.ExecFill(inTime, null, null), US))
+                .as("계좌1식 체결(사다리 칸 없음)").isNull();
+        assertThat(ExecutionAudit.lateResolved(order, null, US)).as("아직·만료·취소").isNull();
+    }
+
     // ------------------------------------------------------------------ 메뉴 대조(V17 CHECK · 수집기 MENU)
     private static final Path V17 = Path.of("../db/migrations/V17__paper_timed_fills_and_exec.sql");
     private static final Path COLLECTOR_BARS = Path.of("../collector/app/tasks/paper_bars.py");

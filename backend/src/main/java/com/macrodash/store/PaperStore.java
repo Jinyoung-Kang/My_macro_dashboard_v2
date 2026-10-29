@@ -984,6 +984,26 @@ public class PaperStore {
     }
 
     /**
+     * {@link #expireOrders(String, LocalDate)}와 같되 {@code keepTimings} 시점의 주문은 남깁니다 — 미국 시각 지정 주문(Claude 계좌2)은 장부가 시각
+     * 지정 체결(2b) 뒤에 그 세션의 1분봉으로 풀 수 있는 것을 다 푼 다음 만료합니다(명세 2026-10-30 §10-1 — 만료가 먼저면 E 장중에 꺼졌다 E+1에 켜진
+     * 서버가 E 주문을 E 1분봉으로 풀기 전에 만료). 비었으면 두 인자 판과 같은 문장입니다.
+     *
+     * @return 만료시킨 주문 수
+     */
+    public int expireOrders(String code, LocalDate today, Collection<String> keepTimings) {
+        if (keepTimings.isEmpty()) {
+            return expireOrders(code, today);
+        }
+        String[] keep = keepTimings.toArray(new String[0]);
+        return jdbc.update("UPDATE paper_orders SET status = 'EXPIRED' "
+                + "WHERE book_code = ? AND status = 'PENDING' AND expires_on < ? AND NOT (timing = ANY(?))", ps -> {
+                    ps.setString(1, code);
+                    ps.setDate(2, Date.valueOf(today));
+                    ps.setArray(3, ps.getConnection().createArrayOf("text", keep));
+                });
+    }
+
+    /**
      * 체결 전 주문(PENDING·PROPOSED)을 모두 취소합니다 — 일시정지할 때.
      *
      * @return 취소한 주문 수
@@ -1073,6 +1093,25 @@ public class PaperStore {
                 },
                 (rs, rowNum) -> rs.getLong("id"));
         return single(ids, "체결");
+    }
+
+    /**
+     * 시각 지정 체결(미국 Claude 계좌2 — 장부 2b·3a)을 넣습니다: {@link #insertFill}과 같은 행에 V17 칸 체결 봉 시작 {@code bar_at}(1분봉으로 푼 칸만 —
+     * 관측치로 푼 {@code QUOTES_*} 칸은 null)과 사다리 칸 {@code fill_rung}(CHECK 다섯)을 함께 씁니다. 장부 처리 트랜잭션 안에서 부릅니다.
+     *
+     * @return 새 체결 번호
+     */
+    public long insertTimedFill(Fill f, Instant barAt, String fillRung) {
+        if (fillRung == null || fillRung.isBlank()) {
+            throw new IllegalArgumentException("시각 지정 체결의 사다리 칸이 없습니다: 주문 " + f.orderId());
+        }
+        long id = insertFill(f);
+        jdbc.update("UPDATE paper_fills SET bar_at = ?, fill_rung = ? WHERE id = ?", ps -> {
+            setInstant(ps, 1, barAt);
+            ps.setString(2, fillRung);
+            ps.setLong(3, id);
+        });
+        return id;
     }
 
     /** 한 책의 최근 체결 {@code limit}건, 최근 순. */

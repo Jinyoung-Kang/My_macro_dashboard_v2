@@ -154,6 +154,15 @@ public class PaperMarketData {
                 .flatMap(market::parse);
     }
 
+    /**
+     * 🧪 미국 1분봉 저장본({@code paper.bars.us}, 수집기 {@code paper_bars_us} — 미국 Claude 계좌2 실험) — 장부의 시각 지정 체결(2b)·1분봉 기다림이
+     * 읽습니다(명세 2026-10-30 §10, {@link UsTimedFills}). 수집 태스크 이름 없이 {@link StoreReader#quietly} 안에서 읽어, 장부를 부른 곳이 정기 작업이든
+     * 수동 실행이든 저장본이 오래돼도 수집을 요청하지 않습니다(ADR 0008). 없으면 empty.
+     */
+    Optional<Snapshot> barsUs() {
+        return store.quietly(() -> store.read(Datasets.SNAP_PAPER_BARS_US, Datasets.MAX_AGE_BARS_US, null));
+    }
+
     /** 미국 관측치 저장본({@code paper.quotes})의 파서 — 미국 묶음의 {@link PaperMarket#parse}가 그대로 부릅니다(클래스 설명의 관측치). */
     static Optional<Quotes> parse(Snapshot snapshot) {
         if (snapshot.collectedAt() == null) {

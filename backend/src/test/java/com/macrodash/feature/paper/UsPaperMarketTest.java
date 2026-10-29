@@ -270,6 +270,21 @@ class UsPaperMarketTest {
                 .as("③ 마감 + 15분, 설정 본문은 보지 않음").isEqualTo(PaperMarket.FillChoice.of(fresh));
     }
 
+    @Test
+    @DisplayName("시각 지정 시점(NEXT_OPEN·AT_1000~AT_1500 — 계좌2)은 fillable이 늘 거짓: 시간별 관측치로는 체결하지 않고 장부 2b가 1분봉으로만(명세 2026-10-30 §10-1)")
+    void timedTimingsAreNeverFillableByTheHourlyPath() {
+        assertThat(UsTimedFills.TIMINGS).containsExactly("NEXT_OPEN", "AT_1000", "AT_1100", "AT_1200", "AT_1300", "AT_1400",
+                "AT_1500");
+        for (String timing : UsTimedFills.TIMINGS) {
+            for (Instant t : List.of(Instant.parse("2026-10-23T15:00:00Z"), Instant.parse("2026-10-23T20:15:00Z"),
+                    Instant.parse("2026-10-26T15:00:00Z"))) {
+                assertThat(US.fillable(order(timing), bar(FRI), t)).as(timing + " " + t).isFalse();
+                assertThat(US.fillBar(order(timing), bar(FRI), t, US.calendar(), null)).as(timing + " " + t)
+                        .isEqualTo(PaperMarket.FillChoice.NONE);
+            }
+        }
+    }
+
     /** 체결 조건 ③만 보는 시험용 대기 주문(시점만 의미 있음). */
     private static PaperStore.Order order(String timing) {
         return new PaperStore.Order(1, PaperBooks.CLAUDE, null, "AAA", PaperBooks.BUY, null, 10.0, null, timing,

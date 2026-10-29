@@ -1515,6 +1515,11 @@ public class PaperDecisionJob {
         if (!outcome.alerts().isEmpty()) {
             out.put("alerts", outcome.alerts());
         }
+        if (!outcome.waiting().isEmpty() || !outcome.stillWaiting().isEmpty()) {
+            List<String> deferred = new ArrayList<>(outcome.waiting());
+            deferred.addAll(outcome.stillWaiting());
+            out.put("barsWait", deferred);   // 1분봉 기다림으로 미룬 계좌(미국 시각 지정 주문 — 리스크 점검이 이어서 처리)
+        }
         return out;
     }
 

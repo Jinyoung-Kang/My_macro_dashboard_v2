@@ -880,7 +880,7 @@ class ApiIntegrationTest {
     /** 테스트가 만든 모의 매매 책을 지웁니다(테스트 DB만 — setUp이 DB 이름을 확인함). 책을 지우면 장부가 함께 지워집니다. */
     private void deletePaperBooks() {
         if (Boolean.TRUE.equals(jdbc.queryForObject("SELECT to_regclass('paper_books') IS NOT NULL", Boolean.class))) {
-            jdbc.update("DELETE FROM paper_books WHERE code IN ('rules', 'claude', 'bench_spy', 'bench_mix')");
+            jdbc.update("DELETE FROM paper_books WHERE code IN ('rules', 'claude', 'claude2', 'bench_spy', 'bench_mix')");
         }
         // 얼린 출발일 종가가 남으면 다음 실행의 초기화가 '종가 없음' 대신 그 값으로 사후 체결합니다(테스트 DB만).
         if (Boolean.TRUE.equals(jdbc.queryForObject("SELECT to_regclass('paper_start_prices') IS NOT NULL", Boolean.class))) {

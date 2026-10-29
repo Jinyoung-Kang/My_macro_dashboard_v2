@@ -8,7 +8,6 @@ import com.macrodash.read.StoreReader;
 import com.macrodash.store.Datasets;
 import com.macrodash.store.PaperStore;
 import com.macrodash.store.PaperStore.ExecFill;
-import com.macrodash.store.PaperStore.Fill;
 import com.macrodash.store.PaperStore.Order;
 import com.macrodash.store.PaperStore.OrderExec;
 import com.macrodash.store.Snapshot;
@@ -46,8 +45,9 @@ import java.util.Map;
  *
  * <p><b>한 번 쓴 값은 고치지 않습니다.</b> 시점마다 값을 처음 구한 저장본의 값이 남고(저장 쪽 {@link PaperStore#mergeOrderExec}), 못 구한 시점은
  * null로 두었다가 다음 저장본에서 다시 봅니다. 지연({@code lag_seconds})은 그 주문의 1분봉 반사실을 처음 적은 저장본의 지연(달력으로 다시 셈 —
- * 정규장 밖이면 null)이고 그때 null이었으면 뒤 저장본의 지연으로 메우지 않습니다. 늦게 풂({@code late_resolved})은 시각 지정 체결이 생기는
- * 단계 1부터라 지금은 늘 null입니다.
+ * 정규장 밖이면 null)이고 그때 null이었으면 뒤 저장본의 지연으로 메우지 않습니다. 늦게 풂({@code late_resolved})은 시각 지정 체결(장부 2b·3a가 사다리
+ * 칸을 남긴 체결)이 생기면 그 체결 행으로 한 번 셉니다({@link ExecutionAudit#lateResolved} — 대체 칸이거나 장부 반영이 T + 65분 뒤). 그 밖의 주문은
+ * null입니다.
  *
  * <p>저장본(1분봉·관측치)은 {@link StoreReader#quietly}로만 읽습니다 — 정기 작업이 수집기를 깨우지 않게(ADR 0008). 작업 기록
  * ({@code paper_job_runs}, 이름 {@value #JOB})은 무엇이든 새로 썼을 때와 오류일 때만 남깁니다(5분마다 쌓이면 다른 작업 기록을 밀어냄) — 실행 시간은
@@ -176,9 +176,9 @@ public class PaperExecutionAuditJob {
             if (audited.isEmpty()) {
                 continue;
             }
-            Map<Long, Fill> fills = new HashMap<>();
+            Map<Long, ExecFill> fills = new HashMap<>();
             for (ExecFill f : store.fillsForOrders(audited.stream().map(Order::id).toList())) {
-                fills.put(f.fill().orderId(), f.fill());
+                fills.put(f.fill().orderId(), f);
             }
             Map<Long, OrderExec> existing = new HashMap<>();
             for (OrderExec row : store.orderExecs(code)) {
@@ -186,8 +186,10 @@ public class PaperExecutionAuditJob {
             }
             for (Order order : audited) {
                 orders++;
-                Map<String, Price> prices = ExecutionAudit.counterfactuals(order, fills.get(order.id()), barsPayload,
-                        quotes, calendar);
+                ExecFill fill = fills.get(order.id());
+                Map<String, Price> prices = ExecutionAudit.counterfactuals(order, fill == null ? null : fill.fill(),
+                        barsPayload, quotes, calendar);
+                Boolean late = ExecutionAudit.lateResolved(order, fill, calendar);
                 OrderExec before = existing.get(order.id());
                 int fresh = 0;
                 boolean fromBars = false;
@@ -200,14 +202,14 @@ public class PaperExecutionAuditJob {
                         fromBars |= ExecutionAudit.MENU.containsKey(entry.getKey());
                     }
                 }
-                if (before != null && fresh == 0) {
+                if (before != null && fresh == 0 && (late == null || before.lateResolved() != null)) {
                     continue;                              // 새로 채울 값이 없음 — 쓰지 않음
                 }
                 LocalDate session = ExecutionAudit.targetSession(order, calendar);
                 // 지연은 그 주문의 1분봉 반사실을 처음 적는 회차의 값만 — 그 회차에 몰랐으면(null) 뒤 회차의 값으로 메우지 않습니다.
                 Integer orderLag = fromBars && !menuFilled(before) ? lag : null;
                 OrderExec row = new OrderExec(order.id(), code, order.timing(),
-                        ExecutionAudit.targetAt(order.timing(), session, calendar), cf, orderLag, null, null);
+                        ExecutionAudit.targetAt(order.timing(), session, calendar), cf, orderLag, late, null);
                 if (store.mergeOrderExec(row)) {
                     rows++;
                     values += fresh;

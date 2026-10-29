@@ -1847,6 +1847,43 @@ class PaperStoreDbTest {
     }
 
     @Test
+    @DisplayName("시각 지정 체결 쓰기(1-4) — 만료는 시각 지정 시점을 남기고(그 밖은 그대로), 체결 봉·사다리 칸은 같은 체결 행에, 칸 없는 체결은 받지 않음")
+    void timedExpiryAndFillBar() {
+        store.insertBookIfAbsent(book(BOOK, "Claude 책"));
+        long timed = store.insertOrder(timedBuy(BOOK, "AT_1000"));
+        long open = store.insertOrder(new PaperStore.Order(0, BOOK, null, "SPY", "BUY", null, 10.0, null, "NEXT_OPEN",
+                "CLAUDE", "PENDING", null, null, DAY, null, DAY.plusDays(3), null));
+        long hourly = store.insertOrder(pendingBuy(BOOK, "SPY", null));
+        LocalDate later = DAY.plusDays(30);
+
+        assertThat(store.expireOrders(BOOK, later, List.of("NEXT_OPEN", "AT_1000"))).isEqualTo(1);
+        assertThat(jdbc.queryForObject("SELECT status FROM paper_orders WHERE id = ?", String.class, hourly))
+                .isEqualTo("EXPIRED");
+        assertThat(jdbc.queryForList("SELECT status FROM paper_orders WHERE id IN (?, ?)", String.class, timed, open))
+                .containsOnly("PENDING");
+        assertThat(store.expireOrders(BOOK, later, List.of())).as("남길 시점이 없으면 두 인자 판과 같음").isEqualTo(2);
+
+        long order = store.insertOrder(timedBuy(BOOK, "AT_1100"));
+        Instant bar = Instant.parse("2026-10-26T15:00:00Z");   // 2026-10-26(월) 11:00 EDT
+        long fillId = store.insertTimedFill(fill(order, BOOK), bar, "Y1M_AT");
+        assertThat(store.fillsForOrders(List.of(order))).singleElement().satisfies(f -> {
+            assertThat(f.fill().id()).isEqualTo(fillId);
+            assertThat(f.barAt()).isEqualTo(bar);
+            assertThat(f.fillRung()).isEqualTo("Y1M_AT");
+        });
+        long closeOrder = store.insertOrder(timedBuy(BOOK, "AT_1200"));
+        store.insertTimedFill(fill(closeOrder, BOOK), null, "QUOTES_CLOSE");
+        assertThat(store.fillsForOrders(List.of(closeOrder))).singleElement()
+                .satisfies(f -> assertThat(f.barAt()).as("관측치 칸에는 1분봉 시각 없음").isNull());
+        long blank = store.insertOrder(timedBuy(BOOK, "AT_1300"));
+        assertThatThrownBy(() -> store.insertTimedFill(fill(blank, BOOK), bar, null))
+                .isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> store.atomically(() -> store.insertTimedFill(fill(blank, BOOK), bar, "Y1M_FIRST")))
+                .as("모르는 사다리 칸(V17 CHECK)").isInstanceOf(org.springframework.dao.DataIntegrityViolationException.class);
+        assertThat(store.fillsForOrders(List.of(blank))).as("같은 트랜잭션의 체결 행도 함께 되돌림").isEmpty();
+    }
+
+    @Test
     @DisplayName("V17은 여러 번 실행해도 안전 — 이미 적용한 DB에서 두 번 더 돌려도 시각 지정 주문·체결 봉·감사 행(반사실·지연)과 주문·체결·감사 표의 CHECK·기본키·외래키 모양이 그대로(make db-test가 다시 돌림) — 시험 뒤 되돌림")
     void v17RerunIsSafe() throws Exception {
         assumeTrue(Files.exists(V17), "db/migrations/V17__paper_timed_fills_and_exec.sql을 찾을 수 없습니다");

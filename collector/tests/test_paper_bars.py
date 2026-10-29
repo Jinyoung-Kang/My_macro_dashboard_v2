@@ -12,7 +12,8 @@ tests/test_paper_bars.py
   4. Yahoo 래치가 닫혀 있으면 묻지 않고, 배치 안의 429(yfinance가 로그로만 남김)도 래치를 닫는다. 두 회차 연달아 429면 한 회차를 쉰다.
   5. 기동 뒤 처음 받을 때까지 period "5d", 받은 뒤 "1d". 일봉 시가(X2)는 확정된 세션마다 배치 한 번.
   6. 받지 못한 종목은 직전 값을 isStale로 잇고, 하나도 못 받으면 EmptyResult로 저장본을 둔다. 세션은 종목마다 최근 3개.
-  7. 이 저장본을 읽는 백엔드 코드는 실행 감사 작업(PaperExecutionAuditJob, 단계 0-4)뿐이고 화면은 읽지 않는다(장부·패킷 그대로).
+  7. 이 저장본을 읽는 백엔드 코드는 실행 감사 작업(PaperExecutionAuditJob, 단계 0-4)과 장부의 시각 지정 체결(PaperMarketData.barsUs → UsTimedFills,
+     단계 1-4 — 시각 지정 주문이 있는 계좌만)뿐이고 화면·패킷은 읽지 않는다.
 
 외부 네트워크를 쓰지 않습니다 — 1분봉 표는 yfinance 1.7.0 yf.download(group_by="ticker")의 모양(종목 × Open·High·Low·Close·Adj Close·Volume,
 종목들의 분을 합친 인덱스 — 봉이 없던 분은 NaN 줄)을 합성해 만듭니다. 태스크·범위 시험은 PostgreSQL이 필요합니다.
@@ -107,9 +108,9 @@ def test_범위_계좌_코드는_백엔드_PaperBooks와_같다():
     assert store_module.TIMED_RECENT_DAYS == 8
 
 
-def test_1분봉_저장본을_읽는_백엔드_코드는_실행_감사_작업뿐이고_화면은_읽지_않는다():
-    """단계 0은 재기만 합니다 — 읽는 곳은 실행 감사 작업(0-4, 반사실·지연을 paper_order_exec에)뿐이고 계좌1의 결정·패킷·장부는 그대로.
-    시각 지정 체결(단계 1-4)이 장부에서 읽기 시작하면 그 커밋이 이 시험을 고칩니다."""
+def test_1분봉_저장본을_읽는_백엔드_코드는_실행_감사_작업과_장부의_시각_지정_체결뿐이고_화면은_읽지_않는다():
+    """읽는 곳은 실행 감사 작업(0-4, 반사실·지연을 paper_order_exec에)과 장부의 시각 지정 체결(1-4 — PaperMarketData.barsUs가 조용히 읽고
+    UsTimedFills가 2b·1분봉 기다림에 씀, 시각 지정 주문이 있는 계좌만)뿐이고 계좌1의 결정·패킷은 그대로. 화면은 읽지 않습니다."""
     readers = []
     for folder in (ROOT / "backend/src/main/java", ROOT / "frontend/src"):
         if not folder.exists():
@@ -120,6 +121,8 @@ def test_1분봉_저장본을_읽는_백엔드_코드는_실행_감사_작업뿐
                 if "SNAP_PAPER_BARS_US" in text or "paper.bars.us" in text:
                     readers.append(path.relative_to(ROOT).as_posix())
     assert sorted(readers) == ["backend/src/main/java/com/macrodash/feature/paper/PaperExecutionAuditJob.java",
+                               "backend/src/main/java/com/macrodash/feature/paper/PaperMarketData.java",
+                               "backend/src/main/java/com/macrodash/feature/paper/UsTimedFills.java",
                                "backend/src/main/java/com/macrodash/store/Datasets.java"]
 
 

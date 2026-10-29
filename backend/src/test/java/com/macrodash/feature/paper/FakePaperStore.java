@@ -288,10 +288,16 @@ class FakePaperStore extends PaperStore {
 
     @Override
     public int expireOrders(String code, LocalDate today) {
+        return expireOrders(code, today, List.of());
+    }
+
+    /** PaperStore와 같은 거르기 — {@code keepTimings} 시점의 주문은 남김(미국 시각 지정 주문은 장부 2b 뒤에 만료). */
+    @Override
+    public int expireOrders(String code, LocalDate today, java.util.Collection<String> keepTimings) {
         int n = 0;
         for (Order o : new ArrayList<>(orders.values())) {
             if (o.bookCode().equals(code) && "PENDING".equals(o.status()) && o.expiresOn() != null
-                    && o.expiresOn().isBefore(today)) {
+                    && o.expiresOn().isBefore(today) && !keepTimings.contains(o.timing())) {
                 orders.put(o.id(), with(o, "EXPIRED", o.rejectReason(), o.filledAt()));
                 n++;
             }
@@ -354,6 +360,20 @@ class FakePaperStore extends PaperStore {
         fills.put(id, new Fill(id, f.orderId(), f.bookCode(), f.ticker(), f.side(), f.qty(), f.price(), f.rawPrice(),
                 f.slippageBp(), f.gross(), f.observedAt(), f.observationDate(), f.priceSource(), f.backfill(),
                 f.createdAt() == null ? dbNow : f.createdAt(), f.fee(), f.tax(), f.slippageCost()));
+        return id;
+    }
+
+    /** 체결 + 체결 봉(V17 bar_at·fill_rung — 체결 레코드에 없는 칸을 {@link #fillBars}에). */
+    @Override
+    public long insertTimedFill(Fill f, Instant barAt, String fillRung) {
+        if (fillRung == null || fillRung.isBlank()) {
+            throw new IllegalArgumentException("시각 지정 체결의 사다리 칸이 없습니다: 주문 " + f.orderId());
+        }
+        if (!List.of("Y1M_AT", "Y1M_NEXT", "Y1M_LATE", "QUOTES_FALLBACK", "QUOTES_CLOSE").contains(fillRung)) {
+            throw new org.springframework.dao.DataIntegrityViolationException("paper_fills_fill_rung_check: " + fillRung);
+        }
+        long id = insertFill(f);
+        fillBars.put(id, new ExecFill(fills.get(id), barAt, fillRung));
         return id;
     }
 
