@@ -32,3 +32,6 @@ da0148e5c3339c22a50b28fd869f6641ff17559f:collector/tests/test_dart.py:generic-ap
 3efe22d4d5a4b5c964e4a9e763a884ad094108e2:backend/src/test/resources/paper/golden/packet-kr-scheduled.json:generic-api-key:1
 bf5fb9760c6c75b691aaab89f6fdba33613d38e1:backend/src/test/resources/paper/golden/packet-kr-initial.json:generic-api-key:1
 bf5fb9760c6c75b691aaab89f6fdba33613d38e1:backend/src/test/resources/paper/golden/packet-kr-scheduled.json:generic-api-key:1
+
+# f8415961: CI 'AWS 덧붙임 해석' 단계의 가짜 GATE_SECRET(ci-gate-secret-…) — compose 해석용 시험 값. 서버의 실제 값과 대조해 일치 0건(2026-10-30).
+f841596142ddde11e49e1869d989ad9b31664d20:.github/workflows/ci.yml:generic-api-key:236
