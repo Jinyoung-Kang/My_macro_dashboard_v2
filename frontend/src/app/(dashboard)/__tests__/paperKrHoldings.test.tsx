@@ -323,6 +323,31 @@ describe("자료", () => {
     expect(within(rowOf(table, "153130")).queryByText(/^확정 /)).toBeNull();
   });
 
+  // 수정 전에는 '좌우로 넘겨 보세요'가 폰 폭(sm 미만)에서만 보여, 데스크톱에서 표가 카드보다 넓으면 가려진 칸이 있다는 단서가 없었습니다(it.fails).
+  it.fails("표가 카드보다 넓으면 폭과 상관없이 '좌우로 넘겨 보세요'를 보인다 — 상자 폭을 재서", async () => {
+    // jsdom에는 배치가 없어 상자 폭을 꾸밉니다 — 가로 스크롤 상자(role=region)의 내용 1,200px > 보이는 958px.
+    vi.stubGlobal("ResizeObserver", class {
+      constructor(private readonly callback: () => void) {}
+      observe() { this.callback(); }
+      disconnect() {}
+    });
+    Object.defineProperty(HTMLElement.prototype, "scrollWidth", { configurable: true,
+      get(this: HTMLElement) { return this.getAttribute("role") === "region" ? 1_200 : 0; } });
+    Object.defineProperty(HTMLElement.prototype, "clientWidth", { configurable: true,
+      get(this: HTMLElement) { return this.getAttribute("role") === "region" ? 958 : 0; } });
+    try {
+      render(<PaperPage market="KR" initialTab="holdings" />);
+      const box = await screen.findByRole("region", { name: "주문 (좌우 스크롤)" });
+      const hint = box.previousElementSibling as HTMLElement;
+      expect(hint.textContent).toBe("← 표를 좌우로 넘겨 보세요");
+      await waitFor(() => expect(hint.className).not.toContain("sm:hidden"));
+    } finally {
+      delete (HTMLElement.prototype as unknown as Record<string, unknown>).scrollWidth;
+      delete (HTMLElement.prototype as unknown as Record<string, unknown>).clientWidth;
+      vi.unstubAllGlobals();
+    }
+  });
+
   it("주문 표 — 스탑 근거(감지·확정값으로 낮춘 최고가·재판정·stopBasisNote), 재판정 취소 이름표", async () => {
     render(<PaperPage market="KR" initialTab="holdings" />);
     const table = await screen.findByRole("table", { name: "주문" });
