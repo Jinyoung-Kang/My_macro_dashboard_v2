@@ -1,5 +1,7 @@
 package com.macrodash.feature.paper;
 
+import com.macrodash.analytics.OrderValidator;
+
 import java.util.Collections;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
@@ -28,10 +30,12 @@ import java.util.Objects;
  * @param timingRanks    체결 시점 → 순위(작을수록 이른 시점, 시점마다 하나) — 기본 계좌는 이른 시점 0·나머지 1(검증기의 '이른 시점 하나 +
  *                       나머지' 두 갈래와 같은 뜻)
  * @param callCapKey     결정 주기 소상한의 설정 키 — 기본 계좌는 null(소상한 없음, 하루 상한만)
+ * @param timingNames    받는 체결 시점 → 검증기 근거 문구의 이름(시점마다 하나, 그 밖의 항목은 버림) — 기본 계좌는 그 시장의
+ *                       {@link PaperMarket#timingNames}
  */
 record ClaudeBookProfile(PaperMarket market, String code, String schemaResource, String fixedRules,
                          String packetVariant, List<String> timings, Map<String, Integer> timingRanks,
-                         String callCapKey) {
+                         String callCapKey, Map<String, String> timingNames) {
 
     /** 미국 Claude 계좌1({@code claude}) — 미국 시장 묶음의 값 그대로, 응답 스키마 {@value ClaudeBookService#SCHEMA_RESOURCE}. */
     static final ClaudeBookProfile US_CLAUDE = marketDefault(UsPaperMarket.INSTANCE, ClaudeBookService.SCHEMA_RESOURCE);
@@ -54,6 +58,38 @@ record ClaudeBookProfile(PaperMarket market, String code, String schemaResource,
                     + " ≠ " + timings);
         }
         timingRanks = Collections.unmodifiableMap(new LinkedHashMap<>(timingRanks));
+        Objects.requireNonNull(timingNames, "timingNames");
+        Map<String, String> names = new LinkedHashMap<>();
+        for (String timing : timings) {
+            String name = timingNames.get(timing);
+            if (name == null || name.isBlank()) {
+                throw new IllegalArgumentException("받는 체결 시점마다 근거 문구의 이름이 있어야 합니다: " + code + " " + timing);
+            }
+            names.put(timing, name);
+        }
+        timingNames = Collections.unmodifiableMap(names);
+    }
+
+    /** 근거 문구의 시점 이름을 그 시장 묶음의 것({@link PaperMarket#timingNames})으로 — 시장 기본 계좌·시험용 계좌. */
+    ClaudeBookProfile(PaperMarket market, String code, String schemaResource, String fixedRules, String packetVariant,
+                      List<String> timings, Map<String, Integer> timingRanks, String callCapKey) {
+        this(market, code, schemaResource, fixedRules, packetVariant, timings, timingRanks, callCapKey,
+                market.timingNames());
+    }
+
+    /**
+     * 이 계좌 주문 검증의 시장 몫({@link OrderValidator.Market}) — 받는 시점·시점 순위·근거 문구의 시점 이름은 이 프로필의 것, 금액 표기는 시장
+     * 묶음의 것({@link PaperMarket#money}). 이른 시점은 가장 작은 순위의 시점 가운데 받는 순서의 첫째입니다. 시장 기본 계좌는 시장 묶음의
+     * {@link PaperMarket#orderValidation}에 이 순위를 준 것과 같습니다({@code DecisionTimingsLockTest}).
+     */
+    OrderValidator.Market orderValidation() {
+        String early = timings.get(0);
+        for (String timing : timings) {
+            if (timingRanks.get(timing) < timingRanks.get(early)) {
+                early = timing;
+            }
+        }
+        return new OrderValidator.Market(timings, early, timingNames, market.money(), timingRanks);
     }
 
     /**

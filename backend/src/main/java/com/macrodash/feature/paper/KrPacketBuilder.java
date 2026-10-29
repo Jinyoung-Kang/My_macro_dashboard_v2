@@ -1043,7 +1043,15 @@ final class KrPacketBuilder {
      * {@code NEXT_OPEN} 주문이라 결정 종류로 가립니다(같은 원칙 — 출발 배분은 과매매가 아님, E1a에서 정함). 한국 검증기(E2)가 같은 함수를 써야 합니다.
      */
     static int monthlyDiscretionaryOrders(PaperStore store, LocalDate asOf) {
-        List<Order> orders = store.recentOrders(PaperBooks.KR_CLAUDE, PacketBuilder.MONTHLY_SCAN);
+        return monthlyDiscretionaryOrders(store, PaperBooks.KR_CLAUDE, asOf);
+    }
+
+    /**
+     * 그 계좌의 이달 재량 주문 수 — {@link #monthlyDiscretionaryOrders(PaperStore, LocalDate)}와 같은 계산(출발 결정 INITIAL의 주문을 뺌)을 그 계좌
+     * 코드로. 앞으로 체결로 출발하는 미국 Claude 계좌2도 같은 계산을 씁니다(계좌2 명세 §4-1의 5·§10-5 — 출발 주문은 BACKFILL이 아님).
+     */
+    static int monthlyDiscretionaryOrders(PaperStore store, String book, LocalDate asOf) {
+        List<Order> orders = store.recentOrders(book, PacketBuilder.MONTHLY_SCAN);
         YearMonth month = YearMonth.from(asOf);
         Map<Long, Boolean> initialDecision = new HashMap<>();
         int count = 0;

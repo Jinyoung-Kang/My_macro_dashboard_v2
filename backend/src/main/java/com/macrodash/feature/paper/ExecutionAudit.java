@@ -347,12 +347,16 @@ final class ExecutionAudit {
         }
     }
 
+    /** 메뉴 이름은 백엔드 상수({@link PaperBooks#AT_1000} 등 — V17 CHECK 글자, 수집기 시험이 대조)이고 기준 시각만 여기서 정합니다. */
     private static Map<String, LocalTime> menu() {
         Map<String, LocalTime> out = new LinkedHashMap<>();
         out.put(PaperBooks.NEXT_OPEN, LocalTime.of(9, 30));
-        for (int hour = 10; hour <= 15; hour++) {
-            out.put(String.format(Locale.ROOT, "AT_%02d00", hour), LocalTime.of(hour, 0));   // V17 CHECK 글자 — ASCII 숫자
-        }
+        out.put(PaperBooks.AT_1000, LocalTime.of(10, 0));
+        out.put(PaperBooks.AT_1100, LocalTime.of(11, 0));
+        out.put(PaperBooks.AT_1200, LocalTime.of(12, 0));
+        out.put(PaperBooks.AT_1300, LocalTime.of(13, 0));
+        out.put(PaperBooks.AT_1400, LocalTime.of(14, 0));
+        out.put(PaperBooks.AT_1500, LocalTime.of(15, 0));
         return java.util.Collections.unmodifiableMap(out);
     }
 

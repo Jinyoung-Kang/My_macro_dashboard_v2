@@ -62,6 +62,8 @@ class DecisionTimingsLockTest {
                     .isEqualTo(profile.timingRanks());
             assertThat(market.orderValidation().withRanks(profile.timingRanks())).as(market.code() + " 검증기 시장 몫")
                     .isEqualTo(market.orderValidation());
+            assertThat(profile.orderValidation()).as(market.code() + " 파이프라인이 쓰는 프로필의 시장 몫 = 시장 묶음 값")
+                    .isEqualTo(market.orderValidation());
         }
     }
 

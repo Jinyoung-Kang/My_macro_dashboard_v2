@@ -86,7 +86,7 @@ def test_데이터셋_이름():
 
 
 def test_메뉴_시점은_V17_timing_CHECK와_같은_글자():
-    """수집기의 시각 지정 시점 목록 = DB가 받는 시점(V17). 백엔드 상수는 단계 1(1-4·1-5)에서 생기면 그 커밋이 여기에 대조를 더합니다."""
+    """수집기의 시각 지정 시점 목록 = DB가 받는 시점(V17) = 백엔드 상수(PaperBooks의 NEXT_OPEN·AT_1000~AT_1500 — 1-5 앞 준비)."""
     sql = next((ROOT / "db/migrations").glob("V17__*.sql")).read_text(encoding="utf-8")
     check = re.search(r"CHECK \(timing IN \(([^)]*)\)\)", sql)
     assert check, "V17에서 paper_orders.timing CHECK를 찾지 못했습니다"
@@ -95,6 +95,12 @@ def test_메뉴_시점은_V17_timing_CHECK와_같은_글자():
     assert {value for value in allowed if value.startswith("AT_")} == {key for key in paper_bars.MENU if key.startswith("AT_")}
     assert paper_bars.MENU["NEXT_OPEN"] == time(9, 30)
     assert all(paper_bars.MENU[key] == time(int(key[3:5]), 0) for key in paper_bars.MENU if key.startswith("AT_"))
+
+    java = (ROOT / "backend/src/main/java/com/macrodash/feature/paper/PaperBooks.java").read_text(encoding="utf-8")
+    constants = re.findall(r'static final String (AT_\d{4}) = "([^"]+)";', java)
+    assert constants and all(name == value for name, value in constants), "PaperBooks의 시각 지정 상수는 이름 = 글자"
+    assert re.search(r'static final String NEXT_OPEN = "NEXT_OPEN";', java)
+    assert ["NEXT_OPEN"] + [value for _, value in constants] == list(paper_bars.MENU), "백엔드 상수 순서 = 수집기 MENU 순서"
 
 
 def test_범위_계좌_코드는_백엔드_PaperBooks와_같다():

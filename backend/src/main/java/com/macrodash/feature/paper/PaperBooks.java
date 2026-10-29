@@ -45,6 +45,18 @@ final class PaperBooks {
     static final String IMMEDIATE = "IMMEDIATE";
     static final String BACKFILL = "BACKFILL";
 
+    /**
+     * 미국 시각 지정 시점(V17 — 계좌2 명세 2026-10-30-claude-book2-timing-design.md §6-2, ADR 0022 결정 3): 목표 세션 E의 뉴욕 시각 10:00~15:00
+     * 매시. 시가는 {@link #NEXT_OPEN}(E 09:30 ET)과 같은 글자입니다. V17 timing CHECK·수집기 {@code paper_bars.MENU}와 같은 글자이고(시험이 대조),
+     * 기준 시각은 {@link ExecutionAudit#MENU}가 이 이름으로 정합니다.
+     */
+    static final String AT_1000 = "AT_1000";
+    static final String AT_1100 = "AT_1100";
+    static final String AT_1200 = "AT_1200";
+    static final String AT_1300 = "AT_1300";
+    static final String AT_1400 = "AT_1400";
+    static final String AT_1500 = "AT_1500";
+
     /** 주문 출처(paper_orders.source). */
     static final String SOURCE_STOP = "STOP";
     static final String SOURCE_BENCHMARK = "BENCHMARK";
