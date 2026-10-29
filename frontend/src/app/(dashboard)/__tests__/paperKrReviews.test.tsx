@@ -63,6 +63,10 @@ const INPUT = {
     { id: 6, asOf: "2026-11-05", orders: [
       { id: 7, ticker: "035720", side: "BUY", status: "REJECTED", rejectReason: "MONTHLY_CAP",
         hypothetical: { basis: "가정", entryDate: "2026-11-06", entryPrice: 40_000, entrySource: "TOSS_1M_OPEN", isProxy: false, returnPct: 5 } },
+      // 거절된 매도 — 판 뒤 변화(기준일 종가 ÷ 가정 매도가 − 1)가 음수면 피한 하락(avoided)입니다(매수 손실이 아님).
+      { id: 8, ticker: "005930", side: "SELL", status: "REJECTED", rejectReason: "MIN_HOLD",
+        hypothetical: { basis: "가정", entryDate: "2026-11-06", entryPrice: 72_000, entrySource: "FSC", isProxy: false, returnPct: -3,
+          afterSellLabel: "avoided" } },
     ] },
   ],
   comparison: { from: "2026-10-30", to: "2026-11-06", note: "순자산 수익률(%) — isEstimated = 확정 종가가 아닌 줄을 씀", books: [
@@ -173,6 +177,21 @@ describe("자료", () => {
     const comparison = screen.getByRole("list", { name: "계좌 수익률 비교" });
     expect(within(comparison).getAllByText("잠정 줄 포함")).toHaveLength(2);
     expect(screen.getByText("계좌 수익률 비교 (2026-10-30 → 2026-11-06)")).toBeTruthy();
+  });
+
+  // 수정 전에는 표에 방향 칸이 없고 안내가 '샀다고 가정'이라, 거절된 매도의 −3%(피한 하락)가 매수 손실처럼 읽혔습니다(it.fails).
+  it.fails("거절된 매도 줄 — 방향 '매도'와 판 뒤 변화의 뜻('피한 하락'), 안내는 '체결됐다고 가정'(매수·매도 모두)", async () => {
+    await openReviews();
+    const entries = await screen.findByRole("region", { name: "가정 진입 (좌우 스크롤)" });
+    const row = within(entries).getAllByRole("row").find((tr) => tr.textContent?.includes("005930")) as HTMLElement;
+    expect(within(row).getByText("매도")).toBeTruthy();
+    expect(within(row).getByText("-3.00%")).toBeTruthy();
+    expect(within(row).getByText("피한 하락")).toBeTruthy();
+    const buy = within(entries).getAllByRole("row").find((tr) => tr.textContent?.includes("000660")) as HTMLElement;
+    expect(within(buy).getByText("매수")).toBeTruthy();
+    expect(within(buy).queryByText(/피한 하락|놓친 상승/)).toBeNull();
+    expect(screen.getByText(/거절된 주문\(매수·매도\)이 결정 다음 세션 시가에 체결됐다고 가정한 값/)).toBeTruthy();
+    expect(screen.queryByText(/샀다고 가정/)).toBeNull();
   });
 
   it("수동 실행은 확인 창에 수동 문턱 → POST /api/paper/reviews/run?market=KR", async () => {
