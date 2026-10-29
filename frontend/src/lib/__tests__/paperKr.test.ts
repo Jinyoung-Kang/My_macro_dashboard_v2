@@ -8,7 +8,7 @@
  */
 import { describe, expect, it } from "vitest";
 
-import { heldText, stopText } from "../paper";
+import { heldText, stopText, toneClass } from "../paper";
 import {
   chargedCalls,
   jobsEmptyMessage,
@@ -297,6 +297,23 @@ describe("보유·체결(F2 — 세 배지·확정 조정·실효 비용·스탑
     expect(krPriceSourceLabel("TOSS_1M_OPEN")).toBe("KRX 시가 단일가(1분봉)");
     expect(krPriceSourceLabel("NEW_SOURCE")).toBe("NEW_SOURCE");
     expect(krPriceSourceLabel(null)).toBe("—");
+  });
+
+  // 수정 전에는 확정된 통합가 체결에도 경고색 'KRX+NXT 통합가 · 잠정'과 '맞춥니다'(앞으로 할 일) 툴팁이 붙었습니다(it.fails).
+  it.fails("통합가 배지 — 확정 행은 경고 없이 '확정 조정됨'(지난 일), 확정 대기·미보정 행만 경고색 '잠정'", () => {
+    const confirmation = { confirmedPrice: 71_200, priceDiff: -100, fee: 106, tax: 0, slippageCost: 356, costBp: 6.49, cashDelta: 1_000,
+      source: "FSC", reconciledAtKst: "2026-11-04 22:05 KST" };
+    const confirmed = krFillBadges({ confirmationState: "CONFIRMED", confirmationNote: null, priceSource: "TOSS_INTEGRATED", confirmation });
+    expect(confirmed.map((badge) => badge.label)).toEqual(["확정", "KRX+NXT 통합가 · 확정 조정됨"]);
+    expect(confirmed[1].className).toBe(toneClass("muted"));
+    expect(confirmed[1].title).toContain("확정 조정했습니다");
+    expect(confirmed.some((badge) => badge.label.includes("잠정"))).toBe(false);
+    const waiting = krFillBadges({ confirmationState: "WAITING", confirmationNote: null, priceSource: "TOSS_INTEGRATED" });
+    expect(waiting[1]).toMatchObject({ label: "KRX+NXT 통합가 · 잠정", className: toneClass("warn") });
+    expect(waiting[1].title).toContain("들어오면 금융위 확정가로 맞춥니다");
+    const uncorrected = krFillBadges({ confirmationState: "UNCORRECTED", confirmationNote: null, priceSource: "TOSS_INTEGRATED" });
+    expect(uncorrected[1]).toMatchObject({ label: "KRX+NXT 통합가 · 잠정", className: toneClass("warn") });
+    expect(uncorrected[1].title).toContain("잠정가 그대로");
   });
 
   it("확정 칸·합계 — 차이·현금 차이는 부호, 행이 없으면 '—'(0원으로 쓰지 않음), 칸이 없는 서버면 합계 줄 없음", () => {
