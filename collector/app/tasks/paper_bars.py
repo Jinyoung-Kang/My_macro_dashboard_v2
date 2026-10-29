@@ -21,6 +21,7 @@ app/tasks/paper_bars.py
 [저장본 모양 — contract 1]
   {contract, source, barLabel "START", menu {NEXT_OPEN: "09:30", AT_1000: "10:00", …}, period, reference "SPY", scope [티커…], fetchedAt,
    lagSeconds,              # fetchedAt − (SPY 마지막 봉 시작 + 60초) — SPY 정규장 안(그 세션 날 09:30~16:00 ET)에서 받았을 때만, 아니면 null.
+                            # 이번 회차에 받은 SPY 세션만 — Yahoo가 짧게 줘 직전 세션을 남겼으면 null(그 봉은 이번 응답이 아님)
                             # 음수면 진행 중인 봉까지 받은 것(X1의 단서). 조기 폐장일 13:00 뒤는 수집기가 구분하지 못해 null
    declaredDelayMin null,   # 출처가 밝힌 지연 — yf.download 1분봉 응답에는 없어 늘 null(§7-3)
    tickers {T: {fetchedAt, sessions {YYYY-MM-DD(뉴욕 날짜, 최근 3): {
@@ -153,6 +154,14 @@ def session_entries(rows: list[dict], fetched_at: datetime) -> dict[str, dict]:
 
 def _last_bar_at(entry: dict) -> datetime | None:
     text = (entry.get("lastBar") or {}).get("t") if isinstance(entry, dict) else None
+    return _parse_at(text)
+
+
+def _fetched_at(entry: dict) -> datetime | None:
+    return _parse_at(entry.get("fetchedAt") if isinstance(entry, dict) else None)
+
+
+def _parse_at(text) -> datetime | None:
     try:
         return datetime.fromisoformat(text) if isinstance(text, str) else None
     except ValueError:
@@ -183,6 +192,8 @@ def lag_seconds(fetched_at: datetime, reference: dict | None) -> int | None:
     """
     저장본의 지연 = 받은 시각 − (기준 종목 마지막 봉 시작 + 60초)(명세 §7-1). 기준 종목을 이번에 받았고, 그 마지막 세션 날짜의 정규장
     (09:30~16:00 ET) 안에서 받았을 때만 셉니다 — 장 밖·휴장·주말의 값은 지연이 아니라 장이 닫힌 시간이라 null(0으로 채우지 않음).
+    그 마지막 세션도 이번 회차에 받은 것이어야 합니다 — Yahoo가 짧게 줘 merge_sessions가 직전 세션을 남겼으면 그 봉은 이번 응답이 아니라
+    지금 받은 시각과 섞지 않습니다(직전 회차보다 한 시간 긴 값이 됨). 그 회차의 지연은 모르므로 null.
     """
     if not isinstance(reference, dict) or reference.get("isStale"):
         return None
@@ -191,7 +202,7 @@ def lag_seconds(fetched_at: datetime, reference: dict | None) -> int | None:
         return None
     day = max(sessions)
     last = _last_bar_at(sessions[day])
-    if last is None:
+    if last is None or _fetched_at(sessions[day]) != fetched_at:
         return None
     local = fetched_at.astimezone(NEW_YORK)
     if local.date().isoformat() != day or not REGULAR_OPEN <= local.time() < REGULAR_CLOSE:

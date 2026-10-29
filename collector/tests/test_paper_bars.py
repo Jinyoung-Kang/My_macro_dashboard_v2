@@ -7,7 +7,8 @@ tests/test_paper_bars.py
      범위가 비면 EmptyResult이고 Yahoo를 부르지 않는다(SPY 혼자서는 묻지 않음).
   2. 메뉴 창 시각은 그 세션 날짜의 America/New_York 시각 — 2026-10-30(EDT) 09:30 ET = 13:30Z, 2026-11-02(EST) 09:30 ET = 14:30Z.
      조기 폐장일(2026-11-27)은 13:00 뒤 창이 null. 창에는 거래량 0 봉도 그대로, firstTradeAfter는 거래량 > 0 봉만(없으면 null).
-  3. lagSeconds는 SPY 정규장 안에서 받은 저장본만(장 밖·다른 날·이어받은 SPY는 null — 0으로 채우지 않음), declaredDelayMin은 늘 null.
+  3. lagSeconds는 SPY 정규장 안에서 받은 저장본만(장 밖·다른 날·이어받은 SPY·짧게 온 응답으로 남긴 SPY 세션은 null — 0으로 채우지 않음),
+     declaredDelayMin은 늘 null.
   4. Yahoo 래치가 닫혀 있으면 묻지 않고, 배치 안의 429(yfinance가 로그로만 남김)도 래치를 닫는다. 두 회차 연달아 429면 한 회차를 쉰다.
   5. 기동 뒤 처음 받을 때까지 period "5d", 받은 뒤 "1d". 일봉 시가(X2)는 확정된 세션마다 배치 한 번.
   6. 받지 못한 종목은 직전 값을 isStale로 잇고, 하나도 못 받으면 EmptyResult로 저장본을 둔다. 세션은 종목마다 최근 3개.
@@ -230,7 +231,6 @@ def test_지연은_이어받은_SPY·진행_중_봉·조기_폐장_뒤를_가린
     assert early(12, 59, 50) == -10, "13:00 전은 그대로 잼"
 
 
-@pytest.mark.xfail(strict=True, reason="이번 회차에 받지 않은(직전 저장본에서 남긴) SPY 세션으로 지연을 잼 — 수정 전")
 def test_지연은_이번_회차에_받은_SPY_세션만이고_짧게_온_응답으로_남긴_세션은_null():
     """Yahoo가 이번에 더 짧게 줘 merge_sessions가 직전 세션을 남기면 그 마지막 봉은 이번 응답의 것이 아닙니다 — 지금 받은 시각과 섞으면
     직전 회차보다 한 시간 긴 값(3600초)이 되고, 이번 응답의 실제 지연(10:30 봉까지 → 5040초)과도 다릅니다. 모르는 값은 null."""
@@ -543,6 +543,7 @@ def test_빠진_종목은_이어받고_하나도_못_받으면_저장본을_둔�
     assert payload["missing"] == ["BBB"] and payload["error"] == "받지 못함 1개(BBB)"
     assert payload["tickers"]["SPY"]["sessions"]["2026-10-30"]["lastBar"]["t"] == "2026-10-30T19:59:00+00:00", \
         "더 짧게 온 응답(12:03)은 이미 받은 세션(15:59)을 덮지 않음"
+    assert payload["lagSeconds"] is None, "남긴 SPY 세션은 이번 응답이 아님 — 이번 회차의 지연은 모름"
     assert detail.startswith("2/3 종목") and "이전 값 1개(BBB)" in detail
 
     yahoo["minute"] = ({}, "거부됨 — finance.yahoo.com HTTP 429", True)
