@@ -73,7 +73,7 @@ public final class Datasets {
      * 🧪 미국 Claude 계좌2(체결 시점 실험)의 1분봉 — 단계 0 측정(명세 2026-10-30-claude-book2-timing-design.md §7-1·§12-1, ADR 0022).
      * 수집 범위(Claude 계좌1·계좌2의 대기 주문 ∪ 최근 8일 주문 ∪ 계좌2 보유, + 지연 기준 SPY)의 종목·세션(최근 3, 뉴욕 날짜)마다 메뉴 창
      * (09:30·10:00~15:00 ET, 각 T~T+4분) 1분봉, 창마다 T 뒤 첫 거래 봉({@code firstTradeAfter}), 첫·마지막 봉, 검증용 일봉 시가(X2).
-     * 봉 시각 {@code t}는 늘 봉 시작의 UTC({@code barLabel} — X1). {@code lagSeconds}는 SPY 정규장 안에서 받은 저장본만, 아니면 null이고
+     * 봉 시각 {@code t}는 늘 봉 시작의 UTC({@code barLabel} — X1). {@code lagSeconds}는 SPY 정규장 안에서 받은 저장본만(그 회차에 받은 SPY 세션만), 아니면 null이고
      * {@code declaredDelayMin}은 늘 null. 모양(contract 1)은 수집기 {@code app/tasks/paper_bars.py} 머리말. 수집기 slow(매시, paper.quotes 바로 뒤).
      * 읽는 코드는 실행 감사 작업({@code PaperExecutionAuditJob}, 단계 0-4)뿐이고 장부·패킷은 읽지 않습니다.
      */

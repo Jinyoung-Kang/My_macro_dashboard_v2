@@ -52,6 +52,8 @@ import java.util.Map;
  *
  * <p><b>지연</b>({@link #lagSeconds}) = 그 세션을 받은 시각 − (기준 종목 SPY 마지막 봉 시작 + 60초). 받은 시각이 그 세션 날의 정규장(미국 달력의
  * 개장 ~ 마감 — 조기 폐장일은 13:00까지) 안일 때만 셉니다 — 수집기는 달력을 몰라 조기 폐장을 구분하지 못하므로 저장본의 재료로 다시 셉니다.
+ * 그 SPY 세션을 그 저장본이 받았을 때만(세션의 받은 시각 = 저장본의 받은 시각) 셉니다 — 수집기가 짧게 온 응답 대신 직전 세션을 남겼으면 그
+ * 봉은 이번 응답이 아니라 null입니다.
  */
 final class ExecutionAudit {
 
@@ -239,7 +241,8 @@ final class ExecutionAudit {
     /**
      * 1분봉 저장본의 지연(초) — 기준 종목(저장본 {@code reference}, 없으면 SPY)의 마지막 세션을 받은 시각 − (그 세션 마지막 봉 시작 + 60초).
      * 기준 종목이 이어받은 값이거나, 받은 시각이 그 세션 날의 정규장(미국 달력 — 조기 폐장일은 13:00까지) 밖이면 null — 장이 닫힌 시간은
-     * 지연이 아닙니다. 음수(진행 중인 봉까지 받음 — X1의 단서)는 그대로 둡니다.
+     * 지연이 아닙니다. 그 세션을 이 저장본이 받지 않았으면(직전 저장본에서 남긴 세션) 이번 회차의 지연을 모르므로 null입니다. 음수(진행 중인
+     * 봉까지 받음 — X1의 단서)는 그대로 둡니다.
      */
     static Integer lagSeconds(JsonNode payload, TradingCalendar calendar) {
         if (payload == null || payload.path("contract").asInt(-1) != BARS_CONTRACT) {
@@ -264,8 +267,10 @@ final class ExecutionAudit {
         JsonNode session = sessions.get(latest);
         Instant fetched = instant(Json.asText(session, "fetchedAt"));
         Instant last = lastBarStart(session);
-        if (fetched == null || last == null || fetched.isBefore(calendar.openInstant(day))
-                || !fetched.isBefore(calendar.closeInstant(day))) {
+        if (fetched == null || last == null || !fetched.equals(instant(Json.asText(payload, "fetchedAt")))) {
+            return null;                                   // 직전 저장본에서 남긴 세션(수집기가 짧게 온 응답을 버림) — 이번 응답이 아님
+        }
+        if (fetched.isBefore(calendar.openInstant(day)) || !fetched.isBefore(calendar.closeInstant(day))) {
             return null;
         }
         return Math.toIntExact(Math.round(Duration.between(last.plusSeconds(60), fetched).toMillis() / 1000.0));
