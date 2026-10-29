@@ -296,6 +296,24 @@ def test_deploy는_받은_main에_Caddyfile이_없으면_기동하지_않는다(
     assert _docker_calls(fakes) == []
 
 
+@pytest.mark.xfail(strict=True, reason="QA-145: 받은 main에서 deploy.sh가 바뀌어도 옛 판으로 끝까지 돈다 — 수정 전")
+def test_QA145_deploy는_받은_main의_deploy_sh가_바뀌었으면_새_판으로_다시_돈다(server, fakes):
+    # 2026-10-30 첫 공개 주소 배포: 새 판이 빌드 목록에 gate를 더했는데, bash가 이미 연 옛 판으로 끝까지 돌아 gate를
+    # 빌드하지 않은 채 기동했다(No such image). 받은 새 판이 빌드·기동을 맡아야 한다.
+    _, seed = server
+    script = seed / "scripts/aws/deploy.sh"
+    script.write_text(script.read_text(encoding="utf-8").replace(
+        'echo "코드를 받습니다(main)…"', 'echo "새 판 deploy.sh"\necho "코드를 받습니다(main)…"', 1), encoding="utf-8")
+    _git(seed, "commit", "-qam", "new deploy.sh")
+    _git(seed, "push", "-q", "origin", "main")
+    result = _deploy(server, fakes)
+    assert result.returncode == 0, result.stderr
+    assert "새 판 deploy.sh" in result.stdout
+    assert result.stdout.count("코드를 받습니다") == 2, "옛 판이 받은 뒤 새 판으로 한 번만 다시 돈다(되풀이 없음)"
+    builds = [c for c in _docker_calls(fakes) if c.startswith("compose build")]
+    assert len(builds) == 4, "빌드는 새 판에서 한 번만"
+
+
 def test_deploy는_CloudFront_대역을_못_받으면_지난_파일로_계속하고_없으면_기동하지_않는다(server, fakes):
     here, _ = server
     result = _deploy(server, fakes, FAKE_CURL_FAIL="1")
