@@ -8,9 +8,9 @@
 
 ---
 
-## 1. 수집 태스크 (35개)
+## 1. 수집 태스크 (37개)
 
-수집기가 세 그룹으로 나눠 돌립니다. 주기는 `.env`로 바꿀 수 있습니다.
+수집기가 세 그룹으로 나눠 돌립니다. 주기는 `.env`로 바꿀 수 있습니다. 장중 평가 둘(`live`)은 정기 수집이 없고 화면이 볼 때만 백엔드가 요청합니다.
 
 | 그룹 | 주기 | 태스크 | 받는 것 |
 |---|---|---|---|
@@ -49,6 +49,8 @@
 | | | `sec_fundamentals` | 📒 같은 유니버스(ETF 제외 — 설정 ETF와 13F 매핑표의 ETP)의 미국 종목 재무 — SEC XBRL Company Facts(회사당 1건) → `observations` `us.fundamentals`(entity = 티커, obs_date = 공시일, 지우지 않음 — 티커의 CIK가 바뀌면 옛 CIK만의 행은 지움) + 회사별 수집 상태 `us.fundamentals.status`. 실행당 CIK 예산(`FUNDAMENTALS_FETCH_BUDGET`, 기본 200건)이라 약 570곳을 세 번(약 36시간)에 한 바퀴. 13F 두 태스크와 같은 SEC 토큰 버킷(§5 '모의 매매가 쓰는 저장본과 한계') |
 | | | `earnings_surprise` | 📒 같은 유니버스(ETF 제외 — `us_calendar`와 같은 범위)의 어닝 서프라이즈 — yfinance quoteSummary `earnings.earningsChart`(내부 호출, 최근 4분기 EPS 실제치·컨센서스·실제 발표 시각) → `observations` `us.earnings_surprise`(entity = 티커, obs_date = 발표 시각의 미국 동부 날짜, (날짜, 티커)마다 덮어씀·지우지 않음) + 수집 상태 `us.earnings_surprise.status`. 실행당 100종목(`EARNINGS_SURPRISE_BUDGET`, 1~600), 키 없음(§5 '어닝 서프라이즈') |
 | | | `run_log_retention` | 🧹 수집 실행 기록 중 보존 기간(`COLLECTOR_RUN_LOG_RETENTION_DAYS`, 기본 90일)이 지난 것 정리 — 외부 호출 없음, 수집한 데이터는 그대로 |
+| `live` | 화면이 볼 때만 | `paper_live_us` | 🧪 모의 매매 **장중 평가(표시 전용)** — 미국 보유 종목(백엔드 표 `paper_positions`를 읽기만 — 출발한 계좌)의 최신 정규장 1분봉(yfinance 배치 한 번, Yahoo 래치 공유) → 스냅샷 `paper.live.us` `{market, source, scope, tickers:{T:{price, at}}, missing, error}`. 정기 수집 없음 — 운영자가 모의 매매 화면을 보는 정규장 동안 백엔드 `GET /api/paper/live`가 저장본이 60초보다 오래됐을 때 요청. 받지 못한 종목은 직전 값을 `isStale`로 잇고(봉 시각 그대로 — 장중 값으로 쓰지 않음), 하나도 못 받으면 저장본 유지. 체결·스탑·확정 순자산에는 쓰지 않음 |
+| | | `paper_live_kr` | 🧪🅣 같은 장중 평가의 한국 판 — 한국 보유 종목의 토스 최신 1분봉(원시가 `adjusted=false`, 종목마다 1회·0.1초 간격) → `paper.live.kr`. 서버 가동 창이 한국 정규장(09:00~15:30)을 덮기 전에는 그 시간에 서버가 꺼져 있어 쓰이지 않음 |
 
 🔑 = 국내 공공 API 키가 있어야 도는 태스크. 키가 없으면 "키 미설정"으로 기록되고
 다른 태스크에는 영향이 없습니다. 자세한 규칙은 아래 "7. 국내 공공 API".
