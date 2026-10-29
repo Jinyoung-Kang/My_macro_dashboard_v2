@@ -273,7 +273,7 @@ def test_slow에서_토스_태스크_뒤에_돌고_태스크는_35개():
     assert task.speed == "slow" and task.run is kr_paper.task_kr_paper_universe
     names = [t.name for t in tasks.ALL_TASKS]
     assert names.index("kr_paper_universe") == names.index("toss_radar_universe") + 1
-    assert len(tasks.ALL_TASKS) == len(tasks.TASKS_BY_NAME) == 35
+    assert len(tasks.ALL_TASKS) == len(tasks.TASKS_BY_NAME) == 37  # 장중 평가 paper_live_us·paper_live_kr까지
 
 
 # ------------------------------------------------------------------ 토스 유형 경고(결과 문구만 — U는 그대로)

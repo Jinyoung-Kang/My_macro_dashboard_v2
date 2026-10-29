@@ -196,7 +196,8 @@ def _run_status(ok_count: int, failures: list[str]) -> str:
 # 대기열에서 워커를 기다린 시간도 들어가므로, 아직 시작도 못 한 작업은 취소하고 '워커 대기 초과'로 따로
 # 적습니다 — 외부 장애가 아니라 풀이 꽉 찬 것입니다.
 # weekly(13F)는 한 태스크가 10분 넘게 걸리는 것이 정상이라 길게 둡니다.
-TASK_DEADLINE_SECONDS: dict[str, float] = {"fast": 120.0, "slow": 600.0, "weekly": 1800.0}
+# live: 정기 수집이 없고 화면이 볼 때만 백엔드가 부르는 장중 평가(paper_live_*) — 보유 종목 수십 개라 1분이면 넉넉합니다.
+TASK_DEADLINE_SECONDS: dict[str, float] = {"fast": 120.0, "slow": 600.0, "weekly": 1800.0, "live": 60.0}
 _task_threads = ThreadPoolExecutor(max_workers=8, thread_name_prefix="task")
 
 

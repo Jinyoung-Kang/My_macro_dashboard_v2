@@ -554,6 +554,21 @@ def recent_observation_codes(dataset: str, since: str, limit: int) -> list[str]:
     return [r["code"] for r in rows if r["code"]]
 
 
+def held_tickers(market: str) -> list[str]:
+    """
+    🧪 모의 매매에서 지금 보유한 종목(그 시장의 출발한 계좌들, 중복 없음·정렬) — 장중 평가(paper.live.*)의 범위입니다.
+
+    백엔드 표 ``paper_positions``·``paper_books``를 **읽기만** 합니다(쓰는 프로세스는 백엔드 하나 — ADR 0008, 이 읽기의 결정은 v2 ADR 0020).
+    보유는 장부가 정하므로 수집기가 따로 셈하지 않습니다.
+    """
+    with connection() as conn:
+        rows = conn.execute(
+            "SELECT DISTINCT p.ticker FROM paper_positions p JOIN paper_books b ON b.code = p.book_code "
+            "WHERE b.market = %s AND b.status <> 'NOT_STARTED' ORDER BY p.ticker", (market,),
+        ).fetchall()
+    return [row["ticker"] for row in rows]
+
+
 def latest_observation_date(dataset: str) -> str | None:
     """그 데이터셋의 가장 최근 obs_date (YYYY-MM-DD). 없으면 None."""
     with connection() as conn:

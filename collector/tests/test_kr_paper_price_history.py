@@ -283,4 +283,4 @@ def test_시간_상한은_weekly_상한보다_짧다():
 def test_weekly에_등록되고_태스크는_35개():
     task = tasks.TASKS_BY_NAME["kr_paper_price_history"]
     assert task.speed == "weekly" and task.run is kr_paper.task_kr_paper_price_history
-    assert len(tasks.ALL_TASKS) == len(tasks.TASKS_BY_NAME) == 35
+    assert len(tasks.ALL_TASKS) == len(tasks.TASKS_BY_NAME) == 37  # 장중 평가 paper_live_us·paper_live_kr까지

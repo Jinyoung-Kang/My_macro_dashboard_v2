@@ -325,7 +325,7 @@ def test_slow에서_주식시세_바로_뒤에_돌고_태스크는_35개():
     assert task.speed == "slow" and task.run is tasks.korea_public.task_fsc_etf_prices
     names = [t.name for t in tasks.ALL_TASKS]
     assert names.index("fsc_etf_prices") == names.index("fsc_prices") + 1
-    assert len(tasks.ALL_TASKS) == len(tasks.TASKS_BY_NAME) == 35
+    assert len(tasks.ALL_TASKS) == len(tasks.TASKS_BY_NAME) == 37  # 장중 평가 paper_live_us·paper_live_kr까지
 
 
 def test_실제_저장본에서_ETF_하루치를_넣고_다시_돌면_호출_0회다(store, monkeypatch):

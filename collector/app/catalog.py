@@ -35,6 +35,11 @@ SNAP_PAPER_QUOTES = "paper.quotes"      # 모의 매매 유니버스 최근 3개
 # 수정 비율)·1분봉 개장 봉(09:01·10:01 라벨)·종목 상태(NXT·KRX 정지)·종목별 받은 시각. 미국 paper.quotes와 모양이 다릅니다 —
 # 계약(contract 1)은 docs/specs/2026-10-26-v2-kr-paper-spec.md §9 'paper.kr.quotes 계약'. KR 거래일 D 20:30 KST 뒤 하루 1회.
 SNAP_KR_PAPER_QUOTES = "paper.kr.quotes"
+# 🧪 모의 매매 장중 평가(표시 전용 — 체결·스탑·확정 순자산은 쓰지 않음) — 보유 종목(백엔드 표 paper_positions를 읽기만)의 최신 1분봉 가격과
+# 봉 시각. 정기 수집이 없고(속도군 live) 운영자가 모의 매매 화면을 보는 정규장 동안 백엔드가 요청합니다(live 읽기 60초 하한).
+# {market, source, scope, tickers: {T: {price, at(ISO), isStale?}}, missing, error}. 미국 Yahoo(yfinance) 1분봉, 한국 토스 1분봉.
+SNAP_PAPER_LIVE_US = "paper.live.us"
+SNAP_PAPER_LIVE_KR = "paper.live.kr"
 SNAP_TRACK_RECORD_INDEX = "sec.13f.track_record_index"  # 모의 매매 트랙레코드 후보 기관 목록·기관별 수집 진행률(q30)
 SNAP_US_FUNDAMENTALS_STATUS = "us.fundamentals.status"  # 모의 매매 미국 재무(SEC XBRL) 회사별 수집 상태 — 사실은 observations us.fundamentals
 # 모의 매매 Claude 계좌 패킷 1b_calendar의 원자료(2단계 A) — 거시 발표일(FRED 릴리스·FOMC 상수, 앞으로 45일)과 유니버스 종목

@@ -117,7 +117,7 @@ def carried_suffix(carried: list[str]) -> str:
 @dataclass(frozen=True)
 class Task:
     name: str
-    speed: str            # fast | slow | weekly
+    speed: str            # fast | slow | weekly | live(정기 수집 없음 — 화면이 볼 때만 백엔드가 요청)
     run: Callable[[], str]
     description: str
 

@@ -173,6 +173,57 @@ def last_two_closes(symbol: str) -> tuple[float | None, float | None, str | None
     return current, previous, None
 
 
+def latest_minute_prices(symbols: list[str]) -> tuple[dict[str, dict], str | None]:
+    """
+    🧪 모의 매매 장중 평가 — 종목마다 가장 최근 세션의 마지막 정규장 1분봉 종가와 그 봉 시각. (``{T: {price, at(ISO, UTC)}}``, 받지 못한 이유)
+
+    배치 한 번(yf.download)으로 받고 빠진 종목을 하나씩 다시 묻지 않습니다 — 화면이 볼 때만 부르고 다음 새로고침이 다시 묻습니다.
+    같은 Yahoo 한도를 나눠 쓰는 다른 수집이 방금 429를 받았으면 묻지 않고, 여기서 받은 429는 래치를 닫습니다(_download와 같음).
+    값이 없거나 0 이하인 봉은 버립니다(0으로 채우지 않음). 지연 여부는 짐작하지 않고 봉 시각을 그대로 넘깁니다.
+    """
+    names = [s for s in dict.fromkeys(symbols) if s]
+    if not names:
+        return {}, None
+    latched = http.active_rejection(http.YAHOO_HOST)
+    if latched is not None:
+        return {}, str(latched)
+    try:
+        raw = yf.download(tickers=" ".join(names), period="1d", interval="1m", prepost=False, auto_adjust=False,
+                          actions=False, progress=False, group_by="ticker", threads=True)
+    except YFRateLimitError:
+        return {}, str(http.reject_host(http.YAHOO_HOST, "HTTP 429(요청 제한)"))
+    except Exception as exc:  # noqa: BLE001 — 배치 하나의 실패는 사유로 돌려줍니다
+        logger.warning("장중 1분봉 배치 실패: %s", exc)
+        return {}, brief_error(exc)
+
+    out: dict[str, dict] = {}
+    if raw is not None and not raw.empty:
+        for symbol in names:
+            try:
+                if isinstance(raw.columns, pd.MultiIndex):
+                    if symbol not in raw.columns.get_level_values(0):
+                        continue
+                    closes = raw[symbol]["Close"].dropna()
+                else:
+                    closes = raw["Close"].dropna()
+            except (KeyError, TypeError) as exc:
+                logger.warning("장중 1분봉 결과 분해 실패 (%s): %s", symbol, exc)
+                continue
+            if closes.empty:
+                continue
+            price = to_float(closes.iloc[-1])
+            if price is None or price <= 0:
+                continue
+            at = pd.Timestamp(closes.index[-1])
+            at = at.tz_localize("UTC") if at.tzinfo is None else at.tz_convert("UTC")
+            out[symbol] = {"price": price, "at": at.isoformat()}
+    missing = [s for s in names if s not in out]
+    if not missing:
+        return out, None
+    shown = ", ".join(missing[:3]) + ("…" if len(missing) > 3 else "")
+    return out, (f"받지 못함 {len(missing)}개({shown})" if out else _empty_reason())
+
+
 def _empty_reason() -> str:
     return (
         f"yfinance({getattr(yf, '__version__', '?')})가 빈 응답을 받았습니다 "

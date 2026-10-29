@@ -335,7 +335,7 @@ def test_weekly에_등록되고_시간_상한은_weekly_상한보다_짧다():
     task = tasks.TASKS_BY_NAME["earnings_surprise"]
     assert task.speed == "weekly" and task.run is task_module.task_earnings_surprise
     assert task_module.TIME_LIMIT_SECONDS < tasks.TASK_DEADLINE_SECONDS["weekly"]
-    assert len(tasks.ALL_TASKS) == len(tasks.TASKS_BY_NAME) == 35  # v2 B3의 fsc_etf_prices·v2 B4의 kr_paper_universe·kr_paper_quotes·kr_paper_flows·kr_paper_price_history·v2 B9의 kr_news_headlines·kr_calendar·us_calendar_consensus까지
+    assert len(tasks.ALL_TASKS) == len(tasks.TASKS_BY_NAME) == 37  # 장중 평가 paper_live_us·paper_live_kr·v2 B3의 fsc_etf_prices·v2 B4의 kr_paper_universe·kr_paper_quotes·kr_paper_flows·kr_paper_price_history·v2 B9의 kr_news_headlines·kr_calendar·us_calendar_consensus까지
 
 
 def test_데이터셋_이름():

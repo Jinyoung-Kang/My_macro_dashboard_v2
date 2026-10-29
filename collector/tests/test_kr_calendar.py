@@ -46,7 +46,7 @@ def test_weekly에서_공휴일_바로_뒤에_돌고_태스크는_35개():
     assert task.speed == "weekly" and task.run is task_module.task_kr_calendar
     names = [t.name for t in tasks.ALL_TASKS]
     assert names.index("kr_calendar") == names.index("kr_holidays") + 1
-    assert len(tasks.ALL_TASKS) == len(tasks.TASKS_BY_NAME) == 35
+    assert len(tasks.ALL_TASKS) == len(tasks.TASKS_BY_NAME) == 37  # 장중 평가 paper_live_us·paper_live_kr까지
 
 
 def test_데이터셋_이름():
