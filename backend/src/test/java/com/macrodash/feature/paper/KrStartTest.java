@@ -394,16 +394,16 @@ class KrStartTest {
     }
 
     @Test
-    @DisplayName("K28(E2b) — Claude 출발이 하루 상한(정기 작업 몫까지 20회)에 막히면 부르지 않고 네 계좌 모두 출발하지 않음(쓰기 없음) → 미룸 한 번, 다음 KR 거래일 22:30에 네 계좌가 함께 출발(바뀐 출발일 = 결정 행 기준 거래일, postponed)")
+    @DisplayName("K28(E2b) — Claude 출발이 하루 상한(정기 작업 몫까지 30회)에 막히면 부르지 않고 네 계좌 모두 출발하지 않음(쓰기 없음) → 미룸 한 번, 다음 KR 거래일 22:30에 네 계좌가 함께 출발(바뀐 출발일 = 결정 행 기준 거래일, postponed)")
     void claudeCapPostponesAllFourBooks() {
         KrClaudeFixtures.FakeAi fake = new KrClaudeFixtures.FakeAi();
         realClaude(fake);
-        store.apiUsage.put(S, new com.macrodash.store.PaperStore.ApiUsage(S, 20, 0, 0, 0, 0));
+        store.apiUsage.put(S, new com.macrodash.store.PaperStore.ApiUsage(S, 30, 0, 0, 0, 0));
 
         PaperDecisionJob.Result capped = runAt("2026-11-30T22:30");
 
         assertThat(capped.outcome()).isEqualTo(PaperDecisionJob.START_POSTPONED);
-        assertThat(capped.message()).contains("kr_claude").contains("일일 호출 상한(20회").contains("2026-12-01");
+        assertThat(capped.message()).contains("kr_claude").contains("일일 호출 상한(30회").contains("2026-12-01");
         assertThat(fake.requests).isEmpty();
         assertThat(krDecisions()).isEmpty();
         assertThat(store.orders).isEmpty();
@@ -629,12 +629,12 @@ class KrStartTest {
     }
 
     @Test
-    @DisplayName("K28·사용자 결정 w12(묶음 E 3차 리뷰) — 429 뒤 기다리기 전에 하루 상한(정기 작업 몫)을 먼저 봄: 그 429가 그날 마지막 자리(20회째)를 썼으면 잠금을 쥔 채 30초 기다리지 않고 바로 네 계좌 모두 미룸(호출 1회)")
+    @DisplayName("K28·사용자 결정 w12(묶음 E 3차 리뷰) — 429 뒤 기다리기 전에 하루 상한(정기 작업 몫)을 먼저 봄: 그 429가 그날 마지막 자리(30회째)를 썼으면 잠금을 쥔 채 30초 기다리지 않고 바로 네 계좌 모두 미룸(호출 1회)")
     void claudeStartRateLimitOnTheLastCallOfTheDayDoesNotWait() {
         KrClaudeFixtures.FakeAi fake = new KrClaudeFixtures.FakeAi();
         fake.rateLimited().answer(KrClaudeFixtures.decision(0, "관망"));
         realClaude(fake);
-        store.apiUsage.put(S, new com.macrodash.store.PaperStore.ApiUsage(S, 19, 0, 0, 0, 0));
+        store.apiUsage.put(S, new com.macrodash.store.PaperStore.ApiUsage(S, 29, 0, 0, 0, 0));
 
         PaperDecisionJob.Result capped = runAt("2026-11-30T22:30");
 
@@ -642,9 +642,9 @@ class KrStartTest {
         assertThat(sleeper.sleeps).as("상한이 남지 않아 기다리지 않음").isEmpty();
         assertThat(fake.requests).as("429 한 번").hasSize(1);
         assertThat(capped.message()).contains("kr_claude")
-                .contains("일일 호출 상한(20회, KST 2026-11-30)에 닿아 Claude를 부르지 않았습니다")
+                .contains("일일 호출 상한(30회, KST 2026-11-30)에 닿아 Claude를 부르지 않았습니다")
                 .contains("(첫 호출 API 오류 뒤 재시도)");
-        assertThat(store.apiUsage(S).map(com.macrodash.store.PaperStore.ApiUsage::calls)).contains(20);
+        assertThat(store.apiUsage(S).map(com.macrodash.store.PaperStore.ApiUsage::calls)).contains(30);
         assertThat(krDecisions()).isEmpty();
         assertNotStarted(store);
         assertThat(krRuns()).singleElement().satisfies(run ->
@@ -1585,18 +1585,18 @@ class KrStartTest {
     }
 
     @Test
-    @DisplayName("F1b 수동 출발 단추의 Claude 몫은 수동 호출 문턱(상한 20 − 예약 7 = 13): 그날 13회를 썼으면 부르지 않고 네 계좌 모두 미룸(ok:false·START_POSTPONED, 기록 manual:true — 정기 출발은 13 뒤에도 부름, fourBooksStartTogether), 그 세션은 단추도 정기 작업도 다시 계획하지 않음")
+    @DisplayName("F1b 수동 출발 단추의 Claude 몫은 수동 호출 문턱(상한 30 − 예약 7 = 23): 그날 23회를 썼으면 부르지 않고 네 계좌 모두 미룸(ok:false·START_POSTPONED, 기록 manual:true — 정기 출발은 23 뒤에도 부름, fourBooksStartTogether), 그 세션은 단추도 정기 작업도 다시 계획하지 않음")
     void manualStartUsesTheManualCallLimit() {
         KrClaudeFixtures.FakeAi fake = new KrClaudeFixtures.FakeAi();
         fake.answer(KrClaudeFixtures.decision(0, "관망"));
         realClaude(fake);
         macroCards(S, kst("2026-11-30T22:25"));
-        store.apiUsage.put(S, new com.macrodash.store.PaperStore.ApiUsage(S, 13, 0, 0, 0, 0));
+        store.apiUsage.put(S, new com.macrodash.store.PaperStore.ApiUsage(S, 23, 0, 0, 0, 0));
 
         Map<String, Object> out = pressAt("2026-11-30T22:35");
 
         assertThat(out).containsEntry("ok", false).containsEntry("outcome", PaperDecisionJob.START_POSTPONED);
-        assertThat((String) out.get("message")).contains("kr_claude").contains("수동 호출은 13회까지")
+        assertThat((String) out.get("message")).contains("kr_claude").contains("수동 호출은 23회까지")
                 .contains("apiScheduledReserve").contains("2026-12-01");
         assertThat(fake.requests).isEmpty();
         assertThat(krDecisions()).isEmpty();

@@ -374,3 +374,9 @@
 - 문제: 장부(`holdUnprocessed`)는 보류 보유의 평가를 그날 금융위 확정 종가 또는 마지막 평가 가격으로 묶지만 어느 쪽인지 저장하지 않아, 화면이 둘을 가르지 못했다
 - 선택: 한국 `positions` 행에 `heldValuation {source, date}` — 저장된 평가 가격이 `fill_ref_date`의 금융위 확정 종가와 같으면 `FSC_CONFIRMED`, 다르거나 없으면 `LAST_VALUATION`, 가격이 없으면 `AVG_COST`. 저장본(`fsc_prices`·`fsc_etf_prices`)만 읽고 보류가 없으면 읽지 않음
 - 이유: 스키마·장부를 바꾸지 않고(미국 응답 그대로) 같은 답을 낸다. 토스 마지막 가격이 우연히 확정 종가와 같으면 `FSC_CONFIRMED`로 적히지만 그 숫자는 확정 종가와 같다. 근거는 [한국 책 명세](specs/2026-10-26-v2-kr-paper-spec.md) §9 F3
+
+## 2026-10-29 · Claude 하루 호출 상한 20 → 30(코드 기본값과 운영 서버 설정 모두)
+
+- 문제: v2 기본 상한은 20(사용자 결정 V6), 운영 서버(v1) 설정은 10이었다.
+- 선택: 사용자 결정 — v2 코드 기본값(`DEFAULT_DAILY_CALL_CAP`·설정 기본 본문)을 30으로, 운영 서버 v1 설정도 같은 날 30으로 저장(설정 판 하나). 수동 문턱 기본 23(예약 7).
+- 이유: 사용자 결정. 어림 하루 최대 약 $2.7(1회 $0.09). 미국 고정본 두 개(`claude-decision-record-us.txt`·`paper-status-us.json`)는 기본 설정의 상한 칸만 바뀜.

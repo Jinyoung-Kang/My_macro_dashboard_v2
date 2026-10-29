@@ -577,21 +577,21 @@ class ReviewServiceTest {
     }
 
     @Test
-    @DisplayName("정기 작업 몫 예약(2단계 명세 §4-10, E2b): 수동 복기는 그날 호출이 상한 20 − 예약 7 = 13 미만일 때만, 정기 복기는 상한까지 — 13회면 수동은 CAP_REACHED(행 없음), 정기는 부름")
+    @DisplayName("정기 작업 몫 예약(2단계 명세 §4-10, E2b): 수동 복기는 그날 호출이 상한 30 − 예약 7 = 23 미만일 때만, 정기 복기는 상한까지 — 23회면 수동은 CAP_REACHED(행 없음), 정기는 부름")
     void manualReviewStopsAtCapMinusReserve() throws Exception {
         long decisionId = scene();
-        store.apiUsage.put(TODAY_KST, new ApiUsage(TODAY_KST, 13, 0, 0, 0, 0));
+        store.apiUsage.put(TODAY_KST, new ApiUsage(TODAY_KST, 23, 0, 0, 0, 0));
 
         ReviewService.Outcome manual = service().review(UsPaperMarket.INSTANCE, WE, false);
         assertThat(manual.kind()).isEqualTo(ReviewService.Kind.CAP_REACHED);
-        assertThat(manual.message()).contains("정기 작업 몫 7회를 남겨 수동 호출은 13회까지").contains("주간 복기도 같은 상한");
+        assertThat(manual.message()).contains("정기 작업 몫 7회를 남겨 수동 호출은 23회까지").contains("주간 복기도 같은 상한");
         assertThat(store.reviews).isEmpty();
         assertThat(hits.get()).isZero();
 
         answerJson(reviewJson(decisionId, "null"));
         assertThat(service().review(UsPaperMarket.INSTANCE, WE, true).kind()).isEqualTo(ReviewService.Kind.CALLED);
         assertThat(hits.get()).isEqualTo(1);
-        assertThat(callsToday()).isEqualTo(14);
+        assertThat(callsToday()).isEqualTo(24);
     }
 
     @Test

@@ -644,22 +644,22 @@ class FrameworkServiceTest {
         assertThat(stale.path("operations").size()).as("받은 연산은 그대로 보임").isEqualTo(2);
         assertThat(callsToday()).isEqualTo(2);
 
-        store.apiUsage.put(TODAY_KST, new ApiUsage(TODAY_KST, 20, 0, 0, 0, 0));   // 기본 상한 20(v2)
+        store.apiUsage.put(TODAY_KST, new ApiUsage(TODAY_KST, 30, 0, 0, 0, 0));   // 기본 상한 30(사용자 결정 2026-10-29)
         assertThatThrownBy(() -> service.propose(null, "글")).isInstanceOf(InvalidRequestException.class)
                 .hasMessageContaining("일일 호출 상한").hasMessageContaining("F7");
         assertThat(hits.get()).isEqualTo(2);
         assertThat(store.proposals).hasSize(3);
 
         // 프레임 제안은 수동 호출 — 정기 작업 몫 예약(기본 7)을 남긴 13회까지(2단계 명세 §4-10, E2b).
-        store.apiUsage.put(TODAY_KST, new ApiUsage(TODAY_KST, 13, 0, 0, 0, 0));
+        store.apiUsage.put(TODAY_KST, new ApiUsage(TODAY_KST, 23, 0, 0, 0, 0));
         assertThatThrownBy(() -> service.propose(null, "글")).isInstanceOf(InvalidRequestException.class)
-                .hasMessageContaining("정기 작업 몫 7회를 남겨 수동 호출은 13회까지").hasMessageContaining("F7");
+                .hasMessageContaining("정기 작업 몫 7회를 남겨 수동 호출은 23회까지").hasMessageContaining("F7");
         assertThat(hits.get()).isEqualTo(2);
-        store.apiUsage.put(TODAY_KST, new ApiUsage(TODAY_KST, 12, 0, 0, 0, 0));
+        store.apiUsage.put(TODAY_KST, new ApiUsage(TODAY_KST, 22, 0, 0, 0, 0));
         answerJson(proposal(op("ADD_RULE", "E2", "집중형 기관의 신규 편입은 두 그룹 확인 없이도 후보로 본다.")));
         service.propose(null, "글");
-        assertThat(hits.get()).as("12회면 13회째 수동 호출").isEqualTo(3);
-        assertThat(callsToday()).isEqualTo(13);
+        assertThat(hits.get()).as("22회면 23회째 수동 호출").isEqualTo(3);
+        assertThat(callsToday()).isEqualTo(23);
     }
 
     @Test

@@ -41,9 +41,9 @@
     "today" : {
       "day" : "2026-10-27",
       "calls" : 3,
-      "cap" : 20,
+      "cap" : 30,
       "scheduledReserve" : 7,
-      "manualLimit" : 13,
+      "manualLimit" : 23,
       "inputTokens" : 12000,
       "outputTokens" : 2400,
       "cacheReadTokens" : 8000,

@@ -536,7 +536,7 @@ public class PaperSettingsService {
         body.put("gate", gateBody);
         body.put("notesDefaultExpiryTradingDays", 3);
         body.put("notesMaxCharsInPacket", 6000);
-        body.put("apiDailyCallCap", 20);
+        body.put("apiDailyCallCap", ClaudeBookService.DEFAULT_DAILY_CALL_CAP);
         // 2단계(C1b)에 더한 공유 키 — 그 전에 만든 설정 행에는 없고(행을 고쳐 쓰지 않음 — 판 그대로), 읽는 쪽(E1·E2)이 이 기본값으로 읽습니다.
         body.put("apiScheduledReserve", DEFAULT_API_SCHEDULED_RESERVE);
         body.put("frameworkTokenBudget", 8000);

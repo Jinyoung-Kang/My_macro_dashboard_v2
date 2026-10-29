@@ -1702,15 +1702,15 @@ class KrRulesJobTest {
             assertThat(run.detail().path("gates").get(0).path("note").asString()).startsWith("kr_claude");
         });
 
-        // 수동 호출은 상한 20 − 정기 작업 몫 7 = 13 미만일 때만(2단계 명세 §4-10) — 다음 KR 세션의 수동 결정은 부르지 않고 SKIPPED.
+        // 수동 호출은 상한 30 − 정기 작업 몫 7 = 23 미만일 때만(2단계 명세 §4-10) — 다음 KR 세션의 수동 결정은 부르지 않고 SKIPPED.
         session(R1);
         java.time.LocalDate today = java.time.LocalDate.of(2026, 11, 3);
         clock.set(kst("2026-11-03T22:40"));
-        store.apiUsage.put(today, new com.macrodash.store.PaperStore.ApiUsage(today, 13, 0, 0, 0, 0));
+        store.apiUsage.put(today, new com.macrodash.store.PaperStore.ApiUsage(today, 23, 0, 0, 0, 0));
         Decision capped = job.runNow(KrPaperMarket.INSTANCE, PaperBooks.KR_CLAUDE);
         assertThat(capped.asOfTradingDate()).isEqualTo(R1);
         assertThat(capped.status()).isEqualTo(ClaudeBookService.STATUS_SKIPPED);
-        assertThat(capped.response().path("summary").asString()).contains("정기 작업 몫 7회를 남겨 수동 호출은 13회까지");
+        assertThat(capped.response().path("summary").asString()).contains("정기 작업 몫 7회를 남겨 수동 호출은 23회까지");
         assertThat(fake.requests).hasSize(1);
     }
 

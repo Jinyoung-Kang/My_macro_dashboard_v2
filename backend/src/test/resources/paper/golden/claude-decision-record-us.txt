@@ -170,7 +170,7 @@ response={
   "settings" : {
     "model" : "claude-sonnet-5-5",
     "effort" : "high",
-    "dailyCallCap" : 20,
+    "dailyCallCap" : 30,
     "maxWeightStockPct" : 10.0,
     "maxWeightEtfPct" : 20.0,
     "maxPositions" : 20,

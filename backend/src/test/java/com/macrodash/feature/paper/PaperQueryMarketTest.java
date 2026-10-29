@@ -154,7 +154,7 @@ class PaperQueryMarketTest {
                 .containsEntry("earnings", null);
         assertThat(jobNames(status)).containsExactly("kr.decision");
         Map<String, Object> today = (Map<String, Object>) ((Map<String, Object>) status.get("apiUsage")).get("today");
-        assertThat(today).containsEntry("cap", 20).containsEntry("scheduledReserve", 7).containsEntry("manualLimit", 13);
+        assertThat(today).containsEntry("cap", 30).containsEntry("scheduledReserve", 7).containsEntry("manualLimit", 23);
         assertThat(MAPPER.writeValueAsString(status.get("apiUsage")))
                 .as("호출 사용량은 시장과 상관없이 하나(상한 공유)")
                 .isEqualTo(MAPPER.writeValueAsString(query.status().get("apiUsage")));

@@ -584,18 +584,18 @@ class ClaudeBookServiceTest {
 
     // ------------------------------------------------------------------ 일일 상한
     @Test
-    @DisplayName("일일 호출 상한(기본 20, 오늘 KST 20회)에 닿았으면 부르지 않고 SKIPPED — 재시도 차례였으면 그 재시도를 쓴 것으로 남긴다")
+    @DisplayName("일일 호출 상한(기본 30, 오늘 KST 30회)에 닿았으면 부르지 않고 SKIPPED — 재시도 차례였으면 그 재시도를 쓴 것으로 남긴다")
     void dailyCapSkipsWithoutCalling() {
         activeWithHolding();
-        store.apiUsage.put(TODAY_KST, new ApiUsage(TODAY_KST, 20, 0, 0, 0, 0));
+        store.apiUsage.put(TODAY_KST, new ApiUsage(TODAY_KST, 30, 0, 0, 0, 0));
 
         Decision skipped = service().decide(MON, RuleBookService.SCHEDULED, true);
 
         assertThat(skipped.status()).isEqualTo(ClaudeBookService.STATUS_SKIPPED);
-        assertThat(skipped.response().path("summary").asString()).contains("일일 호출 상한(20회");
+        assertThat(skipped.response().path("summary").asString()).contains("일일 호출 상한(30회");
         assertThat(skipped.model()).isNull();
         assertThat(hits.get()).isZero();
-        assertThat(callsToday()).isEqualTo(20);
+        assertThat(callsToday()).isEqualTo(30);
         verify(packets, org.mockito.Mockito.never()).build(any(), anyString(), anyBoolean(), any(), any());
 
         // 재시도 차례인 API 오류 + 상한 → 부르지 않고 재시도를 씀(10분마다 다시 오지 않게)
@@ -829,7 +829,7 @@ class ClaudeBookServiceTest {
     @DisplayName("미리보기·시작도 일일 호출 상한을 지킨다 — 닿았으면 부르지 않고 400")
     void previewRespectsDailyCap() {
         notStartedWithStartPrices();
-        store.apiUsage.put(TODAY_KST, new ApiUsage(TODAY_KST, 20, 0, 0, 0, 0));
+        store.apiUsage.put(TODAY_KST, new ApiUsage(TODAY_KST, 30, 0, 0, 0, 0));
 
         assertThatThrownBy(() -> service().preview()).isInstanceOf(InvalidRequestException.class)
                 .hasMessageContaining("일일 호출 상한");
@@ -839,51 +839,51 @@ class ClaudeBookServiceTest {
     }
 
     @Test
-    @DisplayName("정기 작업 몫 예약(2단계 명세 §4-10·§5, E2b): 수동 호출(미리보기·시작·수동 결정)은 그날 호출이 상한 20 − 예약 7 = 13 미만일 때만, 정기 결정은 상한까지 — 13회째 뒤에도 정기 결정은 부르고 19회면 20회째를 씀")
+    @DisplayName("정기 작업 몫 예약(2단계 명세 §4-10·§5, E2b): 수동 호출(미리보기·시작·수동 결정)은 그날 호출이 상한 30 − 예약 7 = 23 미만일 때만, 정기 결정은 상한까지 — 23회째 뒤에도 정기 결정은 부르고 29회면 30회째를 씀")
     void manualCallsStopAtCapMinusReserveScheduledGoToCap() throws Exception {
         activeWithHolding();
-        store.apiUsage.put(TODAY_KST, new ApiUsage(TODAY_KST, 13, 0, 0, 0, 0));
+        store.apiUsage.put(TODAY_KST, new ApiUsage(TODAY_KST, 23, 0, 0, 0, 0));
 
         Decision manual = service().decide(MON, RuleBookService.MANUAL, true);
         assertThat(manual.status()).isEqualTo(ClaudeBookService.STATUS_SKIPPED);
-        assertThat(manual.response().path("summary").asString()).contains("일일 호출 상한(20회")
-                .contains("정기 작업 몫 7회를 남겨 수동 호출은 13회까지").contains("apiScheduledReserve");
+        assertThat(manual.response().path("summary").asString()).contains("일일 호출 상한(30회")
+                .contains("정기 작업 몫 7회를 남겨 수동 호출은 23회까지").contains("apiScheduledReserve");
         assertThat(hits.get()).as("수동 결정은 부르지 않음").isZero();
-        assertThat(callsToday()).isEqualTo(13);
+        assertThat(callsToday()).isEqualTo(23);
 
         answerJson(decision(5, "관망"));
         Decision scheduled = service().decide(MON, RuleBookService.SCHEDULED, true);
         assertThat(scheduled.status()).as("정기 결정은 예약 몫을 씀").isEqualTo(ClaudeBookService.STATUS_NO_TRADE);
         assertThat(hits.get()).isEqualTo(1);
-        assertThat(callsToday()).isEqualTo(14);
+        assertThat(callsToday()).isEqualTo(24);
 
-        store.apiUsage.put(TODAY_KST, new ApiUsage(TODAY_KST, 19, 0, 0, 0, 0));
+        store.apiUsage.put(TODAY_KST, new ApiUsage(TODAY_KST, 29, 0, 0, 0, 0));
         answerJson(decision(5, "관망"));
         assertThat(service().decide(PaperFixtures.TUE, RuleBookService.SCHEDULED, true).status())
-                .as("상한까지 — 20회째").isEqualTo(ClaudeBookService.STATUS_NO_TRADE);
-        assertThat(callsToday()).isEqualTo(20);
+                .as("상한까지 — 30회째").isEqualTo(ClaudeBookService.STATUS_NO_TRADE);
+        assertThat(callsToday()).isEqualTo(30);
         assertThat(hits.get()).isEqualTo(2);
     }
 
     @Test
-    @DisplayName("정기 작업 몫 예약: 미리보기·시작은 수동 호출 — 12회면 부르고 13회면 400(예약 문구), 예약이 상한 이상이면 수동 호출은 늘 막힘")
+    @DisplayName("정기 작업 몫 예약: 미리보기·시작은 수동 호출 — 22회면 부르고 23회면 400(예약 문구), 예약이 상한 이상이면 수동 호출은 늘 막힘")
     void previewStopsAtCapMinusReserve() throws Exception {
         notStartedWithStartPrices();
-        store.apiUsage.put(TODAY_KST, new ApiUsage(TODAY_KST, 13, 0, 0, 0, 0));
+        store.apiUsage.put(TODAY_KST, new ApiUsage(TODAY_KST, 23, 0, 0, 0, 0));
         assertThatThrownBy(() -> service().preview()).isInstanceOf(InvalidRequestException.class)
-                .hasMessageContaining("정기 작업 몫 7회를 남겨 수동 호출은 13회까지");
+                .hasMessageContaining("정기 작업 몫 7회를 남겨 수동 호출은 23회까지");
         assertThatThrownBy(() -> service().start()).isInstanceOf(InvalidRequestException.class)
-                .hasMessageContaining("정기 작업 몫 7회를 남겨 수동 호출은 13회까지");
+                .hasMessageContaining("정기 작업 몫 7회를 남겨 수동 호출은 23회까지");
         assertThat(hits.get()).isZero();
 
-        store.apiUsage.put(TODAY_KST, new ApiUsage(TODAY_KST, 12, 0, 0, 0, 0));
+        store.apiUsage.put(TODAY_KST, new ApiUsage(TODAY_KST, 22, 0, 0, 0, 0));
         answerJson(decision(0, "관망"));
         assertThat(service().preview()).containsEntry("preview", true);
-        assertThat(hits.get()).as("12회 — 13회째 수동 호출").isEqualTo(1);
-        assertThat(callsToday()).isEqualTo(13);
+        assertThat(hits.get()).as("22회 — 23회째 수동 호출").isEqualTo(1);
+        assertThat(callsToday()).isEqualTo(23);
 
         store.apiUsage.clear();
-        ((ObjectNode) store.settings.body()).put("apiScheduledReserve", 20);
+        ((ObjectNode) store.settings.body()).put("apiScheduledReserve", 30);
         assertThatThrownBy(() -> service().preview()).isInstanceOf(InvalidRequestException.class)
                 .hasMessageContaining("수동 호출은 0회까지");
         assertThat(hits.get()).isEqualTo(1);
@@ -903,7 +903,7 @@ class ClaudeBookServiceTest {
                 "model", "claude-opus-5-5", "effort", "turbo", "apiDailyCallCap", 600)));
         assertThat(bad.model()).isEqualTo("claude-sonnet-5-5");
         assertThat(bad.effort()).isEqualTo("high");
-        assertThat(bad.dailyCallCap()).isEqualTo(20);
+        assertThat(bad.dailyCallCap()).isEqualTo(30);
         assertThat(bad.fallbacks()).containsExactly("model", "effort", "apiDailyCallCap");
 
         // 정기 작업 몫 예약(E2b) — 없거나 범위 밖이면 기본 7(fallbacks에는 넣지 않음 — 결정 응답의 settings.fallbacks가 그 키 전의 행에서도 그대로).
@@ -993,7 +993,7 @@ class ClaudeBookServiceTest {
         when(marketData.quotes(market(kr))).thenReturn(Optional.of(quotes(Instant.parse("2026-11-25T12:00:00Z"),
                 bar("KRA", LocalDate.of(2026, 11, 24), 50, wed, 51), bar("KRB", LocalDate.of(2026, 11, 24), 30, wed, 31),
                 bar("KRL", LocalDate.of(2026, 11, 24), 20, wed, 21))));
-        store.apiUsage.put(todayKst, new ApiUsage(todayKst, 19, 0, 0, 0, 0));
+        store.apiUsage.put(todayKst, new ApiUsage(todayKst, 29, 0, 0, 0, 0));
         answerJson(decision(8, null, order("KRA", "BUY", 8.0, null, "NEXT_CLOSE"),
                 order("KRL", "BUY", 5.0, null, "NEXT_CLOSE")));
         List<String> krPacketCalls = new java.util.ArrayList<>();
@@ -1030,12 +1030,12 @@ class ClaudeBookServiceTest {
         assertThat(store.states.get(PaperBooks.CLAUDE)).isEqualTo(usState);
         assertThat(store.ordersOf(PaperBooks.CLAUDE)).hasSize(1);
 
-        // 하루 호출 상한(기본 20)은 시장과 상관없이 하나 — 한국 결정이 20번째를 썼으니 같은 날 미국 결정은 부르지 않음.
-        assertThat(store.apiUsage(todayKst).map(ApiUsage::calls)).contains(20);
+        // 하루 호출 상한(기본 30)은 시장과 상관없이 하나 — 한국 결정이 30번째를 썼으니 같은 날 미국 결정은 부르지 않음.
+        assertThat(store.apiUsage(todayKst).map(ApiUsage::calls)).contains(30);
         Decision us = service.decide(wed, RuleBookService.SCHEDULED, true);
         assertThat(us.bookCode()).isEqualTo(PaperBooks.CLAUDE);
         assertThat(us.status()).isEqualTo(ClaudeBookService.STATUS_SKIPPED);
-        assertThat(us.response().path("summary").asString()).contains("일일 호출 상한(20회");
+        assertThat(us.response().path("summary").asString()).contains("일일 호출 상한(30회");
         assertThat(hits.get()).isEqualTo(1);
     }
 

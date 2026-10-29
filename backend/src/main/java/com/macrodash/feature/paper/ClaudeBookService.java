@@ -59,7 +59,7 @@ import static com.macrodash.feature.paper.ClaudeDecisionPipeline.usageView;
  * 🧪 Claude 재량 책(실험군) — 하루 한 번 Claude가 입력 패킷을 보고 주문과 목표 주식 노출을 <b>제안</b>하고, 검증기가 하드 규칙으로
  * 통과·거절합니다(명세 C1~C11·D5·D7·D18·D26, 설계 §5-1~§5-6).
  *
- * <p><b>결정 한 번</b>({@link #decide}): ① 일일 호출 상한(설정 {@code apiDailyCallCap}, 기본 20(2026-10-26 v2, 처음은 6) — KST 하루, 결정·미리보기·시작·재시도와
+ * <p><b>결정 한 번</b>({@link #decide}): ① 일일 호출 상한(설정 {@code apiDailyCallCap}, 기본 30(2026-10-29 사용자 결정 — v2 처음 20, v1 처음 6) — KST 하루, 결정·미리보기·시작·재시도와
  * 프레임 제안을 모두 셈 — {@link PaperApiCalls}. 두 책이 한 줄을 함께 쓰고, 수동 호출(미리보기·시작·수동 결정·프레임 제안·수동 복기)은 정기 작업 몫
  * {@code apiScheduledReserve}(기본 7)를 남긴 문턱까지, 정기 작업은 상한까지 — 2단계 명세 §4-10, {@link ClaudeSettings#callLimit}) → ② 시스템 프롬프트(지금 프레임 판을 결정 시점 설정으로 렌더링한 것 —
  * {@link FrameworkService#render}, 판이 없으면 임시 v0을 시드) → ③ 패킷({@link PacketBuilder}, 섹션 1에 그 판 번호) →
@@ -132,7 +132,7 @@ public class ClaudeBookService {
     public static final List<String> EFFORTS = List.of("low", "medium", "high", "xhigh", "max");
     static final String DEFAULT_MODEL = "claude-sonnet-5-5";
     static final String DEFAULT_EFFORT = "high";
-    static final int DEFAULT_DAILY_CALL_CAP = 20;
+    static final int DEFAULT_DAILY_CALL_CAP = 30;
     /** 일일 호출 상한의 최댓값 — 설정 실수(600)로 하루 비용이 백 배가 되지 않게. */
     static final int MAX_DAILY_CALL_CAP = 50;
 
