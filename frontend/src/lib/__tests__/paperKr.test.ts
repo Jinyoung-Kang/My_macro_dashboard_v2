@@ -693,8 +693,8 @@ describe("주간 복기 가정 진입(F2 — 매수·매도, 판 뒤 변화의 �
 });
 
 describe("계좌 상세의 지금 설정(한국)", () => {
-  // 수정 전에는 원 단위 설정을 String(값)으로 적어 '500000원'이었습니다 — 다른 한국 금액은 천 단위 구분(it.fails).
-  it.fails("원 단위 설정은 천 단위 구분('500,000원'), 다른 단위·값 없음은 그대로", () => {
+  // 예전에는 원 단위 설정을 String(값)으로 적어 '500000원'이었습니다 — 다른 한국 금액은 천 단위 구분.
+  it("원 단위 설정은 천 단위 구분('500,000원'), 다른 단위·값 없음은 그대로", () => {
     const rows = Object.fromEntries(accountSettingRows("kr_rules", { kr: { minOrderNotional: 500_000, trailingStopPct: 8 } })
       .map((row) => [row.key, row.value]));
     expect(rows["kr.minOrderNotional"]).toBe("500,000원");
@@ -702,5 +702,7 @@ describe("계좌 상세의 지금 설정(한국)", () => {
     expect(rows["kr.rulesMaxNames"]).toBe("—");
     const claude = Object.fromEntries(accountSettingRows("kr_claude", { kr: { minOrderNotional: 1_000_000 } }).map((row) => [row.key, row.value]));
     expect(claude["kr.minOrderNotional"]).toBe("1,000,000원");
+    expect(Object.fromEntries(accountSettingRows("kr_claude", { kr: { minOrderNotional: Number.NaN } }).map((row) => [row.key, row.value]))
+      ["kr.minOrderNotional"]).toBe("—");
   });
 });

@@ -515,6 +515,8 @@ export function accountSettingRows(code: string | null | undefined, body: unknow
     if (value === null || value === undefined) text = EMPTY;
     else if (spec.key === "blend.allocation" && typeof value === "string") text = ALLOCATION_LABEL[value] ?? value;
     else if (spec.labels && typeof value === "string") text = spec.labels[value] ?? value;
+    // 원 단위 금액(한국 kr.minOrderNotional)은 다른 한국 금액처럼 천 단위로 끊습니다("500,000원"). 그 밖의 단위는 값 그대로.
+    else if (typeof value === "number" && spec.unit === "원") text = formatMoney(value, "KR");
     else if (typeof value === "number") text = Number.isFinite(value) ? `${settingText(value)}${spec.unit ?? ""}` : EMPTY;
     else text = settingText(value);
     return { key: spec.key, label: spec.label, value: text };
