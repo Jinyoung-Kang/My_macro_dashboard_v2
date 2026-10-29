@@ -8,7 +8,7 @@
  */
 import { describe, expect, it } from "vitest";
 
-import { heldText, stopText, toneClass } from "../paper";
+import { accountSettingRows, heldText, stopText, toneClass } from "../paper";
 import {
   chargedCalls,
   jobsEmptyMessage,
@@ -689,5 +689,18 @@ describe("주간 복기 가정 진입(F2 — 매수·매도, 판 뒤 변화의 �
     const named = krReviewComparison(input, new Map([["kr_rules", "한국 규칙 계좌"]]));
     expect(named?.rows.map((row) => [row.book, row.code])).toEqual([["한국 규칙 계좌", "kr_rules"], ["kr_new", "kr_new"]]);
     expect(krReviewComparison(input)?.rows.map((row) => row.book)).toEqual(["kr_rules", "kr_new"]);
+  });
+});
+
+describe("계좌 상세의 지금 설정(한국)", () => {
+  // 수정 전에는 원 단위 설정을 String(값)으로 적어 '500000원'이었습니다 — 다른 한국 금액은 천 단위 구분(it.fails).
+  it.fails("원 단위 설정은 천 단위 구분('500,000원'), 다른 단위·값 없음은 그대로", () => {
+    const rows = Object.fromEntries(accountSettingRows("kr_rules", { kr: { minOrderNotional: 500_000, trailingStopPct: 8 } })
+      .map((row) => [row.key, row.value]));
+    expect(rows["kr.minOrderNotional"]).toBe("500,000원");
+    expect(rows["kr.trailingStopPct"]).toBe("8%");
+    expect(rows["kr.rulesMaxNames"]).toBe("—");
+    const claude = Object.fromEntries(accountSettingRows("kr_claude", { kr: { minOrderNotional: 1_000_000 } }).map((row) => [row.key, row.value]));
+    expect(claude["kr.minOrderNotional"]).toBe("1,000,000원");
   });
 });
