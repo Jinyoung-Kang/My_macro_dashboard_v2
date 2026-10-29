@@ -45,6 +45,7 @@ import {
   krNotStartedNote,
   krOrderRejectText,
   krPositionBadges,
+  krPositionPriceTitle,
   krPriceSourceLabel,
   krStopBasisText,
 } from "@/lib/paperKr";
@@ -204,7 +205,7 @@ const KR_POSITION_COLUMNS: readonly Column<PaperPosition>[] = [
     align: "right",
     cell: (row) => {
       const price = wonPrice(row.lastPrice);
-      return price === EMPTY ? price : <span title={row.lastPriceAtKst ? `${formatKst(row.lastPriceAtKst)} 관측(토스증권 잠정)` : undefined}>{price}</span>;
+      return price === EMPTY ? price : <span title={krPositionPriceTitle(row)}>{price}</span>;
     },
   },
   { key: "marketValue", header: "평가액(원)", align: "right", sortValue: (row) => row.marketValue, cell: (row) => formatNumber(row.marketValue, 0) },

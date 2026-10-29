@@ -35,6 +35,7 @@ import {
   krNavRows,
   krOrderRejectText,
   krPositionBadges,
+  krPositionPriceTitle,
   krPriceSourceLabel,
   krStopBasisText,
   krDecisionWindowText,
@@ -281,6 +282,13 @@ describe("보유·체결(F2 — 세 배지·확정 조정·실효 비용·스탑
     expect(krPositionBadges(position({ lastPrice: null })).map((badge) => badge.label)).toEqual(["가격 없음 · 평단 평가"]);
     expect(krPositionBadges(position({ ticker: "153130", cashLike: true })).map((badge) => badge.label)).toEqual(["현금성"]);
     expect(krPositionBadges(position())).toEqual([]);
+  });
+
+  it("보유 가격 툴팁 — 보통은 관측 시각(토스증권 잠정), 기업행위 보류는 묶인 평가, 시각이 없으면 툴팁 없음", () => {
+    expect(krPositionPriceTitle(position())).toBe("2026-11-03 21:57 관측(토스증권 잠정)");
+    expect(krPositionPriceTitle(position({ corpActionHold: "2026-11-03 상장주식수 변동 — 확인 필요", lastPriceAtKst: "2026-11-04 22:05 KST" })))
+      .toBe("묶인 평가 — 금융위 확정 종가(없으면 마지막 평가 가격) · 2026-11-04 22:05 기록(장부가 묶은 때이거나 그 가격을 받은 때)");
+    expect(krPositionPriceTitle(position({ lastPriceAtKst: null }))).toBeUndefined();
   });
 
   it("체결 배지 — 확정·확정 대기·미보정(서버 문구 그대로), 통합가는 '잠정' 배지, 상태를 모르면 배지 없음", () => {

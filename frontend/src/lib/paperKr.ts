@@ -463,6 +463,19 @@ export function krPositionBadges(position: PaperPosition): Badge[] {
   return [...badges, ...positionBadges(position).filter((badge) => badge.key !== "backfill")];
 }
 
+/**
+ * 한국 보유 가격 칸의 툴팁 — 보통은 '{시각} 관측(토스증권 잠정)'. 미처리 기업행위 보류 보유는 장부가 평가를 묶은 값이라(PaperLedgerService
+ * holdUnprocessed — 금융위 확정 종가가 있으면 그 값과 묶은 처리 시각, 없으면 마지막 평가 가격과 그 관측 시각) 관측이라 적지 않고 묶인 평가라고
+ * 적습니다(응답에 가격 출처 칸이 없어 둘 중 어느 쪽인지는 가리지 않음). 시각이 없으면 undefined(툴팁 없음).
+ */
+export function krPositionPriceTitle(position: Pick<PaperPosition, "lastPriceAtKst" | "corpActionHold">): string | undefined {
+  if (!position.lastPriceAtKst) return undefined;
+  const at = formatKst(position.lastPriceAtKst);
+  return textOf(position.corpActionHold)
+    ? `묶인 평가 — 금융위 확정 종가(없으면 마지막 평가 가격) · ${at} 기록(장부가 묶은 때이거나 그 가격을 받은 때)`
+    : `${at} 관측(토스증권 잠정)`;
+}
+
 /** 확정 조정 출처 이름(FSC·FSC_ETF). */
 function fscDatasetLabel(source: string | null | undefined): string {
   return source === "FSC_ETF" ? "금융위 증권상품시세" : source === "FSC" ? "금융위 주식시세" : (source ?? EMPTY);
