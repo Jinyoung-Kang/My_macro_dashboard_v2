@@ -412,6 +412,49 @@ describe("보유·재진입 금지 표", () => {
     expect(tickers()).toEqual(["BBB", "AAA", "CCC"]);
   });
 
+  // 미국 표는 '좌우로 넘겨 보세요'가 폰 폭(sm 미만)에서만 보여, 1024px에서 보유·주문·체결 표가 카드보다 넓어도 가려진 칸이 있다는 단서가
+  // 없었습니다(한국 표는 F2에서 고침 — 사용자 결정 2026-10-29 y5: 미국 표도 같게).
+  it.fails("표가 카드보다 넓으면 폭과 상관없이 '좌우로 넘겨 보세요'를 보인다 — 상자 폭을 재서(미국 표도)", async () => {
+    // jsdom에는 배치가 없어 상자 폭을 꾸밉니다 — 가로 스크롤 상자(role=region)의 내용 972px > 보이는 702px(1024px 화면의 카드).
+    vi.stubGlobal("ResizeObserver", class {
+      constructor(private readonly callback: () => void) {}
+      observe() { this.callback(); }
+      disconnect() {}
+    });
+    Object.defineProperty(HTMLElement.prototype, "scrollWidth", { configurable: true,
+      get(this: HTMLElement) { return this.getAttribute("role") === "region" ? 972 : 0; } });
+    Object.defineProperty(HTMLElement.prototype, "clientWidth", { configurable: true,
+      get(this: HTMLElement) { return this.getAttribute("role") === "region" ? 702 : 0; } });
+    try {
+      reads["/api/paper/overview"] = () => Promise.resolve(INITIALIZED);
+      reads["/api/paper/books/bench_spy/positions"] = () => Promise.resolve({
+        available: true,
+        book: INITIALIZED.books[2],
+        cash: 50.12,
+        lockouts: [],
+        positions: [{
+          ticker: "AAA", qty: 10, avgCost: 10, lastPrice: 10, lastPriceAtKst: "2026-10-24 05:15", marketValue: 100, weightPct: 1,
+          unrealizedPct: 0, highWatermark: 10, stopPrice: 9, stopDistancePct: 10, openedOn: "2026-10-23", holdingTradingDays: 1,
+          priceStale: false, splitNote: null, cashLike: false, backfilled: false,
+        }],
+      });
+      reads["/api/paper/books/bench_spy/orders"] = () => Promise.resolve({ available: true, orders: [] });
+      reads["/api/paper/books/bench_spy/fills"] = () => Promise.resolve({ available: true, fills: [] });
+
+      render(<PaperPage />);
+      fireEvent.click(await screen.findByRole("tab", { name: "보유·체결" }));
+
+      const box = await screen.findByRole("region", { name: "보유 (좌우 스크롤)" });
+      const hint = box.previousElementSibling as HTMLElement;
+      expect(hint.textContent).toBe("← 표를 좌우로 넘겨 보세요");
+      await waitFor(() => expect(hint.className).not.toContain("sm:hidden"), { timeout: 500 });
+    } finally {
+      delete (HTMLElement.prototype as unknown as Record<string, unknown>).scrollWidth;
+      delete (HTMLElement.prototype as unknown as Record<string, unknown>).clientWidth;
+      vi.unstubAllGlobals();
+    }
+  });
+
   it("재진입 금지 표 — 종목·이 날까지(미국 거래일)·사유를 서버 순서대로, 사유가 비면 '—'(값 없음)", async () => {
     reads["/api/paper/overview"] = () => Promise.resolve(INITIALIZED);
     reads["/api/paper/books/bench_spy/positions"] = () => Promise.resolve({
