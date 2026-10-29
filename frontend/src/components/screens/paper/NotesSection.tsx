@@ -139,9 +139,8 @@ export function NotesSection({ startDate, market = "US" }: { startDate: string |
               {
                 key: "title",
                 header: "제목·본문",
-                // 한국 화면은 최소 폭을 둡니다 — 다른 칸이 줄바꿈 없음이라 390px에서 이 칸만 한 글자 폭으로 눌려 제목이 세로로 쌓였습니다.
-                // (미국 메모 탭도 같은 증상이지만 미국 화면은 F2에서 바꾸지 않기로 해 그대로 둡니다.)
-                className: korea ? "min-w-[12rem]" : undefined,
+                // 최소 폭을 둡니다 — 다른 칸이 줄바꿈 없음이라 390px에서 이 칸만 한 글자 폭으로 눌려 제목이 세로로 쌓였습니다(두 시장 같음).
+                className: "min-w-[12rem]",
                 render: (row) => (
                   <details className="text-xs">
                     <summary className="cursor-pointer font-semibold text-bright">{row.title}</summary>

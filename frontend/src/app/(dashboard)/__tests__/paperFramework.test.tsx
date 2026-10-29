@@ -486,6 +486,8 @@ describe("메모 탭", () => {
     const card = (await screen.findByText("메모", { selector: "h2" })).closest("section") as HTMLElement;
     expect(api.apiGetShared).toHaveBeenCalledWith("/api/paper/notes?includeExpired=false", 0);
     await within(card).findByText("유가 급등");
+    // 제목·본문 칸의 최소 폭 — 390px에서 다른 칸(줄바꿈 없음)에 눌려 제목이 한 글자씩 세로로 쌓이지 않게(jsdom에는 배치가 없어 칸 정의로 확인).
+    expect(within(card).getByRole("columnheader", { name: "제목·본문" }).className).toContain("min-w-[12rem]");
     expect(rowsOf(card).map((cells) => [cells[0], cells[1], cells[3], cells[4]])).toEqual([
       ["#12", "시황유효 — 패킷에 실음", "2026-10-23", "2026-10-28"],
       ["#10", "방법론프레임 제안용", "2026-10-20", "만료 없음"],
