@@ -493,8 +493,9 @@ export function OverviewSection({
         </Card>
       )}
 
+      {/* 한 칸일 때도 grid-cols-1(minmax(0, 1fr)) — 칸 수를 주지 않으면 auto 칸이 안쪽 표(최소 640px)만큼 늘어나 390px에서 두 카드가 화면 밖으로 잘렸습니다. */}
       {!korea && (
-      <div className="grid gap-6 lg:grid-cols-2">
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
         <Card
           title="신호 기관"
           subtitle={selection

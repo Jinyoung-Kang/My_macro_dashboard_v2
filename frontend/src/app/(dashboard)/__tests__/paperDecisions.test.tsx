@@ -583,6 +583,18 @@ describe("개요 — 신호 기관·게이트 지표(참고)", () => {
     ]);
   });
 
+  // 예전에는 칸 수 없는 grid라 한 칸(lg 미만)의 auto 칸이 신호 풀 표(최소 640px)만큼 늘어 390px에서 두 카드가 화면 밖으로 잘렸습니다.
+  // jsdom은 배치를 계산하지 못해 칸 정의를 봅니다(실제 폭은 브라우저 측정으로 확인).
+  it("두 카드의 그리드는 한 칸일 때도 minmax(0, 1fr)(grid-cols-1) — 안쪽 표가 카드 폭을 늘리지 않는다", async () => {
+    reads["/api/paper/overview"] = () => Promise.resolve(overview(RULES_ACTIVE));
+
+    render(<PaperPage />);
+
+    const grid = (await screen.findByRole("region", { name: "신호 풀" })).closest(".grid") as HTMLElement;
+    expect(grid.className.split(" ")).toEqual(expect.arrayContaining(["grid-cols-1", "lg:grid-cols-2"]));
+    expect(within(grid).getByText("OS 게이트 지표")).toBeTruthy();
+  });
+
   it("게이트·선정 기록이 없으면 없다고 적는다(이 필드를 아직 보내지 않는 백엔드도 같음)", async () => {
     reads["/api/paper/overview"] = () => Promise.resolve(overview(RULES_NOT_STARTED, { gate: undefined, selection: null }));
 
