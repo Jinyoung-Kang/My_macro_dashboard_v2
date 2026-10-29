@@ -239,7 +239,24 @@ class PaperExecutionAuditJobTest {
         assertThat(cf(id).get("NEXT_CLOSE").path("raw").asDouble()).isEqualTo(104.0);
         assertThat(cf(id).get("NEXT_CLOSE").path("rung").asString()).isEqualTo("QUOTES_CLOSE");
         assertThat(cf(id).get("NEXT_OBSERVATION").isNull()).as("종가 주문의 계좌1식 기준은 체결 행에서 옮길 수 없음").isTrue();
-        assertThat(store.execs.get(id).lagSeconds()).as("1분봉으로 채운 시점이 없음 — 지연 모름").isNull();
+        assertThat(store.execs.get(id).lagSeconds()).as("1분봉 저장본이 없음 — 지연 모름").isNull();
+    }
+
+    @Test
+    @DisplayName("저장본에 지연(90초)이 있어도 그 주문에 1분봉 값이 하나도 생기지 않았으면 지연을 적지 않음 — 체결에서 옮긴 계좌1식 값만 있는 주문")
+    void noLagWithoutABarsValueForThatOrder() {
+        long id = order("MSFT", "NEXT_OBSERVATION", "FILLED", MON, MON_DECIDED);   // 저장본에 MSFT 봉이 없음
+        store.insertFill(observationFill(id, "MSFT", PaperBooks.BUY, 10, 400.0, et(TUE, 9, 57), TUE));
+        bars(tuesdayMorning());
+
+        PaperExecutionAuditJob.Outcome outcome = job(true, et(TUE, 11, 0)).run();
+
+        assertThat(outcome.valuesFilled()).as("계좌1식 기준 하나").isEqualTo(1);
+        assertThat(cf(id).get("NEXT_OBSERVATION").path("raw").asDouble()).isEqualTo(400.0);
+        assertThat(ExecutionAudit.MENU.keySet()).allSatisfy(timing -> assertThat(cf(id).get(timing).isNull()).as(timing).isTrue());
+        assertThat(store.jobRuns).singleElement().satisfies(run -> assertThat(run.detail().path("lagSeconds").asInt())
+                .as("저장본의 지연은 있음").isEqualTo(90));
+        assertThat(store.execs.get(id).lagSeconds()).as("이 주문의 1분봉 반사실을 적은 저장본이 없음").isNull();
     }
 
     @Test
