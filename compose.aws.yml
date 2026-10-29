@@ -14,13 +14,16 @@
 #     수집기를 다시 만들지 않아 새 스키마가 빠집니다(QA-016). 이미 적용한 파일은 건너뜀. 10번 모두 실패하면 ⚠️와
 #     0이 아닌 종료 코드(QA-118) — exit 대신 false라 대화형 셸에 붙여 넣어도 창이 닫히지 않음
 #
-# 사용자는 1명(운영자)이고 공인 주소로는 아무 포트도 열지 않습니다(보안 그룹 인바운드 0). 화면은 PC의 scripts/aws/tunnel.sh가
-# 여는 SSM 포트 포워딩(PC localhost:8201 → 서버 127.0.0.1:8201)으로만 엽니다.
+# 사용자는 1명(운영자)입니다. 길은 둘(ADR 0019 결정 16, 2026-10-29):
+#   · 공개 주소 — CloudFront(HTTPS, 기본 도메인) → 서버 :8301(보안 그룹이 CloudFront 원본용 대역만 들임) → caddy가 비밀 헤더
+#     (X-Origin-Verify = ORIGIN_SECRET)를 확인하고 잠금화면(gate)을 거친 요청만 앱으로. 잠금을 풀어도 앱 로그인은 그대로.
+#   · 관리용 — PC의 scripts/aws/tunnel.sh가 여는 SSM 포트 포워딩(PC localhost:8201 → 서버 127.0.0.1:8201, 잠금화면 없음).
 # 서버는 매일 KST 21:55에 켜지고 08:00(토 10:00)에 꺼집니다 — EventBridge Scheduler(ADR 0019). 그 밖에 볼 때는 scripts/aws/instance.sh start.
 #
 # 바뀌는 것
-#   · 앞단 caddy를 더함(deploy/aws/Caddyfile): 127.0.0.1:8201 하나만 열고 /api/*는 backend, 나머지는 frontend로 보냄.
-#     TLS 없음 — 평문은 서버의 루프백과 SSM 터널(암호화) 안에서만 흐름. 화면은 NEXT_PUBLIC_API_BASE=/(같은 출처)
+#   · 앞단 caddy를 더함(deploy/aws/Caddyfile): 127.0.0.1:8201(터널)과 :8301(CloudFront)을 열고 /api/*는 backend, 나머지는 frontend로.
+#     TLS는 CloudFront에서 끝남 — 서버까지는 HTTP(비밀 헤더 + CloudFront 대역 보안 그룹). 화면은 NEXT_PUBLIC_API_BASE=/(같은 출처)
+#   · 잠금화면 gate를 더함(deploy/aws/gate — 포트폴리오 aws-deploy의 gate.py 그대로, 표준 라이브러리만). 포트를 열지 않고 caddy만 부름
 #   · 로그인은 그대로(ADR 0016): 로컬의 '로그인 없이 운영자로 열기'(DASHBOARD_LOCAL_NO_LOGIN)를 "false"로 고정
 #   · 세션 쿠키에 Secure(COOKIE_SECURE 기본 true) — Chrome·Firefox는 http://localhost를 안전한 출처로 봐 터널 화면에서도
 #     받습니다. Safari(WebKit)는 받지 않아 로그인이 되풀이되므로, Safari로 열 때만 서버 .env에 COOKIE_SECURE=false
@@ -45,8 +48,9 @@ services:
       DASHBOARD_LOCAL_NO_LOGIN: "false"
       # 로그인 쿠키가 붙지 않는 브라우저(Safari)일 때만 서버 .env에 COOKIE_SECURE=false를 적고 ADR 0019에 기록합니다.
       COOKIE_SECURE: "${COOKIE_SECURE:-true}"
-      # 화면이 열리는 주소는 터널 하나. 이 둘이 없으면 터널 화면의 로그인·쓰기 POST가 '다른 출처'(403)로 막힙니다(QA-136).
-      FRONTEND_ORIGIN: "http://localhost:8201,http://127.0.0.1:8201"
+      # 화면이 열리는 주소는 터널과 공개 주소(PUBLIC_ORIGIN = https://dXXXX.cloudfront.net — 계정 고유 값이라 서버 .env에만).
+      # 이것이 없으면 그 화면의 로그인·쓰기 POST가 '다른 출처'(403)로 막힙니다(QA-136). 비어 있으면 터널 주소가 한 번 더 들어감(무해).
+      FRONTEND_ORIGIN: "http://localhost:8201,http://127.0.0.1:8201,${PUBLIC_ORIGIN:-http://localhost:8201}"
       # 백엔드는 허용 출처에 'http://*:화면 포트'를 더합니다(ADR 0006). 기본 3000이면 PC에서 3000번으로 뜬 다른 개발 서버
       # (같은 사이트 localhost라 SameSite=Strict 쿠키도 실림)의 쓰기까지 받으므로 터널 포트로 맞춥니다. 화면 컨테이너의 포트와는 무관.
       FRONTEND_PORT: "8201"
@@ -65,6 +69,30 @@ services:
       args:
         NEXT_PUBLIC_API_BASE: "/"
 
+  gate:
+    # 잠금화면(ADR 0019 결정 16) — 공개 주소의 모든 요청은 caddy의 forward_auth로 여기서 먼저 허락받습니다. 포트를 열지 않습니다.
+    build: ./deploy/aws/gate
+    restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    tmpfs: ["/tmp:size=8m"]
+    # 검사(scrypt 16 MiB) 동시 2개까지 — gate 시험이 이 값의 절반 안인지 봅니다
+    mem_limit: 96m
+    environment:
+      GATE_SECRET: "${GATE_SECRET:?GATE_SECRET 필요 — 서버 .env(.env.aws.example)}"
+      GATE_CODES: "${GATE_CODES:?GATE_CODES 필요 — python3 deploy/aws/gate/gate.py hash}"
+      GATE_COOKIE_SECURE: "true"
+      GATE_HOURS: "${GATE_HOURS:-매일 21:55–08:00 · 토 ~10:00 (KST)}"
+      # 잠금 해제·차단 알림(선택) — 둘 다 있어야 보냄
+      TELEGRAM_BOT_TOKEN: "${TELEGRAM_BOT_TOKEN:-}"
+      TELEGRAM_CHAT_ID: "${TELEGRAM_CHAT_ID:-}"
+
   caddy:
     image: caddy:2-alpine
     restart: unless-stopped
@@ -82,8 +110,16 @@ services:
     depends_on:
       - backend
       - frontend
+      - gate
+    environment:
+      # CloudFront가 원본 요청에 붙이는 비밀 헤더 값 — 없으면 :8301이 모두 403(빈 값으로 뜨지 않게 필수)
+      ORIGIN_SECRET: "${ORIGIN_SECRET:?ORIGIN_SECRET 필요 — 서버 .env(.env.aws.example)}"
     # 인증서를 만들지 않아(auto_https off) /data·/config에 남길 것이 없습니다 — 볼륨을 두지 않습니다.
+    # trusted_proxies.caddy는 deploy.sh가 배포 때마다 만듭니다(scripts/aws/update-cloudfront-ranges.sh — CloudFront 원본용 대역).
     volumes:
       - ./deploy/aws/Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./deploy/aws/trusted_proxies.caddy:/etc/caddy/trusted_proxies.caddy:ro
     ports:
       - "127.0.0.1:8201:8201"
+      # 공개 리스너 — 모든 주소에 열지만 EC2 보안 그룹이 CloudFront 원본용 prefix list만 들입니다(ADR 0019 결정 16)
+      - "8301:8301"

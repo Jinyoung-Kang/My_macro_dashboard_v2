@@ -11,7 +11,8 @@
 #      서버에 적지 않는 이름(포트 네 줄 등, .env.aws.example)이 없는지. 값은 읽지도 찍지도 않습니다.
 #   2. git fetch → main 체크아웃 → origin/main으로 fast-forward. 서버에서 고친 파일이 있거나 갈라졌으면 멈춥니다.
 #   3. 화면 왼쪽 아래 버전(APP_VERSION·APP_UPDATED)
-#   4. 이미지를 하나씩 빌드: backend → frontend → collector(베이스 이미지 보안 패치까지 --pull).
+#   4. 이미지를 하나씩 빌드: backend → frontend → collector → gate(베이스 이미지 보안 패치까지 --pull).
+#      CloudFront 원본용 대역 파일(deploy/aws/trusted_proxies.caddy)을 새로 받음 — 못 받으면 지난 파일로(없으면 멈춤, ADR 0019 결정 16)
 #      4 GiB라 동시에 빌드하면 메모리가 모자랍니다(make up은 한꺼번에 빌드). caddy·postgres 이미지도 새로 받습니다.
 #   5. up -d(건강해질 때까지 기다림) → 스키마 적용(make migrate와 같은 반복 — QA-016·QA-118) → caddy 다시 만들기(바뀐 Caddyfile)
 #   6. 매달린 이미지·오래된 빌드 캐시 정리
@@ -71,11 +72,18 @@ export APP_VERSION APP_UPDATED
 echo "  코드: $APP_VERSION (최종 수정 $APP_UPDATED)"
 
 # ---------------------------------------------------------------- 4) 빌드(하나씩)
-for service in backend frontend collector; do
+for service in backend frontend collector gate; do
     echo "빌드: $service"
     docker compose build --pull "$service"
 done
 docker compose pull --quiet caddy postgres
+
+# 공개 주소(:8301)의 Caddy는 이 대역이 보낸 X-Forwarded-For만 믿습니다. AWS가 대역을 바꾸므로 배포 때마다 새로 받습니다.
+if ! bash scripts/aws/update-cloudfront-ranges.sh; then
+    [ -s deploy/aws/trusted_proxies.caddy ] ||
+        die "CloudFront 대역 파일을 만들지 못했습니다(deploy/aws/trusted_proxies.caddy) — scripts/aws/update-cloudfront-ranges.sh"
+    echo "⚠️  CloudFront 대역을 새로 받지 못해 지난 파일을 씁니다."
+fi
 
 # ---------------------------------------------------------------- 5) 기동·스키마
 echo "기동합니다(건강해질 때까지 최대 5분)…"
@@ -101,5 +109,5 @@ docker builder prune -f --filter until=168h >/dev/null
 echo ""
 docker compose ps --format 'table {{.Service}}\t{{.Status}}'
 echo ""
-echo "✅ 배포했습니다: $APP_VERSION — PC에서 bash scripts/aws/tunnel.sh → http://localhost:8201"
+echo "✅ 배포했습니다: $APP_VERSION — 공개 주소(CloudFront, 잠금화면) 또는 PC에서 bash scripts/aws/tunnel.sh → http://localhost:8201"
 echo "   디스크: $(df -P / | awk 'NR == 2 {print $5}') 사용"

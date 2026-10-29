@@ -49,29 +49,37 @@ class CorsOriginsTest {
     }
 
     @Test
-    @DisplayName("QA-136·ADR 0019: AWS 개인용 서버(compose.aws.yml)의 허용 출처는 터널 화면(SSM 포트 포워딩, localhost:8201)뿐이다")
-    void awsDeploymentAcceptsOnlyTheTunnel() throws Exception {
+    @DisplayName("QA-136·ADR 0019: AWS 개인용 서버(compose.aws.yml)의 허용 출처는 터널 화면(localhost:8201)과 공개 주소(PUBLIC_ORIGIN, 결정 16)뿐이다")
+    void awsDeploymentAcceptsOnlyTheTunnelAndThePublicOrigin() throws Exception {
         Path compose = Path.of("../compose.aws.yml");
         assumeTrue(Files.exists(compose), "compose.aws.yml을 찾을 수 없습니다");
         Matcher setting = Pattern.compile("\\n\\s+FRONTEND_ORIGIN:\\s*(.+)").matcher(Files.readString(compose));
         assertThat(setting.find()).as("compose.aws.yml backend에 FRONTEND_ORIGIN이 있어야 함").isTrue();
         String origins = setting.group(1).trim().replaceAll("^\"|\"$", "");
-        assertThat(origins).as("보간 없는 고정값 — 서버 .env의 FRONTEND_ORIGIN이 끼어들 자리가 없음").doesNotContain("${");
+        // 서버 .env가 끼어들 자리는 공개 주소(CloudFront 배포판 주소) 하나뿐 — FRONTEND_ORIGIN 자체는 보간하지 않음
+        String publicSlot = "${PUBLIC_ORIGIN:-http://localhost:8201}";
+        assertThat(origins).contains(publicSlot);
+        assertThat(origins.replace(publicSlot, "")).as("공개 주소 밖의 보간 없음").doesNotContain("${");
         // 백엔드가 더하는 'http://*:화면 포트'도 터널 포트여야 합니다 — 기본 3000이면 PC의 다른 3000번 개발 서버가 같은 사이트로 통과.
         Matcher port = Pattern.compile("\\n\\s+FRONTEND_PORT:\\s*\"(\\d+)\"").matcher(Files.readString(compose));
         assertThat(port.find()).as("compose.aws.yml backend에 FRONTEND_PORT 고정값이 있어야 함").isTrue();
 
-        AppProperties properties = new AppProperties();
-        properties.setFrontendOrigin(origins);
-        properties.setFrontendPort(Integer.parseInt(port.group(1)));
-        WebConfig.SessionFilter filter = new WebConfig.SessionFilter(null, WebConfig.allowedOriginPatterns(properties), false);
+        String cloudFront = "https://dxxxx.cloudfront.net";
+        for (String publicOrigin : new String[]{cloudFront, null}) {
+            AppProperties properties = new AppProperties();
+            properties.setFrontendOrigin(origins.replace(publicSlot, publicOrigin == null ? "http://localhost:8201" : publicOrigin));
+            properties.setFrontendPort(Integer.parseInt(port.group(1)));
+            WebConfig.SessionFilter filter = new WebConfig.SessionFilter(null, WebConfig.allowedOriginPatterns(properties), false);
 
-        for (String origin : new String[]{"http://localhost:8201", "http://127.0.0.1:8201"}) {
-            assertThat(filter.foreignOrigin(post(origin))).as(origin).isFalse();
-        }
-        for (String origin : new String[]{"https://dxxxx.cloudfront.net", "https://attacker.example", "http://localhost:8202",
-                "https://localhost:8201", "http://localhost:3000", "http://127.0.0.1:3000"}) {
-            assertThat(filter.foreignOrigin(post(origin))).as(origin).isTrue();
+            for (String origin : new String[]{"http://localhost:8201", "http://127.0.0.1:8201"}) {
+                assertThat(filter.foreignOrigin(post(origin))).as(origin).isFalse();
+            }
+            assertThat(filter.foreignOrigin(post(cloudFront))).as("공개 주소는 PUBLIC_ORIGIN이 있을 때만 — " + publicOrigin)
+                    .isEqualTo(publicOrigin == null);
+            for (String origin : new String[]{"https://dyyyy.cloudfront.net", "https://attacker.example", "http://localhost:8202",
+                    "https://localhost:8201", "http://localhost:3000", "http://127.0.0.1:3000"}) {
+                assertThat(filter.foreignOrigin(post(origin))).as(origin).isTrue();
+            }
         }
     }
 

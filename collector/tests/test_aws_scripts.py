@@ -1,8 +1,8 @@
 """
 tests/test_aws_scripts.py
-AWS 개인용 서버(ADR 0019)의 스크립트 시험 — scripts/aws/{bootstrap,deploy,backup-s3,tunnel,instance}.sh.
+AWS 개인용 서버(ADR 0019)의 스크립트 시험 — scripts/aws/{bootstrap,deploy,backup-s3,tunnel,instance,update-cloudfront-ranges}.sh.
 
-서버·AWS·DB 없이 돕니다. 임시 폴더에 스크립트를 복사하고, docker·aws·make·logger·sleep·date는 PATH 앞에 둔 가짜
+서버·AWS·DB 없이 돕니다. 임시 폴더에 스크립트를 복사하고, docker·aws·make·logger·sleep·date·curl은 PATH 앞에 둔 가짜
 실행 파일로 바꿉니다(부른 인자를 기록 파일에 남김). deploy.sh는 진짜 git으로 임시 원격(bare)과 서버 역할의 클론을
 만들어 받기·멈춤을 확인합니다. 사용자 git 설정은 읽지 않습니다. 실제 AWS를 부르지 않도록 진짜 aws가 PATH에 있어도
 가짜가 먼저 잡히는지까지 각 시험이 기록으로 확인합니다.
@@ -19,7 +19,7 @@ from pathlib import Path
 import pytest
 
 ROOT = Path(__file__).resolve().parents[2]
-SCRIPTS = ["bootstrap.sh", "deploy.sh", "backup-s3.sh", "tunnel.sh", "instance.sh"]
+SCRIPTS = ["bootstrap.sh", "deploy.sh", "backup-s3.sh", "tunnel.sh", "instance.sh", "update-cloudfront-ranges.sh"]
 INSTANCE = "i-0123456789abcdef0"
 SECRET = "ci-secret-value-must-not-be-printed"
 
@@ -65,6 +65,14 @@ echo "logger $*" >> "$FAKE_LOG"
 # 바로 돌아옵니다. FAKE_SLEEP_REAL_10이 있으면 `sleep 10`(tunnel.sh의 로그인 재확인 대기)만 실제로 11초 잡니다.
 _FAKE_SLEEP = '#!/usr/bin/env bash\n[ "$1" = 10 ] && [ -n "${FAKE_SLEEP_REAL_10:-}" ] && command -p sleep 11\nexit 0\n'
 _FAKE_PLUGIN = "#!/usr/bin/env bash\nexit 0\n"
+# ip-ranges.json 받기(update-cloudfront-ranges.sh) — `-o 파일`에 CloudFront 원본용 대역 FAKE_CURL_RANGES개를 씁니다(기본 12).
+# FAKE_CURL_FAIL이 있으면 연결 실패(22).
+_FAKE_CURL = """#!/usr/bin/env bash
+echo "curl $*" >> "$FAKE_LOG"
+[ -z "${FAKE_CURL_FAIL:-}" ] || exit 22
+out=; while [ $# -gt 0 ]; do [ "$1" = -o ] && out="$2"; shift; done
+python3 -I -c 'import json,sys; n=int(sys.argv[2]); json.dump({"syncToken": "1", "prefixes": [{"ip_prefix": f"10.0.{i}.0/24", "service": "CLOUDFRONT_ORIGIN_FACING"} for i in range(n)] + [{"ip_prefix": "1.2.3.0/24", "service": "EC2"}], "ipv6_prefixes": [{"ipv6_prefix": "2600:9000::/28", "service": "CLOUDFRONT_ORIGIN_FACING"}]}, open(sys.argv[1], "w"))' "$out" "${FAKE_CURL_RANGES:-12}"
+"""
 # instance.sh가 묻는 지금(KST 요일+시분, `date +%u%H%M`)만 FAKE_NOW로 바꾸고 나머지는 진짜 date에 넘깁니다.
 _FAKE_DATE = '#!/usr/bin/env bash\nif [ -n "${FAKE_NOW:-}" ] && [ "$*" = "+%u%H%M" ]; then echo "$FAKE_NOW"; exit 0; fi\nfor d in /bin/date /usr/bin/date; do [ -x "$d" ] && exec "$d" "$@"; done\nexit 127\n'
 
@@ -80,7 +88,8 @@ def fakes(tmp_path):
     """가짜 실행 파일 폴더와 기록 파일. 진짜 git·bash·coreutils는 그 뒤의 PATH에서 찾습니다."""
     bin_dir, log = tmp_path / "bin", tmp_path / "calls.log"
     for name, text in {"docker": _FAKE_DOCKER, "aws": _FAKE_AWS, "make": _FAKE_MAKE, "logger": _FAKE_LOGGER,
-                       "sleep": _FAKE_SLEEP, "session-manager-plugin": _FAKE_PLUGIN, "date": _FAKE_DATE}.items():
+                       "sleep": _FAKE_SLEEP, "session-manager-plugin": _FAKE_PLUGIN, "date": _FAKE_DATE,
+                       "curl": _FAKE_CURL}.items():
         _write_exec(bin_dir / name, text)
     log.touch()
     return bin_dir, log
@@ -148,6 +157,7 @@ def server(tmp_path):
     _git(seed, "symbolic-ref", "HEAD", "refs/heads/main")
     (seed / "scripts/aws").mkdir(parents=True)
     shutil.copy(ROOT / "scripts/aws/deploy.sh", seed / "scripts/aws/deploy.sh")
+    shutil.copy(ROOT / "scripts/aws/update-cloudfront-ranges.sh", seed / "scripts/aws/update-cloudfront-ranges.sh")
     (seed / "deploy/aws").mkdir(parents=True)
     shutil.copy(ROOT / "deploy/aws/Caddyfile", seed / "deploy/aws/Caddyfile")
     (seed / "README.md").write_text("readme\n", encoding="utf-8")
@@ -175,11 +185,16 @@ def test_deploy는_하나씩_빌드하고_기동한_뒤_스키마를_적용한�
     assert result.returncode == 0, result.stderr
     calls = _docker_calls(fakes)
     builds = [c for c in calls if c.startswith("compose build")]
-    assert builds == ["compose build --pull backend", "compose build --pull frontend", "compose build --pull collector"], \
-        "4 GiB — 서비스를 하나씩, backend → frontend → collector(서비스를 빼면 한꺼번에 빌드)"
+    assert builds == ["compose build --pull backend", "compose build --pull frontend", "compose build --pull collector",
+                      "compose build --pull gate"], \
+        "4 GiB — 서비스를 하나씩, backend → frontend → collector → gate(서비스를 빼면 한꺼번에 빌드)"
     up = next(i for i, c in enumerate(calls) if c.startswith("compose up"))
     assert calls[up] == "compose up -d --no-build --wait --wait-timeout 300"
-    assert up > calls.index("compose build --pull collector")
+    assert up > calls.index("compose build --pull gate")
+    # 공개 주소의 Caddy가 믿을 CloudFront 원본용 대역 — 기동 전에 새로 받아 둠(ADR 0019 결정 16)
+    ranges = (server[0] / "deploy/aws/trusted_proxies.caddy").read_text(encoding="utf-8")
+    assert "trusted_proxies static 10.0.0.0/24" in ranges and "2600:9000::/28" in ranges and "1.2.3.0/24" not in ranges
+    assert "curl -fsS --max-time 30 https://ip-ranges.amazonaws.com/ip-ranges.json" in " ".join(_calls(fakes))
     schema = [i for i, c in enumerate(calls) if " exec -T collector " in f" {c} " and "init_schema" in c]
     assert len(schema) == 1 and schema[0] > up, "up -d 뒤 스키마 적용(QA-016)"
     recreate = calls.index("compose up -d --no-deps --force-recreate --wait --wait-timeout 60 caddy")
@@ -187,7 +202,7 @@ def test_deploy는_하나씩_빌드하고_기동한_뒤_스키마를_적용한�
     assert "image prune -f" in calls
     # 모든 compose 호출이 덧붙임까지 읽고, 화면 빌드에는 받은 커밋의 버전이 들어갑니다.
     head = _git(server[0], "rev-parse", "--short", "HEAD")
-    for line in _calls(fakes):
+    for line in (c for c in _calls(fakes) if not c.startswith("curl ")):  # docker 호출만(대역 받기는 가짜 curl)
         assert f"COMPOSE_FILE=docker-compose.yml:compose.aws.yml APP_VERSION=main@{head}" in line, line
     assert SECRET not in result.stdout + result.stderr, "서버 .env의 값을 찍지 않습니다"
 
@@ -279,6 +294,29 @@ def test_deploy는_받은_main에_Caddyfile이_없으면_기동하지_않는다(
     assert result.returncode != 0
     assert "Caddyfile" in result.stderr, "없으면 docker가 빈 폴더를 만들고 caddy가 뜨지 못함"
     assert _docker_calls(fakes) == []
+
+
+def test_deploy는_CloudFront_대역을_못_받으면_지난_파일로_계속하고_없으면_기동하지_않는다(server, fakes):
+    here, _ = server
+    result = _deploy(server, fakes, FAKE_CURL_FAIL="1")
+    assert result.returncode != 0, "대역 파일이 없으면 caddy가 뜨지 못함(bind mount 자리에 빈 폴더)"
+    assert "trusted_proxies.caddy" in result.stderr
+    assert not any(c.startswith("compose up") for c in _docker_calls(fakes))
+
+    (here / "deploy/aws/trusted_proxies.caddy").write_text("trusted_proxies static 10.9.9.0/24\n", encoding="utf-8")
+    result = _deploy(server, fakes, FAKE_CURL_FAIL="1")
+    assert result.returncode == 0, result.stderr
+    assert "지난 파일" in result.stdout
+    assert (here / "deploy/aws/trusted_proxies.caddy").read_text(encoding="utf-8") == "trusted_proxies static 10.9.9.0/24\n"
+
+
+def test_update_cloudfront_ranges는_대역이_너무_적으면_파일을_바꾸지_않는다(server, fakes):
+    here, _ = server
+    target = here / "deploy/aws/trusted_proxies.caddy"
+    target.write_text("old\n", encoding="utf-8")
+    result = _run(here / "scripts/aws/update-cloudfront-ranges.sh", here, _env(fakes, FAKE_CURL_RANGES="3"))
+    assert result.returncode != 0 and "너무 적음" in result.stderr
+    assert target.read_text(encoding="utf-8") == "old\n"
 
 
 def test_deploy는_빌드가_실패하면_다음_빌드도_기동도_하지_않는다(server, fakes):

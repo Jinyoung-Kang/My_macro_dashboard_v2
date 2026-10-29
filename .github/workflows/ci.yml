@@ -94,6 +94,10 @@ jobs:
           TEST_DATABASE_URL: postgresql://macro:macro@localhost:5432/macrodash_test
         run: python -m pytest tests -q
 
+      # 공개 주소 잠금화면(ADR 0019 결정 16) — 표준 라이브러리만 쓰는 deploy/aws/gate의 시험(make test-gate와 같음)
+      - name: 잠금화면 시험 (gate)
+        run: python3 -I -m unittest discover -s deploy/aws/gate
+
   backend:
     name: 백엔드 (Java)
     runs-on: ubuntu-latest
@@ -208,7 +212,8 @@ jobs:
 
       - name: AWS 덧붙임 해석 (compose.aws.yml · deploy/aws/Caddyfile)
         # AWS 개인용 서버(ADR 0019)에서만 쓰는 덧붙임이 기반 compose와 합쳐 해석되는지(문법·!override 태그)와, 닫아 둔 설정이
-        # 풀리지 않았는지 봅니다: 공개 포트는 모두 127.0.0.1이고 앞단 caddy는 8201 하나, postgres 컨테이너 유지(매일 아침 정지에 30초 여유),
+        # 풀리지 않았는지 봅니다: 공개 포트는 모두 127.0.0.1이고 예외는 앞단 caddy의 공개 리스너 8301 하나(CloudFront 원본 — ADR 0019 결정 16,
+        # 보안 그룹이 CloudFront 대역만 들임), 잠금화면 gate는 포트를 열지 않고 비밀값이 비면 해석부터 실패, postgres 컨테이너 유지(매일 아침 정지에 30초 여유),
         # 국면 판정 기록 23시(가동 창 21:55~08:00 안), 로그인 유지
         # (로컬의 로그인 없는 운영자 열람 끔 — ADR 0016), Secure 쿠키 기본값, 메일 끔, 허용 출처·메일 링크는 터널 주소,
         # 데모 열람 토큰 없음, 화면은 같은 출처(/). 로컬 실행에는 쓰지 않는 파일이라 다른 잡이 읽지 않습니다. 값은 모두
@@ -226,22 +231,40 @@ jobs:
           NEXT_PUBLIC_API_BASE: http://localhost:8082
           FRONTEND_PORT: "3002"
           DEMO_VIEWER_TOKEN: ci-demo-viewer-token-0123456789abcdef
+          # 공개 주소(ADR 0019 결정 16)의 필수 값 — 가짜. 비면 해석이 실패하는지는 아래에서 따로 봄
+          ORIGIN_SECRET: ci-origin-secret-0123456789abcdef
+          GATE_SECRET: ci-gate-secret-0123456789abcdef0123456789
+          GATE_CODES: "ci:scrypt-fake-hash"
         run: |
           docker compose --env-file /dev/null -f docker-compose.yml -f compose.aws.yml config -q
           docker compose --env-file /dev/null -f docker-compose.yml -f compose.aws.yml config --format json > "$RUNNER_TEMP/aws.json"
-          jq -e '[.services[].ports[]?] | length > 0 and all(.host_ip == "127.0.0.1")' "$RUNNER_TEMP/aws.json"
-          jq -e '.services.caddy.ports | length == 1 and .[0].host_ip == "127.0.0.1" and .[0].published == "8201" and .[0].target == 8201' "$RUNNER_TEMP/aws.json"
-          jq -e '.services.caddy.volumes | any(.target == "/etc/caddy/Caddyfile" and (.source | endswith("/deploy/aws/Caddyfile")))' "$RUNNER_TEMP/aws.json"
+          jq -e '[.services | to_entries[] | select(.key != "caddy") | .value.ports[]?] | length > 0 and all(.host_ip == "127.0.0.1")' "$RUNNER_TEMP/aws.json"
+          jq -e '.services.caddy.ports | length == 2
+                 and any(.host_ip == "127.0.0.1" and .published == "8201" and .target == 8201)
+                 and any(((.host_ip // "") == "" or .host_ip == "0.0.0.0") and .published == "8301" and .target == 8301)' "$RUNNER_TEMP/aws.json"
+          jq -e '.services.caddy.volumes | any(.target == "/etc/caddy/Caddyfile" and (.source | endswith("/deploy/aws/Caddyfile")))
+                 and any(.target == "/etc/caddy/trusted_proxies.caddy" and (.source | endswith("/deploy/aws/trusted_proxies.caddy")))' "$RUNNER_TEMP/aws.json"
+          jq -e '.services.caddy.environment.ORIGIN_SECRET == "ci-origin-secret-0123456789abcdef"' "$RUNNER_TEMP/aws.json"
+          jq -e '.services.gate | ((.ports // []) | length == 0) and .read_only == true and .environment.GATE_COOKIE_SECURE == "true"' "$RUNNER_TEMP/aws.json"
+          for name in ORIGIN_SECRET GATE_SECRET GATE_CODES; do
+            if env "$name=" docker compose --env-file /dev/null -f docker-compose.yml -f compose.aws.yml config -q 2>/dev/null; then
+              echo "::error::$name가 비어도 해석됨 — 공개 주소가 비밀값 없이 뜰 수 있음"; exit 1
+            fi
+          done
           jq -e '.services.postgres | (.image | startswith("postgres:")) and .stop_grace_period == "30s"' "$RUNNER_TEMP/aws.json"
           jq -e '.services.backend.environment | .COOKIE_SECURE == "true" and .DASHBOARD_LOCAL_NO_LOGIN == "false" and .MAIL_HOST == ""' "$RUNNER_TEMP/aws.json"
-          jq -e '.services.backend.environment | .FRONTEND_ORIGIN == "http://localhost:8201,http://127.0.0.1:8201" and .FRONTEND_PORT == "8201" and .PUBLIC_URL == "http://localhost:8201" and .SERVER_FORWARDHEADERSSTRATEGY == "native"' "$RUNNER_TEMP/aws.json"
+          jq -e '.services.backend.environment | .FRONTEND_ORIGIN == "http://localhost:8201,http://127.0.0.1:8201,http://localhost:8201" and .FRONTEND_PORT == "8201" and .PUBLIC_URL == "http://localhost:8201" and .SERVER_FORWARDHEADERSSTRATEGY == "native"' "$RUNNER_TEMP/aws.json"
+          PUBLIC_ORIGIN=https://dci.cloudfront.net docker compose --env-file /dev/null -f docker-compose.yml -f compose.aws.yml config --format json \
+            | jq -e '.services.backend.environment.FRONTEND_ORIGIN == "http://localhost:8201,http://127.0.0.1:8201,https://dci.cloudfront.net"'
           jq -e '.services.backend.environment | has("DASHBOARD_DEMO_VIEWER_TOKEN") | not' "$RUNNER_TEMP/aws.json"
           jq -e '.services.backend.environment.DASHBOARD_SCHEDULER_REGIMERECORDHOURKST == "23"' "$RUNNER_TEMP/aws.json"
           jq -e '.services.frontend.build.args.NEXT_PUBLIC_API_BASE == "/"' "$RUNNER_TEMP/aws.json"
           COOKIE_SECURE=false docker compose --env-file /dev/null -f docker-compose.yml -f compose.aws.yml config --format json \
             | jq -e '.services.backend.environment.COOKIE_SECURE == "false"'
-          # Caddyfile 문법 — compose와 같은 이미지로 검사만 합니다(네트워크·포트를 열지 않음).
-          docker run --rm -v "$PWD/deploy/aws/Caddyfile:/etc/caddy/Caddyfile:ro" caddy:2-alpine \
+          # Caddyfile 문법 — compose와 같은 이미지로 검사만 합니다(네트워크·포트를 열지 않음). CloudFront 대역 파일은 가짜 한 줄.
+          echo "trusted_proxies static 10.0.0.0/8" > "$RUNNER_TEMP/trusted_proxies.caddy"
+          docker run --rm -e ORIGIN_SECRET=ci-origin-secret -v "$PWD/deploy/aws/Caddyfile:/etc/caddy/Caddyfile:ro" \
+            -v "$RUNNER_TEMP/trusted_proxies.caddy:/etc/caddy/trusted_proxies.caddy:ro" caddy:2-alpine \
             caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile
 
       - name: 로컬·QA compose 해석 (docker-compose.yml · scripts/qa/docker-compose.qa.yml)
@@ -263,6 +286,9 @@ jobs:
 
       - name: 이미지 빌드 (docker compose build)
         run: docker compose build
+
+      - name: 잠금화면 이미지 빌드 (deploy/aws/gate — 서버 compose.aws.yml에만 있는 서비스)
+        run: docker build -q -t gate-ci deploy/aws/gate
 
   secrets:
     name: 비밀값 검사 (gitleaks)

@@ -514,8 +514,9 @@ class ConcurrentUnlockTest(unittest.TestCase):
         self.assertEqual(res.status, 303)
 
     def test_concurrent_checks_fit_the_container_memory(self):
-        compose = (Path(gate.__file__).resolve().parent.parent / "compose.yml").read_text(encoding="utf-8")
-        gate_block = compose.split("\n  gate:", 1)[1].split("\n  caddy:", 1)[0]
+        # v2: 저장소 최상위 compose.aws.yml의 gate 서비스(포트폴리오 aws-deploy는 compose.yml)
+        compose = (Path(gate.__file__).resolve().parents[3] / "compose.aws.yml").read_text(encoding="utf-8")
+        gate_block = re.split(r"\n  [a-z][a-z0-9_-]*:\n", compose.split("\n  gate:\n", 1)[1], maxsplit=1)[0]
         mem_limit = int(re.search(r"mem_limit:\s*(\d+)m", gate_block).group(1)) * 2**20
         scrypt_bytes = 128 * gate.SCRYPT_R * gate.SCRYPT_N  # 검사 한 번에 쓰는 scrypt 메모리(16 MiB)
         # 나머지 절반은 파이썬 · 스레드 · 여유. 실측(96m 컨테이너, memory.peak): 동시 2개 49 MiB · 4개 82 MiB · 5개부터 OOM(137)

@@ -30,3 +30,5 @@ next-env.d.ts
 
 # 백업 (make backup) — 용량이 크고 개인 데이터입니다
 backups/
+# CloudFront 원본용 대역 — deploy.sh가 배포 때마다 만듦(scripts/aws/update-cloudfront-ranges.sh)
+deploy/aws/trusted_proxies.caddy

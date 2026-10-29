@@ -34,7 +34,7 @@ COLLECTOR_ALLOW_NO_TOKEN ?= $(shell grep -s '^COLLECTOR_ALLOW_NO_TOKEN=' .env | 
 
 .DEFAULT_GOAL := help
 .PHONY: help setup update version up migrate down restart logs ps collect collect-all status verify \
-        doctor test db-test test-collector test-backend test-frontend \
+        doctor test db-test test-collector test-backend test-frontend test-gate \
         dev-collector dev-backend dev-frontend db infra backup restore reset constraints
 
 # 네이티브 개발용 파이썬. collector/.venv가 있으면 그것을 씁니다.
@@ -143,7 +143,7 @@ doctor: ## 어디가 막혔는지 한 번에 진단 (데이터가 안 보일 때
 	@bash scripts/doctor.sh
 
 # ------------------------------------------------------------------ 테스트
-test: test-collector test-backend test-frontend ## 전체 테스트
+test: test-collector test-backend test-frontend test-gate ## 전체 테스트
 
 # ⚠️ 테스트는 운영 DB(macrodash)를 쓰지 않습니다.
 #
@@ -183,6 +183,9 @@ test-backend: db-test ## 백엔드 테스트 (PostgreSQL 필요)
 
 test-frontend: ## 화면 자가검증 + 훅 테스트 + 린트 + 빌드(타입 검사 포함)
 	cd frontend && npm run check && npm test && npm run lint && npm run build
+
+test-gate: ## 공개 주소 잠금화면(deploy/aws/gate) 시험 — 표준 라이브러리만, DB·네트워크 없음(ADR 0019 결정 16)
+	python3 -I -m unittest discover -s deploy/aws/gate
 
 # ------------------------------------------------------------- 네이티브 개발
 # 수집기는 토큰이 비면 기동을 거부하고(COLLECTOR_ALLOW_NO_TOKEN=1일 때만 경고 후 기동), 백엔드는 같은 토큰을

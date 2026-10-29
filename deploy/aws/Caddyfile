@@ -1,11 +1,55 @@
 # deploy/aws/Caddyfile — AWS 개인용 서버의 앞단(ADR 0019). compose.aws.yml의 caddy 서비스가 읽습니다.
 #
-# 들어오는 길은 SSM 포트 포워딩 하나입니다(PC의 localhost:8201 → 서버 127.0.0.1:8201 → 이 컨테이너 8201).
-# TLS는 쓰지 않습니다 — 평문은 서버의 루프백과 SSM 터널(암호화) 안에서만 흐릅니다.
+# 들어오는 길은 둘입니다(ADR 0019 결정 16).
+#   :8201  관리용 — SSM 포트 포워딩(PC의 localhost:8201 → 서버 127.0.0.1:8201 → 이 컨테이너 8201). 잠금화면 없음.
+#   :8301  공개 주소 — CloudFront(HTTPS 종료) → 서버 :8301. EC2 보안 그룹이 CloudFront 원본용 대역만 들이고, 여기서 CloudFront가
+#          붙이는 비밀 헤더(X-Origin-Verify)를 확인해 남이 만든 CloudFront 배포판으로 들어오는 것도 막습니다. 그 뒤 잠금화면(gate)이
+#          허락한 요청만 앱으로 갑니다(포트폴리오 aws-deploy/caddy/Caddyfile과 같은 구성).
+# TLS는 쓰지 않습니다 — 평문은 서버의 루프백·SSM 터널(암호화)·CloudFront ↔ 서버 구간에만 흐릅니다.
 # 화면과 API를 한 주소(같은 출처)로 묶습니다. 화면은 NEXT_PUBLIC_API_BASE=/로 빌드돼 /api/...를 상대 경로로 부릅니다(ADR 0012의 정의).
-# X-Forwarded-For는 Caddy 기본: trusted_proxies를 두지 않아 들어온 값을 믿지 않고 접속 주소로 채워 보냅니다.
+# 환경 변수(compose가 넘김): ORIGIN_SECRET(필수).
 {
 	auto_https off
+	# :8301만 CloudFront 원본용 대역(trusted_proxies.caddy — deploy.sh가 배포 때마다 만듦)의 X-Forwarded-For를 믿습니다. 오른쪽부터
+	# 읽어 처음 만나는 '믿지 않는 주소'가 클라이언트 — CloudFront는 받은 X-Forwarded-For 끝에 실제 주소를 붙이므로 앞쪽 위조는 무시됩니다.
+	# :8201(터널)은 trusted_proxies를 두지 않아 들어온 값을 믿지 않고 접속 주소로 채워 보냅니다(Caddy 기본).
+	servers :8301 {
+		import /etc/caddy/trusted_proxies.caddy
+		trusted_proxies_strict
+		client_ip_headers X-Forwarded-For
+	}
+}
+
+# CloudFront를 거치지 않은 요청 거절
+(origin_guard) {
+	@not_cloudfront not header X-Origin-Verify {$ORIGIN_SECRET}
+	respond @not_cloudfront "forbidden" 403 {
+		close
+	}
+}
+
+# 잠금 — /__gate/*는 gate로, 그 밖은 gate가 허락(200)해야 다음 줄로. args[0] = 서비스 키(services.json)
+(gate) {
+	@gate_path path /__gate /__gate/*
+	reverse_proxy @gate_path gate:8100 {
+		header_up X-Gate-Service {args[0]}
+		header_up X-Gate-Client-IP {client_ip}
+		header_up -X-Origin-Verify
+	}
+	forward_auth gate:8100 {
+		uri /__gate/verify
+		header_up X-Gate-Service {args[0]}
+		header_up X-Gate-Client-IP {client_ip}
+		header_up -X-Origin-Verify
+	}
+}
+
+# 앱으로 보낼 때: 클라이언트 IP는 Caddy가 정한 값 하나로 덮어씁니다(Tomcat은 같은 네트워크의 Caddy만 믿음 — compose.aws.yml)
+(to_app) {
+	header_up X-Forwarded-For {client_ip}
+	header_up X-Real-IP {client_ip}
+	header_up X-Forwarded-Proto https
+	header_up -X-Origin-Verify
 }
 
 :8201 {
@@ -14,5 +58,24 @@
 	}
 	handle {
 		reverse_proxy frontend:3000
+	}
+}
+
+:8301 {
+	header Strict-Transport-Security "max-age=31536000"
+	header -Server
+	header X-Robots-Tag "noindex, nofollow"
+	route {
+		import origin_guard
+		import gate macro
+		# 사용자 관리·감사 기록은 공개 주소에서 닫습니다(앱의 접근 정책은 그대로 두고 한 겹 더 — 관리는 터널로)
+		@admin path /api/admin /api/admin/*
+		respond @admin `{"error":"공개 주소에서는 쓸 수 없는 경로입니다 — 터널(localhost:8201)로 여세요"}` 404
+		reverse_proxy /api/* backend:8080 {
+			import to_app
+		}
+		reverse_proxy frontend:3000 {
+			import to_app
+		}
 	}
 }
