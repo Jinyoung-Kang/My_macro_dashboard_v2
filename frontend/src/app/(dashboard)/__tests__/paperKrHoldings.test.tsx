@@ -293,8 +293,8 @@ describe("자료", () => {
     expect(screen.getByText(CAUTION)).toBeTruthy();
   });
 
-  // 수정 전에는 비용 칸이 잠정 체결의 값만(머리에 '잠정' 없이) 보여, 확정 행에서 장부가 실제로 센 확정 비용과 섞여 읽혔습니다(it.fails).
-  it.fails("체결 표 — 비용·실효 비용 칸 머리는 '잠정', 확정 행은 확정가로 다시 센 비용·실효 비용을 '확정'으로 함께", async () => {
+  // 예전에는 비용 칸이 잠정 체결의 값만(머리에 '잠정' 없이) 보여, 확정 행에서 장부가 실제로 센 확정 비용과 섞여 읽혔습니다.
+  it("체결 표 — 비용·실효 비용 칸 머리는 '잠정', 확정 행은 확정가로 다시 센 비용·실효 비용을 '확정'으로 함께", async () => {
     render(<PaperPage market="KR" initialTab="holdings" />);
     const table = await screen.findByRole("table", { name: "체결" });
     const headers = within(table).getAllByRole("columnheader").map((th) => th.textContent);

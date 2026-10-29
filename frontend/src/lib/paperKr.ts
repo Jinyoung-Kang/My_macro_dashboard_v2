@@ -5,7 +5,7 @@
  * 모르는 값은 "—"로 둡니다(0이나 다른 날로 채우지 않음). 한국만의 표기라 lib/paper(미국과 공용)를 크게 만들지 않고 따로 둡니다 —
  * 이 파일이 lib/paper를 가져오고 lib/paper는 이 파일을 가져오지 않습니다(순환 방지).
  */
-import { EMPTY, formatKst, formatNumber, formatPercent, formatSigned } from "./format";
+import { EMPTY, formatKst, formatNumber, formatPercent, formatSigned, formatWithUnit } from "./format";
 import {
   type Badge,
   decisionKindLabel,
@@ -514,13 +514,25 @@ export function krConfirmationTotalText(total: PaperConfirmationTotal | null | u
   return `확정 조정 합계 ${sum} · 확정 ${formatNumber(total.rows, 0)}건 · 남음 ${formatNumber(total.unconfirmed, 0)}건`;
 }
 
-/** 한국 체결 표의 확정 칸 — 확정가·차이·현금 차이(확정 조정 행이 없으면 셋 다 "—"). */
-export function krConfirmationCells(fill: Pick<PaperFill, "confirmation">): { price: string; diff: string; cash: string } {
+/** 비용 세 칸(수수료 · 세금 · 슬리피지, 원 정수) — "106 · 0 · 356". 모르는 칸은 "—". */
+export function krCostText(fee: number | null | undefined, tax: number | null | undefined, slippage: number | null | undefined): string {
+  return `${formatNumber(fee, 0)} · ${formatNumber(tax, 0)} · ${formatNumber(slippage, 0)}`;
+}
+
+/**
+ * 한국 체결 표의 확정 칸 — 확정가·차이·현금 차이, 그리고 확정가로 다시 센 비용 세 칸·실효 비용 bp(장부가 현금을 맞춘 값 — 잠정 체결의 비용 칸과
+ * 나란히 '확정'으로). 확정 조정 행이 없으면 다섯 모두 "—".
+ */
+export function krConfirmationCells(fill: Pick<PaperFill, "confirmation">): {
+  price: string; diff: string; cash: string; costs: string; costBp: string;
+} {
   const c = fill.confirmation;
   return {
     price: won(c?.confirmedPrice),
     diff: signedWon(c?.priceDiff),
     cash: signedWon(c?.cashDelta),
+    costs: c ? krCostText(c.fee, c.tax, c.slippageCost) : EMPTY,
+    costBp: c ? formatWithUnit(c.costBp, 2, "bp") : EMPTY,
   };
 }
 

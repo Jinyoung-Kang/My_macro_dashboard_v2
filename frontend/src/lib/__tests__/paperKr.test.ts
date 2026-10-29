@@ -29,6 +29,7 @@ import {
   krConfirmationCautions,
   krConfirmationCells,
   krConfirmationTotalText,
+  krCostText,
   krFillBadges,
   krNavProvisionalReason,
   krNavRows,
@@ -300,8 +301,10 @@ describe("보유·체결(F2 — 세 배지·확정 조정·실효 비용·스탑
 
   it("확정 칸·합계 — 차이·현금 차이는 부호, 행이 없으면 '—'(0원으로 쓰지 않음), 칸이 없는 서버면 합계 줄 없음", () => {
     expect(krConfirmationCells({ confirmation: { confirmedPrice: 71_200, priceDiff: -100, fee: 106, tax: 0, slippageCost: 356,
-      costBp: 6.49, cashDelta: 1_000, source: "FSC", reconciledAtKst: null } })).toEqual({ price: "71,200원", diff: "-100원", cash: "+1,000원" });
-    expect(krConfirmationCells({ confirmation: null })).toEqual({ price: "—", diff: "—", cash: "—" });
+      costBp: 6.49, cashDelta: 1_000, source: "FSC", reconciledAtKst: null } }))
+      .toEqual({ price: "71,200원", diff: "-100원", cash: "+1,000원", costs: "106 · 0 · 356", costBp: "6.49bp" });
+    expect(krConfirmationCells({ confirmation: null })).toEqual({ price: "—", diff: "—", cash: "—", costs: "—", costBp: "—" });
+    expect(krCostText(108, 1_440.4, null)).toBe("108 · 1,440 · —");
     expect(krConfirmationTotalText({ rows: 2, cashDelta: 503, unconfirmed: 1 })).toBe("확정 조정 합계 +503원 · 확정 2건 · 남음 1건");
     expect(krConfirmationTotalText({ rows: 0, cashDelta: null, unconfirmed: 3 }))
       .toBe("확정 조정 합계 —(확정 조정 행 없음) · 확정 0건 · 남음 3건");

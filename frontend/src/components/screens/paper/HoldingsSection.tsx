@@ -38,6 +38,7 @@ import {
   krConfirmationCautions,
   krConfirmationCells,
   krConfirmationTotalText,
+  krCostText,
   krFillBadges,
   krNavRows,
   type KrNavRow,
@@ -292,13 +293,19 @@ const KR_FILL_COLUMNS: readonly Column<PaperFill>[] = [
       </span>
     ),
   },
+  // 비용 두 칸은 잠정 체결(토스 잠정가)의 값이고, 확정 조정 행이 있으면 장부가 확정가로 다시 세어 현금을 맞춘 값을 그 아래 '확정'으로 붙입니다.
   {
     key: "costs",
-    header: "수수료·세금·슬리피지(원)",
+    header: "잠정 수수료·세금·슬리피지(원)",
     align: "right",
-    cell: (row) => `${formatNumber(row.fee, 0)} · ${formatNumber(row.tax, 0)} · ${formatNumber(row.slippageCost, 0)}`,
+    cell: (row) => withConfirmed(krCostText(row.fee, row.tax, row.slippageCost), krConfirmationCells(row).costs),
   },
-  { key: "costBp", header: "실효 비용", align: "right", cell: (row) => formatWithUnit(row.costBp, 2, "bp") },
+  {
+    key: "costBp",
+    header: "잠정 실효 비용",
+    align: "right",
+    cell: (row) => withConfirmed(formatWithUnit(row.costBp, 2, "bp"), krConfirmationCells(row).costBp),
+  },
   {
     key: "confirmedPrice",
     header: "확정가·차이(원)",
@@ -618,7 +625,7 @@ export function HoldingsSection({
         subtitle={korea
           ? "잠정 체결가는 토스증권(KRX 시가 단일가 — 1분봉 개장 봉, 없으면 일봉 시가)이고, 금융위원회(공공데이터포털) 확정가가 들어오면 "
             + "체결 행은 그대로 둔 채 확정 조정 행으로 현금·평단을 맞춥니다(보통 다음 영업일 13시 뒤). 실효 비용 = (수수료 + 세금 + 슬리피지) "
-            + "÷ (체결가 × 수량) — 서버 계산."
+            + "÷ (체결가 × 수량) — 서버 계산. 비용 칸은 잠정 체결의 값이고, 확정 조정 행이 있으면 확정가로 다시 센 값('확정')을 그 아래에 둡니다."
           : "체결가는 관측가에 슬리피지를 얹은 값입니다. 사후 체결은 그날 종가로 나중에 기록한 것입니다."}
         source={ledgerSource}
       >
@@ -682,6 +689,20 @@ export function HoldingsSection({
         </Card>
       )}
     </>
+  );
+}
+
+/**
+ * 잠정 값 한 줄과, 확정 조정 행이 있으면 그 아래 '확정 …' 한 줄(작은 글). 확정 값이 "—"(행 없음)이면 잠정 값 글 그대로 — 그 글이 "—"면 표가
+ * 값 없음(Empty)으로 그립니다.
+ */
+function withConfirmed(provisional: string, confirmed: string): ReactNode {
+  if (confirmed === EMPTY) return provisional;
+  return (
+    <span className="flex flex-col items-end">
+      <span>{provisional}</span>
+      <span className="whitespace-nowrap text-[11px] text-text-3">{`확정 ${confirmed}`}</span>
+    </span>
   );
 }
 
