@@ -23,6 +23,8 @@ BACKEND_TABLES = (
     "paper_reviews",
     # 한국 책 확정 조정(V14, v2 2단계 K29) — 금융위 확정가는 수집기가 받고, 조정 행은 백엔드 장부만 씁니다.
     "paper_fill_confirmations",
+    # 미국 Claude 계좌2 실행 감사(V17, ADR 0022) — 1분봉은 수집기가 받고, 주문별 감사 행은 백엔드만 씁니다.
+    "paper_order_exec",
 )
 WRITE = re.compile(
     r"(?i)(INSERT\s+INTO|UPDATE|DELETE\s+FROM|TRUNCATE)\s+(" + "|".join(BACKEND_TABLES) + r")\b"

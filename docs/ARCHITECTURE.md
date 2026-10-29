@@ -51,7 +51,7 @@
 | `regime_log` | 국면 판정 라이브 기록 — 하루 한 건, 추가만. **백엔드가 씁니다**(ADR 0008) |
 | `users`·`user_sessions`·`audit_log`·`email_tokens`·`usage_counters` | 계정·DB 세션·감사 기록·메일 링크 토큰·하루 사용량 — **백엔드가 씁니다**(ADR 0010) |
 | `alert_rules`·`alert_events`·`alert_deliveries` | 알림 규칙·사건·알림함 — **백엔드가 씁니다**(ADR 0011). 수집기는 종목 규칙의 코드만 읽습니다 |
-| `paper_*` 21개 (V8, V9~V11·V13·V15·V16은 열 추가, V12 `paper_reviews`, V14 `paper_fill_confirmations`와 한국 책 열, V15 한국 보유의 since 봉 거래량, V16 한국 장부가 그날 보류한 대기 주문의 표시) | 🧪 모의 매매(운영자 전용) — 계좌·보유·재진입 금지·주문·체결·순자산, 결정 기록, 게이트 지표, 13F 트랙레코드·기관 선정, 프레임 판·제안, 메모, 설정, 작업 기록, 출발일 종가, Claude 사용량·추정 비용, 주간 복기, 체결 확정 조정(한국). **백엔드가 씁니다**(ADR 0008, JDBC는 `store.PaperStore`에만). 수집기는 쓰지 않습니다(`collector/tests/test_table_ownership.py`가 검사) |
+| `paper_*` 22개 (V8, V9~V11·V13·V15·V16은 열 추가, V12 `paper_reviews`, V14 `paper_fill_confirmations`와 한국 책 열, V15 한국 보유의 since 봉 거래량, V16 한국 장부가 그날 보류한 대기 주문의 표시, V17 `paper_order_exec`와 시각 지정 체결 시점·체결 봉 열) | 🧪 모의 매매(운영자 전용) — 계좌·보유·재진입 금지·주문·체결·순자산, 결정 기록, 게이트 지표, 13F 트랙레코드·기관 선정, 프레임 판·제안, 메모, 설정, 작업 기록, 출발일 종가, Claude 사용량·추정 비용, 주간 복기, 체결 확정 조정(한국), 주문별 실행 감사(미국 Claude 계좌2 실험 — ADR 0022). **백엔드가 씁니다**(ADR 0008, JDBC는 `store.PaperStore`에만). 수집기는 쓰지 않습니다(`collector/tests/test_table_ownership.py`가 검사) |
 
 **데이터셋 이름은 두 언어에 같은 문자열로 존재합니다** — `collector/app/catalog.py`와
 `backend/.../store/Datasets.java`. `DatasetsParityTest`가 실제로 `catalog.py`를

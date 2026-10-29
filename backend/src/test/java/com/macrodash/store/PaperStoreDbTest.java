@@ -10,13 +10,19 @@ import org.springframework.jdbc.datasource.DriverManagerDataSource;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 
+import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.sql.Timestamp;
 import java.time.Instant;
 import java.time.LocalDate;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.TreeMap;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
+import java.util.stream.Stream;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -1527,6 +1533,28 @@ class PaperStoreDbTest {
     // ------------------------------------------------------------------ 한국 책 스키마(V14, 2단계 명세 §4-14)
     /** V14 파일 — 백엔드 모듈에서 본 저장소 경로(DatasetsParityTest의 catalog.py와 같은 방식). */
     private static final Path V14 = Path.of("../db/migrations/V14__paper_kr_schema.sql");
+    private static final Pattern MIGRATION_NAME = Pattern.compile("V(\\d+)__.+\\.sql");
+
+    /**
+     * 번호가 {@code from} 이상인 스키마 파일의 본문 — make db-test처럼 번호 순서로(문자열 순서가 아님: V10은 V9 다음). 같은 CHECK를
+     * 뒤 파일이 다시 만드는 경우(V14 → V17의 timing)가 있어, 다시 실행해도 안전한지는 그 뒤 파일까지 차례로 돌려야 실제와 같습니다.
+     */
+    private static List<String> migrationsFrom(int from) throws IOException {
+        TreeMap<Integer, Path> byVersion = new TreeMap<>();
+        try (Stream<Path> paths = Files.list(V14.getParent())) {
+            paths.forEach(path -> {
+                Matcher name = MIGRATION_NAME.matcher(path.getFileName().toString());
+                if (name.matches() && Integer.parseInt(name.group(1)) >= from) {
+                    byVersion.put(Integer.parseInt(name.group(1)), path);
+                }
+            });
+        }
+        List<String> sql = new ArrayList<>();
+        for (Path path : byVersion.values()) {
+            sql.add(Files.readString(path));
+        }
+        return sql;
+    }
 
     private static PaperStore.Review review(String market, LocalDate week, String status) throws Exception {
         PaperStore.Review r = review(week, status, null, null);
@@ -1727,6 +1755,109 @@ class PaperStoreDbTest {
             throw new Rollback();
         })).isInstanceOf(Rollback.class);
         assertThat(new PaperStore(jdbc, MAPPER, new SchemaCheck(jdbc)).ready()).as("되돌린 뒤").isTrue();
+    }
+
+    // ------------------------------------------------------------------ 미국 Claude 계좌2 스키마(V17, ADR 0022 — 명세 2026-10-30 §11)
+    private static final Path V17 = Path.of("../db/migrations/V17__paper_timed_fills_and_exec.sql");
+    /** 계좌2의 시각 지정 시점(E의 그 시각, 뉴욕 시간) — V17이 timing CHECK에 더한 여섯. */
+    private static final List<String> TIMED = List.of("AT_1000", "AT_1100", "AT_1200", "AT_1300", "AT_1400", "AT_1500");
+    private static final String EXEC_INSERT =
+            "INSERT INTO paper_order_exec (order_id, book_code, timing, target_at) VALUES (?, ?, ?, ?)";
+
+    private static PaperStore.Order timedBuy(String code, String timing) {
+        return new PaperStore.Order(0, code, null, "SPY", "BUY", null, 10.0, null, timing, "CLAUDE", "PENDING", null, null,
+                DAY, null, DAY.plusDays(3), null);
+    }
+
+    @Test
+    @DisplayName("V17: 주문 시점에 AT_1000~AT_1500(옛 다섯 시점 그대로, 메뉴 밖 시각은 막힘), 체결의 bar_at·fill_rung은 NULL로 시작하고 사다리 칸 다섯만 받음, 실행 감사 표는 주문마다 한 행(반사실 {}·지연·늦게 풂은 NULL로 시작, 목표 시각 없는 계좌1 주문도), 주문 삭제·책 초기화 때 함께 지워짐")
+    void v17TimedTimingsFillBarAndOrderExec() {
+        store.insertBookIfAbsent(book(BOOK, "Claude 책"));
+        List<Long> timed = new ArrayList<>();
+        for (String timing : TIMED) {
+            timed.add(store.insertOrder(timedBuy(BOOK, timing)));
+        }
+        assertThat(store.ordersByStatus(BOOK, "PENDING")).extracting(PaperStore.Order::timing)
+                .containsExactlyInAnyOrderElementsOf(TIMED);
+        for (String timing : List.of("NEXT_OBSERVATION", "NEXT_OPEN", "NEXT_CLOSE", "IMMEDIATE", "BACKFILL")) {
+            assertThat(store.insertOrder(new PaperStore.Order(0, BOOK, null, "SPY", "BUY", 1, null, null, timing, "RULE",
+                    "PROPOSED", null, null, DAY, null, null, null))).as("옛 시점 " + timing).isPositive();
+        }
+        for (String timing : List.of("AT_0930", "AT_1600", "AT_1030")) {
+            assertThatThrownBy(() -> jdbc.update("UPDATE paper_orders SET timing = ? WHERE id = ?", timing, timed.get(0)))
+                    .as("메뉴 밖 시각 " + timing).isInstanceOf(org.springframework.dao.DataIntegrityViolationException.class);
+        }
+
+        long observed = store.insertOrder(pendingBuy(BOOK, "SPY", null));
+        long fillId = store.insertFill(fill(observed, BOOK));
+        assertThat(jdbc.queryForMap("SELECT bar_at, fill_rung FROM paper_fills WHERE id = ?", fillId))
+                .as("계좌1 체결 경로 — 두 칸 모두 NULL(빈 값으로 채우지 않음)").containsEntry("bar_at", null)
+                .containsEntry("fill_rung", null);
+        Instant bar = Instant.parse("2026-10-26T13:30:00Z");   // 2026-10-26(월) 09:30 EDT 봉 시작
+        for (String rung : List.of("Y1M_AT", "Y1M_NEXT", "Y1M_LATE", "QUOTES_FALLBACK", "QUOTES_CLOSE")) {
+            assertThat(jdbc.update("UPDATE paper_fills SET bar_at = ?, fill_rung = ? WHERE id = ?", Timestamp.from(bar), rung,
+                    fillId)).as("사다리 칸 " + rung).isEqualTo(1);
+        }
+        assertThat(jdbc.queryForObject("SELECT bar_at FROM paper_fills WHERE id = ?", Timestamp.class, fillId).toInstant())
+                .isEqualTo(bar);
+        assertThatThrownBy(() -> jdbc.update("UPDATE paper_fills SET fill_rung = 'Y1M_FIRST' WHERE id = ?", fillId))
+                .as("모르는 사다리 칸").isInstanceOf(org.springframework.dao.DataIntegrityViolationException.class);
+
+        Timestamp target = Timestamp.from(Instant.parse("2026-10-26T14:00:00Z"));   // AT_1000 = 10:00 EDT
+        assertThat(jdbc.update(EXEC_INSERT, timed.get(0), BOOK, "AT_1000", target)).isEqualTo(1);
+        assertThatThrownBy(() -> jdbc.update(EXEC_INSERT, timed.get(0), BOOK, "AT_1000", target))
+                .as("주문마다 한 행").isInstanceOf(DuplicateKeyException.class);
+        assertThat(jdbc.queryForMap("SELECT cf::text AS cf, lag_seconds, late_resolved, target_at = ? AS on_target, "
+                + "updated_at IS NOT NULL AS stamped FROM paper_order_exec WHERE order_id = ?", target, timed.get(0)))
+                .as("반사실은 빈 묶음, 지연·늦게 풂은 모름(NULL — 0·false로 채우지 않음)").containsEntry("cf", "{}")
+                .containsEntry("lag_seconds", null).containsEntry("late_resolved", null).containsEntry("on_target", true)
+                .containsEntry("stamped", true);
+        assertThat(jdbc.update(EXEC_INSERT, observed, BOOK, "NEXT_OBSERVATION", null)).as("계좌1 주문 — 목표 시각 없음")
+                .isEqualTo(1);
+        assertThatThrownBy(() -> jdbc.update(EXEC_INSERT, -1L, BOOK, "AT_1000", null))
+                .as("없는 주문").isInstanceOf(org.springframework.dao.DataIntegrityViolationException.class);
+
+        jdbc.update("DELETE FROM paper_orders WHERE id = ?", timed.get(0));
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM paper_order_exec WHERE order_id = ?", Integer.class,
+                timed.get(0))).as("주문을 지우면 감사 행도 함께").isZero();
+        store.resetBook(BOOK);
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM paper_order_exec WHERE book_code = ?", Integer.class, BOOK))
+                .as("초기화가 지운 주문의 감사 행도 함께").isZero();
+    }
+
+    @Test
+    @DisplayName("V17은 여러 번 실행해도 안전 — 이미 적용한 DB에서 두 번 더 돌려도 시각 지정 주문·체결 봉·감사 행(반사실·지연)과 주문·체결·감사 표의 CHECK·기본키·외래키 모양이 그대로(make db-test가 다시 돌림) — 시험 뒤 되돌림")
+    void v17RerunIsSafe() throws Exception {
+        assumeTrue(Files.exists(V17), "db/migrations/V17__paper_timed_fills_and_exec.sql을 찾을 수 없습니다");
+        String sql = Files.readString(V17);
+        class Rollback extends RuntimeException {
+        }
+        store.insertBookIfAbsent(book(BOOK, "Claude 책"));
+        String constraints = "SELECT string_agg(conname || ' ' || pg_get_constraintdef(oid), '; ' ORDER BY conname) "
+                + "FROM pg_constraint WHERE conrelid IN ('paper_orders'::regclass, 'paper_fills'::regclass, "
+                + "'paper_order_exec'::regclass)";
+        String before = jdbc.queryForObject(constraints, String.class);
+        Instant bar = Instant.parse("2026-10-26T19:00:00Z");   // AT_1500 = 15:00 EDT
+        String cf = "{\"NEXT_OPEN\": {\"raw\": 680.12, \"at\": \"2026-10-26T13:30:00Z\", \"rung\": \"Y1M_AT\"}, \"AT_1000\": null}";
+        assertThatThrownBy(() -> store.atomically(() -> {
+            long order = store.insertOrder(timedBuy(BOOK, "AT_1500"));
+            long fillId = store.insertFill(fill(order, BOOK));
+            jdbc.update("UPDATE paper_fills SET bar_at = ?, fill_rung = 'Y1M_AT' WHERE id = ?", Timestamp.from(bar), fillId);
+            jdbc.update("INSERT INTO paper_order_exec (order_id, book_code, timing, target_at, cf, lag_seconds, late_resolved) "
+                    + "VALUES (?, ?, 'AT_1500', ?, CAST(? AS jsonb), 75, false)", order, BOOK, Timestamp.from(bar), cf);
+            jdbc.execute(sql);
+            jdbc.execute(sql);
+            assertThat(jdbc.queryForObject(constraints, String.class)).as("제약 모양 그대로").isEqualTo(before);
+            assertThat(store.ordersByStatus(BOOK, "PENDING")).extracting(PaperStore.Order::timing).containsExactly("AT_1500");
+            assertThat(jdbc.queryForMap("SELECT bar_at = ? AS on_bar, fill_rung FROM paper_fills WHERE id = ?",
+                    Timestamp.from(bar), fillId)).containsEntry("on_bar", true).containsEntry("fill_rung", "Y1M_AT");
+            Map<String, Object> exec = jdbc.queryForMap("SELECT cf::text AS cf, lag_seconds, late_resolved "
+                    + "FROM paper_order_exec WHERE order_id = ?", order);
+            assertThat(MAPPER.readTree((String) exec.get("cf"))).as("반사실 그대로").isEqualTo(MAPPER.readTree(cf));
+            assertThat(exec).containsEntry("lag_seconds", 75).containsEntry("late_resolved", false);
+            throw new Rollback();
+        })).isInstanceOf(Rollback.class);
+        assertThat(jdbc.queryForObject(constraints, String.class)).as("되돌린 뒤").isEqualTo(before);
     }
 
     @Test
@@ -1984,10 +2115,10 @@ class PaperStoreDbTest {
     }
 
     @Test
-    @DisplayName("V14는 여러 번 실행해도 안전 — 이미 적용한 DB에서 두 번 더 돌려도 기존 미국 복기·메모·체결 행과 기본키·CHECK 모양이 그대로(make db-test·수집기 기동이 다시 돌림) — 시험 뒤 되돌림")
+    @DisplayName("V14는 여러 번 실행해도 안전 — 이미 적용한 DB에서 V14와 그 뒤 파일을 번호 순서로 두 번 더 돌려도(make db-test·수집기 기동이 다시 돌림 — V14만 돌리면 V17이 넓힌 timing CHECK가 옛 다섯 값으로 좁아짐) 기존 미국 복기·메모·체결 행과 기본키·CHECK 모양이 그대로 — 시험 뒤 되돌림")
     void v14RerunIsSafe() throws Exception {
         assumeTrue(Files.exists(V14), "db/migrations/V14__paper_kr_schema.sql을 찾을 수 없습니다");
-        String sql = Files.readString(V14);
+        List<String> files = migrationsFrom(14);
         class Rollback extends RuntimeException {
         }
         store.insertBookIfAbsent(book(BOOK, "규칙 책"));
@@ -2001,8 +2132,9 @@ class PaperStoreDbTest {
             try {
                 assertThat(store.insertReviewIfAbsent(review(W1, "API_ERROR", null, null))).isTrue();
                 long note = store.insertNote(new PaperStore.Note(0, "MARKET", DAY, DAY, "미국", "본문", false, null));
-                jdbc.execute(sql);
-                jdbc.execute(sql);
+                for (int round = 0; round < 2; round++) {
+                    files.forEach(jdbc::execute);
+                }
                 assertThat(jdbc.queryForObject(constraints, String.class)).as("제약 모양 그대로").isEqualTo(before);
                 assertThat(store.review(W1).orElseThrow()).extracting(PaperStore.Review::market,
                         PaperStore.Review::status).containsExactly("US", "API_ERROR");
