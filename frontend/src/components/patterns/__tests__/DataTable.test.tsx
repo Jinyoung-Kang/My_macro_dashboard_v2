@@ -2,7 +2,7 @@
  * DataTable — 밀도 높은 표(설계서 §5 "열 정렬·고정 머리, 행 클릭 → 상세", §6 네 상태).
  * 네 상태: 값 있음(숫자 열 오른쪽·tabular-nums), 값 없음(칸 "—"·행 없음 문구), 추정·대리(칸 배지), 오래됨(칸 ⚠️ 이전 값).
  * 정렬: 머리 단추 + 정렬한 열의 th에만 aria-sort, 모르는 값은 방향과 무관하게 맨 뒤. 행 클릭: Tab으로 닿고 Enter·Space로 열림.
- * 틀: 가로 스크롤 상자·sticky 머리·maxHeight, scrollHint(최소 640px + 폰 안내 줄), 행 머리(rowHeader → th scope=row).
+ * 틀: 가로 스크롤 상자·sticky 머리·maxHeight, scrollHint(최소 640px + 폰 안내 줄, "overflow"면 넘칠 때 늘 안내), 행 머리(rowHeader → th scope=row).
  */
 import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -156,6 +156,42 @@ describe("DataTable — 틀", () => {
     render(<DataTable columns={COLUMNS} rows={ROWS} rowKey={(row) => row.ticker} />);
     expect(screen.queryByText("← 표를 좌우로 넘겨 보세요")).toBeNull();
     expect(screen.getByRole("table").className).not.toContain("min-w-[640px]");
+  });
+
+  it("scrollHint='overflow' — 상자보다 표가 넓으면 폭과 상관없이 안내, 들어가면 폰에서만, 잴 수 없으면 true와 같다", () => {
+    let content = 1_200;
+    vi.stubGlobal("ResizeObserver", class {
+      constructor(private readonly callback: () => void) {}
+      observe() { this.callback(); }
+      disconnect() {}
+    });
+    Object.defineProperty(HTMLElement.prototype, "scrollWidth", { configurable: true,
+      get(this: HTMLElement) { return this.getAttribute("role") === "region" ? content : 0; } });
+    Object.defineProperty(HTMLElement.prototype, "clientWidth", { configurable: true,
+      get(this: HTMLElement) { return this.getAttribute("role") === "region" ? 958 : 0; } });
+    try {
+      render(<DataTable columns={COLUMNS} rows={ROWS} rowKey={(row) => row.ticker} scrollHint="overflow" />);
+      expect(screen.getByText("← 표를 좌우로 넘겨 보세요").className).not.toContain("sm:hidden");
+      expect(screen.getByRole("table").className).toContain("min-w-[640px]");
+      cleanup();
+      content = 958;
+      render(<DataTable columns={COLUMNS} rows={ROWS} rowKey={(row) => row.ticker} scrollHint="overflow" />);
+      expect(screen.getByText("← 표를 좌우로 넘겨 보세요").className).toContain("sm:hidden");
+      cleanup();
+      content = 1_200;
+      render(<DataTable columns={COLUMNS} rows={ROWS} rowKey={(row) => row.ticker} scrollHint />);
+      expect(screen.getByText("← 표를 좌우로 넘겨 보세요").className).toContain("sm:hidden");
+      cleanup();
+      render(<DataTable columns={COLUMNS} rows={[]} rowKey={(row) => row.ticker} scrollHint="overflow" />);
+      expect(screen.queryByText("← 표를 좌우로 넘겨 보세요")).toBeNull();
+    } finally {
+      delete (HTMLElement.prototype as unknown as Record<string, unknown>).scrollWidth;
+      delete (HTMLElement.prototype as unknown as Record<string, unknown>).clientWidth;
+      vi.unstubAllGlobals();
+    }
+    // ResizeObserver가 없는 환경(jsdom 기본) — 재지 못하면 폰에서만(true와 같음).
+    render(<DataTable columns={COLUMNS} rows={ROWS} rowKey={(row) => row.ticker} scrollHint="overflow" />);
+    expect(screen.getByText("← 표를 좌우로 넘겨 보세요").className).toContain("sm:hidden");
   });
 
   it("글 열의 칸도 tabular-nums — 날짜·시각 열의 자릿수가 맞는다", () => {

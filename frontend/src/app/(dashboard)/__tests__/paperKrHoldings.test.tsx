@@ -323,8 +323,8 @@ describe("자료", () => {
     expect(within(rowOf(table, "153130")).queryByText(/^확정 /)).toBeNull();
   });
 
-  // 수정 전에는 '좌우로 넘겨 보세요'가 폰 폭(sm 미만)에서만 보여, 데스크톱에서 표가 카드보다 넓으면 가려진 칸이 있다는 단서가 없었습니다(it.fails).
-  it.fails("표가 카드보다 넓으면 폭과 상관없이 '좌우로 넘겨 보세요'를 보인다 — 상자 폭을 재서", async () => {
+  // 예전에는 '좌우로 넘겨 보세요'가 폰 폭(sm 미만)에서만 보여, 데스크톱에서 표가 카드보다 넓으면 가려진 칸이 있다는 단서가 없었습니다.
+  it("표가 카드보다 넓으면 폭과 상관없이 '좌우로 넘겨 보세요'를 보인다 — 상자 폭을 재서", async () => {
     // jsdom에는 배치가 없어 상자 폭을 꾸밉니다 — 가로 스크롤 상자(role=region)의 내용 1,200px > 보이는 958px.
     vi.stubGlobal("ResizeObserver", class {
       constructor(private readonly callback: () => void) {}

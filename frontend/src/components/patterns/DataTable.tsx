@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, type JSX, type KeyboardEvent, type MouseEvent, type ReactNode } from "react";
+import { useEffect, useRef, useState, type JSX, type KeyboardEvent, type MouseEvent, type ReactNode } from "react";
 
 import { ariaSortOf, nextSort, sortRows, type SortState, type SortValue } from "@/lib/dataTable";
 import { isMissingValue } from "@/lib/patterns";
@@ -48,6 +48,8 @@ function fromInnerControl(event: MouseEvent<HTMLTableRowElement>): boolean {
  * - `scrollHint`(계약에 더한 선택 prop): 폰에서 좌우로 넘겨야 하는 넓은 표 — 표를 최소 640px로 두고 그 폭(sm) 아래에서만 "← 표를 좌우로
  *   넘겨 보세요" 한 줄을 띄웁니다(옛 ui Table과 같음). 스크롤바가 안 보이는 기기에서는 오른쪽에 칸이 더 있다는 것을 알 수 없어서이고,
  *   최소 폭과 안내가 같은 경계라 안내가 거짓이 되지 않습니다. 행이 없으면 둘 다 없습니다(넘길 칸이 없음).
+ *   `scrollHint="overflow"`는 여기에 더해 상자 폭을 재서(ResizeObserver) 표가 상자보다 넓으면 폭과 상관없이 안내를 보입니다 — 데스크톱에서도
+ *   칸이 많은 표가 넘치면(스크롤바가 숨는 환경에서는 단서가 없음) 가려진 칸이 있다는 것을 알 수 있게. 잴 수 없는 환경이면 `true`와 같습니다.
  * - 행이 없으면 머리는 그대로 두고 `emptyText` 한 줄.
  */
 export function DataTable<T>({
@@ -70,7 +72,7 @@ export function DataTable<T>({
   onRowClick?: (row: T) => void;
   initialSort?: SortState;
   maxHeight?: number;
-  scrollHint?: boolean;
+  scrollHint?: boolean | "overflow";
 }): JSX.Element {
   const [sort, setSort] = useState<SortState | null>(initialSort ?? null);
   const sortColumn = sort ? columns.find((column) => column.key === sort.key && column.sortValue) : undefined;
@@ -79,7 +81,19 @@ export function DataTable<T>({
   const shown = sortColumn && activeSort ? sortRows(rows, sortColumn.sortValue, activeSort.dir) : rows;
 
   const alignOf = (column: Column<T>) => (column.align === "right" ? "text-right whitespace-nowrap" : "text-left");
-  const wide = scrollHint && shown.length > 0;
+  const wide = scrollHint !== false && shown.length > 0;
+  // "overflow" — 상자보다 표가 넓은지 재서 안내를 폭과 상관없이 보입니다(첫 관찰은 ResizeObserver가 observe 때 한 번 알려 줌).
+  const measured = scrollHint === "overflow" && shown.length > 0;
+  const boxRef = useRef<HTMLDivElement>(null);
+  const [overflowing, setOverflowing] = useState(false);
+  useEffect(() => {
+    const box = boxRef.current;
+    if (!measured || !box || typeof ResizeObserver === "undefined") return undefined;
+    const observer = new ResizeObserver(() => setOverflowing(box.scrollWidth > box.clientWidth + 1));
+    observer.observe(box);
+    if (box.firstElementChild) observer.observe(box.firstElementChild);
+    return () => observer.disconnect();
+  }, [measured]);
 
   const activate = onRowClick
     ? {
@@ -106,11 +120,12 @@ export function DataTable<T>({
     <>
       {/* 눈으로 보는 안내 — 낭독기에는 감싼 상자의 이름("… (좌우 스크롤)")이 같은 말을 하므로 숨깁니다. */}
       {wide ? (
-        <p aria-hidden="true" className="mb-1 text-[11px] text-text-3 sm:hidden">
+        <p aria-hidden="true" className={`mb-1 text-[11px] text-text-3 ${measured && overflowing ? "" : "sm:hidden"}`}>
           ← 표를 좌우로 넘겨 보세요
         </p>
       ) : null}
       <div
+        ref={boxRef}
         className="w-full min-w-0 max-w-full overflow-x-auto rounded-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus"
         style={maxHeight !== undefined && maxHeight > 0 ? { maxHeight, overflowY: "auto" } : undefined}
         tabIndex={0}

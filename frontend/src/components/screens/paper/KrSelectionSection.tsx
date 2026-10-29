@@ -163,7 +163,7 @@ export function KrSelectionSection() {
             caption="유니버스 구성원"
             emptyText="구성원이 없습니다."
             maxHeight={560}
-            scrollHint
+            scrollHint="overflow"
           />
         </Card>
       )}

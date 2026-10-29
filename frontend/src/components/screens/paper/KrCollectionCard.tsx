@@ -18,7 +18,7 @@ const STATE_TONE: Record<KrCollectionState, string> = {
 
 const COLUMNS: Column<KrCollectionRow>[] = [
   // 열 폭: 출처 글이 긴 항목 열이 한 줄로 늘어나면 범위·상태 열이 몇 글자 폭으로 눌렸습니다(1280px 스크린숏) — 줄바꿈을 허용하고 열마다
-  // 최소 폭을 둡니다(좁은 화면은 표가 가로로 넘어감 — scrollHint).
+  // 최소 폭을 둡니다(좁은 화면은 표가 가로로 넘어감 — scrollHint="overflow"로 넘치면 폭과 상관없이 안내).
   {
     key: "item",
     header: "항목",
@@ -76,7 +76,7 @@ export function KrCollectionCard({
         </p>
       )}
       {!status.error && collection && (
-        <DataTable<KrCollectionRow> columns={COLUMNS} rows={rows} rowKey={(row) => row.key} caption="한국 수집 상태" scrollHint />
+        <DataTable<KrCollectionRow> columns={COLUMNS} rows={rows} rowKey={(row) => row.key} caption="한국 수집 상태" scrollHint="overflow" />
       )}
     </Card>
   );

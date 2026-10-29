@@ -426,7 +426,7 @@ export function OverviewSection({
             rows={comparison}
             rowKey={(row) => row.key}
             caption="계좌 비교"
-            scrollHint
+            scrollHint={korea ? "overflow" : true}
           />
           <ul aria-label="표본 설명" className="mt-3 flex flex-col gap-0.5 text-xs text-text-3">
             {sampleNotes(books).map((note) => (
