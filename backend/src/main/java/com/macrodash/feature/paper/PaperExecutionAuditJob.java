@@ -39,7 +39,7 @@ import java.util.Map;
  * <p><b>측정만 합니다.</b> 장부 잠금을 잡지 않고({@code PaperLedgerService}를 모름), 장부 표(주문·체결)는 읽기만 하며 쓰는 표는 실행 감사 표와
  * 작업 기록뿐입니다 — 계좌1의 결정·패킷·체결·스탑은 그대로입니다. 쓰기는 한 실행에 한 트랜잭션({@link PaperStore#atomically})입니다.
  *
- * <p><b>대상</b>: 미국 Claude 계좌({@link ExecutionAudit#auditedBooks} — 지금은 계좌1)의 결정 주문 가운데 목표 세션 E(기준 거래일 다음 거래일)가
+ * <p><b>대상</b>: 미국 Claude 계좌({@link ExecutionAudit#auditedBooks} — 계좌1·계좌2)의 결정 주문 가운데 목표 세션 E(기준 거래일 다음 거래일)가
  * 오늘(뉴욕 날짜)에서 {@value #WINDOW_DAYS}일 안쪽이거나 뒤인 것 — 수집기 1분봉 범위('최근 8일 주문', 세션 최근 3)와 같은 폭입니다. 그보다
  * 오래된 주문은 다시 보지 않습니다(저장본은 최신 한 건만 남아 놓친 값은 null로 남음 — §14-1).
  *

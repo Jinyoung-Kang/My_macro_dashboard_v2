@@ -79,10 +79,16 @@ class PaperExecutionViewTest {
     @DisplayName("미국 Claude 계좌가 아닌 코드는 400(규칙·벤치마크·한국·없는 코드), 테이블이 없으면 available:false, 초기화 전 claude는 없는 계좌 400")
     void onlyUsClaudeBooks() {
         activeBook(store, PaperBooks.BENCH_SPY, PaperBooks.KIND_BENCHMARK, 100_000, null);
-        for (String code : List.of(PaperBooks.RULES, PaperBooks.BENCH_SPY, PaperBooks.KR_CLAUDE, "claude2", "nope")) {
+        for (String code : List.of(PaperBooks.RULES, PaperBooks.BENCH_SPY, PaperBooks.KR_CLAUDE, "nope")) {
             assertThatThrownBy(() -> query.execution(code, 50)).as(code).isInstanceOf(InvalidRequestException.class)
-                    .hasMessageContaining("실행 감사는 미국 Claude 계좌만 있습니다").hasMessageContaining("(claude)");
+                    .hasMessageContaining("실행 감사는 미국 Claude 계좌만 있습니다").hasMessageContaining("(claude · claude2)");
         }
+        // 계좌2(ADR 0022 — 정의 1-5)는 감사 대상이고, 그 계좌 행이 없으면(초기화 전) 다른 계좌 코드 경로처럼 '없는 계좌'.
+        assertThatThrownBy(() -> query.execution(PaperBooks.CLAUDE2, 50)).isInstanceOf(InvalidRequestException.class)
+                .hasMessageContaining("없는 계좌");
+        activeBook(store, PaperBooks.CLAUDE2, PaperBooks.KIND_CLAUDE, 100_000, null);
+        assertThat(query.execution(PaperBooks.CLAUDE2, 50)).containsEntry("book", PaperBooks.CLAUDE2)
+                .containsEntry("orders", List.of());
         store.ready = false;
         assertThat(query.execution("nope", 50)).containsEntry("available", false);
         store.ready = true;

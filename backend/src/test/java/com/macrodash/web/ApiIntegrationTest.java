@@ -1114,7 +1114,7 @@ class ApiIntegrationTest {
             assertThat(first.getStatusCode()).isEqualTo(HttpStatus.OK);
             assertThat(first.getBody().path("ok").asBoolean()).isTrue();
             assertThat(first.getBody().path("created").toString())
-                    .contains("rules", "claude", "bench_spy", "bench_mix");
+                    .contains("rules", "claude", "claude2", "bench_spy", "bench_mix");
             if (pricedLegs == 0) {
                 assertThat(first.getBody().path("backfilled").size()).isZero();
                 assertThat(first.getBody().path("skipped").size()).isEqualTo(2);
@@ -1129,11 +1129,14 @@ class ApiIntegrationTest {
             assertThat(authorizedExchange("/api/paper/init?market=US", HttpMethod.POST).getBody())
                     .as("?market=US = 시장 값 없음(F1b)").isEqualTo(second.getBody());
             assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM paper_books WHERE code IN "
-                    + "('rules', 'claude', 'bench_spy', 'bench_mix')", Long.class)).isEqualTo(4);
+                    + "('rules', 'claude', 'claude2', 'bench_spy', 'bench_mix')", Long.class)).isEqualTo(5);
 
             JsonNode overview = authorizedGet("/api/paper/overview");
             assertThat(overview.path("initialized").asBoolean()).isTrue();
-            assertThat(overview.path("books").size()).isEqualTo(4);
+            assertThat(overview.path("books").size()).as("미국 다섯 계좌(계좌2 — ADR 0022)").isEqualTo(5);
+            assertThat(overview.path("books").get(2).path("code").asString()).isEqualTo("claude2");
+            assertThat(overview.path("books").get(2).path("status").asString()).as("계좌2는 시작 전(앞으로 체결 출발)")
+                    .isEqualTo("NOT_STARTED");
             assertThat(overview.path("books").get(0).path("code").asString()).isEqualTo("rules");
             assertThat(overview.path("books").get(0).path("status").asString()).isEqualTo("NOT_STARTED");
             assertThat(overview.path("books").get(0).path("nav").asDouble()).isEqualTo(100_000);

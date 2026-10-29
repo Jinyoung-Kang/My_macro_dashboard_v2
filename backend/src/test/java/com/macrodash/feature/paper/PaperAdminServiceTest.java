@@ -78,13 +78,13 @@ class PaperAdminServiceTest {
     }
 
     @Test
-    @DisplayName("초기화: 네 책·현금 상태·설정 행을 만들고, SPY 100% 책을 10-23 종가 × 1.0005로 사후 체결한다(100,000 ÷ 체결가 내림)")
+    @DisplayName("초기화: 다섯 책(계좌2 포함)·현금 상태·설정 행을 만들고, SPY 100% 책을 10-23 종가 × 1.0005로 사후 체결한다(100,000 ÷ 체결가 내림)")
     void initBackfillsBenchmarks() {
         closes(500, 82.5);
 
         PaperAdminService.InitResult result = admin(AFTER_START).init();
 
-        assertThat(result.created()).containsExactly("rules", "claude", "bench_spy", "bench_mix");
+        assertThat(result.created()).containsExactly("rules", "claude", "claude2", "bench_spy", "bench_mix");
         assertThat(result.backfilled()).containsExactly("bench_spy", "bench_mix");
         assertThat(result.skipped()).isEmpty();
         assertThat(result.settingsCreated()).isTrue();
@@ -137,13 +137,17 @@ class PaperAdminServiceTest {
                 org.assertj.core.groups.Tuple.tuple("SPY", 119), org.assertj.core.groups.Tuple.tuple("SHY", 484));
         assertThat(store.states.get("bench_mix").cash()).isEqualTo(520.285);   // 100,000 − 59,529.75 − 39,949.965
 
-        // 규칙·Claude 책은 현금만 든 '시작 전'
-        for (String code : List.of("rules", "claude")) {
-            assertThat(store.books.get(code).status()).isEqualTo("NOT_STARTED");
-            assertThat(store.books.get(code).startedOn()).isNull();
-            assertThat(store.states.get(code).cash()).isEqualTo(100_000);
-            assertThat(store.ordersOf(code)).isEmpty();
+        // 규칙·Claude 계좌1·계좌2는 현금만 든 '시작 전' — 계좌2는 사후 체결 없이 앞으로 체결로 출발(ADR 0022 결정 2 — 정기 결정 창의 INITIAL)
+        for (String code : List.of("rules", "claude", "claude2")) {
+            assertThat(store.books.get(code).status()).as(code).isEqualTo("NOT_STARTED");
+            assertThat(store.books.get(code).startedOn()).as(code).isNull();
+            assertThat(store.states.get(code).cash()).as(code).isEqualTo(100_000);
+            assertThat(store.ordersOf(code)).as(code).isEmpty();
         }
+        assertThat(store.books.get("claude2").kind()).isEqualTo(PaperBooks.KIND_CLAUDE);
+        assertThat(store.books.get("claude2").market()).isEqualTo(Book.MARKET_US);
+        assertThat(store.fillsOf("claude2")).isEmpty();
+        assertThat(store.navSeries("claude2")).as("출발 전 순자산 줄 없음(S 이전은 null)").isEmpty();
     }
 
     @Test
@@ -159,7 +163,8 @@ class PaperAdminServiceTest {
         assertThat(second.backfilled()).isEmpty();
         assertThat(second.settingsCreated()).isFalse();
         assertThat(store.fills).hasSize(3);
-        assertThat(store.books).hasSize(4);
+        assertThat(store.books).hasSize(5);
+        assertThat(store.books.get("claude2").status()).as("다시 눌러도 계좌2는 시작 전 그대로").isEqualTo("NOT_STARTED");
     }
 
     @Test
@@ -222,12 +227,13 @@ class PaperAdminServiceTest {
     }
 
     @Test
-    @DisplayName("초기화: 새 책 이름은 정의 그대로(규칙 계좌 · Claude 계좌 · SPY 계좌 · 60/40 계좌)")
+    @DisplayName("초기화: 새 책 이름은 정의 그대로(규칙 계좌 · Claude 계좌 · Claude 계좌2 · SPY 계좌 · 60/40 계좌)")
     void initUsesDefinitionLabels() {
         admin(AFTER_START).init();
 
-        assertThat(List.of("rules", "claude", "bench_spy", "bench_mix")).extracting(code -> store.books.get(code).label())
-                .containsExactly("규칙 계좌", "Claude 계좌", "SPY 계좌", "60/40 계좌");
+        assertThat(List.of("rules", "claude", "claude2", "bench_spy", "bench_mix"))
+                .extracting(code -> store.books.get(code).label())
+                .containsExactly("규칙 계좌", "Claude 계좌", "Claude 계좌2", "SPY 계좌", "60/40 계좌");
     }
 
     /** 2026-10-25 전 초기화가 남긴 행 — 이름만 옛 이름. */
@@ -561,7 +567,7 @@ class PaperAdminServiceTest {
         admin.init();
         assertThat(store.books.values()).extracting(Book::market, Book::currency).containsOnly(
                 org.assertj.core.groups.Tuple.tuple("US", "USD"));
-        assertThat(store.books).containsOnlyKeys("rules", "claude", "bench_spy", "bench_mix");
+        assertThat(store.books).containsOnlyKeys("rules", "claude", "claude2", "bench_spy", "bench_mix");
     }
 
     @Test

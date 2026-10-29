@@ -103,7 +103,7 @@ final class ExecutionAudit {
         }
     }
 
-    /** 미국 Claude 계좌(실행 감사 대상) — 미국 책 정의 가운데 kind CLAUDE, 정의 순. 지금은 계좌1({@code claude}) 하나. */
+    /** 미국 Claude 계좌(실행 감사 대상) — 미국 책 정의 가운데 kind CLAUDE, 정의 순(계좌1 {@code claude}·계좌2 {@code claude2}). */
     static List<String> auditedBooks() {
         return UsPaperMarket.INSTANCE.books().stream().filter(d -> PaperBooks.KIND_CLAUDE.equals(d.kind()))
                 .map(PaperBooks.Definition::code).toList();

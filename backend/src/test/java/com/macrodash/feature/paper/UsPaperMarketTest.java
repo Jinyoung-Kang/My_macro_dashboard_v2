@@ -297,20 +297,26 @@ class UsPaperMarketTest {
     }
 
     @Test
-    @DisplayName("책 넷 = PaperBooks.ALL(규칙·Claude·SPY 100%·SPY 60/SHY 40, 화면 순서), 비교 기준 bench_spy(자신은 null)")
+    @DisplayName("책 다섯 = PaperBooks.ALL(규칙·Claude 계좌1·Claude 계좌2(시각 지정 체결 — ADR 0022)·SPY 100%·SPY 60/SHY 40, 화면 순서), 비교 기준 bench_spy(자신은 null)")
     void books() {
         assertThat(US.books()).isSameAs(PaperBooks.ALL);
         assertThat(US.books()).extracting(PaperBooks.Definition::code, PaperBooks.Definition::kind,
-                        PaperBooks.Definition::label, PaperBooks.Definition::weights)
+                        PaperBooks.Definition::label, PaperBooks.Definition::weights, PaperBooks.Definition::execution)
                 .containsExactly(
-                        tuple("rules", "RULES", "규칙 계좌", Map.of()),
-                        tuple("claude", "CLAUDE", "Claude 계좌", Map.of()),
-                        tuple("bench_spy", "BENCHMARK", "SPY 계좌", Map.of("SPY", 100.0)),
-                        tuple("bench_mix", "BENCHMARK", "60/40 계좌", Map.of("SPY", 60.0, "SHY", 40.0)));
-        assertThat(US.books().get(3).weights().keySet()).as("사는 순서").containsExactly("SPY", "SHY");
+                        tuple("rules", "RULES", "규칙 계좌", Map.of(), PaperBooks.Execution.OBSERVATION),
+                        tuple("claude", "CLAUDE", "Claude 계좌", Map.of(), PaperBooks.Execution.OBSERVATION),
+                        tuple("claude2", "CLAUDE", "Claude 계좌2", Map.of(), PaperBooks.Execution.TIMED),
+                        tuple("bench_spy", "BENCHMARK", "SPY 계좌", Map.of("SPY", 100.0), PaperBooks.Execution.OBSERVATION),
+                        tuple("bench_mix", "BENCHMARK", "60/40 계좌", Map.of("SPY", 60.0, "SHY", 40.0),
+                                PaperBooks.Execution.OBSERVATION));
+        assertThat(US.books().get(4).weights().keySet()).as("사는 순서").containsExactly("SPY", "SHY");
+        assertThat(US.books()).filteredOn(PaperBooks.Definition::timed).extracting(PaperBooks.Definition::code)
+                .as("시각 지정 체결 책은 계좌2 하나").containsExactly(PaperBooks.CLAUDE2);
+        assertThat(PaperBooks.KR).as("한국 넷은 관측치 체결 그대로").allMatch(d -> !d.timed());
 
         assertThat(US.rulesBook()).isEqualTo("rules").isEqualTo(PaperBooks.RULES);
-        assertThat(US.claudeBook()).isEqualTo("claude").isEqualTo(PaperBooks.CLAUDE);
+        assertThat(US.claudeBook()).as("시장 기본 Claude 계좌는 계좌1 그대로(복기·시작·미리보기 — T13 ⓐ)").isEqualTo("claude")
+                .isEqualTo(PaperBooks.CLAUDE);
         assertThat(US.benchmarkBook()).isEqualTo("bench_spy").isEqualTo(PaperBooks.BENCH_SPY);
         for (PaperBooks.Definition definition : PaperBooks.ALL) {
             assertThat(US.benchmarkOf(definition.code())).as(definition.code())

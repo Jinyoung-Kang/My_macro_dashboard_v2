@@ -108,14 +108,18 @@ class PaperQueryServiceTest {
         assertThat(overview.get("initialized")).isEqualTo(true);
         assertThat(overview.get("pendingBackfill")).as("벤치마크 둘 다 사후 체결함").isEqualTo(List.of());
         List<Map<String, Object>> books = (List<Map<String, Object>>) overview.get("books");
-        assertThat(books).extracting(b -> b.get("code")).containsExactly("rules", "claude", "bench_spy", "bench_mix");
+        assertThat(books).extracting(b -> b.get("code")).containsExactly("rules", "claude", "claude2", "bench_spy",
+                "bench_mix");
         Map<String, Object> rules = books.get(0);
         assertThat(rules.get("status")).isEqualTo("NOT_STARTED");
         assertThat(rules.get("returnPct")).isNull();
         assertThat(rules.get("stats")).isNull();
         assertThat(rules.get("nav")).isEqualTo(100_000.0);
         assertThat(rules.get("benchmark")).isEqualTo("bench_spy");
-        Map<String, Object> spy = books.get(2);
+        Map<String, Object> claude2 = books.get(2);
+        assertThat(claude2.get("status")).as("계좌2 — 앞으로 체결 출발 전(ADR 0022)").isEqualTo("NOT_STARTED");
+        assertThat(claude2.get("stats")).isNull();
+        Map<String, Object> spy = books.get(3);
         assertThat(spy.get("benchmark")).isNull();
         assertThat(spy.get("cash")).isEqualTo(450.25);
         assertThat(spy.get("returnPct")).as("상태의 순자산 99,950.25 기준").isEqualTo(-0.05);
@@ -132,6 +136,7 @@ class PaperQueryServiceTest {
         assertThat(series.get("bench_spy")).containsExactly(99_950.25, 101_000.0);
         assertThat(series.get("bench_mix")).containsExactly(99_950.29, null);   // 520.285 + 119 × 500 + 484 × 82.5
         assertThat(series.get("rules")).containsExactly(null, null);
+        assertThat(series.get("claude2")).as("출발 전 — 100으로 채우지 않음").containsExactly(null, null);
 
         Map<String, Object> quotes = (Map<String, Object>) overview.get("quotes");
         assertThat(quotes.get("barDate")).isEqualTo("2026-10-26");
@@ -269,8 +274,9 @@ class PaperQueryServiceTest {
                 .hasMessageContaining("없는 결정");
         assertThatThrownBy(() -> query.decisions("bench_spy", 50)).isInstanceOf(InvalidRequestException.class)
                 .as("운영 시장 목록(미국 → 한국)의 결정 계좌 코드 — docs/API.md").hasMessageContaining(
-                        "book는 rules · claude · kr_rules · kr_claude 가운데 하나여야 합니다");
+                        "book는 rules · claude · claude2 · kr_rules · kr_claude 가운데 하나여야 합니다");
         assertThat(query.decisions("claude", 50).get("decisions")).isEqualTo(List.of());
+        assertThat(query.decisions(PaperBooks.CLAUDE2, 50).get("decisions")).as("미국 Claude 계좌2(ADR 0022)").isEqualTo(List.of());
         assertThat(query.decisions(PaperBooks.KR_CLAUDE, 50)).containsEntry("available", true)
                 .containsEntry("decisions", List.of());
         assertThat(query.decisions(PaperBooks.KR_RULES, 50).get("decisions")).isEqualTo(List.of());
@@ -574,7 +580,7 @@ class PaperQueryServiceTest {
 
         Map<String, Object> us = both.overview();
         assertThat((List<Map<String, Object>>) us.get("books")).extracting(b -> b.get("code"))
-                .containsExactly("rules", "claude", "bench_spy", "bench_mix");
+                .containsExactly("rules", "claude", "claude2", "bench_spy", "bench_mix");
         Map<String, Object> usNav = (Map<String, Object>) us.get("navSeries");
         assertThat((List<String>) usNav.get("dates")).doesNotContain(krOnly.toString());
         assertThat((Map<String, Object>) usNav.get("books")).doesNotContainKey(krBook);

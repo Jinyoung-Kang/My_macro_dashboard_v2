@@ -31,7 +31,7 @@ import java.util.Optional;
  *   <li>관측치 {@code paper.quotes}(수집기 태스크 {@code paper_quotes}, 3시간 넘게 묵으면 늦음 — 파서 {@link PaperMarketData#parse})·
  *       이력 {@code equity_close}, 확정 판정 셋(종가 나옴·그 시점 가격 있음·확정 — C2a)은 모두 옛 isFinal = 마감 + 15분 뒤 수집, 체결은
  *       관측 종가에 슬리피지를 얹은 체결가({@link FillTerms.SlippageInPrice})</li>
- *   <li>책 넷({@link PaperBooks#ALL} — 규칙·Claude·SPY 100%·SPY 60/SHY 40), 비교 기준 {@code bench_spy}, 현금성 기본 SHY, 최소 주문
+ *   <li>책 다섯({@link PaperBooks#ALL} — 규칙·Claude 계좌1·Claude 계좌2(ADR 0022)·SPY 100%·SPY 60/SHY 40), 비교 기준 {@code bench_spy}, 현금성 기본 SHY, 최소 주문
  *       기본 $500</li>
  *   <li>Claude 체결 시점 NEXT_OBSERVATION·NEXT_CLOSE(이른 시점 NEXT_OBSERVATION), 검증기 시점 이름·금액 표기는
  *       {@link OrderValidator.Market#US}(다음 관측치·확정 종가, 달러) 그대로</li>

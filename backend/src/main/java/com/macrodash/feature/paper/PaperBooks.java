@@ -7,11 +7,12 @@ import java.util.Map;
 import java.util.Optional;
 
 /**
- * 🧪 네 책의 정의와 장부에서 쓰는 상태 값(DB CHECK와 같은 문자열, V8).
+ * 🧪 책의 정의와 장부에서 쓰는 상태 값(DB CHECK와 같은 문자열, V8).
  *
- * <p>책은 시장마다 넷으로 고정입니다(명세 L1, 2단계 명세 K1): 규칙 책(대조군) · Claude 재량 책(실험군) · 벤치마크 둘. 벤치마크는 시작할 때 정한 비중으로
- * 한 번 사고 그대로 들고 갑니다(단계 1은 리밸런싱하지 않음 — bench_mix의 60/40은 시간이 지나며 벌어집니다). 미국 넷은 {@link #ALL},
- * 한국 넷은 {@link #KR}(2단계 C1c — 한국 초기화만 만듦, 벤치마크는 S+1 시가 출발 뒤 리밸런싱 없음, K2·K28)입니다.
+ * <p>책은 시장마다 고정입니다(명세 L1, 2단계 명세 K1): 규칙 책(대조군) · Claude 재량 책(실험군) · 벤치마크 둘. 벤치마크는 시작할 때 정한 비중으로
+ * 한 번 사고 그대로 들고 갑니다(단계 1은 리밸런싱하지 않음 — bench_mix의 60/40은 시간이 지나며 벌어집니다). 미국은 다섯 — 넷에 체결 시점 실험의
+ * Claude 계좌2({@link #CLAUDE2}, 별도 실험군 — ADR 0022 결정 1·명세 L1 개정, 앞으로 체결로 늦게 출발)를 더한 {@link #ALL}, 한국 넷은
+ * {@link #KR}(2단계 C1c — 한국 초기화만 만듦, 벤치마크는 S+1 시가 출발 뒤 리밸런싱 없음, K2·K28)입니다.
  */
 final class PaperBooks {
 
@@ -20,6 +21,12 @@ final class PaperBooks {
 
     static final String RULES = "rules";
     static final String CLAUDE = "claude";
+    /**
+     * 미국 Claude 계좌2(체결 시점 실험 — 계좌2 명세 2026-10-30-claude-book2-timing-design.md §4, ADR 0022). kind는 계좌1과 같은 {@link #KIND_CLAUDE}이고
+     * 백엔드는 kind가 아니라 실행 프로필({@link Execution#TIMED})·계좌 프로필({@link ClaudeBookProfile})로 가릅니다. 시장 묶음의
+     * {@link PaperMarket#claudeBook}은 계좌1({@link #CLAUDE}) 그대로입니다(주간 복기·시작·미리보기는 계좌1만 — T13 ⓐ).
+     */
+    static final String CLAUDE2 = "claude2";
     static final String BENCH_SPY = "bench_spy";
     static final String BENCH_MIX = "bench_mix";
 
@@ -69,13 +76,40 @@ final class PaperBooks {
     static final String SOURCE_HISTORY = "equity_close";
 
     /**
+     * 책의 실행 프로필(계좌2 명세 §4 '정의 위치') — 주문을 어떤 가격으로 체결하는 책인가.
+     *
+     * <ul>
+     *   <li>{@link #OBSERVATION} — 그 시장 장부의 관측치 체결(미국: 시간별 관측치·확정 종가, 한국: 시가·종가 단일가). 계좌2 밖의 모든 책</li>
+     *   <li>{@link #TIMED} — 미국 시각 지정 체결(목표 세션 E의 시가·매시·종가 메뉴, 1분봉 — 장부 2b {@link UsTimedFills}). 주문은 E 하루짜리이고
+     *       앞으로 체결로 출발합니다(§4-1). 미국 Claude 계좌2만</li>
+     * </ul>
+     */
+    enum Execution { OBSERVATION, TIMED }
+
+    /**
      * 책 하나의 정의.
      *
-     * @param weights 벤치마크의 종목 → 비중(%). 규칙·Claude 책은 비어 있음(무엇을 살지는 결정이 정함)
+     * @param weights   벤치마크의 종목 → 비중(%). 규칙·Claude 책은 비어 있음(무엇을 살지는 결정이 정함)
+     * @param execution 실행 프로필({@link Execution})
      */
-    record Definition(String code, String kind, String label, Map<String, Double> weights) {
+    record Definition(String code, String kind, String label, Map<String, Double> weights, Execution execution) {
+
+        Definition {
+            java.util.Objects.requireNonNull(execution, "execution");
+        }
+
+        /** 관측치 체결 책({@link Execution#OBSERVATION}) — 계좌2 밖의 정의. */
+        Definition(String code, String kind, String label, Map<String, Double> weights) {
+            this(code, kind, label, weights, Execution.OBSERVATION);
+        }
+
         boolean benchmark() {
             return KIND_BENCHMARK.equals(kind);
+        }
+
+        /** 시각 지정 체결 책인가({@link Execution#TIMED} — 미국 Claude 계좌2). */
+        boolean timed() {
+            return execution == Execution.TIMED;
         }
     }
 
@@ -85,6 +119,7 @@ final class PaperBooks {
      */
     static final String RULES_LABEL = "규칙 계좌";
     static final String CLAUDE_LABEL = "Claude 계좌";
+    static final String CLAUDE2_LABEL = "Claude 계좌2";
     static final String BENCH_SPY_LABEL = "SPY 계좌";
     static final String BENCH_MIX_LABEL = "60/40 계좌";
 
@@ -98,10 +133,11 @@ final class PaperBooks {
             BENCH_SPY, "SPY 100%",
             BENCH_MIX, "SPY 60% · SHY 40%");
 
-    /** 화면에 보이는 순서이기도 합니다. */
+    /** 화면에 보이는 순서이기도 합니다 — 계좌2는 계좌1 바로 다음(계좌2 명세 §4). */
     static final List<Definition> ALL = List.of(
             new Definition(RULES, KIND_RULES, RULES_LABEL, Map.of()),
             new Definition(CLAUDE, KIND_CLAUDE, CLAUDE_LABEL, Map.of()),
+            new Definition(CLAUDE2, KIND_CLAUDE, CLAUDE2_LABEL, Map.of(), Execution.TIMED),
             new Definition(BENCH_SPY, KIND_BENCHMARK, BENCH_SPY_LABEL, weights("SPY", 100.0)),
             new Definition(BENCH_MIX, KIND_BENCHMARK, BENCH_MIX_LABEL, weights("SPY", 60.0, "SHY", 40.0)));
 

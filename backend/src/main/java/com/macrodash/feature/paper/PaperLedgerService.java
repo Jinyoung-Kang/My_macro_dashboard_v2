@@ -87,7 +87,8 @@ import java.util.function.Supplier;
  *   <li>(미국 시각 지정 주문 — 명세 2026-10-30 §10-1, {@link UsTimedFills}) 2b 시각 지정 체결(기준 시각 T가 이 관측치 전인 주문을 1분봉 저장본의
  *       T 봉으로, T 순) → 3a 끝난 세션의 남은 주문을 그 세션 종가 또는 만료로 → 3b 새 보유의 평가 가격을 이 관측치로. 시각 지정 주문은 1의 만료에서
  *       빼고 여기서 만료하며, 시간별 체결(아래 매도·매수)은 그 주문을 보지 않습니다({@link UsPaperMarket#fillable}). 그런 주문이 있는 책은 이 관측치
- *       뒤의 1분봉 저장본을 최대 {@link UsTimedFills#BARS_WAIT} 기다립니다(그동안 그 책은 처리하지 않고 멱등 키 그대로 — 오류가 아님,
+ *       뒤의 1분봉 저장본을 최대 설정 {@code claude2.barsWaitMinutes}(기본 {@link UsTimedFills#BARS_WAIT}) 기다립니다(그동안 그 책은 처리하지
+ *       않고 멱등 키 그대로 — 오류가 아님,
  *       {@link Outcome#waiting}). 그런 주문이 없는 책은 이 단계가 아무 일도 하지 않습니다.</li>
  *   <li>대기 매도 체결</li>
  *   <li>최고가 갱신 → 트레일링 스탑 — 그 관측치로 즉시 전량 매도 + 재진입 금지</li>
@@ -246,7 +247,7 @@ public class PaperLedgerService {
      * 더 기록하는 것은 괜찮음).
      */
     private final Map<FailureKey, Instant> barsWaits = new ConcurrentHashMap<>();
-    /** 지금 시각 — 1분봉 기다림의 상한(관측치 수집 + {@link UsTimedFills#BARS_WAIT})을 셉니다. */
+    /** 지금 시각 — 1분봉 기다림의 상한(관측치 수집 + 설정 {@code claude2.barsWaitMinutes} — {@link Claude2Settings#barsWait})을 셉니다. */
     private final java.time.Clock clock;
 
     /** 설정은 실행이 읽은 행으로 받습니다({@link MarketRun#settings}) — 장부가 따로 읽지 않습니다. */
@@ -503,18 +504,18 @@ public class PaperLedgerService {
             List<String> deferred = new ArrayList<>(waiting);
             deferred.addAll(stillWaiting);
             skipped = !heldBack.isEmpty() ? heldBackReason(quotes, heldBack)
-                    : !deferred.isEmpty() ? barsWaitReason(quotes, deferred)
+                    : !deferred.isEmpty() ? barsWaitReason(quotes, deferred, Claude2Settings.from(settingsBody).barsWait())
                     : "이미 처리한 관측치입니다(수집 " + Kst.stamp(quotes.collectedAt()) + ")";
         }
         return new Outcome(filled, stopped, expired, splits, processed, skipped, notes, errors, alerts, 0, waiting,
                 stillWaiting);
     }
 
-    /** 1분봉 기다림으로 미룬 책만 남은 관측치의 사유 문구(명세 2026-10-30 §10-2). */
-    static String barsWaitReason(Quotes quotes, List<String> deferred) {
+    /** 1분봉 기다림으로 미룬 책만 남은 관측치의 사유 문구(명세 2026-10-30 §10-2) — {@code limit}은 그 실행 설정의 기다림 상한. */
+    static String barsWaitReason(Quotes quotes, List<String> deferred, java.time.Duration limit) {
         List<String> codes = deferred.stream().map(entry -> entry.substring(0, entry.indexOf(':'))).toList();
         return "수집 " + Kst.stamp(quotes.collectedAt()) + " 관측치는 1분봉 기다림 중인 계좌(" + String.join(", ", codes)
-                + ")만 남았습니다 — 그 관측치 뒤의 1분봉 저장본이 들어오거나 " + UsTimedFills.BARS_WAIT.toMinutes()
+                + ")만 남았습니다 — 그 관측치 뒤의 1분봉 저장본이 들어오거나 " + limit.toMinutes()
                 + "분이 지나면 처리합니다";
     }
 
@@ -559,11 +560,12 @@ public class PaperLedgerService {
         BookRun run = new BookRun(market, book, quotes, current, state.cash(), settingsBody);
 
         // 0. 미국 시각 지정 주문(명세 2026-10-30 §10-2): 기준 시각이 이 관측치 전인 대기 주문이 있으면 이 관측치 뒤의 1분봉 저장본을 기다립니다
-        //    (최대 UsTimedFills.BARS_WAIT) — 그러지 않으면 아래 시간별 스탑이 그 앞 시각의 시각 지정 매도보다 먼저 돕니다. 미루면 아무것도 쓰지
-        //    않습니다(멱등 키 그대로). 그런 주문이 없는 책(지금 모든 계좌)은 묻지 않고 지금처럼 처리합니다.
+        //    (최대 설정 claude2.barsWaitMinutes, 기본 15분) — 그러지 않으면 아래 시간별 스탑이 그 앞 시각의 시각 지정 매도보다 먼저 돕니다. 미루면
+        //    아무것도 쓰지 않습니다(멱등 키 그대로). 그런 주문이 없는 책(계좌2 밖의 모든 계좌)은 묻지 않고 지금처럼 처리합니다.
         if (bars != null && PaperBooks.ACTIVE.equals(book.status()) && !UsTimedFills.due(
                 store.ordersByStatus(book.code(), PaperBooks.ORDER_PENDING), run.at, market.calendar()).isEmpty()) {
-            UsTimedFills.BarsWait wait = UsTimedFills.barsWait(bars.get(), run.at, clock.instant());
+            UsTimedFills.BarsWait wait = UsTimedFills.barsWait(bars.get(), run.at, clock.instant(),
+                    Claude2Settings.from(settingsBody).barsWait());
             if (wait.waiting()) {
                 run.barsWait = wait.text();
                 return run;

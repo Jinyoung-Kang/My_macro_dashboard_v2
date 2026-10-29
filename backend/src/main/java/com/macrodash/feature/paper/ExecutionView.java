@@ -41,7 +41,7 @@ final class ExecutionView {
     }
 
     /**
-     * 실행 감사가 있는 계좌인가 — 미국 Claude 계좌({@link ExecutionAudit#auditedBooks}, 지금은 {@code claude})만, 그 밖의 코드는 400.
+     * 실행 감사가 있는 계좌인가 — 미국 Claude 계좌({@link ExecutionAudit#auditedBooks} — {@code claude}·{@code claude2})만, 그 밖의 코드는 400.
      *
      * @throws InvalidRequestException 미국 Claude 계좌가 아님
      */

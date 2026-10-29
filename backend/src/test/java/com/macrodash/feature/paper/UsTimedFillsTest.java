@@ -859,6 +859,32 @@ class UsTimedFillsTest {
         }
 
         @Test
+        @DisplayName("상한은 그 실행 설정의 claude2.barsWaitMinutes(1-5) — 5분이면 W + 5분에 풀림, 0이면 기다리지 않음, 범위 밖이면 기본 15분")
+        void capComesFromTheSettings() {
+            tools.jackson.databind.node.ObjectNode body = (tools.jackson.databind.node.ObjectNode)
+                    PaperFixtures.settings(store).defaultsJson();
+            ((tools.jackson.databind.node.ObjectNode) body.get("claude2")).put("barsWaitMinutes", 5);
+            store.initSettingsIfAbsent(body);
+            buy("AAPL", 10, "AT_1000");
+            bars(new Bars(et(TUE, 9, 21)).bar("AAPL", MON, et(MON, 15, 59), 99.0, 100.0));
+
+            clock.at = w.plus(Duration.ofMinutes(4)).plusSeconds(59);
+            Outcome waiting = job().run(false);
+            assertThat(waiting.waiting()).singleElement().satisfies(entry -> assertThat(entry).contains("까지)"));
+            assertThat(waiting.skippedReason()).contains("5분이 지나면 처리합니다");
+            clock.at = w.plus(Duration.ofMinutes(5));
+            assertThat(job().run(false).notes()).anySatisfy(note -> assertThat(note).contains("기다림 상한 5분"));
+
+            assertThat(Claude2Settings.from(body).barsWait()).isEqualTo(Duration.ofMinutes(5));
+            ((tools.jackson.databind.node.ObjectNode) body.get("claude2")).put("barsWaitMinutes", 0);
+            assertThat(UsTimedFills.barsWait(UsTimedFills.Bars.NONE, w, w, Claude2Settings.from(body).barsWait())
+                    .waiting()).as("0분 — 기다리지 않음").isFalse();
+            ((tools.jackson.databind.node.ObjectNode) body.get("claude2")).put("barsWaitMinutes", 31);
+            assertThat(Claude2Settings.from(body).barsWait()).as("범위 밖 — 기본값").isEqualTo(UsTimedFills.BARS_WAIT);
+            assertThat(Claude2Settings.from(body).fallbacks()).containsExactly(Claude2Settings.BARS_WAIT_MINUTES);
+        }
+
+        @Test
         @DisplayName("기다릴 일이 없는 날 — 기준 시각이 지난 시각 지정 주문이 없으면 1분봉 저장본을 읽지도 않고 바로 처리")
         void noWaitWithoutDueOrders() {
             long later = buy("AAPL", 10, "AT_1500");

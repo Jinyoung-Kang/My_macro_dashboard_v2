@@ -34,6 +34,7 @@ import java.util.regex.Pattern;
  * 두 책 공통({@code model}·{@code effort}·{@code apiDailyCallCap}·{@code pricing.*}·{@code frameworkTokenBudget}과 그 뒤 공통 키),
  * 미국 책, 한국 책({@code kr.} 접두어와 같음 — 접두어와 범위가 어긋나면 클래스가 올라오지 않음). {@code affectsRules}는 <b>그 시장</b> 규칙
  * 계좌가 읽는 키이고, 저장 경고({@link #rulesWarning})도 그 시장 규칙 계좌 이름으로 냅니다 — 미국 키만 바꾸면 지금 문장 그대로입니다.
+ * 미국 Claude 계좌2만 읽는 키는 {@code claude2.} 묶음이고 시장은 미국입니다({@link Scope#CLAUDE2} — 계좌2 명세 §13-2, 모두 규칙 계좌 영향 없음).
  */
 final class PaperSettingKeys {
 
@@ -49,10 +50,10 @@ final class PaperSettingKeys {
 
     /**
      * 키를 읽는 책(시장 범위). {@link #market}은 화면에 보내는 값({@code paper_books.market}과 같은 US·KR, 두 책 공통이면 null)이고
-     * {@link #prefix}는 그 범위 키의 접두어입니다(한국 {@code kr.} — 미국·공통은 접두어 없음).
+     * {@link #prefix}는 그 범위 키의 접두어입니다(한국 {@code kr.}, 미국 Claude 계좌2 {@code claude2.} — 미국·공통은 접두어 없음).
      */
     enum Scope {
-        SHARED(null, ""), US("US", ""), KR("KR", "kr.");
+        SHARED(null, ""), US("US", ""), KR("KR", "kr."), CLAUDE2("US", "claude2.");
 
         final String market;
         final String prefix;
@@ -62,9 +63,12 @@ final class PaperSettingKeys {
             this.prefix = prefix;
         }
 
-        /** 키 이름으로 정한 기본 범위 — {@code kr.}로 시작하면 한국, 아니면 미국(공통 키는 {@link #shared}로 따로 표시). */
+        /**
+         * 키 이름으로 정한 기본 범위 — {@code kr.}로 시작하면 한국, {@code claude2.}로 시작하면 미국 Claude 계좌2, 아니면 미국(공통 키는
+         * {@link #shared}로 따로 표시).
+         */
         static Scope ofKey(String key) {
-            return key.startsWith(KR.prefix) ? KR : US;
+            return key.startsWith(KR.prefix) ? KR : key.startsWith(CLAUDE2.prefix) ? CLAUDE2 : US;
         }
     }
 
@@ -101,15 +105,17 @@ final class PaperSettingKeys {
      * @param max     숫자 키의 최댓값(포함). 아니면 null
      * @param options 고를 수 있는 값(CHOICE — 하나, FEEDS — 여럿). 아니면 빈 목록
      * @param affectsRules 그 시장({@code scope}) 규칙 계좌가 읽는 키 — 바꾸면 그 시장 경고({@link #rulesWarning})
-     * @param scope   키를 읽는 책 — 두 책 공통·미국·한국. 한국 범위 ⇔ {@code kr.} 접두어(어긋나면 예외)
-     * @throws IllegalStateException 접두어와 범위가 어긋남(한국 키가 아닌데 {@code kr.}로 시작하거나 그 반대)
+     * @param scope   키를 읽는 책 — 두 책 공통·미국·한국·미국 Claude 계좌2. 한국 범위 ⇔ {@code kr.} 접두어, 계좌2 범위 ⇔ {@code claude2.}
+     *                접두어(어긋나면 예외)
+     * @throws IllegalStateException 접두어와 범위가 어긋남(한국 키가 아닌데 {@code kr.}로 시작하거나 그 반대 — 계좌2도 같음)
      */
     record Spec(String key, Type type, Double min, Double max, List<String> options, boolean affectsRules,
                 String description, Scope scope) {
 
         Spec {
             options = List.copyOf(options);
-            if ((scope == Scope.KR) != key.startsWith(Scope.KR.prefix)) {
+            if ((scope == Scope.KR) != key.startsWith(Scope.KR.prefix)
+                    || (scope == Scope.CLAUDE2) != key.startsWith(Scope.CLAUDE2.prefix)) {
                 throw new IllegalStateException("설정 키의 시장 범위와 접두어가 어긋납니다: " + key + " · " + scope);
             }
         }
@@ -265,6 +271,20 @@ final class PaperSettingKeys {
             shared(of("claude.figureCheck", Type.BOOLEAN, false,
                     "Claude 응답의 숫자 근거 검사 + 교정 재호출(3단계 — 2단계 K37, 두 책 공통, 결정마다 호출 +1 — "
                             + "apiScheduledReserve 9 권장). 한국 책 출발일에 함께 켬. 지금은 읽는 코드가 없음")),
+            // ---- 미국 Claude 계좌2(체결 시점 실험 — 계좌2 명세 §13-2, ADR 0022). 모두 규칙 계좌 영향 없음, 기본은 꺼짐·단계 1 값.
+            of(Claude2Settings.ENABLED, Type.BOOLEAN, false,
+                    "Claude 계좌2(체결 시점 실험) — 켜면 다음 미국 결정 창에 앞으로 체결로 출발하고(INITIAL — 사후 체결 없음) 그 뒤 "
+                            + "정기 결정을 냄. 끄면 결정·출발을 하지 않음(장부·스탑은 계속). 켜는 저장에서 apiScheduledReserve 9 권장"),
+            integer(Claude2Settings.MAX_CALLS_PER_CYCLE, 0, Claude2Settings.MAX_CALLS_PER_CYCLE_LIMIT, false,
+                    "계좌2 소상한 — 같은 기준 거래일(결정 주기)의 계좌2 정기 결정·출발·재시도 호출 수(결정 행마다 1 + 재시도 수). "
+                            + "단계 1은 2, 장중 확인(단계 2)을 켜면 3. 0이면 계좌2 정기 호출 없음"),
+            integer(Claude2Settings.BARS_WAIT_MINUTES, 0, Claude2Settings.MAX_BARS_WAIT_MINUTES, false,
+                    "1분봉 기다림 상한(분) — 기준 시각이 지난 시각 지정 주문이 있으면 그 관측치 뒤의 1분봉 저장본을 이만큼 기다린 뒤 "
+                            + "처리(계좌2만 — 그동안 계좌2 스탑 판정이 늦음). 0이면 기다리지 않음"),
+            of(Claude2Settings.EXECUTION_RECORD, Type.BOOLEAN, false,
+                    "계좌2 패킷 13_execution.record — 최근 체결 20건(고른 시점·체결 원가격·사다리 칸·계좌1식 대비 bp, 사실만)"),
+            of(Claude2Settings.CHECKPOINTS, Type.BOOLEAN, false,
+                    "계좌2 장중 확인(단계 2 — 세션당 최대 1회). 지금은 읽는 코드가 없음"),
             // ---- 한국 책(2단계 명세 §4-13 — 같은 한 행의 kr.* 묶음, C1b). 규칙 계좌 영향 = 한국 규칙 계좌(kr_rules)가 읽는 키.
             // 미국 키와 이름이 같은 키는 미국 범위·영향 표시를 그대로 따르고 값은 따로 둡니다(미국 키로 대신하지 않음 — 동결 대조군).
             number("kr.slippageBp", 0, 100, true,

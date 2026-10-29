@@ -272,7 +272,8 @@ class ExecutionAuditTest {
         assertThat(all.keySet()).containsExactly("NEXT_OBSERVATION", "NEXT_OPEN", "AT_1000", "AT_1100", "AT_1200",
                 "AT_1300", "AT_1400", "AT_1500", "NEXT_CLOSE");
         assertThat(all.values()).containsOnlyNulls();
-        assertThat(ExecutionAudit.auditedBooks()).as("미국 Claude 계좌 — 지금은 계좌1 하나").containsExactly(PaperBooks.CLAUDE);
+        assertThat(ExecutionAudit.auditedBooks()).as("미국 Claude 계좌 — 계좌1·계좌2(정의 순)")
+                .containsExactly(PaperBooks.CLAUDE, PaperBooks.CLAUDE2);
     }
 
     // ------------------------------------------------------------------ 늦게 풂(late_resolved)

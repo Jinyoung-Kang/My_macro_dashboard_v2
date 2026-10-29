@@ -550,6 +550,8 @@ public class PaperSettingsService {
         claude.put("schemaV3", false);
         claude.put("figureCheck", false);
         body.put("claude", claude);
+        // 미국 Claude 계좌2(계좌2 명세 §13-2) — 꺼짐·단계 1 값. 이 키가 없는 지금 행도 같은 값으로 읽힙니다(Claude2Settings — 배포만으로 바뀌지 않음).
+        body.put("claude2", Claude2Settings.defaultsBody());
         body.put("kr", krDefaultsBody());
         return mapper.valueToTree(body);
     }

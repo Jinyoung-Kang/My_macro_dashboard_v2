@@ -106,10 +106,13 @@ def test_메뉴_시점은_V17_timing_CHECK와_같은_글자():
 def test_범위_계좌_코드는_백엔드_PaperBooks와_같다():
     java = (ROOT / "backend/src/main/java/com/macrodash/feature/paper/PaperBooks.java").read_text(encoding="utf-8")
     claude = re.search(r'static final String CLAUDE = "([^"]+)";', java).group(1)
+    claude2 = re.search(r'static final String CLAUDE2 = "([^"]+)";', java).group(1)
     pending = re.search(r'static final String ORDER_PENDING = "([^"]+)";', java).group(1)
     store_module = paper_bars.store
-    assert store_module.TIMED_ORDER_BOOKS["US"][0] == claude == "claude"
-    assert "claude2" in store_module.TIMED_ORDER_BOOKS["US"] and store_module.TIMED_HOLDING_BOOKS["US"] == ("claude2",)
+    assert store_module.TIMED_ORDER_BOOKS["US"] == (claude, claude2) == ("claude", "claude2")
+    assert store_module.TIMED_HOLDING_BOOKS["US"] == (claude2,)
+    # 계좌2는 미국 정의(PaperBooks.ALL)에 시각 지정 체결 책(Execution.TIMED)으로 있음 — 1-5.
+    assert re.search(r"new Definition\(CLAUDE2, KIND_CLAUDE, CLAUDE2_LABEL, Map\.of\(\), Execution\.TIMED\)", java)
     assert pending == "PENDING"
     assert store_module.TIMED_RECENT_DAYS == 8
 

@@ -295,6 +295,55 @@ class PaperSettingsServiceTest {
     }
 
     @Test
+    @DisplayName("계좌2 키(claude2.*, 계좌2 명세 §13-2): 꺼짐·소상한 2·기다림 15·체결 기록 켬·장중 확인 꺼짐이 기본, 범위 CLAUDE2(시장 US)·규칙 계좌 영향 없음, 형·범위대로 검사 — 키가 없는 옛 행은 같은 값으로 읽히고 판이 오르지 않음")
+    void claude2Keys() {
+        JsonNode defaults = service.defaultsJson().path("claude2");
+        assertThat(defaults.toString()).isEqualTo("{\"enabled\":false,\"maxCallsPerCycle\":2,\"barsWaitMinutes\":15,"
+                + "\"executionRecord\":true,\"checkpoints\":false}");
+        List<String> keys = List.of("claude2.enabled", "claude2.maxCallsPerCycle", "claude2.barsWaitMinutes",
+                "claude2.executionRecord", "claude2.checkpoints");
+        for (String key : keys) {
+            PaperSettingKeys.Spec spec = PaperSettingKeys.find(key).orElseThrow();
+            assertThat(spec.scope()).as(key).isEqualTo(PaperSettingKeys.Scope.CLAUDE2);
+            assertThat(spec.view().get("market")).as(key).isEqualTo("US");
+            assertThat(spec.affectsRules()).as(key).isFalse();
+        }
+        assertThat(PaperSettingKeys.find("claude2.maxCallsPerCycle").orElseThrow())
+                .extracting(PaperSettingKeys.Spec::min, PaperSettingKeys.Spec::max).containsExactly(0.0, 10.0);
+        assertThat(PaperSettingKeys.find("claude2.barsWaitMinutes").orElseThrow())
+                .extracting(PaperSettingKeys.Spec::min, PaperSettingKeys.Spec::max).containsExactly(0.0, 30.0);
+        assertThat(Claude2Settings.from(service.defaultsJson())).isEqualTo(Claude2Settings.DEFAULTS);
+        assertThat(Claude2Settings.from(null)).isEqualTo(Claude2Settings.DEFAULTS);
+        assertThatThrownBy(() -> new PaperSettingKeys.Spec("claude2.x", PaperSettingKeys.Type.BOOLEAN, null, null,
+                List.of(), false, "", PaperSettingKeys.Scope.US)).isInstanceOf(IllegalStateException.class);
+        assertThatThrownBy(() -> new PaperSettingKeys.Spec("x", PaperSettingKeys.Type.BOOLEAN, null, null,
+                List.of(), false, "", PaperSettingKeys.Scope.CLAUDE2)).isInstanceOf(IllegalStateException.class);
+
+        // 이 키가 없는 옛 행(서버의 지금 행) — 판 그대로, 기본값으로 읽음(기본값으로 읽은 키를 남김), 켜는 저장 한 번이 판 +1.
+        ((tools.jackson.databind.node.ObjectNode) body()).remove("claude2");
+        assertThat(service.current().version()).isEqualTo(1);
+        Claude2Settings old = Claude2Settings.from(body());
+        assertThat(old.enabled()).isFalse();
+        assertThat(old.maxCallsPerCycle()).isEqualTo(2);
+        assertThat(old.barsWaitMinutes()).isEqualTo(15);
+        assertThat(old.fallbacks()).containsExactlyElementsOf(keys);
+        Map<String, Object> switches = new LinkedHashMap<>();
+        switches.put("enabled", true);
+        switches.put("maxCallsPerCycle", 2);
+        Map<String, Object> out = update("apiScheduledReserve", 9, "claude2", switches);
+        assertThat(out.get("version")).isEqualTo(2);
+        assertThat(out.get("changedKeys")).isEqualTo(List.of("apiScheduledReserve", "claude2.enabled",
+                "claude2.maxCallsPerCycle"));
+        assertThat(out.get("warning")).as("규칙 계좌가 읽지 않는 키").isNull();
+        assertThat(Claude2Settings.from(body()).enabled()).isTrue();
+
+        assertThatThrownBy(() -> update("claude2.maxCallsPerCycle", 11)).hasMessageContaining("0~10");
+        assertThatThrownBy(() -> update("claude2.barsWaitMinutes", 31)).hasMessageContaining("0~30");
+        assertThatThrownBy(() -> update("claude2.enabled", "true")).hasMessageContaining("true·false");
+        assertThatThrownBy(() -> update("claude2.unknown", true)).hasMessageContaining("모르는 설정 키: claude2.unknown");
+    }
+
+    @Test
     @DisplayName("시장 범위(2단계 §4-13) — 공유 키는 market null(메모 두 키 포함 — 사용자 결정 v6)·나머지는 US, 규칙 계좌 경고는 그 시장 문장(미국 키만이면 지금 문장 그대로)")
     void marketScopeAndRulesWarningPerMarket() {
         JsonNode keys = MAPPER.valueToTree(service.view().get("keys"));

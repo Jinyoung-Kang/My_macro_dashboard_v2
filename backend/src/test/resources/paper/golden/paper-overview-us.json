@@ -49,6 +49,24 @@
     "statsReason" : null,
     "benchmark" : "bench_spy"
   }, {
+    "code" : "claude2",
+    "kind" : "CLAUDE",
+    "label" : "Claude 계좌2",
+    "status" : "NOT_STARTED",
+    "startedOn" : null,
+    "initialCash" : 100000.0,
+    "cash" : 100000.0,
+    "nav" : 100000.0,
+    "equityValue" : 0.0,
+    "exposurePct" : 0.0,
+    "returnPct" : null,
+    "lastObservedAtKst" : null,
+    "positions" : 0,
+    "staleCount" : 0,
+    "stats" : null,
+    "statsReason" : null,
+    "benchmark" : "bench_spy"
+  }, {
     "code" : "bench_spy",
     "kind" : "BENCHMARK",
     "label" : "SPY 계좌",
@@ -108,6 +126,7 @@
     "books" : {
       "rules" : [ null, null ],
       "claude" : [ 100000.0, 101000.0 ],
+      "claude2" : [ null, null ],
       "bench_spy" : [ 99950.25, 101000.0 ],
       "bench_mix" : [ 99950.29, null ]
     }

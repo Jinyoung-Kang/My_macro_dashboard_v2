@@ -306,8 +306,8 @@ public class PaperQueryService {
 
     // ------------------------------------------------------------------ 결정
     /**
-     * GET /api/paper/decisions?book=&limit= (1–500, 최근 순). 결정을 내는 책은 시장마다 규칙·Claude 책뿐입니다(미국 rules·claude —
-     * 아는 시장 순서대로).
+     * GET /api/paper/decisions?book=&limit= (1–500, 최근 순). 결정을 내는 책은 시장마다 규칙·Claude 책뿐입니다(미국 rules·claude·claude2 —
+     * 아는 시장 순서대로, 시장 안에서는 규칙 → 기본 Claude 계좌 → 그 밖의 Claude 계좌 정의 순).
      */
     public Map<String, Object> decisions(String book, int limit) {
         if (!ready()) {
@@ -317,6 +317,9 @@ public class PaperQueryService {
         markets.all().forEach(market -> {
             deciding.add(market.rulesBook());
             deciding.add(market.claudeBook());
+            // 그 시장의 다른 Claude 계좌(미국 계좌2 — ADR 0022)도 결정을 냅니다.
+            market.books().stream().filter(d -> PaperBooks.KIND_CLAUDE.equals(d.kind()))
+                    .forEach(d -> deciding.add(d.code()));
         });
         String code = Params.oneOf("book", book, List.copyOf(deciding));
         List<Map<String, Object>> rows = new ArrayList<>();

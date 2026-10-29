@@ -334,7 +334,7 @@ class PaperQueryMarketTest {
         assertThat((List<Map<String, Object>>) query.decisions(PaperBooks.RULES, 50).get("decisions"))
                 .extracting(r -> r.get("book")).containsExactly("rules");
         assertThatThrownBy(() -> query.decisions("kr_bench_k200", 50)).isInstanceOf(InvalidRequestException.class)
-                .hasMessage("book는 rules · claude · kr_rules · kr_claude 가운데 하나여야 합니다: kr_bench_k200");
+                .hasMessage("book는 rules · claude · claude2 · kr_rules · kr_claude 가운데 하나여야 합니다: kr_bench_k200");
     }
 
     private void decision(String book, LocalDate asOf, String kind, LocalDate selectionAsOf, Double exposure) {

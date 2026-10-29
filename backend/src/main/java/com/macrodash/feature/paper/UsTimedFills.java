@@ -103,8 +103,8 @@ final class UsTimedFills {
     static final Set<String> FALLBACK_RUNGS = Set.of(RUNG_LATE, RUNG_FALLBACK, RUNG_CLOSE);
 
     /**
-     * 1분봉 기다림의 상한(§10-2) — 관측치 W 수집 뒤 이만큼 지나면 W 뒤의 1분봉 저장본 없이 처리합니다. 설정 {@code claude2.barsWaitMinutes}(기본 15,
-     * 0~30)가 단계 1-5에서 이 상수를 대신합니다(설정 범위 {@code CLAUDE2}와 함께 — 지금은 쓰는 계좌가 없음).
+     * 1분봉 기다림 상한의 기본값(§10-2) — 관측치 W 수집 뒤 이만큼 지나면 W 뒤의 1분봉 저장본 없이 처리합니다. 장부는 그 실행 설정의
+     * {@code claude2.barsWaitMinutes}(0~30 — {@link Claude2Settings#barsWait})를 쓰고, 이 값은 그 키가 없거나 틀릴 때의 값입니다.
      */
     static final Duration BARS_WAIT = Duration.ofMinutes(15);
     /** R3: W 수집이 T + 이만큼 뒤일 때부터(§10-4). */
@@ -254,20 +254,28 @@ final class UsTimedFills {
 
     /**
      * 1분봉 기다림의 판정(§10-2) — 풀어야 할 주문이 있는 책에서만 묻습니다. W 뒤에 받은 1분봉 저장본이 있으면 바로, 없으면 W 수집 뒤
-     * {@link #BARS_WAIT}가 지날 때까지 기다림.
+     * 상한({@link #BARS_WAIT} — 설정 {@code claude2.barsWaitMinutes})이 지날 때까지 기다림.
      *
      * @param text 기다리면 그 사유, 아니면 풀린 사유(작업 기록의 '풀림' 줄)
      */
     record BarsWait(boolean waiting, String text) {
     }
 
+    /** {@link #barsWait(Bars, Instant, Instant, Duration)}를 기본 상한 {@link #BARS_WAIT}로. */
     static BarsWait barsWait(Bars bars, Instant observedAt, Instant now) {
+        return barsWait(bars, observedAt, now, BARS_WAIT);
+    }
+
+    /**
+     * @param limit 기다림 상한(그 실행 설정의 {@code claude2.barsWaitMinutes} — 0이면 기다리지 않음)
+     */
+    static BarsWait barsWait(Bars bars, Instant observedAt, Instant now, Duration limit) {
         if (bars.present() && !bars.collectedAt().isBefore(observedAt)) {
             return new BarsWait(false, "관측치 뒤의 1분봉 저장본(수집 " + Kst.stamp(bars.collectedAt()) + ")으로 처리");
         }
-        Instant until = observedAt.plus(BARS_WAIT);
+        Instant until = observedAt.plus(limit);
         if (!now.isBefore(until)) {
-            return new BarsWait(false, "기다림 상한 " + BARS_WAIT.toMinutes() + "분이 지나 관측치 뒤의 1분봉 저장본 없이 처리");
+            return new BarsWait(false, "기다림 상한 " + limit.toMinutes() + "분이 지나 관측치 뒤의 1분봉 저장본 없이 처리");
         }
         return new BarsWait(true, "기준 시각이 지난 시각 지정 주문이 있어 관측치(수집 " + Kst.stamp(observedAt)
                 + ") 뒤의 1분봉 저장본을 기다립니다(" + Kst.stamp(until) + "까지)");
