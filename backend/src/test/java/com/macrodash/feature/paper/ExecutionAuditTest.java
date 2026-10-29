@@ -5,7 +5,6 @@ import com.macrodash.analytics.UsMarketCalendar;
 import com.macrodash.feature.paper.ExecutionAudit.Price;
 import com.macrodash.feature.paper.ExecutionAuditFixtures.Bars;
 import com.macrodash.store.PaperStore.Order;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -302,7 +301,6 @@ class ExecutionAuditTest {
     }
 
     @Test
-    @Disabled("재현 — 창 키·메뉴 이름을 기본 로캘의 숫자로 만듦(다음 커밋에서 Locale.ROOT)")
     @DisplayName("창 키 'HH:MM'·메뉴 이름 'AT_hh00'은 기본 로캘과 상관없이 ASCII 숫자 — 수집기 저장본 windows 키·V17 CHECK와 같은 글자")
     void labelsIgnoreTheDefaultLocale() throws ReflectiveOperationException {
         // MENU는 클래스를 처음 읽을 때 한 번 만들어지므로, 만드는 메서드를 그 로캘에서 다시 부릅니다.

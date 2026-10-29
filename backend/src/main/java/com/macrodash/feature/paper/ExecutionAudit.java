@@ -22,6 +22,7 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 
 /**
@@ -270,9 +271,9 @@ final class ExecutionAudit {
         return Math.toIntExact(Math.round(Duration.between(last.plusSeconds(60), fetched).toMillis() / 1000.0));
     }
 
-    /** 창 키 'HH:MM'(수집기 저장본 {@code windows}의 키, {@code menu} 대응표의 값). */
+    /** 창 키 'HH:MM'(수집기 저장본 {@code windows}의 키, {@code menu} 대응표의 값) — 기본 로캘과 상관없이 ASCII 숫자. */
     static String label(LocalTime at) {
-        return String.format("%02d:%02d", at.getHour(), at.getMinute());
+        return String.format(Locale.ROOT, "%02d:%02d", at.getHour(), at.getMinute());
     }
 
     // ------------------------------------------------------------------ 저장본 읽기
@@ -321,7 +322,7 @@ final class ExecutionAudit {
         Map<String, LocalTime> out = new LinkedHashMap<>();
         out.put(PaperBooks.NEXT_OPEN, LocalTime.of(9, 30));
         for (int hour = 10; hour <= 15; hour++) {
-            out.put(String.format("AT_%02d00", hour), LocalTime.of(hour, 0));
+            out.put(String.format(Locale.ROOT, "AT_%02d00", hour), LocalTime.of(hour, 0));   // V17 CHECK 글자 — ASCII 숫자
         }
         return java.util.Collections.unmodifiableMap(out);
     }
