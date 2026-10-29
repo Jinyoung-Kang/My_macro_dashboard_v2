@@ -9,6 +9,7 @@ import com.macrodash.store.PaperStore.Fill;
 import com.macrodash.store.PaperStore.Order;
 import com.macrodash.store.PaperStore.Position;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -796,6 +797,26 @@ class KrLedgerTest {
             assertThat(store.orders.get(sell).status()).isEqualTo(PaperBooks.ORDER_PENDING);
             assertThat(again.notes()).anySatisfy(n -> assertThat(n).contains("보류").contains("미처리 기업행위 보유"));
             assertThat(again.alerts()).as("걸린 날 뒤 1거래일 — 알림 아님").isEmpty();
+        }
+
+        @Test
+        @Disabled("QA-144 재현 — 수정 전에는 ETF 분배락의 수정 비율 변화(0.5% 초과)를 미처리 기업행위로 묶음")
+        @DisplayName("QA-144: ETF 분배락(토스 수정주가가 분배금을 조정 — G16, 069500 분기 0.11~0.44%·153130 매달 약 0.2%)의 비율 변화 0.66%는 기업행위가 아님 — 벤치마크 보유가 묶이지 않고 그날 종가로 평가")
+        void etfDistributionIsNotACorporateAction() {
+            book(PaperBooks.KR_BENCH_K200, PaperBooks.KIND_BENCHMARK, 0);
+            holdingSince(PaperBooks.KR_BENCH_K200, "069500", 100, 90_000, D, 95_000, 25_000_000L);
+            KrFixtures.Payload payload = new KrFixtures.Payload(D2);
+            payload.code("069500", kst("2026-11-04T21:57"))
+                    .bar(D, 94_800, 95_000, 25_000_000).ratio(0.9934)
+                    .bar(D1, 95_100, 95_500, 24_000_000).ratio(0.9934)
+                    .bar(D2, 95_400, 96_000, 26_000_000).ratio(1.0).minute("OK", "09:01", 95_400, 200_000);
+
+            Outcome outcome = process(payload, kst("2026-11-04T22:01"));
+
+            assertThat(outcome.errors()).isEmpty();
+            assertThat(store.corpActionHolds(PaperBooks.KR_BENCH_K200)).as("분배락은 묶지 않음").isEmpty();
+            assertThat(position(PaperBooks.KR_BENCH_K200, "069500").lastPrice()).as("평가 = 그날 종가").isEqualTo(96_000);
+            assertThat(outcome.notes()).noneSatisfy(n -> assertThat(n).contains("기업행위"));
         }
 
         @Test
