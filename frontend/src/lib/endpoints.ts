@@ -207,6 +207,8 @@ export const endpoints = {
     orders: (code: string, limit: number) => withQuery(`/api/paper/books/${segment(code)}/orders`, { limit }),
     fills: (code: string, limit: number) => withQuery(`/api/paper/books/${segment(code)}/fills`, { limit }),
     nav: (code: string) => `/api/paper/books/${segment(code)}/nav`,
+    /** 🧪 실행 감사(미국 Claude 계좌만 — 주문별 메뉴 반사실·1분봉 지연과 시점별 요약, 최근 순 1–500). 화면은 단계 1부터입니다. */
+    execution: (code: string, limit: number) => withQuery(`/api/paper/books/${segment(code)}/execution`, { limit }),
     bookStatus: (code: string) => `/api/paper/books/${segment(code)}/status`,
     bookReset: (code: string) => `/api/paper/books/${segment(code)}/reset`,
     /** 책 하나의 결정 기록(최근 순). book은 rules · claude. */

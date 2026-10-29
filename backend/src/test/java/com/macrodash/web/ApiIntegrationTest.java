@@ -870,12 +870,12 @@ class ApiIntegrationTest {
         assertThat(wrongMethod.getBody().path("error").asString()).isEqualTo("method_not_allowed");
     }
 
-    /** 🧪 모의 매매의 GET 경로(책 코드가 든 경로는 bench_spy로). */
+    /** 🧪 모의 매매의 GET 경로(책 코드가 든 경로는 bench_spy로 — 미국 Claude 계좌만 받는 실행 감사는 claude로). */
     private static final List<String> PAPER_GETS = List.of(
             "/api/paper/overview", "/api/paper/status", "/api/paper/books/bench_spy/positions",
             "/api/paper/books/bench_spy/orders?limit=5", "/api/paper/books/bench_spy/fills?limit=5",
-            "/api/paper/books/bench_spy/nav", "/api/paper/track-record", "/api/paper/decisions?book=rules&limit=5",
-            "/api/paper/settings", "/api/paper/settings/history");
+            "/api/paper/books/bench_spy/nav", "/api/paper/books/claude/execution?limit=5", "/api/paper/track-record",
+            "/api/paper/decisions?book=rules&limit=5", "/api/paper/settings", "/api/paper/settings/history");
 
     /** 테스트가 만든 모의 매매 책을 지웁니다(테스트 DB만 — setUp이 DB 이름을 확인함). 책을 지우면 장부가 함께 지워집니다. */
     private void deletePaperBooks() {
@@ -1163,6 +1163,13 @@ class ApiIntegrationTest {
             assertThat(risk.path("outcome").has("confirmed")).as("확정 조정이 없으면 칸 없음 — 미국 응답 그대로(C3)").isFalse();
             assertThat(authorizedExchange("/api/paper/books/nope/orders", HttpMethod.GET).getStatusCode())
                     .isEqualTo(HttpStatus.BAD_REQUEST);
+            ResponseEntity<JsonNode> notAudited = authorizedExchange("/api/paper/books/bench_spy/execution", HttpMethod.GET);
+            assertThat(notAudited.getStatusCode()).as("실행 감사는 미국 Claude 계좌만(초기화한 벤치마크도 400)")
+                    .isEqualTo(HttpStatus.BAD_REQUEST);
+            assertThat(notAudited.getBody().path("message").asString()).contains("미국 Claude 계좌");
+            JsonNode execution = authorizedGet("/api/paper/books/claude/execution");
+            assertThat(execution.path("orders").size()).as("감사 행 없음 — 빈 목록").isZero();
+            assertThat(execution.path("summary").path("timings").get(0).path("meanBp").isNull()).as("표본 없음 — null").isTrue();
 
             // 결정: 시작 전 책은 수동 결정 400, 후보 목록 저장본이 없으면 시작 400(Claude 책 시작·미리보기도 — Claude를 부르기
             // 전에 멈춤. 테스트 설정은 키도 비어 있어 실제 호출이 나가지 않음)

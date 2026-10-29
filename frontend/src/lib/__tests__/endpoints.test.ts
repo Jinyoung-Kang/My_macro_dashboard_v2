@@ -107,6 +107,7 @@ const CASES: Case[] = [
   { name: "paper.orders", before: "/api/paper/books/claude/orders?limit=50", after: endpoints.paper.orders("claude", 50) },
   { name: "paper.fills", before: "/api/paper/books/bench_spy/fills?limit=50", after: endpoints.paper.fills("bench_spy", 50) },
   { name: "paper.nav", before: "/api/paper/books/bench_mix/nav", after: endpoints.paper.nav("bench_mix") },
+  { name: "paper.execution", before: "/api/paper/books/claude/execution?limit=50", after: endpoints.paper.execution("claude", 50) },
   { name: "paper.bookStatus", before: "/api/paper/books/rules/status", after: endpoints.paper.bookStatus("rules") },
   { name: "paper.bookReset", before: "/api/paper/books/claude/reset", after: endpoints.paper.bookReset("claude") },
   ...[s("2026-10-23"), s("")].map((asOf) => ({
@@ -233,7 +234,7 @@ const documentedForm = (url: string) => new URL(url, "http://backend").pathname
   .replace(/^\/api\/status\/run\/[^/]+$/, "/api/status/run/{taskName}")
   .replace(/^\/api\/admin\/users\/[^/]+$/, "/api/admin/users/{id}")
   .replace(/^\/api\/alerts\/rules\/[^/]+$/, "/api/alerts/rules/{id}")
-  .replace(/^\/api\/paper\/books\/[^/]+\/(positions|orders|fills|nav|status|reset)$/, "/api/paper/books/{code}/$1")
+  .replace(/^\/api\/paper\/books\/[^/]+\/(positions|orders|fills|nav|execution|status|reset)$/, "/api/paper/books/{code}/$1")
   .replace(/^\/api\/paper\/decisions\/[^/]+$/, "/api/paper/decisions/{id}")
   .replace(/^\/api\/paper\/framework\/versions\/[^/]+$/, "/api/paper/framework/versions/{version}")
   .replace(/^\/api\/paper\/framework\/proposals\/[^/]+\/(approve|reject)$/, "/api/paper/framework/proposals/{id}/$1")
@@ -251,6 +252,6 @@ describe("docs/API.md 백엔드 표와 대조", () => {
     const paths = [...strings, ...CASES.map(({ after }) => after)].map(documentedForm);
     expect(paths.filter((path) => !documented.has(path))).toEqual([]);
     // 경로를 만드는 함수는 모두 위 CASES에 한 줄 이상 있습니다. 새 함수를 만들었다면 CASES에 추가하고 이 숫자를 고치세요.
-    expect(functions).toBe(54);
+    expect(functions).toBe(55);
   });
 });

@@ -90,7 +90,8 @@ public final class AccessPolicy {
         //    Claude 책의 결정·미리보기·시작은 운영자 키로 Claude를 부름(비용). 설정은 실험 조건을 바꿈
         owner("GET /api/paper/overview", "GET /api/paper/live", "GET /api/paper/status", "GET /api/paper/books/{code}/positions",
                 "GET /api/paper/books/{code}/orders", "GET /api/paper/books/{code}/fills",
-                "GET /api/paper/books/{code}/nav", "POST /api/paper/init", "POST /api/paper/books/{code}/status",
+                "GET /api/paper/books/{code}/nav", "GET /api/paper/books/{code}/execution", "POST /api/paper/init",
+                "POST /api/paper/books/{code}/status",
                 "POST /api/paper/books/{code}/reset", "POST /api/paper/run/risk", "GET /api/paper/track-record",
                 "POST /api/paper/run/rerank", "GET /api/paper/decisions", "GET /api/paper/decisions/{id}",
                 "POST /api/paper/run/decision", "POST /api/paper/run/initial-decision", "GET /api/paper/settings",
