@@ -236,6 +236,43 @@ describe("자료", () => {
   });
 });
 
+describe("계좌 상세의 최근 체결(한국 — 잠정·확정)", () => {
+  // 수정 전에는 미국 배지(사후 체결만)와 '체결가(원)'을 써, 토스 잠정가가 확정 여부 표시 없이 체결가로 보였습니다(it.fails).
+  it.fails("머리는 '잠정 체결가(원)'·'잠정 금액(원)', 확정 상태 배지(확정·확정 대기), 확정 행은 확정가를 그 아래", async () => {
+    reads["/api/paper/overview?market=KR"] = () => Promise.resolve(KR_OVERVIEW);
+    reads["/api/paper/status?market=KR"] = () => Promise.resolve(KR_STATUS);
+    reads["/api/paper/books/kr_rules/positions"] = () => Promise.resolve({ available: true, book: KR_BOOKS[0], cash: 34_000, lockouts: [],
+      positions: [] });
+    const fill = { orderId: 1, side: "BUY", qty: 10, rawPrice: 71_300, slippageBp: 5, observedAtKst: "2026-10-30 22:05 KST",
+      observationDate: "2026-10-30", backfill: false, fee: 106, tax: 0, slippageCost: 356, costBp: 6.48 };
+    reads["/api/paper/books/kr_rules/fills"] = () => Promise.resolve({
+      available: true, confirmationTotal: { rows: 1, cashDelta: 1_000, unconfirmed: 1 },
+      fills: [
+        { ...fill, id: 1, ticker: "005930", price: 71_300, gross: 713_000, priceSource: "TOSS_1M_OPEN", confirmationState: "CONFIRMED",
+          confirmationNote: null, confirmation: { confirmedPrice: 71_200, priceDiff: -100, fee: 106, tax: 0, slippageCost: 356, costBp: 6.49,
+            cashDelta: 1_000, source: "FSC", reconciledAtKst: "2026-11-02 22:05 KST" } },
+        { ...fill, id: 2, ticker: "000660", price: 200_000, gross: 2_000_000, priceSource: "TOSS_INTEGRATED", confirmationState: "WAITING",
+          confirmationNote: "금융위 2026-10-29까지 냄 — 그날 값 기다림", confirmation: null },
+      ],
+    });
+    reads["/api/paper/settings"] = () => Promise.resolve({ available: true, version: 4, body: { kr: {} } });
+    render(<PaperPage market="KR" />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "한국 규칙 계좌 상세 보기" }));
+    const panel = await screen.findByRole("region", { name: "한국 규칙 계좌 상세" });
+    const table = await within(panel).findByRole("region", { name: "최근 체결 (좌우 스크롤)" });
+    expect(within(table).getByRole("columnheader", { name: "잠정 체결가(원)" })).toBeTruthy();
+    expect(within(table).getByRole("columnheader", { name: "잠정 금액(원)" })).toBeTruthy();
+    const row = (ticker: string) => within(table).getAllByRole("row").find((tr) => tr.textContent?.includes(ticker)) as HTMLElement;
+    expect(within(row("005930")).getByText("확정")).toBeTruthy();
+    expect(within(row("005930")).getByText("71,300")).toBeTruthy();
+    expect(within(row("005930")).getByText("확정 71,200원")).toBeTruthy();
+    expect(within(row("000660")).getByText("확정 대기")).toBeTruthy();
+    expect(within(row("000660")).getByText("KRX+NXT 통합가 · 잠정")).toBeTruthy();
+    expect(within(row("000660")).queryByText(/^확정 \d/)).toBeNull();
+  });
+});
+
 const WAITING_BOOKS = KR_BOOKS.map((entry) => ({
   ...entry, status: "NOT_STARTED", startedOn: null, nav: 100_000_000, cash: 100_000_000, returnPct: null, stats: null,
 }));
