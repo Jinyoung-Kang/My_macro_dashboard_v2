@@ -272,6 +272,19 @@ describe("자료", () => {
     expect(within(screen.getByRole("table", { name: "재진입 금지" })).getByText("이 날까지(KR 거래일)")).toBeTruthy();
   });
 
+  // 수정 전에는 기업행위 보류로 묶인 평가(금융위 확정 종가 — 시각은 장부가 묶은 때)도 '{시각} 관측(토스증권 잠정)'이라 적었습니다(it.fails).
+  it.fails("보유 가격 툴팁 — 보통 보유는 관측 시각(토스증권 잠정), 기업행위 보류 보유는 묶인 평가(금융위 확정 종가, 없으면 마지막 평가 가격)", async () => {
+    render(<PaperPage market="KR" initialTab="holdings" />);
+    const table = await screen.findByRole("table", { name: "보유" });
+    // 가격 칸(최고가 칸도 71,500이라 첫째 — 가격 칸이 앞)
+    expect(within(rowOf(table, "005930")).getAllByText("71,500")[0].getAttribute("title")).toBe("2026-11-03 21:57 관측(토스증권 잠정)");
+    const held = within(rowOf(table, "000660")).getByText("201,000").getAttribute("title") ?? "";
+    expect(held).toContain("묶인 평가");
+    expect(held).toContain("금융위 확정 종가");
+    expect(held).not.toContain("토스증권 잠정");
+    expect(held).not.toContain("관측");
+  });
+
   it("체결 표 — 잠정 체결가·출처·비용 칸·실효 bp, 확정 행의 확정가·차이·현금 차이, 미보정(ETF) 배지, 합계와 '주의'", async () => {
     render(<PaperPage market="KR" initialTab="holdings" />);
     const table = await screen.findByRole("table", { name: "체결" });
