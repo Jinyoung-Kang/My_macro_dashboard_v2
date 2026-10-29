@@ -12,7 +12,7 @@ tests/test_paper_bars.py
   4. Yahoo 래치가 닫혀 있으면 묻지 않고, 배치 안의 429(yfinance가 로그로만 남김)도 래치를 닫는다. 두 회차 연달아 429면 한 회차를 쉰다.
   5. 기동 뒤 처음 받을 때까지 period "5d", 받은 뒤 "1d". 일봉 시가(X2)는 확정된 세션마다 배치 한 번.
   6. 받지 못한 종목은 직전 값을 isStale로 잇고, 하나도 못 받으면 EmptyResult로 저장본을 둔다. 세션은 종목마다 최근 3개.
-  7. 이 저장본을 읽는 백엔드·화면 코드는 아직 없다(장부·패킷 그대로 — 단계 0-4의 실행 감사 작업부터).
+  7. 이 저장본을 읽는 백엔드 코드는 실행 감사 작업(PaperExecutionAuditJob, 단계 0-4)뿐이고 화면은 읽지 않는다(장부·패킷 그대로).
 
 외부 네트워크를 쓰지 않습니다 — 1분봉 표는 yfinance 1.7.0 yf.download(group_by="ticker")의 모양(종목 × Open·High·Low·Close·Adj Close·Volume,
 종목들의 분을 합친 인덱스 — 봉이 없던 분은 NaN 줄)을 합성해 만듭니다. 태스크·범위 시험은 PostgreSQL이 필요합니다.
