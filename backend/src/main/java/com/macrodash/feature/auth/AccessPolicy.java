@@ -88,7 +88,7 @@ public final class AccessPolicy {
         owner("GET /api/admin/users", "POST /api/admin/users", "POST /api/admin/users/{id}", "GET /api/admin/audit");
         // 🧪 모의 매매 — 운영자 한 사람의 실험 장부. 초기화·리셋·리스크 실행·트랙레코드 재계산·결정·시작이 장부를 바꾸고,
         //    Claude 책의 결정·미리보기·시작은 운영자 키로 Claude를 부름(비용). 설정은 실험 조건을 바꿈
-        owner("GET /api/paper/overview", "GET /api/paper/status", "GET /api/paper/books/{code}/positions",
+        owner("GET /api/paper/overview", "GET /api/paper/live", "GET /api/paper/status", "GET /api/paper/books/{code}/positions",
                 "GET /api/paper/books/{code}/orders", "GET /api/paper/books/{code}/fills",
                 "GET /api/paper/books/{code}/nav", "POST /api/paper/init", "POST /api/paper/books/{code}/status",
                 "POST /api/paper/books/{code}/reset", "POST /api/paper/run/risk", "GET /api/paper/track-record",

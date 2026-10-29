@@ -63,6 +63,13 @@ public final class Datasets {
      */
     public static final String SNAP_KR_PAPER_QUOTES = "paper.kr.quotes";
     /**
+     * 🧪 모의 매매 장중 평가(표시 전용) — 보유 종목의 최신 1분봉 가격·봉 시각(미국 Yahoo, 한국 토스). 정기 수집이 없고(수집기 속도군 live)
+     * 운영자가 모의 매매 화면을 보는 정규장 동안 {@code GET /api/paper/live}가 live 읽기({@link #MAX_AGE_LIVE})로 요청합니다. 체결·스탑·확정
+     * 순자산에는 쓰지 않습니다. 모양 {@code {market, source, scope, tickers:{T:{price, at, isStale?}}, missing, error}}.
+     */
+    public static final String SNAP_PAPER_LIVE_US = "paper.live.us";
+    public static final String SNAP_PAPER_LIVE_KR = "paper.live.kr";
+    /**
      * 모의 매매 트랙레코드 후보 기관 목록과 기관별 수집 진행률(저장 분기 수·완료 여부). 기관마다의 공시는
      * {@code sec13f(cik, TRACK_RECORD_QUARTERS)}에 있고, 이 저장본은 "누가 후보이고 어디까지 받았나"만 담습니다.
      */

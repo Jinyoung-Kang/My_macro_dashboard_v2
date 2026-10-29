@@ -88,7 +88,7 @@ class RouteInventoryTest {
             "POST /api/ai/report", "POST /api/ai/test",
             "GET /api/ai/toss/diagnostics", "GET /api/ai/toss/exchange-rate", "GET /api/ai/toss/indices",
             // 🧪 모의 매매(운영자 전용)
-            "GET /api/paper/overview", "GET /api/paper/status", "GET /api/paper/books/{code}/positions",
+            "GET /api/paper/overview", "GET /api/paper/live", "GET /api/paper/status", "GET /api/paper/books/{code}/positions",
             "GET /api/paper/books/{code}/orders", "GET /api/paper/books/{code}/fills",
             "GET /api/paper/books/{code}/nav", "POST /api/paper/init", "POST /api/paper/books/{code}/status",
             "POST /api/paper/books/{code}/reset", "POST /api/paper/run/risk", "GET /api/paper/track-record",

@@ -533,6 +533,10 @@
     },
     {
       "m": "GET",
+      "p": "/api/paper/live"
+    },
+    {
+      "m": "GET",
       "p": "/api/paper/status"
     },
     {

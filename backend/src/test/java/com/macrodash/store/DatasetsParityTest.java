@@ -65,6 +65,8 @@ class DatasetsParityTest {
         assertThat(constant(source, "OBS_FSC_ETF_PRICE")).isEqualTo(Datasets.OBS_FSC_ETF_PRICE);
         assertThat(constant(source, "OBS_KR_PAPER_UNIVERSE")).isEqualTo(Datasets.OBS_KR_PAPER_UNIVERSE);
         assertThat(constant(source, "SNAP_KR_PAPER_QUOTES")).isEqualTo(Datasets.SNAP_KR_PAPER_QUOTES);
+        assertThat(constant(source, "SNAP_PAPER_LIVE_US")).isEqualTo(Datasets.SNAP_PAPER_LIVE_US);
+        assertThat(constant(source, "SNAP_PAPER_LIVE_KR")).isEqualTo(Datasets.SNAP_PAPER_LIVE_KR);
         assertThat(constant(source, "TS_KR_CLOSE_ADJ")).isEqualTo(Datasets.TS_KR_CLOSE_ADJ);
         assertThat(constant(source, "OBS_KR_PAPER_FLOW")).isEqualTo(Datasets.OBS_KR_PAPER_FLOW);
         assertThat(constant(source, "SNAP_KR_PAPER_FLOWS_STATUS")).isEqualTo(Datasets.SNAP_KR_PAPER_FLOWS_STATUS);
