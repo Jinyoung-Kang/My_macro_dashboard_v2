@@ -22,9 +22,11 @@ import {
   reviewRunResultView,
   type ReviewVerdictRow,
   shouldReloadReviewDetail,
+  sideClass,
 } from "@/lib/paper";
 import {
   KR_REVIEW_EMPTY,
+  KR_REVIEW_ENTRY_NOTE,
   KR_REVIEW_SCHEDULE_NOTE,
   krLatestWeekReasonText,
   krManualReviewNote,
@@ -245,10 +247,7 @@ function ReviewBody({
       )}
 
       {entries.length > 0 && (
-        <Part
-          title="가정 진입(거절 주문)"
-          note="거절된 주문을 결정 다음 세션 시가에 샀다고 가정한 값입니다(비용 제외) — 금융위 확정 시가가 없으면 토스 잠정 시가, 그 세션 시가가 없으면 종가 근사."
-        >
+        <Part title="가정 진입(거절 주문)" note={KR_REVIEW_ENTRY_NOTE}>
           <Table<KrReviewEntryRow>
             label="가정 진입"
             rows={entries}
@@ -256,6 +255,8 @@ function ReviewBody({
             columns={[
               { key: "decision", header: "결정", render: (row) => <span className="whitespace-nowrap text-xs text-body">{row.decision}</span> },
               { key: "ticker", header: "종목", render: (row) => <span className="font-semibold text-bright">{row.ticker}</span> },
+              // 방향이 있어야 변화의 부호를 읽을 수 있습니다 — 매도의 음수는 피한 하락(손실이 아님).
+              { key: "side", header: "방향", render: (row) => <span className={`whitespace-nowrap text-xs ${sideClass(row.sideCode)}`}>{row.side}</span> },
               { key: "reject", header: "거절 사유", render: (row) => <span className="text-xs text-warn">{row.rejectReason}</span> },
               { key: "entryDate", header: "진입일", render: (row) => <span className="whitespace-nowrap text-xs text-body">{row.entryDate}</span> },
               { key: "entryPrice", header: "진입가(원)", align: "right", render: (row) => row.entryPrice },
@@ -266,7 +267,17 @@ function ReviewBody({
                   <span className="flex flex-wrap gap-1">{row.badges.map((badge) => <Chip key={badge.key} badge={badge} />)}</span>
                 ) : <span className="text-xs text-muted">—</span>),
               },
-              { key: "returnPct", header: "가정 수익률", align: "right", render: (row) => row.returnPct },
+              {
+                key: "returnPct",
+                header: "진입가 → 기준일 종가",
+                align: "right",
+                render: (row) => (row.afterSell ? (
+                  <span className="flex flex-col items-end">
+                    <span>{row.returnPct}</span>
+                    <span className="whitespace-nowrap text-[11px] text-text-3">{row.afterSell}</span>
+                  </span>
+                ) : row.returnPct),
+              },
             ]}
           />
         </Part>

@@ -1046,23 +1046,43 @@ function entrySourceBadge(source: string | null): Badge | null {
   return null;
 }
 
-/** 복기 입력의 가정 진입 한 줄(거절 주문을 결정 다음 세션 시가에 샀다고 가정한 값 — 비용 제외). */
+/** 거절된 매도의 판 뒤 변화 표시(서버 ReviewFacts.AVOIDED·MISSED·FLAT — 반올림한 값의 부호). 모르는 값은 받은 글자 그대로. */
+const AFTER_SELL_LABEL: Readonly<Record<string, string>> = {
+  avoided: "피한 하락",
+  missed: "놓친 상승",
+  flat: "변화 없음",
+};
+
+/** 가정 진입 표의 안내 — 매수·매도 모두 '체결됐다고 가정'이고, 매도의 값은 판 뒤 변화(음수 = 피한 하락)입니다. */
+export const KR_REVIEW_ENTRY_NOTE =
+  "거절된 주문(매수·매도)이 결정 다음 세션 시가에 체결됐다고 가정한 값입니다(비용 제외) — 변화는 기준일 종가 ÷ 진입가 − 1로, 매수면 가정 "
+  + "수익률, 매도면 판 뒤 변화(음수 = 피한 하락, 양수 = 놓친 상승)입니다. 진입가는 금융위 확정 시가, 없으면 토스 잠정 시가, 그 세션 시가가 "
+  + "없으면 종가 근사.";
+
+/** 복기 입력의 가정 진입 한 줄(거절 주문이 결정 다음 세션 시가에 체결됐다고 가정한 값 — 비용 제외, 매수·매도 모두). */
 export interface KrReviewEntryRow {
   key: string;
   decision: string;
   ticker: string;
+  /** 방향 이름(매수·매도). */
   side: string;
+  /** 방향 코드(BUY·SELL — 글자색), 모르면 null. */
+  sideCode: string | null;
   status: string;
   rejectReason: string;
   entryDate: string;
   entryPrice: string;
+  /** 기준일 종가 ÷ 진입가 − 1(서버 값) — 매수면 가정 수익률, 매도면 판 뒤 변화. */
   returnPct: string;
+  /** 매도만 — 판 뒤 변화의 뜻(피한 하락·놓친 상승·변화 없음, 서버 afterSellLabel). 매수·값 없음은 null. */
+  afterSell: string | null;
   badges: Badge[];
 }
 
 /**
- * 한국 복기 입력(`review.input`)의 결정별 주문 가운데 가정 진입(`hypothetical` — 거절 주문)이 있는 것 → 표의 줄. 진입가는 원, 수익률은 서버 값
- * 그대로이고, 출처 배지(금융위 확정 시가·토스 잠정 시가)와 '종가 근사'(isProxy — 그 세션 시가가 없어 종가로 근사)를 붙입니다. 모양이 틀리면 빈 목록.
+ * 한국 복기 입력(`review.input`)의 결정별 주문 가운데 가정 진입(`hypothetical` — 거절 주문, 매수·매도)이 있는 것 → 표의 줄. 진입가는 원, 변화는
+ * 서버 값 그대로이고(매도면 판 뒤 변화 — 뜻은 `afterSell`), 출처 배지(금융위 확정 시가·토스 잠정 시가)와 '종가 근사'(isProxy — 그 세션 시가가
+ * 없어 종가로 근사)를 붙입니다. 모양이 틀리면 빈 목록.
  */
 export function krReviewInputRows(input: unknown): KrReviewEntryRow[] {
   if (!isRecord(input)) return [];
@@ -1078,16 +1098,20 @@ export function krReviewInputRows(input: unknown): KrReviewEntryRow[] {
         badges.push({ key: "proxy", label: "종가 근사", className: toneClass("warn"),
           title: "결정 다음 세션 시가가 없어 그 세션 종가로 근사했습니다(isProxy)." });
       }
+      const side = textOf(order.side);
+      const afterSell = side === "SELL" ? textOf(hypo.afterSellLabel) : null;
       rows.push({
         key: `${numberOf(decision.id) ?? "?"}-${numberOf(order.id) ?? rows.length}`,
         decision: `#${numberOf(decision.id) ?? EMPTY} (${textOf(decision.asOf) ?? EMPTY})`,
         ticker: textOf(order.ticker) ?? EMPTY,
-        side: sideLabel(textOf(order.side)),
+        side: sideLabel(side),
+        sideCode: side,
         status: textOf(order.status) ?? EMPTY,
         rejectReason: rejectReasonText(textOf(order.rejectReason)).label,
         entryDate: textOf(hypo.entryDate) ?? EMPTY,
         entryPrice: won(numberOf(hypo.entryPrice)),
         returnPct: formatPercent(numberOf(hypo.returnPct)),
+        afterSell: afterSell === null ? null : (AFTER_SELL_LABEL[afterSell] ?? afterSell),
         badges,
       });
     });

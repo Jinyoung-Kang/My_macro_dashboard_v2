@@ -46,6 +46,7 @@ import {
   krStartState,
   KR_REFERENCE_KEY,
   krReferenceNotes,
+  krReviewInputRows,
   latestStartRecord,
   marketJobs,
   withKrReference,
@@ -592,5 +593,34 @@ describe("종목 선정 탭", () => {
       "가장 최근 결정 2026-11-02(#41)은 선정 칸이 없습니다(기한 지남·일시정지 등) — 기한 지남",
     );
     expect(krSelectionReference(null)).toBeNull();
+  });
+});
+
+describe("주간 복기 가정 진입(F2 — 매수·매도, 판 뒤 변화의 뜻)", () => {
+  const order = (id: number, side: string, hypothetical: Record<string, unknown>) => ({
+    id, ticker: "005930", side, status: "REJECTED", rejectReason: "MIN_HOLD", hypothetical: { basis: "가정", entryDate: "2026-11-06",
+      entryPrice: 72_000, entrySource: "FSC", isProxy: false, ...hypothetical },
+  });
+
+  it("방향 이름·코드, 매도만 판 뒤 변화의 뜻(피한 하락·놓친 상승·변화 없음, 모르는 값은 그대로) — 매수는 없음", () => {
+    const rows = krReviewInputRows({ decisions: [{ id: 3, asOf: "2026-11-05", orders: [
+      order(1, "SELL", { returnPct: -3, afterSellLabel: "avoided" }),
+      order(2, "SELL", { returnPct: 2.5, afterSellLabel: "missed" }),
+      order(3, "SELL", { returnPct: 0, afterSellLabel: "flat" }),
+      order(4, "SELL", { returnPct: 1, afterSellLabel: "new" }),
+      order(5, "SELL", { returnPct: null, afterSellLabel: null }),
+      order(6, "BUY", { returnPct: 4, afterSellLabel: "avoided" }),
+    ] }] });
+    expect(rows.map((row) => [row.side, row.sideCode, row.returnPct, row.afterSell])).toEqual([
+      ["매도", "SELL", "-3.00%", "피한 하락"],
+      ["매도", "SELL", "+2.50%", "놓친 상승"],
+      ["매도", "SELL", "0.00%", "변화 없음"],
+      ["매도", "SELL", "+1.00%", "new"],
+      ["매도", "SELL", "—", null],
+      ["매수", "BUY", "+4.00%", null],
+    ]);
+    expect(rows[0]).toMatchObject({ decision: "#3 (2026-11-05)", entryPrice: "72,000원", entryDate: "2026-11-06" });
+    expect(krReviewInputRows({ decisions: [{ id: 1, orders: [{ id: 2, side: "BUY" }] }] })).toEqual([]);
+    expect(krReviewInputRows(null)).toEqual([]);
   });
 });

@@ -179,8 +179,8 @@ describe("자료", () => {
     expect(screen.getByText("계좌 수익률 비교 (2026-10-30 → 2026-11-06)")).toBeTruthy();
   });
 
-  // 수정 전에는 표에 방향 칸이 없고 안내가 '샀다고 가정'이라, 거절된 매도의 −3%(피한 하락)가 매수 손실처럼 읽혔습니다(it.fails).
-  it.fails("거절된 매도 줄 — 방향 '매도'와 판 뒤 변화의 뜻('피한 하락'), 안내는 '체결됐다고 가정'(매수·매도 모두)", async () => {
+  // 예전에는 표에 방향 칸이 없고 안내가 '샀다고 가정'이라, 거절된 매도의 −3%(피한 하락)가 매수 손실처럼 읽혔습니다.
+  it("거절된 매도 줄 — 방향 '매도'와 판 뒤 변화의 뜻('피한 하락'), 안내는 '체결됐다고 가정'(매수·매도 모두)", async () => {
     await openReviews();
     const entries = await screen.findByRole("region", { name: "가정 진입 (좌우 스크롤)" });
     const row = within(entries).getAllByRole("row").find((tr) => tr.textContent?.includes("005930")) as HTMLElement;
