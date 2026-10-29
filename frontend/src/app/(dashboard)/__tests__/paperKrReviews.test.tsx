@@ -201,8 +201,8 @@ describe("자료", () => {
     expect(screen.queryByText(/샀다고 가정/)).toBeNull();
   });
 
-  // 수정 전에는 서버가 보낸 값 없음의 이유(비교 줄 reason·주문 notes의 '가정 수익률:')를 버리고 '—'만 그렸습니다(it.fails).
-  it.fails("값이 없으면 서버가 보낸 이유를 곁에 — 가정 진입은 주문 notes의 '가정 수익률:' 줄, 계좌 수익률 비교는 reason", async () => {
+  // 예전에는 서버가 보낸 값 없음의 이유(비교 줄 reason·주문 notes의 '가정 수익률:')를 버리고 '—'만 그렸습니다.
+  it("값이 없으면 서버가 보낸 이유를 곁에 — 가정 진입은 주문 notes의 '가정 수익률:' 줄, 계좌 수익률 비교는 reason", async () => {
     await openReviews();
     const entries = await screen.findByRole("region", { name: "가정 진입 (좌우 스크롤)" });
     const row = within(entries).getAllByRole("row").find((tr) => tr.textContent?.includes("051910")) as HTMLElement;

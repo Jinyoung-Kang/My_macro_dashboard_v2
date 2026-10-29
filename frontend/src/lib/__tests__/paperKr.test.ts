@@ -46,6 +46,7 @@ import {
   krStartState,
   KR_REFERENCE_KEY,
   krReferenceNotes,
+  krReviewComparison,
   krReviewInputRows,
   latestStartRecord,
   marketJobs,
@@ -622,5 +623,34 @@ describe("주간 복기 가정 진입(F2 — 매수·매도, 판 뒤 변화의 �
     expect(rows[0]).toMatchObject({ decision: "#3 (2026-11-05)", entryPrice: "72,000원", entryDate: "2026-11-06" });
     expect(krReviewInputRows({ decisions: [{ id: 1, orders: [{ id: 2, side: "BUY" }] }] })).toEqual([]);
     expect(krReviewInputRows(null)).toEqual([]);
+  });
+
+  it("값 없음의 이유 — 주문 notes의 '가정 수익률:'(근사 안내는 뺌)·기준일 종가 없음, 값이 다 있으면 null", () => {
+    const [later, split, noClose, filled] = krReviewInputRows({ decisions: [{ id: 3, asOf: "2026-11-06", orders: [
+      { ...order(1, "BUY", { entryPrice: null, returnPct: null }), notes: ["가정 수익률: 결정 다음 세션(2026-11-09)이 복기 기준일 뒤"] },
+      { ...order(2, "BUY", { returnPct: null }), notes: ["가정 수익률: 결정 다음 세션(2026-11-09) 시가 72000 ÷ 그날 이력 종가 36000 = 2.0 — "
+        + "0.5~1.5 밖이라 분할·병합 뒤 수정주가로 의심, 가정 수익률을 내지 않음"] },
+      { ...order(3, "SELL", { returnPct: null, isProxy: true }), notes: ["복기 기준일(2026-11-06) 종가 없음 — 마지막 종가 2026-11-05",
+        "가정 수익률: 결정 다음 세션(2026-11-06) 시가 없음 — 그 세션 종가로 근사(isProxy)", "200일선: 기준일까지 이력 20일 < 200일"] },
+      { ...order(4, "BUY", { returnPct: 1 }), notes: ["가정 수익률: 결정 다음 세션(2026-11-06) 시가 없음 — 그 세션 종가로 근사(isProxy)"] },
+    ] }] });
+    expect(later.reason).toBe("결정 다음 세션(2026-11-09)이 복기 기준일 뒤");
+    expect(split.reason).toContain("분할·병합 뒤 수정주가로 의심");
+    expect(noClose.reason).toBe("복기 기준일(2026-11-06) 종가 없음 — 마지막 종가 2026-11-05");
+    expect(filled.reason).toBeNull();
+  });
+
+  it("계좌 수익률 비교 — 수익률이 없을 때만 서버 사유, '잠정 줄 포함' 배지", () => {
+    const view = krReviewComparison({ comparison: { from: "2026-10-30", to: "2026-11-06", note: null, books: [
+      { book: "kr_rules", returnPct: 0.5, isEstimated: true, reason: "쓰지 않는 글" },
+      { book: "kr_bench_mix", returnPct: null, isEstimated: null, reason: "복기 기준일(2026-11-06) 순자산 없음" },
+      { book: "kr_claude", returnPct: null, isEstimated: null },
+    ] } });
+    expect(view?.rows.map((row) => [row.returnPct, row.reason, row.badges.map((badge) => badge.label)])).toEqual([
+      ["+0.50%", null, ["잠정 줄 포함"]],
+      ["—", "복기 기준일(2026-11-06) 순자산 없음", []],
+      ["—", null, []],
+    ]);
+    expect(krReviewComparison({})).toBeNull();
   });
 });

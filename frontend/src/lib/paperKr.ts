@@ -1076,7 +1076,24 @@ export interface KrReviewEntryRow {
   returnPct: string;
   /** 매도만 — 판 뒤 변화의 뜻(피한 하락·놓친 상승·변화 없음, 서버 afterSellLabel). 매수·값 없음은 null. */
   afterSell: string | null;
+  /** 진입가나 변화가 없을 때 그 이유(주문 notes — {@link krHypotheticalReason}). 둘 다 있으면 null. */
+  reason: string | null;
   badges: Badge[];
+}
+
+/**
+ * 가정 진입 값(진입가·변화)이 없는 이유 — 서버가 null을 돌려주기 전에 주문 `notes`에 남긴 '가정 수익률: …'(머리 떼고, 근사(isProxy) 안내는
+ * 값이 있는 갈래라 뺌)과 기준일 종가가 없을 때의 '복기 기준일(…) 종가 없음 — …'·'가격 이력 없음 — …'(ReviewFacts). 값이 다 있거나 이유가 없으면 null.
+ */
+function krHypotheticalReason(order: Record<string, unknown>, entryPrice: number | null, returnPct: number | null): string | null {
+  if (entryPrice !== null && returnPct !== null) return null;
+  const head = "가정 수익률: ";
+  const notes = stringsOf(order.notes);
+  const reasons = [
+    ...notes.filter((note) => note.startsWith(head) && !note.includes("(isProxy)")).map((note) => note.slice(head.length)),
+    ...notes.filter((note) => note.startsWith("복기 기준일(") || note.startsWith("가격 이력 없음")),
+  ];
+  return reasons.length > 0 ? reasons.join(" · ") : null;
 }
 
 /**
@@ -1100,6 +1117,8 @@ export function krReviewInputRows(input: unknown): KrReviewEntryRow[] {
       }
       const side = textOf(order.side);
       const afterSell = side === "SELL" ? textOf(hypo.afterSellLabel) : null;
+      const entryPrice = numberOf(hypo.entryPrice);
+      const returnPct = numberOf(hypo.returnPct);
       rows.push({
         key: `${numberOf(decision.id) ?? "?"}-${numberOf(order.id) ?? rows.length}`,
         decision: `#${numberOf(decision.id) ?? EMPTY} (${textOf(decision.asOf) ?? EMPTY})`,
@@ -1109,9 +1128,10 @@ export function krReviewInputRows(input: unknown): KrReviewEntryRow[] {
         status: textOf(order.status) ?? EMPTY,
         rejectReason: rejectReasonText(textOf(order.rejectReason)).label,
         entryDate: textOf(hypo.entryDate) ?? EMPTY,
-        entryPrice: won(numberOf(hypo.entryPrice)),
-        returnPct: formatPercent(numberOf(hypo.returnPct)),
+        entryPrice: won(entryPrice),
+        returnPct: formatPercent(returnPct),
         afterSell: afterSell === null ? null : (AFTER_SELL_LABEL[afterSell] ?? afterSell),
+        reason: krHypotheticalReason(order, entryPrice, returnPct),
         badges,
       });
     });
@@ -1119,9 +1139,13 @@ export function krReviewInputRows(input: unknown): KrReviewEntryRow[] {
   return rows;
 }
 
-/** 복기 입력의 계좌 수익률 비교(`comparison`) — 구간·설명·계좌별 수익률과 '잠정 줄 포함'(isEstimated) 배지. 없으면 null. */
+/**
+ * 복기 입력의 계좌 수익률 비교(`comparison`) — 구간·설명·계좌별 수익률과 '잠정 줄 포함'(isEstimated) 배지, 수익률이 없으면 서버 사유(`reason` —
+ * '순자산 기록 없음'·'복기 기준일(…) 순자산 없음'·'공통 시작일 순자산 없음'). 없으면 null.
+ */
 export function krReviewComparison(input: unknown): {
-  range: string; note: string | null; rows: { key: string; book: string; returnPct: string; badges: Badge[] }[];
+  range: string; note: string | null;
+  rows: { key: string; book: string; returnPct: string; reason: string | null; badges: Badge[] }[];
 } | null {
   const comparison = isRecord(input) && isRecord(input.comparison) ? input.comparison : null;
   if (!comparison) return null;
@@ -1132,6 +1156,7 @@ export function krReviewComparison(input: unknown): {
       key: `${index}-${textOf(row.book) ?? ""}`,
       book: textOf(row.book) ?? EMPTY,
       returnPct: formatPercent(numberOf(row.returnPct)),
+      reason: numberOf(row.returnPct) === null ? textOf(row.reason) : null,
       badges: row.isEstimated === true
         ? [{ key: "estimated", label: "잠정 줄 포함", className: toneClass("warn"),
           title: "금융위 확정 종가가 아닌(토스 잠정) 순자산 줄을 썼습니다 — 확정되면 값이 조금 바뀔 수 있습니다." }]

@@ -271,10 +271,12 @@ function ReviewBody({
                 key: "returnPct",
                 header: "진입가 → 기준일 종가",
                 align: "right",
-                render: (row) => (row.afterSell ? (
+                render: (row) => (row.afterSell || row.reason ? (
                   <span className="flex flex-col items-end">
                     <span>{row.returnPct}</span>
-                    <span className="whitespace-nowrap text-[11px] text-text-3">{row.afterSell}</span>
+                    {row.afterSell && <span className="whitespace-nowrap text-[11px] text-text-3">{row.afterSell}</span>}
+                    {/* 값이 없으면 서버가 notes에 남긴 이유(기준일 뒤 세션·시가 없음·분할 의심 등) — '—'만 두지 않습니다. */}
+                    {row.reason && <span className="min-w-[10rem] text-[11px] leading-snug text-text-3">{row.reason}</span>}
                   </span>
                 ) : row.returnPct),
               },
@@ -291,6 +293,7 @@ function ReviewBody({
               <li key={row.key} className="flex flex-wrap items-center gap-2">
                 <code className="text-body">{row.book}</code>
                 <span className="tabular-nums font-semibold text-bright">{row.returnPct}</span>
+                {row.reason && <span className="text-text-3">{row.reason}</span>}
                 {row.badges.map((badge) => <Chip key={badge.key} badge={badge} />)}
               </li>
             ))}
