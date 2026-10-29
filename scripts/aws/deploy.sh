@@ -10,6 +10,7 @@
 #   1. 점검: 폴더 이름(My_macro_dashboard_v2 — compose 프로젝트·DB 볼륨 이름이 폴더 이름을 따름), .env가 있고
 #      서버에 적지 않는 이름(포트 네 줄 등, .env.aws.example)이 없는지. 값은 읽지도 찍지도 않습니다.
 #   2. git fetch → main 체크아웃 → origin/main으로 fast-forward. 서버에서 고친 파일이 있거나 갈라졌으면 멈춥니다.
+#      받은 main에서 이 스크립트가 바뀌었으면 새 판으로 처음부터 한 번 다시 돕니다(QA-145).
 #   3. 화면 왼쪽 아래 버전(APP_VERSION·APP_UPDATED)
 #   4. 이미지를 하나씩 빌드: backend → frontend → collector → gate(베이스 이미지 보안 패치까지 --pull).
 #      CloudFront 원본용 대역 파일(deploy/aws/trusted_proxies.caddy)을 새로 받음 — 못 받으면 지난 파일로(없으면 멈춤, ADR 0019 결정 16)
@@ -54,6 +55,7 @@ umask 022
 
 # ---------------------------------------------------------------- 2) 코드 받기
 echo "코드를 받습니다(main)…"
+self_before="$(git rev-parse HEAD:scripts/aws/deploy.sh)"
 git fetch --prune --quiet origin
 # 추적 중인 파일만 봅니다(.env·backups는 추적하지 않음).
 [ -z "$(git status --porcelain --untracked-files=no)" ] ||
@@ -61,6 +63,12 @@ git fetch --prune --quiet origin
 git checkout --quiet main
 git merge --ff-only --quiet origin/main ||
     die "서버의 main이 origin/main과 갈라져 fast-forward하지 못했습니다 — git log --oneline --graph main origin/main"
+# QA-145: 받은 main에서 이 스크립트가 바뀌었으면 새 판으로 처음부터 한 번 다시 돕니다. bash는 이미 연 옛 파일을 끝까지 읽어,
+# 새 판의 빌드 목록·단계가 빠진 채 기동합니다(2026-10-30 gate). 다시 돈 판은 받을 것이 없어 여기를 그냥 지나갑니다.
+if [ -z "${DEPLOY_REEXEC:-}" ] && [ "$(git rev-parse HEAD:scripts/aws/deploy.sh)" != "$self_before" ]; then
+    echo "  deploy.sh가 바뀌어 받은 새 판으로 다시 돕니다."
+    DEPLOY_REEXEC=1 exec bash scripts/aws/deploy.sh "$@"
+fi
 # 받은 코드에 Caddyfile이 없으면 docker가 그 자리에 빈 폴더를 만들고 caddy가 뜨지 못합니다.
 [ -f deploy/aws/Caddyfile ] || die "deploy/aws/Caddyfile이 없습니다 — 받은 main(git log -1)을 확인하세요."
 

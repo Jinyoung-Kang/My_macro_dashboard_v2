@@ -296,7 +296,6 @@ def test_deploy는_받은_main에_Caddyfile이_없으면_기동하지_않는다(
     assert _docker_calls(fakes) == []
 
 
-@pytest.mark.xfail(strict=True, reason="QA-145: 받은 main에서 deploy.sh가 바뀌어도 옛 판으로 끝까지 돈다 — 수정 전")
 def test_QA145_deploy는_받은_main의_deploy_sh가_바뀌었으면_새_판으로_다시_돈다(server, fakes):
     # 2026-10-30 첫 공개 주소 배포: 새 판이 빌드 목록에 gate를 더했는데, bash가 이미 연 옛 판으로 끝까지 돌아 gate를
     # 빌드하지 않은 채 기동했다(No such image). 받은 새 판이 빌드·기동을 맡아야 한다.
