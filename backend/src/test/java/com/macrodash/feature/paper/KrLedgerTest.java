@@ -800,7 +800,6 @@ class KrLedgerTest {
         }
 
         @Test
-        @Disabled("QA-144 재현 — 수정 전에는 ETF 분배락의 수정 비율 변화(0.5% 초과)를 미처리 기업행위로 묶음")
         @DisplayName("QA-144: ETF 분배락(토스 수정주가가 분배금을 조정 — G16, 069500 분기 0.11~0.44%·153130 매달 약 0.2%)의 비율 변화 0.66%는 기업행위가 아님 — 벤치마크 보유가 묶이지 않고 그날 종가로 평가")
         void etfDistributionIsNotACorporateAction() {
             book(PaperBooks.KR_BENCH_K200, PaperBooks.KIND_BENCHMARK, 0);

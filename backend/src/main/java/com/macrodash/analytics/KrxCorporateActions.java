@@ -21,7 +21,8 @@ import java.util.Set;
  * {@code adjRatio} = {@code adjusted=true} 종가 ÷ {@code adjusted=false} 종가, 금융위 최근 두 기준일의 상장주식수, 두 출처에 그
  * 종목이 있는지입니다. [확인] 삼성전자 50:1 분할(변경상장 2018-05-04) 토스 응답: 분할 전 봉의 비율은 정확히 0.02, 분할 뒤 봉은 1,
  * 분할 정지일(04-30·05-02·05-03)은 거래량 0·시고저종 = 전일 종가 봉이었습니다(시험 자료 {@code paper/kr-corporate-actions/}).
- * [추정 — G16] 토스 수정주가는 배당을 조정하지 않아 비율이 바뀌면 분할·병합류(또는 증자) 신호입니다.
+ * [확인 — G16, 2026-10-29] 토스 수정주가는 주식 배당을 조정하지 않아 비율이 바뀌면 분할·병합류(또는 증자) 신호입니다. ETF 분배금은
+ * 조정하므로 ETF는 {@link #FUND_DISTRIBUTION_BAND} 안의 변화를 건너뜁니다(QA-144).
  *
  * <p><b>거래량 0 봉은 관측이 아닙니다</b>({@link #observed}): 정지일 봉의 가격은 전일 종가를 이어 쓴 값이라 체결·평가·비율 계산에
  * 쓰지 않습니다. 거래량을 모르는 봉(null)도 관측이 아닙니다(짐작하지 않음).
@@ -68,6 +69,12 @@ public final class KrxCorporateActions {
     private static final double LIMIT_SLACK = 1e-9;
     /** 이웃한 봉의 수정 비율이 이만큼(상대값) 넘게 다를 때만 '바뀜' — 정수 원으로 반올림한 수정가의 잡음을 버립니다. */
     public static final double RATIO_NOISE = 0.005;
+    /**
+     * ETF(펀드)의 수정 비율 변화 중 이만큼(상대값, 경계 포함) 안은 분배락 조정 — 사건이 아닙니다(QA-144). [확인 — G16, 2026-10-29] 토스
+     * 수정주가는 주식 배당은 조정하지 않지만 ETF 분배금은 조정합니다(069500 분기 0.11~0.44%·153130 매달 약 0.2%). 장부는 분배금을 반영하지
+     * 않으므로(명세 §4-2) 그 변화로 보유를 묶지 않고, 이 밖(분할 k ≥ 2 등)은 주식과 같은 판정입니다. ±10%는 {@link SplitDetector}의 '분할 아님' 폭과 같습니다.
+     */
+    public static final double FUND_DISTRIBUTION_BAND = 0.10;
     /** 한국 분할·병합(액면 변경)으로 읽는 최소 배율 — k ≥ 2 또는 k ≤ 1/2. 그 사이(6:5·3:2 등)는 증자 조정으로 보고 미처리. */
     public static final int MIN_SPLIT_FACTOR = 2;
     /**
@@ -289,6 +296,17 @@ public final class KrxCorporateActions {
      * @throws IllegalArgumentException 인자 null, 수량 음수, 같은 날짜의 봉이 둘
      */
     public static Assessment assess(LocalDate asOf, LocalDate since, int qty, List<DailyBar> bars, Listing listing) {
+        return assess(asOf, since, qty, bars, listing, false);
+    }
+
+    /**
+     * 종목 하나의 기업행위 판정 — {@code fund}(ETF)면 {@link #FUND_DISTRIBUTION_BAND} 안의 수정 비율 변화를 분배락 조정으로 보고 건너뜁니다(QA-144).
+     *
+     * @param fund 그 종목이 ETF인가(부르는 쪽의 ETF 목록 — 한국은 설정 현금성 ∪ 벤치마크 종목)
+     * @see #assess(LocalDate, LocalDate, int, List, Listing)
+     */
+    public static Assessment assess(LocalDate asOf, LocalDate since, int qty, List<DailyBar> bars, Listing listing,
+                                    boolean fund) {
         Objects.requireNonNull(asOf, "기준 거래일이 없습니다");
         Objects.requireNonNull(since, "반영한 마지막 관측 날짜가 없습니다");
         Objects.requireNonNull(listing, "상장 상태가 없습니다(모르면 Listing.UNKNOWN)");
@@ -315,7 +333,7 @@ public final class KrxCorporateActions {
         }
 
         // ② 새 수정 비율 변화 — 하나면 분할·병합 후보(3중 조건)
-        List<Step> steps = ratioSteps(sorted);
+        List<Step> steps = ratioSteps(sorted, fund);
         List<Step> fresh = steps.stream().filter(s -> s.date().isAfter(since)).toList();
         Ratio ratio = null;
         LocalDate effective = null;
@@ -535,14 +553,15 @@ public final class KrxCorporateActions {
         return count;
     }
 
-    private static List<Step> ratioSteps(List<DailyBar> sorted) {
+    private static List<Step> ratioSteps(List<DailyBar> sorted, boolean fund) {
         List<Step> out = new ArrayList<>();
         DailyBar previous = null;
         for (DailyBar bar : sorted) {
             if (bar.adjRatio() == null) {
                 continue;
             }
-            if (previous != null && Math.abs(bar.adjRatio() / previous.adjRatio() - 1) > RATIO_NOISE) {
+            double change = previous == null ? 0 : Math.abs(bar.adjRatio() / previous.adjRatio() - 1);
+            if (change > RATIO_NOISE && !(fund && change <= FUND_DISTRIBUTION_BAND + LIMIT_SLACK)) {
                 out.add(new Step(bar.date(), previous.adjRatio(), bar.adjRatio()));
             }
             previous = bar;

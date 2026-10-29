@@ -226,6 +226,32 @@ class KrxCorporateActionsTest {
     }
 
     @Test
+    @DisplayName("QA-144: ETF는 ±10% 안의 비율 변화(분배락 조정)를 건너뜀 — 같은 변화가 주식이면 미처리, ETF도 ±10% 밖·2:1 분할은 주식과 같은 판정")
+    void fundDistributionBand() {
+        List<DailyBar> distribution = List.of(
+                new DailyBar(NOV_02, 10_000, 500_000L, 0.9934),
+                new DailyBar(NOV_03, 9_950, 500_000L, 1.0));
+        assertThat(KrxCorporateActions.assess(NOV_03, NOV_02, 100, distribution, Listing.UNKNOWN, true).kind())
+                .as("ETF 분배락 ×1.0066").isEqualTo(Kind.NONE);
+        assertThat(KrxCorporateActions.assess(NOV_03, NOV_02, 100, distribution, Listing.UNKNOWN, false).kind())
+                .as("주식이면 그대로 미처리").isEqualTo(Kind.UNPROCESSED);
+        assertThat(KrxCorporateActions.assess(NOV_03, NOV_02, 100, distribution, Listing.UNKNOWN).kind())
+                .as("옛 시그니처 = 주식").isEqualTo(Kind.UNPROCESSED);
+
+        Assessment wide = KrxCorporateActions.assess(NOV_03, NOV_02, 100, List.of(
+                new DailyBar(NOV_02, 10_000, 500_000L, 0.88),
+                new DailyBar(NOV_03, 8_900, 500_000L, 1.0)), Listing.UNKNOWN, true);
+        assertThat(wide.kind()).as("±10% 밖(×1.1364)은 ETF도 미처리").isEqualTo(Kind.UNPROCESSED);
+
+        Assessment split = KrxCorporateActions.assess(NOV_04, NOV_02, 100, List.of(
+                new DailyBar(NOV_02, 20_000, 500_000L, 0.5),
+                new DailyBar(NOV_03, 10_000, 1_000_000L, 1.0),
+                new DailyBar(NOV_04, 10_050, 1_000_000L, 1.0)), Listing.UNKNOWN, true);
+        assertThat(split.kind()).as("ETF 2:1 분할은 3중 조건으로").isEqualTo(Kind.SPLIT);
+        assertThat(split.newQty()).isEqualTo(200);
+    }
+
+    @Test
     @DisplayName("새 비율 변화가 둘이면 미처리, 분할 전 관측이 창에 없으면(정지일부터 시작) 3중 조건을 볼 수 없어 미처리")
     void ambiguousRatioChanges() {
         Assessment twice = KrxCorporateActions.assess(NOV_04, NOV_02, 100, List.of(

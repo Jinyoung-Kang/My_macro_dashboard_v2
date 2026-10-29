@@ -884,7 +884,10 @@ public class PaperLedgerService {
         });
     }
 
-    /** 그 종목의 기업행위 판정 — 저장본의 새 봉(이어받은 항목은 넘기지 않음) + since 봉, 토스·금융위 상장 상태. */
+    /**
+     * 그 종목의 기업행위 판정 — 저장본의 새 봉(이어받은 항목은 넘기지 않음) + since 봉, 토스·금융위 상장 상태. ETF 목록({@link KrPaperMarket#etf})
+     * 종목은 분배락의 수정 비율 변화를 건너뜁니다(QA-144).
+     */
     private static Assessment assess(BookRun run, String ticker, LocalDate since, int qty, DailyBar sinceBar) {
         Bar bar = run.bar(ticker);
         boolean fresh = bar != null && !bar.stale() && bar.kr() != null;
@@ -904,7 +907,8 @@ public class PaperLedgerService {
                 : run.quotes.absent().contains(ticker) ? Presence.ABSENT : Presence.UNKNOWN;
         KrConfirmed.Series fsc = run.confirmed.of(ticker);
         Listing listing = new Listing(toss, fsc.presence(), fsc.sharesBefore(), fsc.sharesAfter());
-        return KrxCorporateActions.assess(asOfOf(run, ticker), since, qty, bars, listing);
+        return KrxCorporateActions.assess(asOfOf(run, ticker), since, qty, bars, listing,
+                KrPaperMarket.etf(ticker, run.settings));
     }
 
     /** 보유가 반영한 마지막 관측(since 봉) — 거래량을 모르면(V15 전 보유) 관측이 아니라 3중 조건의 E 전 관측이 되지 못함. */
