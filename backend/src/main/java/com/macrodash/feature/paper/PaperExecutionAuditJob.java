@@ -46,7 +46,8 @@ import java.util.Map;
  *
  * <p><b>한 번 쓴 값은 고치지 않습니다.</b> 시점마다 값을 처음 구한 저장본의 값이 남고(저장 쪽 {@link PaperStore#mergeOrderExec}), 못 구한 시점은
  * null로 두었다가 다음 저장본에서 다시 봅니다. 지연({@code lag_seconds})은 그 주문의 1분봉 반사실을 처음 적은 저장본의 지연(달력으로 다시 셈 —
- * 정규장 밖이면 null)이고, 늦게 풂({@code late_resolved})은 시각 지정 체결이 생기는 단계 1부터라 지금은 늘 null입니다.
+ * 정규장 밖이면 null)이고 그때 null이었으면 뒤 저장본의 지연으로 메우지 않습니다. 늦게 풂({@code late_resolved})은 시각 지정 체결이 생기는
+ * 단계 1부터라 지금은 늘 null입니다.
  *
  * <p>저장본(1분봉·관측치)은 {@link StoreReader#quietly}로만 읽습니다 — 정기 작업이 수집기를 깨우지 않게(ADR 0008). 작업 기록
  * ({@code paper_job_runs}, 이름 {@value #JOB})은 무엇이든 새로 썼을 때와 오류일 때만 남깁니다(5분마다 쌓이면 다른 작업 기록을 밀어냄) — 실행 시간은
@@ -203,8 +204,10 @@ public class PaperExecutionAuditJob {
                     continue;                              // 새로 채울 값이 없음 — 쓰지 않음
                 }
                 LocalDate session = ExecutionAudit.targetSession(order, calendar);
+                // 지연은 그 주문의 1분봉 반사실을 처음 적는 회차의 값만 — 그 회차에 몰랐으면(null) 뒤 회차의 값으로 메우지 않습니다.
+                Integer orderLag = fromBars && !menuFilled(before) ? lag : null;
                 OrderExec row = new OrderExec(order.id(), code, order.timing(),
-                        ExecutionAudit.targetAt(order.timing(), session, calendar), cf, fromBars ? lag : null, null, null);
+                        ExecutionAudit.targetAt(order.timing(), session, calendar), cf, orderLag, null, null);
                 if (store.mergeOrderExec(row)) {
                     rows++;
                     values += fresh;
@@ -221,6 +224,11 @@ public class PaperExecutionAuditJob {
         }
         JsonNode value = row.cf().get(timing);
         return value != null && !value.isNull();
+    }
+
+    /** 그 행에 1분봉으로 적은 메뉴 시점이 이미 있나 — 있으면 그 주문의 지연은 그 회차에 정해졌습니다(그때 null이었어도). */
+    private static boolean menuFilled(OrderExec row) {
+        return ExecutionAudit.MENU.keySet().stream().anyMatch(timing -> filled(row, timing));
     }
 
     private void record(Instant started, Outcome outcome, Snapshot bars, Quotes quotes, TradingCalendar calendar) {

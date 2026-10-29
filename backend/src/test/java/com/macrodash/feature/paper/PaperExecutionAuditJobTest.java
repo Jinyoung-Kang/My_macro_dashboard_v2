@@ -8,7 +8,6 @@ import com.macrodash.store.PaperStore.Order;
 import com.macrodash.store.PaperStore.OrderExec;
 import com.macrodash.store.Snapshot;
 import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import tools.jackson.databind.JsonNode;
@@ -207,7 +206,6 @@ class PaperExecutionAuditJobTest {
     }
 
     @Test
-    @Disabled("재현 — 1분봉 값을 처음 채운 회차의 지연이 null이면 뒤 회차의 지연으로 메움(다음 커밋에서 정의대로)")
     @DisplayName("지연은 그 주문의 1분봉 반사실을 처음 적은 회차의 값 — 그 회차에 SPY를 이어받아 지연을 몰랐으면 뒤 회차가 다른 시점을 채워도 null 그대로")
     void lagStaysWithTheFirstBarsRoundEvenWhenUnknown() {
         long id = order("AAPL", "NEXT_OBSERVATION", "PENDING", MON, MON_DECIDED);
