@@ -196,7 +196,7 @@ export function SelectionSection() {
           rows={history}
           rowKey={(row) => row.asOfDate}
           caption="선정 이력"
-          scrollHint
+          scrollHint="overflow"
           emptyText="아직 선정 기록이 없습니다 — 초기 선정은 규칙 계좌 초기화 때, 그 뒤는 재선정일마다 남습니다."
           columns={[
             { key: "asOf", header: "기준일", className: "whitespace-nowrap", cell: (row) => row.asOfDate },
@@ -274,7 +274,7 @@ function PoolCard({ rows, asOfDate, groupWeightA }: { rows: PoolRow[]; asOfDate:
           rows={rows}
           rowKey={(row) => row.key}
           caption="신호 풀"
-          scrollHint
+          scrollHint="overflow"
           emptyText="신호 풀이 없습니다 — 이 기준일에 유효한 선정이 아직 없거나, 선정 때 자격 있는 기관이 없었습니다."
           columns={[
             {
@@ -514,7 +514,7 @@ function PeriodTable({ name, span, periods }: { name: string; span: string; peri
         // 같은 날 공시가 둘(정정 공시 등)이어도 겹치지 않게 보고 분기·시작일까지 붙입니다.
         rowKey={(period) => `${period.filingDate}-${period.reportDate}-${period.start}`}
         caption={`${name} 구간`}
-        scrollHint
+        scrollHint="overflow"
         emptyText={`${span} 안의 구간이 없습니다.`}
         columns={[
           { key: "filingDate", header: "공시일", cell: (period) => period.filingDate },

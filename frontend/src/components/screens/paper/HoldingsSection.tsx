@@ -614,7 +614,7 @@ export function HoldingsSection({
                 rows={positions.data.positions ?? []}
                 rowKey={(row) => row.ticker}
                 caption="보유"
-                scrollHint={korea ? "overflow" : true}
+                scrollHint="overflow"
                 emptyText="보유가 없습니다 — 현금만 들고 있습니다."
               />
             )}
@@ -638,7 +638,7 @@ export function HoldingsSection({
             rows={positions.data.lockouts ?? []}
             rowKey={(row) => row.ticker}
             caption="재진입 금지"
-            scrollHint={korea ? "overflow" : true}
+            scrollHint="overflow"
             emptyText="재진입 금지 종목이 없습니다."
           />
         </Card>
@@ -664,7 +664,7 @@ export function HoldingsSection({
               rows={orders.data.orders ?? []}
               rowKey={(row) => String(row.id)}
               caption="주문"
-              scrollHint={korea ? "overflow" : true}
+              scrollHint="overflow"
               emptyText="주문이 없습니다."
             />
           )
@@ -706,7 +706,7 @@ export function HoldingsSection({
                 rows={fills.data.fills ?? []}
                 rowKey={(row) => String(row.id)}
                 caption="체결"
-                scrollHint={korea ? "overflow" : true}
+                scrollHint="overflow"
                 emptyText="체결이 없습니다."
               />
             )}
@@ -734,7 +734,7 @@ export function HoldingsSection({
               rows={krNavRows(nav.data.series, jobs, code).slice(0, NAV_ROWS)}
               rowKey={(row) => row.tradingDate}
               caption="순자산 기록"
-              scrollHint={korea ? "overflow" : true}
+              scrollHint="overflow"
               emptyText="순자산 기록이 없습니다."
             />
           ))}
