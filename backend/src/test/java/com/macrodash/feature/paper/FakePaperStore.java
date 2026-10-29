@@ -47,6 +47,10 @@ class FakePaperStore extends PaperStore {
     TreeMap<Long, Fill> fills = new TreeMap<>();
     /** 체결 번호 → 확정 조정 행({@code paper_fill_confirmations}, V14 — 체결마다 한 행, 체결을 지우면 함께). */
     TreeMap<Long, FillConfirmation> confirmations = new TreeMap<>();
+    /** 주문 번호 → 실행 감사 행({@code paper_order_exec}, V17 — 주문마다 한 행, 주문을 지우면 함께). */
+    TreeMap<Long, OrderExec> execs = new TreeMap<>();
+    /** 체결 번호 → 체결 봉({@code paper_fills.bar_at}·{@code fill_rung}, V17 — 체결 레코드에 없는 칸, 시험이 넣음). */
+    TreeMap<Long, ExecFill> fillBars = new TreeMap<>();
     Map<String, TreeMap<LocalDate, NavRow>> nav = new HashMap<>();
     List<JobRun> jobRuns = new ArrayList<>();
     Map<String, StartPrice> startPrices = new TreeMap<>();
@@ -390,6 +394,68 @@ class FakePaperStore extends PaperStore {
     @Override
     public List<FillConfirmation> fillConfirmations(String code) {
         return confirmations.values().stream().filter(c -> c.bookCode().equals(code)).toList();
+    }
+
+    // ------------------------------------------------------------------ 실행 감사(V17)
+    /** 결정 주문(출처 CLAUDE)·시장에 나간 상태·즉시·사후 체결이 아닌 시점 — PaperStore와 같은 거르기, 만든 순. */
+    @Override
+    public List<Order> executionOrders(String code, LocalDate asOfFrom) {
+        return orders.values().stream()
+                .filter(o -> o.bookCode().equals(code) && "CLAUDE".equals(o.source())
+                        && List.of("PENDING", "FILLED", "EXPIRED", "CANCELLED").contains(o.status())
+                        && !List.of("IMMEDIATE", "BACKFILL").contains(o.timing())
+                        && (asOfFrom == null || (o.asOfTradingDate() != null && !o.asOfTradingDate().isBefore(asOfFrom))))
+                .sorted(Comparator.comparing(Order::createdAt).thenComparing(Order::id)).toList();
+    }
+
+    @Override
+    public List<ExecFill> fillsForOrders(java.util.Collection<Long> orderIds) {
+        return fills.values().stream().filter(f -> orderIds.contains(f.orderId()))
+                .sorted(Comparator.comparingLong(Fill::orderId))
+                .map(f -> {
+                    ExecFill bar = fillBars.get(f.id());
+                    return new ExecFill(f, bar == null ? null : bar.barAt(), bar == null ? null : bar.fillRung());
+                }).toList();
+    }
+
+    /** 주문 최근 순(주문의 만든 시각, 번호 — 내림차순). */
+    @Override
+    public List<OrderExec> orderExecs(String code) {
+        Comparator<OrderExec> byOrder = Comparator.comparing((OrderExec e) -> orders.get(e.orderId()).createdAt())
+                .thenComparingLong(OrderExec::orderId);
+        return execs.values().stream().filter(e -> e.bookCode().equals(code)).sorted(byOrder.reversed()).toList();
+    }
+
+    /** PaperStore와 같은 합치기 — 값이 든 시점·칸은 그대로, 없거나 null인 것만 채움. 바뀐 것이 없으면 false(시각 그대로). */
+    @Override
+    public boolean mergeOrderExec(OrderExec row) {
+        if (!orders.containsKey(row.orderId())) {
+            throw new org.springframework.dao.DataIntegrityViolationException("paper_order_exec_order_id_fkey: "
+                    + row.orderId());
+        }
+        OrderExec before = execs.get(row.orderId());
+        if (before == null) {
+            execs.put(row.orderId(), new OrderExec(row.orderId(), row.bookCode(), row.timing(), row.targetAt(),
+                    row.cf().deepCopy(), row.lagSeconds(), row.lateResolved(), dbNow));
+            return true;
+        }
+        tools.jackson.databind.node.ObjectNode cf = (tools.jackson.databind.node.ObjectNode) before.cf().deepCopy();
+        for (Map.Entry<String, JsonNode> entry : row.cf().properties()) {
+            JsonNode old = cf.get(entry.getKey());
+            if (old == null || old.isNull()) {
+                cf.set(entry.getKey(), entry.getValue().deepCopy());
+            }
+        }
+        OrderExec merged = new OrderExec(before.orderId(), before.bookCode(), before.timing(),
+                before.targetAt() != null ? before.targetAt() : row.targetAt(), cf,
+                before.lagSeconds() != null ? before.lagSeconds() : row.lagSeconds(),
+                before.lateResolved() != null ? before.lateResolved() : row.lateResolved(), before.updatedAt());
+        if (merged.equals(before)) {
+            return false;
+        }
+        execs.put(row.orderId(), new OrderExec(merged.orderId(), merged.bookCode(), merged.timing(), merged.targetAt(),
+                merged.cf(), merged.lagSeconds(), merged.lateResolved(), dbNow));
+        return true;
     }
 
     List<Fill> fillsOf(String code) {
@@ -1067,6 +1133,7 @@ class FakePaperStore extends PaperStore {
         ledgerHoldMarks.keySet().removeIf(id -> !orders.containsKey(id));
         fills.values().removeIf(f -> f.bookCode().equals(code));
         confirmations.keySet().removeIf(id -> !fills.containsKey(id));
+        execs.keySet().removeIf(id -> !orders.containsKey(id));
         positions.remove(code);
         corpHolds.remove(code);
         refVolumes.remove(code);
@@ -1081,7 +1148,7 @@ class FakePaperStore extends PaperStore {
                             Map<String, TreeMap<String, String>> corpHolds, Map<String, TreeMap<String, Long>> refVolumes,
                             Map<String, TreeMap<String, Lockout>> lockouts, TreeMap<Long, Order> orders,
                             TreeMap<Long, LedgerHold> ledgerHoldMarks, TreeMap<Long, Fill> fills, TreeMap<Long, FillConfirmation> confirmations,
-                            Map<String, TreeMap<LocalDate, NavRow>> nav,
+                            TreeMap<Long, OrderExec> execs, Map<String, TreeMap<LocalDate, NavRow>> nav,
                             List<JobRun> jobRuns, Map<String, StartPrice> startPrices, SettingsRow settings,
                             TreeMap<LocalDate, TreeMap<String, TrackRecordRow>> trackRecords,
                             TreeMap<LocalDate, Selection> selections, TreeMap<Long, Decision> decisions,
@@ -1092,7 +1159,8 @@ class FakePaperStore extends PaperStore {
         Snapshot(FakePaperStore s) {
             this(new TreeMap<>(s.books), new TreeMap<>(s.states), deep(s.positions), deep(s.corpHolds),
                     deep(s.refVolumes), deep(s.lockouts),
-                    new TreeMap<>(s.orders), new TreeMap<>(s.ledgerHoldMarks), new TreeMap<>(s.fills), new TreeMap<>(s.confirmations), deep(s.nav),
+                    new TreeMap<>(s.orders), new TreeMap<>(s.ledgerHoldMarks), new TreeMap<>(s.fills), new TreeMap<>(s.confirmations),
+                    new TreeMap<>(s.execs), deep(s.nav),
                     new ArrayList<>(s.jobRuns),
                     new TreeMap<>(s.startPrices), s.settings, deepDates(s.trackRecords), new TreeMap<>(s.selections),
                     new TreeMap<>(s.decisions), new TreeMap<>(s.gates), new TreeMap<>(s.frameworks),
@@ -1111,6 +1179,7 @@ class FakePaperStore extends PaperStore {
             s.ledgerHoldMarks = ledgerHoldMarks;
             s.fills = fills;
             s.confirmations = confirmations;
+            s.execs = execs;
             s.nav = nav;
             s.jobRuns = jobRuns;
             s.startPrices = startPrices;

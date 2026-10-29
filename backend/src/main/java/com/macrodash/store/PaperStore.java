@@ -214,6 +214,34 @@ public class PaperStore {
     public record UnconfirmedFill(Fill fill, String timing) {
     }
 
+    /**
+     * 체결과 그 체결 봉(V17 {@code paper_fills.bar_at}·{@code fill_rung} — 미국 Claude 계좌2의 시각 지정 체결만 씀, 그 밖의 체결은 둘 다 null).
+     * 체결 레코드({@link Fill})에는 이 두 칸이 없습니다 — 장부가 쓰는 체결 경로는 그대로이고, 실행 감사가 읽을 때만 함께 읽습니다.
+     */
+    public record ExecFill(Fill fill, Instant barAt, String fillRung) {
+    }
+
+    /**
+     * 실행 감사 한 행({@code paper_order_exec}, V17 — 미국 Claude 계좌2 실험, 명세 2026-10-30 §11·§14-1). 주문마다 하나이고 쓰는 곳은 실행 감사
+     * 작업({@code PaperExecutionAuditJob})뿐입니다. {@code cf}는 시점 이름 → {@code {raw, at, rung}} 또는 null(아직·못 구함)인 JSON 객체
+     * 그대로입니다 — 값이 든 시점은 다시 쓰지 않습니다({@link #mergeOrderExec}).
+     *
+     * @param timing       주문 행의 timing 그대로
+     * @param targetAt     목표 시각 T(정해진 시각이 없는 NEXT_OBSERVATION은 null)
+     * @param lagSeconds   그 주문의 반사실을 처음 적은 1분봉 저장본의 지연(정규장 밖·모름은 null — 0으로 채우지 않음)
+     * @param lateResolved 늦게 풀었나(아직·모름·시각 지정이 아닌 계좌1 주문은 null)
+     * @param updatedAt    마지막으로 바꾼 시각 — 넣을 때는 보지 않습니다(DB now())
+     */
+    public record OrderExec(long orderId, String bookCode, String timing, Instant targetAt, JsonNode cf,
+                            Integer lagSeconds, Boolean lateResolved, Instant updatedAt) {
+
+        public OrderExec {
+            if (cf == null || !cf.isObject()) {
+                throw new IllegalArgumentException("실행 감사의 반사실(cf)은 JSON 객체여야 합니다: " + orderId);
+            }
+        }
+    }
+
     /** 거래일별 순자산. {@code pricesFinal}이면 확정 종가로 평가한 값입니다. */
     public record NavRow(String bookCode, LocalDate tradingDate, double nav, double cash, double equityValue,
                          double exposurePct, boolean pricesFinal) {
@@ -591,12 +619,12 @@ public class PaperStore {
      * 열({@code paper_track_record.data_source}·{@code paper_decisions.packet_text}·{@code paper_api_usage.est_cost_calls}),
      * V12의 {@code paper_reviews} 테이블, V13이 더하는 {@code paper_books.market}·{@code currency} 열, V14가 더하는
      * {@code paper_reviews.market}·{@code paper_notes.market} 열, V15가 더하는 {@code paper_positions.fill_ref_volume} 열, V16이 더하는
-     * {@code paper_orders.ledger_hold_reason} 열로 봅니다.
+     * {@code paper_orders.ledger_hold_reason} 열, V17이 더하는 {@code paper_fills.bar_at} 열과 {@code paper_order_exec} 테이블로 봅니다.
      * V8만 있는 DB(백엔드만 새로 띄운 경우, QA-016)에서 참이면
      * 트랙레코드 읽기·쓰기가 {@code group_code}·{@code data_source} 열과 새 기본키에서, 결정 읽기·쓰기가 {@code packet_text} 열에서,
      * 사용량 읽기·쓰기가 추정 비용 열에서, 주간 복기 작업·화면이 없는 테이블에서, 책 읽기·쓰기가 시장·통화 열에서, 복기·메모
      * 읽기·쓰기가 시장 열과 새 기본키({@code ON CONFLICT (market, week_ending)})에서, 한국 장부가 since 봉 거래량 열·주문의 그날 보류
-     * 표시 열에서 SQL 오류(500)를 냅니다.
+     * 표시 열에서, 실행 감사 작업·화면이 체결 봉 열·없는 감사 테이블에서 SQL 오류(500)를 냅니다.
      */
     public boolean ready() {
         return schema.tableExists("paper_api_usage") && schema.columnExists("paper_track_record", "data_source")
@@ -606,7 +634,8 @@ public class PaperStore {
                 && schema.columnExists("paper_books", "market") && schema.columnExists("paper_books", "currency")
                 && schema.columnExists("paper_reviews", "market") && schema.columnExists("paper_notes", "market")
                 && schema.columnExists("paper_positions", "fill_ref_volume")
-                && schema.columnExists("paper_orders", "ledger_hold_reason");
+                && schema.columnExists("paper_orders", "ledger_hold_reason")
+                && schema.columnExists("paper_fills", "bar_at") && schema.tableExists("paper_order_exec");
     }
 
     /**
@@ -1119,6 +1148,90 @@ public class PaperStore {
     /** 열 목록({@code "a, b, c"})의 열마다 표 별칭을 붙입니다({@code "f.a, f.b, f.c"}) — 이름은 그대로 읽힙니다. */
     private static String prefixed(String alias, String columns) {
         return String.join(", ", java.util.Arrays.stream(columns.split(",\\s*")).map(column -> alias + column).toList());
+    }
+
+    // ------------------------------------------------------------------ 실행 감사(V17 — 미국 Claude 계좌2 실험)
+    /**
+     * 실행 감사가 보는 주문의 조건 — 결정이 낸 주문(출처 CLAUDE)이고, 시장에 나간 적이 있으며(대기·체결·만료·취소 — 제안·거절은 빠짐),
+     * 시점이 즉시(스탑)·사후 체결(출발)이 아님. 장부 표는 읽기만 합니다.
+     */
+    private static final String EXEC_ORDER_FILTER = "book_code = ? AND source = 'CLAUDE' "
+            + "AND status IN ('PENDING', 'FILLED', 'EXPIRED', 'CANCELLED') AND timing NOT IN ('IMMEDIATE', 'BACKFILL')";
+    private static final String EXEC_COLUMNS = "e.order_id, e.book_code, e.timing, e.target_at, e.cf::text AS cf, "
+            + "e.lag_seconds, e.late_resolved, e.updated_at";
+
+    /**
+     * 그 책에서 실행 감사가 보는 주문(결정이 낸 주문 — 출처 CLAUDE, 대기·체결·만료·취소, 즉시·사후 체결 시점이 아님) 가운데 기준 거래일이
+     * {@code asOfFrom} 이후(포함)인 것, 만든 순(created_at, id).
+     * {@code asOfFrom}이 null이면 날짜를 가리지 않습니다.
+     */
+    public List<Order> executionOrders(String code, LocalDate asOfFrom) {
+        if (asOfFrom == null) {
+            return jdbc.query("SELECT " + ORDER_COLUMNS + " FROM paper_orders WHERE " + EXEC_ORDER_FILTER
+                    + " ORDER BY created_at, id", orderMapper(), code);
+        }
+        return jdbc.query("SELECT " + ORDER_COLUMNS + " FROM paper_orders WHERE " + EXEC_ORDER_FILTER
+                + " AND as_of_trading_date >= ? ORDER BY created_at, id", orderMapper(), code, Date.valueOf(asOfFrom));
+    }
+
+    /** 그 주문들의 체결과 체결 봉({@link ExecFill}), 주문 번호 순. 주문이 없으면 묻지 않고 빈 목록. */
+    public List<ExecFill> fillsForOrders(Collection<Long> orderIds) {
+        if (orderIds.isEmpty()) {
+            return List.of();
+        }
+        Long[] ids = orderIds.toArray(new Long[0]);
+        return jdbc.query("SELECT " + FILL_COLUMNS + ", bar_at, fill_rung FROM paper_fills WHERE order_id = ANY(?) "
+                        + "ORDER BY order_id",
+                ps -> ps.setArray(1, ps.getConnection().createArrayOf("bigint", ids)),
+                (rs, rowNum) -> new ExecFill(fillOf(rs), instant(rs, "bar_at"), rs.getString("fill_rung")));
+    }
+
+    /** 그 책의 실행 감사 행 전부, 주문 최근 순(주문의 created_at DESC, id DESC). */
+    public List<OrderExec> orderExecs(String code) {
+        return jdbc.query("SELECT " + EXEC_COLUMNS + " FROM paper_order_exec e JOIN paper_orders o ON o.id = e.order_id "
+                        + "WHERE e.book_code = ? ORDER BY o.created_at DESC, o.id DESC",
+                (rs, rowNum) -> new OrderExec(rs.getLong("order_id"), rs.getString("book_code"), rs.getString("timing"),
+                        instant(rs, "target_at"), json(rs, "cf"), rs.getObject("lag_seconds", Integer.class),
+                        rs.getObject("late_resolved", Boolean.class), instant(rs, "updated_at")),
+                code);
+    }
+
+    /**
+     * 실행 감사 한 행을 넣거나 합칩니다(명세 §11 '한 번 쓰면 고치지 않음'). 이미 행이 있으면 값이 든 반사실 시점·목표 시각·지연·늦게 풂은
+     * 그대로 두고, 없던 시점이나 비어 있던(null) 시점·칸만 이번 값으로 채웁니다 — 받은 {@code cf}에 없는 시점은 그대로 남습니다. 주문 행의
+     * timing·책은 처음 넣은 값 그대로입니다. 바뀌는 것이 없으면 쓰지 않습니다({@code updated_at} 그대로).
+     *
+     * @return 새로 넣었거나 무엇이든 채웠으면 true
+     */
+    public boolean mergeOrderExec(OrderExec row) {
+        // 기존 cf에 값이 든(null이 아닌) 시점은 남기고, 이번 cf에서 기존에 없거나 null인 시점만 더합니다.
+        String merged = "(paper_order_exec.cf || COALESCE((SELECT jsonb_object_agg(n.key, n.value) "
+                + "FROM jsonb_each(EXCLUDED.cf) n WHERE COALESCE(paper_order_exec.cf -> n.key, 'null'::jsonb) = 'null'::jsonb), "
+                + "'{}'::jsonb))";
+        return jdbc.update("INSERT INTO paper_order_exec (order_id, book_code, timing, target_at, cf, lag_seconds, "
+                        + "late_resolved) VALUES (?, ?, ?, ?, CAST(? AS jsonb), ?, ?) "
+                        + "ON CONFLICT (order_id) DO UPDATE SET cf = " + merged + ", "
+                        + "target_at = COALESCE(paper_order_exec.target_at, EXCLUDED.target_at), "
+                        + "lag_seconds = COALESCE(paper_order_exec.lag_seconds, EXCLUDED.lag_seconds), "
+                        + "late_resolved = COALESCE(paper_order_exec.late_resolved, EXCLUDED.late_resolved), "
+                        + "updated_at = now() "
+                        + "WHERE " + merged + " IS DISTINCT FROM paper_order_exec.cf "
+                        + "OR (paper_order_exec.target_at IS NULL AND EXCLUDED.target_at IS NOT NULL) "
+                        + "OR (paper_order_exec.lag_seconds IS NULL AND EXCLUDED.lag_seconds IS NOT NULL) "
+                        + "OR (paper_order_exec.late_resolved IS NULL AND EXCLUDED.late_resolved IS NOT NULL)",
+                ps -> {
+                    ps.setLong(1, row.orderId());
+                    ps.setString(2, row.bookCode());
+                    ps.setString(3, row.timing());
+                    setInstant(ps, 4, row.targetAt());
+                    ps.setString(5, mapper.writeValueAsString(row.cf()));
+                    setInteger(ps, 6, row.lagSeconds());
+                    if (row.lateResolved() == null) {
+                        ps.setNull(7, Types.BOOLEAN);
+                    } else {
+                        ps.setBoolean(7, row.lateResolved());
+                    }
+                }) == 1;
     }
 
     // ------------------------------------------------------------------ 순자산

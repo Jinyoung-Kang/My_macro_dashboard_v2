@@ -75,7 +75,7 @@ public final class Datasets {
      * (09:30·10:00~15:00 ET, 각 T~T+4분) 1분봉, 창마다 T 뒤 첫 거래 봉({@code firstTradeAfter}), 첫·마지막 봉, 검증용 일봉 시가(X2).
      * 봉 시각 {@code t}는 늘 봉 시작의 UTC({@code barLabel} — X1). {@code lagSeconds}는 SPY 정규장 안에서 받은 저장본만, 아니면 null이고
      * {@code declaredDelayMin}은 늘 null. 모양(contract 1)은 수집기 {@code app/tasks/paper_bars.py} 머리말. 수집기 slow(매시, paper.quotes 바로 뒤).
-     * 읽는 코드는 실행 감사 작업(단계 0-4)부터이고 장부·패킷은 읽지 않습니다.
+     * 읽는 코드는 실행 감사 작업({@code PaperExecutionAuditJob}, 단계 0-4)뿐이고 장부·패킷은 읽지 않습니다.
      */
     public static final String SNAP_PAPER_BARS_US = "paper.bars.us";
     /**
@@ -282,7 +282,7 @@ public final class Datasets {
     public static final long MAX_AGE_LIVE = 60L;
     /**
      * 🧪 {@link #SNAP_PAPER_BARS_US}를 '그 회차의 1분봉'으로 볼 최대 나이 — slow 주기(60분) + 앞 태스크 몇 분 여유(명세 §12-1). 이보다 오래된
-     * 저장본은 1분봉 수집이 한 회차 넘게 멈춘 것으로 봅니다(실행 감사의 '1분봉 없음', 단계 1의 대체 체결 R3). 읽는 코드는 단계 0-4부터입니다.
+     * 저장본은 1분봉 수집이 한 회차 넘게 멈춘 것으로 봅니다(실행 감사 기록의 {@code barsStale}, 단계 1의 대체 체결 R3).
      */
     public static final long MAX_AGE_BARS_US = 70 * 60L;
     /** 일별 확정치 (FRED/KRX 마감). */

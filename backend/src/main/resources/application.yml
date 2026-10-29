@@ -99,7 +99,7 @@ dashboard:
   # 🧪 모의 알고리즘 매매(운영자 전용, 명세 docs/specs/2026-10-24-paper-trading-spec.md). 슬리피지·스탑 비율 같은 값은 여기가 아니라
   # DB 설정 한 행(paper_settings)이고, 여기는 재기동해야 바뀌는 값만 둡니다. 출발일이 거래일이 아니거나 현금이 0 이하면 기동하지 않습니다.
   paper:
-    enabled: ${PAPER_ENABLED:true}          # false면 정기 작업(리스크 점검·결정·출발일 종가 얼리기)이 일하지 않음(통합 테스트는 false). 수동 실행은 그대로
+    enabled: ${PAPER_ENABLED:true}          # false면 정기 작업(리스크 점검·결정·출발일 종가 얼리기·실행 감사)이 일하지 않음(통합 테스트는 false). 수동 실행은 그대로
     start-date: "2026-10-23"                # 네 책의 출발(사후 체결) 거래일 — 명세 D2
     initial-cash: 100000                    # 책마다(달러) — D1
     kr:                                     # 🇰🇷 한국 책(2단계 명세 K1·K25·K28) — 재기동해야 바뀌는 값
@@ -111,6 +111,8 @@ dashboard:
     decision-initial-delay-ms: 120000
     review-interval-ms: 1800000             # 주간 복기 작업 주기(30분). 그 주 토요일 09:00 KST 뒤 확정 종가가 들어오면 그 주 복기를 한 번(2단계 D)
     review-initial-delay-ms: 180000
+    exec-audit-interval-ms: 300000          # 🧪 실행 감사 주기(5분, 미국 Claude 계좌2 실험 단계 0 — ADR 0022). 계좌1 주문의 메뉴 반사실·1분봉 지연을 적고, 새로 적었을 때만 기록
+    exec-audit-initial-delay-ms: 150000
     claude-timeout-seconds: 300             # Claude 책 호출 하나의 대기 한도(초). 출력 16,000토큰·effort high가 다 차도 끝나는 여유
 
   ai:

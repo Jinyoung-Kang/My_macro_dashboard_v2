@@ -106,8 +106,9 @@ def test_범위_계좌_코드는_백엔드_PaperBooks와_같다():
     assert store_module.TIMED_RECENT_DAYS == 8
 
 
-def test_백엔드와_화면은_아직_1분봉_저장본을_읽지_않는다():
-    """단계 0-3은 받기만 합니다 — 계좌1의 결정·패킷·장부는 그대로. 읽는 코드(실행 감사 작업, 0-4)가 생기면 그 커밋이 이 시험을 고칩니다."""
+def test_1분봉_저장본을_읽는_백엔드_코드는_실행_감사_작업뿐이고_화면은_읽지_않는다():
+    """단계 0은 재기만 합니다 — 읽는 곳은 실행 감사 작업(0-4, 반사실·지연을 paper_order_exec에)뿐이고 계좌1의 결정·패킷·장부는 그대로.
+    시각 지정 체결(단계 1-4)이 장부에서 읽기 시작하면 그 커밋이 이 시험을 고칩니다."""
     readers = []
     for folder in (ROOT / "backend/src/main/java", ROOT / "frontend/src"):
         if not folder.exists():
@@ -117,7 +118,8 @@ def test_백엔드와_화면은_아직_1분봉_저장본을_읽지_않는다():
                 text = path.read_text(encoding="utf-8")
                 if "SNAP_PAPER_BARS_US" in text or "paper.bars.us" in text:
                     readers.append(path.relative_to(ROOT).as_posix())
-    assert readers == ["backend/src/main/java/com/macrodash/store/Datasets.java"]
+    assert sorted(readers) == ["backend/src/main/java/com/macrodash/feature/paper/PaperExecutionAuditJob.java",
+                               "backend/src/main/java/com/macrodash/store/Datasets.java"]
 
 
 # ==============================================================================

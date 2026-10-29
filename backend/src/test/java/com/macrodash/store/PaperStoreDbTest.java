@@ -99,9 +99,9 @@ class PaperStoreDbTest {
     }
 
     @Test
-    @DisplayName("테이블이 있다 — V8이 마지막에 만드는 paper_api_usage, V9~V11이 더하는 열, V12의 paper_reviews, V13의 paper_books 시장·통화 열, V14의 복기·메모 시장 열, V15의 since 봉 거래량 열, V16의 주문 그날 보류 표시 열로 준비 여부를 본다")
+    @DisplayName("테이블이 있다 — V8이 마지막에 만드는 paper_api_usage, V9~V11이 더하는 열, V12의 paper_reviews, V13의 paper_books 시장·통화 열, V14의 복기·메모 시장 열, V15의 since 봉 거래량 열, V16의 주문 그날 보류 표시 열, V17의 체결 봉 열·실행 감사 표로 준비 여부를 본다")
     void ready() {
-        assertThat(store.ready()).as("make db-test로 V8~V16을 적용했는가").isTrue();
+        assertThat(store.ready()).as("make db-test로 V8~V17을 적용했는가").isTrue();
         assertThat(new SchemaCheck(jdbc).columnExists("paper_decisions", "packet_text")).isTrue();
         assertThat(new SchemaCheck(jdbc).tableExists("paper_reviews")).isTrue();
     }
@@ -1858,6 +1858,96 @@ class PaperStoreDbTest {
             throw new Rollback();
         })).isInstanceOf(Rollback.class);
         assertThat(jdbc.queryForObject(constraints, String.class)).as("되돌린 뒤").isEqualTo(before);
+    }
+
+    @Test
+    @DisplayName("V17 전 DB(paper_order_exec 없음·paper_fills.bar_at 열 없음)는 준비 안 됨 — 백엔드만 새로 띄운 배포(QA-016)에서 실행 감사의 SQL 오류 대신 안내 문구, 시험 뒤 되돌림")
+    void readyRequiresV17() {
+        class Rollback extends RuntimeException {
+        }
+        assertThat(store.ready()).as("make db-test로 V17까지 적용했는가").isTrue();
+        assertThatThrownBy(() -> store.atomically(() -> {
+            jdbc.execute("DROP TABLE paper_order_exec");
+            assertThat(new PaperStore(jdbc, MAPPER, new SchemaCheck(jdbc)).ready()).as("감사 표가 없으면 준비 안 됨").isFalse();
+            throw new Rollback();
+        })).isInstanceOf(Rollback.class);
+        assertThatThrownBy(() -> store.atomically(() -> {
+            jdbc.execute("ALTER TABLE paper_fills DROP COLUMN bar_at");
+            assertThat(new PaperStore(jdbc, MAPPER, new SchemaCheck(jdbc)).ready()).as("체결 봉 열이 없으면 준비 안 됨").isFalse();
+            throw new Rollback();
+        })).isInstanceOf(Rollback.class);
+        assertThat(new PaperStore(jdbc, MAPPER, new SchemaCheck(jdbc)).ready()).as("되돌린 뒤").isTrue();
+    }
+
+    @Test
+    @DisplayName("실행 감사 읽고 쓰기(V17, 0-4): 감사 주문은 결정 주문(CLAUDE)·시장에 나간 상태·즉시·사후 체결이 아닌 시점만 기준일 이후 만든 순, 체결은 체결 봉 칸과 함께, 합치기는 값이 든 시점·칸을 고치지 않고 빈 것만 채움(바뀐 것이 없으면 false·시각 그대로), 감사 행은 주문 최근 순")
+    void orderExecReadWriteIsWriteOnce() throws Exception {
+        store.insertBookIfAbsent(new PaperStore.Book(BOOK, "CLAUDE", "Claude 책", 100_000, null, "NOT_STARTED", null));
+        Instant t0 = Instant.parse("2026-10-26T22:31:00Z");
+        long first = store.insertOrder(claudeOrder("AAPL", "NEXT_OBSERVATION", "FILLED", DAY, t0));
+        long second = store.insertOrder(claudeOrder("MSFT", "NEXT_CLOSE", "PENDING", DAY.plusDays(3), t0.plusSeconds(60)));
+        store.insertOrder(claudeOrder("NVDA", "NEXT_OBSERVATION", "REJECTED", DAY, t0));
+        store.insertOrder(claudeOrder("AMD", "NEXT_OBSERVATION", "PROPOSED", DAY, t0));
+        store.insertOrder(new PaperStore.Order(0, BOOK, null, "AAPL", "SELL", 3, null, null, "IMMEDIATE", "STOP", "FILLED",
+                null, null, DAY, t0, null, null));
+        store.insertOrder(pendingBuy(BOOK, "QQQ", t0));   // 출처 RULE
+        long old = store.insertOrder(claudeOrder("TSLA", "NEXT_OBSERVATION", "EXPIRED", DAY.minusDays(30), t0.minusSeconds(86_400 * 30L)));
+
+        assertThat(store.executionOrders(BOOK, null)).extracting(PaperStore.Order::id).containsExactly(old, first, second);
+        assertThat(store.executionOrders(BOOK, DAY)).extracting(PaperStore.Order::id).containsExactly(first, second);
+        assertThat(store.executionOrders(BOOK, DAY.plusDays(1))).extracting(PaperStore.Order::id).containsExactly(second);
+
+        long fillId = store.insertFill(new PaperStore.Fill(0, first, BOOK, "AAPL", "BUY", 10, 100.05, 100.0, 5, 1000.5, CLOSE,
+                DAY, "paper.quotes", false, null));
+        assertThat(store.fillsForOrders(List.of(first, second))).singleElement().satisfies(f -> {
+            assertThat(f.fill().id()).isEqualTo(fillId);
+            assertThat(f.fill().rawPrice()).isEqualTo(100.0);
+            assertThat(f.barAt()).as("계좌1 체결 — 체결 봉 없음").isNull();
+            assertThat(f.fillRung()).isNull();
+        });
+        Instant bar = Instant.parse("2026-10-26T14:00:00Z");
+        jdbc.update("UPDATE paper_fills SET bar_at = ?, fill_rung = 'Y1M_AT' WHERE id = ?", Timestamp.from(bar), fillId);
+        assertThat(store.fillsForOrders(List.of(first))).singleElement()
+                .satisfies(f -> assertThat(f).extracting(PaperStore.ExecFill::barAt, PaperStore.ExecFill::fillRung)
+                        .containsExactly(bar, "Y1M_AT"));
+        assertThat(store.fillsForOrders(List.of())).isEmpty();
+
+        String open = "{\"raw\": 100.25, \"at\": \"2026-10-27T13:30:00Z\", \"rung\": \"Y1M_AT\"}";
+        PaperStore.OrderExec row = new PaperStore.OrderExec(first, BOOK, "NEXT_OBSERVATION", null,
+                MAPPER.readTree("{\"NEXT_OBSERVATION\": null, \"NEXT_OPEN\": " + open + ", \"AT_1000\": null}"), 90, null, null);
+        assertThat(store.mergeOrderExec(row)).as("새 행").isTrue();
+        Instant stamped = store.orderExecs(BOOK).get(0).updatedAt();
+        assertThat(store.mergeOrderExec(row)).as("같은 값 — 쓰지 않음").isFalse();
+
+        String other = "{\"raw\": 99.0, \"at\": \"2026-10-27T13:31:00Z\", \"rung\": \"Y1M_NEXT\"}";
+        String ten = "{\"raw\": 101.5, \"at\": \"2026-10-27T14:01:00Z\", \"rung\": \"Y1M_NEXT\"}";
+        PaperStore.OrderExec later = new PaperStore.OrderExec(first, BOOK, "AT_1500", Instant.parse("2026-10-27T19:00:00Z"),
+                MAPPER.readTree("{\"NEXT_OPEN\": " + other + ", \"AT_1000\": " + ten + ", \"NEXT_CLOSE\": null}"), 15, true,
+                null);
+        assertThat(store.mergeOrderExec(later)).as("빈 시점(10:00)·새 시점(종가)·빈 칸이 채워짐").isTrue();
+        PaperStore.OrderExec merged = store.orderExecs(BOOK).get(0);
+        assertThat(merged.cf()).as("시가는 처음 값 그대로, 받은 cf에 없던 계좌1식 키도 남음").isEqualTo(MAPPER.readTree(
+                "{\"NEXT_OBSERVATION\": null, \"NEXT_OPEN\": " + open + ", \"AT_1000\": " + ten + ", \"NEXT_CLOSE\": null}"));
+        assertThat(merged.timing()).as("주문 시점은 처음 값").isEqualTo("NEXT_OBSERVATION");
+        assertThat(merged.lagSeconds()).as("지연은 처음 값").isEqualTo(90);
+        assertThat(merged.targetAt()).as("비어 있던 목표 시각은 채움").isEqualTo(Instant.parse("2026-10-27T19:00:00Z"));
+        assertThat(merged.lateResolved()).isTrue();
+        assertThat(merged.updatedAt()).isAfterOrEqualTo(stamped);
+        assertThat(store.mergeOrderExec(later)).as("다시 같은 값 — 쓰지 않음").isFalse();
+
+        store.mergeOrderExec(new PaperStore.OrderExec(second, BOOK, "NEXT_CLOSE", CLOSE, MAPPER.createObjectNode(), null,
+                null, null));
+        assertThat(store.orderExecs(BOOK)).extracting(PaperStore.OrderExec::orderId).as("주문 최근 순").containsExactly(second, first);
+        assertThat(store.orderExecs(OTHER_BOOK)).isEmpty();
+        assertThatThrownBy(() -> store.mergeOrderExec(new PaperStore.OrderExec(-1, BOOK, "NEXT_CLOSE", null,
+                MAPPER.createObjectNode(), null, null, null))).as("없는 주문 — 외래키")
+                .isInstanceOf(org.springframework.dao.DataIntegrityViolationException.class);
+    }
+
+    private static PaperStore.Order claudeOrder(String ticker, String timing, String status, LocalDate asOf,
+                                                Instant createdAt) {
+        return new PaperStore.Order(0, BOOK, null, ticker, "BUY", null, 5.0, null, timing, "CLAUDE", status, null, null,
+                asOf, createdAt, asOf.plusDays(5), null);
     }
 
     @Test
