@@ -1305,6 +1305,15 @@ public class PaperStore {
     }
 
     /**
+     * 이름이 {@code excludedJob}인 작업을 뺀 모든 작업의 최근 기록 {@code limit}건, 최근 순(시작 시각, 번호) — 자주 쌓이는 작업 한 종류가 짧은
+     * 목록을 밀어내지 않게(미국 개요의 작업 기록 — 실행 감사 작업). 이름은 글자 그대로 같은 것만 뺍니다.
+     */
+    public List<JobRun> recentJobRunsExcept(String excludedJob, int limit) {
+        return jdbc.query("SELECT " + JOB_COLUMNS + " FROM paper_job_runs WHERE job <> ? "
+                + "ORDER BY started_at DESC, id DESC LIMIT ?", jobRunMapper(), excludedJob, limit);
+    }
+
+    /**
      * 이름이 {@code jobPrefix}로 시작하는 작업의 최근 기록 {@code limit}건, 최근 순(시작 시각, 번호) — 한 시장의 작업 기록(작업 기록 이름의 시장
      * 접두어, 한국 {@code kr.} — 2단계 F1의 한국 개요·상태). 접두어는 글자 그대로 봅니다(LIKE·정규식의 특수 글자로 읽지 않음).
      */

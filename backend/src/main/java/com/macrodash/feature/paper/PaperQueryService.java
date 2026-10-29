@@ -75,7 +75,10 @@ public class PaperQueryService {
 
     static final String NOT_READY_MESSAGE = "모의 매매 테이블이 아직 없습니다. 수집기가 스키마(V8·V9·V10·V11·V12)를 적용하면 생깁니다 — "
             + "make up 후 다시 보세요.";
-    /** 개요에 싣는 최근 작업 기록 수. */
+    /**
+     * 개요에 싣는 최근 작업 기록 수. 미국 개요는 실행 감사 작업({@link PaperExecutionAuditJob#JOB})의 기록을 빼고 셉니다 — 값을 채울 때마다 한
+     * 줄이라(계좌1 주문이 있는 미국 세션마다 약 8~10줄) 다른 작업의 기록을 밀어냅니다. 상태 응답({@link #STATUS_JOBS})에는 그대로 실립니다.
+     */
     static final int OVERVIEW_JOBS = 10;
     /** 상태 응답에 싣는 최근 작업 기록 수. */
     static final int STATUS_JOBS = 30;
@@ -264,7 +267,7 @@ public class PaperQueryService {
             out.put("exposureReference", exposureReference(market, books, navByBook));
         }
         out.put("limits", us ? limits() : korea(market) ? krLimits(market) : List.of());
-        out.put("jobs", jobs(market, OVERVIEW_JOBS));
+        out.put("jobs", jobs(market, OVERVIEW_JOBS, PaperExecutionAuditJob.JOB));
         return out;
     }
 
@@ -442,7 +445,7 @@ public class PaperQueryService {
         out.put("startDate", startDate(market));
         out.put("initialCash", initialCash(market));
         out.put("quotes", quotesSummary(market));
-        out.put("jobs", jobs(market, STATUS_JOBS));
+        out.put("jobs", jobs(market, STATUS_JOBS, null));
         if (us) {
             PaperSettingsService.Current current = settings.current();
             out.put("settingsVersion", current.version());
@@ -1321,13 +1324,13 @@ public class PaperQueryService {
     }
 
     /**
-     * 최근 작업 기록 — 미국 응답은 모든 작업(시장을 나누기 전 그대로), 미국 밖 시장은 그 시장 작업 기록 이름의 접두어로 시작하는 것만
-     * ({@link PaperMarket#jobPrefix} — 한국 {@code kr.}).
+     * 최근 작업 기록 — 미국 응답은 모든 작업(시장을 나누기 전 그대로 — {@code excludedJob}이 있으면 그 작업만 빼고), 미국 밖 시장은 그 시장
+     * 작업 기록 이름의 접두어로 시작하는 것만({@link PaperMarket#jobPrefix} — 한국 {@code kr.}, 미국 작업인 {@code excludedJob}은 원래 없음).
      */
-    private List<Map<String, Object>> jobs(PaperMarket market, int limit) {
+    private List<Map<String, Object>> jobs(PaperMarket market, int limit, String excludedJob) {
         List<Map<String, Object>> out = new ArrayList<>();
-        List<JobRun> runs = usOnly(market) ? store.recentJobRuns(limit)
-                : store.recentJobRuns(market.jobPrefix(), limit);
+        List<JobRun> runs = !usOnly(market) ? store.recentJobRuns(market.jobPrefix(), limit)
+                : excludedJob == null ? store.recentJobRuns(limit) : store.recentJobRunsExcept(excludedJob, limit);
         for (JobRun run : runs) {
             Map<String, Object> row = new LinkedHashMap<>();
             row.put("job", run.job());

@@ -507,6 +507,13 @@ class FakePaperStore extends PaperStore {
     }
 
     @Override
+    public List<JobRun> recentJobRunsExcept(String excludedJob, int limit) {
+        List<JobRun> out = new ArrayList<>(jobRuns);
+        java.util.Collections.reverse(out);
+        return out.stream().filter(r -> !r.job().equals(excludedJob)).limit(limit).toList();
+    }
+
+    @Override
     public List<JobRun> recentJobRuns(String jobPrefix, int limit) {
         List<JobRun> out = new ArrayList<>(jobRuns);
         java.util.Collections.reverse(out);

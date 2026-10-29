@@ -117,6 +117,31 @@ class PaperQueryMarketTest {
     }
 
     @Test
+    @DisplayName("미국 개요의 작업 기록은 실행 감사(exec-audit) 줄을 빼고 최근 10건 — 감사 줄이 10건 넘게 가장 최근이어도 다른 작업이 남고, 상태(최근 30건)에는 감사 줄이 그대로 실린다")
+    void usOverviewJobsLeaveOutTheExecutionAudit() {
+        // 감사 줄 12건 사이사이에 리스크 점검 9건 — 감사 줄을 빼지 않으면 개요 10건 중 감사 줄이 6건.
+        for (int i = 0; i < 12; i++) {
+            store.recordJobRun(PaperExecutionAuditJob.JOB, NOW.minusSeconds(48 - 4L * i), NOW.minusSeconds(47 - 4L * i),
+                    "OK", null);
+            if (i < 9) {
+                store.recordJobRun("risk", NOW.minusSeconds(46 - 4L * i), NOW.minusSeconds(45 - 4L * i), "ok", null);
+            }
+        }
+        PaperQueryService query = query(PaperFixtures.config());
+
+        List<Object> overview = jobNames(query.overview("US"));
+        assertThat(overview).as("감사 줄 없이 10건").hasSize(PaperQueryService.OVERVIEW_JOBS)
+                .doesNotContain(PaperExecutionAuditJob.JOB);
+        assertThat(overview.subList(9, 10)).as("감사 줄을 빼고 센 열째 — setUp의 decision").containsExactly("decision");
+        assertThat(jobNames(query.overview())).as("옛 시그니처도 같음").isEqualTo(overview);
+
+        List<Object> status = jobNames(query.status("US"));
+        assertThat(status).as("기록 24건이 모두 상태에(상한 30)").hasSize(24);
+        assertThat(status.stream().filter(PaperExecutionAuditJob.JOB::equals).count()).isEqualTo(12);
+        assertThat(status.subList(21, 24)).containsExactly("decision", "kr.decision", "risk");
+    }
+
+    @Test
     @DisplayName("모르는 시장 값(JP·빈 값·소문자)은 개요·상태 모두 400")
     void unknownMarketIsRejected() {
         PaperQueryService query = query(PaperFixtures.config());

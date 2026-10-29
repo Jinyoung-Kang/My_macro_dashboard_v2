@@ -474,6 +474,27 @@ class PaperStoreDbTest {
     }
 
     @Test
+    @DisplayName("한 작업을 뺀 작업 기록(미국 개요 — 실행 감사): 그 이름과 글자 그대로 같은 작업만 빼고 최근 순(시작 시각, 번호)으로 limit건")
+    void recentJobRunsExceptOneJob() {
+        // 다른 테스트가 지금 시각으로 남긴 기록보다 뒤에 오도록 먼 미래 시각을 씁니다(최근 순 조회 검사).
+        Instant base = Instant.parse("2099-04-01T13:30:00Z");
+        store.recordJobRun("t_risk", base, base.plusSeconds(1), "ok", null);
+        store.recordJobRun("t_audit", base.plusSeconds(60), base.plusSeconds(61), "OK", null);
+        store.recordJobRun("t_decision", base.plusSeconds(120), base.plusSeconds(121), "DECIDED", null);
+        store.recordJobRun("t_audit", base.plusSeconds(180), base.plusSeconds(181), "OK", null);
+        store.recordJobRun("t_audit.x", base.plusSeconds(240), base.plusSeconds(241), "OK", null);
+        store.recordJobRun("t_audit", base.plusSeconds(300), base.plusSeconds(301), "ERROR", null);
+
+        assertThat(store.recentJobRunsExcept("t_audit", 3)).extracting(PaperStore.JobRun::job)
+                .as("같은 이름만 빠짐(앞부분이 같은 다른 이름은 남음), 최근 순")
+                .containsExactly("t_audit.x", "t_decision", "t_risk");
+        assertThat(store.recentJobRunsExcept("t_audit", 2)).extracting(PaperStore.JobRun::job)
+                .containsExactly("t_audit.x", "t_decision");
+        assertThat(store.recentJobRuns(4)).extracting(PaperStore.JobRun::job).as("빼지 않는 조회는 그대로")
+                .containsExactly("t_audit", "t_audit.x", "t_audit", "t_decision");
+    }
+
+    @Test
     @DisplayName("주문: 넣은 값이 그대로 돌아오고, 만료·취소·체결 표시는 조건에 맞는 것만 바꾼다")
     void ordersLifecycle() {
         store.insertBookIfAbsent(book(BOOK, "규칙 책"));
