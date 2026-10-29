@@ -524,6 +524,11 @@ export interface PaperPosition {
    * 보류 중인 보유는 평가가 묶이고 스탑·주문이 보류됩니다.
    */
   corpActionHold?: string | null;
+  /**
+   * 한국 계좌만 — 그 보류로 묶인 평가의 출처(§9 F3): 평가 가격이 `date`(보유가 반영한 마지막 봉 날짜)의 금융위 확정 종가와 같으면
+   * FSC_CONFIRMED, 다르거나 그날 행이 없으면 LAST_VALUATION, 가격을 받은 적 없으면 AVG_COST. 보류가 없으면 null.
+   */
+  heldValuation?: { source: "FSC_CONFIRMED" | "LAST_VALUATION" | "AVG_COST" | string; date: string | null } | null;
 }
 
 /** 재진입 금지(트레일링 스탑 뒤 N거래일). */

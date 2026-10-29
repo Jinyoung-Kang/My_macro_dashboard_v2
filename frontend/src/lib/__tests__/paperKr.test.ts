@@ -291,6 +291,17 @@ describe("보유·체결(F2 — 세 배지·확정 조정·실효 비용·스탑
     expect(krPositionPriceTitle(position({ lastPriceAtKst: null }))).toBeUndefined();
   });
 
+  it("묶인 평가의 출처(heldValuation — §9 F3) — 금융위 확정 종가·마지막 평가 가격·평단을 가려 적고, 칸이 없으면 예전 문구", () => {
+    const held = (source: string, at = "2026-11-04 22:05 KST") => krPositionPriceTitle(position({
+      corpActionHold: "2026-11-03 상장주식수 변동 — 확인 필요", lastPriceAtKst: at, heldValuation: { source, date: "2026-11-03" },
+    }));
+    expect(held("FSC_CONFIRMED")).toBe("묶인 평가 — 금융위 2026-11-03 확정 종가 · 2026-11-04 22:05 장부가 묶음");
+    expect(held("LAST_VALUATION", "2026-11-03 21:57 KST"))
+      .toBe("묶인 평가 — 마지막 평가 가격(2026-11-03 21:57 관측, 토스증권 잠정) · 금융위 2026-11-03 확정 종가로는 아직 묶지 않음");
+    expect(held("AVG_COST")).toBe("묶인 평가 — 가격을 받은 적이 없어 평단으로 평가");
+    expect(held("SOMETHING_NEW")).toBe("묶인 평가 — 금융위 확정 종가(없으면 마지막 평가 가격) · 2026-11-04 22:05 기록(장부가 묶은 때이거나 그 가격을 받은 때)");
+  });
+
   it("체결 배지 — 확정·확정 대기·미보정(서버 문구 그대로), 통합가는 '잠정' 배지, 상태를 모르면 배지 없음", () => {
     expect(krFillBadges({ confirmationState: "CONFIRMED", confirmationNote: null, priceSource: "TOSS_1M_OPEN", confirmation: {
       confirmedPrice: 71_200, priceDiff: -100, fee: 106, tax: 0, slippageCost: 356, costBp: 6.49, cashDelta: 1_000, source: "FSC",

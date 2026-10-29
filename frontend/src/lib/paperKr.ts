@@ -465,15 +465,28 @@ export function krPositionBadges(position: PaperPosition): Badge[] {
 
 /**
  * 한국 보유 가격 칸의 툴팁 — 보통은 '{시각} 관측(토스증권 잠정)'. 미처리 기업행위 보류 보유는 장부가 평가를 묶은 값이라(PaperLedgerService
- * holdUnprocessed — 금융위 확정 종가가 있으면 그 값과 묶은 처리 시각, 없으면 마지막 평가 가격과 그 관측 시각) 관측이라 적지 않고 묶인 평가라고
- * 적습니다(응답에 가격 출처 칸이 없어 둘 중 어느 쪽인지는 가리지 않음). 시각이 없으면 undefined(툴팁 없음).
+ * holdUnprocessed) 관측이라 적지 않고 묶인 평가의 출처(`heldValuation` — §9 F3)를 적습니다: 금융위 확정 종가(시각 = 장부가 묶은 때), 마지막
+ * 평가 가격(시각 = 그 가격을 관측한 때), 평단. 출처 칸이 없는 응답(F3 전 백엔드)은 둘 중 어느 쪽인지 가리지 않는 문구. 시각이 없으면
+ * undefined(툴팁 없음).
  */
-export function krPositionPriceTitle(position: Pick<PaperPosition, "lastPriceAtKst" | "corpActionHold">): string | undefined {
+export function krPositionPriceTitle(
+  position: Pick<PaperPosition, "lastPriceAtKst" | "corpActionHold" | "heldValuation">,
+): string | undefined {
   if (!position.lastPriceAtKst) return undefined;
   const at = formatKst(position.lastPriceAtKst);
-  return textOf(position.corpActionHold)
-    ? `묶인 평가 — 금융위 확정 종가(없으면 마지막 평가 가격) · ${at} 기록(장부가 묶은 때이거나 그 가격을 받은 때)`
-    : `${at} 관측(토스증권 잠정)`;
+  if (!textOf(position.corpActionHold)) return `${at} 관측(토스증권 잠정)`;
+  const held = position.heldValuation;
+  const day = textOf(held?.date) ?? EMPTY;
+  switch (held?.source) {
+    case "FSC_CONFIRMED":
+      return `묶인 평가 — 금융위 ${day} 확정 종가 · ${at} 장부가 묶음`;
+    case "LAST_VALUATION":
+      return `묶인 평가 — 마지막 평가 가격(${at} 관측, 토스증권 잠정) · 금융위 ${day} 확정 종가로는 아직 묶지 않음`;
+    case "AVG_COST":
+      return "묶인 평가 — 가격을 받은 적이 없어 평단으로 평가";
+    default:
+      return `묶인 평가 — 금융위 확정 종가(없으면 마지막 평가 가격) · ${at} 기록(장부가 묶은 때이거나 그 가격을 받은 때)`;
+  }
 }
 
 /** 확정 조정 출처 이름(FSC·FSC_ETF). */
