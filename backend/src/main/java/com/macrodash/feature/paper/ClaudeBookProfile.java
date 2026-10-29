@@ -1,0 +1,76 @@
+package com.macrodash.feature.paper;
+
+import java.util.Collections;
+import java.util.HashSet;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Objects;
+
+/**
+ * 🧪 Claude 계좌 하나의 결정 프로필(계좌2 명세 2026-10-30-claude-book2-timing-design.md §9-1, ADR 0022) — 결정 파이프라인
+ * ({@link ClaudeDecisionPipeline})이 계좌마다 다르게 쓰는 것을 한곳에 둡니다: 계좌 코드·응답 스키마 파일·시스템 프롬프트 끝의 고정 문단·패킷
+ * 변형·받는 체결 시점·시점 순위·결정 주기 소상한의 설정 키.
+ *
+ * <p>결정 파이프라인의 열쇠는 시장이 아니라 이 프로필의 계좌 코드입니다({@link ClaudeBookService}) — 한 시장에 Claude 계좌가 둘(미국 계좌1·
+ * 계좌2)이어도 기동이 막히지 않게. 시장 묶음의 {@link PaperMarket#claudeBook}은 그 시장의 '기본 Claude 계좌'(미국 {@code claude}·한국
+ * {@code kr_claude})로 남고, 그 계좌의 프로필은 시장 묶음의 값을 그대로 옮긴 것입니다({@link #marketDefault}). 그래서 미국 계좌1·한국 Claude
+ * 계좌의 패킷·시스템 프롬프트·응답 스키마·검증은 프로필 전과 글자 그대로입니다(고정본 시험). 계좌2의 프로필은 단계 1의 1-5에서 더합니다.
+ *
+ * @param market         계좌의 시장 묶음(정의 — 달력·하드 규칙 줄·검증기의 시장 몫은 여기서)
+ * @param code           계좌 코드({@code paper_books.code})
+ * @param schemaResource 응답 스키마 파일(API용과 검사용이 같은 파일 — D26)
+ * @param fixedRules     시스템 프롬프트 끝의 고정 문단 — 렌더링이 하드 규칙 줄 다음에 넣습니다
+ *                       ({@link FrameworkService#render(ClaudeBookProfile, tools.jackson.databind.JsonNode, int,
+ *                       tools.jackson.databind.JsonNode)})
+ * @param packetVariant  패킷 머리의 변형 이름 — 기본 계좌는 null(패킷에 그 칸이 없음)
+ * @param timings        받는 체결 시점, 이른 것부터 — 기본 계좌는 그 시장의 {@link PaperMarket#timings}
+ * @param timingRanks    체결 시점 → 순위(작을수록 이른 시점, 시점마다 하나) — 기본 계좌는 이른 시점 0·나머지 1(검증기의 '이른 시점 하나 +
+ *                       나머지' 두 갈래와 같은 뜻)
+ * @param callCapKey     결정 주기 소상한의 설정 키 — 기본 계좌는 null(소상한 없음, 하루 상한만)
+ */
+record ClaudeBookProfile(PaperMarket market, String code, String schemaResource, String fixedRules,
+                         String packetVariant, List<String> timings, Map<String, Integer> timingRanks,
+                         String callCapKey) {
+
+    /** 미국 Claude 계좌1({@code claude}) — 미국 시장 묶음의 값 그대로, 응답 스키마 {@value ClaudeBookService#SCHEMA_RESOURCE}. */
+    static final ClaudeBookProfile US_CLAUDE = marketDefault(UsPaperMarket.INSTANCE, ClaudeBookService.SCHEMA_RESOURCE);
+
+    /** 한국 Claude 계좌({@code kr_claude}) — 한국 시장 묶음의 값 그대로, 응답 스키마 {@value ClaudeBookService#KR_SCHEMA_RESOURCE}. */
+    static final ClaudeBookProfile KR_CLAUDE = marketDefault(KrPaperMarket.INSTANCE, ClaudeBookService.KR_SCHEMA_RESOURCE);
+
+    ClaudeBookProfile {
+        Objects.requireNonNull(market, "market");
+        Objects.requireNonNull(code, "code");
+        Objects.requireNonNull(schemaResource, "schemaResource");
+        Objects.requireNonNull(fixedRules, "fixedRules");
+        Objects.requireNonNull(timingRanks, "timingRanks");
+        timings = List.copyOf(timings);
+        if (timings.isEmpty()) {
+            throw new IllegalArgumentException("받는 체결 시점이 없습니다: " + code);
+        }
+        if (!timingRanks.keySet().equals(new HashSet<>(timings))) {
+            throw new IllegalArgumentException("시점 순위는 받는 체결 시점마다 하나입니다: " + code + " " + timingRanks.keySet()
+                    + " ≠ " + timings);
+        }
+        timingRanks = Collections.unmodifiableMap(new LinkedHashMap<>(timingRanks));
+    }
+
+    /**
+     * 그 시장의 기본 Claude 계좌({@link PaperMarket#claudeBook})의 프로필 — 코드·고정 문단·받는 체결 시점은 시장 묶음의 값 그대로, 시점 순위는
+     * 이른 시점({@link PaperMarket#earlyTiming}) 0·나머지 1, 패킷 변형·소상한 키는 없음. 운영 시장은 {@link #US_CLAUDE}·{@link #KR_CLAUDE}이고,
+     * 시험용 시장 묶음은 결정 문맥이 이것으로 만듭니다({@link ClaudeDecisionPipeline.MarketContext}). 시장 단위 렌더링(주간 복기의 시스템 프롬프트 —
+     * {@link FrameworkService#render(PaperMarket, tools.jackson.databind.JsonNode, int, tools.jackson.databind.JsonNode)})도 같은 시장 묶음의
+     * 고정 문단을 씁니다.
+     *
+     * @param schemaResource 그 계좌의 응답 스키마 파일
+     */
+    static ClaudeBookProfile marketDefault(PaperMarket market, String schemaResource) {
+        Map<String, Integer> ranks = new LinkedHashMap<>();
+        for (String timing : market.timings()) {
+            ranks.put(timing, timing.equals(market.earlyTiming()) ? 0 : 1);
+        }
+        return new ClaudeBookProfile(market, market.claudeBook(), schemaResource, market.promptFixedRules(), null,
+                market.timings(), ranks, null);
+    }
+}

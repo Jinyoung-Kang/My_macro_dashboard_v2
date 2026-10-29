@@ -50,6 +50,13 @@ class DecisionTimingsLockTest {
             for (String timing : market.timings()) {
                 assertThat(market.promptFixedRules()).as(market.code() + " 고정 문단에 " + timing).contains(timing);
             }
+            // 계좌 프로필(계좌2 명세 §9-1) — 결정 파이프라인이 실제로 쓰는 받는 시점·고정 문단도 같은 시점을 말함.
+            ClaudeBookProfile profile = context.profile();
+            assertThat(profile.code()).as(market.code() + " 프로필 계좌").isEqualTo(market.claudeBook());
+            assertThat(profile.timings()).as(market.code() + " 프로필의 받는 시점 = 스키마 enum").isEqualTo(schemaTimings);
+            for (String timing : profile.timings()) {
+                assertThat(profile.fixedRules()).as(market.code() + " 프로필 고정 문단에 " + timing).contains(timing);
+            }
         }
     }
 

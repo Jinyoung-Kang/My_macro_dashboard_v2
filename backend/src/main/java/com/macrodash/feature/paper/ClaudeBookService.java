@@ -106,7 +106,9 @@ import static com.macrodash.feature.paper.ClaudeDecisionPipeline.usageView;
  * 결정 파이프라인(패킷·응답 스키마·시스템 프롬프트의 시장별 부분 — {@link ClaudeDecisionPipeline.MarketContext})으로 냅니다. 다른 시장
  * 책은 건드리지 않습니다. 시장을 받지 않는 옛 시그니처는 미국입니다. 운영 문맥은 미국·한국 둘이고({@link #marketContexts}), 시작·미리보기는
  * 미국 것입니다(13F 출발일 선정·출발일 종가 사후 체결 — 한국은 출발일 사후 체결이 없음, 명세 K28). 한국 결정은 결정 작업이 그 실행의 관측치·읽은
- * 순간을 넘기고({@link ClaudeDecisionPipeline.Observed}), 한국 출발은 네 계좌 출발 파이프라인의 Claude 몫입니다(E2b).
+ * 순간을 넘기고({@link ClaudeDecisionPipeline.Observed}), 한국 출발은 네 계좌 출발 파이프라인의 Claude 몫입니다(E2b). 파이프라인의 열쇠는
+ * 시장이 아니라 Claude 계좌 코드이고(계좌 프로필 {@link ClaudeBookProfile} — 계좌2 명세 §9-1), 시장을 받는 결정은 그 시장 기본 Claude 계좌
+ * ({@link PaperMarket#claudeBook})의 파이프라인으로 냅니다.
  *
  * <p>하루 결정은 결정 작업이 연 실행 문맥({@link MarketRun})을 받아 그 실행이 읽은 설정 행으로 결정 행({@code settings_version})·패킷·
  * 시스템 프롬프트·검증을 하고, 그 실행의 달력으로 주문 만료·재진입 금지를 셉니다(C1a). 시장 묶음을 받으면(옛 시그니처·시험) 고정
@@ -236,8 +238,9 @@ public class ClaudeBookService {
     private final ObjectMapper mapper;
     private final Clock clock;
     /**
-     * 시장 코드 → 그 시장의 결정 한 번의 호출·검증·기록(2단계 명세 §9 A6에서 떼어 냄 — {@link ClaudeDecisionPipeline}). 운영은 미국·한국
-     * 둘입니다({@link #marketContexts}).
+     * Claude 계좌 코드 → 그 계좌의 결정 한 번의 호출·검증·기록(2단계 명세 §9 A6에서 떼어 냄 — {@link ClaudeDecisionPipeline}). 열쇠는 시장이
+     * 아니라 계좌 프로필의 코드입니다({@link ClaudeBookProfile}, 계좌2 명세 §9-1 — 한 시장에 Claude 계좌가 둘이어도 되게). 운영은 미국 계좌1·
+     * 한국 Claude 계좌 둘입니다({@link #marketContexts}).
      */
     private final Map<String, ClaudeDecisionPipeline> pipelines;
     /** 미리보기·시작이 겹치지 않게(두 번 눌러 두 번 과금되지 않게). 정기 결정은 결정 작업의 잠금이 줄을 세웁니다. */
@@ -283,7 +286,7 @@ public class ClaudeBookService {
 
     /**
      * 테스트용 — 시계와 함께 미국 밖 시장의 결정 문맥을 더합니다(시장 격리 시험이 시험용 한국 시장을 넣음). 미국 문맥은 늘 있고
-     * (미국 묶음·{@link PacketBuilder#build}·{@value #SCHEMA_RESOURCE}), 한국 운영 문맥은 없으며, 같은 시장 코드를 두 번 넣으면 거절합니다.
+     * (미국 묶음·{@link PacketBuilder#build}·{@value #SCHEMA_RESOURCE}), 한국 운영 문맥은 없으며, 같은 계좌 코드를 두 번 넣으면 거절합니다.
      */
     ClaudeBookService(PaperStore store, StoreReader reader, PaperMarketData marketData, PaperSelectionService selection,
                       PaperLedgerService ledger, PaperAdminService admin, PacketBuilder packets,
@@ -309,16 +312,16 @@ public class ClaudeBookService {
         this.config = config;
         this.mapper = mapper;
         this.clock = clock;
-        Map<String, ClaudeDecisionPipeline> byMarket = new LinkedHashMap<>();
+        Map<String, ClaudeDecisionPipeline> byBook = new LinkedHashMap<>();
         for (MarketContext context : contexts.all()) {
             // 스키마 파일이 깨졌으면 기동하지 않습니다(파이프라인이 만들 때 읽음) — 첫 결정 날 아침에야 알게 되지 않게.
             ClaudeDecisionPipeline pipeline = new ClaudeDecisionPipeline(context, store, framework, calls, ai, mapper,
                     clock, Math.max(1, timeoutSeconds));
-            if (byMarket.putIfAbsent(context.market().code(), pipeline) != null) {
-                throw new IllegalArgumentException("같은 시장의 결정 문맥이 둘입니다: " + context.market().code());
+            if (byBook.putIfAbsent(context.profile().code(), pipeline) != null) {
+                throw new IllegalArgumentException("같은 계좌의 결정 문맥이 둘입니다: " + context.profile().code());
             }
         }
-        this.pipelines = Map.copyOf(byMarket);
+        this.pipelines = Map.copyOf(byBook);
     }
 
     private static List<MarketContext> concat(List<MarketContext> first, List<MarketContext> second) {
@@ -328,16 +331,17 @@ public class ClaudeBookService {
     }
 
     /**
-     * 운영 결정 문맥 — 시장마다 하나: 미국(미국 묶음·{@link PacketBuilder#build}·{@value #SCHEMA_RESOURCE})과 한국(한국 묶음·
-     * {@link KrPacketBuilder#build} — 그 실행의 관측치·읽은 순간을 받음·{@value #KR_SCHEMA_RESOURCE}, 2단계 명세 §4-7·E2b). 한국 패킷 빌더가
-     * null이면 미국 하나(시험). 서비스가 이 목록으로 파이프라인을 만들고, 시험이 문맥마다 응답 스키마의 체결 시점 enum·시장 묶음의 체결 시점·
-     * 고정 문단이 맞물리는지 봅니다(명세 K38 — {@code DecisionTimingsLockTest}).
+     * 운영 결정 문맥 — Claude 계좌마다 하나: 미국 계좌1({@link ClaudeBookProfile#US_CLAUDE} — 미국 묶음·{@link PacketBuilder#build}·
+     * {@value #SCHEMA_RESOURCE})과 한국 Claude 계좌({@link ClaudeBookProfile#KR_CLAUDE} — 한국 묶음·{@link KrPacketBuilder#build} — 그 실행의
+     * 관측치·읽은 순간을 받음·{@value #KR_SCHEMA_RESOURCE}, 2단계 명세 §4-7·E2b). 한국 패킷 빌더가 null이면 미국 하나(시험). 서비스가 이
+     * 목록으로 파이프라인을 만들고, 시험이 문맥마다 응답 스키마의 체결 시점 enum·시장 묶음의 체결 시점·고정 문단이 맞물리는지 봅니다(명세 K38 —
+     * {@code DecisionTimingsLockTest}).
      */
     static List<MarketContext> marketContexts(PacketBuilder packets, KrPacketBuilder krPackets) {
         List<MarketContext> out = new ArrayList<>();
-        out.add(new MarketContext(US, packets::build, SCHEMA_RESOURCE));
+        out.add(new MarketContext(ClaudeBookProfile.US_CLAUDE, packets::build, null));
         if (krPackets != null) {
-            out.add(new MarketContext(KrPaperMarket.INSTANCE, null, krPackets::build, KR_SCHEMA_RESOURCE));
+            out.add(new MarketContext(ClaudeBookProfile.KR_CLAUDE, null, krPackets::build));
         }
         return List.copyOf(out);
     }
@@ -411,14 +415,14 @@ public class ClaudeBookService {
         MarketRun run = MarketRun.of(market, store);
         ClaudeDecisionPipeline pipeline = base.bind(run);
         Decision retrying = null;
-        Optional<Decision> existing = store.decisionFor(market.claudeBook(), asOf, kind);
+        Optional<Decision> existing = store.decisionFor(pipeline.book(), asOf, kind);
         if (existing.isPresent()) {
             if (!retryable(existing.get())) {
                 return existing.get();
             }
             retrying = existing.get();
         }
-        Book book = claudeBook(market);
+        Book book = claudeBook(pipeline.book());
         if (PaperBooks.NOT_STARTED.equals(book.status())) {
             throw new InvalidRequestException("Claude 계좌는 아직 시작 전입니다 — 개요의 'Claude 계좌 시작'으로 초기 결정을 먼저 "
                     + "내리세요.");
@@ -486,14 +490,14 @@ public class ClaudeBookService {
         MarketRun run = MarketRun.of(market, store);
         ClaudeDecisionPipeline pipeline = base.bind(run);
         Decision retrying = null;
-        Optional<Decision> existing = store.decisionFor(market.claudeBook(), asOf, RuleBookService.SCHEDULED);
+        Optional<Decision> existing = store.decisionFor(pipeline.book(), asOf, RuleBookService.SCHEDULED);
         if (existing.isPresent()) {
             if (!retryable(existing.get())) {
                 return existing.get();
             }
             retrying = existing.get();
         }
-        Book book = claudeBook(market);
+        Book book = claudeBook(pipeline.book());
         if (PaperBooks.NOT_STARTED.equals(book.status())) {
             throw new InvalidRequestException("Claude 계좌는 아직 시작 전입니다 — 기한 지남 행을 쓰지 않습니다");
         }
@@ -513,7 +517,7 @@ public class ClaudeBookService {
         PaperMarket market = pipeline.market();
         Optional<Quotes> quotes = observed != null ? observed.quotes() : reader.quietly(() -> marketData.quotes(market));
         return ledger.exclusively(() -> {
-            Book current = claudeBook(market);
+            Book current = claudeBook(pipeline.book());
             if (PaperBooks.NOT_STARTED.equals(current.status())) {
                 // Claude를 부르는 사이에 초기화(리셋)됐습니다 — 현금만 든 시작 전 책에 주문을 남기지 않습니다.
                 throw new InvalidRequestException("Claude 계좌가 결정을 준비하는 사이에 초기화돼 시작 전 상태입니다 — 결정을 내지 "
@@ -524,7 +528,7 @@ public class ClaudeBookService {
                 throw new InvalidRequestException("Claude 계좌가 결정을 준비하는 사이에 초기화된 뒤 다시 시작했습니다 — 초기화 전 "
                         + "장부로 만든 결정이라 내지 않았습니다.");
             }
-            Optional<Decision> raced = store.decisionFor(market.claudeBook(), asOf, kind);
+            Optional<Decision> raced = store.decisionFor(pipeline.book(), asOf, kind);
             if (raced.isPresent() && (retried == null || !retryable(raced.get()))) {
                 return raced.get();
             }
@@ -720,7 +724,7 @@ public class ClaudeBookService {
      * 상한 − 정기 작업 몫 예약입니다(2단계 명세 §4-10·§9 'E2b 메모' — 그 단추는 수동 문턱을 씀). 문턱에 막힌 문구도 수동 호출의 것입니다.
      */
     KrStartPipeline.Leg krStartLeg() {
-        ClaudeDecisionPipeline base = pipelines.get(KrPaperMarket.INSTANCE.code());
+        ClaudeDecisionPipeline base = pipelines.get(KrPaperMarket.INSTANCE.claudeBook());
         if (base == null || base.market() != KrPaperMarket.INSTANCE) {
             return null;
         }
@@ -1142,13 +1146,21 @@ public class ClaudeBookService {
 
     /** 그 시장의 Claude 책. 없으면(초기화 전) 400. */
     private Book claudeBook(PaperMarket market) {
-        return store.book(market.claudeBook()).orElseThrow(() -> new InvalidRequestException(
+        return claudeBook(market.claudeBook());
+    }
+
+    /** 그 코드의 Claude 책. 없으면(초기화 전) 400. */
+    private Book claudeBook(String code) {
+        return store.book(code).orElseThrow(() -> new InvalidRequestException(
                 "Claude 계좌가 없습니다 — 먼저 초기화(POST /api/paper/init)를 누르세요."));
     }
 
-    /** 그 시장의 결정 파이프라인(클래스 설명의 시장 문맥). */
+    /**
+     * 그 시장 기본 Claude 계좌({@link PaperMarket#claudeBook})의 결정 파이프라인(클래스 설명의 시장 문맥 — 열쇠는 계좌 코드). 그 코드의 문맥이
+     * 다른 시장 묶음의 것이면 없는 것으로 봅니다.
+     */
     private ClaudeDecisionPipeline pipeline(PaperMarket market) {
-        ClaudeDecisionPipeline pipeline = pipelines.get(market.code());
+        ClaudeDecisionPipeline pipeline = pipelines.get(market.claudeBook());
         if (pipeline == null || pipeline.market() != market.definition()) {
             throw new IllegalArgumentException("Claude 결정 문맥이 없는 시장입니다: " + market.code());
         }

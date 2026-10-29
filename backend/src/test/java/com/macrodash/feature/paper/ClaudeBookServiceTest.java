@@ -1195,6 +1195,47 @@ class ClaudeBookServiceTest {
     }
 
     @Test
+    @DisplayName("계좌 프로필(계좌2 명세 §9-1): 결정 문맥의 열쇠는 시장이 아니라 계좌 코드 — 같은 미국 시장에 다른 코드의 문맥이 더 있어도 기동하고 미국 결정은 시장 기본 계좌(계좌1)의 파이프라인·고정 문단, 같은 계좌 코드가 둘이면 기동 실패")
+    void pipelinesAreKeyedByBookCode() throws Exception {
+        activeCashOnly();
+        ClaudeBookProfile other = new ClaudeBookProfile(UsPaperMarket.INSTANCE, "t_claude_other",
+                ClaudeBookService.SCHEMA_RESOURCE, "## 시험용 고정 문단", null, UsPaperMarket.INSTANCE.timings(),
+                ClaudeBookProfile.US_CLAUDE.timingRanks(), null);
+        answerJson(decision(5, "오늘은 주문 없음"));
+
+        Decision d = serviceWith(List.of(new ClaudeDecisionPipeline.MarketContext(other, packets::build, null)))
+                .decide(MON, RuleBookService.SCHEDULED, true);
+
+        assertThat(d.bookCode()).isEqualTo(PaperBooks.CLAUDE);
+        assertThat(d.status()).isEqualTo(ClaudeBookService.STATUS_NO_TRADE);
+        assertThat(store.decisions).hasSize(1);
+        assertThat(hits.get()).isEqualTo(1);
+        assertThat(systemText(requests.get(0))).as("계좌1 고정 문단(시험용 계좌의 문단이 아님)")
+                .isEqualTo(FrameworkService.render(FrameworkService.interimBody(MAPPER), 0,
+                        store.settings().orElseThrow().body()))
+                .doesNotContain("시험용 고정 문단");
+
+        ClaudeBookProfile twin = new ClaudeBookProfile(UsPaperMarket.INSTANCE, PaperBooks.CLAUDE,
+                ClaudeBookService.SCHEMA_RESOURCE, "## 시험용 고정 문단", null, UsPaperMarket.INSTANCE.timings(),
+                ClaudeBookProfile.US_CLAUDE.timingRanks(), null);
+        assertThatThrownBy(() -> serviceWith(List.of(new ClaudeDecisionPipeline.MarketContext(twin, packets::build,
+                null)))).isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("같은 계좌의 결정 문맥이 둘입니다: " + PaperBooks.CLAUDE);
+    }
+
+    /** 미국 운영 문맥에 시험용 결정 문맥을 더한 서비스(시계는 {@link #NOW}). */
+    private ClaudeBookService serviceWith(List<ClaudeDecisionPipeline.MarketContext> others) {
+        Clock clock = Clock.fixed(NOW, ZoneOffset.UTC);
+        PaperAdminService admin = new PaperAdminService(store, marketData, reader, settings, ledger,
+                PaperFixtures.config(), MAPPER, clock);
+        AiService ai = ai(KEY);
+        PaperApiCalls calls = new PaperApiCalls(store, settings);
+        return new ClaudeBookService(store, reader, marketData, selection, ledger, admin, packets,
+                new FrameworkService(store, ai, settings, calls, MAPPER, 30, clock), calls, ai, settings,
+                PaperFixtures.config(), MAPPER, 30, clock, others);
+    }
+
+    @Test
     @DisplayName("한 실행 = 달력 한 벌·설정 판 하나(C1a): 결정 작업 한 번이 그 시장 달력을 한 번만 만들어 장부·관측치 요약·Claude 파이프라인(주문 만료)이 그 한 벌을 쓰고, 실행을 연 뒤 저장된 새 설정 판이 끼어도 결정 행의 settings_version·패킷·시스템 프롬프트는 그 실행이 읽은 판")
     void decisionRunUsesOneCalendarAndTheSettingsVersionItRead() throws Exception {
         PaperFixtures.dropKrDefaults(store);   // 시험용 한국 묶음의 기본값(최소 주문 500원)으로

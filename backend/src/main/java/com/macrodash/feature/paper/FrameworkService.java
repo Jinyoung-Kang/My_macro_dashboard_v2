@@ -239,12 +239,31 @@ public class FrameworkService {
 
     /**
      * 그 시장의 시스템 프롬프트(명세 K34) — 머리·역할·원칙·엔진·지침은 시장과 상관없이 같은 판 본문 그대로이고(판은 두 시장이
-     * 함께 씀, K9), 하드 규칙 줄({@link PaperMarket#promptHardRules})과 끝의 고정 문단({@link PaperMarket#promptFixedRules})만 그
-     * 시장 것입니다. 줄 정리 규칙은 {@link #render(JsonNode, int, JsonNode)}와 같습니다.
+     * 함께 씀, K9), 하드 규칙 줄({@link PaperMarket#promptHardRules})과 끝의 고정 문단({@link PaperMarket#promptFixedRules} — 그 시장
+     * 기본 Claude 계좌의 것)만 그 시장 것입니다. 시장 단위 경로(주간 복기)가 씁니다. 줄 정리 규칙은 {@link #render(JsonNode, int, JsonNode)}와
+     * 같습니다.
      *
      * @param settingsBody 설정 본문(null이면 기본값으로 읽음 — 키마다 읽는 쪽과 같은 규칙)
      */
     static String render(PaperMarket market, JsonNode body, int version, JsonNode settingsBody) {
+        return render(market, market.promptFixedRules(), body, version, settingsBody);
+    }
+
+    /**
+     * 그 Claude 계좌의 시스템 프롬프트(계좌2 명세 §9-1·§9-4) — 결정 파이프라인이 씁니다. 하드 규칙 줄은 그 계좌 시장 묶음의 것
+     * ({@link ClaudeBookProfile#market}), 끝의 고정 문단은 시장이 아니라 계좌 프로필의 것({@link ClaudeBookProfile#fixedRules})입니다.
+     * 시장 기본 계좌(미국 계좌1·한국 Claude 계좌)의 프로필은 시장 묶음의 고정 문단 그대로라 {@link #render(PaperMarket, JsonNode, int, JsonNode)}와
+     * 글자 그대로입니다.
+     *
+     * @param settingsBody 설정 본문(null이면 기본값으로 읽음 — 키마다 읽는 쪽과 같은 규칙)
+     */
+    static String render(ClaudeBookProfile profile, JsonNode body, int version, JsonNode settingsBody) {
+        return render(profile.market(), profile.fixedRules(), body, version, settingsBody);
+    }
+
+    /** 렌더링 본체 — 하드 규칙 줄은 {@code market}, 끝의 고정 문단은 {@code fixedRules}. */
+    private static String render(PaperMarket market, String fixedRules, JsonNode body, int version,
+                                 JsonNode settingsBody) {
         List<String> lines = new ArrayList<>();
         lines.add("# 투자 OS — v" + version + " (" + oneLine(Json.asText(body, "title")) + ")");
         lines.add(ClaudePrompts.ROLE);
@@ -272,7 +291,7 @@ public class FrameworkService {
         lines.add(guidance.isEmpty() ? "(없음)" : guidance);
         lines.add("## 하드 규칙(코드가 집행 — 어기는 주문은 거절된다)");
         lines.addAll(market.promptHardRules(settingsBody));
-        lines.add(market.promptFixedRules());
+        lines.add(fixedRules);
         // 줄마다 끝 공백을 지우고 빈 줄을 빼 한 모양으로(고정 문단의 텍스트 블록 끝 줄바꿈 포함).
         List<String> out = new ArrayList<>();
         for (String chunk : lines) {
