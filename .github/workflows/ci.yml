@@ -75,6 +75,16 @@ jobs:
             psql -h localhost -U macro -d macrodash_test -v ON_ERROR_STOP=1 -q -f "$f"
           done
 
+      # 백업·복원 시험(test_db_scripts.py)은 러너의 psql·pg_dump를 씁니다. 러너 이미지가 더 새 판(17+)을 기본으로 두면
+      # 백업에 `SET transaction_timeout`이 들어가 시험 서버(16)의 복원이 실패합니다(2026-10-29 CI). 서버와 같은 16판으로 맞춥니다.
+      - name: psql·pg_dump를 시험 서버와 같은 16판으로
+        run: |
+          if [ ! -x /usr/lib/postgresql/16/bin/pg_dump ]; then
+            sudo apt-get update -qq && sudo apt-get install -y -qq postgresql-client-16
+          fi
+          echo "/usr/lib/postgresql/16/bin" >> "$GITHUB_PATH"
+          /usr/lib/postgresql/16/bin/pg_dump --version
+
       - name: 테스트
         working-directory: collector
         env:
