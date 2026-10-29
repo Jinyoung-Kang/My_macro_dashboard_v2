@@ -44,6 +44,7 @@ import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.TreeSet;
@@ -825,9 +826,12 @@ public class PaperQueryService {
         if (holds != null) {
             store.corpActionHolds(code).forEach(hold -> holds.put(hold.ticker(), hold.reason()));
         }
+        List<Position> positions = store.positions(code);
+        // 보류로 묶인 평가의 출처를 가르려고 그 종목들의 금융위 확정 종가를 읽습니다(저장본만 — 수집 유발 없음). 보류가 없으면 읽지 않습니다.
+        KrConfirmed heldFsc = holds == null || holds.isEmpty() ? null : heldConfirmed(run, positions, holds.keySet());
 
         List<Map<String, Object>> rows = new ArrayList<>();
-        for (Position p : store.positions(code)) {
+        for (Position p : positions) {
             boolean cashLike = current.cashLike(p.ticker());
             double valuationPrice = p.lastPrice() != null ? p.lastPrice() : p.avgCost();
             double marketValue = p.qty() * valuationPrice;
@@ -867,6 +871,7 @@ public class PaperQueryService {
             if (holds != null) {
                 // 한국 계좌만 — 미처리 기업행위 보류 사유(화면 배지 '기업행위 확인 필요', 명세 §4-2 'C2c'). 미국 행에는 칸이 없습니다.
                 row.put("corpActionHold", holds.get(p.ticker()));
+                row.put("heldValuation", holds.containsKey(p.ticker()) ? heldValuation(p, heldFsc.of(p.ticker())) : null);
             }
             rows.add(row);
         }
@@ -884,6 +889,36 @@ public class PaperQueryService {
         out.put("positions", rows);
         out.put("lockouts", lockouts);
         out.put("cash", state.map(s -> round2(s.cash())).orElse(null));
+        return out;
+    }
+
+    /** 보류 종목들의 금융위 확정 종가 — 그 보유들이 반영한 마지막 봉 날짜({@code fill_ref_date}) 중 이른 날부터(종목·ETF 구분은 장부와 같음). */
+    private KrConfirmed heldConfirmed(MarketRun run, List<Position> positions, Set<String> held) {
+        LocalDate from = positions.stream().filter(p -> held.contains(p.ticker())).map(Position::fillRefDate)
+                .filter(Objects::nonNull).min(LocalDate::compareTo).orElse(null);
+        return run.confirmedPrices(marketData, held, run.settings(), from);
+    }
+
+    /**
+     * 기업행위 보류로 묶인 평가의 출처(사용자 결정 2026-10-29 — 2단계 명세 §9 F3). 장부({@code PaperLedgerService.holdUnprocessed})는 그 보유가
+     * 반영한 마지막 봉 날짜({@code fill_ref_date})의 금융위 확정 종가가 있으면 그 값으로, 없으면 마지막 평가 가격 그대로 묶고 출처는 저장하지
+     * 않습니다. 그래서 저장된 평가 가격이 그날 금융위 확정 종가와 같으면 {@code FSC_CONFIRMED}(토스 마지막 가격이 우연히 같아도 그 값은 확정
+     * 종가와 같은 숫자), 다르거나 그날 행이 없으면 {@code LAST_VALUATION}, 가격을 받은 적이 없으면 {@code AVG_COST}(평단 평가)입니다.
+     * {@code date}는 그 금융위 기준일(= {@code fill_ref_date}).
+     */
+    private static Map<String, Object> heldValuation(Position p, KrConfirmed.Series fsc) {
+        Optional<BigDecimal> close = p.fillRefDate() == null ? Optional.empty() : fsc.closeOn(p.fillRefDate());
+        String source;
+        if (p.lastPrice() == null) {
+            source = "AVG_COST";
+        } else if (close.isPresent() && close.get().compareTo(BigDecimal.valueOf(p.lastPrice())) == 0) {
+            source = "FSC_CONFIRMED";
+        } else {
+            source = "LAST_VALUATION";
+        }
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("source", source);
+        out.put("date", text(p.fillRefDate()));
         return out;
     }
 

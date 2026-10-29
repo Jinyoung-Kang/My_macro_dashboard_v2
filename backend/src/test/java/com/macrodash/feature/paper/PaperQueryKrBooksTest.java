@@ -15,17 +15,21 @@ import java.time.Clock;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneOffset;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.TreeMap;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyCollection;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 /**
  * 한국 계좌의 체결·보유 응답(2단계 명세 §4-16 F2 — 화면의 잠정·확정·확정 조정·실효 비용 bp·'기업행위 확인 필요'): 체결 행의 비용 칸과 실효 비용 bp,
  * 확정 조정 행의 가격 차이·현금 차이·확정가 기준 bp, 확정 상태 셋(확정·확정 대기·미보정 — ETF와 주식의 라벨), 계좌 전체 합계, 보유의 기업행위 보류
- * 사유. 숫자는 손으로 셈니다. 미국 계좌의 체결·보유 행은 키 목록이 예전 그대로입니다.
+ * 사유와 그 보류로 묶인 평가의 출처(§9 F3). 숫자는 손으로 셈니다. 미국 계좌의 체결·보유 행은 키 목록이 예전 그대로입니다.
  */
 class PaperQueryKrBooksTest {
 
@@ -42,12 +46,24 @@ class PaperQueryKrBooksTest {
     private FakePaperStore store;
     private PaperMarketData marketData;
     private PaperQueryService query;
+    /** 금융위 확정 시세(종목 → 기준일 → 종가) — 보류로 묶인 평가의 출처를 가를 때 읽습니다. */
+    private final Map<String, Map<LocalDate, Long>> fscCloses = new HashMap<>();
 
     @BeforeEach
     void setUp() {
         store = new FakePaperStore();
         store.initSettingsIfAbsent(PaperFixtures.settings(store).defaultsJson());
         marketData = mock(PaperMarketData.class);
+        when(marketData.krConfirmed(anyCollection(), anyCollection(), any())).thenAnswer(invocation -> {
+            Map<String, KrConfirmed.Series> series = new HashMap<>();
+            fscCloses.forEach((code, closes) -> {
+                TreeMap<LocalDate, KrConfirmed.Day> days = new TreeMap<>();
+                closes.forEach((day, close) -> days.put(day, new KrConfirmed.Day(day, BigDecimal.valueOf(close), 1_000L, null,
+                        BigDecimal.valueOf(close), "KOSPI")));
+                series.put(code, new KrConfirmed.Series(KrConfirmed.SOURCE_FSC, D2, days));
+            });
+            return new KrConfirmed(series);
+        });
         query = new PaperQueryService(store, marketData, PaperFixtures.quietReader(), PaperFixtures.settings(store),
                 PaperFixtures.config(), NOW);
         store.books.put(BOOK, new Book(BOOK, PaperBooks.KIND_CLAUDE, PaperBooks.KR_CLAUDE_LABEL, 100_000_000,
@@ -198,6 +214,38 @@ class PaperQueryKrBooksTest {
         assertThat(held.get("corpActionHold")).isEqualTo("2026-11-03 상장주식수 변동(분할·병합 추정) — 확인 필요");
         assertThat(free).containsKey("corpActionHold");
         assertThat(free.get("corpActionHold")).isNull();
+        assertThat(free).containsKey("heldValuation");
+        assertThat(free.get("heldValuation")).isNull();
+    }
+
+    @Test
+    @DisplayName("묶인 평가의 출처 heldValuation — 평가 가격 = 그날 금융위 확정 종가면 FSC_CONFIRMED, 다르거나 없으면 LAST_VALUATION, 가격 없으면 AVG_COST")
+    @SuppressWarnings("unchecked")
+    void heldValuationSource() {
+        Instant opened = FILLED_D1;
+        String reason = "2026-11-03 상장주식수 변동(분할·병합 추정) — 확인 필요";
+        // 장부가 금융위 11-03 종가 201,000으로 묶은 보유
+        store.upsertPosition(new Position(BOOK, "000660", 5, 200_000, D1, opened, 201_000, opened, 201_000.0, RECONCILED, false, D1,
+                200_000, null));
+        // 금융위 11-03 종가(179,500)가 묶은 뒤에 들어와 장부가 아직 마지막 평가 가격(토스 180,000)으로 둔 보유
+        store.upsertPosition(new Position(BOOK, "035420", 55, 182_000, D1, opened, 186_500, opened, 180_000.0, opened, false, D1,
+                182_000, null));
+        // 그날 금융위 행이 아예 없고, 가격도 받은 적 없는 보유(평단 평가)
+        store.upsertPosition(new Position(BOOK, "247540", 3, 90_000, D1, opened, 90_000, opened, null, null, true, D1,
+                90_000, null));
+        for (String ticker : List.of("000660", "035420", "247540")) {
+            store.holdForCorpAction(BOOK, ticker, reason);
+        }
+        fscCloses.put("000660", Map.of(D1, 201_000L));
+        fscCloses.put("035420", Map.of(D1, 179_500L));
+
+        List<Map<String, Object>> rows = (List<Map<String, Object>>) query.positions(BOOK).get("positions");
+
+        Map<String, Map<String, Object>> held = new HashMap<>();
+        rows.forEach(r -> held.put((String) r.get("ticker"), (Map<String, Object>) r.get("heldValuation")));
+        assertThat(held.get("000660")).containsExactly(Map.entry("source", "FSC_CONFIRMED"), Map.entry("date", "2026-11-03"));
+        assertThat(held.get("035420")).containsExactly(Map.entry("source", "LAST_VALUATION"), Map.entry("date", "2026-11-03"));
+        assertThat(held.get("247540")).containsExactly(Map.entry("source", "AVG_COST"), Map.entry("date", "2026-11-03"));
     }
 
     @Test
