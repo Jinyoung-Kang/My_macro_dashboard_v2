@@ -315,7 +315,7 @@ EQUITY_MAP = {
 | `us.fundamentals` (observations, 12시간) | Claude 계좌 패킷 `8b_fundamentals`(D28)만 — 규칙 계좌·검증기는 읽지 않음 | 아래 '미국 종목 재무' |
 | `calendar.us_events` (스냅샷, 1시간) | Claude 계좌 패킷 `1b_calendar`(2단계 A)·`/api/paper/status`의 `calendar`(개요의 일정 한 줄) — 규칙 계좌·검증기는 읽지 않음 | 아래 '미국 발표·실적 일정' |
 | `calendar.us_consensus` (스냅샷, 동부 하루 1회) | 🧪 미국 Claude 계좌 패킷 `1b_calendar` — 설정 `calendar.consensus`를 켰을 때만(판 6), 거시 줄의 `forecast`·`previous`·`unit`·`consensusSource`(E1b). 꺼짐이면 읽지 않음 | 위 표 `us_calendar_consensus` 줄. 비공식 참고라 발표 날짜는 FRED·FOMC가 정하고 값만 이름 대응표(백엔드 `analytics.CalendarConsensus` — FOMC·FRED 릴리스 번호 → Nasdaq 머리 지표 하나)로 붙임. 그 날 같은 이름이 두 줄(전월비·전년비 라벨 없음 — CPI·Core PCE)이면 붙이지 않고 사유 |
-| `paper.bars.us` (스냅샷, 1시간) | 🧪 아직 읽는 곳 없음 — 단계 0-4의 실행 감사 작업(계좌1 주문의 메뉴 반사실·1분봉 지연)부터, 단계 1에서 계좌2의 시각 지정 체결 | 아래 'Claude 계좌2 1분봉' |
+| `paper.bars.us` (스냅샷, 1시간) | 🧪 실행 감사 작업 `PaperExecutionAuditJob`(단계 0-4, 5분, `StoreReader.quietly` — 계좌1 주문의 메뉴 반사실·1분봉 지연 → `paper_order_exec`)만 읽음. 장부·패킷은 읽지 않음. 단계 1부터 계좌2의 시각 지정 체결 | 아래 'Claude 계좌2 1분봉' |
 | `calendar.kr_events` (스냅샷, 12시간) | 🧪 한국 책 Claude 계좌 패킷 `1b_calendar`가 읽음(E1a — `KrPacketBuilder`, 읽은 순간 뒤 수집본은 쓰지 않음) — 규칙 계좌·검증기는 읽지 않음 | 위 표 `kr_calendar` 줄. 상수라 임시 회의·바뀐 발표일은 들어오지 않음(손으로 갱신) |
 | `news_headline` (observations, 1시간) | Claude 계좌 패킷 `11b_events`(2단계 B)만 — 규칙 계좌·검증기는 읽지 않음 | 아래 '사건 뉴스 RSS' |
 | `news.headlines.status` (스냅샷, 1시간) | `/api/paper/status`의 `news`(개요의 사건 뉴스 한 줄), 정기·미리보기 패킷 `11b_events`의 `feedNote`(창 끝 3시간 전부터 실패 중인 피드) | 피드별 받은 항목·새 항목·건너뛴 수·마지막 성공 시각(`lastOkAt`)·실패 사유, 7일 보관 건수(`stored7d`). 피드가 모두 실패하면 쓰지 않음(직전 저장본 유지) |
