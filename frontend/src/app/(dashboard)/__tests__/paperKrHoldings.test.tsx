@@ -296,11 +296,12 @@ describe("자료", () => {
     expect(within(confirmed).getByText("71,200원")).toBeTruthy();
     expect(within(confirmed).getByText("차이 -100원")).toBeTruthy();
     expect(within(confirmed).getByText("106 · 0 · 356")).toBeTruthy();
-    expect(within(confirmed).getByText("+1,000원")).toBeTruthy();
+    expect(within(confirmed).getByText("현금 +1,000원")).toBeTruthy();
     const etf = rowOf(table, "153130");
     expect(within(etf).getByText("금융위 확정 미보정(ETF)")).toBeTruthy();
     expect(within(etf).getByText("KRX 일봉 시가")).toBeTruthy();
-    expect(within(etf).getAllByText("—").length).toBe(2);
+    // 확정 조정 칸 하나 — 행이 없으면 "—"(확정가·차이·현금 모두 없음)
+    expect(within(etf).getAllByText("—").length).toBe(1);
     expect(screen.getByText("확정 조정 합계 +1,000원 · 확정 1건 · 남음 1건")).toBeTruthy();
     expect(screen.getByText("확정 조정 주의")).toBeTruthy();
     expect(screen.getByText(CAUTION)).toBeTruthy();
@@ -311,7 +312,8 @@ describe("자료", () => {
     render(<PaperPage market="KR" initialTab="holdings" />);
     const table = await screen.findByRole("table", { name: "체결" });
     const headers = within(table).getAllByRole("columnheader").map((th) => th.textContent);
-    expect(headers).toContain("잠정 수수료·세금·슬리피지(원)");
+    expect(headers).toContain("잠정 비용(원)");
+    expect(screen.getByText(/비용 칸은 수수료 · 세금 · 슬리피지\(원\)이고, 두 비용 칸은 잠정 체결의 값/)).toBeTruthy();
     expect(headers).toContain("잠정 실효 비용");
     const confirmed = rowOf(table, "005930");
     expect(within(confirmed).getByText("106 · 0 · 356")).toBeTruthy();

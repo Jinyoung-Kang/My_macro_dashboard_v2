@@ -221,9 +221,34 @@ const KR_POSITION_COLUMNS: readonly Column<PaperPosition>[] = [
     },
   },
   { key: "highWatermark", header: "최고가(원)", align: "right", cell: (row) => wonPrice(row.highWatermark) },
-  { key: "stop", header: "스탑 가격(원)", align: "right", cell: (row) => stopText(row, "KR") },
-  { key: "held", header: "보유 기간", className: "whitespace-nowrap", cell: (row) => <span className="text-xs">{heldText(row, "KR")}</span> },
+  // 스탑 가격과 거리는 두 줄 — 한 줄로 두면 1280px 카드에서 보유 기간 칸이 밖으로 밀렸습니다.
+  { key: "stop", header: "스탑 가격(원)", align: "right", cell: (row) => krStopCell(row) },
+  // 보유 기간은 낱말 사이에서만 줄바꿈(break-keep — 한 글자씩 접지 않음), 최소 폭은 날짜 한 줄.
+  { key: "held", header: "보유 기간", className: "min-w-[8rem] break-keep", cell: (row) => <span className="text-xs">{heldText(row, "KR")}</span> },
 ];
+
+/** 한국 스탑 칸 — 가격 한 줄과 거리('거리 8.7%') 작은 한 줄. 현금성('적용 안 함')·값 없음은 글 그대로. */
+function krStopCell(row: PaperPosition): ReactNode {
+  const text = stopText(row, "KR");
+  const cut = text.indexOf(" · ");
+  if (cut < 0) return text;
+  return (
+    <span className="flex flex-col items-end">
+      <span>{text.slice(0, cut)}</span>
+      <span className="text-[11px] text-text-3">{text.slice(cut + 3)}</span>
+    </span>
+  );
+}
+
+/** 한 칸 두 줄 — 위는 본문, 아래는 작은 보조 글(같은 행의 관련 값 — 칸 수를 줄여 1280px 카드 안에 표가 들어가게). */
+function TwoLines({ top, bottom }: { top: ReactNode; bottom: ReactNode }) {
+  return (
+    <span className="flex flex-col">
+      <span>{top}</span>
+      <span className="text-[11px] text-text-3">{bottom}</span>
+    </span>
+  );
+}
 
 const KR_LOCKOUT_COLUMNS: readonly Column<PaperLockout>[] = [
   { key: "ticker", header: "종목", cell: (row) => row.ticker },
@@ -231,45 +256,68 @@ const KR_LOCKOUT_COLUMNS: readonly Column<PaperLockout>[] = [
   { key: "reason", header: "사유", cell: (row) => row.reason || EMPTY },
 ];
 
-/** 한국 주문 표의 칸 너비 — 짧은 칸은 줄바꿈 없이, 사유·근거 칸은 읽을 만한 폭(재판정 취소 문장이 길어 다른 칸을 한 글자씩 접지 않게). */
-const KR_ORDER_WIDTH: Readonly<Record<string, string>> = {
-  createdAt: "whitespace-nowrap", ticker: "whitespace-nowrap", side: "whitespace-nowrap", size: "whitespace-nowrap",
-  timing: "whitespace-nowrap", source: "whitespace-nowrap", asOf: "whitespace-nowrap", expires: "whitespace-nowrap",
-  filledAt: "whitespace-nowrap", status: "min-w-[16rem]", reason: "min-w-[18rem]",
-};
-
-const KR_ORDER_COLUMNS: readonly Column<PaperOrder>[] = ORDER_COLUMNS.map((base) => {
-  const column = { ...base, className: KR_ORDER_WIDTH[base.key] };
-  if (column.key === "status") {
-    return {
-      ...column,
-      cell: (row: PaperOrder) => {
-        const reject = krOrderRejectText(row.rejectReason);
-        return (
-          <span className="flex flex-wrap items-center gap-1">
-            <Badges badges={[orderStatusBadge(row.status)]} />
-            {reject.label && <span className="text-xs font-semibold text-warn">{reject.label}</span>}
-            {reject.detail && <span className="text-xs text-warn">{reject.detail}</span>}
-          </span>
-        );
-      },
-    };
-  }
-  if (column.key === "reason") {
-    // 스탑 주문은 감지·재판정 근거(확정값으로 낮춘 최고가·stopBasisNote)를 문장으로 — 그 밖은 미국과 같은 근거 문장.
-    return {
-      ...column,
-      cell: (row: PaperOrder) => {
-        const text = krStopBasisText(row.reason) ?? orderReasonText(row.reason, 80);
-        return text === EMPTY ? text : <span className="text-xs text-muted" title={jsonTitle(row.reason)}>{text}</span>;
-      },
-    };
-  }
-  return column;
-});
+/*
+ * 한국 주문 표 — 미국 열 열한 개를 여덟 칸으로 묶습니다(낸 시각·기준일, 체결 시점·출처, 만료·체결 시각을 두 줄로). 열한 칸 그대로면 1280px 카드에서
+ * 표가 1.5배로 넓어져 맨 끝 '근거'(명세 §9 F2 — STOP 근거 confirmedHighWatermark·stopBasisNote)가 가로 스크롤 밖으로 숨었습니다. 한국어 칸은
+ * 낱말 사이에서만 줄바꿈(break-keep)하고 최소 폭을 두어 좁은 화면에서도 한 글자씩 접지 않습니다.
+ */
+const KR_ORDER_COLUMNS: readonly Column<PaperOrder>[] = [
+  {
+    key: "createdAt",
+    header: "낸 시각·기준일",
+    className: "whitespace-nowrap",
+    cell: (row) => <TwoLines top={formatKst(row.createdAtKst)} bottom={`기준 ${row.asOfTradingDate ?? EMPTY}`} />,
+  },
+  { key: "ticker", header: "종목", className: "whitespace-nowrap", cell: (row) => row.ticker },
+  { key: "side", header: "방향", className: "whitespace-nowrap", cell: (row) => <span className={sideClass(row.side)}>{sideLabel(row.side)}</span> },
+  { key: "size", header: "크기", align: "right", cell: (row) => orderSizeText(row) },
+  {
+    key: "timing",
+    header: "체결 시점·출처",
+    className: "min-w-[6.5rem] break-keep",
+    cell: (row) => <TwoLines top={timingLabel(row.timing)} bottom={sourceLabel(row.source)} />,
+  },
+  {
+    key: "status",
+    header: "상태",
+    className: "min-w-[11rem] break-keep",
+    cell: (row) => {
+      const reject = krOrderRejectText(row.rejectReason);
+      return (
+        <span className="flex flex-wrap items-center gap-1">
+          <Badges badges={[orderStatusBadge(row.status)]} />
+          {reject.label && <span className="text-xs font-semibold text-warn">{reject.label}</span>}
+          {reject.detail && <span className="text-xs text-warn">{reject.detail}</span>}
+        </span>
+      );
+    },
+  },
+  {
+    key: "expires",
+    header: "만료·체결 시각",
+    className: "whitespace-nowrap",
+    cell: (row) => <TwoLines top={`만료 ${row.expiresOn ?? EMPTY}`} bottom={`체결 ${formatKst(row.filledAtKst)}`} />,
+  },
+  // 스탑 주문은 감지·재판정 근거(확정값으로 낮춘 최고가·stopBasisNote)를 문장으로 — 그 밖은 미국과 같은 근거 문장.
+  {
+    key: "reason",
+    header: "근거",
+    className: "min-w-[11rem] break-keep",
+    cell: (row) => {
+      const text = krStopBasisText(row.reason) ?? orderReasonText(row.reason, 80);
+      return text === EMPTY ? text : <span className="text-xs text-muted" title={jsonTitle(row.reason)}>{text}</span>;
+    },
+  },
+];
 
 const KR_FILL_COLUMNS: readonly Column<PaperFill>[] = [
-  { key: "observedAt", header: "관측 시각", className: "whitespace-nowrap", cell: (row) => formatKst(row.observedAtKst) },
+  // 관측 시각과 봉 날짜는 한 칸 두 줄(칸을 줄여 1280px 카드 안에 표가 들어가게).
+  {
+    key: "observedAt",
+    header: "관측 시각·봉 날짜",
+    className: "whitespace-nowrap",
+    cell: (row) => <TwoLines top={formatKst(row.observedAtKst)} bottom={`봉 ${row.observationDate ?? EMPTY}`} />,
+  },
   {
     key: "ticker",
     header: "종목",
@@ -290,14 +338,16 @@ const KR_FILL_COLUMNS: readonly Column<PaperFill>[] = [
     cell: (row) => (
       <span className="flex flex-col items-end">
         <span>{wonPrice(row.price)}</span>
-        <span className="text-[11px] text-text-3">{krPriceSourceLabel(row.priceSource)}</span>
+        {/* 출처 이름은 낱말 사이에서 줄바꿈(오른쪽 정렬 칸은 줄바꿈 없음이 기본) — 칸 폭이 머리 폭을 넘지 않게. */}
+        <span className="whitespace-normal break-keep text-[11px] text-text-3">{krPriceSourceLabel(row.priceSource)}</span>
       </span>
     ),
   },
   // 비용 두 칸은 잠정 체결(토스 잠정가)의 값이고, 확정 조정 행이 있으면 장부가 확정가로 다시 세어 현금을 맞춘 값을 그 아래 '확정'으로 붙입니다.
+  // 비용 칸 세 값의 순서(수수료 · 세금 · 슬리피지)는 카드 부제에 — 머리를 짧게 해야 1280px 카드 안에 표가 들어갑니다.
   {
     key: "costs",
-    header: "잠정 수수료·세금·슬리피지(원)",
+    header: "잠정 비용(원)",
     align: "right",
     cell: (row) => withConfirmed(krCostText(row.fee, row.tax, row.slippageCost), krConfirmationCells(row).costs),
   },
@@ -307,9 +357,10 @@ const KR_FILL_COLUMNS: readonly Column<PaperFill>[] = [
     align: "right",
     cell: (row) => withConfirmed(formatWithUnit(row.costBp, 2, "bp"), krConfirmationCells(row).costBp),
   },
+  // 확정 조정 행의 세 값(확정가·잠정 대비 가격 차이·현금 차이)을 한 칸에 — 칸을 줄여 1280px 카드 안에 표가 들어가게. 행이 없으면 "—".
   {
     key: "confirmedPrice",
-    header: "확정가·차이(원)",
+    header: "확정 조정(원)",
     align: "right",
     cell: (row) => {
       const cells = krConfirmationCells(row);
@@ -317,12 +368,11 @@ const KR_FILL_COLUMNS: readonly Column<PaperFill>[] = [
         <span className="flex flex-col items-end">
           <span>{cells.price}</span>
           <span className="text-[11px] text-text-3">차이 {cells.diff}</span>
+          <span className="text-[11px] text-text-2">현금 {cells.cash}</span>
         </span>
       );
     },
   },
-  { key: "cashDelta", header: "현금 차이(원)", align: "right", cell: (row) => krConfirmationCells(row).cash },
-  { key: "barDate", header: "봉 날짜", className: "whitespace-nowrap", cell: (row) => row.observationDate ?? EMPTY },
 ];
 
 const KR_NAV_COLUMNS: readonly Column<KrNavRow>[] = [
@@ -626,7 +676,8 @@ export function HoldingsSection({
         subtitle={korea
           ? "잠정 체결가는 토스증권(KRX 시가 단일가 — 1분봉 개장 봉, 없으면 일봉 시가)이고, 금융위원회(공공데이터포털) 확정가가 들어오면 "
             + "체결 행은 그대로 둔 채 확정 조정 행으로 현금·평단을 맞춥니다(보통 다음 영업일 13시 뒤). 실효 비용 = (수수료 + 세금 + 슬리피지) "
-            + "÷ (체결가 × 수량) — 서버 계산. 비용 칸은 잠정 체결의 값이고, 확정 조정 행이 있으면 확정가로 다시 센 값('확정')을 그 아래에 둡니다."
+            + "÷ (체결가 × 수량) — 서버 계산. 비용 칸은 수수료 · 세금 · 슬리피지(원)이고, 두 비용 칸은 잠정 체결의 값 — 확정 조정 행이 있으면 "
+            + "확정가로 다시 센 값('확정')을 그 아래에 둡니다."
           : "체결가는 관측가에 슬리피지를 얹은 값입니다. 사후 체결은 그날 종가로 나중에 기록한 것입니다."}
         source={ledgerSource}
       >
