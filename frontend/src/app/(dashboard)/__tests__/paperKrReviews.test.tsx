@@ -36,7 +36,8 @@ function book(code: string, over: Record<string, unknown> = {}) {
 
 const OVERVIEW = {
   available: true, market: "KR", currency: "KRW", dormantReason: null, initialized: true, pendingBackfill: [], startDate: "2026-10-29",
-  books: [book("kr_rules", { kind: "RULES" }), book("kr_claude", { kind: "CLAUDE" }), book("kr_bench_k200"), book("kr_bench_mix")],
+  books: [book("kr_rules", { kind: "RULES", label: "한국 규칙 계좌" }), book("kr_claude", { kind: "CLAUDE", label: "한국 Claude 계좌" }),
+    book("kr_bench_k200", { label: "KODEX 200 계좌" }), book("kr_bench_mix", { label: "한국 60/40 계좌" })],
   navSeries: { dates: [], books: {} }, quotes: null, selection: null, gate: null, claudeExposureSeries: [], frameworkBoundaries: [],
   limits: [], jobs: [],
 };
@@ -212,6 +213,16 @@ describe("자료", () => {
     expect(within(filled).queryByText(/복기 기준일 뒤/)).toBeNull();
     const comparison = screen.getByRole("list", { name: "계좌 수익률 비교" });
     expect(within(comparison).getByText("복기 기준일(2026-11-06) 순자산 없음")).toBeTruthy();
+  });
+
+  // 수정 전에는 계좌 수익률 비교가 계좌 코드(kr_rules …)를 그대로 적었습니다 — 다른 한국 화면은 계좌 이름(it.fails).
+  it.fails("계좌 수익률 비교는 계좌 이름(개요의 계좌 이름) — 코드는 마우스를 올려 봄", async () => {
+    await openReviews();
+    const comparison = await screen.findByRole("list", { name: "계좌 수익률 비교" });
+    expect(within(comparison).getByText("한국 규칙 계좌").getAttribute("title")).toBe("kr_rules");
+    expect(within(comparison).getByText("한국 Claude 계좌")).toBeTruthy();
+    expect(within(comparison).getByText("한국 60/40 계좌")).toBeTruthy();
+    expect(within(comparison).queryByText("kr_rules")).toBeNull();
   });
 
   it("수동 실행은 확인 창에 수동 문턱 → POST /api/paper/reviews/run?market=KR", async () => {
