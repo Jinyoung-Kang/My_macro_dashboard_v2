@@ -5,12 +5,14 @@ import com.macrodash.analytics.UsMarketCalendar;
 import com.macrodash.feature.paper.ExecutionAudit.Price;
 import com.macrodash.feature.paper.ExecutionAuditFixtures.Bars;
 import com.macrodash.store.PaperStore.Order;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
 
 import java.io.IOException;
+import java.lang.reflect.Method;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Instant;
@@ -19,6 +21,7 @@ import java.time.LocalTime;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -296,5 +299,27 @@ class ExecutionAuditTest {
         assertThat(parsed).containsExactlyEntriesOf(ExecutionAudit.MENU);
         assertThat(collector).contains("WINDOW = timedelta(minutes=5)").contains("CONTRACT = " + ExecutionAudit.BARS_CONTRACT)
                 .contains("REFERENCE = \"" + ExecutionAudit.REFERENCE + "\"");
+    }
+
+    @Test
+    @Disabled("재현 — 창 키·메뉴 이름을 기본 로캘의 숫자로 만듦(다음 커밋에서 Locale.ROOT)")
+    @DisplayName("창 키 'HH:MM'·메뉴 이름 'AT_hh00'은 기본 로캘과 상관없이 ASCII 숫자 — 수집기 저장본 windows 키·V17 CHECK와 같은 글자")
+    void labelsIgnoreTheDefaultLocale() throws ReflectiveOperationException {
+        // MENU는 클래스를 처음 읽을 때 한 번 만들어지므로, 만드는 메서드를 그 로캘에서 다시 부릅니다.
+        Method menu = ExecutionAudit.class.getDeclaredMethod("menu");
+        menu.setAccessible(true);
+        Locale saved = Locale.getDefault();
+        try {
+            for (String tag : List.of("ar-EG", "fa-IR", "th-TH-u-nu-thai")) {
+                Locale.setDefault(Locale.forLanguageTag(tag));
+                assertThat(ExecutionAudit.label(LocalTime.of(9, 30))).as(tag).isEqualTo("09:30");
+                assertThat(ExecutionAudit.label(LocalTime.of(15, 0))).as(tag).isEqualTo("15:00");
+                List<Object> names = new ArrayList<>(((Map<?, ?>) menu.invoke(null)).keySet());
+                assertThat(names).as(tag).containsExactly("NEXT_OPEN", "AT_1000", "AT_1100", "AT_1200", "AT_1300",
+                        "AT_1400", "AT_1500");
+            }
+        } finally {
+            Locale.setDefault(saved);
+        }
     }
 }
