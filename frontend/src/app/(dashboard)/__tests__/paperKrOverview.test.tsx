@@ -204,7 +204,7 @@ describe("자료", () => {
     expect(screen.getByText(/아직 한국 Claude 결정 기록이 없습니다/)).toBeTruthy();
   });
 
-  it("계좌 상세: 한국 정의·원 단위 체결 머리·현금성 153130", async () => {
+  it("계좌 상세: 한국 정의·원 단위 잠정 체결 머리·현금성 153130", async () => {
     reads["/api/paper/overview?market=KR"] = () => Promise.resolve(KR_OVERVIEW);
     reads["/api/paper/status?market=KR"] = () => Promise.resolve(KR_STATUS);
     reads["/api/paper/books/kr_bench_mix/positions"] = () => Promise.resolve({
@@ -228,8 +228,8 @@ describe("자료", () => {
     const panel = await screen.findByRole("region", { name: "한국 60/40 계좌 상세" });
     expect(within(panel).getByText(/069500 60%·153130 40%를 사서/)).toBeTruthy();
     expect(within(panel).getByText("현금성(153130) 포함")).toBeTruthy();
-    expect(await within(panel).findByRole("columnheader", { name: "체결가(원)" })).toBeTruthy();
-    expect(within(panel).getByRole("columnheader", { name: "금액(원)" })).toBeTruthy();
+    expect(await within(panel).findByRole("columnheader", { name: "잠정 체결가(원)" })).toBeTruthy();
+    expect(within(panel).getByRole("columnheader", { name: "잠정 금액(원)" })).toBeTruthy();
     expect(await within(panel).findByText("60,000,000")).toBeTruthy();
     expect(within(panel).getByText("100,000")).toBeTruthy();
     expect(await within(panel).findByText("1.5bp")).toBeTruthy();
@@ -237,8 +237,8 @@ describe("자료", () => {
 });
 
 describe("계좌 상세의 최근 체결(한국 — 잠정·확정)", () => {
-  // 수정 전에는 미국 배지(사후 체결만)와 '체결가(원)'을 써, 토스 잠정가가 확정 여부 표시 없이 체결가로 보였습니다(it.fails).
-  it.fails("머리는 '잠정 체결가(원)'·'잠정 금액(원)', 확정 상태 배지(확정·확정 대기), 확정 행은 확정가를 그 아래", async () => {
+  // 예전에는 미국 배지(사후 체결만)와 '체결가(원)'을 써, 토스 잠정가가 확정 여부 표시 없이 체결가로 보였습니다.
+  it("머리는 '잠정 체결가(원)'·'잠정 금액(원)', 확정 상태 배지(확정·확정 대기), 확정 행은 확정가를 그 아래", async () => {
     reads["/api/paper/overview?market=KR"] = () => Promise.resolve(KR_OVERVIEW);
     reads["/api/paper/status?market=KR"] = () => Promise.resolve(KR_STATUS);
     reads["/api/paper/books/kr_rules/positions"] = () => Promise.resolve({ available: true, book: KR_BOOKS[0], cash: 34_000, lockouts: [],

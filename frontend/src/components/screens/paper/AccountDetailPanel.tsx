@@ -4,7 +4,7 @@ import { DonutChart, SERIES_COLORS } from "@/components/charts";
 import { Banner, Button, ErrorState, Freshness, Loading, SourceLine, Table } from "@/components/ui";
 import { useApi } from "@/hooks/useApi";
 import { endpoints } from "@/lib/endpoints";
-import { deltaColor, formatKst, formatNumber } from "@/lib/format";
+import { deltaColor, EMPTY, formatKst, formatNumber } from "@/lib/format";
 import {
   type AccountComposition,
   accountComposition,
@@ -20,6 +20,7 @@ import {
   sideClass,
   sideLabel,
 } from "@/lib/paper";
+import { krConfirmationCells, krFillBadges } from "@/lib/paperKr";
 import { marketMeta, type PaperMarketCode } from "@/lib/paperMarket";
 import type {
   PaperBookSummary,
@@ -68,7 +69,8 @@ export const accountDetailTitleId = (id: string) => `${id}-title`;
  * 보유·체결은 이미 있는 계좌별 응답(positions·fills)을 그대로 읽습니다 — 숫자는 장부 값이고, 묶음·비중 표기는 lib가 만듭니다(ADR 0004).
  * 보유 응답의 계좌 요약이 개요보다 새것이면(버튼 뒤 다시 읽음) 그것을 씁니다.
  *
- * 한국 계좌(`market` "KR")는 돈을 원 단위 정수, 주당 가격을 0자리로 적고 현금성 종목은 153130입니다(lib/paperMarket).
+ * 한국 계좌(`market` "KR")는 돈을 원 단위 정수, 주당 가격을 0자리로 적고 현금성 종목은 153130입니다(lib/paperMarket). 한국 최근 체결은 보유·체결 탭과
+ * 같이 '잠정 체결가'(토스)·확정 상태 배지(lib/paperKr krFillBadges)이고, 확정 조정 행이 있으면 확정가를 그 아래에 둡니다.
  */
 export function AccountDetailPanel({
   id,
@@ -208,7 +210,7 @@ export function AccountDetailPanel({
                 render: (row) => (
                   <span className="flex flex-wrap items-center gap-1">
                     <span>{row.ticker}</span>
-                    {fillBadges(row).map((badge) => (
+                    {(korea ? krFillBadges(row) : fillBadges(row)).map((badge) => (
                       <span key={badge.key} title={badge.title} className={`whitespace-nowrap rounded-sm border px-1.5 py-px text-[10px] ${badge.className}`}>
                         {badge.label}
                       </span>
@@ -220,13 +222,23 @@ export function AccountDetailPanel({
               { key: "qty", header: "수량", align: "right", render: (row) => formatNumber(row.qty, 0) },
               {
                 key: "price",
-                header: `체결가(${meta.unitLabel})`,
+                // 한국 체결 행의 가격은 토스 잠정가입니다 — 확정가는 확정 조정 행에(보유·체결 탭과 같은 머리).
+                header: korea ? `잠정 체결가(${meta.unitLabel})` : `체결가(${meta.unitLabel})`,
                 align: "right",
-                render: (row) => formatSharePrice(row.price, market),
+                render: (row) => {
+                  const price = formatSharePrice(row.price, market);
+                  const confirmed = korea ? krConfirmationCells(row).price : null;
+                  return confirmed && confirmed !== EMPTY ? (
+                    <span className="flex flex-col items-end">
+                      <span>{price}</span>
+                      <span className="whitespace-nowrap text-[11px] text-text-3">{`확정 ${confirmed}`}</span>
+                    </span>
+                  ) : price;
+                },
               },
               {
                 key: "gross",
-                header: `금액(${meta.unitLabel})`,
+                header: korea ? `잠정 금액(${meta.unitLabel})` : `금액(${meta.unitLabel})`,
                 align: "right",
                 // 한국은 원 단위 정수, 미국은 예전처럼 소수 2자리(단위는 머리에).
                 render: (row) => formatNumber(row.gross, meta.moneyDigits),
