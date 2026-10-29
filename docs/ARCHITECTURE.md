@@ -185,7 +185,8 @@ config/          설정 값(AppProperties) · 정기 작업 켜기 — 여러 �
 | `OrderValidator` | 🧪 Claude가 제안한 주문의 하드 규칙 — 제안은 모델, 집행 여부는 이 검사. 받는 체결 시점·이른 시점·근거 문구의 시점 이름과 금액 표기는 시장 묶음이 넘김(`OrderValidator.Market`, 미국 값이 기본) |
 
 🧪 = 모의 알고리즘 매매(운영자 전용, 이 저장소에만 — Local_macro_dashboard_v3에는 없음). 규칙의 근거는
-[명세](specs/2026-10-24-paper-trading-spec.md)·[설계](specs/2026-10-24-paper-trading-design-plan.md)·[ADR 0018](adr/0018-paper-trading-guardrails.md)입니다.
+[명세](specs/2026-10-24-paper-trading-spec.md)·[설계](specs/2026-10-24-paper-trading-design-plan.md)·[ADR 0018](adr/0018-paper-trading-guardrails.md)입니다. 한국 책은
+[2단계 명세](specs/2026-10-26-v2-kr-paper-spec.md)입니다.
 
 `analytics`는 `java.*`만 씁니다. 저장본 JSON을 읽는 일(`support.Json`)과 계산 입력 타입으로
 바꾸는 일(`support.FlowJson`)은 서비스 쪽에서 끝냅니다 — JSON 라이브러리가 바뀌어도 계산 코드는
@@ -224,14 +225,18 @@ config/          설정 값(AppProperties) · 정기 작업 켜기 — 여러 �
 ```
 app/(dashboard)/layout.tsx  세션·읽지 않은 알림 수를 한 번 읽어 셸에 넘김(셸은 다시 읽지 않음)
 components/shell/           왼쪽 내비(1024px 이상)·하단 탭(그 아래)·상단바(통합 검색 ⌘K·알림 벨)·하위 메뉴 줄 — 메뉴 표는 lib/nav.ts 하나
-components/screens/<탭>/    화면 조립(1단계는 홈·모의매매(미국)) — 구역마다 따로 읽어 한 구역의 실패가 다른 구역을 비우지 않음
+components/screens/<탭>/    화면 조립(홈·모의매매 — 미국·한국은 같은 조립에 시장 인자) — 구역마다 따로 읽어 한 구역의 실패가 다른 구역을 비우지 않음
 components/patterns/        자산 행·히어로·통계 타일·표·배지 — 빈값 "—"·추정·이전 값·출처 표시를 여기서 강제
 components/charts/ · ui/    Recharts 래퍼(축 규칙) · 기본 조각(Radix 대화상자·토스트)
 lib/                        표시 규칙(서식·메뉴·검색·테마·화면 모델) — React를 모르는 순수 함수
 ```
 
 - **정보 구조**: 다섯 탭 + 더보기. 1단계는 옛 화면의 경로를 그대로 탭에 묶기만 하고(시장 → `/macro` 등), 새 경로(`/markets/…`)와
-  지표·종목 상세 화면은 4단계입니다. 모의매매만 `/paper/us/*`로 옮겼고 옛 `/paper`는 리디렉션합니다.
+  지표·종목 상세 화면은 4단계입니다. 모의매매만 `/paper/us/*`로 옮겼고(옛 `/paper`는 리디렉션) 한국 책은 `/paper/kr/*`(같은 일곱 탭, 2단계 F2)입니다.
+- **모의매매의 시장 인자**: 화면은 시장(`US`·`KR`) 하나를 받아 통화·주당 가격 자릿수·거래일 이름은 `lib/paperMarket.ts`, API 경로는
+  `endpoints.paper.market(m)`(한국은 `?market=KR`)에서 고릅니다. 한국에만 있는 칸(잠정·확정과 확정 조정, 묶인 평가의 출처, 수집 상태, 노출 맞춘
+  참고선)은 `lib/paperKr.ts`가 화면 모델로 바꿉니다. 미국 응답은 글자 그대로(고정본 `paper-overview-us.json`·`paper-status-us.json`)라 미국 화면은
+  기본값(US)으로 예전과 같고, 프레임·설정은 두 시장이 한 판·한 행을 함께 쓰는 공용 화면입니다.
 - **읽기는 브라우저에서**(`useApi`): 설계서의 "라우트는 서버 컴포넌트에서 fetch"는 하지 않았습니다. 세션이 브라우저 쿠키라 서버에서
   읽으려면 쿠키를 백엔드로 다시 넘겨야 하고, API 주소는 빌드가 아니라 실행 때 정하며([ADR 0006](adr/0006-frontend-api-base-at-runtime.md)),
   `useApi`가 테스트로 고정한 동작(같은 요청 묶기·자동 갱신·늦은 응답 무시·실패해도 앞 값 유지)을 서버 쪽에 다시 만들어야 하기 때문입니다.
