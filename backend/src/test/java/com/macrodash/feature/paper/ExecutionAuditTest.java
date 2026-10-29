@@ -5,6 +5,7 @@ import com.macrodash.analytics.UsMarketCalendar;
 import com.macrodash.feature.paper.ExecutionAudit.Price;
 import com.macrodash.feature.paper.ExecutionAuditFixtures.Bars;
 import com.macrodash.store.PaperStore.Order;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -255,6 +256,19 @@ class ExecutionAuditTest {
         Bars older = new Bars(et(TUE, 13, 5)).bar("SPY", TUE, et(TUE, 12, 0), 500.0, 10.0)
                 .sessionFetchedAt("SPY", TUE, et(TUE, 12, 1).plusSeconds(20));
         assertThat(ExecutionAudit.lagSeconds(older.payload(), US)).as("합쳐 둔 세션은 그 세션을 받은 시각으로").isEqualTo(20);
+    }
+
+    @Test
+    @Disabled("재현 — 직전 저장본에서 남긴 SPY 세션의 받은 시각으로 지연을 셈(다음 커밋에서 null)")
+    @DisplayName("지연은 그 저장본이 받은 SPY 세션으로만 — Yahoo가 짧게 줘 수집기가 직전 세션을 남겼으면(세션 받은 시각 ≠ 저장본 받은 시각) null")
+    void lagIsNullForASessionKeptFromThePreviousSnapshot() {
+        Bars kept = new Bars(et(TUE, 11, 55)).bar("SPY", TUE, et(TUE, 10, 54), 500.0, 10.0)
+                .sessionFetchedAt("SPY", TUE, et(TUE, 10, 55));   // 10:55 회차에 받은 세션을 11:55 저장본이 그대로 남김
+        assertThat(ExecutionAudit.lagSeconds(kept.payload(), US)).as("직전 회차의 지연(0초)을 이번 저장본의 값으로 적지 않음")
+                .isNull();
+
+        Bars fresh = new Bars(et(TUE, 11, 55)).bar("SPY", TUE, et(TUE, 11, 54), 500.0, 10.0);
+        assertThat(ExecutionAudit.lagSeconds(fresh.payload(), US)).as("이번에 받은 세션").isEqualTo(0);
     }
 
     @Test
