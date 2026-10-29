@@ -569,6 +569,40 @@ def held_tickers(market: str) -> list[str]:
     return [row["ticker"] for row in rows]
 
 
+# 🧪 미국 1분봉(paper.bars.us) 수집 범위의 계좌(명세 2026-10-30-claude-book2-timing-design.md §12-1) — 주문은 Claude 계좌1·계좌2, 보유는
+# 계좌2만(계좌2 시각 지정 체결의 'T 시각 순자산'에 보유 종목의 창 가격이 필요 — §10-3). 계좌2(claude2)는 단계 1에서 생기지만 미리 둡니다
+# (행이 없으면 고르는 것이 없음). 코드는 백엔드 PaperBooks와 같은 글자입니다(test_paper_bars가 파일로 대조).
+TIMED_ORDER_BOOKS = {"US": ("claude", "claude2")}
+TIMED_HOLDING_BOOKS = {"US": ("claude2",)}
+# 최근 주문을 범위에 두는 달력일 수 — 수집기는 미국 거래일을 모릅니다. 마감 뒤 결정(기준일) → 다음 세션 E → 서버가 꺼졌던 세션의 늦은
+# 따라잡기까지, 긴 연휴를 넘어도 덮는 길이입니다(1분봉을 되짚을 수 있는 기간도 8일 안 — yfinance period="max" 기준).
+TIMED_RECENT_DAYS = 8
+
+
+def timed_scope(market: str) -> list[str]:
+    """
+    🧪 1분봉(paper.bars.us) 수집 범위 — 그 시장 Claude 계좌들의 대기 주문 ∪ 최근 ``TIMED_RECENT_DAYS``일(달력일, DB 시각)에 만든 주문(상태 무관)
+    ∪ 계좌2 보유의 종목(중복 없음·정렬). 지연 기준 종목(SPY)은 태스크가 더합니다 — 여기는 표에서 고른 것만이라 빈 목록이면 부르지 않습니다.
+
+    백엔드 표 ``paper_orders``·``paper_positions``·``paper_books``를 **읽기만** 합니다(쓰는 프로세스는 백엔드 하나 — ADR 0008, held_tickers와
+    같은 교차 읽기 — v2 ADR 0020·0022). 범위를 정하는 시점·주문은 백엔드가 정하므로 수집기가 따로 셈하지 않습니다.
+    """
+    order_books = TIMED_ORDER_BOOKS.get(market)
+    if not order_books:
+        return []
+    with connection() as conn:
+        rows = conn.execute(
+            "SELECT o.ticker FROM paper_orders o JOIN paper_books b ON b.code = o.book_code "
+            "WHERE b.market = %s AND o.book_code = ANY(%s) "
+            "AND (o.status = 'PENDING' OR o.created_at >= now() - make_interval(days => %s)) "
+            "UNION "
+            "SELECT p.ticker FROM paper_positions p JOIN paper_books b ON b.code = p.book_code "
+            "WHERE b.market = %s AND p.book_code = ANY(%s) ORDER BY 1",
+            (market, list(order_books), TIMED_RECENT_DAYS, market, list(TIMED_HOLDING_BOOKS.get(market, ()))),
+        ).fetchall()
+    return [row["ticker"] for row in rows]
+
+
 def latest_observation_date(dataset: str) -> str | None:
     """그 데이터셋의 가장 최근 obs_date (YYYY-MM-DD). 없으면 None."""
     with connection() as conn:

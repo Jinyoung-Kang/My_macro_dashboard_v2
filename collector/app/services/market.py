@@ -23,6 +23,8 @@ yfinance 기반 시세 수집 (티커 시계열 + 매크로 카드).
 from __future__ import annotations
 
 import logging
+import threading
+from contextlib import contextmanager
 from datetime import date, time, timedelta
 from zoneinfo import ZoneInfo
 
@@ -30,7 +32,7 @@ import pandas as pd
 import yfinance as yf
 from yfinance.exceptions import YFRateLimitError
 
-from ..numbers import to_float
+from ..numbers import to_float, to_int
 from .. import http, indicators, yfcache
 from .. import kst
 
@@ -222,6 +224,159 @@ def latest_minute_prices(symbols: list[str]) -> tuple[dict[str, dict], str | Non
         return out, None
     shown = ", ".join(missing[:3]) + ("…" if len(missing) > 3 else "")
     return out, (f"받지 못함 {len(missing)}개({shown})" if out else _empty_reason())
+
+
+# ------------------------------------------------------------------------------
+# 🧪 미국 Claude 계좌2 단계 0 — 1분봉 원자료·검증용 일봉 시가(tasks/paper_bars.py가 메뉴 창으로 자름, 명세 2026-10-30 §12-1)
+# ------------------------------------------------------------------------------
+# yf.download는 종목마다 받은 429(YFRateLimitError)를 예외로 올리지 않습니다 — [확인] yfinance 1.7.0 multi._download_one이 종목별 예외를
+# 그 호출의 errors에 적고, _download_impl이 부른 스레드에서 'yfinance' 로거로 "['AAA', …]: YFRateLimitError('Too Many Requests. …')" 한 줄을
+# 찍을 뿐입니다. 그래서 배치를 감싼 except YFRateLimitError만으로는 배치 안의 429를 보지 못합니다. 아래 배치는 그 로그 줄도 보고 래치를
+# 닫습니다. yfinance가 문구를 바꾸면 이 감지만 빠지고(그때는 '빈 응답'으로 보임) 수집은 그대로입니다.
+_RATE_LIMIT_MARKS = ("YFRateLimitError", "Too Many Requests")
+
+
+class _RateLimitLog(logging.Handler):
+    """부른 스레드에서 'yfinance' 로거에 찍힌 429 표지를 봅니다 — 다른 태스크 스레드가 찍은 줄은 세지 않습니다."""
+
+    def __init__(self) -> None:
+        super().__init__(level=logging.ERROR)
+        self._thread = threading.get_ident()
+        self.seen = False
+
+    def emit(self, record: logging.LogRecord) -> None:
+        if record.thread != self._thread:
+            return
+        try:
+            message = record.getMessage()
+        except Exception:  # noqa: BLE001 — 형식이 깨진 라이브러리 로그는 표지가 아닙니다
+            return
+        if any(mark in message for mark in _RATE_LIMIT_MARKS):
+            self.seen = True
+
+
+@contextmanager
+def _watch_rate_limit():
+    watcher = _RateLimitLog()
+    yf_logger = logging.getLogger("yfinance")
+    yf_logger.addHandler(watcher)
+    try:
+        yield watcher
+    finally:
+        yf_logger.removeHandler(watcher)
+
+
+def _yahoo_batch(names: list[str], **kwargs) -> tuple[pd.DataFrame | None, str | None, bool]:
+    """
+    yf.download 배치 한 번 — (받은 표, 이유, 이번 호출이 429를 받았나).
+
+    공용 래치가 닫혀 있으면 묻지 않습니다(이 호출은 나가지 않았으니 429가 아님). 이 호출이 받은 429는 래치를 닫고, 일부 종목만 429여도
+    받은 표는 그대로 돌려줍니다 — 받은 종목은 쓰고 나머지는 부르는 쪽이 이어받습니다.
+    """
+    latched = http.active_rejection(http.YAHOO_HOST)
+    if latched is not None:
+        return None, str(latched), False
+    try:
+        with _watch_rate_limit() as watcher:
+            raw = yf.download(tickers=" ".join(names), actions=False, progress=False, group_by="ticker", threads=True,
+                              **kwargs)
+    except YFRateLimitError:
+        return None, str(http.reject_host(http.YAHOO_HOST, "HTTP 429(요청 제한)")), True
+    except Exception as exc:  # noqa: BLE001 — 배치 하나의 실패는 사유로 돌려줍니다
+        logger.warning("Yahoo 배치 실패(%s): %s", kwargs.get("interval"), exc)
+        return None, brief_error(exc), False
+    if watcher.seen:
+        return raw, str(http.reject_host(http.YAHOO_HOST, "HTTP 429(요청 제한)")), True
+    return raw, None, False
+
+
+def _ticker_frame(raw: pd.DataFrame | None, symbol: str, single: bool) -> pd.DataFrame | None:
+    """배치 표에서 한 종목의 표(group_by="ticker"). 묶음 열이 아닌 표는 한 종목만 물었을 때만 그 종목의 것으로 봅니다."""
+    if raw is None or raw.empty:
+        return None
+    if isinstance(raw.columns, pd.MultiIndex):
+        if symbol not in raw.columns.get_level_values(0):
+            return None
+        return raw[symbol]
+    return raw if single else None
+
+
+def _batch_reason(names: list[str], out: dict, reason: str | None) -> str | None:
+    """받지 못한 종목과 그 이유 한 줄. 다 받았으면 배치의 이유(429 등 — 없으면 None)."""
+    missing = [s for s in names if s not in out]
+    if not missing:
+        return reason
+    shown = ", ".join(missing[:3]) + ("…" if len(missing) > 3 else "")
+    if not out:
+        return reason or _empty_reason()
+    return f"받지 못함 {len(missing)}개({shown})" + (f" — {reason}" if reason else "")
+
+
+def minute_bars(symbols: list[str], period: str) -> tuple[dict[str, list[dict]], str | None, bool]:
+    """
+    🧪 미국 Claude 계좌2 단계 0 — 종목마다 그 기간의 정규장 1분봉 전부(``prepost=False``·원시가 ``auto_adjust=False``), 배치 한 번.
+    (``{T: [{at(UTC, 인덱스 라벨 그대로), open, high, low, close, volume}]}``, 받지 못한 이유, 이번 호출이 429를 받았나)
+
+    시고저종 중 하나라도 없거나 0 이하인 줄은 버립니다 — 배치 표는 종목들의 분을 합쳐 만들어(yfinance reindex_dfs) 그 분에 봉이 없던 종목은
+    빈 줄이 됩니다. 거래량은 받은 그대로(0도 그대로, 없으면 None — 0으로 채우지 않음). 라벨이 봉의 시작인지 끝인지는 여기서 정하지 않고
+    (부르는 쪽 BAR_LABEL — 명세 X1), 지연도 짐작하지 않습니다. 빠진 종목을 하나씩 다시 묻지 않습니다(다음 slow 회차가 다시 받음).
+    """
+    names = [s for s in dict.fromkeys(symbols) if s]
+    if not names:
+        return {}, None, False
+    raw, reason, limited = _yahoo_batch(names, period=period, interval="1m", prepost=False, auto_adjust=False)
+    out: dict[str, list[dict]] = {}
+    for symbol in names:
+        rows = _minute_rows(symbol, _ticker_frame(raw, symbol, len(names) == 1))
+        if rows:
+            out[symbol] = rows
+    return out, _batch_reason(names, out, reason), limited
+
+
+def _minute_rows(symbol: str, frame: pd.DataFrame | None) -> list[dict]:
+    if frame is None or frame.empty:
+        return []
+    try:
+        prices = frame[["Open", "High", "Low", "Close"]].to_numpy()
+    except KeyError as exc:
+        logger.warning("1분봉 결과 분해 실패 (%s): %s", symbol, exc)
+        return []
+    volumes = frame["Volume"].to_numpy() if "Volume" in frame.columns else [None] * len(frame)
+    rows = []
+    for label, values, volume in zip(frame.index, prices, volumes):
+        ohlc = [to_float(value) for value in values]
+        if any(value is None or value <= 0 for value in ohlc):
+            continue
+        at = pd.Timestamp(label)
+        at = at.tz_localize("UTC") if at.tzinfo is None else at.tz_convert("UTC")
+        count = to_int(volume)
+        rows.append({"at": at.to_pydatetime(), "open": ohlc[0], "high": ohlc[1], "low": ohlc[2], "close": ohlc[3],
+                     "volume": count if count is None or count >= 0 else None})
+    return rows
+
+
+def daily_opens(symbols: list[str], period: str) -> tuple[dict[str, dict[str, float]], str | None, bool]:
+    """
+    🧪 미국 Claude 계좌2 단계 0의 검증용 일봉 시가(명세 X2 — 1분봉 첫 봉 시가와의 차이), 원시가(``auto_adjust=False``) 배치 한 번.
+    (``{T: {동부 날짜: 시가}}``, 받지 못한 이유, 이번 호출이 429를 받았나). 값이 없거나 0 이하인 날은 뺍니다.
+    """
+    names = [s for s in dict.fromkeys(symbols) if s]
+    if not names:
+        return {}, None, False
+    raw, reason, limited = _yahoo_batch(names, period=period, interval="1d", auto_adjust=False)
+    out: dict[str, dict[str, float]] = {}
+    for symbol in names:
+        frame = _ticker_frame(raw, symbol, len(names) == 1)
+        if frame is None or frame.empty or "Open" not in frame.columns:
+            continue
+        opens = {}
+        for label, value in zip(frame.index, frame["Open"].to_numpy()):
+            price = to_float(value)
+            if price is not None and price > 0:
+                opens[pd.Timestamp(label).strftime("%Y-%m-%d")] = price
+        if opens:
+            out[symbol] = opens
+    return out, _batch_reason(names, out, reason), limited
 
 
 def _empty_reason() -> str:

@@ -70,6 +70,15 @@ public final class Datasets {
     public static final String SNAP_PAPER_LIVE_US = "paper.live.us";
     public static final String SNAP_PAPER_LIVE_KR = "paper.live.kr";
     /**
+     * 🧪 미국 Claude 계좌2(체결 시점 실험)의 1분봉 — 단계 0 측정(명세 2026-10-30-claude-book2-timing-design.md §7-1·§12-1, ADR 0022).
+     * 수집 범위(Claude 계좌1·계좌2의 대기 주문 ∪ 최근 8일 주문 ∪ 계좌2 보유, + 지연 기준 SPY)의 종목·세션(최근 3, 뉴욕 날짜)마다 메뉴 창
+     * (09:30·10:00~15:00 ET, 각 T~T+4분) 1분봉, 창마다 T 뒤 첫 거래 봉({@code firstTradeAfter}), 첫·마지막 봉, 검증용 일봉 시가(X2).
+     * 봉 시각 {@code t}는 늘 봉 시작의 UTC({@code barLabel} — X1). {@code lagSeconds}는 SPY 정규장 안에서 받은 저장본만, 아니면 null이고
+     * {@code declaredDelayMin}은 늘 null. 모양(contract 1)은 수집기 {@code app/tasks/paper_bars.py} 머리말. 수집기 slow(매시, paper.quotes 바로 뒤).
+     * 읽는 코드는 실행 감사 작업(단계 0-4)부터이고 장부·패킷은 읽지 않습니다.
+     */
+    public static final String SNAP_PAPER_BARS_US = "paper.bars.us";
+    /**
      * 모의 매매 트랙레코드 후보 기관 목록과 기관별 수집 진행률(저장 분기 수·완료 여부). 기관마다의 공시는
      * {@code sec13f(cik, TRACK_RECORD_QUARTERS)}에 있고, 이 저장본은 "누가 후보이고 어디까지 받았나"만 담습니다.
      */
@@ -271,6 +280,11 @@ public final class Datasets {
      * 실시간 카드는 수집기가 이 주기에 맞춰 바로 받습니다(QA-138).
      */
     public static final long MAX_AGE_LIVE = 60L;
+    /**
+     * 🧪 {@link #SNAP_PAPER_BARS_US}를 '그 회차의 1분봉'으로 볼 최대 나이 — slow 주기(60분) + 앞 태스크 몇 분 여유(명세 §12-1). 이보다 오래된
+     * 저장본은 1분봉 수집이 한 회차 넘게 멈춘 것으로 봅니다(실행 감사의 '1분봉 없음', 단계 1의 대체 체결 R3). 읽는 코드는 단계 0-4부터입니다.
+     */
+    public static final long MAX_AGE_BARS_US = 70 * 60L;
     /** 일별 확정치 (FRED/KRX 마감). */
     public static final long MAX_AGE_DAILY = 6 * 60 * 60L;
     /** 분기 공시(13F) 등 거의 변하지 않는 데이터. */

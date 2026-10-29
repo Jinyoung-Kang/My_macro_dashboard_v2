@@ -40,6 +40,11 @@ SNAP_KR_PAPER_QUOTES = "paper.kr.quotes"
 # {market, source, scope, tickers: {T: {price, at(ISO), isStale?}}, missing, error}. 미국 Yahoo(yfinance) 1분봉, 한국 토스 1분봉.
 SNAP_PAPER_LIVE_US = "paper.live.us"
 SNAP_PAPER_LIVE_KR = "paper.live.kr"
+# 🧪 미국 Claude 계좌2(체결 시점 실험)의 1분봉 — 단계 0 측정(명세 docs/specs/2026-10-30-claude-book2-timing-design.md §7-1·§12-1, ADR 0022).
+# 수집 범위(Claude 계좌1·계좌2의 대기 주문 ∪ 최근 8일 주문 ∪ 계좌2 보유 — 백엔드 표를 읽기만, + 지연 기준 SPY)의 종목·세션(최근 3, 뉴욕 날짜)마다
+# 메뉴 창(09:30·10:00~15:00 ET, 각 T~T+4분) 1분봉·창마다 T 뒤 첫 거래 봉·첫/마지막 봉·검증용 일봉 시가와 저장본의 지연 lagSeconds.
+# 모양(contract 1)은 app/tasks/paper_bars.py 머리말. slow(매시) — paper.quotes 바로 뒤. 장부·패킷은 읽지 않습니다(읽는 곳은 실행 감사 작업, 단계 0-4).
+SNAP_PAPER_BARS_US = "paper.bars.us"
 SNAP_TRACK_RECORD_INDEX = "sec.13f.track_record_index"  # 모의 매매 트랙레코드 후보 기관 목록·기관별 수집 진행률(q30)
 SNAP_US_FUNDAMENTALS_STATUS = "us.fundamentals.status"  # 모의 매매 미국 재무(SEC XBRL) 회사별 수집 상태 — 사실은 observations us.fundamentals
 # 모의 매매 Claude 계좌 패킷 1b_calendar의 원자료(2단계 A) — 거시 발표일(FRED 릴리스·FOMC 상수, 앞으로 45일)과 유니버스 종목

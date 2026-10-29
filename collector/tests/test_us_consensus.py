@@ -42,7 +42,7 @@ def test_slow에서_미국_일정_바로_뒤에_돌고_태스크는_35개():
     names = [t.name for t in tasks.ALL_TASKS]
     assert names.index("us_calendar_consensus") == names.index("us_calendar") + 1
     assert task_module.TIME_LIMIT_SECONDS < tasks.TASK_DEADLINE_SECONDS["slow"]
-    assert len(tasks.ALL_TASKS) == len(tasks.TASKS_BY_NAME) == 37  # 장중 평가 paper_live_us·paper_live_kr까지
+    assert len(tasks.ALL_TASKS) == len(tasks.TASKS_BY_NAME) == 38  # 장중 평가 paper_live_us·paper_live_kr·계좌2 단계 0의 paper_bars_us까지
 
 
 def test_데이터셋_이름():

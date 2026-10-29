@@ -8,7 +8,7 @@
 
 ---
 
-## 1. 수집 태스크 (37개)
+## 1. 수집 태스크 (38개)
 
 수집기가 세 그룹으로 나눠 돌립니다. 주기는 `.env`로 바꿀 수 있습니다. 장중 평가 둘(`live`)은 정기 수집이 없고 화면이 볼 때만 백엔드가 요청합니다.
 
@@ -24,6 +24,7 @@
 | | | `fx_history` | 환율·달러인덱스 일별 종가 |
 | | | `equity_history` | 13F 매핑 종목 일별 종가 + 이름→티커 매핑표 |
 | | | `paper_quotes` | 📒 모의 매매 유니버스(13F 이름 매핑 티커 + 후보 기관 CUSIP 매핑 티커 + ETF 19개, `paper_universe.tradable()`) 최근 3개월 일봉 → 스냅샷 `paper.quotes`. 장중에는 마지막 봉이 지연 시세(장부 관측치) |
+| | | `paper_bars_us` | 🧪 미국 Claude 계좌2(체결 시점 실험) **단계 0 측정** — Claude 계좌1·계좌2의 대기 주문 ∪ 최근 8일(달력일) 주문 ∪ 계좌2 보유(백엔드 표 `paper_orders`·`paper_positions`·`paper_books`를 읽기만 — ADR 0022) + 지연 기준 SPY의 정규장 1분봉(yfinance 배치 한 번, `prepost=False`·원시가 `auto_adjust=False`) → 스냅샷 `paper.bars.us`(종목·세션(최근 3, 뉴욕 날짜)마다 메뉴 창 09:30·10:00~15:00 ET 각 5분, 창마다 T 뒤 첫 거래 봉, 첫·마지막 봉, 검증용 일봉 시가, 저장본의 지연 `lagSeconds`). `paper_quotes` **바로 뒤**(같은 Yahoo 래치 — 1분봉이 429를 받아도 그 회차 관측치는 이미 받음). 범위가 비면 Yahoo를 부르지 않음. 기동 뒤 처음 받을 때까지 `period="5d"`(꺼졌던 세션 따라잡기), 그 뒤 `"1d"`. 체결·장부·패킷에는 아직 쓰지 않음(읽는 곳은 단계 0-4의 실행 감사 작업) — §5 'Claude 계좌2 1분봉' |
 | | | `us_calendar` | 📒 발표·실적 일정 → 스냅샷 `calendar.us_events`. 거시: FRED `release/dates`(CPI 10·PCE 54·고용 50·GDP 53, 앞으로 45일) + FOMC 연간 일정표 상수. 실적: 같은 유니버스(ETF 제외)의 다음 실적일 — yfinance quoteSummary `calendarEvents`, 실행당 120종목(`US_CALENDAR_EARNINGS_BUDGET`)·종목당 24시간 캐시(§5 '모의 매매가 쓰는 저장본과 한계') |
 | | | `us_calendar_consensus` | 🧪 미국 지표 컨센서스 → 스냅샷 `calendar.us_consensus` — 수집기는 **저장만**(백엔드 미국 패킷이 설정 `calendar.consensus`를 켰을 때만 읽어 `1b_calendar` 거시 줄에 붙임 — 한국 책 출발일에 켬, [명세 §4-12·K22·E1b](specs/2026-10-26-v2-kr-paper-spec.md)). Nasdaq `api/calendar/economicevents`(비공식 참고, 키 없음, 브라우저 UA)를 미국 동부 오늘부터 18일 안의 평일마다 1회(약 14회 — 패킷 창 '기준일 + 10거래일'의 끝이 공휴일 둘이면 +18일) — 같은 동부 날짜에 받은 날은 다시 묻지 않음(서버 창이 동부 한 날짜 안). **`date=D`는 동부 D−1의 행을 줘서** 날짜 E는 `date=E+1`로 묻고(2026-10-26 네 날짜로 확인), 실업수당 청구가 목요일에 하나도 없으면 어긋남이 바뀐 것으로 보고 저장하지 않음. 미국 행만, 값은 숫자 + 단위(`1,728K` → 1728·K, 못 나누면 null·글자는 `…Text`), 중요도는 Nasdaq이 주지 않아 null. 날짜 하나의 실패는 직전 값을 `isStale`로 잇고, 출처 거부면 그 실행을 멈춤. TradingView 경제 캘린더는 이 PC에서 403이라 쓰지 않음(G11) |
 | | | `news_headlines` | 📒 사건 뉴스 RSS 8개 피드(인베스팅닷컴 넷·연준·BLS 둘·SEC) → `observations` `news_headline`(제목·링크·출처·시각만 — entity = 정규화한 제목의 해시, obs_date = 발행 시각의 UTC 날짜, 7일 보관) + 수집 상태 `news.headlines.status`. 키 없음(§5 '사건 뉴스 RSS') |
@@ -314,6 +315,7 @@ EQUITY_MAP = {
 | `us.fundamentals` (observations, 12시간) | Claude 계좌 패킷 `8b_fundamentals`(D28)만 — 규칙 계좌·검증기는 읽지 않음 | 아래 '미국 종목 재무' |
 | `calendar.us_events` (스냅샷, 1시간) | Claude 계좌 패킷 `1b_calendar`(2단계 A)·`/api/paper/status`의 `calendar`(개요의 일정 한 줄) — 규칙 계좌·검증기는 읽지 않음 | 아래 '미국 발표·실적 일정' |
 | `calendar.us_consensus` (스냅샷, 동부 하루 1회) | 🧪 미국 Claude 계좌 패킷 `1b_calendar` — 설정 `calendar.consensus`를 켰을 때만(판 6), 거시 줄의 `forecast`·`previous`·`unit`·`consensusSource`(E1b). 꺼짐이면 읽지 않음 | 위 표 `us_calendar_consensus` 줄. 비공식 참고라 발표 날짜는 FRED·FOMC가 정하고 값만 이름 대응표(백엔드 `analytics.CalendarConsensus` — FOMC·FRED 릴리스 번호 → Nasdaq 머리 지표 하나)로 붙임. 그 날 같은 이름이 두 줄(전월비·전년비 라벨 없음 — CPI·Core PCE)이면 붙이지 않고 사유 |
+| `paper.bars.us` (스냅샷, 1시간) | 🧪 아직 읽는 곳 없음 — 단계 0-4의 실행 감사 작업(계좌1 주문의 메뉴 반사실·1분봉 지연)부터, 단계 1에서 계좌2의 시각 지정 체결 | 아래 'Claude 계좌2 1분봉' |
 | `calendar.kr_events` (스냅샷, 12시간) | 🧪 한국 책 Claude 계좌 패킷 `1b_calendar`가 읽음(E1a — `KrPacketBuilder`, 읽은 순간 뒤 수집본은 쓰지 않음) — 규칙 계좌·검증기는 읽지 않음 | 위 표 `kr_calendar` 줄. 상수라 임시 회의·바뀐 발표일은 들어오지 않음(손으로 갱신) |
 | `news_headline` (observations, 1시간) | Claude 계좌 패킷 `11b_events`(2단계 B)만 — 규칙 계좌·검증기는 읽지 않음 | 아래 '사건 뉴스 RSS' |
 | `news.headlines.status` (스냅샷, 1시간) | `/api/paper/status`의 `news`(개요의 사건 뉴스 한 줄), 정기·미리보기 패킷 `11b_events`의 `feedNote`(창 끝 3시간 전부터 실패 중인 피드) | 피드별 받은 항목·새 항목·건너뛴 수·마지막 성공 시각(`lastOkAt`)·실패 사유, 7일 보관 건수(`stored7d`). 피드가 모두 실패하면 쓰지 않음(직전 저장본 유지) |
@@ -413,6 +415,23 @@ EQUITY_MAP = {
 | 같은 분기가 두 번 | 저장 키가 (발표일, 티커)라 Yahoo가 한 분기의 발표일을 고치면 `periodEnd`가 같은 행이 둘 남습니다 — 패킷은 기준일까지 보인 것 중 가장 늦은 발표 하나만 씁니다. 한 종목이 같은 동부 날짜에 두 분기를 발표하면(늦은 공시자, 드묾) 분기 말이 늦은 쪽만 남습니다. 나중에 받은 값이 비어 있던 추정치를 채우거나 값을 고치면 새 값으로 덮어씁니다 |
 | 유니버스 전체를 천천히 | 실행당 100종목(`EARNINGS_SURPRISE_BUDGET`)이라 576종목에 약 3일. 순서는 ① 받은 적 없음(처음 보는 종목 → 실패만 한 종목) ② `us_calendar` 저장본의 실적일(또는 지난 실적일)이 오늘(동부) 이하인데 그 날짜 + 1일 전에 받은 종목(발표가 나왔을 법함) ③ 가장 오래전에 받은 순. 처음 며칠은 아직 받지 않은 종목이 `[]`로 보입니다(`epsNote`에 적음). 요청 간격 0.5초, 429면 그 실행을 멈추고(같은 Yahoo 한도를 `us_calendar`·`paper_quotes`와 나눔), 이번 실행에서 한 종목이라도 받은 뒤 직전에 제대로 받은 종목이 5번 연속 실패하면 나머지는 다음 실행, 1,200초(태스크 상한 1,800초)에 새 요청을 멈춤 |
 | 실패 | 일부 실패 → 받은 종목만 행을 쓰고 실패한 종목의 상태 줄은 직전 값을 `isStale`로 잇습니다(3일 기한, 관측 행은 그대로). 한 종목도 받지 못하면(전부 실패·첫 요청 429) `EmptyResult` — 행·상태 모두 그대로 |
+
+**Claude 계좌2 1분봉 (단계 0 측정 — [명세 §7·§12·§19](specs/2026-10-30-claude-book2-timing-design.md), [ADR 0022](adr/0022-us-claude-book2-timing.md))**: 수집기
+`paper_bars_us`가 받아 저장만 합니다(모양 contract 1은 `collector/app/tasks/paper_bars.py` 머리말). 창 시각은 그 세션 날짜의 `America/New_York` 시각이라
+서머타임이 끝나도(2026-11-01) 09:30 ET 그대로입니다(10-30 13:30Z, 11-02 14:30Z). 단계 0은 측정만 합니다 — 세 세션 이상 X1~X5를 재 이 절에 적은 뒤
+계좌2가 출발합니다(T4).
+
+| 한계 | 내용 |
+|---|---|
+| 봉 라벨 [추정 — X1] | Yahoo 1분봉의 인덱스 시각을 봉 **시작**으로 봅니다(`BAR_LABEL = "START"`). 저장하는 `t`는 늘 봉 시작이라 끝 라벨로 판명되면 상수만 바꿉니다. `lagSeconds`가 음수면 진행 중인 봉까지 받은 것입니다 |
+| 첫 봉 시가 [모름 — X2] | 09:30 봉 Open과 일봉 Open(원시가 일봉 배치, 확정된 세션 — 동부 16:15 뒤 — 마다 한 번)의 차이로 잽니다. 공식 개장 경매가와 같은지는 공식 출처가 없어 계속 모릅니다 |
+| 받는 기간 [모름 — X9] | `period="1d"`가 장 전·마감 뒤에 어느 세션을 주는지, `"5d"`가 며칠 전 세션까지 주는지 모릅니다 — 기동 직후 저장본의 세션 날짜로 확인. 1분봉을 되짚을 수 있는 기간은 yfinance가 `period="max"`일 때 8일로 자르는 것만 확인했습니다(1.7.0) |
+| 지연 `lagSeconds` | 받은 시각 − (SPY 마지막 봉 시작 + 60초) — SPY 그 세션 날 정규장(09:30~16:00 ET) 안에서 받은 저장본만, 장 밖·휴장·주말은 `null`(장이 닫힌 시간이지 지연이 아님). 수집기는 미국 달력을 몰라 조기 폐장일(13:00)을 가리지 못하므로 SPY 마지막 봉이 12:59인데 13:00 뒤에 받았으면 `null`입니다(보통 날 13:00 직후의 값 한두 개를 잃음). 출처가 밝힌 지연 `declaredDelayMin`은 yf.download 1분봉 응답에 없어 늘 `null` |
+| 무거래·조기 폐장 | 창에는 받은 봉을 거래량 0까지 그대로 두고, `firstTradeAfter`(T 이후 그 세션의 첫 거래량 > 0 봉)만 0을 건너뜁니다 — 없으면 `null`. 조기 폐장일·아직 오지 않은 창은 `null`. 거래 정지 판정(T18)은 백엔드가 합니다 |
+| Yahoo 예산·래치 공유 | 범위가 있는 slow 회차마다 1분봉 배치 1건(서버가 켜진 밤 약 8~10건) + 확정된 세션마다 일봉 배치 1건. 양보다 **래치 공유**가 위험입니다 — 이 태스크의 429가 공용 래치를 닫으면 5분 동안 같은 Yahoo를 쓰는 다른 수집(매크로 카드·`volatility_history`·`us_calendar` 등)도 묻지 않습니다. 그래서 `paper_quotes` 바로 뒤에 돌고(그 회차 관측치는 이미 받음), 래치가 닫혀 있으면 묻지 않고, 두 회차 연달아 429면 다음 한 회차를 쉽니다. 429·래치 사건 수는 단계 0에서 잽니다(X5) |
+| 배치 안의 429 | yfinance 1.7.0 `yf.download`는 종목별 429를 예외로 올리지 않고 'yfinance' 로거에 한 줄(`YFRateLimitError`)만 남깁니다. 이 태스크는 부른 스레드의 그 줄도 보고 래치를 닫습니다 — 문구가 바뀌면 감지만 빠지고 '빈 응답'으로 보입니다 |
+| 실패 | 받지 못한 종목은 직전 값을 `isStale`로 잇고(세션마다의 `fetchedAt`은 실제로 받은 시각 그대로), 하나도 못 받으면 저장본을 둡니다. 같은 세션을 더 짧게 준 응답(마지막 봉이 앞)은 이미 받은 세션을 덮지 않습니다 |
+| 로컬 | 로컬 v2(`PAPER_ENABLED=false`)도 이 태스크를 돕니다 — 범위가 로컬 사본의 주문·보유라 '최근 8일' 조건으로 곧 비고(`EmptyResult`, 상태 화면에 '데이터 없음', Yahoo 호출 0), 사본 직후 며칠만 Yahoo를 부릅니다 |
 
 ---
 
