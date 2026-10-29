@@ -47,7 +47,7 @@ v3 데모 덧붙임(`compose.aws.yml`)은 공개 데모용이었습니다 — RD
    (Docker 공식 저장소의 docker-ce·compose 플러그인, AWS CLI v2, git·make, 2 GiB 스왑, journald 상한, ubuntu 사용자를 docker 그룹에).
 2. **DB**: RDS가 아니라 **postgres 컨테이너**(기반 `docker-compose.yml` 그대로, PostgreSQL 16). 볼륨 이름은 폴더 이름을 따른
    `my_macro_dashboard_v1_postgres-data`라 서버의 저장소 폴더도 `~/My_macro_dashboard_v1`입니다.
-3. **들어오는 길은 SSM Session Manager 하나**: 보안 그룹 `my-macro-ec2`는 인바운드 규칙 0개 · 아웃바운드 전체. 화면은 PC의 `scripts/aws/tunnel.sh`가
+3. **들어오는 길은 SSM Session Manager 하나**(2026-10-29 결정 16으로 공개 주소 하나를 더함): 보안 그룹 `my-macro-ec2`는 인바운드 규칙 0개 · 아웃바운드 전체. 화면은 PC의 `scripts/aws/tunnel.sh`가
    여는 포트 포워딩(`AWS-StartPortForwardingSession`, 서버 8201 → PC 8201)으로 `http://localhost:8201`에서 열고, 관리 셸은 `aws ssm start-session`
    (붙은 뒤 `sudo -iu ubuntu`). v3 데모의 관리자 터널(0012, QA-136)과 같은 방식입니다. 유휴 제한은 세션 설정(`SSM-SessionManagerRunShell`)에서 60분으로 올리고,
    끊기면 `tunnel.sh`가 다시 잇습니다.
@@ -140,6 +140,23 @@ v3 데모 덧붙임(`compose.aws.yml`)은 공개 데모용이었습니다 — RD
 - **Cloudflare Tunnel + Access**: 휴대폰에서 열어야 하면 후보입니다. 다만 TLS가 Cloudflare 엣지에서 풀려 화면·API 평문이 제3자 인프라를 지납니다.
 - **공개 HTTPS + mTLS**: 443을 인터넷에 열고 서버·클라이언트 인증서를 관리해야 합니다. 사용자 1명에 노출 표면만 늘어납니다.
 - **tailscale serve**: Tailscale을 빼면서 함께 뺐습니다.
+
+16. **공개 주소 — CloudFront + 잠금화면**(2026-10-29, 사용자 결정 — "다른 AWS 프로젝트처럼 공개 URL, 첫 화면에 접근키"): 포트폴리오 스택
+    (`aws-deploy` — CloudFront → Caddy → gate)과 같은 구성을 이 서버에 둡니다.
+    - CloudFront 배포판 하나(기본 도메인 `*.cloudfront.net`, HTTPS는 CloudFront에서 끝남, 캐시 끔, 헤더·쿠키·쿼리 전달, 원본 요청에 비밀 헤더
+      `X-Origin-Verify`). 원본은 이 서버의 탄력적 IP 주소 `:8301`(HTTP). 서버가 꺼져 있어 원본이 502·503·504면 S3의 운영 시간 안내 페이지
+      (`deploy/aws/offline/index.html` — 새 버킷, CloudFront 원본 접근 제어만 읽음, 백업 버킷과 따로)를 보여 줍니다.
+    - 보안 그룹 인바운드는 **CloudFront 원본용 관리형 prefix list → TCP 8301 한 줄**뿐입니다. caddy가 `X-Origin-Verify`(= 서버 `.env`의
+      `ORIGIN_SECRET`)를 확인해 남이 만든 배포판으로 들어오는 것도 막고, 실제 클라이언트 IP는 CloudFront 원본용 대역의 X-Forwarded-For만
+      믿습니다(`scripts/aws/update-cloudfront-ranges.sh`가 배포 때마다 만드는 `deploy/aws/trusted_proxies.caddy`).
+    - 잠금화면은 `deploy/aws/gate`(포트폴리오 `gate.py` 그대로 — 표준 라이브러리, 시험 75개는 `make test-gate`·CI). 잠금을 풀기 전에는
+      화면·API 어떤 요청도 앱에 닿지 않고, 틀린 코드는 IP당 15분 5회·전체 1시간 30회(넘으면 30분 잠금)까지입니다. 코드는 이름을 붙인 scrypt
+      해시로만 서버 `.env`(`GATE_CODES`)에 두고, 평문은 PC의 파일 하나에만 둡니다. 잠금 해제·차단은 텔레그램으로 알립니다(`TELEGRAM_*`).
+    - 잠금을 풀어도 앱 로그인(이메일+비밀번호, DB 세션)은 그대로이고, 공개 주소에서는 사용자 관리·감사 기록(`/api/admin/*`)을 caddy가
+      닫습니다(관리는 터널). 터널(`127.0.0.1:8201`)은 잠금화면 없이 관리용으로 남깁니다. 백엔드 허용 출처에 공개 주소(`PUBLIC_ORIGIN`)를 더합니다.
+    - 비용: CloudFront·S3는 상시 무료 한도(월 1 TB·1천만 요청) 안이라 0에 가깝고, 서버에서 CloudFront로 나가는 전송은 무료입니다.
+    - 버린 안: ALB(시간당 요금 + 인증서·도메인 필요), 공인 IP에 caddy를 직접 열고 Let's Encrypt(도메인 필요, 보안 그룹을 전 세계에 엶),
+      Cloudflare Tunnel(새 상주 데몬·외부 계정 — 결정 3에서 Tailscale을 뺀 것과 같은 이유).
 
 ## 결과와 남은 위험
 

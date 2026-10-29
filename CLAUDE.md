@@ -31,7 +31,8 @@ PostgreSQL ← 수집기(FastAPI, `collector/`). Docker Compose 네 컨테이너
   셸은 SSM(`aws ssm start-session` 뒤 `sudo -iu ubuntu`). **서버에서는 `make up` 대신 `bash scripts/aws/deploy.sh`**(4 GiB — 이미지를 하나씩 빌드).
   서버는 매일 KST 21:55~08:00(토 ~10:00)만 켜진다(EventBridge Scheduler) — 창 밖에 보려면 `bash scripts/aws/instance.sh start`(다음 정지 일정에 꺼짐), 상태는 `instance.sh status`.
   계정 고유 값(인스턴스 ID·버킷 이름)은 공개 저장소에 적지 않고 로컬 `.env`·메모리에만 둔다.
-  서버에 인바운드 규칙·공인 IP 앱 포트·Tailscale을 두지 않는다. v3의 데모 스택(portfolio-*)은 건드리지 않는다.
+  공개 주소는 CloudFront 하나(ADR 0019 결정 16): 보안 그룹 인바운드는 CloudFront 원본용 prefix list → :8301 한 줄뿐이고, caddy가 비밀 헤더를 확인한 뒤
+  잠금화면(gate, `deploy/aws/gate`)을 거친 요청만 앱으로 보낸다. 그 밖의 인바운드 규칙·공인 IP 앱 포트·Tailscale은 두지 않는다. v3의 데모 스택(portfolio-*)은 건드리지 않는다.
 - QA·실험용 별도 스택: `bash scripts/qa/qa-stack.sh up|restore F=…|down` (compose 프로젝트 `my_macrodash_v2_qa`,
   포트 13002/18082/18002/15434·프록시 18890 — v3 QA(`macrodash_qa`, 13000…)·v1 QA(`my_macrodash_qa`, 13001…)와 겹치지 않음, 새 비밀값 `.env.qa`, 외부 호출은 차단 프록시). 성능 측정: `ENV_FILE=.env.qa bash scripts/bench-api.sh`(QA 스택), `scripts/qa/k6/`.
 
@@ -93,5 +94,5 @@ PostgreSQL ← 수집기(FastAPI, `collector/`). Docker Compose 네 컨테이너
 - 이 맥의 `mvn`은 Homebrew JDK 27로 돈다(`java -version`은 21이어도). CI는 Temurin 21이라 JDK 27에서만 나는 컴파일 오류는 CI에서
   안 보인다(`80db4ae` — 익명 `LinkedHashMap` 안의 `Entry`가 `Map.Entry`로 풀린 이름 충돌). CI와 같은 판으로 재려면
   `JAVA_HOME=$(/usr/libexec/java_home -v 21) make test-backend`. 코드는 두 판 모두에서 컴파일되게 쓴다.
-- 모든 포트(화면·API·postgres·collector·새 서비스)는 127.0.0.1에만 연다 — 로컬 화면은 로그인 없이 운영자로 열린다(ADR 0016,
+- 모든 포트(화면·API·postgres·collector·새 서비스)는 127.0.0.1에만 연다(예외는 서버 caddy의 공개 리스너 :8301 하나 — ADR 0019 결정 16) — 로컬 화면은 로그인 없이 운영자로 열린다(ADR 0016,
   휴대폰 접속 없음). 로그인 경로를 시험하려면 QA 스택(기본 로그인), 로그인 없는 모드는 `QA_NO_LOGIN=1 bash scripts/qa/qa-stack.sh up`.

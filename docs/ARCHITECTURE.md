@@ -384,14 +384,15 @@ UTC라서 `LocalDate.now()`를 그대로 쓰면 한국 시각 00:00~09:00 사이
 로컬과 같은 compose 스택에 덧붙임 `compose.aws.yml`(앞단 caddy 추가, 로그인·쿠키·출처 고정)을 얹은 것입니다.
 
 ```
-[PC]
- 브라우저 http://localhost:8201
-    │ 루프백
- scripts/aws/tunnel.sh (aws ssm 포트 포워딩)
-    ║ SSM 세션 — 암호화, 서버 쪽 에이전트가 먼저 나가 연 연결(인바운드 없음)
-    ▼
-[EC2 my-macro-app · t4g.medium · 보안 그룹 인바운드 0 · 포트는 모두 127.0.0.1]
- SSM 에이전트 ──▶ 127.0.0.1:8201 caddy ─┬─ /api/* ──▶ backend:8080 ──JDBC──▶ postgres:5432 ◀──적재── collector:8000
+[PC — 관리용]                                   [어디서나 — 공개 주소, ADR 0019 결정 16]
+ 브라우저 http://localhost:8201                    브라우저 https://dXXXX.cloudfront.net
+    │ 루프백                                          │ HTTPS
+ scripts/aws/tunnel.sh (aws ssm 포트 포워딩)        CloudFront(캐시 끔 · 비밀 헤더 X-Origin-Verify · 꺼진 시간엔 S3 안내 페이지)
+    ║ SSM 세션 — 암호화(인바운드 없음)                 │ HTTP :8301 — 보안 그룹은 CloudFront 원본용 prefix list만
+    ▼                                                 ▼
+[EC2 my-macro-app · t4g.medium · 인바운드는 CloudFront → 8301 한 줄 · 나머지 포트는 127.0.0.1]
+ SSM 에이전트 ──▶ 127.0.0.1:8201 caddy :8301 ◀─(비밀 헤더 확인 → 잠금화면 gate:8100 → /api/admin 닫음)
+                                 caddy ─┬─ /api/* ──▶ backend:8080 ──JDBC──▶ postgres:5432 ◀──적재── collector:8000
                                        └─ 나머지 ──▶ frontend:3000
  나가는 통신(공인 IPv4): collector ──▶ 외부 시장 데이터 · backend ──▶ Anthropic API
  cron 06:10 KST: make backup ──▶ S3 my-macro-backups-…/db/ (60일 만료)
@@ -399,13 +400,14 @@ UTC라서 `LocalDate.now()`를 그대로 쓰면 한국 시각 00:00~09:00 사이
 [EventBridge Scheduler, Asia/Seoul] 21:55 ec2:StartInstances · 08:00(일~금)·10:00(토) ec2:StopInstances
 ```
 
-- **들어오는 길은 SSM 하나**입니다. 보안 그룹에 인바운드 규칙이 없고, 서버의 모든 포트(caddy 8201 · 화면 3000 · API 8080 · 수집기 8000 · DB 5432)는
+- **들어오는 길은 둘**입니다(2026-10-29 결정 16). 관리용은 SSM, 공개 주소는 CloudFront → caddy :8301(보안 그룹 인바운드는 CloudFront 원본용
+  prefix list 한 줄, caddy가 비밀 헤더 확인 → 잠금화면). 그 밖의 서버 포트(caddy 8201 · 화면 3000 · API 8080 · 수집기 8000 · DB 5432)는
   `127.0.0.1`에만 열립니다. 세션은 서버의 SSM 에이전트가 AWS로 먼저 나가 연결을 열어 두는 방식이라 인바운드가 필요 없습니다. 접속 권한은 PC의 IAM 로그인(`aws login`)입니다.
 - **TLS는 없습니다.** 평문은 PC의 루프백(브라우저 ↔ session-manager-plugin)과 서버의 루프백·도커 네트워크에만 있고, 그 사이는 SSM이 암호화합니다.
   Chrome·Firefox는 `http://localhost`를 안전한 출처로 봐서 `Secure` 세션 쿠키(`COOKIE_SECURE=true`)를 그대로 받습니다(Safari는 받지 않아
   Safari로 열 때만 서버 `.env`에 `COOKIE_SECURE=false`).
 - **같은 출처**: 화면은 `NEXT_PUBLIC_API_BASE=/`로 빌드돼 `/api/...`를 상대 경로로 부르고, caddy가 백엔드로 보냅니다(ADR 0012의 정의).
-  허용 출처(`FRONTEND_ORIGIN`)는 터널 주소 `http://localhost:8201`·`http://127.0.0.1:8201`뿐입니다.
+  허용 출처(`FRONTEND_ORIGIN`)는 터널 주소 `http://localhost:8201`·`http://127.0.0.1:8201`과 공개 주소(서버 `.env`의 `PUBLIC_ORIGIN`)입니다.
 - **접속 주소**: caddy가 `X-Forwarded-For`를 접속 주소로 채우고(들어온 값은 믿지 않음) Tomcat이 내부 대역에서 온 그 헤더만 믿습니다
   (`SERVER_FORWARDHEADERSSTRATEGY=native` — 내부 대역은 같은 compose 네트워크의 컨테이너·서버 안 프로세스. 바깥에서 닿는 길은 caddy뿐). 터널로 들어온 요청은 모두 같은 주소로 보여, 위 6절의 로그인 지연은 서버에서도 사실상 이메일별입니다.
 - **모의 매매 상태는 서버 한 곳**에만 있습니다. 서버로 옮긴 뒤 로컬 v1은 `PAPER_ENABLED=false`로 띄워 정기 작업(리스크 점검·결정·체결)을 두 곳에서 돌리지 않습니다.

@@ -311,7 +311,7 @@ git config credential.https://github.com.username <아이디>
 
 운영본(🧪 모의 매매가 도는 곳)은 AWS 서울의 EC2 `my-macro-app` 한 대이고, 매일 KST 21:55~08:00(토 ~10:00)만 켜집니다. 구성과 이유는
 [ADR 0019](adr/0019-aws-personal-deployment.md), 그림은 [ARCHITECTURE §9](ARCHITECTURE.md#9-배포-aws-개인용-서버)에 있습니다.
-서버에는 인바운드 포트가 없어 화면도 셸도 SSM으로만 엽니다. 아래 명령의 `<AWS_INSTANCE_ID>`·`<버킷>`은 PC `.env`의
+셸은 SSM으로만 엽니다. 화면은 공개 주소(CloudFront + 잠금화면 — 아래 '공개 주소')나 SSM 터널로 엽니다. 아래 명령의 `<AWS_INSTANCE_ID>`·`<버킷>`은 PC `.env`의
 `AWS_INSTANCE_ID`·서버 `.env`의 `AWS_BACKUP_BUCKET` 값입니다.
 
 > **v2(이 저장소)는 아직 서버에 없습니다.** 교체 전까지 서버는 `~/My_macro_dashboard_v1`(v1)을 돌립니다. 아래 경로는 교체 뒤(서버의
@@ -325,7 +325,7 @@ git config credential.https://github.com.username <아이디>
    `s3:GetObject`·`s3:PutObject`(`<버킷>/*`), `s3:DeleteObject`(`<버킷>/bootstrap/*`만 — 서버가 뚫려도 `db/` 백업을 지우지는 못하게. 같은 키로 덮어쓰는 것은 막지 못함, ADR 0019 남은 위험).
 2. S3 `my-macro-backups-<임의 8자>`: 퍼블릭 액세스 차단 넷 모두, 기본 암호화 SSE-S3, 수명주기 60일 만료. 버전 관리는 켜지 않습니다
    (켜면 지운 `bootstrap/.env`가 이전 버전으로 남음).
-3. 보안 그룹 `my-macro-ec2`: 인바운드 규칙 없음, 아웃바운드 전체. 예산 `my-macro-monthly-45usd`(COST, 80%·100% 알림).
+3. 보안 그룹 `my-macro-ec2`: 인바운드 규칙 없음(2026-10-29부터 CloudFront 원본용 prefix list → TCP 8301 한 줄 — 아래 '공개 주소'), 아웃바운드 전체. 예산 `my-macro-monthly-45usd`(COST, 80%·100% 알림).
 4. EC2 `my-macro-app`: SSM 공개 파라미터의 최신 Ubuntu 24.04 arm64 AMI, t4g.medium, ap-northeast-2a 기본 서브넷(공인 IPv4 자동 할당),
    키페어 없음, 루트 gp3 30 GB 암호화, 메타데이터 `HttpTokens=required`·`HttpPutResponseHopLimit=1`(컨테이너가 인스턴스 역할의 자격 증명을
    꺼내지 못하게 — 호스트의 aws CLI는 그대로 됨), user-data는 `scripts/aws/bootstrap.sh`. 만든 뒤 인스턴스 ID를 PC `.env`의 `AWS_INSTANCE_ID`에 적습니다.
@@ -388,6 +388,18 @@ bash scripts/aws/tunnel.sh
   로그인이 만료되면 `aws login`을 하라고 알리고 멈춥니다.
 - 로그인해도 다시 로그인 화면이 나오면(브라우저가 `http://localhost`의 `Secure` 쿠키를 받지 않음 — Safari가 그렇고 Chrome·Firefox는 받음)
   서버 `.env`에 `COOKIE_SECURE=false`를 적고 `docker compose up -d backend`(서버 셸) 뒤 ADR 0019 결정 10에 기록합니다. 터널 안은 암호화돼 있습니다.
+
+### 공개 주소 (CloudFront + 잠금화면, ADR 0019 결정 16)
+
+- 주소는 CloudFront 배포판의 기본 도메인(`https://dXXXX.cloudfront.net` — 계정 고유 값이라 저장소에 적지 않고 PC `.env`·서버 `.env`의 `PUBLIC_ORIGIN`에만).
+  첫 화면에서 접근 코드를 넣으면 12시간 쿠키가 생기고, 그다음은 평소의 로그인 화면입니다. 서버가 꺼진 시간에는 S3의 안내 페이지가 보입니다.
+- 접근 코드 더하기·폐기: PC에서 `python3 deploy/aws/gate/gate.py hash`(코드를 stdin으로)로 해시를 만들고, 서버 `.env`의 `GATE_CODES`
+  (`이름:해시,이름:해시`)에 더하거나 빼서 `docker compose up -d --no-deps gate`. 코드 평문은 서버·저장소에 두지 않습니다.
+- CloudFront 원본용 대역은 `deploy.sh`가 배포 때마다 다시 받습니다(`scripts/aws/update-cloudfront-ranges.sh` → `deploy/aws/trusted_proxies.caddy`, git 제외).
+- 만든 것(처음 한 번, 2026-10-29): S3 안내 버킷(퍼블릭 차단, CloudFront 원본 접근 제어로만 읽음 — `_offline/index.html`), CloudFront 배포판
+  (원본 = 서버 탄력적 IP의 공개 DNS 이름 `:8301` HTTP + 비밀 헤더 `X-Origin-Verify`, 캐시 정책 CachingDisabled, 원본 요청 정책 AllViewer,
+  `/_offline/*`는 S3, 오류 502·503·504 → `/_offline/index.html`), 보안 그룹 인바운드(CloudFront 원본용 관리형 prefix list → TCP 8301),
+  서버 `.env`의 `PUBLIC_ORIGIN`·`ORIGIN_SECRET`·`GATE_SECRET`·`GATE_CODES`·`TELEGRAM_*`(이름은 [.env.aws.example](../.env.aws.example)).
 
 ### 서버 셸 (SSM)
 

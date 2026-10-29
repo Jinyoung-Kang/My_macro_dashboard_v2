@@ -334,8 +334,9 @@ make test-frontend     # 자가검증 + 훅 테스트(vitest) + 린트 + 빌드(
 
 🧪 모의 매매를 돌리려고 AWS 서울의 EC2 한 대(`my-macro-app`, t4g.medium ARM · 4 GiB)에 올립니다. DB는 로컬과 같은
 Postgres 컨테이너입니다. 서버는 **매일 KST 21:55에 켜지고 08:00(토요일은 10:00)에 꺼집니다**(EventBridge Scheduler) — 미국 장·마지막 지연 봉·
-06:10 백업·07:30 결정이 모두 이 안에 있습니다. 사용자는 1명(운영자)이고 공인 주소로는 아무 포트도 열지 않습니다(보안 그룹 인바운드 0) — 화면은 PC에서
-SSM 포트 포워딩으로만 엽니다. 로컬과 다른 점은 덧붙임 [compose.aws.yml](compose.aws.yml)과 [scripts/aws/](scripts/aws/)에 있고,
+06:10 백업·07:30 결정이 모두 이 안에 있습니다. 사용자는 1명(운영자)입니다. 화면은 **공개 주소**(CloudFront `https://dXXXX.cloudfront.net` —
+첫 화면에서 접근 코드를 넣은 뒤 로그인, 주소와 코드는 운영자에게만)나 PC의 SSM 포트 포워딩(관리용)으로 엽니다. 서버에 들어오는 길은 CloudFront
+원본용 대역 → 8301 한 줄뿐입니다(ADR 0019 결정 16). 로컬과 다른 점은 덧붙임 [compose.aws.yml](compose.aws.yml)과 [scripts/aws/](scripts/aws/)에 있고,
 이유는 [ADR 0019](docs/adr/0019-aws-personal-deployment.md)에 있습니다. 월 약 $17(하루 10시간 기준).
 
 ```bash
