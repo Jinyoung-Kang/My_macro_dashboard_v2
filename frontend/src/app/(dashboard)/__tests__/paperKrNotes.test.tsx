@@ -100,6 +100,8 @@ describe("한국 메모 탭", () => {
     renderNotes();
     expect(await screen.findByText("외국인 반도체 매수")).toBeTruthy();
     expect(screen.getByText("유효 — 패킷에 실음")).toBeTruthy();
+    // 제목·본문 칸의 최소 폭 — 390px에서 다른 칸(줄바꿈 없음)에 눌려 제목이 한 글자씩 세로로 쌓이지 않게(jsdom에는 배치가 없어 칸 정의로 확인).
+    expect(screen.getByRole("columnheader", { name: "제목·본문" }).className).toContain("min-w-[12rem]");
 
     const form = screen.getByRole("form", { name: "메모 쓰기" });
     expect(within(form).getByText(
