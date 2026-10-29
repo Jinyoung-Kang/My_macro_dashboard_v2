@@ -36,6 +36,74 @@ export interface PaperStats {
 }
 
 /** 책 하나의 요약(BookSummary). 개요·보유 응답과 버튼 응답이 같은 모양을 씁니다. */
+/** 🧪 장중 평가(GET /api/paper/live) — 장 상태(그 시장 달력의 정규장 기준). 시각은 "yyyy-MM-dd HH:mm KST". */
+export interface PaperLiveSession {
+  phase: "PRE" | "REGULAR" | "AFTER" | "CLOSED" | "UNKNOWN";
+  sessionDate: string | null;
+  openAtKst: string | null;
+  closeAtKst: string | null;
+  nextOpenAtKst: string | null;
+}
+
+/** 장중 시세 저장본(paper.live.us·paper.live.kr)의 머리 — refreshRequested면 서버가 방금 새 시세를 요청했다(화면이 잠시 뒤 한 번 더 읽음). */
+export interface PaperLiveQuotes {
+  source: string | null;
+  collectedAtKst: string | null;
+  refreshRequested: boolean;
+  missing: string[];
+  error: string | null;
+}
+
+/** 장중 평가의 종목 한 줄 — priceBasis LIVE(그날 세션 1분봉)·LAST_OBSERVATION(장부의 마지막 관측 가격), 가격을 모르면 null. */
+export interface PaperLivePosition {
+  ticker: string;
+  qty: number;
+  avgCost: number | null;
+  price: number | null;
+  priceAtKst: string | null;
+  priceBasis: "LIVE" | "LAST_OBSERVATION" | null;
+  value: number | null;
+  weightPct: number | null;
+  /** 평균 단가 대비 % */
+  returnPct: number | null;
+  previousClose: number | null;
+  /** 직전 거래일 종가 대비 % */
+  dayChangePct: number | null;
+}
+
+/** 장중 평가의 계좌 한 줄(표시 전용 추정 — 장부의 확정 순자산과 별개). 가격을 모르는 보유가 있으면 nav·수익률은 null. */
+export interface PaperLiveBook {
+  code: string;
+  label: string;
+  status: PaperBookStatus;
+  initialCash: number | null;
+  cash: number | null;
+  nav: number | null;
+  /** 출발 대비 % */
+  returnPct: number | null;
+  previousNav: number | null;
+  /** previousNav의 거래일(그 확정 순자산 대비가 dayChangePct) */
+  previousTradingDate: string | null;
+  dayChangePct: number | null;
+  basis: "LIVE" | "LAST_OBSERVATION";
+  basisAtKst: string | null;
+  liveCount: number;
+  positionCount: number;
+  positions: PaperLivePosition[];
+}
+
+export interface PaperLiveResponse {
+  available: boolean;
+  message?: string;
+  market?: string;
+  currency?: string;
+  nowKst?: string;
+  session?: PaperLiveSession;
+  quotes?: PaperLiveQuotes;
+  isEstimated?: boolean;
+  books?: PaperLiveBook[];
+}
+
 export interface PaperBookSummary {
   /** rules · claude · bench_spy · bench_mix */
   code: string;

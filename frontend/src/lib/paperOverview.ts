@@ -75,6 +75,18 @@ export function bookAssetRow(book: PaperBookSummary, context: BookRowContext = {
   };
 }
 
+/**
+ * 계좌 숫자(순자산·출발 이후 수익률)의 기준 시각 — 계좌들의 마지막 관측 시각 중 가장 늦은 것을 "yyyy-MM-dd HH:mm"으로. 네 계좌는 같은
+ * 리스크 점검에서 함께 평가돼 보통 하나입니다. 아무도 모르면 null(시각을 짐작하지 않음).
+ */
+export function latestObserved(books: readonly PaperBookSummary[]): string | null {
+  const stamps = books.map((book) => book.lastObservedAtKst).filter((stamp): stamp is string => typeof stamp === "string" && stamp !== "");
+  if (stamps.length === 0) return null;
+  const latest = stamps.reduce((a, b) => (b > a ? b : a));
+  const shown = formatKst(latest);
+  return shown === EMPTY ? null : shown;
+}
+
 // ---------------------------------------------------------------- 계좌 비교 표(DataTable, 행 = 항목 · 열 = 계좌)
 
 /** 비교 표 칸 하나 — 글과(있으면) 글자색 클래스. 값을 모르면 글은 "—"이고 색은 없습니다. */

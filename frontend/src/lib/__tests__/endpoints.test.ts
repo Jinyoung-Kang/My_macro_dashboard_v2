@@ -129,6 +129,8 @@ const CASES: Case[] = [
   // 시장 단위 경로(2단계 명세 §4-16): 미국은 옛 주소 그대로(?market 없음), 한국은 ?market=KR(메모 목록은 includeExpired 뒤).
   { name: "paper.market(US).overview", before: "/api/paper/overview", after: endpoints.paper.market("US").overview },
   { name: "paper.market(KR).overview", before: "/api/paper/overview?market=KR", after: endpoints.paper.market("KR").overview },
+  { name: "paper.market(US).live", before: "/api/paper/live", after: endpoints.paper.market("US").live },
+  { name: "paper.market(KR).live", before: "/api/paper/live?market=KR", after: endpoints.paper.market("KR").live },
   { name: "paper.market(KR).status", before: "/api/paper/status?market=KR", after: endpoints.paper.market("KR").status },
   { name: "paper.market(KR).init", before: "/api/paper/init?market=KR", after: endpoints.paper.market("KR").init },
   { name: "paper.market(KR).runRisk", before: "/api/paper/run/risk?market=KR", after: endpoints.paper.market("KR").runRisk },

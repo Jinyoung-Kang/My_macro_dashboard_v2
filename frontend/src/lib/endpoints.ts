@@ -181,6 +181,8 @@ export const endpoints = {
       const scoped = (path: string) => (korea ? withQuery(path, { market: "KR" }) : path);
       return {
         overview: scoped("/api/paper/overview"),
+        /** 🧪 장중 평가(표시 전용 추정) — 정규장이면 최신 1분봉, 아니면 장부의 마지막 관측치. */
+        live: scoped("/api/paper/live"),
         status: scoped("/api/paper/status"),
         init: scoped("/api/paper/init"),
         runRisk: scoped("/api/paper/run/risk"),

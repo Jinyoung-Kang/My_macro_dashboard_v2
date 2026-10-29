@@ -40,6 +40,7 @@ import {
 import {
   accountComparisonRows,
   bookAssetRow,
+  latestObserved,
   type ComparisonRow,
   markersInWindow,
   NAV_RANGES,
@@ -75,6 +76,7 @@ import { ClaudeStartSection } from "./ClaudeStartSection";
 import { GateIndicatorBody } from "./GateIndicatorBody";
 import { KrCollectionCard } from "./KrCollectionCard";
 import { KrStartSection } from "./KrStartSection";
+import { LiveValuationCard } from "./LiveValuationCard";
 
 /**
  * 책 코드별 선 색. 앞 셋은 charts의 검증된 팔레트, 혼합 벤치마크는 회색입니다
@@ -187,6 +189,8 @@ export function OverviewSection({
   };
 
   const books = overview.books ?? [];
+  // 계좌 숫자의 기준 시각 — 네 계좌는 같은 리스크 점검에서 함께 평가돼 보통 하나(가장 늦은 것을 적음, 모르면 생략).
+  const observedAt = latestObserved(books);
   const selectedBook = books.find((book) => book.code === selected) ?? null;
   const toggleAccount = (code: string) => setSelected((current) => (current === code ? null : code));
   const closeAccount = () => {
@@ -321,9 +325,12 @@ export function OverviewSection({
       {!korea && <ClaudeStartSection overview={overview} onChanged={onChanged} />}
       {korea && <KrStartSection overview={overview} status={status.data ?? null} onChanged={onChanged} />}
 
+      {/* 정규장 동안 n분마다 움직이는 장중 평가(표시 전용 추정) — 아래 계좌 목록은 장부의 마지막 관측치 값 그대로입니다. */}
+      {overview.initialized !== false && books.length > 0 && <LiveValuationCard market={market} />}
+
       <Card
         title="계좌"
-        subtitle={`순자산·수익률(출발 이후)은 마지막 관측치 기준 · 행을 누르면 그 계좌의 상세${
+        subtitle={`순자산·수익률(출발 이후)은 장부의 마지막 관측치 기준${observedAt ? `(${observedAt} KST)` : ""} · 행을 누르면 그 계좌의 상세${
           status.data?.settingsVersion ? ` · 설정 v${status.data.settingsVersion}` : ""
         }${korea && overview.initialized !== false ? ` · ${KR_RISK_RUN_NOTE}` : ""}`}
         source={ledgerSource}
