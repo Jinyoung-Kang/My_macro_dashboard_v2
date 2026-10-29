@@ -93,7 +93,7 @@ const FILLS = {
       id: 12, orderId: 7, ticker: "005930", side: "BUY", qty: 10, price: 71_300, rawPrice: 71_300, slippageBp: 5, gross: 713_000,
       observedAtKst: "2026-11-03 21:57 KST", observationDate: "2026-11-03", priceSource: "TOSS_1M_OPEN", backfill: false,
       fee: 106, tax: 0, slippageCost: 356, costBp: 6.48,
-      confirmation: { confirmedPrice: 71_200, priceDiff: -100, fee: 106, tax: 0, slippageCost: 356, costBp: 6.49, cashDelta: 1_000,
+      confirmation: { confirmedPrice: 71_200, priceDiff: -100, fee: 105, tax: 0, slippageCost: 356, costBp: 6.49, cashDelta: 1_000,
         source: "FSC", reconciledAtKst: "2026-11-04 22:05 KST" },
       confirmationState: "CONFIRMED", confirmationNote: null,
     },
@@ -291,6 +291,21 @@ describe("자료", () => {
     expect(screen.getByText("확정 조정 합계 +1,000원 · 확정 1건 · 남음 1건")).toBeTruthy();
     expect(screen.getByText("확정 조정 주의")).toBeTruthy();
     expect(screen.getByText(CAUTION)).toBeTruthy();
+  });
+
+  // 수정 전에는 비용 칸이 잠정 체결의 값만(머리에 '잠정' 없이) 보여, 확정 행에서 장부가 실제로 센 확정 비용과 섞여 읽혔습니다(it.fails).
+  it.fails("체결 표 — 비용·실효 비용 칸 머리는 '잠정', 확정 행은 확정가로 다시 센 비용·실효 비용을 '확정'으로 함께", async () => {
+    render(<PaperPage market="KR" initialTab="holdings" />);
+    const table = await screen.findByRole("table", { name: "체결" });
+    const headers = within(table).getAllByRole("columnheader").map((th) => th.textContent);
+    expect(headers).toContain("잠정 수수료·세금·슬리피지(원)");
+    expect(headers).toContain("잠정 실효 비용");
+    const confirmed = rowOf(table, "005930");
+    expect(within(confirmed).getByText("106 · 0 · 356")).toBeTruthy();
+    expect(within(confirmed).getByText("확정 105 · 0 · 356")).toBeTruthy();
+    expect(within(confirmed).getByText("6.48bp")).toBeTruthy();
+    expect(within(confirmed).getByText("확정 6.49bp")).toBeTruthy();
+    expect(within(rowOf(table, "153130")).queryByText(/^확정 /)).toBeNull();
   });
 
   it("주문 표 — 스탑 근거(감지·확정값으로 낮춘 최고가·재판정·stopBasisNote), 재판정 취소 이름표", async () => {
