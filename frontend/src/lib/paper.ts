@@ -4287,7 +4287,8 @@ export function insightNotePayload(
   const payload: { kind: "INSIGHT"; title: string; body: string; market?: "KR" } = {
     kind: "INSIGHT", title: title.trim() || defaultTitle, body: body.trim(),
   };
-  // 한국 화면의 프레임 탭은 방법론 메모를 한국 메모로 남깁니다(한국 메모 목록에서 다시 고를 수 있게 — 제안은 번호로 찾아 시장을 가리지 않음).
+  // 한국 화면의 프레임 탭은 방법론 메모를 한국 메모로 남깁니다(한국 메모 탭에 보이게 — 프레임 탭의 고르기 목록은 두 시장을 합치고, 제안은 번호로 찾아
+  // 시장을 가리지 않음).
   if (market === "KR") payload.market = "KR";
   return payload;
 }
@@ -4333,14 +4334,33 @@ export function frameworkSourceCardView(status: string | null | undefined): Fram
   };
 }
 
-/** 제안에 쓸 수 있는 방법론 메모(보관 안 한 INSIGHT, 서버 순서 그대로)를 고르기 목록으로. 서버가 보관 메모를 거절하므로 빼고 보입니다. */
-export function insightNoteOptions(notes: readonly PaperNote[] | null | undefined): { value: string; label: string }[] {
+/** 제안에 쓸 수 있는 방법론 메모(보관 안 한 INSIGHT, 서버 순서 그대로) — 번호·기준일·고르기 목록 이름. */
+function insightNoteRows(notes: readonly PaperNote[] | null | undefined): { id: number; asOfDate: string; label: string }[] {
   return listOf(notes).filter(isRecord).flatMap((note) => {
     const id = numberOf(note.id);
     if (id === null || note.kind !== "INSIGHT" || note.archived === true) return [];
     const body = stringOf(note.body);
-    return [{ value: String(id), label: `#${id} ${textOf(note.title) ?? EMPTY} (${formatNumber(textLength(body), 0)}자)` }];
+    return [{ id, asOfDate: stringOf(note.asOfDate), label: `#${id} ${textOf(note.title) ?? EMPTY} (${formatNumber(textLength(body), 0)}자)` }];
   });
+}
+
+/** 제안에 쓸 수 있는 방법론 메모(보관 안 한 INSIGHT, 서버 순서 그대로)를 고르기 목록으로. 서버가 보관 메모를 거절하므로 빼고 보입니다. */
+export function insightNoteOptions(notes: readonly PaperNote[] | null | undefined): { value: string; label: string }[] {
+  return insightNoteRows(notes).map(({ id, label }) => ({ value: String(id), label }));
+}
+
+/**
+ * 프레임 탭의 '이미 있는 방법론 메모' 목록 — 두 시장의 메모 목록을 합칩니다(사용자 결정 2026-10-29 y1: 프레임은 두 시장 공용이고 INSIGHT는
+ * 결정 패킷에 들어가지 않아 시장을 나눌 실익이 없음 — 제안은 메모 번호로 찾음). 순서는 서버 목록과 같은 기준일 최근 순(같으면 번호 큰 것
+ * 먼저), 이름 끝에 그 메모의 시장. 읽지 못한 목록(null)은 빼고 나머지로 만듭니다.
+ */
+export function mergedInsightNoteOptions(
+  lists: readonly { market: PaperMarketCode; notes: readonly PaperNote[] | null | undefined }[],
+): { value: string; label: string }[] {
+  const rows = lists.flatMap(({ market, notes }) =>
+    insightNoteRows(notes).map((row) => ({ ...row, label: `${row.label} · ${marketMeta(market).label}` })));
+  rows.sort((a, b) => (a.asOfDate === b.asOfDate ? b.id - a.id : a.asOfDate < b.asOfDate ? 1 : -1));
+  return rows.map(({ id, label }) => ({ value: String(id), label }));
 }
 
 // ---- 시황·방법론 메모(F6·D14)

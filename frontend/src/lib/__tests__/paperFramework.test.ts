@@ -22,6 +22,7 @@ import {
   frameworkVersionRows,
   insightNoteOptions,
   insightNotePayload,
+  mergedInsightNoteOptions,
   noteArchiveConfirm,
   noteAsOfHint,
   noteCreateResultView,
@@ -415,6 +416,25 @@ describe("제안 요청 카드(F1)", () => {
       { value: "8", label: "#8 방법론 (1,200자)" },
     ]);
     expect(insightNoteOptions(null)).toEqual([]);
+  });
+
+  it("프레임 탭의 고르기 목록은 두 시장을 합친다 — 기준일 최근 순(같으면 번호 큰 것 먼저), 이름 끝에 시장, 읽지 못한 목록은 빼고", () => {
+    const note = (id: number, asOfDate: string, over: Record<string, unknown> = {}) => ({
+      id, kind: "INSIGHT", asOfDate, expiresOn: null, title: `메모 ${id}`, body: "글", archived: false, active: true, createdAtKst: null, ...over,
+    });
+    const us = [note(10, "2026-10-20"), note(2, "2026-10-25"), note(9, "2026-10-27", { archived: true }), note(12, "2026-10-28", { kind: "MARKET" })];
+    const kr = [note(31, "2026-10-28"), note(30, "2026-10-25")];
+    expect(mergedInsightNoteOptions([{ market: "US", notes: us }, { market: "KR", notes: kr }])).toEqual([
+      { value: "31", label: "#31 메모 31 (1자) · 한국" },
+      { value: "30", label: "#30 메모 30 (1자) · 한국" },
+      { value: "2", label: "#2 메모 2 (1자) · 미국" },
+      { value: "10", label: "#10 메모 10 (1자) · 미국" },
+    ]);
+    expect(mergedInsightNoteOptions([{ market: "US", notes: us }, { market: "KR", notes: null }])).toEqual([
+      { value: "2", label: "#2 메모 2 (1자) · 미국" },
+      { value: "10", label: "#10 메모 10 (1자) · 미국" },
+    ]);
+    expect(mergedInsightNoteOptions([{ market: "US", notes: null }, { market: "KR", notes: undefined }])).toEqual([]);
   });
 });
 

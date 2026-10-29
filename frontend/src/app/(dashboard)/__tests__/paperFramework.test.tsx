@@ -405,6 +405,14 @@ describe("프레임 탭 — 3b 리뷰 결함", () => {
         { id: 10, kind: "INSIGHT", asOfDate: "2026-10-20", expiresOn: null, title: "투자 OS 원문", body: "원문", archived: false, active: true, createdAtKst: null },
       ],
     }));
+    // 고르기 목록은 두 시장 메모를 합칩니다(사용자 결정 2026-10-29 y1) — 한국 메모는 기준일 최근 순으로 섞이고 이름 끝에 시장.
+    serve("/api/paper/notes?includeExpired=false&market=KR", () => ({
+      available: true,
+      market: "KR",
+      notes: [
+        { id: 14, kind: "INSIGHT", asOfDate: "2026-10-22", expiresOn: null, title: "한국 방법론", body: "수급", archived: false, active: true, createdAtKst: null },
+      ],
+    }));
     api.apiPost.mockResolvedValue({ ok: true, proposal: { ...PROPOSAL, id: 5, noteId: 10, baseVersion: 1 } });
     await openTab("프레임");
 
@@ -413,8 +421,9 @@ describe("프레임 탭 — 3b 리뷰 결함", () => {
     expect(within(card).getByLabelText("방법론 글")).toBeTruthy();
     expect(within(card).getByText(/메모 제목\(비우면 "방법론 글"\)/)).toBeTruthy();
     const select = (await within(card).findByLabelText("이미 있는 방법론 메모로 요청")) as HTMLSelectElement;
+    await waitFor(() => expect(select.options.length).toBe(3));
     expect(Array.from(select.options).map((option) => option.textContent)).toEqual([
-      "고르지 않음 — 아래에 글을 붙여 새 메모로", "#10 투자 OS 원문 (2자)",
+      "고르지 않음 — 아래에 글을 붙여 새 메모로", "#14 한국 방법론 (2자) · 한국", "#10 투자 OS 원문 (2자) · 미국",
     ]);
     fireEvent.change(select, { target: { value: "10" } });
     expect(within(card).getByText("메모 #10의 글로 요청합니다 — 새 메모를 만들지 않습니다.")).toBeTruthy();

@@ -1,8 +1,8 @@
 /**
  * 🧪 모의매매(한국) 프레임·설정 탭(/paper/kr/framework·/paper/kr/settings) — 두 시장 공용 화면을 한국 화면에서도(사용자 결정 2026-10-29).
  *
- *  - 프레임: 불러오는 중·오류·자료 모두 맨 위에 '두 시장 공용 프레임' 안내, 방법론 메모 고르기는 한국 메모 목록(?market=KR), 저장은 본문
- *    market:"KR", 제안은 같은 공용 경로
+ *  - 프레임: 불러오는 중·오류·자료 모두 맨 위에 '두 시장 공용 프레임' 안내, 방법론 메모 고르기는 두 시장 목록을 합침(사용자 결정 2026-10-29
+ *    y1 — 미국 화면도 같음), 저장은 본문 market:"KR", 제안은 같은 공용 경로
  *  - 설정: 불러오는 중·오류·자료 모두 맨 위에 '한 행을 함께 씀' 안내, 보기 기본 '한국 + 공용'(미국 키 숨김) → '전체'로 바꾸면 미국 키,
  *    미국 키에만 '미국 책'(kr.*·공용은 표시 없음), 숨긴 키에 고친 값도 바꿀 값에 남음, 빈 설정 행(초기화 전)은 기본값으로 읽는다는 안내
  *  - 미국 화면은 안내·보기 고르기가 없음
@@ -95,11 +95,16 @@ describe("한국 프레임 탭(두 시장 공용)", () => {
     expect(screen.getByRole("button", { name: "다시 시도" })).toBeTruthy();
   });
 
-  it("자료: 같은 판, 방법론 메모 고르기는 한국 메모(?market=KR)·저장은 market:\"KR\", 제안은 공용 경로", async () => {
+  it("자료: 같은 판, 방법론 메모 고르기는 두 시장 합친 목록(기준일 최근 순·시장 표시)·저장은 market:\"KR\", 제안은 공용 경로", async () => {
     reads["/api/paper/framework"] = () => Promise.resolve(FRAMEWORK);
     reads["/api/paper/notes?includeExpired=false&market=KR"] = () => Promise.resolve({
       available: true, market: "KR", referenceDate: "2026-10-28",
       notes: [{ id: 31, kind: "INSIGHT", asOfDate: "2026-10-28", expiresOn: null, title: "한국 수급 방법론", body: "외국인 20일", archived: false, active: true, createdAtKst: null }],
+    });
+    // 투자 OS 원문은 미국 메모(#2) — 한국 화면에서도 고를 수 있어야 합니다.
+    reads["/api/paper/notes?includeExpired=false"] = () => Promise.resolve({
+      available: true, referenceDate: "2026-10-27",
+      notes: [{ id: 2, kind: "INSIGHT", asOfDate: "2026-10-25", expiresOn: null, title: "투자 OS 원문", body: "원문 전체", archived: false, active: true, createdAtKst: null }],
     });
     api.apiPost.mockImplementation((path: string) => (path === "/api/paper/notes"
       ? Promise.resolve({ ok: true, market: "KR", note: { id: 32, kind: "INSIGHT", title: "투자 OS 갱신", body: "원문", archived: false, active: true } })
@@ -107,23 +112,26 @@ describe("한국 프레임 탭(두 시장 공용)", () => {
     render(<PaperPage market="KR" initialTab="framework" />);
     expect((await screen.findAllByText("투자 OS 2026-10")).length).toBeGreaterThan(0);
     expect(screen.getByText(FRAMEWORK_NOTE)).toBeTruthy();
-    const picker = await screen.findByLabelText("이미 있는 방법론 메모로 요청");
-    expect(within(picker).getByRole("option", { name: /#31 한국 수급 방법론/ })).toBeTruthy();
-    const paths = api.apiGetShared.mock.calls.map(([path]) => path);
-    expect(paths).not.toContain("/api/paper/notes?includeExpired=false");
+    const picker = (await screen.findByLabelText("이미 있는 방법론 메모로 요청")) as HTMLSelectElement;
+    await waitFor(() => expect(picker.options.length).toBe(3));
+    expect(Array.from(picker.options).map((option) => option.textContent)).toEqual([
+      "고르지 않음 — 아래에 글을 붙여 새 메모로", "#31 한국 수급 방법론 (7자) · 한국", "#2 투자 OS 원문 (5자) · 미국",
+    ]);
 
     fireEvent.change(screen.getByLabelText("방법론 글"), { target: { value: "원문" } });
     fireEvent.click(screen.getByRole("button", { name: "① 메모로 저장" }));
     expect(api.apiPost).toHaveBeenCalledWith("/api/paper/notes", expect.objectContaining({ kind: "INSIGHT", body: "원문", market: "KR" }));
   });
 
-  it("미국 화면에는 공용 안내가 없고 메모 고르기는 미국 목록", async () => {
+  it("미국 화면에는 공용 안내가 없고 메모 고르기는 같은 두 시장 합친 목록", async () => {
     reads["/api/paper/framework"] = () => Promise.resolve(FRAMEWORK);
     reads["/api/paper/notes?includeExpired=false"] = () => Promise.resolve({ available: true, referenceDate: "2026-10-27", notes: [] });
+    reads["/api/paper/notes?includeExpired=false&market=KR"] = () => Promise.resolve({ available: true, market: "KR", notes: [] });
     render(<PaperPage initialTab="framework" />);
     expect((await screen.findAllByText("투자 OS 2026-10")).length).toBeGreaterThan(0);
     expect(screen.queryByText(FRAMEWORK_NOTE)).toBeNull();
-    await waitFor(() => expect(api.apiGetShared.mock.calls.map(([path]) => path)).toContain("/api/paper/notes?includeExpired=false"));
+    await waitFor(() => expect(api.apiGetShared.mock.calls.map(([path]) => path)).toEqual(
+      expect.arrayContaining(["/api/paper/notes?includeExpired=false", "/api/paper/notes?includeExpired=false&market=KR"])));
   });
 });
 

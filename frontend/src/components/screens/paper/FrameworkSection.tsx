@@ -32,8 +32,8 @@ import {
   type FrameworkVersionRow,
   frameworkVersionLabel,
   frameworkVersionRows,
-  insightNoteOptions,
   insightNotePayload,
+  mergedInsightNoteOptions,
   noteCreateResultView,
   PAPER_SOURCES,
   PROPOSAL_COST_NOTE,
@@ -81,8 +81,8 @@ const INPUT = "w-full rounded-md border border-border bg-canvas px-3 py-2 text-s
  * (2단계 D — 복기가 낸 제안도 같은 목록·같은 승인 흐름).
  *
  * <p><b>한국 화면</b>(`market` "KR" — 사용자 결정 2026-10-29: 프레임은 두 시장 공용 화면): 같은 판·같은 쓰기 경로(편집·제안·승인)이고, 맨 위에
- * 공용 판이라는 것과 한국 프롬프트에서 무엇이 본문보다 앞서는지를 적습니다(어느 상태에서든 — 읽는 중·오류에도). 방법론 메모 고르기·저장만 한국
- * 메모(`?market=KR`·본문 market:"KR")입니다.
+ * 공용 판이라는 것과 한국 프롬프트에서 무엇이 본문보다 앞서는지를 적습니다(어느 상태에서든 — 읽는 중·오류에도). 방법론 메모 고르기는 두 시장
+ * 목록을 합치고(사용자 결정 2026-10-29 y1 — 두 화면 같음), 저장만 그 화면의 시장 메모(한국은 본문 market:"KR")입니다.
  */
 export function FrameworkSection({
   focusProposalId = null,
@@ -237,9 +237,14 @@ function OsSourceCard({
   market: PaperMarketCode;
 }) {
   const card = frameworkSourceCardView(current?.status);
-  // 한국 화면은 한국 메모 목록 — 미국 화면은 예전 그대로(endpoints.paper.market("US").notes는 옛 주소와 같은 글자).
-  const notes = useApi<PaperNotesResponse>(endpoints.paper.market(market).notes(false));
-  const noteOptions = insightNoteOptions(notes.data?.available ? notes.data.notes : null);
+  // 고르기 목록은 두 시장 메모를 합칩니다(사용자 결정 2026-10-29 y1 — 프레임은 공용). 저장은 지금 화면의 시장 메모로 남습니다.
+  const usNotes = useApi<PaperNotesResponse>(endpoints.paper.market("US").notes(false));
+  const krNotes = useApi<PaperNotesResponse>(endpoints.paper.market("KR").notes(false));
+  const notes = market === "KR" ? krNotes : usNotes;
+  const noteOptions = mergedInsightNoteOptions([
+    { market: "US", notes: usNotes.data?.available ? usNotes.data.notes : null },
+    { market: "KR", notes: krNotes.data?.available ? krNotes.data.notes : null },
+  ]);
   const [title, setTitle] = useState("");
   const [body, setBody] = useState("");
   const [picked, setPicked] = useState<number | null>(null);
