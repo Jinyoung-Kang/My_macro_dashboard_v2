@@ -57,6 +57,11 @@ class DecisionTimingsLockTest {
             for (String timing : profile.timings()) {
                 assertThat(profile.fixedRules()).as(market.code() + " 프로필 고정 문단에 " + timing).contains(timing);
             }
+            // 검증기가 쓰는 시점 순위(계좌2 명세 §10-5) = 프로필의 시점 순위 — 기본 계좌는 시장 묶음의 두 갈래(이른 시점 0·나머지 1) 그대로.
+            assertThat(market.orderValidation().ranks()).as(market.code() + " 검증기 순위 = 프로필 순위")
+                    .isEqualTo(profile.timingRanks());
+            assertThat(market.orderValidation().withRanks(profile.timingRanks())).as(market.code() + " 검증기 시장 몫")
+                    .isEqualTo(market.orderValidation());
         }
     }
 

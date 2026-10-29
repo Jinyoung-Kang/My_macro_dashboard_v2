@@ -2,6 +2,7 @@ package com.macrodash.analytics;
 
 import java.math.BigDecimal;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -11,6 +12,7 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.TreeSet;
+import java.util.function.IntPredicate;
 
 /**
  * 🧪 Claude 재량 책이 제안한 주문의 하드 규칙 검사(명세 C4·C9·C11·D7·D8·D11, 설계 §5-4) — 순수 계산.
@@ -47,7 +49,7 @@ import java.util.TreeSet;
  *   <li>{@link #MONTHLY_CAP} — 이달 누계 + 이번에 받은 건수가 월 상한 이상. 거절된 주문은 집행되지 않으므로 자리를 쓰지 않습니다.</li>
  *   <li>{@link #MAX_POSITIONS}(매수) — 매도 뒤 남는 종목 + 앞서 받은 신규 매수 + 이 주문이 최대 종목 수 초과. 이미 보유한 종목의
  *       추가 매수는 종목 수를 늘리지 않습니다. 종목 수도 아래 "체결 시점"대로 셉니다 — NEXT_OBSERVATION 신규 매수는 그 시점에 이미
- *       체결된 NEXT_OBSERVATION 전량 매도만 자리를 비운 것으로 봅니다.</li>
+ *       체결된 NEXT_OBSERVATION 전량 매도만 자리를 비운 것으로 봅니다(일반 규칙은 "체결 시점"의 순위).</li>
  *   <li>{@link #OVER_ALLOCATED}(매수) — 매도 뒤 남는 보유 비중 + 앞서 받은 매수 증가분 + 이 주문 증가분이 100% 초과(C11 "큰 비중부터
  *       받고 나머지는 거절"). 넘치는 주문만 거절하므로 그 뒤의 더 작은 매수는 남은 자리에 들어갈 수 있습니다. 합은 아래 "체결
  *       시점"대로 매수가 체결될 때 이미 체결된 매도만으로 셉니다.</li>
@@ -63,6 +65,12 @@ import java.util.TreeSet;
  * NEXT_OBSERVATION 매수 증가분)도. NEXT_CLOSE 매수는 모든 매도 뒤라 확정 종가 쪽만 봅니다. 최대 종목 수도 같은 두 시점입니다 —
  * NEXT_CLOSE 전량 매도가 비울 자리를 NEXT_OBSERVATION 신규 매수가 먼저 쓰면 그 사이(다음 세션 장중~마감) 상한 + 1종목이 되고, 그 매도가
  * 체결되지 않으면(보유 미확인·만료·다음 결정이 대신함) 그대로 굳습니다.
+ *
+ * <p>일반 규칙은 <b>시점 순위</b>입니다({@link Market#ranks}, 계좌2 명세 §10-5 — 작을수록 이른 시점, 같은 순위는 같은 때 체결). 매도는 <b>순위가
+ * 같거나 늦은</b> 매수에만 현금(비중 합 — {@link #OVER_ALLOCATED})과 종목 자리({@link #MAX_POSITIONS})를 만들고, 두 검사는 마지막 순위(모든
+ * 매도가 체결된 뒤 — 미국 확정 종가)를 먼저 본 뒤 그 매수의 순위부터 마지막 앞까지 <b>매수가 있는 순위마다</b>(앞서 받은 매수의 순위와 이 매수의
+ * 순위 — 매수가 없는 순위에서는 매도만 체결돼 합이 줄 뿐) 그 순위까지 체결된 매도·매수로 봅니다. 위 두 시점은 순위를 따로 주지 않은 시장의 두
+ * 갈래(이른 시점 0·나머지 1 — {@link Market#Market(List, String, Map, Money)})이고, 판정·사유·근거 문구가 순위 전과 글자까지 같습니다.
  *
  * <p><b>매수 목표 비중</b>: Claude 응답의 매수 {@code targetWeightPct}는 <b>체결 뒤 그 종목의 목표 비중</b>(순자산 대비 %)입니다.
  * 이미 보유한 종목이면 증가분 = 목표 − 현재 비중만 새로 삽니다({@link #buyIncrementPct}). 장부의 매수 주문 targetWeightPct는 "살
@@ -95,7 +103,7 @@ import java.util.TreeSet;
  * <p><b>시장</b>(2단계 명세 §9 A7): 검사 계산은 시장 중립이고, 받는 체결 시점·이른 시점·근거 문구의 시점 이름과 금액 표기만
  * 시장이 정합니다({@link Market}). 위 설명의 NEXT_OBSERVATION·NEXT_CLOSE·'$'는 미국 값({@link Market#US})이고, 시장을 받지 않는
  * {@link #validate(List, Context, Limits)}가 그 값으로 검사합니다. 다른 시장에서는 NEXT_OBSERVATION 자리가 그 시장의 이른 시점,
- * NEXT_CLOSE 자리가 나머지 시점입니다.
+ * NEXT_CLOSE 자리가 나머지 시점입니다(시점 순위를 주면 위 "체결 시점"의 순위대로).
  */
 public final class OrderValidator {
 
@@ -171,17 +179,21 @@ public final class OrderValidator {
     }
 
     /**
-     * 시장마다 다른 검증기의 체결 시점과 표기(2단계 명세 §9 A7). 검사 계산은 그대로이고 어느 시점 이름을 받는지(MALFORMED), 어느
-     * 시점이 이른 시점인지(클래스 설명의 "체결 시점" — 이 시점의 매수는 같은 시점 매도만 자리를 만든 것으로 봄, 나머지 시점은 모든
-     * 매도 뒤), 근거 문구에 시점과 금액을 어떻게 적는지만 정합니다. 목록·맵은 복사해 둡니다.
+     * 시장마다 다른 검증기의 체결 시점과 표기(2단계 명세 §9 A7). 검사 계산은 그대로이고 어느 시점 이름을 받는지(MALFORMED), 시점마다
+     * 체결 순위(클래스 설명의 "체결 시점" — 매도는 순위가 같거나 늦은 매수의 자리만 만듦, 계좌2 명세 §10-5), 근거 문구에 시점과 금액을
+     * 어떻게 적는지만 정합니다. 순위를 따로 주지 않으면 두 갈래(이른 시점 0·나머지 1 — 이른 시점의 매수는 같은 시점 매도만 자리를 만든 것으로
+     * 봄, 나머지 시점은 모든 매도 뒤)입니다. 목록·맵은 복사해 둡니다.
      *
      * @param timings     받는 체결 시점(주문의 timing — {@code paper_orders.timing}과 같은 문자열), 이른 것부터. 비어 있거나 겹치면 안 됨
-     * @param earlyTiming 이른 시점. {@code timings} 안에 있어야 함
+     * @param earlyTiming 이른 시점. {@code timings} 안에 있어야 하고 순위가 가장 작아야 함
      * @param timingNames 시점 → 근거 문구의 이름(미국 NEXT_OBSERVATION → "다음 관측치"). 받는 시점마다 있어야 하고, 그 밖의 항목은 버림
      * @param money       근거 문구의 금액 표기
+     * @param ranks       시점 → 체결 순위(0 이상, 작을수록 이른 시점, 같은 순위는 같은 때 체결). 받는 시점마다 있어야 하고, 그 밖의 항목은
+     *                    버림. null이면 두 갈래(이른 시점 0·나머지 1)
      * @throws IllegalArgumentException 위 조건 밖(호출 실수 — 조용히 미국 값으로 바꾸지 않고 막습니다)
      */
-    public record Market(List<String> timings, String earlyTiming, Map<String, String> timingNames, Money money) {
+    public record Market(List<String> timings, String earlyTiming, Map<String, String> timingNames, Money money,
+                         Map<String, Integer> ranks) {
 
         /** 미국 — 시점 NEXT_OBSERVATION·NEXT_CLOSE(이른 시점 NEXT_OBSERVATION), 달러. 이 묶음 전의 상수·문구 그대로입니다. */
         public static final Market US = new Market(List.of(NEXT_OBSERVATION, NEXT_CLOSE), NEXT_OBSERVATION,
@@ -213,8 +225,33 @@ public final class OrderValidator {
             if (earlyTiming == null || !names.containsKey(earlyTiming)) {
                 throw new IllegalArgumentException("이른 시점이 받는 체결 시점에 없습니다: " + earlyTiming + " ∉ " + timings);
             }
+            Map<String, Integer> order = new LinkedHashMap<>();
+            for (String timing : names.keySet()) {
+                Integer rank = ranks != null ? ranks.get(timing) : Integer.valueOf(timing.equals(earlyTiming) ? 0 : 1);
+                if (rank == null || rank < 0) {
+                    throw new IllegalArgumentException("체결 시점의 순위가 없거나 음수입니다: " + timing + "=" + rank);
+                }
+                order.put(timing, rank);
+            }
+            int earliest = order.get(earlyTiming);
+            for (Map.Entry<String, Integer> e : order.entrySet()) {
+                if (e.getValue() < earliest) {
+                    throw new IllegalArgumentException("이른 시점(" + earlyTiming + ")보다 이른 순위의 시점이 있습니다: " + e);
+                }
+            }
             timings = List.copyOf(timings);
             timingNames = Collections.unmodifiableMap(names);
+            ranks = Collections.unmodifiableMap(order);
+        }
+
+        /** 순위를 따로 주지 않은 시장 — 두 갈래(이른 시점 0·나머지 1, 클래스 설명의 "체결 시점"). */
+        public Market(List<String> timings, String earlyTiming, Map<String, String> timingNames, Money money) {
+            this(timings, earlyTiming, timingNames, money, null);
+        }
+
+        /** 같은 시점·이름·표기에 체결 순위만 바꾼 시장(Claude 계좌 프로필의 시점 순위 — 계좌2 명세 §10-5). */
+        public Market withRanks(Map<String, Integer> ranks) {
+            return new Market(timings, earlyTiming, timingNames, money, ranks);
         }
 
         /** 받는 체결 시점인가(null이면 아님). */
@@ -222,9 +259,9 @@ public final class OrderValidator {
             return timing != null && timingNames.containsKey(timing);
         }
 
-        /** 이른 시점인가. */
-        boolean isEarly(String timing) {
-            return earlyTiming.equals(timing);
+        /** 받는 시점의 체결 순위. */
+        int rank(String timing) {
+            return ranks.get(timing);
         }
 
         /** 근거 문구의 시점 표기 — 이름(시점), 예: 다음 관측치(NEXT_OBSERVATION). */
@@ -232,15 +269,36 @@ public final class OrderValidator {
             return timingNames.get(timing) + "(" + timing + ")";
         }
 
-        /** 이른 시점이 아닌 시점들의 표기(받는 순서, 둘 이상이면 '·'로 이음) — 미국은 확정 종가(NEXT_CLOSE). */
+        /** 이른 시점보다 늦은 순위의 시점들의 표기(받는 순서, 둘 이상이면 '·'로 이음) — 미국은 확정 종가(NEXT_CLOSE). */
         String lateLabel() {
+            return laterLabel(rank(earlyTiming));
+        }
+
+        /** 그 순위보다 늦은 시점들의 표기(받는 순서, 둘 이상이면 '·'로 이음, 없으면 빈 글자). */
+        String laterLabel(int rank) {
             List<String> labels = new ArrayList<>();
             for (String timing : timings) {
-                if (!isEarly(timing)) {
+                if (rank(timing) > rank) {
                     labels.add(label(timing));
                 }
             }
             return String.join("·", labels);
+        }
+
+        /** 그 순위까지(같은 순위 포함) 시점들의 이름(받는 순서, 둘 이상이면 '·'로 이음) — 두 갈래 순위 0이면 이른 시점의 이름. */
+        String namesUpTo(int rank) {
+            List<String> out = new ArrayList<>();
+            for (String timing : timings) {
+                if (rank(timing) <= rank) {
+                    out.add(timingNames.get(timing));
+                }
+            }
+            return String.join("·", out);
+        }
+
+        /** 받는 시점들의 순위(겹치지 않게, 작은 것부터). */
+        int[] distinctRanks() {
+            return new TreeSet<>(ranks.values()).stream().mapToInt(Integer::intValue).toArray();
         }
     }
 
@@ -459,9 +517,10 @@ public final class OrderValidator {
         // 2-a) 매도 — 목록 순으로 월 상한 자리를 먼저 받습니다(클래스 설명).
         int slots = Math.max(0, limits.maxDiscretionaryOrdersPerMonth() - ctx.monthlyOrdersSoFar());
         int used = 0;
+        // 받은 매도의 비율과 체결 순위(티커마다 하나 — 같은 티커 두 번은 1단계가 거절). 매도는 순위가 같거나 늦은 매수의 자리만 만듭니다
+        // (클래스 설명의 "체결 시점").
         Map<String, Double> soldFraction = new HashMap<>();
-        // 이른 시점(미국 NEXT_OBSERVATION)에 체결되는 매도만 — 같은 시점 매수의 자리를 만드는 매도(클래스 설명의 "체결 시점").
-        Map<String, Double> earlySoldFraction = new HashMap<>();
+        Map<String, Integer> soldRank = new HashMap<>();
         // 받았지만 지금 체결할 수 없어 자리를 만들지 않는 매도(한국 칸 — 거절 문구용): 그 비중(%p)과 전량 매도 종목 수.
         double blockedFreedPct = 0;
         int blockedPositions = 0;
@@ -493,39 +552,34 @@ public final class OrderValidator {
                 continue;
             }
             soldFraction.put(order.ticker(), fraction);
-            if (market.isEarly(order.timing())) {
-                earlySoldFraction.put(order.ticker(), fraction);
-            }
+            soldRank.put(order.ticker(), market.rank(order.timing()));
             out[i] = Verdict.accept(order, sellDetail(ctx.weightOf(order.ticker()), fraction));
         }
 
-        // 매도 뒤 남는 보유 비중과 종목 수 — 티커 순으로 더해 맵 순회 순서와 관계없이 같은 합. 둘 다 두 시점으로 봅니다
-        // (클래스 설명의 "체결 시점"): 확정 종가 뒤(모든 매도 체결) · 이른 시점(그 시점 매도만 체결).
-        double allocated = 0;
-        double allocatedEarly = 0;
-        int positions = 0;
-        int positionsEarly = 0;
-        int lateFreed = 0;   // 늦은 시점(미국 NEXT_CLOSE) 전량 매도로만 비는 자리(거절 문구용)
+        // 순위마다(작은 것부터) 그 순위까지 체결된 매도 뒤 남는 보유 비중과 종목 수 — 티커 순으로 더해 맵 순회 순서와 관계없이 같은 합.
+        // 마지막 순위 = 모든 매도가 체결된 뒤(미국 확정 종가), 두 갈래 시장이면 순위 0 = 이른 시점(그 시점 매도만 체결 — 클래스 설명의 "체결 시점").
+        int[] ranks = market.distinctRanks();
+        int last = ranks.length - 1;
+        double[] residual = new double[ranks.length];
+        int[] positions = new int[ranks.length];
+        int[] laterFreed = new int[ranks.length];   // 그 순위 뒤의 전량 매도로만 비는 자리(거절 문구용)
         for (String ticker : heldTickers(ctx)) {
             double weight = ctx.weightOf(ticker);
             double fraction = soldFraction.getOrDefault(ticker, 0.0);
-            double earlyFraction = earlySoldFraction.getOrDefault(ticker, 0.0);
-            allocated += weight * (1.0 - fraction);
-            allocatedEarly += weight * (1.0 - earlyFraction);
-            if (!ctx.cashLike().contains(ticker)) {
-                if (fraction < 1.0) {
-                    positions++;
-                }
-                if (earlyFraction < 1.0) {
-                    positionsEarly++;
+            Integer soldAt = soldRank.get(ticker);
+            for (int k = 0; k < ranks.length; k++) {
+                double done = soldAt != null && soldAt <= ranks[k] ? fraction : 0.0;
+                residual[k] += weight * (1.0 - done);
+                if (!ctx.cashLike().contains(ticker) && done < 1.0) {
+                    positions[k]++;
                     if (fraction >= 1.0) {
-                        lateFreed++;
+                        laterFreed[k]++;
                     }
                 }
             }
         }
-        double residual = allocated;
-        double residualEarly = allocatedEarly;
+        double[] allocated = residual.clone();
+        boolean[] bought = new boolean[ranks.length];   // 앞서 받은 매수가 있는 순위
         double cashPct = ctx.cash() / ctx.nav() * 100.0;
 
         // 2-b) 매수 — 목표 비중 큰 순(C11), 같으면 목록 순.
@@ -539,44 +593,46 @@ public final class OrderValidator {
             Double current = ctx.weightOf(ticker);
             double increment = buyIncrementPct(order, ctx);
             boolean newName = current == null && !ctx.cashLike().contains(ticker);
-            boolean early = market.isEarly(order.timing());
+            int at = Arrays.binarySearch(ranks, market.rank(order.timing()));
+            // 마지막 순위 앞에서 걸리는 순위(이 매수의 순위부터, 매수가 있는 순위마다 — 클래스 설명의 "체결 시점"). 없으면 −1.
+            int crowded = newName ? firstBreach(at, last, bought, k -> positions[k] + 1 > limits.maxPositions()) : -1;
+            int overfull = firstBreach(at, last, bought, k -> allocated[k] + increment > 100.0 + WEIGHT_EPSILON);
             if (used >= slots) {
                 out[i] = Verdict.reject(order, MONTHLY_CAP, monthlyDetail(ctx, limits, used));
-            } else if (newName && positions + 1 > limits.maxPositions()) {
+            } else if (newName && positions[last] + 1 > limits.maxPositions()) {
                 out[i] = Verdict.reject(order, MAX_POSITIONS, String.format(Locale.ROOT,
-                        "매수 뒤 종목 수 %d > 상한 %d(현금성 제외)", positions + 1, limits.maxPositions())
+                        "매수 뒤 종목 수 %d > 상한 %d(현금성 제외)", positions[last] + 1, limits.maxPositions())
                         + blockedPositionsNote(blockedPositions));
-            } else if (newName && early && positionsEarly + 1 > limits.maxPositions()) {
+            } else if (crowded >= 0) {
                 out[i] = Verdict.reject(order, MAX_POSITIONS, String.format(Locale.ROOT,
                         "%s 매수인데 %s 전량 매도 %d종목은 그 뒤에 체결돼 자리를 "
                                 + "비우지 못함 — 그 시점 종목 수 %d > 상한 %d(현금성 제외)",
-                        market.label(market.earlyTiming()), market.lateLabel(), lateFreed, positionsEarly + 1,
-                        limits.maxPositions()) + blockedPositionsNote(blockedPositions));
-            } else if (allocated + increment > 100.0 + WEIGHT_EPSILON) {
+                        market.label(order.timing()), market.laterLabel(ranks[crowded]), laterFreed[crowded],
+                        positions[crowded] + 1, limits.maxPositions()) + blockedPositionsNote(blockedPositions));
+            } else if (allocated[last] + increment > 100.0 + WEIGHT_EPSILON) {
                 out[i] = Verdict.reject(order, OVER_ALLOCATED, String.format(Locale.ROOT,
                         "매도 뒤 남는 보유 %.2f%% + 앞서 받은 매수 %.2f%%p + 이 주문 %.2f%%p = %.2f%% > 100%% (현재 현금 %.2f%%)",
-                        residual, allocated - residual, increment, allocated + increment, cashPct)
-                        + blockedFreedNote(blockedFreedPct));
-            } else if (early && allocatedEarly + increment > 100.0 + WEIGHT_EPSILON) {
+                        residual[last], allocated[last] - residual[last], increment, allocated[last] + increment,
+                        cashPct) + blockedFreedNote(blockedFreedPct));
+            } else if (overfull >= 0) {
                 out[i] = Verdict.reject(order, OVER_ALLOCATED, String.format(Locale.ROOT,
                         "%s 매수인데 %s 매도 %.2f%%p는 그 뒤에 체결돼 자리를 만들지 "
                                 + "못함 — 그 시점 남는 보유 %.2f%% + 앞서 받은 %s 매수 %.2f%%p + 이 주문 %.2f%%p = %.2f%% "
                                 + "> 100%% (현재 현금 %.2f%%)",
-                        market.label(market.earlyTiming()), market.lateLabel(), residualEarly - residual,
-                        residualEarly, market.timingNames().get(market.earlyTiming()), allocatedEarly - residualEarly,
-                        increment, allocatedEarly + increment, cashPct) + blockedFreedNote(blockedFreedPct));
+                        market.label(order.timing()), market.laterLabel(ranks[overfull]),
+                        residual[overfull] - residual[last], residual[overfull], market.namesUpTo(ranks[overfull]),
+                        allocated[overfull] - residual[overfull], increment, allocated[overfull] + increment, cashPct)
+                        + blockedFreedNote(blockedFreedPct));
             } else {
                 used++;
-                allocated += increment;
-                if (early) {
-                    allocatedEarly += increment;
-                }
-                if (newName) {
-                    positions++;
-                    if (early) {
-                        positionsEarly++;
+                // 받은 매수는 그 순위부터 끝까지 남습니다 — 그 뒤 순위의 비중 합·종목 수에 모두 더합니다.
+                for (int k = at; k < ranks.length; k++) {
+                    allocated[k] += increment;
+                    if (newName) {
+                        positions[k]++;
                     }
                 }
+                bought[at] = true;
                 out[i] = Verdict.accept(order, buyDetail(current, order.targetWeightPct(), increment, ctx.nav(),
                         market.money()));
             }
@@ -600,6 +656,19 @@ public final class OrderValidator {
         }
         Double current = ctx.weightOf(order.ticker());
         return order.targetWeightPct() - (current == null ? 0.0 : current);
+    }
+
+    /**
+     * 매수 순위 자리 {@code at}부터 마지막 순위 앞까지, 매수가 있는 순위(이 매수 자신의 순위와 앞서 받은 매수의 순위 — {@code bought}) 가운데
+     * 처음 {@code breached}에 걸리는 순위의 자리. 없으면 −1. 매수가 없는 순위에서는 매도만 체결돼 비중 합·종목 수가 줄 뿐이라 따로 보지 않습니다.
+     */
+    private static int firstBreach(int at, int last, boolean[] bought, IntPredicate breached) {
+        for (int k = at; k < last; k++) {
+            if ((k == at || bought[k]) && breached.test(k)) {
+                return k;
+            }
+        }
+        return -1;
     }
 
     /** 1단계 — 다른 주문을 보지 않는 검사. 통과면 null. firstIndex에 티커의 첫 자리를 남깁니다. */
