@@ -188,19 +188,19 @@ describe("수동 편집(F3)", () => {
     expect(edited.engines[1].rules[0]).toMatchObject({ id: "E2-R1", text: "고친 규칙", addedIn: 0 });
   });
 
-  it("검사 — 300자 초과·빈 본문·바꾼 내용 없음·엔진 수, 사용자 판에서 바뀐 것이 없으면 저장 못 함", () => {
+  it("검사 — 400자 초과·빈 본문·바꾼 내용 없음·엔진 수, 사용자 판에서 바뀐 것이 없으면 저장 못 함", () => {
     const draft = frameworkDraftFrom(version({ status: "USER", version: 1, body: body({ status: "USER" }) }));
     if (!draft) throw new Error("draft");
     const unchanged = frameworkDraftCheck({ ...draft, changelog: "x" }, version({ status: "USER", version: 1, body: body({ status: "USER" }) }));
     expect(unchanged.canSave).toBe(false);
     expect(unchanged.errors).toContain("기준 판과 바뀐 내용이 없습니다.");
 
-    const long = editFrameworkDraft(draft, { type: "rule", engine: 0, index: 0, text: "가".repeat(301) });
+    const long = editFrameworkDraft(draft, { type: "rule", engine: 0, index: 0, text: "가".repeat(401) });
     const empty = editFrameworkDraft(long, { type: "addPrinciple" });
     const check = frameworkDraftCheck(empty, version({ status: "USER", version: 1 }));
     expect(check.errors).toEqual([
       "원칙 P3: 본문이 비었습니다.",
-      "규칙 E1-R1: 300자를 넘습니다(301자).",
+      "규칙 E1-R1: 400자를 넘습니다(401자).",
       "바꾼 내용(changelog)을 적으세요 — 판 목록에 남습니다.",
     ]);
     const fewer = frameworkDraftCheck({ ...draft, engines: draft.engines.slice(0, 7), changelog: "x" }, null);
@@ -291,19 +291,19 @@ describe("제안(F2) — 평가·변경·승인", () => {
     expect(view.confirmReject).toContain("판은 바뀌지 않고");
   });
 
-  it("대상 없음·본문 없음·300자 초과는 그 줄에 경고, 기준 판이 지금 판과 다르면 승인 불가 안내", () => {
+  it("대상 없음·본문 없음·400자 초과는 그 줄에 경고, 기준 판이 지금 판과 다르면 승인 불가 안내", () => {
     const view = proposalView(proposal({
       baseVersion: 0,
       operations: [
         { op: "UPDATE_RULE", target: "E9-R1", text: "x", why: "y" },
         { op: "ADD_PRINCIPLE", target: "", text: null, why: "y" },
-        { op: "UPDATE_PRINCIPLE", target: "P1", text: "가".repeat(301), why: "y" },
+        { op: "UPDATE_PRINCIPLE", target: "P1", text: "가".repeat(401), why: "y" },
       ],
     }), version({ version: 1, status: "USER", body: body({ status: "USER" }) }));
     expect(view.operations.map((row) => row.warning)).toEqual([
       "지금 판에 대상이 없습니다 — 승인하면 서버가 거절합니다(아무것도 바꾸지 않음).",
       "새 본문이 없습니다 — 승인하면 서버가 거절합니다(아무것도 바꾸지 않음).",
-      "300자를 넘습니다(301자) — 승인하면 서버가 거절합니다(아무것도 바꾸지 않음).",
+      "400자를 넘습니다(401자) — 승인하면 서버가 거절합니다(아무것도 바꾸지 않음).",
     ]);
     expect(view.operations[1].target).toBe("(새 번호)");
     expect(view.staleBase).toContain("이 제안의 기준 판(v0)이 지금 판(v1)과 다릅니다");

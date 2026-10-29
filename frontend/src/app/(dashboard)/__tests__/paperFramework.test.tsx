@@ -7,7 +7,7 @@
  *  - OS 원문으로 새 판 만들기: 원문 → POST /api/paper/notes {kind:INSIGHT} → 확인(비용 "Sonnet 5.5 호출 1회") → POST
  *    /api/paper/framework/proposals {noteId} → 그 자리에 제안 → 승인 확인(비용 없음) → POST …/{id}/approve → 판·제안 다시 읽기
  *  - 제안 목록: 기준 판이 지금 판과 다르면 승인을 막고, 거절은 확인 뒤 POST …/{id}/reject, 서버 400 문구는 경고로
- *  - 직접 고치기: 규칙마다 글자 수(300자), 넘으면 저장을 막음, 규칙 추가 → 저장 확인 → POST /api/paper/framework {body(status USER), changelog}
+ *  - 직접 고치기: 규칙마다 글자 수(400자), 넘으면 저장을 막음, 규칙 추가 → 저장 확인 → POST /api/paper/framework {body(status USER), changelog}
  *  - 메모: 목록(서버 상태 그대로)·만료 포함 토글, 쓰기(빈 날짜는 빼고 — 만료 기본 안내는 설정값), 보관은 확인 뒤 DELETE
  *  - 개요: 순자산 곡선에 프레임 경계선("프레임 v0")과 한 줄
  */
@@ -318,7 +318,7 @@ describe("프레임 탭 — 제안 목록", () => {
 });
 
 describe("프레임 탭 — 직접 고치기", () => {
-  it("규칙 글자 수(300자) — 넘으면 저장을 막고, 규칙 추가 → 저장 확인 → POST /api/paper/framework {body(status USER), changelog}", async () => {
+  it("규칙 글자 수(400자) — 넘으면 저장을 막고, 규칙 추가 → 저장 확인 → POST /api/paper/framework {body(status USER), changelog}", async () => {
     serve("/api/paper/framework/proposals", () => ({ available: true, proposals: [] }));
     serve("/api/paper/framework", () => ({ available: true, current: V0, versions: [SUMMARY_V0] }));
     api.apiPost.mockResolvedValue({ ok: true, version: 1 });
@@ -329,18 +329,18 @@ describe("프레임 탭 — 직접 고치기", () => {
     expect(within(form).getAllByRole("group")).toHaveLength(9);   // 원칙 + 엔진 8개
     const rule = within(form).getByLabelText("규칙 E1-R1") as HTMLTextAreaElement;
     expect(rule.value).toBe("세 축으로 주식 노출을 정한다.");
-    expect(within(form).getAllByText("17/300자 · v0에서 추가").length).toBe(1);
+    expect(within(form).getAllByText("17/400자 · v0에서 추가").length).toBe(1);
 
-    fireEvent.change(rule, { target: { value: "가".repeat(301) } });
-    const count = within(form).getByText(/^301\/300자/);
+    fireEvent.change(rule, { target: { value: "가".repeat(401) } });
+    const count = within(form).getByText(/^401\/400자/);
     expect(count.className).toContain("text-warn");
-    expect(within(form).getByText("규칙 E1-R1: 300자를 넘습니다(301자).")).toBeTruthy();
+    expect(within(form).getByText("규칙 E1-R1: 400자를 넘습니다(401자).")).toBeTruthy();
     const save = within(form).getByRole("button", { name: "새 판 저장" }) as HTMLButtonElement;
     expect(save.disabled).toBe(true);
 
     fireEvent.change(rule, { target: { value: "세 축(할인율·비용 물가·외환)으로 노출을 정한다." } });
     fireEvent.click(within(form).getByRole("button", { name: "규칙 추가 (E2)" }));
-    expect(within(form).getByText("0/300자 · 새 규칙 — 추가한 판 번호는 저장할 때 서버가 채움")).toBeTruthy();
+    expect(within(form).getByText("0/400자 · 새 규칙 — 추가한 판 번호는 저장할 때 서버가 채움")).toBeTruthy();
     fireEvent.change(within(form).getByLabelText("규칙 E2-R4"), { target: { value: "새 규칙" } });
     fireEvent.click(within(form).getByRole("button", { name: "원칙 P2 지우기" }));
     fireEvent.change(within(form).getByLabelText(/바꾼 내용/), { target: { value: "OS 원문 옮김" } });

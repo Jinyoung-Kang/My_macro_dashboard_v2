@@ -1343,13 +1343,13 @@ export interface PaperSettingsHistoryResponse {
  */
 export type PaperFrameworkStatus = "INTERIM" | "USER";
 
-/** 원칙 하나 — id는 "P1"처럼, 본문은 300자 이내(F4). */
+/** 원칙 하나 — id는 "P1"처럼, 본문은 400자 이내(F4). */
 export interface PaperFrameworkPrinciple {
   id: string;
   text: string;
 }
 
-/** 엔진의 규칙 하나 — id는 "E2-R1"처럼, 본문 300자 이내. addedIn은 그 규칙을 더한 판, sourceNoteId는 근거 메모(없으면 null). */
+/** 엔진의 규칙 하나 — id는 "E2-R1"처럼, 본문 400자 이내. addedIn은 그 규칙을 더한 판, sourceNoteId는 근거 메모(없으면 null). */
 export interface PaperFrameworkRule {
   id: string;
   text: string;

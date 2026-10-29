@@ -3509,11 +3509,11 @@ export function settingsHistoryRows(history: unknown, keys: readonly PaperSettin
 // ---------------------------------------------------------------- 프레임(투자 OS)·메모(단계 3b, 명세 F1~F7·D14·D15)
 
 /**
- * 판 길이 한도(계약 A·E) — 원칙·규칙 300자, 지침 2,000자, 시황 메모 본문 4,000자, 엔진 8개. 서버가 저장할 때 다시 검사하고(틀리면 400 문구를
+ * 판 길이 한도(계약 A·E) — 원칙·규칙 400자(처음 300자 — 사용자 프레임 v4, 2026-10-29), 지침 2,000자, 시황 메모 본문 4,000자, 엔진 8개. 서버가 저장할 때 다시 검사하고(틀리면 400 문구를
  * 그대로 보임), 화면은 입력 중에 글자 수를 보이고 넘으면 저장 버튼을 막으려고만 씁니다. 글자 수는 서버(FrameworkService.codePoints)와 같은
  * 코드 포인트 단위입니다 — .length(UTF-16)로 세면 이모지 하나가 2자가 되어 서버보다 먼저 막습니다.
  */
-export const FRAMEWORK_TEXT_LIMIT = 300;
+export const FRAMEWORK_TEXT_LIMIT = 400;
 export const FRAMEWORK_GUIDANCE_LIMIT = 2000;
 export const FRAMEWORK_ENGINE_COUNT = 8;
 export const NOTE_MARKET_BODY_LIMIT = 4000;
@@ -3523,7 +3523,7 @@ export function textLength(text: string): number {
   return Array.from(text).length;
 }
 
-/** 글자 수 표기 — "123/300자"와 넘었는지. */
+/** 글자 수 표기 — "123/400자"와 넘었는지. */
 export function charCount(text: string, limit: number): { text: string; over: boolean } {
   const length = textLength(text);
   return { text: `${formatNumber(length, 0)}/${formatNumber(limit, 0)}자`, over: length > limit };
@@ -3905,7 +3905,7 @@ export interface FrameworkDraftCheck {
 }
 
 /**
- * 저장 전 검사 — 제목·원칙·엔진 이름·규칙이 비었는지, 300자·지침 2,000자를 넘는지, 엔진이 8개인지, id가 겹치는지, 바꾼 내용(changelog)을
+ * 저장 전 검사 — 제목·원칙·엔진 이름·규칙이 비었는지, 400자·지침 2,000자를 넘는지, 엔진이 8개인지, id가 겹치는지, 바꾼 내용(changelog)을
  * 적었는지. 서버가 같은 검사를 다시 하고(틀리면 400 문구를 그대로 보임), 화면은 저장 버튼을 막고 이유를 보이려고만 씁니다.
  */
 export function frameworkDraftCheck(draft: FrameworkDraft, current: PaperFrameworkVersion | null | undefined): FrameworkDraftCheck {
@@ -4045,7 +4045,7 @@ export interface ProposalOperationRow {
   before: string;
   after: string;
   why: string;
-  /** 승인하면 서버가 거절할 모양(대상 없음·본문 없음·300자 초과). 없으면 null. */
+  /** 승인하면 서버가 거절할 모양(대상 없음·본문 없음·400자 초과). 없으면 null. */
   warning: string | null;
 }
 
@@ -4106,7 +4106,7 @@ function frameworkLookup(body: unknown) {
  * 제안 한 건 — 평가(OS 절차 B)·변경·전후 비교는 Claude 응답 그대로, 변경마다 대조할 판의 글을 옆에 붙입니다(대상 id로 찾기만 하고
  * 적용하지 않음 — 적용은 승인할 때 서버가 함).
  *
- * 대기 중인 제안은 지금 판과 대조합니다. 대상이 지금 판에 없거나 새 본문이 없거나 300자를 넘으면 그 줄에 경고를 붙이고(승인하면 서버가
+ * 대기 중인 제안은 지금 판과 대조합니다. 대상이 지금 판에 없거나 새 본문이 없거나 400자를 넘으면 그 줄에 경고를 붙이고(승인하면 서버가
  * 400으로 거절하고 아무것도 바꾸지 않음), 기준 판이 지금 판과 다르면 승인할 수 없다고 적습니다(다른 판이 먼저 승인됨). 변경이 0건이면
  * 승인할 수 없다고 적습니다(서버가 거절 — 거절로 닫음).
  *
@@ -4327,7 +4327,7 @@ export function frameworkSourceCardView(status: string | null | undefined): Fram
     subtitle: "① 원문 붙여넣기(또는 있는 메모 고르기) → ② 방법론 메모(INSIGHT)로 저장 → ③ Claude 제안 요청 → ④ 제안을 보고 승인(새 판)",
     defaultTitle: "투자 OS 원문",
     bodyLabel: "OS 원문",
-    intro: "원문은 메모에만 둡니다 — 프레임에는 승인한 원칙·규칙만 들어갑니다(규칙 300자, 렌더링 약 8,000토큰 예산). Claude는 원문의 주장을 하나씩 "
+    intro: "원문은 메모에만 둡니다 — 프레임에는 승인한 원칙·규칙만 들어갑니다(규칙 400자, 렌더링 토큰 예산은 설정 값). Claude는 원문의 주장을 하나씩 "
       + "지금 판과 대조해 [일치·보완·수정 필요·모순]으로 평가하고, 필요한 원칙·규칙 추가·수정·삭제와 전후 비교만 냅니다. 자동 반영은 없습니다. "
       + "제안을 승인한 판은 기준 판의 상태를 이어받아 임시로 남습니다 — 사용자 판(v1)은 아래 '직접 고치기'로 원칙·규칙을 옮겨 저장하면 됩니다. "
       + pick,

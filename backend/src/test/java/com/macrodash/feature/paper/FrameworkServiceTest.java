@@ -457,7 +457,7 @@ class FrameworkServiceTest {
     }
 
     @Test
-    @DisplayName("수동 편집 형식 검사: 엔진 8개·순서·id 유일·규칙의 엔진 번호·300자·지침 2,000자·제목 100자·모르는 키·변경 기록 — 하나라도 틀리면 아무것도 바꾸지 않고 400")
+    @DisplayName("수동 편집 형식 검사: 엔진 8개·순서·id 유일·규칙의 엔진 번호·400자·지침 2,000자·제목 100자·모르는 키·변경 기록 — 하나라도 틀리면 아무것도 바꾸지 않고 400")
     void manualSaveValidation() {
         FrameworkService service = service();
         ObjectNode base = currentBody(service);
@@ -480,11 +480,11 @@ class FrameworkServiceTest {
         assertThatThrownBy(() -> service.save(wrongEngine, "x", 0)).hasMessageContaining("E1의 규칙 id가 아닙니다");
 
         ObjectNode longRule = base.deepCopy();
-        ((ObjectNode) longRule.path("engines").get(0).path("rules").get(0)).put("text", "가".repeat(301));
-        assertThatThrownBy(() -> service.save(longRule, "x", 0)).hasMessageContaining("300자 이내");
+        ((ObjectNode) longRule.path("engines").get(0).path("rules").get(0)).put("text", "가".repeat(401));
+        assertThatThrownBy(() -> service.save(longRule, "x", 0)).hasMessageContaining("400자 이내");
         ObjectNode okRule = base.deepCopy();
-        ((ObjectNode) okRule.path("engines").get(0).path("rules").get(0)).put("text", "가".repeat(300));
-        assertThat(FrameworkService.check(okRule, 1, "USER").errors()).as("300자는 됨").isEmpty();
+        ((ObjectNode) okRule.path("engines").get(0).path("rules").get(0)).put("text", "가".repeat(400));
+        assertThat(FrameworkService.check(okRule, 1, "USER").errors()).as("400자는 됨").isEmpty();
 
         ObjectNode longGuidance = base.deepCopy();
         longGuidance.put("guidance", "나".repeat(2_001));

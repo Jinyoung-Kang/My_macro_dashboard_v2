@@ -58,7 +58,7 @@ import java.util.regex.Pattern;
  * 한 트랜잭션으로 씁니다. 판·제안은 Claude 책에만 영향을 줍니다 — 규칙 책(대조군)은 프레임을 읽지 않고 설정 판(settings_version)도
  * 바꾸지 않습니다.
  *
- * <p><b>크기 예산</b>(F4): 원칙·규칙 하나 300자, 지침 2,000자, 제목 100자는 저장을 막고, 렌더링 전체의 토큰 어림이 설정
+ * <p><b>크기 예산</b>(F4): 원칙·규칙 하나 400자, 지침 2,000자, 제목 100자는 저장을 막고, 렌더링 전체의 토큰 어림이 설정
  * {@code frameworkTokenBudget}(기본 8,000)을 넘으면 경고만 합니다(막지 않음). OS 원문 자체는 메모(INSIGHT)에만 둡니다.
  */
 @Service
@@ -72,7 +72,9 @@ public class FrameworkService {
     static final int BODY_SCHEMA_VERSION = 1;
     /** 엔진 수(F1) — E1~E8로 고정. */
     static final int ENGINE_COUNT = 8;
-    static final int TEXT_MAX = 300;
+    /** 원칙·규칙 하나의 글자 상한 — 처음 300자, 사용자 프레임 v4의 E8-11(329자)을 원문 그대로 받으려고 400자로(2026-10-29). 제안 연산의
+     * 본문은 출력 스키마(proposal.schema.json)가 300자로 먼저 막습니다. */
+    static final int TEXT_MAX = 400;
     static final int GUIDANCE_MAX = 2_000;
     static final int TITLE_MAX = 100;
     static final int ENGINE_NAME_MAX = 100;
@@ -426,7 +428,7 @@ public class FrameworkService {
     // ------------------------------------------------------------------ 본문 검사
     /**
      * 프레임 본문을 검사하고 저장할 모양으로 맞춥니다(F1·F3·F4): 엔진은 E1~E8 순서로 정확히 8개, id는 원칙·규칙 전체에서 유일하고
-     * 형식(P{n}·E{n}-R{m} — 규칙은 자기 엔진 번호), 원칙·규칙 300자, 지침 2,000자, 제목 100자(글자 = 코드 포인트), 모르는 키 없음.
+     * 형식(P{n}·E{n}-R{m} — 규칙은 자기 엔진 번호), 원칙·규칙 400자, 지침 2,000자, 제목 100자(글자 = 코드 포인트), 모르는 키 없음.
      * 고치는 것: 앞뒤 공백, 원칙·규칙·제목·엔진 이름의 줄바꿈(공백 하나로), {@code schemaVersion}(없으면 1), {@code status}(없으면
      * {@code defaultStatus}), 규칙의 {@code addedIn}(없으면 새 판 번호)·{@code sourceNoteId}(없으면 null), 지침(없으면 빈 글).
      *
@@ -771,7 +773,7 @@ public class FrameworkService {
      *
      * <p>실패(키 없음·HTTP·거절·형식 오류·지금 판에 적용할 수 없는 연산)는 {@code FAILED} 제안으로 남기고 {@code ok:false}입니다 —
      * 과금된 실패는 사용량에 남고, 키가 없어 보내지 않았으면 잡은 호출을 돌려놓습니다. 형식을 지났더라도 연산이 지금 판에 적용되지
-     * 않으면(없는 id·본문 없음·300자 초과) 승인할 수 없으므로 같은 검사를 미리 해 FAILED로 둡니다.
+     * 않으면(없는 id·본문 없음·400자 초과) 승인할 수 없으므로 같은 검사를 미리 해 FAILED로 둡니다.
      *
      * @return {@code {ok, proposal}} — 테이블이 없으면 {@code available:false, ok:false}
      * @throws InvalidRequestException {@code noteId}·{@code text} 둘 다 있거나 둘 다 없음·없는 메모·INSIGHT가 아님·보관한 메모·빈 글·
@@ -1033,7 +1035,7 @@ public class FrameworkService {
      * 근거 메모도 그 메모로 — {@code addedIn}은 처음 넣은 판 그대로). ADD_PRINCIPLE은 target을 보지 않고 다음 {@code P{n}}, UPDATE·
      * DELETE_PRINCIPLE은 target = 원칙 id. "다음 번호"는 지금 본문·{@code used}(모든 판에서 쓴 번호)·이 제안에서 앞서 매긴 번호 가운데 가장
      * 큰 것 + 1입니다 — 지운 id를 다시 쓰지 않습니다(같은 제안 안의 [삭제, 추가]도 삭제한 번호를 잇지 않음, {@link UsedIds}). 대상이 없음·
-     * ADD·UPDATE에 본문이 없음·300자 초과·모르는 연산이 하나라도 있으면 사유 목록을 돌려주고 본문은 null입니다(부르는 쪽이 아무것도 바꾸지
+     * ADD·UPDATE에 본문이 없음·400자 초과·모르는 연산이 하나라도 있으면 사유 목록을 돌려주고 본문은 null입니다(부르는 쪽이 아무것도 바꾸지
      * 않음). 다 적용한 본문을 {@link #check}로 다시 검사합니다(새 판 상태 = 기준 판 상태).
      */
     static Applied apply(Frame base, List<JsonNode> operations, int newVersion, Long noteId, UsedIds used) {
