@@ -1669,7 +1669,6 @@ public class PaperStore {
                 (rs, rowNum) -> rs.getDate("as_of_trading_date").toLocalDate(), args.toArray());
     }
 
-    /** 한 책의 최근 결정 {@code limit}건 — 기준 거래일 최근 순(같은 날이면 나중에 낸 것 먼저). */
     /**
      * 한국 규칙 계좌의 거래일별 주식 비중(%) — 그날 결정 응답 {@code holdings[]}의 {@code weightPct} 합에서 현금성 종목을 뺀 값(2단계 명세 §3·K40의
      * '전날 규칙 계좌 주식 비중', 노출 맞춘 참고선이 씀). 결정 응답 전체를 읽지 않고 DB에서 합만 읽습니다(개요를 60초마다 읽어도 가볍게). 같은 날
@@ -1701,6 +1700,7 @@ public class PaperStore {
         return out;
     }
 
+    /** 한 책의 최근 결정 {@code limit}건 — 기준 거래일 최근 순(같은 날이면 나중에 낸 것 먼저). */
     public List<DecisionSummary> decisions(String code, int limit) {
         return jdbc.query("SELECT " + DECISION_SUMMARY_COLUMNS + " FROM paper_decisions d WHERE d.book_code = ? "
                         + "ORDER BY d.as_of_trading_date DESC, d.decided_at DESC, d.id DESC LIMIT ?",
