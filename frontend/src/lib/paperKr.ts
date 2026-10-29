@@ -1141,11 +1141,12 @@ export function krReviewInputRows(input: unknown): KrReviewEntryRow[] {
 
 /**
  * 복기 입력의 계좌 수익률 비교(`comparison`) — 구간·설명·계좌별 수익률과 '잠정 줄 포함'(isEstimated) 배지, 수익률이 없으면 서버 사유(`reason` —
- * '순자산 기록 없음'·'복기 기준일(…) 순자산 없음'·'공통 시작일 순자산 없음'). 없으면 null.
+ * '순자산 기록 없음'·'복기 기준일(…) 순자산 없음'·'공통 시작일 순자산 없음'). 계좌는 이름(`labels` — 개요의 계좌 이름, 모르면 코드)이고 코드는 `code`.
+ * 없으면 null.
  */
-export function krReviewComparison(input: unknown): {
+export function krReviewComparison(input: unknown, labels?: ReadonlyMap<string, string>): {
   range: string; note: string | null;
-  rows: { key: string; book: string; returnPct: string; reason: string | null; badges: Badge[] }[];
+  rows: { key: string; book: string; code: string; returnPct: string; reason: string | null; badges: Badge[] }[];
 } | null {
   const comparison = isRecord(input) && isRecord(input.comparison) ? input.comparison : null;
   if (!comparison) return null;
@@ -1154,7 +1155,8 @@ export function krReviewComparison(input: unknown): {
     note: textOf(comparison.note),
     rows: listOf(comparison.books).filter(isRecord).map((row, index) => ({
       key: `${index}-${textOf(row.book) ?? ""}`,
-      book: textOf(row.book) ?? EMPTY,
+      book: labels?.get(textOf(row.book) ?? "") ?? textOf(row.book) ?? EMPTY,
+      code: textOf(row.book) ?? EMPTY,
       returnPct: formatPercent(numberOf(row.returnPct)),
       reason: numberOf(row.returnPct) === null ? textOf(row.reason) : null,
       badges: row.isEstimated === true

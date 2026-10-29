@@ -35,7 +35,13 @@ import {
   krReviewInputRows,
 } from "@/lib/paperKr";
 import type { PaperMarketCode } from "@/lib/paperMarket";
-import type { PaperReviewResponse, PaperReviewsResponse, PaperRunReviewResult, PaperStatusResponse } from "@/lib/types";
+import type {
+  PaperBookSummary,
+  PaperReviewResponse,
+  PaperReviewsResponse,
+  PaperRunReviewResult,
+  PaperStatusResponse,
+} from "@/lib/types";
 
 /**
  * 결정 로그 탭의 '주간 복기'(2단계 명세 §3 D1~D6) — 주마다 한 건, Claude 계좌의 지난 4주 결정을 그 뒤 가격과 대조한 복기 메모.
@@ -48,15 +54,18 @@ import type { PaperReviewResponse, PaperReviewsResponse, PaperRunReviewResult, P
  *
  * <b>한국</b>(`market` "KR", 2단계 명세 §9 E3·F2): 같은 화면을 `?market=KR` 경로(목록·한 건·수동 실행)로 — 일정 문구는 토요일 22:30 KST, 수동 실행
  * 확인 창에 수동 호출 문턱, 최근 복기 주를 셀 수 없으면 그 사유(달력 없음)를 적고, 복기 한 건에는 입력의 가정 진입(출처·근사 배지)과 계좌 수익률
- * 비교('잠정 줄 포함' 배지) 표를 더합니다.
+ * 비교('잠정 줄 포함' 배지 — 계좌는 `books`의 이름) 표를 더합니다.
  */
 export function ReviewsSection({
   onOpenProposal,
   market = "US",
+  books = [],
 }: {
   onOpenProposal?: (id: number) => void;
   /** 화면의 시장 — 미국은 예전 그대로(?market 없는 경로). */
   market?: PaperMarketCode;
+  /** 개요의 계좌 목록 — 한국 계좌 수익률 비교에 코드 대신 이름을 적습니다(목록에 없으면 코드). */
+  books?: readonly PaperBookSummary[];
 }) {
   const korea = market === "KR";
   const paths = endpoints.paper.market(market);
@@ -195,7 +204,7 @@ export function ReviewsSection({
             <Banner tone="warn">{detail.data.message ?? "복기를 읽을 수 없습니다."}</Banner>
           )}
           {detail.data?.available && detail.data.review && (
-            <ReviewBody review={detail.data.review} onOpenProposal={onOpenProposal} korea={korea} />
+            <ReviewBody review={detail.data.review} onOpenProposal={onOpenProposal} korea={korea} books={books} />
           )}
         </Card>
       )}
@@ -207,16 +216,18 @@ function ReviewBody({
   review,
   onOpenProposal,
   korea,
+  books,
 }: {
   review: NonNullable<PaperReviewResponse["review"]>;
   onOpenProposal?: (id: number) => void;
   /** 한국 복기 — 입력의 가정 진입·계좌 수익률 비교 표를 더합니다. */
   korea: boolean;
+  books: readonly PaperBookSummary[];
 }) {
   const view = reviewDetailView(review);
   const proposal = view.proposal;
   const entries = korea ? krReviewInputRows(review.input) : [];
-  const comparison = korea ? krReviewComparison(review.input) : null;
+  const comparison = korea ? krReviewComparison(review.input, new Map(books.map((book) => [book.code, book.label]))) : null;
   return (
     <section aria-label={view.title} className="flex flex-col gap-4">
       <header className="flex flex-wrap items-center gap-2">
@@ -291,7 +302,8 @@ function ReviewBody({
           <ul aria-label="계좌 수익률 비교" className="flex flex-col gap-1 text-xs">
             {comparison.rows.map((row) => (
               <li key={row.key} className="flex flex-wrap items-center gap-2">
-                <code className="text-body">{row.book}</code>
+                {/* 다른 한국 화면처럼 계좌 이름 — 코드는 마우스를 올려 봅니다. */}
+                <span className="font-medium text-body" title={row.code}>{row.book}</span>
                 <span className="tabular-nums font-semibold text-bright">{row.returnPct}</span>
                 {row.reason && <span className="text-text-3">{row.reason}</span>}
                 {row.badges.map((badge) => <Chip key={badge.key} badge={badge} />)}

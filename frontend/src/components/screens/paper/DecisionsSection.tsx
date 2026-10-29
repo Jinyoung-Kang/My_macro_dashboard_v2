@@ -169,7 +169,7 @@ export function DecisionsSection({
     return (
       <>
         {views}
-        <ReviewsSection onOpenProposal={onOpenProposal} market={market} />
+        <ReviewsSection onOpenProposal={onOpenProposal} market={market} books={books} />
       </>
     );
   }

@@ -215,8 +215,8 @@ describe("자료", () => {
     expect(within(comparison).getByText("복기 기준일(2026-11-06) 순자산 없음")).toBeTruthy();
   });
 
-  // 수정 전에는 계좌 수익률 비교가 계좌 코드(kr_rules …)를 그대로 적었습니다 — 다른 한국 화면은 계좌 이름(it.fails).
-  it.fails("계좌 수익률 비교는 계좌 이름(개요의 계좌 이름) — 코드는 마우스를 올려 봄", async () => {
+  // 예전에는 계좌 수익률 비교가 계좌 코드(kr_rules …)를 그대로 적었습니다 — 다른 한국 화면은 계좌 이름.
+  it("계좌 수익률 비교는 계좌 이름(개요의 계좌 이름) — 코드는 마우스를 올려 봄", async () => {
     await openReviews();
     const comparison = await screen.findByRole("list", { name: "계좌 수익률 비교" });
     expect(within(comparison).getByText("한국 규칙 계좌").getAttribute("title")).toBe("kr_rules");

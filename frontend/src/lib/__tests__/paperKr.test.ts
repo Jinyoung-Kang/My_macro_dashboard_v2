@@ -653,4 +653,13 @@ describe("주간 복기 가정 진입(F2 — 매수·매도, 판 뒤 변화의 �
     ]);
     expect(krReviewComparison({})).toBeNull();
   });
+
+  it("계좌 수익률 비교의 계좌 — 이름표가 있으면 이름(코드는 code), 없으면 코드", () => {
+    const input = { comparison: { from: "2026-10-30", to: "2026-11-06", note: null, books: [
+      { book: "kr_rules", returnPct: 0.5, isEstimated: false }, { book: "kr_new", returnPct: 1, isEstimated: false },
+    ] } };
+    const named = krReviewComparison(input, new Map([["kr_rules", "한국 규칙 계좌"]]));
+    expect(named?.rows.map((row) => [row.book, row.code])).toEqual([["한국 규칙 계좌", "kr_rules"], ["kr_new", "kr_new"]]);
+    expect(krReviewComparison(input)?.rows.map((row) => row.book)).toEqual(["kr_rules", "kr_new"]);
+  });
 });
