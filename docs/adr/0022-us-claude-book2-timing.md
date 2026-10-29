@@ -24,7 +24,10 @@
      - 단계 1(1-4·1-5): 장부 시각 지정 체결 시험(조건 ⑤~⑧b, 사다리 R1·R2·R2b·R3·`QUOTES_CLOSE`, E 하루 만료가 2b 뒤, `fillable` 제외 회귀, 폴링 불변, 룩어헤드 성질 — 명세 §15),
        `DecisionTimingsLockTest` 계좌2 대조(스키마 enum = 프로필의 받는 시점 = 검증기 순위 = 고정 문단 = V17 CHECK)
   4. `NEXT_OBSERVATION`은 계좌2 메뉴에 없음(T6)
-     - 단계 0(0-4): 실행 감사 작업 시험 — 계좌1 주문의 `NEXT_OBSERVATION` 반사실을 체결 조건 ①②④를 통과한 첫 `paper.quotes`로 적음
+     - 단계 0(0-4): 실행 감사 작업 시험 — 계좌1 주문(시점 `NEXT_OBSERVATION`)의 계좌1식 기준 반사실은 그 주문의 실제 체결 원가격에서 옮김(칸 이름
+       `QUOTES_OBSERVATION`, `ExecutionAuditTest.nextObservationFromTheActualFill` — 명세 §14-1 '계좌1 주문은 실제 체결 행에서'). 그 밖의 계좌1 주문(`NEXT_CLOSE`)은 `null`
+     - 단계 1(1-4·1-5): 계좌2 주문의 계좌1식 기준(M1의 P_cf,NEXT_OBS)을 체결 조건 ①②④를 통과한 첫 `paper.quotes`로 적는 시험(저장본은 최신 한 건만 남아
+       놓치면 `null` — 명세 §14-1)
      - 단계 1(1-5): 계좌2 스키마 enum·고정 문단에 `NEXT_OBSERVATION`이 없음(`DecisionTimingsLockTest` 계좌2 대조)
   5. '실시간·지연'(T7)
      - 단계 0(0-3): `lagSeconds`는 정규장 안에서 받은 저장본만(장 밖·휴장 `null`)이고 그 회차에 받은 SPY 세션만(짧게 온 응답으로 남긴 세션은 `null`), 종목 칸의 출처 지연(`declaredDelayMin`)은 늘 `null`
