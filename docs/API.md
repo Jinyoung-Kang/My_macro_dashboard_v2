@@ -253,7 +253,7 @@ statsReason, benchmark}` — `benchmark`는 통계 비교 기준 계좌(`bench_s
 CAGR 지수도 같음), 20일 미만이면 `cumReturnPct`만 있습니다. 변동성·샤프·베타는 연속 거래일 기록 쌍의 수익률만 쓰고, 그런 쌍이
 20개 미만이면 `null`입니다. 관측치 요약 `quotes` =
 `{collectedAtKst, ageSeconds, barDate(다수 티커의 봉 날짜), finalClose(마감 15분 뒤 수집), tickers(개수), staleTickers(이어 쓴 티커 목록), stale(3시간 넘게 묵음)}`, 저장본이 없으면 `null`.
-한국 관측치(`paper.kr.quotes`)는 `finalClose` = 그 봉 날짜 20:30 KST 뒤 수집(한국 수집이 그날 값을 받기 시작하는 시각 — 금융위 확정 여부가 아님), `stale` = 다음 수집 예정(그 세션 다음 KR 거래일의 21:55 KST 서버 창) + 2시간 5분을 넘김입니다.
+한국 관측치(`paper.kr.quotes`)는 `finalClose` = 그 봉 날짜 20:30 KST 뒤 수집(한국 수집이 그날 값을 받기 시작하는 시각 — 금융위 확정 여부가 아님), `stale` = 다음 수집 예정(그 세션 다음 KR 거래일의 서버 기동 뉴욕 09:20 — 겨울 23:20·서머타임 22:20 KST) + 2시간 5분을 넘김입니다.
 
 | 메서드 | 경로 | 설명 |
 |---|---|---|

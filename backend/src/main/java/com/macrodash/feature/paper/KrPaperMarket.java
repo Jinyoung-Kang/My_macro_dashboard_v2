@@ -17,6 +17,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalTime;
+import java.time.ZoneId;
 import java.time.ZonedDateTime;
 import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
@@ -72,11 +73,16 @@ final class KrPaperMarket implements PaperMarket {
 
     /** 한국 수집 태스크가 KR 거래일 D의 값을 받기 시작하는 시각(KST) — 수집기 {@code kr_paper.KR_COLLECT_AFTER}(K17). */
     static final LocalTime COLLECT_AFTER = LocalTime.of(20, 30);
-    /** 서버 창이 매일 여는 시각(KST, ADR 0019 — 그 뒤 첫 slow가 그날 한국 수집). */
-    static final LocalTime SERVER_WINDOW_OPENS = LocalTime.of(21, 55);
+    /**
+     * 서버 밤 창이 여는 시각 — 미국 개장 10분 전 뉴욕 09:20 평일(사용자 결정 2026-10-29, v2 4단계 교체 때 적용 — 겨울 23:20·서머타임 22:20 KST).
+     * 그 뒤 첫 slow가 그날 한국 수집입니다. 늘 켜진 스택(로컬)은 20:30 뒤 첫 slow에 받아 이 기준이 넉넉한 쪽으로만 틀립니다.
+     */
+    static final LocalTime SERVER_BOOT_NEW_YORK = LocalTime.of(9, 20);
+    /** 서버 기동 일정의 시간대(EventBridge 일정 — 미국 거래일 달력이 아니라 시각만, 서머타임을 따라감). */
+    static final ZoneId SERVER_BOOT_ZONE = ZoneId.of("America/New_York");
     /**
      * 늦음 여유 — 다음 수집 예정에서 이만큼 지나면 늦음(명세 §4-9 'C1a에서 정한 것' 2시간 5분 = 기동 직후 slow와 그 다음 slow가 연달아
-     * 새 저장본을 내지 못한 뒤, 한국 결정 기한 D′+1 01:00보다 한 시간 앞).
+     * 새 저장본을 내지 못한 뒤).
      */
     static final Duration QUOTES_LATE_MARGIN = Duration.ofMinutes(125);
     /** 결정 시각·기한 기본값(KST, K6 — 설정 {@code kr.decisionTimeKst}·{@code kr.decisionDeadlineKst}의 기본값과 같음). */
@@ -261,10 +267,11 @@ final class KrPaperMarket implements PaperMarket {
 
     /**
      * 늦음이 되는 순간(결정 d5, 명세 §4-9 'C1a에서 정한 것'): 저장본이 덮는 세션 S(머리의 {@code session}, 없으면 수집 시각으로 수집기
-     * {@code kr_target_session}과 같은 식 — {@link #targetSession}) 다음 KR 거래일 D′의 다음 수집 예정 E = max(D′ 20:30, D′ 21:55 서버 창
-     * 기동) KST에 여유 {@link #QUOTES_LATE_MARGIN}을 더한 순간 = <b>D′+1 00:00 KST</b>. 금요일 저장본은 화요일 00:00부터 늦음이고(주말
-     * 없음), 휴장이 끼면 D′이 그만큼 뒤로 갑니다. 한국 저장본은 한 번 다 받으면 그 밤 다시 쓰지 않아 수집 시각이 하루 넘게 그대로인 것이
-     * 정상이라 미국식 '나이 > 고정 시간'을 쓰지 않습니다.
+     * {@code kr_target_session}과 같은 식 — {@link #targetSession}) 다음 KR 거래일 D′의 다음 수집 예정 E = max(D′ 20:30 KST, D′ 서버 기동
+     * 뉴욕 09:20 — 두 시장의 평일 날짜가 같아 D′ 밤의 기동은 뉴욕 D′ 아침)에 여유 {@link #QUOTES_LATE_MARGIN}을 더한 순간 = <b>겨울 D′+1 01:25,
+     * 서머타임 D′+1 00:25 KST</b>(명세 §9 F4 — 그 전에는 21:55 기동 고정으로 D′+1 00:00). 금요일 저장본은 화요일 새벽부터 늦음이고(주말 없음),
+     * 휴장이 끼면 D′이 그만큼 뒤로 갑니다. 한국 저장본은 한 번 다 받으면 그 밤 다시 쓰지 않아 수집 시각이 하루 넘게 그대로인 것이 정상이라
+     * 미국식 '나이 > 고정 시간'을 쓰지 않습니다.
      *
      * @throws com.macrodash.analytics.CalendarUnavailableException D′(또는 S)가 달력이 모르는 해 — 부르는 쪽이 늦음 = null + '달력 없음'
      */
@@ -273,7 +280,7 @@ final class KrPaperMarket implements PaperMarket {
         LocalDate covered = session != null ? session : targetSession(collectedAt, calendar);
         LocalDate next = calendar.nextTradingDay(covered);
         Instant collect = ZonedDateTime.of(next, COLLECT_AFTER, KrxCalendar.SEOUL).toInstant();
-        Instant window = ZonedDateTime.of(next, SERVER_WINDOW_OPENS, KrxCalendar.SEOUL).toInstant();
+        Instant window = ZonedDateTime.of(next, SERVER_BOOT_NEW_YORK, SERVER_BOOT_ZONE).toInstant();
         return (collect.isAfter(window) ? collect : window).plus(QUOTES_LATE_MARGIN);
     }
 

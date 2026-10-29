@@ -224,23 +224,31 @@ class KrPaperMarketTest {
     }
 
     @Test
-    @DisplayName("관측치 늦음(결정 d5) = 다음 거래일 D′의 21:55 + 2시간 5분 = D′+1 00:00 KST — 금요일은 화요일 00:00, 휴장은 건너뜀, 세션을 모르면 수집 시각으로")
+    @DisplayName("관측치 늦음(결정 d5·F4) = 다음 거래일 D′의 서버 기동(뉴욕 09:20) + 2시간 5분 — 겨울 D′+1 01:25·서머타임 00:25 KST, 금요일은 화요일, 휴장은 건너뜀")
     void quotesLateAt() {
         TradingCalendar calendar = calendar2026And2027();
         Instant collected = kst("2026-11-02T22:01");
-        assertThat(KR.quotesLateAt(collected, LocalDate.of(2026, 11, 2), calendar)).isEqualTo(kst("2026-11-04T00:00"));
+        // 미국 서머타임은 2026-11-01(일)에 끝남 — 11-03(화) 기동은 뉴욕 09:20 EST = 23:20 KST → 01:25.
+        assertThat(KR.quotesLateAt(collected, LocalDate.of(2026, 11, 2), calendar)).isEqualTo(kst("2026-11-04T01:25"));
         assertThat(KR.quotesLateAt(kst("2026-10-30T21:58"), LocalDate.of(2026, 10, 30), calendar))
-                .as("금요일 → 다음 월요일의 다음 날 00:00").isEqualTo(kst("2026-11-03T00:00"));
+                .as("금요일 → 다음 월요일(겨울 23:20 기동)의 다음 날 01:25").isEqualTo(kst("2026-11-03T01:25"));
         assertThat(KR.quotesLateAt(kst("2026-12-24T22:00"), LocalDate.of(2026, 12, 24), calendar))
-                .as("12-25(금) 휴장 → 12-28(월) → 12-29 00:00").isEqualTo(kst("2026-12-29T00:00"));
+                .as("12-25(금) 휴장 → 12-28(월) → 12-29 01:25").isEqualTo(kst("2026-12-29T01:25"));
+        // 서머타임 — 뉴욕 09:20 EDT = 22:20 KST → 00:25.
+        assertThat(KR.quotesLateAt(kst("2026-10-28T21:40"), LocalDate.of(2026, 10, 28), calendar))
+                .as("10-29(목) 기동 22:20 → 10-30 00:25").isEqualTo(kst("2026-10-30T00:25"));
+        assertThat(KR.quotesLateAt(kst("2026-10-29T21:40"), LocalDate.of(2026, 10, 29), calendar))
+                .as("서머타임 마지막 주 금요일 10-30 기동 22:20 → 10-31 00:25").isEqualTo(kst("2026-10-31T00:25"));
+        assertThat(KR.quotesLateAt(kst("2027-03-12T21:40"), LocalDate.of(2027, 3, 12), calendar))
+                .as("서머타임은 2027-03-14(일)에 시작 — 03-15(월) 기동 22:20 → 03-16 00:25").isEqualTo(kst("2027-03-16T00:25"));
 
         // 세션을 모르면 수집 시각으로 — 거래일 20:30 이후면 그날, 아니면 직전 거래일(수집기 kr_target_session).
         assertThat(KrPaperMarket.targetSession(kst("2026-10-30T20:30"), calendar)).isEqualTo(LocalDate.of(2026, 10, 30));
         assertThat(KrPaperMarket.targetSession(kst("2026-10-30T20:29"), calendar)).isEqualTo(LocalDate.of(2026, 10, 29));
         assertThat(KrPaperMarket.targetSession(kst("2026-10-31T03:00"), calendar)).isEqualTo(LocalDate.of(2026, 10, 30));
-        assertThat(KR.quotesLateAt(kst("2026-10-31T03:00"), null, calendar)).isEqualTo(kst("2026-11-03T00:00"));
+        assertThat(KR.quotesLateAt(kst("2026-10-31T03:00"), null, calendar)).isEqualTo(kst("2026-11-03T01:25"));
         assertThat(KR.quotesLateAt(kst("2026-11-02T20:00"), null, calendar))
-                .as("월요일 20:30 전 수집 = 금요일 세션 → 화요일 00:00").isEqualTo(kst("2026-11-03T00:00"));
+                .as("월요일 20:30 전 수집 = 금요일 세션 → 화요일 01:25").isEqualTo(kst("2026-11-03T01:25"));
 
         // D′이 모르는 해 — 늦음을 지어내지 않고 '달력 없음'.
         assertThatThrownBy(() -> KR.quotesLateAt(kst("2027-12-30T22:00"), LocalDate.of(2027, 12, 30), calendar))
