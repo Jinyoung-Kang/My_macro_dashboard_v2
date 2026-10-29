@@ -486,6 +486,40 @@ describe("홈 — 모의매매 한국 탭", () => {
     expect(await screen.findByText(/^Claude 계좌 순자산 · 마지막 관측/)).toBeTruthy();
   });
 
+  // 수정 전에는 한국을 고르면 읽는 중 카드(히어로와 다른 틀)에 라디오가 다시 그려져 초점이 body로 빠지고, 미국을 갔다 오면 한국 값을
+  // 지워 다시 자리표시였습니다(it.fails).
+  it.fails("키보드로 시장을 고르면 초점이 그 라디오에 남는다 — 읽는 중·읽은 뒤 모두, 미국 → 한국을 다시 골라도 자리표시 없이", async () => {
+    let resolveKr: (body: unknown) => void = () => {};
+    const krOverview = new Promise((resolve) => { resolveKr = resolve; });
+    reads = { ...happyReads(), [PAPER_KR_STATUS]: paperStatusKr(false) };
+    const base = api.apiGetShared.getMockImplementation();
+    api.apiGetShared.mockImplementation((path: string) => (path === PAPER_KR_OVERVIEW ? krOverview : base?.(path)));
+    renderHome(OWNER);
+    const hero = await paperHero();
+    const korea = within(hero).getByRole("radio", { name: "한국" }) as HTMLInputElement;
+    korea.focus();
+    fireEvent.click(korea);
+    expect(await screen.findByRole("status", { name: "한국 모의매매 계좌를 불러오는 중" })).toBeTruthy();
+    expect(korea.checked).toBe(true);
+    expect(document.activeElement).toBe(korea);
+
+    await act(async () => resolveKr(paperOverviewKr()));
+    await screen.findByText(/^한국 Claude 계좌 순자산 · 마지막 관측/);
+    expect(document.activeElement).toBe(korea);
+
+    const us = within(region(PAPER_REGION)).getByRole("radio", { name: "미국" }) as HTMLInputElement;
+    us.focus();
+    fireEvent.click(us);
+    await screen.findByText(/^Claude 계좌 순자산 · 마지막 관측/);
+    expect(document.activeElement).toBe(us);
+    korea.focus();
+    fireEvent.click(korea);
+    // 한 번 읽은 한국 값은 남아 있어 자리표시 없이 바로 그립니다.
+    expect(screen.queryByRole("status", { name: "한국 모의매매 계좌를 불러오는 중" })).toBeNull();
+    expect(screen.getByText(/^한국 Claude 계좌 순자산 · 마지막 관측/)).toBeTruthy();
+    expect(document.activeElement).toBe(korea);
+  });
+
   it("쉬는 한국: 계좌 없이 그 사유, 두 책 비교하지 않음 문구", async () => {
     const reason = "한국 책 출발일(dashboard.paper.kr.start-date — .env PAPER_KR_START_DATE)이 비어 있어 한국 초기화·출발을 하지 않습니다";
     reads = { ...happyReads(), [PAPER_KR_OVERVIEW]: paperOverviewKrDormant(reason), [PAPER_KR_STATUS]: { ...paperStatusKr(false), dormantReason: reason } };
