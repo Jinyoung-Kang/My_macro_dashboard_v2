@@ -195,6 +195,11 @@ def test_세션_합치기는_최근_3개와_더_늦게까지_본_쪽을_남긴�
     assert merged["2026-10-29"] is not before["2026-10-29"] and merged["2026-10-29"]["dailyOpen"] == 10.0, "일봉 시가는 이어 둠"
 
 
+def _spy(rows: list[dict], fetched: datetime) -> dict:
+    """그 시각에 받은 SPY 항목 — 세션의 받은 시각 = 저장본의 받은 시각(태스크가 이번 회차에 받은 세션과 같은 모양)."""
+    return {"sessions": paper_bars.session_entries(rows, fetched.astimezone(UTC))}
+
+
 @pytest.mark.parametrize("fetched_et, expected", [
     (datetime(2026, 10, 30, 11, 5, 30, tzinfo=NY), 90),       # 정규장 — 11:05:30 − (11:03 + 60초)
     (datetime(2026, 10, 30, 9, 29, tzinfo=NY), None),         # 개장 전
@@ -202,23 +207,46 @@ def test_세션_합치기는_최근_3개와_더_늦게까지_본_쪽을_남긴�
     (datetime(2026, 10, 31, 11, 5, tzinfo=NY), None),         # 다른 날(토요일) — 장이 닫힌 시간은 지연이 아님
 ])
 def test_지연은_SPY_정규장_안에서_받은_저장본만(fetched_et, expected):
-    day = date(2026, 10, 30)
-    spy = {"sessions": paper_bars.session_entries(_rows(day, time(9, 30), time(11, 3)), FETCHED)}
+    spy = _spy(_rows(date(2026, 10, 30), time(9, 30), time(11, 3)), fetched_et)
     assert paper_bars.lag_seconds(fetched_et.astimezone(UTC), spy) == expected
 
 
 def test_지연은_이어받은_SPY·진행_중_봉·조기_폐장_뒤를_가린다():
-    day = date(2026, 10, 30)
-    spy = {"sessions": paper_bars.session_entries(_rows(day, time(9, 30), time(11, 5)), FETCHED)}
-    assert paper_bars.lag_seconds(datetime(2026, 10, 30, 11, 5, 20, tzinfo=NY), spy) == -40, "진행 중인 봉까지 받으면 음수(X1 단서)"
-    assert paper_bars.lag_seconds(datetime(2026, 10, 30, 11, 6, tzinfo=NY), {**spy, "isStale": True}) is None
-    assert paper_bars.lag_seconds(datetime(2026, 10, 30, 11, 6, tzinfo=NY), None) is None
+    rows = _rows(date(2026, 10, 30), time(9, 30), time(11, 5))
+    forming = datetime(2026, 10, 30, 11, 5, 20, tzinfo=NY)
+    assert paper_bars.lag_seconds(forming, _spy(rows, forming)) == -40, "진행 중인 봉까지 받으면 음수(X1 단서)"
+    later = datetime(2026, 10, 30, 11, 6, tzinfo=NY)
+    assert paper_bars.lag_seconds(later, {**_spy(rows, later), "isStale": True}) is None
+    assert paper_bars.lag_seconds(later, None) is None
 
-    early = date(2026, 11, 27)
-    spy_early = {"sessions": paper_bars.session_entries(_session(early, last=time(12, 59)), FETCHED)}
-    assert paper_bars.lag_seconds(datetime(2026, 11, 27, 13, 55, tzinfo=NY), spy_early) is None, "조기 폐장 — 닫힌 시간을 지연으로 적지 않음"
-    assert paper_bars.lag_seconds(datetime(2026, 11, 27, 13, 0, 30, tzinfo=NY), spy_early) is None, "13:00 직후도 가림(구분 불가)"
-    assert paper_bars.lag_seconds(datetime(2026, 11, 27, 12, 59, 50, tzinfo=NY), spy_early) == -10, "13:00 전은 그대로 잼"
+    early_rows = _session(date(2026, 11, 27), last=time(12, 59))
+
+    def early(hh: int, mm: int, ss: int = 0) -> int | None:
+        at = datetime(2026, 11, 27, hh, mm, ss, tzinfo=NY)
+        return paper_bars.lag_seconds(at, _spy(early_rows, at))
+
+    assert early(13, 55) is None, "조기 폐장 — 닫힌 시간을 지연으로 적지 않음"
+    assert early(13, 0, 30) is None, "13:00 직후도 가림(구분 불가)"
+    assert early(12, 59, 50) == -10, "13:00 전은 그대로 잼"
+
+
+@pytest.mark.xfail(strict=True, reason="이번 회차에 받지 않은(직전 저장본에서 남긴) SPY 세션으로 지연을 잼 — 수정 전")
+def test_지연은_이번_회차에_받은_SPY_세션만이고_짧게_온_응답으로_남긴_세션은_null():
+    """Yahoo가 이번에 더 짧게 줘 merge_sessions가 직전 세션을 남기면 그 마지막 봉은 이번 응답의 것이 아닙니다 — 지금 받은 시각과 섞으면
+    직전 회차보다 한 시간 긴 값(3600초)이 되고, 이번 응답의 실제 지연(10:30 봉까지 → 5040초)과도 다릅니다. 모르는 값은 null."""
+    day = date(2026, 10, 30)
+    first = datetime(2026, 10, 30, 10, 55, tzinfo=NY)
+    before = _spy(_rows(day, time(9, 30), time(10, 54)), first)["sessions"]
+    assert paper_bars.lag_seconds(first, {"sessions": before}) == 0, "10:55:00 − (10:54 + 60초)"
+
+    second = datetime(2026, 10, 30, 11, 55, tzinfo=NY)
+    kept = paper_bars.merge_sessions(_spy(_rows(day, time(9, 30), time(10, 30)), second)["sessions"], before)
+    assert kept[day.isoformat()] == before[day.isoformat()], "이미 받은 세션을 남김(받은 시각도 직전 회차 그대로)"
+    assert paper_bars.lag_seconds(second, {"sessions": kept}) is None
+
+    third = datetime(2026, 10, 30, 12, 55, tzinfo=NY)
+    again = paper_bars.merge_sessions(_spy(_rows(day, time(9, 30), time(12, 53)), third)["sessions"], kept)
+    assert paper_bars.lag_seconds(third, {"sessions": again}) == 60, "다시 더 늦게까지 받은 세션은 그대로 잼"
 
 
 # ==============================================================================
