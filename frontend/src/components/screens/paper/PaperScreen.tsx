@@ -115,7 +115,7 @@ export default function PaperPage({
         <Freshness refreshError={refreshError} />
       </header>
 
-      {/* 시장 고르기(미국 | 한국 · 준비 중 · 2단계)는 셸의 하위 메뉴 줄이 맡습니다(lib/nav) — 화면 안에 또 두면 두 줄로 겹쳐 보였습니다. */}
+      {/* 시장 고르기(미국 | 한국 두 링크)는 셸의 하위 메뉴 줄이 맡습니다(lib/nav) — 화면 안에 또 두면 두 줄로 겹쳐 보였습니다. */}
       {loading && !data && <Loading label="장부를 읽는 중…" />}
       {error && <ErrorState message={error} onRetry={reload} />}
       {/* 테이블이 아직 없으면 서버 문구 그대로 — 무엇을 하면 생기는지까지 서버가 적어 보냅니다. */}

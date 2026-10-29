@@ -7,7 +7,7 @@
  *  - 추정에 가까운 상태: 사후 체결을 기다리는 벤치마크 행에 경고, 가격 없는 보유가 있으면 비교 표 '가격 없음'이 경고색
  *  - 오래됨: 가격 없는 보유·늦은 관측치 저장본이면 계좌 행에 '이전 값' 배지와 사유(숨기는 옵션 없음)
  *  - 기간별 순자산 곡선: 저장된 기록보다 긴 기간 탭은 없고, 고르면 그 기간만(경계선도 그 기간 안의 것만), 곡선 아래 노출 문구(남는 현금 SHY)
- *  - 시장 고르기: 화면 안에는 없다 — 셸의 하위 메뉴 줄(미국 | 한국 · 준비 중 · 2단계)이 맡는다(Shell.test.tsx), 제목은 '(미국)'
+ *  - 시장 고르기: 화면 안에는 없다 — 셸의 하위 메뉴 줄(미국 | 한국 두 링크)이 맡는다(Shell.test.tsx), 제목은 '(미국)'
  */
 import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -306,14 +306,15 @@ describe("기간별 순자산 곡선", () => {
 });
 
 describe("시장 고르기", () => {
-  it("화면 안에는 시장 고르기가 없다 — 셸의 하위 메뉴 줄이 맡고(한국 · 준비 중 · 2단계는 Shell.test.tsx), 제목이 미국 책임을 말한다", async () => {
+  it("화면 안에는 시장 고르기가 없다 — 셸의 하위 메뉴 줄(미국 | 한국 두 링크, Shell.test.tsx)이 맡고, 제목이 미국 책임을 말한다", async () => {
     reads["/api/paper/overview"] = () => Promise.resolve(OVERVIEW);
     render(<PaperPage />);
 
     expect(await screen.findByRole("tablist", { name: "모의 매매 화면" })).toBeTruthy();
     // 예전에는 제목 아래에 같은 고르기가 한 줄 더 있어 셸의 하위 메뉴 줄과 두 줄로 겹쳐 보였습니다.
     expect(screen.queryByRole("navigation", { name: "모의매매 시장" })).toBeNull();
-    expect(screen.queryByText(/한국 · 준비 중/)).toBeNull();
+    // 한국 화면으로 가는 링크도 화면 안에는 없습니다(셸 하위 메뉴의 '한국' 링크 하나).
+    expect(document.querySelector('a[href^="/paper/kr"]')).toBeNull();
     expect(screen.getByRole("heading", { level: 1, name: "모의 알고리즘 매매(미국)" })).toBeTruthy();
   });
 });
