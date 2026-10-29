@@ -486,9 +486,9 @@ describe("홈 — 모의매매 한국 탭", () => {
     expect(await screen.findByText(/^Claude 계좌 순자산 · 마지막 관측/)).toBeTruthy();
   });
 
-  // 수정 전에는 한국을 고르면 읽는 중 카드(히어로와 다른 틀)에 라디오가 다시 그려져 초점이 body로 빠지고, 미국을 갔다 오면 한국 값을
-  // 지워 다시 자리표시였습니다(it.fails).
-  it.fails("키보드로 시장을 고르면 초점이 그 라디오에 남는다 — 읽는 중·읽은 뒤 모두, 미국 → 한국을 다시 골라도 자리표시 없이", async () => {
+  // 예전에는 한국을 고르면 읽는 중 카드(히어로와 다른 틀)에 라디오가 다시 그려져 초점이 body로 빠지고, 미국을 갔다 오면 한국 값을
+  // 지워 다시 자리표시였습니다.
+  it("키보드로 시장을 고르면 초점이 그 라디오에 남는다 — 읽는 중·읽은 뒤 모두, 미국 → 한국을 다시 골라도 자리표시 없이", async () => {
     let resolveKr: (body: unknown) => void = () => {};
     const krOverview = new Promise((resolve) => { resolveKr = resolve; });
     reads = { ...happyReads(), [PAPER_KR_STATUS]: paperStatusKr(false) };

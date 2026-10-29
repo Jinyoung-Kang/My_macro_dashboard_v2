@@ -1,7 +1,7 @@
 /**
  * Hero — 큰 값 · 변화 칩 · 판정 글 · 배지 · 기간 탭(설계서 §5 "판정은 글로").
  * 네 상태: 값 있음(큰 숫자 + 단위 + 칩 + 판정 글), 값 없음("—" + 사유, 칩 생략, 단위 없음),
- * 추정(meta 배지), 오래됨(meta의 ⚠️ 이전 값 + 사유). a11y: 제목(label)이 영역 이름, headingLevel.
+ * 추정(meta 배지), 오래됨(meta의 ⚠️ 이전 값 + 사유), 자리표시(placeholder — 값 대신, 탭은 그 자리 그대로). a11y: 제목(label)이 영역 이름, headingLevel.
  */
 import { cleanup, render, screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
@@ -124,6 +124,28 @@ describe("Hero", () => {
     expect(within(region).getByText("이전 값").parentElement?.className).toContain("text-warn");
     expect(within(region).getByText("· 이번 수집 실패")).toBeTruthy();
     expect(within(region).getByText("5.9")).toBeTruthy();
+  });
+
+  it("자리표시 — 값·변화·판정·배지 대신 그리고, 탭은 같은 자리에 남아 값으로 바뀌어도 다시 마운트되지 않는다", () => {
+    const tabs = <input aria-label="시장" />;
+    const { rerender } = render(
+      <Hero label="순자산" value={null} unit="원" placeholder={<div role="status" aria-label="불러오는 중" />} tabs={tabs}
+        verdict="판정 글" meta={<span>배지</span>} change={<span>칩</span>} />,
+    );
+    const region = screen.getByRole("region", { name: "순자산" });
+    expect(within(region).getByRole("status", { name: "불러오는 중" })).toBeTruthy();
+    expect(within(region).queryByText("—")).toBeNull();
+    expect(within(region).queryByText("판정 글")).toBeNull();
+    expect(within(region).queryByText("배지")).toBeNull();
+    expect(within(region).queryByText("칩")).toBeNull();
+    const input = within(region).getByRole("textbox", { name: "시장" });
+    input.focus();
+    rerender(<Hero label="순자산" value="1억" unit="원" tabs={tabs} verdict="판정 글" />);
+    expect(screen.getByText("1억")).toBeTruthy();
+    expect(screen.getByText("판정 글")).toBeTruthy();
+    expect(screen.queryByRole("status")).toBeNull();
+    expect(screen.getByRole("textbox", { name: "시장" })).toBe(input);
+    expect(document.activeElement).toBe(input);
   });
 
   it("두 히어로의 제목 id가 겹치지 않는다", () => {

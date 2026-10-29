@@ -23,37 +23,43 @@ const TITLE = "모의매매 · Claude 계좌 순자산";
  * 히어로 값은 Claude 계좌 순자산과 그 평가 시각(마지막 관측), 아래로 네 계좌 행(값 = 순자산, 변화율 = 출발 대비 — 일간 변화 필드는
  * 응답에 없어 만들지 않음). 쓰기 버튼(초기화·리스크 실행 등)은 두지 않습니다 — 홈은 읽기만 하고, 조작은 모의매매 화면에서 합니다.
  *
- * 미국 | 한국 탭(2단계 명세 §4-16): 미국이 기본이고, 한국을 고를 때만 `?market=KR` 개요·상태를 읽습니다(고르기 전에는 한국 요청 없음 — 미국 값은
- * 계속 읽어 두어 되돌아오면 바로 보임). 한국은 원 단위 정수, 행 링크 /paper/kr. 두 탭 모두 '두 책 수익률은 서로 비교하지 않음' 문구를 적습니다
- * (§3 '탭마다'). 한국을 읽는 중·실패에도 탭은 남아 미국으로 돌아갈 수 있습니다.
+ * 미국 | 한국 탭(2단계 명세 §4-16): 미국이 기본이고, 한국을 처음 고를 때부터 `?market=KR` 개요·상태를 읽습니다(고르기 전에는 한국 요청 없음 —
+ * 한 번 고른 뒤에는 미국으로 돌아가도 두 시장 값을 계속 읽어 두어, 어느 쪽으로 돌아와도 자리표시 없이 바로 보임). 한국은 원 단위 정수, 행 링크
+ * /paper/kr. 두 탭 모두 '두 책 수익률은 서로 비교하지 않음' 문구를 적습니다(§3 '탭마다'). 한국을 읽는 중·실패에도 같은 히어로 틀(Hero의
+ * placeholder)이라 탭이 같은 자리에 남아 — 다시 마운트되지 않아 키보드 초점을 잃지 않음 — 미국으로 돌아갈 수 있습니다.
  */
 export function PaperHero() {
   const owner = isOwner(useSessionUser());
   const [market, setMarket] = useState<PaperMarketCode>("US");
+  // 한국을 한 번이라도 골랐나 — 그 뒤로는 한국 경로를 비우지 않습니다(비우면 useApi가 값을 지워 다시 고를 때마다 자리표시).
+  const [krPicked, setKrPicked] = useState(false);
   const korea = market === "KR";
+  const pick = (next: PaperMarketCode) => {
+    setMarket(next);
+    if (next === "KR") setKrPicked(true);
+  };
   const usOverview = useApi<PaperOverviewResponse>(owner ? endpoints.paper.overview : null, HOME_REFRESH_MS.paper);
   const usStatus = useApi<PaperStatusResponse>(owner ? endpoints.paper.status : null, HOME_REFRESH_MS.paper);
   const krPaths = endpoints.paper.market("KR");
-  const krOverview = useApi<PaperOverviewResponse>(owner && korea ? krPaths.overview : null, HOME_REFRESH_MS.paper);
-  const krStatus = useApi<PaperStatusResponse>(owner && korea ? krPaths.status : null, HOME_REFRESH_MS.paper);
+  const krOverview = useApi<PaperOverviewResponse>(owner && krPicked ? krPaths.overview : null, HOME_REFRESH_MS.paper);
+  const krStatus = useApi<PaperStatusResponse>(owner && krPicked ? krPaths.status : null, HOME_REFRESH_MS.paper);
   const overview = korea ? krOverview : usOverview;
   const status = korea ? krStatus : usStatus;
 
   if (!owner) {
     return null;
   }
+  const marketSwitch = <MarketSwitch value={market} onChange={pick} />;
   if (!overview.data) {
-    return (
-      <HomeCard title={TITLE}>
-        {overview.error ? (
-          <SectionError message={overview.error} onRetry={() => void overview.reload()} />
-        ) : (
-          <Skeleton lines={5} label={korea ? "한국 모의매매 계좌를 불러오는 중" : "모의매매 계좌를 불러오는 중"} />
-        )}
-        {/* 한국을 고른 뒤 읽는 중·실패여도 미국으로 돌아갈 수 있게 탭을 남깁니다(미국을 처음 읽는 동안은 고를 것이 없어 그리지 않음 — 예전 그대로). */}
-        {korea ? <div className="mt-4"><MarketSwitch value={market} onChange={setMarket} /></div> : null}
-      </HomeCard>
+    const placeholder = overview.error ? (
+      <SectionError message={overview.error} onRetry={() => void overview.reload()} />
+    ) : (
+      <Skeleton lines={5} label={korea ? "한국 모의매매 계좌를 불러오는 중" : "모의매매 계좌를 불러오는 중"} />
     );
+    // 미국을 처음 읽는 동안은 고를 것이 없어 탭 없는 카드(예전 그대로). 한국을 고른 뒤의 읽는 중·실패는 아래 히어로와 같은 틀에 자리표시만 바꿔
+    // 그립니다 — 틀이 다르면 시장 라디오가 다시 마운트되어 초점이 body로 빠지고 자리도 옮겨 갔습니다.
+    if (!korea) return <HomeCard title={TITLE}>{placeholder}</HomeCard>;
+    return <Hero label={TITLE} value={null} placeholder={placeholder} tabs={marketSwitch} />;
   }
 
   const model = paperHomeModel(overview.data, status.data, { market });
@@ -82,7 +88,7 @@ export function PaperHero() {
           <Freshness refreshError={overview.refreshError ?? status.refreshError} />
         </>
       }
-      tabs={<MarketSwitch value={market} onChange={setMarket} />}
+      tabs={marketSwitch}
     >
       {model.message ? (
         <p className="text-sm text-text-2">{model.message}</p>
