@@ -8,6 +8,7 @@ import com.macrodash.store.PaperStore.Order;
 import com.macrodash.store.PaperStore.OrderExec;
 import com.macrodash.store.Snapshot;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import tools.jackson.databind.JsonNode;
@@ -203,6 +204,27 @@ class PaperExecutionAuditJobTest {
         assertThat(cf.get("AT_1000").path("rung").asString()).isEqualTo("Y1M_NEXT");
         assertThat(cf.get("AT_1100").path("raw").asDouble()).isEqualTo(103.0);
         assertThat(store.execs.get(id).lagSeconds()).as("처음 저장본의 지연").isEqualTo(90);
+    }
+
+    @Test
+    @Disabled("재현 — 1분봉 값을 처음 채운 회차의 지연이 null이면 뒤 회차의 지연으로 메움(다음 커밋에서 정의대로)")
+    @DisplayName("지연은 그 주문의 1분봉 반사실을 처음 적은 회차의 값 — 그 회차에 SPY를 이어받아 지연을 몰랐으면 뒤 회차가 다른 시점을 채워도 null 그대로")
+    void lagStaysWithTheFirstBarsRoundEvenWhenUnknown() {
+        long id = order("AAPL", "NEXT_OBSERVATION", "PENDING", MON, MON_DECIDED);
+        bars(tuesdayMorning().stale("SPY"));                     // SPY만 이어받음 — 이 회차의 지연은 모름
+        job(true, et(TUE, 11, 0)).run();
+        assertThat(cf(id).get("NEXT_OPEN").path("raw").asDouble()).isEqualTo(100.0);
+        assertThat(store.execs.get(id).lagSeconds()).isNull();
+
+        bars(new Bars(et(TUE, 11, 55).plusSeconds(30))
+                .bar("AAPL", TUE, et(TUE, 11, 0), 103.0, 50.0)
+                .bar("AAPL", TUE, et(TUE, 11, 54), 103.5, 10.0)
+                .bar("SPY", TUE, et(TUE, 11, 54), 502.0, 10.0));    // 지연 30초
+        PaperExecutionAuditJob.Outcome second = job(true, et(TUE, 12, 0)).run();
+
+        assertThat(second.valuesFilled()).as("새로 채운 것은 11:00 하나").isEqualTo(1);
+        assertThat(store.execs.get(id).lagSeconds())
+                .as("NEXT_OPEN·AT_1000을 적은 10:55 저장본의 지연(모름) — 11:55 저장본의 30초로 메우지 않음").isNull();
     }
 
     @Test
