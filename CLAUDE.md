@@ -5,7 +5,8 @@ PostgreSQL ← 수집기(FastAPI, `collector/`). Docker Compose 네 컨테이너
 `My_macro_dashboard_v2`가 compose 프로젝트·DB 볼륨 이름을 정한다(바꾸지 말 것).
 **v2다**: 2026-10-26에 `My_macro_dashboard_v1`을 전체 이력으로 갈라낸 저장소다(갈라낸 절차는 [docs/LOCAL_SETUP.md](docs/LOCAL_SETUP.md) §0,
 결정은 [ADR 0020](docs/adr/0020-v2-program.md)). 화면 전면 개편과 한국 증시 모의 매매를 여기서 한다.
-**v1은 AWS 운영본이자 로컬 3001 스택으로 교체(4단계) 전까지 계속 돈다.** v1·v3 폴더·볼륨·스택·원격 저장소를 건드리지 않는다
+**2026-10-29 23:17 KST부터 AWS 운영본은 이 저장소(v2)다**(서버 `~/My_macro_dashboard_v2`, 4단계 교체를 사용자 결정으로 앞당김 — 남은 작업은 끝날 때마다
+서버에 `bash ~/My_macro_dashboard_v2/scripts/aws/deploy.sh`). 서버의 v1 폴더·볼륨은 되돌리기용, v1은 로컬 3001 스택으로 계속 돈다. v1·v3 폴더·볼륨·스택·원격 저장소를 건드리지 않는다
 (v1의 긴급 수정은 v1 세션이 하고, 필요하면 여기로 손으로 옮긴다).
 
 ## 먼저 읽을 문서
@@ -45,8 +46,8 @@ PostgreSQL ← 수집기(FastAPI, `collector/`). Docker Compose 네 컨테이너
 - **새 API 경로는 `AccessPolicy` 표에 넣는다**(공개·회원·유료·운영자, ADR 0010) — 빠지면 `AccessPolicyTest`가 막는다. 사용자 정보는 `support.CurrentUser`.
   로그인은 이메일+비밀번호(DB 세션). 운영자 계정은 처음 기동 때 `.env`의 `OWNER_EMAIL`·`APP_PASSWORD`로 만든다.
   로컬 compose는 로그인 없이 이 맥에서 첫 운영자로 연다(`LOCAL_NO_LOGIN`, ADR 0016). AWS·QA 덧붙임은 `"false"` 고정(AWS 개인용 서버는 ADR 0019).
-- **🧪 모의 매매 상태는 AWS 서버(EC2 `my-macro-app`) 한 곳에만**(ADR 0019·0020) — 지금은 서버의 v1. **이 폴더의 `.env`는 `PAPER_ENABLED=false` 고정**
-  (교체 전). 두 곳에서 정기 작업(리스크 점검·결정·체결)이 동시에 돌면 안 된다. 교체 때 상태를 한 번만 옮기고 v1을 바로 멈춘다(계획서 §5).
+- **🧪 모의 매매 상태는 AWS 서버(EC2 `my-macro-app`) 한 곳에만**(ADR 0019·0020) — 2026-10-29부터 서버의 v2. **이 폴더의 `.env`는 `PAPER_ENABLED=false` 고정**.
+  두 곳에서 정기 작업(리스크 점검·결정·체결)이 동시에 돌면 안 된다 — 서버에서 v1의 `deploy.sh`·`make up`을 실행하지 않는다(되돌릴 때만, 계획서 §5-7).
   로컬 `.env`를 서버로 보낼 때는 그 줄과 포트 네 줄 등을 뺀다(`.env.aws.example`).
 - 날짜는 `Kst.today()`(Java)·KST 기준. `LocalDate.now()`를 쓰지 않는다(서버 TZ는 UTC).
 - **테이블마다 쓰는 프로세스는 하나**(ADR 0008). 수집기 테이블은 백엔드가 읽기만, 백엔드 테이블(`regime_log` 등)은 백엔드만 쓴다.
@@ -63,7 +64,7 @@ PostgreSQL ← 수집기(FastAPI, `collector/`). Docker Compose 네 컨테이너
 ## 전달 방식
 - 작업은 `claude/<주제>-YYYY-MM` 브랜치에서 하고, 끝나면 **본체 폴더의 `main`에 fast-forward 병합해 이 저장소(GitHub
   `Jinyoung-Kang/My_macro_dashboard_v2`, 공개)의 `main`에 push**한 뒤 CI(6개 job)까지 확인하고 커밋 번호와 함께 보고한다. 사용자는 git 명령을 직접 치지 않는다. 큰 변경은 설명하고 동의를 받은 뒤 반영한다.
-  `Local_macro_dashboard_v3`·`My_macro_dashboard_v1` 저장소에는 이 세션에서 아무것도 올리지 않는다(v3는 모의 매매를 넣지 않기로 한 별도 공개 저장소 — ADR 0018, v1은 운영본).
+  `Local_macro_dashboard_v3`·`My_macro_dashboard_v1` 저장소에는 이 세션에서 아무것도 올리지 않는다(v3는 모의 매매를 넣지 않기로 한 별도 공개 저장소 — ADR 0018, v1은 교체 전 운영본 — 되돌리기용).
 - 커밋 메시지는 `type(scope): 요약`, **요약은 한국어**(예: `fix(backend): …`, `docs: …`), 끝에 `Co-Authored-By` 줄.
   CI 가 GitHub 쪽 사정으로 취소되면("job was not acquired by Runner") 취소된 job 만 다시 돌린다 — 코드 실패와 구분해 보고한다.
 - 돌고 있는 코드를 바꾸는 변경이면 보고에 "`make up` 하세요"를 넣는다(이미 `make up`까지
