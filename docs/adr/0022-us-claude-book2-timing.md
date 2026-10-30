@@ -3,7 +3,8 @@
 - 상태: 채택 (2026-10-30, 사용자 지시 "권장안대로 진행해"로 명세 확정 — T1~T19 모두 권장안). **단계 0(측정만)·단계 1(계좌2 — 명세 §16-1의 1-1~1-8) 구현, 배포 전**.
   커밋은 브랜치 `claude/us-claude2-2026-10`에 있고, 병합·배포는 명세 §16-2 순서입니다(단계 0 배포 바로 전 `main`에 병합 — T19 ⓐ, 배포는 단계 단위 — 단계 1 배포 뒤
   `POST /api/paper/init`로 계좌2 행을 만들고, 설정 저장 한 번으로 예약 9·소상한 2·`claude2.enabled`). `claude2.enabled`는 기본 꺼짐이라 배포만으로는 계좌2가 결정·출발하지 않습니다.
-  장중 확인(단계 2 — `CHECKPOINT`·`MARKET`·V18·`paper_watch_us`·`PaperCheckpointJob`)은 아직 코드가 없습니다.
+  **장중 확인(단계 2 — `CHECKPOINT`·`MARKET`·V18·`paper_watch_us`·`PaperCheckpointJob`)도 구현했습니다(배포 전)** — 2026-10-31 사용자 결정("모든 일정을
+  10월 31일 안에")으로 단계 1과 함께 시작합니다(T8 앞당김 — 아래 '결과'). 설정 `claude2.checkpoints`는 기본 꺼짐이고, 끄면 결정이 단계 1과 바이트까지 같습니다.
   미국 네 계좌(ADR 0018)의 결정·패킷·시스템 프롬프트·응답 스키마·장부 순서·체결 조건은 바뀌지 않습니다 — 이 문서는 계좌2 때문에 **고치는 기존 결정**과 **출발 뒤에는 되돌리기 어려운 것**만 적습니다.
 - 근거: [계좌2 명세](../specs/2026-10-30-claude-book2-timing-design.md) §3·§4(§4-3 고치는 기존 결정)·§5-3·§6·§7·§8·§10·§11·§12·§14·§16·§18 **T4·T6·T7·T10·T12·T15·T17·T18** ·
   [ADR 0018](0018-paper-trading-guardrails.md)(미국 책 가드레일) · [ADR 0020](0020-v2-program.md)(v2 프로그램, 장중 평가) · [ADR 0021](0021-kr-paper-prices-fills-start.md)(한국 책 — 앞으로 체결 출발의 선례) ·
@@ -22,6 +23,11 @@
        `PacketBuilderTest.goldenClaude2Packets`·`StructuredSchemaTest.goldenClaude2SchemaForApi`·`ClaudeBookProfileTest.claude2RenderDiffersOnlyInTheFixedRules`)뿐입니다.
        `ApiIntegrationTest`(계좌 수 5 — `paperInitWithoutPricesSkipsBenchmarks`), `UsPaperMarketTest.books`, 화면 `paperAccount.test.ts`(코드 다섯),
        계좌1 화면 이름 "Claude 계좌1"과 옛 이름 목록 `PaperAdminServiceTest.reconcileLabelsRenamesBookOneBeforeBookTwo`(T3 — 코드 `claude`·ROLE 그대로)
+     - 단계 2(있음): `claude2.checkpoints`가 없거나 꺼져 있으면 결정이 보낸 시스템 프롬프트·사용자 메시지·API 스키마가 단계 1 고정본과 바이트까지 같고 계획 행도 쓰지 않음
+       (`Claude2DecisionTest.checkpointsOffIsStageOneByteForByte`·`checkpointsOffWritesNoRow`), 켠 판은 따로 둔 고정본(`render-us-claude2-c2-v0-default.txt`·
+       `decision-schema-forapi-us-claude2-c2.json`·`packet-us-claude2-c2-*`)과 단계 1 대비 차이 시험(`ClaudeBookProfileTest.claude2C2RenderDiffersOnlyInTheCheckpointLines`·
+       `claude2C2ProfileDiffersOnlyInTheCheckpointParts`, `StructuredSchemaTest.claude2C2SchemaDiffersOnlyInCheckpoint`, `DecisionTimingsLockTest.claude2C2ContextIsLockedLikeStageOne`).
+       단계 1 고정본은 그대로이고 바뀐 고정본은 상태 응답 하나(`paper-status-us.json` — `claude2.checkpoint` 묶음만 더해짐, `PaperQueryUsGoldenTest`)
        화면: 계좌2 주문·체결 표는 한국 표처럼 두 줄 칸으로 묶어 계좌2 칸(계좌1식 대비·실행 메모·근거)을 앞쪽에 — 주문 일곱 칸·체결 아홉 칸(1280px 카드 안 —
        `paperClaude2.test.tsx` '계좌2 표는 한국 표처럼 두 줄 칸으로…'·'짧은 칸을 한 줄로…'), 두 줄 칸 안의 한 줄만 값이 없어도 그 자리는 Empty('—'는 읽어 주기에서 빼고
        '값 없음' — 같은 파일 '계좌2 표의 두 줄 칸에서 값이 빠진 부분도…', 대기 주문·R3 체결), 계좌1 표는 칸 그대로(같은 파일 '계좌1 표는 칸이 그대로')
@@ -74,15 +80,22 @@
      - 단계 0(0-3): `lagSeconds`는 정규장 안에서 받은 저장본만(장 밖·휴장 `null`)이고 그 회차에 받은 SPY 세션만(짧게 온 응답으로 남긴 세션은 `null`), 종목 칸의 출처 지연(`declaredDelayMin`)은 늘 `null`
      - 단계 1(있음): 화면은 상태 응답 `claude2.bars`를 출발 뒤 개요 '장부 관측치'에 받은 시각·나이·지연(SPY 마지막 봉 끝 → 받은 시각)으로 적고 '실시간'이라 하지 않음,
        정규장 밖이면 그렇다고·모르는 값은 '—'(`paperClaude2.test.ts` '출발 뒤 1분봉 저장본 한 줄…'·`paperClaude2.test.tsx` '출발 뒤 계좌2 상태…' — 결정 로그(계좌2)의 결정 창 세 줄도)
-     - 단계 2(2-2·2-3): `MINUTE`·`HOURLY` 피드와 확인 패킷 시각 ⑨(봉 끝·받은 시각 ≤ 조립 시각)
+     - 단계 2(있음): 확인 패킷에는 봉 끝·받은 시각이 조립 시각 이하인 값만(⑨ — `CheckpointPacketTest.onlyDataBeforeAssembly`·`minuteFeedNeedsTheSameCheckpoint`,
+       고정본 `goldenMinute`·`goldenHourly`), 5세션을 재기 전 감시 지연 등급은 '지연 모름'(`gradeUnknownUnderFiveSessions`, `Claude2DecisionTest.recentLagNullUnderFiveRows`),
+       감시 저장본의 지연은 그 세션 정규장 안에서만(`test_paper_watch.py::test_지난_세션_봉뿐이면_지연은_null`), 화면의 자료 이름·한계 문구에 '실시간' 낱말 없음
+       (`paperClaude2.test.ts` '자료 이름은 지연 자료임을 적고…'·'한계 문구 — …장중 확인…')
   6. 수집기가 읽는 백엔드 표(ADR 0020 개정)
      - 있음: `test_table_ownership.py::test_수집기는_백엔드_테이블에_쓰지_않는다`(0-2부터 `paper_order_exec` 포함), `test_paper_live.py::test_보유_종목은_그_시장의_출발한_계좌들_것만_중복_없이`(첫 읽기 경우)
-     - 단계 0(0-3): 범위 읽기(`store.timed_scope`)가 읽기만, 빈 범위면 Yahoo 호출 0, 수집기의 시각 지정 timing 목록 = 백엔드 상수(파일 대조). 단계 2(2-1): `BACKEND_TABLES`에 `paper_checkpoints`
+     - 단계 0(0-3): 범위 읽기(`store.timed_scope`)가 읽기만, 빈 범위면 Yahoo 호출 0, 수집기의 시각 지정 timing 목록 = 백엔드 상수(파일 대조). 단계 2(있음): `BACKEND_TABLES`에 `paper_checkpoints`, 감시 범위 읽기는
+       SELECT만(`test_paper_watch.py::test_범위_읽기는_쓰기_문장이_없다`·`test_범위는_계좌2의_오늘_PLANNED_MINUTE_확인과_보유·대기이고_읽기만_한다`), 감시 저장본을 읽는 백엔드는
+       장중 확인 작업·패킷·상태 표시뿐(`test_감시_저장본을_읽는_백엔드_코드는_장중_확인_작업과_패킷과_상태_표시뿐이고_화면은_읽지_않는다`)
   7. 장중 평가는 표시 전용 그대로
      - 있음: 시험이 아니라 코드 사실 — `paper.live.*`를 읽는 백엔드 코드는 `PaperLiveService` 하나(`PaperLiveServiceTest`). 계좌2 장부·패킷은 새 데이터셋 `paper.bars.us`(0-3)·`paper.watch.us`(2-2)만 읽음
   8. 정기 작업 둘
      - 있음(선례): `PaperRiskJobTest.disabledDoesNothing`·`PaperReviewJobTest.disabledDoesNothing`(`PAPER_ENABLED=false`면 아무것도 안 함)
-     - 단계 0(0-4): 실행 감사 작업의 같은 시험(꺼지면 아무것도 안 함, 저장본은 `StoreReader.quietly`, 장부 잠금을 잡지 않고 장부 표는 읽기만, 계좌1 고정본 그대로). 단계 2(2-3): 장중 확인 작업의 같은 시험·스케줄러 풀 5
+     - 단계 0(0-4): 실행 감사 작업의 같은 시험(꺼지면 아무것도 안 함, 저장본은 `StoreReader.quietly`, 장부 잠금을 잡지 않고 장부 표는 읽기만, 계좌1 고정본 그대로). 단계 2(있음): 장중 확인 작업
+       `PaperCheckpointJobTest.disabledDoesNothing`·`readsSnapshotsQuietly`·`usesItsOwnLockAndCallsOutsideTheLedgerLock`(결정 작업 잠금을 쓰지 않고 호출은 장부 잠금 밖)·
+       `callsOnceInTheWindow`(+2~+20분에 한 번)·`missedWindowExpires`·`noRetryOnApiError`·`checkpointRowIsNotADecisionJobKind`, 스케줄러 풀 5 `PaperDecisionJobTest.schedulerPoolIsFive`
      - 단계 1(있음 — 새 작업 없음): 계좌2 결정은 결정 작업 안에서 규칙 → 계좌1 → 계좌2(`PaperDecisionJobClaude2Test.book2RunsAfterBook1WithTheSameInputs`·`disabledBook2IsNotCalled`·
        `book1AlreadyDecided`·`book2ErrorsCountForBook2`), 1분봉 기다림은 리스크 점검 안에서(`UsTimedFillsTest.releasedByFreshBars`·`releasedByTheCap`·`capComesFromTheSettings`·
        `noWaitWithoutDueOrders`·`manualRunsAlwaysRecord`, 결정 작업이 기다림을 봄 `PaperDecisionJobClaude2Test.waitsForTheMinuteBars` — 같은 관측치로 기다리기만 한
@@ -95,7 +108,10 @@
      - 단계 1(있음): 계좌2 소상한(같은 기준 거래일의 결정 주기 단위 — 행마다 1 + 재시도) `Claude2DecisionTest.cycleCapCountsTheDecisionRows`(출발의 같은 계획 안 재시도도 행의
        재시도 수로 셈 — `startRetryIsCountedInTheDecisionRow`; 출발의 그 재시도는 결정 주기에 자리가 남을 때만, Claude를 부르지 않은 행은 0회 —
        `cycleCapGuardsTheStartRetryAndSkipsRowsWithoutAModel`), 수동 결정은 수동 문턱
-       `PaperDecisionJobClaude2Test.manualBook2Decision`. 서머타임에 하루 확인 둘(단계 2)은 2-3 몫
+       `PaperDecisionJobClaude2Test.manualBook2Decision`
+     - 단계 2(있음): 결정 주기 셈에 장중 확인 행(`Claude2DecisionTest.cycleCapCountsTheDecisionRows`), 소상한·하루 상한에 닿으면 기다리지 않고 놓침
+       (`PaperCheckpointJobTest.cycleCapExpires`·`callCapExpires`), 서머타임 시작 주에 한 KST 날 확인 둘은 서로 다른 결정 주기(`dstStartWeekTwoCheckpointsInOneKstDay`),
+       확인 주문도 월 상한에 셈(`monthlyCapCountsCheckpointOrders`)
   10. 한도·월 상한(T12)
      - 있음: `OrderValidatorTest.monthlyCap`·`goldenOutcomes`(계좌1 그대로), 한국 계산 `KrPacketBuilderTest.monthlyCountLeavesOutTheStartAllocation`(출발 `INITIAL` 주문을 세지 않음), 미국 계산 `ClaudeBookServiceTest.initialBackfillDoesNotUseMonthlyCap`
      - 단계 1(있음): 검증기 시점 순위 일반화의 동치 시험 `OrderValidatorRanksTest.randomBatchesMatchTheTwoBranchImplementation`(옛 두 갈래 = 순위 0/1)·`positionsPerRank`·`checksEveryRankWithBuys`
@@ -215,7 +231,19 @@
   한국 출발 밤(10-30 21:55~22:30)에 `calendar.consensus`를 계획대로 켜 미국 `packetVersion`은 10-31 07:30 결정(거래일 10-30)부터 6이다(v4의 첫 결정과 다른 결정).
   `claude.schemaV3`·`claude.figureCheck`는 읽는 코드가 생길 때까지 끈 채 둔다(사용자 결정 2026-10-30 — ADR 0021 결정 6의 '세 스위치를 같은 저장으로'에서 바뀜).
   그래서 계좌2의 예약·소상한 저장 값은 단계 1 9·2, 단계 2 10·3이다(명세 §5-3).
-- 배포·출발 기록(채울 자리): 단계 0 `main` 병합·배포 — · X1~X5 측정(3세션) — · 단계 1 배포·`POST /api/paper/init` — · 설정 저장(`settings_version` —, 예약 9·소상한 2·`claude2.enabled`) — · 계좌2 출발 S — · 단계 2 — .
+- 배포·출발 기록(채울 자리): 단계 0 `main` 병합·배포 — · X1·X2·X3·X9 재측정(지난 세션 저장본, 10-31) — · 단계 1·2 배포·`POST /api/paper/init` — ·
+  설정 저장(`settings_version` —, 예약 10·소상한 3·`claude2.checkpoints`·`claude2.enabled`) — · 계좌2 출발 S — · X4·X5 측정(첫 세션 11-02) — · 첫 장중 확인 — .
+- **2026-10-31 사용자 결정("모든 일정을 10월 31일 안에")**: 단계 2를 단계 1과 함께 시작한다 — T8을 ⓑ(단계 1 10세션 운영 점검 뒤)에서 지금으로 앞당김(10세션 점검은
+  켠 채 운영 중에 함). 계좌2 출발 조건(T4)은 X1·X2·X3·X9를 지난 세션 저장본으로 10-31에 다시 재고, X4(개별 종목 감시 지연)·X5(Yahoo 거부 래치 사건)는 첫 세션(11-02)에서 잰다.
+  T9 ⓐ(세션당 최대 1회)는 그대로. 설정 저장 값(예약 `apiScheduledReserve` 10·`claude2.maxCallsPerCycle` 3·`claude2.checkpoints` true·`claude2.enabled` true)은 배포 때
+  한 번 저장하고 그 `settings_version`을 위 기록 칸에 적는다 — 코드 기본값(소상한 2·장중 확인 꺼짐)은 바꾸지 않는다. 대가: 첫 장중 확인 세션 11-02가 서머타임이 끝난
+  첫 거래일이자 계좌2 첫 체결일이라 실험 조건이 한 날에 둘 바뀐다(`docs/decisions.md` '실험 조건을 한 날 한 번만'과 부딪힘 — 사용자 결정으로 받아들임). X4를 재기 전에는
+  감시 지연 등급이 '지연 모름'이고 `13_execution.checkpointOptions.recentLag`는 null이다(5세션 뒤부터). 설정 저장을 빠뜨리면 소상한 2라 아침 결정에 재시도가 있던 날의
+  확인은 `CYCLE_CAP`으로 놓친다.
+- **단계 2 구현(2026-10-31, 배포 전)**: V18(결정 종류 `CHECKPOINT`·시점 `MARKET`·`paper_checkpoints`), 수집기 속도군 `session`(5분)·`paper_watch_us`(감시 1분봉)·`paper_bars_us`의
+  `MARKET` 창, 켠 판의 응답 스키마·고정 문단 `c2-2`·`13_execution` 판 2, 계획 행(아침 결정과 같은 트랜잭션)·요청 검증(`CHECKPOINT_INVALID`), 확인 패킷·응답 스키마,
+  `PaperCheckpointJob`(60초, 자기 잠금, 창 +2~+20분, 세션당 한 번), `MARKET` 체결 사다리·실행 감사 목표 시각, REPLACE 적용(⑩·예상 상태 §10-6), 상태 응답·실행 감사 응답·화면.
+  구현이 명세를 바꾼 곳은 명세 §16-4에 적었다(따로 둔 c2 스키마 파일, `MARKET` 기준 시각의 엄격한 식, KEEP 상태 `NO_TRADE`, 모두 거절돼도 REPLACE는 대신함, 확인 행 재시도 없음 등).
 - **단계 1 구현(2026-10-30, 배포 전)**: 계좌 프로필·입력 동결·검증기 순위(이동 — 바이트 그대로), 시각 지정 체결 2b·1분봉 기다림·대체 체결, 계좌2 정의·`claude2.*` 설정·스키마·고정 문단·
   `13_execution`·결정 작업 몫·앞으로 체결 출발·관측치 사슬, 계좌1 화면 이름 "Claude 계좌1"과 옛 이름 목록, 화면(출발 카드·색 `#a438a0`·시점 이름표·실행 표·'체결 시점 실험'·
   'S = 100 같은 구간'·계좌2 한계 문구). 구현이 명세를 좁힌 곳: E 확정 종가 대체(`QUOTES_CLOSE`)는 그 관측치의 그 종목 봉이 E의 확정 종가(봉 날짜 = E)일 때만이라
