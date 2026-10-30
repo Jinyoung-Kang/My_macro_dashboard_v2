@@ -452,7 +452,7 @@ export function krPriceSourceLabel(source: string | null | undefined): string {
  * 시가만 KRX 시가 단일가이고, 종가에는 20:00까지의 장 마감 뒤 체결이 섞일 수 있습니다(QA-146). 모르는 값은 받은 글자 그대로.
  */
 const KR_CLOSE_SOURCE: Readonly<Record<string, string>> = {
-  TOSS_DAILY: "NXT 미지원 표시 종목 — 20:00까지의 장 마감 뒤 체결이 섞일 수 있음",
+  TOSS_DAILY: "토스가 NXT 미지원으로 표시한 종목 — 20:00까지의 장 마감 뒤 체결이 섞일 수 있음",
   TOSS_INTEGRATED: "KRX+NXT 통합가",
 };
 

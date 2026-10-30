@@ -578,6 +578,8 @@ class KrPacketBuilderTest {
                 }
             }
             assertThat(instruction).as("0_instructions의 가격 줄").isNotNull();
+            assertThat(instruction).as("가격 줄이 토스 잠정 종가인 칸만 가리키고, 평단·최고가는 따로 설명")
+                    .contains("8_prices의 close").contains("9_portfolio의 price").contains("avgCost").contains("highWatermark");
             for (String text : List.of(body.path("1_basis").path("pricesNote").asString(), instruction)) {
                 assertThat(text).as("토스 잠정 종가에 20:00까지의 장 마감 뒤 체결이 섞일 수 있음").contains("20:00");
                 assertThat(text).as("토스 종가를 KRX 종가 단일가라고 하지 않음").doesNotContainPattern("KRX[^()]*종가 단일가");

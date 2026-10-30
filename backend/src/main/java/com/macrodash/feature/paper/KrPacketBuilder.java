@@ -151,7 +151,7 @@ final class KrPacketBuilder {
     private static final double HUNDRED_MILLION = 1e8;
 
     /**
-     * 가격 설명(0_instructions·1_basis) — 8_prices·9_portfolio의 가격은 토스 일봉 종가라, 토스가 NXT 미지원으로 표시한 봉({@code TOSS_DAILY})도
+     * 가격 설명(0_instructions·1_basis) — 8_prices의 close·9_portfolio의 price는 토스 일봉 종가라, 토스가 NXT 미지원으로 표시한 봉({@code TOSS_DAILY})도
      * 20:00까지의 장 마감 뒤 체결이 섞일 수 있습니다(QA-146 — 그 봉도 시가만 KRX 시가 단일가).
      */
     static final String PRICES_NOTE = "토스 잠정 종가 — 금융위 확정 전이고 KRX 정규장 종가와 다를 수 있다(NXT 종목은 KRX+NXT 통합가, 토스가 NXT "
@@ -431,7 +431,9 @@ final class KrPacketBuilder {
                 + "않는다(12_hardRules).");
         lines.add("호가단위: " + KrxCosts.tickTableText() + " — 체결가는 관측된 단일가 그대로라 호가를 맞출 필요는 없다.");
         lines.add(costLine(rates, paper.slippageBp()));
-        lines.add("가격(8_prices·9_portfolio)은 " + PRICES_NOTE + ".");
+        lines.add("가격(8_prices의 close, 9_portfolio의 price와 그 값으로 센 weightPct·unrealizedPct·stopDistancePct)은 " + PRICES_NOTE
+                + ". 9_portfolio의 avgCost는 체결가 평단(확정 뒤에는 금융위 확정가로 옮김), highWatermark·stopPrice는 진입 체결가(확정 뒤에는 "
+                + "금융위 확정가)에서 시작해 금융위 확정 종가로만 오른 최고가와 그 스탑가다.");
         lines.add("수급(외국인·기관 순매수, 주)은 토스 집계(KRX·NXT 통합)이고, 20일·5일 합은 기준 거래일로 끝나는 KRX 거래일 창이다.");
         lines.add("국면(1_basis.regime)은 전날 밤 판정이다.");
         if (initial) {
