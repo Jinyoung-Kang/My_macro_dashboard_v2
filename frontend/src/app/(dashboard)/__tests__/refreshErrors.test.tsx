@@ -61,6 +61,23 @@ async function cardTitled(name: string) {
   return heading.closest("section") as HTMLElement;
 }
 
+/**
+ * 카드 제목을 넣은 커밋 바로 뒤(MutationObserver 마이크로태스크)에 끝납니다. 그 커밋이 마운트한 패널의 첫 요청 effect는
+ * 아직 다음 Scheduler 작업에 남아 있습니다 — cardTitled가 가끔(부하가 높을수록 자주) 깨어나던 순간을 시간에 기대지 않고 만듭니다.
+ */
+function cardCommitted(name: string): Promise<HTMLElement> {
+  return new Promise((resolve) => {
+    const observer = new MutationObserver(() => {
+      const heading = [...document.querySelectorAll("h2")].find((h) => h.textContent === name);
+      if (heading) {
+        observer.disconnect();
+        resolve(heading.closest("section") as HTMLElement);
+      }
+    });
+    observer.observe(document.body, { childList: true, subtree: true });
+  });
+}
+
 beforeEach(() => {
   // 블록으로 둡니다 — 화살표가 목 함수를 돌려주면 vitest가 그것을 정리 함수로 불러 끝나지 않는 요청을 기다립니다.
   api.apiGetShared.mockReset();
@@ -167,4 +184,23 @@ describe("QA-104 자동 갱신하는 나머지 패널도 실패를 표시한다"
       expect(await within(area).findByText(FAILED, {}, { timeout: 500 })).toBeTruthy();
     });
   }
+});
+
+describe("QA-147 패널이 첫 값을 받은 뒤에 새로 읽는다(시험 흔들림)", () => {
+  // 상태 화면은 개요 응답 뒤에야 오류·경고 로그 패널을 마운트하고, 패널의 첫 요청은 그 커밋 다음 Scheduler 작업에서 나갑니다.
+  // 수정 전에는 카드 제목만 보고 새로 읽어, 첫 요청이 새로 읽기 신호 뒤 act 안에서 나가 곧바로 버려지고(abort) 값이 없는
+  // 실패(error, '다시 시도')가 됐다(it.fails). cardTitled로는 부하가 없어도 0.4~1%, 부하가 높으면 더 자주 이 순서였습니다.
+  it.fails("상태 화면 오류·경고 로그: 카드가 막 그려진 직후에 새로 읽어도 '새로 읽지 못함'", async () => {
+    const path = "/api/status/issues";
+    firstThenFail({ "/api/status": { readMode: "auto", collectorReachable: true },
+                    [path]: { counts: { errors: 0, warnings: 0, recentGroups: 0, missingDatasets: 0 },
+                              collectorReachable: true, text: "" } });
+    const committed = cardCommitted("수집 오류·경고 로그");   // 그리기 전에 관찰을 겁니다
+    const { rerender } = render(<StatusPage />);
+    const section = await committed;
+
+    await refreshAll(rerender, () => <StatusPage />, path);
+
+    expect(await within(section).findByText(FAILED, {}, { timeout: 500 })).toBeTruthy();
+  });
 });
