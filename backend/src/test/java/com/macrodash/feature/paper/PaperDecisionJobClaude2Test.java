@@ -10,6 +10,7 @@ import com.macrodash.store.PaperStore.Order;
 import com.macrodash.store.Snapshot;
 import com.macrodash.support.InvalidRequestException;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import tools.jackson.databind.JsonNode;
@@ -76,11 +77,21 @@ class PaperDecisionJobClaude2Test {
     private List<String> calls;
     /** 가짜 계좌2 결정이 돌려줄 결과(없으면 그 거래일 NO_TRADE 행). */
     private ClaudeBookService.Claude2Outcome next;
+    /** 참이면 계좌2 상태 저장(관측치 처리의 끝)이 늘 실패 — 계좌2 장부 오류(그 책만 되돌림). */
+    private boolean claude2StateFails;
 
     @BeforeEach
     @SuppressWarnings("unchecked")
     void setUp() {
-        store = new FakePaperStore();
+        store = new FakePaperStore() {
+            @Override
+            public void upsertState(BookState s) {
+                if (claude2StateFails && PaperBooks.CLAUDE2.equals(s.bookCode())) {
+                    throw new IllegalStateException("디스크 가득 참");
+                }
+                super.upsertState(s);
+            }
+        };
         snapshots = new HashMap<>();
         reader = mock(StoreReader.class);
         when(reader.quietly(any())).thenAnswer(invocation -> ((Supplier<Object>) invocation.getArgument(0)).get());
@@ -152,10 +163,13 @@ class PaperDecisionJobClaude2Test {
 
     /** @param ledgerNow 장부의 지금(1분봉 기다림 상한을 셈) */
     private PaperDecisionJob job(Instant now, Instant ledgerNow) {
-        return new PaperDecisionJob(store, reader, marketData,
-                new PaperLedgerService(store, marketData, MAPPER, Clock.fixed(ledgerNow, ZoneOffset.UTC)),
-                mock(PaperSelectionService.class), rules, claude, PaperFixtures.settings(store), PaperFixtures.config(),
-                MAPPER, Clock.fixed(now, ZoneOffset.UTC));
+        return job(now, new PaperLedgerService(store, marketData, MAPPER, Clock.fixed(ledgerNow, ZoneOffset.UTC)));
+    }
+
+    /** @param ledger 여러 실행이 함께 쓰는 장부(운영처럼 하나 — 오류 기억이 실행 사이에 이어짐) */
+    private PaperDecisionJob job(Instant now, PaperLedgerService ledger) {
+        return new PaperDecisionJob(store, reader, marketData, ledger, mock(PaperSelectionService.class), rules, claude,
+                PaperFixtures.settings(store), PaperFixtures.config(), MAPPER, Clock.fixed(now, ZoneOffset.UTC));
     }
 
     private void observed(Instant collectedAt, LocalDate barDate) {
@@ -323,6 +337,41 @@ class PaperDecisionJobClaude2Test {
         job(MON_RUN.plusSeconds(4200), next.plusSeconds(16 * 60)).run();
         assertThat(calls).filteredOn(c -> c.startsWith("claude2")).containsExactly("claude2 2026-10-26 SCHEDULED");
         assertThat(store.jobRuns).as("풀린 뒤의 결정").hasSize(first + 2);
+    }
+
+    @Test
+    @Disabled("재현 — 고치기 전에는 1분봉 기다림이 풀린 주기에 계좌2 장부가 오류로 되돌려져도 '1분봉 기다림'으로 보고 BARS_WAITING(기록 없음)으로 끝남")
+    @DisplayName("1분봉 기다림이 풀린 주기에 계좌2 장부가 오류로 되돌려지면 그 주기는 기록함 — 장부 오류(ledger.errors)와 '오류로 보류'(1분봉 기다림이 아님), 같은 관측치로 보류만 이어 가는 다음 주기는 기록 없음")
+    void ledgerErrorAfterTheBarsWaitIsRecorded() {
+        enabled(true);
+        claude2(FRI, PaperBooks.ACTIVE);
+        book1AndRulesDecided();
+        dueTimedOrder();
+        Instant observedAt = Instant.parse("2026-10-26T22:50:00Z");
+        observed(observedAt, MON);
+        UsTimedFillsTest.MovableClock ledgerClock = new UsTimedFillsTest.MovableClock(observedAt.plusSeconds(60));
+        PaperLedgerService ledger = new PaperLedgerService(store, marketData, MAPPER, ledgerClock);
+
+        job(MON_RUN, ledger).run();
+        int first = store.jobRuns.size();
+        assertThat(lastRun().path(PaperBooks.CLAUDE2).path("waiting").asString()).contains("1분봉 기다림");
+
+        claude2StateFails = true;
+        ledgerClock.at = observedAt.plusSeconds(16 * 60);   // 기다림 상한이 지나 풀림 → 계좌2 처리가 오류로 되돌려짐
+        PaperDecisionJob.Result failed = job(MON_RUN.plusSeconds(600), ledger).run();
+
+        assertThat(failed.outcome()).isEqualTo(PaperDecisionJob.DECIDED);
+        assertThat(store.jobRuns).as("장부 오류가 든 주기").hasSize(first + 1);
+        assertThat(lastRun().path("ledger").path("errors").toString()).contains(PaperBooks.CLAUDE2).contains("디스크 가득 참");
+        assertThat(lastRun().path(PaperBooks.CLAUDE2).path("waiting").asString()).contains("오류")
+                .doesNotContain("1분봉 기다림");
+        assertThat(calls).filteredOn(c -> c.startsWith("claude2")).isEmpty();
+
+        ledgerClock.at = observedAt.plusSeconds(17 * 60);
+        PaperDecisionJob.Result held = job(MON_RUN.plusSeconds(1200), ledger).run();
+        assertThat(store.jobRuns).as("같은 관측치로 보류만 이어 간 주기").hasSize(first + 1);
+        assertThat(held.outcome()).isEqualTo(PaperDecisionJob.BARS_WAITING);
+        assertThat(calls).filteredOn(c -> c.startsWith("claude2")).isEmpty();
     }
 
     @Test
