@@ -812,6 +812,39 @@ class UsTimedFillsTest {
                     .as("T 뒤 첫 관측치가 T 창을 볼 수 없었던 경우의 다음 관측치 — 늦게 풂이 아님").isFalse();
         }
 
+        /**
+         * 늦게 풂 고정 문턱(T + 71분)의 알려진 한계(리뷰 F5 잔여 — 명세 §10-4, ADR 0022): T 뒤 첫 관측치 W1이 T 창을 볼 수 있는 시각(T + 6분 뒤)인데 그 회차
+         * 1분봉이 실패하면(저장본이 T 전 것) 다음 관측치 W2에서 푼 체결의 늦음 판정이 W1의 분 위치로 갈림 — 회차 간격(60~65분)이 흔들려 고정 문턱으로는
+         * 가를 수 없습니다.
+         */
+        private Boolean resolvedAfterAFailedRound(int w1Minute) {
+            long id = buy("AAA", 10, "AT_1000");
+            bars(new Bars(et(TUE, 9, 59)).bar("SPY", TUE, et(TUE, 9, 58), 580.0, 9000.0));
+            clock.at = et(TUE, 10, w1Minute).plus(Duration.ofMinutes(16));   // 1분봉 기다림 상한 뒤 — 그 회차 1분봉 없이 처리
+            ledger.process(quotes(et(TUE, 10, w1Minute), bar("AAA", MON, 96.0, TUE, 97.5)));
+            assertThat(order(id).status()).as("W1의 1분봉 저장본이 T 전 것 — 아직 모름(W < T + 65분이라 R3도 아님)").isEqualTo("PENDING");
+
+            bars(new Bars(et(TUE, 11, w1Minute + 1)).bar("AAA", TUE, et(TUE, 10, 0), 97.0, 500.0)
+                    .bar("AAA", TUE, et(TUE, 10, 1), 97.2, 500.0).bar("SPY", TUE, et(TUE, 11, w1Minute), 580.0, 9000.0));
+            observe(et(TUE, 11, w1Minute), bar("AAA", MON, 96.0, TUE, 98.0));
+
+            assertThat(barOf(id).fillRung()).isEqualTo("Y1M_AT");
+            assertThat(fillOf(id).observedAt()).as("장부 반영 = W2").isEqualTo(et(TUE, 11, w1Minute));
+            return ExecutionAudit.lateResolved(order(id), barOf(id), US);
+        }
+
+        @Test
+        @DisplayName("알려진 한계 — W1(10:08 = T + 8분)이 T 창을 볼 수 있었는데 그 회차 1분봉이 실패해 W2(11:08 = T + 68분)에 R1로 풀면 문턱 T + 71분 안이라 늦게 풂이 아님(정의상은 늦음)")
+        void failedRoundResolvedWithinTheThresholdIsNotCountedLate() {
+            assertThat(resolvedAfterAFailedRound(8)).isFalse();
+        }
+
+        @Test
+        @DisplayName("같은 원인이라도 W1이 10:12(T + 12분)면 W2 11:12(T + 72분)라 늦게 풂 — 고정 문턱으로 갈리는 곳(W1 T + 11분 ↔ 12분)")
+        void failedRoundResolvedBeyondTheThresholdIsLate() {
+            assertThat(resolvedAfterAFailedRound(12)).isTrue();
+        }
+
         @Test
         @DisplayName("미룬 스탑은 다음 W의 관측가로 다시 판정 — 미룬 W(10:02)의 트리거(90 ≤ 스탑 92)는 이어 가지 않아, 다음 W(11:02)에 스탑 위로 돌아온 종목(95)은 스탑·재진입 금지 없음, 아직 아래인 종목(89)은 미룬 W 가격(90)이 아니라 다음 W 가격에 팖")
         void deferredStopIsJudgedAgainAtTheNextObservation() {

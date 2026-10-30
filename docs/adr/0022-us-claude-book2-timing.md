@@ -48,6 +48,8 @@
        `deferredStopIsJudgedAgainAtTheNextObservation`(미룬 W의 트리거는 이어 가지 않고 다음 W 관측가로 다시 판정 — 돌아오면 스탑 없음, 아니면 다음 W 가격),
        늦게 풂(M4) 문턱 T + 71분(= T + 6분 + 65분 — 리뷰 F5) `ExecutionAuditTest.lateResolvedComesFromTheFill`·`lateResolvedLeavesTheNextObservationAfterTheWindow`·
        `UsTimedFillsTest.resolvedAtTheNextObservationIsNotLate`(T 창을 보지 못한 첫 관측치의 다음 관측치에서 푼 체결은 늦음이 아님 — 그 첫 관측치가 T + 5분 앞이든 뒤든),
+       고정 문턱의 알려진 한계 경계 `failedRoundResolvedWithinTheThresholdIsNotCountedLate`(W1 T + 8분의 1분봉 실패 → W2 T + 68분은 늦음 아님)·
+       `failedRoundResolvedBeyondTheThresholdIsLate`(W1 T + 12분 → W2 T + 72분은 늦음),
        `expiryComesAfterTimedFills`(E 하루 만료가 2b 뒤)·`hourlyPathNeverFillsTimedOrders`(`fillable` 제외 회귀)·`pollingInvariance`·`neverFillsWithABarBeforeTheTargetOrCreation`(룩어헤드 성질)·
        `dstEndWeek`·`dstStartWeek`·`holidayAndEarlyClose`, 서버가 꺼졌던 경우 `backBeforeTheNextOpen`·`backDuringTheNextSession`·`beyondTheBarsHorizon`; 실제 표
        `PaperStoreDbTest.timedExpiryAndFillBar`·`PaperLedgerDbTest.timedFillsOnRealTables`(시험 행은 시작·끝에 지움 — V14 다시 실행). 검증기·스키마
@@ -221,6 +223,9 @@
 - **늦게 푼 주문의 현금 순서(알려진 한계)**: 한 처리 회차에 풀린 시각 지정 주문만 T 순으로 적용하므로, 앞 T 주문이 다음 회차에 늦게 풀리면 그 사이 적용된 더 늦은 T 매도 대금을
   쓸 수 있습니다(가격은 T 봉 그대로, 현금 순서만). 뒤 주문까지 기다리게 하면 정지 종목 하나가 그날 나머지 체결을 마감까지 막아 그대로 둡니다(명세 §17).
   같은 처리 회차 안에서는 R2b 봉 시각·R3 관측치 수집 시각으로 순서를 맞춰, 매수 봉보다 뒤 시각에 R2b·R3로 판 매도 대금을 그 매수에 쓰지 않습니다(명세 §10-3 — 리뷰 F4 ⓐ·R3).
+- **늦게 풂 문턱(알려진 한계)**: M4 `late_resolved`는 고정 문턱(장부 반영 > T + 71분)이라 'T 창을 볼 수 있었던 첫 처리 회차보다 늦게'의 근사입니다 — 첫 관측치가
+  T + 6~11분이고 그 회차 1분봉이 실패해 다음 관측치(T + 66~71분)에서 푼 체결은 늦음으로 세지 않습니다(T + 12분 뒤면 셈). 서버 창에서는 시각 지정 시점의 첫 관측치가
+  이 구간에 오지 않아 수동 기동한 날에만 생기고 장부·현금은 그대로입니다. 수집기 실행 기록으로 정확히 가르는 판은 단계 1 범위 밖으로 둡니다(명세 §10-4).
 - **결정 작업 잠금 공유(알려진 한계·운영 규칙)**: 계좌2 결정은 결정 작업의 미국 차례 안에서 같은 잠금(`running`)을 쥐고 부르므로(출발은 재시도까지 최대 약 600초),
   그 주기의 한국 차례가 늦거나 계좌2 수동 실행 동안 한국 정기 실행이 `BUSY`로 한 주기를 건너뛸 수 있습니다. 겨울(EST)에는 계좌2 컷오프가 23:00 KST라 한국 결정 창(22:30~)과
   겹칠 수 있어, **겨울에는 22:20~23:00 KST에 `claude2.enabled`를 켜거나 '계좌2 시작'을 누르지 않습니다**(명세 §17-11 — 영향은 한국 결정이 창 안에서 몇 분 늦는 것뿐).
