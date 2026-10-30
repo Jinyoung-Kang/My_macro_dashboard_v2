@@ -10,6 +10,7 @@ import com.macrodash.store.PaperStore.Order;
 import com.macrodash.store.Snapshot;
 import com.macrodash.support.InvalidRequestException;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import tools.jackson.databind.JsonNode;
@@ -612,6 +613,57 @@ class PaperDecisionJobClaude2Test {
         assertThat(chainReady(query)).as("지금 관측치의 고리").isEqualTo(true);
         when(marketData.quotes(market(US))).thenReturn(Optional.empty());
         assertThat(chainReady(query)).as("관측치 저장본 없음").isEqualTo(false);
+    }
+
+    @Test
+    @DisplayName("출발의 관측치 사슬 기다림을 같은 관측치로 이어 가기만 한 주기는 기록하지 않음(BARS_WAITING) — 첫 기다림만, 그 관측치의 고리가 생긴 주기에 출발하고 기록")
+    void repeatedChainWaitIsRecordedOnce() {
+        enabled(true);
+        book1AndRulesDecided();
+
+        job(MON_RUN).run();
+        int first = store.jobRuns.size();
+        assertThat(lastRun().path(PaperBooks.CLAUDE2).path("waiting").asString()).contains("관측치 사슬 준비 중");
+
+        PaperDecisionJob.Result again = job(MON_RUN.plusSeconds(600)).run();
+        job(MON_RUN.plusSeconds(1200)).run();
+        assertThat(again.outcome()).isEqualTo(PaperDecisionJob.BARS_WAITING);
+        assertThat(store.jobRuns).as("같은 관측치로 사슬을 다시 기다리기만 한 주기").hasSize(first);
+        assertThat(calls).filteredOn(c -> c.startsWith("claude2")).isEmpty();
+
+        chainLink(MON_OBSERVED);
+        job(MON_RUN.plusSeconds(1800)).run();
+        assertThat(calls).filteredOn(c -> c.startsWith("claude2")).containsExactly("claude2 2026-10-26 INITIAL");
+        assertThat(store.jobRuns.stream().filter(r -> !r.job().equals(PaperExecutionAuditJob.JOB)))
+                .as("고리가 생긴 주기의 출발").hasSize(first + 1);
+        assertThat(lastDecisionRun().path(PaperBooks.CLAUDE2).path(PaperDecisionJob.CLAUDE2_START_TRIED).asBoolean()).isTrue();
+    }
+
+    @Test
+    @Disabled("리뷰 invariance 재현 — 관측치 저장본이 없으면 claude2WaitRecorded가 늘 거짓이라 같은 사슬 기다림이 결정 주기마다 DECIDED로 기록됨. 수정 커밋에서 뗌")
+    @DisplayName("관측치 저장본이 없는 채 기한(12:00 KST) 뒤 — 켜진 시작 전 계좌2의 '관측치 사슬 준비 중'은 첫 주기만 기록하고 같은 기다림을 이어 간 주기는 BARS_WAITING(기록 없음), 개장 전 컷오프에 출발을 한 번 해 보고(startTried) 그 창을 끝냄")
+    void chainWaitWithoutQuotesIsRecordedOnce() {
+        enabled(true);
+        book1AndRulesDecided();
+        when(marketData.quotes(market(US))).thenReturn(Optional.empty());
+        Instant afterDeadline = Instant.parse("2026-10-27T03:10:00Z");   // 12:10 KST — 기한 12:00 뒤, 개장 전 컷오프(13:00Z) 전
+
+        List<String> outcomes = new ArrayList<>();
+        for (int i = 0; i < 4; i++) {
+            outcomes.add(job(afterDeadline.plusSeconds(600L * i)).run().outcome());
+        }
+
+        assertThat(outcomes).containsExactly(PaperDecisionJob.DECIDED, PaperDecisionJob.BARS_WAITING,
+                PaperDecisionJob.BARS_WAITING, PaperDecisionJob.BARS_WAITING);
+        assertThat(store.jobRuns).as("첫 기다림만 — 지금은 10분마다 한 줄씩 늘어 작업 기록 200건 창을 밀어냄").hasSize(1);
+        assertThat(lastRun().has("quotes")).as("관측치 저장본 없음").isFalse();
+        assertThat(lastRun().path(PaperBooks.CLAUDE2).path("waiting").asString()).contains("관측치 사슬 준비 중");
+        assertThat(calls).filteredOn(c -> c.startsWith("claude2")).isEmpty();
+
+        job(Instant.parse("2026-10-27T13:00:00Z")).run();   // 개장 전 컷오프 — 기다림과 상관없이 불러 그 창을 끝냄
+        assertThat(calls).filteredOn(c -> c.startsWith("claude2")).containsExactly("claude2 2026-10-26 INITIAL");
+        assertThat(store.jobRuns).hasSize(2);
+        assertThat(lastRun().path(PaperBooks.CLAUDE2).path(PaperDecisionJob.CLAUDE2_START_TRIED).asBoolean()).isTrue();
     }
 
     @SuppressWarnings("unchecked")
