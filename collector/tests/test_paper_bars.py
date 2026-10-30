@@ -13,7 +13,8 @@ tests/test_paper_bars.py
   5. 기동 뒤 처음 받을 때까지 period "5d", 받은 뒤 "1d". 일봉 시가(X2)는 확정된 세션마다 배치 한 번.
   6. 받지 못한 종목은 직전 값을 isStale로 잇고, 하나도 못 받으면 EmptyResult로 저장본을 둔다. 세션은 종목마다 최근 3개.
   7. 이 저장본을 읽는 백엔드 코드는 실행 감사 작업(PaperExecutionAuditJob, 단계 0-4)과 장부의 시각 지정 체결(PaperMarketData.barsUs → UsTimedFills,
-     단계 1-4 — 시각 지정 주문이 있는 계좌만)뿐이고 화면·패킷은 읽지 않는다.
+     단계 1-4 — 시각 지정 주문이 있는 계좌만), 상태 응답의 계좌2 묶음(PaperQueryService — claude2.bars, 표시용, 같은 barsUs 경유)뿐이고
+     화면·패킷은 읽지 않는다.
 
 외부 네트워크를 쓰지 않습니다 — 1분봉 표는 yfinance 1.7.0 yf.download(group_by="ticker")의 모양(종목 × Open·High·Low·Close·Adj Close·Volume,
 종목들의 분을 합친 인덱스 — 봉이 없던 분은 NaN 줄)을 합성해 만듭니다. 태스크·범위 시험은 PostgreSQL이 필요합니다.
@@ -117,9 +118,11 @@ def test_범위_계좌_코드는_백엔드_PaperBooks와_같다():
     assert store_module.TIMED_RECENT_DAYS == 8
 
 
-def test_1분봉_저장본을_읽는_백엔드_코드는_실행_감사_작업과_장부의_시각_지정_체결뿐이고_화면은_읽지_않는다():
+def test_1분봉_저장본을_읽는_백엔드_코드는_실행_감사_작업_장부의_시각_지정_체결_상태_응답뿐이고_화면은_읽지_않는다():
     """읽는 곳은 실행 감사 작업(0-4, 반사실·지연을 paper_order_exec에)과 장부의 시각 지정 체결(1-4 — PaperMarketData.barsUs가 조용히 읽고
-    UsTimedFills가 2b·1분봉 기다림에 씀, 시각 지정 주문이 있는 계좌만)뿐이고 계좌1의 결정·패킷은 그대로. 화면은 읽지 않습니다."""
+    UsTimedFills가 2b·1분봉 기다림에 씀, 시각 지정 주문이 있는 계좌만), 상태 응답의 계좌2 묶음(PaperQueryService.barsView — claude2.bars, 정규장일 때
+    받은 시각·지연을 보이기만, 같은 barsUs 경유)뿐이고 계좌1의 결정·패킷은 그대로. 화면은 읽지 않습니다.
+    데이터셋 이름을 쓰는 파일과 함께 PaperMarketData.barsUs()를 부르는 파일도 셉니다 — 이름을 쓰지 않고 그 메서드를 거치는 새 독자도 잡도록."""
     readers = []
     for folder in (ROOT / "backend/src/main/java", ROOT / "frontend/src"):
         if not folder.exists():
@@ -133,6 +136,11 @@ def test_1분봉_저장본을_읽는_백엔드_코드는_실행_감사_작업과
                                "backend/src/main/java/com/macrodash/feature/paper/PaperMarketData.java",
                                "backend/src/main/java/com/macrodash/feature/paper/UsTimedFills.java",
                                "backend/src/main/java/com/macrodash/store/Datasets.java"]
+    callers = sorted(path.relative_to(ROOT).as_posix() for path in (ROOT / "backend/src/main/java").rglob("*.java")
+                     if ".barsUs()" in path.read_text(encoding="utf-8"))
+    assert callers == ["backend/src/main/java/com/macrodash/feature/paper/PaperLedgerService.java",
+                       "backend/src/main/java/com/macrodash/feature/paper/PaperQueryService.java"], \
+        "PaperMarketData.barsUs()를 부르는 곳 = 장부(시각 지정 체결)와 상태 응답(claude2.bars)"
 
 
 # ==============================================================================
