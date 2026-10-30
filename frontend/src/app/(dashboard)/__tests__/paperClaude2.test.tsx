@@ -188,6 +188,17 @@ describe("개요 — 체결 시점 실험·S = 100·한계", () => {
     expect(api.apiGetShared).toHaveBeenCalledWith("/api/paper/books/claude/execution?limit=1", 0);
   });
 
+  // 수정 전에는 카드 설명이 '대체 체결·계좌1식 기준이 없는 주문은 빼고 셉니다'라고 적었지만, 서버 요약(ExecutionView.summary)은 계좌1식 기준이
+  // 없거나 그 시점 반사실이 없는 주문만 빼고 대체 체결은 따로 빼지 않는다(it.fails).
+  it.fails("카드 설명은 서버 요약이 빼는 것만 적는다 — 계좌1식 기준이 없거나 그 시점 반사실이 없는 주문, 대체 체결은 따로 빼지 않음", async () => {
+    reads["/api/paper/overview"] = () => Promise.resolve(overview(CLAUDE2_NOT_STARTED));
+    render(<PaperPage />);
+
+    const notes = await screen.findByRole("list", { name: "체결 시점 실험 설명" });
+    expect(notes.textContent).toContain("계좌1식 기준이 없거나 그 시점 반사실이 없는 주문은 빼고 셉니다(뺀 수를 함께 적음");
+    expect(notes.textContent).not.toContain("대체 체결·계좌1식 기준이 없는 주문은 빼고");
+  });
+
   it("계좌2가 출발 전이면 S = 100 보기를 그리지 않는다고, 한계 문구 아래 계좌2의 한계", async () => {
     reads["/api/paper/overview"] = () => Promise.resolve(overview(CLAUDE2_NOT_STARTED, {
       navSeries: { dates: ["2026-10-30"], books: { rules: [1], claude: [2], claude2: [null], bench_spy: [3], bench_mix: [4] } },
