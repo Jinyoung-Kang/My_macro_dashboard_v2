@@ -116,6 +116,12 @@
       "cap" : 2
     },
     "bars" : null,
-    "chainReady" : false
+    "chainReady" : false,
+    "checkpoint" : {
+      "enabled" : false,
+      "session" : "2026-10-27",
+      "today" : null,
+      "watch" : null
+    }
   }
 }

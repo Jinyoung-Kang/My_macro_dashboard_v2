@@ -11,7 +11,8 @@ tests/test_paper_watch.py
   3. 종목마다 완성된 봉(시작 + 60초 ≤ 받은 시각)만 최근 30개, 그 세션의 시가·고가·저가와 마지막 봉. 진행 중인 봉은 싣지 않는다.
   4. lagSeconds는 이번 회차 SPY의 그날 정규장 안에서만(지난 세션 봉뿐이면 null — 0으로 채우지 않음), declaredDelayMin은 늘 null.
   5. 받지 못한 종목은 같은 확인의 직전 저장본에서 isStale로 잇고(다른 확인의 것은 잇지 않음), 하나도 못 받으면 EmptyResult로 저장본을 둔다.
-  6. 이 저장본을 읽는 백엔드 코드는 아직 Datasets.java의 이름뿐이다(장중 확인 패킷·작업은 B1-3·B1-4) — 화면은 읽지 않는다.
+  6. 이 저장본을 읽는 백엔드 코드는 장중 확인 작업·패킷(판단 입력)과 상태 응답의 계좌2 장중 확인 묶음(PaperQueryService — 받은 시각·지연 표시만,
+     같은 watchUs 경유)뿐이다 — 화면은 읽지 않는다.
 
 외부 네트워크를 쓰지 않습니다 — 1분봉은 market.minute_bars를 바꿔 끼웁니다. 범위·태스크 시험은 PostgreSQL이 필요합니다.
 """
@@ -83,10 +84,11 @@ def test_감시_피드와_계좌_코드는_V18·백엔드와_같은_글자():
     assert paper_watch.store.WATCH_BOOKS == {"US": claude2}
 
 
-def test_감시_저장본을_읽는_백엔드_코드는_장중_확인_작업과_패킷뿐이고_화면은_읽지_않는다():
+def test_감시_저장본을_읽는_백엔드_코드는_장중_확인_작업과_패킷과_상태_표시뿐이고_화면은_읽지_않는다():
     """읽는 곳은 PaperMarketData.watchUs(조용히 읽음)를 부르는 장중 확인 작업(PaperCheckpointJob — 호출 조건·지연)과 장중 확인 패킷
-    (CheckpointPacket — MINUTE 피드)뿐입니다(판단 입력). 체결(장부)은 paper.bars.us 한 출처이고 이 저장본을 읽지 않습니다. 이름을 쓰지 않고
-    PaperMarketData.watchUs()를 거치는 새 독자도 잡도록 부르는 파일도 셉니다."""
+    (CheckpointPacket — MINUTE 피드)(판단 입력), 상태 응답의 계좌2 장중 확인 묶음(PaperQueryService — 받은 시각·나이·지연 표시만)뿐입니다.
+    체결(장부)은 paper.bars.us 한 출처이고 이 저장본을 읽지 않습니다. 이름을 쓰지 않고 PaperMarketData.watchUs()를 거치는 새 독자도 잡도록
+    부르는 파일도 셉니다."""
     readers = []
     for folder in (ROOT / "backend/src/main/java", ROOT / "frontend/src"):
         if not folder.exists():
@@ -102,8 +104,9 @@ def test_감시_저장본을_읽는_백엔드_코드는_장중_확인_작업과_
                                "backend/src/main/java/com/macrodash/store/Datasets.java"]
     callers = sorted(path.relative_to(ROOT).as_posix() for path in (ROOT / "backend/src/main/java").rglob("*.java")
                      if ".watchUs()" in path.read_text(encoding="utf-8"))
-    assert callers == ["backend/src/main/java/com/macrodash/feature/paper/PaperCheckpointJob.java"], \
-        "PaperMarketData.watchUs()를 부르는 곳 = 장중 확인 작업뿐"
+    assert callers == ["backend/src/main/java/com/macrodash/feature/paper/PaperCheckpointJob.java",
+                       "backend/src/main/java/com/macrodash/feature/paper/PaperQueryService.java"], \
+        "PaperMarketData.watchUs()를 부르는 곳 = 장중 확인 작업과 상태 응답(표시)뿐"
     java = (ROOT / "backend/src/main/java/com/macrodash/store/Datasets.java").read_text(encoding="utf-8")
     assert re.search(r"MAX_AGE_WATCH_US = 10 \* 60L;", java), "session 주기(300초) + 여유"
 

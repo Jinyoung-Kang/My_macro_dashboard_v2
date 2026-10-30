@@ -5,6 +5,8 @@ import com.macrodash.analytics.ExecutionTiming;
 import com.macrodash.analytics.TradingCalendar;
 import com.macrodash.store.PaperStore;
 import com.macrodash.store.PaperStore.Book;
+import com.macrodash.store.PaperStore.Checkpoint;
+import com.macrodash.store.PaperStore.Decision;
 import com.macrodash.store.PaperStore.ExecFill;
 import com.macrodash.store.PaperStore.Fill;
 import com.macrodash.store.PaperStore.Order;
@@ -39,8 +41,20 @@ import java.util.Map;
  * 대신 체결 원가격(슬리피지 전)을 넣고 같은 {@link ExecutionTiming#summarize}(문턱·부트스트랩 반복·씨앗 같음)로 셉니다. 체결된 주문만 세고, 대체 체결
  * (사다리 칸 {@link UsTimedFills#FALLBACK_RUNGS})은 본 줄에서 빼 {@code fallback}에 따로 셉니다(§14-3 'N ≥ 30(대체 체결 제외)'). 계좌1(시각 지정 체결이
  * 아닌 계좌)은 고른 시점이 곧 계좌1식 기준이라 null입니다. 판정 문턱(§14-3)은 코드에 두지 않습니다 — 8주 뒤 사람이 문서의 문턱으로 읽습니다.
+ *
+ * <p><b>장중 확인 기록</b>(단계 2 — §5-2·§14-2 M8): {@code checkpoints}는 계좌2의 장중 확인 행({@code paper_checkpoints}) 최근
+ * {@value #CHECKPOINT_ROWS}개(세션 최근 순 — 상태·사유·피드·지연·확인 결정과 그 응답의 KEEP/REPLACE), 계좌1은 빈 목록. {@code summary.checkpoints}는
+ * M8(서술 — 판정 없음): 끝난 행 수·부름·놓침·건너뜀, 요청 피드 분포, 부른 확인의 REPLACE 수와 비율(분모 &lt; {@value #CHECKPOINT_MIN_ROWS}이면 비율
+ * null — 수는 그대로). 계좌1은 null. 대신한 주문의 TV 대 취소된 원래 주문의 반사실은 아직 세지 않습니다.
  */
 final class ExecutionView {
+
+    /** 장중 확인 기록에 싣는 최근 행 수. */
+    static final int CHECKPOINT_ROWS = 20;
+    /** M8 비율을 내는 최소 분모 — 이보다 적으면 비율 null(수는 그대로). */
+    static final int CHECKPOINT_MIN_ROWS = 5;
+    /** M8을 셀 때 읽는 행 상한(세션마다 하나 — 8주 실험이면 약 40행). */
+    static final int CHECKPOINT_SUMMARY_ROWS = 500;
 
     private ExecutionView() {
     }
@@ -80,8 +94,111 @@ final class ExecutionView {
         out.put("timings", ExecutionAudit.TIMINGS);
         out.put("limit", limit);
         out.put("orders", rows);
-        out.put("summary", summary(book, audited, orders, fills));
+        boolean checkpointed = PaperBooks.CLAUDE2.equals(book.code());
+        List<Checkpoint> checkpoints = checkpointed ? store.recentCheckpoints(book.code(), CHECKPOINT_SUMMARY_ROWS) : List.of();
+        Map<Long, Decision> answers = new HashMap<>();
+        for (Checkpoint c : checkpoints) {
+            if (c.checkpointDecisionId() != null) {
+                store.decision(c.checkpointDecisionId()).ifPresent(d -> answers.put(d.id(), d));
+            }
+        }
+        List<Map<String, Object>> checkpointRows = new ArrayList<>();
+        for (Checkpoint c : checkpoints.subList(0, Math.min(CHECKPOINT_ROWS, checkpoints.size()))) {
+            checkpointRows.add(checkpointRow(c, answers.get(c.checkpointDecisionId()), calendar));
+        }
+        out.put("checkpoints", checkpointRows);
+        Map<String, Object> summary = summary(book, audited, orders, fills);
+        summary.put("checkpoints", checkpointed ? checkpointSummary(checkpoints, answers) : null);
+        out.put("summary", summary);
         return out;
+    }
+
+    /** 장중 확인 행 하나(클래스 설명) — 확인 결정이 없거나 응답에 action이 없으면(실패) 그 칸은 null. */
+    private static Map<String, Object> checkpointRow(Checkpoint c, Decision answer, TradingCalendar calendar) {
+        Map<String, Object> row = new LinkedHashMap<>();
+        row.put("session", text(c.sessionDate()));
+        row.put("atEt", CheckpointPacket.clock(c.atEt()));
+        row.put("atKst", stamp(c.sessionDate().atTime(c.atEt()).atZone(calendar.zone()).toInstant()));
+        row.put("feed", c.feed());
+        row.put("watch", c.watch());
+        row.put("question", c.question());
+        row.put("status", c.status());
+        row.put("reason", c.reason());
+        row.put("sourceDecisionId", c.sourceDecisionId());
+        row.put("decisionId", c.checkpointDecisionId());
+        row.put("decisionStatus", answer == null ? null : answer.status());
+        row.put("action", action(answer));
+        JsonNode superseded = answer == null || answer.response() == null ? null : answer.response().get("supersededOrders");
+        row.put("supersededOrders", superseded != null && superseded.isArray() ? superseded.size() : null);
+        row.put("lagSeconds", c.lagSeconds());
+        row.put("calledAtKst", stamp(c.calledAt()));
+        return row;
+    }
+
+    /** M8(클래스 설명) — 서술 지표, 판정 없음. */
+    private static Map<String, Object> checkpointSummary(List<Checkpoint> checkpoints, Map<Long, Decision> answers) {
+        int planned = 0;
+        int called = 0;
+        int expired = 0;
+        int skipped = 0;
+        int minute = 0;
+        int hourly = 0;
+        int replace = 0;
+        int keep = 0;
+        for (Checkpoint c : checkpoints) {
+            switch (c.status()) {
+                case PaperBooks.CHECKPOINT_PLANNED -> planned++;
+                case PaperBooks.CHECKPOINT_DONE -> called++;
+                case PaperBooks.CHECKPOINT_EXPIRED -> expired++;
+                case PaperBooks.CHECKPOINT_SKIPPED -> skipped++;
+                default -> { }
+            }
+            if (ExecutionSection.FEED_MINUTE.equals(c.feed())) {
+                minute++;
+            } else if (ExecutionSection.FEED_HOURLY.equals(c.feed())) {
+                hourly++;
+            }
+            String action = PaperBooks.CHECKPOINT_DONE.equals(c.status())
+                    ? action(answers.get(c.checkpointDecisionId())) : null;
+            if ("REPLACE".equals(action)) {
+                replace++;
+            } else if ("KEEP".equals(action)) {
+                keep++;
+            }
+        }
+        int finished = called + expired + skipped;
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("definition", "M8(서술 — 판정 없음): 끝난 행 = 부름 + 놓침 + 건너뜀, 이용률 = 부름 ÷ 끝난 행, 피드 분포 = 요청한 피드(계획 행 전부), "
+                + "REPLACE 비율 = REPLACE ÷ (KEEP + REPLACE)(형식 오류·API 오류는 빼고). 분모 < " + CHECKPOINT_MIN_ROWS + "이면 비율 null");
+        out.put("minRows", CHECKPOINT_MIN_ROWS);
+        out.put("rows", checkpoints.size());
+        out.put("planned", planned);
+        out.put("finished", finished);
+        out.put("called", called);
+        out.put("expired", expired);
+        out.put("skipped", skipped);
+        out.put("calledPct", pct(called, finished));
+        out.put("feedMinute", minute);
+        out.put("feedHourly", hourly);
+        out.put("minutePct", pct(minute, minute + hourly));
+        out.put("keep", keep);
+        out.put("replace", replace);
+        out.put("replacePct", pct(replace, keep + replace));
+        return out;
+    }
+
+    /** 비율(%) — 분모가 {@link #CHECKPOINT_MIN_ROWS}보다 적으면 null(0으로 채우지 않음). */
+    private static Double pct(int part, int whole) {
+        return whole < CHECKPOINT_MIN_ROWS ? null : PaperQueryService.round2(100.0 * part / whole);
+    }
+
+    /** 확인 결정 응답의 KEEP·REPLACE(결정이 없거나 실패 응답이면 null). */
+    private static String action(Decision answer) {
+        if (answer == null || answer.response() == null) {
+            return null;
+        }
+        String action = Json.asText(answer.response(), "action");
+        return "KEEP".equals(action) || "REPLACE".equals(action) ? action : null;
     }
 
     private static Map<String, Object> row(OrderExec exec, Order order, ExecFill fill, TradingCalendar calendar) {

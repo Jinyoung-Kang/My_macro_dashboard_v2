@@ -383,4 +383,95 @@ class PaperExecutionViewTest {
         assertThat(enough.path("lowBp").isNumber()).isTrue();
         assertThat(enough.path("highBp").isNumber()).isTrue();
     }
+
+    /**
+     * 계좌2 장중 확인 행 하나 — 세션 E의 아침 결정(d = E 전 거래일)을 넣고 PLANNED로 계획한 뒤, {@code status}가 PLANNED가 아니면 그 상태로 바꿉니다.
+     * DONE이면 확인 결정(kind CHECKPOINT — 응답 action·대신한 주문 둘, action null이면 API 오류 행)을 함께 넣습니다.
+     */
+    private void checkpoint(LocalDate session, String feed, String status, String action) {
+        LocalDate asOf = UsPaperMarket.INSTANCE.calendar().previousTradingDay(session);
+        long source = store.insertDecisionIfAbsent(new com.macrodash.store.PaperStore.Decision(0, PaperBooks.CLAUDE2, asOf,
+                RuleBookService.SCHEDULED, null, "OK", "claude-sonnet-5-5", 0, 1, null, null, null, null, null,
+                MAPPER.createObjectNode(), null, null, null, true, 5L, 0)).orElseThrow();
+        store.upsertPlannedCheckpoint(new com.macrodash.store.PaperStore.Checkpoint(PaperBooks.CLAUDE2, session,
+                java.time.LocalTime.of(10, 30), feed, List.of("AAPL", "MSFT"), "AAPL 갭 유지?", source, null,
+                PaperBooks.CHECKPOINT_PLANNED, null, null, null, null, null));
+        if (PaperBooks.CHECKPOINT_PLANNED.equals(status)) {
+            return;
+        }
+        Long answer = null;
+        if (PaperBooks.CHECKPOINT_DONE.equals(status)) {
+            ObjectNode response = MAPPER.createObjectNode();
+            if (action != null) {
+                response.put("action", action);
+                response.set("supersededOrders", MAPPER.createArrayNode().add(7).add(8));
+            }
+            answer = store.insertDecisionIfAbsent(new com.macrodash.store.PaperStore.Decision(0, PaperBooks.CLAUDE2, asOf,
+                    RuleBookService.CHECKPOINT, null, action == null ? "API_ERROR" : "NO_TRADE", "claude-sonnet-5-5", 0, 1,
+                    null, null, null, null, null, response, null, null, null, false, 5L, 0)).orElseThrow();
+        }
+        store.markCheckpoint(PaperBooks.CLAUDE2, session, PaperBooks.CHECKPOINT_PLANNED, status,
+                PaperBooks.CHECKPOINT_DONE.equals(status) ? null : status + " — 시험", answer,
+                PaperBooks.CHECKPOINT_DONE.equals(status) && ExecutionSection.FEED_MINUTE.equals(feed) ? 75 : null,
+                answer == null ? null : et(session, 10, 33));
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    @DisplayName("장중 확인 기록(단계 2 — §14-2 M8): 계좌2만 최근 행(세션 최근 순 — 상태·사유·피드·지연·확인 결정의 KEEP/REPLACE·대신한 주문 수), "
+            + "M8은 수만 세고 분모 < 5면 비율 null, 확인 결정이 실패면 action null, 계좌1은 빈 목록과 null")
+    void checkpointRecordsAndM8() {
+        activeBook(store, PaperBooks.CLAUDE2, PaperBooks.KIND_CLAUDE, 100_000, null);
+        LocalDate mon = LocalDate.of(2026, 11, 2);
+        checkpoint(mon, ExecutionSection.FEED_MINUTE, PaperBooks.CHECKPOINT_DONE, "REPLACE");
+        checkpoint(mon.plusDays(1), ExecutionSection.FEED_HOURLY, PaperBooks.CHECKPOINT_EXPIRED, null);
+        checkpoint(mon.plusDays(2), ExecutionSection.FEED_MINUTE, PaperBooks.CHECKPOINT_SKIPPED, null);
+        checkpoint(mon.plusDays(3), ExecutionSection.FEED_MINUTE, PaperBooks.CHECKPOINT_PLANNED, null);
+
+        Map<String, Object> out = query.execution(PaperBooks.CLAUDE2, 50);
+        List<Map<String, Object>> rows = (List<Map<String, Object>>) out.get("checkpoints");
+        assertThat(rows).extracting(r -> r.get("session"))
+                .containsExactly("2026-11-05", "2026-11-04", "2026-11-03", "2026-11-02");
+        Map<String, Object> done = rows.get(3);
+        assertThat(done).containsEntry("atEt", "10:30").containsEntry("atKst", "2026-11-03 00:30 KST")
+                .containsEntry("feed", "MINUTE").containsEntry("watch", List.of("AAPL", "MSFT"))
+                .containsEntry("status", "DONE").containsEntry("reason", null).containsEntry("decisionStatus", "NO_TRADE")
+                .containsEntry("action", "REPLACE").containsEntry("supersededOrders", 2).containsEntry("lagSeconds", 75)
+                .containsEntry("calledAtKst", "2026-11-03 00:33 KST");
+        assertThat(done.get("decisionId")).isNotNull();
+        assertThat(rows.get(2)).containsEntry("status", "EXPIRED").containsEntry("reason", "EXPIRED — 시험")
+                .containsEntry("decisionId", null).containsEntry("action", null).containsEntry("supersededOrders", null)
+                .containsEntry("lagSeconds", null).containsEntry("calledAtKst", null);
+        assertThat(rows.get(0)).containsEntry("status", "PLANNED");
+
+        Map<String, Object> m8 = (Map<String, Object>) ((Map<String, Object>) out.get("summary")).get("checkpoints");
+        assertThat(m8).containsEntry("rows", 4).containsEntry("planned", 1).containsEntry("finished", 3)
+                .containsEntry("called", 1).containsEntry("expired", 1).containsEntry("skipped", 1)
+                .containsEntry("feedMinute", 3).containsEntry("feedHourly", 1).containsEntry("keep", 0)
+                .containsEntry("replace", 1).containsEntry("minRows", ExecutionView.CHECKPOINT_MIN_ROWS);
+        assertThat(m8).as("분모 < 5 — 비율은 null(0으로 채우지 않음)").containsEntry("calledPct", null)
+                .containsEntry("minutePct", null).containsEntry("replacePct", null);
+
+        // 다섯 행을 더 끝내면 이용률·피드 비율이 나옴 — REPLACE 비율의 분모(KEEP + REPLACE)는 아직 넷이라 null, API 오류 행은 action null.
+        LocalDate next = LocalDate.of(2026, 11, 9);
+        checkpoint(next, ExecutionSection.FEED_MINUTE, PaperBooks.CHECKPOINT_DONE, "KEEP");
+        checkpoint(next.plusDays(1), ExecutionSection.FEED_HOURLY, PaperBooks.CHECKPOINT_DONE, "KEEP");
+        checkpoint(next.plusDays(2), ExecutionSection.FEED_MINUTE, PaperBooks.CHECKPOINT_DONE, "REPLACE");
+        checkpoint(next.plusDays(3), ExecutionSection.FEED_MINUTE, PaperBooks.CHECKPOINT_DONE, null);
+        checkpoint(next.plusDays(4), ExecutionSection.FEED_HOURLY, PaperBooks.CHECKPOINT_EXPIRED, null);
+        out = query.execution(PaperBooks.CLAUDE2, 50);
+        m8 = (Map<String, Object>) ((Map<String, Object>) out.get("summary")).get("checkpoints");
+        assertThat(m8).containsEntry("rows", 9).containsEntry("finished", 8).containsEntry("called", 5)
+                .containsEntry("calledPct", 62.5).containsEntry("feedMinute", 6).containsEntry("feedHourly", 3)
+                .containsEntry("minutePct", 66.67).containsEntry("keep", 2).containsEntry("replace", 2)
+                .containsEntry("replacePct", null);
+        Map<String, Object> failed = ((List<Map<String, Object>>) out.get("checkpoints")).stream()
+                .filter(r -> "2026-11-12".equals(r.get("session"))).findFirst().orElseThrow();
+        assertThat(failed).containsEntry("status", "DONE").containsEntry("decisionStatus", "API_ERROR")
+                .containsEntry("action", null).containsEntry("supersededOrders", null);
+
+        Map<String, Object> book1 = query.execution(PaperBooks.CLAUDE, 50);
+        assertThat(book1).containsEntry("checkpoints", List.of());
+        assertThat((Map<String, Object>) book1.get("summary")).containsEntry("checkpoints", null);
+    }
 }

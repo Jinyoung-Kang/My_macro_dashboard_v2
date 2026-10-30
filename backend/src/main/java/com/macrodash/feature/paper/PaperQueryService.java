@@ -488,9 +488,9 @@ public class PaperQueryService {
 
     /**
      * 미국 Claude 계좌2 묶음(계좌2 명세 §13-1, ADR 0022) — {@code {book, status, startedOn, enabled, nextDecision:{tradingDate, atKst, atEt, cutoffKst,
-     * cutoffEt}, cycle:{tradingDate, calls, cap}, bars, chainReady}}. 다음 결정은 마감이 끝난 최근 세션 d의 계좌2 정기·출발 행이 아직 없으면 d, 있으면 d 다음 거래일의
+     * cutoffEt}, cycle:{tradingDate, calls, cap}, bars, chainReady, checkpoint}}(장중 확인 {@code checkpoint} — 단계 2, {@link #checkpointStatus}). 다음 결정은 마감이 끝난 최근 세션 d의 계좌2 정기·출발 행이 아직 없으면 d, 있으면 d 다음 거래일의
      * 결정 시각(설정 {@code decisionTimeKst} — 계좌1과 같은 시각)이고, 컷오프는 그 결정의 목표 세션 09:00 ET(§5-1 ⑤)입니다 — 계좌2가 꺼졌거나 시작
-     * 전이어도 그 창의 시각입니다(켜면 그때 냄). 이번 결정 주기 호출 수는 d의 계좌2 정기·출발 행(1 + 재시도 수 — {@link ClaudeBookService#claude2CallsInCycle})
+     * 전이어도 그 창의 시각입니다(켜면 그때 냄). 이번 결정 주기 호출 수는 d의 계좌2 정기·출발·장중 확인 행(1 + 재시도 수 — {@link ClaudeBookService#claude2CallsInCycle})
      * 이고 상한은 {@code claude2.maxCallsPerCycle}. {@code bars}는 지금이 미국 정규장일 때만 1분봉 저장본의 받은 시각·나이·지연({@link ExecutionAudit#lagSeconds}
      * — SPY 기준, 모르면 null), 정규장 밖은 null(그때 값은 지연이 아니라 장이 닫힌 시간). 계좌2가 없으면(초기화 전) {@code status}·{@code startedOn}은 null.
      * {@code chainReady}는 지금 관측치 저장본의 사슬 고리가 실행 감사 작업 기록에 있나 — 계좌2 출발(정기·수동)은 그때만 나가므로(리뷰 F2 ⓑ, 결정 작업과 같은
@@ -528,6 +528,53 @@ public class PaperQueryService {
         out.put("bars", inRegularSession(now, calendar) ? barsView(now, calendar) : null);
         Optional<Quotes> quotes = reader.quietly(() -> marketData.quotes(market));
         out.put("chainReady", PaperExecutionAuditJob.chainNotReady(store, quotes.map(Quotes::collectedAt).orElse(null), now) == null);
+        out.put("checkpoint", checkpointStatus(now, calendar, book2));
+        return out;
+    }
+
+    /**
+     * 계좌2 장중 확인 묶음(단계 2 — 계좌2 명세 §5-2·§13-1) — 늘 같은 모양 {@code {enabled, session, today, watch}}. {@code enabled}는 설정
+     * {@code claude2.checkpoints}, {@code session}은 지금 진행 중이거나 다음인 미국 세션(마감이 끝난 최근 세션의 다음 거래일 — 아침 결정이 계획하는
+     * 그 E), {@code today}는 그 세션의 장중 확인 행({@code paper_checkpoints} — 계획 행이 없으면 null, 꺼져 있어도 남은 PLANNED 행은 그대로 보임 —
+     * 작업이 창 뒤 CHECKPOINTS_OFF로 둠), {@code watch}는 지금이 미국 정규장이고 감시 저장본이 있을 때만 받은 시각·나이·지연(저장본의
+     * {@code lagSeconds} — 모르면 null), 그 밖은 null. 저장본은 수집 요청 없이 읽기만 합니다.
+     */
+    private Map<String, Object> checkpointStatus(Instant now, TradingCalendar calendar, Claude2Settings book2) {
+        LocalDate session = calendar.nextTradingDay(calendar.lastCompletedSession(now));
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("enabled", book2.checkpoints());
+        out.put("session", session.toString());
+        out.put("today", store.checkpoint(PaperBooks.CLAUDE2, session).map(c -> checkpointToday(c, calendar)).orElse(null));
+        out.put("watch", inRegularSession(now, calendar) ? watchView(now) : null);
+        return out;
+    }
+
+    /** 장중 확인 행 하나 → 상태 응답의 {@code today}(확인 시각은 ET·KST 둘 다, 모르는 값은 null). */
+    private static Map<String, Object> checkpointToday(PaperStore.Checkpoint c, TradingCalendar calendar) {
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("session", c.sessionDate().toString());
+        out.put("atEt", CheckpointPacket.clock(c.atEt()));
+        out.put("atKst", stamp(c.sessionDate().atTime(c.atEt()).atZone(calendar.zone()).toInstant()));
+        out.put("feed", c.feed());
+        out.put("watch", c.watch());
+        out.put("status", c.status());
+        out.put("reason", c.reason());
+        out.put("decisionId", c.checkpointDecisionId());
+        out.put("calledAtKst", c.calledAt() == null ? null : stamp(c.calledAt()));
+        return out;
+    }
+
+    /** 감시 저장본의 받은 시각·나이(초)·지연(초) — 저장본이 없으면 null(0으로 채우지 않음). */
+    private Map<String, Object> watchView(Instant now) {
+        Optional<Snapshot> found = marketData.watchUs();
+        if (found.isEmpty() || found.get().collectedAt() == null) {
+            return null;
+        }
+        Snapshot watch = found.get();
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("collectedAtKst", stamp(watch.collectedAt()));
+        out.put("ageSeconds", Math.max(0, Duration.between(watch.collectedAt(), now).getSeconds()));
+        out.put("lagSeconds", watch.payload() == null ? null : integer(watch.payload(), "lagSeconds"));
         return out;
     }
 

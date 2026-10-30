@@ -877,5 +877,88 @@ class PaperQueryServiceTest {
                 .doesNotContainKeys("sharedWith", "marketSectionsSha256");
     }
 
+    @Test
+    @SuppressWarnings("unchecked")
+    @DisplayName("결정 목록·한 건은 장중 확인 결정(kind CHECKPOINT — 단계 2)을 다른 결정과 같은 줄로 싣고, 그 결정이 낸 MARKET 주문을 함께 보임")
+    void decisionsListShowsCheckpointKind() {
+        initWithBenchmarks();
+        var mapper = PaperFixtures.MAPPER;
+        long morning = store.insertDecisionIfAbsent(new com.macrodash.store.PaperStore.Decision(0, PaperBooks.CLAUDE2, MON,
+                RuleBookService.SCHEDULED, null, "OK", "claude-sonnet-5-5", 0, 1, FRI, null, null, null, null,
+                mapper.valueToTree(Map.of("summary", "아침 결정")), null, null, null, true, 5L, 0)).orElseThrow();
+        long checkpoint = store.insertDecisionIfAbsent(new com.macrodash.store.PaperStore.Decision(0, PaperBooks.CLAUDE2, MON,
+                RuleBookService.CHECKPOINT, null, "OK", "claude-sonnet-5-5", 0, 1, FRI, null, null, null, null,
+                mapper.valueToTree(Map.of("summary", "AAPL 갭 메움 — 대신함", "action", "REPLACE")), null, null, null, false,
+                5L, 0)).orElseThrow();
+        store.insertOrder(new com.macrodash.store.PaperStore.Order(0, PaperBooks.CLAUDE2, checkpoint, "AAPL", "SELL", null,
+                null, 0.5, PaperBooks.MARKET, "CLAUDE", "PENDING", null, null, MON, null, TUE_EXPIRY, null));
+
+        List<Map<String, Object>> rows = (List<Map<String, Object>>) query.decisions(PaperBooks.CLAUDE2, 50).get("decisions");
+        assertThat(rows).extracting(r -> r.get("kind")).containsExactlyInAnyOrder("SCHEDULED", "CHECKPOINT");
+        assertThat(rows).filteredOn(r -> "CHECKPOINT".equals(r.get("kind"))).singleElement().satisfies(row -> {
+            assertThat(row.get("id")).isEqualTo(checkpoint);
+            assertThat(row.get("summary")).isEqualTo("AAPL 갭 메움 — 대신함");
+            assertThat(row.get("orderCount")).isEqualTo(1);
+        });
+        Map<String, Object> detail = query.decision(checkpoint);
+        assertThat(((Map<String, Object>) detail.get("decision")).get("kind")).isEqualTo("CHECKPOINT");
+        assertThat((List<Map<String, Object>>) detail.get("orders")).singleElement()
+                .satisfies(order -> assertThat(order.get("timing")).isEqualTo("MARKET"));
+        assertThat(((Map<String, Object>) query.decision(morning).get("decision")).get("kind")).isEqualTo("SCHEDULED");
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    @DisplayName("상태 응답 claude2.checkpoint(단계 2): 늘 같은 모양 — 꺼짐·계획 없음·장 밖이면 enabled false·today null·watch null, 켜면 enabled, "
+            + "진행 중인 세션의 행(ET·KST·피드·상태·확인 결정·부른 시각)과 정규장 안 감시 저장본의 받은 시각·나이·지연")
+    void claude2CheckpointStatus() {
+        initWithBenchmarks();
+        Map<String, Object> off = (Map<String, Object>) ((Map<String, Object>) query.status().get(PaperBooks.CLAUDE2))
+                .get("checkpoint");
+        assertThat(off).containsExactly(entry("enabled", false), entry("session", "2026-10-27"), entry("today", null),
+                entry("watch", null));
+
+        ((tools.jackson.databind.node.ObjectNode) store.settings.body().get("claude2")).put("checkpoints", true);
+        java.time.LocalDate e = java.time.LocalDate.of(2026, 11, 2);   // 서머타임이 끝난 첫 거래일 — 10:30 ET = 00:30 KST(다음 날)
+        long source = store.insertDecisionIfAbsent(new com.macrodash.store.PaperStore.Decision(0, PaperBooks.CLAUDE2,
+                java.time.LocalDate.of(2026, 10, 30), RuleBookService.SCHEDULED, null, "OK", "claude-sonnet-5-5", 0, 1, null,
+                null, null, null, null, PaperFixtures.MAPPER.createObjectNode(), null, null, null, true, 5L, 0)).orElseThrow();
+        store.upsertPlannedCheckpoint(new com.macrodash.store.PaperStore.Checkpoint(PaperBooks.CLAUDE2, e,
+                java.time.LocalTime.of(10, 30), "MINUTE", List.of("AAPL"), "갭 유지?", source, null, "PLANNED", null, null,
+                null, null, null));
+        store.markCheckpoint(PaperBooks.CLAUDE2, e, "PLANNED", "DONE", null, 99L, 80,
+                Instant.parse("2026-11-02T15:33:00Z"));
+        tools.jackson.databind.node.ObjectNode payload = PaperFixtures.MAPPER.createObjectNode().put("contract", 1)
+                .put("lagSeconds", 80);
+        when(marketData.watchUs()).thenReturn(Optional.of(new com.macrodash.store.Snapshot(
+                com.macrodash.store.Datasets.SNAP_PAPER_WATCH_US, payload, "snapshot", "OK", null,
+                Instant.parse("2026-11-02T15:36:00Z"))));
+        PaperQueryService live = new PaperQueryService(store, marketData, PaperFixtures.quietReader(),
+                PaperFixtures.settings(store), PaperFixtures.config(),
+                Clock.fixed(Instant.parse("2026-11-02T15:40:00Z"), ZoneOffset.UTC));
+        Map<String, Object> on = (Map<String, Object>) ((Map<String, Object>) live.status().get(PaperBooks.CLAUDE2))
+                .get("checkpoint");
+        assertThat(on).containsEntry("enabled", true).containsEntry("session", "2026-11-02");
+        assertThat((Map<String, Object>) on.get("today")).containsExactly(Map.entry("session", "2026-11-02"),
+                Map.entry("atEt", "10:30"), Map.entry("atKst", "2026-11-03 00:30 KST"), Map.entry("feed", "MINUTE"),
+                Map.entry("watch", List.of("AAPL")), Map.entry("status", "DONE"), entry("reason", null),
+                Map.entry("decisionId", 99L), Map.entry("calledAtKst", "2026-11-03 00:33 KST"));
+        assertThat((Map<String, Object>) on.get("watch")).containsExactly(Map.entry("collectedAtKst", "2026-11-03 00:36 KST"),
+                Map.entry("ageSeconds", 240L), Map.entry("lagSeconds", 80));
+
+        // 정규장 밖(마감 뒤)이면 감시 저장본이 있어도 watch null — 그때 값은 지연이 아니라 장이 닫힌 시간.
+        PaperQueryService closed = new PaperQueryService(store, marketData, PaperFixtures.quietReader(),
+                PaperFixtures.settings(store), PaperFixtures.config(),
+                Clock.fixed(Instant.parse("2026-11-02T21:30:00Z"), ZoneOffset.UTC));
+        Map<String, Object> after = (Map<String, Object>) ((Map<String, Object>) closed.status().get(PaperBooks.CLAUDE2))
+                .get("checkpoint");
+        assertThat(after).containsEntry("session", "2026-11-03").containsEntry("today", null).containsEntry("watch", null);
+    }
+
+    /** null 값을 담는 항목(Map.entry는 null을 받지 않음). */
+    private static Map.Entry<String, Object> entry(String key, Object value) {
+        return new java.util.AbstractMap.SimpleEntry<>(key, value);
+    }
+
     private static final java.time.LocalDate TUE_EXPIRY = java.time.LocalDate.of(2026, 10, 29);
 }
