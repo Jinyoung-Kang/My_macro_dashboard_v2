@@ -1,5 +1,9 @@
 package com.macrodash.feature.paper;
 
+import com.macrodash.analytics.ExecutionTiming;
+import com.macrodash.store.Datasets;
+import com.macrodash.store.PaperStore.Fill;
+import com.macrodash.store.PaperStore.Order;
 import com.macrodash.store.PaperStore.OrderExec;
 import com.macrodash.support.InvalidRequestException;
 import org.junit.jupiter.api.BeforeEach;
@@ -12,6 +16,7 @@ import java.time.Clock;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneOffset;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -33,6 +38,7 @@ import static org.mockito.Mockito.when;
 /**
  * GET /api/paper/books/{code}/execution 응답({@link ExecutionView} — 명세 2026-10-30 §13-1·§14-2): 미국 Claude 계좌 밖 코드는 400, 테이블이 없으면
  * available:false, 주문은 감사 행이 있는 결정 주문만 최근 순·limit, NEXT_OPEN은 isProxy, 차이 bp, 요약은 문턱 아래 null·뺀 수, 같은 자료면 같은 구간.
+ * 고른 시점(M1 — 주 판정)은 계좌2만: 체결 원가격 대비 계좌1식, 대체 체결은 따로, 기준 없는 체결·체결 없는 주문은 뺀 수, 메뉴 줄과 같은 문턱·부트스트랩.
  */
 class PaperExecutionViewTest {
 
@@ -73,6 +79,43 @@ class PaperExecutionViewTest {
 
     private static ObjectNode price(double raw, Instant at, String rung) {
         return MAPPER.createObjectNode().put("raw", raw).put("at", at.toString()).put("rung", rung);
+    }
+
+    /**
+     * 계좌2 결정 주문 하나 — 체결 원가격 {@code fillRaw}(null이면 체결 없음 — 만료), 사다리 칸 {@code rung}(null이면 칸 없는 관측치 체결 — NEXT_CLOSE),
+     * 감사 행의 계좌1식 기준 {@code base}(null이면 관측치 사슬로 증명하지 못함). 메뉴 반사실은 비워 둡니다 — M1은 체결 원가격만 씁니다.
+     */
+    private long book2(LocalDate asOf, String side, String timing, Double base, Double fillRaw, String rung, int qty) {
+        LocalDate session = UsPaperMarket.INSTANCE.calendar().nextTradingDay(asOf);
+        boolean buy = PaperBooks.BUY.equals(side);
+        long id = store.insertOrder(new Order(0, PaperBooks.CLAUDE2, 1L, "AAPL", side, null, buy ? 5.0 : null,
+                buy ? null : 0.5, timing, "CLAUDE", fillRaw == null ? "EXPIRED" : "FILLED", null, null, asOf,
+                et(asOf, 18, 31), session, null));
+        if (fillRaw != null) {
+            double fillPrice = buy ? fillRaw * 1.0005 : fillRaw * 0.9995;
+            Fill fill = new Fill(0, id, PaperBooks.CLAUDE2, "AAPL", side, qty, fillPrice, fillRaw, 5, qty * fillPrice,
+                    et(session, 10, 57), session, rung == null ? PaperBooks.SOURCE_QUOTES : Datasets.SNAP_PAPER_BARS_US,
+                    false, null);
+            if (rung == null) {
+                store.insertFill(fill);
+            } else {
+                store.insertTimedFill(fill, rung.startsWith("Y1M") ? et(session, 10, 0) : null, rung);
+            }
+        }
+        ObjectNode cf = MAPPER.createObjectNode();
+        ExecutionAudit.TIMINGS.forEach(cf::putNull);
+        if (base != null) {
+            cf.set("NEXT_OBSERVATION", price(base, et(session, 9, 57), "QUOTES_OBSERVATION"));
+        }
+        store.mergeOrderExec(new OrderExec(id, PaperBooks.CLAUDE2, timing, null, cf, null, null, null));
+        return id;
+    }
+
+    /** 계좌2 M1 표본 하나의 기대값 — 체결 금액(슬리피지 얹은 체결가 × 수량) 가중, 차이는 원가격 대 계좌1식 기준. */
+    private static ExecutionTiming.Sample expected(LocalDate asOf, long id, String side, double base, double raw, int qty) {
+        boolean buy = PaperBooks.BUY.equals(side);
+        double gross = qty * (buy ? raw * 1.0005 : raw * 0.9995);
+        return new ExecutionTiming.Sample(asOf, id, gross, ExecutionTiming.advantageBp(buy ? 1 : -1, base, raw));
     }
 
     @Test
@@ -198,5 +241,123 @@ class PaperExecutionViewTest {
         assertThat(first.path("minDays").asInt()).isEqualTo(5);
         assertThat(first.path("interval").path("resamples").asInt()).isEqualTo(2000);
         assertThat(first.path("baseline").asString()).isEqualTo("NEXT_OBSERVATION");
+    }
+
+    @Test
+    @DisplayName("고른 시점(M1): 계좌2만(계좌1은 null) — 체결된 주문의 체결 원가격 대 계좌1식, 대체 체결은 따로, 기준 없는 체결·체결 없는 주문은 뺀 수")
+    void chosenSeparatesFallbackFills() {
+        activeBook(store, PaperBooks.CLAUDE2, PaperBooks.KIND_CLAUDE, 100_000, null);
+        audited(LocalDate.of(2026, 11, 2), PaperBooks.BUY, 100.0, 99.0, null, 10);   // 계좌1 주문 — 계좌2 요약에 섞이지 않음
+        LocalDate mon = LocalDate.of(2026, 11, 2);
+        LocalDate tue = LocalDate.of(2026, 11, 3);
+        book2(mon, PaperBooks.BUY, PaperBooks.NEXT_OPEN, 100.0, 99.0, "Y1M_AT", 10);
+        book2(mon, PaperBooks.SELL, PaperBooks.AT_1000, 100.0, 101.0, "Y1M_NEXT", 10);
+        book2(tue, PaperBooks.BUY, PaperBooks.NEXT_CLOSE, 100.0, 100.5, null, 10);   // 칸 없는 종가 체결 — 본 줄
+        book2(tue, PaperBooks.BUY, PaperBooks.AT_1100, null, 99.0, "Y1M_AT", 10);    // 계좌1식 기준 없음 — 뺀 수
+        book2(mon, PaperBooks.BUY, PaperBooks.AT_1200, 100.0, 98.0, "Y1M_LATE", 10);
+        book2(mon, PaperBooks.BUY, PaperBooks.AT_1300, 100.0, 98.0, "QUOTES_FALLBACK", 10);
+        book2(tue, PaperBooks.SELL, PaperBooks.AT_1400, 100.0, 102.0, "QUOTES_CLOSE", 10);
+        book2(tue, PaperBooks.BUY, PaperBooks.AT_1500, null, 98.0, "Y1M_LATE", 10);  // 대체 체결 + 기준 없음
+        book2(mon, PaperBooks.BUY, PaperBooks.AT_1000, 100.0, null, null, 10);       // 체결 없음(만료)
+
+        JsonNode book1 = MAPPER.valueToTree(query.execution(PaperBooks.CLAUDE, 50)).path("summary");
+        assertThat(book1.has("chosen")).as("칸은 있음").isTrue();
+        assertThat(book1.path("chosen").isNull()).as("계좌1 — 고른 시점이 곧 계좌1식 기준").isTrue();
+
+        JsonNode summary = MAPPER.valueToTree(query.execution(PaperBooks.CLAUDE2, 50)).path("summary");
+        assertThat(summary.path("audited").asInt()).isEqualTo(9);
+        JsonNode chosen = summary.path("chosen");
+        assertThat(chosen.path("formula").asString()).contains("P_체결").contains("슬리피지 전");
+        assertThat(chosen.path("n").asInt()).isEqualTo(3);
+        assertThat(chosen.path("days").asInt()).isEqualTo(2);
+        assertThat(chosen.path("excludedNoBaseline").asInt()).isEqualTo(1);
+        assertThat(chosen.path("excludedFallback").asInt()).as("대체 체결 넷(기준 없는 하나 포함)").isEqualTo(4);
+        assertThat(chosen.path("notFilled").asInt()).isEqualTo(1);
+        assertThat(chosen.path("meanBp").isNull()).as("주문 3건 — 문턱 아래, 0이 아님").isTrue();
+        assertThat(chosen.path("lowBp").isNull()).isTrue();
+        assertThat(chosen.path("highBp").isNull()).isTrue();
+        assertThat(chosen.path("isProxy").asBoolean()).as("시가 체결가는 1분봉 첫 봉 시가").isTrue();
+        JsonNode fallback = chosen.path("fallback");
+        assertThat(fallback.path("n").asInt()).isEqualTo(3);
+        assertThat(fallback.path("days").asInt()).isEqualTo(2);
+        assertThat(fallback.path("excludedNoBaseline").asInt()).isEqualTo(1);
+        assertThat(chosen.path("excludedFallback").asInt())
+                .isEqualTo(fallback.path("n").asInt() + fallback.path("excludedNoBaseline").asInt());
+        assertThat(fallback.path("meanBp").isNull()).isTrue();
+        assertThat(fallback.path("isProxy").asBoolean(true)).isFalse();
+        // 메뉴 줄(반사실 분포)은 그대로 — 계좌1식 기준이 없는 주문만 따로, 메뉴 반사실을 비운 계좌2 주문은 값 없음.
+        JsonNode open = summary.path("timings").get(0);
+        assertThat(open.path("excludedNoBaseline").asInt()).isEqualTo(3);
+        assertThat(open.path("excludedNoPrice").asInt()).isEqualTo(6);
+    }
+
+    @Test
+    @DisplayName("고른 시점(M1): 대체 체결을 뺀 주문 10건·결정일 5일부터 금액 가중 평균·90% 구간 — 메뉴 줄과 같은 부트스트랩, 같은 자료면 같은 구간")
+    void chosenWithEnoughFillsUsesTheSameBootstrap() {
+        activeBook(store, PaperBooks.CLAUDE2, PaperBooks.KIND_CLAUDE, 100_000, null);
+        double[] raws = {99.0, 100.4, 100.2, 98.8, 99.5, 101.1, 99.1, 100.8, 99.4, 100.1, 98.9, 99.7};
+        List<ExecutionTiming.Sample> samples = new ArrayList<>();
+        for (int i = 0; i < raws.length; i++) {
+            LocalDate asOf = UsPaperMarket.INSTANCE.calendar().addTradingDays(LocalDate.of(2026, 11, 2), i / 2);
+            String side = i % 3 == 0 ? PaperBooks.SELL : PaperBooks.BUY;
+            long id = book2(asOf, side, PaperBooks.AT_1000, 100.0, raws[i], i % 2 == 0 ? "Y1M_AT" : "Y1M_NEXT", 10 + i);
+            samples.add(expected(asOf, id, side, 100.0, raws[i], 10 + i));
+        }
+        // 대체 체결 셋 — 본 줄에 들면 평균이 크게 움직이는 값(90 → +1,000bp)이지만 본 줄의 수·평균에 들지 않음.
+        LocalDate later = UsPaperMarket.INSTANCE.calendar().addTradingDays(LocalDate.of(2026, 11, 2), 7);
+        for (String rung : List.of("Y1M_LATE", "QUOTES_FALLBACK", "QUOTES_CLOSE")) {
+            book2(later, PaperBooks.BUY, PaperBooks.AT_1100, 100.0, 90.0, rung, 50);
+        }
+
+        JsonNode first = MAPPER.valueToTree(query.execution(PaperBooks.CLAUDE2, 50)).path("summary").path("chosen");
+        JsonNode second = MAPPER.valueToTree(query.execution(PaperBooks.CLAUDE2, 50)).path("summary").path("chosen");
+        assertThat(second).isEqualTo(first);
+        ExecutionTiming.Summary want = ExecutionTiming.summarize(samples);
+        assertThat(first.path("n").asInt()).isEqualTo(12);
+        assertThat(first.path("days").asInt()).isEqualTo(6);
+        assertThat(first.path("excludedFallback").asInt()).isEqualTo(3);
+        assertThat(first.path("meanBp").asDouble()).isCloseTo(want.meanBp(), within(0.005));
+        assertThat(first.path("lowBp").asDouble()).isEqualTo(PaperQueryService.round2(want.lowBp()));
+        assertThat(first.path("highBp").asDouble()).isEqualTo(PaperQueryService.round2(want.highBp()));
+        assertThat(first.path("lowBp").asDouble()).isLessThanOrEqualTo(first.path("meanBp").asDouble());
+        assertThat(first.path("highBp").asDouble()).isGreaterThanOrEqualTo(first.path("meanBp").asDouble());
+        assertThat(first.path("isProxy").asBoolean(true)).as("시가 체결 없음").isFalse();
+        double weighted = 0;
+        double weight = 0;
+        for (ExecutionTiming.Sample sample : samples) {
+            weighted += sample.weight() * sample.bp();
+            weight += sample.weight();
+        }
+        assertThat(first.path("meanBp").asDouble()).as("체결 금액 가중 평균").isCloseTo(weighted / weight, within(0.005));
+        assertThat(first.path("fallback").path("n").asInt()).isEqualTo(3);
+        assertThat(first.path("fallback").path("days").asInt()).isEqualTo(1);
+        assertThat(first.path("fallback").path("meanBp").isNull()).as("대체 체결 셋 — 문턱 아래").isTrue();
+    }
+
+    @Test
+    @DisplayName("고른 시점(M1) 문턱: 대체 체결을 뺀 주문 9건이면 null, 10건·결정일 5일이면 값 — 대체 체결은 수에도 결정일에도 세지 않음")
+    void chosenThresholdsCountOnlyPrimaryFills() {
+        activeBook(store, PaperBooks.CLAUDE2, PaperBooks.KIND_CLAUDE, 100_000, null);
+        LocalDate start = LocalDate.of(2026, 11, 2);
+        for (int i = 0; i < 9; i++) {
+            LocalDate asOf = UsPaperMarket.INSTANCE.calendar().addTradingDays(start, i % 4);   // 결정일 넷
+            book2(asOf, PaperBooks.BUY, PaperBooks.AT_1200, 100.0, 99.0 + i * 0.1, "Y1M_AT", 10);
+        }
+        LocalDate fifth = UsPaperMarket.INSTANCE.calendar().addTradingDays(start, 4);
+        book2(fifth, PaperBooks.BUY, PaperBooks.AT_1200, 100.0, 99.0, "Y1M_LATE", 10);
+        book2(fifth, PaperBooks.BUY, PaperBooks.AT_1300, 100.0, 99.0, "QUOTES_FALLBACK", 10);
+
+        JsonNode below = MAPPER.valueToTree(query.execution(PaperBooks.CLAUDE2, 50)).path("summary").path("chosen");
+        assertThat(below.path("n").asInt()).as("대체 체결 둘은 N에 세지 않음").isEqualTo(9);
+        assertThat(below.path("days").asInt()).as("대체 체결만 있는 다섯째 날은 결정일에 세지 않음").isEqualTo(4);
+        assertThat(below.path("meanBp").isNull()).isTrue();
+
+        book2(fifth, PaperBooks.BUY, PaperBooks.AT_1400, 100.0, 99.5, "Y1M_NEXT", 10);
+        JsonNode enough = MAPPER.valueToTree(query.execution(PaperBooks.CLAUDE2, 50)).path("summary").path("chosen");
+        assertThat(enough.path("n").asInt()).isEqualTo(10);
+        assertThat(enough.path("days").asInt()).isEqualTo(5);
+        assertThat(enough.path("meanBp").isNumber()).isTrue();
+        assertThat(enough.path("lowBp").isNumber()).isTrue();
+        assertThat(enough.path("highBp").isNumber()).isTrue();
     }
 }

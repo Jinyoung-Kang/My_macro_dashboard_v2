@@ -1199,6 +1199,13 @@ class ApiIntegrationTest {
             JsonNode execution = authorizedGet("/api/paper/books/claude/execution");
             assertThat(execution.path("orders").size()).as("감사 행 없음 — 빈 목록").isZero();
             assertThat(execution.path("summary").path("timings").get(0).path("meanBp").isNull()).as("표본 없음 — null").isTrue();
+            assertThat(execution.path("summary").path("chosen").isNull()).as("고른 시점(M1)은 계좌2만 — 계좌1은 null(칸은 있음)")
+                    .isTrue();
+            JsonNode book2Execution = authorizedGet("/api/paper/books/claude2/execution");
+            assertThat(book2Execution.path("summary").path("chosen").path("n").asInt(-1)).as("계좌2 — 체결 없음").isZero();
+            assertThat(book2Execution.path("summary").path("chosen").path("notFilled").asInt(-1)).isZero();
+            assertThat(book2Execution.path("summary").path("chosen").path("meanBp").isNull()).as("표본 없음 — null").isTrue();
+            assertThat(book2Execution.path("summary").path("chosen").path("fallback").path("n").asInt(-1)).isZero();
 
             // 결정: 시작 전 책은 수동 결정 400, 후보 목록 저장본이 없으면 시작 400(Claude 책 시작·미리보기도 — Claude를 부르기
             // 전에 멈춤. 테스트 설정은 키도 비어 있어 실제 호출이 나가지 않음)

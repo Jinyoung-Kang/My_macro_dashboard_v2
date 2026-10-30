@@ -34,6 +34,11 @@ import java.util.Map;
  * <p><b>요약</b>(§14-2 M2의 계좌1 기준 분포): 메뉴 여덟 시점마다 차이의 체결 금액 가중 평균과 결정일 묶음 부트스트랩 90% 구간
  * ({@link ExecutionTiming#summarize} — 주문 &lt; 10이거나 결정일 &lt; 5면 null). 계좌1식 기준(실제 체결 원가격)이나 체결 금액이 없는 주문은
  * {@code excludedNoBaseline}, 그 시점 값이 없는 주문은 {@code excludedNoPrice}로 따로 셉니다(빼고 셈 — 0으로 채우지 않음).
+ *
+ * <p><b>고른 시점</b>({@code summary.chosen} — §14-2 M1, 주 판정): 계좌2가 고른 시점의 실제 체결 원가격 대비 계좌1식 — 메뉴 줄과 같은 식에 P_시점
+ * 대신 체결 원가격(슬리피지 전)을 넣고 같은 {@link ExecutionTiming#summarize}(문턱·부트스트랩 반복·씨앗 같음)로 셉니다. 체결된 주문만 세고, 대체 체결
+ * (사다리 칸 {@link UsTimedFills#FALLBACK_RUNGS})은 본 줄에서 빼 {@code fallback}에 따로 셉니다(§14-3 'N ≥ 30(대체 체결 제외)'). 계좌1(시각 지정 체결이
+ * 아닌 계좌)은 고른 시점이 곧 계좌1식 기준이라 null입니다. 판정 문턱(§14-3)은 코드에 두지 않습니다 — 8주 뒤 사람이 문서의 문턱으로 읽습니다.
  */
 final class ExecutionView {
 
@@ -75,7 +80,7 @@ final class ExecutionView {
         out.put("timings", ExecutionAudit.TIMINGS);
         out.put("limit", limit);
         out.put("orders", rows);
-        out.put("summary", summary(audited, orders, fills));
+        out.put("summary", summary(book, audited, orders, fills));
         return out;
     }
 
@@ -149,7 +154,8 @@ final class ExecutionView {
         return out;
     }
 
-    private static Map<String, Object> summary(List<OrderExec> audited, Map<Long, Order> orders, Map<Long, ExecFill> fills) {
+    private static Map<String, Object> summary(Book book, List<OrderExec> audited, Map<Long, Order> orders,
+                                               Map<Long, ExecFill> fills) {
         List<Map<String, Object>> timings = new ArrayList<>();
         for (String timing : menu()) {
             List<ExecutionTiming.Sample> samples = new ArrayList<>();
@@ -198,8 +204,65 @@ final class ExecutionView {
         out.put("minOrders", ExecutionTiming.MIN_ORDERS);
         out.put("minDays", ExecutionTiming.MIN_DAYS);
         out.put("audited", audited.size());
+        out.put("chosen", chosen(book, audited, orders, fills));
         out.put("timings", timings);
         return out;
+    }
+
+    /**
+     * 고른 시점(§14-2 M1 — 클래스 설명). 시각 지정 체결 계좌(계좌2)가 아니면 null. 체결이 없는 주문(대기·만료·취소)은 {@code notFilled}, 계좌1식 기준이나
+     * 체결 금액이 없는 체결은 본 줄·대체 체결 줄 각각의 {@code excludedNoBaseline}으로 셉니다(빼고 셈 — 0으로 채우지 않음). {@code excludedFallback}은
+     * 본 줄에서 뺀 대체 체결 전부(= 대체 체결 줄의 n + excludedNoBaseline)입니다.
+     */
+    private static Map<String, Object> chosen(Book book, List<OrderExec> audited, Map<Long, Order> orders,
+                                              Map<Long, ExecFill> fills) {
+        if (!PaperBooks.find(book.code()).map(PaperBooks.Definition::timed).orElse(false)) {
+            return null;                                   // 계좌1 — 고른 시점이 곧 계좌1식 기준
+        }
+        List<ExecutionTiming.Sample> primary = new ArrayList<>();
+        List<ExecutionTiming.Sample> fallback = new ArrayList<>();
+        int[] noBaseline = new int[2];                     // {본 줄, 대체 체결}
+        boolean proxy = false;
+        int notFilled = 0;
+        for (OrderExec exec : audited) {
+            Order order = orders.get(exec.orderId());
+            ExecFill fill = fills.get(exec.orderId());
+            if (fill == null) {
+                notFilled++;
+                continue;
+            }
+            int group = fill.fillRung() != null && UsTimedFills.FALLBACK_RUNGS.contains(fill.fillRung()) ? 1 : 0;
+            Double bp = ExecutionTiming.advantageBp(sign(order), raw(exec.cf(), ExecutionAudit.NEXT_OBSERVATION),
+                    fill.fill().rawPrice());
+            double weight = fill.fill().gross();
+            if (bp == null || !(weight > 0) || order.asOfTradingDate() == null) {
+                noBaseline[group]++;
+                continue;
+            }
+            (group == 0 ? primary : fallback).add(new ExecutionTiming.Sample(order.asOfTradingDate(), order.id(), weight, bp));
+            // 시가 체결가는 1분봉 첫 봉 시가(R1·R2 — 공식 개장가와 같은지 확인 전, X2). 대체 체결의 늦은 봉·종가는 시가를 대신하지 않음.
+            proxy |= group == 0 && PaperBooks.NEXT_OPEN.equals(order.timing());
+        }
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("formula", "s × (P_NEXT_OBSERVATION − P_체결) ÷ P_NEXT_OBSERVATION × 10⁴ bp — 계좌2가 고른 시점의 체결 원가격(슬리피지 전), "
+                + "양수면 고른 시점의 체결이 계좌1식보다 유리");
+        out.putAll(chosenLine(ExecutionTiming.summarize(primary), noBaseline[0], proxy));
+        out.put("excludedFallback", fallback.size() + noBaseline[1]);
+        out.put("notFilled", notFilled);
+        out.put("fallback", chosenLine(ExecutionTiming.summarize(fallback), noBaseline[1], false));
+        return out;
+    }
+
+    private static Map<String, Object> chosenLine(ExecutionTiming.Summary s, int noBaseline, boolean proxy) {
+        Map<String, Object> line = new LinkedHashMap<>();
+        line.put("n", s.n());
+        line.put("days", s.days());
+        line.put("excludedNoBaseline", noBaseline);
+        line.put("meanBp", PaperQueryService.round2(s.meanBp()));
+        line.put("lowBp", PaperQueryService.round2(s.lowBp()));
+        line.put("highBp", PaperQueryService.round2(s.highBp()));
+        line.put("isProxy", proxy);
+        return line;
     }
 
     /** 메뉴 여덟 시점(계좌1식 기준을 뺀 반사실 시점), 응답 순서. */
