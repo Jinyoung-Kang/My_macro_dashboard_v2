@@ -15,6 +15,8 @@
        단계 0은 `backend/src/test/resources/paper/golden/`을 한 바이트도 바꾸지 않습니다(`main`과의 diff가 빔).
      - 단계 1(있음): 이동 커밋(1-1~1-3)은 위 고정본 그대로 — `ClaudeBookProfileTest.marketDefaultProfilesCarryTheMarketValues`·`renderTakesTheFixedRulesFromTheProfile`,
        `PacketBuilderTest.marketInputsAreReadOnceAndFrozen`, `OrderValidatorRanksTest.randomBatchesMatchTheTwoBranchImplementation`(옛 두 갈래 구현과 무작위 동치).
+       입력 동결 `Claude2DecisionTest.sharesTheMarketInputsWithBook1`(같은 실행이면 그 입력, 따로 도는 실행은 계좌1 행이 보낸 섹션 — 바이트까지 같으면 `sharedWith`)·
+       `sharedWithSkipsABook1RowThatMayStillBeRetried`(계좌1 행이 재시도할 API 오류면 섹션이 같아도 `sharedWith: null`, 해시는 남김).
        고정본 diff(`git diff main..HEAD -- backend/src/test/resources/paper/golden`)는 개요·상태 둘(`PaperQueryUsGoldenTest` — 계좌 행·`navSeries`·`claude2` 묶음이
        더해짐)과 계좌2 새 고정본(`render-us-claude2-v0-default.txt`·`decision-schema-forapi-us-claude2.json`·`packet-us-claude2-*` 셋 —
        `PacketBuilderTest.goldenClaude2Packets`·`StructuredSchemaTest.goldenClaude2SchemaForApi`·`ClaudeBookProfileTest.claude2RenderDiffersOnlyInTheFixedRules`)뿐입니다.
@@ -31,7 +33,8 @@
        계좌1 시점 그대로 `DecisionTimingsLockTest.schemaMarketAndPromptAgree`·`UsPaperMarketTest.timings`
      - 단계 0(0-3): 수집기 `paper_bars_us` 시험 — 메뉴 창 시각이 E 날짜의 `America/New_York`(서머타임 전환 주 포함), 창마다 첫 봉 시가와 `firstTradeAfter`
      - 단계 1(있음): 장부 `UsTimedFillsTest` — 사다리 `r1AtTheTargetBar`·`r2NextTradedBarInTheWindow`·`r2bFirstTradeAfterTheWindow`·`r3OnlyWhenTheBarsThemselvesAreMissing`·
-       `quotesCloseAtTheFinalObservation`·`nextOpen`, 조건 ⑤~⑧b `lateForTimingIsCancelledWithAnAlert`·`barBeforeTheTargetIsSkipped`·`unfinishedBarWaits`·`staleTickerEntry`·`zeroVolumeOnly`·
+       `quotesCloseAtTheFinalObservation`·`nextOpen`, 조건 ⑤~⑧b `lateForTimingIsCancelledWithAnAlert`·`lateForTimingAtExactlySixtySeconds`(T = 생성 + 60초는 막음 — 검증기
+       `closedTimingsForTheValidator`·실행 감사 `ExecutionAuditTest.refusesBarsBeforeCreationPlusSixtySeconds`도 같은 경계)·`barBeforeTheTargetIsSkipped`·`unfinishedBarWaits`·`staleTickerEntry`·`zeroVolumeOnly`·
        `recheckRefusesACorruptFirstTrade`, T 시각 순자산 `navAtTheTarget`·`navFallsBackToThePriceBeforeTheUpdate`, 순서 `sameTargetSellsFirstCashLikeLast`·`timedSellBeforeTheHourlyStop`·
        `pendingTimedSellDefersTheStopAtThatObservation`·`pendingTimedBuyIsResolvedBeforeTheStop`(W가 T 창을 다 본 1분봉보다 먼저 오면 그 종목의 스탑은 다음 W에서 T 주문 뒤)·
        `deferredStopIsJudgedAgainAtTheNextObservation`(미룬 W의 트리거는 이어 가지 않고 다음 W 관측가로 다시 판정 — 돌아오면 스탑 없음, 아니면 다음 W 가격),
@@ -70,7 +73,8 @@
   9. 호출 예산(T10)
      - 있음: `ClaudeBookServiceTest.manualCallsStopAtCapMinusReserveScheduledGoToCap`(수동 문턱 = 상한 − 예약, 정기는 상한까지 — 예약 값은 설정이라 이 결정은 저장 값으로 지킴)
      - 단계 1(있음): 계좌2 소상한(같은 기준 거래일의 결정 주기 단위 — 행마다 1 + 재시도) `Claude2DecisionTest.cycleCapCountsTheDecisionRows`(출발의 같은 계획 안 재시도도 행의
-       재시도 수로 셈 — `startRetryIsCountedInTheDecisionRow`), 수동 결정은 수동 문턱
+       재시도 수로 셈 — `startRetryIsCountedInTheDecisionRow`; 출발의 그 재시도는 결정 주기에 자리가 남을 때만, Claude를 부르지 않은 행은 0회 —
+       `cycleCapGuardsTheStartRetryAndSkipsRowsWithoutAModel`), 수동 결정은 수동 문턱
        `PaperDecisionJobClaude2Test.manualBook2Decision`. 서머타임에 하루 확인 둘(단계 2)은 2-3 몫
   10. 한도·월 상한(T12)
      - 있음: `OrderValidatorTest.monthlyCap`·`goldenOutcomes`(계좌1 그대로), 한국 계산 `KrPacketBuilderTest.monthlyCountLeavesOutTheStartAllocation`(출발 `INITIAL` 주문을 세지 않음), 미국 계산 `ClaudeBookServiceTest.initialBackfillDoesNotUseMonthlyCap`
@@ -79,7 +83,8 @@
        계좌2 출발 배분이 월 상한에 세이지 않음 `Claude2PipelineTest.monthlyCapLeavesOutTheStartDecision`
   11. 기한 지난 날(T17)
      - 있음(계좌1 규칙): `UsPaperMarketTest.decisionTimes`(`PROCEED_UNCONFIRMED`)
-     - 단계 1(있음): 개장 전 컷오프 `Claude2DecisionTest.preOpenCutoff`(지난 뒤면 부르지 않고 정기 `SKIPPED` '개장 전 컷오프', 출발은 쓰지 않음, 수동 400 — 계좌1은 그대로 진행),
+     - 단계 1(있음): 개장 전 컷오프 `Claude2DecisionTest.preOpenCutoff`(지난 뒤면 부르지 않고 정기 `SKIPPED` '개장 전 컷오프', 출발은 쓰지 않음, 수동 400 — 계좌1은 그대로 진행)·
+       `preOpenCutoffFollowsNewYorkTime`(목표 세션 날짜의 `America/New_York` 09:00 — 서머타임 경계 11-02 EST 14:00Z·2027-03-15 EDT 13:00Z, 고정 UTC 오프셋이면 실패),
        기한 뒤 진행은 계좌1과 같은 미국 규칙(`UsPaperMarketTest.decisionTimes`)
   12. 거래 없는 주문(T18)
      - 있음(0-2): `paper_fills.fill_rung` CHECK가 사다리 칸 다섯(`Y1M_AT`·`Y1M_NEXT`·`Y1M_LATE`·`QUOTES_FALLBACK`·`QUOTES_CLOSE`)만 받음(`PaperStoreDbTest.v17TimedTimingsFillBarAndOrderExec`)
