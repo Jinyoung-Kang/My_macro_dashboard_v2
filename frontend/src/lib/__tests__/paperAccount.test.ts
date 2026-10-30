@@ -87,8 +87,8 @@ describe("계좌 정의", () => {
   });
 
   // 수정 전에는 계좌2 '매도·리스크'가 1분봉 기다림만 적고, 기준 시각이 지났는데 풀리지 않은 시각 지정 주문의 종목은 그 관측치의 스탑 판정을 건너뛰고
-  // 다음 관측치 가격으로 다시 보는 것(PaperLedgerService.checkStops — 그만큼 스탑이 늦거나 걸리지 않을 수 있음)을 적지 않았다(it.fails).
-  it.fails("계좌2 '매도·리스크'는 풀리지 않은 시각 지정 주문 종목의 스탑 미룸과 그 대가를 말한다", () => {
+  // 다음 관측치 가격으로 다시 보는 것(PaperLedgerService.checkStops — 그만큼 스탑이 늦거나 걸리지 않을 수 있음)을 적지 않았다(수정 전에는 it.fails).
+  it("계좌2 '매도·리스크'는 풀리지 않은 시각 지정 주문 종목의 스탑 미룸과 그 대가를 말한다", () => {
     const sell = accountProfile("claude2")?.definitions.find((d) => d.key === "sell")?.text ?? "";
     expect(sell).toContain("그 관측치의 스탑 판정을 건너뛰고 다음 관측치 가격으로 다시 봅니다");
     expect(sell).toContain("스탑이 늦거나");
