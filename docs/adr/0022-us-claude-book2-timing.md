@@ -92,7 +92,8 @@
      - 단계 0(0-5): `GET /api/paper/books/{code}/execution` 요약 지표는 N < 10이거나 결정일 묶음 < 5면 `null`(`PaperExecutionViewTest.summaryNullsUnderThresholds`). 판정 문턱은 코드가 아니라 이 문서·명세 §14-3에 출발 전에 고정
      - 단계 1(있음): 화면 '체결 시점 실험'은 `null`을 '—'와 '판단 보류'로 적고 값이 있어도 판정 문장을 만들지 않음, 시가는 대리값(`paperClaude2.test.ts`·`paperClaude2.test.tsx`)
      - 단계 1(있음): 주 판정 M1의 요약 `summary.chosen`(같은 경로) — 계좌2만(계좌1 `null`), 체결된 주문의 체결 원가격 대 계좌1식, 대체 체결은 본 줄에서 빼 따로, 기준 없는 체결·체결 없는 주문은 뺀 수
-       (`PaperExecutionViewTest.chosenSeparatesFallbackFills`), 메뉴 줄과 같은 부트스트랩·문턱이고 대체 체결은 N에도 결정일에도 세지 않음(`chosenWithEnoughFillsUsesTheSameBootstrap`·`chosenThresholdsCountOnlyPrimaryFills`,
+       (`PaperExecutionViewTest.chosenSeparatesFallbackFills`), 본 줄 `isProxy`는 본 줄에 센 시가 체결(R1·R2)이 있을 때만 — 대체 체결로만 푼 시가 주문은 아님
+       (`chosenProxyOnlyForPrimaryOpenFills`), 메뉴 줄과 같은 부트스트랩·문턱이고 대체 체결은 N에도 결정일에도 세지 않음(`chosenWithEnoughFillsUsesTheSameBootstrap`·`chosenThresholdsCountOnlyPrimaryFills`,
        통합 `ApiIntegrationTest`). 화면은 시점 줄 위에 M1 두 줄을 두고 문턱(§14-3)은 설명 문구로만 — 값이 있어도 '구간 참고(판정은 8주 뒤)'(`paperClaude2.test.ts`·`paperClaude2.test.tsx`)
 
 ## 배경

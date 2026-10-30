@@ -292,6 +292,29 @@ class PaperExecutionViewTest {
     }
 
     @Test
+    @DisplayName("고른 시점(M1) 본 줄의 isProxy는 본 줄에 센 시가 체결(R1·R2 — 1분봉 첫 봉 시가)이 있을 때만: 시가 주문이 대체 체결(R2b·R3)로만 풀렸으면 본 줄도 대체 체결 줄도 거짓")
+    void chosenProxyOnlyForPrimaryOpenFills() {
+        activeBook(store, PaperBooks.CLAUDE2, PaperBooks.KIND_CLAUDE, 100_000, null);
+        LocalDate mon = LocalDate.of(2026, 11, 2);
+        book2(mon, PaperBooks.BUY, PaperBooks.AT_1000, 100.0, 99.0, "Y1M_AT", 10);
+        book2(mon, PaperBooks.BUY, PaperBooks.NEXT_OPEN, 100.0, 98.0, "Y1M_LATE", 10);         // 시가 주문 — T 뒤 첫 거래 봉(대체)
+        book2(mon, PaperBooks.SELL, PaperBooks.NEXT_OPEN, 100.0, 101.0, "QUOTES_FALLBACK", 10); // 시가 주문 — 관측 종가(대체)
+
+        JsonNode late = MAPPER.valueToTree(query.execution(PaperBooks.CLAUDE2, 50)).path("summary").path("chosen");
+        assertThat(late.path("n").asInt()).isEqualTo(1);
+        assertThat(late.path("excludedFallback").asInt()).isEqualTo(2);
+        assertThat(late.path("isProxy").asBoolean(true)).as("본 줄에 시가 체결 없음 — 시가 주문은 대체 체결로만 풂").isFalse();
+        assertThat(late.path("fallback").path("isProxy").asBoolean(true)).as("대체 체결의 늦은 봉·종가는 시가를 대신하지 않음")
+                .isFalse();
+
+        book2(mon, PaperBooks.BUY, PaperBooks.NEXT_OPEN, 100.0, 99.5, "Y1M_NEXT", 10);         // 시가 주문 — R2(09:31~09:34 첫 거래 봉)
+        JsonNode primary = MAPPER.valueToTree(query.execution(PaperBooks.CLAUDE2, 50)).path("summary").path("chosen");
+        assertThat(primary.path("n").asInt()).isEqualTo(2);
+        assertThat(primary.path("isProxy").asBoolean()).as("본 줄에 센 시가 체결").isTrue();
+        assertThat(primary.path("fallback").path("isProxy").asBoolean(true)).isFalse();
+    }
+
+    @Test
     @DisplayName("고른 시점(M1): 대체 체결을 뺀 주문 10건·결정일 5일부터 금액 가중 평균·90% 구간 — 메뉴 줄과 같은 부트스트랩, 같은 자료면 같은 구간")
     void chosenWithEnoughFillsUsesTheSameBootstrap() {
         activeBook(store, PaperBooks.CLAUDE2, PaperBooks.KIND_CLAUDE, 100_000, null);
