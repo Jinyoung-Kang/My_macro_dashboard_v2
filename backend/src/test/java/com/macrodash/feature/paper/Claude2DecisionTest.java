@@ -311,6 +311,18 @@ class Claude2DecisionTest {
     }
 
     @Test
+    @DisplayName("개장 전 컷오프는 목표 세션 날짜의 뉴욕 09:00(고정 오프셋 아님): 서머타임이 끝난 주 — 10-30(금, EDT) 결정의 E = 11-02(월, EST) → 14:00Z = 23:00 KST, 다시 시작한 주 — 2027-03-12(금, EST) 결정의 E = 03-15(월, EDT) → 13:00Z")
+    void preOpenCutoffFollowsNewYorkTime() {
+        com.macrodash.analytics.TradingCalendar us = UsPaperMarket.INSTANCE.calendar();
+
+        Instant winter = ClaudeBookService.claude2Cutoff(us, LocalDate.of(2026, 10, 30));
+        assertThat(winter).isEqualTo(Instant.parse("2026-11-02T14:00:00Z"));
+        assertThat(com.macrodash.Kst.stamp(winter)).isEqualTo("2026-11-02 23:00 KST");
+        assertThat(ClaudeBookService.claude2Cutoff(us, LocalDate.of(2027, 3, 12)))
+                .isEqualTo(Instant.parse("2027-03-15T13:00:00Z"));
+    }
+
+    @Test
     @DisplayName("계좌2 소상한(④ — 결정 주기 단위): d의 계좌2 정기·출발 행의 호출 수(1 + 재시도 수)가 claude2.maxCallsPerCycle 이상이면 정기 결정은 부르지 않고 SKIPPED, API 오류 재시도는 남은 자리가 있을 때만")
     void cycleCapCountsTheDecisionRows() {
         active();
