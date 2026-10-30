@@ -39,3 +39,9 @@ bf5fb9760c6c75b691aaab89f6fdba33613d38e1:backend/src/test/resources/paper/golden
 
 # f8415961: CI 'AWS 덧붙임 해석' 단계의 가짜 GATE_SECRET(ci-gate-secret-…) — compose 해석용 시험 값. 서버의 실제 값과 대조해 일치 0건(2026-10-30).
 f841596142ddde11e49e1869d989ad9b31664d20:.github/workflows/ci.yml:generic-api-key:236
+
+# 0965e0b1: 화면 계좌2 소개의 설정 키 문자열("claude2.barsWaitMinutes"·"claude2.executionRecord" — Claude2Settings 상수) — 항목 이름이 "key"라서
+# generic-api-key로 잡혔다(엔트로피 3.882045·3.708132가 두 문자열과 같음). .env 값 43개와 대조해 일치 0건, .env.qa 없음(2026-10-30).
+# 그 커밋은 아직 main에 없는 브랜치 claude/us-claude2-2026-10에만 있지만, CI checkout(fetch-depth 0)이 원격 브랜치를 모두 받고 gitleaks가 모든 참조를 보므로 main에도 둔다.
+0965e0b16233394a8cd44a06e5f043563e289c04:frontend/src/lib/paper.ts:generic-api-key:506
+0965e0b16233394a8cd44a06e5f043563e289c04:frontend/src/lib/paper.ts:generic-api-key:507
