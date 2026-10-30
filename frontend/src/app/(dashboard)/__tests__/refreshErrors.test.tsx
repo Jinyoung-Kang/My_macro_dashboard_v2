@@ -34,15 +34,30 @@ import StatusPage from "../status/page";
 
 const FAILED = "⚠️ 새로 읽지 못함";
 
+/** 경로별 첫 응답이 훅에 건네진 기록. 훅의 await보다 먼저 then을 달아 두므로, 훅이 값을 받기 바로 앞에 찍힙니다. */
+const delivered = new Set<string>();
+
 /** 경로마다 첫 요청은 body로 답하고, 그 뒤(새로 읽기)는 실패. bodies에 없는 경로는 끝나지 않는 요청(경로는 정확히 일치). */
 function firstThenFail(bodies: Record<string, unknown>) {
   const seen = new Set<string>();
+  delivered.clear();
   api.apiGetShared.mockImplementation((path: string) => {
     if (!(path in bodies)) return new Promise(() => {});
     if (seen.has(path)) return Promise.reject(new Error("백엔드 API에 연결하지 못했습니다"));
     seen.add(path);
-    return Promise.resolve(bodies[path]);
+    const first = Promise.resolve(bodies[path]);
+    void first.then(() => delivered.add(path));
+    return first;
   });
+}
+
+/**
+ * 경로들의 첫 응답이 훅에 건네질 때까지 기다린 뒤 화면에 반영합니다(QA-147). 카드 제목은 패널의 첫 요청보다 먼저 그려질 수
+ * 있어, 제목만 보고 새로 읽으면 첫 요청이 버려집니다 — 값이 없을 때의 실패는 refreshError가 아니라 error입니다.
+ */
+async function firstResponsesShown(paths: string[]) {
+  await waitFor(() => expect(paths.filter((path) => !delivered.has(path))).toEqual([]));
+  await act(async () => {});
 }
 
 /**
@@ -85,8 +100,8 @@ beforeEach(() => {
 });
 afterEach(() => cleanup());
 
-// 대기(findBy·waitFor) 한도를 1초 → 5초, 테스트 하나의 한도를 5초 → 20초로. 평소에는 테스트 하나가 30ms 안에 끝나지만,
-// 기계 부하가 높으면(load average 20 이상) 그리는 양이 많은 상태 화면이 1초 대기를 넘겨 세 번에 한 번꼴로 실패했습니다.
+// 대기(findBy·waitFor) 한도 5초, 테스트 하나의 한도 20초(1800bae, 기본 1초·5초). 부하가 높을 때 상태 화면이 가끔 실패한 것은
+// 느려서가 아니라 첫 값을 받기 전에 새로 읽은 탓이라(QA-147) 한도와 무관했습니다. 통과하는 테스트는 30ms 안에 끝나므로 여유로 둡니다.
 describe("QA-067 자동 갱신 실패를 패널에 표시한다", { timeout: 20_000 }, () => {
   beforeAll(() => configure({ asyncUtilTimeout: 5_000 }));
   afterAll(() => configure({ asyncUtilTimeout: 1_000 }));
@@ -116,6 +131,7 @@ describe("QA-067 자동 갱신 실패를 패널에 표시한다", { timeout: 20_
       firstThenFail(bodies);
       const { rerender } = render(make());
       const section = await cardTitled(card);
+      await firstResponsesShown(Object.keys(bodies));
       expect(within(section).queryByText(FAILED)).toBeNull();
 
       await refreshAll(rerender, make, Object.keys(bodies).at(-1) as string);
@@ -176,7 +192,7 @@ describe("QA-104 자동 갱신하는 나머지 패널도 실패를 표시한다"
       const area = header
         ? (await screen.findByRole("heading", { name: card })).closest("header") as HTMLElement
         : await cardTitled(card);
-      await act(async () => {});   // 첫 응답을 화면에 반영 — 값이 없을 때의 실패는 refreshError가 아니라 error입니다
+      await firstResponsesShown(Object.keys(bodies));
       expect(within(area).queryByText(FAILED)).toBeNull();
 
       await refreshAll(rerender, make, Object.keys(bodies).at(-1) as string);
@@ -190,14 +206,16 @@ describe("QA-147 패널이 첫 값을 받은 뒤에 새로 읽는다(시험 흔�
   // 상태 화면은 개요 응답 뒤에야 오류·경고 로그 패널을 마운트하고, 패널의 첫 요청은 그 커밋 다음 Scheduler 작업에서 나갑니다.
   // 수정 전에는 카드 제목만 보고 새로 읽어, 첫 요청이 새로 읽기 신호 뒤 act 안에서 나가 곧바로 버려지고(abort) 값이 없는
   // 실패(error, '다시 시도')가 됐다(it.fails). cardTitled로는 부하가 없어도 0.4~1%, 부하가 높으면 더 자주 이 순서였습니다.
-  it.fails("상태 화면 오류·경고 로그: 카드가 막 그려진 직후에 새로 읽어도 '새로 읽지 못함'", async () => {
+  it("상태 화면 오류·경고 로그: 카드가 막 그려진 직후에 새로 읽어도 '새로 읽지 못함'", async () => {
     const path = "/api/status/issues";
-    firstThenFail({ "/api/status": { readMode: "auto", collectorReachable: true },
-                    [path]: { counts: { errors: 0, warnings: 0, recentGroups: 0, missingDatasets: 0 },
-                              collectorReachable: true, text: "" } });
+    const bodies = { "/api/status": { readMode: "auto", collectorReachable: true },
+                     [path]: { counts: { errors: 0, warnings: 0, recentGroups: 0, missingDatasets: 0 },
+                               collectorReachable: true, text: "" } };
+    firstThenFail(bodies);
     const committed = cardCommitted("수집 오류·경고 로그");   // 그리기 전에 관찰을 겁니다
     const { rerender } = render(<StatusPage />);
     const section = await committed;
+    await firstResponsesShown(Object.keys(bodies));
 
     await refreshAll(rerender, () => <StatusPage />, path);
 
