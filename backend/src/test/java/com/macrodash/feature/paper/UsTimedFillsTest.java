@@ -11,7 +11,6 @@ import com.macrodash.store.PaperStore.Lockout;
 import com.macrodash.store.PaperStore.Order;
 import com.macrodash.store.PaperStore.Position;
 import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -569,7 +568,6 @@ class UsTimedFillsTest {
         }
 
         @Test
-        @Disabled("재현 — 고치기 전에는 W가 (T, T+6분)이면 T 매도가 대기로 남은 채 같은 W의 시간별 스탑이 먼저 팔고 재진입 금지를 검")
         @DisplayName("W(10:02)가 T(10:00) 창을 다 본 1분봉 전 — 시각 지정 매도가 대기로 남으면 그 종목은 이 W의 스탑에서 빼고(작업 기록 한 줄), 다음 W(11:02)에서 그 매도를 10:00 봉으로 먼저 풂 — 스탑·재진입 금지 없음")
         void pendingTimedSellDefersTheStopAtThatObservation() {
             hold("XXX", 100, 90, 100, 100.0);
@@ -594,7 +592,6 @@ class UsTimedFillsTest {
         }
 
         @Test
-        @Disabled("재현 — 고치기 전에는 W가 (T, T+6분)이면 같은 W의 스탑이 재진입 금지를 걸어 다음 W에서 T 매수가 취소됨")
         @DisplayName("시각 지정 매수가 대기로 남은 종목도 그 W의 스탑에서 뺌 — 다음 W에서 T 매수를 10:00 봉으로 먼저 푼 뒤 스탑을 봄(늘어난 보유를 그 W 관측가로 팖, 재진입 금지로 취소되지 않음)")
         void pendingTimedBuyIsResolvedBeforeTheStop() {
             hold("YYY", 100, 90, 100, 100.0);

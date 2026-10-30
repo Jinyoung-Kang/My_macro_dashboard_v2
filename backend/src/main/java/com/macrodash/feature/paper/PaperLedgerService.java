@@ -1608,6 +1608,15 @@ public class PaperLedgerService {
                 continue;
             }
             double stopPrice = TrailingStop.stopPrice(holding.highWatermark, stopPct);
+            String unresolved = run.timedUnresolved.get(holding.ticker);
+            if (unresolved != null) {
+                // 미국 시각 지정 주문 — 앞 시각 T의 주문이 아직 풀리지 않음(UsTimedFills '스탑과의 순서'). 이 관측가로 팔면 T 주문보다 먼저 팔게 되므로
+                // 이번에는 보지 않고, 다음 관측치에서 그 주문을 먼저 푼 뒤 봅니다.
+                run.note(holding.ticker + " 스탑 판정을 다음 관측치로 미룸 — 기준 시각이 지난 시각 지정 주문(" + unresolved
+                        + ")이 아직 풀리지 않아 그 주문을 먼저 풉니다(관측가 " + money(bar.close()) + " ≤ 스탑 "
+                        + money(stopPrice) + ")");
+                continue;
+            }
             int qty = holding.qty;
             Map<String, Object> reason = new LinkedHashMap<>();
             reason.put("trigger", "TRAILING_STOP");
@@ -2023,6 +2032,11 @@ public class PaperLedgerService {
         boolean timedDue;
         /** 미국: 만료 단계가 지난 재진입 금지를 지우기 전의 금지(종목 → 마지막 날) — 2b가 목표 세션 E로 판정. */
         final Map<String, LocalDate> timedLockouts = new HashMap<>();
+        /**
+         * 미국: 2b 뒤에도 기준 시각이 지났는데 풀리지 않은 시각 지정 주문의 종목 → 그 주문 표기 — 이 관측치의 스탑에서 뺍니다(다음 관측치에서 그 주문을 먼저
+         * 풂, {@link UsTimedFills} '스탑과의 순서').
+         */
+        final Map<String, String> timedUnresolved = new TreeMap<>();
         int filled;
         int stopped;
         int expired;

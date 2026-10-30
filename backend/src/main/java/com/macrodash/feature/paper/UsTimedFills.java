@@ -74,6 +74,12 @@ import java.util.Set;
  * 종목 새 값이 없음)는 지금 규칙대로 기다리고, E가 끝나도 확인하지 못하면 만료합니다. 새 보유의 최고가는 체결가부터, 분할 기준은 W 저장본의 E
  * 직전 거래일 종가입니다.
  *
+ * <p><b>스탑과의 순서</b>(§10-2): 시간별 스탑(장부 4단계)은 W 관측가로 돕니다. 2b 뒤에도 기준 시각 T가 지난 시각 지정 주문이 풀리지 않고 남은 종목
+ * (W가 (T, T + 6분)에 수집돼 그 뒤 1분봉 저장본도 T 창을 다 보지 못함 — {@link Evidence#NOT_YET}, 거래 없음 기다림·재검사 오류 등)은 그 W의 스탑에서
+ * 뺍니다({@code BookRun.timedUnresolved}) — 그러지 않으면 W 스탑이 앞 시각 T의 매도보다 먼저 팔고 재진입 금지를 걸어, 다음 W에서 그 매도는 '보유 없음',
+ * 매수는 재진입 금지로 취소됩니다. 다음 W에서 그 주문을 먼저 푼 뒤 스탑을 봅니다(대가: 그 종목의 스탑 판정이 늦어짐 — 1분봉 기다림과 같은 성격, 미룬
+ * 때는 작업 기록 notes에 한 줄). E가 끝나면(3a) 모든 주문이 풀리므로 미룸은 그 세션 안에서 끝납니다.
+ *
  * <p><b>장부 재검사</b>(§8 끝): 고른 봉이 ⑤⑥을 어기면(수집기 저장본의 값이 틀림 — 창에 든 T 앞 봉·다른 날 봉 등) 체결하지 않고 운영 알림
  * ({@code Outcome.alerts})으로 남깁니다. 주문 자체가 ⑤를 어기면(T ≤ 생성 + 60초 — 검증기 {@code LATE_FOR_TIMING}이 막는 것)·E 마감 뒤 시각(조기
  * 폐장)이면 체결할 수 없어 취소하고 알림을 남깁니다. 장부 오류(예외)가 아니므로 그 책의 다른 처리는 그대로 됩니다.
@@ -583,13 +589,23 @@ final class UsTimedFills {
             }
             Look look = status.get(id) == Status.HELD ? unverified(d)
                     : settle(d, bars, run.quotes, calendar, carried.get(id));
-            if (apply(run, d, look, bars, touched) == Status.HELD) {
-                apply(run, d, unverified(d), bars, touched);
+            Status settled = apply(run, d, look, bars, touched);
+            if (settled == Status.HELD) {
+                settled = apply(run, d, unverified(d), bars, touched);
             }
+            status.put(id, settled);
         }
 
         // 3b — 2b·3a로 생긴 보유의 평가 가격을 W의 봉으로
         touched.forEach((ticker, session) -> revalue(run, ticker, session));
+
+        // 기준 시각이 지났는데 아직 풀리지 않은 주문의 종목 — 이 W의 시간별 스탑에서 뺍니다(장부 4단계, 클래스 설명 '스탑과의 순서').
+        for (Due d : due) {
+            if (status.get(d.order().id()) != Status.DONE && d.order().ticker() != null) {
+                run.timedUnresolved.putIfAbsent(d.order().ticker(), "주문 " + d.order().id() + " " + d.order().side() + " "
+                        + d.order().timing());
+            }
+        }
     }
 
     private static Look unverified(Due due) {
