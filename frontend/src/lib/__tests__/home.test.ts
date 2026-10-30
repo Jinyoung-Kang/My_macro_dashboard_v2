@@ -342,6 +342,18 @@ describe("paperHomeModel — 모의매매(미국)", () => {
     expect(model.rows.map((row) => row.name)).toEqual(["규칙 계좌", "Claude 계좌2", "Claude 계좌1", "SPY 계좌", "60/40 계좌"]);
   });
 
+  // 수정 전에는 끝 줄이 개요의 출발일(startDate)만 적어, 늦게 앞으로 체결로 출발한 Claude 계좌2(행의 수익률은 서버가 계좌2 자기 출발 대비로 셈)도
+  // 2026-10-23에 출발한 것처럼 읽혔다(화면 점검 — 수정 전에는 it.fails).
+  it.fails("출발일이 다른 계좌가 있으면 끝 줄에 '· Claude 계좌2는 S 출발(앞으로 체결)'을 덧붙인다 — 같은 날 출발·시작 전 계좌는 적지 않음", () => {
+    const base = paperOverview();
+    const claude2 = { ...base.books![1], code: "claude2", label: "Claude 계좌2", startedOn: "2026-11-02" };
+    expect(paperHomeModel({ ...base, books: [...base.books!, claude2] }, paperStatus(true)).startLine)
+      .toBe("출발 2026-10-23 · 처음 현금 100,000 달러 · 변화율은 출발 대비 · Claude 계좌2는 2026-11-02 출발(앞으로 체결)");
+    const waiting = { ...claude2, status: "NOT_STARTED" as const, startedOn: null };
+    expect(paperHomeModel({ ...base, books: [...base.books!, waiting] }, paperStatus(true)).startLine)
+      .toBe("출발 2026-10-23 · 처음 현금 100,000 달러 · 변화율은 출발 대비");
+  });
+
   it("계좌 행은 모의매매 개요와 같은 규칙(bookAssetRow) + 링크 — 규칙을 두 곳에 두지 않는다", () => {
     const overview = paperOverview();
     overview.pendingBackfill = ["bench_mix"];
