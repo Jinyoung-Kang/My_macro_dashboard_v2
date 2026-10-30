@@ -97,5 +97,24 @@
     "universe" : null,
     "withEstimate4" : null,
     "generatedAtKst" : null
+  },
+  "claude2" : {
+    "book" : "claude2",
+    "status" : "NOT_STARTED",
+    "startedOn" : null,
+    "enabled" : false,
+    "nextDecision" : {
+      "tradingDate" : "2026-10-26",
+      "atKst" : "2026-10-27 07:30 KST",
+      "atEt" : "2026-10-26 18:30 ET",
+      "cutoffKst" : "2026-10-27 22:00 KST",
+      "cutoffEt" : "2026-10-27 09:00 ET"
+    },
+    "cycle" : {
+      "tradingDate" : "2026-10-26",
+      "calls" : 0,
+      "cap" : 2
+    },
+    "bars" : null
   }
 }

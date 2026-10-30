@@ -21,9 +21,10 @@ import java.util.Map;
  * <pre>
  *  GET  /api/paper/decisions?book=rules&amp;limit=50  결정 목록(최근 순, 1–500)
  *  GET  /api/paper/decisions/{id}                    결정 한 건(선정·신호·주문·게이트 참고)과 그 주문
- *  POST /api/paper/run/decision?market=US            {"book"} 수동 결정(MANUAL — 미국은 시각 조건 없이 한 번, 한국은 kr_claude만·결정 창·자료 게이트 안에서)
- *  POST /api/paper/run/initial-decision?market=US    {"book", "preview"?} 시작(초기 결정 + 출발일 사후 체결) — 한국은 본문 없이 네 계좌 함께
- *                                                    출발(정기 출발과 같은 창·게이트, 이미 출발했으면 그 기록)
+ *  POST /api/paper/run/decision?market=US            {"book"} 수동 결정(MANUAL — 미국은 시각 조건 없이 한 번(계좌2 claude2는 확정 종가 처리 뒤 ~
+ *                                                    다음 세션 09:00 ET 창 안에서만), 한국은 kr_claude만·결정 창·자료 게이트 안에서)
+ *  POST /api/paper/run/initial-decision?market=US    {"book", "preview"?} 시작(초기 결정 + 출발일 사후 체결 — 계좌2는 앞으로 체결 출발, 같은 창 안에서만,
+ *                                                    미리보기 없음) — 한국은 본문 없이 네 계좌 함께 출발(정기 출발과 같은 창·게이트, 이미 출발했으면 그 기록)
  * </pre>
  *
  * <p>Claude 책({@code book:"claude"})의 수동 결정·미리보기·시작은 Claude를 한 번 부릅니다(하루 호출 상한에 셈, 설정
@@ -109,8 +110,16 @@ public class PaperDecisionController {
             return krStart(requested, body);
         }
         String book = Params.oneOf("book", body == null ? null : body.book(),
-                List.of(PaperBooks.RULES, PaperBooks.CLAUDE));
+                List.of(PaperBooks.RULES, PaperBooks.CLAUDE, PaperBooks.CLAUDE2));
         boolean preview = body.preview() != null && body.preview();
+        if (PaperBooks.CLAUDE2.equals(book)) {
+            // 계좌2(계좌2 명세 §4-1·§5-4) — 계좌1의 시작·미리보기(출발일 사후 체결)는 쓰지 않고, 앞으로 체결 출발을 그 창 안에서만. 미리보기는 없음.
+            if (preview) {
+                throw new InvalidRequestException("계좌2에는 미리보기가 없습니다 — 출발은 앞으로 체결(INITIAL)이고 정기 출발과 같은 창 안에서만 "
+                        + "냅니다(preview 없이 보내세요).");
+            }
+            return claude2Start();
+        }
         if (PaperBooks.CLAUDE.equals(book)) {
             return preview ? claude.preview() : claudeStart();
         }
@@ -153,6 +162,23 @@ public class PaperDecisionController {
         out.put("decisions", started.decisions().stream().map(query::decisionSummary).toList());
         out.put("books", started.books().stream().map(query::bookSummary).toList());
         out.put("record", started.record());
+        return out;
+    }
+
+    /**
+     * 계좌2 수동 출발({@link PaperDecisionJob#startClaude2Now}) — 시작과 같은 모양({@code decision}·{@code fills}(늘 빈 목록 — 사후 체결 없음)·{@code book})에
+     * {@code outcome}(STARTED · ALREADY_STARTED)·{@code message}.
+     */
+    private Map<String, Object> claude2Start() {
+        var started = job.startClaude2Now();
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("ok", true);
+        out.put("preview", false);
+        out.put("outcome", started.outcome());
+        out.put("message", started.message());
+        out.put("decision", started.decision() == null ? null : query.decisionSummary(started.decision()));
+        out.put("fills", List.of());
+        out.put("book", query.bookSummary(PaperBooks.CLAUDE2));
         return out;
     }
 

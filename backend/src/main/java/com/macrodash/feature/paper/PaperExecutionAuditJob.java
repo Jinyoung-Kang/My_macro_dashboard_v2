@@ -11,6 +11,7 @@ import com.macrodash.store.PaperStore.ExecFill;
 import com.macrodash.store.PaperStore.Order;
 import com.macrodash.store.PaperStore.OrderExec;
 import com.macrodash.store.Snapshot;
+import com.macrodash.store.StoreRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -53,6 +54,23 @@ import java.util.Map;
  * ({@code paper_job_runs}, 이름 {@value #JOB})은 무엇이든 새로 썼을 때와 오류일 때만 남깁니다(5분마다 쌓이면 다른 작업 기록을 밀어냄) — 실행 시간은
  * 그 기록의 시작·끝 시각으로 잽니다(명세 §14-1 — 길면 리스크 점검 뒤에 붙이는 판으로). 예외는 삼키고 로그만 남깁니다(스케줄러로 던지지 않음).
  *
+ * <p><b>계좌2 주문의 계좌1식 기준</b>(NEXT_OBSERVATION, 명세 §14-1·ADR 0022 결정 4 — M1의 P_cf): 체결 조건 ①②④를 통과한 <b>첫</b> {@code paper.quotes}
+ * 저장본의 그 종목 종가입니다({@link ExecutionAudit#fromObservation}). 저장본은 최신 한 건만 남으므로(V1 snapshots) 이 작업은 자기가 본 저장본이
+ * 빠짐없이 이어졌음을 증명할 때만 적고, 증명하지 못하면 null로 둡니다 — 뒤 저장본의 값으로 채우지 않습니다. 증명은 <b>관측치 사슬</b>입니다:
+ * <ol>
+ *   <li>새 관측치 저장본(수집 시각 c)을 처음 본 실행은 사슬 고리 {@code quotesChain = {collectedAt: c, previous: p, adjacent, runsBetween}}을 작업 기록에
+ *       남깁니다(p = 그 전에 기록한 가장 늦은 고리의 수집 시각 — 저장된 기록이라 재기동·서버 정지 뒤에도 이어짐).</li>
+ *   <li>{@code adjacent}는 p와 c 사이에 다른 저장이 없었다는 증명입니다 — 수집기 실행 기록({@code collector_task_runs})에서 관측치 태스크
+ *       ({@code paper_quotes})의 실행 가운데 시작이 (p, c) 사이인 것이 정확히 하나(c를 쓴 실행)면 참. 근거: 이 저장본은 그 태스크만 쓰고, 같은 태스크는
+ *       겹쳐 돌지 않으며(앞 실행이 도는 중이면 새로 시작하지 않고 그 사실을 한 줄로 기록 — 그 줄도 셈), 저장은 그 실행이 시작한 뒤에 하므로 p 뒤의
+ *       저장마다 (p, c) 안에서 시작한 실행이 하나씩 있습니다. 둘 이상이면 거짓(놓친 저장본이 있을 수 있음). 0이면 c를 쓴 실행의 기록이 아직 없는
+ *       것이라(기록은 저장 뒤에 남음) 고리를 남기지 않고 다음 실행에서 다시 셉니다(그동안 이 기준은 적지 않음).</li>
+ *   <li>주문(생성 시각 C)의 지금 저장본이 첫째라는 것: 지금 고리에서 {@code previous}를 따라 C 이하인 고리에 닿을 때까지 모든 고리가 {@code adjacent}
+ *       — 그러면 C 뒤의 모든 저장본을 이 작업이 차례로 봤고, 그때마다 그 주문을 ①②④로 보았는데 값이 없었으니 통과하지 못했던 것입니다. 고리가 하나라도
+ *       거짓이거나 빠졌으면(처음 고리·기록 200건 밖으로 밀림·서버가 꺼진 사이 저장이 둘 이상) 그 주문은 끝까지 null입니다.</li>
+ * </ol>
+ * 남는 가정은 두 가지입니다 — 수집기 실행 기록이 빠지지 않음(기록 쓰기가 실패하면 수집기는 로그만 남김), 백엔드·수집기·DB 시계가 같음(같은 호스트).
+ *
  * <p>{@code dashboard.paper.enabled=false}(로컬 v2 — {@code PAPER_ENABLED=false})면 아무것도 읽거나 쓰지 않습니다. 수동 실행 경로는 없습니다.
  */
 @Service
@@ -67,28 +85,72 @@ public class PaperExecutionAuditJob {
 
     private static final Logger log = LoggerFactory.getLogger(PaperExecutionAuditJob.class);
 
+    /** 작업 기록 상세의 관측치 사슬 고리 칸(클래스 설명). */
+    static final String CHAIN = "quotesChain";
+    /** 사슬 고리를 찾는 작업 기록 수 — 기록은 작업마다 최근 200건만 남습니다(PaperStore). */
+    private static final int CHAIN_RECORDS = 200;
+
     private final PaperStore store;
     private final StoreReader reader;
     private final PaperMarketData marketData;
+    private final StoreRepository repository;
     private final PaperConfig config;
     private final ObjectMapper mapper;
     private final Clock clock;
 
     @Autowired
-    PaperExecutionAuditJob(PaperStore store, StoreReader reader, PaperMarketData marketData, PaperConfig config,
-                           ObjectMapper mapper) {
-        this(store, reader, marketData, config, mapper, Clock.systemUTC());
+    PaperExecutionAuditJob(PaperStore store, StoreReader reader, PaperMarketData marketData, StoreRepository repository,
+                           PaperConfig config, ObjectMapper mapper) {
+        this(store, reader, marketData, repository, config, mapper, Clock.systemUTC());
     }
 
     /** 테스트용 — 시계를 움직입니다. */
-    PaperExecutionAuditJob(PaperStore store, StoreReader reader, PaperMarketData marketData, PaperConfig config,
-                           ObjectMapper mapper, Clock clock) {
+    PaperExecutionAuditJob(PaperStore store, StoreReader reader, PaperMarketData marketData, StoreRepository repository,
+                           PaperConfig config, ObjectMapper mapper, Clock clock) {
         this.store = store;
         this.reader = reader;
         this.marketData = marketData;
+        this.repository = repository;
         this.config = config;
         this.mapper = mapper;
         this.clock = clock;
+    }
+
+    /**
+     * 관측치 사슬의 고리 하나(클래스 설명) — 저장본 수집 시각, 그 전에 기록한 고리의 수집 시각(없으면 null), 둘 사이에 다른 저장이 없었음이 증명됐나,
+     * 그 사이 시작한 관측치 태스크 실행 수(모르면 null).
+     */
+    record ChainLink(Instant collectedAt, Instant previous, boolean adjacent, Integer runsBetween) {
+
+        Map<String, Object> view() {
+            Map<String, Object> out = new LinkedHashMap<>();
+            out.put("collectedAt", collectedAt.toString());
+            out.put("previous", previous == null ? null : previous.toString());
+            out.put("adjacent", adjacent);
+            out.put("runsBetween", runsBetween);
+            return out;
+        }
+    }
+
+    /**
+     * 그 주문의 지금 관측치가 ①②④를 통과하는 첫 저장본일 수 있음이 증명됐나(클래스 설명 3) — 지금 고리부터 {@code previous}를 따라 주문 생성 시각
+     * 이하의 고리에 닿을 때까지 모두 {@code adjacent}. 고리가 빠졌거나 처음 고리(previous 없음)에 닿으면 거짓.
+     *
+     * @param links 수집 시각 → 고리(이번 실행의 새 고리 포함)
+     */
+    static boolean chainProven(Instant created, Instant current, Map<Instant, ChainLink> links) {
+        if (created == null || current == null) {
+            return false;
+        }
+        Instant at = current;
+        while (at.isAfter(created)) {
+            ChainLink link = links.get(at);
+            if (link == null || !link.adjacent() || link.previous() == null) {
+                return false;
+            }
+            at = link.previous();
+        }
+        return true;
     }
 
     /**
@@ -136,26 +198,102 @@ public class PaperExecutionAuditJob {
         TradingCalendar calendar = UsPaperMarket.INSTANCE.calendar();   // 미국 시장 묶음의 달력(뉴욕 세션 날짜)
         Snapshot bars = null;
         Quotes quotes = null;
+        LinkState link = null;
         Outcome outcome;
         try {
             // 수집 태스크 이름을 넘기지 않고(null) quietly 안에서 읽습니다 — 오래된 저장본이어도 수집을 요청하지 않음.
             bars = reader.quietly(() -> reader.read(Datasets.SNAP_PAPER_BARS_US, Datasets.MAX_AGE_BARS_US, null))
                     .orElse(null);
             quotes = reader.quietly(() -> marketData.quotes(UsPaperMarket.INSTANCE)).orElse(null);
+            Map<Instant, ChainLink> links = chainLinks();
+            link = quotes == null ? null : link(quotes.collectedAt(), links);
+            if (link != null && link.isNew()) {
+                links.put(link.collectedAt(), link.link());
+            }
             JsonNode payload = bars == null ? null : bars.payload();
             Quotes observed = quotes;
-            outcome = store.atomically(() -> audit(started, payload, observed, calendar));
+            // 고리를 아직 셀 수 없으면(c를 쓴 실행의 기록 전) 이번에는 계좌2 기준을 보지 않습니다(link == null).
+            Map<Instant, ChainLink> chain = link == null ? null : links;
+            outcome = store.atomically(() -> audit(started, payload, observed, calendar, chain));
         } catch (RuntimeException e) {
             outcome = new Outcome(0, 0, 0, null, e.getClass().getSimpleName() + " " + e.getMessage());
+            link = null;
         }
-        if (outcome.rowsWritten() > 0 || outcome.error() != null) {
-            record(started, outcome, bars, quotes, calendar);
+        boolean newLink = link != null && link.isNew();
+        if (outcome.rowsWritten() > 0 || outcome.error() != null || newLink) {
+            record(started, outcome, bars, quotes, calendar, newLink ? link.link() : null);
         }
         return outcome;
     }
 
-    /** 대상 계좌마다 주문을 보고 감사 행을 합칩니다(한 트랜잭션 안). */
-    private Outcome audit(Instant now, JsonNode barsPayload, Quotes quotes, TradingCalendar calendar) {
+    /** 이번 실행의 고리 — 새 고리면 {@code isNew}(작업 기록에 남김), 이미 기록한 저장본이면 그 고리. */
+    private record LinkState(ChainLink link, boolean isNew) {
+
+        Instant collectedAt() {
+            return link.collectedAt();
+        }
+    }
+
+    /**
+     * 지금 저장본(수집 시각 c)의 고리(클래스 설명 1·2) — 이미 기록한 저장본이면 그 고리, 아니면 그 전에 기록한 가장 늦은 고리 p와의 사이를 수집기 실행 기록으로
+     * 셈. 셀 수 없으면(p와 c 사이에 시작한 실행 기록이 아직 0 — c를 쓴 실행의 기록 전) null.
+     */
+    private LinkState link(Instant collectedAt, Map<Instant, ChainLink> links) {
+        if (collectedAt == null) {
+            return null;
+        }
+        ChainLink known = links.get(collectedAt);
+        if (known != null) {
+            return new LinkState(known, false);
+        }
+        Instant previous = links.keySet().stream().filter(at -> at.isBefore(collectedAt)).max(Instant::compareTo)
+                .orElse(null);
+        if (previous == null) {
+            return new LinkState(new ChainLink(collectedAt, null, false, null), true);   // 처음 고리 — 그 앞을 모름
+        }
+        int runs = repository.countTaskRunsStarted(UsPaperMarket.INSTANCE.quotesTask(), previous, collectedAt);
+        if (runs == 0) {
+            return null;
+        }
+        return new LinkState(new ChainLink(collectedAt, previous, runs == 1, runs), true);
+    }
+
+    /** 기록한 사슬 고리(작업 기록 최근 {@value #CHAIN_RECORDS}건의 {@value #CHAIN} 칸) — 수집 시각 → 고리, 같은 저장본이 둘이면 먼저 기록한 것. */
+    private Map<Instant, ChainLink> chainLinks() {
+        Map<Instant, ChainLink> out = new HashMap<>();
+        List<PaperStore.JobRun> runs = store.recentJobRuns(JOB, CHAIN_RECORDS);
+        for (int i = runs.size() - 1; i >= 0; i--) {   // 오래된 기록부터 — 먼저 기록한 고리가 남게
+            JsonNode chain = runs.get(i).detail() == null ? null : runs.get(i).detail().get(CHAIN);
+            Instant at = chain == null ? null : instant(chain.path("collectedAt").asString(null));
+            if (at == null || out.containsKey(at)) {
+                continue;
+            }
+            JsonNode runsBetween = chain.get("runsBetween");
+            out.put(at, new ChainLink(at, instant(chain.path("previous").asString(null)),
+                    chain.path("adjacent").asBoolean(false),
+                    runsBetween == null || !runsBetween.isNumber() ? null : runsBetween.intValue()));
+        }
+        return out;
+    }
+
+    private static Instant instant(String text) {
+        if (text == null || text.isBlank()) {
+            return null;
+        }
+        try {
+            return Instant.parse(text);
+        } catch (java.time.format.DateTimeParseException e) {
+            return null;
+        }
+    }
+
+    /**
+     * 대상 계좌마다 주문을 보고 감사 행을 합칩니다(한 트랜잭션 안).
+     *
+     * @param chain 관측치 사슬(이번 고리 포함) — 이번 실행에 계좌2 기준을 볼 수 없으면 null
+     */
+    private Outcome audit(Instant now, JsonNode barsPayload, Quotes quotes, TradingCalendar calendar,
+                          Map<Instant, ChainLink> chain) {
         LocalDate today = now.atZone(calendar.zone()).toLocalDate();
         LocalDate fromSession = today.minusDays(WINDOW_DAYS);
         Integer lag = ExecutionAudit.lagSeconds(barsPayload, calendar);
@@ -187,8 +325,11 @@ public class PaperExecutionAuditJob {
             for (Order order : audited) {
                 orders++;
                 ExecFill fill = fills.get(order.id());
+                // 계좌2 주문의 계좌1식 기준 — 지금 관측치가 첫 통과 저장본일 수 있음을 사슬로 증명했을 때만(클래스 설명).
+                boolean first = chain != null && quotes != null
+                        && chainProven(order.createdAt(), quotes.collectedAt(), chain);
                 Map<String, Price> prices = ExecutionAudit.counterfactuals(order, fill == null ? null : fill.fill(),
-                        barsPayload, quotes, calendar);
+                        barsPayload, quotes, calendar, first);
                 Boolean late = ExecutionAudit.lateResolved(order, fill, calendar);
                 OrderExec before = existing.get(order.id());
                 int fresh = 0;
@@ -233,7 +374,8 @@ public class PaperExecutionAuditJob {
         return ExecutionAudit.MENU.keySet().stream().anyMatch(timing -> filled(row, timing));
     }
 
-    private void record(Instant started, Outcome outcome, Snapshot bars, Quotes quotes, TradingCalendar calendar) {
+    private void record(Instant started, Outcome outcome, Snapshot bars, Quotes quotes, TradingCalendar calendar,
+                        ChainLink link) {
         Map<String, Object> detail = new LinkedHashMap<>();
         detail.put("books", ExecutionAudit.auditedBooks());
         detail.put("orders", outcome.orders());
@@ -251,6 +393,9 @@ public class PaperExecutionAuditJob {
             detail.put("barsCollectedAtKst", null);
         }
         detail.put("quotesCollectedAtKst", quotes == null ? null : Kst.stamp(quotes.collectedAt()));
+        if (link != null) {
+            detail.put(CHAIN, link.view());   // 새로 본 관측치 저장본의 고리(클래스 설명 — 다음 실행·재기동 뒤에도 이 기록으로 이음)
+        }
         if (outcome.error() != null) {
             detail.put("error", outcome.error());
         }

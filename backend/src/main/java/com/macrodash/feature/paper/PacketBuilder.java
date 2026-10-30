@@ -46,6 +46,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
+import tools.jackson.databind.DeserializationFeature;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 import tools.jackson.databind.SerializationFeature;
@@ -613,6 +614,53 @@ public class PacketBuilder {
         }
         return new Packet(body, text, sha256(text), in.notes().ids(),
                 calendar.measure().withEvents(events.result()).withEarnings(fundamentals.earnings()));
+    }
+
+    /**
+     * 계좌2가 따로 도는 실행(계좌2 명세 §5-1 — 재시도·계좌1이 이미 끝난 날·1분봉 기다림으로 한 주기 늦은 날)의 시장 입력 — 지금 읽은 시장 입력
+     * {@code fresh}에, 같은 기준 거래일 계좌1 결정 행이 보낸 패킷({@code packet_text} — 보낸 글자 그대로)의 계좌 비의존 섹션
+     * ({@link #MARKET_SECTION_KEYS})과 그 결정의 메모 번호를 넣습니다. 저장본은 최신 한 건만 남아 계좌1이 본 판을 다시 읽을 수 없으므로
+     * (V1 snapshots) 그 결정이 보낸 섹션을 씁니다. 나머지(관측치·유니버스·일정·사건 저장본 — 계좌에 기대는 섹션의 재료)는 지금 읽은 것입니다.
+     * 보낸 글자가 없거나 그 섹션이 하나라도 없으면 {@code fresh} 그대로(지어내지 않음 — 결정 행의 {@code sharedWith}가 null이 됨).
+     *
+     * @param book1 같은 기준 거래일 계좌1 결정 행
+     */
+    MarketInputs withSectionsOf(MarketInputs fresh, Decision book1) {
+        JsonNode sent = readSent(book1 == null ? null : book1.packetText(), mapper);
+        if (sent == null || !sent.isObject()) {
+            return fresh;
+        }
+        Map<String, JsonNode> sections = new LinkedHashMap<>();
+        for (String key : MARKET_SECTION_KEYS) {
+            JsonNode section = sent.get(key);
+            if (section == null) {
+                return fresh;
+            }
+            sections.put(key, section);
+        }
+        NoteService.PacketNotes notes = fresh.notes();
+        NoteService.PacketNotes shared = new NoteService.PacketNotes(notes.notes(), notes.text(),
+                book1.noteIds() == null ? List.of() : book1.noteIds(), notes.omitted(), notes.maxChars(), notes.note());
+        return new MarketInputs(fresh.asOf(), fresh.initial(), fresh.settingsBody(), fresh.settingsVersion(), fresh.paper(),
+                fresh.ruleSettings(), fresh.limits(), fresh.chosen(), fresh.context(), fresh.names(), fresh.quotes(),
+                fresh.universe(), fresh.inputsStale(), fresh.consensus(), fresh.calendar(), fresh.consensusLayer(),
+                fresh.newsWindow(), fresh.news(), fresh.newsRows(), fresh.newsStatus(), shared, sections);
+    }
+
+    /**
+     * 보낸 패킷 글자({@code packet_text}) → JSON 트리 — 소수를 {@link BigDecimal}로 읽어(지수 표기·끝자리 없이) 다시 직렬화하면 보낸 글자와 같은
+     * 섹션이 됩니다({@link #toNode}의 숫자 규칙). 글자가 없거나 읽지 못하면 null.
+     */
+    static JsonNode readSent(String text, ObjectMapper mapper) {
+        if (text == null || text.isBlank()) {
+            return null;
+        }
+        try {
+            return mapper.readerFor(JsonNode.class).with(DeserializationFeature.USE_BIG_DECIMAL_FOR_FLOATS)
+                    .readValue(text);
+        } catch (RuntimeException e) {
+            return null;
+        }
     }
 
     /**

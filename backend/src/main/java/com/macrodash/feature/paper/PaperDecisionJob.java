@@ -117,6 +117,14 @@ import java.util.concurrent.locks.ReentrantLock;
  * 넘긴 실행도 세션은
  * {@code lastCompletedSession}이라 D 그대로입니다. 수동 결정도 결정 창과 게이트 안에서만 받습니다({@link #runNow(PaperMarket, String)}).
  *
+ * <p><b>미국 Claude 계좌2</b>(계좌2 명세 §5-1·§4-1, ADR 0022): 미국 정기 실행은 규칙 → 계좌1 → 계좌2 순이고 같은 잠금·같은 설정 판입니다. 계좌2는 설정
+ * {@code claude2.enabled}가 켜졌을 때만 — 시작 전이면 앞으로 체결 출발({@code INITIAL} — 그 거래일 창에 한 번, 실패하면 아무것도 쓰지 않고 다음 창,
+ * 해 봤는지는 저장된 작업 기록 {@code claude2.startTried}로 셈), 운용 중이면 출발일 뒤 거래일의 정기 결정입니다. 계좌1이 기다리는 확정 종가 관측치에 더해
+ * 계좌2 장부가 그 관측치를 처리했어야 합니다(1분봉 기다림이 풀림 — 기한 뒤에도). 두 계좌가 같은 실행에서 결정하면 시장 입력을 한 번 읽어 함께 씁니다
+ * (입력 동결). 개장 전 컷오프·소상한·호출 상한은 {@link ClaudeBookService#decideClaude2}가 봅니다. 오류 횟수는 (시장, 거래일, 계좌2)로 따로 셉니다.
+ * 수동 결정·수동 출발은 '확정 종가 처리(1분봉 기다림 풀림 포함) 뒤 ~ 다음 세션 09:00 ET' 창 안에서만입니다({@link #runNow(PaperMarket, String)}·
+ * {@link #startClaude2Now}).
+ *
  * <p><b>실행 하나 = 달력 한 벌·설정 판 하나</b>(C1a): 정기·수동 실행은 시작할 때 그 시장의 실행 문맥({@link MarketRun})을 한 번 열어
  * ({@link PaperMarkets#open}) 세션 d·결정 시각과 기한·관측치 확정 판정·장부 처리·미확정 순자산 줄·Claude 결정에 그대로 넘깁니다 —
  * 그 사이 설정 탭에서 새 판을 저장해도 Claude 결정 행의 {@code settings_version}·패킷·시스템 프롬프트는 이 실행이 읽은 판이고,
@@ -180,9 +188,16 @@ public class PaperDecisionJob {
      * @param pricesFinal 확정 종가로 결정했나(결정 전에 끝났으면 null)
      * @param rules       규칙 책 결정(내지 않았으면 null)
      * @param claude      Claude 책 결정(내지 않았으면 null)
+     * @param claude2     미국 Claude 계좌2 결정(내지 않았으면 null — 출발이 실패해 쓰지 않은 때 포함)
      */
     public record Result(String outcome, LocalDate tradingDate, Boolean pricesFinal, Decision rules, Decision claude,
-                         String message) {
+                         String message, Decision claude2) {
+
+        /** 계좌2 결정이 없는 결과(계좌2 밖의 모든 갈래). */
+        public Result(String outcome, LocalDate tradingDate, Boolean pricesFinal, Decision rules, Decision claude,
+                      String message) {
+            this(outcome, tradingDate, pricesFinal, rules, claude, message, null);
+        }
     }
 
     /** 수동 출발 단추가 받은 장부가 이미 출발했음 — 그 출발 기록을 돌려줌({@link #startNow}). */
@@ -258,12 +273,15 @@ public class PaperDecisionJob {
     /**
      * 그 거래일에 남은 일 — 게이트 지표(두 책이 함께 기다림), 시작한 규칙 책의 정기 결정, Claude 책의 정기 결정(재시도할 API 오류 포함).
      */
-    private record Work(boolean gate, boolean rules, boolean claude) {
+    private record Work(boolean gate, boolean rules, boolean claude, String claude2) {
 
         boolean any() {
-            return gate || rules || claude;
+            return gate || rules || claude || claude2 != null;
         }
     }
+
+    /** 작업 기록 상세의 칸 — 그 실행이 계좌2 출발을 해 봤음(성공·실패 모두 — 그 거래일 창에 다시 부르지 않게, 수동 출발은 남기지 않음). */
+    static final String CLAUDE2_START_TRIED = "startTried";
 
     @Autowired
     PaperDecisionJob(PaperStore store, StoreReader reader, PaperMarketData marketData, PaperLedgerService ledger,
@@ -445,8 +463,10 @@ public class PaperDecisionJob {
         }
         boolean rulesGaveUp = gaveUp(market, d, market.rulesBook());
         boolean claudeGaveUp = gaveUp(market, d, market.claudeBook());
-        // 게이트 지표는 두 책이 함께 기다리는 일입니다(그 단계 오류는 두 책 모두에 셈).
-        if ((!(work.gate() || work.rules()) || rulesGaveUp) && (!(work.gate() || work.claude()) || claudeGaveUp)) {
+        boolean claude2GaveUp = gaveUp(market, d, PaperBooks.CLAUDE2);
+        // 게이트 지표는 두 책이 함께 기다리는 일입니다(그 단계 오류는 두 책 모두에 셈). 계좌2는 자기 결정만.
+        if ((!(work.gate() || work.rules()) || rulesGaveUp) && (!(work.gate() || work.claude()) || claudeGaveUp)
+                && (work.claude2() == null || claude2GaveUp)) {
             return new Result(GAVE_UP, d, null, null, null, d + " 오류가 " + MAX_ATTEMPTS + "번 나 오늘은 더 시도하지 않습니다 — "
                     + "수동 실행(POST /api/paper/run/decision)은 다시 시도합니다");
         }
@@ -480,9 +500,12 @@ public class PaperDecisionJob {
                 detail.put("gateLevel", gate.level());
             }
         } catch (RuntimeException e) {
-            // 장부·게이트가 실패하면 두 책 모두 결정하지 않습니다(그날 장부를 믿을 수 없음) — 오류도 두 책 모두에 셉니다.
-            return failed(market, now, d, pricesFinal, detail, List.of(message(e)),
-                    List.of(market.rulesBook(), market.claudeBook()), null, null);
+            // 장부·게이트가 실패하면 두 책 모두 결정하지 않습니다(그날 장부를 믿을 수 없음) — 오류도 두 책 모두에 셉니다(계좌2도 낼 차례면 계좌2에도).
+            List<String> books = new ArrayList<>(List.of(market.rulesBook(), market.claudeBook()));
+            if (work.claude2() != null) {
+                books.add(PaperBooks.CLAUDE2);
+            }
+            return failed(market, now, d, pricesFinal, detail, List.of(message(e)), books, null, null);
         }
 
         // 규칙 책(대조군)과 Claude 책(실험군)은 따로 잡습니다 — 한쪽 오류가 다른 쪽의 그날 결정을 막지 않게(클래스 설명).
@@ -504,13 +527,20 @@ public class PaperDecisionJob {
             }
         }
         Decision claudeDecision = null;
+        String claude2Kind = claude2GaveUp ? null : work.claude2();
+        // 입력 동결(계좌2 명세 §5-1): 계좌1·계좌2가 이 실행에서 함께 결정하면 미국 시장 입력을 한 번 읽어 두 계좌가 씁니다. 읽지 못하면 각자 읽음.
+        // 계좌1이 앞선 실행에서 이미 결정했으면(claudeSkip) 함께 읽지 않습니다 — 계좌2가 그 결정 행이 보낸 섹션을 넣어 조립(따로 도는 실행과 같음).
+        PacketBuilder.MarketInputs shared = null;
         if (claudeGaveUp) {
             detail.put("claude", gaveUpNote());
         } else {
             try {
                 String claudeSkip = claudeSkipReason(market, store.book(market.claudeBook()), d);
                 if (claudeSkip == null) {
-                    claudeDecision = claude.decide(market, d, RuleBookService.SCHEDULED, pricesFinal);
+                    shared = claude2Kind == null ? null : sharedInputs(market, d);
+                    claudeDecision = shared != null
+                            ? claude.decideWith(market, d, RuleBookService.SCHEDULED, pricesFinal, shared)
+                            : claude.decide(market, d, RuleBookService.SCHEDULED, pricesFinal);
                     detail.put("claude", decisionDetail(claudeDecision));
                 } else {
                     detail.put("claude", claudeSkip);
@@ -522,11 +552,127 @@ public class PaperDecisionJob {
                 failedBooks.add(market.claudeBook());
             }
         }
+        Decision claude2Decision = null;
+        if (work.claude2() != null && claude2GaveUp) {
+            detail.put(PaperBooks.CLAUDE2, gaveUpNote());
+        } else if (claude2Kind != null) {
+            try {
+                claude2Decision = claude2Leg(market, d, claude2Kind, pricesFinal, quotes, shared, claudeDecision, detail);
+                failures.remove(new FailureKey(market.code(), d, PaperBooks.CLAUDE2));
+            } catch (RuntimeException e) {
+                errors.add("Claude 계좌2: " + message(e));
+                detail.put("claude2Error", message(e));
+                failedBooks.add(PaperBooks.CLAUDE2);
+            }
+        }
         if (!errors.isEmpty()) {
-            return failed(market, now, d, pricesFinal, detail, errors, failedBooks, decision, claudeDecision);
+            Result result = failed(market, now, d, pricesFinal, detail, errors, failedBooks, decision, claudeDecision);
+            return new Result(result.outcome(), result.tradingDate(), result.pricesFinal(), result.rules(),
+                    result.claude(), result.message(), claude2Decision);
         }
         record(market, now, DECIDED, detail);
-        return new Result(DECIDED, d, pricesFinal, decision, claudeDecision, null);
+        return new Result(DECIDED, d, pricesFinal, decision, claudeDecision, null, claude2Decision);
+    }
+
+    /** 계좌1·계좌2가 함께 쓸 미국 시장 입력(입력 동결) — 읽지 못하면 null(두 계좌가 각자 읽음, 로그만). */
+    private PacketBuilder.MarketInputs sharedInputs(MarketRun market, LocalDate d) {
+        try {
+            return claude.usMarketInputs(market, d);
+        } catch (RuntimeException e) {
+            log.warn("모의 매매 결정 작업 — 계좌1·계좌2가 함께 쓸 시장 입력을 읽지 못해 각자 읽습니다: {}", e.toString());
+            return null;
+        }
+    }
+
+    /**
+     * 계좌2 몫 한 번(클래스 설명 '미국 Claude 계좌2') — ③ 계좌2 장부가 이번 관측치를 처리했나(1분봉 기다림 풀림)를 보고, 결정·출발을 냅니다. 처리하지
+     * 않았으면(기다림 중) 결정하지 않고 다음 주기에 다시 봅니다(오류가 아님). 작업 기록 칸 {@code claude2}에 결과를 남깁니다.
+     *
+     * @return 계좌2 결정 행(쓰지 않았으면 null)
+     */
+    private Decision claude2Leg(MarketRun market, LocalDate d, String kind, boolean pricesFinal, Optional<Quotes> quotes,
+                                PacketBuilder.MarketInputs shared, Decision book1, Map<String, Object> detail) {
+        Map<String, Object> view = new LinkedHashMap<>();
+        view.put("kind", kind);
+        String waiting = claude2BarsWait(quotes);
+        if (waiting != null) {
+            view.put("waiting", waiting);
+            detail.put(PaperBooks.CLAUDE2, view);
+            return null;
+        }
+        ClaudeBookService.Claude2Outcome outcome = claude.decideClaude2(market, d, kind, pricesFinal, shared, book1, true);
+        if (RuleBookService.INITIAL.equals(kind)) {
+            // 성공·실패 모두 이 창의 출발을 해 본 것 — 실패하면 아무것도 쓰지 않았으니 다음 미국 결정 창에 다시(§4-1의 4).
+            view.put(CLAUDE2_START_TRIED, true);
+        }
+        if (outcome == null) {
+            view.put("note", "결과 없음");
+            detail.put(PaperBooks.CLAUDE2, view);
+            return null;
+        }
+        if (outcome.decision() != null) {
+            view.putAll(decisionDetail(outcome.decision()));
+            JsonNode sharedWith = Json.child(outcome.decision().response(), "sharedWith");
+            view.put("sharedWith", sharedWith == null || !sharedWith.isNumber() ? null : sharedWith.asLong());
+        }
+        view.put("started", outcome.started());
+        view.put("failure", outcome.failure());
+        view.put("calls", outcome.calls());
+        view.put("superseded", outcome.superseded());
+        detail.put(PaperBooks.CLAUDE2, view);
+        return outcome.decision();
+    }
+
+    /**
+     * 계좌2 결정을 기다려야 하나(§5-1 ③ — 1분봉 기다림): 계좌2 장부가 이번 관측치를 아직 처리하지 않았으면 그 사유(기한 뒤에도 — 그러지 않으면 아직
+     * 풀리지 않은 d 주문을 새 결정이 '대신함'으로 지움), 처리했거나 관측치가 없으면 null.
+     */
+    private String claude2BarsWait(Optional<Quotes> quotes) {
+        if (quotes.isEmpty() || quotes.get().collectedAt() == null) {
+            return null;
+        }
+        Instant processed = store.state(PaperBooks.CLAUDE2).map(PaperStore.BookState::lastProcessedCollectedAt)
+                .orElse(null);
+        if (processed != null && !processed.isBefore(quotes.get().collectedAt())) {
+            return null;
+        }
+        return "계좌2 장부가 관측치(수집 " + Kst.stamp(quotes.get().collectedAt()) + ")를 아직 처리하지 않았습니다(1분봉 기다림) — "
+                + "다음 주기에 다시";
+    }
+
+    /**
+     * 계좌2가 그 거래일에 낼 결정의 종류(계좌2 명세 §5-1 ①②·§4-1) — 미국 실행에서 계좌2가 있고 그 실행 설정의 {@code claude2.enabled}가 켜졌을 때:
+     * 시작 전이면 출발({@code INITIAL} — 그 거래일 창에서 아직 해 보지 않았을 때만, 저장된 작업 기록 {@value #CLAUDE2_START_TRIED}로 셈 — 재기동해도
+     * 같음), 운용 중이고 출발일 뒤 거래일이면 정기({@code SCHEDULED} — 그날 행이 없거나 재시도할 API 오류). 그 밖(일시정지·꺼짐·이미 결정함)은 null.
+     */
+    private String claude2Kind(MarketRun market, LocalDate d) {
+        if (!usSteps(market)) {
+            return null;
+        }
+        Optional<Book> book = store.book(PaperBooks.CLAUDE2);
+        if (book.isEmpty() || !Claude2Settings.from(market.settingsBody()).enabled()) {
+            return null;
+        }
+        String status = book.get().status();
+        if (PaperBooks.NOT_STARTED.equals(status)) {
+            return claude2StartTried(market, d) ? null : RuleBookService.INITIAL;
+        }
+        if (!PaperBooks.ACTIVE.equals(status) || !afterStart(book.get(), d)) {
+            return null;
+        }
+        Optional<Decision> existing = store.decisionFor(PaperBooks.CLAUDE2, d, RuleBookService.SCHEDULED);
+        return existing.isPresent() && !ClaudeBookService.retryable(existing.get()) ? null : RuleBookService.SCHEDULED;
+    }
+
+    /** 그 거래일 창에 계좌2 출발을 이미 해 봤나 — 그 세션의 저장된 작업 기록의 {@code claude2.}{@value #CLAUDE2_START_TRIED}. */
+    private boolean claude2StartTried(MarketRun market, LocalDate d) {
+        for (PaperStore.JobRun run : store.jobRunsFor(market.jobName(JOB), d)) {
+            JsonNode tried = Json.child(Json.child(run.detail(), PaperBooks.CLAUDE2), CLAUDE2_START_TRIED);
+            if (tried != null && tried.asBoolean(false)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /**
@@ -1152,7 +1298,11 @@ public class PaperDecisionJob {
             attempt = Math.max(attempt, failures.merge(new FailureKey(market.code(), d, book), 1, Integer::sum));
         }
         Map<String, Integer> attempts = new LinkedHashMap<>();
-        for (String book : List.of(market.rulesBook(), market.claudeBook())) {
+        List<String> counted = new ArrayList<>(List.of(market.rulesBook(), market.claudeBook()));
+        if (usSteps(market) && store.book(PaperBooks.CLAUDE2).isPresent()) {
+            counted.add(PaperBooks.CLAUDE2);   // 미국 계좌2(있을 때만 — 그 밖의 기록 모양은 그대로)
+        }
+        for (String book : counted) {
             attempts.put(book, failures.getOrDefault(new FailureKey(market.code(), d, book), 0));
         }
         String message = String.join(" · ", errors);
@@ -1218,7 +1368,8 @@ public class PaperDecisionJob {
      */
     Decision runNow(PaperMarket requested, String book) {
         String code = Params.oneOf("book", book, usSteps(requested)
-                ? List.of(requested.rulesBook(), requested.claudeBook()) : List.of(requested.claudeBook()));
+                ? List.of(requested.rulesBook(), requested.claudeBook(), PaperBooks.CLAUDE2)
+                : List.of(requested.claudeBook()));
         String dormant = dormantReason(requested);
         if (dormant != null) {
             throw new InvalidRequestException(dormant);
@@ -1235,6 +1386,10 @@ public class PaperDecisionJob {
                 throw new InvalidRequestException(e.getMessage());
             }
             LocalDate d = market.calendar().lastCompletedSession(now);
+            if (PaperBooks.CLAUDE2.equals(code)) {
+                // 미국 Claude 계좌2(계좌2 명세 §5-4) — 정규장 중·창 밖은 400(기록 없음), 창 안이면 수동 문턱으로 한 번.
+                return manualClaude2(market, now, d, RuleBookService.MANUAL).decision();
+            }
             if (market.afterDeadline() == PaperMarket.AfterDeadline.NO_TRADE) {
                 requireDecisionWindow(market, now, d);
             }
@@ -1283,6 +1438,91 @@ public class PaperDecisionJob {
         }
     }
 
+    /** 계좌2 수동 출발({@link #startClaude2Now})의 결과 — {@code outcome}은 {@value #STARTED}(이번에 출발)·{@value #ALREADY_STARTED}(이미 출발 — 그 기록). */
+    public record Claude2StartNow(String outcome, LocalDate tradingDate, String message, Decision decision) {
+    }
+
+    /**
+     * 계좌2 수동 출발(POST /api/paper/run/initial-decision {@code {"book":"claude2"}} — 계좌2 명세 §5-4·§4-1) — 결정 작업의 잠금을 기다린 뒤 정기 출발과
+     * 같은 파이프라인({@link ClaudeBookService#decideClaude2} — INITIAL, 사후 체결 문장 없는 정기 조립)을 같은 창('확정 종가 처리(1분봉 기다림 풀림 포함) 뒤
+     * ~ 다음 세션 09:00 ET') 안에서만, 수동 호출 문턱(상한 − 정기 작업 몫 예약)으로 한 번 냅니다(한국 F1b 선례). 이미 출발했으면 아무것도 하지 않고 그 출발
+     * 기록({@value #ALREADY_STARTED} — 출발일의 INITIAL 결정)을 돌려줍니다. 출발하면 작업 기록을 정기 출발과 같은 모양({@code manual:true})으로 남깁니다.
+     *
+     * @throws InvalidRequestException 설정 {@code claude2.enabled}가 꺼짐·창 밖(정규장 중 포함 — 기록 없음)·계좌2 없음(초기화 전)·호출 실패(아무것도
+     *                                 쓰지 않음 — 다시 누르거나 정기 출발을 기다림)
+     */
+    Claude2StartNow startClaude2Now() {
+        PaperMarket requested = UsPaperMarket.INSTANCE;
+        running.lock();
+        try {
+            Instant now = clock.instant();
+            MarketRun market = markets.open(requested);
+            LocalDate d = market.calendar().lastCompletedSession(now);
+            Book book = store.book(PaperBooks.CLAUDE2).orElseThrow(() -> new InvalidRequestException(
+                    "계좌2가 없습니다 — 먼저 초기화(POST /api/paper/init)를 누르세요."));
+            if (!PaperBooks.NOT_STARTED.equals(book.status())) {
+                Decision started = book.startedOn() == null ? null
+                        : store.decisionFor(PaperBooks.CLAUDE2, book.startedOn(), RuleBookService.INITIAL).orElse(null);
+                return new Claude2StartNow(ALREADY_STARTED, book.startedOn(), "계좌2는 " + book.startedOn()
+                        + "에 출발했습니다 — 다시 출발하지 않고 그 출발 기록을 돌려줍니다", started);
+            }
+            ClaudeBookService.Claude2Outcome outcome = manualClaude2(market, now, d, RuleBookService.INITIAL);
+            if (outcome.decision() == null) {
+                throw new InvalidRequestException("계좌2가 출발하지 않았습니다(아무것도 쓰지 않음): " + outcome.failure()
+                        + " — 다시 누르거나 다음 미국 결정 창의 정기 출발을 기다리세요.");
+            }
+            return new Claude2StartNow(outcome.started() ? STARTED : ALREADY_STARTED, d, outcome.started()
+                    ? d + " 기준 앞으로 체결 출발 — 통과 주문은 다음 세션에 고른 시점으로 체결" : "이미 있는 출발 기록",
+                    outcome.decision());
+        } finally {
+            running.unlock();
+        }
+    }
+
+    /**
+     * 계좌2 수동 결정·수동 출발의 공통 몫(계좌2 명세 §5-4) — 설정 {@code claude2.enabled}, 창(지금 &lt; 다음 세션 09:00 ET이고 d 확정 종가 관측치를 계좌2
+     * 장부가 처리함 — 1분봉 기다림 풀림 포함; 그 전에 최신 관측치를 장부에 적용)을 본 뒤 수동 문턱으로 냅니다. 창 밖·꺼짐은 400(기록 없음), 낸 결정은
+     * 작업 기록에 {@code manual:true}로 남깁니다(출발 실패는 기록·쓰기 없음).
+     */
+    private ClaudeBookService.Claude2Outcome manualClaude2(MarketRun market, Instant now, LocalDate d, String kind) {
+        if (!Claude2Settings.from(market.settingsBody()).enabled()) {
+            throw new InvalidRequestException("계좌2가 꺼져 있습니다(설정 " + Claude2Settings.ENABLED + " = false) — 켠 뒤 누르세요.");
+        }
+        Instant cutoff = ClaudeBookService.claude2Cutoff(market.calendar(), d);
+        if (!now.isBefore(cutoff)) {
+            throw new InvalidRequestException("계좌2 수동 " + (RuleBookService.INITIAL.equals(kind) ? "출발" : "결정")
+                    + "은 확정 종가 처리 뒤 ~ 다음 세션 09:00 ET(" + Kst.stamp(cutoff) + ") 전에만 받습니다(정규장 중에는 받지 않음 — 앞선 "
+                    + "결정의 시각 지정 주문을 장중에 대신하면 체결 순서가 깨짐) — 지금 " + Kst.stamp(now) + "(기준 거래일 " + d + ")");
+        }
+        Optional<Quotes> quotes = reader.quietly(() -> marketData.quotes(market));
+        Map<String, Object> detail = new LinkedHashMap<>();
+        detail.put("manual", true);
+        detail.put("book", PaperBooks.CLAUDE2);
+        detail.put("tradingDate", d.toString());
+        quotes.ifPresent(q -> detail.put("ledger", ledgerDetail(ledger.process(market, q))));
+        boolean closesIn = quotes.map(q -> closesFor(market, q, d)).orElse(false);
+        String waiting = claude2BarsWait(quotes);
+        if (!closesIn || waiting != null) {
+            throw new InvalidRequestException("계좌2 수동 " + (RuleBookService.INITIAL.equals(kind) ? "출발" : "결정") + "은 " + d
+                    + " 확정 종가 관측치를 계좌2 장부가 처리한 뒤(1분봉 기다림 풀림 포함)에만 받습니다 — "
+                    + (waiting != null ? waiting : "아직 확정 종가 관측치가 아닙니다"));
+        }
+        boolean pricesFinal = quotes.map(q -> confirmedFor(market, q, d)).orElse(false);
+        detail.put("pricesFinal", pricesFinal);
+        ClaudeBookService.Claude2Outcome outcome = claude.decideClaude2(market, d, kind, pricesFinal, null, null, false);
+        if (outcome.decision() != null) {
+            Map<String, Object> view = new LinkedHashMap<>();
+            view.put("kind", kind);
+            view.putAll(decisionDetail(outcome.decision()));
+            view.put("started", outcome.started());
+            view.put("calls", outcome.calls());
+            view.put("superseded", outcome.superseded());
+            detail.put(PaperBooks.CLAUDE2, view);
+            record(market, now, DECIDED, detail);
+        }
+        return outcome;
+    }
+
     /** 수동 결정의 결정 창(위 설명 '결정 창') — 창 밖이면 400. */
     private static void requireDecisionWindow(MarketRun market, Instant now, LocalDate d) {
         Times times = times(market, market.settingsBody());
@@ -1307,16 +1547,16 @@ public class PaperDecisionJob {
      * 그 거래일에 아직 할 일 — 게이트 지표가 없음, 시작한 규칙 책의 그날 정기 결정(SCHEDULED·REBALANCE)이 없음, Claude 책이 그날
      * 결정을 내야 하는데 아직 없음(또는 재시도할 API 오류 — {@link #claudeSkipReason}).
      */
-    private Work pendingWork(PaperMarket market, LocalDate d) {
+    private Work pendingWork(MarketRun market, LocalDate d) {
         boolean claudeDue = claudeSkipReason(market, store.book(market.claudeBook()), d) == null;
         if (!usSteps(market)) {
             // 게이트 지표·13F 규칙 책은 미국 전용 단계, 한국 규칙 계좌는 한국 수급 규칙(클래스 설명).
-            return new Work(false, krRulesSteps(market) && krRules.due(d), claudeDue);
+            return new Work(false, krRulesSteps(market) && krRules.due(d), claudeDue, null);
         }
         Optional<Book> book = store.book(PaperBooks.RULES);
         boolean rules = book.isPresent() && !PaperBooks.NOT_STARTED.equals(book.get().status())
                 && afterStart(book.get(), d) && rulesDecisionOn(d).isEmpty();
-        return new Work(store.gate(d).isEmpty(), rules, claudeDue);
+        return new Work(store.gate(d).isEmpty(), rules, claudeDue, claude2Kind(market, d));
     }
 
     /** 출발일 뒤 거래일인가 — 출발일 이하는 초기 결정이 그날 결정이라 정기 결정을 내지 않습니다(두 책 같음). */

@@ -291,6 +291,8 @@ class PaperQueryMarketTest {
         assertThat(query(PaperFixtures.config()).status("KR")).as("쉬는 한국에도").containsKey("collection");
         assertThat(query.status("US")).doesNotContainKey("collection");
         assertThat(query.status()).doesNotContainKey("collection");
+        assertThat(status).as("미국 Claude 계좌2 묶음은 미국 응답에만(계좌2 명세 §13-1)").doesNotContainKey(PaperBooks.CLAUDE2);
+        assertThat(query.status("US")).containsKey(PaperBooks.CLAUDE2);
     }
 
     @Test

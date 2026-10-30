@@ -358,6 +358,12 @@ public class PaperQueryService {
         detail.put("responseRaw", d.responseRaw());
         JsonNode mismatch = Json.child(d.response(), "exposureMismatch");
         detail.put("exposureMismatch", mismatch != null && mismatch.isBoolean() ? mismatch.asBoolean() : null);
+        if (PaperBooks.CLAUDE2.equals(d.bookCode())) {
+            // 계좌2(계좌2 명세 §9-1·§13-1) — 계좌 비의존 섹션이 같았던 계좌1 결정 번호와 그 섹션 해시(응답에서, 없으면 null). 계좌1 결정 한 건은 칸 없음.
+            JsonNode sharedWith = Json.child(d.response(), "sharedWith");
+            detail.put("sharedWith", sharedWith != null && sharedWith.isNumber() ? sharedWith.asLong() : null);
+            detail.put("marketSectionsSha256", Json.asText(d.response(), "marketSectionsSha256"));
+        }
         Map<String, Object> out = new LinkedHashMap<>();
         out.put("available", true);
         out.put("decision", detail);
@@ -473,7 +479,75 @@ public class PaperQueryService {
             // 한국 수집 상태 요약(x4 — 사용자 결정 2026-10-29): 저장본·최신 기준일만 읽음(수집 유발 없음), 미국 응답에는 이 칸이 없음.
             out.put("collection", KrCollectionStatus.view(reader, marketData, market, clock.instant()));
         }
+        if (us) {
+            // 미국 Claude 계좌2(계좌2 명세 §13-1) — 미국 응답에만(한국 응답 글자 그대로).
+            out.put(PaperBooks.CLAUDE2, claude2Status(market));
+        }
         return out;
+    }
+
+    /**
+     * 미국 Claude 계좌2 묶음(계좌2 명세 §13-1, ADR 0022) — {@code {book, status, startedOn, enabled, nextDecision:{tradingDate, atKst, atEt, cutoffKst,
+     * cutoffEt}, cycle:{tradingDate, calls, cap}, bars}}. 다음 결정은 마감이 끝난 최근 세션 d의 계좌2 정기·출발 행이 아직 없으면 d, 있으면 d 다음 거래일의
+     * 결정 시각(설정 {@code decisionTimeKst} — 계좌1과 같은 시각)이고, 컷오프는 그 결정의 목표 세션 09:00 ET(§5-1 ⑤)입니다 — 계좌2가 꺼졌거나 시작
+     * 전이어도 그 창의 시각입니다(켜면 그때 냄). 이번 결정 주기 호출 수는 d의 계좌2 정기·출발 행(1 + 재시도 수 — {@link ClaudeBookService#claude2CallsInCycle})
+     * 이고 상한은 {@code claude2.maxCallsPerCycle}. {@code bars}는 지금이 미국 정규장일 때만 1분봉 저장본의 받은 시각·나이·지연({@link ExecutionAudit#lagSeconds}
+     * — SPY 기준, 모르면 null), 정규장 밖은 null(그때 값은 지연이 아니라 장이 닫힌 시간). 계좌2가 없으면(초기화 전) {@code status}·{@code startedOn}은 null.
+     * 저장본은 수집 요청 없이 읽기만 합니다.
+     */
+    private Map<String, Object> claude2Status(MarketRun market) {
+        Instant now = clock.instant();
+        TradingCalendar calendar = market.calendar();
+        Optional<Book> book = store.book(PaperBooks.CLAUDE2);
+        Claude2Settings book2 = Claude2Settings.from(market.settingsBody());
+        LocalDate d = calendar.lastCompletedSession(now);
+        boolean decided = store.decisionFor(PaperBooks.CLAUDE2, d, RuleBookService.SCHEDULED).isPresent()
+                || store.decisionFor(PaperBooks.CLAUDE2, d, RuleBookService.INITIAL).isPresent();
+        LocalDate next = decided ? calendar.nextTradingDay(d) : d;
+        Instant at = market.decisionInstant(next, PaperDecisionJob.times(market, market.settingsBody()).decision());
+        Instant cutoff = ClaudeBookService.claude2Cutoff(calendar, next);
+        Map<String, Object> nextDecision = new LinkedHashMap<>();
+        nextDecision.put("tradingDate", next.toString());
+        nextDecision.put("atKst", stamp(at));
+        nextDecision.put("atEt", etStamp(at, calendar));
+        nextDecision.put("cutoffKst", stamp(cutoff));
+        nextDecision.put("cutoffEt", etStamp(cutoff, calendar));
+        Map<String, Object> cycle = new LinkedHashMap<>();
+        cycle.put("tradingDate", d.toString());
+        cycle.put("calls", ClaudeBookService.claude2CallsInCycle(store, d));
+        cycle.put("cap", book2.maxCallsPerCycle());
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("book", PaperBooks.CLAUDE2);
+        out.put("status", book.map(Book::status).orElse(null));
+        out.put("startedOn", book.map(b -> text(b.startedOn())).orElse(null));
+        out.put("enabled", book2.enabled());
+        out.put("nextDecision", nextDecision);
+        out.put("cycle", cycle);
+        out.put("bars", inRegularSession(now, calendar) ? barsView(now, calendar) : null);
+        return out;
+    }
+
+    /** 지금이 미국 정규장(그 뉴욕 날짜가 거래일이고 개장 ≤ 지금 &lt; 마감 — 조기 폐장일은 13:00까지)인가. */
+    private static boolean inRegularSession(Instant now, TradingCalendar calendar) {
+        LocalDate today = now.atZone(calendar.zone()).toLocalDate();
+        return calendar.isTradingDay(today) && !now.isBefore(calendar.openInstant(today))
+                && now.isBefore(calendar.closeInstant(today));
+    }
+
+    /** 1분봉 저장본의 받은 시각·나이(초)·지연(초) — 저장본이 없거나 모양 판이 다르면 셋 다 null(0으로 채우지 않음). */
+    private Map<String, Object> barsView(Instant now, TradingCalendar calendar) {
+        UsTimedFills.Bars bars = UsTimedFills.Bars.of(marketData.barsUs());
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("collectedAtKst", bars.present() ? stamp(bars.collectedAt()) : null);
+        out.put("ageSeconds", bars.present() ? Math.max(0, Duration.between(bars.collectedAt(), now).getSeconds()) : null);
+        out.put("lagSeconds", bars.present() ? ExecutionAudit.lagSeconds(bars.payload(), calendar) : null);
+        return out;
+    }
+
+    /** 뉴욕 시각 표기 'yyyy-MM-dd HH:mm ET'. */
+    private static String etStamp(Instant at, TradingCalendar calendar) {
+        return java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm", java.util.Locale.ROOT)
+                .format(at.atZone(calendar.zone())) + " ET";
     }
 
     /**
@@ -979,9 +1053,25 @@ public class PaperQueryService {
         if (korea(market)) {
             return krFills(book, markets.open(market), recent);
         }
+        // 시각 지정 체결 계좌(미국 계좌2 — 계좌2 명세 §13-1)는 체결 봉·사다리 칸·대체 체결을 더함(계좌1·벤치마크 체결은 칸 없음 — 미국 응답 그대로).
+        boolean timed = PaperBooks.find(code).map(PaperBooks.Definition::timed).orElse(false);
+        Map<Long, PaperStore.ExecFill> bars = new HashMap<>();
+        if (timed && !recent.isEmpty()) {
+            for (PaperStore.ExecFill f : store.fillsForOrders(recent.stream().map(Fill::orderId).toList())) {
+                bars.put(f.fill().id(), f);
+            }
+        }
         List<Map<String, Object>> rows = new ArrayList<>();
         for (Fill f : recent) {
-            rows.add(fillRow(f));
+            Map<String, Object> row = fillRow(f);
+            if (timed) {
+                PaperStore.ExecFill bar = bars.get(f.id());
+                String rung = bar == null ? null : bar.fillRung();
+                row.put("barAtKst", bar == null ? null : stamp(bar.barAt()));
+                row.put("fillRung", rung);
+                row.put("fallback", rung != null && UsTimedFills.FALLBACK_RUNGS.contains(rung));
+            }
+            rows.add(row);
         }
         Map<String, Object> out = new LinkedHashMap<>();
         out.put("available", true);

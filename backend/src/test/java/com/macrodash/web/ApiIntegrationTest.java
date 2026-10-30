@@ -1188,6 +1188,20 @@ class ApiIntegrationTest {
                     new HttpEntity<>(Map.of("book", "claude"), owner), JsonNode.class);
             assertThat(claudeManual.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
             assertThat(claudeManual.getBody().path("message").asString()).contains("시작 전");
+            // 미국 Claude 계좌2(계좌2 명세 §5-4): 기본 꺼짐(claude2.enabled=false)이라 수동 결정·수동 출발 모두 400(Claude를 부르지 않음),
+            // 계좌2에는 미리보기가 없음(400) — 시각과 무관한 판정만(실제 시계로 도는 시험).
+            for (String path : List.of("/api/paper/run/decision", "/api/paper/run/initial-decision")) {
+                ResponseEntity<JsonNode> off = rest.exchange(url(path), HttpMethod.POST,
+                        new HttpEntity<>(Map.of("book", "claude2"), owner), JsonNode.class);
+                assertThat(off.getStatusCode()).as(path).isEqualTo(HttpStatus.BAD_REQUEST);
+                assertThat(off.getBody().path("message").asString()).as(path).contains("claude2.enabled");
+            }
+            ResponseEntity<JsonNode> preview2 = rest.exchange(url("/api/paper/run/initial-decision"), HttpMethod.POST,
+                    new HttpEntity<>(Map.of("book", "claude2", "preview", true), owner), JsonNode.class);
+            assertThat(preview2.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+            assertThat(preview2.getBody().path("message").asString()).contains("미리보기");
+            assertThat(jdbc.queryForObject("SELECT status FROM paper_books WHERE code = 'claude2'", String.class))
+                    .isEqualTo("NOT_STARTED");
             boolean startSelected = jdbc.queryForObject("SELECT COUNT(*) FROM paper_selection_log "
                     + "WHERE as_of_date = DATE '2026-10-23'", Long.class) > 0;
             for (Map<String, Object> claudeStart : startSelected ? List.<Map<String, Object>>of()

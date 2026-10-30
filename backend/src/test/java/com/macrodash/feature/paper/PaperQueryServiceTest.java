@@ -822,5 +822,60 @@ class PaperQueryServiceTest {
         assertThat(noOpenDate.get("holdingTradingDaysReason")).as("연 날이 없으면 셀 것이 없어 사유도 없음").isNull();
     }
 
+    @Test
+    @SuppressWarnings("unchecked")
+    @DisplayName("미국 Claude 계좌2(계좌2 명세 §13-1): 체결에 체결 봉(barAtKst)·사다리 칸(fillRung)·대체 체결(fallback — 사다리 칸 없는 체결은 거짓), 결정 한 건에 sharedWith·marketSectionsSha256 — 계좌1 체결·결정에는 칸 없음(미국 응답 그대로)")
+    void claude2FillsAndDecisionCarryTheTimedFields() {
+        initWithBenchmarks();
+        java.time.LocalDate tue = java.time.LocalDate.of(2026, 10, 27);
+        Instant at1000 = Instant.parse("2026-10-27T14:00:00Z");
+        long timed = store.insertFill(new com.macrodash.store.PaperStore.Fill(0, 11, PaperBooks.CLAUDE2, "AAPL", "BUY", 10,
+                100.05, 100.0, 5, 1_000.5, Instant.parse("2026-10-27T14:21:00Z"), tue, PaperBooks.SOURCE_QUOTES, false,
+                null));
+        store.fillBars.put(timed, new com.macrodash.store.PaperStore.ExecFill(store.fills.get(timed), at1000,
+                UsTimedFills.RUNG_AT));
+        long late = store.insertFill(new com.macrodash.store.PaperStore.Fill(0, 12, PaperBooks.CLAUDE2, "MSFT", "BUY", 2,
+                300.15, 300.0, 5, 600.3, Instant.parse("2026-10-27T15:30:00Z"), tue, PaperBooks.SOURCE_QUOTES, false,
+                null));
+        store.fillBars.put(late, new com.macrodash.store.PaperStore.ExecFill(store.fills.get(late), null,
+                UsTimedFills.RUNG_FALLBACK));
+        store.insertFill(new com.macrodash.store.PaperStore.Fill(0, 13, PaperBooks.CLAUDE2, "SPY", "SELL", 1, 499.75, 500.0,
+                5, 499.75, Instant.parse("2026-10-27T16:00:00Z"), tue, PaperBooks.SOURCE_QUOTES, false, null));
+        store.insertFill(new com.macrodash.store.PaperStore.Fill(0, 14, PaperBooks.CLAUDE, "AAPL", "BUY", 10, 100.05, 100.0,
+                5, 1_000.5, Instant.parse("2026-10-27T14:21:00Z"), tue, PaperBooks.SOURCE_QUOTES, false, null));
+
+        List<Map<String, Object>> rows = (List<Map<String, Object>>) query.fills(PaperBooks.CLAUDE2, 50).get("fills");
+        Map<String, Map<String, Object>> byTicker = new java.util.HashMap<>();
+        rows.forEach(row -> byTicker.put((String) row.get("ticker"), row));
+        assertThat(byTicker.get("AAPL")).containsEntry("barAtKst", "2026-10-27 23:00 KST")
+                .containsEntry("fillRung", UsTimedFills.RUNG_AT).containsEntry("fallback", false);
+        assertThat(byTicker.get("MSFT")).containsEntry("barAtKst", null)
+                .containsEntry("fillRung", UsTimedFills.RUNG_FALLBACK).containsEntry("fallback", true);
+        assertThat(byTicker.get("SPY")).as("사다리 칸 없는 체결(스탑 등)").containsEntry("barAtKst", null)
+                .containsEntry("fillRung", null).containsEntry("fallback", false);
+        List<Map<String, Object>> book1 = (List<Map<String, Object>>) query.fills(PaperBooks.CLAUDE, 50).get("fills");
+        assertThat(book1).singleElement().satisfies(row -> assertThat(row).doesNotContainKeys("barAtKst", "fillRung",
+                "fallback"));
+
+        long book1Decision = store.insertDecisionIfAbsent(new com.macrodash.store.PaperStore.Decision(0, PaperBooks.CLAUDE,
+                MON, "SCHEDULED", null, "NO_TRADE", "claude-sonnet-5-5", 0, 1, null, 0.0, null, null, null,
+                PaperFixtures.MAPPER.createObjectNode(), null, null, null, true, 5L, 0)).orElseThrow();
+        long shared = store.insertDecisionIfAbsent(new com.macrodash.store.PaperStore.Decision(0, PaperBooks.CLAUDE2, MON,
+                "SCHEDULED", null, "NO_TRADE", "claude-sonnet-5-5", 0, 1, null, 0.0, null, null, null,
+                PaperFixtures.MAPPER.readTree("{\"sharedWith\":" + book1Decision + ",\"marketSectionsSha256\":\"abc123\"}"),
+                null, null, null, true, 5L, 0)).orElseThrow();
+        long fresh = store.insertDecisionIfAbsent(new com.macrodash.store.PaperStore.Decision(0, PaperBooks.CLAUDE2, MON,
+                "MANUAL", null, "NO_TRADE", "claude-sonnet-5-5", 0, 1, null, 0.0, null, null, null,
+                PaperFixtures.MAPPER.readTree("{\"sharedWith\":null,\"marketSectionsSha256\":null}"), null, null, null,
+                true, 5L, 0)).orElseThrow();
+
+        assertThat((Map<String, Object>) query.decision(shared).get("decision")).containsEntry("sharedWith", book1Decision)
+                .containsEntry("marketSectionsSha256", "abc123");
+        assertThat((Map<String, Object>) query.decision(fresh).get("decision")).containsEntry("sharedWith", null)
+                .containsEntry("marketSectionsSha256", null);
+        assertThat((Map<String, Object>) query.decision(book1Decision).get("decision"))
+                .doesNotContainKeys("sharedWith", "marketSectionsSha256");
+    }
+
     private static final java.time.LocalDate TUE_EXPIRY = java.time.LocalDate.of(2026, 10, 29);
 }

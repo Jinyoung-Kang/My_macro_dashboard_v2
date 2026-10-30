@@ -49,7 +49,10 @@ import java.util.Map;
  * {@link UsPaperMarket#closeAvailable}(E 마감 + 15분 뒤 수집)일 때 그 종가({@value #RUNG_CLOSE}, 시각 = E 마감). 다음 세션이 열린 뒤의 저장본은
  * 마지막 봉이 E가 아니라 쓰지 않습니다(조정 이력에서 꺼내지 않음 — 배당락이 지난 값을 바꿈).
  * <b>NEXT_OBSERVATION</b>(계좌1식 기준)은 계좌1 주문(시점 NEXT_OBSERVATION)의 실제 체결 원가격(슬리피지 전 {@code raw_price}, 시각 = 그
- * 관측치 수집 시각, {@value #RUNG_OBSERVATION})에서 옮깁니다(§14-1 '계좌1 주문은 실제 체결 행에서'). 그 밖의 주문은 아직 null입니다.
+ * 관측치 수집 시각, {@value #RUNG_OBSERVATION})에서 옮깁니다(§14-1 '계좌1 주문은 실제 체결 행에서'). 시각 지정 체결 계좌(계좌2)의 주문은 체결 조건
+ * ①②④(주문 뒤 수집·이어 쓴 봉 아님·봉 날짜 &gt; 기준 거래일)를 통과한 <b>첫</b> {@code paper.quotes} 저장본의 그 종목 종가입니다
+ * ({@link #fromObservation}) — 그 저장본이 첫째라는 증명은 작업이 합니다({@link PaperExecutionAuditJob}의 '관측치 사슬' — 증명하지 못하면 null, 뒤
+ * 저장본의 값으로 채우지 않음). 계좌1의 NEXT_CLOSE 주문은 null입니다.
  *
  * <p><b>지연</b>({@link #lagSeconds}) = 그 세션을 받은 시각 − (기준 종목 SPY 마지막 봉 시작 + 60초). 받은 시각이 그 세션 날의 정규장(미국 달력의
  * 개장 ~ 마감 — 조기 폐장일은 13:00까지) 안일 때만 셉니다 — 수집기는 달력을 몰라 조기 폐장을 구분하지 못하므로 저장본의 재료로 다시 셉니다.
@@ -218,6 +221,25 @@ final class ExecutionAudit {
     }
 
     /**
+     * 계좌2 주문의 NEXT_OBSERVATION(계좌1식 기준) 반사실 — 그 관측치가 체결 조건 ①②④를 통과하면(주문 뒤 수집, 그 종목 봉이 이어 쓴 봉이 아니고 봉 날짜가
+     * 기준 거래일 뒤) 그 종가(원가격, 시각 = 저장본 수집 시각, {@value #RUNG_OBSERVATION}). 계좌1의 시간별 체결과 같은 조건이고 ③(NEXT_CLOSE의 확정
+     * 종가)은 보지 않습니다 — 계좌1식 기준은 NEXT_OBSERVATION이라 늘 통과. 이 저장본이 그런 저장본 가운데 <b>첫째</b>인지는 이 함수가 보지 않습니다(작업의
+     * 관측치 사슬 — 증명한 때만 부름). 통과하지 못하면 null.
+     */
+    static Price fromObservation(Order order, Quotes quotes) {
+        if (quotes == null || quotes.collectedAt() == null || order.createdAt() == null
+                || !quotes.collectedAt().isAfter(order.createdAt())) {
+            return null;                                   // ① 주문 뒤에 수집한 관측치만
+        }
+        Bar bar = quotes.bars().get(order.ticker());
+        if (bar == null || bar.stale() || order.asOfTradingDate() == null || !bar.date().isAfter(order.asOfTradingDate())
+                || !Double.isFinite(bar.close()) || !(bar.close() > 0)) {
+            return null;                                   // ④ 이어 쓴 봉 · ② 결정이 이미 본 봉
+        }
+        return new Price(bar.close(), quotes.collectedAt(), RUNG_OBSERVATION);
+    }
+
+    /**
      * 늦게 풀었나({@code paper_order_exec.late_resolved}, 명세 §10-4·M4) — 시각 지정 체결(사다리 칸이 있는 체결 — 장부 2b·3a, {@link UsTimedFills})만
      * 셉니다. 대체 칸(R2b·R3·종가 — {@link UsTimedFills#FALLBACK_RUNGS})이면 참, 아니면 장부 반영 시각(그 체결을 적은 관측치 W의 수집 시각
      * {@code observed_at})이 기준 시각 T + {@link UsTimedFills#ONE_ROUND}(slow 한 회차 + 여유)보다 뒤일 때 참입니다 — T 뒤 첫 처리 회차보다 늦게 체결된
@@ -246,12 +268,23 @@ final class ExecutionAudit {
      */
     static Map<String, Price> counterfactuals(Order order, Fill fill, JsonNode barsPayload, Quotes quotes,
                                               TradingCalendar calendar) {
+        return counterfactuals(order, fill, barsPayload, quotes, calendar, false);
+    }
+
+    /**
+     * {@link #counterfactuals(Order, Fill, JsonNode, Quotes, TradingCalendar)}에 계좌2 주문의 계좌1식 기준을 더한 것 — 시각 지정 체결 계좌(계좌2)의
+     * 주문이면 NEXT_OBSERVATION은 {@code firstObservation}(이 관측치가 ①②④를 통과한 첫 저장본임을 작업이 증명함)일 때만 {@link #fromObservation}, 아니면
+     * null. 그 밖의 주문은 실제 체결에서({@link #fromFill}).
+     */
+    static Map<String, Price> counterfactuals(Order order, Fill fill, JsonNode barsPayload, Quotes quotes,
+                                              TradingCalendar calendar, boolean firstObservation) {
         LocalDate session = targetSession(order, calendar);
+        boolean timedBook = PaperBooks.find(order.bookCode()).map(PaperBooks.Definition::timed).orElse(false);
         Map<String, Price> out = new LinkedHashMap<>();
         for (String timing : TIMINGS) {
             Price price;
             if (NEXT_OBSERVATION.equals(timing)) {
-                price = fromFill(order, fill);
+                price = timedBook ? (firstObservation ? fromObservation(order, quotes) : null) : fromFill(order, fill);
             } else if (PaperBooks.NEXT_CLOSE.equals(timing)) {
                 price = fromQuotes(order, session, quotes, calendar);
             } else {

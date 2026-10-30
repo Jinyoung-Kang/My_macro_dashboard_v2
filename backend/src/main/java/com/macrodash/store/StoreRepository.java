@@ -635,6 +635,22 @@ public class StoreRepository {
     }
 
     /**
+     * 그 태스크의 실행 기록 가운데 시작 시각이 {@code after}보다 뒤이고 {@code before}보다 앞인 것의 수(상태와 상관없이 — 이전 실행이 아직 도는 중이라
+     * 건너뛴 줄·시간 초과도 셈). 먼저 그 태스크의 최근 {@value #TASK_RUN_WINDOW}행(인덱스 (task, id DESC))으로 범위를 자른 뒤 시각으로 셉니다 — 비용이
+     * 표 크기와 무관하게 일정합니다. 모의 매매 실행 감사가 두 관측치 저장본 사이에 다른 저장이 없었음을 증명할 때 씁니다(수집기 표 — 읽기만,
+     * {@code PaperExecutionAuditJob}).
+     */
+    public int countTaskRunsStarted(String task, Instant after, Instant before) {
+        Integer count = jdbc.queryForObject("SELECT COUNT(*) FROM (SELECT started_at FROM collector_task_runs WHERE task = ? "
+                        + "ORDER BY id DESC LIMIT ?) recent WHERE started_at > ? AND started_at < ?", Integer.class, task,
+                TASK_RUN_WINDOW, Timestamp.from(after), Timestamp.from(before));
+        return count == null ? 0 : count;
+    }
+
+    /** {@link #countTaskRunsStarted}가 보는 그 태스크의 최근 실행 기록 수 — 매시 태스크면 40일 남짓. */
+    static final int TASK_RUN_WINDOW = 1_000;
+
+    /**
      * 최근 실행 기록 중 정상(ok)이 아닌 것만, 최신 순.
      *
      * <p>성능 — 실행 기록은 계속 쌓입니다(하루 약 1천 행). 시각 조건만 걸면 문제가 없는 날

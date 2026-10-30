@@ -923,6 +923,14 @@ final class ClaudeDecisionPipeline {
             log.info("Claude 책 결정 {} {}: {}", asOf, kind, message);
             return recordSkipped(asOf, kind, row, claude, pricesFinal, message + " — 그날 재량 주문 없음");
         }
+        return retryNotMade(retrying, message);
+    }
+
+    /**
+     * 재시도 차례였던 API 오류 행에 '재시도 안 함: 사유'를 덧붙이고 재시도를 쓴 것으로 남깁니다(상태는 API 오류 그대로) — 남겨 두면 결정 작업이
+     * 10분마다 다시 와서 같은 이유로 건너뜁니다. 호출 상한({@link #capSkipped})과 계좌2의 개장 전 컷오프·소상한이 씁니다.
+     */
+    Decision retryNotMade(Decision retrying, String message) {
         String error = clip((retrying.error() == null ? "" : retrying.error() + " · ") + "재시도 안 함: " + message,
                 ERROR_CHARS);
         store.updateDecisionRetry(new Decision(retrying.id(), retrying.bookCode(), retrying.asOfTradingDate(),
@@ -931,7 +939,7 @@ final class ClaudeDecisionPipeline {
                 retrying.packetHash(), retrying.responseRaw(), retrying.response(), retrying.usage(), error,
                 retrying.noteIds(), retrying.pricesFinal(), retrying.latencyMs(), retrying.retryCount(),
                 retrying.packetText()));
-        log.info("Claude 책 결정 {} {}: 재시도하지 않음 — {}", asOf, kind, message);
+        log.info("Claude 책 결정 {} {}: 재시도하지 않음 — {}", retrying.asOfTradingDate(), retrying.kind(), message);
         return store.decision(retrying.id()).orElseThrow();
     }
 

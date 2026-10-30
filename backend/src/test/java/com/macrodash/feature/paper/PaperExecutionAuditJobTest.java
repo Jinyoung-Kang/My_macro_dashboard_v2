@@ -61,20 +61,23 @@ class PaperExecutionAuditJobTest {
     private FakePaperStore store;
     private StoreReader reader;
     private PaperMarketData marketData;
+    /** 수집기 실행 기록(관측치 사슬의 증명 — 계좌2 기준). 가짜 — 기본은 0건(고리를 셀 수 없음). */
+    private com.macrodash.store.StoreRepository repository;
 
     @BeforeEach
     void setUp() {
         store = new FakePaperStore();
         reader = PaperFixtures.quietReader();
         marketData = mock(PaperMarketData.class);
+        repository = mock(com.macrodash.store.StoreRepository.class);
         when(marketData.quotes(any(PaperMarket.class))).thenReturn(Optional.empty());
         when(reader.read(eq(Datasets.SNAP_PAPER_BARS_US), anyLong(), isNull())).thenReturn(Optional.empty());
         activeBook(store, PaperBooks.CLAUDE, PaperBooks.KIND_CLAUDE, 100_000, null);
     }
 
     private PaperExecutionAuditJob job(boolean enabled, Instant now) {
-        return new PaperExecutionAuditJob(store, reader, marketData, new PaperConfig(enabled, PaperFixtures.FRI, 100_000),
-                MAPPER, Clock.fixed(now, ZoneOffset.UTC));
+        return new PaperExecutionAuditJob(store, reader, marketData, repository,
+                new PaperConfig(enabled, PaperFixtures.FRI, 100_000), MAPPER, Clock.fixed(now, ZoneOffset.UTC));
     }
 
     private void bars(Bars bars) {
@@ -354,7 +357,7 @@ class PaperExecutionAuditJobTest {
             }
         };
         activeBook(failing, PaperBooks.CLAUDE, PaperBooks.KIND_CLAUDE, 100_000, null);
-        PaperExecutionAuditJob job = new PaperExecutionAuditJob(failing, reader, marketData,
+        PaperExecutionAuditJob job = new PaperExecutionAuditJob(failing, reader, marketData, repository,
                 new PaperConfig(true, PaperFixtures.FRI, 100_000), MAPPER, Clock.fixed(et(TUE, 11, 0), ZoneOffset.UTC));
 
         assertThatCode(job::scheduledRun).doesNotThrowAnyException();
@@ -402,5 +405,137 @@ class PaperExecutionAuditJobTest {
         assertThat(store.execs.get(late).lateResolved()).isTrue();
         assertThat(store.execs.get(onTime).lateResolved()).as("반사실은 그대로 두고 늦게 풂만 채움").isFalse();
         assertThat(cf(onTime).get("NEXT_OPEN").path("raw").asDouble()).isEqualTo(100.0);
+    }
+
+    // ------------------------------------------------------------------ 계좌2의 계좌1식 기준(관측치 사슬, 명세 §14-1)
+    @Test
+    @DisplayName("관측치 사슬(순수): 지금 고리부터 previous를 따라 주문 생성 이하의 고리까지 모두 adjacent일 때만 참 — 처음 고리·빠진 고리·거짓 고리·시각 없음은 거짓, 주문 전 저장본이면 참(① 판정은 따로)")
+    void chainProvenFollowsTheLinks() {
+        Instant c0 = Instant.parse("2026-10-26T22:20:00Z");
+        Instant created = Instant.parse("2026-10-26T22:31:00Z");
+        Instant c1 = Instant.parse("2026-10-26T22:40:00Z");
+        Instant c2 = Instant.parse("2026-10-27T14:00:00Z");
+        Map<Instant, PaperExecutionAuditJob.ChainLink> links = new TreeMap<>();
+        links.put(c0, new PaperExecutionAuditJob.ChainLink(c0, null, false, null));
+        links.put(c1, new PaperExecutionAuditJob.ChainLink(c1, c0, true, 1));
+        links.put(c2, new PaperExecutionAuditJob.ChainLink(c2, c1, true, 1));
+
+        assertThat(PaperExecutionAuditJob.chainProven(created, c2, links)).isTrue();
+        assertThat(PaperExecutionAuditJob.chainProven(created, c1, links)).isTrue();
+        assertThat(PaperExecutionAuditJob.chainProven(created, c0, links)).as("주문 전 저장본 — 고리를 볼 것 없음").isTrue();
+        assertThat(PaperExecutionAuditJob.chainProven(c0.minusSeconds(60), c1, links)).as("처음 고리(그 앞을 모름)에 닿음")
+                .isFalse();
+        assertThat(PaperExecutionAuditJob.chainProven(created, c2.plusSeconds(600), links)).as("고리 없음").isFalse();
+        assertThat(PaperExecutionAuditJob.chainProven(null, c2, links)).isFalse();
+        assertThat(PaperExecutionAuditJob.chainProven(created, null, links)).isFalse();
+        links.put(c1, new PaperExecutionAuditJob.ChainLink(c1, c0, false, 2));
+        assertThat(PaperExecutionAuditJob.chainProven(created, c2, links)).as("사이 고리 하나가 거짓").isFalse();
+    }
+
+    /** 계좌2 주문(시각 지정 AT_1000, 기준 거래일 MON, 생성 MON_DECIDED 22:31Z). */
+    private long book2Order(String ticker) {
+        activeBook(store, PaperBooks.CLAUDE2, PaperBooks.KIND_CLAUDE, 100_000, null);
+        Order base = claudeOrder(ticker, PaperBooks.BUY, PaperBooks.AT_1000, "PENDING", MON, MON_DECIDED);
+        return store.insertOrder(new Order(0, PaperBooks.CLAUDE2, base.decisionId(), base.ticker(), base.side(), null,
+                base.targetWeightPct(), null, base.timing(), base.source(), base.status(), null, null, base.asOfTradingDate(),
+                base.createdAt(), TUE, null));
+    }
+
+    /** 수집기 실행 기록: (previous, collectedAt) 사이에 시작한 관측치 태스크 실행 수. */
+    private void runsBetween(Instant previous, Instant collectedAt, int runs) {
+        when(repository.countTaskRunsStarted(UsPaperMarket.INSTANCE.quotesTask(), previous, collectedAt)).thenReturn(runs);
+    }
+
+    private JsonNode lastChain() {
+        return store.jobRuns.get(store.jobRuns.size() - 1).detail().get(PaperExecutionAuditJob.CHAIN);
+    }
+
+    @Test
+    @DisplayName("계좌2 NEXT_OBSERVATION: 주문 전 저장본(처음 고리) → 주문 뒤 첫 저장본은 ②(기준 거래일 봉)로 통과 못 함 → 다음 저장본이 통과하면 그 종가(사슬이 이어짐 — 실행마다 새 작업 객체 = 재기동해도 기록으로 이음), 한 번 쓴 값은 그대로, 계좌1 주문은 체결 원가격 그대로")
+    void book2ObservationBaselineFromTheProvenChain() {
+        long id = book2Order("AAPL");
+        long book1 = order("AAPL", "NEXT_OBSERVATION", "PENDING", MON, MON_DECIDED);
+        Instant c0 = Instant.parse("2026-10-26T22:20:00Z");
+        Instant c1 = Instant.parse("2026-10-26T22:40:00Z");
+        Instant c2 = et(TUE, 10, 10);
+
+        observed(quotes(c0, bar("AAPL", PaperFixtures.FRI, 97, MON, 98)));
+        job(true, c0.plusSeconds(120)).run();
+        assertThat(lastChain().path("previous").isNull()).as("처음 고리").isTrue();
+        assertThat(lastChain().path("adjacent").asBoolean()).isFalse();
+        assertThat(cf(id).get("NEXT_OBSERVATION").isNull()).as("① 주문 전 저장본").isTrue();
+
+        runsBetween(c0, c1, 1);
+        observed(quotes(c1, bar("AAPL", PaperFixtures.FRI, 97, MON, 98)));
+        job(true, c1.plusSeconds(120)).run();
+        assertThat(lastChain().path("adjacent").asBoolean()).isTrue();
+        assertThat(lastChain().path("runsBetween").asInt()).isEqualTo(1);
+        assertThat(lastChain().path("previous").asString()).isEqualTo(c0.toString());
+        assertThat(cf(id).get("NEXT_OBSERVATION").isNull()).as("② 기준 거래일(월) 봉 — 결정이 이미 본 봉").isTrue();
+
+        runsBetween(c1, c2, 1);
+        observed(quotes(c2, bar("AAPL", MON, 98, TUE, 103.5)));
+        job(true, c2.plusSeconds(120)).run();
+        JsonNode baseline = cf(id).get("NEXT_OBSERVATION");
+        assertThat(baseline.path("raw").asDouble()).isEqualTo(103.5);
+        assertThat(baseline.path("at").asString()).isEqualTo(c2.toString());
+        assertThat(baseline.path("rung").asString()).isEqualTo(ExecutionAudit.RUNG_OBSERVATION);
+        assertThat(cf(book1).get("NEXT_OBSERVATION").isNull()).as("계좌1은 체결 원가격(체결 없음 — null), 관측치로 짓지 않음")
+                .isTrue();
+
+        Instant c3 = et(TUE, 10, 20);
+        runsBetween(c2, c3, 1);
+        observed(quotes(c3, bar("AAPL", MON, 98, TUE, 110.0)));
+        job(true, c3.plusSeconds(120)).run();
+        assertThat(cf(id).get("NEXT_OBSERVATION").path("raw").asDouble()).as("첫 통과 저장본의 값 그대로").isEqualTo(103.5);
+    }
+
+    @Test
+    @DisplayName("계좌2 NEXT_OBSERVATION은 증명하지 못하면 끝까지 null(뒤 저장본으로 채우지 않음): 사이 실행 2회(놓친 저장본이 있을 수 있음) · 주문 뒤의 처음 고리(그 앞을 모름) · 실행 기록 0건은 고리를 미룸(그동안 보지 않음)")
+    void book2ObservationBaselineStaysNullWithoutProof() {
+        long id = book2Order("AAPL");
+        Instant c0 = Instant.parse("2026-10-26T22:20:00Z");
+        Instant c1 = et(TUE, 10, 10);
+        Instant c2 = et(TUE, 10, 20);
+        observed(quotes(c0, bar("AAPL", PaperFixtures.FRI, 97, MON, 98)));
+        job(true, c0.plusSeconds(120)).run();
+
+        // 실행 기록 0건 — c1을 쓴 실행의 기록이 아직 없음: 고리를 남기지 않고 이번에는 계좌2 기준을 보지 않음
+        runsBetween(c0, c1, 0);
+        observed(quotes(c1, bar("AAPL", MON, 98, TUE, 103.5)));
+        job(true, c1.plusSeconds(60)).run();
+        assertThat(store.jobRuns).extracting(r -> r.detail().path(PaperExecutionAuditJob.CHAIN).path("collectedAt").asString(""))
+                .doesNotContain(c1.toString());
+        assertThat(cf(id).get("NEXT_OBSERVATION").isNull()).isTrue();
+
+        // 기록이 생기니 둘(그 사이 저장이 하나 더 있었음) — 거짓 고리, 값 null
+        runsBetween(c0, c1, 2);
+        job(true, c1.plusSeconds(180)).run();
+        assertThat(lastChain().path("adjacent").asBoolean()).isFalse();
+        assertThat(lastChain().path("runsBetween").asInt()).isEqualTo(2);
+        assertThat(cf(id).get("NEXT_OBSERVATION").isNull()).isTrue();
+
+        // 뒤 고리가 이어져도 거짓 고리를 지나므로 끝까지 null
+        runsBetween(c1, c2, 1);
+        observed(quotes(c2, bar("AAPL", MON, 98, TUE, 104.0)));
+        job(true, c2.plusSeconds(120)).run();
+        assertThat(lastChain().path("adjacent").asBoolean()).isTrue();
+        assertThat(cf(id).get("NEXT_OBSERVATION").isNull()).isTrue();
+    }
+
+    @Test
+    @DisplayName("계좌2 NEXT_OBSERVATION: 주문 뒤에 처음 본 저장본이 처음 고리면(그 앞의 저장을 모름 — 서버가 꺼졌던 뒤 첫 실행 등) 그 저장본도 뒤 저장본도 null")
+    void book2ObservationBaselineNeedsALinkBeforeTheOrder() {
+        long id = book2Order("AAPL");
+        Instant c1 = et(TUE, 10, 10);
+        Instant c2 = et(TUE, 10, 20);
+        observed(quotes(c1, bar("AAPL", MON, 98, TUE, 103.5)));
+        job(true, c1.plusSeconds(120)).run();
+        assertThat(cf(id).get("NEXT_OBSERVATION").isNull()).isTrue();
+
+        runsBetween(c1, c2, 1);
+        observed(quotes(c2, bar("AAPL", MON, 98, TUE, 104.0)));
+        job(true, c2.plusSeconds(120)).run();
+        assertThat(cf(id).get("NEXT_OBSERVATION").isNull()).isTrue();
     }
 }

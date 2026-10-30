@@ -242,6 +242,8 @@ public class ClaudeBookService {
     private final PaperConfig config;
     private final ObjectMapper mapper;
     private final Clock clock;
+    /** 미국 시장 입력을 한 번 읽는 패킷 빌더(입력 동결 — 계좌2 명세 §9-1, {@link #usMarketInputs}). 시험의 가짜 빌더도 그대로. */
+    private final PacketBuilder packets;
     /**
      * Claude 계좌 코드 → 그 계좌의 결정 한 번의 호출·검증·기록(2단계 명세 §9 A6에서 떼어 냄 — {@link ClaudeDecisionPipeline}). 열쇠는 시장이
      * 아니라 계좌 프로필의 코드입니다({@link ClaudeBookProfile}, 계좌2 명세 §9-1 — 한 시장에 Claude 계좌가 둘이어도 되게). 운영은 미국 계좌1·
@@ -285,7 +287,7 @@ public class ClaudeBookService {
                       FrameworkService framework, PaperApiCalls calls, AiService ai, PaperSettingsService settings,
                       PaperConfig config, ObjectMapper mapper, int timeoutSeconds, Clock clock,
                       KrPacketBuilder krPackets) {
-        this(store, reader, marketData, selection, ledger, admin, framework, calls, ai, settings, config, mapper,
+        this(store, reader, marketData, selection, ledger, admin, packets, framework, calls, ai, settings, config, mapper,
                 timeoutSeconds, clock, new Contexts(marketContexts(packets, Objects.requireNonNull(krPackets, "krPackets"))));
     }
 
@@ -298,16 +300,17 @@ public class ClaudeBookService {
                       FrameworkService framework, PaperApiCalls calls, AiService ai, PaperSettingsService settings,
                       PaperConfig config, ObjectMapper mapper, int timeoutSeconds, Clock clock,
                       List<MarketContext> otherMarkets) {
-        this(store, reader, marketData, selection, ledger, admin, framework, calls, ai, settings, config, mapper,
+        this(store, reader, marketData, selection, ledger, admin, packets, framework, calls, ai, settings, config, mapper,
                 timeoutSeconds, clock, new Contexts(concat(marketContexts(packets, null), otherMarkets)));
     }
 
     private ClaudeBookService(PaperStore store, StoreReader reader, PaperMarketData marketData,
                               PaperSelectionService selection, PaperLedgerService ledger, PaperAdminService admin,
-                              FrameworkService framework, PaperApiCalls calls, AiService ai, PaperSettingsService settings,
-                              PaperConfig config, ObjectMapper mapper, int timeoutSeconds, Clock clock,
-                              Contexts contexts) {
+                              PacketBuilder packets, FrameworkService framework, PaperApiCalls calls, AiService ai,
+                              PaperSettingsService settings, PaperConfig config, ObjectMapper mapper, int timeoutSeconds,
+                              Clock clock, Contexts contexts) {
         this.store = store;
+        this.packets = packets;
         this.reader = reader;
         this.marketData = marketData;
         this.selection = selection;
@@ -412,6 +415,23 @@ public class ClaudeBookService {
      */
     Decision decide(PaperMarket market, LocalDate asOf, String kind, boolean pricesFinal,
                     ClaudeDecisionPipeline.Observed observed) {
+        return decide(market, asOf, kind, pricesFinal, observed, null);
+    }
+
+    /**
+     * 미국 계좌1의 결정을 그 실행에서 한 번 읽은 미국 시장 입력으로(입력 동결 — 계좌2 명세 §5-1·§9-1: 결정 작업이 같은 실행에서 계좌2도 낼 때 두 계좌가
+     * 같은 입력으로 조립). 규칙은 {@link #decide(PaperMarket, LocalDate, String, boolean)}와 같고 패킷만 {@code inputs}로 조립합니다 — 같은 저장
+     * 상태면 그 패킷은 {@link PacketBuilder#build}와 같은 글자입니다(고정본 시험).
+     *
+     * @param inputs 그 실행의 미국 시장 입력({@link #usMarketInputs})
+     */
+    Decision decideWith(PaperMarket market, LocalDate asOf, String kind, boolean pricesFinal,
+                        PacketBuilder.MarketInputs inputs) {
+        return decide(market, asOf, kind, pricesFinal, null, Objects.requireNonNull(inputs, "inputs"));
+    }
+
+    private Decision decide(PaperMarket market, LocalDate asOf, String kind, boolean pricesFinal,
+                            ClaudeDecisionPipeline.Observed observed, PacketBuilder.MarketInputs inputs) {
         ClaudeDecisionPipeline base = pipeline(market);
         if (base.needsObservation() && observed == null) {
             throw new IllegalArgumentException(market.code() + " Claude 결정은 그 실행의 관측치·읽은 순간이 필요합니다(결정 작업이 넘김)");
@@ -463,7 +483,8 @@ public class ClaudeBookService {
             return pipeline.capSkipped(asOf, kind, row, claude, pricesFinal, retrying, today, scheduled);
         }
         Generation before = generation(book);
-        Attempt attempt = pipeline.attempt(asOf, kind, false, row, claude, today, scheduled, observed);
+        Attempt attempt = inputs != null ? pipeline.attempt(inputs, kind, row, claude, today, scheduled)
+                : pipeline.attempt(asOf, kind, false, row, claude, today, scheduled, observed);
         if (attempt == null) {
             return pipeline.capSkipped(asOf, kind, row, claude, pricesFinal, retrying, today, scheduled);
         }
@@ -589,6 +610,324 @@ public class ClaudeBookService {
                         plan.mismatch() ? " · 목표 노출과 주문이 어긋남" : "",
                         paused ? " · 호출 중 일시정지 — 통과 주문을 집행하지 않음" : "");
                 return saved;
+            });
+        });
+    }
+
+    // ------------------------------------------------------------------ 미국 Claude 계좌2(계좌2 명세 §4-1·§5-1·§5-4)
+    /**
+     * 그 실행의 미국 시장 입력을 한 번 읽습니다(입력 동결 — 계좌2 명세 §9-1·§5-1). 결정 작업이 같은 실행에서 계좌1·계좌2를 낼 때 두 계좌가 이 입력으로
+     * 패킷을 조립합니다({@link #decideWith}·{@link #decideClaude2}). 설정 행은 그 실행이 읽은 행(없으면 지금 행 — 결정 기록의 {@code settings_version}과
+     * 같은 행)입니다.
+     */
+    PacketBuilder.MarketInputs usMarketInputs(MarketRun run, LocalDate asOf) {
+        requireReady();
+        SettingsRow row = run.settingsRow().orElseGet(this::settingsRow);
+        return packets.read(asOf, false, row);
+    }
+
+    /**
+     * 계좌2 결정 한 번의 결과({@link #decideClaude2}).
+     *
+     * @param decision   결정 행 — 쓰지 않았으면 null(출발이 실패·컷오프·소상한으로 끝남 — 출발은 실패하면 아무것도 쓰지 않음, §4-1의 4)
+     * @param started    이번에 출발했나(INITIAL 결정이 통과 — 계좌 ACTIVE·{@code started_on} = S·S 순자산 줄)
+     * @param failure    쓰지 않고 끝난 출발의 사유(다음 미국 결정 창에 다시), 아니면 null
+     * @param calls      이번에 부른 Claude 호출 수(출발의 API 오류 재시도 포함)
+     * @param superseded 새 결정이 "다음 결정이 대신함"으로 취소한 앞선 대기 주문 수
+     */
+    record Claude2Outcome(Decision decision, boolean started, String failure, int calls, int superseded) {
+
+        static Claude2Outcome of(Decision decision) {
+            return new Claude2Outcome(decision, false, null, 0, 0);
+        }
+
+        static Claude2Outcome failed(String failure, int calls) {
+            return new Claude2Outcome(null, false, failure, calls, 0);
+        }
+    }
+
+    /**
+     * 그 결정 주기(기준 거래일 d)의 계좌2 Claude 호출 수 — d의 계좌2 정기(SCHEDULED)·출발(INITIAL) 결정 행마다 1 + 재시도 수(Claude를 부르지 않은
+     * 행 — 모델 없음 — 은 0). 계좌2 소상한({@code claude2.maxCallsPerCycle})이 이 수로 막습니다(계좌2 명세 §5-3 — 새 표 없이 결정 행으로 셈, 한국의 시장별
+     * 횟수와 같은 방식). 재시도를 상한 문구로 건너뛴 행도 재시도 수가 올라 1을 더 셉니다(막는 쪽으로 기울어짐). 수동 결정(MANUAL)은 수동 문턱을 따로 씁니다.
+     */
+    static int claude2CallsInCycle(PaperStore store, LocalDate asOf) {
+        int calls = 0;
+        for (String kind : List.of(RuleBookService.SCHEDULED, RuleBookService.INITIAL)) {
+            Optional<Decision> row = store.decisionFor(PaperBooks.CLAUDE2, asOf, kind);
+            if (row.isPresent() && row.get().model() != null) {
+                calls += 1 + row.get().retryCount();
+            }
+        }
+        return calls;
+    }
+
+    /** 계좌2 개장 전 컷오프(§5-1 ⑤) — 목표 세션 E(기준 거래일 다음 거래일) 09:00 ET. 호출(≤300초)·검증이 첫 메뉴 시각 09:30 ET 전에 끝나게. */
+    static Instant claude2Cutoff(com.macrodash.analytics.TradingCalendar calendar, LocalDate asOf) {
+        LocalDate session = calendar.nextTradingDay(asOf);
+        return java.time.ZonedDateTime.of(session, CLAUDE2_CUTOFF_ET, calendar.zone()).toInstant();
+    }
+
+    /** 계좌2 개장 전 컷오프의 뉴욕 시각(§5-1 ⑤). */
+    static final java.time.LocalTime CLAUDE2_CUTOFF_ET = java.time.LocalTime.of(9, 0);
+
+    /**
+     * 미국 Claude 계좌2의 그 거래일 결정(계좌2 명세 §5-1·§4-1) — 정기({@code SCHEDULED}), 수동({@code MANUAL}), 앞으로 체결 출발({@code INITIAL}).
+     * 결정 작업이 계좌1 바로 뒤 같은 실행에서(정기·출발), 수동 경로가 그 창 안에서 부릅니다 — 언제 부를지(설정 {@code claude2.enabled}·확정 종가와
+     * 1분봉 기다림 풀림·출발을 이 창에서 이미 해 봤나·수동 창)는 부르는 쪽이 정하고, 여기는 이 계좌만의 조건과 호출·검증·기록을 합니다.
+     *
+     * <ul>
+     *   <li><b>이미 있는 행</b>: 그대로(재시도할 API 오류면 한 번 더 — 같은 행, 계좌1과 같음).</li>
+     *   <li><b>상태</b>: 출발은 시작 전 계좌만, 정기·수동은 출발한 계좌만(시작 전이면 400). 일시정지면 계좌1처럼 정기는 {@code SKIPPED}, 수동은 400.</li>
+     *   <li><b>⑤ 개장 전 컷오프</b>: 지금이 E 09:00 ET 뒤면 부르지 않음 — 정기는 {@code SKIPPED}(사유 '개장 전 컷오프', 계좌1은 그대로 진행 — T17), 출발은
+     *       쓰지 않고 실패.</li>
+     *   <li><b>④ 소상한</b>(정기만): 그 결정 주기 호출 수({@link #claude2CallsInCycle})가 {@code claude2.maxCallsPerCycle} 이상이면 부르지 않음(정기는
+     *       {@code SKIPPED}, 출발은 실패). 하루 상한·정기 작업 몫 문턱은 계좌1과 같음({@link ClaudeSettings#callLimit}).</li>
+     *   <li><b>입력</b>: {@code shared}(그 실행의 시장 입력 — 계좌1과 같은 입력)가 있으면 그것, 없으면 지금 읽은 입력에 같은 d의 계좌1 정기 결정 행이 보낸
+     *       계좌 비의존 섹션을 넣은 것({@link PacketBuilder#withSectionsOf}, 그 행이 없으면 지금 읽은 그대로). 결정 행 응답에 {@code sharedWith}(계좌 비의존
+     *       섹션이 바이트까지 같은 계좌1 결정 번호 — 해시로 확인, 아니면 null)와 {@code marketSectionsSha256}를 남깁니다.</li>
+     *   <li><b>재시도</b>: 정기·수동은 계좌1과 같이 API 오류 행을 남기고 다음 주기에 한 번. 출발은 행을 쓰지 않으므로 같은 계획 안에서 같은 패킷으로 한
+     *       번 더 부릅니다(소상한·하루 상한이 남을 때만 — 한국 출발 선례). 그래도 실패하면 아무것도 쓰지 않고 실패(다음 창에 다시).</li>
+     *   <li><b>쓰기</b>(장부 잠금 안, Claude 호출은 밖): 계좌2의 앞선 대기 주문을 모두 "다음 결정이 대신함"으로 취소하고 결정·주문(E 하루짜리)을 한
+     *       트랜잭션으로. 출발이면 같은 트랜잭션에서 계좌 {@code ACTIVE}·{@code started_on} = S·S 순자산 줄 = 현금(확정, 보유 없음)입니다
+     *       ({@code paper_start_prices}·사후 체결 없음 — 한국 K28 방식).</li>
+     * </ul>
+     *
+     * @param shared    그 실행의 미국 시장 입력(계좌1과 같은 실행이면) — 없으면 null
+     * @param book1     같은 실행에서 계좌1이 낸 결정(없으면 null — 같은 d의 저장된 계좌1 정기 결정 행을 찾음)
+     * @param scheduled 정기 작업(하루 상한까지·소상한)이면 참, 수동(상한 − 정기 작업 몫 예약까지)이면 거짓
+     * @throws InvalidRequestException 계좌2가 없음(초기화 전)·상태가 그 종류와 맞지 않음·수동 결정인데 일시정지·컷오프 뒤·호출하는 사이 초기화
+     * @throws IllegalArgumentException 미국 실행이 아님·모르는 종류
+     */
+    Claude2Outcome decideClaude2(MarketRun run, LocalDate asOf, String kind, boolean pricesFinal,
+                                 PacketBuilder.MarketInputs shared, Decision book1, boolean scheduled) {
+        if (run.definition() != US) {
+            throw new IllegalArgumentException("계좌2는 미국 계좌입니다: " + run.code());
+        }
+        if (!List.of(RuleBookService.SCHEDULED, RuleBookService.MANUAL, RuleBookService.INITIAL).contains(kind)) {
+            throw new IllegalArgumentException("계좌2 결정 종류는 SCHEDULED · MANUAL · INITIAL입니다: " + kind);
+        }
+        Objects.requireNonNull(asOf, "asOf");
+        requireReady();
+        ClaudeDecisionPipeline base = pipelines.get(PaperBooks.CLAUDE2);
+        if (base == null) {
+            throw new IllegalArgumentException("계좌2 결정 문맥이 없습니다");
+        }
+        ClaudeDecisionPipeline pipeline = base.bind(run);
+        boolean initial = RuleBookService.INITIAL.equals(kind);
+        Book book = claudeBook(PaperBooks.CLAUDE2);
+        SettingsRow row = run.settingsRow().orElseGet(this::settingsRow);
+        ClaudeSettings claude = ClaudeSettings.from(row.body());
+        Claude2Settings book2 = Claude2Settings.from(row.body());
+        Decision retrying = null;
+        Optional<Decision> existing = store.decisionFor(PaperBooks.CLAUDE2, asOf, kind);
+        if (existing.isPresent()) {
+            if (!retryable(existing.get())) {
+                return Claude2Outcome.of(existing.get());
+            }
+            retrying = existing.get();
+        }
+        if (initial && !PaperBooks.NOT_STARTED.equals(book.status())) {
+            throw new InvalidRequestException("계좌2는 이미 출발했습니다(상태 " + book.status() + ", 출발 " + book.startedOn()
+                    + ") — 다시 출발하려면 계좌2를 초기화(리셋)한 뒤 앞으로 체결 출발을 기다리세요.");
+        }
+        if (!initial && PaperBooks.NOT_STARTED.equals(book.status())) {
+            throw new InvalidRequestException("계좌2는 아직 출발 전입니다 — 설정 claude2.enabled를 켜면 다음 미국 결정 창에 앞으로 체결로 "
+                    + "출발합니다(수동은 POST /api/paper/run/initial-decision {\"book\":\"claude2\"}).");
+        }
+        if (PaperBooks.PAUSED.equals(book.status())) {
+            if (RuleBookService.MANUAL.equals(kind)) {
+                throw new InvalidRequestException("계좌2가 일시정지 중이라 수동 결정을 내지 않았습니다(Claude를 부르지 않음) — "
+                        + "보유·체결 탭에서 재개한 뒤 누르세요.");
+            }
+            if (retrying != null) {
+                return Claude2Outcome.of(retrying);
+            }
+            return Claude2Outcome.of(pipeline.recordSkipped(asOf, kind, row, claude, pricesFinal,
+                    "일시정지 중 — Claude를 부르지 않고 주문을 내지 않습니다(재개한 뒤의 결정부터 다시 부릅니다)"));
+        }
+        Instant cutoff = claude2Cutoff(run.calendar(), asOf);
+        if (!clock.instant().isBefore(cutoff)) {
+            String reason = "개장 전 컷오프 — 목표 세션 " + run.calendar().nextTradingDay(asOf) + " 09:00 ET(" + Kst.stamp(cutoff)
+                    + ") 뒤라 Claude를 부르지 않았습니다(첫 메뉴 시각 09:30 ET 전에 호출·검증이 끝나게)";
+            if (initial) {
+                return Claude2Outcome.failed(reason, 0);
+            }
+            if (!scheduled) {
+                throw new InvalidRequestException(reason);
+            }
+            return skipped(pipeline, asOf, kind, row, claude, pricesFinal, retrying, reason);
+        }
+        int cycle = claude2CallsInCycle(store, asOf);
+        if (scheduled && cycle >= book2.maxCallsPerCycle()) {
+            String reason = "계좌2 소상한(" + book2.maxCallsPerCycle() + "회, 결정 주기 " + asOf + " — 지금 " + cycle
+                    + "회)에 닿아 Claude를 부르지 않았습니다 — 설정 " + Claude2Settings.MAX_CALLS_PER_CYCLE;
+            if (initial) {
+                return Claude2Outcome.failed(reason, 0);
+            }
+            return skipped(pipeline, asOf, kind, row, claude, pricesFinal, retrying, reason);
+        }
+        LocalDate today = Kst.today(clock);
+        if (pipeline.callsLeft(today, claude, scheduled) <= 0) {
+            return initial ? Claude2Outcome.failed(capMessage(claude, today, scheduled), 0)
+                    : Claude2Outcome.of(pipeline.capSkipped(asOf, kind, row, claude, pricesFinal, retrying, today, scheduled));
+        }
+        PacketBuilder.MarketInputs inputs = shared != null ? shared : claude2Inputs(asOf, row);
+        Generation before = generation(book);
+        Attempt attempt = pipeline.attempt(inputs, kind, row, claude, today, scheduled);
+        if (attempt == null) {
+            return initial ? Claude2Outcome.failed(capMessage(claude, today, scheduled), 0)
+                    : Claude2Outcome.of(pipeline.capSkipped(asOf, kind, row, claude, pricesFinal, retrying, today, scheduled));
+        }
+        int calls = 1;
+        if (initial && STATUS_API_ERROR.equals(attempt.status()) && (!scheduled || cycle + calls < book2.maxCallsPerCycle())
+                && pipeline.callsLeft(today, claude, scheduled) > 0) {
+            // 출발은 행을 쓰지 않으므로 같은 계획 안에서 같은 패킷으로 한 번 더(한국 출발 선례 — 첫 호출이 보낸 글자 그대로).
+            log.warn("Claude 계좌2 출발 호출 {} — 한 번 더 부릅니다({}): {}", attempt.status(), asOf, attempt.error());
+            Attempt again = pipeline.again(attempt, row, claude, today, scheduled, null);
+            if (again != null) {
+                attempt = again;
+                calls++;
+            }
+        }
+        if (!attempt.succeeded()) {
+            if (initial) {
+                log.warn("Claude 계좌2 출발 호출 실패({}, {}회): {} — 쓰지 않고 다음 결정 창에 다시", asOf, calls, attempt.error());
+                return Claude2Outcome.failed("Claude 출발 호출 실패(" + statusLabel(attempt.status())
+                        + (calls > 1 ? ", 재시도 1회 뒤" : "") + "): " + clip(attempt.error(), 400), calls);
+            }
+            return new Claude2Outcome(pipeline.recordFailure(asOf, kind, row, claude, pricesFinal, attempt, retrying), false,
+                    null, calls, 0);
+        }
+        Decision book1Row = book1 != null ? book1
+                : store.decisionFor(PaperBooks.CLAUDE, asOf, RuleBookService.SCHEDULED).orElse(null);
+        try {
+            return persistClaude2(pipeline, asOf, kind, pricesFinal, row, claude, attempt, retrying, before, book1Row,
+                    calls);
+        } catch (InvalidRequestException e) {
+            throw e;
+        } catch (RuntimeException e) {
+            if (initial) {
+                // 과금된 출발 응답의 검증·저장 오류 — 쓰지 않고 실패(결정 작업이 그 창의 출발을 해 본 것으로 기억해 다시 부르지 않음).
+                log.warn("Claude 계좌2 출발: 응답을 받은 뒤 검증·저장 오류 — 쓰지 않음({}): {}", asOf, e.toString());
+                return Claude2Outcome.failed("응답을 받은 뒤 검증·저장 오류(과금된 응답 — 다시 부르지 않음): "
+                        + clip(e.toString(), 400), calls);
+            }
+            pipeline.recordAfterResponse(asOf, kind, row, claude, pricesFinal, attempt, retrying, e);
+            throw e;
+        }
+    }
+
+    /** Claude를 부르지 않은 계좌2 정기 결정(개장 전 컷오프·소상한) — 새 행이면 {@code SKIPPED}, 재시도 차례였으면 그 재시도를 쓴 것으로. */
+    private static Claude2Outcome skipped(ClaudeDecisionPipeline pipeline, LocalDate asOf, String kind, SettingsRow row,
+                                          ClaudeSettings claude, boolean pricesFinal, Decision retrying, String reason) {
+        log.info("Claude 계좌2 결정 {} {}: {}", asOf, kind, reason);
+        if (retrying != null) {
+            return Claude2Outcome.of(pipeline.retryNotMade(retrying, reason));
+        }
+        return Claude2Outcome.of(pipeline.recordSkipped(asOf, kind, row, claude, pricesFinal, reason + " — 그날 재량 주문 없음"));
+    }
+
+    /** 계좌2가 따로 도는 실행의 시장 입력(클래스 설명이 아니라 {@link #decideClaude2}의 '입력'). */
+    private PacketBuilder.MarketInputs claude2Inputs(LocalDate asOf, SettingsRow row) {
+        PacketBuilder.MarketInputs fresh = packets.read(asOf, false, row);
+        Optional<Decision> book1 = store.decisionFor(PaperBooks.CLAUDE, asOf, RuleBookService.SCHEDULED)
+                .filter(d -> d.packetText() != null);
+        return book1.map(d -> packets.withSectionsOf(fresh, d)).orElse(fresh);
+    }
+
+    /** 받은 계좌2 응답을 잠금 안에서 그때의 장부로 검증하고 결정·주문(출발이면 운용 전환·S 순자산 줄까지)을 한 트랜잭션으로({@link #decideClaude2}). */
+    private Claude2Outcome persistClaude2(ClaudeDecisionPipeline pipeline, LocalDate asOf, String kind, boolean pricesFinal,
+                                          SettingsRow row, ClaudeSettings claude, Attempt attempt, Decision retried,
+                                          Generation before, Decision book1, int calls) {
+        boolean initial = RuleBookService.INITIAL.equals(kind);
+        Optional<Quotes> quotes = reader.quietly(() -> marketData.quotes(US));
+        String sectionsHash = PacketBuilder.marketSectionsSha256(attempt.packet().body(), mapper);
+        Long sharedWith = book1 != null && sectionsHash != null && sectionsHash.equals(PacketBuilder.marketSectionsSha256(
+                PacketBuilder.readSent(book1.packetText(), mapper), mapper)) ? book1.id() : null;
+        return ledger.exclusively(() -> {
+            Book current = claudeBook(PaperBooks.CLAUDE2);
+            if (initial) {
+                if (!PaperBooks.NOT_STARTED.equals(current.status())) {
+                    throw new InvalidRequestException("계좌2가 출발을 준비하는 사이에 이미 출발했습니다(출발 " + current.startedOn()
+                            + ") — 이 응답으로는 출발하지 않았습니다.");
+                }
+            } else {
+                if (PaperBooks.NOT_STARTED.equals(current.status())) {
+                    throw new InvalidRequestException("계좌2가 결정을 준비하는 사이에 초기화돼 시작 전 상태입니다 — 결정을 내지 "
+                            + "않았습니다.");
+                }
+                if (!before.equals(generation(current))) {
+                    throw new InvalidRequestException("계좌2가 결정을 준비하는 사이에 초기화된 뒤 다시 출발했습니다 — 초기화 전 "
+                            + "장부로 만든 결정이라 내지 않았습니다.");
+                }
+            }
+            Optional<Decision> raced = store.decisionFor(PaperBooks.CLAUDE2, asOf, kind);
+            if (raced.isPresent() && (retried == null || !retryable(raced.get()))) {
+                return Claude2Outcome.of(raced.get());
+            }
+            boolean paused = PaperBooks.PAUSED.equals(current.status());
+            LedgerView view = pipeline.ledgerView(false);
+            Plan plan = pipeline.plan(asOf, kind, false, attempt, view, row, claude, quotes, observedUniverse(quotes),
+                    Map.of());
+            String status = paused ? STATUS_SKIPPED : plan.status();
+            ObjectNode response = plan.response();
+            if (sharedWith == null) {
+                response.putNull("sharedWith");
+            } else {
+                response.put("sharedWith", sharedWith);
+            }
+            response.put("marketSectionsSha256", sectionsHash);
+            response.put("calls", calls);
+            if (initial) {
+                response.put("forwardStart", "앞으로 체결 출발 — 기준 거래일 " + asOf + " = 출발일(S), 통과 주문은 다음 세션에 고른 시점으로 "
+                        + "체결(사후 체결 없음)");
+            }
+            if (paused) {
+                response.put("skipped", "Claude를 부르는 사이에 계좌가 일시정지돼 통과 주문 " + plan.accepted()
+                        + "건을 집행하지 않음(취소로 남김) — 재개한 뒤의 결정부터 다시 냅니다");
+                response.put("pausedDuringCall", true);
+            }
+            return store.atomically(() -> {
+                int superseded = 0;
+                if (!paused) {
+                    // 출발이면 시작 전 계좌에 남은 대기 주문(리셋과 겹친 결정의 찌꺼기)도 같은 규칙으로 — 계좌2 출처 CLAUDE 대기 주문 전부.
+                    List<Long> cancelled = pipeline.supersedePending();
+                    superseded = cancelled.size();
+                    if (!cancelled.isEmpty()) {
+                        response.set("supersededOrders", mapper.valueToTree(cancelled));
+                    }
+                }
+                Decision base = pipeline.decisionRow(retried == null ? 0 : retried.id(), asOf, kind, status, row,
+                        claude, attempt, plan.target(), response, null, pricesFinal);
+                long id;
+                if (retried != null) {
+                    if (!store.updateDecisionRetry(base)) {
+                        throw new IllegalStateException("재시도하려던 결정이 그사이 바뀌었습니다: " + retried.id());
+                    }
+                    id = retried.id();
+                } else {
+                    id = store.insertDecisionIfAbsent(base).orElseThrow(() -> new IllegalStateException(
+                            "같은 거래일 계좌2 결정이 그사이 생겼습니다: " + asOf + " " + kind));
+                }
+                pipeline.insertOrders(id, asOf, plan, paused ? PaperBooks.ORDER_CANCELLED : PaperBooks.ORDER_PENDING);
+                if (initial) {
+                    // 앞으로 체결 출발(§4-1의 3) — 운용 전환·출발일 S·S 순자산 줄(전액 현금이라 가격이 들지 않아 확정).
+                    BookState state = store.state(PaperBooks.CLAUDE2).orElseThrow(() -> new IllegalStateException(
+                            "계좌2 상태(paper_book_state)가 없습니다 — 초기화를 다시 실행하세요"));
+                    store.updateBookStatus(PaperBooks.CLAUDE2, PaperBooks.ACTIVE);
+                    store.updateBookStartedOn(PaperBooks.CLAUDE2, asOf);
+                    store.upsertState(new BookState(PaperBooks.CLAUDE2, state.cash(), state.cash(), 0, 0,
+                            state.lastObservedAt(), state.lastProcessedCollectedAt(), asOf, null));
+                    store.upsertNav(new PaperStore.NavRow(PaperBooks.CLAUDE2, asOf, state.cash(), state.cash(), 0, 0,
+                            true));
+                }
+                Decision saved = store.decision(id).orElseThrow();
+                log.info("Claude 계좌2 결정 {} {}{}: {} — 통과 {} · 거절 {}{}{}", asOf, kind, retried == null ? "" : "(재시도)",
+                        status, plan.accepted(), plan.verdicts().size() - plan.accepted(),
+                        sharedWith == null ? "" : " · 계좌1 결정 " + sharedWith + "와 같은 시장 입력",
+                        initial ? " · 앞으로 체결 출발" : "");
+                return new Claude2Outcome(saved, initial && !paused, null, calls, superseded);
             });
         });
     }
