@@ -10,6 +10,7 @@ import com.macrodash.store.PaperStore.Order;
 import com.macrodash.store.Snapshot;
 import com.macrodash.support.InvalidRequestException;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import tools.jackson.databind.JsonNode;
@@ -511,5 +512,107 @@ class PaperDecisionJobClaude2Test {
         store.books.remove(PaperBooks.CLAUDE2);
         assertThatThrownBy(() -> job(MON_RUN).startClaude2Now()).isInstanceOf(InvalidRequestException.class)
                 .hasMessageContaining("계좌2가 없습니다");
+    }
+
+    // ------------------------------------------------------------------ 출발과 관측치 사슬(리뷰 F2)
+    /** 가짜 계좌2 결정이 출발 주문을 만들 때의 시각(그 실행의 지금). */
+    private Instant decidingAt;
+
+    /** 결정 작업의 작업 기록 가운데 마지막 것(실행 감사 작업의 기록은 뺌). */
+    private JsonNode lastDecisionRun() {
+        List<JobRun> runs = store.jobRuns.stream().filter(r -> !r.job().equals(PaperExecutionAuditJob.JOB)).toList();
+        return runs.get(runs.size() - 1).detail();
+    }
+
+    /** 관측치 저장본 — SPY와 출발 주문의 종목 AAPL(기준 거래일 MON 봉, 또는 다음 세션 봉). */
+    private void observedWithAapl(Instant collectedAt, LocalDate barDate, double aapl) {
+        when(marketData.quotes(market(US))).thenReturn(Optional.of(quotes(collectedAt,
+                bar("SPY", barDate.minusDays(3), 499, barDate, 500), bar("AAPL", barDate.minusDays(3), 99, barDate, aapl))));
+    }
+
+    /** 가짜 출발 결정이 쓰는 출발 주문 — 다음 세션 10:00 ET 목표 비중 매수(시각 지정, 하루짜리). */
+    private void startWritesAnOrder() {
+        // doAnswer — when(...)으로 다시 걸면 앞선 가짜 응답이 한 번 불려 calls에 빈 호출이 남음
+        doAnswer(invocation -> {
+            LocalDate d = invocation.getArgument(1);
+            String kind = invocation.getArgument(2);
+            calls.add("claude2 " + d + " " + kind);
+            store.insertOrder(new Order(0, PaperBooks.CLAUDE2, 97L, "AAPL", PaperBooks.BUY, null, 10.0, null,
+                    PaperBooks.AT_1000, "CLAUDE", PaperBooks.ORDER_PENDING, null, MAPPER.createObjectNode(), d, decidingAt,
+                    TUE, null));
+            return new ClaudeBookService.Claude2Outcome(row(97, PaperBooks.CLAUDE2, d, kind), true, null, 1, 0);
+        }).when(claude).decideClaude2(any(), any(), anyString(), anyBoolean(), any(), any(), anyBoolean());
+    }
+
+    private PaperExecutionAuditJob audit(com.macrodash.store.StoreRepository repository, Instant now) {
+        return new PaperExecutionAuditJob(store, reader, marketData, repository, PaperFixtures.config(), MAPPER,
+                Clock.fixed(now, ZoneOffset.UTC));
+    }
+
+    @Test
+    @Disabled("F2 재현 — 켠 뒤 첫 감사 전에 정기 출발이 주문을 만들면 출발 묶음의 계좌1식 기준(M1 P_cf)이 끝까지 null. 수정 커밋에서 뗌")
+    @DisplayName("F2 리뷰 순서(c0 22:20Z → 22:29Z 감사(꺼짐 — 고리 없음) → 켬 → 정기 출발 22:31Z → c1 22:33Z → 22:34Z 감사 → c2): 지금 관측치의 사슬 고리가 작업 기록에 없으면 정기 출발은 부르지 않고 다음 주기(startTried를 남기지 않음, claude2.waiting '관측치 사슬 준비 중') — 고리가 생긴 뒤 주기(22:41Z)에 낸 출발 주문은 c2에서 계좌1식 기준을 받음")
+    void scheduledStartWaitsForTheChainLink() {
+        com.macrodash.store.StoreRepository repository = mock(com.macrodash.store.StoreRepository.class);
+        startWritesAnOrder();
+        Instant c0 = Instant.parse("2026-10-26T22:20:00Z");
+        Instant c1 = Instant.parse("2026-10-26T22:33:00Z");
+        Instant c2 = Instant.parse("2026-10-27T14:05:00Z");   // 화(E) 10:05 ET — ②(기준 거래일 뒤 봉)를 통과하는 첫 저장본
+        observedWithAapl(c0, MON, 98);
+        audit(repository, Instant.parse("2026-10-26T22:29:00Z")).run();
+        assertThat(store.jobRuns).as("꺼진 채 시작 전 — 고리 없음").isEmpty();
+
+        enabled(true);
+        decidingAt = Instant.parse("2026-10-26T22:31:00Z");
+        job(decidingAt).run();
+        assertThat(calls).as("c0의 고리가 없음 — 출발하지 않음").noneMatch(c -> c.startsWith("claude2"));
+        assertThat(lastDecisionRun().path(PaperBooks.CLAUDE2).path("waiting").asString()).contains("관측치 사슬 준비 중");
+        assertThat(lastDecisionRun().path(PaperBooks.CLAUDE2).has(PaperDecisionJob.CLAUDE2_START_TRIED)).as("해 본 것으로 세지 않음")
+                .isFalse();
+
+        observedWithAapl(c1, MON, 98);
+        audit(repository, Instant.parse("2026-10-26T22:34:00Z")).run();   // 처음 고리 c1
+
+        decidingAt = Instant.parse("2026-10-26T22:41:00Z");
+        job(decidingAt).run();
+        assertThat(calls).filteredOn(c -> c.startsWith("claude2")).containsExactly("claude2 2026-10-26 INITIAL");
+        assertThat(lastDecisionRun().path(PaperBooks.CLAUDE2).path(PaperDecisionJob.CLAUDE2_START_TRIED).asBoolean()).isTrue();
+        Order start = store.orders.values().stream().filter(o -> PaperBooks.CLAUDE2.equals(o.bookCode())).findFirst()
+                .orElseThrow();
+        assertThat(start.createdAt()).isEqualTo(decidingAt);
+
+        when(repository.countTaskRunsStarted(UsPaperMarket.INSTANCE.quotesTask(), c1, c2)).thenReturn(1);
+        observedWithAapl(c2, TUE, 103.5);
+        audit(repository, c2.plusSeconds(120)).run();
+        JsonNode baseline = store.execs.get(start.id()).cf().get("NEXT_OBSERVATION");
+        assertThat(baseline.path("raw").asDouble()).as("출발 주문 뒤 첫 통과 저장본 c2의 종가 — 사슬 c1(주문 전) → c2").isEqualTo(103.5);
+    }
+
+    /** 실행 감사 작업이 그 관측치 저장본을 보고 남긴 사슬 고리(작업 기록 exec-audit의 quotesChain — 처음 고리 모양). */
+    private void chainLink(Instant collectedAt) {
+        ObjectNode detail = MAPPER.createObjectNode();
+        detail.putObject(PaperExecutionAuditJob.CHAIN).put("collectedAt", collectedAt.toString()).putNull("previous")
+                .put("adjacent", false).putNull("runsBetween");
+        store.recordJobRun(PaperExecutionAuditJob.JOB, collectedAt.plusSeconds(120), collectedAt.plusSeconds(121), "OK", detail);
+    }
+
+    @Test
+    @Disabled("F2 재현 — 수동 출발도 지금 관측치의 사슬 고리 없이 주문을 만듦. 수정 커밋에서 뗌")
+    @DisplayName("수동 출발 run/initial-decision {book:claude2}: 지금 관측치의 사슬 고리가 작업 기록에 없으면 400 '관측치 사슬 준비 중'(부르지 않음·기록 없음) — 더 이른 저장본의 고리로는 갈음하지 않음(켰다 끈 사이에 끊김), 그 관측치의 고리가 생기면 출발")
+    void manualStartWaitsForTheChainLink() {
+        enabled(true);
+        assertThatThrownBy(() -> job(MON_RUN).startClaude2Now()).isInstanceOf(InvalidRequestException.class)
+                .hasMessageContaining("관측치 사슬 준비 중");
+        chainLink(Instant.parse("2026-10-23T20:30:00Z"));   // 지난 주(사슬을 꺼 두기 전)의 고리
+        assertThatThrownBy(() -> job(MON_RUN).startClaude2Now()).isInstanceOf(InvalidRequestException.class)
+                .hasMessageContaining("관측치 사슬 준비 중");
+        assertThat(calls).isEmpty();
+        assertThat(store.jobRuns).filteredOn(r -> !r.job().equals(PaperExecutionAuditJob.JOB)).isEmpty();
+
+        chainLink(MON_OBSERVED);
+        next = new ClaudeBookService.Claude2Outcome(row(97, PaperBooks.CLAUDE2, MON, RuleBookService.INITIAL), true, null,
+                1, 0);
+        assertThat(job(MON_RUN).startClaude2Now().outcome()).isEqualTo(PaperDecisionJob.STARTED);
+        assertThat(calls).containsExactly("claude2 2026-10-26 INITIAL");
     }
 }
