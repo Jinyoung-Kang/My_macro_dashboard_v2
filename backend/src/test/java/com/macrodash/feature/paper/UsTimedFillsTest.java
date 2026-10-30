@@ -11,6 +11,7 @@ import com.macrodash.store.PaperStore.Lockout;
 import com.macrodash.store.PaperStore.Order;
 import com.macrodash.store.PaperStore.Position;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -953,6 +954,27 @@ class UsTimedFillsTest {
             assertThat(order(none).status()).isEqualTo("EXPIRED");
             assertThat(order(none).rejectReason()).startsWith("NO_BARS");
             assertThat(fillOf(none)).isNull();
+            assertThat(outcome.expired()).isEqualTo(1);
+        }
+
+        @Test
+        @Disabled("재현(수정 전) — 기준 종목의 E 세션을 앞 회차에 받아 합쳐 둔 저장본에서도 '그 종목만 E 세션 없음'을 거래 없음(⑧b)으로 봄")
+        @DisplayName("E+1 회차 저장본에 그 종목의 E 세션이 없고 기준 종목(SPY)의 E 세션은 앞 회차에 받아 합쳐 둔 것 — 이번 회차는 E를 받지 않아 "
+                + "'거래 없음'의 증거가 아님: NO_TRADE_AFTER_T가 아니라 1분봉 자료 없음(NO_BARS)")
+        void referenceSessionFromAnEarlierRoundIsNotProofOfNoTrade() {
+            long id = buy("CCC", 5, "AT_1100");
+            Bars later = new Bars(et(WED, 11, 21));
+            session(later, "CCC", WED, 30, et(WED, 11, 20));     // 이번 회차(1d)는 E+1 세션만 — CCC의 E는 받지 못한 채(앞 회차는 429로 이어받음)
+            session(later, "SPY", TUE, 580, et(TUE, 16, 0));
+            session(later, "SPY", WED, 590, et(WED, 11, 20));
+            later.sessionFetchedAt("SPY", TUE, et(WED, 9, 56));  // SPY의 E 세션은 기동 직후 5d 회차에 받아 합쳐 둔 것
+            bars(later);
+
+            Outcome outcome = observe(et(WED, 11, 20), bar("CCC", TUE, 21.0, WED, 30.0));
+
+            assertThat(order(id).status()).isEqualTo("EXPIRED");
+            assertThat(order(id).rejectReason()).as("1분봉 자료 없음 — '거래 정지·무거래 가능'으로 적지 않음").startsWith("NO_BARS");
+            assertThat(fillOf(id)).as("E+1 관측가로 채우지 않음").isNull();
             assertThat(outcome.expired()).isEqualTo(1);
         }
 
