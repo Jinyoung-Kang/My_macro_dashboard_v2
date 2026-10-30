@@ -10,7 +10,6 @@ import com.macrodash.store.PaperStore.Order;
 import com.macrodash.store.Snapshot;
 import com.macrodash.support.InvalidRequestException;
 import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import tools.jackson.databind.JsonNode;
@@ -640,7 +639,6 @@ class PaperDecisionJobClaude2Test {
     }
 
     @Test
-    @Disabled("리뷰 invariance 재현 — 관측치 저장본이 없으면 claude2WaitRecorded가 늘 거짓이라 같은 사슬 기다림이 결정 주기마다 DECIDED로 기록됨. 수정 커밋에서 뗌")
     @DisplayName("관측치 저장본이 없는 채 기한(12:00 KST) 뒤 — 켜진 시작 전 계좌2의 '관측치 사슬 준비 중'은 첫 주기만 기록하고 같은 기다림을 이어 간 주기는 BARS_WAITING(기록 없음), 개장 전 컷오프에 출발을 한 번 해 보고(startTried) 그 창을 끝냄")
     void chainWaitWithoutQuotesIsRecordedOnce() {
         enabled(true);
@@ -655,7 +653,7 @@ class PaperDecisionJobClaude2Test {
 
         assertThat(outcomes).containsExactly(PaperDecisionJob.DECIDED, PaperDecisionJob.BARS_WAITING,
                 PaperDecisionJob.BARS_WAITING, PaperDecisionJob.BARS_WAITING);
-        assertThat(store.jobRuns).as("첫 기다림만 — 지금은 10분마다 한 줄씩 늘어 작업 기록 200건 창을 밀어냄").hasSize(1);
+        assertThat(store.jobRuns).as("첫 기다림만 — 고치기 전에는 10분마다 한 줄씩 늘어 작업 기록 200건 창을 밀어냄").hasSize(1);
         assertThat(lastRun().has("quotes")).as("관측치 저장본 없음").isFalse();
         assertThat(lastRun().path(PaperBooks.CLAUDE2).path("waiting").asString()).contains("관측치 사슬 준비 중");
         assertThat(calls).filteredOn(c -> c.startsWith("claude2")).isEmpty();

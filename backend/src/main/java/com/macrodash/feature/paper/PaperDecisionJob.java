@@ -32,6 +32,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.locks.ReentrantLock;
@@ -123,7 +124,8 @@ import java.util.concurrent.locks.ReentrantLock;
  * 주기 — 해 본 것으로 세지 않음, 리뷰 F2 ⓑ), 운용 중이면 출발일 뒤 거래일의 정기 결정입니다. 계좌1이 기다리는 확정 종가 관측치에 더해
  * 계좌2 장부가 그 관측치를 처리했어야 합니다(1분봉 기다림이 풀림 — 기한 뒤에도, 단 개장 전 컷오프가 지났으면 기다리지 않고 계좌2 결정이 SKIPPED로 그 거래일을
  * 끝냄; 계좌2 장부가 그 관측치에서 오류로 보류됐으면 '1분봉 기다림'이 아니라 그 보류로 적고 새 관측치에서 다시). 계좌2만 남아 같은 관측치로 같은 기다림을 이어
- * 가기만 한 주기는 기록하지 않습니다({@value #BARS_WAITING} — 첫 기다림·풀림만, 그 주기 장부에 처리한 책·오류·알림이 있으면 기록). 두 계좌가 같은 실행에서 결정하면
+ * 가기만 한 주기는 기록하지 않습니다({@value #BARS_WAITING} — 첫 기다림·풀림만, 그 주기 장부에 처리한 책·오류·알림이 있으면 기록; 관측치 저장본이 없는
+ * 실행은 '없음'끼리 같은 관측치). 두 계좌가 같은 실행에서 결정하면
  * 시장 입력을 한 번 읽어 함께 씁니다(입력 동결). 개장 전 컷오프·소상한·호출 상한은 {@link ClaudeBookService#decideClaude2}가 봅니다. 오류 횟수는
  * (시장, 거래일, 계좌2)로 따로 셉니다.
  * 수동 결정·수동 출발은 '확정 종가 처리(1분봉 기다림 풀림 포함) 뒤 ~ 다음 세션 09:00 ET' 창 안에서만이고, 수동 출발은 정기 출발과 같이 관측치 사슬
@@ -607,12 +609,12 @@ public class PaperDecisionJob {
 
     /**
      * 이번 실행의 계좌2 몫이 기다림이고, 그 거래일의 가장 최근 작업 기록도 같은 관측치(수집 시각)로 같은 기다림(같은 사유 — 1분봉 기다림이냐 장부 오류로
-     * 보류냐)을 적은 기록인가 — 그렇다면 이 주기는 기다림을 이어 간 것뿐입니다({@value #BARS_WAITING}). 다른 결과 뒤(처음·결정·오류 뒤)나 새 관측치·다른
-     * 사유의 기다림은 새 줄입니다. 저장된 기록으로 보므로 재기동해도 같습니다.
+     * 보류냐 출발의 관측치 사슬 준비 중이냐)을 적은 기록인가 — 그렇다면 이 주기는 기다림을 이어 간 것뿐입니다({@value #BARS_WAITING}). 다른 결과 뒤(처음·
+     * 결정·오류 뒤)나 새 관측치·다른 사유의 기다림은 새 줄입니다. 관측치 저장본이 없는 실행(기록에 {@code quotes} 칸 없음 — 기한 뒤 출발의 사슬 기다림)은
+     * '없음'끼리 같은 관측치로 봅니다(리뷰 invariance — 그러지 않으면 기한 뒤 컷오프까지 10분마다 한 줄). 저장된 기록으로 보므로 재기동해도 같습니다.
      */
     private boolean claude2WaitRecorded(MarketRun market, LocalDate d, Map<String, Object> detail) {
-        if (!(detail.get(PaperBooks.CLAUDE2) instanceof Map<?, ?> view) || view.get("waiting") == null
-                || !(detail.get("quotes") instanceof Map<?, ?> observed) || observed.get("collectedAt") == null) {
+        if (!(detail.get(PaperBooks.CLAUDE2) instanceof Map<?, ?> view) || view.get("waiting") == null) {
             return false;
         }
         List<PaperStore.JobRun> records = store.jobRunsFor(market.jobName(JOB), d);
@@ -620,8 +622,10 @@ public class PaperDecisionJob {
             return false;
         }
         JsonNode last = records.get(0).detail();
+        String observed = detail.get("quotes") instanceof Map<?, ?> quotes && quotes.get("collectedAt") != null
+                ? String.valueOf(quotes.get("collectedAt")) : null;
         return String.valueOf(view.get("waiting")).equals(Json.asText(Json.child(last, PaperBooks.CLAUDE2), "waiting"))
-                && String.valueOf(observed.get("collectedAt")).equals(Json.asText(Json.child(last, "quotes"), "collectedAt"));
+                && Objects.equals(observed, Json.asText(Json.child(last, "quotes"), "collectedAt"));
     }
 
     /** 계좌1·계좌2가 함께 쓸 미국 시장 입력(입력 동결) — 읽지 못하면 null(두 계좌가 각자 읽음, 로그만). */

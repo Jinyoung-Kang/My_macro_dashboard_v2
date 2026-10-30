@@ -81,7 +81,8 @@
      - 단계 1(있음 — 새 작업 없음): 계좌2 결정은 결정 작업 안에서 규칙 → 계좌1 → 계좌2(`PaperDecisionJobClaude2Test.book2RunsAfterBook1WithTheSameInputs`·`disabledBook2IsNotCalled`·
        `book1AlreadyDecided`·`book2ErrorsCountForBook2`), 1분봉 기다림은 리스크 점검 안에서(`UsTimedFillsTest.releasedByFreshBars`·`releasedByTheCap`·`capComesFromTheSettings`·
        `noWaitWithoutDueOrders`·`manualRunsAlwaysRecord`, 결정 작업이 기다림을 봄 `PaperDecisionJobClaude2Test.waitsForTheMinuteBars` — 같은 관측치로 기다리기만 한
-       주기는 기록 없음 `repeatedBarsWaitIsRecordedOnce` — 기다림이 풀린 주기의 계좌2 장부 오류는 기록하고 '오류로 보류'로 적음
+       주기는 기록 없음 `repeatedBarsWaitIsRecordedOnce` — 출발의 관측치 사슬 기다림도 같음 `repeatedChainWaitIsRecordedOnce`, 관측치 저장본이 없는 채 기한 뒤면
+       '없음'끼리 같은 관측치라 첫 기다림만 기록하고 컷오프에 출발을 한 번 해 봄 `chainWaitWithoutQuotesIsRecordedOnce`(리뷰 invariance) — 기다림이 풀린 주기의 계좌2 장부 오류는 기록하고 '오류로 보류'로 적음
        `ledgerErrorAfterTheBarsWaitIsRecorded`, 계좌1 재시도가 있는 주기는 계좌2가 같은 관측치로 기다려도 기록 `book1RetryWhileBook2WaitsIsRecorded`,
        개장 전 컷오프가 기다림보다 먼저 `cutoffComesBeforeTheBarsWait`)
   9. 호출 예산(T10)
