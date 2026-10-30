@@ -842,6 +842,32 @@ class ApiIntegrationTest {
         }
     }
 
+    @Test
+    @DisplayName("🧪 관측치 사슬(계좌2 계좌1식 기준 — ADR 0022)의 사이 실행 수: 그 태스크가 두 시각 사이(양끝 제외)에 시작한 실행만 센다")
+    void taskRunsStartedBetweenCountsOnlyThatTaskStrictlyInside() {
+        // PaperExecutionAuditJob이 '두 관측치 저장본 사이에 paper_quotes 실행이 정확히 한 번'을 이 수로 증명합니다(가짜 저장소로만 돌던 SQL을 실제 표에서).
+        String prefix = "it_chain_";
+        jdbc.update("DELETE FROM collector_task_runs WHERE task LIKE ?", prefix + "%");
+        try {
+            insertTaskRun(prefix + "quotes", "ok", "2026-11-03T14:55:00Z");   // 앞 끝 — 빠짐
+            insertTaskRun(prefix + "quotes", "ok", "2026-11-03T15:55:00Z");   // 사이
+            insertTaskRun(prefix + "quotes", "error", "2026-11-03T16:10:00Z"); // 사이(상태와 상관없이 시작은 셈)
+            insertTaskRun(prefix + "other", "ok", "2026-11-03T15:30:00Z");    // 다른 태스크 — 빠짐
+            insertTaskRun(prefix + "quotes", "ok", "2026-11-03T16:55:00Z");   // 뒤 끝 — 빠짐
+
+            java.time.Instant after = java.time.Instant.parse("2026-11-03T14:55:00Z");
+            java.time.Instant before = java.time.Instant.parse("2026-11-03T16:55:00Z");
+            assertThat(repository.countTaskRunsStarted(prefix + "quotes", after, before)).isEqualTo(2);
+            assertThat(repository.countTaskRunsStarted(prefix + "quotes", after, java.time.Instant.parse("2026-11-03T16:00:00Z")))
+                    .as("사이 한 번 — 증명되는 고리").isEqualTo(1);
+            assertThat(repository.countTaskRunsStarted(prefix + "quotes", java.time.Instant.parse("2026-11-03T16:56:00Z"),
+                    java.time.Instant.parse("2026-11-03T18:00:00Z"))).as("사이 실행 없음 — 고리를 미룸").isZero();
+            assertThat(repository.countTaskRunsStarted(prefix + "none", after, before)).as("기록 없는 태스크").isZero();
+        } finally {
+            jdbc.update("DELETE FROM collector_task_runs WHERE task LIKE ?", prefix + "%");
+        }
+    }
+
     private void insertTaskRun(String task, String status, String startedAt) {
         jdbc.update("INSERT INTO collector_task_runs (task, speed, status, started_at, duration_ms) "
                 + "VALUES (?, 'fast', ?, ?::timestamptz, 1)", task, status, startedAt);
