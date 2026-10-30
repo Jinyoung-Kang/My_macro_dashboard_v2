@@ -120,8 +120,10 @@ import java.util.concurrent.locks.ReentrantLock;
  * <p><b>미국 Claude 계좌2</b>(계좌2 명세 §5-1·§4-1, ADR 0022): 미국 정기 실행은 규칙 → 계좌1 → 계좌2 순이고 같은 잠금·같은 설정 판입니다. 계좌2는 설정
  * {@code claude2.enabled}가 켜졌을 때만 — 시작 전이면 앞으로 체결 출발({@code INITIAL} — 그 거래일 창에 한 번, 실패하면 아무것도 쓰지 않고 다음 창,
  * 해 봤는지는 저장된 작업 기록 {@code claude2.startTried}로 셈), 운용 중이면 출발일 뒤 거래일의 정기 결정입니다. 계좌1이 기다리는 확정 종가 관측치에 더해
- * 계좌2 장부가 그 관측치를 처리했어야 합니다(1분봉 기다림이 풀림 — 기한 뒤에도). 두 계좌가 같은 실행에서 결정하면 시장 입력을 한 번 읽어 함께 씁니다
- * (입력 동결). 개장 전 컷오프·소상한·호출 상한은 {@link ClaudeBookService#decideClaude2}가 봅니다. 오류 횟수는 (시장, 거래일, 계좌2)로 따로 셉니다.
+ * 계좌2 장부가 그 관측치를 처리했어야 합니다(1분봉 기다림이 풀림 — 기한 뒤에도, 단 개장 전 컷오프가 지났으면 기다리지 않고 계좌2 결정이 SKIPPED로 그 거래일을
+ * 끝냄). 계좌2만 남아 같은 관측치로 기다리기만 한 주기는 기록하지 않습니다({@value #BARS_WAITING} — 첫 기다림·풀림만). 두 계좌가 같은 실행에서 결정하면
+ * 시장 입력을 한 번 읽어 함께 씁니다(입력 동결). 개장 전 컷오프·소상한·호출 상한은 {@link ClaudeBookService#decideClaude2}가 봅니다. 오류 횟수는
+ * (시장, 거래일, 계좌2)로 따로 셉니다.
  * 수동 결정·수동 출발은 '확정 종가 처리(1분봉 기다림 풀림 포함) 뒤 ~ 다음 세션 09:00 ET' 창 안에서만입니다({@link #runNow(PaperMarket, String)}·
  * {@link #startClaude2Now}).
  *
@@ -172,6 +174,11 @@ public class PaperDecisionJob {
      * {@value #PRICES_NOT_FINAL}(그날 종가 관측치 기다림) 자리입니다.
      */
     public static final String DATA_NOT_READY = "DATA_NOT_READY";
+    /**
+     * 미국 Claude 계좌2만 할 일이 남았고 같은 관측치로 1분봉 기다림(§5-1 ③)을 이어 감 — 결정 없이 다음 주기에 다시(기록 안 함 — 첫 기다림은 그 실행의
+     * {@value #DECIDED} 기록에 {@code claude2.waiting}으로 남음, 리스크 점검의 '첫 미룸·풀림만'과 같은 규칙).
+     */
+    public static final String BARS_WAITING = "BARS_WAITING";
     /** 기한이 지나 Claude 계좌를 부르지 않음(작업 기록 — 그 시장 Claude 계좌가 그날 결정할 차례였을 때). */
     static final String CLAUDE_PAST_DEADLINE = "결정 기한이 지나 Claude를 부르지 않습니다";
     /** 기한이 지나 규칙 계좌를 결정하지 않음(작업 기록 — NO_TRADE 결정 행은 그 시장 규칙 계좌 결정이 씁니다). */
@@ -557,7 +564,8 @@ public class PaperDecisionJob {
             detail.put(PaperBooks.CLAUDE2, gaveUpNote());
         } else if (claude2Kind != null) {
             try {
-                claude2Decision = claude2Leg(market, d, claude2Kind, pricesFinal, quotes, shared, claudeDecision, detail);
+                claude2Decision = claude2Leg(market, now, d, claude2Kind, pricesFinal, quotes, shared, claudeDecision,
+                        detail);
                 failures.remove(new FailureKey(market.code(), d, PaperBooks.CLAUDE2));
             } catch (RuntimeException e) {
                 errors.add("Claude 계좌2: " + message(e));
@@ -570,8 +578,32 @@ public class PaperDecisionJob {
             return new Result(result.outcome(), result.tradingDate(), result.pricesFinal(), result.rules(),
                     result.claude(), result.message(), claude2Decision);
         }
+        if (!work.gate() && !work.rules() && !work.claude() && claude2WaitRecorded(market, d, detail)) {
+            // 계좌2만 남아 같은 관측치로 1분봉을 다시 기다리기만 한 주기 — 기록하지 않습니다(첫 기다림·풀림만, BARS_WAITING).
+            return new Result(BARS_WAITING, d, pricesFinal, decision, claudeDecision,
+                    d + " 계좌2가 같은 관측치로 1분봉을 기다립니다 — 다음 주기에 다시");
+        }
         record(market, now, DECIDED, detail);
         return new Result(DECIDED, d, pricesFinal, decision, claudeDecision, null, claude2Decision);
+    }
+
+    /**
+     * 이번 실행의 계좌2 몫이 1분봉 기다림이고, 그 거래일의 가장 최근 작업 기록도 같은 관측치(수집 시각)로 계좌2가 기다린 기록인가 — 그렇다면 이 주기는
+     * 기다림을 이어 간 것뿐입니다({@value #BARS_WAITING}). 다른 결과 뒤(처음·결정·오류 뒤)나 새 관측치의 기다림은 새 줄입니다. 저장된 기록으로 보므로
+     * 재기동해도 같습니다.
+     */
+    private boolean claude2WaitRecorded(MarketRun market, LocalDate d, Map<String, Object> detail) {
+        if (!(detail.get(PaperBooks.CLAUDE2) instanceof Map<?, ?> view) || view.get("waiting") == null
+                || !(detail.get("quotes") instanceof Map<?, ?> observed) || observed.get("collectedAt") == null) {
+            return false;
+        }
+        List<PaperStore.JobRun> records = store.jobRunsFor(market.jobName(JOB), d);
+        if (records.isEmpty()) {
+            return false;
+        }
+        JsonNode last = records.get(0).detail();
+        return Json.child(Json.child(last, PaperBooks.CLAUDE2), "waiting") != null
+                && String.valueOf(observed.get("collectedAt")).equals(Json.asText(Json.child(last, "quotes"), "collectedAt"));
     }
 
     /** 계좌1·계좌2가 함께 쓸 미국 시장 입력(입력 동결) — 읽지 못하면 null(두 계좌가 각자 읽음, 로그만). */
@@ -588,13 +620,20 @@ public class PaperDecisionJob {
      * 계좌2 몫 한 번(클래스 설명 '미국 Claude 계좌2') — ③ 계좌2 장부가 이번 관측치를 처리했나(1분봉 기다림 풀림)를 보고, 결정·출발을 냅니다. 처리하지
      * 않았으면(기다림 중) 결정하지 않고 다음 주기에 다시 봅니다(오류가 아님). 작업 기록 칸 {@code claude2}에 결과를 남깁니다.
      *
+     * <p>⑤ 개장 전 컷오프({@link ClaudeBookService#claude2Cutoff} — 목표 세션 09:00 ET)는 ③보다 먼저 봅니다. 컷오프가 지났으면 기다림과 상관없이
+     * {@link ClaudeBookService#decideClaude2}를 불러 그 거래일을 끝냅니다(정기는 Claude 없이 {@code SKIPPED} '개장 전 컷오프', 출발은 쓰지 않고 실패 —
+     * 그 창의 출발을 해 본 것으로 셈). 어느 쪽도 대기 주문을 '대신함'으로 지우지 않으므로 ③의 까닭(풀리지 않은 d 주문을 지우지 않음)과 부딪히지 않고,
+     * 계좌2 장부가 그 관측치에서 보류된 날에도 기다림이 d가 바뀔 때까지 이어지지 않습니다.
+     *
      * @return 계좌2 결정 행(쓰지 않았으면 null)
      */
-    private Decision claude2Leg(MarketRun market, LocalDate d, String kind, boolean pricesFinal, Optional<Quotes> quotes,
-                                PacketBuilder.MarketInputs shared, Decision book1, Map<String, Object> detail) {
+    private Decision claude2Leg(MarketRun market, Instant now, LocalDate d, String kind, boolean pricesFinal,
+                                Optional<Quotes> quotes, PacketBuilder.MarketInputs shared, Decision book1,
+                                Map<String, Object> detail) {
         Map<String, Object> view = new LinkedHashMap<>();
         view.put("kind", kind);
-        String waiting = claude2BarsWait(quotes);
+        boolean pastCutoff = !now.isBefore(ClaudeBookService.claude2Cutoff(market.calendar(), d));
+        String waiting = pastCutoff ? null : claude2BarsWait(quotes);
         if (waiting != null) {
             view.put("waiting", waiting);
             detail.put(PaperBooks.CLAUDE2, view);

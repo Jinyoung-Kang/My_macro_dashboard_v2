@@ -10,7 +10,6 @@ import com.macrodash.store.PaperStore.Order;
 import com.macrodash.store.Snapshot;
 import com.macrodash.support.InvalidRequestException;
 import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import tools.jackson.databind.JsonNode;
@@ -297,7 +296,6 @@ class PaperDecisionJobClaude2Test {
     }
 
     @Test
-    @Disabled("재현 — 고치기 전에는 계좌2만 남아 같은 관측치로 1분봉을 기다리는 주기마다 DECIDED 작업 기록을 한 줄씩 남김")
     @DisplayName("계좌2만 남아 같은 관측치로 1분봉을 다시 기다리기만 한 주기는 기록하지 않음 — 첫 기다림(그 실행 기록의 claude2.waiting)·새 관측치의 첫 기다림·풀린 뒤의 결정만 기록(리스크 점검과 같은 규칙)")
     void repeatedBarsWaitIsRecordedOnce() {
         enabled(true);
@@ -314,7 +312,7 @@ class PaperDecisionJobClaude2Test {
         PaperDecisionJob.Result again = job(MON_RUN.plusSeconds(600), observedAt.plusSeconds(120)).run();
         job(MON_RUN.plusSeconds(1200), observedAt.plusSeconds(180)).run();
         assertThat(store.jobRuns).as("같은 관측치를 다시 기다리기만 한 주기").hasSize(first);
-        assertThat(again.outcome()).as("결정이 아님").isNotEqualTo(PaperDecisionJob.DECIDED);
+        assertThat(again.outcome()).isEqualTo(PaperDecisionJob.BARS_WAITING);
         assertThat(calls).filteredOn(c -> c.startsWith("claude2")).isEmpty();
 
         Instant next = observedAt.plusSeconds(3600);
@@ -328,7 +326,6 @@ class PaperDecisionJobClaude2Test {
     }
 
     @Test
-    @Disabled("재현 — 고치기 전에는 ③ 1분봉 기다림을 ⑤ 컷오프보다 먼저 봐서, 기다리는 동안 목표 세션 09:00 ET가 지나도 계좌2 결정(SKIPPED)을 부르지 않음")
     @DisplayName("⑤ 개장 전 컷오프가 ③ 1분봉 기다림보다 먼저: 계좌2 장부가 그 관측치를 아직 처리하지 않았어도(장부 보류·기다림) 목표 세션 09:00 ET 뒤면 계좌2 결정을 불러 그 거래일을 끝냄(부르는 쪽이 Claude 없이 SKIPPED '개장 전 컷오프'·출발은 실패)")
     void cutoffComesBeforeTheBarsWait() {
         enabled(true);

@@ -61,7 +61,8 @@
      - 단계 0(0-4): 실행 감사 작업의 같은 시험(꺼지면 아무것도 안 함, 저장본은 `StoreReader.quietly`, 장부 잠금을 잡지 않고 장부 표는 읽기만, 계좌1 고정본 그대로). 단계 2(2-3): 장중 확인 작업의 같은 시험·스케줄러 풀 5
      - 단계 1(있음 — 새 작업 없음): 계좌2 결정은 결정 작업 안에서 규칙 → 계좌1 → 계좌2(`PaperDecisionJobClaude2Test.book2RunsAfterBook1WithTheSameInputs`·`disabledBook2IsNotCalled`·
        `book1AlreadyDecided`·`book2ErrorsCountForBook2`), 1분봉 기다림은 리스크 점검 안에서(`UsTimedFillsTest.releasedByFreshBars`·`releasedByTheCap`·`capComesFromTheSettings`·
-       `noWaitWithoutDueOrders`·`manualRunsAlwaysRecord`, 결정 작업이 기다림을 봄 `PaperDecisionJobClaude2Test.waitsForTheMinuteBars`)
+       `noWaitWithoutDueOrders`·`manualRunsAlwaysRecord`, 결정 작업이 기다림을 봄 `PaperDecisionJobClaude2Test.waitsForTheMinuteBars` — 같은 관측치로 기다리기만 한
+       주기는 기록 없음 `repeatedBarsWaitIsRecordedOnce`, 개장 전 컷오프가 기다림보다 먼저 `cutoffComesBeforeTheBarsWait`)
   9. 호출 예산(T10)
      - 있음: `ClaudeBookServiceTest.manualCallsStopAtCapMinusReserveScheduledGoToCap`(수동 문턱 = 상한 − 예약, 정기는 상한까지 — 예약 값은 설정이라 이 결정은 저장 값으로 지킴)
      - 단계 1(있음): 계좌2 소상한(같은 기준 거래일의 결정 주기 단위 — 행마다 1 + 재시도) `Claude2DecisionTest.cycleCapCountsTheDecisionRows`, 수동 결정은 수동 문턱
