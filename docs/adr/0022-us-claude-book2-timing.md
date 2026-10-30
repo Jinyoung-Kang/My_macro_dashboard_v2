@@ -64,7 +64,8 @@
        `book1AlreadyDecided`·`book2ErrorsCountForBook2`), 1분봉 기다림은 리스크 점검 안에서(`UsTimedFillsTest.releasedByFreshBars`·`releasedByTheCap`·`capComesFromTheSettings`·
        `noWaitWithoutDueOrders`·`manualRunsAlwaysRecord`, 결정 작업이 기다림을 봄 `PaperDecisionJobClaude2Test.waitsForTheMinuteBars` — 같은 관측치로 기다리기만 한
        주기는 기록 없음 `repeatedBarsWaitIsRecordedOnce` — 기다림이 풀린 주기의 계좌2 장부 오류는 기록하고 '오류로 보류'로 적음
-       `ledgerErrorAfterTheBarsWaitIsRecorded`, 개장 전 컷오프가 기다림보다 먼저 `cutoffComesBeforeTheBarsWait`)
+       `ledgerErrorAfterTheBarsWaitIsRecorded`, 계좌1 재시도가 있는 주기는 계좌2가 같은 관측치로 기다려도 기록 `book1RetryWhileBook2WaitsIsRecorded`,
+       개장 전 컷오프가 기다림보다 먼저 `cutoffComesBeforeTheBarsWait`)
   9. 호출 예산(T10)
      - 있음: `ClaudeBookServiceTest.manualCallsStopAtCapMinusReserveScheduledGoToCap`(수동 문턱 = 상한 − 예약, 정기는 상한까지 — 예약 값은 설정이라 이 결정은 저장 값으로 지킴)
      - 단계 1(있음): 계좌2 소상한(같은 기준 거래일의 결정 주기 단위 — 행마다 1 + 재시도) `Claude2DecisionTest.cycleCapCountsTheDecisionRows`(출발의 같은 계획 안 재시도도 행의

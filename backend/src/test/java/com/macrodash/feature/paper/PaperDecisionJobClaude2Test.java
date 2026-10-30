@@ -44,6 +44,7 @@ import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.ArgumentMatchers.same;
+import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
@@ -369,6 +370,43 @@ class PaperDecisionJobClaude2Test {
         PaperDecisionJob.Result held = job(MON_RUN.plusSeconds(1200), ledger).run();
         assertThat(store.jobRuns).as("같은 관측치로 보류만 이어 간 주기").hasSize(first + 1);
         assertThat(held.outcome()).isEqualTo(PaperDecisionJob.BARS_WAITING);
+        assertThat(calls).filteredOn(c -> c.startsWith("claude2")).isEmpty();
+    }
+
+    @Test
+    @DisplayName("계좌1 첫 응답이 재시도할 API 오류이고 계좌2가 같은 관측치로 1분봉을 기다리면, 다음 주기의 계좌1 재시도는 기록함 — 할 일이 계좌2만 남았을 때만 BARS_WAITING으로 접음")
+    void book1RetryWhileBook2WaitsIsRecorded() {
+        enabled(true);
+        claude2(FRI, PaperBooks.ACTIVE);
+        store.insertDecisionIfAbsent(row(0, PaperBooks.RULES, MON, RuleBookService.SCHEDULED));
+        dueTimedOrder();
+        doAnswer(invocation -> {
+            calls.add("claude(shared) " + invocation.getArgument(1) + " " + invocation.getArgument(2));
+            Optional<Decision> earlier = store.decisionFor(PaperBooks.CLAUDE, MON, RuleBookService.SCHEDULED);
+            if (earlier.isEmpty()) {   // 첫 응답 — 다음 주기에 재시도할 API 오류(retry_count 0)
+                store.insertDecisionIfAbsent(new Decision(0, PaperBooks.CLAUDE, MON, RuleBookService.SCHEDULED, store.dbNow,
+                        ClaudeBookService.STATUS_API_ERROR, "claude-sonnet-5-5", null, 1, null, null, null, null, null,
+                        MAPPER.createObjectNode(), null, "overloaded", null, true, 0L, 0));
+            } else {
+                store.updateDecision(earlier.get().id(), "NO_TRADE", MAPPER.valueToTree(Map.of("summary", "재시도")), null);
+            }
+            return store.decisionFor(PaperBooks.CLAUDE, MON, RuleBookService.SCHEDULED).orElseThrow();
+        }).when(claude).decideWith(market(US), any(), anyString(), anyBoolean(), any());
+        Instant observedAt = Instant.parse("2026-10-26T22:50:00Z");
+        observed(observedAt, MON);
+
+        job(MON_RUN, observedAt.plusSeconds(60)).run();
+        int first = store.jobRuns.size();
+        assertThat(lastRun().path("claude").path("status").asString()).isEqualTo(ClaudeBookService.STATUS_API_ERROR);
+        assertThat(lastRun().path(PaperBooks.CLAUDE2).path("waiting").asString()).contains("1분봉 기다림");
+
+        PaperDecisionJob.Result retried = job(MON_RUN.plusSeconds(600), observedAt.plusSeconds(120)).run();
+
+        assertThat(calls).filteredOn(c -> c.startsWith("claude(shared)")).as("계좌1 재시도").hasSize(2);
+        assertThat(retried.outcome()).as("계좌2는 같은 관측치로 기다려도 계좌1 재시도가 있는 주기").isEqualTo(PaperDecisionJob.DECIDED);
+        assertThat(store.jobRuns).as("계좌1 재시도 결과가 기록됨").hasSize(first + 1);
+        assertThat(lastRun().path("claude").path("status").asString()).isEqualTo("NO_TRADE");
+        assertThat(lastRun().path(PaperBooks.CLAUDE2).path("waiting").asString()).contains("1분봉 기다림");
         assertThat(calls).filteredOn(c -> c.startsWith("claude2")).isEmpty();
     }
 
