@@ -76,7 +76,8 @@ import java.util.Optional;
  * <p>사슬은 <b>계좌2 행이 있고 설정 {@code claude2.enabled}가 켜졌거나 계좌2가 이미 출발했을 때만</b> 셉니다({@link #chainWanted}) — 계좌2 주문은 출발
  * (INITIAL — 켠 뒤에만 생김)부터라 사슬이 그 앞에서 시작하면 증명은 그대로이고, 배포만으로는(계좌2 행이 없거나 꺼진 채 시작 전) 작업 기록이 늘지 않습니다
  * (ADR 0022 — 배포로 바뀌는 것 없음). 사슬 계산이 실패하면 그 실행은 계좌2 기준을 보지 않고({@code chain = null}) 감사는 그대로 하며, 기록에
- * {@code chainError}를 남깁니다 — 계좌2 전용 증명이 계좌1 측정을 막지 않게.
+ * {@code chainError}를 남깁니다 — 계좌2 전용 증명이 계좌1 측정을 막지 않게. 켠 뒤 첫 감사 전에 출발 주문이 생기면 그 주문 뒤 첫 저장본이 처음 고리라
+ * 증명되지 않으므로, 계좌2 출발(정기·수동)은 그 출발이 읽은 관측치의 고리가 기록된 뒤에만 냅니다({@link #chainNotReady} — 결정 작업이 봄, 리뷰 F2 ⓑ).
  *
  * <p>{@code dashboard.paper.enabled=false}(로컬 v2 — {@code PAPER_ENABLED=false})면 아무것도 읽거나 쓰지 않습니다. 수동 실행 경로는 없습니다.
  */
@@ -218,7 +219,7 @@ public class PaperExecutionAuditJob {
             if (quotes != null) {
                 try {
                     if (chainWanted()) {
-                        Map<Instant, ChainLink> links = chainLinks();
+                        Map<Instant, ChainLink> links = chainLinks(store);
                         link = link(quotes.collectedAt(), links);
                         if (link != null && link.isNew()) {
                             links.put(link.collectedAt(), link.link());
@@ -294,8 +295,27 @@ public class PaperExecutionAuditJob {
         return new LinkState(new ChainLink(collectedAt, previous, runs == 1, runs), true);
     }
 
+    /**
+     * 계좌2 출발(INITIAL — 정기·수동)을 낼 수 있게 관측치 사슬이 준비됐나(리뷰 F2 ⓑ, 명세 §4-1·§5-4) — 그 출발이 읽은 관측치 저장본(수집 시각
+     * c ≤ 지금)의 고리가 작업 기록에 있으면 null, 없으면 기다릴 사유. 고리가 있으면 출발 주문(생성 &gt; c) 뒤의 저장본마다 이 작업이 그 고리에서 이어 붙이므로
+     * 출발 주문의 계좌1식 기준(M1 P_cf)을 증명할 수 있습니다(클래스 설명 3). 없으면 — 켠 뒤 첫 감사(5분 주기) 전이거나 새 저장본을 이 작업이 아직 보지
+     * 못함 — 그 사이 생긴 출발 주문의 첫 통과 저장본이 처음 고리이거나 처음 고리 뒤라 출발 묶음의 기준이 끝까지 null입니다. 더 이른 저장본의 고리로는
+     * 갈음하지 않습니다 — 그 뒤 사슬을 세지 않은 사이(계좌2를 켰다 끔)가 있으면 다음 고리가 이어지지 않습니다.
+     *
+     * @param collectedAt 출발이 읽은 관측치 저장본의 수집 시각(없으면 null — 고리가 있을 수 없음)
+     */
+    static String chainNotReady(PaperStore store, Instant collectedAt, Instant now) {
+        if (collectedAt != null && !collectedAt.isAfter(now) && chainLinks(store).containsKey(collectedAt)) {
+            return null;
+        }
+        return "관측치 사슬 준비 중 — 실행 감사(5분마다)가 지금 관측치"
+                + (collectedAt == null ? "" : "(수집 " + Kst.stamp(collectedAt) + ")")
+                + "의 사슬 고리를 아직 남기지 않았습니다(켠 뒤 첫 감사 전·새 관측치 직후). 출발 주문의 계좌1식 기준(M1)을 증명하려면 주문 전에 "
+                + "그 고리가 있어야 합니다";
+    }
+
     /** 기록한 사슬 고리(작업 기록 최근 {@value #CHAIN_RECORDS}건의 {@value #CHAIN} 칸) — 수집 시각 → 고리, 같은 저장본이 둘이면 먼저 기록한 것. */
-    private Map<Instant, ChainLink> chainLinks() {
+    static Map<Instant, ChainLink> chainLinks(PaperStore store) {
         Map<Instant, ChainLink> out = new HashMap<>();
         List<PaperStore.JobRun> runs = store.recentJobRuns(JOB, CHAIN_RECORDS);
         for (int i = runs.size() - 1; i >= 0; i--) {   // 오래된 기록부터 — 먼저 기록한 고리가 남게

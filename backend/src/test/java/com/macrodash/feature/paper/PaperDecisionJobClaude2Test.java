@@ -10,7 +10,6 @@ import com.macrodash.store.PaperStore.Order;
 import com.macrodash.store.Snapshot;
 import com.macrodash.support.InvalidRequestException;
 import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import tools.jackson.databind.JsonNode;
@@ -257,6 +256,7 @@ class PaperDecisionJobClaude2Test {
     @DisplayName("출발(INITIAL): 시작 전 계좌2는 그 창에 한 번 — 실패해 쓰지 않아도 작업 기록 claude2.startTried로 다시 부르지 않음(새 작업 객체 = 재기동해도), 다음 거래일 창에 다시")
     void startIsTriedOncePerWindow() {
         enabled(true);
+        chainLink(MON_OBSERVED);   // 출발은 그 관측치의 사슬 고리가 있을 때만(리뷰 F2 — scheduledStartWaitsForTheChainLink)
         next = ClaudeBookService.Claude2Outcome.failed("Claude 출발 호출 실패(API 오류, 재시도 1회 뒤): boom", 2);
 
         PaperDecisionJob.Result first = job(MON_RUN).run();
@@ -274,6 +274,7 @@ class PaperDecisionJobClaude2Test {
         assertThat(calls).filteredOn(c -> c.startsWith("claude2")).containsExactly("claude2 2026-10-26 INITIAL");
 
         observed(Instant.parse("2026-10-27T20:30:00Z"), TUE);
+        chainLink(Instant.parse("2026-10-27T20:30:00Z"));
         job(Instant.parse("2026-10-27T23:00:00Z")).run();
         assertThat(calls).filteredOn(c -> c.startsWith("claude2"))
                 .containsExactly("claude2 2026-10-26 INITIAL", "claude2 2026-10-27 INITIAL");
@@ -487,6 +488,7 @@ class PaperDecisionJobClaude2Test {
     @DisplayName("수동 출발 run/initial-decision {book:claude2}: 계좌 없음·창 밖은 400, 출발 실패는 400(쓰지 않음), 출발하면 STARTED, 이미 출발했으면 ALREADY_STARTED와 그 출발 기록(부르지 않음)")
     void manualBook2Start() {
         enabled(true);
+        chainLink(MON_OBSERVED);   // 출발은 그 관측치의 사슬 고리가 있을 때만(리뷰 F2 — manualStartWaitsForTheChainLink)
         assertThatThrownBy(() -> job(Instant.parse("2026-10-27T13:00:00Z")).startClaude2Now())
                 .isInstanceOf(InvalidRequestException.class).hasMessageContaining("09:00 ET");
         next = ClaudeBookService.Claude2Outcome.failed("개장 전 컷오프", 0);
@@ -550,7 +552,6 @@ class PaperDecisionJobClaude2Test {
     }
 
     @Test
-    @Disabled("F2 재현 — 켠 뒤 첫 감사 전에 정기 출발이 주문을 만들면 출발 묶음의 계좌1식 기준(M1 P_cf)이 끝까지 null. 수정 커밋에서 뗌")
     @DisplayName("F2 리뷰 순서(c0 22:20Z → 22:29Z 감사(꺼짐 — 고리 없음) → 켬 → 정기 출발 22:31Z → c1 22:33Z → 22:34Z 감사 → c2): 지금 관측치의 사슬 고리가 작업 기록에 없으면 정기 출발은 부르지 않고 다음 주기(startTried를 남기지 않음, claude2.waiting '관측치 사슬 준비 중') — 고리가 생긴 뒤 주기(22:41Z)에 낸 출발 주문은 c2에서 계좌1식 기준을 받음")
     void scheduledStartWaitsForTheChainLink() {
         com.macrodash.store.StoreRepository repository = mock(com.macrodash.store.StoreRepository.class);
@@ -597,7 +598,6 @@ class PaperDecisionJobClaude2Test {
     }
 
     @Test
-    @Disabled("F2 재현 — 수동 출발도 지금 관측치의 사슬 고리 없이 주문을 만듦. 수정 커밋에서 뗌")
     @DisplayName("수동 출발 run/initial-decision {book:claude2}: 지금 관측치의 사슬 고리가 작업 기록에 없으면 400 '관측치 사슬 준비 중'(부르지 않음·기록 없음) — 더 이른 저장본의 고리로는 갈음하지 않음(켰다 끈 사이에 끊김), 그 관측치의 고리가 생기면 출발")
     void manualStartWaitsForTheChainLink() {
         enabled(true);

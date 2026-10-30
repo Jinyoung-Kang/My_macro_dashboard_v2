@@ -119,14 +119,15 @@ import java.util.concurrent.locks.ReentrantLock;
  *
  * <p><b>미국 Claude 계좌2</b>(계좌2 명세 §5-1·§4-1, ADR 0022): 미국 정기 실행은 규칙 → 계좌1 → 계좌2 순이고 같은 잠금·같은 설정 판입니다. 계좌2는 설정
  * {@code claude2.enabled}가 켜졌을 때만 — 시작 전이면 앞으로 체결 출발({@code INITIAL} — 그 거래일 창에 한 번, 실패하면 아무것도 쓰지 않고 다음 창,
- * 해 봤는지는 저장된 작업 기록 {@code claude2.startTried}로 셈), 운용 중이면 출발일 뒤 거래일의 정기 결정입니다. 계좌1이 기다리는 확정 종가 관측치에 더해
+ * 해 봤는지는 저장된 작업 기록 {@code claude2.startTried}로 셈; 그 실행이 읽은 관측치의 사슬 고리가 실행 감사 작업 기록에 아직 없으면 부르지 않고 다음
+ * 주기 — 해 본 것으로 세지 않음, 리뷰 F2 ⓑ), 운용 중이면 출발일 뒤 거래일의 정기 결정입니다. 계좌1이 기다리는 확정 종가 관측치에 더해
  * 계좌2 장부가 그 관측치를 처리했어야 합니다(1분봉 기다림이 풀림 — 기한 뒤에도, 단 개장 전 컷오프가 지났으면 기다리지 않고 계좌2 결정이 SKIPPED로 그 거래일을
  * 끝냄; 계좌2 장부가 그 관측치에서 오류로 보류됐으면 '1분봉 기다림'이 아니라 그 보류로 적고 새 관측치에서 다시). 계좌2만 남아 같은 관측치로 같은 기다림을 이어
  * 가기만 한 주기는 기록하지 않습니다({@value #BARS_WAITING} — 첫 기다림·풀림만, 그 주기 장부에 처리한 책·오류·알림이 있으면 기록). 두 계좌가 같은 실행에서 결정하면
  * 시장 입력을 한 번 읽어 함께 씁니다(입력 동결). 개장 전 컷오프·소상한·호출 상한은 {@link ClaudeBookService#decideClaude2}가 봅니다. 오류 횟수는
  * (시장, 거래일, 계좌2)로 따로 셉니다.
- * 수동 결정·수동 출발은 '확정 종가 처리(1분봉 기다림 풀림 포함) 뒤 ~ 다음 세션 09:00 ET' 창 안에서만입니다({@link #runNow(PaperMarket, String)}·
- * {@link #startClaude2Now}).
+ * 수동 결정·수동 출발은 '확정 종가 처리(1분봉 기다림 풀림 포함) 뒤 ~ 다음 세션 09:00 ET' 창 안에서만이고, 수동 출발은 정기 출발과 같이 관측치 사슬
+ * 고리가 있어야 합니다(없으면 400 '관측치 사슬 준비 중' — {@link #runNow(PaperMarket, String)}·{@link #startClaude2Now}).
  *
  * <p><b>실행 하나 = 달력 한 벌·설정 판 하나</b>(C1a): 정기·수동 실행은 시작할 때 그 시장의 실행 문맥({@link MarketRun})을 한 번 열어
  * ({@link PaperMarkets#open}) 세션 d·결정 시각과 기한·관측치 확정 판정·장부 처리·미확정 순자산 줄·Claude 결정에 그대로 넘깁니다 —
@@ -176,7 +177,8 @@ public class PaperDecisionJob {
      */
     public static final String DATA_NOT_READY = "DATA_NOT_READY";
     /**
-     * 미국 Claude 계좌2만 할 일이 남았고 같은 관측치로 같은 기다림(§5-1 ③ — 1분봉 기다림, 또는 계좌2 장부가 그 관측치에서 오류로 보류됨)을 이어 가며 그 주기의
+     * 미국 Claude 계좌2만 할 일이 남았고 같은 관측치로 같은 기다림(§5-1 ③ — 1분봉 기다림, 또는 계좌2 장부가 그 관측치에서 오류로 보류됨, 또는 출발의 관측치
+     * 사슬 준비 중 — §4-1)을 이어 가며 그 주기의
      * 장부도 한 일·오류·알림이 없음 — 결정 없이 다음 주기에 다시(기록 안 함 — 첫 기다림은 그 실행의 {@value #DECIDED} 기록에 {@code claude2.waiting}으로
      * 남음, 리스크 점검의 '첫 미룸·풀림만'과 같은 규칙).
      */
@@ -588,7 +590,7 @@ public class PaperDecisionJob {
                 && claude2WaitRecorded(market, d, detail)) {
             // 계좌2만 남아 같은 관측치로 같은 기다림을 이어 가기만 한 주기(장부도 한 일·오류·알림 없음) — 기록하지 않습니다(첫 기다림·풀림만, BARS_WAITING).
             return new Result(BARS_WAITING, d, pricesFinal, decision, claudeDecision,
-                    d + " 계좌2가 같은 관측치로 기다립니다(1분봉 기다림 또는 장부 오류로 보류) — 다음 주기에 다시");
+                    d + " 계좌2가 같은 관측치로 기다립니다(1분봉 기다림·장부 오류로 보류·출발의 관측치 사슬 준비 중) — 다음 주기에 다시");
         }
         record(market, now, DECIDED, detail);
         return new Result(DECIDED, d, pricesFinal, decision, claudeDecision, null, claude2Decision);
@@ -634,7 +636,8 @@ public class PaperDecisionJob {
 
     /**
      * 계좌2 몫 한 번(클래스 설명 '미국 Claude 계좌2') — ③ 계좌2 장부가 이번 관측치를 처리했나(1분봉 기다림 풀림)를 보고, 결정·출발을 냅니다. 처리하지
-     * 않았으면(기다림 중) 결정하지 않고 다음 주기에 다시 봅니다(오류가 아님). 작업 기록 칸 {@code claude2}에 결과를 남깁니다.
+     * 않았으면(기다림 중) 결정하지 않고 다음 주기에 다시 봅니다(오류가 아님). 출발은 이번 관측치의 사슬 고리도 있어야 합니다({@link #claude2ChainWait} —
+     * 없으면 같은 기다림 칸 {@code waiting}, 해 본 것으로 세지 않음). 작업 기록 칸 {@code claude2}에 결과를 남깁니다.
      *
      * <p>⑤ 개장 전 컷오프({@link ClaudeBookService#claude2Cutoff} — 목표 세션 09:00 ET)는 ③보다 먼저 봅니다. 컷오프가 지났으면 기다림과 상관없이
      * {@link ClaudeBookService#decideClaude2}를 불러 그 거래일을 끝냅니다(정기는 Claude 없이 {@code SKIPPED} '개장 전 컷오프', 출발은 쓰지 않고 실패 —
@@ -650,6 +653,10 @@ public class PaperDecisionJob {
         view.put("kind", kind);
         boolean pastCutoff = !now.isBefore(ClaudeBookService.claude2Cutoff(market.calendar(), d));
         String waiting = pastCutoff ? null : claude2BarsWait(market, quotes);
+        if (waiting == null && !pastCutoff && RuleBookService.INITIAL.equals(kind)) {
+            // 출발은 그 관측치의 사슬 고리가 기록된 뒤에만(리뷰 F2 ⓑ) — 해 본 것으로 세지 않고(startTried 없음) 다음 주기에 다시.
+            waiting = claude2ChainWait(quotes, now);
+        }
         if (waiting != null) {
             view.put("waiting", waiting);
             detail.put(PaperBooks.CLAUDE2, view);
@@ -698,6 +705,15 @@ public class PaperDecisionJob {
         }
         return "계좌2 장부가 관측치(수집 " + Kst.stamp(quotes.get().collectedAt()) + ")를 아직 처리하지 않았습니다(1분봉 기다림) — "
                 + "다음 주기에 다시";
+    }
+
+    /**
+     * 계좌2 출발(INITIAL)을 기다려야 하나(리뷰 F2 ⓑ — 명세 §4-1): 그 실행이 읽은 관측치 저장본의 사슬 고리가 실행 감사의 작업 기록에 없으면 그 사유
+     * ({@link PaperExecutionAuditJob#chainNotReady}), 있으면 null. 고리 없이 출발 주문이 생기면 출발 묶음의 계좌1식 기준(M1 P_cf)을 끝까지 증명하지
+     * 못합니다(켠 뒤 첫 감사 전 — 켜자마자 '계좌2 시작'이나 결정 창 안에서 켠 직후의 정기 출발).
+     */
+    private String claude2ChainWait(Optional<Quotes> quotes, Instant now) {
+        return PaperExecutionAuditJob.chainNotReady(store, quotes.map(Quotes::collectedAt).orElse(null), now);
     }
 
     /**
@@ -1508,8 +1524,9 @@ public class PaperDecisionJob {
      * ~ 다음 세션 09:00 ET') 안에서만, 수동 호출 문턱(상한 − 정기 작업 몫 예약)으로 한 번 냅니다(한국 F1b 선례). 이미 출발했으면 아무것도 하지 않고 그 출발
      * 기록({@value #ALREADY_STARTED} — 출발일의 INITIAL 결정)을 돌려줍니다. 출발하면 작업 기록을 정기 출발과 같은 모양({@code manual:true})으로 남깁니다.
      *
-     * @throws InvalidRequestException 설정 {@code claude2.enabled}가 꺼짐·창 밖(정규장 중 포함 — 기록 없음)·계좌2 없음(초기화 전)·호출 실패(아무것도
-     *                                 쓰지 않음 — 다시 누르거나 정기 출발을 기다림)
+     * @throws InvalidRequestException 설정 {@code claude2.enabled}가 꺼짐·창 밖(정규장 중 포함 — 기록 없음)·관측치 사슬 준비 중(그 관측치의 고리가 실행
+     *                                 감사 작업 기록에 아직 없음 — 기록 없음, 리뷰 F2 ⓑ)·계좌2 없음(초기화 전)·호출 실패(아무것도 쓰지 않음 — 다시
+     *                                 누르거나 정기 출발을 기다림)
      */
     Claude2StartNow startClaude2Now() {
         PaperMarket requested = UsPaperMarket.INSTANCE;
@@ -1541,7 +1558,8 @@ public class PaperDecisionJob {
 
     /**
      * 계좌2 수동 결정·수동 출발의 공통 몫(계좌2 명세 §5-4) — 설정 {@code claude2.enabled}, 창(지금 &lt; 다음 세션 09:00 ET이고 d 확정 종가 관측치를 계좌2
-     * 장부가 처리함 — 1분봉 기다림 풀림 포함; 그 전에 최신 관측치를 장부에 적용)을 본 뒤 수동 문턱으로 냅니다. 창 밖·꺼짐은 400(기록 없음), 낸 결정은
+     * 장부가 처리함 — 1분봉 기다림 풀림 포함; 그 전에 최신 관측치를 장부에 적용)을 보고, 출발이면 그 관측치의 사슬 고리({@link #claude2ChainWait})도 본 뒤
+     * 수동 문턱으로 냅니다. 창 밖·꺼짐·사슬 준비 중은 400(기록 없음), 낸 결정은
      * 작업 기록에 {@code manual:true}로 남깁니다(출발 실패는 기록·쓰기 없음).
      */
     private ClaudeBookService.Claude2Outcome manualClaude2(MarketRun market, Instant now, LocalDate d, String kind) {
@@ -1566,6 +1584,14 @@ public class PaperDecisionJob {
             throw new InvalidRequestException("계좌2 수동 " + (RuleBookService.INITIAL.equals(kind) ? "출발" : "결정") + "은 " + d
                     + " 확정 종가 관측치를 계좌2 장부가 처리한 뒤(1분봉 기다림 풀림 포함)에만 받습니다 — "
                     + (waiting != null ? waiting : "아직 확정 종가 관측치가 아닙니다"));
+        }
+        if (RuleBookService.INITIAL.equals(kind)) {
+            String chain = claude2ChainWait(quotes, now);
+            if (chain != null) {
+                // 수동 출발도 그 관측치의 사슬 고리가 기록된 뒤에만(리뷰 F2 ⓑ) — 부르지 않고 기록 없이 400.
+                throw new InvalidRequestException("계좌2 수동 출발은 받지 않습니다 — " + chain + ". 몇 분 뒤(실행 감사 다음 주기 뒤) 다시 누르세요"
+                        + "(아무것도 쓰지 않음).");
+            }
         }
         boolean pricesFinal = quotes.map(q -> confirmedFor(market, q, d)).orElse(false);
         detail.put("pricesFinal", pricesFinal);
