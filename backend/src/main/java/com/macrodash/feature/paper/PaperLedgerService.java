@@ -1144,7 +1144,8 @@ public class PaperLedgerService {
     /**
      * 최고가를 KRX 기준가로만 올립니다(K30 — 통합가 고점으로 되돌릴 수 없는 매도·재진입 금지가 나지 않게). G2(1분봉 15:30 단일가 봉 = 금융위 종가)
      * 판정 전이라 KRX 기준가는 금융위 확정 종가(주식 {@code clpr}·ETF 종가, 거래량 &gt; 0 행)뿐이고, 토스 종가로는 올리지 않습니다 — NXT 종목의
-     * 통합가({@code TOSS_INTEGRATED})는 물론 KRX 단독 봉({@code TOSS_DAILY})의 잠정 종가도(확정값으로 다시 계산할 일을 만들지 않게). 금융위 D 종가는
+     * 통합가({@code TOSS_INTEGRATED})는 물론 토스가 NXT 미지원으로 표시한 봉({@code TOSS_DAILY} — 그 종가에도 20:00까지의 장 마감 뒤 체결이
+     * 섞일 수 있음, QA-146)의 잠정 종가도(확정값으로 다시 계산할 일을 만들지 않게). 금융위 D 종가는
      * D+1 밤에 들어오므로 최고가는 하루 늦게 따라갑니다. 보는 날짜({@link #watermarkFrom}) = 그 보유가 이번 관측치 시작 때 반영한 마지막 관측(since)과
      * 금융위 최신 기준일 − {@value KrConfirmed#LOOKBACK_DAYS}일(확정 시세가 늘 읽는 창) 중 이른 날부터 — 금융위 X 값이 토스 X+1 관측치 처리보다 늦게
      * 들어와도(첫 slow의 {@code fsc_prices} 실패) since는 이미 X 뒤라 그 종가를 건너뛰었기 때문입니다(묶음 C 리뷰). 그 보유를 연 날 전, 분할·병합을

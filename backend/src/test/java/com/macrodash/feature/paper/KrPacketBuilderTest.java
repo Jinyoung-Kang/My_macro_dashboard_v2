@@ -559,6 +559,63 @@ class KrPacketBuilderTest {
     }
 
     @Test
+    @DisplayName("QA-146: 가격 설명 — 토스 잠정 종가에는 20:00까지의 장 마감 뒤 체결이 섞일 수 있다고 적고(NXT 미지원 표시 주식도 일봉 종가 = 20:00 봉), "
+            + "TOSS_DAILY 설명은 시가와 종가를 나눔 — 정기·출발 패킷의 8_prices·1_basis·0_instructions")
+    void priceNotesDoNotCallTheTossCloseAKrxClose() {
+        Packet scheduled = scheduled();
+        setUp();
+        Packet initial = initial();
+        for (Packet packet : List.of(scheduled, initial)) {
+            JsonNode body = packet.body();
+            String closeSentence = sentenceWith(body.path("8_prices").path("note").asString(), "close =");
+            String daily = clauseOf(closeSentence, KrQuotes.SOURCE_DAILY);
+            assertThat(daily).as("8_prices의 TOSS_DAILY 설명이 시가와 종가를 나눔").contains("시가").contains("종가");
+            assertThat(daily).as("8_prices의 TOSS_DAILY 종가에 20:00까지의 체결이 섞일 수 있음").contains("20:00");
+            String instruction = null;
+            for (JsonNode line : body.path("0_instructions").path("lines")) {
+                if (line.asString().contains(KrPacketBuilder.PRICES_NOTE)) {
+                    instruction = line.asString();
+                }
+            }
+            assertThat(instruction).as("0_instructions의 가격 줄").isNotNull();
+            assertThat(instruction).as("가격 줄이 토스 잠정 종가인 칸만 가리키고, 평단·최고가는 따로 설명")
+                    .contains("8_prices의 close").contains("9_portfolio의 price").contains("avgCost").contains("highWatermark");
+            for (String text : List.of(body.path("1_basis").path("pricesNote").asString(), instruction)) {
+                assertThat(text).as("토스 잠정 종가에 20:00까지의 장 마감 뒤 체결이 섞일 수 있음").contains("20:00");
+                assertThat(text).as("토스 종가를 KRX 종가 단일가라고 하지 않음").doesNotContainPattern("KRX[^()]*종가 단일가");
+            }
+        }
+    }
+
+    /** {@code text}를 '. '로 나눈 문장 중 {@code marker}가 든 첫 문장. */
+    private static String sentenceWith(String text, String marker) {
+        for (String sentence : text.split("\\. ")) {
+            if (sentence.contains(marker)) {
+                return sentence;
+            }
+        }
+        throw new AssertionError("'" + marker + "' 문장이 없음: " + text);
+    }
+
+    /**
+     * {@code text}에서 {@code source}부터 그 괄호가 닫히는 곳이나 다음 출처 이름(TOSS_INTEGRATED·TOSS_DAILY) 중 앞선 곳까지 — 그 출처 하나의 설명
+     * (괄호 뒤 문장의 '종가'로 단언이 통과하지 않게).
+     */
+    private static String clauseOf(String text, String source) {
+        int start = text.indexOf(source);
+        assertThat(start).as(source + " 설명이 있음: " + text).isNotNegative();
+        int close = text.indexOf(')', start);
+        int end = close >= 0 ? close : text.length();
+        for (String other : List.of(KrQuotes.SOURCE_INTEGRATED, KrQuotes.SOURCE_DAILY)) {
+            int at = text.indexOf(other, start + source.length());
+            if (at >= 0 && at < end) {
+                end = at;
+            }
+        }
+        return text.substring(start, end);
+    }
+
+    @Test
     @DisplayName("8b DART — 접수일 ≤ 기준일만(11-04 접수는 값 없이 사유), 접수번호 모름·DART 없음 사유, ETF 제외, 금융업 코드 표")
     void fundamentals() {
         JsonNode section = scheduled().body().path("8b_fundamentals");

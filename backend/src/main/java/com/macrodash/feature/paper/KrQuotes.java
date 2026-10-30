@@ -29,7 +29,8 @@ import java.util.regex.Pattern;
  * {@code codes.{코드}} = {@code status}(OK·NO_BARS)·{@code fetchedAt}(그 종목을 받은 시각 — 체결 조건 ①의 '관측 수집 시각')·
  * {@code securityType}·{@code nxtSupported}·{@code krxTradingSuspended}·{@code bars[]}(오래된 날 → 최근, 최근 5봉)·이어받았으면
  * {@code isStale}. 봉 = {@code date}·{@code open}·{@code close}·{@code volume}(토스 {@code adjusted=false} 원시)·{@code priceSource}
- * ({@code TOSS_DAILY} KRX 단독 봉·{@code TOSS_INTEGRATED} KRX+NXT 통합가)·{@code adjRatio}·{@code minute}(1분봉 개장 봉 — 받았을 때만:
+ * ({@code TOSS_DAILY} 토스가 NXT 미지원으로 표시한 봉 — 시가는 KRX 시가 단일가, 종가에는 20:00까지의 장 마감 뒤 체결이 섞일 수 있음(QA-146)·
+ * {@code TOSS_INTEGRATED} KRX+NXT 통합가)·{@code adjRatio}·{@code minute}(1분봉 개장 봉 — 받았을 때만:
  * {@code status} OK·NO_BAR·FAILED, {@code opens} = 라벨(봉 <b>끝</b> 시각 KST) → 시가·거래량). 고가·저가·수정 종가는 체결·평가에 쓰지 않아
  * 읽지 않습니다(§4-1).
  *
@@ -66,7 +67,10 @@ final class KrQuotes {
     static final String SOURCE_1M_OPEN = "TOSS_1M_OPEN";
     /** 한국 가격 출처 — 토스 일봉, KRX+NXT 통합가(NXT 종목·NXT 여부를 모르는 종목). */
     static final String SOURCE_INTEGRATED = "TOSS_INTEGRATED";
-    /** 한국 가격 출처 — 토스 일봉, KRX 단독 봉({@code nxtSupported = false} — ETF 등). */
+    /**
+     * 한국 가격 출처 — 토스 일봉, 토스가 NXT 미지원으로 표시한 봉({@code nxtSupported = false} — ETF와 그렇게 표시된 주식). 시가는 KRX 시가
+     * 단일가지만, 종가는 그런 주식도 20:00 봉 종가라 장 마감 뒤 체결이 섞여 KRX 정규장 종가와 다를 수 있습니다(QA-146 — ETF 종가는 금융위와 같았음).
+     */
     static final String SOURCE_DAILY = "TOSS_DAILY";
 
     private static final Pattern CODE = Pattern.compile("^[0-9A-Z]{6}$");
@@ -112,7 +116,8 @@ final class KrQuotes {
      * 일봉 하나({@code bars[]}, 토스 {@code adjusted=false} 원시 — 금융위와 같은 판).
      *
      * @param open        시가(양수, 아니면 null). NXT 종목은 08:00 프리마켓 첫 체결일 수 있음(KRX 시가 단일가가 아님 — §4-1)
-     * @param close       종가(양수, 아니면 null) — 토스 잠정 종가(NXT 종목은 20:00까지의 통합가)
+     * @param close       종가(양수, 아니면 null) — 토스 잠정 종가(NXT 종목은 20:00까지의 통합가, {@link #SOURCE_DAILY} 주식도 20:00까지의
+     *                    장 마감 뒤 체결이 섞일 수 있음 — QA-146)
      * @param volume      거래량(0 이상 정수, 모르면 null). 0 = 정지일(관측 아님)
      * @param priceSource 봉 출처({@link #SOURCE_DAILY}·{@link #SOURCE_INTEGRATED}, 모르면 null)
      * @param adjRatio    수정 비율(같은 날 수정 종가 ÷ 원시 종가 — B7, 모르면 null)

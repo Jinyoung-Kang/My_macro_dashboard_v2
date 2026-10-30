@@ -150,8 +150,13 @@ final class KrPacketBuilder {
     /** 1억 원. */
     private static final double HUNDRED_MILLION = 1e8;
 
-    static final String PRICES_NOTE = "토스 잠정가(KRX 시가·종가 단일가 또는 KRX+NXT 통합가) — 금융위 확정 전. 확정가는 다음 밤 들어와 체결 행은 그대로 "
-            + "두고 확정 조정으로 현금을 맞춘다";
+    /**
+     * 가격 설명(0_instructions·1_basis) — 8_prices의 close·9_portfolio의 price는 토스 일봉 종가라, 토스가 NXT 미지원으로 표시한 봉({@code TOSS_DAILY})도
+     * 20:00까지의 장 마감 뒤 체결이 섞일 수 있습니다(QA-146 — 그 봉도 시가만 KRX 시가 단일가).
+     */
+    static final String PRICES_NOTE = "토스 잠정 종가 — 금융위 확정 전이고 KRX 정규장 종가와 다를 수 있다(NXT 종목은 KRX+NXT 통합가, 토스가 NXT "
+            + "미지원으로 표시한 봉도 20:00까지의 장 마감 뒤 체결이 섞일 수 있음). 확정가는 다음 밤 들어와 체결 행은 그대로 두고 확정 조정으로 "
+            + "현금을 맞춘다";
     static final String REGIME_NOTE = "국면은 결정 전날 밤의 판정이다(서버 국면 기록은 23시대라 22:30 한국 결정은 그날 판정을 볼 수 없음 — K39). "
             + "미국 매크로 기준 판정이고 한국 시장 판정이 아니다";
     static final String KOSDAQ_NOTE = "코스닥 지수는 수집하지 않음(매크로 카드·이력 모두 없음) — 시장 합계(금융위 시가총액·거래대금, 지수가 아님)로 대신 본다";
@@ -426,7 +431,9 @@ final class KrPacketBuilder {
                 + "않는다(12_hardRules).");
         lines.add("호가단위: " + KrxCosts.tickTableText() + " — 체결가는 관측된 단일가 그대로라 호가를 맞출 필요는 없다.");
         lines.add(costLine(rates, paper.slippageBp()));
-        lines.add("가격(8_prices·9_portfolio)은 " + PRICES_NOTE + ".");
+        lines.add("가격(8_prices의 close, 9_portfolio의 price와 그 값으로 센 weightPct·unrealizedPct·stopDistancePct)은 " + PRICES_NOTE
+                + ". 9_portfolio의 avgCost는 체결가 평단(확정 뒤에는 금융위 확정가로 옮김), highWatermark·stopPrice는 진입 체결가(확정 뒤에는 "
+                + "금융위 확정가)에서 시작해 금융위 확정 종가로만 오른 최고가와 그 스탑가다.");
         lines.add("수급(외국인·기관 순매수, 주)은 토스 집계(KRX·NXT 통합)이고, 20일·5일 합은 기준 거래일로 끝나는 KRX 거래일 창이다.");
         lines.add("국면(1_basis.regime)은 전날 밤 판정이다.");
         if (initial) {
@@ -907,7 +914,8 @@ final class KrPacketBuilder {
                 + Datasets.OBS_KR_PAPER_UNIVERSE + "(순위·시총) — 기준일(" + asOf + ")까지");
         out.put("note", "role = HOLDING(보유)·ETF(069500 = KODEX 200 — 벤치마크, 153130 = 단기채 ETF — 현금성)·UNIVERSE(U 구성원, "
                 + "flowScore 높은 순). close = 기준일 "
-                + "잠정 종가(원, priceSource TOSS_DAILY = KRX 단독·TOSS_INTEGRATED = KRX+NXT 통합가), 관측치에 없으면 수정 종가 이력의 "
+                + "잠정 종가(원, 금융위 확정 전 — priceSource TOSS_INTEGRATED = KRX+NXT 통합가, TOSS_DAILY = 토스가 NXT 미지원으로 표시한 봉: "
+                + "시가는 KRX 시가 단일가지만 종가에는 20:00까지의 장 마감 뒤 체결이 섞일 수 있음), 관측치에 없으면 수정 종가 이력의 "
                 + "마지막 값(priceSource kr_close_adj). stale = 이번 관측치에서 받지 못해 이어 쓴 항목. unfillable = 지금 체결할 수 없는 사유"
                 + "(이번 관측치에 봉 없음·기준일 거래정지·미처리 기업행위 보유 — 그 종목 매수는 거절, 12_hardRules). ret = 1·3·6·12개월"
                 + "(21·63·126·252거래일) 수정 종가 수익률(%), vs200dPct = 200일 평균 대비, vs52wHighPct = 52주 고점 대비(이력이 짧으면 null)");

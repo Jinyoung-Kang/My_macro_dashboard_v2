@@ -436,7 +436,7 @@ const won = (value: number | null | undefined) => formatMoney(value, "KR");
 /** 부호 있는 원 금액 — "+1,000원"·"−100원"이 아니라 "-100원"(lib/format formatSigned 그대로). 모르면 "—". */
 const signedWon = (value: number | null | undefined) => formatSigned(value, 0, "원");
 
-/** 한국 체결가·관측가 출처 이름표(paper_fills.price_source — 백엔드 KrQuotes). 모르는 값은 받은 글자 그대로. */
+/** 한국 체결가(시가) 출처 이름표(paper_fills.price_source — 백엔드 KrQuotes). 종가 출처는 `KR_CLOSE_SOURCE`. 모르는 값은 받은 글자 그대로. */
 const KR_PRICE_SOURCE: Readonly<Record<string, string>> = {
   TOSS_1M_OPEN: "KRX 시가 단일가(1분봉)",
   TOSS_DAILY: "KRX 일봉 시가",
@@ -445,6 +445,19 @@ const KR_PRICE_SOURCE: Readonly<Record<string, string>> = {
 
 export function krPriceSourceLabel(source: string | null | undefined): string {
   return source ? (KR_PRICE_SOURCE[source] ?? source) : EMPTY;
+}
+
+/**
+ * 한국 잠정 종가 출처 이름표(스탑 감지 `observedSource`). 체결가 이름표와 따로 둡니다 — 토스가 NXT 미지원으로 표시한 봉(TOSS_DAILY)도
+ * 시가만 KRX 시가 단일가이고, 종가에는 20:00까지의 장 마감 뒤 체결이 섞일 수 있습니다(QA-146). 모르는 값은 받은 글자 그대로.
+ */
+const KR_CLOSE_SOURCE: Readonly<Record<string, string>> = {
+  TOSS_DAILY: "토스가 NXT 미지원으로 표시한 종목 — 20:00까지의 장 마감 뒤 체결이 섞일 수 있음",
+  TOSS_INTEGRATED: "KRX+NXT 통합가",
+};
+
+function krCloseSourceLabel(source: string | null | undefined): string {
+  return source ? (KR_CLOSE_SOURCE[source] ?? source) : EMPTY;
 }
 
 /**
@@ -580,7 +593,7 @@ export function krStopBasisText(reason: unknown): string | null {
   if (!isRecord(reason) || reason.trigger !== "TRAILING_STOP") return null;
   const pct = numberOf(reason.stopPct);
   const parts = [
-    `감지 ${textOf(reason.barDate) ?? EMPTY} 잠정 종가 ${won(numberOf(reason.observedPrice))}(${krPriceSourceLabel(textOf(reason.observedSource))}) `
+    `감지 ${textOf(reason.barDate) ?? EMPTY} 잠정 종가 ${won(numberOf(reason.observedPrice))}(${krCloseSourceLabel(textOf(reason.observedSource))}) `
       + `≤ 스탑가 ${won(numberOf(reason.stopPrice))}(최고가 ${won(numberOf(reason.highWatermark))} −${pct === null ? EMPTY : formatNumber(pct, 1)}%)`,
   ];
   const corrected = numberOf(reason.confirmedHighWatermark);
