@@ -538,6 +538,51 @@ describe("보유·체결 — 계좌2 칸", () => {
     ]]);
   });
 
+  // 수정 전에는 두 줄 칸 안에서 값이 빠진 부분("목표 —"·"체결 —"·실행 메모 "—"·체결 봉 "—"·"슬리피지 —")을 글자 그대로 넣어, 칸 전체가 "—"일 때
+  // DataTable이 그리는 Empty(기호는 aria-hidden, '값 없음'을 읽음)와 달리 낭독기에 기호만 읽혔다(Empty.tsx 규칙 — 수정 전에는 it.fails).
+  // 대기·만료 주문은 늘 체결 시각이 없고, 감사 행 전 주문은 목표 시각이 없으며, R3·종가 대체 체결은 체결 봉이 없다.
+  it.fails("계좌2 표의 두 줄 칸에서 값이 빠진 부분도 '값 없음'으로 읽힌다 — 대기 주문(목표·체결 시각·실행 메모 없음)·R3 체결(체결 봉·슬리피지 없음)", async () => {
+    reads["/api/paper/books/claude2/orders"] = () => Promise.resolve({ available: true, orders: [{
+      id: 72, ticker: "BBB", side: "BUY", qty: null, targetWeightPct: 5, sellFraction: null, timing: "AT_1100", source: "CLAUDE",
+      status: "PENDING", rejectReason: null, reason: { thesis: "근거", labels: ["사실"], invalidation: "조건" },
+      asOfTradingDate: "2026-11-02", createdAtKst: "2026-11-03 07:41", expiresOn: "2026-11-03", filledAtKst: null,
+    }] });
+    reads["/api/paper/books/claude2/fills"] = () => Promise.resolve({ available: true, fills: [{
+      id: 82, orderId: 73, ticker: "BBB", side: "BUY", qty: 10, price: 100.05, rawPrice: 100, slippageBp: null, gross: 1000.5,
+      observedAtKst: "2026-11-04 02:10", observationDate: "2026-11-03", priceSource: null, backfill: false,
+      barAtKst: null, fillRung: "QUOTES_FALLBACK", fallback: true,
+    }] });
+    reads["/api/paper/books/claude2/execution"] = () => Promise.resolve(execution("claude2", [], []));
+    render(<PaperPage initialTab="holdings" />);
+    fireEvent.change(await screen.findByLabelText("계좌 고르기"), { target: { value: "claude2" } });
+
+    const orders = await screen.findByRole("table", { name: "주문" });
+    await waitFor(() => expect(within(orders).getByText("대기")).toBeTruthy());
+    const fills = screen.getByRole("table", { name: "체결" });
+    await waitFor(() => expect(within(fills).getByText("대체 체결")).toBeTruthy());
+    // 낭독기에 그대로 읽히는 "—"(aria-hidden 밖의 글자)가 표 본문에 없어야 함
+    const exposedDashes = (table: HTMLElement) => {
+      const out: string[] = [];
+      for (const row of within(table).getAllByRole("row").slice(1)) {
+        const walker = document.createTreeWalker(row, NodeFilter.SHOW_TEXT);
+        for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+          if (node.textContent?.includes("—") && !node.parentElement?.closest('[aria-hidden="true"]')) out.push(node.textContent);
+        }
+      }
+      return out;
+    };
+    expect(exposedDashes(orders)).toEqual([]);
+    expect(exposedDashes(fills)).toEqual([]);
+    expect(rowsOf(orders)).toEqual([[
+      "2026-11-03 07:41기준 2026-11-02", "BBB매수", "순자산의 5.00% 매수", "다음 거래일 11:00 ET목표 —값 없음", "—값 없음",
+      "대기Claude · 만료 2026-11-03체결 —값 없음", "—값 없음근거 [사실] · 무효화: 조건",
+    ]]);
+    expect(rowsOf(fills)).toEqual([[
+      "2026-11-04 02:10봉 2026-11-03", "BBB대체 체결", "매수", "10", "100.0500관측 100.0000", "—값 없음R3 · 관측 종가(1분봉 없음)",
+      "—값 없음", "1,000.50슬리피지 —값 없음", "—값 없음",
+    ]]);
+  });
+
   it("계좌1 표는 칸이 그대로 — 실행 감사를 읽지 않는다", async () => {
     reads["/api/paper/books/claude/positions"] = () => Promise.resolve({ available: true, book: book("claude", { kind: "CLAUDE", label: "Claude 계좌1" }), cash: 50, lockouts: [], positions: [] });
     reads["/api/paper/books/claude/orders"] = () => Promise.resolve({ available: true, orders: [] });
