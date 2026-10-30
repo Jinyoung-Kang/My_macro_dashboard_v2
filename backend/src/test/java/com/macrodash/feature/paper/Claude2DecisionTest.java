@@ -339,6 +339,30 @@ class Claude2DecisionTest {
     }
 
     @Test
+    @DisplayName("소상한 셈의 나머지 두 갈래: 출발의 같은 계획 안 재시도는 그 결정 주기에 자리가 남을 때만(소상한 1 — 첫 호출이 API 오류면 다시 부르지 않고 실패, 호출 1회), Claude를 부르지 않은 행(SKIPPED — 모델 없음)은 0회로 셈")
+    void cycleCapGuardsTheStartRetryAndSkipsRowsWithoutAModel() {
+        notStarted();
+        ((tools.jackson.databind.node.ObjectNode) store.settings.body().get("claude2")).put("maxCallsPerCycle", 1);
+        answerOverloaded();
+        answerJson(decision());   // 재시도했다면 받았을 답 — 부르지 않아야 함
+
+        ClaudeBookService.Claude2Outcome start = decide(NOW, RuleBookService.INITIAL);
+
+        assertThat(start.decision()).isNull();
+        assertThat(start.calls()).isEqualTo(1);
+        assertThat(start.failure()).startsWith("Claude 출발 호출 실패(API 오류): ");
+        assertThat(requests).hasSize(1);
+        assertThat(store.books.get(PaperBooks.CLAUDE2).status()).isEqualTo(PaperBooks.NOT_STARTED);
+
+        active();
+        Decision skipped = decide(Instant.parse("2026-10-27T13:00:00Z"), RuleBookService.SCHEDULED).decision();
+        assertThat(skipped.status()).isEqualTo(ClaudeBookService.STATUS_SKIPPED);
+        assertThat(skipped.model()).as("Claude를 부르지 않은 행").isNull();
+        assertThat(ClaudeBookService.claude2CallsInCycle(store, MON)).isZero();
+        assertThat(requests).hasSize(1);
+    }
+
+    @Test
     @DisplayName("정기 결정: 새 결정이 형식 검사를 통과하면 계좌2의 앞선 대기 주문을 모두 '다음 결정이 대신함'으로 취소(취소 수), 계좌1 주문은 건드리지 않음")
     void supersedesPendingBook2Orders() {
         active();
