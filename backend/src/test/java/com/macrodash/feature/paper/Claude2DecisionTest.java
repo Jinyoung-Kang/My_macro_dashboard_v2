@@ -11,6 +11,7 @@ import com.macrodash.support.InvalidRequestException;
 import com.sun.net.httpserver.HttpServer;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.test.util.ReflectionTestUtils;
@@ -377,6 +378,38 @@ class Claude2DecisionTest {
         Decision differs = decide(NOW, RuleBookService.SCHEDULED).decision();
         assertThat(differs.response().path("sharedWith").isNull()).isTrue();
         assertThat(differs.response().path("marketSectionsSha256").asString()).hasSize(64);
+    }
+
+    @Test
+    @Disabled("재현 — 고치기 전에는 재시도할 API 오류 계좌1 행을 sharedWith로 가리켜, 다음 주기 재시도가 그 행의 패킷을 새로 쓰면 사실과 어긋남")
+    @DisplayName("sharedWith는 아직 다시 쓰일 수 있는 계좌1 행(재시도할 API 오류 — 다음 주기 재시도가 같은 행의 패킷을 새로 씀)을 가리키지 않음: 섹션이 같아도 null·해시는 남김, 재시도까지 끝난 행은 그대로 가리킴")
+    void sharedWithSkipsABook1RowThatMayStillBeRetried() {
+        active();
+        PacketBuilder.MarketInputs shared = mock(PacketBuilder.MarketInputs.class);
+        String sent = PACKET_TEXT.replace(",\"13_execution\":{}", "");
+        long book1 = store.insertDecisionIfAbsent(new Decision(0, PaperBooks.CLAUDE, MON, RuleBookService.SCHEDULED, null,
+                ClaudeBookService.STATUS_API_ERROR, "claude-sonnet-5-5", 0, 1, FRI, null, MAPPER.readTree(PACKET_TEXT), "h",
+                null, MAPPER.createObjectNode(), null, "boom", List.of(), true, 5L, 0, sent)).orElseThrow();
+        answerJson(decision());
+
+        Decision retryable = service(NOW).decideClaude2(MarketRun.of(UsPaperMarket.INSTANCE, store), MON,
+                RuleBookService.SCHEDULED, true, shared, store.decision(book1).orElseThrow(), true).decision();
+
+        assertThat(retryable.response().path("sharedWith").isNull()).isTrue();
+        assertThat(retryable.response().path("marketSectionsSha256").asString())
+                .isEqualTo(PacketBuilder.marketSectionsSha256(MAPPER.readTree(PACKET_TEXT), MAPPER));
+
+        // 재시도까지 끝난 계좌1 행(retry_count 1 — 다시 쓰이지 않음)은 그대로 가리킴.
+        Decision row = store.decision(book1).orElseThrow();
+        store.decisions.put(book1, new Decision(row.id(), row.bookCode(), row.asOfTradingDate(), row.kind(), row.decidedAt(),
+                row.status(), row.model(), row.frameworkVersion(), row.settingsVersion(), row.selectionAsOf(),
+                row.targetExposurePct(), row.packet(), row.packetHash(), row.responseRaw(), row.response(), row.usage(),
+                row.error(), row.noteIds(), row.pricesFinal(), row.latencyMs(), 1, row.packetText()));
+        store.decisions.values().removeIf(d -> d.bookCode().equals(PaperBooks.CLAUDE2));
+        answerJson(decision());
+        Decision settled = service(NOW).decideClaude2(MarketRun.of(UsPaperMarket.INSTANCE, store), MON,
+                RuleBookService.SCHEDULED, true, shared, store.decision(book1).orElseThrow(), true).decision();
+        assertThat(settled.response().path("sharedWith").asLong()).isEqualTo(book1);
     }
 
     @Test
