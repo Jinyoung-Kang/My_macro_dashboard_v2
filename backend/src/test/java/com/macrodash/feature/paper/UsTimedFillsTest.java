@@ -11,6 +11,7 @@ import com.macrodash.store.PaperStore.Lockout;
 import com.macrodash.store.PaperStore.Order;
 import com.macrodash.store.PaperStore.Position;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -565,6 +566,55 @@ class UsTimedFillsTest {
             assertThat(fillOf(id).rawPrice()).isEqualTo(97.0);
             assertThat(outcome.stopped()).isZero();
             assertThat(store.lockouts(BOOK)).isEmpty();
+        }
+
+        @Test
+        @Disabled("재현 — 고치기 전에는 W가 (T, T+6분)이면 T 매도가 대기로 남은 채 같은 W의 시간별 스탑이 먼저 팔고 재진입 금지를 검")
+        @DisplayName("W(10:02)가 T(10:00) 창을 다 본 1분봉 전 — 시각 지정 매도가 대기로 남으면 그 종목은 이 W의 스탑에서 빼고(작업 기록 한 줄), 다음 W(11:02)에서 그 매도를 10:00 봉으로 먼저 풂 — 스탑·재진입 금지 없음")
+        void pendingTimedSellDefersTheStopAtThatObservation() {
+            hold("XXX", 100, 90, 100, 100.0);
+            long id = timed("XXX", PaperBooks.SELL, null, null, null, "AT_1000", MON, MON_DECIDED);
+            bars(new Bars(et(TUE, 10, 3)).bar("XXX", TUE, et(TUE, 10, 0), 97.0, 500.0)
+                    .bar("XXX", TUE, et(TUE, 10, 1), 97.0, 500.0).bar("SPY", TUE, et(TUE, 10, 0), 580.0, 9000.0));
+
+            Outcome first = observe(et(TUE, 10, 2), bar("XXX", MON, 100.0, TUE, 90.0));
+
+            assertThat(order(id).status()).as("1분봉 저장본이 T + 6분 전 — 아직 모름").isEqualTo("PENDING");
+            assertThat(first.stopped()).isZero();
+            assertThat(store.lockouts(BOOK)).isEmpty();
+            assertThat(first.notes()).anySatisfy(note -> assertThat(note).contains("XXX 스탑 판정을 다음 관측치로 미룸"));
+
+            bars(new Bars(et(TUE, 11, 3)).bar("XXX", TUE, et(TUE, 10, 0), 97.0, 500.0)
+                    .bar("XXX", TUE, et(TUE, 10, 1), 97.0, 500.0).bar("SPY", TUE, et(TUE, 10, 0), 580.0, 9000.0));
+            Outcome second = observe(et(TUE, 11, 2), bar("XXX", MON, 100.0, TUE, 89.0));
+
+            assertThat(fillOf(id).rawPrice()).isEqualTo(97.0);
+            assertThat(second.stopped()).isZero();
+            assertThat(store.lockouts(BOOK)).isEmpty();
+        }
+
+        @Test
+        @Disabled("재현 — 고치기 전에는 W가 (T, T+6분)이면 같은 W의 스탑이 재진입 금지를 걸어 다음 W에서 T 매수가 취소됨")
+        @DisplayName("시각 지정 매수가 대기로 남은 종목도 그 W의 스탑에서 뺌 — 다음 W에서 T 매수를 10:00 봉으로 먼저 푼 뒤 스탑을 봄(늘어난 보유를 그 W 관측가로 팖, 재진입 금지로 취소되지 않음)")
+        void pendingTimedBuyIsResolvedBeforeTheStop() {
+            hold("YYY", 100, 90, 100, 100.0);
+            long id = buy("YYY", 10, "AT_1000");
+            bars(new Bars(et(TUE, 10, 3)).bar("YYY", TUE, et(TUE, 10, 0), 97.0, 500.0)
+                    .bar("YYY", TUE, et(TUE, 10, 1), 97.0, 500.0).bar("SPY", TUE, et(TUE, 10, 0), 580.0, 9000.0));
+
+            Outcome first = observe(et(TUE, 10, 2), bar("YYY", MON, 100.0, TUE, 90.0));
+            assertThat(first.stopped()).isZero();
+            assertThat(order(id).status()).isEqualTo("PENDING");
+
+            bars(new Bars(et(TUE, 11, 3)).bar("YYY", TUE, et(TUE, 10, 0), 97.0, 500.0)
+                    .bar("YYY", TUE, et(TUE, 10, 1), 97.0, 500.0).bar("SPY", TUE, et(TUE, 10, 0), 580.0, 9000.0));
+            Outcome second = observe(et(TUE, 11, 2), bar("YYY", MON, 100.0, TUE, 89.0));
+
+            assertThat(order(id).status()).isEqualTo("FILLED");
+            assertThat(fillOf(id).rawPrice()).isEqualTo(97.0);
+            assertThat(second.stopped()).as("T 매수 뒤의 스탑 — 110주").isEqualTo(1);
+            assertThat(position("YYY")).isNull();
+            assertThat(store.lockouts(BOOK)).extracting(Lockout::ticker).containsExactly("YYY");
         }
 
         @Test
