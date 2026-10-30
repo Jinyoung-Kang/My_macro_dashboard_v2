@@ -4,13 +4,17 @@ import com.macrodash.feature.paper.ExecutionAuditFixtures.Bars;
 import com.macrodash.feature.paper.PaperMarketData.Quotes;
 import com.macrodash.read.StoreReader;
 import com.macrodash.store.Datasets;
+import com.macrodash.store.PaperStore.Book;
+import com.macrodash.store.PaperStore.JobRun;
 import com.macrodash.store.PaperStore.Order;
 import com.macrodash.store.PaperStore.OrderExec;
 import com.macrodash.store.Snapshot;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.node.ObjectNode;
 
 import java.lang.reflect.Field;
 import java.time.Clock;
@@ -537,5 +541,60 @@ class PaperExecutionAuditJobTest {
         observed(quotes(c2, bar("AAPL", MON, 98, TUE, 104.0)));
         job(true, c2.plusSeconds(120)).run();
         assertThat(cf(id).get("NEXT_OBSERVATION").isNull()).isTrue();
+    }
+
+    @Test
+    @Disabled("재현 — 고치기 전에는 계좌2 행이 없거나 꺼진 채 시작 전이어도 새 관측치 저장본마다 exec-audit 기록(사슬 고리)을 남김")
+    @DisplayName("관측치 사슬은 계좌2가 켜졌거나 출발했을 때만: 계좌2 행이 없거나(배포 직후) 꺼진 채 시작 전이면 새 관측치 저장본이 와도 셈하지도 기록하지도 않음(배포만으로 늘지 않음) — 켜면 시작 전이어도 그 저장본부터 고리(첫 주문 전에 사슬이 시작)")
+    void chainOnlyOnceBook2IsEnabledOrStarted() {
+        Instant c0 = Instant.parse("2026-10-26T22:20:00Z");
+        observed(quotes(c0, bar("AAPL", PaperFixtures.FRI, 97, MON, 98)));
+        job(true, c0.plusSeconds(120)).run();
+        assertThat(store.jobRuns).as("계좌2 행 없음 — 계좌1만").isEmpty();
+
+        store.books.put(PaperBooks.CLAUDE2, new Book(PaperBooks.CLAUDE2, PaperBooks.KIND_CLAUDE, PaperBooks.CLAUDE2_LABEL,
+                100_000, null, PaperBooks.NOT_STARTED, PaperFixtures.FRI_CLOSE));
+        store.initSettingsIfAbsent(PaperFixtures.settings(store).defaultsJson());
+        job(true, c0.plusSeconds(420)).run();
+        assertThat(store.jobRuns).as("계좌2 시작 전·claude2.enabled 꺼짐(기본)").isEmpty();
+        verify(repository, never()).countTaskRunsStarted(any(), any(), any());
+
+        ((ObjectNode) store.settings.body().get("claude2")).put("enabled", true);
+        job(true, c0.plusSeconds(720)).run();
+        assertThat(store.jobRuns).singleElement().satisfies(run -> {
+            assertThat(run.detail().path(PaperExecutionAuditJob.CHAIN).path("collectedAt").asString())
+                    .isEqualTo(c0.toString());
+            assertThat(run.detail().path(PaperExecutionAuditJob.CHAIN).path("previous").isNull()).as("처음 고리").isTrue();
+        });
+    }
+
+    @Test
+    @Disabled("재현 — 고치기 전에는 사슬 계산이 감사와 같은 try 안이라 사슬 오류가 그 회차의 계좌1 감사까지 건너뜀")
+    @DisplayName("관측치 사슬을 셈하다 실패해도(작업 기록 읽기 오류) 계좌1 감사는 그대로 쓰고 — 이번 실행은 계좌2 기준을 보지 않고 기록에 사슬 오류(결과는 OK)")
+    void chainFailureDoesNotStopTheBookOneAudit() {
+        FakePaperStore failing = new FakePaperStore() {
+            @Override
+            public List<JobRun> recentJobRuns(String jobPrefix, int limit) {
+                throw new IllegalStateException("시험 — 작업 기록 읽기 실패");
+            }
+        };
+        activeBook(failing, PaperBooks.CLAUDE, PaperBooks.KIND_CLAUDE, 100_000, null);
+        activeBook(failing, PaperBooks.CLAUDE2, PaperBooks.KIND_CLAUDE, 100_000, null);
+        long id = failing.insertOrder(claudeOrder("AAPL", PaperBooks.BUY, "NEXT_OBSERVATION", "PENDING", MON, MON_DECIDED));
+        bars(tuesdayMorning());
+        observed(quotes(et(TUE, 10, 57), bar("AAPL", MON, 98, TUE, 102)));
+        PaperExecutionAuditJob job = new PaperExecutionAuditJob(failing, reader, marketData, repository,
+                new PaperConfig(true, PaperFixtures.FRI, 100_000), MAPPER, Clock.fixed(et(TUE, 11, 0), ZoneOffset.UTC));
+
+        PaperExecutionAuditJob.Outcome outcome = job.run();
+
+        assertThat(outcome.error()).isNull();
+        assertThat(outcome.rowsWritten()).isEqualTo(1);
+        assertThat(failing.execs.get(id).cf().get("NEXT_OPEN").path("raw").asDouble()).isEqualTo(100.0);
+        assertThat(failing.jobRuns).singleElement().satisfies(run -> {
+            assertThat(run.outcome()).isEqualTo("OK");
+            assertThat(run.detail().path("chainError").asString()).contains("시험 — 작업 기록 읽기 실패");
+            assertThat(run.detail().has(PaperExecutionAuditJob.CHAIN)).isFalse();
+        });
     }
 }
