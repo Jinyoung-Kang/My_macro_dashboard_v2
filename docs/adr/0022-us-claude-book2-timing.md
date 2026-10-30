@@ -96,7 +96,9 @@
   12. 거래 없는 주문(T18)
      - 있음(0-2): `paper_fills.fill_rung` CHECK가 사다리 칸 다섯(`Y1M_AT`·`Y1M_NEXT`·`Y1M_LATE`·`QUOTES_FALLBACK`·`QUOTES_CLOSE`)만 받음(`PaperStoreDbTest.v17TimedTimingsFillBarAndOrderExec`)
      - 단계 1(있음): `UsTimedFillsTest.haltedAllDayIsNotFilledWithAFrozenPrice`(종일 무거래 → `NO_TRADE_AFTER_T` 만료 — 그날 `paper.quotes` 값으로 채우지 않음)·`resumedAfterTheTarget`(T 뒤 재개 → R2b)·
-       `r3OnlyWhenTheBarsThemselvesAreMissing`(1분봉 자체가 없음 → R3 `fallback`)·`temporaryClosure`(`NO_SESSION_BARS`)·`backDuringTheNextSession`(E+1 가격으로는 체결하지 않음)
+       `r3OnlyWhenTheBarsThemselvesAreMissing`(1분봉 자체가 없음 → R3 `fallback`)·`temporaryClosure`(`NO_SESSION_BARS`)·`backDuringTheNextSession`(E+1 가격으로는 체결하지 않음)·
+       'SPY는 E 세션이 있는데 그 종목만 없음'은 SPY가 같은 회차에 E를 받았을 때만 거래 없음 — 앞 회차에 받아 합쳐 둔 SPY E 세션이면 1분봉 자료 없음
+       (`referenceSessionFromAnEarlierRoundIsNotProofOfNoTrade` — `NO_TRADE_AFTER_T`가 아니라 `NO_BARS`)
        — 1분봉 태스크가 마지막 회차들만 실패해 저장본이 관측치 W 전 것인 날: E가 끝난 W에서 W 전 저장본의 완성된 R2b 봉도 T 순으로 씀
        `UsTimedFillsTest.lateFirstTradeFromBarsBeforeTheObservation`(같은 저장본의 R1·T 시각 순자산·늦게 풂 포함), 그 저장본의 'T 뒤 거래 없음'은
        E 마감 + 15분 뒤에 받았을 때만 `NO_TRADE_AFTER_T`(`noTradeSeenAfterTheSessionEndIsProof`)이고 그 전 것이면 `NO_BARS` — 종가로도 채우지 않음

@@ -11,7 +11,6 @@ import com.macrodash.store.PaperStore.Lockout;
 import com.macrodash.store.PaperStore.Order;
 import com.macrodash.store.PaperStore.Position;
 import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -958,7 +957,6 @@ class UsTimedFillsTest {
         }
 
         @Test
-        @Disabled("재현(수정 전) — 기준 종목의 E 세션을 앞 회차에 받아 합쳐 둔 저장본에서도 '그 종목만 E 세션 없음'을 거래 없음(⑧b)으로 봄")
         @DisplayName("E+1 회차 저장본에 그 종목의 E 세션이 없고 기준 종목(SPY)의 E 세션은 앞 회차에 받아 합쳐 둔 것 — 이번 회차는 E를 받지 않아 "
                 + "'거래 없음'의 증거가 아님: NO_TRADE_AFTER_T가 아니라 1분봉 자료 없음(NO_BARS)")
         void referenceSessionFromAnEarlierRoundIsNotProofOfNoTrade() {

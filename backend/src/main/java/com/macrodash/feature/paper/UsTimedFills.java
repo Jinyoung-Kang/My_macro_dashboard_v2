@@ -58,7 +58,7 @@ import java.util.Set;
  *   <li>R3 {@value #RUNG_FALLBACK}(대체) — <b>1분봉 자료 자체가 없을 때만</b>({@link Evidence#MISSING}) 장중 관측치 W의 관측 종가: W ≥ T + 20분,
  *       W의 그 종목 봉 날짜 = E, ①④(주문 뒤 수집·이어 쓴 봉 아님).</li>
  * </ol>
- * 1분봉이 'E 안 T 뒤 거래 없음'을 보이면(⑧b — 그 종목 세션의 첫 거래 봉이 없음, 또는 기준 종목은 E 세션이 있는데 그 종목만 없음) 대체 체결(R2b·
+ * 1분봉이 'E 안 T 뒤 거래 없음'을 보이면(⑧b — 그 종목 세션의 첫 거래 봉이 없음, 또는 기준 종목은 같은 회차에 E 세션을 받았는데 그 종목만 없음) 대체 체결(R2b·
  * R3·{@value #RUNG_CLOSE})을 하지 않고 기다립니다 — 멈춘 가격으로 없는 체결을 만들지 않습니다(T18).
  *
  * <p><b>3a</b>: 2b 뒤에도 남은 주문 가운데 E가 끝난 것(W가 E 마감 + 15분 뒤 — E 확정 종가 관측치 W* 또는 그 뒤)은 대기로 남기지 않습니다 — 1분봉
@@ -248,12 +248,14 @@ final class UsTimedFills {
      *
      * <ul>
      *   <li>{@link #BARS} — 이번 회차에 받은 그 종목의 E 세션이 있고 그 세션을 T + 6분 뒤에 받음(창·T 뒤 첫 거래 봉으로 판정)</li>
-     *   <li>{@link #NO_TRADE} — 이번 회차에 받은 그 종목 항목에 E 세션이 없는데 기준 종목(SPY)은 E 세션이 있음 — E에 그 종목 거래가 (아직) 없음.
-     *       기준 종목도 이번에 받지 못했으면 구분할 수 없어 이쪽(대체 체결을 하지 않는 쪽)</li>
+     *   <li>{@link #NO_TRADE} — 이번 회차에 받은 그 종목 항목에 E 세션이 없는데 기준 종목(SPY)은 <b>같은 회차에</b> E 세션을 받음(그 세션의
+     *       {@code fetchedAt} = 그 종목 항목의 {@code fetchedAt}) — E에 그 종목 거래가 (아직) 없음. 기준 종목도 이번에 받지 못했으면 구분할 수 없어
+     *       이쪽(대체 체결을 하지 않는 쪽)</li>
      *   <li>{@link #MISSING} — 1분봉 자료 자체가 없음: (가) W 뒤에 받은 저장본인데 그 종목 항목이 이어받은 값·없음(종목만 받지 못함), (나) 저장본
      *       (또는 그 종목 세션)을 T + 6분 전에 받았고 W ≥ T + 65분(1분봉 태스크가 한 회차 넘게 실패 — 저장본이 아예 없을 때도), (다) 그 종목도 기준
-     *       종목도 E 세션이 없는 새 저장본(서버가 꺼져 E를 받지 못함·임시 휴장 — 관측치가 가름)</li>
-     *   <li>{@link #NOT_YET} — 아직 모름(W 전에 받은 저장본이고 (나)도 아님 — 다음 저장본을 기다림)</li>
+     *       종목도 E 세션이 없는 새 저장본(서버가 꺼져 E를 받지 못함·임시 휴장 — 관측치가 가름), (라) W 뒤에 받은 저장본인데 그 종목 항목에 E 세션이
+     *       없고 기준 종목의 E 세션은 앞 회차에 받아 합쳐 둔 것(이번 회차는 E를 받지 않음 — 그 종목에 E 세션이 없다는 것이 거래 없음의 증거가 아님)</li>
+     *   <li>{@link #NOT_YET} — 아직 모름(W 전에 받은 저장본이고 (나)도 아님 — (가)·(라)의 W 전 저장본 포함, 다음 저장본을 기다림)</li>
      * </ul>
      */
     enum Evidence { BARS, NO_TRADE, MISSING, NOT_YET }
@@ -270,8 +272,15 @@ final class UsTimedFills {
         JsonNode day = bars.session(ticker, session);
         if (day == null) {
             String reference = bars.reference();
-            if (bars.fresh(reference) && bars.session(reference, session) == null) {
+            if (!bars.fresh(reference)) {
+                return Evidence.NO_TRADE;                                              // ⑧b — 기준 종목도 받지 못해 구분할 수 없음
+            }
+            JsonNode referenceDay = bars.session(reference, session);
+            if (referenceDay == null) {
                 return Evidence.MISSING;                                               // (다)
+            }
+            if (!sameRound(referenceDay, bars.entry(ticker))) {
+                return afterObservation ? Evidence.MISSING : Evidence.NOT_YET;         // (라)
             }
             return Evidence.NO_TRADE;                                                  // ⑧b
         }
@@ -280,6 +289,15 @@ final class UsTimedFills {
             return longAfter ? Evidence.MISSING : Evidence.NOT_YET;                    // 합쳐 둔 옛 세션 — (나)와 같은 뜻
         }
         return Evidence.BARS;
+    }
+
+    /**
+     * 기준 종목의 그 세션을 그 종목 항목과 같은 회차에 받았나 — 세션의 {@code fetchedAt} = 항목의 {@code fetchedAt}(수집기는 한 회차에 같은 시각을
+     * 적고, 합쳐 둔 앞 회차 세션은 그때 시각 그대로). 어느 쪽이든 시각을 모르면 아님.
+     */
+    private static boolean sameRound(JsonNode referenceDay, JsonNode entry) {
+        Instant reference = instant(Json.asText(referenceDay, "fetchedAt"));
+        return reference != null && reference.equals(instant(Json.asText(entry, "fetchedAt")));
     }
 
     // ------------------------------------------------------------------ 기다림·대상
