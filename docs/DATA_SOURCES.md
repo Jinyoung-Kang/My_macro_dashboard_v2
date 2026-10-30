@@ -24,7 +24,7 @@
 | | | `fx_history` | 환율·달러인덱스 일별 종가 |
 | | | `equity_history` | 13F 매핑 종목 일별 종가 + 이름→티커 매핑표 |
 | | | `paper_quotes` | 📒 모의 매매 유니버스(13F 이름 매핑 티커 + 후보 기관 CUSIP 매핑 티커 + ETF 19개, `paper_universe.tradable()`) 최근 3개월 일봉 → 스냅샷 `paper.quotes`. 장중에는 마지막 봉이 지연 시세(장부 관측치) |
-| | | `paper_bars_us` | 🧪 미국 Claude 계좌2(체결 시점 실험) **단계 0 측정** — Claude 계좌1·계좌2의 대기 주문 ∪ 최근 8일(달력일) 주문 ∪ 계좌2 보유(백엔드 표 `paper_orders`·`paper_positions`·`paper_books`를 읽기만 — ADR 0022) + 지연 기준 SPY의 정규장 1분봉(yfinance 배치 한 번, `prepost=False`·원시가 `auto_adjust=False`) → 스냅샷 `paper.bars.us`(종목·세션(최근 3, 뉴욕 날짜)마다 메뉴 창 09:30·10:00~15:00 ET 각 5분, 창마다 T 뒤 첫 거래 봉, 첫·마지막 봉, 검증용 일봉 시가, 저장본의 지연 `lagSeconds`). `paper_quotes` **바로 뒤**(같은 Yahoo 래치 — 1분봉이 429를 받아도 그 회차 관측치는 이미 받음). 범위가 비면 Yahoo를 부르지 않음. 기동 뒤 처음 받을 때까지 `period="5d"`(꺼졌던 세션 따라잡기), 그 뒤 `"1d"`. 패킷에는 쓰지 않음 — 읽는 곳은 단계 0-4의 실행 감사 작업과 단계 1-4의 장부 시각 지정 체결(2b·1분봉 기다림 — 시각 지정 주문이 있는 계좌만, 계좌2 정의는 1-5) — §5 'Claude 계좌2 1분봉' |
+| | | `paper_bars_us` | 🧪 미국 Claude 계좌2(체결 시점 실험) **단계 0 측정 · 단계 1 시각 지정 체결가** — Claude 계좌1·계좌2의 대기 주문 ∪ 최근 8일(달력일) 주문 ∪ 계좌2 보유(백엔드 표 `paper_orders`·`paper_positions`·`paper_books`를 읽기만 — ADR 0022) + 지연 기준 SPY의 정규장 1분봉(yfinance 배치 한 번, `prepost=False`·원시가 `auto_adjust=False`) → 스냅샷 `paper.bars.us`(종목·세션(최근 3, 뉴욕 날짜)마다 메뉴 창 09:30·10:00~15:00 ET 각 5분, 창마다 T 뒤 첫 거래 봉, 첫·마지막 봉, 검증용 일봉 시가, 저장본의 지연 `lagSeconds`). `paper_quotes` **바로 뒤**(같은 Yahoo 래치 — 1분봉이 429를 받아도 그 회차 관측치는 이미 받음). 범위가 비면 Yahoo를 부르지 않음. 기동 뒤 처음 받을 때까지 `period="5d"`(꺼졌던 세션 따라잡기), 그 뒤 `"1d"`. 패킷에는 쓰지 않음 — 읽는 곳은 단계 0-4의 실행 감사 작업, 단계 1-4의 장부 시각 지정 체결(2b·1분봉 기다림 — 시각 지정 주문이 있는 계좌만, 계좌2 정의는 1-5), 상태 응답의 계좌2 묶음(`claude2.bars` — 정규장일 때 받은 시각·지연) — §5 'Claude 계좌2 1분봉' |
 | | | `us_calendar` | 📒 발표·실적 일정 → 스냅샷 `calendar.us_events`. 거시: FRED `release/dates`(CPI 10·PCE 54·고용 50·GDP 53, 앞으로 45일) + FOMC 연간 일정표 상수. 실적: 같은 유니버스(ETF 제외)의 다음 실적일 — yfinance quoteSummary `calendarEvents`, 실행당 120종목(`US_CALENDAR_EARNINGS_BUDGET`)·종목당 24시간 캐시(§5 '모의 매매가 쓰는 저장본과 한계') |
 | | | `us_calendar_consensus` | 🧪 미국 지표 컨센서스 → 스냅샷 `calendar.us_consensus` — 수집기는 **저장만**(백엔드 미국 패킷이 설정 `calendar.consensus`를 켰을 때만 읽어 `1b_calendar` 거시 줄에 붙임 — 한국 책 출발일에 켬, [명세 §4-12·K22·E1b](specs/2026-10-26-v2-kr-paper-spec.md)). Nasdaq `api/calendar/economicevents`(비공식 참고, 키 없음, 브라우저 UA)를 미국 동부 오늘부터 18일 안의 평일마다 1회(약 14회 — 패킷 창 '기준일 + 10거래일'의 끝이 공휴일 둘이면 +18일) — 같은 동부 날짜에 받은 날은 다시 묻지 않음(서버 창이 동부 한 날짜 안). **`date=D`는 동부 D−1의 행을 줘서** 날짜 E는 `date=E+1`로 묻고(2026-10-26 네 날짜로 확인), 실업수당 청구가 목요일에 하나도 없으면 어긋남이 바뀐 것으로 보고 저장하지 않음. 미국 행만, 값은 숫자 + 단위(`1,728K` → 1728·K, 못 나누면 null·글자는 `…Text`), 중요도는 Nasdaq이 주지 않아 null. 날짜 하나의 실패는 직전 값을 `isStale`로 잇고, 출처 거부면 그 실행을 멈춤. TradingView 경제 캘린더는 이 PC에서 403이라 쓰지 않음(G11) |
 | | | `news_headlines` | 📒 사건 뉴스 RSS 8개 피드(인베스팅닷컴 넷·연준·BLS 둘·SEC) → `observations` `news_headline`(제목·링크·출처·시각만 — entity = 정규화한 제목의 해시, obs_date = 발행 시각의 UTC 날짜, 7일 보관) + 수집 상태 `news.headlines.status`. 키 없음(§5 '사건 뉴스 RSS') |
@@ -315,7 +315,7 @@ EQUITY_MAP = {
 | `us.fundamentals` (observations, 12시간) | Claude 계좌 패킷 `8b_fundamentals`(D28)만 — 규칙 계좌·검증기는 읽지 않음 | 아래 '미국 종목 재무' |
 | `calendar.us_events` (스냅샷, 1시간) | Claude 계좌 패킷 `1b_calendar`(2단계 A)·`/api/paper/status`의 `calendar`(개요의 일정 한 줄) — 규칙 계좌·검증기는 읽지 않음 | 아래 '미국 발표·실적 일정' |
 | `calendar.us_consensus` (스냅샷, 동부 하루 1회) | 🧪 미국 Claude 계좌 패킷 `1b_calendar` — 설정 `calendar.consensus`를 켰을 때만(판 6), 거시 줄의 `forecast`·`previous`·`unit`·`consensusSource`(E1b). 꺼짐이면 읽지 않음 | 위 표 `us_calendar_consensus` 줄. 비공식 참고라 발표 날짜는 FRED·FOMC가 정하고 값만 이름 대응표(백엔드 `analytics.CalendarConsensus` — FOMC·FRED 릴리스 번호 → Nasdaq 머리 지표 하나)로 붙임. 그 날 같은 이름이 두 줄(전월비·전년비 라벨 없음 — CPI·Core PCE)이면 붙이지 않고 사유 |
-| `paper.bars.us` (스냅샷, 1시간) | 🧪 실행 감사 작업 `PaperExecutionAuditJob`(단계 0-4, 5분, `StoreReader.quietly` — Claude 계좌 주문의 메뉴 반사실·1분봉 지연·늦게 풂 → `paper_order_exec`)과 장부의 시각 지정 체결(단계 1-4 `UsTimedFills` — 2b·3a·1분봉 기다림, `PaperMarketData.barsUs`가 조용히 읽음, 시각 지정 주문이 있는 계좌만)이 읽음. 패킷은 읽지 않음 | 아래 'Claude 계좌2 1분봉' |
+| `paper.bars.us` (스냅샷, 1시간) | 🧪 실행 감사 작업 `PaperExecutionAuditJob`(단계 0-4, 5분, `StoreReader.quietly` — Claude 계좌 주문의 메뉴 반사실·1분봉 지연·늦게 풂 → `paper_order_exec`)과 장부의 시각 지정 체결(단계 1-4 `UsTimedFills` — 2b·3a·1분봉 기다림, `PaperMarketData.barsUs`가 조용히 읽음, 시각 지정 주문이 있는 계좌만)이 읽음, 상태 응답(`GET /api/paper/status`의 `claude2.bars` — 정규장일 때만 받은 시각·나이·지연)도 읽기만. 패킷은 읽지 않음 | 아래 'Claude 계좌2 1분봉' |
 | `calendar.kr_events` (스냅샷, 12시간) | 🧪 한국 책 Claude 계좌 패킷 `1b_calendar`가 읽음(E1a — `KrPacketBuilder`, 읽은 순간 뒤 수집본은 쓰지 않음) — 규칙 계좌·검증기는 읽지 않음 | 위 표 `kr_calendar` 줄. 상수라 임시 회의·바뀐 발표일은 들어오지 않음(손으로 갱신) |
 | `news_headline` (observations, 1시간) | Claude 계좌 패킷 `11b_events`(2단계 B)만 — 규칙 계좌·검증기는 읽지 않음 | 아래 '사건 뉴스 RSS' |
 | `news.headlines.status` (스냅샷, 1시간) | `/api/paper/status`의 `news`(개요의 사건 뉴스 한 줄), 정기·미리보기 패킷 `11b_events`의 `feedNote`(창 끝 3시간 전부터 실패 중인 피드) | 피드별 받은 항목·새 항목·건너뛴 수·마지막 성공 시각(`lastOkAt`)·실패 사유, 7일 보관 건수(`stored7d`). 피드가 모두 실패하면 쓰지 않음(직전 저장본 유지) |
@@ -419,7 +419,9 @@ EQUITY_MAP = {
 **Claude 계좌2 1분봉 (단계 0 측정 — [명세 §7·§12·§19](specs/2026-10-30-claude-book2-timing-design.md), [ADR 0022](adr/0022-us-claude-book2-timing.md))**: 수집기
 `paper_bars_us`가 받아 저장만 합니다(모양 contract 1은 `collector/app/tasks/paper_bars.py` 머리말). 창 시각은 그 세션 날짜의 `America/New_York` 시각이라
 서머타임이 끝나도(2026-11-01) 09:30 ET 그대로입니다(10-30 13:30Z, 11-02 14:30Z). 단계 0은 측정만 합니다 — 세 세션 이상 X1~X5를 재 이 절에 적은 뒤
-계좌2가 출발합니다(T4).
+계좌2가 출발합니다(T4). 단계 1(코드 — 배포 전)부터 이 저장본이 계좌2의 체결가 출처입니다: 고른 시각 T 창의 봉 시가(사다리 R1·R2), 창에 거래가 없으면 그
+세션 T 뒤 첫 거래 봉(R2b — 대체), 1분봉 자체가 없을 때만 관측 종가(R3)·확정 종가(대체). 장부는 시각 지정 주문이 남은 관측치를 이 저장본이 그 관측치 수집
+시각 뒤에 들어오거나 상한(`claude2.barsWaitMinutes`, 기본 15분)이 지날 때까지 미룹니다(1분봉 기다림 — 명세 §10).
 
 | 한계 | 내용 |
 |---|---|
