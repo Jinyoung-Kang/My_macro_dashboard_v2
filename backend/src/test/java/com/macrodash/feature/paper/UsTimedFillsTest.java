@@ -160,6 +160,8 @@ class UsTimedFillsTest {
         assertThat(late.get("AT_1000").detail()).contains("2026-10-27 10:00 ET").contains("+ 60초 이전");
         assertThat(UsTimedFills.closedTimings(menu, MON, et(TUE, 9, 58).plusSeconds(59), US)).as("정확히 61초 앞이면 받음")
                 .containsOnlyKeys("NEXT_OPEN");
+        assertThat(UsTimedFills.closedTimings(menu, MON, et(TUE, 9, 59), US)).as("정확히 60초 앞이면 막음(T ≤ 생성 + 60초 — ⑤)")
+                .containsOnlyKeys("NEXT_OPEN", "AT_1000");
 
         // 서머타임 끝난 주 — 10-31(토) 07:30 KST 결정(기준 10-30 EDT)의 E = 11-02(월, EST): 닫힌 시점 없음.
         assertThat(UsTimedFills.closedTimings(menu, LocalDate.of(2026, 10, 30), Instant.parse("2026-10-30T22:30:00Z"), US))
@@ -292,6 +294,23 @@ class UsTimedFillsTest {
             assertThat(outcome.alerts()).singleElement().satisfies(alert -> assertThat(alert).startsWith(BOOK + ": 장부 재검사"));
             assertThat(outcome.errors()).as("장부 오류(되돌림)가 아님").isEmpty();
             assertThat(fillOf(id)).isNull();
+        }
+
+        @Test
+        @DisplayName("⑤ 경계 — 주문 생성이 T − 60초 정각이면(T = 생성 + 60초) 체결하지 않고 취소(LATE_FOR_TIMING), T − 61초면 T 봉으로 체결")
+        void lateForTimingAtExactlySixtySeconds() {
+            long exact = timed("AAPL", PaperBooks.BUY, 10, null, null, "AT_1000", MON, et(TUE, 9, 59));
+            long inTime = timed("MSFT", PaperBooks.BUY, 10, null, null, "AT_1000", MON, et(TUE, 9, 58).plusSeconds(59));
+            bars(new Bars(et(TUE, 10, 21)).bar("AAPL", TUE, et(TUE, 10, 0), 100.0, 500.0)
+                    .bar("AAPL", TUE, et(TUE, 10, 1), 100.1, 500.0).bar("MSFT", TUE, et(TUE, 10, 0), 300.0, 500.0)
+                    .bar("MSFT", TUE, et(TUE, 10, 1), 300.1, 500.0));
+
+            observe(et(TUE, 10, 20), bar("AAPL", MON, 99.0, TUE, 103.0), bar("MSFT", MON, 299.0, TUE, 303.0));
+
+            assertThat(order(exact).status()).isEqualTo("CANCELLED");
+            assertThat(order(exact).rejectReason()).contains("LATE_FOR_TIMING");
+            assertThat(fillOf(exact)).isNull();
+            assertThat(fillOf(inTime).rawPrice()).isEqualTo(300.0);
         }
 
         @Test

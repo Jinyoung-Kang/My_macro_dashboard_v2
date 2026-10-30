@@ -115,6 +115,8 @@ class ExecutionAuditTest {
         assertThat(ExecutionAudit.fromBars(late, "NEXT_OPEN", TUE, bars.payload(), US)).as("생성 전 시각").isNull();
         assertThat(ExecutionAudit.fromBars(inTime, "AT_1000", TUE, bars.payload(), US))
                 .as("T 앞 봉(09:59)은 건너뛰고 T 봉").isEqualTo(new Price(101.0, et(TUE, 10, 0), ExecutionAudit.RUNG_AT));
+        Order exact = buy("AT_1000", MON, et(TUE, 9, 59));                       // T − 생성 = 60초 정각
+        assertThat(ExecutionAudit.fromBars(exact, "AT_1000", TUE, bars.payload(), US)).as("T ≤ 생성 + 60초(⑤)").isNull();
     }
 
     @Test
