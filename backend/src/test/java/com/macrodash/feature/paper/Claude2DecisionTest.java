@@ -2,6 +2,7 @@ package com.macrodash.feature.paper;
 
 import com.macrodash.feature.ai.AiService;
 import com.macrodash.read.StoreReader;
+import com.macrodash.store.PaperStore;
 import com.macrodash.store.PaperStore.ApiUsage;
 import com.macrodash.store.PaperStore.Book;
 import com.macrodash.store.PaperStore.BookState;
@@ -78,6 +79,8 @@ class Claude2DecisionTest {
     private String baseUrl;
     private final Deque<String[]> answers = new ArrayDeque<>();
     private final List<JsonNode> requests = new CopyOnWriteArrayList<>();
+    /** 가짜 서버가 답하기 전에 돌리는 일(호출하는 사이의 변화 — 일시정지 등). */
+    private volatile Runnable duringCall;
 
     @BeforeEach
     void setUp() throws Exception {
@@ -90,12 +93,18 @@ class Claude2DecisionTest {
                 bar("SHY", FRI, 82, MON, 82.5))));
         packets = mock(PacketBuilder.class);
         when(packets.assemble(any(), eq(ClaudeBookProfile.US_CLAUDE2), anyString(), any())).thenReturn(packet(PACKET_TEXT));
+        when(packets.assemble(any(), eq(ClaudeBookProfile.US_CLAUDE2_C2), anyString(), any())).thenReturn(packet(PACKET_TEXT));
         settings = PaperFixtures.settings(store);
         store.initSettingsIfAbsent(settings.defaultsJson());
         ledger = new PaperLedgerService(store, marketData, MAPPER);
         server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
         server.createContext("/v1/messages", exchange -> {
             requests.add(MAPPER.readTree(exchange.getRequestBody().readAllBytes()));
+            Runnable hook = duringCall;
+            if (hook != null) {
+                duringCall = null;
+                hook.run();
+            }
             String[] answer;
             synchronized (answers) {
                 answer = answers.isEmpty() ? new String[]{"500", "{\"type\":\"error\",\"error\":{\"type\":\"api_error\","
@@ -239,6 +248,147 @@ class Claude2DecisionTest {
         verify(packets, org.mockito.Mockito.times(2)).assemble(any(), eq(ClaudeBookProfile.US_CLAUDE2),
                 eq(RuleBookService.SCHEDULED), any());
         verify(packets).assemble(any(), eq(ClaudeBookProfile.US_CLAUDE2_C2), eq(RuleBookService.SCHEDULED), any());
+    }
+
+    /** 장중 확인을 켬(설정 claude2.checkpoints) — 아침 결정이 c2 판으로. */
+    private void checkpointsOn() {
+        ((tools.jackson.databind.node.ObjectNode) store.settings.body().get("claude2")).put("checkpoints", true);
+    }
+
+    /** checkpoint 칸을 단 결정 응답. */
+    private static String decisionWithCheckpoint(String checkpoint, String... orders) {
+        String plain = decision(orders);
+        return plain.substring(0, plain.length() - 1) + ",\"checkpoint\":" + checkpoint + "}";
+    }
+
+    private static final String MINUTE_1030 = "{\"atEt\":\"10:30\",\"feed\":\"MINUTE\",\"watch\":[\"AAA\",\"BBB\"],"
+            + "\"question\":\"갭 뒤 거래량\"}";
+
+    @Test
+    @DisplayName("장중 확인 요청 → 같은 트랜잭션에서 E 세션 PLANNED 행(요청 결정 = 그 결정), 응답 checkpointPlan — 정기·출발(INITIAL) 모두, E = 다음 거래일(10-30 금 결정 → 11-02 월)")
+    void checkpointRequestBecomesAPlannedRow() {
+        checkpointsOn();
+        notStarted();
+        answerJson(decisionWithCheckpoint(MINUTE_1030, order("AAA", 5, "NEXT_OPEN")));
+        Decision start = decide(NOW, RuleBookService.INITIAL).decision();
+        PaperStore.Checkpoint row = store.checkpoint(PaperBooks.CLAUDE2, TUE).orElseThrow();
+        assertThat(row.status()).isEqualTo(PaperBooks.CHECKPOINT_PLANNED);
+        assertThat(row.sourceDecisionId()).isEqualTo(start.id());
+        assertThat(row.atEt()).isEqualTo(java.time.LocalTime.of(10, 30));
+        assertThat(row.feed()).isEqualTo("MINUTE");
+        assertThat(row.watch()).containsExactly("AAA", "BBB");
+        assertThat(row.question()).isEqualTo("갭 뒤 거래량");
+        assertThat(start.response().path("checkpointPlan").toString()).isEqualTo("{\"session\":\"2026-10-27\","
+                + "\"atEt\":\"10:30\",\"feed\":\"MINUTE\",\"watch\":[\"AAA\",\"BBB\"],\"status\":\"PLANNED\"}");
+        assertThat(store.ordersOf(PaperBooks.CLAUDE2)).as("아침 주문 판정은 그대로").hasSize(1);
+
+        // 정기 — 금요일(10-30) 결정의 E는 다음 거래일 11-02(월).
+        LocalDate friday = LocalDate.of(2026, 10, 30);
+        LocalDate monday = LocalDate.of(2026, 11, 2);
+        answerJson(decisionWithCheckpoint("{\"atEt\":\"15:00\",\"feed\":\"HOURLY\",\"watch\":[],\"question\":\"q\"}"));
+        Decision scheduled = service(Instant.parse("2026-10-30T23:00:00Z")).decideClaude2(
+                MarketRun.of(UsPaperMarket.INSTANCE, store), friday, RuleBookService.SCHEDULED, true, null, null, true).decision();
+        PaperStore.Checkpoint monRow = store.checkpoint(PaperBooks.CLAUDE2, monday).orElseThrow();
+        assertThat(monRow.sourceDecisionId()).isEqualTo(scheduled.id());
+        assertThat(monRow.feed()).isEqualTo("HOURLY");
+        assertThat(monRow.watch()).isEmpty();
+        assertThat(monRow.atEt()).isEqualTo(java.time.LocalTime.of(15, 0));
+        assertThat(store.checkpoint(PaperBooks.CLAUDE2, LocalDate.of(2026, 10, 31))).as("토요일 세션 없음").isEmpty();
+    }
+
+    @Test
+    @DisplayName("다음 결정이 같은 세션을 대신하면: checkpoint가 있으면 PLANNED를 덮어씀, 없으면 SKIPPED 'SUPERSEDED — …'(응답 checkpointPlan에 그 사실), 이미 끝난 행(DONE)은 그대로")
+    void laterDecisionWithoutCheckpointSkipsThePlannedRow() {
+        checkpointsOn();
+        active();
+        answerJson(decisionWithCheckpoint(MINUTE_1030));
+        Decision morning = decide(NOW, RuleBookService.SCHEDULED).decision();
+        assertThat(store.checkpoint(PaperBooks.CLAUDE2, TUE).orElseThrow().sourceDecisionId()).isEqualTo(morning.id());
+
+        answerJson(decisionWithCheckpoint("{\"atEt\":\"11:00\",\"feed\":\"MINUTE\",\"watch\":[\"AAA\"],\"question\":\"q\"}"));
+        Decision manual = service(NOW).decideClaude2(MarketRun.of(UsPaperMarket.INSTANCE, store), MON,
+                RuleBookService.MANUAL, true, null, null, false).decision();
+        PaperStore.Checkpoint replaced = store.checkpoint(PaperBooks.CLAUDE2, TUE).orElseThrow();
+        assertThat(replaced.status()).isEqualTo(PaperBooks.CHECKPOINT_PLANNED);
+        assertThat(replaced.sourceDecisionId()).isEqualTo(manual.id());
+        assertThat(replaced.atEt()).isEqualTo(java.time.LocalTime.of(11, 0));
+
+        // 수동 결정 행을 지우고 checkpoint 없는 수동 결정 — PLANNED를 SKIPPED로.
+        store.decisions.remove(manual.id());
+        answerJson(decision());
+        Decision without = service(NOW).decideClaude2(MarketRun.of(UsPaperMarket.INSTANCE, store), MON,
+                RuleBookService.MANUAL, true, null, null, false).decision();
+        PaperStore.Checkpoint skipped = store.checkpoint(PaperBooks.CLAUDE2, TUE).orElseThrow();
+        assertThat(skipped.status()).isEqualTo(PaperBooks.CHECKPOINT_SKIPPED);
+        assertThat(skipped.reason()).isEqualTo(ClaudeBookService.CHECKPOINT_SUPERSEDED).startsWith("SUPERSEDED — ");
+        assertThat(without.response().path("checkpointPlan").path("status").asString()).isEqualTo("SKIPPED");
+
+        // 끝난 행은 다음 요청이 되살리지 않음.
+        store.markCheckpoint(PaperBooks.CLAUDE2, TUE, PaperBooks.CHECKPOINT_SKIPPED, PaperBooks.CHECKPOINT_DONE, null, null,
+                null, NOW);
+        store.decisions.remove(without.id());
+        answerJson(decisionWithCheckpoint(MINUTE_1030));
+        Decision late = service(NOW).decideClaude2(MarketRun.of(UsPaperMarket.INSTANCE, store), MON,
+                RuleBookService.MANUAL, true, null, null, false).decision();
+        assertThat(store.checkpoint(PaperBooks.CLAUDE2, TUE).orElseThrow().status()).isEqualTo(PaperBooks.CHECKPOINT_DONE);
+        assertThat(late.response().path("checkpointPlan").path("status").asString()).isEqualTo("DONE");
+    }
+
+    @Test
+    @DisplayName("끄면 계획 행을 쓰지 않음 — 끈 판 스키마에는 checkpoint 칸이 없어(보내면 형식 오류) 행이 생기지 않고, 이미 있는 PLANNED 행도 건드리지 않음(작업이 CHECKPOINTS_OFF로 정리)")
+    void checkpointsOffWritesNoRow() {
+        active();
+        answerJson(decision());
+        Decision d = decide(NOW, RuleBookService.SCHEDULED).decision();
+        assertThat(store.checkpoints).isEmpty();
+        assertThat(d.response().has("checkpointPlan")).isFalse();
+
+        store.upsertPlannedCheckpoint(new PaperStore.Checkpoint(PaperBooks.CLAUDE2, TUE, java.time.LocalTime.of(10, 0),
+                "HOURLY", List.of(), null, d.id(), null, "PLANNED", null, null, null, null, null));
+        store.decisions.remove(d.id());
+        answerJson(decisionWithCheckpoint(MINUTE_1030));
+        Decision rejected = decide(NOW, RuleBookService.SCHEDULED).decision();
+        assertThat(rejected.status()).as("단계 1 스키마는 checkpoint를 받지 않음").isEqualTo(ClaudeBookService.STATUS_FORMAT_ERROR);
+        assertThat(store.checkpoint(PaperBooks.CLAUDE2, TUE).orElseThrow().status()).isEqualTo(PaperBooks.CHECKPOINT_PLANNED);
+    }
+
+    @Test
+    @DisplayName("Claude를 부르는 사이에 계좌2가 일시정지되면 계획 행을 쓰지 않음(결정은 SKIPPED·주문 취소로 남음)")
+    void pausedDuringCallWritesNoRow() {
+        checkpointsOn();
+        active();
+        duringCall = () -> store.updateBookStatus(PaperBooks.CLAUDE2, PaperBooks.PAUSED);
+        answerJson(decisionWithCheckpoint(MINUTE_1030, order("AAA", 5, "NEXT_OPEN")));
+        Decision d = decide(NOW, RuleBookService.SCHEDULED).decision();
+        assertThat(d.status()).isEqualTo(ClaudeBookService.STATUS_SKIPPED);
+        assertThat(d.response().path("pausedDuringCall").asBoolean()).isTrue();
+        assertThat(d.response().has("checkpointPlan")).isFalse();
+        assertThat(store.checkpoints).isEmpty();
+    }
+
+    @Test
+    @DisplayName("13_execution.checkpointOptions.recentLag — 최근 5세션(DONE·MINUTE·지연을 잰 행)이 모이기 전에는 null, 모이면 {n, p50, p95}(근접 순위)")
+    void recentLagNullUnderFiveRows() {
+        active();
+        long source = store.insertDecisionIfAbsent(new Decision(0, PaperBooks.CLAUDE2, FRI, RuleBookService.SCHEDULED, null,
+                "OK", null, null, 1, null, null, null, null, null, null, null, null, List.of(), true, 1L, 0)).orElseThrow();
+        int[] lags = {40, 95, 60, 300, 70};
+        for (int i = 0; i < lags.length; i++) {
+            LocalDate session = LocalDate.of(2026, 10, 1).plusDays(i);
+            store.upsertPlannedCheckpoint(new PaperStore.Checkpoint(PaperBooks.CLAUDE2, session, java.time.LocalTime.of(10, 0),
+                    "MINUTE", List.of("SPY"), null, source, null, "PLANNED", null, null, null, null, null));
+            assertThat(ExecutionSection.lagSummary(store.recentCheckpointLags(PaperBooks.CLAUDE2, "MINUTE",
+                    ExecutionSection.RECENT_LAG_SESSIONS))).as(i + "세션").isNull();
+            store.markCheckpoint(PaperBooks.CLAUDE2, session, "PLANNED", "DONE", null, null, lags[i], NOW);
+        }
+        assertThat(ExecutionSection.lagSummary(store.recentCheckpointLags(PaperBooks.CLAUDE2, "MINUTE",
+                ExecutionSection.RECENT_LAG_SESSIONS))).containsExactly(java.util.Map.entry("n", 5),
+                java.util.Map.entry("p50", 70), java.util.Map.entry("p95", 300));
+        assertThat(ExecutionSection.lagSummary(List.of(1, 2, 3, 4))).isNull();
+        JsonNode section = MAPPER.valueToTree(PacketBuilder.toNode(ExecutionSection.build(MON, PaperBooks.CLAUDE2_TIMINGS,
+                com.macrodash.analytics.UsMarketCalendar.CALENDAR, 5, false, store, PaperBooks.CLAUDE2, true)));
+        assertThat(section.path("checkpointOptions").path("recentLag").toString())
+                .isEqualTo("{\"n\":5,\"p50\":70,\"p95\":300}");
     }
 
     // ------------------------------------------------------------------ 출발(§4-1)

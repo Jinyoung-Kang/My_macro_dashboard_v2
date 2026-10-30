@@ -106,6 +106,32 @@ final class ExecutionSection {
         return out;
     }
 
+    /** 최근 잰 지연 요약에 쓰는 장중 확인 수 — 최근 세션 이만큼(DONE·MINUTE·지연을 잰 행)이 있어야 요약을 냅니다(§9-3 '최근 5세션'). */
+    static final int RECENT_LAG_SESSIONS = 5;
+
+    /**
+     * 잰 지연(초) 요약 {@code {n, p50, p95}} — 근접 순위 백분위(정렬한 값의 ⌈q·n⌉번째). 값이 {@value #RECENT_LAG_SESSIONS}개보다 적으면 null
+     * (잴 값이 모자람 — 0으로 채우지 않음).
+     */
+    static Map<String, Object> lagSummary(List<Integer> lags) {
+        if (lags == null || lags.size() < RECENT_LAG_SESSIONS) {
+            return null;
+        }
+        List<Integer> sorted = new ArrayList<>(lags);
+        sorted.sort(null);
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("n", sorted.size());
+        out.put("p50", nearestRank(sorted, 0.50));
+        out.put("p95", nearestRank(sorted, 0.95));
+        return out;
+    }
+
+    /** 근접 순위 백분위 — 정렬한 목록의 ⌈q·n⌉번째(1부터). */
+    static int nearestRank(List<Integer> sorted, double q) {
+        int rank = (int) Math.ceil(q * sorted.size());
+        return sorted.get(Math.max(0, Math.min(sorted.size(), rank) - 1));
+    }
+
     /** 확인 시각 'HH:mm'(스키마 {@code checkpoint.atEt}의 글자). */
     static String clock(LocalTime t) {
         return CLOCK.format(t);
@@ -203,13 +229,15 @@ final class ExecutionSection {
         out.put("slippageBp", PacketBuilder.decimal(slippageBp, 4));
         out.put("record", record ? record(store, book, calendar) : recordOff());
         if (checkpoints) {
-            out.put("checkpointOptions", checkpointOptions(session, calendar));
+            out.put("checkpointOptions", checkpointOptions(session, calendar,
+                    lagSummary(store.recentCheckpointLags(book, FEED_MINUTE, RECENT_LAG_SESSIONS))));
         }
         return out;
     }
 
     /** 장중 확인 선택지(클래스 설명) — 그 세션의 확인 시각(ET·KST)·피드 뜻·감시 상한·최근 잰 지연 요약·규칙. */
-    private static Map<String, Object> checkpointOptions(LocalDate session, TradingCalendar calendar) {
+    private static Map<String, Object> checkpointOptions(LocalDate session, TradingCalendar calendar,
+                                                         Map<String, Object> recentLag) {
         List<Map<String, Object>> times = new ArrayList<>();
         for (LocalTime t : checkpointTimes(session, calendar)) {
             Map<String, Object> row = new LinkedHashMap<>();
@@ -221,8 +249,8 @@ final class ExecutionSection {
         out.put("times", times);
         out.put("feeds", FEED_MEANINGS);
         out.put("watchMax", WATCH_MAX);
-        // 최근 장중 확인(MINUTE)에서 잰 지연 요약 — 잰 값이 생기기 전(판 2 첫날)에는 null.
-        out.put("recentLag", null);
+        // 최근 장중 확인(MINUTE, 부른 것)에서 잰 지연 요약 — 최근 5세션이 모이기 전(판 2 첫날 포함)에는 null.
+        out.put("recentLag", recentLag);
         out.put("rules", CHECKPOINT_RULES);
         return out;
     }

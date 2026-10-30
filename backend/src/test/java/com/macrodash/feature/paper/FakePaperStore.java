@@ -51,6 +51,8 @@ class FakePaperStore extends PaperStore {
     TreeMap<Long, OrderExec> execs = new TreeMap<>();
     /** 체결 번호 → 체결 봉({@code paper_fills.bar_at}·{@code fill_rung}, V17 — 체결 레코드에 없는 칸, 시험이 넣음). */
     TreeMap<Long, ExecFill> fillBars = new TreeMap<>();
+    /** "책|세션" → 장중 확인 행({@code paper_checkpoints}, V18 — 계좌·세션마다 한 행, 요청 결정을 지우면 함께). */
+    TreeMap<String, Checkpoint> checkpoints = new TreeMap<>();
     Map<String, TreeMap<LocalDate, NavRow>> nav = new HashMap<>();
     List<JobRun> jobRuns = new ArrayList<>();
     Map<String, StartPrice> startPrices = new TreeMap<>();
@@ -1153,8 +1155,71 @@ class FakePaperStore extends PaperStore {
         return value == null || value.isNull() ? null : value.asString("");
     }
 
+    // ------------------------------------------------------------------ 장중 확인(V18)
+    private static String checkpointKey(String code, LocalDate session) {
+        return code + "|" + session;
+    }
+
+    /** PaperStore와 같은 규칙 — 없으면 PLANNED로 넣고, PLANNED 행만 이번 값으로 바꾸며, 끝난 행은 그대로(false). */
+    @Override
+    public boolean upsertPlannedCheckpoint(Checkpoint row) {
+        if (!decisions.containsKey(row.sourceDecisionId())) {
+            throw new org.springframework.dao.DataIntegrityViolationException("paper_checkpoints_source_decision_id_fkey: "
+                    + row.sourceDecisionId());
+        }
+        String key = checkpointKey(row.bookCode(), row.sessionDate());
+        Checkpoint existing = checkpoints.get(key);
+        if (existing != null && !"PLANNED".equals(existing.status())) {
+            return false;
+        }
+        checkpoints.put(key, new Checkpoint(row.bookCode(), row.sessionDate(), row.atEt(), row.feed(), row.watch(),
+                row.question(), row.sourceDecisionId(), existing == null ? null : existing.checkpointDecisionId(), "PLANNED",
+                null, existing == null ? null : existing.lagSeconds(), existing == null ? null : existing.calledAt(),
+                existing == null ? dbNow : existing.createdAt(), dbNow));
+        return true;
+    }
+
+    @Override
+    public Optional<Checkpoint> checkpoint(String code, LocalDate session) {
+        return Optional.ofNullable(checkpoints.get(checkpointKey(code, session)));
+    }
+
+    @Override
+    public List<Checkpoint> plannedCheckpoints(String code) {
+        return checkpoints.values().stream().filter(c -> c.bookCode().equals(code) && "PLANNED".equals(c.status()))
+                .sorted(Comparator.comparing(Checkpoint::sessionDate)).toList();
+    }
+
+    @Override
+    public int markCheckpoint(String code, LocalDate session, String fromStatus, String status, String reason,
+                              Long checkpointDecisionId, Integer lagSeconds, Instant calledAt) {
+        String key = checkpointKey(code, session);
+        Checkpoint c = checkpoints.get(key);
+        if (c == null || !c.status().equals(fromStatus)) {
+            return 0;
+        }
+        checkpoints.put(key, new Checkpoint(c.bookCode(), c.sessionDate(), c.atEt(), c.feed(), c.watch(), c.question(),
+                c.sourceDecisionId(), checkpointDecisionId, status, reason, lagSeconds, calledAt, c.createdAt(), dbNow));
+        return 1;
+    }
+
+    @Override
+    public List<Checkpoint> recentCheckpoints(String code, int limit) {
+        return checkpoints.values().stream().filter(c -> c.bookCode().equals(code))
+                .sorted(Comparator.comparing(Checkpoint::sessionDate).reversed()).limit(limit).toList();
+    }
+
+    @Override
+    public List<Integer> recentCheckpointLags(String code, String feed, int limit) {
+        return checkpoints.values().stream().filter(c -> c.bookCode().equals(code) && c.feed().equals(feed)
+                        && "DONE".equals(c.status()) && c.lagSeconds() != null)
+                .sorted(Comparator.comparing(Checkpoint::sessionDate).reversed()).limit(limit).map(Checkpoint::lagSeconds)
+                .toList();
+    }
+
     @Override
     public void resetBook(String code) {
+        checkpoints.values().removeIf(c -> c.bookCode().equals(code));
         decisions.values().removeIf(d -> d.bookCode().equals(code));
         orders.values().removeIf(o -> o.bookCode().equals(code));
         ledgerHoldMarks.keySet().removeIf(id -> !orders.containsKey(id));
@@ -1175,7 +1240,8 @@ class FakePaperStore extends PaperStore {
                             Map<String, TreeMap<String, String>> corpHolds, Map<String, TreeMap<String, Long>> refVolumes,
                             Map<String, TreeMap<String, Lockout>> lockouts, TreeMap<Long, Order> orders,
                             TreeMap<Long, LedgerHold> ledgerHoldMarks, TreeMap<Long, Fill> fills, TreeMap<Long, FillConfirmation> confirmations,
-                            TreeMap<Long, OrderExec> execs, Map<String, TreeMap<LocalDate, NavRow>> nav,
+                            TreeMap<Long, OrderExec> execs, TreeMap<String, Checkpoint> checkpoints,
+                            Map<String, TreeMap<LocalDate, NavRow>> nav,
                             List<JobRun> jobRuns, Map<String, StartPrice> startPrices, SettingsRow settings,
                             TreeMap<LocalDate, TreeMap<String, TrackRecordRow>> trackRecords,
                             TreeMap<LocalDate, Selection> selections, TreeMap<Long, Decision> decisions,
@@ -1187,7 +1253,7 @@ class FakePaperStore extends PaperStore {
             this(new TreeMap<>(s.books), new TreeMap<>(s.states), deep(s.positions), deep(s.corpHolds),
                     deep(s.refVolumes), deep(s.lockouts),
                     new TreeMap<>(s.orders), new TreeMap<>(s.ledgerHoldMarks), new TreeMap<>(s.fills), new TreeMap<>(s.confirmations),
-                    new TreeMap<>(s.execs), deep(s.nav),
+                    new TreeMap<>(s.execs), new TreeMap<>(s.checkpoints), deep(s.nav),
                     new ArrayList<>(s.jobRuns),
                     new TreeMap<>(s.startPrices), s.settings, deepDates(s.trackRecords), new TreeMap<>(s.selections),
                     new TreeMap<>(s.decisions), new TreeMap<>(s.gates), new TreeMap<>(s.frameworks),
@@ -1207,6 +1273,7 @@ class FakePaperStore extends PaperStore {
             s.fills = fills;
             s.confirmations = confirmations;
             s.execs = execs;
+            s.checkpoints = checkpoints;
             s.nav = nav;
             s.jobRuns = jobRuns;
             s.startPrices = startPrices;

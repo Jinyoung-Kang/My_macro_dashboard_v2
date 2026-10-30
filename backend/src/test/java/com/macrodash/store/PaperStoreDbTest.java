@@ -2045,6 +2045,68 @@ class PaperStoreDbTest {
     }
 
     @Test
+    @DisplayName("장중 확인 행 읽고 쓰기(B1-2): PLANNED 넣기 → 같은 세션 다시 넣으면 PLANNED일 때만 바뀜, markCheckpoint는 지금 상태가 맞을 때만(바뀐 행 수), DONE 뒤 다시 넣어도 그대로, 최근 순·PLANNED 목록·잰 지연 목록(DONE·그 피드·지연 있는 것만), 초기화가 지움 — 시험 행은 책과 함께 지움")
+    void checkpointRowsOnRealTables() {
+        store.insertBookIfAbsent(book(BOOK, "Claude 계좌2 시험"));
+        LocalDate session = DAY.plusDays(3);
+        long morning = decision(BOOK, DAY, "SCHEDULED");
+        long manual = decision(BOOK, DAY, "MANUAL");
+        PaperStore.Checkpoint planned = new PaperStore.Checkpoint(BOOK, session, java.time.LocalTime.of(10, 30), "MINUTE",
+                List.of("SPY", "BRK.B"), "갭 유지?", morning, null, "PLANNED", null, null, null, null, null);
+        assertThat(store.upsertPlannedCheckpoint(planned)).isTrue();
+        PaperStore.Checkpoint read = store.checkpoint(BOOK, session).orElseThrow();
+        assertThat(read.atEt()).isEqualTo(java.time.LocalTime.of(10, 30));
+        assertThat(read.watch()).containsExactly("SPY", "BRK.B");
+        assertThat(read.feed()).isEqualTo("MINUTE");
+        assertThat(read.question()).isEqualTo("갭 유지?");
+        assertThat(read.sourceDecisionId()).isEqualTo(morning);
+        assertThat(read.status()).isEqualTo("PLANNED");
+        assertThat(read.checkpointDecisionId()).isNull();
+        assertThat(read.lagSeconds()).isNull();
+        assertThat(read.calledAt()).isNull();
+        assertThat(read.createdAt()).isNotNull();
+
+        // 뒤 결정이 같은 세션을 대신함 — PLANNED라 이번 값으로.
+        assertThat(store.upsertPlannedCheckpoint(new PaperStore.Checkpoint(BOOK, session, java.time.LocalTime.of(14, 0),
+                "HOURLY", List.of(), null, manual, null, "PLANNED", null, null, null, null, null))).isTrue();
+        read = store.checkpoint(BOOK, session).orElseThrow();
+        assertThat(read.atEt()).isEqualTo(java.time.LocalTime.of(14, 0));
+        assertThat(read.feed()).isEqualTo("HOURLY");
+        assertThat(read.watch()).isEmpty();
+        assertThat(read.sourceDecisionId()).isEqualTo(manual);
+        assertThat(store.plannedCheckpoints(BOOK)).extracting(PaperStore.Checkpoint::sessionDate).containsExactly(session);
+
+        long checkpoint = decision(BOOK, DAY, "CHECKPOINT");
+        Instant called = Instant.parse("2026-10-26T19:02:00Z");
+        assertThat(store.markCheckpoint(BOOK, session, "DONE", "EXPIRED", "x", null, null, null)).as("지금 상태가 아님").isZero();
+        assertThat(store.markCheckpoint(BOOK, session, "PLANNED", "DONE", null, checkpoint, 75, called)).isEqualTo(1);
+        assertThat(store.markCheckpoint(BOOK, session, "PLANNED", "EXPIRED", "WINDOW_MISSED", null, null, null))
+                .as("이미 DONE — 두 번째 바꿈은 막힘").isZero();
+        read = store.checkpoint(BOOK, session).orElseThrow();
+        assertThat(read.status()).isEqualTo("DONE");
+        assertThat(read.checkpointDecisionId()).isEqualTo(checkpoint);
+        assertThat(read.lagSeconds()).isEqualTo(75);
+        assertThat(read.calledAt()).isEqualTo(called);
+        assertThat(store.upsertPlannedCheckpoint(planned)).as("끝난 행은 되살리지 않음").isFalse();
+        assertThat(store.checkpoint(BOOK, session).orElseThrow().status()).isEqualTo("DONE");
+        assertThat(store.plannedCheckpoints(BOOK)).isEmpty();
+
+        LocalDate next = session.plusDays(1);
+        store.upsertPlannedCheckpoint(new PaperStore.Checkpoint(BOOK, next, java.time.LocalTime.of(10, 0), "MINUTE",
+                List.of("SPY"), null, morning, null, "PLANNED", null, null, null, null, null));
+        store.markCheckpoint(BOOK, next, "PLANNED", "DONE", null, null, null, called);
+        assertThat(store.recentCheckpoints(BOOK, 10)).extracting(PaperStore.Checkpoint::sessionDate)
+                .containsExactly(next, session);
+        assertThat(store.recentCheckpoints(BOOK, 1)).hasSize(1);
+        assertThat(store.recentCheckpointLags(BOOK, "HOURLY", 5)).as("HOURLY 행의 지연 75(DONE)").containsExactly(75);
+        assertThat(store.recentCheckpointLags(BOOK, "MINUTE", 5)).as("지연 모름(null)은 빼고 셈").isEmpty();
+        assertThat(store.checkpoint(BOOK, next.plusDays(1))).isEmpty();
+
+        store.resetBook(BOOK);
+        assertThat(store.recentCheckpoints(BOOK, 10)).isEmpty();
+    }
+
+    @Test
     @DisplayName("V18 전 DB(paper_checkpoints 없음)는 준비 안 됨 — 백엔드만 새로 띄운 배포(QA-016)에서 장중 확인의 SQL 오류 대신 안내 문구, 시험 뒤 되돌림")
     void readyRequiresV18() {
         class Rollback extends RuntimeException {

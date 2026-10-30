@@ -46,6 +46,12 @@ final class PaperBooks {
     static final String ORDER_CANCELLED = "CANCELLED";
     static final String ORDER_EXPIRED = "EXPIRED";
 
+    /** 장중 확인 행 상태(paper_checkpoints.status, V18 — 계좌2 단계 2): 예정 → 부름 · 놓침 · 건너뜀. */
+    static final String CHECKPOINT_PLANNED = "PLANNED";
+    static final String CHECKPOINT_DONE = "DONE";
+    static final String CHECKPOINT_EXPIRED = "EXPIRED";
+    static final String CHECKPOINT_SKIPPED = "SKIPPED";
+
     /** 주문 시점(paper_orders.timing). {@link #NEXT_OPEN}은 한국 책의 다음 거래일 시가(V14, 2단계 K13). */
     static final String NEXT_CLOSE = "NEXT_CLOSE";
     static final String NEXT_OPEN = "NEXT_OPEN";

@@ -232,6 +232,33 @@ public class PaperStore {
      * @param lateResolved 늦게 풀었나(아직·모름·시각 지정이 아닌 계좌1 주문은 null)
      * @param updatedAt    마지막으로 바꾼 시각 — 넣을 때는 보지 않습니다(DB now())
      */
+    /**
+     * 장중 확인 한 행({@code paper_checkpoints}, V18 — 미국 Claude 계좌2 실험 단계 2, 명세 2026-10-30 §5-2·§11). 계좌·세션마다 하나이고 쓰는 곳은
+     * 백엔드뿐입니다(아침 결정이 PLANNED로 — {@link #upsertPlannedCheckpoint}, 장중 확인 작업이 DONE·EXPIRED·SKIPPED로 — {@link #markCheckpoint}).
+     *
+     * @param sessionDate          목표 세션 E(뉴욕 거래일)
+     * @param atEt                 확인 시각(E의 America/New_York 시각)
+     * @param feed                 MINUTE · HOURLY
+     * @param watch                감시 목록(빈 목록 가능 — HOURLY)
+     * @param sourceDecisionId     요청을 낸 아침 결정
+     * @param checkpointDecisionId 확인 응답 결정(부르기 전·놓침은 null)
+     * @param status               PLANNED · DONE · EXPIRED · SKIPPED
+     * @param reason               'CODE — 설명'(PLANNED는 null)
+     * @param lagSeconds           그 확인이 읽은 감시 저장본의 지연(모름·HOURLY는 null — 0으로 채우지 않음)
+     * @param calledAt             부른 시각(부르기 전·놓침은 null)
+     * @param createdAt            넣은 시각 — 넣을 때는 보지 않습니다(DB now())
+     * @param updatedAt            마지막으로 바꾼 시각 — 넣을 때는 보지 않습니다(DB now())
+     */
+    public record Checkpoint(String bookCode, LocalDate sessionDate, java.time.LocalTime atEt, String feed,
+                             List<String> watch, String question, long sourceDecisionId, Long checkpointDecisionId,
+                             String status, String reason, Integer lagSeconds, Instant calledAt, Instant createdAt,
+                             Instant updatedAt) {
+
+        public Checkpoint {
+            watch = watch == null ? List.of() : List.copyOf(watch);
+        }
+    }
+
     public record OrderExec(long orderId, String bookCode, String timing, Instant targetAt, JsonNode cf,
                             Integer lagSeconds, Boolean lateResolved, Instant updatedAt) {
 
@@ -1273,6 +1300,99 @@ public class PaperStore {
                         ps.setBoolean(7, row.lateResolved());
                     }
                 }) == 1;
+    }
+
+    // ------------------------------------------------------------------ 장중 확인(V18 — 미국 Claude 계좌2 실험 단계 2)
+    private static final String CHECKPOINT_COLUMNS = "book_code, session_date, at_et, feed, watch, question, "
+            + "source_decision_id, checkpoint_decision_id, status, reason, lag_seconds, called_at, created_at, updated_at";
+
+    /**
+     * 아침 결정의 장중 확인 요청을 그 세션의 PLANNED 행으로 넣거나 바꿉니다(계좌·세션마다 한 행). 이미 행이 있으면 <b>PLANNED일 때만</b> 시각·피드·
+     * 감시 목록·질문·요청 결정을 이번 값으로 바꾸고(뒤 결정이 같은 세션을 대신함), DONE·EXPIRED·SKIPPED인 행은 그대로 둡니다 — 끝난 확인을 되살리지
+     * 않게. {@code status}·{@code reason}·확인 결정·지연·부른 시각은 받은 값을 보지 않습니다(PLANNED·null).
+     *
+     * @return 넣었거나 바꿨으면 true, 끝난 행이라 그대로 두었으면 false
+     */
+    public boolean upsertPlannedCheckpoint(Checkpoint row) {
+        return jdbc.update("INSERT INTO paper_checkpoints (book_code, session_date, at_et, feed, watch, question, "
+                        + "source_decision_id, status) VALUES (?, ?, ?, ?, ?, ?, ?, 'PLANNED') "
+                        + "ON CONFLICT (book_code, session_date) DO UPDATE SET at_et = EXCLUDED.at_et, feed = EXCLUDED.feed, "
+                        + "watch = EXCLUDED.watch, question = EXCLUDED.question, source_decision_id = EXCLUDED.source_decision_id, "
+                        + "reason = NULL, updated_at = now() WHERE paper_checkpoints.status = 'PLANNED'",
+                ps -> {
+                    ps.setString(1, row.bookCode());
+                    ps.setDate(2, Date.valueOf(row.sessionDate()));
+                    ps.setObject(3, row.atEt());
+                    ps.setString(4, row.feed());
+                    ps.setArray(5, ps.getConnection().createArrayOf("text", row.watch().toArray(new String[0])));
+                    ps.setString(6, row.question());
+                    ps.setLong(7, row.sourceDecisionId());
+                }) == 1;
+    }
+
+    /** 그 계좌·세션의 장중 확인 행. */
+    public Optional<Checkpoint> checkpoint(String code, LocalDate session) {
+        return jdbc.query("SELECT " + CHECKPOINT_COLUMNS + " FROM paper_checkpoints WHERE book_code = ? AND session_date = ?",
+                checkpointMapper(), code, Date.valueOf(session)).stream().findFirst();
+    }
+
+    /** 그 계좌의 PLANNED 장중 확인 행, 세션 순. */
+    public List<Checkpoint> plannedCheckpoints(String code) {
+        return jdbc.query("SELECT " + CHECKPOINT_COLUMNS + " FROM paper_checkpoints WHERE book_code = ? AND status = 'PLANNED' "
+                + "ORDER BY session_date", checkpointMapper(), code);
+    }
+
+    /**
+     * 장중 확인 행의 상태를 조건부로 바꿉니다 — 지금 상태가 {@code fromStatus}일 때만(둘이 같은 행을 동시에 바꾸지 않게). 확인 결정·지연·부른 시각은
+     * 받은 값 그대로 씁니다(null이면 null).
+     *
+     * @return 바뀐 행 수(0 또는 1)
+     */
+    public int markCheckpoint(String code, LocalDate session, String fromStatus, String status, String reason,
+                              Long checkpointDecisionId, Integer lagSeconds, Instant calledAt) {
+        return jdbc.update("UPDATE paper_checkpoints SET status = ?, reason = ?, checkpoint_decision_id = ?, lag_seconds = ?, "
+                        + "called_at = ?, updated_at = now() WHERE book_code = ? AND session_date = ? AND status = ?",
+                ps -> {
+                    ps.setString(1, status);
+                    ps.setString(2, reason);
+                    if (checkpointDecisionId == null) {
+                        ps.setNull(3, Types.BIGINT);
+                    } else {
+                        ps.setLong(3, checkpointDecisionId);
+                    }
+                    setInteger(ps, 4, lagSeconds);
+                    setInstant(ps, 5, calledAt);
+                    ps.setString(6, code);
+                    ps.setDate(7, Date.valueOf(session));
+                    ps.setString(8, fromStatus);
+                });
+    }
+
+    /** 그 계좌의 최근 장중 확인 행 {@code limit}개, 세션 최근 순. */
+    public List<Checkpoint> recentCheckpoints(String code, int limit) {
+        return jdbc.query("SELECT " + CHECKPOINT_COLUMNS + " FROM paper_checkpoints WHERE book_code = ? "
+                + "ORDER BY session_date DESC LIMIT ?", checkpointMapper(), code, limit);
+    }
+
+    /**
+     * 그 계좌에서 부른(DONE) 그 피드의 장중 확인이 잰 지연(초), 세션 최근 순 {@code limit}개 — 지연을 모르는 행(null)은 빼고 셉니다(0으로 채우지 않음).
+     */
+    public List<Integer> recentCheckpointLags(String code, String feed, int limit) {
+        return jdbc.query("SELECT lag_seconds FROM paper_checkpoints WHERE book_code = ? AND feed = ? AND status = 'DONE' "
+                        + "AND lag_seconds IS NOT NULL ORDER BY session_date DESC LIMIT ?",
+                (rs, rowNum) -> rs.getInt("lag_seconds"), code, feed, limit);
+    }
+
+    private static RowMapper<Checkpoint> checkpointMapper() {
+        return (rs, rowNum) -> {
+            java.sql.Array watch = rs.getArray("watch");
+            List<String> tickers = watch == null ? List.of() : List.of((String[]) watch.getArray());
+            return new Checkpoint(rs.getString("book_code"), date(rs, "session_date"),
+                    rs.getObject("at_et", java.time.LocalTime.class), rs.getString("feed"), tickers, rs.getString("question"),
+                    rs.getLong("source_decision_id"), rs.getObject("checkpoint_decision_id", Long.class),
+                    rs.getString("status"), rs.getString("reason"), rs.getObject("lag_seconds", Integer.class),
+                    instant(rs, "called_at"), instant(rs, "created_at"), instant(rs, "updated_at"));
+        };
     }
 
     // ------------------------------------------------------------------ 순자산
