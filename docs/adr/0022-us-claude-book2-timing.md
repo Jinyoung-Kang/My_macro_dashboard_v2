@@ -71,7 +71,8 @@
        `PaperDecisionJobClaude2Test.manualBook2Decision`. 서머타임에 하루 확인 둘(단계 2)은 2-3 몫
   10. 한도·월 상한(T12)
      - 있음: `OrderValidatorTest.monthlyCap`·`goldenOutcomes`(계좌1 그대로), 한국 계산 `KrPacketBuilderTest.monthlyCountLeavesOutTheStartAllocation`(출발 `INITIAL` 주문을 세지 않음), 미국 계산 `ClaudeBookServiceTest.initialBackfillDoesNotUseMonthlyCap`
-     - 단계 1(있음): 검증기 시점 순위 일반화의 동치 시험 `OrderValidatorRanksTest.randomBatchesMatchTheTwoBranchImplementation`(옛 두 갈래 = 순위 0/1)·`positionsPerRank`·`checksEveryRankWithBuys`,
+     - 단계 1(있음): 검증기 시점 순위 일반화의 동치 시험 `OrderValidatorRanksTest.randomBatchesMatchTheTwoBranchImplementation`(옛 두 갈래 = 순위 0/1)·`positionsPerRank`·`checksEveryRankWithBuys`
+       (뒤 순위에서 걸린 거절은 근거 문구가 '그 시점' 대신 그 순위의 시점 — `laterRankBreachNamesThatTiming`, 두 갈래 문구는 그대로),
        계좌2 출발 배분이 월 상한에 세이지 않음 `Claude2PipelineTest.monthlyCapLeavesOutTheStartDecision`
   11. 기한 지난 날(T17)
      - 있음(계좌1 규칙): `UsPaperMarketTest.decisionTimes`(`PROCEED_UNCONFIRMED`)

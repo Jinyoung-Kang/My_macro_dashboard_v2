@@ -72,6 +72,8 @@ import java.util.function.IntPredicate;
  * 매도가 체결된 뒤 — 미국 확정 종가)를 먼저 본 뒤 그 매수의 순위부터 마지막 앞까지 <b>매수가 있는 순위마다</b>(앞서 받은 매수의 순위와 이 매수의
  * 순위 — 매수가 없는 순위에서는 매도만 체결돼 합이 줄 뿐) 그 순위까지 체결된 매도·매수로 봅니다. 위 두 시점은 순위를 따로 주지 않은 시장의 두
  * 갈래(이른 시점 0·나머지 1 — {@link Market#Market(List, String, Map, Money)})이고, 판정·사유·근거 문구가 순위 전과 글자까지 같습니다.
+ * 뒤 순위(앞서 받은 매수가 있는 순위)에서 걸리면 근거 문구의 '그 시점' 자리에 그 순위의 시점 표기를 적습니다(예: '— 12:00(AT_1200) 시점 남는
+ * 보유') — 10:00 매수가 12:00 시점 합으로 걸린 것을 10:00 시점으로 읽지 않게. 두 갈래 시장은 늘 그 매수의 순위에서 걸려 '그 시점' 그대로입니다.
  *
  * <p><b>매수 목표 비중</b>: Claude 응답의 매수 {@code targetWeightPct}는 <b>체결 뒤 그 종목의 목표 비중</b>(순자산 대비 %)입니다.
  * 이미 보유한 종목이면 증가분 = 목표 − 현재 비중만 새로 삽니다({@link #buyIncrementPct}). 장부의 매수 주문 targetWeightPct는 "살
@@ -311,6 +313,17 @@ public final class OrderValidator {
             List<String> labels = new ArrayList<>();
             for (String timing : timings) {
                 if (rank(timing) > rank) {
+                    labels.add(label(timing));
+                }
+            }
+            return String.join("·", labels);
+        }
+
+        /** 그 순위 시점들의 표기(받는 순서, 둘 이상이면 '·'로 이음) — 계좌2의 12:00 순위면 다음 세션 12:00(AT_1200). */
+        String labelsAt(int rank) {
+            List<String> labels = new ArrayList<>();
+            for (String timing : timings) {
+                if (rank(timing) == rank) {
                     labels.add(label(timing));
                 }
             }
@@ -655,9 +668,10 @@ public final class OrderValidator {
             } else if (crowded >= 0) {
                 out[i] = Verdict.reject(order, MAX_POSITIONS, String.format(Locale.ROOT,
                         "%s 매수인데 %s 전량 매도 %d종목은 그 뒤에 체결돼 자리를 "
-                                + "비우지 못함 — 그 시점 종목 수 %d > 상한 %d(현금성 제외)",
+                                + "비우지 못함 — %s 종목 수 %d > 상한 %d(현금성 제외)",
                         market.label(order.timing()), market.laterLabel(ranks[crowded]), laterFreed[crowded],
-                        positions[crowded] + 1, limits.maxPositions()) + blockedPositionsNote(blockedPositions));
+                        breachPoint(market, ranks, crowded, at), positions[crowded] + 1, limits.maxPositions())
+                        + blockedPositionsNote(blockedPositions));
             } else if (allocated[last] + increment > 100.0 + WEIGHT_EPSILON) {
                 out[i] = Verdict.reject(order, OVER_ALLOCATED, String.format(Locale.ROOT,
                         "매도 뒤 남는 보유 %.2f%% + 앞서 받은 매수 %.2f%%p + 이 주문 %.2f%%p = %.2f%% > 100%% (현재 현금 %.2f%%)",
@@ -666,10 +680,11 @@ public final class OrderValidator {
             } else if (overfull >= 0) {
                 out[i] = Verdict.reject(order, OVER_ALLOCATED, String.format(Locale.ROOT,
                         "%s 매수인데 %s 매도 %.2f%%p는 그 뒤에 체결돼 자리를 만들지 "
-                                + "못함 — 그 시점 남는 보유 %.2f%% + 앞서 받은 %s 매수 %.2f%%p + 이 주문 %.2f%%p = %.2f%% "
+                                + "못함 — %s 남는 보유 %.2f%% + 앞서 받은 %s 매수 %.2f%%p + 이 주문 %.2f%%p = %.2f%% "
                                 + "> 100%% (현재 현금 %.2f%%)",
                         market.label(order.timing()), market.laterLabel(ranks[overfull]),
-                        residual[overfull] - residual[last], residual[overfull], market.namesUpTo(ranks[overfull]),
+                        residual[overfull] - residual[last], breachPoint(market, ranks, overfull, at), residual[overfull],
+                        market.namesUpTo(ranks[overfull]),
                         allocated[overfull] - residual[overfull], increment, allocated[overfull] + increment, cashPct)
                         + blockedFreedNote(blockedFreedPct));
             } else {
@@ -705,6 +720,14 @@ public final class OrderValidator {
         }
         Double current = ctx.weightOf(order.ticker());
         return order.targetWeightPct() - (current == null ? 0.0 : current);
+    }
+
+    /**
+     * 시점 거절 문구의 시점 — 걸린 순위가 그 매수의 순위({@code at})면 '그 시점', 뒤 순위(앞서 받은 매수가 있는 순위)면 그 순위의 시점 표기 +
+     * ' 시점'(예: '다음 세션 12:00(AT_1200) 시점'). 두 갈래 시장은 늘 그 매수의 순위에서 걸립니다(클래스 설명의 "체결 시점").
+     */
+    private static String breachPoint(Market market, int[] ranks, int breached, int at) {
+        return breached == at ? "그 시점" : market.labelsAt(ranks[breached]) + " 시점";
     }
 
     /**

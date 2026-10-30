@@ -294,7 +294,7 @@ class OrderValidatorRanksTest {
     }
 
     @Test
-    @DisplayName("시점 순위: 100% 검사는 매수가 있는 순위마다 — 12:00에 받은 매수가 있으면 10:00 매수도 12:00 시점 합을 봄(종가 뒤·10:00은 통과해도)")
+    @DisplayName("시점 순위: 100% 검사는 매수가 있는 순위마다 — 12:00에 받은 매수가 있으면 10:00 매수도 12:00 시점 합을 봄(종가 뒤·10:00은 통과해도), 문구는 '12:00(AT_1200) 시점'")
     void checksEveryRankWithBuys() {
         // AAA 60%는 종가에, CCC 30%는 10:00에 팜. 먼저 처리되는 12:00 매수 30%(목표 비중 큰 순)가 12:00 합을 90%로 만듦.
         Context ctx = held(Map.of("AAA", 60.0, "CCC", 30.0));
@@ -303,11 +303,54 @@ class OrderValidatorRanksTest {
                 buy("DDD", 30, AT_1200), buy("EEE", 15, AT_1000)), ctx, limits, TIMED);
         assertThat(verdicts).extracting(Verdict::rejectReason).containsExactly(null, null, null, OVER_ALLOCATED);
         assertThat(verdicts.get(3).detail()).isEqualTo("10:00(AT_1000) 매수인데 15:00(AT_1500)·종가(NEXT_CLOSE) 매도 60.00%p는 "
-                + "그 뒤에 체결돼 자리를 만들지 못함 — 그 시점 남는 보유 60.00% + 앞서 받은 시가·10:00·12:00 매수 30.00%p + 이 주문 "
-                + "15.00%p = 105.00% > 100% (현재 현금 10.00%)");
+                + "그 뒤에 체결돼 자리를 만들지 못함 — 12:00(AT_1200) 시점 남는 보유 60.00% + 앞서 받은 시가·10:00·12:00 매수 30.00%p + "
+                + "이 주문 15.00%p = 105.00% > 100% (현재 현금 10.00%)");
         // 12:00 매수가 없으면 10:00 시점(60%)과 종가 뒤만 봄 — 같은 10:00 매수가 들어감.
         assertThat(OrderValidator.validate(List.of(sell("AAA", NEXT_CLOSE), sell("CCC", AT_1000), buy("EEE", 15, AT_1000)),
                 ctx, limits, TIMED)).extracting(Verdict::rejectReason).containsExactly(null, null, null);
+    }
+
+    @Test
+    @DisplayName("계좌2식 여덟 시점(시가 0 < 10:00 1 < … < 15:00 6 < 종가 7): 뒤 순위에서 걸린 OVER_ALLOCATED·MAX_POSITIONS는 '그 시점' 대신 걸린 시점 표기, 제 순위에서 걸리면 '그 시점' 그대로")
+    void laterRankBreachNamesThatTiming() {
+        Map<String, String> names = new LinkedHashMap<>();
+        Map<String, Integer> ranks = new LinkedHashMap<>();
+        List<String> timings = List.of(NEXT_OPEN, AT_1000, "AT_1100", AT_1200, "AT_1300", "AT_1400", AT_1500, NEXT_CLOSE);
+        for (String timing : timings) {
+            names.put(timing, NEXT_OPEN.equals(timing) ? "다음 세션 시가" : NEXT_CLOSE.equals(timing) ? "확정 종가"
+                    : "다음 세션 " + timing.substring(3, 5) + ":00");
+            ranks.put(timing, ranks.size());
+        }
+        Market eight = new Market(timings, NEXT_OPEN, names, Money.USD, ranks);
+        String after12 = "다음 세션 13:00(AT_1300)·다음 세션 14:00(AT_1400)·다음 세션 15:00(AT_1500)·확정 종가(NEXT_CLOSE)";
+
+        // 비중 합 — 먼저 받은 12:00 매수 30%가 12:00 합을 90%로 만들어 10:00 매수 15%가 12:00 시점에서 걸림(10:00 시점 75%·종가 뒤 45%는 통과).
+        Context weights = held(Map.of("AAA", 60.0, "CCC", 30.0));
+        List<Verdict> overfull = OrderValidator.validate(List.of(sell("AAA", NEXT_CLOSE), sell("CCC", AT_1000),
+                buy("DDD", 30, AT_1200), buy("EEE", 15, AT_1000)), weights, new Limits(40, 40, 20, 500, 20, 0), eight);
+        assertThat(overfull).extracting(Verdict::rejectReason).containsExactly(null, null, null, OVER_ALLOCATED);
+        assertThat(overfull.get(3).detail()).isEqualTo("다음 세션 10:00(AT_1000) 매수인데 " + after12 + " 매도 60.00%p는 "
+                + "그 뒤에 체결돼 자리를 만들지 못함 — 다음 세션 12:00(AT_1200) 시점 남는 보유 60.00% + 앞서 받은 다음 세션 시가·"
+                + "다음 세션 10:00·다음 세션 11:00·다음 세션 12:00 매수 30.00%p + 이 주문 15.00%p = 105.00% > 100% (현재 현금 10.00%)");
+
+        // 종목 수 — 먼저 받은 12:00 신규 매수가 12:00 자리를 채워 10:00 신규 매수가 12:00 시점에서 걸림(종가 전량 매도는 그 뒤).
+        Context positions = held(Map.of("AAA", 40.0, "BBB", 40.0));
+        Limits three = new Limits(10, 20, 3, 500, 20, 0);
+        List<Verdict> crowded = OrderValidator.validate(List.of(sell("AAA", NEXT_CLOSE), buy("CCC", 10, AT_1200),
+                buy("DDD", 5, AT_1000)), positions, three, eight);
+        assertThat(crowded).extracting(Verdict::rejectReason).containsExactly(null, null, MAX_POSITIONS);
+        assertThat(crowded.get(2).detail()).isEqualTo("다음 세션 10:00(AT_1000) 매수인데 " + after12 + " 전량 매도 1종목은 "
+                + "그 뒤에 체결돼 자리를 비우지 못함 — 다음 세션 12:00(AT_1200) 시점 종목 수 4 > 상한 3(현금성 제외)");
+
+        // 제 순위(10:00)에서 걸리면 '그 시점' 그대로 — 10:00 신규 둘째 매수가 10:00 자리를 넘음.
+        List<Verdict> own = OrderValidator.validate(List.of(sell("AAA", "AT_1100"), buy("CCC", 10, AT_1000),
+                buy("DDD", 5, AT_1000)), positions, three, eight);
+        assertThat(own).extracting(Verdict::rejectReason).containsExactly(null, null, MAX_POSITIONS);
+        assertThat(own.get(2).detail()).isEqualTo("다음 세션 10:00(AT_1000) 매수인데 다음 세션 11:00(AT_1100)·"
+                + "다음 세션 12:00(AT_1200)·" + after12 + " 전량 매도 1종목은 그 뒤에 체결돼 자리를 비우지 못함 — 그 시점 종목 수 4 > "
+                + "상한 3(현금성 제외)");
+        assertThat(eight.labelsAt(3)).isEqualTo("다음 세션 12:00(AT_1200)");
+        assertThat(THREE.labelsAt(1)).as("같은 순위 시점은 '·'로").isEqualTo("10:00(AT_1000)·종가(NEXT_CLOSE)");
     }
 
     @Test
