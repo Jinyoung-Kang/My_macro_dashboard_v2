@@ -104,8 +104,8 @@ export function ExecutionExperimentCard({ books }: { books: readonly PaperBookSu
             {view.formula && <li>계산: {view.formula}</li>}
             {view.method && <li>{view.method}</li>}
             <li>
-              판정(사전 등록 — ADR 0022 결정 13)은 8주 뒤 계좌2가 고른 시점의 체결로 합니다. 이 표는 시점마다의 반사실 분포라 판정이 아닙니다 — 대체
-              체결·계좌1식 기준이 없는 주문은 빼고 셉니다(뺀 수를 함께 적음).
+              판정(사전 등록 — ADR 0022 결정 13)은 8주 뒤 계좌2가 고른 시점의 체결로 합니다. 이 표는 시점마다의 반사실 분포라 판정이 아닙니다 —
+              계좌1식 기준이 없거나 그 시점 반사실이 없는 주문은 빼고 셉니다(뺀 수를 함께 적음 — 대체 체결로 풀린 주문도 따로 빼지 않음).
             </li>
           </ul>
         </>
