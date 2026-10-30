@@ -25,7 +25,9 @@ da0148e5c3339c22a50b28fd869f6641ff17559f:collector/tests/test_dart.py:generic-ap
 # 183fc20: 홈 테스트 고정값의 매크로 카드 항목 키("kospi200_night_scraped") — 위 3a976e6·91275c5와 같은 데이터셋 키 문자열이다.
 183fc20c61146f478f6653e968466d65fb70cb1f:frontend/src/lib/__tests__/homeFixtures.ts:generic-api-key:115
 
-# fe4e4c6 · 91c5a78 · 3efe22d · bf5fb97: 한국 패킷 고정본(한 줄 JSON)의 시장 지표 칸 키 문자열(22자, KrPacketBuilder의 상수) — 항목 이름이 "key"라서 generic-api-key로 잡혔다.
+# 16b83a7 · fe4e4c6 · 91c5a78 · 3efe22d · bf5fb97: 한국 패킷 고정본(한 줄 JSON)의 시장 지표 칸 키 문자열(22자, KrPacketBuilder의 상수) — 항목 이름이 "key"라서 generic-api-key로 잡혔다.
+16b83a77d5ec2ec4a9cfea208e1fce2348b2c1a3:backend/src/test/resources/paper/golden/packet-kr-initial.json:generic-api-key:1
+16b83a77d5ec2ec4a9cfea208e1fce2348b2c1a3:backend/src/test/resources/paper/golden/packet-kr-scheduled.json:generic-api-key:1
 fe4e4c611fd9fda0bc99f1c28e888e0ec5df3bd1:backend/src/test/resources/paper/golden/packet-kr-initial.json:generic-api-key:1
 fe4e4c611fd9fda0bc99f1c28e888e0ec5df3bd1:backend/src/test/resources/paper/golden/packet-kr-scheduled.json:generic-api-key:1
 91c5a787ee412146396323675b30a390b36d840f:backend/src/test/resources/paper/golden/packet-kr-initial.json:generic-api-key:1
