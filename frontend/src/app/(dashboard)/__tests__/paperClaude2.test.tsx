@@ -61,15 +61,15 @@ function overview(claude2: Record<string, unknown> | null, over: Record<string, 
   };
 }
 
-function status(enabled: boolean) {
+function status(enabled: boolean, nextDecision: Record<string, unknown> = {
+  tradingDate: "2026-10-30", atKst: "2026-10-31 07:30 KST", atEt: "2026-10-30 18:30 ET",
+  cutoffKst: "2026-11-02 23:00 KST", cutoffEt: "2026-11-02 09:00 ET",
+}) {
   return {
     available: true, enabled: true, jobs: [],
     claude2: {
       book: "claude2", status: "NOT_STARTED", startedOn: null, enabled,
-      nextDecision: {
-        tradingDate: "2026-10-30", atKst: "2026-10-31 07:30 KST", atEt: "2026-10-30 18:30 ET",
-        cutoffKst: "2026-11-02 23:00 KST", cutoffEt: "2026-11-02 09:00 ET",
-      },
+      nextDecision,
       cycle: { tradingDate: "2026-10-29", calls: 0, cap: 2 },
       bars: null,
     },
@@ -135,6 +135,29 @@ describe("개요 — 계좌2 출발", () => {
     expect(within(panel).getByText("0회 / 상한 2회")).toBeTruthy();
     expect(screen.queryByRole("button", { name: "Claude 계좌1 시작" })).toBeNull();
     expect(screen.queryByRole("button", { name: "미리보기" })).toBeNull();
+  });
+
+  // 수정 전에는 d(마감이 끝난 최근 세션)의 계좌2 행이 아직 없으면 서버가 보내는 그 결정 시각 — 이미 지난 07:30 KST(창은 개장 전 컷오프까지 열림,
+  // PaperQueryService.claude2Status) — 을 '다음 결정'에 그대로 적어, 17:43 KST에 '2026-10-30 07:30 KST'가 다음 결정으로 읽혔다(수정 전에는 it.fails).
+  it.fails("다음 결정 시각이 이미 지났으면 지난 시각 대신 '결정 창 열림(07:30부터 컷오프 22:00 KST까지)'", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-10-30T08:43:00Z"));   // 17:43 KST — 그날 07:30 결정 시각은 지났고 22:00 컷오프 전
+    try {
+      reads["/api/paper/overview"] = () => Promise.resolve(overview(CLAUDE2_NOT_STARTED));
+      reads["/api/paper/status"] = () => Promise.resolve(status(true, {
+        tradingDate: "2026-10-29", atKst: "2026-10-30 07:30 KST", atEt: "2026-10-29 18:30 ET",
+        cutoffKst: "2026-10-30 22:00 KST", cutoffEt: "2026-10-30 09:00 ET",
+      }));
+      render(<PaperPage />);
+
+      // 상태 응답이 온 뒤(그 전에는 창 칸이 '—')의 결정 창.
+      expect(await screen.findByText("다음 결정(기준 거래일 2026-10-29)")).toBeTruthy();
+      const panel = screen.getByLabelText("계좌2 결정 창");
+      await waitFor(() => expect(within(panel).getByText("결정 창 열림(07:30부터 컷오프 22:00 KST까지)")).toBeTruthy());
+      expect(within(panel).queryByText("2026-10-30 07:30 KST · 2026-10-29 18:30 ET")).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("설정이 켜져 있으면 확인 단계 → POST {book:'claude2'}(미리보기 없음) → 결과와 개요 다시 읽기", async () => {
