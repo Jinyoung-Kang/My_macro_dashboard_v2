@@ -22,6 +22,8 @@
        `PacketBuilderTest.goldenClaude2Packets`·`StructuredSchemaTest.goldenClaude2SchemaForApi`·`ClaudeBookProfileTest.claude2RenderDiffersOnlyInTheFixedRules`)뿐입니다.
        `ApiIntegrationTest`(계좌 수 5 — `paperInitWithoutPricesSkipsBenchmarks`), `UsPaperMarketTest.books`, 화면 `paperAccount.test.ts`(코드 다섯),
        계좌1 화면 이름 "Claude 계좌1"과 옛 이름 목록 `PaperAdminServiceTest.reconcileLabelsRenamesBookOneBeforeBookTwo`(T3 — 코드 `claude`·ROLE 그대로)
+       화면: 계좌2 주문·체결 표는 한국 표처럼 두 줄 칸으로 묶어 계좌2 칸(계좌1식 대비·실행 메모·근거)을 앞쪽에 — 주문 일곱 칸·체결 아홉 칸(1280px 카드 안 —
+       `paperClaude2.test.tsx` '계좌2 표는 한국 표처럼 두 줄 칸으로…'·'짧은 칸을 한 줄로…'), 계좌1 표는 칸 그대로(같은 파일 '계좌1 표는 칸이 그대로')
   2. 늦은 출발 — 앞으로 체결(T4)
      - 있음(선례 — 한국 앞으로 체결 출발): `KrStartTest.fourBooksStartTogether`, 미국 사후 체결 경로 그대로 `PaperAdminServiceTest.initBackfillsBenchmarks`
      - 단계 1(있음): `Claude2DecisionTest.initialDecisionStartsTheBookForward`(INITIAL — 정기 조립, 통과 주문은 E 하루짜리, 같은 트랜잭션에서 운용·`started_on = S`·S 순자산 줄)·

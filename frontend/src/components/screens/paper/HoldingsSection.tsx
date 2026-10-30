@@ -186,37 +186,53 @@ const FILL_COLUMNS: readonly Column<PaperFill>[] = [
 ];
 
 /*
- * 🧪 미국 Claude 계좌2(시각 지정 체결 — 계좌2 명세 §13-3)의 칸 — 미국 칸 정의에 목표 시각·실행 메모·계좌1식 대비(주문), 체결 봉·사다리·계좌1식 대비
- * (체결)를 끼웁니다. 목표 시각과 계좌1식 대비는 실행 감사 응답(GET books/{code}/execution)의 그 주문 줄 값 그대로이고, 줄이 없거나 값이 없으면 "—"입니다
- * (반사실이 아직 없음·대체 체결). 다른 미국 계좌의 표는 위 칸 정의 그대로입니다.
+ * 🧪 미국 Claude 계좌2(시각 지정 체결 — 계좌2 명세 §13-3)의 주문·체결 표. 목표 시각과 계좌1식 대비는 실행 감사 응답(GET books/{code}/execution)의 그
+ * 주문 줄 값 그대로이고, 줄이 없거나 값이 없으면 "—"입니다(반사실이 아직 없음·대체 체결). 다른 미국 계좌의 표는 위 칸 정의 그대로입니다.
+ *
+ * 한국 표(두 줄 칸)와 같은 방식으로 값을 묶어 칸 수를 줄이고 계좌2 칸(계좌1식 대비·실행 메모·근거)을 앞쪽에 둡니다 — 값마다 한 칸이면 1280px에서
+ * 주문 표가 1,809px·체결 표가 1,364px라(카드 안 표 상자 958px) 8주 실험 동안 가장 자주 볼 칸이 가로 스크롤 오른쪽 밖에 숨었습니다(QA 스택 화면).
+ * 주문: 낸 시각·기준일, 종목·방향, 체결 시점·목표 시각, 상태(장부 사유 + 출처·만료·체결 시각), 실행 메모·근거를 한 칸 두 줄로. 체결: 관측 시각·봉 날짜,
+ * 체결가·관측가, 체결 봉·사다리, 금액·슬리피지를 한 칸 두 줄로. 짧은 칸은 줄바꿈 없이, 글(장부 사유·실행 메모·근거·사다리 이름)은 최소 폭을 두고
+ * 낱말 사이에서만 줄바꿈(break-keep — 한 글자씩 접지 않음)합니다. 좁은 화면에서는 상자 안에서 가로로 넘깁니다('좌우로 넘겨 보세요').
  */
-function insertAfter<T>(columns: readonly Column<T>[], key: string, extra: Column<T>[]): Column<T>[] {
-  const at = columns.findIndex((column) => column.key === key);
-  return at < 0 ? [...columns, ...extra] : [...columns.slice(0, at + 1), ...extra, ...columns.slice(at + 1)];
-}
-
-/*
- * 계좌2 주문 표의 칸 너비 — 짧은 칸은 줄바꿈 없이, 글 칸(상태의 장부 사유·실행 메모·근거)은 최소 폭을 두고 낱말 사이에서만 줄바꿈(break-keep).
- * 계좌2 표는 줄바꿈 금지 칸이 더해져 최소 폭이 카드를 넘고(1280px에서 상자 958px), 그때 너비를 정하지 않은 칸은 모두 최소 폭으로 접혀 '매수'가 한 글자씩·
- * 낸 시각과 체결 시점이 서너 줄로 접혔습니다(QA 스택 화면). 넓은 표는 상자 안에서 가로로 넘깁니다('좌우로 넘겨 보세요'). 한국 표와 같은 방식이고,
- * 계좌1·규칙·벤치마크 표는 위 칸 정의 그대로입니다. 체결 표는 글 칸이 없어 모든 칸이 한 줄입니다(timedFillColumns).
- */
-const TIMED_ORDER_WIDTH: Readonly<Record<string, string>> = {
-  createdAt: "whitespace-nowrap", ticker: "whitespace-nowrap", side: "whitespace-nowrap", size: "whitespace-nowrap",
-  timing: "whitespace-nowrap", targetAt: "whitespace-nowrap", source: "whitespace-nowrap", asOf: "whitespace-nowrap",
-  expires: "whitespace-nowrap", filledAt: "whitespace-nowrap", advantage: "whitespace-nowrap",
-  status: "min-w-[11rem] break-keep", executionNote: "min-w-[12rem] break-keep", reason: "min-w-[14rem] break-keep",
-};
-
-function withWidths<T>(columns: readonly Column<T>[], widthOf: (key: string) => string | undefined): Column<T>[] {
-  return columns.map((column) => ({ ...column, className: widthOf(column.key) ?? column.className }));
-}
-
 function timedOrderColumns(audit: ReadonlyMap<number, PaperExecutionOrder>): Column<PaperOrder>[] {
-  const withTarget = insertAfter(ORDER_COLUMNS, "timing", [
-    { key: "targetAt", header: "목표 시각", cell: (row) => formatKst(audit.get(row.id)?.targetAtKst ?? null) },
-  ]);
-  const cells = insertAfter(withTarget, "filledAt", [
+  return [
+    {
+      key: "createdAt",
+      header: "낸 시각·기준일",
+      className: "whitespace-nowrap",
+      cell: (row) => <TwoLines top={formatKst(row.createdAtKst)} bottom={`기준 ${row.asOfTradingDate ?? EMPTY}`} />,
+    },
+    {
+      key: "ticker",
+      header: "종목·방향",
+      className: "whitespace-nowrap",
+      cell: (row) => (
+        <span className="flex flex-col">
+          <span>{row.ticker}</span>
+          <span className={`text-xs ${sideClass(row.side)}`}>{sideLabel(row.side)}</span>
+        </span>
+      ),
+    },
+    {
+      key: "size",
+      header: "크기",
+      align: "right",
+      className: "min-w-[5.5rem]",
+      cell: (row) => {
+        const text = orderSizeText(row);
+        // 오른쪽 정렬 칸은 줄바꿈 없음이 기본 — 긴 크기('순자산의 5.00% 매수 (목표 8.00%)')는 낱말 사이에서 접습니다.
+        return text === EMPTY ? text : <span className="whitespace-normal break-keep">{text}</span>;
+      },
+    },
+    {
+      key: "timing",
+      header: "체결 시점·목표 시각",
+      className: "whitespace-nowrap",
+      cell: (row) => (
+        <TwoLines top={timingLabel(row.timing)} bottom={`목표 ${formatKst(audit.get(row.id)?.targetAtKst ?? null)}`} />
+      ),
+    },
     {
       key: "advantage",
       header: "계좌1식 대비",
@@ -228,21 +244,105 @@ function timedOrderColumns(audit: ReadonlyMap<number, PaperExecutionOrder>): Col
         );
       },
     },
-    { key: "executionNote", header: "실행 메모", cell: (row) => orderExecutionNote(row.reason) },
-  ]);
-  return withWidths(cells, (key) => TIMED_ORDER_WIDTH[key]);
+    {
+      key: "status",
+      header: "상태·만료·체결",
+      className: "min-w-[8.5rem] break-keep",
+      cell: (row) => (
+        <span className="flex flex-col gap-0.5">
+          <span className="flex flex-wrap items-center gap-1">
+            <Badges badges={[orderStatusBadge(row.status)]} />
+            {row.rejectReason && <span className="text-xs text-warn">{row.rejectReason}</span>}
+          </span>
+          <span className="whitespace-nowrap text-[11px] text-text-3">{`${sourceLabel(row.source)} · 만료 ${row.expiresOn ?? EMPTY}`}</span>
+          <span className="whitespace-nowrap text-[11px] text-text-3">{`체결 ${formatKst(row.filledAtKst)}`}</span>
+        </span>
+      ),
+    },
+    // 실행 메모(왜 그 시점인가 — Claude의 executionNote)와 근거(왜 그 종목인가 — 결정 로그와 같은 orderReasonText, 전체 JSON은 마우스를 올려 봄)를 한 칸에.
+    {
+      key: "executionNote",
+      header: "실행 메모·근거",
+      className: "min-w-[12rem] break-keep",
+      cell: (row) => {
+        const note = orderExecutionNote(row.reason);
+        const reason = orderReasonText(row.reason, 80);
+        if (note === EMPTY && reason === EMPTY) return EMPTY;
+        return (
+          <span className="flex flex-col gap-0.5 text-xs">
+            <span className={note === EMPTY ? "text-text-3" : "text-body"}>{note}</span>
+            <span className="text-muted" title={jsonTitle(row.reason)}>{reason}</span>
+          </span>
+        );
+      },
+    },
+  ];
 }
 
-/** 계좌2 체결 표 — 칸이 모두 짧은 값이라 한 줄(위 TIMED_ORDER_WIDTH와 같은 까닭 — 너비를 두지 않으면 '매수'·관측 시각이 접힘). */
+/** 계좌2 체결 표 — 위 주문 표와 같은 까닭으로 두 줄 칸을 씁니다. 사다리 이름만 낱말 사이에서 접고 나머지는 한 줄. */
 function timedFillColumns(audit: ReadonlyMap<number, PaperExecutionOrder>): Column<PaperFill>[] {
-  const withBar = insertAfter(FILL_COLUMNS, "observedAt", [
-    { key: "barAt", header: "체결 봉", cell: (row) => formatKst(row.barAtKst ?? null) },
-  ]);
-  const cells = insertAfter(withBar, "rawPrice", [
-    { key: "rung", header: "사다리", cell: (row) => fillRungText(row.fillRung) },
+  return [
+    {
+      key: "observedAt",
+      header: "관측 시각·봉 날짜",
+      className: "whitespace-nowrap",
+      cell: (row) => <TwoLines top={formatKst(row.observedAtKst)} bottom={`봉 ${row.observationDate ?? EMPTY}`} />,
+    },
+    {
+      key: "ticker",
+      header: "종목",
+      className: "whitespace-nowrap",
+      cell: (row) => (
+        <span className="flex flex-wrap items-center gap-1">
+          <span>{row.ticker}</span>
+          <Badges badges={fillBadges(row)} />
+        </span>
+      ),
+    },
+    { key: "side", header: "방향", className: "whitespace-nowrap", cell: (row) => <span className={sideClass(row.side)}>{sideLabel(row.side)}</span> },
+    { key: "qty", header: "수량", align: "right", cell: (row) => formatNumber(row.qty, 0) },
+    {
+      key: "price",
+      header: "체결가·관측가(달러)",
+      align: "right",
+      cell: (row) => (
+        <span className="flex flex-col items-end">
+          <span>{formatSharePrice(row.price)}</span>
+          <span className="text-[11px] text-text-3">{`관측 ${formatSharePrice(row.rawPrice)}`}</span>
+        </span>
+      ),
+    },
+    {
+      key: "barAt",
+      header: "체결 봉·사다리",
+      className: "min-w-[10rem]",
+      cell: (row) => {
+        const bar = formatKst(row.barAtKst ?? null);
+        const rung = fillRungText(row.fillRung);
+        // 둘 다 없으면(계좌2 전 체결 등) 표가 값 없음(Empty)으로 그리게 글 그대로.
+        if (bar === EMPTY && rung === EMPTY) return EMPTY;
+        return (
+          <span className="flex flex-col">
+            <span className="whitespace-nowrap">{bar}</span>
+            <span className="break-keep text-[11px] text-text-3">{rung}</span>
+          </span>
+        );
+      },
+    },
     { key: "advantage", header: "계좌1식 대비", align: "right", cell: (row) => executionAdvantageText(audit.get(row.orderId)) },
-  ]);
-  return withWidths(cells, () => "whitespace-nowrap");
+    {
+      key: "gross",
+      header: "금액(달러)·슬리피지",
+      align: "right",
+      cell: (row) => (
+        <span className="flex flex-col items-end">
+          <span>{formatNumber(row.gross, 2)}</span>
+          <span className="text-[11px] text-text-3">{`슬리피지 ${formatWithUnit(row.slippageBp, 1, "bp")}`}</span>
+        </span>
+      ),
+    },
+    { key: "priceSource", header: "가격 출처", className: "whitespace-nowrap", cell: (row) => row.priceSource ?? EMPTY },
+  ];
 }
 
 /*

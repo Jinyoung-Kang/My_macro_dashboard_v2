@@ -368,16 +368,14 @@ describe("보유·체결 — 계좌2 칸", () => {
 
     const orders = await screen.findByRole("table", { name: "주문" });
     await waitFor(() => expect(within(orders).getByText("+12.3bp")).toBeTruthy());
-    expect(headersOf(orders)).toEqual([
-      "낸 시각", "종목", "방향", "크기", "체결 시점", "목표 시각", "출처", "상태", "기준 거래일", "만료", "체결 시각", "계좌1식 대비", "실행 메모", "근거",
-    ]);
+    expect(headersOf(orders)).toEqual(["낸 시각·기준일", "종목·방향", "크기", "체결 시점·목표 시각", "계좌1식 대비", "상태·만료·체결", "실행 메모·근거"]);
     expect(within(orders).getByText("다음 거래일 10:00 ET")).toBeTruthy();
-    expect(within(orders).getByText("2026-11-04 00:00")).toBeTruthy();
+    expect(within(orders).getByText("목표 2026-11-04 00:00")).toBeTruthy();
     expect(within(orders).getByText("개장 직후 변동성을 피함")).toBeTruthy();
 
     const fills = screen.getByRole("table", { name: "체결" });
     expect(headersOf(fills)).toEqual([
-      "관측 시각", "체결 봉", "종목", "방향", "수량", "체결가(달러)", "관측가", "사다리", "계좌1식 대비", "슬리피지", "금액(달러)", "봉 날짜", "가격 출처",
+      "관측 시각·봉 날짜", "종목", "방향", "수량", "체결가·관측가(달러)", "체결 봉·사다리", "계좌1식 대비", "금액(달러)·슬리피지", "가격 출처",
     ]);
     expect(within(fills).getByText("R2b · 그 세션 T 뒤 첫 거래 봉 시가")).toBeTruthy();
     expect(within(fills).getByText("대체 체결")).toBeTruthy();
@@ -388,7 +386,7 @@ describe("보유·체결 — 계좌2 칸", () => {
   // 수정 전에는 계좌2 표에만 줄바꿈 금지 칸(목표 시각·체결 봉·사다리)과 실행 메모 최소 폭이 더해져 표의 최소 폭이 카드를 넘었고(1280px에서 주문
   // 1,272·체결 1,241px > 상자 958px), 그때 브라우저가 모든 칸을 최소 폭으로 접어 '매수'를 한 글자씩·낸 시각과 체결 시점을 서너 줄로 접었다
   // (주문 행 157px·체결 행 77px — QA 스택 화면, 수정 전에는 it.fails).
-  it("계좌2 표는 짧은 칸을 한 줄로, 글 칸(상태·실행 메모·근거)은 최소 폭을 두고 낱말 사이에서만 줄바꿈 — 넓으면 상자 안에서 가로로 넘김", async () => {
+  it("계좌2 표는 짧은 칸을 한 줄로, 글 칸(상태·실행 메모·근거·크기·사다리 이름)은 최소 폭을 두고 낱말 사이에서만 줄바꿈 — 넓으면 상자 안에서 가로로 넘김", async () => {
     render(<PaperPage initialTab="holdings" />);
     fireEvent.change(await screen.findByLabelText("계좌 고르기"), { target: { value: "claude2" } });
 
@@ -399,21 +397,31 @@ describe("보유·체결 — 계좌2 칸", () => {
       return Object.fromEntries(headersOf(table).map((header, index) => [header, cells[index].className]));
     };
     const order = classesOf(orders);
-    for (const header of ["낸 시각", "종목", "방향", "크기", "체결 시점", "목표 시각", "출처", "기준 거래일", "만료", "체결 시각", "계좌1식 대비"]) {
+    for (const header of ["낸 시각·기준일", "종목·방향", "체결 시점·목표 시각", "계좌1식 대비"]) {
       expect(order[header], header).toContain("whitespace-nowrap");
     }
-    for (const header of ["상태", "실행 메모", "근거"]) {
-      expect(order[header], header).toMatch(/min-w-\[\d+rem\] break-keep/);
+    for (const header of ["상태·만료·체결", "실행 메모·근거"]) {
+      expect(order[header], header).toMatch(/min-w-\[[\d.]+rem\] break-keep/);
     }
-    const fill = classesOf(screen.getByRole("table", { name: "체결" }));
+    // 크기는 오른쪽 정렬 칸(줄바꿈 없음이 기본)이라 최소 폭을 두고 안의 글만 낱말 사이에서 접음('순자산의 5.00% 매수 (목표 8.00%)').
+    expect(order["크기"]).toMatch(/min-w-\[[\d.]+rem\]/);
+    expect(within(orders).getByText("순자산의 8.00% 매수").className).toContain("whitespace-normal break-keep");
+    const fills = screen.getByRole("table", { name: "체결" });
+    const fill = classesOf(fills);
     for (const [header, className] of Object.entries(fill)) {
+      if (header === "체결 봉·사다리") continue;
       expect(className, header).toContain("whitespace-nowrap");
     }
+    // 사다리 이름('R2b · 그 세션 T 뒤 첫 거래 봉 시가')만 최소 폭 안에서 낱말 사이로 접음 — 체결 봉 시각은 한 줄.
+    expect(fill["체결 봉·사다리"]).toMatch(/min-w-\[[\d.]+rem\]/);
+    expect(within(fills).getByText("R2b · 그 세션 T 뒤 첫 거래 봉 시가").className).toContain("break-keep");
+    expect(within(fills).getByText("2026-11-04 00:00").className).toContain("whitespace-nowrap");
   });
 
   // 수정 전에는 계좌2 표가 값마다 한 칸이라(주문 열네 칸·체결 열세 칸) 1280px에서 주문 표 1,809px·체결 표 1,364px로 카드 안 표 상자(958px)를 넘어,
   // 8주 실험 동안 가장 자주 볼 계좌2 칸(계좌1식 대비·실행 메모·근거)이 가로 스크롤 오른쪽 밖에 숨었다(QA 스택 화면 — 수정 전에는 it.fails).
-  it.fails("계좌2 표는 한국 표처럼 두 줄 칸으로 묶어 계좌2 칸(계좌1식 대비·실행 메모·근거)을 앞쪽에 — 주문 일곱 칸·체결 아홉 칸", async () => {
+  // 이제 두 표 모두 1280px에서 958px(QA 스택에서 잼 — jsdom은 폭을 재지 못해 칸 구성으로 봄).
+  it("계좌2 표는 한국 표처럼 두 줄 칸으로 묶어 계좌2 칸(계좌1식 대비·실행 메모·근거)을 앞쪽에 — 주문 일곱 칸·체결 아홉 칸", async () => {
     render(<PaperPage initialTab="holdings" />);
     fireEvent.change(await screen.findByLabelText("계좌 고르기"), { target: { value: "claude2" } });
 
