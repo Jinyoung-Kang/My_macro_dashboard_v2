@@ -573,7 +573,7 @@ class KrPacketBuilderTest {
             assertThat(daily).as("8_prices의 TOSS_DAILY 종가에 20:00까지의 체결이 섞일 수 있음").contains("20:00");
             String instruction = null;
             for (JsonNode line : body.path("0_instructions").path("lines")) {
-                if (line.asString().contains("8_prices·9_portfolio")) {
+                if (line.asString().contains(KrPacketBuilder.PRICES_NOTE)) {
                     instruction = line.asString();
                 }
             }
@@ -595,11 +595,15 @@ class KrPacketBuilderTest {
         throw new AssertionError("'" + marker + "' 문장이 없음: " + text);
     }
 
-    /** {@code text}에서 {@code source}부터 다음 출처 이름(TOSS_INTEGRATED·TOSS_DAILY) 앞까지 — 그 출처 하나의 설명. */
+    /**
+     * {@code text}에서 {@code source}부터 그 괄호가 닫히는 곳이나 다음 출처 이름(TOSS_INTEGRATED·TOSS_DAILY) 중 앞선 곳까지 — 그 출처 하나의 설명
+     * (괄호 뒤 문장의 '종가'로 단언이 통과하지 않게).
+     */
     private static String clauseOf(String text, String source) {
         int start = text.indexOf(source);
         assertThat(start).as(source + " 설명이 있음: " + text).isNotNegative();
-        int end = text.length();
+        int close = text.indexOf(')', start);
+        int end = close >= 0 ? close : text.length();
         for (String other : List.of(KrQuotes.SOURCE_INTEGRATED, KrQuotes.SOURCE_DAILY)) {
             int at = text.indexOf(other, start + source.length());
             if (at >= 0 && at < end) {
