@@ -261,6 +261,29 @@ describe("개요 — 체결 시점 실험·S = 100·한계", () => {
     expect(notes.textContent).toContain("'기준 없음'에는 계좌2의 체결 없는 주문도 듦");
   });
 
+  // 수정 전에는 두 표의 '뺀 주문' 칸과 M1 표의 첫 칸(구분)이 줄바꿈 금지(whitespace-nowrap)라, 1280px 카드(표 상자 958px)에서 M1 본 줄의 뺀 주문
+  // ("기준 없음 · 대체 체결(아래 줄) · 체결 없음")이 표를 1,115px로 밀어 '체결 없음'이 가로 스크롤 밖에 숨었다(QA 스택 화면 — 수정 전에는 it.fails).
+  it.fails("M1 표의 구분·뺀 주문 칸과 시점 표의 뺀 주문 칸은 낱말 사이에서 줄바꿈 — 1280px 카드 안에 M1 본 줄이 다 보이게", async () => {
+    reads["/api/paper/overview"] = () => Promise.resolve(overview(CLAUDE2_ACTIVE));
+    render(<PaperPage />);
+
+    const wraps = (cell: Element) => {
+      expect(cell.className).toContain("break-keep");
+      expect(cell.className).not.toContain("whitespace-nowrap");
+    };
+    const chosen = await screen.findByRole("table", { name: "고른 시점(M1 — 주 판정)" });
+    for (const row of within(chosen).getAllByRole("row").slice(1)) {
+      wraps(row.firstElementChild as Element);
+      wraps(row.lastElementChild as Element);
+    }
+    const menu = screen.getByRole("table", { name: "체결 시점 실험" });
+    for (const row of within(menu).getAllByRole("row").slice(1)) {
+      wraps(row.lastElementChild as Element);
+      // 시점 표의 첫 칸(시점 이름)은 짧아 한 줄 그대로
+      expect((row.firstElementChild as Element).className).toContain("whitespace-nowrap");
+    }
+  });
+
   it("계좌2가 출발 전이면 S = 100 보기를 그리지 않는다고, 한계 문구 아래 계좌2의 한계", async () => {
     reads["/api/paper/overview"] = () => Promise.resolve(overview(CLAUDE2_NOT_STARTED, {
       navSeries: { dates: ["2026-10-30"], books: { rules: [1], claude: [2], claude2: [null], bench_spy: [3], bench_mix: [4] } },
