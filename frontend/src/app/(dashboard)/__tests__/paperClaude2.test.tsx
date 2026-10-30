@@ -249,6 +249,17 @@ describe("개요 — 체결 시점 실험·S = 100·한계", () => {
     expect(notes.textContent).not.toContain("대체 체결·계좌1식 기준이 없는 주문은 빼고");
   });
 
+  // 수정 전에는 카드 설명이 '계좌1식 기준이 없거나 그 시점 반사실이 없는 주문은 빼고 셉니다'라고만 적었지만, 서버 요약(ExecutionView.summary)은
+  // 체결 금액(가중치)이 없는 주문도 같은 칸(excludedNoBaseline)으로 뺀다 — 계좌2는 기준이 있어도 체결 없는 대기·만료·취소 주문이 '기준 없음'에 든다(it.fails).
+  it.fails("카드 설명은 시점 표의 '기준 없음'에 계좌2의 체결 없는 주문도 든다고 적는다 — 서버는 계좌1식 기준이나 체결(가중치)이 없는 주문을 뺌", async () => {
+    reads["/api/paper/overview"] = () => Promise.resolve(overview(CLAUDE2_NOT_STARTED));
+    render(<PaperPage />);
+
+    const notes = await screen.findByRole("list", { name: "체결 시점 실험 설명" });
+    expect(notes.textContent).toContain("계좌1식 기준이나 체결(금액 가중치)이 없거나 그 시점 반사실이 없는 주문은 빼고 셉니다");
+    expect(notes.textContent).toContain("'기준 없음'에는 계좌2의 체결 없는 주문도 듦");
+  });
+
   it("계좌2가 출발 전이면 S = 100 보기를 그리지 않는다고, 한계 문구 아래 계좌2의 한계", async () => {
     reads["/api/paper/overview"] = () => Promise.resolve(overview(CLAUDE2_NOT_STARTED, {
       navSeries: { dates: ["2026-10-30"], books: { rules: [1], claude: [2], claude2: [null], bench_spy: [3], bench_mix: [4] } },
