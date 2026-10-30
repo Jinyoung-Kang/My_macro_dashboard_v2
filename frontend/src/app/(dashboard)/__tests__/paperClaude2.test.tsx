@@ -209,6 +209,59 @@ describe("개요 — 계좌2 출발", () => {
   });
 });
 
+describe("출발 뒤 계좌2 상태 — 개요 1분봉 한 줄·결정 로그 결정 창", () => {
+  /** 출발한 계좌2의 상태 묶음(정규장이면 bars가 옴). */
+  function startedStatus(bars: Record<string, unknown> | null) {
+    const base = status(true);
+    return { ...base, claude2: { ...base.claude2, status: "ACTIVE", startedOn: "2026-11-02", bars } };
+  }
+
+  it("개요 '장부 관측치' 카드에 계좌2 1분봉 저장본 한 줄(받은 시각·나이·지연) — 출처에 1분봉", async () => {
+    reads["/api/paper/overview"] = () => Promise.resolve(overview(CLAUDE2_ACTIVE));
+    reads["/api/paper/status"] = () => Promise.resolve(startedStatus({ collectedAtKst: "2026-11-03 23:41 KST", ageSeconds: 180, lagSeconds: 912 }));
+    render(<PaperPage />);
+
+    const line = await screen.findByText("Claude 계좌2 1분봉(Yahoo): 받은 시각 2026-11-03 23:41 · 3분 전 · 지연 15분 12초(SPY 마지막 봉 끝 → 받은 시각)");
+    const card = screen.getByRole("heading", { name: "장부 관측치" }).closest("section") as HTMLElement;
+    expect(card.contains(line)).toBe(true);
+    expect(within(card).getByText(/1분봉: Yahoo Finance \(yfinance\) 1분봉 — 수집 태스크 paper_bars_us/)).toBeTruthy();
+  });
+
+  it("계좌2가 시작 전이면 1분봉 줄이 없다(출발 카드가 결정 창을 보임)", async () => {
+    reads["/api/paper/overview"] = () => Promise.resolve(overview(CLAUDE2_NOT_STARTED));
+    reads["/api/paper/status"] = () => Promise.resolve(status(false));
+    render(<PaperPage />);
+
+    expect(await screen.findByText(/설정 claude2\.enabled가 꺼져 있습니다/)).toBeTruthy();
+    expect(screen.queryByText(/1분봉\(Yahoo\)/)).toBeNull();
+  });
+
+  it("결정 로그에서 계좌2를 고르면 다음 결정·개장 전 컷오프·이번 주기 호출 / 상한 — 다른 계좌를 고르면 상태를 읽지 않음", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-10-30T11:00:00Z"));   // 20:00 KST — 응답의 결정 시각(10-31 07:30 KST) 전
+    try {
+      reads["/api/paper/overview"] = () => Promise.resolve(overview(CLAUDE2_ACTIVE));
+      reads["/api/paper/decisions?book=rules"] = () => Promise.resolve({ available: true, decisions: [] });
+      reads["/api/paper/decisions?book=claude2"] = () => Promise.resolve({ available: true, decisions: [] });
+      reads["/api/paper/status"] = () => Promise.resolve(startedStatus(null));
+      render(<PaperPage initialTab="decisions" />);
+
+      const picker = await screen.findByLabelText("계좌 고르기");
+      expect(screen.queryByLabelText("계좌2 결정 창")).toBeNull();
+      expect(api.apiGetShared.mock.calls.map(([path]) => path)).not.toContain("/api/paper/status");
+
+      fireEvent.change(picker, { target: { value: "claude2" } });
+      expect(await screen.findByText("다음 결정(기준 거래일 2026-10-30)")).toBeTruthy();
+      const panel = screen.getByLabelText("계좌2 결정 창");
+      expect(within(panel).getByText("2026-10-31 07:30 KST · 2026-10-30 18:30 ET")).toBeTruthy();
+      expect(within(panel).getByText("2026-11-02 23:00 KST · 2026-11-02 09:00 ET")).toBeTruthy();
+      expect(within(panel).getByText("0회 / 상한 2회")).toBeTruthy();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+
 describe("개요 — 체결 시점 실험·S = 100·한계", () => {
   beforeEach(() => {
     reads["/api/paper/status"] = () => Promise.resolve(status(false));

@@ -7,7 +7,7 @@ import { useElapsedSeconds } from "@/hooks/useElapsedSeconds";
 import { useMinuteClock } from "@/hooks/useMinuteClock";
 import { apiPost } from "@/lib/api";
 import { endpoints } from "@/lib/endpoints";
-import { claude2StartResultView, claude2StartView, PAPER_SOURCES } from "@/lib/paper";
+import { claude2StartResultView, claude2StartView, type DecisionMetaCell, PAPER_SOURCES } from "@/lib/paper";
 import type { PaperInitialDecisionResult, PaperOverviewResponse, PaperStatusResponse } from "@/lib/types";
 
 /**
@@ -61,14 +61,7 @@ export function Claude2StartSection({
       <div className="mt-3">
         <Banner tone={view.ready ? "info" : "warn"}>{view.armNote}</Banner>
       </div>
-      <dl aria-label="계좌2 결정 창" className="mt-3 grid grid-cols-1 gap-x-4 gap-y-1 text-xs sm:grid-cols-3">
-        {view.lines.map((line) => (
-          <div key={line.key} className="min-w-0">
-            <dt className="text-muted">{line.label}</dt>
-            <dd className="tabular-nums text-bright">{line.value}</dd>
-          </div>
-        ))}
-      </dl>
+      <Claude2WindowList lines={view.lines} className="mt-3" />
       <p className="mt-2 text-xs text-muted">비용: {view.cost}</p>
 
       {confirming ? (
@@ -93,5 +86,22 @@ export function Claude2StartSection({
       {start.error && <div className="mt-3"><Banner tone="warn">{start.error}</Banner></div>}
       {resultBanner && <div className="mt-3">{resultBanner}</div>}
     </Card>
+  );
+}
+
+/**
+ * 계좌2 결정 창 세 줄(다음 결정·개장 전 컷오프·이번 결정 주기 호출 — lib/paper claude2WindowLines) — 출발 카드와, 출발 뒤 결정 로그에서 계좌2를 골랐을 때
+ * 같은 모양으로 씁니다.
+ */
+export function Claude2WindowList({ lines, className = "" }: { lines: readonly DecisionMetaCell[]; className?: string }) {
+  return (
+    <dl aria-label="계좌2 결정 창" className={`grid grid-cols-1 gap-x-4 gap-y-1 text-xs sm:grid-cols-3 ${className}`}>
+      {lines.map((line) => (
+        <div key={line.key} className="min-w-0">
+          <dt className="text-muted">{line.label}</dt>
+          <dd className="tabular-nums text-bright">{line.value}</dd>
+        </div>
+      ))}
+    </dl>
   );
 }

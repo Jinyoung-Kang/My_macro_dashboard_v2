@@ -5,7 +5,7 @@
  * 이름을 붙이고, 차트 행으로 늘어놓기만 합니다 — 화면에서 다시 계산하면 장부와 화면이 다른 숫자를 말하게 됩니다.
  * 모르는 값(null)은 "—"로 둡니다. 0으로 채우지 않습니다.
  */
-import { EMPTY, formatKst, formatLatency, formatNumber, formatPercent, formatSigned, formatWithUnit } from "./format";
+import { EMPTY, formatAge, formatKst, formatLatency, formatNumber, formatPercent, formatSigned, formatWithUnit } from "./format";
 import { tradeTimeFrom } from "./marketSessions";
 import { KR_ACCOUNT_PROFILES } from "./paperKrProfiles";
 import { formatMoney, formatSharePriceFor, marketMeta, type PaperMarketCode } from "./paperMarket";
@@ -100,6 +100,8 @@ export const PAPER_SOURCES = {
   execution: "대시보드 실행 감사 (PostgreSQL paper_order_exec — 반사실은 Yahoo Finance(yfinance) 1분봉(수집 태스크 paper_bars_us)·관측치 paper.quotes, "
     + "평균·90% 구간은 대시보드 백엔드 계산)",
   sameWindow: "대시보드 모의 장부 (PostgreSQL paper_nav_daily — 개요 순자산 곡선의 값을 계좌2 출발일 순자산으로 나눠 100에 맞춤)",
+  // 계좌2 1분봉 줄(개요 '장부 관측치') — 위 execution과 같은 까닭으로 저장본의 데이터셋 이름은 적지 않습니다(값은 상태 응답 claude2.bars).
+  bars: "Yahoo Finance (yfinance) 1분봉 — 수집 태스크 paper_bars_us(계좌2 시각 지정 체결의 자료), 받은 시각·나이·지연(SPY 기준)은 대시보드 백엔드 계산",
   settings: "대시보드 모의 매매 설정 (PostgreSQL paper_settings·paper_settings_history)",
   apiUsage: "대시보드 Claude 호출 사용량 (PostgreSQL paper_api_usage — 토큰은 Anthropic API 응답의 usage, 추정 비용은 설정 단가 pricing.* × 토큰)",
   framework: "대시보드 프레임 기록 (PostgreSQL paper_framework_versions — 렌더링·토큰 어림은 대시보드 백엔드 계산)",
@@ -3183,6 +3185,21 @@ export function claude2WindowLines(group: PaperClaude2Status | null | undefined,
       value: isNumber(cycle?.calls) ? `${formatNumber(cycle.calls, 0)}회${isNumber(cycle?.cap) ? ` / 상한 ${formatNumber(cycle.cap, 0)}회` : ""}` : EMPTY,
     },
   ];
+}
+
+/**
+ * 출발한 계좌2의 1분봉 저장본 한 줄(개요 '장부 관측치' 카드 — 화면 점검 권장 ⓐ, 단계 1 운영 중 1분봉 기다림·지연을 화면에서 확인). 상태 응답 claude2.bars
+ * (지금이 미국 정규장일 때만 받은 시각·나이·지연 — SPY 마지막 봉 끝에서 받은 시각까지)를 그대로 적고, 정규장 밖(bars null)이면 그렇다고, 모르는 값은
+ * "—"(0으로 채우지 않음)입니다. 계좌2가 없거나 시작 전이면 null(줄을 그리지 않음 — 시작 전에는 시각 지정 주문이 없어 1분봉을 받지 않음).
+ */
+export function claude2BarsLine(group: PaperClaude2Status | null | undefined, label = "Claude 계좌2"): string | null {
+  if (!group?.status || group.status === "NOT_STARTED") return null;
+  const head = `${label} 1분봉(Yahoo)`;
+  const bars = group.bars;
+  if (!bars) return `${head}: 정규장 밖 — 받은 시각·지연은 미국 정규장 중에만 적습니다`;
+  if (!bars.collectedAtKst) return `${head}: 저장본 없음(받은 시각·지연 ${EMPTY})`;
+  const lag = isNumber(bars.lagSeconds) ? formatLatency(bars.lagSeconds * 1000) : EMPTY;
+  return `${head}: 받은 시각 ${formatKst(bars.collectedAtKst)} · ${formatAge(bars.ageSeconds)} · 지연 ${lag}(SPY 마지막 봉 끝 → 받은 시각)`;
 }
 
 /**

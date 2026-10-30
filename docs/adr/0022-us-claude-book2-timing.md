@@ -67,6 +67,8 @@
      - 단계 1(있음): 계좌2 스키마 enum·고정 문단에 `NEXT_OBSERVATION`이 없음(`DecisionTimingsLockTest.claude2MenuIsLockedEverywhere`)
   5. '실시간·지연'(T7)
      - 단계 0(0-3): `lagSeconds`는 정규장 안에서 받은 저장본만(장 밖·휴장 `null`)이고 그 회차에 받은 SPY 세션만(짧게 온 응답으로 남긴 세션은 `null`), 종목 칸의 출처 지연(`declaredDelayMin`)은 늘 `null`
+     - 단계 1(있음): 화면은 상태 응답 `claude2.bars`를 출발 뒤 개요 '장부 관측치'에 받은 시각·나이·지연(SPY 마지막 봉 끝 → 받은 시각)으로 적고 '실시간'이라 하지 않음,
+       정규장 밖이면 그렇다고·모르는 값은 '—'(`paperClaude2.test.ts` '출발 뒤 1분봉 저장본 한 줄…'·`paperClaude2.test.tsx` '출발 뒤 계좌2 상태…' — 결정 로그(계좌2)의 결정 창 세 줄도)
      - 단계 2(2-2·2-3): `MINUTE`·`HOURLY` 피드와 확인 패킷 시각 ⑨(봉 끝·받은 시각 ≤ 조립 시각)
   6. 수집기가 읽는 백엔드 표(ADR 0020 개정)
      - 있음: `test_table_ownership.py::test_수집기는_백엔드_테이블에_쓰지_않는다`(0-2부터 `paper_order_exec` 포함), `test_paper_live.py::test_보유_종목은_그_시장의_출발한_계좌들_것만_중복_없이`(첫 읽기 경우)

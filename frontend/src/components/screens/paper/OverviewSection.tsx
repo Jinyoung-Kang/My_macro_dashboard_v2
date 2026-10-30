@@ -15,6 +15,7 @@ import {
   type Badge,
   calendarLine,
   CLAUDE2_EXPOSURE_KEY,
+  claude2BarsLine,
   claudeExposureChart,
   earningsLine,
   exposureNote,
@@ -267,9 +268,12 @@ export function OverviewSection({
   const news = status.data?.available ? newsLine(status.data.news) : null;
   // 어닝 서프라이즈(2단계 C, 패킷 8b eps) — 같은 규칙(필드가 없는 백엔드면 그리지 않음).
   const earnings = status.data?.available ? earningsLine(status.data.earnings) : null;
+  // 🧪 출발한 계좌2의 1분봉 저장본 한 줄(상태 응답 claude2.bars — 정규장일 때만 받은 시각·지연, 시작 전이면 줄 없음).
+  const barsLine = !korea && status.data?.available ? claude2BarsLine(status.data.claude2, book2?.label) : null;
   // 미국 '장부 관측치' 카드의 출처(한국 개요는 이 카드 대신 한국 수집 상태 카드 — 출처를 그 카드가 적음).
   const observationSource = [
     PAPER_SOURCES.quotes,
+    barsLine ? `1분봉: ${PAPER_SOURCES.bars}` : null,
     fundamentals ? `재무: ${PAPER_SOURCES.fundamentals}` : null,
     calendar ? `일정: ${PAPER_SOURCES.calendar}` : null,
     news ? `사건 뉴스: ${PAPER_SOURCES.news}` : null,
@@ -610,6 +614,7 @@ export function OverviewSection({
           {staleNames.length > 0 && (
             <p className="mt-1 text-xs text-warn">지난 값을 이어 쓴 티커: {staleNames.join(", ")}</p>
           )}
+          {barsLine && <p className="mt-1 text-xs text-muted">{barsLine}</p>}
           {fundamentals && <p className="mt-1 text-xs text-muted">{fundamentals}</p>}
           {calendar && <p className="mt-1 text-xs text-muted">{calendar}</p>}
           {news && <p className="mt-1 text-xs text-muted">{news}</p>}

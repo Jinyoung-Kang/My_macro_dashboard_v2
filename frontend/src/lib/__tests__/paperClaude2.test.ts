@@ -15,6 +15,7 @@ import { describe, expect, it } from "vitest";
 import {
   CLAUDE2_EXPOSURE_KEY,
   CLAUDE2_LIMITS,
+  claude2BarsLine,
   claude2StartResultView,
   EXECUTION_CHOSEN_FALLBACK_LABEL,
   EXECUTION_CHOSEN_LABEL,
@@ -213,6 +214,21 @@ describe("계좌2 출발 카드", () => {
     expect(off?.armNote).toContain("claude2.enabled가 꺼져 있습니다");
     expect(claude2StartView({ initialized: true, books: BOOKS }, null)?.ready).toBe(false);
     expect(ready?.confirm).toContain("이거나 관측치 사슬 준비 중(켠 직후·새 관측치 직후 몇 분");
+  });
+
+  it("출발 뒤 1분봉 저장본 한 줄 — 정규장이면 받은 시각·나이·지연, 밖이면 그렇다고, 모르는 값은 '—', 시작 전·계좌2 없음은 줄 없음", () => {
+    const started = { ...STATUS.claude2!, status: "ACTIVE" as const, startedOn: "2026-11-02" };
+    expect(claude2BarsLine({ ...started, bars: { collectedAtKst: "2026-11-03 23:41 KST", ageSeconds: 180, lagSeconds: 912 } }))
+      .toBe("Claude 계좌2 1분봉(Yahoo): 받은 시각 2026-11-03 23:41 · 3분 전 · 지연 15분 12초(SPY 마지막 봉 끝 → 받은 시각)");
+    expect(claude2BarsLine({ ...started, bars: { collectedAtKst: "2026-11-03 23:41 KST", ageSeconds: 30, lagSeconds: null } }))
+      .toBe("Claude 계좌2 1분봉(Yahoo): 받은 시각 2026-11-03 23:41 · 30초 전 · 지연 —(SPY 마지막 봉 끝 → 받은 시각)");
+    expect(claude2BarsLine({ ...started, bars: { collectedAtKst: null, ageSeconds: null, lagSeconds: null } }))
+      .toBe("Claude 계좌2 1분봉(Yahoo): 저장본 없음(받은 시각·지연 —)");
+    expect(claude2BarsLine({ ...started, status: "PAUSED" as const, bars: null }, "계좌2"))
+      .toBe("계좌2 1분봉(Yahoo): 정규장 밖 — 받은 시각·지연은 미국 정규장 중에만 적습니다");
+    expect(claude2BarsLine(STATUS.claude2)).toBeNull();
+    expect(claude2BarsLine({ ...STATUS.claude2!, status: null })).toBeNull();
+    expect(claude2BarsLine(null)).toBeNull();
   });
 
   it("출발 결과 — 출발·이미 출발·실패(서버 문구), 사후 체결 수는 적지 않는다", () => {

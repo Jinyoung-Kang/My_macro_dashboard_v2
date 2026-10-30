@@ -5,6 +5,7 @@ import { Banner, Button, Card, ErrorState, Freshness, Loading, Select, Table } f
 import { useApi } from "@/hooks/useApi";
 import { useAsyncAction } from "@/hooks/useAsyncAction";
 import { useElapsedSeconds } from "@/hooks/useElapsedSeconds";
+import { useMinuteClock } from "@/hooks/useMinuteClock";
 import { apiPost } from "@/lib/api";
 import { endpoints } from "@/lib/endpoints";
 import { EMPTY, formatKst, formatWithUnit } from "@/lib/format";
@@ -12,6 +13,7 @@ import {
   type Badge,
   bookOptions,
   candidatesNote,
+  claude2WindowLines,
   CLAUDE_COST_NOTE,
   claudeDecisionView,
   type ClosedSignalRow,
@@ -26,6 +28,7 @@ import {
   DECISION_VIEWS,
   type DecisionViewKey,
   formatRatioPercent,
+  isTimedBook,
   jsonTitle,
   orderReasonText,
   orderSizeText,
@@ -70,6 +73,7 @@ import type {
   PaperSettingsResponse,
   PaperStatusResponse,
 } from "@/lib/types";
+import { Claude2WindowList } from "./Claude2StartSection";
 import { ClaudeDecisionBody } from "./ClaudeDecisionBody";
 import { GateIndicatorBody } from "./GateIndicatorBody";
 import { KrGateTable, KrRuleDecisionBody } from "./KrRuleDecisionBody";
@@ -129,8 +133,14 @@ export function DecisionsSection({
   const [open, setOpen] = useState<number[]>([]);
   // Claude 책 수동 결정의 확인 단계 — 어느 책에서 열었는지(책을 바꾸면 닫힌 것으로 봄).
   const [confirmingFor, setConfirmingFor] = useState<string | null>(null);
-  // 한국만 — 출발·게이트 기록(작업 기록)과 수동 호출 문턱(호출 사용량), 확인 창의 결정 창(설정).
-  const status = useApi<PaperStatusResponse>(korea ? endpoints.paper.market("KR").status : null, 60_000);
+  // 한국 — 출발·게이트 기록(작업 기록)과 수동 호출 문턱(호출 사용량), 확인 창의 결정 창(설정). 🧪 미국 Claude 계좌2를 고르면 — 결정 창 세 줄(상태 응답
+  // claude2 묶음: 다음 결정·개장 전 컷오프·이번 결정 주기 호출 / 상한 — 출발 뒤에는 출발 카드가 없어 여기서 봄, 화면 점검 권장 ⓐ).
+  const timed = !korea && isTimedBook(code);
+  const status = useApi<PaperStatusResponse>(
+    korea ? endpoints.paper.market("KR").status : timed ? endpoints.paper.status : null, 60_000,
+  );
+  // 분 시계 — 다음 결정 시각이 지났으면 '결정 창 열림'(출발 카드와 같은 줄, lib/paper claude2WindowLines).
+  const now = useMinuteClock();
   const settings = useApi<PaperSettingsResponse>(korea && confirmingFor !== null && confirmingFor === code
     ? endpoints.paper.settings : null);
 
@@ -184,6 +194,7 @@ export function DecisionsSection({
   const showRun = !korea || claude;
   const statusJobs = status.data?.available ? (status.data.jobs ?? []) : null;
   const manualLimit = status.data?.available ? (status.data.apiUsage?.today?.manualLimit ?? null) : null;
+  const windowLines = timed && status.data?.available && status.data.claude2 ? claude2WindowLines(status.data.claude2, now) : null;
 
   const runNow = async () => {
     setRanFor(code);
@@ -225,6 +236,8 @@ export function DecisionsSection({
           )}
         </div>
         <p className="mt-3 text-xs leading-relaxed text-muted">{korea ? krDecisionBookNote(book?.kind) : decisionBookNote(book?.kind, book?.code)}</p>
+        {windowLines && <Claude2WindowList lines={windowLines} className="mt-3" />}
+        {timed && status.error && <p className="mt-2 text-xs text-warn">계좌2 결정 창을 읽지 못했습니다 — {status.error}</p>}
         {blocked && showRun && <p className="mt-2 text-xs text-warn">{blocked}</p>}
         {confirming && (
           <div className="mt-3 flex flex-col gap-3 rounded-md border border-warn/40 bg-warn/10 px-3 py-3">
