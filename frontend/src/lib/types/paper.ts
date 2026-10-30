@@ -830,6 +830,31 @@ export interface PaperExecutionTimingSummary {
   isProxy: boolean;
 }
 
+/** 고른 시점(M1) 요약의 한 줄 — 체결 수·결정일 수·계좌1식 기준이 없어 뺀 수와 금액 가중 평균·90% 구간(문턱 미달이면 셋 다 null). */
+export interface PaperExecutionChosenLine {
+  n: number;
+  days: number;
+  excludedNoBaseline: number;
+  meanBp: number | null;
+  lowBp: number | null;
+  highBp: number | null;
+  /** 센 체결에 시가(NEXT_OPEN — 1분봉 첫 봉 시가, 공식 개장가와 같은지 확인 전) 체결이 있음. */
+  isProxy: boolean;
+}
+
+/**
+ * 고른 시점(M1 — 주 판정, 계좌2 명세 §14-2): 계좌2가 고른 시점의 실제 체결 원가격 대비 계좌1식. 대체 체결(Y1M_LATE·QUOTES_FALLBACK·QUOTES_CLOSE)은
+ * 본 줄에서 빼 `fallback`에 따로 셉니다. 계좌1은 고른 시점이 곧 계좌1식 기준이라 이 묶음 대신 null입니다.
+ */
+export interface PaperExecutionChosenSummary extends PaperExecutionChosenLine {
+  formula: string;
+  /** 본 줄에서 뺀 대체 체결 전부(= fallback.n + fallback.excludedNoBaseline). */
+  excludedFallback: number;
+  /** 체결이 없는 주문(대기·만료·취소) — M1은 체결된 주문만 셉니다. */
+  notFilled: number;
+  fallback: PaperExecutionChosenLine;
+}
+
 /** GET /api/paper/books/{code}/execution — 🧪 실행 감사(미국 Claude 계좌만, ADR 0022). */
 export interface PaperExecutionResponse {
   available: boolean;
@@ -847,6 +872,8 @@ export interface PaperExecutionResponse {
     minOrders: number;
     minDays: number;
     audited: number;
+    /** 고른 시점(M1 — 주 판정) — 계좌2만, 계좌1은 null. */
+    chosen: PaperExecutionChosenSummary | null;
     timings: PaperExecutionTimingSummary[];
   } | null;
 }

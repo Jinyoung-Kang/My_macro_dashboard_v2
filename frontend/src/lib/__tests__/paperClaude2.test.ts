@@ -5,7 +5,8 @@
  *  - 기본 Claude 계좌(시작 카드·홈 히어로)는 계좌1 — 계좌2가 목록에 있어도, 계좌1이 운용 중이어도 계좌2를 고르지 않는다
  *  - 시작 전·결정 안내는 계좌 소개에서(kind CLAUDE면 모두 계좌1 문구였던 것), 계좌1 시작 단추 이름은 서버 이름 + " 시작"
  *  - 계좌2 출발 카드: 시작 전일 때만, 설정 claude2.enabled로 단추가 열림(꺼짐·모름은 닫힘), 창 시각·이번 주기 호출은 상태 응답 글자 그대로
- *  - 체결 시점 실험: 문턱 미달이면 '—'와 '판단 보류'(0으로 채우지 않음), 값이 있어도 판정 문장을 만들지 않음, 시가는 대리값
+ *  - 체결 시점 실험: 문턱 미달이면 '—'와 '판단 보류'(0으로 채우지 않음), 값이 있어도 판정 문장을 만들지 않음, 시가는 대리값,
+ *    고른 시점(M1 — 주 판정) 두 줄(본 줄·대체 체결 따로)은 계좌2만 — 계좌1(서버 null)이면 없음
  *  - 노출 추이: 계좌2 순자산 기록이 오면 셋째 선(날짜 합집합, 없는 날은 그 선만 null), 안 오면 두 선 그대로
  *  - 결정 상세: 계좌2만 '계좌1과 같은 입력'·섹션 해시 칸, 지난 시각 거절 사유, 1분봉 기다림 메모
  */
@@ -14,6 +15,9 @@ import {
   CLAUDE2_EXPOSURE_KEY,
   CLAUDE2_LIMITS,
   claude2StartResultView,
+  EXECUTION_CHOSEN_FALLBACK_LABEL,
+  EXECUTION_CHOSEN_LABEL,
+  EXECUTION_VERDICT_RULE,
   claude2StartView,
   claudeDecisionView,
   claudeExposureChart,
@@ -199,6 +203,11 @@ const EXECUTION: PaperExecutionResponse = {
     baseline: "NEXT_OBSERVATION", formula: "s × (P_NEXT_OBSERVATION − P_시점) ÷ P_NEXT_OBSERVATION × 10⁴ bp", weighting: "체결 금액(gross) 가중 평균",
     interval: { level: 90, method: "결정일(기준 거래일) 묶음 부트스트랩", resamples: 2000, seed: 1 },
     minOrders: 10, minDays: 5, audited: 14,
+    chosen: {
+      formula: "s × (P_NEXT_OBSERVATION − P_체결) ÷ P_NEXT_OBSERVATION × 10⁴ bp", n: 11, days: 5, excludedNoBaseline: 1,
+      meanBp: 6.789, lowBp: -3.25, highBp: 15, isProxy: true, excludedFallback: 2, notFilled: 1,
+      fallback: { n: 2, days: 1, excludedNoBaseline: 0, meanBp: null, lowBp: null, highBp: null, isProxy: false },
+    },
     timings: [
       { timing: "NEXT_OPEN", n: 4, days: 2, excludedNoBaseline: 1, excludedNoPrice: 0, meanBp: null, lowBp: null, highBp: null, isProxy: true },
       { timing: "AT_1000", n: 12, days: 6, excludedNoBaseline: 1, excludedNoPrice: 1, meanBp: 4.25, lowBp: -10.5, highBp: 18, isProxy: false },
@@ -216,6 +225,43 @@ describe("체결 시점 실험", () => {
     ]);
     expect(view?.method).toBe("체결 금액(gross) 가중 평균 · 90% 구간 = 결정일(기준 거래일) 묶음 부트스트랩");
     expect(executionSummaryView({ available: false, message: "없음" })).toBeNull();
+  });
+
+  it("고른 시점(M1): 본 줄은 평균·구간과 뺀 수(기준 없음·대체 체결·체결 없음), 대체 체결은 따로 — 판정에 쓰지 않음, 문턱 미달이면 '—'", () => {
+    const view = executionSummaryView(EXECUTION);
+    expect(view?.chosenFormula).toBe("s × (P_NEXT_OBSERVATION − P_체결) ÷ P_NEXT_OBSERVATION × 10⁴ bp");
+    expect(view?.chosen?.map((row) => [row.timing, row.proxy, row.n, row.days, row.mean, row.interval, row.verdict, row.excluded])).toEqual([
+      [EXECUTION_CHOSEN_LABEL, true, "11건", "5일", "+6.8bp", "-3.3bp ~ +15.0bp", null, "기준 없음 1 · 대체 체결 2(아래 줄) · 체결 없음 1"],
+      [EXECUTION_CHOSEN_FALLBACK_LABEL, false, "2건", "1일", "—", "—", "판정에 쓰지 않음 — 표본 부족(주문 2/10건 · 결정일 1/5일)", "기준 없음 0"],
+    ]);
+    // 본 줄이 문턱 아래면 메뉴 줄과 같은 '판단 보류', 대체 체결 줄은 값이 있어도 판정에 쓰지 않는다고만.
+    const summary = EXECUTION.summary!;
+    const below = executionSummaryView({
+      ...EXECUTION,
+      summary: {
+        ...summary,
+        chosen: {
+          ...summary.chosen!, n: 9, meanBp: null, lowBp: null, highBp: null,
+          fallback: { n: 12, days: 6, excludedNoBaseline: 0, meanBp: -40, lowBp: -60, highBp: -20, isProxy: false },
+        },
+      },
+    });
+    expect(below?.chosen?.map((row) => [row.mean, row.interval, row.verdict])).toEqual([
+      ["—", "—", "판단 보류 — 표본 부족(주문 9/10건 · 결정일 5/5일)"],
+      ["-40.0bp", "-60.0bp ~ -20.0bp", "판정에 쓰지 않음(따로 셈)"],
+    ]);
+    // 계좌1 — 서버가 null을 보내면 M1 줄이 없다(고른 시점이 곧 계좌1식 기준).
+    const book1 = executionSummaryView({ ...EXECUTION, book: "claude", summary: { ...summary, chosen: null } });
+    expect(book1?.chosen).toBeNull();
+    expect(book1?.chosenFormula).toBeNull();
+    expect(book1?.rows).toHaveLength(2);
+  });
+
+  it("사전 등록 판정의 문턱은 설명 문구로만 — 명세 §14-3의 수치 그대로, 카드는 판정을 내리지 않는다고", () => {
+    expect(EXECUTION_VERDICT_RULE).toContain("대체 체결을 뺀 M1 주문 30건 이상이고 평균 > +10bp이고 90% 구간 하한 > 0이면 '도움이 됐다'");
+    expect(EXECUTION_VERDICT_RULE).toContain("구간 상한 < 0이면 '손해였다'");
+    expect(EXECUTION_VERDICT_RULE).toContain("'차이를 확인하지 못함(판단 보류)'");
+    expect(EXECUTION_VERDICT_RULE).toContain("이 카드는 판정을 내리지 않습니다");
   });
 
   it("주문 줄의 계좌1식 대비는 그 주문이 고른 시점의 서버 값 — 없으면 '—'", () => {

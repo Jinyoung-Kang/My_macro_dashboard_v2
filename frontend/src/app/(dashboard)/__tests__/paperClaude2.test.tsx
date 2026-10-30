@@ -4,6 +4,7 @@
  *  - 개요: 계좌2가 시작 전이면 출발 카드 — 설정 claude2.enabled가 꺼져 있으면 '계좌2 시작'이 닫히고 설정을 켜라고, 켜져 있으면 확인 단계 →
  *    POST run/initial-decision {book:"claude2"}(미리보기 없음) → 개요를 다시 읽음. 계좌1 시작 카드는 계좌1이 운용 중이면 없다
  *  - 개요: 체결 시점 실험(시점마다 N·평균·90% 구간 — 문턱 미달이면 '—'와 '판단 보류', 시가는 대리값), 계좌1 기준 분포로 바꿔 보기,
+ *    그 위에 고른 시점(M1 — 주 판정) 표 — 계좌2만(본 줄·대체 체결 따로), 계좌1이면 표 대신 '계좌2만' 한 줄, 사전 등록 문턱은 설명으로만
  *    S = 100 같은 구간(출발 전이면 그리지 않는다고), 한계 문구 아래 계좌2의 한계
  *  - 보유·체결: 계좌2 주문 표에 목표 시각·계좌1식 대비·실행 메모, 체결 표에 체결 봉·사다리·계좌1식 대비·대체 체결 배지 — 계좌1 표는 칸이 그대로
  */
@@ -79,13 +80,23 @@ function summaryLine(timing: string, over: Record<string, unknown> = {}) {
   return { timing, n: 3, days: 2, excludedNoBaseline: 0, excludedNoPrice: 0, meanBp: null, lowBp: null, highBp: null, isProxy: timing === "NEXT_OPEN", ...over };
 }
 
-function execution(bookCode: string, timings: Record<string, unknown>[], orders: Record<string, unknown>[] = []) {
+/** 고른 시점(M1) 묶음 — 서버 모양(본 줄 + 대체 체결 따로). */
+function chosenSummary(over: Record<string, unknown> = {}, fallback: Record<string, unknown> = {}) {
+  return {
+    formula: "s × (P_NEXT_OBSERVATION − P_체결) ÷ P_NEXT_OBSERVATION × 10⁴ bp", n: 2, days: 1, excludedNoBaseline: 0, meanBp: null, lowBp: null,
+    highBp: null, isProxy: false, excludedFallback: 1, notFilled: 0,
+    fallback: { n: 1, days: 1, excludedNoBaseline: 0, meanBp: null, lowBp: null, highBp: null, isProxy: false, ...fallback }, ...over,
+  };
+}
+
+function execution(bookCode: string, timings: Record<string, unknown>[], orders: Record<string, unknown>[] = [],
+  chosen: Record<string, unknown> | null = bookCode === "claude2" ? chosenSummary() : null) {
   return {
     available: true, book: bookCode, limit: 50, orders,
     summary: {
       baseline: "NEXT_OBSERVATION", formula: "s × (P_NEXT_OBSERVATION − P_시점) ÷ P_NEXT_OBSERVATION × 10⁴ bp", weighting: "체결 금액(gross) 가중 평균",
       interval: { level: 90, method: "결정일(기준 거래일) 묶음 부트스트랩", resamples: 2000, seed: 1 },
-      minOrders: 10, minDays: 5, audited: 3, timings,
+      minOrders: 10, minDays: 5, audited: 3, chosen, timings,
     },
   };
 }
@@ -186,6 +197,45 @@ describe("개요 — 체결 시점 실험·S = 100·한계", () => {
     fireEvent.click(within(picker).getByRole("button", { name: "Claude 계좌1" }));
     expect(await screen.findByText("다음 종가")).toBeTruthy();
     expect(api.apiGetShared).toHaveBeenCalledWith("/api/paper/books/claude/execution?limit=1", 0);
+  });
+
+  it("고른 시점(M1 — 주 판정)은 시점 표 위에 — 문턱 미달이면 '—'와 판단 보류, 값이 있으면 평균·구간(판정 문장 없음), 대체 체결은 따로, 계좌1이면 없음", async () => {
+    reads["/api/paper/books/claude2/execution"] = () => Promise.resolve(execution("claude2", [summaryLine("NEXT_OPEN")], [],
+      chosenSummary({ n: 31, days: 9, excludedNoBaseline: 2, meanBp: 12.5, lowBp: 1.25, highBp: 24, isProxy: true, excludedFallback: 3, notFilled: 4 },
+        { n: 3, days: 2 })));
+    reads["/api/paper/overview"] = () => Promise.resolve(overview(CLAUDE2_ACTIVE));
+    render(<PaperPage />);
+
+    const chosen = await screen.findByRole("table", { name: "고른 시점(M1 — 주 판정)" });
+    expect(headersOf(chosen)).toEqual(["구분", "주문", "결정일", "평균(계좌1식 대비)", "90% 구간", "판단", "뺀 주문"]);
+    expect(within(chosen).getAllByRole("rowheader").map((th) => th.textContent))
+      .toEqual(["고른 시점 대비 계좌1식(M1 — 주 판정)대리값", "대체 체결(따로 셈)"]);
+    expect(rowsOf(chosen)).toEqual([
+      ["31건", "9일", "+12.5bp", "+1.3bp ~ +24.0bp", "구간 참고(판정은 8주 뒤)", "기준 없음 2 · 대체 체결 3(아래 줄) · 체결 없음 4"],
+      ["3건", "2일", "—값 없음", "—값 없음", "판정에 쓰지 않음 — 표본 부족(주문 3/10건 · 결정일 2/5일)", "기준 없음 0"],
+    ]);
+    // 문턱을 넘는 값이어도 카드가 판정하지 않는다 — 표 안에 판정 문장이 없고, 문턱은 설명 목록에만.
+    expect(chosen.textContent).not.toMatch(/도움이 됐다|손해였다/);
+    const menu = screen.getByRole("table", { name: "체결 시점 실험" });
+    expect(chosen.compareDocumentPosition(menu) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();   // M1 표가 시점 표보다 위
+    const notes = screen.getByRole("list", { name: "체결 시점 실험 설명" });
+    expect(notes.textContent).toContain("M1 계산: s × (P_NEXT_OBSERVATION − P_체결)");
+    expect(notes.textContent).toContain("대체 체결을 뺀 M1 주문 30건 이상이고 평균 > +10bp이고 90% 구간 하한 > 0이면 '도움이 됐다'");
+    expect(notes.textContent).toContain("이 카드는 판정을 내리지 않습니다");
+
+    fireEvent.click(within(screen.getByRole("group", { name: "실행 감사 계좌" })).getByRole("button", { name: "Claude 계좌1" }));
+    expect(await screen.findByText("고른 시점(M1 — 주 판정)은 계좌2만 있습니다 — 계좌1은 고른 시점이 곧 계좌1식 기준입니다.")).toBeTruthy();
+    expect(screen.queryByRole("table", { name: "고른 시점(M1 — 주 판정)" })).toBeNull();
+    expect(screen.getByRole("table", { name: "체결 시점 실험" })).toBeTruthy();
+  });
+
+  it("고른 시점(M1) 본 줄이 문턱 아래면 '—'와 판단 보류(표본 수와 문턱)", async () => {
+    reads["/api/paper/overview"] = () => Promise.resolve(overview(CLAUDE2_NOT_STARTED));
+    render(<PaperPage />);
+
+    const chosen = await screen.findByRole("table", { name: "고른 시점(M1 — 주 판정)" });
+    expect(rowsOf(chosen)[0]).toEqual(["2건", "1일", "—값 없음", "—값 없음", "판단 보류 — 표본 부족(주문 2/10건 · 결정일 1/5일)",
+      "기준 없음 0 · 대체 체결 1(아래 줄) · 체결 없음 0"]);
   });
 
   // 수정 전에는 카드 설명이 '대체 체결·계좌1식 기준이 없는 주문은 빼고 셉니다'라고 적었지만, 서버 요약(ExecutionView.summary)은 계좌1식 기준이

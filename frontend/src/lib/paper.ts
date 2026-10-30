@@ -3226,6 +3226,13 @@ export interface ExecutionTimingRow {
 
 /** 체결 시점 실험 카드(GET books/{code}/execution의 summary). */
 export interface ExecutionSummaryView {
+  /**
+   * 고른 시점(M1 — 주 판정) 두 줄 — 본 줄(대체 체결을 뺀 체결)과 대체 체결(따로 셈, 판정에 쓰지 않음). 계좌1(서버가 null)이면 null — 계좌1은 고른 시점이
+   * 곧 계좌1식 기준입니다.
+   */
+  chosen: ExecutionTimingRow[] | null;
+  /** M1 식(서버 문구). 계좌1이면 null. */
+  chosenFormula: string | null;
   rows: ExecutionTimingRow[];
   /** "감사한 주문 12건 · 지표는 주문 10건·결정일 5일 이상부터". */
   head: string;
@@ -3233,16 +3240,31 @@ export interface ExecutionSummaryView {
   method: string | null;
 }
 
+/** 고른 시점(M1) 표의 줄 이름. */
+export const EXECUTION_CHOSEN_LABEL = "고른 시점 대비 계좌1식(M1 — 주 판정)";
+export const EXECUTION_CHOSEN_FALLBACK_LABEL = "대체 체결(따로 셈)";
+
+/**
+ * 사전 등록 판정의 문턱(계좌2 명세 §14-3, ADR 0022 결정 13 — 출발 전에 고정). 카드의 설명 문구로만 씁니다 — 화면은 이 문턱으로 판정을 내리지 않고,
+ * 판정은 8주 뒤 사람이 이 문턱으로 읽습니다(문턱은 코드 상수가 아니라 문서에 있음).
+ */
+export const EXECUTION_VERDICT_RULE =
+  "사전 등록 판정(8주 뒤 — ADR 0022 결정 13·명세 §14-3): 대체 체결을 뺀 M1 주문 30건 이상이고 평균 > +10bp이고 90% 구간 하한 > 0이면 '도움이 됐다',"
+  + " 구간 상한 < 0이면 '손해였다', 그 밖은 '차이를 확인하지 못함(판단 보류)'입니다. '고르는 능력'이라고 말하려면 M2(같은 주문의 메뉴 여덟 시점 평균 대비)도"
+  + " 같은 기준을 넘어야 하고, 대체 체결·수집 실패가 세션의 5% 이상이면 판정하지 않고 데이터부터 고칩니다. 이 카드는 판정을 내리지 않습니다.";
+
 const bpText = (value: number | null | undefined) => formatSigned(value, 1, "bp");
 
 /**
  * 실행 감사 요약을 표로 — 메뉴 여덟 시점마다 N·결정일·뺀 수(기준 없음·값 없음)·금액 가중 평균·90% 구간. 평균·구간은 서버가 문턱(주문 수·결정일 수)
  * 아래면 null로 보내고, 화면은 그 줄을 '—'와 '판단 보류'로 적습니다(0으로 채우지 않음). 값이 있어도 화면은 판정 문장을 만들지 않습니다 — 사전 등록
- * 판정(ADR 0022 결정 13)은 8주 뒤 계좌2가 고른 시점의 체결(M1)로 합니다.
+ * 판정(ADR 0022 결정 13)은 8주 뒤 계좌2가 고른 시점의 체결(M1)로 합니다. 그 M1은 `chosen` 두 줄(본 줄·대체 체결 — 서버 계산)이고 계좌1이면 null입니다.
  */
 export function executionSummaryView(response: PaperExecutionResponse | null | undefined): ExecutionSummaryView | null {
   const summary = response?.available ? response.summary ?? null : null;
   if (!summary) return null;
+  const shortfall = (n: number | null, days: number | null) =>
+    `표본 부족(주문 ${formatNumber(n, 0)}/${formatNumber(summary.minOrders, 0)}건 · 결정일 ${formatNumber(days, 0)}/${formatNumber(summary.minDays, 0)}일)`;
   const rows = listOf(summary.timings).filter(isRecord).map((line, index): ExecutionTimingRow => {
     const timing = textOf(line.timing) ?? EMPTY;
     const mean = numberOf(line.meanBp);
@@ -3258,15 +3280,46 @@ export function executionSummaryView(response: PaperExecutionResponse | null | u
       days: formatWithUnit(days, 0, "일"),
       mean: bpText(mean),
       interval: low === null || high === null ? EMPTY : `${bpText(low)} ~ ${bpText(high)}`,
-      verdict: mean === null
-        ? `판단 보류 — 표본 부족(주문 ${formatNumber(n, 0)}/${formatNumber(summary.minOrders, 0)}건 · 결정일 ${formatNumber(days, 0)}/`
-          + `${formatNumber(summary.minDays, 0)}일)`
-        : null,
+      verdict: mean === null ? `판단 보류 — ${shortfall(n, days)}` : null,
       excluded: `기준 없음 ${formatNumber(numberOf(line.excludedNoBaseline), 0)} · 값 없음 ${formatNumber(numberOf(line.excludedNoPrice), 0)}`,
     };
   });
+  // 고른 시점(M1): 본 줄은 메뉴 줄과 같은 문턱 문구('판단 보류'), 대체 체결 줄은 판정에 쓰지 않는다고만.
+  const chosenRow = (line: unknown, key: string, label: string, primary: boolean): ExecutionTimingRow => {
+    const record = isRecord(line) ? line : {};
+    const mean = numberOf(record.meanBp);
+    const low = numberOf(record.lowBp);
+    const high = numberOf(record.highBp);
+    const n = numberOf(record.n);
+    const days = numberOf(record.days);
+    const noBaseline = `기준 없음 ${formatNumber(numberOf(record.excludedNoBaseline), 0)}`;
+    return {
+      key,
+      timing: label,
+      proxy: record.isProxy === true,
+      n: formatWithUnit(n, 0, "건"),
+      days: formatWithUnit(days, 0, "일"),
+      mean: bpText(mean),
+      interval: low === null || high === null ? EMPTY : `${bpText(low)} ~ ${bpText(high)}`,
+      verdict: primary
+        ? (mean === null ? `판단 보류 — ${shortfall(n, days)}` : null)
+        : (mean === null ? `판정에 쓰지 않음 — ${shortfall(n, days)}` : "판정에 쓰지 않음(따로 셈)"),
+      excluded: primary
+        ? `${noBaseline} · 대체 체결 ${formatNumber(numberOf(record.excludedFallback), 0)}(아래 줄) · 체결 없음 `
+          + formatNumber(numberOf(record.notFilled), 0)
+        : noBaseline,
+    };
+  };
+  const chosen = isRecord(summary.chosen) ? summary.chosen : null;
   const level = numberOf(summary.interval?.level);
   return {
+    chosen: chosen
+      ? [
+        chosenRow(chosen, "chosen", EXECUTION_CHOSEN_LABEL, true),
+        chosenRow(chosen.fallback, "chosen-fallback", EXECUTION_CHOSEN_FALLBACK_LABEL, false),
+      ]
+      : null,
+    chosenFormula: chosen ? textOf(chosen.formula) : null,
     rows,
     head: `감사한 주문 ${formatWithUnit(numberOf(summary.audited), 0, "건")} · 평균·구간은 주문 ${formatWithUnit(numberOf(summary.minOrders), 0, "건")}·`
       + `결정일 ${formatWithUnit(numberOf(summary.minDays), 0, "일")} 이상부터`,
