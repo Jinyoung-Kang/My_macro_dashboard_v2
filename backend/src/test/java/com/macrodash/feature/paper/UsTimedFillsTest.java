@@ -873,6 +873,118 @@ class UsTimedFillsTest {
         }
     }
 
+    // ------------------------------------------------------------------ E가 끝난 관측치와 W 전 1분봉 저장본
+    @Nested
+    @DisplayName("E가 끝난 관측치 — W 전 1분봉 저장본(1분봉 태스크가 마지막 회차들만 실패)")
+    class EndedSession {
+
+        /** E 확정 종가 관측치 W(16:20 ET)를 1분봉 기다림 상한 뒤에 처리 — W 뒤의 1분봉 저장본이 끝내 오지 않음. */
+        private Outcome observeAfterTheCap(Instant collectedAt, Bar... observed) {
+            clock.at = collectedAt.plus(UsTimedFills.BARS_WAIT);
+            return ledger.process(quotes(collectedAt, observed));
+        }
+
+        @Test
+        @org.junit.jupiter.api.Disabled("재현 — E가 끝났는데 1분봉 저장본이 W 전 것이면 완성된 R2b 봉이 있어도 NO_BARS 만료(수정 전)")
+        @DisplayName("W 전 저장본(15:01)의 완성된 T 뒤 첫 거래 봉으로 E가 끝난 W(16:20)에서 R2b — 같은 저장본의 R1과 T 순(10:00 매도 대금으로 11:00 매수), 수량은 T 시각 순자산, 늦게 풂")
+        void lateFirstTradeFromBarsBeforeTheObservation() {
+            store.states.put(BOOK, new com.macrodash.store.PaperStore.BookState(BOOK, 2_000, 12_000, 10_000, 83, null,
+                    null, null, null));
+            hold("BBB", 100, 45, 50, 50.0);
+            hold("ZZZ", 100, 50, 50, 50.0);
+            long sell = timed("BBB", PaperBooks.SELL, null, null, null, "AT_1000", MON, MON_DECIDED);
+            long weight = timed("AAPL", PaperBooks.BUY, null, 10.0, null, "AT_1000", MON, MON_DECIDED);
+            long later = buy("MSFT", 10, "AT_1100");
+            bars(new Bars(et(TUE, 15, 1)).bar("BBB", TUE, et(TUE, 10, 0), 50.0, 0.0)
+                    .bar("BBB", TUE, et(TUE, 10, 40), 51.0, 300.0).bar("BBB", TUE, et(TUE, 10, 41), 51.2, 300.0)
+                    .bar("AAPL", TUE, et(TUE, 10, 0), 100.0, 0.0)
+                    .bar("AAPL", TUE, et(TUE, 10, 37), 98.0, 400.0).bar("AAPL", TUE, et(TUE, 10, 38), 98.2, 400.0)
+                    .bar("MSFT", TUE, et(TUE, 11, 0), 300.0, 500.0).bar("MSFT", TUE, et(TUE, 11, 1), 300.1, 500.0)
+                    .bar("SPY", TUE, et(TUE, 9, 30), 580.0, 9000.0).bar("SPY", TUE, et(TUE, 15, 0), 581.0, 9000.0));
+
+            Outcome outcome = observeAfterTheCap(et(TUE, 16, 20), bar("BBB", MON, 50.0, TUE, 52.0),
+                    bar("ZZZ", MON, 50.0, TUE, 70.0), bar("AAPL", MON, 99.0, TUE, 97.0),
+                    bar("MSFT", MON, 299.0, TUE, 305.0));
+
+            assertThat(order(sell).status()).isEqualTo("FILLED");
+            assertThat(barOf(sell).fillRung()).isEqualTo("Y1M_LATE");
+            assertThat(barOf(sell).barAt()).isEqualTo(et(TUE, 10, 40));
+            assertThat(fillOf(sell).rawPrice()).isEqualTo(51.0);
+            assertThat(fillOf(sell).observedAt()).as("장부 반영 = 이 관측치").isEqualTo(et(TUE, 16, 20));
+            assertThat(barOf(weight).fillRung()).isEqualTo("Y1M_LATE");
+            assertThat(fillOf(weight).rawPrice()).isEqualTo(98.0);
+            // T 순자산 = 2,000 + 100 × 51 × 0.9995(같은 T 매도 먼저) + ZZZ 100 × 갱신 전 50 = 12,097.45 → 1,209.7 ÷ 98.049 = 12주(W 70이면 14주)
+            assertThat(fillOf(weight).qty()).isEqualTo(12);
+            assertThat(barOf(later).fillRung()).as("같은 W 전 저장본의 R1도 그대로").isEqualTo("Y1M_AT");
+            assertThat(fillOf(later).qty()).as("10:00 매도 대금이 먼저 — 11:00 매수가 현금 부족으로 줄지 않음").isEqualTo(10);
+            assertThat(order(later).reason() == null || !order(later).reason().has("cashLimited")).isTrue();
+            assertThat(outcome.expired()).isZero();
+            assertThat(outcome.notes()).filteredOn(note -> note.contains("대체 체결(Y1M_LATE)")).hasSize(2);
+            assertThat(ExecutionAudit.lateResolved(order(sell), barOf(sell), US)).as("대체 칸 — 늦게 풂").isTrue();
+        }
+
+        @Test
+        @org.junit.jupiter.api.Disabled("재현 — E 마감 + 15분 전에 받은 W 전 저장본의 '아직 거래 없음'을 NO_TRADE_AFTER_T로 만료(수정 전)")
+        @DisplayName("W 전 저장본(11:21)이 T 뒤 거래를 보이지 않음 — 그 뒤 거래가 있었을 수 있어 NO_TRADE_AFTER_T가 아니고, 멈춘 가격일 수 있어 종가로도 채우지 않음(⑧b) → NO_BARS")
+        void noTradeSeenBeforeTheSessionEndIsNotProof() {
+            long halt = buy("HALT", 10, "AT_1000");
+            long gone = buy("GONE", 10, "AT_1000");
+            Bars early = new Bars(et(TUE, 11, 21)).bar("GONE", MON, et(MON, 15, 59), 20.0, 100.0)
+                    .bar("SPY", TUE, et(TUE, 9, 30), 580.0, 9000.0).bar("SPY", TUE, et(TUE, 11, 20), 581.0, 9000.0);
+            for (int m = 0; m < 15; m++) {
+                early.bar("HALT", TUE, et(TUE, 9, 30).plus(Duration.ofMinutes(m)), 50.0, 100.0);
+            }
+            bars(early);
+
+            Outcome outcome = observeAfterTheCap(et(TUE, 16, 20), bar("HALT", MON, 50.0, TUE, 49.0),
+                    bar("GONE", MON, 20.0, TUE, 20.0));
+
+            assertThat(order(halt).status()).isEqualTo("EXPIRED");
+            assertThat(order(halt).rejectReason()).startsWith("NO_BARS").contains("마감 + 15분 전");
+            assertThat(order(gone).status()).isEqualTo("EXPIRED");
+            assertThat(order(gone).rejectReason()).startsWith("NO_BARS").contains("마감 + 15분 전");
+            assertThat(store.fillsOf(BOOK)).as("관측치의 E 종가(QUOTES_CLOSE)로 채우지 않음").isEmpty();
+            assertThat(store.states.get(BOOK).cash()).isEqualTo(100_000);
+            assertThat(outcome.expired()).isEqualTo(2);
+        }
+
+        @Test
+        @DisplayName("W 전 저장본이라도 E 마감 + 15분 뒤(16:16)에 받았으면 E 전체를 본 것 — T 뒤 거래 없음·E 세션 없음은 NO_TRADE_AFTER_T")
+        void noTradeSeenAfterTheSessionEndIsProof() {
+            long halt = buy("HALT", 10, "AT_1000");
+            long gone = buy("GONE", 10, "AT_1000");
+            Bars closing = new Bars(et(TUE, 16, 16)).bar("GONE", MON, et(MON, 15, 59), 20.0, 100.0)
+                    .bar("SPY", TUE, et(TUE, 9, 30), 580.0, 9000.0).bar("SPY", TUE, et(TUE, 15, 59), 581.0, 9000.0);
+            for (int m = 0; m < 15; m++) {
+                closing.bar("HALT", TUE, et(TUE, 9, 30).plus(Duration.ofMinutes(m)), 50.0, 100.0);
+            }
+            bars(closing);
+
+            observeAfterTheCap(et(TUE, 17, 20), bar("HALT", MON, 50.0, TUE, 49.0), bar("GONE", MON, 20.0, TUE, 20.0));
+
+            assertThat(order(halt).rejectReason()).startsWith("NO_TRADE_AFTER_T");
+            assertThat(order(gone).rejectReason()).startsWith("NO_TRADE_AFTER_T");
+            assertThat(store.fillsOf(BOOK)).isEmpty();
+        }
+
+        @Test
+        @DisplayName("W 전 저장본(11:21)의 진행 중일 수 있는 봉(그 뒤 봉 없음 — ⑦)은 E가 끝나도 쓰지 않음 — T 뒤 첫 거래 봉·창 안 거래 봉 모두 NO_BARS(거래가 있었으니 NO_TRADE_AFTER_T도 아님)")
+        void unfinishedBarsBeforeTheObservationAreNotUsed() {
+            long late = buy("LAST", 10, "AT_1000");
+            long window = buy("WIN", 10, "AT_1000");
+            bars(new Bars(et(TUE, 11, 21)).bar("LAST", TUE, et(TUE, 10, 0), 30.0, 0.0)
+                    .bar("LAST", TUE, et(TUE, 10, 37), 31.0, 400.0)
+                    .bar("WIN", TUE, et(TUE, 10, 0), 40.0, 0.0).bar("WIN", TUE, et(TUE, 10, 2), 41.0, 400.0)
+                    .bar("SPY", TUE, et(TUE, 9, 30), 580.0, 9000.0).bar("SPY", TUE, et(TUE, 11, 20), 581.0, 9000.0));
+
+            observeAfterTheCap(et(TUE, 16, 20), bar("LAST", MON, 30.0, TUE, 32.0), bar("WIN", MON, 40.0, TUE, 42.0));
+
+            assertThat(order(late).rejectReason()).startsWith("NO_BARS");
+            assertThat(order(window).rejectReason()).startsWith("NO_BARS");
+            assertThat(store.fillsOf(BOOK)).isEmpty();
+        }
+    }
+
     // ------------------------------------------------------------------ 1분봉 기다림
     @Nested
     @DisplayName("1분봉 기다림(§10-2) — 리스크 점검 기록은 첫 미룸·풀림만, 오류가 아님, 다른 계좌는 그대로")
