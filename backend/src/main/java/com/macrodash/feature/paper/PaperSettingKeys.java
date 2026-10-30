@@ -193,7 +193,7 @@ final class PaperSettingKeys {
             of("decisionTimeKst", Type.TIME, false, "결정 시각(KST, HH:mm) — 미국 세션 다음 날 이 시각부터 그 거래일 결정(C1)"),
             of("decisionDeadlineKst", Type.TIME, false,
                     "확정 종가를 기다리는 기한(KST, HH:mm) — 지나면 있는 값으로 진행하고 pricesFinal=false"),
-            number("slippageBp", 0, 100, true, "체결 슬리피지(bp) — 네 계좌 공통(D9)"),
+            number("slippageBp", 0, 100, true, "체결 슬리피지(bp) — 미국 계좌 공통(D9, Claude 계좌2 포함 — 시점과 무관)"),
             number("maxWeightStockPct", 1, 100, true, "종목당 비중 상한(%) — Claude 검증기·규칙 계좌(D8)"),
             number("maxWeightEtfPct", 1, 100, true, "ETF 비중 상한(%) — Claude 검증기·규칙 계좌(D8)"),
             integer("maxPositions", 1, 100, false, "매수 뒤 최대 종목 수(현금성 제외) — Claude 검증기"),
