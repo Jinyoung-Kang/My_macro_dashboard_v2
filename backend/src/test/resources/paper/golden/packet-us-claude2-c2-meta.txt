@@ -1,0 +1,3 @@
+scheduled sha256=f6c715284df1ec5c09c3fa4121aaa553e1e34e44d25cd6290da8e21df9871e4a chars=26695 tokens~11036 noteIds=[1] measure={"hasCalendar":true,"calendarItems":6,"hasEvents":5,"eventIds":["90b9c1cdf558e875","2188c827fe3a0c44","80201954563cda55","d225a2242af0d564","f0c3b79eccacf306"],"hasEarnings":true,"earningsRows":2}
+13_execution tokens~ 1408 (단계 1 950)
+checkpointOptions tokens~ 408

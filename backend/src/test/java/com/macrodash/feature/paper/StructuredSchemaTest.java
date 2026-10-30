@@ -546,6 +546,91 @@ class StructuredSchemaTest {
         Golden.assertMatches("decision-schema-forapi-us-claude2.json", Golden.prettyJson(CLAUDE2_DECISION.forApi()));
     }
 
+    // ── 장중 확인을 켠 계좌2 아침 결정 스키마(계좌2 명세 §9-5, 단계 2) ─────────────
+
+    private static final StructuredSchema CLAUDE2_C2_DECISION =
+            StructuredSchema.load(ClaudeBookService.CLAUDE2_C2_SCHEMA_RESOURCE);
+    /** c2 스키마 파일 바이트의 SHA-256 — 켠 뒤 실험 중 바꾸지 않음(바꾸면 판을 올리고 ADR 0022 '결과'에 기록). */
+    private static final String CLAUDE2_C2_SCHEMA_SHA256 =
+            "05607c860c9c71809b21936231dac3e4b1dd533df1b86fd3b4f8f643b8ef403e";
+
+    private static ObjectNode checkpoint(String atEt, String feed, String... watch) {
+        ObjectNode out = MAPPER.createObjectNode().put("atEt", atEt).put("feed", feed).put("question", "갭 뒤 거래량 확인");
+        tools.jackson.databind.node.ArrayNode list = out.putArray("watch");
+        for (String ticker : watch) {
+            list.add(ticker);
+        }
+        return out;
+    }
+
+    @Test
+    @DisplayName("c2 스키마: 단계 1 계좌2 파일에서 선택 칸 properties.checkpoint 하나만 다름(required 목록 그대로 — 없음·null 같은 뜻), 단계 1 파일은 그대로")
+    void claude2C2SchemaDiffersOnlyInCheckpoint() throws Exception {
+        tools.jackson.databind.JsonNode c1 = rawSchema(ClaudeBookService.CLAUDE2_SCHEMA_RESOURCE);
+        tools.jackson.databind.JsonNode c2 = rawSchema(ClaudeBookService.CLAUDE2_C2_SCHEMA_RESOURCE);
+        assertThat(Golden.sha256(Golden.resourceBytes(ClaudeBookService.CLAUDE2_SCHEMA_RESOURCE)))
+                .as("단계 1 파일 바이트 그대로").isEqualTo(CLAUDE2_SCHEMA_SHA256);
+        assertThat(Golden.sha256(Golden.resourceBytes(ClaudeBookService.CLAUDE2_C2_SCHEMA_RESOURCE)))
+                .isEqualTo(CLAUDE2_C2_SCHEMA_SHA256);
+        ObjectNode patched = (ObjectNode) c2.deepCopy();
+        ((ObjectNode) patched.get("properties")).remove("checkpoint");
+        assertThat(patched).as("checkpoint 칸을 빼면 단계 1 파일").isEqualTo(c1);
+        assertThat(c2.get("required")).isEqualTo(c1.get("required"));
+        tools.jackson.databind.JsonNode cp = c2.at("/properties/checkpoint");
+        assertThat(cp.get("type").toString()).isEqualTo("[\"object\",\"null\"]");
+        List<String> times = new ArrayList<>();
+        cp.at("/properties/atEt/enum").forEach(node -> times.add(node.asString()));
+        assertThat(times).containsExactly("10:00", "10:30", "11:00", "11:30", "12:00", "12:30", "13:00", "13:30", "14:00",
+                "14:30", "15:00");
+        assertThat(cp.at("/properties/watch/maxItems").asInt()).isEqualTo(ExecutionSection.WATCH_MAX);
+        assertThat(cp.at("/properties/question/maxLength").asInt()).isEqualTo(300);
+    }
+
+    @Test
+    @DisplayName("c2 스키마 검사 — checkpoint 없음·null·MINUTE·HOURLY는 통과, 메뉴 밖 시각·피드·감시 11개·질문 301자·모르는 칸·티커 형식은 위반")
+    void claude2C2SchemaValidatesCheckpoint() throws Exception {
+        assertThat(CLAUDE2_C2_DECISION.validate(validClaude2())).as("없음").isEmpty();
+        ObjectNode none = validClaude2();
+        none.putNull("checkpoint");
+        assertThat(CLAUDE2_C2_DECISION.validate(none)).as("null").isEmpty();
+        ObjectNode minute = validClaude2();
+        minute.set("checkpoint", checkpoint("10:30", "MINUTE", "AAPL", "BRK.B"));
+        assertThat(CLAUDE2_C2_DECISION.validate(minute)).isEmpty();
+        assertThat(CLAUDE2_DECISION.validate(minute)).as("단계 1 스키마는 checkpoint를 받지 않음").isNotEmpty();
+        ObjectNode hourly = validClaude2();
+        hourly.set("checkpoint", checkpoint("15:00", "HOURLY"));
+        assertThat(CLAUDE2_C2_DECISION.validate(hourly)).isEmpty();
+
+        ObjectNode late = validClaude2();
+        late.set("checkpoint", checkpoint("15:30", "HOURLY"));
+        assertThat(CLAUDE2_C2_DECISION.validate(late)).singleElement().asString().startsWith("$.checkpoint.atEt: ");
+        ObjectNode feed = validClaude2();
+        feed.set("checkpoint", checkpoint("10:00", "STREAM", "AAPL"));
+        assertThat(CLAUDE2_C2_DECISION.validate(feed)).singleElement().asString().startsWith("$.checkpoint.feed: ");
+        ObjectNode many = validClaude2();
+        many.set("checkpoint", checkpoint("10:00", "MINUTE", "A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K"));
+        assertThat(CLAUDE2_C2_DECISION.validate(many)).singleElement().asString().startsWith("$.checkpoint.watch: ");
+        ObjectNode question = validClaude2();
+        question.set("checkpoint", checkpoint("10:00", "HOURLY").put("question", "가".repeat(301)));
+        assertThat(CLAUDE2_C2_DECISION.validate(question)).singleElement().asString().startsWith("$.checkpoint.question: ");
+        ObjectNode extra = validClaude2();
+        extra.set("checkpoint", checkpoint("10:00", "HOURLY").put("orders", "x"));
+        assertThat(CLAUDE2_C2_DECISION.validate(extra)).isNotEmpty();
+        ObjectNode ticker = validClaude2();
+        ticker.set("checkpoint", checkpoint("10:00", "MINUTE", "aapl"));
+        assertThat(CLAUDE2_C2_DECISION.validate(ticker)).singleElement().asString().startsWith("$.checkpoint.watch[0]: ");
+    }
+
+    @Test
+    @DisplayName("고정본: API에 보내는 c2 결정 스키마 — 같은 걷어 내기(watch 개수·question 길이 없음, checkpoint 객체 닫힘)")
+    void goldenClaude2C2SchemaForApi() {
+        List<String> found = new ArrayList<>();
+        walkSchemas(CLAUDE2_C2_DECISION.forApi(), "$", (path, schema) -> schema.keySet().stream()
+                .filter(StructuredSchema.API_UNSUPPORTED::contains).forEach(key -> found.add(path + "." + key)));
+        assertThat(found).isEmpty();
+        Golden.assertMatches("decision-schema-forapi-us-claude2-c2.json", Golden.prettyJson(CLAUDE2_C2_DECISION.forApi()));
+    }
+
     // ── 주간 복기 스키마(2단계 D) ─────────────────────────────────────────
 
     private static final StructuredSchema REVIEW = StructuredSchema.load("paper/review.schema.json");

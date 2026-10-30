@@ -21,7 +21,9 @@ import java.util.Map;
  * @param barsWaitMinutes  1분봉 기다림 상한(분, {@value #BARS_WAIT_MINUTES}, 0~{@value #MAX_BARS_WAIT_MINUTES}, 기본
  *                         {@value #DEFAULT_BARS_WAIT_MINUTES} — {@link UsTimedFills#barsWait})
  * @param executionRecord  패킷 {@code 13_execution.record}(최근 체결 20건 — T14, 기본 켬)
- * @param checkpoints      장중 확인(단계 2 — 지금은 읽는 코드가 없음, 기본 꺼짐)
+ * @param checkpoints      장중 확인({@value #CHECKPOINTS}, 단계 2 — 세션당 최대 1회, 기본 꺼짐). 켠 실행의 아침 결정은 c2 판(응답 스키마
+ *                         {@code checkpoint} 칸·고정 문단 c2-2·패킷 {@code executionMenuVersion} 2 — {@link ClaudeBookProfile#US_CLAUDE2_C2})으로 확인
+ *                         시각·자료를 고를 수 있음. 끄면 단계 1과 바이트까지 같음(계좌2 명세 §16-3)
  * @param fallbacks        기본값으로 읽은 키(행에 없거나 형·범위 밖)
  */
 record Claude2Settings(boolean enabled, int maxCallsPerCycle, int barsWaitMinutes, boolean executionRecord,

@@ -284,7 +284,8 @@ final class PaperSettingKeys {
             of(Claude2Settings.EXECUTION_RECORD, Type.BOOLEAN, false,
                     "계좌2 패킷 13_execution.record — 최근 체결 20건(고른 시점·체결 원가격·사다리 칸·계좌1식 대비 bp, 사실만)"),
             of(Claude2Settings.CHECKPOINTS, Type.BOOLEAN, false,
-                    "계좌2 장중 확인(단계 2 — 세션당 최대 1회). 지금은 읽는 코드가 없음"),
+                    "계좌2 장중 확인(단계 2 — 세션당 최대 1회, 켜면 아침 결정이 확인 시각·자료를 고를 수 있음). "
+                            + "켜는 저장에서 apiScheduledReserve 10·claude2.maxCallsPerCycle 3 권장"),
             // ---- 한국 책(2단계 명세 §4-13 — 같은 한 행의 kr.* 묶음, C1b). 규칙 계좌 영향 = 한국 규칙 계좌(kr_rules)가 읽는 키.
             // 미국 키와 이름이 같은 키는 미국 범위·영향 표시를 그대로 따르고 값은 따로 둡니다(미국 키로 대신하지 않음 — 동결 대조군).
             number("kr.slippageBp", 0, 100, true,

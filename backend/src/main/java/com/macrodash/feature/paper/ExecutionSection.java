@@ -34,6 +34,10 @@ import java.util.Map;
  * 전)·사다리 칸·대체 체결 여부·체결 봉(KST)·계좌1식 기준 반사실(실행 감사 {@code paper_order_exec}의 {@code NEXT_OBSERVATION} 원가격 — 아직 없거나
  * 증명하지 못했으면 null)·차이 bp({@link ExecutionTiming#advantageBp} — 양수면 그 체결이 계좌1식보다 유리, 기준이 없으면 null). 평가 문장은 넣지
  * 않습니다(사실만). 설정 {@code claude2.executionRecord}가 꺼져 있으면 기록 없이 그 사실만 적습니다. 저장된 사실만 읽어 같은 상태면 같은 글자입니다.
+ *
+ * <p><b>장중 확인 판</b>({@code executionMenuVersion} 2 — 계좌2 명세 §9-3 단계 2, 설정 {@code claude2.checkpoints}를 켠 결정만): 위에 더해
+ * {@code checkpointOptions}(고를 수 있는 확인 시각 — E의 10:00~15:00 ET 30분 단위, 마감 − 30분까지라 조기 폐장일은 12:30까지 · 피드 둘의 뜻 ·
+ * 감시 목록 상한 · 최근 잰 지연 요약 · 규칙)와 출처 사실 셋째 줄. 끄면 섹션이 단계 1과 글자 그대로입니다(§16-3).
  */
 final class ExecutionSection {
 
@@ -49,6 +53,63 @@ final class ExecutionSection {
     static final List<String> MENU_COLUMNS = List.of("timing", "atEt", "atKst", "meaning");
 
     private static final DateTimeFormatter CLOCK = DateTimeFormatter.ofPattern("HH:mm", Locale.ROOT);
+
+    // ------------------------------------------------------------------ 장중 확인(단계 2 — 계좌2 명세 §5-2·§9-5)
+    /** 장중 확인 피드 — 감시 종목 1분봉(5분 수집, 잰 지연). V18 {@code paper_checkpoints.feed} CHECK와 같은 글자. */
+    static final String FEED_MINUTE = "MINUTE";
+    /** 장중 확인 피드 — 전 종목 시간별 관측치(최대 60분 묵음). */
+    static final String FEED_HOURLY = "HOURLY";
+    /** 장중 확인 피드, 스키마 {@code checkpoint.feed} enum 순서. */
+    static final List<String> FEEDS = List.of(FEED_MINUTE, FEED_HOURLY);
+    /** 감시 목록 상한(스키마 {@code checkpoint.watch.maxItems}). */
+    static final int WATCH_MAX = 10;
+    /** 확인 시각은 E 마감보다 이만큼 앞서야 함(보통 날 15:00·조기 폐장일 12:30까지 — §5-2). */
+    static final java.time.Duration CHECKPOINT_BEFORE_CLOSE = java.time.Duration.ofMinutes(30);
+    /** 고를 수 있는 확인 시각(뉴욕) — 10:00~15:00 30분 단위, 스키마 {@code checkpoint.atEt} enum과 같은 목록({@code DecisionTimingsLockTest}). */
+    static final List<LocalTime> CHECKPOINT_TIMES = checkpointGrid();
+
+    /** 피드 한 줄 뜻('실시간'이라는 말은 쓰지 않음 — §7-2의 3). */
+    static final Map<String, String> FEED_MEANINGS = feedMeanings();
+    /** 장중 확인 규칙(고정 문단 장중 확인 절과 같은 뜻). */
+    static final List<String> CHECKPOINT_RULES = List.of(
+            "세션당 최대 한 번 — 고른 시각 + 2분 ~ + 20분에 한 번 부른다",
+            "재시도 없음 — 호출이 실패해도 다시 부르지 않는다",
+            "놓치면 없음 — 서버 꺼짐·자료 없음·호출 상한으로 그 창을 놓치면 나중에 대신 부르지 않고, 아침 주문은 그대로 체결된다");
+    /** 출처 사실 셋째 줄(장중 확인 판만). */
+    static final String CHECKPOINT_SOURCE_FACT = "장중 확인을 고르면 그때 볼 자료(MINUTE·HOURLY)만 고른다 — 체결가는 여전히 주문 뒤 1분봉이다.";
+
+    private static List<LocalTime> checkpointGrid() {
+        List<LocalTime> out = new ArrayList<>();
+        for (LocalTime t = LocalTime.of(10, 0); !t.isAfter(LocalTime.of(15, 0)); t = t.plusMinutes(30)) {
+            out.add(t);
+        }
+        return List.copyOf(out);
+    }
+
+    private static Map<String, String> feedMeanings() {
+        Map<String, String> out = new LinkedHashMap<>();
+        out.put(FEED_MINUTE, "감시 종목(watch, 10개 이하) + 보유·대기 종목의 최근 완성 1분봉 — 5분마다 수집, 잰 지연(lagSeconds)을 함께 줌. "
+                + "그 밖의 종목은 보지 못함");
+        out.put(FEED_HOURLY, "유니버스 전 종목의 시간별 관측치 — 최대 60분 묵은 값(수집 시각을 함께 줌)");
+        return java.util.Collections.unmodifiableMap(out);
+    }
+
+    /** 그 세션에서 고를 수 있는 확인 시각 — {@link #CHECKPOINT_TIMES} 가운데 마감 − {@link #CHECKPOINT_BEFORE_CLOSE} 이하(조기 폐장일 12:30까지). */
+    static List<LocalTime> checkpointTimes(LocalDate session, TradingCalendar calendar) {
+        Instant last = calendar.closeInstant(session).minus(CHECKPOINT_BEFORE_CLOSE);
+        List<LocalTime> out = new ArrayList<>();
+        for (LocalTime t : CHECKPOINT_TIMES) {
+            if (!java.time.ZonedDateTime.of(session, t, calendar.zone()).toInstant().isAfter(last)) {
+                out.add(t);
+            }
+        }
+        return out;
+    }
+
+    /** 확인 시각 'HH:mm'(스키마 {@code checkpoint.atEt}의 글자). */
+    static String clock(LocalTime t) {
+        return CLOCK.format(t);
+    }
 
     /** 출처 사실(§7-2의 1·2) — 문서·화면과 같은 뜻. */
     static final List<String> SOURCE_FACTS = List.of(
@@ -81,6 +142,17 @@ final class ExecutionSection {
      */
     static Map<String, Object> build(LocalDate asOf, List<String> timings, TradingCalendar calendar, double slippageBp,
                                      boolean record, PaperStore store, String book) {
+        return build(asOf, timings, calendar, slippageBp, record, store, book, false);
+    }
+
+    /**
+     * {@link #build(LocalDate, List, TradingCalendar, double, boolean, PaperStore, String)}에 장중 확인 판을 더한 것(클래스 설명) — {@code checkpoints}가
+     * 거짓이면 단계 1 섹션 그대로.
+     *
+     * @param checkpoints 장중 확인을 켠 결정인가({@link ClaudeBookProfile#checkpoints})
+     */
+    static Map<String, Object> build(LocalDate asOf, List<String> timings, TradingCalendar calendar, double slippageBp,
+                                     boolean record, PaperStore store, String book, boolean checkpoints) {
         LocalDate session = calendar.nextTradingDay(asOf);
         Instant open = calendar.openInstant(session);
         Instant close = calendar.closeInstant(session);
@@ -114,15 +186,44 @@ final class ExecutionSection {
         menuView.put("rows", menu);
 
         Map<String, Object> out = new LinkedHashMap<>();
-        out.put("executionMenuVersion", PacketBuilder.EXECUTION_MENU_VERSION);
+        out.put("executionMenuVersion", checkpoints ? PacketBuilder.EXECUTION_MENU_VERSION_C2
+                : PacketBuilder.EXECUTION_MENU_VERSION);
         out.put("session", sessionView);
         out.put("menu", menuView);
         out.put("closedTimings", closed);
         out.put("ladder", LADDER);
         out.put("barsSource", BARS_SOURCE);
-        out.put("sourceFacts", SOURCE_FACTS);
+        if (checkpoints) {
+            List<String> facts = new ArrayList<>(SOURCE_FACTS);
+            facts.add(CHECKPOINT_SOURCE_FACT);
+            out.put("sourceFacts", facts);
+        } else {
+            out.put("sourceFacts", SOURCE_FACTS);
+        }
         out.put("slippageBp", PacketBuilder.decimal(slippageBp, 4));
         out.put("record", record ? record(store, book, calendar) : recordOff());
+        if (checkpoints) {
+            out.put("checkpointOptions", checkpointOptions(session, calendar));
+        }
+        return out;
+    }
+
+    /** 장중 확인 선택지(클래스 설명) — 그 세션의 확인 시각(ET·KST)·피드 뜻·감시 상한·최근 잰 지연 요약·규칙. */
+    private static Map<String, Object> checkpointOptions(LocalDate session, TradingCalendar calendar) {
+        List<Map<String, Object>> times = new ArrayList<>();
+        for (LocalTime t : checkpointTimes(session, calendar)) {
+            Map<String, Object> row = new LinkedHashMap<>();
+            row.put("atEt", clock(t));
+            row.put("atKst", Kst.stamp(java.time.ZonedDateTime.of(session, t, calendar.zone()).toInstant()));
+            times.add(row);
+        }
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("times", times);
+        out.put("feeds", FEED_MEANINGS);
+        out.put("watchMax", WATCH_MAX);
+        // 최근 장중 확인(MINUTE)에서 잰 지연 요약 — 잰 값이 생기기 전(판 2 첫날)에는 null.
+        out.put("recentLag", null);
+        out.put("rules", CHECKPOINT_RULES);
         return out;
     }
 

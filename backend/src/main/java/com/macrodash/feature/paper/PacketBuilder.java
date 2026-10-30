@@ -228,6 +228,15 @@ public class PacketBuilder {
     static final int EXECUTION_MENU_VERSION = 1;
     /** 계좌2 고정 문단의 판({@link ClaudePrompts#CLAUDE2_FIXED_RULES}) — 단계 1 = c2-1. */
     static final String CLAUDE2_FIXED_RULES_VERSION = "c2-1";
+    /** 장중 확인을 켠 계좌2 패킷의 {@code 13_execution} 판(단계 2 — {@code checkpointOptions}, {@link ClaudeBookProfile#checkpoints}). */
+    static final int EXECUTION_MENU_VERSION_C2 = 2;
+    /** 장중 확인을 켠 계좌2 고정 문단의 판({@link ClaudePrompts#CLAUDE2_FIXED_RULES_C2}). */
+    static final String CLAUDE2_FIXED_RULES_VERSION_C2 = "c2-2";
+    /**
+     * 장중 확인을 켠 계좌2 패킷의 목표 크기에 더하는 {@code 13_execution.checkpointOptions} 몫(토큰 어림) — 시각 열하나(ET·KST)·피드 뜻·규칙 세 줄
+     * (packet-us-claude2-c2-meta.txt). 단계 1 패킷은 이 몫이 없습니다.
+     */
+    static final int CLAUDE2_CHECKPOINT_TOKENS = 600;
     /**
      * 계좌2 패킷의 목표 크기에 더하는 {@code 13_execution} 몫(토큰 어림) — 체결 기록을 가장 크게(20건 — 다섯 자리 수량·체결가·기준가, 대체 칸·기준
      * bp 모두 있음) 채운 섹션이 약 1,705토큰이었습니다(PacketBuilderTest.executionSectionFitsTheBudget, 2026-10-30). 기록이 없으면 약 700(출발).
@@ -600,14 +609,16 @@ public class PacketBuilder {
         if (VARIANT_CLAUDE2.equals(book.packetVariant())) {
             // 계좌2만 — 체결 시점 메뉴·사다리·출처 사실·자기 체결 기록(계좌2 명세 §9-3). 계좌1 패킷에는 이 섹션이 없습니다(고정본 그대로).
             root.put(EXECUTION, ExecutionSection.build(asOf, book.timings(), UsMarketCalendar.CALENDAR,
-                    in.paper().slippageBp(), Claude2Settings.from(in.settingsBody()).executionRecord(), store, book.code()));
+                    in.paper().slippageBp(), Claude2Settings.from(in.settingsBody()).executionRecord(), store, book.code(),
+                    book.checkpoints()));
         }
 
         JsonNode body = toNode(root);
         String text = mapper.writer().without(SerializationFeature.INDENT_OUTPUT).writeValueAsString(body);
         int tokens = estimateTokens(text);
         int target = (in.consensus() ? TARGET_TOKENS_CONSENSUS : TARGET_TOKENS)
-                + (VARIANT_CLAUDE2.equals(book.packetVariant()) ? CLAUDE2_EXECUTION_TOKENS : 0);
+                + (VARIANT_CLAUDE2.equals(book.packetVariant()) ? CLAUDE2_EXECUTION_TOKENS : 0)
+                + (book.checkpoints() ? CLAUDE2_CHECKPOINT_TOKENS : 0);
         if (tokens > target) {
             log.warn("Claude 패킷이 목표보다 큽니다: {} {} 약 {}토큰(목표 {}) — 목록 상한을 확인하세요", asOf, kind, tokens,
                     target);
@@ -720,10 +731,10 @@ public class PacketBuilder {
         Map<String, Object> out = new LinkedHashMap<>();
         out.put("packetVersion", packetVersion);
         if (VARIANT_CLAUDE2.equals(book.packetVariant())) {
-            // 계좌2 패킷 머리(계좌2 명세 §9-6) — 변형·체결 메뉴 판·고정 문단 판. 계좌1 패킷에는 이 칸들이 없습니다.
+            // 계좌2 패킷 머리(계좌2 명세 §9-6) — 변형·체결 메뉴 판·고정 문단 판(장중 확인을 켠 결정은 2·c2-2). 계좌1 패킷에는 이 칸들이 없습니다.
             out.put("variant", VARIANT_CLAUDE2);
-            out.put("executionMenuVersion", EXECUTION_MENU_VERSION);
-            out.put("fixedRules", CLAUDE2_FIXED_RULES_VERSION);
+            out.put("executionMenuVersion", book.checkpoints() ? EXECUTION_MENU_VERSION_C2 : EXECUTION_MENU_VERSION);
+            out.put("fixedRules", book.checkpoints() ? CLAUDE2_FIXED_RULES_VERSION_C2 : CLAUDE2_FIXED_RULES_VERSION);
         }
         out.put("book", book.code());
         out.put("asOfTradingDate", asOf.toString());

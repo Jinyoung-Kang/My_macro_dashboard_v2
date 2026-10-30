@@ -36,10 +36,12 @@ import java.util.Objects;
  * @param timed          시각 지정 체결 계좌인가({@link PaperBooks.Execution#TIMED} — 미국 Claude 계좌2): 주문은 목표 세션 E 하루짜리, 검증기가 그
  *                       결정에서 닫힌 시점(조기 폐장 마감 뒤·지금 + 60초 안 — {@link UsTimedFills#closedTimings})을 거절, 앞으로 체결로 출발하므로
  *                       이달 재량 주문 수에서 출발(INITIAL) 결정의 주문을 뺌(한국 계산 — 계좌2 명세 §4-1의 5·§10-5). 기본 계좌는 거짓
+ * @param checkpoints    장중 확인 판인가(계좌2 단계 2 — 설정 {@value Claude2Settings#CHECKPOINTS}를 켠 결정, {@link #US_CLAUDE2_C2}): 응답 스키마에
+ *                       {@code checkpoint} 칸, 고정 문단 c2-2, 패킷 {@code executionMenuVersion} 2·{@code 13_execution.checkpointOptions}. 그 밖은 거짓
  */
 record ClaudeBookProfile(PaperMarket market, String code, String schemaResource, String fixedRules,
                          String packetVariant, List<String> timings, Map<String, Integer> timingRanks,
-                         String callCapKey, Map<String, String> timingNames, boolean timed) {
+                         String callCapKey, Map<String, String> timingNames, boolean timed, boolean checkpoints) {
 
     /** 미국 Claude 계좌1({@code claude}) — 미국 시장 묶음의 값 그대로, 응답 스키마 {@value ClaudeBookService#SCHEMA_RESOURCE}. */
     static final ClaudeBookProfile US_CLAUDE = marketDefault(UsPaperMarket.INSTANCE, ClaudeBookService.SCHEMA_RESOURCE);
@@ -56,7 +58,18 @@ record ClaudeBookProfile(PaperMarket market, String code, String schemaResource,
     static final ClaudeBookProfile US_CLAUDE2 = new ClaudeBookProfile(UsPaperMarket.INSTANCE, PaperBooks.CLAUDE2,
             ClaudeBookService.CLAUDE2_SCHEMA_RESOURCE, ClaudePrompts.CLAUDE2_FIXED_RULES, PacketBuilder.VARIANT_CLAUDE2,
             PaperBooks.CLAUDE2_TIMINGS, sequence(PaperBooks.CLAUDE2_TIMINGS), Claude2Settings.MAX_CALLS_PER_CYCLE,
-            claude2TimingNames(), true);
+            claude2TimingNames(), true, false);
+
+    /**
+     * 장중 확인을 켠 계좌2의 아침 결정(계좌2 명세 §5-2·§9-5, 단계 2 — 설정 {@value Claude2Settings#CHECKPOINTS}) — {@link #US_CLAUDE2}와 같은 계좌 코드·
+     * 메뉴 여덟·순위·소상한 키·시각 지정 체결이고, 다른 것은 응답 스키마 {@value ClaudeBookService#CLAUDE2_C2_SCHEMA_RESOURCE}(선택 칸
+     * {@code checkpoint})·고정 문단 {@link ClaudePrompts#CLAUDE2_FIXED_RULES_C2}(판 c2-2)·패킷 판({@link #checkpoints})뿐입니다. 아침 결정은
+     * MARKET을 받지 않습니다(장중 확인 응답만). 결정 파이프라인 맵 밖의 따로 만든 파이프라인이 씁니다({@link ClaudeBookService}).
+     */
+    static final ClaudeBookProfile US_CLAUDE2_C2 = new ClaudeBookProfile(UsPaperMarket.INSTANCE, PaperBooks.CLAUDE2,
+            ClaudeBookService.CLAUDE2_C2_SCHEMA_RESOURCE, ClaudePrompts.CLAUDE2_FIXED_RULES_C2, PacketBuilder.VARIANT_CLAUDE2,
+            PaperBooks.CLAUDE2_TIMINGS, sequence(PaperBooks.CLAUDE2_TIMINGS), Claude2Settings.MAX_CALLS_PER_CYCLE,
+            claude2TimingNames(), true, true);
 
     ClaudeBookProfile {
         Objects.requireNonNull(market, "market");
@@ -89,7 +102,7 @@ record ClaudeBookProfile(PaperMarket market, String code, String schemaResource,
     ClaudeBookProfile(PaperMarket market, String code, String schemaResource, String fixedRules, String packetVariant,
                       List<String> timings, Map<String, Integer> timingRanks, String callCapKey) {
         this(market, code, schemaResource, fixedRules, packetVariant, timings, timingRanks, callCapKey,
-                market.timingNames(), false);
+                market.timingNames(), false, false);
     }
 
     /** 받는 순서 그대로 0, 1, 2 … 순위(시점마다 다른 때 체결 — 계좌2). */

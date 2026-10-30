@@ -151,6 +151,12 @@ public class ClaudeBookService {
      * ({@link PaperBooks#CLAUDE2_TIMINGS} 여덟)과 주문마다 필수인 {@code executionNote}(200자 이내)뿐입니다. 장중 확인({@code checkpoint})은 단계 2.
      */
     static final String CLAUDE2_SCHEMA_RESOURCE = "paper/claude2-decision.schema.json";
+    /**
+     * 장중 확인을 켠 계좌2 아침 결정의 응답 스키마(계좌2 명세 §9-5, 단계 2 — {@link ClaudeBookProfile#US_CLAUDE2_C2}) — 단계 1 파일
+     * ({@value #CLAUDE2_SCHEMA_RESOURCE})에 선택 칸 {@code checkpoint} 하나만 더한 파일입니다. 단계 1 파일은 바이트 그대로 두어
+     * {@code claude2.checkpoints}를 끄면 보내는 스키마가 단계 1과 같습니다(§16-3).
+     */
+    static final String CLAUDE2_C2_SCHEMA_RESOURCE = "paper/claude2-decision-c2.schema.json";
     /** 목표 노출과 주문 반영 뒤 예상 노출의 차이가 이보다 크면 exposureMismatch(설계 §5-3). */
     static final double MISMATCH_PCT = 15;
     /** 종목 저장본이 이보다 오래되면 그날 재량 주문 전부 STALE_INPUT(설계 §5-4). */
@@ -250,6 +256,12 @@ public class ClaudeBookService {
      * 한국 Claude 계좌 둘입니다({@link #marketContexts}).
      */
     private final Map<String, ClaudeDecisionPipeline> pipelines;
+    /**
+     * 장중 확인을 켠 계좌2 아침 결정의 파이프라인({@link ClaudeBookProfile#US_CLAUDE2_C2} — 계좌2 명세 §5-2, 단계 2). 계좌 코드가 계좌2와 같아
+     * {@link #pipelines} 맵 밖에 따로 둡니다(같은 코드 둘이면 기동 실패하는 맵 규칙·운영 문맥 목록 {@link #marketContexts}는 그대로).
+     * {@link #decideClaude2}가 그 실행 설정의 {@code claude2.checkpoints}로 이것과 맵의 계좌2 파이프라인 가운데 하나를 고릅니다.
+     */
+    private final ClaudeDecisionPipeline claude2Checkpoints;
     /** 미리보기·시작이 겹치지 않게(두 번 눌러 두 번 과금되지 않게). 정기 결정은 결정 작업의 잠금이 줄을 세웁니다. */
     private final ReentrantLock initialCall = new ReentrantLock();
 
@@ -330,6 +342,8 @@ public class ClaudeBookService {
             }
         }
         this.pipelines = Map.copyOf(byBook);
+        this.claude2Checkpoints = new ClaudeDecisionPipeline(checkpointContext(packets), store, framework, calls, ai, mapper,
+                clock, Math.max(1, timeoutSeconds));
     }
 
     private static List<MarketContext> concat(List<MarketContext> first, List<MarketContext> second) {
@@ -360,6 +374,18 @@ public class ClaudeBookService {
             out.add(new MarketContext(ClaudeBookProfile.KR_CLAUDE, null, krPackets::build));
         }
         return List.copyOf(out);
+    }
+
+    /**
+     * 장중 확인을 켠 계좌2 아침 결정의 문맥({@link ClaudeBookProfile#US_CLAUDE2_C2} — 계좌2 명세 §5-2·§9-5) — 계좌2 문맥({@link #marketContexts})과
+     * 같은 패킷 조립에 프로필만 c2 판입니다(응답 스키마 {@value #CLAUDE2_C2_SCHEMA_RESOURCE}·고정 문단 c2-2·패킷 {@code executionMenuVersion} 2).
+     * 운영 문맥 목록에는 넣지 않습니다(계좌 코드가 계좌2와 같음 — {@link #claude2Checkpoints}).
+     */
+    static MarketContext checkpointContext(PacketBuilder packets) {
+        return new MarketContext(ClaudeBookProfile.US_CLAUDE2_C2,
+                (asOf, kind, initial, version, row) -> packets.assemble(packets.read(asOf, initial, row),
+                        ClaudeBookProfile.US_CLAUDE2_C2, kind, version),
+                null, (inputs, kind, version) -> packets.assemble(inputs, ClaudeBookProfile.US_CLAUDE2_C2, kind, version));
     }
 
     /**
@@ -710,16 +736,17 @@ public class ClaudeBookService {
         }
         Objects.requireNonNull(asOf, "asOf");
         requireReady();
-        ClaudeDecisionPipeline base = pipelines.get(PaperBooks.CLAUDE2);
+        Book book = claudeBook(PaperBooks.CLAUDE2);
+        SettingsRow row = run.settingsRow().orElseGet(this::settingsRow);
+        ClaudeSettings claude = ClaudeSettings.from(row.body());
+        Claude2Settings book2 = Claude2Settings.from(row.body());
+        // 장중 확인(단계 2)을 켠 실행 설정이면 c2 판(스키마 checkpoint 칸·고정 문단 c2-2·패킷 판 2), 끄면 단계 1 판 그대로(바이트까지 — §16-3).
+        ClaudeDecisionPipeline base = book2.checkpoints() ? claude2Checkpoints : pipelines.get(PaperBooks.CLAUDE2);
         if (base == null) {
             throw new IllegalArgumentException("계좌2 결정 문맥이 없습니다");
         }
         ClaudeDecisionPipeline pipeline = base.bind(run);
         boolean initial = RuleBookService.INITIAL.equals(kind);
-        Book book = claudeBook(PaperBooks.CLAUDE2);
-        SettingsRow row = run.settingsRow().orElseGet(this::settingsRow);
-        ClaudeSettings claude = ClaudeSettings.from(row.body());
-        Claude2Settings book2 = Claude2Settings.from(row.body());
         Decision retrying = null;
         Optional<Decision> existing = store.decisionFor(PaperBooks.CLAUDE2, asOf, kind);
         if (existing.isPresent()) {

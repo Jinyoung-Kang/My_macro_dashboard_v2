@@ -184,6 +184,63 @@ class Claude2DecisionTest {
         return store.apiUsage(TODAY_KST).map(ApiUsage::calls).orElse(0);
     }
 
+    // ------------------------------------------------------------------ 장중 확인 판(단계 2 — §5-2·§9-5·§16-3)
+    /** 고정본 글자(끝 줄바꿈 하나를 뗀 것 — {@link com.macrodash.Golden#assertMatches}와 같은 규칙). */
+    private static String golden(String name) {
+        String text = new String(com.macrodash.Golden.resourceBytes("paper/golden/" + name), StandardCharsets.UTF_8);
+        return text.endsWith("\n") ? text.substring(0, text.length() - 1) : text;
+    }
+
+    /** 정기 결정 한 번을 내고 Claude에게 보낸 (시스템 프롬프트, 사용자 메시지, API 스키마) 글자를 돌려준 뒤 그 결정 행을 지웁니다. */
+    private String[] sentForOneDecision() {
+        answerJson(decision());
+        Decision d = decide(NOW, RuleBookService.SCHEDULED).decision();
+        assertThat(d.error()).isNull();
+        assertThat(d.response().has("checkpoint")).as("결정 응답에 checkpoint 칸 없음(이 커밋은 계획 행을 쓰지 않음)").isFalse();
+        JsonNode request = requests.get(requests.size() - 1);
+        store.decisions.clear();
+        return new String[]{request.path("system").get(0).path("text").asString(),
+                request.path("messages").get(0).path("content").asString(),
+                com.macrodash.Golden.prettyJson(request.path("output_config").path("format").path("schema"))};
+    }
+
+    @Test
+    @DisplayName("끄면 단계 1과 바이트까지 같음(§16-3): 설정에 claude2.checkpoints 키가 없을 때·false일 때 보낸 시스템 프롬프트·사용자 메시지·API 스키마가 서로 같고 단계 1 고정본(render-us-claude2-v0-default·packet-us-claude2-scheduled·decision-schema-forapi-us-claude2)과 같음, 켜면 c2 고정본 셋")
+    void checkpointsOffIsStageOneByteForByte() {
+        active();
+        when(packets.assemble(any(), eq(ClaudeBookProfile.US_CLAUDE2), anyString(), any()))
+                .thenReturn(packet(golden("packet-us-claude2-scheduled.json")));
+        when(packets.assemble(any(), eq(ClaudeBookProfile.US_CLAUDE2_C2), anyString(), any()))
+                .thenReturn(packet(golden("packet-us-claude2-c2-scheduled.json")));
+        tools.jackson.databind.node.ObjectNode claude2 =
+                (tools.jackson.databind.node.ObjectNode) store.settings.body().get("claude2");
+
+        claude2.remove("checkpoints");
+        String[] absent = sentForOneDecision();
+        claude2.put("checkpoints", false);
+        String[] off = sentForOneDecision();
+        claude2.put("checkpoints", true);
+        String[] on = sentForOneDecision();
+
+        assertThat(off).as("키 없음 = false").containsExactly(absent);
+        com.macrodash.Golden.assertMatches("render-us-claude2-v0-default.txt", off[0]);
+        com.macrodash.Golden.assertMatches("packet-us-claude2-scheduled.json", off[1]);
+        com.macrodash.Golden.assertMatches("decision-schema-forapi-us-claude2.json", off[2]);
+        assertThat(MAPPER.readTree(off[1]).path("1_basis").path("executionMenuVersion").asInt()).isEqualTo(1);
+        assertThat(MAPPER.readTree(off[1]).path("1_basis").path("fixedRules").asString()).isEqualTo("c2-1");
+        assertThat(MAPPER.readTree(off[1]).path("13_execution").has("checkpointOptions")).isFalse();
+        assertThat(off[2]).doesNotContain("checkpoint");
+
+        com.macrodash.Golden.assertMatches("render-us-claude2-c2-v0-default.txt", on[0]);
+        com.macrodash.Golden.assertMatches("packet-us-claude2-c2-scheduled.json", on[1]);
+        com.macrodash.Golden.assertMatches("decision-schema-forapi-us-claude2-c2.json", on[2]);
+        assertThat(on[0]).contains("## 장중 확인(고정)");
+        assertThat(on[2]).contains("checkpoint");
+        verify(packets, org.mockito.Mockito.times(2)).assemble(any(), eq(ClaudeBookProfile.US_CLAUDE2),
+                eq(RuleBookService.SCHEDULED), any());
+        verify(packets).assemble(any(), eq(ClaudeBookProfile.US_CLAUDE2_C2), eq(RuleBookService.SCHEDULED), any());
+    }
+
     // ------------------------------------------------------------------ 출발(§4-1)
     @Test
     @DisplayName("앞으로 체결 출발: INITIAL 결정(계좌2 스키마·고정 문단으로 부름) → 통과 주문은 E(10-27) 하루짜리 대기, 같은 트랜잭션에서 ACTIVE·started_on = S·S 순자산 줄 100,000(확정), 사후 체결 없음")

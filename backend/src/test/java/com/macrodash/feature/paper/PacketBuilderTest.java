@@ -1329,6 +1329,85 @@ class PacketBuilderTest {
     }
 
     @Test
+    @DisplayName("고정본(계좌2 단계 2 — 장중 확인 판): c2 프로필의 정기 패킷 — 단계 1 계좌2 패킷과 1_basis의 메뉴 판 2·고정 문단 판 c2-2, 13_execution의 판·출처 사실 셋째 줄·checkpointOptions만 다름(나머지 섹션 바이트 그대로), 단계 1 고정본 그대로")
+    void goldenClaude2C2Packets() {
+        store.insertNote(new Note(0, NoteService.MARKET, FRI, TUE, "금요일 시황", "10년물 4.6%·브렌트 88", false, null));
+        activeClaude();
+        activeClaude2();
+        PacketBuilder.MarketInputs inputs = builder.read(MON, false, store.settings);
+        Packet c1 = builder.assemble(inputs, ClaudeBookProfile.US_CLAUDE2, RuleBookService.SCHEDULED, 0);
+        Packet c2 = builder.assemble(inputs, ClaudeBookProfile.US_CLAUDE2_C2, RuleBookService.SCHEDULED, 0);
+
+        Golden.assertMatches("packet-us-claude2-scheduled.json", c1.text());
+        assertThat(c1.sha256()).as("단계 1 패킷 그대로").isEqualTo(GOLDEN_CLAUDE2_SCHEDULED_SHA256);
+        Golden.assertMatches("packet-us-claude2-c2-scheduled.json", c2.text());
+        Golden.assertMatches("packet-us-claude2-c2-meta.txt", String.join("\n",
+                "scheduled sha256=" + c2.sha256() + " chars=" + c2.text().length() + " tokens~"
+                        + PacketBuilder.estimateTokens(c2.text()) + " noteIds=" + c2.noteIds() + " measure="
+                        + MAPPER.writeValueAsString(c2.measure()),
+                "13_execution tokens~ " + PacketBuilder.estimateTokens(MAPPER.writeValueAsString(
+                        c2.body().get(PacketBuilder.EXECUTION))) + " (단계 1 " + PacketBuilder.estimateTokens(
+                        MAPPER.writeValueAsString(c1.body().get(PacketBuilder.EXECUTION))) + ")",
+                "checkpointOptions tokens~ " + PacketBuilder.estimateTokens(MAPPER.writeValueAsString(
+                        c2.body().get(PacketBuilder.EXECUTION).get("checkpointOptions")))));
+        assertThat(PacketBuilder.estimateTokens(MAPPER.writeValueAsString(
+                c2.body().get(PacketBuilder.EXECUTION).get("checkpointOptions"))))
+                .isLessThanOrEqualTo(PacketBuilder.CLAUDE2_CHECKPOINT_TOKENS);
+
+        // 다른 곳: 1_basis 두 칸, 13_execution 세 곳. 그 밖의 섹션은 바이트 그대로.
+        ObjectNode a = (ObjectNode) c1.body().deepCopy();
+        ObjectNode b = (ObjectNode) c2.body().deepCopy();
+        assertThat(b.get(PacketBuilder.BASIS).get("executionMenuVersion").asInt()).isEqualTo(2);
+        assertThat(b.get(PacketBuilder.BASIS).get("fixedRules").asString()).isEqualTo("c2-2");
+        assertThat(a.get(PacketBuilder.BASIS).get("executionMenuVersion").asInt()).isEqualTo(1);
+        assertThat(a.get(PacketBuilder.BASIS).get("fixedRules").asString()).isEqualTo("c2-1");
+        JsonNode execution = b.get(PacketBuilder.EXECUTION);
+        assertThat(execution.get("executionMenuVersion").asInt()).isEqualTo(2);
+        assertThat(execution.get("sourceFacts")).hasSize(3);
+        assertThat(execution.get("sourceFacts").get(2).asString()).isEqualTo(ExecutionSection.CHECKPOINT_SOURCE_FACT);
+        JsonNode options = execution.get("checkpointOptions");
+        assertThat(options.get("times")).hasSize(11);
+        assertThat(options.get("times").get(0).toString()).isEqualTo("{\"atEt\":\"10:00\",\"atKst\":\"2026-10-27 23:00 KST\"}");
+        assertThat(options.get("times").get(10).get("atEt").asString()).isEqualTo("15:00");
+        assertThat(options.get("feeds").propertyNames()).containsExactly("MINUTE", "HOURLY");
+        assertThat(options.toString()).doesNotContain("실시간");
+        assertThat(options.get("watchMax").asInt()).isEqualTo(10);
+        assertThat(options.get("recentLag").isNull()).as("잰 지연이 아직 없음").isTrue();
+        assertThat(options.get("rules")).hasSize(3);
+        for (ObjectNode node : List.of(a, b)) {
+            ((ObjectNode) node.get(PacketBuilder.BASIS)).remove(List.of("executionMenuVersion", "fixedRules"));
+            ((ObjectNode) node.get(PacketBuilder.EXECUTION)).remove(List.of("executionMenuVersion", "sourceFacts",
+                    "checkpointOptions"));
+        }
+        assertThat(b).as("그 밖은 단계 1 계좌2 패킷과 같음").isEqualTo(a);
+        assertThat(c2.noteIds()).isEqualTo(c1.noteIds());
+        assertThat(PacketBuilder.marketSectionsSha256(c2.body(), MAPPER))
+                .isEqualTo(PacketBuilder.marketSectionsSha256(c1.body(), MAPPER));
+    }
+
+    @Test
+    @DisplayName("13_execution 장중 확인 판: 조기 폐장일(E 11-27 — 마감 13:00)의 확인 시각은 12:30까지, 서머타임 끝난 주(E 11-02)의 10:00 ET = 00:00 KST(다음 날), 끄면 단계 1 섹션 글자 그대로")
+    void executionSectionCheckpointOptions() {
+        activeClaude2();
+        JsonNode early = MAPPER.valueToTree(PacketBuilder.toNode(ExecutionSection.build(LocalDate.of(2026, 11, 25),
+                PaperBooks.CLAUDE2_TIMINGS, UsMarketCalendar.CALENDAR, 5, true, store, PaperBooks.CLAUDE2, true)));
+        List<String> times = new ArrayList<>();
+        early.get("checkpointOptions").get("times").forEach(t -> times.add(t.get("atEt").asString()));
+        assertThat(times).containsExactly("10:00", "10:30", "11:00", "11:30", "12:00", "12:30");
+        JsonNode winter = MAPPER.valueToTree(PacketBuilder.toNode(ExecutionSection.build(LocalDate.of(2026, 10, 30),
+                PaperBooks.CLAUDE2_TIMINGS, UsMarketCalendar.CALENDAR, 5, true, store, PaperBooks.CLAUDE2, true)));
+        assertThat(winter.get("checkpointOptions").get("times").get(0).get("atKst").asString())
+                .isEqualTo("2026-11-03 00:00 KST");
+        assertThat(ExecutionSection.checkpointTimes(LocalDate.of(2026, 11, 27), UsMarketCalendar.CALENDAR))
+                .last().isEqualTo(java.time.LocalTime.of(12, 30));
+        String off = MAPPER.writeValueAsString(PacketBuilder.toNode(ExecutionSection.build(MON, PaperBooks.CLAUDE2_TIMINGS,
+                UsMarketCalendar.CALENDAR, 5, true, store, PaperBooks.CLAUDE2, false)));
+        assertThat(off).isEqualTo(MAPPER.writeValueAsString(PacketBuilder.toNode(ExecutionSection.build(MON,
+                PaperBooks.CLAUDE2_TIMINGS, UsMarketCalendar.CALENDAR, 5, true, store, PaperBooks.CLAUDE2))))
+                .doesNotContain("checkpointOptions");
+    }
+
+    @Test
     @DisplayName("계좌2 패킷의 다른 점: 섹션은 계좌1 순서 뒤 13_execution, 1_basis에 변형·메뉴 판·고정 문단 판, 출발은 사후 체결 문장 없이 검사(STALE_INPUT·NO_PRICE) 켬, 12_hardRules 시점 문장은 순위 규칙·메뉴, 월 상한은 출발 결정 주문 제외")
     void claude2PacketDiffersOnlyInTheExecutionParts() {
         activeClaude();

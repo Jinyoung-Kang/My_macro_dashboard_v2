@@ -108,6 +108,45 @@ class ClaudeBookProfileTest {
     }
 
     @Test
+    @DisplayName("장중 확인 판 c2-2(계좌2 명세 §9-4의 3·§16-3) — 고정본 render-us-claude2-c2-v0-default.txt, c2-1 렌더링과 체결 절의 장중 정보 한 줄·장중 확인 절만 다르고, 그 둘을 되돌리면 c2-1 문단 그대로")
+    void claude2C2RenderDiffersOnlyInTheCheckpointLines() {
+        JsonNode body = FrameworkService.interimBody(MAPPER);
+        JsonNode defaults = PaperFixtures.settings(new FakePaperStore()).defaultsJson();
+        String c1 = FrameworkService.render(ClaudeBookProfile.US_CLAUDE2, body, 0, defaults);
+        String c2 = FrameworkService.render(ClaudeBookProfile.US_CLAUDE2_C2, body, 0, defaults);
+        Golden.assertMatches("render-us-claude2-c2-v0-default.txt", c2);
+        Golden.assertMatches("render-us-claude2-v0-default.txt", c1);
+        String shared = c1.substring(0, c1.indexOf(ClaudePrompts.CLAUDE2_PRIORITY));
+        assertThat(c2).startsWith(shared + ClaudePrompts.CLAUDE2_PRIORITY + "\n## 근거(고정)");
+
+        String rules = ClaudePrompts.CLAUDE2_FIXED_RULES_C2;
+        String back = rules.replace(ClaudePrompts.CLAUDE2_CHECKPOINT_LINE, ClaudePrompts.CLAUDE2_NO_INTRADAY_LINE)
+                .replace(ClaudePrompts.CLAUDE2_CHECKPOINT_SECTION, "");
+        assertThat(back).isEqualTo(ClaudePrompts.CLAUDE2_FIXED_RULES);
+        assertThat(rules).doesNotContain("결정 뒤 장중 정보는 보지 못한다").contains("## 장중 확인(고정)").contains("세션당 최대 한 번")
+                .contains("재시도도 없다").contains("MARKET").contains("KEEP").contains("REPLACE").contains("10:00~15:00 ET의 30분 단위")
+                .contains("12:30까지").contains("summary는 600자").doesNotContain("실시간");
+        assertThat(rules.indexOf("## 장중 확인(고정)")).as("장중 확인 절은 체결 절 뒤·출력 절 앞")
+                .isGreaterThan(rules.indexOf("## 체결(고정)")).isLessThan(rules.indexOf("## 출력(고정)"));
+    }
+
+    @Test
+    @DisplayName("장중 확인 판 프로필 US_CLAUDE2_C2 — 계좌2와 같은 코드·시장·메뉴 여덟·순위·근거 문구·소상한 키·시각 지정 체결, 다른 것은 스키마 파일·고정 문단·checkpoints뿐")
+    void claude2C2ProfileDiffersOnlyInTheCheckpointParts() {
+        ClaudeBookProfile c1 = ClaudeBookProfile.US_CLAUDE2;
+        ClaudeBookProfile c2 = ClaudeBookProfile.US_CLAUDE2_C2;
+        assertThat(c1.checkpoints()).isFalse();
+        assertThat(c2.checkpoints()).isTrue();
+        assertThat(ClaudeBookProfile.US_CLAUDE.checkpoints()).isFalse();
+        assertThat(ClaudeBookProfile.KR_CLAUDE.checkpoints()).isFalse();
+        assertThat(c2.schemaResource()).isEqualTo(ClaudeBookService.CLAUDE2_C2_SCHEMA_RESOURCE);
+        assertThat(c2.fixedRules()).isEqualTo(ClaudePrompts.CLAUDE2_FIXED_RULES_C2);
+        assertThat(new ClaudeBookProfile(c2.market(), c2.code(), c1.schemaResource(), c1.fixedRules(), c2.packetVariant(),
+                c2.timings(), c2.timingRanks(), c2.callCapKey(), c2.timingNames(), c2.timed(), false)).isEqualTo(c1);
+        assertThat(c2.orderValidation()).isEqualTo(c1.orderValidation());
+    }
+
+    @Test
     @DisplayName("계좌2 프로필의 검증기 몫 — 받는 시점 여덟·순위 0~7·근거 문구 이름(다음 세션 시가·다음 세션 10:00 … 확정 종가)·달러 표기, 닫힌 시점 없음")
     void claude2OrderValidation() {
         OrderValidator.Market market = ClaudeBookProfile.US_CLAUDE2.orderValidation();

@@ -113,6 +113,49 @@ final class ClaudePrompts {
                 .replace(OUTPUT_HEADER, CLAUDE2_FILL_SECTION + OUTPUT_HEADER);
     }
 
+    // ------------------------------------------------------------------ 계좌2 단계 2 — 장중 확인(계좌2 명세 §5-2·§9-4의 3·§9-5, 판 c2-2)
+    // 단계 1 문단(c2-1)은 그대로 두고, 설정 claude2.checkpoints를 켠 결정만 이 판을 씁니다(끄면 c2-1과 바이트까지 같음 — §16-3). c2-1에서 두 곳만
+    // 다릅니다: 체결 절의 '장중 정보를 보지 못한다' 줄 → 장중 확인 한 줄, 출력 절 앞의 장중 확인 절. 아침 결정의 timing 메뉴(여덟)는 그대로입니다.
+
+    /** 단계 1 체결 절의 장중 정보 줄({@link #CLAUDE2_FILL_SECTION}) — c2-2에서 {@link #CLAUDE2_CHECKPOINT_LINE}으로 바뀌는 자리. */
+    static final String CLAUDE2_NO_INTRADAY_LINE = "- 결정 뒤 장중 정보는 보지 못한다 — 이 결정이 다음 세션 주문의 마지막 판단이다. "
+            + "체결은 늘 주문 뒤 그 시각의 실제 가격이라 지연 시세로 더 좋은 체결가를 얻을 수는 없다.\n";
+
+    /** c2-2 체결 절의 장중 정보 줄 — 결정 뒤 장중 정보는 장중 확인(세션당 최대 한 번)으로만 봄. */
+    static final String CLAUDE2_CHECKPOINT_LINE = "- 결정 뒤 장중 정보는 아래 장중 확인(세션당 최대 한 번)으로만 본다. "
+            + "체결은 늘 주문 뒤 그 시각의 실제 가격이라 지연 시세로 더 좋은 체결가를 얻을 수는 없다.\n";
+
+    /**
+     * 장중 확인 절(c2-2 — 출력 절 앞). 아침 결정의 {@code checkpoint} 요청과 장중 확인 응답의 규칙을 함께 적습니다 — 장중 확인 호출도 같은 시스템
+     * 프롬프트(c2-2 렌더링)를 씁니다. 확인 시각 목록은 {@code ExecutionSection#CHECKPOINT_TIMES}와 같은 문장입니다({@code DecisionTimingsLockTest}).
+     * '실시간'이라는 말은 쓰지 않습니다(계좌2 명세 §7-2의 3 — 잰 지연이 생기기 전).
+     */
+    static final String CLAUDE2_CHECKPOINT_SECTION = """
+            ## 장중 확인(고정)
+            - 이 결정의 응답에 checkpoint를 적으면 목표 세션(13_execution.session) 장중에 한 번 더 부른다 — 세션당 최대 한 번이다. 그 시각을 놓치면(서버 꺼짐·자료 없음·호출 상한) 나중에 대신 부르지 않고 재시도도 없다. 필요 없으면 checkpoint는 null로 둔다.
+            - checkpoint.atEt는 10:00~15:00 ET의 30분 단위 시각 하나다(13_execution.checkpointOptions.times — 조기 폐장일은 12:30까지). feed는 MINUTE(watch의 감시 종목 10개 이하 + 보유·대기 종목의 1분봉, 5분마다 수집, 잰 지연을 함께 줌 — watch에 한 종목 이상) 또는 HOURLY(유니버스 전 종목의 시간별 관측치, 최대 60분 묵음)다. question(300자 이내)은 그때 확인할 것이다.
+            - 장중 확인의 응답 action은 KEEP(아무것도 바꾸지 않음) 또는 REPLACE다. REPLACE의 응답이 형식 검사를 통과하면(주문이 없거나 모두 거절돼도) 기준 시각이 아직 오지 않은 대기 주문만 취소되고, 기준 시각이 지난 주문은 이미 체결된 것으로 보아 자료가 오는 대로 체결한다.
+            - 장중 확인 주문의 timing은 MARKET(응답 뒤 생성 + 60초가 지난 첫 분에 시작한 1분봉 시가), 아직 오지 않은 AT_* 또는 NEXT_CLOSE다. 주문마다 executionNote를 쓰고, 장중 확인의 summary는 600자 이내다.
+            """;
+
+    /**
+     * 장중 확인을 켠 계좌2 고정 문단(판 {@code c2-2}) — {@link #CLAUDE2_FIXED_RULES}(c2-1)에서 두 곳만 다릅니다: 체결 절의 장중 정보 줄
+     * ({@link #CLAUDE2_NO_INTRADAY_LINE} → {@link #CLAUDE2_CHECKPOINT_LINE}), 출력 절 앞의 장중 확인 절({@link #CLAUDE2_CHECKPOINT_SECTION}).
+     * 바꿀 자리가 c2-1 문단에 한 번씩이 아니면 기동하지 않습니다(c2-1과 같은 자리 검사).
+     */
+    static final String CLAUDE2_FIXED_RULES_C2 = claude2CheckpointRules();
+
+    private static String claude2CheckpointRules() {
+        String base = CLAUDE2_FIXED_RULES;
+        if (base.indexOf(CLAUDE2_NO_INTRADAY_LINE) < 0
+                || base.indexOf(CLAUDE2_NO_INTRADAY_LINE) != base.lastIndexOf(CLAUDE2_NO_INTRADAY_LINE)
+                || base.indexOf(OUTPUT_HEADER) < 0 || base.indexOf(OUTPUT_HEADER) != base.lastIndexOf(OUTPUT_HEADER)) {
+            throw new IllegalStateException("계좌2 c2-2 문단의 바꿀 자리(장중 정보 줄·출력 절)가 c2-1 문단에 한 번씩 있어야 합니다");
+        }
+        return base.replace(CLAUDE2_NO_INTRADAY_LINE, CLAUDE2_CHECKPOINT_LINE)
+                .replace(OUTPUT_HEADER, CLAUDE2_CHECKPOINT_SECTION + OUTPUT_HEADER);
+    }
+
     // ------------------------------------------------------------------ 2단계 E2a — 한국 책의 고정 문단
     // 위 미국 상수(ROLE·FIXED_RULES)는 그대로 두고 한국 문단을 새로 더합니다(명세 K34 — 미국 렌더링은 바이트 그대로). 역할 문단(ROLE)과 프레임
     // 본문(원칙·엔진·지침 — 판은 두 시장이 함께 씀, K9)은 한국 렌더링에도 그대로 들어갑니다.

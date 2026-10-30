@@ -1,6 +1,7 @@
 package com.macrodash.feature.paper;
 
 import com.macrodash.analytics.OrderValidator;
+import com.macrodash.analytics.UsMarketCalendar;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import tools.jackson.databind.JsonNode;
@@ -159,6 +160,60 @@ class DecisionTimingsLockTest {
         List<String> mentions = rules.lines().filter(line -> line.contains(ExecutionAudit.NEXT_OBSERVATION)).toList();
         assertThat(mentions).as("NEXT_OBSERVATION은 우선순위 줄에만").containsExactly(ClaudePrompts.CLAUDE2_PRIORITY);
         assertThat(schemaTimings(ClaudeBookService.CLAUDE2_SCHEMA_RESOURCE)).doesNotContain(ExecutionAudit.NEXT_OBSERVATION);
+    }
+
+    private static final Path V18 = Path.of("../db/migrations/V18__paper_checkpoints.sql");
+
+    @Test
+    @DisplayName("장중 확인 판(계좌2 단계 2 — US_CLAUDE2_C2)도 단계 1과 같은 잠금: 아침 결정의 받는 시점·순위 = 메뉴 여덟(MARKET 없음), c2 스키마 timing enum = 여덟, c2-2 timing 줄 = c2-1 줄, checkpoint.atEt enum = checkpointOptions의 보통 날 시각 = 고정 문단의 '10:00~15:00 ET의 30분 단위', feed enum = V18 feed CHECK")
+    void claude2C2ContextIsLockedLikeStageOne() throws IOException {
+        ClaudeBookProfile c1 = ClaudeBookProfile.US_CLAUDE2;
+        ClaudeBookProfile c2 = ClaudeBookProfile.US_CLAUDE2_C2;
+        ClaudeDecisionPipeline.MarketContext context = ClaudeBookService.checkpointContext(mock(PacketBuilder.class));
+        assertThat(context.profile()).isSameAs(c2);
+        assertThat(context.shared()).as("계좌2처럼 시장 입력을 함께 씀").isNotNull();
+        assertThat(c2.code()).isEqualTo(PaperBooks.CLAUDE2);
+        assertThat(c2.timings()).isEqualTo(c1.timings()).isEqualTo(PaperBooks.CLAUDE2_TIMINGS).doesNotContain("MARKET");
+        assertThat(c2.timingRanks()).isEqualTo(c1.timingRanks());
+        assertThat(c2.orderValidation()).isEqualTo(c1.orderValidation());
+        assertThat(schemaTimings(c2.schemaResource())).isEqualTo(c2.timings());
+        assertThat(v17Timings()).containsAll(c2.timings());
+
+        String line1 = c1.fixedRules().lines().filter(line -> line.startsWith("- timing은")).findFirst().orElseThrow();
+        String line2 = c2.fixedRules().lines().filter(line -> line.startsWith("- timing은")).findFirst().orElseThrow();
+        assertThat(line2).as("아침 결정의 timing 줄은 단계 1 그대로").isEqualTo(line1);
+        assertThat(c2.fixedRules().lines().filter(line -> line.contains(ExecutionAudit.NEXT_OBSERVATION)).toList())
+                .as("NEXT_OBSERVATION은 우선순위 줄에만").containsExactly(ClaudePrompts.CLAUDE2_PRIORITY);
+
+        JsonNode schema;
+        try (InputStream in = DecisionTimingsLockTest.class.getResourceAsStream("/" + c2.schemaResource())) {
+            schema = MAPPER.readTree(in);
+        }
+        List<String> atEt = new ArrayList<>();
+        schema.at("/properties/checkpoint/properties/atEt/enum").forEach(node -> atEt.add(node.asString()));
+        List<String> grid = ExecutionSection.CHECKPOINT_TIMES.stream().map(ExecutionSection::clock).toList();
+        assertThat(atEt).isEqualTo(grid);
+        assertThat(ExecutionSection.checkpointTimes(java.time.LocalDate.of(2026, 11, 2), UsMarketCalendar.CALENDAR)
+                .stream().map(ExecutionSection::clock).toList()).as("보통 날 고를 수 있는 시각 = 스키마 enum").isEqualTo(atEt);
+        assertThat(atEt.get(0)).isEqualTo("10:00");
+        assertThat(atEt.get(atEt.size() - 1)).isEqualTo("15:00");
+        assertThat(c2.fixedRules()).contains(atEt.get(0) + "~" + atEt.get(atEt.size() - 1) + " ET의 30분 단위");
+
+        List<String> feeds = new ArrayList<>();
+        schema.at("/properties/checkpoint/properties/feed/enum").forEach(node -> feeds.add(node.asString()));
+        assertThat(feeds).isEqualTo(ExecutionSection.FEEDS);
+        assumeTrue(Files.exists(V18), "V18 파일을 찾을 수 없습니다");
+        Matcher check = Pattern.compile("CHECK \\(feed IN \\(([^)]*)\\)\\)").matcher(Files.readString(V18));
+        assertThat(check.find()).as("V18의 feed CHECK").isTrue();
+        List<String> v18 = new ArrayList<>();
+        Matcher value = Pattern.compile("'([A-Z_]+)'").matcher(check.group(1));
+        while (value.find()) {
+            v18.add(value.group(1));
+        }
+        assertThat(v18).as("스키마 feed enum = V18 feed CHECK").isEqualTo(feeds);
+        for (String feed : feeds) {
+            assertThat(c2.fixedRules()).as("고정 문단에 " + feed).contains(feed);
+        }
     }
 
     /**
