@@ -134,7 +134,8 @@ export function ExecutionExperimentCard({ books }: { books: readonly PaperBookSu
             <li>{EXECUTION_VERDICT_RULE}</li>
             <li>
               시점 표는 시점마다의 반사실 분포라 판정이 아닙니다 —
-              계좌1식 기준이 없거나 그 시점 반사실이 없는 주문은 빼고 셉니다(뺀 수를 함께 적음 — 대체 체결로 풀린 주문도 따로 빼지 않음).
+              계좌1식 기준이나 체결(금액 가중치)이 없거나 그 시점 반사실이 없는 주문은 빼고 셉니다(뺀 수를 함께 적음 — &apos;기준 없음&apos;에는
+              계좌2의 체결 없는 주문도 듦, 대체 체결로 풀린 주문도 따로 빼지 않음).
             </li>
           </ul>
         </>
