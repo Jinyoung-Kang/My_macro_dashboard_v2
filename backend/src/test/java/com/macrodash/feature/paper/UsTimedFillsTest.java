@@ -885,7 +885,6 @@ class UsTimedFillsTest {
         }
 
         @Test
-        @org.junit.jupiter.api.Disabled("재현 — E가 끝났는데 1분봉 저장본이 W 전 것이면 완성된 R2b 봉이 있어도 NO_BARS 만료(수정 전)")
         @DisplayName("W 전 저장본(15:01)의 완성된 T 뒤 첫 거래 봉으로 E가 끝난 W(16:20)에서 R2b — 같은 저장본의 R1과 T 순(10:00 매도 대금으로 11:00 매수), 수량은 T 시각 순자산, 늦게 풂")
         void lateFirstTradeFromBarsBeforeTheObservation() {
             store.states.put(BOOK, new com.macrodash.store.PaperStore.BookState(BOOK, 2_000, 12_000, 10_000, 83, null,
@@ -924,7 +923,6 @@ class UsTimedFillsTest {
         }
 
         @Test
-        @org.junit.jupiter.api.Disabled("재현 — E 마감 + 15분 전에 받은 W 전 저장본의 '아직 거래 없음'을 NO_TRADE_AFTER_T로 만료(수정 전)")
         @DisplayName("W 전 저장본(11:21)이 T 뒤 거래를 보이지 않음 — 그 뒤 거래가 있었을 수 있어 NO_TRADE_AFTER_T가 아니고, 멈춘 가격일 수 있어 종가로도 채우지 않음(⑧b) → NO_BARS")
         void noTradeSeenBeforeTheSessionEndIsNotProof() {
             long halt = buy("HALT", 10, "AT_1000");

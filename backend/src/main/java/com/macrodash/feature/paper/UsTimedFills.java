@@ -52,7 +52,8 @@ import java.util.Set;
  *       ({@link ExecutionAudit#fromBars} — ⑤ T &gt; 주문 생성 + 60초·봉 시작 ≥ T, ⑥ 봉의 세션 = E, ⑦ 완성된 봉, ⑧ 이어받은 종목 아님·거래량 &gt; 0·
  *       그 세션을 받은 시각 &gt; 주문 생성)이라 같은 주문의 체결과 반사실이 갈리지 않습니다.</li>
  *   <li>R2b {@value #RUNG_LATE}(대체) — 창 안 거래 봉이 없고 E 안에서 T 뒤 첫 거래 봉({@code firstTradeAfter[T]})이 있으면 그 봉 시가. W 뒤에 받은
- *       저장본·이어받은 값이 아닌 그 종목 항목만(§10-4).</li>
+ *       저장본·이어받은 값이 아닌 그 종목 항목만(§10-4) — E가 W에서 끝났으면(3a 조건) W 전에 받은 저장본의 완성된 봉(⑤~⑧)도 씁니다(T 뒤 실제로
+ *       거래된 가격, 1분봉 태스크가 마지막 회차들만 실패한 날 주문을 잃지 않게). R1·R2는 원래 W 전 저장본도 씁니다.</li>
  *   <li>R3 {@value #RUNG_FALLBACK}(대체) — <b>1분봉 자료 자체가 없을 때만</b>({@link Evidence#MISSING}) 장중 관측치 W의 관측 종가: W ≥ T + 20분,
  *       W의 그 종목 봉 날짜 = E, ①④(주문 뒤 수집·이어 쓴 봉 아님).</li>
  * </ol>
@@ -61,7 +62,9 @@ import java.util.Set;
  *
  * <p><b>3a</b>: 2b 뒤에도 남은 주문 가운데 E가 끝난 것(W가 E 마감 + 15분 뒤 — E 확정 종가 관측치 W* 또는 그 뒤)은 대기로 남기지 않습니다 — 1분봉
  * 자료가 없고 W의 그 종목 봉이 E의 확정 종가(봉 날짜 = E)면 그 종가({@value #RUNG_CLOSE}, 대체), 아니면 만료와 사유(아래 {@link #NO_BARS}·
- * {@link #NO_TRADE_AFTER_T}·{@link #NO_SESSION_BARS}). E 가격 밖으로는 체결하지 않습니다 — E 장중에 서버가 꺼졌다 E+1에 켜져도 E 주문은 E의 1분봉·
+ * {@link #NO_TRADE_AFTER_T}·{@link #NO_SESSION_BARS}). 'T 뒤 거래 없음'(⑧b)은 그 1분봉 저장본이 E를 끝까지 봤을 때만(W 뒤에 받았거나 E 마감 +
+ * 15분 뒤에 받음) {@link #NO_TRADE_AFTER_T}이고, 그 전에 받은 W 전 저장본이면 그 뒤 거래가 있었을 수 있어 {@link #NO_BARS}입니다(거래 없음을 보인
+ * 저장본이라 종가로도 채우지 않음). E 가격 밖으로는 체결하지 않습니다 — E 장중에 서버가 꺼졌다 E+1에 켜져도 E 주문은 E의 1분봉·
  * E 종가로만 풀리고, 관측치의 3개월 이력(배당 조정)에서 E 값을 꺼내지 않습니다. 그래서 시각 지정 주문은 장부의 만료 단계(1)에서 만료하지 않고
  * 여기서 만료합니다({@code PaperStore#expireOrders(String, LocalDate, java.util.Collection)}).
  *
@@ -401,7 +404,9 @@ final class UsTimedFills {
         if (first == null) {
             return Look.waiting("1분봉이 " + session + " " + label + " ET 뒤 거래를 아직 보이지 않습니다(⑧b — 거래 정지·무거래 가능)");
         }
-        if (bars.collectedAt().isBefore(observedAt)) {
+        // E가 이 관측치에서 끝났으면(3a 조건) W 전에 받은 저장본의 완성된 봉도 씁니다 — T 뒤 실제로 거래된 가격이라 룩어헤드가 아니고, 3a가 이
+        // 관측치에서 주문을 풀어야 해 더 기다릴 저장본이 없습니다(1분봉 태스크가 마지막 회차들만 실패한 날). 여기서 풀어 T 순 그대로입니다.
+        if (bars.collectedAt().isBefore(observedAt) && !sessionOver(session, observedAt, calendar)) {
             return Look.waiting("관측치 뒤에 받은 1분봉 저장본이 아니라 대체 체결(R2b)을 미룹니다");
         }
         Instant start = instant(Json.asText(first, "t"));
@@ -457,22 +462,47 @@ final class UsTimedFills {
         Order order = due.order();
         LocalDate session = due.session();
         Instant target = due.target();
-        return switch (evidence(order.ticker(), session, target, bars, observed.collectedAt())) {
+        Instant observedAt = observed.collectedAt();
+        return switch (evidence(order.ticker(), session, target, bars, observedAt)) {
             case BARS -> {
                 JsonNode day = bars.session(order.ticker(), session);
                 JsonNode first = Json.child(Json.child(day, "firstTradeAfter"), label(order.timing()));
-                if (first == null) {
-                    Instant fetched = instant(Json.asText(day, "fetchedAt"));
-                    yield Look.expire(NO_TRADE_AFTER_T, session + " 1분봉(받은 시각 " + (fetched == null ? "모름"
-                            : et(fetched, calendar)) + ")에 " + et(target, calendar) + " 뒤 거래 봉이 없습니다(거래 정지·무거래 가능)");
+                Instant fetched = instant(Json.asText(day, "fetchedAt"));
+                if (first != null) {
+                    yield Look.expire(NO_BARS, session + " 1분봉에 " + et(target, calendar)
+                            + " 뒤 거래 봉이 있으나 완성된 봉(⑦⑧)으로 풀지 못했습니다");
                 }
-                yield Look.expire(NO_BARS, session + " 1분봉에 " + et(target, calendar)
-                        + " 뒤 거래 봉이 있으나 완성된 봉·관측치 뒤 저장본으로 풀지 못했습니다");
+                if (!sawTheSessionEnd(bars, fetched, session, observedAt, calendar)) {
+                    yield unproven(session + " 1분봉의 " + et(target, calendar) + " 뒤 거래 없음", fetched, calendar);
+                }
+                yield Look.expire(NO_TRADE_AFTER_T, session + " 1분봉(받은 시각 " + et(fetched, calendar) + ")에 "
+                        + et(target, calendar) + " 뒤 거래 봉이 없습니다(거래 정지·무거래 가능)");
             }
-            case NO_TRADE -> Look.expire(NO_TRADE_AFTER_T, "1분봉에 그 종목의 " + session
-                    + " 세션이 없습니다(거래 정지·무거래 가능)");
+            case NO_TRADE -> sawTheSessionEnd(bars, bars.collectedAt(), session, observedAt, calendar)
+                    ? Look.expire(NO_TRADE_AFTER_T, "1분봉에 그 종목의 " + session + " 세션이 없습니다(거래 정지·무거래 가능)")
+                    : unproven("1분봉에 그 종목의 " + session + " 세션 없음", bars.collectedAt(), calendar);
             case MISSING, NOT_YET -> quotesClose(due, observed, calendar);
         };
+    }
+
+    /**
+     * 1분봉 저장본의 '거래 없음'이 E를 끝까지 본 것인가 — 관측치 W 뒤에 받은 저장본이거나(W는 E 마감 + 15분 뒤), W 전 저장본이라도 그 세션(E 세션이
+     * 없으면 그 저장본)을 E 마감 + 15분 뒤에 받았을 때. 아니면 그 저장본을 받은 뒤 거래가 있었을 수 있습니다.
+     *
+     * @param seen 그 '거래 없음'을 받은 시각(세션의 fetchedAt, E 세션이 없으면 저장본 수집 시각)
+     */
+    private static boolean sawTheSessionEnd(Bars bars, Instant seen, LocalDate session, Instant observedAt,
+                                            TradingCalendar calendar) {
+        return !bars.collectedAt().isBefore(observedAt) || (seen != null && sessionOver(session, seen, calendar));
+    }
+
+    /**
+     * E 마감 + 15분 전에 받은 W 전 저장본의 '거래 없음' — 그 뒤 거래가 있었을 수 있어 NO_TRADE_AFTER_T가 아니고, 거래가 없었을 수도 있어 관측치의 E
+     * 종가로도 채우지 않습니다(⑧b — 1분봉 자료 자체가 없을 때만 종가). 풀지 못한 만료 {@link #NO_BARS}.
+     */
+    private static Look unproven(String what, Instant seen, TradingCalendar calendar) {
+        return Look.expire(NO_BARS, what + "(받은 시각 " + et(seen, calendar) + ")은 마감 + 15분 전에 받은 관측치 전 저장본이라 "
+                + "그 뒤 거래가 있었는지 모릅니다 — 거래 없음을 보여 종가로도 채우지 않습니다(⑧b)");
     }
 
     /** 1분봉 자료가 없을 때의 E 종가({@value #RUNG_CLOSE}) — W의 그 종목 봉이 E의 확정 종가일 때만, 아니면 만료(§10-4·§12-4 'E 봉일 때만'). */

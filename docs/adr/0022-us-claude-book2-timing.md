@@ -81,6 +81,10 @@
      - 있음(0-2): `paper_fills.fill_rung` CHECK가 사다리 칸 다섯(`Y1M_AT`·`Y1M_NEXT`·`Y1M_LATE`·`QUOTES_FALLBACK`·`QUOTES_CLOSE`)만 받음(`PaperStoreDbTest.v17TimedTimingsFillBarAndOrderExec`)
      - 단계 1(있음): `UsTimedFillsTest.haltedAllDayIsNotFilledWithAFrozenPrice`(종일 무거래 → `NO_TRADE_AFTER_T` 만료 — 그날 `paper.quotes` 값으로 채우지 않음)·`resumedAfterTheTarget`(T 뒤 재개 → R2b)·
        `r3OnlyWhenTheBarsThemselvesAreMissing`(1분봉 자체가 없음 → R3 `fallback`)·`temporaryClosure`(`NO_SESSION_BARS`)·`backDuringTheNextSession`(E+1 가격으로는 체결하지 않음)
+       — 1분봉 태스크가 마지막 회차들만 실패해 저장본이 관측치 W 전 것인 날: E가 끝난 W에서 W 전 저장본의 완성된 R2b 봉도 T 순으로 씀
+       `UsTimedFillsTest.lateFirstTradeFromBarsBeforeTheObservation`(같은 저장본의 R1·T 시각 순자산·늦게 풂 포함), 그 저장본의 'T 뒤 거래 없음'은
+       E 마감 + 15분 뒤에 받았을 때만 `NO_TRADE_AFTER_T`(`noTradeSeenAfterTheSessionEndIsProof`)이고 그 전 것이면 `NO_BARS` — 종가로도 채우지 않음
+       (`noTradeSeenBeforeTheSessionEndIsNotProof`), 진행 중일 수 있는 봉(⑦)은 E가 끝나도 쓰지 않음(`unfinishedBarsBeforeTheObservationAreNotUsed`)
   13. 사전 등록 판정(T15)
      - 단계 0(0-5): `GET /api/paper/books/{code}/execution` 요약 지표는 N < 10이거나 결정일 묶음 < 5면 `null`(`PaperExecutionViewTest.summaryNullsUnderThresholds`). 판정 문턱은 코드가 아니라 이 문서·명세 §14-3에 출발 전에 고정
      - 단계 1(있음): 화면 '체결 시점 실험'은 `null`을 '—'와 '판단 보류'로 적고 값이 있어도 판정 문장을 만들지 않음, 시가는 대리값(`paperClaude2.test.ts`·`paperClaude2.test.tsx`)
