@@ -99,9 +99,9 @@ class PaperStoreDbTest {
     }
 
     @Test
-    @DisplayName("테이블이 있다 — V8이 마지막에 만드는 paper_api_usage, V9~V11이 더하는 열, V12의 paper_reviews, V13의 paper_books 시장·통화 열, V14의 복기·메모 시장 열, V15의 since 봉 거래량 열, V16의 주문 그날 보류 표시 열, V17의 체결 봉 열·실행 감사 표로 준비 여부를 본다")
+    @DisplayName("테이블이 있다 — V8이 마지막에 만드는 paper_api_usage, V9~V11이 더하는 열, V12의 paper_reviews, V13의 paper_books 시장·통화 열, V14의 복기·메모 시장 열, V15의 since 봉 거래량 열, V16의 주문 그날 보류 표시 열, V17의 체결 봉 열·실행 감사 표, V18의 장중 확인 표로 준비 여부를 본다")
     void ready() {
-        assertThat(store.ready()).as("make db-test로 V8~V17을 적용했는가").isTrue();
+        assertThat(store.ready()).as("make db-test로 V8~V18을 적용했는가").isTrue();
         assertThat(new SchemaCheck(jdbc).columnExists("paper_decisions", "packet_text")).isTrue();
         assertThat(new SchemaCheck(jdbc).tableExists("paper_reviews")).isTrue();
     }
@@ -1884,10 +1884,10 @@ class PaperStoreDbTest {
     }
 
     @Test
-    @DisplayName("V17은 여러 번 실행해도 안전 — 이미 적용한 DB에서 두 번 더 돌려도 시각 지정 주문·체결 봉·감사 행(반사실·지연)과 주문·체결·감사 표의 CHECK·기본키·외래키 모양이 그대로(make db-test가 다시 돌림) — 시험 뒤 되돌림")
+    @DisplayName("V17은 여러 번 실행해도 안전 — 이미 적용한 DB에서 V17과 그 뒤 파일을 번호 순서로 두 번 더 돌려도(V17만 돌리면 V18이 넓힌 timing CHECK가 열한 값으로 좁아짐) 시각 지정 주문·체결 봉·감사 행(반사실·지연)과 주문·체결·감사 표의 CHECK·기본키·외래키 모양이 그대로(make db-test가 다시 돌림) — 시험 뒤 되돌림")
     void v17RerunIsSafe() throws Exception {
         assumeTrue(Files.exists(V17), "db/migrations/V17__paper_timed_fills_and_exec.sql을 찾을 수 없습니다");
-        String sql = Files.readString(V17);
+        List<String> files = migrationsFrom(17);
         class Rollback extends RuntimeException {
         }
         store.insertBookIfAbsent(book(BOOK, "Claude 책"));
@@ -1903,8 +1903,9 @@ class PaperStoreDbTest {
             jdbc.update("UPDATE paper_fills SET bar_at = ?, fill_rung = 'Y1M_AT' WHERE id = ?", Timestamp.from(bar), fillId);
             jdbc.update("INSERT INTO paper_order_exec (order_id, book_code, timing, target_at, cf, lag_seconds, late_resolved) "
                     + "VALUES (?, ?, 'AT_1500', ?, CAST(? AS jsonb), 75, false)", order, BOOK, Timestamp.from(bar), cf);
-            jdbc.execute(sql);
-            jdbc.execute(sql);
+            for (int round = 0; round < 2; round++) {
+                files.forEach(jdbc::execute);
+            }
             assertThat(jdbc.queryForObject(constraints, String.class)).as("제약 모양 그대로").isEqualTo(before);
             assertThat(store.ordersByStatus(BOOK, "PENDING")).extracting(PaperStore.Order::timing).containsExactly("AT_1500");
             assertThat(jdbc.queryForMap("SELECT bar_at = ? AS on_bar, fill_rung FROM paper_fills WHERE id = ?",
@@ -1932,6 +1933,126 @@ class PaperStoreDbTest {
         assertThatThrownBy(() -> store.atomically(() -> {
             jdbc.execute("ALTER TABLE paper_fills DROP COLUMN bar_at");
             assertThat(new PaperStore(jdbc, MAPPER, new SchemaCheck(jdbc)).ready()).as("체결 봉 열이 없으면 준비 안 됨").isFalse();
+            throw new Rollback();
+        })).isInstanceOf(Rollback.class);
+        assertThat(new PaperStore(jdbc, MAPPER, new SchemaCheck(jdbc)).ready()).as("되돌린 뒤").isTrue();
+    }
+
+    // ------------------------------------------------------------------ 미국 Claude 계좌2 장중 확인(V18, ADR 0022 단계 2 — 명세 §11)
+    private static final Path V18 = Path.of("../db/migrations/V18__paper_checkpoints.sql");
+    private static final String CHECKPOINT_INSERT = "INSERT INTO paper_checkpoints (book_code, session_date, at_et, feed, "
+            + "watch, question, source_decision_id, status) VALUES (?, ?, CAST(? AS time), ?, CAST(? AS text[]), ?, ?, ?)";
+
+    private long decision(String code, LocalDate day, String kind) {
+        return store.insertDecisionIfAbsent(new PaperStore.Decision(0, code, day, kind, null, "OK", null, null, 1, null,
+                null, null, null, null, null, null, null, null, false, 1L, 0)).orElseThrow();
+    }
+
+    @Test
+    @DisplayName("V18: 결정 종류 CHECKPOINT(옛 네 종류 그대로, 모르는 종류는 막힘)·주문 시점 MARKET(V17 열한 값 그대로), 장중 확인 표는 계좌·세션마다 한 행(피드 MINUTE·HOURLY, 상태 넷만, 지연·부른 시각·확인 결정은 NULL로 시작), 요청 결정을 지우면 함께·확인 결정을 지우면 칸만 NULL, 책 초기화 때 함께 지워짐")
+    void v18CheckpointKindMarketTimingAndCheckpointsTable() {
+        store.insertBookIfAbsent(book(BOOK, "Claude 계좌2 시험"));
+        LocalDate session = DAY.plusDays(3);   // 2026-10-26(월)
+        long morning = decision(BOOK, DAY, "SCHEDULED");
+        long checkpoint = decision(BOOK, DAY, "CHECKPOINT");
+        assertThat(store.insertDecisionIfAbsent(new PaperStore.Decision(0, BOOK, DAY, "CHECKPOINT", null, "NO_TRADE", null,
+                null, 1, null, null, null, null, null, null, null, null, null, false, 1L, 0)))
+                .as("세션당 한 번 — UNIQUE(book, d, kind)").isEmpty();
+        for (String kind : List.of("MANUAL", "INITIAL", "REBALANCE")) {
+            assertThat(decision(BOOK, DAY, kind)).as("옛 종류 " + kind).isPositive();
+        }
+        assertThatThrownBy(() -> jdbc.update("UPDATE paper_decisions SET kind = 'INTRADAY' WHERE id = ?", checkpoint))
+                .as("모르는 결정 종류").isInstanceOf(org.springframework.dao.DataIntegrityViolationException.class);
+
+        long market = store.insertOrder(timedBuy(BOOK, "MARKET"));
+        assertThat(store.ordersByStatus(BOOK, "PENDING")).extracting(PaperStore.Order::timing).containsExactly("MARKET");
+        assertThatThrownBy(() -> jdbc.update("UPDATE paper_orders SET timing = 'LIMIT' WHERE id = ?", market))
+                .as("모르는 시점").isInstanceOf(org.springframework.dao.DataIntegrityViolationException.class);
+
+        assertThat(jdbc.update(CHECKPOINT_INSERT, BOOK, session, "10:30", "MINUTE", "{SPY,NVDA}", "갭 유지?", morning,
+                "PLANNED")).isEqualTo(1);
+        assertThat(jdbc.queryForMap("SELECT at_et::text AS at_et, feed, watch::text AS watch, question, status, reason, "
+                + "lag_seconds, called_at, checkpoint_decision_id, created_at IS NOT NULL AND updated_at IS NOT NULL AS stamped "
+                + "FROM paper_checkpoints WHERE book_code = ? AND session_date = ?", BOOK, session))
+                .as("지연·부른 시각·확인 결정은 모름(NULL — 0으로 채우지 않음)").containsEntry("at_et", "10:30:00")
+                .containsEntry("feed", "MINUTE").containsEntry("watch", "{SPY,NVDA}").containsEntry("question", "갭 유지?")
+                .containsEntry("status", "PLANNED").containsEntry("reason", null).containsEntry("lag_seconds", null)
+                .containsEntry("called_at", null).containsEntry("checkpoint_decision_id", null).containsEntry("stamped", true);
+        assertThatThrownBy(() -> jdbc.update(CHECKPOINT_INSERT, BOOK, session, "11:00", "HOURLY", "{}", null, morning,
+                "PLANNED")).as("계좌·세션마다 한 행").isInstanceOf(DuplicateKeyException.class);
+        LocalDate next = session.plusDays(1);
+        assertThat(jdbc.update(CHECKPOINT_INSERT, BOOK, next, "15:00", "HOURLY", "{}", null, morning, "SKIPPED"))
+                .as("HOURLY·빈 감시 목록").isEqualTo(1);
+        for (String[] bad : List.of(new String[]{"feed", "REALTIME"}, new String[]{"status", "CALLED"})) {
+            assertThatThrownBy(() -> jdbc.update("UPDATE paper_checkpoints SET " + bad[0] + " = ? WHERE book_code = ? "
+                    + "AND session_date = ?", bad[1], BOOK, session)).as("모르는 " + bad[0] + " " + bad[1])
+                    .isInstanceOf(org.springframework.dao.DataIntegrityViolationException.class);
+        }
+        assertThatThrownBy(() -> jdbc.update(CHECKPOINT_INSERT, BOOK, next.plusDays(1), "10:00", "MINUTE", "{SPY}", null,
+                -1L, "PLANNED")).as("없는 결정").isInstanceOf(org.springframework.dao.DataIntegrityViolationException.class);
+
+        jdbc.update("UPDATE paper_checkpoints SET status = 'DONE', checkpoint_decision_id = ?, lag_seconds = 75, "
+                + "called_at = now() WHERE book_code = ? AND session_date = ?", checkpoint, BOOK, session);
+        jdbc.update("DELETE FROM paper_decisions WHERE id = ?", checkpoint);
+        assertThat(jdbc.queryForMap("SELECT status, checkpoint_decision_id, lag_seconds FROM paper_checkpoints "
+                + "WHERE book_code = ? AND session_date = ?", BOOK, session)).as("확인 결정만 지우면 칸이 NULL, 행은 그대로")
+                .containsEntry("status", "DONE").containsEntry("checkpoint_decision_id", null).containsEntry("lag_seconds", 75);
+        long other = decision(BOOK, DAY.minusDays(1), "SCHEDULED");
+        jdbc.update(CHECKPOINT_INSERT, BOOK, next.plusDays(1), "10:00", "MINUTE", "{SPY}", null, other, "PLANNED");
+        jdbc.update("DELETE FROM paper_decisions WHERE id = ?", other);
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM paper_checkpoints WHERE book_code = ? AND session_date = ?",
+                Integer.class, BOOK, next.plusDays(1))).as("요청 결정을 지우면 함께").isZero();
+
+        store.resetBook(BOOK);
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM paper_checkpoints WHERE book_code = ?", Integer.class, BOOK))
+                .as("초기화가 장중 확인 행도 지움").isZero();
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM paper_orders WHERE book_code = ?", Integer.class, BOOK))
+                .as("MARKET 주문도 — V14·V17 재실행이 막히지 않게").isZero();
+    }
+
+    @Test
+    @DisplayName("V18은 여러 번 실행해도 안전 — 이미 적용한 DB에서 V14와 그 뒤 파일을 번호 순서로 두 번 더 돌려도 CHECKPOINT 결정 행·장중 확인 행과 결정·주문·장중 확인 표의 CHECK·기본키·외래키 모양이 그대로(MARKET 주문 행은 V14·V17이 막으므로 두지 않음) — 시험 뒤 되돌림")
+    void v18RerunIsSafe() throws Exception {
+        assumeTrue(Files.exists(V18), "db/migrations/V18__paper_checkpoints.sql을 찾을 수 없습니다");
+        List<String> files = migrationsFrom(14);
+        class Rollback extends RuntimeException {
+        }
+        store.insertBookIfAbsent(book(BOOK, "Claude 계좌2 시험"));
+        String constraints = "SELECT string_agg(conname || ' ' || pg_get_constraintdef(oid), '; ' ORDER BY conname) "
+                + "FROM pg_constraint WHERE conrelid IN ('paper_decisions'::regclass, 'paper_orders'::regclass, "
+                + "'paper_checkpoints'::regclass)";
+        String indexes = "SELECT string_agg(indexname, ', ' ORDER BY indexname) FROM pg_indexes WHERE tablename = 'paper_checkpoints'";
+        String before = jdbc.queryForObject(constraints, String.class);
+        String beforeIndexes = jdbc.queryForObject(indexes, String.class);
+        assertThat(before).contains("'CHECKPOINT'").contains("'MARKET'").contains("'MINUTE'");
+        assertThatThrownBy(() -> store.atomically(() -> {
+            long morning = decision(BOOK, DAY, "SCHEDULED");
+            long checkpoint = decision(BOOK, DAY, "CHECKPOINT");
+            jdbc.update(CHECKPOINT_INSERT, BOOK, DAY.plusDays(3), "10:00", "MINUTE", "{SPY}", "질문", morning, "PLANNED");
+            jdbc.update("UPDATE paper_checkpoints SET checkpoint_decision_id = ? WHERE book_code = ?", checkpoint, BOOK);
+            for (int round = 0; round < 2; round++) {
+                files.forEach(jdbc::execute);
+            }
+            assertThat(jdbc.queryForObject(constraints, String.class)).as("제약 모양 그대로").isEqualTo(before);
+            assertThat(jdbc.queryForObject(indexes, String.class)).as("색인 그대로").isEqualTo(beforeIndexes);
+            assertThat(jdbc.queryForMap("SELECT status, checkpoint_decision_id FROM paper_checkpoints WHERE book_code = ?",
+                    BOOK)).containsEntry("status", "PLANNED").containsEntry("checkpoint_decision_id", checkpoint);
+            assertThat(jdbc.queryForObject("SELECT kind FROM paper_decisions WHERE id = ?", String.class, checkpoint))
+                    .isEqualTo("CHECKPOINT");
+            throw new Rollback();
+        })).isInstanceOf(Rollback.class);
+        assertThat(jdbc.queryForObject(constraints, String.class)).as("되돌린 뒤").isEqualTo(before);
+    }
+
+    @Test
+    @DisplayName("V18 전 DB(paper_checkpoints 없음)는 준비 안 됨 — 백엔드만 새로 띄운 배포(QA-016)에서 장중 확인의 SQL 오류 대신 안내 문구, 시험 뒤 되돌림")
+    void readyRequiresV18() {
+        class Rollback extends RuntimeException {
+        }
+        assertThat(store.ready()).as("make db-test로 V18까지 적용했는가").isTrue();
+        assertThatThrownBy(() -> store.atomically(() -> {
+            jdbc.execute("DROP TABLE paper_checkpoints");
+            assertThat(new PaperStore(jdbc, MAPPER, new SchemaCheck(jdbc)).ready()).as("장중 확인 표가 없으면 준비 안 됨").isFalse();
             throw new Rollback();
         })).isInstanceOf(Rollback.class);
         assertThat(new PaperStore(jdbc, MAPPER, new SchemaCheck(jdbc)).ready()).as("되돌린 뒤").isTrue();

@@ -4,7 +4,7 @@ tests/test_table_ownership.py
 
 백엔드 쪽은 ArchitectureRulesTest가 "백엔드는 수집기 테이블에 쓰지 않는다"를 검사합니다. 여기는 그 반대입니다.
 수집기가 읽기만 하는 백엔드 테이블은 alert_rules(관심 종목 코드)·paper_positions·paper_books(장중 평가 범위 — ADR 0020)·
-paper_orders(Claude 계좌2 1분봉 범위 — ADR 0022)입니다.
+paper_orders(Claude 계좌2 1분봉 범위 — ADR 0022)·paper_checkpoints(계좌2 장중 확인 감시 범위 — 단계 2, ADR 0022)입니다.
 """
 from __future__ import annotations
 
@@ -26,6 +26,8 @@ BACKEND_TABLES = (
     "paper_fill_confirmations",
     # 미국 Claude 계좌2 실행 감사(V17, ADR 0022) — 1분봉은 수집기가 받고, 주문별 감사 행은 백엔드만 씁니다.
     "paper_order_exec",
+    # 미국 Claude 계좌2 장중 확인(V18, ADR 0022 단계 2) — 계획·결과는 백엔드만 씁니다. 수집기는 감시 범위를 읽기만 합니다.
+    "paper_checkpoints",
 )
 WRITE = re.compile(
     r"(?i)(INSERT\s+INTO|UPDATE|DELETE\s+FROM|TRUNCATE)\s+(" + "|".join(BACKEND_TABLES) + r")\b"

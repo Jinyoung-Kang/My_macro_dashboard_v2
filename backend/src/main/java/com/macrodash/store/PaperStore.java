@@ -615,16 +615,17 @@ public class PaperStore {
     }
 
     /**
-     * 테이블이 있는가. 수집기가 아직 V8~V16을 적용하지 않았으면 false입니다 — V8이 마지막에 만드는 테이블과 V9~V11이 더하는
+     * 테이블이 있는가. 수집기가 아직 V8~V18을 적용하지 않았으면 false입니다 — V8이 마지막에 만드는 테이블과 V9~V11이 더하는
      * 열({@code paper_track_record.data_source}·{@code paper_decisions.packet_text}·{@code paper_api_usage.est_cost_calls}),
      * V12의 {@code paper_reviews} 테이블, V13이 더하는 {@code paper_books.market}·{@code currency} 열, V14가 더하는
      * {@code paper_reviews.market}·{@code paper_notes.market} 열, V15가 더하는 {@code paper_positions.fill_ref_volume} 열, V16이 더하는
-     * {@code paper_orders.ledger_hold_reason} 열, V17이 더하는 {@code paper_fills.bar_at} 열과 {@code paper_order_exec} 테이블로 봅니다.
+     * {@code paper_orders.ledger_hold_reason} 열, V17이 더하는 {@code paper_fills.bar_at} 열과 {@code paper_order_exec} 테이블, V18의
+     * {@code paper_checkpoints} 테이블(계좌2 장중 확인 — 결정 종류 CHECKPOINT·시점 MARKET과 같은 파일)로 봅니다.
      * V8만 있는 DB(백엔드만 새로 띄운 경우, QA-016)에서 참이면
      * 트랙레코드 읽기·쓰기가 {@code group_code}·{@code data_source} 열과 새 기본키에서, 결정 읽기·쓰기가 {@code packet_text} 열에서,
      * 사용량 읽기·쓰기가 추정 비용 열에서, 주간 복기 작업·화면이 없는 테이블에서, 책 읽기·쓰기가 시장·통화 열에서, 복기·메모
      * 읽기·쓰기가 시장 열과 새 기본키({@code ON CONFLICT (market, week_ending)})에서, 한국 장부가 since 봉 거래량 열·주문의 그날 보류
-     * 표시 열에서, 실행 감사 작업·화면이 체결 봉 열·없는 감사 테이블에서 SQL 오류(500)를 냅니다.
+     * 표시 열에서, 실행 감사 작업·화면이 체결 봉 열·없는 감사 테이블에서, 장중 확인 계획·작업이 없는 확인 테이블에서 SQL 오류(500)를 냅니다.
      */
     public boolean ready() {
         return schema.tableExists("paper_api_usage") && schema.columnExists("paper_track_record", "data_source")
@@ -635,7 +636,8 @@ public class PaperStore {
                 && schema.columnExists("paper_reviews", "market") && schema.columnExists("paper_notes", "market")
                 && schema.columnExists("paper_positions", "fill_ref_volume")
                 && schema.columnExists("paper_orders", "ledger_hold_reason")
-                && schema.columnExists("paper_fills", "bar_at") && schema.tableExists("paper_order_exec");
+                && schema.columnExists("paper_fills", "bar_at") && schema.tableExists("paper_order_exec")
+                && schema.tableExists("paper_checkpoints");
     }
 
     /**
@@ -2341,14 +2343,15 @@ public class PaperStore {
 
     // ------------------------------------------------------------------ 초기화
     /**
-     * 한 책의 장부를 비웁니다 — 체결·주문·결정·보유·재진입 금지·순자산·상태를 한 트랜잭션으로 지웁니다. 책 행(상태·출발일)은
+     * 한 책의 장부를 비웁니다 — 장중 확인·체결·주문·결정·보유·재진입 금지·순자산·상태를 한 트랜잭션으로 지웁니다. 책 행(상태·출발일)은
      * 그대로 두니 호출자가 {@link #updateBookStatus}·{@link #updateBookStartedOn}·{@link #upsertState}로 다시 맞춥니다.
      * 작업 기록·설정·얼려 둔 출발일 종가는 책에 속하지 않아 남깁니다(다시 사후 체결할 때 같은 종가를 쓰려고).
      */
     public void resetBook(String code) {
         atomically(() -> {
-            // 외래키 방향(체결 → 주문 → 결정)대로 아래에서부터 지웁니다.
-            for (String table : List.of("paper_fills", "paper_orders", "paper_decisions", "paper_positions",
+            // 외래키 방향(장중 확인·체결 → 주문 → 결정)대로 아래에서부터 지웁니다. 장중 확인은 결정을 지우면 외래키로도
+            // 함께 지워지지만(V18 CASCADE) 이름을 적어 둡니다.
+            for (String table : List.of("paper_checkpoints", "paper_fills", "paper_orders", "paper_decisions", "paper_positions",
                     "paper_lockouts", "paper_nav_daily", "paper_book_state")) {
                 jdbc.update("DELETE FROM " + table + " WHERE book_code = ?", code);
             }
