@@ -2069,7 +2069,8 @@ export function decisionMeta(decision: PaperDecisionDetail): DecisionMetaCell[] 
     cells.push({
       key: "sharedWith",
       label: "계좌1과 같은 입력",
-      value: isNumber(decision.sharedWith) ? `결정 #${decision.sharedWith}` : "— (같은 실행의 계좌1 결정 없음·섹션 다름)",
+      value: isNumber(decision.sharedWith) ? `결정 #${decision.sharedWith}`
+        : "— (같은 거래일 계좌1 결정 없음·섹션 다름·계좌1 행이 재시도할 API 오류)",
       title: "매크로·FRED·레짐·게이트·트랙레코드·기관 프로필·메모 일곱 섹션이 바이트까지 같았던 같은 거래일 계좌1 결정입니다.",
     });
   }
