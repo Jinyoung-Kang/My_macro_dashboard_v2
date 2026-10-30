@@ -366,8 +366,8 @@ describe("보유·체결(F2 — 세 배지·확정 조정·실효 비용·스탑
   });
 
   // QA-146: 토스가 NXT 미지원으로 표시한 주식(TOSS_DAILY)도 일봉 종가 = 20:00 봉 종가다(시가만 KRX 시가 단일가). 스탑 감지는 종가라
-  // 체결가(시가) 이름표 'KRX 일봉 시가'를 붙이면 틀린다 — 수정 전에는 그 이름표를 그대로 씀(it.fails).
-  it.fails("QA-146: 스탑 근거 — TOSS_DAILY 잠정 종가에는 시가 이름표를 붙이지 않고 20:00까지의 체결이 섞일 수 있다고 적음(체결가 이름표는 그대로 시가)", () => {
+  // 체결가(시가) 이름표 'KRX 일봉 시가'를 붙이면 틀린다.
+  it("QA-146: 스탑 근거 — TOSS_DAILY 잠정 종가에는 시가 이름표를 붙이지 않고 20:00까지의 체결이 섞일 수 있다고 적음(체결가 이름표는 그대로 시가)", () => {
     const detected = { trigger: "TRAILING_STOP", stopPct: 8, highWatermark: 75_000, stopPrice: 69_000, observedPrice: 68_500,
       observedSource: "TOSS_DAILY", barDate: "2026-11-05" };
     const text = krStopBasisText(detected) ?? "";

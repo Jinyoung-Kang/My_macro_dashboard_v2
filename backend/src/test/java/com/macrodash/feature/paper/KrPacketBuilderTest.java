@@ -17,7 +17,6 @@ import com.macrodash.store.Snapshot;
 import com.macrodash.store.StoreRepository;
 import com.macrodash.store.StoreRepository.TimeseriesColumns;
 import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import tools.jackson.databind.JsonNode;
@@ -560,7 +559,6 @@ class KrPacketBuilderTest {
     }
 
     @Test
-    @Disabled("QA-146 재현 — 수정 전에는 8_prices·pricesNote가 TOSS_DAILY 봉을 종가까지 'KRX 단독'(KRX 시가·종가 단일가)으로 설명")
     @DisplayName("QA-146: 가격 설명 — 토스 잠정 종가에는 20:00까지의 장 마감 뒤 체결이 섞일 수 있다고 적고(NXT 미지원 표시 주식도 일봉 종가 = 20:00 봉), "
             + "TOSS_DAILY 설명은 시가와 종가를 나눔 — 정기·출발 패킷의 8_prices·1_basis·0_instructions")
     void priceNotesDoNotCallTheTossCloseAKrxClose() {
