@@ -195,11 +195,28 @@ function insertAfter<T>(columns: readonly Column<T>[], key: string, extra: Colum
   return at < 0 ? [...columns, ...extra] : [...columns.slice(0, at + 1), ...extra, ...columns.slice(at + 1)];
 }
 
+/*
+ * 계좌2 주문 표의 칸 너비 — 짧은 칸은 줄바꿈 없이, 글 칸(상태의 장부 사유·실행 메모·근거)은 최소 폭을 두고 낱말 사이에서만 줄바꿈(break-keep).
+ * 계좌2 표는 줄바꿈 금지 칸이 더해져 최소 폭이 카드를 넘고(1280px에서 상자 958px), 그때 너비를 정하지 않은 칸은 모두 최소 폭으로 접혀 '매수'가 한 글자씩·
+ * 낸 시각과 체결 시점이 서너 줄로 접혔습니다(QA 스택 화면). 넓은 표는 상자 안에서 가로로 넘깁니다('좌우로 넘겨 보세요'). 한국 표와 같은 방식이고,
+ * 계좌1·규칙·벤치마크 표는 위 칸 정의 그대로입니다. 체결 표는 글 칸이 없어 모든 칸이 한 줄입니다(timedFillColumns).
+ */
+const TIMED_ORDER_WIDTH: Readonly<Record<string, string>> = {
+  createdAt: "whitespace-nowrap", ticker: "whitespace-nowrap", side: "whitespace-nowrap", size: "whitespace-nowrap",
+  timing: "whitespace-nowrap", targetAt: "whitespace-nowrap", source: "whitespace-nowrap", asOf: "whitespace-nowrap",
+  expires: "whitespace-nowrap", filledAt: "whitespace-nowrap", advantage: "whitespace-nowrap",
+  status: "min-w-[11rem] break-keep", executionNote: "min-w-[12rem] break-keep", reason: "min-w-[14rem] break-keep",
+};
+
+function withWidths<T>(columns: readonly Column<T>[], widthOf: (key: string) => string | undefined): Column<T>[] {
+  return columns.map((column) => ({ ...column, className: widthOf(column.key) ?? column.className }));
+}
+
 function timedOrderColumns(audit: ReadonlyMap<number, PaperExecutionOrder>): Column<PaperOrder>[] {
   const withTarget = insertAfter(ORDER_COLUMNS, "timing", [
-    { key: "targetAt", header: "목표 시각", className: "whitespace-nowrap", cell: (row) => formatKst(audit.get(row.id)?.targetAtKst ?? null) },
+    { key: "targetAt", header: "목표 시각", cell: (row) => formatKst(audit.get(row.id)?.targetAtKst ?? null) },
   ]);
-  return insertAfter(withTarget, "filledAt", [
+  const cells = insertAfter(withTarget, "filledAt", [
     {
       key: "advantage",
       header: "계좌1식 대비",
@@ -211,18 +228,21 @@ function timedOrderColumns(audit: ReadonlyMap<number, PaperExecutionOrder>): Col
         );
       },
     },
-    { key: "executionNote", header: "실행 메모", className: "min-w-[10rem]", cell: (row) => orderExecutionNote(row.reason) },
+    { key: "executionNote", header: "실행 메모", cell: (row) => orderExecutionNote(row.reason) },
   ]);
+  return withWidths(cells, (key) => TIMED_ORDER_WIDTH[key]);
 }
 
+/** 계좌2 체결 표 — 칸이 모두 짧은 값이라 한 줄(위 TIMED_ORDER_WIDTH와 같은 까닭 — 너비를 두지 않으면 '매수'·관측 시각이 접힘). */
 function timedFillColumns(audit: ReadonlyMap<number, PaperExecutionOrder>): Column<PaperFill>[] {
   const withBar = insertAfter(FILL_COLUMNS, "observedAt", [
-    { key: "barAt", header: "체결 봉", className: "whitespace-nowrap", cell: (row) => formatKst(row.barAtKst ?? null) },
+    { key: "barAt", header: "체결 봉", cell: (row) => formatKst(row.barAtKst ?? null) },
   ]);
-  return insertAfter(withBar, "rawPrice", [
-    { key: "rung", header: "사다리", className: "whitespace-nowrap", cell: (row) => fillRungText(row.fillRung) },
+  const cells = insertAfter(withBar, "rawPrice", [
+    { key: "rung", header: "사다리", cell: (row) => fillRungText(row.fillRung) },
     { key: "advantage", header: "계좌1식 대비", align: "right", cell: (row) => executionAdvantageText(audit.get(row.orderId)) },
   ]);
+  return withWidths(cells, () => "whitespace-nowrap");
 }
 
 /*
