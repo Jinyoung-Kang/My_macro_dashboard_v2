@@ -205,7 +205,7 @@ describe("QA-104 자동 갱신하는 나머지 패널도 실패를 표시한다"
 describe("QA-147 패널이 첫 값을 받은 뒤에 새로 읽는다(시험 흔들림)", () => {
   // 상태 화면은 개요 응답 뒤에야 오류·경고 로그 패널을 마운트하고, 패널의 첫 요청은 그 커밋 다음 Scheduler 작업에서 나갑니다.
   // 수정 전에는 카드 제목만 보고 새로 읽어, 첫 요청이 새로 읽기 신호 뒤 act 안에서 나가 곧바로 버려지고(abort) 값이 없는
-  // 실패(error, '다시 시도')가 됐다(it.fails). cardTitled로는 부하가 없어도 0.4~1%, 부하가 높으면 더 자주 이 순서였습니다.
+  // 실패(error, '다시 시도')가 됐다(재현 커밋에서는 it.fails). cardTitled로는 부하가 없어도 0.4~1%, 부하가 높으면 더 자주 이 순서였습니다.
   it("상태 화면 오류·경고 로그: 카드가 막 그려진 직후에 새로 읽어도 '새로 읽지 못함'", async () => {
     const path = "/api/status/issues";
     const bodies = { "/api/status": { readMode: "auto", collectorReachable: true },
