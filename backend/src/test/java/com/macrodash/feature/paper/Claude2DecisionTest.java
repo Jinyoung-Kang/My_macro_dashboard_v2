@@ -11,7 +11,6 @@ import com.macrodash.support.InvalidRequestException;
 import com.sun.net.httpserver.HttpServer;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.test.util.ReflectionTestUtils;
@@ -269,7 +268,6 @@ class Claude2DecisionTest {
     }
 
     @Test
-    @Disabled("재현 — 고치기 전에는 출발이 같은 계획 안 재시도로 성공해도 결정 행 retry_count가 0이라 결정 주기 호출 수가 1")
     @DisplayName("출발이 같은 계획 안 재시도로 성공하면 결정 행 retry_count 1 — 결정 주기 호출 수(행마다 1 + 재시도 수)가 실제 호출 2회와 같음(상태 cycle.calls·M5)")
     void startRetryIsCountedInTheDecisionRow() {
         notStarted();

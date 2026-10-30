@@ -901,8 +901,9 @@ public class ClaudeBookService {
                         response.set("supersededOrders", mapper.valueToTree(cancelled));
                     }
                 }
+                // 새 행의 재시도 수 = 이 계획에서 더 부른 횟수(출발의 같은 계획 안 재시도 — 한국 출발 선례), 재시도 행은 저장 쪽이 1 올림.
                 Decision base = pipeline.decisionRow(retried == null ? 0 : retried.id(), asOf, kind, status, row,
-                        claude, attempt, plan.target(), response, null, pricesFinal);
+                        claude, attempt, plan.target(), response, null, pricesFinal, retried == null ? calls - 1 : 0);
                 long id;
                 if (retried != null) {
                     if (!store.updateDecisionRetry(base)) {

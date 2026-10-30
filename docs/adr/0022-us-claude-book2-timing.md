@@ -66,7 +66,8 @@
        주기는 기록 없음 `repeatedBarsWaitIsRecordedOnce`, 개장 전 컷오프가 기다림보다 먼저 `cutoffComesBeforeTheBarsWait`)
   9. 호출 예산(T10)
      - 있음: `ClaudeBookServiceTest.manualCallsStopAtCapMinusReserveScheduledGoToCap`(수동 문턱 = 상한 − 예약, 정기는 상한까지 — 예약 값은 설정이라 이 결정은 저장 값으로 지킴)
-     - 단계 1(있음): 계좌2 소상한(같은 기준 거래일의 결정 주기 단위 — 행마다 1 + 재시도) `Claude2DecisionTest.cycleCapCountsTheDecisionRows`, 수동 결정은 수동 문턱
+     - 단계 1(있음): 계좌2 소상한(같은 기준 거래일의 결정 주기 단위 — 행마다 1 + 재시도) `Claude2DecisionTest.cycleCapCountsTheDecisionRows`(출발의 같은 계획 안 재시도도 행의
+       재시도 수로 셈 — `startRetryIsCountedInTheDecisionRow`), 수동 결정은 수동 문턱
        `PaperDecisionJobClaude2Test.manualBook2Decision`. 서머타임에 하루 확인 둘(단계 2)은 2-3 몫
   10. 한도·월 상한(T12)
      - 있음: `OrderValidatorTest.monthlyCap`·`goldenOutcomes`(계좌1 그대로), 한국 계산 `KrPacketBuilderTest.monthlyCountLeavesOutTheStartAllocation`(출발 `INITIAL` 주문을 세지 않음), 미국 계산 `ClaudeBookServiceTest.initialBackfillDoesNotUseMonthlyCap`
