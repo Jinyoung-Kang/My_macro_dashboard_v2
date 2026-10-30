@@ -346,6 +346,11 @@ public class ClaudeBookService {
                 clock, Math.max(1, timeoutSeconds));
     }
 
+    /** 장중 확인을 켠 계좌2 파이프라인({@link #claude2Checkpoints}) — 장중 확인 작업({@link PaperCheckpointJob})이 확인 호출에 씁니다. */
+    ClaudeDecisionPipeline claude2CheckpointPipeline() {
+        return claude2Checkpoints;
+    }
+
     private static List<MarketContext> concat(List<MarketContext> first, List<MarketContext> second) {
         List<MarketContext> out = new ArrayList<>(first);
         out.addAll(second);
@@ -673,13 +678,14 @@ public class ClaudeBookService {
     }
 
     /**
-     * 그 결정 주기(기준 거래일 d)의 계좌2 Claude 호출 수 — d의 계좌2 정기(SCHEDULED)·출발(INITIAL) 결정 행마다 1 + 재시도 수(Claude를 부르지 않은
-     * 행 — 모델 없음 — 은 0). 계좌2 소상한({@code claude2.maxCallsPerCycle})이 이 수로 막습니다(계좌2 명세 §5-3 — 새 표 없이 결정 행으로 셈, 한국의 시장별
+     * 그 결정 주기(기준 거래일 d)의 계좌2 Claude 호출 수 — d의 계좌2 정기(SCHEDULED)·출발(INITIAL)·장중 확인(CHECKPOINT — 단계 2, 재시도 없음)
+     * 결정 행마다 1 + 재시도 수(Claude를 부르지 않은 행 — 모델 없음 — 은 0). 결정 주기로 세므로 서머타임에 한 KST 날 확인이 둘이어도 서로 다른
+     * 주기입니다(계좌2 명세 §5-3). 계좌2 소상한({@code claude2.maxCallsPerCycle})이 이 수로 막습니다(계좌2 명세 §5-3 — 새 표 없이 결정 행으로 셈, 한국의 시장별
      * 횟수와 같은 방식). 재시도를 상한 문구로 건너뛴 행도 재시도 수가 올라 1을 더 셉니다(막는 쪽으로 기울어짐). 수동 결정(MANUAL)은 수동 문턱을 따로 씁니다.
      */
     static int claude2CallsInCycle(PaperStore store, LocalDate asOf) {
         int calls = 0;
-        for (String kind : List.of(RuleBookService.SCHEDULED, RuleBookService.INITIAL)) {
+        for (String kind : List.of(RuleBookService.SCHEDULED, RuleBookService.INITIAL, RuleBookService.CHECKPOINT)) {
             Optional<Decision> row = store.decisionFor(PaperBooks.CLAUDE2, asOf, kind);
             if (row.isPresent() && row.get().model() != null) {
                 calls += 1 + row.get().retryCount();

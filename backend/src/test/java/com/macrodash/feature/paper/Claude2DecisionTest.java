@@ -555,6 +555,13 @@ class Claude2DecisionTest {
         assertThat(zero.decision().status()).isEqualTo(ClaudeBookService.STATUS_SKIPPED);
         assertThat(zero.decision().response().path("summary").asString()).contains("계좌2 소상한(0회");
         assertThat(requests).hasSize(1);
+
+        // 장중 확인 결정 행(CHECKPOINT — 단계 2)도 같은 결정 주기로 셈(재시도 없음 — 1회). 모델 없는 행은 0.
+        store.insertDecisionIfAbsent(new Decision(0, PaperBooks.CLAUDE2, MON, RuleBookService.CHECKPOINT, null,
+                ClaudeBookService.STATUS_API_ERROR, "claude-sonnet-5-5", 0, 1, null, null, null, null, null, null, null, null,
+                List.of(), false, 1L, 0));
+        assertThat(ClaudeBookService.claude2CallsInCycle(store, MON)).as("정기 2 + 확인 1").isEqualTo(3);
+        assertThat(ClaudeBookService.claude2CallsInCycle(store, TUE)).as("TUE 정기는 SKIPPED(모델 없음)").isZero();
     }
 
     @Test

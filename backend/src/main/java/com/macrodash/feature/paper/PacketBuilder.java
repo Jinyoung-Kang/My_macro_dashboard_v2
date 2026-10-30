@@ -474,6 +474,14 @@ public class PacketBuilder {
     }
 
     /**
+     * 장중 확인 패킷({@link CheckpointPacket})의 매크로 카드 섹션 — 아침 패킷과 같은 읽기({@link #read})의 {@value #MACRO} 그대로(각자의 지연 배지
+     * 포함, 저장본은 조용히 읽음).
+     */
+    JsonNode macroSection(LocalDate asOf, SettingsRow settingsRow) {
+        return read(asOf, false, settingsRow).marketSections().get(MACRO);
+    }
+
+    /**
      * 시장 입력 하나로 그 계좌의 패킷을 조립합니다 — 장부·최근 결정·이달 재량 주문 수·가격 이력·재무는 그 계좌({@code book})로 읽고, 섹션 1의
      * {@code book}·{@code decisionKind}와 섹션 9의 {@code book}은 인자 그대로입니다. 계좌 비의존 섹션({@link #MARKET_SECTION_KEYS})은 시장 입력의
      * 것을 그대로 넣습니다. 장부는 {@link StoreReader#quietly} 안에서 읽습니다.

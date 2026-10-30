@@ -17,8 +17,9 @@ import java.util.Set;
 /**
  * 🧪 모의 매매 시장 목록(주입 빈 — 2단계 명세 §9 묶음 A 리뷰 메모 'C1 — 시장 목록과 실행마다 달력 한 벌') — 리스크 점검(A5)·결정·주간
  * 복기(A6) 정기 실행이 {@link #all}의 순서로 시장마다 한 번씩 돌고, 계좌 행의 시장 코드로 시장 묶음을 찾을 때도({@link #of}) 이 목록을
- * 봅니다. 새 {@code @Scheduled}를 만들지 않고 기존 작업이 시장을 차례로 돕니다(스케줄러 풀 4에 작업 12개 — 열두째는 시장을 돌지 않는
- * 미국 전용 실행 감사 작업 {@link PaperExecutionAuditJob}, 미국 Claude 계좌2 실험 단계 0·ADR 0022).
+ * 봅니다. 새 {@code @Scheduled}를 만들지 않고 기존 작업이 시장을 차례로 돕니다(스케줄러 풀 5에 작업 13개 — 열두째는 시장을 돌지 않는
+ * 미국 전용 실행 감사 작업 {@link PaperExecutionAuditJob}, 미국 Claude 계좌2 실험 단계 0·ADR 0022, 열셋째는 장중 확인 작업
+ * {@link PaperCheckpointJob}, 단계 2).
  *
  * <p>정적 목록이 아니라 빈인 까닭: 한국 시장 묶음(C1c의 {@code KrPaperMarket})의 달력은 저장본({@code kr_holidays})과 설정 판에 기대므로
  * 상수로 만들 수 없습니다 — 목록이 그 재료를 읽는 자리를 갖고, 실행 하나의 문맥을 엽니다({@link #open} — 그 실행의 설정 행을 한 번

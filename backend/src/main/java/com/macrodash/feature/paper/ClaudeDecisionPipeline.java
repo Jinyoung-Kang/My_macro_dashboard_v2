@@ -175,6 +175,11 @@ final class ClaudeDecisionPipeline {
     private final Clock clock;
     private final int timeoutSeconds;
     private final StructuredSchema schema;
+    /**
+     * 장중 확인 응답 스키마({@value CheckpointPacket#SCHEMA_RESOURCE}) — 장중 확인을 켠 계좌2 판({@link ClaudeBookProfile#checkpoints})의 파이프라인만
+     * 기동 때 읽습니다(깨졌으면 기동 실패). 그 밖은 null.
+     */
+    private final StructuredSchema checkpointSchema;
 
     ClaudeDecisionPipeline(MarketContext context, PaperStore store, FrameworkService framework, PaperApiCalls calls,
                            AiService ai, ObjectMapper mapper, Clock clock, int timeoutSeconds) {
@@ -192,6 +197,7 @@ final class ClaudeDecisionPipeline {
         this.timeoutSeconds = timeoutSeconds;
         // 스키마 파일이 깨졌으면 기동하지 않습니다 — 첫 결정 날 아침에야 알게 되지 않게.
         this.schema = StructuredSchema.load(context.schemaResource());
+        this.checkpointSchema = profile.checkpoints() ? StructuredSchema.load(CheckpointPacket.SCHEMA_RESOURCE) : null;
     }
 
     /** {@link #bind} — 같은 문맥·협력 객체·읽어 둔 스키마에 시장 문맥만 그 실행으로. */
@@ -209,6 +215,7 @@ final class ClaudeDecisionPipeline {
         this.clock = base.clock;
         this.timeoutSeconds = base.timeoutSeconds;
         this.schema = base.schema;
+        this.checkpointSchema = base.checkpointSchema;
     }
 
     /**
@@ -351,6 +358,23 @@ final class ClaudeDecisionPipeline {
         return send(frame, packet, row, claude, today, scheduled, null);
     }
 
+    /**
+     * 장중 확인 호출 한 번(계좌2 명세 §5-2, 단계 2) — 지금 프레임 판을 읽고, 그 판 번호로 확인 패킷을 만들고({@code packetFor} — 판 번호를 받아
+     * {@link CheckpointPacket}을 조립), 시스템 프롬프트는 이 파이프라인의 c2-2 렌더링, 응답 스키마는 {@value CheckpointPacket#SCHEMA_RESOURCE}로
+     * 부릅니다. 정기 작업 문턱(상한까지)이고 재시도는 없습니다(부르는 쪽). 호출 한 번을 잡지 못하면 null.
+     *
+     * @throws IllegalStateException 장중 확인 판이 아닌 파이프라인
+     */
+    Attempt attemptCheckpoint(java.util.function.IntFunction<Packet> packetFor, SettingsRow row, ClaudeSettings claude,
+                              LocalDate today) {
+        if (checkpointSchema == null) {
+            throw new IllegalStateException(book() + " 파이프라인은 장중 확인 판이 아닙니다");
+        }
+        FrameworkService.Frame frame = framework.current();
+        Packet packet = packetFor.apply(frame.version());
+        return send(frame, packet, row, claude, today, true, null, checkpointSchema);
+    }
+
     /** 시장 입력을 함께 쓰는 문맥인가({@link #attempt(PacketBuilder.MarketInputs, String, SettingsRow, ClaudeSettings, LocalDate, boolean)}). */
     boolean sharesInputs() {
         return shared != null;
@@ -372,6 +396,12 @@ final class ClaudeDecisionPipeline {
     /** 만든 패킷으로 호출 한 번 — 시스템 프롬프트(그 판·그 설정 행), 호출 한 번 잡기, (호출 창이면 남은 시간 재기), 부르기, 사용량, 형식 검사. */
     private Attempt send(FrameworkService.Frame frame, Packet packet, SettingsRow row, ClaudeSettings claude,
                          LocalDate today, boolean scheduled, CallWindow window) {
+        return send(frame, packet, row, claude, today, scheduled, window, schema);
+    }
+
+    /** {@link #send(FrameworkService.Frame, Packet, SettingsRow, ClaudeSettings, LocalDate, boolean, CallWindow)}를 그 응답 스키마로. */
+    private Attempt send(FrameworkService.Frame frame, Packet packet, SettingsRow row, ClaudeSettings claude,
+                         LocalDate today, boolean scheduled, CallWindow window, StructuredSchema responseSchema) {
         String system = FrameworkService.render(profile, frame.body(), frame.version(), row.body());
         // 정기 작업은 상한까지, 수동 호출은 정기 작업 몫을 남긴 문턱까지(2단계 명세 §4-10 — 같은 SQL의 문턱만 다름).
         if (calls.reserve(today, claude.callLimit(scheduled)).isEmpty()) {
@@ -389,7 +419,7 @@ final class ClaudeDecisionPipeline {
         }
         AiService.StructuredResult result;
         try {
-            result = ai.structured(claude.model(), system, packet.text(), schema.forApi(), claude.effort(), timeout);
+            result = ai.structured(claude.model(), system, packet.text(), responseSchema.forApi(), claude.effort(), timeout);
         } catch (RuntimeException e) {
             // 요청을 보내기 전에 멈춘 경우(인자 검사 — 코드 오류)라 잡은 호출을 돌려놓고 그대로 던집니다.
             calls.release(today);
@@ -397,7 +427,7 @@ final class ClaudeDecisionPipeline {
         }
         // 키가 없어 보내지 않았으면 잡은 호출을 돌려놓고, 아니면 토큰·추정 비용을 더합니다(기록 실패는 로그만 — 받은 응답을 버리지 않음).
         calls.record(today, claude.model(), result);
-        return classify(packet, frame, result, claude);
+        return classify(packet, frame, result, claude, responseSchema);
     }
 
     /** 그 문맥의 패킷 — 미국은 설정 행으로, 한국은 그 실행·관측치·읽은 순간으로({@link MarketContext}). */
@@ -417,7 +447,7 @@ final class ClaudeDecisionPipeline {
 
     /** 결과 → 상태(클래스 설명의 실패 분류). 성공이면 JSON으로 읽고 스키마 전체로 검사합니다. */
     private Attempt classify(Packet packet, FrameworkService.Frame frame, AiService.StructuredResult result,
-                             ClaudeSettings claude) {
+                             ClaudeSettings claude, StructuredSchema responseSchema) {
         if (!result.ok()) {
             String kind = result.errorKind() == null ? "UNKNOWN" : result.errorKind();
             String status = switch (kind) {
@@ -435,7 +465,7 @@ final class ClaudeDecisionPipeline {
             return new Attempt(packet, frame, result, STATUS_FORMAT_ERROR, "응답 형식 오류 — JSON으로 읽지 못했습니다",
                     null, List.of("$: JSON으로 읽지 못했습니다"), claude.model(), claude.effort());
         }
-        List<String> violations = schema.validate(parsed);
+        List<String> violations = responseSchema.validate(parsed);
         if (!violations.isEmpty()) {
             String shown = String.join("; ", violations.subList(0, Math.min(VIOLATIONS_IN_ERROR, violations.size())));
             String error = clip("응답 형식 오류 — 스키마 위반 " + violations.size() + "건: " + shown

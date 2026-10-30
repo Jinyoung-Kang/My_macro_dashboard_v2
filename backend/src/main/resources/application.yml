@@ -16,11 +16,12 @@ spring:
 
   # 정기 작업(@Scheduled) 스레드 수. Spring Boot 기본은 1개라, 결정 작업이 Claude를 부르는 몇 분(claude-timeout-seconds 300) 동안
   # 리스크 점검(5분 트레일링 스탑)·알림·국면 기록이 그 뒤에 줄을 섰습니다. 같은 작업은 fixedDelay라 스스로 겹치지 않고, 서로 겹치는
-  # 작업(결정·리스크 점검)은 장부 잠금으로 줄을 섭니다.
+  # 작업(결정·리스크 점검)은 장부 잠금으로 줄을 섭니다. 5개인 까닭: 🧪 장중 확인 호출(최대 300초, 계좌2 단계 2)이 한국 결정 창의 호출과
+  # 겹쳐도 리스크 점검이 줄 서지 않게(계좌2 명세 §5-2).
   task:
     scheduling:
       pool:
-        size: 4
+        size: 5
 
   datasource:
     url: ${DATABASE_URL:jdbc:postgresql://localhost:5432/macrodash}
@@ -99,7 +100,7 @@ dashboard:
   # 🧪 모의 알고리즘 매매(운영자 전용, 명세 docs/specs/2026-10-24-paper-trading-spec.md). 슬리피지·스탑 비율 같은 값은 여기가 아니라
   # DB 설정 한 행(paper_settings)이고, 여기는 재기동해야 바뀌는 값만 둡니다. 출발일이 거래일이 아니거나 현금이 0 이하면 기동하지 않습니다.
   paper:
-    enabled: ${PAPER_ENABLED:true}          # false면 정기 작업(리스크 점검·결정·출발일 종가 얼리기·실행 감사)이 일하지 않음(통합 테스트는 false). 수동 실행은 그대로
+    enabled: ${PAPER_ENABLED:true}          # false면 정기 작업(리스크 점검·결정·출발일 종가 얼리기·실행 감사·장중 확인)이 일하지 않음(통합 테스트는 false). 수동 실행은 그대로
     start-date: "2026-10-23"                # 네 책의 출발(사후 체결) 거래일 — 명세 D2
     initial-cash: 100000                    # 책마다(달러) — D1
     kr:                                     # 🇰🇷 한국 책(2단계 명세 K1·K25·K28) — 재기동해야 바뀌는 값
@@ -113,6 +114,8 @@ dashboard:
     review-initial-delay-ms: 180000
     exec-audit-interval-ms: 300000          # 🧪 실행 감사 주기(5분, 미국 Claude 계좌2 실험 단계 0 — ADR 0022). 계좌1 주문의 메뉴 반사실·1분봉 지연을 적고, 새로 적었을 때만 기록
     exec-audit-initial-delay-ms: 150000
+    checkpoint-interval-ms: 60000           # 🧪 장중 확인 작업 주기(60초, 미국 Claude 계좌2 단계 2 — ADR 0022). PLANNED 행이 있을 때만 읽고, 확인 시각 +2~+20분에 한 번 부름
+    checkpoint-initial-delay-ms: 165000
     claude-timeout-seconds: 300             # Claude 책 호출 하나의 대기 한도(초). 출력 16,000토큰·effort high가 다 차도 끝나는 여유
 
   ai:
