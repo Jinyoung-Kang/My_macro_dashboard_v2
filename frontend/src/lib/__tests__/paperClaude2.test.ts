@@ -324,6 +324,17 @@ describe("결정 상세·검증·리스크·설정", () => {
     expect(decisionMeta(detail({ book: "claude" })).map((cell) => cell.key)).not.toContain("sharedWith");
   });
 
+  // 수정 전에는 sharedWith가 null일 때 '같은 실행의 계좌1 결정 없음·섹션 다름'만 적었지만, 서버(ClaudeBookService.persistClaude2)는 같은 거래일
+  // 계좌1 행이 재시도할 API 오류(retry_count 0)여도 null을 보내고, 따로 도는 실행의 계좌1 정기 결정 행도 가리킨다(it.fails).
+  it.fails("sharedWith가 null인 까닭은 서버의 세 갈래 — 같은 거래일 계좌1 결정 없음·섹션 다름·계좌1 행이 재시도할 API 오류", () => {
+    const cell = decisionMeta(detail({ sharedWith: null, marketSectionsSha256: "0123456789abcdef0123" }))
+      .find((entry) => entry.key === "sharedWith");
+    expect(cell?.value).toContain("같은 거래일 계좌1 결정 없음");
+    expect(cell?.value).toContain("섹션 다름");
+    expect(cell?.value).toContain("재시도할 API 오류");
+    expect(cell?.value).not.toContain("같은 실행의");
+  });
+
   it("계좌2 결정 기록은 Claude 모양으로 읽고 주문마다 실행 메모를 싣는다", () => {
     const view = claudeDecisionView({
       book: "claude2",
