@@ -11,6 +11,7 @@ import com.macrodash.store.PaperStore.Lockout;
 import com.macrodash.store.PaperStore.Order;
 import com.macrodash.store.PaperStore.Position;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -621,6 +622,80 @@ class UsTimedFillsTest {
             assertThat(order(msft).reason().path("cashLimited").asBoolean()).isTrue();
             assertThat(order(msft).reason().path("requestedQty").asInt()).isEqualTo(9);
             assertThat(fillOf(sell).qty()).isEqualTo(100);
+        }
+
+        @Test
+        @Disabled("리뷰 semantics(R3) 재현 — R3 매도의 시장 시각이 T라 관측치 W의 관측가로 판 대금이 더 이른 봉 매수의 현금에 들어감. 수정 커밋에서 뗌")
+        @DisplayName("같은 T(10:00)에서 R3로 판 매도(BBB 1분봉만 이어받음 → W 10:25 관측가 60)의 대금은 그보다 이른 10:00 봉 매수에 쓰지 않음 — 현금 1,000으로 20주 중 9주(cashLimited), 매도는 그 뒤에(시장 시각 = 그 관측치 수집 시각)")
+        void quotesFallbackSaleDoesNotFundAnEarlierBuyAtTheSameTarget() {
+            store.states.put(BOOK, new com.macrodash.store.PaperStore.BookState(BOOK, 1_000, 6_000, 5_000, 83, null,
+                    null, null, null));
+            hold("BBB", 100, 45, 50, 50.0);
+            long sell = timed("BBB", PaperBooks.SELL, null, null, null, "AT_1000", MON, MON_DECIDED);
+            long aapl = buy("AAPL", 20, "AT_1000");
+            bars(new Bars(et(TUE, 10, 26)).bar("BBB", TUE, et(TUE, 10, 0), 50.0, 300.0).stale("BBB")
+                    .bar("AAPL", TUE, et(TUE, 10, 0), 100.0, 500.0).bar("AAPL", TUE, et(TUE, 10, 1), 100.1, 500.0)
+                    .bar("SPY", TUE, et(TUE, 10, 0), 580.0, 9000.0));
+
+            observe(et(TUE, 10, 25), bar("BBB", MON, 50.0, TUE, 60.0), bar("AAPL", MON, 99.0, TUE, 101.0));
+
+            assertThat(barOf(sell).fillRung()).isEqualTo("QUOTES_FALLBACK");
+            assertThat(fillOf(sell).rawPrice()).as("W 10:25의 관측가").isEqualTo(60.0);
+            assertThat(barOf(aapl).fillRung()).isEqualTo("Y1M_AT");
+            // 10:00 봉 매수 때 현금 = 1,000(10:25 관측가 매도 전) → 1,000 ÷ 100.05 = 9.99 → 9주(지금은 매도 대금 5,997을 먼저 넣어 20주)
+            assertThat(fillOf(aapl).qty()).isEqualTo(9);
+            assertThat(order(aapl).reason().path("cashLimited").asBoolean()).isTrue();
+            assertThat(order(aapl).reason().path("requestedQty").asInt()).isEqualTo(20);
+            assertThat(fillOf(sell).qty()).isEqualTo(100);
+            assertThat(fillOf(aapl).id()).as("체결 행도 시장 시각 순 — 10:00 매수 → 10:25 관측치 매도").isLessThan(fillOf(sell).id());
+        }
+
+        @Test
+        @Disabled("리뷰 semantics(R3) 재현 — 앞 T의 R3 매도 대금이 뒤 T의 더 이른 봉 매수의 현금·T 시각 순자산에 들어감. 수정 커밋에서 뗌")
+        @DisplayName("앞 T(10:00) 매도가 R3로 W 11:25 관측가에 풀리면 그 대금은 11:00 봉 매수에 쓰지 않고, 그 매수의 T 시각 순자산은 판 종목을 아직 든 것으로(갱신 전 평가 가격 50) 셈 — 비중 50% = 6,000의 절반 → 9주 요청, 현금 1,000으로 3주")
+        void quotesFallbackSaleDoesNotFundAnEarlierBuyAtALaterTarget() {
+            store.states.put(BOOK, new com.macrodash.store.PaperStore.BookState(BOOK, 1_000, 6_000, 5_000, 83, null,
+                    null, null, null));
+            hold("BBB", 100, 45, 50, 50.0);
+            long sell = timed("BBB", PaperBooks.SELL, null, null, null, "AT_1000", MON, MON_DECIDED);
+            long msft = timed("MSFT", PaperBooks.BUY, null, 50.0, null, "AT_1100", MON, MON_DECIDED);
+            bars(new Bars(et(TUE, 11, 26)).bar("BBB", TUE, et(TUE, 10, 0), 50.0, 300.0).stale("BBB")
+                    .bar("MSFT", TUE, et(TUE, 11, 0), 300.0, 500.0).bar("MSFT", TUE, et(TUE, 11, 1), 300.1, 500.0)
+                    .bar("SPY", TUE, et(TUE, 11, 0), 580.0, 9000.0));
+
+            observe(et(TUE, 11, 25), bar("BBB", MON, 50.0, TUE, 60.0), bar("MSFT", MON, 299.0, TUE, 305.0));
+
+            assertThat(barOf(sell).fillRung()).isEqualTo("QUOTES_FALLBACK");
+            assertThat(barOf(msft).fillRung()).isEqualTo("Y1M_AT");
+            // 11:00 봉 매수의 T 시각 순자산 = 현금 1,000 + BBB 100 × 갱신 전 50(11:25 관측가 매도 전) = 6,000 → 3,000 ÷ 300.15 = 9.99 → 9주 요청,
+            // 현금 1,000 ÷ 300.15 = 3.33 → 3주(지금은 W 관측가로 판 대금을 먼저 넣어 순자산 ≈ 6,997 → 11주 전량)
+            assertThat(fillOf(msft).qty()).isEqualTo(3);
+            assertThat(order(msft).reason()).as("cashLimited 근거").isNotNull();
+            assertThat(order(msft).reason().path("cashLimited").asBoolean()).isTrue();
+            assertThat(order(msft).reason().path("requestedQty").asInt()).isEqualTo(9);
+            assertThat(fillOf(sell).qty()).isEqualTo(100);
+        }
+
+        @Test
+        @DisplayName("같은 관측치 W(10:25)에서 매도·매수가 모두 R3면 그 매도 대금으로 산다 — 둘 다 W의 관측가라 같은 시각(매도 → 매수)")
+        void quotesFallbackSaleFundsAQuotesFallbackBuyAtTheSameObservation() {
+            store.states.put(BOOK, new com.macrodash.store.PaperStore.BookState(BOOK, 1_000, 6_000, 5_000, 83, null,
+                    null, null, null));
+            hold("BBB", 100, 45, 50, 50.0);
+            long sell = timed("BBB", PaperBooks.SELL, null, null, null, "AT_1000", MON, MON_DECIDED);
+            long aapl = buy("AAPL", 20, "AT_1000");
+            bars(new Bars(et(TUE, 10, 26)).bar("BBB", TUE, et(TUE, 10, 0), 50.0, 300.0).stale("BBB")
+                    .bar("AAPL", TUE, et(TUE, 10, 0), 100.0, 500.0).stale("AAPL")
+                    .bar("SPY", TUE, et(TUE, 10, 0), 580.0, 9000.0));
+
+            observe(et(TUE, 10, 25), bar("BBB", MON, 50.0, TUE, 60.0), bar("AAPL", MON, 99.0, TUE, 101.0));
+
+            assertThat(barOf(sell).fillRung()).isEqualTo("QUOTES_FALLBACK");
+            assertThat(barOf(aapl).fillRung()).isEqualTo("QUOTES_FALLBACK");
+            // 1,000 + 100 × 60 × 0.9995 = 6,997 → 20 × 101 × 1.0005 = 2,021 — 전량
+            assertThat(fillOf(aapl).qty()).isEqualTo(20);
+            assertThat(order(aapl).reason() == null || !order(aapl).reason().path("cashLimited").asBoolean()).isTrue();
+            assertThat(fillOf(sell).id()).as("같은 시각 — 매도 → 매수").isLessThan(fillOf(aapl).id());
         }
 
         @Test
