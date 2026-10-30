@@ -5,6 +5,7 @@
  *  - 기본 Claude 계좌(시작 카드·홈 히어로)는 계좌1 — 계좌2가 목록에 있어도, 계좌1이 운용 중이어도 계좌2를 고르지 않는다
  *  - 시작 전·결정 안내는 계좌 소개에서(kind CLAUDE면 모두 계좌1 문구였던 것), 계좌1 시작 단추 이름은 서버 이름 + " 시작"
  *  - 계좌2 출발 카드: 시작 전일 때만, 설정 claude2.enabled로 단추가 열림(꺼짐·모름은 닫힘), 창 시각·이번 주기 호출은 상태 응답 글자 그대로
+ *    (다음 결정 시각이 이미 지났으면 '결정 창 열림(…부터 컷오프 …까지)', 컷오프도 지났으면 이번 창 닫힘)
  *  - 체결 시점 실험: 문턱 미달이면 '—'와 '판단 보류'(0으로 채우지 않음), 값이 있어도 판정 문장을 만들지 않음, 시가는 대리값,
  *    고른 시점(M1 — 주 판정) 두 줄(본 줄·대체 체결 따로)은 계좌2만 — 계좌1(서버 null)이면 없음
  *  - 노출 추이: 계좌2 순자산 기록이 오면 셋째 선(날짜 합집합, 없는 날은 그 선만 null), 안 오면 두 선 그대로
@@ -19,6 +20,7 @@ import {
   EXECUTION_CHOSEN_LABEL,
   EXECUTION_VERDICT_RULE,
   claude2StartView,
+  claude2WindowLines,
   claudeDecisionView,
   claudeExposureChart,
   claudeStartPrompt,
@@ -153,6 +155,38 @@ describe("계좌2 출발 카드", () => {
       .toBeNull();
     expect(claude2StartView({ initialized: false, books: BOOKS }, STATUS)).toBeNull();
     expect(claude2StartView({ initialized: true, books: [CLAUDE1] }, STATUS)).toBeNull();
+  });
+
+  it("다음 결정 시각이 지났으면 '결정 창 열림(…부터 컷오프 …까지)', 컷오프도 지났으면 이번 창 닫힘 — 지금을 모르면 받은 시각 그대로", () => {
+    // 서버는 d의 계좌2 행이 아직 없으면 d의 결정 시각을 보내고 그 창은 개장 전 컷오프까지 열림(PaperQueryService.claude2Status).
+    const group = {
+      ...STATUS.claude2!,
+      nextDecision: {
+        tradingDate: "2026-10-29", atKst: "2026-10-30 07:30 KST", atEt: "2026-10-29 18:30 ET",
+        cutoffKst: "2026-10-30 22:00 KST", cutoffEt: "2026-10-30 09:00 ET",
+      },
+    };
+    const value = (now: Date | null) => claude2WindowLines(group, now)[0].value;
+    expect(value(null)).toBe("2026-10-30 07:30 KST · 2026-10-29 18:30 ET");
+    expect(value(new Date("2026-10-29T22:29:00Z"))).toBe("2026-10-30 07:30 KST · 2026-10-29 18:30 ET");   // 07:29 KST — 아직
+    expect(value(new Date("2026-10-29T22:30:00Z"))).toBe("결정 창 열림(07:30부터 컷오프 22:00 KST까지)");   // 07:30 KST 정각
+    expect(value(new Date("2026-10-30T08:43:00Z"))).toBe("결정 창 열림(07:30부터 컷오프 22:00 KST까지)");   // 17:43 KST
+    expect(value(new Date("2026-10-30T13:00:00Z"))).toBe("이번 창 닫힘(컷오프 22:00 KST 지남) — 다음 결정은 다음 미국 세션 마감 뒤 창");
+    // 주말을 건너는 창(금요일 세션 — 토 07:30부터 월 09:00 ET = 23:00 KST 컷오프)은 날짜까지.
+    const weekend = {
+      ...group,
+      nextDecision: {
+        tradingDate: "2026-10-30", atKst: "2026-10-31 07:30 KST", atEt: "2026-10-30 18:30 ET",
+        cutoffKst: "2026-11-02 23:00 KST", cutoffEt: "2026-11-02 09:00 ET",
+      },
+    };
+    expect(claude2WindowLines(weekend, new Date("2026-11-01T03:00:00Z"))[0].value)
+      .toBe("결정 창 열림(2026-10-31 07:30부터 컷오프 2026-11-02 23:00 KST까지)");
+    // 컷오프·이번 주기 호출 줄은 지금과 상관없이 받은 글자 그대로, 출발 카드도 같은 줄.
+    expect(claude2WindowLines(group, new Date("2026-10-30T08:43:00Z")).slice(1)).toEqual(claude2WindowLines(group, null).slice(1));
+    expect(claude2StartView({ initialized: true, books: BOOKS }, { claude2: group }, new Date("2026-10-30T08:43:00Z"))?.lines)
+      .toEqual(claude2WindowLines(group, new Date("2026-10-30T08:43:00Z")));
+    expect(claude2WindowLines(null, new Date("2026-10-30T08:43:00Z")).map((line) => line.value)).toEqual(["—", "—", "—"]);
   });
 
   it("설정이 꺼져 있으면 단추를 닫고 설정을 켜라고, 상태를 못 읽으면 모른다고 — 창 칸은 '—'", () => {

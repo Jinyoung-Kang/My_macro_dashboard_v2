@@ -29,7 +29,8 @@
      - 단계 1(있음): `Claude2DecisionTest.initialDecisionStartsTheBookForward`(INITIAL — 정기 조립, 통과 주문은 E 하루짜리, 같은 트랜잭션에서 운용·`started_on = S`·S 순자산 줄)·
        `failedStartWritesNothing`·`bookStateGuards`, `PaperDecisionJobClaude2Test.startIsTriedOncePerWindow`(작업 기록 `claude2.startTried`)·`manualBook2Start`,
        `ApiIntegrationTest.paperInitWithoutPricesSkipsBenchmarks`(기본 꺼짐이면 수동 결정·출발 400, `preview:true`도 400), 화면 `paperClaude2.test.tsx`(설정이 꺼져 있으면
-       '계좌2 시작'이 닫힘 → 켜면 확인 → `{book:"claude2"}`). 출발 조건 X1~X5(명세 §19)는 단계 0 측정 기록(`docs/DATA_SOURCES.md`)으로 확인
+       '계좌2 시작'이 닫힘 → 켜면 확인 → `{book:"claude2"}`; 다음 결정 시각이 지났으면 '결정 창 열림(07:30부터 컷오프 22:00 KST까지)' — 창은 컷오프까지 열림,
+       `paperClaude2.test.ts` '다음 결정 시각이 지났으면…'). 출발 조건 X1~X5(명세 §19)는 단계 0 측정 기록(`docs/DATA_SOURCES.md`)으로 확인
   3. 계좌2의 시가·시각 지정 메뉴(T5)
      - 있음(0-2): `PaperStoreDbTest.v17TimedTimingsFillBarAndOrderExec`(timing CHECK = 옛 다섯 + `AT_1000`~`AT_1500`, 모르는 시점은 막힘, 계좌1 체결의 `bar_at`·`fill_rung`은 NULL)·`v17RerunIsSafe`,
        계좌1 시점 그대로 `DecisionTimingsLockTest.schemaMarketAndPromptAgree`·`UsPaperMarketTest.timings`

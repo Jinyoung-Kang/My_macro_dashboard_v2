@@ -121,6 +121,14 @@ const rowsOf = (region: HTMLElement) =>
 const headersOf = (table: HTMLElement) => within(table).getAllByRole("columnheader").map((th) => th.textContent);
 
 describe("개요 — 계좌2 출발", () => {
+  // 출발 카드의 다음 결정은 지금과 견줍니다(지난 시각이면 '결정 창 열림') — 고정 응답의 결정 시각(2026-10-31 07:30 KST) 전으로 시계를 고정해 실제
+  // 날짜가 지나도 같은 결과가 나오게.
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-10-30T11:00:00Z"));   // 20:00 KST
+  });
+  afterEach(() => vi.useRealTimers());
+
   it("설정이 꺼져 있으면 '계좌2 시작'이 닫히고 설정을 켜라고 — 창 시각·이번 주기 호출, 계좌1 시작 카드는 없다", async () => {
     reads["/api/paper/overview"] = () => Promise.resolve(overview(CLAUDE2_NOT_STARTED));
     reads["/api/paper/status"] = () => Promise.resolve(status(false));
@@ -139,7 +147,7 @@ describe("개요 — 계좌2 출발", () => {
 
   // 수정 전에는 d(마감이 끝난 최근 세션)의 계좌2 행이 아직 없으면 서버가 보내는 그 결정 시각 — 이미 지난 07:30 KST(창은 개장 전 컷오프까지 열림,
   // PaperQueryService.claude2Status) — 을 '다음 결정'에 그대로 적어, 17:43 KST에 '2026-10-30 07:30 KST'가 다음 결정으로 읽혔다(수정 전에는 it.fails).
-  it.fails("다음 결정 시각이 이미 지났으면 지난 시각 대신 '결정 창 열림(07:30부터 컷오프 22:00 KST까지)'", async () => {
+  it("다음 결정 시각이 이미 지났으면 지난 시각 대신 '결정 창 열림(07:30부터 컷오프 22:00 KST까지)'", async () => {
     vi.useFakeTimers({ toFake: ["Date"] });
     vi.setSystemTime(new Date("2026-10-30T08:43:00Z"));   // 17:43 KST — 그날 07:30 결정 시각은 지났고 22:00 컷오프 전
     try {

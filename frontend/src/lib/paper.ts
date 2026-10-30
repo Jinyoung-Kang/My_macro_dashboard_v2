@@ -6,6 +6,7 @@
  * 모르는 값(null)은 "—"로 둡니다. 0으로 채우지 않습니다.
  */
 import { EMPTY, formatKst, formatLatency, formatNumber, formatPercent, formatSigned, formatWithUnit } from "./format";
+import { tradeTimeFrom } from "./marketSessions";
 import { KR_ACCOUNT_PROFILES } from "./paperKrProfiles";
 import { formatMoney, formatSharePriceFor, marketMeta, type PaperMarketCode } from "./paperMarket";
 import type {
@@ -13,6 +14,7 @@ import type {
   PaperBookStatusResult,
   PaperBookSummary,
   PaperCalendarStatus,
+  PaperClaude2Status,
   PaperClaudePreviewResult,
   PaperDecisionDetail,
   PaperDecisionSummary,
@@ -3127,32 +3129,48 @@ export interface Claude2StartView {
   /** 설정 claude2.enabled — true면 단추가 열리고, false면 설정을 먼저 켜라는 안내, null이면 상태를 읽지 못함(단추 닫힘). */
   armed: boolean | null;
   armNote: string;
-  /** 다음 결정·개장 전 컷오프·이번 주기 호출 — 상태 응답 글자 그대로(모르면 "—"). */
+  /** 다음 결정·개장 전 컷오프·이번 주기 호출 — 상태 응답 글자 그대로(모르면 "—"), 다음 결정 시각이 지났으면 창이 열렸다고(claude2WindowLines). */
   lines: DecisionMetaCell[];
   cost: string;
   confirm: string;
 }
 
+/** "yyyy-MM-dd HH:mm KST" 두 시각이 같은 KST 날짜면 시각(HH:mm)만, 아니면 날짜까지(창이 주말을 건너는 금요일 세션 등). */
+function windowStamp(stamp: string, other: string | null | undefined): string {
+  const text = formatKst(stamp);
+  return other && formatKst(other).slice(0, 10) === text.slice(0, 10) ? text.slice(11) : text;
+}
+
 /**
- * 계좌2 출발 카드 — 미국 계좌2가 시작 전(NOT_STARTED)일 때만, 아니면 null. 출발은 사후 체결이 아니라 앞으로 체결입니다: 설정 claude2.enabled를
- * 켜면(설정 판 하나 — 명세 L2 '사용자가 시작') 다음 미국 결정 창에 정기 결정 작업이 출발 결정을 내고, 단추는 같은 출발을 그 창 안에서 지금 한 번
- * 부릅니다(창 밖·꺼짐은 서버가 400 — 기록 없음). 미리보기는 없습니다. 창 시각은 상태 응답의 claude2 묶음 그대로입니다.
+ * 계좌2 다음 결정 칸의 값 — 서버는 마감이 끝난 최근 세션 d의 계좌2 행이 아직 없으면 d의 결정 시각을 보내고, 그 창은 개장 전 컷오프까지 열려 있습니다
+ * (PaperQueryService.claude2Status). 그래서 그 시각이 지났으면 지난 시각을 '다음 결정'으로 적지 않고 '결정 창 열림(07:30부터 컷오프 22:00 KST까지)',
+ * 컷오프도 지났으면 이번 창이 닫혔다고 적습니다. 지금(`now`)을 모르면(마운트 전) 받은 시각 그대로입니다.
  */
-export function claude2StartView(
-  overview: Pick<PaperOverviewResponse, "initialized" | "books">,
-  status: Pick<PaperStatusResponse, "claude2"> | null | undefined,
-): Claude2StartView | null {
-  if (overview.initialized === false) return null;
-  const book = (overview.books ?? []).find((entry) => isTimedBook(entry.code));
-  if (!book || book.status !== "NOT_STARTED") return null;
-  const group = status?.claude2 ?? null;
-  const armed = group ? group.enabled === true : null;
+function claude2NextDecisionValue(next: PaperClaude2Status["nextDecision"], now: Date | null): string {
+  const both = (kst: string | null | undefined, et: string | null | undefined) =>
+    kst || et ? [kst, et].filter(Boolean).join(" · ") : EMPTY;
+  const at = tradeTimeFrom(next?.atKst);
+  if (!next?.atKst || !at || !now || now.getTime() < at.getTime()) return both(next?.atKst, next?.atEt);
+  const cutoffKst = next.cutoffKst;
+  const cutoff = tradeTimeFrom(cutoffKst);
+  if (cutoffKst && cutoff && now.getTime() >= cutoff.getTime()) {
+    return `이번 창 닫힘(컷오프 ${windowStamp(cutoffKst, next.atKst)} KST 지남) — 다음 결정은 다음 미국 세션 마감 뒤 창`;
+  }
+  const until = cutoffKst ? `컷오프 ${windowStamp(cutoffKst, next.atKst)} KST까지` : "컷오프까지";
+  return `결정 창 열림(${windowStamp(next.atKst, cutoffKst)}부터 ${until})`;
+}
+
+/**
+ * 계좌2 결정 창 세 줄 — 다음 결정(기준 거래일 d)·개장 전 컷오프·이번 결정 주기 호출(d의 호출 / 상한). 상태 응답 claude2 묶음 글자 그대로이고(모르면 "—"),
+ * 다음 결정 시각이 이미 지났으면 창이 열려 있다고 적습니다(claude2NextDecisionValue). 출발 카드와 결정 로그(계좌2를 고름)가 같은 줄을 씁니다.
+ */
+export function claude2WindowLines(group: PaperClaude2Status | null | undefined, now: Date | null = null): DecisionMetaCell[] {
   const next = group?.nextDecision ?? null;
   const cycle = group?.cycle ?? null;
   const both = (kst: string | null | undefined, et: string | null | undefined) =>
     kst || et ? [kst, et].filter(Boolean).join(" · ") : EMPTY;
-  const lines: DecisionMetaCell[] = [
-    { key: "nextDecision", label: `다음 결정(기준 거래일 ${next?.tradingDate ?? EMPTY})`, value: both(next?.atKst, next?.atEt) },
+  return [
+    { key: "nextDecision", label: `다음 결정(기준 거래일 ${next?.tradingDate ?? EMPTY})`, value: claude2NextDecisionValue(next, now) },
     { key: "cutoff", label: "개장 전 컷오프", value: both(next?.cutoffKst, next?.cutoffEt) },
     {
       key: "cycle",
@@ -3160,6 +3178,26 @@ export function claude2StartView(
       value: isNumber(cycle?.calls) ? `${formatNumber(cycle.calls, 0)}회${isNumber(cycle?.cap) ? ` / 상한 ${formatNumber(cycle.cap, 0)}회` : ""}` : EMPTY,
     },
   ];
+}
+
+/**
+ * 계좌2 출발 카드 — 미국 계좌2가 시작 전(NOT_STARTED)일 때만, 아니면 null. 출발은 사후 체결이 아니라 앞으로 체결입니다: 설정 claude2.enabled를
+ * 켜면(설정 판 하나 — 명세 L2 '사용자가 시작') 다음 미국 결정 창에 정기 결정 작업이 출발 결정을 내고, 단추는 같은 출발을 그 창 안에서 지금 한 번
+ * 부릅니다(창 밖·꺼짐은 서버가 400 — 기록 없음). 미리보기는 없습니다. 창 시각은 상태 응답의 claude2 묶음 그대로입니다.
+ *
+ * @param now 지금(화면의 분 시계 — 마운트 전이면 null). 다음 결정 시각이 지났는지 가르는 데만 씁니다(claude2WindowLines).
+ */
+export function claude2StartView(
+  overview: Pick<PaperOverviewResponse, "initialized" | "books">,
+  status: Pick<PaperStatusResponse, "claude2"> | null | undefined,
+  now: Date | null = null,
+): Claude2StartView | null {
+  if (overview.initialized === false) return null;
+  const book = (overview.books ?? []).find((entry) => isTimedBook(entry.code));
+  if (!book || book.status !== "NOT_STARTED") return null;
+  const group = status?.claude2 ?? null;
+  const armed = group ? group.enabled === true : null;
+  const lines = claude2WindowLines(group, now);
   const label = book.label;
   return {
     bookCode: book.code,
