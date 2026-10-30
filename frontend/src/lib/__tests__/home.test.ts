@@ -344,7 +344,7 @@ describe("paperHomeModel — 모의매매(미국)", () => {
 
   // 수정 전에는 끝 줄이 개요의 출발일(startDate)만 적어, 늦게 앞으로 체결로 출발한 Claude 계좌2(행의 수익률은 서버가 계좌2 자기 출발 대비로 셈)도
   // 2026-10-23에 출발한 것처럼 읽혔다(화면 점검 — 수정 전에는 it.fails).
-  it.fails("출발일이 다른 계좌가 있으면 끝 줄에 '· Claude 계좌2는 S 출발(앞으로 체결)'을 덧붙인다 — 같은 날 출발·시작 전 계좌는 적지 않음", () => {
+  it("출발일이 다른 계좌가 있으면 끝 줄에 '· Claude 계좌2는 S 출발(앞으로 체결)'을 덧붙인다 — 같은 날 출발·시작 전 계좌는 적지 않음", () => {
     const base = paperOverview();
     const claude2 = { ...base.books![1], code: "claude2", label: "Claude 계좌2", startedOn: "2026-11-02" };
     expect(paperHomeModel({ ...base, books: [...base.books!, claude2] }, paperStatus(true)).startLine)

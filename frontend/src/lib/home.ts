@@ -8,7 +8,7 @@
 import { delayLabel, EMPTY, formatDate, formatKst, formatNumber, formatSigned, formatWithUnit, withoutLeadingIcon } from "./format";
 import { MARKETS, sessionStatus, tradeDayFrom, tradeTimeFrom } from "./marketSessions";
 import { TABS } from "./nav";
-import { formatDollars, primaryClaudeBook } from "./paper";
+import { formatDollars, isTimedBook, primaryClaudeBook, withParticle } from "./paper";
 import { formatMoney, marketMeta, type PaperMarketCode } from "./paperMarket";
 import { bookAssetRow, type BookRow } from "./paperOverview";
 import { paperMarketPath } from "./paperRoutes";
@@ -339,7 +339,10 @@ export type PaperHomeModel = {
   heroStale: boolean;
   heroStaleReason: string | null;
   rows: PaperHomeRow[];
-  /** "출발 2026-10-23 · 처음 현금 100,000 달러 · 변화율은 출발 대비"(한국은 "… 100,000,000원 …"). */
+  /**
+   * "출발 2026-10-23 · 처음 현금 100,000 달러 · 변화율은 출발 대비"(한국은 "… 100,000,000원 …"). 🧪 미국 Claude 계좌2가 다른 날 출발했으면 그 출발을
+   * 덧붙입니다("… · Claude 계좌2는 2026-11-02 출발(앞으로 체결)" — 계좌2 행의 수익률은 계좌2 자기 출발 대비).
+   */
   startLine: string;
   /** 정기 작업이 꺼져 있으면 그 안내, 아니면(켜짐·모름) null. */
   disabledNote: string | null;
@@ -403,7 +406,14 @@ export function paperHomeModel(
   const startDate = presentText(overview?.startDate) ?? presentText(status?.startDate);
   const initialCash = finite(status?.initialCash) ?? sharedInitialCash(books);
   const cashText = korea ? formatMoney(initialCash, "KR") : formatDollars(initialCash, 0);
-  const startLine = `출발 ${startDate ?? EMPTY} · 처음 현금 ${cashText} · 변화율은 출발 대비`;
+  // 🧪 미국 Claude 계좌2(시각 지정 계좌 — 앞으로 체결로 늦게, 출발일 S부터, 계좌2 명세 §4-1)는 출발일이 다르면 그 출발을 덧붙입니다. 출발일만 적으면 계좌2도
+  // 개요의 출발일에 출발한 것처럼 읽히는데, 행의 수익률은 서버가 계좌2 자기 출발 대비로 셉니다. 시작 전(출발일 없음)·같은 날 출발이면 적지 않고, 다른 계좌
+  // (사후 체결로 함께 출발한 미국 네 계좌·한국 계좌)의 줄은 예전 그대로입니다.
+  const lateStarts = startDate === null ? [] : books
+    .filter((book) => isTimedBook(book.code) && book.status !== "NOT_STARTED" && presentText(book.startedOn) !== null
+      && book.startedOn !== startDate)
+    .map((book) => `${withParticle(book.label, "은")} ${book.startedOn} 출발(앞으로 체결)`);
+  const startLine = [`출발 ${startDate ?? EMPTY}`, `처음 현금 ${cashText}`, "변화율은 출발 대비", ...lateStarts].join(" · ");
 
   return {
     market,
