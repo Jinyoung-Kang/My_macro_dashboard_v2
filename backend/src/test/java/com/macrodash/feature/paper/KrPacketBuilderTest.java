@@ -17,6 +17,7 @@ import com.macrodash.store.Snapshot;
 import com.macrodash.store.StoreRepository;
 import com.macrodash.store.StoreRepository.TimeseriesColumns;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import tools.jackson.databind.JsonNode;
@@ -556,6 +557,58 @@ class KrPacketBuilderTest {
         assertThat(rows.get("005930").get(unfillable).isNull()).isTrue();
         assertThat(section.has("omitted")).isFalse();
         assertThat(section.path("flowsExcluded").path("afterSession").asInt()).isPositive();
+    }
+
+    @Test
+    @Disabled("QA-146 재현 — 수정 전에는 8_prices·pricesNote가 TOSS_DAILY 봉을 종가까지 'KRX 단독'(KRX 시가·종가 단일가)으로 설명")
+    @DisplayName("QA-146: 가격 설명 — 토스 잠정 종가에는 20:00까지의 장 마감 뒤 체결이 섞일 수 있다고 적고(NXT 미지원 표시 주식도 일봉 종가 = 20:00 봉), "
+            + "TOSS_DAILY 설명은 시가와 종가를 나눔 — 정기·출발 패킷의 8_prices·1_basis·0_instructions")
+    void priceNotesDoNotCallTheTossCloseAKrxClose() {
+        Packet scheduled = scheduled();
+        setUp();
+        Packet initial = initial();
+        for (Packet packet : List.of(scheduled, initial)) {
+            JsonNode body = packet.body();
+            String closeSentence = sentenceWith(body.path("8_prices").path("note").asString(), "close =");
+            String daily = clauseOf(closeSentence, KrQuotes.SOURCE_DAILY);
+            assertThat(daily).as("8_prices의 TOSS_DAILY 설명이 시가와 종가를 나눔").contains("시가").contains("종가");
+            assertThat(daily).as("8_prices의 TOSS_DAILY 종가에 20:00까지의 체결이 섞일 수 있음").contains("20:00");
+            String instruction = null;
+            for (JsonNode line : body.path("0_instructions").path("lines")) {
+                if (line.asString().contains("8_prices·9_portfolio")) {
+                    instruction = line.asString();
+                }
+            }
+            assertThat(instruction).as("0_instructions의 가격 줄").isNotNull();
+            for (String text : List.of(body.path("1_basis").path("pricesNote").asString(), instruction)) {
+                assertThat(text).as("토스 잠정 종가에 20:00까지의 장 마감 뒤 체결이 섞일 수 있음").contains("20:00");
+                assertThat(text).as("토스 종가를 KRX 종가 단일가라고 하지 않음").doesNotContainPattern("KRX[^()]*종가 단일가");
+            }
+        }
+    }
+
+    /** {@code text}를 '. '로 나눈 문장 중 {@code marker}가 든 첫 문장. */
+    private static String sentenceWith(String text, String marker) {
+        for (String sentence : text.split("\\. ")) {
+            if (sentence.contains(marker)) {
+                return sentence;
+            }
+        }
+        throw new AssertionError("'" + marker + "' 문장이 없음: " + text);
+    }
+
+    /** {@code text}에서 {@code source}부터 다음 출처 이름(TOSS_INTEGRATED·TOSS_DAILY) 앞까지 — 그 출처 하나의 설명. */
+    private static String clauseOf(String text, String source) {
+        int start = text.indexOf(source);
+        assertThat(start).as(source + " 설명이 있음: " + text).isNotNegative();
+        int end = text.length();
+        for (String other : List.of(KrQuotes.SOURCE_INTEGRATED, KrQuotes.SOURCE_DAILY)) {
+            int at = text.indexOf(other, start + source.length());
+            if (at >= 0 && at < end) {
+                end = at;
+            }
+        }
+        return text.substring(start, end);
     }
 
     @Test
