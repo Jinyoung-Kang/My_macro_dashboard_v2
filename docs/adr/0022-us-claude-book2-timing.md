@@ -44,7 +44,9 @@
        `QUOTES_OBSERVATION`, `ExecutionAuditTest.nextObservationFromTheActualFill` — 명세 §14-1 '계좌1 주문은 실제 체결 행에서'). 그 밖의 계좌1 주문(`NEXT_CLOSE`)은 `null`
      - 단계 1(있음): 계좌2 주문의 계좌1식 기준(M1의 P_cf,NEXT_OBS)은 체결 조건 ①②④를 통과한 **첫** `paper.quotes`를 관측치 사슬(작업 기록 `quotesChain` 고리 + 수집기
        실행 기록)로 증명한 때만 — `PaperExecutionAuditJobTest.chainProvenFollowsTheLinks`·`book2ObservationBaselineFromTheProvenChain`·`book2ObservationBaselineStaysNullWithoutProof`·
-       `book2ObservationBaselineNeedsALinkBeforeTheOrder`, 사이 실행 수 SQL `ApiIntegrationTest.taskRunsStartedBetweenCountsOnlyThatTaskStrictlyInside`(증명하지 못하면 끝까지 `null`)
+       `book2ObservationBaselineNeedsALinkBeforeTheOrder`, 사이 실행 수 SQL `ApiIntegrationTest.taskRunsStartedBetweenCountsOnlyThatTaskStrictlyInside`(증명하지 못하면 끝까지 `null`).
+       사슬은 계좌2 행이 있고 `claude2.enabled`가 켜졌거나 출발했을 때만 세고 기록함(배포만으로 작업 기록이 늘지 않음 — `chainOnlyOnceBook2IsEnabledOrStarted`),
+       사슬 계산이 실패해도 계좌1 감사는 그대로(`chainFailureDoesNotStopTheBookOneAudit`)
      - 단계 1(있음): 계좌2 스키마 enum·고정 문단에 `NEXT_OBSERVATION`이 없음(`DecisionTimingsLockTest.claude2MenuIsLockedEverywhere`)
   5. '실시간·지연'(T7)
      - 단계 0(0-3): `lagSeconds`는 정규장 안에서 받은 저장본만(장 밖·휴장 `null`)이고 그 회차에 받은 SPY 세션만(짧게 온 응답으로 남긴 세션은 `null`), 종목 칸의 출처 지연(`declaredDelayMin`)은 늘 `null`

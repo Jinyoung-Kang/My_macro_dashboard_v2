@@ -7,6 +7,7 @@ import com.macrodash.feature.paper.PaperMarketData.Quotes;
 import com.macrodash.read.StoreReader;
 import com.macrodash.store.Datasets;
 import com.macrodash.store.PaperStore;
+import com.macrodash.store.PaperStore.Book;
 import com.macrodash.store.PaperStore.ExecFill;
 import com.macrodash.store.PaperStore.Order;
 import com.macrodash.store.PaperStore.OrderExec;
@@ -31,6 +32,7 @@ import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 
 /**
  * 🧪 실행 감사 정기 작업(미국 Claude 계좌2 실험 단계 0 — 명세 docs/specs/2026-10-30-claude-book2-timing-design.md §14-1, ADR 0022) — 5분마다
@@ -51,7 +53,7 @@ import java.util.Map;
  * null입니다.
  *
  * <p>저장본(1분봉·관측치)은 {@link StoreReader#quietly}로만 읽습니다 — 정기 작업이 수집기를 깨우지 않게(ADR 0008). 작업 기록
- * ({@code paper_job_runs}, 이름 {@value #JOB})은 무엇이든 새로 썼을 때와 오류일 때만 남깁니다(5분마다 쌓이면 다른 작업 기록을 밀어냄) — 실행 시간은
+ * ({@code paper_job_runs}, 이름 {@value #JOB})은 무엇이든 새로 썼을 때(감사 행·새 사슬 고리)와 오류일 때만 남깁니다(5분마다 쌓이면 다른 작업 기록을 밀어냄) — 실행 시간은
  * 그 기록의 시작·끝 시각으로 잽니다(명세 §14-1 — 길면 리스크 점검 뒤에 붙이는 판으로). 예외는 삼키고 로그만 남깁니다(스케줄러로 던지지 않음).
  *
  * <p><b>계좌2 주문의 계좌1식 기준</b>(NEXT_OBSERVATION, 명세 §14-1·ADR 0022 결정 4 — M1의 P_cf): 체결 조건 ①②④를 통과한 <b>첫</b> {@code paper.quotes}
@@ -70,6 +72,11 @@ import java.util.Map;
  *       거짓이거나 빠졌으면(처음 고리·기록 200건 밖으로 밀림·서버가 꺼진 사이 저장이 둘 이상) 그 주문은 끝까지 null입니다.</li>
  * </ol>
  * 남는 가정은 두 가지입니다 — 수집기 실행 기록이 빠지지 않음(기록 쓰기가 실패하면 수집기는 로그만 남김), 백엔드·수집기·DB 시계가 같음(같은 호스트).
+ *
+ * <p>사슬은 <b>계좌2 행이 있고 설정 {@code claude2.enabled}가 켜졌거나 계좌2가 이미 출발했을 때만</b> 셉니다({@link #chainWanted}) — 계좌2 주문은 출발
+ * (INITIAL — 켠 뒤에만 생김)부터라 사슬이 그 앞에서 시작하면 증명은 그대로이고, 배포만으로는(계좌2 행이 없거나 꺼진 채 시작 전) 작업 기록이 늘지 않습니다
+ * (ADR 0022 — 배포로 바뀌는 것 없음). 사슬 계산이 실패하면 그 실행은 계좌2 기준을 보지 않고({@code chain = null}) 감사는 그대로 하며, 기록에
+ * {@code chainError}를 남깁니다 — 계좌2 전용 증명이 계좌1 측정을 막지 않게.
  *
  * <p>{@code dashboard.paper.enabled=false}(로컬 v2 — {@code PAPER_ENABLED=false})면 아무것도 읽거나 쓰지 않습니다. 수동 실행 경로는 없습니다.
  */
@@ -199,31 +206,60 @@ public class PaperExecutionAuditJob {
         Snapshot bars = null;
         Quotes quotes = null;
         LinkState link = null;
+        String chainError = null;
         Outcome outcome;
         try {
             // 수집 태스크 이름을 넘기지 않고(null) quietly 안에서 읽습니다 — 오래된 저장본이어도 수집을 요청하지 않음.
             bars = reader.quietly(() -> reader.read(Datasets.SNAP_PAPER_BARS_US, Datasets.MAX_AGE_BARS_US, null))
                     .orElse(null);
             quotes = reader.quietly(() -> marketData.quotes(UsPaperMarket.INSTANCE)).orElse(null);
-            Map<Instant, ChainLink> links = chainLinks();
-            link = quotes == null ? null : link(quotes.collectedAt(), links);
-            if (link != null && link.isNew()) {
-                links.put(link.collectedAt(), link.link());
+            // 관측치 사슬(계좌2 기준의 증명) — 계좌2가 켜졌거나 출발했을 때만, 실패해도 감사는 그대로(클래스 설명).
+            Map<Instant, ChainLink> chain = null;
+            if (quotes != null) {
+                try {
+                    if (chainWanted()) {
+                        Map<Instant, ChainLink> links = chainLinks();
+                        link = link(quotes.collectedAt(), links);
+                        if (link != null && link.isNew()) {
+                            links.put(link.collectedAt(), link.link());
+                        }
+                        // 고리를 아직 셀 수 없으면(c를 쓴 실행의 기록 전) 이번에는 계좌2 기준을 보지 않습니다(link == null).
+                        chain = link == null ? null : links;
+                    }
+                } catch (RuntimeException e) {
+                    link = null;
+                    chainError = e.getClass().getSimpleName() + " " + e.getMessage();
+                    log.warn("모의 매매 실행 감사 — 관측치 사슬을 세지 못해 이번에는 계좌2 기준을 보지 않습니다: {}", chainError);
+                }
             }
             JsonNode payload = bars == null ? null : bars.payload();
             Quotes observed = quotes;
-            // 고리를 아직 셀 수 없으면(c를 쓴 실행의 기록 전) 이번에는 계좌2 기준을 보지 않습니다(link == null).
-            Map<Instant, ChainLink> chain = link == null ? null : links;
-            outcome = store.atomically(() -> audit(started, payload, observed, calendar, chain));
+            Map<Instant, ChainLink> proven = chain;
+            outcome = store.atomically(() -> audit(started, payload, observed, calendar, proven));
         } catch (RuntimeException e) {
             outcome = new Outcome(0, 0, 0, null, e.getClass().getSimpleName() + " " + e.getMessage());
             link = null;
         }
         boolean newLink = link != null && link.isNew();
-        if (outcome.rowsWritten() > 0 || outcome.error() != null || newLink) {
-            record(started, outcome, bars, quotes, calendar, newLink ? link.link() : null);
+        if (outcome.rowsWritten() > 0 || outcome.error() != null || newLink || chainError != null) {
+            record(started, outcome, bars, quotes, calendar, newLink ? link.link() : null, chainError);
         }
         return outcome;
+    }
+
+    /**
+     * 관측치 사슬을 셀 때인가(클래스 설명) — 계좌2 행이 있고 시작 전이 아니거나(출발함·일시정지 — 남은 주문의 기준을 이어 봄), 시작 전이면 지금 설정의
+     * {@code claude2.enabled}가 켜졌을 때. 설정 행이 없으면 기본값(꺼짐)입니다.
+     */
+    private boolean chainWanted() {
+        Optional<Book> book = store.book(PaperBooks.CLAUDE2);
+        if (book.isEmpty()) {
+            return false;
+        }
+        if (!PaperBooks.NOT_STARTED.equals(book.get().status())) {
+            return true;
+        }
+        return Claude2Settings.from(store.settings().map(PaperStore.SettingsRow::body).orElse(null)).enabled();
     }
 
     /** 이번 실행의 고리 — 새 고리면 {@code isNew}(작업 기록에 남김), 이미 기록한 저장본이면 그 고리. */
@@ -375,7 +411,7 @@ public class PaperExecutionAuditJob {
     }
 
     private void record(Instant started, Outcome outcome, Snapshot bars, Quotes quotes, TradingCalendar calendar,
-                        ChainLink link) {
+                        ChainLink link, String chainError) {
         Map<String, Object> detail = new LinkedHashMap<>();
         detail.put("books", ExecutionAudit.auditedBooks());
         detail.put("orders", outcome.orders());
@@ -395,6 +431,9 @@ public class PaperExecutionAuditJob {
         detail.put("quotesCollectedAtKst", quotes == null ? null : Kst.stamp(quotes.collectedAt()));
         if (link != null) {
             detail.put(CHAIN, link.view());   // 새로 본 관측치 저장본의 고리(클래스 설명 — 다음 실행·재기동 뒤에도 이 기록으로 이음)
+        }
+        if (chainError != null) {
+            detail.put("chainError", chainError);   // 사슬을 세지 못함 — 이번 실행은 계좌2 기준을 보지 않음(감사 결과는 그대로)
         }
         if (outcome.error() != null) {
             detail.put("error", outcome.error());

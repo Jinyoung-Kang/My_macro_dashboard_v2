@@ -10,7 +10,6 @@ import com.macrodash.store.PaperStore.Order;
 import com.macrodash.store.PaperStore.OrderExec;
 import com.macrodash.store.Snapshot;
 import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import tools.jackson.databind.JsonNode;
@@ -544,7 +543,6 @@ class PaperExecutionAuditJobTest {
     }
 
     @Test
-    @Disabled("재현 — 고치기 전에는 계좌2 행이 없거나 꺼진 채 시작 전이어도 새 관측치 저장본마다 exec-audit 기록(사슬 고리)을 남김")
     @DisplayName("관측치 사슬은 계좌2가 켜졌거나 출발했을 때만: 계좌2 행이 없거나(배포 직후) 꺼진 채 시작 전이면 새 관측치 저장본이 와도 셈하지도 기록하지도 않음(배포만으로 늘지 않음) — 켜면 시작 전이어도 그 저장본부터 고리(첫 주문 전에 사슬이 시작)")
     void chainOnlyOnceBook2IsEnabledOrStarted() {
         Instant c0 = Instant.parse("2026-10-26T22:20:00Z");
@@ -569,7 +567,6 @@ class PaperExecutionAuditJobTest {
     }
 
     @Test
-    @Disabled("재현 — 고치기 전에는 사슬 계산이 감사와 같은 try 안이라 사슬 오류가 그 회차의 계좌1 감사까지 건너뜀")
     @DisplayName("관측치 사슬을 셈하다 실패해도(작업 기록 읽기 오류) 계좌1 감사는 그대로 쓰고 — 이번 실행은 계좌2 기준을 보지 않고 기록에 사슬 오류(결과는 OK)")
     void chainFailureDoesNotStopTheBookOneAudit() {
         FakePaperStore failing = new FakePaperStore() {
