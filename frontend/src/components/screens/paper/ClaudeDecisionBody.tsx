@@ -71,7 +71,17 @@ export function ClaudeDecisionBody({
               { key: "ticker", header: "종목", render: (row) => <span className="font-semibold text-bright">{row.ticker}</span> },
               { key: "side", header: "방향", render: (row) => <span className={sideClass(row.sideKey)}>{row.side}</span> },
               { key: "size", header: "크기", align: "right", render: (row) => <span className="whitespace-nowrap">{row.size}</span> },
-              { key: "timing", header: "체결 시점", render: (row) => <span className="whitespace-nowrap">{row.timing}</span> },
+              {
+                key: "timing",
+                header: "체결 시점",
+                // 미국 Claude 계좌2는 그 시점을 고른 이유(executionNote)를 아래 작은 글로 — 계좌1 주문은 시점만(예전 그대로).
+                render: (row) => (row.executionNote ? (
+                  <span className="flex flex-col">
+                    <span className="whitespace-nowrap">{row.timing}</span>
+                    <span className="text-[11px] text-text-3" title="실행 메모(executionNote) — 이 시점을 고른 이유">{row.executionNote}</span>
+                  </span>
+                ) : <span className="whitespace-nowrap">{row.timing}</span>),
+              },
               { key: "thesis", header: "근거", render: (row) => <span className="text-xs text-body">{row.thesis}</span> },
               {
                 key: "labels",

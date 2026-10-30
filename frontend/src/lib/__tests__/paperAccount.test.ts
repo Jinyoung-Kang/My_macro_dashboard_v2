@@ -29,8 +29,9 @@ function position(ticker: string, weightPct: number | null, marketValue: number 
 const sum = (values: number[]) => values.reduce((total, value) => total + value, 0);
 
 describe("계좌 정의", () => {
-  it("네 계좌 모두 한 줄 소개와 정의 여섯 줄(운용 방식 · 매수 · 매도·리스크 · 현금 · 시작·출발일 · 비교 목적)", () => {
-    for (const code of ["rules", "claude", "bench_spy", "bench_mix"]) {
+  it("미국 다섯 계좌 모두 한 줄 소개와 정의 여섯 줄(운용 방식 · 매수 · 매도·리스크 · 현금 · 시작·출발일 · 비교 목적)", () => {
+    expect(Object.keys(ACCOUNT_PROFILES)).toEqual(["rules", "claude", "claude2", "bench_spy", "bench_mix"]);
+    for (const code of ["rules", "claude", "claude2", "bench_spy", "bench_mix"]) {
       const profile = accountProfile(code);
       expect(profile?.summary.length).toBeGreaterThan(0);
       expect(profile?.definitions.map((definition) => definition.label)).toEqual([
@@ -67,6 +68,22 @@ describe("계좌 정의", () => {
     // PacketBuilder initial=true — 매크로 카드만 그날 이력이 없어 지금 수집본(asOfMismatch)
     expect(text("claude", "start")).toContain("매크로 카드는 그날 이력이 없어 지금 수집본을 참고로");
     expect(text("claude", "start")).not.toContain("(그날 이하 값만)");
+  });
+
+  it("계좌2(체결 시점 실험)만 시각 지정 체결 계좌 — 앞으로 체결 출발·메뉴·같은 한도를 말하고, 시작 전·결정 안내를 따로 둔다", () => {
+    const text = (key: string) => accountProfile("claude2")?.definitions.find((d) => d.key === key)?.text ?? "";
+    expect(Object.entries(ACCOUNT_PROFILES).filter(([, profile]) => profile.timed).map(([code]) => code)).toEqual(["claude2"]);
+    expect(text("start")).toContain("앞으로 체결로 출발");
+    expect(text("start")).toContain("사후 체결·미리보기는 없습니다");
+    expect(text("buy")).toContain("계좌1과 같은 검증기·같은 한도");
+    expect(text("buy")).toContain("10:00~15:00 ET 매시");
+    expect(text("cash")).toContain("멈춘 가격으로 채우지 않습니다");
+    expect(text("method")).toContain("계좌1의 결정·주문은 넣지 않습니다");
+    expect(accountProfile("claude2")?.notStartedNote).toContain("claude2.enabled");
+    expect(accountProfile("claude2")?.decisionNote).toContain("개장 전 컷오프");
+    // 계좌1의 시작 단추 이름은 계좌 이름 + " 시작"(서버 이름 'Claude 계좌1').
+    expect(accountProfile("claude")?.definitions.find((d) => d.key === "start")?.text).toContain("'Claude 계좌1 시작'");
+    expect(accountProfile("claude")?.timed).toBeUndefined();
   });
 
   it("규칙·Claude 계좌는 결정 계좌의 규칙을, 벤치마크는 '결정을 내지 않음'을 말한다", () => {
@@ -109,9 +126,20 @@ describe("계좌의 지금 설정", () => {
     expect(rows.model).toBe("—");
   });
 
-  it("벤치마크는 공통 슬리피지(60/40은 현금성 종목도)만", () => {
-    expect(accountSettingRows("bench_spy", body)).toEqual([{ key: "slippageBp", label: "체결 슬리피지(네 계좌 공통)", value: "5bp" }]);
+  it("벤치마크는 공통 슬리피지(60/40은 현금성 종목도)만 — 미국 계좌 다섯이 함께 쓰는 값", () => {
+    expect(accountSettingRows("bench_spy", body)).toEqual([{ key: "slippageBp", label: "체결 슬리피지(미국 계좌 공통)", value: "5bp" }]);
     expect(accountSettingRows("bench_mix", body).map((row) => row.key)).toEqual(["slippageBp", "cashLikeTickers"]);
+  });
+
+  it("계좌2는 claude2.* 묶음 키를 따라 내려가 읽는다 — 없는 키는 '—'(기본값으로 채우지 않음)", () => {
+    const rows = Object.fromEntries(accountSettingRows("claude2", {
+      ...body, claude2: { enabled: false, maxCallsPerCycle: 2, barsWaitMinutes: 15 },
+    }).map((row) => [row.key, row.value]));
+    expect(rows["claude2.enabled"]).toBe("아니오");
+    expect(rows["claude2.maxCallsPerCycle"]).toBe("2회");
+    expect(rows["claude2.barsWaitMinutes"]).toBe("15분");
+    expect(rows["claude2.executionRecord"]).toBe("—");
+    expect(rows.slippageBp).toBe("5bp");
   });
 });
 

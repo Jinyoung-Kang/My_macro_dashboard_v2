@@ -5,7 +5,7 @@ import { useEffect, useState } from "react";
 import { Banner, Card, ErrorState, Freshness, Loading } from "@/components/ui";
 import { useApi } from "@/hooks/useApi";
 import { endpoints } from "@/lib/endpoints";
-import { PAPER_SOURCES, PAPER_TABS, type PaperTabKey } from "@/lib/paper";
+import { CLAUDE2_LIMITS, isTimedBook, PAPER_SOURCES, PAPER_TABS, type PaperTabKey } from "@/lib/paper";
 import { KR_TAB_LABELS } from "@/lib/paperKrProfiles";
 import { formatMoney, type PaperMarketCode } from "@/lib/paperMarket";
 import { paperTabFromPath, paperTabPath } from "@/lib/paperRoutes";
@@ -22,7 +22,8 @@ import { SettingsSection } from "./SettingsSection";
 /**
  * 🧪 모의 알고리즘 매매(운영자 전용).
  *
- * <p>같은 돈·같은 날 출발한 네 계좌(규칙 · Claude · SPY(100%) · 60/40(SPY 60%·SHY 40%))의 장부를 봅니다.
+ * <p>같은 돈·같은 날 출발한 네 계좌(규칙 · Claude · SPY(100%) · 60/40(SPY 60%·SHY 40%))의 장부를 봅니다. 미국은 다섯째 계좌 🧪 Claude 계좌2(체결
+ * 시점 실험 — 늦게 앞으로 체결로 출발, ADR 0022)가 더해지고, 한계 문구 아래에 계좌2의 한계(CLAUDE2_LIMITS)를 덧붙입니다.
  * 주문은 어디로도 나가지 않습니다. 숫자는 전부 백엔드 장부가 계산한 값이고, 이 화면은 조회·배치만 합니다(ADR 0004).
  *
  * <p>개요 응답 하나를 이 파일이 읽어 섹션에 나눠 줍니다 — 보유·체결 탭과 결정 로그 탭의 책 목록도 개요의 책 목록입니다
@@ -62,6 +63,8 @@ export default function PaperPage({
   const current = tabs.find((entry) => entry.key === tab) ?? tabs[0];
   // 라우터 밖(테스트)에서는 null입니다 — 그때는 주소를 따라가지 않습니다.
   const pathname = usePathname();
+  // 미국 Claude 계좌2(체결 시점 실험) — 머리 줄과 한계 문구에 그 계좌만의 줄을 더합니다(한국 화면은 없음).
+  const book2 = korea ? undefined : data?.books?.find((entry) => isTimedBook(entry.code));
 
   useEffect(() => {
     const fromPath = paperTabFromPath(pathname, market);
@@ -106,8 +109,9 @@ export default function PaperPage({
             </p>
           ) : (
             <p className="mt-1 text-xs text-muted">
-              같은 돈·같은 날 출발한 네 계좌 — 규칙 · Claude · SPY(100%) · 60/40(SPY 60%·SHY 40%)
+              같은 돈·같은 날 출발한 네 계좌 — 규칙 · Claude 계좌1 · SPY(100%) · 60/40(SPY 60%·SHY 40%)
               {data?.startDate ? ` · 출발 ${data.startDate}` : ""}
+              {book2 ? " · 🧪 Claude 계좌2(체결 시점 실험)는 같은 돈으로 늦게, 앞으로 체결로 출발" : ""}
             </p>
           )}
         </div>
@@ -136,6 +140,15 @@ export default function PaperPage({
                   <li key={limit}>{limit}</li>
                 ))}
               </ol>
+              {/* 미국 Claude 계좌2가 있으면 그 계좌에만 해당하는 한계(계좌2 명세 §13-3) — 위 목록(계좌1·벤치마크)은 서버 문구 그대로입니다. */}
+              {book2 && (
+                <section aria-label="Claude 계좌2의 한계" className="mt-3 border-t border-border pt-2">
+                  <h3 className="text-xs font-semibold text-bright">{book2.label}(체결 시점 실험)</h3>
+                  <ul className="mt-1 list-disc space-y-1 pl-5 text-xs leading-relaxed text-body">
+                    {CLAUDE2_LIMITS.map((limit) => <li key={limit}>{limit}</li>)}
+                  </ul>
+                </section>
+              )}
             </Card>
           )}
 

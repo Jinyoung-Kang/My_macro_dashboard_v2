@@ -8,7 +8,7 @@
 import { delayLabel, EMPTY, formatDate, formatKst, formatNumber, formatSigned, formatWithUnit, withoutLeadingIcon } from "./format";
 import { MARKETS, sessionStatus, tradeDayFrom, tradeTimeFrom } from "./marketSessions";
 import { TABS } from "./nav";
-import { formatDollars } from "./paper";
+import { formatDollars, primaryClaudeBook } from "./paper";
 import { formatMoney, marketMeta, type PaperMarketCode } from "./paperMarket";
 import { bookAssetRow, type BookRow } from "./paperOverview";
 import { paperMarketPath } from "./paperRoutes";
@@ -382,7 +382,8 @@ export function paperHomeModel(
     : {};
   const rows: PaperHomeRow[] = books.map((book) => ({ ...bookAssetRow(book, context), href }));
 
-  const claude = books.find((book) => book.kind === "CLAUDE") ?? null;
+  // 히어로는 그 시장의 기본 Claude 계좌(미국 계좌1·한국 kr_claude) — 계좌2(체결 시점 실험)는 행으로만 보입니다(계좌2 명세 §13-3).
+  const claude = primaryClaudeBook(books);
   const claudeRow = claude ? rows.find((row) => row.id === claude.code) : undefined;
   const nav = finite(claude?.nav);
   const observed = presentText(claude?.lastObservedAtKst);

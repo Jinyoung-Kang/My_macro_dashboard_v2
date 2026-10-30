@@ -332,6 +332,16 @@ describe("paperHomeModel — 모의매매(미국)", () => {
     expect(model.disabledNote).toBeNull();
   });
 
+  it("🧪 Claude 계좌2(체결 시점 실험)가 앞에 와도 히어로는 계좌1 — 계좌2는 행으로만(계좌2 명세 §13-3)", () => {
+    const base = paperOverview();
+    const claude1 = { ...base.books![1], label: "Claude 계좌1" };
+    const claude2 = { ...claude1, code: "claude2", label: "Claude 계좌2", status: "NOT_STARTED" as const, nav: 100000, returnPct: null };
+    const model = paperHomeModel({ ...base, books: [base.books![0], claude2, claude1, base.books![2], base.books![3]] }, paperStatus(true));
+    expect(model.heroCaption).toBe("Claude 계좌1 순자산");
+    expect(model.heroValueText).toBe("99,967.28");
+    expect(model.rows.map((row) => row.name)).toEqual(["규칙 계좌", "Claude 계좌2", "Claude 계좌1", "SPY 계좌", "60/40 계좌"]);
+  });
+
   it("계좌 행은 모의매매 개요와 같은 규칙(bookAssetRow) + 링크 — 규칙을 두 곳에 두지 않는다", () => {
     const overview = paperOverview();
     overview.pendingBackfill = ["bench_mix"];

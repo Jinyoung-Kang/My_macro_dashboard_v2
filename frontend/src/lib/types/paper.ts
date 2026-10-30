@@ -15,7 +15,7 @@
  */
 export type PaperMarketCode = "US" | "KR";
 
-/** 책 종류 — 규칙 책 · Claude 재량 책 · 벤치마크(SPY 100%, SPY 60%·SHY 40%). */
+/** 책 종류 — 규칙 책 · Claude 계좌(미국은 계좌1·계좌2 둘 — 같은 kind, ADR 0022) · 벤치마크(SPY 100%, SPY 60%·SHY 40%). */
 export type PaperBookKind = "RULES" | "CLAUDE" | "BENCHMARK";
 
 /** 책 상태. NOT_STARTED는 현금만 든 책(규칙·Claude 책은 개요의 '규칙 계좌 시작'·'Claude 계좌 시작' — 초기 결정으로 시작). */
@@ -105,7 +105,7 @@ export interface PaperLiveResponse {
 }
 
 export interface PaperBookSummary {
-  /** rules · claude · bench_spy · bench_mix */
+  /** 미국 rules · claude · claude2(🧪 체결 시점 실험 — 늦게 출발, ADR 0022) · bench_spy · bench_mix, 한국 kr_* 넷 */
   code: string;
   kind: PaperBookKind;
   label: string;
@@ -375,11 +375,31 @@ export interface PaperStatusResponse {
    * 보내지 않는 백엔드에서는 없습니다.
    */
   earnings?: PaperEarningsStatus | null;
+  /** 미국 응답만 — 🧪 Claude 계좌2 묶음(계좌2 명세 §13-1). 한국 응답·이 칸을 보내지 않는 백엔드에서는 없습니다. */
+  claude2?: PaperClaude2Status | null;
   /**
    * 한국 응답만 — 한국 수집 상태 요약(2단계 명세 §9 x4): 한국 책이 읽는 저장본 일곱 묶음의 수집 시각·세션/기준일·늦음/뒤처짐. 서버가 저장본만
    * 읽어 만들고(수집 유발 없음) 모르는 값은 null입니다. 이 칸을 보내지 않는 백엔드(F2 전)에서는 없습니다.
    */
   collection?: PaperKrCollection | null;
+}
+
+/**
+ * 미국 Claude 계좌2 상태(GET /api/paper/status의 claude2) — 다음 결정·개장 전 컷오프(ET·KST — 계좌2가 꺼졌거나 시작 전이어도 그 창의 시각), 이번 결정
+ * 주기(마감이 끝난 최근 세션 d)의 호출 수/상한, 1분봉 저장본(정규장일 때만 — 밖은 null). 시각은 "yyyy-MM-dd HH:mm KST"·"… ET" 글자 그대로입니다.
+ */
+export interface PaperClaude2Status {
+  book: string;
+  /** 계좌가 없으면(초기화 전) null. */
+  status: PaperBookStatus | null;
+  startedOn: string | null;
+  /** 설정 claude2.enabled — 꺼져 있으면 정기 결정·출발을 하지 않습니다. */
+  enabled: boolean;
+  nextDecision: { tradingDate: string; atKst: string | null; atEt: string | null; cutoffKst: string | null; cutoffEt: string | null } | null;
+  /** 이번 결정 주기 — d의 계좌2 정기·출발 행의 호출 수(행마다 1 + 재시도)와 상한(claude2.maxCallsPerCycle). */
+  cycle: { tradingDate: string; calls: number | null; cap: number | null } | null;
+  /** 1분봉 저장본(수집 태스크 paper_bars_us)의 받은 시각·나이(초)·지연(초, SPY 기준) — 정규장 밖이면 null, 모르는 값은 null. */
+  bars: { collectedAtKst: string | null; ageSeconds: number | null; lagSeconds: number | null } | null;
 }
 
 /** 한국 수집 상태의 공통 칸 — 수집기 태스크·저장본 이름·저장본이 있나. */
@@ -618,6 +638,15 @@ export interface PaperPositionsResponse {
 
 export type PaperOrderStatus = "PROPOSED" | "REJECTED" | "PENDING" | "FILLED" | "EXPIRED" | "CANCELLED";
 
+/** 미국 Claude 계좌2의 시각 지정 시점(V17) — 목표 세션 E의 뉴욕 시각 10:00~15:00 매시. */
+export type PaperTimedTiming = "AT_1000" | "AT_1100" | "AT_1200" | "AT_1300" | "AT_1400" | "AT_1500";
+
+/**
+ * 미국 Claude 계좌2 체결의 가격 사다리 칸(V17 fill_rung, 계좌2 명세 §6-2) — Y1M_AT(T 봉 시가) · Y1M_NEXT(T+1~T+4분 첫 거래 봉) ·
+ * Y1M_LATE(E 안 T 뒤 첫 거래 봉, 대체) · QUOTES_FALLBACK(1분봉 자체가 없을 때 관측 종가, 대체) · QUOTES_CLOSE(확정 종가 — 종가 주문, 또는 대체).
+ */
+export type PaperFillRung = "Y1M_AT" | "Y1M_NEXT" | "Y1M_LATE" | "QUOTES_FALLBACK" | "QUOTES_CLOSE";
+
 /** 주문 한 줄. qty·targetWeightPct·sellFraction 중 하나로 크기를 정합니다(없으면 null). */
 export interface PaperOrder {
   id: number;
@@ -630,8 +659,11 @@ export interface PaperOrder {
    */
   targetWeightPct: number | null;
   sellFraction: number | null;
-  /** 체결 시점 — 한국 책은 NEXT_OPEN(다음 KR 거래일 시가)뿐입니다(명세 §4-6). */
-  timing: "NEXT_OBSERVATION" | "NEXT_CLOSE" | "IMMEDIATE" | "BACKFILL" | "NEXT_OPEN";
+  /**
+   * 체결 시점 — 한국 책은 NEXT_OPEN(다음 KR 거래일 시가)뿐입니다(명세 §4-6). 미국 Claude 계좌2는 목표 세션의 NEXT_OPEN(09:30 ET)·AT_1000~AT_1500
+   * (뉴욕 매시)·NEXT_CLOSE 여덟 가운데 주문마다 고릅니다(계좌2 명세 §6-2 — NEXT_OBSERVATION은 메뉴에 없음).
+   */
+  timing: "NEXT_OBSERVATION" | "NEXT_CLOSE" | "IMMEDIATE" | "BACKFILL" | "NEXT_OPEN" | PaperTimedTiming;
   source: "RULE" | "CLAUDE" | "STOP" | "BENCHMARK" | "INITIAL";
   status: PaperOrderStatus;
   rejectReason: string | null;
@@ -666,6 +698,12 @@ export interface PaperFill {
   priceSource: string | null;
   /** 사후 체결(그날 종가로 나중에 기록). */
   backfill: boolean;
+  /** 미국 Claude 계좌2만 — 체결에 쓴 1분봉의 시작 시각(KST). 관측치·종가 칸이면 null. 다른 미국 계좌 체결에는 칸이 없습니다. */
+  barAtKst?: string | null;
+  /** 미국 Claude 계좌2만 — 사다리 칸. 스탑처럼 칸이 없는 체결은 null. */
+  fillRung?: PaperFillRung | string | null;
+  /** 미국 Claude 계좌2만 — 대체 칸(Y1M_LATE·QUOTES_FALLBACK·QUOTES_CLOSE)이면 true, 칸이 없는 체결은 false. */
+  fallback?: boolean;
   /** 한국 계좌만 — 수수료(원, 소수 2자리). 한국 슬리피지는 체결가가 아니라 비용 칸입니다(`price` = 잠정 체결가 그대로). */
   fee?: number | null;
   /** 한국 계좌만 — 세금(증권거래세 + 농어촌특별세, 원). */
@@ -739,6 +777,81 @@ export interface PaperNavResponse {
 }
 
 /**
+ * 반사실 하나 — 그 주문을 그 시점에 체결했다면의 원가격(슬리피지 전)·그 가격의 시장 시각·사다리 칸. NEXT_OPEN은 isProxy(Yahoo 1분봉 첫 봉 시가 —
+ * 공식 개장가와 같은지 확인 전, X2). 못 구한 시점은 이 객체 대신 null입니다(0으로 채우지 않음).
+ */
+export interface PaperExecutionCf {
+  raw: number | null;
+  at: string | null;
+  atKst: string | null;
+  rung: string | null;
+  isProxy: boolean;
+}
+
+/** 실행 감사 주문 한 줄(GET /api/paper/books/{code}/execution의 orders[]). */
+export interface PaperExecutionOrder {
+  orderId: number;
+  decisionId: number | null;
+  ticker: string;
+  side: "BUY" | "SELL" | string;
+  status: PaperOrderStatus | string;
+  timing: string;
+  asOfTradingDate: string | null;
+  /** 목표 세션 E(기준 거래일 다음 거래일 — 미국 동부 날짜). */
+  targetSession: string | null;
+  /** 고른 시점의 목표 시각 T(KST). 종가·계좌1식은 마감·관측 시각. 모르면 null. */
+  targetAtKst: string | null;
+  createdAtKst: string | null;
+  fill: {
+    qty: number; rawPrice: number | null; price: number | null; slippageBp: number | null; gross: number | null;
+    observedAtKst: string | null; observationDate: string | null; barAtKst: string | null; fillRung: string | null;
+  } | null;
+  /** 시점(NEXT_OBSERVATION·NEXT_OPEN·AT_1000~AT_1500·NEXT_CLOSE) → 반사실. */
+  cf: Record<string, PaperExecutionCf | null>;
+  /** 메뉴 시점 → 계좌1식(NEXT_OBSERVATION) 대비 bp(양수면 그 시점이 유리). 기준이나 그 시점 값이 없으면 null. */
+  advantageBp: Record<string, number | null>;
+  lagSeconds: number | null;
+  lateResolved: boolean | null;
+  /** 계좌2 주문의 실행 메모(executionNote). 계좌1 주문은 null. */
+  executionNote: string | null;
+  auditedAtKst: string | null;
+}
+
+/** 실행 감사 요약의 시점 한 줄 — N·결정일 수·뺀 수와 금액 가중 평균·90% 구간(문턱 미달이면 셋 다 null). */
+export interface PaperExecutionTimingSummary {
+  timing: string;
+  n: number;
+  days: number;
+  excludedNoBaseline: number;
+  excludedNoPrice: number;
+  meanBp: number | null;
+  lowBp: number | null;
+  highBp: number | null;
+  isProxy: boolean;
+}
+
+/** GET /api/paper/books/{code}/execution — 🧪 실행 감사(미국 Claude 계좌만, ADR 0022). */
+export interface PaperExecutionResponse {
+  available: boolean;
+  message?: string;
+  book?: string;
+  timings?: string[];
+  limit?: number;
+  orders?: PaperExecutionOrder[];
+  summary?: {
+    baseline: string;
+    formula: string;
+    weighting: string;
+    interval: { level: number; method: string; resamples: number; seed: number };
+    /** 지표를 내는 문턱 — 주문 수·결정일 수(이보다 적으면 평균·구간 null). */
+    minOrders: number;
+    minDays: number;
+    audited: number;
+    timings: PaperExecutionTimingSummary[];
+  } | null;
+}
+
+/**
  * POST /api/paper/init — 멱등. 이미 있는 책은 created에 들지 않습니다.
  * 출발일 종가가 아직 없으면 오류가 아니라 200 + `skipped`(사유)이고, 그 벤치마크는 시작 전으로 남습니다(개요 pendingBackfill).
  */
@@ -773,6 +886,13 @@ export interface PaperBookResetResult {
 
 /** 리스크 작업 한 번의 결과(PaperLedgerService.Outcome). */
 export interface PaperRiskOutcome {
+  /**
+   * 미국 Claude 계좌2의 1분봉 기다림(계좌2 명세 §10-2)으로 그 관측치 처리를 처음 미룬 계좌("책: 사유"). 미룬 계좌는 다음 점검이 다시 봅니다(오류 아님).
+   * 시각 지정 주문이 없으면 칸이 없습니다.
+   */
+  waiting?: string[];
+  /** 같은 관측치를 다시 미룬 계좌("책: 사유"). 칸이 없으면 없음. */
+  stillWaiting?: string[];
   filled: number;
   stopped: number;
   expired: number;
@@ -1084,6 +1204,13 @@ export interface PaperDecisionDetail extends PaperDecisionSummary {
   exposureMismatch?: boolean | null;
   /** 모델이 보낸 원문(response_raw). 형식 오류일 때 무엇이 왔는지 보려고 씁니다. 보내지 않는 백엔드도 있습니다. */
   responseRaw?: string | null;
+  /**
+   * 미국 Claude 계좌2 결정만 — 계좌 비의존 섹션 일곱이 바이트까지 같았던 같은 거래일 계좌1 결정 번호(입력 동결, 계좌2 명세 §9-1). 다르거나 계좌1
+   * 결정이 없었으면 null. 계좌1 결정에는 칸이 없습니다.
+   */
+  sharedWith?: number | null;
+  /** 미국 Claude 계좌2 결정만 — 그 일곱 섹션의 SHA-256. 모르면 null. */
+  marketSectionsSha256?: string | null;
 }
 
 // ---------------------------------------------------------------- Claude 재량 책(단계 3a)
@@ -1103,10 +1230,13 @@ export interface PaperClaudeOrder {
   side: "BUY" | "SELL" | string;
   targetWeightPct?: number | null;
   sellFraction?: number | null;
-  timing: "NEXT_OBSERVATION" | "NEXT_CLOSE" | string;
+  /** 계좌1 NEXT_OBSERVATION·NEXT_CLOSE, 계좌2(claude2-decision.schema.json) 메뉴 여덟(NEXT_OPEN·AT_1000~AT_1500·NEXT_CLOSE). */
+  timing: "NEXT_OBSERVATION" | "NEXT_CLOSE" | "NEXT_OPEN" | PaperTimedTiming | string;
   thesis: string;
   labels: (PaperClaudeLabel | string)[];
   invalidation: string;
+  /** 계좌2만 — 그 시점을 고른 이유(200자, 필수). 계좌1 주문에는 없습니다. */
+  executionNote?: string | null;
 }
 
 /**
@@ -1114,7 +1244,8 @@ export interface PaperClaudeOrder {
  */
 export type PaperRejectReason =
   | "OUT_OF_UNIVERSE" | "DUPLICATE_TICKER" | "MALFORMED" | "NOT_HELD" | "BELOW_ONE_SHARE" | "LOCKED_OUT" | "WEIGHT_CAP"
-  | "MAX_POSITIONS" | "OVER_ALLOCATED" | "MIN_NOTIONAL" | "MONTHLY_CAP" | "MIN_HOLD" | "STALE_INPUT" | "NO_PRICE";
+  | "MAX_POSITIONS" | "OVER_ALLOCATED" | "MIN_NOTIONAL" | "MONTHLY_CAP" | "MIN_HOLD" | "STALE_INPUT" | "NO_PRICE"
+  | "LATE_FOR_TIMING";
 
 /**
  * 검증 결과 한 줄(OrderValidator.Verdict). 자바 record를 그대로 직렬화하면 주문이 `order` 안에 들고, 펼쳐 보내면 같은 줄에
@@ -1339,6 +1470,12 @@ export interface PaperInitialDecisionResult {
   decision?: PaperDecisionSummary | null;
   fills?: PaperFill[] | number | null;
   message?: string;
+  /**
+   * 미국 Claude 계좌2(`{book:"claude2"}` — 앞으로 체결 출발, 계좌2 명세 §4-1)만 — STARTED(이번에 출발) · ALREADY_STARTED(이미 출발 — 그 기록).
+   * 사후 체결이 없어 fills는 빈 배열입니다.
+   */
+  outcome?: "STARTED" | "ALREADY_STARTED" | string;
+  book?: PaperBookSummary;
 }
 
 // ---------------------------------------------------------------- 설정(paper_settings, 명세 S1~S3)

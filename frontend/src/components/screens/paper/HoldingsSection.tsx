@@ -13,11 +13,16 @@ import {
   type Badge,
   bookCard,
   bookOptions,
+  executionAdvantageText,
+  executionByOrder,
   fillBadges,
+  fillRungText,
   formatSharePrice,
   heldText,
+  isTimedBook,
   jsonTitle,
   notStartedNote,
+  orderExecutionNote,
   orderReasonText,
   orderSizeText,
   orderStatusBadge,
@@ -54,6 +59,8 @@ import type {
   PaperBookResetResult,
   PaperBookStatusResult,
   PaperBookSummary,
+  PaperExecutionOrder,
+  PaperExecutionResponse,
   PaperFill,
   PaperFillsResponse,
   PaperLockout,
@@ -177,6 +184,46 @@ const FILL_COLUMNS: readonly Column<PaperFill>[] = [
   { key: "barDate", header: "봉 날짜", cell: (row) => row.observationDate ?? EMPTY },
   { key: "priceSource", header: "가격 출처", cell: (row) => row.priceSource ?? EMPTY },
 ];
+
+/*
+ * 🧪 미국 Claude 계좌2(시각 지정 체결 — 계좌2 명세 §13-3)의 칸 — 미국 칸 정의에 목표 시각·실행 메모·계좌1식 대비(주문), 체결 봉·사다리·계좌1식 대비
+ * (체결)를 끼웁니다. 목표 시각과 계좌1식 대비는 실행 감사 응답(GET books/{code}/execution)의 그 주문 줄 값 그대로이고, 줄이 없거나 값이 없으면 "—"입니다
+ * (반사실이 아직 없음·대체 체결). 다른 미국 계좌의 표는 위 칸 정의 그대로입니다.
+ */
+function insertAfter<T>(columns: readonly Column<T>[], key: string, extra: Column<T>[]): Column<T>[] {
+  const at = columns.findIndex((column) => column.key === key);
+  return at < 0 ? [...columns, ...extra] : [...columns.slice(0, at + 1), ...extra, ...columns.slice(at + 1)];
+}
+
+function timedOrderColumns(audit: ReadonlyMap<number, PaperExecutionOrder>): Column<PaperOrder>[] {
+  const withTarget = insertAfter(ORDER_COLUMNS, "timing", [
+    { key: "targetAt", header: "목표 시각", className: "whitespace-nowrap", cell: (row) => formatKst(audit.get(row.id)?.targetAtKst ?? null) },
+  ]);
+  return insertAfter(withTarget, "filledAt", [
+    {
+      key: "advantage",
+      header: "계좌1식 대비",
+      align: "right",
+      cell: (row) => {
+        const text = executionAdvantageText(audit.get(row.id));
+        return text === EMPTY ? text : (
+          <span title="같은 주문을 계좌1식(다음 시간별 관측치)으로 체결했다면의 원가격 대비(양수면 고른 시점이 유리) — 실행 감사">{text}</span>
+        );
+      },
+    },
+    { key: "executionNote", header: "실행 메모", className: "min-w-[10rem]", cell: (row) => orderExecutionNote(row.reason) },
+  ]);
+}
+
+function timedFillColumns(audit: ReadonlyMap<number, PaperExecutionOrder>): Column<PaperFill>[] {
+  const withBar = insertAfter(FILL_COLUMNS, "observedAt", [
+    { key: "barAt", header: "체결 봉", className: "whitespace-nowrap", cell: (row) => formatKst(row.barAtKst ?? null) },
+  ]);
+  return insertAfter(withBar, "rawPrice", [
+    { key: "rung", header: "사다리", className: "whitespace-nowrap", cell: (row) => fillRungText(row.fillRung) },
+    { key: "advantage", header: "계좌1식 대비", align: "right", cell: (row) => executionAdvantageText(audit.get(row.orderId)) },
+  ]);
+}
 
 /*
  * 한국 계좌의 칸(2단계 명세 §4-16 F2) — 돈·주당 가격은 원 단위 정수, 배지는 '기업행위 확인 필요'·'가격 없음'·확정 상태. 미국 칸 정의는 위
@@ -435,6 +482,9 @@ export function HoldingsSection({
   const fills = useApi<PaperFillsResponse>(code ? endpoints.paper.fills(code, RECENT_LIMIT) : null, 60_000);
   // 한국만 — 순자산 기록(잠정/확정)과 그 잠정 사유·확정 조정 '주의'를 고를 작업 기록(상태 응답 최근 30건, kr.risk 메모).
   const nav = useApi<PaperNavResponse>(korea && code ? endpoints.paper.nav(code) : null, 60_000);
+  // 미국 Claude 계좌2만 — 실행 감사(주문의 목표 시각·계좌1식 대비 bp).
+  const timed = !korea && isTimedBook(code);
+  const execution = useApi<PaperExecutionResponse>(timed && code ? endpoints.paper.execution(code, RECENT_LIMIT) : null, 60_000);
   const status = useApi<PaperStatusResponse>(korea && code ? endpoints.paper.market("KR").status : null, 60_000);
 
   const toggle = useAsyncAction(
@@ -457,6 +507,7 @@ export function HoldingsSection({
       void nav.reload();
       void status.reload();
     }
+    if (timed) void execution.reload();
     onChanged();
   };
 
@@ -478,6 +529,9 @@ export function HoldingsSection({
   const cautions = korea && jobs ? krConfirmationCautions(jobs, code) : [];
   const totalText = korea ? krConfirmationTotalText(fills.data?.confirmationTotal) : null;
   const action = statusToggle(book?.status);
+  const audit = executionByOrder(execution.data);
+  const orderColumns = korea ? KR_ORDER_COLUMNS : timed ? timedOrderColumns(audit) : ORDER_COLUMNS;
+  const fillColumns = korea ? KR_FILL_COLUMNS : timed ? timedFillColumns(audit) : FILL_COLUMNS;
   // 버튼 결과는 그 책을 보고 있을 때만 — 다른 책으로 바꾼 뒤 옛 책의 결과가 새 책 이름 아래 남지 않게.
   const toggleResult = toggle.result?.book?.code === code ? toggle.result : null;
   const resetResult = reset.result?.book?.code === code ? resetResultView(reset.result) : null;
@@ -536,7 +590,7 @@ export function HoldingsSection({
                 </Button>
               </div>
             ) : (
-              <p className="text-xs text-muted">{korea ? krNotStartedNote() : notStartedNote(book?.kind)}</p>
+              <p className="text-xs text-muted">{korea ? krNotStartedNote() : notStartedNote(book?.kind, book)}</p>
             )}
             {toggle.error && <Banner tone="warn">{toggle.error}</Banner>}
             {toggleResult && <Banner tone="info">{statusResultText(toggleResult)}</Banner>}
@@ -574,7 +628,9 @@ export function HoldingsSection({
                     ? KR_RESET_NOTE
                     : book?.kind === "BENCHMARK"
                       ? "벤치마크 계좌는 출발일 종가로 다시 사후 체결합니다(종가가 없으면 \"시작 전\"으로 남고 사유를 보입니다)."
-                      : "규칙·Claude 계좌는 현금만 든 \"시작 전\"으로 돌아갑니다."}</p>
+                      : timed
+                        ? "Claude 계좌2는 현금만 든 \"시작 전\"으로 돌아갑니다 — 다시 출발은 앞으로 체결 출발뿐입니다(사후 체결로 메우지 않음)."
+                        : "규칙·Claude 계좌는 현금만 든 \"시작 전\"으로 돌아갑니다."}</p>
                 </>
               }
               confirmLabel={reset.busy ? "초기화 중…" : "초기화 확인"}
@@ -649,7 +705,11 @@ export function HoldingsSection({
         subtitle={korea
           ? "한국 주문은 다음 KR 거래일 시가(KRX 시가 단일가)에 체결합니다. 트레일링 스탑은 밤 잠정 종가로 감지해 다음 거래일 시가에 팔고, "
             + "체결 때 감지한 날의 금융위 확정 종가로 다시 판정합니다(스탑가 위면 취소)."
-          : undefined}
+          : timed
+            ? "Claude 계좌2 주문은 다음 세션 하루짜리입니다 — 목표 시각은 고른 시점의 시각(KST), 계좌1식 대비는 같은 주문을 다음 시간별 관측치로 "
+              + "체결했다면의 원가격 대비 bp(실행 감사 — 양수면 고른 시점이 유리, 반사실이 아직 없거나 대체 체결이면 —)입니다. 1분봉에 그 시각 뒤 "
+              + "거래가 없으면 체결하지 않고 그날 마감 뒤 만료합니다(사유 NO_TRADE_AFTER_T 등)."
+            : undefined}
         source={ledgerSource}
       >
         {orders.loading && !orders.data && <Loading label="주문을 읽는 중…" />}
@@ -660,7 +720,7 @@ export function HoldingsSection({
             <KrEmpty>주문이 없습니다.</KrEmpty>
           ) : (
             <DataTable<PaperOrder>
-              columns={korea ? KR_ORDER_COLUMNS : ORDER_COLUMNS}
+              columns={orderColumns}
               rows={orders.data.orders ?? []}
               rowKey={(row) => String(row.id)}
               caption="주문"
@@ -678,7 +738,10 @@ export function HoldingsSection({
             + "체결 행은 그대로 둔 채 확정 조정 행으로 현금·평단을 맞춥니다(보통 다음 영업일 13시 뒤). 실효 비용 = (수수료 + 세금 + 슬리피지) "
             + "÷ (체결가 × 수량) — 서버 계산. 비용 칸은 수수료 · 세금 · 슬리피지(원)이고, 두 비용 칸은 잠정 체결의 값 — 확정 조정 행이 있으면 "
             + "확정가로 다시 센 값('확정')을 그 아래에 둡니다."
-          : "체결가는 관측가에 슬리피지를 얹은 값입니다. 사후 체결은 그날 종가로 나중에 기록한 것입니다."}
+          : timed
+            ? "체결가는 고른 시각의 Yahoo 1분봉 시가(사다리 R1·R2) 또는 표시된 대체 체결가(R2b·R3·확정 종가 — '대체 체결' 배지)에 슬리피지를 얹은 "
+              + "값입니다. 관측 시각은 장부가 그 체결을 반영한 관측치의 수집 시각, 체결 봉은 그 가격의 1분봉 시작입니다(종가·관측 종가 칸이면 —)."
+            : "체결가는 관측가에 슬리피지를 얹은 값입니다. 사후 체결은 그날 종가로 나중에 기록한 것입니다."}
         source={ledgerSource}
       >
         {fills.loading && !fills.data && <Loading label="체결을 읽는 중…" />}
@@ -702,7 +765,7 @@ export function HoldingsSection({
               <KrEmpty>체결이 없습니다 — 한국 계좌는 출발 결정 다음 KR 거래일 시가에 처음 체결합니다.</KrEmpty>
             ) : (
               <DataTable<PaperFill>
-                columns={korea ? KR_FILL_COLUMNS : FILL_COLUMNS}
+                columns={fillColumns}
                 rows={fills.data.fills ?? []}
                 rowKey={(row) => String(row.id)}
                 caption="체결"

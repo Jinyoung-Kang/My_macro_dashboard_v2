@@ -15,6 +15,7 @@ import {
   initialDecisionResultView,
   PAPER_SOURCES,
   prettyJson,
+  primaryClaudeBook,
 } from "@/lib/paper";
 import type { PaperClaudePreviewResult, PaperFrameworkResponse, PaperInitialDecisionResult, PaperOverviewResponse } from "@/lib/types";
 import { ClaudeDecisionBody } from "./ClaudeDecisionBody";
@@ -51,8 +52,9 @@ export function ClaudeStartSection({ overview, onChanged }: { overview: PaperOve
   const startElapsed = useElapsedSeconds(start.busy);
   const busy = preview.busy || start.busy;
 
+  // 계좌1만 — 계좌2(체결 시점 실험)는 사후 체결 시작이 없고 따로 출발합니다(Claude2StartSection).
   const label = prompt?.bookLabel
-    ?? (overview.books ?? []).find((book) => book.kind === "CLAUDE")?.label
+    ?? primaryClaudeBook(overview.books ?? [])?.label
     ?? "Claude 계좌";
   const startView = start.result ? initialDecisionResultView(start.result, label) : null;
   const startResult = startView && <Banner tone={startView.tone}>{startView.text}</Banner>;

@@ -14,6 +14,7 @@ import {
   apiUsageView,
   type Badge,
   calendarLine,
+  CLAUDE2_EXPOSURE_KEY,
   claudeExposureChart,
   earningsLine,
   exposureNote,
@@ -22,6 +23,7 @@ import {
   initialDecisionResultView,
   initPrompt,
   initResultText,
+  isTimedBook,
   jobOutcomeClass,
   jsonSummary,
   jsonTitle,
@@ -47,6 +49,7 @@ import {
   type NavRangeKey,
   navRangeKeys,
   navSeriesWindow,
+  sameWindowIndex,
   sampleNotes,
 } from "@/lib/paperOverview";
 import {
@@ -63,16 +66,20 @@ import {
 import { marketMeta, type PaperMarketCode } from "@/lib/paperMarket";
 import { allowedRangeKey } from "@/lib/patternRows";
 import type {
+  PaperBookSummary,
   PaperInitialDecisionResult,
   PaperInitResult,
   PaperJobRun,
   PaperKrRiskResult,
+  PaperNavResponse,
   PaperOverviewResponse,
   PaperRiskResult,
   PaperStatusResponse,
 } from "@/lib/types";
 import { AccountDetailPanel, accountDetailTitleId } from "./AccountDetailPanel";
+import { Claude2StartSection } from "./Claude2StartSection";
 import { ClaudeStartSection } from "./ClaudeStartSection";
+import { ExecutionExperimentCard } from "./ExecutionExperimentCard";
 import { GateIndicatorBody } from "./GateIndicatorBody";
 import { KrCollectionCard } from "./KrCollectionCard";
 import { KrStartSection } from "./KrStartSection";
@@ -84,10 +91,16 @@ import { LiveValuationCard } from "./LiveValuationCard";
  * dataviz 검증기(라이트 #ffffff·다크 #1a1a19): 예전 회색 #8B949E는 바로 앞 초록과 정상 시각 ΔE 13.5(15 미만)라 한 단계 어둡게
  * #6b727e(초록과 15.1·색약 8.8, 대비 4.9/3.6:1)로, 남는 색의 청록 #39C5CF는 다크 밝기 띠(0.755) 밖이라 #22a2bd로 옮겼습니다.
  * 회색은 범주 색이 아니라 채도 검사는 적용하지 않습니다.
+ *
+ * 다섯째 미국 계좌 Claude 계좌2(체결 시점 실험 — 계좌2 명세 §13-3)는 자주 #a438a0: 같은 검증기로 라이트(#ffffff)·다크(#1a1a19) 모두 파랑·주황·초록과
+ * **모든 쌍**에서 통과합니다(--pairs all — 이 색이 낀 쌍의 색약 ΔE 최소 11.1·정상 시각 22.6, 네 색 전체 최악은 기존 주황↔초록 9.4·20.9, 대비 3:1 이상,
+ * 밝기 띠·채도 안). 선이 겹치는 순자산 곡선·노출 추이(주황·파랑·자주)·S = 100 보기(주황·자주·초록)에서 어느 둘이 맞닿아도 갈립니다. 남는 색의 보라
+ * #a371f7는 파랑과 색약 ΔE 3.9·정상 13.9라 쓰지 않았습니다. 회색(60/40)과의 이웃 검사도 그대로입니다(초록↔회색 15.1).
  */
 const BOOK_COLORS: Record<string, string> = {
   rules: SERIES_COLORS.blue,
   claude: SERIES_COLORS.orange,
+  claude2: "#a438a0",
   bench_spy: SERIES_COLORS.green,
   bench_mix: "#6b727e",
   // 한국 네 계좌 — 미국과 같은 자리(규칙 파랑·Claude 주황·지수 초록·60/40 회색)라 같은 검증 결과를 그대로 씁니다.
@@ -107,7 +120,12 @@ const REFERENCE_COLOR = SPARE_COLORS[0];
  * Claude 노출 추이의 두 선 — 목표는 순자산 곡선의 Claude 책 색(주황), 실제는 검증된 팔레트의 다음 색(파랑). 두 색은 charts의
  * 팔레트 검증을 통과한 이웃 쌍이라 색약에서도 갈립니다. 한 축(%)이고, 범례가 이름을 함께 적어 색만으로 구분하지 않습니다.
  */
-const EXPOSURE_COLORS: Record<string, string> = { target: SERIES_COLORS.orange, actual: SERIES_COLORS.blue };
+const EXPOSURE_COLORS: Record<string, string> = {
+  target: SERIES_COLORS.orange,
+  actual: SERIES_COLORS.blue,
+  // 미국 Claude 계좌2의 실제 노출 — 순자산 곡선의 계좌2 색(위 BOOK_COLORS — 주황·파랑과 모든 쌍 통과).
+  [CLAUDE2_EXPOSURE_KEY]: BOOK_COLORS.claude2,
+};
 
 /** 계좌 상세 패널의 id — 카드 단추의 aria-controls가 가리킵니다(한 번에 하나만 열림). */
 const ACCOUNT_PANEL_ID = "paper-account-detail";
@@ -229,7 +247,13 @@ export function OverviewSection({
   const startResult = startView && <Banner tone={startView.tone}>{startView.text}</Banner>;
   const selection = selectedFilersView(overview.selection);
   const hasClaude = books.some((book) => book.kind === "CLAUDE");
-  const exposure = claudeExposureChart(overview.claudeExposureSeries);
+  // 미국 Claude 계좌2(체결 시점 실험) — 출발했으면 노출 추이에 계좌2 실제 노출 선(그 순자산 기록)을, 'S = 100 같은 구간'은 출발일을 기준으로.
+  const book2 = korea ? undefined : books.find((book) => isTimedBook(book.code));
+  const book2Nav = useApi<PaperNavResponse>(book2?.startedOn ? endpoints.paper.nav(book2.code) : null, 60_000);
+  const exposure = claudeExposureChart(
+    overview.claudeExposureSeries,
+    book2?.startedOn && book2Nav.data?.available ? (book2Nav.data.series ?? []) : null,
+  );
   const exposureSeries = exposure.series.map((line) => ({ ...line, color: EXPOSURE_COLORS[line.key] ?? SPARE_COLORS[0] }));
   // 한국 카드는 수동 호출 문턱(상한 − 정기 작업 몫 예약)을 함께 — 한국 출발 단추·수동 결정이 그 문턱에서 막힙니다(미국 카드는 그대로).
   const usage = status.data?.available ? apiUsageView(status.data.apiUsage, korea ? { manual: true } : {}) : null;
@@ -323,6 +347,7 @@ export function OverviewSection({
       {!startPrompt && startResult}
 
       {!korea && <ClaudeStartSection overview={overview} onChanged={onChanged} />}
+      {!korea && <Claude2StartSection overview={overview} status={status.data ?? null} onChanged={onChanged} />}
       {korea && <KrStartSection overview={overview} status={status.data ?? null} onChanged={onChanged} />}
 
       {/* 정규장 동안 n분마다 움직이는 장중 평가(표시 전용 추정) — 아래 계좌 목록은 장부의 마지막 관측치 값 그대로입니다. */}
@@ -425,7 +450,7 @@ export function OverviewSection({
       {books.length > 0 && (
         <Card
           title="계좌 비교"
-          subtitle="네 계좌를 항목별로 나란히 — 순자산·수익률·노출은 마지막 관측치 기준 · 통계는 거래일별 순자산 기준(초과 수익률·베타는 '비교 기준' 줄의 계좌 대비)"
+          subtitle={`${korea ? "네 계좌를" : "계좌를"} 항목별로 나란히 — 순자산·수익률·노출은 마지막 관측치 기준 · 통계는 거래일별 순자산 기준(초과 수익률·베타는 '비교 기준' 줄의 계좌 대비)`}
           source={ledgerSource}
         >
           <DataTable<ComparisonRow>
@@ -445,10 +470,16 @@ export function OverviewSection({
         </Card>
       )}
 
+      {!korea && book2 && <SameWindowCard overview={overview} books={books} />}
+
       {hasClaude && (
         <Card
           title="Claude 노출 추이"
-          subtitle="목표 = Claude가 결정마다 정한 주식 노출(기록·표시용 — 집행은 주문 기준) · 실제 = 그 거래일 장부의 주식 노출. 기록이 없는 날은 선을 끊어 그립니다."
+          subtitle={`목표 = Claude가 결정마다 정한 주식 노출(기록·표시용 — 집행은 주문 기준) · 실제 = 그 거래일 장부의 주식 노출${
+            exposure.series.some((line) => line.key === CLAUDE2_EXPOSURE_KEY)
+              ? "(목표·실제는 계좌1) · 계좌2 실제 = Claude 계좌2 장부의 주식 노출"
+              : ""
+          }. 기록이 없는 날은 선을 끊어 그립니다.`}
           source={PAPER_SOURCES.exposure}
         >
           {exposure.rows.length === 0 ? (
@@ -473,6 +504,8 @@ export function OverviewSection({
           )}
         </Card>
       )}
+
+      {!korea && hasClaude && <ExecutionExperimentCard books={books} />}
 
       {hasClaude && usage && (
         <Card
@@ -611,6 +644,39 @@ export function OverviewSection({
         />
       </Card>
     </>
+  );
+}
+
+/**
+ * 🧪 "S = 100 같은 구간"(계좌2 명세 §4-2의 2·§13-3) — 계좌2 출발일 S를 기준일로 계좌1·계좌2·SPY 계좌의 순자산을 100에 맞춘 선(서술용 — 판정은
+ * '체결 시점 실험'의 주문 단위 반사실). 계좌2가 출발하기 전이면 그렇다고 적고 그리지 않습니다(S 이전 구간은 계좌2 값이 없어 100으로 채우지 않음).
+ */
+function SameWindowCard({ overview, books }: { overview: PaperOverviewResponse; books: readonly PaperBookSummary[] }) {
+  const view = sameWindowIndex(overview.navSeries, books);
+  const series = (view?.series ?? []).map((line, index) => ({
+    ...line,
+    color: BOOK_COLORS[line.key] ?? SPARE_COLORS[index % SPARE_COLORS.length],
+  }));
+  return (
+    <Card
+      title="S = 100 같은 구간"
+      subtitle={view
+        ? `기준일 S = ${view.baseDate}(Claude 계좌2 출발일)의 순자산을 100으로 — 계좌1·계좌2·SPY 계좌가 같은 구간을 겪은 결과(서술용, 판정에 쓰지 않음). S 이전 계좌2 값은 없습니다(—).`
+        : "Claude 계좌2가 출발하면 그 출발일 S의 순자산을 100으로 맞춰 계좌1·계좌2·SPY 계좌를 같은 구간에서 나란히 그립니다(서술용, 판정에 쓰지 않음)."}
+      source={PAPER_SOURCES.sameWindow}
+    >
+      {!view ? (
+        <p className="text-sm text-muted">아직 계좌2가 출발하지 않았습니다 — 출발 전 구간은 계좌2 값이 없어(—) 그리지 않습니다.</p>
+      ) : (
+        <>
+          <MultiLineSeries data={view.rows} series={series} precision={1} height={240} ariaLabel="S = 100 같은 구간" />
+          {view.latest && <p className="mt-2 text-xs text-muted">마지막 {view.latest}</p>}
+          {view.missingBase.length > 0 && (
+            <p className="mt-1 text-xs text-warn">기준일에 순자산 기록이 없어 선을 그리지 않은 계좌: {view.missingBase.join(", ")}</p>
+          )}
+        </>
+      )}
+    </Card>
   );
 }
 

@@ -17,6 +17,8 @@ import type {
   PaperDecisionDetail,
   PaperDecisionSummary,
   PaperEarningsStatus,
+  PaperExecutionOrder,
+  PaperExecutionResponse,
   PaperFrameworkEngine,
   PaperFrameworkMaxIds,
   PaperFrameworkPrinciple,
@@ -30,6 +32,7 @@ import type {
   PaperGateThresholds,
   PaperInitialDecisionResult,
   PaperInitResult,
+  PaperNavRow,
   PaperNote,
   PaperNoteCreateResult,
   PaperNoteKind,
@@ -55,6 +58,7 @@ import type {
   PaperSettingsResponse,
   PaperSettingsSaveResult,
   PaperStats,
+  PaperStatusResponse,
   PaperTrackRecordCandidate,
   PaperTrackRecordCollection,
   PaperTrackRecordCriteria,
@@ -90,6 +94,10 @@ export const PAPER_SOURCES = {
   gate: "매크로 카드 저장본 macro.collected(미국 10년물·브렌트·WTI·USD/JPY) — 게이트 단계는 대시보드 백엔드 계산(PostgreSQL paper_gate_log)",
   exposure: "대시보드 결정 기록 (PostgreSQL paper_decisions.target_exposure_pct — Claude 응답) · 대시보드 모의 장부 "
     + "(paper_nav_daily.exposure_pct)",
+  // 1분봉 저장본의 데이터셋 이름은 적지 않습니다 — 화면은 그 저장본을 읽지 않고(수집기 시험 test_paper_bars가 이름으로 검사) 서버 계산만 받습니다.
+  execution: "대시보드 실행 감사 (PostgreSQL paper_order_exec — 반사실은 Yahoo Finance(yfinance) 1분봉(수집 태스크 paper_bars_us)·관측치 paper.quotes, "
+    + "평균·90% 구간은 대시보드 백엔드 계산)",
+  sameWindow: "대시보드 모의 장부 (PostgreSQL paper_nav_daily — 개요 순자산 곡선의 값을 계좌2 출발일 순자산으로 나눠 100에 맞춤)",
   settings: "대시보드 모의 매매 설정 (PostgreSQL paper_settings·paper_settings_history)",
   apiUsage: "대시보드 Claude 호출 사용량 (PostgreSQL paper_api_usage — 토큰은 Anthropic API 응답의 usage, 추정 비용은 설정 단가 pricing.* × 토큰)",
   framework: "대시보드 프레임 기록 (PostgreSQL paper_framework_versions — 렌더링·토큰 어림은 대시보드 백엔드 계산)",
@@ -179,15 +187,20 @@ export function bookKindLabel(kind: string | null | undefined): string {
 /** 받침 있는 말 뒤의 조사 → 받침 없는 말 뒤의 조사. */
 const PARTICLE_PAIR = { 을: "를", 은: "는", 이: "가", 과: "와" } as const;
 
+/** 숫자로 끝나는 이름의 받침 — 끝 숫자를 읽은 소리(영·일·이·삼·사·오·육·칠·팔·구)에 받침이 있나("Claude 계좌1은", "Claude 계좌2는"). */
+const DIGIT_HAS_FINAL = [true, true, false, true, false, false, true, true, true, false];
+
 /**
  * 이름 뒤에 조사를 붙입니다 — 마지막 글자에 받침이 있으면 "을·은·이·과", 없으면 "를·는·가·와"("규칙 계좌를", "규칙 계좌는").
  * 계좌 이름은 서버가 보내므로(paper_books.label) 받침을 가정하지 않습니다 — 예전에는 "책"으로 끝나는지만 봐서, 이름이 바뀌면
- * "계좌을"이 됐습니다. 한글로 끝나지 않으면(예: "SPY 100%") 받침을 알 수 없어 "을(를)"처럼 둘 다 적습니다.
+ * "계좌을"이 됐습니다. 숫자로 끝나면 끝 숫자를 읽은 소리로 정하고("계좌1은" — 10·100도 끝이 영이라 받침), 한글·숫자로 끝나지 않으면
+ * (예: "SPY 100%") 받침을 알 수 없어 "을(를)"처럼 둘 다 적습니다.
  */
 export function withParticle(word: string, particle: keyof typeof PARTICLE_PAIR): string {
   const code = word.charCodeAt(word.length - 1);
   const other = PARTICLE_PAIR[particle];
   if (code >= 0xac00 && code <= 0xd7a3) return `${word}${(code - 0xac00) % 28 === 0 ? other : particle}`;
+  if (code >= 0x30 && code <= 0x39) return `${word}${DIGIT_HAS_FINAL[code - 0x30] ? particle : other}`;
   return `${word}${particle}(${other})`;
 }
 
@@ -304,6 +317,14 @@ export interface AccountProfile {
   summary: string;
   definitions: AccountDefinition[];
   settings: AccountSettingSpec[];
+  /**
+   * 미국 Claude 계좌2처럼 체결 방식이 다른 계좌의 화면 몫(계좌2 명세 §13-3 — kind만 보고 정하면 같은 kind CLAUDE의 계좌1 문구가 계좌2에 나옴).
+   * `timed`는 시각 지정 체결 계좌(주문·체결 표에 목표 시각·체결 봉·사다리·계좌1식 대비 칸, 시작은 앞으로 체결 출발)이고, 두 문장은 보유·체결 탭의
+   * '시작 전' 안내와 결정 로그 탭의 계좌 설명입니다. 없으면 kind 문구를 씁니다.
+   */
+  timed?: boolean;
+  notStartedNote?: string;
+  decisionNote?: string;
 }
 
 /** 시작 방법이 같은 두 벤치마크의 정의 한 줄. */
@@ -311,8 +332,8 @@ const BENCHMARK_START =
   "개요의 '초기화'로 시작합니다 — 출발일 종가를 받은 뒤 초기화하면 그 종가로 사후 체결하고, 종가가 아직 없으면 '시작 전'(현금만)으로 남습니다.";
 
 /**
- * 네 계좌의 정의(계좌 코드 → 소개). 문장은 백엔드 규칙(RuleBookService·ClaudeBookService·OrderValidator·PaperAdminService·
- * PaperLedgerService)을 옮긴 것이고, **설정에서 오는 숫자는 문장에 적지 않습니다** — 설정을 바꾸면 문장이 틀리게 되므로, 숫자는
+ * 미국 다섯 계좌의 정의(계좌 코드 → 소개 — 계좌2는 ADR 0022의 체결 시점 실험). 문장은 백엔드 규칙(RuleBookService·ClaudeBookService·OrderValidator·
+ * PaperAdminService·PaperLedgerService·UsTimedFills)을 옮긴 것이고, **설정에서 오는 숫자는 문장에 적지 않습니다** — 설정을 바꾸면 문장이 틀리게 되므로, 숫자는
  * `settings`의 키로 설정 응답에서 읽어 따로 적습니다(accountSettingRows). 문장에 남은 숫자는 코드에 고정된 값입니다(확대 기준 +30% —
  * RuleBookService.ADD_THRESHOLD_PCT, 벤치마크 구성 SPY 100%·SPY 60%·SHY 40% — PaperBooks).
  */
@@ -405,14 +426,15 @@ export const ACCOUNT_PROFILES: Readonly<Record<string, AccountProfile>> = {
       {
         key: "start",
         label: "시작·출발일",
-        text: "개요의 'Claude 계좌 시작'(초기 결정)으로 시작합니다 — 출발일 기준 초기 패킷(가격·FRED·13F·트랙레코드·재무는 그날 이하 "
+        text: "개요의 'Claude 계좌1 시작'(초기 결정)으로 시작합니다 — 출발일 기준 초기 패킷(가격·FRED·13F·트랙레코드·재무는 그날 이하 "
           + "값만, 매크로 카드는 그날 이력이 없어 지금 수집본을 참고로)으로 받은 주문 가운데 검증을 통과한 것을 출발일 종가에 사후 "
           + "체결합니다.",
       },
       {
         key: "purpose",
         label: "비교 목적",
-        text: "실험군 — 매크로·13F·재무를 함께 읽는 재량 판단이 기계적 규칙(규칙 계좌)과 시장(SPY 계좌)을 이기는지 봅니다.",
+        text: "실험군 — 매크로·13F·재무를 함께 읽는 재량 판단이 기계적 규칙(규칙 계좌)과 시장(SPY 계좌)을 이기는지 봅니다. 체결 "
+          + "시점 실험(Claude 계좌2)의 '계좌1식' 기준(다음 시간별 관측치 체결)이기도 합니다.",
       },
     ],
     settings: [
@@ -430,6 +452,82 @@ export const ACCOUNT_PROFILES: Readonly<Record<string, AccountProfile>> = {
       { key: "cashLikeTickers", label: "현금성 종목" },
     ],
   },
+  claude2: {
+    summary: "계좌1과 같은 자료·프레임·한도로 판단하고, 주문마다 체결 시점(시가 · 10:00~15:00 ET 매시 · 종가)을 스스로 고르는 체결 시점 실험군",
+    definitions: [
+      {
+        key: "method",
+        label: "운용 방식",
+        text: "미국 장 마감 뒤 하루 한 번, 계좌1과 같은 결정 실행에서 계좌1 바로 뒤에 Claude를 부릅니다. 계좌1이 그 실행에서 읽은 시장 입력을 "
+          + "그대로 쓰고(입력 동결 — 매크로·FRED·레짐·게이트·트랙레코드·기관 프로필·메모 일곱 섹션은 바이트까지 같음), 같은 프레임 판으로 "
+          + "판단합니다. 패킷에는 자기 보유·결정과 체결 시점 메뉴·자기 체결 기록(13_execution)이 더해지고, 계좌1의 결정·주문은 넣지 않습니다"
+          + "(독립 판단). 장중에는 결정하지 않습니다.",
+      },
+      {
+        key: "buy",
+        label: "매수",
+        text: "통과 조건은 계좌1과 같은 검증기·같은 한도입니다. 주문마다 체결 시점과 그 이유(실행 메모)를 고릅니다 — 시가(다음 세션 09:30 ET "
+          + "첫 1분봉 시가)·10:00~15:00 ET 매시(그 시각 1분봉 시가)·종가(확정 종가). 모든 주문은 다음 세션 하루짜리이고, 매도는 그보다 늦지 "
+          + "않은 시점의 매수에만 현금·자리를 만듭니다. 이미 지난 시각(LATE_FOR_TIMING)과 조기 폐장일 13:00 ET 뒤 시각은 거절합니다.",
+      },
+      {
+        key: "sell",
+        label: "매도·리스크",
+        text: "재량 매도·트레일링 스탑·재진입 금지는 계좌1과 같습니다 — 스탑은 1분봉이 아니라 시간별 관측치로 봅니다. 시각 지정 주문이 남은 "
+          + "관측치는 그 회차 1분봉 저장본을 기다렸다가(상한은 설정) 처리해, 앞 시각의 매도보다 스탑이 먼저 돌지 않게 합니다. 일시정지 중에는 "
+          + "스탑도 보지 않습니다(최고가만 따라감).",
+      },
+      {
+        key: "cash",
+        label: "현금",
+        text: "현금 비중·주식 노출은 Claude가 정하고 검증기는 보지 않습니다(0%·100%도 거절하지 않음). 매수 수량은 고른 시각의 순자산(그 "
+          + "시각 1분봉 시가로 평가)으로 정하고, 현금이 모자라면 줄여 삽니다. 1분봉에 그 시각 뒤 거래가 없으면(거래 정지·무거래) 체결하지 않고 "
+          + "그날 마감 뒤 만료합니다 — 멈춘 가격으로 채우지 않습니다.",
+      },
+      {
+        key: "start",
+        label: "시작·출발일",
+        text: "늦게, 앞으로 체결로 출발합니다 — 설정 claude2.enabled를 켜면 다음 미국 결정 창에 정기 결정 작업이 출발 결정(정기 결정과 같은 "
+          + "패킷, 사후 체결 문장 없음)을 내고, 주문은 다음 세션에 고른 시점으로 체결합니다. 개요의 '계좌2 시작'은 같은 출발을 그 창 안에서 "
+          + "지금 한 번 부릅니다. 출발일은 그 결정의 기준 거래일 S(그날 순자산 = 처음 현금)이고, 사후 체결·미리보기는 없습니다. 출발 주문은 "
+          + "월 재량 주문 상한에 세지 않습니다.",
+      },
+      {
+        key: "purpose",
+        label: "비교 목적",
+        text: "체결 시점 실험 — 같은 주문을 계좌1식(다음 시간별 관측치)으로 체결했을 때보다 고른 시점의 체결가가 나았는지 주문 단위 반사실로 "
+          + "잽니다(개요의 '체결 시점 실험'). 순자산은 같은 구간(S = 100)으로 서술만 하고 판정에 쓰지 않습니다. 판정 문턱은 출발 전에 정해 "
+          + "두었고(ADR 0022), 표본이 적어 '판단 보류'로 끝날 가능성이 높습니다.",
+      },
+    ],
+    settings: [
+      { key: "claude2.enabled", label: "계좌2 켜기(정기 결정·출발)" },
+      { key: "claude2.maxCallsPerCycle", label: "결정 주기 호출 상한", unit: "회" },
+      { key: "claude2.barsWaitMinutes", label: "1분봉 기다림 상한", unit: "분" },
+      { key: "claude2.executionRecord", label: "패킷에 자기 체결 기록" },
+      { key: "model", label: "모델" },
+      { key: "decisionTimeKst", label: "결정 시각(KST, 계좌1과 같음)" },
+      { key: "apiScheduledReserve", label: "정기 작업 몫 예약", unit: "회" },
+      { key: "maxWeightStockPct", label: "종목 비중 상한", unit: "%" },
+      { key: "maxWeightEtfPct", label: "ETF 비중 상한", unit: "%" },
+      { key: "maxPositions", label: "최대 종목 수(현금성 제외)", unit: "종목" },
+      { key: "minOrderNotional", label: "최소 주문 금액", unit: " 달러" },
+      { key: "maxDiscretionaryOrdersPerMonth", label: "월 재량 주문 상한", unit: "건" },
+      { key: "minHoldTradingDaysForSell", label: "재량 매도 전 최소 보유", unit: "거래일" },
+      { key: "trailingStopPct", label: "트레일링 스탑", unit: "%" },
+      { key: "lockoutTradingDays", label: "스탑 뒤 재진입 금지", unit: "거래일" },
+      { key: "slippageBp", label: "체결 슬리피지(미국 계좌 공통 — 시점과 무관)", unit: "bp" },
+    ],
+    timed: true,
+    notStartedNote: "시작 전인 Claude 계좌2는 앞으로 체결로 출발합니다 — 설정 탭에서 claude2.enabled를 켜면 다음 미국 결정 창에 정기 결정 작업이 "
+      + "출발 결정을 내고(개요의 '계좌2 시작'은 그 창 안에서 지금 한 번), 주문은 다음 세션에 고른 시점으로 체결됩니다. 사후 체결은 없습니다. "
+      + "지금은 현금만 듭니다.",
+    decisionNote: "Claude 계좌2는 미국 장 마감 뒤 하루 한 번 — 계좌1과 같은 결정 실행에서 계좌1 바로 뒤(같은 결정 시각·같은 입력·같은 프레임 판) — "
+      + "결정합니다. 1분봉 기다림이 풀리지 않았으면 다음 주기로 미루고, 목표 세션 09:00 ET(개장 전 컷오프)를 넘기면 그 세션 결정은 '건너뜀'입니다"
+      + "(계좌1은 그대로 진행). 결정 주기마다 호출 상한(설정 claude2.maxCallsPerCycle)이 따로 있고, API 오류는 같은 기준 거래일에 한 번 다시 "
+      + "시도합니다. 통과 주문은 다음 세션 하루짜리 대기 주문이고, 새 결정이 남은 대기 주문을 모두 대신합니다. '지금 결정 실행'은 확정 종가 "
+      + "처리 뒤 ~ 다음 세션 09:00 ET 전에만 됩니다(정규장 중·창 밖은 서버가 거절 — 기록 없음).",
+  },
   bench_spy: {
     summary: "출발일에 SPY 100%를 사서 그대로 드는 시장 기준선",
     definitions: [
@@ -446,10 +544,10 @@ export const ACCOUNT_PROFILES: Readonly<Record<string, AccountProfile>> = {
       {
         key: "purpose",
         label: "비교 목적",
-        text: "시장 기준선 — 다른 세 계좌 통계의 초과 수익률·베타는 이 계좌 대비입니다.",
+        text: "시장 기준선 — 다른 계좌 통계의 초과 수익률·베타는 이 계좌 대비입니다.",
       },
     ],
-    settings: [{ key: "slippageBp", label: "체결 슬리피지(네 계좌 공통)", unit: "bp" }],
+    settings: [{ key: "slippageBp", label: "체결 슬리피지(미국 계좌 공통)", unit: "bp" }],
   },
   bench_mix: {
     summary: "출발일에 SPY 60%·SHY 40%를 사서 그대로 드는 단순 배분 기준 — 리밸런싱 없음",
@@ -479,7 +577,7 @@ export const ACCOUNT_PROFILES: Readonly<Record<string, AccountProfile>> = {
       },
     ],
     settings: [
-      { key: "slippageBp", label: "체결 슬리피지(네 계좌 공통)", unit: "bp" },
+      { key: "slippageBp", label: "체결 슬리피지(미국 계좌 공통)", unit: "bp" },
       { key: "cashLikeTickers", label: "현금성 종목" },
     ],
   },
@@ -490,6 +588,19 @@ export function accountProfile(code: string | null | undefined): AccountProfile 
   if (!code) return null;
   if (Object.hasOwn(ACCOUNT_PROFILES, code)) return ACCOUNT_PROFILES[code];
   return Object.hasOwn(KR_ACCOUNT_PROFILES, code) ? KR_ACCOUNT_PROFILES[code] : null;
+}
+
+/** 시각 지정 체결 계좌인가(미국 Claude 계좌2 — 계좌 소개의 timed). 모르는 코드는 false. */
+export function isTimedBook(code: string | null | undefined): boolean {
+  return accountProfile(code)?.timed === true;
+}
+
+/**
+ * 그 시장의 기본 Claude 계좌 — kind CLAUDE 가운데 시각 지정 체결 계좌(계좌2)가 아닌 첫 계좌(미국 claude·한국 kr_claude). 시작 카드·홈 히어로·
+ * 사용량처럼 Claude 계좌를 하나로 읽는 곳이 계좌1 동작 그대로 남게(계좌2 명세 §13-3). 없으면 null.
+ */
+export function primaryClaudeBook<B extends Pick<PaperBookSummary, "code" | "kind">>(books: readonly B[]): B | null {
+  return books.find((book) => book.kind === "CLAUDE" && !isTimedBook(book.code)) ?? null;
 }
 
 /** 배분 방식(blend.allocation) 이름. */
@@ -963,6 +1074,11 @@ export function orderReasonText(reason: unknown, maxLength = 120): string {
   return jsonSummary(reason, maxLength);
 }
 
+/** 미국 Claude 계좌2 주문의 실행 메모(근거 JSON의 executionNote — 그 체결 시점을 고른 이유). 없으면 "—". */
+export function orderExecutionNote(reason: unknown): string {
+  return (isRecord(reason) ? textOf(reason.executionNote) : null) ?? EMPTY;
+}
+
 /**
  * Claude 주문 근거 한 줄 — "근거 [사실·가설] · 무효화: 조건". Claude 책 주문의 근거는 모델이 쓴 `{thesis, labels, invalidation}`이라
  * 키: 값으로 이어 붙이면 라벨이 배열 글자로 섞이고 무효화 조건이 잘립니다. 근거(thesis)가 없으면 null(호출한 쪽이 키: 값 요약으로).
@@ -1021,11 +1137,19 @@ const ORDER_STATUS: Record<string, { label: string; tone: BadgeTone }> = {
 };
 const TIMING: Record<string, string> = {
   NEXT_OBSERVATION: "다음 관측치",
-  // 한국 책의 체결 시점(명세 §4-1 — 다음 KR 거래일 시가 단일가, 잠정가는 토스 1분봉 개장 봉).
+  // 한국 책의 체결 시점(명세 §4-1 — 다음 KR 거래일 시가 단일가, 잠정가는 토스 1분봉 개장 봉). 미국 Claude 계좌2의 시가(목표 세션 09:30 ET 첫
+  // 1분봉 시가)도 같은 글자입니다 — 둘 다 다음 거래일의 시가입니다.
   NEXT_OPEN: "다음 거래일 시가",
   NEXT_CLOSE: "다음 종가",
   IMMEDIATE: "즉시",
   BACKFILL: "사후 체결",
+  // 미국 Claude 계좌2의 시각 지정 시점(계좌2 명세 §6-2) — 목표 세션(다음 거래일)의 뉴욕 시각, 그 시각 1분봉 시가.
+  AT_1000: "다음 거래일 10:00 ET",
+  AT_1100: "다음 거래일 11:00 ET",
+  AT_1200: "다음 거래일 12:00 ET",
+  AT_1300: "다음 거래일 13:00 ET",
+  AT_1400: "다음 거래일 14:00 ET",
+  AT_1500: "다음 거래일 15:00 ET",
 };
 const SOURCE: Record<string, string> = {
   RULE: "규칙",
@@ -1108,12 +1232,33 @@ export function positionBadges(position: PaperPosition): Badge[] {
   return badges;
 }
 
-/** 체결 배지 — 사후 체결이면 하나. */
-export function fillBadges(fill: { backfill: boolean }): Badge[] {
-  return fill.backfill
+/** 체결 배지 — 사후 체결이면 하나, 미국 Claude 계좌2의 대체 체결(사다리의 대체 칸)이면 하나. */
+export function fillBadges(fill: { backfill: boolean; fallback?: boolean; fillRung?: string | null }): Badge[] {
+  const badges: Badge[] = fill.backfill
     ? [{ key: "backfill", label: "사후 체결", className: TONE.info, title: "그날 종가로 나중에 기록한 체결입니다(관측 시각 = 그날 마감)." }]
     : [];
+  if (fill.fallback === true) {
+    badges.push({
+      key: "fallback", label: "대체 체결", className: TONE.warn,
+      title: `고른 시각 창의 1분봉으로 체결하지 못해 ${fillRungText(fill.fillRung ?? null)}으로 체결했습니다 — 체결 시점 실험의 주 판정에서 따로 셉니다.`,
+    });
+  }
+  return badges;
 }
+
+/**
+ * 미국 Claude 계좌2 체결의 사다리 칸 이름(V17 fill_rung, 계좌2 명세 §6-2). R1·R2는 고른 시각 창의 1분봉, R2b·R3·확정 종가 대체는 대체 체결입니다.
+ * 칸이 없으면(스탑 등 — 사다리를 타지 않은 체결) "—", 모르는 칸은 받은 글자 그대로.
+ */
+const FILL_RUNG: Record<string, string> = {
+  Y1M_AT: "R1 · 그 시각 1분봉 시가",
+  Y1M_NEXT: "R2 · 4분 안 첫 거래 봉 시가",
+  Y1M_LATE: "R2b · 그 세션 T 뒤 첫 거래 봉 시가",
+  QUOTES_FALLBACK: "R3 · 관측 종가(1분봉 없음)",
+  QUOTES_CLOSE: "확정 종가",
+};
+
+export const fillRungText = (rung: string | null | undefined) => labelOf(FILL_RUNG, rung);
 
 /** 스탑 칸 — 현금성은 적용 안 함, 값이 없으면 "—". 주당 가격 자릿수는 시장 표기(미국 4자리, 한국 0자리). */
 export function stopText(
@@ -1156,9 +1301,16 @@ export function statusToggle(status: string | null | undefined): { next: "ACTIVE
 
 /**
  * 시작 전인 책에 버튼 대신 적는 안내. 책 종류마다 시작하는 길이 다릅니다 — 벤치마크는 초기 결정이 아니라 출발일 종가의
- * 사후 체결로 시작하므로, 종가가 없어 시작 전에 남았다면 할 일은 "기다렸다가 초기화를 다시 누르기"입니다.
+ * 사후 체결로 시작하므로, 종가가 없어 시작 전에 남았다면 할 일은 "기다렸다가 초기화를 다시 누르기"입니다. 계좌 소개에 그 계좌만의 안내가 있으면
+ * (미국 Claude 계좌2 — 앞으로 체결 출발) 그것을 씁니다 — kind만 보면 같은 kind CLAUDE의 계좌1 안내(사후 체결)가 계좌2에 나옵니다.
+ * Claude 계좌의 시작 단추 이름은 그 계좌 이름 + " 시작"입니다(개요의 시작 카드).
  */
-export function notStartedNote(kind: string | null | undefined): string {
+export function notStartedNote(
+  kind: string | null | undefined,
+  book?: Pick<PaperBookSummary, "code" | "label"> | null,
+): string {
+  const profiled = accountProfile(book?.code)?.notStartedNote;
+  if (profiled) return profiled;
   if (kind === "BENCHMARK") {
     return "시작 전인 벤치마크 계좌는 출발일 종가로 사후 체결해 시작합니다 — 종가를 받은 뒤 초기화를 다시 누르세요"
       + "(개요 탭의 '초기화' 또는 아래 '계좌 초기화'). 지금은 현금만 듭니다.";
@@ -1168,7 +1320,8 @@ export function notStartedNote(kind: string | null | undefined): string {
       + "출발일 종가에 사후 체결합니다. 지금은 현금만 듭니다.";
   }
   if (kind === "CLAUDE") {
-    return "시작 전인 Claude 계좌는 개요 탭의 'Claude 계좌 시작'(초기 결정)으로 시작합니다 — 출발일 기준 입력 패킷으로 Claude가 "
+    const label = book?.label || "Claude 계좌";
+    return `시작 전인 ${withParticle(label, "은")} 개요 탭의 '${label} 시작'(초기 결정)으로 시작합니다 — 출발일 기준 입력 패킷으로 Claude가 `
       + "고른 주문 가운데 검증(하드 규칙)을 통과한 것만 출발일 종가에 사후 체결합니다. 지금은 현금만 듭니다.";
   }
   return "시작 전인 계좌는 초기 결정으로 시작합니다 — 지금은 현금만 듭니다.";
@@ -1199,9 +1352,9 @@ export function initPrompt(
   if (overview.initialized === false) {
     return {
       title: "장부 초기화",
-      body: `아직 장부가 없습니다. 초기화하면 계좌 네 개를 만들고, 두 벤치마크 계좌를 출발일(${start}) 종가로 사후 체결합니다. `
-        + "규칙 계좌·Claude 계좌는 현금만 든 채 '시작 전'으로 둡니다 — 초기화 뒤 개요의 '규칙 계좌 시작'·'Claude 계좌 시작'"
-        + "(초기 결정)으로 각각 시작합니다. "
+      body: `아직 장부가 없습니다. 초기화하면 계좌 다섯 개를 만들고, 두 벤치마크 계좌를 출발일(${start}) 종가로 사후 체결합니다. `
+        + "규칙 계좌·Claude 계좌1은 현금만 든 채 '시작 전'으로 둡니다 — 초기화 뒤 개요의 '규칙 계좌 시작'·'Claude 계좌1 시작'"
+        + "(초기 결정)으로 각각 시작합니다. Claude 계좌2(체결 시점 실험)는 설정 claude2.enabled를 켠 뒤 앞으로 체결로 늦게 출발합니다. "
         + "여러 번 눌러도 이미 있는 계좌는 다시 만들지 않습니다.",
     };
   }
@@ -1266,7 +1419,12 @@ export function riskResultView(result: PaperRiskResult): RiskResultView {
     // 테이블이 없을 때는 outcome 없이 서버 문구만 옵니다.
     summary: outcome ? riskOutcomeText(outcome) : (result.message ?? riskOutcomeText(null)),
     errors,
-    notes: outcome?.notes ?? [],
+    // 미국 Claude 계좌2의 1분봉 기다림(오류 아님 — 다음 점검이 같은 관측치를 다시 봄)도 메모로 — 칸이 없으면 예전 그대로.
+    notes: [
+      ...(outcome?.notes ?? []),
+      ...(outcome?.waiting ?? []).map((entry) => `1분봉 기다림 — ${entry}`),
+      ...(outcome?.stillWaiting ?? []).map((entry) => `1분봉 기다림(계속) — ${entry}`),
+    ],
   };
 }
 
@@ -1784,8 +1942,13 @@ export function resolveDecisionBook(picked: string, books: readonly PaperBookSum
   return choices.find((book) => book.kind === "RULES")?.code ?? choices[0]?.code ?? null;
 }
 
-/** 책마다 결정이 언제·무엇을 하는지 한 문단. */
-export function decisionBookNote(kind: string | null | undefined): string {
+/**
+ * 책마다 결정이 언제·무엇을 하는지 한 문단. 계좌 소개에 그 계좌만의 문단이 있으면(미국 Claude 계좌2 — 계좌1 뒤 같은 실행·개장 전 컷오프·결정 주기
+ * 상한) 그것을 씁니다 — kind만 보면 같은 kind CLAUDE의 계좌1 문단이 계좌2에 나옵니다.
+ */
+export function decisionBookNote(kind: string | null | undefined, code?: string | null): string {
+  const profiled = accountProfile(code)?.decisionNote;
+  if (profiled) return profiled;
   if (kind === "CLAUDE") {
     return "Claude 계좌는 거래일마다 한 번(KST 07:30 이후, 확정 종가를 확인한 뒤 — 12:00까지 오지 않으면 있는 값으로 '확정 전 값') 입력 "
       + "패킷을 Claude에 보내 주문 목록과 목표 주식 노출을 받습니다. 검증기(하드 규칙)가 주문마다 통과·거절을 정하고 통과한 주문만 "
@@ -1808,15 +1971,21 @@ export function decisionBookNote(kind: string | null | undefined): string {
  * "Claude를 지금 부를까요?"가 틀린 말이 되지 않게 여기서 먼저 막음). 규칙 책은 일시정지 중에도 누를 수 있습니다(주문 없이 '건너뜀'
  * 기록 — 비용 없음). 서버도 다시 판단하고, 그 문구는 버튼 결과로 그대로 보입니다.
  */
-export function decisionRunBlocked(book: Pick<PaperBookSummary, "status" | "kind"> | null | undefined): string | null {
+export function decisionRunBlocked(
+  book: (Pick<PaperBookSummary, "status" | "kind"> & Partial<Pick<PaperBookSummary, "code" | "label">>) | null | undefined,
+): string | null {
   if (!book) return "계좌가 없습니다.";
   if (book.kind === "CLAUDE" && book.status === "PAUSED") {
     return "일시정지 중인 Claude 계좌는 결정을 내지 않습니다(Claude를 부르지 않음) — 보유·체결 탭에서 재개한 뒤 누르세요.";
   }
   if (book.status !== "NOT_STARTED") return null;
-  return book.kind === "RULES"
-    ? "시작 전인 계좌는 결정을 내지 않습니다 — 개요 탭의 '규칙 계좌 시작'으로 먼저 시작하세요."
-    : "시작 전인 계좌는 결정을 내지 않습니다 — 개요 탭의 'Claude 계좌 시작'(초기 결정)으로 먼저 시작하세요.";
+  if (book.kind === "RULES") return "시작 전인 계좌는 결정을 내지 않습니다 — 개요 탭의 '규칙 계좌 시작'으로 먼저 시작하세요.";
+  // 미국 Claude 계좌2는 사후 체결 시작이 없습니다 — 앞으로 체결 출발(설정 claude2.enabled + 다음 미국 결정 창, 또는 개요의 '계좌2 시작').
+  if (isTimedBook(book.code)) {
+    return "시작 전인 계좌는 결정을 내지 않습니다 — 설정 claude2.enabled를 켠 뒤 다음 미국 결정 창의 정기 출발이나 개요 탭의 '계좌2 시작'"
+      + "(앞으로 체결 출발)으로 먼저 출발하세요.";
+  }
+  return `시작 전인 계좌는 결정을 내지 않습니다 — 개요 탭의 '${book.label || "Claude 계좌"} 시작'(초기 결정)으로 먼저 시작하세요.`;
 }
 
 /** 수동 결정 결과 — 배너 색과 한 줄. ok:false면 서버 문구를, 결정에 오류가 있으면 경고색으로 오류를 붙입니다. */
@@ -1856,7 +2025,7 @@ function decisionFrameworkCell(decision: PaperDecisionDetail): DecisionMetaCell 
       title: recorded?.title ?? undefined,
     };
   }
-  if (decision.book !== "claude") return null;
+  if (decision.book !== "claude" && decision.book !== "claude2") return null;
   if (recorded?.status === "INTERIM") {
     return { key: "frameworkVersion", label: "프레임 버전", value: "임시 — 판 번호 없음(단계 3b 전 기록)", title: recorded.title ?? undefined };
   }
@@ -1894,6 +2063,24 @@ export function decisionMeta(decision: PaperDecisionDetail): DecisionMetaCell[] 
   }
   if (Array.isArray(decision.noteIds) && decision.noteIds.length > 0) {
     cells.push({ key: "noteIds", label: "참조 메모", value: decision.noteIds.map((id) => `#${id}`).join(", ") });
+  }
+  // 미국 Claude 계좌2 결정만(서버가 칸을 보낼 때) — 입력 동결(계좌2 명세 §9-1): 계좌 비의존 일곱 섹션이 같았던 계좌1 결정과 그 섹션 해시.
+  if (decision.sharedWith !== undefined) {
+    cells.push({
+      key: "sharedWith",
+      label: "계좌1과 같은 입력",
+      value: isNumber(decision.sharedWith) ? `결정 #${decision.sharedWith}` : "— (같은 실행의 계좌1 결정 없음·섹션 다름)",
+      title: "매크로·FRED·레짐·게이트·트랙레코드·기관 프로필·메모 일곱 섹션이 바이트까지 같았던 같은 거래일 계좌1 결정입니다.",
+    });
+  }
+  if (decision.marketSectionsSha256 !== undefined) {
+    const hash = decision.marketSectionsSha256;
+    cells.push({
+      key: "marketSectionsSha256",
+      label: "일곱 섹션 해시",
+      value: hash ? (hash.length > 12 ? `${hash.slice(0, 12)}…` : hash) : EMPTY,
+      title: hash ?? undefined,
+    });
   }
   return cells;
 }
@@ -2528,7 +2715,11 @@ export function claimLabelBadges(labels: unknown): Badge[] {
 const REJECT_REASON: Record<string, { label: string; title: string }> = {
   OUT_OF_UNIVERSE: { label: "유니버스 밖", title: "모의 매매 유니버스(13F 매핑 종목 + 설정 universeExtraTickers의 ETF)에 없는 종목입니다." },
   DUPLICATE_TICKER: { label: "같은 종목 중복", title: "한 응답에 같은 종목의 주문이 둘 이상입니다." },
-  MALFORMED: { label: "크기 형식 오류", title: "매수에 목표 비중이 없거나 범위 밖, 또는 매도 비율이 0~1 밖입니다." },
+  MALFORMED: {
+    label: "크기 형식 오류",
+    title: "매수에 목표 비중이 없거나 범위 밖, 또는 매도 비율이 0~1 밖입니다. Claude 계좌2는 조기 폐장일 13:00 ET 뒤 시각도 이 사유입니다"
+      + "(검증 설명에 '조기 폐장').",
+  },
   NOT_HELD: { label: "보유 없음", title: "들고 있지 않은 종목을 팔려 했습니다." },
   // 장부는 floor(보유 주식 수 × 매도 비율)이 1주 미만이면 전량을 팝니다(설계 §3-1) — 통과시키면 소량 트림이 전량 청산으로 집행됩니다.
   BELOW_ONE_SHARE: {
@@ -2550,6 +2741,11 @@ const REJECT_REASON: Record<string, { label: string; title: string }> = {
   MONTHLY_CAP: { label: "월 주문 상한", title: "이달 재량 주문 누계가 설정 maxDiscretionaryOrdersPerMonth에 닿았습니다." },
   MIN_HOLD: { label: "최소 보유일 전", title: "보유한 지 설정 minHoldTradingDaysForSell 거래일이 안 된 재량 매도입니다(트레일링 스탑은 예외)." },
   STALE_INPUT: { label: "입력 자료 오래됨", title: "가격 저장본이 오래돼 그날 주문을 모두 거절했습니다." },
+  // 미국 Claude 계좌2(계좌2 명세 §6-2·§8 ⑤) — 고른 시각 T가 주문 생성 + 60초보다 늦지 않음(이미 지난 시각, 늦은 수동 실행).
+  LATE_FOR_TIMING: {
+    label: "이미 지난 시각",
+    title: "고른 체결 시각이 주문을 낸 때(+60초)보다 늦지 않습니다 — 지난 시각의 가격으로는 체결하지 않습니다(Claude 계좌2).",
+  },
   NO_PRICE: { label: "가격 없음", title: "그 종목의 가격이 없거나 지난 값이라 금액을 정할 수 없습니다." },
   // 한국 검증기(2단계 명세 §4-7 E2a) — 체결할 수 없는 종목의 매수, 증가분이 1주에 못 미치는 매수.
   UNFILLABLE: {
@@ -2594,6 +2790,8 @@ export interface ClaudeOrderRow {
   thesis: string;
   labels: Badge[];
   invalidation: string;
+  /** 미국 Claude 계좌2 주문만 — 그 체결 시점을 고른 이유(executionNote). 계좌1 주문·없으면 null. */
+  executionNote: string | null;
 }
 
 /** 검증 결과 한 줄(표시 문자열). */
@@ -2701,6 +2899,7 @@ export function claudeDecisionView(source: ClaudeDecisionSource): ClaudeDecision
   const verdicts = Array.isArray(source.validation) ? source.validation : listOf(record?.validation);
   const usage = isRecord(source.usage) ? source.usage : null;
   const recognized = source.book === "claude"
+    || source.book === "claude2"
     || source.book === "kr_claude"
     || Array.isArray(source.validation)
     || Array.isArray(record?.validation)
@@ -2725,6 +2924,7 @@ export function claudeDecisionView(source: ClaudeDecisionSource): ClaudeDecision
       thesis: textOf(order.thesis) ?? EMPTY,
       labels: claimLabelBadges(order.labels),
       invalidation: textOf(order.invalidation) ?? EMPTY,
+      executionNote: textOf(order.executionNote),
     }];
   });
 
@@ -2863,7 +3063,8 @@ export function claudeStartPrompt(
   framework: FrameworkInfo | null = null,
 ): ClaudeStartPrompt | null {
   if (overview.initialized === false) return null;
-  const claude = (overview.books ?? []).find((book) => book.kind === "CLAUDE");
+  // 계좌1만 — 계좌2는 사후 체결 시작이 없고 따로 출발합니다(claude2StartView).
+  const claude = primaryClaudeBook(overview.books ?? []);
   if (!claude || claude.status !== "NOT_STARTED") return null;
   const start = overview.startDate ?? EMPTY;
   const label = claude.label;
@@ -2913,6 +3114,187 @@ export function claudePreviewResultView(result: PaperClaudePreviewResult): { ton
   };
 }
 
+// ---------------------------------------------------------------- 🧪 미국 Claude 계좌2(체결 시점 실험, ADR 0022)
+
+/** 개요의 "계좌2 시작" 카드(계좌2 명세 §4-1 — 앞으로 체결 출발). */
+export interface Claude2StartView {
+  bookCode: string;
+  bookLabel: string;
+  title: string;
+  body: string;
+  /** 설정 claude2.enabled — true면 단추가 열리고, false면 설정을 먼저 켜라는 안내, null이면 상태를 읽지 못함(단추 닫힘). */
+  armed: boolean | null;
+  armNote: string;
+  /** 다음 결정·개장 전 컷오프·이번 주기 호출 — 상태 응답 글자 그대로(모르면 "—"). */
+  lines: DecisionMetaCell[];
+  cost: string;
+  confirm: string;
+}
+
+/**
+ * 계좌2 출발 카드 — 미국 계좌2가 시작 전(NOT_STARTED)일 때만, 아니면 null. 출발은 사후 체결이 아니라 앞으로 체결입니다: 설정 claude2.enabled를
+ * 켜면(설정 판 하나 — 명세 L2 '사용자가 시작') 다음 미국 결정 창에 정기 결정 작업이 출발 결정을 내고, 단추는 같은 출발을 그 창 안에서 지금 한 번
+ * 부릅니다(창 밖·꺼짐은 서버가 400 — 기록 없음). 미리보기는 없습니다. 창 시각은 상태 응답의 claude2 묶음 그대로입니다.
+ */
+export function claude2StartView(
+  overview: Pick<PaperOverviewResponse, "initialized" | "books">,
+  status: Pick<PaperStatusResponse, "claude2"> | null | undefined,
+): Claude2StartView | null {
+  if (overview.initialized === false) return null;
+  const book = (overview.books ?? []).find((entry) => isTimedBook(entry.code));
+  if (!book || book.status !== "NOT_STARTED") return null;
+  const group = status?.claude2 ?? null;
+  const armed = group ? group.enabled === true : null;
+  const next = group?.nextDecision ?? null;
+  const cycle = group?.cycle ?? null;
+  const both = (kst: string | null | undefined, et: string | null | undefined) =>
+    kst || et ? [kst, et].filter(Boolean).join(" · ") : EMPTY;
+  const lines: DecisionMetaCell[] = [
+    { key: "nextDecision", label: `다음 결정(기준 거래일 ${next?.tradingDate ?? EMPTY})`, value: both(next?.atKst, next?.atEt) },
+    { key: "cutoff", label: "개장 전 컷오프", value: both(next?.cutoffKst, next?.cutoffEt) },
+    {
+      key: "cycle",
+      label: `이번 결정 주기 호출(${cycle?.tradingDate ?? EMPTY})`,
+      value: isNumber(cycle?.calls) ? `${formatNumber(cycle.calls, 0)}회${isNumber(cycle?.cap) ? ` / 상한 ${formatNumber(cycle.cap, 0)}회` : ""}` : EMPTY,
+    },
+  ];
+  const label = book.label;
+  return {
+    bookCode: book.code,
+    bookLabel: label,
+    title: "계좌2 시작",
+    body: `${withParticle(label, "은")} 아직 현금만 들고 있습니다. 출발은 사후 체결이 아니라 앞으로 체결입니다 — 마감이 끝난 최근 미국 세션 S 기준으로 `
+      + "정기 결정과 같은 패킷(사후 체결 문장 없음)을 Claude에 한 번 보내고, 검증을 통과한 주문은 다음 세션에 주문마다 고른 시점(시가 · 10:00~15:00 ET "
+      + "매시 · 종가)으로 체결됩니다. 성공하면 출발일 = S(그날 순자산 = 처음 현금)로 운용을 시작하고, 실패하면 아무것도 쓰지 않고 다음 미국 결정 창에 "
+      + "다시 합니다. 미리보기는 없습니다.",
+    armed,
+    armNote: armed === true
+      ? "설정 claude2.enabled가 켜져 있습니다 — 단추를 누르지 않아도 다음 미국 결정 창에 정기 결정 작업이 출발합니다(단추는 그 창 안에서만 됩니다)."
+      : armed === false
+        ? "설정 claude2.enabled가 꺼져 있습니다 — 설정 탭에서 켜야(설정 판 하나) 정기 출발도 이 단추도 돕니다. 켜는 같은 저장에서 정기 작업 몫 예약"
+          + "(apiScheduledReserve)·결정 주기 호출 상한(claude2.maxCallsPerCycle)도 함께 맞춥니다(명세 §16-2)."
+        : "계좌2 상태를 읽지 못해 설정이 켜져 있는지 모릅니다 — 상태를 다시 읽은 뒤 누르세요.",
+    lines,
+    cost: CLAUDE_COST_NOTE,
+    confirm: `계좌2를 지금 출발시킬까요? ${CLAUDE_COST_NOTE} 같은 창의 정기 출발과 같은 파이프라인을 수동 호출 문턱으로 한 번 부릅니다. 창 밖`
+      + "(확정 종가 처리 전·정규장 중·개장 전 컷오프 뒤)이면 서버가 거절하고 아무것도 쓰지 않습니다. 되돌리려면 보유·체결 탭의 '계좌 초기화'로 이 "
+      + "계좌의 장부를 지운 뒤 다시 앞으로 체결로 출발합니다.",
+  };
+}
+
+/** 계좌2 출발 결과 — 배너 색과 한 줄(STARTED·ALREADY_STARTED, 실패면 서버 문구). 사후 체결이 없어 체결 수를 적지 않습니다. */
+export function claude2StartResultView(result: PaperInitialDecisionResult, bookLabel = "Claude 계좌2"): { tone: "warn" | "info"; text: string } {
+  const object = withParticle(bookLabel, "을");
+  if (result.ok === false) return { tone: "warn", text: result.message ?? `${object} 출발시키지 못했습니다.` };
+  const decision = result.decision ?? null;
+  const head = result.outcome === "ALREADY_STARTED"
+    ? `${withParticle(bookLabel, "은")} 이미 출발했습니다 — 그 출발 기록`
+    : decision?.status === "NO_TRADE"
+      ? `${withParticle(bookLabel, "이")} 출발했지만 주문이 없습니다 — 현금만 듭니다`
+      : `${withParticle(bookLabel, "이")} 출발했습니다 — 주문은 다음 세션에 고른 시점으로 체결됩니다`;
+  const parts = [`${decision?.asOfTradingDate ?? EMPTY} ${decisionKindLabel(decision?.kind ?? "INITIAL")}`, `주문 ${formatWithUnit(decision?.orderCount, 0, "건")}`];
+  const error = decision?.error ? ` — 오류: ${decision.error}` : "";
+  return { tone: error ? "warn" : "info", text: `${head} · ${parts.join(" · ")}${error}` };
+}
+
+/**
+ * 미국 Claude 계좌2의 한계 문구(계좌2 명세 §13-3 — 개요 응답의 한계 여덟 줄 아래에 덧붙임). 2번(최대 1시간 묵은 지연 시세)·4번(2026-10-23 사후
+ * 체결)은 계좌1·벤치마크 그대로이고 계좌2에는 이 줄들이 대신합니다. 판정 문턱은 출발 전에 고정했습니다(§14-3·§14-4).
+ */
+export const CLAUDE2_LIMITS: readonly string[] = [
+  "Claude 계좌2의 체결가는 고른 시각 T의 Yahoo(yfinance) 1분봉 시가(시가는 첫 봉 시가 — 공식 개장가와 같은지 확인 전) 또는 표시된 대체 체결가입니다"
+    + " — 위 2번(최대 1시간 묵은 지연 시세) 대신.",
+  "Claude 계좌2는 2026-10-23 사후 체결 출발이 아니라, 늦게 앞으로 체결로 출발합니다(출발일 S부터) — 위 4번은 계좌2에 해당하지 않습니다.",
+  "슬리피지는 시점과 무관하게 계좌1과 같은 값이라 개장·장중 호가 차이를 반영하지 못합니다 — 시가 체결이 실제보다 유리하게 보일 수 있습니다.",
+  "체결 시점 실험의 판정 문턱은 출발 전에 정했습니다(ADR 0022). 8주 뒤에도 표본이 적어 '차이를 확인하지 못함(판단 보류)'일 가능성이 높습니다.",
+];
+
+/** 실행 감사 요약의 시점 한 줄(표시 문자열). */
+export interface ExecutionTimingRow {
+  key: string;
+  timing: string;
+  /** NEXT_OPEN — 1분봉 첫 봉 시가(공식 개장가와 같은지 확인 전). */
+  proxy: boolean;
+  n: string;
+  days: string;
+  mean: string;
+  interval: string;
+  /** 문턱 미달(평균 null)이면 "판단 보류 — 표본 부족", 아니면 null(판정은 8주 뒤 주 판정에서 — 화면이 하지 않음). */
+  verdict: string | null;
+  excluded: string;
+}
+
+/** 체결 시점 실험 카드(GET books/{code}/execution의 summary). */
+export interface ExecutionSummaryView {
+  rows: ExecutionTimingRow[];
+  /** "감사한 주문 12건 · 지표는 주문 10건·결정일 5일 이상부터". */
+  head: string;
+  formula: string | null;
+  method: string | null;
+}
+
+const bpText = (value: number | null | undefined) => formatSigned(value, 1, "bp");
+
+/**
+ * 실행 감사 요약을 표로 — 메뉴 여덟 시점마다 N·결정일·뺀 수(기준 없음·값 없음)·금액 가중 평균·90% 구간. 평균·구간은 서버가 문턱(주문 수·결정일 수)
+ * 아래면 null로 보내고, 화면은 그 줄을 '—'와 '판단 보류'로 적습니다(0으로 채우지 않음). 값이 있어도 화면은 판정 문장을 만들지 않습니다 — 사전 등록
+ * 판정(ADR 0022 결정 13)은 8주 뒤 계좌2가 고른 시점의 체결(M1)로 합니다.
+ */
+export function executionSummaryView(response: PaperExecutionResponse | null | undefined): ExecutionSummaryView | null {
+  const summary = response?.available ? response.summary ?? null : null;
+  if (!summary) return null;
+  const rows = listOf(summary.timings).filter(isRecord).map((line, index): ExecutionTimingRow => {
+    const timing = textOf(line.timing) ?? EMPTY;
+    const mean = numberOf(line.meanBp);
+    const low = numberOf(line.lowBp);
+    const high = numberOf(line.highBp);
+    const n = numberOf(line.n);
+    const days = numberOf(line.days);
+    return {
+      key: `${index}-${timing}`,
+      timing: timingLabel(timing),
+      proxy: line.isProxy === true,
+      n: formatWithUnit(n, 0, "건"),
+      days: formatWithUnit(days, 0, "일"),
+      mean: bpText(mean),
+      interval: low === null || high === null ? EMPTY : `${bpText(low)} ~ ${bpText(high)}`,
+      verdict: mean === null
+        ? `판단 보류 — 표본 부족(주문 ${formatNumber(n, 0)}/${formatNumber(summary.minOrders, 0)}건 · 결정일 ${formatNumber(days, 0)}/`
+          + `${formatNumber(summary.minDays, 0)}일)`
+        : null,
+      excluded: `기준 없음 ${formatNumber(numberOf(line.excludedNoBaseline), 0)} · 값 없음 ${formatNumber(numberOf(line.excludedNoPrice), 0)}`,
+    };
+  });
+  const level = numberOf(summary.interval?.level);
+  return {
+    rows,
+    head: `감사한 주문 ${formatWithUnit(numberOf(summary.audited), 0, "건")} · 평균·구간은 주문 ${formatWithUnit(numberOf(summary.minOrders), 0, "건")}·`
+      + `결정일 ${formatWithUnit(numberOf(summary.minDays), 0, "일")} 이상부터`,
+    formula: textOf(summary.formula),
+    method: summary.interval
+      ? `${textOf(summary.weighting) ?? EMPTY} · ${level === null ? EMPTY : `${formatNumber(level, 0)}%`} 구간 = ${textOf(summary.interval.method) ?? EMPTY}`
+      : textOf(summary.weighting),
+  };
+}
+
+/** 실행 감사 주문 줄을 주문 번호로 — 보유·체결 탭의 계좌2 칸(목표 시각·계좌1식 대비)이 주문·체결 행과 맞춥니다. */
+export function executionByOrder(response: PaperExecutionResponse | null | undefined): Map<number, PaperExecutionOrder> {
+  const out = new Map<number, PaperExecutionOrder>();
+  for (const row of response?.available ? (response.orders ?? []) : []) {
+    if (isRecord(row) && isNumber(row.orderId)) out.set(row.orderId, row);
+  }
+  return out;
+}
+
+/**
+ * 그 주문이 고른 시점의 계좌1식 대비 bp — 서버가 메뉴 시점마다 셈한 advantageBp에서 주문의 시점 칸을 고릅니다(화면은 계산하지 않음). 감사 줄이 없거나
+ * 계좌1식 기준·그 시점 값이 없으면(대체 체결은 반사실이 없음) "—".
+ */
+export function executionAdvantageText(row: PaperExecutionOrder | null | undefined): string {
+  if (!row || !isRecord(row.advantageBp)) return EMPTY;
+  return bpText(numberOf(row.advantageBp[row.timing]));
+}
+
 /** Claude 노출 추이 차트 — 행·계열과 마지막 날 한 줄. */
 export interface ClaudeExposureChart {
   rows: Record<string, string | number | null>[];
@@ -2921,24 +3303,56 @@ export interface ClaudeExposureChart {
   latest: string | null;
 }
 
+/** 노출 추이에 더하는 미국 Claude 계좌2 선의 키(계좌2 명세 §13-3). */
+export const CLAUDE2_EXPOSURE_KEY = "claude2Actual";
+
 /**
  * Claude 노출 추이(개요 claudeExposureSeries)를 차트 행으로 — 서버 순서(거래일 오름차순) 그대로. 모르는 값은 null로 두어 선을
  * 끊습니다(0이나 앞 값으로 채우면 없는 노출이 생김). 목표는 Claude가 적은 값, 실제는 장부 값이고 화면은 둘의 차를 계산하지 않습니다.
+ *
+ * 미국 Claude 계좌2가 출발했으면 그 순자산 기록(GET books/claude2/nav의 exposurePct — 장부 값)을 셋째 선 '계좌2 실제 노출'로 더합니다(`book2`가
+ * 배열일 때만 — 출발 전·못 읽음이면 두 선 그대로). 날짜는 두 기록의 합집합(오름차순)이고 한쪽에 없는 날은 그 선만 null입니다.
  */
-export function claudeExposureChart(series: unknown): ClaudeExposureChart {
-  const rows = listOf(series).filter(isRecord).flatMap((point) => {
+export function claudeExposureChart(series: unknown, book2?: readonly PaperNavRow[] | null): ClaudeExposureChart {
+  const base = listOf(series).filter(isRecord).flatMap((point) => {
     const date = textOf(point.tradingDate);
     return date ? [{ date, target: numberOf(point.targetExposurePct), actual: numberOf(point.actualExposurePct) }] : [];
   });
+  const lines: NavSeriesLine[] = [
+    { key: "target", name: "목표 노출(Claude가 정함)" },
+    { key: "actual", name: "실제 노출(장부)" },
+  ];
+  if (!Array.isArray(book2)) {
+    const last = base.at(-1) ?? null;
+    return {
+      rows: base,
+      series: lines,
+      latest: last
+        ? `${last.date} — 목표 ${formatWithUnit(last.target, 1, "%")} · 실제 ${formatWithUnit(last.actual, 1, "%")}`
+        : null,
+    };
+  }
+  const second = new Map<string, number | null>();
+  for (const row of book2 as readonly unknown[]) {
+    if (!isRecord(row)) continue;
+    const date = textOf(row.tradingDate);
+    if (date) second.set(date, numberOf(row.exposurePct));
+  }
+  const byDate = new Map(base.map((row) => [row.date, row]));
+  const dates = [...new Set([...byDate.keys(), ...second.keys()])].sort();
+  const rows = dates.map((date) => ({
+    date,
+    target: byDate.get(date)?.target ?? null,
+    actual: byDate.get(date)?.actual ?? null,
+    [CLAUDE2_EXPOSURE_KEY]: second.get(date) ?? null,
+  }));
   const last = rows.at(-1) ?? null;
   return {
     rows,
-    series: [
-      { key: "target", name: "목표 노출(Claude가 정함)" },
-      { key: "actual", name: "실제 노출(장부)" },
-    ],
+    series: [...lines, { key: CLAUDE2_EXPOSURE_KEY, name: "계좌2 실제 노출(장부)" }],
     latest: last
-      ? `${last.date} — 목표 ${formatWithUnit(last.target, 1, "%")} · 실제 ${formatWithUnit(last.actual, 1, "%")}`
+      ? `${last.date} — 목표 ${formatWithUnit(last.target, 1, "%")} · 실제 ${formatWithUnit(last.actual, 1, "%")} · 계좌2 실제 `
+        + formatWithUnit(last[CLAUDE2_EXPOSURE_KEY] as number | null, 1, "%")
       : null,
   };
 }
@@ -3073,6 +3487,7 @@ const SETTING_GROUP: Record<string, string> = {
   news: "사건 뉴스 — Claude 계좌 패킷 11b(2단계 B, 규칙 계좌 영향 없음)",
   calendar: "발표 일정 — 캘린더 컨센서스(3단계 스위치, 두 책 공통)",
   claude: "Claude 계좌 3단계 스위치 — 두 책 공통(규칙 계좌 영향 없음)",
+  claude2: "🧪 미국 Claude 계좌2 — 체결 시점 실험(켜기 · 결정 주기 호출 상한 · 1분봉 기다림 · 체결 기록, 규칙 계좌 영향 없음)",
   kr: "한국 책 — 비용 · 장부 · 검증기 · 규칙 계좌 · 결정 시각(kr.*)",
   "kr.tax": "한국 책 — 매도 세금(세율 · 시행일)",
   "kr.rules": "한국 책 — 규칙 계좌(수급 신호 · 재선정)",

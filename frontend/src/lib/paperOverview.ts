@@ -5,7 +5,7 @@
  * 개요 응답에 없는 값(예: 출발 이후 변화 금액)은 계산해 넣지 않습니다.
  */
 import { deltaColor, EMPTY, formatKst, formatNumber } from "./format";
-import { accountProfile, benchmarkLabel, bookCard, statCells } from "./paper";
+import { accountProfile, benchmarkLabel, bookCard, isTimedBook, type NavSeriesLine, primaryClaudeBook, statCells } from "./paper";
 import { marketMeta, type PaperMarketCode } from "./paperMarket";
 import type { PaperBookSummary, PaperOverviewResponse, PaperQuotesSummary } from "./types";
 
@@ -237,4 +237,67 @@ export function markersInWindow<M extends { x: string }>(
 ): M[] {
   const dates = new Set(Array.isArray(navWindow?.dates) ? navWindow.dates : []);
   return markers.filter((marker) => dates.has(marker.x));
+}
+
+// ---------------------------------------------------------------- 🧪 같은 구간 순자산(S = 100, 계좌2 명세 §4-2의 2)
+
+/** "S = 100 같은 구간" 보기 — 계좌2 출발일 S를 기준일로, 계좌1·계좌2·비교 기준(SPY 계좌)의 순자산을 S = 100으로 다시 잰 선. */
+export interface SameWindowView {
+  /** 기준일 S(계좌2 출발일 — 미국 동부 세션 날짜). */
+  baseDate: string;
+  rows: Record<string, string | number | null>[];
+  series: NavSeriesLine[];
+  /** 마지막 날 한 줄("2026-11-20 — Claude 계좌1 101.2 · Claude 계좌2 99.8 · SPY 계좌 100.5"). 줄이 없으면 null. */
+  latest: string | null;
+  /** 기준일에 순자산 기록이 없어 그리지 못한 계좌 이름(선 없음 — 100으로 채우지 않음). */
+  missingBase: string[];
+}
+
+/**
+ * 계좌2 출발일 S부터 마지막 날까지, 계좌1·계좌2·계좌2의 비교 기준(SPY 계좌)을 각자의 S 순자산으로 나눠 100에 맞춘 선(PRINCIPLES '기준일을 100으로' —
+ * 서술용, 판정에 쓰지 않음). 값은 개요 순자산 곡선의 값 그대로를 나눈 것뿐이고 반올림하지 않습니다(표시는 차트 자릿수). 그날 기록이 없는 계좌는 그날만
+ * null, S에 기록이 없는 계좌는 선 전체가 null입니다 — S 이전 구간은 계좌2 값이 없어(출발 전) 그리지 않습니다.
+ *
+ * 계좌2가 없거나 아직 출발하지 않았거나(출발일 없음) 출발일이 순자산 곡선 날짜에 없으면 null.
+ */
+export function sameWindowIndex(
+  navSeries: PaperOverviewResponse["navSeries"],
+  books: readonly PaperBookSummary[],
+): SameWindowView | null {
+  const book2 = books.find((book) => isTimedBook(book.code));
+  if (!book2?.startedOn || !navSeries || !Array.isArray(navSeries.dates) || !navSeries.books) return null;
+  const from = navSeries.dates.indexOf(book2.startedOn);
+  if (from < 0) return null;
+  const book1 = primaryClaudeBook(books);
+  const picked = [book1, book2, books.find((book) => book.code === book2.benchmark)]
+    .filter((book): book is PaperBookSummary => book !== undefined && book !== null);
+  const dates = navSeries.dates.slice(from);
+  const missingBase: string[] = [];
+  const scaled = picked.map((book) => {
+    const values = Array.isArray(navSeries.books[book.code]) ? navSeries.books[book.code] : [];
+    const base = values[from];
+    const usable = typeof base === "number" && Number.isFinite(base) && base > 0;
+    if (!usable) missingBase.push(book.label);
+    return dates.map((_, offset) => {
+      const value = values[from + offset];
+      return usable && typeof value === "number" && Number.isFinite(value) ? (value / base) * 100 : null;
+    });
+  });
+  const rows = dates.map((date, index) => {
+    const row: Record<string, string | number | null> = { date };
+    picked.forEach((book, which) => {
+      row[book.code] = scaled[which][index];
+    });
+    return row;
+  });
+  const last = rows.at(-1) ?? null;
+  return {
+    baseDate: book2.startedOn,
+    rows,
+    series: picked.map((book) => ({ key: book.code, name: book.label })),
+    latest: last
+      ? `${String(last.date)} — ${picked.map((book) => `${book.label} ${formatNumber(last[book.code] as number | null, 1)}`).join(" · ")}`
+      : null,
+    missingBase,
+  };
 }

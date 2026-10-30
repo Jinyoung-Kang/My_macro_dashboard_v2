@@ -224,7 +224,7 @@ export function DecisionsSection({
             </Button>
           )}
         </div>
-        <p className="mt-3 text-xs leading-relaxed text-muted">{korea ? krDecisionBookNote(book?.kind) : decisionBookNote(book?.kind)}</p>
+        <p className="mt-3 text-xs leading-relaxed text-muted">{korea ? krDecisionBookNote(book?.kind) : decisionBookNote(book?.kind, book?.code)}</p>
         {blocked && showRun && <p className="mt-2 text-xs text-warn">{blocked}</p>}
         {confirming && (
           <div className="mt-3 flex flex-col gap-3 rounded-md border border-warn/40 bg-warn/10 px-3 py-3">

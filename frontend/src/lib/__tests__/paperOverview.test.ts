@@ -5,6 +5,8 @@
  *  - 비교 표: 예전 카드의 칸이 전부 항목 줄로(값은 bookCard 표시 글 그대로, 모르면 "—"), 비교 기준은 따로 한 줄
  *  - 기간: 저장된 기록보다 긴 기간 탭은 없고 "전체"는 늘 있다, 자를 때 날짜와 값 배열을 같은 자리에서 자른다,
  *    프레임 경계 세로선은 고른 기간 안의 날짜만
+ *  - S = 100 같은 구간(🧪 계좌2): 계좌2 출발일 S부터 계좌1·계좌2·SPY 계좌를 각자 S 순자산으로 나눠 100에 — S 전 구간·출발 전은 그리지 않고,
+ *    S에 기록이 없는 계좌는 선 전체 null(100으로 채우지 않음), 그날 기록이 없으면 그날만 null
  */
 import { describe, expect, it } from "vitest";
 
@@ -17,6 +19,7 @@ import {
   navRangeKeys,
   navSeriesWindow,
   PENDING_BACKFILL_WARNING,
+  sameWindowIndex,
   sampleNotes,
 } from "../paperOverview";
 import type { PaperBookSummary, PaperStats } from "../types";
@@ -192,5 +195,55 @@ describe("기간별 순자산 곡선", () => {
     expect(markersInWindow(markers, navSeriesWindow(series, "all"))).toEqual(markers);
     expect(markersInWindow(markers, null)).toEqual([]);
     expect(markersInWindow([], series)).toEqual([]);
+  });
+});
+
+describe("S = 100 같은 구간(🧪 계좌2)", () => {
+  const books = (startedOn: string | null) => [
+    book("rules", { kind: "RULES", label: "규칙 계좌" }),
+    book("claude", { kind: "CLAUDE", label: "Claude 계좌1", benchmark: "bench_spy" }),
+    book("claude2", { kind: "CLAUDE", label: "Claude 계좌2", startedOn, benchmark: "bench_spy" }),
+    book("bench_spy", { label: "SPY 계좌" }),
+    book("bench_mix", { label: "60/40 계좌" }),
+  ];
+  const nav = {
+    dates: ["2026-10-30", "2026-11-02", "2026-11-03", "2026-11-04"],
+    books: {
+      rules: [100, 101, 102, 103],
+      claude: [99000, 100000, 101000, 99500],
+      claude2: [null, 100000, null, 100500],
+      bench_spy: [100500, 101000, 101101, null],
+      bench_mix: [1, 2, 3, 4],
+    },
+  };
+
+  it("출발일 S부터 계좌1·계좌2·비교 기준을 S = 100으로 — 규칙·60/40은 넣지 않고, 그날 기록이 없으면 그날만 null", () => {
+    const view = sameWindowIndex(nav, books("2026-11-02"));
+    expect(view?.baseDate).toBe("2026-11-02");
+    expect(view?.series).toEqual([
+      { key: "claude", name: "Claude 계좌1" }, { key: "claude2", name: "Claude 계좌2" }, { key: "bench_spy", name: "SPY 계좌" },
+    ]);
+    expect(view?.rows.map((row) => row.date)).toEqual(["2026-11-02", "2026-11-03", "2026-11-04"]);
+    expect(view?.rows[0]).toEqual({ date: "2026-11-02", claude: 100, claude2: 100, bench_spy: 100 });
+    expect(view?.rows[1].claude).toBeCloseTo(101, 10);
+    expect(view?.rows[1].claude2).toBeNull();
+    expect(view?.rows[1].bench_spy).toBeCloseTo(100.1, 10);
+    expect(view?.rows[2].claude2).toBeCloseTo(100.5, 10);
+    expect(view?.rows[2].bench_spy).toBeNull();
+    expect(view?.latest).toBe("2026-11-04 — Claude 계좌1 99.5 · Claude 계좌2 100.5 · SPY 계좌 —");
+    expect(view?.missingBase).toEqual([]);
+  });
+
+  it("S에 기록이 없는 계좌는 선 전체 null(100으로 채우지 않음)과 그 이름", () => {
+    const view = sameWindowIndex({ ...nav, books: { ...nav.books, bench_spy: [100500, null, 101101, 101000] } }, books("2026-11-02"));
+    expect(view?.rows.map((row) => row.bench_spy)).toEqual([null, null, null]);
+    expect(view?.missingBase).toEqual(["SPY 계좌"]);
+  });
+
+  it("계좌2가 없거나 출발 전이거나 출발일이 곡선에 없으면 null — 그리지 않음", () => {
+    expect(sameWindowIndex(nav, books(null))).toBeNull();
+    expect(sameWindowIndex(nav, books("2026-11-09"))).toBeNull();
+    expect(sameWindowIndex(nav, BOOKS)).toBeNull();
+    expect(sameWindowIndex(null, books("2026-11-02"))).toBeNull();
   });
 });
