@@ -411,6 +411,30 @@ describe("보유·체결 — 계좌2 칸", () => {
     }
   });
 
+  // 수정 전에는 계좌2 표가 값마다 한 칸이라(주문 열네 칸·체결 열세 칸) 1280px에서 주문 표 1,809px·체결 표 1,364px로 카드 안 표 상자(958px)를 넘어,
+  // 8주 실험 동안 가장 자주 볼 계좌2 칸(계좌1식 대비·실행 메모·근거)이 가로 스크롤 오른쪽 밖에 숨었다(QA 스택 화면 — 수정 전에는 it.fails).
+  it.fails("계좌2 표는 한국 표처럼 두 줄 칸으로 묶어 계좌2 칸(계좌1식 대비·실행 메모·근거)을 앞쪽에 — 주문 일곱 칸·체결 아홉 칸", async () => {
+    render(<PaperPage initialTab="holdings" />);
+    fireEvent.change(await screen.findByLabelText("계좌 고르기"), { target: { value: "claude2" } });
+
+    const orders = await screen.findByRole("table", { name: "주문" });
+    await waitFor(() => expect(within(orders).getByText("+12.3bp")).toBeTruthy());
+    expect(headersOf(orders)).toEqual(["낸 시각·기준일", "종목·방향", "크기", "체결 시점·목표 시각", "계좌1식 대비", "상태·만료·체결", "실행 메모·근거"]);
+    expect(rowsOf(orders)).toEqual([[
+      "2026-11-03 07:41기준 2026-11-02", "AAA매수", "순자산의 8.00% 매수", "다음 거래일 10:00 ET목표 2026-11-04 00:00", "+12.3bp",
+      "체결Claude · 만료 2026-11-03체결 2026-11-04 01:10", "개장 직후 변동성을 피함근거 [사실] · 무효화: 조건",
+    ]]);
+
+    const fills = screen.getByRole("table", { name: "체결" });
+    expect(headersOf(fills)).toEqual([
+      "관측 시각·봉 날짜", "종목", "방향", "수량", "체결가·관측가(달러)", "체결 봉·사다리", "계좌1식 대비", "금액(달러)·슬리피지", "가격 출처",
+    ]);
+    expect(rowsOf(fills)).toEqual([[
+      "2026-11-04 01:10봉 2026-11-03", "AAA대체 체결", "매수", "80", "100.0500관측 100.0000", "2026-11-04 00:00R2b · 그 세션 T 뒤 첫 거래 봉 시가",
+      "+12.3bp", "8,004.00슬리피지 5.0bp", "—값 없음",
+    ]]);
+  });
+
   it("계좌1 표는 칸이 그대로 — 실행 감사를 읽지 않는다", async () => {
     reads["/api/paper/books/claude/positions"] = () => Promise.resolve({ available: true, book: book("claude", { kind: "CLAUDE", label: "Claude 계좌1" }), cash: 50, lockouts: [], positions: [] });
     reads["/api/paper/books/claude/orders"] = () => Promise.resolve({ available: true, orders: [] });
