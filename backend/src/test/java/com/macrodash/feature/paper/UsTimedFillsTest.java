@@ -634,6 +634,37 @@ class UsTimedFillsTest {
         }
 
         @Test
+        @DisplayName("미룬 스탑은 다음 W의 관측가로 다시 판정 — 미룬 W(10:02)의 트리거(90 ≤ 스탑 92)는 이어 가지 않아, 다음 W(11:02)에 스탑 위로 돌아온 종목(95)은 스탑·재진입 금지 없음, 아직 아래인 종목(89)은 미룬 W 가격(90)이 아니라 다음 W 가격에 팖")
+        void deferredStopIsJudgedAgainAtTheNextObservation() {
+            hold("YYY", 100, 90, 100, 100.0);
+            hold("ZZZ", 100, 90, 100, 100.0);
+            long yyy = buy("YYY", 10, "AT_1000");
+            long zzz = buy("ZZZ", 10, "AT_1000");
+            bars(new Bars(et(TUE, 10, 3)).bar("YYY", TUE, et(TUE, 10, 0), 97.0, 500.0)
+                    .bar("YYY", TUE, et(TUE, 10, 1), 97.0, 500.0).bar("ZZZ", TUE, et(TUE, 10, 0), 97.0, 500.0)
+                    .bar("ZZZ", TUE, et(TUE, 10, 1), 97.0, 500.0).bar("SPY", TUE, et(TUE, 10, 0), 580.0, 9000.0));
+
+            Outcome first = observe(et(TUE, 10, 2), bar("YYY", MON, 100.0, TUE, 90.0), bar("ZZZ", MON, 100.0, TUE, 90.0));
+            assertThat(first.stopped()).isZero();
+            assertThat(first.notes()).anySatisfy(note -> assertThat(note).contains("YYY 스탑 판정을 다음 관측치로 미룸"))
+                    .anySatisfy(note -> assertThat(note).contains("ZZZ 스탑 판정을 다음 관측치로 미룸"));
+
+            bars(new Bars(et(TUE, 11, 3)).bar("YYY", TUE, et(TUE, 10, 0), 97.0, 500.0)
+                    .bar("YYY", TUE, et(TUE, 10, 1), 97.0, 500.0).bar("ZZZ", TUE, et(TUE, 10, 0), 97.0, 500.0)
+                    .bar("ZZZ", TUE, et(TUE, 10, 1), 97.0, 500.0).bar("SPY", TUE, et(TUE, 10, 0), 580.0, 9000.0));
+            Outcome second = observe(et(TUE, 11, 2), bar("YYY", MON, 100.0, TUE, 95.0), bar("ZZZ", MON, 100.0, TUE, 89.0));
+
+            assertThat(fillOf(yyy).rawPrice()).isEqualTo(97.0);
+            assertThat(fillOf(zzz).rawPrice()).isEqualTo(97.0);
+            assertThat(second.stopped()).as("ZZZ만 — YYY는 다음 W 관측가 95 > 스탑 92").isEqualTo(1);
+            assertThat(position("YYY").qty()).as("미룬 W의 트리거는 남지 않음 — 보유 + T 매수").isEqualTo(110);
+            assertThat(position("ZZZ")).isNull();
+            assertThat(store.fillsOf(BOOK)).filteredOn(f -> f.ticker().equals("ZZZ") && f.side().equals(PaperBooks.SELL))
+                    .singleElement().satisfies(f -> assertThat(f.rawPrice()).as("다음 W 가격").isEqualTo(89.0));
+            assertThat(store.lockouts(BOOK)).extracting(Lockout::ticker).containsExactly("ZZZ");
+        }
+
+        @Test
         @DisplayName("W1 스탑이 건 재진입 금지는 그 뒤 T의 시각 지정 매수를 막는다(E로 판정)")
         void stopLockoutCancelsALaterTimedBuy() {
             hold("YYY", 100, 90, 100, 100.0);

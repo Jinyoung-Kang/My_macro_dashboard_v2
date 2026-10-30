@@ -1611,7 +1611,7 @@ public class PaperLedgerService {
             String unresolved = run.timedUnresolved.get(holding.ticker);
             if (unresolved != null) {
                 // 미국 시각 지정 주문 — 앞 시각 T의 주문이 아직 풀리지 않음(UsTimedFills '스탑과의 순서'). 이 관측가로 팔면 T 주문보다 먼저 팔게 되므로
-                // 이번에는 보지 않고, 다음 관측치에서 그 주문을 먼저 푼 뒤 봅니다.
+                // 이번에는 보지 않고, 다음 관측치에서 그 주문을 먼저 푼 뒤 그 관측치 가격으로 다시 봅니다(이 관측치의 트리거는 이어 가지 않음).
                 run.note(holding.ticker + " 스탑 판정을 다음 관측치로 미룸 — 기준 시각이 지난 시각 지정 주문(" + unresolved
                         + ")이 아직 풀리지 않아 그 주문을 먼저 풉니다(관측가 " + money(bar.close()) + " ≤ 스탑 "
                         + money(stopPrice) + ")");
