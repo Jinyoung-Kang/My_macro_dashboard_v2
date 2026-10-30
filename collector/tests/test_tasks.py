@@ -509,3 +509,48 @@ def test_관심_종목은_레이더_상한과_따로_수집_범위에_더한다(
 
     assert universe[:40] == radar[:40]
     assert universe[40:] == ["000660", "005930"]
+
+
+
+# ---------------------------------------------------------------- 🧪 속도군 session(계좌2 장중 확인 감시 — 명세 2026-10-30 §12-1, ADR 0022 단계 2)
+def test_session_군은_5분마다_돌고_시간_상한은_60초(monkeypatch):
+    """감시 태스크(paper_watch_us)는 확인 시각 −15~+30분에 5분마다 배치 한 번 — 상한 60초는 주기(300초)보다 짧아 다음 회차와 겹치지 않습니다."""
+    from app import settings
+
+    monkeypatch.delenv("COLLECTOR_SESSION_INTERVAL", raising=False)
+    assert settings.interval_seconds("session") == 300
+    monkeypatch.setenv("COLLECTOR_SESSION_INTERVAL", "5")
+    assert settings.interval_seconds("session") == 30, "다른 군과 같은 30초 하한"
+    assert tasks.TASK_DEADLINE_SECONDS["session"] == 60.0
+    assert tasks.deadline_for(tasks.Task("x", "session", lambda: "", "")) == 60.0
+
+
+def test_session_군_실행은_그_군만_고르고_비면_0개(store, monkeypatch):
+    calls = []
+    monkeypatch.setattr(tasks.runner, "ALL_TASKS", (
+        tasks.Task("t_session_task", "session", lambda: calls.append("session") or "ok", ""),
+        tasks.Task("t_fast_task", "fast", lambda: calls.append("fast") or "ok", ""),
+    ))
+    result = tasks.run_group("session")
+    assert calls == ["session"] and result["okCount"] == 1 and result["failCount"] == 0
+    assert [row["task"] for row in result["results"]] == ["t_session_task"]
+
+    monkeypatch.setattr(tasks.runner, "ALL_TASKS", (tasks.Task("t_fast_task", "fast", lambda: "ok", ""),))
+    assert tasks.run_group("session") == {"group": "session", "okCount": 0, "failCount": 0, "results": []}
+
+
+def test_collect는_session_군을_받고_status_주기에_session이_있다(monkeypatch):
+    from fastapi.testclient import TestClient
+
+    from app import main
+
+    monkeypatch.setattr(main, "API_TOKEN", "")
+    seen = []
+    monkeypatch.setattr(main.tasks, "run_group", lambda group: seen.append(group) or {"group": group, "okCount": 0})
+    monkeypatch.setattr(main.store, "store_stats", lambda task_names: {})
+    monkeypatch.delenv("COLLECTOR_SESSION_INTERVAL", raising=False)
+    client = TestClient(main.app)   # lifespan(스케줄러·DB)을 띄우지 않고 라우팅만
+    assert client.post("/collect?group=session").status_code == 200 and seen == ["session"]
+    assert client.post("/collect?group=minute").status_code == 422
+    intervals = client.get("/status").json()["intervals"]
+    assert intervals["session"] == 300 and set(intervals) == {"fast", "slow", "weekly", "session"}

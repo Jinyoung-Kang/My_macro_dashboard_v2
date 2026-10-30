@@ -197,7 +197,9 @@ def _run_status(ok_count: int, failures: list[str]) -> str:
 # 적습니다 — 외부 장애가 아니라 풀이 꽉 찬 것입니다.
 # weekly(13F)는 한 태스크가 10분 넘게 걸리는 것이 정상이라 길게 둡니다.
 # live: 정기 수집이 없고 화면이 볼 때만 백엔드가 부르는 장중 평가(paper_live_*) — 보유 종목 수십 개라 1분이면 넉넉합니다.
-TASK_DEADLINE_SECONDS: dict[str, float] = {"fast": 120.0, "slow": 600.0, "weekly": 1800.0, "live": 60.0}
+# session: 🧪 계좌2 장중 확인 감시(paper_watch_us, 5분마다) — 감시·보유·대기 종목 1분봉 배치 한 번이라 1분이면 넉넉하고, 주기(300초)보다 짧아야
+# 다음 회차와 겹치지 않습니다.
+TASK_DEADLINE_SECONDS: dict[str, float] = {"fast": 120.0, "slow": 600.0, "weekly": 1800.0, "live": 60.0, "session": 60.0}
 _task_threads = ThreadPoolExecutor(max_workers=8, thread_name_prefix="task")
 
 

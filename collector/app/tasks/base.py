@@ -118,6 +118,7 @@ def carried_suffix(carried: list[str]) -> str:
 class Task:
     name: str
     speed: str            # fast | slow | weekly | live(정기 수집 없음 — 화면이 볼 때만 백엔드가 요청)
+                          # | session(🧪 5분 — 장중 확인 날 확인 시각 앞뒤에만 외부 호출, 그 밖은 EmptyResult)
     run: Callable[[], str]
     description: str
 

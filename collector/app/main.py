@@ -124,7 +124,8 @@ async def lifespan(app: FastAPI):
     global scheduler
     if settings.scheduler_enabled():
         scheduler = BackgroundScheduler(timezone="UTC")
-        for group in ("fast", "slow", "weekly"):
+        # session: 🧪 계좌2 장중 확인 감시(paper_watch_us) — 확인 시각 앞뒤가 아니면 태스크가 외부를 부르지 않고 끝납니다.
+        for group in ("fast", "slow", "weekly", "session"):
             seconds = settings.interval_seconds(group)
             scheduler.add_job(
                 _run_group_job,
@@ -134,7 +135,7 @@ async def lifespan(app: FastAPI):
                 id=f"collect-{group}",
                 max_instances=1,
                 coalesce=True,
-                # 기동 직후 한 번씩 돌립니다. 싼 것부터(fast → slow → weekly)
+                # 기동 직후 한 번씩 돌립니다. 싼 것부터(fast → slow → weekly → session)
                 # 처리해야 가장 자주 보는 데이터가 먼저 채워집니다.
                 next_run_time=datetime.now(tz=ZoneInfo("UTC")),
             )
@@ -250,7 +251,7 @@ def status() -> dict:
     }
     stats["intervals"] = {
         group: settings.interval_seconds(group)
-        for group in ("fast", "slow", "weekly")
+        for group in ("fast", "slow", "weekly", "session")
     }
     return stats
 
@@ -279,7 +280,7 @@ def task_history(
 # ==============================================================================
 @app.post("/collect")
 def collect(
-    group: str = Query("all", pattern="^(fast|slow|weekly|all)$"),
+    group: str = Query("all", pattern="^(fast|slow|weekly|session|all)$"),
     wait: bool = Query(True, description="false면 백그라운드로 실행하고 즉시 응답"),
     background: BackgroundTasks = None,          # type: ignore[assignment]
     x_service_token: str | None = Header(default=None),

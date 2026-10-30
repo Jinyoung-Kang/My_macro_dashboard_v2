@@ -89,8 +89,8 @@ def scheduler_enabled() -> bool:
 
 
 def interval_seconds(group: str) -> int:
-    """작업군별 수집 주기 (기본 5분 / 1시간 / 12시간)."""
-    defaults = {"fast": 5 * 60, "slow": 60 * 60, "weekly": 12 * 60 * 60}
+    """작업군별 수집 주기 (기본 5분 / 1시간 / 12시간 / session 5분 — 🧪 계좌2 장중 확인 감시, compose가 환경변수를 넘기지 않아 이 값)."""
+    defaults = {"fast": 5 * 60, "slow": 60 * 60, "weekly": 12 * 60 * 60, "session": 5 * 60}
     env_key = f"COLLECTOR_{group.upper()}_INTERVAL"
     try:
         return max(30, int(os.environ.get(env_key, defaults[group])))
