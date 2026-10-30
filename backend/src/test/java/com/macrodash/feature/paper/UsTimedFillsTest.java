@@ -11,6 +11,7 @@ import com.macrodash.store.PaperStore.Lockout;
 import com.macrodash.store.PaperStore.Order;
 import com.macrodash.store.PaperStore.Position;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -631,6 +632,27 @@ class UsTimedFillsTest {
             assertThat(second.stopped()).as("T 매수 뒤의 스탑 — 110주").isEqualTo(1);
             assertThat(position("YYY")).isNull();
             assertThat(store.lockouts(BOOK)).extracting(Lockout::ticker).containsExactly("YYY");
+        }
+
+        @Test
+        @Disabled("F5 재현 — 늦게 풂 문턱 T + 65분이 '다음 관측치에서 풂'(W2 ≈ T + 60~66분) 한가운데라 W1이 T + 5분 뒤면 늦음으로 셈. 수정 커밋에서 뗌")
+        @DisplayName("W1(10:05:30)이 T + 6분 전이라 그 1분봉 저장본(10:05:45)이 T 창을 다 보지 못하면 다음 W2(11:05:30 = T + 65분 30초)에서 R1로 풂 — 늦게 풂이 아님(W1이 10:04면 W2 11:04와 같은 원인·같은 판정)")
+        void resolvedAtTheNextObservationIsNotLate() {
+            long id = buy("AAA", 10, "AT_1000");
+            bars(new Bars(et(TUE, 10, 5).plusSeconds(45)).bar("AAA", TUE, et(TUE, 10, 0), 97.0, 500.0)
+                    .bar("AAA", TUE, et(TUE, 10, 1), 97.2, 500.0).bar("SPY", TUE, et(TUE, 10, 0), 580.0, 9000.0));
+
+            observe(et(TUE, 10, 5).plusSeconds(30), bar("AAA", MON, 96.0, TUE, 97.5));
+            assertThat(order(id).status()).as("1분봉 저장본이 T + 6분 전 — 아직 모름").isEqualTo("PENDING");
+
+            bars(new Bars(et(TUE, 11, 6)).bar("AAA", TUE, et(TUE, 10, 0), 97.0, 500.0)
+                    .bar("AAA", TUE, et(TUE, 10, 1), 97.2, 500.0).bar("SPY", TUE, et(TUE, 10, 0), 580.0, 9000.0));
+            observe(et(TUE, 11, 5).plusSeconds(30), bar("AAA", MON, 96.0, TUE, 98.0));
+
+            assertThat(barOf(id).fillRung()).isEqualTo("Y1M_AT");
+            assertThat(fillOf(id).observedAt()).as("장부 반영 = W2").isEqualTo(et(TUE, 11, 5).plusSeconds(30));
+            assertThat(ExecutionAudit.lateResolved(order(id), barOf(id), US))
+                    .as("T 뒤 첫 관측치가 T 창을 볼 수 없었던 경우의 다음 관측치 — 늦게 풂이 아님").isFalse();
         }
 
         @Test

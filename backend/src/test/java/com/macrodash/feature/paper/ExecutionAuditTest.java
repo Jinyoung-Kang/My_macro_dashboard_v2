@@ -5,6 +5,7 @@ import com.macrodash.analytics.UsMarketCalendar;
 import com.macrodash.feature.paper.ExecutionAudit.Price;
 import com.macrodash.feature.paper.ExecutionAuditFixtures.Bars;
 import com.macrodash.store.PaperStore.Order;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -303,6 +304,25 @@ class ExecutionAuditTest {
         assertThat(ExecutionAudit.lateResolved(MON_ORDER, new com.macrodash.store.PaperStore.ExecFill(inTime, null, null), US))
                 .as("계좌1식 체결(사다리 칸 없음)").isNull();
         assertThat(ExecutionAudit.lateResolved(order, null, US)).as("아직·만료·취소").isNull();
+    }
+
+    @Test
+    @Disabled("F5 재현 — 문턱이 T + 65분이라 T 뒤 첫 관측치 W1이 T + 6분 전이어서 다음 관측치 W2(≈ W1 + 60분)에서 푼 체결이 W1 시각에 따라 갈림. 수정 커밋에서 뗌")
+    @DisplayName("늦게 풂 문턱 = T + 6분(1분봉이 T 창을 다 봄) + 65분(slow 한 회차 + 여유) = T + 71분 — W1이 T + 6분 안이라 다음 관측치 W2(T + 64~66분)에서 푼 1분봉 체결은 W1이 T + 5분 앞이든 뒤든 늦음 아님, 정확히 T + 71분도 아님, 그 뒤만 늦음")
+    void lateResolvedLeavesTheNextObservationAfterTheWindow() {
+        Order order = buy("AT_1000", MON, MON_DECIDED);
+        Instant target = et(TUE, 10, 0);
+        // W1 = T + 4분 → W2 ≈ T + 64분, W1 = T + 5분 30초 → W2 ≈ T + 65분 30초·T + 66분(같은 원인 — 1분봉이 아직 T 창을 다 보지 못한 W1)
+        for (long seconds : new long[]{64 * 60, 65 * 60 + 30, 66 * 60, 71 * 60}) {
+            com.macrodash.store.PaperStore.Fill fill = observationFill(7, "AAPL", PaperBooks.BUY, 1, 100,
+                    target.plusSeconds(seconds), TUE);
+            assertThat(ExecutionAudit.lateResolved(order, new com.macrodash.store.PaperStore.ExecFill(fill, target, "Y1M_AT"),
+                    US)).as("장부 반영 T + " + seconds + "초").isFalse();
+        }
+        com.macrodash.store.PaperStore.Fill late = observationFill(7, "AAPL", PaperBooks.BUY, 1, 100,
+                target.plusSeconds(71 * 60 + 1), TUE);
+        assertThat(ExecutionAudit.lateResolved(order, new com.macrodash.store.PaperStore.ExecFill(late, target, "Y1M_NEXT"), US))
+                .as("T + 71분 뒤 — 다음 관측치보다도 늦음(1분봉이 한 회차 넘게 늦음·서버가 꺼졌던 뒤)").isTrue();
     }
 
     // ------------------------------------------------------------------ 메뉴 대조(V17 CHECK · 수집기 MENU)
