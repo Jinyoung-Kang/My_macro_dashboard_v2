@@ -163,6 +163,15 @@ public class PaperMarketData {
         return store.quietly(() -> store.read(Datasets.SNAP_PAPER_BARS_US, Datasets.MAX_AGE_BARS_US, null));
     }
 
+    /**
+     * 🧪 장중 확인 감시 저장본({@link Datasets#SNAP_PAPER_WATCH_US}, 수집기 {@code paper_watch_us} — 계좌2 단계 2) — 장중 확인 패킷({@link CheckpointPacket})의
+     * MINUTE 자료만 읽습니다(판단 입력 — 장부 체결은 1분봉 저장본 한 출처). {@link StoreReader#quietly} 안에서 읽어 수집을 요청하지 않습니다(ADR 0008).
+     * 나이({@link Datasets#MAX_AGE_WATCH_US})·확인 대조는 부르는 쪽이 봅니다. 없으면 empty.
+     */
+    Optional<Snapshot> watchUs() {
+        return store.quietly(() -> store.read(Datasets.SNAP_PAPER_WATCH_US, Datasets.MAX_AGE_WATCH_US, null));
+    }
+
     /** 미국 관측치 저장본({@code paper.quotes})의 파서 — 미국 묶음의 {@link PaperMarket#parse}가 그대로 부릅니다(클래스 설명의 관측치). */
     static Optional<Quotes> parse(Snapshot snapshot) {
         if (snapshot.collectedAt() == null) {

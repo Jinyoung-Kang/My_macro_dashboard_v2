@@ -631,6 +631,65 @@ class StructuredSchemaTest {
         Golden.assertMatches("decision-schema-forapi-us-claude2-c2.json", Golden.prettyJson(CLAUDE2_C2_DECISION.forApi()));
     }
 
+    // ── 장중 확인 응답 스키마(계좌2 명세 §9-5, 단계 2) ───────────────────────
+
+    private static final StructuredSchema CHECKPOINT = StructuredSchema.load(CheckpointPacket.SCHEMA_RESOURCE);
+
+    private static ObjectNode validCheckpoint() throws Exception {
+        ObjectNode response = (ObjectNode) MAPPER.readTree("{\"schemaVersion\":2,\"action\":\"REPLACE\","
+                + "\"summary\":\"갭이 메워짐 — 11:00 매수를 15:00로\",\"orders\":[{\"ticker\":\"NVDA\",\"side\":\"BUY\","
+                + "\"targetWeightPct\":5,\"sellFraction\":null,\"timing\":\"AT_1500\",\"executionNote\":\"마감 전 유동성\","
+                + "\"thesis\":\"논거\",\"labels\":[\"사실\"],\"invalidation\":\"200일선 이탈\"}],\"noTradeReason\":null}");
+        return response;
+    }
+
+    @Test
+    @DisplayName("장중 확인 응답 스키마: schemaVersion 2(고정 문단 출력 절과 같음)·action KEEP|REPLACE·summary 600자·주문 timing = CheckpointPacket.TIMINGS(지난 시점은 검증기 몫)·주문 칸은 계좌2 주문과 같음")
+    void checkpointSchemaShape() throws Exception {
+        tools.jackson.databind.JsonNode schema = rawSchema(CheckpointPacket.SCHEMA_RESOURCE);
+        tools.jackson.databind.JsonNode c2 = rawSchema(ClaudeBookService.CLAUDE2_C2_SCHEMA_RESOURCE);
+        assertThat(schema.at("/properties/schemaVersion")).isEqualTo(c2.at("/properties/schemaVersion"));
+        List<String> timings = new ArrayList<>();
+        schema.at("/properties/orders/items/properties/timing/enum").forEach(node -> timings.add(node.asString()));
+        assertThat(timings).isEqualTo(CheckpointPacket.TIMINGS);
+        ObjectNode items = (ObjectNode) schema.at("/properties/orders/items").deepCopy();
+        ObjectNode morningItems = (ObjectNode) c2.at("/properties/orders/items").deepCopy();
+        ((ObjectNode) items.get("properties")).remove("timing");
+        ((ObjectNode) morningItems.get("properties")).remove("timing");
+        assertThat(items).as("timing 밖의 주문 칸은 아침 결정과 같음").isEqualTo(morningItems);
+        assertThat(schema.at("/properties/summary/maxLength").asInt()).isEqualTo(600);
+
+        assertThat(CHECKPOINT.validate(validCheckpoint())).isEmpty();
+        ObjectNode keep = validCheckpoint().put("action", "KEEP");
+        keep.putArray("orders");
+        keep.put("noTradeReason", "계획대로");
+        assertThat(CHECKPOINT.validate(keep)).isEmpty();
+        assertThat(CHECKPOINT.validate(validCheckpoint().put("action", "CANCEL"))).singleElement().asString()
+                .startsWith("$.action: ");
+        assertThat(CHECKPOINT.validate(validCheckpoint().put("summary", "가".repeat(601)))).singleElement().asString()
+                .startsWith("$.summary: ");
+        for (String timing : List.of("NEXT_OPEN", "NEXT_OBSERVATION", "MARKET")) {
+            ObjectNode response = validCheckpoint();
+            firstOrder(response).put("timing", timing);
+            assertThat(CHECKPOINT.validate(response)).as(timing).singleElement().asString()
+                    .startsWith("$.orders[0].timing: ");
+        }
+        ObjectNode noNote = validCheckpoint();
+        firstOrder(noNote).remove("executionNote");
+        assertThat(CHECKPOINT.validate(noNote)).isNotEmpty();
+        assertThat(CHECKPOINT.validate(validCheckpoint().put("checkpoint", "x"))).as("다음 확인을 요청할 칸 없음").isNotEmpty();
+    }
+
+    @Test
+    @DisplayName("고정본: API에 보내는 장중 확인 응답 스키마 — 같은 걷어 내기(숫자 범위·길이·개수 없음, 모든 객체 닫힘)")
+    void goldenCheckpointSchemaForApi() {
+        List<String> found = new ArrayList<>();
+        walkSchemas(CHECKPOINT.forApi(), "$", (path, schema) -> schema.keySet().stream()
+                .filter(StructuredSchema.API_UNSUPPORTED::contains).forEach(key -> found.add(path + "." + key)));
+        assertThat(found).isEmpty();
+        Golden.assertMatches("checkpoint-schema-forapi-us-claude2.json", Golden.prettyJson(CHECKPOINT.forApi()));
+    }
+
     // ── 주간 복기 스키마(2단계 D) ─────────────────────────────────────────
 
     private static final StructuredSchema REVIEW = StructuredSchema.load("paper/review.schema.json");

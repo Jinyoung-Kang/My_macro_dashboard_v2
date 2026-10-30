@@ -1,0 +1,31 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "action", "summary", "orders", "noTradeReason"],
+  "properties": {
+    "schemaVersion": {"const": 2},
+    "action": {"enum": ["KEEP", "REPLACE"]},
+    "summary": {"type": "string", "maxLength": 600},
+    "orders": {
+      "type": "array",
+      "maxItems": 12,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["ticker", "side", "timing", "executionNote", "thesis", "labels", "invalidation"],
+        "properties": {
+          "ticker": {"type": "string", "pattern": "^[A-Z.\\-]{1,8}$"},
+          "side": {"enum": ["BUY", "SELL"]},
+          "targetWeightPct": {"type": ["number", "null"], "minimum": 0, "maximum": 100},
+          "sellFraction": {"type": ["number", "null"], "minimum": 0, "maximum": 1},
+          "timing": {"enum": ["AT_1000", "AT_1100", "AT_1200", "AT_1300", "AT_1400", "AT_1500", "NEXT_CLOSE"]},
+          "executionNote": {"type": "string", "maxLength": 200},
+          "thesis": {"type": "string", "maxLength": 600},
+          "labels": {"type": "array", "items": {"enum": ["사실", "해석", "가설", "확인 필요", "결정"]}},
+          "invalidation": {"type": "string", "maxLength": 300}
+        }
+      }
+    },
+    "noTradeReason": {"type": ["string", "null"], "maxLength": 600}
+  }
+}

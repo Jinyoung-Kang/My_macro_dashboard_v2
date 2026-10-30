@@ -102,6 +102,11 @@ public class RuleBookService {
     public static final String MANUAL = "MANUAL";
     public static final String REBALANCE = "REBALANCE";
     public static final String INITIAL = "INITIAL";
+    /**
+     * 장중 확인 응답 결정(V18 — 미국 Claude 계좌2 단계 2, {@link CheckpointPacket}). 기준 거래일은 아침 결정과 같은 d라 UNIQUE(book, d, kind)가
+     * '세션당 한 번'을 강제합니다. 아침 패킷 빌더의 종류({@link PacketBuilder#KINDS})에는 넣지 않습니다. 재시도하지 않습니다.
+     */
+    public static final String CHECKPOINT = "CHECKPOINT";
 
     /** 결정 상태(paper_decisions.status). */
     static final String STATUS_OK = "OK";
