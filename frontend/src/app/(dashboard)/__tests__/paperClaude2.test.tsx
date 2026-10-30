@@ -385,6 +385,32 @@ describe("보유·체결 — 계좌2 칸", () => {
     expect(screen.getByText(/Claude 계좌2 주문은 다음 세션 하루짜리입니다/)).toBeTruthy();
   });
 
+  // 수정 전에는 계좌2 표에만 줄바꿈 금지 칸(목표 시각·체결 봉·사다리)과 실행 메모 최소 폭이 더해져 표의 최소 폭이 카드를 넘었고(1280px에서 주문
+  // 1,272·체결 1,241px > 상자 958px), 그때 브라우저가 모든 칸을 최소 폭으로 접어 '매수'를 한 글자씩·낸 시각과 체결 시점을 서너 줄로 접었다
+  // (주문 행 157px·체결 행 77px — QA 스택 화면, 수정 전에는 it.fails).
+  it.fails("계좌2 표는 짧은 칸을 한 줄로, 글 칸(상태·실행 메모·근거)은 최소 폭을 두고 낱말 사이에서만 줄바꿈 — 넓으면 상자 안에서 가로로 넘김", async () => {
+    render(<PaperPage initialTab="holdings" />);
+    fireEvent.change(await screen.findByLabelText("계좌 고르기"), { target: { value: "claude2" } });
+
+    const orders = await screen.findByRole("table", { name: "주문" });
+    await waitFor(() => expect(within(orders).getByText("+12.3bp")).toBeTruthy());
+    const classesOf = (table: HTMLElement) => {
+      const cells = [...within(table).getAllByRole("row")[1].children];
+      return Object.fromEntries(headersOf(table).map((header, index) => [header, cells[index].className]));
+    };
+    const order = classesOf(orders);
+    for (const header of ["낸 시각", "종목", "방향", "크기", "체결 시점", "목표 시각", "출처", "기준 거래일", "만료", "체결 시각", "계좌1식 대비"]) {
+      expect(order[header], header).toContain("whitespace-nowrap");
+    }
+    for (const header of ["상태", "실행 메모", "근거"]) {
+      expect(order[header], header).toMatch(/min-w-\[\d+rem\] break-keep/);
+    }
+    const fill = classesOf(screen.getByRole("table", { name: "체결" }));
+    for (const [header, className] of Object.entries(fill)) {
+      expect(className, header).toContain("whitespace-nowrap");
+    }
+  });
+
   it("계좌1 표는 칸이 그대로 — 실행 감사를 읽지 않는다", async () => {
     reads["/api/paper/books/claude/positions"] = () => Promise.resolve({ available: true, book: book("claude", { kind: "CLAUDE", label: "Claude 계좌1" }), cash: 50, lockouts: [], positions: [] });
     reads["/api/paper/books/claude/orders"] = () => Promise.resolve({ available: true, orders: [] });
