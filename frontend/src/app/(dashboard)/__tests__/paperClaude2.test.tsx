@@ -541,7 +541,7 @@ describe("보유·체결 — 계좌2 칸", () => {
   // 수정 전에는 두 줄 칸 안에서 값이 빠진 부분("목표 —"·"체결 —"·실행 메모 "—"·체결 봉 "—"·"슬리피지 —")을 글자 그대로 넣어, 칸 전체가 "—"일 때
   // DataTable이 그리는 Empty(기호는 aria-hidden, '값 없음'을 읽음)와 달리 낭독기에 기호만 읽혔다(Empty.tsx 규칙 — 수정 전에는 it.fails).
   // 대기·만료 주문은 늘 체결 시각이 없고, 감사 행 전 주문은 목표 시각이 없으며, R3·종가 대체 체결은 체결 봉이 없다.
-  it.fails("계좌2 표의 두 줄 칸에서 값이 빠진 부분도 '값 없음'으로 읽힌다 — 대기 주문(목표·체결 시각·실행 메모 없음)·R3 체결(체결 봉·슬리피지 없음)", async () => {
+  it("계좌2 표의 두 줄 칸에서 값이 빠진 부분도 '값 없음'으로 읽힌다 — 대기 주문(목표·체결 시각·실행 메모 없음)·R3 체결(체결 봉·슬리피지 없음)", async () => {
     reads["/api/paper/books/claude2/orders"] = () => Promise.resolve({ available: true, orders: [{
       id: 72, ticker: "BBB", side: "BUY", qty: null, targetWeightPct: 5, sellFraction: null, timing: "AT_1100", source: "CLAUDE",
       status: "PENDING", rejectReason: null, reason: { thesis: "근거", labels: ["사실"], invalidation: "조건" },

@@ -1,7 +1,7 @@
 "use client";
 
 import { type ReactNode, useState } from "react";
-import { type Column, DataTable } from "@/components/patterns";
+import { type Column, DataTable, Empty } from "@/components/patterns";
 import { Banner, Button, Card, ErrorState, Freshness, Loading, Select } from "@/components/ui";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { useApi } from "@/hooks/useApi";
@@ -194,6 +194,7 @@ const FILL_COLUMNS: readonly Column<PaperFill>[] = [
  * 주문: 낸 시각·기준일, 종목·방향, 체결 시점·목표 시각, 상태(장부 사유 + 출처·만료·체결 시각), 실행 메모·근거를 한 칸 두 줄로. 체결: 관측 시각·봉 날짜,
  * 체결가·관측가, 체결 봉·사다리, 금액·슬리피지를 한 칸 두 줄로. 짧은 칸은 줄바꿈 없이, 글(장부 사유·실행 메모·근거·사다리 이름)은 최소 폭을 두고
  * 낱말 사이에서만 줄바꿈(break-keep — 한 글자씩 접지 않음)합니다. 좁은 화면에서는 상자 안에서 가로로 넘깁니다('좌우로 넘겨 보세요').
+ * 두 줄 칸 안의 한 줄만 값이 없으면 그 자리를 part()로 Empty(기호는 읽어 주기에서 빼고 '값 없음')로 그립니다 — 칸 전체가 "—"일 때 표가 그리는 것과 같은 규칙.
  */
 function timedOrderColumns(audit: ReadonlyMap<number, PaperExecutionOrder>): Column<PaperOrder>[] {
   return [
@@ -201,7 +202,7 @@ function timedOrderColumns(audit: ReadonlyMap<number, PaperExecutionOrder>): Col
       key: "createdAt",
       header: "낸 시각·기준일",
       className: "whitespace-nowrap",
-      cell: (row) => <TwoLines top={formatKst(row.createdAtKst)} bottom={`기준 ${row.asOfTradingDate ?? EMPTY}`} />,
+      cell: (row) => <TwoLines top={part(formatKst(row.createdAtKst))} bottom={part(row.asOfTradingDate ?? EMPTY, "기준")} />,
     },
     {
       key: "ticker",
@@ -210,7 +211,7 @@ function timedOrderColumns(audit: ReadonlyMap<number, PaperExecutionOrder>): Col
       cell: (row) => (
         <span className="flex flex-col">
           <span>{row.ticker}</span>
-          <span className={`text-xs ${sideClass(row.side)}`}>{sideLabel(row.side)}</span>
+          <span className={`text-xs ${sideClass(row.side)}`}>{part(sideLabel(row.side))}</span>
         </span>
       ),
     },
@@ -230,7 +231,7 @@ function timedOrderColumns(audit: ReadonlyMap<number, PaperExecutionOrder>): Col
       header: "체결 시점·목표 시각",
       className: "whitespace-nowrap",
       cell: (row) => (
-        <TwoLines top={timingLabel(row.timing)} bottom={`목표 ${formatKst(audit.get(row.id)?.targetAtKst ?? null)}`} />
+        <TwoLines top={part(timingLabel(row.timing))} bottom={part(formatKst(audit.get(row.id)?.targetAtKst ?? null), "목표")} />
       ),
     },
     {
@@ -254,8 +255,10 @@ function timedOrderColumns(audit: ReadonlyMap<number, PaperExecutionOrder>): Col
             <Badges badges={[orderStatusBadge(row.status)]} />
             {row.rejectReason && <span className="text-xs text-warn">{row.rejectReason}</span>}
           </span>
-          <span className="whitespace-nowrap text-[11px] text-text-3">{`${sourceLabel(row.source)} · 만료 ${row.expiresOn ?? EMPTY}`}</span>
-          <span className="whitespace-nowrap text-[11px] text-text-3">{`체결 ${formatKst(row.filledAtKst)}`}</span>
+          <span className="whitespace-nowrap text-[11px] text-text-3">
+            {part(sourceLabel(row.source))} · {part(row.expiresOn ?? EMPTY, "만료")}
+          </span>
+          <span className="whitespace-nowrap text-[11px] text-text-3">{part(formatKst(row.filledAtKst), "체결")}</span>
         </span>
       ),
     },
@@ -270,8 +273,8 @@ function timedOrderColumns(audit: ReadonlyMap<number, PaperExecutionOrder>): Col
         if (note === EMPTY && reason === EMPTY) return EMPTY;
         return (
           <span className="flex flex-col gap-0.5 text-xs">
-            <span className={note === EMPTY ? "text-text-3" : "text-body"}>{note}</span>
-            <span className="text-muted" title={jsonTitle(row.reason)}>{reason}</span>
+            <span className={note === EMPTY ? "text-text-3" : "text-body"}>{part(note)}</span>
+            <span className="text-muted" title={jsonTitle(row.reason)}>{part(reason)}</span>
           </span>
         );
       },
@@ -286,7 +289,7 @@ function timedFillColumns(audit: ReadonlyMap<number, PaperExecutionOrder>): Colu
       key: "observedAt",
       header: "관측 시각·봉 날짜",
       className: "whitespace-nowrap",
-      cell: (row) => <TwoLines top={formatKst(row.observedAtKst)} bottom={`봉 ${row.observationDate ?? EMPTY}`} />,
+      cell: (row) => <TwoLines top={part(formatKst(row.observedAtKst))} bottom={part(row.observationDate ?? EMPTY, "봉")} />,
     },
     {
       key: "ticker",
@@ -307,8 +310,8 @@ function timedFillColumns(audit: ReadonlyMap<number, PaperExecutionOrder>): Colu
       align: "right",
       cell: (row) => (
         <span className="flex flex-col items-end">
-          <span>{formatSharePrice(row.price)}</span>
-          <span className="text-[11px] text-text-3">{`관측 ${formatSharePrice(row.rawPrice)}`}</span>
+          <span>{part(formatSharePrice(row.price))}</span>
+          <span className="text-[11px] text-text-3">{part(formatSharePrice(row.rawPrice), "관측")}</span>
         </span>
       ),
     },
@@ -323,8 +326,8 @@ function timedFillColumns(audit: ReadonlyMap<number, PaperExecutionOrder>): Colu
         if (bar === EMPTY && rung === EMPTY) return EMPTY;
         return (
           <span className="flex flex-col">
-            <span className="whitespace-nowrap">{bar}</span>
-            <span className="break-keep text-[11px] text-text-3">{rung}</span>
+            <span className="whitespace-nowrap">{part(bar)}</span>
+            <span className="break-keep text-[11px] text-text-3">{part(rung)}</span>
           </span>
         );
       },
@@ -336,8 +339,8 @@ function timedFillColumns(audit: ReadonlyMap<number, PaperExecutionOrder>): Colu
       align: "right",
       cell: (row) => (
         <span className="flex flex-col items-end">
-          <span>{formatNumber(row.gross, 2)}</span>
-          <span className="text-[11px] text-text-3">{`슬리피지 ${formatWithUnit(row.slippageBp, 1, "bp")}`}</span>
+          <span>{part(formatNumber(row.gross, 2))}</span>
+          <span className="text-[11px] text-text-3">{part(formatWithUnit(row.slippageBp, 1, "bp"), "슬리피지")}</span>
         </span>
       ),
     },
@@ -415,6 +418,16 @@ function TwoLines({ top, bottom }: { top: ReactNode; bottom: ReactNode }) {
       <span className="text-[11px] text-text-3">{bottom}</span>
     </span>
   );
+}
+
+/**
+ * 두 줄 칸 안의 한 값(앞에 라벨 — '목표'·'체결'·'슬리피지' 등 — 이 붙을 수 있음). 값이 없으면("—") 글 대신 Empty — 기호는 읽어 주기에서 빼고 '값 없음'을
+ * 읽습니다(Empty.tsx — 기호만 읽으면 뜻이 전해지지 않음). 칸 전체가 "—"이면 표(DataTable)가 같은 Empty로 그리지만, 칸 안의 한 줄은 표가 알 수 없어
+ * 여기서 그립니다. 계좌2 표만 씁니다(한국 표는 그대로).
+ */
+function part(text: string, label?: string): ReactNode {
+  if (text !== EMPTY) return label ? `${label} ${text}` : text;
+  return label ? <>{label} <Empty /></> : <Empty />;
 }
 
 const KR_LOCKOUT_COLUMNS: readonly Column<PaperLockout>[] = [
