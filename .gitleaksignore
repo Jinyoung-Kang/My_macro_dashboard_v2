@@ -25,7 +25,11 @@ da0148e5c3339c22a50b28fd869f6641ff17559f:collector/tests/test_dart.py:generic-ap
 # 183fc20: 홈 테스트 고정값의 매크로 카드 항목 키("kospi200_night_scraped") — 위 3a976e6·91275c5와 같은 데이터셋 키 문자열이다.
 183fc20c61146f478f6653e968466d65fb70cb1f:frontend/src/lib/__tests__/homeFixtures.ts:generic-api-key:115
 
-# 91c5a78 · 3efe22d · bf5fb97: 한국 패킷 고정본(한 줄 JSON)의 시장 지표 칸 키 문자열(22자, KrPacketBuilder의 상수) — 항목 이름이 "key"라서 generic-api-key로 잡혔다.
+# 16b83a7 · fe4e4c6 · 91c5a78 · 3efe22d · bf5fb97: 한국 패킷 고정본(한 줄 JSON)의 시장 지표 칸 키 문자열(22자, KrPacketBuilder의 상수) — 항목 이름이 "key"라서 generic-api-key로 잡혔다.
+16b83a77d5ec2ec4a9cfea208e1fce2348b2c1a3:backend/src/test/resources/paper/golden/packet-kr-initial.json:generic-api-key:1
+16b83a77d5ec2ec4a9cfea208e1fce2348b2c1a3:backend/src/test/resources/paper/golden/packet-kr-scheduled.json:generic-api-key:1
+fe4e4c611fd9fda0bc99f1c28e888e0ec5df3bd1:backend/src/test/resources/paper/golden/packet-kr-initial.json:generic-api-key:1
+fe4e4c611fd9fda0bc99f1c28e888e0ec5df3bd1:backend/src/test/resources/paper/golden/packet-kr-scheduled.json:generic-api-key:1
 91c5a787ee412146396323675b30a390b36d840f:backend/src/test/resources/paper/golden/packet-kr-initial.json:generic-api-key:1
 91c5a787ee412146396323675b30a390b36d840f:backend/src/test/resources/paper/golden/packet-kr-scheduled.json:generic-api-key:1
 3efe22d4d5a4b5c964e4a9e763a884ad094108e2:backend/src/test/resources/paper/golden/packet-kr-initial.json:generic-api-key:1
@@ -38,5 +42,6 @@ f841596142ddde11e49e1869d989ad9b31664d20:.github/workflows/ci.yml:generic-api-ke
 
 # 0965e0b1: 화면 계좌2 소개의 설정 키 문자열("claude2.barsWaitMinutes"·"claude2.executionRecord" — Claude2Settings 상수) — 항목 이름이 "key"라서
 # generic-api-key로 잡혔다(엔트로피 3.882045·3.708132가 두 문자열과 같음). .env 값 43개와 대조해 일치 0건, .env.qa 없음(2026-10-30).
+# 그 커밋은 아직 main에 없는 브랜치 claude/us-claude2-2026-10에만 있지만, CI checkout(fetch-depth 0)이 원격 브랜치를 모두 받고 gitleaks가 모든 참조를 보므로 main에도 둔다.
 0965e0b16233394a8cd44a06e5f043563e289c04:frontend/src/lib/paper.ts:generic-api-key:506
 0965e0b16233394a8cd44a06e5f043563e289c04:frontend/src/lib/paper.ts:generic-api-key:507
