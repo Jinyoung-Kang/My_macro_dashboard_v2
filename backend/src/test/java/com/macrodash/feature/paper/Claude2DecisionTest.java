@@ -11,7 +11,6 @@ import com.macrodash.support.InvalidRequestException;
 import com.sun.net.httpserver.HttpServer;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.test.util.ReflectionTestUtils;
@@ -381,7 +380,6 @@ class Claude2DecisionTest {
     }
 
     @Test
-    @Disabled("재현 — 고치기 전에는 재시도할 API 오류 계좌1 행을 sharedWith로 가리켜, 다음 주기 재시도가 그 행의 패킷을 새로 쓰면 사실과 어긋남")
     @DisplayName("sharedWith는 아직 다시 쓰일 수 있는 계좌1 행(재시도할 API 오류 — 다음 주기 재시도가 같은 행의 패킷을 새로 씀)을 가리키지 않음: 섹션이 같아도 null·해시는 남김, 재시도까지 끝난 행은 그대로 가리킴")
     void sharedWithSkipsABook1RowThatMayStillBeRetried() {
         active();

@@ -685,7 +685,8 @@ public class ClaudeBookService {
      *       {@code SKIPPED}, 출발은 실패). 하루 상한·정기 작업 몫 문턱은 계좌1과 같음({@link ClaudeSettings#callLimit}).</li>
      *   <li><b>입력</b>: {@code shared}(그 실행의 시장 입력 — 계좌1과 같은 입력)가 있으면 그것, 없으면 지금 읽은 입력에 같은 d의 계좌1 정기 결정 행이 보낸
      *       계좌 비의존 섹션을 넣은 것({@link PacketBuilder#withSectionsOf}, 그 행이 없으면 지금 읽은 그대로). 결정 행 응답에 {@code sharedWith}(계좌 비의존
-     *       섹션이 바이트까지 같은 계좌1 결정 번호 — 해시로 확인, 아니면 null)와 {@code marketSectionsSha256}를 남깁니다.</li>
+     *       섹션이 바이트까지 같은 계좌1 결정 번호 — 해시로 확인, 아니면 null. 그 계좌1 행이 재시도할 API 오류면 다음 재시도가 패킷을 새로 쓰므로 null)와
+     *       {@code marketSectionsSha256}를 남깁니다.</li>
      *   <li><b>재시도</b>: 정기·수동은 계좌1과 같이 API 오류 행을 남기고 다음 주기에 한 번. 출발은 행을 쓰지 않으므로 같은 계획 안에서 같은 패킷으로 한
      *       번 더 부릅니다(소상한·하루 상한이 남을 때만 — 한국 출발 선례). 그래도 실패하면 아무것도 쓰지 않고 실패(다음 창에 다시).</li>
      *   <li><b>쓰기</b>(장부 잠금 안, Claude 호출은 밖): 계좌2의 앞선 대기 주문을 모두 "다음 결정이 대신함"으로 취소하고 결정·주문(E 하루짜리)을 한
@@ -843,8 +844,10 @@ public class ClaudeBookService {
         boolean initial = RuleBookService.INITIAL.equals(kind);
         Optional<Quotes> quotes = reader.quietly(() -> marketData.quotes(US));
         String sectionsHash = PacketBuilder.marketSectionsSha256(attempt.packet().body(), mapper);
-        Long sharedWith = book1 != null && sectionsHash != null && sectionsHash.equals(PacketBuilder.marketSectionsSha256(
-                PacketBuilder.readSent(book1.packetText(), mapper), mapper)) ? book1.id() : null;
+        // 재시도할 API 오류 행은 다음 주기 재시도가 같은 행의 패킷을 새로 써(updateDecisionRetry) 지금 같아도 뒤에 달라지므로 가리키지 않습니다.
+        Long sharedWith = book1 != null && !retryable(book1) && sectionsHash != null && sectionsHash.equals(
+                PacketBuilder.marketSectionsSha256(PacketBuilder.readSent(book1.packetText(), mapper), mapper)) ? book1.id()
+                : null;
         return ledger.exclusively(() -> {
             Book current = claudeBook(PaperBooks.CLAUDE2);
             if (initial) {
