@@ -641,6 +641,31 @@ def watch_scope(market: str, session: date) -> dict | None:
             "watch": list(row["watch"] or []), "held": [r["ticker"] for r in held], "pending": [r["ticker"] for r in pending]}
 
 
+# 🧪 장중 시장가(MARKET — 장중 확인 응답의 주문, 단계 2)를 내는 계좌. 1분봉 저장본에 그 주문의 기준 시각 창을 더하려고 생성 시각만 읽습니다.
+TIMED_MARKET_BOOKS = {"US": ("claude2",)}
+MARKET_TIMING = "MARKET"
+
+
+def timed_market_targets(market: str) -> list[datetime]:
+    """
+    🧪 1분봉(paper.bars.us)에 창을 더할 장중 시장가 주문의 생성 시각(UTC, 오래된 순) — 그 시장 계좌2의 ``timing = MARKET`` 주문 가운데 대기이거나
+    최근 ``TIMED_RECENT_DAYS``일(달력일, DB 시각)에 만든 것. 기준 시각(생성 + 60초 뒤 첫 분)은 태스크가 셉니다(paper_bars.market_target).
+
+    백엔드 표 ``paper_orders``·``paper_books``를 **읽기만** 합니다(timed_scope와 같은 교차 읽기 — ADR 0008·0022). 종목은 timed_scope가 이미 담습니다.
+    """
+    books = TIMED_MARKET_BOOKS.get(market)
+    if not books:
+        return []
+    with connection() as conn:
+        rows = conn.execute(
+            "SELECT o.created_at FROM paper_orders o JOIN paper_books b ON b.code = o.book_code "
+            "WHERE b.market = %s AND o.book_code = ANY(%s) AND o.timing = %s "
+            "AND (o.status = 'PENDING' OR o.created_at >= now() - make_interval(days => %s)) ORDER BY 1",
+            (market, list(books), MARKET_TIMING, TIMED_RECENT_DAYS),
+        ).fetchall()
+    return [row["created_at"].astimezone(timezone.utc) for row in rows]
+
+
 def latest_observation_date(dataset: str) -> str | None:
     """그 데이터셋의 가장 최근 obs_date (YYYY-MM-DD). 없으면 None."""
     with connection() as conn:

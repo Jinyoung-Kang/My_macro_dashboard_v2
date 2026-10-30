@@ -17,6 +17,8 @@ tests/test_paper_bars.py
   7. 이 저장본을 읽는 백엔드 코드는 실행 감사 작업(PaperExecutionAuditJob, 단계 0-4)과 장부의 시각 지정 체결(PaperMarketData.barsUs → UsTimedFills,
      단계 1-4 — 시각 지정 주문이 있는 계좌만), 상태 응답의 계좌2 묶음(PaperQueryService — claude2.bars, 표시용, 같은 barsUs 경유)뿐이고
      화면·패킷은 읽지 않는다.
+  8. 🧪 계좌2의 장중 시장가(MARKET, 단계 2) 주문이 대기이거나 최근 8일 것이면 기준 시각 T = (생성 + 60초)를 분으로 내린 뒤 + 1분(⑤ 엄격 —
+     백엔드 ExecutionAudit.marketTarget과 같은 예시 표)을 그 T의 뉴욕 날짜 세션에만 창·첫 거래 봉 키로 더한다. 없으면 저장본 키는 메뉴 일곱 그대로.
 
 외부 네트워크를 쓰지 않습니다 — 1분봉 표는 yfinance 1.7.0 yf.download(group_by="ticker")의 모양(종목 × Open·High·Low·Close·Adj Close·Volume,
 종목들의 분을 합친 인덱스 — 봉이 없던 분은 NaN 줄)을 합성해 만듭니다. 태스크·범위 시험은 PostgreSQL이 필요합니다.
@@ -707,3 +709,107 @@ def test_장중에는_일봉을_부르지_않고_1분봉이_429면_일봉도_묻
     yahoo["minute"] = ({"AAA": _session(DAY)}, "거부됨", True)
     paper_bars.task_paper_bars_us()
     assert [call[0] for call in yahoo["calls"]] == ["1m", "1m"]
+
+
+
+# ==============================================================================
+# 6. 🧪 장중 시장가(MARKET, 단계 2)의 기준 시각 창 — 명세 2026-10-30 §6-2 MARKET 줄·§8 ⑤
+# ==============================================================================
+# 생성 시각(UTC) → 기준 시각 T(UTC). 백엔드 ExecutionAuditTest.marketTargetMatchesTheCollectorTable이 같은 표를 씁니다(B2-2).
+MARKET_TARGETS = [
+    ("2026-11-02T16:02:00+00:00", "2026-11-02T16:04:00+00:00"),       # :00초 생성 → +2분(T = 생성 + 60초는 ⑤에 걸림), 11:04 ET(EST)
+    ("2026-11-02T16:02:30+00:00", "2026-11-02T16:04:00+00:00"),
+    ("2026-11-02T14:59:59.999000+00:00", "2026-11-02T15:01:00+00:00"),
+    ("2026-10-30T13:58:10+00:00", "2026-10-30T14:00:00+00:00"),       # 서머타임(EDT) — 10:00 ET
+]
+
+
+@pytest.mark.parametrize("created, target", MARKET_TARGETS)
+def test_장중_시장가의_기준_시각은_생성_60초_뒤_첫_분(created, target):
+    at = paper_bars.market_target(datetime.fromisoformat(created))
+    assert at.isoformat() == target
+    assert at > datetime.fromisoformat(created) + timedelta(seconds=60), "⑤ T > 생성 + 60초(엄격)"
+
+
+def test_장중_시장가_이름과_계좌는_V18·백엔드와_같은_글자():
+    sql = next((ROOT / "db/migrations").glob("V18__*.sql")).read_text(encoding="utf-8")
+    check = re.search(r"CHECK \(timing IN \(([^)]*)\)\)", sql)
+    assert check and paper_bars.store.MARKET_TIMING in re.findall(r"'([A-Z_0-9]+)'", check.group(1))
+    java = (ROOT / "backend/src/main/java/com/macrodash/feature/paper/PaperBooks.java").read_text(encoding="utf-8")
+    claude2 = re.search(r'static final String CLAUDE2 = "([^"]+)";', java).group(1)
+    assert paper_bars.store.TIMED_MARKET_BOOKS == {"US": (claude2,)}
+    assert paper_bars.MARKET_AFTER_CREATED == timedelta(seconds=60)
+
+
+def test_대기_MARKET_창은_그_세션에만_더하고_메뉴와_겹치면_하나():
+    extra = paper_bars.market_labels([datetime(2026, 11, 2, 16, 2, 30, tzinfo=UTC), datetime(2026, 10, 30, 13, 58, 10, tzinfo=UTC),
+                                      datetime(2026, 11, 2, 16, 2, 0, tzinfo=UTC)])
+    assert extra == {"2026-10-30": ["10:00"], "2026-11-02": ["11:04"]}
+    est_day = date(2026, 11, 2)
+    rows = _session(date(2026, 10, 30)) + _session(est_day)
+    entries = paper_bars.session_entries(rows, FETCHED, extra)
+    menu = {"09:30", "10:00", "11:00", "12:00", "13:00", "14:00", "15:00"}
+
+    assert set(entries["2026-10-30"]["windows"]) == menu, "메뉴 10:00과 겹침 — 키 하나"
+    est = entries[est_day.isoformat()]
+    assert set(est["windows"]) == set(est["firstTradeAfter"]) == menu | {"11:04"}
+    assert [bar["t"] for bar in est["windows"]["11:04"]] == [_at(est_day, 11, 4 + i).isoformat() for i in range(5)]
+    assert est["firstTradeAfter"]["11:04"]["t"] == "2026-11-02T16:04:00+00:00"
+    assert paper_bars.session_entries(rows, FETCHED) == paper_bars.session_entries(rows, FETCHED, {}), "더할 창이 없으면 그대로"
+
+
+def _market_order(store, book: str, ticker: str, status: str, created: str) -> None:
+    with store.connection() as conn:
+        conn.execute(
+            "INSERT INTO paper_orders (book_code, ticker, side, timing, source, status, as_of_trading_date, created_at) "
+            "VALUES (%s, %s, 'BUY', 'MARKET', 'CLAUDE', %s, %s, %s::timestamptz)",
+            (book, ticker, status, date(2026, 10, 30), created),
+        )
+
+
+def test_장중_시장가_범위는_계좌2의_대기·최근_MARKET_주문이고_읽기만_한다(store, monkeypatch):
+    _book(store, "claude")
+    _book(store, "claude2")
+    recent = datetime.now(UTC) - timedelta(days=1)
+    _market_order(store, "claude2", "AAA", "PENDING", "2020-01-02T15:00:00+00:00")      # 오래됐어도 대기 → 넣음
+    _market_order(store, "claude2", "BBB", "FILLED", recent.isoformat())                 # 최근 → 상태 무관
+    _market_order(store, "claude2", "CCC", "FILLED", "2020-01-03T15:00:00+00:00")        # 오래된 체결 → 뺌
+    _market_order(store, "claude", "DDD", "PENDING", recent.isoformat())                 # 계좌1 → 뺌(MARKET은 장중 확인 응답만)
+    _order(store, "claude2", "EEE", "PENDING", 0)                                        # MARKET 아님 → 뺌
+
+    @contextmanager
+    def read_only():
+        with store.get_pool().connection() as conn:
+            conn.execute("SET TRANSACTION READ ONLY")
+            yield conn
+
+    monkeypatch.setattr(store, "connection", read_only)
+    got = store.timed_market_targets("US")
+    assert [at.isoformat() for at in got] == ["2020-01-02T15:00:00+00:00", recent.isoformat()]
+    assert all(at.tzinfo is not None for at in got)
+    assert store.timed_market_targets("KR") == []
+
+
+def test_MARKET_주문이_없으면_저장본_키는_메뉴_그대로(store, monkeypatch, yahoo, clock):
+    monkeypatch.setattr(store, "timed_scope", lambda market: ["AAA"])
+    yahoo["minute"] = ({"AAA": _rows(DAY, time(9, 30), time(11, 4)), "SPY": _rows(DAY, time(9, 30), time(11, 3))}, None, False)
+    paper_bars.task_paper_bars_us()
+    aaa = store.read_snapshot(catalog.SNAP_PAPER_BARS_US).payload["tickers"]["AAA"]["sessions"]["2026-10-30"]
+    assert set(aaa["windows"]) == set(aaa["firstTradeAfter"]) == {"09:30", "10:00", "11:00", "12:00", "13:00", "14:00", "15:00"}
+
+
+def test_대기_MARKET_주문이_있으면_그_세션에만_기준_시각_창과_첫_거래_봉(store, monkeypatch, yahoo, clock):
+    monkeypatch.setattr(store, "timed_scope", lambda market: ["AAA"])
+    monkeypatch.setattr(store, "timed_market_targets", lambda market: [datetime(2026, 10, 30, 14, 32, 10, tzinfo=UTC)])
+    clock(datetime(2026, 10, 30, 11, 5, tzinfo=NY))
+    yahoo["minute"] = ({"AAA": _session(date(2026, 10, 29)) + _rows(DAY, time(9, 30), time(11, 4)),
+                        "SPY": _rows(DAY, time(9, 30), time(11, 3))}, None, False)
+    paper_bars.task_paper_bars_us()
+
+    payload = store.read_snapshot(catalog.SNAP_PAPER_BARS_US).payload
+    today = payload["tickers"]["AAA"]["sessions"]["2026-10-30"]
+    assert len(today["windows"]["10:34"]) == 5 and today["windows"]["10:34"][0]["t"] == "2026-10-30T14:34:00+00:00", \
+        "생성 14:32:10Z → T 14:34Z = 10:34 ET(EDT)"
+    assert today["firstTradeAfter"]["10:34"]["t"] == "2026-10-30T14:34:00+00:00"
+    assert "10:34" not in payload["tickers"]["AAA"]["sessions"]["2026-10-29"]["windows"], "다른 세션에는 없음"
+    assert payload["menu"]["AT_1000"] == "10:00" and "MARKET" not in payload["menu"], "메뉴는 그대로"

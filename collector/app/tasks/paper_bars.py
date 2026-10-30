@@ -8,6 +8,9 @@ app/tasks/paper_bars.py
 
 [범위] store.timed_scope("US") — Claude 계좌1·계좌2의 대기 주문 ∪ 최근 8일(달력일)에 만든 주문 ∪ 계좌2 보유(백엔드 표를 읽기만 — ADR 0008·0022)
   + 지연 기준 SPY. 표에서 고른 종목이 없으면 EmptyResult이고 Yahoo를 부르지 않습니다 — SPY 혼자서는 묻지 않습니다(잴 주문이 없음).
+[장중 시장가] store.timed_market_targets("US") — 계좌2의 MARKET 주문(장중 확인 응답, 단계 2) 가운데 대기·최근 8일 것의 생성 시각. 주문마다 기준 시각
+  T = market_target(생성)(생성 + 60초 뒤 첫 분 — 백엔드 ExecutionAudit와 같은 식)을 그 T의 뉴욕 날짜 세션에만 메뉴처럼 창·첫 거래 봉 키로 더합니다.
+  MARKET 주문이 없으면 저장본은 메뉴 일곱 키 그대로입니다(더하기만 — contract 1 그대로).
 [받는 법] yf.download(interval="1m", prepost=False, auto_adjust=False) 배치 한 번. 이 프로세스에서 1분봉을 처음 받기 전까지는 period "5d"
   (서버가 꺼졌던 세션 따라잡기 — 서버는 밤에만 켜져 날마다 새로 기동), 한 번 받은 뒤로는 "1d". 1d가 장 전·마감 뒤에 어느 세션을 주는지,
   5d가 며칠 전 세션까지 주는지는 [모름 — X9, 기동 직후 저장본의 세션 날짜로 확인]. 확정된 세션(동부 16:15 뒤 — paper.latest_final_date)은
@@ -31,6 +34,7 @@ app/tasks/paper_bars.py
        fetchedAt, barCount,
        firstBar {t, o, v}, lastBar {t, o, h, l, c, v},
        windows {"09:30"|"10:00"…"15:00": [{t, o, h, l, c, v}…] | null},   # T ~ T+4분에 시작한 봉. 없으면 null(아직·조기 폐장·무거래)
+                                                                        # 키는 메뉴 일곱 + 그 세션의 대기 MARKET 기준 시각('HH:MM' — 메뉴와 겹치면 하나)
        firstTradeAfter {"HH:MM": {t, o, v} | null},                    # T 이후(T 포함) 그 세션의 첫 거래량 > 0 봉. 없으면 null
        dailyOpen}},                                                   # 검증용 일봉 시가(X2). 확정 전·못 받음은 null
      noBarSessions?,        # 봉 0개 항목만 — SPY가 이번 회차에 받은 세션(뉴욕 날짜) 가운데 이 종목 봉이 하나도 없던 세션. sessions는 직전 것 그대로(없으면 {})
@@ -75,6 +79,8 @@ MENU = {
 }
 # 창 하나 = T ~ T+4분에 시작한 봉(사다리 R1 T 봉·R2 다음 4분 — §6-2).
 WINDOW = timedelta(minutes=5)
+# 장중 시장가(MARKET)의 기준 시각 — 생성 + 60초보다 **엄격히** 뒤인 첫 분(⑤ 'T > 생성 + 60초', 백엔드 ExecutionAudit.AFTER_CREATED와 같은 60초).
+MARKET_AFTER_CREATED = timedelta(seconds=60)
 SESSIONS_KEPT = 3
 # 지연(lagSeconds)을 재는 기준 종목. 범위가 있을 때만 함께 받습니다.
 REFERENCE = "SPY"
@@ -122,11 +128,32 @@ def _traded(row: dict) -> bool:
     return row["volume"] is not None and row["volume"] > 0
 
 
-def session_entries(rows: list[dict], fetched_at: datetime) -> dict[str, dict]:
+def market_target(created_at: datetime) -> datetime:
+    """
+    장중 시장가(MARKET) 주문의 기준 시각 T(UTC) = (생성 + 60초)를 분으로 내린 뒤 + 1분 — 늘 '생성 + 60초'보다 뒤입니다(생성이 :00.000초여도
+    T = 생성 + 2분). '분으로 올림'이면 :00초 생성에서 T = 생성 + 60초가 되어 ⑤ 엄격 규칙에 걸립니다. 백엔드 ExecutionAudit.marketTarget과 같은
+    식이고, 두 쪽 시험이 같은 예시 표로 대조합니다.
+    """
+    shifted = (created_at + MARKET_AFTER_CREATED).astimezone(timezone.utc)
+    return shifted.replace(second=0, microsecond=0) + timedelta(minutes=1)
+
+
+def market_labels(created: list[datetime]) -> dict[str, list[str]]:
+    """MARKET 주문 생성 시각들 → {T의 뉴욕 날짜: ['HH:MM'(T의 뉴욕 시각)…]}(중복 없음·정렬). 외부 호출·DB 없음."""
+    out: dict[str, set[str]] = {}
+    for at in created:
+        local = market_target(at).astimezone(NEW_YORK)
+        out.setdefault(local.date().isoformat(), set()).add(local.strftime("%H:%M"))
+    return {day: sorted(labels) for day, labels in sorted(out.items())}
+
+
+def session_entries(rows: list[dict], fetched_at: datetime,
+                    extra: dict[str, list[str]] | None = None) -> dict[str, dict]:
     """
     한 종목의 1분봉(market.minute_bars의 줄) → 뉴욕 날짜별 세션 항목(모양은 머리말). 외부 호출·DB 없음 — 시험이 직접 부릅니다.
 
-    창 시각 T는 그 세션 날짜의 America/New_York 시각으로 만들어 UTC로 바꿉니다(서머타임 전환 주에도 같은 규칙).
+    창 시각 T는 그 세션 날짜의 America/New_York 시각으로 만들어 UTC로 바꿉니다(서머타임 전환 주에도 같은 규칙). ``extra``는 세션(뉴욕 날짜)마다
+    더할 창 라벨('HH:MM' — 대기 MARKET 주문의 기준 시각, market_labels)이고, 메뉴 라벨과 겹치면 하나만 둡니다. 그 세션에만 더합니다.
     """
     by_day: dict[str, list[tuple[datetime, dict]]] = {}
     for row in rows:
@@ -139,7 +166,10 @@ def session_entries(rows: list[dict], fetched_at: datetime) -> dict[str, dict]:
         session = date.fromisoformat(day)
         windows: dict[str, list[dict] | None] = {}
         first_trade: dict[str, dict | None] = {}
-        for at in MENU.values():
+        starts = list(MENU.values())
+        menu_labels = {at.strftime("%H:%M") for at in starts}
+        starts += [time.fromisoformat(label) for label in (extra or {}).get(day, []) if label not in menu_labels]
+        for at in starts:
             label = at.strftime("%H:%M")
             begin = datetime.combine(session, at, tzinfo=NEW_YORK).astimezone(timezone.utc)
             windows[label] = [_bar(start, row) for start, row in items if begin <= start < begin + WINDOW] or None
@@ -310,6 +340,7 @@ def task_paper_bars_us() -> str:
         raise EmptyResult(f"0/{len(tickers)} 종목 — 기존 저장본 유지 ({latched})")
 
     period = STEADY_PERIOD if _caught_up else CATCH_UP_PERIOD
+    extra = market_labels(store.timed_market_targets("US"))
     rows, reason, limited = market_service.minute_bars(tickers, period)
     fetched_at = _now()
     _after_round(limited)
@@ -318,7 +349,7 @@ def task_paper_bars_us() -> str:
     before = previous.get("tickers") if isinstance(previous.get("tickers"), dict) else {}
     fresh: dict[str, dict] = {}
     for ticker in tickers:
-        sessions = session_entries(rows.get(ticker) or [], fetched_at)
+        sessions = session_entries(rows.get(ticker) or [], fetched_at, extra)
         if not sessions:
             continue
         prior = before.get(ticker)
