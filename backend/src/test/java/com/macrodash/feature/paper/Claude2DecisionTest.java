@@ -367,6 +367,43 @@ class Claude2DecisionTest {
     }
 
     @Test
+    @DisplayName("장중 확인 요청이 규칙에 맞지 않으면(CHECKPOINT_INVALID — 유니버스 밖 감시·MINUTE 빈 감시) 계획 행만 SKIPPED(사유 'CHECKPOINT_INVALID — …'), 아침 주문 판정·결정 상태는 그대로, 응답 checkpointVerdict{accepted:false, reasons}; 앞 결정의 PLANNED도 그 사유로 SKIPPED")
+    void invalidCheckpointSkipsTheRowButKeepsTheOrders() {
+        checkpointsOn();
+        active();
+        answerJson(decisionWithCheckpoint("{\"atEt\":\"10:30\",\"feed\":\"MINUTE\",\"watch\":[\"ZZZ\"],\"question\":\"q\"}",
+                order("AAA", 5, "NEXT_OPEN")));
+        Decision d = decide(NOW, RuleBookService.SCHEDULED).decision();
+        assertThat(d.status()).isEqualTo(ClaudeBookService.STATUS_OK);
+        assertThat(store.ordersOf(PaperBooks.CLAUDE2)).singleElement()
+                .satisfies(o -> assertThat(o.status()).isEqualTo(PaperBooks.ORDER_PENDING));
+        PaperStore.Checkpoint row = store.checkpoint(PaperBooks.CLAUDE2, TUE).orElseThrow();
+        assertThat(row.status()).isEqualTo(PaperBooks.CHECKPOINT_SKIPPED);
+        assertThat(row.reason()).startsWith("CHECKPOINT_INVALID — ").contains("ZZZ");
+        assertThat(row.sourceDecisionId()).isEqualTo(d.id());
+        assertThat(d.response().path("checkpointVerdict").path("accepted").asBoolean(true)).isFalse();
+        assertThat(d.response().path("checkpointVerdict").path("reasons")).hasSize(1);
+        assertThat(d.response().path("checkpointPlan").path("status").asString()).isEqualTo("SKIPPED");
+        assertThat(d.response().path("checkpointPlan").path("reason").asString()).isEqualTo(row.reason());
+
+        // 앞 결정의 PLANNED 행 → 다음 결정의 요청이 규칙에 맞지 않으면 그 사유로 SKIPPED(대신 넣은 PLANNED가 남지 않음).
+        store.checkpoints.clear();
+        store.decisions.clear();
+        store.orders.clear();
+        answerJson(decisionWithCheckpoint(MINUTE_1030));
+        Decision morning = decide(NOW, RuleBookService.SCHEDULED).decision();
+        assertThat(store.checkpoint(PaperBooks.CLAUDE2, TUE).orElseThrow().status()).isEqualTo(PaperBooks.CHECKPOINT_PLANNED);
+        assertThat(morning.response().path("checkpointVerdict").toString()).isEqualTo("{\"accepted\":true,\"reasons\":[]}");
+        answerJson(decisionWithCheckpoint("{\"atEt\":\"11:00\",\"feed\":\"MINUTE\",\"watch\":[],\"question\":\"q\"}"));
+        Decision manual = service(NOW).decideClaude2(MarketRun.of(UsPaperMarket.INSTANCE, store), MON,
+                RuleBookService.MANUAL, true, null, null, false).decision();
+        PaperStore.Checkpoint skipped = store.checkpoint(PaperBooks.CLAUDE2, TUE).orElseThrow();
+        assertThat(skipped.status()).isEqualTo(PaperBooks.CHECKPOINT_SKIPPED);
+        assertThat(skipped.reason()).startsWith("CHECKPOINT_INVALID — ").contains("MINUTE");
+        assertThat(skipped.sourceDecisionId()).isEqualTo(manual.id());
+    }
+
+    @Test
     @DisplayName("13_execution.checkpointOptions.recentLag — 최근 5세션(DONE·MINUTE·지연을 잰 행)이 모이기 전에는 null, 모이면 {n, p50, p95}(근접 순위)")
     void recentLagNullUnderFiveRows() {
         active();

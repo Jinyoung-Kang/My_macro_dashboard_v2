@@ -143,6 +143,12 @@ public final class OrderValidator {
      * 개장 전 컷오프로 보통 생기지 않습니다. 장부가 체결 때 다시 봅니다(조건 ⑤).
      */
     public static final String LATE_FOR_TIMING = "LATE_FOR_TIMING";
+    /**
+     * 미국 Claude 계좌2 장중 확인 판만(계좌2 명세 §9-5·§10-5) — 아침 결정의 장중 확인 요청({@code checkpoint})이 시각·감시 목록·피드 규칙에 맞지 않음.
+     * 주문이 아니라 요청 칸의 사유라 이 검증기는 내지 않고, 검사는 {@code feature.paper.CheckpointRequest}가 합니다(이 패키지는 java.*만). 아침 주문
+     * 판정은 그대로이고 그 세션의 장중 확인 행만 건너뜁니다.
+     */
+    public static final String CHECKPOINT_INVALID = "CHECKPOINT_INVALID";
 
     /**
      * 비중(%p) 비교 여유. 비중은 평가액/순자산 × 100이라 끝자리 잡음이 있고(예: 합이 100.00000000000001), Claude가 정확히 상한

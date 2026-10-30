@@ -2,6 +2,7 @@ package com.macrodash.feature.paper;
 
 import com.macrodash.Kst;
 import com.macrodash.analytics.OrderValidator;
+import com.macrodash.analytics.TradingCalendar;
 import com.macrodash.feature.ai.AiService;
 import com.macrodash.feature.paper.ClaudeDecisionPipeline.Attempt;
 import com.macrodash.feature.paper.ClaudeDecisionPipeline.LedgerView;
@@ -925,10 +926,17 @@ public class ClaudeBookService {
                 response.put("pausedDuringCall", true);
             }
             // 장중 확인 계획(단계 2 — 켠 판의 결정만, 일시정지면 쓰지 않음): 응답의 checkpoint → E 세션 PLANNED, 없으면 E의 PLANNED를 SKIPPED.
+            // 요청은 의미 검사(CheckpointRequest — 시각·감시 목록·피드)를 거치고, 실패하면 행만 SKIPPED CHECKPOINT_INVALID(아침 주문 판정은 그대로).
             CheckpointPlan checkpointPlan = pipeline.profile().checkpoints() && !paused
-                    ? checkpointPlan(attempt.parsed(), session) : null;
+                    ? checkpointPlan(attempt.parsed(), session, pipeline.market().calendar(), checkpointUniverse(quotes, view))
+                    : null;
             if (checkpointPlan != null) {
                 response.set("checkpointPlan", checkpointPlan.view(mapper));
+                if (checkpointPlan.verdict() != null) {
+                    ObjectNode verdict = response.putObject("checkpointVerdict");
+                    verdict.put("accepted", checkpointPlan.verdict().accepted());
+                    verdict.set("reasons", mapper.valueToTree(checkpointPlan.verdict().reasons()));
+                }
             }
             return store.atomically(() -> {
                 int superseded = 0;
@@ -986,7 +994,13 @@ public class ClaudeBookService {
      * 결정 하나가 E 세션 장중 확인 행에 할 일 — 요청({@code request} — 응답의 checkpoint, 없으면 null)과 쓰기 전 그 세션 행(없으면 null). 요청이
      * 있으면 PLANNED로 넣거나 바꾸고(끝난 행은 그대로), 없으면 남은 PLANNED 행을 {@link #CHECKPOINT_SUPERSEDED}로 SKIPPED.
      */
-    private record CheckpointPlan(LocalDate session, JsonNode request, PaperStore.Checkpoint existing) {
+    private record CheckpointPlan(LocalDate session, JsonNode request, PaperStore.Checkpoint existing,
+                                  CheckpointRequest.Verdict verdict) {
+
+        /** 요청이 의미 검사를 통과하지 못함(행은 SKIPPED CHECKPOINT_INVALID). */
+        boolean invalid() {
+            return request != null && verdict != null && !verdict.accepted();
+        }
 
         /** 아침 결정 응답의 {@code checkpointPlan} — 요청이면 {session, atEt, feed, watch, status}, 아니면 계획 행에 한 일. */
         ObjectNode view(ObjectMapper mapper) {
@@ -999,9 +1013,12 @@ public class ClaudeBookService {
                 out.set("watch", request.path("watch").isArray() ? request.get("watch").deepCopy()
                         : mapper.createArrayNode());
                 // 이미 끝난(DONE·EXPIRED·SKIPPED) 세션 행은 되살리지 않음 — 그 상태 그대로.
-                out.put("status", finished ? existing.status() : PaperBooks.CHECKPOINT_PLANNED);
+                out.put("status", finished ? existing.status() : invalid() ? PaperBooks.CHECKPOINT_SKIPPED
+                        : PaperBooks.CHECKPOINT_PLANNED);
                 if (finished) {
                     out.put("note", "그 세션의 장중 확인이 이미 끝나(" + existing.status() + ") 이 요청은 쓰지 않음");
+                } else if (invalid()) {
+                    out.put("reason", verdict.reason());
                 }
             } else if (existing != null && !finished) {
                 out.put("status", PaperBooks.CHECKPOINT_SKIPPED);
@@ -1013,32 +1030,70 @@ public class ClaudeBookService {
         }
     }
 
-    /** 응답의 checkpoint(없거나 null이면 요청 없음)와 그 세션의 지금 행 — 장부 잠금 안에서 부릅니다. 요청도 행도 없으면 null(할 일 없음). */
-    private CheckpointPlan checkpointPlan(JsonNode parsed, LocalDate session) {
+    /**
+     * 응답의 checkpoint(없거나 null이면 요청 없음)와 그 세션의 지금 행, 요청의 의미 검사({@link CheckpointRequest}) — 장부 잠금 안에서 부릅니다. 요청도
+     * 행도 없으면 null(할 일 없음).
+     */
+    private CheckpointPlan checkpointPlan(JsonNode parsed, LocalDate session, TradingCalendar calendar, Set<String> universe) {
         JsonNode requested = parsed == null ? null : parsed.get("checkpoint");
         JsonNode request = requested != null && requested.isObject() ? requested : null;
         PaperStore.Checkpoint existing = store.checkpoint(PaperBooks.CLAUDE2, session).orElse(null);
         if (request == null && existing == null) {
             return null;
         }
-        return new CheckpointPlan(session, request, existing);
+        CheckpointRequest.Verdict verdict = request == null ? null
+                : CheckpointRequest.validate(request, session, calendar, universe, clock.instant());
+        return new CheckpointPlan(session, request, existing, verdict);
+    }
+
+    /** 감시할 수 있는 티커 — 관측치 종목 + 지금 보유(검증기의 유니버스와 같은 근거). */
+    private static Set<String> checkpointUniverse(Optional<Quotes> quotes, LedgerView view) {
+        Set<String> out = new TreeSet<>(observedUniverse(quotes));
+        view.positions().forEach(p -> out.add(p.ticker()));
+        return out;
     }
 
     /** 계획을 쓰기({@link #persistClaude2}의 트랜잭션 안) — 요청이면 PLANNED(요청 결정 = 이 결정), 아니면 남은 PLANNED를 SKIPPED. */
     private void writeCheckpointPlan(CheckpointPlan plan, long decisionId) {
-        if (plan.request() != null) {
-            List<String> watch = new ArrayList<>();
-            plan.request().path("watch").forEach(ticker -> watch.add(ticker.asString()));
-            boolean written = store.upsertPlannedCheckpoint(new PaperStore.Checkpoint(PaperBooks.CLAUDE2, plan.session(),
-                    java.time.LocalTime.parse(Json.asText(plan.request(), "atEt")), Json.asText(plan.request(), "feed"),
-                    watch, Json.asText(plan.request(), "question"), decisionId, null, PaperBooks.CHECKPOINT_PLANNED, null,
-                    null, null, null, null));
+        if (plan.invalid()) {
+            // 의미 검사 실패 — 남은 PLANNED가 있든 없든 그 세션 행은 이 결정의 요청으로 SKIPPED CHECKPOINT_INVALID(끝난 행은 그대로).
+            // 시각·피드가 칸 규칙(V18 CHECK·TIME)에 맞을 때만 요청 값을 남기고, 아니면 남은 PLANNED만 SKIPPED로.
+            if (writableRequest(plan.request())) {
+                writePlanned(plan, decisionId);
+            }
+            if (store.markCheckpoint(PaperBooks.CLAUDE2, plan.session(), PaperBooks.CHECKPOINT_PLANNED,
+                    PaperBooks.CHECKPOINT_SKIPPED, plan.verdict().reason(), null, null, null) > 0) {
+                log.info("Claude 계좌2 장중 확인 계획 {} — 요청이 규칙에 맞지 않아 건너뜀: {}", plan.session(),
+                        plan.verdict().reason());
+            }
+        } else if (plan.request() != null) {
+            boolean written = writePlanned(plan, decisionId);
             log.info("Claude 계좌2 장중 확인 계획 {} {} {}{}", plan.session(), Json.asText(plan.request(), "atEt"),
                     Json.asText(plan.request(), "feed"), written ? "" : " — 이미 끝난 세션이라 쓰지 않음");
         } else if (store.markCheckpoint(PaperBooks.CLAUDE2, plan.session(), PaperBooks.CHECKPOINT_PLANNED,
                 PaperBooks.CHECKPOINT_SKIPPED, CHECKPOINT_SUPERSEDED, null, null, null) > 0) {
             log.info("Claude 계좌2 장중 확인 계획 {} — 다음 결정({})이 대신해 건너뜀", plan.session(), decisionId);
         }
+    }
+
+    /** 요청 값을 PLANNED로 넣거나 바꿈(끝난 행은 그대로 — 바꿨으면 참). */
+    private boolean writePlanned(CheckpointPlan plan, long decisionId) {
+        List<String> watch = new ArrayList<>();
+        plan.request().path("watch").forEach(ticker -> watch.add(ticker.asString()));
+        return store.upsertPlannedCheckpoint(new PaperStore.Checkpoint(PaperBooks.CLAUDE2, plan.session(),
+                java.time.LocalTime.parse(Json.asText(plan.request(), "atEt")), Json.asText(plan.request(), "feed"),
+                watch, Json.asText(plan.request(), "question"), decisionId, null, PaperBooks.CHECKPOINT_PLANNED, null,
+                null, null, null, null));
+    }
+
+    /** 요청의 시각이 시각 글자이고 피드가 MINUTE·HOURLY인가(행 칸 규칙 — 스키마가 막지만 다시 봄). */
+    private static boolean writableRequest(JsonNode request) {
+        try {
+            java.time.LocalTime.parse(Json.asText(request, "atEt"));
+        } catch (RuntimeException e) {
+            return false;
+        }
+        return ExecutionSection.FEEDS.contains(Json.asText(request, "feed"));
     }
 
     // ------------------------------------------------------------------ 초기 결정·미리보기
