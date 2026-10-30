@@ -62,7 +62,8 @@
        사슬 계산이 실패해도 계좌1 감사는 그대로(`chainFailureDoesNotStopTheBookOneAudit`). 계좌2 출발(정기·수동)은 그 실행이 읽은 관측치의 고리가 기록된 뒤에만
        (리뷰 F2 ⓑ — 켠 뒤 첫 감사 전 출발이면 출발 묶음의 기준이 끝까지 `null`): 리뷰 순서(c0 → 꺼진 감사 → 켬 → 출발 시도 → c1 → 감사 → c2)
        `PaperDecisionJobClaude2Test.scheduledStartWaitsForTheChainLink`(정기는 부르지 않고 다음 주기 — `startTried` 없음, 고리 뒤 출발 주문은 c2에서 기준을 받음)·
-       `manualStartWaitsForTheChainLink`(수동 400 '관측치 사슬 준비 중' — 더 이른 저장본의 고리로는 갈음하지 않음)
+       `manualStartWaitsForTheChainLink`(수동 400 '관측치 사슬 준비 중' — 더 이른 저장본의 고리로는 갈음하지 않음), 상태 응답 `claude2.chainReady`가 같은 판정
+       (`statusSaysWhetherTheStartChainIsReady` — 화면 출발 카드는 `false`면 '계좌2 시작'을 닫고 까닭, `paperClaude2.test.ts`·`paperClaude2.test.tsx` '관측치 사슬 준비 중…')
      - 단계 1(있음): 계좌2 스키마 enum·고정 문단에 `NEXT_OBSERVATION`이 없음(`DecisionTimingsLockTest.claude2MenuIsLockedEverywhere`)
   5. '실시간·지연'(T7)
      - 단계 0(0-3): `lagSeconds`는 정규장 안에서 받은 저장본만(장 밖·휴장 `null`)이고 그 회차에 받은 SPY 세션만(짧게 온 응답으로 남긴 세션은 `null`), 종목 칸의 출처 지연(`declaredDelayMin`)은 늘 `null`

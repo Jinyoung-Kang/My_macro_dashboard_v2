@@ -168,6 +168,17 @@ describe("개요 — 계좌2 출발", () => {
     }
   });
 
+  it("켜져 있어도 관측치 사슬 준비 중(상태 chainReady false)이면 '계좌2 시작'이 닫히고 까닭 — 서버가 출발을 거절하는 동안", async () => {
+    reads["/api/paper/overview"] = () => Promise.resolve(overview(CLAUDE2_NOT_STARTED));
+    const waiting = status(true);
+    reads["/api/paper/status"] = () => Promise.resolve({ ...waiting, claude2: { ...waiting.claude2, chainReady: false } });
+    render(<PaperPage />);
+
+    expect(await screen.findByText(/관측치 사슬 준비 중입니다/)).toBeTruthy();
+    expect((screen.getByRole("button", { name: "계좌2 시작" }) as HTMLButtonElement).disabled).toBe(true);
+    expect(api.apiPost).not.toHaveBeenCalled();
+  });
+
   it("설정이 켜져 있으면 확인 단계 → POST {book:'claude2'}(미리보기 없음) → 결과와 개요 다시 읽기", async () => {
     let overviewReads = 0;
     reads["/api/paper/overview"] = () => {

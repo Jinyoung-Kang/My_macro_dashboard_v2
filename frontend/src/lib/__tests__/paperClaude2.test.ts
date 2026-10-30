@@ -198,6 +198,23 @@ describe("계좌2 출발 카드", () => {
     expect(unknown?.lines.map((line) => line.value)).toEqual(["—", "—", "—"]);
   });
 
+  it("켜져 있어도 관측치 사슬 준비 중(상태 chainReady false)이면 단추를 닫고 까닭을 — 칸이 없는 백엔드면 닫지 않음, 확인 문구에 거절 사유", () => {
+    const waiting = claude2StartView({ initialized: true, books: BOOKS }, { claude2: { ...STATUS.claude2!, chainReady: false } });
+    expect(waiting?.armed).toBe(true);
+    expect(waiting?.ready).toBe(false);
+    expect(waiting?.armNote).toContain("관측치 사슬 준비 중입니다 — 실행 감사(5분마다)가 지금 관측치의 사슬 고리를 남겨야");
+    const ready = claude2StartView({ initialized: true, books: BOOKS }, { claude2: { ...STATUS.claude2!, chainReady: true } });
+    expect(ready?.ready).toBe(true);
+    expect(ready?.armNote).toContain("단추는 그 창 안에서, 관측치 사슬이 준비된 뒤에만 됩니다");
+    expect(claude2StartView({ initialized: true, books: BOOKS }, STATUS)?.ready).toBe(true);   // 칸 없음 — 모름(서버가 거절하면 그 문구)
+    // 꺼져 있으면 사슬보다 설정이 먼저(꺼진 동안은 사슬을 세지 않음).
+    const off = claude2StartView({ initialized: true, books: BOOKS }, { claude2: { ...STATUS.claude2!, enabled: false, chainReady: false } });
+    expect(off?.ready).toBe(false);
+    expect(off?.armNote).toContain("claude2.enabled가 꺼져 있습니다");
+    expect(claude2StartView({ initialized: true, books: BOOKS }, null)?.ready).toBe(false);
+    expect(ready?.confirm).toContain("이거나 관측치 사슬 준비 중(켠 직후·새 관측치 직후 몇 분");
+  });
+
   it("출발 결과 — 출발·이미 출발·실패(서버 문구), 사후 체결 수는 적지 않는다", () => {
     const decision = {
       id: 9, book: "claude2", asOfTradingDate: "2026-10-30", kind: "INITIAL", status: "OK", decidedAtKst: "2026-10-31 07:41",

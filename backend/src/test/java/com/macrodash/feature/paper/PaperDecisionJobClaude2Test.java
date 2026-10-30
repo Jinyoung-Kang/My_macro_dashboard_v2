@@ -598,6 +598,28 @@ class PaperDecisionJobClaude2Test {
     }
 
     @Test
+    @DisplayName("상태 응답 claude2.chainReady — 지금 관측치의 사슬 고리가 작업 기록에 있을 때만 true(출발 판정과 같음 — 더 이른 저장본의 고리는 아님, 저장본이 없으면 false): 화면이 '계좌2 시작'을 미리 닫음")
+    void statusSaysWhetherTheStartChainIsReady() {
+        enabled(true);
+        PaperQueryService query = new PaperQueryService(store, marketData, reader, PaperFixtures.settings(store),
+                PaperFixtures.config(), Clock.fixed(MON_RUN, ZoneOffset.UTC));
+        assertThat(chainReady(query)).as("켠 뒤 첫 감사 전 — 고리 없음").isEqualTo(false);
+        chainLink(Instant.parse("2026-10-23T20:30:00Z"));
+        assertThat(chainReady(query)).as("지난 주 저장본의 고리로는 갈음하지 않음").isEqualTo(false);
+        assertThatThrownBy(() -> job(MON_RUN).startClaude2Now()).hasMessageContaining("관측치 사슬 준비 중");
+
+        chainLink(MON_OBSERVED);
+        assertThat(chainReady(query)).as("지금 관측치의 고리").isEqualTo(true);
+        when(marketData.quotes(market(US))).thenReturn(Optional.empty());
+        assertThat(chainReady(query)).as("관측치 저장본 없음").isEqualTo(false);
+    }
+
+    @SuppressWarnings("unchecked")
+    private static Object chainReady(PaperQueryService query) {
+        return ((Map<String, Object>) query.status().get(PaperBooks.CLAUDE2)).get("chainReady");
+    }
+
+    @Test
     @DisplayName("수동 출발 run/initial-decision {book:claude2}: 지금 관측치의 사슬 고리가 작업 기록에 없으면 400 '관측치 사슬 준비 중'(부르지 않음·기록 없음) — 더 이른 저장본의 고리로는 갈음하지 않음(켰다 끈 사이에 끊김), 그 관측치의 고리가 생기면 출발")
     void manualStartWaitsForTheChainLink() {
         enabled(true);

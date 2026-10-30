@@ -400,6 +400,11 @@ export interface PaperClaude2Status {
   cycle: { tradingDate: string; calls: number | null; cap: number | null } | null;
   /** 1분봉 저장본(수집 태스크 paper_bars_us)의 받은 시각·나이(초)·지연(초, SPY 기준) — 정규장 밖이면 null, 모르는 값은 null. */
   bars: { collectedAtKst: string | null; ageSeconds: number | null; lagSeconds: number | null } | null;
+  /**
+   * 지금 관측치 저장본의 사슬 고리가 실행 감사 작업 기록에 있나 — 계좌2 출발(정기·수동)은 true일 때만 나갑니다(리뷰 F2 ⓑ — 켠 직후·새 관측치 직후 몇 분은
+   * false, 저장본이 없어도 false). 이 칸을 보내지 않는 백엔드에서는 없습니다(모름 — 화면은 단추를 닫지 않음).
+   */
+  chainReady?: boolean;
 }
 
 /** 한국 수집 상태의 공통 칸 — 수집기 태스크·저장본 이름·저장본이 있나. */

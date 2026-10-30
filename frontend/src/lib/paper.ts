@@ -3128,6 +3128,11 @@ export interface Claude2StartView {
   body: string;
   /** 설정 claude2.enabled — true면 단추가 열리고, false면 설정을 먼저 켜라는 안내, null이면 상태를 읽지 못함(단추 닫힘). */
   armed: boolean | null;
+  /**
+   * 단추를 열까 — 설정이 켜져 있고(armed true) 관측치 사슬이 준비됐거나 모를 때(상태 칸 chainReady가 false가 아님). 사슬 준비 중이면 출발은 서버가 거절하고
+   * (수동 400·정기는 다음 주기 — 리뷰 F2 ⓑ) armNote가 그 까닭입니다.
+   */
+  ready: boolean;
   armNote: string;
   /** 다음 결정·개장 전 컷오프·이번 주기 호출 — 상태 응답 글자 그대로(모르면 "—"), 다음 결정 시각이 지났으면 창이 열렸다고(claude2WindowLines). */
   lines: DecisionMetaCell[];
@@ -3181,6 +3186,13 @@ export function claude2WindowLines(group: PaperClaude2Status | null | undefined,
 }
 
 /**
+ * 계좌2 출발 카드의 '관측치 사슬 준비 중' 안내(상태 칸 chainReady false — 리뷰 F2 ⓑ). 서버는 그동안 수동 출발을 400으로 거절하고 정기 출발을 다음 주기로
+ * 미룹니다(PaperExecutionAuditJob.chainNotReady).
+ */
+const CLAUDE2_CHAIN_WAIT_NOTE = "설정 claude2.enabled는 켜져 있지만 관측치 사슬 준비 중입니다 — 실행 감사(5분마다)가 지금 관측치의 사슬 고리를 남겨야 "
+  + "출발 주문의 계좌1식 기준(M1)을 증명할 수 있어, 그때까지 이 단추를 닫고 정기 출발도 다음 주기로 미룹니다(켠 직후·새 관측치 직후 몇 분).";
+
+/**
  * 계좌2 출발 카드 — 미국 계좌2가 시작 전(NOT_STARTED)일 때만, 아니면 null. 출발은 사후 체결이 아니라 앞으로 체결입니다: 설정 claude2.enabled를
  * 켜면(설정 판 하나 — 명세 L2 '사용자가 시작') 다음 미국 결정 창에 정기 결정 작업이 출발 결정을 내고, 단추는 같은 출발을 그 창 안에서 지금 한 번
  * 부릅니다(창 밖·꺼짐은 서버가 400 — 기록 없음). 미리보기는 없습니다. 창 시각은 상태 응답의 claude2 묶음 그대로입니다.
@@ -3197,6 +3209,8 @@ export function claude2StartView(
   if (!book || book.status !== "NOT_STARTED") return null;
   const group = status?.claude2 ?? null;
   const armed = group ? group.enabled === true : null;
+  // 켜져 있어도 지금 관측치의 사슬 고리가 아직 없으면 출발이 나가지 않습니다(서버 판정 그대로 — 상태 칸 chainReady). 칸이 없는 백엔드면 모름 — 닫지 않음.
+  const chainWaiting = armed === true && group?.chainReady === false;
   const lines = claude2WindowLines(group, now);
   const label = book.label;
   return {
@@ -3208,8 +3222,10 @@ export function claude2StartView(
       + "매시 · 종가)으로 체결됩니다. 성공하면 출발일 = S(그날 순자산 = 처음 현금)로 운용을 시작하고, 실패하면 아무것도 쓰지 않고 다음 미국 결정 창에 "
       + "다시 합니다. 미리보기는 없습니다.",
     armed,
-    armNote: armed === true
-      ? "설정 claude2.enabled가 켜져 있습니다 — 단추를 누르지 않아도 다음 미국 결정 창에 정기 결정 작업이 출발합니다(단추는 그 창 안에서만 됩니다)."
+    ready: armed === true && !chainWaiting,
+    armNote: chainWaiting ? CLAUDE2_CHAIN_WAIT_NOTE : armed === true
+      ? "설정 claude2.enabled가 켜져 있습니다 — 단추를 누르지 않아도 다음 미국 결정 창에 정기 결정 작업이 출발합니다(단추는 그 창 안에서, 관측치 사슬이 "
+        + "준비된 뒤에만 됩니다)."
       : armed === false
         ? "설정 claude2.enabled가 꺼져 있습니다 — 설정 탭에서 켜야(설정 판 하나) 정기 출발도 이 단추도 돕니다. 켜는 같은 저장에서 정기 작업 몫 예약"
           + "(apiScheduledReserve)·결정 주기 호출 상한(claude2.maxCallsPerCycle)도 함께 맞춥니다(명세 §16-2)."
@@ -3217,7 +3233,8 @@ export function claude2StartView(
     lines,
     cost: CLAUDE_COST_NOTE,
     confirm: `계좌2를 지금 출발시킬까요? ${CLAUDE_COST_NOTE} 같은 창의 정기 출발과 같은 파이프라인을 수동 호출 문턱으로 한 번 부릅니다. 창 밖`
-      + "(확정 종가 처리 전·정규장 중·개장 전 컷오프 뒤)이면 서버가 거절하고 아무것도 쓰지 않습니다. 되돌리려면 보유·체결 탭의 '계좌 초기화'로 이 "
+      + "(확정 종가 처리 전·정규장 중·개장 전 컷오프 뒤)이거나 관측치 사슬 준비 중(켠 직후·새 관측치 직후 몇 분 — 실행 감사가 지금 관측치의 고리를 "
+      + "남기기 전)이면 서버가 거절하고 아무것도 쓰지 않습니다. 되돌리려면 보유·체결 탭의 '계좌 초기화'로 이 "
       + "계좌의 장부를 지운 뒤 다시 앞으로 체결로 출발합니다.",
   };
 }

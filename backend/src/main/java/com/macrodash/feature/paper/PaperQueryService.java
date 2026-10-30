@@ -488,11 +488,13 @@ public class PaperQueryService {
 
     /**
      * 미국 Claude 계좌2 묶음(계좌2 명세 §13-1, ADR 0022) — {@code {book, status, startedOn, enabled, nextDecision:{tradingDate, atKst, atEt, cutoffKst,
-     * cutoffEt}, cycle:{tradingDate, calls, cap}, bars}}. 다음 결정은 마감이 끝난 최근 세션 d의 계좌2 정기·출발 행이 아직 없으면 d, 있으면 d 다음 거래일의
+     * cutoffEt}, cycle:{tradingDate, calls, cap}, bars, chainReady}}. 다음 결정은 마감이 끝난 최근 세션 d의 계좌2 정기·출발 행이 아직 없으면 d, 있으면 d 다음 거래일의
      * 결정 시각(설정 {@code decisionTimeKst} — 계좌1과 같은 시각)이고, 컷오프는 그 결정의 목표 세션 09:00 ET(§5-1 ⑤)입니다 — 계좌2가 꺼졌거나 시작
      * 전이어도 그 창의 시각입니다(켜면 그때 냄). 이번 결정 주기 호출 수는 d의 계좌2 정기·출발 행(1 + 재시도 수 — {@link ClaudeBookService#claude2CallsInCycle})
      * 이고 상한은 {@code claude2.maxCallsPerCycle}. {@code bars}는 지금이 미국 정규장일 때만 1분봉 저장본의 받은 시각·나이·지연({@link ExecutionAudit#lagSeconds}
      * — SPY 기준, 모르면 null), 정규장 밖은 null(그때 값은 지연이 아니라 장이 닫힌 시간). 계좌2가 없으면(초기화 전) {@code status}·{@code startedOn}은 null.
+     * {@code chainReady}는 지금 관측치 저장본의 사슬 고리가 실행 감사 작업 기록에 있나 — 계좌2 출발(정기·수동)은 그때만 나가므로(리뷰 F2 ⓑ, 결정 작업과 같은
+     * 판정 {@link PaperExecutionAuditJob#chainNotReady}) 화면이 '계좌2 시작'을 미리 닫고 까닭을 적게 합니다(저장본이 없으면 false).
      * 저장본은 수집 요청 없이 읽기만 합니다.
      */
     private Map<String, Object> claude2Status(MarketRun market) {
@@ -524,6 +526,8 @@ public class PaperQueryService {
         out.put("nextDecision", nextDecision);
         out.put("cycle", cycle);
         out.put("bars", inRegularSession(now, calendar) ? barsView(now, calendar) : null);
+        Optional<Quotes> quotes = reader.quietly(() -> marketData.quotes(market));
+        out.put("chainReady", PaperExecutionAuditJob.chainNotReady(store, quotes.map(Quotes::collectedAt).orElse(null), now) == null);
         return out;
     }
 

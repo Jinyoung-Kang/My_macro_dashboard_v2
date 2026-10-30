@@ -15,7 +15,8 @@ import type { PaperInitialDecisionResult, PaperOverviewResponse, PaperStatusResp
  *
  * 출발은 앞으로 체결입니다: 설정 claude2.enabled를 켜면(설정 탭 — 사용자가 시작, 명세 L2) 다음 미국 결정 창에 정기 결정 작업이 출발 결정을 내고, 이
  * 카드의 "계좌2 시작"은 같은 출발을 그 창 안에서 지금 한 번 부릅니다(POST run/initial-decision `{book:"claude2"}` — 창 밖·꺼짐은 서버 400, 기록
- * 없음). 설정이 꺼져 있거나 상태를 읽지 못했으면 단추를 닫고 그 까닭을 적습니다. Claude를 한 번 부르므로 확인 단계를 거칩니다. 미리보기는 없습니다.
+ * 없음). 설정이 꺼져 있거나 상태를 읽지 못했거나 관측치 사슬 준비 중이면(상태 칸 chainReady false — 켠 직후·새 관측치 직후 몇 분, 서버가 출발을 거절)
+ * 단추를 닫고 그 까닭을 적습니다. Claude를 한 번 부르므로 확인 단계를 거칩니다. 미리보기는 없습니다.
  * 창 시각·이번 주기 호출은 상태 응답(claude2 묶음)의 글자 그대로이고, 다음 결정 시각이 이미 지났으면(그 거래일 행이 아직 없음 — 창은 컷오프까지 열림)
  * 지난 시각 대신 창이 열렸다고 적습니다(lib/paper claude2WindowLines).
  */
@@ -58,7 +59,7 @@ export function Claude2StartSection({
     >
       <p className="text-sm leading-relaxed text-body">{view.body}</p>
       <div className="mt-3">
-        <Banner tone={view.armed === true ? "info" : "warn"}>{view.armNote}</Banner>
+        <Banner tone={view.ready ? "info" : "warn"}>{view.armNote}</Banner>
       </div>
       <dl aria-label="계좌2 결정 창" className="mt-3 grid grid-cols-1 gap-x-4 gap-y-1 text-xs sm:grid-cols-3">
         {view.lines.map((line) => (
@@ -82,13 +83,13 @@ export function Claude2StartSection({
         </div>
       ) : (
         <div className="mt-3">
-          <Button variant="primary" onClick={() => setConfirming(true)} disabled={start.busy || view.armed !== true}>
+          <Button variant="primary" onClick={() => setConfirming(true)} disabled={start.busy || !view.ready}>
             {view.title}
           </Button>
         </div>
       )}
 
-      {/* 서버 문구(창 밖·설정 꺼짐·호출 상한·개장 전 컷오프)를 그대로 — 무엇을 기다려야 하는지 서버가 적어 보냅니다. */}
+      {/* 서버 문구(창 밖·설정 꺼짐·호출 상한·개장 전 컷오프·관측치 사슬 준비 중)를 그대로 — 무엇을 기다려야 하는지 서버가 적어 보냅니다. */}
       {start.error && <div className="mt-3"><Banner tone="warn">{start.error}</Banner></div>}
       {resultBanner && <div className="mt-3">{resultBanner}</div>}
     </Card>

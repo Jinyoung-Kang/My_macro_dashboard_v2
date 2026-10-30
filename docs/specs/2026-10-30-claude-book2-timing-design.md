@@ -167,6 +167,8 @@
    (켜자마자 '계좌2 시작', 결정 창 안에서 켠 직후의 정기 출발). 고리가 없으면 정기는 Claude를 부르지 않고 다음 주기(작업 기록 `claude2.waiting` '관측치 사슬 준비 중',
    그 창의 출발을 해 본 것으로 세지 않음 — `claude2.startTried` 없음), 수동은 400 '관측치 사슬 준비 중'(기록 없음). 더 이른 저장본의 고리로는 갈음하지 않는다 —
    그 뒤 사슬을 세지 않은 사이(계좌2를 켰다 끔)가 있으면 다음 고리가 이어지지 않는다. 대가: 켠 직후·새 저장본 직후 몇 분(감사 한 주기, 수집기 실행 기록이 늦으면 두 주기) 출발이 늦다.
+   *(화면 점검 넘김으로 더함)* 상태 응답 `claude2.chainReady`(§13-1)가 같은 판정을 보여, 화면 출발 카드는 `false`인 동안 '계좌2 시작'을 닫고 '관측치 사슬 준비 중'을 적는다
+   (확인 문구의 거절 사유에도 더함).
 5. `paper_start_prices`·`backfill`은 쓰지 않는다. 출발 주문의 출처는 계좌1과 같은 `CLAUDE`이고(`P/ClaudeDecisionPipeline.java:657`), 미국 월 상한 계산은 `BACKFILL` 시점으로만 출발 배분을 뺀다(`P/PacketBuilder.java:1729-1736`) —
    계좌2 주문은 `BACKFILL`이 아니므로 그대로면 월 20건에 세인다. → 계좌2는 **한국 계산(결정 종류 `INITIAL`의 주문을 뺌 — `P/KrPacketBuilder.java:1040-1060`)**을 쓴다. 검증기 월 상한도 같은 함수(T12).
 6. **리셋**: `POST /api/paper/books/claude2/reset`은 지금 코드대로 현금만 남기고 `NOT_STARTED`로 돌린다(사후 체결은 미국 벤치마크만 — `P/PaperAdminService.java:457-462`). 다시 출발은 위 1~5뿐이다.
@@ -578,7 +580,7 @@ E가 끝나면(3a) 모든 주문이 풀리므로 미룸은 그 세션 안에서 
 - 체결 응답에 `barAt`·`fillRung`·`fallback`(계좌1 체결은 칸 없음 — 미국 응답 글자 그대로). 결정 목록·한 건에 kind `CHECKPOINT`(단계 2)와 `sharedWith`·`marketSectionsSha256`.
 - **새 경로 하나**: `GET /api/paper/books/{code}/execution`(운영자) — 주문별 실행 감사(고른 시점·목표 시각·체결 봉·사다리·반사실·`executionNote`)와 §14 요약(N < 10이거나 결정일 묶음 < 5면 지표 `null`), 단계 2의 장중 확인 기록.
   `AccessPolicy`는 경로를 하나씩 나열하므로(와일드카드 없음) 반드시 더한다. 컨트롤러는 자기 기능 서비스(`PaperQueryService`)·`support`·`config`만 쓴다(ADR 0001 — `ArchitectureRulesTest`). 함께 고칠 곳: `AccessPolicy`(`:91-104`), `RouteInventoryTest.EXPECTED`, `docs/API.md`, `scripts/qa/routes.json`(GET), `frontend/src/lib/endpoints.ts`·`endpoints.test.ts`(CASES·함수 수), `access.test.ts`.
-- `GET /api/paper/status`에 `claude2` 묶음: 다음 결정·장중 확인(ET·KST), 이번 주기 호출/소상한, 1분봉 저장본 시각·지연 요약(정규장 밖은 `null`). 그래서 `G/paper-status-us.json`이 바뀐다(§3-2). `?market=KR` 응답은 글자 그대로.
+- `GET /api/paper/status`에 `claude2` 묶음: 다음 결정·장중 확인(ET·KST), 이번 주기 호출/소상한, 1분봉 저장본 시각·지연 요약(정규장 밖은 `null`), *(리뷰 F2 ⓑ 뒤 더함)* `chainReady`(지금 관측치의 사슬 고리가 있나 — 출발 판정과 같음, §4-1의 4). 그래서 `G/paper-status-us.json`이 바뀐다(§3-2). `?market=KR` 응답은 글자 그대로.
 - `docs/API.md:220`의 계좌 코드 목록에 `claude2`.
 
 ### 13-2. 설정(`claude2.*`, 새 범위 `CLAUDE2("US", "claude2.")` — `P/PaperSettingKeys.java:51-60`, 모두 `affectsRules=false`)
