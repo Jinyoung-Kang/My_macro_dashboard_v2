@@ -13,6 +13,7 @@ import {
   type Badge,
   bookOptions,
   candidatesNote,
+  claude2CheckpointLine,
   claude2WindowLines,
   CLAUDE_COST_NOTE,
   claudeDecisionView,
@@ -73,7 +74,7 @@ import type {
   PaperSettingsResponse,
   PaperStatusResponse,
 } from "@/lib/types";
-import { Claude2WindowList } from "./Claude2StartSection";
+import { Claude2CheckpointLine, Claude2WindowList } from "./Claude2StartSection";
 import { ClaudeDecisionBody } from "./ClaudeDecisionBody";
 import { GateIndicatorBody } from "./GateIndicatorBody";
 import { KrGateTable, KrRuleDecisionBody } from "./KrRuleDecisionBody";
@@ -237,6 +238,7 @@ export function DecisionsSection({
         </div>
         <p className="mt-3 text-xs leading-relaxed text-muted">{korea ? krDecisionBookNote(book?.kind) : decisionBookNote(book?.kind, book?.code)}</p>
         {windowLines && <Claude2WindowList lines={windowLines} className="mt-3" />}
+        {windowLines && <Claude2CheckpointLine line={claude2CheckpointLine(status.data?.available ? status.data.claude2 : null)} />}
         {timed && status.error && <p className="mt-2 text-xs text-warn">계좌2 결정 창을 읽지 못했습니다 — {status.error}</p>}
         {blocked && showRun && <p className="mt-2 text-xs text-warn">{blocked}</p>}
         {confirming && (
@@ -396,7 +398,7 @@ function DecisionTable({
       header: "상태",
       render: (row) => (
         <div className="flex min-w-[7rem] flex-col items-start gap-1">
-          <Badges badges={[decisionStatusBadge(row.status)]} />
+          <Badges badges={[decisionStatusBadge(row.status, row.kind)]} />
           {row.error && <span className="text-[11px] leading-snug text-warn">{row.error}</span>}
         </div>
       ),
@@ -482,6 +484,7 @@ function DecisionDetail({ id, market }: { id: number; market: PaperMarketCode })
   const claude = claudeDecisionView({
     book: decision.book,
     status: decision.status,
+    kind: decision.kind,
     response: decision.response,
     usage: decision.usage,
     targetExposurePct: decision.targetExposurePct,

@@ -7,7 +7,7 @@ import { useElapsedSeconds } from "@/hooks/useElapsedSeconds";
 import { useMinuteClock } from "@/hooks/useMinuteClock";
 import { apiPost } from "@/lib/api";
 import { endpoints } from "@/lib/endpoints";
-import { claude2StartResultView, claude2StartView, type DecisionMetaCell, PAPER_SOURCES } from "@/lib/paper";
+import { claude2CheckpointLine, claude2StartResultView, claude2StartView, type DecisionMetaCell, PAPER_SOURCES } from "@/lib/paper";
 import type { PaperInitialDecisionResult, PaperOverviewResponse, PaperStatusResponse } from "@/lib/types";
 
 /**
@@ -18,7 +18,8 @@ import type { PaperInitialDecisionResult, PaperOverviewResponse, PaperStatusResp
  * 없음). 설정이 꺼져 있거나 상태를 읽지 못했거나 관측치 사슬 준비 중이면(상태 칸 chainReady false — 켠 직후·새 관측치 직후 몇 분, 서버가 출발을 거절)
  * 단추를 닫고 그 까닭을 적습니다. Claude를 한 번 부르므로 확인 단계를 거칩니다. 미리보기는 없습니다.
  * 창 시각·이번 주기 호출은 상태 응답(claude2 묶음)의 글자 그대로이고, 다음 결정 시각이 이미 지났으면(그 거래일 행이 아직 없음 — 창은 컷오프까지 열림)
- * 지난 시각 대신 창이 열렸다고 적습니다(lib/paper claude2WindowLines).
+ * 지난 시각 대신 창이 열렸다고 적습니다(lib/paper claude2WindowLines). 그 아래 '오늘 장중 확인' 한 줄(단계 2 — 상태 응답 claude2.checkpoint, 칸이 없는
+ * 백엔드면 줄 없음).
  */
 export function Claude2StartSection({
   overview,
@@ -62,6 +63,7 @@ export function Claude2StartSection({
         <Banner tone={view.ready ? "info" : "warn"}>{view.armNote}</Banner>
       </div>
       <Claude2WindowList lines={view.lines} className="mt-3" />
+      <Claude2CheckpointLine line={claude2CheckpointLine(status?.available ? status.claude2 : null)} />
       <p className="mt-2 text-xs text-muted">비용: {view.cost}</p>
 
       {confirming ? (
@@ -87,6 +89,12 @@ export function Claude2StartSection({
       {resultBanner && <div className="mt-3">{resultBanner}</div>}
     </Card>
   );
+}
+
+/** 🧪 '오늘 장중 확인' 한 줄(lib/paper claude2CheckpointLine — 단계 2). 줄이 없으면(칸을 보내지 않는 백엔드) 그리지 않습니다. */
+export function Claude2CheckpointLine({ line, className = "mt-2" }: { line: string | null; className?: string }) {
+  if (!line) return null;
+  return <p aria-label="오늘 장중 확인" className={`text-xs leading-relaxed text-muted ${className}`}>{line}</p>;
 }
 
 /**

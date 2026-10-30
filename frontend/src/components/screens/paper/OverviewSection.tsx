@@ -16,6 +16,7 @@ import {
   calendarLine,
   CLAUDE2_EXPOSURE_KEY,
   claude2BarsLine,
+  claude2CheckpointLine,
   claudeExposureChart,
   earningsLine,
   exposureNote,
@@ -270,6 +271,8 @@ export function OverviewSection({
   const earnings = status.data?.available ? earningsLine(status.data.earnings) : null;
   // 🧪 출발한 계좌2의 1분봉 저장본 한 줄(상태 응답 claude2.bars — 정규장일 때만 받은 시각·지연, 시작 전이면 줄 없음).
   const barsLine = !korea && status.data?.available ? claude2BarsLine(status.data.claude2, book2?.label) : null;
+  // 🧪 그 아래 '오늘 장중 확인' 한 줄(단계 2 — 상태 응답 claude2.checkpoint). 1분봉 줄과 같은 규칙(출발한 계좌2만, 칸이 없는 백엔드면 줄 없음).
+  const checkpointLine = barsLine && status.data?.available ? claude2CheckpointLine(status.data.claude2) : null;
   // 미국 '장부 관측치' 카드의 출처(한국 개요는 이 카드 대신 한국 수집 상태 카드 — 출처를 그 카드가 적음).
   const observationSource = [
     PAPER_SOURCES.quotes,
@@ -615,6 +618,7 @@ export function OverviewSection({
             <p className="mt-1 text-xs text-warn">지난 값을 이어 쓴 티커: {staleNames.join(", ")}</p>
           )}
           {barsLine && <p className="mt-1 text-xs text-muted">{barsLine}</p>}
+          {checkpointLine && <p aria-label="오늘 장중 확인" className="mt-1 text-xs text-muted">{checkpointLine}</p>}
           {fundamentals && <p className="mt-1 text-xs text-muted">{fundamentals}</p>}
           {calendar && <p className="mt-1 text-xs text-muted">{calendar}</p>}
           {news && <p className="mt-1 text-xs text-muted">{news}</p>}

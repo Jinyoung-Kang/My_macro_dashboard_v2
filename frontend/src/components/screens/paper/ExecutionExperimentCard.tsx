@@ -63,6 +63,8 @@ const TIMING_COLUMNS = columns("시점", "whitespace-nowrap");
  * 보내고 화면은 '—'와 '판단 보류'로 적습니다. 값이 있어도 화면은 "도움이 됐다/손해였다"를 정하지 않습니다 — 사전 등록 판정(§14-3)은 8주 뒤 M1로 하고,
  * 그 문턱은 설명 문구로만 적습니다. 시가(NEXT_OPEN)는 대리값 배지(M1 본 줄은 센 체결에 시가 체결이 있을 때).
  *
+ * 계좌2면 그 사이에 장중 확인(M8 — 단계 2: 부름·놓침·건너뜀, 요청한 자료, KEEP/REPLACE)을 서버가 센 수 그대로 서술로만 적습니다(판정 없음).
+ *
  * 계좌2가 출발하기 전에도 계좌1 주문의 반사실(기준 분포 — 단계 0부터)을 볼 수 있게 계좌를 고릅니다(처음엔 계좌2).
  */
 export function ExecutionExperimentCard({ books }: { books: readonly PaperBookSummary[] }) {
@@ -121,6 +123,14 @@ export function ExecutionExperimentCard({ books }: { books: readonly PaperBookSu
             </section>
           ) : (
             <p className="mb-2 text-xs text-text-3">고른 시점(M1 — 주 판정)은 계좌2만 있습니다 — 계좌1은 고른 시점이 곧 계좌1식 기준입니다.</p>
+          )}
+          {view.checkpoints && (
+            <section aria-label="장중 확인(M8 — 서술)" className="mb-3">
+              <h3 className="mb-1 text-xs font-semibold text-text-2">장중 확인 — 이용·자료·응답(M8 — 서술, 판정 없음)</h3>
+              <ul className="flex flex-col gap-0.5 text-xs text-body">
+                {view.checkpoints.map((line) => <li key={line}>{line}</li>)}
+              </ul>
+            </section>
           )}
           <h3 className="mb-1 text-xs font-semibold text-text-2">시점마다의 반사실 — M2의 기준(판정 아님)</h3>
           <DataTable<ExecutionTimingRow>

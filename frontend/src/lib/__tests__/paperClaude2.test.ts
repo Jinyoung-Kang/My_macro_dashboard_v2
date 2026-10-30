@@ -10,13 +10,19 @@
  *    고른 시점(M1 — 주 판정) 두 줄(본 줄·대체 체결 따로)은 계좌2만 — 계좌1(서버 null)이면 없음
  *  - 노출 추이: 계좌2 순자산 기록이 오면 셋째 선(날짜 합집합, 없는 날은 그 선만 null), 안 오면 두 선 그대로
  *  - 결정 상세: 계좌2만 '계좌1과 같은 입력'·섹션 해시 칸, 지난 시각 거절 사유, 1분봉 기다림 메모
+ *  - 🧪 장중 확인(단계 2): 종류·상태·사유·자료 이름표('실시간' 낱말 없음), 오늘 장중 확인 줄(값 없음은 '—'), 확인 결정 상세(KEEP/REPLACE·예상
+ *    상태·재시도 없음), 아침 결정의 요청 한 줄, 체결 시점 실험의 M8(서버 수 그대로 — 판정 없음)
  */
 import { describe, expect, it } from "vitest";
 import {
   CLAUDE2_EXPOSURE_KEY,
   CLAUDE2_LIMITS,
   claude2BarsLine,
+  claude2CheckpointLine,
   claude2StartResultView,
+  checkpointFeedLabel,
+  checkpointReasonText,
+  checkpointStatusBadge,
   EXECUTION_CHOSEN_FALLBACK_LABEL,
   EXECUTION_CHOSEN_LABEL,
   EXECUTION_VERDICT_RULE,
@@ -28,6 +34,8 @@ import {
   decisionBookNote,
   decisionMeta,
   decisionRunBlocked,
+  decisionKindLabel,
+  decisionStatusBadge,
   executionAdvantageText,
   executionByOrder,
   executionSummaryView,
@@ -80,7 +88,9 @@ describe("시점 이름표·사다리·배지", () => {
     ]);
     expect(timingLabel("NEXT_CLOSE")).toBe("다음 종가");
     expect(timingLabel("NEXT_OBSERVATION")).toBe("다음 관측치");
-    expect(timingLabel("MARKET")).toBe("MARKET");
+    // 장중 시장가(단계 2 — 장중 확인 결정만 냄). 모르는 시점은 받은 글자 그대로.
+    expect(timingLabel("MARKET")).toBe("장중 시장가(확인 직후 첫 분)");
+    expect(timingLabel("AT_0930")).toBe("AT_0930");
   });
 
   it("사다리 칸 — R1·R2·대체 셋, 칸 없는 체결(스탑)은 '—'", () => {
@@ -243,8 +253,11 @@ describe("계좌2 출발 카드", () => {
     expect(claude2StartResultView({ ok: false, message: "창 밖입니다" })).toEqual({ tone: "warn", text: "창 밖입니다" });
   });
 
-  it("한계 문구 — 2·4번 대신의 두 줄과 슬리피지·판단 보류", () => {
-    expect(CLAUDE2_LIMITS).toHaveLength(4);
+  it("한계 문구 — 2·4번 대신의 두 줄과 슬리피지·판단 보류, 장중 확인(세션당 최대 한 번 — 지연 자료로 더 좋은 체결가를 얻을 수 없음)", () => {
+    expect(CLAUDE2_LIMITS).toHaveLength(5);
+    expect(CLAUDE2_LIMITS[4]).toContain("세션당 최대 한 번");
+    expect(CLAUDE2_LIMITS[4]).toContain("더 좋은 체결가를 얻을 수 있다는 뜻이 아닙니다");
+    expect(CLAUDE2_LIMITS[4]).not.toContain("실시간");
     expect(CLAUDE2_LIMITS[0]).toContain("1분봉 시가");
     expect(CLAUDE2_LIMITS[1]).toContain("앞으로 체결로 출발");
     expect(CLAUDE2_LIMITS[3]).toContain("판단 보류");
@@ -434,7 +447,160 @@ describe("결정 상세·검증·리스크·설정", () => {
       keys: [{ key: "claude2.enabled", type: "boolean", min: null, max: null, affectsRules: false, description: "계좌2", market: "US" }],
     });
     expect(groups.map((group) => [group.key, group.title])).toEqual([
-      ["claude2", "🧪 미국 Claude 계좌2 — 체결 시점 실험(켜기 · 결정 주기 호출 상한 · 1분봉 기다림 · 체결 기록, 규칙 계좌 영향 없음)"],
+      ["claude2", "🧪 미국 Claude 계좌2 — 체결 시점 실험(켜기 · 결정 주기 호출 상한 · 1분봉 기다림 · 체결 기록 · 장중 확인, 규칙 계좌 영향 없음)"],
     ]);
+  });
+});
+
+describe("🧪 장중 확인(단계 2)", () => {
+  const today = {
+    session: "2026-11-02", atEt: "10:30", atKst: "2026-11-03 00:30 KST", feed: "MINUTE", watch: ["AAPL", "MSFT"], status: "PLANNED",
+    reason: null, decisionId: null, calledAtKst: null,
+  };
+  const group = (checkpoint: Record<string, unknown> | undefined) =>
+    ({ ...STATUS.claude2, status: "ACTIVE", startedOn: "2026-11-02", checkpoint } as PaperStatusResponse["claude2"]);
+
+  it("결정 종류·상태 이름 — 장중 확인, 실패는 재시도 없음(정기 결정의 API 오류는 그대로)", () => {
+    expect(decisionKindLabel("CHECKPOINT")).toBe("장중 확인");
+    expect(decisionStatusBadge("API_ERROR", "CHECKPOINT").label).toBe("API 오류(재시도 없음)");
+    expect(decisionStatusBadge("API_ERROR", "SCHEDULED").label).toBe("API 오류");
+    expect(decisionStatusBadge("NO_TRADE", "CHECKPOINT").label).toBe("주문 없음");
+    expect(["PLANNED", "DONE", "EXPIRED", "SKIPPED", "ODD"].map((status) => checkpointStatusBadge(status).label))
+      .toEqual(["예정", "확인함", "놓침", "건너뜀", "ODD"]);
+  });
+
+  it("사유 코드는 한국어(코드는 괄호), 요청 무효는 서버 사유를 덧붙이고 부른 뒤 실패는 재시도 없음 — 모르면 받은 글자, 없으면 '—'", () => {
+    expect(checkpointReasonText("WINDOW_MISSED — 호출 창(+2~+20분)을 놓침(서버 꺼짐·늦게 켜짐)"))
+      .toBe("호출 창(확인 시각 +2~+20분)을 놓침 — 서버 꺼짐·늦게 켜짐 (WINDOW_MISSED)");
+    expect(checkpointReasonText("CHECKPOINT_INVALID — MINUTE인데 감시 목록이 비어 있음"))
+      .toBe("요청이 규칙에 맞지 않음(시각·감시 목록·자료): MINUTE인데 감시 목록이 비어 있음 (CHECKPOINT_INVALID)");
+    expect(checkpointReasonText("API_ERROR — 재시도 없음")).toBe("API 오류 — 재시도 없음 (API_ERROR)");
+    expect(checkpointReasonText("SUPERSEDED — 다음 결정이 대신함(장중 확인 요청 없음)")).toContain("(SUPERSEDED)");
+    expect(checkpointReasonText("NEW_CODE — 뭔가")).toBe("NEW_CODE — 뭔가");
+    expect(checkpointReasonText(null)).toBe("—");
+  });
+
+  it("자료 이름은 지연 자료임을 적고 '실시간'이라는 낱말을 쓰지 않는다", () => {
+    expect(checkpointFeedLabel("MINUTE")).toBe("감시 1분봉(5분 수집, 잰 지연)");
+    expect(checkpointFeedLabel("HOURLY")).toBe("전 종목 시간별(최대 60분 묵음)");
+    expect(checkpointFeedLabel(null)).toBe("—");
+    for (const feed of ["MINUTE", "HOURLY"]) expect(checkpointFeedLabel(feed)).not.toContain("실시간");
+  });
+
+  it("오늘 장중 확인 한 줄 — 예정·확인함·놓침·꺼짐·계획 없음, 정규장이면 감시 저장본, 모르는 값은 '—', 칸이 없는 백엔드면 줄 없음", () => {
+    expect(claude2CheckpointLine(group(undefined))).toBeNull();
+    expect(claude2CheckpointLine(null)).toBeNull();
+    expect(claude2CheckpointLine(group({ enabled: false, session: "2026-11-02", today: null, watch: null })))
+      .toBe("오늘 장중 확인(세션 2026-11-02): 꺼짐 — 설정 claude2.checkpoints");
+    expect(claude2CheckpointLine(group({ enabled: true, session: "2026-11-02", today: null, watch: null })))
+      .toBe("오늘 장중 확인(세션 2026-11-02): 계획 없음 — 아침 결정이 요청하지 않았습니다(세션당 최대 한 번)");
+    expect(claude2CheckpointLine(group({ enabled: true, session: "2026-11-02", today, watch: null })))
+      .toBe("오늘 장중 확인(세션 2026-11-02): 10:30 ET · 2026-11-03 00:30 KST · 감시 1분봉(5분 수집, 잰 지연) · 감시 AAPL, MSFT · 예정");
+    expect(claude2CheckpointLine(group({ enabled: false, session: "2026-11-02", today, watch: null })))
+      .toContain("예정 · 설정이 꺼져 있어 창이 끝나면 건너뜀");
+    const done = claude2CheckpointLine(group({
+      enabled: true, session: "2026-11-02", today: { ...today, status: "DONE", decisionId: 41, calledAtKst: "2026-11-03 00:33 KST" },
+      watch: { collectedAtKst: "2026-11-03 00:36 KST", ageSeconds: 240, lagSeconds: 80 },
+    }));
+    expect(done).toContain("확인함 · 확인 결정 #41 · 부른 시각 2026-11-03 00:33");
+    expect(done).toContain("감시 저장본 받은 시각 2026-11-03 00:36 · 4분 전 · 지연 1분 20초");
+    expect(claude2CheckpointLine(group({
+      enabled: true, session: "2026-11-02", today: { ...today, status: "EXPIRED", reason: "WINDOW_MISSED — 놓침", atKst: null, feed: "HOURLY", watch: [] },
+      watch: { collectedAtKst: null, ageSeconds: null, lagSeconds: null },
+    }))).toBe("오늘 장중 확인(세션 2026-11-02): 10:30 ET · — · 전 종목 시간별(최대 60분 묵음) · 놓침 — 호출 창(확인 시각 +2~+20분)을 놓침 — "
+      + "서버 꺼짐·늦게 켜짐 (WINDOW_MISSED) · 감시 저장본 받은 시각 — · — · 지연 —");
+  });
+
+  it("장중 확인 결정 상세 — KEEP/REPLACE·적용·대신한 주문·예상 상태·재시도 없음, 실패 응답은 재시도 없음 문구, 아침 결정은 요청 한 줄", () => {
+    const replace = claudeDecisionView({
+      book: "claude2", kind: "CHECKPOINT", status: "OK",
+      response: {
+        action: "REPLACE", summary: "AAPL 갭 메움", orders: [{ ticker: "AAPL", side: "SELL", sellFraction: 0.5, timing: "MARKET", executionNote: "갭 메움" }],
+        applied: true, supersededOrders: [7, 8],
+        checkpoint: { session: "2026-11-02", atEt: "10:30", feed: "MINUTE", sourceDecisionId: 40, lagSeconds: 75 },
+        expectedState: {
+          cash: 12000.5, nav: 100000, exposurePct: 88, positions: [],
+          assumedFills: [{ orderId: 5, ticker: "MSFT", side: "BUY", timing: "NEXT_OPEN", priceSource: "BARS" }],
+          unpriced: [6], note: "추정 — 기준 시각이 지난 대기 주문을 체결로 봄",
+        },
+      },
+    });
+    expect(replace.checkpoint).not.toBeNull();
+    expect(replace.checkpoint?.request).toBe("세션 2026-11-02 · 10:30 ET · 감시 1분봉(5분 수집, 잰 지연) · 지연 1분 15초");
+    expect(replace.checkpoint?.action?.label).toBe("대신함(REPLACE)");
+    expect(replace.checkpoint?.applied).toContain("적용함");
+    expect(replace.checkpoint?.superseded).toBe("2건(#7 · #8)");
+    expect(replace.checkpoint?.expected[0]).toContain("주식 노출 88.0%");
+    expect(replace.checkpoint?.expected[1]).toBe("체결로 본 대기 주문 1건 — MSFT 매수 다음 거래일 시가(BARS)");
+    expect(replace.checkpoint?.expected[2]).toBe("가격을 몰라 빼고 센 주문 #6");
+    expect(replace.checkpoint?.retry).toContain("재시도 없음");
+    expect(replace.orders.map((row) => row.timing)).toEqual(["장중 시장가(확인 직후 첫 분)"]);
+
+    const keep = claudeDecisionView({ book: "claude2", kind: "CHECKPOINT", status: "NO_TRADE", response: { action: "KEEP", orders: [], summary: "유지" } });
+    expect(keep.checkpoint?.action?.label).toBe("그대로 둠(KEEP)");
+    expect(keep.checkpoint?.applied).toBe("바꾼 것 없음");
+    expect(keep.checkpoint?.superseded).toBe("—");
+    expect(keep.checkpoint?.expected).toEqual([]);
+
+    const failed = claudeDecisionView({
+      book: "claude2", kind: "CHECKPOINT", status: "API_ERROR",
+      response: { summary: "API 오류 — 장중 확인 재시도 없음(아침 주문 그대로)", failure: { status: "API_ERROR" } },
+    });
+    expect(failed.hasResponse).toBe(false);
+    expect(failed.noResponse).toContain("장중 확인은 재시도하지 않습니다");
+    expect(failed.checkpoint?.action).toBeNull();
+
+    const morning = claudeDecisionView({
+      book: "claude2", kind: "SCHEDULED", status: "OK",
+      response: {
+        stance: "NEUTRAL", orders: [], summary: "유지",
+        checkpointPlan: { session: "2026-11-02", atEt: "10:30", feed: "MINUTE", watch: ["AAPL"], status: "PLANNED" },
+        checkpointVerdict: { accepted: true, reasons: [] },
+      },
+    });
+    expect(morning.checkpoint).toBeNull();
+    expect(morning.checkpointPlan).toBe("세션 2026-11-02 · 10:30 ET · 감시 1분봉(5분 수집, 잰 지연) · 감시 AAPL · 예정");
+    const invalid = claudeDecisionView({
+      book: "claude2", kind: "SCHEDULED", status: "OK",
+      response: {
+        stance: "NEUTRAL", orders: [],
+        checkpointPlan: { session: "2026-11-02", atEt: "15:30", feed: "MINUTE", watch: [], status: "SKIPPED", reason: "CHECKPOINT_INVALID — 마감 30분 전 뒤" },
+        checkpointVerdict: { accepted: false, reasons: ["마감 30분 전 뒤"] },
+      },
+    });
+    expect(invalid.checkpointPlan).toContain("건너뜀 — 요청이 규칙에 맞지 않음(시각·감시 목록·자료): 마감 30분 전 뒤 (CHECKPOINT_INVALID)");
+    expect(claudeDecisionView({ book: "claude2", response: { stance: "NEUTRAL", orders: [] } }).checkpointPlan).toBeNull();
+  });
+
+  it("체결 시점 실험의 M8 — 서버가 센 수·비율 그대로(비율 null은 '—'), 판정 문장 없음, 계좌1·칸 없는 백엔드는 null", () => {
+    expect(executionSummaryView(EXECUTION)?.checkpoints).toBeNull();
+    const view = executionSummaryView({
+      ...EXECUTION,
+      summary: {
+        ...EXECUTION.summary!,
+        checkpoints: {
+          definition: "M8", minRows: 5, rows: 4, planned: 1, finished: 3, called: 1, expired: 1, skipped: 1, calledPct: null,
+          feedMinute: 3, feedHourly: 1, minutePct: null, keep: 0, replace: 1, replacePct: null,
+        },
+      },
+    });
+    expect(view?.checkpoints).toEqual([
+      "장중 확인 4행 — 끝남 3(부름 1 · 놓침 1 · 건너뜀 1) · 예정 1 · 이용률(부름 ÷ 끝남) —",
+      "요청한 자료 — 감시 1분봉(5분 수집, 잰 지연) 3 · 전 종목 시간별(최대 60분 묵음) 1 · 1분봉 비율 —",
+      "부른 확인의 응답 — 그대로 둠(KEEP) 0 · 대신함(REPLACE) 1 · REPLACE 비율 —",
+      "서술 지표(M8)라 판정하지 않습니다 — 비율은 분모 5 이상부터, 대신한 주문과 취소된 원래 주문의 비교는 아직 없습니다.",
+    ]);
+    const enough = executionSummaryView({
+      ...EXECUTION,
+      summary: {
+        ...EXECUTION.summary!,
+        checkpoints: {
+          definition: "M8", minRows: 5, rows: 9, planned: 1, finished: 8, called: 5, expired: 2, skipped: 1, calledPct: 62.5,
+          feedMinute: 6, feedHourly: 3, minutePct: 66.67, keep: 2, replace: 3, replacePct: 60,
+        },
+      },
+    });
+    expect(enough?.checkpoints?.[0]).toContain("이용률(부름 ÷ 끝남) 62.5%");
+    expect(enough?.checkpoints?.[2]).toContain("REPLACE 비율 60.0%");
   });
 });

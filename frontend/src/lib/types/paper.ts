@@ -405,6 +405,44 @@ export interface PaperClaude2Status {
    * false, 저장본이 없어도 false). 이 칸을 보내지 않는 백엔드에서는 없습니다(모름 — 화면은 단추를 닫지 않음).
    */
   chainReady?: boolean;
+  /**
+   * 🧪 장중 확인(단계 2 — 계좌2 명세 §5-2). 서버는 늘 같은 모양으로 보냅니다(꺼져 있으면 enabled false). 이 칸을 보내지 않는 백엔드(단계 2 전)에서는
+   * 없습니다(화면은 줄을 그리지 않음).
+   */
+  checkpoint?: PaperClaude2CheckpointStatus | null;
+}
+
+/** 계좌2 장중 확인 행의 상태(paper_checkpoints, V18) — 예정·확인함·놓침·건너뜀. */
+export type PaperCheckpointStatus = "PLANNED" | "DONE" | "EXPIRED" | "SKIPPED";
+
+/** 장중 확인의 자료 — 감시 종목 1분봉(5분 수집, 잰 지연) 또는 전 종목 시간별 관측치(최대 60분 묵음). */
+export type PaperCheckpointFeed = "MINUTE" | "HOURLY";
+
+/** 상태 응답 claude2.checkpoint.today — 지금 진행 중이거나 다음인 세션의 장중 확인 행(시각은 ET·KST 글자 그대로). */
+export interface PaperClaude2CheckpointToday {
+  session: string;
+  atEt: string | null;
+  atKst: string | null;
+  feed: PaperCheckpointFeed | string | null;
+  watch: string[];
+  status: PaperCheckpointStatus | string;
+  /** 'CODE — 설명'(예정이면 null). */
+  reason: string | null;
+  /** 확인 결정(kind CHECKPOINT) 번호 — 부르기 전·놓침은 null. */
+  decisionId: number | null;
+  calledAtKst: string | null;
+}
+
+/** 상태 응답 claude2.checkpoint(계좌2 명세 §13-1 — 단계 2). */
+export interface PaperClaude2CheckpointStatus {
+  /** 설정 claude2.checkpoints. */
+  enabled: boolean;
+  /** 지금 진행 중이거나 다음인 미국 세션(아침 결정이 장중 확인을 계획하는 세션 E). */
+  session: string | null;
+  /** 그 세션의 장중 확인 행 — 계획이 없으면 null. */
+  today: PaperClaude2CheckpointToday | null;
+  /** 감시 저장본의 받은 시각·나이(초)·지연(초) — 정규장이고 저장본이 있을 때만, 그 밖은 null. */
+  watch: { collectedAtKst: string | null; ageSeconds: number | null; lagSeconds: number | null } | null;
 }
 
 /** 한국 수집 상태의 공통 칸 — 수집기 태스크·저장본 이름·저장본이 있나. */
@@ -860,6 +898,47 @@ export interface PaperExecutionChosenSummary extends PaperExecutionChosenLine {
   fallback: PaperExecutionChosenLine;
 }
 
+/** 실행 감사 응답의 장중 확인 한 줄(checkpoints[] — 계좌2만, 세션 최근 순 20개). */
+export interface PaperExecutionCheckpoint {
+  session: string;
+  atEt: string | null;
+  atKst: string | null;
+  feed: PaperCheckpointFeed | string | null;
+  watch: string[];
+  question: string | null;
+  status: PaperCheckpointStatus | string;
+  reason: string | null;
+  sourceDecisionId: number | null;
+  decisionId: number | null;
+  /** 확인 결정의 상태(OK·NO_TRADE·API_ERROR…) — 부르지 않았으면 null. */
+  decisionStatus: string | null;
+  /** KEEP·REPLACE — 실패 응답·부르지 않음은 null. */
+  action: "KEEP" | "REPLACE" | string | null;
+  /** 그 확인이 대신한 대기 주문 수(REPLACE) — 없으면 null. */
+  supersededOrders: number | null;
+  lagSeconds: number | null;
+  calledAtKst: string | null;
+}
+
+/** 장중 확인 요약(M8 — 서술, 판정 없음). 비율은 분모가 minRows보다 적으면 null(수는 그대로). */
+export interface PaperExecutionCheckpointSummary {
+  definition: string;
+  minRows: number;
+  rows: number;
+  planned: number;
+  finished: number;
+  called: number;
+  expired: number;
+  skipped: number;
+  calledPct: number | null;
+  feedMinute: number;
+  feedHourly: number;
+  minutePct: number | null;
+  keep: number;
+  replace: number;
+  replacePct: number | null;
+}
+
 /** GET /api/paper/books/{code}/execution — 🧪 실행 감사(미국 Claude 계좌만, ADR 0022). */
 export interface PaperExecutionResponse {
   available: boolean;
@@ -880,7 +959,11 @@ export interface PaperExecutionResponse {
     /** 고른 시점(M1 — 주 판정) — 계좌2만, 계좌1은 null. */
     chosen: PaperExecutionChosenSummary | null;
     timings: PaperExecutionTimingSummary[];
+    /** 장중 확인(M8 — 단계 2) — 계좌2만, 계좌1은 null. 이 칸을 보내지 않는 백엔드에서는 없습니다. */
+    checkpoints?: PaperExecutionCheckpointSummary | null;
   } | null;
+  /** 장중 확인 기록(단계 2) — 계좌2만, 계좌1은 []. 이 칸을 보내지 않는 백엔드에서는 없습니다. */
+  checkpoints?: PaperExecutionCheckpoint[];
 }
 
 /**
@@ -1177,7 +1260,8 @@ export interface PaperRerankResult {
 // ---------------------------------------------------------------- 결정 기록(paper_decisions)
 
 /** 결정 종류 — 정기(거래일마다) · 수동(버튼) · 재선정일(분기 13F 공시 기한 다음 거래일) · 초기 결정(출발일). */
-export type PaperDecisionKind = "SCHEDULED" | "MANUAL" | "REBALANCE" | "INITIAL";
+/** 결정 종류 — CHECKPOINT는 🧪 계좌2 장중 확인 결정(단계 2 — 세션당 한 번, 재시도 없음). */
+export type PaperDecisionKind = "SCHEDULED" | "MANUAL" | "REBALANCE" | "INITIAL" | "CHECKPOINT";
 
 /**
  * 결정 상태. 규칙 책은 OK(주문 있음)·NO_TRADE(주문 없음)·SKIPPED(일시정지 중이라 주문을 내지 않음)를 씁니다. 나머지는
@@ -1263,7 +1347,8 @@ export interface PaperClaudeOrder {
   targetWeightPct?: number | null;
   sellFraction?: number | null;
   /** 계좌1 NEXT_OBSERVATION·NEXT_CLOSE, 계좌2(claude2-decision.schema.json) 메뉴 여덟(NEXT_OPEN·AT_1000~AT_1500·NEXT_CLOSE). */
-  timing: "NEXT_OBSERVATION" | "NEXT_CLOSE" | "NEXT_OPEN" | PaperTimedTiming | string;
+  /** MARKET은 🧪 계좌2 장중 확인 결정만 내는 장중 시장가(기준 시각 = 생성 + 60초 뒤 첫 분). */
+  timing: "NEXT_OBSERVATION" | "NEXT_CLOSE" | "NEXT_OPEN" | PaperTimedTiming | "MARKET" | string;
   thesis: string;
   labels: (PaperClaudeLabel | string)[];
   invalidation: string;

@@ -17,6 +17,9 @@ import { KrDecisionExtrasParts, KrEventsPart } from "./KrRuleDecisionBody";
  *
  * 한국 Claude 계좌(kr_claude)는 `kr`를 넘깁니다 — 기한 지남(건너뜀)·출발(설정 출발일·미룸·출발 호출 수)·자료 게이트 표를 맨 위에, 패킷의 사건
  * 줄(11b_events)을 관찰 목록 뒤에 더하고, 검증 설명에 한국 사유를 적습니다.
+ *
+ * 🧪 미국 계좌2 장중 확인 결정(kind CHECKPOINT — 단계 2)은 맨 위에 '장중 확인'(요청·KEEP/REPLACE·적용·대신한 대기 주문·예상 상태·재시도 없음)을 두고
+ * 판단 칸의 자세·목표 노출·확신도는 그리지 않습니다(확인 응답에 없는 칸). 아침 결정이 장중 확인을 요청했으면 판단 칸에 그 요청 한 줄.
  */
 export function ClaudeDecisionBody({
   view,
@@ -29,10 +32,33 @@ export function ClaudeDecisionBody({
   return (
     <div className="flex flex-col gap-4">
       {kr && <KrDecisionExtrasParts extras={kr.extras} />}
+      {view.checkpoint && (
+        <Part
+          title="장중 확인"
+          note="세션당 한 번 부른 장중 확인입니다. REPLACE는 기준 시각이 아직 오지 않은 대기 주문만 대신하고, 기준 시각이 지난 주문은 자료로 체결합니다. 예상 상태는 그 주문들을 체결로 본 추정입니다."
+        >
+          <dl className="flex flex-col gap-1 text-xs">
+            <MetaRow label="요청">{view.checkpoint.request}</MetaRow>
+            <MetaRow label="응답">
+              {view.checkpoint.action ? <Badges badges={[view.checkpoint.action]} /> : <span className="text-muted">{EMPTY}</span>}
+            </MetaRow>
+            <MetaRow label="적용">{view.checkpoint.applied}</MetaRow>
+            <MetaRow label="대신한 대기 주문">{view.checkpoint.superseded}</MetaRow>
+            <MetaRow label="예상 상태(추정)">
+              {view.checkpoint.expected.length > 0 ? (
+                <ul className="flex flex-col gap-0.5">
+                  {view.checkpoint.expected.map((line) => <li key={line}>{line}</li>)}
+                </ul>
+              ) : EMPTY}
+            </MetaRow>
+          </dl>
+          <p className="text-[11px] leading-relaxed text-muted">{view.checkpoint.retry}</p>
+        </Part>
+      )}
       <Part title="판단" note="목표 주식 노출은 Claude가 정한 값이고 기록·표시용입니다 — 집행은 아래 주문(검증 통과분) 기준입니다.">
         {view.hasResponse ? (
           <>
-            <dl className="flex flex-wrap items-end gap-x-5 gap-y-1 text-xs">
+            {!view.checkpoint && <dl className="flex flex-wrap items-end gap-x-5 gap-y-1 text-xs">
               <div>
                 <dt className="text-muted">자세</dt>
                 <dd>{view.stance ? <Badges badges={[view.stance]} /> : <span className="text-muted">{EMPTY}</span>}</dd>
@@ -48,11 +74,12 @@ export function ClaudeDecisionBody({
                 <dt className="text-muted">확신도</dt>
                 <dd className="tabular-nums font-semibold text-bright">{view.confidence}</dd>
               </div>
-            </dl>
+            </dl>}
             {view.mismatch && <p className="text-[11px] leading-relaxed text-warn">{view.mismatch.title}</p>}
             <Text label="요약" value={view.summary} />
             <Text label="노출 근거" value={view.exposureRationale} />
             {view.noTradeReason && <Text label="주문 없음 사유" value={view.noTradeReason} />}
+            {view.checkpointPlan && <Text label="장중 확인 요청" value={view.checkpointPlan} />}
             {view.skipped && <p className="text-[11px] leading-relaxed text-warn">{view.skipped}</p>}
           </>
         ) : (
@@ -152,6 +179,16 @@ export function ClaudeDecisionBody({
           </dl>
         </Part>
       )}
+    </div>
+  );
+}
+
+/** 이름 붙은 한 줄(장중 확인 칸). */
+function MetaRow({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <div className="flex flex-wrap gap-x-2">
+      <dt className="min-w-[7rem] text-muted">{label}</dt>
+      <dd className="min-w-0 flex-1 leading-relaxed text-body">{children}</dd>
     </div>
   );
 }

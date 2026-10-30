@@ -7,6 +7,8 @@
  *    그 위에 고른 시점(M1 — 주 판정) 표 — 계좌2만(본 줄·대체 체결 따로), 계좌1이면 표 대신 '계좌2만' 한 줄, 사전 등록 문턱은 설명으로만
  *    S = 100 같은 구간(출발 전이면 그리지 않는다고), 한계 문구 아래 계좌2의 한계
  *  - 보유·체결: 계좌2 주문 표에 목표 시각·계좌1식 대비·실행 메모, 체결 표에 체결 봉·사다리·계좌1식 대비·대체 체결 배지 — 계좌1 표는 칸이 그대로
+ *  - 🧪 장중 확인(단계 2): 개요·출발 카드·결정 로그의 '오늘 장중 확인' 한 줄(칸이 없는 백엔드면 없음), 결정 로그의 종류 '장중 확인'·실패는 재시도
+ *    없음, REPLACE 상세(응답·대신한 주문·예상 상태), 주문 표의 MARKET(장중 시장가 — 목표 시각은 실행 감사 값)
  */
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -388,8 +390,9 @@ describe("개요 — 체결 시점 실험·S = 100·한계", () => {
     expect(await screen.findByText(/아직 계좌2가 출발하지 않았습니다 — 출발 전 구간은 계좌2 값이 없어/)).toBeTruthy();
     expect(screen.queryByRole("list", { name: "차트 S = 100 같은 구간" })).toBeNull();
     const limits = screen.getByRole("region", { name: "Claude 계좌2의 한계" });
-    expect(within(limits).getAllByRole("listitem")).toHaveLength(4);
+    expect(within(limits).getAllByRole("listitem")).toHaveLength(5);
     expect(within(limits).getByText(/위 2번\(최대 1시간 묵은 지연 시세\) 대신/)).toBeTruthy();
+    expect(within(limits).getByText(/장중 확인은 세션당 최대 한 번/)).toBeTruthy();
     // 순자산 곡선의 계좌2 색(검증한 자주색).
     const nav = screen.getByRole("list", { name: "차트 순자산 곡선" });
     expect(within(nav).getByText("Claude 계좌2").getAttribute("data-color")).toBe("#a438a0");
@@ -595,3 +598,130 @@ describe("보유·체결 — 계좌2 칸", () => {
     expect(api.apiGetShared.mock.calls.map(([path]) => path)).not.toContain("/api/paper/books/claude/execution?limit=50");
   });
 });
+
+describe("🧪 장중 확인(단계 2) — 오늘 장중 확인 줄·결정 로그·주문 표", () => {
+  const TODAY = {
+    session: "2026-11-02", atEt: "10:30", atKst: "2026-11-03 00:30 KST", feed: "MINUTE", watch: ["AAPL"], status: "PLANNED",
+    reason: null, decisionId: null, calledAtKst: null,
+  };
+  /** 출발한 계좌2 상태 + 장중 확인 묶음. */
+  function checkpointStatus(checkpoint: Record<string, unknown>) {
+    const base = status(true);
+    return { ...base, claude2: { ...base.claude2, status: "ACTIVE", startedOn: "2026-11-02", bars: null, checkpoint } };
+  }
+  function listRow(id: number, kind: string, statusCode: string, summary: string) {
+    return {
+      id, book: "claude2", asOfTradingDate: "2026-10-30", kind, status: statusCode, decidedAtKst: "2026-11-03 00:33",
+      model: "claude-sonnet-5-5", frameworkVersion: 4, settingsVersion: 9, selectionAsOf: null, targetExposurePct: null, summary,
+      orderCount: kind === "CHECKPOINT" && statusCode === "OK" ? 1 : 0, rejectedCount: 0, pricesFinal: false, error: null,
+    };
+  }
+
+  it("개요 '장부 관측치' 카드에 오늘 장중 확인 한 줄 — 놓침이면 사유를 한국어로(코드는 괄호)", async () => {
+    reads["/api/paper/overview"] = () => Promise.resolve(overview(CLAUDE2_ACTIVE));
+    reads["/api/paper/status"] = () => Promise.resolve(checkpointStatus({
+      enabled: true, session: "2026-11-02", watch: null,
+      today: { ...TODAY, status: "EXPIRED", reason: "WINDOW_MISSED — 호출 창(+2~+20분)을 놓침(서버 꺼짐·늦게 켜짐)" },
+    }));
+    render(<PaperPage />);
+
+    const line = await screen.findByLabelText("오늘 장중 확인");
+    expect(line.textContent).toBe("오늘 장중 확인(세션 2026-11-02): 10:30 ET · 2026-11-03 00:30 KST · 감시 1분봉(5분 수집, 잰 지연) · 감시 AAPL · "
+      + "놓침 — 호출 창(확인 시각 +2~+20분)을 놓침 — 서버 꺼짐·늦게 켜짐 (WINDOW_MISSED)");
+    const card = screen.getByRole("heading", { name: "장부 관측치" }).closest("section") as HTMLElement;
+    expect(card.contains(line)).toBe(true);
+    expect(line.textContent).not.toContain("실시간");
+  });
+
+  it("출발 카드(시작 전)에는 꺼짐 한 줄 — 상태 응답에 칸이 없는 백엔드면 줄이 없다", async () => {
+    reads["/api/paper/overview"] = () => Promise.resolve(overview(CLAUDE2_NOT_STARTED));
+    const base = status(false);
+    reads["/api/paper/status"] = () => Promise.resolve({
+      ...base, claude2: { ...base.claude2, checkpoint: { enabled: false, session: "2026-11-02", today: null, watch: null } },
+    });
+    render(<PaperPage />);
+    expect((await screen.findByLabelText("오늘 장중 확인")).textContent).toBe("오늘 장중 확인(세션 2026-11-02): 꺼짐 — 설정 claude2.checkpoints");
+    cleanup();
+
+    reads["/api/paper/status"] = () => Promise.resolve(status(false));
+    render(<PaperPage />);
+    expect(await screen.findByText(/설정 claude2\.enabled가 꺼져 있습니다/)).toBeTruthy();
+    expect(screen.queryByLabelText("오늘 장중 확인")).toBeNull();
+  });
+
+  it("결정 로그(계좌2) — 예정 줄, 장중 확인 결정은 종류 '장중 확인'·실패는 재시도 없음, REPLACE 상세는 응답·대신한 주문·예상 상태", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-10-30T11:00:00Z"));
+    try {
+      reads["/api/paper/overview"] = () => Promise.resolve(overview(CLAUDE2_ACTIVE));
+      reads["/api/paper/decisions?book=rules"] = () => Promise.resolve({ available: true, decisions: [] });
+      reads["/api/paper/decisions?book=claude2"] = () => Promise.resolve({
+        available: true,
+        decisions: [listRow(52, "CHECKPOINT", "OK", "AAPL 갭 메움 — 대신함"), listRow(51, "CHECKPOINT", "API_ERROR", "API 오류 — 장중 확인 재시도 없음")],
+      });
+      reads["/api/paper/decisions/52"] = () => Promise.resolve({
+        available: true, orders: [],
+        decision: {
+          ...listRow(52, "CHECKPOINT", "OK", "AAPL 갭 메움 — 대신함"), packet: null, packetHash: null, usage: null, noteIds: null, latencyMs: 9000,
+          retryCount: 0,
+          response: {
+            kind: "CHECKPOINT", action: "REPLACE", summary: "AAPL 갭 메움", applied: true, supersededOrders: [7, 8],
+            orders: [{ ticker: "AAPL", side: "SELL", sellFraction: 0.5, timing: "MARKET", executionNote: "갭 메움", thesis: "근거", labels: [], invalidation: "조건" }],
+            validation: [],
+            checkpoint: { session: "2026-11-02", atEt: "10:30", feed: "MINUTE", sourceDecisionId: 40, lagSeconds: 75 },
+            expectedState: { cash: 12000, nav: 100000, exposurePct: 88, positions: [], assumedFills: [], unpriced: [], note: "추정 — 기준 시각이 지난 대기 주문을 체결로 봄" },
+          },
+        },
+      });
+      reads["/api/paper/status"] = () => Promise.resolve(checkpointStatus({ enabled: true, session: "2026-11-02", today: TODAY, watch: null }));
+      render(<PaperPage initialTab="decisions" />);
+
+      fireEvent.change(await screen.findByLabelText("계좌 고르기"), { target: { value: "claude2" } });
+      expect((await screen.findByLabelText("오늘 장중 확인")).textContent).toContain("예정");
+      // 두 줄 모두 이름이 '기준일 종류'(2026-10-30 장중 확인)라 요약 글로 고릅니다.
+      await screen.findAllByRole("row", { name: "2026-10-30 장중 확인" });
+      const byText = (text: string) => screen.getAllByRole("row").find((tr) => tr.textContent?.includes(text)) as HTMLElement;
+      expect(within(byText("API 오류 — 장중 확인 재시도 없음")).getByText("API 오류(재시도 없음)")).toBeTruthy();
+
+      const row = byText("AAPL 갭 메움 — 대신함");
+      expect(within(row).getByText("장중 확인")).toBeTruthy();
+      fireEvent.click(within(row).getByRole("button", { name: "상세 펼치기" }));
+      const part = await screen.findByRole("region", { name: "장중 확인" });
+      expect(within(part).getByText("대신함(REPLACE)")).toBeTruthy();
+      expect(within(part).getByText("2건(#7 · #8)")).toBeTruthy();
+      expect(within(part).getByText("세션 2026-11-02 · 10:30 ET · 감시 1분봉(5분 수집, 잰 지연) · 지연 1분 15초")).toBeTruthy();
+      expect(within(part).getByText("추정 — 기준 시각이 지난 대기 주문을 체결로 봄")).toBeTruthy();
+      expect(within(part).getByText(/재시도 없음/)).toBeTruthy();
+      expect(within(screen.getByRole("region", { name: "제안 주문 (모델 응답)" })).getByText("장중 시장가(확인 직후 첫 분)")).toBeTruthy();
+      expect(within(screen.getByRole("region", { name: "판단" })).queryByText("목표 주식 노출")).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("주문 표의 MARKET 행 — 체결 시점은 '장중 시장가', 목표 시각은 실행 감사의 기준 시각(생성 + 60초 뒤 첫 분), 두 줄 칸 한 줄씩", async () => {
+    reads["/api/paper/overview"] = () => Promise.resolve(overview(CLAUDE2_ACTIVE));
+    reads["/api/paper/books/claude2/positions"] = () => Promise.resolve({ available: true, book: CLAUDE2_ACTIVE, cash: 92000, lockouts: [], positions: [] });
+    reads["/api/paper/books/claude2/orders"] = () => Promise.resolve({ available: true, orders: [{
+      id: 91, ticker: "AAPL", side: "SELL", qty: null, targetWeightPct: null, sellFraction: 0.5, timing: "MARKET", source: "CLAUDE",
+      status: "PENDING", rejectReason: null, reason: { thesis: "근거", labels: [], invalidation: "조건", executionNote: "갭 메움" },
+      asOfTradingDate: "2026-10-30", createdAtKst: "2026-11-03 00:33", expiresOn: "2026-11-02", filledAtKst: null,
+    }] });
+    reads["/api/paper/books/claude2/fills"] = () => Promise.resolve({ available: true, fills: [] });
+    reads["/api/paper/books/claude2/execution"] = () => Promise.resolve(execution("claude2", [], [{
+      orderId: 91, decisionId: 52, ticker: "AAPL", side: "SELL", status: "PENDING", timing: "MARKET", asOfTradingDate: "2026-10-30",
+      targetSession: "2026-11-02", targetAtKst: "2026-11-03 00:35", createdAtKst: "2026-11-03 00:33", fill: null,
+      cf: {}, advantageBp: {}, lagSeconds: null, lateResolved: null, executionNote: "갭 메움", auditedAtKst: null,
+    }]));
+    render(<PaperPage initialTab="holdings" />);
+    fireEvent.change(await screen.findByLabelText("계좌 고르기"), { target: { value: "claude2" } });
+
+    const orders = await screen.findByRole("table", { name: "주문" });
+    await waitFor(() => expect(within(orders).getByText("목표 2026-11-03 00:35")).toBeTruthy());
+    const label = within(orders).getByText("장중 시장가(확인 직후 첫 분)");
+    const cell = label.closest("td") as HTMLElement;
+    expect(cell.className).toContain("whitespace-nowrap");
+    expect(cell.contains(within(orders).getByText("목표 2026-11-03 00:35"))).toBe(true);
+  });
+});
+

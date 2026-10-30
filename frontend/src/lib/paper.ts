@@ -465,7 +465,10 @@ export const ACCOUNT_PROFILES: Readonly<Record<string, AccountProfile>> = {
         text: "미국 장 마감 뒤 하루 한 번, 계좌1과 같은 결정 실행에서 계좌1 바로 뒤에 Claude를 부릅니다. 계좌1이 그 실행에서 읽은 시장 입력을 "
           + "그대로 쓰고(입력 동결 — 매크로·FRED·레짐·게이트·트랙레코드·기관 프로필·메모 일곱 섹션은 바이트까지 같음), 같은 프레임 판으로 "
           + "판단합니다. 패킷에는 자기 보유·결정과 체결 시점 메뉴·자기 체결 기록(13_execution)이 더해지고, 계좌1의 결정·주문은 넣지 않습니다"
-          + "(독립 판단). 장중에는 결정하지 않습니다.",
+          + "(독립 판단). 장중에는 결정하지 않습니다 — 설정 claude2.checkpoints를 켜면 아침 결정이 다음 세션의 장중 확인 한 번(10:00~15:00 ET "
+          + "30분 단위 시각과 자료 — 감시 종목 1분봉 또는 전 종목 시간별 관측치)을 요청할 수 있고, 그 확인은 그대로 두거나(KEEP) 기준 시각이 아직 "
+          + "오지 않은 대기 주문만 새 주문(장중 시장가 포함)으로 대신합니다(REPLACE). 장중 확인은 세션당 최대 한 번이고 놓치거나 실패해도 다시 "
+          + "부르지 않습니다.",
       },
       {
         key: "buy",
@@ -510,6 +513,7 @@ export const ACCOUNT_PROFILES: Readonly<Record<string, AccountProfile>> = {
       { key: "claude2.maxCallsPerCycle", label: "결정 주기 호출 상한", unit: "회" },
       { key: "claude2.barsWaitMinutes", label: "1분봉 기다림 상한", unit: "분" },
       { key: "claude2.executionRecord", label: "패킷에 자기 체결 기록" },
+      { key: "claude2.checkpoints", label: "장중 확인(세션당 최대 한 번)" },
       { key: "model", label: "모델" },
       { key: "decisionTimeKst", label: "결정 시각(KST, 계좌1과 같음)" },
       { key: "apiScheduledReserve", label: "정기 작업 몫 예약", unit: "회" },
@@ -531,7 +535,8 @@ export const ACCOUNT_PROFILES: Readonly<Record<string, AccountProfile>> = {
       + "결정합니다. 1분봉 기다림이 풀리지 않았으면 다음 주기로 미루고, 목표 세션 09:00 ET(개장 전 컷오프)를 넘기면 그 세션 결정은 '건너뜀'입니다"
       + "(계좌1은 그대로 진행). 결정 주기마다 호출 상한(설정 claude2.maxCallsPerCycle)이 따로 있고, API 오류는 같은 기준 거래일에 한 번 다시 "
       + "시도합니다. 통과 주문은 다음 세션 하루짜리 대기 주문이고, 새 결정이 남은 대기 주문을 모두 대신합니다. '지금 결정 실행'은 확정 종가 "
-      + "처리 뒤 ~ 다음 세션 09:00 ET 전에만 됩니다(정규장 중·창 밖은 서버가 거절 — 기록 없음).",
+      + "처리 뒤 ~ 다음 세션 09:00 ET 전에만 됩니다(정규장 중·창 밖은 서버가 거절 — 기록 없음). 장중 확인(설정 claude2.checkpoints — 종류 "
+      + "'장중 확인')은 정기 작업만 부르고 수동 실행이 없으며, 같은 결정 주기 호출 상한에 셉니다.",
   },
   bench_spy: {
     summary: "출발일에 SPY 100%를 사서 그대로 드는 시장 기준선",
@@ -1155,6 +1160,8 @@ const TIMING: Record<string, string> = {
   AT_1300: "다음 거래일 13:00 ET",
   AT_1400: "다음 거래일 14:00 ET",
   AT_1500: "다음 거래일 15:00 ET",
+  // 🧪 계좌2 장중 확인 결정만 내는 장중 시장가(단계 2) — 기준 시각 = 주문 생성 + 60초 뒤 첫 분, 그 1분봉 시가부터 사다리.
+  MARKET: "장중 시장가(확인 직후 첫 분)",
 };
 const SOURCE: Record<string, string> = {
   RULE: "규칙",
@@ -1899,6 +1906,8 @@ const DECISION_KIND: Record<string, string> = {
   MANUAL: "수동",
   REBALANCE: "재선정일",
   INITIAL: "초기 결정",
+  // 🧪 계좌2 장중 확인 결정(단계 2) — 세션당 한 번, 재시도 없음.
+  CHECKPOINT: "장중 확인",
 };
 
 /** 결정 종류 이름. 모르는 값은 받은 글자 그대로. */
@@ -1913,10 +1922,15 @@ const DECISION_STATUS: Record<string, { label: string; tone: BadgeTone }> = {
   SKIPPED: { label: "건너뜀", tone: "muted" },
 };
 
-/** 결정 상태 배지. 모르는 상태는 받은 글자 그대로(지어내지 않음). */
-export function decisionStatusBadge(status: string | null | undefined): Badge {
+/**
+ * 결정 상태 배지. 모르는 상태는 받은 글자 그대로(지어내지 않음). 🧪 장중 확인 결정(kind CHECKPOINT)의 실패(형식 오류·거절·API 오류)는 '(재시도 없음)'을
+ * 붙입니다 — 정기·출발 결정의 API 오류는 한 번 다시 부르지만 장중 확인은 세션당 한 번이라 다시 부르지 않습니다.
+ */
+export function decisionStatusBadge(status: string | null | undefined, kind?: string | null): Badge {
   const known = status ? DECISION_STATUS[status] : undefined;
-  return { key: status ?? "unknown", label: known?.label ?? status ?? EMPTY, className: TONE[known?.tone ?? "muted"] };
+  const label = known?.label ?? status ?? EMPTY;
+  const noRetry = kind === "CHECKPOINT" && status !== null && status !== undefined && CLAUDE_FAILED_STATUSES.includes(status);
+  return { key: status ?? "unknown", label: noRetry ? `${label}(재시도 없음)` : label, className: TONE[known?.tone ?? "muted"] };
 }
 
 /** 주문 칸 — "3건", 거절이 있으면 "3건 · 거절 1". 모르면 "—". */
@@ -2848,6 +2862,25 @@ export interface ClaudeDecisionView {
   watchlist: WatchRow[];
   /** 모델·토큰 사용량 칸(있는 값만). */
   usage: DecisionMetaCell[];
+  /** 🧪 장중 확인 결정(kind CHECKPOINT — 단계 2)이면 그 요청·응답(KEEP/REPLACE)·대신한 주문·예상 상태, 아니면 null. */
+  checkpoint: CheckpointDecisionView | null;
+  /** 🧪 아침 결정이 다음 세션 장중 확인을 요청했으면(응답 checkpointPlan — 단계 2) 그 한 줄, 아니면 null. */
+  checkpointPlan: string | null;
+}
+
+/** 장중 확인 결정의 본문(표시 문자열 — 서버 값 그대로, 화면은 계산하지 않음). */
+export interface CheckpointDecisionView {
+  /** "세션 2026-11-02 · 10:30 ET · 감시 1분봉(5분 수집, 잰 지연) · 지연 1분 15초". */
+  request: string;
+  /** 유지(KEEP)·대신함(REPLACE) — 응답이 없으면 null. */
+  action: Badge | null;
+  /** 적용 — 적용함·적용하지 않은 까닭(서버 문구)·바꾼 것 없음, 모르면 "—". */
+  applied: string;
+  /** 대신한 대기 주문(⑩ — 기준 시각이 아직 오지 않은 것만). */
+  superseded: string;
+  /** 예상 상태(§10-6 — 기준 시각이 지난 대기 주문을 체결로 본 추정) 줄들. 없으면 빈 목록. */
+  expected: string[];
+  retry: string;
 }
 
 /** Claude 결정 화면의 입력 — 결정 기록 상세(PaperDecisionDetail) 또는 미리보기 응답(PaperClaudePreviewResult)에서 고른 값. */
@@ -2855,6 +2888,8 @@ export interface ClaudeDecisionSource {
   book?: string | null;
   /** 결정 상태(OK·NO_TRADE·REFUSED·FORMAT_ERROR·API_ERROR·SKIPPED) — 응답이 없을 때 무엇을 적을지 고릅니다. 모르면 없음. */
   status?: string | null;
+  /** 결정 종류 — CHECKPOINT(🧪 계좌2 장중 확인)이면 확인 본문을 그립니다. 모르면 응답의 kind로 봅니다. */
+  kind?: string | null;
   response: unknown;
   /** 검증 결과를 응답 밖에 따로 보내면(미리보기) 그것, 아니면 response.validation. */
   validation?: unknown;
@@ -2882,7 +2917,10 @@ const CLAUDE_FAILED_STATUSES = ["REFUSED", "FORMAT_ERROR", "API_ERROR"];
  * 응답이 없을 때의 한 줄. 건너뛴 기록(SKIPPED — 호출 상한·일시정지)은 Claude를 부르지 않았으니 서버가 남긴 사유를, 형식 오류·거절·API
  * 오류는 상태와 오류를 보라고 적습니다. 상태를 모르면(옛 기록·미리보기 성공 모양) 어느 쪽이라고 단정하지 않습니다.
  */
-function claudeNoResponseText(status: string | null, skipped: string | null, skippedKey: boolean): string {
+function claudeNoResponseText(status: string | null, skipped: string | null, skippedKey: boolean, checkpoint = false): string {
+  if (checkpoint && status !== null && CLAUDE_FAILED_STATUSES.includes(status)) {
+    return "검사한 모델 응답이 없습니다 — 장중 확인은 재시도하지 않습니다(세션당 한 번 — 아침 결정의 주문 그대로, 상태와 오류를 보세요).";
+  }
   // 상태를 모를 때는 건너뛴 기록만 남기는 키(response.skipped)로만 알아봅니다 — summary는 모델 응답에도 있는 키입니다.
   if (status === "SKIPPED" || (status === null && skippedKey)) {
     return skipped ? `Claude를 부르지 않음 — ${skipped}` : "Claude를 부르지 않음 — 서버가 사유를 남기지 않았습니다.";
@@ -2915,6 +2953,7 @@ export function claudeDecisionView(source: ClaudeDecisionSource): ClaudeDecision
   const skippedKey = textOf(record?.skipped);
   const skipped = skippedKey ?? (hasResponse ? null : textOf(record?.summary));
   const status = textOf(source.status);
+  const checkpointKind = (textOf(source.kind) ?? textOf(record?.kind)) === "CHECKPOINT";
 
   const orders: ClaudeOrderRow[] = listOf(record?.orders).filter(isRecord).flatMap((order, index) => {
     const ticker = textOf(order.ticker);
@@ -2988,7 +3027,7 @@ export function claudeDecisionView(source: ClaudeDecisionSource): ClaudeDecision
   return {
     recognized,
     hasResponse,
-    noResponse: hasResponse ? null : claudeNoResponseText(status, skipped, skippedKey !== null),
+    noResponse: hasResponse ? null : claudeNoResponseText(status, skipped, skippedKey !== null, checkpointKind),
     skipped,
     stance: stanceBadge(record?.stance),
     targetExposure: formatWithUnit(target, 1, "%"),
@@ -3007,6 +3046,8 @@ export function claudeDecisionView(source: ClaudeDecisionSource): ClaudeDecision
     validation,
     watchlist,
     usage: usageCells,
+    checkpoint: checkpointKind ? checkpointDecisionView(record) : null,
+    checkpointPlan: checkpointPlanText(record?.checkpointPlan, record?.checkpointVerdict),
   };
 }
 
@@ -3202,6 +3243,171 @@ export function claude2BarsLine(group: PaperClaude2Status | null | undefined, la
   return `${head}: 받은 시각 ${formatKst(bars.collectedAtKst)} · ${formatAge(bars.ageSeconds)} · 지연 ${lag}(SPY 마지막 봉 끝 → 받은 시각)`;
 }
 
+// ---------------------------------------------------------------- 🧪 계좌2 장중 확인(단계 2 — 계좌2 명세 §5-2·§13-3)
+
+const CHECKPOINT_STATUS: Record<string, { label: string; tone: BadgeTone }> = {
+  PLANNED: { label: "예정", tone: "info" },
+  DONE: { label: "확인함", tone: "ok" },
+  EXPIRED: { label: "놓침", tone: "warn" },
+  SKIPPED: { label: "건너뜀", tone: "muted" },
+};
+
+/** 장중 확인 상태 배지(예정·확인함·놓침·건너뜀). 모르는 값은 받은 글자 그대로. */
+export function checkpointStatusBadge(status: string | null | undefined): Badge {
+  const known = status ? CHECKPOINT_STATUS[status] : undefined;
+  return { key: status ?? "unknown", label: known?.label ?? status ?? EMPTY, className: TONE[known?.tone ?? "muted"] };
+}
+
+/** 장중 확인 상태 이름. 모르는 값은 받은 글자 그대로. */
+export const checkpointStatusLabel = (status: string | null | undefined) => checkpointStatusBadge(status).label;
+
+/** 장중 확인 행의 사유 코드(서버 'CODE — 설명'의 앞부분 — PaperCheckpointJob·ClaudeBookService) → 한국어. */
+const CHECKPOINT_REASON: Record<string, string> = {
+  WINDOW_MISSED: "호출 창(확인 시각 +2~+20분)을 놓침 — 서버 꺼짐·늦게 켜짐",
+  STALE_SESSION: "지난 세션의 계획 — 그 세션에 부르지 못함",
+  NO_WATCH_SNAPSHOT: "확인 시각 뒤에 받은 감시 1분봉이 창 끝까지 없음",
+  NO_FRESH_QUOTES: "그 세션의 시간별 관측치가 창 끝까지 없음",
+  CYCLE_CAP: "결정 주기 호출 상한(claude2.maxCallsPerCycle)에 닿음",
+  CALL_CAP: "하루 호출 상한에 닿음",
+  CHECKPOINT_INVALID: "요청이 규칙에 맞지 않음(시각·감시 목록·자료)",
+  LATE_CHECKPOINT: "확인 시각이 그 세션 마감 30분 전보다 늦음",
+  NO_SESSION_BARS: "그 세션의 봉이 없음(임시 휴장)",
+  BOOK_NOT_ACTIVE: "계좌2가 운용 중이 아님",
+  CHECKPOINTS_OFF: "설정 claude2.checkpoints·claude2.enabled가 꺼져 있음",
+  SUPERSEDED: "다음 결정이 대신함(장중 확인 요청 없음)",
+};
+
+/**
+ * 장중 확인 사유 — 'CODE — 설명'의 코드를 한국어로(코드는 괄호에). 요청이 규칙에 맞지 않음(CHECKPOINT_INVALID)은 서버가 적은 사유를 덧붙이고, 부른 뒤
+ * 실패(API_ERROR 등)는 '재시도 없음'. 모르는 코드는 받은 글자 그대로, 없으면 "—".
+ */
+export function checkpointReasonText(reason: string | null | undefined): string {
+  if (!reason) return EMPTY;
+  const cut = reason.indexOf(" — ");
+  const code = (cut >= 0 ? reason.slice(0, cut) : reason).trim();
+  const detail = cut >= 0 ? reason.slice(cut + 3).trim() : "";
+  const known = CHECKPOINT_REASON[code];
+  if (known) return code === "CHECKPOINT_INVALID" && detail ? `${known}: ${detail} (${code})` : `${known} (${code})`;
+  const failed = DECISION_STATUS[code];
+  if (failed && CLAUDE_FAILED_STATUSES.includes(code)) return `${failed.label} — 재시도 없음 (${code})`;
+  return reason;
+}
+
+/** 장중 확인 자료 이름 — 지연 자료임을 이름에 적습니다. */
+const CHECKPOINT_FEED: Record<string, string> = {
+  MINUTE: "감시 1분봉(5분 수집, 잰 지연)",
+  HOURLY: "전 종목 시간별(최대 60분 묵음)",
+};
+
+/** 장중 확인 자료(MINUTE·HOURLY) 이름. 모르는 값은 받은 글자 그대로. */
+export const checkpointFeedLabel = (feed: string | null | undefined) => labelOf(CHECKPOINT_FEED, feed);
+
+/** 확인 시각 "10:30 ET · 2026-11-03 00:30 KST"(모르는 쪽은 "—"). */
+function checkpointAt(atEt: string | null | undefined, atKst: string | null | undefined): string {
+  return `${atEt ? `${atEt} ET` : EMPTY} · ${atKst ? `${formatKst(atKst)} KST` : EMPTY}`;
+}
+
+/**
+ * 계좌2 '오늘 장중 확인' 한 줄(상태 응답 claude2.checkpoint — 단계 2). 지금 진행 중이거나 다음인 세션의 장중 확인 행 그대로 — 확인 시각(ET·KST)·자료·감시
+ * 목록·상태와 사유·확인 결정·부른 시각, 정규장이면 감시 저장본의 받은 시각·나이·지연. 계획이 없으면 꺼짐·계획 없음이라고, 모르는 값은 "—". 이 칸을
+ * 보내지 않는 백엔드(단계 2 전)면 null(줄을 그리지 않음).
+ */
+export function claude2CheckpointLine(group: PaperClaude2Status | null | undefined): string | null {
+  const checkpoint = group?.checkpoint;
+  if (!checkpoint) return null;
+  const head = `오늘 장중 확인(세션 ${checkpoint.session ?? EMPTY})`;
+  const today = checkpoint.today;
+  if (!today) {
+    return checkpoint.enabled
+      ? `${head}: 계획 없음 — 아침 결정이 요청하지 않았습니다(세션당 최대 한 번)`
+      : `${head}: 꺼짐 — 설정 claude2.checkpoints`;
+  }
+  const state = checkpointStatusLabel(today.status);
+  const parts = [
+    checkpointAt(today.atEt, today.atKst),
+    checkpointFeedLabel(today.feed),
+    today.watch.length > 0 ? `감시 ${today.watch.join(", ")}` : null,
+    today.reason ? `${state} — ${checkpointReasonText(today.reason)}` : state,
+    !checkpoint.enabled && today.status === "PLANNED" ? "설정이 꺼져 있어 창이 끝나면 건너뜀" : null,
+    isNumber(today.decisionId) ? `확인 결정 #${today.decisionId}` : null,
+    today.calledAtKst ? `부른 시각 ${formatKst(today.calledAtKst)}` : null,
+  ].filter((part): part is string => part !== null);
+  const watch = checkpoint.watch;
+  if (watch) {
+    const lag = isNumber(watch.lagSeconds) ? formatLatency(watch.lagSeconds * 1000) : EMPTY;
+    parts.push(`감시 저장본 받은 시각 ${formatKst(watch.collectedAtKst)} · ${formatAge(watch.ageSeconds)} · 지연 ${lag}`);
+  }
+  return `${head}: ${parts.join(" · ")}`;
+}
+
+/** 아침 결정의 장중 확인 요청 한 줄(응답 checkpointPlan·checkpointVerdict — 서버 값 그대로). 요청이 없으면 null. */
+function checkpointPlanText(plan: unknown, verdict: unknown): string | null {
+  if (!isRecord(plan)) return null;
+  const status = textOf(plan.status);
+  const reason = textOf(plan.reason);
+  const watch = listOf(plan.watch).filter((entry): entry is string => typeof entry === "string");
+  const rejected = isRecord(verdict) && verdict.accepted === false;
+  const parts = [
+    `세션 ${textOf(plan.session) ?? EMPTY}`,
+    textOf(plan.atEt) ? `${textOf(plan.atEt)} ET` : null,
+    textOf(plan.feed) ? checkpointFeedLabel(textOf(plan.feed)) : null,
+    watch.length > 0 ? `감시 ${watch.join(", ")}` : null,
+    status ? (reason ? `${checkpointStatusLabel(status)} — ${checkpointReasonText(reason)}` : checkpointStatusLabel(status)) : null,
+    rejected && !reason ? "요청이 규칙에 맞지 않음" : null,
+    textOf(plan.note),
+  ].filter((part): part is string => part !== null);
+  return parts.join(" · ");
+}
+
+/** 장중 확인 결정의 본문(kind CHECKPOINT — 서버 응답 그대로). */
+function checkpointDecisionView(record: Record<string, unknown> | null): CheckpointDecisionView {
+  const request = isRecord(record?.checkpoint) ? record.checkpoint : {};
+  const lag = numberOf(request.lagSeconds);
+  const action = textOf(record?.action);
+  const superseded = listOf(record?.supersededOrders).filter(isNumber);
+  const expected = isRecord(record?.expectedState) ? record.expectedState : null;
+  const expectedLines: string[] = [];
+  if (expected) {
+    expectedLines.push(`현금 ${formatMoney(numberOf(expected.cash))} · 순자산 ${formatMoney(numberOf(expected.nav))} · 주식 노출 `
+      + `${formatWithUnit(numberOf(expected.exposurePct), 1, "%")}`);
+    const fills = listOf(expected.assumedFills).filter(isRecord);
+    if (fills.length > 0) {
+      expectedLines.push(`체결로 본 대기 주문 ${formatNumber(fills.length, 0)}건 — `
+        + fills.map((fill) => `${textOf(fill.ticker) ?? EMPTY} ${sideLabel(textOf(fill.side))} ${timingLabel(textOf(fill.timing))}`
+          + `(${textOf(fill.priceSource) ?? EMPTY})`).join(" · "));
+    }
+    const unpriced = listOf(expected.unpriced).filter(isNumber);
+    if (unpriced.length > 0) expectedLines.push(`가격을 몰라 빼고 센 주문 ${unpriced.map((id) => `#${id}`).join(" · ")}`);
+    if (textOf(expected.note)) expectedLines.push(textOf(expected.note) as string);
+  }
+  return {
+    request: [
+      `세션 ${textOf(request.session) ?? EMPTY}`,
+      textOf(request.atEt) ? `${textOf(request.atEt)} ET` : EMPTY,
+      checkpointFeedLabel(textOf(request.feed)),
+      `지연 ${lag === null ? EMPTY : formatLatency(lag * 1000)}`,
+    ].join(" · "),
+    action: action === "KEEP"
+      ? { key: "KEEP", label: "그대로 둠(KEEP)", className: TONE.muted, title: "아침 결정의 대기 주문을 바꾸지 않았습니다." }
+      : action === "REPLACE"
+        ? {
+          key: "REPLACE", label: "대신함(REPLACE)", className: TONE.info,
+          title: "기준 시각이 아직 오지 않은 대기 주문만 대신합니다 — 기준 시각이 지난 주문은 자료로 체결합니다(⑩).",
+        }
+        : null,
+    applied: record?.applied === true
+      ? "적용함 — 기준 시각이 아직 오지 않은 대기 주문만 대신하고 통과 주문을 대기 주문으로 넣음"
+      : record?.applied === false
+        ? (textOf(record?.appliedNote) ?? "적용하지 않음")
+        : action === "KEEP" ? "바꾼 것 없음" : EMPTY,
+    superseded: action === "REPLACE" || superseded.length > 0
+      ? (superseded.length > 0 ? `${formatNumber(superseded.length, 0)}건(${superseded.map((id) => `#${id}`).join(" · ")})` : "없음")
+      : EMPTY,
+    expected: expectedLines,
+    retry: "재시도 없음 — 장중 확인은 세션당 한 번이고, 놓치거나 실패해도 대신 부르지 않습니다.",
+  };
+}
+
 /**
  * 계좌2 출발 카드의 '관측치 사슬 준비 중' 안내(상태 칸 chainReady false — 리뷰 F2 ⓑ). 서버는 그동안 수동 출발을 400으로 거절하고 정기 출발을 다음 주기로
  * 미룹니다(PaperExecutionAuditJob.chainNotReady).
@@ -3281,6 +3487,8 @@ export const CLAUDE2_LIMITS: readonly string[] = [
   "Claude 계좌2는 2026-10-23 사후 체결 출발이 아니라, 늦게 앞으로 체결로 출발합니다(출발일 S부터) — 위 4번은 계좌2에 해당하지 않습니다.",
   "슬리피지는 시점과 무관하게 계좌1과 같은 값이라 개장·장중 호가 차이를 반영하지 못합니다 — 시가 체결이 실제보다 유리하게 보일 수 있습니다.",
   "체결 시점 실험의 판정 문턱은 출발 전에 정했습니다(ADR 0022). 8주 뒤에도 표본이 적어 '차이를 확인하지 못함(판단 보류)'일 가능성이 높습니다.",
+  "Claude 계좌2의 장중 확인은 세션당 최대 한 번이고 놓치면 대신 부르지 않습니다. 확인 자료(감시 1분봉 5분 수집·시간별 관측치)도 지연 자료라, "
+    + "그것으로 더 좋은 체결가를 얻을 수 있다는 뜻이 아닙니다 — 장중 시장가의 체결가도 주문 뒤 1분봉입니다.",
 ];
 
 /** 실행 감사 요약의 시점 한 줄(표시 문자열). */
@@ -3312,6 +3520,8 @@ export interface ExecutionSummaryView {
   head: string;
   formula: string | null;
   method: string | null;
+  /** 🧪 장중 확인(M8 — 단계 2, 서술·판정 없음) 줄들 — 계좌2만, 계좌1·이 칸을 보내지 않는 백엔드면 null. */
+  checkpoints: string[] | null;
 }
 
 /** 고른 시점(M1) 표의 줄 이름. */
@@ -3401,7 +3611,26 @@ export function executionSummaryView(response: PaperExecutionResponse | null | u
     method: summary.interval
       ? `${textOf(summary.weighting) ?? EMPTY} · ${level === null ? EMPTY : `${formatNumber(level, 0)}%`} 구간 = ${textOf(summary.interval.method) ?? EMPTY}`
       : textOf(summary.weighting),
+    checkpoints: checkpointSummaryLines(summary.checkpoints),
   };
+}
+
+/**
+ * 장중 확인 요약(M8 — 계좌2 명세 §14-2, 서술·판정 없음)을 줄로 — 서버가 센 수와 비율 그대로(비율은 분모가 문턱보다 적으면 서버가 null → "—"). 계좌1·
+ * 칸이 없는 백엔드면 null.
+ */
+function checkpointSummaryLines(summary: unknown): string[] | null {
+  if (!isRecord(summary)) return null;
+  const count = (value: unknown) => formatNumber(numberOf(value), 0);
+  const pct = (value: unknown) => formatWithUnit(numberOf(value), 1, "%");
+  return [
+    `장중 확인 ${count(summary.rows)}행 — 끝남 ${count(summary.finished)}(부름 ${count(summary.called)} · 놓침 ${count(summary.expired)} · `
+      + `건너뜀 ${count(summary.skipped)}) · 예정 ${count(summary.planned)} · 이용률(부름 ÷ 끝남) ${pct(summary.calledPct)}`,
+    `요청한 자료 — ${CHECKPOINT_FEED.MINUTE} ${count(summary.feedMinute)} · ${CHECKPOINT_FEED.HOURLY} ${count(summary.feedHourly)} · `
+      + `1분봉 비율 ${pct(summary.minutePct)}`,
+    `부른 확인의 응답 — 그대로 둠(KEEP) ${count(summary.keep)} · 대신함(REPLACE) ${count(summary.replace)} · REPLACE 비율 ${pct(summary.replacePct)}`,
+    `서술 지표(M8)라 판정하지 않습니다 — 비율은 분모 ${count(summary.minRows)} 이상부터, 대신한 주문과 취소된 원래 주문의 비교는 아직 없습니다.`,
+  ];
 }
 
 /** 실행 감사 주문 줄을 주문 번호로 — 보유·체결 탭의 계좌2 칸(목표 시각·계좌1식 대비)이 주문·체결 행과 맞춥니다. */
@@ -3614,7 +3843,7 @@ const SETTING_GROUP: Record<string, string> = {
   news: "사건 뉴스 — Claude 계좌 패킷 11b(2단계 B, 규칙 계좌 영향 없음)",
   calendar: "발표 일정 — 캘린더 컨센서스(3단계 스위치, 두 책 공통)",
   claude: "Claude 계좌 3단계 스위치 — 두 책 공통(규칙 계좌 영향 없음)",
-  claude2: "🧪 미국 Claude 계좌2 — 체결 시점 실험(켜기 · 결정 주기 호출 상한 · 1분봉 기다림 · 체결 기록, 규칙 계좌 영향 없음)",
+  claude2: "🧪 미국 Claude 계좌2 — 체결 시점 실험(켜기 · 결정 주기 호출 상한 · 1분봉 기다림 · 체결 기록 · 장중 확인, 규칙 계좌 영향 없음)",
   kr: "한국 책 — 비용 · 장부 · 검증기 · 규칙 계좌 · 결정 시각(kr.*)",
   "kr.tax": "한국 책 — 매도 세금(세율 · 시행일)",
   "kr.rules": "한국 책 — 규칙 계좌(수급 신호 · 재선정)",
