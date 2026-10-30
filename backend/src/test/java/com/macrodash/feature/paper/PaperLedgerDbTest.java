@@ -223,7 +223,7 @@ class PaperLedgerDbTest {
     }
 
     @Test
-    @DisplayName("미국 시각 지정 체결(1-4)을 실제 표로 — AT_1000 매수는 1분봉 T 봉으로 체결(bar_at·fill_rung·출처), 종일 거래 없는 AT_1100은 마감 뒤 NO_TRADE_AFTER_T 만료")
+    @DisplayName("미국 시각 지정 체결(1-4)을 실제 표로 — AT_1000 매수는 1분봉 T 봉으로 체결(bar_at·fill_rung·출처), 종일 거래 없는 AT_1100은 마감 뒤 NO_TRADE_AFTER_T 만료, 장중 시장가 MARKET(V18 — 10:02:10 생성 → T 10:04)은 그 T 봉으로 체결(시험 계좌 claude2는 시작·끝에 지움 — V14·V17 재실행 안전)")
     void timedFillsOnRealTables() {
         assertThat(store.insertBookIfAbsent(new PaperStore.Book(TIMED_BOOK, PaperBooks.KIND_CLAUDE, "시험용 계좌2", 100_000,
                 FRI, PaperBooks.ACTIVE, null))).isTrue();
@@ -234,8 +234,14 @@ class PaperLedgerDbTest {
                 "CLAUDE", "PENDING", null, null, MON, decided, tue, null));
         long halted = store.insertOrder(new PaperStore.Order(0, TIMED_BOOK, null, "BBB", "BUY", 5, null, null, "AT_1100",
                 "CLAUDE", "PENDING", null, null, MON, decided, tue, null));
+        long market = store.insertOrder(new PaperStore.Order(0, TIMED_BOOK, null, "CCC", "BUY", 3, null, null, "MARKET",
+                "CLAUDE", "PENDING", null, null, MON, Instant.parse("2026-10-27T14:02:10Z"), tue, null));
         Instant w = Instant.parse("2026-10-27T20:20:00Z");   // 16:20 EDT — 화요일 확정 종가 관측치
         ExecutionAuditFixtures.Bars bars = new ExecutionAuditFixtures.Bars(w.plusSeconds(60))
+                .market(java.time.LocalTime.of(10, 4))
+                .bar("CCC", tue, Instant.parse("2026-10-27T14:03:00Z"), 9.0, 500.0)
+                .bar("CCC", tue, Instant.parse("2026-10-27T14:04:00Z"), 10.0, 500.0)
+                .bar("CCC", tue, Instant.parse("2026-10-27T19:59:00Z"), 10.5, 500.0)
                 .bar("AAA", tue, Instant.parse("2026-10-27T14:00:00Z"), 100.0, 500.0)
                 .bar("AAA", tue, Instant.parse("2026-10-27T19:59:00Z"), 101.0, 500.0)
                 .bar("BBB", MON, Instant.parse("2026-10-26T19:59:00Z"), 50.0, 100.0)
@@ -244,6 +250,7 @@ class PaperLedgerDbTest {
         Snapshot quotes = new Snapshot(Datasets.SNAP_PAPER_QUOTES, MAPPER.valueToTree(Map.of("tickers", Map.of(
                 "AAA", Map.of("dates", List.of("2026-10-26", "2026-10-27"), "close", List.of(99.0, 101.0)),
                 "BBB", Map.of("dates", List.of("2026-10-26", "2026-10-27"), "close", List.of(50.0, 50.0)),
+                "CCC", Map.of("dates", List.of("2026-10-26", "2026-10-27"), "close", List.of(9.5, 10.5)),
                 "SPY", Map.of("dates", List.of("2026-10-26", "2026-10-27"), "close", List.of(505.0, 507.0))))),
                 "json", "ok", null, w);
         when(reader.read(eq(Datasets.SNAP_PAPER_QUOTES), anyLong(), any())).thenReturn(Optional.of(quotes));
@@ -259,6 +266,11 @@ class PaperLedgerDbTest {
         assertThat(jdbc.queryForMap("SELECT status, split_part(reject_reason, ' ', 1) AS code FROM paper_orders "
                 + "WHERE id = ?", halted)).containsEntry("status", "EXPIRED").containsEntry("code", "NO_TRADE_AFTER_T");
         assertThat(count("SELECT COUNT(*) FROM paper_fills WHERE order_id = ?", halted)).isZero();
+        assertThat(jdbc.queryForMap("SELECT raw_price::text AS raw, fill_rung, bar_at = TIMESTAMPTZ '2026-10-27 14:04:00+00' "
+                + "AS at_target FROM paper_fills WHERE order_id = ?", market)).containsEntry("raw", "10.000000")
+                .containsEntry("fill_rung", "Y1M_AT").containsEntry("at_target", true);
+        assertThat(jdbc.queryForObject("SELECT timing FROM paper_orders WHERE id = ?", String.class, market))
+                .isEqualTo("MARKET");
     }
 
     /**

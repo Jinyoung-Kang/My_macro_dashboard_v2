@@ -8,6 +8,8 @@ import com.macrodash.store.PaperStore.Book;
 import com.macrodash.store.PaperStore.BookState;
 import com.macrodash.store.PaperStore.Checkpoint;
 import com.macrodash.store.PaperStore.Decision;
+import com.macrodash.store.PaperStore.Order;
+import com.macrodash.store.PaperStore.Position;
 import com.macrodash.store.Snapshot;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -458,15 +460,339 @@ class PaperCheckpointJobTest {
         assertThat(store.decisionFor(PaperBooks.CLAUDE2, D, RuleBookService.SCHEDULED).orElseThrow().retryCount()).isZero();
     }
 
+    // ------------------------------------------------------------------ 적용(단계 2 — ⑩·§10-6)
+    /** 아침 결정(d)이 낸 대기 주문 — 목표 세션 E 하루짜리, 만든 시각 = d 저녁. */
+    private long pending(String ticker, String side, Double weight, Double fraction, String timing) {
+        long morning = store.decisionFor(PaperBooks.CLAUDE2, D, RuleBookService.SCHEDULED).orElseThrow().id();
+        return store.insertOrder(new Order(0, PaperBooks.CLAUDE2, morning, ticker, side, null, weight, fraction, timing,
+                "CLAUDE", PaperBooks.ORDER_PENDING, null, null, D, Instant.parse("2026-10-30T22:31:00Z"), E, null));
+    }
+
+    /** 보유 — 10-20에 연 것(보유 거래일 8 — 재량 매도 가능). */
+    private void hold(String ticker, int qty, double price) {
+        Instant opened = Instant.parse("2026-10-20T20:20:00Z");
+        store.upsertPosition(new Position(PaperBooks.CLAUDE2, ticker, qty, price, LocalDate.of(2026, 10, 20), opened, price,
+                opened, price, opened, false, LocalDate.of(2026, 10, 20), price, null));
+    }
+
+    private void cash(double cash, double nav) {
+        store.states.put(PaperBooks.CLAUDE2, new BookState(PaperBooks.CLAUDE2, cash, nav, nav - cash,
+                (nav - cash) / nav * 100, null, null, D, null));
+    }
+
+    private static String reply(String action, String... orders) {
+        return "{\"schemaVersion\":2,\"action\":\"" + action + "\",\"summary\":\"장중 판단\",\"orders\":["
+                + String.join(",", orders) + "],\"noTradeReason\":" + (orders.length == 0 ? "\"관망\"" : "null") + "}";
+    }
+
+    private static String checkpointOrder(String ticker, String side, Double weight, Double fraction, String timing) {
+        return "{\"ticker\":\"" + ticker + "\",\"side\":\"" + side + "\",\"targetWeightPct\":" + weight
+                + ",\"sellFraction\":" + fraction + ",\"timing\":\"" + timing + "\",\"executionNote\":\"" + timing
+                + " — 장중 확인\",\"thesis\":\"" + ticker + " 논거\",\"labels\":[\"사실\"],\"invalidation\":\"갭 하락\"}";
+    }
+
+    /** 관측치 — SPY·AAA·BBB·CCC(E 봉). */
+    private void universe() {
+        when(marketData.quotes()).thenReturn(Optional.of(quotes(T.minusSeconds(600), bar("SPY", E, 580.0),
+                bar("AAA", E, 50.0), bar("BBB", E, 20.0), bar("CCC", E, 10.0))));
+    }
+
+    private Decision checkpointDecision() {
+        return store.decisionFor(PaperBooks.CLAUDE2, D, RuleBookService.CHECKPOINT).orElseThrow();
+    }
+
+    private JsonNode verdict(Decision d, String ticker) {
+        for (JsonNode row : d.response().path("validation")) {
+            if (ticker.equals(row.path("ticker").asString())) {
+                return row;
+            }
+        }
+        throw new AssertionError("검증 줄 없음: " + ticker);
+    }
+
     @Test
-    @DisplayName("응답 REPLACE는 이 판에서 기록만(applied:false) — 대기 주문·새 주문을 바꾸지 않음")
-    void replaceIsRecordedOnly() {
-        answer = ok("{\"schemaVersion\":2,\"action\":\"REPLACE\",\"summary\":\"11:00 매수 취소\",\"orders\":[],\"noTradeReason\":\"관망\"}");
+    @DisplayName("⑩ REPLACE는 기준 시각이 아직 오지 않은 대기 주문만 대신함 — 10:00 확인(10:03)에서 NEXT_OPEN(09:30, 지남·미해결)은 남고 AT_1100·NEXT_CLOSE는 '장중 확인이 대신함'으로 취소, 응답 supersededOrders·applied")
+    void replaceCancelsOnlyOrdersWhoseTimeIsAhead() {
+        universe();
+        store.dbNow = T.plus(Duration.ofMinutes(3));
+        long open = pending("AAA", PaperBooks.BUY, 5.0, null, PaperBooks.NEXT_OPEN);
+        long eleven = pending("BBB", PaperBooks.BUY, 5.0, null, PaperBooks.AT_1100);
+        long close = pending("CCC", PaperBooks.BUY, 5.0, null, PaperBooks.NEXT_CLOSE);
+        answer = ok(reply("REPLACE"));
+
         runAt(job(true), T.plus(Duration.ofMinutes(3)));
-        Decision d = store.decisionFor(PaperBooks.CLAUDE2, D, RuleBookService.CHECKPOINT).orElseThrow();
-        JsonNode response = d.response();
-        assertThat(response.path("action").asString()).isEqualTo("REPLACE");
-        assertThat(response.path("applied").isBoolean() && !response.get("applied").booleanValue()).isTrue();
-        assertThat(store.ordersOf(PaperBooks.CLAUDE2)).isEmpty();
+
+        assertThat(store.orders.get(open).status()).as("기준 시각이 지난 주문은 자료로 풂").isEqualTo(PaperBooks.ORDER_PENDING);
+        for (long id : List.of(eleven, close)) {
+            assertThat(store.orders.get(id).status()).isEqualTo(PaperBooks.ORDER_CANCELLED);
+            assertThat(store.orders.get(id).rejectReason()).isEqualTo(ClaudeDecisionPipeline.SUPERSEDED_BY_CHECKPOINT);
+        }
+        Decision d = checkpointDecision();
+        assertThat(d.status()).isEqualTo(ClaudeBookService.STATUS_NO_TRADE);
+        assertThat(d.response().path("action").asString()).isEqualTo("REPLACE");
+        assertThat(d.response().path("applied").asBoolean()).isTrue();
+        assertThat(d.response().path("supersededOrders").toString()).isEqualTo("[" + eleven + "," + close + "]");
+        assertThat(d.response().path("expectedState").path("assumedFills")).singleElement()
+                .satisfies(f -> assertThat(f.path("orderId").asLong()).isEqualTo(open));
+        assertThat(row(E).status()).isEqualTo(PaperBooks.CHECKPOINT_DONE);
+    }
+
+    @Test
+    @DisplayName("REPLACE의 새 주문이 모두 거절돼도(유니버스 밖) 형식 검사를 통과했으면 기준 시각이 뒤인 대기 주문은 대신함 — 거절 주문은 REJECTED와 사유로 남음")
+    void replaceWithAllRejectedStillSupersedes() {
+        universe();
+        store.dbNow = T.plus(Duration.ofMinutes(3));
+        long eleven = pending("BBB", PaperBooks.BUY, 5.0, null, PaperBooks.AT_1100);
+        answer = ok(reply("REPLACE", checkpointOrder("ZZZ", "BUY", 5.0, null, "MARKET")));
+
+        runAt(job(true), T.plus(Duration.ofMinutes(3)));
+
+        assertThat(store.orders.get(eleven).status()).isEqualTo(PaperBooks.ORDER_CANCELLED);
+        Decision d = checkpointDecision();
+        assertThat(d.status()).isEqualTo(ClaudeBookService.STATUS_NO_TRADE);
+        assertThat(verdict(d, "ZZZ").path("rejectReason").asString()).isEqualTo("OUT_OF_UNIVERSE");
+        assertThat(store.ordersOf(PaperBooks.CLAUDE2)).filteredOn(o -> "ZZZ".equals(o.ticker())).singleElement()
+                .satisfies(o -> {
+                    assertThat(o.status()).isEqualTo("REJECTED");
+                    assertThat(o.decisionId()).isEqualTo(d.id());
+                });
+    }
+
+    @Test
+    @DisplayName("호출하는 사이 계좌2가 일시정지되면 REPLACE를 적용하지 않음 — 결정 SKIPPED·applied:false, 대기 주문 그대로(행은 DONE — 재시도 없음)")
+    void pausedDuringCallDoesNotApply() {
+        universe();
+        store.dbNow = T.plus(Duration.ofMinutes(3));
+        long eleven = pending("BBB", PaperBooks.BUY, 5.0, null, PaperBooks.AT_1100);
+        answer = ok(reply("REPLACE", checkpointOrder("CCC", "BUY", 3.0, null, "MARKET")));
+        duringCall.set(() -> store.updateBookStatus(PaperBooks.CLAUDE2, PaperBooks.PAUSED));
+
+        runAt(job(true), T.plus(Duration.ofMinutes(3)));
+
+        Decision d = checkpointDecision();
+        assertThat(d.status()).isEqualTo(ClaudeBookService.STATUS_SKIPPED);
+        assertThat(d.response().path("applied").asBoolean(true)).isFalse();
+        assertThat(store.orders.get(eleven).status()).isEqualTo(PaperBooks.ORDER_PENDING);
+        assertThat(store.ordersOf(PaperBooks.CLAUDE2)).hasSize(1);
+        assertThat(row(E).status()).isEqualTo(PaperBooks.CHECKPOINT_DONE);
+    }
+
+    @Test
+    @DisplayName("KEEP은 아무것도 바꾸지 않음 — 대기 주문 그대로·새 주문 없음, 결정 NO_TRADE + action KEEP, 예상 상태만 기록")
+    void keepChangesNothing() {
+        universe();
+        store.dbNow = T.plus(Duration.ofMinutes(3));
+        long open = pending("AAA", PaperBooks.BUY, 5.0, null, PaperBooks.NEXT_OPEN);
+        long eleven = pending("BBB", PaperBooks.BUY, 5.0, null, PaperBooks.AT_1100);
+
+        runAt(job(true), T.plus(Duration.ofMinutes(3)));
+
+        assertThat(store.ordersOf(PaperBooks.CLAUDE2)).extracting(Order::id).containsExactly(open, eleven);
+        assertThat(store.ordersOf(PaperBooks.CLAUDE2)).allSatisfy(o -> assertThat(o.status()).isEqualTo("PENDING"));
+        Decision d = checkpointDecision();
+        assertThat(d.status()).isEqualTo(ClaudeBookService.STATUS_NO_TRADE);
+        assertThat(d.response().path("action").asString()).isEqualTo("KEEP");
+        assertThat(d.response().has("supersededOrders")).isFalse();
+        assertThat(d.response().path("expectedState").isObject()).isTrue();
+    }
+
+    @Test
+    @DisplayName("지난 AT_*(T ≤ 지금 + 60초)는 LATE_FOR_TIMING, 남은 AT_1100·MARKET은 통과 → 대기(기준 거래일 d, 만료 E, 결정 = 확인 결정)")
+    void passedAtTimingIsLateForTiming() {
+        universe();
+        store.dbNow = T.plus(Duration.ofMinutes(3)).plusSeconds(20);
+        answer = ok(reply("REPLACE", checkpointOrder("AAA", "BUY", 3.0, null, "AT_1000"),
+                checkpointOrder("BBB", "BUY", 3.0, null, "AT_1100"), checkpointOrder("CCC", "BUY", 3.0, null, "MARKET")));
+
+        runAt(job(true), T.plus(Duration.ofMinutes(3)));
+
+        Decision d = checkpointDecision();
+        assertThat(d.status()).isEqualTo(ClaudeBookService.STATUS_OK);
+        assertThat(verdict(d, "AAA").path("rejectReason").asString()).isEqualTo("LATE_FOR_TIMING");
+        List<Order> accepted = store.ordersByStatus(PaperBooks.CLAUDE2, PaperBooks.ORDER_PENDING);
+        assertThat(accepted).extracting(Order::ticker).containsExactlyInAnyOrder("BBB", "CCC");
+        assertThat(accepted).allSatisfy(o -> {
+            assertThat(o.asOfTradingDate()).isEqualTo(D);
+            assertThat(o.expiresOn()).isEqualTo(E);
+            assertThat(o.decisionId()).isEqualTo(d.id());
+        });
+        Order market = accepted.stream().filter(o -> "CCC".equals(o.ticker())).findFirst().orElseThrow();
+        assertThat(market.timing()).isEqualTo(PaperBooks.MARKET);
+        assertThat(ExecutionAudit.targetAt(market, E, UsPaperMarket.INSTANCE.calendar()))
+                .as("10:03:20 생성 → 10:05 ET").isEqualTo(T.plus(Duration.ofMinutes(5)));
+    }
+
+    @Test
+    @DisplayName("순위: MARKET(0) 매도는 AT_1400(5) 매수의 현금을 만듦, AT_1400 매도는 MARKET 매수의 현금을 만들지 않음(OVER_ALLOCATED) — 검증기 순위 규칙의 장중 확인판")
+    void marketRankFundsLaterBuys() {
+        universe();
+        store.dbNow = T.plus(Duration.ofMinutes(3));
+        cash(1_000, 100_000);
+        hold("AAA", 1_980, 50);
+        answer = ok(reply("REPLACE", checkpointOrder("AAA", "SELL", null, 0.5, "MARKET"),
+                checkpointOrder("BBB", "BUY", 5.0, null, "AT_1400")));
+        runAt(job(true), T.plus(Duration.ofMinutes(3)));
+        Decision first = checkpointDecision();
+        assertThat(verdict(first, "AAA").path("accepted").asBoolean()).isTrue();
+        assertThat(verdict(first, "BBB").path("accepted").asBoolean()).as("앞 순위 매도의 대금").isTrue();
+
+        setUp();
+        universe();
+        store.dbNow = T.plus(Duration.ofMinutes(3));
+        cash(1_000, 100_000);
+        hold("AAA", 1_980, 50);
+        answer = ok(reply("REPLACE", checkpointOrder("AAA", "SELL", null, 0.5, "AT_1400"),
+                checkpointOrder("BBB", "BUY", 5.0, null, "MARKET")));
+        runAt(job(true), T.plus(Duration.ofMinutes(3)));
+        Decision second = checkpointDecision();
+        assertThat(verdict(second, "AAA").path("accepted").asBoolean()).isTrue();
+        assertThat(verdict(second, "BBB").path("rejectReason").asString()).as("뒤 순위 매도는 앞 매수의 현금이 아님")
+                .isEqualTo("OVER_ALLOCATED");
+    }
+
+    @Test
+    @DisplayName("예상 상태(§10-6): 기준 시각이 지난 대기 매수를 체결로 셈 — 1분봉·감시 자료가 없으면 마지막 가격(관측치 50 → 10% × 100,000 ÷ 50 = 200주, 현금 90,000), 1분봉 저장본이 있으면 그 T 봉 시가(48 → 208주), 패킷 4_portfolio.expected에도 같은 값")
+    void expectedStateCountsDueOrdersAsFilled() {
+        universe();
+        store.dbNow = T.plus(Duration.ofMinutes(3));
+        long open = pending("AAA", PaperBooks.BUY, 10.0, null, PaperBooks.NEXT_OPEN);
+        pending("BBB", PaperBooks.BUY, 5.0, null, PaperBooks.AT_1100);
+        when(marketData.watchUs()).thenReturn(Optional.empty());
+        store.checkpoints.clear();
+        long source = store.decisionFor(PaperBooks.CLAUDE2, D, RuleBookService.SCHEDULED).orElseThrow().id();
+        plan(E, LocalTime.of(10, 0), "HOURLY", List.of(), source);
+        when(marketData.quotes()).thenReturn(Optional.of(quotes(T.plusSeconds(60), bar("SPY", E, 580.0),
+                bar("AAA", E, 50.0), bar("BBB", E, 20.0))));
+
+        runAt(job(true), T.plus(Duration.ofMinutes(3)));
+
+        JsonNode expected = checkpointDecision().response().path("expectedState");
+        assertThat(expected.path("cash").asDouble()).isEqualTo(90_000.0);
+        assertThat(expected.path("nav").asDouble()).isEqualTo(100_000.0);
+        assertThat(expected.path("assumedFills")).singleElement().satisfies(f -> {
+            assertThat(f.path("orderId").asLong()).isEqualTo(open);
+            assertThat(f.path("qty").asInt()).isEqualTo(200);
+            assertThat(f.path("priceSource").asString()).isEqualTo(ExpectedState.PRICE_LAST);
+        });
+        assertThat(expected.path("positions").get(0).path("weightPct").asDouble()).isEqualTo(10.0);
+        JsonNode packet = MAPPER.readTree(sent.get(0)[1]);
+        assertThat(packet.path("4_portfolio").path("expected").path("assumedFills").get(0).path("qty").asInt()).isEqualTo(200);
+
+        // 1분봉 저장본(조립 전에 받음)에 09:30 봉 시가 48 — 그 가격으로(장부 2b의 R1과 같은 판정).
+        setUp();
+        universe();
+        store.dbNow = T.plus(Duration.ofMinutes(3));
+        long again = pending("AAA", PaperBooks.BUY, 10.0, null, PaperBooks.NEXT_OPEN);
+        store.checkpoints.clear();
+        plan(E, LocalTime.of(10, 0), "HOURLY", List.of(),
+                store.decisionFor(PaperBooks.CLAUDE2, D, RuleBookService.SCHEDULED).orElseThrow().id());
+        when(marketData.quotes()).thenReturn(Optional.of(quotes(T.plusSeconds(60), bar("SPY", E, 580.0),
+                bar("AAA", E, 50.0))));
+        when(marketData.barsUs()).thenReturn(Optional.of(new ExecutionAuditFixtures.Bars(T.plusSeconds(30))
+                .bar("AAA", E, ExecutionAuditFixtures.et(E, 9, 30), 48.0, 500.0)
+                .bar("AAA", E, ExecutionAuditFixtures.et(E, 9, 31), 48.5, 500.0).snapshot()));
+        runAt(job(true), T.plus(Duration.ofMinutes(3)));
+        JsonNode fromBars = checkpointDecision().response().path("expectedState").path("assumedFills").get(0);
+        assertThat(fromBars.path("orderId").asLong()).isEqualTo(again);
+        assertThat(fromBars.path("priceSource").asString()).isEqualTo(ExpectedState.PRICE_BARS);
+        assertThat(fromBars.path("qty").asInt()).isEqualTo(208);
+    }
+
+    @Test
+    @DisplayName("예상 매수 보유는 그 세션에 연 것 — 같은 날 MARKET 재량 매도는 MIN_HOLD로 거절(장중 단타 막음)")
+    void expectedBuyCannotBeSoldSameDay() {
+        universe();
+        store.dbNow = T.plus(Duration.ofMinutes(3));
+        pending("AAA", PaperBooks.BUY, 10.0, null, PaperBooks.NEXT_OPEN);
+        answer = ok(reply("REPLACE", checkpointOrder("AAA", "SELL", null, null, "MARKET")));
+
+        runAt(job(true), T.plus(Duration.ofMinutes(3)));
+
+        assertThat(verdict(checkpointDecision(), "AAA").path("rejectReason").asString()).isEqualTo("MIN_HOLD");
+    }
+
+    @Test
+    @DisplayName("월 상한은 계좌2 계산 — 출발(INITIAL) 주문만 빼고 장중 확인(CHECKPOINT) 결정의 체결 주문도 셈(상한 1에 이미 1건 → MONTHLY_CAP)")
+    void monthlyCapCountsCheckpointOrders() {
+        universe();
+        store.dbNow = T.plus(Duration.ofMinutes(3));
+        ((ObjectNode) store.settings.body()).put("maxDiscretionaryOrdersPerMonth", 1);
+        LocalDate earlier = LocalDate.of(2026, 10, 28);
+        long cp = store.insertDecisionIfAbsent(new Decision(0, PaperBooks.CLAUDE2, earlier, RuleBookService.CHECKPOINT,
+                null, "OK", "claude-sonnet-5-5", 0, 1, null, null, null, null, null, null, null, null, List.of(), false, 1L, 0,
+                "{}")).orElseThrow();
+        store.insertOrder(new Order(0, PaperBooks.CLAUDE2, cp, "CCC", PaperBooks.BUY, 10, 2.0, null, PaperBooks.MARKET,
+                "CLAUDE", PaperBooks.ORDER_FILLED, null, null, earlier, Instant.parse("2026-10-29T15:03:00Z"),
+                LocalDate.of(2026, 10, 29), Instant.parse("2026-10-29T16:00:00Z")));
+        answer = ok(reply("REPLACE", checkpointOrder("BBB", "BUY", 3.0, null, "AT_1100")));
+
+        runAt(job(true), T.plus(Duration.ofMinutes(3)));
+
+        Decision d = checkpointDecision();
+        assertThat(d.response().path("monthlyDiscretionaryOrders").asInt()).isEqualTo(1);
+        assertThat(verdict(d, "BBB").path("rejectReason").asString()).isEqualTo("MONTHLY_CAP");
+    }
+
+    @Test
+    @DisplayName("⑨ 단언 — 확인 주문의 created_at(응답 뒤 DB now())은 패킷 asOfInstant보다 늦고, MARKET 기준 시각은 그보다 60초 넘게 뒤")
+    void ordersCreatedAfterThePacketInstant() {
+        universe();
+        store.dbNow = T.plus(Duration.ofMinutes(3));
+        answer = ok(reply("REPLACE", checkpointOrder("BBB", "BUY", 3.0, null, "MARKET")));
+        duringCall.set(() -> {
+            clock.now = clock.now.plusSeconds(45);
+            store.dbNow = clock.now;
+        });
+
+        runAt(job(true), T.plus(Duration.ofMinutes(3)));
+
+        Decision d = checkpointDecision();
+        Instant asOfInstant = Instant.parse(d.packet().path("1_basis").path("asOfInstant").asString());
+        Order order = store.ordersByStatus(PaperBooks.CLAUDE2, PaperBooks.ORDER_PENDING).get(0);
+        assertThat(order.createdAt()).isAfter(asOfInstant);
+        assertThat(ExecutionAudit.marketTarget(order.createdAt())).isAfter(asOfInstant.plusSeconds(60));
+    }
+
+    @Test
+    @DisplayName("장부 cashLimited가 마지막 방어선 — 예상 상태가 가격을 몰라 빼 둔 대기 매수(unpriced)가 실제로 먼저 체결되면, 확인의 MARKET 매수 둘 가운데 뒤 것이 현금 부족으로 줄어듦")
+    void ledgerCashLimitedIsTheLastDefence() {
+        when(marketData.quotes()).thenReturn(Optional.of(quotes(T.minusSeconds(600), bar("SPY", E, 580.0),
+                bar("BBB", E, 20.0), bar("CCC", E, 10.0), bar("ZZZ", E, 50.0))));
+        store.dbNow = T.plus(Duration.ofMinutes(3));
+        cash(20_000, 100_000);
+        hold("ZZZ", 1_600, 50);
+        long open = pending("AAA", PaperBooks.BUY, 9.0, null, PaperBooks.NEXT_OPEN);
+        answer = ok(reply("REPLACE", checkpointOrder("BBB", "BUY", 10.0, null, "MARKET"),
+                checkpointOrder("CCC", "BUY", 9.0, null, "MARKET")));
+        runAt(job(true), T.plus(Duration.ofMinutes(3)));
+        Decision d = checkpointDecision();
+        assertThat(d.response().path("expectedState").path("unpriced").toString()).isEqualTo("[" + open + "]");
+        assertThat(verdict(d, "BBB").path("accepted").asBoolean()).isTrue();
+        assertThat(verdict(d, "CCC").path("accepted").asBoolean()).as("예상 현금 20,000 안").isTrue();
+
+        // 장부: 11:00 ET 관측치 — AAA 09:30 봉으로 먼저 체결(약 9,000), BBB·CCC는 MARKET T(10:05) 봉.
+        Instant w = ExecutionAuditFixtures.et(E, 11, 0);
+        ExecutionAuditFixtures.Bars bars = new ExecutionAuditFixtures.Bars(w.plusSeconds(60)).market(LocalTime.of(10, 5));
+        for (String ticker : List.of("AAA", "BBB", "CCC", "ZZZ", "SPY")) {
+            double base = switch (ticker) {
+                case "AAA" -> 50;
+                case "BBB" -> 20;
+                case "CCC" -> 10;
+                case "ZZZ" -> 50;
+                default -> 580;
+            };
+            for (int minute = 0; minute < 90; minute++) {
+                bars.bar(ticker, E, ExecutionAuditFixtures.et(E, 9, 30).plus(Duration.ofMinutes(minute)), base, 1_000.0);
+            }
+        }
+        when(marketData.barsUs()).thenReturn(Optional.of(bars.snapshot()));
+        ledger.process(quotes(w, bar("AAA", D, 49.0, E, 50.0), bar("BBB", D, 19.0, E, 20.0), bar("CCC", D, 9.0, E, 10.0),
+                bar("ZZZ", D, 50.0, E, 50.0), bar("SPY", D, 579.0, E, 580.0)));
+
+        assertThat(store.orders.get(open).status()).isEqualTo(PaperBooks.ORDER_FILLED);
+        Order ccc = store.ordersOf(PaperBooks.CLAUDE2).stream().filter(o -> "CCC".equals(o.ticker())).findFirst()
+                .orElseThrow();
+        assertThat(ccc.status()).isEqualTo(PaperBooks.ORDER_FILLED);
+        assertThat(ccc.reason().path("cashLimited").asBoolean()).isTrue();
     }
 }

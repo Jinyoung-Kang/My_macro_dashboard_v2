@@ -34,6 +34,8 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
+import java.util.TreeSet;
 import java.util.concurrent.locks.ReentrantLock;
 
 /**
@@ -55,7 +57,8 @@ import java.util.concurrent.locks.ReentrantLock;
  *       ({@link ClaudeDecisionPipeline#attemptCheckpoint} — 정기 작업 문턱). 장부 잠금·트랜잭션 밖입니다.</li>
  *   <li><b>쓰기</b>(장부 잠금 안 한 트랜잭션): 결정 행 kind CHECKPOINT(기준 거래일 = 아침 결정의 d — UNIQUE가 세션당 한 번을 강제)와 그 행의 DONE
  *       (확인 결정·감시 저장본 지연·부른 시각). API 오류·형식 오류·거절도 결정 행을 남기고 DONE입니다(재시도 없음 — 결정 작업은 정기·출발 행만 재시도).
- *       KEEP은 NO_TRADE + action KEEP. REPLACE의 적용(⑩ 대신하기·새 주문)은 다음 판이고, 이 판은 응답을 {@code applied:false}로 기록만 합니다.</li>
+ *       KEEP은 NO_TRADE + action KEEP. REPLACE는 예상 상태(§10-6)로 새 주문을 검증하고, 기준 시각이 지금보다 뒤인 대기 주문만 대신한
+ *       뒤(⑩) 통과 주문을 넣습니다({@link #write}).</li>
  * </ul>
  *
  * <p>자기 잠금({@link #running})으로 겹치지 않고, 결정 작업의 잠금을 쓰지 않습니다 — 확인 호출(최대 300초)이 결정 작업과 서로 기다리지 않게.
@@ -295,19 +298,22 @@ public class PaperCheckpointJob {
 
         JsonNode macro = packets.macroSection(asOf, row);
         Optional<Snapshot> watchFor = watch;
+        // 예상 상태(§10-6)의 T 가격 — 1분봉 저장본(장부 2b와 같은 판정). 조용히 읽음(수집 유발 없음).
+        Optional<Snapshot> bars = reader.quietly(() -> marketData.barsUs());
         Instant calledAt = clock.instant();
         Attempt attempt = pipeline.attemptCheckpoint(version -> CheckpointPacket.build(new CheckpointPacket.Inputs(c, asOf,
                 source, store.state(PaperBooks.CLAUDE2).orElse(null), store.positions(PaperBooks.CLAUDE2),
                 pendingOrders(), todayFills(session), watchFor, quotes, macro, version, row.version(),
                 store.recentCheckpointLags(PaperBooks.CLAUDE2, ExecutionSection.FEED_MINUTE,
-                        ExecutionSection.RECENT_LAG_SESSIONS), calendar, clock.instant()), mapper),
+                        ExecutionSection.RECENT_LAG_SESSIONS), calendar, clock.instant(), bars), mapper),
                 row, claudeSettings, today);
         if (attempt == null) {
             return mark(c, PaperBooks.CHECKPOINT_EXPIRED, CALL_CAP);
         }
         Integer lagSeconds = lag;
+        Feeds feeds = new Feeds(quotes, watch, bars);
         long id = ledger.exclusively(() -> store.atomically(() -> write(pipeline, c, asOf, row, claudeSettings, attempt,
-                lagSeconds, calledAt)));
+                lagSeconds, calledAt, feeds)));
         log.info("Claude 계좌2 장중 확인 {} {} {}: {} — 결정 {}", session, CheckpointPacket.clock(c.atEt()), c.feed(),
                 attempt.succeeded() ? Json.asText(attempt.parsed(), "action") : attempt.status(), id);
         return PaperBooks.CHECKPOINT_DONE + " 결정 #" + id;
@@ -339,19 +345,71 @@ public class PaperCheckpointJob {
         return out;
     }
 
-    /** 확인 결정 행과 장중 확인 행 DONE(장부 잠금 안 한 트랜잭션). 같은 d의 확인 결정이 그사이 생겼으면 그 행으로. */
+    /** 확인 호출 때 읽은 저장본(예상 상태·검증 문맥 — 장부 잠금 안에서 다시 읽지 않음). */
+    private record Feeds(Optional<Quotes> quotes, Optional<Snapshot> watch, Optional<Snapshot> bars) {
+    }
+
+    /**
+     * 확인 결정 행과 장중 확인 행 DONE(장부 잠금 안 한 트랜잭션). 같은 d의 확인 결정이 그사이 생겼으면 그 행으로.
+     *
+     * <p>응답이 형식 검사를 통과하면 그때의 장부로 예상 상태({@link ExpectedState} — 기준 시각이 지난 대기 주문을 체결로 본 것, §10-6)를 셉니다.
+     * KEEP은 아무것도 바꾸지 않습니다(NO_TRADE + action KEEP). REPLACE는(계좌2가 운용 중일 때) 새 주문을 확인 프로필로 검증하고(예상 상태가 검증 문맥 —
+     * 지난 AT_*는 LATE_FOR_TIMING, 마감 5분 전 뒤 MARKET은 MALFORMED, 예상 매수 보유는 MIN_HOLD), 주문이 모두 거절돼도 기준 시각이 지금보다 뒤인
+     * 대기 주문만 '장중 확인이 대신함'으로 취소한 뒤(⑩) 통과 주문을 대기로 넣습니다(기준 거래일 d, 만료 E). 호출하는 사이 운용 중이 아니게 됐으면
+     * 적용하지 않고 SKIPPED로 남깁니다.
+     */
     private long write(ClaudeDecisionPipeline pipeline, Checkpoint c, LocalDate asOf, SettingsRow row,
-                       ClaudeSettings claudeSettings, Attempt attempt, Integer lag, Instant calledAt) {
+                       ClaudeSettings claudeSettings, Attempt attempt, Integer lag, Instant calledAt, Feeds feeds) {
         ObjectNode response;
         String status;
         String error = null;
+        ClaudeDecisionPipeline replies = null;
+        ClaudeDecisionPipeline.Plan plan = null;
         if (attempt.succeeded()) {
-            response = (ObjectNode) attempt.parsed().deepCopy();
-            status = ClaudeBookService.STATUS_NO_TRADE;
-            if ("REPLACE".equals(Json.asText(response, "action"))) {
-                response.put("applied", false);
-                response.put("appliedNote", "이 판은 장중 확인 응답을 기록만 함 — 대기 주문·새 주문을 바꾸지 않음");
+            Instant now = clock.instant();
+            ExpectedState.State expected = ExpectedState.of(store.state(PaperBooks.CLAUDE2).orElse(null),
+                    store.positions(PaperBooks.CLAUDE2), pendingOrders(), c.sessionDate(), now,
+                    before(feeds.bars(), now), before(feeds.watch(), now), feeds.quotes().orElse(null), calendar);
+            Book current = store.book(PaperBooks.CLAUDE2).orElse(null);
+            boolean replace = "REPLACE".equals(Json.asText(attempt.parsed(), "action"));
+            boolean active = current != null && PaperBooks.ACTIVE.equals(current.status());
+            String notApplied = null;
+            if (replace && active) {
+                replies = pipeline.checkpointReplies();
+                Set<String> universe = new TreeSet<>(ClaudeDecisionPipeline.observedUniverse(feeds.quotes()));
+                expected.positions().forEach(p -> universe.add(p.ticker()));
+                store.positions(PaperBooks.CLAUDE2).forEach(p -> universe.add(p.ticker()));
+                try {
+                    plan = replies.plan(asOf, RuleBookService.CHECKPOINT, false, attempt, expected.view(), row,
+                            claudeSettings, feeds.quotes(), universe, Map.of());
+                } catch (RuntimeException e) {
+                    // 과금된 응답 — 검증할 수 없어도(예: 예상 순자산 0) 결정 행과 DONE을 남겨 다시 부르지 않음(재시도 없음).
+                    notApplied = "검증할 수 없어 적용하지 않음: " + e.getMessage();
+                    log.warn("장중 확인 {} REPLACE 검증 실패 — 적용하지 않음: {}", c.sessionDate(), e.toString());
+                }
             }
+            if (plan != null) {
+                response = plan.response();
+                status = plan.status();
+                // ⑩ — 형식 검사를 통과했으면 주문이 모두 거절돼도 기준 시각이 지금보다 뒤인 대기 주문만 대신함.
+                List<Long> superseded = replies.supersedePendingAfter(now);
+                response.set("supersededOrders", mapper.valueToTree(superseded));
+                response.put("applied", true);
+            } else {
+                response = (ObjectNode) attempt.parsed().deepCopy();
+                status = ClaudeBookService.STATUS_NO_TRADE;
+                if (replace && !active) {
+                    status = ClaudeBookService.STATUS_SKIPPED;
+                    response.put("applied", false);
+                    response.put("pausedDuringCall", true);
+                    response.put("appliedNote", "Claude를 부르는 사이에 계좌2가 운용 중이 아니게 돼(상태 "
+                            + (current == null ? "없음" : current.status()) + ") 대기 주문·새 주문을 바꾸지 않음");
+                } else if (replace) {
+                    response.put("applied", false);
+                    response.put("appliedNote", notApplied + " — 대기 주문·새 주문을 바꾸지 않음");
+                }
+            }
+            response.set("expectedState", mapper.valueToTree(expected.toMap(calendar)));
         } else {
             response = mapper.createObjectNode();
             status = attempt.status();
@@ -377,14 +435,24 @@ public class PaperCheckpointJob {
         response.set("framework", mapper.valueToTree(FrameworkService.decisionView(attempt.frame())));
         Decision decision = pipeline.decisionRow(0, asOf, RuleBookService.CHECKPOINT, status, row, claudeSettings, attempt,
                 null, response, error, false, 0);
-        long id = store.insertDecisionIfAbsent(decision).orElseGet(() -> store.decisionFor(PaperBooks.CLAUDE2, asOf,
+        Optional<Long> inserted = store.insertDecisionIfAbsent(decision);
+        long id = inserted.orElseGet(() -> store.decisionFor(PaperBooks.CLAUDE2, asOf,
                 RuleBookService.CHECKPOINT).map(Decision::id).orElseThrow());
+        if (plan != null && inserted.isPresent()) {
+            replies.insertOrders(id, asOf, plan, PaperBooks.ORDER_PENDING);
+        }
         int marked = store.markCheckpoint(PaperBooks.CLAUDE2, c.sessionDate(), PaperBooks.CHECKPOINT_PLANNED,
                 PaperBooks.CHECKPOINT_DONE, attempt.succeeded() ? null : attempt.status() + " — 재시도 없음", id, lag, calledAt);
         if (marked == 0) {
             log.warn("장중 확인 {} 행이 그사이 PLANNED가 아니게 됨 — 결정 {}은 남김", c.sessionDate(), id);
         }
         return id;
+    }
+
+    /** 지금 이전에 받은 저장본의 본문(⑨ — 예상 상태는 그 뒤 자료를 쓰지 않음), 아니면 null. */
+    private static JsonNode before(Optional<Snapshot> snapshot, Instant now) {
+        return snapshot.filter(s -> s.collectedAt() != null && !s.collectedAt().isAfter(now)).map(Snapshot::payload)
+                .orElse(null);
     }
 
     /** 상태만 바꿈(부르지 않음) — 바꾼 상태 문구. 그사이 PLANNED가 아니면 null. */

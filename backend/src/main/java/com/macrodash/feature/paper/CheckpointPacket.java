@@ -42,7 +42,7 @@ import java.util.Set;
  *
  * <p>섹션: {@code 0_instructions} · {@code 1_basis}(판·세션·지금 시각·마감까지 분·남은 시점) · {@code 2_macroCards}(아침 패킷과 같은 매크로 카드 —
  * 각자의 지연 배지 그대로) · {@code 3_request}(아침의 요청) · {@code 4_portfolio}(장부 현금·순자산·보유·대기 주문과 그 상태·오늘 체결 —
- * 예상 상태({@code expected})는 아직 null, §10-6) · {@code 5_feed}(MINUTE = 감시 저장본의 최근 완성 1분봉 / HOURLY = 시간별 관측치) ·
+ * 예상 상태({@code expected} — {@link ExpectedState}, §10-6)) · {@code 5_feed}(MINUTE = 감시 저장본의 최근 완성 1분봉 / HOURLY = 시간별 관측치) ·
  * {@code 6_hardRules}(아침 패킷 12_hardRules의 한도 + 장중 확인 메뉴·⑩ 범위 문장).
  *
  * <p><b>⑨ 조립 시각 이전 자료만</b>: 봉은 끝(시작 + 60초)이, 종목·저장본은 받은 시각이 조립 시각({@code asOfInstant}) 이하인 것만 싣고 나머지는
@@ -113,11 +113,21 @@ final class CheckpointPacket {
      * @param recentLags       최근 장중 확인(DONE·MINUTE)이 잰 지연(초), 최근 순 — 등급의 5세션 기준
      * @param calendar         미국 달력
      * @param assembledAt      조립 시각(⑨)
+     * @param bars             1분봉 저장본(예상 상태의 T 가격 — 없으면 empty, 조립 뒤에 받은 것은 쓰지 않음)
      */
     record Inputs(Checkpoint checkpoint, LocalDate asOf, Decision morning, BookState state, List<Position> positions,
                   List<Order> pending, List<Fill> todayFills, Optional<Snapshot> watch, Optional<Quotes> quotes,
                   JsonNode macroCards, Integer frameworkVersion, Integer settingsVersion, List<Integer> recentLags,
-                  TradingCalendar calendar, Instant assembledAt) {
+                  TradingCalendar calendar, Instant assembledAt, Optional<Snapshot> bars) {
+
+        /** 1분봉 저장본 없이(예상 상태는 감시 봉·마지막 가격으로). */
+        Inputs(Checkpoint checkpoint, LocalDate asOf, Decision morning, BookState state, List<Position> positions,
+               List<Order> pending, List<Fill> todayFills, Optional<Snapshot> watch, Optional<Quotes> quotes,
+               JsonNode macroCards, Integer frameworkVersion, Integer settingsVersion, List<Integer> recentLags,
+               TradingCalendar calendar, Instant assembledAt) {
+            this(checkpoint, asOf, morning, state, positions, pending, todayFills, watch, quotes, macroCards,
+                    frameworkVersion, settingsVersion, recentLags, calendar, assembledAt, Optional.empty());
+        }
 
         Inputs {
             Objects.requireNonNull(checkpoint, "checkpoint");
@@ -130,6 +140,18 @@ final class CheckpointPacket {
             watch = watch == null ? Optional.empty() : watch;
             quotes = quotes == null ? Optional.empty() : quotes;
             recentLags = recentLags == null ? List.of() : List.copyOf(recentLags);
+            bars = bars == null ? Optional.empty() : bars;
+        }
+
+        /** 예상 상태(§10-6) — 조립 시각 이전 자료만(⑨: 1분봉·감시 저장본은 조립 전에 받은 것). 작업의 검증 문맥과 같은 함수. */
+        ExpectedState.State expected() {
+            JsonNode barsPayload = bars.filter(s -> s.collectedAt() != null && !s.collectedAt().isAfter(assembledAt))
+                    .map(Snapshot::payload).orElse(null);
+            JsonNode watchPayload = watch.filter(s -> s.collectedAt() != null && !s.collectedAt().isAfter(assembledAt))
+                    .map(Snapshot::payload).orElse(null);
+            return ExpectedState.of(state, positions, pending, checkpoint.sessionDate(), assembledAt, barsPayload,
+                    watchPayload, quotes.filter(q -> q.collectedAt() != null && !q.collectedAt().isAfter(assembledAt))
+                            .orElse(null), calendar);
         }
     }
 
@@ -284,8 +306,8 @@ final class CheckpointPacket {
             fills.add(row);
         }
         out.put("todayFills", fills);
-        // 예상 상태(기준 시각이 지난 대기 주문을 체결로 본 장부 — §10-6)는 다음 판에서 채웁니다.
-        out.put("expected", null);
+        // 예상 상태(기준 시각이 지난 대기 주문을 체결로 본 장부 — §10-6, 추정) — 확인 응답의 검증 문맥과 같은 계산.
+        out.put("expected", in.expected().toMap(calendar));
         return out;
     }
 

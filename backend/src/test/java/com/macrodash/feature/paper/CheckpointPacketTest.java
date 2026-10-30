@@ -157,7 +157,11 @@ class CheckpointPacketTest {
         assertThat(pending).extracting(p -> p.get("state").asString()).containsExactly(CheckpointPacket.PENDING_DUE,
                 CheckpointPacket.PENDING_DUE, CheckpointPacket.PENDING_AHEAD, CheckpointPacket.PENDING_AHEAD);
         assertThat(body.get("4_portfolio").get("todayFills")).as("조립 뒤 체결(15:40Z)은 빠짐").hasSize(1);
-        assertThat(body.get("4_portfolio").get("expected").isNull()).isTrue();
+        JsonNode expected = body.get("4_portfolio").get("expected");
+        assertThat(expected.get("assumedFills")).as("기준 시각이 지난 대기 주문 둘(§10-6) — 매도 먼저")
+                .extracting(f -> f.get("orderId").asLong() + " " + f.get("priceSource").asString())
+                .containsExactly("101 LAST", "102 WATCH");
+        assertThat(expected.get("note").asString()).startsWith("추정");
         JsonNode feed = body.get("5_feed");
         assertThat(feed.get("status").asString()).isEqualTo("OK");
         assertThat(feed.get("tickers").propertyNames()).containsExactly("SPY", "NVDA", "AAPL");

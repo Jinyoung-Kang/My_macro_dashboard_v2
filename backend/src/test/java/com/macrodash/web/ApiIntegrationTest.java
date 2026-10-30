@@ -978,6 +978,39 @@ class ApiIntegrationTest {
     }
 
     @Test
+    @DisplayName("🧪 계좌2 장중 확인(단계 2): CHECKPOINT 결정 행·MARKET 주문이 실제 표에 들어가고 결정 목록·주문 목록에 그대로 나옴 — 시험 계좌 claude2는 시작·끝에 지움(V14·V17 재실행 안전)")
+    void checkpointDecisionAndMarketOrderAreListed() {
+        deletePaperBooks();
+        if (!authorizedGet("/api/paper/status").path("schemaReady").asBoolean(false)) {
+            return;
+        }
+        com.macrodash.store.PaperStore store = context.getBean(com.macrodash.store.PaperStore.class);
+        try {
+            store.insertBookIfAbsent(new com.macrodash.store.PaperStore.Book("claude2", "CLAUDE", "시험용 계좌2", 100_000,
+                    java.time.LocalDate.of(2026, 10, 30), "ACTIVE", null));
+            java.time.LocalDate asOf = java.time.LocalDate.of(2026, 10, 30);
+            long decision = store.insertDecisionIfAbsent(new com.macrodash.store.PaperStore.Decision(0, "claude2", asOf,
+                    "CHECKPOINT", null, "OK", "claude-sonnet-5-5", 1, 1, null, null, null, null, null,
+                    tools.jackson.databind.node.JsonNodeFactory.instance.objectNode().put("action", "REPLACE"), null, null, List.of(), false, null, 0))
+                    .orElseThrow();
+            long order = store.insertOrder(new com.macrodash.store.PaperStore.Order(0, "claude2", decision, "AAA", "BUY",
+                    null, 3.0, null, "MARKET", "CLAUDE", "PENDING", null, null, asOf, null,
+                    java.time.LocalDate.of(2026, 11, 2), null));
+
+            JsonNode decisions = authorizedGet("/api/paper/decisions?book=claude2&limit=5");
+            assertThat(decisions.toString()).contains("\"kind\":\"CHECKPOINT\"").contains("\"id\":" + decision);
+            JsonNode orders = authorizedGet("/api/paper/books/claude2/orders?limit=5");
+            assertThat(orders.toString()).contains("\"timing\":\"MARKET\"").contains("\"id\":" + order);
+        } finally {
+            deletePaperBooks();
+        }
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM paper_orders WHERE timing = 'MARKET'", Integer.class))
+                .as("MARKET 주문 행이 남지 않음(V14·V17 재실행이 timing CHECK를 옛 값으로 되돌림)").isZero();
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM paper_decisions WHERE kind = 'CHECKPOINT'", Integer.class))
+                .isZero();
+    }
+
+    @Test
     @DisplayName("🧪 모의 매매 ?market(2단계 F1): 없거나 US면 같은 응답, KR은 쉬는 사유와 함께 200(테스트 배포 설정에 한국 출발일 없음), 모르는 값은 400, 일반 회원은 403")
     void paperMarketParameter() {
         assumePaperSchema();

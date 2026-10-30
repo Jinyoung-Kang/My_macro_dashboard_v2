@@ -122,10 +122,11 @@ def test_범위_계좌_코드는_백엔드_PaperBooks와_같다():
     assert store_module.TIMED_RECENT_DAYS == 8
 
 
-def test_1분봉_저장본을_읽는_백엔드_코드는_실행_감사_작업_장부의_시각_지정_체결_상태_응답뿐이고_화면은_읽지_않는다():
+def test_1분봉_저장본을_읽는_백엔드_코드는_실행_감사_작업_장부의_시각_지정_체결_상태_응답_장중_확인뿐이고_화면은_읽지_않는다():
     """읽는 곳은 실행 감사 작업(0-4, 반사실·지연을 paper_order_exec에)과 장부의 시각 지정 체결(1-4 — PaperMarketData.barsUs가 조용히 읽고
     UsTimedFills가 2b·1분봉 기다림에 씀, 시각 지정 주문이 있는 계좌만), 상태 응답의 계좌2 묶음(PaperQueryService.barsView — claude2.bars, 정규장일 때
-    받은 시각·지연을 보이기만, 같은 barsUs 경유)뿐이고 계좌1의 결정·패킷은 그대로. 화면은 읽지 않습니다.
+    받은 시각·지연을 보이기만, 같은 barsUs 경유), 장중 확인 작업(계좌2 단계 2 — PaperCheckpointJob이 같은 barsUs로 읽어 예상 상태의 T 가격을
+    ExecutionAudit.fromBars로 셈, 판단 입력만)뿐이고 계좌1의 결정·패킷은 그대로. 화면은 읽지 않습니다.
     데이터셋 이름을 쓰는 파일과 함께 PaperMarketData.barsUs()를 부르는 파일도 셉니다 — 이름을 쓰지 않고 그 메서드를 거치는 새 독자도 잡도록."""
     readers = []
     for folder in (ROOT / "backend/src/main/java", ROOT / "frontend/src"):
@@ -142,9 +143,10 @@ def test_1분봉_저장본을_읽는_백엔드_코드는_실행_감사_작업_�
                                "backend/src/main/java/com/macrodash/store/Datasets.java"]
     callers = sorted(path.relative_to(ROOT).as_posix() for path in (ROOT / "backend/src/main/java").rglob("*.java")
                      if ".barsUs()" in path.read_text(encoding="utf-8"))
-    assert callers == ["backend/src/main/java/com/macrodash/feature/paper/PaperLedgerService.java",
+    assert callers == ["backend/src/main/java/com/macrodash/feature/paper/PaperCheckpointJob.java",
+                       "backend/src/main/java/com/macrodash/feature/paper/PaperLedgerService.java",
                        "backend/src/main/java/com/macrodash/feature/paper/PaperQueryService.java"], \
-        "PaperMarketData.barsUs()를 부르는 곳 = 장부(시각 지정 체결)와 상태 응답(claude2.bars)"
+        "PaperMarketData.barsUs()를 부르는 곳 = 장부(시각 지정 체결)·상태 응답(claude2.bars)·장중 확인 작업(예상 상태의 T 가격)"
 
 
 # ==============================================================================

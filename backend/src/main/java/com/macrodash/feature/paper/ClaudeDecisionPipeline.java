@@ -202,8 +202,13 @@ final class ClaudeDecisionPipeline {
 
     /** {@link #bind} — 같은 문맥·협력 객체·읽어 둔 스키마에 시장 문맥만 그 실행으로. */
     private ClaudeDecisionPipeline(ClaudeDecisionPipeline base, MarketRun run) {
-        this.market = run;
-        this.profile = base.profile;
+        this(base, run, base.profile);
+    }
+
+    /** {@link #bind}·{@link #checkpointReplies} — 협력 객체·읽어 둔 스키마는 그대로, 시장 문맥과 프로필만. */
+    private ClaudeDecisionPipeline(ClaudeDecisionPipeline base, PaperMarket market, ClaudeBookProfile profile) {
+        this.market = market;
+        this.profile = profile;
         this.store = base.store;
         this.packets = base.packets;
         this.runPackets = base.runPackets;
@@ -229,6 +234,20 @@ final class ClaudeDecisionPipeline {
             throw new IllegalArgumentException("다른 시장의 실행입니다: " + run + " — 이 파이프라인은 " + market.code());
         }
         return new ClaudeDecisionPipeline(this, run);
+    }
+
+    /**
+     * 장중 확인 응답을 검증·기록하는 사본(계좌2 명세 §10-5·§10-6, 단계 2) — 같은 계좌·시장 문맥·협력 객체에 프로필만
+     * {@link ClaudeBookProfile#US_CLAUDE2_CHECKPOINT}(받는 시점 MARKET·AT_*·NEXT_CLOSE, 순위 MARKET 0 &lt; … &lt; NEXT_CLOSE 7). 확인 호출은 이 사본이
+     * 아니라 원래 파이프라인({@link #attemptCheckpoint})이 합니다 — 이 사본은 {@link #plan}·{@link #insertOrders}·{@link #supersedePendingAfter}만.
+     *
+     * @throws IllegalStateException 장중 확인 판이 아닌 파이프라인
+     */
+    ClaudeDecisionPipeline checkpointReplies() {
+        if (checkpointSchema == null) {
+            throw new IllegalStateException(book() + " 파이프라인은 장중 확인 판이 아닙니다");
+        }
+        return new ClaudeDecisionPipeline(this, market, ClaudeBookProfile.US_CLAUDE2_CHECKPOINT);
     }
 
     /** 이 파이프라인의 시장 문맥 — 서비스가 만든 것은 시장 묶음, {@link #bind}한 사본은 그 실행. */
@@ -788,6 +807,31 @@ final class ClaudeDecisionPipeline {
         for (Order order : store.ordersByStatus(book(), PaperBooks.ORDER_PENDING)) {
             if (PacketBuilder.SOURCE_CLAUDE.equals(order.source())) {
                 store.markOrderStatus(order.id(), PaperBooks.ORDER_CANCELLED, "다음 결정이 대신함");
+                out.add(order.id());
+            }
+        }
+        return out;
+    }
+
+    /** 장중 확인 REPLACE가 대기 주문을 취소할 때의 사유. */
+    static final String SUPERSEDED_BY_CHECKPOINT = "장중 확인이 대신함";
+
+    /**
+     * 장중 확인 REPLACE(계좌2 명세 §8 ⑩) — 이 계좌의 출처 CLAUDE 대기 주문 가운데 기준 시각 T({@link ExecutionAudit#targetAt(Order, LocalDate,
+     * com.macrodash.analytics.TradingCalendar)} — 목표 세션 E의 그 시각, NEXT_CLOSE는 E 마감)가 {@code now}보다 뒤인 것만 {@value #SUPERSEDED_BY_CHECKPOINT}로
+     * 취소합니다. T가 이미 지난 주문은 현실에서는 이미 체결됐을 주문이라 남겨 장부가 자료로 풉니다. T를 모르는 주문(기준 거래일 없음)은 건드리지
+     * 않습니다. 아침 결정의 {@link #supersedePending}(전부)과 다른 범위입니다. 취소한 주문 번호.
+     */
+    List<Long> supersedePendingAfter(Instant now) {
+        List<Long> out = new ArrayList<>();
+        for (Order order : store.ordersByStatus(book(), PaperBooks.ORDER_PENDING)) {
+            if (!PacketBuilder.SOURCE_CLAUDE.equals(order.source())) {
+                continue;
+            }
+            Instant target = ExecutionAudit.targetAt(order, ExecutionAudit.targetSession(order, market.calendar()),
+                    market.calendar());
+            if (target != null && target.isAfter(now)) {
+                store.markOrderStatus(order.id(), PaperBooks.ORDER_CANCELLED, SUPERSEDED_BY_CHECKPOINT);
                 out.add(order.id());
             }
         }
