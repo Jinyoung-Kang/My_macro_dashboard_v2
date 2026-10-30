@@ -35,7 +35,9 @@
      - 단계 1(있음): 장부 `UsTimedFillsTest` — 사다리 `r1AtTheTargetBar`·`r2NextTradedBarInTheWindow`·`r2bFirstTradeAfterTheWindow`·`r3OnlyWhenTheBarsThemselvesAreMissing`·
        `quotesCloseAtTheFinalObservation`·`nextOpen`, 조건 ⑤~⑧b `lateForTimingIsCancelledWithAnAlert`·`lateForTimingAtExactlySixtySeconds`(T = 생성 + 60초는 막음 — 검증기
        `closedTimingsForTheValidator`·실행 감사 `ExecutionAuditTest.refusesBarsBeforeCreationPlusSixtySeconds`도 같은 경계)·`barBeforeTheTargetIsSkipped`·`unfinishedBarWaits`·`staleTickerEntry`·`zeroVolumeOnly`·
-       `recheckRefusesACorruptFirstTrade`, T 시각 순자산 `navAtTheTarget`·`navFallsBackToThePriceBeforeTheUpdate`, 순서 `sameTargetSellsFirstCashLikeLast`·`timedSellBeforeTheHourlyStop`·
+       `recheckRefusesACorruptFirstTrade`, T 시각 순자산 `navAtTheTarget`·`navFallsBackToThePriceBeforeTheUpdate`, 순서 `sameTargetSellsFirstCashLikeLast`·
+       R2b로 늦게 판 매도 대금은 그 봉보다 이른 매수에 쓰지 않음(리뷰 F4 — 같은 T는 (T, R2b 봉 시각, 방향) 순 `lateSaleDoesNotFundAnEarlierBuyAtTheSameTarget`,
+       앞 T 매도가 뒤 T의 더 이른 봉 매수보다 먼저 적용돼도 그 매수의 현금·T 시각 순자산에서는 판 보유 그대로 `lateSaleDoesNotFundAnEarlierBuyAtALaterTarget`)·`timedSellBeforeTheHourlyStop`·
        `pendingTimedSellDefersTheStopAtThatObservation`·`pendingTimedBuyIsResolvedBeforeTheStop`(W가 T 창을 다 본 1분봉보다 먼저 오면 그 종목의 스탑은 다음 W에서 T 주문 뒤)·
        `deferredStopIsJudgedAgainAtTheNextObservation`(미룬 W의 트리거는 이어 가지 않고 다음 W 관측가로 다시 판정 — 돌아오면 스탑 없음, 아니면 다음 W 가격),
        늦게 풂(M4) 문턱 T + 71분(= T + 6분 + 65분 — 리뷰 F5) `ExecutionAuditTest.lateResolvedComesFromTheFill`·`lateResolvedLeavesTheNextObservationAfterTheWindow`·
@@ -196,6 +198,7 @@
   `RECHECK_FAILED`를 더했습니다(명세 §10-4).
 - **늦게 푼 주문의 현금 순서(알려진 한계)**: 한 처리 회차에 풀린 시각 지정 주문만 T 순으로 적용하므로, 앞 T 주문이 다음 회차에 늦게 풀리면 그 사이 적용된 더 늦은 T 매도 대금을
   쓸 수 있습니다(가격은 T 봉 그대로, 현금 순서만). 뒤 주문까지 기다리게 하면 정지 종목 하나가 그날 나머지 체결을 마감까지 막아 그대로 둡니다(명세 §17).
+  같은 처리 회차 안에서는 R2b 봉 시각으로 순서를 맞춰, 매수 봉보다 뒤에 R2b로 판 매도 대금을 그 매수에 쓰지 않습니다(명세 §10-3 — 리뷰 F4 ⓐ).
 - **결정 작업 잠금 공유(알려진 한계·운영 규칙)**: 계좌2 결정은 결정 작업의 미국 차례 안에서 같은 잠금(`running`)을 쥐고 부르므로(출발은 재시도까지 최대 약 600초),
   그 주기의 한국 차례가 늦거나 계좌2 수동 실행 동안 한국 정기 실행이 `BUSY`로 한 주기를 건너뛸 수 있습니다. 겨울(EST)에는 계좌2 컷오프가 23:00 KST라 한국 결정 창(22:30~)과
   겹칠 수 있어, **겨울에는 22:20~23:00 KST에 `claude2.enabled`를 켜거나 '계좌2 시작'을 누르지 않습니다**(명세 §17-11 — 영향은 한국 결정이 창 안에서 몇 분 늦는 것뿐).

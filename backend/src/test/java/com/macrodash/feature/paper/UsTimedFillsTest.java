@@ -11,7 +11,6 @@ import com.macrodash.store.PaperStore.Lockout;
 import com.macrodash.store.PaperStore.Order;
 import com.macrodash.store.PaperStore.Position;
 import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -538,7 +537,6 @@ class UsTimedFillsTest {
         }
 
         @Test
-        @Disabled("F4 재현 — 같은 T 안 정렬이 T·방향뿐이라 R2b로 늦게(10:40) 판 매도 대금이 더 이른 봉(10:00) 매수의 현금에 들어감. 수정 커밋에서 뗌")
         @DisplayName("같은 T(10:00)에서 R2b로 10:40에 판 매도 대금은 그보다 이른 10:00 봉 매수에 쓰지 않음 — 현금 1,000으로 20주 중 9주(cashLimited), 매도는 그 뒤에(시장 시각 순)")
         void lateSaleDoesNotFundAnEarlierBuyAtTheSameTarget() {
             store.states.put(BOOK, new com.macrodash.store.PaperStore.BookState(BOOK, 1_000, 6_000, 5_000, 83, null,
@@ -564,7 +562,6 @@ class UsTimedFillsTest {
         }
 
         @Test
-        @Disabled("F4 재현 — 앞 T(10:00)의 매도가 R2b로 11:30에 풀려도 T 순으로 먼저 적용돼 그 대금이 다음 T(11:00) 봉 매수의 현금·순자산에 들어감. 수정 커밋에서 뗌")
         @DisplayName("앞 T(10:00) 매도가 R2b로 11:30에 풀리면 그 대금은 11:00 봉 매수에 쓰지 않고, 그 매수의 T 시각 순자산은 판 종목을 아직 든 것으로(갱신 전 평가 가격) 셈 — 비중 50% = 6,000의 절반 → 9주 요청, 현금 1,000으로 3주")
         void lateSaleDoesNotFundAnEarlierBuyAtALaterTarget() {
             store.states.put(BOOK, new com.macrodash.store.PaperStore.BookState(BOOK, 1_000, 6_000, 5_000, 83, null,
@@ -1017,10 +1014,13 @@ class UsTimedFillsTest {
             assertThat(fillOf(sell).observedAt()).as("장부 반영 = 이 관측치").isEqualTo(et(TUE, 16, 20));
             assertThat(barOf(weight).fillRung()).isEqualTo("Y1M_LATE");
             assertThat(fillOf(weight).rawPrice()).isEqualTo(98.0);
-            // T 순자산 = 2,000 + 100 × 51 × 0.9995(같은 T 매도 먼저) + ZZZ 100 × 갱신 전 50 = 12,097.45 → 1,209.7 ÷ 98.049 = 12주(W 70이면 14주)
+            // AAPL 10:37 R2b 매수가 BBB 10:40 R2b 매도보다 먼저(같은 T는 시장 시각 순 — 리뷰 F4): T 순자산 = 현금 2,000 + BBB 100 × 갱신 전 50
+            // (10:40 매도 전 — T 창 10:00 봉은 거래 없음) + ZZZ 100 × 갱신 전 50 = 12,000 → 1,200 ÷ 98.049 = 12.24 → 12주(현금 2,000이면 20주까지라
+            // 줄지 않음; 매도 대금을 먼저 넣던 셈 12,097.45 → 12.34도 12주, W 70이면 14주)
             assertThat(fillOf(weight).qty()).isEqualTo(12);
+            assertThat(fillOf(weight).id()).as("체결 행도 시장 시각 순 — 10:37 매수 → 10:40 매도").isLessThan(fillOf(sell).id());
             assertThat(barOf(later).fillRung()).as("같은 W 전 저장본의 R1도 그대로").isEqualTo("Y1M_AT");
-            assertThat(fillOf(later).qty()).as("10:00 매도 대금이 먼저 — 11:00 매수가 현금 부족으로 줄지 않음").isEqualTo(10);
+            assertThat(fillOf(later).qty()).as("10:40 매도 대금은 11:00 봉 매수 전 — 현금 부족으로 줄지 않음").isEqualTo(10);
             assertThat(order(later).reason() == null || !order(later).reason().has("cashLimited")).isTrue();
             assertThat(outcome.expired()).isZero();
             assertThat(outcome.notes()).filteredOn(note -> note.contains("대체 체결(Y1M_LATE)")).hasSize(2);
