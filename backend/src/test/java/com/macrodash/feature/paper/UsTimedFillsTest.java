@@ -11,6 +11,7 @@ import com.macrodash.store.PaperStore.Lockout;
 import com.macrodash.store.PaperStore.Order;
 import com.macrodash.store.PaperStore.Position;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -534,6 +535,59 @@ class UsTimedFillsTest {
             assertThat(fillOf(aapl).qty()).as("2,000 + 4,997.5 = 6,997.5 → 60 × 100.05 = 6,003").isEqualTo(60);
             // 남은 현금 994.5 → SHY 30주(82.041 × 30 = 2,461) 중 12주만(현금성 마지막)
             assertThat(fillOf(shy).qty()).isEqualTo(12);
+        }
+
+        @Test
+        @Disabled("F4 재현 — 같은 T 안 정렬이 T·방향뿐이라 R2b로 늦게(10:40) 판 매도 대금이 더 이른 봉(10:00) 매수의 현금에 들어감. 수정 커밋에서 뗌")
+        @DisplayName("같은 T(10:00)에서 R2b로 10:40에 판 매도 대금은 그보다 이른 10:00 봉 매수에 쓰지 않음 — 현금 1,000으로 20주 중 9주(cashLimited), 매도는 그 뒤에(시장 시각 순)")
+        void lateSaleDoesNotFundAnEarlierBuyAtTheSameTarget() {
+            store.states.put(BOOK, new com.macrodash.store.PaperStore.BookState(BOOK, 1_000, 6_000, 5_000, 83, null,
+                    null, null, null));
+            hold("BBB", 100, 45, 50, 50.0);
+            long sell = timed("BBB", PaperBooks.SELL, null, null, null, "AT_1000", MON, MON_DECIDED);
+            long aapl = buy("AAPL", 20, "AT_1000");
+            bars(new Bars(et(TUE, 11, 21)).bar("BBB", TUE, et(TUE, 10, 0), 50.0, 0.0)
+                    .bar("BBB", TUE, et(TUE, 10, 40), 51.0, 300.0).bar("BBB", TUE, et(TUE, 10, 41), 51.2, 300.0)
+                    .bar("AAPL", TUE, et(TUE, 10, 0), 100.0, 500.0).bar("AAPL", TUE, et(TUE, 10, 1), 100.1, 500.0));
+
+            observe(et(TUE, 11, 20), bar("BBB", MON, 50.0, TUE, 52.0), bar("AAPL", MON, 99.0, TUE, 101.0));
+
+            assertThat(barOf(sell).fillRung()).isEqualTo("Y1M_LATE");
+            assertThat(barOf(aapl).fillRung()).isEqualTo("Y1M_AT");
+            // 10:00 봉 매수 때 현금 = 1,000(10:40 매도 전) → 1,000 ÷ 100.05 = 9.99 → 9주(지금은 매도 대금 5,097.45를 먼저 넣어 20주)
+            assertThat(fillOf(aapl).qty()).isEqualTo(9);
+            assertThat(order(aapl).reason().path("cashLimited").asBoolean()).isTrue();
+            assertThat(order(aapl).reason().path("requestedQty").asInt()).isEqualTo(20);
+            assertThat(order(aapl).reason().path("filledQty").asInt()).isEqualTo(9);
+            assertThat(fillOf(sell).qty()).isEqualTo(100);
+            assertThat(fillOf(aapl).id()).as("체결 행도 시장 시각 순 — 10:00 매수 → 10:40 매도").isLessThan(fillOf(sell).id());
+        }
+
+        @Test
+        @Disabled("F4 재현 — 앞 T(10:00)의 매도가 R2b로 11:30에 풀려도 T 순으로 먼저 적용돼 그 대금이 다음 T(11:00) 봉 매수의 현금·순자산에 들어감. 수정 커밋에서 뗌")
+        @DisplayName("앞 T(10:00) 매도가 R2b로 11:30에 풀리면 그 대금은 11:00 봉 매수에 쓰지 않고, 그 매수의 T 시각 순자산은 판 종목을 아직 든 것으로(갱신 전 평가 가격) 셈 — 비중 50% = 6,000의 절반 → 9주 요청, 현금 1,000으로 3주")
+        void lateSaleDoesNotFundAnEarlierBuyAtALaterTarget() {
+            store.states.put(BOOK, new com.macrodash.store.PaperStore.BookState(BOOK, 1_000, 6_000, 5_000, 83, null,
+                    null, null, null));
+            hold("BBB", 100, 45, 50, 50.0);
+            long sell = timed("BBB", PaperBooks.SELL, null, null, null, "AT_1000", MON, MON_DECIDED);
+            long msft = timed("MSFT", PaperBooks.BUY, null, 50.0, null, "AT_1100", MON, MON_DECIDED);
+            bars(new Bars(et(TUE, 11, 56)).bar("BBB", TUE, et(TUE, 10, 0), 50.0, 0.0)
+                    .bar("BBB", TUE, et(TUE, 11, 30), 52.0, 300.0).bar("BBB", TUE, et(TUE, 11, 31), 52.1, 300.0)
+                    .bar("MSFT", TUE, et(TUE, 11, 0), 300.0, 500.0).bar("MSFT", TUE, et(TUE, 11, 1), 300.1, 500.0));
+
+            observe(et(TUE, 11, 55), bar("BBB", MON, 50.0, TUE, 53.0), bar("MSFT", MON, 299.0, TUE, 305.0));
+
+            assertThat(barOf(sell).fillRung()).isEqualTo("Y1M_LATE");
+            assertThat(barOf(sell).barAt()).isEqualTo(et(TUE, 11, 30));
+            assertThat(barOf(msft).fillRung()).isEqualTo("Y1M_AT");
+            // 11:00 봉 매수의 T 시각 순자산 = 현금 1,000 + BBB 100 × 갱신 전 50(11:30 매도 전) = 6,000 → 3,000 ÷ 300.15 = 9.99 → 9주 요청,
+            // 현금 1,000 ÷ 300.15 = 3.33 → 3주(지금은 매도 대금을 먼저 넣어 순자산 6,197.4 → 10주 전량)
+            assertThat(fillOf(msft).qty()).isEqualTo(3);
+            assertThat(order(msft).reason()).as("cashLimited 근거").isNotNull();
+            assertThat(order(msft).reason().path("cashLimited").asBoolean()).isTrue();
+            assertThat(order(msft).reason().path("requestedQty").asInt()).isEqualTo(9);
+            assertThat(fillOf(sell).qty()).isEqualTo(100);
         }
 
         @Test
