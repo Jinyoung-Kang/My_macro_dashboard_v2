@@ -11,7 +11,6 @@ import com.macrodash.store.PaperStore.Lockout;
 import com.macrodash.store.PaperStore.Order;
 import com.macrodash.store.PaperStore.Position;
 import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -635,7 +634,6 @@ class UsTimedFillsTest {
         }
 
         @Test
-        @Disabled("F5 재현 — 늦게 풂 문턱 T + 65분이 '다음 관측치에서 풂'(W2 ≈ T + 60~66분) 한가운데라 W1이 T + 5분 뒤면 늦음으로 셈. 수정 커밋에서 뗌")
         @DisplayName("W1(10:05:30)이 T + 6분 전이라 그 1분봉 저장본(10:05:45)이 T 창을 다 보지 못하면 다음 W2(11:05:30 = T + 65분 30초)에서 R1로 풂 — 늦게 풂이 아님(W1이 10:04면 W2 11:04와 같은 원인·같은 판정)")
         void resolvedAtTheNextObservationIsNotLate() {
             long id = buy("AAA", 10, "AT_1000");

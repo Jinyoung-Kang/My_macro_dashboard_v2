@@ -49,7 +49,7 @@ import java.util.Optional;
  * <p><b>한 번 쓴 값은 고치지 않습니다.</b> 시점마다 값을 처음 구한 저장본의 값이 남고(저장 쪽 {@link PaperStore#mergeOrderExec}), 못 구한 시점은
  * null로 두었다가 다음 저장본에서 다시 봅니다. 지연({@code lag_seconds})은 그 주문의 1분봉 반사실을 처음 적은 저장본의 지연(달력으로 다시 셈 —
  * 정규장 밖이면 null)이고 그때 null이었으면 뒤 저장본의 지연으로 메우지 않습니다. 늦게 풂({@code late_resolved})은 시각 지정 체결(장부 2b·3a가 사다리
- * 칸을 남긴 체결)이 생기면 그 체결 행으로 한 번 셉니다({@link ExecutionAudit#lateResolved} — 대체 칸이거나 장부 반영이 T + 65분 뒤). 그 밖의 주문은
+ * 칸을 남긴 체결)이 생기면 그 체결 행으로 한 번 셉니다({@link ExecutionAudit#lateResolved} — 대체 칸이거나 장부 반영이 T + 71분 뒤). 그 밖의 주문은
  * null입니다.
  *
  * <p>저장본(1분봉·관측치)은 {@link StoreReader#quietly}로만 읽습니다 — 정기 작업이 수집기를 깨우지 않게(ADR 0008). 작업 기록

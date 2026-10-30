@@ -242,8 +242,10 @@ final class ExecutionAudit {
     /**
      * 늦게 풀었나({@code paper_order_exec.late_resolved}, 명세 §10-4·M4) — 시각 지정 체결(사다리 칸이 있는 체결 — 장부 2b·3a, {@link UsTimedFills})만
      * 셉니다. 대체 칸(R2b·R3·종가 — {@link UsTimedFills#FALLBACK_RUNGS})이면 참, 아니면 장부 반영 시각(그 체결을 적은 관측치 W의 수집 시각
-     * {@code observed_at})이 기준 시각 T + {@link UsTimedFills#ONE_ROUND}(slow 한 회차 + 여유)보다 뒤일 때 참입니다 — T 뒤 첫 처리 회차보다 늦게 체결된
-     * 것(1분봉이 한 회차 넘게 늦음·서버가 꺼졌던 뒤의 2b)입니다. 1분봉 기다림(최대 15분)은 W의 수집 시각을 바꾸지 않으므로 늦음으로 세지 않습니다.
+     * {@code observed_at})이 기준 시각 T + {@link UsTimedFills#LATE_AFTER}(71분 = 1분봉이 T 창을 다 보는 6분 + slow 한 회차와 여유 65분)보다 뒤일 때
+     * 참입니다 — T 창을 볼 수 있었던 첫 처리 회차보다 늦게 체결된 것(1분봉이 한 회차 넘게 늦음·서버가 꺼졌던 뒤의 2b)입니다. T 뒤 첫 관측치가 T + 6분
+     * 전이라 다음 관측치(T + 60~66분)에서 푼 것은 늦음이 아니고(리뷰 F5 — 그 W1이 T + 5분 앞이냐 뒤냐로 갈리지 않게), 1분봉 기다림(최대 15분)도 W의 수집
+     * 시각을 바꾸지 않으므로 늦음으로 세지 않습니다.
      * 시각 지정 체결이 아니거나(계좌1 주문·사다리 칸 없음) 체결이 없으면(대기·만료·취소) null — 모르는 값을 짓지 않습니다.
      *
      * @param fill 그 주문의 체결과 체결 봉(없으면 null)
@@ -259,7 +261,7 @@ final class ExecutionAudit {
         if (target == null) {
             return null;
         }
-        return fill.fill().observedAt().isAfter(target.plus(UsTimedFills.ONE_ROUND));
+        return fill.fill().observedAt().isAfter(target.plus(UsTimedFills.LATE_AFTER));
     }
 
     /**

@@ -5,7 +5,6 @@ import com.macrodash.analytics.UsMarketCalendar;
 import com.macrodash.feature.paper.ExecutionAudit.Price;
 import com.macrodash.feature.paper.ExecutionAuditFixtures.Bars;
 import com.macrodash.store.PaperStore.Order;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -281,20 +280,20 @@ class ExecutionAuditTest {
 
     // ------------------------------------------------------------------ 늦게 풂(late_resolved)
     @Test
-    @DisplayName("늦게 풂 — 대체 칸(R2b·R3·종가)은 참, 1분봉 칸은 장부 반영이 T + 65분 뒤일 때만 참, 사다리 칸 없는 체결·체결 없음은 null")
+    @DisplayName("늦게 풂 — 대체 칸(R2b·R3·종가)은 참, 1분봉 칸은 장부 반영이 T + 71분(T + 6분 + 65분) 뒤일 때만 참, 사다리 칸 없는 체결·체결 없음은 null")
     void lateResolvedComesFromTheFill() {
         Order order = buy("AT_1000", MON, MON_DECIDED);
         Instant target = et(TUE, 10, 0);
         com.macrodash.store.PaperStore.Fill inTime = observationFill(7, "AAPL", PaperBooks.BUY, 1, 100, target.plusSeconds(20 * 60),
                 TUE);
-        com.macrodash.store.PaperStore.Fill late = observationFill(7, "AAPL", PaperBooks.BUY, 1, 100, target.plusSeconds(65 * 60 + 1),
+        com.macrodash.store.PaperStore.Fill late = observationFill(7, "AAPL", PaperBooks.BUY, 1, 100, target.plusSeconds(71 * 60 + 1),
                 TUE);
 
         assertThat(ExecutionAudit.lateResolved(order, new com.macrodash.store.PaperStore.ExecFill(inTime, target, "Y1M_AT"), US))
                 .isFalse();
         assertThat(ExecutionAudit.lateResolved(order, new com.macrodash.store.PaperStore.ExecFill(
-                observationFill(7, "AAPL", PaperBooks.BUY, 1, 100, target.plusSeconds(65 * 60), TUE), target, "Y1M_NEXT"),
-                US)).as("정확히 T + 65분은 아직 한 회차 안").isFalse();
+                observationFill(7, "AAPL", PaperBooks.BUY, 1, 100, target.plusSeconds(71 * 60), TUE), target, "Y1M_NEXT"),
+                US)).as("정확히 T + 71분은 아직 T 창을 볼 수 있었던 다음 관측치 안").isFalse();
         assertThat(ExecutionAudit.lateResolved(order, new com.macrodash.store.PaperStore.ExecFill(late, target, "Y1M_AT"), US))
                 .as("서버가 꺼졌던 뒤의 2b·1분봉이 한 회차 넘게 늦음").isTrue();
         for (String rung : List.of("Y1M_LATE", "QUOTES_FALLBACK", "QUOTES_CLOSE")) {
@@ -307,7 +306,6 @@ class ExecutionAuditTest {
     }
 
     @Test
-    @Disabled("F5 재현 — 문턱이 T + 65분이라 T 뒤 첫 관측치 W1이 T + 6분 전이어서 다음 관측치 W2(≈ W1 + 60분)에서 푼 체결이 W1 시각에 따라 갈림. 수정 커밋에서 뗌")
     @DisplayName("늦게 풂 문턱 = T + 6분(1분봉이 T 창을 다 봄) + 65분(slow 한 회차 + 여유) = T + 71분 — W1이 T + 6분 안이라 다음 관측치 W2(T + 64~66분)에서 푼 1분봉 체결은 W1이 T + 5분 앞이든 뒤든 늦음 아님, 정확히 T + 71분도 아님, 그 뒤만 늦음")
     void lateResolvedLeavesTheNextObservationAfterTheWindow() {
         Order order = buy("AT_1000", MON, MON_DECIDED);

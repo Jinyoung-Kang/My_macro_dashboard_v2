@@ -123,8 +123,15 @@ final class UsTimedFills {
     static final Duration FALLBACK_AFTER = Duration.ofMinutes(20);
     /** (나): 1분봉 저장본(또는 그 종목 세션)을 T + 이만큼 전에 받았으면 그 저장본은 T 창을 다 보지 못함. */
     static final Duration WINDOW_SEEN = Duration.ofMinutes(6);
-    /** (나): W 수집이 T + 이만큼 뒤면 1분봉 태스크가 한 회차 넘게 실패한 것으로 봄 — slow 한 회차(60분) + 앞 태스크 여유 5분. 늦게 풂의 문턱도 같음. */
+    /** (나): W 수집이 T + 이만큼 뒤면 1분봉 태스크가 한 회차 넘게 실패한 것으로 봄 — slow 한 회차(60분) + 앞 태스크 여유 5분. */
     static final Duration ONE_ROUND = Duration.ofMinutes(65);
+    /**
+     * 늦게 풂(M4 — {@link ExecutionAudit#lateResolved})의 문턱: 장부 반영(관측치 W 수집)이 T + 이만큼 뒤일 때만 늦음 — {@link #WINDOW_SEEN}(1분봉 저장본이
+     * T 창을 다 봄) + {@link #ONE_ROUND} = 71분. T 뒤 첫 관측치 W1이 T + 6분 전에 오면 그 뒤 1분봉 저장본도 T 창을 다 보지 못해(NOT_YET) 다음 관측치
+     * W2(≈ W1 + 60분 — T + 60~66분)에서 풀리는데, 이 W2까지는 정상 경로라 늦음이 아닙니다. 문턱을 T + 65분으로 두면 같은 원인이 W1이 T + 5분 앞이냐
+     * 뒤냐로 갈렸습니다(리뷰 F5 ⓐ).
+     */
+    static final Duration LATE_AFTER = WINDOW_SEEN.plus(ONE_ROUND);
 
     /** 만료 사유 코드({@code paper_orders.reject_reason}의 앞머리 — 뒤에 한 줄 설명). E 1분봉 없음(서버 꺼짐·수집 실패)·풀지 못함. */
     static final String NO_BARS = "NO_BARS";

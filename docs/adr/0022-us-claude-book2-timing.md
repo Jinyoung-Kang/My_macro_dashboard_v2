@@ -38,6 +38,8 @@
        `recheckRefusesACorruptFirstTrade`, T 시각 순자산 `navAtTheTarget`·`navFallsBackToThePriceBeforeTheUpdate`, 순서 `sameTargetSellsFirstCashLikeLast`·`timedSellBeforeTheHourlyStop`·
        `pendingTimedSellDefersTheStopAtThatObservation`·`pendingTimedBuyIsResolvedBeforeTheStop`(W가 T 창을 다 본 1분봉보다 먼저 오면 그 종목의 스탑은 다음 W에서 T 주문 뒤)·
        `deferredStopIsJudgedAgainAtTheNextObservation`(미룬 W의 트리거는 이어 가지 않고 다음 W 관측가로 다시 판정 — 돌아오면 스탑 없음, 아니면 다음 W 가격),
+       늦게 풂(M4) 문턱 T + 71분(= T + 6분 + 65분 — 리뷰 F5) `ExecutionAuditTest.lateResolvedComesFromTheFill`·`lateResolvedLeavesTheNextObservationAfterTheWindow`·
+       `UsTimedFillsTest.resolvedAtTheNextObservationIsNotLate`(T 창을 보지 못한 첫 관측치의 다음 관측치에서 푼 체결은 늦음이 아님 — 그 첫 관측치가 T + 5분 앞이든 뒤든),
        `expiryComesAfterTimedFills`(E 하루 만료가 2b 뒤)·`hourlyPathNeverFillsTimedOrders`(`fillable` 제외 회귀)·`pollingInvariance`·`neverFillsWithABarBeforeTheTargetOrCreation`(룩어헤드 성질)·
        `dstEndWeek`·`dstStartWeek`·`holidayAndEarlyClose`, 서버가 꺼졌던 경우 `backBeforeTheNextOpen`·`backDuringTheNextSession`·`beyondTheBarsHorizon`; 실제 표
        `PaperStoreDbTest.timedExpiryAndFillBar`·`PaperLedgerDbTest.timedFillsOnRealTables`(시험 행은 시작·끝에 지움 — V14 다시 실행). 검증기·스키마
