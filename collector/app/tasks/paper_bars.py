@@ -17,6 +17,9 @@ app/tasks/paper_bars.py
   쉬는 것은 다음 회차 관측치가 같은 거부에 걸리는 일을 줄이려는 것).
 [실패] 받지 못한 종목은 직전 저장본의 같은 종목으로 잇고 isStale(세션마다의 fetchedAt은 실제로 받은 시각 그대로). 하나도 받지 못하면 EmptyResult로
   저장본을 둡니다.
+[봉 0개] 응답에 봉이 하나도 없는 종목(종일 거래 정지 등)은 기준 종목 SPY가 이번 회차에 세션을 받았으면 '받지 못함'이 아니라 그 세션들의 거래 없음으로
+  봅니다 — 이어받지 않고 세션 없는 새 항목(noBarSessions)으로 저장해, 장부가 1분봉 자료 없음(R3·종가 대체)이 아니라 'T 뒤 거래 없음'(T18)으로
+  판정합니다(no_bar_entries). 429를 받은 회차·SPY가 세션을 받지 못한 회차·직전 저장본에 그 종목의 그 세션이 이미 있는 종목은 지금처럼 이어받습니다.
 
 [저장본 모양 — contract 1]
   {contract, source, barLabel "START", menu {NEXT_OPEN: "09:30", AT_1000: "10:00", …}, period, reference "SPY", scope [티커…], fetchedAt,
@@ -30,8 +33,10 @@ app/tasks/paper_bars.py
        windows {"09:30"|"10:00"…"15:00": [{t, o, h, l, c, v}…] | null},   # T ~ T+4분에 시작한 봉. 없으면 null(아직·조기 폐장·무거래)
        firstTradeAfter {"HH:MM": {t, o, v} | null},                    # T 이후(T 포함) 그 세션의 첫 거래량 > 0 봉. 없으면 null
        dailyOpen}},                                                   # 검증용 일봉 시가(X2). 확정 전·못 받음은 null
+     noBarSessions?,        # 봉 0개 항목만 — SPY가 이번 회차에 받은 세션(뉴욕 날짜) 가운데 이 종목 봉이 하나도 없던 세션. sessions는 직전 것 그대로(없으면 {})
      isStale?, staleReason?, staleSince?}},
-   missing [이번에 받지 못한 티커], error, dailyOpenSessions {YYYY-MM-DD: 일봉 배치를 부른 시각}}
+   missing [이번에 받지 못한 티커 — 봉 0개 항목은 빠짐], error(배치의 사유 그대로 — 봉 0개 종목도 '받지 못함'으로 셈),
+   dailyOpenSessions {YYYY-MM-DD: 일봉 배치를 부른 시각}}
   t는 늘 봉 **시작**의 UTC ISO입니다(BAR_LABEL). 창 시각은 그 세션 날짜의 America/New_York 시각이라 서머타임 전환에도 09:30 ET 그대로입니다
   (2026-10-30 EDT 13:30Z, 2026-11-02 EST 14:30Z — 고정 UTC 오프셋 없음). 거래량 0 봉도 창에는 그대로 두고(받은 값), 첫 거래 봉에서만 건너뜁니다.
   수집기는 미국 달력을 모릅니다 — 휴장일은 봉이 없어 세션이 생기지 않고, 조기 폐장일(13:00)은 13:00 뒤 창이 null입니다.
@@ -212,8 +217,44 @@ def lag_seconds(fetched_at: datetime, reference: dict | None) -> int | None:
     return round((fetched_at - (last + timedelta(seconds=60))).total_seconds())
 
 
-def _has_sessions(entry: dict) -> bool:
-    return bool(entry.get("sessions"))
+def _has_data(entry: dict) -> bool:
+    """이어받기의 '값 있음' — 세션이 있거나, 봉 0개 항목(noBarSessions — 세션이 하나도 없어도 거래 없음을 본 항목)."""
+    return bool(entry.get("sessions")) or bool(entry.get("noBarSessions"))
+
+
+def no_bar_entries(tickers: list[str], fresh: dict[str, dict], before: dict, fetched_at: datetime,
+                   limited: bool) -> tuple[dict[str, dict], list[str]]:
+    """
+    응답에 봉이 0개인 종목(종일 거래 정지 등) → '세션 없는 새 항목'(그 세션의 거래 없음 — 장부가 NO_TRADE로 봄, 명세 §6-2·T18).
+    (종목 → 항목, 기준 종목이 이번 회차에 받은 세션) — 외부 호출·DB 없음.
+
+    기준 종목(SPY)이 이번 회차에 받은 세션(합친 뒤에도 이번 응답의 것으로 남은 세션 — fetchedAt이 이번 회차)이 있을 때만이고, 그 세션들을
+    ``noBarSessions``에 적습니다. 직전 저장본의 세션은 받은 시각 그대로 둡니다(merge_sessions — 최근 3). 장부는 SPY의 그 세션이 이 항목과 같은
+    회차(같은 fetchedAt)일 때만 거래 없음으로 봅니다(UsTimedFills.evidence).
+
+    다음 경우는 항목을 만들지 않아 지금처럼 이어받습니다(isStale): 이번 회차가 429를 받음(그 종목만 거부됐을 수 있음), SPY가 이번
+    회차에 세션을 받지 못함(응답째 믿을 수 없음 — 짧게 온 응답으로 직전 세션을 남긴 때 포함), 직전 저장본에 그 종목의 그 세션이 이미 있음(그날
+    거래가 있었는데 이번 응답에 없음 — 받지 못한 것).
+    """
+    reference = fresh.get(REFERENCE)
+    if limited or reference is None:
+        return {}, []
+    stamp = fetched_at.isoformat()
+    covered = sorted(day for day, entry in reference["sessions"].items()
+                     if isinstance(entry, dict) and entry.get("fetchedAt") == stamp)
+    if not covered:
+        return {}, []
+    out: dict[str, dict] = {}
+    for ticker in tickers:
+        if ticker in fresh:
+            continue
+        prior = before.get(ticker)
+        sessions = prior.get("sessions") if isinstance(prior, dict) else None
+        sessions = sessions if isinstance(sessions, dict) else {}
+        if any(day in sessions for day in covered):
+            continue
+        out[ticker] = {"fetchedAt": stamp, "sessions": merge_sessions({}, sessions), "noBarSessions": covered}
+    return out, covered
 
 
 def _after_round(limited: bool) -> None:
@@ -291,8 +332,10 @@ def task_paper_bars_us() -> str:
     daily_note = "" if limited else _fill_daily_opens(fresh, done, fetched_at)
 
     received = sorted(fresh)
+    no_bars, covered = no_bar_entries(tickers, fresh, before, fetched_at, limited)
+    fresh.update(no_bars)
     missing = [ticker for ticker in tickers if ticker not in fresh]
-    carried = carry_over_missing(fresh, before, tickers, reason, _has_sessions)
+    carried = carry_over_missing(fresh, before, tickers, reason, _has_data)
     lag = lag_seconds(fetched_at, fresh.get(REFERENCE))
     store.put_snapshot(catalog.SNAP_PAPER_BARS_US, {
         "contract": CONTRACT,
@@ -313,8 +356,11 @@ def task_paper_bars_us() -> str:
     _caught_up = True
 
     days = sorted({day for ticker in received for day in fresh[ticker]["sessions"]})
-    detail = (f"{len(received)}/{len(tickers)} 종목 · 세션 {', '.join(days)} (period {period})" + carried_suffix(carried)
-              + (f" · 지연 {lag}초({REFERENCE})" if lag is not None else "") + daily_note)
+    shown = sorted(no_bars)
+    no_bar_note = (f" · 봉 0개 {len(shown)}개({', '.join(shown[:5])}{'…' if len(shown) > 5 else ''}) — {REFERENCE} 세션 "
+                   f"{', '.join(covered)}의 거래 없음으로 저장") if shown else ""
+    detail = (f"{len(received)}/{len(tickers)} 종목 · 세션 {', '.join(days)} (period {period})" + no_bar_note
+              + carried_suffix(carried) + (f" · 지연 {lag}초({REFERENCE})" if lag is not None else "") + daily_note)
     if reason:
         detail += f" — {reason}"
     return detail

@@ -426,6 +426,42 @@ class UsTimedFillsTest {
         }
 
         @Test
+        @DisplayName("⑧b 수집기의 '봉 0개' 항목(1d 응답에 봉이 없어 세션 없는 새 항목 — SPY는 같은 회차에 E 세션) — 장중 W 뒤 저장본에서도 R3로 채우지 않고 "
+                + "기다리며, 마감 뒤 NO_TRADE_AFTER_T")
+        void noBarsEntryIsNoTradeForTheSessionTheReferenceGot() {
+            long id = buy("HALT", 10, "AT_1000");
+            bars(new Bars(et(TUE, 11, 21)).noBars("HALT", TUE)
+                    .bar("SPY", TUE, et(TUE, 10, 0), 580.0, 9000.0).bar("SPY", TUE, et(TUE, 11, 19), 581.0, 9000.0));
+            Outcome intraday = observe(et(TUE, 11, 20), bar("HALT", MON, 50.0, TUE, 50.0));
+            assertThat(order(id).status()).as("W ≥ T + 20분이지만 1분봉 자료 없음이 아님 — R3 아님").isEqualTo("PENDING");
+            assertThat(intraday.filled()).isZero();
+
+            bars(new Bars(et(TUE, 16, 21)).noBars("HALT", TUE)
+                    .bar("SPY", TUE, et(TUE, 10, 0), 580.0, 9000.0).bar("SPY", TUE, et(TUE, 15, 59), 581.0, 9000.0));
+            observe(et(TUE, 16, 20), bar("HALT", MON, 50.0, TUE, 50.0));
+
+            assertThat(order(id).status()).isEqualTo("EXPIRED");
+            assertThat(order(id).rejectReason()).startsWith("NO_TRADE_AFTER_T").contains("거래 정지");
+            assertThat(store.fillsOf(BOOK)).as("멈춘 가격(관측치의 그날 값)으로 채우지 않음").isEmpty();
+        }
+
+        @Test
+        @DisplayName("⑧b 뒤 회차의 '봉 0개' 항목(E+1 세션만 — SPY의 E 세션은 앞 회차 것)은 E의 거래 없음이 아님 — 1분봉 자료 없음이라 관측치의 E 확정 종가(QUOTES_CLOSE)")
+        void noBarsEntryOfALaterRoundIsNotProofForTheSession() {
+            long id = buy("HALT", 10, "AT_1000");
+            Bars later = new Bars(et(WED, 11, 21)).noBars("HALT", WED)
+                    .bar("SPY", TUE, et(TUE, 15, 59), 580.0, 9000.0).bar("SPY", WED, et(WED, 11, 19), 590.0, 9000.0)
+                    .sessionFetchedAt("SPY", TUE, et(WED, 9, 56));
+            bars(later);
+
+            observe(et(WED, 11, 20), bar("HALT", MON, 50.0, TUE, 51.0));
+
+            assertThat(order(id).rejectReason()).as("NO_TRADE_AFTER_T가 아님").isNull();
+            assertThat(barOf(id).fillRung()).isEqualTo("QUOTES_CLOSE");
+            assertThat(fillOf(id).rawPrice()).as("E 확정 종가(관측치 봉 날짜 = E)").isEqualTo(51.0);
+        }
+
+        @Test
         @DisplayName("거래 정지 뒤 T 뒤 재개 — 재개 첫 거래 봉(R2b)으로 체결")
         void resumedAfterTheTarget() {
             long id = buy("HALT", 10, "AT_1000");

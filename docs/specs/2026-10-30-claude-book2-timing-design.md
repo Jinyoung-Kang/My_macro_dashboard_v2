@@ -287,6 +287,9 @@
   만료 판정은 E의 1분봉으로 풀 수 있는 것을 다 푼 **뒤**에 한다(§10-1 3a) — E 장중에 서버가 꺼졌다가 E+1에 켜져도 E 주문은 E의 가격으로만 체결되거나 만료되고, E+1 가격으로는 체결되지 않는다.
 - **거래가 없는 종목**(거래 정지·늦은 개장·무거래): 1분봉 저장본이 E 안에서 T 뒤 거래 봉을 하나도 보이지 않으면 체결하지 않고 기다리며, E 마감 + 15분 뒤 저장본에서도 없으면 `EXPIRED`
   (사유 `NO_TRADE_AFTER_T` '거래 정지·무거래 가능'). 멈춘 가격(`paper.quotes`의 그날 값)으로 채우지 않는다(T18). 계좌1의 시간별 체결은 이 구분이 없다 — 한계로 적는다(§17).
+  종일 거래 정지로 응답에 봉이 0개인 종목은 수집기가 SPY가 그 회차에 받은 세션의 거래 없음(세션 없는 새 항목 `noBarSessions` — §12-1)으로 저장해 같은 판정을 받는다.
+  *(리뷰 뒤 고쳐 적음 — 전에는 봉 0개 종목을 '받지 못함'으로 보고 직전 항목을 이어받아(`isStale`) 장부가 1분봉 자료 없음(§10-4 (가))으로 R3·`QUOTES_CLOSE`에 채울 수 있었고,
+  종일 정지 판정은 그 종목에 다른 날 세션이 있는 응답(5d 따라잡기)에서만 됐다. 리뷰 권장 ⓐ.)*
 - **검증 시각 규칙**: T ≤ 주문 생성 + 60초인 시각 지정 주문은 검증기가 `LATE_FOR_TIMING`으로 거절한다(마감 뒤 결정은 ⑤ 컷오프로 보통 생기지 않음, 장중 확인에서 지난 `AT_*`).
 - 1분봉은 정규장·원시가(`prepost=False`, `auto_adjust=False`), 봉 시각은 **봉 시작** 라벨로 가정한다[추정 — X1. 끝 라벨로 판명되면 코드 상수 `BAR_LABEL`만 바꾸고 규칙은 '봉 시작' 기준 그대로].
 - **조기 폐장일**(`UsMarketCalendar.isEarlyClose`, `:148`): `AT_1300` 이후는 검증기가 `MALFORMED`(사유 "조기 폐장 13:00 ET")로 거절, `MARKET`은 12:55 ET 뒤 생성이면 거절. 패킷 `13_execution`이 그날 마감을 미리 알린다.
@@ -529,6 +532,9 @@ E가 끝나면(3a) 모든 주문이 풀리므로 미룸은 그 세션 안에서 
 - 받는 법: `yf.download(interval="1m", prepost=False, auto_adjust=False)` 배치 한 번. 기동 뒤 첫 실행만 `period="5d"`(서버가 꺼졌던 세션 따라잡기), 그 뒤 `"1d"`[추정 — X9].
   1분봉을 되짚을 수 있는 기간은 yfinance가 `period="max"`일 때 8일로 자르는 것만 확인했고(1.7.0 `scrapers/history.py:231-232`) Yahoo 쪽 실제 한도는 [모름 — X9에서 `5d` 응답의 첫 세션 날짜로 확인].
 - 받지 못한 종목은 직전 저장본의 같은 종목으로 잇고 `isStale`, 전부 실패하면 `EmptyResult`로 저장본을 둔다(`collector/app/tasks/paper_live.py:37-49`와 같은 방식).
+  응답에 봉이 0개인 종목은 SPY가 그 회차에 세션을 받았으면 받지 못한 것이 아니라 그 세션의 거래 없음이다 — 이어받지 않고 세션 없는 새 항목(그 회차 `fetchedAt`, `noBarSessions` = SPY가 그 회차에 받은
+  세션, 직전 세션은 그대로)으로 저장한다(T18 판정의 증거 — 장부는 SPY의 E 세션이 그 항목과 같은 회차일 때만 거래 없음, §10-4). 429를 받은 회차·SPY가 세션을 받지 못한 회차·직전 저장본에
+  그 종목의 그 세션이 이미 있는 종목(거래가 있었는데 응답에 없음)은 지금처럼 이어받는다.
 - 범위 읽기는 새 `store.timed_scope("US")` — `paper_orders`·`paper_positions`·`paper_books`(단계 2는 `paper_checkpoints`)를 **읽기만**(선례 `collector/app/store.py:557-569`). 수집기 쪽 '시각 지정 timing' 목록은 백엔드 상수와 대조 시험(`DatasetsParityTest`처럼 파일을 읽어 봄).
 - 데이터셋 이름은 `collector/app/catalog.py`와 `backend/.../store/Datasets.java` 양쪽(`DatasetsParityTest`), 백엔드가 읽을 최대 나이 상수(예: `MAX_AGE_BARS` — 70분)도 `Datasets.java`에.
   태스크 수 37 → 38(단계 2에서 39): 수집기 시험 **13개 파일**의 `len(tasks.ALL_TASKS) == len(tasks.TASKS_BY_NAME) == 37`(예: `collector/tests/test_kr_calendar.py:49` — grep으로 모두), `docs/DATA_SOURCES.md:11`, `CLAUDE.md:18`.
@@ -662,6 +668,7 @@ P_cf가 `null`인 체결은 줄마다 `excludedNoBaseline`. 평균·구간은 �
 - **정기 작업 끔**: `PAPER_ENABLED=false`면 감사 작업·장중 확인 작업이 아무것도 하지 않음(로컬 v2).
 - **프롬프트·스키마**: `DecisionTimingsLockTest` 계좌2 대조, `StructuredSchemaTest`, 새 고정본 `G/render-us-claude2-*`·`G/decision-schema-forapi-us-claude2.json`·`G/packet-us-claude2-*`.
 - **수집기**: `paper_bars_us` 이어받기·`EmptyResult`·래치 중 묻지 않음·범위 SQL이 읽기만·빈 범위 호출 0·`period` 따라잡기·`firstTradeAfter`(창 밖 첫 거래·없음 `null`)·창 시각의 서머타임 전환·장 밖 `lagSeconds` `null`,
+  봉 0개 종목(SPY가 받은 세션 — 세션 없는 새 항목, 429 회차·SPY 없음·직전에 그 세션을 받은 종목은 이어받기),
   `test_table_ownership`(새 백엔드 표·데이터셋 쓰는 모듈 하나), `DatasetsParityTest`, 태스크 수 38(39) — 13개 파일.
 - **통합·화면**: `ApiIntegrationTest` 계좌 수 4 → 5(`:1117·1136`), `UsPaperMarketTest:285-317`, `PaperAdminServiceTest`, `PaperQueryUsGoldenTest` 갱신(개요·상태 둘만), `DecisionTimingsLockTest`의 문맥 목록 단언, `paperAccount.test.ts`(코드 넷 → 다섯), 화면 시험.
 - **스키마 준비**: V17·V18 열·표가 없는 DB에 새 판 백엔드를 띄우면 `PaperStore.ready`가 거짓이라 미국·한국 모의 매매 경로가 `available:false`(QA-016과 같은 시험).
@@ -741,6 +748,9 @@ P_cf가 `null`인 체결은 줄마다 `excludedNoBaseline`. 평균·구간은 �
     운영 규칙(리뷰 권장 ⓐ): 겨울에는 22:20~23:00 KST에 `claude2.enabled`를 켜거나 '계좌2 시작'을 누르지 않는다. 한국 창이 열려 있으면 계좌2 정기 몫만 다음 주기로 미루는 판(ⓑ)·
     출발 재시도를 시간 초과에는 하지 않는 판(ⓒ)은 단계 2에서 스레드 풀을 5로 늘릴 때 다시 본다.
 12. **거래 정지·무거래와 1분봉 수집 실패의 구분** — 1분봉이 있으면 '거래 없음'을 알아 만료하지만(T18), 1분봉 자체를 못 받은 날의 R3·`QUOTES_CLOSE`는 멈춘 가격일 수 있다. 계좌1의 시간별 체결도 같은 한계다.
+    종일 정지로 응답에 봉이 0개인 종목은 SPY가 그 회차에 세션을 받았으면 수집기가 거래 없음으로 저장하므로(§12-1) 1분봉 자료 없음으로 보지 않는다. 남는 것: 429를 받은 회차·SPY가 세션을 받지 못한 회차는
+    지금처럼 이어받아 1분봉 자료 없음이 되고, 반대로 배치 안에서 그 종목만 실패한 응답(시간 초과 등 — yfinance 1.7.0 `yf.download`는 종목별 실패 사유를 로그로만 남김)은 거래 정지와 구별하지 못해
+    거래 없음으로 저장된다(다음 회차가 그 세션을 받으면 바로잡히고, 마감 뒤 마지막 회차면 대체 체결 대신 `NO_TRADE_AFTER_T` 만료 — 없는 체결을 만들지 않는 쪽).
     `paper.quotes`가 종일 정지 종목에 그날 봉을 주는지·그 값이 무엇인지는 [모름 — X10].
 13. **서버가 꺼졌던 세션** — E 주문은 E 1분봉으로 나중에 풀리지만(§10-1), 그 사이 스탑은 계좌1처럼 보지 못했다. 1분봉도 8일 넘게 못 받으면 만료다. 이런 체결·만료는 `late_resolved`·사유로 M4에 따로 센다.
 14. **계좌1과 다른 부수 규칙** — 계좌2만 개장 전 컷오프(§5-1 ⑤)와 E 하루 만료가 있다. 둘 다 서버가 늦게 켜진 날에만 갈라지고, 그런 날은 M1·M2에서 빼고 따로 센다.

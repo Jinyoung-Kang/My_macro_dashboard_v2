@@ -97,6 +97,24 @@ final class ExecutionAuditFixtures {
             return this;
         }
 
+        /**
+         * 수집기의 '봉 0개' 항목 — 기준 종목이 이번 회차에 받은 세션(days)에 그 종목 봉이 하나도 없어, 이어받지 않고 세션 없는 새 항목으로 저장한
+         * 것(이번 회차 fetchedAt·{@code noBarSessions}, 직전 세션은 그대로 — {@code paper_bars.no_bar_entries}).
+         */
+        Bars noBars(String ticker, LocalDate... days) {
+            ObjectNode tickers = (ObjectNode) root.get("tickers");
+            ObjectNode entry = tickers.has(ticker) ? (ObjectNode) tickers.get(ticker) : tickers.putObject(ticker);
+            entry.put("fetchedAt", fetched.toString());
+            if (!entry.has("sessions")) {
+                entry.putObject("sessions");
+            }
+            ArrayNode list = entry.putArray("noBarSessions");
+            for (LocalDate day : days) {
+                list.add(day.toString());
+            }
+            return this;
+        }
+
         /** 그 세션 항목을 받은 시각(세션마다의 fetchedAt — 합쳐 둔 옛 세션은 저장본 시각보다 앞)을 바꿉니다. */
         Bars sessionFetchedAt(String ticker, LocalDate day, Instant at) {
             session(ticker, day).put("fetchedAt", at.toString());

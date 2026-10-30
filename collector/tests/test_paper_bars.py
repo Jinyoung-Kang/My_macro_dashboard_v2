@@ -12,6 +12,8 @@ tests/test_paper_bars.py
   4. Yahoo 래치가 닫혀 있으면 묻지 않고, 배치 안의 429(yfinance가 로그로만 남김)도 래치를 닫는다. 두 회차 연달아 429면 한 회차를 쉰다.
   5. 기동 뒤 처음 받을 때까지 period "5d", 받은 뒤 "1d". 일봉 시가(X2)는 확정된 세션마다 배치 한 번.
   6. 받지 못한 종목은 직전 값을 isStale로 잇고, 하나도 못 받으면 EmptyResult로 저장본을 둔다. 세션은 종목마다 최근 3개.
+     응답에 봉이 0개인 종목은 SPY가 이번 회차에 세션을 받았으면 이어받지 않고 세션 없는 새 항목(noBarSessions — 그 세션의 거래 없음, 장부 T18)이다.
+     429 회차·SPY가 세션을 받지 못한 회차·직전에 그 세션을 받은 종목은 지금처럼 이어받는다.
   7. 이 저장본을 읽는 백엔드 코드는 실행 감사 작업(PaperExecutionAuditJob, 단계 0-4)과 장부의 시각 지정 체결(PaperMarketData.barsUs → UsTimedFills,
      단계 1-4 — 시각 지정 주문이 있는 계좌만), 상태 응답의 계좌2 묶음(PaperQueryService — claude2.bars, 표시용, 같은 barsUs 경유)뿐이고
      화면·패킷은 읽지 않는다.
@@ -575,8 +577,6 @@ def test_빠진_종목은_이어받고_하나도_못_받으면_저장본을_둔�
 PREV = date(2026, 10, 29)
 
 
-@pytest.mark.xfail(strict=True, reason="재현(수정 전) — 봉 0개 종목을 '받지 못함'으로 보고 직전 항목을 isStale로 이어받음"
-                                        "(장부는 1분봉 자료 없음 MISSING (가) → R3·QUOTES_CLOSE로 멈춘 가격에 체결할 수 있음)")
 def test_SPY가_세션을_받은_회차에_봉이_0개인_종목은_이어받지_않고_세션_없는_새_항목이다(store, monkeypatch, yahoo, clock):
     """종일 거래 정지 — SPY는 이번 회차에 그 세션을 받았는데 그 종목만 응답에 봉이 없음. 이어받지 않고 '세션 없는 새 항목'(noBarSessions)으로 남겨
     장부가 'T 뒤 거래 없음'(NO_TRADE — T18)으로 보게 합니다. 직전 저장본의 세션은 받은 시각 그대로 둡니다."""
@@ -603,6 +603,60 @@ def test_SPY가_세션을_받은_회차에_봉이_0개인_종목은_이어받지
         "장부가 대조하는 같은 회차의 SPY 세션(UsTimedFills.evidence — 같은 fetchedAt)"
     assert payload["missing"] == [] and payload["error"] == "받지 못함 2개(HALT, NEW)", "error는 배치의 사유 그대로"
     assert detail.startswith("2/4 종목") and "봉 0개 2개(HALT, NEW)" in detail and "이전 값" not in detail
+
+
+_AAA_NOON = _rows(DAY, time(9, 30), time(12, 4))
+
+
+@pytest.mark.parametrize("halt_first, second, why", [
+    ("prev", ({"AAA": _AAA_NOON, "SPY": _rows(DAY, time(9, 30), time(12, 3))}, "거부됨 — finance.yahoo.com HTTP 429", True),
+     "429를 받은 회차 — 그 종목만 거부됐을 수 있음"),
+    ("prev", ({"AAA": _AAA_NOON}, "받지 못함 2개(HALT, SPY)", False), "SPY가 세션을 받지 못한 회차"),
+    ("prev", ({"AAA": _AAA_NOON, "SPY": _rows(DAY, time(9, 30), time(10, 30))}, "받지 못함 1개(HALT)", False),
+     "SPY가 더 짧게 온 회차 — 합친 SPY 세션이 모두 앞 회차 것(이번 응답의 세션 없음)"),
+    ("today", ({"AAA": _AAA_NOON, "SPY": _rows(DAY, time(9, 30), time(12, 3))}, "받지 못함 1개(HALT)", False),
+     "직전 저장본에 그 종목의 오늘 세션이 있음 — 거래가 있었는데 이번 응답에 없음(받지 못한 것)"),
+])
+def test_봉_0개_종목도_믿을_수_없는_회차면_지금처럼_이어받는다(store, monkeypatch, yahoo, clock, halt_first, second, why):
+    monkeypatch.setattr(store, "timed_scope", lambda market: ["AAA", "HALT"])
+    halt_rows = _session(PREV) if halt_first == "prev" else _rows(DAY, time(9, 30), time(10, 0))
+    yahoo["minute"] = ({"AAA": _rows(DAY, time(9, 30), time(11, 4)), "HALT": halt_rows,
+                        "SPY": _session(PREV) + _rows(DAY, time(9, 30), time(11, 3))}, None, False)
+    paper_bars.task_paper_bars_us()
+
+    clock(datetime(2026, 10, 30, 12, 5, tzinfo=NY))
+    yahoo["minute"] = second
+    detail = paper_bars.task_paper_bars_us()
+
+    payload = store.read_snapshot(catalog.SNAP_PAPER_BARS_US).payload
+    halt = payload["tickers"]["HALT"]
+    assert halt["isStale"] is True and halt["staleReason"] == second[1] and "noBarSessions" not in halt, why
+    assert halt["fetchedAt"] == "2026-10-30T15:05:00+00:00", "이어받은 항목은 받은 시각 그대로"
+    assert "HALT" in payload["missing"] and "봉 0개" not in detail and "이전 값" in detail
+
+
+def test_봉_0개_항목도_다음_회차에_받지_못하면_이어받고_다시_받으면_세션으로_바뀐다(store, monkeypatch, yahoo, clock):
+    monkeypatch.setattr(store, "timed_scope", lambda market: ["AAA", "NEW"])
+    yahoo["minute"] = ({"AAA": _rows(DAY, time(9, 30), time(11, 4)), "SPY": _rows(DAY, time(9, 30), time(11, 3))},
+                       "받지 못함 1개(NEW)", False)
+    paper_bars.task_paper_bars_us()
+    assert store.read_snapshot(catalog.SNAP_PAPER_BARS_US).payload["tickers"]["NEW"]["noBarSessions"] == ["2026-10-30"]
+
+    clock(datetime(2026, 10, 30, 12, 5, tzinfo=NY))
+    yahoo["minute"] = ({"AAA": _AAA_NOON}, "받지 못함 2개(NEW, SPY)", False)            # SPY도 받지 못함 — 거래 없음을 다시 보지 못함
+    paper_bars.task_paper_bars_us()
+    new = store.read_snapshot(catalog.SNAP_PAPER_BARS_US).payload["tickers"]["NEW"]
+    assert new["isStale"] is True and new["noBarSessions"] == ["2026-10-30"] and new["sessions"] == {}, \
+        "세션이 없어도 봉 0개 항목은 값이 있는 항목 — 이어받아 isStale(장부는 1분봉 자료 없음으로 봄)"
+    assert new["fetchedAt"] == "2026-10-30T15:05:00+00:00"
+
+    clock(datetime(2026, 10, 30, 13, 5, tzinfo=NY))
+    yahoo["minute"] = ({"AAA": _rows(DAY, time(9, 30), time(13, 4)), "NEW": _rows(DAY, time(12, 40), time(13, 4)),
+                        "SPY": _rows(DAY, time(9, 30), time(13, 3))}, None, False)          # 12:40 거래 재개
+    paper_bars.task_paper_bars_us()
+    new = store.read_snapshot(catalog.SNAP_PAPER_BARS_US).payload["tickers"]["NEW"]
+    assert "isStale" not in new and "noBarSessions" not in new
+    assert new["sessions"]["2026-10-30"]["firstTradeAfter"]["12:00"]["t"] == "2026-10-30T16:40:00+00:00", "T 뒤 재개 첫 거래 봉(R2b)"
 
 
 def test_세션은_종목마다_최근_3개만_남는다(store, monkeypatch, yahoo, clock):
