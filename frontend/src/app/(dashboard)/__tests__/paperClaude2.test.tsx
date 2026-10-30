@@ -263,7 +263,7 @@ describe("개요 — 체결 시점 실험·S = 100·한계", () => {
 
   // 수정 전에는 두 표의 '뺀 주문' 칸과 M1 표의 첫 칸(구분)이 줄바꿈 금지(whitespace-nowrap)라, 1280px 카드(표 상자 958px)에서 M1 본 줄의 뺀 주문
   // ("기준 없음 · 대체 체결(아래 줄) · 체결 없음")이 표를 1,115px로 밀어 '체결 없음'이 가로 스크롤 밖에 숨었다(QA 스택 화면 — 수정 전에는 it.fails).
-  it.fails("M1 표의 구분·뺀 주문 칸과 시점 표의 뺀 주문 칸은 낱말 사이에서 줄바꿈 — 1280px 카드 안에 M1 본 줄이 다 보이게", async () => {
+  it("M1 표의 구분·뺀 주문 칸과 시점 표의 뺀 주문 칸은 낱말 사이에서 줄바꿈 — 1280px 카드 안에 M1 본 줄이 다 보이게", async () => {
     reads["/api/paper/overview"] = () => Promise.resolve(overview(CLAUDE2_ACTIVE));
     render(<PaperPage />);
 

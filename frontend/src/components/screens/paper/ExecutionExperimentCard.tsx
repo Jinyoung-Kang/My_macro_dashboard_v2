@@ -18,13 +18,17 @@ import type { PaperBookSummary, PaperExecutionResponse } from "@/lib/types";
 /** 요약만 쓰므로 주문 줄은 하나만 받습니다(요약은 limit과 상관없이 그 계좌 전부 — docs/API.md). */
 const SUMMARY_LIMIT = 1;
 
-/** 표 칸 — 첫 칸 머리글만 표마다 다릅니다(고른 시점 표는 "구분", 시점 표는 "시점"). */
-const columns = (first: string): readonly Column<ExecutionTimingRow>[] => [
+/**
+ * 표 칸 — 첫 칸 머리글과 폭만 표마다 다릅니다(고른 시점 표는 "구분" — 이름이 길어 낱말 사이 줄바꿈, 시점 표는 "시점" — 짧아 한 줄).
+ * '뺀 주문'도 낱말 사이에서 줄바꿈합니다 — 두 칸을 한 줄로 두면 1280px 카드(표 상자 958px)에서 M1 표가 1,115px로 넘쳐 본 줄의 '체결 없음'이
+ * 가로 스크롤 밖에 숨었습니다(QA 스택 화면).
+ */
+const columns = (first: string, firstClassName: string): readonly Column<ExecutionTimingRow>[] => [
   {
     key: "timing",
     header: first,
     rowHeader: true,
-    className: "whitespace-nowrap",
+    className: firstClassName,
     cell: (row) => (
       <span className="flex flex-wrap items-center gap-1">
         <span>{row.timing}</span>
@@ -45,10 +49,10 @@ const columns = (first: string): readonly Column<ExecutionTimingRow>[] => [
   { key: "mean", header: "평균(계좌1식 대비)", align: "right", cell: (row) => row.mean },
   { key: "interval", header: "90% 구간", align: "right", className: "whitespace-nowrap", cell: (row) => row.interval },
   { key: "verdict", header: "판단", className: "min-w-[12rem] break-keep", cell: (row) => row.verdict ?? "구간 참고(판정은 8주 뒤)" },
-  { key: "excluded", header: "뺀 주문", className: "whitespace-nowrap text-xs", cell: (row) => row.excluded },
+  { key: "excluded", header: "뺀 주문", className: "min-w-[9rem] break-keep text-xs", cell: (row) => row.excluded },
 ];
-const CHOSEN_COLUMNS = columns("구분");
-const TIMING_COLUMNS = columns("시점");
+const CHOSEN_COLUMNS = columns("구분", "min-w-[11rem] break-keep");
+const TIMING_COLUMNS = columns("시점", "whitespace-nowrap");
 
 /**
  * 🧪 체결 시점 실험(미국 Claude 계좌2 — 계좌2 명세 §13-3·§14, ADR 0022 결정 13) — GET /api/paper/books/{code}/execution의 요약을 시점마다 한 줄로.
