@@ -64,6 +64,55 @@ final class ClaudePrompts {
             - 개수 상한: orders 12건, watchlist 10건. 숫자 범위: targetEquityExposurePct 0~100, targetWeightPct 0~100, sellFraction 0 초과 1 이하(0은 그 주문 거절), confidence 0~1(이 판단 전체의 확신도).
             """;
 
+    // ------------------------------------------------------------------ 미국 Claude 계좌2의 고정 문단(계좌2 명세 §9-4)
+    // 위 미국 상수(ROLE·FIXED_RULES)는 그대로 두고, 계좌2 문단은 FIXED_RULES에서 세 곳만 바꿔 만듭니다 — 나머지 문장은 계좌1과 글자까지 같아
+    // 두 시스템 프롬프트의 차이가 체결 시점에 관한 문장뿐입니다(ROLE도 같은 문장 — §3-2).
+
+    /** 계좌2 고정 문단의 첫 줄(§9-4의 1) — 이 문단·12_hardRules·13_execution이 프레임 본문보다 우선, 프레임의 시점 문장은 메뉴로 읽음. */
+    static final String CLAUDE2_PRIORITY = "우선순위(고정): 이 고정 문단과 패킷 12_hardRules·13_execution이 위 프레임 본문보다 우선한다. "
+            + "프레임의 NEXT_OBSERVATION·NEXT_CLOSE 문장은 이 계좌에서 13_execution의 체결 시점 메뉴로 읽는다.";
+
+    /** {@link #FIXED_RULES}의 timing 줄 — 계좌2 문단에서 메뉴 문장으로 바뀌는 자리(§9-4의 2). */
+    static final String US_TIMING_LINE = "- timing은 NEXT_OBSERVATION(기준 거래일 다음 세션의 관측치, 기본) 또는 NEXT_CLOSE(다음 세션 확정 종가).\n";
+
+    /** 계좌2의 timing 줄(§9-4의 2) — 시점마다 체결 규칙 한 줄, 모든 주문은 다음 세션 하루짜리, 조기 폐장 규칙, 주문마다 executionNote. */
+    static final String CLAUDE2_TIMING_LINES = """
+            - timing은 13_execution.menu의 여덟 시점 중 하나다 — NEXT_OPEN(다음 세션 09:30 ET 개장 첫 1분봉 시가), AT_1000·AT_1100·AT_1200·AT_1300·AT_1400·AT_1500(다음 세션 그 시각 ET에 시작한 1분봉 시가), NEXT_CLOSE(다음 세션 확정 종가). 시각은 뉴욕 시간이고 한국 시각은 13_execution에 있다.
+            - 모든 주문은 다음 세션(13_execution.session) 하루짜리다 — 그날 체결되지 않으면 만료되고 다음 세션으로 넘어가지 않는다.
+            - 조기 폐장일(13_execution.session.earlyClose — 마감 13:00 ET)에는 마감 뒤 시점 AT_1300·AT_1400·AT_1500이 거절된다(MALFORMED).
+            - 주문마다 executionNote(그 체결 시점을 고른 이유, 200자 이내)를 반드시 쓴다.
+            """;
+
+    /** 계좌2의 체결 절(§9-4의 3, 단계 1) — 출력 절 앞에 넣습니다. */
+    static final String CLAUDE2_FILL_SECTION = """
+            ## 체결(고정)
+            - 시각 지정 체결가는 그 시각 T에 시작한 1분봉의 시가다. 그 봉에 거래가 없으면 T+1~T+4분의 첫 거래 봉 시가, 그것도 없으면 그날 T 뒤 첫 거래 봉 시가(대체 체결), 1분봉 자료 자체를 받지 못했을 때만 시간별 관측치(대체 체결)로 체결한다. 그날 T 뒤 거래가 없으면(거래 정지·무거래) 체결하지 않고 만료된다.
+            - NEXT_CLOSE는 다음 세션 확정 종가로 체결한다. 체결가에는 슬리피지(13_execution.slippageBp)를 매수는 더하고 매도는 뺀다.
+            - 결정 뒤 장중 정보는 보지 못한다 — 이 결정이 다음 세션 주문의 마지막 판단이다. 체결은 늘 주문 뒤 그 시각의 실제 가격이라 지연 시세로 더 좋은 체결가를 얻을 수는 없다.
+            """;
+
+    /** {@link #FIXED_RULES}의 출력 절 머리 — 계좌2 체결 절이 이 앞에 들어갑니다. */
+    static final String OUTPUT_HEADER = "## 출력(고정)\n";
+
+    /**
+     * 미국 Claude 계좌2(claude2)의 고정 문단(계좌2 명세 §9-4, 판 {@code c2-1}) — {@link #FIXED_RULES}와 같은 문장에서 세 곳만 다릅니다: ① 첫 줄
+     * 우선순위 문장({@link #CLAUDE2_PRIORITY}) ② timing 줄을 메뉴 문장으로({@link #CLAUDE2_TIMING_LINES}) ③ 출력 절 앞의 체결 절
+     * ({@link #CLAUDE2_FILL_SECTION}). 날짜·설정값이 없는 상수입니다(캐시 블록 — 슬리피지 수치는 패킷 13_execution에). 받는 체결 시점은
+     * {@link PaperBooks#CLAUDE2_TIMINGS}와 같은 목록입니다({@code DecisionTimingsLockTest}). 프레임 v4 본문에는 우선순위 줄이 덮지 못하는 시각 지시가
+     * 없습니다(§3-4 — NEXT_OBSERVATION·NEXT_CLOSE·NEXT_OPEN·시가·장중·종가·시장가 0번, '분할 진입' 2번은 결정 여러 번에 걸친 분할로 읽힘).
+     */
+    static final String CLAUDE2_FIXED_RULES = claude2FixedRules();
+
+    private static String claude2FixedRules() {
+        if (FIXED_RULES.indexOf(US_TIMING_LINE) < 0 || FIXED_RULES.indexOf(US_TIMING_LINE) != FIXED_RULES.lastIndexOf(US_TIMING_LINE)
+                || FIXED_RULES.indexOf(OUTPUT_HEADER) < 0
+                || FIXED_RULES.indexOf(OUTPUT_HEADER) != FIXED_RULES.lastIndexOf(OUTPUT_HEADER)) {
+            throw new IllegalStateException("계좌2 고정 문단의 바꿀 자리(timing 줄·출력 절)가 계좌1 문단에 한 번씩 있어야 합니다");
+        }
+        return CLAUDE2_PRIORITY + "\n" + FIXED_RULES.replace(US_TIMING_LINE, CLAUDE2_TIMING_LINES)
+                .replace(OUTPUT_HEADER, CLAUDE2_FILL_SECTION + OUTPUT_HEADER);
+    }
+
     // ------------------------------------------------------------------ 2단계 E2a — 한국 책의 고정 문단
     // 위 미국 상수(ROLE·FIXED_RULES)는 그대로 두고 한국 문단을 새로 더합니다(명세 K34 — 미국 렌더링은 바이트 그대로). 역할 문단(ROLE)과 프레임
     // 본문(원칙·엔진·지침 — 판은 두 시장이 함께 씀, K9)은 한국 렌더링에도 그대로 들어갑니다.

@@ -146,6 +146,11 @@ public class ClaudeBookService {
      * 종목 코드)뿐입니다. 미국 파일은 바이트 그대로입니다({@code StructuredSchemaTest}).
      */
     static final String KR_SCHEMA_RESOURCE = "paper/kr-decision.schema.json";
+    /**
+     * 미국 Claude 계좌2의 응답 스키마(계좌2 명세 §9-2 — 단계 1) — 미국 파일과 같은 {@code schemaVersion} 2이고 다른 점은 주문의 {@code timing} enum
+     * ({@link PaperBooks#CLAUDE2_TIMINGS} 여덟)과 주문마다 필수인 {@code executionNote}(200자 이내)뿐입니다. 장중 확인({@code checkpoint})은 단계 2.
+     */
+    static final String CLAUDE2_SCHEMA_RESOURCE = "paper/claude2-decision.schema.json";
     /** 목표 노출과 주문 반영 뒤 예상 노출의 차이가 이보다 크면 exposureMismatch(설계 §5-3). */
     static final double MISMATCH_PCT = 15;
     /** 종목 저장본이 이보다 오래되면 그날 재량 주문 전부 STALE_INPUT(설계 §5-4). */
@@ -262,7 +267,7 @@ public class ClaudeBookService {
                         notes, ledger, config, mapper, Clock.systemUTC()));
     }
 
-    /** 테스트용 — 시계를 움직입니다(사용량의 KST 날짜·출발일 마감 검사·저장본 신선도). 결정 문맥은 미국 하나입니다. */
+    /** 테스트용 — 시계를 움직입니다(사용량의 KST 날짜·출발일 마감 검사·저장본 신선도). 결정 문맥은 미국 둘(계좌1·계좌2)입니다. */
     ClaudeBookService(PaperStore store, StoreReader reader, PaperMarketData marketData, PaperSelectionService selection,
                       PaperLedgerService ledger, PaperAdminService admin, PacketBuilder packets,
                       FrameworkService framework, PaperApiCalls calls, AiService ai, PaperSettingsService settings,
@@ -272,7 +277,7 @@ public class ClaudeBookService {
     }
 
     /**
-     * 테스트용 — 시계를 움직이고 운영 결정 문맥 둘(미국 + 한국 — 그 한국 패킷 빌더, {@link #marketContexts})로 만듭니다. 한국 결정·출발 시험이
+     * 테스트용 — 시계를 움직이고 운영 결정 문맥(미국 둘 + 한국 — 그 한국 패킷 빌더, {@link #marketContexts})으로 만듭니다. 한국 결정·출발 시험이
      * 실제 한국 경로(패킷·스키마·시스템 프롬프트·검증기)를 씁니다.
      */
     ClaudeBookService(PaperStore store, StoreReader reader, PaperMarketData marketData, PaperSelectionService selection,
@@ -285,8 +290,8 @@ public class ClaudeBookService {
     }
 
     /**
-     * 테스트용 — 시계와 함께 미국 밖 시장의 결정 문맥을 더합니다(시장 격리 시험이 시험용 한국 시장을 넣음). 미국 문맥은 늘 있고
-     * (미국 묶음·{@link PacketBuilder#build}·{@value #SCHEMA_RESOURCE}), 한국 운영 문맥은 없으며, 같은 계좌 코드를 두 번 넣으면 거절합니다.
+     * 테스트용 — 시계와 함께 미국 밖 시장의 결정 문맥을 더합니다(시장 격리 시험이 시험용 한국 시장을 넣음). 미국 문맥 둘(계좌1·계좌2)은 늘
+     * 있고({@link #marketContexts}), 한국 운영 문맥은 없으며, 같은 계좌 코드를 두 번 넣으면 거절합니다.
      */
     ClaudeBookService(PaperStore store, StoreReader reader, PaperMarketData marketData, PaperSelectionService selection,
                       PaperLedgerService ledger, PaperAdminService admin, PacketBuilder packets,
@@ -332,14 +337,22 @@ public class ClaudeBookService {
 
     /**
      * 운영 결정 문맥 — Claude 계좌마다 하나: 미국 계좌1({@link ClaudeBookProfile#US_CLAUDE} — 미국 묶음·{@link PacketBuilder#build}·
-     * {@value #SCHEMA_RESOURCE})과 한국 Claude 계좌({@link ClaudeBookProfile#KR_CLAUDE} — 한국 묶음·{@link KrPacketBuilder#build} — 그 실행의
-     * 관측치·읽은 순간을 받음·{@value #KR_SCHEMA_RESOURCE}, 2단계 명세 §4-7·E2b). 한국 패킷 빌더가 null이면 미국 하나(시험). 서비스가 이
-     * 목록으로 파이프라인을 만들고, 시험이 문맥마다 응답 스키마의 체결 시점 enum·시장 묶음의 체결 시점·고정 문단이 맞물리는지 봅니다(명세 K38 —
+     * {@value #SCHEMA_RESOURCE}), 미국 계좌2({@link ClaudeBookProfile#US_CLAUDE2} — 같은 미국 묶음·{@link PacketBuilder#assemble}·
+     * {@value #CLAUDE2_SCHEMA_RESOURCE}, 계좌2 명세 §9)와 한국 Claude 계좌({@link ClaudeBookProfile#KR_CLAUDE} — 한국 묶음·{@link KrPacketBuilder#build} —
+     * 그 실행의 관측치·읽은 순간을 받음·{@value #KR_SCHEMA_RESOURCE}, 2단계 명세 §4-7·E2b). 미국 둘은 그 실행에서 한 번 읽은 시장 입력으로도 조립합니다
+     * (입력 동결 — {@link MarketContext#shared}). 한국 패킷 빌더가 null이면 미국 둘(시험). 서비스가 이 목록으로 파이프라인을 만들고, 시험이 문맥마다
+     * 응답 스키마의 체결 시점 enum·계좌 프로필의 체결 시점·검증기 순위·고정 문단이 맞물리는지 봅니다(명세 K38·계좌2 명세 §9-6 —
      * {@code DecisionTimingsLockTest}).
      */
     static List<MarketContext> marketContexts(PacketBuilder packets, KrPacketBuilder krPackets) {
         List<MarketContext> out = new ArrayList<>();
-        out.add(new MarketContext(ClaudeBookProfile.US_CLAUDE, packets::build, null));
+        out.add(new MarketContext(ClaudeBookProfile.US_CLAUDE, packets::build, null,
+                (inputs, kind, version) -> packets.assemble(inputs, ClaudeBookProfile.US_CLAUDE, kind, version)));
+        // 미국 Claude 계좌2(계좌2 명세 §9 — 같은 미국 시장 입력으로 그 계좌의 패킷을 조립, 따로 부르면 그때 읽은 시장 입력으로).
+        out.add(new MarketContext(ClaudeBookProfile.US_CLAUDE2,
+                (asOf, kind, initial, version, row) -> packets.assemble(packets.read(asOf, initial, row),
+                        ClaudeBookProfile.US_CLAUDE2, kind, version),
+                null, (inputs, kind, version) -> packets.assemble(inputs, ClaudeBookProfile.US_CLAUDE2, kind, version)));
         if (krPackets != null) {
             out.add(new MarketContext(ClaudeBookProfile.KR_CLAUDE, null, krPackets::build));
         }

@@ -339,6 +339,34 @@ class OrderValidatorRanksTest {
         assertThat(Market.US.withRanks(Map.of(NEXT_OBSERVATION, 0, NEXT_CLOSE, 0)).distinctRanks()).containsExactly(0);
     }
 
+    @Test
+    @DisplayName("닫힌 시점(계좌2 — 조기 폐장 마감 뒤 MALFORMED·지난 시각 LATE_FOR_TIMING): 그 시점 주문만 그 사유로(매도도), 다른 시점·자리 계산은 그대로, 같은 티커 뒤 주문은 DUPLICATE")
+    void closedTimingsRejectOnlyThatTiming() {
+        Market closed = TIMED.withClosed(Map.of(AT_1500, new OrderValidator.Closed(MALFORMED, "조기 폐장 13:00 ET — 마감 뒤"),
+                AT_1000, new OrderValidator.Closed(OrderValidator.LATE_FOR_TIMING, "기준 시각이 지금 + 60초 이전")));
+        assertThat(closed.closed()).containsOnlyKeys(AT_1500, AT_1000);
+        assertThat(closed.withRanks(TIMED.ranks())).as("순위만 바꿔도 닫힌 시점 그대로").isEqualTo(closed);
+        assertThat(TIMED.closed()).isEmpty();
+        Context ctx = held(Map.of("AAA", 30.0));
+        List<Verdict> verdicts = OrderValidator.validate(List.of(sell("AAA", AT_1500), buy("BBB", 5, AT_1000),
+                buy("BBB", 5, AT_1200), buy("CCC", 5, AT_1200)), ctx, DEFAULT, closed);
+        assertThat(verdicts).extracting(Verdict::rejectReason).containsExactly(MALFORMED, OrderValidator.LATE_FOR_TIMING,
+                DUPLICATE_TICKER, null);
+        assertThat(verdicts.get(0).detail()).isEqualTo("조기 폐장 13:00 ET — 마감 뒤");
+        assertThat(verdicts.get(1).detail()).isEqualTo("기준 시각이 지금 + 60초 이전");
+        // 닫힌 시점이 없으면 같은 주문이 모두 지나감(티커 중복만 거절).
+        assertThat(OrderValidator.validate(List.of(sell("AAA", AT_1500), buy("BBB", 5, AT_1000), buy("CCC", 5, AT_1200)),
+                ctx, DEFAULT, TIMED)).extracting(Verdict::rejectReason).containsOnlyNulls();
+        // 모양이 틀린 주문은 MALFORMED가 먼저(받지 않는 시점은 닫힌 시점보다 앞).
+        assertThat(OrderValidator.validate(List.of(buy("BBB", 5, "AT_1300")), ctx, DEFAULT, closed).get(0).detail())
+                .startsWith("timing은 ");
+
+        assertThatThrownBy(() -> TIMED.withClosed(Map.of("AT_1300", new OrderValidator.Closed(MALFORMED, "x"))))
+                .isInstanceOf(IllegalArgumentException.class).hasMessageContaining("받는 체결 시점");
+        assertThatThrownBy(() -> new OrderValidator.Closed(NO_PRICE, "x")).isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> new OrderValidator.Closed(MALFORMED, " ")).isInstanceOf(IllegalArgumentException.class);
+    }
+
     // ------------------------------------------------------------------ 기준: 순위 전 구현
     /**
      * 순위 전(두 갈래) 검증기 — {@code OrderValidator.validate}와 그 1단계·문구 함수를 순위를 더하기 전 판에서 옮겨 온 그대로입니다. 시장의 시점

@@ -10,6 +10,7 @@ import com.macrodash.analytics.UsMarketCalendar;
 import com.macrodash.feature.paper.PacketBuilder.Packet;
 import com.macrodash.read.StoreReader;
 import com.macrodash.store.Datasets;
+import com.macrodash.store.PaperStore;
 import com.macrodash.store.PaperStore.Book;
 import com.macrodash.store.PaperStore.BookState;
 import com.macrodash.store.PaperStore.Decision;
@@ -1231,6 +1232,233 @@ class PacketBuilderTest {
                 null, null, FRI, FRI_CLOSE, null, FRI_CLOSE));
         store.insertOrder(new Order(0, code, decision, "CCC", "BUY", null, 4.0, null, "NEXT_CLOSE", "CLAUDE", "PENDING",
                 null, null, FRI, FRI_CLOSE, TUE, null));
+    }
+
+    // ------------------------------------------------------------------ 미국 Claude 계좌2(계좌2 명세 §9)
+    /** 계좌2 출발일(THU 10-22) — INITIAL 결정의 기준 거래일 = started_on = S. */
+    private static final LocalDate C2_START = LocalDate.of(2026, 10, 22);
+
+    /** 시작 전 계좌2 — 현금 100,000만(초기화가 만든 모양). */
+    private void notStartedClaude2() {
+        store.books.put(PaperBooks.CLAUDE2, new Book(PaperBooks.CLAUDE2, PaperBooks.KIND_CLAUDE, PaperBooks.CLAUDE2_LABEL,
+                100_000, null, PaperBooks.NOT_STARTED, FRI_CLOSE));
+        store.states.put(PaperBooks.CLAUDE2, new BookState(PaperBooks.CLAUDE2, 100_000, 100_000, 0, 0, null, null, null,
+                null));
+    }
+
+    /**
+     * 운용 중인 계좌2 — S = 10-22 출발(INITIAL: EEE 시가 매수 체결 · 계좌1식 기준 있음), 10-23 정기 결정(FFF 10:00 매수 — 대체 체결 R2b, 기준
+     * 없음 · GGG 종가 매수 만료). 보유 EEE 200주·FFF 100주, 현금 74,995.
+     */
+    private void activeClaude2() {
+        String code = PaperBooks.CLAUDE2;
+        store.books.put(code, new Book(code, PaperBooks.KIND_CLAUDE, PaperBooks.CLAUDE2_LABEL, 100_000, C2_START,
+                PaperBooks.ACTIVE, FRI_CLOSE));
+        store.states.put(code, new BookState(code, 74_995, 100_095, 25_100, 25.08, QUOTES_AT, QUOTES_AT, FRI, null));
+        store.upsertPosition(new Position(code, "EEE", 200, 99.55, FRI, FRI_CLOSE, 101, FRI_CLOSE, 100.5, QUOTES_AT,
+                false, C2_START, 99.0, null));
+        store.upsertPosition(new Position(code, "FFF", 100, 50.025, FRI, FRI_CLOSE, 51, FRI_CLOSE, 51.0, QUOTES_AT,
+                false, C2_START, 50.0, null));
+        long initial = store.insertDecisionIfAbsent(new Decision(0, code, C2_START, RuleBookService.INITIAL, null, "OK",
+                "claude-sonnet-5-5", 4, 1, FRI, 20.0, null, null, null,
+                MAPPER.valueToTree(Map.of("stance", "NEUTRAL", "summary", "계좌2 출발")), null, null, List.of(), true,
+                900L, 0)).orElseThrow();
+        Instant created = Instant.parse("2026-10-22T22:31:00Z");
+        long eee = store.insertOrder(new Order(0, code, initial, "EEE", "BUY", null, 20.0, null, "NEXT_OPEN", "CLAUDE",
+                "FILLED", null, null, C2_START, created, FRI, Instant.parse("2026-10-23T14:20:00Z")));
+        store.insertTimedFill(new PaperStore.Fill(0, eee, code, "EEE", "BUY", 200, 99.54975, 99.5, 5, 19_909.95,
+                Instant.parse("2026-10-23T14:20:00Z"), FRI, Datasets.SNAP_PAPER_BARS_US, false, null),
+                Instant.parse("2026-10-23T13:30:00Z"), "Y1M_AT");
+        ObjectNode cf = MAPPER.createObjectNode();
+        cf.set("NEXT_OBSERVATION", MAPPER.createObjectNode().put("raw", 100.2).put("at", "2026-10-23T14:20:00Z")
+                .put("rung", "QUOTES_OBSERVATION"));
+        store.mergeOrderExec(new PaperStore.OrderExec(eee, code, "NEXT_OPEN", Instant.parse("2026-10-23T13:30:00Z"), cf,
+                null, false, null));
+        long scheduled = store.insertDecisionIfAbsent(new Decision(0, code, FRI, RuleBookService.SCHEDULED, null, "OK",
+                "claude-sonnet-5-5", 4, 1, FRI, 25.0, null, null, null,
+                MAPPER.valueToTree(Map.of("stance", "NEUTRAL", "summary", "FFF 편입")), null, null, List.of(), true,
+                800L, 0)).orElseThrow();
+        Instant fridayCreated = Instant.parse("2026-10-23T22:31:00Z");
+        long fff = store.insertOrder(new Order(0, code, scheduled, "FFF", "BUY", null, 5.0, null, "AT_1000", "CLAUDE",
+                "FILLED", null, null, FRI, fridayCreated, MON, Instant.parse("2026-10-26T15:20:00Z")));
+        store.insertTimedFill(new PaperStore.Fill(0, fff, code, "FFF", "BUY", 100, 50.025, 50.0, 5, 5_002.5,
+                Instant.parse("2026-10-26T15:20:00Z"), MON, Datasets.SNAP_PAPER_BARS_US, false, null),
+                Instant.parse("2026-10-26T14:07:00Z"), "Y1M_LATE");
+        store.insertOrder(new Order(0, code, scheduled, "GGG", "BUY", null, 3.0, null, "NEXT_CLOSE", "CLAUDE", "EXPIRED",
+                "NO_TRADE_AFTER_T — 거래 정지·무거래 가능", null, FRI, fridayCreated, MON, null));
+    }
+
+    /** 계좌2 초기(INITIAL — 사후 체결 없는 정기 조립)·정기 패킷의 SHA-256 — 고정본 packet-us-claude2-*.json 글자의 해시. */
+    private static final String GOLDEN_CLAUDE2_INITIAL_SHA256 =
+            "a95d2849759359c02da59e42da910dc77893f8f287d1686663222ffd9a10a9c8";
+    private static final String GOLDEN_CLAUDE2_SCHEDULED_SHA256 =
+            "8a2d6849e50037141204d93cf4955d96923ab95f763d503166e7609da9222d89";
+
+    @Test
+    @DisplayName("고정본(계좌2 명세 §9): 계좌2 출발(INITIAL, initial=false — 사후 체결 문장 없음)·정기 패킷 — 계좌1과 같은 시장 입력으로 조립해 계좌 비의존 섹션 일곱이 같고, 계좌1 패킷은 고정본 그대로")
+    void goldenClaude2Packets() {
+        store.insertNote(new Note(0, NoteService.MARKET, FRI, TUE, "금요일 시황", "10년물 4.6%·브렌트 88", false, null));
+        activeClaude();
+        notStartedClaude2();
+        PacketBuilder.MarketInputs inputs = builder.read(MON, false, store.settings);
+        Packet book1 = builder.assemble(inputs, ClaudeBookProfile.US_CLAUDE, RuleBookService.SCHEDULED, 0);
+        Packet initial = builder.assemble(inputs, ClaudeBookProfile.US_CLAUDE2, RuleBookService.INITIAL, 0);
+        store.books.remove(PaperBooks.CLAUDE2);
+        activeClaude2();
+        Packet scheduled = builder.assemble(inputs, ClaudeBookProfile.US_CLAUDE2, RuleBookService.SCHEDULED, 0);
+
+        assertThat(book1.sha256()).as("계좌1 = 나눔 전 패킷 그대로").isEqualTo(GOLDEN_SCHEDULED_SHA256);
+        Golden.assertMatches("packet-us-claude2-initial.json", initial.text());
+        Golden.assertMatches("packet-us-claude2-scheduled.json", scheduled.text());
+        Golden.assertMatches("packet-us-claude2-meta.txt", String.join("\n",
+                "initial sha256=" + initial.sha256() + " chars=" + initial.text().length() + " tokens~"
+                        + PacketBuilder.estimateTokens(initial.text()) + " noteIds=" + initial.noteIds() + " measure="
+                        + MAPPER.writeValueAsString(initial.measure()),
+                "scheduled sha256=" + scheduled.sha256() + " chars=" + scheduled.text().length() + " tokens~"
+                        + PacketBuilder.estimateTokens(scheduled.text()) + " noteIds=" + scheduled.noteIds()
+                        + " measure=" + MAPPER.writeValueAsString(scheduled.measure()),
+                "13_execution tokens~ initial=" + PacketBuilder.estimateTokens(MAPPER.writeValueAsString(
+                        initial.body().get(PacketBuilder.EXECUTION))) + " scheduled=" + PacketBuilder.estimateTokens(
+                        MAPPER.writeValueAsString(scheduled.body().get(PacketBuilder.EXECUTION)))));
+        assertThat(initial.sha256()).isEqualTo(Golden.sha256(initial.text())).isEqualTo(GOLDEN_CLAUDE2_INITIAL_SHA256);
+        assertThat(scheduled.sha256()).isEqualTo(Golden.sha256(scheduled.text())).isEqualTo(GOLDEN_CLAUDE2_SCHEDULED_SHA256);
+        String hash = PacketBuilder.marketSectionsSha256(book1.body(), MAPPER);
+        assertThat(PacketBuilder.marketSectionsSha256(initial.body(), MAPPER)).isEqualTo(hash);
+        assertThat(PacketBuilder.marketSectionsSha256(scheduled.body(), MAPPER)).isEqualTo(hash);
+        assertThat(initial.noteIds()).isEqualTo(book1.noteIds());
+    }
+
+    @Test
+    @DisplayName("계좌2 패킷의 다른 점: 섹션은 계좌1 순서 뒤 13_execution, 1_basis에 변형·메뉴 판·고정 문단 판, 출발은 사후 체결 문장 없이 검사(STALE_INPUT·NO_PRICE) 켬, 12_hardRules 시점 문장은 순위 규칙·메뉴, 월 상한은 출발 결정 주문 제외")
+    void claude2PacketDiffersOnlyInTheExecutionParts() {
+        activeClaude();
+        notStartedClaude2();
+        PacketBuilder.MarketInputs inputs = builder.read(MON, false, store.settings);
+        Packet book1 = builder.assemble(inputs, ClaudeBookProfile.US_CLAUDE, RuleBookService.SCHEDULED, 0);
+        Packet start = builder.assemble(inputs, ClaudeBookProfile.US_CLAUDE2, RuleBookService.INITIAL, 0);
+        List<String> keys = new ArrayList<>();
+        start.body().propertyNames().forEach(keys::add);
+        List<String> expected = new ArrayList<>(PacketBuilder.SECTION_KEYS);
+        expected.add(PacketBuilder.EXECUTION);
+        assertThat(keys).containsExactlyElementsOf(expected);
+        List<String> book1Keys = new ArrayList<>();
+        book1.body().propertyNames().forEach(book1Keys::add);
+        assertThat(book1Keys).as("계좌1 패킷에는 13_execution이 없음").containsExactlyElementsOf(PacketBuilder.SECTION_KEYS);
+
+        JsonNode basis = start.body().get(PacketBuilder.BASIS);
+        assertThat(basis.get("variant").asString()).isEqualTo("claude2");
+        assertThat(basis.get("executionMenuVersion").asInt()).isEqualTo(1);
+        assertThat(basis.get("fixedRules").asString()).isEqualTo("c2-1");
+        assertThat(basis.get("book").asString()).isEqualTo(PaperBooks.CLAUDE2);
+        assertThat(basis.get("decisionKind").asString()).isEqualTo(RuleBookService.INITIAL);
+        assertThat(basis.get("initial").asBoolean()).as("출발은 정기 조립(initial=false — §4-1의 2)").isFalse();
+        assertThat(book1.body().get(PacketBuilder.BASIS).has("variant")).isFalse();
+        assertThat(start.text()).doesNotContain("사후 체결된다").doesNotContain("기준일 종가로 사후");
+        JsonNode portfolio = start.body().get(PacketBuilder.PORTFOLIO);
+        assertThat(portfolio.get("cash").asDouble()).isEqualTo(100_000);
+        assertThat(portfolio.get("positions")).isEmpty();
+        assertThat(portfolio.get("status").asString()).isEqualTo(PaperBooks.NOT_STARTED);
+
+        JsonNode rules = start.body().get(PacketBuilder.HARD_RULES);
+        String lines = rules.get("lines").toString();
+        assertThat(lines).contains("체결 시점 순위는 NEXT_OPEN < AT_1000 < AT_1100 < AT_1200 < AT_1300 < AT_1400 < AT_1500 < "
+                + "NEXT_CLOSE").contains("13_execution.session.date").contains("LATE_FOR_TIMING").contains("출발 결정(INITIAL) 주문 제외")
+                .doesNotContain("NEXT_OBSERVATION 매수").doesNotContain("관측치(NEXT_OBSERVATION)").contains("STALE_INPUT");
+        assertThat(rules.get("noPriceTickers").isArray()).as("출발도 NO_PRICE 판정을 보임(사후 체결이 아님)").isTrue();
+        // 시점 문장 셋 말고는 계좌1 줄과 같은 글자.
+        List<String> book2Lines = new ArrayList<>();
+        rules.get("lines").forEach(line -> book2Lines.add(line.asString()));
+        List<String> book1Lines = new ArrayList<>();
+        book1.body().get(PacketBuilder.HARD_RULES).get("lines").forEach(line -> book1Lines.add(line.asString()));
+        assertThat(book2Lines).hasSameSizeAs(book1Lines);
+        for (int i = 0; i < book1Lines.size(); i++) {
+            if (i != 3 && i != 4 && i != 7) {
+                assertThat(book2Lines.get(i)).as("12_hardRules 줄 " + i).isEqualTo(book1Lines.get(i));
+            }
+        }
+
+        // 운용 중 — 이달 재량 주문 수는 출발(INITIAL) 결정의 EEE를 빼고 10-23 정기 결정의 체결 FFF 한 건(만료 GGG는 세지 않음).
+        store.books.remove(PaperBooks.CLAUDE2);
+        activeClaude2();
+        Packet scheduled = builder.assemble(inputs, ClaudeBookProfile.US_CLAUDE2, RuleBookService.SCHEDULED, 0);
+        assertThat(scheduled.body().get(PacketBuilder.PORTFOLIO).get("monthlyDiscretionaryOrders").get("used").asInt())
+                .isEqualTo(1);
+        assertThat(scheduled.body().get(PacketBuilder.DECISIONS).get("decisions")).as("계좌2 자기 결정만 — 계좌1 결정 없음")
+                .extracting(d -> d.get("tradingDate").asString()).containsExactly("2026-10-23", "2026-10-22");
+    }
+
+    @Test
+    @DisplayName("13_execution: E의 날짜·개장·마감(ET·KST)·메뉴 여덟·사다리·출처 사실·슬리피지, 체결 기록(최근 순·사실만 — 기준 없으면 null), 기록 끔, 서머타임 끝난 주(E 11-02 EST)·조기 폐장일(E 11-27 — AT_1300~ 닫힘)")
+    void executionSection() {
+        activeClaude2();
+        Map<String, Object> section = ExecutionSection.build(MON, PaperBooks.CLAUDE2_TIMINGS, UsMarketCalendar.CALENDAR, 5,
+                true, store, PaperBooks.CLAUDE2);
+        JsonNode body = MAPPER.valueToTree(PacketBuilder.toNode(section));
+        assertThat(body.get("executionMenuVersion").asInt()).isEqualTo(1);
+        assertThat(body.get("session").toString()).isEqualTo("{\"date\":\"2026-10-27\",\"openEt\":\"09:30\",\"closeEt\":\"16:00\","
+                + "\"openKst\":\"2026-10-27 22:30 KST\",\"closeKst\":\"2026-10-28 05:00 KST\",\"earlyClose\":false,"
+                + "\"timeZone\":\"America/New_York\"}");
+        assertThat(body.get("menu").get("rows")).hasSize(8);
+        assertThat(body.get("menu").get("rows").get(1).toString())
+                .isEqualTo("[\"AT_1000\",\"10:00\",\"2026-10-27 23:00 KST\",\"그 시각에 시작한 1분봉 시가\"]");
+        assertThat(body.get("menu").get("rows").get(7).get(1).asString()).isEqualTo("16:00");
+        assertThat(body.get("closedTimings")).isEmpty();
+        assertThat(body.get("slippageBp").asInt()).isEqualTo(5);
+        assertThat(body.get("ladder")).hasSize(6);
+        assertThat(body.get("sourceFacts").get(0).asString()).startsWith("지연 자료로 더 좋은 체결가를 얻을 수는 없다");
+        JsonNode rows = body.get("record").get("rows");
+        assertThat(rows).hasSize(2);
+        assertThat(rows.get(0).toString()).as("최근 체결 먼저 — 대체 체결, 계좌1식 기준 없음(null)")
+                .isEqualTo("[\"2026-10-23\",\"2026-10-26\",\"FFF\",\"BUY\",\"AT_1000\",50,\"Y1M_LATE\",true,"
+                        + "\"2026-10-26 23:07 KST\",null,null]");
+        assertThat(rows.get(1).toString()).as("기준 100.2 대비 99.5 매수 — +69.86bp")
+                .isEqualTo("[\"2026-10-22\",\"2026-10-23\",\"EEE\",\"BUY\",\"NEXT_OPEN\",99.5,\"Y1M_AT\",false,"
+                        + "\"2026-10-23 22:30 KST\",100.2,69.86]");
+        assertThat(body.get("record").get("note").asString()).contains("사실만");
+
+        JsonNode off = MAPPER.valueToTree(PacketBuilder.toNode(ExecutionSection.build(MON, PaperBooks.CLAUDE2_TIMINGS,
+                UsMarketCalendar.CALENDAR, 5, false, store, PaperBooks.CLAUDE2)));
+        assertThat(off.get("record").get("rows")).isEmpty();
+        assertThat(off.get("record").get("note").asString()).contains("claude2.executionRecord");
+
+        JsonNode winter = MAPPER.valueToTree(PacketBuilder.toNode(ExecutionSection.build(LocalDate.of(2026, 10, 30),
+                PaperBooks.CLAUDE2_TIMINGS, UsMarketCalendar.CALENDAR, 5, true, store, PaperBooks.CLAUDE2)));
+        assertThat(winter.get("session").get("date").asString()).isEqualTo("2026-11-02");
+        assertThat(winter.get("session").get("openKst").asString()).as("EST — 한 시간 늦음").isEqualTo("2026-11-02 23:30 KST");
+        assertThat(winter.get("menu").get("rows").get(0).get(2).asString()).isEqualTo("2026-11-02 23:30 KST");
+
+        JsonNode early = MAPPER.valueToTree(PacketBuilder.toNode(ExecutionSection.build(LocalDate.of(2026, 11, 25),
+                PaperBooks.CLAUDE2_TIMINGS, UsMarketCalendar.CALENDAR, 5, true, store, PaperBooks.CLAUDE2)));
+        assertThat(early.get("session").get("date").asString()).isEqualTo("2026-11-27");
+        assertThat(early.get("session").get("earlyClose").asBoolean()).isTrue();
+        assertThat(early.get("session").get("closeEt").asString()).isEqualTo("13:00");
+        assertThat(early.get("closedTimings").toString()).isEqualTo("[\"AT_1300\",\"AT_1400\",\"AT_1500\"]");
+        assertThat(early.get("menu").get("rows").get(4).get(3).asString()).contains("조기 폐장일 마감 뒤");
+        assertThat(early.get("menu").get("rows").get(7).get(1).asString()).as("종가는 조기 폐장 마감").isEqualTo("13:00");
+    }
+
+    @Test
+    @DisplayName("13_execution 크기 — 체결 기록을 가장 크게(20건, 대체·기준 모두 있음) 채워도 계좌2 몫(PacketBuilder.CLAUDE2_EXECUTION_TOKENS 1,800) 안 — 명세 §9-3의 어림 300~800토큰은 기록이 적을 때")
+    void executionSectionFitsTheBudget() {
+        activeClaude2();
+        String code = PaperBooks.CLAUDE2;
+        for (int i = 0; i < 25; i++) {
+            long id = store.insertOrder(new Order(0, code, null, "T" + i, i % 2 == 0 ? "BUY" : "SELL", null, 5.0, null,
+                    "AT_1500", "CLAUDE", "FILLED", null, null, FRI, Instant.parse("2026-10-23T22:31:00Z"), MON,
+                    Instant.parse("2026-10-26T20:20:00Z")));
+            store.insertTimedFill(new PaperStore.Fill(0, id, code, "T" + i, i % 2 == 0 ? "BUY" : "SELL", 12_345,
+                    12_345.6789, 12_345.6789, 5, 152_000_000.0, Instant.parse("2026-10-26T20:20:00Z").plusSeconds(i),
+                    MON, Datasets.SNAP_PAPER_BARS_US, false, null), Instant.parse("2026-10-26T19:04:00Z"), "QUOTES_FALLBACK");
+            ObjectNode cf = MAPPER.createObjectNode();
+            cf.set("NEXT_OBSERVATION", MAPPER.createObjectNode().put("raw", 12_399.1234).put("at", "2026-10-26T14:20:00Z")
+                    .put("rung", "QUOTES_OBSERVATION"));
+            store.mergeOrderExec(new PaperStore.OrderExec(id, code, "AT_1500", null, cf, null, true, null));
+        }
+        String text = MAPPER.writeValueAsString(PacketBuilder.toNode(ExecutionSection.build(MON, PaperBooks.CLAUDE2_TIMINGS,
+                UsMarketCalendar.CALENDAR, 5, true, store, code)));
+        assertThat(MAPPER.valueToTree(PacketBuilder.toNode(ExecutionSection.build(MON, PaperBooks.CLAUDE2_TIMINGS,
+                UsMarketCalendar.CALENDAR, 5, true, store, code))).get("record").get("rows").size()).isEqualTo(20);
+        assertThat(PacketBuilder.estimateTokens(text)).isGreaterThan(1_600).isLessThanOrEqualTo(PacketBuilder.CLAUDE2_EXECUTION_TOKENS);
     }
 
     @Test

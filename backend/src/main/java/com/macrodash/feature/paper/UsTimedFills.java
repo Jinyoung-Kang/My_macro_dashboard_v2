@@ -1,6 +1,7 @@
 package com.macrodash.feature.paper;
 
 import com.macrodash.Kst;
+import com.macrodash.analytics.OrderValidator;
 import com.macrodash.analytics.PaperLedger;
 import com.macrodash.analytics.TradingCalendar;
 import com.macrodash.analytics.TrailingStop;
@@ -138,6 +139,38 @@ final class UsTimedFills {
     /** 시각 지정 시점인가. */
     static boolean timed(String timing) {
         return timing != null && TIMINGS.contains(timing);
+    }
+
+    /**
+     * 그 결정에서 닫힌 시각 지정 시점(검증기 {@link OrderValidator.Market#closed} — 계좌2 명세 §6-2·§10-5): 목표 세션
+     * E(기준 거래일 다음 거래일)의 마감 이후 시각(조기 폐장일 13:00 ET의 AT_1300~AT_1500)은 MALFORMED, 기준 시각 T가 지금 + 60초 이전이면
+     * LATE_FOR_TIMING(주문은 검증 직후 같은 트랜잭션에서 만들어지므로 지금을 생성 시각으로 봄 — 장부가 체결 때 실제 생성 시각으로 다시 봄, ⑤).
+     * 시각 지정이 아닌 시점(NEXT_CLOSE)은 닫지 않습니다.
+     *
+     * @param timings 받는 체결 시점(계좌 프로필)
+     */
+    static Map<String, OrderValidator.Closed> closedTimings(List<String> timings, LocalDate asOf,
+                                                                                    Instant now, TradingCalendar calendar) {
+        LocalDate session = calendar.nextTradingDay(asOf);
+        Instant close = calendar.closeInstant(session);
+        Map<String, OrderValidator.Closed> out = new LinkedHashMap<>();
+        for (String timing : timings) {
+            Instant target = timed(timing) ? ExecutionAudit.targetAt(timing, session, calendar) : null;
+            if (target == null) {
+                continue;
+            }
+            if (!target.isBefore(close)) {
+                out.put(timing, new OrderValidator.Closed(
+                        OrderValidator.MALFORMED, "조기 폐장 " + CLOCK.format(close.atZone(calendar.zone()))
+                        + " ET — " + session + " " + timing + "(" + CLOCK.format(target.atZone(calendar.zone()))
+                        + " ET)은 마감 뒤라 받지 않음"));
+            } else if (!target.isAfter(now.plus(ExecutionAudit.AFTER_CREATED))) {
+                out.put(timing, new OrderValidator.Closed(
+                        OrderValidator.LATE_FOR_TIMING, "기준 시각 " + et(target, calendar)
+                        + "이 주문 생성(지금 " + Kst.stamp(now) + ") + 60초 이전이라 받지 않음(⑤)"));
+            }
+        }
+        return out;
     }
 
     // ------------------------------------------------------------------ 1분봉 저장본

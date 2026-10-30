@@ -17,7 +17,8 @@ import java.util.Objects;
  * <p>결정 파이프라인의 열쇠는 시장이 아니라 이 프로필의 계좌 코드입니다({@link ClaudeBookService}) — 한 시장에 Claude 계좌가 둘(미국 계좌1·
  * 계좌2)이어도 기동이 막히지 않게. 시장 묶음의 {@link PaperMarket#claudeBook}은 그 시장의 '기본 Claude 계좌'(미국 {@code claude}·한국
  * {@code kr_claude})로 남고, 그 계좌의 프로필은 시장 묶음의 값을 그대로 옮긴 것입니다({@link #marketDefault}). 그래서 미국 계좌1·한국 Claude
- * 계좌의 패킷·시스템 프롬프트·응답 스키마·검증은 프로필 전과 글자 그대로입니다(고정본 시험). 계좌2의 프로필은 단계 1의 1-5에서 더합니다.
+ * 계좌의 패킷·시스템 프롬프트·응답 스키마·검증은 프로필 전과 글자 그대로입니다(고정본 시험). 미국 Claude 계좌2의 프로필은 {@link #US_CLAUDE2}입니다
+ * (계좌2 명세 §9 — 시각 지정 체결 메뉴·{@code CLAUDE2_FIXED_RULES}·패킷 변형 {@code claude2}·소상한 {@code claude2.maxCallsPerCycle}).
  *
  * @param market         계좌의 시장 묶음(정의 — 달력·하드 규칙 줄·검증기의 시장 몫은 여기서)
  * @param code           계좌 코드({@code paper_books.code})
@@ -32,16 +33,30 @@ import java.util.Objects;
  * @param callCapKey     결정 주기 소상한의 설정 키 — 기본 계좌는 null(소상한 없음, 하루 상한만)
  * @param timingNames    받는 체결 시점 → 검증기 근거 문구의 이름(시점마다 하나, 그 밖의 항목은 버림) — 기본 계좌는 그 시장의
  *                       {@link PaperMarket#timingNames}
+ * @param timed          시각 지정 체결 계좌인가({@link PaperBooks.Execution#TIMED} — 미국 Claude 계좌2): 주문은 목표 세션 E 하루짜리, 검증기가 그
+ *                       결정에서 닫힌 시점(조기 폐장 마감 뒤·지금 + 60초 안 — {@link UsTimedFills#closedTimings})을 거절, 앞으로 체결로 출발하므로
+ *                       이달 재량 주문 수에서 출발(INITIAL) 결정의 주문을 뺌(한국 계산 — 계좌2 명세 §4-1의 5·§10-5). 기본 계좌는 거짓
  */
 record ClaudeBookProfile(PaperMarket market, String code, String schemaResource, String fixedRules,
                          String packetVariant, List<String> timings, Map<String, Integer> timingRanks,
-                         String callCapKey, Map<String, String> timingNames) {
+                         String callCapKey, Map<String, String> timingNames, boolean timed) {
 
     /** 미국 Claude 계좌1({@code claude}) — 미국 시장 묶음의 값 그대로, 응답 스키마 {@value ClaudeBookService#SCHEMA_RESOURCE}. */
     static final ClaudeBookProfile US_CLAUDE = marketDefault(UsPaperMarket.INSTANCE, ClaudeBookService.SCHEMA_RESOURCE);
 
     /** 한국 Claude 계좌({@code kr_claude}) — 한국 시장 묶음의 값 그대로, 응답 스키마 {@value ClaudeBookService#KR_SCHEMA_RESOURCE}. */
     static final ClaudeBookProfile KR_CLAUDE = marketDefault(KrPaperMarket.INSTANCE, ClaudeBookService.KR_SCHEMA_RESOURCE);
+
+    /**
+     * 미국 Claude 계좌2({@code claude2}, 계좌2 명세 §9·ADR 0022) — 계좌1과 같은 미국 시장 묶음(달력·관측치·하드 규칙 줄·금액 표기)에 응답 스키마
+     * {@value ClaudeBookService#CLAUDE2_SCHEMA_RESOURCE}·고정 문단 {@link ClaudePrompts#CLAUDE2_FIXED_RULES}·패킷 변형
+     * {@value PacketBuilder#VARIANT_CLAUDE2}·체결 시점 메뉴 {@link PaperBooks#CLAUDE2_TIMINGS}(순위 NEXT_OPEN 0 &lt; AT_1000 1 &lt; … &lt; AT_1500 6 &lt;
+     * NEXT_CLOSE 7 — 시점마다 다른 때 체결)·소상한 키 {@value Claude2Settings#MAX_CALLS_PER_CYCLE}·시각 지정 체결.
+     */
+    static final ClaudeBookProfile US_CLAUDE2 = new ClaudeBookProfile(UsPaperMarket.INSTANCE, PaperBooks.CLAUDE2,
+            ClaudeBookService.CLAUDE2_SCHEMA_RESOURCE, ClaudePrompts.CLAUDE2_FIXED_RULES, PacketBuilder.VARIANT_CLAUDE2,
+            PaperBooks.CLAUDE2_TIMINGS, sequence(PaperBooks.CLAUDE2_TIMINGS), Claude2Settings.MAX_CALLS_PER_CYCLE,
+            claude2TimingNames(), true);
 
     ClaudeBookProfile {
         Objects.requireNonNull(market, "market");
@@ -70,11 +85,33 @@ record ClaudeBookProfile(PaperMarket market, String code, String schemaResource,
         timingNames = Collections.unmodifiableMap(names);
     }
 
-    /** 근거 문구의 시점 이름을 그 시장 묶음의 것({@link PaperMarket#timingNames})으로 — 시장 기본 계좌·시험용 계좌. */
+    /** 근거 문구의 시점 이름을 그 시장 묶음의 것({@link PaperMarket#timingNames})으로, 시각 지정 체결이 아닌 계좌 — 시장 기본 계좌·시험용 계좌. */
     ClaudeBookProfile(PaperMarket market, String code, String schemaResource, String fixedRules, String packetVariant,
                       List<String> timings, Map<String, Integer> timingRanks, String callCapKey) {
         this(market, code, schemaResource, fixedRules, packetVariant, timings, timingRanks, callCapKey,
-                market.timingNames());
+                market.timingNames(), false);
+    }
+
+    /** 받는 순서 그대로 0, 1, 2 … 순위(시점마다 다른 때 체결 — 계좌2). */
+    private static Map<String, Integer> sequence(List<String> timings) {
+        Map<String, Integer> out = new LinkedHashMap<>();
+        for (String timing : timings) {
+            out.put(timing, out.size());
+        }
+        return out;
+    }
+
+    /** 계좌2 검증기 근거 문구의 시점 이름(예: '다음 세션 10:00(AT_1000) 매수인데 …'). 확정 종가는 계좌1과 같은 이름. */
+    private static Map<String, String> claude2TimingNames() {
+        Map<String, String> out = new LinkedHashMap<>();
+        out.put(PaperBooks.NEXT_OPEN, "다음 세션 시가");
+        for (Map.Entry<String, java.time.LocalTime> entry : ExecutionAudit.MENU.entrySet()) {
+            if (!PaperBooks.NEXT_OPEN.equals(entry.getKey())) {
+                out.put(entry.getKey(), "다음 세션 " + ExecutionAudit.label(entry.getValue()));
+            }
+        }
+        out.put(PaperBooks.NEXT_CLOSE, OrderValidator.Market.US.timingNames().get(PaperBooks.NEXT_CLOSE));
+        return out;
     }
 
     /**

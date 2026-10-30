@@ -30,7 +30,8 @@ import java.util.function.IntPredicate;
  * <ol>
  *   <li>{@link #MALFORMED} — 주문·티커 없음, side가 BUY/SELL이 아님, timing이 NEXT_OBSERVATION/NEXT_CLOSE가 아님, 매수에
  *       targetWeightPct가 없음·숫자 아님·0~100 밖, 매도 sellFraction이 숫자 아님·0 이하·1 초과, 매도에 sellFraction 없이
- *       targetWeightPct(0 초과)만 있음(아래 "매도 비율").</li>
+ *       targetWeightPct(0 초과)만 있음(아래 "매도 비율"). 그 결정에서 닫힌 시점({@link Market#closed} — 미국 Claude 계좌2: 조기 폐장일
+ *       마감 뒤 시각은 {@link #MALFORMED}, 지금 + 60초 안에 지나는 시각은 {@link #LATE_FOR_TIMING})도 이 자리에서 그 사유로 거절합니다.</li>
  *   <li>{@link #DUPLICATE_TICKER} — 같은 티커가 목록 앞에 이미 있음. 같은 종목에 주문이 둘이면 어느 쪽이 뜻인지 모르므로 첫 주문만
  *       보고 뒤의 것은 거절합니다(앞 주문이 거절됐어도 마찬가지 — 결과가 앞 주문의 판정에 따라 바뀌지 않게).</li>
  *   <li>{@link #OUT_OF_UNIVERSE} — 유니버스 밖. 단 <b>보유 중인 종목의 매도</b>는 예외입니다 — 설정에서 유니버스를 줄여도 이미
@@ -135,6 +136,11 @@ public final class OrderValidator {
     public static final String UNFILLABLE = "UNFILLABLE";
     /** 한국만(클래스 설명의 "한국 칸") — 매수 증가분 금액이 1주 체결 금액(수수료·슬리피지 포함)보다 작음. */
     public static final String BUY_BELOW_ONE_SHARE = "BUY_BELOW_ONE_SHARE";
+    /**
+     * 미국 Claude 계좌2만(계좌2 명세 §6-2·§10-5) — 시각 지정 시점의 기준 시각 T가 주문 생성 + 60초 이전(지난 시각·곧 지날 시각). 마감 뒤 결정은
+     * 개장 전 컷오프로 보통 생기지 않습니다. 장부가 체결 때 다시 봅니다(조건 ⑤).
+     */
+    public static final String LATE_FOR_TIMING = "LATE_FOR_TIMING";
 
     /**
      * 비중(%p) 비교 여유. 비중은 평가액/순자산 × 100이라 끝자리 잡음이 있고(예: 합이 100.00000000000001), Claude가 정확히 상한
@@ -190,10 +196,12 @@ public final class OrderValidator {
      * @param money       근거 문구의 금액 표기
      * @param ranks       시점 → 체결 순위(0 이상, 작을수록 이른 시점, 같은 순위는 같은 때 체결). 받는 시점마다 있어야 하고, 그 밖의 항목은
      *                    버림. null이면 두 갈래(이른 시점 0·나머지 1)
+     * @param closed      받는 시점 가운데 이 결정에서 닫힌 것 → 거절 사유(미국 Claude 계좌2 — 조기 폐장·지난 시각, {@link Closed}). null이면
+     *                    없음. 받지 않는 시점을 넣으면 안 됨
      * @throws IllegalArgumentException 위 조건 밖(호출 실수 — 조용히 미국 값으로 바꾸지 않고 막습니다)
      */
     public record Market(List<String> timings, String earlyTiming, Map<String, String> timingNames, Money money,
-                         Map<String, Integer> ranks) {
+                         Map<String, Integer> ranks, Map<String, Closed> closed) {
 
         /** 미국 — 시점 NEXT_OBSERVATION·NEXT_CLOSE(이른 시점 NEXT_OBSERVATION), 달러. 이 묶음 전의 상수·문구 그대로입니다. */
         public static final Market US = new Market(List.of(NEXT_OBSERVATION, NEXT_CLOSE), NEXT_OBSERVATION,
@@ -239,19 +247,43 @@ public final class OrderValidator {
                     throw new IllegalArgumentException("이른 시점(" + earlyTiming + ")보다 이른 순위의 시점이 있습니다: " + e);
                 }
             }
+            Map<String, Closed> shut = new LinkedHashMap<>();
+            if (closed != null) {
+                for (String timing : names.keySet()) {
+                    Closed reason = closed.get(timing);
+                    if (reason != null) {
+                        shut.put(timing, reason);
+                    }
+                }
+                if (shut.size() != closed.size()) {
+                    throw new IllegalArgumentException("닫힌 시점은 받는 체결 시점이어야 합니다: " + closed.keySet() + " ⊄ " + timings);
+                }
+            }
             timings = List.copyOf(timings);
             timingNames = Collections.unmodifiableMap(names);
             ranks = Collections.unmodifiableMap(order);
+            closed = Collections.unmodifiableMap(shut);
         }
 
         /** 순위를 따로 주지 않은 시장 — 두 갈래(이른 시점 0·나머지 1, 클래스 설명의 "체결 시점"). */
         public Market(List<String> timings, String earlyTiming, Map<String, String> timingNames, Money money) {
-            this(timings, earlyTiming, timingNames, money, null);
+            this(timings, earlyTiming, timingNames, money, null, null);
         }
 
-        /** 같은 시점·이름·표기에 체결 순위만 바꾼 시장(Claude 계좌 프로필의 시점 순위 — 계좌2 명세 §10-5). */
+        /** 닫힌 시점이 없는 시장(그 결정의 시각과 상관없이 받는 시점을 모두 받음 — 계좌2 밖의 모든 계좌). */
+        public Market(List<String> timings, String earlyTiming, Map<String, String> timingNames, Money money,
+                      Map<String, Integer> ranks) {
+            this(timings, earlyTiming, timingNames, money, ranks, null);
+        }
+
+        /** 같은 시점·이름·표기·닫힌 시점에 체결 순위만 바꾼 시장(Claude 계좌 프로필의 시점 순위 — 계좌2 명세 §10-5). */
         public Market withRanks(Map<String, Integer> ranks) {
-            return new Market(timings, earlyTiming, timingNames, money, ranks);
+            return new Market(timings, earlyTiming, timingNames, money, ranks, closed);
+        }
+
+        /** 같은 시장에 그 결정에서 닫힌 시점만 바꾼 것(미국 Claude 계좌2 — 결정 파이프라인이 기준 거래일·지금으로 정함). */
+        public Market withClosed(Map<String, Closed> closed) {
+            return new Market(timings, earlyTiming, timingNames, money, ranks, closed);
         }
 
         /** 받는 체결 시점인가(null이면 아님). */
@@ -299,6 +331,23 @@ public final class OrderValidator {
         /** 받는 시점들의 순위(겹치지 않게, 작은 것부터). */
         int[] distinctRanks() {
             return new TreeSet<>(ranks.values()).stream().mapToInt(Integer::intValue).toArray();
+        }
+    }
+
+    /**
+     * 그 결정에서 닫힌 체결 시점의 거절({@link Market#closed}) — 사유 코드({@link #MALFORMED}: 조기 폐장일 마감 뒤 시각 · {@link #LATE_FOR_TIMING}:
+     * 지금 + 60초 안에 지나는 시각)와 근거 문구.
+     *
+     * @throws IllegalArgumentException 사유가 둘 밖이거나 문구가 비었음
+     */
+    public record Closed(String reason, String detail) {
+        public Closed {
+            if (!MALFORMED.equals(reason) && !LATE_FOR_TIMING.equals(reason)) {
+                throw new IllegalArgumentException("닫힌 시점의 사유는 MALFORMED · LATE_FOR_TIMING입니다: " + reason);
+            }
+            if (detail == null || detail.isBlank()) {
+                throw new IllegalArgumentException("닫힌 시점의 근거 문구가 없습니다");
+            }
         }
     }
 
@@ -686,6 +735,10 @@ public final class OrderValidator {
         String malformed = malformed(order, market);
         if (malformed != null) {
             return Verdict.reject(order, MALFORMED, malformed);
+        }
+        Closed closed = market.closed().get(order.timing());
+        if (closed != null) {
+            return Verdict.reject(order, closed.reason(), closed.detail());   // 계좌2 — 그 결정에서 닫힌 시점
         }
         if (earlier != null) {
             return Verdict.reject(order, DUPLICATE_TICKER,

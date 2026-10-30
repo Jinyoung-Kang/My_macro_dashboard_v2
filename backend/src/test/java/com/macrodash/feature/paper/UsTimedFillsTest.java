@@ -137,6 +137,37 @@ class UsTimedFillsTest {
         return base + 0.01 * Duration.between(et(day, 9, 30), start).toMinutes();
     }
 
+    // ------------------------------------------------------------------ 검증기의 닫힌 시점(1-5)
+    @Test
+    @DisplayName("검증기의 닫힌 시점(계좌2 명세 §6-2·§10-5): 조기 폐장일 E(2026-11-27)의 AT_1300~AT_1500은 MALFORMED '조기 폐장 13:00 ET', 지금 + 60초 안에 지나는 시각은 LATE_FOR_TIMING, NEXT_CLOSE는 닫지 않음, 서머타임 끝난 주(E 11-02 EST)도 뉴욕 시각")
+    void closedTimingsForTheValidator() {
+        List<String> menu = PaperBooks.CLAUDE2_TIMINGS;
+        // 11-25(수) 결정 → E = 11-27(금, 추수감사절 다음 날 조기 폐장). 결정은 11-26 07:30 KST(= 11-25 22:30Z).
+        Map<String, com.macrodash.analytics.OrderValidator.Closed> early = UsTimedFills.closedTimings(menu,
+                LocalDate.of(2026, 11, 25), Instant.parse("2026-11-25T22:30:00Z"), US);
+        assertThat(early).containsOnlyKeys("AT_1300", "AT_1400", "AT_1500");
+        assertThat(early.values()).allSatisfy(c -> {
+            assertThat(c.reason()).isEqualTo(com.macrodash.analytics.OrderValidator.MALFORMED);
+            assertThat(c.detail()).startsWith("조기 폐장 13:00 ET — 2026-11-27 ");
+        });
+        assertThat(early.get("AT_1300").detail()).contains("AT_1300(13:00 ET)은 마감 뒤라 받지 않음");
+
+        // 늦은 수동 실행 — E(10-27) 09:59:30 ET에 검증하면 NEXT_OPEN·AT_1000(T ≤ 지금 + 60초)은 LATE_FOR_TIMING, AT_1100부터는 받음.
+        Map<String, com.macrodash.analytics.OrderValidator.Closed> late = UsTimedFills.closedTimings(menu, MON,
+                et(TUE, 9, 59).plusSeconds(30), US);
+        assertThat(late).containsOnlyKeys("NEXT_OPEN", "AT_1000");
+        assertThat(late.get("AT_1000").reason()).isEqualTo(com.macrodash.analytics.OrderValidator.LATE_FOR_TIMING);
+        assertThat(late.get("AT_1000").detail()).contains("2026-10-27 10:00 ET").contains("+ 60초 이전");
+        assertThat(UsTimedFills.closedTimings(menu, MON, et(TUE, 9, 58).plusSeconds(59), US)).as("정확히 61초 앞이면 받음")
+                .containsOnlyKeys("NEXT_OPEN");
+
+        // 서머타임 끝난 주 — 10-31(토) 07:30 KST 결정(기준 10-30 EDT)의 E = 11-02(월, EST): 닫힌 시점 없음.
+        assertThat(UsTimedFills.closedTimings(menu, LocalDate.of(2026, 10, 30), Instant.parse("2026-10-30T22:30:00Z"), US))
+                .isEmpty();
+        assertThat(ExecutionAudit.targetAt("AT_1000", LocalDate.of(2026, 11, 2), US))
+                .isEqualTo(Instant.parse("2026-11-02T15:00:00Z"));
+    }
+
     // ------------------------------------------------------------------ 사다리
     @Nested
     @DisplayName("가격 사다리 R1·R2·R2b·R3·종가")

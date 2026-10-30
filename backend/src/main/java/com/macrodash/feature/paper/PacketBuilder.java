@@ -93,7 +93,9 @@ import java.util.function.Function;
  * {@code 9_portfolio} 장부 ·
  * {@code 10_recentDecisions} 최근 결정 5건 · {@code 11_notes} 유효한 시황 메모(구분자로 감싼 자료 — {@link NoteService#activeMarketNotes}) ·
  * {@code 11b_events} 직전 결정 이후(평일 24시간, 주말·휴장 뒤는 그 사이 전부)의 사건 헤드라인(2단계 B — 대상 종목·매크로 키워드에
- * 걸린 것만, 구분자로 감싼 자료 — {@link EventsSection}) · {@code 12_hardRules} 하드 규칙.
+ * 걸린 것만, 구분자로 감싼 자료 — {@link EventsSection}) · {@code 12_hardRules} 하드 규칙 · (미국 Claude 계좌2 패킷만 — 변형
+ * {@value #VARIANT_CLAUDE2}) {@code 13_execution} 체결 시점 메뉴·사다리·자기 체결 기록({@link ExecutionSection}, 계좌2 명세 §9-3). 계좌2 패킷은
+ * {@code 1_basis}에 변형·메뉴 판·고정 문단 판이 붙고 {@code 12_hardRules}의 시점 문장 셋이 순위 규칙·메뉴로 바뀝니다 — 계좌1 패킷은 글자 그대로입니다.
  *
  * <p><b>결정적</b>: 같은 저장 상태면 같은 문자열·같은 해시입니다 — 결정 기록의 패킷 해시로 "같은 입력이었나"를 말할 수 있어야 하고
  * (명세 C5, "재현은 기록으로만"), 해시가 매번 달라지면 그 기록이 쓸모없어집니다. 그래서 맵은 모두 넣은 순서를 지키는 것으로 만들고
@@ -166,6 +168,8 @@ public class PacketBuilder {
     static final String NOTES = "11_notes";
     static final String EVENTS = "11b_events";
     static final String HARD_RULES = "12_hardRules";
+    /** 미국 Claude 계좌2 패킷에만 있는 섹션(계좌2 명세 §9-3 — {@link ExecutionSection}). {@link #SECTION_KEYS} 뒤에 붙습니다. */
+    static final String EXECUTION = "13_execution";
     static final List<String> SECTION_KEYS = List.of(INSTRUCTIONS, BASIS, CALENDAR, MACRO, FRED, REGIME, GATE,
             TRACK_RECORD, PROFILES, CHANGES, PRICES, FUNDAMENTALS, PORTFOLIO, DECISIONS, NOTES, EVENTS, HARD_RULES);
     /**
@@ -215,6 +219,20 @@ public class PacketBuilder {
      * 붙인 보통 모양이면 늘어나는 몫은 약 250입니다. 넘으면 경고 로그만(판 5와 같음).
      */
     static final int TARGET_TOKENS_CONSENSUS = 36_000;
+
+    // ------------------------------------------------------------------ 계좌 변형(계좌2 명세 §9-2·§9-6)
+    /** 미국 Claude 계좌2 패킷의 변형 이름({@code 1_basis.variant} — 계좌 프로필의 {@link ClaudeBookProfile#packetVariant}). */
+    static final String VARIANT_CLAUDE2 = "claude2";
+    /** 계좌2 {@code 13_execution}의 판 — 단계 1 = 1(장중 확인을 켜는 단계 2에서 2). */
+    static final int EXECUTION_MENU_VERSION = 1;
+    /** 계좌2 고정 문단의 판({@link ClaudePrompts#CLAUDE2_FIXED_RULES}) — 단계 1 = c2-1. */
+    static final String CLAUDE2_FIXED_RULES_VERSION = "c2-1";
+    /**
+     * 계좌2 패킷의 목표 크기에 더하는 {@code 13_execution} 몫(토큰 어림) — 체결 기록을 가장 크게(20건 — 다섯 자리 수량·체결가·기준가, 대체 칸·기준
+     * bp 모두 있음) 채운 섹션이 약 1,705토큰이었습니다(PacketBuilderTest.executionSectionFitsTheBudget, 2026-10-30). 기록이 없으면 약 700(출발).
+     * 계좌1 패킷은 이 몫이 없습니다(목표 그대로).
+     */
+    static final int CLAUDE2_EXECUTION_TOKENS = 1_800;
 
     /** 결정 종류(paper_decisions.kind). */
     static final List<String> KINDS = List.of(RuleBookService.SCHEDULED, RuleBookService.MANUAL,
@@ -527,7 +545,7 @@ public class PacketBuilder {
     private Packet assembleFor(MarketInputs in, ClaudeBookProfile book, String kind, Integer frameworkVersion) {
         LocalDate asOf = in.asOf();
         boolean initial = in.initial();
-        LedgerView ledger = ledger(book.code(), asOf, initial);
+        LedgerView ledger = ledger(book, asOf, initial);
         Set<String> lockedOut = lockedOut(ledger.lockouts(), asOf);
         // 검증기가 NO_PRICE·STALE_INPUT으로 거절할 종목·상태 — 패킷이 거래할 수 있는 것처럼 보이면 모델이 거절될 주문을 냅니다.
         Set<String> noPrice = initial ? null : noPriceTickers(in.quotes(), ledger.positions());
@@ -558,7 +576,7 @@ public class PacketBuilder {
 
         Map<String, Object> root = new LinkedHashMap<>();
         root.put(INSTRUCTIONS, instructions(asOf, initial));
-        root.put(BASIS, basis(book.code(), asOf, kind, initial, in.quotes(), frameworkVersion, in.settingsVersion(),
+        root.put(BASIS, basis(book, asOf, kind, initial, in.quotes(), frameworkVersion, in.settingsVersion(),
                 in.chosen(), in.consensus() ? PACKET_VERSION_CONSENSUS : PACKET_VERSION));
         root.put(CALENDAR, calendar.section());
         root.put(MACRO, in.marketSections().get(MACRO));
@@ -576,13 +594,19 @@ public class PacketBuilder {
         root.put(DECISIONS, recentDecisions(prior));
         root.put(NOTES, in.marketSections().get(NOTES));
         root.put(EVENTS, events.section());
-        root.put(HARD_RULES, hardRules(asOf, initial, in.limits(), in.paper(), in.ruleSettings(), in.universe(),
+        root.put(HARD_RULES, hardRules(book, asOf, initial, in.limits(), in.paper(), in.ruleSettings(), in.universe(),
                 lockedOut, noPrice, in.inputsStale(), initial ? null : in.quotes().map(Quotes::collectedAt).orElse(null)));
+        if (VARIANT_CLAUDE2.equals(book.packetVariant())) {
+            // 계좌2만 — 체결 시점 메뉴·사다리·출처 사실·자기 체결 기록(계좌2 명세 §9-3). 계좌1 패킷에는 이 섹션이 없습니다(고정본 그대로).
+            root.put(EXECUTION, ExecutionSection.build(asOf, book.timings(), UsMarketCalendar.CALENDAR,
+                    in.paper().slippageBp(), Claude2Settings.from(in.settingsBody()).executionRecord(), store, book.code()));
+        }
 
         JsonNode body = toNode(root);
         String text = mapper.writer().without(SerializationFeature.INDENT_OUTPUT).writeValueAsString(body);
         int tokens = estimateTokens(text);
-        int target = in.consensus() ? TARGET_TOKENS_CONSENSUS : TARGET_TOKENS;
+        int target = (in.consensus() ? TARGET_TOKENS_CONSENSUS : TARGET_TOKENS)
+                + (VARIANT_CLAUDE2.equals(book.packetVariant()) ? CLAUDE2_EXECUTION_TOKENS : 0);
         if (tokens > target) {
             log.warn("Claude 패킷이 목표보다 큽니다: {} {} 약 {}토큰(목표 {}) — 목록 상한을 확인하세요", asOf, kind, tokens,
                     target);
@@ -634,7 +658,7 @@ public class PacketBuilder {
         return out;
     }
 
-    private Map<String, Object> basis(String book, LocalDate asOf, String kind, boolean initial,
+    private Map<String, Object> basis(ClaudeBookProfile book, LocalDate asOf, String kind, boolean initial,
                                       Optional<Quotes> quotes, Integer frameworkVersion, Integer settingsVersion,
                                       Selection chosen, int packetVersion) {
         LocalDate next = UsMarketCalendar.nextTradingDay(asOf);
@@ -647,7 +671,13 @@ public class PacketBuilder {
         }
         Map<String, Object> out = new LinkedHashMap<>();
         out.put("packetVersion", packetVersion);
-        out.put("book", book);
+        if (VARIANT_CLAUDE2.equals(book.packetVariant())) {
+            // 계좌2 패킷 머리(계좌2 명세 §9-6) — 변형·체결 메뉴 판·고정 문단 판. 계좌1 패킷에는 이 칸들이 없습니다.
+            out.put("variant", VARIANT_CLAUDE2);
+            out.put("executionMenuVersion", EXECUTION_MENU_VERSION);
+            out.put("fixedRules", CLAUDE2_FIXED_RULES_VERSION);
+        }
+        out.put("book", book.code());
         out.put("asOfTradingDate", asOf.toString());
         out.put("decisionKind", kind);
         out.put("initial", initial);
@@ -1833,7 +1863,8 @@ public class PacketBuilder {
                               List<Order> pending) {
     }
 
-    private LedgerView ledger(String code, LocalDate asOf, boolean initial) {
+    private LedgerView ledger(ClaudeBookProfile profile, LocalDate asOf, boolean initial) {
+        String code = profile.code();
         Optional<Book> book = store.book(code);
         if (initial) {
             // 초기 결정은 "출발일에 출발 현금으로 무엇을 사나"라 장부 상태와 상관없이 현금만입니다(시작 전 책은 어차피 현금만).
@@ -1847,7 +1878,9 @@ public class PacketBuilder {
             double cash = config.initialCash();
             return new LedgerView(false, null, cash, cash, 0, 0, List.of(), List.of(), 0, List.of());
         }
-        int monthly = monthlyDiscretionaryOrders(store.recentOrders(code, MONTHLY_SCAN), asOf);
+        // 앞으로 체결로 출발하는 계좌(계좌2 — ClaudeBookProfile#timed)는 출발 결정(INITIAL)의 주문을 뺀 한국 계산, 계좌1은 사후 체결만 뺀 계산.
+        int monthly = profile.timed() ? KrPacketBuilder.monthlyDiscretionaryOrders(store, code, asOf)
+                : monthlyDiscretionaryOrders(store.recentOrders(code, MONTHLY_SCAN), asOf);
         // 결정 서비스가 검증을 마친 결정마다 취소하는 것과 같은 묶음(ClaudeDecisionPipeline.supersedePending: CLAUDE 출처의 PENDING).
         List<Order> pending = store.ordersByStatus(code, PaperBooks.ORDER_PENDING).stream()
                 .filter(o -> SOURCE_CLAUDE.equals(o.source())).toList();
@@ -2076,10 +2109,12 @@ public class PacketBuilder {
         }
     }
 
-    private static Map<String, Object> hardRules(LocalDate asOf, boolean initial, Limits limits, PaperSettings paper,
-                                                 RuleSettings ruleSettings, Set<String> universe,
+    private static Map<String, Object> hardRules(ClaudeBookProfile book, LocalDate asOf, boolean initial, Limits limits,
+                                                 PaperSettings paper, RuleSettings ruleSettings, Set<String> universe,
                                                  Set<String> lockedOut, Set<String> noPrice, boolean inputsStale,
                                                  Instant quotesCollectedAt) {
+        // 계좌2(시각 지정 체결)는 시점 문장 셋이 순위 규칙·메뉴로 바뀝니다(계좌2 명세 §9-2·§10-5) — 나머지 줄은 계좌1과 같은 글자.
+        boolean timed = book.timed();
         String cashLike = String.join(", ", paper.cashLikeTickers());
         List<String> lines = new ArrayList<>();
         lines.add(NO_CASH_BOUNDS + ". 노출 0%·100% 모두 거절 사유가 아니다(매크로 조건도 검사하지 않음).");
@@ -2092,7 +2127,8 @@ public class PacketBuilder {
         lines.add("SELL의 sellFraction = 보유 수량 대비 파는 비율(0 초과 1 이하, null이면 전량). 보유가 없는 종목은 팔 수 없다. "
                 + "부분 매도는 1주 이상이어야 한다 — floor(보유 수량 × sellFraction) < 1이면 BELOW_ONE_SHARE로 거절"
                 + "(보유 수량은 9_portfolio.positions의 qty, 장부는 1주 미만 매도를 전량으로 집행하므로 받지 않음).");
-        lines.add("매수 목표 합 + 매도 뒤 남는 보유 비중이 100%를 넘으면 목표 비중이 큰 주문부터 받고 넘치는 주문은 거절(OVER_ALLOCATED). "
+        lines.add(timed ? rankRule(book)
+                : "매수 목표 합 + 매도 뒤 남는 보유 비중이 100%를 넘으면 목표 비중이 큰 주문부터 받고 넘치는 주문은 거절(OVER_ALLOCATED). "
                 + "매도는 같은 시점이거나 더 늦은 매수의 자리만 만든다 — NEXT_CLOSE 매도는 NEXT_OBSERVATION 매수보다 늦게 체결되므로 "
                 + "NEXT_CLOSE 전량 매도도 NEXT_OBSERVATION 매수의 현금(비중 합, OVER_ALLOCATED)·종목 자리(최대 종목 수, MAX_POSITIONS)를 "
                 + "비우지 못한다.");
@@ -2104,8 +2140,9 @@ public class PacketBuilder {
                         + "그다음 매수를 목표 비중 큰 순) 넘치면 MONTHLY_CAP. 초기 배분(사후 체결)은 이후 결정의 이달 누계에는 세지 않는다. ",
                         limits.maxDiscretionaryOrdersPerMonth(), limits.maxDiscretionaryOrdersPerMonth())
                 : String.format(Locale.ROOT, "재량 주문 월 %d건까지 — 이번 결정은 상한에서 이달 체결된 정기·수동 결정 주문 수"
-                        + "(9_portfolio.monthlyDiscretionaryOrders.used, 초기 배분 제외)를 뺀 건수까지만 받고(매도 먼저 목록 순, 그다음 "
-                        + "매수를 목표 비중 큰 순) 넘치면 MONTHLY_CAP. ", limits.maxDiscretionaryOrdersPerMonth()))
+                        + "(9_portfolio.monthlyDiscretionaryOrders.used, %s)를 뺀 건수까지만 받고(매도 먼저 목록 순, 그다음 "
+                        + "매수를 목표 비중 큰 순) 넘치면 MONTHLY_CAP. ", limits.maxDiscretionaryOrdersPerMonth(),
+                        timed ? "출발 결정(INITIAL) 주문 제외" : "초기 배분 제외"))
                 + String.format(Locale.ROOT, "재량 매도는 보유 %d거래일 뒤부터.", limits.minHoldTradingDaysForSell()));
         lines.add(String.format(Locale.ROOT, "트레일링 스탑 −%s%%는 코드가 관측치마다 집행하고, 스탑 뒤 %d거래일 재진입 금지.",
                 plain(paper.trailingStopPct()), paper.lockoutTradingDays()));
@@ -2119,6 +2156,9 @@ public class PacketBuilder {
                         + "검증 시각보다 " + staleHours + "시간 넘게 오래되면 그날 주문 전부 거절(STALE_INPUT) — inputsStale이 true면 "
                         + "지금 그 상태다.");
         lines.add(initial ? "초기 결정의 통과 주문은 기준일(" + asOf + ") 종가로 사후 체결된다."
+                : timed ? "주문은 다음 세션(13_execution.session.date) 하루짜리로, 주문마다 고른 시점(13_execution.menu)의 가격으로 "
+                        + "체결된다 — 기준 거래일 봉으로는 체결되지 않고, 그날 체결되지 않으면 만료된다. 조기 폐장일의 마감 뒤 시점은 "
+                        + "MALFORMED, 기준 시각이 주문 생성 + 60초 이전인 시점은 LATE_FOR_TIMING으로 거절."
                 : "주문은 기준 거래일 뒤 세션의 관측치(NEXT_OBSERVATION) 또는 확정 종가(NEXT_CLOSE)로 체결된다 — 기준 거래일 봉으로는 체결되지 않는다.");
         if (!initial) {
             lines.add("9_portfolio.pendingOrders(앞선 결정의 대기 주문): " + PENDING_SUPERSEDED + ".");
@@ -2145,6 +2185,19 @@ public class PacketBuilder {
         // 유니버스는 수백 종목이라 한 줄 문자열로(배열이면 따옴표·쉼표로 크기가 두 배).
         out.put("universe", String.join(",", universe));
         return out;
+    }
+
+    /**
+     * 계좌2의 100% 검사·종목 자리 문장(계좌2 명세 §10-5) — 시점 순위를 그 계좌 프로필의 순서로 적습니다(검증기 {@code OrderValidator}의 순위와 같은
+     * 값 — {@code DecisionTimingsLockTest}).
+     */
+    private static String rankRule(ClaudeBookProfile book) {
+        List<String> ordered = new ArrayList<>(book.timings());
+        ordered.sort(Comparator.comparingInt(timing -> book.timingRanks().get(timing)));
+        return "매수 목표 합 + 매도 뒤 남는 보유 비중이 100%를 넘으면 목표 비중이 큰 주문부터 받고 넘치는 주문은 거절(OVER_ALLOCATED). "
+                + "체결 시점 순위는 " + String.join(" < ", ordered) + "이고, 매도는 같은 시점이거나 순위가 더 늦은 매수에만 현금(비중 합, "
+                + "OVER_ALLOCATED)과 종목 자리(최대 종목 수, MAX_POSITIONS)를 만든다 — 예: NEXT_OPEN 전량 매도는 AT_1000 매수의 자리를 비우지만 "
+                + "NEXT_CLOSE 전량 매도는 AT_1500 매수의 자리를 비우지 못한다. 100% 검사·종목 수는 매수가 있는 시점마다 본다.";
     }
 
     // ------------------------------------------------------------------ 유니버스

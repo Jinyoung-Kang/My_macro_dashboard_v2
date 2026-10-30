@@ -27,7 +27,7 @@ class ClaudeBookProfileTest {
     void marketDefaultProfilesCarryTheMarketValues() {
         assertThat(ClaudeBookService.marketContexts(mock(PacketBuilder.class), mock(KrPacketBuilder.class)))
                 .extracting(ClaudeDecisionPipeline.MarketContext::profile)
-                .containsExactly(ClaudeBookProfile.US_CLAUDE, ClaudeBookProfile.KR_CLAUDE);
+                .containsExactly(ClaudeBookProfile.US_CLAUDE, ClaudeBookProfile.US_CLAUDE2, ClaudeBookProfile.KR_CLAUDE);
 
         ClaudeBookProfile us = ClaudeBookProfile.US_CLAUDE;
         assertThat(us.market()).isSameAs(UsPaperMarket.INSTANCE);
@@ -40,6 +40,8 @@ class ClaudeBookProfileTest {
                 .containsExactly(entry(OrderValidator.NEXT_OBSERVATION, 0), entry(OrderValidator.NEXT_CLOSE, 1));
         assertThat(us.packetVariant()).isNull();
         assertThat(us.callCapKey()).isNull();
+        assertThat(us.timingNames()).isEqualTo(OrderValidator.Market.US.timingNames());
+        assertThat(us.timed()).isFalse();
 
         ClaudeBookProfile kr = ClaudeBookProfile.KR_CLAUDE;
         assertThat(kr.market()).isSameAs(KrPaperMarket.INSTANCE);
@@ -52,6 +54,7 @@ class ClaudeBookProfileTest {
         kr.timings().stream().skip(1).forEach(timing -> assertThat(kr.timingRanks()).containsEntry(timing, 1));
         assertThat(kr.packetVariant()).isNull();
         assertThat(kr.callCapKey()).isNull();
+        assertThat(kr.timed()).isFalse();
 
         assertThat(ClaudeBookProfile.marketDefault(UsPaperMarket.INSTANCE, ClaudeBookService.SCHEMA_RESOURCE))
                 .as("시장 묶음에서 만든 기본 계좌 프로필 = 운영 상수").isEqualTo(us);
@@ -77,6 +80,45 @@ class ClaudeBookProfileTest {
         String rendered = FrameworkService.render(other, body, 0, defaults);
         String beforeFixed = book1.substring(0, book1.indexOf("## 근거(고정)"));
         assertThat(rendered).isEqualTo(beforeFixed + "## 시험용 고정 문단\n- 한 줄");
+    }
+
+    @Test
+    @DisplayName("계좌2 시스템 프롬프트(계좌2 명세 §9-4) — 고정본 render-us-claude2-v0-default.txt, 계좌1과 ROLE·원칙·엔진·지침·하드 규칙 줄까지 같고 끝 고정 문단만 다름, 그 문단은 계좌1 문단에서 세 곳(우선순위 첫 줄·timing 줄·체결 절)만 다름")
+    void claude2RenderDiffersOnlyInTheFixedRules() {
+        JsonNode body = FrameworkService.interimBody(MAPPER);
+        JsonNode defaults = PaperFixtures.settings(new FakePaperStore()).defaultsJson();
+        String book1 = FrameworkService.render(ClaudeBookProfile.US_CLAUDE, body, 0, defaults);
+        String book2 = FrameworkService.render(ClaudeBookProfile.US_CLAUDE2, body, 0, defaults);
+        Golden.assertMatches("render-us-claude2-v0-default.txt", book2);
+        Golden.assertMatches("render-us-v0-default.txt", book1);
+        String shared = book1.substring(0, book1.indexOf("## 근거(고정)"));
+        assertThat(book2).startsWith(shared + ClaudePrompts.CLAUDE2_PRIORITY + "\n## 근거(고정)");
+        assertThat(book2).contains(ClaudePrompts.ROLE);
+
+        // 세 곳을 되돌리면 계좌1 문단 그대로(그 밖의 문장은 글자까지 같음).
+        String rules = ClaudePrompts.CLAUDE2_FIXED_RULES;
+        assertThat(rules).startsWith(ClaudePrompts.CLAUDE2_PRIORITY + "\n");
+        String back = rules.substring(ClaudePrompts.CLAUDE2_PRIORITY.length() + 1)
+                .replace(ClaudePrompts.CLAUDE2_TIMING_LINES, ClaudePrompts.US_TIMING_LINE)
+                .replace(ClaudePrompts.CLAUDE2_FILL_SECTION, "");
+        assertThat(back).isEqualTo(ClaudePrompts.FIXED_RULES);
+        assertThat(rules).contains("## 체결(고정)").contains("결정 뒤 장중 정보는 보지 못한다").contains("executionNote")
+                .contains("200자").doesNotContain("5bp");
+        assertThat(rules.indexOf("## 체결(고정)")).as("체결 절은 출력 절 앞").isLessThan(rules.indexOf("## 출력(고정)"));
+    }
+
+    @Test
+    @DisplayName("계좌2 프로필의 검증기 몫 — 받는 시점 여덟·순위 0~7·근거 문구 이름(다음 세션 시가·다음 세션 10:00 … 확정 종가)·달러 표기, 닫힌 시점 없음")
+    void claude2OrderValidation() {
+        OrderValidator.Market market = ClaudeBookProfile.US_CLAUDE2.orderValidation();
+        assertThat(market.timings()).isEqualTo(PaperBooks.CLAUDE2_TIMINGS);
+        assertThat(market.earlyTiming()).isEqualTo(PaperBooks.NEXT_OPEN);
+        assertThat(market.timingNames()).containsEntry("NEXT_OPEN", "다음 세션 시가").containsEntry("AT_1000", "다음 세션 10:00")
+                .containsEntry("AT_1500", "다음 세션 15:00").containsEntry("NEXT_CLOSE", "확정 종가").hasSize(8);
+        assertThat(market.money()).isEqualTo(OrderValidator.Money.USD);
+        assertThat(market.closed()).isEmpty();
+        assertThat(ClaudeBookProfile.US_CLAUDE2.timingRanks().get("AT_1500")).isEqualTo(6);
+        assertThat(ClaudeBookProfile.US_CLAUDE2.timingRanks().get("NEXT_CLOSE")).isEqualTo(7);
     }
 
     @Test

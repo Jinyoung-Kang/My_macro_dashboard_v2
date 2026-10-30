@@ -469,6 +469,83 @@ class StructuredSchemaTest {
         Golden.assertMatches("decision-schema-forapi-kr.json", Golden.prettyJson(KR_DECISION.forApi()));
     }
 
+    // ── 미국 Claude 계좌2 결정 스키마(계좌2 명세 §9-2) ───────────────────────
+
+    private static final StructuredSchema CLAUDE2_DECISION = StructuredSchema.load(ClaudeBookService.CLAUDE2_SCHEMA_RESOURCE);
+    /** 계좌2 스키마 파일 바이트의 SHA-256 — 출발 뒤 실험 중 바꾸지 않음(바꾸면 판을 올리고 ADR 0022 '결과'에 기록). */
+    private static final String CLAUDE2_SCHEMA_SHA256 =
+            "30f40af6752cae3ad9b3b8d85120fa64121583c4ba1720d25898fb9760bebc96";
+
+    private static ObjectNode validClaude2() throws Exception {
+        ObjectNode response = valid();
+        ((ObjectNode) response.get("orders").get(0)).put("timing", "NEXT_OPEN").put("executionNote", "갭 위험이 작아 시가");
+        ((ObjectNode) response.get("orders").get(1)).put("timing", "AT_1500").put("executionNote", "마감 전 유동성");
+        return response;
+    }
+
+    @Test
+    @DisplayName("계좌2 스키마: 미국 파일에서 timing enum(메뉴 여덟)과 주문마다 필수인 executionNote(200자)만 다름 — schemaVersion 2 그대로, 장중 확인(checkpoint) 칸은 단계 2")
+    void claude2SchemaDiffersOnlyInTimingAndExecutionNote() throws Exception {
+        tools.jackson.databind.JsonNode us = rawSchema(ClaudeBookService.SCHEMA_RESOURCE);
+        tools.jackson.databind.JsonNode book2 = rawSchema(ClaudeBookService.CLAUDE2_SCHEMA_RESOURCE);
+        assertThat(Golden.sha256(Golden.resourceBytes(ClaudeBookService.CLAUDE2_SCHEMA_RESOURCE)))
+                .isEqualTo(CLAUDE2_SCHEMA_SHA256);
+        List<String> timings = new ArrayList<>();
+        book2.at("/properties/orders/items/properties/timing/enum").forEach(node -> timings.add(node.asString()));
+        assertThat(timings).isEqualTo(PaperBooks.CLAUDE2_TIMINGS);
+        assertThat(book2.at("/properties/schemaVersion")).isEqualTo(us.at("/properties/schemaVersion"));
+        assertThat(book2.at("/properties/checkpoint").isMissingNode()).as("단계 1 — 장중 확인 칸 없음").isTrue();
+        assertThat(book2.at("/properties/orders/items/properties/executionNote").toString())
+                .isEqualTo("{\"type\":\"string\",\"maxLength\":200}");
+
+        ObjectNode patched = (ObjectNode) us.deepCopy();
+        ObjectNode items = (ObjectNode) patched.at("/properties/orders/items");
+        ObjectNode props = MAPPER.createObjectNode();
+        items.get("properties").properties().forEach(e -> {
+            if (e.getKey().equals("timing")) {
+                props.set("timing", book2.at("/properties/orders/items/properties/timing").deepCopy());
+                props.set("executionNote", book2.at("/properties/orders/items/properties/executionNote").deepCopy());
+            } else {
+                props.set(e.getKey(), e.getValue().deepCopy());
+            }
+        });
+        items.set("properties", props);
+        items.set("required", book2.at("/properties/orders/items/required").deepCopy());
+        assertThat(book2).as("두 칸·required를 미국 파일에 덮으면 계좌2 파일과 같음").isEqualTo(patched);
+        assertThat(book2.at("/properties/orders/items/required").toString())
+                .isEqualTo("[\"ticker\",\"side\",\"timing\",\"executionNote\",\"thesis\",\"labels\",\"invalidation\"]");
+    }
+
+    @Test
+    @DisplayName("계좌2 스키마 검사 — 메뉴 시점·executionNote가 있는 주문은 통과, NEXT_OBSERVATION·없는 시점·executionNote 없음·200자 넘음은 위반")
+    void claude2SchemaValidatesOrders() throws Exception {
+        assertThat(CLAUDE2_DECISION.validate(validClaude2())).isEmpty();
+        assertThat(DECISION.validate(validClaude2())).as("계좌1 스키마는 메뉴 시점·executionNote를 받지 않음").isNotEmpty();
+        for (String timing : List.of("NEXT_OBSERVATION", "AT_0930", "MARKET", "BACKFILL")) {
+            ObjectNode response = validClaude2();
+            firstOrder(response).put("timing", timing);
+            assertThat(CLAUDE2_DECISION.validate(response)).as(timing).hasSize(1)
+                    .allMatch(v -> v.startsWith("$.orders[0].timing: "));
+        }
+        ObjectNode missing = validClaude2();
+        firstOrder(missing).remove("executionNote");
+        assertThat(CLAUDE2_DECISION.validate(missing)).singleElement().asString().contains("executionNote");
+        ObjectNode longNote = validClaude2();
+        firstOrder(longNote).put("executionNote", "가".repeat(201));
+        assertThat(CLAUDE2_DECISION.validate(longNote)).singleElement().asString()
+                .startsWith("$.orders[0].executionNote: ");
+    }
+
+    @Test
+    @DisplayName("고정본: API에 보내는 계좌2 결정 스키마 — 같은 걷어 내기(숫자 범위·길이·개수 없음, 모든 객체 닫힘), executionNote는 필수로 남음")
+    void goldenClaude2SchemaForApi() {
+        List<String> found = new ArrayList<>();
+        walkSchemas(CLAUDE2_DECISION.forApi(), "$", (path, schema) -> schema.keySet().stream()
+                .filter(StructuredSchema.API_UNSUPPORTED::contains).forEach(key -> found.add(path + "." + key)));
+        assertThat(found).isEmpty();
+        Golden.assertMatches("decision-schema-forapi-us-claude2.json", Golden.prettyJson(CLAUDE2_DECISION.forApi()));
+    }
+
     // ── 주간 복기 스키마(2단계 D) ─────────────────────────────────────────
 
     private static final StructuredSchema REVIEW = StructuredSchema.load("paper/review.schema.json");

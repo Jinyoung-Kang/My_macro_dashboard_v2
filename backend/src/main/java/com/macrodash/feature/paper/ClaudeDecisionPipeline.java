@@ -116,11 +116,22 @@ final class ClaudeDecisionPipeline {
     }
 
     /**
+     * 그 실행에서 한 번 읽은 미국 시장 입력({@link PacketBuilder.MarketInputs})으로 이 계좌의 패킷을 조립하는 함수(입력 동결 — 계좌2 명세 §9-1·§5-1:
+     * 같은 실행의 계좌1·계좌2가 같은 시장 입력으로). 미국 문맥만 있습니다({@link PacketBuilder#assemble}).
+     */
+    @FunctionalInterface
+    interface SharedPacketSource {
+        Packet build(PacketBuilder.MarketInputs inputs, String kind, Integer frameworkVersion);
+    }
+
+    /**
      * Claude 결정 한 번이 계좌마다 다르게 쓰는 것(2단계 명세 §9 A6, 계좌2 명세 §9-1) — 계좌 프로필({@link ClaudeBookProfile} — 계좌 코드·시장 묶음
      * (달력·관측치·하드 규칙 줄)·응답 스키마 파일(API용과 검사용이 같은 파일 — D26)·고정 문단·받는 체결 시점)과 패킷. 패킷은 둘 중 하나입니다: 설정
-     * 행만 받는 {@code packets}(미국), 그 실행의 관측치·읽은 순간까지 받는 {@code runPackets}(한국 — 결정이 {@link Observed}를 넘겨야 함).
+     * 행만 받는 {@code packets}(미국), 그 실행의 관측치·읽은 순간까지 받는 {@code runPackets}(한국 — 결정이 {@link Observed}를 넘겨야 함). 미국
+     * 문맥은 그 실행에서 읽은 시장 입력으로 조립하는 {@code shared}도 둡니다(없으면 null — 시험용 시장 묶음·한국).
      */
-    record MarketContext(ClaudeBookProfile profile, PacketSource packets, RunPacketSource runPackets) {
+    record MarketContext(ClaudeBookProfile profile, PacketSource packets, RunPacketSource runPackets,
+                         SharedPacketSource shared) {
 
         MarketContext {
             Objects.requireNonNull(profile, "profile");
@@ -129,9 +140,14 @@ final class ClaudeDecisionPipeline {
             }
         }
 
+        /** 시장 입력을 함께 쓰지 않는 문맥({@code shared} 없음). */
+        MarketContext(ClaudeBookProfile profile, PacketSource packets, RunPacketSource runPackets) {
+            this(profile, packets, runPackets, null);
+        }
+
         /** 그 시장 기본 Claude 계좌({@link ClaudeBookProfile#marketDefault})의 문맥 — 설정 행만 받는 패킷(시험용 시장 묶음). */
         MarketContext(PaperMarket market, PacketSource packets, String schemaResource) {
-            this(ClaudeBookProfile.marketDefault(market, schemaResource), packets, null);
+            this(ClaudeBookProfile.marketDefault(market, schemaResource), packets, null, null);
         }
 
         /** 계좌의 시장 묶음({@link ClaudeBookProfile#market}). */
@@ -151,6 +167,7 @@ final class ClaudeDecisionPipeline {
     private final PaperStore store;
     private final PacketSource packets;
     private final RunPacketSource runPackets;
+    private final SharedPacketSource shared;
     private final FrameworkService framework;
     private final PaperApiCalls calls;
     private final AiService ai;
@@ -166,6 +183,7 @@ final class ClaudeDecisionPipeline {
         this.store = store;
         this.packets = context.packets();
         this.runPackets = context.runPackets();
+        this.shared = context.shared();
         this.framework = framework;
         this.calls = calls;
         this.ai = ai;
@@ -183,6 +201,7 @@ final class ClaudeDecisionPipeline {
         this.store = base.store;
         this.packets = base.packets;
         this.runPackets = base.runPackets;
+        this.shared = base.shared;
         this.framework = base.framework;
         this.calls = base.calls;
         this.ai = base.ai;
@@ -313,6 +332,28 @@ final class ClaudeDecisionPipeline {
         FrameworkService.Frame frame = framework.current();
         Packet packet = packet(asOf, kind, initial, frame.version(), row, observed);
         return send(frame, packet, row, claude, today, scheduled, window);
+    }
+
+    /**
+     * 그 실행에서 한 번 읽은 미국 시장 입력으로 조립한 패킷으로 호출 한 번(입력 동결 — 계좌2 명세 §9-1·§5-1). 호출 상한·사용량·분류는
+     * {@link #attempt(LocalDate, String, boolean, SettingsRow, ClaudeSettings, LocalDate, boolean)}와 같습니다. 패킷의 설정 판·한도는 시장 입력이 읽은
+     * 행입니다(결정은 같은 실행의 행 {@code row}로 시스템 프롬프트를 렌더링 — 둘이 같은 행이어야 함, 부르는 쪽이 지킴).
+     *
+     * @throws IllegalStateException 시장 입력을 함께 쓰지 않는 문맥(시험용 시장 묶음·한국)
+     */
+    Attempt attempt(PacketBuilder.MarketInputs inputs, String kind, SettingsRow row, ClaudeSettings claude,
+                    LocalDate today, boolean scheduled) {
+        if (shared == null) {
+            throw new IllegalStateException(market.code() + " " + book() + " 결정 문맥은 시장 입력을 함께 쓰지 않습니다");
+        }
+        FrameworkService.Frame frame = framework.current();
+        Packet packet = shared.build(inputs, kind, frame.version());
+        return send(frame, packet, row, claude, today, scheduled, null);
+    }
+
+    /** 시장 입력을 함께 쓰는 문맥인가({@link #attempt(PacketBuilder.MarketInputs, String, SettingsRow, ClaudeSettings, LocalDate, boolean)}). */
+    boolean sharesInputs() {
+        return shared != null;
     }
 
     /**
@@ -496,7 +537,13 @@ final class ClaudeDecisionPipeline {
                 checks.universe(), checks.etfs(), Set.copyOf(paper.cashLikeTickers()), checks.lockedOut(),
                 checks.noPrice(), monthly, stale, heldQty, checks.unfillable(), checks.wholeShares());
         // 검증기의 시장 몫 — 계좌의 받는 시점·시점 순위·이름(계좌2 명세 §10-5), 시장의 금액 표기. 기본 계좌는 시장 묶음 값 그대로.
-        List<Verdict> verdicts = OrderValidator.validate(proposed, ctx, limits, profile.orderValidation());
+        // 시각 지정 체결 계좌(계좌2)는 그 결정에서 닫힌 시점(조기 폐장 마감 뒤·지금 + 60초 안 — §6-2)을 더합니다.
+        OrderValidator.Market timingRules = profile.orderValidation();
+        if (profile.timed()) {
+            timingRules = timingRules.withClosed(UsTimedFills.closedTimings(profile.timings(), asOf, clock.instant(),
+                    market.calendar()));
+        }
+        List<Verdict> verdicts = OrderValidator.validate(proposed, ctx, limits, timingRules);
 
         // 주문을 반영한 예상 노출(클래스 설명) — 통과한 매도·매수만.
         Map<String, Double> sold = new HashMap<>();
@@ -580,8 +627,9 @@ final class ClaudeDecisionPipeline {
             noPrice.addAll(noPriceTickers(quotes, heldTickers));
             stale = inputsStale(quotes, clock.instant());
         }
-        int monthly = initial ? 0 : PacketBuilder.monthlyDiscretionaryOrders(
-                store.recentOrders(book(), PacketBuilder.MONTHLY_SCAN), asOf);
+        // 앞으로 체결로 출발하는 계좌(계좌2)는 출발 결정(INITIAL) 주문을 뺀 계산 — 패킷 9_portfolio와 같은 함수(PacketBuilder.ledger).
+        int monthly = initial ? 0 : profile.timed() ? KrPacketBuilder.monthlyDiscretionaryOrders(store, book(), asOf)
+                : PacketBuilder.monthlyDiscretionaryOrders(store.recentOrders(book(), PacketBuilder.MONTHLY_SCAN), asOf);
         return new MarketChecks(universe, RuleSettings.from(body).etfs(), lockedOut(asOf), noPrice, monthly, stale,
                 null, null);
     }
@@ -615,6 +663,11 @@ final class ClaudeDecisionPipeline {
         JsonNode labels = Json.child(raw, "labels");
         reason.set("labels", labels == null ? mapper.createArrayNode() : labels.deepCopy());
         reason.put("invalidation", Json.asText(raw, "invalidation"));
+        String executionNote = Json.asText(raw, "executionNote");
+        if (executionNote != null) {
+            // 계좌2만(응답 스키마에 executionNote가 있는 계좌) — 그 체결 시점을 고른 이유. 계좌1 주문의 근거는 이 칸이 없는 그대로.
+            reason.put("executionNote", executionNote);
+        }
         ObjectNode proposedNode = mapper.createObjectNode();
         for (String field : List.of("targetWeightPct", "sellFraction")) {
             JsonNode value = Json.child(raw, field);
@@ -669,10 +722,14 @@ final class ClaudeDecisionPipeline {
         }
     }
 
-    /** {@link #insertOrders}가 남길 주문 행(번호 없음) — 같은 규칙으로 만들기만 하고 쓰지 않습니다. */
+    /**
+     * {@link #insertOrders}가 남길 주문 행(번호 없음) — 같은 규칙으로 만들기만 하고 쓰지 않습니다. 대기 주문의 만료는 기준일 + 3거래일, 시각 지정 체결
+     * 계좌(계좌2)는 목표 세션 E 하루(기준일 다음 거래일 — 계좌2 명세 §6-2, 시각 지정 주문은 장부 3a가 E 1분봉으로 다 푼 뒤 만료).
+     */
     List<Order> orderRows(long decisionId, LocalDate asOf, Plan plan, String accepted) {
         boolean pending = PaperBooks.ORDER_PENDING.equals(accepted);
-        LocalDate expires = market.calendar().addTradingDays(asOf, RuleBookService.ORDER_EXPIRY_TRADING_DAYS);
+        LocalDate expires = profile.timed() ? market.calendar().nextTradingDay(asOf)
+                : market.calendar().addTradingDays(asOf, RuleBookService.ORDER_EXPIRY_TRADING_DAYS);
         List<Order> out = new ArrayList<>();
         for (Planned p : plan.planned()) {
             Verdict v = p.verdict();

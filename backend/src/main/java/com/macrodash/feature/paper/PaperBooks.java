@@ -63,6 +63,12 @@ final class PaperBooks {
     static final String AT_1300 = "AT_1300";
     static final String AT_1400 = "AT_1400";
     static final String AT_1500 = "AT_1500";
+    /**
+     * 미국 Claude 계좌2의 체결 시점 메뉴, 이른 것부터(계좌2 명세 §6-2 — T5 ⓐ, 단계 1의 여덟): 시가 · 매시 여섯 · 확정 종가. {@code NEXT_OBSERVATION}은
+     * 넣지 않습니다(반사실 기준으로만 — T6). 응답 스키마 enum·검증기 순위·고정 문단·V17 CHECK와 같은 목록입니다({@code DecisionTimingsLockTest}).
+     */
+    static final List<String> CLAUDE2_TIMINGS = List.of(NEXT_OPEN, AT_1000, AT_1100, AT_1200, AT_1300, AT_1400, AT_1500,
+            NEXT_CLOSE);
 
     /** 주문 출처(paper_orders.source). */
     static final String SOURCE_STOP = "STOP";
