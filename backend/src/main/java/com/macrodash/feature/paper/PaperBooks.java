@@ -121,23 +121,26 @@ final class PaperBooks {
 
     /**
      * 화면 이름(paper_books.label) — 이 상수 한 곳에서 정합니다. 이름은 초기화 때 행에 들어가고 그 뒤로는 다시 쓰지 않으므로, 바꾸면
-     * {@link #LEGACY_LABELS}에 옛 이름을 남겨 이미 만든 행도 맞춥니다({@link PaperAdminService#reconcileLabels}).
+     * {@link #LEGACY_LABELS}에 옛 이름을 남겨 이미 만든 행도 맞춥니다({@link PaperAdminService#reconcileLabels}). 계좌1의 이름 "Claude 계좌1"은
+     * 계좌2를 더하며 화면 이름만 바꾼 것입니다(계좌2 명세 T3 ⓐ — 코드 {@link #CLAUDE}·시스템 프롬프트 {@code ClaudePrompts.ROLE}은 그대로).
      */
     static final String RULES_LABEL = "규칙 계좌";
-    static final String CLAUDE_LABEL = "Claude 계좌";
+    static final String CLAUDE_LABEL = "Claude 계좌1";
     static final String CLAUDE2_LABEL = "Claude 계좌2";
     static final String BENCH_SPY_LABEL = "SPY 계좌";
     static final String BENCH_MIX_LABEL = "60/40 계좌";
 
     /**
-     * 옛 화면 이름 — 2026-10-25에 '책'을 '계좌'로 바꾸기 전의 초기화가 행에 넣은 값. 지금 행 이름이 이 값 그대로일 때만 새 이름으로
-     * 바꿉니다(손으로 고친 이름은 그대로). 벤치마크의 옛 이름은 구성 비중이었습니다 — 구성은 정의의 {@code weights}에 그대로 있습니다.
+     * 옛 화면 이름(코드마다 옛 것부터) — 지금 행 이름이 이 가운데 하나 그대로일 때만 새 이름으로 바꿉니다(손으로 고친 이름은 그대로).
+     * 2026-10-25에 '책'을 '계좌'로 바꾸기 전의 초기화가 넣은 값, 그리고 계좌1은 계좌2를 더하기 전(2026-10-30, T3)의 "Claude 계좌"까지 —
+     * 옛 이름 하나만 받으면 '책' 시절에 만든 행이 "Claude 계좌"에서 멈추지 않고, "Claude 계좌"로 맞춘 행이 남지도 않습니다. 벤치마크의
+     * 옛 이름은 구성 비중이었습니다 — 구성은 정의의 {@code weights}에 그대로 있습니다.
      */
-    static final Map<String, String> LEGACY_LABELS = Map.of(
-            RULES, "규칙 책",
-            CLAUDE, "Claude 재량 책",
-            BENCH_SPY, "SPY 100%",
-            BENCH_MIX, "SPY 60% · SHY 40%");
+    static final Map<String, List<String>> LEGACY_LABELS = Map.of(
+            RULES, List.of("규칙 책"),
+            CLAUDE, List.of("Claude 재량 책", "Claude 계좌"),
+            BENCH_SPY, List.of("SPY 100%"),
+            BENCH_MIX, List.of("SPY 60% · SHY 40%"));
 
     /** 화면에 보이는 순서이기도 합니다 — 계좌2는 계좌1 바로 다음(계좌2 명세 §4). */
     static final List<Definition> ALL = List.of(

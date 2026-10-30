@@ -304,7 +304,7 @@ class UsPaperMarketTest {
                         PaperBooks.Definition::label, PaperBooks.Definition::weights, PaperBooks.Definition::execution)
                 .containsExactly(
                         tuple("rules", "RULES", "규칙 계좌", Map.of(), PaperBooks.Execution.OBSERVATION),
-                        tuple("claude", "CLAUDE", "Claude 계좌", Map.of(), PaperBooks.Execution.OBSERVATION),
+                        tuple("claude", "CLAUDE", "Claude 계좌1", Map.of(), PaperBooks.Execution.OBSERVATION),
                         tuple("claude2", "CLAUDE", "Claude 계좌2", Map.of(), PaperBooks.Execution.TIMED),
                         tuple("bench_spy", "BENCHMARK", "SPY 계좌", Map.of("SPY", 100.0), PaperBooks.Execution.OBSERVATION),
                         tuple("bench_mix", "BENCHMARK", "60/40 계좌", Map.of("SPY", 60.0, "SHY", 40.0),

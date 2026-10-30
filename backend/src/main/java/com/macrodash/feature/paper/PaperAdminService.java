@@ -274,7 +274,7 @@ public class PaperAdminService {
 
     // ------------------------------------------------------------------ 화면 이름
     /**
-     * 책 이름을 지금 정의({@link PaperBooks#ALL})로 맞춥니다 — 행 이름이 옛 이름({@link PaperBooks#LEGACY_LABELS}) 그대로일 때만.
+     * 책 이름을 지금 정의({@link PaperBooks#ALL})로 맞춥니다 — 행 이름이 옛 이름({@link PaperBooks#LEGACY_LABELS}의 그 코드 목록 가운데 하나) 그대로일 때만.
      * 이름은 처음 초기화 때 행에 들어가고 그 뒤로는 다시 쓰지 않아서, 화면 이름을 바꿔도 이미 만든 장부는 옛 이름을 계속 보였습니다.
      * 조건부 UPDATE라 몇 번 불러도 같고, 손으로 고친 이름은 건드리지 않습니다. 장부 숫자가 아니라 이름 한 칸이라 관측치 처리와
      * 겹쳐도 됩니다(exclusively 밖). 스키마 파일로 고치지 않는 까닭: paper_books는 백엔드가 쓰는 표이고(ADR 0008) 이름은 이 정의가 정합니다.
@@ -285,10 +285,12 @@ public class PaperAdminService {
         requireReady();
         List<String> renamed = new ArrayList<>();
         for (PaperBooks.Definition definition : PaperBooks.ALL) {
-            String legacy = PaperBooks.LEGACY_LABELS.get(definition.code());
-            if (legacy != null && !legacy.equals(definition.label())
-                    && store.relabelBook(definition.code(), legacy, definition.label())) {
-                renamed.add(definition.code());
+            for (String legacy : PaperBooks.LEGACY_LABELS.getOrDefault(definition.code(), List.of())) {
+                // 행 이름은 하나라 많아야 한 번 바뀝니다 — 바꾼 뒤의 옛 이름은 더 보지 않습니다.
+                if (!legacy.equals(definition.label()) && store.relabelBook(definition.code(), legacy, definition.label())) {
+                    renamed.add(definition.code());
+                    break;
+                }
             }
         }
         return renamed;

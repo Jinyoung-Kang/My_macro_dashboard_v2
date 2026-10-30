@@ -227,13 +227,13 @@ class PaperAdminServiceTest {
     }
 
     @Test
-    @DisplayName("초기화: 새 책 이름은 정의 그대로(규칙 계좌 · Claude 계좌 · Claude 계좌2 · SPY 계좌 · 60/40 계좌)")
+    @DisplayName("초기화: 새 책 이름은 정의 그대로(규칙 계좌 · Claude 계좌1 · Claude 계좌2 · SPY 계좌 · 60/40 계좌)")
     void initUsesDefinitionLabels() {
         admin(AFTER_START).init();
 
         assertThat(List.of("rules", "claude", "claude2", "bench_spy", "bench_mix"))
                 .extracting(code -> store.books.get(code).label())
-                .containsExactly("규칙 계좌", "Claude 계좌", "Claude 계좌2", "SPY 계좌", "60/40 계좌");
+                .containsExactly("규칙 계좌", "Claude 계좌1", "Claude 계좌2", "SPY 계좌", "60/40 계좌");
     }
 
     /** 2026-10-25 전 초기화가 남긴 행 — 이름만 옛 이름. */
@@ -252,11 +252,35 @@ class PaperAdminServiceTest {
 
         assertThat(admin.reconcileLabels()).containsExactly("rules", "claude", "bench_spy");
         assertThat(List.of("rules", "claude", "bench_spy", "bench_mix")).extracting(code -> store.books.get(code).label())
-                .containsExactly("규칙 계좌", "Claude 계좌", "SPY 계좌", "내 60/40");
+                .as("'책' 시절 이름의 계좌1도 한 번에 지금 이름으로(중간 이름 'Claude 계좌'에서 멈추지 않음)")
+                .containsExactly("규칙 계좌", "Claude 계좌1", "SPY 계좌", "내 60/40");
 
         assertThat(admin.reconcileLabels()).as("멱등").isEmpty();
         assertThat(store.books.get("rules").label()).isEqualTo("규칙 계좌");
         assertThat(store.books.get("bench_mix").label()).as("모르는 이름은 그대로").isEqualTo("내 60/40");
+    }
+
+    @Test
+    @DisplayName("이름 맞추기(T3): 계좌2 전 이름 'Claude 계좌'인 계좌1 행도 'Claude 계좌1'로, 손으로 고친 이름·계좌2 이름은 그대로 — 옛 이름 목록이 코드마다 여럿")
+    void reconcileLabelsRenamesBookOneBeforeBookTwo() {
+        assertThat(PaperBooks.LEGACY_LABELS.get(PaperBooks.CLAUDE)).as("옛 것부터 — '책' 시절, 계좌2 전")
+                .containsExactly("Claude 재량 책", "Claude 계좌");
+        assertThat(PaperBooks.LEGACY_LABELS).as("계좌2는 처음부터 지금 이름 — 옛 이름 없음").doesNotContainKey(PaperBooks.CLAUDE2);
+        oldBook("claude", PaperBooks.KIND_CLAUDE, "Claude 계좌");
+        oldBook("claude2", PaperBooks.KIND_CLAUDE, "Claude 계좌2");
+        oldBook("rules", PaperBooks.KIND_RULES, "규칙 계좌");
+        PaperAdminService admin = admin(AFTER_START);
+
+        assertThat(admin.reconcileLabels()).containsExactly("claude");
+        assertThat(store.books.get("claude").label()).isEqualTo("Claude 계좌1");
+        assertThat(store.books.get("claude2").label()).isEqualTo("Claude 계좌2");
+        assertThat(store.books.get("rules").label()).as("이미 지금 이름").isEqualTo("규칙 계좌");
+        assertThat(admin.reconcileLabels()).as("멱등").isEmpty();
+
+        store.books.put("claude", new Book("claude", PaperBooks.KIND_CLAUDE, "내 Claude", 100_000, null,
+                PaperBooks.NOT_STARTED, FRI_CLOSE));
+        assertThat(admin.reconcileLabels()).as("손으로 고친 이름은 그대로").isEmpty();
+        assertThat(store.books.get("claude").label()).isEqualTo("내 Claude");
     }
 
     @Test
