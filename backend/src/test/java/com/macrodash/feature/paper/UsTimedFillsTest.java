@@ -11,7 +11,6 @@ import com.macrodash.store.PaperStore.Lockout;
 import com.macrodash.store.PaperStore.Order;
 import com.macrodash.store.PaperStore.Position;
 import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -625,7 +624,6 @@ class UsTimedFillsTest {
         }
 
         @Test
-        @Disabled("리뷰 semantics(R3) 재현 — R3 매도의 시장 시각이 T라 관측치 W의 관측가로 판 대금이 더 이른 봉 매수의 현금에 들어감. 수정 커밋에서 뗌")
         @DisplayName("같은 T(10:00)에서 R3로 판 매도(BBB 1분봉만 이어받음 → W 10:25 관측가 60)의 대금은 그보다 이른 10:00 봉 매수에 쓰지 않음 — 현금 1,000으로 20주 중 9주(cashLimited), 매도는 그 뒤에(시장 시각 = 그 관측치 수집 시각)")
         void quotesFallbackSaleDoesNotFundAnEarlierBuyAtTheSameTarget() {
             store.states.put(BOOK, new com.macrodash.store.PaperStore.BookState(BOOK, 1_000, 6_000, 5_000, 83, null,
@@ -642,7 +640,7 @@ class UsTimedFillsTest {
             assertThat(barOf(sell).fillRung()).isEqualTo("QUOTES_FALLBACK");
             assertThat(fillOf(sell).rawPrice()).as("W 10:25의 관측가").isEqualTo(60.0);
             assertThat(barOf(aapl).fillRung()).isEqualTo("Y1M_AT");
-            // 10:00 봉 매수 때 현금 = 1,000(10:25 관측가 매도 전) → 1,000 ÷ 100.05 = 9.99 → 9주(지금은 매도 대금 5,997을 먼저 넣어 20주)
+            // 10:00 봉 매수 때 현금 = 1,000(10:25 관측가 매도 전) → 1,000 ÷ 100.05 = 9.99 → 9주(고치기 전에는 매도 대금 5,997을 먼저 넣어 20주)
             assertThat(fillOf(aapl).qty()).isEqualTo(9);
             assertThat(order(aapl).reason().path("cashLimited").asBoolean()).isTrue();
             assertThat(order(aapl).reason().path("requestedQty").asInt()).isEqualTo(20);
@@ -651,7 +649,6 @@ class UsTimedFillsTest {
         }
 
         @Test
-        @Disabled("리뷰 semantics(R3) 재현 — 앞 T의 R3 매도 대금이 뒤 T의 더 이른 봉 매수의 현금·T 시각 순자산에 들어감. 수정 커밋에서 뗌")
         @DisplayName("앞 T(10:00) 매도가 R3로 W 11:25 관측가에 풀리면 그 대금은 11:00 봉 매수에 쓰지 않고, 그 매수의 T 시각 순자산은 판 종목을 아직 든 것으로(갱신 전 평가 가격 50) 셈 — 비중 50% = 6,000의 절반 → 9주 요청, 현금 1,000으로 3주")
         void quotesFallbackSaleDoesNotFundAnEarlierBuyAtALaterTarget() {
             store.states.put(BOOK, new com.macrodash.store.PaperStore.BookState(BOOK, 1_000, 6_000, 5_000, 83, null,
@@ -668,7 +665,7 @@ class UsTimedFillsTest {
             assertThat(barOf(sell).fillRung()).isEqualTo("QUOTES_FALLBACK");
             assertThat(barOf(msft).fillRung()).isEqualTo("Y1M_AT");
             // 11:00 봉 매수의 T 시각 순자산 = 현금 1,000 + BBB 100 × 갱신 전 50(11:25 관측가 매도 전) = 6,000 → 3,000 ÷ 300.15 = 9.99 → 9주 요청,
-            // 현금 1,000 ÷ 300.15 = 3.33 → 3주(지금은 W 관측가로 판 대금을 먼저 넣어 순자산 ≈ 6,997 → 11주 전량)
+            // 현금 1,000 ÷ 300.15 = 3.33 → 3주(고치기 전에는 W 관측가로 판 대금을 먼저 넣어 순자산 ≈ 6,997 → 11주 전량)
             assertThat(fillOf(msft).qty()).isEqualTo(3);
             assertThat(order(msft).reason()).as("cashLimited 근거").isNotNull();
             assertThat(order(msft).reason().path("cashLimited").asBoolean()).isTrue();

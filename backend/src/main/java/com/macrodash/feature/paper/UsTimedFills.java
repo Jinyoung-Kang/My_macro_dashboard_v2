@@ -45,9 +45,9 @@ import java.util.Set;
  * {@code collector/app/tasks/paper_bars.py} 머리말)의 그 시각 봉으로 체결합니다. 처리를 일으키는 흐름은 여전히 시간별 관측치 W(paper.quotes)
  * 하나이고 — 장부가 W를 처리할 때 이 단계가 돕니다 — 1분봉 저장본은 조회표일 뿐입니다(두 번째 처리 흐름·멱등 키가 없음, §10-1).
  *
- * <p><b>2b</b>: 시각 지정 대기 주문 중 기준 시각 T &lt; W 수집 시각인 것을 T 순으로, 같은 T에서는 시장 시각 순(R2b로 늦게 푼 주문은 그 봉 시각 —
- * R1·R2의 T 창은 한 시각, 리뷰 F4) · 같은 시각에서는 매도 → 매수(현금성 마지막 — 장부의 시간별 매수와 같은 규칙). 판정(사다리)을 먼저 모두 구한 뒤
- * 그 순서로 적용합니다. 가격 사다리(원가격 × (1 ± 슬리피지)):
+ * <p><b>2b</b>: 시각 지정 대기 주문 중 기준 시각 T &lt; W 수집 시각인 것을 T 순으로, 같은 T에서는 시장 시각 순(R2b로 늦게 푼 주문은 그 봉 시각·R3는
+ * 그 관측치 W 수집 시각 — R1·R2의 T 창은 한 시각, 리뷰 F4) · 같은 시각에서는 매도 → 매수(현금성 마지막 — 장부의 시간별 매수와 같은 규칙). 판정(사다리)을
+ * 먼저 모두 구한 뒤 그 순서로 적용합니다. 가격 사다리(원가격 × (1 ± 슬리피지)):
  * <ol>
  *   <li>R1 {@value #RUNG_AT}·R2 {@value #RUNG_NEXT} — T 봉 시가(거래량 &gt; 0), 아니면 T+1~T+4분 첫 거래 봉 시가. 실행 감사의 반사실과 같은 판정
  *       ({@link ExecutionAudit#fromBars} — ⑤ T &gt; 주문 생성 + 60초·봉 시작 ≥ T, ⑥ 봉의 세션 = E, ⑦ 완성된 봉, ⑧ 이어받은 종목 아님·거래량 &gt; 0·
@@ -73,9 +73,9 @@ import java.util.Set;
  * 남고 W의 스탑 판정에서 빠집니다. W에 그 값이 없으면 T 가격 그대로 '가격 없음'.
  *
  * <p><b>수량</b>(§10-3): 매수 목표 금액 = 목표 비중 × T 시각의 순자산(현금 — 같은 2b에서 앞선 체결 반영 — + 보유 × 그 종목의 같은 T 창 첫 거래 봉
- * 시가, 없으면 갱신 전 평가 가격 — W의 관측가로 T의 수량을 정하지 않음). 그 매수의 시장 시각(체결 봉 시작)보다 뒤 봉에서 R2b로 판 매도(앞 T 주문이라
- * 먼저 적용된 것)는 아직 팔지 않은 것으로 봅니다 — 그 대금은 현금에 넣지 않고 그 보유를 T 시각 순자산에 그대로 셈(리뷰 F4 ⓐ — T 뒤 가격을 T 수량에
- * 쓰지 않음). 현금이 모자라면 줄여 사고 주문 근거에 {@code cashLimited}·
+ * 시가, 없으면 갱신 전 평가 가격 — W의 관측가로 T의 수량을 정하지 않음). 그 매수의 시장 시각(체결 봉 시작, R3·종가는 그 관측치 수집 시각)보다 뒤 시각에
+ * 판 매도 — R2b 봉 시각·R3 관측치 수집 시각(앞 T 주문이라 먼저 적용된 것) — 는 아직 팔지 않은 것으로 봅니다: 그 대금은 현금에 넣지 않고 그 보유를 T 시각
+ * 순자산에 그대로 셈(리뷰 F4 ⓐ·R3 — T 뒤 가격을 T 수량에 쓰지 않음). 현금이 모자라면 줄여 사고 주문 근거에 {@code cashLimited}·
  * {@code requestedQty}·{@code filledQty}, 1주도 못 사면 취소. 재진입 금지는 E로 판정. 보유 없는 매도는 취소. 분할을 확인하지 못한 보유(이번 W에 그
  * 종목 새 값이 없음)는 지금 규칙대로 기다리고, E가 끝나도 확인하지 못하면 만료합니다. 새 보유의 최고가는 체결가부터, 분할 기준은 W 저장본의 E
  * 직전 거래일 종가입니다.
@@ -629,8 +629,8 @@ final class UsTimedFills {
         if (due.isEmpty()) {
             return;
         }
-        // 2b의 판정(사다리 R1·R2·R2b·R3)을 먼저 구합니다 — 장부 상태를 보지 않는 순수 계산이라 순서와 상관없고, R2b로 늦게 푼 주문의 봉 시각으로
-        // 같은 T 안의 적용 순서를 정합니다(클래스 설명 '수량').
+        // 2b의 판정(사다리 R1·R2·R2b·R3)을 먼저 구합니다 — 장부 상태를 보지 않는 순수 계산이라 순서와 상관없고, R2b로 늦게 푼 주문의 봉 시각·R3의
+        // 관측치 수집 시각으로 같은 T 안의 적용 순서를 정합니다(클래스 설명 '수량').
         Map<Long, Look> carried = new HashMap<>();
         for (Due d : due) {
             carried.put(d.order().id(), look(d, bars, run.quotes, calendar));
@@ -639,7 +639,7 @@ final class UsTimedFills {
         Pass pass = new Pass();
         Map<Long, Status> status = new HashMap<>();
 
-        // 2b — (T, R2b면 그 봉 시각, 방향) 순으로 적용
+        // 2b — (T, R2b면 그 봉 시각·R3면 그 관측치 수집 시각, 방향) 순으로 적용
         for (Due d : due) {
             status.put(d.order().id(), apply(run, d, carried.get(d.order().id()), bars, pass));
         }
@@ -677,13 +677,13 @@ final class UsTimedFills {
     }
 
     /**
-     * 적용 순서(리뷰 F4 ⓐ) — T 순, 같은 T 안에서는 시장 시각(R2b {@value #RUNG_LATE}로 푼 주문은 그 봉 시각, 그 밖은 T — R1·R2의 T 창은 한 시각으로
-     * 봄) 순, 같은 시각에서는 매도 → 매수(현금성 마지막), 그다음 만든 순. 같은 T의 R2b 매도(예: 10:40)는 더 이른 봉(10:00 R1·10:37 R2b)의 매수 뒤에
-     * 적용되므로 그 대금이 그 매수의 현금·T 시각 순자산에 들어가지 않습니다.
+     * 적용 순서(리뷰 F4 ⓐ·R3) — T 순, 같은 T 안에서는 시장 시각({@link #marketTime} — R2b {@value #RUNG_LATE}는 그 봉 시각, R3 {@value #RUNG_FALLBACK}는
+     * 그 관측치 수집 시각, 그 밖은 T — R1·R2의 T 창은 한 시각으로 봄) 순, 같은 시각에서는 매도 → 매수(현금성 마지막), 그다음 만든 순. 같은 T의 R2b 매도
+     * (예: 10:40)·R3 매도(W 10:25)는 더 이른 봉(10:00 R1·10:37 R2b)의 매수 뒤에 적용되므로 그 대금이 그 매수의 현금·T 시각 순자산에 들어가지 않습니다.
      */
     private static Comparator<Due> byMarketTime(BookRun run, Map<Long, Look> looks) {
         return Comparator.comparing((Due d) -> d.target(), Comparator.nullsFirst(Comparator.naturalOrder()))
-                .thenComparing(d -> marketTime(d, looks.get(d.order().id())),
+                .thenComparing(d -> marketTime(run, d, looks.get(d.order().id())),
                         Comparator.nullsFirst(Comparator.naturalOrder()))
                 .thenComparingInt(d -> PaperBooks.SELL.equals(d.order().side()) ? 0
                         : run.settings.cashLike(d.order().ticker()) ? 2 : 1)
@@ -691,29 +691,39 @@ final class UsTimedFills {
                 .thenComparingLong(d -> d.order().id());
     }
 
-    /** 정렬의 시장 시각 — R2b로 푼 주문은 그 봉 시작, 그 밖은 기준 시각 T(모르면 null). */
-    private static Instant marketTime(Due due, Look look) {
-        return look != null && RUNG_LATE.equals(look.rung()) && look.barAt() != null ? look.barAt() : due.target();
+    /**
+     * 정렬의 시장 시각 — R2b로 푼 주문은 그 봉 시작, R3(관측치 W의 관측가)는 그 관측치 수집 시각, 그 밖은 기준 시각 T(모르면 null). 매수가 쓸 수 있는
+     * 매도 대금도 같은 시각으로 가립니다({@link #sell}·{@link Pass#after}).
+     */
+    private static Instant marketTime(BookRun run, Due due, Look look) {
+        if (look != null && RUNG_LATE.equals(look.rung()) && look.barAt() != null) {
+            return look.barAt();
+        }
+        if (look != null && RUNG_FALLBACK.equals(look.rung())) {
+            return run.at;
+        }
+        return due.target();
     }
 
     /**
-     * 한 처리(2b·3a)의 공용 상태 — 3b가 다시 평가할 보유(종목 → 목표 세션)와, 이 처리에서 R2b로 판 매도(그 봉보다 이른 시각의 매수가 그 대금을 쓰지 않게,
-     * 리뷰 F4 ⓐ — T 순 적용이라 앞 T의 R2b 매도가 뒤 T의 더 이른 봉 매수보다 먼저 적용될 수 있음).
+     * 한 처리(2b·3a)의 공용 상태 — 3b가 다시 평가할 보유(종목 → 목표 세션)와, 이 처리에서 R2b·R3로 판 매도(그 시장 시각보다 이른 시각의 매수가 그 대금을
+     * 쓰지 않게, 리뷰 F4 ⓐ·R3 — T 순 적용이라 앞 T의 늦은 매도가 뒤 T의 더 이른 봉 매수보다 먼저 적용될 수 있음).
      */
     private static final class Pass {
         final Map<String, LocalDate> touched = new LinkedHashMap<>();
         final List<LateSale> lateSales = new ArrayList<>();
 
-        /** 봉 시작이 {@code at}보다 뒤인 R2b 매도 — 시각 {@code at}의 매수가 아직 몰랐을 대금. */
+        /** 시장 시각이 {@code at}보다 뒤인 R2b·R3 매도 — 시각 {@code at}의 매수가 아직 몰랐을 대금(같은 시각이면 앎 — 같은 W의 R3끼리). */
         List<LateSale> after(Instant at) {
-            return lateSales.stream().filter(s -> s.barAt().isAfter(at)).toList();
+            return lateSales.stream().filter(s -> s.at().isAfter(at)).toList();
         }
     }
 
     /**
-     * R2b로 판 매도 하나 — 종목·판 수량·그 보유의 갱신 전 평가 가격(그 매도 전의 T 시각 순자산에 그 보유를 셀 때)·현금 변화·체결 봉 시작.
+     * R2b·R3로 판 매도 하나 — 종목·판 수량·그 보유의 갱신 전 평가 가격(그 매도 전의 T 시각 순자산에 그 보유를 셀 때)·현금 변화·시장 시각(R2b는 체결 봉
+     * 시작, R3는 그 관측치 수집 시각 — {@link #marketTime}).
      */
-    private record LateSale(String ticker, int qty, double priceBefore, double cashDelta, Instant barAt) {
+    private record LateSale(String ticker, int qty, double priceBefore, double cashDelta, Instant at) {
     }
 
     private Status apply(BookRun run, Due due, Look look, Bars bars, Pass pass) {
@@ -772,8 +782,10 @@ final class UsTimedFills {
         FillTerms.Costs costs = terms.costs(qty);
         record(run, order, qty, terms, costs, due.session(), look);
         run.cash = PaperLedger.round4(run.cash + costs.cashDelta());
-        if (RUNG_LATE.equals(look.rung()) && look.barAt() != null) {
-            pass.lateSales.add(new LateSale(holding.ticker, qty, holding.priceBefore, costs.cashDelta(), look.barAt()));
+        if ((RUNG_LATE.equals(look.rung()) && look.barAt() != null) || RUNG_FALLBACK.equals(look.rung())) {
+            // T 창 밖 시각에 판 매도(R2b 봉·R3 관측치) — 그보다 이른 시각의 매수가 이 대금을 쓰지 않게(리뷰 F4 ⓐ·R3).
+            pass.lateSales.add(new LateSale(holding.ticker, qty, holding.priceBefore, costs.cashDelta(),
+                    marketTime(run, due, look)));
         }
         holding.qty -= qty;
         if (holding.qty == 0) {
@@ -799,8 +811,8 @@ final class UsTimedFills {
         }
         FillTerms.SlippageInPrice terms = terms(run, order, look);
         double price = terms.price();
-        // 이 매수의 시장 시각(1분봉 체결이면 그 봉 시작, 관측치·종가 체결이면 이 관측치)보다 뒤 봉에서 R2b로 판 매도는 아직 일어나지 않은 매도입니다 —
-        // 그 대금을 현금에서 빼고 그 보유를 T 시각 순자산에 그대로 둡니다(리뷰 F4 ⓐ — T 뒤 가격을 T 수량에 쓰지 않음, 명세 §10-3).
+        // 이 매수의 시장 시각(1분봉 체결이면 그 봉 시작, 관측치·종가 체결이면 이 관측치)보다 뒤 시각에 R2b(봉)·R3(관측치)로 판 매도는 아직 일어나지 않은
+        // 매도입니다 — 그 대금을 현금에서 빼고 그 보유를 T 시각 순자산에 그대로 둡니다(리뷰 F4 ⓐ·R3 — T 뒤 가격을 T 수량에 쓰지 않음, 명세 §10-3).
         List<LateSale> later = pass.after(look.barAt() != null ? look.barAt() : run.at);
         double unsold = later.stream().mapToDouble(LateSale::cashDelta).sum();
         double cash = Math.max(0, run.cash - unsold);
@@ -853,19 +865,19 @@ final class UsTimedFills {
         return Status.DONE;
     }
 
-    /** 현금 부족 문구에 붙이는 '아직 쓰지 않은 R2b 매도 대금'(없으면 빈 글자). */
+    /** 현금 부족 문구에 붙이는 '아직 쓰지 않은 R2b·R3 매도 대금'(없으면 빈 글자). */
     private static String laterNote(List<LateSale> later) {
         if (later.isEmpty()) {
             return "";
         }
-        return " — 이 매수 뒤 봉에서 R2b로 판 " + String.join("·", later.stream().map(LateSale::ticker).toList()) + " 대금 "
+        return " — 이 매수 뒤 시각에 R2b·R3로 판 " + String.join("·", later.stream().map(LateSale::ticker).toList()) + " 대금 "
                 + PaperLedgerService.money(later.stream().mapToDouble(LateSale::cashDelta).sum()) + "은 쓰지 않음";
     }
 
     /**
      * T 시각의 순자산(§10-3) — 현금(같은 2b에서 앞선 체결 반영) + 보유 × 그 종목의 같은 T 창 첫 거래 봉 시가(없으면 갱신 전 평가 가격, 이번 2b에서
-     * 산 보유는 그 체결 원가격). 이 매수의 시장 시각보다 뒤 봉에서 R2b로 판 매도({@code later} — T 순 적용이라 먼저 적용됨)는 아직 팔지 않은 것으로
-     * 셉니다: 그 대금을 현금에서 빼고 판 수량을 그 종목의 같은 규칙 가격(T 창 시가, 없으면 그 보유의 갱신 전 평가 가격)으로 더함(리뷰 F4 ⓐ).
+     * 산 보유는 그 체결 원가격). 이 매수의 시장 시각보다 뒤 시각에 R2b·R3로 판 매도({@code later} — T 순 적용이라 먼저 적용됨)는 아직 팔지 않은 것으로
+     * 셉니다: 그 대금을 현금에서 빼고 판 수량을 그 종목의 같은 규칙 가격(T 창 시가, 없으면 그 보유의 갱신 전 평가 가격)으로 더함(리뷰 F4 ⓐ·R3).
      */
     private static double navAt(BookRun run, Due due, Bars bars, List<LateSale> later) {
         TradingCalendar calendar = run.market.calendar();
