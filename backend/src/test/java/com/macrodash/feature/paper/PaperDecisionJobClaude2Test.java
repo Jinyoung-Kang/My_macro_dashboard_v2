@@ -10,7 +10,6 @@ import com.macrodash.store.PaperStore.Order;
 import com.macrodash.store.Snapshot;
 import com.macrodash.support.InvalidRequestException;
 import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import tools.jackson.databind.JsonNode;
@@ -340,7 +339,6 @@ class PaperDecisionJobClaude2Test {
     }
 
     @Test
-    @Disabled("재현 — 고치기 전에는 1분봉 기다림이 풀린 주기에 계좌2 장부가 오류로 되돌려져도 '1분봉 기다림'으로 보고 BARS_WAITING(기록 없음)으로 끝남")
     @DisplayName("1분봉 기다림이 풀린 주기에 계좌2 장부가 오류로 되돌려지면 그 주기는 기록함 — 장부 오류(ledger.errors)와 '오류로 보류'(1분봉 기다림이 아님), 같은 관측치로 보류만 이어 가는 다음 주기는 기록 없음")
     void ledgerErrorAfterTheBarsWaitIsRecorded() {
         enabled(true);

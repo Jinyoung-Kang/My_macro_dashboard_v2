@@ -121,7 +121,8 @@ import java.util.concurrent.locks.ReentrantLock;
  * {@code claude2.enabled}가 켜졌을 때만 — 시작 전이면 앞으로 체결 출발({@code INITIAL} — 그 거래일 창에 한 번, 실패하면 아무것도 쓰지 않고 다음 창,
  * 해 봤는지는 저장된 작업 기록 {@code claude2.startTried}로 셈), 운용 중이면 출발일 뒤 거래일의 정기 결정입니다. 계좌1이 기다리는 확정 종가 관측치에 더해
  * 계좌2 장부가 그 관측치를 처리했어야 합니다(1분봉 기다림이 풀림 — 기한 뒤에도, 단 개장 전 컷오프가 지났으면 기다리지 않고 계좌2 결정이 SKIPPED로 그 거래일을
- * 끝냄). 계좌2만 남아 같은 관측치로 기다리기만 한 주기는 기록하지 않습니다({@value #BARS_WAITING} — 첫 기다림·풀림만). 두 계좌가 같은 실행에서 결정하면
+ * 끝냄; 계좌2 장부가 그 관측치에서 오류로 보류됐으면 '1분봉 기다림'이 아니라 그 보류로 적고 새 관측치에서 다시). 계좌2만 남아 같은 관측치로 같은 기다림을 이어
+ * 가기만 한 주기는 기록하지 않습니다({@value #BARS_WAITING} — 첫 기다림·풀림만, 그 주기 장부에 처리한 책·오류·알림이 있으면 기록). 두 계좌가 같은 실행에서 결정하면
  * 시장 입력을 한 번 읽어 함께 씁니다(입력 동결). 개장 전 컷오프·소상한·호출 상한은 {@link ClaudeBookService#decideClaude2}가 봅니다. 오류 횟수는
  * (시장, 거래일, 계좌2)로 따로 셉니다.
  * 수동 결정·수동 출발은 '확정 종가 처리(1분봉 기다림 풀림 포함) 뒤 ~ 다음 세션 09:00 ET' 창 안에서만입니다({@link #runNow(PaperMarket, String)}·
@@ -175,8 +176,9 @@ public class PaperDecisionJob {
      */
     public static final String DATA_NOT_READY = "DATA_NOT_READY";
     /**
-     * 미국 Claude 계좌2만 할 일이 남았고 같은 관측치로 1분봉 기다림(§5-1 ③)을 이어 감 — 결정 없이 다음 주기에 다시(기록 안 함 — 첫 기다림은 그 실행의
-     * {@value #DECIDED} 기록에 {@code claude2.waiting}으로 남음, 리스크 점검의 '첫 미룸·풀림만'과 같은 규칙).
+     * 미국 Claude 계좌2만 할 일이 남았고 같은 관측치로 같은 기다림(§5-1 ③ — 1분봉 기다림, 또는 계좌2 장부가 그 관측치에서 오류로 보류됨)을 이어 가며 그 주기의
+     * 장부도 한 일·오류·알림이 없음 — 결정 없이 다음 주기에 다시(기록 안 함 — 첫 기다림은 그 실행의 {@value #DECIDED} 기록에 {@code claude2.waiting}으로
+     * 남음, 리스크 점검의 '첫 미룸·풀림만'과 같은 규칙).
      */
     public static final String BARS_WAITING = "BARS_WAITING";
     /** 기한이 지나 Claude 계좌를 부르지 않음(작업 기록 — 그 시장 Claude 계좌가 그날 결정할 차례였을 때). */
@@ -494,8 +496,12 @@ public class PaperDecisionJob {
         detail.put("pricesFinal", pricesFinal);
         detail.put("pastDeadline", !now.isBefore(deadline));
         quotes.ifPresent(q -> detail.put("quotes", PaperRiskJob.describe(market, q)));
+        Outcome processed = null;
         try {
-            quotes.ifPresent(q -> detail.put("ledger", ledgerDetail(ledger.process(market, q))));
+            processed = quotes.map(q -> ledger.process(market, q)).orElse(null);
+            if (processed != null) {
+                detail.put("ledger", ledgerDetail(processed));
+            }
             // 다음 세션 봉이 섞인 관측치(기한을 한참 넘겨 장중에 돈 경우)로는 d의 줄을 쓰지 않습니다 — 그날 값이 아닙니다.
             boolean sameSession = quotes.map(q -> q.modalBarDate() == null || !q.modalBarDate().isAfter(d))
                     .orElse(true);
@@ -578,19 +584,29 @@ public class PaperDecisionJob {
             return new Result(result.outcome(), result.tradingDate(), result.pricesFinal(), result.rules(),
                     result.claude(), result.message(), claude2Decision);
         }
-        if (!work.gate() && !work.rules() && !work.claude() && claude2WaitRecorded(market, d, detail)) {
-            // 계좌2만 남아 같은 관측치로 1분봉을 다시 기다리기만 한 주기 — 기록하지 않습니다(첫 기다림·풀림만, BARS_WAITING).
+        if (!work.gate() && !work.rules() && !work.claude() && quietLedger(processed)
+                && claude2WaitRecorded(market, d, detail)) {
+            // 계좌2만 남아 같은 관측치로 같은 기다림을 이어 가기만 한 주기(장부도 한 일·오류·알림 없음) — 기록하지 않습니다(첫 기다림·풀림만, BARS_WAITING).
             return new Result(BARS_WAITING, d, pricesFinal, decision, claudeDecision,
-                    d + " 계좌2가 같은 관측치로 1분봉을 기다립니다 — 다음 주기에 다시");
+                    d + " 계좌2가 같은 관측치로 기다립니다(1분봉 기다림 또는 장부 오류로 보류) — 다음 주기에 다시");
         }
         record(market, now, DECIDED, detail);
         return new Result(DECIDED, d, pricesFinal, decision, claudeDecision, null, claude2Decision);
     }
 
     /**
-     * 이번 실행의 계좌2 몫이 1분봉 기다림이고, 그 거래일의 가장 최근 작업 기록도 같은 관측치(수집 시각)로 계좌2가 기다린 기록인가 — 그렇다면 이 주기는
-     * 기다림을 이어 간 것뿐입니다({@value #BARS_WAITING}). 다른 결과 뒤(처음·결정·오류 뒤)나 새 관측치의 기다림은 새 줄입니다. 저장된 기록으로 보므로
-     * 재기동해도 같습니다.
+     * 이번 주기의 장부 처리가 아무 일도 하지 않았나 — 처리한 책·오류·운영 알림이 없음(관측치가 없었으면 참). 리스크 점검이 같은 관측치로 미루기만 한 주기를
+     * 기록하지 않을 때 보는 조건과 같습니다 — 그 주기에 난 장부 오류(예: 기다림이 풀린 계좌2 처리의 되돌림)가 작업 기록에서 빠지지 않게.
+     */
+    private static boolean quietLedger(Outcome processed) {
+        return processed == null
+                || (processed.booksProcessed().isEmpty() && processed.errors().isEmpty() && processed.alerts().isEmpty());
+    }
+
+    /**
+     * 이번 실행의 계좌2 몫이 기다림이고, 그 거래일의 가장 최근 작업 기록도 같은 관측치(수집 시각)로 같은 기다림(같은 사유 — 1분봉 기다림이냐 장부 오류로
+     * 보류냐)을 적은 기록인가 — 그렇다면 이 주기는 기다림을 이어 간 것뿐입니다({@value #BARS_WAITING}). 다른 결과 뒤(처음·결정·오류 뒤)나 새 관측치·다른
+     * 사유의 기다림은 새 줄입니다. 저장된 기록으로 보므로 재기동해도 같습니다.
      */
     private boolean claude2WaitRecorded(MarketRun market, LocalDate d, Map<String, Object> detail) {
         if (!(detail.get(PaperBooks.CLAUDE2) instanceof Map<?, ?> view) || view.get("waiting") == null
@@ -602,7 +618,7 @@ public class PaperDecisionJob {
             return false;
         }
         JsonNode last = records.get(0).detail();
-        return Json.child(Json.child(last, PaperBooks.CLAUDE2), "waiting") != null
+        return String.valueOf(view.get("waiting")).equals(Json.asText(Json.child(last, PaperBooks.CLAUDE2), "waiting"))
                 && String.valueOf(observed.get("collectedAt")).equals(Json.asText(Json.child(last, "quotes"), "collectedAt"));
     }
 
@@ -633,7 +649,7 @@ public class PaperDecisionJob {
         Map<String, Object> view = new LinkedHashMap<>();
         view.put("kind", kind);
         boolean pastCutoff = !now.isBefore(ClaudeBookService.claude2Cutoff(market.calendar(), d));
-        String waiting = pastCutoff ? null : claude2BarsWait(quotes);
+        String waiting = pastCutoff ? null : claude2BarsWait(market, quotes);
         if (waiting != null) {
             view.put("waiting", waiting);
             detail.put(PaperBooks.CLAUDE2, view);
@@ -664,9 +680,10 @@ public class PaperDecisionJob {
 
     /**
      * 계좌2 결정을 기다려야 하나(§5-1 ③ — 1분봉 기다림): 계좌2 장부가 이번 관측치를 아직 처리하지 않았으면 그 사유(기한 뒤에도 — 그러지 않으면 아직
-     * 풀리지 않은 d 주문을 새 결정이 '대신함'으로 지움), 처리했거나 관측치가 없으면 null.
+     * 풀리지 않은 d 주문을 새 결정이 '대신함'으로 지움), 처리했거나 관측치가 없으면 null. 그 관측치에서 계좌2 장부 처리가 오류로 되돌려졌으면(같은 관측치로는
+     * 다시 시도하지 않음 — {@link PaperLedgerService#failedBooks}) 1분봉 기다림이 아니라 그 보류를 사유로 적습니다.
      */
-    private String claude2BarsWait(Optional<Quotes> quotes) {
+    private String claude2BarsWait(MarketRun market, Optional<Quotes> quotes) {
         if (quotes.isEmpty() || quotes.get().collectedAt() == null) {
             return null;
         }
@@ -674,6 +691,10 @@ public class PaperDecisionJob {
                 .orElse(null);
         if (processed != null && !processed.isBefore(quotes.get().collectedAt())) {
             return null;
+        }
+        if (ledger.failedBooks(market, quotes.get()).contains(PaperBooks.CLAUDE2)) {
+            return "계좌2 장부가 관측치(수집 " + Kst.stamp(quotes.get().collectedAt()) + ")를 처리하다 오류가 나 보류 중입니다 — 같은 관측치로는 "
+                    + "다시 시도하지 않고 새 관측치에서 다시(수동 리스크 점검은 한 번 더 시도)";
         }
         return "계좌2 장부가 관측치(수집 " + Kst.stamp(quotes.get().collectedAt()) + ")를 아직 처리하지 않았습니다(1분봉 기다림) — "
                 + "다음 주기에 다시";
@@ -1540,7 +1561,7 @@ public class PaperDecisionJob {
         detail.put("tradingDate", d.toString());
         quotes.ifPresent(q -> detail.put("ledger", ledgerDetail(ledger.process(market, q))));
         boolean closesIn = quotes.map(q -> closesFor(market, q, d)).orElse(false);
-        String waiting = claude2BarsWait(quotes);
+        String waiting = claude2BarsWait(market, quotes);
         if (!closesIn || waiting != null) {
             throw new InvalidRequestException("계좌2 수동 " + (RuleBookService.INITIAL.equals(kind) ? "출발" : "결정") + "은 " + d
                     + " 확정 종가 관측치를 계좌2 장부가 처리한 뒤(1분봉 기다림 풀림 포함)에만 받습니다 — "
