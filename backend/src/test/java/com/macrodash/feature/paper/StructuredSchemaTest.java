@@ -668,7 +668,10 @@ class StructuredSchemaTest {
                 .startsWith("$.action: ");
         assertThat(CHECKPOINT.validate(validCheckpoint().put("summary", "가".repeat(601)))).singleElement().asString()
                 .startsWith("$.summary: ");
-        for (String timing : List.of("NEXT_OPEN", "NEXT_OBSERVATION", "MARKET")) {
+        ObjectNode market = validCheckpoint();
+        firstOrder(market).put("timing", "MARKET");
+        assertThat(CHECKPOINT.validate(market)).as("장중 시장가(단계 2 — B2-2)").isEmpty();
+        for (String timing : List.of("NEXT_OPEN", "NEXT_OBSERVATION")) {
             ObjectNode response = validCheckpoint();
             firstOrder(response).put("timing", timing);
             assertThat(CHECKPOINT.validate(response)).as(timing).singleElement().asString()

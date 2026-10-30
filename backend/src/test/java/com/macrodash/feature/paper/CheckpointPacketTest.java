@@ -151,8 +151,8 @@ class CheckpointPacketTest {
         assertThat(basis.get("nowEt").asString()).isEqualTo("10:33");
         assertThat(basis.get("nowKst").asString()).isEqualTo("2026-11-03 00:33 KST");
         assertThat(basis.get("selectionAsOf").asString()).isEqualTo("2026-10-23");
-        assertThat(basis.get("remainingTimings").toString()).isEqualTo("[\"AT_1100\",\"AT_1200\",\"AT_1300\",\"AT_1400\","
-                + "\"AT_1500\",\"NEXT_CLOSE\"]");
+        assertThat(basis.get("remainingTimings").toString()).isEqualTo("[\"MARKET\",\"AT_1100\",\"AT_1200\",\"AT_1300\","
+                + "\"AT_1400\",\"AT_1500\",\"NEXT_CLOSE\"]");
         JsonNode pending = body.get("4_portfolio").get("pending");
         assertThat(pending).extracting(p -> p.get("state").asString()).containsExactly(CheckpointPacket.PENDING_DUE,
                 CheckpointPacket.PENDING_DUE, CheckpointPacket.PENDING_AHEAD, CheckpointPacket.PENDING_AHEAD);
@@ -265,16 +265,18 @@ class CheckpointPacketTest {
     }
 
     @Test
-    @DisplayName("남은 시점: 지금 + 60초 이하인 기준 시각은 빠짐(10:59:00 → AT_1100 빠짐, 10:58:59 → 남음), 조기 폐장일(11-27 마감 13:00)에는 AT_1300~ 없이 NEXT_CLOSE까지")
+    @DisplayName("남은 시점: 지금 + 60초 이하인 기준 시각은 빠짐(10:59:00 → AT_1100 빠짐, 10:58:59 → 남음), 조기 폐장일(11-27 마감 13:00)에는 AT_1300~ 없이 NEXT_CLOSE까지, MARKET은 기준 시각이 마감 5분 전 앞일 때만(맨 앞)")
     void remainingTimingsDropPassedAndEarlyClose() {
         assertThat(CheckpointPacket.remainingTimings(E, UsMarketCalendar.CALENDAR, Instant.parse("2026-11-02T15:59:00Z")))
-                .doesNotContain("AT_1100").first().isEqualTo("AT_1200");
+                .doesNotContain("AT_1100").containsSequence("MARKET", "AT_1200");
         assertThat(CheckpointPacket.remainingTimings(E, UsMarketCalendar.CALENDAR, Instant.parse("2026-11-02T15:58:59Z")))
-                .first().isEqualTo("AT_1100");
+                .containsSequence("MARKET", "AT_1100");
         LocalDate early = LocalDate.of(2026, 11, 27);
         assertThat(UsMarketCalendar.CALENDAR.isEarlyClose(early)).isTrue();
         assertThat(CheckpointPacket.remainingTimings(early, UsMarketCalendar.CALENDAR, Instant.parse("2026-11-27T16:30:00Z")))
-                .containsExactly("AT_1200", "NEXT_CLOSE");
+                .containsExactly("MARKET", "AT_1200", "NEXT_CLOSE");
+        assertThat(CheckpointPacket.remainingTimings(early, UsMarketCalendar.CALENDAR, Instant.parse("2026-11-27T17:53:00Z")))
+                .as("12:53 ET — MARKET의 T 12:55 = 마감 5분 전").containsExactly("NEXT_CLOSE");
         assertThat(CheckpointPacket.remainingTimings(E, UsMarketCalendar.CALENDAR, Instant.parse("2026-11-02T21:30:00Z")))
                 .as("마감 뒤").isEmpty();
     }

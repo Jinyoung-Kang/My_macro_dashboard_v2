@@ -376,4 +376,52 @@ class ExecutionAuditTest {
             Locale.setDefault(saved);
         }
     }
+
+    // ------------------------------------------------------------------ 장중 시장가 MARKET(단계 2)
+    private static final Path COLLECTOR_BARS_TEST = Path.of("../collector/tests/test_paper_bars.py");
+
+    @Test
+    @DisplayName("MARKET 기준 시각 = (생성 + 60초)를 분으로 내린 뒤 + 1분 — 수집기 시험의 예시 표(MARKET_TARGETS)와 같은 값(Java·Python), 늘 생성 + 60초보다 뒤")
+    void marketTargetMatchesTheCollectorTable() throws IOException {
+        assumeTrue(Files.exists(COLLECTOR_BARS_TEST), "collector/tests/test_paper_bars.py를 찾을 수 없습니다");
+        String text = Files.readString(COLLECTOR_BARS_TEST);
+        Matcher block = Pattern.compile("MARKET_TARGETS = \\[(.*?)\\n\\]", Pattern.DOTALL).matcher(text);
+        assertThat(block.find()).as("수집기 시험의 MARKET_TARGETS 표").isTrue();
+        Matcher row = Pattern.compile("\\(\"([^\"]+)\", \"([^\"]+)\"\\)").matcher(block.group(1));
+        int rows = 0;
+        while (row.find()) {
+            Instant created = java.time.OffsetDateTime.parse(row.group(1)).toInstant();
+            Instant target = java.time.OffsetDateTime.parse(row.group(2)).toInstant();
+            assertThat(ExecutionAudit.marketTarget(created)).as(row.group(1)).isEqualTo(target).isAfter(created.plusSeconds(60));
+            rows++;
+        }
+        assertThat(rows).as("예시 넷(:00초·:30초·:59.999초·서머타임)").isEqualTo(4);
+    }
+
+    @Test
+    @DisplayName("MARKET 주문의 기준 시각·반사실·늦게 풂: targetAt(주문) = 생성 + 60초 뒤 첫 분, fromBars(MARKET)는 그 T 창의 R1, 메뉴 반사실(AT_1000)은 생성 전 시각이라 null, 반사실 표에는 MARKET 칸이 없음, 늦게 풂은 그 T 기준")
+    void marketOrderUsesItsOwnTarget() {
+        Instant created = et(TUE, 10, 32).plusSeconds(10);
+        Order order = buy(PaperBooks.MARKET, MON, created);
+        assertThat(ExecutionAudit.targetAt(order, TUE, US)).isEqualTo(et(TUE, 10, 34));
+        assertThat(ExecutionAudit.targetAt(PaperBooks.MARKET, TUE, US)).as("주문 없이 시점 이름만으로는 T가 없음").isNull();
+        Bars bars = new Bars(et(TUE, 11, 0)).market(LocalTime.of(10, 34))
+                .bar("AAPL", TUE, et(TUE, 10, 0), 99.0, 100.0).bar("AAPL", TUE, et(TUE, 10, 1), 99.1, 100.0)
+                .bar("AAPL", TUE, et(TUE, 10, 34), 100.0, 100.0).bar("AAPL", TUE, et(TUE, 10, 35), 100.2, 100.0);
+        Price price = ExecutionAudit.fromBars(order, PaperBooks.MARKET, TUE, bars.payload(), US);
+        assertThat(price).isEqualTo(new Price(100.0, et(TUE, 10, 34), ExecutionAudit.RUNG_AT));
+        assertThat(ExecutionAudit.fromBars(buy("AT_1000", MON, MON_DECIDED), PaperBooks.MARKET, TUE, bars.payload(), US))
+                .as("MARKET이 아닌 주문의 MARKET 칸은 없음").isNull();
+        Map<String, Price> cf = ExecutionAudit.counterfactuals(order, null, bars.payload(), null, US);
+        assertThat(cf).doesNotContainKey(PaperBooks.MARKET);
+        assertThat(cf.get("AT_1000")).as("생성(10:32) 전 시각").isNull();
+        com.macrodash.store.PaperStore.Fill fill = new com.macrodash.store.PaperStore.Fill(1, 7, PaperBooks.CLAUDE, "AAPL",
+                PaperBooks.BUY, 1, 100.05, 100.0, 5, 100.05, et(TUE, 11, 44), TUE, com.macrodash.store.Datasets.SNAP_PAPER_BARS_US, false, null);
+        assertThat(ExecutionAudit.lateResolved(order, new com.macrodash.store.PaperStore.ExecFill(fill, et(TUE, 10, 34),
+                ExecutionAudit.RUNG_AT), US)).as("11:44 ≤ T + 71분(11:45)").isFalse();
+        com.macrodash.store.PaperStore.Fill later = new com.macrodash.store.PaperStore.Fill(1, 7, PaperBooks.CLAUDE, "AAPL",
+                PaperBooks.BUY, 1, 100.05, 100.0, 5, 100.05, et(TUE, 11, 46), TUE, com.macrodash.store.Datasets.SNAP_PAPER_BARS_US, false, null);
+        assertThat(ExecutionAudit.lateResolved(order, new com.macrodash.store.PaperStore.ExecFill(later, et(TUE, 10, 34),
+                ExecutionAudit.RUNG_AT), US)).isTrue();
+    }
 }

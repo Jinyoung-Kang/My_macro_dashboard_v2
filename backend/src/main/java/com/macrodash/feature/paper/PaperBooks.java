@@ -75,6 +75,14 @@ final class PaperBooks {
      */
     static final List<String> CLAUDE2_TIMINGS = List.of(NEXT_OPEN, AT_1000, AT_1100, AT_1200, AT_1300, AT_1400, AT_1500,
             NEXT_CLOSE);
+    /**
+     * 장중 시장가(V18 timing CHECK — 계좌2 명세 §6-2 단계 2): 장중 확인 응답의 주문만 받습니다(아침 결정 메뉴에는 없음). 기준 시각 T = 주문 생성 + 60초 뒤
+     * 첫 분({@link ExecutionAudit#marketTarget} — ⑤ 'T &gt; 생성 + 60초'를 엄격하게, 수집기 {@code paper_bars.market_target}과 같은 식).
+     */
+    static final String MARKET = "MARKET";
+    /** 장중 확인 응답이 받는 체결 시점, 이른 것부터(MARKET 0 &lt; AT_1000 1 &lt; … &lt; AT_1500 6 &lt; NEXT_CLOSE 7 — 확인 스키마 enum과 같은 목록). */
+    static final List<String> CHECKPOINT_TIMINGS = List.of(MARKET, AT_1000, AT_1100, AT_1200, AT_1300, AT_1400, AT_1500,
+            NEXT_CLOSE);
 
     /** 주문 출처(paper_orders.source). */
     static final String SOURCE_STOP = "STOP";

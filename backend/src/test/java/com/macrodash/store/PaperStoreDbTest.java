@@ -1854,14 +1854,16 @@ class PaperStoreDbTest {
         long open = store.insertOrder(new PaperStore.Order(0, BOOK, null, "SPY", "BUY", null, 10.0, null, "NEXT_OPEN",
                 "CLAUDE", "PENDING", null, null, DAY, null, DAY.plusDays(3), null));
         long hourly = store.insertOrder(pendingBuy(BOOK, "SPY", null));
+        // 장중 시장가(V18 — 장중 확인 응답) — 시각 지정 시점이라 만료 단계가 남김(장부 3a가 E 1분봉으로 푼 뒤 만료).
+        long market = store.insertOrder(timedBuy(BOOK, "MARKET"));
         LocalDate later = DAY.plusDays(30);
 
-        assertThat(store.expireOrders(BOOK, later, List.of("NEXT_OPEN", "AT_1000"))).isEqualTo(1);
+        assertThat(store.expireOrders(BOOK, later, List.of("NEXT_OPEN", "AT_1000", "MARKET"))).isEqualTo(1);
         assertThat(jdbc.queryForObject("SELECT status FROM paper_orders WHERE id = ?", String.class, hourly))
                 .isEqualTo("EXPIRED");
-        assertThat(jdbc.queryForList("SELECT status FROM paper_orders WHERE id IN (?, ?)", String.class, timed, open))
-                .containsOnly("PENDING");
-        assertThat(store.expireOrders(BOOK, later, List.of())).as("남길 시점이 없으면 두 인자 판과 같음").isEqualTo(2);
+        assertThat(jdbc.queryForList("SELECT status FROM paper_orders WHERE id IN (?, ?, ?)", String.class, timed, open,
+                market)).containsOnly("PENDING");
+        assertThat(store.expireOrders(BOOK, later, List.of())).as("남길 시점이 없으면 두 인자 판과 같음").isEqualTo(3);
 
         long order = store.insertOrder(timedBuy(BOOK, "AT_1100"));
         Instant bar = Instant.parse("2026-10-26T15:00:00Z");   // 2026-10-26(월) 11:00 EDT

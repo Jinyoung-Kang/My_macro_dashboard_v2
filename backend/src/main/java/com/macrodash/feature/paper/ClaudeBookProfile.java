@@ -71,6 +71,17 @@ record ClaudeBookProfile(PaperMarket market, String code, String schemaResource,
             PaperBooks.CLAUDE2_TIMINGS, sequence(PaperBooks.CLAUDE2_TIMINGS), Claude2Settings.MAX_CALLS_PER_CYCLE,
             claude2TimingNames(), true, true);
 
+    /**
+     * 장중 확인 응답(계좌2 명세 §5-2·§9-5·§10-5, 단계 2) — 장중 확인 작업이 받은 응답의 주문을 검증할 때 씁니다(호출 자체는 {@link #US_CLAUDE2_C2}의
+     * 시스템 프롬프트 c2-2와 이 스키마). 같은 계좌 코드·소상한 키·시각 지정 체결이고, 받는 시점은 {@link PaperBooks#CHECKPOINT_TIMINGS}(장중 시장가
+     * MARKET 0 &lt; AT_1000 1 &lt; … &lt; AT_1500 6 &lt; NEXT_CLOSE 7 — 매도는 같거나 뒤 순위의 매수에만 현금을 만듦), 응답 스키마
+     * {@value CheckpointPacket#SCHEMA_RESOURCE}. 지난 AT_*·마감 5분 전 뒤 MARKET은 검증기가 닫습니다({@link UsTimedFills#closedTimings}).
+     */
+    static final ClaudeBookProfile US_CLAUDE2_CHECKPOINT = new ClaudeBookProfile(UsPaperMarket.INSTANCE, PaperBooks.CLAUDE2,
+            CheckpointPacket.SCHEMA_RESOURCE, ClaudePrompts.CLAUDE2_FIXED_RULES_C2, PacketBuilder.VARIANT_CLAUDE2,
+            PaperBooks.CHECKPOINT_TIMINGS, sequence(PaperBooks.CHECKPOINT_TIMINGS), Claude2Settings.MAX_CALLS_PER_CYCLE,
+            checkpointTimingNames(), true, true);
+
     ClaudeBookProfile {
         Objects.requireNonNull(market, "market");
         Objects.requireNonNull(code, "code");
@@ -121,6 +132,19 @@ record ClaudeBookProfile(PaperMarket market, String code, String schemaResource,
         for (Map.Entry<String, java.time.LocalTime> entry : ExecutionAudit.MENU.entrySet()) {
             if (!PaperBooks.NEXT_OPEN.equals(entry.getKey())) {
                 out.put(entry.getKey(), "다음 세션 " + ExecutionAudit.label(entry.getValue()));
+            }
+        }
+        out.put(PaperBooks.NEXT_CLOSE, OrderValidator.Market.US.timingNames().get(PaperBooks.NEXT_CLOSE));
+        return out;
+    }
+
+    /** 장중 확인 응답 검증기 근거 문구의 시점 이름(예: '장중 시장가(MARKET) 매도'·'이 세션 14:00(AT_1400) 매수'). */
+    private static Map<String, String> checkpointTimingNames() {
+        Map<String, String> out = new LinkedHashMap<>();
+        out.put(PaperBooks.MARKET, "장중 시장가");
+        for (Map.Entry<String, java.time.LocalTime> entry : ExecutionAudit.MENU.entrySet()) {
+            if (!PaperBooks.NEXT_OPEN.equals(entry.getKey())) {
+                out.put(entry.getKey(), "이 세션 " + ExecutionAudit.label(entry.getValue()));
             }
         }
         out.put(PaperBooks.NEXT_CLOSE, OrderValidator.Market.US.timingNames().get(PaperBooks.NEXT_CLOSE));

@@ -80,9 +80,8 @@ final class CheckpointPacket {
     /** 지연 기준 종목(수집기 REFERENCE). */
     static final String REFERENCE = "SPY";
 
-    /** 장중 확인 주문이 받는 체결 시점(스키마 timing enum과 같은 목록, 이른 것부터). */
-    static final List<String> TIMINGS = List.of("AT_1000", "AT_1100", "AT_1200", "AT_1300", "AT_1400", "AT_1500",
-            PaperBooks.NEXT_CLOSE);
+    /** 장중 확인 주문이 받는 체결 시점(스키마 timing enum·확인 프로필과 같은 목록, 이른 것부터 — MARKET 0 < AT_1000 1 < … < NEXT_CLOSE 7). */
+    static final List<String> TIMINGS = PaperBooks.CHECKPOINT_TIMINGS;
 
     /** 아침 패킷 12_hardRules에서 그대로 옮기는 한도 칸. */
     static final List<String> HARD_RULE_KEYS = List.of("maxWeightStockPct", "maxWeightEtfPct", "maxPositions",
@@ -201,13 +200,21 @@ final class CheckpointPacket {
     }
 
     /**
-     * 아직 고를 수 있는 시점 — 기준 시각 T가 지금 + 60초보다 뒤(⑤)이고, 시각 지정 시점은 E 마감 전(조기 폐장일 13:00 뒤 AT_*는 없음).
+     * 아직 고를 수 있는 시점 — 기준 시각 T가 지금 + 60초보다 뒤(⑤)이고, 시각 지정 시점은 E 마감 전(조기 폐장일 13:00 뒤 AT_*는 없음). MARKET은 검증기와
+     * 같은 규칙({@link UsTimedFills#closedTimings} — 지금 + 60초 뒤 첫 분이 정규장 안·마감 5분 전 앞)일 때만.
      */
     static List<String> remainingTimings(LocalDate session, TradingCalendar calendar, Instant now) {
         Instant close = calendar.closeInstant(session);
         Instant earliest = now.plus(ExecutionAudit.AFTER_CREATED);
         List<String> out = new ArrayList<>();
         for (String timing : TIMINGS) {
+            if (PaperBooks.MARKET.equals(timing)) {
+                if (calendar.isTradingDay(session) && UsTimedFills.closedTimings(List.of(timing),
+                        calendar.previousTradingDay(session), now, calendar).isEmpty()) {
+                    out.add(timing);
+                }
+                continue;
+            }
             Instant at = ExecutionAudit.targetAt(timing, session, calendar);
             if (at == null || !at.isAfter(earliest)) {
                 continue;
@@ -249,7 +256,7 @@ final class CheckpointPacket {
         out.put("positions", positions);
         List<Map<String, Object>> pending = new ArrayList<>();
         for (Order o : in.pending()) {
-            Instant target = ExecutionAudit.targetAt(o.timing(), session, calendar);
+            Instant target = ExecutionAudit.targetAt(o, session, calendar);
             Map<String, Object> row = new LinkedHashMap<>();
             row.put("orderId", o.id());
             row.put("ticker", o.ticker());
@@ -472,7 +479,8 @@ final class CheckpointPacket {
         Map<String, Object> out = new LinkedHashMap<>();
         List<String> lines = List.of(
                 "주문 timing은 " + String.join("·", TIMINGS) + " 가운데 기준 시각이 지금 + 60초보다 뒤인 것(1_basis.remainingTimings)만 "
-                        + "받는다 — 지난 시점은 LATE_FOR_TIMING, 조기 폐장일 마감 뒤 시점은 MALFORMED로 거절.",
+                        + "받는다 — 지난 시점은 LATE_FOR_TIMING, 조기 폐장일 마감 뒤 시점은 MALFORMED로 거절. MARKET은 응답 뒤 생성 + 60초가 "
+                        + "지난 첫 분의 1분봉 시가로 체결하고, 그 분이 마감 5분 전(조기 폐장일 12:55 ET) 이후면 MALFORMED로 거절.",
                 "REPLACE는 기준 시각이 아직 오지 않은 대기 주문만 대신한다(취소) — 기준 시각이 지난 대기 주문은 이미 체결된 주문으로 보고 자료가 "
                         + "오는 대로 체결한다. 형식 검사를 통과하면 새 주문이 모두 거절돼도 그 취소는 일어난다. KEEP은 아무것도 바꾸지 않는다.",
                 "한도·재량 매도 보유 기간·월 상한·재진입 금지는 아침 결정과 같다(아래 값).");

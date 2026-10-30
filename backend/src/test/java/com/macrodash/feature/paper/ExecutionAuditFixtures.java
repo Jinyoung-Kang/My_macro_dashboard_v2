@@ -13,7 +13,6 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalTime;
 import java.time.ZonedDateTime;
-import java.util.Map;
 
 import static com.macrodash.feature.paper.PaperFixtures.MAPPER;
 
@@ -69,6 +68,8 @@ final class ExecutionAuditFixtures {
 
         private final ObjectNode root = MAPPER.createObjectNode();
         private final Instant fetched;
+        /** 메뉴 밖 창 시각 — 대기 MARKET 주문의 기준 시각(수집기 {@code session_entries}의 extra, 메뉴와 겹치면 하나). */
+        private final java.util.List<LocalTime> extra = new java.util.ArrayList<>();
 
         Bars(Instant fetched) {
             this.fetched = fetched;
@@ -81,9 +82,27 @@ final class ExecutionAuditFixtures {
             root.putObject("tickers");
         }
 
-        /** 그 종목·세션의 1분봉 한 줄 — 메뉴 창(T ~ T+4분) 안이면 그 창에, 마지막 봉은 늘 다시 셈(창 밖 봉은 마지막 봉으로만). */
+        /**
+         * 대기 MARKET 주문의 기준 시각 창을 더합니다(수집기 A-4 — 그 시각의 'HH:MM' 창과 firstTradeAfter). 봉을 넣기 전에 부릅니다. 메뉴 시각과 같으면
+         * 하나로 둡니다.
+         */
+        Bars market(LocalTime at) {
+            if (!ExecutionAudit.MENU.containsValue(at) && !extra.contains(at)) {
+                extra.add(at);
+            }
+            return this;
+        }
+
+        /** 그 종목·세션의 1분봉 한 줄 — 창(T ~ T+4분 — 메뉴와 MARKET 창, 겹치면 모두) 안이면 그 창에, 마지막 봉은 늘 다시 셈(창 밖 봉은 마지막 봉으로만). */
         Bars bar(String ticker, LocalDate day, Instant start, double open, Double volume) {
-            return put(windowOf(day, start), ticker, day, start, open, volume);
+            java.util.List<String> labels = windowsOf(day, start);
+            if (labels.isEmpty()) {
+                return put(null, ticker, day, start, open, volume);
+            }
+            for (int i = 0; i < labels.size(); i++) {
+                put(labels.get(i), ticker, day, start, open, volume, i == 0);
+            }
+            return this;
         }
 
         /** 창 키를 직접 정해 넣습니다 — 창 시각을 고정 UTC 오프셋으로 잘못 셈한 저장본(서머타임 시험). */
@@ -137,6 +156,12 @@ final class ExecutionAuditFixtures {
         }
 
         private Bars put(String label, String ticker, LocalDate day, Instant start, double open, Double volume) {
+            return put(label, ticker, day, start, open, volume, true);
+        }
+
+        /** @param count 마지막 봉·봉 수·첫 거래 봉을 셈(같은 봉을 겹친 둘째 창에 넣을 때는 거짓) */
+        private Bars put(String label, String ticker, LocalDate day, Instant start, double open, Double volume,
+                         boolean count) {
             ObjectNode session = session(ticker, day);
             ObjectNode bar = MAPPER.createObjectNode().put("t", start.toString()).put("o", open).put("h", open)
                     .put("l", open).put("c", open);
@@ -151,6 +176,9 @@ final class ExecutionAuditFixtures {
                 ArrayNode rows = existing == null || existing.isNull() ? windows.putArray(label) : (ArrayNode) existing;
                 rows.add(bar);
             }
+            if (!count) {
+                return this;
+            }
             JsonNode last = session.get("lastBar");
             if (last == null || last.isNull() || Instant.parse(last.get("t").asString()).isBefore(start)) {
                 session.set("lastBar", bar.deepCopy());
@@ -158,7 +186,7 @@ final class ExecutionAuditFixtures {
             session.put("barCount", session.path("barCount").asInt(0) + 1);
             ObjectNode first = (ObjectNode) session.get("firstTradeAfter");
             boolean traded = volume != null && volume > 0;
-            for (LocalTime at : ExecutionAudit.MENU.values()) {
+            for (LocalTime at : windowTimes()) {
                 String key = ExecutionAudit.label(at);
                 Instant begin = ZonedDateTime.of(day, at, UsMarketCalendar.NEW_YORK).toInstant();
                 JsonNode current = first.get(key);
@@ -184,8 +212,8 @@ final class ExecutionAuditFixtures {
             if (!sessions.has(key)) {
                 ObjectNode session = sessions.putObject(key).put("fetchedAt", fetched.toString()).put("barCount", 0);
                 ObjectNode windows = session.putObject("windows");
-                for (Map.Entry<String, LocalTime> menu : ExecutionAudit.MENU.entrySet()) {
-                    windows.putNull(ExecutionAudit.label(menu.getValue()));
+                for (LocalTime at : windowTimes()) {
+                    windows.putNull(ExecutionAudit.label(at));
                 }
                 session.putObject("firstTradeAfter");
                 session.putNull("lastBar");
@@ -194,14 +222,22 @@ final class ExecutionAuditFixtures {
             return (ObjectNode) sessions.get(key);
         }
 
-        private static String windowOf(LocalDate day, Instant start) {
-            for (LocalTime at : ExecutionAudit.MENU.values()) {
+        private java.util.List<String> windowsOf(LocalDate day, Instant start) {
+            java.util.List<String> out = new java.util.ArrayList<>();
+            for (LocalTime at : windowTimes()) {
                 Instant begin = ZonedDateTime.of(day, at, UsMarketCalendar.NEW_YORK).toInstant();
                 if (!start.isBefore(begin) && start.isBefore(begin.plus(ExecutionAudit.WINDOW))) {
-                    return ExecutionAudit.label(at);
+                    out.add(ExecutionAudit.label(at));
                 }
             }
-            return null;
+            return out;
+        }
+
+        /** 창 시각 — 메뉴 일곱 + 더한 MARKET 시각. */
+        private java.util.List<LocalTime> windowTimes() {
+            java.util.List<LocalTime> out = new java.util.ArrayList<>(ExecutionAudit.MENU.values());
+            out.addAll(extra);
+            return out;
         }
     }
 }

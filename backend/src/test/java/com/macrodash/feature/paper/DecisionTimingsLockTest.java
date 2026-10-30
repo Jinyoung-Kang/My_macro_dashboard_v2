@@ -145,7 +145,9 @@ class DecisionTimingsLockTest {
         // 실행 감사 메뉴(반사실 시점) = 계좌2의 시각 지정 시점, 장부 2b가 받는 시점도 같음.
         List<String> timed = book2.timings().subList(0, book2.timings().size() - 1);
         assertThat(ExecutionAudit.MENU.keySet()).containsExactlyElementsOf(timed);
-        assertThat(UsTimedFills.TIMINGS).containsExactlyInAnyOrderElementsOf(timed);
+        assertThat(UsTimedFills.TIMINGS).as("장부 2b가 받는 시점 = 메뉴의 시각 지정 일곱 + 장중 확인의 MARKET")
+                .containsExactlyInAnyOrderElementsOf(java.util.stream.Stream.concat(timed.stream(),
+                        java.util.stream.Stream.of(PaperBooks.MARKET)).toList());
         assertThat(ExecutionAudit.TIMINGS).as("반사실 = 계좌1식 기준 + 계좌2 메뉴").containsExactlyElementsOf(
                 java.util.stream.Stream.concat(java.util.stream.Stream.of(ExecutionAudit.NEXT_OBSERVATION),
                         book2.timings().stream()).toList());
@@ -214,6 +216,62 @@ class DecisionTimingsLockTest {
         for (String feed : feeds) {
             assertThat(c2.fixedRules()).as("고정 문단에 " + feed).contains(feed);
         }
+    }
+
+    @Test
+    @DisplayName("장중 확인 응답(계좌2 단계 2): 확인 스키마 timing enum = 확인 프로필의 받는 시점(MARKET·AT_1000~AT_1500·NEXT_CLOSE) = 검증기 순위 키(MARKET 0 < AT_1000 1 < … < NEXT_CLOSE 7) = 확인 패킷의 시점, c2-2 장중 확인 절이 MARKET·NEXT_CLOSE를 말함, 모두 마지막으로 timing CHECK를 다시 만드는 V18 안, 장부 2b의 시점 = 메뉴 ∪ {MARKET}")
+    void checkpointMenuIsLockedEverywhere() throws IOException {
+        ClaudeBookProfile reply = ClaudeBookProfile.US_CLAUDE2_CHECKPOINT;
+        assertThat(reply.code()).isEqualTo(PaperBooks.CLAUDE2);
+        assertThat(reply.timings()).containsExactly("MARKET", "AT_1000", "AT_1100", "AT_1200", "AT_1300", "AT_1400",
+                "AT_1500", "NEXT_CLOSE").isEqualTo(PaperBooks.CHECKPOINT_TIMINGS).isEqualTo(CheckpointPacket.TIMINGS)
+                .isEqualTo(schemaTimings(CheckpointPacket.SCHEMA_RESOURCE));
+        assertThat(reply.schemaResource()).isEqualTo(CheckpointPacket.SCHEMA_RESOURCE);
+        assertThat(reply.fixedRules()).isEqualTo(ClaudePrompts.CLAUDE2_FIXED_RULES_C2);
+        assertThat(reply.timed()).isTrue();
+        assertThat(reply.checkpoints()).isTrue();
+        Map<String, Integer> ranks = new LinkedHashMap<>();
+        for (int i = 0; i < reply.timings().size(); i++) {
+            ranks.put(reply.timings().get(i), i);
+        }
+        assertThat(reply.timingRanks()).containsExactlyEntriesOf(ranks);
+        OrderValidator.Market validation = reply.orderValidation();
+        assertThat(validation.ranks()).isEqualTo(reply.timingRanks());
+        assertThat(validation.timings()).isEqualTo(reply.timings());
+        assertThat(validation.earlyTiming()).isEqualTo(PaperBooks.MARKET);
+        assertThat(ClaudeBookProfile.US_CLAUDE2_C2.timings()).as("아침 결정은 MARKET을 받지 않음").doesNotContain(PaperBooks.MARKET);
+        assertThat(schemaTimings(ClaudeBookService.CLAUDE2_C2_SCHEMA_RESOURCE)).doesNotContain(PaperBooks.MARKET);
+
+        String section = ClaudePrompts.CLAUDE2_CHECKPOINT_SECTION;
+        assertThat(section).contains(PaperBooks.MARKET).contains(PaperBooks.NEXT_CLOSE).contains("AT_*");
+        assertThat(reply.fixedRules()).contains(section);
+
+        // 마이그레이션 가운데 마지막으로 paper_orders_timing_check를 다시 만드는 파일(V18)이 확인 시점을 모두 받음. V17 대조(v17Timings)는 그대로.
+        Path last = null;
+        try (var files = Files.list(Path.of("../db/migrations"))) {
+            for (Path file : files.filter(p -> p.getFileName().toString().matches("V\\d+__.*\\.sql")).sorted(java.util.Comparator.comparing(p -> Integer.parseInt(
+                    p.getFileName().toString().replaceAll("^V(\\d+)__.*$", "$1")))).toList()) {
+                if (Files.readString(file).contains("ADD CONSTRAINT paper_orders_timing_check")) {
+                    last = file;
+                }
+            }
+        } catch (java.nio.file.NoSuchFileException e) {
+            assumeTrue(false, "db/migrations를 찾을 수 없습니다");
+        }
+        assertThat(last).isNotNull();
+        assertThat(last.getFileName().toString()).startsWith("V18__");
+        Matcher check = Pattern.compile("CHECK \\(timing IN \\(([^)]*)\\)\\)").matcher(Files.readString(last));
+        assertThat(check.find()).isTrue();
+        List<String> latest = new ArrayList<>();
+        Matcher value = Pattern.compile("'([A-Z_0-9]+)'").matcher(check.group(1));
+        while (value.find()) {
+            latest.add(value.group(1));
+        }
+        assertThat(latest).containsAll(reply.timings()).containsAll(PaperBooks.CLAUDE2_TIMINGS).containsAll(v17Timings());
+        assertThat(v17Timings()).doesNotContain(PaperBooks.MARKET);
+
+        assertThat(UsTimedFills.TIMINGS).containsExactlyInAnyOrderElementsOf(java.util.stream.Stream.concat(
+                ExecutionAudit.MENU.keySet().stream(), java.util.stream.Stream.of(PaperBooks.MARKET)).toList());
     }
 
     /**

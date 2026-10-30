@@ -271,10 +271,10 @@ class UsPaperMarketTest {
     }
 
     @Test
-    @DisplayName("시각 지정 시점(NEXT_OPEN·AT_1000~AT_1500 — 계좌2)은 fillable이 늘 거짓: 시간별 관측치로는 체결하지 않고 장부 2b가 1분봉으로만(명세 2026-10-30 §10-1)")
+    @DisplayName("시각 지정 시점(NEXT_OPEN·AT_1000~AT_1500·장중 시장가 MARKET — 계좌2)은 fillable이 늘 거짓: 시간별 관측치로는 체결하지 않고 장부 2b가 1분봉으로만(명세 2026-10-30 §10-1)")
     void timedTimingsAreNeverFillableByTheHourlyPath() {
         assertThat(UsTimedFills.TIMINGS).containsExactly("NEXT_OPEN", "AT_1000", "AT_1100", "AT_1200", "AT_1300", "AT_1400",
-                "AT_1500");
+                "AT_1500", "MARKET");
         for (String timing : UsTimedFills.TIMINGS) {
             for (Instant t : List.of(Instant.parse("2026-10-23T15:00:00Z"), Instant.parse("2026-10-23T20:15:00Z"),
                     Instant.parse("2026-10-26T15:00:00Z"))) {

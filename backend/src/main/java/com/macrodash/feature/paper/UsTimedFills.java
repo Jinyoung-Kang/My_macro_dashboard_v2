@@ -99,8 +99,15 @@ import java.util.Set;
  */
 final class UsTimedFills {
 
-    /** 시각 지정 시점 — 실행 감사의 메뉴({@link ExecutionAudit#MENU} — V17 timing CHECK·수집기 MENU와 같은 글자). 장중 확인의 MARKET은 단계 2(V18). */
-    static final Set<String> TIMINGS = ExecutionAudit.MENU.keySet();
+    /**
+     * 시각 지정 시점 — 실행 감사의 메뉴({@link ExecutionAudit#MENU} — V17 timing CHECK·수집기 MENU와 같은 글자)와 장중 확인 응답의 장중 시장가
+     * {@value PaperBooks#MARKET}(단계 2 — V18, 기준 시각은 그 주문의 생성 + 60초 뒤 첫 분 {@link ExecutionAudit#marketTarget}). 이 목록이 시간별 체결에서
+     * 빼는 시점({@code UsPaperMarket.fillable})·장부 만료 단계가 남기는 시점·2b가 푸는 시점을 함께 정합니다.
+     */
+    static final Set<String> TIMINGS = timings();
+
+    /** MARKET은 E 마감 이만큼 전(보통 날 15:55·조기 폐장일 12:55 ET) 이후의 기준 시각이면 받지 않습니다(검증기 MALFORMED — 계좌2 명세 §6-2). */
+    static final Duration MARKET_BEFORE_CLOSE = Duration.ofMinutes(5);
 
     /**
      * 1분봉 저장본의 봉 시각 {@code t}가 무엇인가 — 늘 봉 <b>시작</b>입니다(수집기 계약 {@code paper_bars.BAR_LABEL}과 같은 글자, 시험이 대조). Yahoo
@@ -158,6 +165,12 @@ final class UsTimedFills {
         this.mapper = mapper;
     }
 
+    private static Set<String> timings() {
+        Set<String> out = new java.util.LinkedHashSet<>(ExecutionAudit.MENU.keySet());
+        out.add(PaperBooks.MARKET);
+        return java.util.Collections.unmodifiableSet(out);
+    }
+
     /** 시각 지정 시점인가. */
     static boolean timed(String timing) {
         return timing != null && TIMINGS.contains(timing);
@@ -177,6 +190,21 @@ final class UsTimedFills {
         Instant close = calendar.closeInstant(session);
         Map<String, OrderValidator.Closed> out = new LinkedHashMap<>();
         for (String timing : timings) {
+            if (PaperBooks.MARKET.equals(timing)) {
+                // 장중 시장가(장중 확인 응답) — 기준 시각 T = 지금 + 60초 뒤 첫 분이 그 세션 정규장 안이고 마감 5분 전 앞이어야 함.
+                Instant target = ExecutionAudit.marketTarget(now);
+                Instant last = close.minus(MARKET_BEFORE_CLOSE);
+                if (target.isBefore(calendar.openInstant(session))
+                        || !target.atZone(calendar.zone()).toLocalDate().equals(session)) {
+                    out.put(timing, new OrderValidator.Closed(OrderValidator.MALFORMED, "장중 시장가는 " + session
+                            + " 정규장 안에서만 — 기준 시각 " + et(target, calendar) + "은 정규장 밖이라 받지 않음"));
+                } else if (!target.isBefore(last)) {
+                    out.put(timing, new OrderValidator.Closed(OrderValidator.MALFORMED, "마감 5분 전("
+                            + CLOCK.format(last.atZone(calendar.zone())) + " ET) 뒤 시장가는 받지 않음 — 기준 시각 "
+                            + et(target, calendar)));
+                }
+                continue;
+            }
             Instant target = timed(timing) ? ExecutionAudit.targetAt(timing, session, calendar) : null;
             if (target == null) {
                 continue;
@@ -317,7 +345,7 @@ final class UsTimedFills {
                 continue;
             }
             LocalDate session = ExecutionAudit.targetSession(order, calendar);
-            Instant target = session == null ? null : ExecutionAudit.targetAt(order.timing(), session, calendar);
+            Instant target = session == null ? null : ExecutionAudit.targetAt(order, session, calendar);
             if (target == null || target.isBefore(observedAt)) {
                 out.add(new Due(order, session, target));
             }
@@ -427,7 +455,7 @@ final class UsTimedFills {
             return broken != null ? Look.error(broken) : Look.fill(price.raw(), price.at(), price.rung());
         }
         JsonNode day = bars.session(order.ticker(), session);
-        String label = label(order.timing());
+        String label = ExecutionAudit.label(target, calendar);
         if (tradedInWindow(day, label, target, session, calendar)) {
             return Look.waiting("기준 시각 창의 봉이 아직 완성되지 않았습니다(⑦)");
         }
@@ -497,7 +525,7 @@ final class UsTimedFills {
         return switch (evidence(order.ticker(), session, target, bars, observedAt)) {
             case BARS -> {
                 JsonNode day = bars.session(order.ticker(), session);
-                JsonNode first = Json.child(Json.child(day, "firstTradeAfter"), label(order.timing()));
+                JsonNode first = Json.child(Json.child(day, "firstTradeAfter"), ExecutionAudit.label(target, calendar));
                 Instant fetched = instant(Json.asText(day, "fetchedAt"));
                 if (first != null) {
                     yield Look.expire(NO_BARS, session + " 1분봉에 " + et(target, calendar)
@@ -882,7 +910,7 @@ final class UsTimedFills {
      */
     private static double navAt(BookRun run, Due due, Bars bars, List<LateSale> later) {
         TradingCalendar calendar = run.market.calendar();
-        String label = label(due.order().timing());
+        String label = ExecutionAudit.label(due.target(), calendar);
         Map<String, Integer> qty = new HashMap<>();
         Map<String, Double> price = new HashMap<>();
         for (Holding holding : run.holdings.values()) {
@@ -962,7 +990,10 @@ final class UsTimedFills {
     }
 
     // ------------------------------------------------------------------ 표기
-    /** 그 시점의 창 키 'HH:MM'(저장본 {@code windows}·{@code firstTradeAfter}의 키). */
+    /**
+     * 메뉴 시점의 창 키 'HH:MM'(저장본 {@code windows}·{@code firstTradeAfter}의 키) — MARKET처럼 주문마다 기준 시각이 다른 시점은 null이라 장부는
+     * 주문의 기준 시각으로 셉니다({@link ExecutionAudit#label(Instant, TradingCalendar)}).
+     */
     static String label(String timing) {
         LocalTime at = ExecutionAudit.MENU.get(timing);
         return at == null ? null : ExecutionAudit.label(at);

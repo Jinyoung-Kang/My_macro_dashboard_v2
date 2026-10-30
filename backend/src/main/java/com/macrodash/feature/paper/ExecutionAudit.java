@@ -19,6 +19,7 @@ import java.time.LocalTime;
 import java.time.OffsetDateTime;
 import java.time.ZonedDateTime;
 import java.time.format.DateTimeParseException;
+import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
@@ -133,17 +134,51 @@ final class ExecutionAudit {
     }
 
     /**
+     * 장중 시장가(MARKET — 장중 확인 응답의 주문, 계좌2 명세 §6-2 단계 2)의 기준 시각 T = (생성 + 60초)를 분으로 내린 뒤 + 1분 — 늘 '생성 + 60초'보다
+     * 뒤입니다(⑤ 엄격 — 생성이 :00.000초여도 T = 생성 + 2분). 명세의 '분으로 올림'은 :00초 생성에서 T = 생성 + 60초가 되어 ⑤에 걸리므로 이 식을
+     * 씁니다. 수집기 {@code paper_bars.market_target}과 같은 식이고, 두 쪽 시험이 같은 예시 표로 대조합니다.
+     */
+    static Instant marketTarget(Instant createdAt) {
+        return createdAt.plus(AFTER_CREATED).truncatedTo(ChronoUnit.MINUTES).plus(Duration.ofMinutes(1));
+    }
+
+    /**
+     * 주문의 기준 시각 T — MARKET이면 그 주문의 생성 시각으로({@link #marketTarget}, 생성 시각을 모르면 null), 그 밖은
+     * {@link #targetAt(String, LocalDate, TradingCalendar)}.
+     */
+    static Instant targetAt(Order order, LocalDate session, TradingCalendar calendar) {
+        if (session == null) {
+            return null;
+        }
+        if (PaperBooks.MARKET.equals(order.timing())) {
+            return order.createdAt() == null ? null : marketTarget(order.createdAt());
+        }
+        return targetAt(order.timing(), session, calendar);
+    }
+
+    /** 기준 시각의 창 키 'HH:MM'(그 시각의 뉴욕 시각 — 메뉴 시점은 메뉴 시각, MARKET은 T). */
+    static String label(Instant target, TradingCalendar calendar) {
+        return target == null ? null : label(target.atZone(calendar.zone()).toLocalTime());
+    }
+
+    /**
      * 메뉴 시점 하나의 반사실 — 1분봉 저장본(수집기 모양 contract 1)의 그 창에서 사다리 R1·R2(클래스 설명의 ⑤~⑧). 못 구하면 null.
      *
      * @param payload 1분봉 저장본 본문(없으면 null)
      */
     static Price fromBars(Order order, String timing, LocalDate session, JsonNode payload, TradingCalendar calendar) {
-        LocalTime at = MENU.get(timing);
-        if (at == null || session == null || payload == null || order.createdAt() == null
-                || !calendar.isTradingDay(session) || payload.path("contract").asInt(-1) != BARS_CONTRACT) {
+        boolean market = PaperBooks.MARKET.equals(timing);
+        if ((!market && !MENU.containsKey(timing)) || (market && !timing.equals(order.timing())) || session == null
+                || payload == null || order.createdAt() == null || !calendar.isTradingDay(session)
+                || payload.path("contract").asInt(-1) != BARS_CONTRACT) {
             return null;
         }
-        Instant target = targetAt(timing, session, calendar);
+        // 창은 기준 시각의 'HH:MM' — 메뉴 시점은 메뉴 시각, MARKET은 그 주문의 T(수집기가 대기 MARKET 주문의 T 창을 더함).
+        Instant target = market ? marketTarget(order.createdAt()) : targetAt(timing, session, calendar);
+        if (!target.atZone(calendar.zone()).toLocalDate().equals(session)) {
+            return null;                                   // ⑥ 그 세션 밖의 기준 시각(MARKET)
+        }
+        LocalTime at = target.atZone(calendar.zone()).toLocalTime();
         Instant close = calendar.closeInstant(session);
         if (!target.isBefore(close)) {
             return null;                                   // 조기 폐장일의 마감 뒤 시각 — 그날 그 시각에는 장이 없음
@@ -260,7 +295,7 @@ final class ExecutionAudit {
         if (UsTimedFills.FALLBACK_RUNGS.contains(fill.fillRung())) {
             return true;
         }
-        Instant target = targetAt(order.timing(), targetSession(order, calendar), calendar);
+        Instant target = targetAt(order, targetSession(order, calendar), calendar);
         if (target == null) {
             return null;
         }

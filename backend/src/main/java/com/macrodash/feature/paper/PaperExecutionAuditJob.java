@@ -406,7 +406,7 @@ public class PaperExecutionAuditJob {
                 // 지연은 그 주문의 1분봉 반사실을 처음 적는 회차의 값만 — 그 회차에 몰랐으면(null) 뒤 회차의 값으로 메우지 않습니다.
                 Integer orderLag = fromBars && !menuFilled(before) ? lag : null;
                 OrderExec row = new OrderExec(order.id(), code, order.timing(),
-                        ExecutionAudit.targetAt(order.timing(), session, calendar), cf, orderLag, late, null);
+                        ExecutionAudit.targetAt(order, session, calendar), cf, orderLag, late, null);
                 if (store.mergeOrderExec(row)) {
                     rows++;
                     values += fresh;

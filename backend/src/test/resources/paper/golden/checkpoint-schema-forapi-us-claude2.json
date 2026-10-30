@@ -33,7 +33,7 @@
             "type" : [ "number", "null" ]
           },
           "timing" : {
-            "enum" : [ "AT_1000", "AT_1100", "AT_1200", "AT_1300", "AT_1400", "AT_1500", "NEXT_CLOSE" ]
+            "enum" : [ "MARKET", "AT_1000", "AT_1100", "AT_1200", "AT_1300", "AT_1400", "AT_1500", "NEXT_CLOSE" ]
           },
           "executionNote" : {
             "type" : "string"
