@@ -8,9 +8,9 @@
 
 ---
 
-## 1. 수집 태스크 (38개)
+## 1. 수집 태스크 (39개)
 
-수집기가 세 그룹으로 나눠 돌립니다. 주기는 `.env`로 바꿀 수 있습니다. 장중 평가 둘(`live`)은 정기 수집이 없고 화면이 볼 때만 백엔드가 요청합니다.
+수집기가 세 그룹으로 나눠 돌립니다. 주기는 `.env`로 바꿀 수 있습니다. 장중 평가 둘(`live`)은 정기 수집이 없고 화면이 볼 때만 백엔드가 요청합니다. 🧪 계좌2 장중 확인 감시(`session`, 5분 — compose가 주기 환경변수를 넘기지 않아 코드 기본값)는 확인이 있는 날 확인 시각 앞뒤에만 외부를 부릅니다(그 밖의 회차는 호출 없이 '데이터 없음').
 
 | 그룹 | 주기 | 태스크 | 받는 것 |
 |---|---|---|---|
@@ -50,6 +50,7 @@
 | | | `sec_fundamentals` | 📒 같은 유니버스(ETF 제외 — 설정 ETF와 13F 매핑표의 ETP)의 미국 종목 재무 — SEC XBRL Company Facts(회사당 1건) → `observations` `us.fundamentals`(entity = 티커, obs_date = 공시일, 지우지 않음 — 티커의 CIK가 바뀌면 옛 CIK만의 행은 지움) + 회사별 수집 상태 `us.fundamentals.status`. 실행당 CIK 예산(`FUNDAMENTALS_FETCH_BUDGET`, 기본 200건)이라 약 570곳을 세 번(약 36시간)에 한 바퀴. 13F 두 태스크와 같은 SEC 토큰 버킷(§5 '모의 매매가 쓰는 저장본과 한계') |
 | | | `earnings_surprise` | 📒 같은 유니버스(ETF 제외 — `us_calendar`와 같은 범위)의 어닝 서프라이즈 — yfinance quoteSummary `earnings.earningsChart`(내부 호출, 최근 4분기 EPS 실제치·컨센서스·실제 발표 시각) → `observations` `us.earnings_surprise`(entity = 티커, obs_date = 발표 시각의 미국 동부 날짜, (날짜, 티커)마다 덮어씀·지우지 않음) + 수집 상태 `us.earnings_surprise.status`. 실행당 100종목(`EARNINGS_SURPRISE_BUDGET`, 1~600), 키 없음(§5 '어닝 서프라이즈') |
 | | | `run_log_retention` | 🧹 수집 실행 기록 중 보존 기간(`COLLECTOR_RUN_LOG_RETENTION_DAYS`, 기본 90일)이 지난 것 정리 — 외부 호출 없음, 수집한 데이터는 그대로 |
+| `session` | 5분 | `paper_watch_us` | 🧪 미국 Claude 계좌2 **단계 2 장중 확인 감시** — 계좌2의 뉴욕 오늘 세션 장중 확인 행이 `PLANNED`·`MINUTE`일 때(백엔드 표 `paper_checkpoints`·`paper_positions`·`paper_orders`를 읽기만 — ADR 0022) 그 감시 목록(≤10) ∪ 계좌2 보유·대기 주문 ∪ {SPY, QQQ}의 정규장 1분봉(yfinance 배치 한 번, `period="1d"`, Yahoo 래치 공유)을 **확인 시각 −15분 ~ +30분에만** 받아 → 스냅샷 `paper.watch.us`(contract 1 — `collector/app/tasks/paper_watch.py` 머리말: 종목마다 완성된 봉(시작 + 60초 ≤ 받은 시각) 최근 30개·당일 시고저·마지막 봉, 저장본 `lagSeconds`는 SPY 그날 정규장 안에서만). 확인이 없거나 창 밖·래치 중이면 호출 없이 `EmptyResult`. 받지 못한 종목은 같은 확인의 직전 값을 `isStale`로 잇고, 하나도 못 받으면 저장본 유지. 장중 확인 패킷·예상 상태 가격에만 쓰고 장부 체결은 `paper.bars.us` 그대로. 이 수집은 '실시간'이 아니라 5분마다 받은 지연 1분봉입니다 |
 | `live` | 화면이 볼 때만 | `paper_live_us` | 🧪 모의 매매 **장중 평가(표시 전용)** — 미국 보유 종목(백엔드 표 `paper_positions`를 읽기만 — 출발한 계좌)의 최신 정규장 1분봉(yfinance 배치 한 번, Yahoo 래치 공유) → 스냅샷 `paper.live.us` `{market, source, scope, tickers:{T:{price, at}}, missing, error}`. 정기 수집 없음 — 운영자가 모의 매매 화면을 보는 정규장 동안 백엔드 `GET /api/paper/live`가 저장본이 60초보다 오래됐을 때 요청. 받지 못한 종목은 직전 값을 `isStale`로 잇고(봉 시각 그대로 — 장중 값으로 쓰지 않음), 하나도 못 받으면 저장본 유지. 체결·스탑·확정 순자산에는 쓰지 않음 |
 | | | `paper_live_kr` | 🧪🅣 같은 장중 평가의 한국 판 — 한국 보유 종목의 토스 최신 1분봉(원시가 `adjusted=false`, 종목마다 1회·0.1초 간격) → `paper.live.kr`. 서버 가동 창이 한국 정규장(09:00~15:30)을 덮기 전에는 그 시간에 서버가 꺼져 있어 쓰이지 않음 |
 
@@ -316,6 +317,7 @@ EQUITY_MAP = {
 | `calendar.us_events` (스냅샷, 1시간) | Claude 계좌 패킷 `1b_calendar`(2단계 A)·`/api/paper/status`의 `calendar`(개요의 일정 한 줄) — 규칙 계좌·검증기는 읽지 않음 | 아래 '미국 발표·실적 일정' |
 | `calendar.us_consensus` (스냅샷, 동부 하루 1회) | 🧪 미국 Claude 계좌 패킷 `1b_calendar` — 설정 `calendar.consensus`를 켰을 때만(판 6), 거시 줄의 `forecast`·`previous`·`unit`·`consensusSource`(E1b). 꺼짐이면 읽지 않음 | 위 표 `us_calendar_consensus` 줄. 비공식 참고라 발표 날짜는 FRED·FOMC가 정하고 값만 이름 대응표(백엔드 `analytics.CalendarConsensus` — FOMC·FRED 릴리스 번호 → Nasdaq 머리 지표 하나)로 붙임. 그 날 같은 이름이 두 줄(전월비·전년비 라벨 없음 — CPI·Core PCE)이면 붙이지 않고 사유 |
 | `paper.bars.us` (스냅샷, 1시간) | 🧪 실행 감사 작업 `PaperExecutionAuditJob`(단계 0-4, 5분, `StoreReader.quietly` — Claude 계좌 주문의 메뉴 반사실·1분봉 지연·늦게 풂 → `paper_order_exec`)과 장부의 시각 지정 체결(단계 1-4 `UsTimedFills` — 2b·3a·1분봉 기다림, `PaperMarketData.barsUs`가 조용히 읽음, 시각 지정 주문이 있는 계좌만)이 읽음, 상태 응답(`GET /api/paper/status`의 `claude2.bars` — 정규장일 때만 받은 시각·나이·지연)도 읽기만. 패킷은 읽지 않음 | 아래 'Claude 계좌2 1분봉' |
+| `paper.watch.us` (스냅샷, 5분 — 장중 확인 창에만) | 🧪 계좌2 장중 확인(단계 2)만 — 읽는 곳은 백엔드 장중 확인 패킷·작업(B1, 최대 나이 `MAX_AGE_WATCH_US` 10분). 장부 체결·계좌1·화면은 읽지 않음 | 아래 'Claude 계좌2 1분봉'의 장중 확인 감시 줄 |
 | `calendar.kr_events` (스냅샷, 12시간) | 🧪 한국 책 Claude 계좌 패킷 `1b_calendar`가 읽음(E1a — `KrPacketBuilder`, 읽은 순간 뒤 수집본은 쓰지 않음) — 규칙 계좌·검증기는 읽지 않음 | 위 표 `kr_calendar` 줄. 상수라 임시 회의·바뀐 발표일은 들어오지 않음(손으로 갱신) |
 | `news_headline` (observations, 1시간) | Claude 계좌 패킷 `11b_events`(2단계 B)만 — 규칙 계좌·검증기는 읽지 않음 | 아래 '사건 뉴스 RSS' |
 | `news.headlines.status` (스냅샷, 1시간) | `/api/paper/status`의 `news`(개요의 사건 뉴스 한 줄), 정기·미리보기 패킷 `11b_events`의 `feedNote`(창 끝 3시간 전부터 실패 중인 피드) | 피드별 받은 항목·새 항목·건너뛴 수·마지막 성공 시각(`lastOkAt`)·실패 사유, 7일 보관 건수(`stored7d`). 피드가 모두 실패하면 쓰지 않음(직전 저장본 유지) |
@@ -434,6 +436,7 @@ EQUITY_MAP = {
 | 배치 안의 429 | yfinance 1.7.0 `yf.download`는 종목별 429를 예외로 올리지 않고 'yfinance' 로거에 한 줄(`YFRateLimitError`)만 남깁니다. 이 태스크는 부른 스레드의 그 줄도 보고 래치를 닫습니다 — 문구가 바뀌면 감지만 빠지고 '빈 응답'으로 보입니다 |
 | 실패 | 받지 못한 종목은 직전 값을 `isStale`로 잇고(세션마다의 `fetchedAt`은 실제로 받은 시각 그대로), 하나도 못 받으면 저장본을 둡니다. 같은 세션을 더 짧게 준 응답(마지막 봉이 앞)은 이미 받은 세션을 덮지 않습니다. 응답에 봉이 0개인 종목은 아래 '봉 0개 종목' |
 | 봉 0개 종목(거래 정지) | 응답에 봉이 하나도 없는 종목은 기준 종목 SPY가 그 회차에 세션을 받았으면 받지 못한 것이 아니라 그 세션들의 거래 없음으로 봅니다 — 이어받지 않고 세션 없는 새 항목(그 회차 `fetchedAt`, `noBarSessions` = SPY가 그 회차에 받은 세션 날짜들, 직전 세션은 받은 시각 그대로)으로 저장하고 `missing`에서 뺍니다(`error`는 배치의 사유 그대로). 장부는 SPY의 그 세션이 이 항목과 같은 회차일 때만 'T 뒤 거래 없음'(T18 — 마감 뒤 `NO_TRADE_AFTER_T`, 멈춘 가격으로 채우지 않음)으로 봅니다. 429를 받은 회차·SPY가 세션을 받지 못한(더 짧게 온 응답 포함) 회차·직전 저장본에 그 종목의 그 세션이 이미 있는 종목은 지금처럼 이어받습니다(`isStale` — 장부는 1분봉 자료 없음). 배치 안에서 그 종목 하나만 실패한 응답(시간 초과 등)은 거래 정지와 구별하지 못해 같은 '거래 없음'으로 저장됩니다 — yfinance 1.7.0 `yf.download`는 종목별 실패 사유를 로그로만 남깁니다[확인 — `multi.py`]. 다음 회차가 그 세션을 받으면 바로잡히고, 마감 뒤 마지막 회차면 대체 체결(R3·종가) 대신 만료입니다(없는 체결을 만들지 않는 쪽 — 명세 §17-12) |
+| 장중 확인 감시(`paper_watch_us`, 단계 2) | `MINUTE` 확인이 있는 날만 확인 시각 −15분 ~ +30분에 5분마다 배치 1건(약 10건 — 명세 §12-3), 그 밖의 날·시각은 0건. `paper_quotes`와 다른 스레드(session 군)라 같은 시각에 돌 수 있고, 이 회차의 429가 공용 래치를 닫으면 계좌1 관측치 회차도 5분 동안 묻지 않습니다(§17-2 — X5로 잼). 래치가 닫혀 있으면 묻지 않습니다. 감시 저장본의 지연(`lagSeconds`)은 SPY 기준 저장본 지연이고 개별 종목의 지연은 [모름 — X4, 첫 세션에서 잼] |
 | 로컬 | 로컬 v2(`PAPER_ENABLED=false`)도 이 태스크를 돕니다 — 범위가 로컬 사본의 주문·보유라 '최근 8일' 조건으로 곧 비고(`EmptyResult`, 상태 화면에 '데이터 없음', Yahoo 호출 0), 사본 직후 며칠만 Yahoo를 부릅니다 |
 
 ---

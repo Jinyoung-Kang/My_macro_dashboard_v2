@@ -79,6 +79,13 @@ public final class Datasets {
      */
     public static final String SNAP_PAPER_BARS_US = "paper.bars.us";
     /**
+     * 🧪 미국 Claude 계좌2 단계 2 장중 확인 감시(명세 2026-10-30 §12-1, ADR 0022) — 계좌2의 오늘 세션 MINUTE 확인 감시 목록 ∪ 계좌2 보유·대기 ∪
+     * {SPY, QQQ}의 최근 완성 1분봉 30개, 당일 시가·고가·저가, 저장본 지연 {@code lagSeconds}(SPY 그날 정규장 안에서만, 아니면 null).
+     * 모양(contract 1)은 수집기 {@code app/tasks/paper_watch.py} 머리말. 수집기 session(5분, 확인 시각 −15~+30분에만 받음).
+     * 장중 확인 패킷과 예상 상태의 가격에만 쓰고, 장부 체결은 1분봉 저장본({@link #SNAP_PAPER_BARS_US}) 한 출처 그대로입니다.
+     */
+    public static final String SNAP_PAPER_WATCH_US = "paper.watch.us";
+    /**
      * 모의 매매 트랙레코드 후보 기관 목록과 기관별 수집 진행률(저장 분기 수·완료 여부). 기관마다의 공시는
      * {@code sec13f(cik, TRACK_RECORD_QUARTERS)}에 있고, 이 저장본은 "누가 후보이고 어디까지 받았나"만 담습니다.
      */
@@ -285,6 +292,11 @@ public final class Datasets {
      * 저장본은 1분봉 수집이 한 회차 넘게 멈춘 것으로 봅니다(실행 감사 기록의 {@code barsStale}, 단계 1의 대체 체결 R3).
      */
     public static final long MAX_AGE_BARS_US = 70 * 60L;
+    /**
+     * 🧪 {@link #SNAP_PAPER_WATCH_US}를 장중 확인의 MINUTE 자료로 볼 최대 나이 — session 주기(300초) + 여유. 이보다 오래된 저장본은 그 확인의
+     * 감시 자료로 쓰지 않습니다(감시 수집이 한 회차 넘게 멈춘 것).
+     */
+    public static final long MAX_AGE_WATCH_US = 10 * 60L;
     /** 일별 확정치 (FRED/KRX 마감). */
     public static final long MAX_AGE_DAILY = 6 * 60 * 60L;
     /** 분기 공시(13F) 등 거의 변하지 않는 데이터. */

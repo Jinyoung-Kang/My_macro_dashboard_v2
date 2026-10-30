@@ -603,6 +603,44 @@ def timed_scope(market: str) -> list[str]:
     return [row["ticker"] for row in rows]
 
 
+# 🧪 장중 확인 감시(paper.watch.us) 범위의 계좌·피드·상태(명세 2026-10-30 §12-1, ADR 0022 단계 2) — 계좌는 백엔드 PaperBooks.CLAUDE2, 피드·상태는
+# V18 paper_checkpoints CHECK와 같은 글자입니다(test_paper_watch가 파일로 대조). HOURLY 확인은 시간별 관측치를 쓰므로 감시 범위가 아닙니다.
+WATCH_BOOKS = {"US": "claude2"}
+FEED_MINUTE = "MINUTE"
+CHECKPOINT_PLANNED = "PLANNED"
+
+
+def watch_scope(market: str, session: date) -> dict | None:
+    """
+    🧪 장중 확인 감시 범위 — 그 시장 계좌2의 ``session``(뉴욕 날짜) 장중 확인 행 가운데 PLANNED·MINUTE인 것(계좌·세션마다 한 행)과 계좌2의
+    보유·대기 주문 종목. 행이 없으면 None(태스크가 Yahoo를 부르지 않음).
+    ``{book, sessionDate, atEt(time), watch[…], held[…], pending[…]}``
+
+    백엔드 표 ``paper_checkpoints``·``paper_positions``·``paper_orders``·``paper_books``를 **읽기만** 합니다(쓰는 프로세스는 백엔드 하나 —
+    ADR 0008, timed_scope와 같은 교차 읽기 — ADR 0022). 확인 시각·감시 목록은 아침 결정이 정하고 백엔드가 적습니다.
+    """
+    book = WATCH_BOOKS.get(market)
+    if not book:
+        return None
+    with connection() as conn:
+        row = conn.execute(
+            "SELECT c.book_code, c.session_date, c.at_et, c.watch FROM paper_checkpoints c "
+            "JOIN paper_books b ON b.code = c.book_code "
+            "WHERE b.market = %s AND c.book_code = %s AND c.session_date = %s AND c.status = %s AND c.feed = %s",
+            (market, book, session, CHECKPOINT_PLANNED, FEED_MINUTE),
+        ).fetchone()
+        if row is None:
+            return None
+        held = conn.execute(
+            "SELECT ticker FROM paper_positions WHERE book_code = %s ORDER BY ticker", (book,),
+        ).fetchall()
+        pending = conn.execute(
+            "SELECT DISTINCT ticker FROM paper_orders WHERE book_code = %s AND status = 'PENDING' ORDER BY ticker", (book,),
+        ).fetchall()
+    return {"book": row["book_code"], "sessionDate": row["session_date"], "atEt": row["at_et"],
+            "watch": list(row["watch"] or []), "held": [r["ticker"] for r in held], "pending": [r["ticker"] for r in pending]}
+
+
 def latest_observation_date(dataset: str) -> str | None:
     """그 데이터셋의 가장 최근 obs_date (YYYY-MM-DD). 없으면 None."""
     with connection() as conn:

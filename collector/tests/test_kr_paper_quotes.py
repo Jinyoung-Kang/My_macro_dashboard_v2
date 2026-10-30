@@ -528,4 +528,4 @@ def test_slow에서_유니버스_바로_뒤에_돌고_태스크는_35개():
     assert task.speed == "slow" and task.run is kr_paper.task_kr_paper_quotes
     names = [t.name for t in tasks.ALL_TASKS]
     assert names.index("kr_paper_quotes") == names.index("kr_paper_universe") + 1
-    assert len(tasks.ALL_TASKS) == len(tasks.TASKS_BY_NAME) == 38  # 장중 평가 paper_live_us·paper_live_kr·계좌2 단계 0의 paper_bars_us까지
+    assert len(tasks.ALL_TASKS) == len(tasks.TASKS_BY_NAME) == 39  # 장중 평가 paper_live_us·paper_live_kr·계좌2 단계 0의 paper_bars_us·계좌2 단계 2의 paper_watch_us까지

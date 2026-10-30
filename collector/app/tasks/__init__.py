@@ -12,6 +12,7 @@ app/tasks/ — 수집 작업 정의(패키지).
   slow   (1시간): fred_series · fed_liquidity · krx_futures · sector_history · fx_history ·
                   volatility_history · cot_history · daum_futures_trend · fsc_prices · fsc_etf_prices
   weekly (12시간): sec_13f · kr_holidays · dart_fundamentals
+  session (5분) : 🧪 paper_watch_us(계좌2 장중 확인 감시 — 확인 시각 앞뒤에만 외부 호출)
 
 [규칙]
 - 수집이 예외 없이 끝났지만 쓸 데이터가 없으면 EmptyResult로 **실패 집계**

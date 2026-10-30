@@ -68,6 +68,7 @@ class DatasetsParityTest {
         assertThat(constant(source, "SNAP_PAPER_LIVE_US")).isEqualTo(Datasets.SNAP_PAPER_LIVE_US);
         assertThat(constant(source, "SNAP_PAPER_LIVE_KR")).isEqualTo(Datasets.SNAP_PAPER_LIVE_KR);
         assertThat(constant(source, "SNAP_PAPER_BARS_US")).isEqualTo(Datasets.SNAP_PAPER_BARS_US);
+        assertThat(constant(source, "SNAP_PAPER_WATCH_US")).isEqualTo(Datasets.SNAP_PAPER_WATCH_US);
         assertThat(constant(source, "TS_KR_CLOSE_ADJ")).isEqualTo(Datasets.TS_KR_CLOSE_ADJ);
         assertThat(constant(source, "OBS_KR_PAPER_FLOW")).isEqualTo(Datasets.OBS_KR_PAPER_FLOW);
         assertThat(constant(source, "SNAP_KR_PAPER_FLOWS_STATUS")).isEqualTo(Datasets.SNAP_KR_PAPER_FLOWS_STATUS);

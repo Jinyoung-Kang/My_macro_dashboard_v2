@@ -88,16 +88,31 @@ def test_B9_데이터셋은_정해진_태스크_하나만_쓴다():
 
 
 # 🧪 미국 Claude 계좌2 단계 0(명세 2026-10-30 §12-1·ADR 0022) — 1분봉 저장본을 쓰는 모듈은 하나입니다(읽기는 백엔드 실행 감사 작업, 0-4).
-CLAUDE2_WRITERS = {"SNAP_PAPER_BARS_US": "tasks/paper_bars.py"}
+# 단계 2의 장중 확인 감시 저장본도 쓰는 모듈은 하나입니다(읽기는 백엔드 장중 확인 — B1).
+CLAUDE2_WRITERS = {"SNAP_PAPER_BARS_US": "tasks/paper_bars.py", "SNAP_PAPER_WATCH_US": "tasks/paper_watch.py"}
 CLAUDE2_WRITE = re.compile(
     r"\b(put_snapshot|put_observations|put_entity_observations|replace_observations|insert_new_observations|"
     r"add_headline_feeds|put_timeseries|delete_observations_before)\(\s*catalog\.(" + "|".join(CLAUDE2_WRITERS) + r")\b"
 )
 
 
-def test_계좌2_1분봉_데이터셋은_paper_bars_태스크만_쓴다():
+def test_계좌2_1분봉·감시_데이터셋은_정해진_태스크_하나만_쓴다():
     writers = {}
     for path in APP.rglob("*.py"):
         for match in CLAUDE2_WRITE.finditer(path.read_text(encoding="utf-8")):
             writers.setdefault(match.group(2), set()).add(path.relative_to(APP).as_posix())
     assert writers == {name: {module} for name, module in CLAUDE2_WRITERS.items()}
+
+
+def test_계좌2_감시_범위는_백엔드_표를_읽기만_한다():
+    """장중 확인 감시(paper_watch.py)는 범위를 store.watch_scope로만 읽습니다 — 태스크 모듈에는 SQL이 없고, 범위 함수에는 쓰기 문장이 없습니다."""
+    import inspect
+
+    from app import store
+
+    task = (APP / "tasks" / "paper_watch.py").read_text(encoding="utf-8")
+    assert [name for name in BACKEND_TABLES if re.search(rf"\b{name}\b", task)] == []
+    assert not re.search(r"(?i)\b(SELECT|INSERT|UPDATE|DELETE|TRUNCATE)\s", task)
+    scope = inspect.getsource(store.watch_scope)
+    assert not re.search(r"(?i)\b(INSERT|UPDATE|DELETE|TRUNCATE)\b", scope)
+    assert "paper_checkpoints" in scope

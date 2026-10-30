@@ -76,12 +76,12 @@ def _session(day: date, last: time = time(15, 59)) -> list[dict]:
 # ==============================================================================
 # 1. 등록·이름·백엔드와 같은 글자
 # ==============================================================================
-def test_slow에서_paper_quotes_바로_뒤에_돌고_태스크는_38개():
+def test_slow에서_paper_quotes_바로_뒤에_돌고_태스크는_39개():
     task = tasks.TASKS_BY_NAME["paper_bars_us"]
     assert task.speed == "slow" and task.run is paper_bars.task_paper_bars_us
     names = [t.name for t in tasks.ALL_TASKS]
     assert names.index("paper_bars_us") == names.index("paper_quotes") + 1, "같은 Yahoo 래치 — 관측치를 먼저 받음(§12-2)"
-    assert len(tasks.ALL_TASKS) == len(tasks.TASKS_BY_NAME) == 38  # 장중 평가 paper_live_us·paper_live_kr·계좌2 단계 0의 paper_bars_us까지
+    assert len(tasks.ALL_TASKS) == len(tasks.TASKS_BY_NAME) == 39  # 장중 평가 paper_live_us·paper_live_kr·계좌2 단계 0의 paper_bars_us·계좌2 단계 2의 paper_watch_us까지
 
 
 def test_데이터셋_이름():

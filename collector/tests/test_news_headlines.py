@@ -99,7 +99,7 @@ def test_slow에_등록되고_시간_상한은_slow_상한보다_짧다():
     task = tasks.TASKS_BY_NAME["news_headlines"]
     assert task.speed == "slow" and task.run is task_module.task_news_headlines
     assert task_module.TIME_LIMIT_SECONDS < tasks.TASK_DEADLINE_SECONDS["slow"]
-    assert len(tasks.ALL_TASKS) == len(tasks.TASKS_BY_NAME) == 38  # 장중 평가 paper_live_us·paper_live_kr·2단계 C의 earnings_surprise·v2 B3의 fsc_etf_prices·v2 B4의 kr_paper_universe·kr_paper_quotes·kr_paper_flows·kr_paper_price_history·v2 B9의 kr_news_headlines·kr_calendar·us_calendar_consensus·계좌2 단계 0의 paper_bars_us까지
+    assert len(tasks.ALL_TASKS) == len(tasks.TASKS_BY_NAME) == 39  # 장중 평가 paper_live_us·paper_live_kr·2단계 C의 earnings_surprise·v2 B3의 fsc_etf_prices·v2 B4의 kr_paper_universe·kr_paper_quotes·kr_paper_flows·kr_paper_price_history·v2 B9의 kr_news_headlines·kr_calendar·us_calendar_consensus·계좌2 단계 0의 paper_bars_us·계좌2 단계 2의 paper_watch_us까지
 
 
 # ==============================================================================

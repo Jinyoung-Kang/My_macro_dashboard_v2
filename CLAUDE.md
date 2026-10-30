@@ -15,7 +15,7 @@ PostgreSQL ← 수집기(FastAPI, `collector/`). Docker Compose 네 컨테이너
 - 숫자·화면 원칙: [docs/PRINCIPLES.md](docs/PRINCIPLES.md)
 - 설계 결정과 지키는 방법: [docs/adr/README.md](docs/adr/README.md)
 - API 경로(`RouteInventoryTest`·`endpoints.test.ts`가 이 문서와 대조): [docs/API.md](docs/API.md)
-- 수집 태스크 38개와 소스별 한계: [docs/DATA_SOURCES.md](docs/DATA_SOURCES.md)
+- 수집 태스크 39개와 소스별 한계: [docs/DATA_SOURCES.md](docs/DATA_SOURCES.md)
 - 지난 리뷰·QA의 결함 목록과 남은 위험: [docs/reviews/](docs/reviews/) · [docs/qa/](docs/qa/) (결함 번호 `QA-###`)
 - **v2 프로그램**(순서·사용자 결정 V1~V8·AWS 교체 절차): [docs/specs/2026-10-26-v2-program-plan.md](docs/specs/2026-10-26-v2-program-plan.md) ·
   [0단계 체크리스트](docs/specs/2026-10-26-v2-step0-fork.md) · [UI/UX 설계](docs/specs/2026-10-26-v2-ui-design.md)(1단계 — 토큰·셸 시안 승인 뒤 홈 → 모의매매(미국)) ·
