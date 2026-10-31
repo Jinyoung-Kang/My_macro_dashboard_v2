@@ -40,10 +40,11 @@ export function AlertsSummary() {
       <ul className="-mx-5 divide-y divide-border border-y border-border lg:-mx-6">
         {rows.map((row) => (
           <li key={row.id} className="flex min-h-14 items-start gap-3 px-5 py-2.5 lg:px-6">
-            {/* 점은 보조 표시이고 뜻은 옆의 "읽음·안 읽음·지난 사건" 글자로 전합니다(색만으로 전하지 않음). 읽지 않은 수에 드는 것만 칠합니다. */}
+            {/* 점은 보조 표시이고 뜻은 옆의 "읽음·안 읽음·지난 사건" 글자로 전합니다(색만으로 전하지 않음). 읽지 않은 수에 드는 것만 칠합니다 —
+                잉크(강조 파랑 아님, 명세 A1)를 굵은 테두리로 칠해 고대비 모드에서도 찬 점과 빈 고리가 갈립니다(바탕색은 그 모드에서 지워짐). */}
             <span
               aria-hidden="true"
-              className={`mt-1.5 size-2 shrink-0 rounded-full ${row.unread ? "bg-accent" : "border border-text-3"}`}
+              className={`mt-1.5 size-2 shrink-0 rounded-full ${row.unread ? "border-4 border-text" : "border border-text-3"}`}
             />
             <span className="flex min-w-0 flex-1 flex-col">
               <span className={`truncate text-[15px] leading-5 ${row.unread ? "font-semibold text-text" : "text-text-2"}`}>

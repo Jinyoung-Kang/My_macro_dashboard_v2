@@ -13,6 +13,7 @@ import {
   formatSignedMinus,
   formatWithUnit,
   MINUS,
+  statusColor,
 } from "@/lib/format";
 
 describe("값이 없으면 —", () => {
@@ -188,5 +189,14 @@ describe("부호 −(U+2212) — 변화 칩(formatSignedMinus)", () => {
   it("천 단위 구분과 자릿수", () => {
     expect(formatSignedMinus(-12345.678, 1).text).toBe(`${MINUS}12,345.7`);
     expect(formatSignedMinus(1500, 0).text).toBe("+1,500");
+  });
+});
+
+describe("해석 색(statusColor) — 강조 파랑을 쓰지 않는 네 단계(명세 원칙 A1)", () => {
+  it("green·blue·orange·red와 모름이 서로 다른 클래스이고, 어느 것도 강조색(accent)이 아니다", () => {
+    const classes = ["green", "blue", "orange", "red", null].map((color) => statusColor(color));
+    expect(classes).toEqual(["text-ok", "text-text", "text-warn", "text-danger", "text-body"]);
+    expect(new Set(classes).size).toBe(5);
+    expect(classes.some((name) => name.includes("accent"))).toBe(false);
   });
 });

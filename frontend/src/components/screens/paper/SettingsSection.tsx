@@ -25,9 +25,9 @@ import {
 import type { PaperMarketCode } from "@/lib/paperMarket";
 import type { PaperSettingsHistoryResponse, PaperSettingsResponse, PaperSettingsSaveResult } from "@/lib/types";
 
-/** 배지 색 — lib/paper의 배지와 같은 팔레트. */
-const RULES_BADGE = "border-warn/40 bg-warn/10 text-warn";
-const CHANGED_BADGE = "border-accent/40 bg-accent/10 text-accent";
+/** 배지 색 — lib/paper의 배지와 같은 팔레트(불투명 틴트). '바꿈'은 데이터 배지라 강조 파랑이 아니라 중립입니다(명세 원칙 A1 — 글이 뜻을 나름). */
+const RULES_BADGE = "border-warn/40 bg-warn-tint text-warn";
+const CHANGED_BADGE = "border-border bg-surface-2 text-text-2";
 const INPUT = `w-full ${inputClasses()}`;
 
 /**

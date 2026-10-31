@@ -144,11 +144,15 @@ export const PAPER_TABS = [
 
 export type PaperTabKey = (typeof PAPER_TABS)[number]["key"];
 
-/** 배지 색 — Banner·Freshness와 같은 팔레트. 경고·정상 바탕은 불투명 틴트(globals.css) — 계좌 상세처럼 페이지 바탕 위에 놓여도 대비 4.5:1 이상. */
+/**
+ * 배지 색 — Banner·Freshness와 같은 팔레트. 경고·정상 바탕은 불투명 틴트(globals.css) — 계좌 상세처럼 페이지 바탕 위에 놓여도 대비 4.5:1 이상.
+ * 안내(info — 대기·사후 체결·분할 조정·선정·L1·해석·결정)는 데이터 배지라 강조 파랑이 아니라 중립(회색 바탕·보조 글)입니다 — 강조 파랑은
+ * 하락 파랑과 색으로 구분되지 않아(명세 원칙 A1) 보유·결정 표에서 하락 값처럼 읽혔습니다. 뜻은 배지 글이 나릅니다.
+ */
 const TONE = {
   ok: "border-ok/40 bg-ok-tint text-ok",
   warn: "border-warn/40 bg-warn-tint text-warn",
-  info: "border-accent/40 bg-accent/10 text-accent",
+  info: "border-border bg-surface-2 text-text-2",
   muted: "border-border bg-surface-hover text-muted",
 } as const;
 

@@ -112,7 +112,8 @@ export function AccountDetailPanel({
       onKeyDown={(event) => {
         if (event.key === "Escape") onClose();
       }}
-      className="mt-4 flex flex-col gap-5 rounded-lg border border-accent/40 bg-canvas px-4 py-4"
+      // 열린 계좌 상세는 잉크 테두리 — 강조 파랑은 누를 수 있는 것에만(명세 A1).
+      className="mt-4 flex flex-col gap-5 rounded-lg border border-text bg-canvas px-4 py-4"
     >
       <header className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0">

@@ -125,7 +125,7 @@ export function AutoRefreshControl({
         {seconds === 0 ? (
           "수동"
         ) : loading ? (
-          <span className="text-accent">갱신 중…</span>
+          <span className="text-text-2">갱신 중…</span>
         ) : hidden ? (
           "다른 탭 — 멈춤"
         ) : loadedAt ? (

@@ -98,11 +98,12 @@ export default function AlertsPage() {
             {items.map((item: InboxItem) => (
               <li
                 key={item.id}
-                className={`rounded-lg border p-3 ${item.read || item.late ? "border-border bg-canvas/40" : "border-accent/50 bg-accent/5"}`}
+                // 읽지 않은 알림은 진한 테두리·점·굵은 제목(중립 — 강조 파랑은 누를 수 있는 것에만, 명세 A1), 읽은·지난 알림은 옅은 바탕.
+                className={`rounded-control border p-4 ${item.read || item.late ? "border-border bg-surface-2/50" : "border-border-strong bg-surface"}`}
               >
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <p className="text-sm font-semibold text-bright">
-                    {!item.read && !item.late && <span className="mr-1 text-accent">●</span>}
+                    {!item.read && !item.late && <span className="mr-1 text-text">●</span>}
                     {/* 제목·본문은 서버가 만든 글이라 예전 알림에는 국기·나침반 같은 그림 문자가 있습니다 — 화면에서 뗍니다 */}
                     {withoutLeadingIcon(item.title)}
                   </p>

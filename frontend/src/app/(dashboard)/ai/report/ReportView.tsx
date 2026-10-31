@@ -58,11 +58,12 @@ export function ReportView({ markdown }: { markdown: string }) {
 function ReportSection({ section }: { section: Section }) {
   const kind = sectionKind(section.name);
   const frame =
+    // 결론은 진한 테두리(중립 — 강조 파랑은 누를 수 있는 것에만, 명세 A1), 신뢰도 주의는 경고 틴트, 나머지는 카드 바탕 그대로.
     kind === "summary"
-      ? "border-accent/50 bg-accent/5"
+      ? "border-border-strong bg-surface"
       : kind === "reliability"
-        ? "border-warn/40 bg-warn/5"
-        : "border-border bg-canvas/40";
+        ? "border-warn/30 bg-warn-tint"
+        : "border-border bg-surface";
 
   return (
     <section id={section.id} className={`scroll-mt-4 rounded-lg border p-4 ${frame}`}>

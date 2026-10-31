@@ -222,9 +222,9 @@ function SimilarityCard() {
                   <td className="whitespace-nowrap px-2 py-1.5 text-body">{pair.right}</td>
                   <td className="px-2 py-1.5">
                     <div className="flex items-center gap-2">
-                      <div className="h-2 flex-1 rounded-sm bg-canvas">
+                      <div className="h-2 flex-1 rounded-sm bg-surface-2">
                         <div
-                          className="h-2 rounded-sm bg-accent/70"
+                          className="h-2 rounded-sm bg-text-3"
                           style={{ width: `${Math.min(100, (pair.value / max) * 100)}%` }}
                         />
                       </div>

@@ -36,32 +36,34 @@ const QUADRANTS = [
     code: "EXPANSION",
     label: "확장",
     axis: "성장·신용 양호 + 유동성 확대",
-    tone: "border-ok/50 bg-ok/10 text-ok",
+    tone: "border-ok/50 bg-ok-tint text-ok",
   },
   {
     code: "LATE",
     label: "후퇴 경계",
     axis: "성장·신용 양호 + 유동성 축소",
-    tone: "border-warn/50 bg-warn/10 text-warn",
+    tone: "border-warn/50 bg-warn-tint text-warn",
   },
   {
     code: "RECOVERY",
     label: "회복",
     axis: "성장·신용 악화 + 유동성 확대",
-    tone: "border-accent/50 bg-accent/10 text-accent",
+    // 회복은 강조 파랑이 아니라 중립(잉크 글·회색 바탕) — 강조 파랑은 누를 수 있는 것에만(명세 A1). 뜻은 라벨 글이 나릅니다.
+    tone: "border-text/40 bg-surface-2 text-text",
   },
   {
     code: "CONTRACTION",
     label: "침체 경계",
     axis: "성장·신용 악화 + 유동성 축소",
-    tone: "border-danger/50 bg-danger/10 text-danger",
+    tone: "border-danger/50 bg-danger-tint text-danger",
   },
 ];
 
 const TIMELINE_COLOR: Record<string, string> = {
   EXPANSION: "bg-ok/70",
   LATE: "bg-warn/70",
-  RECOVERY: "bg-accent/70",
+  // 회복은 진한 회색(text-2) — 판정 불가(border 옅은 회색)와 명도가 크게 달라 한 띠에서 갈립니다.
+  RECOVERY: "bg-text-2",
   CONTRACTION: "bg-danger/70",
   UNKNOWN: "bg-border",
 };

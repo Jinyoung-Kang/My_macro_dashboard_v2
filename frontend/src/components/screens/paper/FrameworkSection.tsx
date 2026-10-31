@@ -433,13 +433,14 @@ function ProposalItem({
       aria-label={view.title}
       aria-current={highlighted ? "true" : undefined}
       className={`flex scroll-mt-4 flex-col gap-3 rounded-lg border bg-canvas px-4 py-3 ${
-        highlighted ? "border-accent ring-2 ring-accent/60" : "border-border"
+        // 주간 복기에서 연 제안은 잉크 2px 테두리(강조 파랑은 누를 수 있는 것에만 — 명세 A1). 뜻은 옆의 글과 aria-current가 나릅니다.
+        highlighted ? "border-text ring-1 ring-text" : "border-border"
       }`}
     >
       <header className="flex flex-wrap items-center gap-2">
         <h3 className="text-sm font-semibold text-bright">{view.title}</h3>
         <BadgeChip badge={view.status} />
-        {highlighted && <span className="text-xs text-accent">주간 복기에서 연 제안</span>}
+        {highlighted && <span className="text-xs font-semibold text-text">주간 복기에서 연 제안</span>}
       </header>
       <dl className="flex flex-wrap gap-x-5 gap-y-1 text-xs">
         {view.meta.map((cell) => <Meta key={cell.key} label={cell.label} value={cell.value} />)}
@@ -562,7 +563,7 @@ function VersionsCard({ response }: { response: PaperFrameworkResponse }) {
             render: (row) => (
               <span className="whitespace-nowrap font-semibold text-bright">
                 {row.version}
-                {row.current && <span className="ml-1 text-xs font-normal text-accent">지금</span>}
+                {row.current && <span className="ml-1 text-xs font-normal text-text-2">지금</span>}
               </span>
             ),
           },
@@ -651,7 +652,8 @@ function RenderedPane({
             <span
               key={line.key}
               data-changed={line.changed ? "true" : undefined}
-              className={`block whitespace-pre-wrap break-words ${line.changed ? "bg-accent/15 text-bright" : "text-body"}`}
+              // 강조한 줄은 회색 바탕 + 굵은 잉크 글(강조 파랑 아님 — 명세 A1). 굵기는 고대비 모드에서 바탕이 지워져도 남습니다.
+              className={`block whitespace-pre-wrap break-words ${line.changed ? "bg-surface-2 font-semibold text-text" : "text-body"}`}
             >
               {line.text || " "}
             </span>

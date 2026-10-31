@@ -396,14 +396,16 @@ export function formatSampleWindow(
  * 백엔드가 내려주는 해석 색상을 Tailwind 클래스명으로.
  *
  * @param color `"green"` | `"blue"` | `"orange"` | `"red"`
- * @returns 클래스명. 모르는 값이면 기본 본문색
+ * @returns 클래스명. 모르는 값이면 기본 본문색(보조 글색 text-2).
+ *   `"blue"`는 강조 파랑이 아니라 본문 잉크(text-text)입니다 — 강조 파랑은 누를 수 있는 것에만 쓰고 하락 파랑과 색으로 구분되지 않으며
+ *   (명세 원칙 A1), 잉크는 기본값(text-2)과도 달라 네 단계가 그대로 갈립니다. 뜻은 옆의 해석 글이 나릅니다.
  */
 export function statusColor(color: string | null | undefined): string {
   switch (color) {
     case "green":
       return "text-ok";
     case "blue":
-      return "text-accent";
+      return "text-text";
     case "orange":
       return "text-warn";
     case "red":

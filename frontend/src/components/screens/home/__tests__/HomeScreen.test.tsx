@@ -264,9 +264,10 @@ describe("홈 — 값 있음(운영자)", () => {
     const [late, , unread] = within(region("알림")).getAllByRole("listitem");
     expect(late.textContent).toBe("[국면 전환] 후퇴 경계 → 확장2026-10-25 · 지난 사건");
     expect(title.className).not.toContain("font-semibold");
-    expect(late.querySelector(".bg-accent")).toBeNull();
-    // 읽지 않은 수에 드는 알림만 칠한 점과 굵은 글씨입니다.
-    expect(unread.querySelector(".bg-accent")).not.toBeNull();
+    expect(late.querySelector(".border-4")).toBeNull();
+    // 읽지 않은 수에 드는 알림만 칠한 점(잉크 — 강조 파랑 아님)과 굵은 글씨입니다.
+    expect(unread.querySelector(".border-4.border-text")).not.toBeNull();
+    expect(unread.querySelector("[class*='accent']")).toBeNull();
     expect(within(unread).getByText("외국인 5일 연속 순매수").className).toContain("font-semibold");
   });
 });
