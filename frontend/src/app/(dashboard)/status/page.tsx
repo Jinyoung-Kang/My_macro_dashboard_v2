@@ -11,6 +11,7 @@ import {
   Freshness,
   Loading,
   Metric,
+  PageHeader,
   SourceBadge,
   Table,
 } from "@/components/ui";
@@ -63,14 +64,12 @@ export default function StatusPage() {
   const resolvedStatus = data?.lastRunStatus ?? "none";
 
   return (
-    <div className="flex flex-col gap-6">
-      <header>
-        <h1 className="text-xl font-bold text-bright">데이터 저장소 상태</h1>
-        <p className="mt-1 flex flex-wrap items-center gap-2 text-xs text-muted">
-          수집 현황·신선도·실패 원인·누적 이력 · 읽기 모드 {data?.readMode}
-          <Freshness refreshError={refreshError} />
-        </p>
-      </header>
+    <div className="flex flex-col gap-6 lg:gap-8">
+      <PageHeader
+        title="데이터 저장소 상태"
+        description={<>수집 현황·신선도·실패 원인·누적 이력 · 읽기 모드 {data?.readMode}</>}
+        actions={<Freshness refreshError={refreshError} />}
+      />
 
       {data && !data.collectorReachable && (
         <Banner tone="warn">

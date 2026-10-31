@@ -9,6 +9,7 @@ import {
   Freshness,
   Loading,
   Metric,
+  PageHeader,
   Select,
 } from "@/components/ui";
 import { useApi } from "@/hooks/useApi";
@@ -59,28 +60,26 @@ export default function LiquidityPage() {
   const { netLiquidity, components: componentSeries } = liquidityChartSeries(rows);
 
   return (
-    <div className="flex flex-col gap-6">
-      <header className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h1 className="text-xl font-bold text-bright">연준 순유동성 트래커</h1>
-          <p className="mt-1 text-xs text-muted">
-            WALCL − TGA − ON RRP · 출처: FRED 공식 시계열 (주간 갱신)
-          </p>
-        </div>
-        {/* 선택 상자는 위에 이름표가 있어, 가운데 정렬이면 수집 시각 배지가 상자보다 위로 뜹니다(이름표+상자의 가운데).
-            아래 끝을 맞춘 뒤 배지를 상자(33px)와 배지(22.5px) 높이 차의 절반만큼 올려 두 가운데를 한 줄에 둡니다. */}
-        <div className="flex flex-wrap items-end gap-3">
-          <Select label="조회 기간" value={years} onChange={setYears} options={PERIODS} />
-          <div className="pb-[5px]">
-            <Freshness
-              collectedAt={data?.collectedAtKst}
-              ageSeconds={data?.ageSeconds}
-              stale={data?.stale}
-              refreshError={refreshError}
-            />
+    <div className="flex flex-col gap-6 lg:gap-8">
+      <PageHeader
+        title="연준 순유동성 트래커"
+        description="WALCL − TGA − ON RRP · 출처: FRED 공식 시계열 (주간 갱신)"
+        actions={
+          // 선택 상자는 위에 이름표가 있어, 가운데 정렬이면 수집 시각 배지가 상자보다 위로 뜹니다(이름표+상자의 가운데).
+          // 아래 끝을 맞추고 배지를 상자와 같은 높이(lg 미만 44px·lg 40px) 칸의 가운데에 두어 두 가운데를 한 줄에 둡니다.
+          <div className="flex flex-wrap items-end gap-3">
+            <Select label="조회 기간" value={years} onChange={setYears} options={PERIODS} />
+            <div className="flex min-h-11 items-center lg:min-h-10">
+              <Freshness
+                collectedAt={data?.collectedAtKst}
+                ageSeconds={data?.ageSeconds}
+                stale={data?.stale}
+                refreshError={refreshError}
+              />
+            </div>
           </div>
-        </div>
-      </header>
+        }
+      />
 
       {/* 컨트롤(머리말·첫 카드)은 늘 그리고 본문만 로딩·오류로 바꿉니다 — 페이지 전체를 바꾸면 방금 조작한
           선택 상자가 사라지고 키보드 포커스를 잃었습니다(QA-047). */}

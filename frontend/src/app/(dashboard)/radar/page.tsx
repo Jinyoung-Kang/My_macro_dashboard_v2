@@ -13,6 +13,7 @@ import {
   Freshness,
   Loading,
   Metric,
+  PageHeader,
   Select,
   SourceBadge,
   Table,
@@ -80,29 +81,27 @@ export default function RadarPage() {
   );
 
   return (
-    <div className="flex flex-col gap-6">
-      <header className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h1 className="text-xl font-bold text-bright">외국인/기관 수급 레이더 (KRX)</h1>
-          <p className="mt-1 text-xs text-muted">
-            폴백 체인: {(options.data?.fallbackChain ?? ["KIS(장중)", "Daum", "Naver", "LS", "토스(공식)", "PyKrx", "누적 이력"]).join(" → ")}
-          </p>
-        </div>
-        <div className="flex items-center gap-2">
-          <Freshness
-            collectedAt={data?.collectedAtKst}
-            ageSeconds={data?.ageSeconds}
-            stale={data?.stale}
-            refreshError={refreshError}
-          />
-          <Button onClick={reload}>새로고침</Button>
-          {owner && (
-            <Button onClick={() => setShowDiagnostics((value) => !value)}>
-              {showDiagnostics ? "진단 닫기" : "데이터 소스 연결 테스트"}
-            </Button>
-          )}
-        </div>
-      </header>
+    <div className="flex flex-col gap-6 lg:gap-8">
+      <PageHeader
+        title="외국인/기관 수급 레이더 (KRX)"
+        description={<>폴백 체인: {(options.data?.fallbackChain ?? ["KIS(장중)", "Daum", "Naver", "LS", "토스(공식)", "PyKrx", "누적 이력"]).join(" → ")}</>}
+        actions={
+          <>
+            <Freshness
+              collectedAt={data?.collectedAtKst}
+              ageSeconds={data?.ageSeconds}
+              stale={data?.stale}
+              refreshError={refreshError}
+            />
+            <Button onClick={reload}>새로고침</Button>
+            {owner && (
+              <Button onClick={() => setShowDiagnostics((value) => !value)}>
+                {showDiagnostics ? "진단 닫기" : "데이터 소스 연결 테스트"}
+              </Button>
+            )}
+          </>
+        }
+      />
 
       {owner && showDiagnostics && <DiagnosticsPanel />}
 

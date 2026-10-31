@@ -6,6 +6,7 @@ import { lockedFor } from "@/lib/access";
 import { TABS, visibleItems } from "@/lib/nav";
 import { AccountBox } from "./AccountBox";
 import { BuildInfo } from "./BuildInfo";
+import { PageHeader } from "@/components/ui";
 import { LockIcon } from "@/components/ui/icons";
 import { ReadModeNote } from "./ReadMode";
 import { RefreshButton } from "./RefreshButton";
@@ -25,11 +26,8 @@ export function MoreMenu() {
   const user = useSessionUser();
   const items = MORE ? visibleItems(MORE, user) : [];
   return (
-    <div className="flex flex-col gap-6">
-      <header>
-        <h1 className="text-xl font-bold text-text">더보기</h1>
-        <p className="mt-1 text-xs text-text-3">알림·계정·운영 화면과 화면 설정</p>
-      </header>
+    <div className="flex flex-col gap-6 lg:gap-8">
+      <PageHeader title="더보기" description="알림·계정·운영 화면과 화면 설정" />
 
       <section aria-labelledby="more-menus" className="flex flex-col gap-2">
         <h2 id="more-menus" className="text-sm font-semibold text-text-2">메뉴</h2>

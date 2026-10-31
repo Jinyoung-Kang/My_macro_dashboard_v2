@@ -8,6 +8,7 @@ import {
   Freshness,
   Loading,
   Metric,
+  PageHeader,
   Select,
   SourceBadge,
   Table,
@@ -77,25 +78,23 @@ export default function RegimePage() {
   const current = QUADRANTS.find((entry) => entry.code === verdict?.code);
 
   return (
-    <div className="flex flex-col gap-6">
-      <header className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h1 className="text-xl font-bold text-bright">시장 국면</h1>
-          <p className="mt-1 text-xs text-muted">
-            성장·신용 축 × 유동성 축 · 기준일 {data?.asOf ?? EMPTY}
-          </p>
-        </div>
-        <div className="flex items-center gap-2">
-          {/* 자동 갱신이 실패하면 앞서 받은 값을 그대로 보이므로 '새로 읽지 못함'을 붙입니다(QA-104, QA-067과 같음). */}
-          <Freshness refreshError={refreshError} />
-          <Select
-            label="이력 기간"
-            value={years}
-            onChange={setYears}
-            options={["3", "5", "10"].map((value) => ({ value, label: `최근 ${value}년` }))}
-          />
-        </div>
-      </header>
+    <div className="flex flex-col gap-6 lg:gap-8">
+      <PageHeader
+        title="시장 국면"
+        description={<>성장·신용 축 × 유동성 축 · 기준일 {data?.asOf ?? EMPTY}</>}
+        actions={
+          <>
+            {/* 자동 갱신이 실패하면 앞서 받은 값을 그대로 보이므로 '새로 읽지 못함'을 붙입니다(QA-104, QA-067과 같음). */}
+            <Freshness refreshError={refreshError} />
+            <Select
+              label="이력 기간"
+              value={years}
+              onChange={setYears}
+              options={["3", "5", "10"].map((value) => ({ value, label: `최근 ${value}년` }))}
+            />
+          </>
+        }
+      />
 
       {/* 컨트롤(머리말·첫 카드)은 늘 그리고 본문만 로딩·오류로 바꿉니다 — 페이지 전체를 바꾸면 방금 조작한
           선택 상자가 사라지고 키보드 포커스를 잃었습니다(QA-047). */}

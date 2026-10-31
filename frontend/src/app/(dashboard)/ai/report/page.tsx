@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { CopyButton } from "@/components/CopyButton";
-import { Banner, Button, Card, ErrorState, inputClasses, Loading, Select, SourceBadge } from "@/components/ui";
+import { Banner, Button, Card, ErrorState, inputClasses, Loading, PageHeader, Select, SourceBadge } from "@/components/ui";
 import { useApi } from "@/hooks/useApi";
 import { useAsyncAction } from "@/hooks/useAsyncAction";
 import { useElapsedSeconds } from "@/hooks/useElapsedSeconds";
@@ -57,13 +57,11 @@ export default function AiReportPage() {
     report.run({ engineId, reportType: reportType || reportTypes.data?.types?.[0], extraInstruction: extra });
 
   return (
-    <div className="flex flex-col gap-6">
-      <header>
-        <h1 className="text-xl font-bold text-bright">AI 종합 데이터 분석 &amp; 결론 리포트</h1>
-        <p className="mt-1 text-xs text-muted">
-          수집된 데이터만 근거로 삼습니다. 데이터에 없는 수치는 생성하지 않도록 지시합니다.
-        </p>
-      </header>
+    <div className="flex flex-col gap-6 lg:gap-8">
+      <PageHeader
+        title="AI 종합 데이터 분석 & 결론 리포트"
+        description="수집된 데이터만 근거로 삼습니다. 데이터에 없는 수치는 생성하지 않도록 지시합니다."
+      />
 
       {/* 엔진 목록을 받지 못하면 생성 버튼이 이유 없이 꺼져 있었습니다(QA-050). */}
       {engines.error && <ErrorState message={engines.error} onRetry={engines.reload} />}

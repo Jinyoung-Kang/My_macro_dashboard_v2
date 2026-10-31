@@ -14,6 +14,7 @@ import {
   Freshness,
   Loading,
   Metric,
+  PageHeader,
   SourceBadge,
   Table,
 } from "@/components/ui";
@@ -90,37 +91,36 @@ export default function MacroPage() {
   const data = overview.data;
 
   return (
-    <div className="flex flex-col gap-6">
-      <header className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h1 className="text-xl font-bold text-bright">거시경제 매크로 지표</h1>
-          <p className="mt-1 text-xs text-muted">
-            환율·국채·원자재·지수, 장단기 금리차, 신용 리스크, 심화 지표 6종
+    <div className="flex flex-col gap-6 lg:gap-8">
+      <PageHeader
+        title="거시경제 매크로 지표"
+        description="환율·국채·원자재·지수, 장단기 금리차, 신용 리스크, 심화 지표 6종"
+        actions={
+          <>
+            <AutoRefreshControl
+              seconds={refreshSeconds}
+              onChange={setRefreshSeconds}
+              loadedAt={overview.loadedAt}
+              loading={overview.loading}
+            />
+            <Freshness
+              collectedAt={data?.collectedAtKst}
+              ageSeconds={data?.ageSeconds}
+              stale={data?.stale}
+              refreshError={overview.refreshError}
+            />
+          </>
+        }
+      >
+        {/* 고른 간격보다 값이 늦게 바뀌는 이유를 화면에서 바로 알 수 있게 적습니다.
+            적지 않으면 "10초로 해 뒀는데 숫자가 그대로"로 읽힙니다. */}
+        {live && (
+          <p className="mt-1 text-[11px] text-muted">
+            카드 시세는 최대 1분마다 새로 수집됩니다. 출처(Yahoo·TradingView)가
+            폴링·지연 시세라 그보다 빠르게는 바뀌지 않습니다.
           </p>
-          {/* 고른 간격보다 값이 늦게 바뀌는 이유를 화면에서 바로 알 수 있게 적습니다.
-              적지 않으면 "10초로 해 뒀는데 숫자가 그대로"로 읽힙니다. */}
-          {live && (
-            <p className="mt-1 text-[11px] text-muted">
-              카드 시세는 최대 1분마다 새로 수집됩니다. 출처(Yahoo·TradingView)가
-              폴링·지연 시세라 그보다 빠르게는 바뀌지 않습니다.
-            </p>
-          )}
-        </div>
-        <div className="flex flex-wrap items-center gap-3">
-          <AutoRefreshControl
-            seconds={refreshSeconds}
-            onChange={setRefreshSeconds}
-            loadedAt={overview.loadedAt}
-            loading={overview.loading}
-          />
-          <Freshness
-            collectedAt={data?.collectedAtKst}
-            ageSeconds={data?.ageSeconds}
-            stale={data?.stale}
-            refreshError={overview.refreshError}
-          />
-        </div>
-      </header>
+        )}
+      </PageHeader>
 
       {/* 자동 갱신 간격(머리말)은 늘 그리고 본문만 로딩·오류로 바꿉니다 — 1분 경계를 넘으면 경로(live)가 바뀌어
           페이지 전체가 로딩으로 바뀌고 방금 조작한 선택 상자가 사라졌습니다(QA-047). */}

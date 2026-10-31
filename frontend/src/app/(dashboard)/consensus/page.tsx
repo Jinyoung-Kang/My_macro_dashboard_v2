@@ -9,6 +9,7 @@ import {
   ErrorState,
   Loading,
   Metric,
+  PageHeader,
   Select,
   SourceBadge,
   Table,
@@ -59,13 +60,8 @@ export default function ConsensusPage() {
   const chartData = consensusBars(data?.rows ?? []);
 
   return (
-    <div className="flex flex-col gap-6">
-      <header>
-        <h1 className="text-xl font-bold text-bright">기관 13F Money 교집합</h1>
-        <p className="mt-1 text-xs text-muted">
-          여러 기관이 공통 보유한 종목 · 동시 매수/매도 집중도
-        </p>
-      </header>
+    <div className="flex flex-col gap-6 lg:gap-8">
+      <PageHeader title="기관 13F Money 교집합" description="여러 기관이 공통 보유한 종목 · 동시 매수/매도 집중도" />
 
       <Card title="분석 대상" subtitle="전체 기관이 선택된 상태에서 시작합니다. 빼고 싶은 기관을 누르세요(전부 빼면 다시 전체).">
         <div className="flex flex-wrap gap-2">

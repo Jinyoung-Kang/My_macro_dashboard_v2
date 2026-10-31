@@ -10,6 +10,7 @@ import {
   Freshness,
   Loading,
   Metric,
+  PageHeader,
   Select,
   SourceBadge,
 } from "@/components/ui";
@@ -50,13 +51,8 @@ export default function CorrelationPage() {
   }));
 
   return (
-    <div className="flex flex-col gap-6">
-      <header>
-        <h1 className="text-xl font-bold text-bright">지표 상관관계</h1>
-        <p className="mt-1 text-xs text-muted">
-          이미 수집한 지표끼리 엮어 봅니다 · 롤링 상관계수 + 산점도 · 상관은 인과가 아닙니다
-        </p>
-      </header>
+    <div className="flex flex-col gap-6 lg:gap-8">
+      <PageHeader title="지표 상관관계" description="이미 수집한 지표끼리 엮어 봅니다 · 롤링 상관계수 + 산점도 · 상관은 인과가 아닙니다" />
 
       {/* 자동 갱신이 실패하면 앞서 받은 값을 그대로 보이므로 '새로 읽지 못함'을 붙입니다(QA-104, QA-067과 같음). */}
       <Card title="비교할 지표" actions={<Freshness refreshError={refreshError} />}>

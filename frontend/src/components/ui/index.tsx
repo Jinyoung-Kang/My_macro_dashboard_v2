@@ -63,6 +63,35 @@ export function Card({
   );
 }
 
+/**
+ * 화면 머리 — h1(좁은 화면 24px, sm 이상 글자 단계 title-1 28px) · 설명(15px 보조 글) · 오른쪽 동작(신선도·고르기·단추).
+ * 화면마다 h1 모양을 따로 적던 곳을 하나로 모읍니다(명세 §7-1). 설명 아래에 덧붙일 줄(예: 매크로 자동 갱신 안내)은 children으로 넘깁니다.
+ * 동작은 넓은 화면에서 제목 묶음의 아래 끝에 맞춰 오른쪽에 두고(이름표가 위에 있는 고르기 상자의 상자가 설명 줄과 한 줄에 놓임),
+ * 자리가 모자라면 제목 아래로 내려갑니다.
+ */
+export function PageHeader({
+  title,
+  description,
+  actions,
+  children,
+}: {
+  title: ReactNode;
+  description?: ReactNode;
+  actions?: ReactNode;
+  children?: ReactNode;
+}) {
+  return (
+    <header className="flex flex-wrap items-end justify-between gap-x-6 gap-y-3">
+      <div className="min-w-0">
+        <h1 className="text-2xl font-bold text-text sm:text-title-1">{title}</h1>
+        {description ? <p className="mt-1 text-body-md text-text-2">{description}</p> : null}
+        {children}
+      </div>
+      {actions ? <div className="flex min-w-0 flex-wrap items-center gap-2">{actions}</div> : null}
+    </header>
+  );
+}
+
 /** 지표 카드 (구버전 st.metric에 해당) — 겉모양은 새 통계 타일(patterns/StatTile)과 같습니다. */
 export function Metric({
   label,

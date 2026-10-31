@@ -1,7 +1,7 @@
 "use client";
 
 import { FormEvent, useState } from "react";
-import { Banner, Button, Card, ErrorState, Freshness, inputClasses, Loading, Select, Table } from "@/components/ui";
+import { Banner, Button, Card, ErrorState, Freshness, inputClasses, Loading, PageHeader, Select, Table } from "@/components/ui";
 import { useApi } from "@/hooks/useApi";
 import { useAsyncAction } from "@/hooks/useAsyncAction";
 import { useSessionUser } from "@/hooks/useSessionUser";
@@ -63,13 +63,11 @@ export default function AlertsPage() {
 
   const items = inbox.data?.items ?? [];
   return (
-    <div className="flex flex-col gap-6">
-      <header>
-        <h1 className="text-xl font-bold text-bright">알림</h1>
-        <p className="mt-1 text-xs text-muted">
-          알림은 이 화면에만 쌓입니다(메일·메신저로 보내지 않음). 대시보드를 열면 위쪽 알림 벨과 탭 제목에 읽지 않은 수가 보입니다.
-        </p>
-      </header>
+    <div className="flex flex-col gap-6 lg:gap-8">
+      <PageHeader
+        title="알림"
+        description="알림은 이 화면에만 쌓입니다(메일·메신저로 보내지 않음). 대시보드를 열면 위쪽 알림 벨과 탭 제목에 읽지 않은 수가 보입니다."
+      />
 
       <Card
         title="알림함"

@@ -9,6 +9,7 @@ import {
   Freshness,
   Loading,
   Metric,
+  PageHeader,
   Select,
   SourceBadge,
   Table,
@@ -37,21 +38,19 @@ export default function ScorecardPage() {
   );
 
   return (
-    <div className="flex flex-col gap-6">
-      <header className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h1 className="text-xl font-bold text-bright">종목 스코어카드</h1>
-          <p className="mt-1 text-xs text-muted">
-            모멘텀 · 변동성 · 낙폭 · 추세를 {data?.universeLabel ?? "대형주"} 대비 백분위로
-          </p>
-        </div>
-        <Freshness
-          collectedAt={data?.collectedAtKst}
-          ageSeconds={data?.ageSeconds}
-          stale={data?.stale}
-          refreshError={refreshError}
-        />
-      </header>
+    <div className="flex flex-col gap-6 lg:gap-8">
+      <PageHeader
+        title="종목 스코어카드"
+        description={<>모멘텀 · 변동성 · 낙폭 · 추세를 {data?.universeLabel ?? "대형주"} 대비 백분위로</>}
+        actions={
+          <Freshness
+            collectedAt={data?.collectedAtKst}
+            ageSeconds={data?.ageSeconds}
+            stale={data?.stale}
+            refreshError={refreshError}
+          />
+        }
+      />
 
       {/*
         빠진 것을 결과보다 **먼저** 보여 줍니다. 점수를 본 뒤에 "사실 재무는

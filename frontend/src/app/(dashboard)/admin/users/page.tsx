@@ -1,7 +1,7 @@
 "use client";
 
 import { FormEvent, useState } from "react";
-import { Banner, Button, Card, ErrorState, inputClasses, Loading, Select, Table } from "@/components/ui";
+import { Banner, Button, Card, ErrorState, inputClasses, Loading, PageHeader, Select, Table } from "@/components/ui";
 import { CheckIcon, StatusIcon } from "@/components/ui/icons";
 import { useApi } from "@/hooks/useApi";
 import { useAsyncAction } from "@/hooks/useAsyncAction";
@@ -60,11 +60,8 @@ export default function AdminUsersPage() {
   if (users.error) return <ErrorState message={users.error} onRetry={users.reload} />;
 
   return (
-    <div className="flex flex-col gap-6">
-      <header>
-        <h1 className="text-xl font-bold text-bright">사용자 관리</h1>
-        <p className="mt-1 text-xs text-muted">역할(운영자·회원)과 등급(무료·유료)을 정합니다. 자기 운영자 역할은 내릴 수 없습니다.</p>
-      </header>
+    <div className="flex flex-col gap-6 lg:gap-8">
+      <PageHeader title="사용자 관리" description="역할(운영자·회원)과 등급(무료·유료)을 정합니다. 자기 운영자 역할은 내릴 수 없습니다." />
 
       <Card title="사용자" subtitle={`${users.data?.users.length ?? 0}명`}>
         {update.error && <Banner tone="warn">{update.error}</Banner>}

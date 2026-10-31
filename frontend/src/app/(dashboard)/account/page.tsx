@@ -2,7 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { FormEvent, useEffect, useState } from "react";
-import { Banner, Button, Card, ErrorState, inputClasses, Loading, Table } from "@/components/ui";
+import { Banner, Button, Card, ErrorState, inputClasses, Loading, PageHeader, Table } from "@/components/ui";
 import { StatusDot } from "@/components/ui/icons";
 import { useApi } from "@/hooks/useApi";
 import { useAsyncAction } from "@/hooks/useAsyncAction";
@@ -62,13 +62,8 @@ export default function AccountPage() {
   if (session.error) return <ErrorState message={session.error} onRetry={session.reload} />;
 
   return (
-    <div className="flex flex-col gap-6">
-      <header>
-        <h1 className="text-xl font-bold text-bright">내 계정</h1>
-        <p className="mt-1 text-xs text-muted">
-          {user?.email} · {roleLabel(user)}
-        </p>
-      </header>
+    <div className="flex flex-col gap-6 lg:gap-8">
+      <PageHeader title="내 계정" description={<>{user?.email} · {roleLabel(user)}</>} />
 
       {local && (
         <Banner tone="info">

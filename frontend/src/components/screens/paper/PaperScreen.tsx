@@ -2,7 +2,7 @@
 
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
-import { Banner, Card, ErrorState, Freshness, Loading, underlineTabClasses } from "@/components/ui";
+import { Banner, Card, ErrorState, Freshness, Loading, PageHeader, underlineTabClasses } from "@/components/ui";
 import { useApi } from "@/hooks/useApi";
 import { endpoints } from "@/lib/endpoints";
 import { CLAUDE2_LIMITS, isTimedBook, PAPER_SOURCES, PAPER_TABS, type PaperTabKey } from "@/lib/paper";
@@ -97,27 +97,27 @@ export default function PaperPage({
   };
 
   return (
-    <div className="flex flex-col gap-6">
-      <header className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <h1 className="text-xl font-bold text-bright">모의 알고리즘 매매({korea ? "한국" : "미국"})</h1>
-          {korea ? (
-            <p className="mt-1 text-xs text-muted">
+    <div className="flex flex-col gap-6 lg:gap-8">
+      <PageHeader
+        title={`모의 알고리즘 매매(${korea ? "한국" : "미국"})`}
+        description={
+          korea ? (
+            <>
               같은 돈·같은 날 출발한 네 계좌 — 규칙 · Claude · KODEX 200(069500) · 한국 60/40(069500 60%·153130 40%)
               {krInitialCash(data) ? ` · 계좌마다 ${krInitialCash(data)}` : ""}
               {data?.startDate ? ` · 출발 ${data.startDate}` : ""} · 출발일 밤 결정으로 다음 KR 거래일 시가에 함께 출발
-            </p>
+            </>
           ) : (
-            <p className="mt-1 text-xs text-muted">
+            <>
               같은 돈·같은 날 출발한 네 계좌 — 규칙 · Claude 계좌1 · SPY(100%) · 60/40(SPY 60%·SHY 40%)
               {data?.startDate ? ` · 출발 ${data.startDate}` : ""}
               {book2 ? " · Claude 계좌2(체결 시점 실험)는 같은 돈으로 늦게, 앞으로 체결로 출발" : ""}
-            </p>
-          )}
-        </div>
-        {/* 자동 갱신이 실패하면 앞서 받은 값을 그대로 보이므로 '새로 읽지 못함'을 붙입니다(QA-104, QA-067과 같음). */}
-        <Freshness refreshError={refreshError} />
-      </header>
+            </>
+          )
+        }
+        // 자동 갱신이 실패하면 앞서 받은 값을 그대로 보이므로 '새로 읽지 못함'을 붙입니다(QA-104, QA-067과 같음).
+        actions={<Freshness refreshError={refreshError} />}
+      />
 
       {/* 시장 고르기(미국 | 한국 두 링크)는 셸의 하위 메뉴 줄이 맡습니다(lib/nav) — 화면 안에 또 두면 두 줄로 겹쳐 보였습니다. */}
       {loading && !data && <Loading label="장부를 읽는 중…" />}

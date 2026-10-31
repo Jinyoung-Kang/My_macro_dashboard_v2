@@ -9,6 +9,7 @@ import {
   Freshness,
   Loading,
   Metric,
+  PageHeader,
   Select,
   SourceBadge,
   Table,
@@ -45,20 +46,18 @@ export default function CotPage() {
   );
 
   return (
-    <div className="flex flex-col gap-6">
-      <header className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h1 className="text-xl font-bold text-bright">글로벌 투기세력 (COT)</h1>
-          <p className="mt-1 text-xs text-muted">
-            CFTC 공개 데이터 · 비상업(투기) / 상업(헤저) / 비보고(소액) 순포지션
-          </p>
-        </div>
-        <Freshness
-          collectedAt={overview.data?.collectedAtKst}
-          ageSeconds={overview.data?.ageSeconds}
-          refreshError={overview.refreshError}
-        />
-      </header>
+    <div className="flex flex-col gap-6 lg:gap-8">
+      <PageHeader
+        title="글로벌 투기세력 (COT)"
+        description="CFTC 공개 데이터 · 비상업(투기) / 상업(헤저) / 비보고(소액) 순포지션"
+        actions={
+          <Freshness
+            collectedAt={overview.data?.collectedAtKst}
+            ageSeconds={overview.data?.ageSeconds}
+            refreshError={overview.refreshError}
+          />
+        }
+      />
 
       {overview.data && !overview.data.available && (
         <Banner tone="warn">COT 저장본이 없습니다. 수집기의 slow 작업을 실행하세요.</Banner>

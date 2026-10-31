@@ -8,6 +8,7 @@ import {
   ErrorState,
   Freshness,
   Loading,
+  PageHeader,
   Select,
   SourceBadge,
   Table,
@@ -47,21 +48,19 @@ export default function SectorPage() {
   ).bars.sort((a, b) => b.value - a.value);
 
   return (
-    <div className="flex flex-col gap-6">
-      <header className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h1 className="text-xl font-bold text-bright">섹터 &amp; 자산군 로테이션 맵</h1>
-          <p className="mt-1 text-xs text-muted">
-            S&amp;P 11개 섹터 + 글로벌 자산군 모멘텀 · 벤치마크 {data?.benchmark ?? "SPY"}
-          </p>
-        </div>
-        <Freshness
-          collectedAt={data?.collectedAtKst}
-          ageSeconds={data?.ageSeconds}
-          stale={data?.stale}
-          refreshError={refreshError}
-        />
-      </header>
+    <div className="flex flex-col gap-6 lg:gap-8">
+      <PageHeader
+        title="섹터 & 자산군 로테이션 맵"
+        description={<>S&amp;P 11개 섹터 + 글로벌 자산군 모멘텀 · 벤치마크 {data?.benchmark ?? "SPY"}</>}
+        actions={
+          <Freshness
+            collectedAt={data?.collectedAtKst}
+            ageSeconds={data?.ageSeconds}
+            stale={data?.stale}
+            refreshError={refreshError}
+          />
+        }
+      />
 
       {/* 선택 상자가 있는 첫 카드는 늘 그리고 본문만 로딩·오류로 바꿉니다 — 페이지 전체를 바꾸면 방금 조작한
           선택 상자가 사라지고 키보드 포커스를 잃었습니다(QA-047). */}
