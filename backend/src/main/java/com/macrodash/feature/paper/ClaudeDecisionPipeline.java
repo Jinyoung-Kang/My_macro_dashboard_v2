@@ -934,6 +934,17 @@ final class ClaudeDecisionPipeline {
      */
     void recordAfterResponse(LocalDate asOf, String kind, SettingsRow row, ClaudeSettings claude,
                                      boolean pricesFinal, Attempt attempt, Decision retrying, RuntimeException cause) {
+        recordAfterResponse(asOf, kind, row, claude, pricesFinal, attempt, retrying, cause, null);
+    }
+
+    /**
+     * {@link #recordAfterResponse(LocalDate, String, SettingsRow, ClaudeSettings, boolean, Attempt, Decision, RuntimeException)}에 응답의
+     * {@code checkpoint} 칸(장중 확인 요청 — {@link PaperCheckpointJob}의 일반 응답과 같은 모양, 기준 거래일 뒤)을 더한 것. null이면 칸을 넣지 않습니다
+     * (아침 결정 — 응답이 그대로).
+     */
+    void recordAfterResponse(LocalDate asOf, String kind, SettingsRow row, ClaudeSettings claude,
+                                     boolean pricesFinal, Attempt attempt, Decision retrying, RuntimeException cause,
+                                     JsonNode checkpointRequest) {
         String message = clip("응답을 받은 뒤 검증·저장 중 오류(과금된 응답 — 다시 부르지 않음): " + cause, ERROR_CHARS);
         boolean checkpoint = RuleBookService.CHECKPOINT.equals(kind);
         try {
@@ -945,6 +956,9 @@ final class ClaudeDecisionPipeline {
             response.put("book", book());
             response.put("kind", kind);
             response.put("asOfTradingDate", asOf.toString());
+            if (checkpointRequest != null) {
+                response.put("checkpoint", checkpointRequest);
+            }
             Map<String, Object> failure = new LinkedHashMap<>();
             failure.put("status", STATUS_API_ERROR);
             failure.put("stage", "AFTER_RESPONSE");

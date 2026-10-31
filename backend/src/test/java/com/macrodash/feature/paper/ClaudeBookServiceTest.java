@@ -1380,6 +1380,7 @@ class ClaudeBookServiceTest {
         assertThat(d.error()).contains("응답을 받은 뒤", "paper_book_state");
         assertThat(d.response().path("failure").path("stage").asString()).isEqualTo("AFTER_RESPONSE");
         assertThat(d.response().path("measure").toString()).isEqualTo(MEASURE_JSON);
+        assertThat(d.response().has("checkpoint")).as("아침 결정의 실패 행은 응답 그대로 — checkpoint 칸은 장중 확인만").isFalse();
         assertThat(store.ordersOf(PaperBooks.CLAUDE)).isEmpty();
         assertThat(callsToday()).isEqualTo(1);
 

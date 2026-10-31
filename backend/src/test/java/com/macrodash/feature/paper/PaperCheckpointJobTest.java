@@ -434,8 +434,7 @@ class PaperCheckpointJobTest {
     }
 
     @Test
-    @Disabled("재현 — 응답 뒤 쓰기 실패로 남긴 확인 결정(AFTER_RESPONSE)의 응답에 checkpoint 칸이 없어 상세의 요청 줄이 '세션 — · — · — · 지연 —'")
-    @DisplayName("응답 뒤 쓰기 실패 결정(AFTER_RESPONSE)도 일반 실패 응답과 같은 checkpoint 칸(세션·시각·피드·아침 결정·지연)을 남김 재현")
+    @DisplayName("응답 뒤 쓰기 실패 결정(AFTER_RESPONSE)도 일반 실패 응답과 같은 checkpoint 칸(세션·시각·피드·아침 결정·지연)을 남김")
     void afterResponseFailureKeepsTheCheckpointRequest() {
         failDone = 1;
         runAt(job(true), T.plus(Duration.ofMinutes(3)));

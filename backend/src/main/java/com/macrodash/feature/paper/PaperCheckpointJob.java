@@ -345,7 +345,8 @@ public class PaperCheckpointJob {
         } catch (RuntimeException e) {
             // 과금된 응답 — 쓰기가 되돌려져도 다시 부르지 않음(§5-2 재시도 없음, 리뷰 F1·OPS-1). 실패 결정 행을 따로 남기고 행을 DONE으로.
             called.add(key(c));
-            pipeline.recordAfterResponse(asOf, RuleBookService.CHECKPOINT, row, claudeSettings, false, attempt, null, e);
+            pipeline.recordAfterResponse(asOf, RuleBookService.CHECKPOINT, row, claudeSettings, false, attempt, null, e,
+                    checkpointRequest(c, lagSeconds));
             try {
                 store.decisionFor(PaperBooks.CLAUDE2, asOf, RuleBookService.CHECKPOINT).ifPresent(d -> store.markCheckpoint(
                         PaperBooks.CLAUDE2, session, PaperBooks.CHECKPOINT_PLANNED, PaperBooks.CHECKPOINT_DONE,
@@ -467,12 +468,7 @@ public class PaperCheckpointJob {
         response.put("book", PaperBooks.CLAUDE2);
         response.put("kind", RuleBookService.CHECKPOINT);
         response.put("asOfTradingDate", asOf.toString());
-        ObjectNode request = response.putObject("checkpoint");
-        request.put("session", c.sessionDate().toString());
-        request.put("atEt", CheckpointPacket.clock(c.atEt()));
-        request.put("feed", c.feed());
-        request.put("sourceDecisionId", c.sourceDecisionId());
-        request.put("lagSeconds", lag);
+        response.set("checkpoint", checkpointRequest(c, lag));
         response.put("retry", false);
         response.set("framework", mapper.valueToTree(FrameworkService.decisionView(attempt.frame())));
         Decision decision = pipeline.decisionRow(0, asOf, RuleBookService.CHECKPOINT, status, row, claudeSettings, attempt,
@@ -489,6 +485,17 @@ public class PaperCheckpointJob {
             log.warn("장중 확인 {} 행이 그사이 PLANNED가 아니게 됨 — 결정 {}은 남김", c.sessionDate(), id);
         }
         return id;
+    }
+
+    /** 확인 결정 응답의 {@code checkpoint} 칸 — 그 요청(세션·시각·피드·아침 결정)과 감시 저장본 지연. 응답 뒤 쓰기 실패 행도 같은 칸을 남깁니다. */
+    private ObjectNode checkpointRequest(Checkpoint c, Integer lag) {
+        ObjectNode request = mapper.createObjectNode();
+        request.put("session", c.sessionDate().toString());
+        request.put("atEt", CheckpointPacket.clock(c.atEt()));
+        request.put("feed", c.feed());
+        request.put("sourceDecisionId", c.sourceDecisionId());
+        request.put("lagSeconds", lag);
+        return request;
     }
 
     /**

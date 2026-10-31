@@ -2870,7 +2870,7 @@ export interface ClaudeDecisionView {
 
 /** 장중 확인 결정의 본문(표시 문자열 — 서버 값 그대로, 화면은 계산하지 않음). */
 export interface CheckpointDecisionView {
-  /** "세션 2026-11-02 · 10:30 ET · 감시 1분봉(5분 수집, 잰 지연) · 지연 1분 15초". */
+  /** "세션 2026-11-02 · 10:30 ET · 감시 1분봉(5분 수집, 잰 지연) · 지연 1분 15초" — 응답에 checkpoint 칸이 없으면 "—" 하나. */
   request: string;
   /** 유지(KEEP)·대신함(REPLACE) — 응답이 없으면 null. */
   action: Badge | null;
@@ -3389,12 +3389,15 @@ function checkpointDecisionView(record: Record<string, unknown> | null): Checkpo
     if (textOf(expected.note)) expectedLines.push(textOf(expected.note) as string);
   }
   return {
-    request: [
-      `세션 ${textOf(request.session) ?? EMPTY}`,
-      textOf(request.atEt) ? `${textOf(request.atEt)} ET` : EMPTY,
-      checkpointFeedLabel(textOf(request.feed)),
-      `지연 ${lag === null ? EMPTY : formatLatency(lag * 1000)}`,
-    ].join(" · "),
+    // checkpoint 칸이 없는 응답(이 칸을 남기기 전의 응답 뒤 쓰기 실패 행)은 빈 칸 넷을 늘어놓지 않고 '—' 하나.
+    request: isRecord(record?.checkpoint)
+      ? [
+        `세션 ${textOf(request.session) ?? EMPTY}`,
+        textOf(request.atEt) ? `${textOf(request.atEt)} ET` : EMPTY,
+        checkpointFeedLabel(textOf(request.feed)),
+        `지연 ${lag === null ? EMPTY : formatLatency(lag * 1000)}`,
+      ].join(" · ")
+      : EMPTY,
     action: action === "KEEP"
       ? { key: "KEEP", label: "그대로 둠(KEEP)", className: TONE.muted, title: "아침 결정의 대기 주문을 바꾸지 않았습니다." }
       : action === "REPLACE"

@@ -576,6 +576,15 @@ describe("🧪 장중 확인(단계 2)", () => {
     expect(failed.hasResponse).toBe(false);
     expect(failed.noResponse).toContain("장중 확인은 재시도하지 않습니다");
     expect(failed.checkpoint?.action).toBeNull();
+    expect(failed.checkpoint?.request).toBe("—");   // checkpoint 칸이 없는 응답 — 빈 칸 넷이 아니라 '—' 하나
+    const afterResponse = claudeDecisionView({
+      book: "claude2", kind: "CHECKPOINT", status: "API_ERROR",
+      response: {
+        summary: "응답을 받은 뒤 검증·저장 중 오류 — 장중 확인 재시도 없음(아침 주문 그대로)", failure: { status: "API_ERROR", stage: "AFTER_RESPONSE" },
+        checkpoint: { session: "2026-11-02", atEt: "10:30", feed: "MINUTE", sourceDecisionId: 40, lagSeconds: 75 },
+      },
+    });
+    expect(afterResponse.checkpoint?.request).toBe("세션 2026-11-02 · 10:30 ET · 감시 1분봉(5분 수집, 잰 지연) · 지연 1분 15초");
 
     const morning = claudeDecisionView({
       book: "claude2", kind: "SCHEDULED", status: "OK",
