@@ -955,6 +955,58 @@ class PaperQueryServiceTest {
         assertThat(after).containsEntry("session", "2026-11-03").containsEntry("today", null).containsEntry("watch", null);
     }
 
+    @Test
+    @org.junit.jupiter.api.Disabled("리뷰 N1·N2 재현 — 상태의 checkpoint.enabled가 claude2.enabled를 보지 않고, watch가 다른 확인의 감시 저장본도 실음. 수정 커밋에서 뗌")
+    @org.junit.jupiter.api.DisplayName("장중 확인 상태: enabled는 claude2.enabled와 claude2.checkpoints가 모두 켜졌을 때만(작업의 CHECKPOINTS_OFF와 같은 판정), watch는 오늘 행이 MINUTE이고 감시 저장본이 그 확인(계좌·세션·시각)의 것일 때만")
+    @SuppressWarnings("unchecked")
+    void claude2CheckpointStatusFollowsTheJob() {
+        initWithBenchmarks();
+        tools.jackson.databind.node.ObjectNode claude2 = (tools.jackson.databind.node.ObjectNode) store.settings.body()
+                .get("claude2");
+        claude2.put("checkpoints", true).put("enabled", false);
+        java.time.LocalDate e = java.time.LocalDate.of(2026, 11, 2);
+        long source = store.insertDecisionIfAbsent(new com.macrodash.store.PaperStore.Decision(0, PaperBooks.CLAUDE2,
+                java.time.LocalDate.of(2026, 10, 30), RuleBookService.SCHEDULED, null, "OK", "claude-sonnet-5-5", 0, 1, null,
+                null, null, null, null, PaperFixtures.MAPPER.createObjectNode(), null, null, null, true, 5L, 0)).orElseThrow();
+        store.upsertPlannedCheckpoint(new com.macrodash.store.PaperStore.Checkpoint(PaperBooks.CLAUDE2, e,
+                java.time.LocalTime.of(10, 30), "MINUTE", List.of("AAPL"), "갭 유지?", source, null, "PLANNED", null, null,
+                null, null, null));
+        tools.jackson.databind.node.ObjectNode yesterday = PaperFixtures.MAPPER.createObjectNode().put("contract", 1)
+                .put("lagSeconds", 40);
+        yesterday.putObject("checkpoint").put("book", PaperBooks.CLAUDE2).put("sessionDate", "2026-10-30").put("atEt", "10:30");
+        when(marketData.watchUs()).thenReturn(Optional.of(new com.macrodash.store.Snapshot(
+                com.macrodash.store.Datasets.SNAP_PAPER_WATCH_US, yesterday, "snapshot", "OK", null,
+                Instant.parse("2026-10-30T14:45:00Z"))));
+        PaperQueryService live = new PaperQueryService(store, marketData, PaperFixtures.quietReader(),
+                PaperFixtures.settings(store), PaperFixtures.config(),
+                Clock.fixed(Instant.parse("2026-11-02T15:40:00Z"), ZoneOffset.UTC));
+        Map<String, Object> off = (Map<String, Object>) ((Map<String, Object>) live.status().get(PaperBooks.CLAUDE2))
+                .get("checkpoint");
+        assertThat(off).as("claude2.enabled가 꺼지면 작업은 창 뒤 SKIPPED CHECKPOINTS_OFF").containsEntry("enabled", false);
+        assertThat(off.get("watch")).as("다른 확인(10-30)의 저장본 — 오늘 지연이 아님").isNull();
+
+        claude2.put("enabled", true);
+        tools.jackson.databind.node.ObjectNode same = PaperFixtures.MAPPER.createObjectNode().put("contract", 1)
+                .put("lagSeconds", 80);
+        same.putObject("checkpoint").put("book", PaperBooks.CLAUDE2).put("sessionDate", "2026-11-02").put("atEt", "10:30");
+        when(marketData.watchUs()).thenReturn(Optional.of(new com.macrodash.store.Snapshot(
+                com.macrodash.store.Datasets.SNAP_PAPER_WATCH_US, same, "snapshot", "OK", null,
+                Instant.parse("2026-11-02T15:36:00Z"))));
+        Map<String, Object> on = (Map<String, Object>) ((Map<String, Object>) live.status().get(PaperBooks.CLAUDE2))
+                .get("checkpoint");
+        assertThat(on).containsEntry("enabled", true);
+        assertThat((Map<String, Object>) on.get("watch")).containsEntry("lagSeconds", 80);
+
+        // 오늘 행이 HOURLY면 감시 저장본이 그 세션·시각이어도 싣지 않음(그 확인은 감시 1분봉을 쓰지 않음).
+        store.checkpoints.clear();
+        store.upsertPlannedCheckpoint(new com.macrodash.store.PaperStore.Checkpoint(PaperBooks.CLAUDE2, e,
+                java.time.LocalTime.of(10, 30), "HOURLY", List.of(), "갭 유지?", source, null, "PLANNED", null, null,
+                null, null, null));
+        Map<String, Object> hourly = (Map<String, Object>) ((Map<String, Object>) live.status().get(PaperBooks.CLAUDE2))
+                .get("checkpoint");
+        assertThat(hourly.get("watch")).isNull();
+    }
+
     /** null 값을 담는 항목(Map.entry는 null을 받지 않음). */
     private static Map.Entry<String, Object> entry(String key, Object value) {
         return new java.util.AbstractMap.SimpleEntry<>(key, value);

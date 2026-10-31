@@ -12,8 +12,10 @@ import com.macrodash.store.PaperStore.Order;
 import com.macrodash.store.PaperStore.Position;
 import com.macrodash.store.Snapshot;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.springframework.dao.TransientDataAccessResourceException;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.node.ObjectNode;
 
@@ -93,10 +95,33 @@ class PaperCheckpointJobTest {
     private final List<String[]> sent = new ArrayList<>();
     private final AtomicReference<Runnable> duringCall = new AtomicReference<>();
     private AiService.StructuredResult answer;
+    /** 심는 쓰기 실패(DB 순간 장애) — 남은 횟수만큼 행 DONE 표시·CHECKPOINT 결정 넣기가 실패합니다. */
+    private int failDone;
+    private int failCheckpointInsert;
 
     @BeforeEach
     void setUp() {
-        store = new FakePaperStore();
+        store = new FakePaperStore() {
+            @Override
+            public int markCheckpoint(String code, LocalDate session, String fromStatus, String status, String reason,
+                                      Long checkpointDecisionId, Integer lagSeconds, Instant calledAt) {
+                if (PaperBooks.CHECKPOINT_DONE.equals(status) && failDone > 0) {
+                    failDone--;
+                    throw new TransientDataAccessResourceException("시험: DONE 쓰기 중 DB 순간 장애");
+                }
+                return super.markCheckpoint(code, session, fromStatus, status, reason, checkpointDecisionId, lagSeconds,
+                        calledAt);
+            }
+
+            @Override
+            public Optional<Long> insertDecisionIfAbsent(Decision d) {
+                if (RuleBookService.CHECKPOINT.equals(d.kind()) && failCheckpointInsert > 0) {
+                    failCheckpointInsert--;
+                    throw new TransientDataAccessResourceException("시험: 확인 결정 넣기 중 DB 순간 장애");
+                }
+                return super.insertDecisionIfAbsent(d);
+            }
+        };
         clock = new MovableClock(T.plus(Duration.ofMinutes(3)));
         reader = PaperFixtures.quietReader();
         marketData = mock(PaperMarketData.class);
@@ -374,6 +399,67 @@ class PaperCheckpointJobTest {
         runAt(job, T.plus(Duration.ofMinutes(10)));
         assertThat(sent).hasSize(1);
         assertThat(ClaudeBookService.claude2CallsInCycle(store, D)).isEqualTo(2);
+    }
+
+    @Test
+    @Disabled("리뷰 F1·OPS-1 재현 — 과금된 호출 뒤 쓰기 트랜잭션이 실패하면 결정 행·DONE이 함께 되돌려져 다음 주기에 다시 부름. 수정 커밋에서 뗌")
+    @DisplayName("재시도 없음(쓰기 실패): 응답을 받은 뒤 쓰기(행 DONE·확인 결정 넣기)가 DB 순간 장애로 실패해도 다음 주기에 다시 부르지 않음 — 실패 결정 행(API_ERROR·AFTER_RESPONSE)이 따로 남고 행 DONE, 호출·사용량 1")
+    void writeFailureAfterTheCallDoesNotCallAgain() {
+        failDone = 1;
+        PaperCheckpointJob job = job(true);
+        PaperCheckpointJob.Outcome first = runAt(job, T.plus(Duration.ofMinutes(3)));
+        assertThat(first.error()).contains("DONE 쓰기 중 DB 순간 장애");
+        runAt(job, T.plus(Duration.ofMinutes(4)));
+        runAt(job, T.plus(Duration.ofMinutes(10)));
+        assertThat(sent.size()).as("과금된 응답을 버리고 다시 부르지 않음").isEqualTo(1);
+        assertThat(store.apiUsage(LocalDate.of(2026, 11, 3)).map(ApiUsage::calls)).contains(1);
+        Decision d = checkpointDecision();
+        assertThat(d.status()).isEqualTo(ClaudeBookService.STATUS_API_ERROR);
+        assertThat(d.response().path("failure").path("stage").asString()).isEqualTo("AFTER_RESPONSE");
+        assertThat(d.response().path("summary").asString()).contains("재시도 없음");
+        assertThat(row(E).status()).isEqualTo(PaperBooks.CHECKPOINT_DONE);
+        assertThat(row(E).checkpointDecisionId()).isEqualTo(d.id());
+        assertThat(row(E).reason()).startsWith("API_ERROR — ");
+        assertThat(ClaudeBookService.claude2CallsInCycle(store, D)).as("아침 1 + 확인 1").isEqualTo(2);
+
+        // 확인 결정 넣기가 실패해도 같음(트랜잭션 안 첫 쓰기).
+        setUp();
+        failCheckpointInsert = 1;
+        PaperCheckpointJob again = job(true);
+        runAt(again, T.plus(Duration.ofMinutes(3)));
+        runAt(again, T.plus(Duration.ofMinutes(4)));
+        assertThat(sent.size()).isEqualTo(1);
+        assertThat(checkpointDecision().response().path("failure").path("stage").asString()).isEqualTo("AFTER_RESPONSE");
+        assertThat(row(E).status()).isEqualTo(PaperBooks.CHECKPOINT_DONE);
+    }
+
+    @Test
+    @Disabled("리뷰 F1·OPS-1 재현 — 실패 결정 행마저 남기지 못하면 작업 메모리에도 '부름'이 없어 창 안에서 다시 부름. 수정 커밋에서 뗌")
+    @DisplayName("재시도 없음(기록도 실패): 쓰기와 실패 결정 행 기록이 모두 실패하면 작업 메모리의 '부름'으로 다시 부르지 않고 EXPIRED CALLED_NOT_RECORDED")
+    void unrecordedCallIsNotRepeated() {
+        failCheckpointInsert = 2;   // write의 넣기 + 실패 결정 행 넣기
+        PaperCheckpointJob job = job(true);
+        runAt(job, T.plus(Duration.ofMinutes(3)));
+        assertThat(store.decisionFor(PaperBooks.CLAUDE2, D, RuleBookService.CHECKPOINT)).isEmpty();
+        runAt(job, T.plus(Duration.ofMinutes(4)));
+        assertThat(sent.size()).isEqualTo(1);
+        assertThat(row(E).status()).isEqualTo(PaperBooks.CHECKPOINT_EXPIRED);
+        assertThat(row(E).reason()).startsWith("CALLED_NOT_RECORDED — ");
+    }
+
+    @Test
+    @Disabled("리뷰 OPS-5 재현 — 부르기 전 예외가 창 끝까지 이어지면 사유가 WINDOW_MISSED(서버 꺼짐)로 적힘. 수정 커밋에서 뗌")
+    @DisplayName("부르기 전 작업 오류(예: 매크로 섹션 예외)가 창 끝까지 이어지면 EXPIRED JOB_ERROR(서버 꺼짐 WINDOW_MISSED가 아님) — 부르지 않음")
+    void errorBeforeTheCallExpiresAsJobError() {
+        when(packets.macroSection(any(), any())).thenThrow(new IllegalStateException("시험: 매크로 섹션 오류"));
+        PaperCheckpointJob job = job(true);
+        runAt(job, T.plus(Duration.ofMinutes(3)));
+        runAt(job, T.plus(Duration.ofMinutes(10)));
+        assertThat(row(E).status()).isEqualTo(PaperBooks.CHECKPOINT_PLANNED);
+        runAt(job, T.plus(Duration.ofMinutes(21)));
+        assertThat(row(E).status()).isEqualTo(PaperBooks.CHECKPOINT_EXPIRED);
+        assertThat(row(E).reason()).startsWith("JOB_ERROR — ").contains("시험: 매크로 섹션 오류");
+        assertThat(sent).isEmpty();
     }
 
     @Test
@@ -731,6 +817,31 @@ class PaperCheckpointJobTest {
         Decision d = checkpointDecision();
         assertThat(d.response().path("monthlyDiscretionaryOrders").asInt()).isEqualTo(1);
         assertThat(verdict(d, "BBB").path("rejectReason").asString()).isEqualTo("MONTHLY_CAP");
+    }
+
+    @Test
+    @Disabled("리뷰 F2 재현 — 월 재량 주문 수가 체결(FILLED)만 세어, 예상 상태가 체결로 보는 기준 시각 지난 대기 주문만큼 월 상한이 샘. 수정 커밋에서 뗌")
+    @DisplayName("월 상한은 기준 시각이 지난 대기 주문(예상 상태가 체결로 봄)도 셈 — 체결 1 + 지난 NEXT_OPEN 대기 1 = 상한 2 → 확인 매수 MONTHLY_CAP, 아직 오지 않은 AT_1100 대기는 대신되므로 세지 않음")
+    void monthlyCapCountsDuePendingOrders() {
+        universe();
+        store.dbNow = T.plus(Duration.ofMinutes(3));
+        ((ObjectNode) store.settings.body()).put("maxDiscretionaryOrdersPerMonth", 2);
+        LocalDate earlier = LocalDate.of(2026, 10, 28);
+        long older = store.insertDecisionIfAbsent(new Decision(0, PaperBooks.CLAUDE2, earlier, RuleBookService.SCHEDULED,
+                null, "OK", "claude-sonnet-5-5", 0, 1, null, null, null, null, null, null, null, null, List.of(), false, 1L, 0,
+                "{}")).orElseThrow();
+        store.insertOrder(new Order(0, PaperBooks.CLAUDE2, older, "CCC", PaperBooks.BUY, 10, 2.0, null, PaperBooks.NEXT_OPEN,
+                "CLAUDE", PaperBooks.ORDER_FILLED, null, null, earlier, Instant.parse("2026-10-28T22:31:00Z"),
+                LocalDate.of(2026, 10, 29), Instant.parse("2026-10-29T13:31:00Z")));
+        pending("AAA", PaperBooks.BUY, 5.0, null, PaperBooks.NEXT_OPEN);
+        pending("BBB", PaperBooks.BUY, 5.0, null, PaperBooks.AT_1100);
+        answer = ok(reply("REPLACE", checkpointOrder("CCC", "BUY", 3.0, null, "MARKET")));
+
+        runAt(job(true), T.plus(Duration.ofMinutes(3)));
+
+        Decision d = checkpointDecision();
+        assertThat(d.response().path("monthlyDiscretionaryOrders").asInt()).as("체결 1 + 지난 대기 1").isEqualTo(2);
+        assertThat(verdict(d, "CCC").path("rejectReason").asString()).isEqualTo("MONTHLY_CAP");
     }
 
     @Test

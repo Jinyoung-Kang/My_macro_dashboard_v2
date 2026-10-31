@@ -2414,6 +2414,32 @@ class PacketBuilderTest {
     }
 
     @Test
+    @org.junit.jupiter.api.Disabled("리뷰 F4 재현 — 직전 결정 목록이 종류를 가리지 않아 장중 확인(CHECKPOINT) 결정이 8b watchlist·10_recentDecisions에 들어감. 수정 커밋에서 뗌")
+    @DisplayName("장중 확인(CHECKPOINT) 결정은 직전 결정이 아님 — 같은 기준일에 더 늦게 생긴 확인 결정(watchlist 칸 없음)이 있어도 8b watchlist는 아침 결정의 것이고 10_recentDecisions에 CHECKPOINT 줄이 없음")
+    void checkpointDecisionIsNotAPriorDecision() {
+        activeClaude();   // 보유 BBB, 10-23 초기 결정(응답에 watchlist 없음)
+        store.insertDecisionIfAbsent(new Decision(0, PaperBooks.CLAUDE, FRI, RuleBookService.MANUAL, null, "OK",
+                "claude-sonnet-5-5", 1, 1, FRI, 50.0, null, null, null,
+                MAPPER.valueToTree(Map.of("schemaVersion", 2, "stance", "NEUTRAL", "summary", "관찰", "watchlist", List.of(
+                        Map.of("ticker", "EEE", "condition", "실적 확인")))),
+                null, null, List.of(), true, 900L, 0));
+        // 장중 확인 응답(claude2-checkpoint.schema.json — schemaVersion 2, watchlist 칸 없음). 종류로 거르므로 계좌는 상관없음.
+        store.insertDecisionIfAbsent(new Decision(0, PaperBooks.CLAUDE, FRI, RuleBookService.CHECKPOINT, null,
+                ClaudeBookService.STATUS_NO_TRADE, "claude-sonnet-5-5", 1, 1, null, null, null, null, null,
+                MAPPER.valueToTree(Map.of("schemaVersion", 2, "action", "KEEP", "summary", "장중 판단", "orders", List.of(),
+                        "noTradeReason", "갭 유지")),
+                null, null, List.of(), true, 900L, 0));
+
+        JsonNode body = builder.build(MON, RuleBookService.SCHEDULED, false).body();
+        List<String> tickers = new ArrayList<>();
+        body.get(PacketBuilder.FUNDAMENTALS).get("rows").forEach(r -> tickers.add(r.get(0).asString() + ":" + r.get(1).asString()));
+        assertThat(tickers).contains("EEE:WATCHLIST");
+        List<String> kinds = new ArrayList<>();
+        body.get(PacketBuilder.DECISIONS).get("decisions").forEach(r -> kinds.add(r.get("kind").asString()));
+        assertThat(kinds).doesNotContain(RuleBookService.CHECKPOINT).contains(RuleBookService.MANUAL);
+    }
+
+    @Test
     @DisplayName("재무(8b) 변환: 저장본 행(obsDate·facts) → 계산 입력, 틀린 칸은 null(0으로 채우지 않음), 개념 코드·메모 자르기")
     void fundamentalsConversion() {
         ObjectNode payload = MAPPER.createObjectNode();
