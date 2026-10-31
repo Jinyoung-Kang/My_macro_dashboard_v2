@@ -4,7 +4,6 @@ import com.macrodash.analytics.TradingCalendar;
 import com.macrodash.store.PaperStore.BookState;
 import com.macrodash.store.PaperStore.Order;
 import com.macrodash.store.PaperStore.Position;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -35,7 +34,6 @@ class ExpectedStateTest {
     }
 
     @Test
-    @Disabled("리뷰 F3 재현 — 예상 상태가 '모든 매도 → 모든 매수'로 적용해 뒤 T 매도 대금이 앞 T 매수의 현금에 들어감. 수정 커밋에서 뗌")
     @DisplayName("순서는 장부 2b와 같음(기준 시각 순, 같은 T 안에서만 매도 먼저) — 뒤 T(10:00) 매도 대금은 앞 T(09:30) 매수의 현금이 아님: 현금 1,000이면 AAA 20주, 매도 뒤 현금 9,000")
     void laterSaleDoesNotFundAnEarlierBuy() {
         BookState state = new BookState(PaperBooks.CLAUDE2, 1_000, 10_000, 9_000, 90, null, null, D, null);

@@ -34,8 +34,9 @@ import java.util.TreeMap;
  *   <li><b>가격</b>(원가격, 슬리피지 빼고 어림): 1분봉 저장본의 T 창 R1·R2({@link ExecutionAudit#fromBars} — 장부 2b와 같은 판정) → 감시 저장본의 그 종목
  *       E 세션 T 창 첫 거래 봉 시가(완성된 봉만) → 마지막 가격(관측치 종가, 없으면 보유의 마지막 평가 가격). 셋 다 없으면 그 주문은 체결로 보지 않고
  *       {@code unpriced}에 적습니다(없는 숫자를 만들지 않음).</li>
- *   <li><b>순서</b>: 매도 먼저(기준 시각 순), 그다음 매수(기준 시각 순). 매도 수량은 장부 규칙({@link PaperLedger#sellQty}), 매수는 주문의 목표 비중(살
- *       증가분) × 그때의 예상 순자산 ÷ 가격을 내림하고 현금을 넘지 않게 줄임(1주도 못 사면 체결로 보지 않음).</li>
+ *   <li><b>순서</b>: 장부 2b({@code UsTimedFills.byMarketTime})와 같이 기준 시각 순이고, 같은 기준 시각 안에서만 매도 먼저 — 뒤 시각 매도의 대금은
+ *       앞 시각 매수의 현금이 아닙니다. 매도 수량은 장부 규칙({@link PaperLedger#sellQty}), 매수는 주문의 목표 비중(살 증가분) × 그때(그 시각까지
+ *       적용한)의 예상 순자산 ÷ 가격을 내림하고 그때 현금을 넘지 않게 줄임(1주도 못 사면 체결로 보지 않음).</li>
  *   <li><b>예상 매수 보유</b>는 그 세션 E를 연 날로 둡니다 — 검증기의 보유 거래일이 0이라 같은 날 재량 매도는 MIN_HOLD가 막습니다.</li>
  *   <li>평가 가격은 이 체결로 정한 가격, 그 밖의 보유는 장부의 마지막 평가 가격(없으면 평단) — 아침 결정의 검증 문맥과 같은 규칙입니다.</li>
  * </ul>
@@ -157,8 +158,9 @@ final class ExpectedState {
                 targets.put(o.id(), target);
             }
         }
-        due.sort(Comparator.comparingInt((Order o) -> PaperBooks.SELL.equals(o.side()) ? 0 : 1)
-                .thenComparing(o -> targets.get(o.id())).thenComparingLong(Order::id));
+        // 장부 2b 순서(리뷰 F3) — 기준 시각 순, 같은 시각 안에서만 매도 먼저.
+        due.sort(Comparator.comparing((Order o) -> targets.get(o.id()))
+                .thenComparingInt(o -> PaperBooks.SELL.equals(o.side()) ? 0 : 1).thenComparingLong(Order::id));
         List<Assumed> assumed = new ArrayList<>();
         List<Long> unpriced = new ArrayList<>();
         for (Order o : due) {
