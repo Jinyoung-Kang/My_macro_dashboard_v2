@@ -5,7 +5,7 @@ import { describe, expect, it } from "vitest";
 import { visualWidth } from "@/lib/chartAxis";
 import { consensusBars, securityNote } from "@/lib/consensus";
 import { correlationStrength } from "@/lib/correlation";
-import { streakText } from "@/lib/flows";
+import { stanceText, streakText } from "@/lib/flows";
 import { liquidityChartSeries } from "@/lib/liquidity";
 import { sortBySourceOrder, sourceLabel, splitFundamentals, historySelection } from "@/lib/radar";
 import { spreadSummary } from "@/lib/spread";
@@ -69,6 +69,15 @@ describe("flows", () => {
     expect(streakText(0, 20)).toBe("—");
     expect(streakText(3, 20)).toBe("3일 순매수");
     expect(streakText(-20, 20)).toBe("20일+ 순매도");
+  });
+
+  it("KRX 포지션 성향은 앞의 색 원 기호를 떼고 글만 — 모르면 —", () => {
+    expect(stanceText("🟢 매수 우위(Long)")).toBe("매수 우위(Long)");
+    expect(stanceText("🔴 매도 우위(Short)")).toBe("매도 우위(Short)");
+    expect(stanceText("⚪ 판정 불가")).toBe("판정 불가");
+    expect(stanceText("중립")).toBe("중립");
+    expect(stanceText(null)).toBe("—");
+    expect(stanceText("⚪")).toBe("—");
   });
 });
 

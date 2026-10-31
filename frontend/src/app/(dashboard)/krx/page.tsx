@@ -12,6 +12,7 @@ import {
   Table,
 } from "@/components/ui";
 import { useApi } from "@/hooks/useApi";
+import { stanceText } from "@/lib/flows";
 import { deltaColor, EMPTY, formatKrw, formatNumber, formatPercent, formatSigned } from "@/lib/format";
 import type { InvestorTrendResponse, KrMarketTotalsResponse, KrxFuturesResponse } from "@/lib/types";
 import { SpotFuturesCard } from "./SpotFuturesCard";
@@ -259,7 +260,7 @@ export default function KrxPage() {
                       <span className={deltaColor(row.net20d, 0)}>{formatSigned(row.net20d, 0)}</span>
                     ),
                   },
-                  { key: "stance", header: "포지션 성향", render: (row) => row.stance },
+                  { key: "stance", header: "포지션 성향", render: (row) => stanceText(row.stance) },
                 ]}
               />
             </div>
