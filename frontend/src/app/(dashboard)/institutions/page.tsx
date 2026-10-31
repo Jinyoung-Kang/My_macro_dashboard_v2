@@ -31,7 +31,7 @@ import {
   EMPTY,
   formatCurrency,
   formatNumber, formatWithUnit } from "@/lib/format";
-import { holdingActionView, type HoldingActionKind } from "@/lib/holdings";
+import { filerName, holdingActionView, type HoldingActionKind } from "@/lib/holdings";
 import type { PortfolioResponse } from "@/lib/types";
 import { SOURCES } from "@/lib/sources";
 import { endpoints } from "@/lib/endpoints";
@@ -105,7 +105,7 @@ export default function InstitutionsPage() {
             onChange={setCik}
             options={(institutions.data?.institutions ?? []).map((entry) => ({
               value: entry.cik,
-              label: entry.name,
+              label: filerName(entry.name) ?? `CIK ${entry.cik}`,
             }))}
           />
           <Select

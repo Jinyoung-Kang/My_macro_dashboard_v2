@@ -202,12 +202,12 @@ describe("결정 기록 — 두 그룹을 섞은 뒤 모양", () => {
     expect(selection?.pool.map((row) => [row.name, row.group?.label, row.rankA, row.rankB, row.weight])).toEqual([
       ["듀케인", "AB", "1위", "1위", "53.3%"],
       ["아팔루사", "A", "2위", "—", "13.3%"],
-      ["🇺🇸 버크셔 해서웨이", "B", "—", "2위", "33.3%"],
+      ["버크셔 해서웨이", "B", "—", "2위", "33.3%"],
     ]);
     expect(selection?.groupANames).toBe("듀케인 · 1위, 아팔루사 · 2위");
     // 두 그룹에 모두 든 듀케인은 그룹 B 목록에서도 같은 이름(먼저 본 신호 풀의 이름)
-    expect(selection?.groupBNames).toBe("듀케인 · 1위, 🇺🇸 버크셔 해서웨이 · 2위");
-    expect(selection?.selectedNames).toBe("듀케인 · A 1위 · B 1위, 아팔루사 · A 2위, 🇺🇸 버크셔 해서웨이 · B 2위");
+    expect(selection?.groupBNames).toBe("듀케인 · 1위, 버크셔 해서웨이 · 2위");
+    expect(selection?.selectedNames).toBe("듀케인 · A 1위 · B 1위, 아팔루사 · A 2위, 버크셔 해서웨이 · B 2위");
   });
 
   it("그룹이 비면 '자격 있는 기관 없음', 서버 ciks가 없으면 풀 순서로 신호 기관을 적는다", () => {
@@ -221,7 +221,7 @@ describe("결정 기록 — 두 그룹을 섞은 뒤 모양", () => {
   it("신호 이벤트 — 기관 이름표에 그룹 순위, 풀에 없는 기관은 줄의 이름 그대로(순위 없음)", () => {
     expect(ruleDecisionView(RESPONSE).events.map((row) => [row.filer, row.ticker, row.action])).toEqual([
       ["듀케인 · A 1위 · B 1위", "NVDA", "신규 편입"],
-      ["🇺🇸 버크셔 해서웨이 · B 2위", "NVDA", "확대"],
+      ["버크셔 해서웨이 · B 2위", "NVDA", "확대"],
       ["모르는 기관", "XOM", "전량 매도"],
     ]);
   });
@@ -230,7 +230,7 @@ describe("결정 기록 — 두 그룹을 섞은 뒤 모양", () => {
     const view = ruleDecisionView(RESPONSE);
     expect(view.scored).toBe(true);
     expect(view.candidates.map(({ ticker, score, rankSum, buyers }) => [ticker, score, rankSum, buyers])).toEqual([
-      ["NVDA", "0.617", "—", "듀케인 · A 1위 · B 1위, 🇺🇸 버크셔 해서웨이 · B 2위"],
+      ["NVDA", "0.617", "—", "듀케인 · A 1위 · B 1위, 버크셔 해서웨이 · B 2위"],
       ["AAPL", "—", "—", "아팔루사 · A 2위, 듀케인 · A 1위 · B 1위"],
     ]);
   });
@@ -239,7 +239,7 @@ describe("결정 기록 — 두 그룹을 섞은 뒤 모양", () => {
     const view = ruleDecisionView(RESPONSE);
     expect(view.contributions.map(({ key: _key, group, ...row }) => ({ ...row, group: group?.label ?? null }))).toEqual([
       { ticker: "NVDA", filer: "듀케인 · A 1위 · B 1위", group: "AB", filerWeight: "53.3%", conviction: "100.0%", points: "0.533" },
-      { ticker: "NVDA", filer: "🇺🇸 버크셔 해서웨이 · B 2위", group: "B", filerWeight: "33.3%", conviction: "25.0%", points: "0.083" },
+      { ticker: "NVDA", filer: "버크셔 해서웨이 · B 2위", group: "B", filerWeight: "33.3%", conviction: "25.0%", points: "0.083" },
     ]);
     expect(view.convictionNote).toContain("min(그 종목의 기관 내 비중, 10%) ÷ 10%");
   });

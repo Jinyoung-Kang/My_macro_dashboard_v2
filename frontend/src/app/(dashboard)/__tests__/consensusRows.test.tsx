@@ -115,3 +115,30 @@ describe("QA-122 합친 클래스가 없는 보통주 행", () => {
     expect(screen.getByText("발행사 02079K · 보통주 합산")).toBeTruthy();
   });
 });
+
+describe("기관 이름의 국기", () => {
+  // 예전에는 보유 기관 배지가 이름의 첫 낱말이라 국기가 붙은 이름에서는 국기만 남았다.
+  it("기관 고르기·보유 기관 배지·참여 기관 줄은 국기를 뗀 이름 — 배지는 짧은 이름, 전체 이름은 마우스 설명", async () => {
+    const flagged = "🇰🇷 국민연금 (National Pension Service)";
+    api.apiGetShared.mockImplementation((path: string) => {
+      if (path.startsWith("/api/sec13f/institutions")) {
+        return Promise.resolve({ institutions: [{ key: "nps", name: flagged, cik: "0001608046", desc: "" }] });
+      }
+      if (path.startsWith("/api/sec13f/consensus")) {
+        return Promise.resolve({
+          available: true, participants: [flagged], participantCount: 1, availableDates: ["2026-06-30"],
+          reportDate: null, minHolders: 1,
+          rows: [{ ...row("cusip:037833100", "APPLE INC", "037833100", 1), holders: [flagged] }],
+        });
+      }
+      return new Promise(() => {});
+    });
+    render(<ConsensusPage />);
+
+    expect(await screen.findByRole("button", { name: "국민연금 (National Pension Service)" })).toBeTruthy();
+    const badge = await screen.findByText("국민연금");
+    expect(badge.closest("[title]")?.getAttribute("title")).toBe("국민연금 (National Pension Service)");
+    expect(screen.getByText("참여 기관: 국민연금 (National Pension Service)")).toBeTruthy();
+    expect(document.body.textContent).not.toMatch(/\p{Regional_Indicator}/u);
+  });
+});

@@ -3,7 +3,7 @@
  */
 import { describe, expect, it } from "vitest";
 
-import { holdingActionView } from "@/lib/holdings";
+import { filerName, filerShortName, holdingActionView } from "@/lib/holdings";
 
 describe("holdingActionView", () => {
   it("예전 문구(앞 그림 문자)와 새 문구(기호 없음)가 같은 글·종류", () => {
@@ -25,5 +25,20 @@ describe("holdingActionView", () => {
     expect(holdingActionView("새 표기")).toEqual({ kind: "none", text: "새 표기" });
     expect(holdingActionView(null)).toEqual({ kind: "none", text: "—" });
     expect(holdingActionView("⚪")).toEqual({ kind: "none", text: "—" });
+  });
+});
+
+describe("기관 이름 — 서버가 붙인 국기는 화면에서 뗀다(서버 원문은 패킷·알림에 그대로)", () => {
+  it("국기를 뗀 이름, 이름이 없거나 기호뿐이면 null(부르는 쪽이 CIK로)", () => {
+    expect(filerName("🇺🇸 버크셔 해서웨이 (Berkshire Hathaway)")).toBe("버크셔 해서웨이 (Berkshire Hathaway)");
+    expect(filerName("버크셔 해서웨이")).toBe("버크셔 해서웨이");
+    expect(filerName("🇺🇸")).toBeNull();
+    expect(filerName(null)).toBeNull();
+  });
+
+  it("좁은 칸의 짧은 이름은 국기를 뗀 이름의 첫 낱말 — 국기만 남지 않는다", () => {
+    expect(filerShortName("🇰🇷 국민연금 (National Pension Service)")).toBe("국민연금");
+    expect(filerShortName("🇳🇴 노르웨이 국부펀드 (Norges Bank / GPFG)")).toBe("노르웨이");
+    expect(filerShortName("국민연금")).toBe("국민연금");
   });
 });

@@ -18,6 +18,7 @@ import { useRemembered } from "@/hooks/useRemembered";
 import { useUsdKrw } from "@/hooks/useUsdKrw";
 import { consensusBars, securityNote } from "@/lib/consensus";
 import { EMPTY, formatCurrency, formatNumber } from "@/lib/format";
+import { filerName, filerShortName } from "@/lib/holdings";
 import { isSelected, toggleSelection } from "@/lib/selection";
 import type { ConsensusResponse, NewBuysResponse } from "@/lib/types";
 import { SOURCES } from "@/lib/sources";
@@ -82,7 +83,7 @@ export default function ConsensusPage() {
                     : "border-border bg-surface-hover text-muted hover:text-bright"
                 }`}
               >
-                {entry.name}
+                {filerName(entry.name) ?? `CIK ${entry.cik}`}
               </button>
             );
           })}
@@ -199,7 +200,7 @@ export default function ConsensusPage() {
                   render: (row) => (
                     <span className="flex flex-wrap gap-1">
                       {row.holders.map((holder) => (
-                        <SourceBadge key={holder}>{holder.split(" ")[0] ?? holder}</SourceBadge>
+                        <FilerBadge key={holder} name={holder} />
                       ))}
                     </span>
                   ),
@@ -209,7 +210,7 @@ export default function ConsensusPage() {
           </Card>
 
           <p className="text-xs text-muted">
-            참여 기관: {data.participants.join(", ") || EMPTY}
+            참여 기관: {data.participants.map((name) => filerName(name) ?? name).join(", ") || EMPTY}
           </p>
         </>
       )}
@@ -314,7 +315,7 @@ function NewBuysCard({ reportDate }: { reportDate: string }) {
                 render: (row) => (
                   <span className="flex flex-wrap gap-1">
                     {row.buyers.map((buyer) => (
-                      <SourceBadge key={buyer}>{buyer.split(" ")[0] ?? buyer}</SourceBadge>
+                      <FilerBadge key={buyer} name={buyer} />
                     ))}
                   </span>
                 ),
@@ -327,5 +328,14 @@ function NewBuysCard({ reportDate }: { reportDate: string }) {
         </>
       )}
     </Card>
+  );
+}
+
+/** 기관 배지 — 짧은 이름(국기를 뗀 첫 낱말, lib/holdings.filerShortName), 전체 이름은 마우스 설명으로. */
+function FilerBadge({ name }: { name: string }) {
+  return (
+    <span title={filerName(name) ?? name}>
+      <SourceBadge>{filerShortName(name)}</SourceBadge>
+    </span>
   );
 }

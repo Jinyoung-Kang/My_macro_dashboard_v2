@@ -20,6 +20,7 @@ import { StatusText } from "@/components/ui/icons";
 import { useApi } from "@/hooks/useApi";
 import { useUsdKrw } from "@/hooks/useUsdKrw";
 import { deltaColor, EMPTY, formatCurrency, formatNumber, formatPercent, formatWithUnit } from "@/lib/format";
+import { filerName } from "@/lib/holdings";
 import type {
   GuruHoldersResponse,
   GuruProfilesResponse,
@@ -92,7 +93,7 @@ function ProfilesCard() {
               header: "기관",
               render: (row) => (
                 <span className="flex flex-col">
-                  <span className="text-body">{row.name}</span>
+                  <span className="text-body">{filerName(row.name) ?? `CIK ${row.cik}`}</span>
                   <span className="text-[11px] text-muted">{row.desc}</span>
                 </span>
               ),
@@ -345,7 +346,7 @@ function RiskCard() {
           onChange={setCik}
           options={(profiles.data?.rows ?? []).map((row) => ({
             value: row.cik,
-            label: row.name,
+            label: filerName(row.name) ?? `CIK ${row.cik}`,
           }))}
         />
         <Select
@@ -570,7 +571,7 @@ function HoldersCard() {
             rows={data!.rows}
             rowKey={(row, index) => `${row.cik}-${row.cusip}-${index}`}
             columns={[
-              { key: "institution", header: "기관", render: (row) => row.institution },
+              { key: "institution", header: "기관", render: (row) => filerName(row.institution) ?? `CIK ${row.cik}` },
               {
                 key: "name",
                 header: "종목",

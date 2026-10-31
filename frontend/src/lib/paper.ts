@@ -8,6 +8,7 @@
 import { EMPTY, formatAge, formatKst, formatLatency, formatNumber, formatPercent, formatSigned, formatWithUnit } from "./format";
 import { tradeTimeFrom } from "./marketSessions";
 import { KR_ACCOUNT_PROFILES } from "./paperKrProfiles";
+import { filerName } from "./holdings";
 import { formatMoney, formatSharePriceFor, marketMeta, type PaperMarketCode } from "./paperMarket";
 import type {
   PaperBookResetResult,
@@ -1110,7 +1111,7 @@ function contributionReason(reason: Record<string, unknown>): string | null {
   const contributions = listOf(reason.contributions).filter(isRecord);
   if (contributions.length === 0) return null;
   const parts = contributions.map((entry) => {
-    const name = textOf(entry.name) ?? `CIK ${textOf(entry.cik) ?? EMPTY}`;
+    const name = filerNameOf(entry.name) ?? `CIK ${textOf(entry.cik) ?? EMPTY}`;
     const groups = groupsOf(entry.groups).join("");
     const action = textOf(entry.action);
     return `${name}${groups ? `(${groups})` : ""}${action ? ` ${signalActionLabel(action)}` : ""} · 가중 `
@@ -1475,6 +1476,8 @@ const isNumber = (value: unknown): value is number => typeof value === "number" 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   value !== null && typeof value === "object" && !Array.isArray(value);
 const textOf = (value: unknown): string | null => (typeof value === "string" && value ? value : null);
+/** 기관 이름 — 서버가 붙인 국기는 화면에서 뗍니다(lib/holdings.filerName). */
+const filerNameOf = (value: unknown): string | null => filerName(textOf(value));
 const numberOf = (value: unknown): number | null => (isNumber(value) ? value : null);
 const listOf = (value: unknown): unknown[] => (Array.isArray(value) ? value : []);
 
@@ -1637,7 +1640,7 @@ export function selectionHistoryRows(
 ): SelectionHistoryRow[] {
   const names = new Map<string, string>();
   for (const candidate of candidates ?? []) {
-    if (!names.has(candidate.cik)) names.set(candidate.cik, candidate.name);
+    if (!names.has(candidate.cik)) names.set(candidate.cik, filerName(candidate.name) ?? `CIK ${candidate.cik}`);
   }
   return (history ?? []).map((entry) => {
     const ciks = entry.selectedCiks ?? [];
@@ -1811,7 +1814,7 @@ export function signalPoolRows(pool: unknown): PoolRow[] {
     return [{
       key: `${index}-${cik}`,
       cik,
-      name: textOf(entry.name) ?? `CIK ${cik}`,
+      name: filerNameOf(entry.name) ?? `CIK ${cik}`,
       group: groupBadge(entry.groups),
       rankA: rankA === null ? EMPTY : `${formatNumber(rankA, 0)}위`,
       rankB: rankB === null ? EMPTY : `${formatNumber(rankB, 0)}위`,
@@ -2259,7 +2262,7 @@ function filerInfo(selection: Record<string, unknown> | null): Map<string, Filer
     if (!cik) return;
     const current = names.get(cik) ?? { name: null, rank: null, rankA: null, rankB: null, groups: [] };
     names.set(cik, {
-      name: current.name ?? textOf(entry.name),
+      name: current.name ?? filerNameOf(entry.name),
       rank: current.rank ?? patch.rank ?? null,
       rankA: current.rankA ?? patch.rankA ?? null,
       rankB: current.rankB ?? patch.rankB ?? null,
@@ -2352,7 +2355,7 @@ function groupNames(value: unknown, names: Map<string, FilerInfo>): string | nul
   const rows = selectedEntries(value).flatMap((entry) => {
     const cik = textOf(entry.cik);
     if (!cik) return [];
-    const name = names.get(cik)?.name ?? textOf(entry.name) ?? `CIK ${cik}`;
+    const name = names.get(cik)?.name ?? filerNameOf(entry.name) ?? `CIK ${cik}`;
     const rank = numberOf(entry.rank);
     return [rank === null ? name : `${name} · ${formatNumber(rank, 0)}위`];
   });
@@ -2386,7 +2389,7 @@ export function ruleDecisionView(response: unknown): RuleDecisionView {
     const rank = numberOf(entry.rank);
     return [{
       cik,
-      name: textOf(entry.name) ?? `CIK ${cik}`,
+      name: filerNameOf(entry.name) ?? `CIK ${cik}`,
       rank: rank === null ? EMPTY : formatNumber(rank, 0),
       cagr: formatPercent(numberOf(entry.cagrPct)),
       excess: formatExcessPoints(numberOf(entry.excessVsSpyPct)),
@@ -2403,7 +2406,7 @@ export function ruleDecisionView(response: unknown): RuleDecisionView {
     const action = textOf(event.action);
     return [{
       key: `${index}-${cik}-${ticker}`,
-      filer: filerLabel(cik, ownRanks(event), names, textOf(event.name)),
+      filer: filerLabel(cik, ownRanks(event), names, filerNameOf(event.name)),
       ticker,
       action: signalActionLabel(action),
       actionKey: action ?? "",
@@ -2437,7 +2440,7 @@ export function ruleDecisionView(response: unknown): RuleDecisionView {
       return [{
         key: `${candidateIndex}-${index}-${ticker}-${cik}`,
         ticker,
-        filer: filerLabel(cik, ownRanks(entry), names, textOf(entry.name)),
+        filer: filerLabel(cik, ownRanks(entry), names, filerNameOf(entry.name)),
         group: groupBadge(groups.length > 0 ? groups : names.get(cik)?.groups),
         filerWeight: formatRatioPercent(numberOf(entry.filerWeight)),
         conviction: formatRatioPercent(numberOf(entry.conviction)),
@@ -2660,7 +2663,7 @@ const filerRows = (filers: readonly PaperSelectedFiler[]): SelectedFilerRow[] =>
   filers.map((filer, index) => ({
     key: `${index}-${filer.cik}`,
     rank: isNumber(filer.rank) ? `${formatNumber(filer.rank, 0)}위` : EMPTY,
-    name: filer.name ?? `CIK ${filer.cik}`,
+    name: filerName(filer.name) ?? `CIK ${filer.cik}`,
     cik: filer.cik,
   }));
 

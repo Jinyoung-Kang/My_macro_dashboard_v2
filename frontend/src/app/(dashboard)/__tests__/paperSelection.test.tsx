@@ -280,7 +280,7 @@ describe("두 기관 그룹(D27)", () => {
   it("그룹 B 행 — 기존 메뉴 설명·출처, q8·complete=false인 기관은 '수집 중'이 아니라 서버 사유 그대로", async () => {
     await openSelectionTab();
 
-    const duquesneRow = "🇺🇸 듀케인 패밀리 오피스 (Duquesne Family Office) (그룹 B)";
+    const duquesneRow = "듀케인 패밀리 오피스 (Duquesne Family Office) (그룹 B)";
     await screen.findByRole("row", { name: duquesneRow });
     const duquesne = cellsOf(duquesneRow);
     expect(duquesne[0]).toBe("1");
@@ -290,7 +290,7 @@ describe("두 기관 그룹(D27)", () => {
     expect(duquesne[4]).toBe("q30 · 30분기");
     expect(duquesne[8]).toBe("+26.80%");
 
-    const norges = cellsOf("🇳🇴 노르웨이 국부펀드 (Norges Bank / GPFG) (그룹 B)");
+    const norges = cellsOf("노르웨이 국부펀드 (Norges Bank / GPFG) (그룹 B)");
     expect(norges[0]).toBe("—");
     expect(norges[2]).toBe("자격 없음평균 커버리지 57.0% < 70%");
     expect(norges[4]).toBe("q8");
@@ -299,10 +299,10 @@ describe("두 기관 그룹(D27)", () => {
   it("그룹 B 행을 펼치면 그 행의 구간 표만 — 2년 창 문구", async () => {
     await openSelectionTab();
 
-    const row = await screen.findByRole("row", { name: "🇺🇸 듀케인 패밀리 오피스 (Duquesne Family Office) (그룹 B)" });
+    const row = await screen.findByRole("row", { name: "듀케인 패밀리 오피스 (Duquesne Family Office) (그룹 B)" });
     fireEvent.click(within(row).getByRole("button", { name: "구간 펼치기" }));
 
-    const periods = screen.getByRole("region", { name: "🇺🇸 듀케인 패밀리 오피스 (Duquesne Family Office) (그룹 B) 구간" });
+    const periods = screen.getByRole("region", { name: "듀케인 패밀리 오피스 (Duquesne Family Office) (그룹 B) 구간" });
     expect(within(periods).getByText(/첫 구간은 2년 창 시작으로/)).toBeTruthy();
     expect(within(periods).getByText("2026-08-14")).toBeTruthy();
     // 그룹 A 행은 펼쳐지지 않습니다.
@@ -317,7 +317,7 @@ describe("두 기관 그룹(D27)", () => {
     const rows = within(pool).getAllByRole("row").slice(1).map((tr) => within(tr).getAllByRole("cell").map((td) => td.textContent));
     expect(rows).toEqual([
       ["버크셔 해서웨이 (Berkshire Hathaway)CIK 0001067983", "A", "1위", NONE, "50.0%"],
-      ["🇺🇸 듀케인 패밀리 오피스 (Duquesne Family Office)CIK 0001536411", "B", NONE, "1위", "50.0%"],
+      ["듀케인 패밀리 오피스 (Duquesne Family Office)CIK 0001536411", "B", NONE, "1위", "50.0%"],
     ]);
     expect(screen.getByText(/2026-10-23 선정 — 규칙 계좌가 이 기관들의 13F 변화를 신호로 씁니다/)).toBeTruthy();
     expect(screen.getByText(/그룹 A 50\.0% · 그룹 B 50\.0%/)).toBeTruthy();
@@ -334,7 +334,7 @@ describe("두 기관 그룹(D27)", () => {
     const items = within(card).getAllByRole("listitem").map((li) => li.textContent);
     expect(items.slice(0, 3)).toEqual(COMPUTED.limits);
     expect(items[3]).toContain("그룹 B는 2년 창 — 표본이 짧다");
-    expect(screen.getByText("버크셔 해서웨이 (Berkshire Hathaway), 🇺🇸 듀케인 패밀리 오피스 (Duquesne Family Office)")).toBeTruthy();
+    expect(screen.getByText("버크셔 해서웨이 (Berkshire Hathaway), 듀케인 패밀리 오피스 (Duquesne Family Office)")).toBeTruthy();
   });
 
   it("그룹 B를 아직 보내지 않는 백엔드 — 그룹 B 표·신호 풀 카드·그룹 B 한계 줄이 없다", async () => {

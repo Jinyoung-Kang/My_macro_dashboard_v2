@@ -9,6 +9,7 @@ import { useElapsedSeconds } from "@/hooks/useElapsedSeconds";
 import { apiPost } from "@/lib/api";
 import { endpoints } from "@/lib/endpoints";
 import { deltaColor, EMPTY, formatNumber, formatPercent, formatWithUnit } from "@/lib/format";
+import { filerName } from "@/lib/holdings";
 import {
   type Badge,
   collectionView,
@@ -378,7 +379,7 @@ function CandidateTable({
         const about = group === "B" ? (row.desc ?? row.style) : row.style;
         return (
           <div className="flex min-w-[12rem] flex-col items-start gap-1">
-            <span className="font-semibold text-bright">{row.name}</span>
+            <span className="font-semibold text-bright">{nameOf(row)}</span>
             <span className="text-[11px] text-muted">{about ?? EMPTY} · CIK {row.cik}</span>
             <Button variant="ghost" expanded={expanded} onClick={() => onToggle(openKey(row))}>
               {expanded ? "구간 접기" : "구간 펼치기"}
@@ -478,7 +479,7 @@ function CandidateTable({
           <tbody>
             {rows.map((row) => (
               <Fragment key={row.cik}>
-                <tr className="border-b border-border/50 align-top hover:bg-surface-hover/60" aria-label={`${row.name}${group === "B" ? " (그룹 B)" : ""}`}>
+                <tr className="border-b border-border/50 align-top hover:bg-surface-hover/60" aria-label={`${nameOf(row)}${group === "B" ? " (그룹 B)" : ""}`}>
                   {columns.map((column) => (
                     <td key={column.key} className={`px-3 py-2 tabular-nums ${align(column)}`}>
                       {column.render(row)}
@@ -488,7 +489,7 @@ function CandidateTable({
                 {open.includes(openKey(row)) && (
                   <tr className="border-b border-border/50 bg-canvas">
                     <td colSpan={columns.length} className="px-3 py-3">
-                      <PeriodTable name={`${row.name}${group === "B" ? " (그룹 B)" : ""}`} span={span} periods={row.periods ?? []} />
+                      <PeriodTable name={`${nameOf(row)}${group === "B" ? " (그룹 B)" : ""}`} span={span} periods={row.periods ?? []} />
                     </td>
                   </tr>
                 )}
@@ -552,4 +553,9 @@ function Badges({ badges }: { badges: Badge[] }) {
       ))}
     </span>
   );
+}
+
+/** 후보 기관 이름 — 서버가 붙인 국기는 화면에서 뗍니다(없으면 CIK). */
+function nameOf(row: { name?: string | null; cik: string }): string {
+  return filerName(row.name) ?? `CIK ${row.cik}`;
 }
