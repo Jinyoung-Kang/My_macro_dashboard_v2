@@ -434,6 +434,35 @@ class PaperCheckpointJobTest {
     }
 
     @Test
+    @Disabled("재현 — 응답 뒤 쓰기 실패로 남긴 확인 결정(AFTER_RESPONSE)의 응답에 checkpoint 칸이 없어 상세의 요청 줄이 '세션 — · — · — · 지연 —'")
+    @DisplayName("응답 뒤 쓰기 실패 결정(AFTER_RESPONSE)도 일반 실패 응답과 같은 checkpoint 칸(세션·시각·피드·아침 결정·지연)을 남김 재현")
+    void afterResponseFailureKeepsTheCheckpointRequest() {
+        failDone = 1;
+        runAt(job(true), T.plus(Duration.ofMinutes(3)));
+        Decision d = checkpointDecision();
+        assertThat(d.response().path("failure").path("stage").asString()).isEqualTo("AFTER_RESPONSE");
+        Checkpoint c = row(E);
+        JsonNode request = d.response().path("checkpoint");
+        assertThat(request.isObject()).as("checkpoint 칸").isTrue();
+        assertThat(request.path("session").asString()).isEqualTo(E.toString());
+        assertThat(request.path("atEt").asString()).isEqualTo(CheckpointPacket.clock(c.atEt()));
+        assertThat(request.path("feed").asString()).isEqualTo(c.feed());
+        assertThat(request.path("sourceDecisionId").asLong()).isEqualTo(c.sourceDecisionId());
+        assertThat(request.path("lagSeconds").asInt()).isEqualTo(75);
+        assertThat(c.lagSeconds()).as("행의 지연과 같음").isEqualTo(75);
+
+        // 일반 실패 응답(API 오류)과 같은 칸 이름·순서.
+        setUp();
+        answer = new AiService.StructuredResult(false, null, null, "API_ERROR", "HTTP 500", false, null, null, null, null, 300L);
+        runAt(job(true), T.plus(Duration.ofMinutes(3)));
+        java.util.List<String> names = new java.util.ArrayList<>();
+        checkpointDecision().response().path("checkpoint").propertyNames().forEach(names::add);
+        java.util.List<String> afterResponse = new java.util.ArrayList<>();
+        request.propertyNames().forEach(afterResponse::add);
+        assertThat(afterResponse).isEqualTo(names);
+    }
+
+    @Test
     @DisplayName("재시도 없음(기록도 실패): 쓰기와 실패 결정 행 기록이 모두 실패하면 작업 메모리의 '부름'으로 다시 부르지 않고 EXPIRED CALLED_NOT_RECORDED")
     void unrecordedCallIsNotRepeated() {
         failCheckpointInsert = 2;   // write의 넣기 + 실패 결정 행 넣기
