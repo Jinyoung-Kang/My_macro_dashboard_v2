@@ -20,7 +20,7 @@ import {
   type SearchEntry,
 } from "@/lib/search";
 import type { MacroOverview, SessionUser, StockUniverseResponse } from "@/lib/types";
-import { SearchIcon } from "./icons";
+import { SearchIcon, TabIcon } from "./icons";
 
 // 맥이면 ⌘K, 아니면 Ctrl K. 서버 렌더·하이드레이션 첫 그림은 Ctrl로 같게 그립니다(값은 브라우저에만 있음).
 const noSubscribe = () => () => {};
@@ -35,6 +35,8 @@ const isMacServer = () => false;
  *   않습니다 — 운영자 화면은 메뉴 범주에만 있고 그것도 lib/access가 운영자에게만 넣습니다.
  * - 키보드: ↑↓로 결과를 옮기고 Enter로 갑니다(입력칸이 combobox, 결과가 listbox — aria-activedescendant).
  * - 결과는 범주마다 상한까지만 보이고 넘친 수를 범주 제목에 적습니다. 무료 회원에게 잠긴 유료 화면은 🔒.
+ * - 결과 행: 왼쪽 32px 원(메뉴는 그 탭 아이콘, 지표는 시장·기관은 기관 아이콘, 종목은 티커 모노그램 — lib/search `avatar`, 장식) ·
+ *   이름과 보조 글 · 오른쪽 '→ 화면' 캡션.
  */
 export function SearchCommand({ user }: { user?: SessionUser }) {
   const router = useRouter();
@@ -148,8 +150,9 @@ export function SearchCommand({ user }: { user?: SessionUser }) {
         </button>
       }
     >
-      <div className="mt-1 flex items-center gap-2.5 rounded-[10px] bg-surface-2 px-3 pr-10 has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-focus">
-        <SearchIcon />
+      {/* 입력칸은 대화상자 닫기 단추(오른쪽 위) 앞에서 끝납니다 — 안쪽 여백으로 비키면 입력칸 테두리·포커스 링 위에 닫기 단추가 겹쳤습니다. */}
+      <div className="mr-10 mt-1 flex items-center gap-3 rounded-control bg-surface-2 px-4 has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-focus">
+        <SearchIcon size={18} />
         <input
           type="search"
           role="combobox"
@@ -167,7 +170,7 @@ export function SearchCommand({ user }: { user?: SessionUser }) {
             setActive(0);
           }}
           onKeyDown={onInputKeyDown}
-          className="h-11 min-w-0 flex-1 bg-transparent text-[15px] text-text outline-none placeholder:text-text-3"
+          className="h-12 min-w-0 flex-1 bg-transparent text-[17px] text-text outline-none placeholder:text-text-3"
         />
       </div>
 
@@ -188,7 +191,7 @@ export function SearchCommand({ user }: { user?: SessionUser }) {
           const headingId = `${baseId}-group-${group.kind}`;
           return (
             <div key={group.kind} role="group" aria-labelledby={headingId}>
-              <div id={headingId} role="presentation" className="flex items-baseline justify-between gap-2 px-2 pb-1 text-xs font-semibold text-text-3">
+              <div id={headingId} role="presentation" className="flex items-baseline justify-between gap-2 px-3 pb-1 text-xs font-semibold text-text-3">
                 <span>{group.label}</span>
                 {group.more > 0 && (
                   <span className="font-normal">
@@ -209,11 +212,19 @@ export function SearchCommand({ user }: { user?: SessionUser }) {
                     onMouseMove={() => {
                       if (!selected) setActive(index);
                     }}
-                    className={`relative flex min-h-11 cursor-pointer items-center gap-3 rounded-lg px-2 py-2 ${selected ? "bg-surface-2" : ""}`}
+                    className={`relative flex min-h-12 cursor-pointer items-center gap-3 rounded-control px-3 py-2 ${selected ? "bg-surface-2" : ""}`}
                   >
                     {/* 고른 결과 표시 — 초점은 입력칸에 있어 포커스 링이 없고, surface-2 바탕만으로는 대비가 1.1:1이라 왼쪽 잉크 막대를
-                        함께 둡니다(계좌 행 AssetRow의 선택 막대와 같은 모양, 바탕 대비 3:1 이상). */}
-                    {selected && <span aria-hidden="true" className="absolute inset-y-1 left-0 w-[3px] rounded-r bg-accent" />}
+                        함께 둡니다(계좌 행 AssetRow의 선택 막대와 같은 모양·색, 바탕 대비 3:1 이상 — 명세 D8 d). */}
+                    {selected && <span aria-hidden="true" className="absolute inset-y-1 left-0 w-[3px] rounded-r bg-text" />}
+                    <span
+                      aria-hidden="true"
+                      className={`inline-flex size-8 shrink-0 items-center justify-center rounded-full text-xs font-semibold text-text-2 ${
+                        selected ? "bg-surface" : "bg-surface-2"
+                      }`}
+                    >
+                      {entry.avatar && "tab" in entry.avatar ? <TabIcon tab={entry.avatar.tab} size={16} /> : entry.avatar?.text}
+                    </span>
                     <span className="flex min-w-0 flex-1 flex-col">
                       <span className="truncate text-[15px] text-text">
                         {entry.label}
@@ -235,13 +246,13 @@ export function SearchCommand({ user }: { user?: SessionUser }) {
       </div>
 
       {trimmed === "" && (
-        <p className="px-2 text-sm text-text-2">
+        <p className="px-3 text-sm text-text-2">
           메뉴 이름, 매크로 지표 이름·티커, 13F 기관 이름, 종목 이름·티커를 입력하세요. 지표·기관·종목은 그 값을 고르는 화면으로 갑니다.
         </p>
       )}
-      {trimmed !== "" && flat.length === 0 && <p className="px-2 text-sm text-text-2">{noResultText(trimmed, notices)}</p>}
+      {trimmed !== "" && flat.length === 0 && <p className="px-3 text-sm text-text-2">{noResultText(trimmed, notices)}</p>}
       {notices.length > 0 && (
-        <ul aria-label="검색 자료 상태" className="mt-3 flex flex-col gap-1 border-t border-border px-2 pt-3 text-xs text-text-3">
+        <ul aria-label="검색 자료 상태" className="mt-3 flex flex-col gap-1 border-t border-border px-3 pt-3 text-xs text-text-3">
           {notices.map((notice) => (
             <li key={notice}>{notice}</li>
           ))}

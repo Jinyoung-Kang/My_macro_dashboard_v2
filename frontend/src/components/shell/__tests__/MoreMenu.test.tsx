@@ -56,6 +56,16 @@ describe("더보기 화면", () => {
     expect(screen.getByText(/main@1ccad1c/)).toBeTruthy();
   });
 
+  it("행마다 왼쪽 원 안 아이콘은 장식(aria-hidden) — 링크 이름은 화면 이름 그대로", () => {
+    renderMore({ email: "owner@test.local", role: "OWNER", tier: "PRO", local: true });
+    const links = within(screen.getByRole("region", { name: "메뉴" })).getAllByRole("link");
+    expect(links).toHaveLength(6);
+    for (const link of links) {
+      expect(link.querySelector("span[aria-hidden='true'].rounded-full svg")).toBeTruthy();
+    }
+    expect(screen.getByRole("link", { name: "데이터 저장소 상태" }).getAttribute("href")).toBe("/status");
+  });
+
   it("무료 회원에게는 AI 종합 분석에 🔒", () => {
     renderMore({ email: "member@test.local", role: "MEMBER", tier: "FREE" });
     const ai = screen.getByRole("link", { name: /AI 종합 분석/ });

@@ -197,6 +197,19 @@ describe("색인 항목", () => {
     expect(entries.find((item) => item.href === "/macro")?.sub).toBe("시장");
   });
 
+  it("결과 행 왼쪽 원 — 메뉴는 그 화면의 탭 아이콘, 지표는 시장·기관은 기관 아이콘, 종목은 티커 모노그램", () => {
+    const menus = menuEntries(navSearchItems({ email: "o@x", role: "OWNER", tier: "PRO" }));
+    expect(menus.find((item) => item.href === "/liquidity")?.avatar).toEqual({ tab: "markets" });
+    expect(menus.find((item) => item.href === "/paper/kr")?.avatar).toEqual({ tab: "paper" });
+    expect(menus.find((item) => item.href === "/more")?.avatar).toEqual({ tab: "more" });
+    expect(indicatorEntries(OVERVIEW)[0].avatar).toEqual({ tab: "markets" });
+    expect(institutionEntries(INSTITUTIONS)[0].avatar).toEqual({ tab: "institutions" });
+    expect(tickerEntries(UNIVERSE).map((item) => item.avatar)).toEqual([{ text: "AAP" }, { text: "AMZ" }]);
+    // 영문 티커가 아니면 이름 첫 글자, 그것도 없으면 빈 원
+    expect(tickerEntries({ available: true, rows: [{ ticker: "005930", name: "삼성전자", sector: null }] })[0].avatar).toEqual({ text: "삼" });
+    expect(tickerEntries({ available: true, rows: [{ ticker: "", name: "", sector: null }] })[0].avatar).toBeUndefined();
+  });
+
   it("메뉴: 무료 회원에게 잠긴 유료 화면은 locked를 그대로 넘긴다(결과의 🔒)", () => {
     const entries = menuEntries(navSearchItems({ email: "m@x", role: "MEMBER", tier: "FREE" }));
     expect(entries.find((item) => item.href === "/ai/report")?.locked).toBe(true);

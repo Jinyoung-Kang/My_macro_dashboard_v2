@@ -200,7 +200,7 @@ describe("통합 검색의 메뉴 항목", () => {
     ]);
     const liquidity = items.find((item) => item.href === "/liquidity");
     expect(liquidity).toEqual({
-      href: "/liquidity", label: "순유동성", section: "시장", keywords: ["시장", "연준 순유동성 트래커"], locked: false,
+      href: "/liquidity", label: "순유동성", section: "시장", tab: "markets", keywords: ["시장", "연준 순유동성 트래커"], locked: false,
     });
   });
 

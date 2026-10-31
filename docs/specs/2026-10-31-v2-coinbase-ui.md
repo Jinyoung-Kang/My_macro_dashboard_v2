@@ -281,6 +281,27 @@ Tailwind 4.3.3은 `--text-*--line-height`·`--text-*--font-weight`·`--text-*--l
   `aria-activedescendant` 동작 그대로.
 - 390px: 페이지 여백 16, TopBar 두 줄, 아래 탭 바, 표는 가로 스크롤과 '← 표를 좌우로 넘겨 보세요' 유지, 가로 페이지 스크롤 없음.
 
+### 6-1. 구현 메모(셸 단계, 2026-11-01) — 위 설계와 달리 한 것 [확인 코드·시험·QA 스택 캡처]
+
+- 커밋을 셋으로 나눴다: 장 시계 이동(+ MarketClock·Shell 시험) · 셸 겉모양 · 목록 행(더보기·검색 결과 — lib `nav`·`search`를 건드려 따로 뺌).
+- 장 상태 칩은 높이 28px(lg 미만)·32px(lg), 좁은 화면 둘째 줄은 `h-10`(칩 + 아래 여백). 가장 좁은 화면(sm 미만)은 칩 둘이 한 줄에 들도록 가운뎃점과 초를 숨긴다
+  (390px에서 '휴장 (주말)' 둘이 든다 — 360px는 그 줄만 가로로 넘기고 페이지 가로 스크롤은 없음). title은 '한국 (KOSPI) 날짜 시각 — 상태 — 휴일 안내'.
+  마운트 전에는 같은 높이의 빈 칩 둘(aria-hidden)로 자리를 잡는다.
+- 상단바 lg: 검색 단추에 기준 폭 520px(`lg:basis-[520px]`)을 주고 칩 묶음은 줄지 않게 했다 — 검색과 빈칸이 둘 다 `flex-1`이면 남는 폭을 반씩 나눠 검색이 좁아지고,
+  1024·1280px에서 칩이 벨 밑으로 밀렸다. 상단바 좌우 여백은 32px(1280px에서 검색 왼쪽 끝 = 본문 카드 왼쪽 끝). 벨 수 배지 글자는 11 → 12px.
+- SubNav 목록 여백은 본문 여백에서 탭 안쪽 여백(12px)을 뺀 값(`px-1 sm:px-3 lg:px-5`)이라 첫 탭 글이 본문 글과 같은 세로줄이다. /paper의 위계는 크기 차이
+  (SubNav md 15px·48px, 7탭 sm 14px·44px)와 자리(폭 전체 줄 · 본문 안)로 가르고 다른 장치는 두지 않았다.
+- TabBar: 고대비(forced-colors)에서 지금 탭은 이름 밑줄(굵기 semibold ↔ normal 차이와 함께). SideNav 지금 탭은 `forced-colors:border`.
+- 계정 행: 패턴 Avatar(36·40px) 대신 32px 원(테두리 + surface — 행 hover 바탕 surface-2 위에서도 보이게), 글자는 `lib/access`의 `accountInitial`(이메일 첫 글자).
+  이름은 말줄임 + title(예전 `break-all` 여러 줄 대신).
+- 더보기 행 아이콘은 `shell/icons`의 `MenuIcon(href)`(알림·AI 종합 분석·저장소 상태·연결 테스트·사용자 관리·내 계정 여섯, 없는 경로는 더보기 아이콘).
+  더보기 h1은 화면 다듬기 단계의 PageHeader 커밋(h1 20곳)에서 바꾼다 — 이 단계는 목록 행만.
+- 검색 결과 원은 `lib/search`의 `avatar`(`{tab}` 또는 `{text}` — 메뉴 항목에 `NavSearchItem.tab`을 더함), 고른 행에서는 원 바탕을 surface로(행 바탕 surface-2와 겹치지 않게).
+  입력칸은 닫기 단추 앞에서 끝나게 `mr-10`(안쪽 여백으로 비키면 닫기 단추가 입력칸 테두리·포커스 링 위에 겹침). `SearchCommand.test`의 종목 결과 글 단언은
+  장식 원(aria-hidden — 모노그램 'AAP')을 뺀 글로 비교하고 원 글자를 따로 본다.
+- 이모지 단계로 남긴 셸 글자: 잠금(SubNav·MoreMenu·SearchCommand — 잠금 커밋), 새로고침 단추의 로켓(장식 커밋), 로그아웃 오류의 경고(공용 커밋),
+  검색 결과 보조 글의 매크로 범주 제목 그림 문자(`indicatorEntries`의 `category.title` — 표시 정리 도우미 커밋에서 `withoutLeadingIcon`).
+
 ## 7. 화면
 
 ### 7-1. 공통

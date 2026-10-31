@@ -43,6 +43,12 @@ const trigger = () => screen.getByRole("button", { name: "종목·기관·지표
 const input = () => screen.getByRole("combobox", { name: "검색어" });
 const type = (text: string) => fireEvent.change(input(), { target: { value: text } });
 const optionLabels = () => screen.queryAllByRole("option").map((option) => option.textContent ?? "");
+/** 결과 행이 읽어 주는 글 — 왼쪽 원(장식, aria-hidden — 종목 모노그램 글자)을 뺀 글. */
+const spokenText = (element: HTMLElement) => {
+  const copy = element.cloneNode(true) as HTMLElement;
+  copy.querySelectorAll("[aria-hidden='true']").forEach((node) => node.remove());
+  return copy.textContent ?? "";
+};
 
 function openSearch(user: SessionUser = MEMBER) {
   render(<SearchCommand user={user} />);
@@ -197,7 +203,10 @@ describe("결과", () => {
 
     type("aapl");
     const group = screen.getByRole("group", { name: "종목" });
-    expect(within(group).getByRole("option").textContent).toBe("Apple Inc.AAPL · Technology→ 종목 스코어카드");
+    const apple = within(group).getByRole("option");
+    expect(spokenText(apple)).toBe("Apple Inc.AAPL · Technology→ 종목 스코어카드");
+    // 왼쪽 원은 장식(aria-hidden) — 종목은 티커 모노그램, 메뉴·지표·기관은 탭 아이콘(글 없음)
+    expect(apple.querySelector("span[aria-hidden='true'].rounded-full")?.textContent).toBe("AAP");
 
     type("버크셔");
     expect(within(screen.getByRole("group", { name: "기관" })).getByRole("option").textContent).toContain("버크셔 해서웨이 (Berkshire Hathaway)");
@@ -262,7 +271,7 @@ describe("이동", () => {
     expect(options[1].getAttribute("aria-selected")).toBe("true");
     expect(box.getAttribute("aria-activedescendant")).toBe(options[1].id);
     // 눈으로도 구분된다 — 고른 결과에만 왼쪽 잉크 막대(바탕색 차이만으로는 대비가 모자람).
-    const bar = (option: HTMLElement) => option.querySelector("span[aria-hidden='true'].bg-accent");
+    const bar = (option: HTMLElement) => option.querySelector("span[aria-hidden='true'].bg-text");
     expect(bar(options[1])).toBeTruthy();
     expect(bar(options[0])).toBeNull();
     fireEvent.keyDown(box, { key: "ArrowUp" });

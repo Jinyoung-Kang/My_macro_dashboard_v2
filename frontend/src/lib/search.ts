@@ -8,10 +8,17 @@
  * 일치: 대소문자·공백·기호를 무시하고, 한글은 자모로 풀어 맞춥니다 — 입력 중인 글자("맼" → "매크로")와 초성("ㅅㅈ" → "시장")도 맞습니다.
  * 순위: 정확히 같음 > 앞부분 > 중간(같은 단계면 이름이 검색어보다 앞섬, 그다음 원래 순서). 범주마다 상한이 있고 넘친 수는 `more`로 알립니다.
  */
-import type { NavSearchItem } from "./nav";
+import type { NavSearchItem, TabKey } from "./nav";
+import { assetMonogram } from "./patternRows";
 import type { MacroOverview, StockUniverseResponse } from "./types";
 
 export type SearchKind = "menu" | "indicator" | "institution" | "ticker";
+
+/**
+ * 결과 행 왼쪽 원 안에 그릴 것 — 탭 아이콘(메뉴는 그 화면의 탭, 지표는 시장, 기관은 기관) 또는 종목 모노그램(`assetMonogram` — 티커 앞 글자).
+ * 장식입니다(뜻은 이름 글이 나름). 모노그램을 만들 수 없으면 원을 비웁니다.
+ */
+export type SearchAvatar = { tab: TabKey } | { text: string };
 
 export type SearchEntry = {
   kind: SearchKind;
@@ -27,6 +34,8 @@ export type SearchEntry = {
   keywords: readonly string[];
   /** 무료 회원에게 잠긴 유료 화면(메뉴만) — 결과에 하위 메뉴·더보기와 같은 🔒을 붙입니다. */
   locked?: boolean;
+  /** 결과 행 왼쪽 원(없으면 빈 원). */
+  avatar?: SearchAvatar;
 };
 
 /** 범주 순서와 이름(결과 묶음의 제목). */
@@ -106,6 +115,7 @@ export function menuEntries(items: readonly NavSearchItem[]): SearchEntry[] {
     dest: null,
     keywords: item.keywords,
     locked: item.locked,
+    avatar: { tab: item.tab },
   }));
 }
 
@@ -126,6 +136,7 @@ export function indicatorEntries(overview: MacroOverview | null | undefined): Se
         href: DEST.indicator.href,
         dest: DEST.indicator.name,
         keywords: [item.ticker, item.key].filter((word): word is string => Boolean(word)),
+        avatar: { tab: "markets" },
       });
     }
   }
@@ -145,21 +156,26 @@ export function institutionEntries(list: InstitutionList | null | undefined): Se
     href: DEST.institution.href,
     dest: DEST.institution.name,
     keywords: [entry.cik, entry.key, entry.desc].filter((word): word is string => Boolean(word)),
+    avatar: { tab: "institutions" },
   }));
 }
 
 /** 스코어카드 유니버스 종목(이름·티커·섹터). 저장본이 없으면(available false) 비어 있습니다. */
 export function tickerEntries(universe: StockUniverseResponse | null | undefined): SearchEntry[] {
   if (!universe?.available) return [];
-  return universe.rows.map((row) => ({
-    kind: "ticker",
-    id: `ticker:${row.ticker}`,
-    label: row.name,
-    sub: row.sector ? `${row.ticker} · ${row.sector}` : row.ticker,
-    href: DEST.ticker.href,
-    dest: DEST.ticker.name,
-    keywords: [row.ticker],
-  }));
+  return universe.rows.map((row) => {
+    const monogram = assetMonogram({ name: row.name, ticker: row.ticker });
+    return {
+      kind: "ticker",
+      id: `ticker:${row.ticker}`,
+      label: row.name,
+      sub: row.sector ? `${row.ticker} · ${row.sector}` : row.ticker,
+      href: DEST.ticker.href,
+      dest: DEST.ticker.name,
+      keywords: [row.ticker],
+      avatar: monogram ? { text: monogram } : undefined,
+    };
+  });
 }
 
 type IndexedEntry = { entry: SearchEntry; order: number; keys: { jamo: string; cho: string }[] };

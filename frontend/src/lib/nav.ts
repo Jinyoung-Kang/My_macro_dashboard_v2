@@ -181,8 +181,11 @@ export function documentTitle(pathname: string): string {
   return name ? `${name} · ${APP_TITLE}` : APP_TITLE;
 }
 
-/** 통합 검색의 메뉴 항목 하나 — 보이는 화면만, 탭 이름이 보조 글. locked는 무료 회원에게 잠긴 유료 화면(하위 메뉴와 같은 🔒). */
-export type NavSearchItem = { href: string; label: string; section: string; keywords: readonly string[]; locked: boolean };
+/**
+ * 통합 검색의 메뉴 항목 하나 — 보이는 화면만, 탭 이름이 보조 글. locked는 무료 회원에게 잠긴 유료 화면(하위 메뉴와 같은 잠금 표시).
+ * tab은 그 화면이 속한 탭(결과 행 왼쪽 원에 그 탭의 아이콘을 그림).
+ */
+export type NavSearchItem = { href: string; label: string; section: string; tab: TabKey; keywords: readonly string[]; locked: boolean };
 
 /**
  * 통합 검색에 넣을 메뉴 — 이 사용자에게 보이는 탭의 보이는 화면 전부(하위 메뉴가 하나뿐인 탭도) + 더보기 화면 자체.
@@ -196,12 +199,13 @@ export function navSearchItems(user: SessionUser | null | undefined): NavSearchI
         href: item.href,
         label: item.title ?? item.label,
         section: tab.label,
+        tab: tab.key,
         keywords: [tab.label, ...(item.keywords ?? [])],
         locked: lockedFor(user, item.href),
       });
     }
     if (!tab.items.some((item) => item.href === tab.href)) {
-      out.push({ href: tab.href, label: tab.label, section: tab.label, keywords: [], locked: lockedFor(user, tab.href) });
+      out.push({ href: tab.href, label: tab.label, section: tab.label, tab: tab.key, keywords: [], locked: lockedFor(user, tab.href) });
     }
   }
   return out;

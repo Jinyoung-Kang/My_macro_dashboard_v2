@@ -9,7 +9,7 @@ import { BuildInfo } from "./BuildInfo";
 import { ReadModeNote } from "./ReadMode";
 import { RefreshButton } from "./RefreshButton";
 import { ThemeSwitch } from "./ThemeSwitch";
-import { ChevronRightIcon } from "./icons";
+import { ChevronRightIcon, MenuIcon } from "./icons";
 
 const MORE = TABS.find((tab) => tab.key === "more");
 
@@ -18,6 +18,7 @@ const MORE = TABS.find((tab) => tab.key === "more");
  *
  * 좁은 화면에서는 왼쪽 내비가 없어 계정·읽기 모드·새로고침·테마·빌드 정보를 여기서 씁니다. 데스크톱에서도 열립니다(같은 내용이 왼쪽 내비에도 있음 —
  * 테마 전환 둘은 같은 탭 안 이벤트로 함께 바뀝니다). 운영자 전용 화면은 운영자에게만, 유료 화면은 무료 회원에게 🔒.
+ * 하위 화면은 목록 행(높이 64px — 원 안 아이콘 · 화면 이름 · 오른쪽 화살표)이고, 행 전체가 링크입니다(hover 바탕).
  */
 export function MoreMenu() {
   const user = useSessionUser();
@@ -31,13 +32,19 @@ export function MoreMenu() {
 
       <section aria-labelledby="more-menus" className="flex flex-col gap-2">
         <h2 id="more-menus" className="text-sm font-semibold text-text-2">메뉴</h2>
-        <ul className="divide-y divide-border overflow-hidden rounded-xl border border-border bg-surface">
+        <ul className="divide-y divide-border overflow-hidden rounded-card border border-border bg-surface">
           {items.map((item) => (
             <li key={item.href}>
               <Link
                 href={item.href}
-                className="flex min-h-[54px] items-center gap-3 px-4 text-[15px] text-text hover:underline focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-focus"
+                className="flex min-h-16 items-center gap-3 px-4 text-[15px] font-semibold text-text hover:bg-surface-2 motion-safe:transition-colors motion-safe:duration-150 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-focus lg:px-5"
               >
+                <span
+                  aria-hidden="true"
+                  className="inline-flex size-10 shrink-0 items-center justify-center rounded-full border border-border bg-surface text-text-2"
+                >
+                  <MenuIcon href={item.href} size={20} />
+                </span>
                 <span className="min-w-0 flex-1 truncate">
                   {item.label}
                   {lockedFor(user, item.href) && (
