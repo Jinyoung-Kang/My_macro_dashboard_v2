@@ -11,6 +11,7 @@
  * 시작한 기록이 보이면 끝난 것입니다. (같은 태스크를 스케줄러가 이미 돌리고 있었다면 새로
  * 시작하지 않고 그 실행에 합류하므로, 그 실행의 기록이 곧 결과입니다.)
  */
+import { withoutLeadingIcon } from "./format.ts";
 import type { TaskSummary } from "./types.ts";
 
 export type TaskRunRow = Pick<TaskSummary, "task" | "status" | "startedAt" | "durationMs" | "detail">;
@@ -40,7 +41,8 @@ export function taskStatusView(status: string | null | undefined): TaskStatusVie
 /** 수동 실행이 끝났을 때의 안내 — '<태스크> 완료 — <결과 설명>'과 그 결과의 톤(기호 글자 없이). */
 export function taskDoneMessage(taskName: string, run: Pick<TaskRunRow, "status" | "detail">): { text: string; tone: TaskTone } {
   return {
-    text: `${taskName} 완료${run.detail ? ` — ${run.detail}` : ""}`,
+    // 결과 설명(task_runs.detail)은 수집기가 적은 글이라 예전 기호('⚠️ 추정치')가 섞여 옵니다 — 화면에서 뗍니다
+    text: `${taskName} 완료${run.detail ? ` — ${withoutLeadingIcon(run.detail)}` : ""}`,
     tone: taskStatusView(run.status).tone,
   };
 }

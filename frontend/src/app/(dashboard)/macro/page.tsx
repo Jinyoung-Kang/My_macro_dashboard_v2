@@ -20,7 +20,7 @@ import {
 import { AlertTriangleIcon, StatusText } from "@/components/ui/icons";
 import { useApi } from "@/hooks/useApi";
 import { SOURCES, uniqueSources } from "@/lib/sources";
-import { EMPTY, formatKst } from "@/lib/format";
+import { EMPTY, formatKst, withoutLeadingIcon } from "@/lib/format";
 import { cardNotices, categoryDelay } from "@/lib/macroCards";
 import type {
   AdvancedIndicators,
@@ -158,7 +158,7 @@ export default function MacroPage() {
                       <span className="flex min-h-5 flex-wrap items-center gap-1">
                         {/* 개장 상태와 시세 지연은 배지 하나("개장 · 10분 지연")로, 지연이 아닌 알림만 따로 둡니다.
                             예전 저장본(delayMinutes 없음)은 예전처럼 note 배지를 씁니다. */}
-                        {item.delayMinutes === undefined && item.note && <SourceBadge>{item.note}</SourceBadge>}
+                        {item.delayMinutes === undefined && item.note && <SourceBadge>{withoutLeadingIcon(item.note)}</SourceBadge>}
                         <SessionBadge
                           market={item.market}
                           now={now}

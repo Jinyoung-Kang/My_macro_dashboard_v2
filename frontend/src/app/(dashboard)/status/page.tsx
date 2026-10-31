@@ -20,7 +20,7 @@ import { useRefreshSignal } from "@/hooks/useRefreshSignal";
 import { useAsyncAction } from "@/hooks/useAsyncAction";
 import { useTaskRunner } from "@/hooks/useTaskRunner";
 import { apiPost } from "@/lib/api";
-import { EMPTY, formatAge, formatKst, formatNumber, formatWithUnit } from "@/lib/format";
+import { EMPTY, formatAge, formatKst, formatNumber, formatWithUnit, withoutLeadingIcon } from "@/lib/format";
 import type {
   PublicApiDiagnosticsResponse,
   StatusIssuesResponse,
@@ -98,7 +98,7 @@ export default function StatusPage() {
         <Metric
           label="성공 / 실패"
           value={lastRun ? `${lastRun.okCount} / ${lastRun.failCount}` : "—"}
-          caption={lastRun?.detail ?? undefined}
+          caption={lastRun?.detail ? withoutLeadingIcon(lastRun.detail) : undefined}
         />
         <Metric
           label="누적 시계열"
@@ -183,7 +183,7 @@ export default function StatusPage() {
               header: "상세",
               render: (row) => (
                 <span className={row.status === "ok" ? "text-muted" : "text-warn"}>
-                  {row.detail ?? EMPTY}
+                  {row.detail ? withoutLeadingIcon(row.detail) : EMPTY}
                 </span>
               ),
             },

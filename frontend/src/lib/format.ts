@@ -414,12 +414,25 @@ export function statusColor(color: string | null | undefined): string {
 }
 
 /**
- * 제목 앞의 그림 문자(이모지·국기) 아이콘을 뗍니다 — 카드 제목에 아이콘을 쓰지 않습니다.
- * 수집기 데이터에서 오는 제목(예: 매크로 카테고리 "💵 통화 및 환율")도 같은 모양으로 맞춥니다.
+ * 그림 문자(이모지·국기) 아이콘을 뗍니다 — 앞뿐 아니라 글 가운데·끝에 있어도(이름은 처음 쓰임새인 '제목 앞'에서 왔습니다).
+ * 화면은 이모지를 쓰지 않습니다(명세 2026-10-31-v2-coinbase-ui §8-2). 수집기·백엔드·DB에서 오는 글 — 매크로 범주 제목,
+ * 13F 액션, AI 엔진 라벨, 기관 이름, 알림 제목·본문, 태스크 결과 설명 — 은 예전 저장본이 남아 있어 서버 문구를 고쳐도
+ * 화면에서 한 번 더 정리합니다.
+ *
+ * - 기호(이어진 기호·이형 선택자·결합자 포함)와 그 뒤 공백을 함께 지웁니다: '(🧭 시장 국면)' → '(시장 국면)'.
+ * - 겹친 공백은 하나로, 앞뒤 공백은 지웁니다. 줄바꿈은 그대로 둡니다(알림 본문).
+ * - 그림 문자 속성이 있어도 글자 기호로 쓰는 ↔·↕·▪·©·®·™는 남깁니다.
+ * - 원문(복사·다운로드·AI 입력)은 바꾸지 않습니다 — 화면에 그릴 때만 부릅니다.
  */
 export function withoutLeadingIcon(text: string): string {
-  return text.replace(/^[\p{Extended_Pictographic}\p{Regional_Indicator}\u200d\ufe0f\s]+/u, "");
+  return text
+    .replace(ICON_RUN, "")
+    .replace(/[ \t]{2,}/g, " ")
+    .replace(/[ \t]*\n[ \t]*/g, "\n")
+    .trim();
 }
+
+const ICON_RUN = /(?:(?![\u2194\u2195\u25aa\u00a9\u00ae\u2122])[\p{Extended_Pictographic}\p{Regional_Indicator}]|[\u200d\ufe0f])+[ \t]*/gu;
 
 /**
  * 숫자 + 단위. 모르는 값이면 단위 없이 "—"입니다 — "—%"·"—억 원"은 값이 있는 것처럼 읽혔습니다(QA-049).

@@ -8,6 +8,7 @@
  * 일치: 대소문자·공백·기호를 무시하고, 한글은 자모로 풀어 맞춥니다 — 입력 중인 글자("맼" → "매크로")와 초성("ㅅㅈ" → "시장")도 맞습니다.
  * 순위: 정확히 같음 > 앞부분 > 중간(같은 단계면 이름이 검색어보다 앞섬, 그다음 원래 순서). 범주마다 상한이 있고 넘친 수는 `more`로 알립니다.
  */
+import { withoutLeadingIcon } from "./format";
 import type { NavSearchItem, TabKey } from "./nav";
 import { assetMonogram } from "./patternRows";
 import type { MacroOverview, StockUniverseResponse } from "./types";
@@ -99,11 +100,6 @@ export function searchKey(text: string): { jamo: string; cho: string } {
 
 // ------------------------------------------------------------------ 색인
 
-/** 이름 앞의 국기·그림 문자(🇺🇸 등)를 뗍니다 — 결과 목록에서 이름이 같은 자리에서 시작하게. */
-function stripLeadingEmoji(text: string): string {
-  return text.replace(/^[\p{Extended_Pictographic}\p{Regional_Indicator}‍️\s]+/u, "").trim();
-}
-
 /** 메뉴 항목(lib/nav navSearchItems — 이미 사용자에게 보이는 것만). */
 export function menuEntries(items: readonly NavSearchItem[]): SearchEntry[] {
   return items.map((item) => ({
@@ -132,7 +128,8 @@ export function indicatorEntries(overview: MacroOverview | null | undefined): Se
         kind: "indicator",
         id: `indicator:${item.key}`,
         label: item.name,
-        sub: item.ticker ? `${category.title} · ${item.ticker}` : category.title,
+        // 범주 제목은 수집기가 저장한 글이라 예전 그림 문자가 붙어 옵니다(화면에서만 뗌)
+        sub: item.ticker ? `${withoutLeadingIcon(category.title)} · ${item.ticker}` : withoutLeadingIcon(category.title),
         href: DEST.indicator.href,
         dest: DEST.indicator.name,
         keywords: [item.ticker, item.key].filter((word): word is string => Boolean(word)),
@@ -151,7 +148,8 @@ export function institutionEntries(list: InstitutionList | null | undefined): Se
   return (list?.institutions ?? []).map((entry) => ({
     kind: "institution",
     id: `institution:${entry.cik}`,
-    label: stripLeadingEmoji(entry.name),
+    // 이름 앞 국기는 떼고 씁니다 — 결과 목록에서 이름이 같은 자리에서 시작하게(lib/format.withoutLeadingIcon)
+    label: withoutLeadingIcon(entry.name),
     sub: `13F · CIK ${entry.cik}`,
     href: DEST.institution.href,
     dest: DEST.institution.name,

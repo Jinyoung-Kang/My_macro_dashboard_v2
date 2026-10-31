@@ -169,6 +169,9 @@ describe("색인 항목", () => {
     expect(entries.map((item) => item.label)).toEqual(["달러 인덱스 (DXY)", "원/달러 (USD/KRW)", "S&P 500", "나스닥 100"]);
     expect(entries[0]).toMatchObject({ kind: "indicator", sub: "환율 · DX-Y.NYB", href: "/macro", dest: "매크로 지표", keywords: ["DX-Y.NYB", "dxy"] });
     expect(entries[3]).toMatchObject({ sub: "주가지수", keywords: ["ndx"] });
+    // 범주 제목의 예전 그림 문자는 보조 글에서 뗀다
+    const flagged = { ...OVERVIEW, categories: [{ ...OVERVIEW.categories[0], title: "💵 통화 및 환율" }] } as MacroOverview;
+    expect(indicatorEntries(flagged)[0].sub).toBe("통화 및 환율 · DX-Y.NYB");
     expect(indicatorEntries({ ...OVERVIEW, available: false })).toEqual([]);
     expect(indicatorEntries(null)).toEqual([]);
   });

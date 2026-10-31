@@ -25,6 +25,9 @@ describe("taskDoneMessage", () => {
     expect(taskDoneMessage("macro_collected", { status: "ok", detail: "12건 저장" }))
       .toEqual({ text: "macro_collected 완료 — 12건 저장", tone: "ok" });
     expect(taskDoneMessage("sec_13f", { status: "error", detail: null })).toEqual({ text: "sec_13f 완료", tone: "danger" });
+    // 결과 설명의 예전 기호(수집기 문구 '⚠️ 추정치')는 화면에서 뗀다
+    expect(taskDoneMessage("krx_futures", { status: "ok", detail: "31행 (⚠️ 추정치 — 누적 제외)" }).text)
+      .toBe("krx_futures 완료 — 31행 (추정치 — 누적 제외)");
     // 타입에 없는 상태가 와도(수집기가 먼저 바뀐 경우) 중립
     expect(taskDoneMessage("x", { status: "weird" as never, detail: "" })).toEqual({ text: "x 완료", tone: "neutral" });
   });

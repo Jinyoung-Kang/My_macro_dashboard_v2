@@ -110,6 +110,34 @@ describe("제목 앞 아이콘 떼기", () => {
   });
 });
 
+describe("서버·DB 글의 그림 문자 정리 — 어디에 있든(명세 §8-2, 예전 저장본 표본)", () => {
+  it("괄호 안·글 가운데·끝의 기호도 떼고, 기호 뒤 공백을 함께 지워 괄호·문장이 그대로 붙는다", () => {
+    expect(withoutLeadingIcon("국면 전환 — 확장 (🧭 시장 국면)")).toBe("국면 전환 — 확장 (시장 국면)");
+    expect(withoutLeadingIcon("31행 (⚠️ 추정치 — 누적 제외)")).toBe("31행 (추정치 — 누적 제외)");
+    expect(withoutLeadingIcon("채권 시장의 공포 지수. ⚠️ 이 화면의 값은 추정치")).toBe("채권 시장의 공포 지수. 이 화면의 값은 추정치");
+    expect(withoutLeadingIcon("역전 (Inversion) ⚠️")).toBe("역전 (Inversion)");
+    expect(withoutLeadingIcon("13F 신규 편입 — 🇺🇸 버크셔 해서웨이 (Berkshire Hathaway)")).toBe("13F 신규 편입 — 버크셔 해서웨이 (Berkshire Hathaway)");
+  });
+
+  it("AI 엔진 라벨·13F 액션·KRX 성향·기관 이름(국기 쌍)", () => {
+    expect(withoutLeadingIcon("⚡ 자동 탐색 — 권장 (Failover)")).toBe("자동 탐색 — 권장 (Failover)");
+    expect(withoutLeadingIcon("🟣 Anthropic — Claude Haiku 5.5")).toBe("Anthropic — Claude Haiku 5.5");
+    expect(withoutLeadingIcon("🆕 신규 매수 (New)")).toBe("신규 매수 (New)");
+    expect(withoutLeadingIcon("📉 비중 축소 (Reduced)")).toBe("비중 축소 (Reduced)");
+    expect(withoutLeadingIcon("⚪ 비교 데이터 없음")).toBe("비교 데이터 없음");
+    expect(withoutLeadingIcon("🟢 매수 우위(Long)")).toBe("매수 우위(Long)");
+    expect(withoutLeadingIcon("🇳🇴 노르웨이 국부펀드 (Norges Bank / GPFG)")).toBe("노르웨이 국부펀드 (Norges Bank / GPFG)");
+    expect(withoutLeadingIcon("🇺🇸")).toBe("");
+  });
+
+  it("줄바꿈은 그대로(알림 본문), 겹친 공백은 하나로, 글자 기호(↔·↕·▪·©·▲▼·✓)는 남긴다", () => {
+    expect(withoutLeadingIcon("첫 줄 ⚠️\n🇺🇸 버크셔  해서웨이")).toBe("첫 줄\n버크셔 해서웨이");
+    expect(withoutLeadingIcon("USD↔KRW ▲ 1.2% ✓ ▪ ↕ ©")).toBe("USD↔KRW ▲ 1.2% ✓ ▪ ↕ ©");
+    expect(withoutLeadingIcon("👨‍👩‍👧 가족")).toBe("가족");
+    expect(withoutLeadingIcon("")).toBe("");
+  });
+});
+
 describe("AI 소요 시간 (화면에서 옮김, 동작 동일)", () => {
   it("1분 미만은 소수 한 자리 초, 1분 이상은 분·초, 모르면 미상", () => {
     expect(formatLatency(4200)).toBe("4.2초");
