@@ -81,23 +81,23 @@ public class AiService {
 
     /** 분석 엔진 레지스트리 (번역 전용 모델은 선택지에서 제외). */
     public static final List<Engine> ENGINES = List.of(
-            new Engine("auto", "⚡ 자동 탐색 — 권장 (Failover)", "auto", null,
+            new Engine("auto", "자동 탐색 — 권장 (Failover)", "auto", null,
                     "사용 가능한 엔진을 우선순위대로 자동 호출합니다."),
-            new Engine("anthropic_haiku", "🟣 Anthropic — Claude Haiku 5.5", "anthropic",
+            new Engine("anthropic_haiku", "Anthropic — Claude Haiku 5.5", "anthropic",
                     "claude-haiku-5-5", "빠른 장문 분석·한국어 리포트 (유료 — 리포트 1건 약 1센트 미만)"),
-            new Engine("nvidia_nemotron", "🟢 NVIDIA — Nemotron-3 Super 120B", "nvidia",
+            new Engine("nvidia_nemotron", "NVIDIA — Nemotron-3 Super 120B", "nvidia",
                     "nvidia/nemotron-3-super-120b-a12b", "장문 투자 분석 및 구조화된 리포트"),
-            new Engine("nvidia_gpt_oss_120b", "🟢 NVIDIA — OpenAI GPT-OSS 120B", "nvidia",
+            new Engine("nvidia_gpt_oss_120b", "NVIDIA — OpenAI GPT-OSS 120B", "nvidia",
                     "openai/gpt-oss-120b", "고난도 추론·장문 종합 분석"),
-            new Engine("nvidia_gpt_oss_20b", "🟢 NVIDIA — OpenAI GPT-OSS 20B", "nvidia",
+            new Engine("nvidia_gpt_oss_20b", "NVIDIA — OpenAI GPT-OSS 20B", "nvidia",
                     "openai/gpt-oss-20b", "비교적 빠른 보조 분석"),
-            new Engine("nvidia_llama_33_70b", "🟢 NVIDIA — Meta Llama 3.3 70B Instruct", "nvidia",
+            new Engine("nvidia_llama_33_70b", "NVIDIA — Meta Llama 3.3 70B Instruct", "nvidia",
                     "meta/llama-3.3-70b-instruct", "범용 지시 이행·다국어 분석"),
-            new Engine("cloudflare_deepseek", "🟠 Cloudflare — DeepSeek-R1 (32B)", "cloudflare",
+            new Engine("cloudflare_deepseek", "Cloudflare — DeepSeek-R1 (32B)", "cloudflare",
                     "@cf/deepseek-ai/deepseek-r1-distill-qwen-32b", "추론형 분석 보조"),
-            new Engine("cloudflare_llama", "🟠 Cloudflare — Llama 3.3 70B FP8 Fast", "cloudflare",
+            new Engine("cloudflare_llama", "Cloudflare — Llama 3.3 70B FP8 Fast", "cloudflare",
                     "@cf/meta/llama-3.3-70b-instruct-fp8-fast", "장문 매크로·투자 분석용 고속 모델"),
-            new Engine("cerebras_llama", "🔵 Cerebras — Llama 3.3 70B", "cerebras",
+            new Engine("cerebras_llama", "Cerebras — Llama 3.3 70B", "cerebras",
                     "llama-3.3-70b", "초고속 장문 생성"));
 
     /**
@@ -770,7 +770,7 @@ public class AiService {
 
         if (lowered.contains("timed out") || lowered.contains("timeout")) {
             return ("%d초 안에 응답하지 않았습니다. 추론형 모델은 오래 걸릴 수 있습니다 — "
-                    + "'⚡ 자동 탐색'을 고르면 응답이 빠른 엔진으로 넘어가고, "
+                    + "'자동 탐색'을 고르면 응답이 빠른 엔진으로 넘어가고, "
                     + "더 기다리려면 .env에 AI_TIMEOUT_SECONDS를 늘리세요.")
                     .formatted(waitedSeconds);
         }
