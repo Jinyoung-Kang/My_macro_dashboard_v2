@@ -138,11 +138,12 @@ export function SearchCommand({ user }: { user?: SessionUser }) {
       hideTitle
       size="lg"
       trigger={
+        // 투명 1px 테두리 — 고대비(forced-colors) 모드에서 바탕색이 지워져도 알약 경계가 시스템 색 테두리로 남습니다(단추와 같음, 명세 D9).
         <button
           type="button"
           aria-label="종목·기관·지표·메뉴 검색"
           aria-keyshortcuts={isMac ? "Meta+K" : "Control+K"}
-          className="flex h-11 min-w-0 flex-1 items-center gap-2.5 rounded-full bg-surface-2 px-4 text-left text-sm text-text-3 hover:text-text-2 motion-safe:transition-colors motion-safe:duration-150 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus lg:h-10 lg:max-w-[520px] lg:basis-[520px]"
+          className="flex h-11 min-w-0 flex-1 items-center gap-2.5 rounded-full border border-transparent bg-surface-2 px-4 text-left text-sm text-text-3 hover:text-text-2 motion-safe:transition-colors motion-safe:duration-150 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus lg:h-10 lg:max-w-[520px] lg:basis-[520px]"
         >
           <SearchIcon />
           <span className="min-w-0 flex-1 truncate">종목·기관·지표·메뉴 검색</span>

@@ -101,9 +101,12 @@ function statusFor(
   return { text: "장 마감", tone: STATUS_TONE.closed };
 }
 
-/** 칩 모양 — 좁은 화면(상단바 둘째 줄)은 12px·높이 28px, 넓은 화면(상단바 한 줄 64px)은 13px·높이 32px. */
+/**
+ * 칩 모양 — 좁은 화면(상단바 둘째 줄)은 12px·높이 28px, 넓은 화면(상단바 한 줄 64px)은 13px·높이 32px.
+ * 가장 좁은 화면(sm 미만)의 안쪽 여백은 6px — 8px이면 390px에서 '휴장 (주말)' 칩 둘이 줄(358px)보다 4px 넓어 둘째 칩 끝이 잘렸습니다.
+ */
 const CHIP =
-  "inline-flex h-7 shrink-0 items-center gap-1 whitespace-nowrap rounded-full border border-border px-2 text-xs text-text sm:gap-1.5 sm:px-2.5 lg:h-8 lg:px-3 lg:text-[13px]";
+  "inline-flex h-7 shrink-0 items-center gap-1 whitespace-nowrap rounded-full border border-border px-1.5 text-xs text-text sm:gap-1.5 sm:px-2.5 lg:h-8 lg:px-3 lg:text-[13px]";
 
 export function MarketClock() {
   const [now, setNow] = useState<Date | null>(null);
@@ -144,7 +147,7 @@ export function MarketClock() {
   if (!now || !kst || !est) {
     // 마운트 전 자리 — 칩 둘의 높이를 미리 잡아 상단바가 흔들리지 않게 합니다.
     return (
-      <div aria-hidden="true" className="flex items-center gap-2">
+      <div aria-hidden="true" className="flex items-center gap-1.5 sm:gap-2">
         <span className={`${CHIP} w-32 lg:w-36`} />
         <span className={`${CHIP} w-32 lg:w-36`} />
       </div>
@@ -155,7 +158,7 @@ export function MarketClock() {
   const estStatus = statusFor("NASDAQ", est.minutes, est.weekday, usHolidays.has(est.date));
 
   return (
-    <div className="flex min-w-0 items-center gap-2">
+    <div className="flex min-w-0 items-center gap-1.5 sm:gap-2">
       <ClockChip
         label="한국 (KOSPI)"
         shortLabel="KOSPI"
