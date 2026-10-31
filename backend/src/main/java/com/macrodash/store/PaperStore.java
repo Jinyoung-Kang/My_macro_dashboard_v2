@@ -278,10 +278,11 @@ public class PaperStore {
     }
 
     /**
-     * 한 책의 장부 한 벌 — {@link #ledgers}가 한 스냅숏으로 읽은 상태(없으면 null)·보유(ticker 순)·순자산 줄(거래일 오름차순). 장중 평가가 현금과
-     * 보유를 같은 시점으로 견주는 데 씁니다(QA-152).
+     * 한 책의 장부 한 벌 — {@link #ledgers}가 한 스냅숏으로 읽은 상태(없으면 null)·보유(ticker 순)·순자산 줄(거래일 오름차순)·대기 주문(PENDING,
+     * {@link #ordersByStatus} 순). 장중 평가가 현금과 보유·아직 체결되지 않은 주문을 같은 시점으로 견주는 데 씁니다(QA-152).
      */
-    public record BookLedger(Book book, BookState state, List<Position> positions, List<NavRow> nav) {
+    public record BookLedger(Book book, BookState state, List<Position> positions, List<NavRow> nav,
+                             List<Order> pending) {
     }
 
     /** 정기 작업 실행 기록. 끝나지 않았으면 {@code finishedAt}이 null. */
@@ -1464,7 +1465,7 @@ public class PaperStore {
 
     // ------------------------------------------------------------------ 장부 한 벌(한 스냅숏)
     /**
-     * 그 시장({@code market} — US·KR) 책들의 장부 한 벌({@link BookLedger}), code 순 — 책·상태·보유·순자산 줄을 모두 한 스냅숏({@link #readConsistently})
+     * 그 시장({@code market} — US·KR) 책들의 장부 한 벌({@link BookLedger}), code 순 — 책·상태·보유·순자산 줄·대기 주문을 모두 한 스냅숏({@link #readConsistently})
      * 으로 읽습니다. 모르는 시장이면 빈 목록.
      */
     public List<BookLedger> ledgers(String market) {
@@ -1472,7 +1473,7 @@ public class PaperStore {
             List<BookLedger> out = new ArrayList<>();
             for (Book book : books(market)) {
                 out.add(new BookLedger(book, state(book.code()).orElse(null), positions(book.code()),
-                        navSeries(book.code())));
+                        navSeries(book.code()), ordersByStatus(book.code(), "PENDING")));
             }
             return out;
         });

@@ -29,7 +29,7 @@ import java.util.Map;
 import java.util.Optional;
 
 /**
- * 🧪 모의 매매 장중 평가 — {@code GET /api/paper/live?market=US|KR}(운영자). 정규장 동안 보유 종목을 최신 1분봉 가격(수집기
+ * 모의 매매 장중 평가 — {@code GET /api/paper/live?market=US|KR}(운영자). 정규장 동안 보유 종목을 최신 1분봉 가격(수집기
  * {@code paper_live_us}·{@code paper_live_kr})으로 다시 평가해 계좌·종목 수익률이 움직이게 하고, 모든 값에 기준 시각·출처를 붙입니다.
  *
  * <p><b>표시 전용 추정</b>입니다({@code isEstimated:true}). 장부(체결·스탑·확정 순자산·통계·결정 패킷)는 지금처럼 관측치와 확정 종가로만
@@ -37,9 +37,11 @@ import java.util.Optional;
  * live 읽기({@link Datasets#MAX_AGE_LIVE})가 오래된 저장본을 두고 수집을 요청하고 {@code quotes.refreshRequested:true}로 알려, 화면이
  * 잠시 뒤 한 번 더 읽습니다. 장 밖에서는 수집을 요청하지 않고 장부의 마지막 관측치로 답합니다.
  *
- * <p>값 규칙 — 가격은 그날 세션 안의 1분봉이고 오래되지 않았을 때만 장중 값(LIVE), 아니면 장부의 마지막 관측 가격(LAST_OBSERVATION)이고
- * 그것도 없으면 null(0으로 채우지 않음). '오늘 변화'는 기준 거래일 앞의 마지막 확정 순자산(정규장·장 마감 직후는 그날, 그 밖은 장부가 마지막으로
- * 평가한 거래일) 대비, 종목은 관측치 일봉의 직전 거래일 종가 대비입니다.
+ * <p>값 규칙({@link LiveValuation}) — 종목마다 그날 세션 안의 이어받지 않은 1분봉이 장부의 마지막 관측(수집 시각)보다 늦을 때만 장중 값(LIVE),
+ * 아니면 장부의 마지막 관측 가격(LAST_OBSERVATION)이고 그것도 없으면 null(0으로 채우지 않음 — 그 계좌의 순자산·평가액·노출도 null, 장부는 그런
+ * 보유를 평단으로 평가). '오늘 변화'는 기준 거래일(정규장·장 마감 뒤 같은 날은 그날, 그 밖은 장부가 마지막으로 평가한 거래일) 앞의 마지막 순자산
+ * 줄(잠정 포함 — 확정 여부는 {@code previousNavFinal}) 대비, 종목은 관측치 일봉의 직전 거래일 종가 대비입니다. 책·상태·보유·순자산 줄·대기 주문은
+ * 한 스냅숏으로 읽습니다(QA-152).
  */
 @Service
 public class PaperLiveService {
@@ -106,7 +108,7 @@ public class PaperLiveService {
                     : state == null ? null : state.lastNavTradingDate();
             NavRow previous = LiveValuation.previousNav(ledger.nav(), reference);
             rows.add(LiveValuation.book(ledger.book(), state, ledger.positions(), previous, reference, live, bars,
-                    session, now));
+                    session, now, LiveValuation.pendingOrders(ledger.pending(), korea, run.calendar(), now)));
         }
 
         Map<String, Object> out = new LinkedHashMap<>();

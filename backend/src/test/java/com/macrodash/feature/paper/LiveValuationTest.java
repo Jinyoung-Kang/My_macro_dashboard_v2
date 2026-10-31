@@ -1,13 +1,16 @@
 package com.macrodash.feature.paper;
 
 import com.macrodash.analytics.DailySeries;
+import com.macrodash.analytics.PaperLedger;
 import com.macrodash.analytics.UsMarketCalendar;
 import com.macrodash.feature.paper.LiveValuation.LivePrice;
+import com.macrodash.feature.paper.LiveValuation.Priced;
 import com.macrodash.feature.paper.LiveValuation.Session;
 import com.macrodash.feature.paper.PaperMarketData.Bar;
 import com.macrodash.store.PaperStore.Book;
 import com.macrodash.store.PaperStore.BookState;
 import com.macrodash.store.PaperStore.NavRow;
+import com.macrodash.store.PaperStore.Order;
 import com.macrodash.store.PaperStore.Position;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -104,7 +107,7 @@ class LiveValuationTest {
         Map<String, Bar> bars = Map.of("AAA", bar("AAA", Map.of("2026-10-28", 405.0, "2026-10-29", 410.0)));
 
         Map<String, Object> out = LiveValuation.book(book, state, positions, nav("2026-10-29", 99_000), FRI, live, bars,
-                REGULAR_FRI, Instant.parse("2026-10-30T15:00:00Z"));
+                REGULAR_FRI, Instant.parse("2026-10-30T15:00:00Z"), null);
 
         // 10,000 + 100 × 420(장중) + 200 × 240(BBB는 이어받은 값이라 장부의 마지막 관측 가격) = 100,000
         assertThat(out).containsEntry("nav", 100_000.0).containsEntry("returnPct", 0.0)
@@ -125,13 +128,97 @@ class LiveValuationTest {
     void unknownPriceAndNotStarted() {
         BookState state = new BookState("rules", 10_000, 99_000, 89_000, 89.9, null, null, null, null);
         Map<String, Object> missing = LiveValuation.book(book("rules", "ACTIVE"), state,
-                List.of(position("AAA", 100, 400, null)), null, FRI, Map.of(), Map.of(), REGULAR_FRI, OPEN.plusSeconds(60));
+                List.of(position("AAA", 100, 400, null)), null, FRI, Map.of(), Map.of(), REGULAR_FRI, OPEN.plusSeconds(60), null);
         assertThat(missing).containsEntry("nav", null).containsEntry("returnPct", null).containsEntry("dayChangePct", null)
-                .containsEntry("basis", LiveValuation.LAST_OBSERVATION);
+                .containsEntry("basis", LiveValuation.LAST_OBSERVATION)
+                .as("장부는 그런 보유를 평단으로 평가하지만 장중 평가는 평가액·노출을 짓지 않음")
+                .containsEntry("equityValue", null).containsEntry("exposurePct", null);
 
         Map<String, Object> notStarted = LiveValuation.book(book("rules", PaperBooks.NOT_STARTED), null, List.of(), null,
-                FRI, Map.of(), Map.of(), REGULAR_FRI, OPEN);
+                FRI, Map.of(), Map.of(), REGULAR_FRI, OPEN, null);
         assertThat(notStarted).containsEntry("cash", null).containsEntry("nav", null).containsEntry("basisAtKst", null);
+    }
+
+    @Test
+    @DisplayName("종목마다 늦은 가격 — 장중 1분봉이 장부 관측(수집 시각)보다 늦을 때만 장중 값, 아니면 장부 관측 가격, 장부 가격이 없으면 장중 값")
+    void laterPriceWinsPerTicker() {
+        Instant now = Instant.parse("2026-10-30T15:00:00Z");
+        Priced aaa = LiveValuation.price(position("AAA", 100, 400, 410.0, "2026-10-30T14:05:00Z"),
+                price("2026-10-30T14:58:00Z", false, 420), REGULAR_FRI, now);
+        assertThat(aaa.live()).as("14:58 봉 > 14:05 관측").isTrue();
+        assertThat(aaa.price()).isEqualTo(420.0);
+
+        Priced bbb = LiveValuation.price(position("BBB", 200, 250, 240.0, "2026-10-30T14:55:00Z"),
+                price("2026-10-30T14:30:00Z", false, 245), REGULAR_FRI, now);
+        assertThat(bbb.live()).as("14:30 봉 < 14:55 관측 — 장부가 더 늦음").isFalse();
+        assertThat(bbb.price()).isEqualTo(240.0);
+        assertThat(bbb.at()).isEqualTo(Instant.parse("2026-10-30T14:55:00Z"));
+
+        Priced fresh = LiveValuation.price(position("CCC", 10, 50, null), price("2026-10-30T14:58:00Z", false, 51),
+                REGULAR_FRI, now);
+        assertThat(fresh.live()).as("장부 가격이 아직 없음").isTrue();
+
+        Map<String, Object> out = LiveValuation.book(book("claude2", "ACTIVE"), state(10_000),
+                List.of(position("AAA", 100, 400, 410.0, "2026-10-30T14:05:00Z"),
+                        position("BBB", 200, 250, 240.0, "2026-10-30T14:55:00Z")),
+                null, FRI, Map.of("AAA", price("2026-10-30T14:58:00Z", false, 420),
+                        "BBB", price("2026-10-30T14:30:00Z", false, 245)), Map.of(), REGULAR_FRI, now, 0);
+        // 10,000 + 100 × 420(장중) + 200 × 240(장부가 더 늦음) = 100,000
+        assertThat(out).containsEntry("nav", 100_000.0).containsEntry("basis", LiveValuation.LIVE)
+                .containsEntry("liveCount", 1).containsEntry("basisAtKst", "2026-10-30 23:58 KST");
+    }
+
+    @Test
+    @DisplayName("계좌 평가액·노출은 장부와 같은 식(현금성 포함 평가액, 평가액 ÷ 순자산 × 100), 직전 줄의 확정 여부, 대기 주문 수 그대로")
+    void equityExposureAndPreviousFinal() {
+        List<Position> positions = List.of(position("AAA", 100, 400, 410.0), position("SHY", 200, 82, 80.0));
+        Map<String, LivePrice> live = Map.of("AAA", price("2026-10-30T14:58:00Z", false, 420));
+        Instant now = Instant.parse("2026-10-30T15:00:00Z");
+
+        Map<String, Object> out = LiveValuation.book(book("claude", "ACTIVE"), state(42_000), positions,
+                nav("2026-10-29", 99_000), FRI, live, Map.of(), REGULAR_FRI, now, 2);
+        // 평가액 100 × 420 + 200 × 80 = 58,000, 순자산 100,000 — 장부의 PaperLedger.value와 같은 값
+        PaperLedger.Valuation ledger = PaperLedger.value(42_000, Map.of("AAA", 100, "SHY", 200),
+                Map.of("AAA", 420.0, "SHY", 80.0));
+        assertThat(out).containsEntry("nav", ledger.nav()).containsEntry("equityValue", ledger.equityValue())
+                .containsEntry("exposurePct", 58.0).containsEntry("previousNavFinal", true)
+                .containsEntry("pendingOrders", 2);
+
+        Map<String, Object> provisional = LiveValuation.book(book("claude", "ACTIVE"), state(42_000), positions,
+                new NavRow("claude", LocalDate.of(2026, 10, 29), 99_000, 0, 99_000, 100, false), FRI, live, Map.of(),
+                REGULAR_FRI, now, 0);
+        assertThat(provisional).as("직전 줄이 잠정이면 false — 기준은 그대로 그 줄").containsEntry("previousNavFinal", false)
+                .containsEntry("previousTradingDate", "2026-10-29").containsEntry("dayChangePct", 1.01);
+
+        Map<String, Object> none = LiveValuation.book(book("claude", "ACTIVE"), state(42_000), positions, null, FRI, live,
+                Map.of(), REGULAR_FRI, now, null);
+        assertThat(none).containsEntry("previousNavFinal", null).containsEntry("pendingOrders", null);
+    }
+
+    @Test
+    @DisplayName("시각이 지난 대기 주문 — 미국은 시각 지정(계좌2: T ≤ 지금), 한국은 NEXT_OPEN(목표 세션 개장 뒤), 그 밖 시점은 세지 않음, 달력이 모르는 해는 null")
+    void pendingOrders() {
+        LocalDate thu = LocalDate.of(2026, 10, 29);
+        // 미국 — 기준 거래일 목요일 → 목표 세션 금요일. 지금 11:00 ET(15:00 UTC)
+        Instant usNow = Instant.parse("2026-10-30T15:00:00Z");
+        List<Order> us = List.of(
+                order(PaperBooks.NEXT_OPEN, thu, null),                                  // 09:30 ET — 지남
+                order(PaperBooks.AT_1000, thu, null),                                    // 10:00 ET — 지남
+                order(PaperBooks.AT_1500, thu, null),                                    // 15:00 ET — 아직
+                order(PaperBooks.MARKET, thu, Instant.parse("2026-10-30T14:50:00Z")),   // T = 14:52 UTC — 지남
+                order("NEXT_OBSERVATION", thu, null),                                    // 시각 없는 시점 — 세지 않음
+                order(PaperBooks.AT_1100, FRI, null));                                   // 목표 세션 다음 주 월요일 — 아직
+        assertThat(LiveValuation.pendingOrders(us, false, UsMarketCalendar.CALENDAR, usNow)).isEqualTo(3);
+
+        // 한국 — 지금 10-30(금) 10:00 KST. 목요일 기준 NEXT_OPEN은 금요일 09:00 개장이 지남, 금요일 기준은 월요일 개장 전
+        Instant krNow = Instant.parse("2026-10-30T01:00:00Z");
+        List<Order> kr = List.of(order(PaperBooks.NEXT_OPEN, thu, null), order(PaperBooks.NEXT_OPEN, FRI, null),
+                order(PaperBooks.AT_1000, thu, null));
+        assertThat(LiveValuation.pendingOrders(kr, true, KrRulesFixtures.CALENDAR, krNow)).isEqualTo(1);
+
+        assertThat(LiveValuation.pendingOrders(List.of(order(PaperBooks.NEXT_OPEN, LocalDate.of(2031, 1, 2), null)), true,
+                KrRulesFixtures.CALENDAR, krNow)).as("달력이 그해를 모름").isNull();
+        assertThat(LiveValuation.pendingOrders(List.of(), false, UsMarketCalendar.CALENDAR, usNow)).isZero();
     }
 
     // ------------------------------------------------------------------ 재료
@@ -153,9 +240,24 @@ class LiveValuationTest {
     }
 
     private static Position position(String ticker, int qty, double avgCost, Double lastPrice) {
-        Instant at = Instant.parse("2026-10-30T09:05:00Z");
+        return position(ticker, qty, avgCost, lastPrice, "2026-10-30T09:05:00Z");
+    }
+
+    private static Position position(String ticker, int qty, double avgCost, Double lastPrice, String lastPriceAt) {
+        Instant at = Instant.parse(lastPriceAt);
         return new Position("claude", ticker, qty, avgCost, PaperFixtures.FRI, at, avgCost, at, lastPrice,
                 lastPrice == null ? null : at, false, PaperFixtures.FRI, avgCost, null);
+    }
+
+    private static BookState state(double cash) {
+        Instant at = Instant.parse("2026-10-30T09:05:00Z");
+        return new BookState("claude", cash, 0, 0, 0, at, at, LocalDate.of(2026, 10, 29), at);
+    }
+
+    /** 대기 주문(PENDING) 하나 — 시점·기준 거래일·만든 시각(MARKET의 기준 시각, 없으면 기준 거래일 밤). */
+    private static Order order(String timing, LocalDate asOf, Instant createdAt) {
+        return new Order(0, "claude2", 1L, "AAA", PaperBooks.BUY, null, 10.0, null, timing, "CLAUDE", PaperBooks.ORDER_PENDING,
+                null, null, asOf, createdAt == null ? Instant.parse("2026-10-30T10:30:00Z") : createdAt, null, null);
     }
 
     private static Bar bar(String ticker, Map<String, Double> closes) {

@@ -82,7 +82,7 @@ export interface PaperLiveBook {
   /** 출발 대비 % */
   returnPct: number | null;
   previousNav: number | null;
-  /** previousNav의 거래일(그 확정 순자산 대비가 dayChangePct) */
+  /** previousNav의 거래일 — 기준 거래일 앞의 마지막 순자산 줄(잠정 포함), 그 대비가 dayChangePct */
   previousTradingDate: string | null;
   dayChangePct: number | null;
   basis: "LIVE" | "LAST_OBSERVATION";
