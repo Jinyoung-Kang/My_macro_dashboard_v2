@@ -421,6 +421,23 @@ Tailwind 4.3.3은 `--text-*--line-height`·`--text-*--font-weight`·`--text-*--l
 - **noEmoji 시험**(`lib/__tests__/noEmoji.test.ts`): 지금 0건. 시험 자신이 검사기 표본(이스케이프한 U+26A0·템플릿 안 국기·JSX 속성·JSX 글은 잡고, 주석·정규식·
   나눗셈·허용 기호는 건너뜀)을 함께 확인한다. 시험 파일(`*.test.*`)·`__checks__`의 콘솔 출력 기호는 범위 밖(§12).
 
+### 8-7. 구현 메모(이모지 단계 — 서버, 2026-11-01) [확인 코드·grep·시험]
+
+- **바꾼 곳**(§8-3 표 그대로, 커밋 여섯): 저장소 안내 11곳 · `AlertText` 국면 알림 끝줄 · `AiService` 엔진 라벨 9개와 시간 초과 안내의 '자동 탐색' ·
+  `HoldingsDiff` 상수 7개 · 수집기 `series.py` 두 곳 · 잠금화면(`gate.py` 안내 줄·텔레그램 세 문구, `services.json` 설명). 기호와 그 뒤 공백만 지웠다.
+- **AI 입력에 들어가지 않는 근거**(D7): `SnapshotTextService`는 저장소 안내(`message`)를 읽지 않는다 — 없으면 '데이터 없음'·'COT 데이터 수집 실패'를 직접 적고,
+  `CotService`의 두 안내는 `extremes()`(스냅샷이 부르지 않음) 안이다. 13F 변화 글은 스냅샷이 `consensus()`의 개수(`buyCount`·`sellCount` — 한글 `contains`)로만
+  쓰고, 패킷은 `Signal13F` 코드(NEW·ADDED·CLOSED)를 쓴다. 엔진 라벨은 `engines()` 목록·실패 문구(`provider`·`error`)에만 실리고, 모의매매는 `structured()`(라벨 없음)를
+  부른다. 시간 초과 안내는 모의매매 기록의 오류 칸에 남을 수 있지만 패킷(`PacketBuilder`·`KrPacketBuilder`·`CheckpointPacket`)과 복기 입력(`ReviewFacts`)은 오류 칸을 읽지 않는다. 수집기 결과 문구는 `collector_task_runs.detail`(상태 화면)이다.
+  `AlertText`는 알림함·홈 요약에만 쓰인다.
+- **시험**: 고친 고정 시험은 `AiServiceAllowListTest`·`Sec13FServiceTest`·`test_gate.py`. 바꾼 문구를 붙잡는 단언을 더했다 — `AlertServiceTest`(국면 알림 끝줄이
+  '(시장 국면)'), `test_tasks.py`(추정치 KRX 선물 결과 문구 전체), `test_gate.py`(잠금 화면·기본 `services.json`·텔레그램 문구에 그림 문자 없음 — 표준 `re`에
+  `\p{Extended_Pictographic}`이 없어 블록 범위로).
+- **잠금화면**: 안내 줄은 로그인 화면 제목처럼 기호만 지웠다(아이콘 없음). `deploy/aws/offline/index.html`은 다시 확인해도 그림 문자가 없다(D6).
+- **그대로 둔 것**: §8-4 목록, 고친 줄 밖의 주석 이모지(예: `series.py` 추정치 줄 위 주석, `application.yml`의 '자동 탐색' 주석), 프런트 시험의 옛 문구 표본(옛 DB 행 정리를
+  시험하는 입력이라 남김). 화면의 표시 정리(`withoutLeadingIcon`·`holdingActionView`·`engineLabel`)는 옛 DB 행 때문에 그대로 둔다.
+- 이 작업 환경에는 JDK 21이 없어(25뿐) 백엔드는 JDK 25로만 쟀다 — 바꾼 것은 문자열 리터럴뿐이라 판에 따른 차이는 없다 [추정].
+
 ## 9. 시험 영향
 
 - 시험은 바뀐 코드와 같은 커밋에서 고친다. 뜻을 보는 단언(role·aria-label·aria-current·aria-sort·aria-expanded·sr-only 글·`text-warn`/`text-up`/`text-down`/`tabular-nums`/`sr-only`)은 지키고,

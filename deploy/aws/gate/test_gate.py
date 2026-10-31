@@ -24,6 +24,9 @@ import gate
 
 SECRET = "s" * 40
 CODE_A, CODE_B = "correct-horse-1", "recruiter-xyz-2"
+# 그림 문자(이모지·국기·이형 선택자·결합자) — 화면과 알림 문구에는 쓰지 않는다(v2 화면 개편 명세 D6). 표준 라이브러리 re 에는
+# \p{Extended_Pictographic} 이 없어 블록으로 잡는다. 가운뎃점(·)·대시(–, —) 같은 문장 부호는 이 블록 밖이다.
+PICTOGRAPH = re.compile("[\U0001F000-\U0001FAFF\u2300-\u23FF\u2600-\u27BF\u2B00-\u2BFF\uFE0F\u200D]")
 
 
 def make_config(**overrides) -> gate.Config:
@@ -67,6 +70,7 @@ class HashTest(unittest.TestCase):
             gate.Config.from_env({"GATE_SECRET": SECRET, "GATE_CODES": ""})
         cfg = gate.Config.from_env({"GATE_SECRET": SECRET, "GATE_CODES": f"a:{gate.hash_code('abc12345')}"})
         self.assertIn("macro", cfg.services)  # 기본 services.json
+        self.assertIsNone(PICTOGRAPH.search(json.dumps(cfg.services, ensure_ascii=False)))
         self.assertTrue(cfg.cookie_secure)
         self.assertEqual(cfg.cookie_name, "__Host-pf_gate")
 
@@ -279,6 +283,8 @@ class ServerTest(unittest.TestCase):
         self.assertIn("Macro", page)
         self.assertIn('value="/sector?tab=1"', page)
         self.assertIn("데모 계정 안내", page)
+        self.assertIn("접근 코드가 필요합니다", page)
+        self.assertIsNone(PICTOGRAPH.search(page))
 
     def test_locked_api_gets_json(self):
         for headers in ({"Accept": "application/json", "X-Forwarded-Method": "GET"},
@@ -651,7 +657,7 @@ class NotifierTest(Capture, unittest.TestCase):
         n = self.make()
         n.unlocked("macro", "211.234.12.34", "recruit", CHROME_WIN)
         self.assertTrue(n.flush(5))
-        self.assertEqual(self.sent, ["🔓 Macro — 잠금 해제\n코드: recruit\n시각: 2026-10-15 10:32 KST\n"
+        self.assertEqual(self.sent, ["Macro — 잠금 해제\n코드: recruit\n시각: 2026-10-15 10:32 KST\n"
                                      "IP: 211.234.12.x\n기기: Chrome · Windows"])
 
     def test_lock_messages_use_the_limits(self):
@@ -660,9 +666,9 @@ class NotifierTest(Capture, unittest.TestCase):
         n.locked_global("wakeline")
         self.assertTrue(n.flush(5))
         self.assertEqual(self.sent, [
-            "⛔ Macro — 접근 코드 5회 실패\n15분 안에 5회 틀려 이 IP 를 15분 동안 막습니다\n"
+            "Macro — 접근 코드 5회 실패\n15분 안에 5회 틀려 이 IP 를 15분 동안 막습니다\n"
             "시각: 2026-10-15 10:32 KST\nIP: 2001:db8:1::/48\n기기: 알 수 없음",
-            "🚨 Wakeline — 전체 잠금\n1시간 안에 30회 틀려 30분 동안 모든 서비스의 시도를 막습니다\n시각: 2026-10-15 10:32 KST",
+            "Wakeline — 전체 잠금\n1시간 안에 30회 틀려 30분 동안 모든 서비스의 시도를 막습니다\n시각: 2026-10-15 10:32 KST",
         ])
         # 숫자는 상수에서 온다
         with mock.patch.multiple(gate, IP_MAX_FAILS=3, IP_LOCK_S=3600, GLOBAL_MAX_FAILS=6, GLOBAL_LOCK_S=7200):
@@ -671,12 +677,13 @@ class NotifierTest(Capture, unittest.TestCase):
             self.assertTrue(n.flush(5))
         self.assertIn("3회 틀려 이 IP 를 1시간 동안", self.sent[2])
         self.assertIn("6회 틀려 2시간 동안", self.sent[3])
+        self.assertEqual([m for m in self.sent if PICTOGRAPH.search(m)], [])
 
     def test_unknown_service_uses_its_key(self):
         n = self.make()
         n.unlocked("other", "1.2.3.4", "recruit", None)
         self.assertTrue(n.flush(5))
-        self.assertTrue(self.sent[0].startswith("🔓 other — 잠금 해제\n"))
+        self.assertTrue(self.sent[0].startswith("other — 잠금 해제\n"))
 
     def test_same_service_and_ip_once_an_hour(self):
         n = self.make()
@@ -819,14 +826,14 @@ class TelegramTransportTest(Capture, unittest.TestCase):
     def test_request_shape(self):
         transport = gate.TelegramTransport(TOKEN, CHAT_ID)
         with mock.patch.object(gate.urllib.request, "urlopen") as urlopen:
-            transport("🔓 Macro — 잠금 해제\n코드: recruit")
+            transport("Macro — 잠금 해제\n코드: recruit")
         urlopen.assert_called_once()
         req, timeout = urlopen.call_args.args[0], urlopen.call_args.kwargs["timeout"]
         url = urlsplit(req.full_url)
         self.assertEqual((url.scheme, url.netloc, url.path), ("https", "api.telegram.org", f"/bot{TOKEN}/sendMessage"))
         self.assertEqual(req.get_method(), "POST")
         self.assertEqual(req.get_header("Content-type"), "application/json; charset=utf-8")
-        self.assertEqual(json.loads(req.data), {"chat_id": CHAT_ID, "text": "🔓 Macro — 잠금 해제\n코드: recruit",
+        self.assertEqual(json.loads(req.data), {"chat_id": CHAT_ID, "text": "Macro — 잠금 해제\n코드: recruit",
                                                 "link_preview_options": {"is_disabled": True}})  # 평문 — parse_mode 없음
         self.assertEqual(timeout, gate.TELEGRAM_TIMEOUT_S)
         self.assertLessEqual(gate.TELEGRAM_TIMEOUT_S, 5)
@@ -847,7 +854,7 @@ class TelegramTransportTest(Capture, unittest.TestCase):
             n.unlocked("wakeline", "1.2.3.4", "alice", None)
             self.assertTrue(n.flush(5))
         self.assertEqual(urlopen.call_count, 4)
-        self.assertTrue(json.loads(urlopen.call_args.args[0].data)["text"].startswith("🔓 Wakeline — 잠금 해제\n"))
+        self.assertTrue(json.loads(urlopen.call_args.args[0].data)["text"].startswith("Wakeline — 잠금 해제\n"))
         out = log.getvalue()
         for want in ('"status": 429', '"error": "URLError"', '"error": "TimeoutError"'):
             self.assertIn(want, out)
@@ -934,7 +941,7 @@ class NotifyServerTest(Capture, unittest.TestCase):
         self.flush()
         self.assertEqual(len(self.sent), 1)
         msg = self.sent[0]
-        for want in ("🔓 Macro — 잠금 해제", "코드: alice", "시각: 2026-10-15 10:32 KST", "IP: 211.234.12.x",
+        for want in ("Macro — 잠금 해제", "코드: alice", "시각: 2026-10-15 10:32 KST", "IP: 211.234.12.x",
                      "기기: Chrome · Windows"):
             self.assertIn(want, msg)
         for secret in ("211.234.12.34", "Mozilla", CODE_A):  # 전체 IP · UA 원문 · 코드 자체는 보내지 않는다
@@ -951,7 +958,7 @@ class NotifyServerTest(Capture, unittest.TestCase):
         self.assertEqual(self.unlock(CODE_B)[0].status, 303)  # 1시간 뒤
         self.flush()
         self.assertEqual([m.split("\n")[0] for m in self.sent],
-                         ["🔓 Macro — 잠금 해제", "🔓 Wakeline — 잠금 해제", "🔓 Macro — 잠금 해제"])
+                         ["Macro — 잠금 해제", "Wakeline — 잠금 해제", "Macro — 잠금 해제"])
         self.assertIn("코드: acme", self.sent[2])
 
     def test_ip_rotation_does_not_flood_alerts(self):
@@ -981,7 +988,7 @@ class NotifyServerTest(Capture, unittest.TestCase):
             self.assertEqual(self.unlock(code)[0].status, 429)
         self.flush()
         self.assertEqual(len(self.sent), 1)
-        self.assertTrue(self.sent[0].startswith(f"⛔ Macro — 접근 코드 {gate.IP_MAX_FAILS}회 실패\n"))
+        self.assertTrue(self.sent[0].startswith(f"Macro — 접근 코드 {gate.IP_MAX_FAILS}회 실패\n"))
         self.assertIn("IP: 203.0.113.x", self.sent[0])
         self.assertIn("기기: Chrome · Windows", self.sent[0])
 
@@ -994,7 +1001,7 @@ class NotifyServerTest(Capture, unittest.TestCase):
                 self.assertEqual(self.unlock(CODE_A, ip=f"192.0.2.{i}")[0].status, 429)
             self.flush()
         self.assertEqual(len(self.sent), 1)
-        self.assertTrue(self.sent[0].startswith("🚨 Macro — 전체 잠금\n1시간 안에 6회 틀려 30분 동안"))
+        self.assertTrue(self.sent[0].startswith("Macro — 전체 잠금\n1시간 안에 6회 틀려 30분 동안"))
 
     def test_slow_sender_does_not_hold_responses(self):
         entered, release = threading.Event(), threading.Event()

@@ -389,7 +389,7 @@ PAGE = """<!doctype html>
 </head>
 <body>
 <main>
-  <p class="lock">🔒 접근 코드가 필요합니다</p>
+  <p class="lock">접근 코드가 필요합니다</p>
   <h1>{title}</h1>
   <p class="desc">{description}</p>
   <form method="post" action="{prefix}/unlock">
@@ -597,7 +597,7 @@ class Notifier:
                     self._unsaid += 1
                     log_event("telegram_capped", kind="unlock")
                     return
-                lines = [f"🔓 {self._title(service)} — 잠금 해제", f"코드: {code_name}",
+                lines = [f"{self._title(service)} — 잠금 해제", f"코드: {code_name}",
                          *self._when_where(now, ip, user_agent)]
                 if self._unsaid:
                     lines.append(f"그 사이 알리지 못한 잠금 해제 {self._unsaid}건 "
@@ -618,7 +618,7 @@ class Notifier:
         try:
             now = self.clock()
             self._put("locked_ip", "\n".join([
-                f"⛔ {self._title(service)} — 접근 코드 {IP_MAX_FAILS}회 실패",
+                f"{self._title(service)} — 접근 코드 {IP_MAX_FAILS}회 실패",
                 f"{duration_text(IP_WINDOW_S)} 안에 {IP_MAX_FAILS}회 틀려 이 IP 를 {duration_text(IP_LOCK_S)} 동안 막습니다",
                 *self._when_where(now, ip, user_agent)]))
         except Exception as e:
@@ -631,7 +631,7 @@ class Notifier:
         try:
             now = self.clock()
             self._put("locked_global", "\n".join([
-                f"🚨 {self._title(service)} — 전체 잠금",
+                f"{self._title(service)} — 전체 잠금",
                 f"{duration_text(GLOBAL_WINDOW_S)} 안에 {GLOBAL_MAX_FAILS}회 틀려 "
                 f"{duration_text(GLOBAL_LOCK_S)} 동안 모든 서비스의 시도를 막습니다",
                 f"시각: {kst_text(now)}"]))
