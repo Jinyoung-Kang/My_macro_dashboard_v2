@@ -116,7 +116,7 @@ def task_fed_liquidity() -> str:
     )
 
     if payload.get("isEstimated"):
-        return f"{len(rows)}행 (⚠️ 추정치 — 누적 제외)"
+        return f"{len(rows)}행 (추정치 — 누적 제외)"
 
     accumulated = 0
     for column in ("walcl", "wtregen", "rrpM", "netLiquidityM"):
@@ -157,7 +157,7 @@ def task_krx_futures() -> str:
 
     if payload.get("isEstimated"):
         # ⚠️ 추정치는 누적하지 않습니다. 실제 확정치와 섞이면 구분 불가능합니다.
-        return f"{len(rows)}행 (⚠️ 추정치 — 누적 제외)"
+        return f"{len(rows)}행 (추정치 — 누적 제외)"
 
     accumulated = 0
     for column in ("futuresClose", "volume", "openInterest"):

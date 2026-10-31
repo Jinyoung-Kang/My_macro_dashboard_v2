@@ -73,7 +73,7 @@ def test_estimated_krx_futures_are_not_accumulated(store, monkeypatch):
 
     detail = tasks.task_krx_futures()
 
-    assert "추정치" in detail
+    assert detail == "1행 (추정치 — 누적 제외)"  # 상태 화면 문구 — 그림 문자 없이
     assert store.read_timeseries(catalog.TS_KRX_FUTURES, "futuresClose") == []
     snapshot = store.read_snapshot(catalog.SNAP_KRX_FUTURES)
     assert snapshot.status == "estimated"
