@@ -8,6 +8,9 @@
     패턴의 네 상태 테스트(`components/patterns/__tests__/*` — 값 있음·값 없음·추정·오래됨), 화면의 네 상태 테스트
     (`components/screens/home/__tests__/HomeScreen.test.tsx`, `app/(dashboard)/__tests__/paperOverviewStates.test.tsx`·`paperStateHandling.test.tsx`),
     `lib/__tests__/nav.test.ts`(탭·하위 메뉴 표, 지금 탭, 탭 제목, 검색 메뉴 항목 — 셸은 그리기만)
+  - v2 Coinbase식 개편(아래 두 번째 덧붙임): `components/ui/__tests__/icons.test.tsx`(아이콘 내보내기 목록·장식 aria-hidden·잠금만 이름),
+    `lib/__tests__/noEmoji.test.ts`(화면 소스의 문자열·JSX 글자에 그림 문자 없음 — TypeScript AST), `components/ui/__tests__/formControls.test.tsx`(입력칸 모양·예전 포커스 표시 금지),
+    `selectionClasses.test.ts`(고르기 조각 클래스), `pageHeader.test.tsx`(화면 머리 — 예전 h1 모양 금지), `lib/__tests__/lineChart.test.ts`·`hooks/__tests__/useChartScrub.test.ts`(문지르기)
 
 ## 배경
 
@@ -63,3 +66,14 @@
 - `components/screens/<탭>/`: 화면 조립. 라우트 `page.tsx`는 화면 컴포넌트를 그리기만 합니다. 옛 화면은 4단계에 옮길 때까지 `app/(dashboard)/**`에 그대로.
 - `components/ui.tsx`·`charts.tsx`는 `ui/index.tsx`·`charts/index.tsx`로 옮겼습니다(가져오는 지정자 그대로 — 테스트 mock이 그 지정자에 걸림).
 - 서버 읽기는 그대로 훅(`useApi`, 브라우저)입니다. 설계서의 서버 컴포넌트 fetch를 하지 않은 이유는 [ARCHITECTURE §4-3](../ARCHITECTURE.md).
+
+## 덧붙임 — v2 Coinbase식 개편(2026-11-01): 아이콘·클래스 모듈·문지르기 훅
+
+위 결정과 1단계 덧붙임은 그대로이고, 같은 층 나누기 안에서 셋을 더했습니다([명세](../specs/2026-10-31-v2-coinbase-ui.md)).
+
+- `components/ui/icons.tsx`: 이모지 대신 쓰는 인라인 SVG 아이콘(새 의존성 없음)과 `StatusDot`·`StatusText`·`StatusIcon`·`LineIcon`. 아이콘은 장식(aria-hidden)이고
+  뜻은 글·sr-only 글이 나릅니다(잠금 아이콘만 이름). 셸의 아이콘 모듈은 탭 아이콘만 두고 나머지는 여기서 다시 내보냅니다.
+- `components/ui/classes.ts`(와 `components/auth/classes.ts`): 단추·입력칸·고르기 조각(기간 알약·세그먼트·밑줄 탭·거르기 칩)·고른 행 막대의 클래스 문자열을
+  React 없는 순수 모듈로 둡니다 — `"use client"`인 `ui/index.tsx`의 함수는 서버 컴포넌트(`/privacy`)에서 부를 수 없어서입니다. `@/components/ui`가 다시 내보냅니다.
+- 차트 문지르기: 상태는 훅 `hooks/useChartScrub.ts`, 표시 값은 순수 함수 `lib/lineChart.ts`의 `scrubIndex`·`scrubModel`, 그리기는 `LineChart variant="hero"`와
+  `Hero scrub`(차트는 여전히 `@/components/charts`에서만). 서버·DB 글의 그림 문자 정리(`withoutLeadingIcon`)와 표시 모델(`holdingActionView`·`taskStatusView` 등)도 `lib/`입니다.

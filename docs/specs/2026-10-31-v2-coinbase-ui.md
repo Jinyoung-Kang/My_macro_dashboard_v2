@@ -346,6 +346,39 @@ Tailwind 4.3.3은 `--text-*--line-height`·`--text-*--font-weight`·`--text-*--l
 - **인증 화면**(/login·/signup·/reset·/verify·/privacy, `AuthCard`): 가운데 `max-w-sm rounded-card p-8`, 제목 24 bold(/login h1의 [자물쇠] 지움), 입력칸 `inputClasses` h-12, 주 단추 primary 폭 전체.
 - **대시보드 레이아웃 오류 상태**(`(dashboard)/layout.tsx`): AlertTriangle(aria-hidden)과 h1 글. 문구 그대로.
 
+### 7-4. 구현 메모(화면 다듬기 단계, 2026-11-01) — 위 설계와 달리 한 것 [확인 코드·시험·QA 스택 캡처]
+
+- **PageHeader**(`c218438c`): ui의 새 조각 — h1 `text-2xl sm:text-title-1`, 설명 `text-body-md text-text-2`, 동작은 제목 묶음의 아래 끝에 맞춰 오른쪽(`items-end` —
+  이름표가 위에 있는 고르기 상자의 상자가 설명 줄과 한 줄), 설명 아래 덧붙일 줄(매크로 자동 갱신 안내)은 children. 20곳을 바꾸며 저장소 상태의 신선도 배지를
+  설명 줄 안에서 동작 칸으로 옮겼고, 순유동성의 배지는 고르기 상자와 같은 높이 칸의 가운데에 둔다(예전 5px 올림은 상자 높이가 바뀌어 맞지 않음).
+  `pageHeader.test`가 화면 소스에 예전 h1 모양(`text-xl font-bold`)이 다시 들어오는 것을 막는다. 구역 간격 `gap-6 lg:gap-8`도 같은 커밋.
+- **글자 하한**(`cb9b180b`): `text-[10px]`·`text-[11px]` 178곳(시험 제외 47파일) → `text-xs`. 차트 SVG 글자는 차트 커밋(`b92743f2`)에서 이미 12px.
+- **배지 모서리**(`bc3d29ba`): 추정·이전 값 배지는 `rounded-full`이 아니라 `rounded-control`(12px) — 한 줄(22px)이면 알약과 같고, 사유가 긴 이전 값 배지가
+  390px에서 두세 줄로 접히면 `rounded-full`은 타원이 되어 글이 모서리에 걸렸다.
+- **홈**(`82baad6d`): 시장 행 아바타는 `macroCardRow`의 `assetMonogram`, 계좌 행 아바타는 `paperHomeModel`의 `bookMonogram`(개요와 공용인 `bookAssetRow`에는 넣지
+  않음 — 개요 행 아바타는 D1). **계좌 색 고리는 달지 않았다** — 홈에는 그 색이 가리킬 순자산 곡선이 없고, 색 표(`BOOK_COLORS`)가 `OverviewSection` 안에 있어
+  옮기면 D1에 어긋난다(§12). 국면 히어로는 `Hero valueKind="label"`(새 선택 prop — 판정 라벨은 28/36px, 숫자 자리 맞춤 없음; 44px 라벨이 반 폭에서 세 줄로 접혔음).
+  시장 범주 목록은 `xl:grid-cols-2`, '시장' 제목 title-2. `AssetRow`의 값·칩 덩어리에 `ml-auto` — 좁은 화면에서 아바타·이름과 한 줄에 들지 않아 내려가도
+  오른쪽 끝(설계 '값과 칩은 오른쪽 한 덩어리'). **홈 차트의 문지르기는 쓰지 않았다** — 홈에는 시계열 차트가 없고(매크로 개요에 이력 없음), 모의매매 `navSeries`로
+  히어로 곡선을 더하는 것은 정보 구조를 바꾸는 일(A6)이라 §12. 문지르기를 처음 쓰는 화면은 장중 값 단계의 개요 히어로다.
+- **A1 감사**(`cd98d91b`): §7-2 표대로. 다르게 한 것 — 매크로 '갱신 중…'은 text-2(설계 text-3: 바로 옆 글이 이미 text-3라 같은 색이면 상태가 바뀐 것이
+  보이지 않음), 홈 안 읽음 점은 `bg-text` 대신 `border-4 border-text`(고대비 모드에서 바탕색이 지워져도 찬 점), 알림함 읽지 않은 알림은 `border-strong` 테두리·
+  잉크 점·굵은 제목, AI 리포트 결론 칸은 `border-strong`, 프레임 판 비교의 강조한 줄은 `surface-2` 바탕 + 굵은 잉크 글(굵기가 고대비에서도 남음),
+  복기에서 연 제안은 잉크 2px(`border-text ring-1 ring-text`). 국면의 다른 세 칸과 설정 '규칙 계좌 영향' 배지의 투명 틴트도 불투명 틴트로.
+  새로 생긴 쌍의 대비(라이트 / 다크): 켠 거르기 칩 accent ÷ accent-tint 5.43 / 5.56 · 중립 배지 text-2 ÷ surface-2 6.15 / 8.47 · 읽은 알림 text-3 ÷ surface-2 50% 4.86 / 5.68 ·
+  국면 띠 회복(text-2) ÷ 판정 불가(border) 5.41 / 7.03 · 결론 테두리 border-strong ÷ surface 3.38 / 3.69 · 스타일 막대 text-3 ÷ 트랙 surface-2 4.62 / 5.30 [확인 tools/contrast 계산].
+- **옛 화면**(`503bba68`): `rounded-md·lg·xl` → `rounded-control`, 데이터 배지 `rounded-sm` → 알약(`px-2`), 투명 warn·ok 틴트 → 불투명. 거르기 칩 `filterChipClasses`
+  (새, ui/classes — 교집합 분석 대상 기관·환율 겹쳐 보기): 켠 칩은 강조 파랑(누르는 것)에 굵은 글과 체크 아이콘(장식), 두 상태 모두 테두리. 결정 로그 보기·실행 감사
+  계좌의 단추 묶음은 세그먼트(`SEGMENT_TRACK`·`segmentClasses` + `FOCUS_RING` — aria-pressed 단추라 포커스 링은 단추에). Metric 격자 간격은 `StatGrid`와 같은
+  `gap-3`이라 그대로, 표 hover는 기반 단계에서 끝남. **D1 세 파일**(`OverviewSection`·`LiveValuationCard`·`AccountDetailPanel`)의 옛 모서리·투명 틴트는 그대로다
+  (A1의 계좌 상세 테두리만 바꿈) — 장중 값 단계 몫.
+- **인증 화면**(`e3590e66`): 클래스는 `components/auth/classes.ts`(새, React 없는 모듈 — 서버 컴포넌트 `/privacy`와 로그인 화면이 함께), 입력칸 `inputClasses("lg")`
+  (새 크기 48px·15px), 주 단추는 `buttonClasses("primary")` 폭 전체(높이는 md — 44/40px). 대시보드 레이아웃 오류 화면 둘은 16px 모서리·주 단추 sm.
+- **고대비(D9)**(`07e8240d`): headless 크롬에서 CDP `Emulation.setEmulatedMedia({forced-colors: active})`로 확인했다 — 투명 테두리는 시스템 글자색으로 칠해지고
+  바탕색은 지워진다. 그래서 밑줄 탭의 나머지 탭은 그 모드에서 밑줄을 지우고(`forced-colors:border-b-0` — 예전에는 모든 탭에 밑줄), 고른 행 막대는 공용
+  `SELECTED_BAR`(`bg-text` + `forced-colors:border-l-[3px]` — 자산 행·검색 결과)로 테두리로도 그린다. 고른 알약·세그먼트·SideNav·TabBar·상태 점·히어로 문지르기
+  알림 영역·차트 SVG 12px는 앞 단계에서 끝났다.
+
 ## 8. 이모지 대응표
 
 ### 8-1. 프런트 화면 문구 — AST로 훑은 67개 문자열 노드 [확인 — §8-5와 같은 TypeScript AST 스캔, 주석·정규식 리터럴 제외]
@@ -495,5 +528,11 @@ Tailwind 4.3.3은 `--text-*--line-height`·`--text-*--font-weight`·`--text-*--l
 - **지킴 시험 더**: 백엔드 화면 문구의 noEmoji 시험, 데이터 영역의 `text-accent`·`bg-accent` 위치를 고정하는 시험(A1).
 - **Y 끝값 눈금**(§5-1): 여백 포함 범위 끝 대신 데이터 최고·최저를 적거나, 묶인 지수(0~100)는 범위 상한을 받게 — 1단계 결정(`lineYAxis` 눈금 = 범위 끝)을 바꾸는 일이라 사용자 확인 뒤.
 - **차트 키보드 초점 링**: Recharts 그림(svg, tabindex 0)은 브라우저 기본 초점선을 쓴다 — `outline-focus` 2px로 맞추기.
+- **홈 계좌 행 색 고리**(§7-4): 장중 값 단계가 개요 계좌 행에 아바타를 달 때 `BOOK_COLORS`를 `OverviewSection` 밖(예: `components/screens/paper/bookColors.ts`)으로
+  옮기며 홈에도 함께.
+- **홈 모의매매 히어로 곡선**(§7-4): 개요 응답의 `navSeries`로 Claude 계좌 곡선 + 문지르기를 홈에 더할 수 있다 — 홈의 정보 구조를 바꾸는 일이라 사용자 확인 뒤.
+- **고대비 모드의 바탕색 그림**: 국면 이력 띠·스타일 유사도 막대·막대·도넛 차트처럼 바탕·채움색만으로 그린 것은 그 모드에서 지워진다(옆 표·숫자가 같은 값을 나름).
+  `forced-color-adjust: none` + 시스템 색을 쓸지 정하기.
+- **D1 세 파일의 겉모양**: `OverviewSection`·`LiveValuationCard`·`AccountDetailPanel`의 `rounded-md·lg·xl`·투명 경고 틴트·`rounded-sm` 배지 — 장중 값 단계에서.
 - **매크로 자동 갱신 1시간·3시간**(D2): 사용자가 그쪽도 뜻했는지 장중 명세 단계 보고에서 묻는다. 넣는다면 다음 읽기 전까지 서버 stale 플래그가 갱신되지 않아 '오래된 저장본'(PRINCIPLES)을 최대 3시간 못 띄우는
   한계가 있다 — 화면에서 경과 시간을 다시 판정하거나 그 한계를 적는다.
