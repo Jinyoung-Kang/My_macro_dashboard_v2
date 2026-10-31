@@ -71,7 +71,7 @@ export default function LoginPage() {
         onSubmit={submit}
         className="w-full max-w-sm rounded-xl border border-border bg-surface p-6"
       >
-        <h1 className="text-lg font-bold text-bright">🔒 Global Macro &amp; 13F Dashboard</h1>
+        <h1 className="text-lg font-bold text-bright">Global Macro &amp; 13F Dashboard</h1>
         <p className="mt-1 text-xs text-muted">인가된 사용자만 접근할 수 있는 시스템입니다.</p>
 
         <label className="mt-6 block text-xs text-muted">

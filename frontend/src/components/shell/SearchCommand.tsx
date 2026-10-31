@@ -3,6 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useEffect, useId, useMemo, useState, useSyncExternalStore, type KeyboardEvent } from "react";
 import { Dialog } from "@/components/ui/Dialog";
+import { LockIcon } from "@/components/ui/icons";
 import { useApi } from "@/hooks/useApi";
 import { endpoints } from "@/lib/endpoints";
 import { navSearchItems } from "@/lib/nav";
@@ -229,8 +230,8 @@ export function SearchCommand({ user }: { user?: SessionUser }) {
                       <span className="truncate text-[15px] text-text">
                         {entry.label}
                         {entry.locked && (
-                          <span role="img" aria-label="유료 등급 기능" title="유료 등급 기능" className="ml-1">
-                            🔒
+                          <span title="유료 등급 기능" className="ml-1.5 inline-flex align-[-2px]">
+                            <LockIcon size={14} label="유료 등급 기능" />
                           </span>
                         )}
                       </span>

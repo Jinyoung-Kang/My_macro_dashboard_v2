@@ -6,6 +6,7 @@ import { lockedFor } from "@/lib/access";
 import { TABS, visibleItems } from "@/lib/nav";
 import { AccountBox } from "./AccountBox";
 import { BuildInfo } from "./BuildInfo";
+import { LockIcon } from "@/components/ui/icons";
 import { ReadModeNote } from "./ReadMode";
 import { RefreshButton } from "./RefreshButton";
 import { ThemeSwitch } from "./ThemeSwitch";
@@ -48,8 +49,8 @@ export function MoreMenu() {
                 <span className="min-w-0 flex-1 truncate">
                   {item.label}
                   {lockedFor(user, item.href) && (
-                    <span role="img" aria-label="유료 등급 기능" title="유료 등급 기능" className="ml-1">
-                      🔒
+                    <span title="유료 등급 기능" className="ml-1.5 inline-flex align-[-2px]">
+                      <LockIcon size={14} label="유료 등급 기능" />
                     </span>
                   )}
                 </span>

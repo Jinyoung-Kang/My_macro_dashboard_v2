@@ -31,7 +31,7 @@ function renderMore(user: SessionUser | undefined, readMode?: string) {
 
 const rows = () => {
   const section = screen.getByRole("region", { name: "메뉴" });
-  return within(section).getAllByRole("link").map((link) => [link.textContent?.replace("🔒", "") ?? "", link.getAttribute("href")]);
+  return within(section).getAllByRole("link").map((link) => [link.textContent ?? "", link.getAttribute("href")]);
 };
 
 beforeEach(() => router.push.mockReset());
@@ -66,7 +66,7 @@ describe("더보기 화면", () => {
     expect(screen.getByRole("link", { name: "데이터 저장소 상태" }).getAttribute("href")).toBe("/status");
   });
 
-  it("무료 회원에게는 AI 종합 분석에 🔒", () => {
+  it("무료 회원에게는 AI 종합 분석에 잠금 아이콘", () => {
     renderMore({ email: "member@test.local", role: "MEMBER", tier: "FREE" });
     const ai = screen.getByRole("link", { name: /AI 종합 분석/ });
     expect(within(ai).getByRole("img", { name: "유료 등급 기능" })).toBeTruthy();

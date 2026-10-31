@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { underlineTabClasses } from "@/components/ui/classes";
+import { LockIcon } from "@/components/ui/icons";
 import { lockedFor } from "@/lib/access";
 import { subNav } from "@/lib/nav";
 import type { SessionUser } from "@/lib/types";
@@ -33,8 +34,9 @@ export function SubNav({ pathname, user }: { pathname: string; user?: SessionUse
               >
                 {item.label}
                 {lockedFor(user, item.href) && (
-                  <span role="img" aria-label="유료 등급 기능" title="유료 등급 기능">
-                    🔒
+                  // 이름은 아이콘의 aria-label, 마우스 설명은 감싼 span의 title(아이콘에 <title>을 두면 링크 글자에 섞임 — 명세 D8 c)
+                  <span title="유료 등급 기능" className="ml-1 inline-flex">
+                    <LockIcon size={14} label="유료 등급 기능" />
                   </span>
                 )}
               </Link>

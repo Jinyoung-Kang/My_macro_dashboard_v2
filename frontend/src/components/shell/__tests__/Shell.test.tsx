@@ -193,12 +193,13 @@ describe("하위 메뉴 줄", () => {
     expect(within(mainNav()).getByRole("link", { name: "모의매매" }).getAttribute("aria-current")).toBe("true");
   });
 
-  it("무료 회원에게는 유료 화면(AI 종합 분석)에 🔒", () => {
+  it("무료 회원에게는 유료 화면(AI 종합 분석)에 잠금 아이콘", () => {
     renderShell(MEMBER_FREE, { path: "/alerts" });
     const sub = screen.getByRole("navigation", { name: "더보기 하위 메뉴" });
     const ai = within(sub).getByRole("link", { name: /AI 종합 분석/ });
     expect(within(ai).getByRole("img", { name: "유료 등급 기능" })).toBeTruthy();
-    expect(linkLabels(sub).map((label) => label.replace("🔒", ""))).toEqual(["알림", "AI 종합 분석", "내 계정"]);
+    // 잠금 아이콘에는 <title>이 없어 링크 글자는 메뉴 이름 그대로(명세 D8 c)
+    expect(linkLabels(sub)).toEqual(["알림", "AI 종합 분석", "내 계정"]);
   });
 });
 

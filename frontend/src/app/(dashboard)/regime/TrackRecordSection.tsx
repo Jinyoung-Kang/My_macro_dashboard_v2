@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { Banner, Card, ErrorState, Freshness, Loading, Select, Table } from "@/components/ui";
+import { LockIcon } from "@/components/ui/icons";
 import { useApi } from "@/hooks/useApi";
 import { useRemembered } from "@/hooks/useRemembered";
 import { endpoints } from "@/lib/endpoints";
@@ -71,7 +72,15 @@ export function TrackRecordSection({ tone }: { tone: Record<string, string> }) {
     >
       {loading && !data && <Loading label="판정 성과를 계산하는 중…" />}
       {error && <ErrorState message={error} onRetry={reload} />}
-      {data && !data.available && <Banner tone={data.locked ? "info" : "warn"}>{data.locked ? "🔒 " : ""}{data.message}</Banner>}
+      {data && !data.available && (
+        // 유료 등급에서만 보이는 기능이면 안내 톤 + 잠금 아이콘(이름 있는 그림 — 잠금이라는 뜻을 아이콘이 나름)
+        <Banner
+          tone={data.locked ? "info" : "warn"}
+          icon={data.locked ? <LockIcon size={16} label="유료 등급 기능" /> : undefined}
+        >
+          {data.message}
+        </Banner>
+      )}
       {data?.available && (
         <>
           <Banner tone="info">

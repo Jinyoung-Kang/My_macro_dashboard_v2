@@ -243,7 +243,7 @@ describe("결과", () => {
     expect(screen.getByRole("status").textContent).toBe("결과 10건 중 6건 표시");
   });
 
-  it("유료 화면은 무료 회원에게 🔒 — 하위 메뉴·더보기와 같은 표시", async () => {
+  it("유료 화면은 무료 회원에게 잠금 아이콘 — 하위 메뉴·더보기와 같은 표시", async () => {
     openSearch(MEMBER_FREE);
     type("AI 종합");
     const ai = screen.getByRole("option", { name: /AI 종합 분석/ });
