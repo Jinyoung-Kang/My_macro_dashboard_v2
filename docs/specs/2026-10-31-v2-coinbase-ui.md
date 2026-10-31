@@ -399,6 +399,28 @@ Tailwind 4.3.3은 `--text-*--line-height`·`--text-*--font-weight`·`--text-*--l
 (주석·정규식 리터럴은 건너뜀 — 날 `createScanner`는 정규식과 나눗셈을 구별하지 못함). 찾는 글자: `\p{Extended_Pictographic}`·`\p{Regional_Indicator}`·U+FE0F·U+200D(FE0F 없는 [경고] U+26A0도 잡힘).
 허용 목록: ▲▼↑↓↕→←↻✓✗⌘↔▪© 등 기호 글자.
 
+### 8-6. 구현 메모(이모지 단계 — 프런트, 2026-11-01) — 위 설계와 달리 한 것 [확인 코드·시험]
+
+- **Banner**: 톤 아이콘은 warn·danger 모두 AlertTriangle, 낭독기 머리말도 둘 다 '주의: '(설계는 danger '오류: '). danger 배너가 실패만이 아니라
+  추정치 모드(유동성·KRX)·금리 역전 같은 심각한 주의에도 쓰여 '오류'로 읽히면 틀린다. info는 Info(아이콘만 accent), ok는 CheckCircle.
+  `icon` prop(false면 없음 — 판정 성과 잠금은 이름 있는 LockIcon). ErrorState·StatusText danger는 XCircle·'오류: ' 그대로.
+- **첫 줄 아이콘 칸 `LineIcon`**(ui/icons): 한 줄 높이(`h-[1lh]`) 칸 가운데에 아이콘 — 여러 줄 글에서도 첫 줄 옆에 남는다. StatusText·Banner·Toast가 쓴다.
+- **StatusText**에 `iconSize`(12px 글 옆 12)·`colorText`(false면 글은 놓인 자리 색, 아이콘만 톤 색)를 더했다. 상관·국면·스타일 화면의 해석 주의(note)는
+  `colorText={false}` — 설계대로 warn 글색을 입히면 긴 해석 문단 전체가 경고색이 된다. **StatusIcon**(새): 아이콘만 둘 표 칸 — 뜻은 sr-only 글과 `title`.
+- **Freshness**: 경고 두 가지는 알약 안의 글자를 그 span의 글자 그대로 둔다(아이콘·'주의: '는 따로) — '새로 읽지 못함'으로 찾은 요소가 `title`·`role="status"`를 가진다.
+- **저장소 상태**: 교차 검증 판정 아이콘은 장식(aria-hidden) — 바로 옆 판정 글(`entry.label`)이 같은 뜻을 읽혀 sr 라벨을 두지 않았다(설계는 sr 라벨). 표 범례는
+  머리말 없이(`srPrefix=""`). 다시 실행 안내는 `messageTone`의 상태 글(강조 파랑 글자였던 status:134도 여기서 함께 바뀜).
+- **표시 정리 도우미**: `withoutLeadingIcon`을 넓혔다 — 기호와 그 뒤 공백을 함께 지움('(시장 국면)' 괄호가 그대로 붙음), 줄바꿈 유지, ↔·↕·▪·©·®·™ 유지,
+  뒤 보기(lookbehind) 정규식은 쓰지 않음(옛 Safari). 같은 일을 하던 `lib/search`의 `stripLeadingEmoji`는 지웠다. `flagCountry`(국기 → ISO 코드)는 만들지 않았다(보조 글이 필요한 곳 없음).
+- **도메인 도우미**: `lib/holdings`(새) — `holdingActionView`(비교 데이터 없음·비교 불가는 CircleDashed — 설계의 다섯 아이콘 + 하나), `filerName`·`filerShortName`;
+  `lib/aiEngines.engineLabel`; `lib/flows.stanceText`; `lib/taskRun.taskStatusView`·`taskDoneMessage`; `lib/markdown.splitVerdicts`·`VERDICT_LABEL`.
+- **AI 리포트 판정**: 흰 원은 '중립·보류' 배지 하나(프롬프트의 뜻이 '중립·판단 보류' 한 기호). 굵은 글 안의 기호도 배지, 숫자 열 판정은 원문 기준.
+- **기관 이름**: 교집합의 보유 기관·공통 신규 매수 기관 배지는 이름의 첫 낱말이라 예전에는 국기만 보였다 — 국기를 뗀 첫 낱말('국민연금') + 전체 이름 마우스 설명.
+  스코어카드(`/scorecard`)는 종목 스코어카드라 기관 이름이 없다 [확인]. 스타일 유사도 행렬의 짧은 이름은 결함 QA-153으로 따로(재현 → 수정).
+- **AI 엔진**: 라벨뿐 아니라 실패 문구(키 누락에 라벨이 실림)·'자동 탐색' 안내·폴오버 경로도 화면에서 정리.
+- **noEmoji 시험**(`lib/__tests__/noEmoji.test.ts`): 지금 0건. 시험 자신이 검사기 표본(이스케이프한 U+26A0·템플릿 안 국기·JSX 속성·JSX 글은 잡고, 주석·정규식·
+  나눗셈·허용 기호는 건너뜀)을 함께 확인한다. 시험 파일(`*.test.*`)·`__checks__`의 콘솔 출력 기호는 범위 밖(§12).
+
 ## 9. 시험 영향
 
 - 시험은 바뀐 코드와 같은 커밋에서 고친다. 뜻을 보는 단언(role·aria-label·aria-current·aria-sort·aria-expanded·sr-only 글·`text-warn`/`text-up`/`text-down`/`tabular-nums`/`sr-only`)은 지키고,
