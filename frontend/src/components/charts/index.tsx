@@ -57,21 +57,27 @@ export { SERIES_COLORS };
  * 한 칸이 24px 남짓인데 두 줄은 26px이 넘어서 **위아래 라벨이 서로 겹칩니다**
  * (실제로 수급 레이더 화면에서 종목명이 뭉개져 읽을 수 없었습니다).
  * 잘라서 한 줄로 그리고, 전체 이름은 툴팁이 보여 줍니다.
+ *
+ * Recharts가 넘기는 className(recharts-cartesian-axis-tick-value)을 그대로 붙입니다 — 축 폭 맞춤(width="auto")이 이 이름으로 눈금 글을
+ * 찾아 잽니다. 빼면 잴 글이 없어 축 폭이 0으로 줄어듭니다.
  */
 function CategoryTick({
   x,
   y,
   payload,
   maxWidth,
+  className,
 }: {
   x?: number | string;
   y?: number | string;
   payload?: { value?: string | number };
   maxWidth: number;
+  className?: string;
 }) {
   const label = String(payload?.value ?? "");
   return (
     <text
+      className={className}
       x={Number(x) || 0}
       y={Number(y) || 0}
       dy={4}
@@ -254,7 +260,7 @@ export function MultiLineSeries({
   domain,
   markers = [],
   ariaLabel,
-  axisWidth = 64,
+  axisWidth,
 }: {
   data: Record<string, unknown>[];
   series: MultiSeries[];
@@ -287,7 +293,8 @@ export function MultiLineSeries({
    */
   ariaLabel?: string;
   /**
-   * 왼쪽 축 폭(px, 기본 64). 눈금 글자가 긴 계열(원 단위 정수 금액 "100,000,000" — 12px 글자로 약 75px)은 넓혀야 눈금이 잘리지 않습니다.
+   * 왼쪽 축 폭(px). 주지 않으면 눈금 글 폭에 맞춥니다(Recharts width="auto" — 그린 눈금을 재서 넓힘). 고정 64px에서는 단위가 긴 눈금
+   * ('193,971 계약')이 두 줄로 접혀 위 끝값이 SVG 밖으로 잘렸습니다. 여러 차트의 축을 같은 폭으로 맞출 때만 줍니다.
    */
   axisWidth?: number;
 }) {
@@ -335,7 +342,7 @@ export function MultiLineSeries({
             axisLine={false}
             tickLine={false}
             tick={AXIS}
-            width={axisWidth}
+            width={axisWidth ?? "auto"}
             tickFormatter={(value: number) => `${formatNumber(value, precision)}${unit}`}
           />
           {/*
@@ -447,11 +454,12 @@ export function HorizontalBars({
           tickLine={false}
           tickFormatter={(value: number) => `${formatNumber(value, 0)}${unit}`}
         />
+        {/* 축 폭은 이름표 폭에 맞춥니다(width="auto") — 고정 150px은 12px 글자에서 영문 대문자가 섞인 24칸 이름('KODEX 코스닥150선물인버…')을 왼쪽에서 잘랐습니다. */}
         <YAxis
           type="category"
           dataKey="name"
           stroke={AXIS_LINE}
-          width={150}
+          width="auto"
           tickLine={false}
           interval={0}
           tick={(props) => <CategoryTick {...props} maxWidth={24} />}
@@ -504,11 +512,12 @@ export function SignedBars({
     <ResponsiveContainer width="100%" height={height}>
       <BarChart data={data} margin={{ top: 8, right: 8, bottom: 0, left: 0 }}>
         <XAxis dataKey="name" stroke={AXIS_LINE} tick={AXIS} tickLine={false} interval={0} angle={-25} height={70} textAnchor="end" />
+        {/* 축 폭은 눈금 글 폭에 맞춥니다(width="auto") — 고정 64px은 음수 부호·긴 단위('-16,000계약')의 앞자리를 잘랐습니다. */}
         <YAxis
           axisLine={false}
           tick={AXIS}
           tickLine={false}
-          width={64}
+          width="auto"
           tickFormatter={(value: number) => `${formatNumber(value, 0)}${unit}`}
         />
         <Tooltip
