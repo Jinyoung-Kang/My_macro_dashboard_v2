@@ -190,6 +190,8 @@ class AlertServiceTest {
             }
             assertThat(body).contains("투자 권유가 아닙니다");
         }
+        assertThat(bodies.get(0)).as("국면 알림의 끝줄은 화면 이름만 — 그림 문자 없이")
+                .endsWith(AlertText.DISCLAIMER + " (시장 국면)");
         assertThat(AlertText.won(1_234_000_000_000L)).isEqualTo("+1.23조 원");
         assertThat(AlertText.won(-5_600_000_000L)).isEqualTo("-56.0억 원");
     }

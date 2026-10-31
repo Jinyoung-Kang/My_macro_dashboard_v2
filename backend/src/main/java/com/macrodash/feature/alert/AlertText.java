@@ -30,7 +30,7 @@ final class AlertText {
             lines.add("근거(%s 기록): %s".formatted(change.confirmedOn(), String.join(" · ", inputs.values())));
         }
         lines.add("최근 90일 확정 전환 %d회 · 입력: FRED 공식(금리차·NFCI·하이일드·순유동성)".formatted(changesIn90Days));
-        lines.add(DISCLAIMER + " (🧭 시장 국면)");
+        lines.add(DISCLAIMER + " (시장 국면)");
         return new Text("[국면 전환] %s → %s".formatted(shortLabel(change.fromLabel()), shortLabel(change.toLabel())),
                 String.join("\n", lines));
     }
