@@ -1,7 +1,6 @@
 "use client";
 
 import { usePathname } from "next/navigation";
-import { MarketClock } from "@/components/MarketClock";
 import type { SessionUser } from "@/lib/types";
 import { ReadModeProvider } from "./ReadMode";
 import { SideNav } from "./SideNav";
@@ -10,7 +9,7 @@ import { TabBar } from "./TabBar";
 import { TopBar } from "./TopBar";
 
 /**
- * 앱 셸 — 왼쪽 내비(lg 이상) · 상단바(검색·알림 벨) · 하위 메뉴 줄 · 본문 · 하단 탭 바(lg 미만). 옛 Sidebar를 대신합니다.
+ * 앱 셸 — 왼쪽 내비(lg 이상) · 상단바(검색·장 상태 칩·알림 벨) · 하위 메뉴 줄 · 본문 · 하단 탭 바(lg 미만). 옛 Sidebar를 대신합니다.
  *
  * 세션은 다시 읽지 않습니다 — 사용자·읽기 모드·읽지 않은 알림 수는 대시보드 레이아웃이 한 번 읽어 넘깁니다(레이아웃 세션 테스트가
  * 세션 호출 횟수를 고정). 읽기 모드는 본문 화면(더보기)도 읽도록 context로 내려 줍니다.
@@ -50,9 +49,6 @@ export function Shell({
             tabIndex={-1}
             className="min-h-0 min-w-0 flex-1 overflow-x-hidden p-4 pb-[calc(64px+1rem+env(safe-area-inset-bottom))] outline-none sm:p-6 sm:pb-[calc(64px+1.5rem+env(safe-area-inset-bottom))] lg:overflow-y-auto lg:pb-6"
           >
-            <div className="mb-5">
-              <MarketClock />
-            </div>
             {children}
           </main>
         </div>

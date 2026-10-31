@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { InfoIcon, StatusDot, type StatusTone } from "@/components/ui/icons";
 import { useApi } from "@/hooks/useApi";
 import type { KrHolidaysResponse } from "@/lib/types";
 import {
@@ -11,28 +12,30 @@ import {
 import { endpoints } from "@/lib/endpoints";
 
 /**
- * 실시간 거래소 시계 + 장 상태 배지.
+ * 실시간 거래소 시계 — 상단바의 장 상태 칩 둘(KOSPI·NASDAQ).
  *
  * 휴장 판정은 `lib/marketCalendar`가 맡습니다. 예전에는 브라우저가 공개
  * 공휴일 API를 호출했는데, 공휴일과 거래소 휴장일이 달라 잘못된 배지가
  * 떴습니다(그 이유는 marketCalendar에 적어 두었습니다).
+ *
+ * 상단바가 한 번만 그립니다 — 좁은 화면의 두 번째 줄과 넓은 화면의 한 줄은 같은 인스턴스의 자리만 바뀝니다
+ * (둘로 그리면 공휴일 요청·1초 시계·글이 두 번씩 생김).
  */
 
 type MarketStatus = {
   text: string;
-  className: string;
+  tone: StatusTone;
 };
 
 /**
- * 장 상태 배지 색 — 디자인 토큰만 씁니다(라이트·다크가 함께 바뀜). 배지 글자는 옅은 바탕(같은 색 10%) 위에서 두 테마 모두
- * 4.5:1 이상입니다(라이트 4.7~4.8, 다크 5.2~6.6, 애프터 잉크 15.9·11.7). 15% 바탕은 라이트에서 4.4:1로 모자랐고,
- * 예전 애프터마켓의 purple-300은 라이트 표면에서 1.8:1이었습니다. 상태는 글자(거래 중·프리마켓…)가 나르고 색은 보조입니다.
+ * 장 상태 점의 톤 — 거래 중 ok, 프리·애프터마켓 warn, 장 마감·휴장 중립(text-3). 상태는 칩 글(거래 중·프리마켓…)이 나르고
+ * 점은 보조입니다. 점은 테두리로 칠해 고대비(forced-colors) 모드에서도 남습니다(`StatusDot`).
  */
-const STATUS_STYLES: Record<string, string> = {
-  trading: "bg-ok/10 text-ok border-ok/40",
-  pre: "bg-warn/10 text-warn border-warn/40",
-  post: "bg-accent/10 text-accent border-accent/40",
-  closed: "bg-muted/10 text-muted border-muted/40",
+const STATUS_TONE: Record<"trading" | "pre" | "post" | "closed", StatusTone> = {
+  trading: "ok",
+  pre: "warn",
+  post: "warn",
+  closed: "neutral",
 };
 
 function partsFor(timeZone: string, now: Date) {
@@ -67,36 +70,40 @@ function statusFor(
   isHoliday: boolean,
 ): MarketStatus {
   if (weekday === "Sat" || weekday === "Sun") {
-    return { text: "휴장 (주말)", className: STATUS_STYLES.closed };
+    return { text: "휴장 (주말)", tone: STATUS_TONE.closed };
   }
   if (isHoliday) {
-    return { text: "휴장 (공휴일)", className: STATUS_STYLES.closed };
+    return { text: "휴장 (공휴일)", tone: STATUS_TONE.closed };
   }
 
   if (market === "KOSPI") {
     if (minutes >= 9 * 60 && minutes < 15 * 60 + 30) {
-      return { text: "거래 중", className: STATUS_STYLES.trading };
+      return { text: "거래 중", tone: STATUS_TONE.trading };
     }
     if (minutes >= 8 * 60 + 30 && minutes < 9 * 60) {
-      return { text: "프리마켓", className: STATUS_STYLES.pre };
+      return { text: "프리마켓", tone: STATUS_TONE.pre };
     }
     if (minutes >= 15 * 60 + 30 && minutes <= 18 * 60) {
-      return { text: "애프터마켓", className: STATUS_STYLES.post };
+      return { text: "애프터마켓", tone: STATUS_TONE.post };
     }
-    return { text: "장 마감", className: STATUS_STYLES.closed };
+    return { text: "장 마감", tone: STATUS_TONE.closed };
   }
 
   if (minutes >= 9 * 60 + 30 && minutes < 16 * 60) {
-    return { text: "거래 중", className: STATUS_STYLES.trading };
+    return { text: "거래 중", tone: STATUS_TONE.trading };
   }
   if (minutes >= 4 * 60 && minutes < 9 * 60 + 30) {
-    return { text: "프리마켓", className: STATUS_STYLES.pre };
+    return { text: "프리마켓", tone: STATUS_TONE.pre };
   }
   if (minutes >= 16 * 60 && minutes <= 20 * 60) {
-    return { text: "애프터마켓", className: STATUS_STYLES.post };
+    return { text: "애프터마켓", tone: STATUS_TONE.post };
   }
-  return { text: "장 마감", className: STATUS_STYLES.closed };
+  return { text: "장 마감", tone: STATUS_TONE.closed };
 }
+
+/** 칩 모양 — 좁은 화면(상단바 둘째 줄)은 12px·높이 28px, 넓은 화면(상단바 한 줄 64px)은 13px·높이 32px. */
+const CHIP =
+  "inline-flex h-7 shrink-0 items-center gap-1 whitespace-nowrap rounded-full border border-border px-2 text-xs text-text sm:gap-1.5 sm:px-2.5 lg:h-8 lg:px-3 lg:text-[13px]";
 
 export function MarketClock() {
   const [now, setNow] = useState<Date | null>(null);
@@ -135,16 +142,21 @@ export function MarketClock() {
   );
 
   if (!now || !kst || !est) {
-    return <div className="h-[46px] rounded-lg border border-border bg-surface" />;
+    // 마운트 전 자리 — 칩 둘의 높이를 미리 잡아 상단바가 흔들리지 않게 합니다.
+    return (
+      <div aria-hidden="true" className="flex items-center gap-2">
+        <span className={`${CHIP} w-32 lg:w-36`} />
+        <span className={`${CHIP} w-32 lg:w-36`} />
+      </div>
+    );
   }
 
   const kstStatus = statusFor("KOSPI", kst.minutes, kst.weekday, krHolidays.has(kst.date));
   const estStatus = statusFor("NASDAQ", est.minutes, est.weekday, usHolidays.has(est.date));
 
   return (
-    <div className="flex flex-col gap-2 rounded-lg border border-border bg-surface px-4 py-2 text-sm sm:flex-row sm:flex-wrap sm:items-center sm:gap-4">
-      <ClockEntry
-        flag="🇰🇷"
+    <div className="flex min-w-0 items-center gap-2">
+      <ClockChip
         label="한국 (KOSPI)"
         shortLabel="KOSPI"
         date={kst.date}
@@ -156,8 +168,7 @@ export function MarketClock() {
             : undefined
         }
       />
-      <ClockEntry
-        flag="🗽"
+      <ClockChip
         label="뉴욕 (NASDAQ)"
         shortLabel="NASDAQ"
         date={est.date}
@@ -169,12 +180,12 @@ export function MarketClock() {
 }
 
 /*
-  좁은 화면에서는 한 줄에 다 들어가지 않습니다. 예전에는 그대로 접혀서
-  "장 마 감"처럼 배지 글자가 세 줄로 쪼개졌습니다. 줄바꿈을 막고, 라벨만
-  짧게 바꿉니다(날짜는 시장마다 다를 수 있어 그대로 둡니다).
+  장 상태 칩 — 상태 점 · 시장 이름 · 상태 · 시각. 줄을 바꾸지 않습니다(예전에는 접혀서 "장 마 감"처럼 배지 글자가 세 줄로
+  쪼개졌습니다). 시각은 좁은 화면(둘째 줄)과 아주 넓은 화면(xl)에서 보이고, 그 사이(lg 한 줄 — 검색·벨과 나란히)에서는
+  자리가 모자라 숨깁니다. 가장 좁은 화면(sm 미만)은 칩 둘이 한 줄에 들도록 가운뎃점과 초를 숨깁니다(390px에서 '휴장 (주말)' 둘).
+  시장 전체 이름·현지 날짜·초까지의 시각·안내는 늘 title에 있습니다(날짜는 시장마다 다를 수 있음).
 */
-function ClockEntry({
-  flag,
+function ClockChip({
   label,
   shortLabel,
   date,
@@ -182,32 +193,28 @@ function ClockEntry({
   status,
   note,
 }: {
-  flag: string;
   label: string;
   shortLabel: string;
   date: string;
   time: string;
   status: MarketStatus;
-  /** 판정에 빠진 정보가 있을 때의 안내. 배지에 마우스를 올리면 보입니다. */
+  /** 판정에 빠진 정보가 있을 때의 안내. 칩에 마우스를 올리면 보입니다(안내 아이콘이 있다는 표시). */
   note?: string;
 }) {
+  const title = [`${label} ${date} ${time}`, status.text, note].filter(Boolean).join(" — ");
   return (
-    <div className="flex items-center gap-2">
-      <span>{flag}</span>
-      <span className="whitespace-nowrap text-muted">
-        <span className="sm:hidden">{shortLabel}</span>
-        <span className="hidden sm:inline">{label}</span>
+    <span className={CHIP} title={title}>
+      <StatusDot tone={status.tone} />
+      <span className="font-medium">{shortLabel}</span>
+      <span aria-hidden="true" className="hidden text-text-3 sm:inline">
+        ·
       </span>
-      <span className="whitespace-nowrap font-mono tabular-nums text-bright">
-        {date} {time}
+      <span>{status.text}</span>
+      {note && <InfoIcon size={12} className="text-text-3" />}
+      <span className="tabular-nums text-text-3 lg:hidden xl:inline">
+        {time.slice(0, 5)}
+        <span className="hidden sm:inline">{time.slice(5)}</span>
       </span>
-      <span
-        className={`shrink-0 whitespace-nowrap rounded-sm border px-2 py-0.5 text-[11px] font-semibold ${status.className}`}
-        title={note}
-      >
-        {status.text}
-        {note && <span className="ml-1 font-normal opacity-70">ⓘ</span>}
-      </span>
-    </div>
+    </span>
   );
 }

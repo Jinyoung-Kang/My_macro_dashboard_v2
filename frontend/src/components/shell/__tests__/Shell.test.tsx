@@ -224,6 +224,17 @@ describe("상단바 알림 벨", () => {
     expect(screen.queryByRole("link", { name: /읽지 않음/ })).toBeNull();
   });
 
+  // 좁은 화면(둘째 줄)과 넓은 화면(한 줄)은 같은 인스턴스의 자리만 바뀐다 — 둘로 그리면 공휴일 요청·1초 시계·글이 두 번씩 생긴다.
+  it("장 시계(장 상태 칩)는 상단바에 한 번만 — 본문 맨 위에는 없다", () => {
+    renderShell(MEMBER_PRO);
+    const banner = screen.getByRole("banner");
+    expect(within(banner).getAllByText("KOSPI")).toHaveLength(1);
+    expect(screen.getAllByText("KOSPI")).toHaveLength(1);
+    expect(within(screen.getByRole("main")).queryByText("NASDAQ")).toBeNull();
+    const holidayReads = api.apiGetShared.mock.calls.filter(([path]) => String(path).startsWith("/api/calendar/kr-holidays"));
+    expect(holidayReads).toHaveLength(1);
+  });
+
   it("상단바에 통합 검색 단추가 있다(닫힌 동안에는 검색 자료를 읽지 않음)", () => {
     renderShell(MEMBER_PRO);
     expect(screen.getByRole("button", { name: "종목·기관·지표·메뉴 검색" }).getAttribute("aria-haspopup")).toBe("dialog");

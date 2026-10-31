@@ -138,7 +138,7 @@ export function SearchCommand({ user }: { user?: SessionUser }) {
           type="button"
           aria-label="종목·기관·지표·메뉴 검색"
           aria-keyshortcuts={isMac ? "Meta+K" : "Control+K"}
-          className="flex h-11 min-w-0 flex-1 items-center gap-2.5 rounded-[10px] bg-surface-2 px-3 text-left text-sm text-text-3 hover:text-text-2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus lg:max-w-[520px]"
+          className="flex h-11 min-w-0 flex-1 items-center gap-2.5 rounded-[10px] bg-surface-2 px-3 text-left text-sm text-text-3 hover:text-text-2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus lg:max-w-[520px] lg:basis-[520px]"
         >
           <SearchIcon />
           <span className="min-w-0 flex-1 truncate">종목·기관·지표·메뉴 검색</span>

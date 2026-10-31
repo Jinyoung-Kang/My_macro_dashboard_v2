@@ -159,7 +159,7 @@ function DashboardShell({
       {/* 짧은 안내(토스트)는 셸 안 어디서든 띄웁니다. 화면만 그리는 테스트에서는 Provider가 없어 아무 일도 하지 않습니다. */}
       <ToastProvider>
         {/* 읽기 모드는 세션 응답에 함께 옵니다. 예전에는 이 한 줄 때문에 페이지를 열 때마다
-            무거운 /api/status(수집기 상태 + DB 집계)를 불렀습니다. 셸은 MarketClock을 본문 맨 위에 그립니다. */}
+            무거운 /api/status(수집기 상태 + DB 집계)를 불렀습니다. 셸은 장 시계(MarketClock)를 상단바에 그립니다. */}
         <Shell readMode={data?.readMode} user={data?.user} unread={unread}>
           {children}
         </Shell>
