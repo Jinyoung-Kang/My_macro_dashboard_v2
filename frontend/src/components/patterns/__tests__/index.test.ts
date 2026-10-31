@@ -8,6 +8,7 @@ import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 
 import * as AssetRow from "../AssetRow";
+import * as Avatar from "../Avatar";
 import * as badges from "../badges";
 import * as ChangeChip from "../ChangeChip";
 import * as DataTable from "../DataTable";
@@ -21,6 +22,7 @@ import * as StatTile from "../StatTile";
 
 const MODULES: Record<string, Record<string, unknown>> = {
   AssetRow,
+  Avatar,
   badges,
   ChangeChip,
   DataTable,
@@ -57,6 +59,7 @@ describe("components/patterns 배럴", () => {
       [
         "AssetList",
         "AssetRow",
+        "Avatar",
         "ChangeChip",
         "DataTable",
         "Empty",

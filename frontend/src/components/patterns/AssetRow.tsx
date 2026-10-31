@@ -7,6 +7,7 @@ import { ChevronDownIcon, ChevronUpIcon } from "@/components/ui/icons";
 import { assetRowModel } from "@/lib/patternRows";
 import { presentText } from "@/lib/patterns";
 
+import { Avatar } from "./Avatar";
 import { EstimateBadge, ProvenanceBadge, StaleBadge } from "./badges";
 import { ChangeChip } from "./ChangeChip";
 import { Empty } from "./Empty";
@@ -38,6 +39,13 @@ export type AssetRowData = {
   staleReason?: string | null;
   warning?: string | null;
   href?: string;
+  /**
+   * 왼쪽 아바타의 짧은 글(모노그램, 명세 §4 — `lib/patternRows`의 `assetMonogram`·`lib/paperOverview`의 `bookMonogram`). 없으면 아바타 칸을
+   * 그리지 않습니다. 장식이라 단추·링크 이름에 들어가지 않습니다.
+   */
+  avatarText?: string | null;
+  /** 아바타 고리 색(예: 그 계좌의 차트 선 색) — 보조 표지일 뿐 뜻은 이름 글이 나릅니다. */
+  avatarRing?: string | null;
 };
 
 /**
@@ -68,7 +76,7 @@ const INTERACTIVE =
 const SELECTED = "bg-surface-2";
 
 /**
- * 자산 행 — 이름·보조 → (스파크라인) → 값(+단위) → 변화 칩 → 배지(추정·이전 값·경고·출처).
+ * 자산 행 — (아바타) → 이름·보조 → (스파크라인) → 값(+단위) → 변화 칩 → 배지(추정·이전 값·경고·출처).
  *
  * - 값을 모르면 "—"(단위 없음, QA-049). 변화를 모르면 칩을 생략합니다(0.00%를 만들지 않음).
  * - 추정·대리·이전 값·경고는 있으면 반드시 보입니다(숨기는 옵션 없음). 출처 배지는 `showProvenance`일 때.
@@ -103,6 +111,7 @@ export function AssetRow({
       {selectable && selected ? (
         <span aria-hidden="true" className="absolute inset-y-1 left-0 w-[3px] rounded-r bg-text" />
       ) : null}
+      {model.avatarText ? <Avatar text={model.avatarText} ring={row.avatarRing} /> : null}
       <span className="flex min-w-0 flex-1 basis-32 flex-col">
         <span id={parts?.name} className="truncate text-[15px] font-semibold leading-5 text-text">
           {row.name}
@@ -142,7 +151,8 @@ export function AssetRow({
         <ChangeChip change={row.change} changePct={row.changePct} digits={row.changeDigits ?? 2} pctDigits={2} size="sm" />
       </span>
       {model.hasBadges ? (
-        <span id={parts?.badges} className="flex basis-full flex-wrap items-center gap-1">
+        // 배지 줄은 아바타가 있으면 이름과 같은 세로줄에서 시작합니다(아바타 36·40px + 간격 12px).
+        <span id={parts?.badges} className={`flex basis-full flex-wrap items-center gap-1 ${model.avatarText ? "pl-12 sm:pl-[52px]" : ""}`}>
           <EstimateBadge estimated={row.isEstimated} proxy={row.isProxy} />
           <StaleBadge stale={row.isStale} reason={row.staleReason} />
           {model.warning ? (

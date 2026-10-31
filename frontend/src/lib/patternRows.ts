@@ -5,7 +5,7 @@
  * Y 범위는 `lib/chartAxis.ts`의 `valueDomain`을 그대로 씁니다. 컴포넌트는 여기서 만든 글·좌표만 그립니다.
  */
 import { valueDomain } from "./chartAxis";
-import { formatNumber } from "./format";
+import { formatNumber, withoutLeadingIcon } from "./format";
 import { isMissingValue, presentText } from "./patterns";
 
 /**
@@ -28,6 +28,7 @@ export type AssetRowFlags = {
   value: number | null;
   valueText?: string | null;
   sub?: string | null;
+  avatarText?: string | null;
   spark?: readonly (number | null)[];
   isEstimated?: boolean;
   isProxy?: boolean;
@@ -40,6 +41,8 @@ export type AssetRowModel = {
   valueText: string | null;
   /** 보조 글(티커·시장 등). 비었거나 "N/A"면 null. */
   sub: string | null;
+  /** 아바타 모노그램. 비었거나 "N/A"면 null — 아바타 칸을 그리지 않습니다(지금 행 모양 그대로). */
+  avatarText: string | null;
   /** 경고 글(예: "수집 실패"). 비었거나 "N/A"면 null. */
   warning: string | null;
   /** 스파크라인을 그릴 수 있는가 — 알려진 점이 2개 이상. */
@@ -58,10 +61,27 @@ export function assetRowModel(row: AssetRowFlags, showProvenance = false): Asset
   return {
     valueText: assetValueText(row.value, row.valueText),
     sub: presentText(row.sub),
+    avatarText: presentText(row.avatarText),
     warning,
     showSpark: knownPointCount(row.spark) >= 2,
     hasBadges: Boolean(row.isEstimated || row.isProxy || row.isStale || warning !== null || showProvenance),
   };
+}
+
+/**
+ * 시장 행 아바타의 모노그램 — 티커가 영문으로 시작하면(앞의 "^"는 뗌) 그 영문 앞 2~3자(대문자), 아니면 이름의 첫 글자.
+ *
+ * 예: "DX-Y.NYB" → "DX", "KRW=X" → "KRW", "^TNX" → "TNX", "^GSPC" → "GSP", "000001.SS"(숫자) → 이름 첫 글자, 티커 없음 → 이름 첫 글자.
+ * 영문이 한 글자뿐이면(예: "^N225"의 "N") 이름 첫 글자를 씁니다 — 한 글자 영문은 무엇인지 짐작하기 어렵습니다.
+ * 이름 앞의 그림 문자(예전 저장본의 국기 등)는 떼고 셉니다. 이름도 비면 null(아바타 없음). 장식이라 뜻은 행 이름이 나릅니다.
+ */
+export function assetMonogram(row: { name: string; ticker?: string | null }): string | null {
+  const code = /^\^?([A-Za-z]{2,})/.exec(row.ticker?.trim() ?? "")?.[1];
+  if (code) {
+    return code.slice(0, 3).toUpperCase();
+  }
+  const first = Array.from(withoutLeadingIcon(row.name).trim())[0];
+  return first ? first.toUpperCase() : null;
 }
 
 /** 유한한 숫자의 개수. null·NaN·Infinity는 세지 않습니다. */

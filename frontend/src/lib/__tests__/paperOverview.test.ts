@@ -13,6 +13,7 @@ import { describe, expect, it } from "vitest";
 import {
   accountComparisonRows,
   bookAssetRow,
+  bookMonogram,
   markersInWindow,
   monthsBefore,
   NAV_RANGES,
@@ -245,5 +246,18 @@ describe("S = 100 같은 구간(🧪 계좌2)", () => {
     expect(sameWindowIndex(nav, books("2026-11-09"))).toBeNull();
     expect(sameWindowIndex(nav, BOOKS)).toBeNull();
     expect(sameWindowIndex(null, books("2026-11-02"))).toBeNull();
+  });
+});
+
+describe("bookMonogram — 계좌 행 아바타 글자", () => {
+  it("미국·한국 계좌 코드마다 약칭", () => {
+    expect(["rules", "claude", "claude2", "bench_spy", "bench_mix"].map(bookMonogram)).toEqual(["R", "C1", "C2", "SPY", "60"]);
+    expect(["kr_rules", "kr_claude", "kr_bench_k200", "kr_bench_mix"].map(bookMonogram)).toEqual(["R", "C", "200", "60"]);
+  });
+
+  it("모르는 코드는 null — 글자를 짐작하지 않는다(객체 기본 속성 이름도)", () => {
+    for (const code of ["", "unknown", "constructor", "toString", "RULES"]) {
+      expect(bookMonogram(code)).toBeNull();
+    }
   });
 });

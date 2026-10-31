@@ -25,6 +25,27 @@ export interface BookRowContext {
 /** 사후 체결을 기다리는 벤치마크 행의 경고(초기화 카드가 사유와 다시 누를 단추를 보입니다). */
 export const PENDING_BACKFILL_WARNING = "출발일 종가 대기 — 사후 체결 전(현금만)";
 
+/** 계좌 아바타의 약칭 — 미국·한국 책의 계좌 코드마다(계좌 이름의 머리글자·벤치마크 종목). */
+const BOOK_MONOGRAMS: ReadonlyMap<string, string> = new Map([
+  ["rules", "R"],
+  ["claude", "C1"],
+  ["claude2", "C2"],
+  ["bench_spy", "SPY"],
+  ["bench_mix", "60"],
+  ["kr_rules", "R"],
+  ["kr_claude", "C"],
+  ["kr_bench_k200", "200"],
+  ["kr_bench_mix", "60"],
+]);
+
+/**
+ * 계좌 행 아바타의 모노그램(명세 §4 Avatar). 모르는 계좌 코드면 null — 짐작한 글자를 만들지 않고 아바타 칸을 그리지 않습니다.
+ * 장식이라 뜻은 행 이름(계좌 이름)이 나릅니다.
+ */
+export function bookMonogram(code: string): string | null {
+  return BOOK_MONOGRAMS.get(code) ?? null;
+}
+
 /**
  * 계좌 행 자료 — `AssetRowData`(components/patterns/AssetRow.tsx)의 부분집합이라 그대로 넘깁니다(lib는 components를 가져오지 않음,
  * lib/patternRows.ts의 AssetRowFlags와 같은 방식).

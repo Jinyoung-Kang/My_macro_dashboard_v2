@@ -249,6 +249,62 @@ describe("AssetRow", () => {
   });
 });
 
+describe("AssetRow — 아바타(avatarText)", () => {
+  const avatarOf = (container: HTMLElement) => container.querySelector('[aria-hidden="true"].rounded-full.size-9') as HTMLElement | null;
+
+  it("값 있음 — 이름 왼쪽에 모노그램 원(장식), 고리 색은 변수로", () => {
+    const { container } = render(<AssetRow row={{ ...SPX, avatarText: "GSP", avatarRing: "#3987e5" }} />);
+    const avatar = avatarOf(container);
+    expect(avatar?.textContent).toBe("GSP");
+    expect(avatar?.style.getPropertyValue("--avatar-ring")).toBe("#3987e5");
+    // 아바타가 이름보다 앞(왼쪽)
+    expect(avatar!.compareDocumentPosition(screen.getByText("S&P 500")) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(screen.getByText("5,800.12")).toBeTruthy();
+  });
+
+  it("값 없음 — 아바타는 그대로, 값은 '—'(단위 없음)·칩 생략", () => {
+    const { container } = render(
+      <AssetRow row={{ id: "x", name: "WTI", value: null, unit: "달러", changePct: null, avatarText: "CL" }} />,
+    );
+    expect(avatarOf(container)?.textContent).toBe("CL");
+    expect(screen.getByText("—")).toBeTruthy();
+    expect(screen.queryByText("달러")).toBeNull();
+  });
+
+  it("추정·오래됨 — 배지는 그대로 보이고, 배지 줄은 이름과 같은 세로줄(아바타 폭만큼 들여씀)", () => {
+    const { container } = render(
+      <AssetRow row={{ ...SPX, avatarText: "GSP", isEstimated: true, isStale: true, staleReason: "이번 수집 실패" }} />,
+    );
+    expect(avatarOf(container)).not.toBeNull();
+    expect(screen.getByText("추정")).toBeTruthy();
+    expect(screen.getByText("이전 값").parentElement?.className).toContain("text-warn");
+    const badges = screen.getByText("추정").closest(".basis-full") as HTMLElement;
+    expect(badges.className.split(/\s+/)).toEqual(expect.arrayContaining(["pl-12", "sm:pl-[52px]"]));
+  });
+
+  it("글자가 없거나 'N/A'면 아바타 칸도, 배지 줄 들여쓰기도 없다(지금 행 모양 그대로)", () => {
+    const { container } = render(<AssetRow row={{ ...SPX, avatarText: "N/A", isEstimated: true }} />);
+    expect(avatarOf(container)).toBeNull();
+    expect((screen.getByText("추정").closest(".basis-full") as HTMLElement).className).not.toContain("pl-12");
+  });
+
+  it("펼침 단추 — 아바타 글자는 단추 이름·설명에 들어가지 않는다", () => {
+    render(
+      <AssetRow
+        row={{ ...SPX, avatarText: "GSP" }}
+        onSelect={() => {}}
+        disclosure={{ controls: "detail", expanded: false, hint: "상세 보기" }}
+      />,
+    );
+    const button = screen.getByRole("button", { name: "S&P 500 상세 보기" });
+    const description = (button.getAttribute("aria-describedby") ?? "")
+      .split(" ")
+      .map((id) => document.getElementById(id)?.textContent ?? "")
+      .join(" | ");
+    expect(description).not.toContain("GSP");
+  });
+});
+
 describe("AssetList", () => {
   const ROWS: AssetRowData[] = [
     SPX,

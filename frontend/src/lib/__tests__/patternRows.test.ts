@@ -4,10 +4,19 @@
  *  - 행 모델: 플래그·경고·출처가 하나라도 있으면 배지 줄, 빈 보조·경고 글은 버림, 스파크라인은 알려진 점 2개 이상
  *  - 스파크라인: 알려진 점 2개 미만이면 null, null에서 끊고 순번 간격을 지킴, 큰 값이 위(작은 y)
  *  - 기간 탭: 허용 밖은 그리지 않음, 고른 값이 허용 밖이면 첫 허용 키, ←·→ 돎·Home·End
+ *  - 아바타 모노그램: 영문 티커면 앞 2~3자, 아니면 이름 첫 글자(그림 문자는 뗌), 행 모델의 빈 글은 null
  */
 import { describe, expect, it } from "vitest";
 
-import { allowedRangeKey, assetRowModel, assetValueText, rangeKeyAfter, sparklineSegments, visibleRanges } from "../patternRows";
+import {
+  allowedRangeKey,
+  assetMonogram,
+  assetRowModel,
+  assetValueText,
+  rangeKeyAfter,
+  sparklineSegments,
+  visibleRanges,
+} from "../patternRows";
 
 describe("assetValueText", () => {
   it("숫자는 소수 둘째 자리·천 단위 구분, 0은 값이다", () => {
@@ -45,6 +54,7 @@ describe("assetRowModel", () => {
     expect(assetRowModel({ value: 1 })).toEqual({
       valueText: "1.00",
       sub: null,
+      avatarText: null,
       warning: null,
       showSpark: false,
       hasBadges: false,
@@ -193,5 +203,35 @@ describe("rangeKeyAfter", () => {
     expect(rangeKeyAfter(keys, "1y", "Enter")).toBeNull();
     expect(rangeKeyAfter(keys, "1y", "ArrowDown")).toBeNull();
     expect(rangeKeyAfter([], "1y", "ArrowRight")).toBeNull();
+  });
+});
+
+describe("assetMonogram — 시장 행 아바타 글자", () => {
+  it("영문으로 시작하는 티커는 앞 2~3자(대문자, 앞의 ^는 뗌)", () => {
+    expect(assetMonogram({ name: "달러 인덱스 (DXY)", ticker: "DX-Y.NYB" })).toBe("DX");
+    expect(assetMonogram({ name: "원/달러 (USD/KRW)", ticker: "KRW=X" })).toBe("KRW");
+    expect(assetMonogram({ name: "미국채 10년물 수익률(%)", ticker: "^TNX" })).toBe("TNX");
+    expect(assetMonogram({ name: "S&P 500", ticker: "^GSPC" })).toBe("GSP");
+    expect(assetMonogram({ name: "WTI 원유 ($)", ticker: "CL=F" })).toBe("CL");
+    expect(assetMonogram({ name: "spy", ticker: "spy" })).toBe("SPY");
+  });
+
+  it("티커가 없거나 숫자로 시작하거나 영문 한 글자면 이름 첫 글자", () => {
+    expect(assetMonogram({ name: "코스피200 야간선물", ticker: null })).toBe("코");
+    expect(assetMonogram({ name: "상하이 종합 (SSE)", ticker: "000001.SS" })).toBe("상");
+    expect(assetMonogram({ name: "닛케이 225 (Nikkei)", ticker: "^N225" })).toBe("닛");
+    expect(assetMonogram({ name: "bitcoin", ticker: "" })).toBe("B");
+  });
+
+  it("이름 앞 그림 문자(예전 저장본의 국기 등)는 떼고, 이름도 비면 null", () => {
+    expect(assetMonogram({ name: "\u{1F1FA}\u{1F1F8} 미국 지수", ticker: null })).toBe("미");
+    expect(assetMonogram({ name: "  ", ticker: null })).toBeNull();
+  });
+
+  it("행 모델 — 아바타 글자가 비었거나 'N/A'면 null(아바타 칸 없음)", () => {
+    expect(assetRowModel({ value: 1, avatarText: "SPY" }).avatarText).toBe("SPY");
+    for (const avatarText of [undefined, null, "", " ", "N/A"]) {
+      expect(assetRowModel({ value: 1, avatarText }).avatarText).toBeNull();
+    }
   });
 });

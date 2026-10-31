@@ -6,6 +6,7 @@
  * 새 패턴 파일을 만들면 여기에 넣습니다 — `__tests__/index.test.ts`가 빠진 export를 막습니다.
  */
 export { AssetList, AssetRow, type AssetRowData, type AssetRowDisclosure } from "./AssetRow";
+export { Avatar } from "./Avatar";
 export { EstimateBadge, ProvenanceBadge, StaleBadge } from "./badges";
 export { ChangeChip } from "./ChangeChip";
 export { type Column, DataTable } from "./DataTable";
