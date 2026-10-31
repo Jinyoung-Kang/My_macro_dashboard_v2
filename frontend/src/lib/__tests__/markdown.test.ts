@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
-  isNumericCell, numericColumns, parseInline, parseMarkdown, sectionKind, sectionName, splitRow, splitSections,
+  isNumericCell, numericColumns, parseInline, parseMarkdown, sectionKind, sectionName, splitRow, splitSections, splitVerdicts,
 } from "../markdown";
 
 const REPORT = `## 1. 핵심 요약
@@ -178,5 +178,19 @@ describe("QA-100 제목·표 구분선 해석은 줄 길이에 선형", () => {
     const blocks = parseMarkdown("| a | b |\n|--" + " ".repeat(20000) + "x|");
     expect(performance.now() - started).toBeLessThan(50);
     expect(blocks.map((block) => block.type)).toEqual(["paragraph"]);
+  });
+});
+
+describe("판정 기호 — 값의 방향이 아니라 우호·비우호·중립·보류(명세 D8 e)", () => {
+  it("세 기호를 판정 조각으로, 나머지는 글 조각으로 — 기호 뒤 공백은 배지가 대신한다", () => {
+    expect(splitVerdicts("🟢 정상")).toEqual([{ verdict: "favorable" }, { text: "정상" }]);
+    expect(splitVerdicts("VIX 상승 → 🔴 -2.83%")).toEqual([{ text: "VIX 상승 → " }, { verdict: "unfavorable" }, { text: "-2.83%" }]);
+    expect(splitVerdicts("⚪️ 판단 보류")).toEqual([{ verdict: "neutral" }, { text: "판단 보류" }]);
+    expect(splitVerdicts("🟢🔴")).toEqual([{ verdict: "favorable" }, { verdict: "unfavorable" }]);
+  });
+
+  it("기호가 없으면 글 하나 그대로(빈 글도)", () => {
+    expect(splitVerdicts("전 섹터 상위")).toEqual([{ text: "전 섹터 상위" }]);
+    expect(splitVerdicts("")).toEqual([{ text: "" }]);
   });
 });

@@ -1,7 +1,7 @@
 "use client";
 
 import { type ReactNode, useMemo } from "react";
-import { AlertTriangleIcon } from "@/components/ui/icons";
+import { AlertTriangleIcon, CheckCircleIcon, MinusIcon, XCircleIcon } from "@/components/ui/icons";
 import {
   type Block,
   numericColumns,
@@ -10,6 +10,9 @@ import {
   sectionKind,
   type Section,
   splitSections,
+  splitVerdicts,
+  type Verdict,
+  VERDICT_LABEL,
 } from "@/lib/markdown";
 
 /**
@@ -147,14 +150,42 @@ function renderInline(text: string): ReactNode {
   return parseInline(text).map((part, index) =>
     part.bold ? (
       <strong key={index} className="font-semibold text-bright">
-        {part.text}
+        {withVerdicts(part.text)}
       </strong>
     ) : part.code ? (
       <code key={index} className="rounded-sm bg-canvas px-1 py-0.5 text-[12px]">
         {part.text}
       </code>
     ) : (
-      <span key={index}>{part.text}</span>
+      <span key={index}>{withVerdicts(part.text)}</span>
     ),
+  );
+}
+
+/** 판정 기호를 글 배지로(lib/markdown.splitVerdicts) — 기호가 없으면 글 그대로. */
+function withVerdicts(text: string): ReactNode {
+  const parts = splitVerdicts(text);
+  if (parts.length === 1 && "text" in parts[0]) return parts[0].text;
+  return parts.map((part, index) =>
+    "verdict" in part ? <VerdictBadge key={index} verdict={part.verdict} /> : <span key={index}>{part.text}</span>,
+  );
+}
+
+const VERDICT_ICON: Record<Verdict, ReactNode> = {
+  favorable: <CheckCircleIcon size={12} className="text-ok" />,
+  unfavorable: <XCircleIcon size={12} className="text-danger" />,
+  neutral: <MinusIcon size={12} className="text-text-3" />,
+};
+
+/**
+ * 판정 배지 — 중립 바탕에 글('우호'·'비우호'·'중립·보류')과 장식 아이콘. 뜻은 글이 나르고 아이콘 색은 보조입니다.
+ * ▲▼와 상승·하락 색은 값 변화에만 씁니다(판정을 방향으로 읽지 않게).
+ */
+function VerdictBadge({ verdict }: { verdict: Verdict }) {
+  return (
+    <span className="mr-1 inline-flex items-center gap-1 rounded-full bg-surface-2 px-1.5 py-px align-[1px] text-xs font-medium leading-4 text-text-2">
+      {VERDICT_ICON[verdict]}
+      {VERDICT_LABEL[verdict]}
+    </span>
   );
 }

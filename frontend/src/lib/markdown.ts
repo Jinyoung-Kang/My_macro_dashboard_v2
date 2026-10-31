@@ -252,6 +252,39 @@ export function isNumericCell(cell: string): boolean {
   return NUMERIC_CELL.test(cell.replace(/\*\*/g, "").trim());
 }
 
+/**
+ * 판정 기호 — 리포트 프롬프트가 쓰게 한 세 기호(초록 원·빨강 원·흰 원)의 뜻은 '우호'·'비우호'·'중립·판단 보류'입니다
+ * ({@code SnapshotTextService} 리포트 규칙, 원본의 수급 판정 기호와 같은 뜻). 값이 오르내린 방향이 아니라 판정이라
+ * 화면은 ▲▼·상승/하락 색이 아니라 글 배지로 그립니다('VIX 상승 → 비우호'가 하락으로 읽히지 않게, 명세 D8 e).
+ */
+export type Verdict = "favorable" | "unfavorable" | "neutral";
+
+export const VERDICT_LABEL: Record<Verdict, string> = {
+  favorable: "우호",
+  unfavorable: "비우호",
+  neutral: "중립·보류",
+};
+
+/** 기호 하나(이모지 변형 선택자 포함)와 뒤 공백 — 배지가 글과의 간격을 따로 둡니다. */
+const VERDICT_MARK = /(?:(\u{1F7E2})|(\u{1F534})|(\u{26AA}))\u{FE0F}?[ \t]*/gu;
+
+/**
+ * 글을 판정 기호 자리에서 나눕니다 — 화면은 글 조각은 글로, 판정 조각은 배지로 그립니다. 기호가 없으면 글 하나.
+ * 복사·다운로드·원문 카드는 이 함수를 거치지 않으므로 원문 그대로입니다.
+ */
+export function splitVerdicts(text: string): ({ text: string } | { verdict: Verdict })[] {
+  const out: ({ text: string } | { verdict: Verdict })[] = [];
+  let last = 0;
+  for (const match of text.matchAll(VERDICT_MARK)) {
+    const index = match.index ?? 0;
+    if (index > last) out.push({ text: text.slice(last, index) });
+    out.push({ verdict: match[1] ? "favorable" : match[2] ? "unfavorable" : "neutral" });
+    last = index + match[0].length;
+  }
+  if (last < text.length) out.push({ text: text.slice(last) });
+  return out.length > 0 ? out : [{ text }];
+}
+
 /** 표에서 숫자 열(첫 열 제외, 비어 있지 않은 칸이 모두 숫자)인지 열마다 판정합니다. */
 export function numericColumns(header: string[], rows: string[][]): boolean[] {
   return header.map(
