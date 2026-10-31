@@ -16,7 +16,7 @@ import java.util.Map;
  * 배포해도 아무것도 바뀌지 않습니다 — 운영자가 설정을 저장할 때 켜집니다(§16-2의 3).
  *
  * @param enabled          계좌2 결정·출발({@value #ENABLED}, 기본 꺼짐)
- * @param maxCallsPerCycle 계좌2 소상한 — 같은 기준 거래일(결정 주기)의 정기 결정·출발·재시도 호출 수({@value #MAX_CALLS_PER_CYCLE},
+ * @param maxCallsPerCycle 계좌2 소상한 — 같은 기준 거래일(결정 주기)의 정기 결정·출발·재시도·장중 확인 호출 수({@value #MAX_CALLS_PER_CYCLE},
  *                         0~{@value #MAX_CALLS_PER_CYCLE_LIMIT}, 기본 {@value #DEFAULT_MAX_CALLS_PER_CYCLE})
  * @param barsWaitMinutes  1분봉 기다림 상한(분, {@value #BARS_WAIT_MINUTES}, 0~{@value #MAX_BARS_WAIT_MINUTES}, 기본
  *                         {@value #DEFAULT_BARS_WAIT_MINUTES} — {@link UsTimedFills#barsWait})

@@ -467,7 +467,7 @@ describe("🧪 장중 확인(단계 2)", () => {
     expect(decisionStatusBadge("API_ERROR", "SCHEDULED").label).toBe("API 오류");
     expect(decisionStatusBadge("NO_TRADE", "CHECKPOINT").label).toBe("주문 없음");
     expect(["PLANNED", "DONE", "EXPIRED", "SKIPPED", "ODD"].map((status) => checkpointStatusBadge(status).label))
-      .toEqual(["예정", "확인함", "놓침", "건너뜀", "ODD"]);
+      .toEqual(["예정", "부름", "놓침", "건너뜀", "ODD"]);
   });
 
   it("사유 코드는 한국어(코드는 괄호), 요청 무효는 서버 사유를 덧붙이고 부른 뒤 실패는 재시도 없음 — 모르면 받은 글자, 없으면 '—'", () => {
@@ -494,7 +494,7 @@ describe("🧪 장중 확인(단계 2)", () => {
     for (const feed of ["MINUTE", "HOURLY"]) expect(checkpointFeedLabel(feed)).not.toContain("실시간");
   });
 
-  it("오늘 장중 확인 한 줄 — 예정·확인함·놓침·꺼짐·계획 없음, 정규장이면 감시 저장본, 모르는 값은 '—', 칸이 없는 백엔드면 줄 없음", () => {
+  it("오늘 장중 확인 한 줄 — 예정·부름·놓침·꺼짐·계획 없음, 정규장이면 감시 저장본, 모르는 값은 '—', 칸이 없는 백엔드면 줄 없음", () => {
     expect(claude2CheckpointLine(group(undefined))).toBeNull();
     expect(claude2CheckpointLine(null)).toBeNull();
     expect(claude2CheckpointLine(group({ enabled: false, session: "2026-11-02", today: null, watch: null })))
@@ -511,7 +511,7 @@ describe("🧪 장중 확인(단계 2)", () => {
       enabled: true, session: "2026-11-02", today: { ...today, status: "DONE", decisionId: 41, calledAtKst: "2026-11-03 00:33 KST" },
       watch: { collectedAtKst: "2026-11-03 00:36 KST", ageSeconds: 240, lagSeconds: 80 },
     }));
-    expect(done).toContain("확인함 · 확인 결정 #41 · 부른 시각 2026-11-03 00:33");
+    expect(done).toContain("부름 · 확인 결정 #41 · 부른 시각 2026-11-03 00:33");
     expect(done).toContain("감시 저장본 받은 시각 2026-11-03 00:36 · 4분 전 · 지연 1분 20초");
     expect(claude2CheckpointLine(group({
       enabled: true, session: "2026-11-02", today: { ...today, status: "EXPIRED", reason: "WINDOW_MISSED — 놓침", atKst: null, feed: "HOURLY", watch: [] },

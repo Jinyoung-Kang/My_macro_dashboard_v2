@@ -274,9 +274,10 @@ final class PaperSettingKeys {
             // ---- 미국 Claude 계좌2(체결 시점 실험 — 계좌2 명세 §13-2, ADR 0022). 모두 규칙 계좌 영향 없음, 기본은 꺼짐·단계 1 값.
             of(Claude2Settings.ENABLED, Type.BOOLEAN, false,
                     "Claude 계좌2(체결 시점 실험) — 켜면 다음 미국 결정 창에 앞으로 체결로 출발하고(INITIAL — 사후 체결 없음) 그 뒤 "
-                            + "정기 결정을 냄. 끄면 결정·출발을 하지 않음(장부·스탑은 계속). 켜는 저장에서 apiScheduledReserve 9 권장"),
+                            + "정기 결정을 냄. 끄면 결정·출발을 하지 않음(장부·스탑은 계속). 켜는 저장에서 apiScheduledReserve 9 권장"
+                            + "(장중 확인 claude2.checkpoints를 함께 켜면 10)"),
             integer(Claude2Settings.MAX_CALLS_PER_CYCLE, 0, Claude2Settings.MAX_CALLS_PER_CYCLE_LIMIT, false,
-                    "계좌2 소상한 — 같은 기준 거래일(결정 주기)의 계좌2 정기 결정·출발·재시도 호출 수(결정 행마다 1 + 재시도 수). "
+                    "계좌2 소상한 — 같은 기준 거래일(결정 주기)의 계좌2 정기 결정·출발·재시도·장중 확인 호출 수(결정 행마다 1 + 재시도 수). "
                             + "단계 1은 2, 장중 확인(단계 2)을 켜면 3. 0이면 계좌2 정기 호출 없음"),
             integer(Claude2Settings.BARS_WAIT_MINUTES, 0, Claude2Settings.MAX_BARS_WAIT_MINUTES, false,
                     "1분봉 기다림 상한(분) — 기준 시각이 지난 시각 지정 주문이 있으면 그 관측치 뒤의 1분봉 저장본을 이만큼 기다린 뒤 "

@@ -412,7 +412,7 @@ export interface PaperClaude2Status {
   checkpoint?: PaperClaude2CheckpointStatus | null;
 }
 
-/** 계좌2 장중 확인 행의 상태(paper_checkpoints, V18) — 예정·확인함·놓침·건너뜀. */
+/** 계좌2 장중 확인 행의 상태(paper_checkpoints, V18) — 예정·부름(API 오류 등 실패로 끝난 호출 포함)·놓침·건너뜀. */
 export type PaperCheckpointStatus = "PLANNED" | "DONE" | "EXPIRED" | "SKIPPED";
 
 /** 장중 확인의 자료 — 감시 종목 1분봉(5분 수집, 잰 지연) 또는 전 종목 시간별 관측치(최대 60분 묵음). */

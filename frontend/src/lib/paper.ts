@@ -3247,12 +3247,15 @@ export function claude2BarsLine(group: PaperClaude2Status | null | undefined, la
 
 const CHECKPOINT_STATUS: Record<string, { label: string; tone: BadgeTone }> = {
   PLANNED: { label: "예정", tone: "info" },
-  DONE: { label: "확인함", tone: "ok" },
+  DONE: { label: "부름", tone: "ok" },
   EXPIRED: { label: "놓침", tone: "warn" },
   SKIPPED: { label: "건너뜀", tone: "muted" },
 };
 
-/** 장중 확인 상태 배지(예정·확인함·놓침·건너뜀). 모르는 값은 받은 글자 그대로. */
+/**
+ * 장중 확인 상태 배지(예정·부름·놓침·건너뜀). DONE은 '부름'입니다 — API 오류·형식 오류·거절로 끝난 호출도 DONE이라(재시도 없음) '확인함'이라 적지 않음
+ * (API.md·M8 줄과 같은 낱말). 모르는 값은 받은 글자 그대로.
+ */
 export function checkpointStatusBadge(status: string | null | undefined): Badge {
   const known = status ? CHECKPOINT_STATUS[status] : undefined;
   return { key: status ?? "unknown", label: known?.label ?? status ?? EMPTY, className: TONE[known?.tone ?? "muted"] };
@@ -3456,7 +3459,7 @@ export function claude2StartView(
         + "준비된 뒤에만 됩니다)."
       : armed === false
         ? "설정 claude2.enabled가 꺼져 있습니다 — 설정 탭에서 켜야(설정 판 하나) 정기 출발도 이 단추도 돕니다. 켜는 같은 저장에서 정기 작업 몫 예약"
-          + "(apiScheduledReserve)·결정 주기 호출 상한(claude2.maxCallsPerCycle)도 함께 맞춥니다(명세 §16-2)."
+          + "(apiScheduledReserve)·결정 주기 호출 상한(claude2.maxCallsPerCycle)과 장중 확인(claude2.checkpoints — 단계 2)도 함께 맞춥니다(명세 §16-2)."
         : "계좌2 상태를 읽지 못해 설정이 켜져 있는지 모릅니다 — 상태를 다시 읽은 뒤 누르세요.",
     lines,
     cost: CLAUDE_COST_NOTE,
