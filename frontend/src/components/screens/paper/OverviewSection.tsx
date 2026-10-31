@@ -356,7 +356,15 @@ export function OverviewSection({
       {!startPrompt && startResult}
 
       {!korea && <ClaudeStartSection overview={overview} onChanged={onChanged} />}
-      {!korea && <Claude2StartSection overview={overview} status={status.data ?? null} onChanged={onChanged} />}
+      {/* 상태를 아직 기다리는 중(앞서 받은 값 없음)과 실패를 갈라 넘깁니다 — 실패만 '읽지 못해'(QA-149). */}
+      {!korea && (
+        <Claude2StartSection
+          overview={overview}
+          status={status.data ?? null}
+          statusPending={status.loading && status.data === null}
+          onChanged={onChanged}
+        />
+      )}
       {korea && <KrStartSection overview={overview} status={status.data ?? null} onChanged={onChanged} />}
 
       {/* 정규장 동안 n분마다 움직이는 장중 평가(표시 전용 추정) — 아래 계좌 목록은 장부의 마지막 관측치 값 그대로입니다. */}

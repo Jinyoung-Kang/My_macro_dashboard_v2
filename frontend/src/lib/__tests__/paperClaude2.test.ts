@@ -208,12 +208,32 @@ describe("계좌2 출발 카드", () => {
     const unknown = claude2StartView({ initialized: true, books: BOOKS }, null);
     expect(unknown?.armed).toBeNull();
     expect(unknown?.lines.map((line) => line.value)).toEqual(["—", "—", "—"]);
+    // 배너 색 — 출발할 수 있으면 info, 꺼짐·읽지 못함은 warn.
+    expect(off?.armTone).toBe("warn");
+    expect(unknown?.armTone).toBe("warn");
+    expect(unknown?.armNote).toBe("계좌2 상태를 읽지 못해 설정이 켜져 있는지 모릅니다 — 상태를 다시 읽은 뒤 누르세요.");
+    expect(claude2StartView({ initialized: true, books: BOOKS }, STATUS)?.armTone).toBe("info");
+  });
+
+  it("상태를 아직 읽는 중이면 '읽지 못해'가 아니라 '읽는 중'(info) — 단추 닫힘·창 칸 '—', 상태가 있으면 그 값(QA-149)", () => {
+    const pending = claude2StartView({ initialized: true, books: BOOKS }, null, null, { pending: true });
+    expect(pending?.armed).toBeNull();
+    expect(pending?.ready).toBe(false);
+    expect(pending?.armTone).toBe("info");
+    expect(pending?.armNote).toBe("계좌2 상태를 읽는 중입니다 — 설정 claude2.enabled가 켜져 있는지 받은 뒤 단추를 열지 정합니다.");
+    expect(pending?.lines.map((line) => line.value)).toEqual(["—", "—", "—"]);
+    // 읽는 중 표시는 상태가 없을 때만 — 받은 상태가 있으면 그 값 그대로.
+    const off = claude2StartView({ initialized: true, books: BOOKS }, { claude2: { ...STATUS.claude2!, enabled: false } }, null, { pending: true });
+    expect(off?.armTone).toBe("warn");
+    expect(off?.armNote).toContain("claude2.enabled가 꺼져 있습니다");
+    expect(claude2StartView({ initialized: true, books: BOOKS }, STATUS, null, { pending: true })?.ready).toBe(true);
   });
 
   it("켜져 있어도 관측치 사슬 준비 중(상태 chainReady false)이면 단추를 닫고 까닭을 — 칸이 없는 백엔드면 닫지 않음, 확인 문구에 거절 사유", () => {
     const waiting = claude2StartView({ initialized: true, books: BOOKS }, { claude2: { ...STATUS.claude2!, chainReady: false } });
     expect(waiting?.armed).toBe(true);
     expect(waiting?.ready).toBe(false);
+    expect(waiting?.armTone).toBe("warn");
     expect(waiting?.armNote).toContain("관측치 사슬 준비 중입니다 — 실행 감사(5분마다)가 지금 관측치의 사슬 고리를 남겨야");
     const ready = claude2StartView({ initialized: true, books: BOOKS }, { claude2: { ...STATUS.claude2!, chainReady: true } });
     expect(ready?.ready).toBe(true);

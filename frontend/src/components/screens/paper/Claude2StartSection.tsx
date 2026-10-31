@@ -16,7 +16,8 @@ import type { PaperInitialDecisionResult, PaperOverviewResponse, PaperStatusResp
  * 출발은 앞으로 체결입니다: 설정 claude2.enabled를 켜면(설정 탭 — 사용자가 시작, 명세 L2) 다음 미국 결정 창에 정기 결정 작업이 출발 결정을 내고, 이
  * 카드의 "계좌2 시작"은 같은 출발을 그 창 안에서 지금 한 번 부릅니다(POST run/initial-decision `{book:"claude2"}` — 창 밖·꺼짐은 서버 400, 기록
  * 없음). 설정이 꺼져 있거나 상태를 읽지 못했거나 관측치 사슬 준비 중이면(상태 칸 chainReady false — 켠 직후·새 관측치 직후 몇 분, 서버가 출발을 거절)
- * 단추를 닫고 그 까닭을 적습니다. Claude를 한 번 부르므로 확인 단계를 거칩니다. 미리보기는 없습니다.
+ * 단추를 닫고 그 까닭을 적습니다. 상태 응답을 아직 기다리는 중이면(첫 요청·탭을 바꿨다 돌아옴) 실패와 갈라 '읽는 중'(경고색 아님)이고 단추는 닫습니다
+ * (QA-149). Claude를 한 번 부르므로 확인 단계를 거칩니다. 미리보기는 없습니다.
  * 창 시각·이번 주기 호출은 상태 응답(claude2 묶음)의 글자 그대로이고, 다음 결정 시각이 이미 지났으면(그 거래일 행이 아직 없음 — 창은 컷오프까지 열림)
  * 지난 시각 대신 창이 열렸다고 적습니다(lib/paper claude2WindowLines). 그 아래 '오늘 장중 확인' 한 줄(단계 2 — 상태 응답 claude2.checkpoint, 칸이 없는
  * 백엔드면 줄 없음).
@@ -24,15 +25,18 @@ import type { PaperInitialDecisionResult, PaperOverviewResponse, PaperStatusResp
 export function Claude2StartSection({
   overview,
   status,
+  statusPending = false,
   onChanged,
 }: {
   overview: PaperOverviewResponse;
   status: PaperStatusResponse | null;
+  /** 상태 응답을 아직 기다리는 중(앞서 받은 값 없음 — useApi loading이고 data 없음). 실패(오류·available false)와 가릅니다(QA-149). */
+  statusPending?: boolean;
   onChanged: () => void;
 }) {
   // 분 시계 — 다음 결정 시각이 지났으면 지난 시각 대신 '결정 창 열림(…부터 컷오프 …까지)'(마운트 전에는 받은 시각 그대로).
   const now = useMinuteClock();
-  const view = claude2StartView(overview, status?.available ? status : null, now);
+  const view = claude2StartView(overview, status?.available ? status : null, now, { pending: statusPending });
   const [confirming, setConfirming] = useState(false);
   const start = useAsyncAction(
     (book: string) => apiPost<PaperInitialDecisionResult>(endpoints.paper.runInitialDecision, { book }),
@@ -60,7 +64,7 @@ export function Claude2StartSection({
     >
       <p className="text-sm leading-relaxed text-body">{view.body}</p>
       <div className="mt-3">
-        <Banner tone={view.ready ? "info" : "warn"}>{view.armNote}</Banner>
+        <Banner tone={view.armTone}>{view.armNote}</Banner>
       </div>
       <Claude2WindowList lines={view.lines} className="mt-3" />
       <Claude2CheckpointLine line={claude2CheckpointLine(status?.available ? status.claude2 : null)} />

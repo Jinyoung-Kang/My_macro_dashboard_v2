@@ -3169,7 +3169,7 @@ export interface Claude2StartView {
   bookLabel: string;
   title: string;
   body: string;
-  /** 설정 claude2.enabled — true면 단추가 열리고, false면 설정을 먼저 켜라는 안내, null이면 상태를 읽지 못함(단추 닫힘). */
+  /** 설정 claude2.enabled — true면 단추가 열리고, false면 설정을 먼저 켜라는 안내, null이면 모름 — 상태를 읽지 못했거나 아직 읽는 중(단추 닫힘). */
   armed: boolean | null;
   /**
    * 단추를 열까 — 설정이 켜져 있고(armed true) 관측치 사슬이 준비됐거나 모를 때(상태 칸 chainReady가 false가 아님). 사슬 준비 중이면 출발은 서버가 거절하고
@@ -3177,6 +3177,8 @@ export interface Claude2StartView {
    */
   ready: boolean;
   armNote: string;
+  /** armNote 배너의 색 — 출발할 수 있거나(ready) 상태를 아직 읽는 중이면 info, 꺼짐·사슬 준비 중·상태를 읽지 못함은 warn(QA-149). */
+  armTone: "info" | "warn";
   /** 다음 결정·개장 전 컷오프·이번 주기 호출 — 상태 응답 글자 그대로(모르면 "—"), 다음 결정 시각이 지났으면 창이 열렸다고(claude2WindowLines). */
   lines: DecisionMetaCell[];
   cost: string;
@@ -3432,19 +3434,25 @@ const CLAUDE2_CHAIN_WAIT_NOTE = "설정 claude2.enabled는 켜져 있지만 관�
  * 부릅니다(창 밖·꺼짐은 서버가 400 — 기록 없음). 미리보기는 없습니다. 창 시각은 상태 응답의 claude2 묶음 그대로입니다.
  *
  * @param now 지금(화면의 분 시계 — 마운트 전이면 null). 다음 결정 시각이 지났는지 가르는 데만 씁니다(claude2WindowLines).
+ * @param options.pending 상태 응답을 아직 기다리는 중(앞서 받은 값 없음 — 첫 요청, 탭을 바꿨다 돌아와 처음부터 다시 읽음). 상태가 없을 때만 봅니다.
  */
 export function claude2StartView(
   overview: Pick<PaperOverviewResponse, "initialized" | "books">,
   status: Pick<PaperStatusResponse, "claude2"> | null | undefined,
   now: Date | null = null,
+  options: { pending?: boolean } = {},
 ): Claude2StartView | null {
   if (overview.initialized === false) return null;
   const book = (overview.books ?? []).find((entry) => isTimedBook(entry.code));
   if (!book || book.status !== "NOT_STARTED") return null;
   const group = status?.claude2 ?? null;
   const armed = group ? group.enabled === true : null;
+  // 상태를 아직 읽는 중이면 켜져 있는지 모르는 것은 같지만 실패가 아닙니다 — 실패(요청 오류·available false)와 같은 '읽지 못해'(경고색)를 보이지
+  // 않고 '읽는 중'(QA-149). 단추는 같이 닫습니다.
+  const pending = !group && options.pending === true;
   // 켜져 있어도 지금 관측치의 사슬 고리가 아직 없으면 출발이 나가지 않습니다(서버 판정 그대로 — 상태 칸 chainReady). 칸이 없는 백엔드면 모름 — 닫지 않음.
   const chainWaiting = armed === true && group?.chainReady === false;
+  const ready = armed === true && !chainWaiting;
   const lines = claude2WindowLines(group, now);
   const label = book.label;
   return {
@@ -3456,14 +3464,17 @@ export function claude2StartView(
       + "매시 · 종가)으로 체결됩니다. 성공하면 출발일 = S(그날 순자산 = 처음 현금)로 운용을 시작하고, 실패하면 아무것도 쓰지 않고 다음 미국 결정 창에 "
       + "다시 합니다. 미리보기는 없습니다.",
     armed,
-    ready: armed === true && !chainWaiting,
+    ready,
     armNote: chainWaiting ? CLAUDE2_CHAIN_WAIT_NOTE : armed === true
       ? "설정 claude2.enabled가 켜져 있습니다 — 단추를 누르지 않아도 다음 미국 결정 창에 정기 결정 작업이 출발합니다(단추는 그 창 안에서, 관측치 사슬이 "
         + "준비된 뒤에만 됩니다)."
       : armed === false
         ? "설정 claude2.enabled가 꺼져 있습니다 — 설정 탭에서 켜야(설정 판 하나) 정기 출발도 이 단추도 돕니다. 켜는 같은 저장에서 정기 작업 몫 예약"
           + "(apiScheduledReserve)·결정 주기 호출 상한(claude2.maxCallsPerCycle)과 장중 확인(claude2.checkpoints — 단계 2)도 함께 맞춥니다(명세 §16-2)."
-        : "계좌2 상태를 읽지 못해 설정이 켜져 있는지 모릅니다 — 상태를 다시 읽은 뒤 누르세요.",
+        : pending
+          ? "계좌2 상태를 읽는 중입니다 — 설정 claude2.enabled가 켜져 있는지 받은 뒤 단추를 열지 정합니다."
+          : "계좌2 상태를 읽지 못해 설정이 켜져 있는지 모릅니다 — 상태를 다시 읽은 뒤 누르세요.",
+    armTone: ready || pending ? "info" : "warn",
     lines,
     cost: CLAUDE_COST_NOTE,
     confirm: `계좌2를 지금 출발시킬까요? ${CLAUDE_COST_NOTE} 같은 창의 정기 출발과 같은 파이프라인을 수동 호출 문턱으로 한 번 부릅니다. 창 밖`
