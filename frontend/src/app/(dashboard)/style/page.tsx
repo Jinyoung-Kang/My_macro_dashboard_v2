@@ -146,6 +146,8 @@ function ProfilesCard() {
             {
               key: "reportDate",
               header: "기준 분기",
+              // 날짜는 접지 않습니다 — 좁은 표에서 '2026-06- / 30'처럼 하이픈에서 끊겼습니다.
+              className: "whitespace-nowrap",
               render: (row) => <SourceBadge>{row.reportDate ?? EMPTY}</SourceBadge>,
             },
           ]}
@@ -595,6 +597,8 @@ function HoldersCard() {
               {
                 key: "reportDate",
                 header: "기준 분기",
+                // 날짜는 접지 않습니다 — 좁은 표에서 '2026-06- / 30'처럼 하이픈에서 끊겼습니다.
+                className: "whitespace-nowrap",
                 render: (row) => <SourceBadge>{row.reportDate}</SourceBadge>,
               },
             ]}

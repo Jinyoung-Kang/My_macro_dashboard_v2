@@ -11,8 +11,10 @@ import { PROVENANCE_UNKNOWN, estimateLabel, presentText, provenanceText } from "
  * surface와 미리 섞은 불투명 색이라 어디에 놓여도 경고색 글자 대비가 같습니다(라이트 5.1·다크 7.2:1, 명세 §2-1). 투명 틴트(bg-warn/10)는 쓰지 않습니다.
  * 모서리는 rounded-full이 아니라 12px(rounded-control)입니다 — 한 줄이면 높이 22px라 알약과 같고, 사유가 길어 좁은 화면에서 두세 줄로
  * 접히면 rounded-full은 타원이 되어 글이 모서리에 걸렸습니다(홈 모의매매 히어로·계좌 행, 390px).
+ * 안은 flex가 아니라 글 흐름(inline-block)입니다 — flex 줄바꿈은 사유를 통째로 다음 줄로 넘겨 둘째 줄이 '· 관측치 …'처럼 가운뎃점으로
+ * 시작했습니다(홈 1280px 계좌 행). 글 흐름이면 첫 줄을 채운 뒤 사유 중간에서 줄을 바꿉니다.
  */
-const PILL = "inline-flex max-w-full flex-wrap items-center gap-x-1 rounded-control border px-2 py-0.5 text-xs leading-4";
+const PILL = "inline-block max-w-full rounded-control border px-2 py-0.5 text-xs leading-4";
 
 /**
  * 출처 캡션 — "출처 · 실시간|N분 지연 · 시각"을 작은 글(12px, text-3)로. 모르는 부분은 빼고, 전부 모르면 "출처 —".
@@ -68,7 +70,7 @@ export function EstimateBadge({
   return (
     <span className={`${PILL} border-dashed border-text-3 text-text-2`}>
       <span className="font-medium">{label}</span>
-      {detail ? <span>· {detail}</span> : null}
+      {detail ? <> <span>· {detail}</span></> : null}
     </span>
   );
 }
@@ -84,10 +86,11 @@ export function StaleBadge({ stale, reason }: { stale?: boolean; reason?: string
   const detail = presentText(reason);
   return (
     <span className={`${PILL} border-warn/30 bg-warn-tint text-warn`}>
-      <AlertTriangleIcon size={12} className="self-center" />
+      {/* 글 흐름 안의 아이콘 — 12px 글 가운데에 오게 조금 내립니다. */}
+      <AlertTriangleIcon size={12} className="mr-1 inline align-[-2px]" />
       <span className="sr-only">주의: </span>
       <span className="font-medium">이전 값</span>
-      {detail ? <span>· {detail}</span> : null}
+      {detail ? <> <span>· {detail}</span></> : null}
     </span>
   );
 }

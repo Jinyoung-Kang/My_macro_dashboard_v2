@@ -57,6 +57,8 @@ export function AiEngineSection() {
               {
                 key: "available",
                 header: "키",
+                // 낱말 안에서 끊지 않습니다(break-keep) — 좁은 표에서 '없 / 음'으로 접혔습니다. 긴 사유는 띄어쓰기에서만 줄을 바꿉니다.
+                className: "break-keep",
                 // available은 "허용됐고 키도 있음"입니다(ADR 0014). 허용 목록 밖이면 키가 있어도 쓰지 않으므로 따로 적습니다.
                 render: (row) => (
                   <span className={row.available ? "text-ok" : "text-muted"}>

@@ -466,9 +466,14 @@ export function Table<T>({
   );
 }
 
+/**
+ * 작은 글 배지(출처 종류·모델 이름·기준 분기 등). 모서리는 rounded-full이 아니라 12px(rounded-control) — 한 줄이면 높이 20px라 알약과
+ * 같고, 표의 좁은 칸에서 두 줄로 접히면 rounded-full은 글이 모서리에 걸린 타원이 됐습니다(추정·이전 값 배지와 같은 까닭).
+ * 날짜처럼 접히면 안 되는 값은 부르는 쪽(표 칸의 className)이 whitespace-nowrap을 붙입니다.
+ */
 export function SourceBadge({ children }: { children: ReactNode }) {
   return (
-    <span className="inline-flex items-center rounded-full bg-surface-2 px-2 py-0.5 text-xs leading-4 text-text-2">
+    <span className="inline-flex items-center rounded-control bg-surface-2 px-2 py-0.5 text-xs leading-4 text-text-2">
       {children}
     </span>
   );
