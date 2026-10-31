@@ -3,6 +3,7 @@
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { FormEvent, useEffect, useState } from "react";
+import { AUTH_CARD, AUTH_SUBMIT, AUTH_TITLE } from "@/components/auth/classes";
 import { inputClasses } from "@/components/ui";
 import { isDemo, isLocalOwner } from "@/lib/access";
 import { auth } from "@/lib/api";
@@ -69,12 +70,12 @@ export default function LoginPage() {
     <main className="flex min-h-screen items-center justify-center px-4">
       <form
         onSubmit={submit}
-        className="w-full max-w-sm rounded-xl border border-border bg-surface p-6"
+        className={AUTH_CARD}
       >
-        <h1 className="text-lg font-bold text-bright">Global Macro &amp; 13F Dashboard</h1>
-        <p className="mt-1 text-xs text-muted">인가된 사용자만 접근할 수 있는 시스템입니다.</p>
+        <h1 className={AUTH_TITLE}>Global Macro &amp; 13F Dashboard</h1>
+        <p className="mt-1 text-[13px] text-text-2">인가된 사용자만 접근할 수 있는 시스템입니다.</p>
 
-        <label className="mt-6 block text-xs text-muted">
+        <label className="mt-6 block text-[13px] font-medium text-text-2">
           이메일
           <input
             type="email"
@@ -82,11 +83,11 @@ export default function LoginPage() {
             onChange={(event) => setEmail(event.target.value)}
             autoComplete="username"
             autoFocus
-            className={`mt-1 w-full ${inputClasses()}`}
+            className={`mt-1.5 w-full ${inputClasses("lg")}`}
           />
         </label>
 
-        <label className="mt-3 block text-xs text-muted">
+        <label className="mt-4 block text-[13px] font-medium text-text-2">
           비밀번호
           <input
             type="password"
@@ -94,12 +95,12 @@ export default function LoginPage() {
             onChange={(event) => setPassword(event.target.value)}
             placeholder="Enter Password..."
             autoComplete="current-password"
-            className={`mt-1 w-full ${inputClasses()}`}
+            className={`mt-1.5 w-full ${inputClasses("lg")}`}
           />
         </label>
 
         {error && (
-          <p className="mt-3 rounded-sm border border-danger/40 bg-danger/10 px-3 py-2 text-xs text-danger">
+          <p className="mt-4 rounded-control border border-danger/30 bg-danger-tint px-3 py-2.5 text-[13px] text-danger">
             {error}
           </p>
         )}
@@ -107,13 +108,13 @@ export default function LoginPage() {
         <button
           type="submit"
           disabled={busy || password.length === 0 || email.trim().length === 0}
-          className="mt-5 w-full rounded-md border border-accent/60 bg-accent/15 px-3 py-2 text-sm font-semibold text-accent transition hover:bg-accent/25 disabled:opacity-50"
+          className={AUTH_SUBMIT}
         >
           {busy ? "확인 중…" : "로그인"}
         </button>
 
         {mailAvailable && (
-          <div className="mt-4 flex justify-between text-xs text-muted">
+          <div className="mt-5 flex justify-between text-[13px] text-text-2">
             <Link href="/signup" className="hover:text-accent">가입하기</Link>
             <Link href="/reset" className="hover:text-accent">비밀번호를 잊었나요?</Link>
           </div>

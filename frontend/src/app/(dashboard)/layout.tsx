@@ -3,6 +3,7 @@
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { Shell } from "@/components/shell/Shell";
+import { buttonClasses } from "@/components/ui/classes";
 import { ToastProvider } from "@/components/ui/Toast";
 import { AlertTriangleIcon } from "@/components/ui/icons";
 import { useApi } from "@/hooks/useApi";
@@ -187,8 +188,8 @@ function BackendUnavailable({
 }) {
   return (
     <main className="flex min-h-screen items-center justify-center px-4">
-      <div className="w-full max-w-lg rounded-xl border border-warn/40 bg-surface p-6 text-sm">
-        <h1 className="flex items-center gap-2 text-base font-bold text-bright">
+      <div className="w-full max-w-lg rounded-card border border-warn/40 bg-surface p-6 text-sm sm:p-8">
+        <h1 className="flex items-center gap-2 text-title-3 text-text">
           <AlertTriangleIcon size={18} className="text-warn" />
           백엔드 API에 연결하지 못했습니다
         </h1>
@@ -196,7 +197,7 @@ function BackendUnavailable({
         <p className="mt-4 text-muted">
           화면은 떠 있지만 데이터를 주는 백엔드가 응답하지 않습니다. 터미널에서 확인하세요.
         </p>
-        <pre className="mt-2 overflow-x-auto rounded-md border border-border bg-canvas px-3 py-2 text-xs text-body">
+        <pre className="mt-2 overflow-x-auto rounded-control border border-border bg-surface-2 px-3 py-2 text-xs text-body">
 {`make doctor          # 어디가 막혔는지 한 번에
 docker compose ps    # backend가 running인지
 make logs S=backend  # 기동 실패 원인`}
@@ -209,7 +210,7 @@ make logs S=backend  # 기동 실패 원인`}
           type="button"
           onClick={onRetry}
           disabled={retrying}
-          className="mt-4 rounded-md border border-accent/60 bg-accent/15 px-3 py-1.5 text-xs font-semibold text-accent transition hover:bg-accent/25 disabled:opacity-50"
+          className={`mt-5 ${buttonClasses("primary", "sm")}`}
         >
           지금 다시 확인
         </button>
@@ -228,8 +229,8 @@ make logs S=backend  # 기동 실패 원인`}
 function OwnerMissing({ retrying, onRetry }: { retrying: boolean; onRetry: () => void }) {
   return (
     <main className="flex min-h-screen items-center justify-center px-4">
-      <div className="w-full max-w-lg rounded-xl border border-warn/40 bg-surface p-6 text-sm">
-        <h1 className="flex items-center gap-2 text-base font-bold text-bright">
+      <div className="w-full max-w-lg rounded-card border border-warn/40 bg-surface p-6 text-sm sm:p-8">
+        <h1 className="flex items-center gap-2 text-title-3 text-text">
           <AlertTriangleIcon size={18} className="text-warn" />
           운영자 계정이 아직 없습니다
         </h1>
@@ -241,7 +242,7 @@ function OwnerMissing({ retrying, onRetry }: { retrying: boolean; onRetry: () =>
           <li>스키마가 아직 적용되지 않음(docker compose up을 직접 쓴 경우) — make migrate 또는 make doctor</li>
           <li>복원한 백업에 운영자 없이 회원만 있음 — 계정이 하나라도 있으면 새로 만들지 않으니 운영자가 있는 백업인지 확인하세요</li>
         </ul>
-        <pre className="mt-2 overflow-x-auto rounded-md border border-border bg-canvas px-3 py-2 text-xs text-body">
+        <pre className="mt-2 overflow-x-auto rounded-control border border-border bg-surface-2 px-3 py-2 text-xs text-body">
 {`make up              # .env를 고친 뒤 — 백엔드가 기동하며 운영자 계정을 만듦
 make logs S=backend  # 그래도 이 화면이면 원인 확인`}
         </pre>
@@ -252,7 +253,7 @@ make logs S=backend  # 그래도 이 화면이면 원인 확인`}
           type="button"
           onClick={onRetry}
           disabled={retrying}
-          className="mt-4 rounded-md border border-accent/60 bg-accent/15 px-3 py-1.5 text-xs font-semibold text-accent transition hover:bg-accent/25 disabled:opacity-50"
+          className={`mt-5 ${buttonClasses("primary", "sm")}`}
         >
           지금 다시 확인
         </button>
