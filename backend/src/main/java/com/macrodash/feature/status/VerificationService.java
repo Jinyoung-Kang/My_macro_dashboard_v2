@@ -359,7 +359,7 @@ public class VerificationService {
         Optional<Snapshot> snapshot = store.readStored(Datasets.SNAP_TOSS_MARKET_FLOWS);
         if (snapshot.isEmpty() || snapshot.get().payload() == null) {
             return new Verification.Result(FlowIntegrity.NAME, Verification.ERROR, List.of(), null, null,
-                    "토스 수급 저장본이 없습니다 — 🗄️ 데이터 저장소 상태에서 toss_market_flows를 실행하세요.");
+                    "토스 수급 저장본이 없습니다 — 데이터 저장소 상태에서 toss_market_flows를 실행하세요.");
         }
         JsonNode markets = snapshot.get().payload().path("markets");
         Map<String, List<FlowRecord>> byMarket = new LinkedHashMap<>();

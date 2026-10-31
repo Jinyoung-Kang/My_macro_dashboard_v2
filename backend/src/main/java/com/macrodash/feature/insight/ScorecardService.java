@@ -50,7 +50,7 @@ public class ScorecardService {
             out.put("available", false);
             out.put("rows", List.of());
             out.put("message", "종목 가격 저장본이 없습니다. "
-                    + "🗄️ 데이터 저장소 상태에서 'equity_history' 수집을 먼저 실행하세요.");
+                    + "데이터 저장소 상태에서 'equity_history' 수집을 먼저 실행하세요.");
             return out;
         }
 
@@ -110,7 +110,7 @@ public class ScorecardService {
         if (snapshot.isEmpty() || snapshot.get().payload() == null) {
             out.put("available", false);
             out.put("message", "종목 가격 저장본이 없습니다. "
-                    + "🗄️ 데이터 저장소 상태에서 'equity_history' 수집을 먼저 실행하세요.");
+                    + "데이터 저장소 상태에서 'equity_history' 수집을 먼저 실행하세요.");
             return out;
         }
         snapshot.get().putFreshness(out);

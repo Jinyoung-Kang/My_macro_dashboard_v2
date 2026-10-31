@@ -300,7 +300,7 @@ public class GuruService {
 
         if (priceSnapshot.isEmpty() || priceSnapshot.get().payload() == null) {
             return unavailable(out, "종목 가격 저장본이 없습니다. "
-                    + "🗄️ 데이터 저장소 상태에서 'equity_history' 수집을 먼저 실행하세요.");
+                    + "데이터 저장소 상태에서 'equity_history' 수집을 먼저 실행하세요.");
         }
         if (quarters.isEmpty()) {
             return unavailable(out, "13F 저장본이 없습니다. 수집기의 weekly 작업을 실행하세요.");

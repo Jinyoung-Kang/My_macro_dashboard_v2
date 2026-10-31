@@ -107,12 +107,12 @@ public class TrackRecordService {
 
         if (curve.isEmpty() || nfci.isEmpty() || hy.isEmpty() || liquidity.isEmpty()) {
             out.put("available", false);
-            out.put("message", "국면 입력의 누적 이력이 없습니다. 🗄️ 데이터 저장소 상태에서 fred_series·fed_liquidity를 실행하세요.");
+            out.put("message", "국면 입력의 누적 이력이 없습니다. 데이터 저장소 상태에서 fred_series·fed_liquidity를 실행하세요.");
             return out;
         }
         if (prices.isEmpty()) {
             out.put("available", false);
-            out.put("message", "%s 가격 저장본이 없습니다. 🗄️ 데이터 저장소 상태에서 %s를 실행하세요."
+            out.put("message", "%s 가격 저장본이 없습니다. 데이터 저장소 상태에서 %s를 실행하세요."
                     .formatted(asset.label(), asset.task()));
             return out;
         }

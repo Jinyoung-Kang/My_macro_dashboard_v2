@@ -39,7 +39,7 @@ public class KrFlowsService {
     private static final String SOURCE = "토스증권 Open API (공식)";
     private static final String NO_DATA =
             "토스 수급 저장본이 없습니다 — .env의 TOSS_CLIENT_ID/SECRET과 허용 IP를 확인하고, "
-                    + "🗄️ 데이터 저장소 상태에서 toss_market_flows를 다시 실행하세요.";
+                    + "데이터 저장소 상태에서 toss_market_flows를 다시 실행하세요.";
 
     private final StoreReader store;
     private final StoreRepository repository;

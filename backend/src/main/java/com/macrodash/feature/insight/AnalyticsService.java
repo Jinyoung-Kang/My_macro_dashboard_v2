@@ -144,7 +144,7 @@ public class AnalyticsService {
         if (left.isEmpty() || right.isEmpty()) {
             out.put("available", false);
             out.put("message", "두 계열 중 하나의 저장본이 없습니다. "
-                    + "🗄️ 데이터 저장소 상태에서 해당 수집을 먼저 실행하세요.");
+                    + "데이터 저장소 상태에서 해당 수집을 먼저 실행하세요.");
             return out;
         }
 

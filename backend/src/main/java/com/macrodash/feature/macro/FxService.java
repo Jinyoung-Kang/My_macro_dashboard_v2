@@ -72,7 +72,7 @@ public class FxService {
             out.put("available", false);
             out.put("catalog", List.of());
             out.put("series", List.of());
-            out.put("message", "환율 저장본이 없습니다. 🗄️ 데이터 저장소 상태에서 "
+            out.put("message", "환율 저장본이 없습니다. 데이터 저장소 상태에서 "
                     + "'fx_history' 수집을 먼저 실행하세요.");
             return out;
         }

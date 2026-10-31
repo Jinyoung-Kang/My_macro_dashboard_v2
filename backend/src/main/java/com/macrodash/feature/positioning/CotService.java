@@ -171,7 +171,7 @@ public class CotService {
         if (snapshot.isEmpty() || snapshot.get().payload() == null) {
             out.put("available", false);
             out.put("message", "이 자산의 COT 주간 저장본이 없습니다. "
-                    + "🗄️ 데이터 저장소 상태에서 cot_history를 실행하세요.");
+                    + "데이터 저장소 상태에서 cot_history를 실행하세요.");
             return out;
         }
 
@@ -192,7 +192,7 @@ public class CotService {
             out.put("available", false);
             out.put("message", "가격 대용 ETF(%s) 종가 저장본이 없습니다. "
                     .formatted(proxy == null ? "미지정" : proxy)
-                    + "🗄️ 데이터 저장소 상태에서 sector_history를 실행하세요.");
+                    + "데이터 저장소 상태에서 sector_history를 실행하세요.");
             return out;
         }
         if (dates.size() < lookback + 8) {
