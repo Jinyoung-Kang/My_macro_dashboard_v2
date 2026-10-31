@@ -253,7 +253,7 @@ function SimilarityCard() {
                 {names.map((entry) => (
                   <th
                     key={entry.cik}
-                    title={entry.name}
+                    title={filerName(entry.name) ?? entry.name}
                     className="whitespace-nowrap px-2 py-2 text-right font-medium"
                   >
                     {shortName(entry.name)}
@@ -265,7 +265,7 @@ function SimilarityCard() {
               {names.map((entry, row) => (
                 <tr key={entry.cik} className="border-t border-border">
                   <td
-                    title={entry.name}
+                    title={filerName(entry.name) ?? entry.name}
                     className="sticky left-0 whitespace-nowrap bg-surface px-3 py-2 text-body"
                   >
                     {shortName(entry.name)}
@@ -609,10 +609,10 @@ function HoldersCard() {
   );
 }
 
-/** 표 머리글에 들어갈 짧은 이름. 국기 이모지와 괄호 설명을 뗍니다. */
+/**
+ * 표 머리글에 들어갈 짧은 이름 — 국기를 뗀 이름(lib/holdings.filerName)에서 끝의 괄호 설명(영문 이름)을 뗍니다.
+ * 예전에는 그림 문자 정규식만 써서 국기를 이루는 지역 표시 문자가 남았습니다(QA-153).
+ */
 function shortName(name: string): string {
-  return name
-    .replace(/^[\p{Extended_Pictographic}‍️\s]+/u, "")
-    .replace(/\s*\(.*\)\s*$/, "")
-    .trim();
+  return (filerName(name) ?? name).replace(/\s*\(.*\)\s*$/, "").trim();
 }

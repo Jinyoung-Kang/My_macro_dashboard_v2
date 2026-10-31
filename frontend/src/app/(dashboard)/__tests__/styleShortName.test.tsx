@@ -34,7 +34,7 @@ const SIMILARITY = {
 
 describe("QA-153 유사도 행렬의 짧은 이름", () => {
   // 수정 전에는 shortName이 지역 표시 문자를 떼지 않아 머리·행 이름·짝 순위가 '[국기] 버크셔 해서웨이'였다.
-  it.fails("행렬 머리·행 이름과 짝 순위는 국기를 뗀 짧은 이름 — 전체 이름(마우스 설명)에도 국기가 없다", async () => {
+  it("행렬 머리·행 이름과 짝 순위는 국기를 뗀 짧은 이름 — 전체 이름(마우스 설명)에도 국기가 없다", async () => {
     api.apiGetShared.mockImplementation((path: string) =>
       path.startsWith("/api/guru/similarity") ? Promise.resolve(SIMILARITY) : new Promise(() => {}));
     render(<GuruPage />);
