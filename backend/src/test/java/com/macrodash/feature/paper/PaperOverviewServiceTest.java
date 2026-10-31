@@ -191,6 +191,8 @@ class PaperOverviewServiceTest {
         Map<String, Object> live = service(KR_REGULAR, config).overview("KR");
         assertThat(current(live, 0)).containsEntry("stage", "LIVE").containsEntry("nav", 101_000_000.0)
                 .containsEntry("atKst", "2026-10-30 09:59 KST");
+        assertThat(MAPPER.writeValueAsString(withoutLive(live))).as("장중 저장본이 있어도 장부 부분은 그대로")
+                .isEqualTo(MAPPER.writeValueAsString(withoutLive(ledger)));
         assertThat(live.get("liveSession")).isEqualTo(Map.of("phase", "REGULAR", "sessionDate", "2026-10-30"));
         verify(reader, never()).read(eq(Datasets.SNAP_PAPER_LIVE_KR), anyLong(), nullable(String.class));
     }
