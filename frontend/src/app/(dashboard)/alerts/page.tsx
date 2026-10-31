@@ -10,6 +10,7 @@ import { ALERT_KINDS, notifyAlertsRead } from "@/lib/alerts";
 import { apiDelete, apiPost } from "@/lib/api";
 import { endpoints } from "@/lib/endpoints";
 import { EMPTY, formatKst, withoutLeadingIcon } from "@/lib/format";
+import { filerName } from "@/lib/holdings";
 import type { AlertKind, AlertRule, AlertRulesResponse, InboxItem, InboxResponse } from "@/lib/types";
 
 type Result = { ok: boolean; message: string };
@@ -181,10 +182,11 @@ export default function AlertsPage() {
               </p>
             </>
           )}
+          {/* 기관 이름은 서버 글 그대로면 국기가 붙어 옵니다 — 13F·교집합 화면과 같이 뗀 이름(비면 CIK). */}
           {kind === "INSTITUTION_NEW" && (
             <Select label="관심 기관" value={cik} onChange={setCik}
               options={[{ value: "", label: "기관을 고르세요" },
-                ...(institutions.data?.institutions ?? []).map((i) => ({ value: i.cik, label: i.name }))]} />
+                ...(institutions.data?.institutions ?? []).map((i) => ({ value: i.cik, label: filerName(i.name) ?? `CIK ${i.cik}` }))]} />
           )}
           {create.error && <Banner tone="warn">{create.error}</Banner>}
           {create.result && <Banner tone={create.result.ok ? "info" : "warn"}>{create.result.message}</Banner>}

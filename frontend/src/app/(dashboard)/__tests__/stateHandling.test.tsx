@@ -1,7 +1,7 @@
 /**
  * 버튼 동작 뒤의 화면 상태(QA-051) — 실패를 삼키지 않고, 늦은 응답으로 바꾼 값을 되돌리지 않고, 읽음 처리가 배지에 닿는다.
  */
-import { act, cleanup, fireEvent, render, renderHook, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, renderHook, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const api = vi.hoisted(() => {
@@ -134,5 +134,23 @@ describe("알림함의 서버 글 — 예전 알림의 그림 문자", () => {
     expect(screen.getByText((_, element) => element?.textContent === "판정이 3일 이어졌습니다.\n버크셔 해서웨이가 편입")).toBeTruthy();
     expect(await screen.findByText("13F 신규 편입 — 버크셔 해서웨이 (Berkshire Hathaway)")).toBeTruthy();
     expect(document.body.textContent).not.toMatch(/\p{Extended_Pictographic}|\p{Regional_Indicator}/u);
+  });
+
+  it("규칙 만들기의 관심 기관 고르기도 국기를 뗀 이름 — 이름이 그림 문자뿐이면 CIK", async () => {
+    reads["/api/alerts/rules"] = () => Promise.resolve({ available: true, limit: 5, rules: [] });
+    reads["/api/alerts/inbox"] = () => Promise.resolve({ available: true, unread: 0, items: [] });
+    reads["/api/sec13f/institutions"] = () => Promise.resolve({ institutions: [
+      { cik: "0001608046", name: "🇰🇷 국민연금 (National Pension Service)" },
+      { cik: "0001067983", name: "🇺🇸 버크셔 해서웨이 (Berkshire Hathaway)" },
+      { cik: "0000000001", name: "🇯🇵" },
+    ] });
+
+    render(<AlertsPage />);
+    await act(async () => {});
+    fireEvent.change(screen.getByLabelText("알림 종류"), { target: { value: "INSTITUTION_NEW" } });
+
+    const options = within(screen.getByLabelText("관심 기관")).getAllByRole("option").map((option) => option.textContent);
+    expect(options).toEqual(["기관을 고르세요", "국민연금 (National Pension Service)", "버크셔 해서웨이 (Berkshire Hathaway)", "CIK 0000000001"]);
+    expect(options.join("")).not.toMatch(/\p{Extended_Pictographic}|\p{Regional_Indicator}/u);
   });
 });
