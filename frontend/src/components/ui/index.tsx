@@ -29,19 +29,17 @@ export function Card({
   className?: string;
 }) {
   return (
-    <section
-      className={`rounded-lg border border-border bg-surface p-4 sm:p-5 ${className}`}
-    >
+    <section className={`rounded-card border border-border bg-surface p-5 lg:p-6 ${className}`}>
       {(title || actions || source) && (
-        <header className="mb-4 flex flex-wrap items-start justify-between gap-3">
-          <div>
+        <header className="mb-5 flex flex-wrap items-start justify-between gap-3">
+          <div className="min-w-0">
             {/* 카드 제목에는 아이콘을 쓰지 않습니다 — 데이터에서 온 제목도 앞 아이콘을 뗍니다. */}
             {title && (
-              <h2 className="text-base font-semibold text-bright">
+              <h2 className="text-title-3 text-text">
                 {typeof title === "string" ? withoutLeadingIcon(title) : title}
               </h2>
             )}
-            {subtitle && <p className="mt-1 text-xs text-muted">{subtitle}</p>}
+            {subtitle && <p className="mt-1 text-[13px] leading-5 text-text-2">{subtitle}</p>}
             {source && <SourceLine>{source}</SourceLine>}
           </div>
           {actions && <div className="flex items-center gap-2">{actions}</div>}
@@ -52,7 +50,7 @@ export function Card({
   );
 }
 
-/** 지표 카드 (구버전 st.metric에 해당). */
+/** 지표 카드 (구버전 st.metric에 해당) — 겉모양은 새 통계 타일(patterns/StatTile)과 같습니다. */
 export function Metric({
   label,
   value,
@@ -77,28 +75,32 @@ export function Metric({
   tone?: string;
 }) {
   return (
-    <div className="rounded-lg border border-border bg-surface px-4 py-3">
-      <div className="text-xs font-medium text-muted">{label}</div>
-      <div className={`mt-1 text-xl font-bold tabular-nums ${tone ?? "text-bright"}`}>
+    <div className="min-w-0 rounded-control border border-border bg-surface p-4">
+      <div className="text-[13px] font-medium text-text-2">{label}</div>
+      <div className={`mt-1 text-2xl font-semibold tabular-nums ${tone ?? "text-text"}`}>
         {value}
       </div>
       {(deltaText || delta !== undefined) && (
-        <div className={`mt-1 text-xs tabular-nums ${deltaColor(delta, deltaDigits)}`}>
+        <div className={`mt-1 text-sm tabular-nums ${deltaColor(delta, deltaDigits)}`}>
           {deltaText ?? EMPTY}
         </div>
       )}
-      {caption && <div className="mt-1 text-[11px] text-muted">{caption}</div>}
-      {note && <div className="mt-2 text-[11px] leading-relaxed text-muted">{note}</div>}
+      {caption && <div className="mt-1 text-xs text-text-3">{caption}</div>}
+      {note && <div className="mt-2 text-xs leading-relaxed text-text-3">{note}</div>}
       {source && <SourceLine>{source}</SourceLine>}
     </div>
   );
 }
 
-/** "출처 · …" 한 줄. 카드·지표가 같은 모양을 쓰게 합니다. */
+/**
+ * "출처 · …" 한 줄. 카드·지표가 같은 모양을 쓰게 합니다 — 테두리 상자 없는 캡션(새 패턴의 ProvenanceBadge와 같은 12px text-3).
+ * '출처'와 가운뎃점은 따로 span이라 출처 글(children)이 이 줄의 글자로 그대로 남습니다(getByText가 출처 글로 찾음).
+ */
 export function SourceLine({ children }: { children: ReactNode }) {
   return (
-    <p className="mt-1 text-[11px] text-muted">
-      <span className="mr-1 rounded-sm border border-border px-1 py-px text-[10px]">출처</span>
+    <p className="mt-1 text-xs leading-4 text-text-3">
+      <span>출처</span>
+      <span aria-hidden="true"> · </span>
       {children}
     </p>
   );
@@ -393,7 +395,7 @@ export function Table<T>({
 
 export function SourceBadge({ children }: { children: ReactNode }) {
   return (
-    <span className="rounded-sm border border-border bg-surface-hover px-2 py-0.5 text-[11px] text-muted">
+    <span className="inline-flex items-center rounded-full bg-surface-2 px-2 py-0.5 text-xs leading-4 text-text-2">
       {children}
     </span>
   );
