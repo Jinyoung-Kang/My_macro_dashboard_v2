@@ -498,7 +498,9 @@ describe("🧪 장중 확인(단계 2)", () => {
     expect(claude2CheckpointLine(null)).toBeNull();
     expect(claude2CheckpointLine(group({ enabled: false, session: "2026-11-02", today: null, watch: null })))
       .toBe("오늘 장중 확인(세션 2026-11-02): 꺼짐 — 설정 claude2.enabled·claude2.checkpoints");
-    expect(claude2CheckpointLine(group({ enabled: true, session: "2026-11-02", today: null, watch: null })))
+    // 그 세션(11-02)을 계획하는 결정(d 10-30)이 돈 뒤 — 다음 결정 기준 거래일이 세션과 같음.
+    expect(claude2CheckpointLine({ ...group({ enabled: true, session: "2026-11-02", today: null, watch: null }),
+      nextDecision: { ...STATUS.claude2!.nextDecision!, tradingDate: "2026-11-02" } } as PaperStatusResponse["claude2"]))
       .toBe("오늘 장중 확인(세션 2026-11-02): 계획 없음 — 아침 결정이 요청하지 않았습니다(세션당 최대 한 번)");
     expect(claude2CheckpointLine(group({ enabled: true, session: "2026-11-02", today, watch: null })))
       .toBe("오늘 장중 확인(세션 2026-11-02): 10:30 ET · 2026-11-03 00:30 KST · 감시 1분봉(5분 수집, 잰 지연) · 감시 AAPL, MSFT · 예정");
@@ -518,7 +520,7 @@ describe("🧪 장중 확인(단계 2)", () => {
   });
 
   // 리뷰 S2 재현 — 재현 커밋에서는 it.fails, 수정 커밋 뒤에는 it.
-  it.fails("오늘 장중 확인 한 줄 — 그 세션을 계획하는 아침 결정이 아직 돌지 않았으면(다음 결정의 기준 거래일이 세션 앞) '계획 없음'이 아니라 '아침 결정 전'", () => {
+  it("오늘 장중 확인 한 줄 — 그 세션을 계획하는 아침 결정이 아직 돌지 않았으면(다음 결정의 기준 거래일이 세션 앞) '계획 없음'이 아니라 '아침 결정 전'", () => {
     const at = (tradingDate: string, checkpoint: Record<string, unknown>) =>
       ({ ...group(checkpoint), nextDecision: { ...STATUS.claude2!.nextDecision!, tradingDate } } as PaperStatusResponse["claude2"]);
     const empty = { enabled: true, session: "2026-11-03", today: null, watch: null };

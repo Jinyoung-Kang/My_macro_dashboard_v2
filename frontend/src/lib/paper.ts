@@ -3311,8 +3311,9 @@ function checkpointAt(atEt: string | null | undefined, atKst: string | null | un
 
 /**
  * 계좌2 '오늘 장중 확인' 한 줄(상태 응답 claude2.checkpoint — 단계 2). 지금 진행 중이거나 다음인 세션의 장중 확인 행 그대로 — 확인 시각(ET·KST)·자료·감시
- * 목록·상태와 사유·확인 결정·부른 시각, 정규장이면 감시 저장본의 받은 시각·나이·지연. 계획이 없으면 꺼짐·계획 없음이라고, 모르는 값은 "—". 이 칸을
- * 보내지 않는 백엔드(단계 2 전)면 null(줄을 그리지 않음).
+ * 목록·상태와 사유·확인 결정·부른 시각, 정규장이면 감시 저장본의 받은 시각·나이·지연. 계획이 없으면 꺼짐·아침 결정 전·계획 없음이라고, 모르는 값은
+ * "—". 서버의 세션은 직전 세션 마감에 바로 다음 세션으로 넘어가므로, 같은 묶음의 다음 결정 기준 거래일이 세션보다 앞이면 그 세션을 계획하는 아침
+ * 결정이 아직 돌지 않은 것이라 '요청하지 않았다'고 단정하지 않습니다(리뷰 S2). 이 칸을 보내지 않는 백엔드(단계 2 전)면 null(줄을 그리지 않음).
  */
 export function claude2CheckpointLine(group: PaperClaude2Status | null | undefined): string | null {
   const checkpoint = group?.checkpoint;
@@ -3320,9 +3321,11 @@ export function claude2CheckpointLine(group: PaperClaude2Status | null | undefin
   const head = `오늘 장중 확인(세션 ${checkpoint.session ?? EMPTY})`;
   const today = checkpoint.today;
   if (!today) {
-    return checkpoint.enabled
-      ? `${head}: 계획 없음 — 아침 결정이 요청하지 않았습니다(세션당 최대 한 번)`
-      : `${head}: 꺼짐 — 설정 claude2.enabled·claude2.checkpoints`;
+    if (!checkpoint.enabled) return `${head}: 꺼짐 — 설정 claude2.enabled·claude2.checkpoints`;
+    const planning = group?.nextDecision?.tradingDate;
+    return planning && checkpoint.session && planning < checkpoint.session
+      ? `${head}: 아침 결정 전 — 그 결정이 장중 확인을 요청하면 여기 나옵니다(세션당 최대 한 번)`
+      : `${head}: 계획 없음 — 아침 결정이 요청하지 않았습니다(세션당 최대 한 번)`;
   }
   const state = checkpointStatusLabel(today.status);
   const parts = [

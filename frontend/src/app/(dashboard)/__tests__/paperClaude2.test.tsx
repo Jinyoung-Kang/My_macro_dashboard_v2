@@ -700,7 +700,7 @@ describe("🧪 장중 확인(단계 2) — 오늘 장중 확인 줄·결정 로�
   });
 
   // 리뷰 N5 재현 — 재현 커밋에서는 it.fails, 수정 커밋 뒤에는 it.
-  it.fails("장중 확인 결정의 판단 칸에는 '노출 근거'가 없다 — 확인 응답 스키마에 없는 칸이라 '—'로 그리지 않음", async () => {
+  it("장중 확인 결정의 판단 칸에는 '노출 근거'가 없다 — 확인 응답 스키마에 없는 칸이라 '—'로 그리지 않음", async () => {
     reads["/api/paper/overview"] = () => Promise.resolve(overview(CLAUDE2_ACTIVE));
     reads["/api/paper/decisions?book=rules"] = () => Promise.resolve({ available: true, decisions: [] });
     reads["/api/paper/decisions?book=claude2"] = () => Promise.resolve({

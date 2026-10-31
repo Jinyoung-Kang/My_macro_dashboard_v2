@@ -77,7 +77,7 @@ export function ClaudeDecisionBody({
             </dl>}
             {view.mismatch && <p className="text-[11px] leading-relaxed text-warn">{view.mismatch.title}</p>}
             <Text label="요약" value={view.summary} />
-            <Text label="노출 근거" value={view.exposureRationale} />
+            {!view.checkpoint && <Text label="노출 근거" value={view.exposureRationale} />}
             {view.noTradeReason && <Text label="주문 없음 사유" value={view.noTradeReason} />}
             {view.checkpointPlan && <Text label="장중 확인 요청" value={view.checkpointPlan} />}
             {view.skipped && <p className="text-[11px] leading-relaxed text-warn">{view.skipped}</p>}
