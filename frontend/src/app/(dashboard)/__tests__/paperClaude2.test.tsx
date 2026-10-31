@@ -509,7 +509,7 @@ describe("보유·체결 — 계좌2 칸", () => {
     expect(within(fills).getByText("R2b · 그 세션 T 뒤 첫 거래 봉 시가")).toBeTruthy();
     expect(within(fills).getByText("대체 체결")).toBeTruthy();
     expect(within(fills).getByText("+12.3bp")).toBeTruthy();
-    expect(screen.getByText(/Claude 계좌2 주문은 다음 세션 하루짜리입니다/)).toBeTruthy();
+    expect(screen.getByText(/Claude 계좌2 주문은 다음 세션 하루짜리입니다\(장중 확인이 장중에 낸 주문은 그 세션 하루 — 장중 시장가는/)).toBeTruthy();
   });
 
   // 수정 전에는 계좌2 표에만 줄바꿈 금지 칸(목표 시각·체결 봉·사다리)과 실행 메모 최소 폭이 더해져 표의 최소 폭이 카드를 넘었고(1280px에서 주문
@@ -757,6 +757,9 @@ describe("🧪 장중 확인(단계 2) — 오늘 장중 확인 줄·결정 로�
     const judged = await screen.findByRole("region", { name: "판단" });
     expect(within(judged).getByText("계획대로")).toBeTruthy();
     expect(within(judged).queryByText("노출 근거")).toBeNull();
+    // 칸 설명도 숨긴 '목표 주식 노출'을 가리키지 않음.
+    expect(within(judged).queryByText(/목표 주식 노출은 Claude가 정한 값/)).toBeNull();
+    expect(within(judged).getByText(/장중 확인은 자세·목표 노출 없이/)).toBeTruthy();
   });
 
   it("주문 표의 MARKET 행 — 체결 시점은 '장중 시장가', 목표 시각은 실행 감사의 기준 시각(생성 + 60초 뒤 첫 분), 두 줄 칸 한 줄씩", async () => {

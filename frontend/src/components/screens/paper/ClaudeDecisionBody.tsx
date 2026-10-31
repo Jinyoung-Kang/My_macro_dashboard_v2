@@ -55,7 +55,12 @@ export function ClaudeDecisionBody({
           <p className="text-[11px] leading-relaxed text-muted">{view.checkpoint.retry}</p>
         </Part>
       )}
-      <Part title="판단" note="목표 주식 노출은 Claude가 정한 값이고 기록·표시용입니다 — 집행은 아래 주문(검증 통과분) 기준입니다.">
+      <Part
+        title="판단"
+        note={view.checkpoint
+          ? "장중 확인은 자세·목표 노출 없이 그대로 둠(KEEP)·대신함(REPLACE)과 주문만 냅니다 — 요약은 Claude가 쓴 장중 판단이고, 집행은 아래 주문(검증 통과분) 기준입니다."
+          : "목표 주식 노출은 Claude가 정한 값이고 기록·표시용입니다 — 집행은 아래 주문(검증 통과분) 기준입니다."}
+      >
         {view.hasResponse ? (
           <>
             {!view.checkpoint && <dl className="flex flex-wrap items-end gap-x-5 gap-y-1 text-xs">
