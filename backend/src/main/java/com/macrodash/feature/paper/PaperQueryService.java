@@ -534,18 +534,23 @@ public class PaperQueryService {
 
     /**
      * 계좌2 장중 확인 묶음(단계 2 — 계좌2 명세 §5-2·§13-1) — 늘 같은 모양 {@code {enabled, session, today, watch}}. {@code enabled}는 설정
-     * {@code claude2.checkpoints}, {@code session}은 지금 진행 중이거나 다음인 미국 세션(마감이 끝난 최근 세션의 다음 거래일 — 아침 결정이 계획하는
+     * {@code claude2.enabled}와 {@code claude2.checkpoints}가 모두 켜졌는가(작업이 부르는 조건 — 하나라도 꺼지면 PLANNED 행은 창 뒤
+     * CHECKPOINTS_OFF, 리뷰 N2), {@code session}은 지금 진행 중이거나 다음인 미국 세션(마감이 끝난 최근 세션의 다음 거래일 — 아침 결정이 계획하는
      * 그 E), {@code today}는 그 세션의 장중 확인 행({@code paper_checkpoints} — 계획 행이 없으면 null, 꺼져 있어도 남은 PLANNED 행은 그대로 보임 —
-     * 작업이 창 뒤 CHECKPOINTS_OFF로 둠), {@code watch}는 지금이 미국 정규장이고 감시 저장본이 있을 때만 받은 시각·나이·지연(저장본의
-     * {@code lagSeconds} — 모르면 null), 그 밖은 null. 저장본은 수집 요청 없이 읽기만 합니다.
+     * 작업이 창 뒤 CHECKPOINTS_OFF로 둠), {@code watch}는 지금이 미국 정규장이고 그 행이 MINUTE이며 감시 저장본이 그 확인(계좌·세션·시각)의 것일
+     * 때만 받은 시각·나이·지연(저장본의 {@code lagSeconds} — 모르면 null), 그 밖은 null(다른 확인의 저장본·지연을 오늘 줄에 붙이지 않음 — 리뷰 N1).
+     * 저장본은 수집 요청 없이 읽기만 합니다.
      */
     private Map<String, Object> checkpointStatus(Instant now, TradingCalendar calendar, Claude2Settings book2) {
         LocalDate session = calendar.nextTradingDay(calendar.lastCompletedSession(now));
+        Optional<PaperStore.Checkpoint> today = store.checkpoint(PaperBooks.CLAUDE2, session);
         Map<String, Object> out = new LinkedHashMap<>();
-        out.put("enabled", book2.checkpoints());
+        out.put("enabled", book2.enabled() && book2.checkpoints());
         out.put("session", session.toString());
-        out.put("today", store.checkpoint(PaperBooks.CLAUDE2, session).map(c -> checkpointToday(c, calendar)).orElse(null));
-        out.put("watch", inRegularSession(now, calendar) ? watchView(now) : null);
+        out.put("today", today.map(c -> checkpointToday(c, calendar)).orElse(null));
+        out.put("watch", inRegularSession(now, calendar)
+                ? today.filter(c -> ExecutionSection.FEED_MINUTE.equals(c.feed())).map(c -> watchView(now, c)).orElse(null)
+                : null);
         return out;
     }
 
@@ -564,17 +569,26 @@ public class PaperQueryService {
         return out;
     }
 
-    /** 감시 저장본의 받은 시각·나이(초)·지연(초) — 저장본이 없으면 null(0으로 채우지 않음). */
-    private Map<String, Object> watchView(Instant now) {
+    /**
+     * 감시 저장본의 받은 시각·나이(초)·지연(초) — 저장본이 없거나 그 확인(계좌·세션·시각 — {@code PaperCheckpointJob.freshWatch}와 같은 대조)의
+     * 것이 아니면 null(0으로 채우지 않음).
+     */
+    private Map<String, Object> watchView(Instant now, PaperStore.Checkpoint c) {
         Optional<Snapshot> found = marketData.watchUs();
-        if (found.isEmpty() || found.get().collectedAt() == null) {
+        if (found.isEmpty() || found.get().collectedAt() == null || found.get().payload() == null) {
             return null;
         }
         Snapshot watch = found.get();
+        JsonNode cp = watch.payload().get("checkpoint");
+        if (cp == null || !c.bookCode().equals(Json.asText(cp, "book"))
+                || !c.sessionDate().toString().equals(Json.asText(cp, "sessionDate"))
+                || !CheckpointPacket.clock(c.atEt()).equals(Json.asText(cp, "atEt"))) {
+            return null;
+        }
         Map<String, Object> out = new LinkedHashMap<>();
         out.put("collectedAtKst", stamp(watch.collectedAt()));
         out.put("ageSeconds", Math.max(0, Duration.between(watch.collectedAt(), now).getSeconds()));
-        out.put("lagSeconds", watch.payload() == null ? null : integer(watch.payload(), "lagSeconds"));
+        out.put("lagSeconds", integer(watch.payload(), "lagSeconds"));
         return out;
     }
 

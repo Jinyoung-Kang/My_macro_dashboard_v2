@@ -3322,7 +3322,7 @@ export function claude2CheckpointLine(group: PaperClaude2Status | null | undefin
   if (!today) {
     return checkpoint.enabled
       ? `${head}: 계획 없음 — 아침 결정이 요청하지 않았습니다(세션당 최대 한 번)`
-      : `${head}: 꺼짐 — 설정 claude2.checkpoints`;
+      : `${head}: 꺼짐 — 설정 claude2.enabled·claude2.checkpoints`;
   }
   const state = checkpointStatusLabel(today.status);
   const parts = [

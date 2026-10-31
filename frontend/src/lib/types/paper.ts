@@ -435,13 +435,13 @@ export interface PaperClaude2CheckpointToday {
 
 /** 상태 응답 claude2.checkpoint(계좌2 명세 §13-1 — 단계 2). */
 export interface PaperClaude2CheckpointStatus {
-  /** 설정 claude2.checkpoints. */
+  /** 설정 claude2.enabled와 claude2.checkpoints가 모두 켜졌나(작업이 부르는 조건 — 하나라도 꺼지면 계획 행은 창 뒤 CHECKPOINTS_OFF). */
   enabled: boolean;
   /** 지금 진행 중이거나 다음인 미국 세션(아침 결정이 장중 확인을 계획하는 세션 E). */
   session: string | null;
   /** 그 세션의 장중 확인 행 — 계획이 없으면 null. */
   today: PaperClaude2CheckpointToday | null;
-  /** 감시 저장본의 받은 시각·나이(초)·지연(초) — 정규장이고 저장본이 있을 때만, 그 밖은 null. */
+  /** 감시 저장본의 받은 시각·나이(초)·지연(초) — 정규장이고 오늘 행이 MINUTE이며 저장본이 그 확인의 것일 때만, 그 밖은 null. */
   watch: { collectedAtKst: string | null; ageSeconds: number | null; lagSeconds: number | null } | null;
 }
 

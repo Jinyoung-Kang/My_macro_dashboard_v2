@@ -497,7 +497,7 @@ describe("🧪 장중 확인(단계 2)", () => {
     expect(claude2CheckpointLine(group(undefined))).toBeNull();
     expect(claude2CheckpointLine(null)).toBeNull();
     expect(claude2CheckpointLine(group({ enabled: false, session: "2026-11-02", today: null, watch: null })))
-      .toBe("오늘 장중 확인(세션 2026-11-02): 꺼짐 — 설정 claude2.checkpoints");
+      .toBe("오늘 장중 확인(세션 2026-11-02): 꺼짐 — 설정 claude2.enabled·claude2.checkpoints");
     expect(claude2CheckpointLine(group({ enabled: true, session: "2026-11-02", today: null, watch: null })))
       .toBe("오늘 장중 확인(세션 2026-11-02): 계획 없음 — 아침 결정이 요청하지 않았습니다(세션당 최대 한 번)");
     expect(claude2CheckpointLine(group({ enabled: true, session: "2026-11-02", today, watch: null })))

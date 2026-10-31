@@ -918,7 +918,8 @@ class PaperQueryServiceTest {
         assertThat(off).containsExactly(entry("enabled", false), entry("session", "2026-10-27"), entry("today", null),
                 entry("watch", null));
 
-        ((tools.jackson.databind.node.ObjectNode) store.settings.body().get("claude2")).put("checkpoints", true);
+        ((tools.jackson.databind.node.ObjectNode) store.settings.body().get("claude2")).put("checkpoints", true)
+                .put("enabled", true);
         java.time.LocalDate e = java.time.LocalDate.of(2026, 11, 2);   // 서머타임이 끝난 첫 거래일 — 10:30 ET = 00:30 KST(다음 날)
         long source = store.insertDecisionIfAbsent(new com.macrodash.store.PaperStore.Decision(0, PaperBooks.CLAUDE2,
                 java.time.LocalDate.of(2026, 10, 30), RuleBookService.SCHEDULED, null, "OK", "claude-sonnet-5-5", 0, 1, null,
@@ -930,6 +931,7 @@ class PaperQueryServiceTest {
                 Instant.parse("2026-11-02T15:33:00Z"));
         tools.jackson.databind.node.ObjectNode payload = PaperFixtures.MAPPER.createObjectNode().put("contract", 1)
                 .put("lagSeconds", 80);
+        payload.putObject("checkpoint").put("book", PaperBooks.CLAUDE2).put("sessionDate", "2026-11-02").put("atEt", "10:30");
         when(marketData.watchUs()).thenReturn(Optional.of(new com.macrodash.store.Snapshot(
                 com.macrodash.store.Datasets.SNAP_PAPER_WATCH_US, payload, "snapshot", "OK", null,
                 Instant.parse("2026-11-02T15:36:00Z"))));
@@ -956,7 +958,6 @@ class PaperQueryServiceTest {
     }
 
     @Test
-    @org.junit.jupiter.api.Disabled("리뷰 N1·N2 재현 — 상태의 checkpoint.enabled가 claude2.enabled를 보지 않고, watch가 다른 확인의 감시 저장본도 실음. 수정 커밋에서 뗌")
     @org.junit.jupiter.api.DisplayName("장중 확인 상태: enabled는 claude2.enabled와 claude2.checkpoints가 모두 켜졌을 때만(작업의 CHECKPOINTS_OFF와 같은 판정), watch는 오늘 행이 MINUTE이고 감시 저장본이 그 확인(계좌·세션·시각)의 것일 때만")
     @SuppressWarnings("unchecked")
     void claude2CheckpointStatusFollowsTheJob() {

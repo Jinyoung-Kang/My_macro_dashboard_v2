@@ -640,7 +640,7 @@ describe("🧪 장중 확인(단계 2) — 오늘 장중 확인 줄·결정 로�
       ...base, claude2: { ...base.claude2, checkpoint: { enabled: false, session: "2026-11-02", today: null, watch: null } },
     });
     render(<PaperPage />);
-    expect((await screen.findByLabelText("오늘 장중 확인")).textContent).toBe("오늘 장중 확인(세션 2026-11-02): 꺼짐 — 설정 claude2.checkpoints");
+    expect((await screen.findByLabelText("오늘 장중 확인")).textContent).toBe("오늘 장중 확인(세션 2026-11-02): 꺼짐 — 설정 claude2.enabled·claude2.checkpoints");
     cleanup();
 
     reads["/api/paper/status"] = () => Promise.resolve(status(false));
