@@ -49,7 +49,10 @@ function answer() {
         available: true, cik: "0001067983",
         quarters: [{ filingDate: "2026-08-14", reportDate: "2026-06-30", totalValue: 100, holdingCount: 6 }],
         latest: { reportDate: "2026-06-30", filingDate: "2026-08-14", totalValue: 100 },
-        holdings: [],
+        holdings: [
+          { name: "APPLE INC", cusip: "037833100", class: "COM", value: 60, weight: 60, shares: 100, action: "📉 비중 축소 (Reduced)" },
+          { name: "NVIDIA CORP", cusip: "67066G104", class: "COM", value: 40, weight: 40, shares: 50, action: "신규 매수 (New)" },
+        ],
         weightHistory: {
           dates: ["2026-03-31", "2026-06-30"],
           series: Object.fromEntries(KEYS.map((key, index) => [key, [index + 1, index + 2]])),
@@ -77,5 +80,19 @@ describe("QA-120 비중 추이 선 이름표", () => {
     expect(labelOf("WELLS FARGO & CO · PERP PFD CNV A")).toMatch(/ · PERP PFD CNV A$/);
     expect(labelOf("ISHARES TR · CUSIP 464287200")).toContain("464287200");
     expect(labelOf("ISHARES TR · CUSIP 464287655")).toContain("464287655");
+  });
+});
+
+describe("직전 분기 대비 변화 배지", () => {
+  it("글(신규 매수·비중 축소)이 뜻을 나르고 앞의 그림 문자는 장식 아이콘으로 — 상승·하락 색은 쓰지 않는다", async () => {
+    answer();
+    render(<InstitutionsPage />);
+
+    const reduced = await screen.findByText("비중 축소 (Reduced)");
+    expect(screen.getByText("신규 매수 (New)")).toBeTruthy();
+    expect(reduced.querySelector("svg")?.getAttribute("aria-hidden")).toBe("true");
+    const row = reduced.closest("tr") as HTMLElement;
+    expect(row.querySelector(".text-up, .text-down")).toBeNull();
+    expect(row.textContent).not.toMatch(/\p{Extended_Pictographic}/u);
   });
 });

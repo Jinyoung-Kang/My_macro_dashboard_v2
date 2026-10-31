@@ -16,6 +16,14 @@ import {
   SourceBadge,
   Table,
 } from "@/components/ui";
+import {
+  ChevronDownIcon,
+  ChevronUpIcon,
+  CircleDashedIcon,
+  MinusIcon,
+  PlusIcon,
+  XCircleIcon,
+} from "@/components/ui/icons";
 import { useApi } from "@/hooks/useApi";
 import { useUsdKrw } from "@/hooks/useUsdKrw";
 import {
@@ -23,6 +31,7 @@ import {
   EMPTY,
   formatCurrency,
   formatNumber, formatWithUnit } from "@/lib/format";
+import { holdingActionView, type HoldingActionKind } from "@/lib/holdings";
 import type { PortfolioResponse } from "@/lib/types";
 import { SOURCES } from "@/lib/sources";
 import { endpoints } from "@/lib/endpoints";
@@ -245,7 +254,7 @@ export default function InstitutionsPage() {
                 {
                   key: "action",
                   header: "직전 분기 대비",
-                  render: (row) => <SourceBadge>{row.action}</SourceBadge>,
+                  render: (row) => <HoldingActionBadge label={row.action} />,
                 },
               ]}
             />
@@ -253,5 +262,31 @@ export default function InstitutionsPage() {
         </>
       )}
     </div>
+  );
+}
+
+const HOLDING_ACTION_ICON: Record<HoldingActionKind, typeof PlusIcon> = {
+  new: PlusIcon,
+  closed: XCircleIcon,
+  added: ChevronUpIcon,
+  reduced: ChevronDownIcon,
+  unchanged: MinusIcon,
+  none: CircleDashedIcon,
+};
+
+/**
+ * 직전 분기 대비 변화 배지 — 글(신규 매수·비중 확대 …)이 뜻을 나르고, 앞의 아이콘은 장식입니다. 색은 중립 —
+ * 상승·하락 색(up·down)은 값이 오르내린 방향 전용이라 매수·매도 판정에 쓰지 않습니다(명세 §7-3).
+ */
+function HoldingActionBadge({ label }: { label: string | null | undefined }) {
+  const view = holdingActionView(label);
+  const Icon = HOLDING_ACTION_ICON[view.kind];
+  return (
+    <SourceBadge>
+      <span className="inline-flex items-center gap-1">
+        <Icon size={12} className="text-text-3" />
+        {view.text}
+      </span>
+    </SourceBadge>
   );
 }
