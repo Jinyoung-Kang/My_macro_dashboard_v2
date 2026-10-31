@@ -94,7 +94,7 @@ export function ClaudeStartSection({ overview, onChanged }: { overview: PaperOve
       <p className="mt-2 text-xs text-muted">비용: {prompt.cost}</p>
 
       {confirming ? (
-        <div className="mt-3 flex flex-col gap-3 rounded-md border border-warn/40 bg-warn/10 px-3 py-3">
+        <div className="mt-3 flex flex-col gap-3 rounded-control border border-warn/30 bg-warn-tint px-4 py-3">
           <p className="text-sm leading-relaxed text-warn">{confirming === "preview" ? prompt.confirmPreview : prompt.confirmStart}</p>
           <div className="flex flex-wrap items-center gap-2">
             {confirming === "preview" ? (
@@ -126,7 +126,7 @@ export function ClaudeStartSection({ overview, onChanged }: { overview: PaperOve
           <Banner tone={previewView.tone}>{previewView.text}</Banner>
           {previewBody && <ClaudeDecisionBody view={previewBody} />}
           {previewPacket && (
-            <details className="rounded-md border border-border px-3 py-2 text-xs">
+            <details className="rounded-control border border-border px-3 py-2 text-xs">
               <summary className="cursor-pointer text-muted">입력 패킷(JSON)</summary>
               <pre className="mt-2 max-h-96 overflow-auto whitespace-pre-wrap break-all text-xs text-body">{previewPacket}</pre>
             </details>

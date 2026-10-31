@@ -37,7 +37,7 @@ export function SpreadSection({
         읽거나 그 반대가 됩니다. 나란히 두고 출처와 성격을 함께 적습니다.
       */}
       <div className="grid gap-3 lg:grid-cols-2">
-        <div className="rounded-lg border border-border bg-surface-hover/30 p-3">
+        <div className="rounded-control border border-border bg-surface p-4">
           <p className="mb-2 text-xs font-semibold text-body">
             공식 확정치 · FRED
             <span className="ml-1 font-normal text-muted">(일별, 하루 이상 지연)</span>
@@ -70,7 +70,7 @@ export function SpreadSection({
           </div>
         </div>
 
-        <div className="rounded-lg border border-border bg-surface-hover/30 p-3">
+        <div className="rounded-control border border-border bg-surface p-4">
           <p className="mb-2 text-xs font-semibold text-body">
             스크래핑 참고 시세 · TradingView
             <span className="ml-1 font-normal text-muted">(지금, 공식 확정치 아님)</span>

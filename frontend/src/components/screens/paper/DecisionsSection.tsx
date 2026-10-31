@@ -1,7 +1,7 @@
 "use client";
 
 import { Fragment, type ReactNode, useState } from "react";
-import { Banner, Button, Card, ErrorState, Freshness, Loading, Select, Table } from "@/components/ui";
+import { Banner, Button, Card, ErrorState, FOCUS_RING, Freshness, Loading, SEGMENT_TRACK, segmentClasses, Select, Table } from "@/components/ui";
 import { useApi } from "@/hooks/useApi";
 import { useAsyncAction } from "@/hooks/useAsyncAction";
 import { useElapsedSeconds } from "@/hooks/useElapsedSeconds";
@@ -156,7 +156,7 @@ export function DecisionsSection({
   }
 
   const views = (
-    <div role="group" aria-label="결정 로그 보기" className="inline-flex w-fit overflow-hidden rounded-md border border-border">
+    <div role="group" aria-label="결정 로그 보기" className={`inline-flex w-fit ${SEGMENT_TRACK}`}>
       {DECISION_VIEWS.map((entry) => {
         const active = entry.key === view;
         return (
@@ -165,10 +165,8 @@ export function DecisionsSection({
             type="button"
             aria-pressed={active}
             onClick={() => setView(entry.key)}
-            // 7탭 바와 같은 모양 — 고른 것은 surface-2 바탕 + 굵게(색만으로 고름을 전하지 않음, aria-pressed가 읽어 줌).
-            className={`px-3 py-1.5 text-xs transition-colors duration-150 motion-reduce:transition-none focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-focus ${
-              active ? "bg-surface-2 font-semibold text-text" : "text-text-2 hover:bg-surface-2 hover:text-text"
-            }`}
+            // 세그먼트(테마 전환과 같은 모양) — 고른 것은 트랙 위 표면 칩 + 굵게(색만으로 고름을 전하지 않음, aria-pressed가 읽어 줌).
+            className={`min-h-11 px-3.5 text-[13px] lg:min-h-8 ${segmentClasses(active)} ${FOCUS_RING}`}
           >
             {entry.label}
           </button>
@@ -242,7 +240,7 @@ export function DecisionsSection({
         {timed && status.error && <p className="mt-2 text-xs text-warn">계좌2 결정 창을 읽지 못했습니다 — {status.error}</p>}
         {blocked && showRun && <p className="mt-2 text-xs text-warn">{blocked}</p>}
         {confirming && (
-          <div className="mt-3 flex flex-col gap-3 rounded-md border border-warn/40 bg-warn/10 px-3 py-3">
+          <div className="mt-3 flex flex-col gap-3 rounded-control border border-warn/30 bg-warn-tint px-4 py-3">
             <p className="text-sm leading-relaxed text-warn">Claude를 지금 부를까요? {CLAUDE_COST_NOTE}</p>
             {korea && (
               <p className="text-xs leading-relaxed text-warn">
@@ -731,19 +729,19 @@ function DecisionDetail({ id, market }: { id: number; market: PaperMarketCode })
       )}
 
       {response && (
-        <details className="rounded-md border border-border px-3 py-2 text-xs">
+        <details className="rounded-control border border-border px-3 py-2 text-xs">
           <summary className="cursor-pointer text-muted">결정 기록 원본(JSON)</summary>
           <pre className="mt-2 max-h-96 overflow-auto whitespace-pre-wrap break-all text-xs text-body">{response}</pre>
         </details>
       )}
       {raw && (
-        <details className="rounded-md border border-border px-3 py-2 text-xs">
+        <details className="rounded-control border border-border px-3 py-2 text-xs">
           <summary className="cursor-pointer text-muted">모델 응답 원문</summary>
           <pre className="mt-2 max-h-96 overflow-auto whitespace-pre-wrap break-all text-xs text-body">{raw}</pre>
         </details>
       )}
       {packet && (
-        <details className="rounded-md border border-border px-3 py-2 text-xs">
+        <details className="rounded-control border border-border px-3 py-2 text-xs">
           <summary className="cursor-pointer text-muted">입력 패킷(JSON)</summary>
           <pre className="mt-2 max-h-96 overflow-auto whitespace-pre-wrap break-all text-xs text-body">{packet}</pre>
         </details>
@@ -798,7 +796,7 @@ function Badges({ badges }: { badges: Badge[] }) {
         <span
           key={badge.key}
           title={badge.title}
-          className={`whitespace-nowrap rounded-sm border px-1.5 py-px text-xs ${badge.className}`}
+          className={`whitespace-nowrap rounded-full border px-2 py-px text-xs ${badge.className}`}
         >
           {badge.label}
         </span>

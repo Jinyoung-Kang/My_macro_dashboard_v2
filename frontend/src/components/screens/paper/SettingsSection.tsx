@@ -117,7 +117,7 @@ export function SettingsSection({ market = "US" }: { market?: PaperMarketCode })
         source={PAPER_SOURCES.settings}
       >
         <p className="text-xs leading-relaxed text-muted">
-          형·범위는 저장할 때 서버가 검사합니다. <span className={`rounded-sm border px-1 ${RULES_BADGE}`}>규칙 계좌 영향</span>이 붙은
+          형·범위는 저장할 때 서버가 검사합니다. <span className={`rounded-full border px-1.5 ${RULES_BADGE}`}>규칙 계좌 영향</span>이 붙은
           키는 규칙 계좌(동결된 대조군)의 조건을 바꿉니다(한국 키 kr.*는 한국 규칙 계좌) — 저장 전에 한 번 더 묻습니다. 결정 기록마다 그때의
           설정 버전이 남습니다.
           계좌 일시정지·재개는 보유·체결 탭에서 합니다.
@@ -144,7 +144,7 @@ export function SettingsSection({ market = "US" }: { market?: PaperMarketCode })
                   <code className="text-bright">{change.key}</code>
                   <span>: {change.from} → {change.to}</span>
                   {change.affectsRules && (
-                    <span className={`rounded-sm border px-1 text-xs ${RULES_BADGE}`}>
+                    <span className={`rounded-full border px-1.5 text-xs ${RULES_BADGE}`}>
                       {change.market === "KR" ? "한국 규칙 계좌 영향" : "규칙 계좌 영향"}
                     </span>
                   )}
@@ -178,7 +178,7 @@ export function SettingsSection({ market = "US" }: { market?: PaperMarketCode })
           {save.error && <Banner tone="warn">{save.error}</Banner>}
           {/* 저장 결과 — 성공하면 초점이 여기로 옵니다(tabIndex -1: 스크립트로만 닿고 Tab 순서에는 넣지 않음). */}
           {result && (
-            <div ref={resultRef} tabIndex={-1} className="flex flex-col gap-2 rounded-lg focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus">
+            <div ref={resultRef} tabIndex={-1} className="flex flex-col gap-2 rounded-control focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus">
               <Banner tone={result.tone}>{result.text}</Banner>
               {result.warning && <Banner tone="warn">{result.warning}</Banner>}
             </div>
@@ -229,7 +229,7 @@ export function SettingsSection({ market = "US" }: { market?: PaperMarketCode })
                 key: "rules",
                 header: "규칙 계좌 영향",
                 render: (row) => (row.rulesAffected
-                  ? <span className={`whitespace-nowrap rounded-sm border px-1.5 py-px text-xs ${RULES_BADGE}`}>규칙 계좌 영향</span>
+                  ? <span className={`whitespace-nowrap rounded-full border px-2 py-px text-xs ${RULES_BADGE}`}>규칙 계좌 영향</span>
                   : <span className="text-muted">{EMPTY}</span>),
               },
             ]}
@@ -282,19 +282,19 @@ function SettingField({
         <div className="flex flex-wrap items-center gap-1">
           <label htmlFor={id} className="break-all font-mono text-xs font-semibold text-bright">{row.key}</label>
           {marketLabel && (
-            <span className="whitespace-nowrap rounded-sm border border-border px-1.5 py-px text-xs text-text-2">{marketLabel}</span>
+            <span className="whitespace-nowrap rounded-full border border-border px-2 py-px text-xs text-text-2">{marketLabel}</span>
           )}
           {row.affectsRules && (
             <span
               title={row.market === "KR"
                 ? "한국 규칙 계좌(kr_rules, 동결된 대조군)의 조건을 바꾸는 키입니다 — 저장 전에 한 번 더 묻습니다."
                 : "규칙 계좌(동결된 대조군)의 조건을 바꾸는 키입니다 — 저장 전에 한 번 더 묻습니다."}
-              className={`whitespace-nowrap rounded-sm border px-1.5 py-px text-xs ${RULES_BADGE}`}
+              className={`whitespace-nowrap rounded-full border px-2 py-px text-xs ${RULES_BADGE}`}
             >
               {row.market === "KR" ? "한국 규칙 계좌 영향" : "규칙 계좌 영향"}
             </span>
           )}
-          {changed && <span className={`whitespace-nowrap rounded-sm border px-1.5 py-px text-xs ${CHANGED_BADGE}`}>바꿈</span>}
+          {changed && <span className={`whitespace-nowrap rounded-full border px-2 py-px text-xs ${CHANGED_BADGE}`}>바꿈</span>}
         </div>
         {row.description && <p id={descriptionId} className="mt-0.5 text-xs leading-relaxed text-muted">{row.description}</p>}
       </div>

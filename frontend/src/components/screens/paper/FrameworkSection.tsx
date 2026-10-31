@@ -206,7 +206,7 @@ function CurrentCard({ view }: { view: FrameworkCurrentView | null }) {
         토큰은 서버의 문자 수 어림입니다(한글 1자 ≈ 1토큰, 영문 4자 ≈ 1토큰). 아래 렌더링은 이 판을 만들 때의 글이고, 결정의 시스템
         프롬프트는 결정 시점의 설정(하드 규칙 수치)으로 다시 렌더링합니다 — 결정 기록마다 프레임 판과 설정 버전이 남습니다.
       </p>
-      <details className="mt-3 rounded-md border border-border px-3 py-2 text-xs">
+      <details className="mt-3 rounded-control border border-border px-3 py-2 text-xs">
         <summary className="cursor-pointer text-muted">렌더링 미리보기(시스템 프롬프트)</summary>
         {view.rendered ? (
           <pre className="mt-2 max-h-[32rem] overflow-auto whitespace-pre-wrap break-words text-xs leading-relaxed text-body">{view.rendered}</pre>
@@ -354,7 +354,7 @@ function OsSourceCard({
       <div className="mt-4 flex flex-col gap-2 border-t border-border pt-3">
         <p className="text-xs text-muted">비용: {PROPOSAL_COST_NOTE}</p>
         {confirming ? (
-          <div className="flex flex-col gap-3 rounded-md border border-warn/40 bg-warn/10 px-3 py-3">
+          <div className="flex flex-col gap-3 rounded-control border border-warn/30 bg-warn-tint px-4 py-3">
             <p className="text-sm leading-relaxed text-warn">
               {`메모(#${noteId ?? "—"})로 제안을 요청할까요? ${PROPOSAL_COST_NOTE} 판은 바뀌지 않습니다 — 받은 제안을 승인해야 새 판이 됩니다.`}
             </p>
@@ -432,7 +432,7 @@ function ProposalItem({
       id={anchor ? `paper-proposal-${proposal.id}` : undefined}
       aria-label={view.title}
       aria-current={highlighted ? "true" : undefined}
-      className={`flex scroll-mt-4 flex-col gap-3 rounded-lg border bg-canvas px-4 py-3 ${
+      className={`flex scroll-mt-4 flex-col gap-3 rounded-control border bg-surface px-4 py-3 ${
         // 주간 복기에서 연 제안은 잉크 2px 테두리(강조 파랑은 누를 수 있는 것에만 — 명세 A1). 뜻은 옆의 글과 aria-current가 나릅니다.
         highlighted ? "border-text ring-1 ring-text" : "border-border"
       }`}
@@ -499,7 +499,7 @@ function ProposalItem({
       {view.staleBase && <Banner tone="warn">{view.staleBase}</Banner>}
 
       {view.pending && (deciding ? (
-        <div className="flex flex-col gap-3 rounded-md border border-warn/40 bg-warn/10 px-3 py-3">
+        <div className="flex flex-col gap-3 rounded-control border border-warn/30 bg-warn-tint px-4 py-3">
           <p className="text-sm leading-relaxed text-warn">{deciding === "approve" ? view.confirmApprove : view.confirmReject}</p>
           <div className="flex flex-wrap items-center gap-2">
             <Button variant="primary" onClick={() => void decide()} disabled={busy}>
@@ -637,7 +637,7 @@ function RenderedPane({
   lines: CompareLine[];
 }) {
   return (
-    <section aria-label={label} className="min-w-0 rounded-md border border-border px-3 py-2">
+    <section aria-label={label} className="min-w-0 rounded-control border border-border px-3 py-2">
       <h4 className="text-xs font-semibold text-bright">
         {version ? `${frameworkVersionLabel(version.version, version.status)} — ${version.title ?? ""}` : label}
       </h4>
@@ -757,7 +757,7 @@ function EditCard({
         </fieldset>
 
         {draft.engines.map((engine, engineIndex) => (
-          <fieldset key={`${engine.id}-${engineIndex}`} className="flex flex-col gap-2 rounded-md border border-border px-3 py-2">
+          <fieldset key={`${engine.id}-${engineIndex}`} className="flex flex-col gap-2 rounded-control border border-border px-3 py-2">
             <legend className="px-1 text-sm font-semibold text-bright">엔진 {engine.id}</legend>
             <label className="flex flex-col gap-1 text-xs text-muted">
               이름
@@ -823,7 +823,7 @@ function EditCard({
         )}
 
         {confirming ? (
-          <div className="flex flex-col gap-3 rounded-md border border-warn/40 bg-warn/10 px-3 py-3">
+          <div className="flex flex-col gap-3 rounded-control border border-warn/30 bg-warn-tint px-4 py-3">
             <p className="text-sm leading-relaxed text-warn">
               새 판으로 저장할까요? 사용자 판이 되고 다음 Claude 결정부터 이 판으로 판단합니다. 렌더링·토큰 어림은 저장할 때 서버가 계산합니다.
               Claude를 부르지 않습니다(비용 없음).
@@ -908,7 +908,7 @@ function Part({ title, note, children }: { title: string; note?: string; childre
 
 function BadgeChip({ badge }: { badge: Badge }) {
   return (
-    <span title={badge.title} className={`whitespace-nowrap rounded-sm border px-1.5 py-px text-xs ${badge.className}`}>
+    <span title={badge.title} className={`whitespace-nowrap rounded-full border px-2 py-px text-xs ${badge.className}`}>
       {badge.label}
     </span>
   );

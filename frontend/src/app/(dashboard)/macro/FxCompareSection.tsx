@@ -6,11 +6,13 @@ import {
   Banner,
   Card,
   ErrorState,
+  filterChipClasses,
   Freshness,
   Loading,
   Metric,
   Select,
 } from "@/components/ui";
+import { CheckIcon } from "@/components/ui/icons";
 import { useApi } from "@/hooks/useApi";
 import { useRemembered } from "@/hooks/useRemembered";
 import { SOURCES } from "@/lib/sources";
@@ -102,12 +104,9 @@ export function FxCompareSection() {
               type="button"
               aria-pressed={active}
               onClick={() => toggle(entry.id)}
-              className={`rounded-md border px-3 py-1.5 text-xs transition ${
-                active
-                  ? "border-accent/60 bg-accent/15 text-accent"
-                  : "border-border bg-surface-hover text-muted hover:text-bright"
-              }`}
+              className={filterChipClasses(active)}
             >
+              {active ? <CheckIcon size={14} /> : null}
               {entry.label}
             </button>
           );

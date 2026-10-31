@@ -66,7 +66,7 @@ function ReportSection({ section }: { section: Section }) {
         : "border-border bg-surface";
 
   return (
-    <section id={section.id} className={`scroll-mt-4 rounded-lg border p-4 ${frame}`}>
+    <section id={section.id} className={`scroll-mt-4 rounded-control border p-4 lg:p-5 ${frame}`}>
       {section.title && (
         <h3
           className={`mb-3 flex items-center gap-2 font-semibold ${

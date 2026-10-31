@@ -170,7 +170,7 @@ export function NotesSection({ startDate, market = "US" }: { startDate: string |
           />
         )}
         {confirmingRow && (
-          <div className="mt-3 flex flex-col gap-3 rounded-md border border-warn/40 bg-warn/10 px-3 py-3">
+          <div className="mt-3 flex flex-col gap-3 rounded-control border border-warn/30 bg-warn-tint px-4 py-3">
             <p className="text-sm leading-relaxed text-warn">{noteArchiveConfirm(confirmingRow)}</p>
             <div className="flex flex-wrap items-center gap-2">
               <Button variant="primary" onClick={() => void runArchive(confirmingRow.id)} disabled={archive.busy}>
@@ -283,7 +283,7 @@ export function NotesSection({ startDate, market = "US" }: { startDate: string |
 
 function BadgeChip({ badge }: { badge: Badge }) {
   return (
-    <span title={badge.title} className={`whitespace-nowrap rounded-sm border px-1.5 py-px text-xs ${badge.className}`}>
+    <span title={badge.title} className={`whitespace-nowrap rounded-full border px-2 py-px text-xs ${badge.className}`}>
       {badge.label}
     </span>
   );

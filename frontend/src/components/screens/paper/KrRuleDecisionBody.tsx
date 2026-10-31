@@ -52,7 +52,7 @@ export function KrRuleDecisionBody({ view }: { view: KrRuleDecisionView }) {
           {view.exclusions.length > 0 && (
             <p className="text-xs text-body">제외 — {view.exclusions.map((row) => `${row.reason} ${row.count}`).join(" · ")}</p>
           )}
-          <details className="rounded-md border border-border px-3 py-2 text-xs">
+          <details className="rounded-control border border-border px-3 py-2 text-xs">
             <summary className="cursor-pointer text-muted">후보 표 보기</summary>
             <div className="mt-2">
               <Table
@@ -228,7 +228,7 @@ export function KrEventsPart({ packet }: { packet: unknown }) {
         ]}
       />
       {events.text && (
-        <details className="rounded-md border border-border px-3 py-2 text-xs">
+        <details className="rounded-control border border-border px-3 py-2 text-xs">
           <summary className="cursor-pointer text-muted">사건 패킷 글(제목)</summary>
           <pre className="mt-2 max-h-72 overflow-auto whitespace-pre-wrap break-all text-xs text-body">{events.text}</pre>
         </details>
@@ -269,7 +269,7 @@ function Badges({ badges }: { badges: Badge[] }) {
   return (
     <span className="flex flex-wrap items-center gap-1">
       {badges.map((badge) => (
-        <span key={badge.key} title={badge.title} className={`whitespace-nowrap rounded-sm border px-1.5 py-px text-xs ${badge.className}`}>
+        <span key={badge.key} title={badge.title} className={`whitespace-nowrap rounded-full border px-2 py-px text-xs ${badge.className}`}>
           {badge.label}
         </span>
       ))}

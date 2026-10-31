@@ -564,7 +564,7 @@ const KR_NAV_COLUMNS: readonly Column<KrNavRow>[] = [
     key: "final",
     header: "가격",
     cell: (row) => (
-      <span className={`whitespace-nowrap rounded-sm border px-1.5 py-px text-xs ${row.pricesFinal
+      <span className={`whitespace-nowrap rounded-full border px-2 py-px text-xs ${row.pricesFinal
         ? "border-ok/40 bg-ok-tint text-ok" : "border-warn/40 bg-warn-tint text-warn"}`}>
         {row.pricesFinal ? "확정(금융위 종가)" : "잠정"}
       </span>
@@ -699,7 +699,7 @@ export function HoldingsSection({
             <dl className="flex flex-wrap gap-x-5 gap-y-1 text-xs">
               <div>
                 <dt className="text-muted">상태</dt>
-                <dd><span className={`rounded-sm border px-2 py-0.5 text-xs ${summary.status.className}`}>{summary.status.label}</span></dd>
+                <dd><span className={`rounded-full border px-2 py-0.5 text-xs ${summary.status.className}`}>{summary.status.label}</span></dd>
               </div>
               <Pair label="순자산" value={summary.nav} />
               <Pair label="수익률" value={summary.returnPct} tone={deltaColor(book?.returnPct)} />
@@ -979,7 +979,7 @@ function Badges({ badges }: { badges: Badge[] }) {
         <span
           key={badge.key}
           title={badge.title}
-          className={`whitespace-nowrap rounded-sm border px-1.5 py-px text-xs ${badge.className}`}
+          className={`whitespace-nowrap rounded-full border px-2 py-px text-xs ${badge.className}`}
         >
           {badge.label}
         </span>

@@ -2,7 +2,7 @@
 
 import { type ReactNode, useState } from "react";
 import { type Column, DataTable, Empty } from "@/components/patterns";
-import { Banner, Card, ErrorState, Freshness, Loading } from "@/components/ui";
+import { Banner, Card, ErrorState, FOCUS_RING, Freshness, Loading, SEGMENT_TRACK, segmentClasses } from "@/components/ui";
 import { useApi } from "@/hooks/useApi";
 import { endpoints } from "@/lib/endpoints";
 import { EMPTY } from "@/lib/format";
@@ -38,7 +38,7 @@ const columns = (first: string, firstClassName: string): readonly Column<Executi
         <span>{row.timing}</span>
         {row.proxy && (
           <span
-            className="whitespace-nowrap rounded-sm border border-warn/40 bg-warn-tint px-1.5 py-px text-xs text-warn"
+            className="whitespace-nowrap rounded-full border border-warn/40 bg-warn-tint px-2 py-px text-xs text-warn"
             title="시가(NEXT_OPEN)는 Yahoo(yfinance) 1분봉 첫 봉 시가입니다 — 공식 개장 경매가와 같은지 확인하지 못했습니다(명세 §19 X2)."
           >
             대리값
@@ -60,7 +60,7 @@ const TIMING_COLUMNS = columns("시점", "whitespace-nowrap");
 
 function BadgeChip({ badge }: { badge: Badge }) {
   return (
-    <span title={badge.title} className={`whitespace-nowrap rounded-sm border px-1.5 py-px text-xs ${badge.className}`}>
+    <span title={badge.title} className={`whitespace-nowrap rounded-full border px-2 py-px text-xs ${badge.className}`}>
       {badge.label}
     </span>
   );
@@ -167,7 +167,7 @@ export function ExecutionExperimentCard({ books }: { books: readonly PaperBookSu
       actions={<Freshness refreshError={execution.refreshError} />}
     >
       {audited.length > 1 && (
-        <div role="group" aria-label="실행 감사 계좌" className="mb-3 inline-flex overflow-hidden rounded-md border border-border">
+        <div role="group" aria-label="실행 감사 계좌" className={`mb-3 inline-flex w-fit ${SEGMENT_TRACK}`}>
           {audited.map((book) => {
             const active = book.code === code;
             return (
@@ -176,9 +176,7 @@ export function ExecutionExperimentCard({ books }: { books: readonly PaperBookSu
                 type="button"
                 aria-pressed={active}
                 onClick={() => setPicked(book.code)}
-                className={`px-3 py-1.5 text-xs transition-colors duration-150 motion-reduce:transition-none focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-focus ${
-                  active ? "bg-surface-2 font-semibold text-text" : "text-text-2 hover:bg-surface-2 hover:text-text"
-                }`}
+                className={`min-h-11 px-3.5 text-[13px] lg:min-h-8 ${segmentClasses(active)} ${FOCUS_RING}`}
               >
                 {book.label}
               </button>

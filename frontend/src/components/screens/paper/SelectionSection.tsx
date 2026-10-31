@@ -546,7 +546,7 @@ function Badges({ badges }: { badges: Badge[] }) {
         <span
           key={badge.key}
           title={badge.title}
-          className={`whitespace-nowrap rounded-sm border px-1.5 py-px text-xs ${badge.className}`}
+          className={`whitespace-nowrap rounded-full border px-2 py-px text-xs ${badge.className}`}
         >
           {badge.label}
         </span>

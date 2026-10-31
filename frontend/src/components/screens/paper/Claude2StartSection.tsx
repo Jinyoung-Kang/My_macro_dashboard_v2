@@ -78,7 +78,7 @@ export function Claude2StartSection({
       <p className="mt-2 text-xs text-muted">비용: {view.cost}</p>
 
       {confirming ? (
-        <div className="mt-3 flex flex-col gap-3 rounded-md border border-warn/40 bg-warn/10 px-3 py-3">
+        <div className="mt-3 flex flex-col gap-3 rounded-control border border-warn/30 bg-warn-tint px-4 py-3">
           <p className="text-sm leading-relaxed text-warn">{view.confirm}</p>
           {/* 확인 단계를 연 뒤 상태를 다시 읽어 출발할 수 없게 되면(꺼짐·관측치 사슬 준비 중) '출발 확인'을 막습니다(QA-150 — 예전에는 열린 채라 눌러도
               서버가 400). 단계를 닫지 않고 까닭을 한 줄 적어, 무엇이 바뀌었는지 놓치지 않게 하고 다시 출발할 수 있게 되면 그대로 이어 누르게 둡니다. */}

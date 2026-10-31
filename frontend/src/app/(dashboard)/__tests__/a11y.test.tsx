@@ -40,6 +40,9 @@ describe("QA-052 상태를 aria로 알린다", () => {
     render(<FxCompareSection />);
     expect((await screen.findByRole("button", { name: "원/달러" })).getAttribute("aria-pressed")).toBe("true");
     expect(screen.getByRole("button", { name: "엔/달러" }).getAttribute("aria-pressed")).toBe("false");
+    // 눈으로도 색만이 아니라 체크 아이콘(장식 — 이름에 섞이지 않음)으로 켬이 갈립니다.
+    expect(screen.getByRole("button", { name: "원/달러" }).querySelector('svg[aria-hidden="true"]')).not.toBeNull();
+    expect(screen.getByRole("button", { name: "엔/달러" }).querySelector("svg")).toBeNull();
   });
 
   it("13F 교집합의 기관 버튼은 aria-pressed로 포함 여부를 알린다", async () => {

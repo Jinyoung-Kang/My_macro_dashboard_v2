@@ -120,9 +120,9 @@ export default function StatusPage() {
             {Object.entries(data.keys).map(([name, present]) => (
               <span
                 key={name}
-                className={`rounded-sm border px-3 py-1 text-xs ${
+                className={`rounded-full border px-3 py-1 text-xs ${
                   present
-                    ? "border-ok/40 bg-ok/10 text-ok"
+                    ? "border-ok/40 bg-ok-tint text-ok"
                     : "border-border bg-surface-hover text-muted"
                 }`}
               >
@@ -263,7 +263,7 @@ export default function StatusPage() {
             {data?.missingDatasets?.map((entry) => (
               <span
                 key={entry.name}
-                className="rounded-sm border border-warn/40 bg-warn/10 px-2 py-1 text-xs text-warn"
+                className="rounded-full border border-warn/40 bg-warn-tint px-2.5 py-1 text-xs text-warn"
                 title={entry.name}
               >
                 {entry.label}
@@ -400,7 +400,7 @@ function VerificationPanel() {
           </p>
           <div className="flex flex-col gap-3">
             {result.results?.map((entry) => (
-              <div key={entry.name} className="rounded-lg border border-border bg-canvas p-3">
+              <div key={entry.name} className="rounded-control border border-border bg-surface p-4">
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <span className="inline-flex items-center gap-1.5 text-sm text-bright">
                     <VerdictIcon verdict={entry.verdict} />

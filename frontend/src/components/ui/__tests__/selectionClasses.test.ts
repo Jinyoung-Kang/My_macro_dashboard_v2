@@ -6,7 +6,7 @@
  */
 import { describe, expect, it } from "vitest";
 
-import { FOCUS_RING, pillTabClasses, SEGMENT_TRACK, segmentClasses, underlineTabClasses } from "@/components/ui/classes";
+import { filterChipClasses, FOCUS_RING, pillTabClasses, SEGMENT_TRACK, segmentClasses, underlineTabClasses } from "@/components/ui/classes";
 
 const tokens = (classes: string) => classes.split(/\s+/);
 
@@ -36,6 +36,19 @@ describe("세그먼트 segmentClasses", () => {
     for (const classes of [checked, idle]) {
       expect(classes).toContain("has-[:focus-visible]:outline-2");
       expect(classes.some((name) => name.includes("accent"))).toBe(false);
+    }
+  });
+});
+
+describe("거르기 칩 filterChipClasses", () => {
+  it("켠 칩은 강조 파랑(누를 수 있는 것) + 굵은 글, 끈 칩은 중립 — 두 상태 모두 테두리(고대비에서 경계가 남음), 44px·포커스 링", () => {
+    const on = tokens(filterChipClasses(true));
+    const off = tokens(filterChipClasses(false));
+    expect(on).toEqual(expect.arrayContaining(["rounded-full", "border", "border-accent", "bg-accent-tint", "text-accent", "font-semibold"]));
+    expect(off).toEqual(expect.arrayContaining(["rounded-full", "border", "border-border", "text-text-2", "font-medium"]));
+    expect(off.some((name) => name.includes("accent"))).toBe(false);
+    for (const classes of [on, off]) {
+      expect(classes).toEqual(expect.arrayContaining(["min-h-11", "lg:min-h-8", ...tokens(FOCUS_RING)]));
     }
   });
 });

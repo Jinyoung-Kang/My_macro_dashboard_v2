@@ -124,7 +124,7 @@ export default function RegimePage() {
             actions={current ? <SourceBadge>{verdict.code}</SourceBadge> : undefined}
           >
             <div
-              className={`rounded-lg border px-4 py-4 ${
+              className={`rounded-control border px-4 py-4 ${
                 current?.tone ?? "border-border bg-surface-hover text-muted"
               }`}
             >
@@ -140,7 +140,7 @@ export default function RegimePage() {
               {QUADRANTS.map((quadrant) => (
                 <div
                   key={quadrant.code}
-                  className={`rounded-lg border px-3 py-2 text-xs ${
+                  className={`rounded-control border px-3 py-2 text-xs ${
                     quadrant.code === verdict.code
                       ? quadrant.tone
                       : "border-border bg-canvas text-muted"

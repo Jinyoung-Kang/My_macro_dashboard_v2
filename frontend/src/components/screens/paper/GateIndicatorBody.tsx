@@ -23,8 +23,8 @@ export function GateIndicatorBody({ gate, compact = false }: { gate: PaperGateIn
   return (
     <div className="flex flex-col gap-3">
       <div className="flex flex-wrap items-center gap-2">
-        <span className={`rounded-sm border px-2 py-0.5 text-xs font-semibold ${view.level.className}`}>{view.level.label}</span>
-        <span className="rounded-sm border border-border bg-surface-hover px-2 py-0.5 text-xs text-muted">참고 — 구속하지 않음</span>
+        <span className={`rounded-full border px-2 py-0.5 text-xs font-semibold ${view.level.className}`}>{view.level.label}</span>
+        <span className="rounded-full border border-border bg-surface-hover px-2 py-0.5 text-xs text-muted">참고 — 구속하지 않음</span>
         <span className="text-xs text-muted">거래일 {view.tradingDate}</span>
       </div>
       {view.levelNote && <p className="text-xs leading-relaxed text-body">{view.levelNote}</p>}
@@ -65,7 +65,7 @@ export function GateIndicatorBody({ gate, compact = false }: { gate: PaperGateIn
                     {row.stale && (
                       <span
                         title="이번 수집에 실패해 지난 값을 이어 썼습니다."
-                        className="whitespace-nowrap rounded-sm border border-warn/40 bg-warn/10 px-1.5 py-px text-xs text-warn"
+                        className="whitespace-nowrap rounded-full border border-warn/40 bg-warn-tint px-2 py-px text-xs text-warn"
                       >
                         지난 값
                       </span>

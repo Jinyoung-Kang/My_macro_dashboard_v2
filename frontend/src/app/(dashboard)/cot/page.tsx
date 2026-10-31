@@ -302,7 +302,7 @@ function ExtremesPanel({ asset }: { asset: string }) {
 
           <div className="mt-4 flex flex-col gap-4">
             {(data.sides ?? []).map((side) => (
-              <div key={side.side} className="rounded-lg border border-border bg-canvas p-3">
+              <div key={side.side} className="rounded-control border border-border bg-surface p-4">
                 <p className="text-sm font-semibold text-bright">{side.side}</p>
                 <p className="mt-0.5 text-xs text-muted">{side.rule}</p>
                 <div className="mt-3">

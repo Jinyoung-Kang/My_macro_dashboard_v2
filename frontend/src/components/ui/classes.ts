@@ -87,6 +87,17 @@ export function segmentClasses(checked: boolean): string {
   }`;
 }
 
+/**
+ * 거르기 칩(교집합의 분석 대상 기관·환율 겹쳐 보기) — 여럿을 켜고 끄는 aria-pressed 단추. 누를 수 있는 것이라 켠 칩은 강조 파랑(틴트 바탕·
+ * 파랑 글·파랑 테두리, 명세 원칙 A1이 허용)이고, 색만으로 켬을 전하지 않게 굵기와 체크 아이콘(부르는 쪽이 켠 칩 앞에 둠)이 함께 바뀝니다.
+ * 두 상태 모두 테두리가 있어 고대비(forced-colors) 모드에서도 칩 경계가 남고, 켬은 굵기·아이콘으로 갈립니다. 좁은 화면에서 높이 44px.
+ */
+export function filterChipClasses(pressed: boolean): string {
+  return `inline-flex min-h-11 items-center gap-1 rounded-full border px-3.5 text-[13px] lg:min-h-8 ${SELECT_MOTION} ${FOCUS_RING} ${
+    pressed ? "border-accent bg-accent-tint font-semibold text-accent" : "border-border bg-surface font-medium text-text-2 hover:bg-surface-2 hover:text-text"
+  }`;
+}
+
 export type UnderlineTabSize = "md" | "sm";
 
 const UNDERLINE_SIZE: Record<UnderlineTabSize, string> = {

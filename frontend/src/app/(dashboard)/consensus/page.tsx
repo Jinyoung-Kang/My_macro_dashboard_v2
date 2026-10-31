@@ -7,6 +7,7 @@ import {
   Card,
   EmptyState,
   ErrorState,
+  filterChipClasses,
   Loading,
   Metric,
   PageHeader,
@@ -14,6 +15,7 @@ import {
   SourceBadge,
   Table,
 } from "@/components/ui";
+import { CheckIcon } from "@/components/ui/icons";
 import { useApi } from "@/hooks/useApi";
 import { useRemembered } from "@/hooks/useRemembered";
 import { useUsdKrw } from "@/hooks/useUsdKrw";
@@ -73,12 +75,9 @@ export default function ConsensusPage() {
                 type="button"
                 aria-pressed={active}
                 onClick={() => toggle(entry.cik)}
-                className={`rounded-md border px-3 py-1.5 text-xs transition ${
-                  active
-                    ? "border-accent/60 bg-accent/15 text-accent"
-                    : "border-border bg-surface-hover text-muted hover:text-bright"
-                }`}
+                className={filterChipClasses(active)}
               >
+                {active ? <CheckIcon size={14} /> : null}
                 {filerName(entry.name) ?? `CIK ${entry.cik}`}
               </button>
             );

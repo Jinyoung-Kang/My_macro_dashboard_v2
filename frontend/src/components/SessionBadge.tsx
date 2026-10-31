@@ -16,8 +16,8 @@ import { sessionStatus, tradeDayFrom, tradeTimeFrom, type SessionState } from "@
  * 상승·하락 전용이라 상태 표시에 쓰지 않습니다.
  */
 const STYLES: Record<SessionState, string> = {
-  open: "border-ok/40 bg-ok/10 text-ok",
-  break: "border-warn/40 bg-warn/10 text-warn",
+  open: "border-ok/40 bg-ok-tint text-ok",
+  break: "border-warn/40 bg-warn-tint text-warn",
   closed: "border-border bg-surface-hover text-muted",
   holiday: "border-border bg-surface-hover text-muted",
   idle: "border-border bg-surface-hover text-muted",
@@ -57,14 +57,14 @@ export function SessionBadge({
   if (!status) {
     // 시간표를 모르는 시장이면 지연만 적습니다.
     return delay ? (
-      <span className={`rounded-sm border px-2 py-0.5 text-xs ${STYLES.idle}`} title="시세 지연(출처 기준)">
+      <span className={`rounded-full border px-2 py-0.5 text-xs ${STYLES.idle}`} title="시세 지연(출처 기준)">
         {delay}
       </span>
     ) : null;
   }
   return (
     <span
-      className={`rounded-sm border px-2 py-0.5 text-xs ${STYLES[status.state]}`}
+      className={`rounded-full border px-2 py-0.5 text-xs ${STYLES[status.state]}`}
       title={delay ? `${status.detail} · 시세 ${delay}(출처 기준)` : status.detail}
     >
       {status.state === "open" && delay ? `${status.label} · ${delay}` : status.label}

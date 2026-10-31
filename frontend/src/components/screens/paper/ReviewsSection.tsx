@@ -126,7 +126,7 @@ export function ReviewsSection({
           </Button>
         </div>
         {confirming && (
-          <div className="mt-3 flex flex-col gap-3 rounded-md border border-warn/40 bg-warn/10 px-3 py-3">
+          <div className="mt-3 flex flex-col gap-3 rounded-control border border-warn/30 bg-warn-tint px-4 py-3">
             <p className="text-sm leading-relaxed text-warn">Claude를 지금 부를까요? {REVIEW_COST_NOTE}</p>
             {korea && <p className="text-xs leading-relaxed text-warn">{krManualReviewNote(manualLimit)}</p>}
             <div className="flex flex-wrap items-center gap-2">
@@ -335,7 +335,7 @@ function ReviewBody({
 
       {proposal && (
         <Part title="프레임 제안" note="자동 반영은 없습니다 — 프레임 탭에서 승인해야 새 판이 됩니다.">
-          <div className="flex flex-col gap-2 rounded-md border border-border px-3 py-2">
+          <div className="flex flex-col gap-2 rounded-control border border-border px-3 py-2">
             <p className="text-sm font-semibold text-bright">{proposal.label}</p>
             {proposal.summary && <p className="text-xs leading-relaxed text-body">{proposal.summary}</p>}
             <p className="text-xs text-muted">{proposal.detail}</p>
@@ -355,13 +355,13 @@ function ReviewBody({
         </dl>
       )}
       {view.input && (
-        <details className="rounded-md border border-border px-3 py-2 text-xs">
+        <details className="rounded-control border border-border px-3 py-2 text-xs">
           <summary className="cursor-pointer text-muted">복기 입력(JSON — 서버가 장부에서 만든 사실)</summary>
           <pre className="mt-2 max-h-96 overflow-auto whitespace-pre-wrap break-all text-xs text-body">{view.input}</pre>
         </details>
       )}
       {view.response && (
-        <details className="rounded-md border border-border px-3 py-2 text-xs">
+        <details className="rounded-control border border-border px-3 py-2 text-xs">
           <summary className="cursor-pointer text-muted">복기 응답(JSON)</summary>
           <pre className="mt-2 max-h-96 overflow-auto whitespace-pre-wrap break-all text-xs text-body">{view.response}</pre>
         </details>
@@ -391,7 +391,7 @@ function Part({ title, note, children }: { title: string; note?: string; childre
 
 function Chip({ badge }: { badge: Badge }) {
   return (
-    <span title={badge.title} className={`w-fit whitespace-nowrap rounded-sm border px-1.5 py-px text-xs ${badge.className}`}>
+    <span title={badge.title} className={`w-fit whitespace-nowrap rounded-full border px-2 py-px text-xs ${badge.className}`}>
       {badge.label}
     </span>
   );
