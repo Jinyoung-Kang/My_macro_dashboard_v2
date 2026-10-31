@@ -11,9 +11,11 @@ export type ButtonSize = "md" | "sm";
 /*
  * 알약 모양·굵은 글·색만 바뀌는 전환(움직임 줄이기면 없음)·포커스 링 2px(바탕 대비 6.3:1).
  * 투명 1px 테두리는 고대비(forced-colors) 모드에서 시스템 색 테두리로 보여 단추 경계가 남게 합니다(바탕색은 그 모드에서 지워짐).
+ * 글은 줄을 바꾸지 않습니다(whitespace-nowrap) — 단추 글은 짧다는 전제이고, 표의 좁은 칸에서 접히면 알약이 세로로 길어져
+ * '상세 펼치 / 기'·'다시 실행'(한 글자씩 세로로) 같은 캡슐이 됐습니다. 접히지 않는 대신 칸이 단추 폭만큼 넓어집니다.
  */
 const BUTTON_BASE =
-  "inline-flex items-center justify-center gap-2 rounded-full border border-transparent text-center font-semibold motion-safe:transition-colors motion-safe:duration-150 disabled:cursor-not-allowed disabled:opacity-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus";
+  "inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-full border border-transparent text-center font-semibold motion-safe:transition-colors motion-safe:duration-150 disabled:cursor-not-allowed disabled:opacity-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus";
 
 const BUTTON_VARIANT: Record<ButtonVariant, string> = {
   primary: "bg-accent text-accent-fg hover:bg-accent-hover",
