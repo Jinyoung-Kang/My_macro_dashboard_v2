@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { defaultEngineId, demoQuotaNote, engineOptions, quotaLabel } from "../aiEngines";
+import { defaultEngineId, demoQuotaNote, engineLabel, engineOptions, quotaLabel } from "../aiEngines";
 import type { AiEngine } from "../types";
 
 function engine(id: string, available: boolean, unavailableReason: AiEngine["unavailableReason"] = null): AiEngine {
@@ -55,5 +55,22 @@ describe("데모 공용 한도 안내", () => {
     expect(quotaLabel({ used: 4, limit: 20, shared: true })).toBe("데모 전체 오늘 4/20건");
     expect(quotaLabel({ used: 4, limit: 20 })).toBe("오늘 4/20건");
     expect(quotaLabel({ used: 9, limit: null })).toBe("오늘 9/무제한건");
+  });
+});
+
+describe("엔진 이름 — 백엔드 라벨의 앞 그림 문자(제공자 색 원·번개)는 화면에서 뗀다", () => {
+  it("예전 라벨은 기호를 떼고, 새 라벨은 그대로, 비면 id", () => {
+    expect(engineLabel({ id: "auto", label: "⚡ 자동 탐색 — 권장 (Failover)" })).toBe("자동 탐색 — 권장 (Failover)");
+    expect(engineLabel({ id: "anthropic_haiku", label: "🟣 Anthropic — Claude Haiku 5.5" })).toBe("Anthropic — Claude Haiku 5.5");
+    expect(engineLabel({ id: "cerebras_llama", label: "Cerebras — Llama 3.3 70B" })).toBe("Cerebras — Llama 3.3 70B");
+    expect(engineLabel({ id: "x", label: "" })).toBe("x");
+  });
+
+  it("선택지 라벨도 같은 이름 + 속도 + 못 쓰는 이유", () => {
+    const options = engineOptions([
+      { id: "nvidia_nemotron", label: "🟢 NVIDIA — Nemotron-3 Super 120B", provider: "nvidia", model: null, description: "",
+        available: false, unavailableReason: "no_key", speedHint: "느림" },
+    ] as never);
+    expect(options).toEqual([{ value: "nvidia_nemotron", label: "NVIDIA — Nemotron-3 Super 120B · 느림 (키 없음)", disabled: true }]);
   });
 });

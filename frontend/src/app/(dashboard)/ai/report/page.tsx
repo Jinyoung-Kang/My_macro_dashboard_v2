@@ -10,7 +10,7 @@ import { useSessionUser } from "@/hooks/useSessionUser";
 import { isDemo } from "@/lib/access";
 import { defaultEngineId, demoQuotaNote, engineOptions, quotaLabel } from "@/lib/aiEngines";
 import { apiPost } from "@/lib/api";
-import { formatKst, formatLatency } from "@/lib/format";
+import { formatKst, formatLatency, withoutLeadingIcon } from "@/lib/format";
 import type { AiEngines, AiResponse, SnapshotText } from "@/lib/types";
 import { SOURCES } from "@/lib/sources";
 import { endpoints } from "@/lib/endpoints";
@@ -167,7 +167,8 @@ export default function AiReportPage() {
         </Card>
       )}
 
-      {error && <Banner tone="danger">{error}</Banner>}
+      {/* 실패 문구에는 엔진 라벨·'자동 탐색' 안내가 실려 예전 그림 문자가 섞여 옵니다 — 화면에서 뗍니다 */}
+      {error && <Banner tone="danger">{withoutLeadingIcon(error)}</Banner>}
 
       {result && (
         <Card
@@ -212,11 +213,11 @@ export default function AiReportPage() {
         >
           {!result.status ? (
             <Banner tone="danger">
-              생성 실패: {result.error}
+              생성 실패: {withoutLeadingIcon(result.error ?? "")}
               {result.failoverPath && (
                 <ul className="mt-2 list-disc pl-5 text-xs">
                   {result.failoverPath.map((step) => (
-                    <li key={step}>{step}</li>
+                    <li key={step}>{withoutLeadingIcon(step)}</li>
                   ))}
                 </ul>
               )}
@@ -225,7 +226,7 @@ export default function AiReportPage() {
             <>
               {result.failoverPath && result.failoverPath.length > 1 && (
                 <p className="mb-3 text-[11px] text-muted">
-                  폴오버 경로: {result.failoverPath.join(" → ")}
+                  폴오버 경로: {result.failoverPath.map((step) => withoutLeadingIcon(step)).join(" → ")}
                 </p>
               )}
               {showRaw ? (

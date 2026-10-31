@@ -4,7 +4,9 @@ import { useState } from "react";
 import { Banner, Button, Card, ErrorState, inputClasses, Loading, Select, SourceBadge, Table } from "@/components/ui";
 import { useApi } from "@/hooks/useApi";
 import { errorMessage, useAsyncAction } from "@/hooks/useAsyncAction";
+import { engineLabel } from "@/lib/aiEngines";
 import { apiPost } from "@/lib/api";
+import { withoutLeadingIcon } from "@/lib/format";
 import type { AiEngine, AiResponse } from "@/lib/types";
 import { SOURCES } from "@/lib/sources";
 import { endpoints } from "@/lib/endpoints";
@@ -45,7 +47,7 @@ export function AiEngineSection() {
             rows={engines.data.engines}
             rowKey={(row) => row.id}
             columns={[
-              { key: "label", header: "엔진", render: (row) => row.label },
+              { key: "label", header: "엔진", render: (row) => engineLabel(row) },
               {
                 key: "model",
                 header: "모델",
@@ -75,7 +77,7 @@ export function AiEngineSection() {
             onChange={setEngineId}
             options={(engines.data?.engines ?? []).map((engine) => ({
               value: engine.id,
-              label: engine.label,
+              label: engineLabel(engine),
             }))}
           />
           <Select
@@ -119,11 +121,12 @@ export function AiEngineSection() {
               {result.response}
             </article>
           ) : (
-            <Banner tone="danger">{result.error}</Banner>
+            // 실패 문구에는 엔진 라벨·'자동 탐색' 안내가 실려 예전 그림 문자가 섞여 옵니다 — 화면에서 뗍니다
+            <Banner tone="danger">{withoutLeadingIcon(result.error ?? "")}</Banner>
           )}
           {result.failoverPath && (
             <p className="mt-3 text-[11px] text-muted">
-              폴오버 경로: {result.failoverPath.join(" → ")}
+              폴오버 경로: {result.failoverPath.map((step) => withoutLeadingIcon(step)).join(" → ")}
             </p>
           )}
           {result.translationInfo && (

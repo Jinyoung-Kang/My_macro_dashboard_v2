@@ -109,6 +109,20 @@ describe("🤖 AI 엔진 테스트", () => {
 
     expect(await screen.findByText("HTTP 502 — 엔진 응답 없음")).toBeTruthy();
   });
+
+  it("실패 응답의 엔진 라벨·폴오버 경로에 섞인 예전 그림 문자는 화면에서 뗀다", async () => {
+    api.apiPost.mockResolvedValue({
+      status: false, error: "🟣 Anthropic — Claude Haiku 5.5 API Key 누락", pipelineStep: "직접",
+      failoverPath: ["anthropic_haiku: 키 없음", "cerebras_llama (90.0s): 90초 안에 응답하지 않았습니다 — '⚡ 자동 탐색'을 고르면 …"],
+    });
+    render(<AiEngineSection />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "선택 모델 호출" }));
+
+    expect(await screen.findByText("Anthropic — Claude Haiku 5.5 API Key 누락")).toBeTruthy();
+    expect(screen.getByText(/'자동 탐색'을 고르면/)).toBeTruthy();
+    expect(document.body.textContent).not.toMatch(/\p{Extended_Pictographic}/u);
+  });
 });
 
 describe("🔌 토스 연결 테스트", () => {
