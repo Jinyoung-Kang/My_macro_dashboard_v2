@@ -3,6 +3,7 @@
 import * as DialogPrimitive from "@radix-ui/react-dialog";
 import * as VisuallyHidden from "@radix-ui/react-visually-hidden";
 import { useRef, type ReactElement, type ReactNode } from "react";
+import { XIcon } from "@/components/ui/icons";
 
 /** 폭 — 확인 창은 sm, 보통은 md, 검색처럼 목록이 긴 것은 lg. 좁은 화면에서는 양옆 16px만 남기고 다 씁니다. */
 const WIDTH = { sm: "max-w-sm", md: "max-w-md", lg: "max-w-2xl" } as const;
@@ -108,9 +109,7 @@ export function Dialog({
               disabled={!dismissible}
               className="absolute right-1.5 top-1.5 inline-flex h-11 w-11 items-center justify-center rounded-md text-text-3 hover:bg-surface-2 hover:text-text lg:right-3 lg:top-3 lg:h-8 lg:w-8 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus disabled:cursor-not-allowed disabled:opacity-50"
             >
-              <svg aria-hidden="true" viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round">
-                <path d="M4 4l8 8M12 4l-8 8" />
-              </svg>
+              <XIcon size={16} />
             </DialogPrimitive.Close>
           )}
         </DialogPrimitive.Content>
