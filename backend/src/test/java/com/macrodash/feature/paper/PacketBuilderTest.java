@@ -2414,7 +2414,6 @@ class PacketBuilderTest {
     }
 
     @Test
-    @org.junit.jupiter.api.Disabled("리뷰 F4 재현 — 직전 결정 목록이 종류를 가리지 않아 장중 확인(CHECKPOINT) 결정이 8b watchlist·10_recentDecisions에 들어감. 수정 커밋에서 뗌")
     @DisplayName("장중 확인(CHECKPOINT) 결정은 직전 결정이 아님 — 같은 기준일에 더 늦게 생긴 확인 결정(watchlist 칸 없음)이 있어도 8b watchlist는 아침 결정의 것이고 10_recentDecisions에 CHECKPOINT 줄이 없음")
     void checkpointDecisionIsNotAPriorDecision() {
         activeClaude();   // 보유 BBB, 10-23 초기 결정(응답에 watchlist 없음)

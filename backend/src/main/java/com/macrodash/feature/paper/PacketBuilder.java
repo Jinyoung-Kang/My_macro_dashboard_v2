@@ -2082,10 +2082,13 @@ public class PacketBuilder {
     // ------------------------------------------------------------------ 10·11 최근 결정·메모
     /**
      * 기준일 앞의 그 Claude 계좌 결정(같은 날의 다른 종류 포함, 최근 순 5건) — 같은 (날, 종류)의 결정은 지금 다시 만드는 그 결정(재시도)이라
-     * 뺍니다. 섹션 10과 재무 섹션의 watchlist(8b)가 같은 목록을 봅니다.
+     * 뺍니다. 섹션 10과 재무 섹션의 watchlist(8b)가 같은 목록을 봅니다. 계좌2 장중 확인 결정(CHECKPOINT — 단계 2)은 자세·목표 노출·watchlist가
+     * 없는 장중 판단이라 넣지 않습니다(리뷰 F4 — 같은 d에 아침 결정보다 늦게 생겨 8b watchlist를 빈 목록으로 지우고 5칸 하나를 차지했음). 그 결과
+     * (대신한·새 주문과 체결)는 대기 주문·체결 칸으로 보입니다. CHECKPOINT 행이 없는 계좌는 이 거름 전과 바이트까지 같습니다.
      */
     private List<DecisionSummary> priorDecisions(String book, LocalDate asOf, String kind, boolean initial) {
         return store.decisions(book, MAX_RECENT_DECISIONS * 4).stream()
+                .filter(d -> !RuleBookService.CHECKPOINT.equals(d.kind()))
                 .filter(d -> d.asOfTradingDate().isBefore(asOf)
                         || !initial && d.asOfTradingDate().equals(asOf) && !d.kind().equals(kind))
                 .limit(MAX_RECENT_DECISIONS).toList();

@@ -761,6 +761,9 @@ P_cf가 `null`인 체결은 줄마다 `excludedNoBaseline`. 평균·구간은 �
 8. 예상 상태(§10-6)의 가격은 슬리피지 전 원가격이고, 1분봉·감시·관측치 모두에 가격이 없는 주문은 `unpriced`(현금 계산에서 빠짐 — 장부 `cashLimited`가 마지막 방어선).
 9. 상태 응답 `claude2.checkpoint`는 늘 같은 모양이고(꺼짐이면 `enabled:false`), 실행 감사 응답에 `checkpoints`(최근 20행)와 M8 요약을 더했다(§14-2 M8 가운데 '대신한 주문의 TV 대 취소된 원래 주문'은 아직 없음).
 10. 태스크 수는 38 → 39, `paper_*` 표는 22 → 23, 스케줄러 풀을 쓰는 정기 작업은 12 → 13(§5-2·§13-4의 옛 수는 단계 0 전 기준).
+11. 확인 결정 행(`CHECKPOINT`)은 다음 아침 패킷의 `10_recentDecisions`·8b watchlist의 '직전 결정'이 아니다(리뷰 F4 — `PacketBuilder.priorDecisions`가 거름).
+    자세·목표 노출·watchlist가 없는 장중 판단이고, 같은 d에 아침 결정보다 늦게 생겨 watchlist를 빈 목록으로 지우고 5칸 하나를 차지했다. 그 결과는 대기 주문·체결 칸으로 보인다.
+    `claude2.checkpoints`를 끈 뒤(§16-3)에도 과거 확인 행이 패킷에 나오지 않는다.
 
 ## 17. 위험과 대안
 
