@@ -56,7 +56,7 @@ class Sec13FServiceTest {
         List<Map<String, Object>> rows = service.compareQuarters(current, null, 10);
 
         assertThat(rows).hasSize(1);
-        assertThat(rows.get(0).get("action")).isEqualTo("⚪ 비교 데이터 없음");
+        assertThat(rows.get(0).get("action")).isEqualTo("비교 데이터 없음");
         assertThat(rows.get(0).get("weightDiff")).isNull();
     }
 

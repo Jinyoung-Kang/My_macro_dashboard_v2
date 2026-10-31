@@ -23,13 +23,13 @@ public final class HoldingsDiff {
     /** 비중 변화가 이 값보다 작으면 "유지"로 봅니다(%p). */
     public static final double WEIGHT_EPSILON = 0.05;
 
-    public static final String NO_PREVIOUS = "⚪ 비교 데이터 없음";
-    public static final String CANNOT_COMPARE = "⚪ 비교 불가 (주식 수 없음)";
-    public static final String NEW = "🆕 신규 매수 (New)";
-    public static final String CLOSED = "❌ 전량 매도 (Closed)";
-    public static final String ADDED = "📈 비중 확대 (Added)";
-    public static final String REDUCED = "📉 비중 축소 (Reduced)";
-    public static final String UNCHANGED = "⚪ 유지 (Unchanged)";
+    public static final String NO_PREVIOUS = "비교 데이터 없음";
+    public static final String CANNOT_COMPARE = "비교 불가 (주식 수 없음)";
+    public static final String NEW = "신규 매수 (New)";
+    public static final String CLOSED = "전량 매도 (Closed)";
+    public static final String ADDED = "비중 확대 (Added)";
+    public static final String REDUCED = "비중 축소 (Reduced)";
+    public static final String UNCHANGED = "유지 (Unchanged)";
 
     private HoldingsDiff() {
     }
