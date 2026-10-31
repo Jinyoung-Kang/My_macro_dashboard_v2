@@ -11,8 +11,11 @@ import { presentText } from "./patterns";
 /** 차트 한 행 — 날짜와 계열 키마다 값(모르면 null). */
 export type LineRow = { date: string; [key: string]: number | string | null };
 
-/** 계열 정의 — `key`는 행의 키, `label`은 범례·툴팁 이름, `color`가 없으면 기본 색을 순서대로. */
-export type LineSeriesSpec = { key: string; label: string; color?: string };
+/**
+ * 계열 정의 — `key`는 행의 키, `label`은 범례·툴팁 이름, `color`가 없으면 기본 색을 순서대로.
+ * `legend: false`면 글자 범례에서 뺍니다 — 계열이 아니라 다른 계열에 붙는 표시(장중 값 단계의 오늘 추정 점선 꼬리)일 때만 씁니다.
+ */
+export type LineSeriesSpec = { key: string; label: string; color?: string; legend?: boolean };
 
 /** 계열 값 하나 — 유한한 숫자만 값입니다. null·문자열("N/A" 등)·NaN·±Infinity는 모름(null). */
 export function lineValue(row: LineRow, key: string): number | null {
@@ -168,4 +171,70 @@ export function lineChartLabel(data: readonly LineRow[], series: readonly LineSe
   const ticks = lineXTicks(data);
   const span = ticks.length === 0 ? "" : ` · ${ticks.join(" ~ ")}`;
   return `선 차트: ${names}${span}`;
+}
+
+// ---------------------------------------------------------------- 히어로 차트 문지르기(명세 §5)
+
+/**
+ * 문지르는 점의 순번 — Recharts가 넘기는 활성 자리(툴팁의 `activeIndex`·이벤트의 `activeTooltipIndex`: number | string | null | undefined,
+ * 키보드·터치에서는 "3" 같은 글)를 행 순번으로 바꿉니다. 정수가 아니거나 행 범위 밖이면 null(문지르지 않음 — 지금 값을 보임).
+ *
+ * @param length 지금 그리는 행 수
+ */
+export function scrubIndex(raw: unknown, length: number): number | null {
+  if (typeof raw !== "number" && (typeof raw !== "string" || raw.trim() === "")) {
+    return null;
+  }
+  const index = Number(raw);
+  return Number.isInteger(index) && index >= 0 && index < length ? index : null;
+}
+
+/** 문지르는 점의 표시 글 — 히어로(components/patterns/Hero의 `scrub`)가 큰 숫자·날짜·'기간 시작 대비' 칩으로 그립니다. */
+export type ScrubModel = {
+  /** 그 점의 값(valueFormat). 그날 값이 없으면 "—"(0으로 채우지 않음). */
+  valueText: string;
+  /** 그 점의 날짜(행의 date 그대로). */
+  dateText: string;
+  /** 기간의 첫 유효값 대비 변화량 — 그 점의 값을 모르면 null(칩 생략). */
+  change: number | null;
+  /** 같은 기준의 변화율(%) — 기준이 0 이하이면(비율의 뜻이 없음) 또는 값을 모르면 null. */
+  changePct: number | null;
+  /** 추정 점인가 — 장중 값 단계의 '오늘 추정 점'(점선 꼬리). 문지르는 동안에도 추정 배지가 보이게 합니다(원칙 A3). */
+  isEstimated: boolean;
+  /** 추정 점의 설명(예: "장중 14:05") — 부르는 쪽이 준 글, 없으면 null. */
+  estimateNote: string | null;
+};
+
+/**
+ * 문지르는 점 → 표시 글. 순번이 null이거나 범위 밖이면 null(문지르지 않음).
+ *
+ * - 변화는 **기간의 첫 유효값**(그 계열에서 처음으로 값이 있는 행) 대비입니다 — 그 기간 안에서 얼마나 움직였는지. 그 점이 첫 유효값이면 0.
+ * - 그 점의 값이 없으면 값 "—"와 변화 null(칩 생략) — 날짜는 그대로 보입니다(그날 기록이 없음을 보임).
+ * - `estimate`(선택): 장중 값 단계가 붙일 오늘 추정 점의 날짜와 설명. 그 날짜의 점을 문지르면 `isEstimated`와 설명을 함께 냅니다.
+ *   그 점의 꼬리 선(점선)은 범례에 넣지 않고(계열의 `legend: false`), 추정 표시는 이 모델로 히어로가 그립니다.
+ */
+export function scrubModel(
+  rows: readonly LineRow[],
+  key: string,
+  index: number | null,
+  valueFormat: (value: number) => string,
+  options: { estimate?: { date: string; note?: string | null } | null } = {},
+): ScrubModel | null {
+  const at = scrubIndex(index, rows.length);
+  if (at === null) {
+    return null;
+  }
+  const row = rows[at];
+  const value = lineValue(row, key);
+  const base = rows.map((entry) => lineValue(entry, key)).find((entry): entry is number => entry !== null) ?? null;
+  const change = value !== null && base !== null ? value - base : null;
+  const estimated = options.estimate != null && options.estimate.date === row.date;
+  return {
+    valueText: value === null ? EMPTY : valueFormat(value),
+    dateText: row.date,
+    change,
+    changePct: change !== null && base !== null && base > 0 ? (change / base) * 100 : null,
+    isEstimated: estimated,
+    estimateNote: estimated ? presentText(options.estimate?.note) : null,
+  };
 }

@@ -6,6 +6,8 @@
  *  - 호버 툴팁: 날짜 · 계열 값(모르면 "—") · 출처
  *  - 값 없음: 행이 없거나 전부 모름이면 "표시할 시계열이 없습니다."(옛 래퍼와 같은 문구)
  *  - 추정·오래됨: 배지가 그림 위에 반드시 보인다(빈 상태에서도)
+ *  - 히어로(variant="hero", 명세 §5): 중립 잉크 선, 툴팁 상자 없음, 축선 없음·축 글자 12px, 높이 200/lg 260·touch-action pan-y,
+ *    문지르기 onScrub(순번 | null) — 마우스 이동·벗어남, 터치를 떼면 null. 범례에서 뺀 계열(legend: false)
  *
  * jsdom에는 크기가 없어 ResponsiveContainer가 너비를 모릅니다 — 관찰을 시작하면 정한 크기를 바로 알려 주는 가짜를 씁니다(DonutChart.test와 같음).
  * 호버는 감싼 상자의 getBoundingClientRect를 차트 크기로 맞춘 뒤 mousemove를 보냅니다.
@@ -189,6 +191,93 @@ describe("LineChart — 호버 툴팁", () => {
     expect(within(tooltip).getByText("10년−2년").nextElementSibling?.textContent).toBe("0.3%");
     expect(within(tooltip).getByText("출처 · FRED")).toBeTruthy();
     expect((tooltip.firstElementChild as HTMLElement).style.backgroundColor).toBe("var(--surface)");
+  });
+});
+
+describe("LineChart — 히어로 · 문지르기", () => {
+  function sizeAs(width: number, height: number) {
+    observeAs(width, height);
+    vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockReturnValue({
+      left: 0, top: 0, x: 0, y: 0, width, height, right: width, bottom: height, toJSON: () => ({}),
+    } as DOMRect);
+  }
+
+  it("중립 잉크 선(계열 색을 주지 않으면 var(--text)) · 축선 없음 · 축 글자 12px · 높이 200/lg 260 · 세로 스크롤은 브라우저에", () => {
+    observeAs(600, 260);
+    const { container } = render(<LineChart data={LIQUIDITY} series={ONE_SERIES} variant="hero" valueFormat={pct} />);
+    expect(linePaths(container)[0].getAttribute("stroke")).toBe("var(--text)");
+    expect(container.querySelector(".recharts-xAxis line.recharts-cartesian-axis-line")).toBeNull();
+    expect(container.querySelector(".recharts-cartesian-grid")).toBeNull();
+    const ticks = [...container.querySelectorAll(".recharts-xAxis-tick-labels text, .recharts-yAxis-tick-labels text")];
+    expect(ticks).toHaveLength(4);
+    for (const tick of ticks) expect(tick.getAttribute("font-size")).toBe("12");
+    const axis = lineYAxis(LIQUIDITY, ONE_SERIES)!;
+    expect(yTickTexts(container)).toEqual([pct(axis.domain[0]), pct(axis.domain[1])]);
+    expect(xTickTexts(container)).toEqual(["2026-01-02", "2026-10-24"]);
+    const box = (container.querySelector("svg.recharts-surface") as Element).closest(".touch-pan-y") as HTMLElement;
+    expect(box.className.split(/\s+/)).toEqual(expect.arrayContaining(["h-[200px]", "lg:h-[260px]"]));
+    // 계열 색을 주면 그 색(계좌 색 등)
+    cleanup();
+    observeAs(600, 260);
+    const colored = render(<LineChart data={LIQUIDITY} series={[{ ...ONE_SERIES[0], color: "#d95926" }]} variant="hero" />);
+    expect(linePaths(colored.container)[0].getAttribute("stroke")).toBe("#d95926");
+  });
+
+  it("마우스로 문지르면 그 점의 순번을, 벗어나면 null을 알린다 — 툴팁 상자는 없다", async () => {
+    sizeAs(600, 240);
+    const onScrub = vi.fn();
+    const { container } = render(<LineChart data={SPREADS} series={TWO_SERIES} includeZero variant="hero" height={240} onScrub={onScrub} />);
+    const wrapper = container.querySelector(".recharts-wrapper") as Element;
+    // Recharts는 마우스 이동을 다음 프레임에 반영합니다 — 그 반영을 기다립니다(아래 툴팁 시험의 findByText와 같음).
+    await act(async () => {
+      fireEvent.mouseMove(wrapper, { clientX: 205, clientY: 100 });
+    });
+    await vi.waitFor(() => expect(onScrub).toHaveBeenLastCalledWith(1));
+    expect(container.querySelector(".recharts-tooltip-cursor")).not.toBeNull();
+    expect((container.querySelector(".recharts-tooltip-wrapper") as HTMLElement).textContent).toBe("");
+    await act(async () => {
+      fireEvent.mouseLeave(wrapper);
+    });
+    await vi.waitFor(() => expect(onScrub).toHaveBeenLastCalledWith(null));
+    expect(container.querySelector(".recharts-tooltip-cursor")).toBeNull();
+  });
+
+  it("터치를 떼면 null — 커서를 감추고 지금 값으로 돌아가게", async () => {
+    sizeAs(600, 240);
+    const onScrub = vi.fn();
+    const { container } = render(<LineChart data={LIQUIDITY} series={ONE_SERIES} variant="hero" height={240} onScrub={onScrub} />);
+    const wrapper = container.querySelector(".recharts-wrapper") as Element;
+    await act(async () => {
+      fireEvent.mouseMove(wrapper, { clientX: 590, clientY: 100 });
+    });
+    await vi.waitFor(() => expect(onScrub).toHaveBeenLastCalledWith(3));
+    await act(async () => {
+      fireEvent.touchEnd(wrapper);
+    });
+    expect(onScrub).toHaveBeenLastCalledWith(null);
+    expect(container.querySelector(".recharts-tooltip-cursor")).toBeNull();
+  });
+
+  it("기본 차트에 onScrub을 주면 툴팁 상자는 그대로 두고 순번도 알린다", async () => {
+    sizeAs(600, 240);
+    const onScrub = vi.fn();
+    const { container } = render(<LineChart data={SPREADS} series={TWO_SERIES} valueFormat={pct} includeZero onScrub={onScrub} />);
+    await act(async () => {
+      fireEvent.mouseMove(container.querySelector(".recharts-wrapper") as Element, { clientX: 205, clientY: 100 });
+    });
+    await vi.waitFor(() => expect(onScrub).toHaveBeenLastCalledWith(1));
+    expect(await within(container.querySelector(".recharts-tooltip-wrapper") as HTMLElement).findByText("2026-04-01")).toBeTruthy();
+  });
+
+  it("범례에서 뺀 계열(legend: false — 장중 값 단계의 추정 꼬리 자리)은 글자 범례에 없고 선은 그린다", () => {
+    observeAs(600, 240);
+    const three = [...TWO_SERIES, { key: "c", label: "추정 꼬리", color: "#888888", legend: false }];
+    const { container } = render(
+      <LineChart data={SPREADS.map((row, index) => ({ ...row, c: index === 3 ? 1.0 : null }))} series={three} includeZero />,
+    );
+    const legend = screen.getByRole("list", { name: "범례" });
+    expect(within(legend).getAllByRole("listitem").map((item) => item.textContent)).toEqual(["10년−3개월", "10년−2년"]);
+    expect(linePaths(container)).toHaveLength(3);
   });
 });
 

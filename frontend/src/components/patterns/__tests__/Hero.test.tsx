@@ -2,6 +2,8 @@
  * Hero — 큰 값 · 변화 칩 · 판정 글 · 배지 · 기간 탭(설계서 §5 "판정은 글로").
  * 네 상태: 값 있음(큰 숫자 + 단위 + 칩 + 판정 글), 값 없음("—" + 사유, 칩 생략, 단위 없음),
  * 추정(meta 배지), 오래됨(meta의 ⚠️ 이전 값 + 사유), 자리표시(placeholder — 값 대신, 탭은 그 자리 그대로). a11y: 제목(label)이 영역 이름, headingLevel.
+ * 문지르기(scrub, 명세 §4·D9): 큰 숫자는 그 점 값(눈으로만), 지금 값은 sr-only '지금 값 …', '기간 시작 대비' 칩·날짜, 배지는 그대로,
+ * 알림 영역(aria-live polite)에 '날짜 값', 추정 점 배지. 탭 자리(tabsPlacement) 위·아래.
  */
 import { cleanup, render, screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
@@ -157,5 +159,119 @@ describe("Hero", () => {
     );
     expect(screen.getByRole("region", { name: "하나" })).toBeTruthy();
     expect(screen.getByRole("region", { name: "둘" })).toBeTruthy();
+  });
+
+  describe("문지르기(scrub)", () => {
+    const base = {
+      label: "순자산",
+      value: "100,136.32",
+      unit: "달러",
+      change: (
+        <span>
+          <ChangeChip changePct={0.14} /> 출발 대비
+        </span>
+      ),
+      verdict: "네 계좌 모두 기준선 위",
+      meta: <StaleBadge stale reason="관측치 저장본이 늦음" />,
+    };
+    const liveRegion = (region: HTMLElement) => region.querySelector('[aria-live="polite"]') as HTMLElement;
+
+    it("문지르지 않을 때(scrub=null) — 지금 값·부르는 쪽 칩, 알림 영역은 미리 있고 비어 있다", () => {
+      render(<Hero {...base} scrub={null} />);
+      const region = screen.getByRole("region", { name: "순자산" });
+      expect(within(region).getByText("100,136.32").getAttribute("aria-hidden")).toBeNull();
+      expect(within(region).getByText("출발 대비")).toBeTruthy();
+      const live = liveRegion(region);
+      expect(live.className).toContain("sr-only");
+      expect(live.getAttribute("aria-atomic")).toBe("true");
+      expect(live.textContent).toBe("");
+      expect(within(region).queryByText(/지금 값/)).toBeNull();
+    });
+
+    it("문지르는 중 — 큰 숫자는 그 점 값(눈으로만), sr '지금 값', '기간 시작 대비' 칩과 날짜, 판정 글·이전 값 배지는 그대로", () => {
+      render(
+        <Hero
+          {...base}
+          scrub={{ valueText: "99,341.08", dateText: "2026-10-27", change: -658.92, changePct: -0.66 }}
+        />,
+      );
+      const region = screen.getByRole("region", { name: "순자산" });
+      const shown = within(region).getByText("99,341.08");
+      expect(shown.getAttribute("aria-hidden")).toBe("true");
+      expect(shown.className).toContain("text-display-sm");
+      expect(within(region).getByText(/지금 값/).className).toContain("sr-only");
+      expect(within(region).getByText(/지금 값/).textContent).toBe("지금 값 100,136.32 달러");
+      expect(within(region).queryByText("출발 대비")).toBeNull();
+      expect(within(region).getByText("기간 시작 대비 ·")).toBeTruthy();
+      expect(within(region).getByText("(−0.66%)")).toBeTruthy();
+      expect(within(region).getByText("−658.92")).toBeTruthy();
+      expect(within(region).getByText("2026-10-27")).toBeTruthy();
+      // 판정 글과 meta 배지(이전 값)는 문지르는 동안에도 보입니다(원칙 A3).
+      expect(within(region).getByText("네 계좌 모두 기준선 위")).toBeTruthy();
+      expect(within(region).getByText("이전 값").parentElement?.className).toContain("text-warn");
+      expect(liveRegion(region).textContent).toBe("2026-10-27 99,341.08 달러");
+    });
+
+    it("그 점의 값이 없으면 '—'(단위 없음)·칩 생략, 날짜만 — 알림도 단위 없이", () => {
+      render(<Hero {...base} scrub={{ valueText: "—", dateText: "2026-10-28", change: null, changePct: null }} />);
+      const region = screen.getByRole("region", { name: "순자산" });
+      expect(within(region).getByText("—").className).toContain("text-text-3");
+      expect(within(region).queryByText("기간 시작 대비 ·")).toBeNull();
+      expect(within(region).queryByText("▲")).toBeNull();
+      expect(within(region).queryByText("▼")).toBeNull();
+      expect(within(region).getByText("2026-10-28")).toBeTruthy();
+      // 단위는 지금 값(sr-only)에만
+      expect(within(region).getAllByText(/달러/).every((node) => node.className.includes("sr-only"))).toBe(true);
+      expect(liveRegion(region).textContent).toBe("2026-10-28 —");
+    });
+
+    it("추정 점 — 점 옆에 추정 배지(설명), 알림에 '추정'", () => {
+      render(
+        <Hero
+          {...base}
+          scrub={{ valueText: "100,250.00", dateText: "2026-10-30", change: 250, changePct: 0.25, isEstimated: true, estimateNote: "장중 14:05" }}
+        />,
+      );
+      const region = screen.getByRole("region", { name: "순자산" });
+      expect(within(region).getByText("추정").parentElement?.className).toContain("border-dashed");
+      expect(within(region).getByText("· 장중 14:05")).toBeTruthy();
+      expect(liveRegion(region).textContent).toBe("2026-10-30 100,250.00 달러 추정");
+    });
+
+    it("문지르기와 지금 값이 바뀌어도 본문(차트)은 다시 마운트되지 않는다", () => {
+      const chart = <input aria-label="차트" />;
+      const { rerender } = render(<Hero {...base} scrub={null}>{chart}</Hero>);
+      const input = screen.getByRole("textbox", { name: "차트" });
+      input.focus();
+      rerender(<Hero {...base} scrub={{ valueText: "1", dateText: "d", change: 1, changePct: 1 }}>{chart}</Hero>);
+      rerender(<Hero {...base} scrub={null}>{chart}</Hero>);
+      expect(screen.getByRole("textbox", { name: "차트" })).toBe(input);
+      expect(document.activeElement).toBe(input);
+    });
+
+    it("scrub을 주지 않으면 알림 영역도 없다(문지를 수 없는 히어로)", () => {
+      render(<Hero {...base} />);
+      expect(liveRegion(screen.getByRole("region", { name: "순자산" }))).toBeNull();
+    });
+  });
+
+  it("tabsPlacement — 기본은 본문 위, 'below'면 본문 아래(차트 아래 기간 알약)", () => {
+    const tabs = <div role="tablist" aria-label="기간" />;
+    const { rerender } = render(
+      <Hero label="순자산" value="1" tabs={tabs}>
+        <div>차트</div>
+      </Hero>,
+    );
+    const order = () => {
+      const list = screen.getByRole("tablist", { name: "기간" });
+      return list.compareDocumentPosition(screen.getByText("차트")) & Node.DOCUMENT_POSITION_FOLLOWING ? "above" : "below";
+    };
+    expect(order()).toBe("above");
+    rerender(
+      <Hero label="순자산" value="1" tabs={tabs} tabsPlacement="below">
+        <div>차트</div>
+      </Hero>,
+    );
+    expect(order()).toBe("below");
   });
 });
