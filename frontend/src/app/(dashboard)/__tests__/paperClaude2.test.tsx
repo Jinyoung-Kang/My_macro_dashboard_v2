@@ -295,6 +295,53 @@ describe("개요 — 계좌2 출발 카드의 상태 읽기(읽는 중·실패·
     expect(startButton().disabled).toBe(true);
     expect(windowValues()).toEqual(["—", "—", "—"]);
   });
+
+  /** 탭이 다시 보일 때의 다시 읽기(useApi onVisibilityChange) — 60초 자동 갱신을 기다리지 않고 자동 갱신하는 요청을 한 번 다시 읽어 반영합니다. */
+  const reread = () => act(async () => { document.dispatchEvent(new Event("visibilitychange")); });
+  const confirmButton = () => screen.getByRole("button", { name: "출발 확인" }) as HTMLButtonElement;
+
+  // QA-150 — 수정 전에는 확인 단계를 연 뒤 상태 다시 읽기가 꺼짐(또는 관측치 사슬 준비 중)을 돌려주면 배너는 바뀌지만 '출발 확인'이 열린
+  // 채였다(확인 단계의 disabled가 start.busy만 봄 — 누르면 서버가 400으로 거절해 쓰는 것은 없음. 재현 커밋에서는 it.fails).
+  const notReady: { name: string; body: () => unknown; note: RegExp }[] = [
+    { name: "꺼짐", body: () => status(false), note: /설정 claude2\.enabled가 꺼져 있습니다/ },
+    {
+      name: "관측치 사슬 준비 중",
+      body: () => {
+        const on = status(true);
+        return { ...on, claude2: { ...on.claude2, chainReady: false } };
+      },
+      note: /관측치 사슬 준비 중입니다/,
+    },
+  ];
+  for (const { name, body, note } of notReady) {
+    it.fails(`확인 단계를 연 뒤 다시 읽은 상태가 ${name}이면 '출발 확인'이 닫히고 확인 단계 안에 까닭 — 다시 출발할 수 있으면 열림`, async () => {
+      reads["/api/paper/overview"] = () => Promise.resolve(overview(CLAUDE2_NOT_STARTED));
+      reads["/api/paper/status"] = () => Promise.resolve(status(true));
+      render(<PaperPage />);
+      await settled();
+      fireEvent.click(startButton());
+      expect(confirmButton().disabled).toBe(false);
+
+      reads["/api/paper/status"] = () => Promise.resolve(body());
+      await reread();
+
+      expect(statusReads()).toBe(2);
+      expect(screen.getByText(note)).toBeTruthy();
+      expect(confirmButton().disabled).toBe(true);
+      // 확인 단계는 닫지 않고(무엇이 바뀌었는지 놓치지 않게) 그 안에 까닭 한 줄.
+      expect(screen.getByText(/계좌2를 지금 출발시킬까요\?/)).toBeTruthy();
+      expect(screen.getByText(/지금은 출발할 수 없습니다/)).toBeTruthy();
+      fireEvent.click(confirmButton());
+      await settled();
+      expect(api.apiPost).not.toHaveBeenCalled();
+
+      // 다시 읽은 상태가 다시 출발할 수 있으면 '출발 확인'이 열리고 까닭 줄이 사라집니다.
+      reads["/api/paper/status"] = () => Promise.resolve(status(true));
+      await reread();
+      expect(confirmButton().disabled).toBe(false);
+      expect(screen.queryByText(/지금은 출발할 수 없습니다/)).toBeNull();
+    });
+  }
 });
 
 describe("출발 뒤 계좌2 상태 — 개요 1분봉 한 줄·결정 로그 결정 창", () => {
