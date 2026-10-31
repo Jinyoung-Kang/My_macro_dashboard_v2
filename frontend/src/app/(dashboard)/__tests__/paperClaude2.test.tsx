@@ -342,6 +342,33 @@ describe("개요 — 계좌2 출발 카드의 상태 읽기(읽는 중·실패·
       expect(screen.queryByText(/지금은 출발할 수 없습니다/)).toBeNull();
     });
   }
+
+  // QA-151 — 수정 전에는 켜짐을 받은 뒤 상태 다시 읽기가 실패하면 카드가 옛 '켜져 있습니다'와 열린 단추를 그대로 두고 화면 어디에도 실패 표시가
+  // 없었다(OverviewSection은 status.error만 보이고 useApi의 refreshError는 넘기지 않음 — 재현 커밋에서는 it.fails).
+  it.fails("켜짐을 받은 뒤 상태 다시 읽기가 실패하면(502) 카드에 '새로 읽지 못함' — 마지막으로 읽은 켜짐·단추는 그대로, 다시 읽으면 사라짐", async () => {
+    reads["/api/paper/overview"] = () => Promise.resolve(overview(CLAUDE2_NOT_STARTED));
+    reads["/api/paper/status"] = () => Promise.resolve(status(true));
+    render(<PaperPage />);
+    await settled();
+    const card = screen.getByRole("heading", { name: "Claude 계좌2 — 계좌2 시작" }).closest("section") as HTMLElement;
+    expect(within(card).queryByText("⚠️ 새로 읽지 못함")).toBeNull();
+
+    reads["/api/paper/status"] = () => Promise.reject(new Error("요청 실패 (HTTP 502)"));
+    await reread();
+
+    expect(statusReads()).toBe(2);
+    const badge = within(card).getByText("⚠️ 새로 읽지 못함");
+    expect(badge.getAttribute("title")).toBe("요청 실패 (HTTP 502) — 앞서 받은 값을 보여 줍니다");
+    // 옛 값은 버리지 않습니다(useApi — 값이 있는 다시 읽기 실패는 refreshError). 단추도 그 값 기준 — 출발은 서버가 다시 판정합니다.
+    expect(within(card).getByText(/설정 claude2\.enabled가 켜져 있습니다/)).toBeTruthy();
+    expect(startButton().disabled).toBe(false);
+    // 값이 있을 때의 실패라 위 '확인하지 못했습니다' 배너(값이 없을 때의 실패)는 없습니다.
+    expect(screen.queryByText(/정기 작업 상태를 확인하지 못했습니다/)).toBeNull();
+
+    reads["/api/paper/status"] = () => Promise.resolve(status(true));
+    await reread();
+    expect(within(card).queryByText("⚠️ 새로 읽지 못함")).toBeNull();
+  });
 });
 
 describe("출발 뒤 계좌2 상태 — 개요 1분봉 한 줄·결정 로그 결정 창", () => {
