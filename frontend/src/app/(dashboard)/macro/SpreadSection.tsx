@@ -35,8 +35,10 @@ export function SpreadSection({
         두 값은 서로를 대체하지 않습니다 — 공식은 "확정된 어제까지",
         스크래핑은 "지금 시장". 한쪽만 보여 주면 어제 값을 지금 값으로
         읽거나 그 반대가 됩니다. 나란히 두고 출처와 성격을 함께 적습니다.
+        두 묶음을 옆으로 놓는 것은 아주 넓은 화면(2xl)부터입니다 — 지표 값(24px)이 '+0.347%p'로 약 137px이라, 왼쪽 내비가 있는
+        1024~1440px에서 옆으로 놓은 세 칸(칸 안쪽 100~127px)을 넘어 옆 칸·묶음 테두리와 겹쳤습니다. 그 아래에서는 위아래로 놓습니다.
       */}
-      <div className="grid gap-3 lg:grid-cols-2">
+      <div className="grid gap-3 2xl:grid-cols-2">
         <div className="rounded-control border border-border bg-surface p-4">
           <p className="mb-2 text-xs font-semibold text-body">
             공식 확정치 · FRED
@@ -79,7 +81,8 @@ export function SpreadSection({
             )}
           </p>
           {scraped ? (
-            <div className="grid gap-3 sm:grid-cols-3">
+            // 세 칸은 md(768px)부터 — sm(640px)에서 세 칸이면 칸 안쪽이 130px이라 같은 값이 넘쳤습니다.
+            <div className="grid gap-3 md:grid-cols-3">
               <Metric
                 label={`${pair} 스프레드`}
                 value={

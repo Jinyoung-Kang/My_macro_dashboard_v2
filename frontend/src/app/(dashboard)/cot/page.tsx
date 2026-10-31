@@ -182,7 +182,8 @@ export default function CotPage() {
         )}
         {detail.data?.available && (
           <>
-            <div className="mb-4 grid gap-3 sm:grid-cols-4">
+            {/* 네 칸은 xl부터 — 640~1024px의 네 칸(칸 안쪽 95~127px)에서는 '+108,749'(24px, 약 129px)가 칸을 넘었습니다. */}
+            <div className="mb-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
               <Metric
                 label="스마트머니 순포지션"
                 value={formatSigned(detail.data.summary?.ncNet ?? null, 0)}
