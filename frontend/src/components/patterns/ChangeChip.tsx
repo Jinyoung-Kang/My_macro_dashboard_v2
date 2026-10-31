@@ -14,6 +14,12 @@ const ARROW: Record<ChangeDirection, string | null> = { up: "▲", down: "▼", 
 // 화살표는 읽어 주기에서 빼고 방향을 말로 읽습니다. 부호(+·−)도 글자로 남으므로 색만으로 뜻을 전하지 않습니다.
 const SPOKEN: Record<ChangeDirection, string> = { up: "상승", down: "하락", flat: "변화 없음" };
 
+// md는 히어로 값 아래(15px 굵게), sm은 자산 행 값 아래(13px).
+const SIZE: Record<"sm" | "md", string> = {
+  sm: "text-[13px] font-medium",
+  md: "text-[15px] font-semibold",
+};
+
 /**
  * 변화 칩 — "▲ +1.23원 (+0.45%)". 변화량·변화율을 둘 다 모르면 그리지 않습니다(0.00%를 만들지 않음).
  *
@@ -44,7 +50,7 @@ export function ChangeChip({
   const arrow = ARROW[model.direction];
   return (
     <span
-      className={`inline-flex flex-wrap items-baseline gap-x-1 font-medium tabular-nums ${size === "sm" ? "text-xs" : "text-sm"} ${TONE[model.direction]}`}
+      className={`inline-flex flex-wrap items-baseline gap-x-1 tabular-nums ${SIZE[size]} ${TONE[model.direction]}`}
     >
       {arrow ? (
         <span aria-hidden="true" className="text-[0.8em]">

@@ -108,7 +108,7 @@ describe("StaleBadge", () => {
     expect(container.textContent).toBe("⚠️주의: 이전 값");
   });
 
-  it("배지·캡션에 바탕색을 칠하지 않는다(경고색 글자 대비 유지)", () => {
+  it("추정 배지·출처 캡션은 바탕을 칠하지 않고, 이전 값 배지만 불투명 경고 틴트(투명 틴트 없음 — 경고색 글자 대비 유지)", () => {
     render(
       <>
         <StaleBadge stale />
@@ -116,9 +116,9 @@ describe("StaleBadge", () => {
         <ProvenanceBadge source="FRED" />
       </>,
     );
-    for (const text of ["이전 값", "추정"]) {
-      expect((screen.getByText(text).parentElement as HTMLElement).className).not.toMatch(/\bbg-/);
-    }
+    expect((screen.getByText("추정").parentElement as HTMLElement).className).not.toMatch(/\bbg-/);
     expect(screen.getByText("FRED").className).not.toMatch(/\bbg-/);
+    const stale = (screen.getByText("이전 값").parentElement as HTMLElement).className.split(/\s+/);
+    expect(stale.filter((name) => name.startsWith("bg-"))).toEqual(["bg-warn-tint"]);
   });
 });

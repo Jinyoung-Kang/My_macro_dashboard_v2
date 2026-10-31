@@ -42,8 +42,8 @@ function fromInnerControl(event: MouseEvent<HTMLTableRowElement>): boolean {
  * - 넓은 표는 감싼 상자(overflow-x-auto) 안에서만 좌우로 넘어갑니다 — 페이지 폭을 넓히지 않습니다. 상자는 Tab으로 닿아 화살표로 넘길 수 있습니다.
  * - 머리는 `sticky top-0`입니다. 가로 스크롤 상자는 CSS상 세로로도 스크롤 상자가 되므로, 머리가 실제로 붙어 있으려면 상자에 높이 한도가
  *   있어야 합니다 — `maxHeight`(px)를 주면 그 높이에서 세로로도 스크롤되고 머리가 위에 남습니다(설계서 §1.5 계약에 더한 선택 props).
- * - `onRowClick`이 있으면 행이 Tab으로 닿고(tabIndex 0) Enter·Space로도 열립니다. 마우스를 올리면 첫 칸에 밑줄 — 바탕은 칠하지 않습니다
- *   (surface-2 위에서는 칸 안의 상승·하락 글자가 4.5:1을 밑돎, AssetRow와 같은 규칙).
+ * - `onRowClick`이 있으면 행이 Tab으로 닿고(tabIndex 0) Enter·Space로도 열립니다. 마우스를 올리면 바탕(surface-2)과 첫 칸 밑줄 —
+ *   surface-2 위에서도 칸 안의 상승·하락·보조 글자가 4.5:1 이상입니다(토큰 대비, 명세 §2-1 — AssetRow와 같은 규칙). 누를 수 없는 행에는 hover 표시가 없습니다.
  * - 모르는 칸의 "—"는 보조 글자색(text-3) — 타일·히어로·자산 행과 같습니다. 칸 글자는 모두 `tabular-nums`(날짜·시각 열도 자릿수가 맞게).
  * - `scrollHint`(계약에 더한 선택 prop): 폰에서 좌우로 넘겨야 하는 넓은 표 — 표를 최소 640px로 두고 그 폭(sm) 아래에서만 "← 표를 좌우로
  *   넘겨 보세요" 한 줄을 띄웁니다(옛 ui Table과 같음). 스크롤바가 안 보이는 기기에서는 오른쪽에 칸이 더 있다는 것을 알 수 없어서이고,
@@ -144,7 +144,7 @@ export function DataTable<T>({
                     key={column.key}
                     scope="col"
                     aria-sort={ariaSort}
-                    className={`whitespace-nowrap px-3 py-2 text-xs font-medium text-text-3 ${alignOf(column)} ${column.className ?? ""}`}
+                    className={`whitespace-nowrap px-3 py-2.5 text-[13px] font-medium text-text-2 ${alignOf(column)} ${column.className ?? ""}`}
                   >
                     {column.sortValue ? (
                       <button
@@ -184,13 +184,13 @@ export function DataTable<T>({
                   onKeyDown={activate ? activate.onKeyDown(row) : undefined}
                   className={`border-b border-border last:border-0 ${
                     activate
-                      ? "group cursor-pointer focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-focus"
+                      ? "group cursor-pointer hover:bg-surface-2 motion-safe:transition-colors motion-safe:duration-150 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-focus"
                       : ""
                   }`}
                 >
                   {columns.map((column, index) => {
                     const content = column.cell(row);
-                    const className = `px-3 py-2 tabular-nums text-text ${activate && index === 0 ? "group-hover:underline" : ""} ${alignOf(column)} ${column.className ?? ""}`;
+                    const className = `px-3 py-3 tabular-nums text-text ${activate && index === 0 ? "group-hover:underline" : ""} ${alignOf(column)} ${column.className ?? ""}`;
                     const shownContent = isMissingValue(content) ? (
                       <span className="text-text-3">
                         <Empty />

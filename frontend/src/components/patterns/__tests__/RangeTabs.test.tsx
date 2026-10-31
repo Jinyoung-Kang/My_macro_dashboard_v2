@@ -55,6 +55,12 @@ describe("RangeTabs", () => {
     expect(tabs.map((tab) => tab.getAttribute("aria-selected"))).toEqual(["false", "true", "false", "false"]);
     expect(tabs.map((tab) => tab.tabIndex)).toEqual([-1, 0, -1, -1]);
     expect(tabs[1].className).toContain("bg-surface-2");
+    // 고른 탭은 색만이 아니라 굵기로도, 고대비(forced-colors)에서는 테두리로도 다릅니다. 데이터 영역이라 강조 파랑이 아닙니다(명세 A1·D9).
+    const classes = (tab: HTMLElement) => tab.className.split(/\s+/);
+    expect(classes(tabs[1])).toEqual(expect.arrayContaining(["font-semibold", "forced-colors:border", "rounded-full"]));
+    expect(classes(tabs[0])).not.toContain("font-semibold");
+    expect(classes(tabs[0])).not.toContain("forced-colors:border");
+    expect(tabs.some((tab) => /\b(bg|text)-accent\b/.test(tab.className))).toBe(false);
     expect(tabs.every((tab) => tab.getAttribute("type") === "button")).toBe(true);
   });
 

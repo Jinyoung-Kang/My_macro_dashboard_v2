@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useId, type JSX, type ReactNode } from "react";
 
+import { ChevronDownIcon, ChevronUpIcon } from "@/components/ui/icons";
 import { assetRowModel } from "@/lib/patternRows";
 import { presentText } from "@/lib/patterns";
 
@@ -42,7 +43,7 @@ export type AssetRowData = {
 /**
  * 행 버튼을 펼침 단추(디스클로저)로 쓸 때 — 누르면 행 밖의 상세 영역(`controls`)이 열리고 닫힙니다(예: 모의매매 개요의 계좌 상세).
  * 설계서 §1.5 계약에 더한 선택 prop입니다. 이때 버튼은 aria-pressed 대신 aria-expanded·aria-controls를 답니다(둘을 함께 달면 낭독기가
- * "눌림"과 "펼침"을 같이 읽음). `hint`(예: "상세 보기")는 이름 바로 뒤에 작게 붙어 버튼 이름의 일부가 됩니다 — 화살표(▾·▴)는 읽지 않습니다.
+ * "눌림"과 "펼침"을 같이 읽음). `hint`(예: "상세 보기")는 이름 바로 뒤에 작게 붙어 버튼 이름의 일부가 됩니다 — 화살표(장식 아이콘)는 읽지 않습니다.
  *
  * 버튼 이름은 이름 + 안내 글뿐입니다(aria-labelledby). 보조 글·값·변화 칩·배지는 설명(aria-describedby)으로 잇습니다 — 행 전체가
  * 단추라 그대로 두면 낭독기가 행의 숫자·배지 전부를 단추 이름으로 읽어, 무엇을 여는 단추인지가 맨 끝에야 나옵니다. 행 전체가 단추이므로
@@ -57,11 +58,14 @@ export type AssetRowDisclosure = {
   hint?: string | null;
 };
 
-// 행 높이 54px(데스크톱 한 줄). 배지가 있으면 둘째 줄로 내려가 행이 늘어납니다.
-const ROW = "relative flex min-h-[54px] w-full flex-wrap items-center gap-x-3 gap-y-1 px-4 py-2 text-left";
+// 행 높이 64px 이상(명세 §4). 배지가 있으면 둘째 줄로 내려가 행이 늘어납니다.
+const ROW = "relative flex min-h-16 w-full flex-wrap items-center gap-x-3 gap-y-1 px-4 py-3 text-left lg:px-5";
 // 행은 카드 폭을 꽉 채우므로 포커스 링을 안쪽으로 그립니다(바깥으로 그리면 카드 테두리 밖으로 삐져나감).
-// hover에 surface-2 바탕을 깔지 않습니다 — 그 위에서는 상승·하락 글자가 4.5:1을 밑돕니다. 이름 밑줄로 대신합니다.
-const INTERACTIVE = "group focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-focus";
+// 누를 수 있는 행은 hover에 surface-2 바탕을 깝니다 — 그 위에서도 상승·하락·보조 글자가 4.5:1 이상입니다(토큰 대비, 명세 §2-1).
+const INTERACTIVE =
+  "hover:bg-surface-2 motion-safe:transition-colors motion-safe:duration-150 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-focus";
+// 고른 행 — 중립 바탕 + 왼쪽 3px 잉크 막대(바탕 차이만으로는 대비가 모자라 막대를 둡니다). 데이터 영역이라 강조 파랑을 쓰지 않습니다(A1).
+const SELECTED = "bg-surface-2";
 
 /**
  * 자산 행 — 이름·보조 → (스파크라인) → 값(+단위) → 변화 칩 → 배지(추정·이전 값·경고·출처).
@@ -97,17 +101,17 @@ export function AssetRow({
   const body: ReactNode = (
     <>
       {selectable && selected ? (
-        <span aria-hidden="true" className="absolute inset-y-1 left-0 w-[3px] rounded-r bg-accent" />
+        <span aria-hidden="true" className="absolute inset-y-1 left-0 w-[3px] rounded-r bg-text" />
       ) : null}
       <span className="flex min-w-0 flex-1 basis-32 flex-col">
-        <span id={parts?.name} className="truncate text-[15px] font-medium leading-5 text-text group-hover:underline">
+        <span id={parts?.name} className="truncate text-[15px] font-semibold leading-5 text-text">
           {row.name}
           {hint ? (
             <>
               {" "}
-              <span className="ml-1 text-xs font-normal text-text-3">
+              <span className="ml-1 inline-flex items-center gap-0.5 align-baseline text-xs font-normal text-text-3">
                 {hint}
-                <span aria-hidden="true"> {disclosure?.expanded ? "▴" : "▾"}</span>
+                {disclosure?.expanded ? <ChevronUpIcon size={14} /> : <ChevronDownIcon size={14} />}
               </span>
             </>
           ) : null}
@@ -173,7 +177,7 @@ export function AssetRow({
         aria-expanded={disclosure.expanded}
         aria-controls={disclosure.controls}
         onClick={() => onSelect(row.id)}
-        className={`${ROW} ${INTERACTIVE}`}
+        className={`${ROW} ${INTERACTIVE} ${selected ? SELECTED : ""}`}
       >
         {body}
       </button>
@@ -181,7 +185,7 @@ export function AssetRow({
   }
   if (onSelect) {
     return (
-      <button type="button" aria-pressed={selected} onClick={() => onSelect(row.id)} className={`${ROW} ${INTERACTIVE}`}>
+      <button type="button" aria-pressed={selected} onClick={() => onSelect(row.id)} className={`${ROW} ${INTERACTIVE} ${selected ? SELECTED : ""}`}>
         {body}
       </button>
     );
@@ -190,7 +194,7 @@ export function AssetRow({
 }
 
 /**
- * 자산 행 목록 — 카드(1px 경계) 안에 제목(h2, 있으면 영역 이름)과 행들. 행 사이는 1px 윗선으로 나눕니다.
+ * 자산 행 목록 — 카드(1px 경계, 16px 모서리) 안에 제목(h2, 있으면 영역 이름)과 행들. 행 사이는 1px 윗선으로 나눕니다.
  *
  * - 행이 없으면 `emptyText`(기본 "표시할 항목이 없습니다.").
  * - `onSelect`·`selectedId`는 각 행에 넘깁니다(href가 있는 행은 링크가 이김).
@@ -222,14 +226,15 @@ export function AssetList({
   const Heading = headingLevel === 3 ? "h3" : "h2";
   const labelled = Boolean(title) && headingLevel === 2;
   return (
-    <section aria-labelledby={labelled ? headingId : undefined} className="min-w-0 rounded-xl border border-border bg-surface">
+    <section aria-labelledby={labelled ? headingId : undefined} className="min-w-0 overflow-hidden rounded-card border border-border bg-surface">
       {title ? (
-        <Heading id={headingId} className="px-4 pb-1 pt-4 text-sm font-medium text-text-2">
+        // 제목 글은 행 글과 같은 세로줄(px-4 · lg:px-5)에 둡니다.
+        <Heading id={headingId} className="px-4 pb-2 pt-5 text-title-3 text-text lg:px-5">
           {title}
         </Heading>
       ) : null}
       {rows.length === 0 ? (
-        <p className="px-4 py-6 text-sm text-text-3">{emptyText}</p>
+        <p className="px-4 py-6 text-sm text-text-3 lg:px-5">{emptyText}</p>
       ) : (
         <ul>
           {rows.map((row) => (

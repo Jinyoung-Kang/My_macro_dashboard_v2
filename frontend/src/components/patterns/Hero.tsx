@@ -5,7 +5,7 @@ import { isMissingValue, presentText } from "@/lib/patterns";
 import { Empty } from "./Empty";
 
 /**
- * 히어로 — 라벨(제목) · 큰 값(36~44px) · 단위 · 변화 칩 · 한 줄 판정 글 · 배지(meta) · 기간 탭 · 본문(차트 등).
+ * 히어로 — 라벨(제목) · 큰 값(글자 단계 display: 좁은 화면 36px, sm 이상 44px) · 단위 · 변화 칩 · 한 줄 판정 글 · 배지(meta) · 기간 탭 · 본문(차트 등).
  *
  * - 판정은 `verdict` 글로 적습니다. 색·선만으로 판정을 전하지 않습니다(PRINCIPLES "선 하나로 판정까지 전하지 않습니다").
  * - 값이 없으면(null·빈 글·"N/A"·NaN) "—". 사유를 보이려면 `value={<Empty reason="…" />}`로 넘깁니다(그때도 값 없음으로 봄).
@@ -46,8 +46,8 @@ export function Hero({
   const missing = givenEmpty || isMissingValue(value);
   const sentence = presentText(verdict);
   return (
-    <section aria-labelledby={headingId} className="min-w-0 rounded-xl border border-border bg-surface p-5 sm:p-6">
-      <Heading id={headingId} className="text-sm font-medium text-text-2">
+    <section aria-labelledby={headingId} className="min-w-0 rounded-card border border-border bg-surface p-6 lg:p-8">
+      <Heading id={headingId} className="text-[15px] font-medium text-text-2">
         {label}
       </Heading>
       {/* 자리마다 순서를 고정합니다(자리표시 ↔ 값으로 바뀌어도 탭·본문이 같은 자리 — 다시 마운트되지 않음). */}
@@ -55,9 +55,7 @@ export function Hero({
         <div className="mt-3 min-w-0">{placeholder}</div>
       ) : (
         <div className="mt-2 flex flex-wrap items-baseline gap-x-2 gap-y-1">
-          <span
-            className={`text-[36px] font-semibold leading-tight tabular-nums sm:text-[44px] ${missing ? "text-text-3" : "text-text"}`}
-          >
+          <span className={`text-display-sm tabular-nums sm:text-display ${missing ? "text-text-3" : "text-text"}`}>
             {missing && !givenEmpty ? <Empty /> : value}
           </span>
           {!missing && unit ? <span className="text-base text-text-3">{unit}</span> : null}
@@ -65,7 +63,7 @@ export function Hero({
       )}
       {/* 칩이 null(변화를 모름)을 그리면 빈 줄이 되므로 :empty로 접습니다. */}
       {placeholder === undefined && change ? <div className="mt-1 empty:hidden">{change}</div> : null}
-      {placeholder === undefined && sentence ? <p className="mt-3 text-base leading-relaxed text-text">{sentence}</p> : null}
+      {placeholder === undefined && sentence ? <p className="mt-3 text-body-md text-text">{sentence}</p> : null}
       {placeholder === undefined && meta ? <div className="mt-3 flex flex-wrap items-center gap-2 empty:hidden">{meta}</div> : null}
       {tabs ? <div className="mt-4">{tabs}</div> : null}
       {children ? <div className="mt-4 min-w-0">{children}</div> : null}

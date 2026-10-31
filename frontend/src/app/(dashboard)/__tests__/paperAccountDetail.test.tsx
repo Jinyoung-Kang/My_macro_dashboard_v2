@@ -165,8 +165,8 @@ describe("계좌 행을 누르면 상세가 열린다", () => {
     expect(screen.queryByRole("region", { name: "SPY 계좌 상세" })).toBeNull();
     expect(toggle(/SPY 계좌 상세 보기/).getAttribute("aria-expanded")).toBe("false");
     // 선택된 행은 왼쪽 막대로도 보입니다(색만이 아니라 단추 글자 '상세 닫기'도 바뀜) — 다른 행에는 막대가 없습니다.
-    expect(toggle(/규칙 계좌 상세 닫기/).querySelector('[aria-hidden="true"].bg-accent')).not.toBeNull();
-    expect(toggle(/SPY 계좌 상세 보기/).querySelector(".bg-accent")).toBeNull();
+    expect(toggle(/규칙 계좌 상세 닫기/).querySelector('[aria-hidden="true"].bg-text')).not.toBeNull();
+    expect(toggle(/SPY 계좌 상세 보기/).querySelector('[aria-hidden="true"].bg-text')).toBeNull();
   });
 
   it("'닫기'와 Esc로 닫히고, 초점은 그 계좌 행의 단추로 돌아간다", async () => {

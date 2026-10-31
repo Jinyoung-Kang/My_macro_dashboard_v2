@@ -2,7 +2,7 @@
 
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
-import { Banner, Card, ErrorState, Freshness, Loading } from "@/components/ui";
+import { Banner, Card, ErrorState, Freshness, Loading, underlineTabClasses } from "@/components/ui";
 import { useApi } from "@/hooks/useApi";
 import { endpoints } from "@/lib/endpoints";
 import { CLAUDE2_LIMITS, isTimedBook, PAPER_SOURCES, PAPER_TABS, type PaperTabKey } from "@/lib/paper";
@@ -152,7 +152,8 @@ export default function PaperPage({
             </Card>
           )}
 
-          <div role="tablist" aria-label="모의 매매 화면" className="flex flex-wrap gap-1 rounded-lg border border-border bg-surface p-1">
+          {/* 밑줄 탭 — 위 하위 메뉴 줄(시장)보다 한 단계 작게(sm) 둬 두 줄의 위계를 가릅니다. 좁으면 줄을 바꾸지 않고 가로로 스크롤합니다. */}
+          <div role="tablist" aria-label="모의 매매 화면" className="flex overflow-x-auto border-b border-border">
             {tabs.map((entry) => {
               const active = entry.key === tab;
               return (
@@ -168,9 +169,7 @@ export default function PaperPage({
                     setFocusProposal(null);
                     showTab(entry.key);
                   }}
-                  className={`min-h-11 rounded-md px-3 py-1.5 text-xs transition-colors duration-150 motion-reduce:transition-none lg:min-h-0 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus ${
-                    active ? "bg-surface-2 font-semibold text-text" : "text-text-2 hover:bg-surface-2 hover:text-text"
-                  }`}
+                  className={underlineTabClasses(active, "sm")}
                 >
                   {entry.label}
                   {entry.opensIn && <span className="ml-1 text-[10px] text-muted">(준비 중)</span>}

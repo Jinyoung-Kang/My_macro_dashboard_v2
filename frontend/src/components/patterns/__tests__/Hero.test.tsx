@@ -14,7 +14,7 @@ import { EstimateBadge, ProvenanceBadge, StaleBadge } from "../badges";
 afterEach(() => cleanup());
 
 describe("Hero", () => {
-  it("값 있음 — 영역 이름은 제목, 큰 숫자(36~44px)·단위·칩·판정 글", () => {
+  it("값 있음 — 영역 이름은 제목, 큰 숫자(글자 단계 display — 36~44px)·단위·칩·판정 글", () => {
     render(
       <Hero
         label="순자산"
@@ -31,8 +31,8 @@ describe("Hero", () => {
     const region = screen.getByRole("region", { name: "순자산" });
     expect(within(region).getByRole("heading", { level: 2, name: "순자산" })).toBeTruthy();
     const value = within(region).getByText("1억 2,345만");
-    expect(value.className).toContain("text-[36px]");
-    expect(value.className).toContain("sm:text-[44px]");
+    expect(value.className).toContain("text-display-sm");
+    expect(value.className).toContain("sm:text-display");
     expect(value.className).toContain("tabular-nums");
     expect(within(region).getByText("원").className).toContain("text-base");
     expect(within(region).getByText("▼")).toBeTruthy();
@@ -41,7 +41,7 @@ describe("Hero", () => {
     expect(within(region).getByText("모의매매 장부 · 2026-10-26 15:30")).toBeTruthy();
     expect(within(region).getByRole("group", { name: "기간" })).toBeTruthy();
     expect(within(region).getByText("차트 자리")).toBeTruthy();
-    expect(region.className).toContain("rounded-xl");
+    expect(region.className).toContain("rounded-card");
   });
 
   it("headingLevel=3이면 h3", () => {

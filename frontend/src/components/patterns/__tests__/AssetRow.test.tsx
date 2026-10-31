@@ -29,7 +29,9 @@ describe("AssetRow", () => {
     const { container } = render(<AssetRow row={SPX} />);
     const row = container.firstElementChild as HTMLElement;
     expect(row.tagName).toBe("DIV");
-    expect(row.className).toContain("min-h-[54px]");
+    expect(row.className).toContain("min-h-16");
+    // 누를 수 없는 줄에는 hover 표시가 없습니다.
+    expect(row.className).not.toMatch(/hover:bg-/);
     expect(screen.getByText("S&P 500")).toBeTruthy();
     expect(screen.getByText("SPX").className).toContain("text-text-3");
     const value = screen.getByText("5,800.12");
@@ -179,9 +181,13 @@ describe("AssetRow", () => {
     expect(button.getAttribute("aria-expanded")).toBe("false");
     expect(button.getAttribute("aria-controls")).toBe("detail");
     expect(button.hasAttribute("aria-pressed")).toBe(false);
-    expect(within(button).getByText("▾").getAttribute("aria-hidden")).toBe("true");
-    // 닫혀 있으면 고른 막대가 없습니다.
-    expect(button.querySelector(".bg-accent")).toBeNull();
+    // 화살표는 장식 아이콘(닫힘 = 아래 꺾쇠) — 단추 이름에 들어가지 않습니다.
+    const closedArrow = button.querySelector("svg[aria-hidden='true'] path") as SVGPathElement;
+    expect(closedArrow.getAttribute("d")).toBe("m6 9 6 6 6-6");
+    // 닫혀 있으면 고른 막대·바탕이 없습니다(hover 바탕만).
+    expect(button.querySelector(".bg-text")).toBeNull();
+    expect(button.className.split(/\s+/)).not.toContain("bg-surface-2");
+    expect(button.className.split(/\s+/)).toContain("hover:bg-surface-2");
     // 값·칩·배지는 그대로 행 안에
     expect(within(button).getByText("5,800.12")).toBeTruthy();
     fireEvent.click(within(button).getByText("SPX"));
@@ -190,8 +196,11 @@ describe("AssetRow", () => {
     rerender(<AssetRow row={SPX} onSelect={onSelect} selected disclosure={{ ...disclosure, expanded: true, hint: "상세 닫기" }} />);
     const open = screen.getByRole("button", { name: /^S&P 500 상세 닫기/ });
     expect(open.getAttribute("aria-expanded")).toBe("true");
-    expect(within(open).getByText("▴")).toBeTruthy();
-    expect(open.querySelector('[aria-hidden="true"].bg-accent')).not.toBeNull();
+    expect((open.querySelector("svg[aria-hidden='true'] path") as SVGPathElement).getAttribute("d")).toBe("m6 15 6-6 6 6");
+    // 고른 행 — 왼쪽 막대는 잉크(데이터 영역이라 강조 파랑이 아님, 명세 A1)와 중립 바탕.
+    expect(open.querySelector('[aria-hidden="true"].bg-text')).not.toBeNull();
+    expect(open.querySelector(".bg-accent")).toBeNull();
+    expect(open.className.split(/\s+/)).toContain("bg-surface-2");
   });
 
   it("disclosure — 안내 글이 없거나 'N/A'면 이름만, 네 상태 배지는 펼침 단추에서도 보인다", () => {

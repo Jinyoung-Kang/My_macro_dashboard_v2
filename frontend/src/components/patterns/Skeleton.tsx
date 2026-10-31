@@ -13,14 +13,14 @@ export function Skeleton({ lines, height, label = "불러오는 중" }: { lines?
     <div role="status" aria-busy="true" aria-label={label} className="flex flex-col gap-2 py-1">
       <span className="sr-only">{label}</span>
       {height !== undefined && height > 0 ? (
-        <div aria-hidden="true" className="w-full rounded-xl bg-surface-2 motion-safe:animate-pulse" style={{ height }} />
+        <div aria-hidden="true" className="w-full rounded-control bg-surface-2 motion-safe:animate-pulse" style={{ height }} />
       ) : null}
       {Array.from({ length: count }, (_, index) => (
         <div
           key={index}
           aria-hidden="true"
           // 마지막 줄을 짧게 — 글 문단처럼 보이게.
-          className={`h-3.5 rounded-md bg-surface-2 motion-safe:animate-pulse ${count > 1 && index === count - 1 ? "w-3/5" : "w-full"}`}
+          className={`h-3.5 rounded-full bg-surface-2 motion-safe:animate-pulse ${count > 1 && index === count - 1 ? "w-3/5" : "w-full"}`}
         />
       ))}
     </div>

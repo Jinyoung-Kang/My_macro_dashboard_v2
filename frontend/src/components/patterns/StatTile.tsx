@@ -41,8 +41,8 @@ export function StatTile({
   const flagged = Boolean(isEstimated || isProxy || isStale);
   const detail = presentText(note);
   return (
-    <div role="group" aria-label={label} className="min-w-0 rounded-xl border border-border bg-surface px-4 py-3">
-      <div className="text-xs font-medium text-text-2">{label}</div>
+    <div role="group" aria-label={label} className="min-w-0 rounded-control border border-border bg-surface p-4">
+      <div className="text-[13px] font-medium text-text-2">{label}</div>
       <div className="mt-1 flex flex-wrap items-baseline gap-x-1">
         {text === null ? (
           <span className="text-2xl font-semibold text-text-3">

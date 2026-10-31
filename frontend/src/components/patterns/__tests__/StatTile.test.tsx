@@ -14,7 +14,7 @@ describe("StatTile", () => {
   it("값 있음 — 라벨 이름의 group, 카드 숫자(24px)·tabular-nums, 단위는 작게 옆에", () => {
     render(<StatTile label="샤프 비율" value={1.2345} unit="배" note="2023-10-09 이후 784개 · 약 3.0년" />);
     const tile = screen.getByRole("group", { name: "샤프 비율" });
-    expect(tile.className).toContain("rounded-xl");
+    expect(tile.className).toContain("rounded-control");
     expect(tile.className).toContain("border");
     const value = within(tile).getByText("1.23");
     expect(value.className).toContain("text-2xl");

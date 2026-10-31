@@ -6,7 +6,8 @@ import { PROVENANCE_UNKNOWN, estimateLabel, presentText, provenanceText } from "
  * 상태 표시 세 가지(설계서 §5) — 늘 글자 라벨이 있습니다(색만으로 뜻을 전하지 않음).
  * 추정·이전 값은 플래그라 작은 알약(배지)으로, 출처는 늘 붙는 설명이라 작은 캡션 줄로 그립니다.
  * 플래그가 있으면 반드시 보입니다. 숨기는 옵션은 두지 않습니다.
- * 바탕은 칠하지 않고 놓인 자리(surface·bg)를 그대로 씁니다 — 옅은 바탕을 깔면 경고색 글자 대비가 4.5:1 근처로 떨어집니다.
+ * 추정 배지·출처 캡션은 바탕을 칠하지 않고 놓인 자리(surface·bg)를 그대로 씁니다. 이전 값 배지만 경고 틴트(warn-tint) 바탕입니다 —
+ * surface와 미리 섞은 불투명 색이라 어디에 놓여도 경고색 글자 대비가 같습니다(라이트 5.1·다크 7.2:1, 명세 §2-1). 투명 틴트(bg-warn/10)는 쓰지 않습니다.
  */
 const PILL = "inline-flex max-w-full flex-wrap items-center gap-x-1 rounded-full border px-2 py-0.5 text-xs leading-4";
 
@@ -79,7 +80,7 @@ export function StaleBadge({ stale, reason }: { stale?: boolean; reason?: string
   }
   const detail = presentText(reason);
   return (
-    <span className={`${PILL} border-warn text-warn`}>
+    <span className={`${PILL} border-warn/30 bg-warn-tint text-warn`}>
       <span aria-hidden="true">⚠️</span>
       <span className="sr-only">주의: </span>
       <span className="font-medium">이전 값</span>

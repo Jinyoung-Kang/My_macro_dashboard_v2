@@ -279,16 +279,17 @@ describe("DataTable — 행 클릭 · 키보드", () => {
     const row = bodyRows()[0];
     expect(row.hasAttribute("tabindex")).toBe(false);
     expect(row.className).not.toContain("cursor-pointer");
+    expect(row.className).not.toMatch(/hover:bg-/);
     expect(within(row).getAllByRole("cell")[0].className).not.toContain("group-hover:underline");
   });
 
-  it("행을 누르면 그 행으로 부른다 — tabIndex 0, hover는 첫 칸 밑줄(바탕을 칠하지 않음 — 상승·하락 글자 대비)", () => {
+  it("행을 누르면 그 행으로 부른다 — tabIndex 0, hover는 surface-2 바탕(그 위에서도 상승·하락 글자 4.5:1)과 첫 칸 밑줄", () => {
     const onRowClick = vi.fn();
     render(<DataTable columns={COLUMNS} rows={ROWS} rowKey={(row) => row.ticker} onRowClick={onRowClick} />);
     const row = bodyRows()[2];
     expect(row.getAttribute("tabindex")).toBe("0");
     expect(row.className).toContain("cursor-pointer");
-    expect(row.className).not.toMatch(/hover:bg-/);
+    expect(row.className).toContain("hover:bg-surface-2");
     const cells = within(row).getAllByRole("cell");
     expect(cells[0].className).toContain("group-hover:underline");
     expect(cells[1].className).not.toContain("group-hover:underline");

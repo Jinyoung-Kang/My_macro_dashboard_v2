@@ -73,7 +73,7 @@ describe("ChangeChip", () => {
     expect(screen.getByText("하락")).toBeTruthy();
   });
 
-  it("size — sm은 text-xs, 기본(md)은 text-sm", () => {
+  it("size — sm(자산 행)은 13px, 기본 md(히어로)는 15px 굵게", () => {
     const { container } = render(
       <>
         <ChangeChip changePct={1} size="sm" />
@@ -81,8 +81,9 @@ describe("ChangeChip", () => {
       </>,
     );
     const [small, medium] = Array.from(container.children) as HTMLElement[];
-    expect(small.className).toContain("text-xs");
-    expect(medium.className).toContain("text-sm");
+    expect(small.className).toContain("text-[13px]");
+    expect(medium.className).toContain("text-[15px]");
+    expect(medium.className).toContain("font-semibold");
   });
 
   it("상승·하락 글자에 바탕색을 칠하지 않는다(surface·bg 위에서만 대비 4.5:1)", () => {

@@ -2,7 +2,7 @@
 
 import { useId, useState } from "react";
 import { AssetRow, ChangeChip, Empty, Hero, ProvenanceBadge, Skeleton, StaleBadge } from "@/components/patterns";
-import { Freshness } from "@/components/ui";
+import { Freshness, SEGMENT_TRACK, segmentClasses } from "@/components/ui";
 import { useApi } from "@/hooks/useApi";
 import { useSessionUser } from "@/hooks/useSessionUser";
 import { isOwner } from "@/lib/access";
@@ -93,11 +93,11 @@ export function PaperHero() {
       {model.message ? (
         <p className="text-sm text-text-2">{model.message}</p>
       ) : (
-        // 구분선은 카드 가장자리까지 펼치고(-mx-5·sm:-mx-6 = 카드 안쪽 여백), 줄 안쪽 여백(px-1·sm:px-2)을 더해 행 글자(행 자체 px-4)를
-        // 히어로 글과 같은 세로줄(20·24px)에 맞춥니다.
-        <ul className="-mx-5 divide-y divide-border border-y border-border sm:-mx-6">
+        // 구분선은 카드 가장자리까지 펼치고(-mx-6·lg:-mx-8 = 히어로 안쪽 여백), 줄 안쪽 여백(px-2·lg:px-3)을 더해 행 글자(행 자체 px-4·lg:px-5)를
+        // 히어로 글과 같은 세로줄(24·32px)에 맞춥니다.
+        <ul className="-mx-6 divide-y divide-border border-y border-border lg:-mx-8">
           {model.rows.map((row) => (
-            <li key={row.id} className="px-1 sm:px-2">
+            <li key={row.id} className="px-2 lg:px-3">
               <AssetRow row={row} />
             </li>
           ))}
@@ -128,8 +128,8 @@ export function PaperHero() {
 }
 
 /**
- * 미국 | 한국 — 화면 테마 전환(ThemeSwitch)과 같은 브라우저 기본 라디오 묶음입니다(고른 시장이 "선택됨"으로 읽힘). 고르면 그 시장의 개요를
- * 히어로에 그립니다(한국 2단계 명세 §4-16 — 예전 '한국 · 준비 중' 막힘 해제).
+ * 미국 | 한국 — 화면 테마 전환(ThemeSwitch)과 같은 브라우저 기본 라디오 묶음이고 모양도 같은 세그먼트입니다(고른 시장이 "선택됨"으로 읽힘).
+ * 고르면 그 시장의 개요를 히어로에 그립니다(한국 2단계 명세 §4-16 — 예전 '한국 · 준비 중' 막힘 해제).
  */
 function MarketSwitch({ value, onChange }: { value: PaperMarketCode; onChange: (market: PaperMarketCode) => void }) {
   const name = useId();
@@ -138,16 +138,11 @@ function MarketSwitch({ value, onChange }: { value: PaperMarketCode; onChange: (
     { market: "KR", label: "한국" },
   ];
   return (
-    <div role="radiogroup" aria-label="모의매매 시장" className="inline-flex rounded-lg border border-border p-0.5 text-sm">
+    <div role="radiogroup" aria-label="모의매매 시장" className={`inline-flex text-sm ${SEGMENT_TRACK}`}>
       {options.map((option) => {
         const checked = option.market === value;
         return (
-          <label
-            key={option.market}
-            className={`inline-flex min-h-11 cursor-pointer items-center rounded-md px-3 py-1 lg:min-h-0 has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-offset-2 has-[:focus-visible]:outline-focus ${
-              checked ? "bg-surface-2 font-semibold text-text" : "text-text-2 hover:text-text"
-            }`}
-          >
+          <label key={option.market} className={`min-h-11 px-4 lg:min-h-8 ${segmentClasses(checked)}`}>
             <input
               type="radio"
               name={name}

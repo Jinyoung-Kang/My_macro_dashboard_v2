@@ -6,7 +6,19 @@ import { buttonClasses, FOCUS_RING, inputClasses, type ButtonSize, type ButtonVa
 import { ChevronDownIcon, SpinnerIcon, XCircleIcon } from "./icons";
 
 // 클래스 문자열은 서버 컴포넌트도 부를 수 있게 순수 모듈(classes.ts)에 두고 여기서 다시 내보냅니다.
-export { buttonClasses, FOCUS_RING, inputClasses, type ButtonSize, type ButtonVariant, type InputSize } from "./classes";
+export {
+  buttonClasses,
+  FOCUS_RING,
+  inputClasses,
+  pillTabClasses,
+  SEGMENT_TRACK,
+  segmentClasses,
+  underlineTabClasses,
+  type ButtonSize,
+  type ButtonVariant,
+  type InputSize,
+  type UnderlineTabSize,
+} from "./classes";
 
 /**
  * 섹션 카드 컨테이너.
