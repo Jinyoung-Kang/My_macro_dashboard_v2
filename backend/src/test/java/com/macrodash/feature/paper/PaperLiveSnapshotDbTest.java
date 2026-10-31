@@ -10,7 +10,6 @@ import com.macrodash.store.SchemaCheck;
 import com.macrodash.store.StoreRepository;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -70,7 +69,6 @@ class PaperLiveSnapshotDbTest {
     }
 
     @Test
-    @Disabled("QA-152 재현 — 수정 전에는 순자산이 105,000(옛 현금 10,000 + 새 보유 95,000)으로 부풂")
     @DisplayName("QA-152: 상태를 읽은 직후 장부가 매수 한 건을 커밋해도 장중 평가의 현금·보유·순자산은 한 시점(커밋 전 또는 뒤) — 순자산 100,000 그대로")
     void liveReadsTheLedgerAsOneSnapshot() throws Exception {
         PaperStore writer = new PaperStore(jdbc, MAPPER, new SchemaCheck(jdbc));

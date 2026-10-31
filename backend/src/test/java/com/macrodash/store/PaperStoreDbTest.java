@@ -136,6 +136,34 @@ class PaperStoreDbTest {
     }
 
     @Test
+    @DisplayName("장부 한 벌(ledgers, QA-152) — 그 시장 책만 code 순으로 상태·보유·순자산 줄을 한 스냅숏에서, 상태가 없는 책은 null, 그 트랜잭션은 읽기 전용(안에서 쓰면 DB가 거절)")
+    void ledgersReadOneSnapshot() {
+        store.insertBookIfAbsent(book(BOOK, "시험 규칙"));
+        store.insertBookIfAbsent(book(OTHER_BOOK, "시험 벤치"));
+        store.insertBookIfAbsent(new PaperStore.Book("t_kr", "RULES", "시험 한국", 100_000_000, null, "NOT_STARTED", null,
+                "KR", "KRW"));
+        store.upsertState(new PaperStore.BookState(BOOK, 10.0, 100_009.98, 99_999.98, 99.99, CLOSE, CLOSE, DAY, null));
+        store.upsertNav(nav(DAY, 100_009.98, true));
+
+        List<PaperStore.BookLedger> ledgers = store.ledgers("US").stream()
+                .filter(ledger -> ledger.book().code().startsWith("t_")).toList();
+        assertThat(ledgers).extracting(ledger -> ledger.book().code()).containsExactly(OTHER_BOOK, BOOK);
+        PaperStore.BookLedger rules = ledgers.get(1);
+        assertThat(rules.state().cash()).isEqualTo(10.0);
+        assertThat(rules.nav()).extracting(PaperStore.NavRow::tradingDate).containsExactly(DAY);
+        assertThat(rules.positions()).isEmpty();
+        assertThat(ledgers.get(0).state()).as("상태가 없는 책").isNull();
+        assertThat(store.ledgers("KR").stream().map(ledger -> ledger.book().code())).contains("t_kr")
+                .doesNotContain(BOOK);
+
+        assertThatThrownBy(() -> store.readConsistently(() -> {
+            store.updateBookStatus(BOOK, "PAUSED");
+            return null;
+        })).as("읽기 전용 트랜잭션").isInstanceOf(org.springframework.dao.DataAccessException.class);
+        assertThat(store.book(BOOK).orElseThrow().status()).isEqualTo("NOT_STARTED");
+    }
+
+    @Test
     @DisplayName("시장별 책 조회 — books(market)은 그 시장 책만 code 순, 시장·통화는 넣은 값 그대로 읽힘, 옛 모양(인자 7개)의 책은 US·USD, books()는 시장을 가리지 않음")
     void booksByMarket() {
         String krBook = "t_kr_rules";

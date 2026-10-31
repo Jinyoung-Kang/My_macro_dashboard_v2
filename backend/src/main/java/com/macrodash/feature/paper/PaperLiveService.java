@@ -9,6 +9,7 @@ import com.macrodash.read.StoreReader;
 import com.macrodash.store.Datasets;
 import com.macrodash.store.PaperStore;
 import com.macrodash.store.PaperStore.Book;
+import com.macrodash.store.PaperStore.BookLedger;
 import com.macrodash.store.PaperStore.BookState;
 import com.macrodash.store.PaperStore.NavRow;
 import com.macrodash.store.Snapshot;
@@ -95,16 +96,17 @@ public class PaperLiveService {
         Map<String, LivePrice> live = snapshot.map(s -> LiveValuation.livePrices(s.payload())).orElse(Map.of());
         Map<String, Bar> bars = marketData.quotes(market).map(Quotes::bars).orElse(Map.of());
 
-        List<Book> books = new ArrayList<>(store.books(market.code()));
-        books.sort(Comparator.comparing(Book::code, market.bookOrder()));
+        // 책·상태·보유·순자산 줄은 한 스냅숏으로 — 따로 읽으면 그 사이 장부 커밋(체결)이 끼어 현금과 보유가 어긋날 수 있습니다(QA-152).
+        List<BookLedger> ledgers = new ArrayList<>(store.ledgers(market.code()));
+        ledgers.sort(Comparator.comparing(ledger -> ledger.book().code(), market.bookOrder()));
         List<Map<String, Object>> rows = new ArrayList<>();
-        for (Book book : books) {
-            Optional<BookState> state = store.state(book.code());
+        for (BookLedger ledger : ledgers) {
+            BookState state = ledger.state();
             LocalDate reference = session.intraday() ? session.sessionDate()
-                    : state.map(BookState::lastNavTradingDate).orElse(null);
-            NavRow previous = LiveValuation.previousNav(store.navSeries(book.code()), reference);
-            rows.add(LiveValuation.book(book, state.orElse(null), store.positions(book.code()), previous, reference, live,
-                    bars, session, now));
+                    : state == null ? null : state.lastNavTradingDate();
+            NavRow previous = LiveValuation.previousNav(ledger.nav(), reference);
+            rows.add(LiveValuation.book(ledger.book(), state, ledger.positions(), previous, reference, live, bars,
+                    session, now));
         }
 
         Map<String, Object> out = new LinkedHashMap<>();

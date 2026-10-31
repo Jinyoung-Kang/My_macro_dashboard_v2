@@ -5,6 +5,7 @@ import org.springframework.jdbc.core.RowCallbackHandler;
 import org.springframework.jdbc.core.RowMapper;
 import org.springframework.jdbc.datasource.DataSourceTransactionManager;
 import org.springframework.stereotype.Repository;
+import org.springframework.transaction.TransactionDefinition;
 import org.springframework.transaction.support.TransactionTemplate;
 import tools.jackson.core.JacksonException;
 import tools.jackson.databind.JsonNode;
@@ -39,7 +40,8 @@ import java.util.function.Supplier;
  * ({@code Double}·{@code Integer}·{@code Long})이고 없으면 null입니다 — 0으로 채우지 않습니다. NaN·무한대인 금액은 저장하지
  * 않고 {@link IllegalArgumentException}을 던집니다(NUMERIC은 NaN을 받아 주므로, 계산 오류가 장부에 조용히 남지 않게).
  *
- * <p>여러 쓰기를 한 번에 반영해야 하는 곳(관측치 하나를 책 하나에 적용 등)은 {@link #atomically}로 감쌉니다.
+ * <p>여러 쓰기를 한 번에 반영해야 하는 곳(관측치 하나를 책 하나에 적용 등)은 {@link #atomically}로 감쌉니다. 여러 읽기가 한 시점의 장부를 봐야
+ * 하는 곳(장중 평가의 상태·보유·순자산 줄)은 {@link #readConsistently}·{@link #ledgers}로 읽습니다.
  */
 @Repository
 public class PaperStore {
@@ -273,6 +275,13 @@ public class PaperStore {
     /** 거래일별 순자산. {@code pricesFinal}이면 확정 종가로 평가한 값입니다. */
     public record NavRow(String bookCode, LocalDate tradingDate, double nav, double cash, double equityValue,
                          double exposurePct, boolean pricesFinal) {
+    }
+
+    /**
+     * 한 책의 장부 한 벌 — {@link #ledgers}가 한 스냅숏으로 읽은 상태(없으면 null)·보유(ticker 순)·순자산 줄(거래일 오름차순). 장중 평가가 현금과
+     * 보유를 같은 시점으로 견주는 데 씁니다(QA-152).
+     */
+    public record BookLedger(Book book, BookState state, List<Position> positions, List<NavRow> nav) {
     }
 
     /** 정기 작업 실행 기록. 끝나지 않았으면 {@code finishedAt}이 null. */
@@ -634,12 +643,18 @@ public class PaperStore {
     private final SchemaCheck schema;
     /** 같은 DataSource의 트랜잭션 — 안에서 부르는 이 저장소·{@link StoreRepository}의 문장이 같은 연결에 합류합니다. */
     private final TransactionTemplate transactions;
+    /** 같은 DataSource의 읽기 전용 REPEATABLE READ 트랜잭션 — {@link #readConsistently}. */
+    private final TransactionTemplate snapshots;
 
     public PaperStore(JdbcTemplate jdbc, ObjectMapper mapper, SchemaCheck schema) {
         this.jdbc = jdbc;
         this.mapper = mapper;
         this.schema = schema;
-        this.transactions = new TransactionTemplate(new DataSourceTransactionManager(jdbc.getDataSource()));
+        DataSourceTransactionManager manager = new DataSourceTransactionManager(jdbc.getDataSource());
+        this.transactions = new TransactionTemplate(manager);
+        this.snapshots = new TransactionTemplate(manager);
+        snapshots.setIsolationLevel(TransactionDefinition.ISOLATION_REPEATABLE_READ);
+        snapshots.setReadOnly(true);
     }
 
     /**
@@ -677,6 +692,16 @@ public class PaperStore {
      */
     public <T> T atomically(Supplier<T> work) {
         return transactions.execute(status -> work.get());
+    }
+
+    /**
+     * 읽기 여러 개를 한 스냅숏으로 — 읽기 전용 REPEATABLE READ 트랜잭션 하나에서 돌려, 안의 문장이 모두 첫 문장 때 커밋된 장부를 봅니다. 따로 읽으면
+     * (PostgreSQL 기본 READ COMMITTED — 문장마다 새 스냅숏) 그 사이에 커밋된 장부 쓰기(책 하나의 체결 — 보유와 현금을 한 트랜잭션으로 씀)가 뒤 문장에만
+     * 보여, 옛 현금과 새 보유를 섞어 평가할 수 있습니다(QA-152). 이미 트랜잭션 안이면 거기에 합류합니다(그 트랜잭션의 격리 수준 그대로). 안에서 쓰면
+     * DB가 거절합니다(읽기 전용).
+     */
+    public <T> T readConsistently(Supplier<T> work) {
+        return snapshots.execute(status -> work.get());
     }
 
     // ------------------------------------------------------------------ 책
@@ -1435,6 +1460,22 @@ public class PaperStore {
     public List<NavRow> navSeriesAll() {
         return jdbc.query("SELECT " + NAV_COLUMNS + " FROM paper_nav_daily ORDER BY book_code, trading_date",
                 navMapper());
+    }
+
+    // ------------------------------------------------------------------ 장부 한 벌(한 스냅숏)
+    /**
+     * 그 시장({@code market} — US·KR) 책들의 장부 한 벌({@link BookLedger}), code 순 — 책·상태·보유·순자산 줄을 모두 한 스냅숏({@link #readConsistently})
+     * 으로 읽습니다. 모르는 시장이면 빈 목록.
+     */
+    public List<BookLedger> ledgers(String market) {
+        return readConsistently(() -> {
+            List<BookLedger> out = new ArrayList<>();
+            for (Book book : books(market)) {
+                out.add(new BookLedger(book, state(book.code()).orElse(null), positions(book.code()),
+                        navSeries(book.code())));
+            }
+            return out;
+        });
     }
 
     // ------------------------------------------------------------------ 작업 기록

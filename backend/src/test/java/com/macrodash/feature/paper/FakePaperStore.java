@@ -25,7 +25,8 @@ import static org.mockito.Mockito.mock;
  * 메모리 안의 {@link PaperStore} — 장부 서비스 단위 테스트용. DB 없이 PaperStore의 계약(정렬·유일 제약·확정 순자산 보호·
  * 트랜잭션 되돌림)만 흉내 냅니다. 실제 SQL은 {@code PaperStoreDbTest}가 테스트 DB로 확인합니다.
  *
- * <p>{@link #atomically}는 바깥 호출에서 모든 표를 복사해 두고, 예외가 나면 되돌립니다(안쪽 호출은 합류).
+ * <p>{@link #atomically}는 바깥 호출에서 모든 표를 복사해 두고, 예외가 나면 되돌립니다(안쪽 호출은 합류). {@link #readConsistently}는 그대로
+ * 돌립니다(메모리 안이라 시점이 하나).
  */
 class FakePaperStore extends PaperStore {
 
@@ -90,6 +91,11 @@ class FakePaperStore extends PaperStore {
         } finally {
             depth--;
         }
+    }
+
+    @Override
+    public <T> T readConsistently(Supplier<T> work) {
+        return work.get();
     }
 
     // ------------------------------------------------------------------ 책·상태
