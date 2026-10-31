@@ -1,15 +1,13 @@
 "use client";
 
 import { useId, useState, type ReactNode } from "react";
+import { buttonClasses } from "@/components/ui";
 import { Dialog } from "@/components/ui/Dialog";
 
-const BUTTON =
-  "inline-flex min-h-11 items-center justify-center rounded-md border px-4 py-2 text-sm font-semibold lg:min-h-9 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus disabled:cursor-not-allowed disabled:opacity-50";
-
-// 위험한 확인은 danger 바탕. 글자는 surface 색(라이트 흰색·다크 검정에 가까움)이라 두 테마 모두 대비 6.9:1 이상입니다.
+// 확인은 주 단추(강조 바탕), 위험한 확인은 danger 바탕에 danger-fg 글자(두 테마 모두 대비 7.7:1 이상) — 공용 단추 모양(buttonClasses).
 const CONFIRM_TONE = {
-  default: "border-accent bg-accent text-accent-fg hover:opacity-90",
-  danger: "border-danger bg-danger text-surface hover:opacity-90",
+  default: buttonClasses("primary"),
+  danger: buttonClasses("danger"),
 } as const;
 
 /**
@@ -114,10 +112,10 @@ function ConfirmForm({
         </div>
       )}
       <div className="flex flex-wrap justify-end gap-2">
-        <button type="button" onClick={onCancel} disabled={busy} className={`${BUTTON} border-border bg-surface text-text hover:bg-surface-2`}>
+        <button type="button" onClick={onCancel} disabled={busy} className={buttonClasses("secondary")}>
           {cancelLabel}
         </button>
-        <button type="submit" disabled={!canConfirm} className={`${BUTTON} ${CONFIRM_TONE[tone]}`}>
+        <button type="submit" disabled={!canConfirm} className={CONFIRM_TONE[tone]}>
           {confirmLabel}
         </button>
       </div>

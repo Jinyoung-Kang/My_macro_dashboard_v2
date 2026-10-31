@@ -159,7 +159,7 @@ describe("requireText", () => {
 });
 
 describe("tone", () => {
-  it("danger는 danger 토큰, 기본은 accent(잉크) 바탕", () => {
+  it("danger는 danger 토큰, 기본은 accent(강조) 바탕", () => {
     const { rerender } = renderConfirm({ tone: "danger" });
     expect(confirmButton().className).toContain("bg-danger");
     rerender({ tone: "default" });

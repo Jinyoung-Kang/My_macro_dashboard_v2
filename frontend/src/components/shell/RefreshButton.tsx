@@ -1,5 +1,6 @@
 "use client";
 
+import { buttonClasses } from "@/components/ui";
 import { useRefreshSignal } from "@/hooks/useRefreshSignal";
 import { isOwner } from "@/lib/access";
 import type { SessionUser } from "@/lib/types";
@@ -19,7 +20,7 @@ export function RefreshButton({ user }: { user?: SessionUser }) {
           type="button"
           onClick={() => void requestRefresh()}
           disabled={collecting}
-          className="inline-flex h-11 items-center justify-center rounded-lg bg-accent px-3 text-sm font-semibold text-accent-fg hover:opacity-90 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus disabled:cursor-not-allowed disabled:opacity-50 lg:h-9"
+          className={`${buttonClasses("primary", "sm")} w-full`}
         >
           {collecting ? "수집 중… 끝나면 자동 갱신" : "데이터 수동 새로고침 🚀"}
         </button>

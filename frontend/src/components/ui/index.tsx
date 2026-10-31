@@ -2,6 +2,10 @@
 
 import { ReactNode } from "react";
 import { deltaColor, EMPTY, formatAge, formatKst, withoutLeadingIcon } from "@/lib/format";
+import { buttonClasses, type ButtonSize, type ButtonVariant } from "./classes";
+
+// 클래스 문자열은 서버 컴포넌트도 부를 수 있게 순수 모듈(classes.ts)에 두고 여기서 다시 내보냅니다.
+export { buttonClasses, type ButtonSize, type ButtonVariant } from "./classes";
 
 /**
  * 섹션 카드 컨테이너.
@@ -230,6 +234,8 @@ export function Button({
   children,
   onClick,
   variant = "default",
+  size = "md",
+  icon,
   disabled,
   type = "button",
   className = "",
@@ -237,29 +243,26 @@ export function Button({
 }: {
   children: ReactNode;
   onClick?: () => void;
-  variant?: "default" | "primary" | "ghost";
+  /** "default"는 옛 이름으로 secondary와 같습니다 — variant를 주지 않은 곳(약 48곳)을 한꺼번에 고치지 않으려고 남깁니다. */
+  variant?: ButtonVariant | "default";
+  size?: ButtonSize;
+  /** 글 앞 아이콘(장식 — components/ui/icons의 aria-hidden 아이콘). 뜻은 단추 글이 나릅니다. */
+  icon?: ReactNode;
   disabled?: boolean;
   type?: "button" | "submit";
   className?: string;
   /** 펼치고 접는 버튼이면 지금 펼쳐졌는지(aria-expanded). 아니면 넘기지 않습니다. */
   expanded?: boolean;
 }) {
-  const palette = {
-    default: "border-border bg-surface-hover text-body hover:border-muted hover:text-bright",
-    primary: "border-accent/60 bg-accent/15 text-accent hover:bg-accent/25",
-    ghost: "border-transparent bg-transparent text-muted hover:text-bright",
-  }[variant];
-
   return (
     <button
       aria-expanded={expanded}
       type={type}
       onClick={onClick}
       disabled={disabled}
-      // focus-visible 링 — 키보드로 조작할 때 지금 어디에 있는지 보여 줍니다.
-      // 브라우저 기본 외곽선은 이 어두운 배경에서 거의 보이지 않았습니다.
-      className={`rounded-md border px-3 py-1.5 text-xs font-semibold transition disabled:cursor-not-allowed disabled:opacity-50 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-1 focus-visible:ring-offset-canvas ${palette} ${className}`}
+      className={`${buttonClasses(variant === "default" ? "secondary" : variant, size)} ${className}`.trim()}
     >
+      {icon}
       {children}
     </button>
   );

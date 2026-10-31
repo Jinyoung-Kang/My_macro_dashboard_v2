@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
+import { buttonClasses } from "@/components/ui";
 import { auth } from "@/lib/api";
 import { DEMO_READ_ONLY, LOCAL_NO_LOGIN, isDemo, isLocalOwner, roleLabel } from "@/lib/access";
 import type { SessionUser } from "@/lib/types";
@@ -65,7 +66,7 @@ export function AccountBox({ user }: { user?: SessionUser }) {
       <button
         type="button"
         onClick={() => void logout()}
-        className={`inline-flex h-11 items-center justify-center rounded-lg border border-border bg-surface px-3 text-sm font-medium text-text hover:bg-surface-2 lg:h-9 ${FOCUS}`}
+        className={`${buttonClasses("secondary", "sm")} w-full`}
       >
         로그아웃
       </button>
