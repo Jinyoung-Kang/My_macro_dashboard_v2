@@ -110,10 +110,10 @@ describe("QA-050 자동 갱신이 실패하면 수집 시각 배지 옆에 알�
   it("refreshError가 있으면 '새로 읽지 못함'(이유는 title), 없으면 보이지 않는다", async () => {
     const { Freshness } = await import("@/components/ui");
     const { rerender } = render(<Freshness collectedAt="2026-10-11 09:00 KST" refreshError="백엔드 API에 연결하지 못했습니다" />);
-    expect(screen.getByText("⚠️ 새로 읽지 못함").getAttribute("title")).toContain("백엔드 API에 연결하지 못했습니다");
+    expect(screen.getByText("새로 읽지 못함").getAttribute("title")).toContain("백엔드 API에 연결하지 못했습니다");
 
     rerender(<Freshness collectedAt="2026-10-11 09:00 KST" />);
-    expect(screen.queryByText("⚠️ 새로 읽지 못함")).toBeNull();
+    expect(screen.queryByText("새로 읽지 못함")).toBeNull();
   });
 });
 

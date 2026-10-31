@@ -135,7 +135,7 @@ export function FxCompareSection() {
       {/* 고른 대로 그리되, 무슨 일이 일어나는지는 숨기지 않습니다. */}
       {mode === "raw" && data?.mixedUnits && (
         <Banner tone="warn">
-          ⚠️ 단위가 섞였습니다(원·엔·pt). 한 축에 겹치면 값이 작은 계열은 바닥에
+          단위가 섞였습니다(원·엔·pt). 한 축에 겹치면 값이 작은 계열은 바닥에
           눌려 직선처럼 보입니다. 비교가 목적이라면 <b>기준일 = 100</b>을 쓰세요.
         </Banner>
       )}

@@ -252,7 +252,7 @@ describe("오래됨 — 이전 값 배지는 반드시 보인다", () => {
     expect(within(spy).getByText("이전 값")).toBeTruthy();
     expect(within(spy).getByText("· 관측치 저장본이 늦음 · 마지막 관측 2026-10-24 05:15")).toBeTruthy();
     expect(within(row(/^Claude 계좌 상세 보기/)).queryByText("이전 값")).toBeNull();
-    expect(screen.getByText("⚠️ 오래된 저장본")).toBeTruthy();
+    expect(screen.getByText("오래된 저장본")).toBeTruthy();
   });
 });
 

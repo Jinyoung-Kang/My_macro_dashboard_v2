@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { Empty, Hero, ProvenanceBadge, Skeleton, StatGrid, StatTile } from "@/components/patterns";
 import { Freshness } from "@/components/ui";
+import { StatusText } from "@/components/ui/icons";
 import { useApi } from "@/hooks/useApi";
 import { endpoints } from "@/lib/endpoints";
 import { HOME_REFRESH_MS, HOME_REGIME_YEARS, REGIME_AS_OF_NOTE, regimeHeroModel } from "@/lib/home";
@@ -62,8 +63,7 @@ export function RegimeHero() {
     >
       {model.missing.length > 0 ? (
         <p className="mb-3 text-sm text-warn">
-          <span aria-hidden="true">⚠️ </span>
-          받지 못한 입력: {model.missing.join(" · ")}
+          <StatusText tone="warn">받지 못한 입력: {model.missing.join(" · ")}</StatusText>
         </p>
       ) : null}
       {/* 히어로가 데스크톱에서 반 폭이라 네 칸이면 타일이 60px대로 좁아집니다 — 늘 두 칸(2×2). */}

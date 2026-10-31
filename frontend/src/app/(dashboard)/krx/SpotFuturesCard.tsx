@@ -45,7 +45,7 @@ export function SpotFuturesCard() {
           {data.spotIsStale && (
             // 이어받은 현물은 위 수집 시각(다른 시장을 받은 때)과 달리 예전 값입니다(QA-116).
             <Banner tone="warn">
-              ⚠️ 이전 값 — 이번 수집 실패: {data.spotStaleReason ?? "사유 모름"}
+              이전 값 — 이번 수집 실패: {data.spotStaleReason ?? "사유 모름"}
               {data.spotFetchedAt ? ` · ${formatKst(data.spotFetchedAt)}에 받은 값` : ""}
             </Banner>
           )}

@@ -1,5 +1,5 @@
 /**
- * 자동 갱신(또는 새로고침)이 실패하면 그 패널에 '⚠️ 새로 읽지 못함'을 보인다(QA-067).
+ * 자동 갱신(또는 새로고침)이 실패하면 그 패널에 '새로 읽지 못함'을 보인다(QA-067).
  *
  * 실패하면 화면은 앞서 받은 값을 그대로 보이므로, 표시가 없으면 몇 시간 전 값이 지금 값처럼 남습니다. QA-050은 수집
  * 시각 배지가 있는 9개 화면에만 붙였고, 자동 갱신하는 나머지 패널(상태 화면, 매크로 위험·고급·스크래핑, 수급 패널,
@@ -32,7 +32,7 @@ import { RegimeLogSection } from "../regime/RegimeLogSection";
 import { TrackRecordSection } from "../regime/TrackRecordSection";
 import StatusPage from "../status/page";
 
-const FAILED = "⚠️ 새로 읽지 못함";
+const FAILED = "새로 읽지 못함";
 
 /** 경로별 첫 응답이 훅에 건네진 기록. 훅의 await보다 먼저 then을 달아 두므로, 훅이 값을 받기 바로 앞에 찍힙니다. */
 const delivered = new Set<string>();

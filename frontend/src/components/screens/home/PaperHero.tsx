@@ -3,6 +3,7 @@
 import { useId, useState } from "react";
 import { AssetRow, ChangeChip, Empty, Hero, ProvenanceBadge, Skeleton, StaleBadge } from "@/components/patterns";
 import { Freshness, SEGMENT_TRACK, segmentClasses } from "@/components/ui";
+import { AlertTriangleIcon, StatusText } from "@/components/ui/icons";
 import { useApi } from "@/hooks/useApi";
 import { useSessionUser } from "@/hooks/useSessionUser";
 import { isOwner } from "@/lib/access";
@@ -106,16 +107,16 @@ export function PaperHero() {
       {model.available ? <p className="mt-3 text-xs leading-relaxed text-text-3">{model.startLine}</p> : null}
       {model.dormantNote ? (
         <p className="mt-1 text-xs leading-relaxed text-warn">
-          <span aria-hidden="true">⚠️ </span>
-          <span className="sr-only">주의: </span>
-          {model.dormantNote}
+          <StatusText tone="warn" icon={<AlertTriangleIcon size={12} />}>
+            {model.dormantNote}
+          </StatusText>
         </p>
       ) : null}
       {model.disabledNote ? (
         <p className="mt-1 text-xs leading-relaxed text-warn">
-          <span aria-hidden="true">⚠️ </span>
-          <span className="sr-only">주의: </span>
-          {model.disabledNote}
+          <StatusText tone="warn" icon={<AlertTriangleIcon size={12} />}>
+            {model.disabledNote}
+          </StatusText>
         </p>
       ) : null}
       {/* 정기 작업이 켜졌는지 모르면(상태 응답 실패) 모른다고 적습니다 — 꺼짐 안내가 없다고 켜진 것은 아닙니다. */}

@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { buttonClasses } from "@/components/ui";
+import { AlertTriangleIcon, StatusText } from "@/components/ui/icons";
 import { auth } from "@/lib/api";
 import { DEMO_READ_ONLY, LOCAL_NO_LOGIN, accountInitial, isDemo, isLocalOwner, roleLabel } from "@/lib/access";
 import type { SessionUser } from "@/lib/types";
@@ -85,8 +86,9 @@ export function AccountBox({ user }: { user?: SessionUser }) {
       </button>
       {logoutError && (
         <p role="alert" className="text-xs leading-5 text-warn">
-          <span aria-hidden="true">⚠️ </span>
-          {logoutError}
+          <StatusText tone="warn" icon={<AlertTriangleIcon size={12} />}>
+            {logoutError}
+          </StatusText>
         </p>
       )}
     </div>

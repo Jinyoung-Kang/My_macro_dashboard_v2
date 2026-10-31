@@ -3,7 +3,7 @@
 import { ReactNode } from "react";
 import { deltaColor, EMPTY, formatAge, formatKst, withoutLeadingIcon } from "@/lib/format";
 import { buttonClasses, FOCUS_RING, inputClasses, type ButtonSize, type ButtonVariant } from "./classes";
-import { ChevronDownIcon, SpinnerIcon, XCircleIcon } from "./icons";
+import { AlertTriangleIcon, CheckCircleIcon, ChevronDownIcon, ClockIcon, InfoIcon, LineIcon, SpinnerIcon, XCircleIcon } from "./icons";
 
 // 클래스 문자열은 서버 컴포넌트도 부를 수 있게 순수 모듈(classes.ts)에 두고 여기서 다시 내보냅니다.
 export {
@@ -152,12 +152,15 @@ export function Freshness({
   return (
     <span className="inline-flex flex-wrap items-center gap-1">
       {refreshError && (
+        // 글은 이 span의 글자 그대로 둡니다(아이콘·sr 머리말은 따로) — '새로 읽지 못함'으로 찾은 요소가 title을 가진 이 알약입니다.
         <span
-          className="inline-flex items-center rounded-sm border border-warn/40 bg-warn-tint px-2 py-0.5 text-[11px] text-warn"
+          className="inline-flex items-center gap-1 rounded-full border border-warn/30 bg-warn-tint px-2 py-0.5 text-xs text-warn"
           title={`${refreshError} — 앞서 받은 값을 보여 줍니다`}
           role="status"
         >
-          ⚠️ 새로 읽지 못함
+          <AlertTriangleIcon size={12} />
+          <span className="sr-only">주의: </span>
+          새로 읽지 못함
         </span>
       )}
       {(collectedAt || ageSeconds !== undefined) && (
@@ -168,49 +171,69 @@ export function Freshness({
 }
 
 function FreshnessBadge({ collectedAt, age, stale }: { collectedAt?: string | null; age: string; stale?: boolean }) {
-  return (
-    <span
-      className={`inline-flex items-center gap-1 rounded-sm border px-2 py-0.5 text-[11px] ${
-        stale
-          ? "border-warn/40 bg-warn-tint text-warn"
-          : "border-border bg-surface-hover text-muted"
-      }`}
-      title={collectedAt ? `${formatKst(collectedAt)} (한국 시간) · 조회 시점 기준 ${age}` : undefined}
-    >
-      {stale ? "⚠️ 오래된 저장본" : "🕒 수집"}
-      {/* 시각을 모르면 그때만 경과 시간으로 대신합니다 — 아무것도 안 적는 것보다 낫습니다. */}
-      <span className="tabular-nums">
-        {collectedAt ? formatKst(collectedAt) : age}
+  const title = collectedAt ? `${formatKst(collectedAt)} (한국 시간) · 조회 시점 기준 ${age}` : undefined;
+  // 시각을 모르면 그때만 경과 시간으로 대신합니다 — 아무것도 안 적는 것보다 낫습니다.
+  const when = <span className="tabular-nums">{collectedAt ? formatKst(collectedAt) : age}</span>;
+  if (stale) {
+    return (
+      <span
+        className="inline-flex items-center gap-1 rounded-full border border-warn/30 bg-warn-tint px-2 py-0.5 text-xs text-warn"
+        title={title}
+      >
+        <AlertTriangleIcon size={12} />
+        <span className="sr-only">주의: </span>
+        오래된 저장본
+        {when}
       </span>
+    );
+  }
+  // 평상시는 알약 없이 캡션 한 줄 — 시계 아이콘 + '수집' + 시각.
+  return (
+    <span className="inline-flex items-center gap-1 text-xs text-text-3" title={title}>
+      <ClockIcon size={12} />
+      수집
+      {when}
     </span>
   );
 }
 
 /**
- * 배너 — 추정치·이력 대체처럼 "값의 성격"을 알리거나(warn), 실패(danger)·안내(info)·완료(ok)를 알릴 때.
+ * 배너 — 추정치·이력 대체처럼 "값의 성격"을 알리거나(warn), 실패·심각한 주의(danger)·안내(info)·완료(ok)를 알릴 때.
  * 바탕은 모두 불투명 틴트(globals.css의 *-tint)라 카드 밖 페이지 바탕 위에 놓여도 글자 대비가 같습니다(톤 글자 4.7:1 이상).
  * 안내(info)는 글을 본문색으로 둡니다 — 강조 파랑 글자는 링크로 읽히고 하락 파랑과 구분되지 않습니다(명세 원칙 A1).
+ *
+ * 앞에 톤 아이콘(장식)을 둡니다 — 예전에 부르는 쪽이 글 앞에 붙이던 경고 이모지 자리. 주의(warn)·심각(danger)은 낭독기에 '주의: '를
+ * 먼저 읽힙니다(아이콘은 aria-hidden). danger는 실패만이 아니라 추정치 모드·금리 역전 같은 심각한 주의에도 쓰여 '오류'라 읽히지 않게 합니다.
+ * 글은 톤 글자색을 가진 div로 감쌉니다 — 글로 찾은 요소(또는 그 closest div)가 톤 글자색을 그대로 가집니다(명세 D8 b).
+ *
+ * @param icon 톤 기본 아이콘 대신 쓸 아이콘(예: 잠금). false면 아이콘 없이 글만.
  */
 export function Banner({
   tone = "warn",
+  icon,
   children,
 }: {
   tone?: "warn" | "danger" | "info" | "ok";
+  icon?: ReactNode | false;
   children: ReactNode;
 }) {
-  const palette = {
-    warn: "border-warn/30 bg-warn-tint text-warn",
-    danger: "border-danger/30 bg-danger-tint text-danger",
-    info: "border-accent/25 bg-accent-tint text-text",
-    ok: "border-ok/30 bg-ok-tint text-ok",
-  }[tone];
-
+  const style = BANNER_TONES[tone];
   return (
-    <div className={`rounded-control border px-4 py-3 text-sm leading-relaxed ${palette}`}>
-      {children}
+    <div className={`flex items-start gap-2.5 rounded-control border px-4 py-3 text-sm leading-relaxed ${style.box}`}>
+      {icon === false ? null : <LineIcon className={style.icon}>{icon ?? style.glyph}</LineIcon>}
+      {style.srPrefix && <span className="sr-only">{style.srPrefix}</span>}
+      <div className={`min-w-0 flex-1 ${style.text}`}>{children}</div>
     </div>
   );
 }
+
+const BANNER_TONES = {
+  warn: { box: "border-warn/30 bg-warn-tint text-warn", text: "text-warn", icon: "", glyph: <AlertTriangleIcon size={16} />, srPrefix: "주의: " },
+  danger: { box: "border-danger/30 bg-danger-tint text-danger", text: "text-danger", icon: "", glyph: <AlertTriangleIcon size={16} />, srPrefix: "주의: " },
+  // 안내의 아이콘만 강조색 — 안내 톤의 표지이고, 글은 본문색입니다.
+  info: { box: "border-accent/25 bg-accent-tint text-text", text: "text-text", icon: "text-accent", glyph: <InfoIcon size={16} />, srPrefix: "" },
+  ok: { box: "border-ok/30 bg-ok-tint text-ok", text: "text-ok", icon: "", glyph: <CheckCircleIcon size={16} />, srPrefix: "" },
+} as const;
 
 export function Loading({ label = "불러오는 중…" }: { label?: string }) {
   return (

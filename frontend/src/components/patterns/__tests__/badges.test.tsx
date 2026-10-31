@@ -91,21 +91,21 @@ describe("StaleBadge", () => {
     expect(container.innerHTML).toBe("");
   });
 
-  it("오래됨 — ⚠️ 아이콘 + '이전 값' 글 + 사유, 경고색", () => {
+  it("오래됨 — 경고 아이콘 + '이전 값' 글 + 사유, 경고색", () => {
     render(<StaleBadge stale reason="이번 수집 실패 — 직전 저장본" />);
     const label = screen.getByText("이전 값");
     const pill = label.parentElement as HTMLElement;
     expect(pill.className).toContain("text-warn");
     expect(pill.className).toContain("border-warn");
     expect(pill.className).toContain("rounded-full");
-    expect(screen.getByText("⚠️").getAttribute("aria-hidden")).toBe("true");
+    expect(pill.querySelector("svg")?.getAttribute("aria-hidden")).toBe("true");
     expect(screen.getByText("주의:").className).toContain("sr-only");
     expect(screen.getByText("· 이번 수집 실패 — 직전 저장본")).toBeTruthy();
   });
 
   it("사유를 모르면 라벨만 — 사유를 지어내지 않는다", () => {
     const { container } = render(<StaleBadge stale reason={null} />);
-    expect(container.textContent).toBe("⚠️주의: 이전 값");
+    expect(container.textContent).toBe("주의: 이전 값");
   });
 
   it("추정 배지·출처 캡션은 바탕을 칠하지 않고, 이전 값 배지만 불투명 경고 틴트(투명 틴트 없음 — 경고색 글자 대비 유지)", () => {

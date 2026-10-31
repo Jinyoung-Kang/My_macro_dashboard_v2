@@ -175,7 +175,7 @@ export default function RadarPage() {
       {loading && !data && <Loading label="수급 데이터를 불러오는 중…" />}
       {error && <ErrorState message={error} onRetry={reload} />}
 
-      {data?.warning && <Banner tone="warn">⚠️ {data.warning}</Banner>}
+      {data?.warning && <Banner tone="warn">{data.warning}</Banner>}
 
       {data && !data.available && !data.warning && (
         <Banner tone="warn">
@@ -495,7 +495,7 @@ function ConsensusPanel({
       {loading && !data && <Loading label="교집합을 계산하는 중…" />}
       {error && <ErrorState message={error} onRetry={reload} />}
 
-      {data?.warning && <Banner tone="warn">⚠️ {data.warning}</Banner>}
+      {data?.warning && <Banner tone="warn">{data.warning}</Banner>}
 
       {data && !data.available && (
         <Banner tone="warn">

@@ -94,7 +94,7 @@ describe("StatTile", () => {
     expect(within(screen.getByRole("group", { name: "MOVE" })).getByText("대리 지표")).toBeTruthy();
   });
 
-  it("오래됨 — ⚠️ 이전 값 배지와 사유가 보인다", () => {
+  it("오래됨 — 이전 값 배지와 사유가 보인다", () => {
     render(<StatTile label="순자산" value="1억 2,000만" unit="원" isStale staleReason="이번 수집 실패" />);
     const tile = screen.getByRole("group", { name: "순자산" });
     expect(within(tile).getByText("1억 2,000만")).toBeTruthy();

@@ -120,7 +120,7 @@ describe("Hero", () => {
     expect(within(region).getByText("· KODEX 200 기반 추정치")).toBeTruthy();
   });
 
-  it("오래됨 — meta의 ⚠️ 이전 값 배지와 사유가 보인다", () => {
+  it("오래됨 — meta의 이전 값 배지와 사유가 보인다", () => {
     render(<Hero label="순유동성" value="5.9" unit="조 달러" meta={<StaleBadge stale reason="이번 수집 실패" />} />);
     const region = screen.getByRole("region", { name: "순유동성" });
     expect(within(region).getByText("이전 값").parentElement?.className).toContain("text-warn");

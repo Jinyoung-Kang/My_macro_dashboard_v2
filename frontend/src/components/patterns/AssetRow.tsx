@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useId, type JSX, type ReactNode } from "react";
 
-import { ChevronDownIcon, ChevronUpIcon } from "@/components/ui/icons";
+import { AlertTriangleIcon, ChevronDownIcon, ChevronUpIcon } from "@/components/ui/icons";
 import { assetRowModel } from "@/lib/patternRows";
 import { presentText } from "@/lib/patterns";
 
@@ -157,7 +157,7 @@ export function AssetRow({
           <StaleBadge stale={row.isStale} reason={row.staleReason} />
           {model.warning ? (
             <span className="inline-flex items-center gap-1 text-xs leading-4 text-warn">
-              <span aria-hidden="true">⚠️</span>
+              <AlertTriangleIcon size={12} />
               <span className="sr-only">주의: </span>
               {model.warning}
             </span>

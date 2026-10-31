@@ -2,7 +2,7 @@
 
 import * as ToastPrimitive from "@radix-ui/react-toast";
 import { createContext, useCallback, useContext, useMemo, useRef, useState, type ReactNode } from "react";
-import { XIcon } from "@/components/ui/icons";
+import { AlertTriangleIcon, InfoIcon, LineIcon, XIcon } from "@/components/ui/icons";
 
 export type ToastTone = "info" | "warn";
 
@@ -56,13 +56,18 @@ export function ToastProvider({ children }: { children: ReactNode }) {
             }}
             className={`flex items-start gap-3 rounded-control border bg-surface py-3 pl-4 pr-2 text-sm text-text shadow-overlay focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus data-[swipe=move]:translate-x-[var(--radix-toast-swipe-move-x)] motion-safe:transition-opacity motion-safe:duration-150 motion-safe:starting:opacity-0 ${TONE[item.tone]}`}
           >
+            {/* 톤 아이콘은 장식 — 주의는 경고 삼각형(+ 낭독기용 '주의: '), 안내는 i(배너 info와 같은 표지, 글은 본문색). */}
+            <span className="shrink-0 py-1 leading-relaxed">
+              <LineIcon>
+                {item.tone === "warn" ? (
+                  <AlertTriangleIcon size={16} className="text-warn" />
+                ) : (
+                  <InfoIcon size={16} className="text-accent" />
+                )}
+              </LineIcon>
+            </span>
             <ToastPrimitive.Description className="min-w-0 flex-1 py-1 leading-relaxed">
-              {item.tone === "warn" && (
-                <>
-                  <span aria-hidden="true" className="mr-1 text-warn">⚠️</span>
-                  <span className="sr-only">주의: </span>
-                </>
-              )}
+              {item.tone === "warn" && <span className="sr-only">주의: </span>}
               {item.message}
             </ToastPrimitive.Description>
             <ToastPrimitive.Close

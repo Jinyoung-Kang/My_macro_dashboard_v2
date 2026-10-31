@@ -57,7 +57,7 @@ export function SingleChartSection() {
 
       {data?.isProxy && (
         <div className="mb-3">
-          <Banner tone="warn">⚠️ {data.sourceLabel}</Banner>
+          <Banner tone="warn">{data.sourceLabel}</Banner>
         </div>
       )}
 

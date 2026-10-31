@@ -21,11 +21,14 @@ export function categoryDelay(category: MacroCategory): string | undefined {
   return labels.size === 1 ? `시세: ${[...labels][0]}` : "시세: 종목마다 다름 — 카드 배지 참고";
 }
 
+/** 카드 알림 하나 — tone이 'warn'이면 그리는 쪽이 경고 아이콘과 낭독기용 '주의: '를 붙입니다(글에는 기호를 넣지 않음). */
+export type CardNotice = { text: string; title?: string; tone?: "warn" };
+
 /** 지연이 아닌 알림 — 이어받은 예전 값, 선물 대신 지수 값·추정치·보정 실패. */
-export function cardNotices(item: MacroItem): { text: string; title?: string }[] {
-  const notices: { text: string; title?: string }[] = [];
+export function cardNotices(item: MacroItem): CardNotice[] {
+  const notices: CardNotice[] = [];
   if (item.isStale) {
-    notices.push({ text: "⚠️ 이전 값", title: `이번 수집 실패로 직전 값을 보입니다 — ${item.staleReason ?? "수집 실패"}` });
+    notices.push({ text: "이전 값", tone: "warn", title: `이번 수집 실패로 직전 값을 보입니다 — ${item.staleReason ?? "수집 실패"}` });
   }
   if (item.warning) {
     notices.push({ text: item.warning });

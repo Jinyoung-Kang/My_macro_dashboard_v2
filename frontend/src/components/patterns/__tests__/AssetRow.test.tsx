@@ -96,7 +96,7 @@ describe("AssetRow", () => {
     expect(screen.getByText("대리 지표")).toBeTruthy();
   });
 
-  it("오래됨 — ⚠️ 이전 값 배지(경고색)와 사유", () => {
+  it("오래됨 — 이전 값 배지(경고색)와 사유", () => {
     render(<AssetRow row={{ ...SPX, isStale: true, staleReason: "이번 수집 실패" }} />);
     expect(screen.getByText("5,800.12")).toBeTruthy();
     expect(screen.getByText("이전 값").parentElement?.className).toContain("text-warn");
@@ -107,7 +107,7 @@ describe("AssetRow", () => {
     render(<AssetRow row={{ id: "w", name: "달러 인덱스", value: null, warning: "수집 실패" }} />);
     const warning = screen.getByText("수집 실패");
     expect(warning.className).toContain("text-warn");
-    expect(within(warning).getByText("⚠️").getAttribute("aria-hidden")).toBe("true");
+    expect(warning.querySelector("svg")?.getAttribute("aria-hidden")).toBe("true");
     expect(within(warning).getByText("주의:")).toBeTruthy();
   });
 

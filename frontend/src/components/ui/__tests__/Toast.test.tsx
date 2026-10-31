@@ -51,6 +51,9 @@ describe("띄우기", () => {
     const text = await within(region()).findByText("저장하지 못했습니다", { exact: false });
     expect(text.textContent).toContain("주의: 저장하지 못했습니다");
     expect(text.closest("li")?.className).toContain("border-warn");
+    // 경고 기호는 이모지 글자가 아니라 장식 아이콘(낭독기는 '주의:'를 읽음)
+    expect(text.closest("li")?.querySelector("svg.text-warn")?.getAttribute("aria-hidden")).toBe("true");
+    expect(text.textContent).not.toMatch(/\p{Extended_Pictographic}/u);
     const status = await screen.findByRole("status");
     expect(status.getAttribute("aria-live")).toBe("assertive");
   });

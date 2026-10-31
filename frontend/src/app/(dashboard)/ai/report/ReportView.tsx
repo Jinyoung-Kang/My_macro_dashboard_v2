@@ -1,6 +1,7 @@
 "use client";
 
 import { type ReactNode, useMemo } from "react";
+import { AlertTriangleIcon } from "@/components/ui/icons";
 import {
   type Block,
   numericColumns,
@@ -68,7 +69,7 @@ function ReportSection({ section }: { section: Section }) {
             kind === "summary" ? "text-base text-bright" : "text-sm text-bright"
           }`}
         >
-          {kind === "reliability" && <span aria-hidden="true">⚠️</span>}
+          {kind === "reliability" && <AlertTriangleIcon size={16} className="text-warn" />}
           {section.title}
         </h3>
       )}

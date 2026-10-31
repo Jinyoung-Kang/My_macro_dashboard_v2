@@ -27,7 +27,9 @@ describe("categoryDelay", () => {
 describe("cardNotices", () => {
   it("이어받은 값과 경고만 — 지연 문구는 알림이 아니다", () => {
     expect(cardNotices(item({ note: "실시간 · TradingView 참고", delayMinutes: 0 }))).toEqual([]);
-    expect(cardNotices(item({ isStale: true, staleReason: "HTTP 429", warning: "선물 조회 실패 · 지수 값" })).map((n) => n.text))
-      .toEqual(["⚠️ 이전 값", "선물 조회 실패 · 지수 값"]);
+    const notices = cardNotices(item({ isStale: true, staleReason: "HTTP 429", warning: "선물 조회 실패 · 지수 값" }));
+    expect(notices.map((n) => n.text)).toEqual(["이전 값", "선물 조회 실패 · 지수 값"]);
+    // 이어받은 값은 경고 톤 — 기호는 글에 넣지 않고 그리는 쪽이 아이콘으로
+    expect(notices.map((n) => n.tone)).toEqual(["warn", undefined]);
   });
 });

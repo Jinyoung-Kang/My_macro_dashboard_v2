@@ -1,5 +1,6 @@
 import type { JSX } from "react";
 
+import { AlertTriangleIcon } from "@/components/ui/icons";
 import { PROVENANCE_UNKNOWN, estimateLabel, presentText, provenanceText } from "@/lib/patterns";
 
 /*
@@ -71,7 +72,7 @@ export function EstimateBadge({
 }
 
 /**
- * 오래된·이어받은 값 배지 — "⚠️ 이전 값"(경고색) + 사유. stale이 아니면 그리지 않습니다.
+ * 오래된·이어받은 값 배지 — 경고 아이콘 + "이전 값"(경고색) + 사유. stale이 아니면 그리지 않습니다.
  * 수집에 실패해 직전 저장본의 값을 보일 때(isStale·이어받은 값) 씁니다.
  */
 export function StaleBadge({ stale, reason }: { stale?: boolean; reason?: string | null }): JSX.Element | null {
@@ -81,7 +82,7 @@ export function StaleBadge({ stale, reason }: { stale?: boolean; reason?: string
   const detail = presentText(reason);
   return (
     <span className={`${PILL} border-warn/30 bg-warn-tint text-warn`}>
-      <span aria-hidden="true">⚠️</span>
+      <AlertTriangleIcon size={12} className="self-center" />
       <span className="sr-only">주의: </span>
       <span className="font-medium">이전 값</span>
       {detail ? <span>· {detail}</span> : null}

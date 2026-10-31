@@ -97,7 +97,7 @@ export default function LiquidityPage() {
 
         {data?.isEstimated && (
           <Banner tone="danger">
-            ⚠️ 추정치 모드입니다. FRED 확정치가 아니므로 수치를 그대로 신뢰하지 마세요.
+            추정치 모드입니다. FRED 확정치가 아니므로 수치를 그대로 신뢰하지 마세요.
           </Banner>
         )}
 

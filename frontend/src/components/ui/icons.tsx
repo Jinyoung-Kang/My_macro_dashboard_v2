@@ -269,10 +269,18 @@ export function StatusText({
   const Icon = STATUS_ICON[tone];
   const prefix = srPrefix ?? STATUS_SR_PREFIX[tone];
   return (
-    <span className={`inline-flex items-center gap-1.5 ${TONE_TEXT[tone]} ${className}`.trim()}>
-      {icon === false ? null : (icon ?? <Icon size={14} />)}
+    <span className={`inline-flex items-start gap-1.5 ${TONE_TEXT[tone]} ${className}`.trim()}>
+      {icon === false ? null : <LineIcon>{icon ?? <Icon size={14} />}</LineIcon>}
       {prefix && <span className="sr-only">{prefix}</span>}
-      <span>{children}</span>
+      <span className="min-w-0">{children}</span>
     </span>
   );
+}
+
+/**
+ * 글 첫 줄의 가운데에 아이콘을 둡니다 — 한 줄 높이(1lh)의 칸 안에서 가운데 정렬. 글이 여러 줄로 접혀도 아이콘이 첫 줄 옆에 남습니다
+ * (items-center면 여러 줄 글의 한가운데로 내려감). 상태 글·배너가 함께 씁니다.
+ */
+export function LineIcon({ children, className = "" }: { children: ReactNode; className?: string }) {
+  return <span className={`flex h-[1lh] shrink-0 items-center ${className}`.trim()}>{children}</span>;
 }

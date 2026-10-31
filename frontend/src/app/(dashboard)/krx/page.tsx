@@ -84,7 +84,7 @@ export default function KrxPage() {
         </Banner>
       )}
 
-      {data?.isEstimated && <Banner tone="danger">⚠️ {data.estimateNotice}</Banner>}
+      {data?.isEstimated && <Banner tone="danger">{data.estimateNotice}</Banner>}
 
       {latest && (
         <>

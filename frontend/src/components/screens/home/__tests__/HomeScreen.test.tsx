@@ -399,11 +399,11 @@ describe("홈 — 일부 실패", () => {
     expect(screen.getByText("확장 (Expansion)")).toBeTruthy();
   });
 
-  it("자동 갱신이 실패하면 앞서 받은 시장 행을 두고 '⚠️ 새로 읽지 못함'(QA-067)", async () => {
+  it("자동 갱신이 실패하면 앞서 받은 시장 행을 두고 '새로 읽지 못함'(QA-067)", async () => {
     reads = happyReads();
     const { rerender } = renderHome(OWNER);
     await screen.findByText("원/달러 (USD/KRW)");
-    expect(within(region("시장")).queryByText("⚠️ 새로 읽지 못함")).toBeNull();
+    expect(within(region("시장")).queryByText("새로 읽지 못함")).toBeNull();
 
     reads[MACRO] = new Error("백엔드 API에 연결하지 못했습니다");
     signal.token += 1;
@@ -411,7 +411,7 @@ describe("홈 — 일부 실패", () => {
     await waitFor(() => expect(requested().filter((path) => path === MACRO)).toHaveLength(2));
 
     const market = region("시장");
-    expect(await within(market).findByText("⚠️ 새로 읽지 못함")).toBeTruthy();
+    expect(await within(market).findByText("새로 읽지 못함")).toBeTruthy();
     expect(within(market).getByText("원/달러 (USD/KRW)")).toBeTruthy();
   });
 });
@@ -428,7 +428,7 @@ describe("홈 — 추정·오래됨 배지", () => {
     expect(within(marketRow("원/달러 (USD/KRW)")).queryByText("추정")).toBeNull();
   });
 
-  it("이어받은 카드(isStale)·가격 없는 보유 계좌에는 '⚠️ 이전 값' + 사유, 이어받은 카드에는 열린 장이어도 '실시간'을 붙이지 않는다", async () => {
+  it("이어받은 카드(isStale)·가격 없는 보유 계좌에는 '이전 값' + 사유, 이어받은 카드에는 열린 장이어도 '실시간'을 붙이지 않는다", async () => {
     const overview = macroOverview();
     overview.categories[0].items[0] = macroItem({
       ...overview.categories[0].items[0],

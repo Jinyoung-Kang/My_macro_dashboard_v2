@@ -4,6 +4,7 @@ import Link from "next/link";
 import { Fragment } from "react";
 import { Empty, ProvenanceBadge, Skeleton } from "@/components/patterns";
 import { Freshness } from "@/components/ui";
+import { AlertTriangleIcon, StatusText } from "@/components/ui/icons";
 import { useApi } from "@/hooks/useApi";
 import { useSessionUser } from "@/hooks/useSessionUser";
 import { isOwner } from "@/lib/access";
@@ -66,11 +67,9 @@ export function StoreStatusLine() {
           ))}
         </span>
         {model.notice ? (
-          <span className="text-xs text-warn">
-            <span aria-hidden="true">⚠️ </span>
-            <span className="sr-only">주의: </span>
+          <StatusText tone="warn" icon={<AlertTriangleIcon size={12} />} className="text-xs">
             {model.notice}
-          </span>
+          </StatusText>
         ) : null}
         {/* 데이터 카드마다 출처 줄(PRINCIPLES) — 수는 상태 화면의 '수집 오류·경고 로그'와 같은 출처에서 셉니다. */}
         <ProvenanceBadge source={SOURCES.collectorRuns} />

@@ -41,8 +41,8 @@ type IconComponent = (props: IconProps) => React.ReactNode;
 const iconOf = (name: (typeof ICONS)[number]) => (icons as unknown as Record<string, IconComponent>)[name];
 
 describe("내보내는 이름", () => {
-  it("아이콘 목록과 바탕 SVG·상태 점·상태 글이 전부다", () => {
-    expect(Object.keys(icons).sort()).toEqual([...ICONS, "IconBase", "StatusDot", "StatusText"].sort());
+  it("아이콘 목록과 바탕 SVG·상태 점·상태 글·첫 줄 아이콘 칸이 전부다", () => {
+    expect(Object.keys(icons).sort()).toEqual([...ICONS, "IconBase", "LineIcon", "StatusDot", "StatusText"].sort());
   });
 
   it("셸의 아이콘 모듈은 탭 아이콘 말고는 ui 아이콘을 그대로 다시 내보낸다", () => {

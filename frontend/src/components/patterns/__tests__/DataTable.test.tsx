@@ -112,7 +112,7 @@ describe("DataTable — 네 상태", () => {
     expect(within(within(bodyRows()[0]).getAllByRole("cell")[1]).queryByText("대리 지표")).toBeNull();
   });
 
-  it("오래됨 — 칸 안의 '⚠️ 이전 값' + 사유(경고색)", () => {
+  it("오래됨 — 칸 안의 '이전 값' + 사유(경고색)", () => {
     render(<DataTable columns={COLUMNS} rows={ROWS} rowKey={(row) => row.ticker} />);
     const brk = within(bodyRows()[3]).getAllByRole("cell")[1];
     const label = within(brk).getByText("이전 값");

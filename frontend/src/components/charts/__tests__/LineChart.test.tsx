@@ -311,7 +311,7 @@ describe("LineChart — 추정 · 오래됨 배지", () => {
     expect(screen.queryByText("이전 값")).toBeNull();
   });
 
-  it("오래됨이면 '⚠️ 이전 값' + 사유(경고색)", () => {
+  it("오래됨이면 '이전 값' + 사유(경고색)", () => {
     observeAs(600, 240);
     render(<LineChart data={LIQUIDITY} series={ONE_SERIES} stale staleReason="이번 수집 실패 — 직전 저장본" />);
     const label = screen.getByText("이전 값");
