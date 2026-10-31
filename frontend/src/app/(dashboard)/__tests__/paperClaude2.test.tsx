@@ -223,6 +223,80 @@ describe("개요 — 계좌2 출발", () => {
   });
 });
 
+describe("개요 — 계좌2 출발 카드의 상태 읽기(읽는 중·실패·다시 읽기)", () => {
+  // 위 묶음과 같은 시계(응답의 결정 시각 2026-10-31 07:30 KST 전).
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-10-30T11:00:00Z"));   // 20:00 KST
+  });
+  afterEach(() => vi.useRealTimers());
+
+  const statusReads = () => api.apiGetShared.mock.calls.filter(([path]) => path === "/api/paper/status").length;
+  const startButton = () => screen.getByRole("button", { name: "계좌2 시작" }) as HTMLButtonElement;
+  const windowValues = () => Array.from(screen.getByLabelText("계좌2 결정 창").querySelectorAll("dd")).map((dd) => dd.textContent);
+
+  // QA-149 — 수정 전에는 상태 응답을 기다리는 동안(로딩 중)에도 출발 카드가 실패와 글자까지 같은 '계좌2 상태를 읽지 못해 …'를 경고색으로
+  // 보였다(lib claude2StartView가 '아직 안 옴'과 '실패'를 가르지 않음 — 재현 커밋에서는 it.fails).
+  it.fails("상태 응답을 기다리는 동안에는 '읽지 못해'가 아니라 '읽는 중'(경고색 아님) — 단추 닫힘, 창 칸 '—'", async () => {
+    reads["/api/paper/overview"] = () => Promise.resolve(overview(CLAUDE2_NOT_STARTED));
+    // 상태 경로는 목이 없어 끝나지 않는 요청 — 응답이 아직 안 온 상태를 시간에 기대지 않고 만듭니다.
+    render(<PaperPage />);
+    await settled();
+
+    expect(statusReads()).toBe(1);
+    expect(screen.queryByText(/계좌2 상태를 읽지 못해/)).toBeNull();
+    const note = screen.getByText(/계좌2 상태를 읽는 중입니다/);
+    expect(note.className).not.toContain("text-warn");
+    expect(startButton().disabled).toBe(true);
+    expect(windowValues()).toEqual(["—", "—", "—"]);
+    expect(screen.queryByText(/정기 작업 상태를 확인하지 못했습니다/)).toBeNull();
+  });
+
+  // QA-149 — 설정 탭에서 claude2.enabled를 켜고 개요로 돌아오는 출발 준비 흐름: 개요가 언마운트됐다 다시 마운트돼 상태를 처음부터 다시 읽는
+  // 동안에도 수정 전에는 '읽지 못해'였다(재현 커밋에서는 it.fails).
+  it.fails("설정 탭에 갔다 개요로 돌아와 상태를 다시 읽는 동안에도 '읽는 중' — 응답이 오면 켜짐과 열린 단추", async () => {
+    reads["/api/paper/overview"] = () => Promise.resolve(overview(CLAUDE2_NOT_STARTED));
+    reads["/api/paper/status"] = () => Promise.resolve(status(false));
+    render(<PaperPage />);
+    await settled();
+    expect(screen.getByText(/설정 claude2\.enabled가 꺼져 있습니다/)).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("tab", { name: "설정" }));
+    await settled();
+    expect(screen.queryByRole("button", { name: "계좌2 시작" })).toBeNull();
+    // 설정 탭에서 켠 뒤 돌아옵니다 — 다시 읽는 상태 응답은 손으로 풀 때까지 오지 않습니다.
+    let release: (body: unknown) => void = () => {};
+    reads["/api/paper/status"] = () => new Promise((resolve) => { release = resolve; });
+    fireEvent.click(screen.getByRole("tab", { name: "개요" }));
+    await settled();
+
+    expect(statusReads()).toBe(2);
+    expect(screen.queryByText(/계좌2 상태를 읽지 못해/)).toBeNull();
+    expect(screen.getByText(/계좌2 상태를 읽는 중입니다/).className).not.toContain("text-warn");
+    expect(startButton().disabled).toBe(true);
+
+    await act(async () => release(status(true)));
+    expect(screen.getByText(/설정 claude2\.enabled가 켜져 있습니다/)).toBeTruthy();
+    expect(screen.queryByText(/계좌2 상태를 읽는 중입니다/)).toBeNull();
+    expect(startButton().disabled).toBe(false);
+  });
+
+  // QA-149 — '읽지 못해'(경고색)는 상태 요청이 실패했을 때만(위 배너에 실패 문구도). 수정 전후 같음.
+  it("상태 요청이 실패하면(500) '읽지 못해'(경고색) — 위 배너에 실패 문구, 단추 닫힘", async () => {
+    reads["/api/paper/overview"] = () => Promise.resolve(overview(CLAUDE2_NOT_STARTED));
+    reads["/api/paper/status"] = () => Promise.reject(new Error("요청 실패 (HTTP 500)"));
+    render(<PaperPage />);
+    await settled();
+
+    expect(screen.getByText("정기 작업 상태를 확인하지 못했습니다 — 요청 실패 (HTTP 500)")).toBeTruthy();
+    const note = screen.getByText("계좌2 상태를 읽지 못해 설정이 켜져 있는지 모릅니다 — 상태를 다시 읽은 뒤 누르세요.");
+    expect(note.className).toContain("text-warn");
+    expect(screen.queryByText(/계좌2 상태를 읽는 중입니다/)).toBeNull();
+    expect(startButton().disabled).toBe(true);
+    expect(windowValues()).toEqual(["—", "—", "—"]);
+  });
+});
+
 describe("출발 뒤 계좌2 상태 — 개요 1분봉 한 줄·결정 로그 결정 창", () => {
   /** 출발한 계좌2의 상태 묶음(정규장이면 bars가 옴). */
   function startedStatus(bars: Record<string, unknown> | null) {
