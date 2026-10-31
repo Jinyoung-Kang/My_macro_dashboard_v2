@@ -10,7 +10,7 @@
  *  - 🧪 장중 확인(단계 2): 개요·출발 카드·결정 로그의 '오늘 장중 확인' 한 줄(칸이 없는 백엔드면 없음), 결정 로그의 종류 '장중 확인'·실패는 재시도
  *    없음, REPLACE 상세(응답·대신한 주문·예상 상태), 주문 표의 MARKET(장중 시장가 — 목표 시각은 실행 감사 값)
  */
-import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const api = vi.hoisted(() => {
@@ -122,6 +122,13 @@ const rowsOf = (region: HTMLElement) =>
   within(region).getAllByRole("row").slice(1).map((tr) => within(tr).getAllByRole("cell").map((td) => td.textContent));
 const headersOf = (table: HTMLElement) => within(table).getAllByRole("columnheader").map((th) => th.textContent);
 
+/**
+ * 목 응답이 잇는 일을 끝까지 화면에 반영합니다(QA-148). 개요 응답 → 탭 섹션 마운트 → 그 섹션의 요청(상태·실행 감사·결정 로그·보유) → 커밋이
+ * 모두 곧바로 resolve하는 목이라, React 일거리가 빌 때까지 도는 act 한 번이면 순서대로 끝납니다 — findBy·waitFor의 벽시계 한도(기본 1초)가
+ * 없어 부하에 지지 않습니다. 끝나지 않는 요청(목 없는 경로)은 기다리지 않습니다. render와 요청을 부르는 fireEvent 바로 뒤에 부릅니다.
+ */
+const settled = () => act(async () => {});
+
 describe("개요 — 계좌2 출발", () => {
   // 출발 카드의 다음 결정은 지금과 견줍니다(지난 시각이면 '결정 창 열림') — 고정 응답의 결정 시각(2026-10-31 07:30 KST) 전으로 시계를 고정해 실제
   // 날짜가 지나도 같은 결과가 나오게.
@@ -135,8 +142,9 @@ describe("개요 — 계좌2 출발", () => {
     reads["/api/paper/overview"] = () => Promise.resolve(overview(CLAUDE2_NOT_STARTED));
     reads["/api/paper/status"] = () => Promise.resolve(status(false));
     render(<PaperPage />);
+    await settled();
 
-    expect(await screen.findByText(/설정 claude2\.enabled가 꺼져 있습니다/)).toBeTruthy();
+    expect(screen.getByText(/설정 claude2\.enabled가 꺼져 있습니다/)).toBeTruthy();
     const button = screen.getByRole("button", { name: "계좌2 시작" }) as HTMLButtonElement;
     expect(button.disabled).toBe(true);
     expect(screen.getByText(/Claude 계좌2는 아직 현금만 들고 있습니다\. 출발은 사후 체결이 아니라 앞으로 체결입니다/)).toBeTruthy();
@@ -159,11 +167,12 @@ describe("개요 — 계좌2 출발", () => {
         cutoffKst: "2026-10-30 22:00 KST", cutoffEt: "2026-10-30 09:00 ET",
       }));
       render(<PaperPage />);
+      await settled();
 
       // 상태 응답이 온 뒤(그 전에는 창 칸이 '—')의 결정 창.
-      expect(await screen.findByText("다음 결정(기준 거래일 2026-10-29)")).toBeTruthy();
+      expect(screen.getByText("다음 결정(기준 거래일 2026-10-29)")).toBeTruthy();
       const panel = screen.getByLabelText("계좌2 결정 창");
-      await waitFor(() => expect(within(panel).getByText("결정 창 열림(07:30부터 컷오프 22:00 KST까지)")).toBeTruthy());
+      expect(within(panel).getByText("결정 창 열림(07:30부터 컷오프 22:00 KST까지)")).toBeTruthy();
       expect(within(panel).queryByText("2026-10-30 07:30 KST · 2026-10-29 18:30 ET")).toBeNull();
     } finally {
       vi.useRealTimers();
@@ -175,8 +184,9 @@ describe("개요 — 계좌2 출발", () => {
     const waiting = status(true);
     reads["/api/paper/status"] = () => Promise.resolve({ ...waiting, claude2: { ...waiting.claude2, chainReady: false } });
     render(<PaperPage />);
+    await settled();
 
-    expect(await screen.findByText(/관측치 사슬 준비 중입니다/)).toBeTruthy();
+    expect(screen.getByText(/관측치 사슬 준비 중입니다/)).toBeTruthy();
     expect((screen.getByRole("button", { name: "계좌2 시작" }) as HTMLButtonElement).disabled).toBe(true);
     expect(api.apiPost).not.toHaveBeenCalled();
   });
@@ -197,17 +207,19 @@ describe("개요 — 계좌2 출발", () => {
       },
     });
     render(<PaperPage />);
+    await settled();
 
-    expect(await screen.findByText(/설정 claude2\.enabled가 켜져 있습니다/)).toBeTruthy();
+    expect(screen.getByText(/설정 claude2\.enabled가 켜져 있습니다/)).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "계좌2 시작" }));
     expect(api.apiPost).not.toHaveBeenCalled();
     expect(screen.getByText(/계좌2를 지금 출발시킬까요\?/)).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "출발 확인" }));
+    await settled();
 
-    await waitFor(() => expect(api.apiPost).toHaveBeenCalledWith("/api/paper/run/initial-decision", { book: "claude2" }));
-    expect(await screen.findByText(/Claude 계좌2가 출발했습니다 — 주문은 다음 세션에 고른 시점으로 체결됩니다 · 2026-10-30 초기 결정 · 주문 5건/))
+    expect(api.apiPost).toHaveBeenCalledWith("/api/paper/run/initial-decision", { book: "claude2" });
+    expect(screen.getByText(/Claude 계좌2가 출발했습니다 — 주문은 다음 세션에 고른 시점으로 체결됩니다 · 2026-10-30 초기 결정 · 주문 5건/))
       .toBeTruthy();
-    await waitFor(() => expect(overviewReads).toBe(2));
+    expect(overviewReads).toBe(2);
   });
 });
 
@@ -222,8 +234,9 @@ describe("출발 뒤 계좌2 상태 — 개요 1분봉 한 줄·결정 로그 �
     reads["/api/paper/overview"] = () => Promise.resolve(overview(CLAUDE2_ACTIVE));
     reads["/api/paper/status"] = () => Promise.resolve(startedStatus({ collectedAtKst: "2026-11-03 23:41 KST", ageSeconds: 180, lagSeconds: 912 }));
     render(<PaperPage />);
+    await settled();
 
-    const line = await screen.findByText("Claude 계좌2 1분봉(Yahoo): 받은 시각 2026-11-03 23:41 · 3분 전 · 지연 15분 12초(SPY 마지막 봉 끝 → 받은 시각)");
+    const line = screen.getByText("Claude 계좌2 1분봉(Yahoo): 받은 시각 2026-11-03 23:41 · 3분 전 · 지연 15분 12초(SPY 마지막 봉 끝 → 받은 시각)");
     const card = screen.getByRole("heading", { name: "장부 관측치" }).closest("section") as HTMLElement;
     expect(card.contains(line)).toBe(true);
     expect(within(card).getByText(/1분봉: Yahoo Finance \(yfinance\) 1분봉 — 수집 태스크 paper_bars_us/)).toBeTruthy();
@@ -233,8 +246,9 @@ describe("출발 뒤 계좌2 상태 — 개요 1분봉 한 줄·결정 로그 �
     reads["/api/paper/overview"] = () => Promise.resolve(overview(CLAUDE2_NOT_STARTED));
     reads["/api/paper/status"] = () => Promise.resolve(status(false));
     render(<PaperPage />);
+    await settled();
 
-    expect(await screen.findByText(/설정 claude2\.enabled가 꺼져 있습니다/)).toBeTruthy();
+    expect(screen.getByText(/설정 claude2\.enabled가 꺼져 있습니다/)).toBeTruthy();
     expect(screen.queryByText(/1분봉\(Yahoo\)/)).toBeNull();
   });
 
@@ -247,13 +261,15 @@ describe("출발 뒤 계좌2 상태 — 개요 1분봉 한 줄·결정 로그 �
       reads["/api/paper/decisions?book=claude2"] = () => Promise.resolve({ available: true, decisions: [] });
       reads["/api/paper/status"] = () => Promise.resolve(startedStatus(null));
       render(<PaperPage initialTab="decisions" />);
+      await settled();
 
-      const picker = await screen.findByLabelText("계좌 고르기");
+      const picker = screen.getByLabelText("계좌 고르기");
       expect(screen.queryByLabelText("계좌2 결정 창")).toBeNull();
       expect(api.apiGetShared.mock.calls.map(([path]) => path)).not.toContain("/api/paper/status");
 
       fireEvent.change(picker, { target: { value: "claude2" } });
-      expect(await screen.findByText("다음 결정(기준 거래일 2026-10-30)")).toBeTruthy();
+      await settled();
+      expect(screen.getByText("다음 결정(기준 거래일 2026-10-30)")).toBeTruthy();
       const panel = screen.getByLabelText("계좌2 결정 창");
       expect(within(panel).getByText("2026-10-31 07:30 KST · 2026-10-30 18:30 ET")).toBeTruthy();
       expect(within(panel).getByText("2026-11-02 23:00 KST · 2026-11-02 09:00 ET")).toBeTruthy();
@@ -277,8 +293,9 @@ describe("개요 — 체결 시점 실험·S = 100·한계", () => {
   it("시점마다 N·평균·90% 구간 — 문턱 미달은 '—'와 판단 보류, 시가는 대리값, 계좌1 기준 분포로 바꿔 본다", async () => {
     reads["/api/paper/overview"] = () => Promise.resolve(overview(CLAUDE2_NOT_STARTED));
     render(<PaperPage />);
+    await settled();
 
-    const table = await screen.findByRole("table", { name: "체결 시점 실험" });
+    const table = screen.getByRole("table", { name: "체결 시점 실험" });
     expect(api.apiGetShared).toHaveBeenCalledWith("/api/paper/books/claude2/execution?limit=1", 0);
     expect(headersOf(table)).toEqual(["시점", "주문", "결정일", "평균(계좌1식 대비)", "90% 구간", "판단", "뺀 주문"]);
     expect(within(table).getAllByRole("rowheader").map((th) => th.textContent)).toEqual(["다음 거래일 시가대리값", "다음 거래일 10:00 ET"]);
@@ -292,7 +309,8 @@ describe("개요 — 체결 시점 실험·S = 100·한계", () => {
     const picker = screen.getByRole("group", { name: "실행 감사 계좌" });
     expect(within(picker).getByRole("button", { name: "Claude 계좌2" }).getAttribute("aria-pressed")).toBe("true");
     fireEvent.click(within(picker).getByRole("button", { name: "Claude 계좌1" }));
-    expect(await screen.findByText("다음 종가")).toBeTruthy();
+    await settled();
+    expect(screen.getByText("다음 종가")).toBeTruthy();
     expect(api.apiGetShared).toHaveBeenCalledWith("/api/paper/books/claude/execution?limit=1", 0);
   });
 
@@ -302,8 +320,9 @@ describe("개요 — 체결 시점 실험·S = 100·한계", () => {
         { n: 3, days: 2 })));
     reads["/api/paper/overview"] = () => Promise.resolve(overview(CLAUDE2_ACTIVE));
     render(<PaperPage />);
+    await settled();
 
-    const chosen = await screen.findByRole("table", { name: "고른 시점(M1 — 주 판정)" });
+    const chosen = screen.getByRole("table", { name: "고른 시점(M1 — 주 판정)" });
     expect(headersOf(chosen)).toEqual(["구분", "주문", "결정일", "평균(계좌1식 대비)", "90% 구간", "판단", "뺀 주문"]);
     expect(within(chosen).getAllByRole("rowheader").map((th) => th.textContent))
       .toEqual(["고른 시점 대비 계좌1식(M1 — 주 판정)대리값", "대체 체결(따로 셈)"]);
@@ -321,7 +340,8 @@ describe("개요 — 체결 시점 실험·S = 100·한계", () => {
     expect(notes.textContent).toContain("이 카드는 판정을 내리지 않습니다");
 
     fireEvent.click(within(screen.getByRole("group", { name: "실행 감사 계좌" })).getByRole("button", { name: "Claude 계좌1" }));
-    expect(await screen.findByText("고른 시점(M1 — 주 판정)은 계좌2만 있습니다 — 계좌1은 고른 시점이 곧 계좌1식 기준입니다.")).toBeTruthy();
+    await settled();
+    expect(screen.getByText("고른 시점(M1 — 주 판정)은 계좌2만 있습니다 — 계좌1은 고른 시점이 곧 계좌1식 기준입니다.")).toBeTruthy();
     expect(screen.queryByRole("table", { name: "고른 시점(M1 — 주 판정)" })).toBeNull();
     expect(screen.getByRole("table", { name: "체결 시점 실험" })).toBeTruthy();
   });
@@ -345,8 +365,9 @@ describe("개요 — 체결 시점 실험·S = 100·한계", () => {
     });
     reads["/api/paper/overview"] = () => Promise.resolve(overview(CLAUDE2_ACTIVE));
     render(<PaperPage />);
+    await settled();
 
-    const table = await screen.findByRole("table", { name: "장중 확인 기록(최근 20행)" });
+    const table = screen.getByRole("table", { name: "장중 확인 기록(최근 20행)" });
     // 다섯 칸 — 상태·사유가 둘째 칸(390px에서도 첫 화면에), 자료·지연과 확인 결정·응답은 두 줄 칸(1280px 카드 안에 들어가게).
     expect(headersOf(table)).toEqual(["세션 · 확인 시각", "상태 · 사유", "자료 · 지연", "확인 결정 · 응답", "부른 시각"]);
     expect(within(table).getByRole("rowheader").textContent).toBe("2026-11-02 · 10:30 ET2026-11-03 00:30 KST");
@@ -357,15 +378,17 @@ describe("개요 — 체결 시점 실험·S = 100·한계", () => {
       "감시 1분봉(5분 수집, 잰 지연)지연 —값 없음", "—값 없음", "—값 없음"]);
 
     fireEvent.click(within(screen.getByRole("group", { name: "실행 감사 계좌" })).getByRole("button", { name: "Claude 계좌1" }));
-    expect(await screen.findByText("다음 종가")).toBeTruthy();
+    await settled();
+    expect(screen.getByText("다음 종가")).toBeTruthy();
     expect(screen.queryByRole("table", { name: "장중 확인 기록(최근 20행)" })).toBeNull();
   });
 
   it("고른 시점(M1) 본 줄이 문턱 아래면 '—'와 판단 보류(표본 수와 문턱)", async () => {
     reads["/api/paper/overview"] = () => Promise.resolve(overview(CLAUDE2_NOT_STARTED));
     render(<PaperPage />);
+    await settled();
 
-    const chosen = await screen.findByRole("table", { name: "고른 시점(M1 — 주 판정)" });
+    const chosen = screen.getByRole("table", { name: "고른 시점(M1 — 주 판정)" });
     expect(rowsOf(chosen)[0]).toEqual(["2건", "1일", "—값 없음", "—값 없음", "판단 보류 — 표본 부족(주문 2/10건 · 결정일 1/5일)",
       "기준 없음 0 · 대체 체결 1(아래 줄) · 체결 없음 0"]);
   });
@@ -375,8 +398,9 @@ describe("개요 — 체결 시점 실험·S = 100·한계", () => {
   it("카드 설명은 서버 요약이 빼는 것만 적는다 — 계좌1식 기준이 없거나 그 시점 반사실이 없는 주문, 대체 체결은 따로 빼지 않음", async () => {
     reads["/api/paper/overview"] = () => Promise.resolve(overview(CLAUDE2_NOT_STARTED));
     render(<PaperPage />);
+    await settled();
 
-    const notes = await screen.findByRole("list", { name: "체결 시점 실험 설명" });
+    const notes = screen.getByRole("list", { name: "체결 시점 실험 설명" });
     expect(notes.textContent).toContain("그 시점 반사실이 없는 주문은 빼고 셉니다(뺀 수를 함께 적음");
     expect(notes.textContent).toContain("대체 체결로 풀린 주문도 따로 빼지 않음");
     expect(notes.textContent).not.toContain("대체 체결·계좌1식 기준이 없는 주문은 빼고");
@@ -387,8 +411,9 @@ describe("개요 — 체결 시점 실험·S = 100·한계", () => {
   it("카드 설명은 시점 표의 '기준 없음'에 계좌2의 체결 없는 주문도 든다고 적는다 — 서버는 계좌1식 기준이나 체결(가중치)이 없는 주문을 뺌", async () => {
     reads["/api/paper/overview"] = () => Promise.resolve(overview(CLAUDE2_NOT_STARTED));
     render(<PaperPage />);
+    await settled();
 
-    const notes = await screen.findByRole("list", { name: "체결 시점 실험 설명" });
+    const notes = screen.getByRole("list", { name: "체결 시점 실험 설명" });
     expect(notes.textContent).toContain("계좌1식 기준이나 체결(금액 가중치)이 없거나 그 시점 반사실이 없는 주문은 빼고 셉니다");
     expect(notes.textContent).toContain("'기준 없음'에는 계좌2의 체결 없는 주문도 듦");
   });
@@ -398,12 +423,13 @@ describe("개요 — 체결 시점 실험·S = 100·한계", () => {
   it("M1 표의 구분·뺀 주문 칸과 시점 표의 뺀 주문 칸은 낱말 사이에서 줄바꿈 — 1280px 카드 안에 M1 본 줄이 다 보이게", async () => {
     reads["/api/paper/overview"] = () => Promise.resolve(overview(CLAUDE2_ACTIVE));
     render(<PaperPage />);
+    await settled();
 
     const wraps = (cell: Element) => {
       expect(cell.className).toContain("break-keep");
       expect(cell.className).not.toContain("whitespace-nowrap");
     };
-    const chosen = await screen.findByRole("table", { name: "고른 시점(M1 — 주 판정)" });
+    const chosen = screen.getByRole("table", { name: "고른 시점(M1 — 주 판정)" });
     for (const row of within(chosen).getAllByRole("row").slice(1)) {
       wraps(row.firstElementChild as Element);
       wraps(row.lastElementChild as Element);
@@ -421,8 +447,9 @@ describe("개요 — 체결 시점 실험·S = 100·한계", () => {
       navSeries: { dates: ["2026-10-30"], books: { rules: [1], claude: [2], claude2: [null], bench_spy: [3], bench_mix: [4] } },
     }));
     render(<PaperPage />);
+    await settled();
 
-    expect(await screen.findByText(/아직 계좌2가 출발하지 않았습니다 — 출발 전 구간은 계좌2 값이 없어/)).toBeTruthy();
+    expect(screen.getByText(/아직 계좌2가 출발하지 않았습니다 — 출발 전 구간은 계좌2 값이 없어/)).toBeTruthy();
     expect(screen.queryByRole("list", { name: "차트 S = 100 같은 구간" })).toBeNull();
     const limits = screen.getByRole("region", { name: "Claude 계좌2의 한계" });
     expect(within(limits).getAllByRole("listitem")).toHaveLength(5);
@@ -445,23 +472,25 @@ describe("개요 — 체결 시점 실험·S = 100·한계", () => {
       available: true, series: [{ tradingDate: "2026-11-03", nav: 100500, cash: 40000, equityValue: 60500, exposurePct: 60.2, pricesFinal: true }],
     });
     render(<PaperPage />);
+    await settled();
 
-    const same = await screen.findByRole("list", { name: "차트 S = 100 같은 구간" });
+    const same = screen.getByRole("list", { name: "차트 S = 100 같은 구간" });
     expect(within(same).getAllByRole("listitem").map((li) => li.textContent)).toEqual(["Claude 계좌1", "Claude 계좌2", "SPY 계좌"]);
     expect(same.getAttribute("data-rows")).toBe("2");
     expect(screen.getByText(/기준일 S = 2026-11-02\(Claude 계좌2 출발일\)/)).toBeTruthy();
     expect(screen.getByText("마지막 2026-11-03 — Claude 계좌1 101.0 · Claude 계좌2 100.5 · SPY 계좌 101.0")).toBeTruthy();
-    const exposure = await screen.findByRole("list", { name: "차트 Claude 노출 추이(목표 대비 실제)" });
-    await waitFor(() => expect(within(exposure).getAllByRole("listitem").map((li) => li.textContent))
-      .toEqual(["목표 노출(Claude가 정함)", "실제 노출(장부)", "계좌2 실제 노출(장부)"]));
+    const exposure = screen.getByRole("list", { name: "차트 Claude 노출 추이(목표 대비 실제)" });
+    expect(within(exposure).getAllByRole("listitem").map((li) => li.textContent))
+      .toEqual(["목표 노출(Claude가 정함)", "실제 노출(장부)", "계좌2 실제 노출(장부)"]);
     expect(screen.queryByRole("button", { name: "계좌2 시작" })).toBeNull();
   });
 
   it("계좌2가 없는 개요(배포 전 백엔드)는 예전 그대로 — 출발 카드·S = 100·계좌2 한계 없음", async () => {
     reads["/api/paper/overview"] = () => Promise.resolve(overview(null));
     render(<PaperPage />);
+    await settled();
 
-    expect(await screen.findByRole("table", { name: "체결 시점 실험" })).toBeTruthy();
+    expect(screen.getByRole("table", { name: "체결 시점 실험" })).toBeTruthy();
     expect(screen.queryByRole("group", { name: "실행 감사 계좌" })).toBeNull();
     expect(screen.queryByText("S = 100 같은 구간")).toBeNull();
     expect(screen.queryByRole("region", { name: "Claude 계좌2의 한계" })).toBeNull();
@@ -497,10 +526,12 @@ describe("보유·체결 — 계좌2 칸", () => {
 
   it("주문 표에 목표 시각·계좌1식 대비·실행 메모, 체결 표에 체결 봉·사다리·계좌1식 대비와 대체 체결 배지", async () => {
     render(<PaperPage initialTab="holdings" />);
-    fireEvent.change(await screen.findByLabelText("계좌 고르기"), { target: { value: "claude2" } });
+    await settled();
+    fireEvent.change(screen.getByLabelText("계좌 고르기"), { target: { value: "claude2" } });
+    await settled();
 
-    const orders = await screen.findByRole("table", { name: "주문" });
-    await waitFor(() => expect(within(orders).getByText("+12.3bp")).toBeTruthy());
+    const orders = screen.getByRole("table", { name: "주문" });
+    expect(within(orders).getByText("+12.3bp")).toBeTruthy();
     expect(headersOf(orders)).toEqual(["낸 시각·기준일", "종목·방향", "크기", "체결 시점·목표 시각", "계좌1식 대비", "상태·만료·체결", "실행 메모·근거"]);
     expect(within(orders).getByText("다음 거래일 10:00 ET")).toBeTruthy();
     expect(within(orders).getByText("목표 2026-11-04 00:00")).toBeTruthy();
@@ -521,10 +552,12 @@ describe("보유·체결 — 계좌2 칸", () => {
   // (주문 행 157px·체결 행 77px — QA 스택 화면, 수정 전에는 it.fails).
   it("계좌2 표는 짧은 칸을 한 줄로, 글 칸(상태·실행 메모·근거·크기·사다리 이름)은 최소 폭을 두고 낱말 사이에서만 줄바꿈 — 넓으면 상자 안에서 가로로 넘김", async () => {
     render(<PaperPage initialTab="holdings" />);
-    fireEvent.change(await screen.findByLabelText("계좌 고르기"), { target: { value: "claude2" } });
+    await settled();
+    fireEvent.change(screen.getByLabelText("계좌 고르기"), { target: { value: "claude2" } });
+    await settled();
 
-    const orders = await screen.findByRole("table", { name: "주문" });
-    await waitFor(() => expect(within(orders).getByText("+12.3bp")).toBeTruthy());
+    const orders = screen.getByRole("table", { name: "주문" });
+    expect(within(orders).getByText("+12.3bp")).toBeTruthy();
     const classesOf = (table: HTMLElement) => {
       const cells = [...within(table).getAllByRole("row")[1].children];
       return Object.fromEntries(headersOf(table).map((header, index) => [header, cells[index].className]));
@@ -556,10 +589,12 @@ describe("보유·체결 — 계좌2 칸", () => {
   // 이제 두 표 모두 1280px에서 958px(QA 스택에서 잼 — jsdom은 폭을 재지 못해 칸 구성으로 봄).
   it("계좌2 표는 한국 표처럼 두 줄 칸으로 묶어 계좌2 칸(계좌1식 대비·실행 메모·근거)을 앞쪽에 — 주문 일곱 칸·체결 아홉 칸", async () => {
     render(<PaperPage initialTab="holdings" />);
-    fireEvent.change(await screen.findByLabelText("계좌 고르기"), { target: { value: "claude2" } });
+    await settled();
+    fireEvent.change(screen.getByLabelText("계좌 고르기"), { target: { value: "claude2" } });
+    await settled();
 
-    const orders = await screen.findByRole("table", { name: "주문" });
-    await waitFor(() => expect(within(orders).getByText("+12.3bp")).toBeTruthy());
+    const orders = screen.getByRole("table", { name: "주문" });
+    expect(within(orders).getByText("+12.3bp")).toBeTruthy();
     expect(headersOf(orders)).toEqual(["낸 시각·기준일", "종목·방향", "크기", "체결 시점·목표 시각", "계좌1식 대비", "상태·만료·체결", "실행 메모·근거"]);
     expect(rowsOf(orders)).toEqual([[
       "2026-11-03 07:41기준 2026-11-02", "AAA매수", "순자산의 8.00% 매수", "다음 거래일 10:00 ET목표 2026-11-04 00:00", "+12.3bp",
@@ -592,12 +627,14 @@ describe("보유·체결 — 계좌2 칸", () => {
     }] });
     reads["/api/paper/books/claude2/execution"] = () => Promise.resolve(execution("claude2", [], []));
     render(<PaperPage initialTab="holdings" />);
-    fireEvent.change(await screen.findByLabelText("계좌 고르기"), { target: { value: "claude2" } });
+    await settled();
+    fireEvent.change(screen.getByLabelText("계좌 고르기"), { target: { value: "claude2" } });
+    await settled();
 
-    const orders = await screen.findByRole("table", { name: "주문" });
-    await waitFor(() => expect(within(orders).getByText("대기")).toBeTruthy());
+    const orders = screen.getByRole("table", { name: "주문" });
+    expect(within(orders).getByText("대기")).toBeTruthy();
     const fills = screen.getByRole("table", { name: "체결" });
-    await waitFor(() => expect(within(fills).getByText("대체 체결")).toBeTruthy());
+    expect(within(fills).getByText("대체 체결")).toBeTruthy();
     // 낭독기에 그대로 읽히는 "—"(aria-hidden 밖의 글자)가 표 본문에 없어야 함
     const exposedDashes = (table: HTMLElement) => {
       const out: string[] = [];
@@ -626,9 +663,11 @@ describe("보유·체결 — 계좌2 칸", () => {
     reads["/api/paper/books/claude/orders"] = () => Promise.resolve({ available: true, orders: [] });
     reads["/api/paper/books/claude/fills"] = () => Promise.resolve({ available: true, fills: [] });
     render(<PaperPage initialTab="holdings" />);
-    fireEvent.change(await screen.findByLabelText("계좌 고르기"), { target: { value: "claude" } });
+    await settled();
+    fireEvent.change(screen.getByLabelText("계좌 고르기"), { target: { value: "claude" } });
+    await settled();
 
-    const orders = await screen.findByRole("table", { name: "주문" });
+    const orders = screen.getByRole("table", { name: "주문" });
     expect(headersOf(orders)).toEqual(["낸 시각", "종목", "방향", "크기", "체결 시점", "출처", "상태", "기준 거래일", "만료", "체결 시각", "근거"]);
     expect(api.apiGetShared.mock.calls.map(([path]) => path)).not.toContain("/api/paper/books/claude/execution?limit=50");
   });
@@ -659,8 +698,9 @@ describe("🧪 장중 확인(단계 2) — 오늘 장중 확인 줄·결정 로�
       today: { ...TODAY, status: "EXPIRED", reason: "WINDOW_MISSED — 호출 창(+2~+20분)을 놓침(서버 꺼짐·늦게 켜짐)" },
     }));
     render(<PaperPage />);
+    await settled();
 
-    const line = await screen.findByLabelText("오늘 장중 확인");
+    const line = screen.getByLabelText("오늘 장중 확인");
     expect(line.textContent).toBe("오늘 장중 확인(세션 2026-11-02): 10:30 ET · 2026-11-03 00:30 KST · 감시 1분봉(5분 수집, 잰 지연) · 감시 AAPL · "
       + "놓침 — 호출 창(확인 시각 +2~+20분)을 놓침 — 서버 꺼짐·늦게 켜짐 (WINDOW_MISSED)");
     const card = screen.getByRole("heading", { name: "장부 관측치" }).closest("section") as HTMLElement;
@@ -675,12 +715,14 @@ describe("🧪 장중 확인(단계 2) — 오늘 장중 확인 줄·결정 로�
       ...base, claude2: { ...base.claude2, checkpoint: { enabled: false, session: "2026-11-02", today: null, watch: null } },
     });
     render(<PaperPage />);
-    expect((await screen.findByLabelText("오늘 장중 확인")).textContent).toBe("오늘 장중 확인(세션 2026-11-02): 꺼짐 — 설정 claude2.enabled·claude2.checkpoints");
+    await settled();
+    expect(screen.getByLabelText("오늘 장중 확인").textContent).toBe("오늘 장중 확인(세션 2026-11-02): 꺼짐 — 설정 claude2.enabled·claude2.checkpoints");
     cleanup();
 
     reads["/api/paper/status"] = () => Promise.resolve(status(false));
     render(<PaperPage />);
-    expect(await screen.findByText(/설정 claude2\.enabled가 꺼져 있습니다/)).toBeTruthy();
+    await settled();
+    expect(screen.getByText(/설정 claude2\.enabled가 꺼져 있습니다/)).toBeTruthy();
     expect(screen.queryByLabelText("오늘 장중 확인")).toBeNull();
   });
 
@@ -710,18 +752,21 @@ describe("🧪 장중 확인(단계 2) — 오늘 장중 확인 줄·결정 로�
       });
       reads["/api/paper/status"] = () => Promise.resolve(checkpointStatus({ enabled: true, session: "2026-11-02", today: TODAY, watch: null }));
       render(<PaperPage initialTab="decisions" />);
+      await settled();
 
-      fireEvent.change(await screen.findByLabelText("계좌 고르기"), { target: { value: "claude2" } });
-      expect((await screen.findByLabelText("오늘 장중 확인")).textContent).toContain("예정");
+      fireEvent.change(screen.getByLabelText("계좌 고르기"), { target: { value: "claude2" } });
+      await settled();
+      expect(screen.getByLabelText("오늘 장중 확인").textContent).toContain("예정");
       // 두 줄 모두 이름이 '기준일 종류'(2026-10-30 장중 확인)라 요약 글로 고릅니다.
-      await screen.findAllByRole("row", { name: "2026-10-30 장중 확인" });
+      expect(screen.getAllByRole("row", { name: "2026-10-30 장중 확인" })).toHaveLength(2);
       const byText = (text: string) => screen.getAllByRole("row").find((tr) => tr.textContent?.includes(text)) as HTMLElement;
       expect(within(byText("API 오류 — 장중 확인 재시도 없음")).getByText("API 오류(재시도 없음)")).toBeTruthy();
 
       const row = byText("AAPL 갭 메움 — 대신함");
       expect(within(row).getByText("장중 확인")).toBeTruthy();
       fireEvent.click(within(row).getByRole("button", { name: "상세 펼치기" }));
-      const part = await screen.findByRole("region", { name: "장중 확인" });
+      await settled();
+      const part = screen.getByRole("region", { name: "장중 확인" });
       expect(within(part).getByText("대신함(REPLACE)")).toBeTruthy();
       expect(within(part).getByText("2건(#7 · #8)")).toBeTruthy();
       expect(within(part).getByText("세션 2026-11-02 · 10:30 ET · 감시 1분봉(5분 수집, 잰 지연) · 지연 1분 15초")).toBeTruthy();
@@ -754,11 +799,14 @@ describe("🧪 장중 확인(단계 2) — 오늘 장중 확인 줄·결정 로�
     });
     reads["/api/paper/status"] = () => Promise.resolve(checkpointStatus({ enabled: true, session: "2026-11-02", today: TODAY, watch: null }));
     render(<PaperPage initialTab="decisions" />);
+    await settled();
 
-    fireEvent.change(await screen.findByLabelText("계좌 고르기"), { target: { value: "claude2" } });
-    const row = (await screen.findAllByRole("row", { name: "2026-10-30 장중 확인" }))[0];
+    fireEvent.change(screen.getByLabelText("계좌 고르기"), { target: { value: "claude2" } });
+    await settled();
+    const row = screen.getAllByRole("row", { name: "2026-10-30 장중 확인" })[0];
     fireEvent.click(within(row).getByRole("button", { name: "상세 펼치기" }));
-    const judged = await screen.findByRole("region", { name: "판단" });
+    await settled();
+    const judged = screen.getByRole("region", { name: "판단" });
     expect(within(judged).getByText("계획대로")).toBeTruthy();
     expect(within(judged).queryByText("노출 근거")).toBeNull();
     // 칸 설명도 숨긴 '목표 주식 노출'을 가리키지 않음.
@@ -781,10 +829,12 @@ describe("🧪 장중 확인(단계 2) — 오늘 장중 확인 줄·결정 로�
       cf: {}, advantageBp: {}, lagSeconds: null, lateResolved: null, executionNote: "갭 메움", auditedAtKst: null,
     }]));
     render(<PaperPage initialTab="holdings" />);
-    fireEvent.change(await screen.findByLabelText("계좌 고르기"), { target: { value: "claude2" } });
+    await settled();
+    fireEvent.change(screen.getByLabelText("계좌 고르기"), { target: { value: "claude2" } });
+    await settled();
 
-    const orders = await screen.findByRole("table", { name: "주문" });
-    await waitFor(() => expect(within(orders).getByText("목표 2026-11-03 00:35")).toBeTruthy());
+    const orders = screen.getByRole("table", { name: "주문" });
+    expect(within(orders).getByText("목표 2026-11-03 00:35")).toBeTruthy();
     const label = within(orders).getByText("장중 시장가(확인 직후 첫 분)");
     const cell = label.closest("td") as HTMLElement;
     expect(cell.className).toContain("whitespace-nowrap");
@@ -808,15 +858,19 @@ describe("QA-148 개요 뒤에 마운트된 섹션의 요청을 벽시계 한도
 
   // 출발 카드는 개요 응답 뒤에 마운트되고, 상태 요청은 그 커밋 다음 Scheduler 작업의 마운트 effect에서 나갑니다. 수정 전에는 render 직후
   // findByText(기본 한도 1초, 진짜 타이머)로 기다려, 부하로 '개요 커밋 → 상태 요청 → 상태 커밋'이 1초를 넘기면 카드가 '계좌2 상태를 읽지
-  // 못해'인 채 졌다(6e6ecf3c). 상태 요청 순간 1.1초를 붙잡아 그 순서를 부하 없이 만듭니다(재현 커밋에서는 it.fails).
-  it.fails("상태 요청이 1초 넘게 늦게 나가도 출발 카드가 꺼짐 문구를 보인다", async () => {
+  // 못해'인 채 졌다(6e6ecf3c). 상태 요청 순간 1.1초를 붙잡아 그 순서를 부하 없이 만듭니다(재현 커밋에서는 it.fails). 이제 이 파일의 시험은
+  // 한도 없이 settled(act)로 비운 뒤 확인합니다.
+  it("상태 요청이 1초 넘게 늦게 나가도 출발 카드가 꺼짐 문구를 보인다", async () => {
     reads["/api/paper/overview"] = () => Promise.resolve(overview(CLAUDE2_NOT_STARTED));
     reads["/api/paper/status"] = () => {
       busyFor(1_100);
       return Promise.resolve(status(false));
     };
     render(<PaperPage />);
+    await settled();
 
-    expect(await screen.findByText(/설정 claude2\.enabled가 꺼져 있습니다/)).toBeTruthy();
+    expect(screen.getByText(/설정 claude2\.enabled가 꺼져 있습니다/)).toBeTruthy();
+    // 붙잡혀도 상태 요청은 한 번 — 버리거나 다시 읽지 않습니다(QA-147의 '첫 요청 버림'과 다른 흔들림).
+    expect(api.apiGetShared.mock.calls.filter(([path]) => path === "/api/paper/status")).toHaveLength(1);
   });
 });
