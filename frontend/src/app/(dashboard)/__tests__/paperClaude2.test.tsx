@@ -792,3 +792,31 @@ describe("🧪 장중 확인(단계 2) — 오늘 장중 확인 줄·결정 로�
   });
 });
 
+
+describe("QA-148 개요 뒤에 마운트된 섹션의 요청을 벽시계 한도 없이 기다린다(시험 흔들림)", () => {
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-10-30T11:00:00Z"));   // 20:00 KST — 출발 카드 시험과 같은 시계
+  });
+  afterEach(() => vi.useRealTimers());
+
+  /** 메인 스레드를 ms 동안 붙잡습니다 — 부하로 CPU를 못 받는 동안과 같은 효과(응답 순서·내용은 그대로). */
+  function busyFor(ms: number) {
+    const end = performance.now() + ms;
+    while (performance.now() < end) { /* 붙잡음 */ }
+  }
+
+  // 출발 카드는 개요 응답 뒤에 마운트되고, 상태 요청은 그 커밋 다음 Scheduler 작업의 마운트 effect에서 나갑니다. 수정 전에는 render 직후
+  // findByText(기본 한도 1초, 진짜 타이머)로 기다려, 부하로 '개요 커밋 → 상태 요청 → 상태 커밋'이 1초를 넘기면 카드가 '계좌2 상태를 읽지
+  // 못해'인 채 졌다(6e6ecf3c). 상태 요청 순간 1.1초를 붙잡아 그 순서를 부하 없이 만듭니다(재현 커밋에서는 it.fails).
+  it.fails("상태 요청이 1초 넘게 늦게 나가도 출발 카드가 꺼짐 문구를 보인다", async () => {
+    reads["/api/paper/overview"] = () => Promise.resolve(overview(CLAUDE2_NOT_STARTED));
+    reads["/api/paper/status"] = () => {
+      busyFor(1_100);
+      return Promise.resolve(status(false));
+    };
+    render(<PaperPage />);
+
+    expect(await screen.findByText(/설정 claude2\.enabled가 꺼져 있습니다/)).toBeTruthy();
+  });
+});
