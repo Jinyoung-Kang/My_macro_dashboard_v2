@@ -97,7 +97,9 @@ describe("StaleBadge", () => {
     const pill = label.parentElement as HTMLElement;
     expect(pill.className).toContain("text-warn");
     expect(pill.className).toContain("border-warn");
-    expect(pill.className).toContain("rounded-full");
+    // 한 줄이면 알약, 줄이 바뀌면 둥근 사각(12px) — 두 줄로 접힌 rounded-full 타원이 글을 자르지 않게.
+    expect(pill.className).toContain("rounded-control");
+    expect(pill.className).not.toContain("rounded-full");
     expect(pill.querySelector("svg")?.getAttribute("aria-hidden")).toBe("true");
     expect(screen.getByText("주의:").className).toContain("sr-only");
     expect(screen.getByText("· 이번 수집 실패 — 직전 저장본")).toBeTruthy();

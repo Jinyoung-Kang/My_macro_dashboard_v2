@@ -9,8 +9,10 @@ import { PROVENANCE_UNKNOWN, estimateLabel, presentText, provenanceText } from "
  * 플래그가 있으면 반드시 보입니다. 숨기는 옵션은 두지 않습니다.
  * 추정 배지·출처 캡션은 바탕을 칠하지 않고 놓인 자리(surface·bg)를 그대로 씁니다. 이전 값 배지만 경고 틴트(warn-tint) 바탕입니다 —
  * surface와 미리 섞은 불투명 색이라 어디에 놓여도 경고색 글자 대비가 같습니다(라이트 5.1·다크 7.2:1, 명세 §2-1). 투명 틴트(bg-warn/10)는 쓰지 않습니다.
+ * 모서리는 rounded-full이 아니라 12px(rounded-control)입니다 — 한 줄이면 높이 22px라 알약과 같고, 사유가 길어 좁은 화면에서 두세 줄로
+ * 접히면 rounded-full은 타원이 되어 글이 모서리에 걸렸습니다(홈 모의매매 히어로·계좌 행, 390px).
  */
-const PILL = "inline-flex max-w-full flex-wrap items-center gap-x-1 rounded-full border px-2 py-0.5 text-xs leading-4";
+const PILL = "inline-flex max-w-full flex-wrap items-center gap-x-1 rounded-control border px-2 py-0.5 text-xs leading-4";
 
 /**
  * 출처 캡션 — "출처 · 실시간|N분 지연 · 시각"을 작은 글(12px, text-3)로. 모르는 부분은 빼고, 전부 모르면 "출처 —".
