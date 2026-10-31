@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Banner, Button, Card, ErrorState, inputClasses, Loading, Table } from "@/components/ui";
+import { Banner, Button, Card, ErrorState, inputClasses, Loading, NativeSelect, Table } from "@/components/ui";
 import { useApi } from "@/hooks/useApi";
 import { useAsyncAction } from "@/hooks/useAsyncAction";
 import { apiDelete, apiPost } from "@/lib/api";
@@ -203,14 +203,14 @@ export function NotesSection({ startDate, market = "US" }: { startDate: string |
           <div className="grid gap-3 sm:grid-cols-3">
             <label className="flex flex-col gap-1 text-xs text-muted">
               종류
-              <select
+              <NativeSelect
                 value={draft.kind}
                 onChange={(event) => edit({ kind: event.target.value === "INSIGHT" ? "INSIGHT" : "MARKET" })}
-                className={INPUT}
+                wrapperClassName="block w-full"
               >
                 <option value="MARKET">{korea ? "시황 메모(MARKET) — 한국 결정 패킷에" : "시황 메모(MARKET) — 결정 패킷에"}</option>
                 <option value="INSIGHT">방법론 메모(INSIGHT) — 프레임 제안에</option>
-              </select>
+              </NativeSelect>
             </label>
             <div className="flex flex-col gap-1">
               <label className="flex flex-col gap-1 text-xs text-muted">

@@ -1,8 +1,8 @@
 "use client";
 
-import { ReactNode } from "react";
+import { ReactNode, type SelectHTMLAttributes } from "react";
 import { deltaColor, EMPTY, formatAge, formatKst, withoutLeadingIcon } from "@/lib/format";
-import { buttonClasses, FOCUS_RING, inputClasses, type ButtonSize, type ButtonVariant } from "./classes";
+import { buttonClasses, FOCUS_RING, inputClasses, type ButtonSize, type ButtonVariant, type InputSize } from "./classes";
 import { AlertTriangleIcon, CheckCircleIcon, ChevronDownIcon, ClockIcon, InfoIcon, LineIcon, SpinnerIcon, XCircleIcon } from "./icons";
 
 // 클래스 문자열은 서버 컴포넌트도 부를 수 있게 순수 모듈(classes.ts)에 두고 여기서 다시 내보냅니다.
@@ -368,23 +368,47 @@ export function Select({
   return (
     <label className="flex min-w-0 max-w-full flex-col gap-1 text-[13px] text-text-2 sm:w-auto">
       {label}
-      {/* 브라우저 화살표 대신 아이콘(appearance-none) — 고대비 모드에서도 글자색으로 보입니다. 폭 묶기는 감싼 칸이 합니다. */}
-      <span className="relative block w-full max-w-full sm:max-w-[22rem]">
-        <select
-          value={value}
-          disabled={disabled}
-          onChange={(event) => onChange(event.target.value)}
-          className={`w-full max-w-full appearance-none pr-9 ${inputClasses()}`}
-        >
-          {options.map((option) => (
-            <option key={option.value} value={option.value} disabled={option.disabled}>
-              {option.label}
-            </option>
-          ))}
-        </select>
-        <ChevronDownIcon size={16} className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-text-3" />
-      </span>
+      {/* 상자 모양·화살표 아이콘은 NativeSelect, 폭 묶기(좁은 화면 한 줄 전체·넓은 화면 22rem까지)는 감싼 칸이 합니다. */}
+      <NativeSelect
+        value={value}
+        disabled={disabled}
+        onChange={(event) => onChange(event.target.value)}
+        wrapperClassName="block w-full sm:max-w-[22rem]"
+      >
+        {options.map((option) => (
+          <option key={option.value} value={option.value} disabled={option.disabled}>
+            {option.label}
+          </option>
+        ))}
+      </NativeSelect>
     </label>
+  );
+}
+
+/**
+ * 고르기 상자 하나 — 날 select에 공용 입력칸 모양(inputClasses)과 화살표 아이콘을 입힙니다. 브라우저 화살표는 지우고(appearance-none)
+ * 아이콘을 둡니다 — 고대비 모드에서도 글자색으로 보이고, 같은 화면의 고르기 상자가 한 모양이 됩니다(예전에는 날 select만 브라우저 화살표).
+ * 이름은 부르는 쪽이 붙입니다(감싼 label·aria-label·id). `Select`(라벨·선택지 목록까지 그림)로 안 되는 자리 — 설정 표의 칸·카드 머리의
+ * 작은 고르기 — 에 씁니다. 폭은 `className`(select)·`wrapperClassName`(감싼 칸).
+ */
+export function NativeSelect({
+  inputSize = "md",
+  className = "",
+  wrapperClassName = "inline-block",
+  children,
+  ...props
+}: SelectHTMLAttributes<HTMLSelectElement> & {
+  inputSize?: InputSize;
+  /** 감싼 칸의 배치(표시 방식·폭). 기본은 글 흐름 안의 inline-block — 한 줄을 다 쓰려면 "block w-full". */
+  wrapperClassName?: string;
+}) {
+  return (
+    <span className={`relative max-w-full ${wrapperClassName}`.trim()}>
+      <select {...props} className={`w-full max-w-full appearance-none pr-9 ${inputClasses(inputSize)} ${className}`.trim()}>
+        {children}
+      </select>
+      <ChevronDownIcon size={16} className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-text-3" />
+    </span>
   );
 }
 

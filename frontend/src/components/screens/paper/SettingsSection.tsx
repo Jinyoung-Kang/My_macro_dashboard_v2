@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { Banner, Button, Card, ErrorState, inputClasses, Loading, Select, Table } from "@/components/ui";
+import { Banner, Button, Card, ErrorState, inputClasses, Loading, NativeSelect, Select, Table } from "@/components/ui";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { useApi } from "@/hooks/useApi";
 import { useAsyncAction } from "@/hooks/useAsyncAction";
@@ -350,17 +350,17 @@ function SettingInput({
       );
     case "choice":
       return (
-        <select
+        <NativeSelect
           id={id}
           value={value}
           aria-describedby={describedBy}
           onChange={(event) => onChange(event.target.value)}
-          className={`${INPUT} sm:max-w-[22rem]`}
+          wrapperClassName="block w-full sm:max-w-[22rem]"
         >
           {row.options.map((option) => (
             <option key={option} value={option}>{option}</option>
           ))}
-        </select>
+        </NativeSelect>
       );
     case "list":
     case "phrases":

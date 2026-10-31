@@ -2,6 +2,7 @@
  * 입력칸 모양(components/ui/classes.ts의 inputClasses·FOCUS_RING, ui Select) — 명세 docs/specs/2026-10-31-v2-coinbase-ui.md D9.
  *  - 입력칸 테두리는 border-strong(3:1), 포커스는 2px 바깥선 — 테두리 색만 바꾸는 예전 표시(1.9:1)로 돌아가지 않는다
  *  - 공용 Select는 라벨과 이어지고, 화살표는 장식 아이콘(aria-hidden)이다
+ *  - 날 고르기 상자(NativeSelect)도 같은 모양 — 화면 소스의 select는 이 둘을 거친다(브라우저 기본 화살표가 섞이지 않음)
  *  - 화면 소스에 예전 모양(outline-hidden + focus:border-accent)이 다시 들어오지 않는다
  */
 import { readdirSync, readFileSync, statSync } from "node:fs";
@@ -9,7 +10,7 @@ import { join, relative, resolve } from "node:path";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { FOCUS_RING, inputClasses, Select } from "@/components/ui";
+import { FOCUS_RING, inputClasses, NativeSelect, Select } from "@/components/ui";
 
 afterEach(() => cleanup());
 
@@ -55,6 +56,24 @@ describe("Select", () => {
   });
 });
 
+describe("NativeSelect", () => {
+  it("이름은 부르는 쪽(aria-label)이 붙이고, 입력칸 모양·브라우저 화살표 없음·장식 화살표 아이콘", () => {
+    const onChange = vi.fn();
+    const { container } = render(
+      <NativeSelect aria-label="자동 갱신 간격" value="60" onChange={(event) => onChange(event.target.value)} inputSize="sm">
+        <option value="0">수동</option>
+        <option value="60">1분</option>
+      </NativeSelect>,
+    );
+    const select = screen.getByRole("combobox", { name: "자동 갱신 간격" }) as HTMLSelectElement;
+    expect(select.className).toContain("appearance-none");
+    expect(select.className.split(/\s+/)).toEqual(expect.arrayContaining(inputClasses("sm").split(/\s+/)));
+    fireEvent.change(select, { target: { value: "0" } });
+    expect(onChange).toHaveBeenCalledWith("0");
+    expect((container.querySelector("svg") as SVGSVGElement).getAttribute("aria-hidden")).toBe("true");
+  });
+});
+
 describe("화면 소스", () => {
   it("예전 입력칸 모양(outline-hidden + focus:border-accent)을 쓰는 곳이 없다", () => {
     const root = resolve(__dirname, "../../..");
@@ -76,5 +95,23 @@ describe("화면 소스", () => {
       .filter((path) => /outline-hidden[^"`]*focus:border-accent/.test(readFileSync(path, "utf8")))
       .map((path) => relative(root, path));
     expect(offenders).toEqual([]);
+  });
+
+  it("날 <select>는 공용 조각(ui/index.tsx의 Select·NativeSelect) 안에만 — 남은 한 곳은 모의매매 장중 카드(명세 D1, 다음 단계)", () => {
+    const root = resolve(__dirname, "../../..");
+    const files: string[] = [];
+    const walk = (dir: string) => {
+      for (const name of readdirSync(dir)) {
+        const path = join(dir, name);
+        if (statSync(path).isDirectory()) {
+          if (name !== "__tests__" && name !== "__checks__") walk(path);
+        } else if (/\.tsx$/.test(name)) {
+          files.push(path);
+        }
+      }
+    };
+    walk(root);
+    const raw = files.filter((path) => /<select\b/.test(readFileSync(path, "utf8"))).map((path) => relative(root, path)).sort();
+    expect(raw).toEqual(["components/screens/paper/LiveValuationCard.tsx", "components/ui/index.tsx"]);
   });
 });

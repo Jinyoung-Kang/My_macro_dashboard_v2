@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { inputClasses } from "@/components/ui";
+import { NativeSelect } from "@/components/ui";
 import { formatKst } from "@/lib/format";
 
 /**
@@ -107,10 +107,10 @@ export function AutoRefreshControl({
     <div className="flex items-center gap-2">
       <label className="flex items-center gap-1.5 text-xs text-muted">
         <span className="whitespace-nowrap">자동 갱신</span>
-        <select
+        <NativeSelect
           value={String(seconds)}
           onChange={(event) => onChange(Number(event.target.value))}
-          className={inputClasses("sm")}
+          inputSize="sm"
           aria-label="자동 갱신 간격"
         >
           {REFRESH_OPTIONS.map((option) => (
@@ -118,7 +118,7 @@ export function AutoRefreshControl({
               {option.label}
             </option>
           ))}
-        </select>
+        </NativeSelect>
       </label>
 
       <span className="text-xs tabular-nums text-muted">
