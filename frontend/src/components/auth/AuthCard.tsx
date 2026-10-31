@@ -1,5 +1,6 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
+import { inputClasses } from "@/components/ui/classes";
 
 /** 로그인 밖 화면(로그인·가입·인증·재설정·처리방침)의 공통 틀. */
 export function AuthCard({ title, children, footer }: { title: string; children: ReactNode; footer?: ReactNode }) {
@@ -36,7 +37,7 @@ export function AuthField({
         autoComplete={autoComplete}
         autoFocus={autoFocus}
         onChange={(event) => onChange(event.target.value)}
-        className="mt-1 w-full rounded-md border border-border bg-canvas px-3 py-2 text-sm text-body outline-hidden focus:border-accent"
+        className={`mt-1 w-full ${inputClasses()}`}
       />
     </label>
   );

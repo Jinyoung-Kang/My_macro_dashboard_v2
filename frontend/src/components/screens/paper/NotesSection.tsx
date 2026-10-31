@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Banner, Button, Card, ErrorState, Loading, Table } from "@/components/ui";
+import { Banner, Button, Card, ErrorState, inputClasses, Loading, Table } from "@/components/ui";
 import { useApi } from "@/hooks/useApi";
 import { useAsyncAction } from "@/hooks/useAsyncAction";
 import { apiDelete, apiPost } from "@/lib/api";
@@ -24,7 +24,7 @@ import {
 import type { PaperMarketCode } from "@/lib/paperMarket";
 import type { PaperNoteCreateResult, PaperNotesResponse, PaperOkResult, PaperSettingsResponse } from "@/lib/types";
 
-const INPUT = "w-full rounded-md border border-border bg-canvas px-3 py-2 text-sm text-body outline-hidden focus:border-accent";
+const INPUT = `w-full ${inputClasses()}`;
 
 /**
  * 메모 탭(명세 F6·D14) — 시황 메모(MARKET: 기준일·만료일, 유효하면 Claude 결정 패킷 섹션 11에 자료로)와 방법론 메모(INSIGHT: 만료 없음,

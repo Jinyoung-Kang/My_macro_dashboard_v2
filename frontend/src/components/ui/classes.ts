@@ -35,3 +35,22 @@ const BUTTON_SIZE: Record<ButtonSize, string> = {
 export function buttonClasses(variant: ButtonVariant = "secondary", size: ButtonSize = "md"): string {
   return `${BUTTON_BASE} ${BUTTON_VARIANT[variant]} ${BUTTON_SIZE[size]}`;
 }
+
+/** 포커스 링 — 키보드로 옮긴 곳을 2px 바깥선으로 보입니다(바탕 대비 라이트 6.3·다크 6.8:1). */
+export const FOCUS_RING = "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus";
+
+export type InputSize = "md" | "sm";
+
+const INPUT_SIZE: Record<InputSize, string> = {
+  md: "min-h-11 px-3 py-2 text-sm lg:min-h-10",
+  sm: "min-h-11 px-2.5 py-1 text-[13px] lg:min-h-8",
+};
+
+/**
+ * 날 입력칸(input·textarea·select) 모양 — 테두리 border-strong(3:1, WCAG 1.4.11), 바탕 surface, 포커스 링 2px.
+ * 예전 모양(`outline-hidden focus:border-accent`)은 포커스 표시가 테두리 색 하나(1.9:1)뿐이라 모자랐습니다(명세 D9).
+ * 폭·여백 같은 배치 클래스는 부르는 쪽이 붙입니다. sm은 카드 머리의 작은 고르기(새로고침 간격 등)용입니다.
+ */
+export function inputClasses(size: InputSize = "md"): string {
+  return `rounded-control border border-border-strong bg-surface text-text placeholder:text-text-3 disabled:cursor-not-allowed disabled:opacity-60 ${FOCUS_RING} ${INPUT_SIZE[size]}`;
+}

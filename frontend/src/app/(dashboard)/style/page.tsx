@@ -9,6 +9,7 @@ import {
   EmptyState,
   ErrorState,
   Freshness,
+  inputClasses,
   Loading,
   Metric,
   Select,
@@ -541,7 +542,7 @@ function HoldersCard() {
             value={input}
             onChange={(event) => setInput(event.target.value)}
             placeholder="NVIDIA"
-            className="rounded-md border border-border bg-surface-hover px-3 py-1.5 text-xs text-bright outline-hidden focus:border-accent"
+            className={inputClasses("sm")}
           />
         </label>
         <Button type="submit">찾기</Button>

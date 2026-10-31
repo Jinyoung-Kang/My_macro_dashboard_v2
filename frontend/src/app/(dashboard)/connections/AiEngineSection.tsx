@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Banner, Button, Card, ErrorState, Loading, Select, SourceBadge, Table } from "@/components/ui";
+import { Banner, Button, Card, ErrorState, inputClasses, Loading, Select, SourceBadge, Table } from "@/components/ui";
 import { useApi } from "@/hooks/useApi";
 import { errorMessage, useAsyncAction } from "@/hooks/useAsyncAction";
 import { apiPost } from "@/lib/api";
@@ -95,7 +95,7 @@ export function AiEngineSection() {
           onChange={(event) => setPrompt(event.target.value)}
           rows={3}
           maxLength={2000}
-          className="mt-3 w-full rounded-md border border-border bg-canvas px-3 py-2 text-sm text-body outline-hidden focus:border-accent"
+          className={`mt-3 w-full ${inputClasses()}`}
         />
 
         <div className="mt-3">

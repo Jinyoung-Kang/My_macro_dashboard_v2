@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { Banner, Button, Card, ErrorState, Loading, Select, Table } from "@/components/ui";
+import { Banner, Button, Card, ErrorState, inputClasses, Loading, Select, Table } from "@/components/ui";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { useApi } from "@/hooks/useApi";
 import { useAsyncAction } from "@/hooks/useAsyncAction";
@@ -28,7 +28,7 @@ import type { PaperSettingsHistoryResponse, PaperSettingsResponse, PaperSettings
 /** 배지 색 — lib/paper의 배지와 같은 팔레트. */
 const RULES_BADGE = "border-warn/40 bg-warn/10 text-warn";
 const CHANGED_BADGE = "border-accent/40 bg-accent/10 text-accent";
-const INPUT = "w-full rounded-md border border-border bg-canvas px-3 py-2 text-sm text-body outline-hidden focus:border-accent";
+const INPUT = `w-full ${inputClasses()}`;
 
 /**
  * 설정 탭(명세 S1~S3) — 키마다 지금 값·기본값·범위·설명을 보이고 바꿔 저장합니다. 바꾼 기록(버전)은 아래 표.

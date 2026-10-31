@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { type Column, DataTable } from "@/components/patterns";
-import { Banner, Button, Card } from "@/components/ui";
+import { Banner, Button, Card, inputClasses } from "@/components/ui";
 import { useApi } from "@/hooks/useApi";
 import { endpoints } from "@/lib/endpoints";
 import { deltaColor, EMPTY, formatKst } from "@/lib/format";
@@ -119,7 +119,7 @@ export function LiveValuationCard({ market = "US" }: { market?: PaperMarketCode 
             <select
               value={String(minutes)}
               onChange={(event) => setMinutes(Number(event.target.value))}
-              className="rounded-md border border-border bg-surface-hover px-2 py-1 text-xs text-body outline-hidden focus:border-accent"
+              className={`${inputClasses("sm")}`}
               aria-label="장중 평가 새로고침 간격"
             >
               {LIVE_REFRESH_OPTIONS.map((option) => (

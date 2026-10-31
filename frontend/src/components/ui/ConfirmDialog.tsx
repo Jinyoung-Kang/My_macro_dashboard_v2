@@ -1,7 +1,7 @@
 "use client";
 
 import { useId, useState, type ReactNode } from "react";
-import { buttonClasses } from "@/components/ui";
+import { buttonClasses, inputClasses } from "@/components/ui";
 import { Dialog } from "@/components/ui/Dialog";
 
 // 확인은 주 단추(강조 바탕), 위험한 확인은 danger 바탕에 danger-fg 글자(두 테마 모두 대비 7.7:1 이상) — 공용 단추 모양(buttonClasses).
@@ -107,7 +107,7 @@ function ConfirmForm({
             autoComplete="off"
             autoCapitalize="off"
             spellCheck={false}
-            className="w-full rounded-md border border-border bg-surface-2 px-3 py-2 text-sm text-text focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus disabled:opacity-60"
+            className={`w-full ${inputClasses()}`}
           />
         </div>
       )}

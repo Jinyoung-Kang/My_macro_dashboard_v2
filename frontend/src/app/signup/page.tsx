@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { FormEvent, useState } from "react";
 import { AuthCard, AuthField, AuthMessage, AuthSubmit } from "@/components/auth/AuthCard";
+import { FOCUS_RING } from "@/components/ui";
 import { auth } from "@/lib/api";
 
 /**
@@ -45,7 +46,7 @@ export default function SignupPage() {
           <AuthField label="비밀번호 확인" type="password" value={confirm} onChange={setConfirm} autoComplete="new-password" />
           {mismatch && <p className="mt-2 text-xs text-danger">비밀번호가 서로 다릅니다.</p>}
           <label className="mt-4 flex items-start gap-2 text-xs text-body">
-            <input type="checkbox" checked={agreed} onChange={(event) => setAgreed(event.target.checked)} className="mt-0.5" />
+            <input type="checkbox" checked={agreed} onChange={(event) => setAgreed(event.target.checked)} className={`mt-0.5 size-4 shrink-0 accent-accent ${FOCUS_RING}`} />
             <span>
               <Link href="/privacy" className="text-accent underline">개인정보 수집·이용</Link>(이메일·비밀번호 해시·알림 설정)에
               동의합니다.

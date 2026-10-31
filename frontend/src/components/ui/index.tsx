@@ -2,10 +2,11 @@
 
 import { ReactNode } from "react";
 import { deltaColor, EMPTY, formatAge, formatKst, withoutLeadingIcon } from "@/lib/format";
-import { buttonClasses, type ButtonSize, type ButtonVariant } from "./classes";
+import { buttonClasses, inputClasses, type ButtonSize, type ButtonVariant } from "./classes";
+import { ChevronDownIcon } from "./icons";
 
 // 클래스 문자열은 서버 컴포넌트도 부를 수 있게 순수 모듈(classes.ts)에 두고 여기서 다시 내보냅니다.
-export { buttonClasses, type ButtonSize, type ButtonVariant } from "./classes";
+export { buttonClasses, FOCUS_RING, inputClasses, type ButtonSize, type ButtonVariant, type InputSize } from "./classes";
 
 /**
  * 섹션 카드 컨테이너.
@@ -298,20 +299,24 @@ export function Select({
     내용만큼만 차지하되 화면을 넘지 않게 합니다.
   */
   return (
-    <label className="flex min-w-0 max-w-full flex-col gap-1 text-xs text-muted sm:w-auto">
+    <label className="flex min-w-0 max-w-full flex-col gap-1 text-[13px] text-text-2 sm:w-auto">
       {label}
-      <select
-        value={value}
-        disabled={disabled}
-        onChange={(event) => onChange(event.target.value)}
-        className="w-full max-w-full disabled:opacity-60 rounded-md border border-border bg-surface-hover px-2 py-1.5 text-sm text-body outline-hidden focus:border-accent focus-visible:ring-2 focus-visible:ring-accent sm:max-w-[22rem]"
-      >
-        {options.map((option) => (
-          <option key={option.value} value={option.value} disabled={option.disabled}>
-            {option.label}
-          </option>
-        ))}
-      </select>
+      {/* 브라우저 화살표 대신 아이콘(appearance-none) — 고대비 모드에서도 글자색으로 보입니다. 폭 묶기는 감싼 칸이 합니다. */}
+      <span className="relative block w-full max-w-full sm:max-w-[22rem]">
+        <select
+          value={value}
+          disabled={disabled}
+          onChange={(event) => onChange(event.target.value)}
+          className={`w-full max-w-full appearance-none pr-9 ${inputClasses()}`}
+        >
+          {options.map((option) => (
+            <option key={option.value} value={option.value} disabled={option.disabled}>
+              {option.label}
+            </option>
+          ))}
+        </select>
+        <ChevronDownIcon size={16} className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-text-3" />
+      </span>
     </label>
   );
 }

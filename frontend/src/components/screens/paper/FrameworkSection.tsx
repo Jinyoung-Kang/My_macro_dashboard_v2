@@ -1,7 +1,7 @@
 "use client";
 
 import { type ReactNode, useEffect, useState } from "react";
-import { Banner, Button, Card, ErrorState, Loading, Select, Table } from "@/components/ui";
+import { Banner, Button, Card, ErrorState, inputClasses, Loading, Select, Table } from "@/components/ui";
 import { useApi } from "@/hooks/useApi";
 import { useAsyncAction } from "@/hooks/useAsyncAction";
 import { useElapsedSeconds } from "@/hooks/useElapsedSeconds";
@@ -64,7 +64,7 @@ import type {
   PaperSettingsResponse,
 } from "@/lib/types";
 
-const INPUT = "w-full rounded-md border border-border bg-canvas px-3 py-2 text-sm text-body outline-hidden focus:border-accent";
+const INPUT = `w-full ${inputClasses()}`;
 
 /**
  * 프레임 탭(명세 F1~F5·F7·D15) — Claude 책의 판단 프레임(투자 OS) 판.

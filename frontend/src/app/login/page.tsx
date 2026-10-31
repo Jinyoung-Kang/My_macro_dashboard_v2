@@ -3,6 +3,7 @@
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { FormEvent, useEffect, useState } from "react";
+import { inputClasses } from "@/components/ui";
 import { isDemo, isLocalOwner } from "@/lib/access";
 import { auth } from "@/lib/api";
 
@@ -81,7 +82,7 @@ export default function LoginPage() {
             onChange={(event) => setEmail(event.target.value)}
             autoComplete="username"
             autoFocus
-            className="mt-1 w-full rounded-md border border-border bg-canvas px-3 py-2 text-sm text-body outline-hidden focus:border-accent"
+            className={`mt-1 w-full ${inputClasses()}`}
           />
         </label>
 
@@ -93,7 +94,7 @@ export default function LoginPage() {
             onChange={(event) => setPassword(event.target.value)}
             placeholder="Enter Password..."
             autoComplete="current-password"
-            className="mt-1 w-full rounded-md border border-border bg-canvas px-3 py-2 text-sm text-body outline-hidden focus:border-accent"
+            className={`mt-1 w-full ${inputClasses()}`}
           />
         </label>
 

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { inputClasses } from "@/components/ui";
 import { formatKst } from "@/lib/format";
 
 /**
@@ -109,7 +110,7 @@ export function AutoRefreshControl({
         <select
           value={String(seconds)}
           onChange={(event) => onChange(Number(event.target.value))}
-          className="rounded-md border border-border bg-surface-hover px-2 py-1 text-xs text-body outline-hidden focus:border-accent"
+          className={inputClasses("sm")}
           aria-label="자동 갱신 간격"
         >
           {REFRESH_OPTIONS.map((option) => (

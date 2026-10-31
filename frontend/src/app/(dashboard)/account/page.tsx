@@ -2,7 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { FormEvent, useEffect, useState } from "react";
-import { Banner, Button, Card, ErrorState, Loading, Table } from "@/components/ui";
+import { Banner, Button, Card, ErrorState, inputClasses, Loading, Table } from "@/components/ui";
 import { useApi } from "@/hooks/useApi";
 import { useAsyncAction } from "@/hooks/useAsyncAction";
 import { useSessionUser } from "@/hooks/useSessionUser";
@@ -97,7 +97,7 @@ export default function AccountPage() {
                 value={field.value}
                 autoComplete={field.auto}
                 onChange={(event) => field.set(event.target.value)}
-                className="mt-1 w-full rounded-md border border-border bg-canvas px-3 py-2 text-sm text-body outline-hidden focus:border-accent"
+                className={`mt-1 w-full ${inputClasses()}`}
               />
             </label>
           ))}
@@ -133,7 +133,7 @@ export default function AccountPage() {
                   value={deletePassword}
                   autoComplete="current-password"
                   onChange={(event) => setDeletePassword(event.target.value)}
-                  className="mt-1 w-full rounded-md border border-border bg-canvas px-3 py-2 text-sm text-body outline-hidden focus:border-accent"
+                  className={`mt-1 w-full ${inputClasses()}`}
                 />
               </label>
               {remove.error && <Banner tone="warn">{remove.error}</Banner>}
