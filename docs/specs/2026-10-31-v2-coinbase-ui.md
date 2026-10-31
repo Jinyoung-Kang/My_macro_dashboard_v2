@@ -208,6 +208,24 @@ Tailwind 4.3.3은 `--text-*--line-height`·`--text-*--font-weight`·`--text-*--l
   `/paper`에서 SubNav와 7탭이 같은 모양으로 두 줄 겹치면 위계가 흐려지므로 7탭은 `text-[14px] h-11`로 한 단계 작게 둔다.
 - **Skeleton**: 글 줄 `rounded-full`, 덩어리 `rounded-control`, `bg-surface-2 motion-safe:animate-pulse`.
 
+### 4-1. 구현 메모(패턴 단계, 2026-11-01) — 위 설계와 달리 한 것 [확인 코드·시험]
+
+- 고르기 조각 클래스는 `components/ui/classes.ts`에 둔다: `pillTabClasses(active)`(기간 알약 — 새·옛 RangeTabs), `SEGMENT_TRACK`·`segmentClasses(checked)`
+  (ThemeSwitch·홈 시장 고르기), `underlineTabClasses(active, "md"|"sm")`(밑줄 탭 — 모의매매 7탭은 sm, SubNav는 셸 단계에서 md로).
+- forced-colors: 세그먼트의 고른 칸은 `ring-1`만으로는 그 모드에서 보이지 않는다 — ring은 box-shadow라 고대비 모드가 지운다. 고른 알약·세그먼트 칸에만
+  `forced-colors:border`(1px 테두리)를 더하고, 나머지 칸에는 테두리를 두지 않는다(투명 테두리는 그 모드에서 시스템 색으로 보여 모든 칸이 고른 것처럼 보임).
+  굵기 차이도 둔다 — 기간 알약·세그먼트는 고른 칸 semibold·나머지 medium, 밑줄 탭은 semibold·normal.
+- AssetList 제목은 행 글과 같은 세로줄(`px-4 lg:px-5`)에 둔다(설계의 `px-5`는 좁은 화면에서 행보다 4px 안쪽). 목록 상자는 `overflow-hidden`(마지막 행 hover 바탕이 모서리 밖으로 나가지 않게).
+- AssetRow에 아바타가 있으면 배지 줄을 이름과 같은 세로줄로 들여쓴다(`pl-12 sm:pl-[52px]`). `assetRowModel`이 `avatarText`의 빈 글·'N/A'를 null로 정리한다.
+- 홈 PaperHero 계좌 줄의 바깥 여백을 새 히어로 안쪽 여백(`p-6 lg:p-8`)에 맞췄다(`-mx-6 lg:-mx-8`, 줄 `px-2 lg:px-3`).
+- `assetMonogram({name, ticker})`: 영문으로 시작하는 티커의 앞 2~3자(영문 한 글자뿐이면 이름 첫 글자 — 예 `^N225`), `bookMonogram`은 모르는 코드면 null.
+- 문지르기: 차트는 툴팁 내용 자리의 알림 컴포넌트 하나로 마우스·터치·키보드(차트 초점 + ←·→)의 활성 자리를 받는다(`scrubIndex`가 Number 변환·범위 검사).
+  Recharts는 터치를 뗀 뒤에도 툴팁을 남기므로 손을 떼면 툴팁 `active={false}`로 커서를 감추고 null을 알린다. 탭 뒤 브라우저가 흉내 내는 mousemove는
+  진짜 마우스(pointerType)가 아니라 감춤을 풀지 않는다. `useChartScrub`은 행 수가 바뀌면(기간 변경) 렌더 중에 순번을 지운다.
+  headless 크롬(CDP)으로 임시 데모 화면에서 마우스·키보드·터치 끌기·떼기·탭을 확인했다(데모는 커밋하지 않음).
+- `scrubModel`의 추정 점 자리: `{ estimate: { date, note } }` — 그 날짜를 문지르면 `isEstimated`·`estimateNote`, Hero가 추정 배지와 알림의 '추정'을 낸다.
+  `LineSeriesSpec.legend: false`로 글자 범례에서 뺄 수 있다(장중 값 단계의 점선 꼬리 자리).
+
 ## 5. 차트 — `components/charts`
 
 - **LineChart `variant="hero"`**: 선 `var(--text)` 2px monotone, 툴팁 상자 없이 세로 커서 1px `var(--border)`와 activeDot r=4(테두리 surface), Y 끝값 둘은 오른쪽 안쪽 micro text-3,
@@ -220,6 +238,30 @@ Tailwind 4.3.3은 `--text-*--line-height`·`--text-*--font-weight`·`--text-*--l
   툴팁 `rounded-control shadow-overlay`. 이중 축(right) 기능은 남긴다(KRX 두 곳 — §12).
 - **막대**(HorizontalBars·SignedBars): 격자 끄고 0 기준선과 막대 끝 모서리 4, 색 up/down 그대로. **산점도**: 격자 `border` 50%로 옅게. **WeightHeatmap·DonutChart**: 색 그대로, 틀만 토큰.
 - **SVG 글자 12px 하한**(D9): `charts/index.tsx`의 축(AXIS)·범례·표시선 이름·도넛 이름의 10·11px도 12px로(글자 하한 커밋과 같은 커밋 묶음).
+
+### 5-1. 차트 커밋 결과(패턴 단계, 2026-11-01) [확인 코드·시험·validate_palette.js]
+
+- 차트 틀은 `components/charts/frame.tsx` 하나 — `AXIS_TEXT`·`AXIS_LINE`·`GUIDE`·`CHART_FONT`(12)·`SERIES_COLORS`·`TOOLTIP_BOX`(불투명 surface·1px border·12px 모서리·
+  `var(--elev-overlay)`)·`EdgeDateTick`·`ChartLegend`. `index.tsx`와 `LineChart.tsx`가 함께 쓰고 서로 가져오지 않는다(예전 `SERIES_COLORS` 순환 가져오기를 없앰).
+- `LineSeries`(옛 화면 7곳)는 새 `LineChart`에 맡긴다 — 격자·면적 그라디언트 없음, Y 끝값 둘(precision + 단위), X 첫·마지막 날짜, 툴팁은 한 자리 더(`tooltipFormat`).
+  값이 모두 없으면 빈 상태 문구(예전에는 행이 있으면 빈 그림).
+- `MultiLineSeries`: 격자·Recharts Legend 없음, 위에 글자 범례(두 계열 이상, 점선 계열은 점선 표지), Y 끝값은 `lineYAxis`(고정 `domain`이면 그 끝값), 오른쪽 축도 끝값,
+  선 2px·활성 점 테두리 surface, 표시선 이름 12px. 오른쪽 축 계열 이름은 부르는 쪽이 적는다(KRX 두 곳은 이미 '(좌)'·'(오른쪽)').
+- 막대는 격자를 지우고 0 기준선(text-3)만, 가로 막대의 수치 축선도 지움. 산점도만 옅은 격자(`strokeOpacity` 0.5). 도넛 직접 라벨·산점도 축 이름도 12px.
+- 축선: Y 축선은 모든 선 차트에서 없음. X 축선은 기본 선 차트·래퍼에서 옅은 경계선(border)으로 남기고(바닥 기준), 히어로에서는 없앤다.
+- 남은 점(제안): Y 끝값은 `lineYAxis`의 여백 포함 범위 끝(1단계 결정)이라, 0~100으로 묶인 지수(KRX 한국판 COT OI Index)는 위 끝값이 '108.00%'로 적힌다
+  (예전 자동 눈금은 같은 범위 [0, 108]에 Recharts가 고른 눈금을 적었다 — 그 끝 글자가 무엇이었는지는 확인하지 못함 [추정]). 데이터 최고·최저를
+  눈금으로 쓰거나 범위 상한을 받는 쪽을 §12에 둔다.
+- 검증기 다시 돌림(라이트 `#ffffff` · 다크 `#141619`, 두 모드 같은 결과):
+
+| 팔레트 | 결과 |
+|---|---|
+| `SERIES_COLORS` #3987e5·#d95926·#199e70 | ALL PASS — 이웃 쌍 색약 최소 9.4(deutan)·정상 26.5 |
+| 기관 비중 10색 | ALL PASS — 이웃 쌍 색약 최소 8.2·정상 17.2 |
+| 환율 4색 | ALL PASS — 이웃 쌍 색약 최소 8.1(protan)·정상 22.0 |
+| 막대 up↔down 라이트 #cc2f2f·#0a6fb5 / 다크 #f4564f·#3d9de0 | ALL PASS — 색약 20.5 / 21.6, 정상 31.1 / 31.2 |
+
+  히어로 선 `var(--text)`는 범주 색이 아니라 표면 대비로 본다 — 19.69(라이트)·16.33(다크). 문지르는 세로 커서 `var(--border)`(1.26·1.37)는 장식이고 위치는 활성 점(r 4, 테두리 surface)이 보인다.
 
 ## 6. 셸 — `components/shell` (그리기만, `lib/nav.ts`의 탭·경로·라벨·접근 판정 그대로)
 
@@ -391,5 +433,7 @@ Tailwind 4.3.3은 `--text-*--line-height`·`--text-*--font-weight`·`--text-*--l
 - **인쇄 규칙**(D9): 지금 없음.
 - **이모지 나머지**: 코드 주석(프런트 약 120줄·백엔드 217·수집기 100)·문서 약 422줄·README 48·CLAUDE.md 2·Makefile·scripts 콘솔 출력 — 별도 chore 커밋 묶음, 사용자 확인 뒤.
 - **지킴 시험 더**: 백엔드 화면 문구의 noEmoji 시험, 데이터 영역의 `text-accent`·`bg-accent` 위치를 고정하는 시험(A1).
+- **Y 끝값 눈금**(§5-1): 여백 포함 범위 끝 대신 데이터 최고·최저를 적거나, 묶인 지수(0~100)는 범위 상한을 받게 — 1단계 결정(`lineYAxis` 눈금 = 범위 끝)을 바꾸는 일이라 사용자 확인 뒤.
+- **차트 키보드 초점 링**: Recharts 그림(svg, tabindex 0)은 브라우저 기본 초점선을 쓴다 — `outline-focus` 2px로 맞추기.
 - **매크로 자동 갱신 1시간·3시간**(D2): 사용자가 그쪽도 뜻했는지 장중 명세 단계 보고에서 묻는다. 넣는다면 다음 읽기 전까지 서버 stale 플래그가 갱신되지 않아 '오래된 저장본'(PRINCIPLES)을 최대 3시간 못 띄우는
   한계가 있다 — 화면에서 경과 시간을 다시 판정하거나 그 한계를 적는다.

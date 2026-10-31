@@ -1,15 +1,12 @@
 "use client";
 
-import { useId, useState } from "react";
+import { useState } from "react";
 import {
-  Area,
-  AreaChart,
   Bar,
   BarChart,
   CartesianGrid,
   Cell,
   LabelList,
-  Legend,
   Line,
   LineChart,
   Pie,
@@ -27,32 +24,31 @@ import {
   ZAxis,
 } from "recharts";
 import { EMPTY, formatNumber } from "@/lib/format";
-import { type DonutLabelGeometry, donutLabelsFit, truncateToWidth, valueDomain } from "@/lib/chartAxis";
+import { type DonutLabelGeometry, donutLabelsFit, truncateToWidth } from "@/lib/chartAxis";
+import { lineXTicks, lineYAxis, type LineRow, type LineYAxis } from "@/lib/lineChart";
+
+import {
+  AXIS_LINE,
+  AXIS_TEXT,
+  CHART_FONT,
+  ChartLegend,
+  EdgeDateTick,
+  GUIDE,
+  SERIES_COLORS,
+  TOOLTIP_BOX,
+} from "./frame";
+import { LineChart as SingleLineChart } from "./LineChart";
 
 /*
- * 차트 틀의 색 — 디자인 토큰의 CSS 변수(globals.css)라 라이트·다크가 :root에서 함께 바뀝니다.
- * Recharts는 var() 문자열을 그대로 SVG 속성으로 넘깁니다. 기본값(축 #666·참조선·커서 #ccc·글자 #808080)은 테마를 모르므로
- * 축·참조선·커서·글자마다 여기 값을 넘겨 덮습니다. 글자는 text-3(표면 대비 라이트 5.4·다크 6.0:1), 선은 border·text-3.
+ * 차트 래퍼 — 격자 없는 단일 선 문법(명세 docs/specs/2026-10-31-v2-coinbase-ui.md §5): 선 차트는 격자·면적 그라디언트 없이 축 끝값 눈금
+ * (lib/lineChart의 lineYAxis·lineXTicks), 글자 범례, 덮개 모양 툴팁. 막대는 격자 없이 0 기준선. 산점도만 옅은 격자(두 축이 다 데이터).
+ * 축·기준선 색과 툴팁 상자·글자 범례·계열 색은 차트 틀(frame.tsx — LineChart와 함께 씀). SVG 글자는 12px 이상(명세 D9).
  */
-const AXIS_TEXT = "var(--text-3)";
-const AXIS_LINE = "var(--border)";
-const AXIS = { fill: AXIS_TEXT, fontSize: 11 };
+const AXIS = { fill: AXIS_TEXT, fontSize: CHART_FONT };
+/** 산점도 격자 — 두 축이 다 데이터라 남기되 옅게(border 50%). */
 const GRID = "var(--border)";
-/** 0선·경계선·커서 선 — 격자(border)보다 진하게(text-3) 그어 기준선으로 읽히게 합니다. */
-const GUIDE = "var(--text-3)";
 
-/**
- * 시계열 색.
- *
- * dataviz 검증기(scripts/validate_palette.js)를 라이트(#ffffff)·다크(#1a1a19) 표면 모두에서 통과한 조합입니다.
- * 이전 조합(#58A6FF·#D29922·#F85149)은 적록색약에서 노랑↔빨강 ΔE가 5.8로
- * 구분 한계(6) 아래였습니다 — 화면에서도 두 선이 겹쳐 보였습니다.
- */
-export const SERIES_COLORS = {
-  blue: "#3987e5",
-  orange: "#d95926",
-  green: "#199e70",
-} as const;
+export { SERIES_COLORS };
 
 /**
  * 한 줄로만 그리는 세로축 라벨.
@@ -147,19 +143,12 @@ function BarValueLabel({
  * 않았습니다. 막대 위에 겹치면 글자가 막대 색과 뒤섞여 숫자를 읽을 수
  * 없었습니다(실제로 화면에서 그랬습니다).
  *
- * <p>고친 것: 바탕은 불투명한 표면색(surface)으로 막대·선을 가리고, 테두리는 격자보다 진한 text-3(표면 대비 3:1 이상)으로
- * 떠 있는 상자임을 보입니다(디자인 원칙상 그림자 없이 1px 선). 글자는 본문색(text), 날짜는 보조색(text-2).
+ * <p>고친 것: 바탕은 불투명한 표면색(surface)으로 막대·선을 가리고, 떠 있는 덮개라 덮개 그림자와 12px 모서리(차트 틀 TOOLTIP_BOX —
+ * 새 LineChart 툴팁과 같은 상자). 글자는 본문색(text), 날짜는 보조색(text-2).
  */
 function tooltipStyle() {
   return {
-    contentStyle: {
-      backgroundColor: "var(--surface)",
-      border: "1px solid var(--text-3)",
-      borderRadius: 8,
-      fontSize: 12,
-      padding: "8px 10px",
-      color: "var(--text)",
-    },
+    contentStyle: TOOLTIP_BOX,
     labelStyle: { color: "var(--text-2)", fontWeight: 600, marginBottom: 4 },
     itemStyle: { color: "var(--text)", padding: 0 },
     wrapperStyle: { outline: "none", zIndex: 40 },
@@ -177,7 +166,10 @@ const BAR_CURSOR = { fill: "var(--surface-2)" };
 
 export type Point = { date: string; value: number | null };
 
-/** 단일 시계열 라인 차트. */
+/**
+ * 단일 시계열 라인 차트(옛 화면) — 새 선 차트(LineChart)와 같은 문법으로 그립니다: 격자·면적 그라디언트 없음, Y축은 끝값 두 개
+ * (`precision` 자리 + `unit`), X축은 첫·마지막 날짜, 툴팁은 눈금보다 한 자리 더(정확한 값 확인). 모르는 값(null)에서 선을 끊습니다.
+ */
 export function LineSeries({
   data,
   // 기본 선 색은 검증된 계열 첫 색 — 예전 #58A6FF는 다크 밝기 띠(L 0.48~0.67)를 벗어났습니다(0.715).
@@ -192,9 +184,9 @@ export function LineSeries({
   height?: number;
   unit?: string;
   /**
-   * 0선을 그립니다 (스프레드·지수처럼 부호가 의미 있는 값).
+   * 0을 범위에 넣고, 0이 범위 안쪽이면 0선을 그립니다 (스프레드·지수처럼 부호가 의미 있는 값).
    *
-   * 선 색(text-3)은 격자(border)보다 진해 구분은 되지만, 선만으로는
+   * 선 색(text-3)은 축선(border)보다 진해 구분은 되지만, 선만으로는
    * "역전"이라는 뜻까지 전달되지 않습니다. 부호가 판정으로 이어지는
    * 차트는 카드 쪽에서 배너 한 줄을 함께 띄웁니다(색·선만으로 의미를
    * 나르지 않기 위해서입니다). 예: 심화 매크로의 T10Y3M·NFCI.
@@ -209,62 +201,15 @@ export function LineSeries({
    */
   precision?: number;
 }) {
-  // ⚠️ 그라디언트 id는 문서 전체에서 유일해야 합니다. 예전에는 "fill"로
-  // 고정돼 있어서, 한 페이지에 차트가 여러 개면(매크로 화면은 3개) 전부
-  // 첫 번째 차트의 색을 쓰는 상태였습니다.
-  //
-  // 훅은 조기 반환보다 **위**에 있어야 합니다 — 렌더마다 호출 순서가 같아야
-  // 하기 때문입니다.
-  const gradientId = `line-fill-${useId().replace(/:/g, "")}`;
-
-  if (data.length === 0) {
-    return <div className="py-10 text-center text-sm text-muted">표시할 시계열이 없습니다.</div>;
-  }
-
   return (
-    <ResponsiveContainer width="100%" height={height}>
-      <AreaChart data={data} margin={{ top: 8, right: 12, bottom: 0, left: 0 }}>
-        <defs>
-          <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
-            <stop offset="5%" stopColor={color} stopOpacity={0.3} />
-            <stop offset="95%" stopColor={color} stopOpacity={0.02} />
-          </linearGradient>
-        </defs>
-        {/* 점선 격자는 '임계선'처럼 읽힙니다. 격자는 실선 헤어라인으로. */}
-        <CartesianGrid stroke={GRID} vertical={false} />
-        <XAxis dataKey="date" stroke={AXIS_LINE} tick={AXIS} minTickGap={40} tickLine={false} />
-        <YAxis
-          stroke={AXIS_LINE}
-          tick={AXIS}
-          tickLine={false}
-          width={64}
-          domain={valueDomain(data, zeroLine)}
-          tickFormatter={(value: number) => `${formatNumber(value, precision)}${unit}`}
-        />
-        <Tooltip
-          {...tooltipStyle()}
-          cursor={{ stroke: GUIDE, strokeWidth: 1 }}
-          // recharts 3: value는 ValueType | undefined — 숫자로 맞춰 씁니다.
-          formatter={(value) => [
-            // 툴팁은 눈금보다 한 자리 더 보여 줍니다(정확한 값을 확인하는 곳).
-            `${formatNumber(Number(value), precision + 1)}${unit}`,
-            "값",
-          ]}
-        />
-        {zeroLine && <ReferenceLine y={0} stroke={GUIDE} strokeWidth={1} />}
-        <Area
-          isAnimationActive={false}
-          type="monotone"
-          dataKey="value"
-          stroke={color}
-          strokeWidth={2}
-          fill={`url(#${gradientId})`}
-          connectNulls={false}
-          dot={false}
-          activeDot={{ r: 4, strokeWidth: 2, stroke: "var(--surface)" }}
-        />
-      </AreaChart>
-    </ResponsiveContainer>
+    <SingleLineChart
+      data={data}
+      series={[{ key: "value", label: "값", color }]}
+      height={height}
+      includeZero={zeroLine}
+      valueFormat={(value) => `${formatNumber(value, precision)}${unit}`}
+      tooltipFormat={(value) => `${formatNumber(value, precision + 1)}${unit}`}
+    />
   );
 }
 
@@ -292,7 +237,11 @@ export type MultiSeries = {
   dashed?: boolean;
 };
 
-/** 여러 시계열 비교. 단위가 다른 계열은 축을 나눠 그립니다. */
+/**
+ * 여러 시계열 비교 — 격자 없이 축 끝값 눈금(데이터 범위 — 고정 domain이면 그 끝값)과 첫·마지막 날짜, 글자 범례(두 계열 이상), 덮개 모양 툴팁.
+ * 단위가 다른 계열은 오른쪽 축으로 나눌 수 있지만(KRX 두 곳) 새로 쓰지 않습니다 — 이중 축은 PRINCIPLES가 피하라는 모양이라 패널을 나누는 쪽이
+ * 낫습니다(명세 §12 제안). 오른쪽 축 계열은 부르는 쪽이 이름에 어느 축인지 적습니다.
+ */
 export function MultiLineSeries({
   data,
   series,
@@ -338,91 +287,118 @@ export function MultiLineSeries({
    */
   ariaLabel?: string;
   /**
-   * 왼쪽 축 폭(px, 기본 64). 눈금 글자가 긴 계열(원 단위 정수 금액 "100,000,000" — 11px 글자로 약 70px)은 넓혀야 눈금이 잘리지 않습니다.
+   * 왼쪽 축 폭(px, 기본 64). 눈금 글자가 긴 계열(원 단위 정수 금액 "100,000,000" — 12px 글자로 약 75px)은 넓혀야 눈금이 잘리지 않습니다.
    */
   axisWidth?: number;
 }) {
-  if (data.length === 0) {
-    return <div className="py-10 text-center text-sm text-muted">표시할 시계열이 없습니다.</div>;
+  const rows = data as unknown as readonly LineRow[];
+  const specsOf = (side: "left" | "right") =>
+    series.filter((entry) => (entry.axis ?? "left") === side).map((entry) => ({ key: entry.key, label: entry.name }));
+  const usesRight = series.some((entry) => entry.axis === "right");
+  // 축 끝값 눈금 — 선 차트(LineChart)와 같은 규칙(lib/lineChart의 lineYAxis: 데이터 범위, 0은 zeroLine일 때만). 고정 범위(domain)를 주면 그 끝값.
+  const leftAxis: LineYAxis | null = domain
+    ? { domain, ticks: domain, zeroLine: zeroLine && domain[0] < 0 && domain[1] > 0 }
+    : lineYAxis(rows, specsOf("left"), { includeZero: zeroLine });
+  const rightAxis = usesRight ? lineYAxis(rows, specsOf("right")) : null;
+  if (data.length === 0 || (leftAxis === null && rightAxis === null)) {
+    return <div className="py-10 text-center text-sm text-text-3">표시할 시계열이 없습니다.</div>;
   }
 
-  const usesRight = series.some((entry) => entry.axis === "right");
+  const xTicks = lineXTicks(rows);
+  const first = xTicks[0] ?? "";
+  const last = xTicks[xTicks.length - 1] ?? "";
   const unitOf = (name: string) =>
     series.find((entry) => entry.name === name)?.axis === "right" ? rightUnit : unit;
   const digitsOf = (name: string) => series.find((entry) => entry.name === name)?.valueDigits ?? 2;
+  // 글자 범례 — 이름은 부르는 쪽 그대로(오른쪽 축 계열은 이름에 '(오른쪽)'·'(우)'를 적어 넘깁니다 — KRX 두 곳).
+  const legend = series.map((entry) => ({ key: entry.key, label: entry.name, color: entry.color, dashed: entry.dashed }));
 
   return (
-    <ResponsiveContainer width="100%" height={height}>
-      <LineChart data={data} margin={{ top: 8, right: 8, bottom: 0, left: 0 }} aria-label={ariaLabel}>
-        {/* recharts 3: 축 id가 기본값(0)이 아니면 격자에도 같은 id를 줘야 그려집니다. */}
-        <CartesianGrid stroke={GRID} vertical={false} yAxisId="left" />
-        <XAxis dataKey="date" stroke={AXIS_LINE} tick={AXIS} minTickGap={40} tickLine={false} />
-        <YAxis
-          yAxisId="left"
-          stroke={AXIS_LINE}
-          tick={AXIS}
-          tickLine={false}
-          width={axisWidth}
-          domain={domain ?? ["auto", "auto"]}
-          tickFormatter={(value: number) => `${formatNumber(value, precision)}${unit}`}
-        />
-        {/*
-          오른쪽 축은 쓰는 계열이 있을 때만 보입니다(빈 축은 눈금만 늘립니다).
-          눈금에는 단위를 붙이지 않습니다 — "320,000 계약"처럼 길어지면 두 줄로
-          접히며 맨 위 눈금이 잘렸습니다. 단위는 범례와 툴팁이 말해 줍니다.
-        */}
-        <YAxis
-          yAxisId="right"
-          orientation="right"
-          hide={!usesRight}
-          stroke={AXIS_LINE}
-          tick={AXIS}
-          tickLine={false}
-          width={76}
-          domain={["auto", "auto"]}
-          tickFormatter={(value: number) => formatNumber(value, rightPrecision)}
-        />
-        <Tooltip
-          {...tooltipStyle()}
-          cursor={{ stroke: GUIDE, strokeWidth: 1 }}
-          formatter={(value, name) => [
-            value === null || value === undefined
-              ? EMPTY
-              : `${formatNumber(Number(value), digitsOf(String(name)))}${unitOf(String(name))}`,
-            String(name),
-          ]}
-        />
-        <Legend wrapperStyle={{ fontSize: 11, color: AXIS_TEXT }} inactiveColor={AXIS_TEXT} />
-        {zeroLine && <ReferenceLine yAxisId="left" y={0} stroke={GUIDE} strokeWidth={1} />}
-        {/* 경계선은 계열선보다 흐린 회색 점선 — 값이 아니라 "여기서 조건이 바뀜" 표시라 계열색과 겹치지 않게 합니다. */}
-        {markers.map((marker) => (
-          <ReferenceLine
-            key={`${marker.x}-${marker.label}`}
+    <figure className="m-0">
+      <ChartLegend entries={legend} />
+      <ResponsiveContainer width="100%" height={height}>
+        <LineChart data={data} margin={{ top: 8, right: 8, bottom: 0, left: 0 }} aria-label={ariaLabel}>
+          <XAxis
+            dataKey="date"
+            ticks={xTicks}
+            interval={0}
+            stroke={AXIS_LINE}
+            tickLine={false}
+            tick={(props) => <EdgeDateTick {...props} first={first} last={last} />}
+          />
+          <YAxis
             yAxisId="left"
-            x={marker.x}
-            stroke={GUIDE}
-            strokeDasharray="4 3"
-            strokeWidth={1}
-            label={{ value: marker.label, position: "insideTopLeft", fill: AXIS_TEXT, fontSize: 10 }}
+            type="number"
+            domain={leftAxis?.domain ?? ["auto", "auto"]}
+            ticks={leftAxis?.ticks}
+            interval={0}
+            axisLine={false}
+            tickLine={false}
+            tick={AXIS}
+            width={axisWidth}
+            tickFormatter={(value: number) => `${formatNumber(value, precision)}${unit}`}
           />
-        ))}
-        {series.map((entry) => (
-          <Line
-            isAnimationActive={false}
-            key={entry.key}
-            yAxisId={entry.axis ?? "left"}
-            type="monotone"
-            dataKey={entry.key}
-            name={entry.name}
-            stroke={entry.color}
-            strokeWidth={1.8}
-            strokeDasharray={entry.dashed ? "6 4" : undefined}
-            dot={false}
-            connectNulls={false}
+          {/*
+            오른쪽 축은 쓰는 계열이 있을 때만 보입니다(빈 축은 눈금만 늘립니다).
+            눈금에는 단위를 붙이지 않습니다 — "320,000 계약"처럼 길어지면 두 줄로
+            접히며 맨 위 눈금이 잘렸습니다. 단위는 범례와 툴팁이 말해 줍니다.
+          */}
+          <YAxis
+            yAxisId="right"
+            type="number"
+            orientation="right"
+            hide={!usesRight}
+            domain={rightAxis?.domain ?? ["auto", "auto"]}
+            ticks={rightAxis?.ticks}
+            interval={0}
+            axisLine={false}
+            tickLine={false}
+            tick={AXIS}
+            width={76}
+            tickFormatter={(value: number) => formatNumber(value, rightPrecision)}
           />
-        ))}
-      </LineChart>
-    </ResponsiveContainer>
+          <Tooltip
+            {...tooltipStyle()}
+            cursor={{ stroke: GUIDE, strokeWidth: 1 }}
+            formatter={(value, name) => [
+              value === null || value === undefined
+                ? EMPTY
+                : `${formatNumber(Number(value), digitsOf(String(name)))}${unitOf(String(name))}`,
+              String(name),
+            ]}
+          />
+          {leftAxis?.zeroLine ? <ReferenceLine yAxisId="left" y={0} stroke={GUIDE} strokeWidth={1} /> : null}
+          {/* 경계선은 계열선보다 흐린 회색 점선 — 값이 아니라 "여기서 조건이 바뀜" 표시라 계열색과 겹치지 않게 합니다. */}
+          {markers.map((marker) => (
+            <ReferenceLine
+              key={`${marker.x}-${marker.label}`}
+              yAxisId="left"
+              x={marker.x}
+              stroke={GUIDE}
+              strokeDasharray="4 3"
+              strokeWidth={1}
+              label={{ value: marker.label, position: "insideTopLeft", fill: AXIS_TEXT, fontSize: CHART_FONT }}
+            />
+          ))}
+          {series.map((entry) => (
+            <Line
+              isAnimationActive={false}
+              key={entry.key}
+              yAxisId={entry.axis ?? "left"}
+              type="monotone"
+              dataKey={entry.key}
+              name={entry.name}
+              stroke={entry.color}
+              strokeWidth={2}
+              strokeDasharray={entry.dashed ? "6 4" : undefined}
+              dot={false}
+              activeDot={{ r: 4, strokeWidth: 2, stroke: "var(--surface)" }}
+              connectNulls={false}
+            />
+          ))}
+        </LineChart>
+      </ResponsiveContainer>
+    </figure>
   );
 }
 
@@ -449,7 +425,7 @@ export function HorizontalBars({
   neutral?: boolean;
 }) {
   if (data.length === 0) {
-    return <div className="py-10 text-center text-sm text-muted">표시할 데이터가 없습니다.</div>;
+    return <div className="py-10 text-center text-sm text-text-3">표시할 데이터가 없습니다.</div>;
   }
 
   // 항목이 많으면 높이를 늘립니다. 고정 높이로 30개를 그리면 한 칸이 12px이라
@@ -464,10 +440,9 @@ export function HorizontalBars({
         // 오른쪽 여백은 막대 끝 값 라벨이 잘리지 않을 만큼 둡니다.
         margin={{ top: 8, right: 68, bottom: 0, left: 8 }}
       >
-        <CartesianGrid stroke={GRID} horizontal={false} />
         <XAxis
           type="number"
-          stroke={AXIS_LINE}
+          axisLine={false}
           tick={AXIS}
           tickLine={false}
           tickFormatter={(value: number) => `${formatNumber(value, 0)}${unit}`}
@@ -522,16 +497,15 @@ export function SignedBars({
   valueName?: string;
 }) {
   if (data.length === 0) {
-    return <div className="py-10 text-center text-sm text-muted">표시할 데이터가 없습니다.</div>;
+    return <div className="py-10 text-center text-sm text-text-3">표시할 데이터가 없습니다.</div>;
   }
 
   return (
     <ResponsiveContainer width="100%" height={height}>
       <BarChart data={data} margin={{ top: 8, right: 8, bottom: 0, left: 0 }}>
-        <CartesianGrid stroke={GRID} vertical={false} />
         <XAxis dataKey="name" stroke={AXIS_LINE} tick={AXIS} tickLine={false} interval={0} angle={-25} height={70} textAnchor="end" />
         <YAxis
-          stroke={AXIS_LINE}
+          axisLine={false}
           tick={AXIS}
           tickLine={false}
           width={64}
@@ -578,7 +552,7 @@ export function ScatterPlot({
   color?: string;
 }) {
   if (data.length === 0) {
-    return <div className="py-10 text-center text-sm text-muted">표시할 점이 없습니다.</div>;
+    return <div className="py-10 text-center text-sm text-text-3">표시할 점이 없습니다.</div>;
   }
 
   return (
@@ -587,7 +561,7 @@ export function ScatterPlot({
     <div aria-hidden="true">
     <ResponsiveContainer width="100%" height={height}>
       <ScatterChart margin={{ top: 8, right: 16, bottom: 28, left: 8 }}>
-        <CartesianGrid stroke={GRID} />
+        <CartesianGrid stroke={GRID} strokeOpacity={0.5} />
         <XAxis
           type="number"
           dataKey="x"
@@ -597,7 +571,7 @@ export function ScatterPlot({
           tickLine={false}
           tickFormatter={(value: number) => `${formatNumber(value, 2)}`}
           label={{ value: `${xLabel}${xUnit ? ` (${xUnit})` : ""}`, position: "insideBottom",
-                   offset: -18, fill: AXIS_TEXT, fontSize: 11 }}
+                   offset: -18, fill: AXIS_TEXT, fontSize: CHART_FONT }}
         />
         <YAxis
           type="number"
@@ -648,7 +622,7 @@ export function WeightHeatmap({
 }) {
   const names = Object.keys(series);
   if (names.length === 0 || dates.length === 0) {
-    return <div className="py-10 text-center text-sm text-muted">표시할 비중 이력이 없습니다.</div>;
+    return <div className="py-10 text-center text-sm text-text-3">표시할 비중 이력이 없습니다.</div>;
   }
 
   const values = names.flatMap((name) => series[name] ?? []);
@@ -658,7 +632,7 @@ export function WeightHeatmap({
     <div className="overflow-x-auto" tabIndex={0} role="region" aria-label="비중 히트맵 (좌우 스크롤)">
       <table className="w-full min-w-[640px] border-collapse text-xs">
         <thead>
-          <tr className="text-[11px] text-muted">
+          <tr className="text-[11px] text-text-3">
             <th className="sticky left-0 bg-surface px-3 py-2 text-left font-medium">종목</th>
             {dates.map((date) => (
               <th key={date} className="px-2 py-2 text-right font-medium tabular-nums">
@@ -670,7 +644,7 @@ export function WeightHeatmap({
         <tbody>
           {names.map((name) => (
             <tr key={name}>
-              <td className="sticky left-0 bg-surface px-3 py-1.5 text-left text-body">{name}</td>
+              <td className="sticky left-0 bg-surface px-3 py-1.5 text-left text-text-2">{name}</td>
               {(series[name] ?? []).map((value, index) => {
                 // 0%는 "데이터 없음"이 아니라 "그 분기에 보유하지 않음"입니다.
                 const ratio = typeof value === "number" && max > 0 ? value / max : 0;
@@ -703,7 +677,7 @@ export function WeightHeatmap({
           ))}
         </tbody>
       </table>
-      <p className="mt-2 text-[11px] text-muted">
+      <p className="mt-2 text-[11px] text-text-3">
         색이 진할수록 비중이 큽니다. &quot;·&quot;는 그 분기에 <b>보유하지 않았다</b>는 뜻이고,
         &quot;{EMPTY}&quot;는 <b>값을 모른다</b>는 뜻입니다 — 둘은 다릅니다.
       </p>
@@ -745,8 +719,8 @@ function DonutTooltip({ active, payload }: { active?: boolean; payload?: Readonl
   );
 }
 
-/** 라벨을 붙인 도넛의 자리 — 아래 Pie에 넘기는 값(여백 8 · 바깥 70% · 라벨 거리 20 · 글자 11px)과 같습니다. */
-const DONUT_LABEL_GEOMETRY: DonutLabelGeometry = { margin: 8, outerPct: 70, offset: 20, fontSize: 11 };
+/** 라벨을 붙인 도넛의 자리 — 아래 Pie에 넘기는 값(여백 8 · 바깥 70% · 라벨 거리 20 · 글자 12px)과 같습니다. */
+const DONUT_LABEL_GEOMETRY: DonutLabelGeometry = { margin: 8, outerPct: 70, offset: 20, fontSize: CHART_FONT };
 
 /** 직접 라벨 — 고리 밖, 본문 글자색(조각 색이 아님). 라벨이 없는 조각은 그리지 않습니다. */
 function DonutLabel(props: PieLabelRenderProps) {
@@ -787,7 +761,7 @@ export function DonutChart({
   // 그려진 너비 — 직접 라벨이 SVG 끝에서 잘리지 않을 만큼 넓을 때만 라벨을 붙입니다(측정 전에는 붙이지 않음).
   const [width, setWidth] = useState<number | null>(null);
   if (segments.length === 0) {
-    return <div className="py-10 text-center text-sm text-muted">표시할 구성이 없습니다.</div>;
+    return <div className="py-10 text-center text-sm text-text-3">표시할 구성이 없습니다.</div>;
   }
   const labelled = donutLabelsFit(width, height, segments.map((segment) => segment.label), DONUT_LABEL_GEOMETRY);
   const margin = DONUT_LABEL_GEOMETRY.margin;

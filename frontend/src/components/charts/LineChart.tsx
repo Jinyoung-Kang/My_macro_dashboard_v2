@@ -28,48 +28,12 @@ import {
   type LineTooltipModel,
 } from "@/lib/lineChart";
 
-// 기본 계열 색은 charts/index.tsx의 SERIES_COLORS 하나만 씁니다(검증한 조합을 두 곳에 적지 않음). index가 이 파일을 다시 내보내므로
-// 서로 가져오는 고리가 생깁니다 — 그래서 SERIES_COLORS는 모듈을 읽을 때가 아니라 그릴 때만 읽습니다(최상위에서 읽으면 초기화 전 접근).
-import { SERIES_COLORS } from "./index";
+// 축·기준선·툴팁 상자·글자 범례·기본 계열 색은 래퍼들(index.tsx)과 함께 쓰는 차트 틀(frame.tsx)에서 — 검증한 값을 두 곳에 적지 않습니다.
+import { AXIS_LINE, AXIS_TEXT, CHART_FONT, ChartLegend, EdgeDateTick, GUIDE, SERIES_COLORS, TOOLTIP_BOX } from "./frame";
 
-/*
- * 차트 틀의 색 — 디자인 토큰 CSS 변수(라이트·다크가 :root에서 함께 바뀜). Recharts 기본 hex(축 #666·커서 #ccc·글자 #808080)는
- * 테마를 모르므로 축·커서·기준선·글자마다 덮습니다. 글자 text-3, 축선 border, 기준선·커서 text-3(격자가 없으니 기준선이 유일한 가로선).
- */
-const AXIS_TEXT = "var(--text-3)";
-const AXIS_LINE = "var(--border)";
-const GUIDE = "var(--text-3)";
-const TICK_FONT = 11;
 /** 히어로 선 — 중립 잉크 하나(방향색을 입히지 않음, 명세 A4). 문지르는 세로 커서는 옅은 경계색. */
 const HERO_INK = "var(--text)";
 const HERO_CURSOR = "var(--border)";
-/** 히어로 축 글자 — 최소 글자 단계(micro 12px). */
-const HERO_TICK_FONT = 12;
-
-/** 축 끝 날짜 — 첫 날짜는 왼쪽 끝에 붙여(start), 마지막은 오른쪽 끝에 붙여(end) 그립니다. 가운데 정렬이면 SVG 밖으로 잘립니다. */
-function EdgeDateTick({
-  x,
-  y,
-  payload,
-  first,
-  last,
-  fontSize = TICK_FONT,
-}: {
-  x?: number | string;
-  y?: number | string;
-  payload?: { value?: string | number };
-  first: string;
-  last: string;
-  fontSize?: number;
-}) {
-  const value = String(payload?.value ?? "");
-  const anchor = first === last ? "middle" : value === first ? "start" : value === last ? "end" : "middle";
-  return (
-    <text x={Number(x) || 0} y={Number(y) || 0} dy="0.71em" textAnchor={anchor} fill={AXIS_TEXT} fontSize={fontSize}>
-      {value}
-    </text>
-  );
-}
 
 /**
  * 히어로의 Y 끝값 — 그림 오른쪽 안쪽에 적습니다. 위 끝값은 선 아래로(위 가장자리에서 잘리지 않게), 아래 끝값은 선 위로 올려 적습니다 —
@@ -93,7 +57,7 @@ function HeroValueTick({
     return null;
   }
   return (
-    <text x={Number(x) || 0} y={Number(y) || 0} dy={value === lower ? -6 : 14} textAnchor="end" fill={AXIS_TEXT} fontSize={HERO_TICK_FONT}>
+    <text x={Number(x) || 0} y={Number(y) || 0} dy={value === lower ? -6 : 14} textAnchor="end" fill={AXIS_TEXT} fontSize={CHART_FONT}>
       {format(value)}
     </text>
   );
@@ -101,23 +65,14 @@ function HeroValueTick({
 
 /**
  * 툴팁 상자 — 날짜, 계열마다 짧은 색 선 · 이름 · 값(모르면 "—"), 출처 줄.
- * 바탕은 불투명한 표면(surface)으로 선을 가리고, 테두리는 text-3 1px(그림자 없이 떠 있는 상자임을 보임). 글자에는 계열 색을 입히지 않습니다.
+ * 상자는 차트 틀의 덮개 모양(TOOLTIP_BOX — 불투명 표면·12px 모서리·덮개 그림자). 글자에는 계열 색을 입히지 않습니다.
  */
 export function LineChartTooltip({ model }: { model: LineTooltipModel | null }) {
   if (!model) {
     return null;
   }
   return (
-    <div
-      style={{
-        backgroundColor: "var(--surface)",
-        border: "1px solid var(--text-3)",
-        borderRadius: 8,
-        fontSize: 12,
-        padding: "8px 10px",
-        color: "var(--text)",
-      }}
-    >
+    <div style={TOOLTIP_BOX}>
       <div style={{ color: "var(--text-2)", fontWeight: 600, marginBottom: 4 }}>{model.date}</div>
       {model.items.map((item) => (
         <div key={item.key} style={{ display: "flex", alignItems: "center", gap: 6 }}>
@@ -154,7 +109,7 @@ function ScrubReporter({
 }
 
 /**
- * 선 차트 — 격자 없음, Y축은 끝값 두 개(데이터 범위), X축은 첫·마지막 날짜, 0 기준선은 뜻이 있을 때만, 이중 축 없음.
+ * 선 차트 — 격자 없음, Y축은 끝값 두 개(데이터 범위), X축은 첫·마지막 날짜, 0 기준선은 뜻이 있을 때만, 이중 축 없음, 축 글자 12px.
  *
  * - Y 범위·눈금·0선·색·툴팁 글은 `lib/lineChart.ts`가 정합니다(여기서는 그리기만 — ADR 0004).
  * - 모르는 값(null·"N/A")에서 선을 끊습니다(connectNulls=false). 앞뒤가 모두 모름인 외딴 값은 점으로 찍어 사라지지 않게 합니다.
@@ -176,6 +131,7 @@ export function LineChart({
   series,
   height,
   valueFormat = (value: number) => formatNumber(value, 2),
+  tooltipFormat,
   includeZero = false,
   nonNegative = false,
   source,
@@ -191,6 +147,8 @@ export function LineChart({
   /** 그림 높이(px). 없으면 기본 240, 히어로는 좁은 화면 200·lg 260. */
   height?: number;
   valueFormat?: (value: number) => string;
+  /** 툴팁 값 서식 — 없으면 valueFormat. 눈금보다 한 자리 더 보일 때(옛 LineSeries의 정확한 값 확인). */
+  tooltipFormat?: (value: number) => string;
   /** 0이 뜻을 갖는 계열(스프레드·순포지션)만 — 범위에 0을 넣고, 0이 범위 안쪽이면 기준선을 긋습니다. */
   includeZero?: boolean;
   /** 음수가 될 수 없는 양(역레포·잔고) — 축을 0 아래로 내리지 않습니다. */
@@ -214,7 +172,9 @@ export function LineChart({
     hero ? series.map((entry) => (entry.color ? entry : { ...entry, color: HERO_INK })) : series,
     Object.values(SERIES_COLORS),
   );
-  const legendEntries = series.flatMap((entry, index) => (entry.legend === false ? [] : [{ entry, color: colors[index] }]));
+  const legendEntries = series.flatMap((entry, index) =>
+    entry.legend === false ? [] : [{ key: entry.key, label: entry.label, color: colors[index] }],
+  );
   const badges =
     estimated || stale ? (
       <div className="mb-2 flex flex-wrap items-center gap-1.5">
@@ -238,8 +198,7 @@ export function LineChart({
   const first = xTicks[0] ?? "";
   const last = xTicks[xTicks.length - 1] ?? "";
   const tooltipFor = (row: LineRow | undefined) =>
-    row ? lineTooltipModel(row, series, colors, valueFormat, source) : null;
-  const tickFont = hero ? HERO_TICK_FONT : TICK_FONT;
+    row ? lineTooltipModel(row, series, colors, tooltipFormat ?? valueFormat, source) : null;
   const fixedHeight = height ?? (hero ? null : 240);
   // 문지르기 손짓 — 손을 떼면(touchend) 지금 값으로 돌아가고 커서를 감춥니다. 탭 뒤 브라우저가 흉내 내는 mousemove는 진짜 마우스가
   // 아니므로(pointerType이 mouse인 포인터 이벤트가 없음) 감춤을 풀지 않습니다 — 풀면 탭한 점에 커서가 남습니다.
@@ -275,7 +234,7 @@ export function LineChart({
           stroke={AXIS_LINE}
           axisLine={!hero}
           tickLine={false}
-          tick={(props) => <EdgeDateTick {...props} first={first} last={last} fontSize={tickFont} />}
+          tick={(props) => <EdgeDateTick {...props} first={first} last={last} />}
         />
         <YAxis
           type="number"
@@ -291,7 +250,7 @@ export function LineChart({
           tick={
             hero
               ? (props) => <HeroValueTick {...props} lower={yAxis.domain[0]} format={valueFormat} />
-              : { fill: AXIS_TEXT, fontSize: tickFont }
+              : { fill: AXIS_TEXT, fontSize: CHART_FONT }
           }
           tickFormatter={(value: number) => valueFormat(value)}
         />
@@ -353,16 +312,7 @@ export function LineChart({
   return (
     <figure className="m-0">
       {badges}
-      {legendEntries.length >= 2 ? (
-        <ul aria-label="범례" className="mb-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-text-2">
-          {legendEntries.map(({ entry, color }) => (
-            <li key={entry.key} className="inline-flex items-center gap-1.5">
-              <span aria-hidden="true" className="inline-block h-0.5 w-3 rounded-sm" style={{ backgroundColor: color }} />
-              {entry.label}
-            </li>
-          ))}
-        </ul>
-      ) : null}
+      <ChartLegend entries={legendEntries} />
       {hero || scrubEvents ? (
         // 히어로 높이 — 좁은 화면 200, lg 260(height를 주지 않았을 때). 세로 스크롤은 브라우저가, 가로 끌기는 문지르기가 받습니다.
         <div className={`${fixedHeight === null ? "h-[200px] lg:h-[260px]" : ""} ${hero ? "touch-pan-y" : ""}`.trim() || undefined} {...scrubEvents}>
