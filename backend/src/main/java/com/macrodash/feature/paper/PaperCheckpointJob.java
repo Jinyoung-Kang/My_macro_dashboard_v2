@@ -30,6 +30,7 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -47,8 +48,9 @@ import java.util.concurrent.locks.ReentrantLock;
  *   <li><b>꺼짐</b>: {@code dashboard.paper.enabled=false}면 아무것도 읽거나 쓰지 않습니다(로컬 v2 — {@code PaperRiskJob} 선례). 설정
  *       {@code claude2.enabled}·{@code claude2.checkpoints}가 꺼져 있으면 부르지 않고, PLANNED 행은 그 창이 끝난 뒤 SKIPPED {@code CHECKPOINTS_OFF}.</li>
  *   <li><b>놓침</b>(EXPIRED): 지난 세션의 행 {@code STALE_SESSION}, 창이 끝남 {@code WINDOW_MISSED}(서버 꺼짐·늦게 켜짐 — 창 안에서 자료를 기다리던
- *       행은 그 사유 {@code NO_WATCH_SNAPSHOT}·{@code NO_FRESH_QUOTES}), 결정 주기 소상한 {@code CYCLE_CAP}·하루 상한 {@code CALL_CAP}(바로 —
- *       재시도가 없어 기다릴 까닭이 없음).</li>
+ *       행은 그 사유 {@code NO_WATCH_SNAPSHOT}·{@code NO_FRESH_QUOTES}, 부르기 전 작업 오류가 이어진 행은 {@code JOB_ERROR}), 결정 주기 소상한
+ *       {@code CYCLE_CAP}·하루 상한 {@code CALL_CAP}(바로 — 재시도가 없어 기다릴 까닭이 없음), 부른 뒤 결정을 기록하지 못함
+ *       {@code CALLED_NOT_RECORDED}.</li>
  *   <li><b>건너뜀</b>(SKIPPED): 계좌2가 운용 중이 아님 {@code BOOK_NOT_ACTIVE}, T가 E 마감 − 30분 뒤 {@code LATE_CHECKPOINT}, E에 세션 봉이 없음
  *       (감시 저장본의 SPY가 E 세션이 아님 — 임시 휴장) {@code NO_SESSION_BARS}.</li>
  *   <li><b>자료</b>: MINUTE는 T 뒤에 받은 그 확인의 감시 저장본({@code paper.watch.us} — 계좌·세션·시각이 같고 {@link Datasets#MAX_AGE_WATCH_US} 안),
@@ -57,6 +59,10 @@ import java.util.concurrent.locks.ReentrantLock;
  *       ({@link ClaudeDecisionPipeline#attemptCheckpoint} — 정기 작업 문턱). 장부 잠금·트랜잭션 밖입니다.</li>
  *   <li><b>쓰기</b>(장부 잠금 안 한 트랜잭션): 결정 행 kind CHECKPOINT(기준 거래일 = 아침 결정의 d — UNIQUE가 세션당 한 번을 강제)와 그 행의 DONE
  *       (확인 결정·감시 저장본 지연·부른 시각). API 오류·형식 오류·거절도 결정 행을 남기고 DONE입니다(재시도 없음 — 결정 작업은 정기·출발 행만 재시도).
+ *       응답을 받은 뒤 이 쓰기가 예외로 끝나면(DB 순간 장애 등 — 트랜잭션이 되돌려짐) 과금된 응답을 버리고 다시 부르지 않게, 실패 결정 행(API_ERROR·
+ *       {@code failure.stage = AFTER_RESPONSE})을 따로 한 트랜잭션으로 남기고 행을 DONE으로 둡니다({@link ClaudeDecisionPipeline#recordAfterResponse}
+ *       — 결정 작업과 같은 장치). 그 기록마저 실패하면 작업 메모리의 '부름'({@link #called})으로 창 안에서 다시 부르지 않고 EXPIRED
+ *       {@code CALLED_NOT_RECORDED}로 둡니다(재기동하면 메모리가 비므로 그때만 다시 부를 수 있음 — 하루 상한이 막음).
  *       KEEP은 NO_TRADE + action KEEP. REPLACE는 예상 상태(§10-6)로 새 주문을 검증하고, 기준 시각이 지금보다 뒤인 대기 주문만 대신한
  *       뒤(⑩) 통과 주문을 넣습니다({@link #write}).</li>
  * </ul>
@@ -90,6 +96,9 @@ public class PaperCheckpointJob {
     static final String LATE_CHECKPOINT = "LATE_CHECKPOINT — 확인 시각이 그 세션 마감 30분 전보다 늦음";
     static final String NO_SESSION_BARS = "NO_SESSION_BARS — 그 세션의 봉이 없음(임시 휴장)";
     static final String CHECKPOINTS_OFF = "CHECKPOINTS_OFF — 설정 claude2.checkpoints·claude2.enabled가 꺼져 있음";
+    static final String CALLED_NOT_RECORDED = "CALLED_NOT_RECORDED — 부른 뒤 결정을 기록하지 못함(과금된 응답 — 다시 부르지 않음)";
+    /** 응답을 받은 뒤 쓰기가 실패해 실패 결정 행(API_ERROR·AFTER_RESPONSE)으로 끝낸 행의 DONE 사유. */
+    static final String AFTER_RESPONSE = "API_ERROR — 응답을 받은 뒤 검증·저장 중 오류(과금된 응답 — 재시도 없음)";
 
     private static final Logger log = LoggerFactory.getLogger(PaperCheckpointJob.class);
 
@@ -108,6 +117,8 @@ public class PaperCheckpointJob {
     private final ReentrantLock running = new ReentrantLock();
     /** 창 안에서 자료를 기다린 행 → 그 사유(창 끝의 EXPIRED 사유). 재기동하면 비어 WINDOW_MISSED로 남습니다. */
     private final Map<String, String> waiting = new HashMap<>();
+    /** 응답을 받았는데 결정 행을 남기지 못한 행(클래스 설명의 '쓰기') — 다시 부르지 않습니다. 재기동하면 비어 있습니다. */
+    private final Set<String> called = new HashSet<>();
 
     @Autowired
     PaperCheckpointJob(PaperStore store, StoreReader reader, PaperMarketData marketData, PacketBuilder packets,
@@ -181,6 +192,7 @@ public class PaperCheckpointJob {
         List<Checkpoint> planned = store.plannedCheckpoints(PaperBooks.CLAUDE2);
         if (planned.isEmpty()) {
             waiting.clear();
+            called.clear();
             return new Outcome(0, Map.of(), null);
         }
         SettingsRow row = store.settings().orElse(null);
@@ -193,6 +205,7 @@ public class PaperCheckpointJob {
                 if (change != null) {
                     changes.put(c.sessionDate().toString(), change);
                     waiting.remove(key(c));
+                    called.remove(key(c));
                 }
             } catch (RuntimeException e) {
                 error = c.sessionDate() + ": " + e;
@@ -251,12 +264,15 @@ public class PaperCheckpointJob {
             return null;   // 요청 결정을 지우면 행도 함께 지워짐(V18 CASCADE) — 그사이의 경합
         }
         LocalDate asOf = source.asOfTradingDate();
-        Optional<Decision> called = store.decisionFor(PaperBooks.CLAUDE2, asOf, RuleBookService.CHECKPOINT);
-        if (called.isPresent()) {
+        Optional<Decision> decided = store.decisionFor(PaperBooks.CLAUDE2, asOf, RuleBookService.CHECKPOINT);
+        if (decided.isPresent()) {
             // 세션당 한 번 — 이미 부른 확인 결정이 있으면 다시 부르지 않고 그 결정으로 끝냄.
             store.markCheckpoint(PaperBooks.CLAUDE2, session, PaperBooks.CHECKPOINT_PLANNED, PaperBooks.CHECKPOINT_DONE,
-                    null, called.get().id(), null, called.get().decidedAt());
-            return PaperBooks.CHECKPOINT_DONE + " 결정 #" + called.get().id() + "(이미 부름)";
+                    doneReason(decided.get()), decided.get().id(), null, decided.get().decidedAt());
+            return PaperBooks.CHECKPOINT_DONE + " 결정 #" + decided.get().id() + "(이미 부름)";
+        }
+        if (called.contains(key(c))) {
+            return mark(c, PaperBooks.CHECKPOINT_EXPIRED, CALLED_NOT_RECORDED);   // 부른 뒤 기록 실패 — 다시 부르지 않음
         }
 
         boolean minute = ExecutionSection.FEED_MINUTE.equals(c.feed());
@@ -312,8 +328,23 @@ public class PaperCheckpointJob {
         }
         Integer lagSeconds = lag;
         Feeds feeds = new Feeds(quotes, watch, bars);
-        long id = ledger.exclusively(() -> store.atomically(() -> write(pipeline, c, asOf, row, claudeSettings, attempt,
-                lagSeconds, calledAt, feeds)));
+        long id;
+        try {
+            id = ledger.exclusively(() -> store.atomically(() -> write(pipeline, c, asOf, row, claudeSettings, attempt,
+                    lagSeconds, calledAt, feeds)));
+        } catch (RuntimeException e) {
+            // 과금된 응답 — 쓰기가 되돌려져도 다시 부르지 않음(§5-2 재시도 없음, 리뷰 F1·OPS-1). 실패 결정 행을 따로 남기고 행을 DONE으로.
+            called.add(key(c));
+            pipeline.recordAfterResponse(asOf, RuleBookService.CHECKPOINT, row, claudeSettings, false, attempt, null, e);
+            try {
+                store.decisionFor(PaperBooks.CLAUDE2, asOf, RuleBookService.CHECKPOINT).ifPresent(d -> store.markCheckpoint(
+                        PaperBooks.CLAUDE2, session, PaperBooks.CHECKPOINT_PLANNED, PaperBooks.CHECKPOINT_DONE,
+                        doneReason(d), d.id(), lagSeconds, calledAt));
+            } catch (RuntimeException again) {
+                e.addSuppressed(again);   // 다음 주기가 그 결정 행으로(또는 메모리의 '부름'으로) 끝냄
+            }
+            throw e;
+        }
         log.info("Claude 계좌2 장중 확인 {} {} {}: {} — 결정 {}", session, CheckpointPacket.clock(c.atEt()), c.feed(),
                 attempt.succeeded() ? Json.asText(attempt.parsed(), "action") : attempt.status(), id);
         return PaperBooks.CHECKPOINT_DONE + " 결정 #" + id;
@@ -447,6 +478,18 @@ public class PaperCheckpointJob {
             log.warn("장중 확인 {} 행이 그사이 PLANNED가 아니게 됨 — 결정 {}은 남김", c.sessionDate(), id);
         }
         return id;
+    }
+
+    /**
+     * 이미 있는 확인 결정으로 행을 DONE으로 둘 때의 사유 — 응답 뒤 쓰기 실패로 남긴 행이면 {@link #AFTER_RESPONSE}, 그 밖의 실패 응답이면
+     * '상태 — 재시도 없음'({@link #write}와 같음), 성공 응답이면 null.
+     */
+    private static String doneReason(Decision d) {
+        JsonNode failure = d.response() == null ? null : d.response().get("failure");
+        if (failure == null || !failure.isObject()) {
+            return null;
+        }
+        return "AFTER_RESPONSE".equals(Json.asText(failure, "stage")) ? AFTER_RESPONSE : d.status() + " — 재시도 없음";
     }
 
     /** 지금 이전에 받은 저장본의 본문(⑨ — 예상 상태는 그 뒤 자료를 쓰지 않음), 아니면 null. */

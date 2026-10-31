@@ -3269,6 +3269,7 @@ const CHECKPOINT_REASON: Record<string, string> = {
   NO_FRESH_QUOTES: "그 세션의 시간별 관측치가 창 끝까지 없음",
   CYCLE_CAP: "결정 주기 호출 상한(claude2.maxCallsPerCycle)에 닿음",
   CALL_CAP: "하루 호출 상한에 닿음",
+  CALLED_NOT_RECORDED: "부른 뒤 결정을 기록하지 못함 — 과금된 응답이라 다시 부르지 않음",
   CHECKPOINT_INVALID: "요청이 규칙에 맞지 않음(시각·감시 목록·자료)",
   LATE_CHECKPOINT: "확인 시각이 그 세션 마감 30분 전보다 늦음",
   NO_SESSION_BARS: "그 세션의 봉이 없음(임시 휴장)",

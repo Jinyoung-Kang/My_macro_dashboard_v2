@@ -475,6 +475,10 @@ describe("🧪 장중 확인(단계 2)", () => {
     expect(checkpointReasonText("CHECKPOINT_INVALID — MINUTE인데 감시 목록이 비어 있음"))
       .toBe("요청이 규칙에 맞지 않음(시각·감시 목록·자료): MINUTE인데 감시 목록이 비어 있음 (CHECKPOINT_INVALID)");
     expect(checkpointReasonText("API_ERROR — 재시도 없음")).toBe("API 오류 — 재시도 없음 (API_ERROR)");
+    expect(checkpointReasonText("API_ERROR — 응답을 받은 뒤 검증·저장 중 오류(과금된 응답 — 재시도 없음)"))
+      .toBe("API 오류 — 재시도 없음 (API_ERROR)");
+    expect(checkpointReasonText("CALLED_NOT_RECORDED — 부른 뒤 결정을 기록하지 못함(과금된 응답 — 다시 부르지 않음)"))
+      .toBe("부른 뒤 결정을 기록하지 못함 — 과금된 응답이라 다시 부르지 않음 (CALLED_NOT_RECORDED)");
     expect(checkpointReasonText("SUPERSEDED — 다음 결정이 대신함(장중 확인 요청 없음)")).toContain("(SUPERSEDED)");
     expect(checkpointReasonText("NEW_CODE — 뭔가")).toBe("NEW_CODE — 뭔가");
     expect(checkpointReasonText(null)).toBe("—");

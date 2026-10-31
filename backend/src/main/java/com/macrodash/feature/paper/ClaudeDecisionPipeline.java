@@ -917,13 +917,19 @@ final class ClaudeDecisionPipeline {
      * 또 불러(유료) 같은 날 호출이 명세 C7의 "재시도 한 번"을 넘고, 예외가 되풀이되면 하루 호출 상한까지 갑니다. 상태는 V8 CHECK 안의
      * 가장 가까운 것(호출 쪽 오류)이고 {@code response.failure.stage = AFTER_RESPONSE}로 구분합니다. 이 기록까지 실패하면(DB 장애)
      * 로그만 남기고, 호출한 쪽은 원래 예외를 받습니다.
+     *
+     * <p>장중 확인(kind {@code CHECKPOINT} — {@link PaperCheckpointJob})도 같은 함수로 남깁니다(리뷰 F1·OPS-1). 그 행은 결정 작업이 재시도하지 않는
+     * 종류라 {@code retry_count}가 0입니다 — 결정 주기 호출 수({@link ClaudeBookService#claude2CallsInCycle})가 한 번으로 세게.
      */
     void recordAfterResponse(LocalDate asOf, String kind, SettingsRow row, ClaudeSettings claude,
                                      boolean pricesFinal, Attempt attempt, Decision retrying, RuntimeException cause) {
         String message = clip("응답을 받은 뒤 검증·저장 중 오류(과금된 응답 — 다시 부르지 않음): " + cause, ERROR_CHARS);
+        boolean checkpoint = RuleBookService.CHECKPOINT.equals(kind);
         try {
             Map<String, Object> response = new LinkedHashMap<>();
-            response.put("summary", "응답을 받은 뒤 검증·저장 중 오류 — 그날 재량 주문 없음(리스크 규칙은 계속). 과금된 응답이라 같은 "
+            response.put("summary", checkpoint
+                    ? "응답을 받은 뒤 검증·저장 중 오류 — 장중 확인 재시도 없음(아침 주문 그대로). 과금된 응답이라 다시 부르지 않습니다"
+                    : "응답을 받은 뒤 검증·저장 중 오류 — 그날 재량 주문 없음(리스크 규칙은 계속). 과금된 응답이라 같은 "
                     + "거래일에 다시 부르지 않습니다");
             response.put("book", book());
             response.put("kind", kind);
@@ -942,7 +948,7 @@ final class ClaudeDecisionPipeline {
             response.put("settings", claudeView(claude));
             putMeasure(response, attempt);
             Decision d = decisionRow(retrying == null ? 0 : retrying.id(), asOf, kind, STATUS_API_ERROR, row, claude,
-                    attempt, null, mapper.valueToTree(response), message, pricesFinal, 1);
+                    attempt, null, mapper.valueToTree(response), message, pricesFinal, checkpoint ? 0 : 1);
             store.atomically(() -> {
                 if (retrying != null) {
                     store.updateDecisionRetry(d);   // 재시도 수가 1이 됩니다(그사이 바뀐 행이면 아무것도 안 함)

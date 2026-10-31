@@ -402,7 +402,6 @@ class PaperCheckpointJobTest {
     }
 
     @Test
-    @Disabled("리뷰 F1·OPS-1 재현 — 과금된 호출 뒤 쓰기 트랜잭션이 실패하면 결정 행·DONE이 함께 되돌려져 다음 주기에 다시 부름. 수정 커밋에서 뗌")
     @DisplayName("재시도 없음(쓰기 실패): 응답을 받은 뒤 쓰기(행 DONE·확인 결정 넣기)가 DB 순간 장애로 실패해도 다음 주기에 다시 부르지 않음 — 실패 결정 행(API_ERROR·AFTER_RESPONSE)이 따로 남고 행 DONE, 호출·사용량 1")
     void writeFailureAfterTheCallDoesNotCallAgain() {
         failDone = 1;
@@ -423,6 +422,7 @@ class PaperCheckpointJobTest {
         assertThat(ClaudeBookService.claude2CallsInCycle(store, D)).as("아침 1 + 확인 1").isEqualTo(2);
 
         // 확인 결정 넣기가 실패해도 같음(트랜잭션 안 첫 쓰기).
+        sent.clear();
         setUp();
         failCheckpointInsert = 1;
         PaperCheckpointJob again = job(true);
@@ -434,7 +434,6 @@ class PaperCheckpointJobTest {
     }
 
     @Test
-    @Disabled("리뷰 F1·OPS-1 재현 — 실패 결정 행마저 남기지 못하면 작업 메모리에도 '부름'이 없어 창 안에서 다시 부름. 수정 커밋에서 뗌")
     @DisplayName("재시도 없음(기록도 실패): 쓰기와 실패 결정 행 기록이 모두 실패하면 작업 메모리의 '부름'으로 다시 부르지 않고 EXPIRED CALLED_NOT_RECORDED")
     void unrecordedCallIsNotRepeated() {
         failCheckpointInsert = 2;   // write의 넣기 + 실패 결정 행 넣기
