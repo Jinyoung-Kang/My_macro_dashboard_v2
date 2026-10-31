@@ -241,7 +241,8 @@ lib/                        표시 규칙(서식·메뉴·검색·테마·화면
   지표·종목 상세 화면은 4단계입니다. 모의매매만 `/paper/us/*`로 옮겼고(옛 `/paper`는 리디렉션) 한국 책은 `/paper/kr/*`(같은 일곱 탭, 2단계 F2)입니다.
 - **모의매매의 시장 인자**: 화면은 시장(`US`·`KR`) 하나를 받아 통화·주당 가격 자릿수·거래일 이름은 `lib/paperMarket.ts`, API 경로는
   `endpoints.paper.market(m)`(한국은 `?market=KR`)에서 고릅니다. 한국에만 있는 칸(잠정·확정과 확정 조정, 묶인 평가의 출처, 수집 상태, 노출 맞춘
-  참고선)은 `lib/paperKr.ts`가 화면 모델로 바꿉니다. 미국 응답은 글자 그대로(고정본 `paper-overview-us.json`·`paper-status-us.json`)라 미국 화면은
+  참고선)은 `lib/paperKr.ts`가 화면 모델로 바꿉니다. 미국 응답은 글자 그대로(고정본 `paper-overview-us.json`·`paper-status-us.json` — 장부 응답이고, 개요 경로가 덧붙이는 지금 값
+  칸은 `PaperOverviewServiceTest`가 장부 부분 불변과 함께 지킴, [명세 2026-10-31](specs/2026-10-31-paper-live-overview.md))라 미국 화면은
   기본값(US)으로 예전과 같고, 프레임·설정은 두 시장이 한 판·한 행을 함께 쓰는 공용 화면입니다. 🧪 미국 Claude 계좌2(ADR 0022)는 kind가 계좌1과 같은
   `CLAUDE`라 화면은 kind가 아니라 계좌 소개(`ACCOUNT_PROFILES`의 `timed`·시작 전·결정 안내)로 가르고, Claude 계좌를 하나로 읽는 곳(시작 카드·홈 히어로·
   사용량)은 기본 Claude 계좌(`primaryClaudeBook` — 계좌1)를 고릅니다. 홈 히어로 끝 줄은 계좌2가 다른 날(앞으로 체결로 늦게) 출발했으면

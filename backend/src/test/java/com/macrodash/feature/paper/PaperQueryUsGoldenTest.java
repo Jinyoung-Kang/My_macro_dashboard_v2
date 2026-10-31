@@ -44,6 +44,10 @@ import static org.mockito.Mockito.when;
  *
  * <p>고정본은 main 코드에 이 재료를 넣어 만들었습니다({@code git archive main backend}로 푼 트리에서 이 시험(시장 값 판 호출만 뺀 것)을
  * {@code GOLDEN_UPDATE=1}로 두 번 — 두 번 다 같은 글자). 고정본이 바뀌는 커밋은 미국 화면 응답을 바꾸는 커밋입니다({@link Golden}).
+ *
+ * <p>고정본은 장부 응답({@code PaperQueryService.overview}·{@code status})입니다. 개요 경로({@code GET /api/paper/overview} —
+ * {@link PaperOverviewService})는 그 뒤에 지금 값 칸({@code current}·{@code lastNavTradingDate}·{@code lastNavFinal}·{@code navEstimate}·
+ * {@code liveSession})을 덧붙이고, 덧붙여도 장부 부분이 글자 그대로라는 것은 {@code PaperOverviewServiceTest}가 지킵니다(명세 2026-10-31).
  */
 class PaperQueryUsGoldenTest {
 

@@ -90,7 +90,7 @@
        SELECT만(`test_paper_watch.py::test_범위_읽기는_쓰기_문장이_없다`·`test_범위는_계좌2의_오늘_PLANNED_MINUTE_확인과_보유·대기이고_읽기만_한다`), 감시 저장본을 읽는 백엔드는
        장중 확인 작업·패킷·상태 표시뿐(`test_감시_저장본을_읽는_백엔드_코드는_장중_확인_작업과_패킷과_상태_표시뿐이고_화면은_읽지_않는다`)
   7. 장중 평가는 표시 전용 그대로
-     - 있음: 시험이 아니라 코드 사실 — `paper.live.*`를 읽는 백엔드 코드는 `PaperLiveService` 하나(`PaperLiveServiceTest`). 계좌2 장부·패킷은 새 데이터셋 `paper.bars.us`(0-3)·`paper.watch.us`(2-2)만 읽음
+     - 있음: 장중 데이터셋(`paper.live.*`)을 참조할 수 있는 백엔드 코드는 평가 계산 `LiveValuation`·`/live`의 `PaperLiveService`·개요 조립 `PaperOverviewService` 셋이고(개요는 `readStored`로만 읽음 — [개요 지금 값 명세](../specs/2026-10-31-paper-live-overview.md) §6, ADR 0020 2026-10-31 덧붙임), 소스 검사 시험 `LiveIsolationTest`가 지킴. 계좌2 장부·패킷은 새 데이터셋 `paper.bars.us`(0-3)·`paper.watch.us`(2-2)만 읽음
   8. 정기 작업 둘
      - 있음(선례): `PaperRiskJobTest.disabledDoesNothing`·`PaperReviewJobTest.disabledDoesNothing`(`PAPER_ENABLED=false`면 아무것도 안 함)
      - 단계 0(0-4): 실행 감사 작업의 같은 시험(꺼지면 아무것도 안 함, 저장본은 `StoreReader.quietly`, 장부 잠금을 잡지 않고 장부 표는 읽기만, 계좌1 고정본 그대로). 단계 2(있음): 장중 확인 작업
