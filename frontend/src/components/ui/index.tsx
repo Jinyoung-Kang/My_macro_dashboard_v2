@@ -3,7 +3,7 @@
 import { ReactNode } from "react";
 import { deltaColor, EMPTY, formatAge, formatKst, withoutLeadingIcon } from "@/lib/format";
 import { buttonClasses, FOCUS_RING, inputClasses, type ButtonSize, type ButtonVariant } from "./classes";
-import { ChevronDownIcon } from "./icons";
+import { ChevronDownIcon, SpinnerIcon, XCircleIcon } from "./icons";
 
 // 클래스 문자열은 서버 컴포넌트도 부를 수 있게 순수 모듈(classes.ts)에 두고 여기서 다시 내보냅니다.
 export { buttonClasses, FOCUS_RING, inputClasses, type ButtonSize, type ButtonVariant, type InputSize } from "./classes";
@@ -175,24 +175,26 @@ function FreshnessBadge({ collectedAt, age, stale }: { collectedAt?: string | nu
 }
 
 /**
- * 경고 배너 — 추정치·이력 대체처럼 "값의 성격"을 알려야 할 때.
- * 경고 바탕은 불투명 틴트(bg-warn-tint, globals.css)라 카드 밖 페이지 바탕 위에 놓여도 글자 대비가 4.5:1 이상입니다.
+ * 배너 — 추정치·이력 대체처럼 "값의 성격"을 알리거나(warn), 실패(danger)·안내(info)·완료(ok)를 알릴 때.
+ * 바탕은 모두 불투명 틴트(globals.css의 *-tint)라 카드 밖 페이지 바탕 위에 놓여도 글자 대비가 같습니다(톤 글자 4.7:1 이상).
+ * 안내(info)는 글을 본문색으로 둡니다 — 강조 파랑 글자는 링크로 읽히고 하락 파랑과 구분되지 않습니다(명세 원칙 A1).
  */
 export function Banner({
   tone = "warn",
   children,
 }: {
-  tone?: "warn" | "danger" | "info";
+  tone?: "warn" | "danger" | "info" | "ok";
   children: ReactNode;
 }) {
   const palette = {
-    warn: "border-warn/40 bg-warn-tint text-warn",
-    danger: "border-danger/40 bg-danger/10 text-danger",
-    info: "border-accent/40 bg-accent/10 text-accent",
+    warn: "border-warn/30 bg-warn-tint text-warn",
+    danger: "border-danger/30 bg-danger-tint text-danger",
+    info: "border-accent/25 bg-accent-tint text-text",
+    ok: "border-ok/30 bg-ok-tint text-ok",
   }[tone];
 
   return (
-    <div className={`rounded-lg border px-4 py-3 text-sm leading-relaxed ${palette}`}>
+    <div className={`rounded-control border px-4 py-3 text-sm leading-relaxed ${palette}`}>
       {children}
     </div>
   );
@@ -200,9 +202,9 @@ export function Banner({
 
 export function Loading({ label = "불러오는 중…" }: { label?: string }) {
   return (
-    <div className="flex items-center gap-2 py-8 text-sm text-muted">
-      {/* 깜빡임은 움직임 줄이기(prefers-reduced-motion)가 꺼져 있을 때만 */}
-      <span className="h-3 w-3 rounded-full bg-accent motion-safe:animate-pulse" />
+    <div className="flex items-center gap-2 py-8 text-sm text-text-3">
+      {/* 도는 것은 움직임 줄이기(prefers-reduced-motion)가 꺼져 있을 때만 — 켜져 있으면 멈춘 호와 글 */}
+      <SpinnerIcon size={16} className="motion-safe:animate-spin" />
       {label}
     </div>
   );
@@ -210,7 +212,7 @@ export function Loading({ label = "불러오는 중…" }: { label?: string }) {
 
 export function EmptyState({ message }: { message: string }) {
   return (
-    <div className="rounded-lg border border-dashed border-border px-4 py-8 text-center text-sm text-muted">
+    <div className="rounded-control bg-surface-2/60 px-4 py-10 text-center text-sm text-text-2">
       {message}
     </div>
   );
@@ -218,14 +220,13 @@ export function EmptyState({ message }: { message: string }) {
 
 export function ErrorState({ message, onRetry }: { message: string; onRetry?: () => void }) {
   return (
-    <div className="rounded-lg border border-danger/40 bg-danger/10 px-4 py-4 text-sm text-danger">
-      <p>{message}</p>
+    <div className="rounded-control border border-danger/30 bg-danger-tint px-4 py-4 text-sm text-danger">
+      <p className="flex items-start gap-2">
+        <XCircleIcon size={16} className="mt-0.5" />
+        <span className="min-w-0">{message}</span>
+      </p>
       {onRetry && (
-        <button
-          type="button"
-          onClick={onRetry}
-          className="mt-2 min-h-11 rounded-sm border border-danger/40 px-3 py-1 text-xs hover:bg-danger/20 lg:min-h-0"
-        >
+        <button type="button" onClick={onRetry} className={`mt-3 ${buttonClasses("secondary", "sm")}`}>
           다시 시도
         </button>
       )}
