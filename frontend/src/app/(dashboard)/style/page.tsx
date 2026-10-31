@@ -90,7 +90,7 @@ function ProfilesCard() {
               render: (row) => (
                 <span className="flex flex-col">
                   <span className="text-body">{filerName(row.name) ?? `CIK ${row.cik}`}</span>
-                  <span className="text-[11px] text-muted">{row.desc}</span>
+                  <span className="text-xs text-muted">{row.desc}</span>
                 </span>
               ),
             },
@@ -102,7 +102,7 @@ function ProfilesCard() {
                 <span className="flex flex-col items-end">
                   <span>{formatCurrency(row.totalValue)}</span>
                   {usdKrw.toKrw(row.totalValue) && (
-                    <span className="text-[11px] text-muted">{usdKrw.toKrw(row.totalValue)}</span>
+                    <span className="text-xs text-muted">{usdKrw.toKrw(row.totalValue)}</span>
                   )}
                 </span>
               ),
@@ -120,7 +120,7 @@ function ProfilesCard() {
               render: (row) => (
                 <span className="flex flex-col items-end">
                   <span className="font-semibold">{formatNumber(row.effectiveHoldings, 1)}</span>
-                  <span className="text-[11px] text-muted">1 ÷ HHI</span>
+                  <span className="text-xs text-muted">1 ÷ HHI</span>
                 </span>
               ),
             },
@@ -152,7 +152,7 @@ function ProfilesCard() {
         />
       )}
 
-      <p className="mt-3 text-[11px] leading-relaxed text-muted">
+      <p className="mt-3 text-xs leading-relaxed text-muted">
         <b>유효 종목 수</b> = 1 ÷ 허핀달 지수. 한 종목에 몰아넣었으면 1에 가깝고, 고르게
         나눴으면 실제 종목 수에 가까워집니다. <b>회전율</b>은 분기 사이에 갈아탄 비중이며,
         100%면 포트폴리오가 통째로 바뀐 것입니다. 직전 분기가 없으면 {EMPTY}입니다 — 0으로
@@ -205,7 +205,7 @@ function SimilarityCard() {
               막대는 크기 감만 주는 보조이고, 색은 중립색(빨강 = 매수·상승 약속과 섞이지 않게). */}
           <table className="w-full border-collapse text-xs">
             <thead>
-              <tr className="text-[11px] text-muted">
+              <tr className="text-xs text-muted">
                 <th className="w-8 px-2 py-1.5 text-right font-medium">#</th>
                 <th className="px-2 py-1.5 text-left font-medium">기관 A</th>
                 <th className="px-2 py-1.5 text-left font-medium">기관 B</th>
@@ -244,7 +244,7 @@ function SimilarityCard() {
         <div className="mt-5 overflow-x-auto" tabIndex={0} role="region" aria-label="기관 간 유사도 행렬 (좌우 스크롤)">
           <table className="w-full min-w-[720px] border-collapse text-xs">
             <thead>
-              <tr className="text-[11px] text-muted">
+              <tr className="text-xs text-muted">
                 <th className="sticky left-0 bg-surface px-3 py-2 text-left font-medium">기관</th>
                 {names.map((entry) => (
                   <th
@@ -299,7 +299,7 @@ function SimilarityCard() {
         </div>
       )}
 
-      <p className="mt-3 text-[11px] leading-relaxed text-muted">
+      <p className="mt-3 text-xs leading-relaxed text-muted">
         <b>겹침 비중</b>은 각 종목에서 작은 쪽 비중을 더한 값입니다 — 애플을 한쪽이 10%,
         다른 쪽이 3% 들고 있으면 겹치는 것은 3%입니다. <b>코사인</b>은 비중의 모양만 봅니다.
         종목 수가 크게 다른 두 곳에서는 두 값이 엇갈릴 수 있고, 그 엇갈림 자체가 정보입니다.
@@ -386,7 +386,7 @@ function RiskCard() {
               <summary className="cursor-pointer text-xs">
                 미커버 {coverage.uncoveredCount}종목 보기
               </summary>
-              <ul className="mt-1 space-y-0.5 text-[11px]">
+              <ul className="mt-1 space-y-0.5 text-xs">
                 {/* 같은 회사의 보통주·우선주·사채가 같은 공시 이름으로 여러 줄 옵니다. 응답에 증권을 가르는 필드가 없고
                     목록은 응답마다 통째로 바뀌므로 순서를 키에 넣습니다(QA-135). */}
                 {coverage.uncovered.map((row, index) => (
@@ -464,7 +464,7 @@ function RiskCard() {
                 render: (row) => (
                   <span className="flex flex-col">
                     <span className="text-body">{row.name}</span>
-                    <span className="text-[11px] text-muted">
+                    <span className="text-xs text-muted">
                       {row.ticker}
                       {row.sector ? ` · ${row.sector}` : ""}
                     </span>
@@ -501,7 +501,7 @@ function RiskCard() {
               },
             ]}
           />
-          <p className="mt-2 text-[11px] leading-relaxed text-muted">
+          <p className="mt-2 text-xs leading-relaxed text-muted">
             <b>기여의 합 = 포트폴리오 변동성</b>입니다. 개별 변동성을 그냥 더하면 분산 효과가
             사라져 합이 맞지 않습니다. 비중이 큰 종목이 곧 위험이 큰 종목은 아닙니다 — 조용한
             대형주 20%와 널뛰는 종목 5%의 기여가 뒤집히는 일이 흔합니다.
@@ -510,7 +510,7 @@ function RiskCard() {
       )}
 
       {data?.note && (
-        <p className="mt-3 text-[11px] leading-relaxed text-muted">
+        <p className="mt-3 text-xs leading-relaxed text-muted">
           <StatusText tone="warn" colorText={false} iconSize={12}>{data.note}</StatusText>
         </p>
       )}
@@ -539,7 +539,7 @@ function HoldersCard() {
         }}
       >
         <label className="flex flex-col gap-1">
-          <span className="text-[11px] text-muted">종목명 일부</span>
+          <span className="text-xs text-muted">종목명 일부</span>
           <input
             value={input}
             onChange={(event) => setInput(event.target.value)}
@@ -558,7 +558,7 @@ function HoldersCard() {
         <div className="mt-4">
           {/* 백엔드는 비중 상위 200행까지만 보냅니다(QA-133). 말하지 않으면 잘린 목록이 전부처럼 읽힙니다. */}
           {data!.truncated && (
-            <p className="mb-2 text-[11px] leading-relaxed text-muted">
+            <p className="mb-2 text-xs leading-relaxed text-muted">
               일치 {formatNumber(data!.totalMatches, 0)}건 중 비중 상위 {data!.rows.length}건만 보입니다 — 종목명을
               더 길게 적어 좁히세요.
             </p>
@@ -574,7 +574,7 @@ function HoldersCard() {
                 render: (row) => (
                   <span className="flex flex-col">
                     <span className="text-body">{row.name}</span>
-                    <span className="text-[11px] text-muted">CUSIP {row.cusip}</span>
+                    <span className="text-xs text-muted">CUSIP {row.cusip}</span>
                   </span>
                 ),
               },

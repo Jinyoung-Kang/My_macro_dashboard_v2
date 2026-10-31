@@ -183,9 +183,9 @@ export default function LiquidityPage() {
                     style={{ backgroundColor: component.color }}
                   />
                   <h3 className="text-xs font-semibold text-body">{component.name}</h3>
-                  <span className="text-[11px] text-muted">{component.unit}</span>
+                  <span className="text-xs text-muted">{component.unit}</span>
                 </div>
-                <p className="mb-2 text-[11px] leading-relaxed text-muted">
+                <p className="mb-2 text-xs leading-relaxed text-muted">
                   {component.note}
                 </p>
                 <LineSeries

@@ -105,7 +105,7 @@ export function AutoRefreshControl({
 
   return (
     <div className="flex items-center gap-2">
-      <label className="flex items-center gap-1.5 text-[11px] text-muted">
+      <label className="flex items-center gap-1.5 text-xs text-muted">
         <span className="whitespace-nowrap">자동 갱신</span>
         <select
           value={String(seconds)}
@@ -121,7 +121,7 @@ export function AutoRefreshControl({
         </select>
       </label>
 
-      <span className="text-[11px] tabular-nums text-muted">
+      <span className="text-xs tabular-nums text-muted">
         {seconds === 0 ? (
           "수동"
         ) : loading ? (

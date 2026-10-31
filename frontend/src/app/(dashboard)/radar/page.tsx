@@ -158,14 +158,14 @@ export default function RadarPage() {
         </div>
 
         {unsupportedInvestors.length > 0 && (
-          <p className="mt-3 text-[11px] text-muted">
+          <p className="mt-3 text-xs text-muted">
             ⓘ {unsupportedInvestors.join(" · ")}는 <b>지원 안 함</b>입니다.{" "}
             {options.data?.unsupportedInvestorNote}
           </p>
         )}
         {/* 토스 폴백으로 여섯 모두 고를 수 있을 때도, 넷은 한계가 있는 순위라 적어 둡니다 */}
         {unsupportedInvestors.length === 0 && TOSS_ONLY.includes(investor) && options.data?.unsupportedInvestorNote && (
-          <p className="mt-3 text-[11px] text-muted">ⓘ {options.data.unsupportedInvestorNote}</p>
+          <p className="mt-3 text-xs text-muted">ⓘ {options.data.unsupportedInvestorNote}</p>
         )}
       </Card>
 
@@ -225,7 +225,7 @@ export default function RadarPage() {
                     <span className="flex flex-col">
                       <span className="text-body">{row.name}</span>
                       {/* 종목코드는 앞자리 0을 포함한 문자열 그대로 표시합니다. */}
-                      <span className="text-[11px] text-muted">{row.code}</span>
+                      <span className="text-xs text-muted">{row.code}</span>
                     </span>
                   ),
                 },
@@ -403,7 +403,7 @@ function FundamentalsPanel({ codes }: { codes: string[] }) {
                   render: (row) => (
                     <span className="flex flex-col">
                       <span className="text-body">{row.name ?? row.code}</span>
-                      <span className="text-[11px] text-muted">
+                      <span className="text-xs text-muted">
                         {row.available ? `${row.bsnsYear} ${row.fsLabel}` : "재무 없음"}
                       </span>
                     </span>
@@ -550,7 +550,7 @@ function ConsensusPanel({
                   render: (row) => (
                     <span className="flex flex-col">
                       <span className="text-body">{row.name}</span>
-                      <span className="text-[11px] text-muted">{row.code}</span>
+                      <span className="text-xs text-muted">{row.code}</span>
                     </span>
                   ),
                 },
@@ -573,7 +573,7 @@ function ConsensusPanel({
                       <span className={deltaColor(row.foreignEok, 1)}>
                         {formatNumber(row.foreignEok, 1)}
                       </span>
-                      <span className="text-[11px] text-muted">
+                      <span className="text-xs text-muted">
                         {row.foreignRank === null ? EMPTY : `${row.foreignRank}위`}
                       </span>
                     </span>
@@ -588,7 +588,7 @@ function ConsensusPanel({
                       <span className={deltaColor(row.institutionEok, 1)}>
                         {formatNumber(row.institutionEok, 1)}
                       </span>
-                      <span className="text-[11px] text-muted">
+                      <span className="text-xs text-muted">
                         {row.institutionRank === null ? EMPTY : `${row.institutionRank}위`}
                       </span>
                     </span>
@@ -608,7 +608,7 @@ function ConsensusPanel({
             />
           </div>
 
-          <p className="mt-2 text-[11px] leading-relaxed text-muted">
+          <p className="mt-2 text-xs leading-relaxed text-muted">
             {buying
               ? "두 주체가 함께 담은 종목입니다. 한쪽만 사는 종목보다 수급의 방향이 뚜렷하지만, 그것이 수익을 뜻하지는 않습니다."
               : "두 주체가 함께 던진 종목입니다. 금액이 음수인 것은 순매도라는 뜻이며, 표기를 바꾸지 않았습니다."}{" "}

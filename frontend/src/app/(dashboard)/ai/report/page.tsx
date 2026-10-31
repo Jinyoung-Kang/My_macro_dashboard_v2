@@ -93,7 +93,7 @@ export default function AiReportPage() {
           />
         </div>
 
-        <p className="mt-2 text-[11px] leading-relaxed text-muted">
+        <p className="mt-2 text-xs leading-relaxed text-muted">
           {engineId === "auto"
             ? `자동 탐색은 빠른 엔진부터 부릅니다${
                 autoBudget ? ` (전체 ${autoBudget}초를 넘기면 중단하고 실패 경로를 보여 줍니다)` : ""
@@ -158,7 +158,7 @@ export default function AiReportPage() {
           {/* 받지 못하면 이유 없이 빈 상자만 남았습니다(QA-132). */}
           {snapshot.error && <ErrorState message={snapshot.error} onRetry={snapshot.reload} />}
           {snapshot.data && (
-            <pre className="max-h-[480px] overflow-auto whitespace-pre-wrap rounded-sm border border-border bg-canvas p-3 text-[11px] leading-relaxed text-muted">
+            <pre className="max-h-[480px] overflow-auto whitespace-pre-wrap rounded-sm border border-border bg-canvas p-3 text-xs leading-relaxed text-muted">
               {snapshot.data.text}
             </pre>
           )}
@@ -223,7 +223,7 @@ export default function AiReportPage() {
           ) : (
             <>
               {result.failoverPath && result.failoverPath.length > 1 && (
-                <p className="mb-3 text-[11px] text-muted">
+                <p className="mb-3 text-xs text-muted">
                   폴오버 경로: {result.failoverPath.map((step) => withoutLeadingIcon(step)).join(" → ")}
                 </p>
               )}

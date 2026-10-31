@@ -77,7 +77,7 @@ export default function CotPage() {
                 render: (row) => (
                   <span className="flex flex-col">
                     <span className="text-body">{row.asset}</span>
-                    <span className="text-[11px] text-muted">{row.category}</span>
+                    <span className="text-xs text-muted">{row.category}</span>
                   </span>
                 ),
               },
@@ -88,7 +88,7 @@ export default function CotPage() {
                   row.available ? (
                     <span className="flex flex-col">
                       <span>{row.date}</span>
-                      <span className="text-[11px] text-muted">{formatWithUnit(row.ageDays, 0, "일 전 공시")}</span>
+                      <span className="text-xs text-muted">{formatWithUnit(row.ageDays, 0, "일 전 공시")}</span>
                     </span>
                   ) : (
                     <span className="text-muted">{row.error ?? "데이터 없음"}</span>
@@ -304,7 +304,7 @@ function ExtremesPanel({ asset }: { asset: string }) {
             {(data.sides ?? []).map((side) => (
               <div key={side.side} className="rounded-lg border border-border bg-canvas p-3">
                 <p className="text-sm font-semibold text-bright">{side.side}</p>
-                <p className="mt-0.5 text-[11px] text-muted">{side.rule}</p>
+                <p className="mt-0.5 text-xs text-muted">{side.rule}</p>
                 <div className="mt-3">
                   <Table
                     rows={[
@@ -404,7 +404,7 @@ function ExtremesPanel({ asset }: { asset: string }) {
                 },
               ]}
             />
-            <p className="mt-2 text-[11px] text-muted">
+            <p className="mt-2 text-xs text-muted">
               아직 4·13주가 지나지 않은 최근 신호는 수익률을 {EMPTY}로 둡니다 — 없는 미래를
               0으로 채우지 않습니다.
             </p>

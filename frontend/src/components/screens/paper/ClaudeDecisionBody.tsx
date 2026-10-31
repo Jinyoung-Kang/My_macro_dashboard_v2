@@ -52,7 +52,7 @@ export function ClaudeDecisionBody({
               ) : EMPTY}
             </MetaRow>
           </dl>
-          <p className="text-[11px] leading-relaxed text-muted">{view.checkpoint.retry}</p>
+          <p className="text-xs leading-relaxed text-muted">{view.checkpoint.retry}</p>
         </Part>
       )}
       <Part
@@ -80,12 +80,12 @@ export function ClaudeDecisionBody({
                 <dd className="tabular-nums font-semibold text-bright">{view.confidence}</dd>
               </div>
             </dl>}
-            {view.mismatch && <p className="text-[11px] leading-relaxed text-warn">{view.mismatch.title}</p>}
+            {view.mismatch && <p className="text-xs leading-relaxed text-warn">{view.mismatch.title}</p>}
             <Text label="요약" value={view.summary} />
             {!view.checkpoint && <Text label="노출 근거" value={view.exposureRationale} />}
             {view.noTradeReason && <Text label="주문 없음 사유" value={view.noTradeReason} />}
             {view.checkpointPlan && <Text label="장중 확인 요청" value={view.checkpointPlan} />}
-            {view.skipped && <p className="text-[11px] leading-relaxed text-warn">{view.skipped}</p>}
+            {view.skipped && <p className="text-xs leading-relaxed text-warn">{view.skipped}</p>}
           </>
         ) : (
           <p className="whitespace-pre-wrap text-xs leading-relaxed text-muted">{view.noResponse}</p>
@@ -110,7 +110,7 @@ export function ClaudeDecisionBody({
                 render: (row) => (row.executionNote ? (
                   <span className="flex flex-col">
                     <span className="whitespace-nowrap">{row.timing}</span>
-                    <span className="text-[11px] text-text-3" title="실행 메모(executionNote) — 이 시점을 고른 이유">{row.executionNote}</span>
+                    <span className="text-xs text-text-3" title="실행 메모(executionNote) — 이 시점을 고른 이유">{row.executionNote}</span>
                   </span>
                 ) : <span className="whitespace-nowrap">{row.timing}</span>),
               },
@@ -214,7 +214,7 @@ function Part({ title, note, children }: { title: string; note?: string; childre
   return (
     <section aria-label={title} className="flex flex-col gap-1">
       <h3 className="text-sm font-semibold text-bright">{title}</h3>
-      {note && <p className="text-[11px] leading-relaxed text-muted">{note}</p>}
+      {note && <p className="text-xs leading-relaxed text-muted">{note}</p>}
       {children}
     </section>
   );
@@ -227,7 +227,7 @@ function Badges({ badges }: { badges: Badge[] }) {
         <span
           key={badge.key}
           title={badge.title}
-          className={`whitespace-nowrap rounded-sm border px-1.5 py-px text-[10px] ${badge.className}`}
+          className={`whitespace-nowrap rounded-sm border px-1.5 py-px text-xs ${badge.className}`}
         >
           {badge.label}
         </span>

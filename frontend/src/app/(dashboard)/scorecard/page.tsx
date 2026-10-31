@@ -163,7 +163,7 @@ export default function ScorecardPage() {
                       render: (row) => (
                         <span className="flex flex-col">
                           <span className="text-body">{row.label}</span>
-                          <span className="text-[11px] text-muted">{row.how}</span>
+                          <span className="text-xs text-muted">{row.how}</span>
                         </span>
                       ),
                     },

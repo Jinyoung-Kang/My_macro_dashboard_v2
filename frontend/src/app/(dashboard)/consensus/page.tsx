@@ -183,7 +183,7 @@ export default function ConsensusPage() {
                     <span className="flex flex-col items-end">
                       <span>{formatCurrency(row.totalValue)}</span>
                       {usdKrw.toKrw(row.totalValue) && (
-                        <span className="text-[11px] text-muted">
+                        <span className="text-xs text-muted">
                           {usdKrw.toKrw(row.totalValue)}
                         </span>
                       )}
@@ -226,7 +226,7 @@ function SecurityName({ row }: { row: { key: string; name: string; cusip?: strin
   return (
     <span className="flex flex-col">
       <span className="text-body">{row.name}</span>
-      {note && <span className="text-[11px] text-muted">{note}</span>}
+      {note && <span className="text-xs text-muted">{note}</span>}
     </span>
   );
 }
@@ -298,7 +298,7 @@ function NewBuysCard({ reportDate }: { reportDate: string }) {
                   <span className="flex flex-col items-end">
                     <span>{formatCurrency(row.totalValue)}</span>
                     {usdKrw.toKrw(row.totalValue) && (
-                      <span className="text-[11px] text-muted">
+                      <span className="text-xs text-muted">
                         {usdKrw.toKrw(row.totalValue)}
                       </span>
                     )}
@@ -318,7 +318,7 @@ function NewBuysCard({ reportDate }: { reportDate: string }) {
               },
             ]}
           />
-          <p className="mt-2 text-[11px] text-muted">
+          <p className="mt-2 text-xs text-muted">
             기준 분기 {data.rows[0]?.reportDate ?? EMPTY} · {data.note}
           </p>
         </>

@@ -120,7 +120,7 @@ export function DataTable<T>({
     <>
       {/* 눈으로 보는 안내 — 낭독기에는 감싼 상자의 이름("… (좌우 스크롤)")이 같은 말을 하므로 숨깁니다. */}
       {wide ? (
-        <p aria-hidden="true" className={`mb-1 text-[11px] text-text-3 ${measured && overflowing ? "" : "sm:hidden"}`}>
+        <p aria-hidden="true" className={`mb-1 text-xs text-text-3 ${measured && overflowing ? "" : "sm:hidden"}`}>
           ← 표를 좌우로 넘겨 보세요
         </p>
       ) : null}

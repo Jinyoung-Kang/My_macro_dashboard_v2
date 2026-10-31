@@ -106,7 +106,7 @@ export default function AlertsPage() {
                     {/* 제목·본문은 서버가 만든 글이라 예전 알림에는 국기·나침반 같은 그림 문자가 있습니다 — 화면에서 뗍니다 */}
                     {withoutLeadingIcon(item.title)}
                   </p>
-                  <span className="text-[11px] text-muted">
+                  <span className="text-xs text-muted">
                     {item.occurredOn}{item.late ? " · 지난 사건" : ""}
                   </span>
                 </div>
@@ -114,7 +114,7 @@ export default function AlertsPage() {
                 {!item.read && !demo && (
                   <button
                     type="button"
-                    className="mt-2 text-[11px] text-muted underline hover:text-accent"
+                    className="mt-2 text-xs text-muted underline hover:text-accent"
                     onClick={async () => { await read.run([item.id]); void inbox.reload(); notifyAlertsRead(); }}
                   >
                     읽음
@@ -175,7 +175,7 @@ export default function AlertsPage() {
               )}
               <Select label="연속 일수" value={days} onChange={setDays}
                 options={[3, 5, 7, 10, 15, 20].map((n) => ({ value: String(n), label: `${n}일` }))} />
-              <p className="text-[11px] text-muted">
+              <p className="text-xs text-muted">
                 토스증권 확정 기록 기준(당일 잠정치 제외). 시장 전체의 외국인은 등록+비등록, 종목은 등록 외국인입니다.
               </p>
             </>
@@ -191,7 +191,7 @@ export default function AlertsPage() {
             disabled={demo || create.busy || (kind === "INSTITUTION_NEW" && !cik) || (kind === "FOREIGN_STREAK" && target === "STOCK" && !/^\d{6}$/.test(code))}>
             {create.busy ? "만드는 중…" : "규칙 만들기"}
           </Button>
-          {demo && <p className="text-[11px] text-muted">{DEMO_READ_ONLY}</p>}
+          {demo && <p className="text-xs text-muted">{DEMO_READ_ONLY}</p>}
         </form>
       </Card>
     </div>

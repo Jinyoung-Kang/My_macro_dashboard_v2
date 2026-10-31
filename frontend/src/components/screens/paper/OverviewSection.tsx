@@ -766,7 +766,7 @@ function GroupList({ title, rows, empty }: { title: string; rows: SelectedFilerR
 
 function GroupBadge({ badge }: { badge: Badge }) {
   return (
-    <span title={badge.title} className={`whitespace-nowrap rounded-sm border px-1.5 py-px text-[10px] ${badge.className}`}>
+    <span title={badge.title} className={`whitespace-nowrap rounded-sm border px-1.5 py-px text-xs ${badge.className}`}>
       {badge.label}
     </span>
   );
@@ -777,7 +777,7 @@ function comparisonContent(row: ComparisonRow, code: string): ReactNode {
   const cell = row.cells[code];
   if (!cell || cell.text === EMPTY) return cell?.text ?? null;
   if (row.badge && cell.className) {
-    return <span className={`whitespace-nowrap rounded-sm border px-2 py-0.5 text-[11px] ${cell.className}`}>{cell.text}</span>;
+    return <span className={`whitespace-nowrap rounded-sm border px-2 py-0.5 text-xs ${cell.className}`}>{cell.text}</span>;
   }
   return cell.className ? <span className={cell.className}>{cell.text}</span> : cell.text;
 }
@@ -785,7 +785,7 @@ function comparisonContent(row: ComparisonRow, code: string): ReactNode {
 function Cell({ label, value, small }: { label: string; value: string; small?: boolean }) {
   return (
     <div className="min-w-0">
-      <dt className="text-[11px] text-muted">{label}</dt>
+      <dt className="text-xs text-muted">{label}</dt>
       <dd className={`tabular-nums text-bright ${small ? "text-xs" : "text-sm font-semibold"}`}>{value}</dd>
     </div>
   );

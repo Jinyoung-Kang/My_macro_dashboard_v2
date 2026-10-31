@@ -115,7 +115,7 @@ export default function MacroPage() {
         {/* 고른 간격보다 값이 늦게 바뀌는 이유를 화면에서 바로 알 수 있게 적습니다.
             적지 않으면 "10초로 해 뒀는데 숫자가 그대로"로 읽힙니다. */}
         {live && (
-          <p className="mt-1 text-[11px] text-muted">
+          <p className="mt-1 text-xs text-muted">
             카드 시세는 최대 1분마다 새로 수집됩니다. 출처(Yahoo·TradingView)가
             폴링·지연 시세라 그보다 빠르게는 바뀌지 않습니다.
           </p>
@@ -258,7 +258,7 @@ function itemSource(item: MacroItem): string | undefined {
 /** 지연이 아닌 알림 배지 — 이 화면의 빨강·파랑은 상승·하락 전용이라 경고는 노랑입니다. */
 function NoticeBadge({ children, title, tone }: { children: string; title?: string; tone?: "warn" }) {
   return (
-    <span className="inline-flex items-center gap-1 rounded-sm border border-warn/40 bg-warn/10 px-2 py-0.5 text-[11px] text-warn" title={title}>
+    <span className="inline-flex items-center gap-1 rounded-sm border border-warn/40 bg-warn/10 px-2 py-0.5 text-xs text-warn" title={title}>
       {tone === "warn" ? (
         <>
           <AlertTriangleIcon size={12} />

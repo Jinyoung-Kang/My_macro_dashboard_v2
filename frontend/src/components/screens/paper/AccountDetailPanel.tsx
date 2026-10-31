@@ -119,7 +119,7 @@ export function AccountDetailPanel({
           <div className="flex flex-wrap items-center gap-2">
             {/* 열 때 초점을 받는 자리(tabIndex -1 — Tab 순서에는 넣지 않음). 단추가 아니라 초점 테두리는 그리지 않습니다. */}
             <h3 id={titleId} tabIndex={-1} className="text-base font-semibold text-bright focus:outline-hidden">{book.label} 상세</h3>
-            <span className={`rounded-sm border px-2 py-0.5 text-[11px] ${card.status.className}`}>{card.status.label}</span>
+            <span className={`rounded-sm border px-2 py-0.5 text-xs ${card.status.className}`}>{card.status.label}</span>
           </div>
           {profile && <p className="mt-1 text-xs text-body">{profile.summary}</p>}
         </div>
@@ -172,7 +172,7 @@ export function AccountDetailPanel({
             <Tile label="출발일" value={card.startedOn} />
             <Tile label="마지막 평가" value={card.lastObserved} />
           </dl>
-          {card.staleWarning && <p className="text-[11px] text-warn">{card.staleWarning}</p>}
+          {card.staleWarning && <p className="text-xs text-warn">{card.staleWarning}</p>}
           <SourceLine>{korea ? PAPER_SOURCES.krLedger : PAPER_SOURCES.ledger}</SourceLine>
         </section>
       </div>
@@ -180,7 +180,7 @@ export function AccountDetailPanel({
       <section aria-label="구성" className="flex flex-col gap-3 border-t border-border pt-4">
         <div>
           <h4 className="text-xs font-semibold text-bright">구성 — 순자산 대비 비중</h4>
-          <p className="mt-0.5 text-[11px] text-muted">
+          <p className="mt-0.5 text-xs text-muted">
             상위 {COMPOSITION_TOP_N}종목은 따로, 나머지 종목은 &quot;기타&quot;(하나뿐이면 그 종목 이름), 현금과 현금성 종목({meta.cashLike} 등 — 설정
             {korea ? "kr.cashLikeTickers" : "cashLikeTickers"})은 한 묶음입니다. 비중은 장부의 평가액 ÷ 순자산입니다.
           </p>
@@ -211,7 +211,7 @@ export function AccountDetailPanel({
                   <span className="flex flex-wrap items-center gap-1">
                     <span>{row.ticker}</span>
                     {(korea ? krFillBadges(row) : fillBadges(row)).map((badge) => (
-                      <span key={badge.key} title={badge.title} className={`whitespace-nowrap rounded-sm border px-1.5 py-px text-[10px] ${badge.className}`}>
+                      <span key={badge.key} title={badge.title} className={`whitespace-nowrap rounded-sm border px-1.5 py-px text-xs ${badge.className}`}>
                         {badge.label}
                       </span>
                     ))}
@@ -231,7 +231,7 @@ export function AccountDetailPanel({
                   return confirmed && confirmed !== EMPTY ? (
                     <span className="flex flex-col items-end">
                       <span>{price}</span>
-                      <span className="whitespace-nowrap text-[11px] text-text-3">{`확정 ${confirmed}`}</span>
+                      <span className="whitespace-nowrap text-xs text-text-3">{`확정 ${confirmed}`}</span>
                     </span>
                   ) : price;
                 },
@@ -318,7 +318,7 @@ function CompositionView({ label, composition }: { label: string; composition: A
                 />
                 <span className={row.isCash ? "text-body" : "font-semibold text-bright"}>{row.label}</span>
                 {row.cashLike && (
-                  <span title="현금성 ETF — 트레일링 스탑을 적용하지 않습니다." className="rounded-sm border border-border bg-surface-hover px-1.5 py-px text-[10px] text-muted">
+                  <span title="현금성 ETF — 트레일링 스탑을 적용하지 않습니다." className="rounded-sm border border-border bg-surface-hover px-1.5 py-px text-xs text-muted">
                     현금성
                   </span>
                 )}
@@ -353,7 +353,7 @@ function Legend({ segments }: { segments: readonly CompositionSegment[] }) {
           />
           <span className="min-w-0 flex-1 text-body">
             {segment.label}
-            {segment.detail && <span className="block text-[11px] text-muted">{segment.detail}</span>}
+            {segment.detail && <span className="block text-xs text-muted">{segment.detail}</span>}
           </span>
           <span className="tabular-nums font-semibold text-bright">{segment.shareText}</span>
         </li>
@@ -366,9 +366,9 @@ function Legend({ segments }: { segments: readonly CompositionSegment[] }) {
 function Tile({ label, value, tone, caption }: { label: string; value: string; tone?: string; caption?: string }) {
   return (
     <div className="min-w-0">
-      <dt className="text-[11px] text-muted">{label}</dt>
+      <dt className="text-xs text-muted">{label}</dt>
       <dd className={`text-sm font-semibold ${tone ?? "text-bright"}`}>{value}</dd>
-      {caption && <dd className="text-[10px] text-muted">{caption}</dd>}
+      {caption && <dd className="text-xs text-muted">{caption}</dd>}
     </div>
   );
 }

@@ -86,7 +86,7 @@ export function LiveValuationCard({ market = "US" }: { market?: PaperMarketCode 
       cell: (row) => (
         <span className="flex flex-col items-end">
           <Delta text={row.dayText} value={row.dayChangePct} />
-          <span className="text-[10px] text-muted">{row.dayBase}</span>
+          <span className="text-xs text-muted">{row.dayBase}</span>
         </span>
       ),
     },
@@ -114,7 +114,7 @@ export function LiveValuationCard({ market = "US" }: { market?: PaperMarketCode 
       source={`표시 전용 — 장부(체결·확정 순자산·통계·결정)와 별개 · 지금 ${formatKst(data.nowKst ?? null)}`}
       actions={
         <div className="flex flex-wrap items-center gap-2">
-          <label className="flex items-center gap-1.5 text-[11px] text-muted">
+          <label className="flex items-center gap-1.5 text-xs text-muted">
             <span className="whitespace-nowrap">새로고침</span>
             <select
               value={String(minutes)}

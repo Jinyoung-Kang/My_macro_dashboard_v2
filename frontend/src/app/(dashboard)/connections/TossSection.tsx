@@ -82,7 +82,7 @@ export function TossSection() {
         )}
 
         {result !== null && (
-          <pre className="mt-4 max-h-80 overflow-auto rounded-sm border border-border bg-canvas p-3 text-[11px] text-muted">
+          <pre className="mt-4 max-h-80 overflow-auto rounded-sm border border-border bg-canvas p-3 text-xs text-muted">
             {JSON.stringify(result, null, 2)}
           </pre>
         )}

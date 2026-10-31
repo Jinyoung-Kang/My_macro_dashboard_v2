@@ -263,7 +263,7 @@ export default function StatusPage() {
             {data?.missingDatasets?.map((entry) => (
               <span
                 key={entry.name}
-                className="rounded-sm border border-warn/40 bg-warn/10 px-2 py-1 text-[11px] text-warn"
+                className="rounded-sm border border-warn/40 bg-warn/10 px-2 py-1 text-xs text-warn"
                 title={entry.name}
               >
                 {entry.label}
@@ -481,7 +481,7 @@ function IssuesPanel() {
             <Banner tone="warn">수집기에 연결하지 못해 DB 기록만으로 만들었습니다(누락 데이터셋·없앤 태스크 거르기 제외).</Banner>
           )}
           {hasIssues ? (
-            <pre tabIndex={0} className="max-h-96 overflow-auto whitespace-pre-wrap break-all rounded-sm border border-border bg-canvas p-3 text-[11px] leading-relaxed text-body">
+            <pre tabIndex={0} className="max-h-96 overflow-auto whitespace-pre-wrap break-all rounded-sm border border-border bg-canvas p-3 text-xs leading-relaxed text-body">
               {data.text}
             </pre>
           ) : missingUnknown ? (

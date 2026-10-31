@@ -288,7 +288,7 @@ function Part({ title, note, children }: { title: string; note?: string; childre
   return (
     <section aria-label={title} className="flex flex-col gap-1">
       <h3 className="text-sm font-semibold text-bright">{title}</h3>
-      {note && <p className="text-[11px] leading-relaxed text-muted">{note}</p>}
+      {note && <p className="text-xs leading-relaxed text-muted">{note}</p>}
       {children}
     </section>
   );

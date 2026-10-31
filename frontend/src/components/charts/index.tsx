@@ -632,7 +632,7 @@ export function WeightHeatmap({
     <div className="overflow-x-auto" tabIndex={0} role="region" aria-label="비중 히트맵 (좌우 스크롤)">
       <table className="w-full min-w-[640px] border-collapse text-xs">
         <thead>
-          <tr className="text-[11px] text-text-3">
+          <tr className="text-xs text-text-3">
             <th className="sticky left-0 bg-surface px-3 py-2 text-left font-medium">종목</th>
             {dates.map((date) => (
               <th key={date} className="px-2 py-2 text-right font-medium tabular-nums">
@@ -677,7 +677,7 @@ export function WeightHeatmap({
           ))}
         </tbody>
       </table>
-      <p className="mt-2 text-[11px] text-text-3">
+      <p className="mt-2 text-xs text-text-3">
         색이 진할수록 비중이 큽니다. &quot;·&quot;는 그 분기에 <b>보유하지 않았다</b>는 뜻이고,
         &quot;{EMPTY}&quot;는 <b>값을 모른다</b>는 뜻입니다 — 둘은 다릅니다.
       </p>

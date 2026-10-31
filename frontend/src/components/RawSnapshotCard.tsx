@@ -65,11 +65,11 @@ export function RawSnapshotCard() {
           {snapshot.error && <ErrorState message={snapshot.error} onRetry={snapshot.reload} />}
           {snapshot.data && (
             <>
-              <p className="mb-2 text-[11px] text-muted">
+              <p className="mb-2 text-xs text-muted">
                 수집 실패 항목은 숫자를 만들어내지 않고 &apos;수집 실패&apos;로 적습니다.
                 &apos;추정치&apos;로 표시된 값은 공식 확정치가 아닙니다.
               </p>
-              <pre tabIndex={0} className="max-h-[560px] overflow-auto whitespace-pre-wrap rounded-sm border border-border bg-canvas p-3 text-[11px] leading-relaxed text-muted">
+              <pre tabIndex={0} className="max-h-[560px] overflow-auto whitespace-pre-wrap rounded-sm border border-border bg-canvas p-3 text-xs leading-relaxed text-muted">
                 {snapshot.data.text}
               </pre>
             </>

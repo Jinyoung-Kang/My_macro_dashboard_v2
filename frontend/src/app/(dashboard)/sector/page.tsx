@@ -159,9 +159,9 @@ function ReturnsTable({
           render: (row) => (
             <span className="flex flex-col">
               <span className="text-body">{row.name}</span>
-              <span className="text-[11px] text-muted">{row.ticker}</span>
+              <span className="text-xs text-muted">{row.ticker}</span>
               {row.isStale && (
-                <span className="text-[11px]" title={row.staleReason ?? undefined}>
+                <span className="text-xs" title={row.staleReason ?? undefined}>
                   <StatusText tone="warn" iconSize={12}>이전 값(수집 실패)</StatusText>
                 </span>
               )}

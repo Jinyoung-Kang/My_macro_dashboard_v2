@@ -202,14 +202,14 @@ function CurrentCard({ view }: { view: FrameworkCurrentView | null }) {
         <span className="text-muted">바꾼 내용 </span>
         {view.changelog}
       </p>
-      <p className="mt-2 text-[11px] leading-relaxed text-muted">
+      <p className="mt-2 text-xs leading-relaxed text-muted">
         토큰은 서버의 문자 수 어림입니다(한글 1자 ≈ 1토큰, 영문 4자 ≈ 1토큰). 아래 렌더링은 이 판을 만들 때의 글이고, 결정의 시스템
         프롬프트는 결정 시점의 설정(하드 규칙 수치)으로 다시 렌더링합니다 — 결정 기록마다 프레임 판과 설정 버전이 남습니다.
       </p>
       <details className="mt-3 rounded-md border border-border px-3 py-2 text-xs">
         <summary className="cursor-pointer text-muted">렌더링 미리보기(시스템 프롬프트)</summary>
         {view.rendered ? (
-          <pre className="mt-2 max-h-[32rem] overflow-auto whitespace-pre-wrap break-words text-[11px] leading-relaxed text-body">{view.rendered}</pre>
+          <pre className="mt-2 max-h-[32rem] overflow-auto whitespace-pre-wrap break-words text-xs leading-relaxed text-body">{view.rendered}</pre>
         ) : (
           <p className="mt-2 text-muted">서버가 렌더링을 보내지 않았습니다.</p>
         )}
@@ -335,7 +335,7 @@ function OsSourceCard({
               className={`${INPUT} font-mono text-xs leading-relaxed`}
             />
           </label>
-          <span className="text-[11px] text-muted">
+          <span className="text-xs text-muted">
             {picked !== null && savedId === null
               ? `메모 #${picked}의 글로 요청합니다 — 새 메모를 만들지 않습니다.`
               : `${formatNumber(count, 0)}자`}
@@ -439,7 +439,7 @@ function ProposalItem({
       <header className="flex flex-wrap items-center gap-2">
         <h3 className="text-sm font-semibold text-bright">{view.title}</h3>
         <BadgeChip badge={view.status} />
-        {highlighted && <span className="text-[11px] text-accent">주간 복기에서 연 제안</span>}
+        {highlighted && <span className="text-xs text-accent">주간 복기에서 연 제안</span>}
       </header>
       <dl className="flex flex-wrap gap-x-5 gap-y-1 text-xs">
         {view.meta.map((cell) => <Meta key={cell.key} label={cell.label} value={cell.value} />)}
@@ -515,7 +515,7 @@ function ProposalItem({
             </Button>
             <Button onClick={() => setDeciding("reject")} disabled={busy}>{`${view.title} 거절`}</Button>
           </div>
-          <p className="text-[11px] text-muted">{APPROVE_COST_NOTE}</p>
+          <p className="text-xs text-muted">{APPROVE_COST_NOTE}</p>
         </div>
       ))}
 
@@ -562,7 +562,7 @@ function VersionsCard({ response }: { response: PaperFrameworkResponse }) {
             render: (row) => (
               <span className="whitespace-nowrap font-semibold text-bright">
                 {row.version}
-                {row.current && <span className="ml-1 text-[10px] font-normal text-accent">지금</span>}
+                {row.current && <span className="ml-1 text-xs font-normal text-accent">지금</span>}
               </span>
             ),
           },
@@ -591,7 +591,7 @@ function VersionsCard({ response }: { response: PaperFrameworkResponse }) {
               options={[{ value: "", label: "고르기" }, ...options]}
             />
           </div>
-          <p className="text-[11px] text-muted">
+          <p className="text-xs text-muted">
             강조한 줄은 다른 쪽 렌더링에 똑같은 줄이 없는 줄입니다(왼쪽 {compare.changedLeft}줄 · 오른쪽 {compare.changedRight}줄). 줄 순서를
             맞추는 비교가 아니라서 자리만 옮긴 줄은 강조하지 않습니다.
           </p>
@@ -646,7 +646,7 @@ function RenderedPane({
       {version && (lines.length === 0 ? (
         <p className="mt-1 text-xs text-muted">서버가 렌더링을 보내지 않았습니다.</p>
       ) : (
-        <pre className="mt-2 max-h-[32rem] overflow-auto text-[11px] leading-relaxed">
+        <pre className="mt-2 max-h-[32rem] overflow-auto text-xs leading-relaxed">
           {lines.map((line) => (
             <span
               key={line.key}
@@ -795,7 +795,7 @@ function EditCard({
               className={`${INPUT} leading-relaxed`}
             />
           </label>
-          <span className={`text-[11px] ${guidance.over ? "text-warn" : "text-muted"}`}>{guidance.text}</span>
+          <span className={`text-xs ${guidance.over ? "text-warn" : "text-muted"}`}>{guidance.text}</span>
         </div>
 
         <label className="flex flex-col gap-1 text-xs text-muted">
@@ -874,7 +874,7 @@ function TextRow({
           onChange={(event) => onChange(event.target.value)}
           className={`${INPUT} leading-relaxed`}
         />
-        <p className={`text-[11px] ${count.over ? "text-warn" : "text-muted"}`}>
+        <p className={`text-xs ${count.over ? "text-warn" : "text-muted"}`}>
           {count.text}
           {note ? ` · ${note}` : ""}
         </p>
@@ -898,7 +898,7 @@ function Part({ title, note, children }: { title: string; note?: string; childre
   return (
     <section aria-label={title} className="flex flex-col gap-1">
       <h4 className="text-sm font-semibold text-bright">{title}</h4>
-      {note && <p className="text-[11px] leading-relaxed text-muted">{note}</p>}
+      {note && <p className="text-xs leading-relaxed text-muted">{note}</p>}
       {children}
     </section>
   );
@@ -906,7 +906,7 @@ function Part({ title, note, children }: { title: string; note?: string; childre
 
 function BadgeChip({ badge }: { badge: Badge }) {
   return (
-    <span title={badge.title} className={`whitespace-nowrap rounded-sm border px-1.5 py-px text-[10px] ${badge.className}`}>
+    <span title={badge.title} className={`whitespace-nowrap rounded-sm border px-1.5 py-px text-xs ${badge.className}`}>
       {badge.label}
     </span>
   );

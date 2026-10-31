@@ -128,7 +128,7 @@ export function ClaudeStartSection({ overview, onChanged }: { overview: PaperOve
           {previewPacket && (
             <details className="rounded-md border border-border px-3 py-2 text-xs">
               <summary className="cursor-pointer text-muted">입력 패킷(JSON)</summary>
-              <pre className="mt-2 max-h-96 overflow-auto whitespace-pre-wrap break-all text-[11px] text-body">{previewPacket}</pre>
+              <pre className="mt-2 max-h-96 overflow-auto whitespace-pre-wrap break-all text-xs text-body">{previewPacket}</pre>
             </details>
           )}
         </section>

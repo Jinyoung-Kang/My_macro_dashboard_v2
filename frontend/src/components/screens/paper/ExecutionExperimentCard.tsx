@@ -38,7 +38,7 @@ const columns = (first: string, firstClassName: string): readonly Column<Executi
         <span>{row.timing}</span>
         {row.proxy && (
           <span
-            className="whitespace-nowrap rounded-sm border border-warn/40 bg-warn-tint px-1.5 py-px text-[10px] text-warn"
+            className="whitespace-nowrap rounded-sm border border-warn/40 bg-warn-tint px-1.5 py-px text-xs text-warn"
             title="시가(NEXT_OPEN)는 Yahoo(yfinance) 1분봉 첫 봉 시가입니다 — 공식 개장 경매가와 같은지 확인하지 못했습니다(명세 §19 X2)."
           >
             대리값
@@ -60,7 +60,7 @@ const TIMING_COLUMNS = columns("시점", "whitespace-nowrap");
 
 function BadgeChip({ badge }: { badge: Badge }) {
   return (
-    <span title={badge.title} className={`whitespace-nowrap rounded-sm border px-1.5 py-px text-[10px] ${badge.className}`}>
+    <span title={badge.title} className={`whitespace-nowrap rounded-sm border px-1.5 py-px text-xs ${badge.className}`}>
       {badge.label}
     </span>
   );
@@ -71,7 +71,7 @@ function TwoLines({ top, bottom }: { top: ReactNode; bottom: ReactNode }) {
   return (
     <span className="flex flex-col">
       <span>{top}</span>
-      <span className="text-[11px] text-text-3">{bottom}</span>
+      <span className="text-xs text-text-3">{bottom}</span>
     </span>
   );
 }

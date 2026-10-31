@@ -125,12 +125,12 @@ export function AiEngineSection() {
             <Banner tone="danger">{withoutLeadingIcon(result.error ?? "")}</Banner>
           )}
           {result.failoverPath && (
-            <p className="mt-3 text-[11px] text-muted">
+            <p className="mt-3 text-xs text-muted">
               폴오버 경로: {result.failoverPath.map((step) => withoutLeadingIcon(step)).join(" → ")}
             </p>
           )}
           {result.translationInfo && (
-            <p className="mt-1 text-[11px] text-muted">{result.translationInfo}</p>
+            <p className="mt-1 text-xs text-muted">{result.translationInfo}</p>
           )}
         </Card>
       )}

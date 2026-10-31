@@ -181,7 +181,7 @@ export function FxCompareSection() {
             />
           </div>
 
-          <p className="mt-2 text-[11px] leading-relaxed text-muted">
+          <p className="mt-2 text-xs leading-relaxed text-muted">
             {mode === "index"
               ? "축은 기준일 = 100입니다. 110이면 기준일보다 10% 높다는 뜻이고, 계열별 기준일은 위 카드에 적혀 있습니다 — 시장마다 휴일이 달라 하루씩 어긋날 수 있습니다."
               : "축은 원래 단위입니다. 계열마다 단위가 다르면(원·엔·pt) 같은 눈금으로 읽으면 안 됩니다."}{" "}

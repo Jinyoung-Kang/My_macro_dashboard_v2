@@ -144,7 +144,7 @@ export function SettingsSection({ market = "US" }: { market?: PaperMarketCode })
                   <code className="text-bright">{change.key}</code>
                   <span>: {change.from} → {change.to}</span>
                   {change.affectsRules && (
-                    <span className={`rounded-sm border px-1 text-[10px] ${RULES_BADGE}`}>
+                    <span className={`rounded-sm border px-1 text-xs ${RULES_BADGE}`}>
                       {change.market === "KR" ? "한국 규칙 계좌 영향" : "규칙 계좌 영향"}
                     </span>
                   )}
@@ -229,7 +229,7 @@ export function SettingsSection({ market = "US" }: { market?: PaperMarketCode })
                 key: "rules",
                 header: "규칙 계좌 영향",
                 render: (row) => (row.rulesAffected
-                  ? <span className={`whitespace-nowrap rounded-sm border px-1.5 py-px text-[10px] ${RULES_BADGE}`}>규칙 계좌 영향</span>
+                  ? <span className={`whitespace-nowrap rounded-sm border px-1.5 py-px text-xs ${RULES_BADGE}`}>규칙 계좌 영향</span>
                   : <span className="text-muted">{EMPTY}</span>),
               },
             ]}
@@ -282,26 +282,26 @@ function SettingField({
         <div className="flex flex-wrap items-center gap-1">
           <label htmlFor={id} className="break-all font-mono text-xs font-semibold text-bright">{row.key}</label>
           {marketLabel && (
-            <span className="whitespace-nowrap rounded-sm border border-border px-1.5 py-px text-[10px] text-text-2">{marketLabel}</span>
+            <span className="whitespace-nowrap rounded-sm border border-border px-1.5 py-px text-xs text-text-2">{marketLabel}</span>
           )}
           {row.affectsRules && (
             <span
               title={row.market === "KR"
                 ? "한국 규칙 계좌(kr_rules, 동결된 대조군)의 조건을 바꾸는 키입니다 — 저장 전에 한 번 더 묻습니다."
                 : "규칙 계좌(동결된 대조군)의 조건을 바꾸는 키입니다 — 저장 전에 한 번 더 묻습니다."}
-              className={`whitespace-nowrap rounded-sm border px-1.5 py-px text-[10px] ${RULES_BADGE}`}
+              className={`whitespace-nowrap rounded-sm border px-1.5 py-px text-xs ${RULES_BADGE}`}
             >
               {row.market === "KR" ? "한국 규칙 계좌 영향" : "규칙 계좌 영향"}
             </span>
           )}
-          {changed && <span className={`whitespace-nowrap rounded-sm border px-1.5 py-px text-[10px] ${CHANGED_BADGE}`}>바꿈</span>}
+          {changed && <span className={`whitespace-nowrap rounded-sm border px-1.5 py-px text-xs ${CHANGED_BADGE}`}>바꿈</span>}
         </div>
-        {row.description && <p id={descriptionId} className="mt-0.5 text-[11px] leading-relaxed text-muted">{row.description}</p>}
+        {row.description && <p id={descriptionId} className="mt-0.5 text-xs leading-relaxed text-muted">{row.description}</p>}
       </div>
       <div className="min-w-0">
         <SettingInput row={row} id={id} value={value} describedBy={descriptionId} onChange={onChange} />
-        <p className="mt-1 text-[11px] text-muted">{meta}</p>
-        {error && <p className="mt-1 text-[11px] text-warn">{error}</p>}
+        <p className="mt-1 text-xs text-muted">{meta}</p>
+        {error && <p className="mt-1 text-xs text-warn">{error}</p>}
       </div>
     </div>
   );
@@ -381,7 +381,7 @@ function SettingInput({
             onChange={(event) => onChange(event.target.value)}
             className={`${INPUT} font-mono text-xs`}
           />
-          <p className="text-[11px] text-muted">{MULTILINE_HINT[row.kind]}</p>
+          <p className="text-xs text-muted">{MULTILINE_HINT[row.kind]}</p>
         </>
       );
     }

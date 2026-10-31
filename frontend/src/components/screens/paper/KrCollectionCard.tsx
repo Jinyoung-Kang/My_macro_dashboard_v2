@@ -27,7 +27,7 @@ const COLUMNS: Column<KrCollectionRow>[] = [
     cell: (row) => (
       <span className="flex flex-col">
         <span className="font-medium text-text">{row.item}</span>
-        <span className="text-[11px] font-normal text-text-3">{row.source}</span>
+        <span className="text-xs font-normal text-text-3">{row.source}</span>
       </span>
     ),
   },
@@ -40,8 +40,8 @@ const COLUMNS: Column<KrCollectionRow>[] = [
     className: "min-w-[12rem] align-top",
     cell: (row) => (
       <span className="flex flex-col gap-0.5">
-        <span className={`w-fit whitespace-nowrap rounded-sm border px-1.5 py-px text-[11px] ${STATE_TONE[row.state]}`}>{row.state}</span>
-        {row.reason && <span className="text-[11px] text-text-2">{row.reason}</span>}
+        <span className={`w-fit whitespace-nowrap rounded-sm border px-1.5 py-px text-xs ${STATE_TONE[row.state]}`}>{row.state}</span>
+        {row.reason && <span className="text-xs text-text-2">{row.reason}</span>}
       </span>
     ),
   },

@@ -399,7 +399,7 @@ function DecisionTable({
       render: (row) => (
         <div className="flex min-w-[7rem] flex-col items-start gap-1">
           <Badges badges={[decisionStatusBadge(row.status, row.kind)]} />
-          {row.error && <span className="text-[11px] leading-snug text-warn">{row.error}</span>}
+          {row.error && <span className="text-xs leading-snug text-warn">{row.error}</span>}
         </div>
       ),
     },
@@ -428,7 +428,7 @@ function DecisionTable({
 
   return (
     <>
-      <p className="mb-1 text-[11px] text-muted sm:hidden">← 표를 좌우로 넘겨 보세요</p>
+      <p className="mb-1 text-xs text-muted sm:hidden">← 표를 좌우로 넘겨 보세요</p>
       <div className="overflow-x-auto" tabIndex={0} role="region" aria-label="결정 기록 표 (좌우 스크롤)">
         <table className="w-full min-w-[820px] border-collapse text-sm">
           <thead>
@@ -611,7 +611,7 @@ function DecisionDetail({ id, market }: { id: number; market: PaperMarketCode })
           </Part>
 
           <Part title="매수 후보" note={candidatesNote(decision.kind)}>
-            {view.allocation && <p className="text-[11px] leading-relaxed text-body">{view.allocation}</p>}
+            {view.allocation && <p className="text-xs leading-relaxed text-body">{view.allocation}</p>}
             <Table<SignalCandidateRow>
               label="매수 후보"
               rows={view.candidates}
@@ -733,19 +733,19 @@ function DecisionDetail({ id, market }: { id: number; market: PaperMarketCode })
       {response && (
         <details className="rounded-md border border-border px-3 py-2 text-xs">
           <summary className="cursor-pointer text-muted">결정 기록 원본(JSON)</summary>
-          <pre className="mt-2 max-h-96 overflow-auto whitespace-pre-wrap break-all text-[11px] text-body">{response}</pre>
+          <pre className="mt-2 max-h-96 overflow-auto whitespace-pre-wrap break-all text-xs text-body">{response}</pre>
         </details>
       )}
       {raw && (
         <details className="rounded-md border border-border px-3 py-2 text-xs">
           <summary className="cursor-pointer text-muted">모델 응답 원문</summary>
-          <pre className="mt-2 max-h-96 overflow-auto whitespace-pre-wrap break-all text-[11px] text-body">{raw}</pre>
+          <pre className="mt-2 max-h-96 overflow-auto whitespace-pre-wrap break-all text-xs text-body">{raw}</pre>
         </details>
       )}
       {packet && (
         <details className="rounded-md border border-border px-3 py-2 text-xs">
           <summary className="cursor-pointer text-muted">입력 패킷(JSON)</summary>
-          <pre className="mt-2 max-h-96 overflow-auto whitespace-pre-wrap break-all text-[11px] text-body">{packet}</pre>
+          <pre className="mt-2 max-h-96 overflow-auto whitespace-pre-wrap break-all text-xs text-body">{packet}</pre>
         </details>
       )}
     </section>
@@ -785,7 +785,7 @@ function Part({ title, note, children }: { title: string; note?: string; childre
   return (
     <section aria-label={title} className="flex flex-col gap-1">
       <h3 className="text-sm font-semibold text-bright">{title}</h3>
-      {note && <p className="text-[11px] leading-relaxed text-muted">{note}</p>}
+      {note && <p className="text-xs leading-relaxed text-muted">{note}</p>}
       {children}
     </section>
   );
@@ -798,7 +798,7 @@ function Badges({ badges }: { badges: Badge[] }) {
         <span
           key={badge.key}
           title={badge.title}
-          className={`whitespace-nowrap rounded-sm border px-1.5 py-px text-[10px] ${badge.className}`}
+          className={`whitespace-nowrap rounded-sm border px-1.5 py-px text-xs ${badge.className}`}
         >
           {badge.label}
         </span>

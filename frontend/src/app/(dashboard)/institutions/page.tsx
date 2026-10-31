@@ -203,7 +203,7 @@ export default function InstitutionsPage() {
                   render: (row) => (
                     <span className="flex flex-col">
                       <span className="text-body">{row.name}</span>
-                      <span className="text-[11px] text-muted">
+                      <span className="text-xs text-muted">
                         CUSIP {row.cusip} · {row.class}
                       </span>
                     </span>
@@ -235,7 +235,7 @@ export default function InstitutionsPage() {
                     <span className="flex flex-col items-end">
                       <span>{formatCurrency(row.value)}</span>
                       {usdKrw.toKrw(row.value) && (
-                        <span className="text-[11px] text-muted">
+                        <span className="text-xs text-muted">
                           {usdKrw.toKrw(row.value)}
                         </span>
                       )}

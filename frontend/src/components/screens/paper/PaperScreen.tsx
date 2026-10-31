@@ -172,7 +172,7 @@ export default function PaperPage({
                   className={underlineTabClasses(active, "sm")}
                 >
                   {entry.label}
-                  {entry.opensIn && <span className="ml-1 text-[10px] text-muted">(준비 중)</span>}
+                  {entry.opensIn && <span className="ml-1 text-xs text-muted">(준비 중)</span>}
                 </button>
               );
             })}

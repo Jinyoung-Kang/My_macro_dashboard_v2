@@ -71,7 +71,7 @@ export function ScrapedSection() {
                 <span className="flex flex-wrap items-center gap-1">
                   <SourceBadge>{row.provider}</SourceBadge>
                   {row.status === "ok" && delayLabel(row.delayMinutes) && (
-                    <span className="text-[11px] text-muted">{delayLabel(row.delayMinutes)}</span>
+                    <span className="text-xs text-muted">{delayLabel(row.delayMinutes)}</span>
                   )}
                 </span>
               ),

@@ -220,7 +220,7 @@ export function KrEventsPart({ packet }: { packet: unknown }) {
             render: (row) => (
               <span className="flex flex-col text-xs">
                 <span className="whitespace-nowrap">{row.when}</span>
-                {row.beforeWindow && <span className="text-[11px] text-warn">창 앞 시각 — 결정 순간 뒤(창 안)에 받은 제목</span>}
+                {row.beforeWindow && <span className="text-xs text-warn">창 앞 시각 — 결정 순간 뒤(창 안)에 받은 제목</span>}
               </span>
             ),
           },
@@ -230,7 +230,7 @@ export function KrEventsPart({ packet }: { packet: unknown }) {
       {events.text && (
         <details className="rounded-md border border-border px-3 py-2 text-xs">
           <summary className="cursor-pointer text-muted">사건 패킷 글(제목)</summary>
-          <pre className="mt-2 max-h-72 overflow-auto whitespace-pre-wrap break-all text-[11px] text-body">{events.text}</pre>
+          <pre className="mt-2 max-h-72 overflow-auto whitespace-pre-wrap break-all text-xs text-body">{events.text}</pre>
         </details>
       )}
     </Part>
@@ -259,7 +259,7 @@ function Part({ title, note, children }: { title: string; note?: string; childre
   return (
     <section aria-label={title} className="flex flex-col gap-1">
       <h3 className="text-sm font-semibold text-bright">{title}</h3>
-      {note && <p className="text-[11px] leading-relaxed text-muted">{note}</p>}
+      {note && <p className="text-xs leading-relaxed text-muted">{note}</p>}
       {children}
     </section>
   );
@@ -269,7 +269,7 @@ function Badges({ badges }: { badges: Badge[] }) {
   return (
     <span className="flex flex-wrap items-center gap-1">
       {badges.map((badge) => (
-        <span key={badge.key} title={badge.title} className={`whitespace-nowrap rounded-sm border px-1.5 py-px text-[10px] ${badge.className}`}>
+        <span key={badge.key} title={badge.title} className={`whitespace-nowrap rounded-sm border px-1.5 py-px text-xs ${badge.className}`}>
           {badge.label}
         </span>
       ))}

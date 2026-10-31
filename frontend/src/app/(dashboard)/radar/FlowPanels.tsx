@@ -26,7 +26,7 @@ function WindowCell({ value, format }: { value: FlowWindow; format: (n: number |
     <span className={deltaColor(value.sum, 0)}>
       {format(value.sum)}
       {value.sum !== null && value.days < value.window && (
-        <span className="ml-1 text-[10px] text-muted">({value.days}일)</span>
+        <span className="ml-1 text-xs text-muted">({value.days}일)</span>
       )}
     </span>
   );
@@ -93,7 +93,7 @@ export function MarketFlowsPanel({ market }: { market: string }) {
               height={240}
             />
           </div>
-          <p className="text-[11px] text-muted">{data?.note}</p>
+          <p className="text-xs text-muted">{data?.note}</p>
         </div>
       )}
     </Card>
@@ -143,7 +143,7 @@ export function StockFlowsPanel({ rows }: { rows: { code: string; name: string }
                 render: (stock) => (
                   <span className="flex flex-col">
                     <span className="text-body">{names.get(stock.code) ?? stock.code}</span>
-                    <span className="text-[11px] text-muted">
+                    <span className="text-xs text-muted">
                       {stock.code} · {stock.latestDate}
                       {stock.provisional ? " 잠정" : ""}
                     </span>
@@ -197,7 +197,7 @@ export function StockFlowsPanel({ rows }: { rows: { code: string; name: string }
                     <span className="flex flex-col items-end">
                       <span>{formatNumber(holding.ratePct, 2)}%</span>
                       {holding.changePp !== null && (
-                        <span className={`text-[11px] ${deltaColor(holding.changePp, 2)}`}>
+                        <span className={`text-xs ${deltaColor(holding.changePp, 2)}`}>
                           {holding.changePp > 0 ? "+" : ""}
                           {formatNumber(holding.changePp, 2)}%p
                         </span>
@@ -208,7 +208,7 @@ export function StockFlowsPanel({ rows }: { rows: { code: string; name: string }
               },
             ]}
           />
-          <p className="mt-2 text-[11px] text-muted">{data?.note} “(n일)”은 값이 있는 날만 더했다는 뜻입니다.</p>
+          <p className="mt-2 text-xs text-muted">{data?.note} “(n일)”은 값이 있는 날만 더했다는 뜻입니다.</p>
         </>
       )}
     </Card>

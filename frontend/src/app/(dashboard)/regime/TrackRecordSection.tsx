@@ -94,7 +94,7 @@ export function TrackRecordSection({ tone }: { tone: Record<string, string> }) {
                   <span className={`h-2 w-4 rounded-xs ${tone[regime.code] ?? "bg-border"}`} />
                   {regime.label}
                 </p>
-                <p className="mt-0.5 text-[11px] text-muted">
+                <p className="mt-0.5 text-xs text-muted">
                   {view === "start"
                     ? `시작 ${regime.weeks}번`
                     : `${regime.weeks}주 · ${regime.episodes}개 구간`}
@@ -129,12 +129,12 @@ export function TrackRecordSection({ tone }: { tone: Record<string, string> }) {
               </div>
             ))}
           </div>
-          <ul className="mt-4 list-disc space-y-1 pl-5 text-[11px] text-muted">
+          <ul className="mt-4 list-disc space-y-1 pl-5 text-xs text-muted">
             {data.limits.map((limit) => (
               <li key={limit}>{limit}</li>
             ))}
           </ul>
-          <p className="mt-2 text-[11px] text-muted">
+          <p className="mt-2 text-xs text-muted">
             가격 {data.priceFrom} ~ {data.priceTo}. 아직 기간이 끝나지 않은 최근 판정은 표본에서 빠집니다.
           </p>
         </>

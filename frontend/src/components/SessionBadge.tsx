@@ -57,14 +57,14 @@ export function SessionBadge({
   if (!status) {
     // 시간표를 모르는 시장이면 지연만 적습니다.
     return delay ? (
-      <span className={`rounded-sm border px-2 py-0.5 text-[11px] ${STYLES.idle}`} title="시세 지연(출처 기준)">
+      <span className={`rounded-sm border px-2 py-0.5 text-xs ${STYLES.idle}`} title="시세 지연(출처 기준)">
         {delay}
       </span>
     ) : null;
   }
   return (
     <span
-      className={`rounded-sm border px-2 py-0.5 text-[11px] ${STYLES[status.state]}`}
+      className={`rounded-sm border px-2 py-0.5 text-xs ${STYLES[status.state]}`}
       title={delay ? `${status.detail} · 시세 ${delay}(출처 기준)` : status.detail}
     >
       {status.state === "open" && delay ? `${status.label} · ${delay}` : status.label}

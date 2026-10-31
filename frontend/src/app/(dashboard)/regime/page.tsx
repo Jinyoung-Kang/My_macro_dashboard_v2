@@ -197,7 +197,7 @@ export default function RegimePage() {
               />
             ))}
           </div>
-          <div className="mt-2 flex flex-wrap gap-3 text-[11px] text-muted">
+          <div className="mt-2 flex flex-wrap gap-3 text-xs text-muted">
             {QUADRANTS.map((quadrant) => (
               <span key={quadrant.code} className="flex items-center gap-1">
                 <span className={`h-2 w-4 rounded-xs ${TIMELINE_COLOR[quadrant.code]}`} />

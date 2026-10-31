@@ -172,7 +172,7 @@ export function ReviewsSection({
                 render: (row) => (
                   <span className="flex flex-col gap-1">
                     <Chip badge={row.status} />
-                    {row.note && <span className="text-[11px] text-muted">{row.note}</span>}
+                    {row.note && <span className="text-xs text-muted">{row.note}</span>}
                   </span>
                 ),
               },
@@ -290,9 +290,9 @@ function ReviewBody({
                 render: (row) => (row.afterSell || row.reason ? (
                   <span className="flex flex-col items-end">
                     <span>{row.returnPct}</span>
-                    {row.afterSell && <span className="whitespace-nowrap text-[11px] text-text-3">{row.afterSell}</span>}
+                    {row.afterSell && <span className="whitespace-nowrap text-xs text-text-3">{row.afterSell}</span>}
                     {/* 값이 없으면 서버가 notes에 남긴 이유(기준일 뒤 세션·시가 없음·분할 의심 등) — '—'만 두지 않습니다. */}
-                    {row.reason && <span className="min-w-[10rem] text-[11px] leading-snug text-text-3">{row.reason}</span>}
+                    {row.reason && <span className="min-w-[10rem] text-xs leading-snug text-text-3">{row.reason}</span>}
                   </span>
                 ) : row.returnPct),
               },
@@ -338,7 +338,7 @@ function ReviewBody({
           <div className="flex flex-col gap-2 rounded-md border border-border px-3 py-2">
             <p className="text-sm font-semibold text-bright">{proposal.label}</p>
             {proposal.summary && <p className="text-xs leading-relaxed text-body">{proposal.summary}</p>}
-            <p className="text-[11px] text-muted">{proposal.detail}</p>
+            <p className="text-xs text-muted">{proposal.detail}</p>
             {onOpenProposal && (
               <div>
                 <Button onClick={() => onOpenProposal(proposal.id)}>프레임 탭에서 이 제안 보기</Button>
@@ -357,13 +357,13 @@ function ReviewBody({
       {view.input && (
         <details className="rounded-md border border-border px-3 py-2 text-xs">
           <summary className="cursor-pointer text-muted">복기 입력(JSON — 서버가 장부에서 만든 사실)</summary>
-          <pre className="mt-2 max-h-96 overflow-auto whitespace-pre-wrap break-all text-[11px] text-body">{view.input}</pre>
+          <pre className="mt-2 max-h-96 overflow-auto whitespace-pre-wrap break-all text-xs text-body">{view.input}</pre>
         </details>
       )}
       {view.response && (
         <details className="rounded-md border border-border px-3 py-2 text-xs">
           <summary className="cursor-pointer text-muted">복기 응답(JSON)</summary>
-          <pre className="mt-2 max-h-96 overflow-auto whitespace-pre-wrap break-all text-[11px] text-body">{view.response}</pre>
+          <pre className="mt-2 max-h-96 overflow-auto whitespace-pre-wrap break-all text-xs text-body">{view.response}</pre>
         </details>
       )}
     </section>
@@ -383,7 +383,7 @@ function Part({ title, note, children }: { title: string; note?: string; childre
   return (
     <section className="flex flex-col gap-2">
       <h3 className="text-xs font-semibold text-bright">{title}</h3>
-      {note && <p className="text-[11px] text-muted">{note}</p>}
+      {note && <p className="text-xs text-muted">{note}</p>}
       {children}
     </section>
   );
@@ -391,7 +391,7 @@ function Part({ title, note, children }: { title: string; note?: string; childre
 
 function Chip({ badge }: { badge: Badge }) {
   return (
-    <span title={badge.title} className={`w-fit whitespace-nowrap rounded-sm border px-1.5 py-px text-[10px] ${badge.className}`}>
+    <span title={badge.title} className={`w-fit whitespace-nowrap rounded-sm border px-1.5 py-px text-xs ${badge.className}`}>
       {badge.label}
     </span>
   );

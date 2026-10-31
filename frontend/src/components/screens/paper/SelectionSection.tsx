@@ -284,7 +284,7 @@ function PoolCard({ rows, asOfDate, groupWeightA }: { rows: PoolRow[]; asOfDate:
               cell: (row) => (
                 <div className="flex flex-col">
                   <span className="font-semibold text-bright">{row.name}</span>
-                  <span className="text-[11px] text-muted">CIK {row.cik}</span>
+                  <span className="text-xs text-muted">CIK {row.cik}</span>
                 </div>
               ),
             },
@@ -380,7 +380,7 @@ function CandidateTable({
         return (
           <div className="flex min-w-[12rem] flex-col items-start gap-1">
             <span className="font-semibold text-bright">{nameOf(row)}</span>
-            <span className="text-[11px] text-muted">{about ?? EMPTY} · CIK {row.cik}</span>
+            <span className="text-xs text-muted">{about ?? EMPTY} · CIK {row.cik}</span>
             <Button variant="ghost" expanded={expanded} onClick={() => onToggle(openKey(row))}>
               {expanded ? "구간 접기" : "구간 펼치기"}
             </Button>
@@ -394,7 +394,7 @@ function CandidateTable({
       render: (row) => (
         <div className="flex min-w-[9rem] flex-col items-start gap-1">
           <Badges badges={[eligibilityBadge(row, group)]} />
-          {!row.eligible && row.ineligibleReason && <span className="text-[11px] leading-snug text-warn">{row.ineligibleReason}</span>}
+          {!row.eligible && row.ineligibleReason && <span className="text-xs leading-snug text-warn">{row.ineligibleReason}</span>}
         </div>
       ),
     },
@@ -425,7 +425,7 @@ function CandidateTable({
       render: (row) => (
         <div className="flex flex-col items-end">
           <span>{periodsText(row)}</span>
-          <span className="whitespace-nowrap text-[11px] text-muted">{filingSpanText(row)}</span>
+          <span className="whitespace-nowrap text-xs text-muted">{filingSpanText(row)}</span>
         </div>
       ),
     },
@@ -459,7 +459,7 @@ function CandidateTable({
 
   return (
     <>
-      <p className="mb-1 text-[11px] text-muted sm:hidden">← 표를 좌우로 넘겨 보세요</p>
+      <p className="mb-1 text-xs text-muted sm:hidden">← 표를 좌우로 넘겨 보세요</p>
       <div
         className="overflow-x-auto"
         tabIndex={0}
@@ -546,7 +546,7 @@ function Badges({ badges }: { badges: Badge[] }) {
         <span
           key={badge.key}
           title={badge.title}
-          className={`whitespace-nowrap rounded-sm border px-1.5 py-px text-[10px] ${badge.className}`}
+          className={`whitespace-nowrap rounded-sm border px-1.5 py-px text-xs ${badge.className}`}
         >
           {badge.label}
         </span>

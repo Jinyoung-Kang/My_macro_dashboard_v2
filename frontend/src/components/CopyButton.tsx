@@ -66,7 +66,7 @@ export function CopyButton({
       >
         {state === "working" ? "복사 중…" : state === "copied" ? copiedLabel : label}
       </Button>
-      {error && <span className="text-[11px] text-danger">{error}</span>}
+      {error && <span className="text-xs text-danger">{error}</span>}
     </span>
   );
 }

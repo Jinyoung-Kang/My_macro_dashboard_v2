@@ -41,7 +41,7 @@ export function ReportView({ markdown }: { markdown: string }) {
             <a
               key={section.id}
               href={`#${section.id}`}
-              className="rounded-full border border-border px-2.5 py-1 text-[11px] text-muted hover:border-accent/60 hover:text-bright"
+              className="rounded-full border border-border px-2.5 py-1 text-xs text-muted hover:border-accent/60 hover:text-bright"
             >
               {section.title}
             </a>

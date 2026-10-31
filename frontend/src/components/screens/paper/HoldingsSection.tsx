@@ -255,10 +255,10 @@ function timedOrderColumns(audit: ReadonlyMap<number, PaperExecutionOrder>): Col
             <Badges badges={[orderStatusBadge(row.status)]} />
             {row.rejectReason && <span className="text-xs text-warn">{row.rejectReason}</span>}
           </span>
-          <span className="whitespace-nowrap text-[11px] text-text-3">
+          <span className="whitespace-nowrap text-xs text-text-3">
             {part(sourceLabel(row.source))} · {part(row.expiresOn ?? EMPTY, "만료")}
           </span>
-          <span className="whitespace-nowrap text-[11px] text-text-3">{part(formatKst(row.filledAtKst), "체결")}</span>
+          <span className="whitespace-nowrap text-xs text-text-3">{part(formatKst(row.filledAtKst), "체결")}</span>
         </span>
       ),
     },
@@ -311,7 +311,7 @@ function timedFillColumns(audit: ReadonlyMap<number, PaperExecutionOrder>): Colu
       cell: (row) => (
         <span className="flex flex-col items-end">
           <span>{part(formatSharePrice(row.price))}</span>
-          <span className="text-[11px] text-text-3">{part(formatSharePrice(row.rawPrice), "관측")}</span>
+          <span className="text-xs text-text-3">{part(formatSharePrice(row.rawPrice), "관측")}</span>
         </span>
       ),
     },
@@ -327,7 +327,7 @@ function timedFillColumns(audit: ReadonlyMap<number, PaperExecutionOrder>): Colu
         return (
           <span className="flex flex-col">
             <span className="whitespace-nowrap">{part(bar)}</span>
-            <span className="break-keep text-[11px] text-text-3">{part(rung)}</span>
+            <span className="break-keep text-xs text-text-3">{part(rung)}</span>
           </span>
         );
       },
@@ -340,7 +340,7 @@ function timedFillColumns(audit: ReadonlyMap<number, PaperExecutionOrder>): Colu
       cell: (row) => (
         <span className="flex flex-col items-end">
           <span>{part(formatNumber(row.gross, 2))}</span>
-          <span className="text-[11px] text-text-3">{part(formatWithUnit(row.slippageBp, 1, "bp"), "슬리피지")}</span>
+          <span className="text-xs text-text-3">{part(formatWithUnit(row.slippageBp, 1, "bp"), "슬리피지")}</span>
         </span>
       ),
     },
@@ -405,7 +405,7 @@ function krStopCell(row: PaperPosition): ReactNode {
   return (
     <span className="flex flex-col items-end">
       <span>{text.slice(0, cut)}</span>
-      <span className="text-[11px] text-text-3">{text.slice(cut + 3)}</span>
+      <span className="text-xs text-text-3">{text.slice(cut + 3)}</span>
     </span>
   );
 }
@@ -415,7 +415,7 @@ function TwoLines({ top, bottom }: { top: ReactNode; bottom: ReactNode }) {
   return (
     <span className="flex flex-col">
       <span>{top}</span>
-      <span className="text-[11px] text-text-3">{bottom}</span>
+      <span className="text-xs text-text-3">{bottom}</span>
     </span>
   );
 }
@@ -519,7 +519,7 @@ const KR_FILL_COLUMNS: readonly Column<PaperFill>[] = [
       <span className="flex flex-col items-end">
         <span>{wonPrice(row.price)}</span>
         {/* 출처 이름은 낱말 사이에서 줄바꿈(오른쪽 정렬 칸은 줄바꿈 없음이 기본) — 칸 폭이 머리 폭을 넘지 않게. */}
-        <span className="whitespace-normal break-keep text-[11px] text-text-3">{krPriceSourceLabel(row.priceSource)}</span>
+        <span className="whitespace-normal break-keep text-xs text-text-3">{krPriceSourceLabel(row.priceSource)}</span>
       </span>
     ),
   },
@@ -547,8 +547,8 @@ const KR_FILL_COLUMNS: readonly Column<PaperFill>[] = [
       return cells.price === EMPTY ? cells.price : (
         <span className="flex flex-col items-end">
           <span>{cells.price}</span>
-          <span className="text-[11px] text-text-3">차이 {cells.diff}</span>
-          <span className="text-[11px] text-text-2">현금 {cells.cash}</span>
+          <span className="text-xs text-text-3">차이 {cells.diff}</span>
+          <span className="text-xs text-text-2">현금 {cells.cash}</span>
         </span>
       );
     },
@@ -564,7 +564,7 @@ const KR_NAV_COLUMNS: readonly Column<KrNavRow>[] = [
     key: "final",
     header: "가격",
     cell: (row) => (
-      <span className={`whitespace-nowrap rounded-sm border px-1.5 py-px text-[10px] ${row.pricesFinal
+      <span className={`whitespace-nowrap rounded-sm border px-1.5 py-px text-xs ${row.pricesFinal
         ? "border-ok/40 bg-ok-tint text-ok" : "border-warn/40 bg-warn-tint text-warn"}`}>
         {row.pricesFinal ? "확정(금융위 종가)" : "잠정"}
       </span>
@@ -699,7 +699,7 @@ export function HoldingsSection({
             <dl className="flex flex-wrap gap-x-5 gap-y-1 text-xs">
               <div>
                 <dt className="text-muted">상태</dt>
-                <dd><span className={`rounded-sm border px-2 py-0.5 text-[11px] ${summary.status.className}`}>{summary.status.label}</span></dd>
+                <dd><span className={`rounded-sm border px-2 py-0.5 text-xs ${summary.status.className}`}>{summary.status.label}</span></dd>
               </div>
               <Pair label="순자산" value={summary.nav} />
               <Pair label="수익률" value={summary.returnPct} tone={deltaColor(book?.returnPct)} />
@@ -950,7 +950,7 @@ function withConfirmed(provisional: string, confirmed: string): ReactNode {
   return (
     <span className="flex flex-col items-end">
       <span>{provisional}</span>
-      <span className="whitespace-nowrap text-[11px] text-text-3">{`확정 ${confirmed}`}</span>
+      <span className="whitespace-nowrap text-xs text-text-3">{`확정 ${confirmed}`}</span>
     </span>
   );
 }
@@ -979,7 +979,7 @@ function Badges({ badges }: { badges: Badge[] }) {
         <span
           key={badge.key}
           title={badge.title}
-          className={`whitespace-nowrap rounded-sm border px-1.5 py-px text-[10px] ${badge.className}`}
+          className={`whitespace-nowrap rounded-sm border px-1.5 py-px text-xs ${badge.className}`}
         >
           {badge.label}
         </span>

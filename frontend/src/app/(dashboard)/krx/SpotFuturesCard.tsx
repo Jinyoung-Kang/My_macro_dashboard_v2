@@ -89,7 +89,7 @@ export function SpotFuturesCard() {
               { key: "vt", header: "당일", render: (row) => <span className={verdictClass(row.verdictToday)}>{row.verdictToday}</span> },
             ]}
           />
-          <p className="mt-2 text-[11px] leading-relaxed text-muted">
+          <p className="mt-2 text-xs leading-relaxed text-muted">
             단위가 달라(원 · 계약) 크기는 비교하지 않고 방향만 봅니다. 금융투자는 현물·선물 가격 차이를 노리는
             차익거래 주체라 두 시장에서 반대로 움직이는 것이 보통입니다. 토스증권 API는 선물·옵션 데이터를
             제공하지 않아 선물 쪽은 Daum(비공식) 값을 씁니다.

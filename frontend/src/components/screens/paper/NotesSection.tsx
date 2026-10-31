@@ -223,7 +223,7 @@ export function NotesSection({ startDate, market = "US" }: { startDate: string |
                   className={INPUT}
                 />
               </label>
-              <span id="paper-note-asof-hint" className="text-[11px] text-muted">{noteAsOfHint(referenceDate, market)}</span>
+              <span id="paper-note-asof-hint" className="text-xs text-muted">{noteAsOfHint(referenceDate, market)}</span>
             </div>
             {draft.kind === "MARKET" ? (
               <div className="flex flex-col gap-1">
@@ -237,10 +237,10 @@ export function NotesSection({ startDate, market = "US" }: { startDate: string |
                     className={INPUT}
                   />
                 </label>
-                <span id="paper-note-expiry-hint" className="text-[11px] text-muted">{expiryHint}</span>
+                <span id="paper-note-expiry-hint" className="text-xs text-muted">{expiryHint}</span>
               </div>
             ) : (
-              <p className="self-end text-[11px] text-muted">방법론 메모는 만료가 없습니다.</p>
+              <p className="self-end text-xs text-muted">방법론 메모는 만료가 없습니다.</p>
             )}
           </div>
           <label className="flex flex-col gap-1 text-xs text-muted">
@@ -257,7 +257,7 @@ export function NotesSection({ startDate, market = "US" }: { startDate: string |
                 className={`${INPUT} leading-relaxed`}
               />
             </label>
-            <span className={`text-[11px] ${check.bodyCount.over ? "text-warn" : "text-muted"}`}>
+            <span className={`text-xs ${check.bodyCount.over ? "text-warn" : "text-muted"}`}>
               {check.bodyCount.text}
               {draft.kind === "MARKET" ? " — 패킷에는 유효한 메모를 합쳐 설정 notesMaxCharsInPacket까지 싣습니다." : ""}
             </span>
@@ -283,7 +283,7 @@ export function NotesSection({ startDate, market = "US" }: { startDate: string |
 
 function BadgeChip({ badge }: { badge: Badge }) {
   return (
-    <span title={badge.title} className={`whitespace-nowrap rounded-sm border px-1.5 py-px text-[10px] ${badge.className}`}>
+    <span title={badge.title} className={`whitespace-nowrap rounded-sm border px-1.5 py-px text-xs ${badge.className}`}>
       {badge.label}
     </span>
   );

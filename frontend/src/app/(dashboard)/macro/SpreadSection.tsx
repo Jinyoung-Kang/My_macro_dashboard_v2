@@ -38,7 +38,7 @@ export function SpreadSection({
       */}
       <div className="grid gap-3 lg:grid-cols-2">
         <div className="rounded-lg border border-border bg-surface-hover/30 p-3">
-          <p className="mb-2 text-[11px] font-semibold text-body">
+          <p className="mb-2 text-xs font-semibold text-body">
             공식 확정치 · FRED
             <span className="ml-1 font-normal text-muted">(일별, 하루 이상 지연)</span>
           </p>
@@ -71,7 +71,7 @@ export function SpreadSection({
         </div>
 
         <div className="rounded-lg border border-border bg-surface-hover/30 p-3">
-          <p className="mb-2 text-[11px] font-semibold text-body">
+          <p className="mb-2 text-xs font-semibold text-body">
             스크래핑 참고 시세 · TradingView
             <span className="ml-1 font-normal text-muted">(지금, 공식 확정치 아님)</span>
             {scraped?.isStale && (
@@ -127,7 +127,7 @@ export function SpreadSection({
       )}
 
       <div className="mt-4">
-        <p className="mb-2 text-[11px] text-muted">
+        <p className="mb-2 text-xs text-muted">
           아래 차트는 <strong className="text-body">공식 확정치</strong> 시계열입니다
           (스크래핑 값은 지금 시점 한 점이라 추이로 그리지 않습니다).
         </p>

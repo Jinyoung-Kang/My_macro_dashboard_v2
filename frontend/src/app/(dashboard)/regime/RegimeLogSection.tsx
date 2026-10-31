@@ -72,9 +72,9 @@ export function RegimeLogSection({ tone }: { tone: Record<string, string> }) {
               },
             ]}
           />
-          {data.note && <p className="mt-2 text-[11px] text-muted">{data.note}</p>}
+          {data.note && <p className="mt-2 text-xs text-muted">{data.note}</p>}
           {data.limitedTo && (
-            <p className="mt-1 flex items-start gap-1 text-[11px] text-muted">
+            <p className="mt-1 flex items-start gap-1 text-xs text-muted">
               {/* 장식 — 뜻은 옆의 글이 나릅니다. */}
               <LineIcon>
                 <LockIcon size={12} />
