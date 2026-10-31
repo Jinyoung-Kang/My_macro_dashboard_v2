@@ -180,6 +180,41 @@ class LiveCurrentTest {
     }
 
     @Test
+    @DisplayName("장부 기준 그날 변화(ledgerDay) — 장부 상태 순자산 ÷ 관측한 세션 앞의 마지막 줄(장중 값을 쓰지 않음), 출발 전·상태 없음은 null, 장 상태를 모르면 거래일 null")
+    void ledgerDay() {
+        BookLedger intraday = ledger(active("claude"), state(40_000, 100_000, FRI_HOURLY),
+                List.of(position("AAA", 100, 600.0, FRI_HOURLY)), List.of(nav(THU, 99_000, true)));
+        assertThat(current(intraday, Map.of("AAA", live("2026-10-30T14:58:00Z", 610)), US_REGULAR).view())
+                .as("같은 계좌의 지금 값은 장중 추정 101,000 대비").containsEntry("dayChangePct", 2.02);
+        Map<String, Object> day = LiveValuation.ledgerDay(intraday, us(US_REGULAR), UsMarketCalendar.CALENDAR);
+        assertThat(day).as("장부 칸은 상태 100,000 ÷ 목요일 줄 99,000").isEqualTo(day("2026-10-30", 1.01, "2026-10-29", true));
+        assertThat(List.copyOf(day.keySet())).containsExactly("tradingDate", "dayChangePct", "previousTradingDate", "previousNavFinal");
+
+        // 개장 전 관측(10-30 08:05 ET)만 — 관측한 세션은 목요일, 수요일 줄(확정) 대비
+        Instant pre = Instant.parse("2026-10-30T12:05:00Z");
+        BookLedger early = ledger(active("claude"), state(40_000, 99_000, pre), List.of(position("AAA", 100, 590.0, pre)),
+                List.of(nav(LocalDate.of(2026, 10, 28), 98_000, true), nav(THU, 99_000, false)));
+        assertThat(LiveValuation.ledgerDay(early, us(US_REGULAR), UsMarketCalendar.CALENDAR))
+                .isEqualTo(day("2026-10-29", 1.02, "2026-10-28", true));
+
+        BookLedger afterProvisional = ledger(active("claude"), state(40_000, 101_000, FRI_HOURLY),
+                List.of(position("AAA", 100, 610.0, FRI_HOURLY)), List.of(nav(THU, 100_000, false)));
+        assertThat(LiveValuation.ledgerDay(afterProvisional, us(US_REGULAR), UsMarketCalendar.CALENDAR))
+                .as("잠정 줄 대비").isEqualTo(day("2026-10-30", 1.0, "2026-10-29", false));
+
+        BookLedger notStarted = ledger(new Book("claude2", "CLAUDE", "계좌2", 100_000, null, PaperBooks.NOT_STARTED, null),
+                state(100_000, 100_000, THU_FINAL), List.of(), List.of());
+        assertThat(LiveValuation.ledgerDay(notStarted, us(US_REGULAR), UsMarketCalendar.CALENDAR)).isNull();
+        assertThat(LiveValuation.ledgerDay(ledger(active("rules"), null, List.of(), List.of()), us(US_REGULAR),
+                UsMarketCalendar.CALENDAR)).isNull();
+
+        Session unknown = new Session(LiveValuation.UNKNOWN, null, null, null, null);
+        assertThat(LiveValuation.ledgerDay(intraday, unknown, UsMarketCalendar.CALENDAR))
+                .as("장 상태를 모르면 관측한 세션도 모름 — 기준은 상태의 마지막 줄(목요일)이고 그 앞 줄이 없어 변화 없음")
+                .isEqualTo(day(null, null, null, null));
+    }
+
+    @Test
     @DisplayName("달력이 그해를 모르면(UNKNOWN) 장부 상태")
     void unknownCalendarYear() {
         BookLedger ledger = ledger(active("claude"), state(40_000, 100_000, FRI_HOURLY),
@@ -226,6 +261,16 @@ class LiveCurrentTest {
     }
 
     // ------------------------------------------------------------------ 재료
+    private static Map<String, Object> day(String tradingDate, Double dayChangePct, String previousTradingDate,
+                                           Boolean previousNavFinal) {
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("tradingDate", tradingDate);
+        out.put("dayChangePct", dayChangePct);
+        out.put("previousTradingDate", previousTradingDate);
+        out.put("previousNavFinal", previousNavFinal);
+        return out;
+    }
+
     private static Map<String, Object> point(Double nav, boolean estimated) {
         Map<String, Object> out = new LinkedHashMap<>();
         out.put("nav", nav);

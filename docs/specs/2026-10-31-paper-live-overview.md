@@ -55,7 +55,9 @@
 - **계좌 상세**: `current`는 개요에만 있다. 패널의 순자산·수익률·주식 노출·마지막 평가 타일만 prop의 `current`를 쓰고, 구성 도넛·현금·보유·체결은
   `/books/{code}/positions` 응답(장부)을 쓴다 — 한 패널에 두 기준이 있으므로 타일 아래에 '장부 마지막 관측 X (HH:MM)' 한 줄로 밝힌다.
 - **계좌 비교**: 순자산·수익률(출발 이후)·주식 노출과 새 줄 '오늘 변화'를 `current`로, 맨 위에 기준 줄. 한 표에는 한 기준만 — 기준 중립이 아닌 계좌 하나라도
-  `LIVE`·`LIVE_LAST`가 아니면 표 전체를 장부 칸으로 두고 사유를 적는다. 통계 일곱 칸과 표본 설명은 그대로 두고 머리에 '거래일 마감 기준 · 마지막 줄
+  `LIVE`·`LIVE_LAST`가 아니면 표 전체를 장부 칸으로 두고 사유를 적는다. 장부 칸은 BookSummary의 `nav`·`returnPct`·`exposurePct`와 '오늘 변화'
+  `ledgerDay.dayChangePct`(장부 상태 순자산 ÷ 장부가 관측한 세션 `ledgerDay.tradingDate` 앞의 마지막 줄, 잠정 포함 — 잠정 대비면
+  `previousNavFinal:false`)다. 화면은 `navSeries`로 계산하지 않는다(ADR 0004). 통계 일곱 칸과 표본 설명은 그대로 두고 머리에 '거래일 마감 기준 · 마지막 줄
   MM-DD 잠정/확정'(`lastNavTradingDate`·`lastNavFinal`), '수익률(출발 이후)'과 '누적 수익률'이 다를 수 있다는 설명 한 줄. 현금·보유·처음 현금·출발·
   가격 없음은 장부 값.
 - **순자산 곡선 꼬리**(L2, 마지막): 장중 선은 그리지 않는다. `navEstimate`가 있을 때만 계좌마다 마지막 줄 → 오늘 추정 점을 점선 꼬리로, 기간 탭·창 계산
@@ -71,7 +73,8 @@
 - `GET /api/paper/live` 계좌 줄에 `equityValue`·`exposurePct`(장부와 같은 정의 = 보유 평가액 합(현금성 포함) ÷ 순자산 — 다만 가격 없는 보유가 있으면 장부는
   평단으로 평가하고 이 응답은 null), `pendingOrders`, `previousNavFinal`을 더한다.
 - `GET /api/paper/overview`의 계좌마다 `current{nav, returnPct, exposurePct, dayChangePct, previousTradingDate, previousNavFinal, basis(LIVE|LEDGER),
-  stage, tradingDate, atKst, isEstimated, livePriced, positionCount, pendingOrders, neutral, note}`·`lastNavTradingDate`·`lastNavFinal`, 최상위
+  stage, tradingDate, atKst, isEstimated, livePriced, positionCount, pendingOrders, neutral, note}`·`ledgerDay{tradingDate, dayChangePct,
+  previousTradingDate, previousNavFinal}`(장부 칸의 오늘 변화 — 출발 전·상태 없음은 null)·`lastNavTradingDate`·`lastNavFinal`, 최상위
   `navEstimate{date, atKst, isEstimated:true, books:{code:{nav, isEstimated}}}`(정규장·마감 뒤 같은 날에 그 세션 줄이 어느 계좌에도 없고 장중 값이 있을 때만, 아니면 null)·`liveSession{phase,
   sessionDate}`. 기존 칸과 다른 소비처(`/positions`·`/nav`·결정 응답의 BookSummary)는 바뀌지 않는다.
 - `pendingOrders` — 미국: 계좌2 시각 지정 대기 주문 가운데 기준 시각 T가 지났는데 장부에 아직 없는 것. 한국: `NEXT_OPEN` 대기 주문 가운데 목표 세션 개장이

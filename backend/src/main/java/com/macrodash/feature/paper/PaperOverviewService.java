@@ -22,7 +22,7 @@ import java.util.Map;
 /**
  * 모의 매매 개요 응답의 조립 — {@code GET /api/paper/overview?market=US|KR}. 장부 응답({@link PaperQueryService#overview(PaperMarket)})을 그대로 두고
  * 장중 '지금 값'을 덧붙입니다(명세 docs/specs/2026-10-31-paper-live-overview.md §5): 계좌마다 {@code current}({@link LiveValuation#current})·
- * {@code lastNavTradingDate}·{@code lastNavFinal}, 최상위 {@code navEstimate}({@link LiveValuation#navEstimate})·{@code liveSession}. 기존 칸은 한
+ * {@code ledgerDay}(장부 칸의 오늘 변화 — {@link LiveValuation#ledgerDay})·{@code lastNavTradingDate}·{@code lastNavFinal}, 최상위 {@code navEstimate}({@link LiveValuation#navEstimate})·{@code liveSession}. 기존 칸은 한
  * 글자도 바꾸지 않습니다 — BookSummary는 {@code /positions}·{@code /nav}·결정 응답도 함께 쓰므로 장중 값을 넣지 않습니다.
  *
  * <p>장중 저장본은 {@link StoreReader#readStored}로만 읽습니다 — 개요는 화면이 60초마다 읽어, 여기서 수집을 요청하면 '보는 동안 사용자 간격으로만
@@ -89,6 +89,7 @@ public class PaperOverviewService {
             if (ledger == null) {
                 // 장부 응답을 읽은 뒤 스냅숏 전에 사라진 책(리셋 등) — 지금 값을 짓지 않습니다
                 summary.put("current", null);
+                summary.put("ledgerDay", null);
                 summary.put("lastNavTradingDate", null);
                 summary.put("lastNavFinal", null);
                 continue;
@@ -96,6 +97,7 @@ public class PaperOverviewService {
             Current current = LiveValuation.current(ledger, live, session, run.calendar(), now, korea);
             NavRow last = ledger.nav().isEmpty() ? null : ledger.nav().get(ledger.nav().size() - 1);
             summary.put("current", current.view());
+            summary.put("ledgerDay", LiveValuation.ledgerDay(ledger, session, run.calendar()));
             summary.put("lastNavTradingDate", last == null ? null : last.tradingDate().toString());
             summary.put("lastNavFinal", last == null ? null : last.pricesFinal());
             shown.add(ledger);

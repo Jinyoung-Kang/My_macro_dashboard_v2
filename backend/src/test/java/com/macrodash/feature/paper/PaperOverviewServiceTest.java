@@ -33,7 +33,7 @@ import static org.mockito.Mockito.when;
 
 /**
  * 개요 조립(GET /api/paper/overview — {@link PaperOverviewService}) — 장부 응답은 한 글자도 바뀌지 않고 계좌마다 {@code current}·
- * {@code lastNavTradingDate}·{@code lastNavFinal}, 최상위 {@code navEstimate}·{@code liveSession}이 덧붙으며, 장중 저장본은 저장본만 읽는다(수집 요청
+ * {@code ledgerDay}·{@code lastNavTradingDate}·{@code lastNavFinal}, 최상위 {@code navEstimate}·{@code liveSession}이 덧붙으며, 장중 저장본은 저장본만 읽는다(수집 요청
  * 없음). 미국·한국 모두. 시계는 고정입니다(2026-10-30(금) 11:00 ET = 15:00 UTC, 미국 정규장).
  */
 class PaperOverviewServiceTest {
@@ -111,6 +111,7 @@ class PaperOverviewServiceTest {
         copy.put("books", ((List<Map<String, Object>>) out.get("books")).stream().map(book -> {
             Map<String, Object> b = new LinkedHashMap<>(book);
             b.remove("current");
+            b.remove("ledgerDay");
             b.remove("lastNavTradingDate");
             b.remove("lastNavFinal");
             return b;
@@ -134,6 +135,11 @@ class PaperOverviewServiceTest {
         assertThat(current(out, 0)).containsEntry("stage", "LIVE").containsEntry("nav", 101_000.0)
                 .containsEntry("atKst", "2026-10-30 23:58 KST").containsEntry("isEstimated", true)
                 .containsEntry("dayChangePct", 2.02);
+        assertThat(books(out).get(0).get("ledgerDay")).as("장부 칸의 오늘 변화 — 상태 100,000 ÷ 목요일 줄 99,000(장중 값 아님)")
+                .isEqualTo(Map.of("tradingDate", "2026-10-30", "dayChangePct", 1.01, "previousTradingDate", "2026-10-29",
+                        "previousNavFinal", true));
+        assertThat(List.copyOf(books(out).get(0).keySet()))
+                .endsWith("current", "ledgerDay", "lastNavTradingDate", "lastNavFinal");
         assertThat(current(out, 1)).as("현금뿐인 계좌2 — 기준 중립").containsEntry("neutral", true)
                 .containsEntry("stage", "LEDGER").containsEntry("nav", 100_000.0);
         assertThat(out.get("navEstimate")).isEqualTo(Map.of("date", "2026-10-30", "atKst", "2026-10-30 23:58 KST",

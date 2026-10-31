@@ -427,6 +427,28 @@ final class LiveValuation {
     }
 
     /**
+     * 장부 기준 그날 변화(명세 §4 계좌 비교의 장부 칸) — 장부 상태의 순자산(BookSummary {@code nav}와 같은 값) ÷ 장부 상태가 관측한 세션 앞의 마지막
+     * 순자산 줄(잠정 포함). 관측한 세션은 지금 값의 장부 단계와 같은 규칙({@link #observedSession} — 장 상태가 UNKNOWN이거나 모르면 null이고, 그때
+     * 기준은 상태의 마지막 순자산 줄 거래일)입니다. 장중 값을 쓰지 않습니다 — 비교 표가 장중 값과 장부 값을 섞지 않으려고 표 전체를 장부 칸으로 둘 때
+     * 그 표의 '오늘 변화'입니다(화면은 {@code navSeries}로 계산하지 않음). {@code {tradingDate, dayChangePct, previousTradingDate, previousNavFinal}},
+     * 출발 전이거나 장부 상태가 없으면 null.
+     */
+    static Map<String, Object> ledgerDay(BookLedger ledger, Session session, TradingCalendar calendar) {
+        BookState state = ledger.state();
+        if (PaperBooks.NOT_STARTED.equals(ledger.book().status()) || state == null) {
+            return null;
+        }
+        LocalDate observed = UNKNOWN.equals(session.phase()) ? null : observedSession(calendar, state.lastObservedAt());
+        NavRow previous = previousNav(ledger.nav(), observed != null ? observed : state.lastNavTradingDate());
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("tradingDate", observed == null ? null : observed.toString());
+        out.put("dayChangePct", previous == null || !(previous.nav() > 0) ? null : pct(state.nav() / previous.nav()));
+        out.put("previousTradingDate", previous == null ? null : previous.tradingDate().toString());
+        out.put("previousNavFinal", previous == null ? null : previous.pricesFinal());
+        return out;
+    }
+
+    /**
      * 순자산 곡선의 오늘 추정 점(명세 §4 곡선 꼬리) — 정규장 또는 마감 뒤 같은 날이고 그 세션 순자산 줄이 어느 계좌에도 없을 때, 장중 값인 계좌가 하나라도
      * 있으면 {@code {date, atKst, isEstimated:true, books:{code: {nav, isEstimated}}}}(계좌 순서는 받은 순서). 장중 값 계좌는 그 순자산
      * ({@code isEstimated:true}), 현금뿐인 운용 계좌는 장부 값(= 장중 값, {@code isEstimated:false}), 그 밖은 {@code nav:null}. 점은 장중 값이 든
