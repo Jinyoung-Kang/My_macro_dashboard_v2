@@ -541,6 +541,17 @@ final class ClaudeDecisionPipeline {
     Plan plan(LocalDate asOf, String kind, boolean initial, Attempt attempt, LedgerView view, SettingsRow row,
                       ClaudeSettings claude, Optional<Quotes> quotes, Set<String> universe,
                       Map<String, PaperMarketData.SourcedClose> closes) {
+        return plan(asOf, kind, initial, attempt, view, row, claude, quotes, universe, closes, 0);
+    }
+
+    /**
+     * {@link #plan(LocalDate, String, boolean, Attempt, LedgerView, SettingsRow, ClaudeSettings, Optional, Set, Map)}에 이달 재량 주문 수로 더 셀
+     * 주문 수({@code dueOrders})를 더한 것 — 장중 확인({@link PaperCheckpointJob})이 예상 상태(§10-6)가 체결로 보는 기준 시각 지난 대기 재량
+     * 주문을 넘깁니다(체결 전이라 장부의 월 수에는 아직 없지만 곧 체결됨 — 리뷰 F2). 응답 {@code monthlyDiscretionaryOrders}도 더한 수입니다.
+     */
+    Plan plan(LocalDate asOf, String kind, boolean initial, Attempt attempt, LedgerView view, SettingsRow row,
+                      ClaudeSettings claude, Optional<Quotes> quotes, Set<String> universe,
+                      Map<String, PaperMarketData.SourcedClose> closes, int dueOrders) {
         JsonNode body = row.body();
         // 그 시장의 설정 읽기(접두어·현금성 기본값 — C1a): 현금성(비중 상한·종목 수에서 빠짐)과 검증기 한도가 그 시장 키.
         PaperSettings paper = PaperSettings.from(body, market);
@@ -581,7 +592,7 @@ final class ClaudeDecisionPipeline {
                         lockedOut(asOf), clock.instant())
                 : usChecks(asOf, initial, body, quotes, universe, closes, proposed, heldQty.keySet());
         boolean stale = checks.stale();
-        int monthly = checks.monthly();
+        int monthly = checks.monthly() + dueOrders;
         OrderValidator.Context ctx = new OrderValidator.Context(view.nav(), view.cash(), weights, heldDays,
                 checks.universe(), checks.etfs(), Set.copyOf(paper.cashLikeTickers()), checks.lockedOut(),
                 checks.noPrice(), monthly, stale, heldQty, checks.unfillable(), checks.wholeShares());

@@ -818,7 +818,6 @@ class PaperCheckpointJobTest {
     }
 
     @Test
-    @Disabled("리뷰 F2 재현 — 월 재량 주문 수가 체결(FILLED)만 세어, 예상 상태가 체결로 보는 기준 시각 지난 대기 주문만큼 월 상한이 샘. 수정 커밋에서 뗌")
     @DisplayName("월 상한은 기준 시각이 지난 대기 주문(예상 상태가 체결로 봄)도 셈 — 체결 1 + 지난 NEXT_OPEN 대기 1 = 상한 2 → 확인 매수 MONTHLY_CAP, 아직 오지 않은 AT_1100 대기는 대신되므로 세지 않음")
     void monthlyCapCountsDuePendingOrders() {
         universe();

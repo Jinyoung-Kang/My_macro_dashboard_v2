@@ -28,6 +28,7 @@ import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDate;
+import java.time.YearMonth;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -63,8 +64,8 @@ import java.util.concurrent.locks.ReentrantLock;
  *       {@code failure.stage = AFTER_RESPONSE})을 따로 한 트랜잭션으로 남기고 행을 DONE으로 둡니다({@link ClaudeDecisionPipeline#recordAfterResponse}
  *       — 결정 작업과 같은 장치). 그 기록마저 실패하면 작업 메모리의 '부름'({@link #called})으로 창 안에서 다시 부르지 않고 EXPIRED
  *       {@code CALLED_NOT_RECORDED}로 둡니다(재기동하면 메모리가 비므로 그때만 다시 부를 수 있음 — 하루 상한이 막음).
- *       KEEP은 NO_TRADE + action KEEP. REPLACE는 예상 상태(§10-6)로 새 주문을 검증하고, 기준 시각이 지금보다 뒤인 대기 주문만 대신한
- *       뒤(⑩) 통과 주문을 넣습니다({@link #write}).</li>
+ *       KEEP은 NO_TRADE + action KEEP. REPLACE는 예상 상태(§10-6)로 새 주문을 검증하고(월 상한은 기준 시각이 지난 대기 재량 주문도 셈), 기준
+ *       시각이 지금보다 뒤인 대기 주문만 대신한 뒤(⑩) 통과 주문을 넣습니다({@link #write}).</li>
  * </ul>
  *
  * <p>자기 잠금({@link #running})으로 겹치지 않고, 결정 작업의 잠금을 쓰지 않습니다 — 확인 호출(최대 300초)이 결정 작업과 서로 기다리지 않게.
@@ -407,8 +408,9 @@ public class PaperCheckpointJob {
         ClaudeDecisionPipeline.Plan plan = null;
         if (attempt.succeeded()) {
             Instant now = clock.instant();
+            List<PaperStore.Order> pending = pendingOrders();
             ExpectedState.State expected = ExpectedState.of(store.state(PaperBooks.CLAUDE2).orElse(null),
-                    store.positions(PaperBooks.CLAUDE2), pendingOrders(), c.sessionDate(), now,
+                    store.positions(PaperBooks.CLAUDE2), pending, c.sessionDate(), now,
                     before(feeds.bars(), now), before(feeds.watch(), now), feeds.quotes().orElse(null), calendar);
             Book current = store.book(PaperBooks.CLAUDE2).orElse(null);
             boolean replace = "REPLACE".equals(Json.asText(attempt.parsed(), "action"));
@@ -421,7 +423,7 @@ public class PaperCheckpointJob {
                 store.positions(PaperBooks.CLAUDE2).forEach(p -> universe.add(p.ticker()));
                 try {
                     plan = replies.plan(asOf, RuleBookService.CHECKPOINT, false, attempt, expected.view(), row,
-                            claudeSettings, feeds.quotes(), universe, Map.of());
+                            claudeSettings, feeds.quotes(), universe, Map.of(), dueDiscretionary(expected, pending, asOf));
                 } catch (RuntimeException e) {
                     // 과금된 응답 — 검증할 수 없어도(예: 예상 순자산 0) 결정 행과 DONE을 남겨 다시 부르지 않음(재시도 없음).
                     notApplied = "검증할 수 없어 적용하지 않음: " + e.getMessage();
@@ -487,6 +489,31 @@ public class PaperCheckpointJob {
             log.warn("장중 확인 {} 행이 그사이 PLANNED가 아니게 됨 — 결정 {}은 남김", c.sessionDate(), id);
         }
         return id;
+    }
+
+    /**
+     * 이달 재량 주문 수에 더 셀 대기 주문 수(리뷰 F2) — 예상 상태가 기준 시각이 지나 체결로 본 주문({@code assumed})과 가격을 몰라 빼 둔 주문
+     * ({@code unpriced} — 장부가 곧 체결할 수 있어 보수적으로 셈) 가운데 월 수의 규칙({@link KrPacketBuilder#monthlyDiscretionaryOrders(PaperStore,
+     * String, LocalDate)} — 출처 CLAUDE·기준일이 그 달이고 기준일 이하·출발 결정 INITIAL의 주문이 아님)에 드는 것. 아직 체결되지 않아 장부의 월 수에는
+     * 없습니다. 기준 시각이 아직 오지 않은 대기 주문은 REPLACE가 대신하므로 세지 않습니다(⑩).
+     */
+    private int dueDiscretionary(ExpectedState.State expected, List<PaperStore.Order> pending, LocalDate asOf) {
+        Set<Long> due = new HashSet<>(expected.unpriced());
+        expected.assumed().forEach(a -> due.add(a.orderId()));
+        YearMonth month = YearMonth.from(asOf);
+        int count = 0;
+        for (PaperStore.Order o : pending) {
+            if (!due.contains(o.id()) || o.asOfTradingDate() == null || o.asOfTradingDate().isAfter(asOf)
+                    || !YearMonth.from(o.asOfTradingDate()).equals(month)) {
+                continue;
+            }
+            boolean initial = o.decisionId() != null && store.decision(o.decisionId())
+                    .map(d -> RuleBookService.INITIAL.equals(d.kind())).orElse(false);
+            if (!initial) {
+                count++;
+            }
+        }
+        return count;
     }
 
     /**
