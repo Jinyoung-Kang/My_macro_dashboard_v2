@@ -284,6 +284,31 @@ export function StatusText({
 }
 
 /**
+ * 상태 아이콘 하나 — 표 칸처럼 글 없이 아이콘만 둘 자리. 뜻(label)은 sr-only 글과 마우스 설명(title)이 나릅니다.
+ * 옆에 같은 뜻의 글이 이미 보이면 이것 대신 장식 아이콘(aria-hidden)만 씁니다(같은 말을 두 번 읽히지 않게).
+ */
+export function StatusIcon({
+  tone,
+  label,
+  icon,
+  size = 14,
+}: {
+  tone: StatusTone;
+  label: string;
+  /** 톤 기본 아이콘 대신 쓸 아이콘(예: 인증됨의 체크). */
+  icon?: ReactNode;
+  size?: number;
+}) {
+  const Icon = STATUS_ICON[tone];
+  return (
+    <span className={`inline-flex shrink-0 items-center ${TONE_TEXT[tone]}`} title={label}>
+      {icon ?? <Icon size={size} />}
+      <span className="sr-only">{label}</span>
+    </span>
+  );
+}
+
+/**
  * 글 첫 줄의 가운데에 아이콘을 둡니다 — 한 줄 높이(1lh)의 칸 안에서 가운데 정렬. 글이 여러 줄로 접혀도 아이콘이 첫 줄 옆에 남습니다
  * (items-center면 여러 줄 글의 한가운데로 내려감). 상태 글·배너가 함께 씁니다.
  */

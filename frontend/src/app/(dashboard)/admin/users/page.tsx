@@ -2,6 +2,7 @@
 
 import { FormEvent, useState } from "react";
 import { Banner, Button, Card, ErrorState, inputClasses, Loading, Select, Table } from "@/components/ui";
+import { CheckIcon, StatusIcon } from "@/components/ui/icons";
 import { useApi } from "@/hooks/useApi";
 import { useAsyncAction } from "@/hooks/useAsyncAction";
 import { apiPost } from "@/lib/api";
@@ -99,7 +100,11 @@ export default function AdminUsersPage() {
                 />
               ),
             },
-            { key: "verified", header: "메일 인증", render: (row) => (row.verified ? "✅" : "대기") },
+            {
+              key: "verified",
+              header: "메일 인증",
+              render: (row) => (row.verified ? <StatusIcon tone="ok" label="인증됨" icon={<CheckIcon size={16} />} /> : "대기"),
+            },
             { key: "created", header: "가입", render: (row) => formatKst(row.createdAt) },
           ]}
         />

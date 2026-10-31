@@ -15,8 +15,35 @@ import type { TaskSummary } from "./types.ts";
 
 export type TaskRunRow = Pick<TaskSummary, "task" | "status" | "startedAt" | "durationMs" | "detail">;
 
-/** 태스크 결과 표시 아이콘: ✅ 정상 · ⚠️ 데이터 없음(기존 저장본 유지) · ❌ 오류 */
-export const TASK_ICONS: Record<string, string> = { ok: "✅", empty: "⚠️", error: "❌" };
+/** 상태 톤 — 화면의 상태 글·아이콘(components/ui/icons의 StatusTone)과 같은 네 값. */
+export type TaskTone = "ok" | "warn" | "danger" | "neutral";
+
+/** 태스크 결과 표시 — 톤(아이콘·색)과 글. 화면은 이것으로 그리고 기호 글자는 쓰지 않습니다. */
+export type TaskStatusView = { tone: TaskTone; label: string };
+
+const TASK_STATUS = new Map<string, TaskStatusView>([
+  ["ok", { tone: "ok", label: "정상" }],
+  ["empty", { tone: "warn", label: "데이터 없음" }],
+  ["error", { tone: "danger", label: "오류" }],
+]);
+
+/** 모르는 상태(수집기에 새로 생긴 상태 등) — 정상·오류로 지어내지 않고 '알 수 없음'(중립). */
+const UNKNOWN_STATUS: TaskStatusView = { tone: "neutral", label: "알 수 없음" };
+
+/**
+ * 태스크 실행 결과(task_runs.status)의 표시: 정상(ok) · 데이터 없음 — 기존 저장본 유지(warn) · 오류(danger) · 그 밖은 알 수 없음(neutral).
+ */
+export function taskStatusView(status: string | null | undefined): TaskStatusView {
+  return (status ? TASK_STATUS.get(status) : undefined) ?? UNKNOWN_STATUS;
+}
+
+/** 수동 실행이 끝났을 때의 안내 — '<태스크> 완료 — <결과 설명>'과 그 결과의 톤(기호 글자 없이). */
+export function taskDoneMessage(taskName: string, run: Pick<TaskRunRow, "status" | "detail">): { text: string; tone: TaskTone } {
+  return {
+    text: `${taskName} 완료${run.detail ? ` — ${run.detail}` : ""}`,
+    tone: taskStatusView(run.status).tone,
+  };
+}
 
 /** 기준 시각 이후에 시작한 실행 기록인지. 기준이 없으면(처음 실행) 기록이 있기만 하면 됩니다. */
 export function isNewerRun(row: TaskRunRow | null | undefined, baselineStartedAt: string | null): boolean {

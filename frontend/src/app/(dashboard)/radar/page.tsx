@@ -17,6 +17,7 @@ import {
   SourceBadge,
   Table,
 } from "@/components/ui";
+import { StatusText } from "@/components/ui/icons";
 import { useApi } from "@/hooks/useApi";
 import { useSessionUser } from "@/hooks/useSessionUser";
 import { isOwner } from "@/lib/access";
@@ -322,9 +323,7 @@ function DiagnosticsPanel() {
               key: "status",
               header: "상태",
               render: (row) => (
-                <span className={row.ok ? "text-ok" : "text-danger"}>
-                  {row.ok ? "✅ 정상" : "❌ 실패"}
-                </span>
+                <StatusText tone={row.ok ? "ok" : "danger"}>{row.ok ? "정상" : "실패"}</StatusText>
               ),
             },
             { key: "stage", header: "단계", render: (row) => <SourceBadge>{row.stage}</SourceBadge> },

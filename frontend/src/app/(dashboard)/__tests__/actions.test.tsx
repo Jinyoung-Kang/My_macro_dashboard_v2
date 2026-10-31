@@ -6,7 +6,7 @@
  *  - AI 리포트는 생성 중 경과 초를 센다
  *  - 저장소 상태의 "다시 실행"은 시작 → 끝날 때까지 확인 → 결과 문구 → 화면 전체 새로고침
  */
-import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const api = vi.hoisted(() => {
@@ -224,11 +224,38 @@ describe("🗄️ 저장소 상태 — 태스크 다시 실행", () => {
     fireEvent.click(await screen.findByRole("button", { name: "다시 실행" }));
 
     expect(api.apiPost).toHaveBeenCalledWith("/api/status/run/macro_collected");
-    expect(await screen.findByText("✅ macro_collected 완료 — 12건 저장")).toBeTruthy();
+    // 결과 기호는 글자가 아니라 톤(정상 = 경고·오류 머리말 없이 정상 색 + 장식 아이콘)
+    const done = await screen.findByText("macro_collected 완료 — 12건 저장");
+    expect((done.parentElement as HTMLElement).className).toContain("text-ok");
+    expect((done.parentElement as HTMLElement).querySelector("svg")?.getAttribute("aria-hidden")).toBe("true");
     expect(taskRun.waitForTaskRun.mock.calls[0][0]).toBe("2026-09-30T01:00:00Z");
     expect(api.apiGet).toHaveBeenCalledWith("/api/status/history?task=macro_collected&limit=1");
     expect(refresh.reloadAll).toHaveBeenCalledTimes(1);
     expect((screen.getByRole("button", { name: "다시 실행" }) as HTMLButtonElement).disabled).toBe(false);
+  });
+
+  it("데이터 없음(empty)으로 끝나면 주의 톤 — 낭독기는 '주의:'를 먼저 읽는다", async () => {
+    api.apiPost.mockResolvedValue({ baselineStartedAt: null });
+    taskRun.waitForTaskRun.mockResolvedValue({ status: "empty", detail: "새 행 없음" });
+    render(<StatusPage />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "다시 실행" }));
+
+    const done = await screen.findByText("macro_collected 완료 — 새 행 없음");
+    expect((done.parentElement as HTMLElement).className).toContain("text-warn");
+    expect(done.parentElement?.textContent).toBe("주의: macro_collected 완료 — 새 행 없음");
+  });
+
+  it("태스크 표의 결과는 상태 아이콘(이름은 sr-only 글·마우스 설명), 범례는 글 — 기호 글자가 아니다", async () => {
+    render(<StatusPage />);
+
+    const row = (await screen.findByText("macro_collected")).closest("tr") as HTMLElement;
+    const icon = within(row).getByText("정상");
+    expect(icon.className).toContain("sr-only");
+    expect(icon.parentElement?.getAttribute("title")).toBe("정상");
+    expect(icon.parentElement?.className).toContain("text-ok");
+    expect(screen.getByText("데이터 없음(기존 저장본 유지)")).toBeTruthy();
+    expect(document.body.textContent).not.toMatch(/\p{Extended_Pictographic}/u);
   });
 
   it("확인 시간 안에 안 끝나면 진행 중이라고 알린다", async () => {
@@ -248,7 +275,8 @@ describe("🗄️ 저장소 상태 — 태스크 다시 실행", () => {
 
     fireEvent.click(await screen.findByRole("button", { name: "다시 실행" }));
 
-    expect(await screen.findByText("수집기에 닿지 못했습니다")).toBeTruthy();
+    const failed = await screen.findByText("수집기에 닿지 못했습니다");
+    expect((failed.parentElement as HTMLElement).className).toContain("text-danger");
     expect(refresh.reloadAll).not.toHaveBeenCalled();
   });
 });

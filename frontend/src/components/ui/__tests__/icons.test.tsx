@@ -11,7 +11,7 @@ import { afterEach, describe, expect, it } from "vitest";
 
 import * as shellIcons from "@/components/shell/icons";
 import * as icons from "../icons";
-import { StatusDot, StatusText, type IconProps } from "../icons";
+import { StatusDot, StatusIcon, StatusText, type IconProps } from "../icons";
 
 afterEach(() => cleanup());
 
@@ -42,7 +42,7 @@ const iconOf = (name: (typeof ICONS)[number]) => (icons as unknown as Record<str
 
 describe("내보내는 이름", () => {
   it("아이콘 목록과 바탕 SVG·상태 점·상태 글·첫 줄 아이콘 칸이 전부다", () => {
-    expect(Object.keys(icons).sort()).toEqual([...ICONS, "IconBase", "LineIcon", "StatusDot", "StatusText"].sort());
+    expect(Object.keys(icons).sort()).toEqual([...ICONS, "IconBase", "LineIcon", "StatusDot", "StatusIcon", "StatusText"].sort());
   });
 
   it("셸의 아이콘 모듈은 탭 아이콘 말고는 ui 아이콘을 그대로 다시 내보낸다", () => {
@@ -136,6 +136,24 @@ describe("상태 점·상태 글", () => {
     expect(icon.getAttribute("width")).toBe("12");
     expect(icon.closest(".text-warn")).not.toBeNull();
     expect(status.textContent).toBe("주의: 표본이 적습니다");
+  });
+
+  it("상태 아이콘 — 톤 색 아이콘(장식) + sr-only 뜻 글 + 마우스 설명, 아이콘을 바꿀 수 있다", () => {
+    const { container } = render(
+      <>
+        <StatusIcon tone="danger" label="오류" />
+        <StatusIcon tone="ok" label="인증됨" icon={<icons.CheckIcon size={16} />} />
+      </>,
+    );
+    const [error, verified] = [...container.children] as HTMLElement[];
+    expect(error.className).toContain("text-danger");
+    expect(error.getAttribute("title")).toBe("오류");
+    expect(error.textContent).toBe("오류");
+    expect(screen.getByText("오류").className).toContain("sr-only");
+    expect(error.querySelector("svg")?.getAttribute("aria-hidden")).toBe("true");
+    expect(verified.className).toContain("text-ok");
+    expect(verified.querySelectorAll("svg")).toHaveLength(1);
+    expect(screen.getByText("인증됨").className).toContain("sr-only");
   });
 
   it("icon={false}면 아이콘 없이 글만, 다른 아이콘·머리말로 바꿀 수 있다", () => {

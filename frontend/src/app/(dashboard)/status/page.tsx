@@ -14,6 +14,7 @@ import {
   SourceBadge,
   Table,
 } from "@/components/ui";
+import { AlertTriangleIcon, CheckCircleIcon, SkipIcon, StatusIcon, StatusText, XCircleIcon } from "@/components/ui/icons";
 import { useApi } from "@/hooks/useApi";
 import { useRefreshSignal } from "@/hooks/useRefreshSignal";
 import { useAsyncAction } from "@/hooks/useAsyncAction";
@@ -27,7 +28,7 @@ import type {
   VerificationResponse,
 } from "@/lib/types";
 import { SOURCES } from "@/lib/sources";
-import { TASK_ICONS } from "@/lib/taskRun";
+import { taskStatusView } from "@/lib/taskRun";
 import { endpoints } from "@/lib/endpoints";
 
 const RUN_STATUS_LABEL: Record<string, string> = {
@@ -35,7 +36,7 @@ const RUN_STATUS_LABEL: Record<string, string> = {
   partial: "일부 실패",
   fail: "전부 실패",
   running: "진행 중",
-  interrupted: "⚠️ 비정상 종료 (프로세스가 사라졌거나 신호가 끊겼습니다)",
+  interrupted: "비정상 종료 (프로세스가 사라졌거나 신호가 끊겼습니다)",
   none: "기록 없음",
 };
 
@@ -49,7 +50,7 @@ export default function StatusPage() {
   const { data, loading, error, reload, refreshError } = useApi<StatusResponse>(endpoints.status.overview, 60_000);
   const { reloadAll } = useRefreshSignal();
   // 개별 태스크 실행도 화면 전체를 갱신합니다(useTaskRunner 설명 참고).
-  const { running, message, runTask } = useTaskRunner(reloadAll);
+  const { running, message, messageTone, runTask } = useTaskRunner(reloadAll);
 
   if (loading && !data) {
     return <Loading label="저장소 상태를 확인하는 중…" />;
@@ -80,7 +81,13 @@ export default function StatusPage() {
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         <Metric
           label="최근 수집 상태"
-          value={RUN_STATUS_LABEL[resolvedStatus] ?? resolvedStatus}
+          value={
+            resolvedStatus === "interrupted" ? (
+              <StatusText tone="warn" iconSize={20}>{RUN_STATUS_LABEL.interrupted}</StatusText>
+            ) : (
+              RUN_STATUS_LABEL[resolvedStatus] ?? resolvedStatus
+            )
+          }
           caption={
             lastRun?.startedAt
               ? `${formatKst(lastRun.startedAt)} 시작 · 대상 ${lastRun.groupName ?? EMPTY}`
@@ -129,9 +136,20 @@ export default function StatusPage() {
 
       <Card
         title="태스크별 최근 결과" source={SOURCES.collectorRuns}
-        subtitle="✅ 정상 · ⚠️ 데이터 없음(기존 저장본 유지) · ❌ 오류"
+        subtitle={
+          // 범례 — 표의 아이콘이 무엇인지. 범례라 낭독기 머리말('주의:')은 붙이지 않습니다.
+          <span className="inline-flex flex-wrap gap-x-3 gap-y-1">
+            <StatusText tone="ok" srPrefix="">정상</StatusText>
+            <StatusText tone="warn" srPrefix="">데이터 없음(기존 저장본 유지)</StatusText>
+            <StatusText tone="danger" srPrefix="">오류</StatusText>
+          </span>
+        }
       >
-        {message && <p className="mb-3 text-xs text-accent">{message}</p>}
+        {message && (
+          <p className="mb-3 text-xs">
+            <StatusText tone={messageTone} iconSize={12}>{message}</StatusText>
+          </p>
+        )}
         <Table
           rows={data?.taskSummary ?? []}
           rowKey={(row) => row.task}
@@ -142,7 +160,7 @@ export default function StatusPage() {
               header: "태스크",
               render: (row) => (
                 <span className="flex items-center gap-2">
-                  <span>{TASK_ICONS[row.status] ?? "•"}</span>
+                  <TaskStatusIcon status={row.status} />
                   <span className="text-body">{row.task}</span>
                   {row.speed && <SourceBadge>{row.speed}</SourceBadge>}
                 </span>
@@ -302,7 +320,14 @@ function PublicApiPanel() {
             {
               key: "state",
               header: "상태",
-              render: (row) => (row.ok ? "✅ 정상" : row.configured ? "❌ 실패" : "⚪ 키 없음"),
+              render: (row) =>
+                row.ok ? (
+                  <StatusText tone="ok">정상</StatusText>
+                ) : row.configured ? (
+                  <StatusText tone="danger">실패</StatusText>
+                ) : (
+                  <StatusText tone="neutral">키 없음</StatusText>
+                ),
             },
             { key: "detail", header: "내용", render: (row) => <span className="text-xs">{row.detail ?? EMPTY}</span> },
             {
@@ -325,12 +350,24 @@ const VERDICT_STYLE: Record<string, string> = {
   error: "text-warn",
 };
 
-const VERDICT_ICON: Record<string, string> = {
-  match: "✅",
-  mismatch: "❌",
-  skipped: "⏭️",
-  error: "⚠️",
+/** 판정 아이콘 — 장식입니다. 뜻은 바로 옆에 보이는 판정 글(entry.label)이 나릅니다. */
+const VERDICT_ICON: Record<string, typeof CheckCircleIcon> = {
+  match: CheckCircleIcon,
+  mismatch: XCircleIcon,
+  skipped: SkipIcon,
+  error: AlertTriangleIcon,
 };
+
+/** 태스크 결과 아이콘(표 칸) — 모르는 상태는 '알 수 없음'(lib/taskRun.taskStatusView). */
+function TaskStatusIcon({ status }: { status: string | null | undefined }) {
+  const view = taskStatusView(status);
+  return <StatusIcon tone={view.tone} label={view.label} />;
+}
+
+function VerdictIcon({ verdict }: { verdict: string }) {
+  const Icon = VERDICT_ICON[verdict];
+  return Icon ? <Icon size={14} className={VERDICT_STYLE[verdict]} /> : null;
+}
 
 function VerificationPanel() {
   const verification = useAsyncAction(
@@ -366,8 +403,9 @@ function VerificationPanel() {
             {result.results?.map((entry) => (
               <div key={entry.name} className="rounded-lg border border-border bg-canvas p-3">
                 <div className="flex flex-wrap items-center justify-between gap-2">
-                  <span className="text-sm text-bright">
-                    {VERDICT_ICON[entry.verdict]} {entry.name}
+                  <span className="inline-flex items-center gap-1.5 text-sm text-bright">
+                    <VerdictIcon verdict={entry.verdict} />
+                    {entry.name}
                   </span>
                   <span className={`text-xs font-semibold ${VERDICT_STYLE[entry.verdict]}`}>
                     {entry.label}
@@ -453,7 +491,9 @@ function IssuesPanel() {
               확인하지 못했습니다.
             </p>
           ) : (
-            <p className="text-sm text-ok">✅ 최근 {data.lookbackHours}시간 동안 오류·경고가 없습니다.</p>
+            <p className="text-sm">
+              <StatusText tone="ok">최근 {data.lookbackHours}시간 동안 오류·경고가 없습니다.</StatusText>
+            </p>
           )}
         </>
       )}

@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { Banner, Button, Card, ErrorState, Loading, SourceBadge } from "@/components/ui";
+import { StatusText } from "@/components/ui/icons";
 import { useApi } from "@/hooks/useApi";
 import { useAsyncAction } from "@/hooks/useAsyncAction";
 import { apiGet } from "@/lib/api";
@@ -47,8 +48,10 @@ export function TossSection() {
         {diagnostics.error && <ErrorState message={diagnostics.error} onRetry={diagnostics.reload} />}
         {diagnostics.data && (
           <div className="flex flex-col gap-2">
-            <p className={diagnostics.data.ok ? "text-ok" : "text-warn"}>
-              {diagnostics.data.ok ? "✅ 연결 성공" : "⚠️ 연결 실패"}{" "}
+            <p className="flex flex-wrap items-center gap-2">
+              <StatusText tone={diagnostics.data.ok ? "ok" : "warn"}>
+                {diagnostics.data.ok ? "연결 성공" : "연결 실패"}
+              </StatusText>
               {diagnostics.data.stage && <SourceBadge>{diagnostics.data.stage}</SourceBadge>}
             </p>
             <p className="text-sm text-muted">{diagnostics.data.message}</p>
