@@ -59,7 +59,7 @@
   MM-DD 잠정/확정'(`lastNavTradingDate`·`lastNavFinal`), '수익률(출발 이후)'과 '누적 수익률'이 다를 수 있다는 설명 한 줄. 현금·보유·처음 현금·출발·
   가격 없음은 장부 값.
 - **순자산 곡선 꼬리**(L2, 마지막): 장중 선은 그리지 않는다. `navEstimate`가 있을 때만 계좌마다 마지막 줄 → 오늘 추정 점을 점선 꼬리로, 기간 탭·창 계산
-  뒤에 붙이고 범례에서 숨기며 툴팁 이름은 '추정 HH:MM'. S=100 카드와 한국 K40 참고선에는 붙이지 않는다. 그날 줄이 생기면 꼬리가 사라진다.
+  뒤에 붙이고 범례에서 숨기며 툴팁 이름은 '추정 HH:MM' — 계좌마다 `books[code].isEstimated`가 true인 꼬리만이고, 현금뿐 계좌(false)는 장부 값이라 '장부'로 적는다. S=100 카드와 한국 K40 참고선에는 붙이지 않는다. 그날 줄이 생기면 꼬리가 사라진다.
 - **홈(PaperHero)**(L3): 같은 개요 응답의 `current`를 쓴다.
 - **'장중 평가 (추정)' 카드**: 계좌 표를 빼고 장 상태·간격 선택·'지금 새로 읽기'·시세 출처·빠진 종목·종목별 장중가를 남겨 '장중 시세 (추정)'으로.
   간격 선택은 이 카드 한 곳(수집을 깨우는 유일한 곳)이고 선택지에 60·180분을 더한다(L5). 카드가 새 장중 값을 받으면 개요를 한 번 다시 읽는다 —
@@ -72,7 +72,7 @@
   평단으로 평가하고 이 응답은 null), `pendingOrders`, `previousNavFinal`을 더한다.
 - `GET /api/paper/overview`의 계좌마다 `current{nav, returnPct, exposurePct, dayChangePct, previousTradingDate, previousNavFinal, basis(LIVE|LEDGER),
   stage, tradingDate, atKst, isEstimated, livePriced, positionCount, pendingOrders, neutral, note}`·`lastNavTradingDate`·`lastNavFinal`, 최상위
-  `navEstimate{date, atKst, books}`(정규장·마감 뒤 같은 날에 그 세션 줄이 어느 계좌에도 없고 장중 값이 있을 때만, 아니면 null)·`liveSession{phase,
+  `navEstimate{date, atKst, isEstimated:true, books:{code:{nav, isEstimated}}}`(정규장·마감 뒤 같은 날에 그 세션 줄이 어느 계좌에도 없고 장중 값이 있을 때만, 아니면 null)·`liveSession{phase,
   sessionDate}`. 기존 칸과 다른 소비처(`/positions`·`/nav`·결정 응답의 BookSummary)는 바뀌지 않는다.
 - `pendingOrders` — 미국: 계좌2 시각 지정 대기 주문 가운데 기준 시각 T가 지났는데 장부에 아직 없는 것. 한국: `NEXT_OPEN` 대기 주문 가운데 목표 세션 개장이
   지난 것(그날 밤 관측치에서 체결). 그 밖의 시점(미국 `NEXT_OBSERVATION`·`NEXT_CLOSE`)은 세지 않는다. 체결 전 보유로 평가된 값이라는 표시에 쓴다.

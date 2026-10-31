@@ -428,8 +428,10 @@ final class LiveValuation {
 
     /**
      * 순자산 곡선의 오늘 추정 점(명세 §4 곡선 꼬리) — 정규장 또는 마감 뒤 같은 날이고 그 세션 순자산 줄이 어느 계좌에도 없을 때, 장중 값인 계좌가 하나라도
-     * 있으면 {@code {date, atKst, books:{code: nav|null}}}(계좌 순서는 받은 순서). 장중 값 계좌는 그 순자산, 현금뿐인 운용 계좌는 장부 값(= 장중 값), 그
-     * 밖은 null. {@code atKst}는 장중 값 계좌들 가운데 가장 오래된 기준 시각. 아니면 null.
+     * 있으면 {@code {date, atKst, isEstimated:true, books:{code: {nav, isEstimated}}}}(계좌 순서는 받은 순서). 장중 값 계좌는 그 순자산
+     * ({@code isEstimated:true}), 현금뿐인 운용 계좌는 장부 값(= 장중 값, {@code isEstimated:false}), 그 밖은 {@code nav:null}. 점은 장중 값이 든
+     * 추정이라 최상위에 {@code isEstimated:true}를 두고, 계좌마다 추정인지는 그 계좌의 표시입니다(PRINCIPLES — 추정치는 표시와 함께). {@code atKst}는
+     * 장중 값 계좌들 가운데 가장 오래된 기준 시각. 아니면 null.
      *
      * @param currents 계좌 코드 → 지금 값(받은 순서)
      */
@@ -450,7 +452,10 @@ final class LiveValuation {
             if (current.live()) {
                 oldest = oldest == null || (current.at() != null && current.at().isBefore(oldest)) ? current.at() : oldest;
             }
-            books.put(entry.getKey(), current.live() || cashOnly ? PaperQueryService.round2(current.nav()) : null);
+            Map<String, Object> point = new LinkedHashMap<>();
+            point.put("nav", current.live() || cashOnly ? PaperQueryService.round2(current.nav()) : null);
+            point.put("isEstimated", current.live());
+            books.put(entry.getKey(), point);
         }
         if (oldest == null) {
             return null;
@@ -458,6 +463,7 @@ final class LiveValuation {
         Map<String, Object> out = new LinkedHashMap<>();
         out.put("date", session.sessionDate().toString());
         out.put("atKst", Kst.stamp(oldest));
+        out.put("isEstimated", true);
         out.put("books", books);
         return out;
     }

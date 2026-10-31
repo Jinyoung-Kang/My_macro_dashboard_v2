@@ -137,7 +137,8 @@ class PaperOverviewServiceTest {
         assertThat(current(out, 1)).as("현금뿐인 계좌2 — 기준 중립").containsEntry("neutral", true)
                 .containsEntry("stage", "LEDGER").containsEntry("nav", 100_000.0);
         assertThat(out.get("navEstimate")).isEqualTo(Map.of("date", "2026-10-30", "atKst", "2026-10-30 23:58 KST",
-                "books", Map.of(PaperBooks.CLAUDE, 101_000.0, PaperBooks.CLAUDE2, 100_000.0)));
+                "isEstimated", true, "books", Map.of(PaperBooks.CLAUDE, Map.of("nav", 101_000.0, "isEstimated", true),
+                        PaperBooks.CLAUDE2, Map.of("nav", 100_000.0, "isEstimated", false))));
         assertThat(out.get("liveSession")).isEqualTo(Map.of("phase", "REGULAR", "sessionDate", "2026-10-30"));
         assertThat(List.copyOf(out.keySet()).subList(out.size() - 2, out.size())).containsExactly("navEstimate", "liveSession");
     }

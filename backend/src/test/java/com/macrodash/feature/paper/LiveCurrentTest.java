@@ -192,7 +192,7 @@ class LiveCurrentTest {
     }
 
     @Test
-    @DisplayName("오늘 추정 점 — 정규장·마감 뒤에 그 세션 줄이 어느 계좌에도 없고 장중 값이 있을 때만: 장중 계좌는 그 값, 현금뿐 운용 계좌는 장부 값, 그 밖은 null")
+    @DisplayName("오늘 추정 점 — 정규장·마감 뒤에 그 세션 줄이 어느 계좌에도 없고 장중 값이 있을 때만: 장중 계좌는 그 값(추정), 현금뿐 운용 계좌는 장부 값(추정 아님), 그 밖은 null")
     void navEstimate() {
         BookLedger liveBook = ledger(active("claude"), state(40_000, 100_000, FRI_HOURLY),
                 List.of(position("AAA", 100, 600.0, FRI_HOURLY)), List.of(nav(THU, 99_000, true)));
@@ -206,13 +206,15 @@ class LiveCurrentTest {
         List<BookLedger> ledgers = List.of(liveBook, cashOnly, ledgerBook, notStarted);
 
         Map<String, Object> estimate = LiveValuation.navEstimate(ledgers, currents(ledgers, live, US_REGULAR), us(US_REGULAR));
-        assertThat(estimate).containsEntry("date", "2026-10-30").containsEntry("atKst", "2026-10-30 23:58 KST");
+        assertThat(estimate).containsEntry("date", "2026-10-30").containsEntry("atKst", "2026-10-30 23:58 KST")
+                .containsEntry("isEstimated", true);
         Map<String, Object> books = new LinkedHashMap<>();
-        books.put("claude", 101_000.0);
-        books.put("claude2", 100_000.0);
-        books.put("rules", null);
-        books.put("bench_mix", null);
+        books.put("claude", point(101_000.0, true));
+        books.put("claude2", point(100_000.0, false));
+        books.put("rules", point(null, false));
+        books.put("bench_mix", point(null, false));
         assertThat(estimate.get("books")).isEqualTo(books);
+        assertThat(List.copyOf(estimate.keySet())).containsExactly("date", "atKst", "isEstimated", "books");
 
         List<BookLedger> withRow = List.of(liveBook, ledger(active("claude2"), state(100_000, 100_000, THU_FINAL), List.of(),
                 List.of(nav(THU, 100_000, true), nav(FRI, 100_000, true))));
@@ -224,6 +226,13 @@ class LiveCurrentTest {
     }
 
     // ------------------------------------------------------------------ 재료
+    private static Map<String, Object> point(Double nav, boolean estimated) {
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("nav", nav);
+        out.put("isEstimated", estimated);
+        return out;
+    }
+
     private static Map<String, Current> currents(List<BookLedger> ledgers, Map<String, LivePrice> live, Instant now) {
         Map<String, Current> out = new LinkedHashMap<>();
         ledgers.forEach(ledger -> out.put(ledger.book().code(), current(ledger, live, now)));
