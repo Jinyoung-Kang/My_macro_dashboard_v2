@@ -220,7 +220,7 @@ describe("계좌2 출발 카드", () => {
     expect(pending?.armed).toBeNull();
     expect(pending?.ready).toBe(false);
     expect(pending?.armTone).toBe("info");
-    expect(pending?.armNote).toBe("계좌2 상태를 읽는 중입니다 — 설정 claude2.enabled가 켜져 있는지 받은 뒤 단추를 열지 정합니다.");
+    expect(pending?.armNote).toBe("계좌2 상태를 읽는 중입니다 — 설정 claude2.enabled가 켜져 있는지 확인한 뒤 단추를 열지 정합니다.");
     expect(pending?.lines.map((line) => line.value)).toEqual(["—", "—", "—"]);
     // 읽는 중 표시는 상태가 없을 때만 — 받은 상태가 있으면 그 값 그대로.
     const off = claude2StartView({ initialized: true, books: BOOKS }, { claude2: { ...STATUS.claude2!, enabled: false } }, null, { pending: true });

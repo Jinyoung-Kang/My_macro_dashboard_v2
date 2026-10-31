@@ -3472,7 +3472,7 @@ export function claude2StartView(
         ? "설정 claude2.enabled가 꺼져 있습니다 — 설정 탭에서 켜야(설정 판 하나) 정기 출발도 이 단추도 돕니다. 켜는 같은 저장에서 정기 작업 몫 예약"
           + "(apiScheduledReserve)·결정 주기 호출 상한(claude2.maxCallsPerCycle)과 장중 확인(claude2.checkpoints — 단계 2)도 함께 맞춥니다(명세 §16-2)."
         : pending
-          ? "계좌2 상태를 읽는 중입니다 — 설정 claude2.enabled가 켜져 있는지 받은 뒤 단추를 열지 정합니다."
+          ? "계좌2 상태를 읽는 중입니다 — 설정 claude2.enabled가 켜져 있는지 확인한 뒤 단추를 열지 정합니다."
           : "계좌2 상태를 읽지 못해 설정이 켜져 있는지 모릅니다 — 상태를 다시 읽은 뒤 누르세요.",
     armTone: ready || pending ? "info" : "warn",
     lines,
