@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Banner, Button, Card } from "@/components/ui";
+import { Banner, Button, Card, Freshness } from "@/components/ui";
 import { useAsyncAction } from "@/hooks/useAsyncAction";
 import { useElapsedSeconds } from "@/hooks/useElapsedSeconds";
 import { useMinuteClock } from "@/hooks/useMinuteClock";
@@ -17,7 +17,8 @@ import type { PaperInitialDecisionResult, PaperOverviewResponse, PaperStatusResp
  * 카드의 "계좌2 시작"은 같은 출발을 그 창 안에서 지금 한 번 부릅니다(POST run/initial-decision `{book:"claude2"}` — 창 밖·꺼짐은 서버 400, 기록
  * 없음). 설정이 꺼져 있거나 상태를 읽지 못했거나 관측치 사슬 준비 중이면(상태 칸 chainReady false — 켠 직후·새 관측치 직후 몇 분, 서버가 출발을 거절)
  * 단추를 닫고 그 까닭을 적습니다. 상태 응답을 아직 기다리는 중이면(첫 요청·탭을 바꿨다 돌아옴) 실패와 갈라 '읽는 중'(경고색 아님)이고 단추는 닫습니다
- * (QA-149). Claude를 한 번 부르므로 확인 단계를 거칩니다. 미리보기는 없습니다.
+ * (QA-149). 앞서 받은 상태를 다시 읽지 못하면 마지막으로 읽은 값을 그대로 두고 카드 머리에 '⚠️ 새로 읽지 못함'을 붙입니다(QA-151 — 단추도 그 값
+ * 기준, 출발은 서버가 다시 판정). Claude를 한 번 부르므로 확인 단계를 거칩니다. 미리보기는 없습니다.
  * 창 시각·이번 주기 호출은 상태 응답(claude2 묶음)의 글자 그대로이고, 다음 결정 시각이 이미 지났으면(그 거래일 행이 아직 없음 — 창은 컷오프까지 열림)
  * 지난 시각 대신 창이 열렸다고 적습니다(lib/paper claude2WindowLines). 그 아래 '오늘 장중 확인' 한 줄(단계 2 — 상태 응답 claude2.checkpoint, 칸이 없는
  * 백엔드면 줄 없음).
@@ -26,12 +27,15 @@ export function Claude2StartSection({
   overview,
   status,
   statusPending = false,
+  statusRefreshError = null,
   onChanged,
 }: {
   overview: PaperOverviewResponse;
   status: PaperStatusResponse | null;
   /** 상태 응답을 아직 기다리는 중(앞서 받은 값 없음 — useApi loading이고 data 없음). 실패(오류·available false)와 가릅니다(QA-149). */
   statusPending?: boolean;
+  /** 앞서 받은 상태를 다시 읽지 못했으면 그 문구(useApi refreshError — 값은 그대로 남음, QA-151). */
+  statusRefreshError?: string | null;
   onChanged: () => void;
 }) {
   // 분 시계 — 다음 결정 시각이 지났으면 지난 시각 대신 '결정 창 열림(…부터 컷오프 …까지)'(마운트 전에는 받은 시각 그대로).
@@ -61,6 +65,9 @@ export function Claude2StartSection({
       title={`${view.bookLabel} — ${view.title}`}
       subtitle="앞으로 체결 출발 — 마감이 끝난 최근 미국 세션 기준 출발 결정 · 다음 세션에 고른 시점으로 체결 · 사후 체결·미리보기 없음"
       source={PAPER_SOURCES.decisions}
+      // 상태 다시 읽기가 실패하면 아래 안내·창 칸·단추는 마지막으로 읽은 값입니다 — 다른 패널과 같은 표시(Freshness, title에 실패 문구). 단추를
+      // 닫지 않는 까닭: 한 번의 일시 오류로 출발을 막지 않고, 지금 켜져 있는지·창 안인지는 서버가 다시 판정합니다(꺼짐·창 밖·사슬 준비 중은 400 — 기록 없음).
+      actions={<Freshness refreshError={statusRefreshError} />}
     >
       <p className="text-sm leading-relaxed text-body">{view.body}</p>
       <div className="mt-3">

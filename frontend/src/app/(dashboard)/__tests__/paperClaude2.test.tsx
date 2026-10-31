@@ -345,7 +345,7 @@ describe("개요 — 계좌2 출발 카드의 상태 읽기(읽는 중·실패·
 
   // QA-151 — 수정 전에는 켜짐을 받은 뒤 상태 다시 읽기가 실패하면 카드가 옛 '켜져 있습니다'와 열린 단추를 그대로 두고 화면 어디에도 실패 표시가
   // 없었다(OverviewSection은 status.error만 보이고 useApi의 refreshError는 넘기지 않음 — 재현 커밋에서는 it.fails).
-  it.fails("켜짐을 받은 뒤 상태 다시 읽기가 실패하면(502) 카드에 '새로 읽지 못함' — 마지막으로 읽은 켜짐·단추는 그대로, 다시 읽으면 사라짐", async () => {
+  it("켜짐을 받은 뒤 상태 다시 읽기가 실패하면(502) 카드에 '새로 읽지 못함' — 마지막으로 읽은 켜짐·단추는 그대로, 다시 읽으면 사라짐", async () => {
     reads["/api/paper/overview"] = () => Promise.resolve(overview(CLAUDE2_NOT_STARTED));
     reads["/api/paper/status"] = () => Promise.resolve(status(true));
     render(<PaperPage />);

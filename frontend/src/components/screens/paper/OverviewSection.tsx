@@ -356,12 +356,14 @@ export function OverviewSection({
       {!startPrompt && startResult}
 
       {!korea && <ClaudeStartSection overview={overview} onChanged={onChanged} />}
-      {/* 상태를 아직 기다리는 중(앞서 받은 값 없음)과 실패를 갈라 넘깁니다 — 실패만 '읽지 못해'(QA-149). */}
+      {/* 상태를 아직 기다리는 중(앞서 받은 값 없음)과 실패를 갈라 넘깁니다 — 실패만 '읽지 못해'(QA-149). 값이 있는 다시 읽기의 실패는
+          카드에 '새로 읽지 못함'(QA-151). */}
       {!korea && (
         <Claude2StartSection
           overview={overview}
           status={status.data ?? null}
           statusPending={status.loading && status.data === null}
+          statusRefreshError={status.refreshError}
           onChanged={onChanged}
         />
       )}
