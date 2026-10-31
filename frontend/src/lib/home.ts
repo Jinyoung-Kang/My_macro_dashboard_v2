@@ -466,7 +466,8 @@ export function latestAlerts(inbox: InboxResponse | null | undefined, limit: num
     const late = item.late === true;
     return {
       id: item.id,
-      title: presentText(item.title) ?? "(제목 없음)",
+      // 서버가 만든 제목 — 예전 알림의 국기·나침반 같은 그림 문자는 화면에서 뗍니다(/alerts와 같음)
+      title: presentText(withoutLeadingIcon(item.title ?? "")) ?? "(제목 없음)",
       occurredOn: formatDate(item.occurredOn),
       read,
       late,

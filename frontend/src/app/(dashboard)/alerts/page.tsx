@@ -9,7 +9,7 @@ import { DEMO_READ_ONLY, isDemo } from "@/lib/access";
 import { ALERT_KINDS, notifyAlertsRead } from "@/lib/alerts";
 import { apiDelete, apiPost } from "@/lib/api";
 import { endpoints } from "@/lib/endpoints";
-import { EMPTY, formatKst } from "@/lib/format";
+import { EMPTY, formatKst, withoutLeadingIcon } from "@/lib/format";
 import type { AlertKind, AlertRule, AlertRulesResponse, InboxItem, InboxResponse } from "@/lib/types";
 
 type Result = { ok: boolean; message: string };
@@ -105,13 +105,14 @@ export default function AlertsPage() {
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <p className="text-sm font-semibold text-bright">
                     {!item.read && !item.late && <span className="mr-1 text-accent">●</span>}
-                    {item.title}
+                    {/* 제목·본문은 서버가 만든 글이라 예전 알림에는 국기·나침반 같은 그림 문자가 있습니다 — 화면에서 뗍니다 */}
+                    {withoutLeadingIcon(item.title)}
                   </p>
                   <span className="text-[11px] text-muted">
                     {item.occurredOn}{item.late ? " · 지난 사건" : ""}
                   </span>
                 </div>
-                <p className="mt-1 whitespace-pre-line text-xs leading-relaxed text-body">{item.body}</p>
+                <p className="mt-1 whitespace-pre-line text-xs leading-relaxed text-body">{withoutLeadingIcon(item.body)}</p>
                 {!item.read && !demo && (
                   <button
                     type="button"
@@ -137,7 +138,7 @@ export default function AlertsPage() {
           rowKey={(row) => String(row.id)}
           emptyMessage="규칙이 없습니다."
           columns={[
-            { key: "desc", header: "알림", render: (row) => row.description },
+            { key: "desc", header: "알림", render: (row) => withoutLeadingIcon(row.description) },
             { key: "created", header: "만든 날", render: (row) => formatKst(row.createdAt) },
             {
               key: "enabled",

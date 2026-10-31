@@ -454,6 +454,20 @@ describe("알림 요약", () => {
     expect(latestAlerts(null)).toEqual([]);
   });
 
+  it("알림 제목의 예전 그림 문자(기관 국기·나침반)는 뗀다 — 기호뿐인 제목은 '(제목 없음)'", () => {
+    const response = inbox();
+    response.items = [
+      { ...response.items[0], id: 21, title: "13F 신규 편입 — 🇺🇸 버크셔 해서웨이 (Berkshire Hathaway)" },
+      { ...response.items[0], id: 22, title: "[국면 전환] 후퇴 경계 → 확장 (🧭 시장 국면)" },
+      { ...response.items[0], id: 23, title: "🇺🇸" },
+    ];
+    expect(latestAlerts(response).map((row) => row.title)).toEqual([
+      "13F 신규 편입 — 버크셔 해서웨이 (Berkshire Hathaway)",
+      "[국면 전환] 후퇴 경계 → 확장 (시장 국면)",
+      "(제목 없음)",
+    ]);
+  });
+
   it("지난 사건(late)은 읽지 않은 수에 들지 않으므로 '지난 사건'이고 강조하지 않는다 — 카드의 '읽지 않음 0건'과 어긋나지 않음", () => {
     const response = { unread: 0, items: [{ ...inbox().items[0], late: true, read: false }] };
     expect(unreadText(response)).toBe("0건");

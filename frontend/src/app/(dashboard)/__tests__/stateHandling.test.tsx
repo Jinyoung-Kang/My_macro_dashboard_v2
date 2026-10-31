@@ -117,3 +117,22 @@ describe("QA-105 사용자 관리 — 회원 만들기", () => {
     expect((screen.getByLabelText("처음 비밀번호(10자 이상)") as HTMLInputElement).value).toBe("");
   });
 });
+
+describe("알림함의 서버 글 — 예전 알림의 그림 문자", () => {
+  it("제목·본문·규칙 설명의 국기·나침반은 화면에서 뗀다(줄바꿈은 그대로)", async () => {
+    reads["/api/alerts/rules"] = () => Promise.resolve({ available: true, limit: 5, rules: [
+      { id: 1, kind: "INSTITUTION_NEW", params: { cik: "0001067983" }, enabled: true, description: "13F 신규 편입 — 🇺🇸 버크셔 해서웨이 (Berkshire Hathaway)", createdAt: "2026-10-01" },
+    ] });
+    reads["/api/alerts/inbox"] = () => Promise.resolve({ available: true, unread: 1, items: [
+      { id: 7, kind: "REGIME_CHANGE", occurredOn: "2026-10-25", title: "[국면 전환] 후퇴 경계 → 확장 (🧭 시장 국면)",
+        body: "판정이 3일 이어졌습니다.\n🇺🇸 버크셔 해서웨이가 편입", late: false, createdAt: "2026-10-25", read: false },
+    ] });
+
+    render(<AlertsPage />);
+
+    expect(await screen.findByText("[국면 전환] 후퇴 경계 → 확장 (시장 국면)")).toBeTruthy();
+    expect(screen.getByText((_, element) => element?.textContent === "판정이 3일 이어졌습니다.\n버크셔 해서웨이가 편입")).toBeTruthy();
+    expect(await screen.findByText("13F 신규 편입 — 버크셔 해서웨이 (Berkshire Hathaway)")).toBeTruthy();
+    expect(document.body.textContent).not.toMatch(/\p{Extended_Pictographic}|\p{Regional_Indicator}/u);
+  });
+});
