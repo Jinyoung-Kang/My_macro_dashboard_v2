@@ -3642,7 +3642,7 @@ function checkpointSummaryLines(summary: unknown): string[] | null {
     `요청한 자료 — ${CHECKPOINT_FEED.MINUTE} ${count(summary.feedMinute)} · ${CHECKPOINT_FEED.HOURLY} ${count(summary.feedHourly)} · `
       + `1분봉 비율 ${pct(summary.minutePct)}`,
     `부른 확인의 응답 — 그대로 둠(KEEP) ${count(summary.keep)} · 대신함(REPLACE) ${count(summary.replace)} · REPLACE 비율 ${pct(summary.replacePct)}`,
-    `장중 확인이 낸 주문 ${formatWithUnit(numberOf(summary.orders), 0, "건")} — 아침 결정의 시점 선택을 재는 M1과 시점 표에는 세지 않습니다(장중 확인의 효과는 M8).`,
+    `장중 확인이 낸 주문 가운데 실행 감사에 든 것 ${formatWithUnit(numberOf(summary.orders), 0, "건")}(감사 작업이 5분마다 돈 뒤 셈) — 아침 결정의 시점 선택을 재는 M1과 시점 표에는 세지 않습니다(장중 확인의 효과는 M8).`,
     `서술 지표(M8)라 판정하지 않습니다 — 비율은 분모 ${count(summary.minRows)} 이상부터, 대신한 주문과 취소된 원래 주문의 비교는 아직 없습니다.`,
   ];
 }
