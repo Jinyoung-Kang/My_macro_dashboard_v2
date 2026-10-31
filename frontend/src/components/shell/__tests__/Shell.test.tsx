@@ -255,6 +255,8 @@ describe("본문", () => {
     expect(main.getAttribute("tabindex")).toBe("-1");
     expect(main.className).toContain("min-w-0");
     expect(main.className).toContain("overflow-x-hidden");
+    // 본문 안 sr-only 글(absolute)의 위치 기준 — 없으면 390px에서 페이지가 넓어지고 데스크톱에서 문서가 스크롤됐습니다.
+    expect(main.className.split(/\s+/)).toContain("relative");
     expect(within(main).getByText("대시보드 본문")).toBeTruthy();
   });
 
