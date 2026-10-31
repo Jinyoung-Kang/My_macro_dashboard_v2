@@ -10,7 +10,8 @@ import { MARKETS, sessionStatus, tradeDayFrom, tradeTimeFrom } from "./marketSes
 import { TABS } from "./nav";
 import { formatDollars, isTimedBook, primaryClaudeBook, withParticle } from "./paper";
 import { formatMoney, marketMeta, type PaperMarketCode } from "./paperMarket";
-import { bookAssetRow, type BookRow } from "./paperOverview";
+import { bookAssetRow, bookMonogram, type BookRow } from "./paperOverview";
+import { assetMonogram } from "./patternRows";
 import { paperMarketPath } from "./paperRoutes";
 import { presentText } from "./patterns";
 import type {
@@ -80,6 +81,8 @@ export type HomeRow = {
   staleReason?: string | null;
   warning?: string | null;
   href: string;
+  /** 왼쪽 아바타의 모노그램(티커 앞 글자 — `assetMonogram`). 모르면 null(아바타 칸 없음). */
+  avatarText?: string | null;
 };
 
 /** 유한한 숫자만 — null·undefined·NaN·Infinity는 null(0으로 바꾸지 않음). */
@@ -253,6 +256,7 @@ export function deltaDigits(deltaStr: string | null | undefined): number | null 
  *   장이 닫혀 배지에 적지 않은 지연은 툴팁(provenanceTitle)에 둡니다 — /macro 장 상태 배지의 툴팁과 같은 규칙(이어받은 값·실패는 없음).
  * - 이어받은 값은 "이전 값" 배지 + 사유(수집기가 비우면 "수집 실패" — cardNotices와 같음).
  * - 추정(isEstimated)·경고(warning)는 있으면 그대로 넘깁니다(배지는 반드시 보임).
+ * - 아바타는 티커 앞 글자(`assetMonogram` — 영문 티커가 없으면 이름 첫 글자). 장식이라 뜻은 이름이 나릅니다.
  */
 export function macroCardRow(item: MacroItem, clock: MarketClock, href: string = MARKET_HREF): HomeRow {
   const failed = item.status === "fail";
@@ -280,6 +284,7 @@ export function macroCardRow(item: MacroItem, clock: MarketClock, href: string =
     staleReason: stale ? (presentText(item.staleReason) ?? "수집 실패") : null,
     warning: joinPresent([failed ? "수집 실패" : null, item.warning]),
     href,
+    avatarText: assetMonogram({ name: item.name, ticker: item.ticker }),
   };
 }
 
@@ -317,8 +322,11 @@ export const PAPER_COMPARE_NOTE =
 /** 한국 탭의 계좌 행이 가는 화면 — 모의매매(한국) 개요. */
 export const PAPER_KR_HREF = paperMarketPath("KR");
 
-/** 홈의 계좌 행 — 모의매매 개요와 같은 행 규칙(lib/paperOverview bookAssetRow) + 모의매매 화면으로 가는 링크. */
-export type PaperHomeRow = BookRow & { href: string };
+/**
+ * 홈의 계좌 행 — 모의매매 개요와 같은 행 규칙(lib/paperOverview bookAssetRow) + 모의매매 화면으로 가는 링크 + 아바타 약칭(`bookMonogram`,
+ * 모르는 계좌면 null). 아바타는 홈에만 답니다 — 개요 계좌 행의 아바타는 장중 값 단계(명세 D1).
+ */
+export type PaperHomeRow = BookRow & { href: string; avatarText: string | null };
 
 export type PaperHomeModel = {
   /** 이 모델의 시장(히어로 탭). */
@@ -383,7 +391,7 @@ export function paperHomeModel(
   const context = available
     ? { pendingBackfill: overview?.pendingBackfill ?? [], quotes: overview?.quotes ?? null, ...(korea ? { market } : {}) }
     : {};
-  const rows: PaperHomeRow[] = books.map((book) => ({ ...bookAssetRow(book, context), href }));
+  const rows: PaperHomeRow[] = books.map((book) => ({ ...bookAssetRow(book, context), href, avatarText: bookMonogram(book.code) }));
 
   // 히어로는 그 시장의 기본 Claude 계좌(미국 계좌1·한국 kr_claude) — 계좌2(체결 시점 실험)는 행으로만 보입니다(계좌2 명세 §13-3).
   const claude = primaryClaudeBook(books);

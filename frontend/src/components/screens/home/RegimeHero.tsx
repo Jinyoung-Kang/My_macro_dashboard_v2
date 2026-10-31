@@ -44,6 +44,8 @@ export function RegimeHero() {
   return (
     <Hero
       label={TITLE}
+      // 값은 숫자가 아니라 판정 라벨이라 한 단계 작은 글자 단계(Hero valueKind)로 그립니다.
+      valueKind="label"
       // 판정 불가는 판정 난 라벨과 같은 잉크로 그리지 않습니다 — 중립색(브리프 §1.1 neutral = 변화 없음·판정 불가).
       value={model.known ? model.label : <span className="text-neutral">{model.label}</span>}
       verdict={model.summary}

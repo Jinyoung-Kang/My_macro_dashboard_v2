@@ -37,7 +37,7 @@ export function StoreStatusLine() {
   }
   if (!issues.data) {
     return (
-      <section aria-label={TITLE} className="min-w-0 rounded-xl border border-border bg-surface px-4 py-3">
+      <section aria-label={TITLE} className="min-w-0 rounded-card border border-border bg-surface px-5 py-4">
         <p className="text-sm font-medium text-text-2">{TITLE}</p>
         <div className="mt-2">
           {issues.error ? (
@@ -55,7 +55,7 @@ export function StoreStatusLine() {
     <section aria-label={TITLE} className="min-w-0">
       <Link
         href="/status"
-        className="group flex min-h-[54px] flex-wrap items-center gap-x-3 gap-y-1 rounded-xl border border-border bg-surface px-4 py-3 text-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus"
+        className="group flex min-h-16 flex-wrap items-center gap-x-3 gap-y-1 rounded-card border border-border bg-surface px-5 py-4 text-sm hover:bg-surface-2 motion-safe:transition-colors motion-safe:duration-150 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus"
       >
         <span className="font-medium text-text-2 group-hover:underline">{TITLE}</span>
         <span className={`tabular-nums font-semibold ${TONE[model.tone]}`}>

@@ -46,6 +46,16 @@ describe("Hero", () => {
     expect(region.className).toContain("rounded-card");
   });
 
+  it("valueKind='label'이면 판정 라벨 — 한 단계 작은 글자(좁은 화면 28px·sm 이상 36px), 숫자 자리 맞춤 없음", () => {
+    render(<Hero label="오늘의 국면" value="후퇴 경계 (Late cycle)" valueKind="label" verdict="유동성이 빠지고 있습니다." />);
+    const value = screen.getByText("후퇴 경계 (Late cycle)");
+    expect(value.className).toContain("text-title-1");
+    expect(value.className).toContain("sm:text-display-sm");
+    expect(value.className).not.toContain("tabular-nums");
+    expect(value.className).not.toContain("sm:text-display ");
+    expect(screen.getByText("유동성이 빠지고 있습니다.")).toBeTruthy();
+  });
+
   it("headingLevel=3이면 h3", () => {
     render(<Hero label="오늘의 국면" value="확장" headingLevel={3} />);
     expect(screen.getByRole("heading", { level: 3, name: "오늘의 국면" })).toBeTruthy();

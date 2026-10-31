@@ -31,7 +31,7 @@ import {
   unreadText,
 } from "../home";
 import { TABS } from "../nav";
-import { bookAssetRow, PENDING_BACKFILL_WARNING } from "../paperOverview";
+import { bookAssetRow, bookMonogram, PENDING_BACKFILL_WARNING } from "../paperOverview";
 import { assetRowModel } from "../patternRows";
 import { provenanceText } from "../patterns";
 import {
@@ -134,7 +134,15 @@ describe("macroCardRow — 매크로 카드 → 자산 행", () => {
       staleReason: null,
       warning: null,
       href: MARKET_HREF,
+      // 아바타는 티커 앞 글자(assetMonogram — 앞의 ^는 빼고 세 글자까지)
+      avatarText: "GSP",
     });
+  });
+
+  it("아바타 — 영문 티커가 없으면 이름 첫 글자, 이름도 없으면 그리지 않는다(null)", () => {
+    expect(macroCardRow(macroItem({ key: "kr", name: "한국 기준금리", ticker: null }), CLOCK).avatarText).toBe("한");
+    expect(macroCardRow(macroItem({ key: "fx", name: "원/달러", ticker: "KRW=X" }), CLOCK).avatarText).toBe("KRW");
+    expect(macroCardRow(macroItem({ key: "x", name: "", ticker: "" }), CLOCK).avatarText).toBeNull();
   });
 
   it("닫힌 장의 이틀 지난 종가·'장 밖' 참고 시세에 '실시간'을 찍지 않는다 — 열린 장만 '개장 · 실시간|N분 지연'", () => {
@@ -360,8 +368,15 @@ describe("paperHomeModel — 모의매매(미국)", () => {
     overview.quotes!.stale = true;
     const model = paperHomeModel(overview, paperStatus(true));
     expect(model.rows).toEqual(
-      overview.books!.map((book) => ({ ...bookAssetRow(book, { pendingBackfill: ["bench_mix"], quotes: overview.quotes }), href: PAPER_HREF })),
+      overview.books!.map((book) => ({
+        ...bookAssetRow(book, { pendingBackfill: ["bench_mix"], quotes: overview.quotes }),
+        href: PAPER_HREF,
+        avatarText: bookMonogram(book.code),
+      })),
     );
+    // 아바타 약칭은 계좌 코드마다(lib/paperOverview bookMonogram) — 장식이고 뜻은 계좌 이름이 나릅니다.
+    expect(model.rows.map((row) => row.avatarText)).toEqual(overview.books!.map((book) => bookMonogram(book.code)));
+    expect(model.rows.find((row) => row.id === "claude")?.avatarText).toBe("C1");
     // 사후 체결을 기다리는 벤치마크에는 그 경고가 붙습니다.
     expect(model.rows.find((row) => row.id === "bench_mix")?.warning).toBe(PENDING_BACKFILL_WARNING);
     expect(model.rows.find((row) => row.id === "rules")?.warning).toBeNull();

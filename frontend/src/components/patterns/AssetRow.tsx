@@ -137,7 +137,8 @@ export function AssetRow({
           <Sparkline values={row.spark} width={64} height={24} />
         </span>
       ) : null}
-      <span id={parts?.value} className="flex shrink-0 flex-col items-end">
+      {/* 값·칩은 늘 오른쪽 한 덩어리 — 좁은 화면에서 아바타·이름과 한 줄에 들지 않아 다음 줄로 내려가도 왼쪽이 아니라 오른쪽 끝에 둡니다(ml-auto). */}
+      <span id={parts?.value} className="ml-auto flex shrink-0 flex-col items-end">
         {model.valueText === null ? (
           <span className="text-[15px] font-semibold leading-5 text-text-3">
             <Empty />

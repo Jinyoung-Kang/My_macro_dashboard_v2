@@ -36,6 +36,8 @@ export type HeroScrub = {
  * - `placeholder`(선택)를 주면 값·변화·판정·배지 대신 그것(불러오는 중 Skeleton·오류)을 그리고, 탭·본문 자리는 그대로 둡니다 — 값을 다시 읽는
  *   동안에도 같은 틀이라 탭(시장 고르기 등)이 다시 마운트되지 않아 초점을 잃지 않습니다.
  * - `tabsPlacement`(선택, 기본 "above"): 탭을 본문 위(홈의 시장 고르기)에 둘지, 본문 아래(차트 아래의 기간 알약 — 명세 §1)에 둘지.
+ * - `valueKind`(선택, 기본 "number"): "label"이면 값이 숫자가 아니라 판정 라벨(예: 홈 국면 '후퇴 경계 (Late cycle)')이라 한 단계 작게
+ *   (좁은 화면 28px·sm 이상 36px) 그리고 숫자 자리 맞춤(tabular-nums)을 하지 않습니다 — 44px 글자 라벨은 반 폭 히어로에서 세 줄로 접혔습니다.
  * - `scrub`(선택, 명세 §4·D9): 히어로 차트를 문지르는 동안의 그 점 값(`HeroScrub`). 값이 있으면 큰 숫자를 그 값으로, 변화 칩을 '기간 시작 대비'로
  *   바꾸고 날짜를 옆에 적습니다. 판정 글과 meta 배지(추정·이전 값)는 그대로 보입니다(원칙 A3). 큰 숫자에는 aria-live를 달지 않습니다 —
  *   지금 값은 읽어 주기용 '지금 값 …'으로 늘 남고, 문지른 점은 따로 둔 조용한 알림 영역(aria-live="polite")이 '날짜 값'으로 읽습니다
@@ -51,6 +53,7 @@ export function Hero({
   meta,
   tabs,
   tabsPlacement = "above",
+  valueKind = "number",
   headingLevel = 2,
   placeholder,
   scrub,
@@ -65,6 +68,8 @@ export function Hero({
   tabs?: ReactNode;
   /** 탭 자리 — 본문 위(기본) 또는 아래. */
   tabsPlacement?: "above" | "below";
+  /** 값의 종류 — 숫자(기본) 또는 판정 라벨(한 단계 작은 글자, 숫자 자리 맞춤 없음). */
+  valueKind?: "number" | "label";
   headingLevel?: 2 | 3;
   /** 값 자리에 대신 그릴 것(불러오는 중·오류) — 주면 값·변화·판정·배지는 그리지 않습니다. */
   placeholder?: ReactNode;
@@ -109,7 +114,7 @@ export function Hero({
         </div>
       ) : (
         <div className="mt-2 flex flex-wrap items-baseline gap-x-2 gap-y-1">
-          <span className={`text-display-sm tabular-nums sm:text-display ${missing ? "text-text-3" : "text-text"}`}>
+          <span className={`${valueKind === "label" ? "text-title-1 sm:text-display-sm" : "text-display-sm tabular-nums sm:text-display"} ${missing ? "text-text-3" : "text-text"}`}>
             {missing && !givenEmpty ? <Empty /> : value}
           </span>
           {!missing && unit ? <span className="text-base text-text-3">{unit}</span> : null}

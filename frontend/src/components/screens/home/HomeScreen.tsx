@@ -18,10 +18,10 @@ import { StoreStatusLine } from "./StoreStatusLine";
 export default function HomeScreen() {
   const owner = isOwner(useSessionUser());
   return (
-    <div className="flex min-w-0 flex-col gap-6">
+    <div className="flex min-w-0 flex-col gap-6 lg:gap-8">
       <h1 className="sr-only">홈</h1>
       {/* 회원은 모의매매 히어로가 없으므로 국면 히어로가 한 줄을 다 씁니다(반 칸 빈자리를 남기지 않음). */}
-      <div className={`grid min-w-0 gap-4 ${owner ? "lg:grid-cols-2" : ""}`}>
+      <div className={`grid min-w-0 gap-6 ${owner ? "lg:grid-cols-2" : ""}`}>
         <RegimeHero />
         {owner ? <PaperHero /> : null}
       </div>

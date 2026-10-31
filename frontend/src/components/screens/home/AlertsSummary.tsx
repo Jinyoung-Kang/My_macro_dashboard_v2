@@ -36,10 +36,10 @@ export function AlertsSummary() {
     body = <p className="text-sm text-text-2">새 알림이 없습니다</p>;
   } else {
     body = (
-      // 구분선은 카드 가장자리까지(-mx-5·sm:-mx-6 = 카드 안쪽 여백), 줄 글자는 카드 글과 같은 세로줄(px-5·sm:px-6)에 둡니다.
-      <ul className="-mx-5 divide-y divide-border border-y border-border sm:-mx-6">
+      // 구분선은 카드 가장자리까지(-mx-5·lg:-mx-6 = 카드 안쪽 여백), 줄 글자는 카드 글과 같은 세로줄(px-5·lg:px-6)에 둡니다.
+      <ul className="-mx-5 divide-y divide-border border-y border-border lg:-mx-6">
         {rows.map((row) => (
-          <li key={row.id} className="flex min-h-[54px] items-start gap-3 px-5 py-2 sm:px-6">
+          <li key={row.id} className="flex min-h-14 items-start gap-3 px-5 py-2.5 lg:px-6">
             {/* 점은 보조 표시이고 뜻은 옆의 "읽음·안 읽음·지난 사건" 글자로 전합니다(색만으로 전하지 않음). 읽지 않은 수에 드는 것만 칠합니다. */}
             <span
               aria-hidden="true"
