@@ -3264,6 +3264,7 @@ export const checkpointStatusLabel = (status: string | null | undefined) => chec
 /** 장중 확인 행의 사유 코드(서버 'CODE — 설명'의 앞부분 — PaperCheckpointJob·ClaudeBookService) → 한국어. */
 const CHECKPOINT_REASON: Record<string, string> = {
   WINDOW_MISSED: "호출 창(확인 시각 +2~+20분)을 놓침 — 서버 꺼짐·늦게 켜짐",
+  JOB_ERROR: "부르기 전 작업 오류가 창 끝까지 이어짐(서버는 켜져 있었음)",
   STALE_SESSION: "지난 세션의 계획 — 그 세션에 부르지 못함",
   NO_WATCH_SNAPSHOT: "확인 시각 뒤에 받은 감시 1분봉이 창 끝까지 없음",
   NO_FRESH_QUOTES: "그 세션의 시간별 관측치가 창 끝까지 없음",

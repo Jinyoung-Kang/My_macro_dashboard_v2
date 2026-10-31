@@ -447,7 +447,6 @@ class PaperCheckpointJobTest {
     }
 
     @Test
-    @Disabled("리뷰 OPS-5 재현 — 부르기 전 예외가 창 끝까지 이어지면 사유가 WINDOW_MISSED(서버 꺼짐)로 적힘. 수정 커밋에서 뗌")
     @DisplayName("부르기 전 작업 오류(예: 매크로 섹션 예외)가 창 끝까지 이어지면 EXPIRED JOB_ERROR(서버 꺼짐 WINDOW_MISSED가 아님) — 부르지 않음")
     void errorBeforeTheCallExpiresAsJobError() {
         when(packets.macroSection(any(), any())).thenThrow(new IllegalStateException("시험: 매크로 섹션 오류"));

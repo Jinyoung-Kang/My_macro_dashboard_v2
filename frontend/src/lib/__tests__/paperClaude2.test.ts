@@ -477,6 +477,8 @@ describe("🧪 장중 확인(단계 2)", () => {
     expect(checkpointReasonText("API_ERROR — 재시도 없음")).toBe("API 오류 — 재시도 없음 (API_ERROR)");
     expect(checkpointReasonText("API_ERROR — 응답을 받은 뒤 검증·저장 중 오류(과금된 응답 — 재시도 없음)"))
       .toBe("API 오류 — 재시도 없음 (API_ERROR)");
+    expect(checkpointReasonText("JOB_ERROR — 부르기 전 작업 오류가 창 끝까지 이어짐(서버는 켜져 있었음): java.lang.IllegalStateException: x"))
+      .toBe("부르기 전 작업 오류가 창 끝까지 이어짐(서버는 켜져 있었음) (JOB_ERROR)");
     expect(checkpointReasonText("CALLED_NOT_RECORDED — 부른 뒤 결정을 기록하지 못함(과금된 응답 — 다시 부르지 않음)"))
       .toBe("부른 뒤 결정을 기록하지 못함 — 과금된 응답이라 다시 부르지 않음 (CALLED_NOT_RECORDED)");
     expect(checkpointReasonText("SUPERSEDED — 다음 결정이 대신함(장중 확인 요청 없음)")).toContain("(SUPERSEDED)");

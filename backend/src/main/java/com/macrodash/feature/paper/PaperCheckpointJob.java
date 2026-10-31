@@ -48,7 +48,7 @@ import java.util.concurrent.locks.ReentrantLock;
  *   <li><b>꺼짐</b>: {@code dashboard.paper.enabled=false}면 아무것도 읽거나 쓰지 않습니다(로컬 v2 — {@code PaperRiskJob} 선례). 설정
  *       {@code claude2.enabled}·{@code claude2.checkpoints}가 꺼져 있으면 부르지 않고, PLANNED 행은 그 창이 끝난 뒤 SKIPPED {@code CHECKPOINTS_OFF}.</li>
  *   <li><b>놓침</b>(EXPIRED): 지난 세션의 행 {@code STALE_SESSION}, 창이 끝남 {@code WINDOW_MISSED}(서버 꺼짐·늦게 켜짐 — 창 안에서 자료를 기다리던
- *       행은 그 사유 {@code NO_WATCH_SNAPSHOT}·{@code NO_FRESH_QUOTES}, 부르기 전 작업 오류가 이어진 행은 {@code JOB_ERROR}), 결정 주기 소상한
+ *       행은 그 사유 {@code NO_WATCH_SNAPSHOT}·{@code NO_FRESH_QUOTES}, 마지막 주기가 부르기 전 작업 오류로 끝난 행은 {@code JOB_ERROR}), 결정 주기 소상한
  *       {@code CYCLE_CAP}·하루 상한 {@code CALL_CAP}(바로 — 재시도가 없어 기다릴 까닭이 없음), 부른 뒤 결정을 기록하지 못함
  *       {@code CALLED_NOT_RECORDED}.</li>
  *   <li><b>건너뜀</b>(SKIPPED): 계좌2가 운용 중이 아님 {@code BOOK_NOT_ACTIVE}, T가 E 마감 − 30분 뒤 {@code LATE_CHECKPOINT}, E에 세션 봉이 없음
@@ -96,6 +96,9 @@ public class PaperCheckpointJob {
     static final String LATE_CHECKPOINT = "LATE_CHECKPOINT — 확인 시각이 그 세션 마감 30분 전보다 늦음";
     static final String NO_SESSION_BARS = "NO_SESSION_BARS — 그 세션의 봉이 없음(임시 휴장)";
     static final String CHECKPOINTS_OFF = "CHECKPOINTS_OFF — 설정 claude2.checkpoints·claude2.enabled가 꺼져 있음";
+    static final String JOB_ERROR = "JOB_ERROR — 부르기 전 작업 오류가 창 끝까지 이어짐(서버는 켜져 있었음)";
+    /** {@link #JOB_ERROR} 뒤에 붙이는 원인 글자 수 상한. */
+    static final int JOB_ERROR_CAUSE_CHARS = 200;
     static final String CALLED_NOT_RECORDED = "CALLED_NOT_RECORDED — 부른 뒤 결정을 기록하지 못함(과금된 응답 — 다시 부르지 않음)";
     /** 응답을 받은 뒤 쓰기가 실패해 실패 결정 행(API_ERROR·AFTER_RESPONSE)으로 끝낸 행의 DONE 사유. */
     static final String AFTER_RESPONSE = "API_ERROR — 응답을 받은 뒤 검증·저장 중 오류(과금된 응답 — 재시도 없음)";
@@ -210,6 +213,12 @@ public class PaperCheckpointJob {
             } catch (RuntimeException e) {
                 error = c.sessionDate() + ": " + e;
                 log.warn("장중 확인 {} 처리 실패 — 다음 주기에 다시 봅니다: {}", c.sessionDate(), e.toString());
+                if (!called.contains(key(c))) {
+                    // 부르기 전 오류 — 창 끝까지 이어지면 '서버 꺼짐'(WINDOW_MISSED)이 아니라 이 사유로 EXPIRED(리뷰 OPS-5).
+                    String cause = e.toString();
+                    waiting.put(key(c), JOB_ERROR + ": " + (cause.length() > JOB_ERROR_CAUSE_CHARS
+                            ? cause.substring(0, JOB_ERROR_CAUSE_CHARS) + "…" : cause));
+                }
             }
         }
         if (!changes.isEmpty() || error != null) {
