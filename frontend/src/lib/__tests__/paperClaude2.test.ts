@@ -38,6 +38,7 @@ import {
   decisionStatusBadge,
   executionAdvantageText,
   executionByOrder,
+  executionCheckpointRows,
   executionSummaryView,
   fillBadges,
   fillRungText,
@@ -621,5 +622,41 @@ describe("🧪 장중 확인(단계 2)", () => {
     });
     expect(enough?.checkpoints?.[0]).toContain("이용률(부름 ÷ 끝남) 62.5%");
     expect(enough?.checkpoints?.[2]).toContain("REPLACE 비율 60.0%");
+  });
+
+  it("장중 확인 기록 표 — 서버 값 그대로(놓침 사유 한국어·확인 결정·KEEP/REPLACE·대신한 수·지연), 모르는 값은 '—', 요약이 없는 응답(계좌1)은 null", () => {
+    expect(executionCheckpointRows(EXECUTION)).toBeNull();
+    expect(executionCheckpointRows(null)).toBeNull();
+    const summary = {
+      definition: "M8", minRows: 5, rows: 2, planned: 0, finished: 2, called: 1, expired: 1, skipped: 0, calledPct: null,
+      feedMinute: 2, feedHourly: 0, minutePct: null, keep: 0, replace: 1, replacePct: null,
+    };
+    const rows = executionCheckpointRows({
+      ...EXECUTION,
+      summary: { ...EXECUTION.summary!, checkpoints: summary },
+      checkpoints: [
+        {
+          session: "2026-11-03", atEt: "10:30", atKst: "2026-11-04 00:30 KST", feed: "MINUTE", watch: ["AAPL"], question: null,
+          status: "EXPIRED", reason: "WINDOW_MISSED — 호출 창(+2~+20분)을 놓침(서버 꺼짐·늦게 켜짐)", sourceDecisionId: 40,
+          decisionId: null, decisionStatus: null, action: null, supersededOrders: null, lagSeconds: null, calledAtKst: null,
+        },
+        {
+          session: "2026-11-02", atEt: "10:00", atKst: "2026-11-03 00:00 KST", feed: "MINUTE", watch: ["AAPL"], question: null,
+          status: "DONE", reason: null, sourceDecisionId: 39, decisionId: 52, decisionStatus: "OK", action: "REPLACE",
+          supersededOrders: 2, lagSeconds: 75, calledAtKst: "2026-11-03 00:03 KST",
+        },
+      ],
+    });
+    expect(rows).toHaveLength(2);
+    expect(rows?.[0]).toMatchObject({
+      at: "2026-11-03 · 10:30 ET · 2026-11-04 00:30 KST", feed: "감시 1분봉(5분 수집, 잰 지연)",
+      reason: "호출 창(확인 시각 +2~+20분)을 놓침 — 서버 꺼짐·늦게 켜짐 (WINDOW_MISSED)", decision: "—", action: null, superseded: "—",
+      lag: "—", calledAt: "—",
+    });
+    expect(rows?.[0].status.label).toBe("놓침");
+    expect(rows?.[1]).toMatchObject({ reason: "—", superseded: "2건", lag: "1분 15초", calledAt: "2026-11-03 00:03" });
+    expect(rows?.[1].decision).toMatch(/^#52 · /);
+    expect(rows?.[1].action?.label).toBe("대신함(REPLACE)");
+    expect(executionCheckpointRows({ ...EXECUTION, summary: { ...EXECUTION.summary!, checkpoints: summary } })).toEqual([]);
   });
 });

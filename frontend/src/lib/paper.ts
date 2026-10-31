@@ -3638,6 +3638,58 @@ function checkpointSummaryLines(summary: unknown): string[] | null {
   ];
 }
 
+/** 장중 확인 기록 표의 한 줄(실행 감사 checkpoints[] — 서버 값 그대로, 모르는 값은 "—"). */
+export interface ExecutionCheckpointRow {
+  key: string;
+  /** "2026-11-02 · 10:30 ET · 2026-11-03 00:30 KST". */
+  at: string;
+  feed: string;
+  status: Badge;
+  /** 사유 한국어(코드는 괄호) — 없으면 "—". */
+  reason: string;
+  /** "#52 · 주문 없음" — 부르지 않았으면 "—". */
+  decision: string;
+  /** 그대로 둠(KEEP)·대신함(REPLACE) — 실패 응답·부르지 않음은 null. */
+  action: Badge | null;
+  /** 대신한 대기 주문 수("2건") — 모르면 "—". */
+  superseded: string;
+  lag: string;
+  calledAt: string;
+}
+
+/**
+ * 🧪 장중 확인 기록(실행 감사 응답의 checkpoints[] — 계좌2 최근 20행, 단계 2)을 표 줄로 — 그날 확인이 놓침·건너뜀으로 끝났는지와 사유를 상태 줄이 다음
+ * 세션으로 넘어간 뒤에도 볼 수 있게(리뷰 S1 — 놓침·건너뜀은 결정 행이 없어 결정 로그에도 없음). 장중 확인 요약(summary.checkpoints)이 없는 응답
+ * (계좌1·칸이 없는 백엔드)이면 null(표를 그리지 않음). 화면은 계산하지 않습니다.
+ */
+export function executionCheckpointRows(response: PaperExecutionResponse | null | undefined): ExecutionCheckpointRow[] | null {
+  if (!response?.available || !isRecord(response.summary?.checkpoints)) return null;
+  return listOf(response.checkpoints).filter(isRecord).map((row, index): ExecutionCheckpointRow => {
+    const session = textOf(row.session);
+    const action = textOf(row.action);
+    const decisionId = numberOf(row.decisionId);
+    const decisionStatus = textOf(row.decisionStatus);
+    const superseded = numberOf(row.supersededOrders);
+    const lag = numberOf(row.lagSeconds);
+    const calledAt = textOf(row.calledAtKst);
+    return {
+      key: `${session ?? "?"}-${index}`,
+      at: `${session ?? EMPTY} · ${checkpointAt(textOf(row.atEt), textOf(row.atKst))}`,
+      feed: checkpointFeedLabel(textOf(row.feed)),
+      status: checkpointStatusBadge(textOf(row.status)),
+      reason: checkpointReasonText(textOf(row.reason)),
+      decision: decisionId === null ? EMPTY
+        : `#${decisionId}${decisionStatus ? ` · ${decisionStatusBadge(decisionStatus, "CHECKPOINT").label}` : ""}`,
+      action: action === "KEEP" || action === "REPLACE"
+        ? { key: action, label: action === "KEEP" ? "그대로 둠(KEEP)" : "대신함(REPLACE)", className: TONE[action === "KEEP" ? "muted" : "info"] }
+        : null,
+      superseded: superseded === null ? EMPTY : `${formatNumber(superseded, 0)}건`,
+      lag: lag === null ? EMPTY : formatLatency(lag * 1000),
+      calledAt: calledAt ? formatKst(calledAt) : EMPTY,
+    };
+  });
+}
+
 /** 실행 감사 주문 줄을 주문 번호로 — 보유·체결 탭의 계좌2 칸(목표 시각·계좌1식 대비)이 주문·체결 행과 맞춥니다. */
 export function executionByOrder(response: PaperExecutionResponse | null | undefined): Map<number, PaperExecutionOrder> {
   const out = new Map<number, PaperExecutionOrder>();

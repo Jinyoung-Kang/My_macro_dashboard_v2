@@ -326,6 +326,37 @@ describe("개요 — 체결 시점 실험·S = 100·한계", () => {
     expect(screen.getByRole("table", { name: "체결 시점 실험" })).toBeTruthy();
   });
 
+  it("계좌2면 M8 줄 아래 장중 확인 기록 표 — 지난 세션 확인의 놓침 사유·확인 결정·응답을 상태 줄이 넘어간 뒤에도 본다, 계좌1이면 표 없음", async () => {
+    const base = execution("claude2", [summaryLine("NEXT_OPEN")]);
+    reads["/api/paper/books/claude2/execution"] = () => Promise.resolve({
+      ...base,
+      summary: {
+        ...base.summary,
+        checkpoints: {
+          definition: "M8", minRows: 5, rows: 1, planned: 0, finished: 1, called: 0, expired: 1, skipped: 0, calledPct: null,
+          feedMinute: 1, feedHourly: 0, minutePct: null, keep: 0, replace: 0, replacePct: null,
+        },
+      },
+      checkpoints: [{
+        session: "2026-11-02", atEt: "10:30", atKst: "2026-11-03 00:30 KST", feed: "MINUTE", watch: ["AAPL"], question: null,
+        status: "EXPIRED", reason: "WINDOW_MISSED — 호출 창(+2~+20분)을 놓침(서버 꺼짐·늦게 켜짐)", sourceDecisionId: 40,
+        decisionId: null, decisionStatus: null, action: null, supersededOrders: null, lagSeconds: null, calledAtKst: null,
+      }],
+    });
+    reads["/api/paper/overview"] = () => Promise.resolve(overview(CLAUDE2_ACTIVE));
+    render(<PaperPage />);
+
+    const table = await screen.findByRole("table", { name: "장중 확인 기록(최근 20행)" });
+    expect(headersOf(table)).toEqual(["세션 · 확인 시각", "자료", "상태 · 사유", "확인 결정", "응답 · 대신한 주문", "지연", "부른 시각"]);
+    expect(within(table).getByRole("rowheader").textContent).toBe("2026-11-02 · 10:30 ET · 2026-11-03 00:30 KST");
+    expect(within(table).getByText("놓침")).toBeTruthy();
+    expect(within(table).getByText("호출 창(확인 시각 +2~+20분)을 놓침 — 서버 꺼짐·늦게 켜짐 (WINDOW_MISSED)")).toBeTruthy();
+
+    fireEvent.click(within(screen.getByRole("group", { name: "실행 감사 계좌" })).getByRole("button", { name: "Claude 계좌1" }));
+    expect(await screen.findByText("다음 종가")).toBeTruthy();
+    expect(screen.queryByRole("table", { name: "장중 확인 기록(최근 20행)" })).toBeNull();
+  });
+
   it("고른 시점(M1) 본 줄이 문턱 아래면 '—'와 판단 보류(표본 수와 문턱)", async () => {
     reads["/api/paper/overview"] = () => Promise.resolve(overview(CLAUDE2_NOT_STARTED));
     render(<PaperPage />);

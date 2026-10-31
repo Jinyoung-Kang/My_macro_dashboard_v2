@@ -6,8 +6,11 @@ import { Banner, Card, ErrorState, Freshness, Loading } from "@/components/ui";
 import { useApi } from "@/hooks/useApi";
 import { endpoints } from "@/lib/endpoints";
 import {
+  type Badge,
   EXECUTION_VERDICT_RULE,
+  type ExecutionCheckpointRow,
   type ExecutionTimingRow,
+  executionCheckpointRows,
   executionSummaryView,
   isTimedBook,
   PAPER_SOURCES,
@@ -54,6 +57,45 @@ const columns = (first: string, firstClassName: string): readonly Column<Executi
 const CHOSEN_COLUMNS = columns("구분", "min-w-[11rem] break-keep");
 const TIMING_COLUMNS = columns("시점", "whitespace-nowrap");
 
+function BadgeChip({ badge }: { badge: Badge }) {
+  return (
+    <span title={badge.title} className={`whitespace-nowrap rounded-sm border px-1.5 py-px text-[10px] ${badge.className}`}>
+      {badge.label}
+    </span>
+  );
+}
+
+/** 장중 확인 기록 표 칸 — 값은 서버 값 그대로(lib/paper executionCheckpointRows), 모르는 값은 "—". */
+const CHECKPOINT_COLUMNS: readonly Column<ExecutionCheckpointRow>[] = [
+  { key: "at", header: "세션 · 확인 시각", rowHeader: true, className: "min-w-[12rem] break-keep", cell: (row) => row.at },
+  { key: "feed", header: "자료", className: "min-w-[8rem] break-keep text-xs", cell: (row) => row.feed },
+  {
+    key: "status",
+    header: "상태 · 사유",
+    className: "min-w-[14rem] break-keep",
+    cell: (row) => (
+      <span className="flex flex-wrap items-center gap-1">
+        <BadgeChip badge={row.status} />
+        <span className="text-xs">{row.reason}</span>
+      </span>
+    ),
+  },
+  { key: "decision", header: "확인 결정", className: "whitespace-nowrap", cell: (row) => row.decision },
+  {
+    key: "action",
+    header: "응답 · 대신한 주문",
+    className: "whitespace-nowrap",
+    cell: (row) => (
+      <span className="flex flex-wrap items-center gap-1">
+        {row.action ? <BadgeChip badge={row.action} /> : <span className="text-muted">—</span>}
+        <span className="tabular-nums">{row.superseded}</span>
+      </span>
+    ),
+  },
+  { key: "lag", header: "지연", align: "right", className: "whitespace-nowrap", cell: (row) => row.lag },
+  { key: "calledAt", header: "부른 시각", className: "whitespace-nowrap", cell: (row) => row.calledAt },
+];
+
 /**
  * 🧪 체결 시점 실험(미국 Claude 계좌2 — 계좌2 명세 §13-3·§14, ADR 0022 결정 13) — GET /api/paper/books/{code}/execution의 요약을 시점마다 한 줄로.
  *
@@ -63,7 +105,9 @@ const TIMING_COLUMNS = columns("시점", "whitespace-nowrap");
  * 보내고 화면은 '—'와 '판단 보류'로 적습니다. 값이 있어도 화면은 "도움이 됐다/손해였다"를 정하지 않습니다 — 사전 등록 판정(§14-3)은 8주 뒤 M1로 하고,
  * 그 문턱은 설명 문구로만 적습니다. 시가(NEXT_OPEN)는 대리값 배지(M1 본 줄은 센 체결에 시가 체결이 있을 때).
  *
- * 계좌2면 그 사이에 장중 확인(M8 — 단계 2: 부름·놓침·건너뜀, 요청한 자료, KEEP/REPLACE)을 서버가 센 수 그대로 서술로만 적습니다(판정 없음).
+ * 계좌2면 그 사이에 장중 확인(M8 — 단계 2: 부름·놓침·건너뜀, 요청한 자료, KEEP/REPLACE)을 서버가 센 수 그대로 서술로만 적고(판정 없음), 그 아래에
+ * 장중 확인 기록(최근 20행 — 세션·시각·자료·상태와 사유·확인 결정·응답·지연)을 표로 둡니다. 상태 줄은 마감 뒤 다음 세션으로 넘어가고 놓침·건너뜀은
+ * 결정 로그에 없어서, 지난 세션 확인이 어떻게 끝났는지는 이 표에서 봅니다.
  *
  * 계좌2가 출발하기 전에도 계좌1 주문의 반사실(기준 분포 — 단계 0부터)을 볼 수 있게 계좌를 고릅니다(처음엔 계좌2).
  */
@@ -76,6 +120,7 @@ export function ExecutionExperimentCard({ books }: { books: readonly PaperBookSu
   const execution = useApi<PaperExecutionResponse>(code ? endpoints.paper.execution(code, SUMMARY_LIMIT) : null, 300_000);
   if (!code) return null;
   const view = executionSummaryView(execution.data);
+  const checkpointRows = executionCheckpointRows(execution.data);
 
   return (
     <Card
@@ -130,6 +175,18 @@ export function ExecutionExperimentCard({ books }: { books: readonly PaperBookSu
               <ul className="flex flex-col gap-0.5 text-xs text-body">
                 {view.checkpoints.map((line) => <li key={line}>{line}</li>)}
               </ul>
+              {checkpointRows && (
+                <div className="mt-2">
+                  <DataTable<ExecutionCheckpointRow>
+                    columns={CHECKPOINT_COLUMNS}
+                    rows={checkpointRows}
+                    rowKey={(row) => row.key}
+                    caption="장중 확인 기록(최근 20행)"
+                    scrollHint="overflow"
+                    emptyText="아직 장중 확인 행이 없습니다."
+                  />
+                </div>
+              )}
             </section>
           )}
           <h3 className="mb-1 text-xs font-semibold text-text-2">시점마다의 반사실 — M2의 기준(판정 아님)</h3>
