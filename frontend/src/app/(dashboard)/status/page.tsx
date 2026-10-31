@@ -15,7 +15,7 @@ import {
   SourceBadge,
   Table,
 } from "@/components/ui";
-import { AlertTriangleIcon, CheckCircleIcon, SkipIcon, StatusIcon, StatusText, XCircleIcon } from "@/components/ui/icons";
+import { AlertTriangleIcon, CheckCircleIcon, ClockIcon, SkipIcon, StatusIcon, StatusText, XCircleIcon } from "@/components/ui/icons";
 import { useApi } from "@/hooks/useApi";
 import { useRefreshSignal } from "@/hooks/useRefreshSignal";
 import { useAsyncAction } from "@/hooks/useAsyncAction";
@@ -144,9 +144,14 @@ export default function StatusPage() {
           </span>
         }
       >
+        {/* 시작·진행 중 안내는 결과가 아니라 시계 아이콘(중립 색) — '알 수 없음'의 점선 원을 붙이지 않습니다. */}
         {message && (
           <p className="mb-3 text-xs">
-            <StatusText tone={messageTone} iconSize={12}>{message}</StatusText>
+            {messageTone === "progress" ? (
+              <StatusText tone="neutral" icon={<ClockIcon size={12} />}>{message}</StatusText>
+            ) : (
+              <StatusText tone={messageTone} iconSize={12}>{message}</StatusText>
+            )}
           </p>
         )}
         <Table

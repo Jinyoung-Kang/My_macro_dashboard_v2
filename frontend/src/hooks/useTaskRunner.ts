@@ -6,6 +6,9 @@ import { apiGet, apiPost } from "@/lib/api";
 import { endpoints } from "@/lib/endpoints";
 import { taskDoneMessage, waitForTaskRun, type TaskRunRow, type TaskTone } from "@/lib/taskRun";
 
+/** 수동 실행 안내의 톤 — 끝난 실행의 결과 톤(TaskTone)과, 결과가 아직 없는 시작·진행 중 안내(progress). */
+export type TaskMessageTone = TaskTone | "progress";
+
 /**
  * 수집 태스크 하나를 수동으로 실행하고 끝날 때까지 지켜봅니다.
  *
@@ -15,18 +18,19 @@ import { taskDoneMessage, waitForTaskRun, type TaskRunRow, type TaskTone } from 
  *
  * @param onFinished 확인이 끝나면(끝났든 아직 진행 중이든) 부릅니다. 화면 전체 새로고침에 씁니다
  * @returns `{ running, message, messageTone, runTask }` — running은 실행 중인 태스크 이름(없으면 null),
- *          messageTone은 안내의 톤(끝난 실행의 결과 · 시작·진행 중은 neutral · 요청 실패는 danger) — 화면이 아이콘·색으로 그립니다
+ *          messageTone은 안내의 톤(끝난 실행의 결과 · 시작·진행 중은 progress · 요청 실패는 danger) — 화면이 아이콘·색으로 그립니다.
+ *          시작·진행 중을 결과의 neutral('알 수 없음' — 점선 원)과 따로 두는 까닭: 같은 톤이면 '실행을 시작했습니다'에 '없음' 아이콘이 붙었습니다.
  */
 export function useTaskRunner(onFinished: () => void) {
   const [running, setRunning] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
-  const [messageTone, setMessageTone] = useState<TaskTone>("neutral");
+  const [messageTone, setMessageTone] = useState<TaskMessageTone>("progress");
   const mounted = useMountedRef();
 
   const runTask = async (taskName: string) => {
     setRunning(taskName);
     setMessage(null);
-    setMessageTone("neutral");
+    setMessageTone("progress");
     try {
       const started = await apiPost<{ baselineStartedAt?: string | null }>(endpoints.status.runTask(taskName));
       setMessage(`${taskName} 실행을 시작했습니다. 끝나면 여기에 결과가 표시됩니다…`);

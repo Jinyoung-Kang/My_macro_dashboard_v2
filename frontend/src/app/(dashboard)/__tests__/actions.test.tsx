@@ -30,6 +30,7 @@ import AiReportPage from "../ai/report/page";
 import { AiEngineSection } from "../connections/AiEngineSection";
 import { TossSection } from "../connections/TossSection";
 import StatusPage from "../status/page";
+import { ClockIcon } from "@/components/ui/icons";
 
 const ENGINES = {
   enabled: true,
@@ -279,8 +280,16 @@ describe("🗄️ 저장소 상태 — 태스크 다시 실행", () => {
 
     fireEvent.click(await screen.findByRole("button", { name: "다시 실행" }));
 
-    expect(await screen.findByText(/macro_collected이\(가\) 아직 진행 중입니다/)).toBeTruthy();
+    const pending = await screen.findByText(/macro_collected이\(가\) 아직 진행 중입니다/);
     expect(taskRun.waitForTaskRun.mock.calls[0][0]).toBeNull();
+    // 진행 중은 결과가 아니라 기다림 — 시계 아이콘이고, '알 수 없음·없음'의 점선 원이 아니다(머리말 없음·중립 색).
+    const status = pending.parentElement as HTMLElement;
+    const icon = status.querySelector("svg") as SVGSVGElement;
+    expect(icon.getAttribute("aria-hidden")).toBe("true");
+    expect(icon.outerHTML).toBe(render(<ClockIcon size={12} />).container.innerHTML);
+    expect(icon.querySelector("[stroke-dasharray]")).toBeNull();
+    expect(status.className).toContain("text-text-3");
+    expect(status.textContent).toBe(pending.textContent);
   });
 
   it("시작하지 못하면 서버가 준 문구, 새로고침하지 않는다", async () => {
