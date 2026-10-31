@@ -4,7 +4,7 @@
  * 예전 화면: 미국채 카드에 '실시간 · TradingView 참고'와 '마감'이, S&P 500에 '실시간'과 '마감'이 나란히 떠 서로 어긋나게
  * 읽혔습니다. 지연은 장이 열려 있을 때만 뜻이 있어 개장 배지에 붙이고, 참고 시세라는 성격은 출처 줄로 옮깁니다.
  */
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, render, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const api = vi.hoisted(() => {
@@ -75,6 +75,38 @@ describe("매크로 카드 배지", () => {
     expect((await screen.findAllByText(/TradingView Scanner · 참고 시세/)).length).toBeGreaterThan(0);
     const notice = screen.getByText("선물 조회 실패 · 지수 값");
     expect(notice.className).toContain("text-warn");
+  });
+
+  it("이어받은 카드는 '이전 값' 배지 — 경고 기호는 이모지 글자가 아니라 장식 아이콘 + 낭독기용 '주의: '", async () => {
+    const stale = { ...OVERVIEW, categories: [{ id: "ust", title: "미국 국채 수익률", items: [
+      card({ key: "us10y", name: "미국채 10년물 수익률(%)", market: "ust", delayMinutes: 0, isStale: true, staleReason: "HTTP 429" }),
+    ] }] };
+    api.apiGetShared.mockImplementation((path: string) =>
+      path.startsWith("/api/macro/overview") ? Promise.resolve(stale) : new Promise(() => {}));
+    render(<MacroPage />);
+
+    const badge = await screen.findByText("이전 값");
+    expect(badge.className).toContain("text-warn");
+    expect(badge.getAttribute("title")).toContain("HTTP 429");
+    expect(badge.querySelector("svg")?.getAttribute("aria-hidden")).toBe("true");
+    expect(badge.textContent).toBe("주의: 이전 값");
+  });
+
+  it("장단기 금리차 해석 기준의 '역전'은 경고 상태 글 — 기호 없이 '역전 (Inversion)'과 아이콘", async () => {
+    const block = { longId: "DGS10", shortId: "DGS2", points: [], latest: 0.5, previous: 0.4 };
+    const withSpreads = { ...OVERVIEW, spreads: {
+      realtime: { longValue: null, shortValue: null }, official10y2y: block, official30y2y: block,
+    } };
+    api.apiGetShared.mockImplementation((path: string) =>
+      path.startsWith("/api/macro/overview") ? Promise.resolve(withSpreads) : new Promise(() => {}));
+    render(<MacroPage />);
+
+    const inversion = await screen.findByText("역전 (Inversion)");
+    const status = inversion.parentElement as HTMLElement;
+    expect(status.className).toContain("text-warn");
+    expect(within(status).getByText("주의:").className).toContain("sr-only");
+    expect(status.querySelector("svg")?.getAttribute("aria-hidden")).toBe("true");
+    expect(screen.getByText("정상 (Normal)").querySelector("svg")).toBeNull();
   });
 
   it("카테고리 부제는 카드 지연의 요약 — 같으면 그 지연, 다르면 '종목마다 다름'", async () => {

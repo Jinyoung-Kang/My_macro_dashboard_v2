@@ -255,6 +255,8 @@ export function StatusText({
   tone,
   children,
   icon,
+  iconSize = 14,
+  colorText = true,
   srPrefix,
   className = "",
 }: {
@@ -262,6 +264,10 @@ export function StatusText({
   children: ReactNode;
   /** 톤 기본 아이콘 대신 쓸 아이콘(예: 건너뜀). false면 아이콘 없이 글만. */
   icon?: ReactNode | false;
+  /** 톤 기본 아이콘의 크기 — 12px 글 옆에는 12. */
+  iconSize?: number;
+  /** false면 글은 놓인 자리의 색 그대로(보조 글 안의 주의 표시), 아이콘만 톤 색. */
+  colorText?: boolean;
   /** 톤 기본 머리말 대신 쓸 sr-only 머리말. */
   srPrefix?: string;
   className?: string;
@@ -269,8 +275,8 @@ export function StatusText({
   const Icon = STATUS_ICON[tone];
   const prefix = srPrefix ?? STATUS_SR_PREFIX[tone];
   return (
-    <span className={`inline-flex items-start gap-1.5 ${TONE_TEXT[tone]} ${className}`.trim()}>
-      {icon === false ? null : <LineIcon>{icon ?? <Icon size={14} />}</LineIcon>}
+    <span className={`inline-flex items-start gap-1.5 ${colorText ? TONE_TEXT[tone] : ""} ${className}`.replace(/\s+/g, " ").trim()}>
+      {icon === false ? null : <LineIcon className={colorText ? "" : TONE_TEXT[tone]}>{icon ?? <Icon size={iconSize} />}</LineIcon>}
       {prefix && <span className="sr-only">{prefix}</span>}
       <span className="min-w-0">{children}</span>
     </span>

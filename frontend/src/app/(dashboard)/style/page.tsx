@@ -16,6 +16,7 @@ import {
   SourceBadge,
   Table,
 } from "@/components/ui";
+import { StatusText } from "@/components/ui/icons";
 import { useApi } from "@/hooks/useApi";
 import { useUsdKrw } from "@/hooks/useUsdKrw";
 import { deltaColor, EMPTY, formatCurrency, formatNumber, formatPercent, formatWithUnit } from "@/lib/format";
@@ -511,7 +512,11 @@ function RiskCard() {
         </div>
       )}
 
-      {data?.note && <p className="mt-3 text-[11px] leading-relaxed text-muted">⚠️ {data.note}</p>}
+      {data?.note && (
+        <p className="mt-3 text-[11px] leading-relaxed text-muted">
+          <StatusText tone="warn" colorText={false} iconSize={12}>{data.note}</StatusText>
+        </p>
+      )}
     </Card>
   );
 }

@@ -4,6 +4,7 @@ import { useState } from "react";
 import { LineSeries, SERIES_COLORS } from "@/components/charts";
 import { RangeTabs, sliceByRange, type RangeValue } from "@/components/RangeTabs";
 import { Banner, Card, Metric } from "@/components/ui";
+import { StatusText } from "@/components/ui/icons";
 import { SOURCES } from "@/lib/sources";
 import { spreadSummary } from "@/lib/spread";
 import { EMPTY, formatNumber, formatSigned } from "@/lib/format";
@@ -74,7 +75,7 @@ export function SpreadSection({
             스크래핑 참고 시세 · TradingView
             <span className="ml-1 font-normal text-muted">(지금, 공식 확정치 아님)</span>
             {scraped?.isStale && (
-              <span className="ml-1 font-normal text-warn">⚠️ 이전 값 포함(수집 실패)</span>
+              <StatusText tone="warn" iconSize={12} className="ml-1 align-top font-normal">이전 값 포함(수집 실패)</StatusText>
             )}
           </p>
           {scraped ? (

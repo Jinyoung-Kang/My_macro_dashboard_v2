@@ -4,6 +4,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { Shell } from "@/components/shell/Shell";
 import { ToastProvider } from "@/components/ui/Toast";
+import { AlertTriangleIcon } from "@/components/ui/icons";
 import { useApi } from "@/hooks/useApi";
 import { apiBase } from "@/lib/api";
 import { RefreshProvider, useRefreshSignal } from "@/hooks/useRefreshSignal";
@@ -187,7 +188,10 @@ function BackendUnavailable({
   return (
     <main className="flex min-h-screen items-center justify-center px-4">
       <div className="w-full max-w-lg rounded-xl border border-warn/40 bg-surface p-6 text-sm">
-        <h1 className="text-base font-bold text-bright">⚠️ 백엔드 API에 연결하지 못했습니다</h1>
+        <h1 className="flex items-center gap-2 text-base font-bold text-bright">
+          <AlertTriangleIcon size={18} className="text-warn" />
+          백엔드 API에 연결하지 못했습니다
+        </h1>
         <p className="mt-2 text-warn">{reason}</p>
         <p className="mt-4 text-muted">
           화면은 떠 있지만 데이터를 주는 백엔드가 응답하지 않습니다. 터미널에서 확인하세요.
@@ -225,7 +229,10 @@ function OwnerMissing({ retrying, onRetry }: { retrying: boolean; onRetry: () =>
   return (
     <main className="flex min-h-screen items-center justify-center px-4">
       <div className="w-full max-w-lg rounded-xl border border-warn/40 bg-surface p-6 text-sm">
-        <h1 className="text-base font-bold text-bright">⚠️ 운영자 계정이 아직 없습니다</h1>
+        <h1 className="flex items-center gap-2 text-base font-bold text-bright">
+          <AlertTriangleIcon size={18} className="text-warn" />
+          운영자 계정이 아직 없습니다
+        </h1>
         <p className="mt-2 text-warn">
           로컬 실행은 로그인 없이 운영자 계정으로 열립니다. .env에 OWNER_EMAIL·APP_PASSWORD를 넣고 make up 하세요.
         </p>

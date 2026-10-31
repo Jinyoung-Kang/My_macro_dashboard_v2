@@ -12,6 +12,7 @@ import {
   SourceBadge,
   Table,
 } from "@/components/ui";
+import { StatusText } from "@/components/ui/icons";
 import { useApi } from "@/hooks/useApi";
 import { EMPTY, formatNumber } from "@/lib/format";
 import type { RegimeResponse, RegimeSignal } from "@/lib/types";
@@ -242,7 +243,7 @@ export default function RegimePage() {
 
         {data?.note && (
           <p className="rounded-sm border border-border bg-canvas px-3 py-2 text-xs text-muted">
-            ⚠️ {data.note}
+            <StatusText tone="warn" colorText={false} iconSize={12}>{data.note}</StatusText>
           </p>
         )}
         </>

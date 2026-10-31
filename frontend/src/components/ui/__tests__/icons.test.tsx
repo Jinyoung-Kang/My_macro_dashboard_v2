@@ -124,6 +124,20 @@ describe("상태 점·상태 글", () => {
     expect(screen.getByText("정상").parentElement?.textContent).toBe("정상");
   });
 
+  it("colorText={false}면 글은 놓인 자리의 색, 아이콘만 톤 색 — iconSize로 아이콘 크기", () => {
+    render(
+      <p className="text-text-3">
+        <StatusText tone="warn" colorText={false} iconSize={12}>표본이 적습니다</StatusText>
+      </p>,
+    );
+    const status = screen.getByText("표본이 적습니다").parentElement as HTMLElement;
+    expect(status.className).not.toContain("text-warn");
+    const icon = status.querySelector("svg") as SVGSVGElement;
+    expect(icon.getAttribute("width")).toBe("12");
+    expect(icon.closest(".text-warn")).not.toBeNull();
+    expect(status.textContent).toBe("주의: 표본이 적습니다");
+  });
+
   it("icon={false}면 아이콘 없이 글만, 다른 아이콘·머리말로 바꿀 수 있다", () => {
     render(
       <>

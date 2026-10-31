@@ -13,6 +13,7 @@ import {
   Select,
   SourceBadge,
 } from "@/components/ui";
+import { StatusText } from "@/components/ui/icons";
 import { useApi } from "@/hooks/useApi";
 import { EMPTY, formatNumber } from "@/lib/format";
 import { correlationStrength } from "@/lib/correlation";
@@ -115,7 +116,7 @@ export default function CorrelationPage() {
 
           {(data.notes ?? []).map((note) => (
             <p key={note} className="rounded-sm border border-border bg-canvas px-3 py-2 text-xs text-muted">
-              ⚠️ {note}
+              <StatusText tone="warn" colorText={false} iconSize={12}>{note}</StatusText>
             </p>
           ))}
 

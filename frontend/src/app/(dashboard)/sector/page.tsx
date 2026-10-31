@@ -12,6 +12,7 @@ import {
   SourceBadge,
   Table,
 } from "@/components/ui";
+import { StatusText } from "@/components/ui/icons";
 import { useApi } from "@/hooks/useApi";
 import { deltaColor, EMPTY, formatNumber, formatPercent } from "@/lib/format";
 import type { SectorResponse, SectorRow } from "@/lib/types";
@@ -161,8 +162,8 @@ function ReturnsTable({
               <span className="text-body">{row.name}</span>
               <span className="text-[11px] text-muted">{row.ticker}</span>
               {row.isStale && (
-                <span className="text-[11px] text-warn" title={row.staleReason ?? undefined}>
-                  ⚠️ 이전 값(수집 실패)
+                <span className="text-[11px]" title={row.staleReason ?? undefined}>
+                  <StatusText tone="warn" iconSize={12}>이전 값(수집 실패)</StatusText>
                 </span>
               )}
             </span>

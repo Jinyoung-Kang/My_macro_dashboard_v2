@@ -8,6 +8,7 @@ import {
   Metric,
   Table,
 } from "@/components/ui";
+import { StatusText } from "@/components/ui/icons";
 import { EMPTY, formatNumber, formatSigned } from "@/lib/format";
 import type { RiskEntry, RiskIndicators } from "@/lib/types";
 
@@ -23,7 +24,7 @@ const RISK_TABLE = [
     name: "ICE BofA MOVE [지연/마감]",
     normal: "80 ~ 120 (80 미만: 금리 초안정)",
     danger: "140 이상 (채권 발작 / 긴축 충격)",
-    note: "채권 시장의 공포 지수. ⚠️ 이 화면의 값은 추정치이므로 이 임계치를 그대로 적용하지 마세요.",
+    note: "채권 시장의 공포 지수. 이 화면의 값은 추정치이므로 이 임계치를 그대로 적용하지 마세요.",
   },
   {
     name: "하이일드 스프레드 [1일 지연]",
@@ -108,9 +109,9 @@ export function RiskSection({
               source={RISK_SOURCES[entry.key]}
               note={
                 item?.isProxy ? (
-                  <span className="text-warn">
-                    ⚠️ 실제 지표가 아닙니다 — {item.sourceLabel}
-                  </span>
+                  <StatusText tone="warn" iconSize={12}>
+                    실제 지표가 아닙니다 — {item.sourceLabel}
+                  </StatusText>
                 ) : undefined
               }
             />

@@ -156,7 +156,7 @@ describe("로그인 없는 로컬 실행(noLogin: true)", () => {
     renderLayout();
     await act(async () => {});
 
-    expect(screen.getByText("⚠️ 운영자 계정이 아직 없습니다")).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "운영자 계정이 아직 없습니다" })).toBeTruthy();
     expect(screen.getByText(/\.env에 OWNER_EMAIL·APP_PASSWORD를 넣고 make up 하세요/)).toBeTruthy();
     expect(screen.getByText(/make logs S=backend/)).toBeTruthy();
     expect(screen.queryByText("세션을 확인하는 중…")).toBeNull();
@@ -166,7 +166,7 @@ describe("로그인 없는 로컬 실행(noLogin: true)", () => {
     expect(sessionCalls()).toBe(1);
     await act(async () => vi.advanceTimersByTime(1));
     expect(sessionCalls()).toBe(2);
-    expect(screen.getByText("⚠️ 운영자 계정이 아직 없습니다")).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "운영자 계정이 아직 없습니다" })).toBeTruthy();
 
     // 응답마다 다음 확인을 다시 겁니다(한 번만 확인하고 멈추지 않음).
     ownerCreated = true;
@@ -187,7 +187,7 @@ describe("로그인 없는 로컬 실행(noLogin: true)", () => {
     expect(router.replace).not.toHaveBeenCalled();
 
     await act(async () => answer(OWNER_MISSING));
-    expect(screen.getByText("⚠️ 운영자 계정이 아직 없습니다")).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "운영자 계정이 아직 없습니다" })).toBeTruthy();
     expect(router.replace).not.toHaveBeenCalled();
   });
 
@@ -207,7 +207,7 @@ describe("로그인 없는 로컬 실행(noLogin: true)", () => {
     reads[PAGE] = new api.UnauthorizedError("로그인이 필요합니다");
     renderLayout();
     await act(async () => {});
-    expect(screen.getByText("⚠️ 운영자 계정이 아직 없습니다")).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "운영자 계정이 아직 없습니다" })).toBeTruthy();
 
     phase = "local";
     await act(async () => vi.advanceTimersByTime(5_000));   // 운영자 계정이 생김 → 화면이 열리고 화면 요청이 401
@@ -222,6 +222,6 @@ describe("로그인 없는 로컬 실행(noLogin: true)", () => {
     renderLayout();
 
     await waitFor(() => expect(router.replace).toHaveBeenCalledWith("/login"));
-    expect(screen.queryByText("⚠️ 운영자 계정이 아직 없습니다")).toBeNull();
+    expect(screen.queryByRole("heading", { name: "운영자 계정이 아직 없습니다" })).toBeNull();
   });
 });

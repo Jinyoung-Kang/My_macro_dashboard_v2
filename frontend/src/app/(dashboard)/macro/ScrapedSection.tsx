@@ -8,6 +8,7 @@ import {
   SourceBadge,
   Table,
 } from "@/components/ui";
+import { StatusText } from "@/components/ui/icons";
 import { useApi } from "@/hooks/useApi";
 import {
   delayLabel,
@@ -101,7 +102,9 @@ export function ScrapedSection() {
               header: "비고",
               render: (row) => (
                 <span className="text-xs text-muted">
-                  {row.isStale ? `⚠️ 이전 값 — ${row.staleReason ?? "수집 실패"}` : (row.error ?? "")}
+                  {row.isStale ? (
+                    <StatusText tone="warn" iconSize={12}>이전 값 — {row.staleReason ?? "수집 실패"}</StatusText>
+                  ) : (row.error ?? "")}
                 </span>
               ),
             },
