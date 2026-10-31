@@ -15,7 +15,6 @@ import java.util.Map;
  * 🧪 모의 알고리즘 매매(운영자 전용) — 장부 조회와 관리 버튼.
  *
  * <pre>
- *  GET  /api/paper/overview?market=US            네 책 요약·순자산 곡선·관측치 신선도·한계 문구·작업 기록(시장 US·KR, 없으면 US)
  *  GET  /api/paper/status?market=US              스키마·초기화·정기 작업 상태(시장 US·KR, 없으면 US)
  *  GET  /api/paper/books/{code}/positions         보유·재진입 금지·현금
  *  GET  /api/paper/books/{code}/orders?limit=50   주문(최근 순, 1–500)
@@ -30,7 +29,8 @@ import java.util.Map;
  *  POST /api/paper/run/rerank                     {"asOf"?} 트랙레코드 수동 재계산(선정은 그대로)
  * </pre>
  *
- * <p>모든 경로는 운영자만 부릅니다(AccessPolicy). 테이블이 없으면 500이 아니라 {@code available:false}(+ POST는 {@code ok:false})입니다.
+ * <p>개요({@code GET /api/paper/overview} — 장부 응답 + 장중 지금 값)는 {@link PaperOverviewController}입니다. 모든 경로는 운영자만
+ * 부릅니다(AccessPolicy). 테이블이 없으면 500이 아니라 {@code available:false}(+ POST는 {@code ok:false})입니다.
  * {@code market}(2단계 명세 §4-16, F1)이 없거나 US면 미국 응답 그대로, KR이면 그 시장 판({@link PaperMarkets#requested}), 그 밖 값은 400입니다.
  */
 @RestController
@@ -60,12 +60,6 @@ public class PaperController {
 
     /** 수동 재계산의 기준일(yyyy-MM-dd). 없으면 마지막 완료 세션. */
     public record RerankRequest(String asOf) {
-    }
-
-    /** {@code market}이 없으면 미국(시장을 받기 전 응답 그대로), 모르는 값은 400(2단계 명세 §4-16). */
-    @GetMapping("/overview")
-    public Map<String, Object> overview(@RequestParam(required = false) String market) {
-        return query.overview(market);
     }
 
     @GetMapping("/status")

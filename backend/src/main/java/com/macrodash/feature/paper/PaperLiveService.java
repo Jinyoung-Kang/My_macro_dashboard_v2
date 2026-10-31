@@ -86,8 +86,8 @@ public class PaperLiveService {
         Instant now = clock.instant();
         Session session = LiveValuation.session(run.calendar(), now);
 
-        String dataset = korea ? Datasets.SNAP_PAPER_LIVE_KR : Datasets.SNAP_PAPER_LIVE_US;
-        String task = korea ? "paper_live_kr" : "paper_live_us";
+        String dataset = LiveValuation.dataset(korea);
+        String task = LiveValuation.task(korea);
         // 정규장이면 화면이 보는 지금 받습니다(오래됐으면 요청하고 기존 값을 먼저 보여 줌). 장 밖에서는 수집을 깨우지 않습니다.
         Optional<Snapshot> snapshot = LiveValuation.REGULAR.equals(session.phase())
                 ? reader.read(dataset, Datasets.MAX_AGE_LIVE, task) : reader.readStored(dataset);

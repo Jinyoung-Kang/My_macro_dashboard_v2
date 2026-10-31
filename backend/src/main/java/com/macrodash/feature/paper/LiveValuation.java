@@ -6,7 +6,9 @@ import com.macrodash.analytics.DailySeries;
 import com.macrodash.analytics.PaperLedger;
 import com.macrodash.analytics.TradingCalendar;
 import com.macrodash.feature.paper.PaperMarketData.Bar;
+import com.macrodash.store.Datasets;
 import com.macrodash.store.PaperStore.Book;
+import com.macrodash.store.PaperStore.BookLedger;
 import com.macrodash.store.PaperStore.BookState;
 import com.macrodash.store.PaperStore.NavRow;
 import com.macrodash.store.PaperStore.Order;
@@ -25,8 +27,10 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * 모의 매매 장중 평가의 계산 — 장 상태, 장중 1분봉 가격 고르기, 계좌·종목 평가({@link PaperLiveService}가 씀). 저장소를 읽지 않는 순수 계산이고,
- * 값 규칙은 {@link PaperLiveService} 클래스 설명과 같습니다.
+ * 모의 매매 장중 평가의 계산 — 장 상태, 장중 1분봉 가격 고르기, 계좌·종목 평가({@link PaperLiveService}가 씀)와 개요의 지금 값·오늘 추정 점(개요
+ * 조립이 씀 — 명세 docs/specs/2026-10-31-paper-live-overview.md §3). 저장소를 읽지 않는 순수 계산이고, 값 규칙은 {@link PaperLiveService} 클래스
+ * 설명과 같습니다. 장중 시세 저장본의 이름·수집 태스크도 여기서 고릅니다 — 장중 데이터셋을 참조할 수 있는 곳은 이 계산과 {@code /live}·개요 조립뿐
+ * 입니다(시험 {@code LiveIsolationTest}).
  */
 final class LiveValuation {
 
@@ -38,10 +42,25 @@ final class LiveValuation {
     static final String UNKNOWN = "UNKNOWN";
     static final String LIVE = "LIVE";
     static final String LAST_OBSERVATION = "LAST_OBSERVATION";
+    /** 개요 지금 값의 단계(명세 §3) — 장중 추정은 {@link #LIVE}, 그 밖은 아래 넷. 기준({@code basis})은 {@link #LIVE}·{@link #LEDGER} 둘. */
+    static final String LIVE_LAST = "LIVE_LAST";
+    static final String LEDGER = "LEDGER";
+    static final String PROVISIONAL = "PROVISIONAL";
+    static final String FINAL = "FINAL";
     /** 봉 시각이 지금보다 이만큼 앞서도(시계 차이) 받습니다. 마감 뒤에는 마감 + 이 값까지의 봉이 그날 마지막 장중 값입니다. */
     static final Duration CLOCK_SLACK = Duration.ofMinutes(2);
 
     private LiveValuation() {
+    }
+
+    /** 그 시장의 장중 시세 저장본({@code paper.live.us}·{@code paper.live.kr}). */
+    static String dataset(boolean korea) {
+        return korea ? Datasets.SNAP_PAPER_LIVE_KR : Datasets.SNAP_PAPER_LIVE_US;
+    }
+
+    /** 그 저장본을 채우는 수집기 태스크({@code paper_live_us}·{@code paper_live_kr}) — {@code /live}가 정규장에만 요청합니다. */
+    static String task(boolean korea) {
+        return korea ? "paper_live_kr" : "paper_live_us";
     }
 
     /** 장 상태 한 벌 — 그 시장 시간대의 세션 날짜와 정규장 시작·끝, 다음 개장(모르면 null). */
@@ -284,6 +303,234 @@ final class LiveValuation {
             return recent.floorValue(reference.minusDays(1));
         }
         return bar.date() != null && bar.date().isBefore(reference) ? bar.close() : null;
+    }
+
+    // ------------------------------------------------------------------ 개요의 지금 값(명세 2026-10-31 §3)
+    /**
+     * 개요 계좌 한 줄의 지금 값 — {@code stage}는 {@link #LIVE}(정규장 장중 추정)·{@link #LIVE_LAST}(마감 뒤 같은 날, 그 세션 줄 전의 장중 마지막
+     * 추정)·{@link #LEDGER}(장부 상태 — 마지막 관측치 평가)·{@link #PROVISIONAL}·{@link #FINAL}(그 거래일 순자산 줄). {@code at}은 장중이면 장중가로
+     * 평가한 종목 가운데 가장 오래된 봉 시각, 장부 상태면 그 관측 시각, 순자산 줄이면 그 세션 마감 시각. 출발 전이면 금액이 장부 상태 그대로입니다.
+     */
+    record Current(boolean started, Double nav, Double returnPct, Double exposurePct, Double dayChangePct, NavRow previous,
+                   String stage, LocalDate tradingDate, Instant at, int livePriced, int positionCount, Integer pendingOrders,
+                   String note) {
+
+        /** 기준 중립 — 현금뿐이거나 출발 전이라 장중 값 = 장부 값(비교 표의 '한 표 한 기준' 판정에서 뺌). */
+        boolean neutral() {
+            return !started || positionCount == 0;
+        }
+
+        /** 장중 1분봉이 든 값인가({@code basis} LIVE — 표시 전용 추정). */
+        boolean live() {
+            return LIVE.equals(stage) || LIVE_LAST.equals(stage);
+        }
+
+        /** 응답 모양({@code current} — API.md 개요 줄). */
+        Map<String, Object> view() {
+            Map<String, Object> out = new LinkedHashMap<>();
+            out.put("nav", PaperQueryService.round2(nav));
+            out.put("returnPct", returnPct);
+            out.put("exposurePct", PaperQueryService.round2(exposurePct));
+            out.put("dayChangePct", dayChangePct);
+            out.put("previousTradingDate", previous == null ? null : previous.tradingDate().toString());
+            out.put("previousNavFinal", previous == null ? null : previous.pricesFinal());
+            out.put("basis", live() ? LIVE : LEDGER);
+            out.put("stage", stage);
+            out.put("tradingDate", tradingDate == null ? null : tradingDate.toString());
+            out.put("atKst", at == null ? null : Kst.stamp(at));
+            out.put("isEstimated", live());
+            out.put("livePriced", livePriced);
+            out.put("positionCount", positionCount);
+            out.put("pendingOrders", pendingOrders);
+            out.put("neutral", neutral());
+            out.put("note", note);
+            return out;
+        }
+    }
+
+    /**
+     * 개요 계좌 한 줄의 지금 값을 고릅니다(명세 §3의 순서). ① 정규장 또는 마감 뒤 같은 날이고, 그 세션 순자산 줄이 없고(정규장은 보지 않음), 장중가로
+     * 평가한 보유가 있고 장중 순자산이 있으면 장중 값. ② 아니면 마지막으로 끝난 세션 이하의 마지막 순자산 줄 R과 장부 상태가 관측한 세션 I(관측 시각이 속한
+     * 세션)를 견줘 R의 거래일 ≥ I면 그 줄, 아니면 장부 상태. 달력이 그해를 모르면(UNKNOWN) 장부 상태. 출발 전이면 장부 상태 그대로(수익률 없음).
+     * '오늘 변화'는 그 값의 거래일(장부 상태는 I) 앞의 마지막 줄(잠정 포함) 대비.
+     */
+    static Current current(BookLedger ledger, Map<String, LivePrice> live, Session session, TradingCalendar calendar,
+                           Instant now, boolean korea) {
+        Book book = ledger.book();
+        BookState state = ledger.state();
+        List<Position> positions = ledger.positions();
+        List<NavRow> rows = ledger.nav();
+        boolean started = !PaperBooks.NOT_STARTED.equals(book.status()) && state != null;
+        Valued valued = value(started, state, positions, live, session, now);
+        Integer pending = pendingOrders(ledger.pending(), korea, calendar, now);
+        List<String> notes = new ArrayList<>();
+
+        String stage;
+        Double nav;
+        Double exposure;
+        LocalDate tradingDate;
+        Instant at;
+        LocalDate reference;
+        int livePriced = 0;
+        NavRow sessionRow = row(rows, session.sessionDate());
+        if (!started) {
+            stage = LEDGER;
+            nav = state == null ? null : state.nav();
+            exposure = state == null ? null : state.exposurePct();
+            tradingDate = null;
+            at = state == null ? null : state.lastObservedAt();
+            reference = null;
+            notes.add("출발 전");
+        } else if (session.intraday() && valued.livePriced() > 0 && valued.nav() != null
+                && (REGULAR.equals(session.phase()) || sessionRow == null)) {
+            stage = REGULAR.equals(session.phase()) ? LIVE : LIVE_LAST;
+            nav = valued.nav();
+            exposure = valued.exposurePct();
+            tradingDate = session.sessionDate();
+            at = valued.oldestLive();
+            reference = session.sessionDate();
+            livePriced = valued.livePriced();
+            if (livePriced < positions.size()) {
+                notes.add("장중가 " + livePriced + "/" + positions.size() + "종목 — 나머지는 장부 관측가");
+            }
+        } else {
+            LocalDate observed = UNKNOWN.equals(session.phase()) ? null : observedSession(calendar, state.lastObservedAt());
+            NavRow latest = UNKNOWN.equals(session.phase()) ? null : latestRow(rows, completedSession(session, calendar));
+            if (latest != null && (observed == null || !latest.tradingDate().isBefore(observed))) {
+                stage = latest.pricesFinal() ? FINAL : PROVISIONAL;
+                nav = latest.nav();
+                exposure = latest.exposurePct();
+                tradingDate = latest.tradingDate();
+                at = closeOf(calendar, latest.tradingDate());
+                reference = latest.tradingDate();
+            } else {
+                stage = LEDGER;
+                nav = state.nav();
+                exposure = state.exposurePct();
+                tradingDate = observed;
+                at = state.lastObservedAt();
+                reference = observed != null ? observed : state.lastNavTradingDate();
+            }
+            if (session.intraday() && valued.livePriced() > 0 && valued.unpriced() > 0) {
+                notes.add("가격을 한 번도 받지 못한 종목 " + valued.unpriced() + "개 — 장부 평가(평단)");
+            }
+        }
+        if (pending != null && pending > 0) {
+            notes.add(korea ? "시가 체결 대기 " + pending + "건 반영 전 — 그날 밤 관측치에서 체결"
+                    : "체결 대기 " + pending + "건 반영 전 — 다음 장부 관측치에서 체결");
+        }
+        NavRow previous = previousNav(rows, reference);
+        Double returnPct = started && nav != null && book.initialCash() > 0 ? pct(nav / book.initialCash()) : null;
+        Double dayChange = nav == null || previous == null || !(previous.nav() > 0) ? null : pct(nav / previous.nav());
+        return new Current(started, nav, returnPct, exposure, dayChange, previous, stage, tradingDate, at, livePriced,
+                positions.size(), pending, notes.isEmpty() ? null : String.join(" · ", notes));
+    }
+
+    /**
+     * 순자산 곡선의 오늘 추정 점(명세 §4 곡선 꼬리) — 정규장 또는 마감 뒤 같은 날이고 그 세션 순자산 줄이 어느 계좌에도 없을 때, 장중 값인 계좌가 하나라도
+     * 있으면 {@code {date, atKst, books:{code: nav|null}}}(계좌 순서는 받은 순서). 장중 값 계좌는 그 순자산, 현금뿐인 운용 계좌는 장부 값(= 장중 값), 그
+     * 밖은 null. {@code atKst}는 장중 값 계좌들 가운데 가장 오래된 기준 시각. 아니면 null.
+     *
+     * @param currents 계좌 코드 → 지금 값(받은 순서)
+     */
+    static Map<String, Object> navEstimate(List<BookLedger> ledgers, Map<String, Current> currents, Session session) {
+        if (!session.intraday() || session.sessionDate() == null) {
+            return null;
+        }
+        for (BookLedger ledger : ledgers) {
+            if (row(ledger.nav(), session.sessionDate()) != null) {
+                return null;
+            }
+        }
+        Map<String, Object> books = new LinkedHashMap<>();
+        Instant oldest = null;
+        for (Map.Entry<String, Current> entry : currents.entrySet()) {
+            Current current = entry.getValue();
+            boolean cashOnly = current.started() && current.positionCount() == 0;
+            if (current.live()) {
+                oldest = oldest == null || (current.at() != null && current.at().isBefore(oldest)) ? current.at() : oldest;
+            }
+            books.put(entry.getKey(), current.live() || cashOnly ? PaperQueryService.round2(current.nav()) : null);
+        }
+        if (oldest == null) {
+            return null;
+        }
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("date", session.sessionDate().toString());
+        out.put("atKst", Kst.stamp(oldest));
+        out.put("books", books);
+        return out;
+    }
+
+    /** 장 상태의 짧은 모양 — 개요의 {@code liveSession{phase, sessionDate}}. */
+    static Map<String, Object> sessionSummary(Session session) {
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("phase", session.phase());
+        out.put("sessionDate", session.sessionDate() == null ? null : session.sessionDate().toString());
+        return out;
+    }
+
+    /** 그 거래일의 순자산 줄(없거나 날짜가 null이면 null). */
+    static NavRow row(List<NavRow> rows, LocalDate date) {
+        if (date == null) {
+            return null;
+        }
+        for (NavRow row : rows) {
+            if (row.tradingDate().equals(date)) {
+                return row;
+            }
+        }
+        return null;
+    }
+
+    /** 그 날 이하의 마지막 순자산 줄(날짜가 null이면 null). */
+    static NavRow latestRow(List<NavRow> rows, LocalDate until) {
+        if (until == null) {
+            return null;
+        }
+        NavRow found = null;
+        for (NavRow row : rows) {
+            if (!row.tradingDate().isAfter(until) && (found == null || row.tradingDate().isAfter(found.tradingDate()))) {
+                found = row;
+            }
+        }
+        return found;
+    }
+
+    /** 마지막으로 끝난 세션 — 정규장·장 전이면 그 세션의 직전 거래일, 마감 뒤·휴장일이면 그 세션 날짜(휴장일은 이미 직전 거래일). 모르면 null. */
+    static LocalDate completedSession(Session session, TradingCalendar calendar) {
+        if (session.sessionDate() == null) {
+            return null;
+        }
+        try {
+            return switch (session.phase()) {
+                case REGULAR, PRE -> calendar.previousTradingDay(session.sessionDate());
+                case AFTER, CLOSED -> session.sessionDate();
+                default -> null;
+            };
+        } catch (CalendarUnavailableException e) {
+            return null;
+        }
+    }
+
+    /** 그 시각이 속한(또는 직전) 세션 — 장부 관측치가 본 거래일. 모르면 null. */
+    static LocalDate observedSession(TradingCalendar calendar, Instant observedAt) {
+        if (observedAt == null) {
+            return null;
+        }
+        try {
+            return calendar.currentOrLastSession(observedAt);
+        } catch (CalendarUnavailableException e) {
+            return null;
+        }
+    }
+
+    private static Instant closeOf(TradingCalendar calendar, LocalDate date) {
+        try {
+            return calendar.closeInstant(date);
+        } catch (CalendarUnavailableException e) {
+            return null;
+        }
     }
 
     /** 배수 → 퍼센트(소수 둘째 자리). */

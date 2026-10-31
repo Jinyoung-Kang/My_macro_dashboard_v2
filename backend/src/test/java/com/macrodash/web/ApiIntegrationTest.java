@@ -1200,6 +1200,10 @@ class ApiIntegrationTest {
             assertThat(overview.path("books").get(0).path("status").asString()).isEqualTo("NOT_STARTED");
             assertThat(overview.path("books").get(0).path("nav").asDouble()).isEqualTo(100_000);
             assertThat(overview.path("books").get(0).path("returnPct").isNull()).isTrue();
+            // 지금 값(명세 2026-10-31) — 개요 경로가 조립 서비스를 거쳐 장부 한 벌(실제 DB의 읽기 전용 스냅숏)로 계좌마다 current를 붙임
+            assertThat(overview.path("books").get(0).path("current").path("note").asString()).isEqualTo("출발 전");
+            assertThat(overview.path("books").get(0).path("current").path("neutral").asBoolean()).isTrue();
+            assertThat(overview.path("liveSession").path("phase").isString()).isTrue();
             for (String path : PAPER_GETS) {
                 assertThat(authorizedGet(path).path("available").asBoolean()).as(path).isTrue();
             }
