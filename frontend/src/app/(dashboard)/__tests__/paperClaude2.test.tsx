@@ -699,6 +699,35 @@ describe("🧪 장중 확인(단계 2) — 오늘 장중 확인 줄·결정 로�
     }
   });
 
+  // 리뷰 N5 재현 — 재현 커밋에서는 it.fails, 수정 커밋 뒤에는 it.
+  it.fails("장중 확인 결정의 판단 칸에는 '노출 근거'가 없다 — 확인 응답 스키마에 없는 칸이라 '—'로 그리지 않음", async () => {
+    reads["/api/paper/overview"] = () => Promise.resolve(overview(CLAUDE2_ACTIVE));
+    reads["/api/paper/decisions?book=rules"] = () => Promise.resolve({ available: true, decisions: [] });
+    reads["/api/paper/decisions?book=claude2"] = () => Promise.resolve({
+      available: true, decisions: [listRow(53, "CHECKPOINT", "NO_TRADE", "계획대로")],
+    });
+    reads["/api/paper/decisions/53"] = () => Promise.resolve({
+      available: true, orders: [],
+      decision: {
+        ...listRow(53, "CHECKPOINT", "NO_TRADE", "계획대로"), packet: null, packetHash: null, usage: null, noteIds: null, latencyMs: 9000,
+        retryCount: 0,
+        response: {
+          kind: "CHECKPOINT", action: "KEEP", summary: "계획대로", orders: [], noTradeReason: "갭 유지",
+          checkpoint: { session: "2026-11-02", atEt: "10:30", feed: "MINUTE", sourceDecisionId: 40, lagSeconds: 75 },
+        },
+      },
+    });
+    reads["/api/paper/status"] = () => Promise.resolve(checkpointStatus({ enabled: true, session: "2026-11-02", today: TODAY, watch: null }));
+    render(<PaperPage initialTab="decisions" />);
+
+    fireEvent.change(await screen.findByLabelText("계좌 고르기"), { target: { value: "claude2" } });
+    const row = (await screen.findAllByRole("row", { name: "2026-10-30 장중 확인" }))[0];
+    fireEvent.click(within(row).getByRole("button", { name: "상세 펼치기" }));
+    const judged = await screen.findByRole("region", { name: "판단" });
+    expect(within(judged).getByText("계획대로")).toBeTruthy();
+    expect(within(judged).queryByText("노출 근거")).toBeNull();
+  });
+
   it("주문 표의 MARKET 행 — 체결 시점은 '장중 시장가', 목표 시각은 실행 감사의 기준 시각(생성 + 60초 뒤 첫 분), 두 줄 칸 한 줄씩", async () => {
     reads["/api/paper/overview"] = () => Promise.resolve(overview(CLAUDE2_ACTIVE));
     reads["/api/paper/books/claude2/positions"] = () => Promise.resolve({ available: true, book: CLAUDE2_ACTIVE, cash: 92000, lockouts: [], positions: [] });

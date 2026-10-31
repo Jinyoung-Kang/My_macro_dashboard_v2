@@ -517,6 +517,17 @@ describe("🧪 장중 확인(단계 2)", () => {
       + "서버 꺼짐·늦게 켜짐 (WINDOW_MISSED) · 감시 저장본 받은 시각 — · — · 지연 —");
   });
 
+  // 리뷰 S2 재현 — 재현 커밋에서는 it.fails, 수정 커밋 뒤에는 it.
+  it.fails("오늘 장중 확인 한 줄 — 그 세션을 계획하는 아침 결정이 아직 돌지 않았으면(다음 결정의 기준 거래일이 세션 앞) '계획 없음'이 아니라 '아침 결정 전'", () => {
+    const at = (tradingDate: string, checkpoint: Record<string, unknown>) =>
+      ({ ...group(checkpoint), nextDecision: { ...STATUS.claude2!.nextDecision!, tradingDate } } as PaperStatusResponse["claude2"]);
+    const empty = { enabled: true, session: "2026-11-03", today: null, watch: null };
+    expect(claude2CheckpointLine(at("2026-11-02", empty)))
+      .toBe("오늘 장중 확인(세션 2026-11-03): 아침 결정 전 — 그 결정이 장중 확인을 요청하면 여기 나옵니다(세션당 최대 한 번)");
+    expect(claude2CheckpointLine(at("2026-11-03", empty)))
+      .toBe("오늘 장중 확인(세션 2026-11-03): 계획 없음 — 아침 결정이 요청하지 않았습니다(세션당 최대 한 번)");
+  });
+
   it("장중 확인 결정 상세 — KEEP/REPLACE·적용·대신한 주문·예상 상태·재시도 없음, 실패 응답은 재시도 없음 문구, 아침 결정은 요청 한 줄", () => {
     const replace = claudeDecisionView({
       book: "claude2", kind: "CHECKPOINT", status: "OK",

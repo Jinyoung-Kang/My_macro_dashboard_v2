@@ -285,6 +285,18 @@ def test_창_밖이면_부르지_않는다(store, yahoo, scope, clock, hh, mm):
     assert yahoo["calls"] == [] and scope == [("US", SESSION)], "범위는 뉴욕 오늘 날짜로 읽음"
 
 
+@pytest.mark.xfail(strict=True, reason="리뷰 OPS-2 재현: 계획 없음·창 밖(하루의 거의 전부)이 EmptyResult라 session 군 실행이 늘 'empty' — 수정 전")
+def test_계획이_없거나_창_밖이면_정상_반환이고_호출_0회(store, monkeypatch, yahoo, scope, clock):
+    # session 군은 이 태스크 하나뿐이라 EmptyResult면 실행 전체가 늘 empty — 상태 화면 경고·doctor 비정상·마지막 실행 가림(리뷰 OPS-2).
+    clock(_ny(15, 0))
+    detail = paper_watch.task_paper_watch_us()
+    assert "밖" in detail and "호출 0회" in detail
+    monkeypatch.setattr(store, "watch_scope", lambda market, session: None)
+    detail = paper_watch.task_paper_watch_us()
+    assert "계획 없음" in detail and "호출 0회" in detail
+    assert yahoo["calls"] == [] and store.read_snapshot(catalog.SNAP_PAPER_WATCH_US) is None
+
+
 def test_래치가_닫혀_있으면_묻지_않는다(store, yahoo, scope, clock):
     http.reject_host(http.YAHOO_HOST, "HTTP 429(요청 제한)")
     with pytest.raises(EmptyResult, match=http.REJECTED_MARK):
