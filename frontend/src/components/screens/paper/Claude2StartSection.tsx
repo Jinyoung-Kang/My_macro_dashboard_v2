@@ -73,8 +73,15 @@ export function Claude2StartSection({
       {confirming ? (
         <div className="mt-3 flex flex-col gap-3 rounded-md border border-warn/40 bg-warn/10 px-3 py-3">
           <p className="text-sm leading-relaxed text-warn">{view.confirm}</p>
+          {/* 확인 단계를 연 뒤 상태를 다시 읽어 출발할 수 없게 되면(꺼짐·관측치 사슬 준비 중) '출발 확인'을 막습니다(QA-150 — 예전에는 열린 채라 눌러도
+              서버가 400). 단계를 닫지 않고 까닭을 한 줄 적어, 무엇이 바뀌었는지 놓치지 않게 하고 다시 출발할 수 있게 되면 그대로 이어 누르게 둡니다. */}
+          {!view.ready && !start.busy && (
+            <p className="text-sm leading-relaxed text-warn">
+              지금은 출발할 수 없습니다 — 확인 단계를 연 뒤 다시 읽은 상태가 바뀌었습니다(까닭은 위 안내). 다시 출발할 수 있게 되면 &apos;출발 확인&apos;이 열립니다.
+            </p>
+          )}
           <div className="flex flex-wrap items-center gap-2">
-            <Button variant="primary" onClick={() => void runStart()} disabled={start.busy}>
+            <Button variant="primary" onClick={() => void runStart()} disabled={start.busy || !view.ready}>
               {start.busy ? `출발 중… ${elapsed}초` : "출발 확인"}
             </Button>
             <Button onClick={() => setConfirming(false)} disabled={start.busy}>취소</Button>

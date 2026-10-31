@@ -314,7 +314,7 @@ describe("개요 — 계좌2 출발 카드의 상태 읽기(읽는 중·실패·
     },
   ];
   for (const { name, body, note } of notReady) {
-    it.fails(`확인 단계를 연 뒤 다시 읽은 상태가 ${name}이면 '출발 확인'이 닫히고 확인 단계 안에 까닭 — 다시 출발할 수 있으면 열림`, async () => {
+    it(`확인 단계를 연 뒤 다시 읽은 상태가 ${name}이면 '출발 확인'이 닫히고 확인 단계 안에 까닭 — 다시 출발할 수 있으면 열림`, async () => {
       reads["/api/paper/overview"] = () => Promise.resolve(overview(CLAUDE2_NOT_STARTED));
       reads["/api/paper/status"] = () => Promise.resolve(status(true));
       render(<PaperPage />);
