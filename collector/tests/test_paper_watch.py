@@ -6,7 +6,8 @@ tests/test_paper_watch.py
 고정하는 규칙
   1. 범위 = 계좌2의 뉴욕 오늘 세션 장중 확인 행 가운데 PLANNED·MINUTE 하나(감시 목록) ∪ 계좌2 보유·대기 주문 ∪ {SPY, QQQ} — 백엔드 표를 읽기만
      (읽기 전용 트랜잭션에서도 돎). HOURLY·다른 계좌·다른 날·PLANNED가 아닌 행은 범위가 아니다.
-  2. 확인 시각 T(그 세션 날짜의 뉴욕 시각)의 −15분 ~ +30분 밖이거나 범위가 없거나 Yahoo 래치가 닫혀 있으면 묻지 않는다(호출 0). 창 안이면 배치 한 번.
+  2. 확인 시각 T(그 세션 날짜의 뉴욕 시각)의 −15분 ~ +30분 밖이거나 범위가 없거나 Yahoo 래치가 닫혀 있으면 묻지 않는다(호출 0). 범위 없음·창 밖은
+     정상 반환('호출 0회' — session 군 실행이 늘 empty가 되지 않게), 래치는 EmptyResult. 창 안이면 배치 한 번.
      서머타임이 끝난 주(2026-11-02 10:00 ET = 15:00Z)도 뉴욕 시각 그대로.
   3. 종목마다 완성된 봉(시작 + 60초 ≤ 받은 시각)만 최근 30개, 그 세션의 시가·고가·저가와 마지막 봉. 진행 중인 봉은 싣지 않는다.
   4. lagSeconds는 이번 회차 SPY의 그날 정규장 안에서만(지난 세션 봉뿐이면 null — 0으로 채우지 않음), declaredDelayMin은 늘 null.
@@ -272,20 +273,17 @@ def _all(day: date = SESSION, end: time = time(10, 4)) -> dict[str, list[dict]]:
 
 def test_범위가_없으면_Yahoo를_부르지_않는다(store, monkeypatch, yahoo, clock):
     monkeypatch.setattr(store, "watch_scope", lambda market, session: None)
-    with pytest.raises(EmptyResult, match="장중 확인\\(MINUTE\\) 계획이 없습니다"):
-        paper_watch.task_paper_watch_us()
+    assert paper_watch.task_paper_watch_us() == "오늘 장중 확인(MINUTE) 계획 없음 — 호출 0회"
     assert yahoo["calls"] == [] and store.read_snapshot(catalog.SNAP_PAPER_WATCH_US) is None
 
 
 @pytest.mark.parametrize("hh, mm", [(9, 44), (10, 31), (15, 0)])
 def test_창_밖이면_부르지_않는다(store, yahoo, scope, clock, hh, mm):
     clock(_ny(hh, mm))
-    with pytest.raises(EmptyResult, match="밖 — Yahoo를 부르지 않음"):
-        paper_watch.task_paper_watch_us()
+    assert paper_watch.task_paper_watch_us().endswith("밖 — 호출 0회")
     assert yahoo["calls"] == [] and scope == [("US", SESSION)], "범위는 뉴욕 오늘 날짜로 읽음"
 
 
-@pytest.mark.xfail(strict=True, reason="리뷰 OPS-2 재현: 계획 없음·창 밖(하루의 거의 전부)이 EmptyResult라 session 군 실행이 늘 'empty' — 수정 전")
 def test_계획이_없거나_창_밖이면_정상_반환이고_호출_0회(store, monkeypatch, yahoo, scope, clock):
     # session 군은 이 태스크 하나뿐이라 EmptyResult면 실행 전체가 늘 empty — 상태 화면 경고·doctor 비정상·마지막 실행 가림(리뷰 OPS-2).
     clock(_ny(15, 0))

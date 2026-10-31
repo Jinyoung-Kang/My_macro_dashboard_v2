@@ -541,7 +541,7 @@ E가 끝나면(3a) 모든 주문이 풀리므로 미룸은 그 세션 안에서 
 | 태스크 → 데이터셋 | 단계 | 속도군 | 범위 | 저장 |
 |---|---|---|---|---|
 | `paper_bars_us` → `paper.bars.us` | 0 | slow(매시), 등록은 **`paper_quotes` 바로 뒤**(`collector/app/tasks/registry.py:45`) | `claude`·`claude2`의 대기 주문 ∪ **최근 8일(달력일 — 수집기는 미국 거래일을 모름)**에 만든 주문의 종목 ∪ `claude2` 보유 ∪ {SPY}. 범위가 비면 `EmptyResult`, Yahoo를 부르지 않음 | 종목·세션(최근 3)마다 메뉴 창(09:30~09:34·hh:00~hh:04, E의 `America/New_York` 시각)과 대기 `MARKET` 주문 창의 1분봉 OHLCV, 창 시작 T마다 **T 뒤 첫 거래 봉(`firstTradeAfter[T]` — 시각·Open·거래량, 그 세션 끝까지 찾고 없으면 `null`)**, 첫 봉 시가·마지막 봉, `fetchedAt`·`lagSeconds`(§7-1), 단계 0은 검증용 일봉 시가(X2) |
-| `paper_watch_us` → `paper.watch.us` | 2 | 새 `session`(300초, 상한 60초) | 그날 `MINUTE` 확인의 감시 목록 ∪ `claude2` 보유·대기 ∪ {SPY, QQQ}, 확인 시각 −15분 ~ +30분에만 | 종목마다 최근 완성 봉 30개, 당일 시가·고가·저가, `lagSeconds`. 그 밖의 시각은 `EmptyResult`(호출 없음) |
+| `paper_watch_us` → `paper.watch.us` | 2 | 새 `session`(300초, 상한 60초) | 그날 `MINUTE` 확인의 감시 목록 ∪ `claude2` 보유·대기 ∪ {SPY, QQQ}, 확인 시각 −15분 ~ +30분에만 | 종목마다 최근 완성 봉 30개, 당일 시가·고가·저가, `lagSeconds`. 그 밖의 시각은 호출 없이 정상 끝('호출 0회' — *구현(§16-4의 12)*: `EmptyResult`면 이 태스크 하나뿐인 session 군 실행이 하루 내내 'empty'라 상태 경고가 늘 남음) |
 
 - 받는 법: `yf.download(interval="1m", prepost=False, auto_adjust=False)` 배치 한 번. 기동 뒤 첫 실행만 `period="5d"`(서버가 꺼졌던 세션 따라잡기), 그 뒤 `"1d"`[추정 — X9].
   1분봉을 되짚을 수 있는 기간은 yfinance가 `period="max"`일 때 8일로 자르는 것만 확인했고(1.7.0 `scrapers/history.py:231-232`) Yahoo 쪽 실제 한도는 [모름 — X9에서 `5d` 응답의 첫 세션 날짜로 확인].
@@ -764,6 +764,8 @@ P_cf가 `null`인 체결은 줄마다 `excludedNoBaseline`. 평균·구간은 �
 11. 확인 결정 행(`CHECKPOINT`)은 다음 아침 패킷의 `10_recentDecisions`·8b watchlist의 '직전 결정'이 아니다(리뷰 F4 — `PacketBuilder.priorDecisions`가 거름).
     자세·목표 노출·watchlist가 없는 장중 판단이고, 같은 d에 아침 결정보다 늦게 생겨 watchlist를 빈 목록으로 지우고 5칸 하나를 차지했다. 그 결과는 대기 주문·체결 칸으로 보인다.
     `claude2.checkpoints`를 끈 뒤(§16-3)에도 과거 확인 행이 패킷에 나오지 않는다.
+12. `paper_watch_us`는 계획 없음·창 밖이면 `EmptyResult`가 아니라 정상 반환('… 호출 0회')이다(리뷰 OPS-2). session 군에는 이 태스크 하나뿐이라
+    `EmptyResult`면 실행 전체가 하루 거의 내내 `empty`로 남아 상태 화면 경고·`make doctor` 비정상·마지막 실행 가림이 생겼다. `EmptyResult`는 래치·0종목(받으려다 못 받음)만.
 
 ## 17. 위험과 대안
 

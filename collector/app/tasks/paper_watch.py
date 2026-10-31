@@ -7,9 +7,12 @@ app/tasks/paper_watch.py
 예상 상태의 가격에만 쓰입니다 — 장부 체결은 지금처럼 paper.bars.us 한 출처입니다(체결 출처를 둘로 늘리지 않음).
 
 [범위] store.watch_scope("US", 뉴욕 오늘) — 계좌2의 오늘(뉴욕 날짜) 세션 장중 확인 행 가운데 PLANNED·MINUTE인 것 하나(확인 시각·감시 목록)와
-  계좌2 보유·대기 주문 종목(백엔드 표를 읽기만 — ADR 0008·0022) + 기준 종목 SPY·QQQ. 행이 없으면 EmptyResult이고 Yahoo를 부르지 않습니다.
-[창] 확인 시각 T(그 세션 날짜의 America/New_York 시각)의 −WATCH_BEFORE ~ +WATCH_AFTER 안에서만 묻습니다. 그 밖은 EmptyResult(호출 0) —
-  확인이 없는 날·시각에는 외부 호출이 없습니다(§12-3: MINUTE 확인 날만 약 10건).
+  계좌2 보유·대기 주문 종목(백엔드 표를 읽기만 — ADR 0008·0022) + 기준 종목 SPY·QQQ. 행이 없으면 Yahoo를 부르지 않고 정상으로 끝냅니다
+  ('… 호출 0회').
+[창] 확인 시각 T(그 세션 날짜의 America/New_York 시각)의 −WATCH_BEFORE ~ +WATCH_AFTER 안에서만 묻습니다. 그 밖도 호출 0회로 정상 끝 —
+  확인이 없는 날·시각에는 외부 호출이 없습니다(§12-3: MINUTE 확인 날만 약 10건). 계획 없음·창 밖은 하루의 거의 전부라 EmptyResult로 두면
+  이 태스크 하나뿐인 session 군 실행이 늘 'empty'가 되어 상태 경고·doctor 비정상·마지막 실행 가림이 생깁니다(리뷰 OPS-2 — us_consensus의
+  '호출 0회' 선례). EmptyResult는 받으려 했는데 못 받은 경우(래치·0종목)에만 씁니다.
 [받는 법] market.minute_bars(…, "1d") 배치 한 번(paper_bars_us와 같은 함수 — 정규장·원시가). 공용 Yahoo 래치(http.YAHOO_HOST)가 닫혀 있으면
   그 회차는 묻지 않습니다(다음 session 회차가 다시 봄). 이 회차가 받은 429는 같은 함수가 래치를 닫습니다.
 [실패] 받지 못한 종목은 같은 확인(계좌·세션·시각)의 직전 저장본에서 잇고 isStale. 다른 확인의 저장본은 잇지 않습니다(어제 값을 오늘 감시로
@@ -113,12 +116,12 @@ def task_paper_watch_us() -> str:
     now = _now()
     scope = store.watch_scope("US", now.astimezone(paper_bars.NEW_YORK).date())
     if not scope:
-        raise EmptyResult("오늘 장중 확인(MINUTE) 계획이 없습니다 — Yahoo를 부르지 않음")
+        return "오늘 장중 확인(MINUTE) 계획 없음 — 호출 0회"
     session, at_et = scope["sessionDate"], scope["atEt"]
     label = at_et.strftime("%H:%M")
     if not in_window(now, session, at_et):
-        raise EmptyResult(f"장중 확인 {session.isoformat()} {label} ET 앞 {int(WATCH_BEFORE.total_seconds() // 60)}분 ~ "
-                          f"뒤 {int(WATCH_AFTER.total_seconds() // 60)}분 밖 — Yahoo를 부르지 않음")
+        return (f"장중 확인 {session.isoformat()} {label} ET 앞 {int(WATCH_BEFORE.total_seconds() // 60)}분 ~ "
+                f"뒤 {int(WATCH_AFTER.total_seconds() // 60)}분 밖 — 호출 0회")
     tickers = sorted(set(scope["watch"]) | set(scope["held"]) | set(scope["pending"]) | set(BENCHMARKS))
     latched = http.active_rejection(http.YAHOO_HOST)
     if latched is not None:
