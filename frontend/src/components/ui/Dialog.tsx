@@ -62,7 +62,7 @@ export function Dialog({
   };
 
   const heading = (
-    <DialogPrimitive.Title className={`text-base font-semibold text-text ${showClose ? "pr-10" : ""}`}>{title}</DialogPrimitive.Title>
+    <DialogPrimitive.Title className={`text-title-2 text-text ${showClose ? "pr-10" : ""}`}>{title}</DialogPrimitive.Title>
   );
 
   return (
@@ -92,7 +92,7 @@ export function Dialog({
           }}
           onEscapeKeyDown={blockWhenBusy}
           onInteractOutside={blockWhenBusy}
-          className={`fixed left-1/2 top-1/2 z-50 max-h-[calc(100dvh-2rem)] w-[calc(100%-2rem)] ${WIDTH[size]} -translate-x-1/2 -translate-y-1/2 overflow-y-auto rounded-xl border border-border bg-surface p-5 text-text outline-none ${FADE_IN}`}
+          className={`fixed left-1/2 top-1/2 z-50 max-h-[calc(100dvh-2rem)] w-[calc(100%-2rem)] ${WIDTH[size]} -translate-x-1/2 -translate-y-1/2 overflow-y-auto rounded-card border border-border bg-surface p-6 text-text shadow-overlay outline-none ${FADE_IN}`}
         >
           {hideTitle ? <VisuallyHidden.Root asChild>{heading}</VisuallyHidden.Root> : heading}
           {description && (
@@ -107,7 +107,7 @@ export function Dialog({
             <DialogPrimitive.Close
               aria-label="닫기"
               disabled={!dismissible}
-              className="absolute right-1.5 top-1.5 inline-flex h-11 w-11 items-center justify-center rounded-md text-text-3 hover:bg-surface-2 hover:text-text lg:right-3 lg:top-3 lg:h-8 lg:w-8 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus disabled:cursor-not-allowed disabled:opacity-50"
+              className="absolute right-2 top-2 inline-flex h-11 w-11 items-center justify-center rounded-full text-text-3 hover:bg-surface-2 hover:text-text motion-safe:transition-colors lg:right-4 lg:top-4 lg:h-8 lg:w-8 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus disabled:cursor-not-allowed disabled:opacity-50"
             >
               <XIcon size={16} />
             </DialogPrimitive.Close>

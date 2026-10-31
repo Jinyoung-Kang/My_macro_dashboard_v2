@@ -54,7 +54,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
             onOpenChange={(open) => {
               if (!open) remove(item.id);
             }}
-            className={`flex items-start gap-3 rounded-xl border bg-surface py-3 pl-4 pr-2 text-sm text-text focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus data-[swipe=move]:translate-x-[var(--radix-toast-swipe-move-x)] motion-safe:transition-opacity motion-safe:duration-150 motion-safe:starting:opacity-0 ${TONE[item.tone]}`}
+            className={`flex items-start gap-3 rounded-control border bg-surface py-3 pl-4 pr-2 text-sm text-text shadow-overlay focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus data-[swipe=move]:translate-x-[var(--radix-toast-swipe-move-x)] motion-safe:transition-opacity motion-safe:duration-150 motion-safe:starting:opacity-0 ${TONE[item.tone]}`}
           >
             <ToastPrimitive.Description className="min-w-0 flex-1 py-1 leading-relaxed">
               {item.tone === "warn" && (
@@ -67,7 +67,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
             </ToastPrimitive.Description>
             <ToastPrimitive.Close
               aria-label="닫기"
-              className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-md text-text-3 hover:bg-surface-2 hover:text-text lg:h-8 lg:w-8 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus"
+              className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-text-3 hover:bg-surface-2 hover:text-text motion-safe:transition-colors lg:h-8 lg:w-8 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus"
             >
               <XIcon size={14} />
             </ToastPrimitive.Close>

@@ -2,7 +2,7 @@
 
 import { ReactNode } from "react";
 import { deltaColor, EMPTY, formatAge, formatKst, withoutLeadingIcon } from "@/lib/format";
-import { buttonClasses, inputClasses, type ButtonSize, type ButtonVariant } from "./classes";
+import { buttonClasses, FOCUS_RING, inputClasses, type ButtonSize, type ButtonVariant } from "./classes";
 import { ChevronDownIcon } from "./icons";
 
 // 클래스 문자열은 서버 컴포넌트도 부를 수 있게 순수 모듈(classes.ts)에 두고 여기서 다시 내보냅니다.
@@ -356,15 +356,16 @@ export function Table<T>({
         표는 좁은 화면에서 좌우로 스크롤됩니다. 스크롤바가 보이지 않는 기기에서는
         오른쪽에 열이 더 있다는 사실을 알 수 없어, 폰에서만 안내를 한 줄 띄웁니다.
       */}
-      <p className="mb-1 text-[11px] text-muted sm:hidden">← 표를 좌우로 넘겨 보세요</p>
-      <div className="overflow-x-auto" tabIndex={0} role="region" aria-label={`${label ?? "표"} (좌우 스크롤)`}>
+      <p className="mb-1 text-xs text-text-3 sm:hidden">← 표를 좌우로 넘겨 보세요</p>
+      <div className={`overflow-x-auto ${FOCUS_RING}`} tabIndex={0} role="region" aria-label={`${label ?? "표"} (좌우 스크롤)`}>
         <table className="w-full min-w-[640px] border-collapse text-sm">
           <thead>
-            <tr className="border-b border-border text-xs uppercase tracking-wide text-muted">
+            {/* 머리는 13px 보조 글 — 대문자·자간은 한국어 머리에서 뜻이 없어 뺐습니다. */}
+            <tr className="border-b border-border text-[13px] text-text-2">
               {columns.map((column) => (
                 <th
                   key={column.key}
-                  className={`px-3 py-2 font-medium ${
+                  className={`px-3 py-2.5 font-medium ${
                     column.align === "right" ? "text-right" : "text-left"
                   } ${column.className ?? ""}`}
                 >
@@ -377,12 +378,12 @@ export function Table<T>({
             {rows.map((row, index) => (
               <tr
                 key={rowKey(row, index)}
-                className="border-b border-border/50 last:border-0 hover:bg-surface-hover/60"
+                className="border-b border-border last:border-0 hover:bg-surface-2 motion-safe:transition-colors"
               >
                 {columns.map((column) => (
                   <td
                     key={column.key}
-                    className={`px-3 py-2 tabular-nums ${
+                    className={`px-3 py-3 tabular-nums ${
                       column.align === "right" ? "text-right" : "text-left"
                     } ${column.className ?? ""}`}
                   >
