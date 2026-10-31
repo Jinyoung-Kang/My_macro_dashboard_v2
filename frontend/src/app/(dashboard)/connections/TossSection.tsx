@@ -34,7 +34,7 @@ export function TossSection() {
 
       <Card
         title="연결 상태" source={SOURCES.toss}
-        subtitle="연결 진단·조회 테스트입니다. 📡 수급 레이더(시장 전체·수급 지속성·폴백 순위)와 🇰🇷 국내 파생(현물·선물 수급 동조)도 토스 공식 데이터를 씁니다"
+        subtitle="연결 진단·조회 테스트입니다. 수급 레이더(시장 전체·수급 지속성·폴백 순위)와 국내 파생(현물·선물 수급 동조)도 토스 공식 데이터를 씁니다"
         actions={
           <Button onClick={() => setRunId(Date.now())} disabled={diagnostics.loading}>
             {diagnostics.loading ? "검사 중…" : "진단 실행"}

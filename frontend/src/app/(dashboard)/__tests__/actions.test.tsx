@@ -87,7 +87,7 @@ describe("🤖 AI 엔진 테스트", () => {
     const reply = deferred<unknown>();
     api.apiPost.mockReturnValue(reply.promise);
     render(<AiEngineSection />);
-    const button = await screen.findByRole("button", { name: "🧪 선택 모델 호출" });
+    const button = await screen.findByRole("button", { name: "선택 모델 호출" });
 
     fireEvent.click(button);
 
@@ -98,14 +98,14 @@ describe("🤖 AI 엔진 테스트", () => {
     expect((screen.getByRole("button", { name: "호출 중…" }) as HTMLButtonElement).disabled).toBe(true);
     await act(async () => reply.resolve({ status: true, response: "정상입니다", provider: "cerebras", latencyMs: 120, pipelineStep: "직접" }));
     expect(await screen.findByText("정상입니다")).toBeTruthy();
-    expect((screen.getByRole("button", { name: "🧪 선택 모델 호출" }) as HTMLButtonElement).disabled).toBe(false);
+    expect((screen.getByRole("button", { name: "선택 모델 호출" }) as HTMLButtonElement).disabled).toBe(false);
   });
 
   it("실패하면 서버가 준 문구를 결과 자리에 보여 준다", async () => {
     api.apiPost.mockRejectedValue(new Error("HTTP 502 — 엔진 응답 없음"));
     render(<AiEngineSection />);
 
-    fireEvent.click(await screen.findByRole("button", { name: "🧪 선택 모델 호출" }));
+    fireEvent.click(await screen.findByRole("button", { name: "선택 모델 호출" }));
 
     expect(await screen.findByText("HTTP 502 — 엔진 응답 없음")).toBeTruthy();
   });
@@ -165,7 +165,7 @@ describe("🤖 AI 리포트", () => {
       ["cerebras_llama", "Cerebras (키 없음)", true],
     ]);
 
-    fireEvent.click(screen.getByRole("button", { name: "🚀 리포트 생성" }));
+    fireEvent.click(screen.getByRole("button", { name: "리포트 생성" }));
     expect(api.apiPost).toHaveBeenCalledWith("/api/ai/report", {
       engineId: "anthropic_haiku", reportType: "종합 매크로 브리핑", extraInstruction: "",
     });
@@ -176,7 +176,7 @@ describe("🤖 AI 리포트", () => {
     const reply = deferred<unknown>();
     api.apiPost.mockReturnValue(reply.promise);
     render(<AiReportPage />);
-    const button = await screen.findByRole("button", { name: "🚀 리포트 생성" });
+    const button = await screen.findByRole("button", { name: "리포트 생성" });
     await waitFor(() => expect((button as HTMLButtonElement).disabled).toBe(false));
 
     fireEvent.click(button);
@@ -192,19 +192,19 @@ describe("🤖 AI 리포트", () => {
 
     await act(async () => reply.resolve({ status: true, response: "리포트 본문", reportType: "종합 매크로 브리핑", provider: "cerebras", latencyMs: 1000 }));
     expect(await screen.findByText("리포트 본문")).toBeTruthy();
-    expect(screen.getByRole("button", { name: "🚀 리포트 생성" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "리포트 생성" })).toBeTruthy();
   });
 
   it("실패하면 문구를 보여 주고, 앞서 받은 리포트는 지우지 않는다", async () => {
     api.apiPost.mockResolvedValueOnce({ status: true, response: "첫 리포트", reportType: "종합 매크로 브리핑", provider: "cerebras", latencyMs: 1 });
     api.apiPost.mockRejectedValueOnce(new Error("AI 요청 시간이 지났습니다"));
     render(<AiReportPage />);
-    const button = await screen.findByRole("button", { name: "🚀 리포트 생성" });
+    const button = await screen.findByRole("button", { name: "리포트 생성" });
     await waitFor(() => expect((button as HTMLButtonElement).disabled).toBe(false));
 
     fireEvent.click(button);
     expect(await screen.findByText("첫 리포트")).toBeTruthy();
-    fireEvent.click(await screen.findByRole("button", { name: "🚀 리포트 생성" }));
+    fireEvent.click(await screen.findByRole("button", { name: "리포트 생성" }));
 
     expect(await screen.findByText("AI 요청 시간이 지났습니다")).toBeTruthy();
     expect(screen.getByText("첫 리포트")).toBeTruthy();

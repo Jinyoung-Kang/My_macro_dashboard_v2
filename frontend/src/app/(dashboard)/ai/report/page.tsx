@@ -97,7 +97,7 @@ export default function AiReportPage() {
 
         <p className="mt-2 text-[11px] leading-relaxed text-muted">
           {engineId === "auto"
-            ? `⚡ 자동 탐색은 빠른 엔진부터 부릅니다${
+            ? `자동 탐색은 빠른 엔진부터 부릅니다${
                 autoBudget ? ` (전체 ${autoBudget}초를 넘기면 중단하고 실패 경로를 보여 줍니다)` : ""
               }.`
             : `고른 엔진만 부릅니다${
@@ -123,7 +123,7 @@ export default function AiReportPage() {
             onClick={generate}
             disabled={busy || !engines.data?.enabled}
           >
-            {busy ? `생성 중… ${elapsed}초 경과` : "🚀 리포트 생성"}
+            {busy ? `생성 중… ${elapsed}초 경과` : "리포트 생성"}
           </Button>
           {demo && (
             <span className="text-xs text-muted">{demoQuotaNote(result?.quota ?? engines.data?.quota)}</span>

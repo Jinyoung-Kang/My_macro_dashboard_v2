@@ -475,7 +475,7 @@ describe("결정 상세·검증·리스크·설정", () => {
       keys: [{ key: "claude2.enabled", type: "boolean", min: null, max: null, affectsRules: false, description: "계좌2", market: "US" }],
     });
     expect(groups.map((group) => [group.key, group.title])).toEqual([
-      ["claude2", "🧪 미국 Claude 계좌2 — 체결 시점 실험(켜기 · 결정 주기 호출 상한 · 1분봉 기다림 · 체결 기록 · 장중 확인, 규칙 계좌 영향 없음)"],
+      ["claude2", "미국 Claude 계좌2 — 체결 시점 실험(켜기 · 결정 주기 호출 상한 · 1분봉 기다림 · 체결 기록 · 장중 확인, 규칙 계좌 영향 없음)"],
     ]);
   });
 });

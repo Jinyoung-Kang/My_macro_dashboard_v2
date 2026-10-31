@@ -3,6 +3,7 @@
 import { useRouter } from "next/navigation";
 import { FormEvent, useEffect, useState } from "react";
 import { Banner, Button, Card, ErrorState, inputClasses, Loading, Table } from "@/components/ui";
+import { StatusDot } from "@/components/ui/icons";
 import { useApi } from "@/hooks/useApi";
 import { useAsyncAction } from "@/hooks/useAsyncAction";
 import { useSessionUser } from "@/hooks/useSessionUser";
@@ -173,7 +174,20 @@ export default function AccountPage() {
               rowKey={(row) => row.id}
               emptyMessage="로그인한 기기가 없습니다."
               columns={[
-                { key: "device", header: "기기", render: (row) => (row.current ? "🟢 지금 이 기기" : row.userAgent ?? "알 수 없음") },
+                {
+                  key: "device",
+                  header: "기기",
+                  render: (row) =>
+                    row.current ? (
+                      // 점은 장식 — 뜻은 '지금 이 기기' 글이 나릅니다.
+                      <span className="inline-flex items-center gap-1.5">
+                        <StatusDot tone="ok" />
+                        지금 이 기기
+                      </span>
+                    ) : (
+                      row.userAgent ?? "알 수 없음"
+                    ),
+                },
                 { key: "lastSeen", header: "마지막 사용", render: (row) => formatKst(row.lastSeenAt) },
                 { key: "created", header: "로그인", render: (row) => formatKst(row.createdAt) },
                 { key: "expires", header: "만료", render: (row) => formatKst(row.expiresAt) },

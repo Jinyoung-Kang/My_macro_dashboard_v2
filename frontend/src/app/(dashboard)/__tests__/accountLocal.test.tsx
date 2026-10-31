@@ -88,7 +88,7 @@ describe("내 계정 — 쿠키 세션으로 로그인한 사용자(지금과 �
     serveSession(COOKIE_OWNER, false);
     render(<SessionUserProvider user={COOKIE_OWNER}><AccountPage /></SessionUserProvider>);
 
-    expect(await screen.findByText("🟢 지금 이 기기")).toBeTruthy();
+    expect(await screen.findByText("지금 이 기기")).toBeTruthy();
     expect(screen.getByText("로그인한 기기")).toBeTruthy();
     expect(screen.getByRole("button", { name: "다른 기기 모두 로그아웃" })).toBeTruthy();
     expect(screen.getByText(/바꾸면 다른 기기의 로그인은 끊깁니다/)).toBeTruthy();

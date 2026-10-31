@@ -111,7 +111,7 @@ export default function PaperPage({
             <p className="mt-1 text-xs text-muted">
               같은 돈·같은 날 출발한 네 계좌 — 규칙 · Claude 계좌1 · SPY(100%) · 60/40(SPY 60%·SHY 40%)
               {data?.startDate ? ` · 출발 ${data.startDate}` : ""}
-              {book2 ? " · 🧪 Claude 계좌2(체결 시점 실험)는 같은 돈으로 늦게, 앞으로 체결로 출발" : ""}
+              {book2 ? " · Claude 계좌2(체결 시점 실험)는 같은 돈으로 늦게, 앞으로 체결로 출발" : ""}
             </p>
           )}
         </div>

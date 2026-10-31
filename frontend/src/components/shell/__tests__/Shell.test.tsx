@@ -279,7 +279,7 @@ describe("운영자 수동 새로고침", () => {
     // 안내 영역(role=status)은 문구가 없을 때도 있다 — 지웠다 내용과 함께 다시 넣으면 낭독기가 새 문구를 읽지 않기도 한다.
     const empty = screen.getAllByRole("status").find((node) => node.closest("aside"));
     expect(empty?.textContent).toBe("");
-    fireEvent.click(screen.getByRole("button", { name: "데이터 수동 새로고침 🚀" }));
+    fireEvent.click(screen.getByRole("button", { name: "데이터 수동 새로고침" }));
     expect(signal.requestRefresh).toHaveBeenCalledTimes(1);
     cleanup();
 

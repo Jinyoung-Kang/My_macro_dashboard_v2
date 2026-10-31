@@ -94,7 +94,7 @@ describe("데모 열람 — 쓰기 버튼", () => {
     });
     renderAs(DEMO, <AiReportPage />);
 
-    const generate = (await screen.findByRole("button", { name: "🚀 리포트 생성" })) as HTMLButtonElement;
+    const generate = (await screen.findByRole("button", { name: "리포트 생성" })) as HTMLButtonElement;
     await waitFor(() => expect(generate.disabled).toBe(false));
     expect(screen.getByText("데모 방문자 전체가 하루 20건을 함께 씁니다(오늘 0건 사용).")).toBeTruthy();
     expect(screen.queryByText("데모에서는 조회만 가능합니다")).toBeNull();
@@ -116,7 +116,7 @@ describe("데모 열람 — 쓰기 버튼", () => {
     });
     renderAs(DEMO, <AiReportPage />);
 
-    const generate = (await screen.findByRole("button", { name: "🚀 리포트 생성" })) as HTMLButtonElement;
+    const generate = (await screen.findByRole("button", { name: "리포트 생성" })) as HTMLButtonElement;
     await waitFor(() => expect(generate.disabled).toBe(false));
     fireEvent.click(generate);
 
@@ -127,7 +127,7 @@ describe("데모 열람 — 쓰기 버튼", () => {
   it("AI 리포트: 계정 회원은 지금처럼 생성 버튼을 쓴다", async () => {
     renderAs(MEMBER, <AiReportPage />);
 
-    const generate = (await screen.findByRole("button", { name: "🚀 리포트 생성" })) as HTMLButtonElement;
+    const generate = (await screen.findByRole("button", { name: "리포트 생성" })) as HTMLButtonElement;
     await waitFor(() => expect(generate.disabled).toBe(false));
     expect(screen.queryByText("데모에서는 조회만 가능합니다")).toBeNull();
   });

@@ -177,7 +177,7 @@ export default function CotPage() {
           <Banner tone="warn">
             {overview.data?.available
               ? `이 자산의 주간 추이 저장본만 아직 없습니다 (위 요약은 다른 저장본에서 온 값입니다).
-                 🗄️ 데이터 저장소 상태에서 cot_history를 다시 실행해 보세요.`
+                 데이터 저장소 상태에서 cot_history를 다시 실행해 보세요.`
               : (detail.data.message ?? "해당 자산의 데이터가 없습니다.")}
           </Banner>
         )}

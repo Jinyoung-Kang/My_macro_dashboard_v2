@@ -78,7 +78,7 @@ describe("더보기 화면", () => {
     expect(rows().map(([, href]) => href)).toEqual(["/alerts", "/ai/report", "/status", "/connections", "/admin/users", "/account"]);
     expect(screen.queryByRole("button", { name: "로그아웃" })).toBeNull();
     expect(within(screen.getByRole("region", { name: "계정" })).getByRole("link").textContent).toContain("로컬 · 로그인 없음");
-    expect(screen.getByRole("button", { name: "데이터 수동 새로고침 🚀" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "데이터 수동 새로고침" })).toBeTruthy();
   });
 
   it("데모 열람: 내 계정 행·로그아웃이 없고 '데모 열람' 표시", () => {
