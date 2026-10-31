@@ -312,7 +312,7 @@ make test-frontend     # 자가검증 + 훅 테스트(vitest) + 린트 + 빌드(
 | `LOCAL_NO_LOGIN` | 비우면 `true` — 로컬은 로그인 없이 이 맥에서 운영자로 열림. `false`면 로그인 화면(웹·QA 덧붙임은 늘 `false`로 고정, [ADR 0016](docs/adr/0016-local-no-login.md)) |
 | `COOKIE_SECURE` | HTTPS로만 접속할 때 `true` (http://에서 켜면 로그인이 안 됨). `LOCAL_NO_LOGIN=false`와 함께 — 로그인 없는 로컬과 함께 켜면 백엔드가 기동하지 않음. AWS 개인용 서버는 덧붙임이 기본 `true`로 둠(터널의 `http://localhost`는 Chrome·Firefox가 받음) — 로컬 값을 서버 `.env`에 옮기지 않음 |
 | `AI_TIMEOUT_SECONDS` | 엔진을 직접 고른 경우의 대기 한도 (기본 240초) |
-| `AI_AUTO_ATTEMPT_SECONDS` / `AI_AUTO_BUDGET_SECONDS` | `⚡ 자동 탐색`의 엔진별·전체 시간 예산 (기본 60초 / 180초) |
+| `AI_AUTO_ATTEMPT_SECONDS` / `AI_AUTO_BUDGET_SECONDS` | `자동 탐색`의 엔진별·전체 시간 예산 (기본 60초 / 180초) |
 | `COMPUTE_MAX_CONCURRENT` | 캐시에 없는 비싼 계산(스코어카드·기관 위험·13F 조합 등)의 동시 실행 상한. 비우거나 0이면 자동(코어 수의 절반, 최소 1). 넘친 요청은 2초 기다린 뒤 429 |
 
 > **`SEC_USER_AGENT`는 영문 이메일이어야 합니다.** HTTP 헤더는 latin-1만 담을 수
@@ -401,7 +401,7 @@ bash ~/My_macro_dashboard_v2/scripts/aws/deploy.sh   # main 받기 → 이미지
 
 | 증상 | 해결 |
 |---|---|
-| AI 리포트가 `N초 안에 응답하지 않았습니다` | `⚡ 자동 탐색`을 고르거나 `AI_TIMEOUT_SECONDS`를 늘리세요 |
+| AI 리포트가 `N초 안에 응답하지 않았습니다` | `자동 탐색`을 고르거나 `AI_TIMEOUT_SECONDS`를 늘리세요 |
 | 복사 버튼이 안 먹음 | 다른 기기에서 `http://192.168.x.x:3000`으로 열면 브라우저가 클립보드를 막습니다. 화면이 사유를 표시합니다 |
 | KRX 선물이 "추정치" | `KRX_API_KEY` 미설정. KODEX 200 기반 폴백입니다 |
 | 수급 레이더에 "누적 이력" 경고 | 외부 소스가 모두 실패해 저장된 이력을 보는 중입니다. **날짜**를 확인하세요 |
