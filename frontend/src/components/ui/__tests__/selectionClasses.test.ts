@@ -6,7 +6,15 @@
  */
 import { describe, expect, it } from "vitest";
 
-import { filterChipClasses, FOCUS_RING, pillTabClasses, SEGMENT_TRACK, segmentClasses, underlineTabClasses } from "@/components/ui/classes";
+import {
+  filterChipClasses,
+  FOCUS_RING,
+  pillTabClasses,
+  SEGMENT_TRACK,
+  segmentClasses,
+  SELECTED_BAR,
+  underlineTabClasses,
+} from "@/components/ui/classes";
 
 const tokens = (classes: string) => classes.split(/\s+/);
 
@@ -62,5 +70,18 @@ describe("밑줄 탭 underlineTabClasses", () => {
     expect(idle).not.toContain("font-semibold");
     expect(tokens(underlineTabClasses(true, "sm"))).toEqual(expect.arrayContaining(["h-11", "text-sm"]));
     expect(active).toContain("whitespace-nowrap");
+  });
+
+  it("고대비(forced-colors)에서는 나머지 탭의 투명 밑줄을 지운다 — 그 모드는 투명 테두리를 글자색으로 칠해 모든 탭에 밑줄이 생김", () => {
+    expect(tokens(underlineTabClasses(false))).toContain("forced-colors:border-b-0");
+    expect(tokens(underlineTabClasses(true))).not.toContain("forced-colors:border-b-0");
+  });
+});
+
+describe("고른 행 막대 SELECTED_BAR", () => {
+  it("잉크 3px 막대(강조 파랑 아님) — 고대비에서는 바탕색이 지워지므로 같은 폭의 왼쪽 테두리로", () => {
+    const bar = tokens(SELECTED_BAR);
+    expect(bar).toEqual(expect.arrayContaining(["absolute", "w-[3px]", "bg-text", "forced-colors:border-l-[3px]"]));
+    expect(bar.some((name) => name.includes("accent"))).toBe(false);
   });
 });

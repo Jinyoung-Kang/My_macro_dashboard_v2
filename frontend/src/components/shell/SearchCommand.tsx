@@ -2,6 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useEffect, useId, useMemo, useState, useSyncExternalStore, type KeyboardEvent } from "react";
+import { SELECTED_BAR } from "@/components/ui/classes";
 import { Dialog } from "@/components/ui/Dialog";
 import { LockIcon } from "@/components/ui/icons";
 import { useApi } from "@/hooks/useApi";
@@ -217,7 +218,7 @@ export function SearchCommand({ user }: { user?: SessionUser }) {
                   >
                     {/* 고른 결과 표시 — 초점은 입력칸에 있어 포커스 링이 없고, surface-2 바탕만으로는 대비가 1.1:1이라 왼쪽 잉크 막대를
                         함께 둡니다(계좌 행 AssetRow의 선택 막대와 같은 모양·색, 바탕 대비 3:1 이상 — 명세 D8 d). */}
-                    {selected && <span aria-hidden="true" className="absolute inset-y-1 left-0 w-[3px] rounded-r bg-text" />}
+                    {selected && <span aria-hidden="true" className={SELECTED_BAR} />}
                     <span
                       aria-hidden="true"
                       className={`inline-flex size-8 shrink-0 items-center justify-center rounded-full text-xs font-semibold text-text-2 ${

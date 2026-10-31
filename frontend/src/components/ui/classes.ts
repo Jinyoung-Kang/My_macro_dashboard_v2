@@ -111,9 +111,18 @@ const UNDERLINE_SIZE: Record<UnderlineTabSize, string> = {
  * 밑줄 탭(하위 메뉴 줄·모의매매 화면 탭) — 지금 탭은 강조 파랑 밑줄과 굵은 글(셸·탐색은 누를 수 있는 것이라 강조 파랑을 씀 — A1),
  * 나머지는 보조 글. 줄을 바꾸지 않고 감싼 줄이 가로로 스크롤합니다. `sm`은 하위 메뉴 줄 아래 두 번째 탭 줄(모의매매 7탭)용으로
  * 한 단계 작게 둬 두 줄의 위계를 가릅니다.
+ * 나머지 탭의 투명 밑줄(글이 위아래로 흔들리지 않게 둔 자리)은 고대비(forced-colors) 모드에서 시스템 글자색으로 칠해져 모든 탭에 밑줄이
+ * 생기므로, 그 모드에서는 지웁니다 — 지금 탭만 밑줄과 굵은 글이 남습니다(명세 D9, headless 크롬 forced-colors 흉내로 확인).
  */
 export function underlineTabClasses(active: boolean, size: UnderlineTabSize = "md"): string {
   return `inline-flex shrink-0 items-center gap-1 whitespace-nowrap border-b-2 px-3 ${UNDERLINE_SIZE[size]} ${SELECT_MOTION} focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-focus ${
-    active ? "border-accent font-semibold text-text" : "border-transparent font-normal text-text-2 hover:text-text"
+    active ? "border-accent font-semibold text-text" : "border-transparent font-normal text-text-2 hover:text-text forced-colors:border-b-0"
   }`;
 }
+
+/**
+ * 고른 행의 왼쪽 막대(자산 행·검색 결과 — 감싼 행이 relative) — 3px 잉크(데이터 영역이라 강조 파랑 아님, 원칙 A1). 고른 행의 바탕(surface-2)과
+ * 막대의 바탕색은 고대비(forced-colors) 모드에서 지워지므로, 그 모드에서는 같은 폭의 왼쪽 테두리로 그립니다 — 테두리는 시스템 글자색으로
+ * 남습니다(명세 D9).
+ */
+export const SELECTED_BAR = "absolute inset-y-1 left-0 w-[3px] rounded-r bg-text forced-colors:border-l-[3px]";

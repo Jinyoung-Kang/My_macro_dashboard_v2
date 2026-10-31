@@ -13,6 +13,7 @@ export {
   inputClasses,
   pillTabClasses,
   SEGMENT_TRACK,
+  SELECTED_BAR,
   segmentClasses,
   underlineTabClasses,
   type ButtonSize,

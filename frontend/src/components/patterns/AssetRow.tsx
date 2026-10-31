@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useId, type JSX, type ReactNode } from "react";
 
+import { SELECTED_BAR } from "@/components/ui/classes";
 import { AlertTriangleIcon, ChevronDownIcon, ChevronUpIcon } from "@/components/ui/icons";
 import { assetRowModel } from "@/lib/patternRows";
 import { presentText } from "@/lib/patterns";
@@ -109,7 +110,7 @@ export function AssetRow({
   const body: ReactNode = (
     <>
       {selectable && selected ? (
-        <span aria-hidden="true" className="absolute inset-y-1 left-0 w-[3px] rounded-r bg-text" />
+        <span aria-hidden="true" className={SELECTED_BAR} />
       ) : null}
       {model.avatarText ? <Avatar text={model.avatarText} ring={row.avatarRing} /> : null}
       <span className="flex min-w-0 flex-1 basis-32 flex-col">

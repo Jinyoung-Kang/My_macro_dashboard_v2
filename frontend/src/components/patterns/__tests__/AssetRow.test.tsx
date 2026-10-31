@@ -199,6 +199,8 @@ describe("AssetRow", () => {
     expect((open.querySelector("svg[aria-hidden='true'] path") as SVGPathElement).getAttribute("d")).toBe("m6 15 6-6 6 6");
     // 고른 행 — 왼쪽 막대는 잉크(데이터 영역이라 강조 파랑이 아님, 명세 A1)와 중립 바탕.
     expect(open.querySelector('[aria-hidden="true"].bg-text')).not.toBeNull();
+    // 고대비(forced-colors)에서는 바탕색이 지워지므로 막대는 같은 폭의 테두리로도 그려집니다(명세 D9).
+    expect((open.querySelector('[aria-hidden="true"].bg-text') as HTMLElement).className).toContain("forced-colors:border-l-[3px]");
     expect(open.querySelector(".bg-accent")).toBeNull();
     expect(open.className.split(/\s+/)).toContain("bg-surface-2");
   });
