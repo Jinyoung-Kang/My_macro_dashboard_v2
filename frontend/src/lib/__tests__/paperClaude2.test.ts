@@ -286,7 +286,7 @@ const EXECUTION: PaperExecutionResponse = {
     minOrders: 10, minDays: 5, audited: 14,
     chosen: {
       formula: "s × (P_NEXT_OBSERVATION − P_체결) ÷ P_NEXT_OBSERVATION × 10⁴ bp", n: 11, days: 5, excludedNoBaseline: 1,
-      meanBp: 6.789, lowBp: -3.25, highBp: 15, isProxy: true, excludedFallback: 2, notFilled: 1,
+      meanBp: 6.789, lowBp: -3.25, highBp: 15, isProxy: true, excludedFallback: 2, notFilled: 1, replacedByCheckpoint: 0,
       fallback: { n: 2, days: 1, excludedNoBaseline: 0, meanBp: null, lowBp: null, highBp: null, isProxy: false },
     },
     timings: [
@@ -336,6 +336,13 @@ describe("체결 시점 실험", () => {
     expect(book1?.chosen).toBeNull();
     expect(book1?.chosenFormula).toBeNull();
     expect(book1?.rows).toHaveLength(2);
+  });
+
+  it("고른 시점(M1): 체결 없음 가운데 장중 확인이 대신해 취소된 아침 주문은 있을 때만 괄호로 — 0이거나 칸이 없으면 붙이지 않음", () => {
+    const summary = EXECUTION.summary!;
+    const replaced = executionSummaryView({ ...EXECUTION, summary: { ...summary, chosen: { ...summary.chosen!, notFilled: 3, replacedByCheckpoint: 2 } } });
+    expect(replaced?.chosen?.[0].excluded).toBe("기준 없음 1 · 대체 체결 2(아래 줄) · 체결 없음 3(장중 확인이 대신함 2)");
+    expect(executionSummaryView(EXECUTION)?.chosen?.[0].excluded).toBe("기준 없음 1 · 대체 체결 2(아래 줄) · 체결 없음 1");
   });
 
   it("사전 등록 판정의 문턱은 설명 문구로만 — 명세 §14-3의 수치 그대로, 카드는 판정을 내리지 않는다고", () => {
@@ -600,7 +607,7 @@ describe("🧪 장중 확인(단계 2)", () => {
         ...EXECUTION.summary!,
         checkpoints: {
           definition: "M8", minRows: 5, rows: 4, planned: 1, finished: 3, called: 1, expired: 1, skipped: 1, calledPct: null,
-          feedMinute: 3, feedHourly: 1, minutePct: null, keep: 0, replace: 1, replacePct: null,
+          feedMinute: 3, feedHourly: 1, minutePct: null, keep: 0, replace: 1, replacePct: null, orders: 2,
         },
       },
     });
@@ -608,6 +615,7 @@ describe("🧪 장중 확인(단계 2)", () => {
       "장중 확인 4행 — 끝남 3(부름 1 · 놓침 1 · 건너뜀 1) · 예정 1 · 이용률(부름 ÷ 끝남) —",
       "요청한 자료 — 감시 1분봉(5분 수집, 잰 지연) 3 · 전 종목 시간별(최대 60분 묵음) 1 · 1분봉 비율 —",
       "부른 확인의 응답 — 그대로 둠(KEEP) 0 · 대신함(REPLACE) 1 · REPLACE 비율 —",
+      "장중 확인이 낸 주문 2건 — 아침 결정의 시점 선택을 재는 M1과 시점 표에는 세지 않습니다(장중 확인의 효과는 M8).",
       "서술 지표(M8)라 판정하지 않습니다 — 비율은 분모 5 이상부터, 대신한 주문과 취소된 원래 주문의 비교는 아직 없습니다.",
     ]);
     const enough = executionSummaryView({
@@ -616,7 +624,7 @@ describe("🧪 장중 확인(단계 2)", () => {
         ...EXECUTION.summary!,
         checkpoints: {
           definition: "M8", minRows: 5, rows: 9, planned: 1, finished: 8, called: 5, expired: 2, skipped: 1, calledPct: 62.5,
-          feedMinute: 6, feedHourly: 3, minutePct: 66.67, keep: 2, replace: 3, replacePct: 60,
+          feedMinute: 6, feedHourly: 3, minutePct: 66.67, keep: 2, replace: 3, replacePct: 60, orders: 5,
         },
       },
     });
@@ -629,7 +637,7 @@ describe("🧪 장중 확인(단계 2)", () => {
     expect(executionCheckpointRows(null)).toBeNull();
     const summary = {
       definition: "M8", minRows: 5, rows: 2, planned: 0, finished: 2, called: 1, expired: 1, skipped: 0, calledPct: null,
-      feedMinute: 2, feedHourly: 0, minutePct: null, keep: 0, replace: 1, replacePct: null,
+      feedMinute: 2, feedHourly: 0, minutePct: null, keep: 0, replace: 1, replacePct: null, orders: 1,
     };
     const rows = executionCheckpointRows({
       ...EXECUTION,

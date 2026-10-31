@@ -895,6 +895,8 @@ export interface PaperExecutionChosenSummary extends PaperExecutionChosenLine {
   excludedFallback: number;
   /** 체결이 없는 주문(대기·만료·취소) — M1은 체결된 주문만 셉니다. */
   notFilled: number;
+  /** notFilled 가운데 장중 확인 REPLACE가 대신해 취소된 아침 주문. 장중 확인 결정이 낸 주문은 M1에 아예 없습니다(M8의 orders). */
+  replacedByCheckpoint: number;
   fallback: PaperExecutionChosenLine;
 }
 
@@ -937,6 +939,8 @@ export interface PaperExecutionCheckpointSummary {
   keep: number;
   replace: number;
   replacePct: number | null;
+  /** 장중 확인 결정이 낸 감사 주문 수 — M1·시점 표에서 뺍니다(명세 §16-4의 17). */
+  orders: number;
 }
 
 /** GET /api/paper/books/{code}/execution — 🧪 실행 감사(미국 Claude 계좌만, ADR 0022). */

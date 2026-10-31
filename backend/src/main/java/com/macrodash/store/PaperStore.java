@@ -22,6 +22,7 @@ import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -1900,6 +1901,12 @@ public class PaperStore {
     public Optional<Decision> decision(long id) {
         return jdbc.query("SELECT " + DECISION_COLUMNS + " FROM paper_decisions WHERE id = ?", decisionMapper(), id)
                 .stream().findFirst();
+    }
+
+    /** 그 책에서 그 종류인 결정의 번호(순서 없음) — 큰 JSON은 읽지 않습니다. 실행 감사 요약이 장중 확인(CHECKPOINT) 결정의 주문을 가릴 때 씁니다. */
+    public Set<Long> decisionIds(String code, String kind) {
+        return new HashSet<>(jdbc.query("SELECT id FROM paper_decisions WHERE book_code = ? AND kind = ?",
+                (rs, rowNum) -> rs.getLong("id"), code, kind));
     }
 
     /** 그 (책, 기준 거래일, 종류)의 결정. 없으면 empty. */

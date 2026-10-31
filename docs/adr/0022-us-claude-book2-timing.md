@@ -144,6 +144,8 @@
        (`PaperExecutionViewTest.chosenSeparatesFallbackFills`), 본 줄 `isProxy`는 본 줄에 센 시가 체결(R1·R2)이 있을 때만 — 대체 체결로만 푼 시가 주문은 아님
        (`chosenProxyOnlyForPrimaryOpenFills`), 메뉴 줄과 같은 부트스트랩·문턱이고 대체 체결은 N에도 결정일에도 세지 않음(`chosenWithEnoughFillsUsesTheSameBootstrap`·`chosenThresholdsCountOnlyPrimaryFills`,
        통합 `ApiIntegrationTest`). 화면은 시점 줄 위에 M1 두 줄을 두고 문턱(§14-3)은 설명 문구로만 — 값이 있어도 '구간 참고(판정은 8주 뒤)'(`paperClaude2.test.ts`·`paperClaude2.test.tsx`)
+     - 단계 2(있음): M1·메뉴 줄은 장중 확인 결정(`CHECKPOINT`)이 낸 주문을 세지 않음 — 뺀 수는 M8 `orders`, 장중 확인이 취소한 아침 주문은 `notFilled` 가운데 `replacedByCheckpoint`
+       (`PaperExecutionViewTest.chosenExcludesCheckpointOrders`, `PaperStoreDbTest.decisionIdsByKind`)
 
 ## 배경
 
@@ -244,6 +246,8 @@
   `MARKET` 창, 켠 판의 응답 스키마·고정 문단 `c2-2`·`13_execution` 판 2, 계획 행(아침 결정과 같은 트랜잭션)·요청 검증(`CHECKPOINT_INVALID`), 확인 패킷·응답 스키마,
   `PaperCheckpointJob`(60초, 자기 잠금, 창 +2~+20분, 세션당 한 번), `MARKET` 체결 사다리·실행 감사 목표 시각, REPLACE 적용(⑩·예상 상태 §10-6), 상태 응답·실행 감사 응답·화면.
   구현이 명세를 바꾼 곳은 명세 §16-4에 적었다(따로 둔 c2 스키마 파일, `MARKET` 기준 시각의 엄격한 식, KEEP 상태 `NO_TRADE`, 모두 거절돼도 REPLACE는 대신함, 확인 행 재시도 없음 등).
+  리뷰 S3(2026-10-31, 권장안): **M1 표본은 아침 결정의 주문만**이다 — 장중 확인 결정이 낸 주문은 M1·메뉴 줄에서 빼고 M8에 수만 센다(단계 1과 같은 표본 정의라 단계 2를 꺼도
+  M1 뜻이 그대로). 대가: 장중 확인이 아침 주문을 대신한 날은 그 주문이 M1에서 '체결 없음'으로 빠져 M1 N이 줄고, 장중 확인 판단의 체결 효과는 M8의 반사실 비교(아직 없음)가 생기기 전까지 재지 않는다.
 - **단계 1 구현(2026-10-30, 배포 전)**: 계좌 프로필·입력 동결·검증기 순위(이동 — 바이트 그대로), 시각 지정 체결 2b·1분봉 기다림·대체 체결, 계좌2 정의·`claude2.*` 설정·스키마·고정 문단·
   `13_execution`·결정 작업 몫·앞으로 체결 출발·관측치 사슬, 계좌1 화면 이름 "Claude 계좌1"과 옛 이름 목록, 화면(출발 카드·색 `#a438a0`·시점 이름표·실행 표·'체결 시점 실험'·
   'S = 100 같은 구간'·계좌2 한계 문구). 구현이 명세를 좁힌 곳: E 확정 종가 대체(`QUOTES_CLOSE`)는 그 관측치의 그 종목 봉이 E의 확정 종가(봉 날짜 = E)일 때만이라

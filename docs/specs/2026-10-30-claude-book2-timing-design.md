@@ -779,8 +779,11 @@ P_cf가 `null`인 체결은 줄마다 `excludedNoBaseline`. 평균·구간은 �
 15. 예상 상태(§10-6)는 장부 2b와 같은 순서(기준 시각 순, 같은 시각 안에서만 매도 먼저)로 적용한다 — 뒤 시각 매도 대금을 앞 시각 매수 현금에 쓰지 않음(리뷰 F3).
 16. 상태 `claude2.checkpoint.enabled`는 `claude2.enabled`와 `claude2.checkpoints`가 모두 켜졌는가(작업이 부르는 조건 — 리뷰 N2), `watch`는 오늘 행이 `MINUTE`이고
     감시 저장본이 그 확인(계좌·세션·시각)의 것일 때만(리뷰 N1). 실행 감사 `checkpoints[]`는 체결 시점 실험 카드(계좌2)의 '장중 확인 기록' 표로 보인다(리뷰 S1).
-17. **M1(`summary.chosen`)에는 장중 확인 REPLACE가 낸 주문도 들어간다** — 기준 거래일이 아침 결정의 d라 같은 결정일 묶음으로 본 줄에 섞이고, 따로 세는 칸은 없다(코드 사실, 리뷰 S3).
-    §14-3 판정의 표본이 '시점 선택 + 장중 판단'이 섞인 표본이라는 뜻이다. 빼서 `fallback`처럼 따로 셀지는 사용자 결정으로 남긴다(첫 세션 전에 정하면 표본 정의가 흔들리지 않음).
+17. **M1(`summary.chosen`)과 메뉴 반사실 줄(`summary.timings`)은 장중 확인 결정(kind `CHECKPOINT`)이 낸 주문을 세지 않는다**(리뷰 S3 — 2026-10-31 권장안으로 정함).
+    M1은 아침 결정의 시점 선택을 재는 지표라 단계 1과 표본 정의가 같아야 하고(되돌리기·단계 1/2 비교), 장중 확인의 효과는 M8('대신한 주문의 TV 대 취소된 원래 주문')이
+    따로 다룬다. `MARKET`은 아침 메뉴에 없는 시점이라 메뉴 반사실의 뜻도 맞지 않는다. 뺀 수는 M8 `summary.checkpoints.orders`, 주문 줄(`orders[]`)·`summary.audited`에는 그대로 있다.
+    아침 주문이 장중 확인 REPLACE로 취소되면(사유 '장중 확인이 대신함') 지금처럼 체결 없음(`notFilled`)이고, 그 가운데 수를 `chosen.replacedByCheckpoint`로 따로 적는다
+    (`PaperExecutionViewTest.chosenExcludesCheckpointOrders`).
 
 ## 17. 위험과 대안
 

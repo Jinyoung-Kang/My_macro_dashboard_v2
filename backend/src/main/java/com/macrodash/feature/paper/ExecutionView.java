@@ -23,6 +23,7 @@ import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * 🧪 GET /api/paper/books/{code}/execution — 실행 감사 응답(미국 Claude 계좌2 실험 단계 0, 명세 docs/specs/2026-10-30-claude-book2-timing-design.md
@@ -41,11 +42,14 @@ import java.util.Map;
  * 대신 체결 원가격(슬리피지 전)을 넣고 같은 {@link ExecutionTiming#summarize}(문턱·부트스트랩 반복·씨앗 같음)로 셉니다. 체결된 주문만 세고, 대체 체결
  * (사다리 칸 {@link UsTimedFills#FALLBACK_RUNGS})은 본 줄에서 빼 {@code fallback}에 따로 셉니다(§14-3 'N ≥ 30(대체 체결 제외)'). 계좌1(시각 지정 체결이
  * 아닌 계좌)은 고른 시점이 곧 계좌1식 기준이라 null입니다. 판정 문턱(§14-3)은 코드에 두지 않습니다 — 8주 뒤 사람이 문서의 문턱으로 읽습니다.
+ * 장중 확인 결정(kind CHECKPOINT)이 낸 주문은 M1·메뉴 줄 어디에도 세지 않습니다(명세 §16-4의 17 — M1은 아침 결정의 시점 선택이고 장중 확인의 효과는
+ * M8). 아침 주문이 장중 확인 REPLACE로 취소됐으면 지금처럼 {@code notFilled}이고, 그 가운데 수를 {@code replacedByCheckpoint}로 따로 적습니다.
  *
  * <p><b>장중 확인 기록</b>(단계 2 — §5-2·§14-2 M8): {@code checkpoints}는 계좌2의 장중 확인 행({@code paper_checkpoints}) 최근
  * {@value #CHECKPOINT_ROWS}개(세션 최근 순 — 상태·사유·피드·지연·확인 결정과 그 응답의 KEEP/REPLACE), 계좌1은 빈 목록. {@code summary.checkpoints}는
  * M8(서술 — 판정 없음): 끝난 행 수·부름·놓침·건너뜀, 요청 피드 분포, 부른 확인의 REPLACE 수와 비율(분모 &lt; {@value #CHECKPOINT_MIN_ROWS}이면 비율
- * null — 수는 그대로). 계좌1은 null. 대신한 주문의 TV 대 취소된 원래 주문의 반사실은 아직 세지 않습니다.
+ * null — 수는 그대로), M1·메뉴 줄에서 뺀 장중 확인 주문 수({@code orders}). 계좌1은 null. 대신한 주문의 TV 대 취소된 원래 주문의 반사실은 아직
+ * 세지 않습니다.
  */
 final class ExecutionView {
 
@@ -107,8 +111,16 @@ final class ExecutionView {
             checkpointRows.add(checkpointRow(c, answers.get(c.checkpointDecisionId()), calendar));
         }
         out.put("checkpoints", checkpointRows);
-        Map<String, Object> summary = summary(book, audited, orders, fills);
-        summary.put("checkpoints", checkpointed ? checkpointSummary(checkpoints, answers) : null);
+        // 장중 확인 결정이 낸 주문은 M1·메뉴 줄에서 뺌(클래스 설명) — 감사한 주문 수(summary.audited)에는 그대로 셈.
+        Set<Long> checkpointDecisions = checkpointed ? store.decisionIds(book.code(), RuleBookService.CHECKPOINT) : Set.of();
+        List<OrderExec> morning = audited.stream()
+                .filter(e -> {
+                    Long decision = orders.get(e.orderId()).decisionId();
+                    return decision == null || !checkpointDecisions.contains(decision);   // Set.of()는 null을 받지 않음
+                }).toList();
+        Map<String, Object> summary = summary(book, audited.size(), morning, orders, fills);
+        summary.put("checkpoints", checkpointed
+                ? checkpointSummary(checkpoints, answers, audited.size() - morning.size()) : null);
         out.put("summary", summary);
         return out;
     }
@@ -136,7 +148,8 @@ final class ExecutionView {
     }
 
     /** M8(클래스 설명) — 서술 지표, 판정 없음. */
-    private static Map<String, Object> checkpointSummary(List<Checkpoint> checkpoints, Map<Long, Decision> answers) {
+    private static Map<String, Object> checkpointSummary(List<Checkpoint> checkpoints, Map<Long, Decision> answers,
+                                                         int checkpointOrders) {
         int planned = 0;
         int called = 0;
         int expired = 0;
@@ -169,7 +182,8 @@ final class ExecutionView {
         int finished = called + expired + skipped;
         Map<String, Object> out = new LinkedHashMap<>();
         out.put("definition", "M8(서술 — 판정 없음): 끝난 행 = 부름 + 놓침 + 건너뜀, 이용률 = 부름 ÷ 끝난 행, 피드 분포 = 요청한 피드(계획 행 전부), "
-                + "REPLACE 비율 = REPLACE ÷ (KEEP + REPLACE)(형식 오류·API 오류는 빼고). 분모 < " + CHECKPOINT_MIN_ROWS + "이면 비율 null");
+                + "REPLACE 비율 = REPLACE ÷ (KEEP + REPLACE)(형식 오류·API 오류는 빼고). 분모 < " + CHECKPOINT_MIN_ROWS + "이면 비율 null. "
+                + "주문 = 장중 확인 결정이 낸 감사 주문(M1·시점 표에서 뺌)");
         out.put("minRows", CHECKPOINT_MIN_ROWS);
         out.put("rows", checkpoints.size());
         out.put("planned", planned);
@@ -184,6 +198,7 @@ final class ExecutionView {
         out.put("keep", keep);
         out.put("replace", replace);
         out.put("replacePct", pct(replace, keep + replace));
+        out.put("orders", checkpointOrders);
         return out;
     }
 
@@ -271,7 +286,8 @@ final class ExecutionView {
         return out;
     }
 
-    private static Map<String, Object> summary(Book book, List<OrderExec> audited, Map<Long, Order> orders,
+    /** 요약 — {@code audited}는 M1·메뉴 줄에 세는 주문(장중 확인 주문을 뺀 것), {@code auditedCount}는 감사한 주문 전부. */
+    private static Map<String, Object> summary(Book book, int auditedCount, List<OrderExec> audited, Map<Long, Order> orders,
                                                Map<Long, ExecFill> fills) {
         List<Map<String, Object>> timings = new ArrayList<>();
         for (String timing : menu()) {
@@ -320,7 +336,7 @@ final class ExecutionView {
         out.put("interval", interval);
         out.put("minOrders", ExecutionTiming.MIN_ORDERS);
         out.put("minDays", ExecutionTiming.MIN_DAYS);
-        out.put("audited", audited.size());
+        out.put("audited", auditedCount);
         out.put("chosen", chosen(book, audited, orders, fills));
         out.put("timings", timings);
         return out;
@@ -329,7 +345,8 @@ final class ExecutionView {
     /**
      * 고른 시점(§14-2 M1 — 클래스 설명). 시각 지정 체결 계좌(계좌2)가 아니면 null. 체결이 없는 주문(대기·만료·취소)은 {@code notFilled}, 계좌1식 기준이나
      * 체결 금액이 없는 체결은 본 줄·대체 체결 줄 각각의 {@code excludedNoBaseline}으로 셉니다(빼고 셈 — 0으로 채우지 않음). {@code excludedFallback}은
-     * 본 줄에서 뺀 대체 체결 전부(= 대체 체결 줄의 n + excludedNoBaseline)입니다.
+     * 본 줄에서 뺀 대체 체결 전부(= 대체 체결 줄의 n + excludedNoBaseline)입니다. {@code replacedByCheckpoint}는 notFilled 가운데 장중 확인 REPLACE가
+     * 취소한 아침 주문({@link ClaudeDecisionPipeline#SUPERSEDED_BY_CHECKPOINT})입니다.
      */
     private static Map<String, Object> chosen(Book book, List<OrderExec> audited, Map<Long, Order> orders,
                                               Map<Long, ExecFill> fills) {
@@ -341,11 +358,16 @@ final class ExecutionView {
         int[] noBaseline = new int[2];                     // {본 줄, 대체 체결}
         boolean proxy = false;
         int notFilled = 0;
+        int replaced = 0;
         for (OrderExec exec : audited) {
             Order order = orders.get(exec.orderId());
             ExecFill fill = fills.get(exec.orderId());
             if (fill == null) {
                 notFilled++;
+                if (PaperBooks.ORDER_CANCELLED.equals(order.status())
+                        && ClaudeDecisionPipeline.SUPERSEDED_BY_CHECKPOINT.equals(order.rejectReason())) {
+                    replaced++;
+                }
                 continue;
             }
             int group = fill.fillRung() != null && UsTimedFills.FALLBACK_RUNGS.contains(fill.fillRung()) ? 1 : 0;
@@ -366,6 +388,7 @@ final class ExecutionView {
         out.putAll(chosenLine(ExecutionTiming.summarize(primary), noBaseline[0], proxy));
         out.put("excludedFallback", fallback.size() + noBaseline[1]);
         out.put("notFilled", notFilled);
+        out.put("replacedByCheckpoint", replaced);
         out.put("fallback", chosenLine(ExecutionTiming.summarize(fallback), noBaseline[1], false));
         return out;
     }

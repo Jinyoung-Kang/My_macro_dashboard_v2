@@ -100,7 +100,7 @@ const CHECKPOINT_COLUMNS: readonly Column<ExecutionCheckpointRow>[] = [
  * 🧪 체결 시점 실험(미국 Claude 계좌2 — 계좌2 명세 §13-3·§14, ADR 0022 결정 13) — GET /api/paper/books/{code}/execution의 요약을 시점마다 한 줄로.
  *
  * 위 표는 고른 시점(M1 — 주 판정, §14-2): 계좌2가 고른 시점의 실제 체결 원가격이 계좌1식(다음 시간별 관측치)보다 몇 bp 나았나 — 대체 체결은 본 줄에서 빼
- * 둘째 줄에 따로 셉니다(계좌1은 고른 시점이 곧 기준이라 없음). 아래 표는 시점마다 "그 계좌 주문을 모두 그 시점에 체결했다면"의 반사실 분포(M2의 기준)입니다.
+ * 둘째 줄에 따로 셉니다(계좌1은 고른 시점이 곧 기준이라 없음 — 장중 확인 결정이 낸 주문은 두 표 모두 세지 않고 M8에 수만). 아래 표는 시점마다 "그 계좌 주문을 모두 그 시점에 체결했다면"의 반사실 분포(M2의 기준)입니다.
  * 둘 다 체결 금액 가중 평균과 결정일 묶음 부트스트랩 90% 구간이고 서버 계산입니다(화면은 계산하지 않음). 주문 수·결정일 수가 문턱보다 적으면 서버가 null을
  * 보내고 화면은 '—'와 '판단 보류'로 적습니다. 값이 있어도 화면은 "도움이 됐다/손해였다"를 정하지 않습니다 — 사전 등록 판정(§14-3)은 8주 뒤 M1로 하고,
  * 그 문턱은 설명 문구로만 적습니다. 시가(NEXT_OPEN)는 대리값 배지(M1 본 줄은 센 체결에 시가 체결이 있을 때).
@@ -199,14 +199,19 @@ export function ExecutionExperimentCard({ books }: { books: readonly PaperBookSu
             emptyText="아직 감사한 주문이 없습니다."
           />
           <ul aria-label="체결 시점 실험 설명" className="mt-2 flex flex-col gap-0.5 text-xs text-text-3">
-            {view.chosenFormula && <li>M1 계산: {view.chosenFormula} — 체결된 주문만, 대체 체결(R2b T 뒤 첫 거래 봉 시가·R3 관측 종가·확정 종가)은 둘째 줄에 따로</li>}
+            {view.chosenFormula && (
+              <li>
+                M1 계산: {view.chosenFormula} — 아침 결정이 낸 주문 가운데 체결된 주문만, 대체 체결(R2b T 뒤 첫 거래 봉 시가·R3 관측 종가·확정 종가)은
+                둘째 줄에 따로, 장중 확인이 낸 주문은 세지 않음(M8)
+              </li>
+            )}
             {view.formula && <li>시점 계산: {view.formula}</li>}
             {view.method && <li>{view.method}</li>}
             <li>{EXECUTION_VERDICT_RULE}</li>
             <li>
               시점 표는 시점마다의 반사실 분포라 판정이 아닙니다 —
               계좌1식 기준이나 체결(금액 가중치)이 없거나 그 시점 반사실이 없는 주문은 빼고 셉니다(뺀 수를 함께 적음 — &apos;기준 없음&apos;에는
-              계좌2의 체결 없는 주문도 듦, 대체 체결로 풀린 주문도 따로 빼지 않음).
+              계좌2의 체결 없는 주문도 듦, 대체 체결로 풀린 주문도 따로 빼지 않음). 장중 확인이 낸 주문은 M1처럼 세지 않습니다.
             </li>
           </ul>
         </>

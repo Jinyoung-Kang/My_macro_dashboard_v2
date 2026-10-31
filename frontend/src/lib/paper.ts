@@ -3576,6 +3576,8 @@ export function executionSummaryView(response: PaperExecutionResponse | null | u
       excluded: `기준 없음 ${formatNumber(numberOf(line.excludedNoBaseline), 0)} · 값 없음 ${formatNumber(numberOf(line.excludedNoPrice), 0)}`,
     };
   });
+  // 체결 없음 가운데 장중 확인이 대신해 취소된 아침 주문 — 있을 때만 괄호로(장중 확인을 안 쓴 날이 대부분이라 늘 '0'을 붙이지 않음).
+  const replacedText = (count: number | null) => (count !== null && count > 0 ? `(장중 확인이 대신함 ${formatNumber(count, 0)})` : "");
   // 고른 시점(M1): 본 줄은 메뉴 줄과 같은 문턱 문구('판단 보류'), 대체 체결 줄은 판정에 쓰지 않는다고만.
   const chosenRow = (line: unknown, key: string, label: string, primary: boolean): ExecutionTimingRow => {
     const record = isRecord(line) ? line : {};
@@ -3598,7 +3600,7 @@ export function executionSummaryView(response: PaperExecutionResponse | null | u
         : (mean === null ? `판정에 쓰지 않음 — ${shortfall(n, days)}` : "판정에 쓰지 않음(따로 셈)"),
       excluded: primary
         ? `${noBaseline} · 대체 체결 ${formatNumber(numberOf(record.excludedFallback), 0)}(아래 줄) · 체결 없음 `
-          + formatNumber(numberOf(record.notFilled), 0)
+          + formatNumber(numberOf(record.notFilled), 0) + replacedText(numberOf(record.replacedByCheckpoint))
         : noBaseline,
     };
   };
@@ -3637,6 +3639,7 @@ function checkpointSummaryLines(summary: unknown): string[] | null {
     `요청한 자료 — ${CHECKPOINT_FEED.MINUTE} ${count(summary.feedMinute)} · ${CHECKPOINT_FEED.HOURLY} ${count(summary.feedHourly)} · `
       + `1분봉 비율 ${pct(summary.minutePct)}`,
     `부른 확인의 응답 — 그대로 둠(KEEP) ${count(summary.keep)} · 대신함(REPLACE) ${count(summary.replace)} · REPLACE 비율 ${pct(summary.replacePct)}`,
+    `장중 확인이 낸 주문 ${count(summary.orders)}건 — 아침 결정의 시점 선택을 재는 M1과 시점 표에는 세지 않습니다(장중 확인의 효과는 M8).`,
     `서술 지표(M8)라 판정하지 않습니다 — 비율은 분모 ${count(summary.minRows)} 이상부터, 대신한 주문과 취소된 원래 주문의 비교는 아직 없습니다.`,
   ];
 }

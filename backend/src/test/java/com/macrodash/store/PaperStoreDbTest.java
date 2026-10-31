@@ -1144,6 +1144,21 @@ class PaperStoreDbTest {
     }
 
     @Test
+    @DisplayName("결정 번호(실행 감사의 장중 확인 주문 가림) — 그 책·그 종류만, 없으면 빈 집합")
+    void decisionIdsByKind() {
+        store.insertBookIfAbsent(book(BOOK, "규칙 책"));
+        store.insertBookIfAbsent(book(OTHER_BOOK, "다른 책"));
+        long first = store.insertDecisionIfAbsent(decision(DAY, "CHECKPOINT", "NO_TRADE", null)).orElseThrow();
+        long second = store.insertDecisionIfAbsent(decision(DAY.plusDays(1), "CHECKPOINT", "API_ERROR", null)).orElseThrow();
+        store.insertDecisionIfAbsent(decision(DAY, "SCHEDULED", "OK", null));
+        store.insertDecisionIfAbsent(new PaperStore.Decision(0, OTHER_BOOK, DAY, "CHECKPOINT", null, "OK",
+                null, null, 3, null, null, null, null, null, null, null, null, null, false, null, 0));
+
+        assertThat(store.decisionIds(BOOK, "CHECKPOINT")).as("SCHEDULED·다른 책은 빠짐").containsExactlyInAnyOrder(first, second);
+        assertThat(store.decisionIds(BOOK, "INITIAL")).isEmpty();
+    }
+
+    @Test
     @DisplayName("게이트 지표: 거래일마다 한 번(두 번째 넣기는 처음 값 그대로), 직전 기록·최근 순 — 시험 뒤 되돌림")
     void gateLogOncePerTradingDay() {
         class Rollback extends RuntimeException {

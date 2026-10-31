@@ -86,10 +86,16 @@ class PaperExecutionViewTest {
      * 감사 행의 계좌1식 기준 {@code base}(null이면 관측치 사슬로 증명하지 못함). 메뉴 반사실은 비워 둡니다 — M1은 체결 원가격만 씁니다.
      */
     private long book2(LocalDate asOf, String side, String timing, Double base, Double fillRaw, String rung, int qty) {
+        return book2(1L, asOf, side, timing, base, fillRaw, rung, qty, fillRaw == null ? "EXPIRED" : "FILLED", null);
+    }
+
+    /** {@link #book2(LocalDate, String, String, Double, Double, String, int)}에 결정 번호·주문 상태·사유를 정해서. */
+    private long book2(long decisionId, LocalDate asOf, String side, String timing, Double base, Double fillRaw, String rung,
+                       int qty, String status, String rejectReason) {
         LocalDate session = UsPaperMarket.INSTANCE.calendar().nextTradingDay(asOf);
         boolean buy = PaperBooks.BUY.equals(side);
-        long id = store.insertOrder(new Order(0, PaperBooks.CLAUDE2, 1L, "AAPL", side, null, buy ? 5.0 : null,
-                buy ? null : 0.5, timing, "CLAUDE", fillRaw == null ? "EXPIRED" : "FILLED", null, null, asOf,
+        long id = store.insertOrder(new Order(0, PaperBooks.CLAUDE2, decisionId, "AAPL", side, null, buy ? 5.0 : null,
+                buy ? null : 0.5, timing, "CLAUDE", status, rejectReason, null, asOf,
                 et(asOf, 18, 31), session, null));
         if (fillRaw != null) {
             double fillPrice = buy ? fillRaw * 1.0005 : fillRaw * 0.9995;
@@ -273,6 +279,7 @@ class PaperExecutionViewTest {
         assertThat(chosen.path("excludedNoBaseline").asInt()).isEqualTo(1);
         assertThat(chosen.path("excludedFallback").asInt()).as("대체 체결 넷(기준 없는 하나 포함)").isEqualTo(4);
         assertThat(chosen.path("notFilled").asInt()).isEqualTo(1);
+        assertThat(chosen.path("replacedByCheckpoint").asInt(-1)).as("만료 — 장중 확인이 대신한 취소가 아님").isZero();
         assertThat(chosen.path("meanBp").isNull()).as("주문 3건 — 문턱 아래, 0이 아님").isTrue();
         assertThat(chosen.path("lowBp").isNull()).isTrue();
         assertThat(chosen.path("highBp").isNull()).isTrue();
@@ -312,6 +319,47 @@ class PaperExecutionViewTest {
         assertThat(primary.path("n").asInt()).isEqualTo(2);
         assertThat(primary.path("isProxy").asBoolean()).as("본 줄에 센 시가 체결").isTrue();
         assertThat(primary.path("fallback").path("isProxy").asBoolean(true)).isFalse();
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    @DisplayName("고른 시점(M1)·메뉴 줄은 장중 확인 결정(CHECKPOINT)이 낸 주문을 세지 않음(명세 §16-4의 17) — 그 수는 M8의 orders, "
+            + "감사한 주문 수에는 셈, 장중 확인이 대신해 취소된 아침 주문은 notFilled 가운데 replacedByCheckpoint")
+    void chosenExcludesCheckpointOrders() {
+        activeBook(store, PaperBooks.CLAUDE2, PaperBooks.KIND_CLAUDE, 100_000, null);
+        LocalDate mon = LocalDate.of(2026, 11, 2);
+        long morning = store.insertDecisionIfAbsent(new com.macrodash.store.PaperStore.Decision(0, PaperBooks.CLAUDE2, mon,
+                RuleBookService.SCHEDULED, null, "OK", "claude-sonnet-5-5", 0, 1, null, null, null, null, null,
+                MAPPER.createObjectNode(), null, null, null, true, 5L, 0)).orElseThrow();
+        long answer = store.insertDecisionIfAbsent(new com.macrodash.store.PaperStore.Decision(0, PaperBooks.CLAUDE2, mon,
+                RuleBookService.CHECKPOINT, null, "OK", "claude-sonnet-5-5", 0, 1, null, null, null, null, null,
+                MAPPER.createObjectNode().put("action", "REPLACE"), null, null, null, false, 5L, 0)).orElseThrow();
+        book2(morning, mon, PaperBooks.BUY, PaperBooks.NEXT_OPEN, 100.0, 99.0, "Y1M_AT", 10, "FILLED", null);
+        book2(morning, mon, PaperBooks.BUY, PaperBooks.AT_1400, 100.0, null, null, 10, "CANCELLED",
+                ClaudeDecisionPipeline.SUPERSEDED_BY_CHECKPOINT);                         // 장중 확인이 대신함 — 체결 없음
+        book2(morning, mon, PaperBooks.BUY, PaperBooks.AT_1500, 100.0, null, null, 10, "EXPIRED", null);
+        book2(answer, mon, PaperBooks.SELL, PaperBooks.MARKET, 100.0, 101.0, "Y1M_AT", 10, "FILLED", null);   // 장중 시장가
+        book2(answer, mon, PaperBooks.BUY, PaperBooks.AT_1500, 100.0, 98.0, "Y1M_LATE", 10, "FILLED", null);  // 확인의 대체 체결
+        book2(answer, mon, PaperBooks.BUY, PaperBooks.AT_1400, 100.0, null, null, 10, "PENDING", null);       // 확인의 대기 주문
+
+        Map<String, Object> out = query.execution(PaperBooks.CLAUDE2, 50);
+        assertThat((List<?>) out.get("orders")).as("주문 줄에는 그대로").hasSize(6);
+        JsonNode summary = MAPPER.valueToTree(out).path("summary");
+        assertThat(summary.path("audited").asInt()).as("감사한 주문 전부").isEqualTo(6);
+        JsonNode chosen = summary.path("chosen");
+        assertThat(chosen.path("n").asInt()).as("아침 주문의 체결 하나만").isEqualTo(1);
+        assertThat(chosen.path("excludedFallback").asInt()).as("확인 주문의 대체 체결은 대체 줄에도 없음").isZero();
+        assertThat(chosen.path("fallback").path("n").asInt()).isZero();
+        assertThat(chosen.path("notFilled").asInt()).as("아침 주문의 취소·만료 — 확인의 대기 주문은 세지 않음").isEqualTo(2);
+        assertThat(chosen.path("replacedByCheckpoint").asInt()).isEqualTo(1);
+        JsonNode open = summary.path("timings").get(0);
+        assertThat(open.path("excludedNoBaseline").asInt() + open.path("excludedNoPrice").asInt() + open.path("n").asInt())
+                .as("메뉴 줄도 아침 주문 셋만").isEqualTo(3);
+        assertThat(summary.path("checkpoints").path("orders").asInt()).as("M8 — 뺀 장중 확인 주문").isEqualTo(3);
+        assertThat(summary.path("checkpoints").path("definition").asString()).contains("M1·시점 표에서 뺌");
+
+        JsonNode book1 = MAPPER.valueToTree(query.execution(PaperBooks.CLAUDE, 50)).path("summary");
+        assertThat(book1.path("checkpoints").isNull()).as("계좌1 — 장중 확인 없음").isTrue();
     }
 
     @Test
@@ -448,7 +496,8 @@ class PaperExecutionViewTest {
         assertThat(m8).containsEntry("rows", 4).containsEntry("planned", 1).containsEntry("finished", 3)
                 .containsEntry("called", 1).containsEntry("expired", 1).containsEntry("skipped", 1)
                 .containsEntry("feedMinute", 3).containsEntry("feedHourly", 1).containsEntry("keep", 0)
-                .containsEntry("replace", 1).containsEntry("minRows", ExecutionView.CHECKPOINT_MIN_ROWS);
+                .containsEntry("replace", 1).containsEntry("minRows", ExecutionView.CHECKPOINT_MIN_ROWS)
+                .containsEntry("orders", 0);
         assertThat(m8).as("분모 < 5 — 비율은 null(0으로 채우지 않음)").containsEntry("calledPct", null)
                 .containsEntry("minutePct", null).containsEntry("replacePct", null);
 

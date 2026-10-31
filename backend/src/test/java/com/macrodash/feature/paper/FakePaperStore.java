@@ -788,6 +788,12 @@ class FakePaperStore extends PaperStore {
     }
 
     @Override
+    public java.util.Set<Long> decisionIds(String code, String kind) {
+        return decisions.values().stream().filter(d -> d.bookCode().equals(code) && d.kind().equals(kind))
+                .map(Decision::id).collect(java.util.stream.Collectors.toCollection(java.util.HashSet::new));
+    }
+
+    @Override
     public Optional<Decision> decisionFor(String code, LocalDate tradingDate, String kind) {
         return decisions.values().stream().filter(d -> d.bookCode().equals(code)
                 && d.asOfTradingDate().equals(tradingDate) && d.kind().equals(kind)).findFirst();

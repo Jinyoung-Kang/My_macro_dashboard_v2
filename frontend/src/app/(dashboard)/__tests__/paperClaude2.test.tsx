@@ -86,7 +86,7 @@ function summaryLine(timing: string, over: Record<string, unknown> = {}) {
 function chosenSummary(over: Record<string, unknown> = {}, fallback: Record<string, unknown> = {}) {
   return {
     formula: "s × (P_NEXT_OBSERVATION − P_체결) ÷ P_NEXT_OBSERVATION × 10⁴ bp", n: 2, days: 1, excludedNoBaseline: 0, meanBp: null, lowBp: null,
-    highBp: null, isProxy: false, excludedFallback: 1, notFilled: 0,
+    highBp: null, isProxy: false, excludedFallback: 1, notFilled: 0, replacedByCheckpoint: 0,
     fallback: { n: 1, days: 1, excludedNoBaseline: 0, meanBp: null, lowBp: null, highBp: null, isProxy: false, ...fallback }, ...over,
   };
 }
@@ -334,7 +334,7 @@ describe("개요 — 체결 시점 실험·S = 100·한계", () => {
         ...base.summary,
         checkpoints: {
           definition: "M8", minRows: 5, rows: 1, planned: 0, finished: 1, called: 0, expired: 1, skipped: 0, calledPct: null,
-          feedMinute: 1, feedHourly: 0, minutePct: null, keep: 0, replace: 0, replacePct: null,
+          feedMinute: 1, feedHourly: 0, minutePct: null, keep: 0, replace: 0, replacePct: null, orders: 0,
         },
       },
       checkpoints: [{
