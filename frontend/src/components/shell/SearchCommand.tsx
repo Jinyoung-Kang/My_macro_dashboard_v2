@@ -138,11 +138,11 @@ export function SearchCommand({ user }: { user?: SessionUser }) {
           type="button"
           aria-label="종목·기관·지표·메뉴 검색"
           aria-keyshortcuts={isMac ? "Meta+K" : "Control+K"}
-          className="flex h-11 min-w-0 flex-1 items-center gap-2.5 rounded-[10px] bg-surface-2 px-3 text-left text-sm text-text-3 hover:text-text-2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus lg:max-w-[520px] lg:basis-[520px]"
+          className="flex h-11 min-w-0 flex-1 items-center gap-2.5 rounded-full bg-surface-2 px-4 text-left text-sm text-text-3 hover:text-text-2 motion-safe:transition-colors motion-safe:duration-150 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus lg:h-10 lg:max-w-[520px] lg:basis-[520px]"
         >
           <SearchIcon />
           <span className="min-w-0 flex-1 truncate">종목·기관·지표·메뉴 검색</span>
-          <kbd aria-hidden="true" className="hidden shrink-0 rounded-md border border-border px-1.5 font-sans text-xs text-text-3 sm:inline">
+          <kbd aria-hidden="true" className="hidden shrink-0 rounded-sm border border-border px-1.5 font-sans text-xs text-text-3 sm:inline">
             {isMac ? "⌘K" : "Ctrl K"}
           </kbd>
         </button>

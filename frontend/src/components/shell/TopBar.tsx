@@ -23,7 +23,7 @@ function bellLabel(unread: number | null | undefined): string {
 export function TopBar({ pathname, user, unread }: { pathname: string; user?: SessionUser; unread?: number | null }) {
   const badge = unreadBadge(unread);
   return (
-    <header className="flex shrink-0 flex-wrap items-center gap-x-3 border-b border-border bg-surface px-4 sm:px-6 lg:h-16 lg:flex-nowrap lg:px-7">
+    <header className="flex shrink-0 flex-wrap items-center gap-x-3 border-b border-border bg-surface px-4 sm:px-6 lg:h-16 lg:flex-nowrap lg:px-8">
       <span className="flex h-16 shrink-0 items-center whitespace-nowrap text-[15px] font-bold text-text lg:hidden">My Macro v2</span>
       <SearchCommand user={user} />
       {/* 빈칸은 검색 단추(기준 폭 520px)가 다 자란 뒤에 남는 자리만 차지합니다 — 장 상태 칩이 들어온 뒤로 둘이 남는 폭을 반씩 나눠 검색이 좁아졌습니다. */}
@@ -37,13 +37,14 @@ export function TopBar({ pathname, user, unread }: { pathname: string; user?: Se
         href="/alerts"
         aria-label={bellLabel(unread)}
         aria-current={pathname === "/alerts" ? "page" : undefined}
-        className="relative inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-[10px] border border-border bg-surface text-text hover:bg-surface-2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus"
+        className="relative inline-flex size-11 shrink-0 items-center justify-center rounded-full text-text hover:bg-surface-2 motion-safe:transition-colors motion-safe:duration-150 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus"
       >
-        <BellIcon />
+        <BellIcon size={20} />
+        {/* 수 배지는 알림을 여는 단추의 일부라 강조 파랑(명세 원칙 A1 — 알림 수). 이름(aria-label)이 수를 읽으므로 배지는 장식입니다. */}
         {badge && (
           <span
             aria-hidden="true"
-            className="absolute -right-1.5 -top-1.5 inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-accent px-1 text-[11px] font-semibold tabular-nums text-accent-fg"
+            className="absolute -right-0.5 -top-0.5 inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-accent px-1 text-xs font-semibold leading-none tabular-nums text-accent-fg"
           >
             {badge}
           </span>

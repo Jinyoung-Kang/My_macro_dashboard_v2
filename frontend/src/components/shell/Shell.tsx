@@ -17,6 +17,7 @@ import { TopBar } from "./TopBar";
  *
  * 본문(main#main)은 min-w-0·overflow-x-hidden으로 넓은 표가 페이지 가로 스크롤을 만들지 않게 하고, 데스크톱에서는 본문만 스크롤됩니다.
  * 좁은 화면에서는 하단 탭 바(64px + 안전 영역)에 끝 내용이 가리지 않게 그만큼 아래 여백을 둡니다.
+ * 본문 열은 최대 1280px(max-w-7xl)로 가운데에 두고, 좌우 여백(16·24·32px)은 하위 메뉴 줄의 글과 같은 세로줄입니다.
  */
 export function Shell({
   user,
@@ -36,7 +37,7 @@ export function Shell({
       <div className="min-h-screen lg:flex">
         <a
           href="#main"
-          className="sr-only rounded-lg bg-accent px-4 py-2 text-sm font-semibold text-accent-fg focus:not-sr-only focus:fixed focus:left-4 focus:top-4 focus:z-[70] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus"
+          className="sr-only rounded-full bg-accent px-4 py-2 text-sm font-semibold text-accent-fg focus:not-sr-only focus:fixed focus:left-4 focus:top-4 focus:z-[70] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus"
         >
           본문으로 건너뛰기
         </a>
@@ -47,9 +48,9 @@ export function Shell({
           <main
             id="main"
             tabIndex={-1}
-            className="min-h-0 min-w-0 flex-1 overflow-x-hidden p-4 pb-[calc(64px+1rem+env(safe-area-inset-bottom))] outline-none sm:p-6 sm:pb-[calc(64px+1.5rem+env(safe-area-inset-bottom))] lg:overflow-y-auto lg:pb-6"
+            className="min-h-0 min-w-0 flex-1 overflow-x-hidden pb-[calc(64px+1rem+env(safe-area-inset-bottom))] outline-none sm:pb-[calc(64px+1.5rem+env(safe-area-inset-bottom))] lg:overflow-y-auto lg:pb-6"
           >
-            {children}
+            <div className="mx-auto w-full max-w-7xl px-4 pt-6 sm:px-6 lg:px-8 lg:pt-8">{children}</div>
           </main>
         </div>
         <TabBar pathname={pathname} user={user} />

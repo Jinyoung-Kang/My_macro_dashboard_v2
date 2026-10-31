@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { isDemo, isLocalOwner, isNoLogin, lockedFor, roleLabel, visibleMenus } from "../access";
+import { accountInitial, isDemo, isLocalOwner, isNoLogin, lockedFor, roleLabel, visibleMenus } from "../access";
 
 const MENUS = [{ href: "/macro" }, { href: "/status" }, { href: "/regime" }, { href: "/connections" }];
 
@@ -60,6 +60,14 @@ describe("메뉴 고르기", () => {
     expect(roleLabel({ email: "o@x", role: "OWNER", tier: "FREE" })).toBe("운영자");
     expect(roleLabel({ email: "m@x", role: "MEMBER", tier: "PRO" })).toBe("유료 회원");
     expect(roleLabel({ email: "m@x", role: "MEMBER", tier: "FREE" })).toBe("무료 회원");
+  });
+
+  it("계정 행의 원 안 글자 — 이메일 첫 글자(대문자), 이메일이 없으면 null(빈 원을 두지 않음)", () => {
+    expect(accountInitial({ email: "member@test.local", role: "MEMBER", tier: "PRO" })).toBe("M");
+    expect(accountInitial({ email: "  owner@test.local", role: "OWNER", tier: "PRO", local: true })).toBe("O");
+    expect(accountInitial({ email: null, role: "MEMBER", tier: "PRO", demo: true })).toBeNull();
+    expect(accountInitial({ email: "", role: "MEMBER", tier: "FREE" })).toBeNull();
+    expect(accountInitial(undefined)).toBeNull();
   });
 });
 

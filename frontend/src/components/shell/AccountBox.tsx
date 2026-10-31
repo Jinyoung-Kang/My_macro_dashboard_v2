@@ -5,13 +5,36 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { buttonClasses } from "@/components/ui";
 import { auth } from "@/lib/api";
-import { DEMO_READ_ONLY, LOCAL_NO_LOGIN, isDemo, isLocalOwner, roleLabel } from "@/lib/access";
+import { DEMO_READ_ONLY, LOCAL_NO_LOGIN, accountInitial, isDemo, isLocalOwner, roleLabel } from "@/lib/access";
 import type { SessionUser } from "@/lib/types";
 
-const BOX = "block rounded-lg border border-border bg-surface px-3 text-xs leading-5 text-text-2";
-// 누르는 것(내 계정 링크·로그아웃)은 좁은 화면(더보기 화면 — 손가락)에서 높이 44px 이상, 왼쪽 내비(lg)에서는 촘촘하게.
-const TAP_BOX = `${BOX} py-3 lg:py-2`;
+// 계정 행(내 계정 링크) — 누르는 것이라 좁은 화면(더보기 화면 — 손가락)에서 높이 44px 이상. 원 안 글자는 이메일 첫 글자(장식).
+const ROW =
+  "flex min-h-11 items-center gap-2.5 rounded-control px-2 py-1.5 hover:bg-surface-2 motion-safe:transition-colors motion-safe:duration-150";
 const FOCUS = "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus";
+
+/** 계정 행 — 원(이메일 첫 글자) · 이름(이메일 또는 '로컬 · 로그인 없음') · 역할 캡션. 긴 이메일은 말줄임하고 title에 전부 둡니다. */
+function AccountRow({ user, name }: { user: SessionUser; name: string }) {
+  const initial = accountInitial(user);
+  return (
+    <Link href="/account" className={`${ROW} ${FOCUS}`}>
+      {initial && (
+        <span
+          aria-hidden="true"
+          className="inline-flex size-8 shrink-0 items-center justify-center rounded-full border border-border bg-surface text-[13px] font-semibold text-text-2"
+        >
+          {initial}
+        </span>
+      )}
+      <span className="flex min-w-0 flex-col">
+        <span className="truncate text-[13px] font-medium leading-5 text-text" title={name}>
+          {name}
+        </span>
+        <span className="text-xs leading-4 text-text-3">{roleLabel(user)}</span>
+      </span>
+    </Link>
+  );
+}
 
 /**
  * 계정 영역 — 누가 보고 있는지와 내 계정·로그아웃(왼쪽 내비 아래와 더보기 화면).
@@ -39,30 +62,20 @@ export function AccountBox({ user }: { user?: SessionUser }) {
 
   if (isDemo(user)) {
     return (
-      <p className={`${BOX} py-2`}>
+      <p className="rounded-control bg-surface-2 px-3 py-2 text-xs leading-5 text-text-2">
         {roleLabel(user)}
         <span className="ml-1 text-text-3">· {DEMO_READ_ONLY}</span>
       </p>
     );
   }
 
-  if (isLocalOwner(user)) {
-    return (
-      <Link href="/account" className={`${TAP_BOX} hover:bg-surface-2 ${FOCUS}`}>
-        {LOCAL_NO_LOGIN}
-        <span className="ml-1 text-text-3">· {roleLabel(user)}</span>
-      </Link>
-    );
+  if (user && isLocalOwner(user)) {
+    return <AccountRow user={user} name={LOCAL_NO_LOGIN} />;
   }
 
   return (
     <div className="flex flex-col gap-2">
-      {user && (
-        <Link href="/account" className={`${TAP_BOX} break-all hover:bg-surface-2 ${FOCUS}`}>
-          {user.email}
-          <span className="ml-1 text-text-3">· {roleLabel(user)}</span>
-        </Link>
-      )}
+      {user && <AccountRow user={user} name={user.email ?? roleLabel(user)} />}
       <button
         type="button"
         onClick={() => void logout()}

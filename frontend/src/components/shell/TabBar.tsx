@@ -9,7 +9,9 @@ import { TabIcon } from "./icons";
 const COLUMNS: Record<number, string> = { 5: "grid-cols-5", 6: "grid-cols-6" };
 
 /**
- * 좁은 화면(lg 미만) 아래쪽 탭 바 — 홈·시장·기관·한국·모의매매(운영자만)·더보기, 같은 폭의 칸에 아이콘 + 12px 이름.
+ * 좁은 화면(lg 미만) 아래쪽 탭 바 — 홈·시장·기관·한국·모의매매(운영자만)·더보기, 같은 폭의 칸에 아이콘(22px) + 12px 이름.
+ * 지금 탭은 강조 파랑 글·굵은 글(셸의 현재 메뉴 — 명세 원칙 A1), 나머지는 text-3(바탕 대비 5.1:1). 고대비(forced-colors) 모드에서는
+ * 색이 지워지므로 지금 탭 이름에 밑줄을 더합니다(D9 — 굵기 차이와 함께 색 말고도 구분).
  * 화면 아래에 붙어 있고(높이 64px + 안전 영역), 본문은 그만큼 아래 여백을 둡니다(Shell). Tab으로 옮긴 포커스가 이 밑에 숨지 않게
  * 문서 스크롤 여백(html scroll-padding-bottom)도 같은 높이입니다(globals.css). 데스크톱에서는 숨깁니다.
  */
@@ -27,12 +29,12 @@ export function TabBar({ pathname, user }: { pathname: string; user?: SessionUse
             key={tab.key}
             href={tab.href}
             aria-current={current}
-            className={`flex h-16 min-w-0 flex-col items-center justify-center gap-[3px] text-xs focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-focus ${
-              current ? "font-bold text-text" : "text-text-3 hover:text-text"
+            className={`flex h-16 min-w-0 flex-col items-center justify-center gap-1 text-xs motion-safe:transition-colors motion-safe:duration-150 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-focus ${
+              current ? "font-semibold text-accent" : "font-normal text-text-3 hover:text-text"
             }`}
           >
-            <TabIcon tab={tab.key} size={20} />
-            <span className="max-w-full truncate">{tab.label}</span>
+            <TabIcon tab={tab.key} size={22} />
+            <span className={`max-w-full truncate${current ? " forced-colors:underline" : ""}`}>{tab.label}</span>
           </Link>
         );
       })}

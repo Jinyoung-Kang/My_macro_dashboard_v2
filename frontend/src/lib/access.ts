@@ -73,6 +73,12 @@ export function isLocalOwner(user: SessionUser | null | undefined): boolean {
 /** 로그인 없이 연 로컬 운영자를 셸 계정 영역·내 계정에 적는 이름. */
 export const LOCAL_NO_LOGIN = "로컬 · 로그인 없음";
 
+/** 셸 계정 행의 원 안 글자 — 이메일 첫 글자(대문자). 이메일이 없으면(데모 열람·사용자 모름) null — 빈 원을 두지 않습니다. */
+export function accountInitial(user: SessionUser | null | undefined): string | null {
+  const first = Array.from(user?.email?.trim() ?? "")[0];
+  return first ? first.toUpperCase() : null;
+}
+
 /** 셸 계정 영역에 적을 역할·등급 이름. */
 export function roleLabel(user: SessionUser | null | undefined): string {
   if (!user) return "";
