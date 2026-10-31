@@ -666,7 +666,7 @@ describe("🧪 장중 확인(단계 2)", () => {
     });
     expect(rows).toHaveLength(2);
     expect(rows?.[0]).toMatchObject({
-      at: "2026-11-03 · 10:30 ET · 2026-11-04 00:30 KST", feed: "감시 1분봉(5분 수집, 잰 지연)",
+      at: "2026-11-03 · 10:30 ET", atKst: "2026-11-04 00:30 KST", feed: "감시 1분봉(5분 수집, 잰 지연)",
       reason: "호출 창(확인 시각 +2~+20분)을 놓침 — 서버 꺼짐·늦게 켜짐 (WINDOW_MISSED)", decision: "—", action: null, superseded: "—",
       lag: "—", calledAt: "—",
     });

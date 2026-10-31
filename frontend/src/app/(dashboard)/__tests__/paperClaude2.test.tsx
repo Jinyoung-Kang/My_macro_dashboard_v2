@@ -347,10 +347,14 @@ describe("개요 — 체결 시점 실험·S = 100·한계", () => {
     render(<PaperPage />);
 
     const table = await screen.findByRole("table", { name: "장중 확인 기록(최근 20행)" });
-    expect(headersOf(table)).toEqual(["세션 · 확인 시각", "자료", "상태 · 사유", "확인 결정", "응답 · 대신한 주문", "지연", "부른 시각"]);
-    expect(within(table).getByRole("rowheader").textContent).toBe("2026-11-02 · 10:30 ET · 2026-11-03 00:30 KST");
+    // 다섯 칸 — 상태·사유가 둘째 칸(390px에서도 첫 화면에), 자료·지연과 확인 결정·응답은 두 줄 칸(1280px 카드 안에 들어가게).
+    expect(headersOf(table)).toEqual(["세션 · 확인 시각", "상태 · 사유", "자료 · 지연", "확인 결정 · 응답", "부른 시각"]);
+    expect(within(table).getByRole("rowheader").textContent).toBe("2026-11-02 · 10:30 ET2026-11-03 00:30 KST");
     expect(within(table).getByText("놓침")).toBeTruthy();
     expect(within(table).getByText("호출 창(확인 시각 +2~+20분)을 놓침 — 서버 꺼짐·늦게 켜짐 (WINDOW_MISSED)")).toBeTruthy();
+    // 부르지 않은 행 — 확인 결정·응답 칸은 '—' 하나(둘이 아님), 지연은 라벨 뒤 값 없음.
+    expect(rowsOf(table)[0]).toEqual(["놓침호출 창(확인 시각 +2~+20분)을 놓침 — 서버 꺼짐·늦게 켜짐 (WINDOW_MISSED)",
+      "감시 1분봉(5분 수집, 잰 지연)지연 —값 없음", "—값 없음", "—값 없음"]);
 
     fireEvent.click(within(screen.getByRole("group", { name: "실행 감사 계좌" })).getByRole("button", { name: "Claude 계좌1" }));
     expect(await screen.findByText("다음 종가")).toBeTruthy();

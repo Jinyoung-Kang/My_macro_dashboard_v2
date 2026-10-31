@@ -3642,7 +3642,7 @@ function checkpointSummaryLines(summary: unknown): string[] | null {
     `요청한 자료 — ${CHECKPOINT_FEED.MINUTE} ${count(summary.feedMinute)} · ${CHECKPOINT_FEED.HOURLY} ${count(summary.feedHourly)} · `
       + `1분봉 비율 ${pct(summary.minutePct)}`,
     `부른 확인의 응답 — 그대로 둠(KEEP) ${count(summary.keep)} · 대신함(REPLACE) ${count(summary.replace)} · REPLACE 비율 ${pct(summary.replacePct)}`,
-    `장중 확인이 낸 주문 ${count(summary.orders)}건 — 아침 결정의 시점 선택을 재는 M1과 시점 표에는 세지 않습니다(장중 확인의 효과는 M8).`,
+    `장중 확인이 낸 주문 ${formatWithUnit(numberOf(summary.orders), 0, "건")} — 아침 결정의 시점 선택을 재는 M1과 시점 표에는 세지 않습니다(장중 확인의 효과는 M8).`,
     `서술 지표(M8)라 판정하지 않습니다 — 비율은 분모 ${count(summary.minRows)} 이상부터, 대신한 주문과 취소된 원래 주문의 비교는 아직 없습니다.`,
   ];
 }
@@ -3650,8 +3650,10 @@ function checkpointSummaryLines(summary: unknown): string[] | null {
 /** 장중 확인 기록 표의 한 줄(실행 감사 checkpoints[] — 서버 값 그대로, 모르는 값은 "—"). */
 export interface ExecutionCheckpointRow {
   key: string;
-  /** "2026-11-02 · 10:30 ET · 2026-11-03 00:30 KST". */
+  /** "2026-11-02 · 10:30 ET". */
   at: string;
+  /** "2026-11-03 00:30 KST" — 모르면 "—". */
+  atKst: string;
   feed: string;
   status: Badge;
   /** 사유 한국어(코드는 괄호) — 없으면 "—". */
@@ -3675,6 +3677,8 @@ export function executionCheckpointRows(response: PaperExecutionResponse | null 
   if (!response?.available || !isRecord(response.summary?.checkpoints)) return null;
   return listOf(response.checkpoints).filter(isRecord).map((row, index): ExecutionCheckpointRow => {
     const session = textOf(row.session);
+    const atEt = textOf(row.atEt);
+    const atKst = textOf(row.atKst);
     const action = textOf(row.action);
     const decisionId = numberOf(row.decisionId);
     const decisionStatus = textOf(row.decisionStatus);
@@ -3683,7 +3687,8 @@ export function executionCheckpointRows(response: PaperExecutionResponse | null 
     const calledAt = textOf(row.calledAtKst);
     return {
       key: `${session ?? "?"}-${index}`,
-      at: `${session ?? EMPTY} · ${checkpointAt(textOf(row.atEt), textOf(row.atKst))}`,
+      at: `${session ?? EMPTY} · ${atEt ? `${atEt} ET` : EMPTY}`,
+      atKst: atKst ? `${formatKst(atKst)} KST` : EMPTY,
       feed: checkpointFeedLabel(textOf(row.feed)),
       status: checkpointStatusBadge(textOf(row.status)),
       reason: checkpointReasonText(textOf(row.reason)),

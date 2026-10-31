@@ -1,10 +1,11 @@
 "use client";
 
-import { useState } from "react";
-import { type Column, DataTable } from "@/components/patterns";
+import { type ReactNode, useState } from "react";
+import { type Column, DataTable, Empty } from "@/components/patterns";
 import { Banner, Card, ErrorState, Freshness, Loading } from "@/components/ui";
 import { useApi } from "@/hooks/useApi";
 import { endpoints } from "@/lib/endpoints";
+import { EMPTY } from "@/lib/format";
 import {
   type Badge,
   EXECUTION_VERDICT_RULE,
@@ -65,10 +66,35 @@ function BadgeChip({ badge }: { badge: Badge }) {
   );
 }
 
-/** 장중 확인 기록 표 칸 — 값은 서버 값 그대로(lib/paper executionCheckpointRows), 모르는 값은 "—". */
+/** 한 칸 두 줄 — 위는 본문, 아래는 작은 보조 글(같은 행의 관련 값 — 칸 수를 줄여 1280px 카드 안에 표가 들어가게, 보유·체결 탭 계좌2 표와 같은 방식). */
+function TwoLines({ top, bottom }: { top: ReactNode; bottom: ReactNode }) {
+  return (
+    <span className="flex flex-col">
+      <span>{top}</span>
+      <span className="text-[11px] text-text-3">{bottom}</span>
+    </span>
+  );
+}
+
+/** 두 줄 칸 안의 한 값 — 없으면("—") Empty(기호는 읽어 주기에서 빼고 '값 없음'). 칸 전체가 "—"이면 표가 같은 Empty로 그립니다. */
+function part(text: string, label?: string): ReactNode {
+  if (text !== EMPTY) return label ? `${label} ${text}` : text;
+  return label ? <>{label} <Empty /></> : <Empty />;
+}
+
+/**
+ * 장중 확인 기록 표 칸 — 값은 서버 값 그대로(lib/paper executionCheckpointRows), 모르는 값은 "—". 값마다 한 칸(일곱 칸)이면 1280px에서 표가 1,102px로
+ * 카드(표 상자 958px)를 넘었고 390px에서 '상태 · 사유'가 가로 스크롤 밖이었습니다(화면 확인 2026-10-31) — 다섯 칸으로 묶고 상태·사유를 둘째 칸에 둡니다.
+ * 짧은 칸은 줄바꿈 없이, 글(사유·자료 이름)은 낱말 사이에서만 줄바꿈합니다. 결정도 응답도 없는 행(놓침·건너뜀)은 '—' 하나입니다.
+ */
 const CHECKPOINT_COLUMNS: readonly Column<ExecutionCheckpointRow>[] = [
-  { key: "at", header: "세션 · 확인 시각", rowHeader: true, className: "min-w-[12rem] break-keep", cell: (row) => row.at },
-  { key: "feed", header: "자료", className: "min-w-[8rem] break-keep text-xs", cell: (row) => row.feed },
+  {
+    key: "at",
+    header: "세션 · 확인 시각",
+    rowHeader: true,
+    className: "whitespace-nowrap",
+    cell: (row) => <TwoLines top={row.at} bottom={part(row.atKst)} />,
+  },
   {
     key: "status",
     header: "상태 · 사유",
@@ -76,23 +102,34 @@ const CHECKPOINT_COLUMNS: readonly Column<ExecutionCheckpointRow>[] = [
     cell: (row) => (
       <span className="flex flex-wrap items-center gap-1">
         <BadgeChip badge={row.status} />
-        <span className="text-xs">{row.reason}</span>
+        {row.reason !== EMPTY && <span className="text-xs">{row.reason}</span>}
       </span>
     ),
   },
-  { key: "decision", header: "확인 결정", className: "whitespace-nowrap", cell: (row) => row.decision },
   {
-    key: "action",
-    header: "응답 · 대신한 주문",
-    className: "whitespace-nowrap",
-    cell: (row) => (
-      <span className="flex flex-wrap items-center gap-1">
-        {row.action ? <BadgeChip badge={row.action} /> : <span className="text-muted">—</span>}
-        <span className="tabular-nums">{row.superseded}</span>
-      </span>
-    ),
+    key: "feed",
+    header: "자료 · 지연",
+    className: "min-w-[8rem] break-keep text-xs",
+    cell: (row) => <TwoLines top={row.feed} bottom={part(row.lag, "지연")} />,
   },
-  { key: "lag", header: "지연", align: "right", className: "whitespace-nowrap", cell: (row) => row.lag },
+  {
+    key: "decision",
+    header: "확인 결정 · 응답",
+    className: "whitespace-nowrap",
+    cell: (row) => row.decision === EMPTY && !row.action && row.superseded === EMPTY
+      ? EMPTY
+      : (
+        <TwoLines
+          top={part(row.decision)}
+          bottom={row.action ? (
+            <span className="inline-flex items-center gap-1">
+              <BadgeChip badge={row.action} />
+              {row.superseded !== EMPTY && <span className="tabular-nums">대신한 주문 {row.superseded}</span>}
+            </span>
+          ) : part(row.superseded === EMPTY ? EMPTY : `대신한 주문 ${row.superseded}`)}
+        />
+      ),
+  },
   { key: "calledAt", header: "부른 시각", className: "whitespace-nowrap", cell: (row) => row.calledAt },
 ];
 
