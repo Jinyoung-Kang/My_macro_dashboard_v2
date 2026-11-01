@@ -4,7 +4,7 @@
  * 소스로 지킵니다 — 어긋나면 홈 '/'가 계좌 행 색 고리 때문에 recharts 조각을 다시 싣지만(장중 명세 §4-1) 다른 시험은 그대로 통과합니다.
  */
 import { readdirSync, readFileSync, statSync } from "node:fs";
-import { join, relative, resolve } from "node:path";
+import { dirname, join, relative, resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 
 const root = resolve(__dirname, "../../..");
@@ -27,18 +27,22 @@ function sources(): string[] {
 }
 
 describe("차트 경계(ADR 0004)", () => {
-  it("차트 폴더 밖에서 차트 하위 경로를 가져오는 곳은 계좌 색 표의 차트 틀 하나", () => {
+  it("차트 폴더 밖에서 차트 하위 경로를 가져오는 곳은 계좌 색 표의 차트 틀 하나 — 별칭(@/)·상대 경로 모두", () => {
     const files = sources();
     expect(files.length).toBeGreaterThan(50);
+    const charts = join(root, "components", "charts");
     const subpaths = files
-      .filter((path) => !relative(root, path).startsWith(join("components", "charts")))
-      .flatMap((path) => [...readFileSync(path, "utf8").matchAll(/["']@\/components\/charts\/([^"']+)["']/g)]
-        .map((match) => `${relative(root, path)} → ${match[1]}`))
+      .filter((path) => !path.startsWith(charts + "/"))
+      .flatMap((path) => [...readFileSync(path, "utf8").matchAll(/(?:from|import)\s*\(?\s*["']([^"']+)["']/g)]
+        .map((match) => match[1])
+        .map((spec) => spec.startsWith("@/") ? join(root, spec.slice(2)) : spec.startsWith(".") ? resolve(dirname(path), spec) : null)
+        .filter((target): target is string => target !== null && target.startsWith(charts + "/") && target !== join(charts, "index"))
+        .map((target) => `${relative(root, path)} → ${relative(charts, target)}`))
       .sort();
     expect(subpaths).toEqual(["components/screens/paper/bookColors.ts → frame"]);
   });
 
-  it("차트 틀(frame.tsx)은 recharts를 가져오지 않는다 — 가져오는 모듈은 react 타입뿐", () => {
+  it("차트 틀(frame.tsx)은 recharts를 가져오지 않는다 — 가져오는 모듈은 react 하나", () => {
     const text = readFileSync(join(root, "components", "charts", "frame.tsx"), "utf8");
     expect(text).not.toMatch(/["']recharts["']/);
     expect([...text.matchAll(/^import\b[^;]*?from\s+["']([^"']+)["']/gm)].map((match) => match[1])).toEqual(["react"]);
