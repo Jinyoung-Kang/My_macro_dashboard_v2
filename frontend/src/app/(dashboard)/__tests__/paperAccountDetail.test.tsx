@@ -3,7 +3,8 @@
  *
  *  - 행 전체가 진짜 <button>(aria-expanded·aria-controls, 이름 "… 상세 보기")이라 행 어디를 눌러도 열리고, 다시 누르거나 '닫기'·Esc로 닫힌다
  *  - 열면 초점이 패널 제목으로 간다(바로 Esc로 닫을 수 있게), 움직임 줄이기를 켰으면 부드러운 스크롤 대신 바로 옮긴다
- *  - 정의(운용 방식 …)와 지금 설정(설정 응답 — 못 읽으면 숫자 없이 정의만), 핵심 숫자
+ *  - 정의(운용 방식 …)와 지금 설정(설정 응답 — 못 읽으면 숫자 없이 정의만), 핵심 숫자 — 개요에 지금 값(current)이 있으면 순자산·수익률·
+ *    주식 노출·마지막 평가 타일만 지금 값(장중 추정이면 그 타일과 머리에 '추정'), 나머지와 구성·체결은 장부 + '장부 마지막 관측' 한 줄
  *  - 묶음이 셋 이상이면 도넛 + 범례, 둘 이하면 한 줄 막대 + 범례, 어느 쪽이든 표(차트의 표 보기)
  *  - 최근 체결 다섯 건, "보유·체결 탭에서 전체 보기"·"결정 로그 보기"는 그 탭으로 바꾸며 이 계좌를 미리 고른다
  */
@@ -263,7 +264,62 @@ describe("상세 패널의 내용", () => {
     expect(within(numbers).getByText("현금성(SHY) 포함")).toBeTruthy();
     expect(tile("보유 종목 수")).toBe("7종목");
     expect(tile("출발일")).toBe("2026-10-23");
-    expect(tile("마지막 평가")).not.toBe("—");
+    expect(tile("마지막 평가")).toBe("2026-10-24 05:15");
+    // 지금 값이 없는 옛 응답은 모두 장부 — 장부 한 줄·추정 배지 없음
+    expect(within(numbers).queryByText(/^장부 마지막 관측/)).toBeNull();
+    expect(within(numbers).queryByText("추정")).toBeNull();
+  });
+
+  it("지금 값 — 순자산·수익률·주식 노출·마지막 평가 타일만 지금 값(장중 추정 표시), 현금·보유 수·구성은 장부, 장부 한 줄", async () => {
+    const live = {
+      nav: 101234.56, returnPct: 1.23, exposurePct: 98.7, dayChangePct: 0.42, previousTradingDate: "2026-10-29", previousNavFinal: false,
+      basis: "LIVE", stage: "LIVE", tradingDate: "2026-10-30", atKst: "2026-10-30 23:58 KST", isEstimated: true, livePriced: 7,
+      positionCount: 7, pendingOrders: 0, neutral: false, note: null,
+    };
+    reads["/api/paper/overview"] = () => Promise.resolve({
+      ...OVERVIEW, liveSession: { phase: "REGULAR", sessionDate: "2026-10-30" }, navEstimate: null,
+      books: BOOKS.map((entry) => (entry.code === "rules" ? { ...entry, current: live } : entry)),
+    });
+    render(<PaperPage />);
+    fireEvent.click(await screen.findByRole("button", { name: /규칙 계좌 상세 보기/ }));
+    const panel = await screen.findByRole("region", { name: "규칙 계좌 상세" });
+    const numbers = within(panel).getByRole("region", { name: "핵심 숫자" });
+    const tile = (label: string) => within(numbers).getByText(label).nextElementSibling?.textContent;
+    expect(tile("순자산")).toBe("101,234.56 달러");
+    expect(tile("수익률(출발 이후)")).toBe("+1.23%");
+    expect(tile("주식 노출")).toBe("98.7%");
+    expect(tile("마지막 평가")).toBe("장중 추정 23:58");
+    // 장중 추정인 타일에는 '장중 추정', 머리 옆에 추정 배지 — 같은 격자의 장부 타일과 섞여 확정처럼 읽히지 않게
+    expect(within(numbers).getAllByText("장중 추정")).toHaveLength(2);
+    expect(within(numbers).getByText("현금성(SHY) 포함 · 장중 추정")).toBeTruthy();
+    expect(within(numbers).getByText("추정")).toBeTruthy();
+    // 장부 값 그대로인 타일과 장부 한 줄
+    expect(tile("현금")).toBe("500.00 달러");
+    expect(tile("보유 종목 수")).toBe("7종목");
+    expect(within(numbers).getByText("장부 마지막 관측 101,200.00 달러 (10-24 05:15) — 아래 구성·현금·보유·체결은 장부 값")).toBeTruthy();
+    // 구성 비중은 장부 순자산 기준 그대로
+    const donut = await within(panel).findByRole("list", { name: "구성 도넛" });
+    expect(within(donut).getAllByRole("listitem")[0].textContent).toBe("NVDA 20.0%");
+  });
+
+  it("지금 값이 장부 단계면 추정 표시 없이 단계 표기만 — 장부 한 줄은 그대로", async () => {
+    const ledger = {
+      nav: 101200, returnPct: 1.2, exposurePct: 99.51, dayChangePct: 0.1, previousTradingDate: "2026-10-23", previousNavFinal: true,
+      basis: "LEDGER", stage: "FINAL", tradingDate: "2026-10-23", atKst: "2026-10-24 05:00 KST", isEstimated: false, livePriced: 0,
+      positionCount: 7, pendingOrders: 0, neutral: false, note: null,
+    };
+    reads["/api/paper/overview"] = () => Promise.resolve({
+      ...OVERVIEW, liveSession: { phase: "CLOSED", sessionDate: "2026-10-23" }, navEstimate: null,
+      books: BOOKS.map((entry) => (entry.code === "rules" ? { ...entry, current: ledger } : entry)),
+    });
+    render(<PaperPage />);
+    fireEvent.click(await screen.findByRole("button", { name: /규칙 계좌 상세 보기/ }));
+    const panel = await screen.findByRole("region", { name: "규칙 계좌 상세" });
+    const numbers = within(panel).getByRole("region", { name: "핵심 숫자" });
+    expect(within(numbers).getByText("마지막 평가").nextElementSibling?.textContent).toBe("10-23 확정");
+    expect(within(numbers).queryByText("추정")).toBeNull();
+    expect(within(numbers).queryByText("장중 추정")).toBeNull();
+    expect(within(numbers).getByText(/^장부 마지막 관측 101,200\.00 달러/)).toBeTruthy();
   });
 
   it("설정을 읽지 못하면 숫자 없이 정의만 — '지금 설정'은 그리지 않는다", async () => {

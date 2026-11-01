@@ -417,6 +417,7 @@ export function OverviewSection({
                 onClose={closeAccount}
                 onOpenTab={onOpenTab}
                 market={market}
+                session={session}
               />
             )}
           </>

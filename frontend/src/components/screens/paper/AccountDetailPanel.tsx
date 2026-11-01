@@ -1,10 +1,11 @@
 "use client";
 
 import { DonutChart, SERIES_COLORS } from "@/components/charts";
+import { EstimateBadge } from "@/components/patterns";
 import { Banner, Button, ErrorState, Freshness, Loading, SourceLine, Table } from "@/components/ui";
 import { useApi } from "@/hooks/useApi";
 import { endpoints } from "@/lib/endpoints";
-import { deltaColor, EMPTY, formatKst, formatNumber } from "@/lib/format";
+import { deltaColor, EMPTY, formatKst, formatNumber, formatPercent, formatWithUnit } from "@/lib/format";
 import {
   type AccountComposition,
   accountComposition,
@@ -20,11 +21,14 @@ import {
   sideClass,
   sideLabel,
 } from "@/lib/paper";
+import { currentView, ledgerObservedLine } from "@/lib/paperCurrent";
 import { krConfirmationCells, krFillBadges } from "@/lib/paperKr";
-import { marketMeta, type PaperMarketCode } from "@/lib/paperMarket";
+import { formatMoney, marketMeta, type PaperMarketCode } from "@/lib/paperMarket";
 import type {
   PaperBookSummary,
   PaperFill,
+  PaperLiveSessionSummary,
+  PaperOverviewBook,
   PaperFillsResponse,
   PaperPositionsResponse,
   PaperSettingsResponse,
@@ -69,6 +73,11 @@ export const accountDetailTitleId = (id: string) => `${id}-title`;
  * 보유·체결은 이미 있는 계좌별 응답(positions·fills)을 그대로 읽습니다 — 숫자는 장부 값이고, 묶음·비중 표기는 lib가 만듭니다(ADR 0004).
  * 보유 응답의 계좌 요약이 개요보다 새것이면(버튼 뒤 다시 읽음) 그것을 씁니다.
  *
+ * 지금 값(장중 명세 §4-1 — 개요 계좌 줄의 `current`, 새 요청 없음): 핵심 숫자 가운데 순자산·수익률(출발 이후)·주식 노출·마지막 평가 타일만 지금 값
+ * (계좌 행·히어로와 같은 값과 단계 표기)이고, 현금·보유 수·출발일과 구성·최근 체결은 장부입니다 — 한 패널에 두 기준이 있으므로 장중 추정이면 그
+ * 타일들에 '장중 추정'과 머리 옆 추정 배지를 달고, 타일 아래에 '장부 마지막 관측 X (MM-DD HH:MM)' 한 줄로 장부 쪽을 밝힙니다. 지금 값이 없는 옛
+ * 응답은 예전 그대로(모두 장부).
+ *
  * 한국 계좌(`market` "KR")는 돈을 원 단위 정수, 주당 가격을 0자리로 적고 현금성 종목은 153130입니다(lib/paperMarket). 한국 최근 체결은 보유·체결 탭과
  * 같이 '잠정 체결가'(토스)·확정 상태 배지(lib/paperKr krFillBadges)이고, 확정 조정 행이 있으면 확정가를 그 아래에 둡니다.
  */
@@ -79,14 +88,18 @@ export function AccountDetailPanel({
   onClose,
   onOpenTab,
   market = "US",
+  session = null,
 }: {
   id: string;
-  book: PaperBookSummary;
+  /** 개요의 계좌 줄(지금 값 `current`가 있으면 그것을 타일에). */
+  book: PaperOverviewBook;
   books: readonly PaperBookSummary[];
   onClose: () => void;
   onOpenTab?: (tab: "holdings" | "decisions", code: string) => void;
   /** 이 계좌의 시장(기본 미국). */
   market?: PaperMarketCode;
+  /** 개요의 장 상태(`liveSession`) — 단계 표기의 '오늘'·날짜를 계좌 행과 같게. */
+  session?: PaperLiveSessionSummary | null;
 }) {
   const meta = marketMeta(market);
   const korea = market === "KR";
@@ -95,12 +108,16 @@ export function AccountDetailPanel({
   // 설정은 자주 바뀌지 않아 열 때 한 번만 읽습니다. 못 읽으면 정의 문장만 보입니다(숫자를 지어내지 않음).
   const settings = useApi<PaperSettingsResponse>(endpoints.paper.settings);
 
-  const current = positions.data?.available && positions.data.book ? positions.data.book : book;
-  const card = bookCard(current, books, market);
+  const ledger = positions.data?.available && positions.data.book ? positions.data.book : book;
+  const card = bookCard(ledger, books, market);
+  // 순자산·수익률·노출·마지막 평가 타일의 지금 값(개요 계좌 줄 — 옛 응답이면 from "ledger"이고 타일은 장부 그대로).
+  const view = currentView(book, { market, session });
+  const now = view.from === "current" ? view : null;
+  const estimated = now?.isEstimated === true;
   const profile = accountProfile(book.code);
   const settingRows = accountSettingRows(book.code, settings.data?.available ? settings.data.body : null);
   const composition = positions.data?.available
-    ? accountComposition(positions.data.positions ?? [], positions.data.cash ?? null, current.nav, market)
+    ? accountComposition(positions.data.positions ?? [], positions.data.cash ?? null, ledger.nav, market)
     : null;
   const decides = book.kind === "RULES" || book.kind === "CLAUDE";
   const titleId = accountDetailTitleId(id);
@@ -162,17 +179,32 @@ export function AccountDetailPanel({
         </section>
 
         <section aria-label="핵심 숫자" className="flex flex-col gap-2">
-          <h4 className="text-xs font-semibold text-bright">핵심 숫자</h4>
+          <div className="flex flex-wrap items-center gap-2">
+            <h4 className="text-xs font-semibold text-bright">핵심 숫자</h4>
+            {/* 장중 추정이면 같은 격자의 장부 타일(현금·보유 수)과 섞여 확정처럼 읽히지 않게 머리 옆에도 배지(반박 검토). */}
+            <EstimateBadge estimated={estimated} note={estimated ? "순자산·수익률·주식 노출" : null} />
+          </div>
           <dl className="grid grid-cols-2 gap-x-4 gap-y-3 sm:grid-cols-3">
-            <Tile label="순자산" value={card.nav} />
-            <Tile label="수익률(출발 이후)" value={card.returnPct} tone={deltaColor(current.returnPct)} />
+            <Tile label="순자산" value={now ? formatMoney(now.nav, market) : card.nav} caption={estimated ? "장중 추정" : undefined} />
+            <Tile
+              label="수익률(출발 이후)"
+              value={now ? formatPercent(now.returnPct) : card.returnPct}
+              tone={deltaColor(now ? now.returnPct : ledger.returnPct)}
+              caption={estimated ? "장중 추정" : undefined}
+            />
             <Tile label="현금" value={card.cash} />
-            {/* 장부의 주식 노출은 평가액 ÷ 순자산이라 현금성(SHY)도 들어갑니다 — 구성 차트의 '현금·현금성'과 같은 SHY를 두 번 읽지 않게 적습니다. */}
-            <Tile label="주식 노출" value={card.exposure} caption={`현금성(${meta.cashLike}) 포함`} />
+            {/* 주식 노출은 평가액 ÷ 순자산이라 현금성(SHY)도 들어갑니다 — 구성 차트의 '현금·현금성'과 같은 SHY를 두 번 읽지 않게 적습니다. */}
+            <Tile
+              label="주식 노출"
+              value={now ? formatWithUnit(now.exposurePct, 1, "%") : card.exposure}
+              caption={`현금성(${meta.cashLike}) 포함${estimated ? " · 장중 추정" : ""}`}
+            />
             <Tile label="보유 종목 수" value={card.positions} />
             <Tile label="출발일" value={card.startedOn} />
-            <Tile label="마지막 평가" value={card.lastObserved} />
+            <Tile label="마지막 평가" value={now ? (now.stageLabel ?? EMPTY) : card.lastObserved} />
           </dl>
+          {/* 지금 값이면 장부 쪽 기준을 함께 — 아래 구성·현금·보유·체결은 이 장부 관측의 값입니다. */}
+          {now && <p className="text-xs text-text-2">{ledgerObservedLine(ledger, market)}</p>}
           {card.staleWarning && <p className="text-xs text-warn">{card.staleWarning}</p>}
           <SourceLine>{korea ? PAPER_SOURCES.krLedger : PAPER_SOURCES.ledger}</SourceLine>
         </section>
