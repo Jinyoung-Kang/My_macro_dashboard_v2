@@ -88,7 +88,7 @@
 
 | ID | 요구사항 |
 |---|---|
-| D1 | **주기.** 토요일 KST 09:00 이후, 그 주 금요일 확정 종가가 들어온 뒤 1회(`paper_reviews` 유일 제약: `week_ending`). 수동 실행 가능 |
+| D1 | **주기.** 토요일 KST 09:00 이후(2026-11-02 사용자 결정으로 일요일 21:00 — 서버 일요일 밤 창, ADR 0019 결정 14), 그 주 금요일 확정 종가가 들어온 뒤 1회(`paper_reviews` 유일 제약: `week_ending`). 수동 실행 가능 |
 | D2 | **입력(코드가 만든다, Claude가 아니라).** 최근 4주(단계 0: 조립 뒤 어림이 25,000토큰을 넘으면 2주로 다시 조립하고 `windowWeeks`·`trimmedReason`을 입력에 남김) Claude 계좌 결정의 요약·stance·노출·주문·검증 결과; 각 주문의 그 뒤 수익률(체결가 대비 금요일 종가)·스탑 발동 여부; 각 `invalidation` 문장과 **코드가 평가할 수 있는 것**(가격·지표 조건)은 평가 결과, 못 하는 것은 "평가 불가"; 같은 기간 규칙 계좌·벤치마크 수익률; 거절된 주문의 가정 수익률(체결됐다면). 프레임 현재 버전 |
 | D3 | **출력(구조화).** `{weekEnding, verdicts:[{decisionId, thesisHeld: 유지/반증/판단불가, note}], recurringErrors:[…], keep:[…], proposal: null | {operations:[…], judgment, rationale}}`. `proposal`이 있으면 1단계 F2의 제안 테이블에 `PENDING`으로 넣는다. **자동 반영 없음** |
 | D4 | **비용.** `apiDailyCallCap`에 포함. 모델은 설정의 `model`. 주 1회 |

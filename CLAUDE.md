@@ -29,7 +29,9 @@ PostgreSQL ← 수집기(FastAPI, `collector/`). Docker Compose 네 컨테이너
 - AWS 개인용 서버(ADR 0019, [docs/DEVELOPMENT.md §7](docs/DEVELOPMENT.md)) — **교체(4단계, 계획서 §5) 전까지 서버는 v1을 돌린다. v2를 서버에 올리지 않는다.**
   아래는 교체 뒤 기준이다. 화면은 PC에서 `bash scripts/aws/tunnel.sh` → http://localhost:8201,
   셸은 SSM(`aws ssm start-session` 뒤 `sudo -iu ubuntu`). **서버에서는 `make up` 대신 `bash scripts/aws/deploy.sh`**(4 GiB — 이미지를 하나씩 빌드).
-  서버는 매일 KST 21:55~08:00(토 ~10:00)만 켜진다(EventBridge Scheduler) — 창 밖에 보려면 `bash scripts/aws/instance.sh start`(다음 정지 일정에 꺼짐), 상태는 `instance.sh status`.
+  서버는 평일 밤 미국 개장 10분 전(뉴욕 09:20 — 겨울 23:20·서머타임 22:20 KST)~07:00, 평일 낮 08:55~15:50, 일요일 밤 20:50~23:30 KST만 켜진다(EventBridge Scheduler,
+  2026-11-02 — ADR 0019 결정 14). 미국 결정 06:30·백업 06:45(일 23:00)·주간 복기 일 21:00(미국)·22:00(한국). 창 밖에 보려면 `bash scripts/aws/instance.sh start`
+  (다음 정지 일정에 꺼짐), 상태는 `instance.sh status`. 창 밖에서 켜서 배포했으면 확인 뒤 다른 일이 없으면 `instance.sh stop --force`로 다시 끈다.
   계정 고유 값(인스턴스 ID·버킷 이름)은 공개 저장소에 적지 않고 로컬 `.env`·메모리에만 둔다.
   공개 주소는 CloudFront 하나(ADR 0019 결정 16): 보안 그룹 인바운드는 CloudFront 원본용 prefix list → :8301 한 줄뿐이고, caddy가 비밀 헤더를 확인한 뒤
   잠금화면(gate, `deploy/aws/gate`)을 거친 요청만 앱으로 보낸다. 그 밖의 인바운드 규칙·공인 IP 앱 포트·Tailscale은 두지 않는다. v3의 데모 스택(portfolio-*)은 건드리지 않는다.

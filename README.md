@@ -4,7 +4,7 @@
 SEC 13F · 국내 수급을 **한 화면에서** 보는 개인용 대시보드입니다. 운영자 전용
 모의 알고리즘 매매도 들어 있습니다 — 미국(규칙·Claude 계좌1·SPY·60/40 네 계좌 + 체결 시점 실험 Claude 계좌2 — 장중 확인 최대 한 번(MINUTE·HOURLY), $100k씩)과 한국(규칙·Claude·KODEX 200·60/40 네 계좌,
 1억 원씩 — 출발일 `PAPER_KR_START_DATE`를 정하면 출발, 서버 출발은 v2 4단계 교체 뒤).
-맥에서 Docker 한 줄로 띄우고, 모의 매매가 도는 운영본은 AWS의 개인용 서버(EC2 한 대, 매일 밤 KST 21:55~08:00)에 둡니다.
+맥에서 Docker 한 줄로 띄우고, 모의 매매가 도는 운영본은 AWS의 개인용 서버(EC2 한 대, 평일 밤 미국 개장 10분 전~07:00 · 평일 낮 08:55~15:50 · 일요일 밤 20:50~23:30 KST)에 둡니다.
 
 > 이 저장소(`My_macro_dashboard_v2`)는 2026-10-26에 `My_macro_dashboard_v1`에서 전체 이력으로 갈라져 나왔습니다 — 화면 전면 개편과
 > 한국 증시 모의 매매를 여기서 합니다([v2 프로그램 계획서](docs/specs/2026-10-26-v2-program-plan.md)). **교체 전까지 AWS 운영본은 v1**이고,
@@ -337,8 +337,8 @@ make test-frontend     # 자가검증 + 훅 테스트(vitest) + 린트 + 빌드(
 ### AWS 개인용 서버
 
 모의 매매를 돌리려고 AWS 서울의 EC2 한 대(`my-macro-app`, t4g.medium ARM · 4 GiB)에 올립니다. DB는 로컬과 같은
-Postgres 컨테이너입니다. 서버는 **매일 KST 21:55에 켜지고 08:00(토요일은 10:00)에 꺼집니다**(EventBridge Scheduler) — 미국 장·마지막 지연 봉·
-06:10 백업·07:30 결정이 모두 이 안에 있습니다. 사용자는 1명(운영자)입니다. 화면은 **공개 주소**(CloudFront `https://dXXXX.cloudfront.net` —
+Postgres 컨테이너입니다. 서버는 **평일 밤 미국 개장 10분 전(뉴욕 09:20 — 겨울 23:20·서머타임 22:20 KST)~07:00, 평일 낮 08:55~15:50, 일요일 밤 20:50~23:30 KST에만 켜집니다**(EventBridge Scheduler, 2026-11-02 —
+ADR 0019 결정 14) — 미국 장·마지막 지연 봉·06:30 미국 결정·06:45 백업(일요일은 23:00 한 번 더)·한국 장중·한국 결정 창·일요일 밤 주간 복기(미국 21:00·한국 22:00)가 이 안에 있습니다. 사용자는 1명(운영자)입니다. 화면은 **공개 주소**(CloudFront `https://dXXXX.cloudfront.net` —
 첫 화면에서 접근 코드를 넣은 뒤 로그인, 주소와 코드는 운영자에게만)나 PC의 SSM 포트 포워딩(관리용)으로 엽니다. 서버에 들어오는 길은 CloudFront
 원본용 대역 → 8301 한 줄뿐입니다(ADR 0019 결정 16). 로컬과 다른 점은 덧붙임 [compose.aws.yml](compose.aws.yml)과 [scripts/aws/](scripts/aws/)에 있고,
 이유는 [ADR 0019](docs/adr/0019-aws-personal-deployment.md)에 있습니다. 월 약 $17(하루 10시간 기준).
@@ -366,7 +366,7 @@ bash ~/My_macro_dashboard_v2/scripts/aws/deploy.sh   # main 받기 → 이미지
   `COMPOSE_FILE`·`AWS_BACKUP_BUCKET`을 더한 것입니다([.env.aws.example](.env.aws.example)). 빠져야 할 이름이 있으면 `deploy.sh`가 멈춥니다
   (`COOKIE_SECURE`·`PAPER_ENABLED`는 알리고 계속 — Secure 쿠키를 받지 못하는 브라우저, 서버 정기 작업을 일부러 끈 경우의 자리).
   전환 뒤 로컬의 `PAPER_ENABLED=false`도 옮기지 않습니다(서버는 비우면 켜짐). PC의 `.env`에는 `AWS_INSTANCE_ID`(서버 인스턴스 ID)만 더합니다.
-- DB는 매일 06:10 KST에 S3로 백업합니다(`scripts/aws/backup-s3.sh`, cron, 60일 보관).
+- DB는 06:45 KST(서버가 켜진 아침 — 화~토)와 일요일 23:00 KST에 S3로 백업합니다(`scripts/aws/backup-s3.sh`, cron, 60일 보관).
 - 모의 매매 정기 작업은 **서버 한 곳에서만** 돕니다. 데이터를 서버로 옮긴 뒤 로컬 v1은 `.env`에 `PAPER_ENABLED=false`를 넣고 띄웁니다
   — 두 곳이 같은 계좌를 따로 결정·체결하면 안 됩니다.
 - 서버 만들기·데이터 전환·SSM 셸 절차는 [docs/DEVELOPMENT.md §7](docs/DEVELOPMENT.md#7-aws-개인용-서버)에 있습니다.

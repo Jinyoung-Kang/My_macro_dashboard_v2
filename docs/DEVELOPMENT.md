@@ -311,7 +311,7 @@ git config credential.https://github.com.username <아이디>
 
 ## 7. AWS 개인용 서버
 
-운영본(모의 매매가 도는 곳)은 AWS 서울의 EC2 `my-macro-app` 한 대이고, 매일 KST 21:55~08:00(토 ~10:00)만 켜집니다. 구성과 이유는
+운영본(모의 매매가 도는 곳)은 AWS 서울의 EC2 `my-macro-app` 한 대이고, 평일 밤 미국 개장 10분 전(뉴욕 09:20 — 겨울 23:20·서머타임 22:20 KST)~07:00, 평일 낮 08:55~15:50, 일요일 밤 20:50~23:30 KST에만 켜집니다(2026-11-02 — ADR 0019 결정 14). 구성과 이유는
 [ADR 0019](adr/0019-aws-personal-deployment.md), 그림은 [ARCHITECTURE §9](ARCHITECTURE.md#9-배포-aws-개인용-서버)에 있습니다.
 셸은 SSM으로만 엽니다. 화면은 공개 주소(CloudFront + 잠금화면 — 아래 '공개 주소')나 SSM 터널로 엽니다. 아래 명령의 `<AWS_INSTANCE_ID>`·`<버킷>`은 PC `.env`의
 `AWS_INSTANCE_ID`·서버 `.env`의 `AWS_BACKUP_BUCKET` 값입니다.
@@ -350,22 +350,29 @@ git config credential.https://github.com.username <아이디>
 
    `gh`로 등록한 배포 키는 그때의 `gh` 인증 토큰에 묶여, 그 토큰을 끊으면 함께 지워집니다 — 서버의 `git fetch`가 `Permission denied`면 다시 등록합니다.
 7. 켜기·끄기 일정(ADR 0019 결정 14): 실행 역할 `my-macro-scheduler`(신뢰 `scheduler.amazonaws.com` + 같은 계정 조건, 그 인스턴스 하나에만
-   `ec2:StartInstances`·`ec2:StopInstances`)와 EventBridge Scheduler 세 개 — 시간대 `Asia/Seoul`, 범용 타깃 `arn:aws:scheduler:::aws-sdk:ec2:startInstances`
+   `ec2:StartInstances`·`ec2:StopInstances`)와 EventBridge Scheduler 여섯 개 — 시간대 `Asia/Seoul`(밤 켜기만 `America/New_York`), 범용 타깃 `arn:aws:scheduler:::aws-sdk:ec2:startInstances`
    (끄기는 `…:stopInstances`), 입력 `{"InstanceIds":["<AWS_INSTANCE_ID>"]}`, 재시도 1시간·3번.
 
    | 이름 | 식 | 하는 일 |
    |---|---|---|
-   | `my-macro-start` | `cron(55 21 * * ? *)` | 매일 21:55 켬 |
-   | `my-macro-stop` | `cron(0 8 ? * SUN-FRI *)` | 일~금 08:00 끔 |
-   | `my-macro-stop-sat` | `cron(0 10 ? * SAT *)` | 토 10:00 끔(주간 복기 09:00 뒤) |
+   | `my-macro-start` | `cron(20 9 ? * MON-FRI *)`, `America/New_York` | 평일 뉴욕 09:20 켬(미국 개장 10분 전 — 겨울 23:20·서머타임 22:20 KST) |
+   | `my-macro-stop` | `cron(0 7 * * ? *)` | 매일 07:00 끔(토요일 07:00은 금요일 세션 뒤 — 손으로 켠 주말도 다음 아침에 꺼짐) |
+   | `my-macro-day-start` | `cron(55 8 ? * MON-FRI *)` | 평일 08:55 켬(한국 장 5분 전) |
+   | `my-macro-day-stop` | `cron(50 15 ? * MON-FRI *)` | 평일 15:50 끔 |
+   | `my-macro-sun-start` | `cron(50 20 ? * SUN *)` | 일 20:50 켬(주간 복기 — 미국 21:00·한국 22:00) |
+   | `my-macro-sun-stop` | `cron(30 23 ? * SUN *)` | 일 23:30 끔 |
 
-   데이터 전환을 마칠 때까지는 `DISABLED`로 만들어 두고(08:00 정지가 빌드·전환을 끊지 않게), 전환을 확인한 뒤 켭니다.
+   처음(2026-10-26)은 세 개(매일 21:55 켬, 일~금 08:00·토 10:00 끔)였고, 2026-11-02 사용자 결정으로 지금의 여섯 개로 바꿨습니다.
+
+   데이터 전환을 마칠 때까지는 `DISABLED`로 만들어 두고(정지 일정이 빌드·전환을 끊지 않게), 전환을 확인한 뒤 켭니다.
 8. 아래 '서버 .env 전달' → '배포' → '화면 열기'로 확인 → '데이터 전환' → '백업(cron)' → 일정 켜기 순서로 이어 갑니다.
 
 ### 가동 시간 (켜기·끄기)
 
-서버는 **매일 KST 21:55에 켜지고 08:00(토요일은 10:00)에 꺼집니다** — 미국 장·마지막 지연 봉·06:10 백업·07:30 결정·토요일 09:00 복기가 그 안에 있습니다.
-**08:00 뒤에 보려면 손으로 켜고, 다음 정지 일정에 다시 꺼집니다**(낮에 켜 두면 그날 밤 창이 끝나는 08:00까지 켜져 있음).
+서버는 **평일 밤 미국 개장 10분 전(뉴욕 09:20 — 겨울 23:20·서머타임 22:20 KST)~07:00, 평일 낮 08:55~15:50, 일요일 밤 20:50~23:30 KST에만 켜집니다**(2026-11-02) — 미국 장·마지막 지연 봉·06:30 미국 결정·06:45 백업·한국 장중(낮 창)·
+한국 결정 창(겨울은 23:20 기동·수집 뒤)·일요일 밤 주간 복기(미국 21:00·한국 22:00, 일요일 23:00 백업)가 그 안에 있습니다.
+**창 밖에 보려면 손으로 켜고, 다음 정지 일정(매일 07:00·평일 15:50·일 23:30)에 다시 꺼집니다.** 창 밖에서 켜서 배포했으면 배포·확인 뒤
+다른 일이 없으면 `instance.sh stop --force`로 다시 끕니다(2026-11-02 사용자 결정 — 저녁에 켠 채 두면 다음 07:00까지 켜져 있음).
 
 ```bash
 bash scripts/aws/instance.sh status   # 지금 켜져 있나 — 한 줄
@@ -467,21 +474,22 @@ tmp="$(mktemp)" && grep -Ev '^[[:space:]]*(DATABASE_PORT|BACKEND_PORT|COLLECTOR_
 그대로입니다. 컨테이너만 멈추면(`docker compose stop backend`) 다음 `deploy.sh`가 다시 켜므로 `.env`로 끕니다(`deploy.sh`도 그 줄을 보고 알림).
 다시 전환할 때는 1단계부터 하고, 서버 `.env`의 그 줄은 3단계 복원 뒤에 지우고 `docker compose up -d backend`.
 
-확인이 끝나면 서버를 끄고(`instance.sh stop` — 낮이라 창 밖) 일정 세 개를 `ENABLED`로 바꿉니다. **첫 사이클**(그날 21:55 → 다음 날 08:00)에서 차례로 봅니다 —
+확인이 끝나면 서버를 끄고(`instance.sh stop` — 창 밖) 일정을 `ENABLED`로 바꿉니다. **첫 사이클**(그날 밤 켜짐 → 다음 날 07:00)에서 차례로 봅니다 —
 하나라도 빠지면 원인을 찾을 때까지 일정을 그대로 두고 보고합니다.
 
-1. 21:55 자동 기동(인스턴스 running, EventBridge 일정 실행 기록)
+1. 밤 자동 기동(뉴욕 09:20 — 인스턴스 running, EventBridge 일정 실행 기록)
 2. 컨테이너 다섯 개 healthy(`docker compose ps`) — 정지 뒤 다시 뜬 것이므로 postgres 복구 로그가 없어야 함(30초 안에 깨끗이 꺼졌다는 뜻)
 3. 미국 장 시작 뒤 리스크 작업 기록(`/api/paper/status`의 `jobs`에 새 `risk` 행)
-4. 06:10 백업이 S3 `db/`에 도착(`journalctl -t my-macro-backup`)
-5. 07:30 결정 기록(`jobs`의 `decision` 행)
-6. 08:00 자동 정지(인스턴스 stopped)
+4. 06:30 결정 기록(`jobs`의 `decision` 행)
+5. 06:45 백업이 S3 `db/`에 도착(`journalctl -t my-macro-backup`)
+6. 07:00 자동 정지(인스턴스 stopped)
 
 ### 백업 (cron)
 
 ```bash
-# 서버(ubuntu) — 매일 21:10 UTC(06:10 KST). 서버 시간대는 UTC입니다
-(crontab -l 2>/dev/null | grep -v 'scripts/aws/backup-s3.sh'; echo '10 21 * * * /home/ubuntu/My_macro_dashboard_v2/scripts/aws/backup-s3.sh') | crontab -
+# 서버(ubuntu) — 매일 21:45 UTC(06:45 KST — 미국 결정 06:30 뒤, 07:00 정지 전)와 일요일 14:00 UTC(23:00 KST — 주간 복기 뒤).
+# 서버 시간대는 UTC이고, 꺼져 있는 아침(일·월 06:45)에는 cron이 돌지 않습니다(2026-11-02 — 처음은 매일 06:10)
+(crontab -l 2>/dev/null | grep -v 'scripts/aws/backup-s3.sh'; echo '45 21 * * * /home/ubuntu/My_macro_dashboard_v2/scripts/aws/backup-s3.sh'; echo '0 14 * * 0 /home/ubuntu/My_macro_dashboard_v2/scripts/aws/backup-s3.sh') | crontab -
 journalctl -t my-macro-backup --since yesterday       # 결과(실패는 err)
 ```
 
