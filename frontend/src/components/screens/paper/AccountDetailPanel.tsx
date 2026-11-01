@@ -130,14 +130,14 @@ export function AccountDetailPanel({
         if (event.key === "Escape") onClose();
       }}
       // 열린 계좌 상세는 잉크 테두리 — 강조 파랑은 누를 수 있는 것에만(명세 A1).
-      className="mt-4 flex flex-col gap-5 rounded-lg border border-text bg-canvas px-4 py-4"
+      className="mt-4 flex flex-col gap-5 rounded-control border border-text bg-canvas px-4 py-4"
     >
       <header className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2">
             {/* 열 때 초점을 받는 자리(tabIndex -1 — Tab 순서에는 넣지 않음). 단추가 아니라 초점 테두리는 그리지 않습니다. */}
             <h3 id={titleId} tabIndex={-1} className="text-base font-semibold text-bright focus:outline-hidden">{book.label} 상세</h3>
-            <span className={`rounded-sm border px-2 py-0.5 text-xs ${card.status.className}`}>{card.status.label}</span>
+            <span className={`rounded-full border px-2 py-0.5 text-xs ${card.status.className}`}>{card.status.label}</span>
           </div>
           {profile && <p className="mt-1 text-xs text-body">{profile.summary}</p>}
         </div>
@@ -244,7 +244,7 @@ export function AccountDetailPanel({
                   <span className="flex flex-wrap items-center gap-1">
                     <span>{row.ticker}</span>
                     {(korea ? krFillBadges(row) : fillBadges(row)).map((badge) => (
-                      <span key={badge.key} title={badge.title} className={`whitespace-nowrap rounded-sm border px-1.5 py-px text-xs ${badge.className}`}>
+                      <span key={badge.key} title={badge.title} className={`whitespace-nowrap rounded-full border px-2 py-px text-xs ${badge.className}`}>
                         {badge.label}
                       </span>
                     ))}
@@ -351,7 +351,7 @@ function CompositionView({ label, composition }: { label: string; composition: A
                 />
                 <span className={row.isCash ? "text-body" : "font-semibold text-bright"}>{row.label}</span>
                 {row.cashLike && (
-                  <span title="현금성 ETF — 트레일링 스탑을 적용하지 않습니다." className="rounded-sm border border-border bg-surface-hover px-1.5 py-px text-xs text-muted">
+                  <span title="현금성 ETF — 트레일링 스탑을 적용하지 않습니다." className="rounded-full border border-border bg-surface-2 px-2 py-px text-xs text-text-2">
                     현금성
                   </span>
                 )}

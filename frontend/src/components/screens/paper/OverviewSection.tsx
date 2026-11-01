@@ -309,7 +309,7 @@ export function OverviewSection({
         <Card title={startPrompt.title} subtitle="초기 결정 — 출발일 종가 사후 체결" source={PAPER_SOURCES.decisions}>
           <p className="text-sm leading-relaxed text-body">{startPrompt.body}</p>
           {confirmingStart ? (
-            <div className="mt-3 flex flex-col gap-3 rounded-md border border-warn/40 bg-warn/10 px-3 py-3">
+            <div className="mt-3 flex flex-col gap-3 rounded-control border border-warn/30 bg-warn-tint px-3 py-3">
               <p className="text-sm leading-relaxed text-warn">{startPrompt.confirm}</p>
               <div className="flex flex-wrap items-center gap-2">
                 <Button variant="primary" onClick={() => void runStart(startPrompt.bookCode)} disabled={start.busy}>
@@ -374,7 +374,7 @@ export function OverviewSection({
         ) : (
           <>
             {/* 계좌 행(설계서 §7) — 행 전체가 펼침 단추(aria-expanded·aria-controls)라 어디를 눌러도 상세가 열리고 다시 누르면 닫힙니다. */}
-            <ul aria-label="계좌 목록" className="overflow-hidden rounded-xl border border-border bg-surface">
+            <ul aria-label="계좌 목록" className="overflow-hidden rounded-control border border-border bg-surface">
               {books.map((book, index) => {
                 const open = book.code === selected;
                 return (
@@ -731,7 +731,7 @@ function GroupList({ title, rows, empty }: { title: string; rows: SelectedFilerR
 
 function GroupBadge({ badge }: { badge: Badge }) {
   return (
-    <span title={badge.title} className={`whitespace-nowrap rounded-sm border px-1.5 py-px text-xs ${badge.className}`}>
+    <span title={badge.title} className={`whitespace-nowrap rounded-full border px-2 py-px text-xs ${badge.className}`}>
       {badge.label}
     </span>
   );

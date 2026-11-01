@@ -86,7 +86,7 @@ function comparisonContent(row: ComparisonRow, code: string): ReactNode {
   const cell = row.cells[code];
   if (!cell || cell.text === EMPTY) return cell?.text ?? null;
   if (row.badge && cell.className) {
-    return <span className={`whitespace-nowrap rounded-sm border px-2 py-0.5 text-xs ${cell.className}`}>{cell.text}</span>;
+    return <span className={`whitespace-nowrap rounded-full border px-2 py-0.5 text-xs ${cell.className}`}>{cell.text}</span>;
   }
   const text = cell.className ? <span className={cell.className}>{cell.text}</span> : cell.text;
   if (cell.sub) {
