@@ -13,7 +13,7 @@ import re
 from pathlib import Path
 
 from app.services import toss as toss_service
-from app.tasks import kr_paper, toss
+from app.tasks import kr_paper, kr_paper_timed, toss
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -44,18 +44,19 @@ def test_DATA_SOURCES의_토스_호출_예산이_코드_상수와_같다():
 
 # 한국 책(v2 2단계 B4) — 하루 한 번 도는 태스크마다 실행당 상한. (태스크, 상수 이름) — 문서의 숫자와 상수 이름을 함께 대조합니다.
 KR_BUDGETS = (
-    ("kr_paper_quotes", "KR_QUOTES_CALL_BUDGET"),
-    ("kr_paper_flows", "KR_FLOWS_CALL_BUDGET"),
-    ("kr_paper_price_history", "KR_HISTORY_CALL_BUDGET"),
+    ("kr_paper_quotes", "KR_QUOTES_CALL_BUDGET", kr_paper),
+    ("kr_paper_flows", "KR_FLOWS_CALL_BUDGET", kr_paper),
+    ("kr_paper_price_history", "KR_HISTORY_CALL_BUDGET", kr_paper),
+    ("kr_paper_timed", "KR_TIMED_CALL_BUDGET", kr_paper_timed),   # 한국 Claude 계좌2 단계 2a
 )
 
 
 def test_DATA_SOURCES의_한국_책_호출_예산이_코드_상수와_같다():
     text = _bullet("한국 책 호출 예산")
-    for task, constant in KR_BUDGETS:
+    for task, constant, module in KR_BUDGETS:
         stated = re.search(rf"`{task}` 실행당 최대 ([\d,]+)회", text)
         assert stated, f"{task}의 실행당 상한이 문서에 없습니다"
-        assert int(stated.group(1).replace(",", "")) == getattr(kr_paper, constant), task
+        assert int(stated.group(1).replace(",", "")) == getattr(module, constant), task
         assert constant in text, constant
 
 
