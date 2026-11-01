@@ -609,6 +609,7 @@ E가 끝나면(3a) 모든 주문이 풀리므로 미룸은 그 세션 안에서 
 | `claude2.barsWaitMinutes` | INTEGER 0~30, 15 | 1분봉 기다림 상한(§10-2) |
 | `claude2.executionRecord` | BOOLEAN true | `13_execution.record`(T14) |
 | `claude2.checkpoints` | BOOLEAN false | 단계 2 |
+| `claude2.riskProfile` | CHOICE 공격투자형·적극투자형·위험중립형·안정추구형, 적극투자형 | 투자 성향(2026-11-01 사용자 결정, 이 명세 뒤에 더함) — 결정 시점 설정의 '투자 성향' 절을 계좌2 시스템 프롬프트(c2-1·c2-2)의 출력 절 앞에(`ClaudePrompts.withClaude2RiskProfile`). 판단 기준일 뿐 하드 규칙·검증기·체결 메뉴·응답 스키마·패킷은 그대로(ADR 0022 결과) |
 
 메뉴 자체는 코드 상수(`DecisionTimingsLockTest`가 대조), 기본 설정 본문(`P/PaperSettingsService.java:478-552`)에 묶음을 더한다.
 
