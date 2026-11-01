@@ -2,11 +2,13 @@
  * 선 차트 규칙(lib/lineChart.ts) — 축은 데이터 범위(0 바닥을 지어내지 않음), 0선은 뜻이 있을 때만, 색은 되풀이하지 않음,
  * 모르는 값은 null(선 끊김)·툴팁 "—", 외딴 점은 점으로.
  * 문지르기: Recharts의 활성 자리(숫자·글)를 순번으로 바꾸고 범위를 검사, 그 점의 값·날짜·기간의 첫 유효값 대비 변화(모르면 null), 추정 점 표시.
+ * 꼬리 계열(tailOf — 장중 값 단계의 오늘 추정 점선): 범례에서 빠지고, 색은 본 계열 색, 툴팁 줄은 꼬리 자신의 점에만(그 점에서는 본 계열 '—' 줄이 빠짐).
  */
 import { describe, expect, it } from "vitest";
 
 import {
   hasLineValues,
+  inLegend,
   isolatedPointIndexes,
   lineChartLabel,
   lineSeriesColors,
@@ -17,6 +19,7 @@ import {
   normalizeLineRows,
   scrubIndex,
   scrubModel,
+  tailPointShown,
   type LineRow,
 } from "@/lib/lineChart";
 
@@ -134,6 +137,36 @@ describe("lineSeriesColors", () => {
     // 넷째에 색을 주면 괜찮다.
     expect(lineSeriesColors([...four.slice(0, 3), { key: "d", label: "D", color: "#606870" }], PALETTE)).toHaveLength(4);
   });
+
+  it("색을 주지 않은 꼬리 계열은 본 계열 색 — 기본 색 자리를 쓰지 않고, 본 계열이 없으면 오류", () => {
+    const three = ["a", "b", "c"].map((key) => ({ key, label: key.toUpperCase() }));
+    // 셋째 뒤의 꼬리 둘 — 기본 색이 셋뿐이어도 오류가 아니고, 각자 본 계열 색(넘긴 색이면 그 색)
+    expect(
+      lineSeriesColors([...three, { key: "a~", label: "A 꼬리", tailOf: "a" }, { key: "c~", label: "C 꼬리", tailOf: "c", color: "#606870" }], PALETTE),
+    ).toEqual(["#3987e5", "#d95926", "#199e70", "#3987e5", "#606870"]);
+    expect(lineSeriesColors([{ key: "a", label: "A", color: "var(--text)" }, { key: "a~", label: "A 꼬리", tailOf: "a" }], PALETTE)).toEqual([
+      "var(--text)",
+      "var(--text)",
+    ]);
+    expect(() => lineSeriesColors([{ key: "a", label: "A" }, { key: "x~", label: "X 꼬리", tailOf: "x" }], PALETTE)).toThrow(/꼬리 계열 "X 꼬리"/);
+  });
+});
+
+describe("꼬리 계열(tailOf) — 범례·툴팁 자리", () => {
+  const tail = { key: "a~", label: "A · 추정 23:58", tailOf: "a" };
+
+  it("범례에서 빠지는 계열 — legend:false와 꼬리", () => {
+    expect(inLegend({})).toBe(true);
+    expect(inLegend({ legend: false })).toBe(false);
+    expect(inLegend({ tailOf: "a" })).toBe(false);
+  });
+
+  it("꼬리 줄은 꼬리 자신의 점(본 계열 값이 없는 행)에만 — 꼬리가 시작하는 마지막 줄에서는 아님", () => {
+    expect(tailPointShown({ date: "10-30", a: null, "a~": 101_234.56 }, tail)).toBe(true);
+    expect(tailPointShown({ date: "10-29", a: 101_200, "a~": 101_200 }, tail)).toBe(false);
+    expect(tailPointShown({ date: "10-28", a: 101_000, "a~": null }, tail)).toBe(false);
+    expect(tailPointShown({ date: "10-30", a: null, "a~": 1 }, { key: "a" })).toBe(false);
+  });
 });
 
 describe("isolatedPointIndexes", () => {
@@ -171,6 +204,21 @@ describe("lineTooltipModel", () => {
     expect(model.items.map((item) => item.text)).toEqual(["—", "—"]);
     expect(model.sourceLine).toBeNull();
     expect(lineTooltipModel({ date: "d", a: 1 }, series, PALETTE, format).sourceLine).toBeNull();
+  });
+
+  it("꼬리 계열 — 꼬리 점에서는 꼬리 이름과 값(본 계열 '—' 줄은 뺌), 마지막 줄에서는 꼬리 줄 없음, 다른 계열의 '—'는 그대로", () => {
+    const withTail = [...series, { key: "a~", label: "총자산 · 추정 23:58", tailOf: "a" }];
+    const colors = [...PALETTE.slice(0, 2), PALETTE[0]];
+    const point = lineTooltipModel({ date: "10-30", a: null, b: null, "a~": 6.75 }, withTail, colors, format);
+    expect(point.items).toEqual([
+      { key: "b", label: "역레포", color: "#d95926", text: "—" },
+      { key: "a~", label: "총자산 · 추정 23:58", color: "#3987e5", text: "6.8T" },
+    ]);
+    const last = lineTooltipModel({ date: "10-29", a: 6.71, b: 0.005, "a~": 6.71 }, withTail, colors, format);
+    expect(last.items.map((item) => item.label)).toEqual(["총자산", "역레포"]);
+    // 꼬리가 없는 옛 날: 꼬리 줄이 없고 본 계열 '—'는 남음(그날 기록이 없음을 보임)
+    const old = lineTooltipModel({ date: "10-01", a: null, b: 0.1, "a~": null }, withTail, colors, format);
+    expect(old.items.map((item) => `${item.label} ${item.text}`)).toEqual(["총자산 —", "역레포 0.1T"]);
   });
 });
 

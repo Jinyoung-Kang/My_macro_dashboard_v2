@@ -15,6 +15,15 @@ export const GUIDE = "var(--text-3)";
 export const CHART_FONT = 12;
 
 /**
+ * 점선 두 가지 — 계산한 참고선(모의매매 한국의 노출 맞춘 참고선 K40, `MultiSeries.dashed`)은 "6 4", 장중 값 단계의 오늘 추정 꼬리(`tailOf`)는 더 잘게
+ * "3 3". 둘이 한 그림에 함께 있어도 선 모양이 갈립니다(뜻은 이름 — 참고선은 범례 '…(계좌 아님)', 꼬리는 툴팁 '… · 추정 HH:MM' — 이 나름).
+ */
+export const REFERENCE_DASH = "6 4";
+export const TAIL_DASH = "3 3";
+/** 앞뒤가 모름인 외딴 값의 점 반지름 — 선(connectNulls=false)만으로는 사라지는 값을 점으로 남깁니다(두 선 차트가 같은 값). */
+export const ISOLATED_DOT_R = 2.5;
+
+/**
  * 시계열 색.
  *
  * dataviz 검증기(scripts/validate_palette.js)를 라이트(#ffffff)·다크(#141619) 표면 모두에서 통과한 조합입니다(명세 §2-2).

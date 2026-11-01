@@ -15,6 +15,7 @@ import { EstimateBadge, StaleBadge } from "@/components/patterns/badges";
 import { formatNumber } from "@/lib/format";
 import {
   hasLineValues,
+  inLegend,
   isolatedPointIndexes,
   lineChartLabel,
   lineSeriesColors,
@@ -29,7 +30,18 @@ import {
 } from "@/lib/lineChart";
 
 // 축·기준선·툴팁 상자·글자 범례·기본 계열 색은 래퍼들(index.tsx)과 함께 쓰는 차트 틀(frame.tsx)에서 — 검증한 값을 두 곳에 적지 않습니다.
-import { AXIS_LINE, AXIS_TEXT, CHART_FONT, ChartLegend, EdgeDateTick, GUIDE, SERIES_COLORS, TOOLTIP_BOX } from "./frame";
+import {
+  AXIS_LINE,
+  AXIS_TEXT,
+  CHART_FONT,
+  ChartLegend,
+  EdgeDateTick,
+  GUIDE,
+  ISOLATED_DOT_R,
+  SERIES_COLORS,
+  TAIL_DASH,
+  TOOLTIP_BOX,
+} from "./frame";
 
 /** 히어로 선 — 중립 잉크 하나(방향색을 입히지 않음, 명세 A4). 문지르는 세로 커서는 옅은 경계색. */
 const HERO_INK = "var(--text)";
@@ -117,6 +129,9 @@ function ScrubReporter({
  * - 계열이 둘 이상이면 글자 범례를 위에 둡니다(색 선은 보조, 이름이 본 뜻).
  * - 자릿수가 다른 계열을 한 축에 겹치지 않습니다 — 두 번째 축은 없습니다. 그런 계열은 패널(차트)을 나눕니다(PRINCIPLES).
  * - 추정·이전 값 플래그가 있으면 배지가 그림 위에 반드시 보입니다(숨기는 옵션 없음).
+ * - 꼬리 계열(`tailOf` — 장중 값 단계의 오늘 추정 점선, 장중 명세 §4): 점선(TAIL_DASH "3 3")·글자 범례에서 뺌·색은 본 계열 색(주지 않으면)·
+ *   툴팁 줄은 꼬리 자신의 점에만(`lib/lineChart` `lineTooltipModel`). 앞 값이 없는 외딴 꼬리 점도 점으로 남습니다. 히어로는 툴팁이 없고 문지르기가
+ *   그 점을 읽습니다(`scrubModel`의 estimate).
  *
  * `estimated`·`stale`·`staleReason`·`ariaLabel`은 설계서 §1.5 계약에 더한 선택 props입니다.
  *
@@ -173,7 +188,7 @@ export function LineChart({
     Object.values(SERIES_COLORS),
   );
   const legendEntries = series.flatMap((entry, index) =>
-    entry.legend === false ? [] : [{ key: entry.key, label: entry.label, color: colors[index] }],
+    inLegend(entry) ? [{ key: entry.key, label: entry.label, color: colors[index] }] : [],
   );
   const badges =
     estimated || stale ? (
@@ -295,10 +310,11 @@ export function LineChart({
               name={entry.label}
               stroke={colors[index]}
               strokeWidth={2}
+              strokeDasharray={entry.tailOf !== undefined ? TAIL_DASH : undefined}
               connectNulls={false}
               dot={(dot) =>
                 isolated.has(dot.index) ? (
-                  <circle key={`${entry.key}-${dot.index}`} cx={dot.cx} cy={dot.cy} r={2.5} fill={colors[index]} stroke="none" />
+                  <circle key={`${entry.key}-${dot.index}`} cx={dot.cx} cy={dot.cy} r={ISOLATED_DOT_R} fill={colors[index]} stroke="none" />
                 ) : null
               }
               activeDot={{ r: 4, strokeWidth: 2, stroke: "var(--surface)" }}

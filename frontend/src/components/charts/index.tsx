@@ -25,7 +25,7 @@ import {
 } from "recharts";
 import { EMPTY, formatNumber } from "@/lib/format";
 import { type DonutLabelGeometry, donutLabelsFit, truncateToWidth } from "@/lib/chartAxis";
-import { lineXTicks, lineYAxis, type LineRow, type LineYAxis } from "@/lib/lineChart";
+import { inLegend, isolatedPointIndexes, lineXTicks, lineYAxis, type LineRow, type LineYAxis, tailPointShown } from "@/lib/lineChart";
 
 import {
   AXIS_LINE,
@@ -34,7 +34,10 @@ import {
   ChartLegend,
   EdgeDateTick,
   GUIDE,
+  ISOLATED_DOT_R,
+  REFERENCE_DASH,
   SERIES_COLORS,
+  TAIL_DASH,
   TOOLTIP_BOX,
 } from "./frame";
 import { LineChart as SingleLineChart } from "./LineChart";
@@ -241,6 +244,13 @@ export type MultiSeries = {
    * 이름(범례·툴팁)이 함께 뜻을 나릅니다(선 모양만으로 전하지 않음).
    */
   dashed?: boolean;
+  /**
+   * 꼬리 계열 — 이 키의 계열(본 계열)에 붙는 장중 값 단계의 '마지막 순자산 줄 → 오늘 추정 점'(장중 명세 §4, 선 차트 LineChart의 `tailOf`와 같은 뜻).
+   * 더 잘게 끊은 점선("3 3" — 참고선 "6 4"와 다름)으로 그리고, 글자 범례에서 빼며, 툴팁 줄은 꼬리 자신의 점(본 계열 값이 없는 행)에만 둡니다 —
+   * 꼬리가 시작하는 마지막 줄에서는 본 계열과 같은 숫자라 겹쳐 적지 않습니다. 이름('{계좌} · 추정 HH:MM')이 그 점이 추정이라는 뜻을 나르고, 앞 값이
+   * 없는 외딴 꼬리 점은 점으로 남깁니다. 색·자릿수(`valueDigits`)는 부르는 쪽이 본 계열과 같게 넘깁니다.
+   */
+  tailOf?: string;
 };
 
 /**
@@ -317,8 +327,10 @@ export function MultiLineSeries({
   const unitOf = (name: string) =>
     series.find((entry) => entry.name === name)?.axis === "right" ? rightUnit : unit;
   const digitsOf = (name: string) => series.find((entry) => entry.name === name)?.valueDigits ?? 2;
-  // 글자 범례 — 이름은 부르는 쪽 그대로(오른쪽 축 계열은 이름에 '(오른쪽)'·'(우)'를 적어 넘깁니다 — KRX 두 곳).
-  const legend = series.map((entry) => ({ key: entry.key, label: entry.name, color: entry.color, dashed: entry.dashed }));
+  // 글자 범례 — 이름은 부르는 쪽 그대로(오른쪽 축 계열은 이름에 '(오른쪽)'·'(우)'를 적어 넘깁니다 — KRX 두 곳). 꼬리 계열은 넣지 않습니다.
+  const legend = series
+    .filter((entry) => inLegend(entry))
+    .map((entry) => ({ key: entry.key, label: entry.name, color: entry.color, dashed: entry.dashed }));
 
   return (
     <figure className="m-0">
@@ -367,12 +379,20 @@ export function MultiLineSeries({
           <Tooltip
             {...tooltipStyle()}
             cursor={{ stroke: GUIDE, strokeWidth: 1 }}
-            formatter={(value, name) => [
-              value === null || value === undefined
-                ? EMPTY
-                : `${formatNumber(Number(value), digitsOf(String(name)))}${unitOf(String(name))}`,
-              String(name),
-            ]}
+            formatter={(value, name, item) => {
+              // 꼬리 줄은 꼬리 자신의 점에만 — 마지막 줄에서는 본 계열과 같은 숫자입니다(null을 돌려주면 Recharts가 그 줄을 그리지 않음). 꼬리 점에서
+              // 본 계열은 값이 null이라 툴팁 기본값(filterNull)이 이미 뺍니다.
+              const tail = series.find((entry) => entry.key === String(item?.dataKey) && entry.tailOf !== undefined);
+              if (tail && !tailPointShown((item?.payload ?? {}) as LineRow, tail)) {
+                return null;
+              }
+              return [
+                value === null || value === undefined
+                  ? EMPTY
+                  : `${formatNumber(Number(value), digitsOf(String(name)))}${unitOf(String(name))}`,
+                String(name),
+              ];
+            }}
           />
           {leftAxis?.zeroLine ? <ReferenceLine yAxisId="left" y={0} stroke={GUIDE} strokeWidth={1} /> : null}
           {/* 경계선은 계열선보다 흐린 회색 점선 — 값이 아니라 "여기서 조건이 바뀜" 표시라 계열색과 겹치지 않게 합니다. */}
@@ -387,22 +407,33 @@ export function MultiLineSeries({
               label={{ value: marker.label, position: "insideTopLeft", fill: AXIS_TEXT, fontSize: CHART_FONT }}
             />
           ))}
-          {series.map((entry) => (
-            <Line
-              isAnimationActive={false}
-              key={entry.key}
-              yAxisId={entry.axis ?? "left"}
-              type="monotone"
-              dataKey={entry.key}
-              name={entry.name}
-              stroke={entry.color}
-              strokeWidth={2}
-              strokeDasharray={entry.dashed ? "6 4" : undefined}
-              dot={false}
-              activeDot={{ r: 4, strokeWidth: 2, stroke: "var(--surface)" }}
-              connectNulls={false}
-            />
-          ))}
+          {series.map((entry) => {
+            // 꼬리는 앞 값이 없으면 점 하나뿐 — 선만으로는 사라지므로 외딴 점은 점으로(선 차트 LineChart와 같은 규칙). 본 계열은 그리지 않던 그대로.
+            const isolated = entry.tailOf !== undefined ? new Set(isolatedPointIndexes(rows, entry.key)) : null;
+            return (
+              <Line
+                isAnimationActive={false}
+                key={entry.key}
+                yAxisId={entry.axis ?? "left"}
+                type="monotone"
+                dataKey={entry.key}
+                name={entry.name}
+                stroke={entry.color}
+                strokeWidth={2}
+                strokeDasharray={entry.tailOf !== undefined ? TAIL_DASH : entry.dashed ? REFERENCE_DASH : undefined}
+                dot={
+                  isolated
+                    ? (dot) =>
+                        isolated.has(dot.index) ? (
+                          <circle key={`${entry.key}-${dot.index}`} cx={dot.cx} cy={dot.cy} r={ISOLATED_DOT_R} fill={entry.color} stroke="none" />
+                        ) : null
+                    : false
+                }
+                activeDot={{ r: 4, strokeWidth: 2, stroke: "var(--surface)" }}
+                connectNulls={false}
+              />
+            );
+          })}
         </LineChart>
       </ResponsiveContainer>
     </figure>

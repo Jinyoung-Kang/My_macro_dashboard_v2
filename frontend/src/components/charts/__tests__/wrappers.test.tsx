@@ -4,6 +4,8 @@
  *  - LineSeries(옛 화면): 격자·면적 그라디언트 없음, Y축 끝값 두 개(precision + 단위), X축 첫·마지막 날짜, 툴팁은 한 자리 더
  *  - MultiLineSeries: 격자·Recharts 범례 없음, 글자 범례(두 계열 이상 — 점선 계열은 점선 표지, 이름은 부르는 쪽 그대로),
  *    Y축 끝값(데이터 범위 — 고정 domain이면 그 끝값), 모든 칸이 모름이면 빈 상태
+ *  - MultiLineSeries 꼬리 계열(tailOf — 장중 값 단계의 오늘 추정 점선): 범례 없음, 점선 "3 3"(참고선 "6 4"와 다름), 툴팁 줄은 꼬리 점에만
+ *    (꼬리가 시작하는 마지막 줄에서는 없음 — Recharts가 formatter의 null을 그리지 않음), 앞 값 없는 외딴 꼬리 점은 점
  *  - 막대(HorizontalBars·SignedBars): 격자 없음, 0 기준선(text-3)
  *  - 산점도만 옅은 격자(border 50%)
  *  - SVG 글자는 모두 12px 이상(축·막대 끝 값·표시선 이름), 툴팁 상자는 덮개 모양(그림자·12px 모서리)
@@ -151,6 +153,63 @@ describe("MultiLineSeries — 격자 없는 여러 선", () => {
     );
     expect(screen.getByText("표시할 시계열이 없습니다.")).toBeTruthy();
     expect(container.querySelector("svg")).toBeNull();
+  });
+});
+
+describe("MultiLineSeries — 꼬리 계열(tailOf)", () => {
+  const ROWS = [
+    { date: "2026-10-27", rules: 100_000, spy: 100_100, ref: 100_000, "rules~": null, "spy~": null },
+    { date: "2026-10-28", rules: 100_400, spy: 100_300, ref: 100_200, "rules~": null, "spy~": null },
+    { date: "2026-10-29", rules: 100_200, spy: null, ref: 100_100, "rules~": 100_200, "spy~": null },
+    { date: "2026-10-30", rules: null, spy: null, ref: null, "rules~": 100_600, "spy~": 100_700 },
+  ];
+  const SERIES = [
+    { key: "rules", name: "규칙 계좌", color: SERIES_COLORS.blue },
+    { key: "spy", name: "SPY 계좌", color: SERIES_COLORS.green },
+    { key: "ref", name: "참고선(계좌 아님)", color: "#a371f7", dashed: true },
+    { key: "rules~", name: "규칙 계좌 · 추정 23:58", color: SERIES_COLORS.blue, tailOf: "rules" },
+    { key: "spy~", name: "SPY 계좌 · 장부", color: SERIES_COLORS.green, tailOf: "spy" },
+  ];
+
+  function sizeAs(width: number, height: number) {
+    observeAs(width, height);
+    vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockReturnValue({
+      left: 0, top: 0, x: 0, y: 0, width, height, right: width, bottom: height, toJSON: () => ({}),
+    } as DOMRect);
+  }
+
+  it("범례에 꼬리가 없고, 꼬리는 점선 3 3(참고선 6 4와 다름), 앞 값 없는 외딴 꼬리 점은 점", () => {
+    observeAs(600, 300);
+    const { container } = render(<MultiLineSeries data={ROWS} series={SERIES} precision={0} ariaLabel="순자산 곡선" />);
+    const legend = screen.getByRole("list", { name: "범례" });
+    expect(within(legend).getAllByRole("listitem").map((item) => item.textContent)).toEqual(["규칙 계좌", "SPY 계좌", "참고선(계좌 아님)"]);
+    const curves = [...container.querySelectorAll("path.recharts-line-curve")];
+    expect(curves.map((path) => path.getAttribute("stroke-dasharray"))).toEqual([null, null, "6 4", "3 3", "3 3"]);
+    // SPY 계좌는 마지막 줄이 없어 꼬리가 점 하나뿐 — 사라지지 않게 그 계좌 색 점으로(본 계열에는 점을 찍지 않던 그대로)
+    const dots = [...container.querySelectorAll(".recharts-line-dots circle")];
+    expect(dots.map((dot) => dot.getAttribute("fill"))).toEqual([SERIES_COLORS.green]);
+  });
+
+  it("툴팁 — 꼬리 점에서는 꼬리 이름과 값, 꼬리가 시작하는 마지막 줄에서는 꼬리 줄이 없다", async () => {
+    sizeAs(600, 300);
+    const { container } = render(<MultiLineSeries data={ROWS} series={SERIES} precision={0} />);
+    const wrapper = container.querySelector(".recharts-wrapper") as Element;
+    const tooltip = () => container.querySelector(".recharts-tooltip-wrapper") as HTMLElement;
+    // 줄 순서는 Recharts가 이름으로 정렬합니다(기본 itemSorter) — 어떤 줄이 있는지만 봅니다.
+    const names = () => texts(tooltip().querySelectorAll(".recharts-tooltip-item-name")).sort();
+
+    await act(async () => {
+      fireEvent.mouseMove(wrapper, { clientX: 590, clientY: 100 });
+    });
+    expect(await within(tooltip()).findByText("2026-10-30")).toBeTruthy();
+    expect(names()).toEqual(["SPY 계좌 · 장부", "규칙 계좌 · 추정 23:58"].sort());
+    expect(within(tooltip()).getByText("100,600.00")).toBeTruthy();
+
+    await act(async () => {
+      fireEvent.mouseMove(wrapper, { clientX: 400, clientY: 100 });
+    });
+    expect(await within(tooltip()).findByText("2026-10-29")).toBeTruthy();
+    expect(names()).toEqual(["규칙 계좌", "참고선(계좌 아님)"].sort());
   });
 });
 

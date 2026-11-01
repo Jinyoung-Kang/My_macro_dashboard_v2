@@ -8,6 +8,7 @@
  *  - 추정·오래됨: 배지가 그림 위에 반드시 보인다(빈 상태에서도)
  *  - 히어로(variant="hero", 명세 §5): 중립 잉크 선, 툴팁 상자 없음, 축선 없음·축 글자 12px, 높이 200/lg 260·touch-action pan-y,
  *    문지르기 onScrub(순번 | null) — 마우스 이동·벗어남, 터치를 떼면 null. 범례에서 뺀 계열(legend: false)
+ *  - 꼬리 계열(tailOf — 장중 값 단계의 오늘 추정 점선): 점선 "3 3"·범례 없음·본 계열 색, 툴팁 줄은 꼬리 점에만, 앞 값 없는 외딴 꼬리 점은 점
  *
  * jsdom에는 크기가 없어 ResponsiveContainer가 너비를 모릅니다 — 관찰을 시작하면 정한 크기를 바로 알려 주는 가짜를 씁니다(DonutChart.test와 같음).
  * 호버는 감싼 상자의 getBoundingClientRect를 차트 크기로 맞춘 뒤 mousemove를 보냅니다.
@@ -278,6 +279,84 @@ describe("LineChart — 히어로 · 문지르기", () => {
     const legend = screen.getByRole("list", { name: "범례" });
     expect(within(legend).getAllByRole("listitem").map((item) => item.textContent)).toEqual(["10년−3개월", "10년−2년"]);
     expect(linePaths(container)).toHaveLength(3);
+  });
+});
+
+describe("LineChart — 꼬리 계열(tailOf, 장중 값 단계의 오늘 추정 점선)", () => {
+  const SERIES = [
+    { key: "a", label: "규칙 계좌" },
+    { key: "b", label: "SPY 계좌" },
+    { key: "a~", label: "규칙 계좌 · 추정 23:58", tailOf: "a" },
+  ];
+  const ROWS = [
+    { date: "2026-10-27", a: 100_000, b: 100_100, "a~": null },
+    { date: "2026-10-28", a: 100_400, b: 100_300, "a~": null },
+    { date: "2026-10-29", a: 100_200, b: 100_500, "a~": 100_200 },
+    { date: "2026-10-30", a: null, b: null, "a~": 100_600 },
+  ];
+  const money = (value: number) => value.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+  function sizeAs(width: number, height: number) {
+    observeAs(width, height);
+    vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockReturnValue({
+      left: 0, top: 0, x: 0, y: 0, width, height, right: width, bottom: height, toJSON: () => ({}),
+    } as DOMRect);
+  }
+
+  it("꼬리는 점선 3 3·본 계열 색, 글자 범례에 없고, 축 범위에 든다(마지막 날짜는 꼬리 점의 날)", () => {
+    observeAs(600, 240);
+    const { container } = render(<LineChart data={ROWS} series={SERIES} valueFormat={money} />);
+    const legend = screen.getByRole("list", { name: "범례" });
+    expect(within(legend).getAllByRole("listitem").map((item) => item.textContent)).toEqual(["규칙 계좌", "SPY 계좌"]);
+    const paths = linePaths(container);
+    expect(paths).toHaveLength(3);
+    expect(paths.map((path) => path.getAttribute("stroke-dasharray"))).toEqual([null, null, "3 3"]);
+    expect(paths[2].getAttribute("stroke")).toBe(SERIES_COLORS.blue);
+    expect(xTickTexts(container)).toEqual(["2026-10-27", "2026-10-30"]);
+    expect(lineYAxis(ROWS, SERIES)!.domain[1]).toBeGreaterThanOrEqual(100_600);
+  });
+
+  it("툴팁 — 꼬리 점에서는 꼬리 이름과 값(본 계열 '—' 줄 없음), 꼬리가 시작하는 마지막 줄에서는 꼬리 줄이 없다", async () => {
+    sizeAs(600, 240);
+    const { container } = render(<LineChart data={ROWS} series={SERIES} valueFormat={money} />);
+    const wrapper = container.querySelector(".recharts-wrapper") as Element;
+    const tooltip = () => container.querySelector(".recharts-tooltip-wrapper") as HTMLElement;
+    await act(async () => {
+      fireEvent.mouseMove(wrapper, { clientX: 590, clientY: 100 });
+    });
+    expect(await within(tooltip()).findByText("2026-10-30")).toBeTruthy();
+    expect(within(tooltip()).getByText("규칙 계좌 · 추정 23:58").nextElementSibling?.textContent).toBe("100,600.00");
+    expect(within(tooltip()).queryByText("규칙 계좌")).toBeNull();
+    // 다른 계열은 그날 값이 없다는 '—'를 그대로
+    expect(within(tooltip()).getByText("SPY 계좌").nextElementSibling?.textContent).toBe("—");
+
+    await act(async () => {
+      fireEvent.mouseMove(wrapper, { clientX: 400, clientY: 100 });
+    });
+    expect(await within(tooltip()).findByText("2026-10-29")).toBeTruthy();
+    expect(within(tooltip()).getByText("규칙 계좌").nextElementSibling?.textContent).toBe("100,200.00");
+    expect(within(tooltip()).queryByText("규칙 계좌 · 추정 23:58")).toBeNull();
+  });
+
+  it("앞 값이 없는 외딴 꼬리 점(그 계좌의 마지막 줄이 없음)은 본 계열 색 점으로 남는다", () => {
+    observeAs(600, 240);
+    const rows = ROWS.map((row, index) => (index === 2 ? { ...row, a: null, "a~": null } : row));
+    const { container } = render(<LineChart data={rows} series={SERIES} valueFormat={money} />);
+    const dots = [...container.querySelectorAll(".recharts-line-dots circle")];
+    // 본 계열 a의 둘째 날(앞뒤 null 아님 — 첫날과 이어짐)은 점이 아니고, 꼬리의 외딴 점 하나만
+    expect(dots.map((dot) => dot.getAttribute("fill"))).toEqual([SERIES_COLORS.blue]);
+  });
+
+  it("히어로 — 꼬리도 중립 잉크(var(--text)) 점선", () => {
+    observeAs(600, 260);
+    const { container } = render(
+      <LineChart data={ROWS.map(({ date, a, "a~": tail }) => ({ date, a, "a~": tail }))} series={[SERIES[0], SERIES[2]]} variant="hero" />,
+    );
+    const paths = linePaths(container);
+    expect(paths.map((path) => [path.getAttribute("stroke"), path.getAttribute("stroke-dasharray")])).toEqual([
+      ["var(--text)", null],
+      ["var(--text)", "3 3"],
+    ]);
   });
 });
 
