@@ -13,9 +13,8 @@ import {
   LIVE_FOLLOW_UP_MS,
   LIVE_REFRESH_OPTIONS,
   LIVE_REFRESH_STORAGE_KEY,
-  type LiveBookView,
-  liveBookView,
   type LivePositionView,
+  livePositionsFor,
   liveQuotesWarning,
   liveRefreshMs,
   liveSessionView,
@@ -25,14 +24,23 @@ import {
 import type { PaperLiveResponse } from "@/lib/types";
 
 /**
- * 장중 평가(추정) 카드 — 정규장 동안 계좌·종목 수익률이 고른 간격(기본 30분)으로 움직이고, 모든 값에 기준 시각을 붙입니다.
+ * 장중 시세(추정) 카드 — 정규장 동안 고른 계좌의 종목 장중가가 고른 간격(기본 30분)으로 움직이고, 모든 값에 기준 시각을 붙입니다. 장 상태·간격
+ * 선택·'지금 새로 읽기'·출처·받지 못한 종목도 여기에 둡니다. 계좌 숫자(순자산·수익률)는 이 카드에서 빼고 개요의 지금 값이 같은 장중 저장본으로
+ * 맡습니다(명세 2026-10-31 §4) — 계좌 고르기도 계좌 행 한 곳입니다(`bookCode`).
  *
  * 표시 전용입니다. 장부(체결·순자산 줄·통계·결정)는 이 값을 쓰지 않습니다(서버 PaperLiveService). 다시 읽기 규칙은 lib/paperLive —
  * 정규장에만 간격대로, 서버가 새 시세를 요청했으면 20초 뒤 한 번만 더, 장 밖에서는 멈추고 다음 개장에 한 번 깨어납니다. 탭을 숨기면 간격
  * 읽기는 useApi가 멈추고, '한 번 더'·'다음 개장' 깨우기는 탭이 다시 보일 때로 미룹니다(useVisibleWake — 보지 않는 동안 시세를 받지 않음,
  * QA-154). 숨긴 탭으로 열렸으면 첫 읽기도 처음 보일 때까지 미룹니다(useShownOnce, QA-156).
  */
-export function LiveValuationCard({ market = "US" }: { market?: PaperMarketCode }) {
+export function LiveValuationCard({
+  market = "US",
+  bookCode = null,
+}: {
+  market?: PaperMarketCode;
+  /** 종목 표를 그릴 계좌(개요에서 고른 계좌). 없거나 응답에 없으면 첫 계좌. 바뀌어도 다시 읽지 않습니다(같은 응답의 다른 계좌). */
+  bookCode?: string | null;
+}) {
   const [minutes, setMinutes] = useLiveRefreshMinutes();
   const [refreshMs, setRefreshMs] = useState(0);
   // 숨긴 탭으로 열렸으면 처음 보일 때까지 읽지 않습니다(QA-156) — 첫 읽기도 정규장이면 수집을 깨웁니다.
@@ -42,7 +50,6 @@ export function LiveValuationCard({ market = "US" }: { market?: PaperMarketCode 
   const { reload } = live;
   // 타이머의 다시 읽기 — 숨긴 탭이면 다시 보일 때로 미룹니다(QA-154). reload를 바로 부르면 숨긴 탭에서도 /live가 나가 정규장이면 수집을 깨웠습니다.
   const wake = useVisibleWake(reload, refreshMs);
-  const [selected, setSelected] = useState<string | null>(null);
   // 바로 앞 읽기가 '한 번 더 읽기'였으면 또 예약하지 않습니다(수집이 늦어도 20초마다 되풀이하지 않게).
   const followingUp = useRef(false);
 
@@ -71,35 +78,16 @@ export function LiveValuationCard({ market = "US" }: { market?: PaperMarketCode 
 
   if (live.error && !data) {
     return (
-      <Card title="장중 평가 (추정)">
-        <Banner tone="warn">장중 평가를 읽지 못했습니다 — {live.error}</Banner>
+      <Card title="장중 시세 (추정)">
+        <Banner tone="warn">장중 시세를 읽지 못했습니다 — {live.error}</Banner>
       </Card>
     );
   }
   if (!data?.available) return null;
 
   const session = liveSessionView(data.session, data.quotes);
-  const books = (data.books ?? []).map((book) => liveBookView(book, market));
-  const open = books.find((book) => book.code === selected) ?? null;
+  const holdings = livePositionsFor(data, bookCode, market);
   const warning = session.live ? liveQuotesWarning(data.quotes) : null;
-  const columns: Column<LiveBookView>[] = [
-    { key: "label", header: "계좌", rowHeader: true, cell: (row) => row.label, className: "whitespace-nowrap" },
-    { key: "nav", header: "순자산", align: "right", cell: (row) => <span className="tabular-nums">{row.nav}</span> },
-    { key: "return", header: "출발 대비", align: "right", cell: (row) => <Delta text={row.returnText} value={row.returnPct} /> },
-    {
-      key: "day",
-      header: "오늘",
-      align: "right",
-      cell: (row) => (
-        <span className="flex flex-col items-end">
-          <Delta text={row.dayText} value={row.dayChangePct} />
-          <span className="text-xs text-muted">{row.dayBase}</span>
-        </span>
-      ),
-    },
-    { key: "basis", header: "기준 시각", cell: (row) => <span className="whitespace-nowrap text-xs text-text-2">{row.basis}</span> },
-    { key: "coverage", header: "장중 값", cell: (row) => <span className="whitespace-nowrap text-xs text-muted">{row.coverage}</span> },
-  ];
   const positionColumns: Column<LivePositionView>[] = [
     { key: "ticker", header: "종목", rowHeader: true, cell: (row) => row.ticker, className: "whitespace-nowrap font-semibold" },
     { key: "qty", header: "수량", align: "right", cell: (row) => <span className="tabular-nums">{row.qty}</span> },
@@ -116,9 +104,9 @@ export function LiveValuationCard({ market = "US" }: { market?: PaperMarketCode 
 
   return (
     <Card
-      title="장중 평가 (추정)"
+      title="장중 시세 (추정)"
       subtitle={`${session.label} — ${session.detail}`}
-      source={`표시 전용 — 장부(체결·확정 순자산·통계·결정)와 별개 · 지금 ${formatKst(data.nowKst ?? null)}`}
+      source={`표시 전용 — 장부(체결·순자산 줄·통계·결정)는 이 시세를 쓰지 않음 · 지금 ${formatKst(data.nowKst ?? null)}`}
       actions={
         <div className="flex flex-wrap items-center gap-2">
           <label className="flex items-center gap-1.5 text-xs text-muted">
@@ -151,29 +139,22 @@ export function LiveValuationCard({ market = "US" }: { market?: PaperMarketCode 
         {live.refreshError && <span className="ml-1 text-warn">· 새로 읽지 못함({live.refreshError})</span>}
       </p>
       {warning && <div className="mb-3"><Banner tone="warn">{warning}</Banner></div>}
-      <DataTable
-        columns={columns}
-        rows={books}
-        rowKey={(row) => row.code}
-        caption="계좌별 장중 평가"
-        onRowClick={(row) => setSelected((current) => (current === row.code ? null : row.code))}
-        emptyText="계좌가 없습니다."
-        scrollHint="overflow"
-      />
-      {open && (
-        <div className="mt-4">
+      {holdings ? (
+        <>
           <p className="mb-2 text-xs text-text-2">
-            <strong className="text-text">{open.label}</strong> 보유 종목 · 행을 다시 누르면 닫힙니다
+            <strong className="text-text">{holdings.label}</strong> 보유 종목 — 계좌 행을 누르면 그 계좌로 바뀝니다
           </p>
           <DataTable
             columns={positionColumns}
-            rows={open.positions}
+            rows={holdings.positions}
             rowKey={(row) => row.ticker}
-            caption={`${open.label} 보유 종목 장중 평가`}
-            emptyText="보유 종목이 없습니다."
+            caption={`${holdings.label} 보유 종목 장중가`}
+            emptyText="보유 종목이 없습니다(현금뿐)."
             scrollHint="overflow"
           />
-        </div>
+        </>
+      ) : (
+        <p className="text-sm text-muted">계좌가 없습니다.</p>
       )}
     </Card>
   );

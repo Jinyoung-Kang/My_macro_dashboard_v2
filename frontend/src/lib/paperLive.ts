@@ -1,14 +1,14 @@
 /**
- * 🧪 모의 매매 장중 평가(GET /api/paper/live) 화면 자료 — 장 상태 문구, 계좌·종목 줄, 자동 새로고침 규칙.
+ * 모의 매매 장중 평가(GET /api/paper/live) 화면 자료 — 장 상태 문구, 고른 계좌의 종목 줄, 자동 새로고침 규칙.
  *
- * 장중 평가는 **표시 전용 추정**입니다. 서버가 정규장 동안 보유 종목을 최신 1분봉으로 다시 평가한 값이고, 장부(체결·스탑·확정 순자산·
+ * 장중 평가는 **표시 전용 추정**입니다. 서버가 정규장 동안 보유 종목을 최신 1분봉으로 다시 평가한 값이고, 장부(체결·스탑·순자산 줄·
  * 통계·결정 패킷)는 이 값을 쓰지 않습니다. 시세는 화면이 볼 때만 받습니다(사용자 결정 2026-10-30) — 그래서 이 화면은 정규장에만 고른
  * 간격(기본 30분)으로 다시 읽고, 서버가 새 시세를 요청했으면(refreshRequested) 잠시 뒤 한 번만 더 읽습니다. 장 밖에서는 다시 읽지 않고
  * 다음 개장 시각에 한 번 깨어납니다. 모르는 값은 "—"(0으로 채우지 않음)이고 모든 수익률에 기준 시각을 붙입니다.
  */
 import { EMPTY, formatKst, formatNumber, formatPercent } from "./format";
-import { formatMoney, formatSharePriceFor, type PaperMarketCode } from "./paperMarket";
-import type { PaperLiveBook, PaperLivePosition, PaperLiveQuotes, PaperLiveResponse, PaperLiveSession } from "./types";
+import { formatSharePriceFor, type PaperMarketCode } from "./paperMarket";
+import type { PaperLivePosition, PaperLiveQuotes, PaperLiveResponse, PaperLiveSession } from "./types";
 
 /** 자동 새로고침 간격(분). 0은 끄기. 시세를 받는 하한이 1분(서버 MAX_AGE_LIVE)이라 더 짧은 간격은 두지 않습니다. */
 export const LIVE_REFRESH_OPTIONS = [
@@ -91,40 +91,26 @@ export function liveSessionView(session: PaperLiveSession | null | undefined, qu
   }
 }
 
-export interface LiveBookView {
+/** 장중 시세 카드의 종목 표 — 고른 계좌의 이름과 종목 줄. */
+export interface LiveHoldingsView {
   code: string;
   label: string;
-  nav: string;
-  returnPct: number | null;
-  returnText: string;
-  dayChangePct: number | null;
-  dayText: string;
-  /** 오늘 변화의 기준 — "10-29 확정 대비"(모르면 "—") */
-  dayBase: string;
-  /** 숫자의 기준 시각 — "장중 10-30 23:58" 또는 "마지막 관측 10-30 06:15"(모르면 "—") */
-  basis: string;
-  /** 장중 값으로 평가한 종목 수 — "장중 값 3/9종목"·"보유 없음" */
-  coverage: string;
   positions: LivePositionView[];
 }
 
-/** 계좌 한 줄. 돈은 그 시장 통화(미국 달러 소수 둘째, 한국 원 정수). */
-export function liveBookView(book: PaperLiveBook, market: PaperMarketCode = "US"): LiveBookView {
-  const basisTime = shortStamp(book.basisAtKst);
-  const basis = basisTime === EMPTY ? EMPTY : book.basis === "LIVE" ? `장중 ${basisTime}` : `마지막 관측 ${basisTime}`;
-  return {
-    code: book.code,
-    label: book.label,
-    nav: formatMoney(book.nav, market),
-    returnPct: book.returnPct,
-    returnText: formatPercent(book.returnPct),
-    dayChangePct: book.dayChangePct,
-    dayText: formatPercent(book.dayChangePct),
-    dayBase: book.previousTradingDate ? `${book.previousTradingDate.slice(5)} 확정 대비` : EMPTY,
-    basis,
-    coverage: book.positionCount === 0 ? "보유 없음" : `장중 값 ${book.liveCount}/${book.positionCount}종목`,
-    positions: book.positions.map((position) => livePositionView(position, market)),
-  };
+/**
+ * 고른 계좌(개요의 계좌 행)의 종목 줄 — 그 코드가 응답에 없거나 고르지 않았으면 첫 계좌, 계좌가 없으면 null. 계좌 숫자(순자산·수익률)는 개요의
+ * 지금 값이 맡아 여기서 만들지 않습니다.
+ */
+export function livePositionsFor(
+  live: PaperLiveResponse | null | undefined,
+  bookCode: string | null | undefined,
+  market: PaperMarketCode = "US",
+): LiveHoldingsView | null {
+  const books = live?.books ?? [];
+  const book = books.find((entry) => entry.code === bookCode) ?? books[0];
+  if (!book) return null;
+  return { code: book.code, label: book.label, positions: book.positions.map((position) => livePositionView(position, market)) };
 }
 
 export interface LivePositionView {

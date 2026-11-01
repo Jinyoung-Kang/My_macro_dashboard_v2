@@ -1,13 +1,13 @@
 /**
- * 🧪 장중 평가 화면 자료(lib/paperLive) — 고정하는 규칙
+ * 장중 시세 화면 자료(lib/paperLive) — 고정하는 규칙
  *  - 새로고침 간격: 선택지(끄기·1·2·5·10·15·30분) 밖의 저장 값은 기본 30분, 정규장에만 그 간격(그 밖은 0 — 다시 읽지 않음)
  *  - 장 밖이면 다음 개장 + 1분에 한 번 깨어남(하루 넘게 남거나 시각을 모르면 깨지 않음)
- *  - 모든 수익률에 기준 시각("장중 …"·"마지막 관측 …"), 모르는 값은 "—"
+ *  - 고른 계좌의 종목 줄(없거나 모르는 계좌면 첫 계좌, 계좌가 없으면 null) — 모든 가격에 기준 시각("장중 …"·"마지막 관측 …"), 모르는 값은 "—"
  */
 import { describe, expect, it } from "vitest";
 import {
   DEFAULT_LIVE_REFRESH_MINUTES,
-  liveBookView,
+  livePositionsFor,
   livePositionView,
   liveQuotesWarning,
   liveRefreshMs,
@@ -83,25 +83,31 @@ describe("장 상태 문구", () => {
   });
 });
 
-describe("계좌·종목 줄", () => {
-  it("순자산·출발 대비·오늘(확정 대비 기준일)·기준 시각·장중 값 종목 수", () => {
-    const view = liveBookView(book());
-    expect(view).toMatchObject({
-      nav: "100,000.00 달러", returnText: "0.00%", dayText: "+1.01%", dayBase: "10-29 확정 대비", basis: "장중 10-30 23:58",
-      coverage: "장중 값 1/2종목",
-    });
-    expect(view.positions[0]).toMatchObject({ ticker: "AAA", price: "420.0000", priceAt: "장중 10-30 23:58", live: true,
+describe("종목 줄", () => {
+  it("고른 계좌의 종목 — 가격 기준(장중·마지막 관측)과 시각·직전 종가 대비·평균 단가 대비·비중", () => {
+    const response = { available: true, books: [book(), book({ code: "rules", label: "규칙 계좌", positionCount: 0, positions: [] })] };
+    const view = livePositionsFor(response, "claude");
+    expect(view).toMatchObject({ code: "claude", label: "Claude 계좌" });
+    expect(view?.positions[0]).toMatchObject({ ticker: "AAA", price: "420.0000", priceAt: "장중 10-30 23:58", live: true,
       dayText: "+2.44%", returnText: "+5.00%", weight: "42.0%" });
-    expect(view.positions[1]).toMatchObject({ priceAt: "마지막 관측 10-30 06:05", live: false, dayText: "—" });
+    expect(view?.positions[1]).toMatchObject({ priceAt: "마지막 관측 10-30 06:05", live: false, dayText: "—" });
+    expect(livePositionsFor(response, "rules")).toEqual({ code: "rules", label: "규칙 계좌", positions: [] });
   });
 
-  it("모르는 값은 —, 한국은 원 정수, 장중 값이 없으면 마지막 관측 시각", () => {
-    const view = liveBookView(book({ nav: null, returnPct: null, dayChangePct: null, previousTradingDate: null,
-      basis: "LAST_OBSERVATION", basisAtKst: "2026-10-30 21:10 KST", liveCount: 0, positionCount: 0, positions: [] }), "KR");
-    expect(view).toMatchObject({ nav: "—", returnText: "—", dayText: "—", dayBase: "—", basis: "마지막 관측 10-30 21:10",
-      coverage: "보유 없음" });
+  it("고르지 않았거나 응답에 없는 계좌면 첫 계좌, 계좌가 없으면 null", () => {
+    const response = { available: true, books: [book(), book({ code: "rules", label: "규칙 계좌" })] };
+    expect(livePositionsFor(response, null)?.code).toBe("claude");
+    expect(livePositionsFor(response, "gone")?.code).toBe("claude");
+    expect(livePositionsFor({ available: true, books: [] }, "claude")).toBeNull();
+    expect(livePositionsFor({ available: false }, "claude")).toBeNull();
+    expect(livePositionsFor(null, "claude")).toBeNull();
+  });
+
+  it("모르는 값은 —, 한국은 원 정수", () => {
     expect(livePositionView({ ...book().positions[0], price: 71000, priceBasis: null, priceAtKst: null }, "KR"))
       .toMatchObject({ price: "71,000", priceAt: "—" });
+    expect(livePositionView({ ...book().positions[0], weightPct: null, returnPct: null, dayChangePct: null }))
+      .toMatchObject({ weight: "—", returnText: "—", dayText: "—" });
   });
 
   it("받지 못한 종목 경고 — 없으면 null, 이름은 다섯 개까지", () => {

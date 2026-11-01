@@ -1,6 +1,6 @@
 /**
- * 장중 평가 카드(LiveValuationCard) — 고정하는 규칙
- *  - 정규장이면 계좌별 순자산·출발 대비·오늘·기준 시각을 그리고, 행을 누르면 그 계좌의 종목 표
+ * 장중 시세 카드(LiveValuationCard) — 고정하는 규칙
+ *  - 계좌 표는 없고(계좌 숫자는 개요의 지금 값), 고른 계좌(bookCode — 없거나 응답에 없으면 첫 계좌)의 종목 장중가와 기준 시각
  *  - 서버가 새 시세를 요청한 응답이면(refreshRequested) 20초 뒤 한 번만 더 읽는다(되풀이 없음)
  *  - 간격 선택은 이 브라우저에 기억되고(기본 30분), 장 밖에서는 다시 읽지 않는다
  *  - 숨긴 탭에서는 '한 번 더'·'다음 개장' 깨우기가 읽지 않고, 다시 보일 때 한 번(QA-154). 숨긴 탭으로 열리면 처음 보일 때 읽는다(QA-156)
@@ -63,23 +63,38 @@ async function settle(ms = 1) {
 const liveCalls = () => api.apiGetShared.mock.calls.filter(([path]) => String(path).startsWith("/api/paper/live")).length;
 
 describe("정규장", () => {
-  it("계좌 줄과 기준 시각, 행을 누르면 종목 표", async () => {
+  it("'장중 시세 (추정)' — 계좌 표 없이 고른 계좌의 종목 장중가와 기준 시각", async () => {
     api.apiGetShared.mockImplementation(() => Promise.resolve(live()));
-    render(<LiveValuationCard />);
+    render(<LiveValuationCard bookCode="claude" />);
 
     await settle();
+    expect(screen.getByRole("heading", { name: "장중 시세 (추정)" })).toBeTruthy();
     expect(screen.getByText(/정규장 — 장중 1분봉 시세로 다시 평가/)).toBeTruthy();
-    const table = screen.getByRole("table", { name: "계좌별 장중 평가" });
-    expect(within(table).getByText("100,000.00 달러")).toBeTruthy();
-    expect(within(table).getByText("+1.01%")).toBeTruthy();
-    expect(within(table).getByText("10-29 확정 대비")).toBeTruthy();
-    expect(within(table).getByText("장중 10-30 23:58")).toBeTruthy();
-    expect(screen.getByText("정규장 동안 30분마다 다시 읽습니다(이 화면을 보는 동안만).")).toBeTruthy();
-
-    fireEvent.click(within(table).getByText("Claude 계좌"));
-    const positions = screen.getByRole("table", { name: "Claude 계좌 보유 종목 장중 평가" });
+    expect(screen.queryByRole("table", { name: "계좌별 장중 평가" })).toBeNull();
+    const positions = screen.getByRole("table", { name: "Claude 계좌 보유 종목 장중가" });
     expect(within(positions).getByText("AAA")).toBeTruthy();
     expect(within(positions).getByText("+2.44%")).toBeTruthy();
+    expect(within(positions).getByText("장중 10-30 23:58")).toBeTruthy();
+    expect(screen.getByText(/보유 종목 — 계좌 행을 누르면 그 계좌로 바뀝니다/)).toBeTruthy();
+    expect(screen.getByText("정규장 동안 30분마다 다시 읽습니다(이 화면을 보는 동안만).")).toBeTruthy();
+    expect(screen.getByText(/표시 전용 — 장부\(체결·순자산 줄·통계·결정\)는 이 시세를 쓰지 않음/)).toBeTruthy();
+  });
+
+  it("종목 표는 고른 계좌를 따른다 — 없거나 모르는 계좌면 첫 계좌, 현금뿐이면 빈 표 안내, 바꿔도 다시 읽지 않음", async () => {
+    const claude = live().books[0];
+    const rules = { ...claude, code: "rules", label: "규칙 계좌", liveCount: 0, positionCount: 0, positions: [] };
+    api.apiGetShared.mockImplementation(() => Promise.resolve(live({ books: [claude, rules] })));
+    const { rerender } = render(<LiveValuationCard bookCode="rules" />);
+
+    await settle();
+    const empty = screen.getByRole("table", { name: "규칙 계좌 보유 종목 장중가" });
+    expect(within(empty).getByText("보유 종목이 없습니다(현금뿐).")).toBeTruthy();
+
+    rerender(<LiveValuationCard bookCode={null} />);
+    expect(screen.getByRole("table", { name: "Claude 계좌 보유 종목 장중가" })).toBeTruthy();
+    rerender(<LiveValuationCard bookCode="gone" />);
+    expect(screen.getByRole("table", { name: "Claude 계좌 보유 종목 장중가" })).toBeTruthy();
+    expect(liveCalls()).toBe(1);
   });
 
   it("서버가 새 시세를 요청했으면 20초 뒤 한 번만 더 읽는다", async () => {

@@ -34,6 +34,7 @@ import {
   newsLine,
   PAPER_SOURCES,
   type PoolRow,
+  primaryClaudeBook,
   quotesLine,
   type RiskResultView,
   riskResultView,
@@ -237,9 +238,9 @@ export function OverviewSection({
   const news = status.data?.available ? newsLine(status.data.news) : null;
   // 어닝 서프라이즈(2단계 C, 패킷 8b eps) — 같은 규칙(필드가 없는 백엔드면 그리지 않음).
   const earnings = status.data?.available ? earningsLine(status.data.earnings) : null;
-  // 🧪 출발한 계좌2의 1분봉 저장본 한 줄(상태 응답 claude2.bars — 정규장일 때만 받은 시각·지연, 시작 전이면 줄 없음).
+  // 출발한 계좌2의 1분봉 저장본 한 줄(상태 응답 claude2.bars — 정규장일 때만 받은 시각·지연, 시작 전이면 줄 없음).
   const barsLine = !korea && status.data?.available ? claude2BarsLine(status.data.claude2, book2?.label) : null;
-  // 🧪 그 아래 '오늘 장중 확인' 한 줄(단계 2 — 상태 응답 claude2.checkpoint). 1분봉 줄과 같은 규칙(출발한 계좌2만, 칸이 없는 백엔드면 줄 없음).
+  // 그 아래 '오늘 장중 확인' 한 줄(단계 2 — 상태 응답 claude2.checkpoint). 1분봉 줄과 같은 규칙(출발한 계좌2만, 칸이 없는 백엔드면 줄 없음).
   const checkpointLine = barsLine && status.data?.available ? claude2CheckpointLine(status.data.claude2) : null;
   // 미국 '장부 관측치' 카드의 출처(한국 개요는 이 카드 대신 한국 수집 상태 카드 — 출처를 그 카드가 적음).
   const observationSource = [
@@ -337,8 +338,11 @@ export function OverviewSection({
       )}
       {korea && <KrStartSection overview={overview} status={status.data ?? null} onChanged={onChanged} />}
 
-      {/* 정규장 동안 n분마다 움직이는 장중 평가(표시 전용 추정) — 아래 계좌 목록은 장부의 마지막 관측치 값 그대로입니다. */}
-      {overview.initialized !== false && books.length > 0 && <LiveValuationCard market={market} />}
+      {/* 장중 시세(표시 전용 추정) — 장 상태·간격·출처와 고른 계좌의 종목 장중가. 종목 표는 상세를 연 계좌, 없으면 기본 Claude 계좌
+          (홈 히어로와 같은 규칙)를 따릅니다. 아래 계좌 목록은 장부의 마지막 관측치 값 그대로입니다. */}
+      {overview.initialized !== false && books.length > 0 && (
+        <LiveValuationCard market={market} bookCode={selected ?? primaryClaudeBook(books)?.code ?? null} />
+      )}
 
       <Card
         title="계좌"
@@ -637,7 +641,7 @@ export function OverviewSection({
 }
 
 /**
- * 🧪 "S = 100 같은 구간"(계좌2 명세 §4-2의 2·§13-3) — 계좌2 출발일 S를 기준일로 계좌1·계좌2·SPY 계좌의 순자산을 100에 맞춘 선(서술용 — 판정은
+ * "S = 100 같은 구간"(계좌2 명세 §4-2의 2·§13-3) — 계좌2 출발일 S를 기준일로 계좌1·계좌2·SPY 계좌의 순자산을 100에 맞춘 선(서술용 — 판정은
  * '체결 시점 실험'의 주문 단위 반사실). 계좌2가 출발하기 전이면 그렇다고 적고 그리지 않습니다(S 이전 구간은 계좌2 값이 없어 100으로 채우지 않음).
  */
 function SameWindowCard({ overview, books }: { overview: PaperOverviewResponse; books: readonly PaperBookSummary[] }) {
