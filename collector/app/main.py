@@ -37,6 +37,7 @@ from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from . import catalog, krcalendar, logredact, settings, store, tasks, verification, webguard
 from .services import (
+    detail as detail_service,
     kis as kis_service,
     krx as krx_service,
     ls as ls_service,
@@ -423,6 +424,63 @@ def live_ticker(
     if not _TICKER_SYMBOL.match(symbol):
         raise HTTPException(status_code=400, detail="심볼 형식이 올바르지 않습니다 (영문·숫자·^=.- 24자 이내).")
     return market_service.collect_ticker(symbol, period)
+
+
+def _detail_target(market: str, code: str) -> tuple[str, str]:
+    """상세 화면의 시장·코드 검사 — 'us'(Yahoo 심볼 형식)·'kr'(국내 6자리, 대문자 영숫자)."""
+    market = (market or "").strip().lower()
+    code = (code or "").strip()
+    if market == "kr":
+        code = code.upper()
+        if not detail_service.KR_CODE.match(code):
+            raise HTTPException(status_code=400, detail="국내 코드는 영문 대문자·숫자 6자리입니다.")
+    elif market == "us":
+        if not detail_service.US_CODE.match(code):
+            raise HTTPException(status_code=400, detail="심볼 형식이 올바르지 않습니다 (영문·숫자·^=.- 24자 이내).")
+        code = code.upper()
+    else:
+        raise HTTPException(status_code=400, detail="market은 us 또는 kr입니다.")
+    return market, code
+
+
+@app.get("/live/quote")
+def live_quote(
+    market: str = Query(...),
+    code: str = Query(...),
+    x_service_token: str | None = Header(default=None),
+) -> dict:
+    """검색 상세 화면의 시세·핵심 지표·개요(미국·해외 Yahoo, 국내 네이버 — services/detail.py). 저장하지 않고 5분 캐시."""
+    _check_token(x_service_token)
+    return detail_service.quote(*_detail_target(market, code))
+
+
+@app.get("/live/news")
+def live_news(
+    market: str | None = Query(None),
+    code: str | None = Query(None),
+    q: str | None = Query(None, max_length=60),
+    x_service_token: str | None = Header(default=None),
+) -> dict:
+    """검색 상세 화면의 주요 뉴스(종목 뉴스 Yahoo·네이버 + 검색어 구글 뉴스 RSS). 코드나 검색어 중 하나는 있어야 합니다. 15분 캐시."""
+    _check_token(x_service_token)
+    query = (q or "").strip() or None
+    if code:
+        target_market, target_code = _detail_target(market or "us", code)
+    elif query:
+        target_market, target_code = ((market or "").strip().lower() or None), None
+    else:
+        raise HTTPException(status_code=400, detail="code나 q 중 하나가 있어야 합니다.")
+    return detail_service.news(target_market, target_code, query)
+
+
+@app.get("/live/symbols")
+def live_symbols(
+    q: str = Query(..., min_length=1, max_length=40),
+    x_service_token: str | None = Header(default=None),
+) -> dict:
+    """종목 찾기(네이버 자동완성 + Yahoo 검색) — 통합 검색이 저장된 색인 밖의 종목을 찾을 때. 1시간 캐시."""
+    _check_token(x_service_token)
+    return detail_service.symbols(q.strip())
 
 
 @app.get("/live/daum-intraday")
