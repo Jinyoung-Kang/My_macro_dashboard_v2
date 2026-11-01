@@ -159,6 +159,37 @@
 - 하지 않은 것: 차트 가짜(`vi.mock("@/components/charts")`)에 `LineChart` 자리를 미리 넣는 커밋 — 가짜에 없는 이름은 쓰는 순간에만 오류라(반박 검토),
   개요가 `LineChart`를 쓰는 커밋에서 개요를 실제로 그리는 시험의 가짜에 더한다.
 
+#### 구현 메모(개요 묶음, 2026-11-01) — 위 설계와 달리 한 것·다음 묶음이 알 것 [확인 코드·시험·QA 스택 캡처]
+
+- 지금 값 규칙(`48780747`): `lib/paperCurrent` — `stageLabel`(`inCurrentSession`이 장부 표기의 날짜를 가름)·`dayLabel`·`dayBaseText`·`dayChange`·`currentNotes`·
+  `currentView`(옛 응답이면 `from:"ledger"`)·`accountsBasisText`·`currentSource`·`ledgerObservedLine`·`comparisonBasis`, 날짜 조각 `monthDay`·`stampText`.
+  현금뿐 계좌의 서버 `neutral`은 출발 전도 포함 — 행·히어로는 `status`로 출발 전을 가름.
+- 계좌 행(`104032cf`·`5a11cc39`): 자산 행에 새 칸 `caption`(값의 기준 한 줄)을 두고 **배지 줄 맨 앞**에 그림(설계는 추정 배지 뒤 — '추정 장중 추정'으로 겹쳐
+  읽혀 순서를 바꿈). 행 caption = 단계 표기 · 짧은 덧붙임 · 하루 변화('오늘 +0.42% · 10-29 잠정 대비'), 출발 전 계좌는 caption 없음(보조 글이 '시작 전'),
+  지금 값이 없는 옛 응답의 행에는 `caption`·`isEstimated` 칸 자체가 없음. **홈 히어로(L3)도 같은 커밋**에서 바꿈(행이 같은 함수라 한 카드에 두 숫자가 보이는
+  중간 상태를 없앰) — 홈은 끝남(단계 표기·덧붙임·추정 배지·하루 변화·출처, 칩 옆 '출발 대비'는 그대로, 곡선은 더하지 않음).
+- 장중 카드 안내(`b4716fdf`): 출처에 '계좌의 지금 값(장중 추정)은 이 시세로 평가한 값', 미국이고 간격 1시간 이상이면 '간격이 길면 그 사이 매시 장부 관측이
+  돌아 계좌의 지금 값이 대개 장부 단계' 한 줄(`lib/paperLive` `liveIntervalNote` — 한국은 정규장에 장부 관측이 없어 없음).
+- 아바타·색 고리(`7d12614b`): 약칭은 `bookAssetRow`의 `avatarText`(개요·홈 공용), 고리는 `bookColors` `bookColor(code, index)`(곡선 계열 색과 같은 규칙).
+  홈이 이 파일을 가져오자 '/'가 recharts 조각을 실어(정적 HTML이 싣는 JS 897,358 → 1,330,052바이트) 색 표의 `SERIES_COLORS`를 차트 배럴 대신 차트 틀
+  `components/charts/frame`(같은 값, recharts 없음)에서 가져옴 → 902,748바이트·recharts 조각 0.
+- 히어로(`b76e38d6`): `components/screens/paper/OverviewHero`(그리기만) + `lib/paperOverview` `heroBookCode`·`heroNavChart`·`overviewHeroModel`·`HERO_NAV_KEY`.
+  설계와 다른 점 — 메타 순서는 단계 표기 → 추정 배지 → 이전 값 → 경고 → 출처 → 서버 글 전문(행과 같은 순서), 히어로는 `key`가 계좌 코드라 계좌를 바꾸면
+  문지르기 상태를 새로 둠, **초기화 전(`initialized:false`)이면 히어로가 없어 기간 알약을 '순자산 곡선' 카드에 그대로 둠**(QA 덤프의 미국 개요가 그 경우).
+  계좌 카드 부제 '행을 누르면 그 계좌의 상세(위 히어로·아래 장중 시세도 그 계좌로)', 곡선 카드 부제 '기간은 위 히어로에서 고릅니다(지금 …)'(둘 다 히어로가 있을 때만).
+- 계좌 상세(`dcbda7cb`): 타일 넷 + 머리 옆 추정 배지(note '순자산·수익률·주식 노출') + 세 숫자 타일의 '장중 추정' + 장부 한 줄. **새 prop `session`**(설계의
+  '새 prop 없음'과 다름 — 단계 표기의 날짜·'오늘'을 행과 같게).
+- 계좌 비교(`3fc69fb8` 옮김 · `654c95e7`): `AccountComparisonCard` + `accountComparisonRows(books, market, {session})`. 장부 칸의 기준 줄은 늘
+  '장부 MM-DD HH:MM'(BookSummary에는 관측 세션이 없어 지금 세션 판정을 하지 않음). 지금 값 칸의 현금뿐 계좌는 '{단계 표기} · 현금뿐'.
+- 겉모양(`8aa35fc9`): 계좌 목록 모서리는 `rounded-control`(카드 안 구획 — `503bba68`과 같은 규칙, 12px 그대로).
+- 시험: 개요를 그리는 모의매매 화면 시험 아홉 개의 차트 가짜에 `LineChart`(개요·한국 개요는 기록형 — 이름·행 수·값). 개요 화면 시험의 지금 값 고정본은
+  `CURRENT_OVERVIEW`(`navEstimate: null` — 꼬리 시험이 채울 자리).
+- 다음 묶음(곡선 꼬리)이 쓸 자리: `heroNavChart(navWindow, code, label, market)`에 꼬리 인자를 더하고 `OverviewHero`의 `scrubModel(..., {estimate})`에 잇기,
+  꼬리 이름의 시각은 계좌별 `currentView(...).atKst`(없으면 `navEstimate.atKst`), 비교 곡선은 OverviewSection의 `navChart → withKrReference → navAxis` 사이.
+  홈은 꼬리를 그리지 않음(곡선 없음).
+- 캡처: QA 스택(10-31 덤프) `/`·`/paper/us`·`/paper/kr` × 1280·390 × 라이트·다크와, 개요·`/live` 응답을 바꿔 끼운 장면(정규장 섞임·체결 대기 → 비교 표 장부 칸 +
+  사유 / 모두 장중 / 마감 뒤 같은 날 / 일요일 잠정 줄 / 한국 정규장 시가 체결 대기)은 작업 기록의 `shots/overview/`(제품 코드에 가짜 자료 없음).
+
 ## 5. 응답 칸(서버 단계)
 
 - `GET /api/paper/live` 계좌 줄에 `equityValue`·`exposurePct`(장부와 같은 정의 = 보유 평가액 합(현금성 포함) ÷ 순자산 — 다만 가격 없는 보유가 있으면 장부는
