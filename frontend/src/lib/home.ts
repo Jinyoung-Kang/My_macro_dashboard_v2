@@ -10,6 +10,7 @@ import { MARKETS, sessionStatus, tradeDayFrom, tradeTimeFrom } from "./marketSes
 import { TABS } from "./nav";
 import { formatDollars, isTimedBook, primaryClaudeBook, withParticle } from "./paper";
 import { formatMoney, marketMeta, type PaperMarketCode } from "./paperMarket";
+import { currentSource, currentView, type DayChange } from "./paperCurrent";
 import { bookAssetRow, bookMonogram, type BookRow } from "./paperOverview";
 import { assetMonogram } from "./patternRows";
 import { paperMarketPath } from "./paperRoutes";
@@ -337,18 +338,31 @@ export type PaperHomeModel = {
   message: string | null;
   /** 히어로 값이 무엇인지 — "Claude 계좌 순자산"(구역 제목에도 있지만, 평가 시각 줄에 서버가 붙인 계좌 이름으로 다시 적습니다). */
   heroCaption: string;
-  /** Claude 계좌 순자산(미국 달러 소수 둘째 · 한국 원 정수). 모르면 null("—"). */
+  /**
+   * Claude 계좌 순자산(미국 달러 소수 둘째 · 한국 원 정수) — 개요 응답의 지금 값(`current`, lib/paperCurrent — 모의매매 개요와 같은 함수), 지금 값이
+   * 없는 옛 응답이면 장부 값. 모르면 null("—").
+   */
   heroValueText: string | null;
   heroUnit: string;
-  /** Claude 계좌 출발 대비 수익률(백엔드 returnPct). 일간 변화 필드는 응답에 없어 만들지 않습니다. */
+  /** Claude 계좌 출발 대비 수익률(지금 값, 옛 응답이면 백엔드 returnPct). */
   heroReturnPct: number | null;
-  /** 히어로 순자산의 평가 시각 — Claude 계좌의 마지막 관측(KST). 모르면 null("—"). 정기 작업이 켜져 있어도 늘 보입니다. */
+  /** 히어로 순자산의 평가 시각 — Claude 계좌의 마지막 관측(KST). 모르면 null("—"). 정기 작업이 켜져 있어도 늘 보입니다(옛 응답의 평가 시각 줄). */
   heroAsOf: string | null;
+  /** 지금 값의 단계 표기('장중 추정 23:58'·'10-30 확정' 등 — 개요와 같은 함수). 옛 응답이면 null(평가 시각 줄은 heroAsOf). */
+  heroStageLabel: string | null;
+  /** 짧은 덧붙임('장중가 n/m종목'·'체결 대기 n건 반영 전') — 옛 응답이면 빈 목록. */
+  heroNotes: string[];
+  /** 장중 추정인가(추정 배지). */
+  heroIsEstimated: boolean;
+  /** 하루 변화('오늘 +0.42% · 10-29 잠정 대비' — 서버 dayChangePct). 옛 응답·모르면 null. */
+  heroDay: DayChange | null;
+  /** 히어로 숫자의 출처 — 장부, 장중 추정이면 장중 시세로 다시 평가했다는 말을 덧붙임. */
+  heroSource: string;
   heroStale: boolean;
   heroStaleReason: string | null;
   rows: PaperHomeRow[];
   /**
-   * "출발 2026-10-23 · 처음 현금 100,000 달러 · 변화율은 출발 대비"(한국은 "… 100,000,000원 …"). 🧪 미국 Claude 계좌2가 다른 날 출발했으면 그 출발을
+   * "출발 2026-10-23 · 처음 현금 100,000 달러 · 변화율은 출발 대비"(한국은 "… 100,000,000원 …"). 미국 Claude 계좌2가 다른 날 출발했으면 그 출발을
    * 덧붙입니다("… · Claude 계좌2는 2026-11-02 출발(앞으로 체결)" — 계좌2 행의 수익률은 계좌2 자기 출발 대비).
    */
   startLine: string;
@@ -370,6 +384,9 @@ function sharedInitialCash(books: readonly PaperBookSummary[]): number | null {
 /**
  * 모의매매 히어로 모델 — Claude 계좌 순자산(히어로)·평가 시각·네 계좌 행·출발 줄·정기 작업 꺼짐 안내·두 책 비교하지 않음 문구.
  *
+ * - 히어로 값·수익률·단계 표기·추정 배지·하루 변화는 개요 응답의 지금 값(`current`)을 모의매매 개요와 같은 함수(lib/paperCurrent `currentView`)로
+ *   읽습니다(장중 명세 L3) — 계좌 행도 같은 지금 값이라 한 카드에 같은 계좌의 두 숫자가 보이지 않습니다. 지금 값이 없는 옛 응답은 장부 값과
+ *   마지막 관측 그대로입니다.
  * - 행: 모의매매 개요의 계좌 행과 같은 규칙(lib/paperOverview bookAssetRow — 이름·종류·상태·소개, 순자산, 출발 대비 수익률,
  *   가격 없는 보유·늦은 관측치의 "이전 값" + 사유, 사후 체결 대기 경고)에 링크만 더합니다. 규칙을 두 곳에 두지 않습니다(ADR 0004).
  * - 히어로의 이전 값 배지는 Claude 계좌 행의 것 그대로입니다.
@@ -388,15 +405,18 @@ export function paperHomeModel(
   const href = options.href ?? (korea ? PAPER_KR_HREF : PAPER_HREF);
   const available = overview?.available === true;
   const books = available ? (overview?.books ?? []) : [];
+  const session = available ? (overview?.liveSession ?? null) : null;
   const context = available
-    ? { pendingBackfill: overview?.pendingBackfill ?? [], quotes: overview?.quotes ?? null, ...(korea ? { market } : {}) }
+    ? { pendingBackfill: overview?.pendingBackfill ?? [], quotes: overview?.quotes ?? null, ...(korea ? { market } : {}), session }
     : {};
   const rows: PaperHomeRow[] = books.map((book) => ({ ...bookAssetRow(book, context), href, avatarText: bookMonogram(book.code) }));
 
   // 히어로는 그 시장의 기본 Claude 계좌(미국 계좌1·한국 kr_claude) — 계좌2(체결 시점 실험)는 행으로만 보입니다(계좌2 명세 §13-3).
   const claude = primaryClaudeBook(books);
   const claudeRow = claude ? rows.find((row) => row.id === claude.code) : undefined;
-  const nav = finite(claude?.nav);
+  const view = claude ? currentView(claude, { market, session }) : null;
+  const live = view?.from === "current" ? view : null;
+  const nav = finite(view?.nav);
   const observed = presentText(claude?.lastObservedAtKst);
 
   const dormant = korea && available ? presentText(overview?.dormantReason) : null;
@@ -414,7 +434,7 @@ export function paperHomeModel(
   const startDate = presentText(overview?.startDate) ?? presentText(status?.startDate);
   const initialCash = finite(status?.initialCash) ?? sharedInitialCash(books);
   const cashText = korea ? formatMoney(initialCash, "KR") : formatDollars(initialCash, 0);
-  // 🧪 미국 Claude 계좌2(시각 지정 계좌 — 앞으로 체결로 늦게, 출발일 S부터, 계좌2 명세 §4-1)는 출발일이 다르면 그 출발을 덧붙입니다. 출발일만 적으면 계좌2도
+  // 미국 Claude 계좌2(시각 지정 계좌 — 앞으로 체결로 늦게, 출발일 S부터, 계좌2 명세 §4-1)는 출발일이 다르면 그 출발을 덧붙입니다. 출발일만 적으면 계좌2도
   // 개요의 출발일에 출발한 것처럼 읽히는데, 행의 수익률은 서버가 계좌2 자기 출발 대비로 셉니다. 시작 전(출발일 없음)·같은 날 출발이면 적지 않고, 다른 계좌
   // (사후 체결로 함께 출발한 미국 네 계좌·한국 계좌)의 줄은 예전 그대로입니다.
   const lateStarts = startDate === null ? [] : books
@@ -430,8 +450,13 @@ export function paperHomeModel(
     heroCaption: `${presentText(claude?.label) ?? (korea ? "한국 Claude 계좌" : "Claude 계좌")} 순자산`,
     heroValueText: nav === null ? null : formatNumber(nav, korea ? 0 : 2),
     heroUnit: marketMeta(market).unitLabel,
-    heroReturnPct: finite(claude?.returnPct),
+    heroReturnPct: finite(view?.returnPct),
     heroAsOf: observed === null ? null : formatKst(observed),
+    heroStageLabel: live?.stageLabel ?? null,
+    heroNotes: live?.notes ?? [],
+    heroIsEstimated: live?.isEstimated === true,
+    heroDay: live?.day?.text ? live.day : null,
+    heroSource: currentSource(live?.isEstimated === true, market),
     heroStale: claudeRow?.isStale === true,
     heroStaleReason: claudeRow?.staleReason ?? null,
     rows,

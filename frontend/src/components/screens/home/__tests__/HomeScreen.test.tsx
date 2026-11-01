@@ -457,6 +457,35 @@ describe("홈 — 추정·오래됨 배지", () => {
     expect(within(rules).queryByText("이전 값")).toBeNull();
   });
 
+  it("지금 값(current) — 히어로는 개요와 같은 단계 표기·추정 배지·하루 변화 한 줄, Claude 행도 같은 지금 값", async () => {
+    const overview = paperOverview();
+    overview.liveSession = { phase: "REGULAR", sessionDate: "2026-10-26" };
+    overview.books![1] = {
+      ...overview.books![1],
+      current: {
+        nav: 100123.45, returnPct: 0.12, exposurePct: 97.5, dayChangePct: 0.3, previousTradingDate: "2026-10-23", previousNavFinal: false,
+        basis: "LIVE", stage: "LIVE", tradingDate: "2026-10-26", atKst: "2026-10-26 23:58 KST", isEstimated: true, livePriced: 9,
+        positionCount: 9, pendingOrders: 0, neutral: false, note: null,
+      },
+    };
+    reads = { ...happyReads(), [PAPER_OVERVIEW]: overview };
+    renderHome(OWNER);
+
+    // 값의 기준 줄 — 계좌 이름 뒤에 단계 표기(개요와 같은 함수), 옛 응답의 '마지막 관측' 대신.
+    const stage = await screen.findByText((_, element) => element?.tagName === "SPAN" && element.textContent === "Claude 계좌 순자산 · 장중 추정 23:58");
+    expect(stage).toBeTruthy();
+    const hero = region(PAPER_REGION);
+    // 히어로 값과 Claude 계좌 행이 같은 지금 값을 적습니다(한 카드에 두 숫자가 보이지 않음).
+    expect(within(hero).getAllByText("100,123.45")).toHaveLength(2);
+    expect(within(hero).getAllByText("추정")).toHaveLength(2);
+    expect(within(hero).getByText("출발 대비")).toBeTruthy();
+    expect(within(hero).getByText("· 10-23 잠정 대비")).toBeTruthy();
+    expect(within(hero).getByText("오늘")).toBeTruthy();
+    const claude = within(hero).getByText("Claude 계좌").closest("a") as HTMLElement;
+    expect(within(claude).getByText("장중 추정 23:58 · 오늘 +0.30% · 10-23 잠정 대비")).toBeTruthy();
+    expect(within(hero).queryByText(/· 마지막 관측/)).toBeNull();
+  });
+
   it("장부 관측치 저장본이 늦으면(백엔드 quotes.stale) 네 계좌 모두 '이전 값'(모의매매 개요와 같은 사유)", async () => {
     const ledger = paperOverview();
     ledger.quotes!.stale = true;

@@ -1,7 +1,7 @@
 "use client";
 
 import { useId, useState } from "react";
-import { AssetRow, ChangeChip, Empty, Hero, ProvenanceBadge, Skeleton, StaleBadge } from "@/components/patterns";
+import { AssetRow, ChangeChip, Empty, EstimateBadge, Hero, ProvenanceBadge, Skeleton, StaleBadge } from "@/components/patterns";
 import { Freshness, SEGMENT_TRACK, segmentClasses } from "@/components/ui";
 import { AlertTriangleIcon, StatusText } from "@/components/ui/icons";
 import { useApi } from "@/hooks/useApi";
@@ -9,7 +9,6 @@ import { useSessionUser } from "@/hooks/useSessionUser";
 import { isOwner } from "@/lib/access";
 import { endpoints } from "@/lib/endpoints";
 import { HOME_REFRESH_MS, paperHomeModel } from "@/lib/home";
-import { PAPER_SOURCES } from "@/lib/paper";
 import type { PaperMarketCode } from "@/lib/paperMarket";
 import type { PaperOverviewResponse, PaperStatusResponse } from "@/lib/types";
 import { HomeCard, SectionError } from "./HomeCard";
@@ -21,8 +20,9 @@ const TITLE = "모의매매 · Claude 계좌 순자산";
 /**
  * ② 모의매매 히어로 — 운영자 전용(/api/paper/* 전부 OWNER). 운영자가 아니면 요청하지 않고(null 경로) 그리지 않습니다.
  *
- * 히어로 값은 Claude 계좌 순자산과 그 평가 시각(마지막 관측), 아래로 네 계좌 행(값 = 순자산, 변화율 = 출발 대비 — 일간 변화 필드는
- * 응답에 없어 만들지 않음). 쓰기 버튼(초기화·리스크 실행 등)은 두지 않습니다 — 홈은 읽기만 하고, 조작은 모의매매 화면에서 합니다.
+ * 히어로 값은 Claude 계좌 순자산 — 개요 응답의 지금 값(모의매매 개요와 같은 규칙, lib/home `paperHomeModel`)이고 그 단계 표기('장중 추정 23:58' 등,
+ * 옛 응답이면 마지막 관측)·추정 배지·하루 변화(서버 값) 한 줄을 함께, 아래로 네 계좌 행(값 = 같은 지금 값, 변화율 = 출발 대비). 쓰기 버튼(초기화·
+ * 리스크 실행 등)은 두지 않습니다 — 홈은 읽기만 하고, 조작은 모의매매 화면에서 합니다. 홈에 순자산 곡선은 두지 않습니다(정보 구조 — 사용자 확인 뒤).
  *
  * 미국 | 한국 탭(2단계 명세 §4-16): 미국이 기본이고, 한국을 처음 고를 때부터 `?market=KR` 개요·상태를 읽습니다(고르기 전에는 한국 요청 없음 —
  * 한 번 고른 뒤에는 미국으로 돌아가도 두 시장 값을 계속 읽어 두어, 어느 쪽으로 돌아와도 자리표시 없이 바로 보임). 한국은 원 단위 정수, 행 링크
@@ -70,21 +70,40 @@ export function PaperHero() {
       value={model.heroValueText}
       unit={model.heroUnit}
       change={
-        model.heroReturnPct !== null ? (
-          <span className="inline-flex flex-wrap items-baseline gap-x-1.5">
-            <ChangeChip changePct={model.heroReturnPct} />
-            <span className="text-xs text-text-3">출발 대비</span>
+        model.heroReturnPct !== null || model.heroDay ? (
+          <span className="flex flex-col items-start gap-1">
+            {model.heroReturnPct !== null ? (
+              <span className="inline-flex flex-wrap items-baseline gap-x-1.5">
+                <ChangeChip changePct={model.heroReturnPct} />
+                <span className="text-xs text-text-3">출발 대비</span>
+              </span>
+            ) : null}
+            {/* 하루 변화 — 서버의 dayChangePct와 그 기준(앞의 마지막 순자산 줄, 잠정 포함). 화면이 계산하지 않습니다. */}
+            {model.heroDay ? (
+              <span className="inline-flex flex-wrap items-baseline gap-x-1.5 text-[13px] text-text-2">
+                <span>{model.heroDay.label}</span>
+                <ChangeChip changePct={model.heroDay.pct} size="sm" />
+                {model.heroDay.base ? <span className="text-text-3">· {model.heroDay.base}</span> : null}
+              </span>
+            ) : null}
           </span>
         ) : undefined
       }
       meta={
         <>
-          {/* 평가 시각은 정기 작업이 켜져 있어도 늘 적습니다 — 리스크 작업이 멈추면 오래된 순자산이 시각 없이 지금 값처럼 보입니다. */}
+          {/* 값의 기준은 정기 작업이 켜져 있어도 늘 적습니다 — 리스크 작업이 멈추면 오래된 순자산이 시각 없이 지금 값처럼 보입니다.
+              지금 값이면 단계 표기(개요와 같은 함수), 옛 응답이면 마지막 관측. */}
           <span className="text-xs text-text-2">
-            {model.heroCaption} · 마지막 관측 <span className="tabular-nums">{model.heroAsOf ?? <Empty />}</span>
+            {model.heroCaption} ·{" "}
+            {model.heroStageLabel !== null ? (
+              <span className="tabular-nums">{[model.heroStageLabel, ...model.heroNotes].join(" · ")}</span>
+            ) : (
+              <>마지막 관측 <span className="tabular-nums">{model.heroAsOf ?? <Empty />}</span></>
+            )}
           </span>
+          <EstimateBadge estimated={model.heroIsEstimated} />
           <StaleBadge stale={model.heroStale} reason={model.heroStaleReason} />
-          <ProvenanceBadge source={korea ? PAPER_SOURCES.krLedger : PAPER_SOURCES.ledger} />
+          <ProvenanceBadge source={model.heroSource} />
           {/* 다시 읽기가 실패하면 앞서 받은 값을 두고 '새로 읽지 못함'을 붙입니다(QA-067). */}
           <Freshness refreshError={overview.refreshError ?? status.refreshError} />
         </>

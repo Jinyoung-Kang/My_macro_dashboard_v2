@@ -8,6 +8,8 @@
  *  - 오래됨: 가격 없는 보유·늦은 관측치 저장본이면 계좌 행에 '이전 값' 배지와 사유(숨기는 옵션 없음)
  *  - 기간별 순자산 곡선: 저장된 기록보다 긴 기간 탭은 없고, 고르면 그 기간만(경계선도 그 기간 안의 것만), 곡선 아래 노출 문구(남는 현금 SHY)
  *  - 시장 고르기: 화면 안에는 없다 — 셸의 하위 메뉴 줄(미국 | 한국 두 링크)이 맡는다(Shell.test.tsx), 제목은 '(미국)'
+ *  - 지금 값(장중 명세 §4-1): 개요 응답에 current가 있으면 계좌 행은 그 값과 값의 기준 한 줄(단계 표기·덧붙임·하루 변화)·추정 배지,
+ *    부제는 '지금 값 기준' — current가 없는 옛 응답(위 고정본들)은 장부 표시 그대로
  */
 import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -65,6 +67,44 @@ const OVERVIEW = {
   navSeries: { dates: ["2026-10-23", "2026-10-24"], books: { rules: [100000, 101200], bench_spy: [100000, 100500] } },
   quotes: QUOTES,
 };
+
+/** 지금 값(current — API.md 개요 줄)이 든 고정본: 정규장 10-30 세션, 규칙·SPY 계좌는 장중 추정, 60/40 계좌는 장부 단계, Claude 계좌는 출발 전. */
+const LIVE_SESSION = { phase: "REGULAR", sessionDate: "2026-10-30" };
+
+function current(over: Record<string, unknown> = {}) {
+  return {
+    nav: 101234.56, returnPct: 1.23, exposurePct: 98.7, dayChangePct: 0.42, previousTradingDate: "2026-10-29", previousNavFinal: false,
+    basis: "LIVE", stage: "LIVE", tradingDate: "2026-10-30", atKst: "2026-10-30 23:58 KST", isEstimated: true, livePriced: 2,
+    positionCount: 2, pendingOrders: 0, neutral: false, note: null, ...over,
+  };
+}
+
+const LEDGER_DAY = { tradingDate: "2026-10-30", dayChangePct: 0.3, previousTradingDate: "2026-10-29", previousNavFinal: true };
+
+const CURRENT_BOOKS = [
+  {
+    ...BOOKS[0], ledgerDay: LEDGER_DAY, lastNavTradingDate: "2026-10-29", lastNavFinal: true,
+    current: current({ livePriced: 1, pendingOrders: 1,
+      note: "장중가 1/2종목 — 나머지는 장부 관측가 · 체결 대기 1건 반영 전 — 다음 장부 관측치에서 체결" }),
+  },
+  {
+    ...BOOKS[1], ledgerDay: null, lastNavTradingDate: null, lastNavFinal: null,
+    current: current({ nav: 100000, returnPct: null, exposurePct: 0, dayChangePct: null, previousTradingDate: null, previousNavFinal: null,
+      basis: "LEDGER", stage: "LEDGER", tradingDate: null, atKst: null, isEstimated: false, livePriced: 0, positionCount: 0, neutral: true,
+      note: "출발 전" }),
+  },
+  {
+    ...BOOKS[2], ledgerDay: { ...LEDGER_DAY, dayChangePct: 0.2 }, lastNavTradingDate: "2026-10-29", lastNavFinal: true,
+    current: current({ nav: 100600, returnPct: 0.6, exposurePct: 99.8, dayChangePct: 0.1, positionCount: 1, livePriced: 1 }),
+  },
+  {
+    ...BOOKS[3], ledgerDay: { ...LEDGER_DAY, dayChangePct: 0.04 }, lastNavTradingDate: "2026-10-29", lastNavFinal: true,
+    current: current({ nav: 100500, returnPct: 0.5, exposurePct: 99.8, dayChangePct: 0.05, basis: "LEDGER", stage: "LEDGER",
+      atKst: "2026-10-30 23:15 KST", isEstimated: false, livePriced: 0, positionCount: 2 }),
+  },
+];
+
+const CURRENT_OVERVIEW = { ...OVERVIEW, books: CURRENT_BOOKS, liveSession: LIVE_SESSION, navEstimate: null };
 
 const STATUS = {
   available: true, schemaReady: true, initialized: true, enabled: false, jobs: [], settingsVersion: 4,
@@ -130,6 +170,44 @@ describe("값 있음 — 계좌 행·비교 표·곡선", () => {
     expect(within(screen.getByRole("list", { name: "표본 설명" })).getAllByRole("listitem")).toHaveLength(4);
     expect(within(screen.getByRole("list", { name: "순자산 계열" })).getAllByRole("listitem").map((li) => li.textContent))
       .toEqual(["규칙 계좌", "SPY 계좌"]);
+  });
+});
+
+describe("지금 값 — 계좌 행(장중 명세 §4-1)", () => {
+  it("행은 지금 값과 값의 기준 한 줄(단계 표기·장중가 n/m종목·체결 대기·오늘 변화), 장중 추정만 추정 배지 — 부제는 '지금 값 기준'", async () => {
+    reads["/api/paper/overview"] = () => Promise.resolve(CURRENT_OVERVIEW);
+    render(<PaperPage />);
+
+    const rules = await screen.findByRole("button", { name: "규칙 계좌 상세 보기" });
+    expect(within(rules).getByText("101,234.56")).toBeTruthy();
+    expect(within(rules).getByText("+1.23%")).toBeTruthy();
+    expect(within(rules).getByText("장중 추정 23:58 · 장중가 1/2종목 · 체결 대기 1건 반영 전 · 오늘 +0.42% · 10-29 잠정 대비")).toBeTruthy();
+    expect(within(rules).getByText("추정")).toBeTruthy();
+    // 값의 기준은 펼침 단추의 설명으로도 읽힙니다(이름은 '규칙 계좌 상세 보기' 그대로).
+    const described = (rules.getAttribute("aria-describedby") ?? "").split(" ").map((id) => document.getElementById(id)?.textContent ?? "").join(" ");
+    expect(described).toContain("장중 추정 23:58");
+
+    // 장부 단계(지금 세션의 시간별 관측)는 배지 없이 단계 표기만
+    const mix = row(/^60\/40 계좌 상세 보기/);
+    expect(within(mix).getByText("장부 23:15 · 오늘 +0.05% · 10-29 잠정 대비")).toBeTruthy();
+    expect(within(mix).queryByText("추정")).toBeNull();
+    // 출발 전 계좌는 기준 한 줄 없이 보조 글('시작 전 · 현금만')
+    const claude = row(/^Claude 계좌 상세 보기/);
+    expect(within(claude).getByText("100,000.00")).toBeTruthy();
+    expect(within(claude).queryByText(/출발 전|추정/)).toBeNull();
+
+    expect(screen.getByText(/^순자산·수익률\(출발 이후\)은 지금 값 기준\(행마다 단계 표기\) — 장중 추정은 표시 전용 · 행을 누르면/)).toBeTruthy();
+    expect(screen.queryByText(/장부의 마지막 관측치 기준\(/)).toBeNull();
+  });
+
+  it("옛 응답(current 없음)은 장부 표시 그대로 — 부제는 '장부의 마지막 관측치 기준(시각 KST)', 기준 한 줄·추정 배지 없음", async () => {
+    reads["/api/paper/overview"] = () => Promise.resolve(OVERVIEW);
+    render(<PaperPage />);
+
+    const rules = await screen.findByRole("button", { name: "규칙 계좌 상세 보기" });
+    expect(within(rules).queryByText("추정")).toBeNull();
+    expect(within(rules).queryByText(/^장중 추정|^장부 /)).toBeNull();
+    expect(screen.getByText(/^순자산·수익률\(출발 이후\)은 장부의 마지막 관측치 기준\(2026-10-24 05:15 KST\) · 행을 누르면/)).toBeTruthy();
   });
 });
 

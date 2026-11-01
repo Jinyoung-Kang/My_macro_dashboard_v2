@@ -1,11 +1,12 @@
 /**
- * 🧪 모의매매(한국) 개요(/paper/kr, 2단계 명세 §4-16) — 네 상태 이야기(설계서 §9 DoD)와 한국 표기.
+ * 모의매매(한국) 개요(/paper/kr, 2단계 명세 §4-16) — 네 상태 이야기(설계서 §9 DoD)와 한국 표기.
  *
  *  - 불러오는 중: 개요 응답 전에는 '장부를 읽는 중…'(제목은 '(한국)')
  *  - 쉬는 한국: 정기 작업이 쉬는 사유(dormantReason)를 맨 위 경고로, 계좌가 없으면 한국 초기화 안내 — 숫자를 짓지 않음
  *  - 오류: 개요를 못 읽으면 오류 + 다시 시도(누르면 다시 읽음)
  *  - 자료: 네 계좌 행·비교 표는 원 단위 정수, 한계 문구(§6) 카드, 미국 전용 카드(초기화·사후 체결 대기·계좌 시작·신호 기관·OS 게이트)는
  *    없고, 한국 벤치마크가 '시작 전'이어도 사후 체결 대기 경고가 없다. 개요·상태는 ?market=KR 경로
+ *  - 지금 값(장중 명세 §4-1): 계좌 행은 원 정수 지금 값과 값의 기준 한 줄 — 그날 시가 체결 전이면 '시가 체결 대기 n건 반영 전'
  */
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -233,6 +234,31 @@ describe("자료", () => {
     expect(await within(panel).findByText("60,000,000")).toBeTruthy();
     expect(within(panel).getByText("100,000")).toBeTruthy();
     expect(await within(panel).findByText("1.5bp")).toBeTruthy();
+  });
+});
+
+describe("지금 값 — 계좌 행(한국)", () => {
+  it("원 정수 지금 값, 장중 마지막 추정(종가 확정 전)과 '시가 체결 대기 n건 반영 전', 미국 낱말 없음", async () => {
+    const live = {
+      nav: 100_400_000, returnPct: 0.4, exposurePct: 99.9, dayChangePct: 0.09, previousTradingDate: "2026-10-29", previousNavFinal: false,
+      basis: "LIVE", stage: "LIVE_LAST", tradingDate: "2026-10-30", atKst: "2026-10-30 15:30 KST", isEstimated: true, livePriced: 1,
+      positionCount: 1, pendingOrders: 2, neutral: false, note: "시가 체결 대기 2건 반영 전 — 그날 밤 관측치에서 체결",
+    };
+    reads["/api/paper/overview?market=KR"] = () => Promise.resolve({
+      ...KR_OVERVIEW, liveSession: { phase: "AFTER", sessionDate: "2026-10-30" }, navEstimate: null,
+      books: KR_BOOKS.map((entry) => (entry.code === "kr_claude" ? { ...entry, current: live } : entry)),
+    });
+    reads["/api/paper/status?market=KR"] = () => Promise.resolve(KR_STATUS);
+    render(<PaperPage market="KR" />);
+
+    const claude = await screen.findByRole("button", { name: "한국 Claude 계좌 상세 보기" });
+    expect(within(claude).getByText("100,400,000")).toBeTruthy();
+    expect(within(claude).getByText("장중 마지막 추정 15:30 · 종가 확정 전 · 시가 체결 대기 2건 반영 전 · 오늘 +0.09% · 10-29 잠정 대비"))
+      .toBeTruthy();
+    expect(within(claude).getByText("추정")).toBeTruthy();
+    // current가 없는 계좌 줄(사라진 계좌·옛 응답)은 장부 값 그대로
+    expect(within(screen.getByRole("button", { name: "한국 규칙 계좌 상세 보기" })).getByText("100,312,450")).toBeTruthy();
+    expect(document.body.textContent).not.toMatch(/13F|SHY|SPY|사후 체결/);
   });
 });
 

@@ -1,11 +1,12 @@
 /**
  * 모의매매(미국) 개요의 새 패턴 규칙(lib/paperOverview) — 계좌 행·계좌 비교 표·기간별 순자산 곡선.
  *
- *  - 계좌 행: 이름 · 종류 · 상태 · 소개, 순자산(달러), 출발 이후 수익률(모르면 null — 칩 생략), 이전 값·사후 체결 대기 배지
+ *  - 계좌 행: 이름 · 종류 · 상태 · 소개, 순자산(달러), 출발 이후 수익률(모르면 null — 칩 생략), 이전 값·사후 체결 대기 배지,
+ *    지금 값(current)이 있으면 그 값과 값의 기준 한 줄(단계 표기·덧붙임·하루 변화)·추정 배지 — 옛 응답은 예전 모양 그대로
  *  - 비교 표: 예전 카드의 칸이 전부 항목 줄로(값은 bookCard 표시 글 그대로, 모르면 "—"), 비교 기준은 따로 한 줄
  *  - 기간: 저장된 기록보다 긴 기간 탭은 없고 "전체"는 늘 있다, 자를 때 날짜와 값 배열을 같은 자리에서 자른다,
  *    프레임 경계 세로선은 고른 기간 안의 날짜만
- *  - S = 100 같은 구간(🧪 계좌2): 계좌2 출발일 S부터 계좌1·계좌2·SPY 계좌를 각자 S 순자산으로 나눠 100에 — S 전 구간·출발 전은 그리지 않고,
+ *  - S = 100 같은 구간(계좌2): 계좌2 출발일 S부터 계좌1·계좌2·SPY 계좌를 각자 S 순자산으로 나눠 100에 — S 전 구간·출발 전은 그리지 않고,
  *    S에 기록이 없는 계좌는 선 전체 null(100으로 채우지 않음), 그날 기록이 없으면 그날만 null
  */
 import { describe, expect, it } from "vitest";
@@ -23,7 +24,7 @@ import {
   sameWindowIndex,
   sampleNotes,
 } from "../paperOverview";
-import type { PaperBookSummary, PaperStats } from "../types";
+import type { PaperBookSummary, PaperCurrentValue, PaperOverviewBook, PaperStats } from "../types";
 
 const STATS: PaperStats = {
   cumReturnPct: 1.234, cagrPct: 12.5, volPct: 15.2, mddPct: -3.4, sharpe: 0.81, excessPct: -0.52, beta: 0.97, sampleDays: 42,
@@ -88,6 +89,51 @@ describe("계좌 행(AssetRow 자료)", () => {
 
   it("소개가 없는 계좌(모르는 코드)는 종류·상태만", () => {
     expect(bookAssetRow(book("x", { label: "새 계좌" })).sub).toBe("벤치마크 · 운용 중");
+  });
+});
+
+describe("계좌 행 — 지금 값(current, 장중 명세 §4-1)", () => {
+  const REGULAR = { phase: "REGULAR" as const, sessionDate: "2026-10-30" };
+  const live = (over: Partial<PaperCurrentValue> = {}): PaperCurrentValue => ({
+    nav: 101234.56, returnPct: 1.23, exposurePct: 98.7, dayChangePct: 0.42, previousTradingDate: "2026-10-29", previousNavFinal: false,
+    basis: "LIVE", stage: "LIVE", tradingDate: "2026-10-30", atKst: "2026-10-30 23:58 KST", isEstimated: true, livePriced: 1,
+    positionCount: 2, pendingOrders: 1, neutral: false, note: "장중가 1/2종목 — 나머지는 장부 관측가 · 체결 대기 1건 반영 전 — 다음 장부 관측치에서 체결", ...over,
+  });
+
+  it("값은 지금 값, 값의 기준 한 줄은 단계 표기 · 덧붙임 · 하루 변화, 장중 추정이면 추정 배지", () => {
+    const row = bookAssetRow({ ...BOOKS[0], current: live() } as PaperOverviewBook, { session: REGULAR });
+    expect(row).toMatchObject({
+      value: 101234.56, changePct: 1.23, isEstimated: true,
+      caption: "장중 추정 23:58 · 장중가 1/2종목 · 체결 대기 1건 반영 전 · 오늘 +0.42% · 10-29 잠정 대비",
+    });
+  });
+
+  it("장부 단계·현금뿐(기준 중립)은 추정 배지 없이 단계 표기, 장 밖이면 '하루'와 날짜", () => {
+    const ledger = live({ stage: "LEDGER", basis: "LEDGER", isEstimated: false, livePriced: 0, pendingOrders: 0, atKst: "2026-10-30 23:15 KST", note: null });
+    expect(bookAssetRow({ ...BOOKS[0], current: ledger } as PaperOverviewBook, { session: REGULAR }))
+      .toMatchObject({ isEstimated: false, caption: "장부 23:15 · 오늘 +0.42% · 10-29 잠정 대비" });
+    const sunday = { phase: "CLOSED" as const, sessionDate: "2026-10-30" };
+    const final = live({ stage: "FINAL", basis: "LEDGER", isEstimated: false, livePriced: 0, pendingOrders: 0, previousNavFinal: true, note: null });
+    expect(bookAssetRow({ ...BOOKS[0], current: final } as PaperOverviewBook, { session: sunday }).caption)
+      .toBe("10-30 확정 · 10-30 하루 +0.42% · 10-29 확정 대비");
+  });
+
+  it("출발 전 계좌는 기준 한 줄 없음(보조 글이 '시작 전'), 한국은 원 정수와 '시가 체결 대기'", () => {
+    const waiting = live({ nav: 100000, returnPct: null, stage: "LEDGER", basis: "LEDGER", isEstimated: false, neutral: true, note: "출발 전" });
+    expect(bookAssetRow({ ...BOOKS[1], current: waiting } as PaperOverviewBook)).toMatchObject({ value: 100000, changePct: null, caption: null, isEstimated: false });
+    const kr = bookAssetRow(
+      { ...BOOKS[0], code: "kr_claude", current: live({ nav: 100_400_000.4, livePriced: 2, pendingOrders: 2 }) } as PaperOverviewBook,
+      { market: "KR", session: REGULAR },
+    );
+    expect(kr).toMatchObject({ value: 100_400_000.4, valueText: "100,400,000", unit: "원" });
+    expect(kr.caption).toBe("장중 추정 23:58 · 시가 체결 대기 2건 반영 전 · 오늘 +0.42% · 10-29 잠정 대비");
+  });
+
+  it("옛 응답(current 없음)은 예전 모양 그대로 — 추정·기준 한 줄 칸이 없다", () => {
+    const row = bookAssetRow(BOOKS[0], { session: REGULAR });
+    expect("caption" in row).toBe(false);
+    expect("isEstimated" in row).toBe(false);
+    expect(row.value).toBe(100123.45);
   });
 });
 
@@ -199,7 +245,7 @@ describe("기간별 순자산 곡선", () => {
   });
 });
 
-describe("S = 100 같은 구간(🧪 계좌2)", () => {
+describe("S = 100 같은 구간(계좌2)", () => {
   const books = (startedOn: string | null) => [
     book("rules", { kind: "RULES", label: "규칙 계좌" }),
     book("claude", { kind: "CLAUDE", label: "Claude 계좌1", benchmark: "bench_spy" }),

@@ -66,6 +66,7 @@ import {
   marketJobs,
   withKrReference,
 } from "@/lib/paperKr";
+import { accountsBasisText } from "@/lib/paperCurrent";
 import { marketMeta, type PaperMarketCode } from "@/lib/paperMarket";
 import { allowedRangeKey } from "@/lib/patternRows";
 import type {
@@ -180,8 +181,11 @@ export function OverviewSection({
   };
 
   const books = overview.books ?? [];
-  // 계좌 숫자의 기준 시각 — 네 계좌는 같은 리스크 점검에서 함께 평가돼 보통 하나(가장 늦은 것을 적음, 모르면 생략).
+  // 계좌 숫자의 기준 시각 — 네 계좌는 같은 리스크 점검에서 함께 평가돼 보통 하나(가장 늦은 것을 적음, 모르면 생략). 지금 값이 없는 옛 응답의 부제에만.
   const observedAt = latestObserved(books);
+  // 계좌 행의 지금 값 기준 — 지금 값이면 행마다 단계 표기, 옛 응답이면 null(예전 '장부의 마지막 관측치 기준').
+  const accountsBasis = accountsBasisText(books);
+  const session = overview.liveSession ?? null;
   const selectedBook = books.find((book) => book.code === selected) ?? null;
   const toggleAccount = (code: string) => setSelected((current) => (current === code ? null : code));
   const closeAccount = () => {
@@ -339,8 +343,8 @@ export function OverviewSection({
       {korea && <KrStartSection overview={overview} status={status.data ?? null} onChanged={onChanged} />}
 
       {/* 장중 시세(표시 전용 추정) — 장 상태·간격·출처와 고른 계좌의 종목 장중가. 종목 표는 상세를 연 계좌, 없으면 기본 Claude 계좌
-          (홈 히어로와 같은 규칙)를 따릅니다. 새 장중 값을 받으면 개요를 한 번 다시 읽습니다(onChanged — 지금 값이 같은 저장본을 읽음).
-          아래 계좌 목록은 장부의 마지막 관측치 값 그대로입니다. */}
+          (홈 히어로와 같은 규칙)를 따릅니다. 새 장중 값을 받으면 개요를 한 번 다시 읽습니다(onChanged — 계좌 행의 지금 값은 서버가 같은
+          장중 저장본을 합친 값). */}
       {overview.initialized !== false && books.length > 0 && (
         <LiveValuationCard
           market={market}
@@ -351,7 +355,7 @@ export function OverviewSection({
 
       <Card
         title="계좌"
-        subtitle={`순자산·수익률(출발 이후)은 장부의 마지막 관측치 기준${observedAt ? `(${observedAt} KST)` : ""} · 행을 누르면 그 계좌의 상세${
+        subtitle={`순자산·수익률(출발 이후)은 ${accountsBasis ?? `장부의 마지막 관측치 기준${observedAt ? `(${observedAt} KST)` : ""}`} · 행을 누르면 그 계좌의 상세${
           status.data?.settingsVersion ? ` · 설정 v${status.data.settingsVersion}` : ""
         }${korea && overview.initialized !== false ? ` · ${KR_RISK_RUN_NOTE}` : ""}`}
         source={ledgerSource}
@@ -382,7 +386,7 @@ export function OverviewSection({
                 return (
                   <li key={book.code} className="border-t border-border first:border-t-0">
                     <AssetRow
-                      row={bookAssetRow(book, { pendingBackfill: overview.pendingBackfill, quotes, market })}
+                      row={bookAssetRow(book, { pendingBackfill: overview.pendingBackfill, quotes, market, session })}
                       onSelect={toggleAccount}
                       selected={open}
                       disclosure={{

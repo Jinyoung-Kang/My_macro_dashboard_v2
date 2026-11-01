@@ -6,12 +6,13 @@
  */
 import { deltaColor, EMPTY, formatKst, formatNumber } from "./format";
 import { accountProfile, benchmarkLabel, bookCard, isTimedBook, type NavSeriesLine, primaryClaudeBook, statCells } from "./paper";
+import { type CurrentView, currentView } from "./paperCurrent";
 import { marketMeta, type PaperMarketCode } from "./paperMarket";
-import type { PaperBookSummary, PaperOverviewResponse, PaperQuotesSummary } from "./types";
+import type { PaperBookSummary, PaperLiveSessionSummary, PaperOverviewBook, PaperOverviewResponse, PaperQuotesSummary } from "./types";
 
 // ---------------------------------------------------------------- 계좌 행(AssetRow)
 
-/** 계좌 행이 개요에서 함께 읽는 것 — 사후 체결 대기 목록과 장부 관측치 신선도, 그 개요의 시장(기본 미국). */
+/** 계좌 행이 개요에서 함께 읽는 것 — 사후 체결 대기 목록과 장부 관측치 신선도, 그 개요의 시장(기본 미국)과 장 상태. */
 export interface BookRowContext {
   pendingBackfill?: readonly string[] | null;
   quotes?: Pick<PaperQuotesSummary, "stale"> | null;
@@ -20,6 +21,8 @@ export interface BookRowContext {
    * 출발하고 초기화를 다시 눌러 체결하지 않습니다(명세 §2·K28, API.md 개요 행 — 한국 `pendingBackfill`은 '시작 전 벤치마크'일 뿐).
    */
   market?: PaperMarketCode;
+  /** 개요의 장 상태(`liveSession`) — 지금 값의 '오늘'·장부 표기 날짜를 가릅니다(lib/paperCurrent). 옛 응답이면 없음. */
+  session?: PaperLiveSessionSummary | null;
 }
 
 /** 사후 체결을 기다리는 벤치마크 행의 경고(초기화 카드가 사유와 다시 누를 단추를 보입니다). */
@@ -62,37 +65,53 @@ export interface BookRow {
   isStale: boolean;
   staleReason: string | null;
   warning: string | null;
+  /** 지금 값이 장중 추정인가 — 지금 값이 있는 응답에서만 있는 칸(옛 응답의 행은 예전 모양 그대로). */
+  isEstimated?: boolean;
+  /** 값의 기준 한 줄(단계 표기 · 덧붙임 · 하루 변화) — 지금 값이 있는 응답에서만, 출발 전 계좌는 null. */
+  caption?: string | null;
+}
+
+/** 행의 값의 기준 한 줄 — 단계 표기 · 짧은 덧붙임 · 하루 변화. 옛 응답·출발 전 계좌(보조 글이 '시작 전'을 말함)는 null. */
+function rowCaption(view: CurrentView, book: PaperBookSummary): string | null {
+  if (view.from !== "current" || book.status === "NOT_STARTED") return null;
+  const parts = [view.stageLabel, ...view.notes, view.day?.text ?? null].filter((part): part is string => typeof part === "string" && part !== "");
+  return parts.length > 0 ? parts.join(" · ") : null;
 }
 
 /**
  * 계좌 하나 → 자산 행. 이름 · 보조(종류 · 상태 · 한 줄 소개) · 순자산(달러) · 출발 이후 수익률 칩 · 배지.
  *
+ * - 순자산·수익률은 개요의 지금 값(`current` — lib/paperCurrent `currentView`)이고, 지금 값이 없는 옛 응답은 장부 값 그대로입니다.
+ *   지금 값이면 값의 기준 한 줄(`caption` — 단계 표기 '장중 추정 23:58'·덧붙임 '장중가 1/2종목'·'체결 대기 1건 반영 전'·하루 변화
+ *   '오늘 +0.42% · 10-29 잠정 대비')과, 장중 추정이면 추정 배지(`isEstimated`)를 답니다. 기준 중립(현금뿐)은 배지 없이 단계 표기만.
  * - 순자산을 모르면 "—"(단위 없음), 수익률을 모르면 칩을 생략합니다(0.00%를 만들지 않음 — AssetRow 규칙).
  * - 이전 값 배지: 가격을 새로 받지 못한 보유가 있거나(staleCount > 0 — 지난 값으로 평가), 장부 관측치 저장본이 늦었으면
- *   (quotes.stale — 서버 판정) 시작한 계좌의 순자산은 그 늦은 관측으로 평가한 값입니다. 사유를 함께 적습니다.
- * - 경고: 벤치마크가 출발일 종가를 기다리면(pendingBackfill) 그 사실. 추정 배지는 없습니다(장부 값은 추정이 아님).
+ *   (quotes.stale — 서버 판정) 시작한 계좌의 순자산은 그 늦은 관측으로 평가한 값입니다. 사유를 함께 적습니다(장부 상태 기준 그대로).
+ * - 경고: 벤치마크가 출발일 종가를 기다리면(pendingBackfill) 그 사실.
  */
-export function bookAssetRow(book: PaperBookSummary, context: BookRowContext = {}): BookRow {
+export function bookAssetRow(book: PaperOverviewBook, context: BookRowContext = {}): BookRow {
   const market = context.market ?? "US";
   const card = bookCard(book, [], market);
+  const view = currentView(book, { market, session: context.session });
   const summary = accountProfile(book.code)?.summary ?? null;
   const staleReasons = [
     card.staleWarning,
     context.quotes?.stale === true && book.lastObservedAtKst ? `관측치 저장본이 늦음 · 마지막 관측 ${formatKst(book.lastObservedAtKst)}` : null,
   ].filter((reason): reason is string => reason !== null);
   const korea = market === "KR";
-  const nav = korea ? formatNumber(book.nav, 0) : null;
+  const nav = korea ? formatNumber(view.nav, 0) : null;
   return {
     id: book.code,
     name: book.label,
     sub: [card.kind, card.status.label, summary].filter((part) => part && part !== EMPTY).join(" · "),
-    value: book.nav,
+    value: view.nav,
     ...(korea ? { valueText: nav === EMPTY ? null : nav } : {}),
     unit: marketMeta(market).unitLabel,
-    changePct: book.returnPct,
+    changePct: view.returnPct,
     isStale: staleReasons.length > 0,
     staleReason: staleReasons.length > 0 ? staleReasons.join(" · ") : null,
     warning: !korea && (context.pendingBackfill ?? []).includes(book.code) ? PENDING_BACKFILL_WARNING : null,
+    ...(view.from === "current" ? { isEstimated: view.isEstimated, caption: rowCaption(view, book) } : {}),
   };
 }
 
@@ -260,7 +279,7 @@ export function markersInWindow<M extends { x: string }>(
   return markers.filter((marker) => dates.has(marker.x));
 }
 
-// ---------------------------------------------------------------- 🧪 같은 구간 순자산(S = 100, 계좌2 명세 §4-2의 2)
+// ---------------------------------------------------------------- 같은 구간 순자산(S = 100, 계좌2 명세 §4-2의 2)
 
 /** "S = 100 같은 구간" 보기 — 계좌2 출발일 S를 기준일로, 계좌1·계좌2·비교 기준(SPY 계좌)의 순자산을 S = 100으로 다시 잰 선. */
 export interface SameWindowView {

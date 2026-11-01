@@ -5,7 +5,7 @@
  *    추정·이전 값·참고 시세·경고는 넘기고, 장 상태는 보는 시각 기준 — 지연은 열린 장에만("개장 · 실시간"), 닫힌 장은 "마감"만,
  *    이어받은 값·실패에는 지연을 붙이지 않음, 변화량 자릿수는 deltaStr을 따름
  *  - 모의매매: Claude 계좌 순자산 히어로·마지막 관측, 네 계좌 행(모의매매 개요와 같은 bookAssetRow — 출발 대비 수익률, 오래됨·사후 체결 대기),
- *    정기 작업 꺼짐 안내, 처음 현금
+ *    정기 작업 꺼짐 안내, 처음 현금. 개요 응답에 지금 값(current)이 있으면 히어로·행이 같은 지금 값과 같은 단계 표기(lib/paperCurrent)
  *  - 알림: 모르는 수는 null(화면 "—"), 지난 사건은 강조하지 않음 / 저장소 상태: 모르는 수는 null, 수집기 연결 안 됨·누락 데이터셋
  */
 import { describe, expect, it } from "vitest";
@@ -340,7 +340,7 @@ describe("paperHomeModel — 모의매매(미국)", () => {
     expect(model.disabledNote).toBeNull();
   });
 
-  it("🧪 Claude 계좌2(체결 시점 실험)가 앞에 와도 히어로는 계좌1 — 계좌2는 행으로만(계좌2 명세 §13-3)", () => {
+  it("Claude 계좌2(체결 시점 실험)가 앞에 와도 히어로는 계좌1 — 계좌2는 행으로만(계좌2 명세 §13-3)", () => {
     const base = paperOverview();
     const claude1 = { ...base.books![1], label: "Claude 계좌1" };
     const claude2 = { ...claude1, code: "claude2", label: "Claude 계좌2", status: "NOT_STARTED" as const, nav: 100000, returnPct: null };
@@ -380,6 +380,36 @@ describe("paperHomeModel — 모의매매(미국)", () => {
     // 사후 체결을 기다리는 벤치마크에는 그 경고가 붙습니다.
     expect(model.rows.find((row) => row.id === "bench_mix")?.warning).toBe(PENDING_BACKFILL_WARNING);
     expect(model.rows.find((row) => row.id === "rules")?.warning).toBeNull();
+  });
+
+  it("지금 값(current) — 히어로와 Claude 행이 같은 지금 값·단계 표기·추정 배지·하루 변화, 옛 응답 칸(마지막 관측)은 그대로", () => {
+    const overview = paperOverview();
+    overview.liveSession = { phase: "REGULAR", sessionDate: "2026-10-26" };
+    overview.books![1] = {
+      ...overview.books![1],
+      current: {
+        nav: 100123.45, returnPct: 0.12, exposurePct: 97.5, dayChangePct: 0.3, previousTradingDate: "2026-10-23", previousNavFinal: false,
+        basis: "LIVE", stage: "LIVE", tradingDate: "2026-10-26", atKst: "2026-10-26 23:58 KST", isEstimated: true, livePriced: 8,
+        positionCount: 9, pendingOrders: 0, neutral: false, note: "장중가 8/9종목 — 나머지는 장부 관측가",
+      },
+    };
+    const model = paperHomeModel(overview, paperStatus(true));
+    expect(model).toMatchObject({
+      heroValueText: "100,123.45", heroReturnPct: 0.12, heroStageLabel: "장중 추정 23:58", heroNotes: ["장중가 8/9종목"],
+      heroIsEstimated: true, heroAsOf: "2026-10-26 04:56",
+      heroDay: { pct: 0.3, label: "오늘", base: "10-23 잠정 대비", text: "오늘 +0.30% · 10-23 잠정 대비" },
+    });
+    expect(model.heroSource).toContain("보유를 장중 1분봉 시세로 다시 평가한 표시 전용 추정");
+    const claude = model.rows.find((row) => row.id === "claude");
+    expect(claude).toMatchObject({ value: 100123.45, changePct: 0.12, isEstimated: true });
+    expect(claude?.caption).toBe("장중 추정 23:58 · 장중가 8/9종목 · 오늘 +0.30% · 10-23 잠정 대비");
+    // current가 없는 다른 계좌 행은 장부 값 그대로
+    expect(model.rows.find((row) => row.id === "rules")).toMatchObject({ value: 99951, changePct: -0.05 });
+
+    // 옛 응답이면 단계 표기·덧붙임·하루 변화 없음, 출처는 장부
+    const ledger = paperHomeModel(paperOverview(), paperStatus(true));
+    expect(ledger).toMatchObject({ heroStageLabel: null, heroNotes: [], heroIsEstimated: false, heroDay: null, heroValueText: "99,967.28" });
+    expect(ledger.heroSource).not.toContain("장중");
   });
 
   it("행 링크는 셸의 모의매매 탭과 같은 곳", () => {
