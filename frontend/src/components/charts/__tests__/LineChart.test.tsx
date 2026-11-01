@@ -363,6 +363,19 @@ describe("LineChart — 꼬리 계열(tailOf, 장중 값 단계의 오늘 추정
     expect([...container.querySelectorAll("[data-hero-extreme]")].map((node) => node.textContent)).toEqual(["100,400.00", "100,000.00"]);
   });
 
+  it("히어로 — 최고가 꼬리가 시작하는 점이면 끝 맞춤(글이 오른쪽 꼬리 점선 위로 번지지 않게)", () => {
+    observeAs(600, 260);
+    const rows = [
+      { date: "2026-10-23", a: 99_967.28, "a~": null },
+      { date: "2026-10-30", a: 100_136.32, "a~": 100_136.32 },
+      { date: "2026-11-02", a: null, "a~": 100_556.89 },
+    ];
+    const { container } = render(<LineChart data={rows} series={[SERIES[0], SERIES[2]]} variant="hero" valueFormat={money} />);
+    const [high, low] = [...container.querySelectorAll("[data-hero-extreme]")];
+    expect([high.textContent, high.getAttribute("text-anchor"), high.getAttribute("dy")]).toEqual(["100,136.32", "end", "-8"]);
+    expect([low.textContent, low.getAttribute("text-anchor"), low.getAttribute("dy")]).toEqual(["99,967.28", "start", "17"]);
+  });
+
   it("히어로 — 꼬리도 중립 잉크(var(--text)) 점선", () => {
     observeAs(600, 260);
     const { container } = render(

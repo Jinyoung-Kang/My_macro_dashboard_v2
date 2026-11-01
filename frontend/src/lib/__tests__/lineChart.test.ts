@@ -125,8 +125,8 @@ describe("heroExtremes — 히어로 Y 끝값(실제 최고·최저)", () => {
 
   it("본 계열의 최고·최저 값과 그 날짜 — 축 범위 끝(여백 8%)이 아니고, 꼬리(오늘 추정 점)는 빼고 봄", () => {
     expect(heroExtremes(rows, series)).toEqual({
-      high: { date: "2026-10-22", value: 100_300, anchor: "middle" },
-      low: { date: "2026-10-21", value: 99_800, anchor: "middle" },
+      high: { date: "2026-10-22", value: 100_300, anchor: "middle", side: "above" },
+      low: { date: "2026-10-21", value: 99_800, anchor: "middle", side: "below" },
     });
     // 축 범위는 꼬리를 담고 여백을 더함 — 끝값 글은 그 범위 끝이 아님
     const axis = lineYAxis(rows, series)!;
@@ -138,17 +138,37 @@ describe("heroExtremes — 히어로 Y 끝값(실제 최고·최저)", () => {
       { date: "a", nav: 1 }, { date: "b", nav: 2 }, { date: "c", nav: 2 }, { date: "d", nav: 2 }, { date: "e", nav: 2 }, { date: "f", nav: 3 },
     ];
     expect(heroExtremes(edge, ONE.map((entry) => ({ ...entry, key: "nav" })))).toEqual({
-      low: { date: "a", value: 1, anchor: "start" },
-      high: { date: "f", value: 3, anchor: "end" },
+      low: { date: "a", value: 1, anchor: "start", side: "below" },
+      high: { date: "f", value: 3, anchor: "end", side: "above" },
     });
+  });
+
+  it("꼬리가 시작하는 점(본 계열의 마지막 값)의 글은 꼬리 반대쪽 — 끝 맞춤, 그림 왼쪽 끝이면 시작 맞춤에 꼬리가 글 쪽으로 가면 점의 반대쪽", () => {
+    // 3행(10-23·10-30 기록 + 11-02 꼬리 점): 최고가 꼬리가 시작하는 10-30(가운데)이고 꼬리가 더 올라감 — 가운데 맞춤이면 글 오른쪽 반이 꼬리 점선과 겹침
+    const three: LineRow[] = [
+      { date: "2026-10-23", nav: 99_967.28, estimate: null },
+      { date: "2026-10-30", nav: 100_136.32, estimate: 100_136.32 },
+      { date: "2026-11-02", nav: null, estimate: 100_556.89 },
+    ];
+    expect(heroExtremes(three, series)).toEqual({
+      high: { date: "2026-10-30", value: 100_136.32, anchor: "end", side: "above" },
+      low: { date: "2026-10-23", value: 99_967.28, anchor: "start", side: "below" },
+    });
+    // 기록이 한 줄뿐(그림 왼쪽 끝) + 꼬리 — 끝 맞춤이면 잘려 시작 맞춤, 꼬리가 올라가면 글은 점 아래, 내려가면 위
+    const up: LineRow[] = [{ date: "2026-10-30", nav: 100_000, estimate: 100_000 }, { date: "2026-11-02", nav: null, estimate: 100_400 }];
+    expect(heroExtremes(up, series)).toEqual({ high: { date: "2026-10-30", value: 100_000, anchor: "start", side: "below" }, low: null });
+    const down: LineRow[] = [{ date: "2026-10-30", nav: 100_000, estimate: 100_000 }, { date: "2026-11-02", nav: null, estimate: 99_600 }];
+    expect(heroExtremes(down, series)).toEqual({ high: { date: "2026-10-30", value: 100_000, anchor: "start", side: "above" }, low: null });
   });
 
   it("같은 값이 여럿이면 가장 늦은 점, 평평하거나 점 하나면 최고 하나만, 본 계열 값이 없으면 null", () => {
     const ties: LineRow[] = [{ date: "a", nav: 5 }, { date: "b", nav: 7 }, { date: "c", nav: 5 }, { date: "d", nav: 7 }];
     const nav = [{ key: "nav", label: "순자산" }];
-    expect(heroExtremes(ties, nav)).toEqual({ high: { date: "d", value: 7, anchor: "end" }, low: { date: "c", value: 5, anchor: "middle" } });
-    expect(heroExtremes([{ date: "a", nav: 5 }, { date: "b", nav: 5 }], nav)).toEqual({ high: { date: "b", value: 5, anchor: "end" }, low: null });
-    expect(heroExtremes([{ date: "a", nav: 5 }], nav)).toEqual({ high: { date: "a", value: 5, anchor: "middle" }, low: null });
+    expect(heroExtremes(ties, nav)).toEqual({
+      high: { date: "d", value: 7, anchor: "end", side: "above" }, low: { date: "c", value: 5, anchor: "middle", side: "below" },
+    });
+    expect(heroExtremes([{ date: "a", nav: 5 }, { date: "b", nav: 5 }], nav)).toEqual({ high: { date: "b", value: 5, anchor: "end", side: "above" }, low: null });
+    expect(heroExtremes([{ date: "a", nav: 5 }], nav)).toEqual({ high: { date: "a", value: 5, anchor: "middle", side: "above" }, low: null });
     expect(heroExtremes([{ date: "a", nav: null, estimate: 5 }], series)).toBeNull();
     expect(heroExtremes([], nav)).toBeNull();
   });

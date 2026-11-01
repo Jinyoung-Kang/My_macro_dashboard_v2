@@ -97,8 +97,11 @@ export function lineYAxis(
   };
 }
 
-/** 히어로 차트의 최고·최저 표시 하나 — 그 점의 날짜(행의 date)·값과, 글을 점의 어느 쪽에 맞출지(그림 왼쪽 끝 가까이면 start, 오른쪽 끝 가까이면 end). */
-export type HeroExtreme = { date: string; value: number; anchor: "start" | "middle" | "end" };
+/**
+ * 히어로 차트의 최고·최저 표시 하나 — 그 점의 날짜(행의 date)·값, 글을 점의 어느 쪽에 맞출지(`anchor`), 점의 위·아래 어디에 적을지(`side` — 최고는
+ * 보통 위, 최저는 보통 아래).
+ */
+export type HeroExtreme = { date: string; value: number; anchor: "start" | "middle" | "end"; side: "above" | "below" };
 
 /**
  * 히어로 차트(`variant="hero"`)의 Y 끝값 둘 — 축 범위 끝(여백 8%를 더한, 데이터에 없는 값) 대신 **본 계열의 실제 최고·최저**를 그 점 위·아래에 적습니다.
@@ -109,6 +112,9 @@ export type HeroExtreme = { date: string; value: number; anchor: "start" | "midd
  *   축 범위는 그대로 꼬리를 담습니다(`lineYAxis`).
  * - 같은 값이 여럿이면 가장 늦은 점. 최고와 최저가 같으면(평평하거나 점 하나) 최고 하나만(low null).
  * - 글 맞춤은 점의 자리(행 순번 ÷ 마지막 순번)로 — 왼쪽 1/5 안이면 start, 오른쪽 1/5 안이면 end, 그 밖은 middle(그림 밖으로 잘리지 않게).
+ * - 꼬리는 본 계열의 마지막 값에서 시작해 오른쪽으로 이어지고 그 끝(추정 점)은 본 계열의 최고보다 높거나 최저보다 낮을 수 있어, 그 점(꼬리가 시작하는
+ *   점)의 글이 오른쪽으로 번지면 꼬리 점선과 겹칩니다 — 그 점이면 끝 맞춤(end, 글이 왼쪽 — 본 계열 쪽 — 으로). 그 점이 그림 왼쪽 끝이라(기록이 한 줄뿐)
+ *   끝 맞춤이면 잘리는 때는 시작 맞춤을 두고, 꼬리가 글 쪽으로 가면(최고 글인데 꼬리가 올라감·최저 글인데 내려감) 글을 점의 반대쪽에 적습니다.
  *
  * @returns 본 계열 값이 하나도 없으면 null
  */
@@ -131,11 +137,29 @@ export function heroExtremes(
     return null;
   }
   const last = data.length - 1;
-  const point = ({ index, value }: { index: number; value: number }): HeroExtreme => {
-    const at = last <= 0 ? 0.5 : index / last;
-    return { date: data[index].date, value, anchor: at < 0.2 ? "start" : at > 0.8 ? "end" : "middle" };
+  const tails = series.filter((entry) => entry.tailOf !== undefined);
+  const lastMain = data.reduce((found, row, index) => (mains.some((entry) => lineValue(row, entry.key) !== null) ? index : found), -1);
+  // 꼬리가 시작하는 점(본 계열의 마지막 값)이면 그 뒤 꼬리의 끝 값 — 아니면 null.
+  const tailEnd = (index: number): number | null => {
+    if (index !== lastMain) return null;
+    const ends = data
+      .slice(index + 1)
+      .flatMap((row) => tails.map((entry) => lineValue(row, entry.key)).filter((value): value is number => value !== null));
+    return ends.at(-1) ?? null;
   };
-  return { high: point(high), low: low.value === high.value ? null : point(low) };
+  const point = ({ index, value }: { index: number; value: number }, side: "above" | "below"): HeroExtreme => {
+    const at = last <= 0 ? 0.5 : index / last;
+    const end = tailEnd(index);
+    if (end === null) {
+      return { date: data[index].date, value, anchor: at < 0.2 ? "start" : at > 0.8 ? "end" : "middle", side };
+    }
+    if (at >= 0.2) {
+      return { date: data[index].date, value, anchor: "end", side };
+    }
+    const toward = side === "above" ? end > value : end < value;
+    return { date: data[index].date, value, anchor: "start", side: toward ? (side === "above" ? "below" : "above") : side };
+  };
+  return { high: point(high, "above"), low: low.value === high.value ? null : point(low, "below") };
 }
 
 /** X축 눈금 — 첫 날짜와 마지막 날짜만(행이 하나면 그 날짜 하나, 없으면 빈 목록). */

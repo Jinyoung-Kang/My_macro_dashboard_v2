@@ -54,20 +54,21 @@ const HERO_CURSOR = "var(--border)";
 const HERO_LABEL_ROOM = 18;
 
 /**
- * 히어로의 Y 끝값 하나 — 본 계열의 실제 최고(점 위)·최저(점 아래) 값을 그 점에 붙여 적습니다(`lib/lineChart` `heroExtremes`). 축 범위 끝(여백을 더한
- * 값 — 데이터에 없는 숫자)을 그림 오른쪽 안쪽에 적던 예전 끝값은 선·꼬리와 겹쳤습니다. 최고 점 위·최저 점 아래는 선이 지나지 않습니다.
+ * 히어로의 Y 끝값 하나 — 본 계열의 실제 최고(보통 점 위)·최저(보통 점 아래) 값을 그 점에 붙여 적습니다(`lib/lineChart` `heroExtremes` — 맞춤과 위·아래는
+ * 꼬리와 겹치지 않게 lib가 정함). 축 범위 끝(여백을 더한 값 — 데이터에 없는 숫자)을 그림 오른쪽 안쪽에 적던 예전 끝값은 선·꼬리와 겹쳤습니다.
  */
 function HeroExtremeLabel({
   cx,
   cy,
   extreme,
-  side,
+  kind,
   format,
 }: {
   cx?: number;
   cy?: number;
   extreme: HeroExtreme;
-  side: "high" | "low";
+  /** 최고(high)·최저(low) 표지(시험·검사용). 점의 위·아래는 `extreme.side`. */
+  kind: "high" | "low";
   format: (value: number) => string;
 }) {
   if (typeof cx !== "number" || typeof cy !== "number" || !Number.isFinite(cx) || !Number.isFinite(cy)) {
@@ -77,11 +78,11 @@ function HeroExtremeLabel({
     <text
       x={cx}
       y={cy}
-      dy={side === "high" ? -8 : 17}
+      dy={extreme.side === "above" ? -8 : 17}
       textAnchor={extreme.anchor}
       fill={AXIS_TEXT}
       fontSize={CHART_FONT}
-      data-hero-extreme={side}
+      data-hero-extreme={kind}
       style={{ fontVariantNumeric: "tabular-nums" }}
     >
       {format(extreme.value)}
@@ -151,7 +152,7 @@ function ScrubReporter({
  *
  * `variant="hero"`(히어로 안의 큰 차트, 명세 §5): 선은 중립 잉크(var(--text)) 하나 — 계열 색을 넘기지 않으면 — , 툴팁 상자 없이 세로 커서와
  * 활성 점만, Y 끝값 둘은 본 계열의 실제 최고·최저 값을 그 점 위·아래에(12px text-3 — 축 범위 끝의 여백 값을 적지 않고 선과 겹치지 않음, 꼬리 계열은
- * 빼고 봄), X는 첫·마지막 날짜(축선 없음), 높이는 좁은 화면 200·lg 260(`height`를 주면 그 값),
+ * 빼고 보며 꼬리가 시작하는 점이면 글을 꼬리 반대쪽으로), X는 첫·마지막 날짜(축선 없음), 높이는 좁은 화면 200·lg 260(`height`를 주면 그 값),
  * 세로 스크롤은 브라우저에 맡기고(touch-action: pan-y) 가로로 끌면 문지릅니다.
  * `onScrub(index | null)`: 가리킨 점의 행 순번(손을 떼거나 벗어나면 null) — `hooks/useChartScrub`에 그대로 넘기고, 표시 글은
  * `lib/lineChart`의 `scrubModel`, 그리는 것은 Hero의 `scrub`입니다. 터치는 손을 떼면 커서도 감춥니다(Recharts는 터치 뒤 툴팁을 남김).
@@ -313,15 +314,15 @@ export function LineChart({
         />
         {yAxis.zeroLine ? <ReferenceLine y={0} stroke={GUIDE} strokeWidth={1} /> : null}
         {extremes
-          ? [{ side: "high" as const, extreme: extremes.high }, ...(extremes.low ? [{ side: "low" as const, extreme: extremes.low }] : [])].map(
-              ({ side, extreme }) => (
+          ? [{ kind: "high" as const, extreme: extremes.high }, ...(extremes.low ? [{ kind: "low" as const, extreme: extremes.low }] : [])].map(
+              ({ kind, extreme }) => (
                 <ReferenceDot
-                  key={side}
+                  key={kind}
                   x={extreme.date}
                   y={extreme.value}
                   r={0}
                   ifOverflow="visible"
-                  shape={(props) => <HeroExtremeLabel cx={props.cx} cy={props.cy} extreme={extreme} side={side} format={valueFormat} />}
+                  shape={(props) => <HeroExtremeLabel cx={props.cx} cy={props.cy} extreme={extreme} kind={kind} format={valueFormat} />}
                 />
               ),
             )
