@@ -478,6 +478,15 @@ public class ClaudeBookService {
         return decide(pipeline(market, book), market, asOf, kind, pricesFinal, observed, null);
     }
 
+    /**
+     * 미국 Claude 계좌1의 장중 확인 결정(사용자 결정 2026-11-02 — {@link PaperClaude1CheckpointJob}): 기준 거래일 {@code asOf}(그 아침 결정과 같은 d)의
+     * 종류 {@code CHECKPOINT} 결정 — 정기 결정과 같은 패킷(장중 확인 지시 한 줄 — 가격은 지금 저장본의 장중 시간별 관측치)·검증·기록이고, 호출 문턱은
+     * 정기 작업(하루 상한까지). (계좌, d, CHECKPOINT)마다 한 건이라 세션당 한 번입니다.
+     */
+    Decision decideCheckpoint(PaperMarket market, LocalDate asOf) {
+        return decide(pipeline(market), market, asOf, RuleBookService.CHECKPOINT, false, null, null);
+    }
+
     private Decision decide(PaperMarket market, LocalDate asOf, String kind, boolean pricesFinal,
                             ClaudeDecisionPipeline.Observed observed, PacketBuilder.MarketInputs inputs) {
         return decide(pipeline(market), market, asOf, kind, pricesFinal, observed, inputs);
@@ -492,8 +501,8 @@ public class ClaudeBookService {
         if (asOf == null) {
             throw new IllegalArgumentException("기준 거래일이 없습니다");
         }
-        if (!List.of(RuleBookService.SCHEDULED, RuleBookService.MANUAL).contains(kind)) {
-            throw new IllegalArgumentException("Claude 계좌 결정 종류는 SCHEDULED · MANUAL입니다(초기 결정은 start): " + kind);
+        if (!List.of(RuleBookService.SCHEDULED, RuleBookService.MANUAL, RuleBookService.CHECKPOINT).contains(kind)) {
+            throw new IllegalArgumentException("Claude 계좌 결정 종류는 SCHEDULED · MANUAL · CHECKPOINT입니다(초기 결정은 start): " + kind);
         }
         requireReady();
         // 그 실행의 시장 문맥(결정 작업이 연 실행 — 시장 묶음을 받으면 고정 달력과 지금 설정 행으로 엶): 파이프라인의 달력·설정 판이
@@ -531,7 +540,7 @@ public class ClaudeBookService {
         }
         LocalDate today = Kst.today(clock);
         // 정기 결정(재시도 포함)은 상한까지, 수동 결정은 정기 작업 몫을 남긴 문턱까지(2단계 명세 §4-10 — ClaudeSettings.callLimit).
-        boolean scheduled = RuleBookService.SCHEDULED.equals(kind);
+        boolean scheduled = RuleBookService.SCHEDULED.equals(kind) || RuleBookService.CHECKPOINT.equals(kind);
         if (pipeline.callsLeft(today, claude, scheduled) <= 0) {
             return pipeline.capSkipped(asOf, kind, row, claude, pricesFinal, retrying, today, scheduled);
         }

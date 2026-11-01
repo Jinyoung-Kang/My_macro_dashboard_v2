@@ -568,7 +568,7 @@ class PaperCheckpointJobTest {
         runAt(job(true), T.plus(Duration.ofMinutes(3)));
         Decision d = store.decisionFor(PaperBooks.CLAUDE2, D, RuleBookService.CHECKPOINT).orElseThrow();
         assertThat(ClaudeBookService.retryable(d)).as("API 오류·재시도 0 — 종류로 걸러야 함").isTrue();
-        assertThat(PacketBuilder.KINDS).doesNotContain(RuleBookService.CHECKPOINT);
+        // 패킷 빌더는 계좌1 장중 확인(사용자 결정 2026-11-02)을 위해 CHECKPOINT를 받지만, 결정 작업은 정기 결정(SCHEDULED)만 다시 부름.
         assertThat(store.decisionFor(PaperBooks.CLAUDE2, D, RuleBookService.SCHEDULED).orElseThrow().retryCount()).isZero();
     }
 

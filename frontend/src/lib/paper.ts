@@ -420,7 +420,9 @@ export const ACCOUNT_PROFILES: Readonly<Record<string, AccountProfile>> = {
         label: "운용 방식",
         text: "거래일마다 한 번(결정 시각 이후, 확정 종가를 확인한 뒤) 입력 패킷 — 매크로·레짐·게이트 지표·기관 트랙레코드·13F 변화·시세·"
           + "재무·보유·최근 결정·메모·하드 규칙 — 을 Claude에 보내 주문 목록과 목표 주식 노출을 받습니다. 판단 원칙은 프레임 판(시스템 "
-          + "프롬프트)이 정합니다.",
+          + "프롬프트)이 정합니다. 설정 claude.checkpoint를 켜면 다음 세션 장중에 한 번 더 확인합니다(종류 '장중 확인' — 정한 뉴욕 시각 "
+          + "claude.checkpointAtEt 뒤 그날 시간별 관측치로 같은 패킷·검증기, 통과 주문은 다음 시간별 관측치·종가에 체결되고 남은 대기 주문을 "
+          + "대신함, 마감 30분 전까지 못 부르면 그 세션은 건너뜀).",
       },
       {
         key: "buy",
@@ -459,6 +461,8 @@ export const ACCOUNT_PROFILES: Readonly<Record<string, AccountProfile>> = {
     settings: [
       { key: "model", label: "모델" },
       { key: "decisionTimeKst", label: "결정 시각(KST)" },
+      { key: "claude.checkpoint", label: "장중 확인(세션당 한 번)" },
+      { key: "claude.checkpointAtEt", label: "장중 확인 시각(뉴욕)" },
       { key: "apiDailyCallCap", label: "하루 호출 상한", unit: "회" },
       { key: "maxWeightStockPct", label: "종목 비중 상한", unit: "%" },
       { key: "maxWeightEtfPct", label: "ETF 비중 상한", unit: "%" },

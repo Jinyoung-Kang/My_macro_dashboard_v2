@@ -549,6 +549,9 @@ public class PaperSettingsService {
         Map<String, Object> claude = new LinkedHashMap<>();
         claude.put("schemaV3", false);
         claude.put("figureCheck", false);
+        // 계좌1 장중 확인(사용자 결정 2026-11-02) — 꺼짐, 시각 12:00 ET.
+        claude.put("checkpoint", Claude1Checkpoint.DEFAULTS.enabled());
+        claude.put("checkpointAtEt", Claude1Checkpoint.DEFAULT_AT.toString());
         body.put("claude", claude);
         // 미국 Claude 계좌2(계좌2 명세 §13-2) — 꺼짐·단계 1 값. 이 키가 없는 지금 행도 같은 값으로 읽힙니다(Claude2Settings — 배포만으로 바뀌지 않음).
         body.put("claude2", Claude2Settings.defaultsBody());

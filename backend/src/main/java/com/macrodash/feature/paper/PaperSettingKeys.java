@@ -271,6 +271,14 @@ final class PaperSettingKeys {
             shared(of("claude.figureCheck", Type.BOOLEAN, false,
                     "Claude 응답의 숫자 근거 검사 + 교정 재호출(3단계 — 2단계 K37, 두 책 공통, 결정마다 호출 +1 — "
                             + "apiScheduledReserve 9 권장). 한국 책 출발일에 함께 켬. 지금은 읽는 코드가 없음")),
+            // ---- 미국 Claude 계좌1 장중 확인(사용자 결정 2026-11-02) — 규칙 계좌 영향 없음, 기본 꺼짐.
+            of(Claude1Checkpoint.ENABLED, Type.BOOLEAN, false,
+                    "Claude 계좌1 장중 확인(세션당 한 번) — 켜면 정한 시각(claude.checkpointAtEt) 뒤 첫 시간별 관측치로 계좌1 결정을 한 번 더 냄"
+                            + "(종류 CHECKPOINT, 같은 패킷·검증기·한도). 통과 주문은 다음 시간별 관측치·종가에 체결되고 남은 대기 주문을 대신함. "
+                            + "하루 호출 +1(정기 작업 몫)"),
+            of(Claude1Checkpoint.AT_ET, Type.TIME, false,
+                    "Claude 계좌1 장중 확인 시각(뉴욕 시각 HH:mm, 10:00~15:00, 기본 12:00) — 그 시각 뒤 수집된 그날 시간별 관측치가 오면 부름, "
+                            + "마감 30분 전까지 못 부르면 그 세션은 건너뜀"),
             // ---- 미국 Claude 계좌2(체결 시점 실험 — 계좌2 명세 §13-2, ADR 0022). 모두 규칙 계좌 영향 없음, 기본은 꺼짐·단계 1 값.
             of(Claude2Settings.ENABLED, Type.BOOLEAN, false,
                     "Claude 계좌2(체결 시점 실험) — 켜면 다음 미국 결정 창에 앞으로 체결로 출발하고(INITIAL — 사후 체결 없음) 그 뒤 "

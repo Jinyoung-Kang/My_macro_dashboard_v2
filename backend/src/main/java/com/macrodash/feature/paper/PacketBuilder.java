@@ -246,7 +246,7 @@ public class PacketBuilder {
 
     /** 결정 종류(paper_decisions.kind). */
     static final List<String> KINDS = List.of(RuleBookService.SCHEDULED, RuleBookService.MANUAL,
-            RuleBookService.INITIAL, RuleBookService.REBALANCE);
+            RuleBookService.INITIAL, RuleBookService.REBALANCE, RuleBookService.CHECKPOINT);
     /** Claude 책의 재량 주문 출처(paper_orders.source) — 월 상한은 이 출처만 셉니다. */
     static final String SOURCE_CLAUDE = "CLAUDE";
 
@@ -593,7 +593,7 @@ public class PacketBuilder {
         EventsSection.Built events = events(in, stockTargets);
 
         Map<String, Object> root = new LinkedHashMap<>();
-        root.put(INSTRUCTIONS, instructions(asOf, initial));
+        root.put(INSTRUCTIONS, instructions(asOf, initial, kind));
         root.put(BASIS, basis(book, asOf, kind, initial, in.quotes(), frameworkVersion, in.settingsVersion(),
                 in.chosen(), in.consensus() ? PACKET_VERSION_CONSENSUS : PACKET_VERSION));
         root.put(CALENDAR, calendar.section());
@@ -706,7 +706,7 @@ public class PacketBuilder {
     }
 
     // ------------------------------------------------------------------ 0·1 지시·기준
-    private static Map<String, Object> instructions(LocalDate asOf, boolean initial) {
+    private static Map<String, Object> instructions(LocalDate asOf, boolean initial, String kind) {
         List<String> lines = new ArrayList<>();
         lines.add("아래 패킷의 자료만으로 판단한다. 패킷에 없는 사실은 '확인 필요'로 둔다.");
         lines.add("메모의 숫자는 참고이고, 패킷의 숫자가 우선한다.");
@@ -719,6 +719,13 @@ public class PacketBuilder {
         if (initial) {
             lines.add("이번은 초기 결정이다(기준일 " + asOf + ") — 가격·FRED·환율·13F·트랙레코드는 기준일까지 알려진 값만 넣었다. "
                     + "매크로 카드는 기준일 값이 없어 현재 수집본(asOfMismatch, 참고만)이다. 통과한 주문은 기준일 종가로 사후 체결된다.");
+        }
+        if (RuleBookService.CHECKPOINT.equals(kind)) {
+            // 계좌1 장중 확인(사용자 결정 2026-11-02) — 이 줄이 없는 종류의 패킷은 글자 그대로.
+            lines.add("이번은 장중 확인이다(기준일 " + asOf + "의 아침 결정 뒤 다음 세션 장중, 세션당 한 번) — 8_prices·9_portfolio는 장중 시간별 "
+                    + "관측치(지연 시세)다. 10_recentDecisions의 같은 기준일 결정이 오늘 아침 결정이다. 통과한 주문은 다음 시간별 관측치"
+                    + "(NEXT_OBSERVATION) 또는 오늘 종가(NEXT_CLOSE)에 체결되고, 이 결정이 남은 대기 주문을 모두 대신한다. 바꿀 이유가 약하면 주문 "
+                    + "없이 noTradeReason을 쓴다.");
         }
         Map<String, Object> out = new LinkedHashMap<>();
         out.put("lines", lines);

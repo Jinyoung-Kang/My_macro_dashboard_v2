@@ -1001,6 +1001,22 @@ class PacketBuilderTest {
             "313757e080ffd731655c070c54bc81ee96b23bb1debdce335b323e17eeb17860";
 
     @Test
+    @DisplayName("계좌1 장중 확인(CHECKPOINT, 사용자 결정 2026-11-02) — 정기 패킷과 같고 0_instructions에 장중 확인 줄 하나와 decisionKind만 다름")
+    void checkpointPacketAddsOneInstruction() {
+        activeClaude();
+        Packet scheduled = builder.build(MON, RuleBookService.SCHEDULED, false, 0, store.settings);
+        Packet checkpoint = builder.build(MON, RuleBookService.CHECKPOINT, false, 0, store.settings);
+
+        List<String> lines = new ArrayList<>();
+        checkpoint.body().path("0_instructions").path("lines").forEach(line -> lines.add(line.asString()));
+        assertThat(lines).hasSize(scheduled.body().path("0_instructions").path("lines").size() + 1);
+        assertThat(lines.get(lines.size() - 1)).startsWith("이번은 장중 확인이다(기준일 " + MON).contains("NEXT_OBSERVATION")
+                .contains("남은 대기 주문을 모두 대신한다");
+        assertThat(checkpoint.body().path("1_basis").path("decisionKind").asString()).isEqualTo(RuleBookService.CHECKPOINT);
+        assertThat(scheduled.text()).doesNotContain("장중 확인이다");
+    }
+
+    @Test
     @DisplayName("고정본(묶음 A 기준선): 미국 초기·정기 패킷 글자·해시·메모 번호·측정 태그가 시장 추상화 전과 바이트까지 같다")
     void goldenUsPackets() {
         store.insertNote(new Note(0, NoteService.MARKET, FRI, TUE, "금요일 시황", "10년물 4.6%·브렌트 88", false, null));

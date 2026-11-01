@@ -43,7 +43,7 @@ import java.util.Set;
  * (사다리 칸 {@link UsTimedFills#FALLBACK_RUNGS})은 본 줄에서 빼 {@code fallback}에 따로 셉니다(§14-3 'N ≥ 30(대체 체결 제외)'). 계좌1(시각 지정 체결이
  * 아닌 계좌)은 고른 시점이 곧 계좌1식 기준이라 null입니다. 판정 문턱(§14-3)은 코드에 두지 않습니다 — 8주 뒤 사람이 문서의 문턱으로 읽습니다.
  * 장중 확인 결정(kind CHECKPOINT)이 낸 주문은 M1·메뉴 줄 어디에도 세지 않습니다(명세 §16-4의 17 — M1은 아침 결정의 시점 선택이고 장중 확인의 효과는
- * M8). 아침 주문이 장중 확인 REPLACE로 취소됐으면 지금처럼 {@code notFilled}이고, 그 가운데 수를 {@code replacedByCheckpoint}로 따로 적습니다.
+ * M8). 계좌1의 장중 확인(사용자 결정 2026-11-02 — {@link PaperClaude1CheckpointJob})이 낸 주문도 같은 까닭으로 메뉴 줄에서 뺍니다. 아침 주문이 장중 확인 REPLACE로 취소됐으면 지금처럼 {@code notFilled}이고, 그 가운데 수를 {@code replacedByCheckpoint}로 따로 적습니다.
  *
  * <p><b>장중 확인 기록</b>(단계 2 — §5-2·§14-2 M8): {@code checkpoints}는 계좌2의 장중 확인 행({@code paper_checkpoints}) 최근
  * {@value #CHECKPOINT_ROWS}개(세션 최근 순 — 상태·사유·피드·지연·확인 결정과 그 응답의 KEEP/REPLACE), 계좌1은 빈 목록. {@code summary.checkpoints}는
@@ -111,8 +111,8 @@ final class ExecutionView {
             checkpointRows.add(checkpointRow(c, answers.get(c.checkpointDecisionId()), calendar));
         }
         out.put("checkpoints", checkpointRows);
-        // 장중 확인 결정이 낸 주문은 M1·메뉴 줄에서 뺌(클래스 설명) — 감사한 주문 수(summary.audited)에는 그대로 셈.
-        Set<Long> checkpointDecisions = checkpointed ? store.decisionIds(book.code(), RuleBookService.CHECKPOINT) : Set.of();
+        // 장중 확인 결정이 낸 주문은 M1·메뉴 줄에서 뺌(클래스 설명, 계좌1·계좌2 모두) — 감사한 주문 수(summary.audited)에는 그대로 셈.
+        Set<Long> checkpointDecisions = store.decisionIds(book.code(), RuleBookService.CHECKPOINT);
         List<OrderExec> morning = audited.stream()
                 .filter(e -> {
                     Long decision = orders.get(e.orderId()).decisionId();
