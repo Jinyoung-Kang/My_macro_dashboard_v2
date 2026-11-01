@@ -97,6 +97,47 @@ export function lineYAxis(
   };
 }
 
+/** 히어로 차트의 최고·최저 표시 하나 — 그 점의 날짜(행의 date)·값과, 글을 점의 어느 쪽에 맞출지(그림 왼쪽 끝 가까이면 start, 오른쪽 끝 가까이면 end). */
+export type HeroExtreme = { date: string; value: number; anchor: "start" | "middle" | "end" };
+
+/**
+ * 히어로 차트(`variant="hero"`)의 Y 끝값 둘 — 축 범위 끝(여백 8%를 더한, 데이터에 없는 값) 대신 **본 계열의 실제 최고·최저**를 그 점 위·아래에 적습니다.
+ * 값이 데이터에 있는 숫자라 짓지 않고, 최고 점 위·최저 점 아래는 선이 지나지 않아(선은 그 값을 넘지 않음 — monotone 보간은 점 사이에서 넘치지 않음)
+ * 글이 선·꼬리와 겹치지 않습니다.
+ *
+ * - 꼬리 계열(`tailOf` — 장중 값 단계의 오늘 추정 점)은 빼고 본 계열(순자산 줄 등 기록된 값)만 봅니다 — 추정 점의 값을 표시 없이 끝값으로 적지 않게.
+ *   축 범위는 그대로 꼬리를 담습니다(`lineYAxis`).
+ * - 같은 값이 여럿이면 가장 늦은 점. 최고와 최저가 같으면(평평하거나 점 하나) 최고 하나만(low null).
+ * - 글 맞춤은 점의 자리(행 순번 ÷ 마지막 순번)로 — 왼쪽 1/5 안이면 start, 오른쪽 1/5 안이면 end, 그 밖은 middle(그림 밖으로 잘리지 않게).
+ *
+ * @returns 본 계열 값이 하나도 없으면 null
+ */
+export function heroExtremes(
+  data: readonly LineRow[],
+  series: readonly LineSeriesSpec[],
+): { high: HeroExtreme; low: HeroExtreme | null } | null {
+  const mains = series.filter((entry) => entry.tailOf === undefined);
+  let high: { index: number; value: number } | null = null;
+  let low: { index: number; value: number } | null = null;
+  for (let index = 0; index < data.length; index += 1) {
+    for (const entry of mains) {
+      const value = lineValue(data[index], entry.key);
+      if (value === null) continue;
+      if (high === null || value >= high.value) high = { index, value };
+      if (low === null || value <= low.value) low = { index, value };
+    }
+  }
+  if (high === null || low === null) {
+    return null;
+  }
+  const last = data.length - 1;
+  const point = ({ index, value }: { index: number; value: number }): HeroExtreme => {
+    const at = last <= 0 ? 0.5 : index / last;
+    return { date: data[index].date, value, anchor: at < 0.2 ? "start" : at > 0.8 ? "end" : "middle" };
+  };
+  return { high: point(high), low: low.value === high.value ? null : point(low) };
+}
+
 /** X축 눈금 — 첫 날짜와 마지막 날짜만(행이 하나면 그 날짜 하나, 없으면 빈 목록). */
 export function lineXTicks(data: readonly LineRow[]): string[] {
   if (data.length === 0) {

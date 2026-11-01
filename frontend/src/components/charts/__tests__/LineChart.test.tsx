@@ -7,6 +7,7 @@
  *  - 값 없음: 행이 없거나 전부 모름이면 "표시할 시계열이 없습니다."(옛 래퍼와 같은 문구)
  *  - 추정·오래됨: 배지가 그림 위에 반드시 보인다(빈 상태에서도)
  *  - 히어로(variant="hero", 명세 §5): 중립 잉크 선, 툴팁 상자 없음, 축선 없음·축 글자 12px, 높이 200/lg 260·touch-action pan-y,
+ *    Y 끝값은 축 눈금이 아니라 본 계열의 실제 최고(점 위)·최저(점 아래) — 꼬리 계열은 빼고 봄,
  *    문지르기 onScrub(순번 | null) — 마우스 이동·벗어남, 터치를 떼면 null. 범례에서 뺀 계열(legend: false)
  *  - 꼬리 계열(tailOf — 장중 값 단계의 오늘 추정 점선): 점선 "3 3"·범례 없음·본 계열 색, 툴팁 줄은 꼬리 점에만, 앞 값 없는 외딴 꼬리 점은 점
  *
@@ -209,11 +210,18 @@ describe("LineChart — 히어로 · 문지르기", () => {
     expect(linePaths(container)[0].getAttribute("stroke")).toBe("var(--text)");
     expect(container.querySelector(".recharts-xAxis line.recharts-cartesian-axis-line")).toBeNull();
     expect(container.querySelector(".recharts-cartesian-grid")).toBeNull();
-    const ticks = [...container.querySelectorAll(".recharts-xAxis-tick-labels text, .recharts-yAxis-tick-labels text")];
+    // Y는 축 눈금 글 없이 실제 최고·최저를 그 점 위·아래에 — 축 범위 끝(여백 8%를 더한, 데이터에 없는 값)을 적지 않음
+    expect(yTickTexts(container)).toEqual([]);
+    const extremes = [...container.querySelectorAll("[data-hero-extreme]")];
+    expect(extremes.map((node) => [node.getAttribute("data-hero-extreme"), node.textContent])).toEqual([["high", pct(6.0)], ["low", pct(5.85)]]);
+    const ticks = [...container.querySelectorAll(".recharts-xAxis-tick-labels text"), ...extremes];
     expect(ticks).toHaveLength(4);
     for (const tick of ticks) expect(tick.getAttribute("font-size")).toBe("12");
-    const axis = lineYAxis(LIQUIDITY, ONE_SERIES)!;
-    expect(yTickTexts(container)).toEqual([pct(axis.domain[0]), pct(axis.domain[1])]);
+    // 최고(마지막 점 — 그림 오른쪽 끝)는 끝 맞춤으로 점 위, 최저(첫 점 — 왼쪽 끝)는 시작 맞춤으로 점 아래
+    const [high, low] = extremes;
+    expect([high.getAttribute("text-anchor"), high.getAttribute("dy")]).toEqual(["end", "-8"]);
+    expect([low.getAttribute("text-anchor"), low.getAttribute("dy")]).toEqual(["start", "17"]);
+    expect(Number(high.getAttribute("y"))).toBeLessThan(Number(low.getAttribute("y")));
     expect(xTickTexts(container)).toEqual(["2026-01-02", "2026-10-24"]);
     const box = (container.querySelector("svg.recharts-surface") as Element).closest(".touch-pan-y") as HTMLElement;
     expect(box.className.split(/\s+/)).toEqual(expect.arrayContaining(["h-[200px]", "lg:h-[260px]"]));
@@ -345,6 +353,14 @@ describe("LineChart — 꼬리 계열(tailOf, 장중 값 단계의 오늘 추정
     const dots = [...container.querySelectorAll(".recharts-line-dots circle")];
     // 본 계열 a의 둘째 날(앞뒤 null 아님 — 첫날과 이어짐)은 점이 아니고, 꼬리의 외딴 점 하나만
     expect(dots.map((dot) => dot.getAttribute("fill"))).toEqual([SERIES_COLORS.blue]);
+  });
+
+  it("히어로 끝값은 본 계열의 최고·최저 — 꼬리(오늘 추정 점)의 값은 끝값으로 적지 않는다", () => {
+    observeAs(600, 260);
+    const { container } = render(
+      <LineChart data={ROWS.map(({ date, a, "a~": tail }) => ({ date, a, "a~": tail }))} series={[SERIES[0], SERIES[2]]} variant="hero" valueFormat={money} />,
+    );
+    expect([...container.querySelectorAll("[data-hero-extreme]")].map((node) => node.textContent)).toEqual(["100,400.00", "100,000.00"]);
   });
 
   it("히어로 — 꼬리도 중립 잉크(var(--text)) 점선", () => {

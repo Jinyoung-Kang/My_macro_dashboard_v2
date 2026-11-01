@@ -3,11 +3,13 @@
  * 모르는 값은 null(선 끊김)·툴팁 "—", 외딴 점은 점으로.
  * 문지르기: Recharts의 활성 자리(숫자·글)를 순번으로 바꾸고 범위를 검사, 그 점의 값·날짜·기간의 첫 유효값 대비 변화(모르면 null), 추정 점 표시.
  * 꼬리 계열(tailOf — 장중 값 단계의 오늘 추정 점선): 범례에서 빠지고, 색은 본 계열 색, 툴팁 줄은 꼬리 자신의 점에만(그 점에서는 본 계열 '—' 줄이 빠짐).
+ * 히어로 끝값(heroExtremes): 축 범위 끝(여백 값)이 아니라 본 계열의 실제 최고·최저와 그 점의 자리(꼬리는 뺌).
  */
 import { describe, expect, it } from "vitest";
 
 import {
   hasLineValues,
+  heroExtremes,
   inLegend,
   isolatedPointIndexes,
   lineChartLabel,
@@ -107,6 +109,48 @@ describe("lineYAxis", () => {
   it("값이 하나도 없으면 null", () => {
     expect(lineYAxis([{ date: "a", v: null }], ONE)).toBeNull();
     expect(lineYAxis([], ONE)).toBeNull();
+  });
+});
+
+describe("heroExtremes — 히어로 Y 끝값(실제 최고·최저)", () => {
+  const rows: LineRow[] = [
+    { date: "2026-10-20", nav: 100_000, estimate: null },
+    { date: "2026-10-21", nav: 99_800, estimate: null },
+    { date: "2026-10-22", nav: 100_300, estimate: null },
+    { date: "2026-10-23", nav: 100_100, estimate: null },
+    { date: "2026-10-24", nav: 100_200, estimate: 100_200 },
+    { date: "2026-10-27", nav: null, estimate: 100_900 },
+  ];
+  const series = [{ key: "nav", label: "Claude 계좌" }, { key: "estimate", label: "Claude 계좌 · 추정 23:58", tailOf: "nav" }];
+
+  it("본 계열의 최고·최저 값과 그 날짜 — 축 범위 끝(여백 8%)이 아니고, 꼬리(오늘 추정 점)는 빼고 봄", () => {
+    expect(heroExtremes(rows, series)).toEqual({
+      high: { date: "2026-10-22", value: 100_300, anchor: "middle" },
+      low: { date: "2026-10-21", value: 99_800, anchor: "middle" },
+    });
+    // 축 범위는 꼬리를 담고 여백을 더함 — 끝값 글은 그 범위 끝이 아님
+    const axis = lineYAxis(rows, series)!;
+    expect(axis.domain[1]).toBeGreaterThan(100_900);
+  });
+
+  it("글 맞춤 — 그림 왼쪽 1/5 안이면 start, 오른쪽 1/5 안이면 end(그림 밖으로 잘리지 않게)", () => {
+    const edge: LineRow[] = [
+      { date: "a", nav: 1 }, { date: "b", nav: 2 }, { date: "c", nav: 2 }, { date: "d", nav: 2 }, { date: "e", nav: 2 }, { date: "f", nav: 3 },
+    ];
+    expect(heroExtremes(edge, ONE.map((entry) => ({ ...entry, key: "nav" })))).toEqual({
+      low: { date: "a", value: 1, anchor: "start" },
+      high: { date: "f", value: 3, anchor: "end" },
+    });
+  });
+
+  it("같은 값이 여럿이면 가장 늦은 점, 평평하거나 점 하나면 최고 하나만, 본 계열 값이 없으면 null", () => {
+    const ties: LineRow[] = [{ date: "a", nav: 5 }, { date: "b", nav: 7 }, { date: "c", nav: 5 }, { date: "d", nav: 7 }];
+    const nav = [{ key: "nav", label: "순자산" }];
+    expect(heroExtremes(ties, nav)).toEqual({ high: { date: "d", value: 7, anchor: "end" }, low: { date: "c", value: 5, anchor: "middle" } });
+    expect(heroExtremes([{ date: "a", nav: 5 }, { date: "b", nav: 5 }], nav)).toEqual({ high: { date: "b", value: 5, anchor: "end" }, low: null });
+    expect(heroExtremes([{ date: "a", nav: 5 }], nav)).toEqual({ high: { date: "a", value: 5, anchor: "middle" }, low: null });
+    expect(heroExtremes([{ date: "a", nav: null, estimate: 5 }], series)).toBeNull();
+    expect(heroExtremes([], nav)).toBeNull();
   });
 });
 

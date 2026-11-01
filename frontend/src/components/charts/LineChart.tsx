@@ -4,6 +4,7 @@ import { useEffect, useState, type JSX, type PointerEvent } from "react";
 import {
   Line,
   LineChart as RechartsLineChart,
+  ReferenceDot,
   ReferenceLine,
   ResponsiveContainer,
   Tooltip,
@@ -15,6 +16,8 @@ import { EstimateBadge, StaleBadge } from "@/components/patterns/badges";
 import { formatNumber } from "@/lib/format";
 import {
   hasLineValues,
+  heroExtremes,
+  type HeroExtreme,
   inLegend,
   isolatedPointIndexes,
   lineChartLabel,
@@ -47,30 +50,41 @@ import {
 const HERO_INK = "var(--text)";
 const HERO_CURSOR = "var(--border)";
 
+/** 히어로 그림 위·아래에 남기는 자리(px) — 최고 점 위·최저 점 아래에 적는 끝값 글(12px)이 그림 안에 들어오게(축 범위 여백 8%에 더함). */
+const HERO_LABEL_ROOM = 18;
+
 /**
- * 히어로의 Y 끝값 — 그림 오른쪽 안쪽에 적습니다. 위 끝값은 선 아래로(위 가장자리에서 잘리지 않게), 아래 끝값은 선 위로 올려 적습니다 —
- * 그대로 두면 아래 끝값이 X축의 마지막 날짜와 겹칩니다.
+ * 히어로의 Y 끝값 하나 — 본 계열의 실제 최고(점 위)·최저(점 아래) 값을 그 점에 붙여 적습니다(`lib/lineChart` `heroExtremes`). 축 범위 끝(여백을 더한
+ * 값 — 데이터에 없는 숫자)을 그림 오른쪽 안쪽에 적던 예전 끝값은 선·꼬리와 겹쳤습니다. 최고 점 위·최저 점 아래는 선이 지나지 않습니다.
  */
-function HeroValueTick({
-  x,
-  y,
-  payload,
-  lower,
+function HeroExtremeLabel({
+  cx,
+  cy,
+  extreme,
+  side,
   format,
 }: {
-  x?: number | string;
-  y?: number | string;
-  payload?: { value?: string | number };
-  lower: number;
+  cx?: number;
+  cy?: number;
+  extreme: HeroExtreme;
+  side: "high" | "low";
   format: (value: number) => string;
 }) {
-  const value = Number(payload?.value);
-  if (!Number.isFinite(value)) {
-    return null;
+  if (typeof cx !== "number" || typeof cy !== "number" || !Number.isFinite(cx) || !Number.isFinite(cy)) {
+    return <g />;
   }
   return (
-    <text x={Number(x) || 0} y={Number(y) || 0} dy={value === lower ? -6 : 14} textAnchor="end" fill={AXIS_TEXT} fontSize={CHART_FONT}>
-      {format(value)}
+    <text
+      x={cx}
+      y={cy}
+      dy={side === "high" ? -8 : 17}
+      textAnchor={extreme.anchor}
+      fill={AXIS_TEXT}
+      fontSize={CHART_FONT}
+      data-hero-extreme={side}
+      style={{ fontVariantNumeric: "tabular-nums" }}
+    >
+      {format(extreme.value)}
     </text>
   );
 }
@@ -121,7 +135,7 @@ function ScrubReporter({
 }
 
 /**
- * 선 차트 — 격자 없음, Y축은 끝값 두 개(데이터 범위), X축은 첫·마지막 날짜, 0 기준선은 뜻이 있을 때만, 이중 축 없음, 축 글자 12px.
+ * 선 차트 — 격자 없음, Y축은 끝값 두 개(데이터 범위 — 히어로는 실제 최고·최저), X축은 첫·마지막 날짜, 0 기준선은 뜻이 있을 때만, 이중 축 없음, 축 글자 12px.
  *
  * - Y 범위·눈금·0선·색·툴팁 글은 `lib/lineChart.ts`가 정합니다(여기서는 그리기만 — ADR 0004).
  * - 모르는 값(null·"N/A")에서 선을 끊습니다(connectNulls=false). 앞뒤가 모두 모름인 외딴 값은 점으로 찍어 사라지지 않게 합니다.
@@ -136,7 +150,8 @@ function ScrubReporter({
  * `estimated`·`stale`·`staleReason`·`ariaLabel`은 설계서 §1.5 계약에 더한 선택 props입니다.
  *
  * `variant="hero"`(히어로 안의 큰 차트, 명세 §5): 선은 중립 잉크(var(--text)) 하나 — 계열 색을 넘기지 않으면 — , 툴팁 상자 없이 세로 커서와
- * 활성 점만, Y 끝값 둘은 그림 오른쪽 안쪽(12px text-3), X는 첫·마지막 날짜(축선 없음), 높이는 좁은 화면 200·lg 260(`height`를 주면 그 값),
+ * 활성 점만, Y 끝값 둘은 본 계열의 실제 최고·최저 값을 그 점 위·아래에(12px text-3 — 축 범위 끝의 여백 값을 적지 않고 선과 겹치지 않음, 꼬리 계열은
+ * 빼고 봄), X는 첫·마지막 날짜(축선 없음), 높이는 좁은 화면 200·lg 260(`height`를 주면 그 값),
  * 세로 스크롤은 브라우저에 맡기고(touch-action: pan-y) 가로로 끌면 문지릅니다.
  * `onScrub(index | null)`: 가리킨 점의 행 순번(손을 떼거나 벗어나면 null) — `hooks/useChartScrub`에 그대로 넘기고, 표시 글은
  * `lib/lineChart`의 `scrubModel`, 그리는 것은 Hero의 `scrub`입니다. 터치는 손을 떼면 커서도 감춥니다(Recharts는 터치 뒤 툴팁을 남김).
@@ -209,6 +224,7 @@ export function LineChart({
   }
 
   const rows = normalizeLineRows(data, series);
+  const extremes = hero ? heroExtremes(rows, series) : null;
   const xTicks = lineXTicks(rows);
   const first = xTicks[0] ?? "";
   const last = xTicks[xTicks.length - 1] ?? "";
@@ -257,16 +273,13 @@ export function LineChart({
           ticks={yAxis.ticks}
           interval={0}
           width="auto"
-          // 히어로는 끝값 두 개를 그림 오른쪽 안쪽에 적습니다(축 자리를 따로 두지 않음).
+          // 히어로는 축 눈금 글을 두지 않고(축 자리도 없음) 실제 최고·최저를 그 점에 적습니다(아래 ReferenceDot). 위아래로 글 자리를 남깁니다.
           orientation={hero ? "right" : "left"}
           mirror={hero}
           axisLine={false}
           tickLine={false}
-          tick={
-            hero
-              ? (props) => <HeroValueTick {...props} lower={yAxis.domain[0]} format={valueFormat} />
-              : { fill: AXIS_TEXT, fontSize: CHART_FONT }
-          }
+          tick={hero ? false : { fill: AXIS_TEXT, fontSize: CHART_FONT }}
+          {...(hero ? { padding: { top: HERO_LABEL_ROOM, bottom: HERO_LABEL_ROOM } } : {})}
           tickFormatter={(value: number) => valueFormat(value)}
         />
         <Tooltip
@@ -299,6 +312,20 @@ export function LineChart({
           )}
         />
         {yAxis.zeroLine ? <ReferenceLine y={0} stroke={GUIDE} strokeWidth={1} /> : null}
+        {extremes
+          ? [{ side: "high" as const, extreme: extremes.high }, ...(extremes.low ? [{ side: "low" as const, extreme: extremes.low }] : [])].map(
+              ({ side, extreme }) => (
+                <ReferenceDot
+                  key={side}
+                  x={extreme.date}
+                  y={extreme.value}
+                  r={0}
+                  ifOverflow="visible"
+                  shape={(props) => <HeroExtremeLabel cx={props.cx} cy={props.cy} extreme={extreme} side={side} format={valueFormat} />}
+                />
+              ),
+            )
+          : null}
         {series.map((entry, index) => {
           const isolated = new Set(isolatedPointIndexes(rows, entry.key));
           return (
