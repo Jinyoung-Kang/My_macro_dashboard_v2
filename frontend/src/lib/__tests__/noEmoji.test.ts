@@ -8,13 +8,18 @@
  *
  * 찾는 글자: 그림 문자(Extended_Pictographic — 이형 선택자 없는 경고 삼각형 U+26A0도 포함), 지역 표시 문자(국기),
  * 이형 선택자 U+FE0F, 결합자 U+200D. 글자 기호로 쓰는 것(▲▼·화살표·체크·⌘·↔·↕·▪·©)은 허용합니다.
+ *
+ * 아래 두 번째 시험은 같은 글자 정의로 저장소의 스크립트·Makefile·compose·env 예시·주요 문서를 줄마다 봅니다(전체 글 —
+ * 스크립트 출력과 문서 본문이라 주석을 가르지 않음). 지난 기록(docs/qa·docs/reviews·docs/improve)과 코드 주석은 넣지 않습니다
+ * — 서버·AI 입력 글을 그대로 옮긴 인용이 남아 있습니다. Claude 프롬프트·패킷 원문과 그 고정본은 실험 조건이라 대상이 아닙니다.
  */
-import { readdirSync, readFileSync, statSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { join, relative, resolve } from "node:path";
 import ts from "typescript";
 import { describe, expect, it } from "vitest";
 
 const SRC = resolve(__dirname, "../..");
+const REPO = resolve(SRC, "../..");
 const SKIP_DIRS = new Set(["__tests__", "__checks__", "node_modules"]);
 const PICTOGRAPH = /[\p{Extended_Pictographic}\p{Regional_Indicator}\u{FE0F}\u{200D}]/u;
 /** 그림 문자 속성이 있거나 비슷해 보여도 글자 기호로 쓰는 것. */
@@ -80,5 +85,48 @@ describe("화면 소스에 이모지가 없다", () => {
     expect(hits.map((hit) => hit.split(":")[0])).toEqual(["3", "4", "7", "7"]);
     expect(hits[0]).toContain("U+26A0");
     expect(hits[1]).toContain("U+1F1FA,U+1F1F8");
+  });
+});
+
+/** 문서 본문에서 글자 기호로 쓰는 ®·™까지 허용합니다(상표 표기). */
+const ALLOWED_TEXT = new Set([...ALLOWED, ..."®™"]);
+const REPO_FILES = ["Makefile", "README.md", "CLAUDE.md", "docker-compose.yml", "compose.aws.yml", ".env.example", ".env.aws.example"];
+
+/** 한 글에서 허용 목록 밖의 그림 문자가 있는 줄을 찾습니다 — "줄: 코드 포인트". */
+function pictographLines(text: string): string[] {
+  return text.split("\n").flatMap((line, index) => {
+    const bad = [...line].filter((char) => PICTOGRAPH.test(char) && !ALLOWED_TEXT.has(char));
+    return bad.length > 0 ? [`${index + 1}: ${bad.map((char) => `U+${char.codePointAt(0)?.toString(16).toUpperCase()}`).join(",")}`] : [];
+  });
+}
+
+function repoFiles(dir: string, pattern: RegExp, skip: Set<string>, out: string[] = []): string[] {
+  for (const name of readdirSync(dir)) {
+    const path = join(dir, name);
+    if (statSync(path).isDirectory()) {
+      if (!skip.has(name)) repoFiles(path, pattern, skip, out);
+    } else if (pattern.test(name)) {
+      out.push(path);
+    }
+  }
+  return out;
+}
+
+describe("저장소 스크립트·문서에 이모지가 없다", () => {
+  it("Makefile·scripts·compose·env 예시·README·CLAUDE.md·docs(지난 기록 제외)의 줄에 그림 문자·국기·이형 선택자가 없다", () => {
+    const files = [
+      ...REPO_FILES.map((name) => join(REPO, name)),
+      ...repoFiles(join(REPO, "scripts"), /\.(sh|ya?ml)$/, new Set()),
+      ...repoFiles(join(REPO, "docs"), /\.md$/, new Set(["qa", "reviews", "improve"])),
+    ];
+    expect(files.filter((path) => !existsSync(path))).toEqual([]);
+    expect(files.length).toBeGreaterThan(60);
+    const offenders = files.flatMap((path) =>
+      pictographLines(readFileSync(path, "utf8")).map((hit) => `${relative(REPO, path)}:${hit}`));
+    expect(offenders).toEqual([]);
+  });
+
+  it("검사기 자체 — 글자 기호(✓·✗·→·△·©·®·™)는 두고 그림 문자 줄만 찾는다", () => {
+    expect(pictographLines("✓ 배포했습니다 → 끝\n경고: 스키마\n✅ 끝\n© ® ™ △\n# ⚠️ 주의")).toEqual(["3: U+2705", "5: U+26A0,U+FE0F"]);
   });
 });
