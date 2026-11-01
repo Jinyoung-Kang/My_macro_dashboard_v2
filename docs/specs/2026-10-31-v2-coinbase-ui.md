@@ -399,7 +399,8 @@ Tailwind 4.3.3은 `--text-*--line-height`·`--text-*--font-weight`·`--text-*--l
 - **상단바**(`19261a57`): 장 상태 칩 sm 미만 여백·사이 6px(§6-1), 검색 알약에 투명 1px 테두리(고대비에서 경계가 남음 — D9).
 - **고르기 상자**(`aab0fdaf`): ui `NativeSelect`(새 — 날 select + `inputClasses(inputSize)` + 장식 화살표, 감싼 칸 배치는 `wrapperClassName`, 기본 `inline-block`).
   `Select`도 이것을 쓴다. 바꾼 곳은 설정 choice 칸·메모 '종류'·매크로 자동 갱신 간격(선택지 그대로 — D2). 장중 카드(`LiveValuationCard`)는 D1이라 남겼고,
-  `formControls.test`의 소스 시험이 날 `<select>`가 있는 파일을 `ui/index.tsx`와 그 한 곳으로 고정한다(장중 값 단계가 바꾸며 목록에서 뺀다).
+  `formControls.test`의 소스 시험이 날 `<select>`가 있는 파일을 `ui/index.tsx`와 그 한 곳으로 고정한다(장중 값 단계가 바꾸며 목록에서 뺀다 —
+  2026-11-01 바꿈 `3132e6a3`, 이제 목록은 `ui/index.tsx` 하나).
 - **알림 규칙 '관심 기관'**(`4d20eb9a`): 선택지가 서버 기관 이름 그대로라 국기가 남았다 — `filerName`(비면 'CIK …'). 소스만 보는 noEmoji 시험이 못 잡는 자리.
 - **'다시 실행' 안내**(`588941b5`): 시작·진행 중은 `useTaskRunner`의 새 톤 `progress` → 시계 아이콘(중립 색). 끝난 실행의 '알 수 없음'만 점선 원.
 - **info·muted 배지는 글로만 갈린다**: A1로 `lib/paper` `TONE.info`를 중립으로 바꾼 결과 info(text-2)와 muted(text-3)는 바탕·테두리가 같고 글자색만 조금 다르다
@@ -560,12 +561,13 @@ Tailwind 4.3.3은 `--text-*--line-height`·`--text-*--font-weight`·`--text-*--l
 - **Y 끝값 눈금**(§5-1): 여백 포함 범위 끝 대신 데이터 최고·최저를 적거나, 묶인 지수(0~100)는 범위 상한을 받게 — 1단계 결정(`lineYAxis` 눈금 = 범위 끝)을 바꾸는 일이라 사용자 확인 뒤.
 - **차트 키보드 초점 링**: Recharts 그림(svg, tabindex 0)은 브라우저 기본 초점선을 쓴다 — `outline-focus` 2px로 맞추기.
 - **홈 계좌 행 색 고리**(§7-4): 장중 값 단계가 개요 계좌 행에 아바타를 달 때 `BOOK_COLORS`를 `OverviewSection` 밖(예: `components/screens/paper/bookColors.ts`)으로
-  옮기며 홈에도 함께.
+  옮기며 홈에도 함께. — 색 표는 옮김(2026-11-01 `e0e6f442`, 그 파일), 고리는 장중 값 단계의 행 커밋에서.
 - **홈 모의매매 히어로 곡선**(§7-4): 개요 응답의 `navSeries`로 Claude 계좌 곡선 + 문지르기를 홈에 더할 수 있다 — 홈의 정보 구조를 바꾸는 일이라 사용자 확인 뒤.
 - **고대비 모드의 바탕색 그림**: 국면 이력 띠·스타일 유사도 막대·막대·도넛 차트처럼 바탕·채움색만으로 그린 것은 그 모드에서 지워진다(옆 표·숫자가 같은 값을 나름).
   `forced-color-adjust: none` + 시스템 색을 쓸지 정하기.
 - **D1 세 파일의 겉모양**: `OverviewSection`·`LiveValuationCard`·`AccountDetailPanel`의 `rounded-md·lg·xl`·투명 경고 틴트·`rounded-sm` 배지, 장중 카드의 날
-  select(→ `NativeSelect`, §7-5) — 장중 값 단계에서.
+  select(→ `NativeSelect`, §7-5) — 장중 값 단계에서. — 장중 카드는 고르기 상자만 바꿀 것이었고 바꿈(`3132e6a3`), 나머지 둘은 그 단계의 겉모양 커밋에서.
 - **모의매매 오류 칸의 그림 문자 정리**(§11-7): 결정·복기·제안 오류를 그릴 때 `withoutLeadingIcon`을 거치게 — 장중 값 단계나 다음 정리 단계에서.
+  — 2026-11-01 처리(`447c45ef` — `lib/paper` `storedText`, 자리는 장중 명세 §4-1 구현 메모).
 - **매크로 자동 갱신 1시간·3시간**(D2): 사용자가 그쪽도 뜻했는지 장중 명세 단계 보고에서 묻는다. 넣는다면 다음 읽기 전까지 서버 stale 플래그가 갱신되지 않아 '오래된 저장본'(PRINCIPLES)을 최대 3시간 못 띄우는
   한계가 있다 — 화면에서 경과 시간을 다시 판정하거나 그 한계를 적는다.

@@ -135,6 +135,30 @@
 - 매크로 `AutoRefresh`에도 1시간·3시간을 넣을지(L5 — 넣으면 '오래된 저장본' 배지가 다음 읽기까지 최대 3시간 늦을 수 있음).
 - 개요 다시 읽기의 기준값: 카드가 받은 첫 장중 값이 이미 개요가 읽은 저장본보다 새것이면 개요는 다음 60초 폴링까지 앞 값이다.
 
+#### 구현 메모(준비 묶음, 2026-11-01) — 위 설계와 달리 한 것·다음 묶음이 알 것 [확인 코드·시험]
+
+- 화면 타입(`646923f8`): 개요 계좌 줄은 `PaperOverviewBook`(BookSummary + `current`·`ledgerDay`·`lastNavTradingDate`·`lastNavFinal`, 모두 선택 칸),
+  응답 끝 `navEstimate`·`liveSession`, 값 모양 `PaperCurrentValue`·`PaperCurrentStage`·`PaperLedgerDay`·`PaperNavEstimate`·`PaperLiveSessionSummary`.
+  `/live` 계좌 줄에 `equityValue`·`exposurePct`·`previousNavFinal`·`pendingOrders`(선택 칸). 아직 읽는 화면은 없다.
+- 계좌 색 표(`e0e6f442`): `components/screens/paper/bookColors.ts`의 `BOOK_COLORS`·`SPARE_COLORS`·`REFERENCE_COLOR`(값 그대로 옮김). `SERIES_COLORS`는
+  차트 배럴(`@/components/charts`)에서 가져온다 — 홈이 이 파일을 가져오는 커밋에서 '/' First Load JS를 견주고, 늘면 출처를 바꾼다.
+- 장중 시세 카드(`536518a1`·`f4bec349`·`3132e6a3`·`e1514460`): 제목 '장중 시세 (추정)', 계좌 표·`liveBookView` 삭제, 종목 표는
+  `lib/paperLive` `livePositionsFor(live, bookCode, market)`(고른 계좌, 없거나 응답에 없으면 첫 계좌) — 표 이름 '{계좌} 보유 종목 장중가', 빈 표
+  '보유 종목이 없습니다(현금뿐).'. 개요는 지금 `bookCode = selected ?? primaryClaudeBook(books)`(상세를 연 계좌 — 히어로가 생기면 히어로 계좌로 바꿈).
+  안내는 자리에 매이지 않게 '계좌 행을 누르면 그 계좌로 바뀝니다'. 출처는 '표시 전용 — 장부(체결·순자산 줄·통계·결정)는 이 시세를 쓰지 않음' —
+  설계의 '위 히어로·계좌 행의 장중 추정이 이 시세로 평가한 값'은 그 화면이 생기는 커밋에서 더한다(아직 없는 화면을 가리키지 않게). 간격 1시간·3시간과
+  `liveIntervalText`. '간격이 길면 지금 값이 대개 장부 단계' 안내도 개요가 지금 값을 보이는 커밋에서 카드 안내에 더한다(지금은 주석과 위 '알릴 것'에만).
+  간격 고르기는 공용 `NativeSelect`(aria-label 그대로 — `formControls.test`의 날 select 허용 목록은 `components/ui/index.tsx` 하나). 새 값 알림
+  `onUpdated`와 판 `liveRevision(live)`(수집 시각 + 계좌마다 `code=basisAtKst`)을 개요의 `onChanged`(개요 다시 읽기)에 이었다 — 첫 응답은 기준으로만.
+- QA-154·155·156(`ca679fef`·`dfa4d0e3`·`ee0468db`): 깨우기는 `hooks/useVisibleWake`(보이면 바로, 숨겼으면 다시 보일 때 한 번 — 정규장 간격이 있으면
+  useApi 복귀 읽기에 맡김), 첫 읽기는 `hooks/useShownOnce`(탭이 처음 보일 때까지 카드가 경로를 주지 않음), 장중 카드 시험은 시계 고정(Date까지
+  가짜, 고정 응답의 지금 10-30 23:59 KST). useApi는 바꾸지 않았다.
+- 오류 칸(`447c45ef`): `lib/paper` `storedText`(= `withoutLeadingIcon` + 빈 글 null)를 결정 시작·수동 결정·미리보기·계좌2 출발 결과, 프레임 제안
+  오류·요청 실패 문구, 복기 목록·상세·연결된 제안 오류, 한국 출발 기록(`lib/paperKr`), 결정 로그 행·상세(`DecisionsSection`), 복기 실행 오류
+  (`ReviewsSection`)에 씀.
+- 하지 않은 것: 차트 가짜(`vi.mock("@/components/charts")`)에 `LineChart` 자리를 미리 넣는 커밋 — 가짜에 없는 이름은 쓰는 순간에만 오류라(반박 검토),
+  개요가 `LineChart`를 쓰는 커밋에서 개요를 실제로 그리는 시험의 가짜에 더한다.
+
 ## 5. 응답 칸(서버 단계)
 
 - `GET /api/paper/live` 계좌 줄에 `equityValue`·`exposurePct`(장부와 같은 정의 = 보유 평가액 합(현금성 포함) ÷ 순자산 — 다만 가격 없는 보유가 있으면 장부는
