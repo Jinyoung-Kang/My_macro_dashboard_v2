@@ -1,8 +1,9 @@
 /**
- * 🧪 장중 평가 카드(LiveValuationCard) — 고정하는 규칙
+ * 장중 평가 카드(LiveValuationCard) — 고정하는 규칙
  *  - 정규장이면 계좌별 순자산·출발 대비·오늘·기준 시각을 그리고, 행을 누르면 그 계좌의 종목 표
  *  - 서버가 새 시세를 요청한 응답이면(refreshRequested) 20초 뒤 한 번만 더 읽는다(되풀이 없음)
  *  - 간격 선택은 이 브라우저에 기억되고(기본 30분), 장 밖에서는 다시 읽지 않는다
+ *  - 시계는 고정한다(QA-155) — 다음 개장 깨우기가 지금 시각으로 기다릴 시간을 정하므로, 진짜 시계면 돌린 때에 따라 결과가 달라진다
  */
 import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -37,8 +38,13 @@ function live(over: Record<string, unknown> = {}) {
   };
 }
 
+/** 고정 시계 — 고정 응답의 지금(nowKst 2026-10-30 23:59 KST). 다음 개장(2026-11-02 23:30 KST)까지 하루가 넘게 남아 장 밖에서는 깨어나지 않습니다. */
+const NOW = Date.UTC(2026, 9, 30, 14, 59);
+
 beforeEach(() => {
-  vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "setInterval", "clearInterval"] });
+  // Date까지 가짜로 두고 시각을 고정합니다(QA-155) — 카드의 다음 개장 깨우기가 진짜 벽시계를 읽지 않게.
+  vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "setInterval", "clearInterval", "Date"] });
+  vi.setSystemTime(NOW);
   window.localStorage.clear();
   api.apiGetShared.mockReset();
 });
@@ -128,11 +134,12 @@ describe("QA-155 장 밖 시험이 벽시계에 기대지 않는다(시험 흔�
   // 카드의 다음 개장 깨우기는 msUntilNextOpen(session, Date.now())로 기다릴 시간을 정합니다. 수정 전 이 파일은 Date를 가짜로 두지 않아(setTimeout·
   // setInterval만) 진짜 벽시계를 읽었고, 고정 응답의 다음 개장까지 31분이 안 남은 때(2026-11-02 23:00~23:31 KST) 돌리면 '장 밖' 시험이 31분을
   // 흘리는 동안 깨우기가 불려 두 번째 읽기가 나가 졌습니다. 벽시계의 now만 그 창 안으로 옮겨 같은 몸체를 돌립니다(재현 커밋에서는 it.fails).
+  // 이제 이 파일은 Date도 가짜 시계(고정 NOW)라 진짜 벽시계가 어디 있든 같은 결과입니다.
   beforeEach(() => {
     vi.spyOn(WallClock, "now").mockReturnValue(WALL_IN_OPEN_WINDOW);
   });
 
-  it.fails("다음 개장 31분 안의 벽시계에서도 — 장 밖이면 31분 동안 다시 읽지 않는다", async () => {
+  it("다음 개장 31분 안의 벽시계에서도 — 장 밖이면 31분 동안 다시 읽지 않는다", async () => {
     api.apiGetShared.mockImplementation(() => Promise.resolve(live({ session: { ...SESSION, phase: "CLOSED" } })));
     render(<LiveValuationCard />);
 
