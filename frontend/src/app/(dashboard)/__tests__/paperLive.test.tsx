@@ -299,7 +299,7 @@ describe("QA-157 탭 복귀 읽기의 응답도 한 번 더 읽기를 예약한�
   // 넘김), 카드가 타이머를 걸 때 세운 '한 번 더 읽는 중' 표시가 남아 복귀 읽기의 응답을 '한 번 더 읽기의 응답'으로 소모했습니다 — 그 응답이 새
   // 수집을 요청했어도 카드는 다음 간격(기본 30분, 1·3시간이면 그만큼)까지 읽지 않아 종목 표의 장중가가 개요의 지금 값보다 옛 시각으로 남았습니다
   // (재현 커밋에서는 it.fails). 이제 '한 번 더 읽는 중'은 한 번 더 읽기가 실제로 나갈 때만 섭니다.
-  it.fails("정규장 — 숨긴 사이 미룬 '한 번 더'를 넘긴 복귀 읽기가 새 수집을 요청했으면 20초 뒤 한 번 더, 그 뒤 되풀이 없음", async () => {
+  it("정규장 — 숨긴 사이 미룬 '한 번 더'를 넘긴 복귀 읽기가 새 수집을 요청했으면 20초 뒤 한 번 더, 그 뒤 되풀이 없음", async () => {
     api.apiGetShared.mockImplementation(() =>
       Promise.resolve(live({ quotes: { source: null, collectedAtKst: null, refreshRequested: true, missing: [], error: null } })));
     render(<LiveValuationCard />);

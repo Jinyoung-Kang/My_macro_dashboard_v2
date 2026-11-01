@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { type Column, DataTable } from "@/components/patterns";
 import { Banner, Button, Card, NativeSelect } from "@/components/ui";
 import { useApi } from "@/hooks/useApi";
@@ -34,7 +34,8 @@ import type { PaperLiveResponse } from "@/lib/types";
  * 표시 전용입니다. 장부(체결·순자산 줄·통계·결정)는 이 값을 쓰지 않습니다(서버 PaperLiveService). 다시 읽기 규칙은 lib/paperLive —
  * 정규장에만 간격대로, 서버가 새 시세를 요청했으면 20초 뒤 한 번만 더, 장 밖에서는 멈추고 다음 개장에 한 번 깨어납니다. 탭을 숨기면 간격
  * 읽기는 useApi가 멈추고, '한 번 더'·'다음 개장' 깨우기는 탭이 다시 보일 때로 미룹니다(useVisibleWake — 보지 않는 동안 시세를 받지 않음,
- * QA-154). 숨긴 탭으로 열렸으면 첫 읽기도 처음 보일 때까지 미룹니다(useShownOnce, QA-156).
+ * QA-154). 미룬 '한 번 더'를 useApi의 탭 복귀 읽기에 넘기면 그 복귀 읽기는 보통 읽기라, 응답이 새 수집을 요청했으면 그 뒤 20초에 한 번 더 읽습니다
+ * (QA-157). 숨긴 탭으로 열렸으면 첫 읽기도 처음 보일 때까지 미룹니다(useShownOnce, QA-156).
  */
 export function LiveValuationCard({
   market = "US",
@@ -57,13 +58,21 @@ export function LiveValuationCard({
   const live = useApi<PaperLiveResponse>(shown ? endpoints.paper.market(market).live : null, refreshMs);
   const data = live.data;
   const { reload } = live;
+  // 바로 앞 읽기가 '한 번 더 읽기'였으면 또 예약하지 않습니다(수집이 늦어도 20초마다 되풀이하지 않게). 이 표시는 한 번 더 읽기가 실제로 나갈 때만
+  // 세웁니다 — 타이머를 걸 때 세우면, 숨긴 사이 미룬 한 번 더를 useApi의 탭 복귀 읽기에 넘겼을 때 그 복귀 읽기의 응답을 소모해 그 응답이 요청한 새
+  // 수집을 다음 간격(기본 30분, 1·3시간이면 그만큼)까지 읽지 않았습니다(QA-157).
+  const followingUp = useRef(false);
+  const readFollowUp = useCallback(() => {
+    followingUp.current = true;
+    void reload();
+  }, [reload]);
   // 타이머의 다시 읽기 — 숨긴 탭이면 다시 보일 때로 미룹니다(QA-154). reload를 바로 부르면 숨긴 탭에서도 /live가 나가 정규장이면 수집을 깨웠습니다.
-  const wake = useVisibleWake(reload, refreshMs);
+  // 정규장 간격이 있으면 미룬 것은 useApi의 탭 복귀 읽기가 맡고(그 읽기는 보통 읽기 — readFollowUp을 부르지 않음), 간격이 0이면 훅이 읽습니다.
+  const wakeFollowUp = useVisibleWake(readFollowUp, refreshMs);
+  const wakeAtOpen = useVisibleWake(reload, refreshMs);
   // 처음 받은 장중 값의 판 — 그 뒤 판이 바뀔 때만 onUpdated를 부릅니다.
   const revision = liveRevision(data);
   const seenRevision = useRef<string | null>(null);
-  // 바로 앞 읽기가 '한 번 더 읽기'였으면 또 예약하지 않습니다(수집이 늦어도 20초마다 되풀이하지 않게).
-  const followingUp = useRef(false);
 
   useEffect(() => {
     setRefreshMs(liveRefreshMs(data, minutes));
@@ -83,17 +92,16 @@ export function LiveValuationCard({
       return;
     }
     if (!data.quotes?.refreshRequested) return;
-    followingUp.current = true;
-    const timer = setTimeout(wake, LIVE_FOLLOW_UP_MS);
+    const timer = setTimeout(wakeFollowUp, LIVE_FOLLOW_UP_MS);
     return () => clearTimeout(timer);
-  }, [data, wake]);
+  }, [data, wakeFollowUp]);
 
   useEffect(() => {
     const wait = msUntilNextOpen(data?.session, Date.now());
     if (wait === null || minutes === 0) return;
-    const timer = setTimeout(wake, wait);
+    const timer = setTimeout(wakeAtOpen, wait);
     return () => clearTimeout(timer);
-  }, [data, minutes, wake]);
+  }, [data, minutes, wakeAtOpen]);
 
   if (live.error && !data) {
     return (
