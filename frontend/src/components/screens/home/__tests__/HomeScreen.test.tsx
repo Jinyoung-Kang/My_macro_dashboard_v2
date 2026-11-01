@@ -461,7 +461,7 @@ describe("홈 — 추정·오래됨 배지", () => {
     expect(within(rules).queryByText("이전 값")).toBeNull();
   });
 
-  it("지금 값(current) — 히어로는 개요와 같은 단계 표기·추정 배지·하루 변화 한 줄, Claude 행도 같은 지금 값", async () => {
+  it("지금 값(current) — 히어로는 개요와 같은 단계 표기·추정 배지·변화 한 줄, Claude 행도 같은 지금 값", async () => {
     const overview = paperOverview();
     overview.liveSession = { phase: "REGULAR", sessionDate: "2026-10-26" };
     overview.books![1] = {

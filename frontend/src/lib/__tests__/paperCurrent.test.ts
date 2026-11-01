@@ -2,9 +2,10 @@
  * 개요 '지금 값' 표시 규칙(lib/paperCurrent, 장중 명세 2026-10-31 §3·§4-1) — 단계 표기는 한 함수, 없는 값은 짓지 않는다.
  *
  *  - 단계 표기: 다섯 단계와 출발 전, 장부 표기는 지금 세션일 때만 시각만(아니면 날짜를 붙임), 시각·거래일을 모르면 그것 없이
- *  - '오늘' 이름: 정규장·마감 뒤의 같은 세션만 '오늘', 휴장(세션 날짜 = 직전 거래일)·개장 전은 'MM-DD 하루'
+ *  - '오늘' 이름: 정규장·마감 뒤의 같은 세션만 '오늘', 휴장(세션 날짜 = 직전 거래일)·개장 전은 'MM-DD 변화'('하루'라 적지 않음 — 기준 줄이
+ *    바로 전 거래일이 아닐 수 있음)
  *  - 기준 글·덧붙임(섞임·체결 대기 미국·한국)·지금 값 보기(옛 응답은 장부 값 그대로)·카드 부제·출처·장부 한 줄
- *  - 한 표 한 기준: 모두 장중이면 지금 값 칸, 비중립 하나라도 아니면 장부 칸 + 사유, 기준 중립은 판정에서 뺌, '하루 변화' 이름
+ *  - 한 표 한 기준: 모두 장중이면 지금 값 칸, 비중립 하나라도 아니면 장부 칸 + 사유, 기준 중립은 판정에서 뺌, '최근 변화' 이름
  */
 import { describe, expect, it } from "vitest";
 
@@ -87,13 +88,13 @@ describe("단계 표기 — 한 함수", () => {
 });
 
 describe("'오늘' 이름과 기준 글", () => {
-  it("정규장·마감 뒤의 같은 세션만 '오늘' — 휴장(직전 거래일)·개장 전은 'MM-DD 하루', 거래일을 모르면 '하루'", () => {
+  it("정규장·마감 뒤의 같은 세션만 '오늘' — 휴장(직전 거래일)·개장 전은 'MM-DD 변화', 거래일을 모르면 '변화'", () => {
     expect(dayLabel("2026-10-30", REGULAR)).toBe("오늘");
     expect(dayLabel("2026-10-30", AFTER)).toBe("오늘");
-    expect(dayLabel("2026-10-30", SUNDAY)).toBe("10-30 하루");
-    expect(dayLabel("2026-10-30", PRE)).toBe("10-30 하루");
-    expect(dayLabel("2026-10-30", null)).toBe("10-30 하루");
-    expect(dayLabel(null, REGULAR)).toBe("하루");
+    expect(dayLabel("2026-10-30", SUNDAY)).toBe("10-30 변화");
+    expect(dayLabel("2026-10-30", PRE)).toBe("10-30 변화");
+    expect(dayLabel("2026-10-30", null)).toBe("10-30 변화");
+    expect(dayLabel(null, REGULAR)).toBe("변화");
   });
 
   it("기준 글 — 잠정·확정·모름, 기준 줄이 없으면 null", () => {
@@ -103,9 +104,14 @@ describe("'오늘' 이름과 기준 글", () => {
     expect(dayBaseText(null, true)).toBeNull();
   });
 
-  it("하루 변화 한 줄 — 서버 값 그대로, 모르면 줄 없음(0.00%를 짓지 않음)", () => {
+  it("변화 한 줄 — 서버 값 그대로, 모르면 줄 없음(0.00%를 짓지 않음)", () => {
     expect(dayChange(current(), REGULAR)).toEqual({ pct: 0.42, label: "오늘", base: "10-29 잠정 대비", text: "오늘 +0.42% · 10-29 잠정 대비" });
-    expect(dayChange(current({ dayChangePct: -0.1, previousNavFinal: true }), SUNDAY).text).toBe("10-30 하루 -0.10% · 10-29 확정 대비");
+    expect(dayChange(current({ dayChangePct: -0.1, previousNavFinal: true }), SUNDAY).text).toBe("10-30 변화 -0.10% · 10-29 확정 대비");
+    // 앞의 마지막 순자산 줄이 바로 전 거래일이 아니면(10-30 값의 기준이 10-23 줄 — 그 사이 줄 없음) 기준 글이 그 간격을 밝힘('하루'라 적지 않음)
+    expect(dayChange(current({ dayChangePct: -1.54, previousTradingDate: "2026-10-23", previousNavFinal: true }), SUNDAY).text)
+      .toBe("10-30 변화 -1.54% · 10-23 확정 대비");
+    expect(dayChange(current({ dayChangePct: 0.42, previousTradingDate: "2026-10-23", previousNavFinal: true }), REGULAR).text)
+      .toBe("오늘 +0.42% · 10-23 확정 대비");
     expect(dayChange(current({ previousTradingDate: null }), REGULAR).text).toBe("오늘 +0.42%");
     expect(dayChange(current({ dayChangePct: null }), REGULAR)).toMatchObject({ pct: null, text: null, label: "오늘" });
   });
@@ -128,7 +134,7 @@ describe("덧붙임", () => {
 });
 
 describe("지금 값 보기", () => {
-  it("지금 값 — 순자산·수익률·노출은 current, 단계 표기·추정·덧붙임·하루 변화", () => {
+  it("지금 값 — 순자산·수익률·노출은 current, 단계 표기·추정·덧붙임·변화 한 줄", () => {
     const view = currentView(book("rules", { current: current({ livePriced: 1, note: "장중가 1/2종목 — 나머지는 장부 관측가" }) }), { session: REGULAR });
     expect(view).toEqual({
       from: "current", nav: 101234.56, returnPct: 1.23, exposurePct: 98.7, stageLabel: "장중 추정 23:58", isEstimated: true, neutral: false,
@@ -137,7 +143,7 @@ describe("지금 값 보기", () => {
     });
   });
 
-  it("옛 응답(current 없음·null) — 장부 값 그대로, 단계 표기 자리에 '마지막 관측 …', 덧붙임·하루 변화 없음, 추정 아님", () => {
+  it("옛 응답(current 없음·null) — 장부 값 그대로, 단계 표기 자리에 '마지막 관측 …', 덧붙임·변화 한 줄 없음, 추정 아님", () => {
     for (const entry of [book("rules"), book("rules", { current: null })]) {
       expect(currentView(entry, { session: REGULAR })).toEqual({
         from: "ledger", nav: 101200, returnPct: 1.2, exposurePct: 99.8, stageLabel: "마지막 관측 2026-10-30 23:15", isEstimated: false,
@@ -215,16 +221,16 @@ describe("한 표 한 기준(계좌 비교)", () => {
     );
   });
 
-  it("장중 계좌가 없으면(장 밖) 장부 칸이고 사유는 없다 — 관측 세션이 지금 세션이 아니면 '하루 변화'", () => {
+  it("장중 계좌가 없으면(장 밖) 장부 칸이고 사유는 없다 — 관측 세션이 지금 세션이 아니면 '최근 변화'", () => {
     const final = (code: string) => book(code, {
       current: current({ stage: "FINAL", basis: "LEDGER", isEstimated: false }), ledgerDay: ledgerDay("2026-10-30"),
     });
     expect(comparisonBasis([final("rules"), final("bench_spy")], SUNDAY))
-      .toEqual({ hasCurrent: true, mode: "ledger", reason: null, dayLabel: "하루 변화" });
+      .toEqual({ hasCurrent: true, mode: "ledger", reason: null, dayLabel: "최근 변화" });
     expect(comparisonBasis([final("rules"), final("bench_spy")], AFTER).dayLabel).toBe("오늘 변화");
   });
 
   it("옛 응답이면 hasCurrent false — 표는 지금과 같은 줄 목록", () => {
-    expect(comparisonBasis([book("rules"), book("bench_spy")], REGULAR)).toEqual({ hasCurrent: false, mode: "ledger", reason: null, dayLabel: "하루 변화" });
+    expect(comparisonBasis([book("rules"), book("bench_spy")], REGULAR)).toEqual({ hasCurrent: false, mode: "ledger", reason: null, dayLabel: "최근 변화" });
   });
 });

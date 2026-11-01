@@ -90,11 +90,11 @@ export interface BookRow {
   warning: string | null;
   /** 지금 값이 장중 추정인가 — 지금 값이 있는 응답에서만 있는 칸(옛 응답의 행은 예전 모양 그대로). */
   isEstimated?: boolean;
-  /** 값의 기준 한 줄(단계 표기 · 덧붙임 · 하루 변화) — 지금 값이 있는 응답에서만, 출발 전 계좌는 null. */
+  /** 값의 기준 한 줄(단계 표기 · 덧붙임 · 변화 한 줄) — 지금 값이 있는 응답에서만, 출발 전 계좌는 null. */
   caption?: string | null;
 }
 
-/** 행의 값의 기준 한 줄 — 단계 표기 · 짧은 덧붙임 · 하루 변화. 옛 응답·출발 전 계좌(보조 글이 '시작 전'을 말함)는 null. */
+/** 행의 값의 기준 한 줄 — 단계 표기 · 짧은 덧붙임 · 변화 한 줄. 옛 응답·출발 전 계좌(보조 글이 '시작 전'을 말함)는 null. */
 function rowCaption(view: CurrentView, book: PaperBookSummary): string | null {
   if (view.from !== "current" || book.status === "NOT_STARTED") return null;
   const parts = [view.stageLabel, ...view.notes, view.day?.text ?? null].filter((part): part is string => typeof part === "string" && part !== "");
@@ -106,8 +106,8 @@ function rowCaption(view: CurrentView, book: PaperBookSummary): string | null {
  * 아바타 고리 색(차트 계열 색과 같은 계좌 색)은 화면이 붙입니다(색 표는 components/screens/paper/bookColors — lib는 components를 가져오지 않음).
  *
  * - 순자산·수익률은 개요의 지금 값(`current` — lib/paperCurrent `currentView`)이고, 지금 값이 없는 옛 응답은 장부 값 그대로입니다.
- *   지금 값이면 값의 기준 한 줄(`caption` — 단계 표기 '장중 추정 23:58'·덧붙임 '장중가 1/2종목'·'체결 대기 1건 반영 전'·하루 변화
- *   '오늘 +0.42% · 10-29 잠정 대비')과, 장중 추정이면 추정 배지(`isEstimated`)를 답니다. 기준 중립(현금뿐)은 배지 없이 단계 표기만.
+ *   지금 값이면 값의 기준 한 줄(`caption` — 단계 표기 '장중 추정 23:58'·덧붙임 '장중가 1/2종목'·'체결 대기 1건 반영 전'·변화 한 줄
+ *   '오늘 +0.42% · 10-29 잠정 대비'·'10-30 변화 -1.54% · 10-23 확정 대비')과, 장중 추정이면 추정 배지(`isEstimated`)를 답니다. 기준 중립(현금뿐)은 배지 없이 단계 표기만.
  * - 순자산을 모르면 "—"(단위 없음), 수익률을 모르면 칩을 생략합니다(0.00%를 만들지 않음 — AssetRow 규칙).
  * - 이전 값 배지: 가격을 새로 받지 못한 보유가 있거나(staleCount > 0 — 지난 값으로 평가), 장부 관측치 저장본이 늦었으면
  *   (quotes.stale — 서버 판정) 시작한 계좌의 순자산은 그 늦은 관측으로 평가한 값입니다. 사유를 함께 적습니다(장부 상태 기준 그대로).
@@ -226,7 +226,7 @@ export interface OverviewHeroModel {
   unit: string;
   /** 출발 이후 수익률(계좌 행·비교 표와 같은 뜻). */
   returnPct: number | null;
-  /** 하루 변화 한 줄(서버 값 — 모르면 null). */
+  /** 변화 한 줄(서버 값 — 모르면 null). */
   day: DayChange | null;
   /** 단계 표기(옛 응답이면 '마지막 관측 …'). */
   stageLabel: string | null;
@@ -287,7 +287,7 @@ export function overviewHeroModel(
 export interface ComparisonCell {
   text: string;
   className: string | null;
-  /** 값 아래 작은 글(하루 변화의 기준 '10-29 잠정 대비' 등) — 없으면 없음. */
+  /** 값 아래 작은 글(변화의 기준 '10-29 잠정 대비' 등) — 없으면 없음. */
   sub?: string | null;
 }
 
@@ -313,7 +313,7 @@ function staleCell(book: PaperBookSummary): ComparisonCell {
   return toned(`${formatNumber(count, 0)}종목 — 지난 값으로 평가`, "text-warn");
 }
 
-/** 하루 변화 칸 — 글은 부호 % 와 방향색, 아래 작은 글은 그 값의 날짜(지금 세션이 아니면 'MM-DD')와 기준('10-29 잠정 대비'). 모르면 "—". */
+/** 변화 칸 — 글은 부호 % 와 방향색, 아래 작은 글은 그 값의 날짜(지금 세션이 아니면 'MM-DD')와 기준('10-29 잠정 대비'). 모르면 "—". */
 function dayCell(
   source: { tradingDate: string | null; dayChangePct: number | null; previousTradingDate: string | null; previousNavFinal: boolean | null } | null | undefined,
   session: PaperLiveSessionSummary | null | undefined,
@@ -359,8 +359,8 @@ export interface ComparisonContext {
  * 돈 칸은 그 개요 시장의 통화입니다(`market` — 기본 미국 달러, 한국은 원 정수).
  *
  * 지금 값(장중 명세 §4 — 개요 계좌 줄의 `current`)이 있으면 한 표 한 기준(lib/paperCurrent `comparisonBasis`): 맨 위 '기준' 줄(계좌마다 단계 표기
- * 또는 '장부 MM-DD HH:MM'), '수익률(출발 이후)' 다음 '오늘 변화'(장부 칸이고 지금 세션이 아니면 '하루 변화' — 칸 아래 기준 글), 통계 일곱 칸 앞
- * '통계 기준'('마감 10-29 확정'). 순자산·수익률·노출·하루 변화는 지금 값 칸이면 `current`, 장부 칸이면 BookSummary와 `ledgerDay`(navSeries로
+ * 또는 '장부 MM-DD HH:MM'), '수익률(출발 이후)' 다음 '오늘 변화'(장부 칸이고 지금 세션이 아니면 '최근 변화' — 칸 아래 그 날짜와 기준 글), 통계
+ * 일곱 칸 앞 '통계 기준'('마감 10-29 확정'). 순자산·수익률·노출·변화는 지금 값 칸이면 `current`, 장부 칸이면 BookSummary와 `ledgerDay`(navSeries로
  * 계산하지 않음). 현금·보유·처음 현금·출발·마지막 관측·가격 없음·통계·비교 기준은 장부 그대로. 지금 값이 없는 옛 응답은 예전 줄 목록 그대로입니다.
  */
 export function accountComparisonRows(

@@ -382,7 +382,7 @@ describe("paperHomeModel — 모의매매(미국)", () => {
     expect(model.rows.find((row) => row.id === "rules")?.warning).toBeNull();
   });
 
-  it("지금 값(current) — 히어로와 Claude 행이 같은 지금 값·단계 표기·추정 배지·하루 변화, 옛 응답 칸(마지막 관측)은 그대로", () => {
+  it("지금 값(current) — 히어로와 Claude 행이 같은 지금 값·단계 표기·추정 배지·변화 한 줄, 옛 응답 칸(마지막 관측)은 그대로", () => {
     const overview = paperOverview();
     overview.liveSession = { phase: "REGULAR", sessionDate: "2026-10-26" };
     overview.books![1] = {
@@ -406,7 +406,7 @@ describe("paperHomeModel — 모의매매(미국)", () => {
     // current가 없는 다른 계좌 행은 장부 값 그대로
     expect(model.rows.find((row) => row.id === "rules")).toMatchObject({ value: 99951, changePct: -0.05 });
 
-    // 옛 응답이면 단계 표기·덧붙임·하루 변화 없음, 출처는 장부
+    // 옛 응답이면 단계 표기·덧붙임·변화 한 줄 없음, 출처는 장부
     const ledger = paperHomeModel(paperOverview(), paperStatus(true));
     expect(ledger).toMatchObject({ heroStageLabel: null, heroNotes: [], heroIsEstimated: false, heroDay: null, heroValueText: "99,967.28" });
     expect(ledger.heroSource).not.toContain("장중");

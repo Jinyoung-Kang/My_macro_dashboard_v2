@@ -354,7 +354,7 @@ export type PaperHomeModel = {
   heroNotes: string[];
   /** 장중 추정인가(추정 배지). */
   heroIsEstimated: boolean;
-  /** 하루 변화('오늘 +0.42% · 10-29 잠정 대비' — 서버 dayChangePct). 옛 응답·모르면 null. */
+  /** 변화 한 줄('오늘 +0.42% · 10-29 잠정 대비'·'10-30 변화 …' — 서버 dayChangePct). 옛 응답·모르면 null. */
   heroDay: DayChange | null;
   /** 히어로 숫자의 출처 — 장부, 장중 추정이면 장중 시세로 다시 평가했다는 말을 덧붙임. */
   heroSource: string;
@@ -384,7 +384,7 @@ function sharedInitialCash(books: readonly PaperBookSummary[]): number | null {
 /**
  * 모의매매 히어로 모델 — Claude 계좌 순자산(히어로)·평가 시각·네 계좌 행·출발 줄·정기 작업 꺼짐 안내·두 책 비교하지 않음 문구.
  *
- * - 히어로 값·수익률·단계 표기·추정 배지·하루 변화는 개요 응답의 지금 값(`current`)을 모의매매 개요와 같은 함수(lib/paperCurrent `currentView`)로
+ * - 히어로 값·수익률·단계 표기·추정 배지·변화 한 줄은 개요 응답의 지금 값(`current`)을 모의매매 개요와 같은 함수(lib/paperCurrent `currentView`)로
  *   읽습니다(장중 명세 L3) — 계좌 행도 같은 지금 값이라 한 카드에 같은 계좌의 두 숫자가 보이지 않습니다. 지금 값이 없는 옛 응답은 장부 값과
  *   마지막 관측 그대로입니다.
  * - 행: 모의매매 개요의 계좌 행과 같은 규칙(lib/paperOverview bookAssetRow — 이름·종류·상태·소개, 순자산, 출발 대비 수익률,

@@ -12,7 +12,7 @@ import { HERO_NAV_KEY, NAV_RANGES, type NavRangeKey, type OverviewHeroModel } fr
  * 모의매매 개요 히어로(포트폴리오식 — 장중 명세 §4-1, Coinbase식 개편 명세 D1) — 고른 계좌 하나의 지금 값과 그 계좌 곡선.
  *
  * - 값은 계좌 행과 같은 지금 값(`lib/paperOverview` `overviewHeroModel` — 장중 추정이면 추정 배지와 단계 표기, 옛 응답이면 장부 값과 마지막 관측).
- *   큰 칩은 '출발 이후'(계좌 행·비교 표와 같은 뜻), 그 아래 하루 변화 한 줄(서버 값 — 모르면 줄 없음). 서버의 긴 글(섞임·체결 대기)은 맨 아래 한 줄.
+ *   큰 칩은 '출발 이후'(계좌 행·비교 표와 같은 뜻), 그 아래 변화 한 줄('오늘'·'MM-DD 변화' — 서버 값, 모르면 줄 없음). 서버의 긴 글(섞임·체결 대기)은 맨 아래 한 줄.
  * - 곡선은 고른 계좌 한 줄(`LineChart` hero — 중립 잉크 선, 격자 없음, 문지르면 큰 숫자가 그 날 값). 기간 알약은 차트 아래이고, 아래 '순자산 곡선'
  *   카드와 같은 기간 상태입니다(그 카드의 탭은 없음 — aria-label '순자산 곡선 기간'은 이 탭). 고를 기간이 '전체' 하나뿐이면 탭을 그리지 않습니다.
  * - 오늘 추정 점이 있으면(개요 `navEstimate`) 마지막 줄 → 그 점의 점선 꼬리 — 문지르면 '추정 HH:MM'(현금뿐 계좌는 '장부', 장중 명세 §4).
@@ -56,7 +56,8 @@ export function OverviewHero({
                 <span className="text-xs text-text-3">출발 이후</span>
               </span>
             ) : null}
-            {/* 하루 변화 — 서버의 dayChangePct와 그 기준(앞의 마지막 순자산 줄, 잠정 포함). navSeries로 계산하지 않습니다. */}
+            {/* 변화 한 줄 — 서버의 dayChangePct와 그 기준(앞의 마지막 순자산 줄, 잠정 포함 — 바로 전 거래일이 아닐 수 있어 '하루'라 적지 않음).
+                navSeries로 계산하지 않습니다. */}
             {model.day ? (
               <span className="inline-flex flex-wrap items-baseline gap-x-1.5 text-[13px] text-text-2">
                 <span>{model.day.label}</span>

@@ -2,9 +2,9 @@
  * 모의매매(미국) 개요의 새 패턴 규칙(lib/paperOverview) — 계좌 행·계좌 비교 표·기간별 순자산 곡선.
  *
  *  - 계좌 행: 이름 · 종류 · 상태 · 소개, 순자산(달러), 출발 이후 수익률(모르면 null — 칩 생략), 이전 값·사후 체결 대기 배지,
- *    지금 값(current)이 있으면 그 값과 값의 기준 한 줄(단계 표기·덧붙임·하루 변화)·추정 배지 — 옛 응답은 예전 모양 그대로
+ *    지금 값(current)이 있으면 그 값과 값의 기준 한 줄(단계 표기·덧붙임·변화 한 줄)·추정 배지 — 옛 응답은 예전 모양 그대로
  *  - 비교 표: 예전 카드의 칸이 전부 항목 줄로(값은 bookCard 표시 글 그대로, 모르면 "—"), 비교 기준은 따로 한 줄. 지금 값이 있으면
- *    한 표 한 기준 — 맨 위 기준 줄·'오늘 변화'(장부 칸이고 지금 세션이 아니면 '하루 변화')·통계 기준 줄, 칸 값은 지금 값 또는 장부(섞지 않음)
+ *    한 표 한 기준 — 맨 위 기준 줄·'오늘 변화'(장부 칸이고 지금 세션이 아니면 '최근 변화')·통계 기준 줄, 칸 값은 지금 값 또는 장부(섞지 않음)
  *  - 기간: 저장된 기록보다 긴 기간 탭은 없고 "전체"는 늘 있다, 자를 때 날짜와 값 배열을 같은 자리에서 자른다,
  *    프레임 경계 세로선은 고른 기간 안의 날짜만
  *  - S = 100 같은 구간(계좌2): 계좌2 출발일 S부터 계좌1·계좌2·SPY 계좌를 각자 S 순자산으로 나눠 100에 — S 전 구간·출발 전은 그리지 않고,
@@ -110,7 +110,7 @@ describe("계좌 행 — 지금 값(current, 장중 명세 §4-1)", () => {
     positionCount: 2, pendingOrders: 1, neutral: false, note: "장중가 1/2종목 — 나머지는 장부 관측가 · 체결 대기 1건 반영 전 — 다음 장부 관측치에서 체결", ...over,
   });
 
-  it("값은 지금 값, 값의 기준 한 줄은 단계 표기 · 덧붙임 · 하루 변화, 장중 추정이면 추정 배지", () => {
+  it("값은 지금 값, 값의 기준 한 줄은 단계 표기 · 덧붙임 · 변화 한 줄, 장중 추정이면 추정 배지", () => {
     const row = bookAssetRow({ ...BOOKS[0], current: live() } as PaperOverviewBook, { session: REGULAR });
     expect(row).toMatchObject({
       value: 101234.56, changePct: 1.23, isEstimated: true,
@@ -118,14 +118,14 @@ describe("계좌 행 — 지금 값(current, 장중 명세 §4-1)", () => {
     });
   });
 
-  it("장부 단계·현금뿐(기준 중립)은 추정 배지 없이 단계 표기, 장 밖이면 '하루'와 날짜", () => {
+  it("장부 단계·현금뿐(기준 중립)은 추정 배지 없이 단계 표기, 장 밖이면 'MM-DD 변화'", () => {
     const ledger = live({ stage: "LEDGER", basis: "LEDGER", isEstimated: false, livePriced: 0, pendingOrders: 0, atKst: "2026-10-30 23:15 KST", note: null });
     expect(bookAssetRow({ ...BOOKS[0], current: ledger } as PaperOverviewBook, { session: REGULAR }))
       .toMatchObject({ isEstimated: false, caption: "장부 23:15 · 오늘 +0.42% · 10-29 잠정 대비" });
     const sunday = { phase: "CLOSED" as const, sessionDate: "2026-10-30" };
     const final = live({ stage: "FINAL", basis: "LEDGER", isEstimated: false, livePriced: 0, pendingOrders: 0, previousNavFinal: true, note: null });
     expect(bookAssetRow({ ...BOOKS[0], current: final } as PaperOverviewBook, { session: sunday }).caption)
-      .toBe("10-30 확정 · 10-30 하루 +0.42% · 10-29 확정 대비");
+      .toBe("10-30 확정 · 10-30 변화 +0.42% · 10-29 확정 대비");
   });
 
   it("출발 전 계좌는 기준 한 줄 없음(보조 글이 '시작 전'), 한국은 원 정수와 '시가 체결 대기'", () => {
@@ -192,24 +192,24 @@ describe("계좌 비교 표 — 지금 값(한 표 한 기준, 장중 명세 §4
     expect(cells(rows, "stat-cumReturnPct")[0].text).toBe("+1.23%");
   });
 
-  it("비중립 계좌 하나라도 장중이 아니면 표 전체 장부 칸 — 순자산·수익률은 BookSummary, 하루 변화는 ledgerDay, 기준 줄은 '장부 MM-DD HH:MM'", () => {
+  it("비중립 계좌 하나라도 장중이 아니면 표 전체 장부 칸 — 순자산·수익률은 BookSummary, 변화는 ledgerDay, 기준 줄은 '장부 MM-DD HH:MM'", () => {
     const books = withCurrent("LEDGER").map((entry) => (entry.code === "bench_mix" ? { ...entry, current: { ...entry.current!, neutral: false, positionCount: 2 } } : entry));
     const rows = accountComparisonRows(books, "US", { session: REGULAR });
     expect(cells(rows, "basis").map((cell) => cell.text)).toEqual(["장부 10-24 05:15", "출발 전", "장부 10-24 05:15", "장부 10-24 05:15"]);
     expect(cells(rows, "nav")[0].text).toBe("100,123.45 달러");
     expect(cells(rows, "returnPct")[0]).toEqual({ text: "-1.50%", className: "text-down" });
     expect(cells(rows, "day")[0]).toEqual({ text: "+0.30%", className: "text-up", sub: "10-29 확정 대비" });
-    // 출발 전 계좌(장부 하루 변화 없음)는 '—'
+    // 출발 전 계좌(장부 변화 없음)는 '—'
     expect(cells(rows, "day")[1]).toEqual({ text: "—", className: null });
     expect(rows.find((row) => row.key === "day")?.label).toBe("오늘 변화");
   });
 
-  it("장 밖(휴장)이면 '하루 변화' — 칸 아래 기준 글 앞에 그 값의 날짜", () => {
+  it("장 밖(휴장)이면 '최근 변화' — 칸 아래 기준 글 앞에 그 값의 날짜", () => {
     const books = withCurrent("LEDGER").map((entry) => ({
       ...entry, current: entry.current ? { ...entry.current, stage: "FINAL" as const, basis: "LEDGER" as const, isEstimated: false } : entry.current,
     }));
     const rows = accountComparisonRows(books, "US", { session: SUNDAY });
-    expect(rows.find((row) => row.key === "day")?.label).toBe("하루 변화");
+    expect(rows.find((row) => row.key === "day")?.label).toBe("최근 변화");
     expect(cells(rows, "day")[0]).toEqual({ text: "+0.30%", className: "text-up", sub: "10-30 · 10-29 확정 대비" });
   });
 });

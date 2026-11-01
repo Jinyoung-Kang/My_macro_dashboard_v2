@@ -10,7 +10,7 @@
  *  - 시장 고르기: 화면 안에는 없다 — 셸의 하위 메뉴 줄(미국 | 한국 두 링크)이 맡는다(Shell.test.tsx), 제목은 '(미국)'
  *  - 히어로(포트폴리오식): 고른 계좌 하나(기본 Claude 계좌, 계좌 행을 누르면 그 계좌 — 상세를 닫아도 남음)의 지금 값·곡선, 기간 알약은
  *    히어로 차트 아래(아래 '순자산 곡선'과 같은 기간 — 그 카드의 탭은 없음), 초기화 전이면 히어로 없이 탭은 곡선 카드에
- *  - 지금 값(장중 명세 §4-1): 개요 응답에 current가 있으면 계좌 행은 그 값과 값의 기준 한 줄(단계 표기·덧붙임·하루 변화)·추정 배지,
+ *  - 지금 값(장중 명세 §4-1): 개요 응답에 current가 있으면 계좌 행은 그 값과 값의 기준 한 줄(단계 표기·덧붙임·변화 한 줄)·추정 배지,
  *    부제는 '지금 값 기준' — current가 없는 옛 응답(위 고정본들)은 장부 표시 그대로
  *  - 오늘 추정 꼬리(장중 명세 §4): navEstimate가 있으면 비교 곡선에 계좌마다 마지막 줄 → 추정 점의 꼬리(이름 '{계좌} · 추정 HH:MM', 현금뿐
  *    '· 장부', 기간 창 뒤 한 행)와 곡선 아래 설명·출처, 히어로 곡선도 꼬리 점 — 문지르면 '추정 HH:MM'(배지·알림), 현금뿐은 배지 없이 '장부'
@@ -245,7 +245,7 @@ describe("히어로(포트폴리오식 — 장중 명세 §4-1)", () => {
     expect(screen.getByRole("region", { name: "규칙 계좌 순자산" })).toBeTruthy();
   });
 
-  it("지금 값 — 히어로는 단계 표기·추정 배지·서버 글 전문·하루 변화 한 줄(서버 값)", async () => {
+  it("지금 값 — 히어로는 단계 표기·추정 배지·서버 글 전문·변화 한 줄(서버 값)", async () => {
     reads["/api/paper/overview"] = () => Promise.resolve(CURRENT_OVERVIEW);
     render(<PaperPage />);
 
@@ -339,7 +339,7 @@ describe("지금 값 — 계좌 행(장중 명세 §4-1)", () => {
 describe("지금 값 — 계좌 비교(한 표 한 기준)", () => {
   const rowHeaders = () => within(screen.getByRole("table", { name: "계좌 비교" })).getAllByRole("rowheader").map((th) => th.textContent);
 
-  it("장중이 아닌 비중립 계좌가 있으면 표 전체 장부 칸 + 사유 — 기준 줄·오늘 변화(장부 하루)·통계 기준·두 수익률 설명", async () => {
+  it("장중이 아닌 비중립 계좌가 있으면 표 전체 장부 칸 + 사유 — 기준 줄·오늘 변화(장부)·통계 기준·두 수익률 설명", async () => {
     reads["/api/paper/overview"] = () => Promise.resolve(CURRENT_OVERVIEW);
     render(<PaperPage />);
 
@@ -380,7 +380,7 @@ describe("지금 값 — 계좌 비교(한 표 한 기준)", () => {
 
     await screen.findByRole("table", { name: "계좌 비교" });
     expect(rowHeaders()).not.toEqual(expect.arrayContaining(["기준"]));
-    expect(rowHeaders().some((label) => label === "오늘 변화" || label === "하루 변화" || label === "통계 기준")).toBe(false);
+    expect(rowHeaders().some((label) => label === "오늘 변화" || label === "최근 변화" || label === "통계 기준")).toBe(false);
     expect(screen.queryByText(/^'수익률\(출발 이후\)'은 맨 위/)).toBeNull();
   });
 });

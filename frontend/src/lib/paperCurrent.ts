@@ -97,14 +97,18 @@ export function stageLabel(
   }
 }
 
-/** '오늘' 이름 — 값의 거래일이 지금 세션이면 '오늘', 아니면 'MM-DD 하루'(거래일을 모르면 '하루'). */
+/**
+ * 변화 한 줄의 이름 — 값의 거래일이 지금 세션이면 '오늘', 아니면 'MM-DD 변화'(거래일을 모르면 '변화'). '하루'라고 적지 않습니다 — 기준(앞의 마지막
+ * 순자산 줄)이 바로 전 거래일이 아닐 수 있어(그 사이 줄이 없는 날 — 10-30 값의 기준이 10-23 줄), 몇 거래일의 변화인지는 기준 글('10-23 확정 대비')이
+ * 밝힙니다.
+ */
 export function dayLabel(tradingDate: string | null | undefined, session: PaperLiveSessionSummary | null | undefined): string {
   if (inCurrentSession(tradingDate, session)) return "오늘";
   const md = monthDay(tradingDate);
-  return md ? `${md} 하루` : "하루";
+  return md ? `${md} 변화` : "변화";
 }
 
-/** 하루 변화의 기준 글 — '10-29 잠정 대비'·'10-29 확정 대비', 확정 여부를 모르면 '10-29 대비', 기준 줄이 없으면 null. */
+/** 변화의 기준 글 — '10-29 잠정 대비'·'10-29 확정 대비', 확정 여부를 모르면 '10-29 대비', 기준 줄이 없으면 null. */
 export function dayBaseText(previousTradingDate: string | null | undefined, previousNavFinal: boolean | null | undefined): string | null {
   const md = monthDay(previousTradingDate);
   if (!md) return null;
@@ -113,10 +117,10 @@ export function dayBaseText(previousTradingDate: string | null | undefined, prev
   return `${md} 대비`;
 }
 
-/** 하루 변화 한 줄 — 서버의 `dayChangePct`와 그 기준(앞의 마지막 순자산 줄, 잠정 포함). */
+/** 변화 한 줄 — 서버의 `dayChangePct`와 그 기준(앞의 마지막 순자산 줄, 잠정 포함 — 바로 전 거래일이 아닐 수 있음). */
 export interface DayChange {
   pct: number | null;
-  /** '오늘'·'10-30 하루'·'하루'. */
+  /** '오늘'·'10-30 변화'·'변화'. */
   label: string;
   /** '10-29 잠정 대비' 등(모르면 null). */
   base: string | null;
@@ -124,7 +128,7 @@ export interface DayChange {
   text: string | null;
 }
 
-/** 하루 변화의 재료 — `current`와 `ledgerDay`가 같은 칸 이름을 씁니다. */
+/** 변화의 재료 — `current`와 `ledgerDay`가 같은 칸 이름을 씁니다. */
 type DaySource = {
   tradingDate: string | null;
   dayChangePct: number | null;
@@ -132,7 +136,7 @@ type DaySource = {
   previousNavFinal: boolean | null;
 };
 
-/** 하루 변화 한 줄을 만듭니다(값은 서버 그대로). */
+/** 변화 한 줄을 만듭니다(값은 서버 그대로). */
 export function dayChange(source: DaySource, session: PaperLiveSessionSummary | null | undefined): DayChange {
   const pct = typeof source.dayChangePct === "number" && Number.isFinite(source.dayChangePct) ? source.dayChangePct : null;
   const label = dayLabel(source.tradingDate, session);
@@ -174,7 +178,7 @@ export interface CurrentView {
   notes: string[];
   /** 서버 글 전문(섞임·가격 없음·체결 대기) — 단계 표기와 같은 '출발 전'뿐이면 null. */
   note: string | null;
-  /** 하루 변화(옛 응답이면 null). */
+  /** 변화 한 줄(옛 응답이면 null). */
   day: DayChange | null;
   /** 값의 기준 시각(`current.atKst`, 옛 응답이면 장부 마지막 관측). */
   atKst: string | null;
@@ -188,7 +192,7 @@ export interface CurrentContext {
 
 /**
  * 계좌 하나 → 지금 값 보기. `current`가 있으면 그 값(순자산이 null — 출발 전이고 장부 상태도 없음 — 이면 장부 칸 셋을 함께), 없거나 null이면
- * (옛 응답·장부를 읽은 뒤 사라진 계좌) 장부 값 그대로 — 단계 표기 자리에 '마지막 관측 …', 덧붙임·하루 변화 없음, 추정 아님.
+ * (옛 응답·장부를 읽은 뒤 사라진 계좌) 장부 값 그대로 — 단계 표기 자리에 '마지막 관측 …', 덧붙임·변화 한 줄 없음, 추정 아님.
  */
 export function currentView(book: PaperOverviewBook, context: CurrentContext = {}): CurrentView {
   const current = book.current ?? null;
@@ -259,7 +263,7 @@ export interface ComparisonBasis {
   mode: "live" | "ledger";
   /** 장부 칸으로 둔 사유 — 장중 추정인 계좌가 있는데 표를 장부로 둘 때만(그 밖은 null). */
   reason: string | null;
-  /** '오늘 변화' 또는 '하루 변화'(장부 칸이고 관측 세션이 지금 세션이 아니면). */
+  /** '오늘 변화' 또는 '최근 변화'(장부 칸이고 관측 세션이 지금 세션이 아니면 — 칸 아래 그 값의 날짜와 기준). */
   dayLabel: string;
 }
 
@@ -289,6 +293,6 @@ export function comparisonBasis(
     reason: hasCurrent && anyLive && offenders.length > 0
       ? `장중 추정이 아닌 계좌가 있어 표 전체를 장부 기준으로 둡니다 — ${offenders.join(", ")}`
       : null,
-    dayLabel: today ? "오늘 변화" : "하루 변화",
+    dayLabel: today ? "오늘 변화" : "최근 변화",
   };
 }
