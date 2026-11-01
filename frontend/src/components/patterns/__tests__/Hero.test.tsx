@@ -1,9 +1,9 @@
 /**
  * Hero — 큰 값 · 변화 칩 · 판정 글 · 배지 · 기간 탭(설계서 §5 "판정은 글로").
  * 네 상태: 값 있음(큰 숫자 + 단위 + 칩 + 판정 글), 값 없음("—" + 사유, 칩 생략, 단위 없음),
- * 추정(meta 배지), 오래됨(meta의 ⚠️ 이전 값 + 사유), 자리표시(placeholder — 값 대신, 탭은 그 자리 그대로). a11y: 제목(label)이 영역 이름, headingLevel.
- * 문지르기(scrub, 명세 §4·D9): 큰 숫자는 그 점 값(눈으로만), 지금 값은 sr-only '지금 값 …', '기간 시작 대비' 칩·날짜, 배지는 그대로,
- * 알림 영역(aria-live polite)에 '날짜 값', 추정 점 배지. 탭 자리(tabsPlacement) 위·아래.
+ * 추정(meta 배지), 오래됨(meta의 경고 아이콘 + 이전 값 + 사유), 자리표시(placeholder — 값 대신, 탭은 그 자리 그대로). a11y: 제목(label)이 영역 이름,
+ * headingLevel. 문지르기(scrub, 명세 §4·D9): 큰 숫자는 그 점 값(눈으로만), 지금 값은 sr-only '지금 값 …', '기간 시작 대비' 칩·날짜, 배지는 그대로,
+ * 알림 영역(aria-live polite)에 '날짜 값', 추정 점 배지와 그 설명(알림에도 '추정 23:58'), 장부 값 꼬리 점은 배지 없이 '장부'. 탭 자리(tabsPlacement) 위·아래.
  */
 import { cleanup, render, screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
@@ -235,17 +235,30 @@ describe("Hero", () => {
       expect(liveRegion(region).textContent).toBe("2026-10-28 —");
     });
 
-    it("추정 점 — 점 옆에 추정 배지(설명), 알림에 '추정'", () => {
+    it("추정 점 — 점 옆에 추정 배지(설명), 알림에 '추정'과 그 설명(기준 시각 — 눈으로만 보이지 않게)", () => {
       render(
         <Hero
           {...base}
-          scrub={{ valueText: "100,250.00", dateText: "2026-10-30", change: 250, changePct: 0.25, isEstimated: true, estimateNote: "장중 14:05" }}
+          scrub={{ valueText: "100,250.00", dateText: "2026-10-30", change: 250, changePct: 0.25, isEstimated: true, estimateNote: "23:58" }}
         />,
       );
       const region = screen.getByRole("region", { name: "순자산" });
       expect(within(region).getByText("추정").parentElement?.className).toContain("border-dashed");
-      expect(within(region).getByText("· 장중 14:05")).toBeTruthy();
-      expect(liveRegion(region).textContent).toBe("2026-10-30 100,250.00 달러 추정");
+      expect(within(region).getByText("· 23:58")).toBeTruthy();
+      expect(liveRegion(region).textContent).toBe("2026-10-30 100,250.00 달러 추정 23:58");
+    });
+
+    it("장부 값 꼬리 점(현금뿐 계좌) — 추정 배지 없이 설명 '장부', 알림에도 '장부'", () => {
+      render(
+        <Hero
+          {...base}
+          scrub={{ valueText: "100,000.00", dateText: "2026-10-30", change: 0, changePct: 0, isEstimated: false, estimateNote: "장부" }}
+        />,
+      );
+      const region = screen.getByRole("region", { name: "순자산" });
+      expect(within(region).queryByText("추정")).toBeNull();
+      expect(within(region).getByText("· 장부")).toBeTruthy();
+      expect(liveRegion(region).textContent).toBe("2026-10-30 100,000.00 달러 장부");
     });
 
     it("문지르기와 지금 값이 바뀌어도 본문(차트)은 다시 마운트되지 않는다", () => {

@@ -297,4 +297,34 @@ describe("scrubModel — 문지르는 점의 표시 글", () => {
     expect(scrubModel(rows, "v", 4, usd, { estimate })).toMatchObject({ isEstimated: false, estimateNote: null });
     expect(scrubModel(rows, "v", 5, usd, { estimate: { date: "2026-10-30", note: "N/A" } })).toMatchObject({ isEstimated: true, estimateNote: null });
   });
+
+  it("꼬리 점 — 값은 꼬리 키(그날 본 계열 값 없음)에서 읽고 같은 첫 유효값 대비 변화, 다른 날은 본 키 그대로", () => {
+    const rows: LineRow[] = [
+      ...NAV.map((row, index) => ({ ...row, tail: index === NAV.length - 1 ? row.v : null })),
+      { date: "2026-10-30", v: null, tail: 100_250 },
+    ];
+    const estimate = { date: "2026-10-30", note: "23:58", valueKey: "tail" };
+    expect(scrubModel(rows, "v", 5, usd, { estimate })).toEqual({
+      valueText: "100,250.00",
+      dateText: "2026-10-30",
+      change: 250,
+      changePct: 0.25,
+      isEstimated: true,
+      estimateNote: "23:58",
+    });
+    // 꼬리가 시작하는 마지막 줄은 본 계열 값 그대로(추정 아님)
+    expect(scrubModel(rows, "v", 4, usd, { estimate })).toMatchObject({ valueText: "99,000.00", isEstimated: false, estimateNote: null });
+    // 꼬리 키를 주지 않으면 본 키 — 그날 본 계열 값이 없으므로 '—'(짓지 않음)
+    expect(scrubModel(rows, "v", 5, usd, { estimate: { date: "2026-10-30" } })).toMatchObject({ valueText: "—", change: null });
+  });
+
+  it("장부 값 꼬리 점(현금뿐 계좌 — isEstimated false)은 추정 아님 + 설명 '장부'", () => {
+    const rows: LineRow[] = [{ date: "2026-10-29", v: 100_000, tail: 100_000 }, { date: "2026-10-30", v: null, tail: 100_000 }];
+    expect(scrubModel(rows, "v", 1, usd, { estimate: { date: "2026-10-30", note: "장부", valueKey: "tail", isEstimated: false } })).toMatchObject({
+      valueText: "100,000.00",
+      change: 0,
+      isEstimated: false,
+      estimateNote: "장부",
+    });
+  });
 });

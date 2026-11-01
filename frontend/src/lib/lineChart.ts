@@ -239,40 +239,54 @@ export type ScrubModel = {
   changePct: number | null;
   /** 추정 점인가 — 장중 값 단계의 '오늘 추정 점'(점선 꼬리). 문지르는 동안에도 추정 배지가 보이게 합니다(원칙 A3). */
   isEstimated: boolean;
-  /** 추정 점의 설명(예: "장중 14:05") — 부르는 쪽이 준 글, 없으면 null. */
+  /**
+   * 꼬리 점의 설명 — 부르는 쪽이 준 글(없으면 null). 추정 점이면 배지 안의 설명(예: 기준 시각 "23:58" → '추정 · 23:58'), 추정이 아닌 꼬리 점
+   * (현금뿐 계좌 — 그 점은 장부 값)이면 배지 없이 적는 글(예: "장부"). 히어로의 낭독 알림도 같은 글을 읽습니다.
+   */
   estimateNote: string | null;
 };
+
+/**
+ * 꼬리 점(장중 값 단계의 오늘 추정 점) — 문지르기가 그 날짜의 점을 읽는 법.
+ *
+ * - `date`: 꼬리 점의 날짜(행의 date).
+ * - `valueKey`(선택): 그 날 값을 읽을 키 — 꼬리 계열(`tailOf`)의 키. 꼬리 점의 날에는 본 계열 값이 없습니다(그날 순자산 줄이 아직 없음). 주지 않으면 본 키.
+ * - `isEstimated`(선택, 기본 true): 추정 점인가. false는 현금뿐 계좌처럼 그 점이 장부 값인 꼬리(추정 배지 없이 `note`만).
+ * - `note`(선택): 그 점의 설명(추정이면 기준 시각 'HH:MM', 장부 값이면 '장부').
+ */
+export type ScrubEstimate = { date: string; note?: string | null; valueKey?: string; isEstimated?: boolean };
 
 /**
  * 문지르는 점 → 표시 글. 순번이 null이거나 범위 밖이면 null(문지르지 않음).
  *
  * - 변화는 **기간의 첫 유효값**(그 계열에서 처음으로 값이 있는 행) 대비입니다 — 그 기간 안에서 얼마나 움직였는지. 그 점이 첫 유효값이면 0.
  * - 그 점의 값이 없으면 값 "—"와 변화 null(칩 생략) — 날짜는 그대로 보입니다(그날 기록이 없음을 보임).
- * - `estimate`(선택): 장중 값 단계가 붙일 오늘 추정 점의 날짜와 설명. 그 날짜의 점을 문지르면 `isEstimated`와 설명을 함께 냅니다.
- *   그 점의 꼬리 선(점선)은 범례에 넣지 않고(계열의 `legend: false`), 추정 표시는 이 모델로 히어로가 그립니다.
+ * - `estimate`(선택, `ScrubEstimate`): 꼬리 점의 날짜를 문지르면 값은 꼬리 키(`valueKey`)에서 읽고(같은 첫 유효값 대비 변화), 추정 점이면
+ *   `isEstimated`와 설명, 장부 값 꼬리 점이면 추정 아님 + 설명('장부')을 냅니다. 꼬리 선(점선)은 범례에 넣지 않고(계열의 `tailOf`), 추정 표시는
+ *   이 모델로 히어로가 그립니다.
  */
 export function scrubModel(
   rows: readonly LineRow[],
   key: string,
   index: number | null,
   valueFormat: (value: number) => string,
-  options: { estimate?: { date: string; note?: string | null } | null } = {},
+  options: { estimate?: ScrubEstimate | null } = {},
 ): ScrubModel | null {
   const at = scrubIndex(index, rows.length);
   if (at === null) {
     return null;
   }
   const row = rows[at];
-  const value = lineValue(row, key);
+  const estimate = options.estimate != null && options.estimate.date === row.date ? options.estimate : null;
+  const value = estimate?.valueKey ? (lineValue(row, estimate.valueKey) ?? lineValue(row, key)) : lineValue(row, key);
   const base = rows.map((entry) => lineValue(entry, key)).find((entry): entry is number => entry !== null) ?? null;
   const change = value !== null && base !== null ? value - base : null;
-  const estimated = options.estimate != null && options.estimate.date === row.date;
   return {
     valueText: value === null ? EMPTY : valueFormat(value),
     dateText: row.date,
     change,
     changePct: change !== null && base !== null && base > 0 ? (change / base) * 100 : null,
-    isEstimated: estimated,
-    estimateNote: estimated ? presentText(options.estimate?.note) : null,
+    isEstimated: estimate !== null && estimate.isEstimated !== false,
+    estimateNote: estimate ? presentText(estimate.note) : null,
   };
 }

@@ -22,6 +22,9 @@ export type HeroScrub = {
   changeDigits?: number;
   /** 추정 점(장중 값 단계의 오늘 추정 점)이면 추정 배지를 그 점 옆에 보입니다. */
   isEstimated?: boolean;
+  /**
+   * 꼬리 점의 설명 — 추정 점이면 배지 안('추정 · 23:58'), 추정이 아닌 꼬리 점(현금뿐 계좌의 장부 값)이면 배지 없이 글('장부'). 알림 영역도 읽습니다.
+   */
   estimateNote?: string | null;
 };
 
@@ -41,7 +44,8 @@ export type HeroScrub = {
  * - `scrub`(선택, 명세 §4·D9): 히어로 차트를 문지르는 동안의 그 점 값(`HeroScrub`). 값이 있으면 큰 숫자를 그 값으로, 변화 칩을 '기간 시작 대비'로
  *   바꾸고 날짜를 옆에 적습니다. 판정 글과 meta 배지(추정·이전 값)는 그대로 보입니다(원칙 A3). 큰 숫자에는 aria-live를 달지 않습니다 —
  *   지금 값은 읽어 주기용 '지금 값 …'으로 늘 남고, 문지른 점은 따로 둔 조용한 알림 영역(aria-live="polite")이 '날짜 값'으로 읽습니다
- *   (차트에 초점을 두고 ←·→로 점을 옮기는 낭독기 사용자에게). 문지를 수 있는 히어로는 문지르지 않을 때 `scrub={null}`을 넘깁니다 — 그래야
+ *   (차트에 초점을 두고 ←·→로 점을 옮기는 낭독기 사용자에게 — 꼬리 점이면 '추정 23:58'·'장부'까지). 문지를 수 있는 히어로는 문지르지 않을 때
+ *   `scrub={null}`을 넘깁니다 — 그래야
  *   알림 영역이 미리 있어 첫 점부터 읽힙니다. `undefined`(주지 않음)면 알림 영역도 두지 않습니다.
  */
 export function Hero({
@@ -87,6 +91,7 @@ export function Hero({
   const scrubMissing = scrubbing !== null && isMissingValue(scrubbing.valueText);
   const scrubDigits = scrubbing?.changeDigits ?? 2;
   const scrubChip = scrubbing !== null && changeChipModel(scrubbing.change, scrubbing.changePct, scrubDigits, 2) !== null;
+  const scrubNote = presentText(scrubbing?.estimateNote);
   const tabsBlock = tabs ? <div className="mt-4">{tabs}</div> : null;
   return (
     <section aria-labelledby={headingId} className="min-w-0 rounded-card border border-border bg-surface p-6 lg:p-8">
@@ -120,7 +125,8 @@ export function Hero({
           {!missing && unit ? <span className="text-base text-text-3">{unit}</span> : null}
         </div>
       )}
-      {/* 문지르는 동안: '기간 시작 대비' 칩(모르면 생략)·날짜·추정 배지 — 눈으로 보는 줄이고 읽어 주기는 알림 영역이 합니다.
+      {/* 문지르는 동안: '기간 시작 대비' 칩(모르면 생략)·날짜·추정 배지(장부 값 꼬리 점이면 배지 없이 그 설명) — 눈으로 보는 줄이고 읽어 주기는
+          알림 영역이 합니다.
           그 밖에는 부르는 쪽의 칩. 칩이 null(변화를 모름)을 그리면 빈 줄이 되므로 :empty로 접습니다. */}
       {scrubbing !== null ? (
         <div aria-hidden="true" className="mt-1 flex flex-wrap items-baseline gap-x-1.5 gap-y-1">
@@ -131,7 +137,11 @@ export function Hero({
             </>
           ) : null}
           <span className="text-[13px] tabular-nums text-text-2">{scrubbing.dateText}</span>
-          {scrubbing.isEstimated ? <EstimateBadge estimated note={scrubbing.estimateNote} /> : null}
+          {scrubbing.isEstimated ? (
+            <EstimateBadge estimated note={scrubbing.estimateNote} />
+          ) : scrubNote ? (
+            <span className="text-[13px] text-text-2">· {scrubNote}</span>
+          ) : null}
         </div>
       ) : placeholder === undefined && change ? (
         <div className="mt-1 empty:hidden">{change}</div>
@@ -142,10 +152,12 @@ export function Hero({
       {children ? <div className="mt-4 min-w-0">{children}</div> : null}
       {tabsPlacement === "below" ? tabsBlock : null}
       {scrub !== undefined ? (
-        // 조용한 알림 — 문지른 점의 '날짜 값'(추정 점이면 '추정'). 문지르지 않으면 비워 둡니다.
+        // 조용한 알림 — 문지른 점의 '날짜 값'(추정 점이면 '추정'과 그 설명 — '추정 23:58', 장부 값 꼬리 점이면 '장부'). 문지르지 않으면 비워 둡니다.
         <div className="sr-only" aria-live="polite" aria-atomic="true">
           {scrubbing !== null
-            ? `${scrubbing.dateText} ${scrubbing.valueText}${!scrubMissing && unit ? ` ${unit}` : ""}${scrubbing.isEstimated ? " 추정" : ""}`
+            ? `${scrubbing.dateText} ${scrubbing.valueText}${!scrubMissing && unit ? ` ${unit}` : ""}${scrubbing.isEstimated ? " 추정" : ""}${
+                scrubNote ? ` ${scrubNote}` : ""
+              }`
             : ""}
         </div>
       ) : null}
