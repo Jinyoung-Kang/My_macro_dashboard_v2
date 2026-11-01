@@ -87,6 +87,8 @@ class RouteInventoryTest {
             "GET /api/ai/engines", "GET /api/ai/report-types",
             "POST /api/ai/report", "POST /api/ai/test",
             "GET /api/ai/toss/diagnostics", "GET /api/ai/toss/exchange-rate", "GET /api/ai/toss/indices",
+            // 검색 상세 화면
+            "GET /api/detail/quote", "GET /api/detail/news", "GET /api/detail/symbols", "POST /api/detail/summary",
             // 모의 매매(운영자 전용)
             "GET /api/paper/overview", "GET /api/paper/live", "GET /api/paper/status", "GET /api/paper/books/{code}/positions",
             "GET /api/paper/books/{code}/orders", "GET /api/paper/books/{code}/fills",

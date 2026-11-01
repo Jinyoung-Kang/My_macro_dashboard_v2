@@ -23,6 +23,8 @@ import java.time.LocalDate;
 public class UsageService {
 
     public static final String AI_REPORT = "ai.report";
+    /** 검색 상세 화면의 AI 요약(feature.detail) — 하루 한도는 AI 리포트와 같은 값을 따로 셉니다(데모 공용 한도는 쓰지 않음). */
+    public static final String AI_DETAIL = "ai.detail";
 
     /**
      * 이번 요청의 결과. {@code limit}이 null이면 한도 없음.

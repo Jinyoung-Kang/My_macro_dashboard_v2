@@ -214,6 +214,18 @@ GET·OPTIONS 밖(쓰기·HEAD)은 경로와 상관없이 403 `{"error":"demo_rea
 | `GET /api/ai/toss/exchange-rate?base=USD&quote=KRW` | 환율 조회 |
 | `GET /api/ai/toss/indices?symbols=KOSPI,KOSDAQ` | 지수 조회 |
 
+### 검색 상세 화면 (종목 `/s/<시장>/<코드>`·지표 `/markets/i/<id>`·기관 `/institutions/<CIK>` — [명세](specs/2026-11-01-search-detail.md))
+
+저장하지 않는 외부 정보라 수집기 실시간 조회를 그대로 전합니다(출처·받은 시각·출처별 오류 포함). `store_only` 읽기 모드에서는 부르지 않고 `available:false`.
+시장 `us` = Yahoo 심볼 형식(`AAPL`·`BRK-B`·`^GSPC`·`KRW=X`), `kr` = 국내 코드 6자리 — 형식이 틀리면 400. 차트는 `GET /api/macro/ticker`(국내는 `yahooSymbol`).
+
+| 경로 | 설명 |
+|---|---|
+| `GET /api/detail/quote?market=us&code=AAPL` | `{available, quote:{market, code, yahooSymbol, name, exchange, currency, kind, price, previousClose, change, changePct, asOf, marketState, stats:[{key, label, value(숫자 \| null), text(글 지표 — 국내), unit}], profile:{sector, industry, country, website, employees, summary}, consensus:{targetMean, recommendation, analysts}, research:[{title, broker, date, url}], source:{label, url}, error, fetchedAt}}` — 미국·해외 Yahoo Finance(yfinance), 국내 네이버 증권. 없는 값은 null(0으로 채우지 않음) |
+| `GET /api/detail/news?market=&code=&q=` | `{available, news:{items:[{title, url, publisher, publishedAt, source}], errors:{출처: 사유}, error, fetchedAt}}` — 종목(시장·코드)은 Yahoo 검색 뉴스·네이버 종목 뉴스, 검색어(`q`, 60자 이내)는 구글 뉴스 RSS(최근 7일). 합쳐 최신순 15건, 같은 기사 하나만. 코드·검색어가 모두 없으면 400 |
+| `GET /api/detail/symbols?q=` | `{available, symbols:{items:[{market, code, yahooSymbol, name, exchange, kind, source}], errors, error}}` — 네이버 자동완성 + Yahoo 검색(한글·숫자 질의는 네이버 먼저), 10건. 검색어 40자 이내, 비면 빈 목록 |
+| `POST /api/detail/summary` | (유료) `{market?, code?, q?, label?}` → `{status, summary, model, generatedAtKst, cached, sources:[{n, label, url}], quota:{used, limit}, error}` — 서버가 모은 시세·지표·뉴스 제목만 번호를 붙여 Claude Haiku 5.5(effort medium)에 넘김, 줄 끝 [번호]가 `sources`. 같은 대상·같은 KST 날짜의 성공 요약은 다시 부르지 않음(`cached`). 하루 한도는 AI 리포트와 같은 값(`ai.detail`로 따로 셈), 모델에 닿지 않은 실패는 되돌림 |
+
 ### 모의 매매(미국·한국, 운영자 전용)
 
 모든 경로가 운영자 전용입니다. 테이블(V8)이나 V9~V11의 열(`paper_track_record.group_code`·`data_source`, `paper_decisions.packet_text`, `paper_api_usage.est_cost_calls`), V12의 `paper_reviews`, V13~V16의 열(`paper_books.market`·`currency`(V13), `paper_reviews.market`·`paper_notes.market`(V14), `paper_positions.fill_ref_volume`(V15), `paper_orders.ledger_hold_reason`(V16)), V17의 `paper_fills.bar_at` 열과 `paper_order_exec`, V18의 `paper_checkpoints`가 아직 없으면 `{available:false, message}`(POST·DELETE는 `ok:false`도)로 답합니다(`PaperStore.ready` — 백엔드만 새로 띄워 마이그레이션이 빠졌을 때, QA-016).
@@ -324,6 +336,9 @@ CAGR 지수도 같음), 20일 미만이면 `cumReturnPct`만 있습니다. 변�
 | [토큰] `GET /live/radar?...` | 수급 랭킹 즉시 수집 (폴백 체인 전체) |
 | [토큰] `GET /live/ticker/{symbol}?period=` | 티커 시계열 즉시 수집 |
 | [토큰] `GET /live/daum-intraday?minutes=30` | 장중 수급 가속도 |
+| [토큰] `GET /live/quote?market=us\|kr&code=` | 검색 상세의 시세·핵심 지표·개요(Yahoo·네이버, 5분 캐시) |
+| [토큰] `GET /live/news?market=&code=&q=` | 검색 상세의 주요 뉴스(Yahoo·네이버·구글 뉴스 RSS, 15분 캐시) |
+| [토큰] `GET /live/symbols?q=` | 종목 찾기(네이버 자동완성·Yahoo 검색, 1시간 캐시) |
 | [토큰] `GET /verify/readings?market=&investor=&tradeType=` | 검증용 원자료 (판정은 백엔드, 읽는 코드는 `app/verification.py`) |
 | [토큰] `GET /diagnostics/connections` | KIS·LS·Daum·Naver·PyKrx 진단 |
 | [토큰] `GET /diagnostics/public-apis` | 특일정보·주식시세·DART 진단 (API당 1회) |

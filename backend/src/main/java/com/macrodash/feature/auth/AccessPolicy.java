@@ -73,6 +73,9 @@ public final class AccessPolicy {
                 "GET /api/ai/toss/exchange-rate", "GET /api/ai/toss/indices");
         // 유료 — 종목별 투자자 매매 이력, AI 리포트(유료 API, 하루 한도는 UsageService)
         pro("GET /api/kr/stock-flows", "POST /api/ai/report");
+        // 검색 상세 화면 — 외부 정보(시세·뉴스·종목 찾기, 수집기 실시간 조회)는 회원, AI 요약(유료 API, 하루 한도)은 유료
+        member("GET /api/detail/quote", "GET /api/detail/news", "GET /api/detail/symbols");
+        pro("POST /api/detail/summary");
 
         // 알림 — 규칙·알림함(등급별 규칙 수와 종류는 AlertService가 제한)
         member("GET /api/alerts/rules", "POST /api/alerts/rules", "POST /api/alerts/rules/{id}",

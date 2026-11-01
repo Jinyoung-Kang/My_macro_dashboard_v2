@@ -157,6 +157,30 @@ public class CollectorClient {
                 .build(symbol), "/live/ticker");
     }
 
+    /** 검색 상세 화면의 시세·핵심 지표·개요(수집기 /live/quote — 미국·해외 Yahoo, 국내 네이버, 5분 캐시). */
+    public Optional<JsonNode> liveQuote(String market, String code) {
+        return get(uri -> uri.path("/live/quote")
+                .queryParam("market", market)
+                .queryParam("code", code)
+                .build(), "/live/quote");
+    }
+
+    /** 검색 상세 화면의 주요 뉴스(수집기 /live/news — 종목 뉴스 Yahoo·네이버 + 검색어 구글 뉴스 RSS, 15분 캐시). 빈 값은 보내지 않습니다. */
+    public Optional<JsonNode> liveNews(String market, String code, String q) {
+        return get(uri -> uri.path("/live/news")
+                .queryParamIfPresent("market", Optional.ofNullable(market))
+                .queryParamIfPresent("code", Optional.ofNullable(code))
+                .queryParamIfPresent("q", Optional.ofNullable(q))
+                .build(), "/live/news");
+    }
+
+    /** 종목 찾기(수집기 /live/symbols — 네이버 자동완성 + Yahoo 검색, 1시간 캐시). */
+    public Optional<JsonNode> liveSymbols(String q) {
+        return get(uri -> uri.path("/live/symbols")
+                .queryParam("q", q)
+                .build(), "/live/symbols");
+    }
+
     public Optional<JsonNode> daumIntraday(int minutes) {
         return get(uri -> uri.path("/live/daum-intraday")
                 .queryParam("minutes", minutes)
