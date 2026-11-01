@@ -91,3 +91,15 @@ export function formatSharePriceFor(value: number | null | undefined, market: Pa
 export function marketOfBook(code: string | null | undefined): PaperMarketCode {
   return typeof code === "string" && code.startsWith("kr_") ? "KR" : "US";
 }
+
+/**
+ * 종목 표시 이름(사용자 결정 2026-11-02 — 한국 화면에 종목 코드 대신 기업명) — 이름 표(`GET /api/paper/names`)에 있으면 그 이름, 없으면 코드
+ * 그대로(이름을 짐작하지 않음). 코드가 없으면 "—".
+ */
+export function tickerName(code: string | null | undefined, names: Readonly<Record<string, string>> | null | undefined): string {
+  if (!code) {
+    return "—";
+  }
+  const name = names?.[code];
+  return typeof name === "string" && name.trim() !== "" ? name : code;
+}

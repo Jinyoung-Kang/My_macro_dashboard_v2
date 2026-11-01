@@ -193,6 +193,8 @@ export const endpoints = {
         /** 장중 평가(표시 전용 추정) — 정규장이면 최신 1분봉, 아니면 장부의 마지막 관측치. */
         live: scoped("/api/paper/live"),
         status: scoped("/api/paper/status"),
+        /** 종목 이름 표 — 한국은 코드 → 기업명(토스·금융위), 미국은 빈 표. */
+        names: scoped("/api/paper/names"),
         init: scoped("/api/paper/init"),
         runRisk: scoped("/api/paper/run/risk"),
         runDecision: scoped("/api/paper/run/decision"),

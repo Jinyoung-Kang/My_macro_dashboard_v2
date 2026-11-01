@@ -75,6 +75,7 @@ import type {
   PaperSettingsResponse,
   PaperStatusResponse,
 } from "@/lib/types";
+import { TickerName } from "./TickerName";
 import { Claude2CheckpointLine, Claude2WindowList } from "./Claude2StartSection";
 import { ClaudeDecisionBody } from "./ClaudeDecisionBody";
 import { GateIndicatorBody } from "./GateIndicatorBody";
@@ -683,7 +684,7 @@ function DecisionDetail({ id, market }: { id: number; market: PaperMarketCode })
           rowKey={(row) => String(row.id)}
           emptyMessage="이 결정은 주문을 내지 않았습니다."
           columns={[
-            { key: "ticker", header: "종목", render: (row) => <span className="font-semibold text-bright">{row.ticker}</span> },
+            { key: "ticker", header: "종목", render: (row) => <span className="font-semibold text-bright"><TickerName code={row.ticker} /></span> },
             { key: "side", header: "방향", render: (row) => <span className={sideClass(row.side)}>{sideLabel(row.side)}</span> },
             { key: "size", header: "크기", align: "right", render: (row) => orderSizeText(row) },
             {

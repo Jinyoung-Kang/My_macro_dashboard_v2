@@ -4,6 +4,7 @@ import { DonutChart, SERIES_COLORS } from "@/components/charts";
 import { EstimateBadge } from "@/components/patterns";
 import { Banner, Button, ErrorState, Freshness, Loading, SourceLine, Table } from "@/components/ui";
 import { useApi } from "@/hooks/useApi";
+import { useTickerNames } from "@/hooks/useTickerNames";
 import { endpoints } from "@/lib/endpoints";
 import { deltaColor, EMPTY, formatKst, formatNumber, formatPercent, formatWithUnit } from "@/lib/format";
 import {
@@ -33,6 +34,7 @@ import type {
   PaperPositionsResponse,
   PaperSettingsResponse,
 } from "@/lib/types";
+import { TickerName } from "./TickerName";
 
 /** 상세에 보일 최근 체결 수. 전체는 보유·체결 탭(최근 50건). */
 const RECENT_FILLS = 5;
@@ -116,8 +118,9 @@ export function AccountDetailPanel({
   const estimated = now?.isEstimated === true;
   const profile = accountProfile(book.code);
   const settingRows = accountSettingRows(book.code, settings.data?.available ? settings.data.body : null);
+  const names = useTickerNames();
   const composition = positions.data?.available
-    ? accountComposition(positions.data.positions ?? [], positions.data.cash ?? null, ledger.nav, market)
+    ? accountComposition(positions.data.positions ?? [], positions.data.cash ?? null, ledger.nav, market, names)
     : null;
   const decides = book.kind === "RULES" || book.kind === "CLAUDE";
   const titleId = accountDetailTitleId(id);
@@ -242,7 +245,7 @@ export function AccountDetailPanel({
                 header: "종목",
                 render: (row) => (
                   <span className="flex flex-wrap items-center gap-1">
-                    <span>{row.ticker}</span>
+                    <span><TickerName code={row.ticker} /></span>
                     {(korea ? krFillBadges(row) : fillBadges(row)).map((badge) => (
                       <span key={badge.key} title={badge.title} className={`whitespace-nowrap rounded-full border px-2 py-px text-xs ${badge.className}`}>
                         {badge.label}

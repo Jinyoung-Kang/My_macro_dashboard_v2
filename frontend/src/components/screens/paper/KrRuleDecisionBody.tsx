@@ -14,6 +14,7 @@ import {
   type KrRuleDecisionView,
 } from "@/lib/paperKr";
 import { paperTabPath } from "@/lib/paperRoutes";
+import { TickerName } from "./TickerName";
 
 /**
  * 한국 규칙 계좌(kr_rules) 결정의 본문(2단계 명세 §4-6·§4-9·§4-16 F2) — 자료 게이트 ①~⑥·기한 지남·출발 칸({@link KrDecisionExtrasParts}),
@@ -35,7 +36,7 @@ export function KrRuleDecisionBody({ view }: { view: KrRuleDecisionView }) {
               rowKey={(row) => row.key}
               columns={[
                 { key: "rank", header: "순서", align: "right", render: (row) => row.rank },
-                { key: "code", header: "종목", render: (row) => <span className="font-semibold text-bright">{row.code}</span> },
+                { key: "code", header: "종목", render: (row) => <span className="font-semibold text-bright"><TickerName code={row.code} /></span> },
                 { key: "score", header: "점수", align: "right", render: (row) => row.score },
                 { key: "weight", header: "목표 비중", align: "right", render: (row) => row.weight },
               ]}
@@ -61,7 +62,7 @@ export function KrRuleDecisionBody({ view }: { view: KrRuleDecisionView }) {
                 rowKey={(row) => row.key}
                 emptyMessage="후보가 없습니다 — 외국인·기관 20일 순매수가 둘 다 0보다 큰 U 종목이 없었습니다."
                 columns={[
-                  { key: "code", header: "종목", render: (row) => <span className="font-semibold text-bright">{row.code}</span> },
+                  { key: "code", header: "종목", render: (row) => <span className="font-semibold text-bright"><TickerName code={row.code} /></span> },
                   { key: "rank", header: "U 순위", align: "right", render: (row) => row.rank },
                   { key: "score", header: "점수", align: "right", render: (row) => row.score },
                 ]}
@@ -78,7 +79,7 @@ export function KrRuleDecisionBody({ view }: { view: KrRuleDecisionView }) {
             rows={view.holdings}
             rowKey={(row) => row.key}
             columns={[
-              { key: "code", header: "종목", render: (row) => <span className="font-semibold text-bright">{row.code}</span> },
+              { key: "code", header: "종목", render: (row) => <span className="font-semibold text-bright"><TickerName code={row.code} /></span> },
               { key: "qty", header: "수량(주)", align: "right", render: (row) => row.qty },
               { key: "weight", header: "비중", align: "right", render: (row) => row.weight },
               { key: "sell", header: "판정", render: (row) => <span className={row.sell === "매도" ? "text-down" : "text-body"}>{row.sell}</span> },
@@ -95,7 +96,7 @@ export function KrRuleDecisionBody({ view }: { view: KrRuleDecisionView }) {
             rows={view.skipped}
             rowKey={(row) => row.key}
             columns={[
-              { key: "ticker", header: "종목", render: (row) => row.ticker },
+              { key: "ticker", header: "종목", render: (row) => <TickerName code={row.ticker} /> },
               { key: "reason", header: "사유", render: (row) => <span className="text-xs text-body">{row.reason}</span> },
             ]}
           />

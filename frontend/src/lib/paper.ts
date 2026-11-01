@@ -19,7 +19,7 @@ import {
 import { tradeTimeFrom } from "./marketSessions";
 import { KR_ACCOUNT_PROFILES } from "./paperKrProfiles";
 import { filerName } from "./holdings";
-import { formatMoney, formatSharePriceFor, marketMeta, type PaperMarketCode } from "./paperMarket";
+import { formatMoney, formatSharePriceFor, marketMeta, type PaperMarketCode, tickerName } from "./paperMarket";
 import type {
   PaperBookResetResult,
   PaperBookStatusResult,
@@ -762,8 +762,11 @@ export function accountComposition(
   cash: number | null | undefined,
   nav: number | null | undefined,
   market: PaperMarketCode = "US",
+  names: Readonly<Record<string, string>> = {},
 ): AccountComposition {
   const money = (value: number | null | undefined) => formatMoney(value, market);
+  // 이름표는 종목 이름 표(한국 화면 — 사용자 결정 2026-11-02)의 기업명, 모르면 코드 그대로. 조각·줄의 key는 코드 그대로.
+  const nameOf = (ticker: string) => tickerName(ticker, names);
   const navValue = isNumber(nav) && nav > 0 ? nav : null;
   const entries = (positions ?? []).map((position) => ({
     position,
@@ -782,8 +785,8 @@ export function accountComposition(
   const segmentOf = (index: number) => (index < COMPOSITION_TOP_N ? `holding:${stocks[index].ticker}` : "other");
 
   const rows: CompositionRow[] = [
-    ...stocks.map((entry, index) => holdingRow(entry.position, entry.share, segmentOf(index), market)),
-    ...cashLike.map((entry) => holdingRow(entry.position, entry.share, "cash", market)),
+    ...stocks.map((entry, index) => holdingRow(entry.position, entry.share, segmentOf(index), market, nameOf)),
+    ...cashLike.map((entry) => holdingRow(entry.position, entry.share, "cash", market, nameOf)),
     {
       key: "cash", label: "현금", segmentKey: "cash", cashLike: false, isCash: true,
       shareText: formatWithUnit(cashShare, 1, "%"), valueText: money(cashValue),
@@ -808,8 +811,8 @@ export function accountComposition(
     key: `holding:${entry.ticker}`,
     kind: "holding",
     slot: index,
-    label: entry.ticker,
-    short: entry.ticker,
+    label: nameOf(entry.ticker),
+    short: nameOf(entry.ticker),
     sharePct: entry.share as number,
     shareText: formatWithUnit(entry.share, 1, "%"),
     valueText: money(entry.position.marketValue),
@@ -817,8 +820,8 @@ export function accountComposition(
   }));
   if (rest.length > 0) {
     const share = rest.reduce((sum, entry) => sum + (entry.share as number), 0);
-    const single = rest.length === 1 ? rest[0].ticker : null;
-    const names = rest.slice(0, OTHER_DETAIL_NAMES).map((entry) => entry.ticker).join("·");
+    const single = rest.length === 1 ? nameOf(rest[0].ticker) : null;
+    const restNames = rest.slice(0, OTHER_DETAIL_NAMES).map((entry) => nameOf(entry.ticker)).join("·");
     const more = rest.length > OTHER_DETAIL_NAMES ? ` 외 ${formatNumber(rest.length - OTHER_DETAIL_NAMES, 0)}종목` : "";
     segments.push({
       key: "other",
@@ -829,13 +832,13 @@ export function accountComposition(
       sharePct: share,
       shareText: formatWithUnit(share, 1, "%"),
       valueText: money(rest.reduce((sum, entry) => sum + valueOf(entry.position), 0)),
-      detail: single ? null : `${names}${more}`,
+      detail: single ? null : `${restNames}${more}`,
     });
   }
   const cashLikeShare = cashLike.reduce((sum, entry) => sum + (entry.share as number), 0);
   const cashSegmentShare = (cashShare as number) + cashLikeShare;
   if (cashSegmentShare > 0) {
-    const tickers = cashLike.map((entry) => entry.ticker);
+    const tickers = cashLike.map((entry) => nameOf(entry.ticker));
     segments.push({
       key: "cash",
       kind: "cash",
@@ -846,7 +849,7 @@ export function accountComposition(
       shareText: formatWithUnit(cashSegmentShare, 1, "%"),
       valueText: money((cashValue as number) + cashLike.reduce((sum, entry) => sum + valueOf(entry.position), 0)),
       detail: tickers.length > 0
-        ? [`현금 ${money(cashValue)}`, ...cashLike.map((entry) => `${entry.ticker} ${money(entry.position.marketValue)}`)]
+        ? [`현금 ${money(cashValue)}`, ...cashLike.map((entry) => `${nameOf(entry.ticker)} ${money(entry.position.marketValue)}`)]
           .join(" + ")
         : null,
     });
@@ -867,10 +870,11 @@ export function accountComposition(
 }
 
 /** 구성 표의 보유 한 줄. 평가 손익(평단 대비)은 장부 값 그대로. 평가액은 그 계좌 시장의 통화. */
-function holdingRow(position: PaperPosition, share: number | null, segmentKey: string, market: PaperMarketCode): CompositionRow {
+function holdingRow(position: PaperPosition, share: number | null, segmentKey: string, market: PaperMarketCode,
+  nameOf: (ticker: string) => string): CompositionRow {
   return {
     key: `position:${position.ticker}`,
-    label: position.ticker,
+    label: nameOf(position.ticker),
     segmentKey,
     cashLike: position.cashLike,
     isCash: false,

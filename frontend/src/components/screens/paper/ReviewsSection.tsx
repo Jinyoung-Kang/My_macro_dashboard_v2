@@ -43,6 +43,7 @@ import type {
   PaperRunReviewResult,
   PaperStatusResponse,
 } from "@/lib/types";
+import { TickerName } from "./TickerName";
 
 /**
  * 결정 로그 탭의 '주간 복기'(2단계 명세 §3 D1~D6) — 주마다 한 건, Claude 계좌의 지난 4주 결정을 그 뒤 가격과 대조한 복기 메모.
@@ -266,7 +267,7 @@ function ReviewBody({
             rowKey={(row) => row.key}
             columns={[
               { key: "decision", header: "결정", render: (row) => <span className="whitespace-nowrap text-xs text-body">{row.decision}</span> },
-              { key: "ticker", header: "종목", render: (row) => <span className="font-semibold text-bright">{row.ticker}</span> },
+              { key: "ticker", header: "종목", render: (row) => <span className="font-semibold text-bright"><TickerName code={row.ticker} /></span> },
               // 방향이 있어야 변화의 부호를 읽을 수 있습니다 — 매도의 음수는 피한 하락(손실이 아님).
               {
                 key: "side",

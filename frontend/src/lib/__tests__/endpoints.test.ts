@@ -139,6 +139,8 @@ const CASES: Case[] = [
   { name: "paper.market(KR).overview", before: "/api/paper/overview?market=KR", after: endpoints.paper.market("KR").overview },
   { name: "paper.market(US).live", before: "/api/paper/live", after: endpoints.paper.market("US").live },
   { name: "paper.market(KR).live", before: "/api/paper/live?market=KR", after: endpoints.paper.market("KR").live },
+  { name: "paper.market(US).names", before: "/api/paper/names", after: endpoints.paper.market("US").names },
+  { name: "paper.market(KR).names", before: "/api/paper/names?market=KR", after: endpoints.paper.market("KR").names },
   { name: "paper.market(KR).status", before: "/api/paper/status?market=KR", after: endpoints.paper.market("KR").status },
   { name: "paper.market(KR).init", before: "/api/paper/init?market=KR", after: endpoints.paper.market("KR").init },
   { name: "paper.market(KR).runRisk", before: "/api/paper/run/risk?market=KR", after: endpoints.paper.market("KR").runRisk },

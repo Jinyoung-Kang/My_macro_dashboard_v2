@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useTickerName } from "@/hooks/useTickerNames";
 import { MultiLineSeries, SERIES_COLORS } from "@/components/charts";
 import { AssetRow, RangeTabs } from "@/components/patterns";
 import { Banner, Button, Card, Freshness, Table } from "@/components/ui";
@@ -138,6 +139,8 @@ export function OverviewSection({
   /** 이 개요의 시장(기본 미국). */
   market?: PaperMarketCode;
 }) {
+  // 종목 표시 이름(한국 화면 — 사용자 결정 2026-11-02), 모르면 코드 그대로.
+  const nameOf = useTickerName();
   const korea = market === "KR";
   const paths = endpoints.paper.market(market);
   // 정기 작업이 꺼져 있는지·설정 버전·Claude 호출 사용량·재무 수집 범위는 개요 응답에 없어 상태 응답에서 읽습니다(실패해도 개요는 그대로).
@@ -236,7 +239,7 @@ export function OverviewSection({
     ...(line.key === KR_REFERENCE_KEY ? { dashed: true } : {}),
   }));
   const quotes = overview.quotes ?? null;
-  const staleNames = quotes?.staleTickers ?? [];
+  const staleNames = (quotes?.staleTickers ?? []).map(nameOf);
   // 미국 전용 — 출발일 종가 사후 체결 초기화(한국은 출발 상태 카드가 맡음).
   const prompt = korea ? null : initPrompt(overview);
   const initResult = init.result && (

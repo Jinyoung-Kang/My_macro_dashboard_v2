@@ -10,7 +10,7 @@
 import { describe, expect, it } from "vitest";
 
 import { bookCard, formatDollars, formatSharePrice, timingLabel } from "../paper";
-import { formatMoney, formatSharePriceFor, MARKET_META, marketOfBook } from "../paperMarket";
+import { formatMoney, formatSharePriceFor, MARKET_META, marketOfBook, tickerName } from "../paperMarket";
 import { bookAssetRow, PENDING_BACKFILL_WARNING } from "../paperOverview";
 import type { PaperBookSummary } from "../types";
 
@@ -105,5 +105,16 @@ describe("시장 인자를 받은 기존 함수", () => {
   it("체결 시점 이름 — 한국 NEXT_OPEN", () => {
     expect(timingLabel("NEXT_OPEN")).toBe("다음 거래일 시가");
     expect(timingLabel("NEXT_OBSERVATION")).toBe("다음 관측치");
+  });
+});
+
+describe("tickerName — 종목 표시 이름(사용자 결정 2026-11-02)", () => {
+  it("이름 표에 있으면 기업명, 없거나 빈 이름이면 코드 그대로, 코드가 없으면 —", () => {
+    const names = { "005930": "삼성전자", "000660": " " };
+    expect(tickerName("005930", names)).toBe("삼성전자");
+    expect(tickerName("000660", names)).toBe("000660");
+    expect(tickerName("035420", names)).toBe("035420");
+    expect(tickerName("SPY", undefined)).toBe("SPY");
+    expect(tickerName(null, names)).toBe("—");
   });
 });

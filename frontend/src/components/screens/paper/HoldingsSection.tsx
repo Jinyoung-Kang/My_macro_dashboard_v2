@@ -71,6 +71,7 @@ import type {
   PaperPositionsResponse,
   PaperStatusResponse,
 } from "@/lib/types";
+import { TickerName } from "./TickerName";
 
 /** 주문·체결 표에 보일 최근 건수. 서버 상한은 500입니다. */
 const RECENT_LIMIT = 50;
@@ -362,7 +363,7 @@ const KR_POSITION_COLUMNS: readonly Column<PaperPosition>[] = [
     sortValue: (row) => row.ticker,
     cell: (row) => (
       <span className="flex flex-wrap items-center gap-1">
-        <span className="font-semibold text-bright">{row.ticker}</span>
+        <span className="font-semibold text-bright"><TickerName code={row.ticker} /></span>
         <Badges badges={krPositionBadges(row)} />
       </span>
     ),
@@ -431,7 +432,7 @@ function part(text: string, label?: string): ReactNode {
 }
 
 const KR_LOCKOUT_COLUMNS: readonly Column<PaperLockout>[] = [
-  { key: "ticker", header: "종목", cell: (row) => row.ticker },
+  { key: "ticker", header: "종목", cell: (row) => <TickerName code={row.ticker} /> },
   { key: "until", header: "이 날까지(KR 거래일)", cell: (row) => row.untilTradingDate },
   { key: "reason", header: "사유", cell: (row) => row.reason || EMPTY },
 ];
@@ -448,7 +449,7 @@ const KR_ORDER_COLUMNS: readonly Column<PaperOrder>[] = [
     className: "whitespace-nowrap",
     cell: (row) => <TwoLines top={formatKst(row.createdAtKst)} bottom={`기준 ${row.asOfTradingDate ?? EMPTY}`} />,
   },
-  { key: "ticker", header: "종목", className: "whitespace-nowrap", cell: (row) => row.ticker },
+  { key: "ticker", header: "종목", className: "whitespace-nowrap", cell: (row) => <TickerName code={row.ticker} /> },
   { key: "side", header: "방향", className: "whitespace-nowrap", cell: (row) => <span className={sideClass(row.side)}>{sideLabel(row.side)}</span> },
   { key: "size", header: "크기", align: "right", cell: (row) => orderSizeText(row) },
   {
@@ -504,7 +505,7 @@ const KR_FILL_COLUMNS: readonly Column<PaperFill>[] = [
     className: "min-w-[9rem]",
     cell: (row) => (
       <span className="flex flex-wrap items-center gap-1">
-        <span>{row.ticker}</span>
+        <span><TickerName code={row.ticker} /></span>
         <Badges badges={krFillBadges(row)} />
       </span>
     ),

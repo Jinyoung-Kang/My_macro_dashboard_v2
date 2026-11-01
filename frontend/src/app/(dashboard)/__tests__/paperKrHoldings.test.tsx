@@ -272,6 +272,20 @@ describe("자료", () => {
     expect(within(screen.getByRole("table", { name: "재진입 금지" })).getByText("이 날까지(KR 거래일)")).toBeTruthy();
   });
 
+  it("종목은 코드 대신 기업명(사용자 결정 2026-11-02 — 이름 표 /api/paper/names?market=KR), 코드는 title, 이름을 모르는 종목은 코드 그대로", async () => {
+    reads["/api/paper/names?market=KR"] = () =>
+      Promise.resolve({ available: true, market: "KR", names: { "005930": "삼성전자", "000660": "SK하이닉스" }, count: 2, source: "토스" });
+    render(<PaperPage market="KR" initialTab="holdings" />);
+    const table = await screen.findByRole("table", { name: "보유" });
+    const samsung = await within(table).findByText("삼성전자");
+    expect(samsung.getAttribute("title")).toBe("005930");
+    expect(within(table).getByText("SK하이닉스")).toBeTruthy();
+    expect(within(table).queryByText("005930")).toBeNull();
+    expect(within(table).getByText("035420")).toBeTruthy();
+    expect(within(screen.getByRole("table", { name: "체결" })).getByText("삼성전자")).toBeTruthy();
+    expect(requested()).toContain("/api/paper/names?market=KR");
+  });
+
   // 예전에는 기업행위 보류로 묶인 평가(금융위 확정 종가 — 시각은 장부가 묶은 때)도 '{시각} 관측(토스증권 잠정)'이라 적었습니다.
   it("보유 가격 툴팁 — 보통 보유는 관측 시각(토스증권 잠정), 기업행위 보류 보유는 묶인 평가(금융위 확정 종가, 없으면 마지막 평가 가격)", async () => {
     render(<PaperPage market="KR" initialTab="holdings" />);

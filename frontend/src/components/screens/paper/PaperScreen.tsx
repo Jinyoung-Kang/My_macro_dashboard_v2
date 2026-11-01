@@ -4,12 +4,13 @@ import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 import { Banner, Button, Card, ErrorState, Freshness, Loading, PageHeader, underlineTabClasses } from "@/components/ui";
 import { useApi } from "@/hooks/useApi";
+import { TickerNamesProvider } from "@/hooks/useTickerNames";
 import { endpoints } from "@/lib/endpoints";
 import { CLAUDE2_LIMITS, isTimedBook, PAPER_SOURCES, PAPER_TABS, type PaperTabKey } from "@/lib/paper";
 import { KR_TAB_LABELS } from "@/lib/paperKrProfiles";
 import { formatMoney, type PaperMarketCode } from "@/lib/paperMarket";
 import { paperTabFromPath, paperTabPath } from "@/lib/paperRoutes";
-import type { PaperOverviewResponse } from "@/lib/types";
+import type { PaperNamesResponse, PaperOverviewResponse } from "@/lib/types";
 import { DecisionsSection } from "./DecisionsSection";
 import { FrameworkSection } from "./FrameworkSection";
 import { HoldingsSection } from "./HoldingsSection";
@@ -52,6 +53,16 @@ export default function PaperPage({
   initialTab?: PaperTabKey;
   market?: PaperMarketCode;
 }) {
+  // 한국 화면은 종목 코드 대신 기업명(사용자 결정 2026-11-02) — 이름 표를 한 번 읽어 탭들에 내려 줍니다(10분마다 다시, 실패하면 코드 그대로).
+  const names = useApi<PaperNamesResponse>(market === "KR" ? endpoints.paper.market("KR").names : null, 600_000);
+  return (
+    <TickerNamesProvider names={names.data?.names}>
+      <PaperScreenBody initialTab={initialTab} market={market} />
+    </TickerNamesProvider>
+  );
+}
+
+function PaperScreenBody({ initialTab, market }: { initialTab: PaperTabKey; market: PaperMarketCode }) {
   const korea = market === "KR";
   const [tab, setTab] = useState<PaperTabKey>(initialTab);
   const [preselect, setPreselect] = useState("");

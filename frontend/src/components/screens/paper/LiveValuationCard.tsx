@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { type Column, DataTable } from "@/components/patterns";
 import { Banner, Button, Card, NativeSelect } from "@/components/ui";
 import { useApi } from "@/hooks/useApi";
+import { useTickerNames } from "@/hooks/useTickerNames";
 import { useShownOnce } from "@/hooks/useShownOnce";
 import { useVisibleWake } from "@/hooks/useVisibleWake";
 import { endpoints } from "@/lib/endpoints";
@@ -25,6 +26,7 @@ import {
   normalizeLiveMinutes,
 } from "@/lib/paperLive";
 import type { PaperLiveResponse } from "@/lib/types";
+import { TickerName } from "./TickerName";
 
 /**
  * 장중 시세(추정) 카드 — 정규장 동안 고른 계좌의 종목 장중가가 고른 간격(기본 30분)으로 움직이고, 모든 값에 기준 시각을 붙입니다. 장 상태·간격
@@ -83,6 +85,8 @@ export function LiveValuationCard({
     setRefreshMs(liveRefreshMs(data, minutes));
   }, [data, minutes]);
 
+  const names = useTickerNames();
+
   useEffect(() => {
     if (revision === null) return;
     const previous = seenRevision.current;
@@ -127,10 +131,10 @@ export function LiveValuationCard({
 
   const session = liveSessionView(data.session, data.quotes);
   const holdings = livePositionsFor(data, bookCode, market);
-  const warning = session.live ? liveQuotesWarning(data.quotes) : null;
+  const warning = session.live ? liveQuotesWarning(data.quotes, names) : null;
   const intervalNote = session.live ? liveIntervalNote(minutes, market) : null;
   const positionColumns: Column<LivePositionView>[] = [
-    { key: "ticker", header: "종목", rowHeader: true, cell: (row) => row.ticker, className: "whitespace-nowrap font-semibold" },
+    { key: "ticker", header: "종목", rowHeader: true, cell: (row) => <TickerName code={row.ticker} />, className: "whitespace-nowrap font-semibold" },
     { key: "qty", header: "수량", align: "right", cell: (row) => <span className="tabular-nums">{row.qty}</span> },
     { key: "price", header: "가격", align: "right", cell: (row) => <span className="tabular-nums">{row.price}</span> },
     {

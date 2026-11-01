@@ -5,6 +5,7 @@ import { Table } from "@/components/ui";
 import { EMPTY } from "@/lib/format";
 import { type Badge, type ClaudeDecisionView, type ClaudeOrderRow, sideClass, type ValidationRow, type WatchRow } from "@/lib/paper";
 import type { KrDecisionExtras } from "@/lib/paperKr";
+import { TickerName } from "./TickerName";
 import { KrDecisionExtrasParts, KrEventsPart } from "./KrRuleDecisionBody";
 
 /**
@@ -100,7 +101,7 @@ export function ClaudeDecisionBody({
             rowKey={(row) => row.key}
             emptyMessage="모델이 주문을 내지 않았습니다."
             columns={[
-              { key: "ticker", header: "종목", render: (row) => <span className="font-semibold text-bright">{row.ticker}</span> },
+              { key: "ticker", header: "종목", render: (row) => <span className="font-semibold text-bright"><TickerName code={row.ticker} /></span> },
               { key: "side", header: "방향", render: (row) => <span className={sideClass(row.sideKey)}>{row.side}</span> },
               { key: "size", header: "크기", align: "right", render: (row) => <span className="whitespace-nowrap">{row.size}</span> },
               {
@@ -141,7 +142,7 @@ export function ClaudeDecisionBody({
             rowKey={(row) => row.key}
             emptyMessage="검증한 주문이 없습니다."
             columns={[
-              { key: "ticker", header: "종목", render: (row) => <span className="font-semibold text-bright">{row.ticker}</span> },
+              { key: "ticker", header: "종목", render: (row) => <span className="font-semibold text-bright"><TickerName code={row.ticker} /></span> },
               { key: "side", header: "방향", render: (row) => <span className={sideClass(row.sideKey)}>{row.side}</span> },
               { key: "size", header: "크기", align: "right", render: (row) => <span className="whitespace-nowrap">{row.size}</span> },
               { key: "result", header: "결과", render: (row) => <Badges badges={[row.result]} /> },
@@ -163,7 +164,7 @@ export function ClaudeDecisionBody({
             rows={view.watchlist}
             rowKey={(row) => row.key}
             columns={[
-              { key: "ticker", header: "종목", render: (row) => <span className="font-semibold text-bright">{row.ticker}</span> },
+              { key: "ticker", header: "종목", render: (row) => <span className="font-semibold text-bright"><TickerName code={row.ticker} /></span> },
               { key: "condition", header: "조건", render: (row) => <span className="text-xs text-body">{row.condition}</span> },
             ]}
           />

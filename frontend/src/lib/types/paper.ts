@@ -254,6 +254,15 @@ export interface PaperOverviewBook extends PaperBookSummary {
 }
 
 /** GET /api/paper/overview(?market=KR) */
+/** GET /api/paper/names?market= — 종목 이름 표(한국 코드 → 기업명, 미국은 빈 표). 모르는 종목은 없음(화면은 코드 그대로). */
+export interface PaperNamesResponse {
+  available: boolean;
+  market?: string;
+  names?: Record<string, string>;
+  count?: number;
+  source?: string | null;
+}
+
 export interface PaperOverviewResponse {
   available: boolean;
   message?: string;

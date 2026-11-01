@@ -7,7 +7,7 @@
  * 다음 개장 시각에 한 번 깨어납니다. 모르는 값은 "—"(0으로 채우지 않음)이고 모든 수익률에 기준 시각을 붙입니다.
  */
 import { EMPTY, formatKst, formatNumber, formatPercent } from "./format";
-import { formatSharePriceFor, type PaperMarketCode } from "./paperMarket";
+import { formatSharePriceFor, type PaperMarketCode, tickerName } from "./paperMarket";
 import type { PaperLivePosition, PaperLiveQuotes, PaperLiveResponse, PaperLiveSession } from "./types";
 
 /**
@@ -180,11 +180,14 @@ export function liveRevision(live: PaperLiveResponse | null | undefined): string
 }
 
 /** 받지 못한 종목·수집 오류 한 줄(없으면 null) — 그 종목은 마지막 관측 가격으로 평가됐다는 뜻. */
-export function liveQuotesWarning(quotes: PaperLiveQuotes | null | undefined): string | null {
+export function liveQuotesWarning(quotes: PaperLiveQuotes | null | undefined,
+  names: Readonly<Record<string, string>> = {}): string | null {
   if (!quotes) return null;
   const missing = quotes.missing ?? [];
   if (missing.length === 0 && !quotes.error) return null;
   if (missing.length === 0) return `장중 시세 수집 오류 — ${quotes.error}`;
-  const names = `${missing.slice(0, 5).join(", ")}${missing.length > 5 ? ` 외 ${missing.length - 5}` : ""}`;
-  return `장중 시세를 받지 못한 종목: ${names} — 마지막 관측 가격으로 평가`;
+  // 한국 화면은 이름 표의 기업명(사용자 결정 2026-11-02), 모르면 코드 그대로.
+  const shown = missing.slice(0, 5).map((code) => tickerName(code, names));
+  const list = `${shown.join(", ")}${missing.length > 5 ? ` 외 ${missing.length - 5}` : ""}`;
+  return `장중 시세를 받지 못한 종목: ${list} — 마지막 관측 가격으로 평가`;
 }
