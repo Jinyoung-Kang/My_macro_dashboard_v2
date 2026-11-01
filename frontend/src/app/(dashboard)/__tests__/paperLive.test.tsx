@@ -149,3 +149,56 @@ describe("QA-155 장 밖 시험이 벽시계에 기대지 않는다(시험 흔�
     expect(liveCalls()).toBe(1);
   });
 });
+
+describe("QA-154 숨긴 탭에서는 깨우지 않는다", () => {
+  let visibility: DocumentVisibilityState;
+  beforeEach(() => {
+    visibility = "visible";
+    vi.spyOn(document, "visibilityState", "get").mockImplementation(() => visibility);
+  });
+
+  /** 탭을 숨기거나 다시 보이게 합니다(브라우저처럼 visibilitychange를 냄). */
+  async function setVisibility(next: DocumentVisibilityState) {
+    visibility = next;
+    await act(async () => { document.dispatchEvent(new Event("visibilitychange")); });
+  }
+
+  // 카드의 '다음 개장 깨우기'·'20초 뒤 한 번 더'는 setTimeout으로 useApi의 reload를 부릅니다. reload(load)는 탭이 보이는지 보지 않아, 수정 전에는
+  // 숨긴 탭에서도 /live 요청이 나갔습니다 — 정규장이면 서버가 그 요청으로 수집을 깨웁니다(시세는 화면을 볼 때만 받기로 한 결정과 어긋남).
+  // 재현 커밋에서는 it.fails.
+  it.fails("장 밖 — 다음 개장 깨우기는 숨긴 탭이면 읽지 않고, 다시 보이면 한 번 읽는다", async () => {
+    // 고정 시계(10-30 23:59 KST)에서 다음 개장이 10-31 00:10 KST → 깨우기는 12분 뒤(개장 + 1분).
+    api.apiGetShared.mockImplementation(() =>
+      Promise.resolve(live({ session: { ...SESSION, phase: "CLOSED", nextOpenAtKst: "2026-10-31 00:10 KST" } })));
+    render(<LiveValuationCard />);
+    await settle();
+    expect(liveCalls()).toBe(1);
+
+    await setVisibility("hidden");
+    await settle(13 * 60_000);
+    expect(liveCalls()).toBe(1);
+
+    // 장 밖에는 자동 갱신 주기가 0이라 useApi가 탭 복귀 때 읽지 않습니다 — 미뤄 둔 깨우기를 카드가 한 번 읽습니다.
+    await setVisibility("visible");
+    await settle();
+    expect(liveCalls()).toBe(2);
+  });
+
+  it.fails("정규장 — 20초 뒤 한 번 더는 숨긴 탭이면 읽지 않고, 돌아오면 useApi의 복귀 읽기 한 번뿐(셋이 아님)", async () => {
+    api.apiGetShared.mockImplementation(() =>
+      Promise.resolve(live({ quotes: { source: null, collectedAtKst: null, refreshRequested: true, missing: [], error: null } })));
+    render(<LiveValuationCard />);
+    await settle();
+    expect(liveCalls()).toBe(1);
+
+    await setVisibility("hidden");
+    await settle(20_000);
+    expect(liveCalls()).toBe(1);
+
+    await setVisibility("visible");
+    await settle();
+    expect(liveCalls()).toBe(2);
+    await settle(60_000);
+    expect(liveCalls()).toBe(2);
+  });
+});
