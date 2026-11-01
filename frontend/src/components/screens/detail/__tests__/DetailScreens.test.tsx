@@ -5,7 +5,7 @@
  *  - AI 요약: 유료·운영자만 단추, 누를 때만 부르고 근거 번호를 출처 링크로, 무료 회원은 자물쇠 안내
  *  - 라우트: 시장·코드·CIK·지표 키 모양이 틀리면 404(notFound)
  */
-import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import type { ReactElement } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { SessionUserProvider } from "@/hooks/useSessionUser";
@@ -303,7 +303,7 @@ describe("종목 상세 — 국내", () => {
     expect(screen.getByText("89,000 원")).toBeTruthy();
     expect(screen.getByText("평균 4.00 / 5")).toBeTruthy();
     expect(screen.getByRole("link", { name: /메모리 회복/ }).getAttribute("href")).toBe("https://finance.naver.com/research/company_read.naver?nid=1");
-    expect(requested()).toContain(endpoints.macro.ticker("005930.KS", "1y"));
+    await waitFor(() => expect(requested()).toContain(endpoints.macro.ticker("005930.KS", "1y")));
     expect(requested().some((path) => path.startsWith("/api/guru/holders"))).toBe(false);
     const links = screen.getByRole("heading", { name: "다른 곳에서 보기" }).closest("section") as HTMLElement;
     expect(within(links).getAllByRole("link")[0].textContent).toContain("네이버 증권");
@@ -321,8 +321,8 @@ describe("지표 상세", () => {
     const hero = screen.getByRole("region", { name: "S&P 500" });
     expect(within(hero).getByText("7,622.99")).toBeTruthy();
     expect(within(hero).getByText("차트: Yahoo Finance ^GSPC 일별 종가")).toBeTruthy();
-    expect(requested()).toContain(endpoints.macro.ticker("^GSPC", "1y"));
-    expect(requested()).toContain(endpoints.detail.news({ q: "S&P 500" }));
+    await waitFor(() => expect(requested()).toContain(endpoints.macro.ticker("^GSPC", "1y")));
+    await waitFor(() => expect(requested()).toContain(endpoints.detail.news({ q: "S&P 500" })));
     expect(screen.getByRole("link", { name: /S&P 500 선물 \(ES\)/ }).getAttribute("href")).toBe("/markets/i/sp500_fut");
     expect(screen.getByRole("link", { name: "^GSPC 시세·핵심 지표 보기" }).getAttribute("href")).toBe("/s/us/%5EGSPC");
   });
@@ -338,7 +338,8 @@ describe("지표 상세", () => {
     renderAs(PRO, <IndicatorDetailScreen indicatorKey="us02y" />);
     expect(await screen.findByText(/Yahoo 티커 ZT=F는 선물 가격이라 차트를 그리지 않습니다/)).toBeTruthy();
     expect(requested().some((path) => path.startsWith("/api/macro/ticker"))).toBe(false);
-    expect(requested()).toContain(endpoints.detail.news({ q: "미국채 2년물 수익률" }));
+    // 뉴스 카드는 지표를 찾은 뒤 따로 부르므로 이유 문장보다 늦게 요청될 수 있다(간헐 실패 — 2026-11-02 검증)
+    await waitFor(() => expect(requested()).toContain(endpoints.detail.news({ q: "미국채 2년물 수익률" })));
     cleanup();
 
     renderAs(PRO, <IndicatorDetailScreen indicatorKey="nope" />);
@@ -378,7 +379,7 @@ describe("기관 상세", () => {
     expect(screen.getByText("21.50%")).toBeTruthy();
     expect(screen.getAllByText("—").length).toBeGreaterThan(0);
     expect(screen.getByText("가치투자 포트폴리오")).toBeTruthy();
-    expect(requested()).toContain(endpoints.detail.news({ q: "Berkshire Hathaway" }));
+    await waitFor(() => expect(requested()).toContain(endpoints.detail.news({ q: "Berkshire Hathaway" })));
     expect(screen.getByRole("link", { name: /SEC EDGAR 13F 공시/ }).getAttribute("href")).toBe(
       "https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=0001067983&type=13F-HR",
     );
