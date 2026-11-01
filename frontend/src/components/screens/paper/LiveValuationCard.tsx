@@ -34,8 +34,8 @@ import type { PaperLiveResponse } from "@/lib/types";
  * 표시 전용입니다. 장부(체결·순자산 줄·통계·결정)는 이 값을 쓰지 않습니다(서버 PaperLiveService). 다시 읽기 규칙은 lib/paperLive —
  * 정규장에만 간격대로, 서버가 새 시세를 요청했으면 20초 뒤 한 번만 더, 장 밖에서는 멈추고 다음 개장에 한 번 깨어납니다. 탭을 숨기면 간격
  * 읽기는 useApi가 멈추고, '한 번 더'·'다음 개장' 깨우기는 탭이 다시 보일 때로 미룹니다(useVisibleWake — 보지 않는 동안 시세를 받지 않음,
- * QA-154). 미룬 '한 번 더'를 useApi의 탭 복귀 읽기에 넘기면 그 복귀 읽기는 보통 읽기라, 응답이 새 수집을 요청했으면 그 뒤 20초에 한 번 더 읽습니다
- * (QA-157). 숨긴 탭으로 열렸으면 첫 읽기도 처음 보일 때까지 미룹니다(useShownOnce, QA-156).
+ * QA-154). 미룬 '한 번 더'의 탭 복귀 읽기는 보통 읽기라(간격이 있으면 useApi, 끄기면 카드 훅), 응답이 새 수집을 요청했으면 그 뒤 20초에 한 번 더
+ * 읽습니다(QA-157·159). 숨긴 탭으로 열렸으면 첫 읽기도 처음 보일 때까지 미룹니다(useShownOnce, QA-156).
  */
 export function LiveValuationCard({
   market = "US",
@@ -67,8 +67,13 @@ export function LiveValuationCard({
     void reload();
   }, [reload]);
   // 타이머의 다시 읽기 — 숨긴 탭이면 다시 보일 때로 미룹니다(QA-154). reload를 바로 부르면 숨긴 탭에서도 /live가 나가 정규장이면 수집을 깨웠습니다.
-  // 정규장 간격이 있으면 미룬 것은 useApi의 탭 복귀 읽기가 맡고(그 읽기는 보통 읽기 — readFollowUp을 부르지 않음), 간격이 0이면 훅이 읽습니다.
-  const wakeFollowUp = useVisibleWake(readFollowUp, refreshMs);
+  // 미룬 '한 번 더'의 탭 복귀 읽기는 보통 읽기입니다 — 정규장 간격이 있으면 useApi의 복귀 읽기가, 간격이 0(끄기)이면 훅이 reload로 읽습니다. 복귀가
+  // 늦으면 그 읽기가 새 수집을 깨우므로 응답이 20초 뒤 한 번 더를 걸 수 있어야 합니다(QA-157 — 끄기 갈래는 QA-159).
+  const deferredFollowUp = useVisibleWake(reload, refreshMs);
+  const wakeFollowUp = useCallback(() => {
+    if (document.visibilityState === "visible") readFollowUp();
+    else deferredFollowUp();
+  }, [readFollowUp, deferredFollowUp]);
   const wakeAtOpen = useVisibleWake(reload, refreshMs);
   // 처음 받은 장중 값의 판 — 그 뒤 판이 바뀔 때만 onUpdated를 부릅니다.
   const revision = liveRevision(data);
