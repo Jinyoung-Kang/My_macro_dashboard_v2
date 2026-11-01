@@ -117,8 +117,8 @@ export interface BookStale {
  *   모든 보유를 장중가로 평가했으면 배지 없음(그 값은 늦은 관측으로 평가한 값이 아님).
  * - 확정 줄(`FINAL`): 그 거래일 마감 값이라 장부 관측과 무관 — 배지 없음.
  * - 잠정 줄(`PROVISIONAL`): 마감 값이 아닐 수 있어(QA-158) 장부 사유를 그대로 답니다 — 지난 값으로 평가한 보유가 있거나(`staleCount`), 마지막 관측이 그 줄의
- *   마감(`current.atKst`)보다 이르면(마감 뒤 관측이 오지 않아 서버가 마지막 관측 상태를 잠정 줄로 옮긴 것 — `PaperLedgerService.settleNav`). 둘 다
- *   아니면(마감 뒤 관측으로 쓴 줄) 배지 없음 — 관측치 저장본 늦음(수집 3시간 뒤부터)은 그 값과 무관합니다. 시각을 모르면 사유 그대로.
+ *   마감(`current.atKst`) + 15분보다 이르면(그날 줄을 쓸 수 있는 관측이 오지 않아 서버가 마지막 관측 상태를 잠정 줄로 옮긴 것 — `PaperLedgerService.settleNav`,
+ *   QA-160). 둘 다 아니면(마감 + 15분부터의 관측으로 쓴 줄) 배지 없음 — 미국 관측치 저장본 늦음(수집 3시간 뒤부터)은 그 값과 무관합니다. 시각을 모르면 사유 그대로.
  * - 모르는 단계(새 서버 값): 장부 사유 그대로(배지를 숨기는 쪽으로 짐작하지 않음).
  *
  * `place`가 "hero"면 그 자리가 장부 관측 시각을 단계 표기로 이미 적으므로(옛 응답 '마지막 관측 …'·장부 단계 '장부 …') 사유의 '· 마지막 관측 …'을
@@ -152,21 +152,26 @@ export function bookStale(book: PaperOverviewBook, context: BookRowContext = {},
   return { isStale: reasons.length > 0, reason: reasons.length > 0 ? reasons.join(" · ") : null };
 }
 
-/** "2026-10-31 02:08 KST" → "2026-10-31 02:08"(분까지 — 그대로 문자열 비교가 시각 비교). 꼴이 다르면 null. */
-function minuteKey(stamp: string | null | undefined): string | null {
-  const match = /^(\d{4}-\d{2}-\d{2})[ T](\d{2}:\d{2})/.exec(stamp ?? "");
-  return match ? `${match[1]} ${match[2]}` : null;
+/** 관측치가 그날 순자산 줄을 쓰려면 마감 뒤 이만큼 지나 수집해야 합니다(서버 `PaperMarketData.FINAL_DELAY` — 마감 봉이 확정되는 시간). */
+const LINE_AFTER_CLOSE_MINUTES = 15;
+
+/** "2026-10-31 02:08 KST" → 그 시각의 분 수(두 KST 시각을 견주는 데만 씀 — 시간대는 무시). 꼴이 다르면 null. */
+function stampMinutes(stamp: string | null | undefined): number | null {
+  const match = /^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})/.exec(stamp ?? "");
+  if (!match) return null;
+  const [, year, month, day, hour, minute] = match.map(Number);
+  return Date.UTC(year, month - 1, day, hour, minute) / 60_000;
 }
 
 /**
- * 잠정 줄이 장부 상태에서 나왔을 수 있나(QA-158) — 지난 값으로 평가한 보유가 있거나, 마지막 관측이 그 줄의 마감보다 이름(서버가 마지막 관측 상태를
- * 잠정 줄로 옮김). 시각을 모르면 그렇다고 봅니다(배지를 숨기는 쪽으로 짐작하지 않음).
+ * 잠정 줄이 장부 상태에서 나왔을 수 있나(QA-158) — 지난 값으로 평가한 보유가 있거나, 마지막 관측이 그 줄의 마감 + 15분보다 이름(그날 줄을 쓸 수 있는
+ * 관측이 오지 않아 서버가 마지막 관측 상태를 잠정 줄로 옮김 — QA-160). 시각을 모르면 그렇다고 봅니다(배지를 숨기는 쪽으로 짐작하지 않음).
  */
 function provisionalFromLedger(book: PaperOverviewBook): boolean {
   if ((book.staleCount ?? 0) > 0) return true;
-  const observed = minuteKey(book.lastObservedAtKst);
-  const close = minuteKey(book.current?.atKst);
-  return observed === null || close === null || observed < close;
+  const observed = stampMinutes(book.lastObservedAtKst);
+  const close = stampMinutes(book.current?.atKst);
+  return observed === null || close === null || observed < close + LINE_AFTER_CLOSE_MINUTES;
 }
 
 /**

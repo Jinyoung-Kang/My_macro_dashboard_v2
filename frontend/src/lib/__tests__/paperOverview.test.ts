@@ -187,7 +187,7 @@ describe("계좌 행 — 지금 값(current, 장중 명세 §4-1)", () => {
   // QA-160: 관측치가 그날 줄을 쓰려면 마감 + 15분 뒤에 수집해야 합니다(서버 closeAvailable — PaperMarketData.FINAL_DELAY). 마감과 마감 + 15분 사이의
   // 관측도 줄을 쓰지 못해 결정 작업이 그 상태를 잠정 줄로 옮기는데, QA-158 수정은 마감과만 견줘 이 줄을 마감 뒤 관측의 줄로 보고 배지를 뺐습니다
   // (재현 커밋에서는 it.fails).
-  it.fails("QA-160 마감 뒤 15분 안의 관측을 옮긴 잠정 줄도 이전 값 배지 — 마감 + 15분부터의 관측으로 쓴 줄만 배지 없음", () => {
+  it("QA-160 마감 뒤 15분 안의 관측을 옮긴 잠정 줄도 이전 값 배지 — 마감 + 15분부터의 관측으로 쓴 줄만 배지 없음", () => {
     const late = { quotes: { stale: true }, session: { phase: "CLOSED" as const, sessionDate: "2026-10-30" } };
     const provisional = live({ stage: "PROVISIONAL", basis: "LEDGER", isEstimated: false, livePriced: 0, pendingOrders: 0, tradingDate: "2026-10-30",
       atKst: "2026-10-31 05:00 KST", note: null });
