@@ -321,6 +321,53 @@ describe("QA-157 탭 복귀 읽기의 응답도 한 번 더 읽기를 예약한�
   });
 });
 
+describe("QA-159 간격이 끄기여도 탭 복귀 읽기는 보통 읽기", () => {
+  let visibility: DocumentVisibilityState;
+  beforeEach(() => {
+    visibility = "visible";
+    vi.spyOn(document, "visibilityState", "get").mockImplementation(() => visibility);
+    window.localStorage.setItem("paper.liveRefreshMinutes", "0");
+    api.apiGetShared.mockImplementation(() =>
+      Promise.resolve(live({ quotes: { source: null, collectedAtKst: null, refreshRequested: true, missing: [], error: null } })));
+  });
+
+  async function setVisibility(next: DocumentVisibilityState) {
+    visibility = next;
+    await act(async () => { document.dispatchEvent(new Event("visibilitychange")); });
+  }
+
+  it("보이는 탭 — 끄기여도 새 수집을 요청한 응답이면 20초 뒤 한 번만 더(되풀이 없음)", async () => {
+    render(<LiveValuationCard />);
+    await settle();
+    expect(liveCalls()).toBe(1);
+    await settle(20_000);
+    expect(liveCalls()).toBe(2);
+    await settle(60_000);
+    expect(liveCalls()).toBe(2);
+  });
+
+  // QA-157 수정은 간격이 있을 때만 덮었습니다: 간격이 끄기(0)면 숨긴 사이 미룬 '한 번 더'를 탭 복귀 때 카드 훅이 '한 번 더 읽기'로 읽어, 그 복귀
+  // 읽기가 새 수집을 깨웠어도(복귀가 늦어 저장본이 60초보다 오래됨) 응답을 '한 번 더'의 응답으로 소모했습니다 — 카드는 다시 읽을 길이 없고(끄기·정규장),
+  // 개요는 60초 폴링으로 새 저장본을 읽어 종목 표의 장중가만 옛 시각으로 남았습니다(재현 커밋에서는 it.fails).
+  it.fails("숨긴 탭 — 미룬 '한 번 더'의 복귀 읽기가 새 수집을 요청했으면 20초 뒤 한 번 더, 그 뒤 되풀이 없음", async () => {
+    render(<LiveValuationCard />);
+    await settle();
+    expect(liveCalls()).toBe(1);
+
+    await setVisibility("hidden");
+    await settle(20_000);
+    expect(liveCalls()).toBe(1);
+
+    await setVisibility("visible");
+    await settle();
+    expect(liveCalls()).toBe(2);
+    await settle(20_000);
+    expect(liveCalls()).toBe(3);
+    await settle(60_000);
+    expect(liveCalls()).toBe(3);
+  });
+});
+
 describe("QA-156 숨긴 탭으로 열면 보일 때까지 읽지 않는다", () => {
   let visibility: DocumentVisibilityState;
   beforeEach(() => {
