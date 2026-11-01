@@ -1,5 +1,5 @@
 /**
- * 🧪 모의매매(미국) — Claude 계좌2(체결 시점 실험, 계좌2 명세 §13-3, ADR 0022)의 화면. 계좌1·벤치마크 화면은 그대로.
+ * 모의매매(미국) — Claude 계좌2(체결 시점 실험, 계좌2 명세 §13-3, ADR 0022)의 화면. 계좌1·벤치마크 화면은 그대로.
  *
  *  - 개요: 계좌2가 시작 전이면 출발 카드 — 설정 claude2.enabled가 꺼져 있으면 '계좌2 시작'이 닫히고 설정을 켜라고, 켜져 있으면 확인 단계 →
  *    POST run/initial-decision {book:"claude2"}(미리보기 없음) → 개요를 다시 읽음. 계좌1 시작 카드는 계좌1이 운용 중이면 없다
@@ -7,7 +7,7 @@
  *    그 위에 고른 시점(M1 — 주 판정) 표 — 계좌2만(본 줄·대체 체결 따로), 계좌1이면 표 대신 '계좌2만' 한 줄, 사전 등록 문턱은 설명으로만
  *    S = 100 같은 구간(출발 전이면 그리지 않는다고), 한계 문구 아래 계좌2의 한계
  *  - 보유·체결: 계좌2 주문 표에 목표 시각·계좌1식 대비·실행 메모, 체결 표에 체결 봉·사다리·계좌1식 대비·대체 체결 배지 — 계좌1 표는 칸이 그대로
- *  - 🧪 장중 확인(단계 2): 개요·출발 카드·결정 로그의 '오늘 장중 확인' 한 줄(칸이 없는 백엔드면 없음), 결정 로그의 종류 '장중 확인'·실패는 재시도
+ *  - 장중 확인(단계 2): 개요·출발 카드·결정 로그의 '오늘 장중 확인' 한 줄(칸이 없는 백엔드면 없음), 결정 로그의 종류 '장중 확인'·실패는 재시도
  *    없음, REPLACE 상세(응답·대신한 주문·예상 상태), 주문 표의 MARKET(장중 시장가 — 목표 시각은 실행 감사 값)
  */
 import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
@@ -24,6 +24,8 @@ vi.mock("@/hooks/useRefreshSignal", () => ({ useRefreshSignal: () => signal }));
 // jsdom에서는 recharts가 크기 0이라 아무것도 그리지 않습니다 — 차트 이름·계열 이름·색·행 수를 목록으로 그립니다.
 vi.mock("@/components/charts", () => ({
   SERIES_COLORS: { blue: "#3987e5", orange: "#d95926", green: "#199e70" },
+  // 개요 히어로의 선 차트(히어로 곡선) — 이 시험은 그 그림을 보지 않습니다.
+  LineChart: () => null,
   MultiLineSeries: ({ data, series, ariaLabel }: { data: unknown[]; series: { key: string; name: string; color?: string }[]; ariaLabel?: string }) => (
     <ul aria-label={`차트 ${ariaLabel ?? ""}`} data-rows={data.length}>
       {series.map((entry) => <li key={entry.key} data-color={entry.color}>{entry.name}</li>)}
@@ -821,7 +823,7 @@ describe("보유·체결 — 계좌2 칸", () => {
   });
 });
 
-describe("🧪 장중 확인(단계 2) — 오늘 장중 확인 줄·결정 로그·주문 표", () => {
+describe("장중 확인(단계 2) — 오늘 장중 확인 줄·결정 로그·주문 표", () => {
   const TODAY = {
     session: "2026-11-02", atEt: "10:30", atKst: "2026-11-03 00:30 KST", feed: "MINUTE", watch: ["AAPL"], status: "PLANNED",
     reason: null, decisionId: null, calledAtKst: null,

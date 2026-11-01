@@ -1,5 +1,5 @@
 /**
- * 🧪 모의 매매 — Claude 재량 책(단계 3a). 서버 값을 그대로 보이고, 통과·거절·어긋남을 화면이 다시 판정하지 않는다.
+ * 모의 매매 — Claude 재량 책(단계 3a). 서버 값을 그대로 보이고, 통과·거절·어긋남을 화면이 다시 판정하지 않는다.
  *
  *  - 결정 로그: Claude 책 목록에 목표 노출 칸, 상세는 판단(자세·목표 노출·어긋남 배지·확신도·요약·노출 근거)·제안 주문(근거·라벨·
  *    무효화)·검증(통과·거절·사유·설명)·사용량(모델·토큰)·프레임 판("임시 v0")·입력 패킷(접힘). 규칙 책 표(신호·게이트)는 그리지 않는다
@@ -25,6 +25,8 @@ vi.mock("@/hooks/useRefreshSignal", () => ({ useRefreshSignal: () => signal }));
 // jsdom에서는 recharts가 크기 0이라 아무것도 그리지 않습니다 — 노출 차트만 계열 이름·행 수·축 범위를 목록으로 그립니다.
 vi.mock("@/components/charts", () => ({
   SERIES_COLORS: { blue: "#3987e5", orange: "#d95926", green: "#199e70" },
+  // 개요 히어로의 선 차트(히어로 곡선) — 이 시험은 그 그림을 보지 않습니다.
+  LineChart: () => null,
   MultiLineSeries: ({ data, series, domain }: { data: unknown[]; series: { key: string; name: string }[]; domain?: number[] }) =>
     series.some((entry) => entry.key === "target") ? (
       <ul aria-label="노출 계열" data-rows={data.length} data-domain={domain?.join("~")}>

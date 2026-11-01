@@ -8,6 +8,8 @@
  *  - 오래됨: 가격 없는 보유·늦은 관측치 저장본이면 계좌 행에 '이전 값' 배지와 사유(숨기는 옵션 없음)
  *  - 기간별 순자산 곡선: 저장된 기록보다 긴 기간 탭은 없고, 고르면 그 기간만(경계선도 그 기간 안의 것만), 곡선 아래 노출 문구(남는 현금 SHY)
  *  - 시장 고르기: 화면 안에는 없다 — 셸의 하위 메뉴 줄(미국 | 한국 두 링크)이 맡는다(Shell.test.tsx), 제목은 '(미국)'
+ *  - 히어로(포트폴리오식): 고른 계좌 하나(기본 Claude 계좌, 계좌 행을 누르면 그 계좌 — 상세를 닫아도 남음)의 지금 값·곡선, 기간 알약은
+ *    히어로 차트 아래(아래 '순자산 곡선'과 같은 기간 — 그 카드의 탭은 없음), 초기화 전이면 히어로 없이 탭은 곡선 카드에
  *  - 지금 값(장중 명세 §4-1): 개요 응답에 current가 있으면 계좌 행은 그 값과 값의 기준 한 줄(단계 표기·덧붙임·하루 변화)·추정 배지,
  *    부제는 '지금 값 기준' — current가 없는 옛 응답(위 고정본들)은 장부 표시 그대로
  */
@@ -34,6 +36,11 @@ vi.mock("@/components/charts", () => ({
     </ul>
   ),
   DonutChart: () => null,
+  // 개요 히어로의 선 차트 — 이름(계좌)·행 수·첫 날짜·값만 목록 속성으로.
+  LineChart: ({ data, ariaLabel }: { data: Record<string, unknown>[]; ariaLabel?: string }) => (
+    <ul aria-label={ariaLabel ?? "선 차트"} data-rows={data.length} data-first={String(data[0]?.date ?? "")}
+      data-values={data.map((entry) => String(entry.nav ?? "null")).join(",")} />
+  ),
 }));
 
 import PaperPage from "@/components/screens/paper/PaperScreen";
@@ -178,6 +185,68 @@ describe("값 있음 — 계좌 행·비교 표·곡선", () => {
   });
 });
 
+describe("히어로(포트폴리오식 — 장중 명세 §4-1)", () => {
+  it("기본은 Claude 계좌, 계좌 행을 누르면 히어로도 그 계좌 — 상세를 닫아도 남고, 곡선은 그 계좌 한 줄", async () => {
+    reads["/api/paper/overview"] = () => Promise.resolve(OVERVIEW);
+    render(<PaperPage />);
+
+    const first = await screen.findByRole("region", { name: "Claude 계좌 순자산" });
+    expect(within(first).getByText("100,000.00")).toBeTruthy();
+    // 시작 전 계좌는 곡선 값이 없음(선 없음 — 0으로 채우지 않음)
+    expect(within(first).getByRole("list", { name: "Claude 계좌 순자산 곡선" }).getAttribute("data-values")).toBe("null,null");
+    // 히어로는 화면 맨 위(시작 카드·계좌 카드보다 앞)
+    const accounts = screen.getByRole("list", { name: "계좌 목록" });
+    expect(first.compareDocumentPosition(accounts) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+
+    fireEvent.click(row(/^규칙 계좌 상세 보기/));
+    const hero = screen.getByRole("region", { name: "규칙 계좌 순자산" });
+    expect(within(hero).getByText("101,200.00")).toBeTruthy();
+    expect(within(hero).getByText("+1.20%")).toBeTruthy();
+    expect(within(hero).getByText("출발 이후")).toBeTruthy();
+    // 옛 응답(current 없음)은 장부 값과 마지막 관측
+    expect(within(hero).getByText("마지막 관측 2026-10-24 05:15")).toBeTruthy();
+    expect(within(hero).queryByText("추정")).toBeNull();
+    expect(within(hero).getByRole("list", { name: "규칙 계좌 순자산 곡선" }).getAttribute("data-values")).toBe("100000,101200");
+    expect(screen.queryByRole("region", { name: "Claude 계좌 순자산" })).toBeNull();
+
+    // 상세를 닫아도 히어로는 그 계좌 그대로
+    fireEvent.click(row(/^규칙 계좌 상세 닫기/));
+    expect(screen.queryByRole("region", { name: "규칙 계좌 상세" })).toBeNull();
+    expect(screen.getByRole("region", { name: "규칙 계좌 순자산" })).toBeTruthy();
+  });
+
+  it("지금 값 — 히어로는 단계 표기·추정 배지·서버 글 전문·하루 변화 한 줄(서버 값)", async () => {
+    reads["/api/paper/overview"] = () => Promise.resolve(CURRENT_OVERVIEW);
+    render(<PaperPage />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "규칙 계좌 상세 보기" }));
+    const hero = screen.getByRole("region", { name: "규칙 계좌 순자산" });
+    expect(within(hero).getByText("101,234.56")).toBeTruthy();
+    expect(within(hero).getByText("+1.23%")).toBeTruthy();
+    expect(within(hero).getByText("장중 추정 23:58")).toBeTruthy();
+    expect(within(hero).getByText("추정")).toBeTruthy();
+    expect(within(hero).getByText("장중가 1/2종목 — 나머지는 장부 관측가 · 체결 대기 1건 반영 전 — 다음 장부 관측치에서 체결")).toBeTruthy();
+    expect(within(hero).getByText("오늘")).toBeTruthy();
+    expect(within(hero).getByText("+0.42%")).toBeTruthy();
+    expect(within(hero).getByText("· 10-29 잠정 대비")).toBeTruthy();
+    expect(within(hero).getByText(/보유를 장중 1분봉 시세로 다시 평가한 표시 전용 추정/)).toBeTruthy();
+  });
+
+  it("초기화 전(initialized false)이면 히어로 없이 기간 알약은 '순자산 곡선' 카드에", async () => {
+    const dates = ["2026-06-01", "2026-08-03", "2026-09-28", "2026-10-26"];
+    reads["/api/paper/overview"] = () => Promise.resolve({
+      ...OVERVIEW, initialized: false,
+      navSeries: { dates, books: { rules: [100000, 100500, 101000, 101200], bench_spy: [100000, 100100, 100300, 100500] } },
+    });
+    render(<PaperPage />);
+
+    expect(await screen.findByRole("tablist", { name: "순자산 곡선 기간" })).toBeTruthy();
+    expect(screen.queryByRole("region", { name: /순자산$/ })).toBeNull();
+    expect(screen.queryByText(/기간은 위 히어로에서 고릅니다/)).toBeNull();
+    expect(screen.queryByText(/위 히어로·아래 장중 시세도/)).toBeNull();
+  });
+});
+
 describe("지금 값 — 계좌 행(장중 명세 §4-1)", () => {
   it("행은 지금 값과 값의 기준 한 줄(단계 표기·장중가 n/m종목·체결 대기·오늘 변화), 장중 추정만 추정 배지 — 부제는 '지금 값 기준'", async () => {
     reads["/api/paper/overview"] = () => Promise.resolve(CURRENT_OVERVIEW);
@@ -260,7 +329,7 @@ describe("일부 실패", () => {
     render(<PaperPage />);
 
     expect(await screen.findByText(/정기 작업이 꺼져 있습니다/)).toBeTruthy();
-    expect(screen.getByText(/행을 누르면 그 계좌의 상세 · 설정 v4/)).toBeTruthy();
+    expect(screen.getByText(/행을 누르면 그 계좌의 상세\(위 히어로·아래 장중 시세도 그 계좌로\) · 설정 v4/)).toBeTruthy();
   });
 
   it("계좌 상세의 보유 응답이 실패하면 구성 칸만 오류 + 다시 시도 — 정의·핵심 숫자는 개요 값으로", async () => {
@@ -371,6 +440,9 @@ describe("기간별 순자산 곡선", () => {
     render(<PaperPage />);
 
     const tabs = await screen.findByRole("tablist", { name: "순자산 곡선 기간" });
+    // 기간 알약은 히어로(차트 아래) 한 곳 — 아래 '순자산 곡선' 카드에는 탭이 없고 같은 기간을 따릅니다.
+    expect(within(screen.getByRole("region", { name: "Claude 계좌 순자산" })).getByRole("tablist", { name: "순자산 곡선 기간" })).toBe(tabs);
+    expect(screen.getAllByRole("tablist", { name: "순자산 곡선 기간" })).toHaveLength(1);
     // 기록이 약 5개월 — 6개월·1년 탭은 그리지 않습니다.
     expect(within(tabs).getAllByRole("tab").map((tab) => tab.textContent)).toEqual(["1개월", "3개월", "전체"]);
     expect(within(tabs).getByRole("tab", { name: "전체" }).getAttribute("aria-selected")).toBe("true");
@@ -382,6 +454,9 @@ describe("기간별 순자산 곡선", () => {
     expect(within(tabs).getByRole("tab", { name: "1개월" }).getAttribute("aria-selected")).toBe("true");
     expect(chart().getAttribute("data-rows")).toBe("2");
     expect(chart().getAttribute("data-first")).toBe("2026-09-28");
+    // 히어로 곡선도 같은 기간(두 행)이고, 곡선 카드 부제가 지금 기간을 적습니다.
+    expect(screen.getByRole("list", { name: "Claude 계좌 순자산 곡선" }).getAttribute("data-rows")).toBe("2");
+    expect(screen.getByText(/기간은 위 히어로에서 고릅니다\(지금 1개월\)\.$/)).toBeTruthy();
     expect(Array.from(chart().querySelectorAll("[data-marker]")).map((li) => li.textContent)).toEqual(["2026-10-26 프레임 v1"]);
     // 기간 밖의 경계를 '그날 기록 없음'으로 적지 않습니다.
     expect(screen.getByText(/2026-08-03부터 임시 v0 · 2026-10-26부터 v1$/)).toBeTruthy();

@@ -1,5 +1,5 @@
 /**
- * 🧪 개요의 계좌 상세 — 계좌 행(AssetRow)을 누르면 계좌 목록 아래에 그 계좌의 상세가 열린다(한 번에 하나).
+ * 개요의 계좌 상세 — 계좌 행(AssetRow)을 누르면 계좌 목록 아래에 그 계좌의 상세가 열린다(한 번에 하나).
  *
  *  - 행 전체가 진짜 <button>(aria-expanded·aria-controls, 이름 "… 상세 보기")이라 행 어디를 눌러도 열리고, 다시 누르거나 '닫기'·Esc로 닫힌다
  *  - 열면 초점이 패널 제목으로 간다(바로 Esc로 닫을 수 있게), 움직임 줄이기를 켰으면 부드러운 스크롤 대신 바로 옮긴다
@@ -22,6 +22,8 @@ vi.mock("@/hooks/useRefreshSignal", () => ({ useRefreshSignal: () => signal }));
 // jsdom에서는 차트 크기가 0이라 recharts가 아무것도 그리지 않습니다 — 조각의 이름·값·직접 라벨·색을 목록으로 그립니다.
 vi.mock("@/components/charts", () => ({
   SERIES_COLORS: { blue: "#3987e5", orange: "#d95926", green: "#199e70" },
+  // 개요 히어로의 선 차트(히어로 곡선) — 이 시험은 그 그림을 보지 않습니다.
+  LineChart: () => null,
   MultiLineSeries: () => null,
   DonutChart: ({ segments, ariaLabel }: {
     segments: { key: string; name: string; valueText: string; label?: string | null; color: string }[];

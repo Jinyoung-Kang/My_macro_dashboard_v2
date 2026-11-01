@@ -1,5 +1,5 @@
 /**
- * 🧪 모의 알고리즘 매매 화면의 상태 — 테이블이 없을 때·초기화 전·값을 모를 때 지어내지 않고 그대로 말한다.
+ * 모의 알고리즘 매매 화면의 상태 — 테이블이 없을 때·초기화 전·값을 모를 때 지어내지 않고 그대로 말한다.
  *
  *  - available:false면 서버 문구 그대로(탭·계좌 행 없음)
  *  - 초기화 전이면 "초기화" 버튼 → POST /api/paper/init → 결과 문구 + 개요 다시 읽기
@@ -25,6 +25,8 @@ vi.mock("@/hooks/useRefreshSignal", () => ({ useRefreshSignal: () => signal }));
 // jsdom에서는 차트 크기가 0이라 recharts가 아무것도 그리지 않습니다 — 계열 이름과 행 수만 목록으로 그립니다.
 vi.mock("@/components/charts", () => ({
   SERIES_COLORS: { blue: "#3987e5", orange: "#d95926", green: "#199e70" },
+  // 개요 히어로의 선 차트(히어로 곡선) — 이 시험은 그 그림을 보지 않습니다.
+  LineChart: () => null,
   MultiLineSeries: ({ data, series }: { data: unknown[]; series: { key: string; name: string }[] }) => (
     <ul aria-label="순자산 계열" data-rows={data.length}>
       {series.map((entry) => <li key={entry.key}>{entry.name}</li>)}

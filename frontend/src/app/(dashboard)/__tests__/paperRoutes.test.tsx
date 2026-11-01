@@ -1,6 +1,6 @@
 /**
- * 🧪 모의매매(미국) 경로 — /paper/us(개요)·/paper/us/[tab](여섯 탭)과 화면의 주소 맞추기.
- * 🧪 모의매매(한국) 경로 — /paper/kr·/paper/kr/[tab](미국과 같은 탭 키, 2단계 명세 §4-16): 같은 규칙, 일곱 탭 모두 한국 화면,
+ * 모의매매(미국) 경로 — /paper/us(개요)·/paper/us/[tab](여섯 탭)과 화면의 주소 맞추기.
+ * 모의매매(한국) 경로 — /paper/kr·/paper/kr/[tab](미국과 같은 탭 키, 2단계 명세 §4-16): 같은 규칙, 일곱 탭 모두 한국 화면,
  *    selection 키의 이름은 '종목 선정',
  *    프레임·설정은 두 시장 공용 안내와 함께 그대로, 주소 맞추기는 그 시장 주소만
  *
@@ -24,6 +24,8 @@ const signal = vi.hoisted(() => ({ token: 0, reloadAll: () => {}, notifyUnauthor
 vi.mock("@/hooks/useRefreshSignal", () => ({ useRefreshSignal: () => signal }));
 vi.mock("@/components/charts", () => ({
   SERIES_COLORS: { blue: "#3987e5", orange: "#d95926", green: "#199e70" },
+  // 개요 히어로의 선 차트(히어로 곡선) — 이 시험은 그 그림을 보지 않습니다.
+  LineChart: () => null,
   MultiLineSeries: () => null,
   DonutChart: () => null,
 }));

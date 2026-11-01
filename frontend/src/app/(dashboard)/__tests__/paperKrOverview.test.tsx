@@ -36,6 +36,10 @@ vi.mock("@/components/charts", () => ({
     </ul>
   ),
   DonutChart: () => null,
+  // 개요 히어로의 선 차트 — 이름(계좌)·값만 목록 속성으로.
+  LineChart: ({ data, ariaLabel }: { data: Record<string, unknown>[]; ariaLabel?: string }) => (
+    <ul aria-label={ariaLabel ?? "선 차트"} data-values={data.map((entry) => String(entry.nav ?? "null")).join(",")} />
+  ),
 }));
 
 import PaperPage from "@/components/screens/paper/PaperScreen";
@@ -176,6 +180,12 @@ describe("자료", () => {
     expect(comparisonCell("순자산", "KODEX 200 계좌").textContent).toBe("100,312,450원");
     expect(comparisonCell("현금", "한국 60/40 계좌").textContent).toBe("34,000원");
     expect(comparisonCell("비교 기준", "한국 규칙 계좌").textContent).toBe("KODEX 200 계좌");
+
+    // 히어로: 기본은 한국 Claude 계좌(홈과 같은 규칙) — 원 정수, 곡선은 그 계좌 한 줄
+    const hero = screen.getByRole("region", { name: "한국 Claude 계좌 순자산" });
+    expect(within(hero).getByText("100,312,450")).toBeTruthy();
+    expect(within(hero).getByText("원")).toBeTruthy();
+    expect(within(hero).getByRole("list", { name: "한국 Claude 계좌 순자산 곡선" }).getAttribute("data-values")).toBe("100000000,100312450");
 
     // 순자산 곡선: 네 계좌 계열·툴팁 0자리·넓은 축(원 단위 정수 눈금)
     const nav = screen.getByRole("list", { name: "순자산 계열" });

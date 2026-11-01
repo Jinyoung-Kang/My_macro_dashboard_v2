@@ -34,7 +34,6 @@ import {
   newsLine,
   PAPER_SOURCES,
   type PoolRow,
-  primaryClaudeBook,
   quotesLine,
   type RiskResultView,
   riskResultView,
@@ -45,6 +44,7 @@ import {
 import {
   accountComparisonRows,
   bookAssetRow,
+  heroBookCode,
   latestObserved,
   type ComparisonRow,
   markersInWindow,
@@ -52,6 +52,7 @@ import {
   type NavRangeKey,
   navRangeKeys,
   navSeriesWindow,
+  overviewHeroModel,
   sameWindowIndex,
   sampleNotes,
 } from "@/lib/paperOverview";
@@ -89,6 +90,7 @@ import { GateIndicatorBody } from "./GateIndicatorBody";
 import { KrCollectionCard } from "./KrCollectionCard";
 import { KrStartSection } from "./KrStartSection";
 import { LiveValuationCard } from "./LiveValuationCard";
+import { OverviewHero } from "./OverviewHero";
 
 /**
  * Claude 노출 추이의 두 선 — 목표는 순자산 곡선의 Claude 책 색(주황), 실제는 검증된 팔레트의 다음 색(파랑). 두 색은 charts의
@@ -106,8 +108,10 @@ const ACCOUNT_PANEL_ID = "paper-account-detail";
 const accountToggleId = (code: string) => `paper-account-toggle-${code}`;
 
 /**
- * 개요 탭(설계서 §7) — 네 계좌 행(AssetRow: 이름·종류·상태·순자산·출발 이후 수익률·배지, 누르면 목록 아래에 그 계좌의 상세 — 정의·핵심
- * 숫자·구성 도넛·최근 체결, AccountDetailPanel), 기간별 순자산 곡선(프레임 판 경계 세로선), 계좌 비교 표(예전 카드의 칸 전부 — 상태·종류·
+ * 개요 탭(설계서 §7, 포트폴리오식 — 장중 명세 §4-1) — 맨 위 히어로(고른 계좌 하나의 지금 값과 곡선·기간 알약, OverviewHero — 기본은 홈과 같은
+ * Claude 계좌, 계좌 행을 누르면 그 계좌), 시작 카드들, 네 계좌 행(AssetRow: 아바타·이름·종류·상태·지금 순자산·출발 이후 수익률·값의 기준 한 줄·배지,
+ * 누르면 목록 아래에 그 계좌의 상세 — 정의·핵심 숫자·구성 도넛·최근 체결, AccountDetailPanel), 장중 시세 카드, 기간별 순자산 곡선(히어로와 같은
+ * 기간, 프레임 판 경계 세로선), 계좌 비교 표(예전 카드의 칸 전부 — 상태·종류·
  * 출발·처음 현금·순자산·수익률·노출·현금·보유·마지막 관측·가격 없음·통계 일곱 칸·비교 기준, 그 아래 표본 설명), Claude 노출 추이(목표 vs
  * 실제), Claude 호출 사용량(오늘·이달·추정 비용 — 상태 응답), 신호 기관(최근
  * 선정), OS 게이트 지표(참고), 장부 관측치 신선도(와 재무 수집 범위 한 줄 — 상태 응답, D28), 작업 기록. 초기화 전이거나 벤치마크가
@@ -153,8 +157,10 @@ export function OverviewSection({
   const [confirmingStart, setConfirmingStart] = useState(false);
   // 상세를 연 계좌 코드(한 번에 하나). 이 화면은 주소 쿼리를 쓰지 않아 화면 상태로만 둡니다 — 개요를 다시 읽어도 그대로입니다.
   const [selected, setSelected] = useState<string | null>(null);
-  // 순자산 곡선의 기간 — 처음엔 전체. 저장된 기록보다 긴 기간 탭은 그리지 않습니다(lib navRangeKeys).
+  // 순자산 곡선의 기간 — 처음엔 전체. 저장된 기록보다 긴 기간 탭은 그리지 않습니다(lib navRangeKeys). 히어로와 '순자산 곡선' 카드가 함께 씁니다.
   const [navRange, setNavRange] = useState<NavRangeKey>("all");
+  // 히어로에 그릴 계좌 — 계좌 행을 누르면 그 계좌(상세를 닫아도·개요를 다시 읽어도 남음, 목록에서 사라지면 기본 Claude 계좌 — lib heroBookCode).
+  const [heroPick, setHeroPick] = useState<string | null>(null);
   // 패널을 열면 초점을 패널 제목으로 옮깁니다 — 화면만 패널로 내려가고 초점이 행 단추에 남으면 다음 Tab이 다른 행 단추를 돌며
   // 화면을 다시 끌어올리고, Esc(패널 안에서만 들음)도 듣지 않았습니다. 닫으면 closeAccount가 그 행 단추로 돌려보냅니다.
   // 패널은 계좌 목록 맨 아래에 열립니다 — 연 패널이 보이도록 가까운 쪽으로만 스크롤하고,
@@ -187,7 +193,11 @@ export function OverviewSection({
   const accountsBasis = accountsBasisText(books);
   const session = overview.liveSession ?? null;
   const selectedBook = books.find((book) => book.code === selected) ?? null;
-  const toggleAccount = (code: string) => setSelected((current) => (current === code ? null : code));
+  const toggleAccount = (code: string) => {
+    setSelected((current) => (current === code ? null : code));
+    setHeroPick(code);
+  };
+  const heroCode = heroBookCode(books, heroPick);
   const closeAccount = () => {
     const code = selected;
     setSelected(null);
@@ -198,6 +208,9 @@ export function OverviewSection({
   const navRanges = navRangeKeys(overview.navSeries);
   const range = allowedRangeKey(navRange, NAV_RANGES, navRanges) ?? "all";
   const navWindow = navSeriesWindow(overview.navSeries, range);
+  // 히어로는 시작한 장부(초기화 뒤)에 계좌가 있을 때만 — 장중 시세 카드와 같은 조건. 없으면 기간 알약은 '순자산 곡선' 카드에 둡니다.
+  const hero = overview.initialized !== false && heroCode ? overviewHeroModel(overview, heroCode, navWindow, market) : null;
+  const rangeLabel = NAV_RANGES.find((entry) => entry.key === range)?.label ?? "전체";
   const accounts = navChart(navWindow, books);
   // 한국은 노출 맞춘 참고선(K40 — 계산만, 계좌 아님)을 같은 축의 점선 계열로 더합니다(출발 전·F2 전 서버면 계열 없음).
   const reference = korea ? withKrReference(accounts.rows, overview.exposureReference) : { rows: accounts.rows, series: [] };
@@ -286,6 +299,9 @@ export function OverviewSection({
       {/* 상태를 읽지 못하면 꺼짐·켜짐을 모릅니다 — 배너가 조용히 사라지면 켜져 있는 것으로 읽히므로 그렇다고 적습니다(홈과 같은 문구). */}
       {status.error && <Banner tone="warn">정기 작업 상태를 확인하지 못했습니다 — {status.error}</Banner>}
 
+      {/* 히어로 — 고른 계좌의 지금 값·곡선(기간 알약은 아래 '순자산 곡선' 카드와 같은 상태). 계좌가 바뀌면 문지르기 상태를 새로 둡니다. */}
+      {hero && <OverviewHero key={hero.code} model={hero} range={range} ranges={navRanges} onRange={setNavRange} />}
+
       {prompt && (
         <Card title={prompt.title} source={PAPER_SOURCES.ledger}>
           <p className="text-sm leading-relaxed text-body">{prompt.body}</p>
@@ -342,20 +358,11 @@ export function OverviewSection({
       )}
       {korea && <KrStartSection overview={overview} status={status.data ?? null} onChanged={onChanged} />}
 
-      {/* 장중 시세(표시 전용 추정) — 장 상태·간격·출처와 고른 계좌의 종목 장중가. 종목 표는 상세를 연 계좌, 없으면 기본 Claude 계좌
-          (홈 히어로와 같은 규칙)를 따릅니다. 새 장중 값을 받으면 개요를 한 번 다시 읽습니다(onChanged — 계좌 행의 지금 값은 서버가 같은
-          장중 저장본을 합친 값). */}
-      {overview.initialized !== false && books.length > 0 && (
-        <LiveValuationCard
-          market={market}
-          bookCode={selected ?? primaryClaudeBook(books)?.code ?? null}
-          onUpdated={onChanged}
-        />
-      )}
-
       <Card
         title="계좌"
         subtitle={`순자산·수익률(출발 이후)은 ${accountsBasis ?? `장부의 마지막 관측치 기준${observedAt ? `(${observedAt} KST)` : ""}`} · 행을 누르면 그 계좌의 상세${
+          hero ? "(위 히어로·아래 장중 시세도 그 계좌로)" : ""
+        }${
           status.data?.settingsVersion ? ` · 설정 v${status.data.settingsVersion}` : ""
         }${korea && overview.initialized !== false ? ` · ${KR_RISK_RUN_NOTE}` : ""}`}
         source={ledgerSource}
@@ -416,13 +423,22 @@ export function OverviewSection({
         )}
       </Card>
 
+      {/* 장중 시세(표시 전용 추정) — 장 상태·간격·출처와 히어로 계좌의 종목 장중가(계좌 고르기는 계좌 행 한 곳). 새 장중 값을 받으면 개요를
+          한 번 다시 읽습니다(onChanged — 히어로·계좌 행의 지금 값은 서버가 같은 장중 저장본을 합친 값). */}
+      {overview.initialized !== false && books.length > 0 && (
+        <LiveValuationCard market={market} bookCode={heroCode} onUpdated={onChanged} />
+      )}
+
       <Card
         title="순자산 곡선"
-        subtitle={`${korea ? "KR 거래일" : "거래일"}별 순자산(${marketMeta(market).unitLabel}). 그날 기록이 없는 계좌는 선을 끊어 그립니다 — 시작 전인 계좌는 선이 없습니다.`}
+        subtitle={`${korea ? "KR 거래일" : "거래일"}별 순자산(${marketMeta(market).unitLabel}). 그날 기록이 없는 계좌는 선을 끊어 그립니다 — 시작 전인 계좌는 선이 없습니다.${
+          hero && navRanges.length > 1 ? ` 기간은 위 히어로에서 고릅니다(지금 ${rangeLabel}).` : ""
+        }`}
         source={boundaries.text ? `${ledgerSource} · 프레임 경계는 ${PAPER_SOURCES.boundaries}` : ledgerSource}
         actions={
-          // 기간이 '전체' 하나뿐이면(출발 직후) 탭을 그리지 않습니다 — 고를 것이 없는 탭은 소음입니다.
-          navRanges.length > 1 && (
+          // 기간 알약은 히어로(차트 아래)에 — 히어로가 없을 때(초기화 전)만 이 카드에 둡니다. 기간이 '전체' 하나뿐이면(출발 직후) 탭을 그리지
+          // 않습니다 — 고를 것이 없는 탭은 소음입니다.
+          !hero && navRanges.length > 1 && (
             <RangeTabs ranges={NAV_RANGES} allowed={navRanges} value={range} onChange={setNavRange} label="순자산 곡선 기간" />
           )
         }

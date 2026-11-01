@@ -1,5 +1,5 @@
 /**
- * 🧪 모의 매매 — 결정 로그 탭의 '주간 복기'(2단계 명세 §3 D1~D6). 서버 값을 그대로 보이고(판정 수·결정 날짜는 서버가 붙인 값), 모르는
+ * 모의 매매 — 결정 로그 탭의 '주간 복기'(2단계 명세 §3 D1~D6). 서버 값을 그대로 보이고(판정 수·결정 날짜는 서버가 붙인 값), 모르는
  * 값은 "—".
  *
  *  - 결정 로그 → '주간 복기': 목록(상태·창·판정 수·제안) → 가장 최근 주를 펼침(판정 표·반복 오류·지킬 것·제안)
@@ -19,6 +19,8 @@ const signal = vi.hoisted(() => ({ token: 0, reloadAll: () => {}, notifyUnauthor
 vi.mock("@/hooks/useRefreshSignal", () => ({ useRefreshSignal: () => signal }));
 vi.mock("@/components/charts", () => ({
   SERIES_COLORS: { blue: "#3987e5", orange: "#d95926", green: "#199e70" },
+  // 개요 히어로의 선 차트(히어로 곡선) — 이 시험은 그 그림을 보지 않습니다.
+  LineChart: () => null,
   MultiLineSeries: () => null,
 }));
 

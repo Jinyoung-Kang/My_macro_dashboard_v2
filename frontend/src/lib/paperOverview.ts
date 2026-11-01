@@ -6,7 +6,8 @@
  */
 import { deltaColor, EMPTY, formatKst, formatNumber } from "./format";
 import { accountProfile, benchmarkLabel, bookCard, isTimedBook, type NavSeriesLine, primaryClaudeBook, statCells } from "./paper";
-import { type CurrentView, currentView } from "./paperCurrent";
+import type { LineRow, LineSeriesSpec } from "./lineChart";
+import { type CurrentView, currentSource, currentView, type DayChange } from "./paperCurrent";
 import { marketMeta, type PaperMarketCode } from "./paperMarket";
 import type { PaperBookSummary, PaperLiveSessionSummary, PaperOverviewBook, PaperOverviewResponse, PaperQuotesSummary } from "./types";
 
@@ -129,6 +130,107 @@ export function latestObserved(books: readonly PaperBookSummary[]): string | nul
   const latest = stamps.reduce((a, b) => (b > a ? b : a));
   const shown = formatKst(latest);
   return shown === EMPTY ? null : shown;
+}
+
+// ---------------------------------------------------------------- 개요 히어로(고른 계좌 하나 — 포트폴리오식, 장중 명세 §4-1)
+
+/**
+ * 히어로 계좌 — 고른 계좌가 목록에 있으면 그것, 아니면(고르지 않음·목록에서 사라짐) 그 시장의 기본 Claude 계좌(홈 PaperHero와 같은 규칙 — 미국
+ * claude·한국 kr_claude, lib/paper `primaryClaudeBook`), 그것도 없으면 첫 계좌. 계좌가 없으면 null.
+ */
+export function heroBookCode(books: readonly Pick<PaperBookSummary, "code" | "kind">[], pick: string | null | undefined): string | null {
+  if (pick && books.some((book) => book.code === pick)) return pick;
+  return primaryClaudeBook(books)?.code ?? books[0]?.code ?? null;
+}
+
+/** 히어로 곡선 — 고른 계좌 한 줄(행 = 거래일, 키 "nav"). 값은 순자산 곡선(`navSeries`)의 그 계좌 값 그대로(기록 없는 날은 null — 선이 끊김). */
+export interface HeroNavChart {
+  rows: LineRow[];
+  series: LineSeriesSpec[];
+  /** 값 자릿수 — 미국 소수 둘째, 한국 원 정수. */
+  valueDigits: number;
+}
+
+/** 히어로 곡선의 값 키. */
+export const HERO_NAV_KEY = "nav";
+
+/**
+ * 고른 기간 창(`navSeriesWindow` 결과 — 순자산 곡선 카드와 같은 기간)에서 그 계좌 한 줄만. 창이 없으면 빈 행. 계열 이름은 계좌 이름.
+ */
+export function heroNavChart(
+  navWindow: PaperOverviewResponse["navSeries"],
+  code: string,
+  label: string,
+  market: PaperMarketCode = "US",
+): HeroNavChart {
+  const dates = Array.isArray(navWindow?.dates) ? navWindow.dates : [];
+  const values = navWindow?.books && Array.isArray(navWindow.books[code]) ? navWindow.books[code] : [];
+  const rows = dates.map((date, index): LineRow => {
+    const value = values[index];
+    return { date, [HERO_NAV_KEY]: typeof value === "number" && Number.isFinite(value) ? value : null };
+  });
+  return { rows, series: [{ key: HERO_NAV_KEY, label }], valueDigits: market === "KR" ? 0 : 2 };
+}
+
+/** 개요 히어로 한 장 — 고른 계좌의 지금 값(계좌 행과 같은 규칙)과 곡선. */
+export interface OverviewHeroModel {
+  code: string;
+  /** 계좌 이름. */
+  name: string;
+  /** 히어로 제목 '{계좌} 순자산'. */
+  label: string;
+  /** 순자산 글(미국 소수 둘째·한국 원 정수). 모르면 null("—"). */
+  valueText: string | null;
+  unit: string;
+  /** 출발 이후 수익률(계좌 행·비교 표와 같은 뜻). */
+  returnPct: number | null;
+  /** 하루 변화 한 줄(서버 값 — 모르면 null). */
+  day: DayChange | null;
+  /** 단계 표기(옛 응답이면 '마지막 관측 …'). */
+  stageLabel: string | null;
+  isEstimated: boolean;
+  /** 서버 글 전문(섞임·가격 없음·체결 대기) — 히어로는 긴 글, 행은 짧은 덧붙임. */
+  note: string | null;
+  isStale: boolean;
+  staleReason: string | null;
+  warning: string | null;
+  source: string;
+  chart: HeroNavChart;
+}
+
+/**
+ * 개요 히어로 모델 — 계좌 행(`bookAssetRow`)과 같은 지금 값·이전 값·경고 규칙이고, 곡선은 고른 기간 창의 그 계좌 한 줄. 그 계좌가 목록에 없으면 null.
+ */
+export function overviewHeroModel(
+  overview: Pick<PaperOverviewResponse, "books" | "pendingBackfill" | "quotes" | "liveSession">,
+  code: string,
+  navWindow: PaperOverviewResponse["navSeries"],
+  market: PaperMarketCode = "US",
+): OverviewHeroModel | null {
+  const book = (overview.books ?? []).find((entry) => entry.code === code);
+  if (!book) return null;
+  const session = overview.liveSession ?? null;
+  const row = bookAssetRow(book, { pendingBackfill: overview.pendingBackfill, quotes: overview.quotes ?? null, market, session });
+  const view = currentView(book, { market, session });
+  const digits = market === "KR" ? 0 : 2;
+  const valueText = formatNumber(view.nav, digits);
+  return {
+    code,
+    name: book.label,
+    label: `${book.label} 순자산`,
+    valueText: valueText === EMPTY ? null : valueText,
+    unit: marketMeta(market).unitLabel,
+    returnPct: view.returnPct,
+    day: view.day?.text ? view.day : null,
+    stageLabel: view.stageLabel,
+    isEstimated: view.isEstimated,
+    note: view.note ?? (view.notes.length > 0 ? view.notes.join(" · ") : null),
+    isStale: row.isStale,
+    staleReason: row.staleReason,
+    warning: row.warning,
+    source: currentSource(view.isEstimated, market),
+    chart: heroNavChart(navWindow, code, book.label, market),
+  };
 }
 
 // ---------------------------------------------------------------- 계좌 비교 표(DataTable, 행 = 항목 · 열 = 계좌)
