@@ -203,3 +203,26 @@ describe("QA-154 숨긴 탭에서는 깨우지 않는다", () => {
     expect(liveCalls()).toBe(2);
   });
 });
+
+describe("QA-156 숨긴 탭으로 열면 보일 때까지 읽지 않는다", () => {
+  let visibility: DocumentVisibilityState;
+  beforeEach(() => {
+    visibility = "hidden";
+    vi.spyOn(document, "visibilityState", "get").mockImplementation(() => visibility);
+  });
+
+  // 개요를 백그라운드 탭으로 열면(새 탭으로 열기·브라우저가 탭을 되살림) 카드가 마운트되며 /live를 읽었습니다 — useApi의 첫 읽기는 탭이
+  // 보이는지 보지 않아, 정규장이면 아무도 보지 않는데 서버가 수집을 깨웠습니다(재현 커밋에서는 it.fails).
+  it.fails("숨긴 탭에서 마운트되면 /live를 읽지 않고, 처음 보일 때 읽는다", async () => {
+    api.apiGetShared.mockImplementation(() => Promise.resolve(live()));
+    render(<LiveValuationCard />);
+    await settle();
+    expect(liveCalls()).toBe(0);
+
+    visibility = "visible";
+    await act(async () => { document.dispatchEvent(new Event("visibilitychange")); });
+    await settle();
+    expect(liveCalls()).toBe(1);
+    expect(screen.getByText(/정규장 — 장중 1분봉 시세로 다시 평가/)).toBeTruthy();
+  });
+});
