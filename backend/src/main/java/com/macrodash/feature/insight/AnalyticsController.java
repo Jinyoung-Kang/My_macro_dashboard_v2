@@ -11,7 +11,7 @@ import org.springframework.web.bind.annotation.RestController;
 import java.util.Map;
 
 /**
- * 저장된 여러 데이터를 엮어 계산하는 분석 — 🔗 지표 상관관계 · 🧭 시장 국면 · 🩺 종목 스코어카드.
+ * 저장된 여러 데이터를 엮어 계산하는 분석 — 지표 상관관계 · 시장 국면 · 종목 스코어카드.
  *
  * <pre>
  *  GET /api/analytics/*   상관 분석 계열·상관계수·국면
@@ -38,7 +38,7 @@ public class AnalyticsController {
         this.cache = cache;
     }
 
-    // ----------------------------------------------- 🔗 상관관계 · 🧭 국면
+    // ----------------------------------------------- 상관관계 · 국면
     /** 상관 분석에 쓸 수 있는 계열 목록. */
     @GetMapping("/analytics/series")
     public Map<String, Object> analyticsSeries() {
@@ -88,7 +88,7 @@ public class AnalyticsController {
                 () -> trackRecord.trackRecord(asset, pro));
     }
 
-    // ----------------------------------------------------- 🩺 스코어카드
+    // ----------------------------------------------------- 스코어카드
     /** 스코어카드를 낼 수 있는 종목 목록. */
     @GetMapping("/stock/universe")
     public Map<String, Object> stockUniverse() {

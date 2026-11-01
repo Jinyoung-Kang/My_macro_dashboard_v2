@@ -20,7 +20,7 @@ import java.util.regex.Pattern;
 import java.util.regex.PatternSyntaxException;
 
 /**
- * 🧪 구조화 출력 스키마 — 파일 하나로 API에 보낼 스키마와 응답 검사를 함께 만듭니다(D26, 설계 §5-1).
+ * 구조화 출력 스키마 — 파일 하나로 API에 보낼 스키마와 응답 검사를 함께 만듭니다(D26, 설계 §5-1).
  *
  * <p><b>왜 둘로 나누는가.</b> 단계 0에서 확인한 대로 API는 숫자 {@code minimum}·{@code maximum}을 400으로 거절하고, 문자열
  * 길이·배열 크기 제약도 받지 않습니다. 그렇다고 스키마 파일에서 그 제약을 빼면 "노출 0~100%", "주문 12건 이하" 같은 약속이

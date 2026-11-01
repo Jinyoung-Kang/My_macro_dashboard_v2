@@ -10,7 +10,7 @@ import java.util.Map;
 import java.util.NavigableMap;
 
 /**
- * 🧭 국면 판정 성과 — 판정을 과거에 그대로 적용했을 때, 그 뒤 수익률이 어땠나.
+ * 국면 판정 성과 — 판정을 과거에 그대로 적용했을 때, 그 뒤 수익률이 어땠나.
  *
  * <p>규칙
  * <ul>

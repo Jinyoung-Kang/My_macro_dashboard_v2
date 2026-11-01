@@ -10,7 +10,7 @@ import org.springframework.web.bind.annotation.RestController;
 import java.util.Map;
 
 /**
- * 🧪 주간 복기(운영자 전용, 2단계 명세 §3 D1~D6) — 복기 목록·한 건과 수동 실행. 결정은 {@link PaperDecisionController},
+ * 주간 복기(운영자 전용, 2단계 명세 §3 D1~D6) — 복기 목록·한 건과 수동 실행. 결정은 {@link PaperDecisionController},
  * 프레임 제안(복기가 낸 제안의 승인·거절 포함)은 {@link PaperFrameworkController}입니다.
  *
  * <pre>

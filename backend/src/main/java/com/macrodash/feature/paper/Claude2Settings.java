@@ -9,7 +9,7 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * 🧪 미국 Claude 계좌2의 설정 — 설정 한 행의 {@code claude2.*} 묶음(계좌2 명세 2026-10-30-claude-book2-timing-design.md §13-2, ADR 0022 결정 9;
+ * 미국 Claude 계좌2의 설정 — 설정 한 행의 {@code claude2.*} 묶음(계좌2 명세 2026-10-30-claude-book2-timing-design.md §13-2, ADR 0022 결정 9;
  * 범위 {@link PaperSettingKeys.Scope#CLAUDE2}, 모두 규칙 계좌 영향 없음). 키가 없거나 형·범위 밖이면 그 키만 기본값으로 읽고 {@link #fallbacks}에
  * 남깁니다({@link ClaudeBookService.ClaudeSettings}와 같은 방식 — 손으로 고친 행이 있어도 결정·장부가 멈추지 않게. 쓰기 API는
  * {@link PaperSettingsService#update}가 같은 범위로 막습니다). 기본값은 '꺼짐'과 단계 1 값이라, 이 키가 생기기 전의 설정 행(서버의 지금 행)으로

@@ -13,7 +13,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 /**
- * 좀비가 도는 동안의 ⚠️ 안내 행 앞머리를 수집기(Python)와 백엔드가 같게 쓰는지 대조합니다(QA-139).
+ * 좀비가 도는 동안의 empty 안내 행 앞머리를 수집기(Python)와 백엔드가 같게 쓰는지 대조합니다(QA-139).
  *
  * <p>한쪽만 바뀌면 백엔드의 '현재 오류'가 다시 그 안내 행을 최근 결과로 골라, 멈춘 태스크가 오류 목록에서 빠집니다.
  */

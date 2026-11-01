@@ -19,7 +19,7 @@ import java.util.TreeSet;
 import java.util.stream.Collectors;
 
 /**
- * 🧪 한국 증시(KRX 유가증권·코스닥 정규장) 거래일 달력 — 2단계 명세 2026-10-26-v2-kr-paper-spec.md §4-4·K16·K35.
+ * 한국 증시(KRX 유가증권·코스닥 정규장) 거래일 달력 — 2단계 명세 2026-10-26-v2-kr-paper-spec.md §4-4·K16·K35.
  *
  * <pre>
  *  휴장 = 주말 ∪ 천문연 공휴일(isHoliday=Y) ∪ 연말휴장일 ∪ 설정 임시휴장(kr.calendar.extraClosures) ∪ (2026년 전이면 5-1)

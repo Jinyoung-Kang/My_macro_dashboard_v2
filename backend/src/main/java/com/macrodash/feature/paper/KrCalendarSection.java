@@ -17,7 +17,7 @@ import java.util.Map;
 import java.util.Optional;
 
 /**
- * 🧪 한국 Claude 패킷의 일정 섹션 {@code 1b_calendar}(2단계 명세 §4-11·K20, E1a) — 저장본 {@code calendar.kr_events}(수집기 {@code kr_calendar}, B9 —
+ * 한국 Claude 패킷의 일정 섹션 {@code 1b_calendar}(2단계 명세 §4-11·K20, E1a) — 저장본 {@code calendar.kr_events}(수집기 {@code kr_calendar}, B9 —
  * 금통위 상수·주요 발표 상수, 앞으로 45일)를 기준 세션 다음 KR 거래일부터 10거래일 창({@link CalendarWindow#window(TradingCalendar, LocalDate)} —
  * 미국과 같은 길이, 그 실행의 {@code KrxCalendar})으로 자릅니다.
  *

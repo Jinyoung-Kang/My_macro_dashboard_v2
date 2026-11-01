@@ -58,7 +58,7 @@ import static com.macrodash.feature.paper.ClaudeBookService.inputsStale;
 import static com.macrodash.feature.paper.ClaudeBookService.noPriceTickers;
 
 /**
- * 🧪 Claude 책 결정 한 번의 파이프라인 — <b>호출</b>(프레임 판 렌더링 → 패킷 → 일일 호출 상한 → 구조화 출력 → 사용량 → 스키마 검사),
+ * Claude 책 결정 한 번의 파이프라인 — <b>호출</b>(프레임 판 렌더링 → 패킷 → 일일 호출 상한 → 구조화 출력 → 사용량 → 스키마 검사),
  * <b>검증</b>(검증기 문맥·판정·노출 비교·결정 응답), <b>기록</b>(주문 행·결정 행·호출 실패·응답 뒤 오류·건너뜀·호출 상한). 규칙은
  * {@link ClaudeBookService} 클래스 설명 그대로입니다.
  *

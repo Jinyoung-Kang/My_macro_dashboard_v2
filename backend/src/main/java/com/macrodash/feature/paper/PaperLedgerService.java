@@ -53,7 +53,7 @@ import java.util.concurrent.locks.ReentrantLock;
 import java.util.function.Supplier;
 
 /**
- * 🧪 관측치 하나를 그 시장 책들의 장부에 적용합니다(명세 L3~L9, 설계 §3-1) — 체결·트레일링 스탑·분할·평가·순자산.
+ * 관측치 하나를 그 시장 책들의 장부에 적용합니다(명세 L3~L9, 설계 §3-1) — 체결·트레일링 스탑·분할·평가·순자산.
  *
  * <p><b>시장마다 따로입니다</b>(2단계 명세 §9 A5). 관측치 처리·미확정 순자산 줄·'새 관측치가 있나'·오류 기억은 받은 시장
  * ({@link PaperMarket})의 책({@code paper_books.market})만 보고, 세션 날짜·확정 판정 셋(종가 나옴·그 시점 가격 있음·확정 — 결정 d9)·

@@ -45,7 +45,7 @@ import java.util.TreeSet;
 import java.util.regex.Pattern;
 
 /**
- * 🧪 주간 복기(2단계 명세 §3 D1~D6·D32) — Claude 계좌의 지난 결정(기본 4주)을 그 뒤 실제 가격과 대조한 입력을 <b>코드가</b> 만들고,
+ * 주간 복기(2단계 명세 §3 D1~D6·D32) — Claude 계좌의 지난 결정(기본 4주)을 그 뒤 실제 가격과 대조한 입력을 <b>코드가</b> 만들고,
  * Claude에 한 번 물어 복기 메모(판정·반복 오류·지킬 것·프레임 제안)를 받아 {@code paper_reviews}에 주마다 한 행 남깁니다.
  *
  * <p><b>입력</b>({@link #build}): 장부(결정·주문·체결·스탑·순자산)와 종가 이력을 읽어 {@link ReviewFacts}가 사실을 계산합니다 —

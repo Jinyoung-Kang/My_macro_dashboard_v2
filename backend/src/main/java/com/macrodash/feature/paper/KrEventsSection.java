@@ -17,7 +17,7 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * 🧪 한국 Claude 패킷의 사건 섹션 {@code 11b_events}(2단계 명세 §4-11·K21, E1a) — 저장본({@code kr_news_headline}) 행을 {@link KrNewsEvents} 입력으로
+ * 한국 Claude 패킷의 사건 섹션 {@code 11b_events}(2단계 명세 §4-11·K21, E1a) — 저장본({@code kr_news_headline}) 행을 {@link KrNewsEvents} 입력으로
  * 옮기고, 고른 헤드라인을 구분자로 감싼 글({@code text})과 번호·entity·출처·알 수 있는 시각·걸린 이유 목록({@code items})으로 펼칩니다(미국
  * {@link EventsSection}과 같은 모양). 설정 {@code kr.news.*}를 읽는 것도 여기입니다.
  *

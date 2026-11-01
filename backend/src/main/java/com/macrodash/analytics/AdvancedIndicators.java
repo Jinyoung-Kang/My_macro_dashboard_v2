@@ -21,7 +21,7 @@ import java.util.Map;
  * </ol>
  * NFCI는 STLFSI4와 구성이 달라, 두 지수가 갈라지는 것 자체가 신호입니다.
  *
- * <p>⚠️ 임계치는 역사적 분포에 근거한 <b>참고치</b>이며 투자 판단의 근거가 아닙니다.
+ * <p>주의: 임계치는 역사적 분포에 근거한 <b>참고치</b>이며 투자 판단의 근거가 아닙니다.
  */
 public final class AdvancedIndicators {
 

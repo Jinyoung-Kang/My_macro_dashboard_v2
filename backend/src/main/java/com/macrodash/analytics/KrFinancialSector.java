@@ -6,7 +6,7 @@ import java.util.Optional;
 import java.util.TreeMap;
 
 /**
- * 🧪 한국 규칙 계좌의 금융업 코드 표 — 이 표의 회사는 부채비율 상한({@code kr.rules.debtRatioMaxPct})을 보지 않습니다(ROE &gt; 0은 그대로).
+ * 한국 규칙 계좌의 금융업 코드 표 — 이 표의 회사는 부채비율 상한({@code kr.rules.debtRatioMaxPct})을 보지 않습니다(ROE &gt; 0은 그대로).
  * 2단계 명세 2026-10-26-v2-kr-paper-spec.md §4-6 'D2a', 사용자 결정 2026-10-28(u1 — '매출액 계정 없음'·'유동자산 계정 없음' 대신 코드 표).
  *
  * <p><b>출처</b>: 금융감독원 Open DART 기업개황({@code company.json})의 {@code induty_code}(한국표준산업분류 코드) — 2026-10-28 05:34 KST에

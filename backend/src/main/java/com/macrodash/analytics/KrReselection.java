@@ -11,7 +11,7 @@ import java.util.Objects;
 import java.util.Optional;
 
 /**
- * 🧪 한국 규칙 계좌({@code kr_rules})의 재선정일과 재선정 따라잡기 — 2단계 명세 2026-10-26-v2-kr-paper-spec.md §4-6·K10·K33.
+ * 한국 규칙 계좌({@code kr_rules})의 재선정일과 재선정 따라잡기 — 2단계 명세 2026-10-26-v2-kr-paper-spec.md §4-6·K10·K33.
  *
  * <pre>
  *  예정 재선정일(설정 kr.rules.reselection)

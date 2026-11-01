@@ -6,7 +6,7 @@ import java.util.Map;
 import java.util.Objects;
 
 /**
- * 🧪 모의 매매 장부의 체결·평가 계산(설계 §3-1).
+ * 모의 매매 장부의 체결·평가 계산(설계 §3-1).
  *
  * <p>여기는 숫자만 다룹니다. 어떤 주문을 언제 체결할지(룩어헤드 방지 조건), 가격을 모르는 보유를 무엇으로 평가할지는
  * {@code PaperLedgerService}의 책임입니다.

@@ -15,7 +15,7 @@ import java.util.Map;
 import java.util.Optional;
 
 /**
- * 🇰🇷 국내 파생 & 투기세력 (KRX).
+ * 국내 파생 & 투기세력 (KRX).
  *
  * <p>KOSPI200 선물 종가·미결제약정·베이시스, 4대 국면 판정, 한국판 COT Index,
  * Daum 투자주체별 선물 수급(계약수 기준), 장중 수급 가속도.

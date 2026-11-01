@@ -35,7 +35,7 @@ import java.util.Map;
 import java.util.Optional;
 
 /**
- * 🧪 실행 감사 정기 작업(미국 Claude 계좌2 실험 단계 0 — 명세 docs/specs/2026-10-30-claude-book2-timing-design.md §14-1, ADR 0022) — 5분마다
+ * 실행 감사 정기 작업(미국 Claude 계좌2 실험 단계 0 — 명세 docs/specs/2026-10-30-claude-book2-timing-design.md §14-1, ADR 0022) — 5분마다
  * 미국 Claude 계좌의 결정 주문마다 "계좌1식·시가·매시·종가로 체결했다면의 원가격"(반사실)과 1분봉 지연을 {@code paper_order_exec}에 적습니다.
  * 판정은 {@link ExecutionAudit}이고, 이 작업은 저장본을 읽어 넘기고 결과를 합쳐 쓰기만 합니다.
  *

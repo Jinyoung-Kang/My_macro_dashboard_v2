@@ -18,7 +18,7 @@ import java.util.Map;
 import java.util.regex.Pattern;
 
 /**
- * 🧪 Claude 패킷의 사건 섹션 {@code 11b_events}(2단계 명세 B3·B4·B5·B6) — 저장본(수집기 {@code news_headlines}의 {@code news_headline}
+ * Claude 패킷의 사건 섹션 {@code 11b_events}(2단계 명세 B3·B4·B5·B6) — 저장본(수집기 {@code news_headlines}의 {@code news_headline}
  * 관측치) 행을 {@link NewsEvents} 입력으로 옮기고, 고른 헤드라인을 구분자로 감싼 글({@code text})과 번호·entity·출처·시각·걸린 이유
  * 목록({@code items} — 제목은 글에만, 두 번 싣지 않음)으로 펼칩니다. 설정 {@code news.*}를 읽는 것도 여기입니다.
  *

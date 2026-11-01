@@ -49,7 +49,7 @@ import java.util.concurrent.locks.ReentrantLock;
 import java.util.function.DoublePredicate;
 
 /**
- * 🧪 기관 선정 — 후보 기관의 13F 트랙레코드를 계산해 순위를 매기고, 재선정일에 상위 N곳을 선정으로 남깁니다(명세 R1·R5·R7~R10,
+ * 기관 선정 — 후보 기관의 13F 트랙레코드를 계산해 순위를 매기고, 재선정일에 상위 N곳을 선정으로 남깁니다(명세 R1·R5·R7~R10,
  * 설계 §4-0 ⑤). 설계의 {@code TrackRecordService}입니다 — 국면 판정 성과의 {@code feature/insight/TrackRecordService}와 빈
  * 이름이 겹쳐 이름을 바꿨습니다(단계 0).
  *

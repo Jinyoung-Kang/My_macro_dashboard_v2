@@ -26,7 +26,7 @@ import java.util.Set;
 import java.util.TreeMap;
 
 /**
- * 🧪 모의 매매가 읽는 시세 저장본 — 장부 관측치({@code paper.quotes})와 10년 종가 이력({@code timeseries equity_close}).
+ * 모의 매매가 읽는 시세 저장본 — 장부 관측치({@code paper.quotes})와 10년 종가 이력({@code timeseries equity_close}).
  *
  * <p>둘 다 수집기 테이블이라 읽기만 합니다(ADR 0008). 스냅샷은 {@link StoreReader}로 읽습니다 — 정기 작업·화면은 이 클래스를
  * {@link StoreReader#quietly} 안에서 불러, 저장본이 오래돼도 수집을 깨우거나 기다리지 않습니다(부르는 쪽 책임).
@@ -155,7 +155,7 @@ public class PaperMarketData {
     }
 
     /**
-     * 🧪 미국 1분봉 저장본({@code paper.bars.us}, 수집기 {@code paper_bars_us} — 미국 Claude 계좌2 실험) — 장부의 시각 지정 체결(2b)·1분봉 기다림이
+     * 미국 1분봉 저장본({@code paper.bars.us}, 수집기 {@code paper_bars_us} — 미국 Claude 계좌2 실험) — 장부의 시각 지정 체결(2b)·1분봉 기다림이
      * 읽습니다(명세 2026-10-30 §10, {@link UsTimedFills}). 수집 태스크 이름 없이 {@link StoreReader#quietly} 안에서 읽어, 장부를 부른 곳이 정기 작업이든
      * 수동 실행이든 저장본이 오래돼도 수집을 요청하지 않습니다(ADR 0008). 없으면 empty.
      */
@@ -164,7 +164,7 @@ public class PaperMarketData {
     }
 
     /**
-     * 🧪 장중 확인 감시 저장본({@link Datasets#SNAP_PAPER_WATCH_US}, 수집기 {@code paper_watch_us} — 계좌2 단계 2) — 장중 확인 패킷({@link CheckpointPacket})의
+     * 장중 확인 감시 저장본({@link Datasets#SNAP_PAPER_WATCH_US}, 수집기 {@code paper_watch_us} — 계좌2 단계 2) — 장중 확인 패킷({@link CheckpointPacket})의
      * MINUTE 자료만 읽습니다(판단 입력 — 장부 체결은 1분봉 저장본 한 출처). {@link StoreReader#quietly} 안에서 읽어 수집을 요청하지 않습니다(ADR 0008).
      * 나이({@link Datasets#MAX_AGE_WATCH_US})·확인 대조는 부르는 쪽이 봅니다. 없으면 empty.
      */

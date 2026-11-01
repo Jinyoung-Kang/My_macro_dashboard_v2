@@ -22,7 +22,7 @@ import java.util.Set;
 import java.util.TreeMap;
 
 /**
- * 🧪 Claude 패킷의 일정 섹션 {@code 1b_calendar}(2단계 명세 A4) — 저장본({@code calendar.us_events}) payload를
+ * Claude 패킷의 일정 섹션 {@code 1b_calendar}(2단계 명세 A4) — 저장본({@code calendar.us_events}) payload를
  * {@link CalendarWindow} 입력으로 옮기고, 창 안의 거시 일정({@code macro})과 대상 종목 실적일({@code earnings})을 {@code 8_prices}와
  * 같은 열 배열로 펼칩니다. 두 표 모두 날짜 순(같은 날이면 FOMC → 발표일, 이름·티커 순 — {@link CalendarWindow}의 순서)입니다.
  *

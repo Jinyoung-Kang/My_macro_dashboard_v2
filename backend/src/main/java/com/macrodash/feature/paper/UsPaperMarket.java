@@ -23,7 +23,7 @@ import java.util.Map;
 import java.util.Optional;
 
 /**
- * 🧪 미국 책의 시장 묶음({@link PaperMarket}) — 값은 모두 이 묶음 전부터 있던 상수를 그대로 돌려줍니다(2단계 명세 §9 A4, 미국 숫자
+ * 미국 책의 시장 묶음({@link PaperMarket}) — 값은 모두 이 묶음 전부터 있던 상수를 그대로 돌려줍니다(2단계 명세 §9 A4, 미국 숫자
  * 불변). 상수의 자리는 아직 원래 클래스이고, {@code UsPaperMarketTest}가 값 자체와 원래 상수가 같은지를 함께 고정합니다.
  *
  * <ul>

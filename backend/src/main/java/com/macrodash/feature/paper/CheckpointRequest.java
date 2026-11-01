@@ -15,7 +15,7 @@ import java.util.List;
 import java.util.Set;
 
 /**
- * 🧪 아침 결정의 장중 확인 요청({@code checkpoint}) 의미 검사 — 계좌2 명세 §9-5·§10-5의 {@link OrderValidator#CHECKPOINT_INVALID}(시각·감시 목록·피드).
+ * 아침 결정의 장중 확인 요청({@code checkpoint}) 의미 검사 — 계좌2 명세 §9-5·§10-5의 {@link OrderValidator#CHECKPOINT_INVALID}(시각·감시 목록·피드).
  * 스키마가 칸의 모양(시각 enum·피드 enum·감시 ≤10·질문 ≤300자)을 보고, 여기서는 조건부 규칙과 그 세션에 맞는지를 봅니다 — API용 스키마는 제약을
  * 걷어 내므로(ADR 0018 결정 1) 스키마가 막는 것도 다시 봅니다.
  *

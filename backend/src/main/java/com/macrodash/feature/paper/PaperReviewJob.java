@@ -28,7 +28,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.locks.ReentrantLock;
 
 /**
- * 🧪 주간 복기 작업(2단계 명세 §3 D1·D4) — 30분마다 돌며, 그 주 복기를 낼 때가 됐으면 {@link ReviewService#review}를 한 번 부릅니다.
+ * 주간 복기 작업(2단계 명세 §3 D1·D4) — 30분마다 돌며, 그 주 복기를 낼 때가 됐으면 {@link ReviewService#review}를 한 번 부릅니다.
  *
  * <pre>
  *  그 시장 달력이 앞 창(직전 세션 ~ 10거래일)의 해를 모름 → NO_CALENDAR(정기 실행은 그 시장·KST 날짜·빠진 해마다 한 번 기록 — 명세 K35)

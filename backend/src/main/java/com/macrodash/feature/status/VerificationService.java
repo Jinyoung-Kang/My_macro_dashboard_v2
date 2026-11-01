@@ -26,7 +26,7 @@ import java.util.Optional;
 import java.util.Set;
 
 /**
- * 🔍 데이터 교차 검증 (KRX · KIS · 토스증권).
+ * 데이터 교차 검증 (KRX · KIS · 토스증권).
  *
  * <p>이 프로젝트는 공식 API와 비공식 스크래핑을 섞어 씁니다. 비공식 소스는
  * 페이지 구조가 바뀌면 조용히 틀린 값을 주기 시작하고, 화면만 봐서는 알아챌

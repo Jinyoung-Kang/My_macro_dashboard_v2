@@ -10,7 +10,7 @@ import org.springframework.web.bind.annotation.RestController;
 import java.util.Map;
 
 /**
- * 누가 어느 쪽에 서 있나 — 🏛️ 글로벌 투기세력(COT) · 🇰🇷 국내 파생 · 📡 외국인/기관 수급 레이더.
+ * 누가 어느 쪽에 서 있나 — 글로벌 투기세력(COT) · 국내 파생 · 외국인/기관 수급 레이더.
  *
  * <pre>
  *  GET /api/cot/*     CFTC COT 포지션·극단값
@@ -35,7 +35,7 @@ public class PositioningController {
         this.radar = radar;
     }
 
-    // ------------------------------------------------------ 🏛️ COT
+    // ------------------------------------------------------ COT
     @GetMapping("/cot/assets")
     public Map<String, Object> cotAssets() {
         return cot.assetList();
@@ -60,7 +60,7 @@ public class PositioningController {
         return cot.extremes(name, percentile, lookbackWeeks);
     }
 
-    // ------------------------------------------------------ 🇰🇷 KRX
+    // ------------------------------------------------------ KRX
     @GetMapping("/krx/futures")
     public Map<String, Object> krxFutures(@RequestParam(defaultValue = "40") Integer days) {
         return krx.futures(days);
@@ -81,7 +81,7 @@ public class PositioningController {
         return krx.openInterestTrend();
     }
 
-    // ------------------------------------------------------- 📡 레이더
+    // ------------------------------------------------------- 레이더
     @GetMapping("/radar/options")
     public Map<String, Object> radarOptions() {
         return radar.options();
@@ -103,7 +103,7 @@ public class PositioningController {
     }
 
     /**
-     * 📡 외국인·기관이 같은 방향으로 움직인 종목.
+     * 외국인·기관이 같은 방향으로 움직인 종목.
      *
      * <p>두 주체의 상위 목록을 각각 받아 종목코드로 맞춘 교집합입니다.
      * 상위 N 밖의 종목은 소스가 주지 않아 포함되지 않습니다.

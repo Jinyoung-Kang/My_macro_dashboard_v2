@@ -22,7 +22,7 @@ import java.util.Map;
 import java.util.Optional;
 
 /**
- * 🧪 리스크 점검 정기 작업(설계 §6-3) — 5분마다 새 관측치({@code paper.quotes})가 있으면 장부에 적용합니다(체결·스탑·분할·평가).
+ * 리스크 점검 정기 작업(설계 §6-3) — 5분마다 새 관측치({@code paper.quotes})가 있으면 장부에 적용합니다(체결·스탑·분할·평가).
  *
  * <p>시장마다 따로 돕니다(2단계 명세 §9 A5): 정기 실행은 {@link PaperMarkets#all}을 차례로, 시장마다 그 시장의 관측치 저장본을
  * 읽어 그 시장 책에만 적용하고({@link PaperLedgerService} 설명), 작업 기록은 그 시장 이름({@link PaperMarket#jobName})으로

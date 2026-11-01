@@ -17,7 +17,7 @@ import java.util.Map;
 import java.util.Optional;
 
 /**
- * 🧪 Claude 호출 예산(명세 C8·D18·F7) — 하루(KST) 호출 상한 잡기·되돌리기·사용량(토큰·추정 비용) 기록을 한 곳에 둡니다. Claude 재량
+ * Claude 호출 예산(명세 C8·D18·F7) — 하루(KST) 호출 상한 잡기·되돌리기·사용량(토큰·추정 비용) 기록을 한 곳에 둡니다. Claude 재량
  * 책의 결정·미리보기·시작과 프레임 제안이 <b>같은 상한</b>을 나눠 씁니다 — 상한을 따로 두면 제안을 여러 번 눌러 하루 비용이 결정
  * 상한을 넘습니다. 한국 책도 같은 줄을 씁니다(두 책 합 상한, 2단계 명세 §4-10·K18). 상한의 문턱은 부르는 쪽이 정합니다 — 정기 작업은 상한까지,
  * 수동 호출은 정기 작업 몫 예약({@code apiScheduledReserve})을 남긴 문턱까지({@link ClaudeBookService.ClaudeSettings#callLimit}, 같은 SQL의 문턱만 다름).

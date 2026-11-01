@@ -10,7 +10,7 @@ import java.util.Objects;
 import java.util.Optional;
 
 /**
- * 🧪 한국 증시(KRX 유가증권·코스닥·ETF) 체결 비용 — 2단계 명세 2026-10-26-v2-kr-paper-spec.md §4-3·K5·K31, §5 '비용이 손계산과 같다'.
+ * 한국 증시(KRX 유가증권·코스닥·ETF) 체결 비용 — 2단계 명세 2026-10-26-v2-kr-paper-spec.md §4-3·K5·K31, §5 '비용이 손계산과 같다'.
  *
  * <pre>
  *  체결 금액   = 수량 × 체결가          (체결가 = 관측가 그대로 — 슬리피지·호가 반올림을 얹지 않음, K31)

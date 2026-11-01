@@ -14,7 +14,7 @@ import org.springframework.web.bind.annotation.RestController;
 import java.util.Map;
 
 /**
- * 👥 사용자 관리(운영자만 — 접근 정책 표가 막음).
+ * 사용자 관리(운영자만 — 접근 정책 표가 막음).
  *
  * <pre>
  *  GET  /api/admin/users          사용자 목록

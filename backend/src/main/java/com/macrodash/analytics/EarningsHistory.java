@@ -15,7 +15,7 @@ import java.util.Set;
 import java.util.TreeSet;
 
 /**
- * 🧪 어닝 서프라이즈 — 저장본(수집기 {@code earnings_surprise} 태스크의 {@code observations us.earnings_surprise}, entity = 티커,
+ * 어닝 서프라이즈 — 저장본(수집기 {@code earnings_surprise} 태스크의 {@code observations us.earnings_surprise}, entity = 티커,
  * obs_date = 발표 시각의 미국 동부 날짜)에서 기준일에 <b>알 수 있었던</b> 최근 {@value #LAST}분기 EPS 실제치·컨센서스·서프라이즈율을
  * 고릅니다(2단계 명세 C1·C3). Claude 패킷 재무 섹션 {@code 8b_fundamentals}의 종목 행 {@code eps} 칸이 이 결과입니다. 저장소 없이
  * 테스트하는 순수 계산입니다.

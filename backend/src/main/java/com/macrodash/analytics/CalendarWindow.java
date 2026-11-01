@@ -13,7 +13,7 @@ import java.util.TreeMap;
 import java.util.TreeSet;
 
 /**
- * 🧪 Claude 패킷의 일정 섹션 {@code 1b_calendar}(2단계 명세 A1·A2·A4)에 실을 줄 — 저장본(수집기 {@code us_calendar} 태스크의
+ * Claude 패킷의 일정 섹션 {@code 1b_calendar}(2단계 명세 A1·A2·A4)에 실을 줄 — 저장본(수집기 {@code us_calendar} 태스크의
  * {@code calendar.us_events})에서 기준 거래일 뒤 10거래일 창 안의 거시 일정(FOMC·FRED 발표일)과 대상 종목 실적일만 고릅니다.
  *
  * <p><b>창</b>: 기준일 <b>다음</b> 세션부터 기준일 + 10거래일까지(양 끝 포함, {@link UsMarketCalendar}) — 주문이 체결될 수 있는 첫

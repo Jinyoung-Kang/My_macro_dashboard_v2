@@ -31,7 +31,7 @@ import java.util.function.Supplier;
 import java.util.regex.Pattern;
 
 /**
- * 🧪 한국 책의 시장 묶음({@link PaperMarket}, 2단계 명세 2026-10-26-v2-kr-paper-spec.md §4 — C1c). 미국 묶음과 달리 <b>고정 달력이
+ * 한국 책의 시장 묶음({@link PaperMarket}, 2단계 명세 2026-10-26-v2-kr-paper-spec.md §4 — C1c). 미국 묶음과 달리 <b>고정 달력이
  * 없습니다</b>: 실행을 열 때마다({@link PaperMarkets#open}) 그 실행이 조용히 읽은 공휴일 저장본({@code calendar.kr_holidays})과 그 실행이
  * 읽은 설정 판의 임시휴장({@code kr.calendar.extraClosures})·장 시간 변경일({@code kr.calendar.openTimeOverrides} — 결정 d8)로
  * {@link KrxCalendar}를 한 벌 만듭니다({@link #openCalendar}). 실행 밖에서 달력을 물으면({@link #calendar()}) 던집니다.

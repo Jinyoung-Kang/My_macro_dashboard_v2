@@ -7,7 +7,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 import java.util.Map;
 
-/** 📋 전체 원본 데이터 — 수집한 대시보드 원본 텍스트(화면 표시·복사용). */
+/** 전체 원본 데이터 — 수집한 대시보드 원본 텍스트(화면 표시·복사용). */
 @RestController
 @RequestMapping("/api")
 public class SnapshotTextController {

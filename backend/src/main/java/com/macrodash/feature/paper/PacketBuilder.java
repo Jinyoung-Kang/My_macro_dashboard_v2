@@ -83,7 +83,7 @@ import java.util.TreeSet;
 import java.util.function.Function;
 
 /**
- * 🧪 Claude 재량 책의 입력 패킷(명세 C5·C6·C11, 설계 §5-2) — 섹션 0~12(와 6b·8b)를 사람이 읽는 순서의 JSON 하나로 묶습니다.
+ * Claude 재량 책의 입력 패킷(명세 C5·C6·C11, 설계 §5-2) — 섹션 0~12(와 6b·8b)를 사람이 읽는 순서의 JSON 하나로 묶습니다.
  *
  * <p><b>섹션</b>: {@code 0_instructions} 지시 · {@code 1_basis} 기준(거래일·다음 세션·확정 종가·버전·선정 기준일) ·
  * {@code 1b_calendar} 다음 10거래일의 거시 발표일·대상 종목 실적일(2단계 A — {@link CalendarSection}) ·

@@ -11,7 +11,7 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * 📑 기관 13F 포트폴리오 · 🎯 13F 교집합 · 🧬 기관 13F 스타일·위험.
+ * 기관 13F 포트폴리오 · 13F 교집합 · 기관 13F 스타일·위험.
  *
  * <pre>
  *  GET /api/sec13f/*   기관 목록·포트폴리오·교집합·공통 신규 매수
@@ -33,7 +33,7 @@ public class InstitutionController {
         this.cache = cache;
     }
 
-    // ------------------------------------------------------- 📑 13F
+    // ------------------------------------------------------- 13F
     @GetMapping("/sec13f/institutions")
     public Map<String, Object> institutions() {
         return Institutions.list();
@@ -60,7 +60,7 @@ public class InstitutionController {
                 () -> sec13f.consensus(selected, reportDate, minHolders, topN));
     }
 
-    /** 🆕 이번 분기에 여러 기관이 함께 새로 담은 종목. */
+    /** 이번 분기에 여러 기관이 함께 새로 담은 종목. */
     @GetMapping("/sec13f/new-buys")
     public Map<String, Object> newBuys(
             @RequestParam(required = false) String ciks,
@@ -71,7 +71,7 @@ public class InstitutionController {
                 () -> sec13f.newBuys(selected, reportDate, minHolders));
     }
 
-    // ------------------------------------------------- 🧬 기관 스타일·위험
+    // ------------------------------------------------- 기관 스타일·위험
     /** 기관별 성격 요약 (집중도·유효 종목 수·회전율). */
     @GetMapping("/guru/profiles")
     public Map<String, Object> guruProfiles() {

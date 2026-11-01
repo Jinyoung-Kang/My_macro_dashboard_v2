@@ -27,7 +27,7 @@ import java.util.TreeMap;
 import java.util.TreeSet;
 
 /**
- * 🧪 한국 금융위 확정 조정(2단계 명세 §4-1 '확정가'·K29, ADR 0021 결정 3 — C3). 장부({@code PaperLedgerService})가 확정 조정 시장
+ * 한국 금융위 확정 조정(2단계 명세 §4-1 '확정가'·K29, ADR 0021 결정 3 — C3). 장부({@code PaperLedgerService})가 확정 조정 시장
  * ({@link PaperMarket#confirmsFills})의 책마다 한 트랜잭션 안에서 부릅니다 — 관측치를 처리하기 전에, 그리고 리스크 점검이 새 관측치가 없는 주기에도.
  *
  * <p><b>체결마다 한 행</b>: 확정 조정 행이 아직 없는 체결({@link PaperStore#unconfirmedFills})마다 그 체결일 D의 금융위 행을 봅니다 — 주식은

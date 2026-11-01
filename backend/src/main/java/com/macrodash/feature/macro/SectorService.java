@@ -19,7 +19,7 @@ import java.util.Map;
 import java.util.Optional;
 
 /**
- * 🔄 섹터 & 자산군 로테이션.
+ * 섹터 & 자산군 로테이션.
  *
  * <p>수집기가 적재한 ETF 종가에서 기간별 수익률 매트릭스와 모멘텀 순위를
  * 계산합니다.

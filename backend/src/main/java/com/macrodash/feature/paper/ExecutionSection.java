@@ -23,7 +23,7 @@ import java.util.Locale;
 import java.util.Map;
 
 /**
- * 🧪 미국 Claude 계좌2 패킷의 {@code 13_execution} 섹션(계좌2 명세 2026-10-30-claude-book2-timing-design.md §9-3, {@code executionMenuVersion} 1 —
+ * 미국 Claude 계좌2 패킷의 {@code 13_execution} 섹션(계좌2 명세 2026-10-30-claude-book2-timing-design.md §9-3, {@code executionMenuVersion} 1 —
  * 단계 1) — 목표 세션 E(기준 거래일 다음 거래일)의 날짜·개장·마감(ET·KST)·조기 폐장, 체결 시점 메뉴와 한 줄 뜻, 가격 사다리, 출처 사실(§7-2의 1·2),
  * 슬리피지, 자기 체결 기록({@code record} — 최근 20건, 사실만, T14).
  *

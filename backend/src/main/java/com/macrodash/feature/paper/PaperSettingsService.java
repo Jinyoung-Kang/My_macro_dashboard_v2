@@ -23,7 +23,7 @@ import java.util.Map;
 import java.util.concurrent.locks.ReentrantLock;
 
 /**
- * 🧪 모의 매매 설정(명세 S1, 설계 §4-4) — DB 한 행({@code paper_settings}) + 변경 이력.
+ * 모의 매매 설정(명세 S1, 설계 §4-4) — DB 한 행({@code paper_settings}) + 변경 이력.
  *
  * <p>읽기·처음 값 넣기({@link #ensureInitialized})와, 화면에서 바꾸는 쓰기({@link #update} — 단계 3a, S2·S3)를 합니다.
  * 설정 행이 아직 없으면(초기화 전) {@link #defaultsJson()}을 그대로 쓰고 버전은 null입니다 — "버전 0"을 지어내지 않습니다.

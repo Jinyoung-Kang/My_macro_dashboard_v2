@@ -7,7 +7,7 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * 🏦 투자자별 매매 (토스증권 공식) — 누적·연속성·기관 세부·현물/선물 동조.
+ * 투자자별 매매 (토스증권 공식) — 누적·연속성·기관 세부·현물/선물 동조.
  *
  * <p>입력은 수집기가 정규화한 기록입니다({@code collector/app/services/toss.py}).
  * <pre>

@@ -64,7 +64,7 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /**
- * 🧪 한국 Claude 계좌({@code kr_claude})의 입력 패킷(2단계 명세 §4-7·K8, E1a) — 미국 {@link PacketBuilder}와 같은 번호 체계의 섹션을 한국 자료로
+ * 한국 Claude 계좌({@code kr_claude})의 입력 패킷(2단계 명세 §4-7·K8, E1a) — 미국 {@link PacketBuilder}와 같은 번호 체계의 섹션을 한국 자료로
  * 채웁니다. 미국 패킷·{@link PacketBuilder}는 건드리지 않습니다(미국 고정본·해시 그대로 — K37). 미국에 있는 {@code 2_macroCards}·{@code 3_fred}·
  * {@code 4_regime}·{@code 5_gate}·{@code 6}·{@code 6b}·{@code 7}(13F)은 없고, 매크로 카드·국면은 {@code 1_basis}에, 한국 금리·환율은 {@code 3_kr_macro}에
  * 둡니다.

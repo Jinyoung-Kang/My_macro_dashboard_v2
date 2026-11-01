@@ -36,7 +36,7 @@ import java.util.Optional;
 import java.util.Set;
 
 /**
- * 🧪 미국 Claude 계좌2의 장중 확인 패킷({@code checkpointVersion} 1 — 계좌2 명세 2026-10-30-claude-book2-timing-design.md §5-2·§7-3·§8 ⑨·§9-5,
+ * 미국 Claude 계좌2의 장중 확인 패킷({@code checkpointVersion} 1 — 계좌2 명세 2026-10-30-claude-book2-timing-design.md §5-2·§7-3·§8 ⑨·§9-5,
  * ADR 0022). 아침 결정이 고른 시각(확인 시각 + 2~20분)에 장중 확인 작업이 한 번 보내는 사용자 메시지입니다. 시스템 프롬프트는 아침 결정과 같은
  * c2-2 렌더링이고, 응답 스키마는 {@value #SCHEMA_RESOURCE}입니다.
  *

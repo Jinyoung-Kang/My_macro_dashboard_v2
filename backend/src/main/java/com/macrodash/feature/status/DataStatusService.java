@@ -23,12 +23,12 @@ import java.util.Map;
 import java.util.Optional;
 
 /**
- * 🗄️ 데이터 저장소 상태.
+ * 데이터 저장소 상태.
  *
  * <p>구버전 {@code collector.py --status}가 터미널에 출력하던 내용을 화면에서
  * 그대로 볼 수 있게 합니다.
  * <ul>
- *   <li>태스크별 최근 결과 — ✅ 정상 / ⚠️ 데이터 없음 / ❌ 오류 + 실패 이유</li>
+ *   <li>태스크별 최근 결과 — 정상 / 데이터 없음 / 오류 + 실패 이유</li>
  *   <li>있어야 하는데 없는 데이터셋 — 기대 목록과 대조</li>
  *   <li>실제 실행 상태 — 수집기가 죽으면 기록은 'running'에 남습니다.
  *       PID 생존 여부와 heartbeat로 검사해 '비정상 종료'로 보고합니다.</li>
@@ -106,7 +106,7 @@ public class DataStatusService {
     static final int ISSUE_WINDOW = 3000;
 
     /**
-     * ⚠️ 수집 오류·경고 모음 (복사용 텍스트 포함). {@link StatusIssues} 참고.
+     * 수집 오류·경고 모음 (복사용 텍스트 포함). {@link StatusIssues} 참고.
      *
      * <p>실행 기록은 DB에서 직접 읽습니다 — 수집기가 죽어 있을 때가 가장 로그가 필요한
      * 때입니다. 수집기에 닿으면 등록된 태스크 목록과 누락 데이터셋을 더합니다. 닿지 않으면

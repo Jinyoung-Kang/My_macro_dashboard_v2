@@ -17,7 +17,7 @@ import java.util.Set;
 import java.util.regex.Pattern;
 
 /**
- * 📅 한국 공휴일 (천문연 특일정보) — 화면 시계의 KRX 휴장 판정용.
+ * 한국 공휴일 (천문연 특일정보) — 화면 시계의 KRX 휴장 판정용.
  *
  * <p>휴장 판정 자체는 화면({@code marketCalendar.ts})이 합니다. 인터넷이 끊겨도
  * 시계가 동작해야 하므로 계산 규칙은 브라우저에 있고, 여기서는 규칙으로 알 수

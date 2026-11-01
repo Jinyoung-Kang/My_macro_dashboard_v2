@@ -23,7 +23,7 @@ import java.util.Set;
 import java.util.regex.Pattern;
 
 /**
- * 🏦 투자자별 매매 (토스증권 공식 Open API) — 레이더·국내 파생 화면용 응답 조립.
+ * 투자자별 매매 (토스증권 공식 Open API) — 레이더·국내 파생 화면용 응답 조립.
  *
  * <p>계산은 {@link InvestorFlows}가 하고, 여기서는 저장본을 읽어 넘깁니다.
  * 토스 키가 없거나 아직 수집 전이면 {@code available=false}와 이유를 돌려줍니다.

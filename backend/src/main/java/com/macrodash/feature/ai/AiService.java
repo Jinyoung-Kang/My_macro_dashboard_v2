@@ -50,7 +50,7 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /**
- * 🤖 AI 엔진 라우팅 (Anthropic Claude / NVIDIA / Cerebras / Cloudflare).
+ * AI 엔진 라우팅 (Anthropic Claude / NVIDIA / Cerebras / Cloudflare).
  *
  * <p>구버전 services/ai_service.py의 구조를 유지합니다.
  * <ul>
@@ -290,7 +290,7 @@ public class AiService {
         this(timeoutSeconds, autoAttemptSeconds, autoBudgetSeconds, "");
     }
 
-    // ⚠️ 생성자가 여럿이고 아무것도 표시하지 않으면 Spring은 무인자 생성자를 골라
+    // 주의: 생성자가 여럿이고 아무것도 표시하지 않으면 Spring은 무인자 생성자를 골라
     //    설정값을 조용히 무시합니다. 어느 쪽을 쓸지 명시해야 합니다.
     @Autowired
     public AiService(@Value("${dashboard.ai.timeout-seconds:240}") int timeoutSeconds,

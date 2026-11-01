@@ -14,7 +14,7 @@ import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
- * 🧪 미국 증시(NYSE·NASDAQ) 거래일 달력 — 모의 매매 장부의 '세션 날짜'와 13F 공시 기한.
+ * 미국 증시(NYSE·NASDAQ) 거래일 달력 — 모의 매매 장부의 '세션 날짜'와 13F 공시 기한.
  *
  * <p>장부의 날짜는 전부 <b>뉴욕 시각 기준 세션 날짜</b>입니다. 서버 TZ(UTC)나 한국 날짜로 세면 한국 아침(=뉴욕 전날 저녁)에
  * 들어온 종가가 '다음 날' 봉으로 읽혀, 주문의 기준 거래일 판정(체결 룩어헤드 방지)이 하루씩 어긋납니다.

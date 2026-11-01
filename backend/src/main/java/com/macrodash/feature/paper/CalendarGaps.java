@@ -10,7 +10,7 @@ import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
- * 🧪 정기 작업의 '달력 없음'(2단계 명세 §4-4·K35, §9 묶음 A 리뷰 메모 'B5 — 달력이 모르는 날') — 시장 달력이 앞으로 쓸 창의 해를
+ * 정기 작업의 '달력 없음'(2단계 명세 §4-4·K35, §9 묶음 A 리뷰 메모 'B5 — 달력이 모르는 날') — 시장 달력이 앞으로 쓸 창의 해를
  * 모를 때({@link PaperMarket#requireCalendarWindow}) 결정·리스크 점검·복기 작업이 그 시장 실행을 멈추고 작업 기록
  * ({@code paper_job_runs})에 {@value #NO_CALENDAR}로 남기는 내용과, 같은 사유를 되풀이해 남기지 않는 장부입니다.
  *

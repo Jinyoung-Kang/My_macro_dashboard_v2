@@ -13,7 +13,7 @@ import tools.jackson.databind.JsonNode;
 import java.util.Map;
 
 /**
- * 🧪 투자 OS 프레임·메모(운영자 전용, 명세 F1~F7·D14·D15) — 프레임 판 보기·수동 편집·제안→승인, 시황·방법론 메모. 장부는
+ * 투자 OS 프레임·메모(운영자 전용, 명세 F1~F7·D14·D15) — 프레임 판 보기·수동 편집·제안→승인, 시황·방법론 메모. 장부는
  * {@link PaperController}, 결정은 {@link PaperDecisionController}, 설정은 {@link PaperSettingsController}입니다.
  *
  * <pre>

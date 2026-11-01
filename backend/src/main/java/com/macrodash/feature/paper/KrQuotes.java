@@ -22,7 +22,7 @@ import java.util.TreeMap;
 import java.util.regex.Pattern;
 
 /**
- * 🧪 한국 관측치 저장본 {@code paper.kr.quotes} <b>계약 1</b>(2단계 명세 §9 묶음 A 리뷰 메모 'B4·C2' — 쓰는 곳은 수집기 {@code kr_paper_quotes}
+ * 한국 관측치 저장본 {@code paper.kr.quotes} <b>계약 1</b>(2단계 명세 §9 묶음 A 리뷰 메모 'B4·C2' — 쓰는 곳은 수집기 {@code kr_paper_quotes}
  * 하나)을 한국 봉으로 읽습니다(결정 d10 — 시장이 파싱을 가짐, C2b). 미국 {@code paper.quotes}·{@link PaperMarketData#parse}는 건드리지 않습니다.
  *
  * <p><b>읽는 모양</b>: 머리 {@code contract}(1이 아니면 모르는 모양 — 짐작하지 않고 empty)·{@code session}(그 실행의 대상 KR 세션 D)·

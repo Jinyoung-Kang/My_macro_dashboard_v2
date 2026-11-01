@@ -10,7 +10,7 @@ import java.util.Map;
 import java.util.Objects;
 
 /**
- * 🧪 Claude 계좌 하나의 결정 프로필(계좌2 명세 2026-10-30-claude-book2-timing-design.md §9-1, ADR 0022) — 결정 파이프라인
+ * Claude 계좌 하나의 결정 프로필(계좌2 명세 2026-10-30-claude-book2-timing-design.md §9-1, ADR 0022) — 결정 파이프라인
  * ({@link ClaudeDecisionPipeline})이 계좌마다 다르게 쓰는 것을 한곳에 둡니다: 계좌 코드·응답 스키마 파일·시스템 프롬프트 끝의 고정 문단·패킷
  * 변형·받는 체결 시점·시점 순위·결정 주기 소상한의 설정 키.
  *

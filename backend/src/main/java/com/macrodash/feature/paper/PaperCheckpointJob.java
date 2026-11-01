@@ -41,7 +41,7 @@ import java.util.TreeSet;
 import java.util.concurrent.locks.ReentrantLock;
 
 /**
- * 🧪 장중 확인 정기 작업(미국 Claude 계좌2 단계 2 — 계좌2 명세 docs/specs/2026-10-30-claude-book2-timing-design.md §5-2·§5-3·§12, ADR 0022) — 60초마다
+ * 장중 확인 정기 작업(미국 Claude 계좌2 단계 2 — 계좌2 명세 docs/specs/2026-10-30-claude-book2-timing-design.md §5-2·§5-3·§12, ADR 0022) — 60초마다
  * 계좌2의 PLANNED 장중 확인 행({@code paper_checkpoints})을 보고, 확인 시각 T(그 세션 날짜의 뉴욕 시각) + {@value #WINDOW_START_MINUTES}분 ~ +
  * {@value #WINDOW_END_MINUTES}분 창에서 <b>한 번</b> Claude를 부릅니다(재시도 없음 — 놓치면 나중에 대신 부르지 않음).
  *

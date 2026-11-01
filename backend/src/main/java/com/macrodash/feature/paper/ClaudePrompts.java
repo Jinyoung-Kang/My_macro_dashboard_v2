@@ -1,7 +1,7 @@
 package com.macrodash.feature.paper;
 
 /**
- * 🧪 Claude 재량 책의 시스템 프롬프트 조각 — 프레임 렌더링이 붙이는 고정 문단({@link #ROLE}·{@link #FIXED_RULES})과 프레임 제안
+ * Claude 재량 책의 시스템 프롬프트 조각 — 프레임 렌더링이 붙이는 고정 문단({@link #ROLE}·{@link #FIXED_RULES})과 프레임 제안
  * 지시문({@link #PROPOSAL})(명세 F1·F2, 설계 §5-7, 계약 3b·보충 §2·§6), 주간 복기 지시문({@link #REVIEW}, 2단계 명세 §3).
  *
  * <p>결정의 시스템 프롬프트는 구조화해 저장한 투자 OS 프레임의 지금 판을 결정적으로 렌더링한 것입니다

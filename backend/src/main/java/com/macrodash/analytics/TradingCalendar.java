@@ -5,7 +5,7 @@ import java.time.LocalDate;
 import java.time.ZoneId;
 
 /**
- * 🧪 거래일 달력 — 모의 매매 장부가 '세션 날짜'로 체결·만료·재진입 금지·통계 표본을 세는 규칙의 시장 중립 모양
+ * 거래일 달력 — 모의 매매 장부가 '세션 날짜'로 체결·만료·재진입 금지·통계 표본을 세는 규칙의 시장 중립 모양
  * (2단계 명세 2026-10-26-v2-kr-paper-spec.md §9 A1).
  *
  * <p>구현은 시장마다 하나입니다. 미국은 {@link UsMarketCalendar#CALENDAR}(정적 함수를 그대로 부르는 어댑터)이고, 한국 달력은

@@ -15,7 +15,7 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * 🧪 모의 매매 결정(운영자 전용) — 결정 기록 조회와 수동 결정·시작 버튼. 장부 조회·관리는 {@link PaperController}입니다
+ * 모의 매매 결정(운영자 전용) — 결정 기록 조회와 수동 결정·시작 버튼. 장부 조회·관리는 {@link PaperController}입니다
  * (한 컨트롤러가 서비스를 다섯 개 넘게 받지 않게 나눔).
  *
  * <pre>

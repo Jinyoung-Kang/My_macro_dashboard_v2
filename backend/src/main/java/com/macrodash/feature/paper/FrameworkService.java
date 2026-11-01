@@ -39,7 +39,7 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /**
- * 🧪 투자 OS 프레임(명세 F1~F5·F7·D15, 설계 §5-7, 계약 3b·보충) — Claude 재량 책의 시스템 프롬프트가 되는 구조화한 프레임의 판을
+ * 투자 OS 프레임(명세 F1~F5·F7·D15, 설계 §5-7, 계약 3b·보충) — Claude 재량 책의 시스템 프롬프트가 되는 구조화한 프레임의 판을
  * 관리합니다.
  *
  * <p><b>저장 구조</b>({@code paper_framework_versions.body}): {@code {schemaVersion:1, title, status(INTERIM|USER), principles:[{id,

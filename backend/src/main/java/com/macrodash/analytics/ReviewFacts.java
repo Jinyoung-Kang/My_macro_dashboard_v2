@@ -22,7 +22,7 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /**
- * 🧪 주간 복기(2단계 명세 D1·D2)의 입력 사실 — Claude 계좌의 지난 결정을 그 뒤 실제 가격과 대조한 값을 <b>코드가</b> 만듭니다.
+ * 주간 복기(2단계 명세 D1·D2)의 입력 사실 — Claude 계좌의 지난 결정을 그 뒤 실제 가격과 대조한 값을 <b>코드가</b> 만듭니다.
  * Claude는 이 사실을 읽고 판정만 합니다(수익률을 Claude가 계산하면 틀려도 알 수 없음).
  *
  * <p><b>복기 기준일({@link #weekEnding})</b>은 ISO 주(월~일)의 마지막 미국 거래일 — 보통 금요일, 금요일이 휴장이면 목요일

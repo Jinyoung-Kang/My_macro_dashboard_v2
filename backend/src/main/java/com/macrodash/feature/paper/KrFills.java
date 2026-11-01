@@ -27,7 +27,7 @@ import java.util.Set;
 import java.util.function.Function;
 
 /**
- * 🧪 한국 체결 — 체결 봉 고르기·시가 사다리·체결 조건(비용 칸)(2단계 명세 §4-1·§4-2·§4-3, 결정 d10·d11, C2b). 한국 시장 묶음
+ * 한국 체결 — 체결 봉 고르기·시가 사다리·체결 조건(비용 칸)(2단계 명세 §4-1·§4-2·§4-3, 결정 d10·d11, C2b). 한국 시장 묶음
  * ({@link KrPaperMarket})이 이 함수들로 {@link PaperMarket#fillBar}·{@link PaperMarket#fillable}·{@link PaperMarket#fill}을 답합니다.
  *
  * <p><b>체결 봉</b>(조건 ①~⑤, 미국 {@code fillableBar}의 한국판): 그 종목 항목이 이번에 새로 받은 것이고(이어받은 {@code isStale}이 아님 — ④)

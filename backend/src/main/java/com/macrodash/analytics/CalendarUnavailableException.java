@@ -1,7 +1,7 @@
 package com.macrodash.analytics;
 
 /**
- * 🧪 달력이 모르는 날 — 거래일 달력({@link TradingCalendar})이 그날이 거래일인지 알 수 없을 때 던집니다(2단계 명세
+ * 달력이 모르는 날 — 거래일 달력({@link TradingCalendar})이 그날이 거래일인지 알 수 없을 때 던집니다(2단계 명세
  * 2026-10-26-v2-kr-paper-spec.md §4-4·K35, §9 묶음 A 리뷰 메모 'B5 — 달력이 모르는 날').
  *
  * <p>한국 달력({@link KrxCalendar})은 공휴일 목록을 받은 해만 압니다. 목록이 없는 해의 평일을 '거래일'이나 '휴장'으로 짐작하면

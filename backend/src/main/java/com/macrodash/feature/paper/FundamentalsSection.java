@@ -24,7 +24,7 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /**
- * 🧪 Claude 패킷의 재무 섹션 {@code 8b_fundamentals}(명세 D28, 설계 §4-5 ⑦) — 저장본 행({@code observations us.fundamentals})을
+ * Claude 패킷의 재무 섹션 {@code 8b_fundamentals}(명세 D28, 설계 §4-5 ⑦) — 저장본 행({@code observations us.fundamentals})을
  * {@link Fundamentals} 입력으로 바꾸고, 계산 결과를 {@code 8_prices}와 같은 열 배열로 펼칩니다.
  *
  * <p>읽기(JDBC)는 {@link PacketBuilder}가 {@code StoreRepository}로 하고 여기서는 순수 변환만 합니다 — 대상 고르기(보유·후보·

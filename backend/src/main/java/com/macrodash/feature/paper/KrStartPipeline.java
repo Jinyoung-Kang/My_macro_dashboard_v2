@@ -26,7 +26,7 @@ import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
- * 🧪 한국 네 계좌의 출발(2단계 명세 §4-8·K28, 결정 d13 — C1c). 결정 작업이 한국 실행을 열고 <b>한국 계좌가 모두 시작 전일 때</b>
+ * 한국 네 계좌의 출발(2단계 명세 §4-8·K28, 결정 d13 — C1c). 결정 작업이 한국 실행을 열고 <b>한국 계좌가 모두 시작 전일 때</b>
  * ({@link #pending}) 정기 결정 대신 이 출발을 냅니다.
  *
  * <pre>

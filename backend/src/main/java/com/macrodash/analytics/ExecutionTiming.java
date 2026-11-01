@@ -10,7 +10,7 @@ import java.util.Random;
 import java.util.TreeMap;
 
 /**
- * 🧪 체결 시점 비교(미국 Claude 계좌2 실험 — 명세 docs/specs/2026-10-30-claude-book2-timing-design.md §14-2, ADR 0022): 주문마다 "그 시점에
+ * 체결 시점 비교(미국 Claude 계좌2 실험 — 명세 docs/specs/2026-10-30-claude-book2-timing-design.md §14-2, ADR 0022): 주문마다 "그 시점에
  * 체결했다면 계좌1식(다음 시간별 관측치)보다 몇 bp 나았나"와, 그 차이의 금액 가중 평균·결정일 묶음 부트스트랩 90% 구간.
  *
  * <p><b>차이</b> = s × (P_기준 − P_시점) ÷ P_기준 × 10⁴ bp. s는 매수 +1·매도 −1이라 양수면 그 시점이 기준보다 유리합니다(싸게 삼·비싸게 팖).

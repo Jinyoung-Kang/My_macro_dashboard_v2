@@ -7,7 +7,7 @@ import java.util.NavigableMap;
 import java.util.TreeMap;
 
 /**
- * 🧪 날짜 오름차순 일별 값 — 원시 배열 두 개(에포크 일수·값)로 압축해 들고 있는 읽기 전용 계열.
+ * 날짜 오름차순 일별 값 — 원시 배열 두 개(에포크 일수·값)로 압축해 들고 있는 읽기 전용 계열.
  *
  * <p>모의 매매는 유니버스 수백 종목의 10년 종가(종목당 약 2,500점)를 읽습니다. {@code TreeMap<LocalDate, Double>}로 들면
  * 점마다 객체 세 개(항목·날짜·Double)가 생겨 수십 MB가 됩니다. 저장소({@code StoreRepository.readTimeseriesColumns})가

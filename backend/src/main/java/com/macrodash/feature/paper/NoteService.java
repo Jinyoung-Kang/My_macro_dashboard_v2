@@ -23,7 +23,7 @@ import java.util.Map;
 import java.util.regex.Pattern;
 
 /**
- * 🧪 메모(명세 F6·D14, 계약 3b E·보충 §5) — 사용자가 쓰는 두 종류의 글.
+ * 메모(명세 F6·D14, 계약 3b E·보충 §5) — 사용자가 쓰는 두 종류의 글.
  *
  * <ul>
  *   <li><b>MARKET</b>(시황 메모): 기준일·만료일(기본 기준일 + 설정 {@code notesDefaultExpiryTradingDays}(3)거래일)·본문

@@ -14,7 +14,7 @@ import java.util.Optional;
 import java.util.TreeMap;
 
 /**
- * 🧪 한국 확정 시세 — 금융위 주식시세({@code fsc_price}, 종가 {@code clpr})·증권상품시세({@code fsc_etf_price}, ETF 종가)의 종목별 기준일 값
+ * 한국 확정 시세 — 금융위 주식시세({@code fsc_price}, 종가 {@code clpr})·증권상품시세({@code fsc_etf_price}, ETF 종가)의 종목별 기준일 값
  * (2단계 명세 §4-1 '확정가', §4-2 K30·K32, C2c). 장부의 시가 체결 경로({@link PaperMarket#auctionFills})가 책 하나를 처리할 때 한 번 읽어
  * ({@link PaperMarket#confirmedPrices}) 네 곳에 쓰고, 금융위 확정 조정(K29, C3 — {@code KrConfirmations})도 같은 읽기로 체결일의 시가·
  * 시장 구분과 확정 순자산 줄의 그날 종가를 봅니다:

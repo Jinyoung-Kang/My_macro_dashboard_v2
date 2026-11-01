@@ -9,7 +9,7 @@ import org.springframework.web.bind.annotation.RestController;
 import java.util.Map;
 
 /**
- * 🧪 모의 매매 설정(운영자 전용, 명세 S1~S3) — 설정 한 행 보기·바꾸기·이력. 장부는 {@link PaperController}, 결정은
+ * 모의 매매 설정(운영자 전용, 명세 S1~S3) — 설정 한 행 보기·바꾸기·이력. 장부는 {@link PaperController}, 결정은
  * {@link PaperDecisionController}입니다.
  *
  * <pre>

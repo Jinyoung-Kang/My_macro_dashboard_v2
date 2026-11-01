@@ -24,7 +24,7 @@ import java.util.Map;
 import java.util.Optional;
 
 /**
- * 🧪 한국 결정 자료 게이트(2단계 명세 §4-9 — 모두 충족해야 결정을 부름). 정기 결정 작업({@link PaperDecisionJob} — ①~⑥)과 한국 출발
+ * 한국 결정 자료 게이트(2단계 명세 §4-9 — 모두 충족해야 결정을 부름). 정기 결정 작업({@link PaperDecisionJob} — ①~⑥)과 한국 출발
  * ({@link KrStartPipeline} — S 22:30, ①은 앞 주문이 없어 보지 않음 §4-8)이 같은 판정을 씁니다(D1c).
  *
  * <ul>

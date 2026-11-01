@@ -19,7 +19,7 @@ import java.util.Set;
 import java.util.regex.Pattern;
 
 /**
- * 🧪 화면에서 바꿀 수 있는 설정 키(설계 §4-4, 명세 S1~S3) — 키(설정 본문 안의 점 경로)마다 형·범위·고를 수 있는 값·규칙 책 영향.
+ * 화면에서 바꿀 수 있는 설정 키(설계 §4-4, 명세 S1~S3) — 키(설정 본문 안의 점 경로)마다 형·범위·고를 수 있는 값·규칙 책 영향.
  *
  * <p>범위는 읽는 쪽({@link PaperSettings}·{@code RuleSettings}·{@code TrackRecordSettings}·{@code PacketBuilder.Limits}·
  * {@link ClaudeBookService.ClaudeSettings})이 받는 범위 <b>안</b>으로 잡았습니다 — 쓰기 API를 지난 값이 읽을 때 기본값으로 바뀌는 일이

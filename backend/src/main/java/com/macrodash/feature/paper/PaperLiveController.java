@@ -8,7 +8,7 @@ import org.springframework.web.bind.annotation.RestController;
 import java.util.Map;
 
 /**
- * 🧪 모의 매매 장중 평가(운영자 전용, 표시 전용 추정).
+ * 모의 매매 장중 평가(운영자 전용, 표시 전용 추정).
  *
  * <pre>
  *  GET  /api/paper/live?market=US   계좌·종목의 장중 평가(정규장이면 최신 1분봉, 아니면 장부의 마지막 관측치)·장 상태·시세 기준 시각

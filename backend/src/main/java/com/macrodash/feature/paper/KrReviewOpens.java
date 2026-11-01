@@ -19,7 +19,7 @@ import java.util.TreeMap;
 import java.util.TreeSet;
 
 /**
- * 🧪 한국 주간 복기의 가정 진입 시가(2단계 명세 §9 'E3 — 복기의 가정 진입가', 사용자 결정 v5) — 종목 → 세션 날짜 → 시가·출처.
+ * 한국 주간 복기의 가정 진입 시가(2단계 명세 §9 'E3 — 복기의 가정 진입가', 사용자 결정 v5) — 종목 → 세션 날짜 → 시가·출처.
  * 거절 주문은 결정 다음 세션 시가({@code NEXT_OPEN})에 체결됐다고 가정합니다({@code ReviewFacts.Entry.NEXT_OPEN}). 시가가 없는 날은 이 표에
  * 없고, 복기 입력이 그 세션 종가로 근사해 {@code isProxy}를 답니다.
  *

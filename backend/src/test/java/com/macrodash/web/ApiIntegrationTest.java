@@ -582,7 +582,7 @@ class ApiIntegrationTest {
     @Test
     @DisplayName("원본 데이터 텍스트는 저장본이 없어도 모든 영역을 표기한다")
     void snapshotTextAlwaysCoversEverySection() {
-        // 📋 "전체 대시보드 원본 데이터 보기/복사"가 읽는 경로입니다.
+        // "전체 대시보드 원본 데이터 보기/복사"가 읽는 경로입니다.
         // 수집본이 하나도 없어도 500이 아니라, 어느 영역이 비었는지 보여 줘야
         // 합니다 — 빈 화면은 "이 메뉴가 고장났다"로 읽힙니다.
         JsonNode body = authorizedGet("/api/snapshot/text");
@@ -771,7 +771,7 @@ class ApiIntegrationTest {
     }
 
     @Test
-    @DisplayName("QA-139 태스크별 최근 실행: 좀비가 도는 동안의 ⚠️ '이전 수집이 아직 진행 중' 행 대신 앞선 시간 초과를 준다")
+    @DisplayName("QA-139 태스크별 최근 실행: 좀비가 도는 동안의 empty '이전 수집이 아직 진행 중' 행 대신 앞선 시간 초과를 준다")
     void taskSummarySkipsStillRunningNotice() {
         String prefix = "it_zombie_";
         jdbc.update("DELETE FROM collector_task_runs WHERE task LIKE ?", prefix + "%");
@@ -843,7 +843,7 @@ class ApiIntegrationTest {
     }
 
     @Test
-    @DisplayName("🧪 관측치 사슬(계좌2 계좌1식 기준 — ADR 0022)의 사이 실행 수: 그 태스크가 두 시각 사이(양끝 제외)에 시작한 실행만 센다")
+    @DisplayName("관측치 사슬(계좌2 계좌1식 기준 — ADR 0022)의 사이 실행 수: 그 태스크가 두 시각 사이(양끝 제외)에 시작한 실행만 센다")
     void taskRunsStartedBetweenCountsOnlyThatTaskStrictlyInside() {
         // PaperExecutionAuditJob이 '두 관측치 저장본 사이에 paper_quotes 실행이 정확히 한 번'을 이 수로 증명합니다(가짜 저장소로만 돌던 SQL을 실제 표에서).
         String prefix = "it_chain_";
@@ -896,7 +896,7 @@ class ApiIntegrationTest {
         assertThat(wrongMethod.getBody().path("error").asString()).isEqualTo("method_not_allowed");
     }
 
-    /** 🧪 모의 매매의 GET 경로(책 코드가 든 경로는 bench_spy로 — 미국 Claude 계좌만 받는 실행 감사는 claude로). */
+    /** 모의 매매의 GET 경로(책 코드가 든 경로는 bench_spy로 — 미국 Claude 계좌만 받는 실행 감사는 claude로). */
     private static final List<String> PAPER_GETS = List.of(
             "/api/paper/overview", "/api/paper/status", "/api/paper/books/bench_spy/positions",
             "/api/paper/books/bench_spy/orders?limit=5", "/api/paper/books/bench_spy/fills?limit=5",
@@ -915,7 +915,7 @@ class ApiIntegrationTest {
     }
 
     @Test
-    @DisplayName("🧪 모의 매매: 운영자는 모든 경로 200(테이블이 없어도 available:false), 일반 회원은 GET·POST 모두 403")
+    @DisplayName("모의 매매: 운영자는 모든 경로 200(테이블이 없어도 available:false), 일반 회원은 GET·POST 모두 403")
     void paperRoutesAreOwnerOnly() {
         HttpHeaders member = new HttpHeaders();
         member.add(HttpHeaders.COOKIE, login(MEMBER, "test-password"));
@@ -978,7 +978,7 @@ class ApiIntegrationTest {
     }
 
     @Test
-    @DisplayName("🧪 계좌2 장중 확인(단계 2): CHECKPOINT 결정 행·MARKET 주문이 실제 표에 들어가고 결정 목록·주문 목록에 그대로 나옴 — 시험 계좌 claude2는 시작·끝에 지움(V14·V17 재실행 안전)")
+    @DisplayName("계좌2 장중 확인(단계 2): CHECKPOINT 결정 행·MARKET 주문이 실제 표에 들어가고 결정 목록·주문 목록에 그대로 나옴 — 시험 계좌 claude2는 시작·끝에 지움(V14·V17 재실행 안전)")
     void checkpointDecisionAndMarketOrderAreListed() {
         deletePaperBooks();
         if (!authorizedGet("/api/paper/status").path("schemaReady").asBoolean(false)) {
@@ -1011,7 +1011,7 @@ class ApiIntegrationTest {
     }
 
     @Test
-    @DisplayName("🧪 모의 매매 ?market(2단계 F1): 없거나 US면 같은 응답, KR은 쉬는 사유와 함께 200(테스트 배포 설정에 한국 출발일 없음), 모르는 값은 400, 일반 회원은 403")
+    @DisplayName("모의 매매 ?market(2단계 F1): 없거나 US면 같은 응답, KR은 쉬는 사유와 함께 200(테스트 배포 설정에 한국 출발일 없음), 모르는 값은 400, 일반 회원은 403")
     void paperMarketParameter() {
         assumePaperSchema();
         HttpHeaders member = new HttpHeaders();
@@ -1076,7 +1076,7 @@ class ApiIntegrationTest {
     }
 
     @Test
-    @DisplayName("🧪 모의 매매 POST의 시장 값(2단계 F1b): 회원은 403, 모르는 값은 400(쓰기 없음), 시장 값 없음·US는 같은 응답, 한국은 테스트 배포 설정에 출발일이 없어 초기화·수동 결정·출발·복기가 그 사유로 400, 리스크 점검은 ok:false·쉬는 사유, 한국 메모는 달력 저장본이 없어 400")
+    @DisplayName("모의 매매 POST의 시장 값(2단계 F1b): 회원은 403, 모르는 값은 400(쓰기 없음), 시장 값 없음·US는 같은 응답, 한국은 테스트 배포 설정에 출발일이 없어 초기화·수동 결정·출발·복기가 그 사유로 400, 리스크 점검은 ok:false·쉬는 사유, 한국 메모는 달력 저장본이 없어 400")
     void paperMarketWriteRoutes() {
         assumePaperSchema();
         HttpHeaders member = new HttpHeaders();
@@ -1158,7 +1158,7 @@ class ApiIntegrationTest {
     }
 
     @Test
-    @DisplayName("🧪 모의 매매 초기화: 가격 없는 테스트 DB에서도 500이 아니라 벤치마크를 사유와 함께 건너뛰고, 두 번 눌러도 한 번")
+    @DisplayName("모의 매매 초기화: 가격 없는 테스트 DB에서도 500이 아니라 벤치마크를 사유와 함께 건너뛰고, 두 번 눌러도 한 번")
     void paperInitWithoutPricesSkipsBenchmarks() {
         assumePaperSchema();
         deletePaperBooks();
@@ -1346,7 +1346,7 @@ class ApiIntegrationTest {
     }
 
     @Test
-    @DisplayName("🧪 투자 OS 프레임·메모: 회원은 403, 운영자는 판 보기·형식이 틀린 수동 편집 400·메모 쓰기/목록/보관·키 없는 제안은 FAILED(외부 호출 없음)")
+    @DisplayName("투자 OS 프레임·메모: 회원은 403, 운영자는 판 보기·형식이 틀린 수동 편집 400·메모 쓰기/목록/보관·키 없는 제안은 FAILED(외부 호출 없음)")
     void paperFrameworkAndNotes() {
         HttpHeaders member = new HttpHeaders();
         member.add(HttpHeaders.COOKIE, login(MEMBER, "test-password"));
@@ -1490,7 +1490,7 @@ class ApiIntegrationTest {
     }
 
     @Test
-    @DisplayName("🧪 주간 복기: 회원은 403, 운영자는 목록·한 건·수동 실행 — 조건이 안 되면 400, 결정이 없으면 SKIPPED, 키가 없으면 외부 호출 없이 "
+    @DisplayName("주간 복기: 회원은 403, 운영자는 목록·한 건·수동 실행 — 조건이 안 되면 400, 결정이 없으면 SKIPPED, 키가 없으면 외부 호출 없이 "
             + "NO_KEY(API_ERROR, 한 번 재시도) — 한 주 한 행")
     void paperWeeklyReviews() {
         HttpHeaders member = new HttpHeaders();

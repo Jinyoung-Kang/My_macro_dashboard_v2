@@ -48,46 +48,46 @@ class RouteInventoryTest {
             "POST /api/auth/logout-all", "GET /api/auth/sessions", "POST /api/auth/password",
             "POST /api/auth/signup", "POST /api/auth/verify", "POST /api/auth/reset/request",
             "POST /api/auth/reset/confirm", "POST /api/auth/delete",
-            // 👥 사용자 관리(운영자)
+            // 사용자 관리(운영자)
             "GET /api/admin/users", "POST /api/admin/users", "POST /api/admin/users/{id}", "GET /api/admin/audit",
-            // 🔔 알림
+            // 알림
             "GET /api/alerts/rules", "POST /api/alerts/rules", "POST /api/alerts/rules/{id}",
             "DELETE /api/alerts/rules/{id}", "GET /api/alerts/inbox", "GET /api/alerts/unread-count",
             "POST /api/alerts/inbox/read",
-            // 📊 매크로 · 순유동성 · 로테이션
+            // 매크로 · 순유동성 · 로테이션
             "GET /api/macro/overview", "GET /api/macro/risk", "GET /api/macro/advanced",
             "GET /api/macro/usdkrw", "GET /api/macro/fx", "GET /api/macro/fx/options",
             "GET /api/macro/scraped", "GET /api/macro/spread", "GET /api/macro/fred/{seriesId}",
             "GET /api/macro/ticker", "GET /api/liquidity",
             "GET /api/sector/rotation", "GET /api/sector/momentum",
-            // 📑 13F · 🧬 기관 스타일
+            // 13F · 기관 스타일
             "GET /api/sec13f/institutions", "GET /api/sec13f/portfolio",
             "GET /api/sec13f/consensus", "GET /api/sec13f/new-buys",
             "GET /api/guru/profiles", "GET /api/guru/similarity",
             "GET /api/guru/holders", "GET /api/guru/risk",
-            // 🩺 스코어카드
+            // 스코어카드
             "GET /api/stock/universe", "GET /api/stock/scorecard",
-            // 🏛️ COT · 🇰🇷 파생 · 📡 레이더
+            // COT · 파생 · 레이더
             "GET /api/cot/assets", "GET /api/cot/overview", "GET /api/cot/asset", "GET /api/cot/extremes",
             "GET /api/krx/futures", "GET /api/krx/investor-trend", "GET /api/krx/intraday",
             "GET /api/krx/oi-trend", "GET /api/krx/spot-futures",
             "GET /api/radar/options", "GET /api/radar/ranking", "GET /api/radar/consensus",
             "GET /api/radar/history", "GET /api/radar/diagnostics",
-            // 🏦 투자자별 매매 · 🇰🇷 공공 API
+            // 투자자별 매매 · 공공 API
             "GET /api/kr/investor-flows", "GET /api/kr/stock-flows",
             "GET /api/calendar/kr-holidays", "GET /api/kr/fundamentals", "GET /api/kr/market-totals",
-            // 🗄️ 상태 · 검증 · 원본
+            // 상태 · 검증 · 원본
             "GET /api/status", "GET /api/status/issues", "GET /api/status/tasks",
             "GET /api/status/history", "POST /api/status/refresh", "POST /api/status/run/{taskName}",
             "GET /api/status/public-apis", "POST /api/verification", "GET /api/snapshot/text",
-            // 🔗 상관 · 🧭 국면
+            // 상관 · 국면
             "GET /api/analytics/series", "GET /api/analytics/correlation", "GET /api/analytics/regime",
             "GET /api/analytics/regime/log", "GET /api/analytics/regime/track-record",
-            // 🤖 AI · 🔌 토스
+            // AI · 토스
             "GET /api/ai/engines", "GET /api/ai/report-types",
             "POST /api/ai/report", "POST /api/ai/test",
             "GET /api/ai/toss/diagnostics", "GET /api/ai/toss/exchange-rate", "GET /api/ai/toss/indices",
-            // 🧪 모의 매매(운영자 전용)
+            // 모의 매매(운영자 전용)
             "GET /api/paper/overview", "GET /api/paper/live", "GET /api/paper/status", "GET /api/paper/books/{code}/positions",
             "GET /api/paper/books/{code}/orders", "GET /api/paper/books/{code}/fills",
             "GET /api/paper/books/{code}/nav", "GET /api/paper/books/{code}/execution", "POST /api/paper/init",

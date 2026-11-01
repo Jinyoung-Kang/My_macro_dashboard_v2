@@ -9,7 +9,7 @@ import org.springframework.web.bind.annotation.RestController;
 import java.util.Map;
 
 /**
- * 📊 거시경제 매크로 지표 · 🏢 연준 순유동성 · 🔄 섹터 &amp; 자산군 로테이션.
+ * 거시경제 매크로 지표 · 연준 순유동성 · 섹터 &amp; 자산군 로테이션.
  *
  * <pre>
  *  GET /api/macro/*       매크로 카드·위험·심화 지표·환율·FRED·티커
@@ -36,7 +36,7 @@ public class MacroController {
         this.sector = sector;
     }
 
-    // ------------------------------------------------------- 📊 매크로
+    // ------------------------------------------------------- 매크로
     /**
      * @param live 매크로 화면의 자동 갱신이 켜져 있으면 true.
      *             저장본을 다시 받을 기준이 15분 → 60초로 내려갑니다.
@@ -58,14 +58,14 @@ public class MacroController {
         return macro.advancedIndicators();
     }
 
-    /** 💱 원/달러 환율 (달러 금액을 원화로 병기할 때 씁니다). */
+    /** 원/달러 환율 (달러 금액을 원화로 병기할 때 씁니다). */
     @GetMapping("/macro/usdkrw")
     public Map<String, Object> usdKrw() {
         return macro.usdKrw();
     }
 
     /**
-     * 💱 환율·달러인덱스 비교 차트 (여러 계열 겹쳐 보기).
+     * 환율·달러인덱스 비교 차트 (여러 계열 겹쳐 보기).
      *
      * @param ids    쉼표로 구분한 계열 키. 비면 기본 선택(원/달러 + 달러 인덱스)
      * @param mode   index = 기준일 100 (기본) · raw = 원래 단위
@@ -107,13 +107,13 @@ public class MacroController {
         return macro.tickerSeries(symbol, period);
     }
 
-    // ------------------------------------------------------ 🏢 순유동성
+    // ------------------------------------------------------ 순유동성
     @GetMapping("/liquidity")
     public Map<String, Object> liquidity(@RequestParam(required = false) Integer years) {
         return liquidity.netLiquidity(years);
     }
 
-    // ------------------------------------------------------ 🔄 로테이션
+    // ------------------------------------------------------ 로테이션
     @GetMapping("/sector/rotation")
     public Map<String, Object> rotation(@RequestParam(defaultValue = "1M") String period) {
         return sector.rotation(period);

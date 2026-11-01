@@ -27,7 +27,7 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /**
- * 🧪 Claude 패킷의 사건 섹션 {@code 11b_events}(2단계 명세 B3·B4·B5·B6)에 실을 헤드라인 — 저장본(수집기 {@code news_headlines} 태스크의
+ * Claude 패킷의 사건 섹션 {@code 11b_events}(2단계 명세 B3·B4·B5·B6)에 실을 헤드라인 — 저장본(수집기 {@code news_headlines} 태스크의
  * {@code news_headline} 관측치, 보존 7일)에서 직전 결정 이후(평일이면 24시간)에 나온 제목 가운데 <b>보유·후보 종목</b> 또는 <b>매크로 키워드</b>에
  * 걸리는 것만 최신순으로 상한({@code news.maxPerDay}, 기본 {@value #DEFAULT_MAX_PER_DAY})까지 고릅니다. 매일 다이제스트가 아니라 사건
  * 감지형이라(D30) 걸리는 것이 없는 날은 비어 있고 그것이 정상입니다.

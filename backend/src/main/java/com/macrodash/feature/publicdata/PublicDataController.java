@@ -32,14 +32,14 @@ public class PublicDataController {
         this.publicApis = publicApis;
     }
 
-    /** 📅 한국 공휴일 (천문연 특일정보) — 시계의 KRX 휴장 판정용. */
+    /** 한국 공휴일 (천문연 특일정보) — 시계의 KRX 휴장 판정용. */
     @GetMapping("/calendar/kr-holidays")
     public Map<String, Object> krHolidays() {
         return calendar.krHolidays();
     }
 
     /**
-     * 📑 국내 종목 재무 안정성·성장성 (DART 사업보고서).
+     * 국내 종목 재무 안정성·성장성 (DART 사업보고서).
      *
      * @param codes 쉼표로 구분한 6자리 종목코드 (최대 60개, 형식이 틀린 코드는 무시)
      */
@@ -49,7 +49,7 @@ public class PublicDataController {
     }
 
     /**
-     * 🏛️ 시장별 시가총액·거래대금 합계 (금융위 공식 시세).
+     * 시장별 시가총액·거래대금 합계 (금융위 공식 시세).
      *
      * @param days 조회 기간(일, 20~400)
      */
@@ -59,7 +59,7 @@ public class PublicDataController {
     }
 
     /**
-     * 🔌 국내 공공 API 연결 진단 — 키를 넣은 뒤 어느 서비스가 승인됐는지 확인용.
+     * 국내 공공 API 연결 진단 — 키를 넣은 뒤 어느 서비스가 승인됐는지 확인용.
      *
      * <p>누를 때마다 API당 1회씩 실제로 호출합니다(화면이 자동으로 부르지 않음).
      * 응답에는 키가 없고, 설정 여부와 키가 지워진 실패 사유만 있습니다.

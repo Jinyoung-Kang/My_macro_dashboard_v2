@@ -12,7 +12,7 @@ import org.springframework.web.bind.annotation.RestController;
 import java.util.Map;
 
 /**
- * 🗄️ 데이터 저장소 상태 · 교차 검증 · 헬스체크.
+ * 데이터 저장소 상태 · 교차 검증 · 헬스체크.
  *
  * <pre>
  *  GET  /api/health            헬스체크 (인증 없음)
@@ -53,14 +53,14 @@ public class StatusController {
         return ResponseEntity.status(database ? HttpStatus.OK : HttpStatus.SERVICE_UNAVAILABLE).body(body);
     }
 
-    // --------------------------------------------------- 🗄️ 저장소 상태
+    // --------------------------------------------------- 저장소 상태
     @GetMapping("/status")
     public Map<String, Object> status() {
         return status.status();
     }
 
     /**
-     * ⚠️ 수집 오류·경고 모음 — 지금 실패 중인 태스크, 최근 24시간 실패 이력(같은 사유는 묶음),
+     * 수집 오류·경고 모음 — 지금 실패 중인 태스크, 최근 24시간 실패 이력(같은 사유는 묶음),
      * 누락 데이터셋. {@code text}는 그대로 복사해 붙일 수 있는 형태이고 비밀값은 가려져 있습니다.
      */
     @GetMapping("/status/issues")

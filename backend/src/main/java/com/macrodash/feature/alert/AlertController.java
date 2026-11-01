@@ -19,7 +19,7 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * 🔔 알림 — 규칙과 화면 알림함.
+ * 알림 — 규칙과 화면 알림함.
  *
  * <pre>
  *  GET    /api/alerts/rules            내 규칙 + 상한

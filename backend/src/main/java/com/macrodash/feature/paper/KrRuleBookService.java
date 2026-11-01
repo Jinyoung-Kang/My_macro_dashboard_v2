@@ -48,7 +48,7 @@ import java.util.TreeMap;
 import java.util.TreeSet;
 
 /**
- * 🧪 한국 규칙 계좌({@code kr_rules}, 동결 대조군) — 수급 규칙(2단계 명세 §4-6·K7·K10·K33)의 순수 계산({@link KrRules}·{@link KrReselection})을
+ * 한국 규칙 계좌({@code kr_rules}, 동결 대조군) — 수급 규칙(2단계 명세 §4-6·K7·K10·K33)의 순수 계산({@link KrRules}·{@link KrReselection})을
  * 저장본·장부·결정 행에 잇는 자리(D1b). 미국 13F 규칙 책({@link RuleBookService})과 코드를 나누지 않습니다 — 미국 규칙 책은 그대로입니다.
  *
  * <pre>

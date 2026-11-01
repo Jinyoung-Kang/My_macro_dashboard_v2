@@ -56,21 +56,21 @@ public final class Datasets {
      */
     public static final String SNAP_PAPER_QUOTES = "paper.quotes";
     /**
-     * 🧪 한국 책 장부 관측치(v2 2단계 B4) — 수집 범위의 토스 일봉 최근 5봉(adjusted=false 원시 시고저종·거래량·출처 {@code TOSS_DAILY}/
+     * 한국 책 장부 관측치(v2 2단계 B4) — 수집 범위의 토스 일봉 최근 5봉(adjusted=false 원시 시고저종·거래량·출처 {@code TOSS_DAILY}/
      * {@code TOSS_INTEGRATED}, 같은 날 수정 종가·수정 비율), 1분봉 개장 봉({@code 09:01}·{@code 10:01} 라벨, {@code TOSS_1M_OPEN}),
      * 종목 상태(NXT·KRX 정지), 종목별 받은 시각 {@code fetchedAt}. 미국 {@link #SNAP_PAPER_QUOTES}와 모양이 다르고 파싱은 시장 묶음(C2)이
      * 합니다 — 계약 {@code contract 1}은 명세 2026-10-26-v2-kr-paper-spec.md §9 'paper.kr.quotes 계약'. KR 거래일 D 20:30 KST 뒤 하루 1회.
      */
     public static final String SNAP_KR_PAPER_QUOTES = "paper.kr.quotes";
     /**
-     * 🧪 모의 매매 장중 평가(표시 전용) — 보유 종목의 최신 1분봉 가격·봉 시각(미국 Yahoo, 한국 토스). 정기 수집이 없고(수집기 속도군 live)
+     * 모의 매매 장중 평가(표시 전용) — 보유 종목의 최신 1분봉 가격·봉 시각(미국 Yahoo, 한국 토스). 정기 수집이 없고(수집기 속도군 live)
      * 운영자가 모의 매매 화면을 보는 정규장 동안 {@code GET /api/paper/live}가 live 읽기({@link #MAX_AGE_LIVE})로 요청합니다. 체결·스탑·확정
      * 순자산에는 쓰지 않습니다. 모양 {@code {market, source, scope, tickers:{T:{price, at, isStale?}}, missing, error}}.
      */
     public static final String SNAP_PAPER_LIVE_US = "paper.live.us";
     public static final String SNAP_PAPER_LIVE_KR = "paper.live.kr";
     /**
-     * 🧪 미국 Claude 계좌2(체결 시점 실험)의 1분봉 — 단계 0 측정(명세 2026-10-30-claude-book2-timing-design.md §7-1·§12-1, ADR 0022).
+     * 미국 Claude 계좌2(체결 시점 실험)의 1분봉 — 단계 0 측정(명세 2026-10-30-claude-book2-timing-design.md §7-1·§12-1, ADR 0022).
      * 수집 범위(Claude 계좌1·계좌2의 대기 주문 ∪ 최근 8일 주문 ∪ 계좌2 보유, + 지연 기준 SPY)의 종목·세션(최근 3, 뉴욕 날짜)마다 메뉴 창
      * (09:30·10:00~15:00 ET, 각 T~T+4분) 1분봉, 창마다 T 뒤 첫 거래 봉({@code firstTradeAfter}), 첫·마지막 봉, 검증용 일봉 시가(X2).
      * 봉 시각 {@code t}는 늘 봉 시작의 UTC({@code barLabel} — X1). {@code lagSeconds}는 SPY 정규장 안에서 받은 저장본만(그 회차에 받은 SPY 세션만), 아니면 null이고
@@ -79,7 +79,7 @@ public final class Datasets {
      */
     public static final String SNAP_PAPER_BARS_US = "paper.bars.us";
     /**
-     * 🧪 미국 Claude 계좌2 단계 2 장중 확인 감시(명세 2026-10-30 §12-1, ADR 0022) — 계좌2의 오늘 세션 MINUTE 확인 감시 목록 ∪ 계좌2 보유·대기 ∪
+     * 미국 Claude 계좌2 단계 2 장중 확인 감시(명세 2026-10-30 §12-1, ADR 0022) — 계좌2의 오늘 세션 MINUTE 확인 감시 목록 ∪ 계좌2 보유·대기 ∪
      * {SPY, QQQ}의 최근 완성 1분봉 30개, 당일 시가·고가·저가, 저장본 지연 {@code lagSeconds}(SPY 그날 정규장 안에서만, 아니면 null).
      * 모양(contract 1)은 수집기 {@code app/tasks/paper_watch.py} 머리말. 수집기 session(5분, 확인 시각 −15~+30분에만 받음).
      * 장중 확인 패킷과 예상 상태의 가격에만 쓰고, 장부 체결은 1분봉 저장본({@link #SNAP_PAPER_BARS_US}) 한 출처 그대로입니다.
@@ -101,14 +101,14 @@ public final class Datasets {
      */
     public static final String SNAP_US_CALENDAR = "calendar.us_events";
     /**
-     * 🧪 한국 책 Claude 계좌 패킷 {@code 1b_calendar}의 한국 거시 일정(v2 2단계 B9·K20) — 금통위 상수와 연 1회 손으로 옮기는 주요 발표 상수
+     * 한국 책 Claude 계좌 패킷 {@code 1b_calendar}의 한국 거시 일정(v2 2단계 B9·K20) — 금통위 상수와 연 1회 손으로 옮기는 주요 발표 상수
      * (앞으로 45일, KST). {@link #SNAP_US_CALENDAR}와 같은 모양({@code macro.events}·{@code macro.horizon}, 금통위 {@code macro.bok}, 발표 상수
      * {@code macro.releases} — 날짜를 옮기지 않은 발표는 {@code status} "일정 미확인"), {@code earnings}·{@code consensus}는 null + 사유.
      * 창(다음 세션부터 10거래일, {@code KrxCalendar})은 백엔드가 자릅니다.
      */
     public static final String SNAP_KR_CALENDAR = "calendar.kr_events";
     /**
-     * 🧪 미국 경제 지표 컨센서스(v2 2단계 B9·K22 — Nasdaq {@code api/calendar/economicevents}, 비공식 참고). 미국 패킷({@code PacketBuilder})이
+     * 미국 경제 지표 컨센서스(v2 2단계 B9·K22 — Nasdaq {@code api/calendar/economicevents}, 비공식 참고). 미국 패킷({@code PacketBuilder})이
      * 설정 {@code calendar.consensus}가 켜졌을 때만 읽어 {@code 1b_calendar} 거시 줄에 붙입니다(E1b — 대응표 {@code analytics.CalendarConsensus}).
      * 그 밖의 코드는 읽지 않습니다(수집기 시험 {@code test_us_consensus}가 대조).
      * {@code {forDate, days: {동부 날짜: {rows: [{name, timeEt, forecast, previous, actual, unit, forecastText, previousText, actualText,
@@ -122,7 +122,7 @@ public final class Datasets {
      */
     public static final String SNAP_NEWS_STATUS = "news.headlines.status";
     /**
-     * 🧪 한국 책 Claude 계좌 패킷 {@code 11b_events}(v2 2단계 B9)의 한국 사건 헤드라인 수집 상태 — {@link #SNAP_NEWS_STATUS}와 같은 칸 +
+     * 한국 책 Claude 계좌 패킷 {@code 11b_events}(v2 2단계 B9)의 한국 사건 헤드라인 수집 상태 — {@link #SNAP_NEWS_STATUS}와 같은 칸 +
      * 피드별 시각 형식({@code timeFormat})·형식이 다른 시각 수({@code skippedBadTime}). 헤드라인 자체는 {@link #OBS_KR_NEWS_HEADLINE}에 있습니다.
      */
     public static final String SNAP_KR_NEWS_STATUS = "kr.news.headlines.status";
@@ -204,7 +204,7 @@ public final class Datasets {
      */
     public static final String OBS_FSC_ETF_PRICE = "fsc_etf_price";
     /**
-     * 🧪 한국 책 유니버스 U(v2 2단계 B4·K3) — 금융위 최신 기준일 B(&lt; 오늘)의 코스피 시가총액 상위 100 보통주(우선주·스팩·리츠·
+     * 한국 책 유니버스 U(v2 2단계 B4·K3) — 금융위 최신 기준일 B(&lt; 오늘)의 코스피 시가총액 상위 100 보통주(우선주·스팩·리츠·
      * 거래정지·DART 고유번호 없음 제외). entity = 6자리 코드, obs_date = B, payload {@code {code, name, rank, marketCap, listedShares,
      * close, rule}}. 그날 U에 든 종목만 있고 날짜마다 통째로 교체됩니다. 정의는 수집기 한 곳({@code collector/app/tasks/kr_paper.py}) —
      * 백엔드는 그대로 읽어 결정 행에 동결합니다. 수집기만 쓰며(ADR 0008) 400일이 지난 행은 수집기가 지웁니다.
@@ -215,7 +215,7 @@ public final class Datasets {
     /** 종목별 일별 투자자 매매동향 (토스증권 공식, entity = 종목코드). */
     public static final String OBS_TOSS_STOCK_FLOW = "toss_stock_flow";
     /**
-     * 🧪 한국 책 종목별 수급(v2 2단계 B4) — 수집 범위의 토스 투자자별 매매동향(주, KRX·NXT 통합). entity = 코드, obs_date = 기록 날짜,
+     * 한국 책 종목별 수급(v2 2단계 B4) — 수집 범위의 토스 투자자별 매매동향(주, KRX·NXT 통합). entity = 코드, obs_date = 기록 날짜,
      * payload = {@link #OBS_TOSS_STOCK_FLOW}와 같은 칸(투자자 4분류·기관 세부 7·외국인 보유율·토스 {@code updatedAt}) + {@code code}·
      * {@code fetchedAt}. 같은 날짜는 나중 판으로 덮이므로 결정·선정은 그때 읽은 값과 {@code updatedAt}을 결정 행에 동결합니다(명세 K26).
      * 수집기만 쓰며(ADR 0008) 400일이 지난 행은 수집기가 지웁니다.
@@ -233,7 +233,7 @@ public final class Datasets {
      */
     public static final String TS_EQUITY_CLOSE = "equity_close";
     /**
-     * 🧪 한국 책 종가 이력(v2 2단계 B4) — 토스 {@code adjusted=true} 일봉 종가(NXT 종목은 KRX+NXT 통합가), series = 6자리 코드. 수집기가
+     * 한국 책 종가 이력(v2 2단계 B4) — 토스 {@code adjusted=true} 일봉 종가(NXT 종목은 KRX+NXT 통합가), series = 6자리 코드. 수집기가
      * 1년을 메우고 날마다 최근 5봉을 덧붙이며, 수정주가 기준이 바뀌면(분할·병합) 저장 구간 전체를 새 기준으로 다시 받습니다. 지우지 않습니다.
      */
     public static final String TS_KR_CLOSE_ADJ = "kr_close_adj";
@@ -250,7 +250,7 @@ public final class Datasets {
      */
     public static final String OBS_NEWS_HEADLINE = "news_headline";
     /**
-     * 🧪 한국 책 사건 헤드라인(v2 2단계 B9·K21 — 한국은행·재정경제부·국가데이터처·연합뉴스 마켓+ RSS 제목·링크·시각만). 미국
+     * 한국 책 사건 헤드라인(v2 2단계 B9·K21 — 한국은행·재정경제부·국가데이터처·연합뉴스 마켓+ RSS 제목·링크·시각만). 미국
      * {@link #OBS_NEWS_HEADLINE}과 따로입니다. entity = 같은 제목 해시, obs_date = 발행 KST 날짜, payload {@code {title, link, source, feed,
      * feeds, publishedAt, publishedDate, timePrecision, knownAt, fetchedAt}} — {@code publishedAt}은 날짜만 주는 피드(재정경제부)에서 null,
      * {@code timePrecision}은 second·minute·date. 창은 {@code knownAt}('알 수 있는 시각' — 날짜만이면 min(처음 받은 시각, 그 KST 날짜 다음
@@ -288,12 +288,12 @@ public final class Datasets {
      */
     public static final long MAX_AGE_LIVE = 60L;
     /**
-     * 🧪 {@link #SNAP_PAPER_BARS_US}를 '그 회차의 1분봉'으로 볼 최대 나이 — slow 주기(60분) + 앞 태스크 몇 분 여유(명세 §12-1). 이보다 오래된
+     * {@link #SNAP_PAPER_BARS_US}를 '그 회차의 1분봉'으로 볼 최대 나이 — slow 주기(60분) + 앞 태스크 몇 분 여유(명세 §12-1). 이보다 오래된
      * 저장본은 1분봉 수집이 한 회차 넘게 멈춘 것으로 봅니다(실행 감사 기록의 {@code barsStale}, 단계 1의 대체 체결 R3).
      */
     public static final long MAX_AGE_BARS_US = 70 * 60L;
     /**
-     * 🧪 {@link #SNAP_PAPER_WATCH_US}를 장중 확인의 MINUTE 자료로 볼 최대 나이 — session 주기(300초) + 여유. 이보다 오래된 저장본은 그 확인의
+     * {@link #SNAP_PAPER_WATCH_US}를 장중 확인의 MINUTE 자료로 볼 최대 나이 — session 주기(300초) + 여유. 이보다 오래된 저장본은 그 확인의
      * 감시 자료로 쓰지 않습니다(감시 수집이 한 회차 넘게 멈춘 것).
      */
     public static final long MAX_AGE_WATCH_US = 10 * 60L;

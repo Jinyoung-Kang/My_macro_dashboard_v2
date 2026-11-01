@@ -11,7 +11,7 @@ import java.time.format.DateTimeParseException;
 import java.util.Objects;
 
 /**
- * 🧪 모의 매매의 배포 설정({@code dashboard.paper.*}, application.yml) — 재기동해야 바뀌는 값만.
+ * 모의 매매의 배포 설정({@code dashboard.paper.*}, application.yml) — 재기동해야 바뀌는 값만.
  *
  * <p>슬리피지·스탑 비율처럼 화면에서 바꾸는 값은 여기가 아니라 DB 설정 한 행({@link PaperSettingsService})입니다.
  * 여기에는 "언제·얼마로 시작하나"와 "정기 작업을 돌리나"만 둡니다 — 이 둘을 화면에서 바꾸면 이미 쌓인 장부와 맞지 않습니다.

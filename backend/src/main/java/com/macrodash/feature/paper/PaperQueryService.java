@@ -50,7 +50,7 @@ import java.util.Set;
 import java.util.TreeSet;
 
 /**
- * 🧪 모의 매매 화면 응답(API.md "🧪 모의 매매") — 장부 테이블을 읽어 화면이 그대로 그릴 숫자로 만듭니다(ADR 0004: 화면은 계산하지 않음).
+ * 모의 매매 화면 응답(API.md "모의 매매") — 장부 테이블을 읽어 화면이 그대로 그릴 숫자로 만듭니다(ADR 0004: 화면은 계산하지 않음).
  *
  * <p>준비 여부는 {@code SchemaCheck}가 아니라 {@link PaperStore#ready()}로 봅니다(V8의 마지막 테이블·V9의 마지막 열). 테이블이 없으면 모든 응답이
  * {@code {available:false, message}}입니다. 초기화 전이면 {@code available:true, initialized:false}.
@@ -1266,7 +1266,7 @@ public class PaperQueryService {
     }
 
     /**
-     * GET /api/paper/books/{code}/execution?limit= (1–500, 주문 최근 순) — 🧪 실행 감사(미국 Claude 계좌만 — 그 밖의 코드는 400, 모양은
+     * GET /api/paper/books/{code}/execution?limit= (1–500, 주문 최근 순) — 실행 감사(미국 Claude 계좌만 — 그 밖의 코드는 400, 모양은
      * {@link ExecutionView}). 감사 표·주문·체결을 읽기만 합니다.
      */
     public Map<String, Object> execution(String code, int limit) {

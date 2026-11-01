@@ -18,7 +18,7 @@ import java.util.function.Predicate;
 import java.util.regex.Pattern;
 
 /**
- * 🧪 미국 종목 재무 — SEC XBRL Company Facts 사실로 그날 <b>알 수 있었던</b> TTM·성장률·마진·FCF·듀퐁 항
+ * 미국 종목 재무 — SEC XBRL Company Facts 사실로 그날 <b>알 수 있었던</b> TTM·성장률·마진·FCF·듀퐁 항
  * (명세 D28, 설계 §4-5 ④~⑥).
  *
  * <p>수집기({@code sec_fundamentals})가 공시일({@code filed})마다 그날 처음 낸(또는 값이 바뀐) 사실 묶음을 쌓고, 여기서는

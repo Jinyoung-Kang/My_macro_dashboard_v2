@@ -11,7 +11,7 @@ import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Component;
 
 /**
- * 기동할 때 🧪 모의 매매 정기 작업이 이 스택에서 도는지 한 줄로 남깁니다(ADR 0020 결과 — 계획서 §6 위험 표).
+ * 기동할 때 모의 매매 정기 작업이 이 스택에서 도는지 한 줄로 남깁니다(ADR 0020 결과 — 계획서 §6 위험 표).
  *
  * <p>장부는 한 곳(AWS 서버)에만 둡니다(ADR 0019·0020). {@code PAPER_ENABLED}는 compose·application.yml·{@link PaperConfig}
  * 세 층 모두 기본값이 켜짐이라, {@code .env}에서 그 줄이 빠지면 로컬 스택도 정기 작업(리스크 점검·결정·체결)을 돌립니다.

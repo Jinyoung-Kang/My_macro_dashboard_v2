@@ -12,7 +12,7 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 
 /**
- * 🧪 모의 알고리즘 매매(운영자 전용) — 장부 조회와 관리 버튼.
+ * 모의 알고리즘 매매(운영자 전용) — 장부 조회와 관리 버튼.
  *
  * <pre>
  *  GET  /api/paper/status?market=US              스키마·초기화·정기 작업 상태(시장 US·KR, 없으면 US)
@@ -20,7 +20,7 @@ import java.util.Map;
  *  GET  /api/paper/books/{code}/orders?limit=50   주문(최근 순, 1–500)
  *  GET  /api/paper/books/{code}/fills?limit=50    체결(최근 순, 1–500)
  *  GET  /api/paper/books/{code}/nav               거래일별 순자산
- *  GET  /api/paper/books/{code}/execution?limit=50 🧪 실행 감사(미국 Claude 계좌만 — 주문별 메뉴 반사실·1분봉 지연과 시점별 요약)
+ *  GET  /api/paper/books/{code}/execution?limit=50 실행 감사(미국 Claude 계좌만 — 주문별 메뉴 반사실·1분봉 지연과 시점별 요약)
  *  POST /api/paper/init?market=US                 네 책 만들기 + 벤치마크 사후 체결(멱등 — 한국은 출발일 검사 뒤 네 계좌 '시작 전'만)
  *  POST /api/paper/books/{code}/status            {"status":"ACTIVE"|"PAUSED"}
  *  POST /api/paper/books/{code}/reset             {"confirm":"<code>"}

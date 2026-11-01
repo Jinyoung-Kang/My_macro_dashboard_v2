@@ -16,7 +16,7 @@ import java.util.Objects;
 import java.util.function.DoublePredicate;
 
 /**
- * 🧪 장부가 지금(단계 1) 읽는 설정 값 — DB 설정 한 행({@code paper_settings.body}, 설계 §4-4)에서 고른 것.
+ * 장부가 지금(단계 1) 읽는 설정 값 — DB 설정 한 행({@code paper_settings.body}, 설계 §4-4)에서 고른 것.
  *
  * <p>나머지 키(모델·상한·트랙레코드 등)는 본문에 그대로 있고 뒤 단계의 서비스가 읽습니다.
  *

@@ -35,7 +35,7 @@ class AccessPolicyTest {
     }
 
     @Test
-    @DisplayName("🧪 모의 매매 경로는 모두 운영자만(ADR 0010·0018) — 시장 단위 조회·실행(?market·본문 market, 2단계 F1)은 경로가 같아 같은 정책")
+    @DisplayName("모의 매매 경로는 모두 운영자만(ADR 0010·0018) — 시장 단위 조회·실행(?market·본문 market, 2단계 F1)은 경로가 같아 같은 정책")
     void paperRoutesAreOwnerOnly() {
         java.util.List<String> paper = AccessPolicy.routes().keySet().stream()
                 .filter(route -> route.split(" ")[1].startsWith("/api/paper/")).toList();

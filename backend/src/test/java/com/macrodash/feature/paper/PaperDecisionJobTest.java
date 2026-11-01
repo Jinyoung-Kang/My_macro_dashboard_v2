@@ -1096,7 +1096,7 @@ class PaperDecisionJobTest {
     }
 
     @Test
-    @DisplayName("정기 작업 스레드는 5개(application.yml) — 🧪 장중 확인 호출(최대 300초, 계좌2 단계 2)이 한국 결정 창의 호출과 겹쳐도 리스크 점검이 줄 서지 않게(작업 13개)")
+    @DisplayName("정기 작업 스레드는 5개(application.yml) — 장중 확인 호출(최대 300초, 계좌2 단계 2)이 한국 결정 창의 호출과 겹쳐도 리스크 점검이 줄 서지 않게(작업 13개)")
     void schedulerPoolIsFive() throws Exception {
         Object size = new YamlPropertySourceLoader().load("application", new ClassPathResource("application.yml"))
                 .stream().map(source -> source.getProperty("spring.task.scheduling.pool.size"))

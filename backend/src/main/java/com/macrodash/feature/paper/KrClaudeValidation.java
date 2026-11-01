@@ -20,7 +20,7 @@ import java.util.TreeMap;
 import java.util.TreeSet;
 
 /**
- * 🧪 한국 Claude 계좌({@code kr_claude})의 검증기 문맥 — 시장별 칸(2단계 명세 §4-7·K34·사용자 결정 v2, E2a). 결정 파이프라인
+ * 한국 Claude 계좌({@code kr_claude})의 검증기 문맥 — 시장별 칸(2단계 명세 §4-7·K34·사용자 결정 v2, E2a). 결정 파이프라인
  * ({@link ClaudeDecisionPipeline#plan})이 한국 실행이면 미국 칸({@code usChecks}) 대신 이것을 씁니다. 공통 검사(형식·중복·유니버스·재진입 금지·
  * 최소 보유일·1주 미만 부분 매도·비중 상한·최소 금액·월 상한·최대 종목 수·100% 합)는 {@link OrderValidator} 그대로이고, 한도·현금성은 그 시장 키
  * ({@code kr.*} — 최소 주문 500,000원, 현금성 153130)를 {@code plan}이 읽습니다.

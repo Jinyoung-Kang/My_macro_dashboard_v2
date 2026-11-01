@@ -25,10 +25,10 @@ import static org.assertj.core.api.Assertions.assertThat;
  * 패키지 의존 규칙 — 바깥(HTTP·설정)에서 안쪽(비즈니스 규칙)으로만 향하게.
  *
  * <pre>
- *   web ─▶ feature/&lt;기능&gt; ─▶ read ─▶ store
- *                │            └──▶ collector
- *                ├──▶ analytics (java.*만)
- *                └──▶ support
+ *   web ─► feature/&lt;기능&gt; ─► read ─► store
+ *                │            └──► collector
+ *                ├──► analytics (java.*만)
+ *                └──► support
  * </pre>
  *
  * <p>설정 값({@code config.AppProperties})은 기능·read·collector·web이 읽고, config는 우리 패키지를 쓰지 않습니다.

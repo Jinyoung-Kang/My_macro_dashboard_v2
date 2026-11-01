@@ -45,19 +45,19 @@ public final class AccessPolicy {
         member("POST /api/auth/logout", "POST /api/auth/logout-all", "GET /api/auth/sessions",
                 "POST /api/auth/password", "POST /api/auth/delete");
 
-        // 📊 매크로 · 순유동성 · 로테이션
+        // 매크로 · 순유동성 · 로테이션
         member("GET /api/macro/overview", "GET /api/macro/risk", "GET /api/macro/advanced",
                 "GET /api/macro/usdkrw", "GET /api/macro/fx", "GET /api/macro/fx/options",
                 "GET /api/macro/scraped", "GET /api/macro/spread", "GET /api/macro/fred/{seriesId}",
                 "GET /api/macro/ticker", "GET /api/liquidity",
                 "GET /api/sector/rotation", "GET /api/sector/momentum");
-        // 📑 13F · 🧬 기관 스타일 · 🩺 스코어카드
+        // 13F · 기관 스타일 · 스코어카드
         member("GET /api/sec13f/institutions", "GET /api/sec13f/portfolio", "GET /api/sec13f/consensus",
                 "GET /api/guru/profiles", "GET /api/guru/similarity",
                 "GET /api/guru/holders", "GET /api/stock/universe", "GET /api/stock/scorecard");
-        // 💎 유료 — 심화 분석(신규 매수 교집합·포트폴리오 위험)
+        // 유료 — 심화 분석(신규 매수 교집합·포트폴리오 위험)
         pro("GET /api/sec13f/new-buys", "GET /api/guru/risk");
-        // 🏛️ COT · 🇰🇷 파생 · 📡 레이더 · 🏦 투자자별 매매 · 공공 API
+        // COT · 파생 · 레이더 · 투자자별 매매 · 공공 API
         member("GET /api/cot/assets", "GET /api/cot/overview", "GET /api/cot/asset", "GET /api/cot/extremes",
                 "GET /api/krx/futures", "GET /api/krx/investor-trend", "GET /api/krx/intraday",
                 "GET /api/krx/oi-trend", "GET /api/krx/spot-futures",
@@ -65,28 +65,28 @@ public final class AccessPolicy {
                 "GET /api/radar/history",
                 "GET /api/kr/investor-flows", "GET /api/calendar/kr-holidays",
                 "GET /api/kr/fundamentals", "GET /api/kr/market-totals");
-        // 🔗 상관 · 🧭 국면 · 원본 텍스트
+        // 상관 · 국면 · 원본 텍스트
         member("GET /api/analytics/series", "GET /api/analytics/correlation", "GET /api/analytics/regime",
                 "GET /api/analytics/regime/log", "GET /api/analytics/regime/track-record", "GET /api/snapshot/text");
-        // 🤖 AI (조회) · 🔌 토스 공개 시세
+        // AI (조회) · 토스 공개 시세
         member("GET /api/ai/engines", "GET /api/ai/report-types",
                 "GET /api/ai/toss/exchange-rate", "GET /api/ai/toss/indices");
-        // 💎 유료 — 종목별 투자자 매매 이력, AI 리포트(유료 API, 하루 한도는 UsageService)
+        // 유료 — 종목별 투자자 매매 이력, AI 리포트(유료 API, 하루 한도는 UsageService)
         pro("GET /api/kr/stock-flows", "POST /api/ai/report");
 
-        // 🔔 알림 — 규칙·알림함(등급별 규칙 수와 종류는 AlertService가 제한)
+        // 알림 — 규칙·알림함(등급별 규칙 수와 종류는 AlertService가 제한)
         member("GET /api/alerts/rules", "POST /api/alerts/rules", "POST /api/alerts/rules/{id}",
                 "DELETE /api/alerts/rules/{id}", "GET /api/alerts/inbox", "GET /api/alerts/unread-count",
                 "POST /api/alerts/inbox/read");
 
-        // 🗄️ 운영 — 수집을 일으키거나 내부 상태·키 설정 여부를 보여 줌
+        // 운영 — 수집을 일으키거나 내부 상태·키 설정 여부를 보여 줌
         owner("GET /api/status", "GET /api/status/issues", "GET /api/status/tasks", "GET /api/status/history",
                 "POST /api/status/refresh", "POST /api/status/run/{taskName}", "GET /api/status/public-apis",
                 "POST /api/verification", "GET /api/radar/diagnostics", "GET /api/ai/toss/diagnostics",
                 "POST /api/ai/test");
-        // 👥 사용자 관리
+        // 사용자 관리
         owner("GET /api/admin/users", "POST /api/admin/users", "POST /api/admin/users/{id}", "GET /api/admin/audit");
-        // 🧪 모의 매매 — 운영자 한 사람의 실험 장부. 초기화·리셋·리스크 실행·트랙레코드 재계산·결정·시작이 장부를 바꾸고,
+        // 모의 매매 — 운영자 한 사람의 실험 장부. 초기화·리셋·리스크 실행·트랙레코드 재계산·결정·시작이 장부를 바꾸고,
         //    Claude 책의 결정·미리보기·시작은 운영자 키로 Claude를 부름(비용). 설정은 실험 조건을 바꿈
         owner("GET /api/paper/overview", "GET /api/paper/live", "GET /api/paper/status", "GET /api/paper/books/{code}/positions",
                 "GET /api/paper/books/{code}/orders", "GET /api/paper/books/{code}/fills",

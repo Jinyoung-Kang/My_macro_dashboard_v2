@@ -57,7 +57,7 @@ import static com.macrodash.feature.paper.ClaudeDecisionPipeline.statusLabel;
 import static com.macrodash.feature.paper.ClaudeDecisionPipeline.usageView;
 
 /**
- * 🧪 Claude 재량 책(실험군) — 하루 한 번 Claude가 입력 패킷을 보고 주문과 목표 주식 노출을 <b>제안</b>하고, 검증기가 하드 규칙으로
+ * Claude 재량 책(실험군) — 하루 한 번 Claude가 입력 패킷을 보고 주문과 목표 주식 노출을 <b>제안</b>하고, 검증기가 하드 규칙으로
  * 통과·거절합니다(명세 C1~C11·D5·D7·D18·D26, 설계 §5-1~§5-6).
  *
  * <p><b>결정 한 번</b>({@link #decide}): ① 일일 호출 상한(설정 {@code apiDailyCallCap}, 기본 30(2026-10-29 사용자 결정 — v2 처음 20, v1 처음 6) — KST 하루, 결정·미리보기·시작·재시도와

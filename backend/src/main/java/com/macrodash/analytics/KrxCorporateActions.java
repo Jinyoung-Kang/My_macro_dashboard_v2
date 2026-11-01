@@ -14,7 +14,7 @@ import java.util.Optional;
 import java.util.Set;
 
 /**
- * 🧪 한국 책의 기업행위 감지 — 2단계 명세 2026-10-26-v2-kr-paper-spec.md §4-1·§4-2·K32, §5 '기업행위'. 미국 책은 쓰지 않습니다
+ * 한국 책의 기업행위 감지 — 2단계 명세 2026-10-26-v2-kr-paper-spec.md §4-1·§4-2·K32, §5 '기업행위'. 미국 책은 쓰지 않습니다
  * (미국은 {@link SplitDetector}가 수정주가 이력의 다시 쓰임으로 잽니다 — 그 경로·시험은 그대로).
  *
  * <p><b>입력</b>은 종목 하나의 토스 일봉(원시가 {@code adjusted=false} — 금융위 원시 종가와 같은 판)과 봉마다의 수정 비율

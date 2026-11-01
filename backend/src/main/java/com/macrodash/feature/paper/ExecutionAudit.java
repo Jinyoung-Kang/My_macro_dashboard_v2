@@ -28,7 +28,7 @@ import java.util.Locale;
 import java.util.Map;
 
 /**
- * 🧪 실행 감사의 판정(미국 Claude 계좌2 실험 단계 0 — 명세 docs/specs/2026-10-30-claude-book2-timing-design.md §6-2·§8·§14-1, ADR 0022):
+ * 실행 감사의 판정(미국 Claude 계좌2 실험 단계 0 — 명세 docs/specs/2026-10-30-claude-book2-timing-design.md §6-2·§8·§14-1, ADR 0022):
  * 주문 하나를 계좌1식(다음 시간별 관측치)·시가·매시·종가로 체결했다면의 원가격(반사실)을 1분봉 저장본·관측치·그 주문의 체결에서 셉니다.
  * 저장본·DB를 읽지 않는 순수 계산이라 정기 작업({@link PaperExecutionAuditJob})과 시험이 그대로 부릅니다.
  *

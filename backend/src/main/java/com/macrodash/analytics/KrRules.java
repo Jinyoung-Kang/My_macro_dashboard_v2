@@ -20,7 +20,7 @@ import java.util.Set;
 import java.util.TreeSet;
 
 /**
- * 🧪 한국 규칙 계좌({@code kr_rules}) 수급 규칙의 순수 계산 — 2단계 명세 2026-10-26-v2-kr-paper-spec.md §4-6·K7, §4-5 'B8 구현에서 정한 것'.
+ * 한국 규칙 계좌({@code kr_rules}) 수급 규칙의 순수 계산 — 2단계 명세 2026-10-26-v2-kr-paper-spec.md §4-6·K7, §4-5 'B8 구현에서 정한 것'.
  *
  * <pre>
  *  창       = 결정의 기준 KR 세션 D와 그 앞 19거래일(KRX 달력 — 20거래일, 휴장일 기록은 보지 않음)

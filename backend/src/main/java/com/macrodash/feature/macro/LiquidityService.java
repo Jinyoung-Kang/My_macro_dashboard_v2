@@ -19,7 +19,7 @@ import java.util.TreeMap;
 import java.util.NavigableMap;
 
 /**
- * 🏢 연준 순유동성 트래커.
+ * 연준 순유동성 트래커.
  *
  * <p>순유동성 = WALCL(연준 총자산) − TGA(재무부 일반계정) − ON RRP(역레포).
  * 시장에 실제로 남아 있는 달러 유동성의 근사치입니다.
@@ -78,7 +78,7 @@ public class LiquidityService {
         Double previous = SeriesMath.previous(netValues);
 
         out.put("available", !rows.isEmpty());
-        // ⚠️ 추정치 여부를 그대로 전달합니다. 화면은 이 값을 보고 경고해야 합니다.
+        // 주의: 추정치 여부를 그대로 전달합니다. 화면은 이 값을 보고 경고해야 합니다.
         out.put("isEstimated", Json.asBoolean(payload, "isEstimated") || snap.isEstimated());
         snap.putFreshness(out);
         out.put("stale", !snap.isFresh(Datasets.MAX_AGE_DAILY));

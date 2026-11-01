@@ -20,7 +20,7 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /**
- * 🧪 OS 게이트 <b>지표</b>(참고 — 구속하지 않음, 명세 D7·D19)의 입력 읽기와 기록·화면 모양.
+ * OS 게이트 <b>지표</b>(참고 — 구속하지 않음, 명세 D7·D19)의 입력 읽기와 기록·화면 모양.
  *
  * <p>계산은 {@link GateIndicator}, 거래일마다 한 번 남기는 것은 {@link PaperDecisionJob}입니다. 규칙 책은 이 값을 주문에 쓰지
  * 않고(매크로 게이트 없음, D19) 결정 기록에 참고로만 싣습니다.

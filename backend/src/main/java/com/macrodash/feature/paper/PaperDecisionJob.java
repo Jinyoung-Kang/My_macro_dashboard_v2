@@ -38,7 +38,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.locks.ReentrantLock;
 
 /**
- * 🧪 하루 한 번의 결정 작업(설계 §6-2) — 10분마다 돌며, 미국 세션이 끝난 다음 날 아침(KST)에 그 거래일의 결정을 냅니다.
+ * 하루 한 번의 결정 작업(설계 §6-2) — 10분마다 돌며, 미국 세션이 끝난 다음 날 아침(KST)에 그 거래일의 결정을 냅니다.
  *
  * <pre>
  *  그 시장 달력이 앞 창(직전 세션 ~ 10거래일)의 해를 모름 → NO_CALENDAR(그 시장·KST 날짜·빠진 해마다 한 번 기록 — 명세 K35)

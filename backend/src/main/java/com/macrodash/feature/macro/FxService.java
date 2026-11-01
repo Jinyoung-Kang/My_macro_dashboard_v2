@@ -22,7 +22,7 @@ import java.util.Optional;
 import java.util.TreeMap;
 
 /**
- * 💱 환율·달러인덱스 비교 차트.
+ * 환율·달러인덱스 비교 차트.
  *
  * <p>화면에서 <b>고른 계열만</b> 겹쳐 그립니다. 티커는 매크로 카드와 같은
  * 것을 쓰므로(수집기 {@code fx_history} 태스크), 카드의 최근값과 차트의 끝값이

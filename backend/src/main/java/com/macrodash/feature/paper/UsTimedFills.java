@@ -39,7 +39,7 @@ import java.util.Optional;
 import java.util.Set;
 
 /**
- * 🧪 미국 시각 지정 체결 — 장부 처리 순서의 2b·3a·3b(미국 Claude 계좌2 실험 단계 1 — 명세
+ * 미국 시각 지정 체결 — 장부 처리 순서의 2b·3a·3b(미국 Claude 계좌2 실험 단계 1 — 명세
  * docs/specs/2026-10-30-claude-book2-timing-design.md §6-2·§8·§10-1~§10-4, ADR 0022 결정 3·12). 시각 지정 시점({@link #TIMINGS} — 목표 세션 E의
  * NEXT_OPEN 09:30 · AT_1000~AT_1500 매시, 뉴욕 시간)의 대기 주문을 1분봉 저장본(수집기 {@code paper_bars_us}, contract 1 —
  * {@code collector/app/tasks/paper_bars.py} 머리말)의 그 시각 봉으로 체결합니다. 처리를 일으키는 흐름은 여전히 시간별 관측치 W(paper.quotes)

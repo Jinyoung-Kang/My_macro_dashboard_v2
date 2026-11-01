@@ -26,7 +26,7 @@ import java.util.Map;
 import java.util.Set;
 
 /**
- * 🧪 GET /api/paper/books/{code}/execution — 실행 감사 응답(미국 Claude 계좌2 실험 단계 0, 명세 docs/specs/2026-10-30-claude-book2-timing-design.md
+ * GET /api/paper/books/{code}/execution — 실행 감사 응답(미국 Claude 계좌2 실험 단계 0, 명세 docs/specs/2026-10-30-claude-book2-timing-design.md
  * §13-1·§14-2, ADR 0022). 감사 행({@code paper_order_exec} — {@link PaperExecutionAuditJob}이 씀)·주문·체결을 읽기만 해서 주문별 줄과 시점별 요약을
  * 만듭니다(화면은 계산하지 않음 — ADR 0004). 저장본은 읽지 않습니다.
  *

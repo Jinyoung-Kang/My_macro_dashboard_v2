@@ -23,7 +23,7 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /**
- * 🧪 한국 Claude 패킷의 사건 섹션 {@code 11b_events}(2단계 명세 §4-11·K21, E1a) — 저장본(수집기 {@code kr_news_headlines}의
+ * 한국 Claude 패킷의 사건 섹션 {@code 11b_events}(2단계 명세 §4-11·K21, E1a) — 저장본(수집기 {@code kr_news_headlines}의
  * {@code kr_news_headline} 관측치, 한국은행·재정경제부·국가데이터처·연합뉴스 마켓+ RSS 제목, 보존 7일)에서 직전 한국 결정 이후에 <b>알 수 있던</b>
  * 제목 가운데 대상 종목(이름·별칭·6자리 코드) 또는 한국 매크로 키워드({@code kr.news.keywords})에 걸리는 것만 최신순으로 상한
  * ({@code kr.news.maxPerDay})까지 고릅니다. 미국 {@link NewsEvents}와 같은 사건 감지형이고(걸리는 것이 없는 날은 비어 있음), 창·수집 범위 판정·
