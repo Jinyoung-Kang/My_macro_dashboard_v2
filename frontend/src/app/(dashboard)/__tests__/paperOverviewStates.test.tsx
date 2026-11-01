@@ -349,6 +349,9 @@ describe("지금 값 — 계좌 비교(한 표 한 기준)", () => {
     expect(rowHeaders().slice(0, 1)).toEqual(["기준"]);
     expect(rowHeaders()).toEqual(expect.arrayContaining(["오늘 변화", "통계 기준"]));
     expect(comparisonCell("기준", "규칙 계좌").textContent).toBe("장부 10-24 05:15");
+    // 긴 기준 글·기준 아래 글은 낱말 중간에서 접히지 않게
+    expect(within(comparisonCell("기준", "규칙 계좌")).getByText("장부 10-24 05:15").className).toContain("break-keep");
+    expect(within(comparisonCell("오늘 변화", "규칙 계좌")).getByText("10-29 확정 대비").className).toContain("break-keep");
     expect(comparisonCell("기준", "Claude 계좌").textContent).toBe("출발 전");
     // 장부 칸 — 순자산·수익률은 장부(BookSummary), 오늘 변화는 ledgerDay(지금 값과 섞지 않음)
     expect(comparisonCell("순자산", "규칙 계좌").textContent).toBe("101,200.00 달러");

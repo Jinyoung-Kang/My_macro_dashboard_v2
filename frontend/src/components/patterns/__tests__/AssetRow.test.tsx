@@ -250,6 +250,8 @@ describe("AssetRow", () => {
     expect(caption.closest(".basis-full")).not.toBeNull();
     // 말줄임 없음(보조 글 sub와 달리 늘 다 보임)
     expect(caption.className).not.toContain("truncate");
+    // 줄을 바꿔도 한국어 낱말 중간에서 접히지 않음
+    expect(caption.className).toContain("break-keep");
     expect(caption.compareDocumentPosition(screen.getByText("추정")) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     cleanup();
 

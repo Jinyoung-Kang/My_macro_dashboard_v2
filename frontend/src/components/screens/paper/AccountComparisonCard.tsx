@@ -80,7 +80,7 @@ export function AccountComparisonCard({
 
 /**
  * 계좌 비교 표의 칸 — 상태는 배지, 색이 있는 값(수익률·가격 없음·변화)은 그 색, 나머지는 글 그대로("—"면 표가 Empty로 그림). 값 아래 작은 글
- * (변화의 기준)이 있으면 그 아래 줄에, 기준 줄처럼 긴 글은 칸 안에서 줄을 바꿉니다.
+ * (변화의 기준)이 있으면 그 아래 줄에, 기준 줄처럼 긴 글은 칸 안에서 줄을 바꿉니다 — 낱말 중간에서 접히지 않게(break-keep — '종 / 가 확정 전').
  */
 function comparisonContent(row: ComparisonRow, code: string): ReactNode {
   const cell = row.cells[code];
@@ -93,9 +93,9 @@ function comparisonContent(row: ComparisonRow, code: string): ReactNode {
     return (
       <span className="flex flex-col items-end">
         {text}
-        <span className="text-xs text-text-3">{cell.sub}</span>
+        <span className="break-keep text-xs text-text-3">{cell.sub}</span>
       </span>
     );
   }
-  return row.wrap ? <span className="inline-block min-w-32 whitespace-normal text-[13px] text-text-2">{cell.text}</span> : text;
+  return row.wrap ? <span className="inline-block min-w-32 whitespace-normal break-keep text-[13px] text-text-2">{cell.text}</span> : text;
 }

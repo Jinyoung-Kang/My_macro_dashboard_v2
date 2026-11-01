@@ -161,8 +161,9 @@ export function AssetRow({
       {model.hasBadges ? (
         // 배지 줄은 아바타가 있으면 이름과 같은 세로줄에서 시작합니다(아바타 36·40px + 간격 12px).
         <span id={parts?.badges} className={`flex basis-full flex-wrap items-center gap-1 ${model.avatarText ? "pl-12 sm:pl-[52px]" : ""}`}>
-          {/* 값의 기준 한 줄은 배지보다 앞 — '추정' 배지 바로 뒤에 '장중 추정 …'이 오면 눈에도 낭독에도 '추정 장중 추정'으로 겹칩니다. */}
-          {model.caption ? <span className="text-xs leading-4 tabular-nums text-text-2">{model.caption}</span> : null}
+          {/* 값의 기준 한 줄은 배지보다 앞 — '추정' 배지 바로 뒤에 '장중 추정 …'이 오면 눈에도 낭독에도 '추정 장중 추정'으로 겹칩니다.
+              줄을 바꿀 때 한국어 낱말 중간에서 접히지 않게(break-keep — '잠정 대 / 비'). */}
+          {model.caption ? <span className="break-keep text-xs leading-4 tabular-nums text-text-2">{model.caption}</span> : null}
           <EstimateBadge estimated={row.isEstimated} proxy={row.isProxy} />
           <StaleBadge stale={row.isStale} reason={row.staleReason} />
           {model.warning ? (
