@@ -1411,8 +1411,9 @@ public class ClaudeBookService {
                 throw new InvalidRequestException("한국 Claude 계좌2 출발 호출 실패(" + statusLabel(attempt.status()) + "): "
                         + clip(attempt.error(), 400));
             }
+            // 신선도는 계좌1 출발 결정 순간으로(입력 동결 — QA-165): 그 결정이 본 S 밤 관측치를 지금 시각으로 세면 주말을 넘긴 출발이 모두 거절됨.
             Plan plan = pipeline.plan(start, RuleBookService.INITIAL, true, attempt, cashOnly(state.cash()), row, claude,
-                    quotes, Set.of(), Map.of());
+                    quotes, Set.of(), Map.of(), 0, source.decidedAt());
             ObjectNode response = plan.response();
             response.put("packetFromDecision", source.id());
             response.put("startNote", "한국 Claude 계좌1 출발 결정 " + source.id() + "의 패킷(계좌 몫만 바꿈)으로 출발 — 통과 주문은 출발일 "

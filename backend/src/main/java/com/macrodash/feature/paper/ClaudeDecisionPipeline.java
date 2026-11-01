@@ -562,6 +562,18 @@ final class ClaudeDecisionPipeline {
     Plan plan(LocalDate asOf, String kind, boolean initial, Attempt attempt, LedgerView view, SettingsRow row,
                       ClaudeSettings claude, Optional<Quotes> quotes, Set<String> universe,
                       Map<String, PaperMarketData.SourcedClose> closes, int dueOrders) {
+        return plan(asOf, kind, initial, attempt, view, row, claude, quotes, universe, closes, dueOrders, null);
+    }
+
+    /**
+     * {@link #plan(LocalDate, String, boolean, Attempt, LedgerView, SettingsRow, ClaudeSettings, Optional, Set, Map, int)}을 검증 순간
+     * {@code checkedAt}(신선도 STALE_INPUT을 세는 지금 — null이면 이 파이프라인 시계의 지금)으로. 한국 Claude 계좌2 출발은 계좌1 출발 결정의 패킷을
+     * 그대로 써 그 결정 순간으로 셉니다(입력 동결 — QA-165: 금요일 밤 관측치를 월요일에 지금 시각으로 세면 주문이 모두 거절됨).
+     */
+    Plan plan(LocalDate asOf, String kind, boolean initial, Attempt attempt, LedgerView view, SettingsRow row,
+                      ClaudeSettings claude, Optional<Quotes> quotes, Set<String> universe,
+                      Map<String, PaperMarketData.SourcedClose> closes, int dueOrders, Instant checkedAt) {
+        Instant moment = checkedAt == null ? clock.instant() : checkedAt;
         JsonNode body = row.body();
         // 그 시장의 설정 읽기(접두어·현금성 기본값 — C1a): 현금성(비중 상한·종목 수에서 빠짐)과 검증기 한도가 그 시장 키.
         PaperSettings paper = PaperSettings.from(body, market);
@@ -599,8 +611,8 @@ final class ClaudeDecisionPipeline {
         // 시장별 칸 — 한국 실행이면 패킷 12_hardRules·관측치·장부로(KrClaudeValidation, E2a), 그 밖은 미국 칸(이 묶음 전 그대로).
         MarketChecks checks = market.definition() == KrPaperMarket.INSTANCE
                 ? KrClaudeValidation.checks(market, book(), store, asOf, initial, attempt.packet().body(), paper, quotes,
-                        lockedOut(asOf), clock.instant())
-                : usChecks(asOf, initial, body, quotes, universe, closes, proposed, heldQty.keySet());
+                        lockedOut(asOf), moment)
+                : usChecks(asOf, initial, body, quotes, universe, closes, proposed, heldQty.keySet(), moment);
         boolean stale = checks.stale();
         int monthly = checks.monthly() + dueOrders;
         OrderValidator.Context ctx = new OrderValidator.Context(view.nav(), view.cash(), weights, heldDays,
@@ -683,7 +695,7 @@ final class ClaudeDecisionPipeline {
      */
     private MarketChecks usChecks(LocalDate asOf, boolean initial, JsonNode body, Optional<Quotes> quotes,
                                   Set<String> universe, Map<String, PaperMarketData.SourcedClose> closes,
-                                  List<Proposed> proposed, Set<String> heldTickers) {
+                                  List<Proposed> proposed, Set<String> heldTickers, Instant moment) {
         Set<String> noPrice = new TreeSet<>();
         boolean stale;
         if (initial) {
@@ -695,7 +707,7 @@ final class ClaudeDecisionPipeline {
             stale = false;   // 초기 결정은 얼린 출발일 확정 종가로 체결합니다
         } else {
             noPrice.addAll(noPriceTickers(quotes, heldTickers));
-            stale = inputsStale(quotes, clock.instant());
+            stale = inputsStale(quotes, moment);
         }
         // 앞으로 체결로 출발하는 계좌(계좌2)는 출발 결정(INITIAL) 주문을 뺀 계산 — 패킷 9_portfolio와 같은 함수(PacketBuilder.ledger).
         int monthly = initial ? 0 : profile.timed() ? KrPacketBuilder.monthlyDiscretionaryOrders(store, book(), asOf)
