@@ -396,6 +396,36 @@ describe("QA-162 실패한 한 번 더 읽기가 다음 한 번 더를 삼키지
   });
 });
 
+describe("QA-163 같은 문구로 연달아 실패해도 한 번 더 표시를 내린다", () => {
+  // QA-162 수정은 refreshError가 바뀔 때 표시를 내렸는데, 20초 안에 다른 읽기('지금 새로 읽기'·탭 복귀·셸 새로고침)가 먼저 실패하면 refreshError가
+  // 이미 차 있어 같은 문구의 한 번 더 실패가 변화로 오지 않았습니다 — 표시가 남아 다음 응답의 새 수집 요청을 소모했습니다(재현 커밋에서는 it.fails).
+  it.fails("성공 → '지금 새로 읽기' 실패 → 한 번 더도 같은 문구로 실패 → 30분 간격 읽기가 새 수집을 요청했으면 20초 뒤 한 번 더", async () => {
+    let calls = 0;
+    api.apiGetShared.mockImplementation(() => {
+      calls += 1;
+      return calls === 2 || calls === 3
+        ? Promise.reject(new Error("백엔드 API에 연결하지 못했습니다"))
+        : Promise.resolve(live({ quotes: { source: null, collectedAtKst: null, refreshRequested: true, missing: [], error: null } }));
+    });
+    render(<LiveValuationCard />);
+    await settle();
+    expect(liveCalls()).toBe(1);
+    await settle(5_000);
+    fireEvent.click(screen.getByRole("button", { name: "지금 새로 읽기" }));
+    await settle();
+    expect(liveCalls()).toBe(2);   // '지금 새로 읽기' — 실패
+    await settle(16_000);
+    expect(liveCalls()).toBe(3);   // 한 번 더 — 같은 문구로 실패
+
+    await settle(30 * 60_000 - 20_000);
+    expect(liveCalls()).toBe(4);   // 30분 간격 읽기 — 새 수집 요청
+    await settle(20_000);
+    expect(liveCalls()).toBe(5);
+    await settle(60_000);
+    expect(liveCalls()).toBe(5);
+  });
+});
+
 describe("QA-156 숨긴 탭으로 열면 보일 때까지 읽지 않는다", () => {
   let visibility: DocumentVisibilityState;
   beforeEach(() => {
