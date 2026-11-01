@@ -23,7 +23,7 @@ import { knownBars } from "@/lib/chartData";
 import { sortDescUnknownLast } from "@/lib/transforms";
 
 /**
- * 🔄 섹터 & 자산군 로테이션.
+ * 섹터 & 자산군 로테이션.
  *
  * 표본이 부족한 기간은 "—"로 표시합니다. 0.00%로 채우면 '보합'으로 읽혀
  * 신규 상장 ETF가 실제로 보합인 것처럼 보이고 순위까지 오염됩니다.

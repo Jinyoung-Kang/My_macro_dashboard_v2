@@ -23,7 +23,7 @@ import { SOURCES } from "@/lib/sources";
 import { endpoints } from "@/lib/endpoints";
 
 /**
- * 🔗 지표 상관관계.
+ * 지표 상관관계.
  *
  * <p>두 지표가 <b>같이 움직이는지</b> 봅니다. 기본값은 "변화(Δ)"입니다 — 수준
  * 끼리 비교하면 둘 다 추세만 가져도 상관이 0.9를 넘습니다(허위 상관).

@@ -20,9 +20,9 @@ import { SelectionSection } from "./SelectionSection";
 import { SettingsSection } from "./SettingsSection";
 
 /**
- * 🧪 모의 알고리즘 매매(운영자 전용).
+ * 모의 알고리즘 매매(운영자 전용).
  *
- * <p>같은 돈·같은 날 출발한 네 계좌(규칙 · Claude · SPY(100%) · 60/40(SPY 60%·SHY 40%))의 장부를 봅니다. 미국은 다섯째 계좌 🧪 Claude 계좌2(체결
+ * <p>같은 돈·같은 날 출발한 네 계좌(규칙 · Claude · SPY(100%) · 60/40(SPY 60%·SHY 40%))의 장부를 봅니다. 미국은 다섯째 계좌 Claude 계좌2(체결
  * 시점 실험 — 늦게 앞으로 체결로 출발, ADR 0022)가 더해지고, 한계 문구 아래에 계좌2의 한계(CLAUDE2_LIMITS)를 덧붙입니다.
  * 주문은 어디로도 나가지 않습니다. 숫자는 전부 백엔드 장부가 계산한 값이고, 이 화면은 조회·배치만 합니다(ADR 0004).
  *

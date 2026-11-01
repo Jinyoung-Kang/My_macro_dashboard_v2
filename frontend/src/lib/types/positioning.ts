@@ -119,7 +119,7 @@ export interface RadarResponse {
   rows: RadarRow[];
 }
 
-/** 📡 외국인·기관 공통 수급 (상위 N 목록의 교집합). */
+/** 외국인·기관 공통 수급 (상위 N 목록의 교집합). */
 export interface RadarConsensusResponse {
   available: boolean;
   message?: string;
@@ -152,7 +152,7 @@ export interface RadarConsensusRow {
   institutionRank: number | null;
 }
 
-// ----------------------------------------------- 📉 COT 극단값 백테스트
+// ----------------------------------------------- COT 극단값 백테스트
 export interface CotExtremeSummary {
   count: number;
   mean: number | null;

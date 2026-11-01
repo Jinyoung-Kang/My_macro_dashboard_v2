@@ -134,7 +134,7 @@ const CHECKPOINT_COLUMNS: readonly Column<ExecutionCheckpointRow>[] = [
 ];
 
 /**
- * 🧪 체결 시점 실험(미국 Claude 계좌2 — 계좌2 명세 §13-3·§14, ADR 0022 결정 13) — GET /api/paper/books/{code}/execution의 요약을 시점마다 한 줄로.
+ * 체결 시점 실험(미국 Claude 계좌2 — 계좌2 명세 §13-3·§14, ADR 0022 결정 13) — GET /api/paper/books/{code}/execution의 요약을 시점마다 한 줄로.
  *
  * 위 표는 고른 시점(M1 — 주 판정, §14-2): 계좌2가 고른 시점의 실제 체결 원가격이 계좌1식(다음 시간별 관측치)보다 몇 bp 나았나 — 대체 체결은 본 줄에서 빼
  * 둘째 줄에 따로 셉니다(계좌1은 고른 시점이 곧 기준이라 없음 — 장중 확인 결정이 낸 주문은 두 표 모두 세지 않고 M8에 수만). 아래 표는 시점마다 "그 계좌 주문을 모두 그 시점에 체결했다면"의 반사실 분포(M2의 기준)입니다.

@@ -213,7 +213,7 @@ describe("색인 항목", () => {
     expect(tickerEntries({ available: true, rows: [{ ticker: "", name: "", sector: null }] })[0].avatar).toBeUndefined();
   });
 
-  it("메뉴: 무료 회원에게 잠긴 유료 화면은 locked를 그대로 넘긴다(결과의 🔒)", () => {
+  it("메뉴: 무료 회원에게 잠긴 유료 화면은 locked를 그대로 넘긴다(결과의 자물쇠 아이콘)", () => {
     const entries = menuEntries(navSearchItems({ email: "m@x", role: "MEMBER", tier: "FREE" }));
     expect(entries.find((item) => item.href === "/ai/report")?.locked).toBe(true);
     expect(entries.find((item) => item.href === "/macro")?.locked).toBe(false);

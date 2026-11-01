@@ -4,7 +4,7 @@
  * 값이 없을 수 있는 필드는 전부 `| null`입니다. 프런트는 그 null을 그대로 "—"로 표시하고,
  * 절대 0으로 바꾸지 않습니다. 가져올 때는 `@/lib/types`(배럴)를 그대로 쓰면 됩니다.
  */
-/** 🩺 종목 스코어카드 (가격 기반 지표만). */
+/** 종목 스코어카드 (가격 기반 지표만). */
 export interface ScorecardResponse {
   available: boolean;
   message?: string;
@@ -50,7 +50,7 @@ export interface StockUniverseResponse {
   rows: { ticker: string; name: string; sector: string | null }[];
 }
 
-// ------------------------------------------------- 🔗 상관관계 · 🧭 국면
+// ------------------------------------------------- 상관관계 · 국면
 export interface SeriesRef {
   id: string;
   label: string;

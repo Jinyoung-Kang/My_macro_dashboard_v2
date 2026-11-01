@@ -10,7 +10,7 @@ import { SOURCES } from "@/lib/sources";
 import { endpoints } from "@/lib/endpoints";
 
 /**
- * 🔌 토스증권 — 연결 진단·조회 테스트.
+ * 토스증권 — 연결 진단·조회 테스트.
  *
  * 이 프로젝트에서 토스는 <b>연결 진단 전용</b>입니다. 대시보드 수치는 토스에서
  * 가져오지 않습니다. 키가 없으면 이 영역만 비활성화됩니다.

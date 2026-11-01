@@ -1,5 +1,5 @@
 /**
- * 🔔 알림 표기 — React를 모르는 순수 함수(ADR 0004).
+ * 알림 표기 — React를 모르는 순수 함수(ADR 0004).
  */
 import type { AlertKind } from "./types";
 

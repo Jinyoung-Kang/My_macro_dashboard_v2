@@ -10,7 +10,7 @@ export function generateStaticParams() {
 }
 
 /**
- * 🧪 모의 알고리즘 매매(한국)의 탭 화면(/paper/kr/selection|holdings|decisions|framework|notes|settings, 운영자 전용).
+ * 모의 알고리즘 매매(한국)의 탭 화면(/paper/kr/selection|holdings|decisions|framework|notes|settings, 운영자 전용).
  * 개요는 /paper/kr(../page.tsx). 화면 안에서 탭을 바꾸면 PaperScreen이 주소만 바꿉니다(이 파일을 다시 그리지 않음).
  */
 export default async function PaperKrTabPage({ params }: { params: Promise<{ tab: string }> }) {

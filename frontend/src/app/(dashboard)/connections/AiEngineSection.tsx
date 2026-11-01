@@ -17,7 +17,7 @@ const SAMPLE_PROMPTS = [
   "미결제약정이 늘면서 가격이 하락하는 국면을 한 문장으로 설명해 주세요.",
 ];
 
-/** 🤖 AI 엔진 — 엔진별 키 설정 여부, 호출 응답·지연시간·폴오버 경로. */
+/** AI 엔진 — 엔진별 키 설정 여부, 호출 응답·지연시간·폴오버 경로. */
 export function AiEngineSection() {
   const engines = useApi<{ engines: AiEngine[]; keys: Record<string, boolean>; enabled: boolean }>(
     endpoints.ai.engines,

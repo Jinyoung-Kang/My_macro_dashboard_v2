@@ -7,7 +7,7 @@ import type { SpotFuturesResponse, SpotFuturesRow } from "@/lib/types";
 import { endpoints } from "@/lib/endpoints";
 
 /**
- * 🔀 현물·선물 수급 동조 — 같은 투자자가 코스피 현물과 KOSPI200 선물을 같은 방향으로 샀나.
+ * 현물·선물 수급 동조 — 같은 투자자가 코스피 현물과 KOSPI200 선물을 같은 방향으로 샀나.
  *
  * 현물은 토스증권 공식(원), 선물은 Daum(계약)이라 **단위가 달라 크기는 비교하지 않습니다.**
  * 방향만 봅니다. 토스 API에는 선물·옵션 데이터가 없어서, 선물 쪽은 기존 출처를 그대로 씁니다.

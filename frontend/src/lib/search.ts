@@ -33,7 +33,7 @@ export type SearchEntry = {
   dest: string | null;
   /** 이름 말고도 맞추는 말(티커·옛 메뉴 이름·운용자 소개). */
   keywords: readonly string[];
-  /** 무료 회원에게 잠긴 유료 화면(메뉴만) — 결과에 하위 메뉴·더보기와 같은 🔒을 붙입니다. */
+  /** 무료 회원에게 잠긴 유료 화면(메뉴만) — 결과에 하위 메뉴·더보기와 같은 자물쇠 아이콘을 붙입니다. */
   locked?: boolean;
   /** 결과 행 왼쪽 원(없으면 빈 원). */
   avatar?: SearchAvatar;

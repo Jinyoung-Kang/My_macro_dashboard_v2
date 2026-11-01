@@ -12,7 +12,7 @@ import { endpoints } from "@/lib/endpoints";
 const PATH = endpoints.snapshot.text;
 
 /**
- * 📋 전체 대시보드 원본 데이터 보기 / 복사.
+ * 전체 대시보드 원본 데이터 보기 / 복사.
  *
  * <p>AI를 거치지 않은 <b>수집 원본</b>입니다. AI 리포트가 요약하면서 무엇을
  * 빠뜨렸는지 확인하거나, 다른 도구(챗봇·스프레드시트)에 그대로 붙여 넣을 때

@@ -22,7 +22,7 @@ import { endpoints } from "@/lib/endpoints";
 import { mergeByDate } from "@/lib/chartData";
 
 /**
- * 💱 환율·달러인덱스 비교.
+ * 환율·달러인덱스 비교.
  *
  * <p><b>왜 기본이 "기준일 = 100"인가</b> — 원/달러(약 1,380)·달러/엔(약 150)·
  * 엔/원(약 930)·달러 인덱스(약 100)를 원래 단위로 한 축에 겹치면 축이

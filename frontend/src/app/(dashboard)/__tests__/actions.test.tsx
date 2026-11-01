@@ -83,7 +83,7 @@ afterEach(() => {
   vi.useRealTimers();
 });
 
-describe("🤖 AI 엔진 테스트", () => {
+describe("AI 엔진 테스트", () => {
   it("누르면 선택한 엔진·프롬프트로 부르고, 그동안 '호출 중…'", async () => {
     const reply = deferred<unknown>();
     api.apiPost.mockReturnValue(reply.promise);
@@ -126,7 +126,7 @@ describe("🤖 AI 엔진 테스트", () => {
   });
 });
 
-describe("🔌 토스 연결 테스트", () => {
+describe("토스 연결 테스트", () => {
   it("누른 버튼의 주소로 부르고 받은 JSON을 그대로 보여 준다", async () => {
     api.apiGet.mockResolvedValue({ ok: true, rate: 1385.2 });
     render(<TossSection />);
@@ -148,7 +148,7 @@ describe("🔌 토스 연결 테스트", () => {
   });
 });
 
-describe("🤖 AI 리포트", () => {
+describe("AI 리포트", () => {
   it("배포가 엔진을 좁혔으면(AI_ENGINES) 못 쓰는 엔진은 이유를 붙여 막고, 쓸 수 있는 첫 엔진으로 부른다", async () => {
     api.apiGetShared.mockImplementation((path: string) =>
       path === "/api/ai/engines"
@@ -226,7 +226,7 @@ describe("🤖 AI 리포트", () => {
   });
 });
 
-describe("🗄️ 저장소 상태 — 태스크 다시 실행", () => {
+describe("저장소 상태 — 태스크 다시 실행", () => {
   it("시작 → 끝날 때까지 확인 → 결과 문구 → 화면 전체 새로고침", async () => {
     api.apiPost.mockResolvedValue({ baselineStartedAt: "2026-09-30T01:00:00Z" });
     api.apiGet.mockResolvedValue({ history: [{ status: "ok" }] });
@@ -304,7 +304,7 @@ describe("🗄️ 저장소 상태 — 태스크 다시 실행", () => {
   });
 });
 
-describe("🔍 교차 검증", () => {
+describe("교차 검증", () => {
   it("결과가 없으면(장 시간 등) 서버 안내를, 실패하면 오류 문구를 보여 준다", async () => {
     api.apiPost.mockResolvedValueOnce({ available: false, message: "확인할 수 있는 항목이 없습니다" });
     api.apiPost.mockRejectedValueOnce(new Error("검증 요청 실패 (HTTP 500)"));

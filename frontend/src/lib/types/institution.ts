@@ -62,7 +62,7 @@ export interface ConsensusResponse {
   rows: ConsensusRow[];
 }
 
-/** 🧬 구루 스타일 프로파일. */
+/** 구루 스타일 프로파일. */
 export interface GuruProfilesResponse {
   available: boolean;
   message?: string;
@@ -87,7 +87,7 @@ export interface GuruProfile {
   quarterCount: number;
 }
 
-/** 🤝 기관 간 유사도. */
+/** 기관 간 유사도. */
 export interface GuruSimilarityResponse {
   available: boolean;
   message?: string;
@@ -100,7 +100,7 @@ export interface GuruSimilarityResponse {
   topPairs: { left: string; right: string; overlap: number; cosine: number }[];
 }
 
-/** 🔍 이 종목을 누가 들고 있나. */
+/** 이 종목을 누가 들고 있나. */
 export interface GuruHoldersResponse {
   available: boolean;
   message?: string;
@@ -120,7 +120,7 @@ export interface GuruHoldersResponse {
   truncated?: boolean;
 }
 
-/** 🛡️ 구루 포트폴리오 위험. */
+/** 구루 포트폴리오 위험. */
 export interface GuruRiskResponse {
   available: boolean;
   message?: string;
@@ -171,7 +171,7 @@ export interface GuruRiskContribution {
   share: number | null;
 }
 
-// ------------------------------------------------ 🆕 13F 공통 신규 매수
+// ------------------------------------------------ 13F 공통 신규 매수
 export interface NewBuysResponse {
   available: boolean;
   participants: string[];

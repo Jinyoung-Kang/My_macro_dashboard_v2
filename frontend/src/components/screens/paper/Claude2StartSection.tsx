@@ -11,13 +11,13 @@ import { claude2CheckpointLine, claude2StartResultView, claude2StartView, type D
 import type { PaperInitialDecisionResult, PaperOverviewResponse, PaperStatusResponse } from "@/lib/types";
 
 /**
- * 🧪 개요의 미국 Claude 계좌2 출발(계좌2 명세 §4-1·§5-4, ADR 0022 결정 2) — 계좌2가 시작 전이면 카드, 출발한 뒤에는 결과만 남깁니다.
+ * 개요의 미국 Claude 계좌2 출발(계좌2 명세 §4-1·§5-4, ADR 0022 결정 2) — 계좌2가 시작 전이면 카드, 출발한 뒤에는 결과만 남깁니다.
  *
  * 출발은 앞으로 체결입니다: 설정 claude2.enabled를 켜면(설정 탭 — 사용자가 시작, 명세 L2) 다음 미국 결정 창에 정기 결정 작업이 출발 결정을 내고, 이
  * 카드의 "계좌2 시작"은 같은 출발을 그 창 안에서 지금 한 번 부릅니다(POST run/initial-decision `{book:"claude2"}` — 창 밖·꺼짐은 서버 400, 기록
  * 없음). 설정이 꺼져 있거나 상태를 읽지 못했거나 관측치 사슬 준비 중이면(상태 칸 chainReady false — 켠 직후·새 관측치 직후 몇 분, 서버가 출발을 거절)
  * 단추를 닫고 그 까닭을 적습니다. 상태 응답을 아직 기다리는 중이면(첫 요청·탭을 바꿨다 돌아옴) 실패와 갈라 '읽는 중'(경고색 아님)이고 단추는 닫습니다
- * (QA-149). 앞서 받은 상태를 다시 읽지 못하면 마지막으로 읽은 값을 그대로 두고 카드 머리에 '⚠️ 새로 읽지 못함'을 붙입니다(QA-151 — 단추도 그 값
+ * (QA-149). 앞서 받은 상태를 다시 읽지 못하면 마지막으로 읽은 값을 그대로 두고 카드 머리에 '새로 읽지 못함'을 붙입니다(QA-151 — 단추도 그 값
  * 기준, 출발은 서버가 다시 판정). Claude를 한 번 부르므로 확인 단계를 거칩니다. 미리보기는 없습니다.
  * 창 시각·이번 주기 호출은 상태 응답(claude2 묶음)의 글자 그대로이고, 다음 결정 시각이 이미 지났으면(그 거래일 행이 아직 없음 — 창은 컷오프까지 열림)
  * 지난 시각 대신 창이 열렸다고 적습니다(lib/paper claude2WindowLines). 그 아래 '오늘 장중 확인' 한 줄(단계 2 — 상태 응답 claude2.checkpoint, 칸이 없는
@@ -109,7 +109,7 @@ export function Claude2StartSection({
   );
 }
 
-/** 🧪 '오늘 장중 확인' 한 줄(lib/paper claude2CheckpointLine — 단계 2). 줄이 없으면(칸을 보내지 않는 백엔드) 그리지 않습니다. */
+/** '오늘 장중 확인' 한 줄(lib/paper claude2CheckpointLine — 단계 2). 줄이 없으면(칸을 보내지 않는 백엔드) 그리지 않습니다. */
 export function Claude2CheckpointLine({ line, className = "mt-2" }: { line: string | null; className?: string }) {
   if (!line) return null;
   return <p aria-label="오늘 장중 확인" className={`text-xs leading-relaxed text-muted ${className}`}>{line}</p>;

@@ -23,12 +23,12 @@ import { RegimeLogSection } from "./RegimeLogSection";
 import { TrackRecordSection } from "./TrackRecordSection";
 
 /**
- * 🧭 시장 국면.
+ * 시장 국면.
  *
  * <p>성장·신용 축(금리차·NFCI·하이일드)과 유동성 축(순유동성 4주 방향)으로
  * 지금이 4국면 중 어디인지 판정합니다.
  *
- * <p>⚠️ 입력 지표가 하나라도 없으면 <b>판정하지 않습니다.</b> 빠진 값을 0으로
+ * <p>주의: 입력 지표가 하나라도 없으면 <b>판정하지 않습니다.</b> 빠진 값을 0으로
  * 메우면 "중립"이라는 틀린 판정이 됩니다 — 이 프로젝트가 지키는 규칙입니다.
  */
 const QUADRANTS = [

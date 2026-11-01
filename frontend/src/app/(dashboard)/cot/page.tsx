@@ -21,9 +21,9 @@ import { SOURCES } from "@/lib/sources";
 import { endpoints } from "@/lib/endpoints";
 
 /**
- * 🏛️ 글로벌 투기세력 (CFTC COT).
+ * 글로벌 투기세력 (CFTC COT).
  *
- * ⚠️ CFTC는 화요일 기준 포지션을 금요일에 공시합니다. 항상 며칠 지난
+ * 주의: CFTC는 화요일 기준 포지션을 금요일에 공시합니다. 항상 며칠 지난
  * 데이터이므로 지연 일수를 함께 표시합니다.
  */
 export default function CotPage() {
@@ -245,13 +245,13 @@ export default function CotPage() {
 }
 
 /**
- * 📉 극단 포지션 이후 무슨 일이 있었나.
+ * 극단 포지션 이후 무슨 일이 있었나.
  *
  * <p>"3년 백분위 96%"는 지금이 역사적 극단이라고 알려 주지만, <b>그래서 어땠는지</b>는
  * 말해 주지 않았습니다. 과거 같은 극단 이후의 4주·13주 수익률을, <b>아무 때나
  * 들어갔을 때</b>와 나란히 놓습니다. 비교 대상이 없으면 좋은 숫자인지 알 수 없습니다.
  *
- * <p>⚠️ COT에는 가격이 없어 ETF 종가를 대용으로 씁니다. 화면이 그 사실을 감추면
+ * <p>주의: COT에는 가격이 없어 ETF 종가를 대용으로 씁니다. 화면이 그 사실을 감추면
  * 선물 수익률로 오해합니다.
  */
 function ExtremesPanel({ asset }: { asset: string }) {

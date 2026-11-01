@@ -33,9 +33,9 @@ function check(label: string, actual: unknown, expected: unknown): void {
   const a = JSON.stringify(actual);
   const b = JSON.stringify(expected);
   if (a === b) {
-    console.log(`  ✅ ${label}`);
+    console.log(`  ✓ ${label}`);
   } else {
-    console.error(`  ❌ ${label}\n     받음: ${a}\n     기대: ${b}`);
+    console.error(`  ✗ ${label}\n     받음: ${a}\n     기대: ${b}`);
     failed++;
   }
 }

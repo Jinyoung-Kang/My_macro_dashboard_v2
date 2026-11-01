@@ -1,4 +1,4 @@
-/** 🔔 알림 규칙 — GET /api/alerts/rules. */
+/** 알림 규칙 — GET /api/alerts/rules. */
 export type AlertKind = "REGIME_CHANGE" | "FOREIGN_STREAK" | "INSTITUTION_NEW";
 
 export interface AlertRule {

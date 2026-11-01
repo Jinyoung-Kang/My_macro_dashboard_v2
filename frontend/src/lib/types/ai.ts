@@ -38,7 +38,7 @@ export interface AiEngines {
   autoBudgetSeconds?: number;
 }
 
-/** 📋 전체 대시보드 원본 데이터 (AI 분석 없음). */
+/** 전체 대시보드 원본 데이터 (AI 분석 없음). */
 export interface SnapshotText {
   text: string;
   generatedAtKst: string;

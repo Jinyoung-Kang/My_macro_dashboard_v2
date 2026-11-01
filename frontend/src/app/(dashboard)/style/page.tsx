@@ -33,7 +33,7 @@ import { endpoints } from "@/lib/endpoints";
 import { topPairs } from "@/lib/transforms";
 
 /**
- * 🧬 기관 13F 스타일·위험 (옛 이름: 구루 포트폴리오 분석, 주소 /guru → /style).
+ * 기관 13F 스타일·위험 (옛 이름: 구루 포트폴리오 분석, 주소 /guru → /style).
  *
  * <p>13F 화면은 "누가 무엇을 들고 있나"를 보여 줍니다. 이 화면은 한 발 더
  * 들어가 <b>어떤 식으로</b> 들고 있는지를 봅니다 — 몇 종목에 쏠려 있는지,

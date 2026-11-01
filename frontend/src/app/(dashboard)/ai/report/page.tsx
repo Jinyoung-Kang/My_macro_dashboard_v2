@@ -17,7 +17,7 @@ import { endpoints } from "@/lib/endpoints";
 import { ReportView } from "./ReportView";
 
 /**
- * 🤖 AI 종합 데이터 분석 &amp; 결론 리포트.
+ * AI 종합 데이터 분석 &amp; 결론 리포트.
  *
  * 프롬프트에는 대시보드가 수집한 <b>원본 텍스트</b>가 그대로 들어갑니다.
  * 추정치·대용 지표에는 경고 문구가 함께 들어가므로, AI가 실제 지표의 임계치를

@@ -28,7 +28,7 @@ import { SOURCES } from "@/lib/sources";
 import { endpoints } from "@/lib/endpoints";
 
 /**
- * 🎯 기관 13F Money 교집합.
+ * 기관 13F Money 교집합.
  *
  * 여러 기관이 같은 분기에 공통 보유한 종목과, 동시 순매수/순매도가 몰린
  * 종목을 집계합니다. 기관마다 공시 분기가 다를 수 있으므로 기준 분기를
@@ -231,7 +231,7 @@ function SecurityName({ row }: { row: { key: string; name: string; cusip?: strin
 }
 
 /**
- * 🆕 이번 분기에 여러 기관이 <b>함께 새로 담은</b> 종목.
+ * 이번 분기에 여러 기관이 <b>함께 새로 담은</b> 종목.
  *
  * <p>교집합은 "지금 누가 무엇을 들고 있는가"를 보여 줍니다. 그런데 더 신호에
  * 가까운 것은 <b>이번 분기에 새로 들어온</b> 종목입니다 — 한 곳이 새로 사면

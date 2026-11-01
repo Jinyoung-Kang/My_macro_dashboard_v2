@@ -13,7 +13,7 @@ import type { AdminUser, AuditEntry } from "@/lib/types";
 type Result = { ok: boolean; message: string };
 
 /**
- * 👥 사용자 관리(운영자만 — 백엔드 접근 정책이 막음). 결제 연동 전까지 등급은 여기서 정합니다(명세 D4).
+ * 사용자 관리(운영자만 — 백엔드 접근 정책이 막음). 결제 연동 전까지 등급은 여기서 정합니다(명세 D4).
  * 바꾼 역할·등급은 그 사용자의 다음 요청부터 반영됩니다.
  */
 export default function AdminUsersPage() {

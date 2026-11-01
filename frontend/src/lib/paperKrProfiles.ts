@@ -1,5 +1,5 @@
 /**
- * 🧪 모의매매(한국) 화면의 고정 표 — 네 계좌의 정의(계좌 상세 패널)와 한국 탭 이름. React를 모르는 순수 모듈(ADR 0004).
+ * 모의매매(한국) 화면의 고정 표 — 네 계좌의 정의(계좌 상세 패널)와 한국 탭 이름. React를 모르는 순수 모듈(ADR 0004).
  *
  * 문장은 백엔드 한국 규칙(KrRuleBookService·KrStartPipeline·KrPaperMarket·KrFills·KrConfirmations — 2단계 명세 §4-1·§4-6~§4-9)을 옮긴
  * 것이고, **설정에서 오는 숫자는 문장에 적지 않습니다**(미국 ACCOUNT_PROFILES와 같은 규칙) — 숫자는 `settings`의 `kr.*` 키로 설정 응답에서

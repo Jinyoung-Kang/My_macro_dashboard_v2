@@ -18,7 +18,7 @@ import { KrDecisionExtrasParts, KrEventsPart } from "./KrRuleDecisionBody";
  * 한국 Claude 계좌(kr_claude)는 `kr`를 넘깁니다 — 기한 지남(건너뜀)·출발(설정 출발일·미룸·출발 호출 수)·자료 게이트 표를 맨 위에, 패킷의 사건
  * 줄(11b_events)을 관찰 목록 뒤에 더하고, 검증 설명에 한국 사유를 적습니다.
  *
- * 🧪 미국 계좌2 장중 확인 결정(kind CHECKPOINT — 단계 2)은 맨 위에 '장중 확인'(요청·KEEP/REPLACE·적용·대신한 대기 주문·예상 상태·재시도 없음)을 두고
+ * 미국 계좌2 장중 확인 결정(kind CHECKPOINT — 단계 2)은 맨 위에 '장중 확인'(요청·KEEP/REPLACE·적용·대신한 대기 주문·예상 상태·재시도 없음)을 두고
  * 판단 칸의 자세·목표 노출·확신도는 그리지 않습니다(확인 응답에 없는 칸). 아침 결정이 장중 확인을 요청했으면 판단 칸에 그 요청 한 줄.
  */
 export function ClaudeDecisionBody({

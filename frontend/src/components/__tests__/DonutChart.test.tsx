@@ -1,5 +1,5 @@
 /**
- * 🧪 구성 도넛(DonutChart) — 실제 Recharts로 그려 봅니다.
+ * 구성 도넛(DonutChart) — 실제 Recharts로 그려 봅니다.
  *
  *  - Tab으로 닿는 SVG(role="application", tabindex=0)에 이름이 붙는다(바깥 figure가 아니라) — A11Y-2
  *  - 직접 라벨은 차트 너비가 넉넉할 때만 — 좁으면 SVG 끝에서 잘리므로 끄고 범례·툴팁·표에 맡긴다 — DV-2

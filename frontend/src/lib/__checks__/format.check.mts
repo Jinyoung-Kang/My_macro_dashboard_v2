@@ -13,7 +13,7 @@ let failed = 0;
 function check(label: string, actual: unknown, expected: unknown): void {
   const ok = JSON.stringify(actual) === JSON.stringify(expected);
   if (!ok) failed += 1;
-  console.log(`  ${ok ? "✅" : "❌"} ${label}${ok ? "" : ` — 기대 ${JSON.stringify(expected)}, 실제 ${JSON.stringify(actual)}`}`);
+  console.log(`  ${ok ? "✓" : "✗"} ${label}${ok ? "" : ` — 기대 ${JSON.stringify(expected)}, 실제 ${JSON.stringify(actual)}`}`);
 }
 
 console.log("시각 표기");

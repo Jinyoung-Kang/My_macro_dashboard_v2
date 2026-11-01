@@ -44,7 +44,7 @@ export const endpoints = {
     deleteAccount: "/api/auth/delete",
   },
 
-  // 🔔 알림 — 규칙·화면 알림함
+  // 알림 — 규칙·화면 알림함
   alerts: {
     rules: "/api/alerts/rules",
     rule: (id: number) => `/api/alerts/rules/${segment(String(id))}`,
@@ -53,14 +53,14 @@ export const endpoints = {
     read: "/api/alerts/inbox/read",
   },
 
-  // 👥 사용자 관리(운영자)
+  // 사용자 관리(운영자)
   admin: {
     users: "/api/admin/users",
     user: (id: number) => `/api/admin/users/${segment(String(id))}`,
     audit: (limit: number) => withQuery("/api/admin/audit", { limit }),
   },
 
-  // 📊 매크로 · 순유동성 · 로테이션
+  // 매크로 · 순유동성 · 로테이션
   macro: {
     overview: (live: boolean) => withQuery("/api/macro/overview", { live: live ? true : undefined }),
     risk: "/api/macro/risk",
@@ -75,7 +75,7 @@ export const endpoints = {
     sectorRotation: (period: string) => withQuery("/api/sector/rotation", { period }),
   },
 
-  // 📑 13F · 🧬 기관 스타일
+  // 13F · 기관 스타일
   institution: {
     institutions: "/api/sec13f/institutions",
     portfolio: (cik: string, quarters: string | number, topN: string | number) =>
@@ -93,7 +93,7 @@ export const endpoints = {
       withQuery("/api/guru/risk", { cik, benchmark, years }),
   },
 
-  // 🩺 스코어카드 · 🔗 상관 · 🧭 국면
+  // 스코어카드 · 상관 · 국면
   insight: {
     stockUniverse: "/api/stock/universe",
     scorecard: (symbol: string, benchmark: string, years: string | number) =>
@@ -106,7 +106,7 @@ export const endpoints = {
     regimeTrackRecord: (asset: string) => withQuery("/api/analytics/regime/track-record", { asset }),
   },
 
-  // 🏛️ COT · 🇰🇷 파생 · 📡 레이더 · 🏦 투자자별 매매
+  // COT · 파생 · 레이더 · 투자자별 매매
   positioning: {
     cotAssets: "/api/cot/assets",
     cotOverview: "/api/cot/overview",
@@ -145,7 +145,7 @@ export const endpoints = {
     apiStatus: (run: number) => withQuery("/api/status/public-apis", { run }),
   },
 
-  // 🗄️ 저장소 상태 · 교차 검증
+  // 저장소 상태 · 교차 검증
   status: {
     overview: "/api/status",
     issues: "/api/status/issues",
@@ -155,12 +155,12 @@ export const endpoints = {
     verification: "/api/verification",
   },
 
-  // 📋 전체 원본 데이터
+  // 전체 원본 데이터
   snapshot: {
     text: "/api/snapshot/text",
   },
 
-  // 🤖 AI
+  // AI
   ai: {
     engines: "/api/ai/engines",
     reportTypes: "/api/ai/report-types",
@@ -168,7 +168,7 @@ export const endpoints = {
     test: (engineId: string, prompt: string) => withQuery("/api/ai/test", { engineId, prompt }),
   },
 
-  // 🧪 모의 알고리즘 매매(운영자 전용). code는 책 코드(rules · claude · bench_spy · bench_mix · kr_rules · kr_claude · kr_bench_k200 · kr_bench_mix).
+  // 모의 알고리즘 매매(운영자 전용). code는 책 코드(rules · claude · bench_spy · bench_mix · kr_rules · kr_claude · kr_bench_k200 · kr_bench_mix).
   paper: {
     /**
      * 시장 단위 경로(2단계 명세 §4-16, docs/API.md '시장 단위 조회·실행') — 개요·상태·초기화·리스크 점검·수동 결정·시작·메모 목록·복기.
@@ -181,7 +181,7 @@ export const endpoints = {
       const scoped = (path: string) => (korea ? withQuery(path, { market: "KR" }) : path);
       return {
         overview: scoped("/api/paper/overview"),
-        /** 🧪 장중 평가(표시 전용 추정) — 정규장이면 최신 1분봉, 아니면 장부의 마지막 관측치. */
+        /** 장중 평가(표시 전용 추정) — 정규장이면 최신 1분봉, 아니면 장부의 마지막 관측치. */
         live: scoped("/api/paper/live"),
         status: scoped("/api/paper/status"),
         init: scoped("/api/paper/init"),
@@ -207,7 +207,7 @@ export const endpoints = {
     orders: (code: string, limit: number) => withQuery(`/api/paper/books/${segment(code)}/orders`, { limit }),
     fills: (code: string, limit: number) => withQuery(`/api/paper/books/${segment(code)}/fills`, { limit }),
     nav: (code: string) => `/api/paper/books/${segment(code)}/nav`,
-    /** 🧪 실행 감사(미국 Claude 계좌만 — 주문별 메뉴 반사실·1분봉 지연과 시점별 요약, 최근 순 1–500). 화면은 단계 1부터입니다. */
+    /** 실행 감사(미국 Claude 계좌만 — 주문별 메뉴 반사실·1분봉 지연과 시점별 요약, 최근 순 1–500). 화면은 단계 1부터입니다. */
     execution: (code: string, limit: number) => withQuery(`/api/paper/books/${segment(code)}/execution`, { limit }),
     bookStatus: (code: string) => `/api/paper/books/${segment(code)}/status`,
     bookReset: (code: string) => `/api/paper/books/${segment(code)}/reset`,
@@ -255,7 +255,7 @@ export const endpoints = {
     runReview: "/api/paper/reviews/run",
   },
 
-  // 🔌 토스증권 연결 테스트 (경로는 /api/ai/toss 이지만 AI와 관계없음)
+  // 토스증권 연결 테스트 (경로는 /api/ai/toss 이지만 AI와 관계없음)
   toss: {
     diagnostics: (run: number) => withQuery("/api/ai/toss/diagnostics", { run }),
     exchangeRate: (base: string, quote: string) => withQuery("/api/ai/toss/exchange-rate", { base, quote }),

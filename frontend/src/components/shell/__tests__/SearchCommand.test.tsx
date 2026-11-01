@@ -1,6 +1,6 @@
 /**
  * 통합 검색(⌘K) — 여닫기(단추·맥 ⌘K/그 밖 Ctrl+K·Esc), 열 때만 자료를 읽기, 범주별 결과와 "N개 더", 키보드(↑↓·Enter)와 누르기로 이동,
- * 운영자 화면은 운영자에게만, 유료 화면은 무료 회원에게 🔒, 비어 있는 범주는 이유를 적기.
+ * 운영자 화면은 운영자에게만, 유료 화면은 무료 회원에게 자물쇠 아이콘, 비어 있는 범주는 이유를 적기.
  */
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";

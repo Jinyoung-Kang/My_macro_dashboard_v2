@@ -201,7 +201,7 @@ export interface SectorResponse {
   assetClasses: SectorRow[];
 }
 
-/** 💱 환율·달러인덱스 비교 차트. */
+/** 환율·달러인덱스 비교 차트. */
 export interface FxSeriesResponse {
   available: boolean;
   message?: string;
@@ -233,7 +233,7 @@ export interface FxSeries {
   points: { date: string; value: number | null }[];
 }
 
-/** 💱 원/달러 (달러 금액을 원화로 병기할 때). */
+/** 원/달러 (달러 금액을 원화로 병기할 때). */
 export interface UsdKrwResponse {
   available: boolean;
   /** 값이 없으면 available=false이고 rate는 없습니다(기본 환율을 지어내지 않습니다). */

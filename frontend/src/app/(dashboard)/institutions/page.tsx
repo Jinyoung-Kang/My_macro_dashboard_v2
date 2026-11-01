@@ -51,9 +51,9 @@ const SERIES_COLORS = [
 const LINE_LABEL_WIDTH = 19;
 
 /**
- * 📑 기관 13F 포트폴리오 분석.
+ * 기관 13F 포트폴리오 분석.
  *
- * ⚠️ 13F는 분기 공시이며 **45일 지연**입니다. 지금의 포지션이 아니라 지난
+ * 주의: 13F는 분기 공시이며 **45일 지연**입니다. 지금의 포지션이 아니라 지난
  * 분기말 스냅샷이라는 점을 화면이 계속 상기시켜야 합니다.
  */
 export default function InstitutionsPage() {

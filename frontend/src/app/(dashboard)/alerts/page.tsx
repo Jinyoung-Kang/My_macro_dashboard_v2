@@ -16,7 +16,7 @@ import type { AlertKind, AlertRule, AlertRulesResponse, InboxItem, InboxResponse
 type Result = { ok: boolean; message: string };
 
 /**
- * 🔔 알림 — 화면 알림함과 알림 규칙(명세 C, D2: 화면 알림함만).
+ * 알림 — 화면 알림함과 알림 규칙(명세 C, D2: 화면 알림함만).
  *
  * 알림은 대시보드를 열어야 보입니다(메일·메신저로 보내지 않음). 상단바 알림 벨과 탭 제목에 읽지 않은 수가 뜹니다.
  * 규칙을 만든 날 이후의 사건만 들어오고, 사건은 수집이 확정된 데이터로만 만듭니다(잠정치 제외).

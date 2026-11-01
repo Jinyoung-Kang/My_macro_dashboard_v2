@@ -10,7 +10,7 @@ import type { SessionUser } from "@/lib/types";
 /**
  * 상단바 아래 하위 메뉴 줄 — 지금 탭에 화면이 둘 이상일 때만(lib/nav subNav). 좁으면 가로로 스크롤됩니다(줄을 바꾸지 않음).
  * 준비 중인 화면(lib/nav upcoming — 지금은 없음, 예전 모의매매 한국)은 링크 없이 이름만 흐리게 보이고, 언제 여는지("2단계")를 작은 표시로 붙입니다 — title이 아니라
- * 보이는 글이라 키보드·터치 사용자도 봅니다. 유료 화면은 무료 회원에게 🔒(눌러도 되며 화면이 안내).
+ * 보이는 글이라 키보드·터치 사용자도 봅니다. 유료 화면은 무료 회원에게 자물쇠 아이콘(눌러도 되며 화면이 안내).
  * 고른 링크의 aria-current는 그 주소 그대로면 "page", 그 화면의 아래 주소(/paper/us/holdings)면 "true"입니다(lib/nav currentAria).
  *
  * 모양은 밑줄 탭(`underlineTabClasses` md — 15px·높이 48px). 모의매매 화면 안의 7탭은 한 단계 작은 sm(14px·44px)이라 두 줄이

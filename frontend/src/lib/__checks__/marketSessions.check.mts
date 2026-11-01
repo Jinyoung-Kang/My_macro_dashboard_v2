@@ -13,9 +13,9 @@ let failed = 0;
 
 function check(label: string, actual: unknown, expected: unknown): void {
   if (actual === expected) {
-    console.log(`  ✅ ${label}`);
+    console.log(`  ✓ ${label}`);
   } else {
-    console.error(`  ❌ ${label}\n     받음: ${String(actual)}\n     기대: ${String(expected)}`);
+    console.error(`  ✗ ${label}\n     받음: ${String(actual)}\n     기대: ${String(expected)}`);
     failed++;
   }
 }

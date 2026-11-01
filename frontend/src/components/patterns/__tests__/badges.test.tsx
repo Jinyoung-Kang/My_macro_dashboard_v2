@@ -1,7 +1,7 @@
 /**
  * 상태 표시 — ProvenanceBadge(캡션 줄)·EstimateBadge·StaleBadge(알약)(설계서 §5 "플래그가 있으면 반드시 보인다").
  * 네 상태: 값 있음(출처·지연·시각), 값 없음(모르는 부분 생략·"출처 —"·플래그 없으면 배지 없음),
- * 추정·대리(라벨 글자), 오래됨(⚠️ 이전 값 + 사유). 색만으로 뜻을 전하지 않는다(라벨 글자가 늘 있음).
+ * 추정·대리(라벨 글자), 오래됨(경고 아이콘과 '이전 값' + 사유). 색만으로 뜻을 전하지 않는다(라벨 글자가 늘 있음).
  */
 import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";

@@ -359,7 +359,7 @@ export function Select({
   options: { value: string; label: string; disabled?: boolean }[];
 }) {
   /*
-    ⚠️ 폭을 반드시 묶어 둡니다.
+    주의: 폭을 반드시 묶어 둡니다.
     select는 가장 긴 option에 맞춰 스스로 넓어집니다. AI 엔진 목록처럼 라벨이
     긴 선택지가 들어오자 폭이 533px이 되어, 390px 화면에서 페이지 전체가
     가로로 스크롤됐습니다. 좁은 화면에서는 한 줄을 다 쓰고, 넓은 화면에서는
