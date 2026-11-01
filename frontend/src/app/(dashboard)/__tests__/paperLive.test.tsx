@@ -5,6 +5,7 @@
  *  - 간격 선택(끄기~30분·1시간·3시간)은 이 브라우저에 기억되고(기본 30분), 장 밖에서는 다시 읽지 않는다
  *  - 새 장중 값(판이 바뀐 응답)을 받으면 onUpdated를 한 번 — 첫 응답·같은 판이면 부르지 않고, 부른다고 /live를 다시 읽지 않는다
  *  - 숨긴 탭에서는 '한 번 더'·'다음 개장' 깨우기가 읽지 않고, 다시 보일 때 한 번(QA-154). 숨긴 탭으로 열리면 처음 보일 때 읽는다(QA-156)
+ *  - 미룬 '한 번 더'를 useApi의 탭 복귀 읽기에 넘기면 그 복귀 읽기는 보통 읽기 — 응답이 새 수집을 요청했으면 20초 뒤 한 번 더(QA-157)
  *  - 시계는 고정한다(QA-155) — 다음 개장 깨우기가 지금 시각으로 기다릴 시간을 정하므로, 진짜 시계면 돌린 때에 따라 결과가 달라진다
  */
 import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
@@ -278,8 +279,45 @@ describe("QA-154 숨긴 탭에서는 깨우지 않는다", () => {
     await setVisibility("visible");
     await settle();
     expect(liveCalls()).toBe(2);
-    await settle(60_000);
+    // 그 뒤(복귀 읽기의 응답이 새 수집을 요청했을 때의 한 번 더)는 아래 QA-157이 봅니다.
+  });
+});
+
+describe("QA-157 탭 복귀 읽기의 응답도 한 번 더 읽기를 예약한다", () => {
+  let visibility: DocumentVisibilityState;
+  beforeEach(() => {
+    visibility = "visible";
+    vi.spyOn(document, "visibilityState", "get").mockImplementation(() => visibility);
+  });
+
+  async function setVisibility(next: DocumentVisibilityState) {
+    visibility = next;
+    await act(async () => { document.dispatchEvent(new Event("visibilitychange")); });
+  }
+
+  // QA-154 수정 뒤의 회귀: 숨긴 사이 '20초 뒤 한 번 더'가 미뤄지고 정규장 간격이 있으면 탭 복귀 때 useApi가 다시 읽는데(미룬 깨우기는 그 읽기에
+  // 넘김), 카드가 타이머를 걸 때 세운 '한 번 더 읽는 중' 표시가 남아 복귀 읽기의 응답을 '한 번 더 읽기의 응답'으로 소모했습니다 — 그 응답이 새
+  // 수집을 요청했어도 카드는 다음 간격(기본 30분, 1·3시간이면 그만큼)까지 읽지 않아 종목 표의 장중가가 개요의 지금 값보다 옛 시각으로 남았습니다
+  // (재현 커밋에서는 it.fails). 이제 '한 번 더 읽는 중'은 한 번 더 읽기가 실제로 나갈 때만 섭니다.
+  it.fails("정규장 — 숨긴 사이 미룬 '한 번 더'를 넘긴 복귀 읽기가 새 수집을 요청했으면 20초 뒤 한 번 더, 그 뒤 되풀이 없음", async () => {
+    api.apiGetShared.mockImplementation(() =>
+      Promise.resolve(live({ quotes: { source: null, collectedAtKst: null, refreshRequested: true, missing: [], error: null } })));
+    render(<LiveValuationCard />);
+    await settle();
+    expect(liveCalls()).toBe(1);
+
+    await setVisibility("hidden");
+    await settle(20_000);
+    expect(liveCalls()).toBe(1);
+
+    await setVisibility("visible");
+    await settle();
     expect(liveCalls()).toBe(2);
+    await settle(20_000);
+    expect(liveCalls()).toBe(3);
+    // 한 번 더 읽은 응답도 새 수집을 요청했지만 또 예약하지 않습니다.
+    await settle(60_000);
+    expect(liveCalls()).toBe(3);
   });
 });
 
