@@ -47,12 +47,12 @@ class KrPaperMarketTest {
         assertThat(KR.quotesTask()).isEqualTo("kr_paper_quotes");
         assertThat(KR.historyDataset()).isEqualTo("kr_close_adj").isEqualTo(Datasets.TS_KR_CLOSE_ADJ);
         assertThat(KR.books()).extracting(PaperBooks.Definition::code)
-                .containsExactly("kr_rules", "kr_claude", "kr_bench_k200", "kr_bench_mix");
+                .containsExactly("kr_rules", "kr_claude", "kr_claude2", "kr_bench_k200", "kr_bench_mix");
         assertThat(KR.books()).extracting(PaperBooks.Definition::kind)
-                .containsExactly(PaperBooks.KIND_RULES, PaperBooks.KIND_CLAUDE, PaperBooks.KIND_BENCHMARK,
+                .containsExactly(PaperBooks.KIND_RULES, PaperBooks.KIND_CLAUDE, PaperBooks.KIND_CLAUDE, PaperBooks.KIND_BENCHMARK,
                         PaperBooks.KIND_BENCHMARK);
-        assertThat(KR.books().get(2).weights()).containsExactly(Map.entry("069500", 100.0));
-        assertThat(KR.books().get(3).weights()).containsExactly(Map.entry("069500", 60.0), Map.entry("153130", 40.0));
+        assertThat(KR.books().get(3).weights()).containsExactly(Map.entry("069500", 100.0));
+        assertThat(KR.books().get(4).weights()).containsExactly(Map.entry("069500", 60.0), Map.entry("153130", 40.0));
         assertThat(KR.rulesBook()).isEqualTo("kr_rules");
         assertThat(KR.claudeBook()).isEqualTo("kr_claude");
         assertThat(KR.benchmarkBook()).isEqualTo("kr_bench_k200");

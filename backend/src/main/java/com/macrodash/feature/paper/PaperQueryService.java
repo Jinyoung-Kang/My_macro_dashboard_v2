@@ -1510,7 +1510,8 @@ public class PaperQueryService {
 
     /** 그 시장 책 정의가 모두 있나. */
     private static boolean initialized(PaperMarket market, List<Book> books) {
-        return market.books().stream().allMatch(d -> books.stream().anyMatch(b -> b.code().equals(d.code())));
+        return market.books().stream().filter(d -> !PaperBooks.createdSeparately(d.code()))
+                .allMatch(d -> books.stream().anyMatch(b -> b.code().equals(d.code())));
     }
 
     /** 그 책의 시장 묶음({@code paper_books.market}). 이 서비스가 모르는 시장이면 IllegalStateException(코드·자료 오류). */

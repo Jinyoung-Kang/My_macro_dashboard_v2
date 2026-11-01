@@ -28,7 +28,8 @@ class ClaudeBookProfileTest {
     void marketDefaultProfilesCarryTheMarketValues() {
         assertThat(ClaudeBookService.marketContexts(mock(PacketBuilder.class), mock(KrPacketBuilder.class)))
                 .extracting(ClaudeDecisionPipeline.MarketContext::profile)
-                .containsExactly(ClaudeBookProfile.US_CLAUDE, ClaudeBookProfile.US_CLAUDE2, ClaudeBookProfile.KR_CLAUDE);
+                .containsExactly(ClaudeBookProfile.US_CLAUDE, ClaudeBookProfile.US_CLAUDE2, ClaudeBookProfile.KR_CLAUDE,
+                        ClaudeBookProfile.KR_CLAUDE2);
 
         ClaudeBookProfile us = ClaudeBookProfile.US_CLAUDE;
         assertThat(us.market()).isSameAs(UsPaperMarket.INSTANCE);
@@ -109,15 +110,45 @@ class ClaudeBookProfileTest {
     }
 
     @Test
-    @DisplayName("계좌2 투자 성향(사용자 결정 2026-11-01, 설정 claude2.riskProfile) — 기본 적극투자형 절이 출력 절 바로 앞(c2-1·c2-2 모두), 성향을 바꾸면 그 절만 다르고, 모르는 값은 기본 성향, 계좌1·한국 렌더링에는 없음")
+    @DisplayName("한국 Claude 계좌2(사용자 결정 2026-11-02) — 계좌1과 같은 프로필(코드만 kr_claude2), 렌더링은 계좌1 + 출력 절 앞의 투자 성향 절(현금성 153130, "
+            + "기본 공격투자형 — 한국 묶음 kr.claude2.riskProfile), 계좌1 렌더링에는 없음")
+    void krClaude2Profile() {
+        ClaudeBookProfile kr1 = ClaudeBookProfile.KR_CLAUDE;
+        ClaudeBookProfile kr2 = ClaudeBookProfile.KR_CLAUDE2;
+        assertThat(kr2.code()).isEqualTo(PaperBooks.KR_CLAUDE2);
+        assertThat(kr2.market()).isSameAs(kr1.market());
+        assertThat(kr2.schemaResource()).isEqualTo(kr1.schemaResource());
+        assertThat(kr2.fixedRules()).isEqualTo(kr1.fixedRules());
+        assertThat(kr2.timings()).isEqualTo(kr1.timings());
+        assertThat(kr2.timingRanks()).isEqualTo(kr1.timingRanks());
+        assertThat(kr2.timed()).isFalse();
+
+        JsonNode body = FrameworkService.interimBody(MAPPER);
+        JsonNode defaults = PaperFixtures.settings(new FakePaperStore()).defaultsJson();
+        String first = FrameworkService.render(kr1, body, 0, defaults);
+        String second = FrameworkService.render(kr2, body, 0, defaults);
+        String section = ClaudePrompts.riskProfileSection("공격투자형", "153130");
+        assertThat(first).doesNotContain("## 투자 성향");
+        assertThat(second).isEqualTo(first.replace(ClaudePrompts.OUTPUT_HEADER, section + ClaudePrompts.OUTPUT_HEADER));
+        assertThat(section).contains("현금성(153130)을 뺀");
+        ObjectNode stable = (ObjectNode) defaults.deepCopy();
+        ((ObjectNode) stable.path("kr")).putObject("claude2").put("riskProfile", "안정추구형");
+        assertThat(FrameworkService.render(kr2, body, 0, stable)).contains("## 투자 성향(사용자 선택 — 안정추구형)")
+                .contains(ClaudePrompts.CLAUDE2_RISK_PROFILE_LINES.get("안정추구형"));
+        assertThat(FrameworkService.render(kr1, body, 0, stable)).as("계좌1은 그대로").isEqualTo(first);
+    }
+
+    @Test
+    @DisplayName("계좌2 투자 성향(사용자 결정 2026-11-01, 설정 claude2.riskProfile — 기본은 11-02에 공격투자형으로) — 기본 성향 절이 출력 절 바로 앞(c2-1·c2-2 모두), 성향을 바꾸면 그 절만 다르고, 모르는 값은 기본 성향, 계좌1·한국 렌더링에는 없음")
     void claude2RiskProfileSection() {
         JsonNode body = FrameworkService.interimBody(MAPPER);
         JsonNode defaults = PaperFixtures.settings(new FakePaperStore()).defaultsJson();
         String book2 = FrameworkService.render(ClaudeBookProfile.US_CLAUDE2, body, 0, defaults);
-        String section = ClaudePrompts.claude2RiskProfileSection("적극투자형");
+        String section = ClaudePrompts.claude2RiskProfileSection(Claude2Settings.DEFAULT_RISK_PROFILE);
         assertThat(book2).contains(section + ClaudePrompts.OUTPUT_HEADER);
         assertThat(FrameworkService.render(ClaudeBookProfile.US_CLAUDE2_C2, body, 0, defaults)).contains(section + ClaudePrompts.OUTPUT_HEADER);
-        assertThat(section).startsWith("## 투자 성향(사용자 선택 — 적극투자형)\n").contains("하드 규칙을 따른다").contains("현금성(SHY)을 뺀")
+        assertThat(Claude2Settings.DEFAULT_RISK_PROFILE).isEqualTo("공격투자형");
+        assertThat(section).startsWith("## 투자 성향(사용자 선택 — 공격투자형)\n").contains("하드 규칙을 따른다").contains("현금성(SHY)을 뺀")
                 .contains("exposureRationale");
 
         assertThat(ClaudePrompts.CLAUDE2_RISK_PROFILE_LINES.keySet()).containsExactlyInAnyOrderElementsOf(Claude2Settings.RISK_PROFILES);

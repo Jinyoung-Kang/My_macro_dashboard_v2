@@ -234,6 +234,9 @@ public class PaperAdminService {
             double cash = config.krInitialCash().doubleValue();
             List<String> created = new ArrayList<>();
             for (PaperBooks.Definition definition : run.books()) {
+                if (PaperBooks.createdSeparately(definition.code())) {
+                    continue;   // 한국 Claude 계좌2는 자기 출발 작업이 만듭니다(사용자 결정 2026-11-02 — 네 계좌 출발과 따로)
+                }
                 if (store.insertBookIfAbsent(new Book(definition.code(), definition.kind(), definition.label(), cash,
                         null, PaperBooks.NOT_STARTED, null, run.code(), run.currency()))) {
                     created.add(definition.code());
@@ -287,7 +290,9 @@ public class PaperAdminService {
     public List<String> reconcileLabels() {
         requireReady();
         List<String> renamed = new ArrayList<>();
-        for (PaperBooks.Definition definition : PaperBooks.ALL) {
+        List<PaperBooks.Definition> definitions = new ArrayList<>(PaperBooks.ALL);
+        definitions.addAll(PaperBooks.KR);
+        for (PaperBooks.Definition definition : definitions) {
             for (String legacy : PaperBooks.LEGACY_LABELS.getOrDefault(definition.code(), List.of())) {
                 // 행 이름은 하나라 많아야 한 번 바뀝니다 — 바꾼 뒤의 옛 이름은 더 보지 않습니다.
                 if (!legacy.equals(definition.label()) && store.relabelBook(definition.code(), legacy, definition.label())) {

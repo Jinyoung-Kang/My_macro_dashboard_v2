@@ -361,6 +361,16 @@ final class ClaudeDecisionPipeline {
     }
 
     /**
+     * 이미 만든 패킷으로 호출 한 번 — 지금 프레임 판·이 파이프라인의 시스템 프롬프트(이 결정이 읽은 설정 행으로 렌더링)·응답 스키마. 한국 Claude 계좌2
+     * 출발(사용자 결정 2026-11-02 — 계좌1 출발 패킷의 계좌 몫만 바꾼 패킷, {@link KrClaude2Start})이 씁니다. 호출 상한·사용량·분류는
+     * {@link #attempt(LocalDate, String, boolean, SettingsRow, ClaudeSettings, LocalDate, boolean)}와 같고, 한 번을 잡지 못하면 null.
+     */
+    Attempt attemptWithPacket(Packet packet, SettingsRow row, ClaudeSettings claude, LocalDate today, boolean scheduled) {
+        Objects.requireNonNull(packet, "packet");
+        return send(framework.current(), packet, row, claude, today, scheduled, null);
+    }
+
+    /**
      * 그 실행에서 한 번 읽은 미국 시장 입력으로 조립한 패킷으로 호출 한 번(입력 동결 — 계좌2 명세 §9-1·§5-1). 호출 상한·사용량·분류는
      * {@link #attempt(LocalDate, String, boolean, SettingsRow, ClaudeSettings, LocalDate, boolean)}와 같습니다. 패킷의 설정 판·한도는 시장 입력이 읽은
      * 행입니다(결정은 같은 실행의 행 {@code row}로 시스템 프롬프트를 렌더링 — 둘이 같은 행이어야 함, 부르는 쪽이 지킴).
@@ -588,7 +598,7 @@ final class ClaudeDecisionPipeline {
         }
         // 시장별 칸 — 한국 실행이면 패킷 12_hardRules·관측치·장부로(KrClaudeValidation, E2a), 그 밖은 미국 칸(이 묶음 전 그대로).
         MarketChecks checks = market.definition() == KrPaperMarket.INSTANCE
-                ? KrClaudeValidation.checks(market, store, asOf, initial, attempt.packet().body(), paper, quotes,
+                ? KrClaudeValidation.checks(market, book(), store, asOf, initial, attempt.packet().body(), paper, quotes,
                         lockedOut(asOf), clock.instant())
                 : usChecks(asOf, initial, body, quotes, universe, closes, proposed, heldQty.keySet());
         boolean stale = checks.stale();

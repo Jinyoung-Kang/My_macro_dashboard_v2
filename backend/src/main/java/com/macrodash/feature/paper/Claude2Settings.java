@@ -14,7 +14,8 @@ import java.util.Map;
  * 남깁니다({@link ClaudeBookService.ClaudeSettings}와 같은 방식 — 손으로 고친 행이 있어도 결정·장부가 멈추지 않게. 쓰기 API는
  * {@link PaperSettingsService#update}가 같은 범위로 막습니다). 기본값은 '꺼짐'과 단계 1 값이라, 이 키가 생기기 전의 설정 행(서버의 지금 행)으로
  * 배포해도 아무것도 바뀌지 않습니다 — 운영자가 설정을 저장할 때 켜집니다(§16-2의 3). 예외는 투자 성향({@value #RISK_PROFILE})입니다 — 사용자
- * 결정(2026-11-01)으로 기본이 {@value #DEFAULT_RISK_PROFILE}이라, 키가 없는 행으로 배포하면 그 뒤 계좌2 호출부터 시스템 프롬프트에 그 성향 절이 들어갑니다.
+ * 결정(2026-11-01)으로 기본이 있고(2026-11-02에 {@value #DEFAULT_RISK_PROFILE}로 바꿈), 키가 없는 행으로 배포하면 그 뒤 계좌2 호출부터 시스템 프롬프트에
+ * 그 성향 절이 들어갑니다. 한국 Claude 계좌2의 성향은 한국 묶음의 {@value #KR_RISK_PROFILE}입니다({@link #krRiskProfile} — 사용자 결정 2026-11-02).
  *
  * @param enabled          계좌2 결정·출발({@value #ENABLED}, 기본 꺼짐)
  * @param maxCallsPerCycle 계좌2 소상한 — 같은 기준 거래일(결정 주기)의 정기 결정·출발·재시도·장중 확인 호출 수({@value #MAX_CALLS_PER_CYCLE},
@@ -45,7 +46,12 @@ record Claude2Settings(boolean enabled, int maxCallsPerCycle, int barsWaitMinute
      * 값은 화면 설정 탭에 그대로 보이는 이름입니다.
      */
     static final List<String> RISK_PROFILES = List.of("공격투자형", "적극투자형", "위험중립형", "안정추구형");
-    static final String DEFAULT_RISK_PROFILE = "적극투자형";
+    /** 미국 계좌2의 기본 성향 — 사용자 결정 2026-11-01 적극투자형, 2026-11-02 공격투자형으로 바꿈. */
+    static final String DEFAULT_RISK_PROFILE = "공격투자형";
+    /** 한국 Claude 계좌2의 투자 성향 키(한국 묶음 — {@code kr.*}, 같은 성향 넷). */
+    static final String KR_RISK_PROFILE = "kr.claude2.riskProfile";
+    /** 한국 Claude 계좌2의 기본 성향(사용자 결정 2026-11-02 — 미국 계좌2와 같은 성격). */
+    static final String DEFAULT_KR_RISK_PROFILE = "공격투자형";
 
     static final int DEFAULT_MAX_CALLS_PER_CYCLE = 2;
     static final int MAX_CALLS_PER_CYCLE_LIMIT = 10;
@@ -82,6 +88,15 @@ record Claude2Settings(boolean enabled, int maxCallsPerCycle, int barsWaitMinute
         boolean checkpoints = bool(body, CHECKPOINTS, DEFAULTS.checkpoints(), fallbacks);
         String riskProfile = choice(body, RISK_PROFILE, RISK_PROFILES, DEFAULTS.riskProfile(), fallbacks);
         return new Claude2Settings(enabled, calls, wait, record, checkpoints, riskProfile, fallbacks);
+    }
+
+    /**
+     * 한국 Claude 계좌2의 투자 성향 — 키({@value #KR_RISK_PROFILE})가 없거나 성향 넷 밖이면 기본({@value #DEFAULT_KR_RISK_PROFILE}). null 본문도 기본.
+     */
+    static String krRiskProfile(JsonNode body) {
+        JsonNode value = body == null ? null : PaperSettingsService.valueAt(body, KR_RISK_PROFILE);
+        return value != null && value.isString() && RISK_PROFILES.contains(value.asString()) ? value.asString()
+                : DEFAULT_KR_RISK_PROFILE;
     }
 
     /** 기본 설정 본문의 {@code claude2} 묶음({@link PaperSettingsService#defaultsJson}). */

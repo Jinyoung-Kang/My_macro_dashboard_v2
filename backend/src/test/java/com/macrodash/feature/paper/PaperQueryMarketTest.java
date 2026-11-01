@@ -76,6 +76,9 @@ class PaperQueryMarketTest {
     /** 한국 네 계좌 — KODEX 200 계좌만 10-08 출발(운용), 순자산 줄 10-08·10-12, 나머지는 현금만 든 시작 전. */
     private void krBooks() {
         for (PaperBooks.Definition d : PaperBooks.KR) {
+            if (PaperBooks.KR_CLAUDE2.equals(d.code())) {
+                continue;   // 계좌2 행은 자기 출발 작업이 만듦(운영과 같게 — 한국 초기화는 네 계좌)
+            }
             boolean started = PaperBooks.KR_BENCH_K200.equals(d.code());
             store.books.put(d.code(), new Book(d.code(), d.kind(), d.label(), 100_000_000,
                     started ? LocalDate.of(2026, 10, 8) : null, started ? PaperBooks.ACTIVE : PaperBooks.NOT_STARTED,
@@ -336,7 +339,7 @@ class PaperQueryMarketTest {
         assertThat((List<Map<String, Object>>) query.decisions(PaperBooks.RULES, 50).get("decisions"))
                 .extracting(r -> r.get("book")).containsExactly("rules");
         assertThatThrownBy(() -> query.decisions("kr_bench_k200", 50)).isInstanceOf(InvalidRequestException.class)
-                .hasMessage("book는 rules · claude · claude2 · kr_rules · kr_claude 가운데 하나여야 합니다: kr_bench_k200");
+                .hasMessage("book는 rules · claude · claude2 · kr_rules · kr_claude · kr_claude2 가운데 하나여야 합니다: kr_bench_k200");
     }
 
     private void decision(String book, LocalDate asOf, String kind, LocalDate selectionAsOf, Double exposure) {

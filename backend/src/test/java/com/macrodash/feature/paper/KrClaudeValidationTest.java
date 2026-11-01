@@ -210,7 +210,7 @@ class KrClaudeValidationTest {
     @DisplayName("한국 칸 — 패킷 12_hardRules의 유니버스·ETF·재진입 금지(+ 지금 장부)·체결할 수 없는 종목(+ 지금 장부의 기업행위 보류), 기준 가격은 관측치의 기준 거래일 종가, 요율은 kr.*, 가격 없음 집합은 비움")
     void checksReadThePacketAndTheLedger() {
         view();
-        MarketChecks checks = KrClaudeValidation.checks(run, store, D, false, packet().body(), run.settings(), quotes(),
+        MarketChecks checks = KrClaudeValidation.checks(run, PaperBooks.KR_CLAUDE, store, D, false, packet().body(), run.settings(), quotes(),
                 Set.of("005930"), NOW);
 
         assertThat(checks.universe()).containsExactly("000660", "005930", "035420", "035720", "051910", "069500",
@@ -226,11 +226,11 @@ class KrClaudeValidationTest {
         assertThat(checks.wholeShares().rates().commissionBp()).isEqualByComparingTo("1.5");
         assertThat(checks.wholeShares().rates().slippageBp()).isEqualByComparingTo("5");
 
-        assertThat(KrClaudeValidation.checks(run, store, D, false, packet().body(), run.settings(), Optional.empty(),
+        assertThat(KrClaudeValidation.checks(run, PaperBooks.KR_CLAUDE, store, D, false, packet().body(), run.settings(), Optional.empty(),
                 Set.of(), NOW).stale()).as("관측치 없음 → 전부 STALE_INPUT").isTrue();
-        assertThat(KrClaudeValidation.checks(run, store, D, false, packet().body(), run.settings(), quotes(), Set.of(),
+        assertThat(KrClaudeValidation.checks(run, PaperBooks.KR_CLAUDE, store, D, false, packet().body(), run.settings(), quotes(), Set.of(),
                 kst("2026-11-04T22:01")).stale()).as("24시간 넘은 관측치").isTrue();
-        assertThatThrownBy(() -> KrClaudeValidation.checks(run, store, D, false, MAPPER.createObjectNode(),
+        assertThatThrownBy(() -> KrClaudeValidation.checks(run, PaperBooks.KR_CLAUDE, store, D, false, MAPPER.createObjectNode(),
                 run.settings(), quotes(), Set.of(), NOW)).isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("12_hardRules.universe");
     }
@@ -244,9 +244,9 @@ class KrClaudeValidationTest {
         filled(initialId, "000660");
         filled(scheduledId, "207940");
 
-        assertThat(KrClaudeValidation.checks(run, store, D, false, packet().body(), run.settings(), quotes(), Set.of(),
+        assertThat(KrClaudeValidation.checks(run, PaperBooks.KR_CLAUDE, store, D, false, packet().body(), run.settings(), quotes(), Set.of(),
                 NOW).monthly()).isEqualTo(1).isEqualTo(KrPacketBuilder.monthlyDiscretionaryOrders(store, D));
-        assertThat(KrClaudeValidation.checks(run, store, D, true, packet().body(), run.settings(), quotes(), Set.of(),
+        assertThat(KrClaudeValidation.checks(run, PaperBooks.KR_CLAUDE, store, D, true, packet().body(), run.settings(), quotes(), Set.of(),
                 NOW).monthly()).isZero();
         Plan plan = plan(false, attempt(packet(), "005930", "BUY", 3.0), view(), quotes());
         assertThat(plan.response().path("monthlyDiscretionaryOrders").asInt()).isEqualTo(1);

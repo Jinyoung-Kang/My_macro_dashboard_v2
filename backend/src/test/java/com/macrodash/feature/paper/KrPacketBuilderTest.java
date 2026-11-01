@@ -768,7 +768,7 @@ class KrPacketBuilderTest {
         Packet packet = scheduled();
         JsonNode rules = packet.body().path("12_hardRules");
         MarketRun run = run();
-        ClaudeDecisionPipeline.MarketChecks checks = KrClaudeValidation.checks(run, store, D, false, packet.body(),
+        ClaudeDecisionPipeline.MarketChecks checks = KrClaudeValidation.checks(run, PaperBooks.KR_CLAUDE, store, D, false, packet.body(),
                 run.settings(), quotesD(), Set.of(), READ_D);
 
         assertThat(String.join(",", checks.universe())).isEqualTo(rules.path("universe").asString());

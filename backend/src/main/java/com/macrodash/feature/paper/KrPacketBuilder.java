@@ -179,6 +179,11 @@ final class KrPacketBuilder {
     private final ObjectMapper mapper;
     /** 크기 예산 — 운영은 {@link #TARGET_TOKENS}, 시험은 작은 값으로 자르기를 봅니다. */
     private final int targetTokens;
+    /**
+     * 패킷이 그리는 계좌 — 장부(9_portfolio)·최근 결정·묶인 보유·이달 재량 주문 수가 이 계좌의 것이고, 1_basis·0_instructions에 이 코드를 적습니다.
+     * 기본은 한국 Claude 계좌1({@link PaperBooks#KR_CLAUDE} — 그 패킷은 이 칸 전과 글자 그대로), 계좌2는 {@link #forBook}.
+     */
+    private final String book;
 
     KrPacketBuilder(PaperStore store, StoreReader reader, StoreRepository repository, RegimeLogStore regimeLog,
                     PaperMarketData marketData, NoteService notes, KrRuleBookService rules, PaperConfig config,
@@ -190,6 +195,14 @@ final class KrPacketBuilder {
     KrPacketBuilder(PaperStore store, StoreReader reader, StoreRepository repository, RegimeLogStore regimeLog,
                     PaperMarketData marketData, NoteService notes, KrRuleBookService rules, PaperConfig config,
                     ObjectMapper mapper, int targetTokens) {
+        this(store, reader, repository, regimeLog, marketData, notes, rules, config, mapper, targetTokens,
+                PaperBooks.KR_CLAUDE);
+    }
+
+    private KrPacketBuilder(PaperStore store, StoreReader reader, StoreRepository repository, RegimeLogStore regimeLog,
+                            PaperMarketData marketData, NoteService notes, KrRuleBookService rules, PaperConfig config,
+                            ObjectMapper mapper, int targetTokens, String book) {
+        this.book = Objects.requireNonNull(book, "book");
         this.targetTokens = targetTokens;
         this.store = Objects.requireNonNull(store, "store");
         this.reader = Objects.requireNonNull(reader, "reader");
@@ -200,6 +213,15 @@ final class KrPacketBuilder {
         this.rules = Objects.requireNonNull(rules, "rules");
         this.config = Objects.requireNonNull(config, "config");
         this.mapper = Objects.requireNonNull(mapper, "mapper");
+    }
+
+    /**
+     * 같은 재료로 다른 한국 Claude 계좌의 패킷을 만드는 빌더 — 시장 자료(가격·수급·재무·국면·일정·사건·메모)는 같고 계좌 몫(장부·최근 결정·묶인 보유·
+     * 이달 재량 주문 수·계좌 코드)만 그 계좌의 것입니다(한국 Claude 계좌2 — 사용자 결정 2026-11-02).
+     */
+    KrPacketBuilder forBook(String code) {
+        return new KrPacketBuilder(store, reader, repository, regimeLog, marketData, notes, rules, config, mapper,
+                targetTokens, code);
     }
 
     /**
@@ -273,7 +295,7 @@ final class KrPacketBuilder {
             scores.put(code, member == null ? null : KrRules.score(summary, member.listedShares()));
         }
         Map<String, String> holds = new TreeMap<>();
-        for (PaperStore.CorpActionHold hold : store.corpActionHolds(PaperBooks.KR_CLAUDE)) {
+        for (PaperStore.CorpActionHold hold : store.corpActionHolds(book)) {
             holds.put(hold.ticker(), hold.reason());
         }
         KrRuleBookService.Fillable fillable = new KrRuleBookService.Fillable(asOf, read.tradable(), input.suspended(),
@@ -416,7 +438,7 @@ final class KrPacketBuilder {
     }
 
     // ------------------------------------------------------------------ 0 지시
-    private static Map<String, Object> instructions(LocalDate asOf, boolean initial, PaperSettings paper) {
+    private Map<String, Object> instructions(LocalDate asOf, boolean initial, PaperSettings paper) {
         PaperSettings.CostRates rates = paper.costRates() == null ? PaperSettings.CostRates.defaults() : paper.costRates();
         List<String> lines = new ArrayList<>();
         lines.add("아래 패킷의 자료만으로 판단한다. 패킷에 없는 사실은 '확인 필요'로 둔다.");
@@ -424,7 +446,7 @@ final class KrPacketBuilder {
         lines.add("현금 비중은 네가 정한다 — targetEquityExposurePct(0~100)에 목표 주식 노출을 적고 근거를 exposureRationale에 적는다. "
                 + "현금 비중 상·하한은 없다.");
         lines.add("출력은 주어진 스키마대로 한다. 주문이 없어도 noTradeReason을 쓴다.");
-        lines.add("한국 책(" + PaperBooks.KR_CLAUDE + ")이다 — 통화는 원(KRW), 날짜는 KRX 거래일(KST), 시각 표기도 KST다. 티커는 6자리 종목 "
+        lines.add("한국 책(" + book + ")이다 — 통화는 원(KRW), 날짜는 KRX 거래일(KST), 시각 표기도 KST다. 티커는 6자리 종목 "
                 + "코드다.");
         lines.add(timingLine());
         lines.add("체결은 정수 주다 — 목표 비중 증가분을 체결가(시가)와 비용으로 나눈 정수 주만 사고, 1주 가격보다 작은 매수 증가분은 체결되지 "
@@ -472,7 +494,7 @@ final class KrPacketBuilder {
         out.put("packetVersion", PACKET_VERSION);
         out.put("market", Book.MARKET_KR);
         out.put("currency", Book.CURRENCY_KRW);
-        out.put("book", PaperBooks.KR_CLAUDE);
+        out.put("book", book);
         out.put("asOfTradingDate", asOf.toString());
         out.put("decisionKind", kind);
         out.put("initial", initial);
@@ -1026,23 +1048,23 @@ final class KrPacketBuilder {
     }
 
     private LedgerView ledger(LocalDate asOf, boolean initial) {
-        Optional<Book> book = store.book(PaperBooks.KR_CLAUDE);
+        Optional<Book> row = store.book(book);
         if (initial) {
-            double cash = book.map(Book::initialCash).orElse(config.krInitialCash().doubleValue());
-            return new LedgerView(book.isPresent(), book.map(Book::status).orElse(null), cash, cash, 0, 0, List.of(),
+            double cash = row.map(Book::initialCash).orElse(config.krInitialCash().doubleValue());
+            return new LedgerView(row.isPresent(), row.map(Book::status).orElse(null), cash, cash, 0, 0, List.of(),
                     List.of(), 0, List.of());
         }
-        Optional<BookState> state = store.state(PaperBooks.KR_CLAUDE);
-        if (book.isEmpty() || state.isEmpty()) {
+        Optional<BookState> state = store.state(book);
+        if (row.isEmpty() || state.isEmpty()) {
             double cash = config.krInitialCash().doubleValue();
             return new LedgerView(false, null, cash, cash, 0, 0, List.of(), List.of(), 0, List.of());
         }
-        int monthly = monthlyDiscretionaryOrders(store, asOf);
-        List<Order> pending = store.ordersByStatus(PaperBooks.KR_CLAUDE, PaperBooks.ORDER_PENDING).stream()
+        int monthly = monthlyDiscretionaryOrders(store, book, asOf);
+        List<Order> pending = store.ordersByStatus(book, PaperBooks.ORDER_PENDING).stream()
                 .filter(o -> PacketBuilder.SOURCE_CLAUDE.equals(o.source())).toList();
         BookState s = state.get();
-        return new LedgerView(true, book.get().status(), s.cash(), s.nav(), s.equityValue(), s.exposurePct(),
-                store.positions(PaperBooks.KR_CLAUDE), store.lockouts(PaperBooks.KR_CLAUDE), monthly, pending);
+        return new LedgerView(true, row.get().status(), s.cash(), s.nav(), s.equityValue(), s.exposurePct(),
+                store.positions(book), store.lockouts(book), monthly, pending);
     }
 
     /**
@@ -1081,7 +1103,7 @@ final class KrPacketBuilder {
     private Map<String, Object> portfolio(TradingCalendar calendar, LocalDate asOf, boolean initial, LedgerView ledger,
                                           PaperSettings paper, Limits limits, Map<String, String> holds) {
         Map<String, Object> out = new LinkedHashMap<>();
-        out.put("book", PaperBooks.KR_CLAUDE);
+        out.put("book", book);
         out.put("status", ledger.status());
         out.put("currency", Book.CURRENCY_KRW);
         if (initial) {
@@ -1164,7 +1186,7 @@ final class KrPacketBuilder {
 
     // ------------------------------------------------------------------ 10·11 최근 결정·메모
     private List<DecisionSummary> priorDecisions(LocalDate asOf, String kind, boolean initial) {
-        return store.decisions(PaperBooks.KR_CLAUDE, MAX_RECENT_DECISIONS * 4).stream()
+        return store.decisions(book, MAX_RECENT_DECISIONS * 4).stream()
                 .filter(d -> d.asOfTradingDate().isBefore(asOf)
                         || !initial && d.asOfTradingDate().equals(asOf) && !d.kind().equals(kind))
                 .limit(MAX_RECENT_DECISIONS).toList();

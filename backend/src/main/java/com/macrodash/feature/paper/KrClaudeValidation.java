@@ -53,7 +53,8 @@ final class KrClaudeValidation {
     /**
      * 그 결정의 한국 칸.
      *
-     * @param market          한국 실행(Claude 계좌 코드)
+     * @param market          한국 실행
+     * @param book            검증하는 한국 Claude 계좌(계좌1 {@code kr_claude}·계좌2 {@code kr_claude2}) — 묶인 보유·이달 재량 주문 수가 그 계좌의 것
      * @param asOf            기준 KR 세션 D(출발이면 S)
      * @param initial         출발 결정(이달 재량 주문 수 0부터)
      * @param packetBody      그 결정이 보낸 한국 패킷({@link KrPacketBuilder}) — {@code 12_hardRules}를 읽음
@@ -63,7 +64,7 @@ final class KrClaudeValidation {
      * @param now             지금(신선도)
      * @throws IllegalStateException 패킷에 {@code 12_hardRules.universe}가 없음(한국 패킷이 아님 — 유니버스를 짐작하지 않음), 요율이 없음
      */
-    static ClaudeDecisionPipeline.MarketChecks checks(PaperMarket market, PaperStore store, LocalDate asOf,
+    static ClaudeDecisionPipeline.MarketChecks checks(PaperMarket market, String book, PaperStore store, LocalDate asOf,
                                                       boolean initial, JsonNode packetBody, PaperSettings paper,
                                                       Optional<Quotes> quotes, Set<String> ledgerLockedOut,
                                                       Instant now) {
@@ -90,7 +91,7 @@ final class KrClaudeValidation {
                 unfillable.put(entry.getKey().strip(), reason == null || reason.isBlank() ? "지금 체결할 수 없음" : reason);
             }
         }
-        for (PaperStore.CorpActionHold hold : store.corpActionHolds(market.claudeBook())) {
+        for (PaperStore.CorpActionHold hold : store.corpActionHolds(book)) {
             KrRuleBookService.Fillable held = new KrRuleBookService.Fillable(asOf, null, Set.of(),
                     Map.of(hold.ticker(), hold.reason()));
             unfillable.putIfAbsent(hold.ticker(), held.blocked(hold.ticker()));
@@ -100,7 +101,7 @@ final class KrClaudeValidation {
         }
         OrderValidator.WholeShares shares = new OrderValidator.WholeShares(referencePrices(quotes, asOf),
                 paper.costRates().rates(paper.slippageBp()));
-        int monthly = initial ? 0 : KrPacketBuilder.monthlyDiscretionaryOrders(store, asOf);
+        int monthly = initial ? 0 : KrPacketBuilder.monthlyDiscretionaryOrders(store, book, asOf);
         boolean stale = ClaudeBookService.inputsStale(quotes, now);
         return new ClaudeDecisionPipeline.MarketChecks(universe, etfs, lockedOut, Set.of(), monthly, stale, unfillable,
                 shares);

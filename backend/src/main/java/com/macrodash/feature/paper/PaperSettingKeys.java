@@ -349,7 +349,11 @@ final class PaperSettingKeys {
                             + ". yna_market(연합뉴스 마켓+)은 채널의 '무단 전재-재배포, AI 학습 및 활용 금지' 문구에도 사용자 결정으로 "
                             + "기본에 둠(G12) — 빼려면 목록에서 지움", Scope.KR),
             of("kr.news.aliases", Type.ALIAS_MAP, false,
-                    "종목 별칭 표(6자리 코드 → 별칭, 예 000660: 하이닉스) — 금융위·DART 이름 밖의 약칭·우선주 이름"));
+                    "종목 별칭 표(6자리 코드 → 별칭, 예 000660: 하이닉스) — 금융위·DART 이름 밖의 약칭·우선주 이름"),
+            choice(Claude2Settings.KR_RISK_PROFILE, Claude2Settings.RISK_PROFILES, false,
+                    "한국 Claude 계좌2 투자 성향(사용자 선택, 기본 " + Claude2Settings.DEFAULT_KR_RISK_PROFILE + ") — 한국 계좌2 시스템 프롬프트의 "
+                            + "'투자 성향' 절이 이 성향으로 위험자산 비중·종목 집중도·현금 여력·손실 감내를 정하게 함. 하드 규칙·검증기·체결 시점은 "
+                            + "한국 계좌1과 같음(코드가 집행하지 않는 판단 기준), 다른 계좌는 영향 없음. 바꾸면 다음 한국 계좌2 호출부터"));
 
 
     private static final Map<String, Spec> BY_KEY;

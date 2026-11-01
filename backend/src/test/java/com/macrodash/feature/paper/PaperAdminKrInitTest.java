@@ -124,7 +124,7 @@ class PaperAdminKrInitTest {
         assertThat(result.startDate()).isEqualTo(S);
         assertThat(result.settingsCreated()).isFalse();
         assertThat(result.settingsVersion()).isEqualTo(2);
-        assertThat(result.settingsKeysWritten()).containsExactlyElementsOf(krKeys()).hasSize(32);
+        assertThat(result.settingsKeysWritten()).containsExactlyElementsOf(krKeys()).hasSize(33);
         assertThat(store.settings.version()).isEqualTo(2);
         assertThat(store.settingsChangedKeys.get(2)).containsExactlyElementsOf(krKeys());
         JsonNode kr = store.settings.body().get("kr");
@@ -133,7 +133,11 @@ class PaperAdminKrInitTest {
         assertThat(store.settings.body().path("slippageBp").asDouble()).as("미국 키 그대로").isEqualTo(5);
 
         assertThat(result.created()).containsExactly("kr_rules", "kr_claude", "kr_bench_k200", "kr_bench_mix");
+        assertThat(store.books).as("한국 Claude 계좌2는 자기 출발 작업이 만듦(사용자 결정 2026-11-02)").doesNotContainKey(PaperBooks.KR_CLAUDE2);
         for (PaperBooks.Definition d : PaperBooks.KR) {
+            if (PaperBooks.createdSeparately(d.code())) {
+                continue;
+            }
             Book book = store.books.get(d.code());
             assertThat(book.market()).isEqualTo("KR");
             assertThat(book.currency()).isEqualTo("KRW");
@@ -187,7 +191,7 @@ class PaperAdminKrInitTest {
         PaperAdminService.KrInitResult result = admin(S, BEFORE).initKr();
 
         assertThat(result.settingsKeysWritten()).doesNotContain("kr.slippageBp", "kr.calendar.extraClosures")
-                .contains("kr.commissionBp", "kr.calendar.openTimeOverrides").hasSize(30);
+                .contains("kr.commissionBp", "kr.calendar.openTimeOverrides", "kr.claude2.riskProfile").hasSize(31);
         assertThat(store.settings.body().at("/kr/slippageBp").asDouble()).isEqualTo(7);
         assertThat(store.settings.body().at("/kr/calendar/extraClosures/0").asString()).isEqualTo("2026-12-29");
         assertThat(store.settings.body().at("/kr/tax/kospi/sttBp").asDouble()).isEqualTo(5);

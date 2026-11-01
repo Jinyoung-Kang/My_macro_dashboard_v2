@@ -94,7 +94,7 @@ class PaperSettingsKrTest {
                 "kr.rules.minStreakDays", "kr.rules.debtRatioMaxPct", "kr.rules.reselection",
                 "kr.rules.parkCashThresholdPct", "kr.cashLikeTickers", "kr.universeExtraTickers", "kr.decisionTimeKst",
                 "kr.decisionDeadlineKst", "kr.calendar.extraClosures", "kr.calendar.openTimeOverrides", "kr.news.enabled",
-                "kr.news.maxPerDay", "kr.news.keywords", "kr.news.feeds", "kr.news.aliases");
+                "kr.news.maxPerDay", "kr.news.keywords", "kr.news.feeds", "kr.news.aliases", "kr.claude2.riskProfile");
 
         JsonNode d = service.defaultsJson().path("kr");
         assertThat(d.path("slippageBp").asDouble()).isEqualTo(5);

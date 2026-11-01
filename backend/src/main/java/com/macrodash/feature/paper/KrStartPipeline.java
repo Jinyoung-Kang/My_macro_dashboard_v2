@@ -471,7 +471,7 @@ final class KrStartPipeline {
         }
         List<String> missing = new ArrayList<>();
         for (PaperBooks.Definition definition : run.books()) {
-            if (store.book(definition.code()).isEmpty()) {
+            if (!PaperBooks.createdSeparately(definition.code()) && store.book(definition.code()).isEmpty()) {
                 missing.add(definition.code());
             }
         }

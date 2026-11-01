@@ -274,7 +274,7 @@ class PaperQueryServiceTest {
                 .hasMessageContaining("없는 결정");
         assertThatThrownBy(() -> query.decisions("bench_spy", 50)).isInstanceOf(InvalidRequestException.class)
                 .as("운영 시장 목록(미국 → 한국)의 결정 계좌 코드 — docs/API.md").hasMessageContaining(
-                        "book는 rules · claude · claude2 · kr_rules · kr_claude 가운데 하나여야 합니다");
+                        "book는 rules · claude · claude2 · kr_rules · kr_claude · kr_claude2 가운데 하나여야 합니다");
         assertThat(query.decisions("claude", 50).get("decisions")).isEqualTo(List.of());
         assertThat(query.decisions(PaperBooks.CLAUDE2, 50).get("decisions")).as("미국 Claude 계좌2(ADR 0022)").isEqualTo(List.of());
         assertThat(query.decisions(PaperBooks.KR_CLAUDE, 50)).containsEntry("available", true)

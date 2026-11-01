@@ -179,6 +179,14 @@ final class ClaudePrompts {
 
     /** 투자 성향 절(출력 절 앞) — 성향 이름과 그 한 줄, 공통 세 줄. 모르는 성향이면 기동·렌더링 오류(설정 읽기가 이미 기본값으로 바꿈). */
     static String claude2RiskProfileSection(String profile) {
+        return riskProfileSection(profile, "SHY");
+    }
+
+    /**
+     * 투자 성향 절 — 위험자산 비중 정의의 현금성 종목만 시장마다 다름(미국 SHY·한국 153130). 미국 계좌2는 {@link #claude2RiskProfileSection}
+     * (바이트 그대로), 한국 Claude 계좌2는 {@link #withKrClaude2RiskProfile}.
+     */
+    static String riskProfileSection(String profile, String cashLike) {
         String line = CLAUDE2_RISK_PROFILE_LINES.get(profile);
         if (line == null) {
             throw new IllegalArgumentException("모르는 계좌2 투자 성향: " + profile);
@@ -187,8 +195,20 @@ final class ClaudePrompts {
                 + "- 이 계좌는 위 프레임·하드 규칙·체결 메뉴를 그대로 따르고, 그 안에서 사용자가 고른 투자 성향으로 위험자산 비중·종목 집중도·"
                 + "현금 여력·손실 감내를 정한다. 성향은 코드가 집행하지 않는 판단 기준이다 — 하드 규칙과 부딪히면 하드 규칙을 따른다.\n"
                 + line + "\n"
-                + "- 위험자산 비중은 현금성(SHY)을 뺀 보유 평가액 ÷ 순자산이다(targetEquityExposurePct는 현금성을 포함 — 위 현금 비중 절).\n"
+                + "- 위험자산 비중은 현금성(" + cashLike + ")을 뺀 보유 평가액 ÷ 순자산이다(targetEquityExposurePct는 현금성을 포함 — 위 현금 비중 절).\n"
                 + "- exposureRationale에 이 성향을 어떻게 반영했는지 한 줄 적는다. 성향 범위를 벗어난 비중을 고르면 그 까닭을 프레임의 판단 기준으로 적는다.\n";
+    }
+
+    /**
+     * 한국 Claude 계좌2(사용자 결정 2026-11-02)의 고정 문단 — 한국 고정 문단({@link #KR_FIXED_RULES})의 출력 절 앞에 성향 절(현금성 153130)을 끼운 글.
+     * 출력 절 머리가 한 번이 아니면 오류.
+     */
+    static String withKrClaude2RiskProfile(String fixedRules, String profile) {
+        if (fixedRules.indexOf(OUTPUT_HEADER) < 0 || fixedRules.indexOf(OUTPUT_HEADER) != fixedRules.lastIndexOf(OUTPUT_HEADER)) {
+            throw new IllegalStateException("한국 고정 문단의 출력 절 머리가 한 번이어야 성향 절을 끼울 수 있습니다");
+        }
+        return fixedRules.replace(OUTPUT_HEADER, riskProfileSection(profile, PaperSettingsService.KR_DEFAULT_CASH_LIKE.get(0))
+                + OUTPUT_HEADER);
     }
 
     /** 계좌2 고정 문단(c2-1·c2-2)의 출력 절 앞에 성향 절을 끼운 글 — 출력 절 머리가 한 번이 아니면 오류(c2 문단을 만들 때와 같은 자리 검사). */

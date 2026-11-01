@@ -295,11 +295,11 @@ class PaperSettingsServiceTest {
     }
 
     @Test
-    @DisplayName("계좌2 키(claude2.*, 계좌2 명세 §13-2): 꺼짐·소상한 2·기다림 15·체결 기록 켬·장중 확인 꺼짐·투자 성향 적극투자형이 기본, 범위 CLAUDE2(시장 US)·규칙 계좌 영향 없음, 형·범위대로 검사 — 키가 없는 옛 행은 같은 값으로 읽히고 판이 오르지 않음")
+    @DisplayName("계좌2 키(claude2.*, 계좌2 명세 §13-2): 꺼짐·소상한 2·기다림 15·체결 기록 켬·장중 확인 꺼짐·투자 성향 공격투자형이 기본(11-02에 적극투자형에서 바꿈), 범위 CLAUDE2(시장 US)·규칙 계좌 영향 없음, 형·범위대로 검사 — 키가 없는 옛 행은 같은 값으로 읽히고 판이 오르지 않음")
     void claude2Keys() {
         JsonNode defaults = service.defaultsJson().path("claude2");
         assertThat(defaults.toString()).isEqualTo("{\"enabled\":false,\"maxCallsPerCycle\":2,\"barsWaitMinutes\":15,"
-                + "\"executionRecord\":true,\"checkpoints\":false,\"riskProfile\":\"적극투자형\"}");
+                + "\"executionRecord\":true,\"checkpoints\":false,\"riskProfile\":\"공격투자형\"}");
         List<String> keys = List.of("claude2.enabled", "claude2.maxCallsPerCycle", "claude2.barsWaitMinutes",
                 "claude2.executionRecord", "claude2.checkpoints", "claude2.riskProfile");
         for (String key : keys) {
@@ -329,7 +329,7 @@ class PaperSettingsServiceTest {
         assertThat(old.enabled()).isFalse();
         assertThat(old.maxCallsPerCycle()).isEqualTo(2);
         assertThat(old.barsWaitMinutes()).isEqualTo(15);
-        assertThat(old.riskProfile()).as("키가 없는 옛 행도 기본 성향(사용자 결정 2026-11-01)").isEqualTo("적극투자형");
+        assertThat(old.riskProfile()).as("키가 없는 옛 행도 기본 성향(사용자 결정 2026-11-01, 11-02에 공격투자형으로)").isEqualTo("공격투자형");
         assertThat(old.fallbacks()).containsExactlyElementsOf(keys);
         Map<String, Object> switches = new LinkedHashMap<>();
         switches.put("enabled", true);

@@ -286,10 +286,11 @@ public class PaperDecisionJob {
     /**
      * 그 거래일에 남은 일 — 게이트 지표(두 책이 함께 기다림), 시작한 규칙 책의 정기 결정, Claude 책의 정기 결정(재시도할 API 오류 포함).
      */
-    private record Work(boolean gate, boolean rules, boolean claude, String claude2) {
+    /** {@code krClaude2} — 한국 Claude 계좌2가 그 세션 정기 결정을 낼 차례(사용자 결정 2026-11-02). */
+    private record Work(boolean gate, boolean rules, boolean claude, String claude2, boolean krClaude2) {
 
         boolean any() {
-            return gate || rules || claude || claude2 != null;
+            return gate || rules || claude || claude2 != null || krClaude2;
         }
     }
 
@@ -477,15 +478,16 @@ public class PaperDecisionJob {
         boolean rulesGaveUp = gaveUp(market, d, market.rulesBook());
         boolean claudeGaveUp = gaveUp(market, d, market.claudeBook());
         boolean claude2GaveUp = gaveUp(market, d, PaperBooks.CLAUDE2);
+        boolean krClaude2GaveUp = gaveUp(market, d, PaperBooks.KR_CLAUDE2);
         // 게이트 지표는 두 책이 함께 기다리는 일입니다(그 단계 오류는 두 책 모두에 셈). 계좌2는 자기 결정만.
         if ((!(work.gate() || work.rules()) || rulesGaveUp) && (!(work.gate() || work.claude()) || claudeGaveUp)
-                && (work.claude2() == null || claude2GaveUp)) {
+                && (work.claude2() == null || claude2GaveUp) && (!work.krClaude2() || krClaude2GaveUp)) {
             return new Result(GAVE_UP, d, null, null, null, d + " 오류가 " + MAX_ATTEMPTS + "번 나 오늘은 더 시도하지 않습니다 — "
                     + "수동 실행(POST /api/paper/run/decision)은 다시 시도합니다");
         }
         if (krRulesSteps(market)) {
             // 한국 묶음 — 자료 게이트 ①~⑥(§4-9)가 '그날 종가 관측치' 기다림을 대신합니다(클래스 설명 '한국 결정 게이트').
-            return decideKr(market, now, d, deadline, rulesGaveUp, claudeGaveUp);
+            return decideKr(market, now, d, deadline, rulesGaveUp, claudeGaveUp, krClaude2GaveUp);
         }
         Optional<Quotes> quotes = reader.quietly(() -> marketData.quotes(market));
         boolean closesIn = quotes.map(q -> closesFor(market, q, d)).orElse(false);
@@ -764,7 +766,7 @@ public class PaperDecisionJob {
      * {@value #DATA_NOT_READY}입니다.
      */
     private Result decideKr(MarketRun market, Instant now, LocalDate d, Instant deadline, boolean rulesGaveUp,
-                            boolean claudeGaveUp) {
+                            boolean claudeGaveUp, boolean krClaude2GaveUp) {
         KrDecisionGates.Inputs session = krGates.readSession(market, d);
         if (!rulesGaveUp && krRules.due(d) && krRules.paused()) {
             // 일시정지 규칙 계좌 — 입력·자료 게이트 없이 그 세션 SKIPPED(주문을 내지 않으니 가격·수급을 기다릴 까닭이 없음). Claude 쪽 일이
@@ -888,6 +890,36 @@ public class PaperDecisionJob {
                 failedBooks.add(market.claudeBook());
             }
         }
+        // 한국 Claude 계좌2(사용자 결정 2026-11-02) — 계좌1과 같은 관측치·읽은 순간·자료 게이트, 자기 장부의 ①로 따로 결정(독립 판단 — 계좌1의
+        // 결정·주문은 패킷에 넣지 않음). 한쪽 오류가 다른 쪽의 그날 결정을 막지 않습니다.
+        Decision krClaude2Decision = null;
+        if (krClaude2GaveUp) {
+            detail.put(PaperBooks.KR_CLAUDE2, gaveUpNote());
+        } else {
+            try {
+                String skip = claudeSkipReason(market, PaperBooks.KR_CLAUDE2, store.book(PaperBooks.KR_CLAUDE2), d);
+                if (skip != null) {
+                    detail.put(PaperBooks.KR_CLAUDE2, skip);
+                } else {
+                    KrDecisionGates.Gate first = ledgerGate(market, PaperBooks.KR_CLAUDE2, d, inputs);
+                    gates.add(first);
+                    if (first.blocks()) {
+                        waiting.add(first.id() + " " + first.note());
+                        detail.put(PaperBooks.KR_CLAUDE2, "자료 게이트 미달 — 다음 주기에 다시: " + first.id() + " " + first.note());
+                    } else {
+                        krClaude2Decision = claude.decideBook(market, PaperBooks.KR_CLAUDE2, d, RuleBookService.SCHEDULED,
+                                pricesFinal, new ClaudeDecisionPipeline.Observed(inputs.quotes(), now,
+                                        views(withFirst(first, data))));
+                        detail.put(PaperBooks.KR_CLAUDE2, decisionDetail(krClaude2Decision));
+                    }
+                }
+                failures.remove(new FailureKey(market.code(), d, PaperBooks.KR_CLAUDE2));
+            } catch (RuntimeException e) {
+                errors.add("Claude 계좌2: " + message(e));
+                detail.put("krClaude2Error", message(e));
+                failedBooks.add(PaperBooks.KR_CLAUDE2);
+            }
+        }
         gates.addAll(data);
         detail.put("gates", views(gates));
         List<KrDecisionGates.Gate> rulesJudged = rulesOpen && !rulesDecided ? judged : null;
@@ -897,7 +929,7 @@ public class PaperDecisionJob {
             putGates(detail, CLAUDE_GATES, claudeLeft, now);
             return failed(market, now, d, pricesFinal, detail, errors, failedBooks, decision, claudeDecision);
         }
-        if (!waiting.isEmpty() && !rulesDecided && claudeDecision == null) {
+        if (!waiting.isEmpty() && !rulesDecided && claudeDecision == null && krClaude2Decision == null) {
             // 결정한 계좌 없이 ①로 기다리는 계좌만 — 그 세션 기다림 한 줄(이어지는 기다림은 그 줄을 늘림)로 남기고 다음 주기에 다시.
             return waitKr(market, now, d, gates, rulesJudged, claudeLeft, deadline, "자료 게이트 미달: "
                     + String.join(" · ", waiting) + " — 기한 " + Kst.stamp(deadline) + "까지 다음 주기에 다시 봅니다",
@@ -930,7 +962,9 @@ public class PaperDecisionJob {
                     List.of(market.rulesBook()), null, null);
         }
         String claudeSkip = claudeGaveUp ? gaveUpNote() : claudeSkipReason(market, store.book(market.claudeBook()), d);
-        if (claudeSkip == null) {
+        // 한국 Claude 계좌2가 그날 결정을 낼 차례여도 게이트 경로로 이어 갑니다(사용자 결정 2026-11-02).
+        boolean krClaude2Due = claudeSkipReason(market, PaperBooks.KR_CLAUDE2, store.book(PaperBooks.KR_CLAUDE2), d) == null;
+        if (claudeSkip == null || krClaude2Due) {
             return null;
         }
         detail.put("rules", krDecisionDetail(skipped));
@@ -1061,6 +1095,29 @@ public class PaperDecisionJob {
                 log.warn("모의 매매 결정 작업({}) — Claude 계좌 기한 지남 행을 쓰지 못했습니다: {}", market.code(), e.toString());
             }
         }
+        // 한국 Claude 계좌2(사용자 결정 2026-11-02)도 그 세션 정기 결정을 낼 차례였으면 같은 SKIPPED 행 — 판정은 지금 판정(① 계좌2 · ②~⑥)에
+        // '기한 뒤 판정' 표시(계좌2는 기한 전 판정을 따로 기록하지 않음), 재시도 차례인 API 오류 행이면 판정을 만들지 않음.
+        Object krClaude2View = null;
+        if (krRulesSteps(market)) {
+            String skip2 = claudeSkipReason(market, PaperBooks.KR_CLAUDE2, store.book(PaperBooks.KR_CLAUDE2), d);
+            krClaude2View = skip2;
+            if (skip2 == null) {
+                boolean retrying2 = store.decisionFor(PaperBooks.KR_CLAUDE2, d, RuleBookService.SCHEDULED)
+                        .filter(ClaudeBookService::retryable).isPresent();
+                KrDecisionGates.Judged judged2 = null;
+                if (!retrying2) {
+                    List<KrDecisionGates.Gate> current = deadlineGates(market, PaperBooks.KR_CLAUDE2, d, now);
+                    judged2 = current == null ? null : new KrDecisionGates.Judged(current, now, false);
+                }
+                try {
+                    Decision row2 = claude.pastDeadline(market, PaperBooks.KR_CLAUDE2, d, deadline, judged2);
+                    krClaude2View = row2 == null ? CLAUDE_PAST_DEADLINE : decisionDetail(row2);
+                } catch (RuntimeException e) {
+                    krClaude2View = CLAUDE_PAST_DEADLINE + " — 기한 지남 행을 쓰지 못함(다음 주기에 다시): " + message(e);
+                    log.warn("모의 매매 결정 작업({}) — 한국 Claude 계좌2 기한 지남 행을 쓰지 못했습니다: {}", market.code(), e.toString());
+                }
+            }
+        }
         boolean first = records.stream().noneMatch(r -> PAST_DEADLINE.equals(r.outcome()));
         if (first) {
             Map<String, Object> detail = new LinkedHashMap<>();
@@ -1073,6 +1130,9 @@ public class PaperDecisionJob {
             }
             detail.put("rules", rulesView);
             detail.put("claude", claudeView);
+            if (krClaude2View != null) {
+                detail.put(PaperBooks.KR_CLAUDE2, krClaude2View);
+            }
             record(market, now, PAST_DEADLINE, detail);
             log.info("모의 매매 결정 작업({}): {}", market.code(), message);
         } else {
@@ -1641,12 +1701,14 @@ public class PaperDecisionJob {
         boolean claudeDue = claudeSkipReason(market, store.book(market.claudeBook()), d) == null;
         if (!usSteps(market)) {
             // 게이트 지표·13F 규칙 책은 미국 전용 단계, 한국 규칙 계좌는 한국 수급 규칙(클래스 설명).
-            return new Work(false, krRulesSteps(market) && krRules.due(d), claudeDue, null);
+            boolean krClaude2Due = krRulesSteps(market)
+                    && claudeSkipReason(market, PaperBooks.KR_CLAUDE2, store.book(PaperBooks.KR_CLAUDE2), d) == null;
+            return new Work(false, krRulesSteps(market) && krRules.due(d), claudeDue, null, krClaude2Due);
         }
         Optional<Book> book = store.book(PaperBooks.RULES);
         boolean rules = book.isPresent() && !PaperBooks.NOT_STARTED.equals(book.get().status())
                 && afterStart(book.get(), d) && rulesDecisionOn(d).isEmpty();
-        return new Work(store.gate(d).isEmpty(), rules, claudeDue, claude2Kind(market, d));
+        return new Work(store.gate(d).isEmpty(), rules, claudeDue, claude2Kind(market, d), false);
     }
 
     /** 출발일 뒤 거래일인가 — 출발일 이하는 초기 결정이 그날 결정이라 정기 결정을 내지 않습니다(두 책 같음). */
@@ -1665,6 +1727,11 @@ public class PaperDecisionJob {
      * 이하(초기 결정이 그날 결정)·이미 결정함(재시도할 API 오류는 "낼 것"으로 봄, 명세 C7).
      */
     private String claudeSkipReason(PaperMarket market, Optional<Book> book, LocalDate d) {
+        return claudeSkipReason(market, market.claudeBook(), book, d);
+    }
+
+    /** {@link #claudeSkipReason(PaperMarket, Optional, LocalDate)}를 그 시장의 다른 Claude 계좌(계좌 코드 {@code code} — 한국 계좌2)로. */
+    private String claudeSkipReason(PaperMarket market, String code, Optional<Book> book, LocalDate d) {
         if (book.isEmpty()) {
             return "Claude 계좌 없음";
         }
@@ -1676,7 +1743,7 @@ public class PaperDecisionJob {
         if (startedOn == null || !d.isAfter(startedOn)) {
             return "출발일(" + startedOn + ") 이하 — 초기 결정이 그날 결정입니다";
         }
-        Optional<Decision> existing = store.decisionFor(market.claudeBook(), d, RuleBookService.SCHEDULED);
+        Optional<Decision> existing = store.decisionFor(code, d, RuleBookService.SCHEDULED);
         if (existing.isPresent() && !ClaudeBookService.retryable(existing.get())) {
             return "이미 결정함(" + existing.get().status() + ")";
         }

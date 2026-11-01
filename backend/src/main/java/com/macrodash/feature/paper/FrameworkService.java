@@ -259,8 +259,11 @@ public class FrameworkService {
      */
     static String render(ClaudeBookProfile profile, JsonNode body, int version, JsonNode settingsBody) {
         // 계좌2는 결정 시점 설정의 투자 성향 절을 고정 문단의 출력 절 앞에(사용자 결정 2026-11-01) — 다른 계좌는 고정 문단 그대로.
+        // 한국 Claude 계좌2도 같은 성향 절(한국 묶음의 성향 키 — 사용자 결정 2026-11-02).
         String fixedRules = PaperBooks.CLAUDE2.equals(profile.code())
                 ? ClaudePrompts.withClaude2RiskProfile(profile.fixedRules(), Claude2Settings.from(settingsBody).riskProfile())
+                : PaperBooks.KR_CLAUDE2.equals(profile.code())
+                ? ClaudePrompts.withKrClaude2RiskProfile(profile.fixedRules(), Claude2Settings.krRiskProfile(settingsBody))
                 : profile.fixedRules();
         return render(profile.market(), fixedRules, body, version, settingsBody);
     }

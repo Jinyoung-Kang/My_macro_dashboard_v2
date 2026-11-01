@@ -50,6 +50,12 @@ record ClaudeBookProfile(PaperMarket market, String code, String schemaResource,
     static final ClaudeBookProfile KR_CLAUDE = marketDefault(KrPaperMarket.INSTANCE, ClaudeBookService.KR_SCHEMA_RESOURCE);
 
     /**
+     * 한국 Claude 계좌2({@code kr_claude2}, 사용자 결정 2026-11-02) — 단계 1은 한국 계좌1과 같은 한국 묶음·응답 스키마·고정 문단·체결 시점·순위
+     * (계좌 코드만 다름 — 패킷은 {@link KrPacketBuilder#forBook}). 투자 성향 절은 렌더링이 더합니다({@link FrameworkService#render}).
+     */
+    static final ClaudeBookProfile KR_CLAUDE2 = sameAs(KR_CLAUDE, PaperBooks.KR_CLAUDE2);
+
+    /**
      * 미국 Claude 계좌2({@code claude2}, 계좌2 명세 §9·ADR 0022) — 계좌1과 같은 미국 시장 묶음(달력·관측치·하드 규칙 줄·금액 표기)에 응답 스키마
      * {@value ClaudeBookService#CLAUDE2_SCHEMA_RESOURCE}·고정 문단 {@link ClaudePrompts#CLAUDE2_FIXED_RULES}·패킷 변형
      * {@value PacketBuilder#VARIANT_CLAUDE2}·체결 시점 메뉴 {@link PaperBooks#CLAUDE2_TIMINGS}(순위 NEXT_OPEN 0 &lt; AT_1000 1 &lt; … &lt; AT_1500 6 &lt;
@@ -114,6 +120,12 @@ record ClaudeBookProfile(PaperMarket market, String code, String schemaResource,
                       List<String> timings, Map<String, Integer> timingRanks, String callCapKey) {
         this(market, code, schemaResource, fixedRules, packetVariant, timings, timingRanks, callCapKey,
                 market.timingNames(), false, false);
+    }
+
+    /** 다른 계좌 코드로 같은 프로필(시장·스키마·고정 문단·패킷 변형·시점·순위·소상한 키·이름·체결 방식·장중 확인 판). */
+    private static ClaudeBookProfile sameAs(ClaudeBookProfile base, String code) {
+        return new ClaudeBookProfile(base.market(), code, base.schemaResource(), base.fixedRules(), base.packetVariant(),
+                base.timings(), base.timingRanks(), base.callCapKey(), base.timingNames(), base.timed(), base.checkpoints());
     }
 
     /** 받는 순서 그대로 0, 1, 2 … 순위(시점마다 다른 때 체결 — 계좌2). */

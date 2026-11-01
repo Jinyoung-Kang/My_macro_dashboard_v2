@@ -77,13 +77,16 @@ class KrStartDbTest {
     }
 
     private void deleteKrBooks() {
-        jdbc.update("DELETE FROM paper_books WHERE code IN ('kr_rules', 'kr_claude', 'kr_bench_k200', 'kr_bench_mix')");
+        jdbc.update("DELETE FROM paper_books WHERE code IN ('kr_rules', 'kr_claude', 'kr_claude2', 'kr_bench_k200', 'kr_bench_mix')");
     }
 
     @Test
     @DisplayName("S 22:30 출발 — 결정 셋(규칙·벤치마크 둘)·NEXT_OPEN 주문 아홉(RULE 여섯·BENCHMARK 셋)·운용 전환·S 순자산 1억이 실제 표의 제약을 통과하고, 다시 돌려도 한 번")
     void startRowsPassDbConstraints() {
         for (PaperBooks.Definition d : PaperBooks.KR) {
+            if (PaperBooks.createdSeparately(d.code())) {
+                continue;   // 한국 Claude 계좌2는 자기 출발 작업이 만듦(한국 초기화와 같게)
+            }
             assertThat(store.insertBookIfAbsent(new PaperStore.Book(d.code(), d.kind(), d.label(), 100_000_000, null,
                     PaperBooks.NOT_STARTED, null, PaperStore.Book.MARKET_KR, PaperStore.Book.CURRENCY_KRW))).isTrue();
             store.upsertState(new PaperStore.BookState(d.code(), 100_000_000, 100_000_000, 0, 0, null, null, null, null));

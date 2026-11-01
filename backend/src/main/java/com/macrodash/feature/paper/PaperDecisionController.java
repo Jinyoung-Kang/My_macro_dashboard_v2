@@ -141,6 +141,33 @@ public class PaperDecisionController {
     }
 
     /**
+     * 한국 Claude 계좌2 출발({@link ClaudeBookService#startKrClaude2} — 사용자 결정 2026-11-02): 본문 {@code {"confirm":"kr_claude2"}} →
+     * {@code {ok, decision, fills, skipped, book}}. 계좌1 출발 패킷(계좌 몫만 바꿈)으로 한 번 부르고 통과 주문을 출발일 종가로 사후 체결합니다.
+     */
+    @PostMapping("/run/kr-claude2-start")
+    public Map<String, Object> krClaude2Start(@RequestBody(required = false) ConfirmRequest body) {
+        if (!query.ready()) {
+            return notReady();
+        }
+        ClaudeBookService.KrClaude2Started started = claude.startKrClaude2(body == null ? null : body.confirm());
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("ok", true);
+        out.put("decision", query.decisionSummary(started.decision()));
+        out.put("fills", started.restart() == null ? List.of() : query.fillRows(started.restart().fills()));
+        List<Map<String, Object>> skipped = new java.util.ArrayList<>();
+        if (started.restart() != null) {
+            started.restart().skipped().forEach(e -> skipped.add(Map.of("ticker", e.getKey(), "reason", e.getValue())));
+        }
+        out.put("skipped", skipped);
+        out.put("book", query.bookSummary(PaperBooks.KR_CLAUDE2));
+        return out;
+    }
+
+    /** 확인 문구만 받는 본문. */
+    record ConfirmRequest(String confirm) {
+    }
+
+    /**
      * 한국 수동 출발(2단계 명세 §4-8, F1 — {@link PaperDecisionJob#startNow}) → {@code {ok, market, outcome, tradingDate, message, decisions:[목록 한 줄],
      * books:[BookSummary], record}}. 정기 출발과 같은 창·게이트·기한 안에서 네 계좌를 함께 출발시키고, 이미 출발했으면 그 출발 기록
      * ({@code ALREADY_STARTED})을 돌려줍니다. {@code ok}는 출발함·이미 출발함이면 참, 그 세션을 미룸·쓰기 오류면 거짓. 미국 시작의 {@code book}·

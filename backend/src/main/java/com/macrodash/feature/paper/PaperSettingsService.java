@@ -606,6 +606,8 @@ public class PaperSettingsService {
         news.put("feeds", KR_NEWS_FEEDS);
         news.put("aliases", Map.of());
         kr.put("news", news);
+        // 한국 Claude 계좌2(사용자 결정 2026-11-02) — 투자 성향만(체결 시점 고르기·장중 확인은 한국 1분봉 수집 뒤).
+        kr.put("claude2", Map.of("riskProfile", Claude2Settings.DEFAULT_KR_RISK_PROFILE));
         return kr;
     }
 }

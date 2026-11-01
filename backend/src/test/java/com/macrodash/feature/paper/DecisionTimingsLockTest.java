@@ -64,14 +64,17 @@ class DecisionTimingsLockTest {
     void schemaMarketAndPromptAgree() throws IOException {
         List<ClaudeDecisionPipeline.MarketContext> contexts = ClaudeBookService.marketContexts(mock(PacketBuilder.class),
                 mock(KrPacketBuilder.class));
-        assertThat(contexts).extracting(context -> context.profile().code()).as("운영 문맥(계좌마다 — 미국 둘 · 한국, 계좌2 명세 §9-1)")
-                .containsExactly(PaperBooks.CLAUDE, PaperBooks.CLAUDE2, PaperBooks.KR_CLAUDE);
+        assertThat(contexts).extracting(context -> context.profile().code())
+                .as("운영 문맥(계좌마다 — 미국 둘 · 한국 둘, 계좌2 명세 §9-1·한국 계좌2 사용자 결정 2026-11-02)")
+                .containsExactly(PaperBooks.CLAUDE, PaperBooks.CLAUDE2, PaperBooks.KR_CLAUDE, PaperBooks.KR_CLAUDE2);
         assertThat(contexts).extracting(context -> context.market().code())
-                .containsExactly(UsPaperMarket.INSTANCE.code(), UsPaperMarket.INSTANCE.code(), KrPaperMarket.INSTANCE.code());
+                .containsExactly(UsPaperMarket.INSTANCE.code(), UsPaperMarket.INSTANCE.code(), KrPaperMarket.INSTANCE.code(),
+                        KrPaperMarket.INSTANCE.code());
         assertThat(contexts.get(2).market()).isSameAs(KrPaperMarket.INSTANCE);
         assertThat(contexts.get(2).schemaResource()).isEqualTo(ClaudeBookService.KR_SCHEMA_RESOURCE);
+        assertThat(contexts.get(3).schemaResource()).isEqualTo(ClaudeBookService.KR_SCHEMA_RESOURCE);
         assertThat(contexts).extracting(context -> context.shared() != null).as("미국 둘만 시장 입력을 함께 씀(입력 동결)")
-                .containsExactly(true, true, false);
+                .containsExactly(true, true, false, false);
         assertThat(ClaudeBookService.marketContexts(mock(PacketBuilder.class), null)).as("한국 패킷 빌더가 없으면 미국 둘(시험)")
                 .extracting(context -> context.profile().code()).containsExactly(PaperBooks.CLAUDE, PaperBooks.CLAUDE2);
         List<String> v17 = v17Timings();
@@ -97,7 +100,8 @@ class DecisionTimingsLockTest {
             if (!profile.timed()) {
                 // 시장 기본 계좌 — 시장 묶음의 받는 시점·두 갈래 순위·시장 몫 그대로.
                 PaperMarket market = context.market();
-                assertThat(profile.code()).as(code + " 프로필 계좌").isEqualTo(market.claudeBook());
+                // 한국 Claude 계좌2는 계좌1과 같은 시장 몫의 다른 계좌(사용자 결정 2026-11-02).
+                assertThat(profile.code()).as(code + " 프로필 계좌").isIn(market.claudeBook(), PaperBooks.KR_CLAUDE2);
                 assertThat(profile.timings()).as(code + " 시장 체결 시점").isEqualTo(market.timings());
                 assertThat(market.earlyTiming()).as(code + " 이른 시점").isEqualTo(market.timings().get(0));
                 assertThat(market.orderValidation().timings()).isEqualTo(market.timings());

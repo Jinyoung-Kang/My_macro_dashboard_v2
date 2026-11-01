@@ -378,6 +378,10 @@ public class ClaudeBookService {
                 null, (inputs, kind, version) -> packets.assemble(inputs, ClaudeBookProfile.US_CLAUDE2, kind, version)));
         if (krPackets != null) {
             out.add(new MarketContext(ClaudeBookProfile.KR_CLAUDE, null, krPackets::build));
+            // 한국 Claude 계좌2(사용자 결정 2026-11-02) — 같은 한국 자료, 패킷의 계좌 몫만 계좌2의 것.
+            out.add(new MarketContext(ClaudeBookProfile.KR_CLAUDE2, null,
+                    (run, asOf, kind, initial, version, quotes, readAt) -> krPackets.forBook(PaperBooks.KR_CLAUDE2)
+                            .build(run, asOf, kind, initial, version, quotes, readAt)));
         }
         return List.copyOf(out);
     }
@@ -462,9 +466,26 @@ public class ClaudeBookService {
         return decide(market, asOf, kind, pricesFinal, null, Objects.requireNonNull(inputs, "inputs"));
     }
 
+    /**
+     * 그 시장의 다른 Claude 계좌(계좌 코드 {@code book} — 한국 Claude 계좌2, 사용자 결정 2026-11-02)의 결정. 규칙은
+     * {@link #decide(PaperMarket, LocalDate, String, boolean, ClaudeDecisionPipeline.Observed)}와 같고 파이프라인(패킷의 계좌 몫·시스템 프롬프트의
+     * 성향 절·검증의 계좌 몫)만 그 계좌의 것입니다.
+     *
+     * @throws IllegalArgumentException 그 시장에 그 계좌의 결정 문맥이 없음
+     */
+    Decision decideBook(PaperMarket market, String book, LocalDate asOf, String kind, boolean pricesFinal,
+                        ClaudeDecisionPipeline.Observed observed) {
+        return decide(pipeline(market, book), market, asOf, kind, pricesFinal, observed, null);
+    }
+
     private Decision decide(PaperMarket market, LocalDate asOf, String kind, boolean pricesFinal,
                             ClaudeDecisionPipeline.Observed observed, PacketBuilder.MarketInputs inputs) {
-        ClaudeDecisionPipeline base = pipeline(market);
+        return decide(pipeline(market), market, asOf, kind, pricesFinal, observed, inputs);
+    }
+
+    private Decision decide(ClaudeDecisionPipeline base, PaperMarket market, LocalDate asOf, String kind,
+                            boolean pricesFinal, ClaudeDecisionPipeline.Observed observed,
+                            PacketBuilder.MarketInputs inputs) {
         if (base.needsObservation() && observed == null) {
             throw new IllegalArgumentException(market.code() + " Claude 결정은 그 실행의 관측치·읽은 순간이 필요합니다(결정 작업이 넘김)");
         }
@@ -546,7 +567,12 @@ public class ClaudeBookService {
      * @throws InvalidRequestException  Claude 계좌가 없음·시작 전
      */
     Decision pastDeadline(PaperMarket market, LocalDate asOf, Instant deadline, KrDecisionGates.Judged judged) {
-        ClaudeDecisionPipeline base = pipeline(market);
+        return pastDeadline(market, market.claudeBook(), asOf, deadline, judged);
+    }
+
+    /** {@link #pastDeadline(PaperMarket, LocalDate, Instant, KrDecisionGates.Judged)}를 그 시장의 다른 Claude 계좌(한국 계좌2)로. */
+    Decision pastDeadline(PaperMarket market, String code, LocalDate asOf, Instant deadline, KrDecisionGates.Judged judged) {
+        ClaudeDecisionPipeline base = pipeline(market, code);
         if (market.afterDeadline() != PaperMarket.AfterDeadline.NO_TRADE) {
             throw new IllegalArgumentException(market.code() + "은 기한 뒤에도 결정하는 시장입니다 — 기한 지남 행을 쓰지 않습니다");
         }
@@ -1274,6 +1300,120 @@ public class ClaudeBookService {
         };
     }
 
+    /**
+     * 한국 Claude 계좌2 출발 결과.
+     *
+     * @param decision 계좌2 출발 결정 행
+     * @param restart  출발일 종가 사후 체결({@link StartCloseRestart}) — 통과 주문이 없으면 null
+     */
+    public record KrClaude2Started(Decision decision, StartCloseRestart.Result restart) {
+    }
+
+    /**
+     * 한국 Claude 계좌2 출발(사용자 결정 2026-11-02 — 미국 계좌2처럼 한국에도 계좌2, 계좌1과 같은 출발일 S 종가로 시작). 순서:
+     *
+     * <ol>
+     *   <li>계좌2 행이 없으면 만듦(시작 전·출발 현금 = 계좌1과 같은 금액).</li>
+     *   <li>계좌1의 출발 결정(INITIAL, 기준 거래일 S = 계좌1 출발일)이 보낸 패킷에서 계좌 몫만 바꾼 패킷({@link KrClaude2Start})으로 Claude를 한 번
+     *       부름 — 시스템 프롬프트는 계좌2의 것(지금 프레임 판 + 투자 성향 절), 수동 호출 문턱(하루 상한 − 정기 작업 몫).</li>
+     *   <li>검증은 출발 결정 규칙(출발 현금, 그 패킷의 12_hardRules, 관측치 = 지금 한국 관측치 — S 밤 판이어야 함).</li>
+     *   <li>한 트랜잭션: 결정 행·통과 주문(대기) → 계좌2 운용(출발일 S) → 출발일 종가 사후 체결({@link PaperAdminService#restartAtStartClose}).
+     *       사후 체결이 거절되면(금융위 확정 종가 없음 등) 전부 되돌립니다(과금된 호출은 사용량에만 남음).</li>
+     * </ol>
+     *
+     * @throws InvalidRequestException 확인 문구 다름·계좌1이 출발 전·계좌2가 이미 시작함·출발일 금융위 확정 시세가 아직 없음·관측치가 S 판이 아님·
+     *                                 호출 상한·호출 실패
+     */
+    public KrClaude2Started startKrClaude2(String confirm) {
+        requireReady();
+        if (!PaperBooks.KR_CLAUDE2.equals(confirm)) {
+            throw new InvalidRequestException("한국 Claude 계좌2를 출발시키려면 확인 문구로 " + PaperBooks.KR_CLAUDE2 + "를 그대로 입력하세요.");
+        }
+        ClaudeDecisionPipeline base = pipelines.get(PaperBooks.KR_CLAUDE2);
+        if (base == null || base.market() != KrPaperMarket.INSTANCE) {
+            throw new IllegalStateException("한국 Claude 계좌2 결정 문맥이 없습니다");
+        }
+        if (!initialCall.tryLock()) {
+            throw new TooManyRequestsException("다른 Claude 호출(미리보기·시작)이 진행 중입니다 — 끝난 뒤 다시 누르세요.",
+                    BUSY_RETRY);
+        }
+        try {
+            MarketRun run = new PaperMarkets(store, reader).open(KrPaperMarket.INSTANCE);
+            Book first = claudeBook(PaperBooks.KR_CLAUDE);
+            if (!PaperBooks.ACTIVE.equals(first.status()) || first.startedOn() == null) {
+                throw new InvalidRequestException("한국 Claude 계좌1이 운용 중(출발함)이어야 합니다 — 상태 " + first.status());
+            }
+            LocalDate start = first.startedOn();
+            Decision source = store.decisionFor(PaperBooks.KR_CLAUDE, start, RuleBookService.INITIAL)
+                    .filter(d -> "OK".equals(d.status()) || "NO_TRADE".equals(d.status()))
+                    .orElseThrow(() -> new InvalidRequestException("한국 Claude 계좌1의 출발 결정(" + start + ")을 찾지 못했습니다"));
+            PaperMarketData.FscLatest fsc = reader.quietly(marketData::fscLatest);
+            if (fsc == null || fsc.stocks() == null || fsc.stocks().isBefore(start) || fsc.etfs() == null
+                    || fsc.etfs().isBefore(start)) {
+                throw new InvalidRequestException(start + " 금융위 확정 시세가 아직 없습니다(주식 " + (fsc == null ? null : fsc.stocks())
+                        + " · ETF " + (fsc == null ? null : fsc.etfs()) + " — 다음 영업일 13시 뒤 공개) — Claude를 부르지 않았습니다");
+            }
+            Optional<Quotes> quotes = reader.quietly(() -> marketData.quotes(run));
+            LocalDate barDate = quotes == null ? null : quotes.map(Quotes::modalBarDate).orElse(null);
+            if (!start.equals(barDate)) {
+                throw new InvalidRequestException("지금 한국 관측치가 출발일(" + start + ") 판이 아닙니다(봉 " + barDate + ") — 검증 기준 가격이 달라 "
+                        + "Claude를 부르지 않았습니다");
+            }
+            double cash = first.initialCash();
+            ledger.exclusively(() -> store.atomically(() -> {
+                store.insertBookIfAbsent(new Book(PaperBooks.KR_CLAUDE2, PaperBooks.KIND_CLAUDE, PaperBooks.KR_CLAUDE2_LABEL, cash,
+                        null, PaperBooks.NOT_STARTED, null, Book.MARKET_KR, Book.CURRENCY_KRW));
+                if (store.state(PaperBooks.KR_CLAUDE2).isEmpty()) {
+                    store.upsertState(new BookState(PaperBooks.KR_CLAUDE2, cash, cash, 0, 0, null, null, null, null));
+                }
+                return null;
+            }));
+            Book book = claudeBook(PaperBooks.KR_CLAUDE2);
+            requireNotStarted(book);
+            if (store.decisionFor(PaperBooks.KR_CLAUDE2, start, RuleBookService.INITIAL).isPresent()) {
+                throw new InvalidRequestException("한국 Claude 계좌2의 출발 결정이 이미 있습니다");
+            }
+            BookState state = store.state(PaperBooks.KR_CLAUDE2).orElseThrow();
+            SettingsRow row = run.settingsRow().orElseGet(this::settingsRow);
+            ClaudeSettings claude = ClaudeSettings.from(row.body());
+            LocalDate today = Kst.today(clock);
+            ClaudeDecisionPipeline pipeline = base.bind(run);
+            PacketBuilder.Packet packet = KrClaude2Start.packet(source, start, mapper);
+            Attempt attempt = pipeline.callsLeft(today, claude, false) <= 0 ? null
+                    : pipeline.attemptWithPacket(packet, row, claude, today, false);
+            if (attempt == null) {
+                throw new InvalidRequestException(capMessage(claude, today, false));
+            }
+            if (!attempt.succeeded()) {
+                throw new InvalidRequestException("한국 Claude 계좌2 출발 호출 실패(" + statusLabel(attempt.status()) + "): "
+                        + clip(attempt.error(), 400));
+            }
+            Plan plan = pipeline.plan(start, RuleBookService.INITIAL, true, attempt, cashOnly(state.cash()), row, claude,
+                    quotes, Set.of(), Map.of());
+            ObjectNode response = plan.response();
+            response.put("packetFromDecision", source.id());
+            response.put("startNote", "한국 Claude 계좌1 출발 결정 " + source.id() + "의 패킷(계좌 몫만 바꿈)으로 출발 — 통과 주문은 출발일 "
+                    + start + " 종가로 사후 체결(사용자 결정 2026-11-02)");
+            Decision row2 = pipeline.decisionRow(0, start, RuleBookService.INITIAL, plan.status(), row, claude, attempt,
+                    plan.target(), response, null, true);
+            KrClaude2Started started = ledger.exclusively(() -> store.atomically(() -> {
+                long id = store.insertDecisionIfAbsent(row2).orElseThrow(() -> new InvalidRequestException(
+                        "한국 Claude 계좌2의 출발 결정이 그사이 생겼습니다"));
+                pipeline.insertOrders(id, start, plan, PaperBooks.ORDER_PENDING);
+                store.updateBookStatus(PaperBooks.KR_CLAUDE2, PaperBooks.ACTIVE);
+                store.updateBookStartedOn(PaperBooks.KR_CLAUDE2, start);
+                StartCloseRestart.Result restart = plan.accepted() > 0
+                        ? admin.restartAtStartClose(PaperBooks.KR_CLAUDE2, PaperBooks.KR_CLAUDE2) : null;
+                return new KrClaude2Started(store.decision(id).orElseThrow(), restart);
+            }));
+            log.info("한국 Claude 계좌2 출발: 결정 {} {} — 통과 {} · 거절 {}", started.decision().id(), plan.status(), plan.accepted(),
+                    plan.verdicts().size() - plan.accepted());
+            return started;
+        } finally {
+            initialCall.unlock();
+        }
+    }
+
     /** 출발 계획 실패의 사유(예외). */
     private static String startFailure(RuntimeException e) {
         return "Claude 계좌 출발 계획 실패 — " + e.getClass().getSimpleName() + " " + clip(e.getMessage(), 400);
@@ -1676,9 +1816,14 @@ public class ClaudeBookService {
      * 다른 시장 묶음의 것이면 없는 것으로 봅니다.
      */
     private ClaudeDecisionPipeline pipeline(PaperMarket market) {
-        ClaudeDecisionPipeline pipeline = pipelines.get(market.claudeBook());
+        return pipeline(market, market.claudeBook());
+    }
+
+    /** 그 시장의 Claude 계좌 {@code book}의 결정 파이프라인 — 없거나 다른 시장의 문맥이면 오류. */
+    private ClaudeDecisionPipeline pipeline(PaperMarket market, String book) {
+        ClaudeDecisionPipeline pipeline = pipelines.get(book);
         if (pipeline == null || pipeline.market() != market.definition()) {
-            throw new IllegalArgumentException("Claude 결정 문맥이 없는 시장입니다: " + market.code());
+            throw new IllegalArgumentException("Claude 결정 문맥이 없는 시장·계좌입니다: " + market.code() + " " + book);
         }
         return pipeline;
     }

@@ -661,6 +661,15 @@
     },
     {
       "m": "POST",
+      "p": "/api/paper/run/kr-claude2-start",
+      "body": {
+        "confirm": "str"
+      },
+      "mutating": true,
+      "fuzz": false
+    },
+    {
+      "m": "POST",
       "p": "/api/paper/run/risk",
       "mutating": true
     },

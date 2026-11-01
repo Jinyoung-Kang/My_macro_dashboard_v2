@@ -96,6 +96,7 @@ public final class AccessPolicy {
                 "GET /api/paper/books/{code}/nav", "GET /api/paper/books/{code}/execution", "POST /api/paper/init",
                 "POST /api/paper/books/{code}/status",
                 "POST /api/paper/books/{code}/reset", "POST /api/paper/books/{code}/restart-at-start-close",
+                "POST /api/paper/run/kr-claude2-start",
                 "POST /api/paper/run/risk", "GET /api/paper/track-record",
                 "POST /api/paper/run/rerank", "GET /api/paper/decisions", "GET /api/paper/decisions/{id}",
                 "POST /api/paper/run/decision", "POST /api/paper/run/initial-decision", "GET /api/paper/settings",
