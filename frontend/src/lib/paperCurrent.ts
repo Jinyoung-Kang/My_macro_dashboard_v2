@@ -38,6 +38,11 @@ export function stampText(stamp: string | null | undefined): string | null {
   return at ? `${at.md} ${at.hm}` : null;
 }
 
+/** "2026-10-30 23:58 KST" → "23:58"(꼴이 다르면 null — 곡선 꼬리 이름·히어로 꼬리 점의 기준 시각). */
+export function clockText(stamp: string | null | undefined): string | null {
+  return stampParts(stamp)?.hm ?? null;
+}
+
 /** 장중 1분봉이 든 단계인가(`LIVE` 정규장 장중 추정 · `LIVE_LAST` 마감 뒤 같은 날 장중 마지막 추정). */
 export function isLiveStage(stage: PaperCurrentStage | null | undefined): boolean {
   return stage === "LIVE" || stage === "LIVE_LAST";

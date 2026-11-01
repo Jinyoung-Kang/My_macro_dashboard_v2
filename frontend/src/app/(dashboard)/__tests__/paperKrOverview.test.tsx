@@ -7,8 +7,9 @@
  *  - 자료: 네 계좌 행·비교 표는 원 단위 정수, 한계 문구(§6) 카드, 미국 전용 카드(초기화·사후 체결 대기·계좌 시작·신호 기관·OS 게이트)는
  *    없고, 한국 벤치마크가 '시작 전'이어도 사후 체결 대기 경고가 없다. 개요·상태는 ?market=KR 경로
  *  - 지금 값(장중 명세 §4-1): 계좌 행은 원 정수 지금 값과 값의 기준 한 줄 — 그날 시가 체결 전이면 '시가 체결 대기 n건 반영 전'
+ *  - 오늘 추정 꼬리(장중 명세 §4): 계좌 선에만(노출 맞춘 참고선 K40에는 없음), 원 정수 자릿수, 히어로 곡선도 꼬리 점
  */
-import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const api = vi.hoisted(() => {
@@ -23,12 +24,12 @@ vi.mock("@/hooks/useRefreshSignal", () => ({ useRefreshSignal: () => signal }));
 vi.mock("@/components/charts", () => ({
   SERIES_COLORS: { blue: "#3987e5", orange: "#d95926", green: "#199e70" },
   MultiLineSeries: ({ data, series, unit, axisWidth }: {
-    data: Record<string, unknown>[]; series: { key: string; name: string; valueDigits?: number; dashed?: boolean }[]; unit?: string;
-    axisWidth?: number;
+    data: Record<string, unknown>[]; series: { key: string; name: string; valueDigits?: number; dashed?: boolean; tailOf?: string }[];
+    unit?: string; axisWidth?: number;
   }) => (
     <ul aria-label={unit === "%" ? "노출 계열" : "순자산 계열"} data-rows={data.length} data-axis-width={axisWidth ?? ""}>
       {series.map((entry) => (
-        <li key={entry.key} data-digits={entry.valueDigits ?? ""} data-dashed={entry.dashed ? "yes" : "no"}
+        <li key={entry.key} data-digits={entry.valueDigits ?? ""} data-dashed={entry.dashed ? "yes" : "no"} data-tail={entry.tailOf ?? ""}
           data-values={data.map((row) => String(row[entry.key] ?? "null")).join(",")}>
           {entry.name}
         </li>
@@ -36,9 +37,10 @@ vi.mock("@/components/charts", () => ({
     </ul>
   ),
   DonutChart: () => null,
-  // 개요 히어로의 선 차트 — 이름(계좌)·값만 목록 속성으로.
+  // 개요 히어로의 선 차트 — 이름(계좌)·값·꼬리 값만 목록 속성으로.
   LineChart: ({ data, ariaLabel }: { data: Record<string, unknown>[]; ariaLabel?: string }) => (
-    <ul aria-label={ariaLabel ?? "선 차트"} data-values={data.map((entry) => String(entry.nav ?? "null")).join(",")} />
+    <ul aria-label={ariaLabel ?? "선 차트"} data-values={data.map((entry) => String(entry.nav ?? "null")).join(",")}
+      data-estimate={data.map((entry) => String(entry.estimate ?? "null")).join(",")} />
   ),
 }));
 
@@ -514,5 +516,50 @@ describe("노출 맞춘 참고선(K40)", () => {
     const plain = await screen.findByRole("list", { name: "순자산 계열" });
     expect(within(plain).queryByText("노출 맞춘 참고선(계좌 아님)")).toBeNull();
     expect(screen.queryByRole("list", { name: "노출 맞춘 참고선 설명" })).toBeNull();
+  });
+});
+
+describe("오늘 추정 꼬리(한국)", () => {
+  /** 곧바로 resolve하는 목 응답을 끝까지 반영합니다(QA-148 — 벽시계 한도 없이). */
+  const settled = () => act(async () => {});
+
+  it("계좌 선에만 꼬리 — 노출 맞춘 참고선(K40)에는 없고, 원 정수 자릿수, 히어로(기본 한국 Claude 계좌) 곡선도 꼬리 점", async () => {
+    const live = {
+      nav: 100_400_000, returnPct: 0.4, exposurePct: 99.9, dayChangePct: 0.09, previousTradingDate: "2026-10-30", previousNavFinal: false,
+      basis: "LIVE", stage: "LIVE", tradingDate: "2026-11-02", atKst: "2026-11-02 10:05 KST", isEstimated: true, livePriced: 1,
+      positionCount: 1, pendingOrders: 0, neutral: false, note: null,
+    };
+    reads["/api/paper/overview?market=KR"] = () => Promise.resolve({
+      ...KR_OVERVIEW,
+      exposureReference: {
+        label: "노출 맞춘 참고선 — 계좌 아님", basis: "…", note: "…", dates: ["2026-10-29", "2026-10-30"],
+        values: [100_000_000, 100_100_000], stockWeightPct: [null, 0], asOfDate: "2026-10-30", stoppedReason: null,
+      },
+      liveSession: { phase: "REGULAR", sessionDate: "2026-11-02" },
+      navEstimate: {
+        date: "2026-11-02", atKst: "2026-11-02 10:05 KST", isEstimated: true,
+        books: {
+          kr_rules: { nav: null, isEstimated: false }, kr_claude: { nav: 100_400_000, isEstimated: true },
+          kr_bench_k200: { nav: null, isEstimated: false }, kr_bench_mix: { nav: null, isEstimated: false },
+        },
+      },
+      books: KR_BOOKS.map((entry) => (entry.code === "kr_claude" ? { ...entry, current: live } : entry)),
+    });
+    reads["/api/paper/status?market=KR"] = () => Promise.resolve(KR_STATUS);
+    render(<PaperPage market="KR" />);
+    await settled();
+
+    const nav = screen.getByRole("list", { name: "순자산 계열" });
+    expect(within(nav).getAllByRole("listitem").map((li) => li.textContent)).toEqual([
+      "한국 규칙 계좌", "한국 Claude 계좌", "KODEX 200 계좌", "한국 60/40 계좌", "노출 맞춘 참고선(계좌 아님)", "한국 Claude 계좌 · 추정 10:05",
+    ]);
+    const tail = within(nav).getByText("한국 Claude 계좌 · 추정 10:05");
+    expect(tail.getAttribute("data-tail")).toBe("kr_claude");
+    expect(tail.getAttribute("data-digits")).toBe("0");
+    expect(tail.getAttribute("data-values")).toBe("null,100312450,100400000");
+    // 참고선은 꼬리 점의 날에 값이 없음(계산만 하는 선 — 오늘 추정을 붙이지 않음)
+    expect(within(nav).getByText("노출 맞춘 참고선(계좌 아님)").getAttribute("data-values")).toBe("100000000,100100000,null");
+    expect(screen.getByRole("list", { name: "한국 Claude 계좌 순자산 곡선" }).getAttribute("data-estimate")).toBe("null,100312450,100400000");
+    expect(screen.getByText(/^점선 꼬리 = 11-02 순자산 줄이 생기기 전의 지금 값/)).toBeTruthy();
   });
 });

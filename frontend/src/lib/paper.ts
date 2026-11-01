@@ -872,10 +872,14 @@ function holdingRow(position: PaperPosition, share: number | null, segmentKey: s
   };
 }
 
-/** 차트 한 줄(계열)의 키·이름. 색은 화면이 정합니다(components/charts의 팔레트). */
+/**
+ * 차트 한 줄(계열)의 키·이름. 색은 화면이 정합니다(components/charts의 팔레트). `tailOf`가 있으면 그 키의 계좌 선에 붙는 오늘 추정 꼬리
+ * (lib/paperOverview `withNavEstimateTail` — 차트의 꼬리 계열).
+ */
 export interface NavSeriesLine {
   key: string;
   name: string;
+  tailOf?: string;
 }
 
 /**

@@ -6,8 +6,9 @@
  */
 import { deltaColor, EMPTY, formatKst, formatNumber, formatPercent, formatWithUnit } from "./format";
 import { accountProfile, benchmarkLabel, bookCard, isTimedBook, type NavSeriesLine, primaryClaudeBook, statCells } from "./paper";
-import type { LineRow, LineSeriesSpec } from "./lineChart";
+import type { LineRow, LineSeriesSpec, ScrubEstimate } from "./lineChart";
 import {
+  clockText,
   type ComparisonBasis,
   comparisonBasis,
   type CurrentView,
@@ -21,7 +22,14 @@ import {
   stampText,
 } from "./paperCurrent";
 import { formatMoney, marketMeta, type PaperMarketCode } from "./paperMarket";
-import type { PaperBookSummary, PaperLiveSessionSummary, PaperOverviewBook, PaperOverviewResponse, PaperQuotesSummary } from "./types";
+import type {
+  PaperBookSummary,
+  PaperLiveSessionSummary,
+  PaperNavEstimate,
+  PaperOverviewBook,
+  PaperOverviewResponse,
+  PaperQuotesSummary,
+} from "./types";
 
 // ---------------------------------------------------------------- 계좌 행(AssetRow)
 
@@ -155,33 +163,55 @@ export function heroBookCode(books: readonly Pick<PaperBookSummary, "code" | "ki
   return primaryClaudeBook(books)?.code ?? books[0]?.code ?? null;
 }
 
-/** 히어로 곡선 — 고른 계좌 한 줄(행 = 거래일, 키 "nav"). 값은 순자산 곡선(`navSeries`)의 그 계좌 값 그대로(기록 없는 날은 null — 선이 끊김). */
+/** 유한한 숫자만 값 — 그 밖(null·글·NaN)은 null(선이 끊김, 짓지 않음). */
+const finiteOrNull = (value: unknown): number | null => (typeof value === "number" && Number.isFinite(value) ? value : null);
+
+/**
+ * 히어로 곡선 — 고른 계좌 한 줄(행 = 거래일, 키 "nav"). 값은 순자산 곡선(`navSeries`)의 그 계좌 값 그대로(기록 없는 날은 null — 선이 끊김).
+ * 오늘 추정 점이 있으면 꼬리 계열(키 "estimate", `tailOf` "nav")과 그 점의 행이 하나 더 붙습니다(`heroNavChart`).
+ */
 export interface HeroNavChart {
   rows: LineRow[];
   series: LineSeriesSpec[];
   /** 값 자릿수 — 미국 소수 둘째, 한국 원 정수. */
   valueDigits: number;
+  /** 꼬리 점을 문지르기가 읽는 법(`scrubModel`의 estimate — 날짜·꼬리 키·추정 여부·설명 'HH:MM'/'장부'). 꼬리가 없으면 null. */
+  estimate: ScrubEstimate | null;
 }
 
 /** 히어로 곡선의 값 키. */
 export const HERO_NAV_KEY = "nav";
+/** 히어로 곡선의 오늘 추정 꼬리 키. */
+export const HERO_ESTIMATE_KEY = "estimate";
 
 /**
  * 고른 기간 창(`navSeriesWindow` 결과 — 순자산 곡선 카드와 같은 기간)에서 그 계좌 한 줄만. 창이 없으면 빈 행. 계열 이름은 계좌 이름.
+ *
+ * `tail`(그 계좌의 오늘 추정 점 — `navEstimatePoint`)이 있고 그 날짜가 창의 마지막 행보다 뒤면, 비교 곡선과 같은 규칙(`withNavEstimateTail`)으로
+ * 마지막 행 → 그 점의 꼬리(점선)를 붙이고 문지르기가 그 점을 '추정 HH:MM'(현금뿐 계좌는 배지 없이 '장부')으로 읽게 합니다. 창에 행이 없으면 붙이지 않습니다.
  */
 export function heroNavChart(
   navWindow: PaperOverviewResponse["navSeries"],
   code: string,
   label: string,
   market: PaperMarketCode = "US",
+  tail: NavEstimatePoint | null = null,
 ): HeroNavChart {
   const dates = Array.isArray(navWindow?.dates) ? navWindow.dates : [];
   const values = navWindow?.books && Array.isArray(navWindow.books[code]) ? navWindow.books[code] : [];
-  const rows = dates.map((date, index): LineRow => {
-    const value = values[index];
-    return { date, [HERO_NAV_KEY]: typeof value === "number" && Number.isFinite(value) ? value : null };
-  });
-  return { rows, series: [{ key: HERO_NAV_KEY, label }], valueDigits: market === "KR" ? 0 : 2 };
+  const rows = dates.map((date, index): LineRow => ({ date, [HERO_NAV_KEY]: finiteOrNull(values[index]) }));
+  const series: LineSeriesSpec[] = [{ key: HERO_NAV_KEY, label }];
+  const valueDigits = market === "KR" ? 0 : 2;
+  const last = rows.at(-1);
+  if (!tail || !last || !(tail.date > last.date)) return { rows, series, valueDigits, estimate: null };
+  const withTail = rows.map((row, index): LineRow => ({ ...row, [HERO_ESTIMATE_KEY]: index === rows.length - 1 ? row[HERO_NAV_KEY] : null }));
+  withTail.push({ date: tail.date, [HERO_NAV_KEY]: null, [HERO_ESTIMATE_KEY]: tail.nav });
+  return {
+    rows: withTail,
+    series: [...series, { key: HERO_ESTIMATE_KEY, label: `${label} · ${tail.tag}`, tailOf: HERO_NAV_KEY }],
+    valueDigits,
+    estimate: { date: tail.date, valueKey: HERO_ESTIMATE_KEY, isEstimated: tail.isEstimated, note: tail.isEstimated ? tail.clock : tail.tag },
+  };
 }
 
 /** 개요 히어로 한 장 — 고른 계좌의 지금 값(계좌 행과 같은 규칙)과 곡선. */
@@ -214,7 +244,7 @@ export interface OverviewHeroModel {
  * 개요 히어로 모델 — 계좌 행(`bookAssetRow`)과 같은 지금 값·이전 값·경고 규칙이고, 곡선은 고른 기간 창의 그 계좌 한 줄. 그 계좌가 목록에 없으면 null.
  */
 export function overviewHeroModel(
-  overview: Pick<PaperOverviewResponse, "books" | "pendingBackfill" | "quotes" | "liveSession">,
+  overview: Pick<PaperOverviewResponse, "books" | "pendingBackfill" | "quotes" | "liveSession" | "navEstimate">,
   code: string,
   navWindow: PaperOverviewResponse["navSeries"],
   market: PaperMarketCode = "US",
@@ -241,7 +271,7 @@ export function overviewHeroModel(
     staleReason: row.staleReason,
     warning: row.warning,
     source: currentSource(view.isEstimated, market),
-    chart: heroNavChart(navWindow, code, book.label, market),
+    chart: heroNavChart(navWindow, code, book.label, market, navEstimatePoint(overview.navEstimate, book, code)),
   };
 }
 
@@ -471,6 +501,99 @@ export function markersInWindow<M extends { x: string }>(
 ): M[] {
   const dates = new Set(Array.isArray(navWindow?.dates) ? navWindow.dates : []);
   return markers.filter((marker) => dates.has(marker.x));
+}
+
+// ---------------------------------------------------------------- 순자산 곡선의 오늘 추정 꼬리(장중 명세 §4 '순자산 곡선 꼬리', L2)
+
+/** 비교 곡선 꼬리 계열 키의 꼬리말 — 계좌 코드 뒤에 붙입니다(계좌 코드·참고선 키와 겹치지 않게). */
+export const NAV_TAIL_SUFFIX = "__estimate";
+
+/** 계좌 하나의 오늘 추정 점 — 개요 `navEstimate`의 그 계좌 값(서버 값 그대로). */
+export interface NavEstimatePoint {
+  /** 점의 날짜 — 그 세션(아직 순자산 줄이 없는 날). */
+  date: string;
+  nav: number;
+  /** 장중 추정인가 — false는 현금뿐 계좌(장부 값 = 장중 값). */
+  isEstimated: boolean;
+  /** 기준 시각 'HH:MM' — 그 계좌 지금 값의 시각(`current.atKst`), 모르면 `navEstimate.atKst`(장중 값 계좌들 가운데 가장 오래된 시각). 장부 값 점은 null. */
+  clock: string | null;
+  /** 이름 꼬리말 — '추정 23:58'·'추정'(시각 모름)·'장부'(현금뿐). */
+  tag: string;
+}
+
+/**
+ * 개요 `navEstimate`에서 계좌 하나의 오늘 추정 점. 꼬리가 없는 응답(옛 응답·장 밖·그날 줄이 이미 있음 — 서버가 null)이거나 그 계좌 값이 없으면
+ * (장중 값도 현금뿐도 아님 — 서버 `nav:null`) null. 짓지 않습니다.
+ */
+export function navEstimatePoint(
+  navEstimate: PaperNavEstimate | null | undefined,
+  book: Pick<PaperOverviewBook, "current"> | null | undefined,
+  code: string,
+): NavEstimatePoint | null {
+  if (!navEstimate || monthDay(navEstimate.date) === null || !navEstimate.books || !Object.hasOwn(navEstimate.books, code)) return null;
+  const entry = navEstimate.books[code];
+  const nav = finiteOrNull(entry?.nav);
+  if (nav === null) return null;
+  if (entry.isEstimated !== true) return { date: navEstimate.date, nav, isEstimated: false, clock: null, tag: "장부" };
+  const own = book?.current?.isEstimated === true ? clockText(book.current.atKst) : null;
+  const clock = own ?? clockText(navEstimate.atKst);
+  return { date: navEstimate.date, nav, isEstimated: true, clock, tag: clock ? `추정 ${clock}` : "추정" };
+}
+
+/** 꼬리를 붙인 순자산 곡선 — `tailDate`는 꼬리 점의 날짜(꼬리가 없으면 null). */
+export interface NavChartWithTail {
+  rows: Record<string, string | number | null>[];
+  series: NavSeriesLine[];
+  tailDate: string | null;
+}
+
+/**
+ * 순자산 곡선(고른 기간 창 — `navChart` 뒤, 한국은 참고선 `withKrReference` 뒤)에 오늘 추정 꼬리를 붙입니다(장중 명세 §4 '순자산 곡선 꼬리').
+ *
+ * - 개요에 `navEstimate`가 있고 그 날짜가 창의 마지막 행보다 뒤일 때만 — 그날 순자산 줄이 생기면 서버가 꼬리를 보내지 않고(이 함수도 날짜로 한 번 더
+ *   막음), 창에 행이 하나도 없으면 붙이지 않습니다(이을 마지막 줄이 없음).
+ * - 계좌 선마다(`navEstimatePoint`가 값을 주는 계좌만) 꼬리 계열 `{코드}__estimate` — 이름 '{계좌} · 추정 HH:MM'(현금뿐 '{계좌} · 장부'),
+ *   `tailOf` = 계좌 코드. 꼬리는 창의 마지막 행의 그 계좌 값에서 시작해(그날 값이 없으면 외딴 점 하나) 새 행(꼬리 점의 날짜 — 다른 칸은 모두 null)의
+ *   추정 값으로 갑니다. 축 범위는 부르는 쪽이 이 결과로 잽니다(`navAxis`).
+ * - 계좌가 아닌 계열(한국 노출 맞춘 참고선 K40 — `books`에 없는 키)과 이미 꼬리인 계열에는 붙이지 않습니다. 값은 서버 값 그대로입니다(표시 전용 —
+ *   통계·순자산 줄과 섞지 않음).
+ */
+export function withNavEstimateTail(
+  chart: { rows: readonly Record<string, string | number | null>[]; series: readonly NavSeriesLine[] },
+  navEstimate: PaperNavEstimate | null | undefined,
+  books: readonly PaperOverviewBook[],
+): NavChartWithTail {
+  const unchanged = (): NavChartWithTail => ({ rows: chart.rows.map((row) => ({ ...row })), series: [...chart.series], tailDate: null });
+  const last = chart.rows.at(-1);
+  if (!navEstimate || !last || !(navEstimate.date > String(last.date))) return unchanged();
+  const tails = chart.series.flatMap((line) => {
+    const book = line.tailOf === undefined ? books.find((entry) => entry.code === line.key) : undefined;
+    const point = book ? navEstimatePoint(navEstimate, book, line.key) : null;
+    return point ? [{ line, point, key: `${line.key}${NAV_TAIL_SUFFIX}` }] : [];
+  });
+  if (tails.length === 0) return unchanged();
+  const lastIndex = chart.rows.length - 1;
+  const rows = chart.rows.map((row, index) => {
+    const out: Record<string, string | number | null> = { ...row };
+    for (const tail of tails) out[tail.key] = index === lastIndex ? finiteOrNull(row[tail.line.key]) : null;
+    return out;
+  });
+  const point: Record<string, string | number | null> = { date: navEstimate.date };
+  for (const line of chart.series) point[line.key] = null;
+  for (const tail of tails) point[tail.key] = tail.point.nav;
+  rows.push(point);
+  return {
+    rows,
+    series: [...chart.series, ...tails.map((tail) => ({ key: tail.key, name: `${tail.line.name} · ${tail.point.tag}`, tailOf: tail.line.key }))],
+    tailDate: navEstimate.date,
+  };
+}
+
+/** 곡선 아래 꼬리 설명 한 줄 — 꼬리가 없으면 null. */
+export function navTailNote(tailDate: string | null): string | null {
+  const md = monthDay(tailDate);
+  if (!md) return null;
+  return `점선 꼬리 = ${md} 순자산 줄이 생기기 전의 지금 값(계좌 행과 같은 값 — 장중 추정, 현금뿐 계좌는 장부 값)입니다. 표시 전용이고 그날 줄이 생기면 사라집니다.`;
 }
 
 // ---------------------------------------------------------------- 같은 구간 순자산(S = 100, 계좌2 명세 §4-2의 2)

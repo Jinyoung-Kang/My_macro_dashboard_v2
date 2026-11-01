@@ -12,6 +12,8 @@
  *    히어로 차트 아래(아래 '순자산 곡선'과 같은 기간 — 그 카드의 탭은 없음), 초기화 전이면 히어로 없이 탭은 곡선 카드에
  *  - 지금 값(장중 명세 §4-1): 개요 응답에 current가 있으면 계좌 행은 그 값과 값의 기준 한 줄(단계 표기·덧붙임·하루 변화)·추정 배지,
  *    부제는 '지금 값 기준' — current가 없는 옛 응답(위 고정본들)은 장부 표시 그대로
+ *  - 오늘 추정 꼬리(장중 명세 §4): navEstimate가 있으면 비교 곡선에 계좌마다 마지막 줄 → 추정 점의 꼬리(이름 '{계좌} · 추정 HH:MM', 현금뿐
+ *    '· 장부', 기간 창 뒤 한 행)와 곡선 아래 설명·출처, 히어로 곡선도 꼬리 점 — 문지르면 '추정 HH:MM'(배지·알림), 현금뿐은 배지 없이 '장부'
  */
 import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -36,10 +38,21 @@ vi.mock("@/components/charts", () => ({
     </ul>
   ),
   DonutChart: () => null,
-  // 개요 히어로의 선 차트 — 이름(계좌)·행 수·첫 날짜·값만 목록 속성으로.
-  LineChart: ({ data, ariaLabel }: { data: Record<string, unknown>[]; ariaLabel?: string }) => (
-    <ul aria-label={ariaLabel ?? "선 차트"} data-rows={data.length} data-first={String(data[0]?.date ?? "")}
-      data-values={data.map((entry) => String(entry.nav ?? "null")).join(",")} />
+  // 개요 히어로의 선 차트 — 이름(계좌)·행 수·첫 날짜·값·꼬리 값·계열(꼬리는 본 계열 키)만 목록 속성으로. 실제 차트의 문지르기 대신 '마지막 점
+  // 문지르기' 단추가 onScrub에 마지막 행 순번을 넘깁니다(히어로가 그 점을 어떻게 읽는지 — 꼬리 점이면 '추정 HH:MM').
+  LineChart: ({ data, series, ariaLabel, onScrub }: {
+    data: Record<string, unknown>[]; series: { key: string; label: string; tailOf?: string }[]; ariaLabel?: string;
+    onScrub?: (index: number | null) => void;
+  }) => (
+    <>
+      <ul aria-label={ariaLabel ?? "선 차트"} data-rows={data.length} data-first={String(data[0]?.date ?? "")}
+        data-values={data.map((entry) => String(entry.nav ?? "null")).join(",")}
+        data-estimate={data.map((entry) => String(entry.estimate ?? "null")).join(",")}
+        data-series={series.map((entry) => `${entry.label}${entry.tailOf ? `(꼬리 ${entry.tailOf})` : ""}`).join("|")} />
+      {onScrub ? (
+        <button type="button" onClick={() => onScrub(data.length - 1)}>{`${ariaLabel ?? "선 차트"} 마지막 점 문지르기`}</button>
+      ) : null}
+    </>
   ),
 }));
 
@@ -112,6 +125,21 @@ const CURRENT_BOOKS = [
 ];
 
 const CURRENT_OVERVIEW = { ...OVERVIEW, books: CURRENT_BOOKS, liveSession: LIVE_SESSION, navEstimate: null };
+
+/**
+ * 오늘 추정 꼬리가 든 고정본(navEstimate — 10-30 세션에 그날 순자산 줄이 아직 없음): 규칙·SPY 계좌는 장중 값(SPY 계좌는 기준 시각 23:57 —
+ * 계좌마다 시각이 다름), 출발 전 Claude·장부 단계 60/40 계좌는 nav null.
+ */
+const TAIL_ESTIMATE = {
+  date: "2026-10-30", atKst: "2026-10-30 23:57 KST", isEstimated: true,
+  books: {
+    rules: { nav: 101234.56, isEstimated: true }, claude: { nav: null, isEstimated: false },
+    bench_spy: { nav: 100600, isEstimated: true }, bench_mix: { nav: null, isEstimated: false },
+  },
+};
+const TAIL_BOOKS = CURRENT_BOOKS.map((entry) => (entry.code === "bench_spy"
+  ? { ...entry, current: { ...entry.current, atKst: "2026-10-30 23:57 KST" } } : entry));
+const TAIL_OVERVIEW = { ...CURRENT_OVERVIEW, books: TAIL_BOOKS, navEstimate: TAIL_ESTIMATE };
 
 const STATUS = {
   available: true, schemaReady: true, initialized: true, enabled: false, jobs: [], settingsVersion: 4,
@@ -509,6 +537,93 @@ describe("기간별 순자산 곡선", () => {
     expect(Array.from(chart().querySelectorAll("[data-marker]")).map((li) => li.textContent)).toEqual(["2026-10-26 프레임 v1"]);
     // 기간 밖의 경계를 '그날 기록 없음'으로 적지 않습니다.
     expect(screen.getByText(/2026-08-03부터 임시 v0 · 2026-10-26부터 v1$/)).toBeTruthy();
+  });
+});
+
+describe("오늘 추정 꼬리(장중 명세 §4 '순자산 곡선 꼬리')", () => {
+  /** 곧바로 resolve하는 목 응답을 끝까지 반영합니다(QA-148 — 벽시계 한도 없이). */
+  const settled = () => act(async () => {});
+  const navItems = () => within(screen.getByRole("list", { name: "순자산 계열" })).getAllByRole("listitem").map((li) => li.textContent);
+  const alertOf = (region: HTMLElement) => region.querySelector('[aria-live="polite"]')?.textContent;
+
+  it("비교 곡선에 계좌마다 꼬리 — 이름은 그 계좌의 기준 시각, 행은 창 + 1, 곡선 아래 설명과 출처(장중 추정)", async () => {
+    reads["/api/paper/overview"] = () => Promise.resolve(TAIL_OVERVIEW);
+    render(<PaperPage />);
+    await settled();
+
+    expect(navItems()).toEqual(["규칙 계좌", "SPY 계좌", "규칙 계좌 · 추정 23:58", "SPY 계좌 · 추정 23:57"]);
+    expect(screen.getByRole("list", { name: "순자산 계열" }).getAttribute("data-rows")).toBe("3");
+    expect(screen.getByText(/^점선 꼬리 = 10-30 순자산 줄이 생기기 전의 지금 값/)).toBeTruthy();
+    // 곡선 카드의 출처가 그 점의 출처(장중 1분봉으로 다시 평가한 표시 전용 추정)를 함께 — 기본 히어로(출발 전 Claude 계좌)는 장부 출처
+    expect(screen.getAllByText(/보유를 장중 1분봉 시세로 다시 평가한 표시 전용 추정/)).toHaveLength(1);
+    // 출발 전 계좌의 히어로 곡선에는 꼬리가 없음(navEstimate의 그 계좌 값이 null — 짓지 않음)
+    expect(screen.getByRole("list", { name: "Claude 계좌 순자산 곡선" }).getAttribute("data-rows")).toBe("2");
+  });
+
+  it("히어로 곡선도 꼬리 점 — 문지르면 그 점의 값과 '추정 23:58'(배지와 낭독 알림 둘 다)", async () => {
+    reads["/api/paper/overview"] = () => Promise.resolve(TAIL_OVERVIEW);
+    render(<PaperPage />);
+    await settled();
+
+    fireEvent.click(row(/^규칙 계좌 상세 보기/));
+    const hero = screen.getByRole("region", { name: "규칙 계좌 순자산" });
+    const line = within(hero).getByRole("list", { name: "규칙 계좌 순자산 곡선" });
+    expect(line.getAttribute("data-values")).toBe("100000,101200,null");
+    expect(line.getAttribute("data-estimate")).toBe("null,101200,101234.56");
+    expect(line.getAttribute("data-series")).toBe("규칙 계좌|규칙 계좌 · 추정 23:58(꼬리 nav)");
+    expect(alertOf(hero)).toBe("");
+
+    fireEvent.click(within(hero).getByRole("button", { name: "규칙 계좌 순자산 곡선 마지막 점 문지르기" }));
+    expect(within(hero).getByText("2026-10-30")).toBeTruthy();
+    expect(within(hero).getByText("· 23:58")).toBeTruthy();
+    expect(alertOf(hero)).toBe("2026-10-30 101,234.56 달러 추정 23:58");
+  });
+
+  it("현금뿐 계좌의 꼬리는 '장부' — 비교 곡선 이름, 히어로 문지르기는 추정 배지 없이 '장부'", async () => {
+    const cash = {
+      ...current(), nav: 100500, returnPct: 0.5, exposurePct: 0, dayChangePct: 0, basis: "LEDGER", stage: "FINAL", tradingDate: "2026-10-29",
+      atKst: "2026-10-30 05:00 KST", isEstimated: false, livePriced: 0, positionCount: 0, neutral: true,
+    };
+    reads["/api/paper/overview"] = () => Promise.resolve({
+      ...TAIL_OVERVIEW,
+      books: TAIL_BOOKS.map((entry) => (entry.code === "bench_spy" ? { ...entry, current: cash } : entry)),
+      navEstimate: { ...TAIL_ESTIMATE, books: { ...TAIL_ESTIMATE.books, bench_spy: { nav: 100500, isEstimated: false } } },
+    });
+    render(<PaperPage />);
+    await settled();
+
+    expect(navItems()).toEqual(["규칙 계좌", "SPY 계좌", "규칙 계좌 · 추정 23:58", "SPY 계좌 · 장부"]);
+    fireEvent.click(row(/^SPY 계좌 상세 보기/));
+    const hero = screen.getByRole("region", { name: "SPY 계좌 순자산" });
+    fireEvent.click(within(hero).getByRole("button", { name: "SPY 계좌 순자산 곡선 마지막 점 문지르기" }));
+    expect(within(hero).getByText("· 장부")).toBeTruthy();
+    expect(within(hero).queryByText("추정")).toBeNull();
+    expect(alertOf(hero)).toBe("2026-10-30 100,500.00 달러 장부");
+  });
+
+  it("기간을 고르면 그 창 뒤에 꼬리 — 1개월이면 두 행 + 꼬리 점 한 행", async () => {
+    const dates = ["2026-06-01", "2026-08-03", "2026-09-28", "2026-10-26"];
+    reads["/api/paper/overview"] = () => Promise.resolve({
+      ...TAIL_OVERVIEW,
+      navSeries: { dates, books: { rules: [100000, 100500, 101000, 101200], bench_spy: [100000, 100100, 100300, 100500] } },
+    });
+    render(<PaperPage />);
+    await settled();
+
+    fireEvent.click(within(screen.getByRole("tablist", { name: "순자산 곡선 기간" })).getByRole("tab", { name: "1개월" }));
+    const nav = screen.getByRole("list", { name: "순자산 계열" });
+    expect(nav.getAttribute("data-rows")).toBe("3");
+    expect(nav.getAttribute("data-first")).toBe("2026-09-28");
+  });
+
+  it("navEstimate가 없거나(옛 응답) null(그날 줄이 이미 있음·장 밖)이면 꼬리·설명이 없다", async () => {
+    reads["/api/paper/overview"] = () => Promise.resolve(CURRENT_OVERVIEW);
+    render(<PaperPage />);
+    await settled();
+
+    expect(navItems()).toEqual(["규칙 계좌", "SPY 계좌"]);
+    expect(screen.getByRole("list", { name: "순자산 계열" }).getAttribute("data-rows")).toBe("2");
+    expect(screen.queryByText(/^점선 꼬리/)).toBeNull();
   });
 });
 

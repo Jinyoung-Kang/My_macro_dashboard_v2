@@ -9,6 +9,8 @@
  *    프레임 경계 세로선은 고른 기간 안의 날짜만
  *  - S = 100 같은 구간(계좌2): 계좌2 출발일 S부터 계좌1·계좌2·SPY 계좌를 각자 S 순자산으로 나눠 100에 — S 전 구간·출발 전은 그리지 않고,
  *    S에 기록이 없는 계좌는 선 전체 null(100으로 채우지 않음), 그날 기록이 없으면 그날만 null
+ *  - 오늘 추정 꼬리(장중 명세 §4): navEstimate의 계좌 값만(짓지 않음), 기간 창 뒤 한 행, 마지막 행 → 추정 점, 이름 '{계좌} · 추정 HH:MM'(현금뿐
+ *    '· 장부'), 참고선·출발 전·그날 줄이 이미 있는 날·빈 창에는 없음, 히어로 곡선도 같은 규칙과 문지르기용 꼬리 정보
  */
 import { describe, expect, it } from "vitest";
 
@@ -16,16 +18,21 @@ import {
   accountComparisonRows,
   bookAssetRow,
   bookMonogram,
+  heroNavChart,
   markersInWindow,
   monthsBefore,
   NAV_RANGES,
+  navEstimatePoint,
   navRangeKeys,
   navSeriesWindow,
+  navTailNote,
+  overviewHeroModel,
   PENDING_BACKFILL_WARNING,
   sameWindowIndex,
   sampleNotes,
+  withNavEstimateTail,
 } from "../paperOverview";
-import type { PaperBookSummary, PaperCurrentValue, PaperOverviewBook, PaperStats } from "../types";
+import type { PaperBookSummary, PaperCurrentValue, PaperNavEstimate, PaperOverviewBook, PaperStats } from "../types";
 
 const STATS: PaperStats = {
   cumReturnPct: 1.234, cagrPct: 12.5, volPct: 15.2, mddPct: -3.4, sharpe: 0.81, excessPct: -0.52, beta: 0.97, sampleDays: 42,
@@ -375,5 +382,117 @@ describe("bookMonogram — 계좌 행 아바타 글자", () => {
     for (const code of ["", "unknown", "constructor", "toString", "RULES"]) {
       expect(bookMonogram(code)).toBeNull();
     }
+  });
+});
+
+describe("오늘 추정 꼬리(장중 명세 §4 '순자산 곡선 꼬리')", () => {
+  const REGULAR = { phase: "REGULAR" as const, sessionDate: "2026-10-30" };
+  const ESTIMATE: PaperNavEstimate = {
+    date: "2026-10-30", atKst: "2026-10-30 23:57 KST", isEstimated: true,
+    books: {
+      rules: { nav: 101_234.56, isEstimated: true }, claude: { nav: null, isEstimated: false },
+      bench_spy: { nav: 100_600, isEstimated: true }, bench_mix: { nav: 100_500, isEstimated: false },
+      // 계좌가 아닌 키(참고선)가 섞여 와도 꼬리를 짓지 않습니다.
+      ref: { nav: 1, isEstimated: true },
+    },
+  };
+  const live = (atKst: string | null): PaperCurrentValue => ({
+    nav: 101_234.56, returnPct: 1.23, exposurePct: 98.7, dayChangePct: 0.42, previousTradingDate: "2026-10-29", previousNavFinal: false,
+    basis: "LIVE", stage: "LIVE", tradingDate: "2026-10-30", atKst, isEstimated: true, livePriced: 2, positionCount: 2, pendingOrders: 0,
+    neutral: false, note: null,
+  });
+  const books: PaperOverviewBook[] = [
+    { ...BOOKS[0], current: live("2026-10-30 23:58 KST") },
+    BOOKS[1],
+    // 그 계좌 시각을 모르면 navEstimate 시각(장중 값 계좌들 가운데 가장 오래된 것)
+    { ...BOOKS[2], current: live(null) },
+    BOOKS[3],
+  ];
+  const NAV_WINDOW = {
+    dates: ["2026-10-28", "2026-10-29"],
+    books: { rules: [100_900, 101_200], bench_spy: [100_300, null], bench_mix: [100_400, 100_500] },
+  };
+  const CHART = {
+    rows: [
+      { date: "2026-10-28", rules: 100_900, bench_spy: 100_300, bench_mix: 100_400, ref: 100_000 },
+      { date: "2026-10-29", rules: 101_200, bench_spy: null, bench_mix: 100_500, ref: 100_100 },
+    ],
+    series: [
+      { key: "rules", name: "규칙 계좌" }, { key: "bench_spy", name: "SPY 계좌" }, { key: "bench_mix", name: "60/40 계좌" },
+      { key: "ref", name: "참고선(계좌 아님)" },
+    ],
+  };
+
+  it("계좌 하나의 점 — 시각은 그 계좌 지금 값(모르면 navEstimate), 현금뿐은 '장부', 값이 없거나 꼬리가 없는 응답이면 null", () => {
+    expect(navEstimatePoint(ESTIMATE, books[0], "rules")).toEqual({ date: "2026-10-30", nav: 101_234.56, isEstimated: true, clock: "23:58", tag: "추정 23:58" });
+    expect(navEstimatePoint(ESTIMATE, books[2], "bench_spy")).toMatchObject({ clock: "23:57", tag: "추정 23:57" });
+    expect(navEstimatePoint(ESTIMATE, books[3], "bench_mix")).toEqual({ date: "2026-10-30", nav: 100_500, isEstimated: false, clock: null, tag: "장부" });
+    expect(navEstimatePoint({ ...ESTIMATE, atKst: "" }, books[2], "bench_spy")).toMatchObject({ clock: null, tag: "추정" });
+    expect(navEstimatePoint(ESTIMATE, books[1], "claude")).toBeNull();
+    expect(navEstimatePoint(ESTIMATE, null, "constructor")).toBeNull();
+    expect(navEstimatePoint(null, books[0], "rules")).toBeNull();
+    expect(navEstimatePoint({ ...ESTIMATE, date: "오늘" }, books[0], "rules")).toBeNull();
+  });
+
+  it("비교 곡선 — 창 뒤에 한 행, 꼬리는 마지막 행 값에서 시작(없으면 외딴 점), 이름 '{계좌} · 추정 HH:MM'·'· 장부', 출발 전·참고선에는 없음", () => {
+    const tailed = withNavEstimateTail(CHART, ESTIMATE, books);
+    expect(tailed.tailDate).toBe("2026-10-30");
+    expect(tailed.series.slice(4)).toEqual([
+      { key: "rules__estimate", name: "규칙 계좌 · 추정 23:58", tailOf: "rules" },
+      { key: "bench_spy__estimate", name: "SPY 계좌 · 추정 23:57", tailOf: "bench_spy" },
+      { key: "bench_mix__estimate", name: "60/40 계좌 · 장부", tailOf: "bench_mix" },
+    ]);
+    expect(tailed.rows).toHaveLength(3);
+    expect(tailed.rows[2]).toEqual({
+      date: "2026-10-30", rules: null, bench_spy: null, bench_mix: null, ref: null,
+      rules__estimate: 101_234.56, bench_spy__estimate: 100_600, bench_mix__estimate: 100_500,
+    });
+    // 꼬리 시작은 마지막 행의 그 계좌 값 — SPY 계좌는 그날 값이 없어 꼬리가 점 하나(차트가 외딴 점으로 그림)
+    expect(tailed.rows[1]).toMatchObject({ rules__estimate: 101_200, bench_spy__estimate: null, bench_mix__estimate: 100_500 });
+    expect(tailed.rows[0]).toMatchObject({ rules__estimate: null, bench_spy__estimate: null, bench_mix__estimate: null });
+    // 받은 차트는 그대로(새 행·새 칸은 사본에만)
+    expect(CHART.rows).toHaveLength(2);
+    expect("rules__estimate" in CHART.rows[1]).toBe(false);
+  });
+
+  it("그날 줄이 이미 있거나(날짜 ≤ 마지막 행) 꼬리가 없는 응답·빈 창·꼬리를 줄 계좌가 없으면 그대로", () => {
+    expect(withNavEstimateTail(CHART, { ...ESTIMATE, date: "2026-10-29" }, books)).toEqual({ rows: CHART.rows, series: CHART.series, tailDate: null });
+    expect(withNavEstimateTail(CHART, null, books)).toEqual({ rows: CHART.rows, series: CHART.series, tailDate: null });
+    expect(withNavEstimateTail({ rows: [], series: CHART.series }, ESTIMATE, books)).toEqual({ rows: [], series: CHART.series, tailDate: null });
+    expect(withNavEstimateTail(CHART, { ...ESTIMATE, books: {} }, books).tailDate).toBeNull();
+  });
+
+  it("곡선 아래 설명 — 꼬리가 있을 때만", () => {
+    expect(navTailNote("2026-10-30")).toMatch(/^점선 꼬리 = 10-30 순자산 줄이 생기기 전의 지금 값/);
+    expect(navTailNote(null)).toBeNull();
+  });
+
+  it("히어로 곡선 — 같은 창의 그 계좌 한 줄 + 꼬리 점 행, 문지르기가 읽을 꼬리 정보(추정 'HH:MM'·현금뿐 '장부'), 꼬리가 없으면 예전 모양", () => {
+    const tail = navEstimatePoint(ESTIMATE, books[0], "rules");
+    const hero = heroNavChart(NAV_WINDOW, "rules", "규칙 계좌", "US", tail);
+    expect(hero.rows).toEqual([
+      { date: "2026-10-28", nav: 100_900, estimate: null },
+      { date: "2026-10-29", nav: 101_200, estimate: 101_200 },
+      { date: "2026-10-30", nav: null, estimate: 101_234.56 },
+    ]);
+    expect(hero.series).toEqual([{ key: "nav", label: "규칙 계좌" }, { key: "estimate", label: "규칙 계좌 · 추정 23:58", tailOf: "nav" }]);
+    expect(hero.estimate).toEqual({ date: "2026-10-30", valueKey: "estimate", isEstimated: true, note: "23:58" });
+    expect(heroNavChart(NAV_WINDOW, "bench_mix", "60/40 계좌", "US", navEstimatePoint(ESTIMATE, books[3], "bench_mix")).estimate)
+      .toEqual({ date: "2026-10-30", valueKey: "estimate", isEstimated: false, note: "장부" });
+    expect(heroNavChart(NAV_WINDOW, "rules", "규칙 계좌")).toEqual({
+      rows: [{ date: "2026-10-28", nav: 100_900 }, { date: "2026-10-29", nav: 101_200 }],
+      series: [{ key: "nav", label: "규칙 계좌" }],
+      valueDigits: 2,
+      estimate: null,
+    });
+    expect(heroNavChart(NAV_WINDOW, "rules", "규칙 계좌", "US", tail && { ...tail, date: "2026-10-29" }).estimate).toBeNull();
+    expect(heroNavChart(null, "rules", "규칙 계좌", "US", tail)).toMatchObject({ rows: [], estimate: null });
+  });
+
+  it("개요 히어로 모델 — 고른 계좌의 꼬리(navEstimate의 그 계좌), 출발 전 계좌는 꼬리 없음", () => {
+    const overview = { books, pendingBackfill: [], quotes: null, liveSession: REGULAR, navEstimate: ESTIMATE };
+    expect(overviewHeroModel(overview, "rules", NAV_WINDOW)?.chart.estimate).toMatchObject({ date: "2026-10-30", note: "23:58" });
+    expect(overviewHeroModel(overview, "claude", NAV_WINDOW)?.chart.estimate).toBeNull();
+    expect(overviewHeroModel({ ...overview, navEstimate: undefined }, "rules", NAV_WINDOW)?.chart.estimate).toBeNull();
   });
 });

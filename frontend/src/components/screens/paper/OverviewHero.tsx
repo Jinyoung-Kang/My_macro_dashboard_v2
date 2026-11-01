@@ -15,6 +15,7 @@ import { HERO_NAV_KEY, NAV_RANGES, type NavRangeKey, type OverviewHeroModel } fr
  *   큰 칩은 '출발 이후'(계좌 행·비교 표와 같은 뜻), 그 아래 하루 변화 한 줄(서버 값 — 모르면 줄 없음). 서버의 긴 글(섞임·체결 대기)은 맨 아래 한 줄.
  * - 곡선은 고른 계좌 한 줄(`LineChart` hero — 중립 잉크 선, 격자 없음, 문지르면 큰 숫자가 그 날 값). 기간 알약은 차트 아래이고, 아래 '순자산 곡선'
  *   카드와 같은 기간 상태입니다(그 카드의 탭은 없음 — aria-label '순자산 곡선 기간'은 이 탭). 고를 기간이 '전체' 하나뿐이면 탭을 그리지 않습니다.
+ * - 오늘 추정 점이 있으면(개요 `navEstimate`) 마지막 줄 → 그 점의 점선 꼬리 — 문지르면 '추정 HH:MM'(현금뿐 계좌는 '장부', 장중 명세 §4).
  * - 그리기만 합니다 — 값·글은 lib, 문지르기 상태는 `hooks/useChartScrub`.
  */
 export function OverviewHero({
@@ -34,7 +35,8 @@ export function OverviewHero({
   const format = (value: number) => formatNumber(value, chart.valueDigits);
   // 그릴 값이 있을 때만 문지를 수 있는 히어로(알림 영역을 미리 둠 — 문지르지 않을 때 null). 값이 없으면 차트가 빈 상태 문구만 그립니다.
   const scrubbable = hasLineValues(chart.rows, chart.series);
-  const point = scrubbable ? scrubModel(chart.rows, HERO_NAV_KEY, index, format) : null;
+  // 오늘 추정 점(꼬리)을 문지르면 꼬리 값과 '추정 HH:MM'(현금뿐 계좌는 배지 없이 '장부') — 배지와 낭독 알림 둘 다(Hero).
+  const point = scrubbable ? scrubModel(chart.rows, HERO_NAV_KEY, index, format, { estimate: chart.estimate }) : null;
   const scrub = scrubbable ? (point ? { ...point, changeDigits: chart.valueDigits } : null) : undefined;
 
   return (

@@ -50,8 +50,10 @@ import {
   type NavRangeKey,
   navRangeKeys,
   navSeriesWindow,
+  navTailNote,
   overviewHeroModel,
   sameWindowIndex,
+  withNavEstimateTail,
 } from "@/lib/paperOverview";
 import {
   jobsCardSubtitle,
@@ -64,7 +66,7 @@ import {
   marketJobs,
   withKrReference,
 } from "@/lib/paperKr";
-import { accountsBasisText } from "@/lib/paperCurrent";
+import { accountsBasisText, currentSource } from "@/lib/paperCurrent";
 import { marketMeta, type PaperMarketCode } from "@/lib/paperMarket";
 import { allowedRangeKey } from "@/lib/patternRows";
 import type {
@@ -212,13 +214,23 @@ export function OverviewSection({
   const accounts = navChart(navWindow, books);
   // 한국은 노출 맞춘 참고선(K40 — 계산만, 계좌 아님)을 같은 축의 점선 계열로 더합니다(출발 전·F2 전 서버면 계열 없음).
   const reference = korea ? withKrReference(accounts.rows, overview.exposureReference) : { rows: accounts.rows, series: [] };
-  const chart = { rows: reference.rows, series: [...accounts.series, ...reference.series] };
+  // 오늘 추정 꼬리(장중 명세 §4 — 표시 전용): 기간 창·참고선 뒤에 계좌마다 마지막 줄 → 오늘 추정 점의 점선을 붙입니다(참고선·S = 100 카드에는 없음).
+  // 그날 순자산 줄이 생기면 서버가 navEstimate를 보내지 않아 사라집니다.
+  const chart = withNavEstimateTail({ rows: reference.rows, series: [...accounts.series, ...reference.series] }, overview.navEstimate, books);
+  const tailNote = navTailNote(chart.tailDate);
   const referenceNotes = korea ? krReferenceNotes(overview.exposureReference) : null;
-  // 하루 움직임이 1달러 미만이면 정수 눈금이 같은 숫자로 반복됩니다 — 축을 조금 펼치고 자릿수를 간격에 맞춥니다(참고선도 축 범위에 넣음).
+  // 하루 움직임이 1달러 미만이면 정수 눈금이 같은 숫자로 반복됩니다 — 축을 조금 펼치고 자릿수를 간격에 맞춥니다(참고선·꼬리도 축 범위에 넣음).
   const navY = navAxis(chart);
+  const lineIndex = (key: string) => chart.series.findIndex((line) => line.key === key);
   const series = chart.series.map((line, index) => ({
     ...line,
-    color: line.key === KR_REFERENCE_KEY ? REFERENCE_COLOR : bookColor(line.key, index),
+    // 꼬리는 그 계좌 선의 색(남는 색을 쓰는 계좌도 그 계좌 자리의 색 — 같은 계좌가 같은 색).
+    color:
+      line.key === KR_REFERENCE_KEY
+        ? REFERENCE_COLOR
+        : line.tailOf !== undefined
+          ? bookColor(line.tailOf, lineIndex(line.tailOf))
+          : bookColor(line.key, index),
     // 원 단위 정수 장부 — 툴팁에 없는 소수 자리를 붙이지 않음(미국은 기본 2자리 그대로).
     ...(korea ? { valueDigits: 0 } : {}),
     ...(line.key === KR_REFERENCE_KEY ? { dashed: true } : {}),
@@ -422,7 +434,10 @@ export function OverviewSection({
         subtitle={`${korea ? "KR 거래일" : "거래일"}별 순자산(${marketMeta(market).unitLabel}). 그날 기록이 없는 계좌는 선을 끊어 그립니다 — 시작 전인 계좌는 선이 없습니다.${
           hero && navRanges.length > 1 ? ` 기간은 위 히어로에서 고릅니다(지금 ${rangeLabel}).` : ""
         }`}
-        source={boundaries.text ? `${ledgerSource} · 프레임 경계는 ${PAPER_SOURCES.boundaries}` : ledgerSource}
+        // 꼬리가 있으면 그 점의 출처(보유를 장중 1분봉으로 다시 평가한 표시 전용 추정 — 계좌 행·히어로의 지금 값과 같은 글)를 함께.
+        source={[tailNote ? currentSource(true, market) : ledgerSource, boundaries.text ? `프레임 경계는 ${PAPER_SOURCES.boundaries}` : null]
+          .filter(Boolean)
+          .join(" · ")}
         actions={
           // 기간 알약은 히어로(차트 아래)에 — 히어로가 없을 때(초기화 전)만 이 카드에 둡니다. 기간이 '전체' 하나뿐이면(출발 직후) 탭을 그리지
           // 않습니다 — 고를 것이 없는 탭은 소음입니다.
@@ -442,6 +457,7 @@ export function OverviewSection({
           // 원 단위 정수 눈금("100,000,000")은 기본 폭(64px)에서 잘립니다 — 한국만 넓힙니다.
           axisWidth={korea ? 84 : undefined}
         />
+        {tailNote && <p className="mt-2 text-xs text-muted">{tailNote}</p>}
         {boundaries.text && <p className="mt-2 text-xs text-muted">{boundaries.text}</p>}
         {/* 규칙 계좌 결과는 종목 신호와 주식 노출이 섞인 값 — 미국(남는 현금 SHY)·한국(153130, 참고선과 함께) 같은 함수(2단계 명세 §4-16). */}
         <p className="mt-2 text-xs text-muted">{exposureNote(market)}</p>
