@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { type Column, DataTable } from "@/components/patterns";
 import { Banner, Button, Card, inputClasses } from "@/components/ui";
 import { useApi } from "@/hooks/useApi";
+import { useShownOnce } from "@/hooks/useShownOnce";
 import { useVisibleWake } from "@/hooks/useVisibleWake";
 import { endpoints } from "@/lib/endpoints";
 import { deltaColor, EMPTY, formatKst } from "@/lib/format";
@@ -29,12 +30,14 @@ import type { PaperLiveResponse } from "@/lib/types";
  * 표시 전용입니다. 장부(체결·순자산 줄·통계·결정)는 이 값을 쓰지 않습니다(서버 PaperLiveService). 다시 읽기 규칙은 lib/paperLive —
  * 정규장에만 간격대로, 서버가 새 시세를 요청했으면 20초 뒤 한 번만 더, 장 밖에서는 멈추고 다음 개장에 한 번 깨어납니다. 탭을 숨기면 간격
  * 읽기는 useApi가 멈추고, '한 번 더'·'다음 개장' 깨우기는 탭이 다시 보일 때로 미룹니다(useVisibleWake — 보지 않는 동안 시세를 받지 않음,
- * QA-154).
+ * QA-154). 숨긴 탭으로 열렸으면 첫 읽기도 처음 보일 때까지 미룹니다(useShownOnce, QA-156).
  */
 export function LiveValuationCard({ market = "US" }: { market?: PaperMarketCode }) {
   const [minutes, setMinutes] = useLiveRefreshMinutes();
   const [refreshMs, setRefreshMs] = useState(0);
-  const live = useApi<PaperLiveResponse>(endpoints.paper.market(market).live, refreshMs);
+  // 숨긴 탭으로 열렸으면 처음 보일 때까지 읽지 않습니다(QA-156) — 첫 읽기도 정규장이면 수집을 깨웁니다.
+  const shown = useShownOnce();
+  const live = useApi<PaperLiveResponse>(shown ? endpoints.paper.market(market).live : null, refreshMs);
   const data = live.data;
   const { reload } = live;
   // 타이머의 다시 읽기 — 숨긴 탭이면 다시 보일 때로 미룹니다(QA-154). reload를 바로 부르면 숨긴 탭에서도 /live가 나가 정규장이면 수집을 깨웠습니다.
