@@ -233,6 +233,70 @@ class StartCloseRestartTest {
                 .extracting(Order::asOfTradingDate).containsOnly(LocalDate.of(2026, 10, 29));
     }
 
+    /** 지금 한국 관측치 저장본 — 종목마다 출발일 봉 하나(종가·거래량·봉 출처). */
+    private void tossBars(Map<String, KrQuotes.Day> days) {
+        Map<String, PaperMarketData.Bar> bars = new java.util.LinkedHashMap<>();
+        days.forEach((code, day) -> bars.put(code, new PaperMarketData.Bar(code, day.date(),
+                day.close() == null ? 0 : day.close().doubleValue(), false, null,
+                new KrQuotes.Quote(code, KR_NIGHT, null, true, false, List.of(day), null, null))));
+        when(marketData.quotes(any(PaperMarket.class))).thenReturn(Optional.of(
+                new PaperMarketData.Quotes(KR_NIGHT, bars, KR_START, java.util.Set.of())));
+    }
+
+    private static KrQuotes.Day tossDay(String close, long volume, String source) {
+        return new KrQuotes.Day(KR_START, new BigDecimal(close), new BigDecimal(close), volume, source, null, null);
+    }
+
+    @Test
+    @DisplayName("한국 토스 종가(사용자 결정 2026-11-02): 금융위 행 없이 관측치 저장본의 출발일 봉 종가로 체결(행 출처 = 봉 출처), 비용 종목 구분은 최신 금융위 시장 구분, 출발일 순자산 줄은 확정 아님")
+    void krTossClose() {
+        krBook(PaperBooks.KR_CLAUDE2);
+        confirmed(Map.of());
+        tossBars(Map.of("005930", tossDay("70100", 1_000_000, KrQuotes.SOURCE_INTEGRATED),
+                "153130", tossDay("108500", 20_000, KrQuotes.SOURCE_DAILY)));
+        when(marketData.fscMarkets(anyCollection())).thenReturn(Map.of("005930", "KOSPI"));
+
+        StartCloseRestart.Result result = restart.restart(PaperBooks.KR_CLAUDE2, PaperBooks.KR_CLAUDE2, StartCloseRestart.SOURCE_TOSS);
+
+        PaperSettings settings = new PaperMarkets(store, reader).open(KrPaperMarket.INSTANCE).settings();
+        KrxCosts.Rates rates = settings.costRates().rates(settings.slippageBp());
+        int stockQty = KrxCosts.affordableQty(BigDecimal.valueOf(5_000_000.0), new BigDecimal("70100"), rates);
+        KrxCosts.Costs stock = KrxCosts.fill(PaperLedger.Side.BUY, KrxCosts.Instrument.KOSPI, KR_START, stockQty,
+                new BigDecimal("70100"), rates);
+        assertThat(result.skipped()).isEmpty();
+        assertThat(store.fillsOf(PaperBooks.KR_CLAUDE2)).extracting(Fill::ticker, Fill::price, Fill::priceSource, Fill::backfill)
+                .containsExactly(org.assertj.core.groups.Tuple.tuple("005930", 70100.0, KrQuotes.SOURCE_INTEGRATED, true),
+                        org.assertj.core.groups.Tuple.tuple("153130", 108500.0, KrQuotes.SOURCE_DAILY, true));
+        assertThat(store.fillsOf(PaperBooks.KR_CLAUDE2).get(0).fee()).isEqualByComparingTo(stock.commission());
+        assertThat(store.navSeries(PaperBooks.KR_CLAUDE2).get(0).pricesFinal()).as("토스 잠정가 — 확정 아님").isFalse();
+        assertThat(store.states.get(PaperBooks.KR_CLAUDE2).lastProcessedCollectedAt()).isEqualTo(KR_NIGHT);
+    }
+
+    @Test
+    @DisplayName("한국 토스 종가: 출발일 봉이 없거나 거래량 0이면·종목 구분을 모르면 거절, 모르는 출처·미국 계좌의 출처도 거절 — 아무것도 바꾸지 않음")
+    void krTossRefusals() {
+        krBook(PaperBooks.KR_CLAUDE);
+        tossBars(Map.of("005930", tossDay("70100", 0, KrQuotes.SOURCE_INTEGRATED),
+                "153130", tossDay("108500", 20_000, KrQuotes.SOURCE_DAILY)));
+        when(marketData.fscMarkets(anyCollection())).thenReturn(Map.of("005930", "KOSPI"));
+        assertThatThrownBy(() -> restart.restart(PaperBooks.KR_CLAUDE, PaperBooks.KR_CLAUDE, StartCloseRestart.SOURCE_TOSS))
+                .isInstanceOf(InvalidRequestException.class).hasMessageContaining("005930 토스 종가가 한국 관측치 저장본에 없습니다");
+
+        tossBars(Map.of("005930", tossDay("70100", 10, KrQuotes.SOURCE_INTEGRATED),
+                "153130", tossDay("108500", 20_000, KrQuotes.SOURCE_DAILY)));
+        when(marketData.fscMarkets(anyCollection())).thenReturn(Map.of());
+        assertThatThrownBy(() -> restart.restart(PaperBooks.KR_CLAUDE, PaperBooks.KR_CLAUDE, StartCloseRestart.SOURCE_TOSS))
+                .isInstanceOf(InvalidRequestException.class).hasMessageContaining("종목 구분을 모릅니다");
+        assertThatThrownBy(() -> restart.restart(PaperBooks.KR_CLAUDE, PaperBooks.KR_CLAUDE, "NAVER"))
+                .isInstanceOf(InvalidRequestException.class).hasMessageContaining("가격 출처");
+        assertThat(store.fillsOf(PaperBooks.KR_CLAUDE)).isEmpty();
+        assertThat(store.ordersOf(PaperBooks.KR_CLAUDE)).allSatisfy(o -> assertThat(o.status()).isEqualTo(PaperBooks.ORDER_PENDING));
+
+        usBook(PaperBooks.CLAUDE2);
+        assertThatThrownBy(() -> restart.restart(PaperBooks.CLAUDE2, PaperBooks.CLAUDE2, StartCloseRestart.SOURCE_TOSS))
+                .isInstanceOf(InvalidRequestException.class).hasMessageContaining("가격 출처는 한국 계좌만");
+    }
+
     @Test
     @DisplayName("한국: 그날 금융위 행이 없거나 거래량 0이면·종목 구분을 모르면 거절(짐작하지 않음)")
     void krRefusals() {

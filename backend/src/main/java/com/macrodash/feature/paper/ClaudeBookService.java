@@ -23,6 +23,7 @@ import com.macrodash.store.RegimeLogStore;
 import com.macrodash.store.StoreRepository;
 import com.macrodash.support.InvalidRequestException;
 import com.macrodash.support.Json;
+import com.macrodash.support.Params;
 import com.macrodash.support.TooManyRequestsException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -1327,17 +1328,30 @@ public class ClaudeBookService {
      *       부름 — 시스템 프롬프트는 계좌2의 것(지금 프레임 판 + 투자 성향 절), 수동 호출 문턱(하루 상한 − 정기 작업 몫).</li>
      *   <li>검증은 출발 결정 규칙(출발 현금, 그 패킷의 12_hardRules, 관측치 = 지금 한국 관측치 — S 밤 판이어야 함).</li>
      *   <li>한 트랜잭션: 결정 행·통과 주문(대기) → 계좌2 운용(출발일 S) → 출발일 종가 사후 체결({@link PaperAdminService#restartAtStartClose}).
-     *       사후 체결이 거절되면(금융위 확정 종가 없음 등) 전부 되돌립니다(과금된 호출은 사용량에만 남음).</li>
+     *       사후 체결이 거절되면(종가 없음 등) 전부 되돌립니다(과금된 호출은 사용량에만 남음).</li>
      * </ol>
      *
-     * @throws InvalidRequestException 확인 문구 다름·계좌1이 출발 전·계좌2가 이미 시작함·출발일 금융위 확정 시세가 아직 없음·관측치가 S 판이 아님·
-     *                                 호출 상한·호출 실패
+     * <p>가격 출처({@code priceSource} — {@link StartCloseRestart#KR_SOURCES}, null이면 금융위): 금융위면 출발일 금융위 확정 시세가 들어온 뒤에만
+     * 부르고, 토스면(사용자 결정 2026-11-02) 그 검사 없이 지금 한국 관측치(S 밤 판)의 출발일 종가로 체결합니다 — 출발 패킷의 체결 문장도 그 출처로.
+     *
+     * @throws InvalidRequestException 확인 문구 다름·모르는 출처·계좌1이 출발 전·계좌2가 이미 시작함·(금융위) 출발일 확정 시세가 아직 없음·관측치가 S
+     *                                 판이 아님·호출 상한·호출 실패
      */
     public KrClaude2Started startKrClaude2(String confirm) {
+        return startKrClaude2(confirm, null);
+    }
+
+    /** {@link #startKrClaude2(String)}의 가격 출처를 정해서. */
+    public KrClaude2Started startKrClaude2(String confirm, String priceSource) {
         requireReady();
         if (!PaperBooks.KR_CLAUDE2.equals(confirm)) {
             throw new InvalidRequestException("한국 Claude 계좌2를 출발시키려면 확인 문구로 " + PaperBooks.KR_CLAUDE2 + "를 그대로 입력하세요.");
         }
+        String priceFrom = priceSource == null ? StartCloseRestart.SOURCE_FSC : priceSource;
+        if (!StartCloseRestart.KR_SOURCES.contains(priceFrom)) {
+            throw new InvalidRequestException("가격 출처는 " + StartCloseRestart.KR_SOURCES + " 가운데 하나입니다: " + Params.echo(priceSource));
+        }
+        boolean toss = StartCloseRestart.SOURCE_TOSS.equals(priceFrom);
         ClaudeDecisionPipeline base = pipelines.get(PaperBooks.KR_CLAUDE2);
         if (base == null || base.market() != KrPaperMarket.INSTANCE) {
             throw new IllegalStateException("한국 Claude 계좌2 결정 문맥이 없습니다");
@@ -1357,8 +1371,8 @@ public class ClaudeBookService {
                     .filter(d -> "OK".equals(d.status()) || "NO_TRADE".equals(d.status()))
                     .orElseThrow(() -> new InvalidRequestException("한국 Claude 계좌1의 출발 결정(" + start + ")을 찾지 못했습니다"));
             PaperMarketData.FscLatest fsc = reader.quietly(marketData::fscLatest);
-            if (fsc == null || fsc.stocks() == null || fsc.stocks().isBefore(start) || fsc.etfs() == null
-                    || fsc.etfs().isBefore(start)) {
+            if (!toss && (fsc == null || fsc.stocks() == null || fsc.stocks().isBefore(start) || fsc.etfs() == null
+                    || fsc.etfs().isBefore(start))) {
                 throw new InvalidRequestException(start + " 금융위 확정 시세가 아직 없습니다(주식 " + (fsc == null ? null : fsc.stocks())
                         + " · ETF " + (fsc == null ? null : fsc.etfs()) + " — 다음 영업일 13시 뒤 공개) — Claude를 부르지 않았습니다");
             }
@@ -1387,7 +1401,7 @@ public class ClaudeBookService {
             ClaudeSettings claude = ClaudeSettings.from(row.body());
             LocalDate today = Kst.today(clock);
             ClaudeDecisionPipeline pipeline = base.bind(run);
-            PacketBuilder.Packet packet = KrClaude2Start.packet(source, start, mapper);
+            PacketBuilder.Packet packet = KrClaude2Start.packet(source, start, toss, mapper);
             Attempt attempt = pipeline.callsLeft(today, claude, false) <= 0 ? null
                     : pipeline.attemptWithPacket(packet, row, claude, today, false);
             if (attempt == null) {
@@ -1402,7 +1416,7 @@ public class ClaudeBookService {
             ObjectNode response = plan.response();
             response.put("packetFromDecision", source.id());
             response.put("startNote", "한국 Claude 계좌1 출발 결정 " + source.id() + "의 패킷(계좌 몫만 바꿈)으로 출발 — 통과 주문은 출발일 "
-                    + start + " 종가로 사후 체결(사용자 결정 2026-11-02)");
+                    + start + (toss ? " 토스 종가" : " 금융위 확정 종가") + "로 사후 체결(사용자 결정 2026-11-02)");
             Decision row2 = pipeline.decisionRow(0, start, RuleBookService.INITIAL, plan.status(), row, claude, attempt,
                     plan.target(), response, null, true);
             KrClaude2Started started = ledger.exclusively(() -> store.atomically(() -> {
@@ -1412,7 +1426,7 @@ public class ClaudeBookService {
                 store.updateBookStatus(PaperBooks.KR_CLAUDE2, PaperBooks.ACTIVE);
                 store.updateBookStartedOn(PaperBooks.KR_CLAUDE2, start);
                 StartCloseRestart.Result restart = plan.accepted() > 0
-                        ? admin.restartAtStartClose(PaperBooks.KR_CLAUDE2, PaperBooks.KR_CLAUDE2) : null;
+                        ? admin.restartAtStartClose(PaperBooks.KR_CLAUDE2, PaperBooks.KR_CLAUDE2, priceFrom) : null;
                 return new KrClaude2Started(store.decision(id).orElseThrow(), restart);
             }));
             log.info("한국 Claude 계좌2 출발: 결정 {} {} — 통과 {} · 거절 {}", started.decision().id(), plan.status(), plan.accepted(),

@@ -484,6 +484,11 @@ public class PaperAdminService {
         return restart.restart(code, confirm);
     }
 
+    /** {@link #restartAtStartClose(String, String)}의 한국 가격 출처를 정해서(금융위 {@code FSC}·토스 {@code TOSS}, null이면 금융위). */
+    public StartCloseRestart.Result restartAtStartClose(String code, String confirm, String krPriceSource) {
+        return restart.restart(code, confirm, krPriceSource);
+    }
+
     // ------------------------------------------------------------------ 사후 체결
     /**
      * 벤치마크 책을 얼려 둔 출발일 종가로 삽니다(한 트랜잭션). 종가가 하나라도 없으면 체결은 쓰지 않고 그 사유를 돌려줍니다.

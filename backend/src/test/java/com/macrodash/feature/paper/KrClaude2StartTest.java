@@ -52,6 +52,18 @@ class KrClaude2StartTest {
     }
 
     @Test
+    @DisplayName("토스 종가 출발(사용자 결정 2026-11-02)이면 출발 문장의 체결 가격만 '토스 잠정 종가 — NXT 종목은 20:00까지의 통합가'")
+    void tossStartSentence() {
+        String text = packet("");
+        PacketBuilder.Packet toss = KrClaude2Start.packet(source(text), S, true, MAPPER);
+        PacketBuilder.Packet fsc = KrClaude2Start.packet(source(text), S, MAPPER);
+
+        assertThat(toss.text()).contains("기준일 2026-10-30 종가(토스 잠정 종가 — NXT 종목은 20:00까지의 통합가)로 사후 체결된다")
+                .doesNotContain("금융위 확정 종가");
+        assertThat(toss.text().replace("토스 잠정 종가 — NXT 종목은 20:00까지의 통합가", "금융위 확정 종가")).isEqualTo(fsc.text());
+    }
+
+    @Test
     @DisplayName("계좌 코드 자리가 셋이 아니거나 출발 문장이 없으면 거절(패킷 모양이 바뀐 뒤의 오용 방지)")
     void refusesUnexpectedShapes() {
         assertThatThrownBy(() -> KrClaude2Start.packet(source(packet(",\"note\":\"kr_claude\"")), S, MAPPER))

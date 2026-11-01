@@ -34,10 +34,12 @@ import java.util.Optional;
  * <ul>
  *   <li><b>미국</b> — 미국 계좌1·벤치마크의 출발과 같은 사후 체결({@link PaperLedgerService#backfill}: 종가 × 슬리피지, 시간별 관측치 출처
  *       {@link PaperMarketData#sourcedCloseOn}).</li>
- *   <li><b>한국</b> — 금융위 확정 종가(주식시세 {@code fsc_price}·증권상품시세 {@code fsc_etf_price}, 거래량 &gt; 0 행만 — {@link KrConfirmed.Day#observed})로
- *       한국 체결 조건 그대로: 체결가 = 확정 종가, 수수료·슬리피지는 비용 칸({@link KrxCosts}), 수량은 비용 포함 유출이 예산 안. 확정가로 체결하므로
- *       금융위 확정 조정 대상이 아닙니다(사후 체결 행은 확정 조정이 보지 않음 — {@link PaperStore#unconfirmedFills}). 종목 구분을 모르면 짐작하지 않고
- *       거절합니다.</li>
+ *   <li><b>한국</b> — 가격 출처 둘({@link #KR_SOURCES}): {@value #SOURCE_FSC}(기본)은 금융위 확정 종가(주식시세 {@code fsc_price}·증권상품시세
+ *       {@code fsc_etf_price}, 거래량 &gt; 0 행만 — {@link KrConfirmed.Day#observed}), {@value #SOURCE_TOSS}(사용자 결정 2026-11-02 — 한국 다섯 계좌를
+ *       토스 종가로)는 지금 한국 관측치 저장본({@code paper.kr.quotes})의 출발일 봉 종가(거래량 &gt; 0 — 토스 잠정 종가, NXT 종목은 20:00까지의 통합가)이고
+ *       비용 종목 구분은 최신 금융위 시장 구분({@link PaperMarketData#fscMarkets})입니다. 한국 체결 조건 그대로: 체결가 = 그 종가, 수수료·슬리피지는
+ *       비용 칸({@link KrxCosts}), 수량은 비용 포함 유출이 예산 안. 사후 체결 행은 금융위 확정 조정이 보지 않아({@link PaperStore#unconfirmedFills})
+ *       토스 종가 체결도 그 값 그대로 남습니다(출발일 순자산 줄만 확정 아님). 종목 구분을 모르면 짐작하지 않고 거절합니다.</li>
  * </ul>
  *
  * <p>사후 체결은 출발일 S 마감의 순자산 줄(확정)을 다시 쓰고, 계좌의 관측치 처리 기억(마지막 관측·처리 수집 시각)은 앞의 값을 그대로 둡니다 — 그 뒤
@@ -53,6 +55,11 @@ final class StartCloseRestart {
     static final String CANCEL_REASON = "출발일 종가 사후 체결로 다시 출발";
     /** 사후 체결 주문 근거의 표시. */
     static final String REASON_KEY = "restartAtStartClose";
+    /** 한국 가격 출처 — 금융위 확정 종가(기본). */
+    static final String SOURCE_FSC = "FSC";
+    /** 한국 가격 출처 — 한국 관측치 저장본의 토스 종가. */
+    static final String SOURCE_TOSS = "TOSS";
+    static final List<String> KR_SOURCES = List.of(SOURCE_FSC, SOURCE_TOSS);
 
     /**
      * 결과.
@@ -91,6 +98,15 @@ final class StartCloseRestart {
      *                                 종가 없음·종목 구분 모름
      */
     Result restart(String code, String confirm) {
+        return restart(code, confirm, null);
+    }
+
+    /**
+     * {@link #restart(String, String)}의 한국 가격 출처를 정해서({@link #KR_SOURCES}, null이면 {@value #SOURCE_FSC}). 미국 계좌는 출처를 받지 않습니다.
+     *
+     * @throws InvalidRequestException 위와 같음, 모르는 출처·미국 계좌에 출처를 줌
+     */
+    Result restart(String code, String confirm, String krSource) {
         if (!store.ready()) {
             throw new IllegalStateException("모의 매매 테이블이 아직 없습니다");
         }
@@ -113,8 +129,13 @@ final class StartCloseRestart {
         Decision decision = startDecision(code, start, pending);
         PaperSettings current = market.settings();
         boolean korea = Book.MARKET_KR.equals(book.market());
+        String source = krSource == null ? SOURCE_FSC : krSource;
+        if (!KR_SOURCES.contains(source) || !korea && krSource != null) {
+            throw new InvalidRequestException("가격 출처는 한국 계좌만 " + KR_SOURCES + " 가운데 하나입니다: " + Params.echo(krSource));
+        }
         Map<String, PaperMarketData.SourcedClose> usCloses = korea ? Map.of() : usCloses(pending, start);
-        Map<String, KrClose> krCloses = korea ? krCloses(market, pending, start, current) : Map.of();
+        Map<String, KrClose> krCloses = !korea ? Map.of()
+                : SOURCE_TOSS.equals(source) ? tossCloses(market, pending, start, current) : krCloses(market, pending, start, current);
         List<PaperLedgerService.BackfillLeg> legs = new ArrayList<>();
         for (Order order : pending) {
             legs.add(new PaperLedgerService.BackfillLeg(order.ticker(), PaperBooks.BUY, order.targetWeightPct(), null,
@@ -128,7 +149,8 @@ final class StartCloseRestart {
                 cancelled.add(order.id());
             }
             Filled filled = korea
-                    ? krBackfill(market, book, start, decision.id(), order(pending).source(), before, legs, krCloses, current)
+                    ? krBackfill(market, book, start, decision.id(), order(pending).source(), before, legs, krCloses, current,
+                    SOURCE_FSC.equals(source))
                     : usBackfill(book, start, decision.id(), order(pending).source(), before, legs, usCloses, current);
             BookState after = store.state(code).orElseThrow();
             // 관측치 처리 기억은 앞의 값 — 출발일 뒤 이미 처리한 관측치를 다시 처리하지 않게(클래스 설명).
@@ -203,7 +225,7 @@ final class StartCloseRestart {
     }
 
     // ------------------------------------------------------------------ 한국
-    /** 출발일 금융위 확정 종가 한 종목 — 값·출처(FSC·FSC_ETF)·비용 종목 구분. */
+    /** 출발일 종가 한 종목 — 값·체결 행의 가격 출처(FSC·FSC_ETF, 토스는 봉 출처 TOSS_DAILY·TOSS_INTEGRATED)·비용 종목 구분. */
     private record KrClose(BigDecimal close, String source, KrxCosts.Instrument instrument) {
     }
 
@@ -232,13 +254,45 @@ final class StartCloseRestart {
         return out;
     }
 
+    /** 출발일 토스 종가({@value #SOURCE_TOSS} — 클래스 설명). 봉이 없거나 거래량이 0·모름이거나 종목 구분을 모르면 거절합니다(전부 아니면 없음). */
+    private Map<String, KrClose> tossCloses(MarketRun market, List<Order> pending, LocalDate start, PaperSettings current) {
+        List<String> codes = pending.stream().map(Order::ticker).distinct().toList();
+        Optional<PaperMarketData.Quotes> quotes = reader.quietly(() -> marketData.quotes(market));
+        if (quotes == null || quotes.isEmpty()) {
+            throw new InvalidRequestException("한국 관측치 저장본(paper.kr.quotes)이 없습니다 — 아무것도 바꾸지 않았습니다");
+        }
+        Map<String, String> fscMarkets = reader.quietly(() -> marketData.fscMarkets(codes));
+        Map<String, KrClose> out = new LinkedHashMap<>();
+        for (String code : codes) {
+            PaperMarketData.Bar bar = quotes.get().bars().get(code);
+            Optional<KrQuotes.Day> day = bar == null || bar.kr() == null ? Optional.empty()
+                    : bar.kr().days().stream().filter(d -> start.equals(d.date()) && d.observed() && d.close() != null).findFirst();
+            if (day.isEmpty()) {
+                throw new InvalidRequestException(start + " " + code + " 토스 종가가 한국 관측치 저장본에 없습니다(거래량 > 0 봉) — 아무것도 "
+                        + "바꾸지 않았습니다");
+            }
+            boolean etf = KrPaperMarket.etf(code, current);
+            String fscMarket = fscMarkets == null ? null : fscMarkets.get(code);
+            Optional<KrxCosts.Instrument> instrument = KrxCosts.classify(fscMarket, etf);
+            if (instrument.isEmpty()) {
+                throw new InvalidRequestException(code + " 종목 구분을 모릅니다(금융위 시장 구분 '" + fscMarket + "', ETF 목록 밖) — "
+                        + "비용을 짐작하지 않습니다. 아무것도 바꾸지 않았습니다");
+            }
+            String priceSource = day.get().priceSource() == null ? SOURCE_TOSS : day.get().priceSource();
+            out.put(code, new KrClose(day.get().close(), priceSource, instrument.get()));
+        }
+        return out;
+    }
+
     /**
      * 한국 사후 체결 — 매수만(출발 주문), 순서는 현금성이 아닌 매수 → 현금성 매수(미국 사후 체결과 같은 순서), 매수 예산 = 체결 전 순자산 × 목표
      * 비중과 남은 현금 중 작은 쪽, 수량 = 비용 포함 유출이 예산 안인 최대 정수 주({@link KrxCosts#affordableQty}).
+     *
+     * @param confirmedPrices 체결가가 금융위 확정 종가인가 — 출발일 순자산 줄의 확정 여부
      */
     private Filled krBackfill(MarketRun market, Book book, LocalDate start, long decisionId, String source,
                               BookState before, List<PaperLedgerService.BackfillLeg> legs, Map<String, KrClose> closes,
-                              PaperSettings current) {
+                              PaperSettings current, boolean confirmedPrices) {
         String code = book.code();
         Instant close = market.calendar().closeInstant(start);
         PaperSettings.CostRates costRates = current.costRates();
@@ -260,7 +314,7 @@ final class StartCloseRestart {
             double budget = Math.min(baseNav * leg.targetWeightPct() / 100.0, cash);
             int qty = budget > 0 ? KrxCosts.affordableQty(BigDecimal.valueOf(budget), price.close(), rates) : 0;
             if (qty <= 0) {
-                skipped.add(Map.entry(leg.ticker(), leg.ticker() + " 확정 종가(" + price.close().toPlainString()
+                skipped.add(Map.entry(leg.ticker(), leg.ticker() + " 출발일 종가(" + price.close().toPlainString()
                         + "원)로는 예산(" + PaperLedgerService.money(budget) + "원) 안에서 1주도 살 수 없습니다"));
                 continue;
             }
@@ -301,7 +355,7 @@ final class StartCloseRestart {
         double nav = PaperLedger.round4(valuation.nav());
         double equity = PaperLedger.round4(valuation.equityValue());
         double exposure = PaperLedger.round4(valuation.exposurePct());
-        store.upsertNav(new NavRow(code, start, nav, cash, equity, exposure, true));
+        store.upsertNav(new NavRow(code, start, nav, cash, equity, exposure, confirmedPrices));
         store.upsertState(new BookState(code, cash, nav, equity, exposure, close, close, start, null));
         return new Filled(fills, skipped);
     }

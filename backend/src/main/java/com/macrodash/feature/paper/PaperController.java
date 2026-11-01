@@ -60,6 +60,10 @@ public class PaperController {
     public record ResetRequest(String confirm) {
     }
 
+    /** 출발일 종가로 다시 출발 — 확인 문구와 한국 가격 출처(없으면 금융위). */
+    public record RestartRequest(String confirm, String priceSource) {
+    }
+
     /** 수동 재계산의 기준일(yyyy-MM-dd). 없으면 마지막 완료 세션. */
     public record RerankRequest(String asOf) {
     }
@@ -158,15 +162,17 @@ public class PaperController {
     }
 
     /**
-     * 출발일 종가로 다시 출발({@link PaperAdminService#restartAtStartClose} — 사용자 결정 2026-11-02). 본문 {@code {"confirm":"<code>"}}.
+     * 출발일 종가로 다시 출발({@link PaperAdminService#restartAtStartClose} — 사용자 결정 2026-11-02). 본문 {@code {"confirm":"<code>",
+     * "priceSource":"FSC"|"TOSS"}}(가격 출처는 한국 계좌만, 없으면 금융위).
      */
     @PostMapping("/books/{code}/restart-at-start-close")
     public Map<String, Object> restartAtStartClose(@PathVariable String code,
-                                                   @RequestBody(required = false) ResetRequest body) {
+                                                   @RequestBody(required = false) RestartRequest body) {
         if (!query.ready()) {
             return notReady();
         }
-        StartCloseRestart.Result result = admin.restartAtStartClose(code, body == null ? null : body.confirm());
+        StartCloseRestart.Result result = admin.restartAtStartClose(code, body == null ? null : body.confirm(),
+                body == null ? null : body.priceSource());
         Map<String, Object> out = new LinkedHashMap<>();
         out.put("ok", true);
         out.put("book", query.bookSummary(code));

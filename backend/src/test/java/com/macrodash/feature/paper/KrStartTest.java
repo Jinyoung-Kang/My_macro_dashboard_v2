@@ -434,6 +434,37 @@ class KrStartTest {
     }
 
     @Test
+    @DisplayName("한국 Claude 계좌2 토스 종가 출발(사용자 결정 2026-11-02) — 금융위 S 시세가 없어도 지금 한국 관측치(S 밤 판)의 S 봉 종가로 사후 "
+            + "체결(행 출처 토스), 출발 패킷의 체결 문장은 토스 잠정 종가, 모르는 출처는 부르지 않고 400")
+    void krClaude2StartsAtTheTossClose() {
+        KrClaudeFixtures.FakeAi fake = new KrClaudeFixtures.FakeAi();
+        fake.answer(KrClaudeFixtures.decision(8, null, KrClaudeFixtures.order("005930", "BUY", 8.0, null)));
+        realClaude(fake);
+        assertThat(runAt("2026-11-30T22:30").outcome()).isEqualTo(PaperDecisionJob.STARTED);
+        clock.set(kst("2026-12-01T05:00"));
+        assertThatThrownBy(() -> claudeService.startKrClaude2(PaperBooks.KR_CLAUDE2, "NAVER"))
+                .isInstanceOf(InvalidRequestException.class).hasMessageContaining("가격 출처");
+        fake.answer(KrClaudeFixtures.decision(9, null, KrClaudeFixtures.order("005930", "BUY", 10.0, null)));
+
+        ClaudeBookService.KrClaude2Started started = claudeService.startKrClaude2(PaperBooks.KR_CLAUDE2, StartCloseRestart.SOURCE_TOSS);
+
+        assertThat(fake.requests).hasSize(2);
+        assertThat(fake.requests.get(1).user()).contains("종가(토스 잠정 종가 — NXT 종목은 20:00까지의 통합가)로 사후 체결된다")
+                .doesNotContain("금융위 확정 종가)로 사후 체결");
+        assertThat(store.fillsOf(PaperBooks.KR_CLAUDE2)).singleElement().satisfies(f -> {
+            assertThat(f.ticker()).isEqualTo("005930");
+            assertThat(f.price()).as("S 봉 토스 종가").isEqualTo(10_200.0);
+            assertThat(f.priceSource()).startsWith("TOSS");
+            assertThat(f.backfill()).isTrue();
+            assertThat(f.observationDate()).isEqualTo(S);
+        });
+        assertThat(started.decision().response().path("startNote").asString()).contains("토스 종가");
+        assertThat(store.books.get(PaperBooks.KR_CLAUDE2).status()).isEqualTo(PaperBooks.ACTIVE);
+        assertThat(store.navSeries(PaperBooks.KR_CLAUDE2)).filteredOn(n -> n.tradingDate().equals(S)).singleElement()
+                .satisfies(n -> assertThat(n.pricesFinal()).isFalse());
+    }
+
+    @Test
     @DisplayName("한국 Claude 계좌2(사용자 결정 2026-11-02) — 운용 중이면 같은 밤 계좌1 다음에 따로 정기 결정: 같은 관측치·자료 게이트, 패킷의 계좌 몫은 "
             + "kr_claude2(자기 장부), 시스템 프롬프트에 투자 성향 절(기본 공격투자형·현금성 153130), 계좌1 결정·주문은 넣지 않음")
     void krClaude2DecidesIndependentlyAfterAccount1() {

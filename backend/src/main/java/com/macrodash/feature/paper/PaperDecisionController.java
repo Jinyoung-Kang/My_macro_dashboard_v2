@@ -141,15 +141,17 @@ public class PaperDecisionController {
     }
 
     /**
-     * 한국 Claude 계좌2 출발({@link ClaudeBookService#startKrClaude2} — 사용자 결정 2026-11-02): 본문 {@code {"confirm":"kr_claude2"}} →
+     * 한국 Claude 계좌2 출발({@link ClaudeBookService#startKrClaude2} — 사용자 결정 2026-11-02): 본문 {@code {"confirm":"kr_claude2",
+     * "priceSource":"FSC"|"TOSS"}}(없으면 금융위) →
      * {@code {ok, decision, fills, skipped, book}}. 계좌1 출발 패킷(계좌 몫만 바꿈)으로 한 번 부르고 통과 주문을 출발일 종가로 사후 체결합니다.
      */
     @PostMapping("/run/kr-claude2-start")
-    public Map<String, Object> krClaude2Start(@RequestBody(required = false) ConfirmRequest body) {
+    public Map<String, Object> krClaude2Start(@RequestBody(required = false) StartRequest body) {
         if (!query.ready()) {
             return notReady();
         }
-        ClaudeBookService.KrClaude2Started started = claude.startKrClaude2(body == null ? null : body.confirm());
+        ClaudeBookService.KrClaude2Started started = claude.startKrClaude2(body == null ? null : body.confirm(),
+                body == null ? null : body.priceSource());
         Map<String, Object> out = new LinkedHashMap<>();
         out.put("ok", true);
         out.put("decision", query.decisionSummary(started.decision()));
@@ -165,6 +167,10 @@ public class PaperDecisionController {
 
     /** 확인 문구만 받는 본문. */
     record ConfirmRequest(String confirm) {
+    }
+
+    /** 한국 Claude 계좌2 출발 — 확인 문구와 가격 출처(없으면 금융위). */
+    record StartRequest(String confirm, String priceSource) {
     }
 
     /**
