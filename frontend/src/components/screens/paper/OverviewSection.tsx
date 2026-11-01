@@ -1,8 +1,8 @@
 "use client";
 
-import { type ReactNode, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { MultiLineSeries, SERIES_COLORS } from "@/components/charts";
-import { AssetRow, type Column, DataTable, RangeTabs } from "@/components/patterns";
+import { AssetRow, RangeTabs } from "@/components/patterns";
 import { Banner, Button, Card, Freshness, Table } from "@/components/ui";
 import { useApi } from "@/hooks/useApi";
 import { useAsyncAction } from "@/hooks/useAsyncAction";
@@ -42,11 +42,9 @@ import {
   selectedFilersView,
 } from "@/lib/paper";
 import {
-  accountComparisonRows,
   bookAssetRow,
   heroBookCode,
   latestObserved,
-  type ComparisonRow,
   markersInWindow,
   NAV_RANGES,
   type NavRangeKey,
@@ -54,7 +52,6 @@ import {
   navSeriesWindow,
   overviewHeroModel,
   sameWindowIndex,
-  sampleNotes,
 } from "@/lib/paperOverview";
 import {
   jobsCardSubtitle,
@@ -81,6 +78,7 @@ import type {
   PaperRiskResult,
   PaperStatusResponse,
 } from "@/lib/types";
+import { AccountComparisonCard } from "./AccountComparisonCard";
 import { AccountDetailPanel, accountDetailTitleId } from "./AccountDetailPanel";
 import { BOOK_COLORS, bookColor, REFERENCE_COLOR, SPARE_COLORS } from "./bookColors";
 import { Claude2StartSection } from "./Claude2StartSection";
@@ -272,18 +270,7 @@ export function OverviewSection({
   // 한 줄 글은 전체 기록 기준(기간 밖의 경계를 '그날 기록 없음'으로 적지 않게), 세로선은 고른 기간 안의 날짜만.
   const boundaries = frameworkBoundaryView(overview.frameworkBoundaries, overview.navSeries?.dates ?? []);
   const markers = markersInWindow(boundaries.markers, navWindow);
-  const comparison = accountComparisonRows(books, market);
   const ledgerSource = korea ? PAPER_SOURCES.krLedger : PAPER_SOURCES.ledger;
-  const comparisonColumns: Column<ComparisonRow>[] = [
-    // 줄이 항목이라 항목 이름 칸을 행 머리(th scope=row)로 — 낭독기가 칸마다 "순자산 · 규칙 계좌"처럼 항목과 계좌를 함께 읽습니다.
-    { key: "label", header: "항목", rowHeader: true, cell: (row) => row.label, className: "whitespace-nowrap text-text-2" },
-    ...books.map((book): Column<ComparisonRow> => ({
-      key: book.code,
-      header: book.label,
-      align: "right",
-      cell: (row) => comparisonContent(row, book.code),
-    })),
-  ];
 
   return (
     <>
@@ -465,28 +452,7 @@ export function OverviewSection({
         )}
       </Card>
 
-      {books.length > 0 && (
-        <Card
-          title="계좌 비교"
-          subtitle={`${korea ? "네 계좌를" : "계좌를"} 항목별로 나란히 — 순자산·수익률·노출은 마지막 관측치 기준 · 통계는 거래일별 순자산 기준(초과 수익률·베타는 '비교 기준' 줄의 계좌 대비)`}
-          source={ledgerSource}
-        >
-          <DataTable<ComparisonRow>
-            columns={comparisonColumns}
-            rows={comparison}
-            rowKey={(row) => row.key}
-            caption="계좌 비교"
-            scrollHint="overflow"
-          />
-          <ul aria-label="표본 설명" className="mt-3 flex flex-col gap-0.5 text-xs text-text-3">
-            {sampleNotes(books).map((note) => (
-              <li key={note.code}>
-                <span className="font-medium text-text-2">{note.label}</span> — {note.text}
-              </li>
-            ))}
-          </ul>
-        </Card>
-      )}
+      {books.length > 0 && <AccountComparisonCard books={books} market={market} />}
 
       {!korea && book2 && <SameWindowCard overview={overview} books={books} />}
 
@@ -769,16 +735,6 @@ function GroupBadge({ badge }: { badge: Badge }) {
       {badge.label}
     </span>
   );
-}
-
-/** 계좌 비교 표의 칸 — 상태는 배지, 색이 있는 값(수익률·가격 없음)은 그 색, 나머지는 글 그대로("—"면 표가 Empty로 그림). */
-function comparisonContent(row: ComparisonRow, code: string): ReactNode {
-  const cell = row.cells[code];
-  if (!cell || cell.text === EMPTY) return cell?.text ?? null;
-  if (row.badge && cell.className) {
-    return <span className={`whitespace-nowrap rounded-sm border px-2 py-0.5 text-xs ${cell.className}`}>{cell.text}</span>;
-  }
-  return cell.className ? <span className={cell.className}>{cell.text}</span> : cell.text;
 }
 
 function Cell({ label, value, small }: { label: string; value: string; small?: boolean }) {
