@@ -233,6 +233,11 @@ export interface OverviewHeroModel {
   isEstimated: boolean;
   /** 서버 글 전문(섞임·가격 없음·체결 대기) — 히어로는 긴 글, 행은 짧은 덧붙임. */
   note: string | null;
+  /**
+   * '지금 값 101,234.56 달러'(모르면 '지금 값 —') — 문지르는 동안 큰 숫자는 그 점의 값이라, 단계 표기·추정 배지·서버 글이 그 점이 아니라 지금 값의
+   * 것임을 앞에 밝힙니다(배지는 문지르는 동안에도 보임 — Coinbase식 명세 A3).
+   */
+  nowText: string;
   isStale: boolean;
   staleReason: string | null;
   warning: string | null;
@@ -267,6 +272,7 @@ export function overviewHeroModel(
     stageLabel: view.stageLabel,
     isEstimated: view.isEstimated,
     note: view.note ?? (view.notes.length > 0 ? view.notes.join(" · ") : null),
+    nowText: `지금 값 ${valueText === EMPTY ? EMPTY : `${valueText} ${marketMeta(market).unitLabel}`}`,
     isStale: row.isStale,
     staleReason: row.staleReason,
     warning: row.warning,

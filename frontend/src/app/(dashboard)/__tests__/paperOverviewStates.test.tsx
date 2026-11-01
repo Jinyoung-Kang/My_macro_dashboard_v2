@@ -161,6 +161,8 @@ beforeEach(() => {
 afterEach(() => cleanup());
 
 const row = (name: RegExp) => screen.getByRole("button", { name });
+/** 곧바로 resolve하는 목 응답을 끝까지 반영합니다(QA-147·148 — 벽시계 한도가 있는 findBy 대신). */
+const settled = () => act(async () => {});
 
 /**
  * 계좌 비교 표의 칸(항목 줄 × 계좌 열) — 글과 글자색을 함께 보려고 칸 요소를 돌려줍니다. 항목 이름은 행 머리(th scope=row)라
@@ -258,6 +260,27 @@ describe("히어로(포트폴리오식 — 장중 명세 §4-1)", () => {
     expect(within(hero).getByText("+0.42%")).toBeTruthy();
     expect(within(hero).getByText("· 10-29 잠정 대비")).toBeTruthy();
     expect(within(hero).getByText(/보유를 장중 1분봉 시세로 다시 평가한 표시 전용 추정/)).toBeTruthy();
+  });
+
+  it("문지르는 동안 단계 표기·추정 배지·서버 글은 '지금 값 …' 뒤에 — 그 점(순자산 줄)의 값이 '장중 추정'으로 읽히지 않게, 배지는 그대로", async () => {
+    reads["/api/paper/overview"] = () => Promise.resolve(CURRENT_OVERVIEW);
+    render(<PaperPage />);
+    await settled();
+
+    fireEvent.click(row(/^규칙 계좌 상세 보기/));
+    const hero = screen.getByRole("region", { name: "규칙 계좌 순자산" });
+    expect(within(hero).getByText("장중 추정 23:58")).toBeTruthy();
+    // 마지막 점(10-24 순자산 줄 — 꼬리가 아님)을 문지름
+    fireEvent.click(within(hero).getByRole("button", { name: "규칙 계좌 순자산 곡선 마지막 점 문지르기" }));
+    expect(within(hero).getByText("2026-10-24")).toBeTruthy();
+    // 단계 표기 바로 앞에 '지금 값 …'(눈으로만 — 낭독기는 Hero 값 자리의 '지금 값 …'을 이미 읽음)
+    const stage = within(hero).getByText("장중 추정 23:58");
+    expect(stage.textContent).toBe("지금 값 101,234.56 달러 · 장중 추정 23:58");
+    expect(stage.querySelector('[aria-hidden="true"]')?.textContent).toBe("지금 값 101,234.56 달러 · ");
+    expect(within(hero).getByText("추정")).toBeTruthy();
+    expect(within(hero).getByText(/^지금 값: 장중가 1\/2종목 — 나머지는 장부 관측가 · 체결 대기 1건 반영 전/)).toBeTruthy();
+    // 그 점은 추정이 아님 — 알림은 날짜와 값뿐
+    expect(hero.querySelector('[aria-live="polite"]')?.textContent).toBe("2026-10-24 101,200.00 달러");
   });
 
   it("초기화 전(initialized false)이면 히어로 없이 기간 알약은 '순자산 곡선' 카드에", async () => {
