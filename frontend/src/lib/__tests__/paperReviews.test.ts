@@ -1,5 +1,5 @@
 /**
- * 🧪 모의 매매 — 주간 복기 표기(2단계 명세 §3 D1~D6). 숫자·판정 수는 서버 값 그대로, 모르는 값은 "—"(0으로 채우지 않음).
+ * 모의 매매 — 주간 복기 표기(2단계 명세 §3 D1~D6). 숫자·판정 수는 서버 값 그대로, 모르는 값은 "—"(0으로 채우지 않음).
  */
 import { describe, expect, it } from "vitest";
 import {
@@ -197,6 +197,15 @@ describe("프레임 탭의 복기 제안", () => {
     expect(proposalFocusView([proposal], 12)).toEqual({ found: true, note: null });
     expect(proposalFocusView([proposal], 3).note).toContain("제안 #3가 최근 제안 목록(50건)에 없습니다");
     expect(proposalFocusView([proposal], null)).toEqual({ found: false, note: null });
+  });
+
+  it("서버에 저장된 오류 글(복기·연결된 제안)의 옛 그림 문자는 걷어 낸다", () => {
+    const old = "120초 안에 응답하지 않았습니다 — '\u26a1 자동 탐색'을 고르면 응답이 빠른 엔진으로 넘어갑니다";
+    expect(reviewRows([summary({ status: "REFUSED", error: old })])[0].note).toBe("120초 안에 응답하지 않았습니다 — '자동 탐색'을 고르면 응답이 빠른 엔진으로 넘어갑니다");
+    const view = reviewDetailView(detail({ status: "API_ERROR", error: old,
+      proposal: { id: 12, status: "FAILED", summary: null, operationsCount: null, baseVersion: 1, resultVersion: null, error: old } }));
+    expect(view.notices[0]).toBe("오류 — 120초 안에 응답하지 않았습니다 — '자동 탐색'을 고르면 응답이 빠른 엔진으로 넘어갑니다");
+    expect(view.proposal?.detail).toBe("기준 판 v1 · 오류 — 120초 안에 응답하지 않았습니다 — '자동 탐색'을 고르면 응답이 빠른 엔진으로 넘어갑니다");
   });
 
   it("복기가 낸 제안은 근거에 '주간 복기 <주>'를 적는다(메모 번호 없음)", () => {

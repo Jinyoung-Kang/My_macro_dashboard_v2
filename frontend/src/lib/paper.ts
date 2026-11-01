@@ -1,11 +1,21 @@
 /**
- * 🧪 모의 알고리즘 매매 화면의 표기 — React를 모르는 순수 함수(ADR 0004).
+ * 모의 알고리즘 매매 화면의 표기 — React를 모르는 순수 함수(ADR 0004).
  *
  * 숫자는 전부 백엔드가 계산해 보냅니다(순자산·수익률·통계·스탑 가격·비중). 여기서는 받은 값을 고르고,
  * 이름을 붙이고, 차트 행으로 늘어놓기만 합니다 — 화면에서 다시 계산하면 장부와 화면이 다른 숫자를 말하게 됩니다.
  * 모르는 값(null)은 "—"로 둡니다. 0으로 채우지 않습니다.
  */
-import { EMPTY, formatAge, formatKst, formatLatency, formatNumber, formatPercent, formatSigned, formatWithUnit } from "./format";
+import {
+  EMPTY,
+  formatAge,
+  formatKst,
+  formatLatency,
+  formatNumber,
+  formatPercent,
+  formatSigned,
+  formatWithUnit,
+  withoutLeadingIcon,
+} from "./format";
 import { tradeTimeFrom } from "./marketSessions";
 import { KR_ACCOUNT_PROFILES } from "./paperKrProfiles";
 import { filerName } from "./holdings";
@@ -1165,7 +1175,7 @@ const TIMING: Record<string, string> = {
   AT_1300: "다음 거래일 13:00 ET",
   AT_1400: "다음 거래일 14:00 ET",
   AT_1500: "다음 거래일 15:00 ET",
-  // 🧪 계좌2 장중 확인 결정만 내는 장중 시장가(단계 2) — 기준 시각 = 주문 생성 + 60초 뒤 첫 분, 그 1분봉 시가부터 사다리.
+  // 계좌2 장중 확인 결정만 내는 장중 시장가(단계 2) — 기준 시각 = 주문 생성 + 60초 뒤 첫 분, 그 1분봉 시가부터 사다리.
   MARKET: "장중 시장가(확인 직후 첫 분)",
 };
 const SOURCE: Record<string, string> = {
@@ -1480,6 +1490,16 @@ const isNumber = (value: unknown): value is number => typeof value === "number" 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   value !== null && typeof value === "object" && !Array.isArray(value);
 const textOf = (value: unknown): string | null => (typeof value === "string" && value ? value : null);
+
+/**
+ * 서버에 저장된 글(결정·복기·제안의 오류 칸)을 화면에 — 옛 행의 그림 문자(예전 AI 시간 초과 안내의 '[번개] 자동 탐색' 같은 기호)를 걷어 냅니다
+ * (lib/format `withoutLeadingIcon`). 서버는 이제 기호 없이 쓰지만 DB의 옛 행은 그대로라 표시 층에서 정리합니다(Coinbase식 개편 명세 §11-7).
+ * 글이 아니거나 비면 null.
+ */
+export function storedText(value: unknown): string | null {
+  const text = textOf(value);
+  return text === null ? null : withoutLeadingIcon(text) || null;
+}
 /** 기관 이름 — 서버가 붙인 국기는 화면에서 뗍니다(lib/holdings.filerName). */
 const filerNameOf = (value: unknown): string | null => filerName(textOf(value));
 const numberOf = (value: unknown): number | null => (isNumber(value) ? value : null);
@@ -1902,7 +1922,8 @@ export function initialDecisionResultView(
   ];
   const head = noTrade ? `${object} 시작했지만 주문이 없습니다 — 현금만 듭니다` : `${object} 시작했습니다`;
   const summary = decision?.summary ? ` — ${decision.summary}` : "";
-  const error = decision?.error ? ` — 오류: ${decision.error}` : "";
+  const failure = storedText(decision?.error);
+  const error = failure ? ` — 오류: ${failure}` : "";
   return { tone: noTrade || error ? "warn" : "info", text: `${head} · ${parts.join(" · ")}${summary}${error}` };
 }
 
@@ -1913,7 +1934,7 @@ const DECISION_KIND: Record<string, string> = {
   MANUAL: "수동",
   REBALANCE: "재선정일",
   INITIAL: "초기 결정",
-  // 🧪 계좌2 장중 확인 결정(단계 2) — 세션당 한 번, 재시도 없음.
+  // 계좌2 장중 확인 결정(단계 2) — 세션당 한 번, 재시도 없음.
   CHECKPOINT: "장중 확인",
 };
 
@@ -1930,7 +1951,7 @@ const DECISION_STATUS: Record<string, { label: string; tone: BadgeTone }> = {
 };
 
 /**
- * 결정 상태 배지. 모르는 상태는 받은 글자 그대로(지어내지 않음). 🧪 장중 확인 결정(kind CHECKPOINT)의 실패(형식 오류·거절·API 오류)는 '(재시도 없음)'을
+ * 결정 상태 배지. 모르는 상태는 받은 글자 그대로(지어내지 않음). 장중 확인 결정(kind CHECKPOINT)의 실패(형식 오류·거절·API 오류)는 '(재시도 없음)'을
  * 붙입니다 — 정기·출발 결정의 API 오류는 한 번 다시 부르지만 장중 확인은 세션당 한 번이라 다시 부르지 않습니다.
  */
 export function decisionStatusBadge(status: string | null | undefined, kind?: string | null): Badge {
@@ -2021,7 +2042,8 @@ export function runDecisionResultView(result: PaperRunDecisionResult): { tone: "
   if (!decision) return { tone: "warn", text: result.message ?? "결정 기록을 받지 못했습니다." };
   const text = `${decision.asOfTradingDate} ${decisionKindLabel(decision.kind)} 결정 — ${decisionStatusBadge(decision.status).label}`
     + ` · 주문 ${decisionOrdersText(decision)}${decision.summary ? ` · ${decision.summary}` : ""}`;
-  return decision.error ? { tone: "warn", text: `${text} — 오류: ${decision.error}` } : { tone: "info", text };
+  const error = storedText(decision.error);
+  return error ? { tone: "warn", text: `${text} — 오류: ${error}` } : { tone: "info", text };
 }
 
 /** 결정 상세 머리의 한 칸. */
@@ -2869,9 +2891,9 @@ export interface ClaudeDecisionView {
   watchlist: WatchRow[];
   /** 모델·토큰 사용량 칸(있는 값만). */
   usage: DecisionMetaCell[];
-  /** 🧪 장중 확인 결정(kind CHECKPOINT — 단계 2)이면 그 요청·응답(KEEP/REPLACE)·대신한 주문·예상 상태, 아니면 null. */
+  /** 장중 확인 결정(kind CHECKPOINT — 단계 2)이면 그 요청·응답(KEEP/REPLACE)·대신한 주문·예상 상태, 아니면 null. */
   checkpoint: CheckpointDecisionView | null;
-  /** 🧪 아침 결정이 다음 세션 장중 확인을 요청했으면(응답 checkpointPlan — 단계 2) 그 한 줄, 아니면 null. */
+  /** 아침 결정이 다음 세션 장중 확인을 요청했으면(응답 checkpointPlan — 단계 2) 그 한 줄, 아니면 null. */
   checkpointPlan: string | null;
 }
 
@@ -2895,7 +2917,7 @@ export interface ClaudeDecisionSource {
   book?: string | null;
   /** 결정 상태(OK·NO_TRADE·REFUSED·FORMAT_ERROR·API_ERROR·SKIPPED) — 응답이 없을 때 무엇을 적을지 고릅니다. 모르면 없음. */
   status?: string | null;
-  /** 결정 종류 — CHECKPOINT(🧪 계좌2 장중 확인)이면 확인 본문을 그립니다. 모르면 응답의 kind로 봅니다. */
+  /** 결정 종류 — CHECKPOINT(계좌2 장중 확인)이면 확인 본문을 그립니다. 모르면 응답의 kind로 봅니다. */
   kind?: string | null;
   response: unknown;
   /** 검증 결과를 응답 밖에 따로 보내면(미리보기) 그것, 아니면 response.validation. */
@@ -3159,7 +3181,8 @@ export function claudePreviewResultView(result: PaperClaudePreviewResult): { ton
   const untouched = "장부·결정·주문 기록은 바꾸지 않았습니다(남긴 것: 사용량, 없을 때만 출발일 기관 선정·제안 종목의 출발일 종가).";
   if (failed) {
     const label = status ? decisionStatusBadge(status).label : "응답 없음";
-    return { tone: "warn", text: `미리보기 — ${label}${result.error ? `: ${result.error}` : ""}. ${untouched}` };
+    const error = storedText(result.error);
+    return { tone: "warn", text: `미리보기 — ${label}${error ? `: ${error}` : ""}. ${untouched}` };
   }
   return {
     tone: "info",
@@ -3168,7 +3191,7 @@ export function claudePreviewResultView(result: PaperClaudePreviewResult): { ton
   };
 }
 
-// ---------------------------------------------------------------- 🧪 미국 Claude 계좌2(체결 시점 실험, ADR 0022)
+// ---------------------------------------------------------------- 미국 Claude 계좌2(체결 시점 실험, ADR 0022)
 
 /** 개요의 "계좌2 시작" 카드(계좌2 명세 §4-1 — 앞으로 체결 출발). */
 export interface Claude2StartView {
@@ -3252,7 +3275,7 @@ export function claude2BarsLine(group: PaperClaude2Status | null | undefined, la
   return `${head}: 받은 시각 ${formatKst(bars.collectedAtKst)} · ${formatAge(bars.ageSeconds)} · 지연 ${lag}(SPY 마지막 봉 끝 → 받은 시각)`;
 }
 
-// ---------------------------------------------------------------- 🧪 계좌2 장중 확인(단계 2 — 계좌2 명세 §5-2·§13-3)
+// ---------------------------------------------------------------- 계좌2 장중 확인(단계 2 — 계좌2 명세 §5-2·§13-3)
 
 const CHECKPOINT_STATUS: Record<string, { label: string; tone: BadgeTone }> = {
   PLANNED: { label: "예정", tone: "info" },
@@ -3502,7 +3525,8 @@ export function claude2StartResultView(result: PaperInitialDecisionResult, bookL
       ? `${withParticle(bookLabel, "이")} 출발했지만 주문이 없습니다 — 현금만 듭니다`
       : `${withParticle(bookLabel, "이")} 출발했습니다 — 주문은 다음 세션에 고른 시점으로 체결됩니다`;
   const parts = [`${decision?.asOfTradingDate ?? EMPTY} ${decisionKindLabel(decision?.kind ?? "INITIAL")}`, `주문 ${formatWithUnit(decision?.orderCount, 0, "건")}`];
-  const error = decision?.error ? ` — 오류: ${decision.error}` : "";
+  const failure = storedText(decision?.error);
+  const error = failure ? ` — 오류: ${failure}` : "";
   return { tone: error ? "warn" : "info", text: `${head} · ${parts.join(" · ")}${error}` };
 }
 
@@ -3549,7 +3573,7 @@ export interface ExecutionSummaryView {
   head: string;
   formula: string | null;
   method: string | null;
-  /** 🧪 장중 확인(M8 — 단계 2, 서술·판정 없음) 줄들 — 계좌2만, 계좌1·이 칸을 보내지 않는 백엔드면 null. */
+  /** 장중 확인(M8 — 단계 2, 서술·판정 없음) 줄들 — 계좌2만, 계좌1·이 칸을 보내지 않는 백엔드면 null. */
   checkpoints: string[] | null;
 }
 
@@ -3687,7 +3711,7 @@ export interface ExecutionCheckpointRow {
 }
 
 /**
- * 🧪 장중 확인 기록(실행 감사 응답의 checkpoints[] — 계좌2 최근 20행, 단계 2)을 표 줄로 — 그날 확인이 놓침·건너뜀으로 끝났는지와 사유를 상태 줄이 다음
+ * 장중 확인 기록(실행 감사 응답의 checkpoints[] — 계좌2 최근 20행, 단계 2)을 표 줄로 — 그날 확인이 놓침·건너뜀으로 끝났는지와 사유를 상태 줄이 다음
  * 세션으로 넘어간 뒤에도 볼 수 있게(리뷰 S1 — 놓침·건너뜀은 결정 행이 없어 결정 로그에도 없음). 장중 확인 요약(summary.checkpoints)이 없는 응답
  * (계좌1·칸이 없는 백엔드)이면 null(표를 그리지 않음). 화면은 계산하지 않습니다.
  */
@@ -5087,7 +5111,7 @@ export function proposalView(
       ? "평가만 있는 제안입니다 — 바꿀 것이 없어 승인할 수 없습니다(서버가 새 판을 만들지 않음). 거절로 닫으세요."
       : "변경이 없는 제안입니다.",
     beforeAfter: textOf(proposal.beforeAfter),
-    error: textOf(proposal.error),
+    error: storedText(proposal.error),
     staleBase,
     confirmApprove: `이 제안(#${proposal.id})을 승인할까요? 변경 ${formatNumber(operations.length, 0)}건을 ${currentName}에 적용해 새 판을 `
       + `만들고, 다음 Claude 결정부터 새 판으로 판단합니다. ${APPROVE_COST_NOTE}${inherit}`,
@@ -5105,7 +5129,7 @@ export function proposeResultView(result: PaperProposeResult): { tone: "warn" | 
   if (proposal.status === "FAILED" || result.ok === false) {
     return {
       tone: "warn",
-      text: `제안 요청이 실패했습니다(#${proposal.id}) — ${proposal.error ?? "서버가 사유를 남기지 않았습니다"}. 판은 바뀌지 않았습니다. `
+      text: `제안 요청이 실패했습니다(#${proposal.id}) — ${storedText(proposal.error) ?? "서버가 사유를 남기지 않았습니다"}. 판은 바뀌지 않았습니다. `
         + "다시 요청하면 Claude를 한 번 더 부릅니다.",
     };
   }
@@ -5577,7 +5601,7 @@ export function reviewRows(reviews: readonly PaperReviewSummary[]): ReviewRow[] 
     model: textOf(review.model) ?? EMPTY,
     note: review.retryable
       ? "API 오류 — 다음 실행(정기 30분 주기 또는 수동)이 같은 주를 한 번 더 부릅니다."
-      : textOf(review.error),
+      : storedText(review.error),
   }));
 }
 
@@ -5667,7 +5691,7 @@ export interface ReviewDetailView {
 export function reviewDetailView(review: PaperReviewDetail): ReviewDetailView {
   const status = textOf(review.status);
   const notices: string[] = [];
-  const error = textOf(review.error);
+  const error = storedText(review.error);
   if (error) notices.push(status === "SKIPPED" ? error : `오류 — ${error}`);
   if (review.retryable) notices.push("API 오류로 끝났습니다 — 다음 실행(정기 또는 수동)이 같은 주를 한 번 더 부릅니다.");
   if (textOf(review.trimmedReason)) notices.push(`입력을 줄였습니다 — ${review.trimmedReason}`);
@@ -5705,7 +5729,7 @@ export function reviewDetailView(review: PaperReviewDetail): ReviewDetailView {
         isNumber(review.proposal.operationsCount) ? `변경 ${formatNumber(review.proposal.operationsCount, 0)}건` : null,
         isNumber(review.proposal.baseVersion) ? `기준 판 v${review.proposal.baseVersion}` : null,
         isNumber(review.proposal.resultVersion) ? `만든 판 v${review.proposal.resultVersion}` : null,
-        textOf(review.proposal.error) ? `오류 — ${review.proposal.error}` : null,
+        storedText(review.proposal.error) ? `오류 — ${storedText(review.proposal.error)}` : null,
       ].filter((part): part is string => part !== null).join(" · ") || EMPTY,
     }
     : null;

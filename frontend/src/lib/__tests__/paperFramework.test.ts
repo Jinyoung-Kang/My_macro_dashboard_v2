@@ -381,6 +381,11 @@ describe("제안(F2) — 평가·변경·승인", () => {
     expect(proposeResultView({ ok: false, proposal: proposal({ status: "FAILED", error: "응답 형식 오류" }) }))
       .toMatchObject({ tone: "warn", text: expect.stringContaining("제안 요청이 실패했습니다(#3) — 응답 형식 오류. 판은 바뀌지 않았습니다.") });
     expect(proposeResultView({ ok: false, message: "하루 호출 상한" })).toEqual({ tone: "warn", text: "하루 호출 상한" });
+    // 옛 행의 오류 글(예전 AI 시간 초과 안내)의 그림 문자는 걷어 냅니다 — 결과 문구와 제안 카드의 오류 칸 둘 다.
+    expect(proposeResultView({ ok: false, proposal: proposal({ status: "FAILED", error: "120초 안에 응답하지 않았습니다 — '\u26a1 자동 탐색'을 고르면 응답이 빠른 엔진으로 넘어갑니다" }) }).text)
+      .toContain("제안 요청이 실패했습니다(#3) — 120초 안에 응답하지 않았습니다 — '자동 탐색'을 고르면 응답이 빠른 엔진으로 넘어갑니다. 판은 바뀌지 않았습니다.");
+    expect(proposalView(proposal({ status: "FAILED", summary: null, operations: null, assessment: null, error: "120초 안에 응답하지 않았습니다 — '\u26a1 자동 탐색'을 고르면 응답이 빠른 엔진으로 넘어갑니다" }), version()).error)
+      .toBe("120초 안에 응답하지 않았습니다 — '자동 탐색'을 고르면 응답이 빠른 엔진으로 넘어갑니다");
     expect(approveResultView({ ok: true, version: 1 }).text).toBe("승인했습니다 — 새 판 v1. 다음 Claude 결정부터 이 판으로 판단합니다.");
     expect(approveResultView({ ok: true, version: 1 }).warning).toBeNull();
     expect(approveResultView({ ok: true, version: 2, overBudget: true, warning: "렌더링이 약 9,000토큰으로 예산을 넘습니다" }).warning)

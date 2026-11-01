@@ -1,5 +1,5 @@
 /**
- * 🧪 모의매매(한국) 화면의 표기 — 출발 상태·실행 결과·작업 기록 줄. React를 모르는 순수 함수(ADR 0004).
+ * 모의매매(한국) 화면의 표기 — 출발 상태·실행 결과·작업 기록 줄. React를 모르는 순수 함수(ADR 0004).
  *
  * 숫자·판정은 전부 백엔드가 보냅니다(출발 결과·작업 기록 상세·쉬는 사유). 여기서는 받은 값을 고르고 이름을 붙여 문장으로 늘어놓기만 하고,
  * 모르는 값은 "—"로 둡니다(0이나 다른 날로 채우지 않음). 한국만의 표기라 lib/paper(미국과 공용)를 크게 만들지 않고 따로 둡니다 —
@@ -16,6 +16,7 @@ import {
   riskResultView,
   settingValueAt,
   sideLabel,
+  storedText,
   toneClass,
 } from "./paper";
 import { formatMoney, type PaperMarketCode } from "./paperMarket";
@@ -118,7 +119,7 @@ export function krStartRecordParts(detail: unknown): string[] {
   if (calls) parts.push(calls);
   const attempt = numberOf(detail.attempt);
   if (attempt !== null) parts.push(`시도 ${formatNumber(attempt, 0)}번째`);
-  const error = textOf(detail.error);
+  const error = storedText(detail.error);
   if (error) parts.push(`오류 ${error}`);
   return parts;
 }

@@ -23,6 +23,7 @@ import {
   type ReviewVerdictRow,
   shouldReloadReviewDetail,
   sideClass,
+  storedText,
 } from "@/lib/paper";
 import {
   KR_REVIEW_EMPTY,
@@ -138,7 +139,7 @@ export function ReviewsSection({
           </div>
         )}
         {/* 서버의 400·429 문구(계좌 상태·확정 종가·하루 상한·진행 중)를 그대로. */}
-        {run.error && <div className="mt-3"><Banner tone="warn">{run.error}</Banner></div>}
+        {run.error && <div className="mt-3"><Banner tone="warn">{storedText(run.error)}</Banner></div>}
         {runView && <div className="mt-3"><Banner tone={runView.tone}>{runView.text}</Banner></div>}
       </Card>
 

@@ -127,6 +127,9 @@ describe("출발 결과", () => {
     expect(krStartRecordParts({ tradingDate: "2026-10-30", configuredStartDate: "2026-10-29", postponed: true, checks: 5, reason: "② 관측치 없음" }))
       .toEqual(["세션 2026-10-30", "설정 출발일 2026-10-29에서 미뤄짐", "이어진 주기 5번", "사유 ② 관측치 없음"]);
     expect(krStartRecordParts("문자열")).toEqual([]);
+    // 옛 기록의 오류 글(예전 AI 시간 초과 안내)의 그림 문자는 걷어 냅니다.
+    expect(krStartRecordParts({ tradingDate: "2026-10-30", error: "120초 안에 응답하지 않았습니다 — '\u26a1 자동 탐색'을 고르면 응답이 빠른 엔진으로 넘어갑니다" }))
+      .toEqual(["세션 2026-10-30", "오류 120초 안에 응답하지 않았습니다 — '자동 탐색'을 고르면 응답이 빠른 엔진으로 넘어갑니다"]);
   });
 });
 

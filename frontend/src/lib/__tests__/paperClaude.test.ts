@@ -342,6 +342,9 @@ describe("Claude 책 시작 카드", () => {
       text: "미리보기 — 응답 형식 오류: orders[0].ticker: 형식이 다릅니다. 장부·결정·주문 기록은 바꾸지 않았습니다"
         + "(남긴 것: 사용량, 없을 때만 출발일 기관 선정·제안 종목의 출발일 종가).",
     });
+    // 옛 행의 오류 글(예전 AI 시간 초과 안내)의 그림 문자는 걷어 냅니다.
+    expect(claudePreviewResultView({ ok: true, status: "API_ERROR", error: "120초 안에 응답하지 않았습니다 — '\u26a1 자동 탐색'을 고르면 응답이 빠른 엔진으로 넘어갑니다", response: null }).text)
+      .toContain("미리보기 — API 오류: 120초 안에 응답하지 않았습니다 — '자동 탐색'을 고르면 응답이 빠른 엔진으로 넘어갑니다. 장부·결정·주문 기록은 바꾸지 않았습니다");
     expect(claudePreviewResultView({ ok: false, message: "하루 호출 상한(6회)에 닿았습니다." }))
       .toEqual({ tone: "warn", text: "하루 호출 상한(6회)에 닿았습니다." });
   });

@@ -48,6 +48,7 @@ import {
   type SignalCandidateRow,
   type SignalEventRow,
   type SkippedRow,
+  storedText,
   timingLabel,
 } from "@/lib/paper";
 import {
@@ -134,7 +135,7 @@ export function DecisionsSection({
   const [open, setOpen] = useState<number[]>([]);
   // Claude 책 수동 결정의 확인 단계 — 어느 책에서 열었는지(책을 바꾸면 닫힌 것으로 봄).
   const [confirmingFor, setConfirmingFor] = useState<string | null>(null);
-  // 한국 — 출발·게이트 기록(작업 기록)과 수동 호출 문턱(호출 사용량), 확인 창의 결정 창(설정). 🧪 미국 Claude 계좌2를 고르면 — 결정 창 세 줄(상태 응답
+  // 한국 — 출발·게이트 기록(작업 기록)과 수동 호출 문턱(호출 사용량), 확인 창의 결정 창(설정). 미국 Claude 계좌2를 고르면 — 결정 창 세 줄(상태 응답
   // claude2 묶음: 다음 결정·개장 전 컷오프·이번 결정 주기 호출 / 상한 — 출발 뒤에는 출발 카드가 없어 여기서 봄, 화면 점검 권장 ⓐ).
   const timed = !korea && isTimedBook(code);
   const status = useApi<PaperStatusResponse>(
@@ -397,7 +398,7 @@ function DecisionTable({
       render: (row) => (
         <div className="flex min-w-[7rem] flex-col items-start gap-1">
           <Badges badges={[decisionStatusBadge(row.status, row.kind)]} />
-          {row.error && <span className="text-xs leading-snug text-warn">{row.error}</span>}
+          {row.error && <span className="text-xs leading-snug text-warn">{storedText(row.error)}</span>}
         </div>
       ),
     },
@@ -514,7 +515,7 @@ function DecisionDetail({ id, market }: { id: number; market: PaperMarketCode })
           </div>
         ))}
       </dl>
-      {decision.error && <Banner tone="warn">오류 — {decision.error}</Banner>}
+      {decision.error && <Banner tone="warn">오류 — {storedText(decision.error)}</Banner>}
 
       {claude.recognized && (
         <ClaudeDecisionBody

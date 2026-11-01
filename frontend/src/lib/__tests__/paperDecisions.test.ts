@@ -25,6 +25,7 @@ import {
   rulesStartPrompt,
   runDecisionResultView,
   selectedFilersView,
+  storedText,
   signalActionLabel,
 } from "../paper";
 import type { PaperBookSummary, PaperDecisionDetail, PaperDecisionSummary, PaperGateIndicator } from "../types";
@@ -164,6 +165,19 @@ describe("결정 목록 표기", () => {
     expect(decisionRunBlocked({ kind: "CLAUDE", status: "PAUSED" })).toContain("일시정지 중인 Claude 계좌");
     expect(decisionRunBlocked({ kind: "CLAUDE", status: "PAUSED" })).toContain("재개한 뒤");
     expect(decisionRunBlocked(null)).toBe("계좌가 없습니다.");
+  });
+
+  it("서버에 저장된 오류 글의 옛 그림 문자는 걷어 낸다 — 옛 AI 시간 초과 안내(DB에 남은 행)", () => {
+    const old = "120초 안에 응답하지 않았습니다 — '\u26a1 자동 탐색'을 고르면 응답이 빠른 엔진으로 넘어갑니다";
+    expect(storedText(old)).toBe("120초 안에 응답하지 않았습니다 — '자동 탐색'을 고르면 응답이 빠른 엔진으로 넘어갑니다");
+    expect(storedText("선정 없음")).toBe("선정 없음");
+    expect(storedText("")).toBeNull();
+    expect(storedText(null)).toBeNull();
+    expect(storedText(42)).toBeNull();
+    expect(runDecisionResultView({ ok: true, decision: summary({ kind: "MANUAL", error: old, summary: null }) }).text)
+      .toBe("2026-10-23 수동 결정 — 주문 냄 · 주문 4건 — 오류: 120초 안에 응답하지 않았습니다 — '자동 탐색'을 고르면 응답이 빠른 엔진으로 넘어갑니다");
+    expect(initialDecisionResultView({ ok: true, decision: summary({ error: old, summary: null }), fills: 4 }))
+      .toEqual({ tone: "warn", text: "규칙 계좌를 시작했습니다 · 2026-10-23 초기 결정 · 주문 4건 · 사후 체결 4건 — 오류: 120초 안에 응답하지 않았습니다 — '자동 탐색'을 고르면 응답이 빠른 엔진으로 넘어갑니다" });
   });
 
   it("수동 결정 결과 — 요약 한 줄, 결정 오류·ok:false는 경고", () => {
