@@ -296,7 +296,7 @@ describe("상세 패널의 내용", () => {
     // 장부 값 그대로인 타일과 장부 한 줄
     expect(tile("현금")).toBe("500.00 달러");
     expect(tile("보유 종목 수")).toBe("7종목");
-    expect(within(numbers).getByText("장부 마지막 관측 101,200.00 달러 (10-24 05:15) — 아래 구성·현금·보유·체결은 장부 값")).toBeTruthy();
+    expect(within(numbers).getByText("장부 마지막 관측 101,200.00 달러 (10-24 05:15) — 현금·보유 종목 수 타일과 아래 구성·체결은 장부 값")).toBeTruthy();
     // 구성 비중은 장부 순자산 기준 그대로
     const donut = await within(panel).findByRole("list", { name: "구성 도넛" });
     expect(within(donut).getAllByRole("listitem")[0].textContent).toBe("NVDA 20.0%");

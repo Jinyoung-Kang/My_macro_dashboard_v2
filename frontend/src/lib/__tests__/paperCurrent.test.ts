@@ -185,12 +185,12 @@ describe("지금 값 보기", () => {
     expect(currentSource(true, "KR")).not.toMatch(/paper\.live|SPY|SHY|사후 체결/);
   });
 
-  it("계좌 상세의 장부 한 줄 — 장부 순자산과 마지막 관측(MM-DD HH:MM), 모르면 '—'·괄호 없이", () => {
+  it("계좌 상세의 장부 한 줄 — 장부 순자산과 마지막 관측(MM-DD HH:MM), 모르면 '—'·괄호 없이 — 현금·보유 수 타일(같은 격자, 이 줄 위)도 가리킴", () => {
     expect(ledgerObservedLine({ nav: 101200, lastObservedAtKst: "2026-10-24 05:15" }))
-      .toBe("장부 마지막 관측 101,200.00 달러 (10-24 05:15) — 아래 구성·현금·보유·체결은 장부 값");
+      .toBe("장부 마지막 관측 101,200.00 달러 (10-24 05:15) — 현금·보유 종목 수 타일과 아래 구성·체결은 장부 값");
     expect(ledgerObservedLine({ nav: 100_312_450, lastObservedAtKst: "2026-10-30 22:05 KST" }, "KR"))
-      .toBe("장부 마지막 관측 100,312,450원 (10-30 22:05) — 아래 구성·현금·보유·체결은 장부 값");
-    expect(ledgerObservedLine({ nav: null, lastObservedAtKst: null })).toBe("장부 마지막 관측 — — 아래 구성·현금·보유·체결은 장부 값");
+      .toBe("장부 마지막 관측 100,312,450원 (10-30 22:05) — 현금·보유 종목 수 타일과 아래 구성·체결은 장부 값");
+    expect(ledgerObservedLine({ nav: null, lastObservedAtKst: null })).toBe("장부 마지막 관측 — — 현금·보유 종목 수 타일과 아래 구성·체결은 장부 값");
   });
 });
 
@@ -203,13 +203,17 @@ describe("한 표 한 기준(계좌 비교)", () => {
       .toEqual({ hasCurrent: true, mode: "live", reason: null, dayLabel: "오늘 변화" });
   });
 
-  it("비중립 계좌 하나라도 장중이 아니면 표 전체 장부 칸 + 사유(그 계좌의 단계 표기)", () => {
+  it("비중립 계좌 하나라도 장중이 아니면 표 전체 장부 칸 + 사유(그 계좌의 단계 — 장부 단계는 기준 줄과 같은 '장부 MM-DD HH:MM')", () => {
     const basis = comparisonBasis([
       live("rules"),
       live("bench_spy", { stage: "LEDGER", basis: "LEDGER", isEstimated: false, atKst: "2026-10-30 23:15 KST" }),
     ], REGULAR);
     expect(basis.mode).toBe("ledger");
-    expect(basis.reason).toBe("장중 추정이 아닌 계좌가 있어 표 전체를 장부 기준으로 둡니다 — bench_spy 계좌(장부 23:15)");
+    expect(basis.reason).toBe("장중 추정이 아닌 계좌가 있어 표 전체를 장부 기준으로 둡니다 — bench_spy 계좌(장부 10-30 23:15)");
+    // 장부 단계가 아닌 계좌(그날 잠정 줄을 먼저 받음)는 그 단계 표기
+    const provisional = live("bench_spy", { stage: "PROVISIONAL", basis: "LEDGER", isEstimated: false, atKst: "2026-10-31 05:00 KST" });
+    expect(comparisonBasis([live("rules", { stage: "LIVE_LAST" }), provisional], AFTER).reason)
+      .toBe("장중 추정이 아닌 계좌가 있어 표 전체를 장부 기준으로 둡니다 — bench_spy 계좌(10-30 잠정)");
   });
 
   it("기준 중립(현금뿐·출발 전)은 판정에서 뺀다 — current가 null인 계좌는 장중이 아닌 것으로 셈", () => {

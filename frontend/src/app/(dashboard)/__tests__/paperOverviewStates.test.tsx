@@ -344,7 +344,8 @@ describe("지금 값 — 계좌 비교(한 표 한 기준)", () => {
     render(<PaperPage />);
 
     await screen.findByRole("table", { name: "계좌 비교" });
-    expect(screen.getByText("장중 추정이 아닌 계좌가 있어 표 전체를 장부 기준으로 둡니다 — 60/40 계좌(장부 23:15)")).toBeTruthy();
+    // 사유 괄호도 기준 줄과 같은 꼴('장부 MM-DD HH:MM')
+    expect(screen.getByText("장중 추정이 아닌 계좌가 있어 표 전체를 장부 기준으로 둡니다 — 60/40 계좌(장부 10-30 23:15)")).toBeTruthy();
     expect(rowHeaders().slice(0, 1)).toEqual(["기준"]);
     expect(rowHeaders()).toEqual(expect.arrayContaining(["오늘 변화", "통계 기준"]));
     expect(comparisonCell("기준", "규칙 계좌").textContent).toBe("장부 10-24 05:15");

@@ -247,12 +247,13 @@ export function currentSource(isEstimated: boolean, market: PaperMarketCode = "U
 }
 
 /**
- * 계좌 상세의 장부 한 줄 — 위 타일(지금 값)과 아래 구성·현금·보유·체결(장부)의 기준이 다르므로 장부 값을 함께 밝힙니다.
- * '장부 마지막 관측 101,200.00 달러 (10-24 05:15) — 아래 구성·현금·보유·체결은 장부 값'(시각을 모르면 괄호 없이, 순자산을 모르면 '—').
+ * 계좌 상세의 장부 한 줄 — 타일 가운데 지금 값(순자산·수익률·주식 노출·마지막 평가)과 장부 값(현금·보유 종목 수 — 같은 격자)·아래 구성·체결의 기준이
+ * 다르므로 장부 값을 함께 밝힙니다. 현금·보유 종목 수 타일은 이 줄 위(같은 격자)에 있어 '아래'로만 가리키지 않습니다.
+ * '장부 마지막 관측 101,200.00 달러 (10-24 05:15) — 현금·보유 종목 수 타일과 아래 구성·체결은 장부 값'(시각을 모르면 괄호 없이, 순자산을 모르면 '—').
  */
 export function ledgerObservedLine(ledger: Pick<PaperBookSummary, "nav" | "lastObservedAtKst">, market: PaperMarketCode = "US"): string {
   const at = stampParts(ledger.lastObservedAtKst);
-  return `장부 마지막 관측 ${formatMoney(ledger.nav, market)}${at ? ` (${at.md} ${at.hm})` : ""} — 아래 구성·현금·보유·체결은 장부 값`;
+  return `장부 마지막 관측 ${formatMoney(ledger.nav, market)}${at ? ` (${at.md} ${at.hm})` : ""} — 현금·보유 종목 수 타일과 아래 구성·체결은 장부 값`;
 }
 
 /** 계좌 비교 표의 기준(한 표 한 기준 — 장중 명세 §4). */
@@ -268,9 +269,20 @@ export interface ComparisonBasis {
 }
 
 /**
+ * 사유 괄호의 그 계좌 단계 — 장부 단계는 장부 칸 표의 기준 줄과 같은 '장부 MM-DD HH:MM' 꼴(지금 세션이어도 날짜를 붙임 — 한 카드에 같은 관측 시각을
+ * 두 꼴로 적지 않게), 그 밖은 단계 표기('10-30 잠정' 등), 지금 값이 없으면 '지금 값 없음'.
+ */
+function reasonStage(book: PaperOverviewBook, session: PaperLiveSessionSummary | null | undefined): string {
+  const current = book.current;
+  if (!current) return "지금 값 없음";
+  const at = current.stage === "LEDGER" && book.status !== "NOT_STARTED" ? stampText(current.atKst) : null;
+  return at ? `장부 ${at}` : stageLabel(current, { status: book.status, session });
+}
+
+/**
  * 한 표 한 기준 — 판정 대상은 기준 중립(현금뿐·출발 전)이 아닌 계좌(`current`가 null인 계좌는 장중이 아닌 것으로 셈). 모두 `LIVE`·`LIVE_LAST`면
  * 지금 값 칸, 하나라도 아니면 표 전체를 장부 칸으로 두고(장중 값과 장부 값을 한 표에 섞지 않음) 장중 추정인 계좌가 있으면 사유
- * '장중 추정이 아닌 계좌가 있어 표 전체를 장부 기준으로 둡니다 — {계좌}({단계 표기})'를 적습니다.
+ * '장중 추정이 아닌 계좌가 있어 표 전체를 장부 기준으로 둡니다 — {계좌}({그 계좌 단계 — 장부 단계는 기준 줄과 같은 '장부 MM-DD HH:MM'})'를 적습니다.
  */
 export function comparisonBasis(
   books: readonly PaperOverviewBook[],
@@ -284,7 +296,7 @@ export function comparisonBasis(
   const anyLive = books.some((book) => isLiveStage(book.current?.stage));
   const offenders = judged
     .filter((book) => !isLiveStage(book.current?.stage))
-    .map((book) => `${book.label}(${book.current ? stageLabel(book.current, { status: book.status, session }) : "지금 값 없음"})`);
+    .map((book) => `${book.label}(${reasonStage(book, session)})`);
   const days = books.map((book) => book.ledgerDay).filter((day): day is NonNullable<typeof day> => day != null);
   const today = days.length > 0 && days.every((day) => dayLabel(day.tradingDate, session) === "오늘");
   return {

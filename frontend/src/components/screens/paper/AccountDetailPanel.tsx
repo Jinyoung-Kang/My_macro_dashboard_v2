@@ -203,7 +203,7 @@ export function AccountDetailPanel({
             <Tile label="출발일" value={card.startedOn} />
             <Tile label="마지막 평가" value={now ? (now.stageLabel ?? EMPTY) : card.lastObserved} />
           </dl>
-          {/* 지금 값이면 장부 쪽 기준을 함께 — 아래 구성·현금·보유·체결은 이 장부 관측의 값입니다. */}
+          {/* 지금 값이면 장부 쪽 기준을 함께 — 현금·보유 종목 수 타일(위 같은 격자)과 아래 구성·체결은 이 장부 관측의 값입니다. */}
           {now && <p className="text-xs text-text-2">{ledgerObservedLine(ledger, market)}</p>}
           {card.staleWarning && <p className="text-xs text-warn">{card.staleWarning}</p>}
           <SourceLine>{korea ? PAPER_SOURCES.krLedger : PAPER_SOURCES.ledger}</SourceLine>
