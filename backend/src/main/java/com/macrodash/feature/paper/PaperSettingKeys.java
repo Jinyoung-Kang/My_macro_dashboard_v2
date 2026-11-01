@@ -287,6 +287,10 @@ final class PaperSettingKeys {
             of(Claude2Settings.CHECKPOINTS, Type.BOOLEAN, false,
                     "계좌2 장중 확인(단계 2 — 세션당 최대 1회, 켜면 아침 결정이 확인 시각·자료를 고를 수 있음). "
                             + "켜는 저장에서 apiScheduledReserve 10·claude2.maxCallsPerCycle 3 권장"),
+            choice(Claude2Settings.RISK_PROFILE, Claude2Settings.RISK_PROFILES, false,
+                    "계좌2 투자 성향(사용자 선택, 기본 " + Claude2Settings.DEFAULT_RISK_PROFILE + ") — 계좌2 시스템 프롬프트의 '투자 성향' 절이 "
+                            + "이 성향으로 위험자산 비중·종목 집중도·현금 여력·손실 감내를 정하게 함. 하드 규칙·검증기·체결 메뉴는 그대로"
+                            + "(코드가 집행하지 않는 판단 기준), 계좌1·한국 계좌는 영향 없음. 바꾸면 다음 계좌2 호출부터"),
             // ---- 한국 책(2단계 명세 §4-13 — 같은 한 행의 kr.* 묶음, C1b). 규칙 계좌 영향 = 한국 규칙 계좌(kr_rules)가 읽는 키.
             // 미국 키와 이름이 같은 키는 미국 범위·영향 표시를 그대로 따르고 값은 따로 둡니다(미국 키로 대신하지 않음 — 동결 대조군).
             number("kr.slippageBp", 0, 100, true,

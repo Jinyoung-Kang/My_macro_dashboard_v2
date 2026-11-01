@@ -258,7 +258,11 @@ public class FrameworkService {
      * @param settingsBody 설정 본문(null이면 기본값으로 읽음 — 키마다 읽는 쪽과 같은 규칙)
      */
     static String render(ClaudeBookProfile profile, JsonNode body, int version, JsonNode settingsBody) {
-        return render(profile.market(), profile.fixedRules(), body, version, settingsBody);
+        // 계좌2는 결정 시점 설정의 투자 성향 절을 고정 문단의 출력 절 앞에(사용자 결정 2026-11-01) — 다른 계좌는 고정 문단 그대로.
+        String fixedRules = PaperBooks.CLAUDE2.equals(profile.code())
+                ? ClaudePrompts.withClaude2RiskProfile(profile.fixedRules(), Claude2Settings.from(settingsBody).riskProfile())
+                : profile.fixedRules();
+        return render(profile.market(), fixedRules, body, version, settingsBody);
     }
 
     /** 렌더링 본체 — 하드 규칙 줄은 {@code market}, 끝의 고정 문단은 {@code fixedRules}. */

@@ -295,13 +295,13 @@ class PaperSettingsServiceTest {
     }
 
     @Test
-    @DisplayName("계좌2 키(claude2.*, 계좌2 명세 §13-2): 꺼짐·소상한 2·기다림 15·체결 기록 켬·장중 확인 꺼짐이 기본, 범위 CLAUDE2(시장 US)·규칙 계좌 영향 없음, 형·범위대로 검사 — 키가 없는 옛 행은 같은 값으로 읽히고 판이 오르지 않음")
+    @DisplayName("계좌2 키(claude2.*, 계좌2 명세 §13-2): 꺼짐·소상한 2·기다림 15·체결 기록 켬·장중 확인 꺼짐·투자 성향 적극투자형이 기본, 범위 CLAUDE2(시장 US)·규칙 계좌 영향 없음, 형·범위대로 검사 — 키가 없는 옛 행은 같은 값으로 읽히고 판이 오르지 않음")
     void claude2Keys() {
         JsonNode defaults = service.defaultsJson().path("claude2");
         assertThat(defaults.toString()).isEqualTo("{\"enabled\":false,\"maxCallsPerCycle\":2,\"barsWaitMinutes\":15,"
-                + "\"executionRecord\":true,\"checkpoints\":false}");
+                + "\"executionRecord\":true,\"checkpoints\":false,\"riskProfile\":\"적극투자형\"}");
         List<String> keys = List.of("claude2.enabled", "claude2.maxCallsPerCycle", "claude2.barsWaitMinutes",
-                "claude2.executionRecord", "claude2.checkpoints");
+                "claude2.executionRecord", "claude2.checkpoints", "claude2.riskProfile");
         for (String key : keys) {
             PaperSettingKeys.Spec spec = PaperSettingKeys.find(key).orElseThrow();
             assertThat(spec.scope()).as(key).isEqualTo(PaperSettingKeys.Scope.CLAUDE2);
@@ -312,6 +312,9 @@ class PaperSettingsServiceTest {
                 .extracting(PaperSettingKeys.Spec::min, PaperSettingKeys.Spec::max).containsExactly(0.0, 10.0);
         assertThat(PaperSettingKeys.find("claude2.barsWaitMinutes").orElseThrow())
                 .extracting(PaperSettingKeys.Spec::min, PaperSettingKeys.Spec::max).containsExactly(0.0, 30.0);
+        PaperSettingKeys.Spec profile = PaperSettingKeys.find("claude2.riskProfile").orElseThrow();
+        assertThat(profile.type()).isEqualTo(PaperSettingKeys.Type.CHOICE);
+        assertThat(profile.options()).containsExactly("공격투자형", "적극투자형", "위험중립형", "안정추구형");
         assertThat(Claude2Settings.from(service.defaultsJson())).isEqualTo(Claude2Settings.DEFAULTS);
         assertThat(Claude2Settings.from(null)).isEqualTo(Claude2Settings.DEFAULTS);
         assertThatThrownBy(() -> new PaperSettingKeys.Spec("claude2.x", PaperSettingKeys.Type.BOOLEAN, null, null,
@@ -326,6 +329,7 @@ class PaperSettingsServiceTest {
         assertThat(old.enabled()).isFalse();
         assertThat(old.maxCallsPerCycle()).isEqualTo(2);
         assertThat(old.barsWaitMinutes()).isEqualTo(15);
+        assertThat(old.riskProfile()).as("키가 없는 옛 행도 기본 성향(사용자 결정 2026-11-01)").isEqualTo("적극투자형");
         assertThat(old.fallbacks()).containsExactlyElementsOf(keys);
         Map<String, Object> switches = new LinkedHashMap<>();
         switches.put("enabled", true);
@@ -340,6 +344,10 @@ class PaperSettingsServiceTest {
         assertThatThrownBy(() -> update("claude2.maxCallsPerCycle", 11)).hasMessageContaining("0~10");
         assertThatThrownBy(() -> update("claude2.barsWaitMinutes", 31)).hasMessageContaining("0~30");
         assertThatThrownBy(() -> update("claude2.enabled", "true")).hasMessageContaining("true·false");
+        assertThatThrownBy(() -> update("claude2.riskProfile", "안정형")).hasMessageContaining("공격투자형 · 적극투자형 · 위험중립형 · 안정추구형");
+        Map<String, Object> chosen = update("claude2.riskProfile", "안정추구형");
+        assertThat(chosen.get("changedKeys")).isEqualTo(List.of("claude2.riskProfile"));
+        assertThat(Claude2Settings.from(body()).riskProfile()).isEqualTo("안정추구형");
         assertThatThrownBy(() -> update("claude2.unknown", true)).hasMessageContaining("모르는 설정 키: claude2.unknown");
     }
 

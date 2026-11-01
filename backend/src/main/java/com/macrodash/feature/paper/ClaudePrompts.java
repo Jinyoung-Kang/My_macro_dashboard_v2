@@ -1,5 +1,7 @@
 package com.macrodash.feature.paper;
 
+import java.util.Map;
+
 /**
  * Claude 재량 책의 시스템 프롬프트 조각 — 프레임 렌더링이 붙이는 고정 문단({@link #ROLE}·{@link #FIXED_RULES})과 프레임 제안
  * 지시문({@link #PROPOSAL})(명세 F1·F2, 설계 §5-7, 계약 3b·보충 §2·§6), 주간 복기 지시문({@link #REVIEW}, 2단계 명세 §3).
@@ -154,6 +156,47 @@ final class ClaudePrompts {
         }
         return base.replace(CLAUDE2_NO_INTRADAY_LINE, CLAUDE2_CHECKPOINT_LINE)
                 .replace(OUTPUT_HEADER, CLAUDE2_CHECKPOINT_SECTION + OUTPUT_HEADER);
+    }
+
+    // ------------------------------------------------------------------ 계좌2 투자 성향(사용자 결정 2026-11-01 — 설정 claude2.riskProfile)
+    // 계좌2 고정 문단(c2-1·c2-2)은 그대로 두고, 렌더링이 결정 시점 설정의 성향 절을 출력 절 앞에 끼웁니다(FrameworkService.render). 성향은
+    // 코드가 집행하지 않는 판단 기준이라 하드 규칙·검증기·체결 메뉴·응답 스키마는 바뀌지 않습니다. 계좌1·한국 계좌의 렌더링은 바이트 그대로입니다.
+
+    /** 성향마다 한 줄 — 위험자산 비중(현금성 제외)·집중도·국면이 나쁠 때의 대응·감내하는 낙폭. 키는 {@link Claude2Settings#RISK_PROFILES}와 같습니다. */
+    static final Map<String, String> CLAUDE2_RISK_PROFILE_LINES = Map.of(
+            "공격투자형", "- 공격투자형 — 시장 평균을 넘는 수익을 위해 자산 가치의 큰 변동과 손실 위험을 적극 받아들인다. 위험자산 비중은 보통 "
+                    + "80~100%이고, 확신이 높은 종목은 종목 상한까지 담아 종목 수를 줄여 집중할 수 있다. 국면이 나빠져도 비중을 크게 줄이기보다 "
+                    + "종목·섹터를 바꾸는 쪽을 먼저 본다. 계좌 고점 대비 낙폭 −25% 안팎까지 감내한다.",
+            "적극투자형", "- 적극투자형 — 원금 보전보다 높은 수익을 위해 상당한 손실 위험을 감수한다. 위험자산 비중은 보통 60~85%이고, 확신이 "
+                    + "높은 종목은 크게 담되 한 업종·테마에 몰지 않는다. 국면이 나빠지면 비중을 단계적으로 낮춘다. 계좌 고점 대비 낙폭 −15~−20%까지 "
+                    + "감내한다.",
+            "위험중립형", "- 위험중립형 — 예·적금보다 높은 수익을 기대할 수 있으면 그에 맞는 손실 위험을 감수한다. 위험자산 비중은 보통 40~65%이고, "
+                    + "종목은 고르게 나누며 현금성으로 변동을 줄인다. 국면이 불확실하면 비중을 범위 가운데에 둔다. 계좌 고점 대비 낙폭 −10~−12%까지 "
+                    + "감내한다.",
+            "안정추구형", "- 안정추구형 — 원금 손실 위험을 줄이고 배당·이자 수준의 안정적인 수익을 우선하되, 일부는 변동성 자산에 둘 수 있다. 위험자산 "
+                    + "비중은 보통 20~40%이고, 변동성이 낮고 현금 창출이 확실한 종목·ETF 위주로 담으며 현금성을 넉넉히 둔다. 계좌 고점 대비 낙폭 "
+                    + "−5~−8% 안에서 관리한다.");
+
+    /** 투자 성향 절(출력 절 앞) — 성향 이름과 그 한 줄, 공통 세 줄. 모르는 성향이면 기동·렌더링 오류(설정 읽기가 이미 기본값으로 바꿈). */
+    static String claude2RiskProfileSection(String profile) {
+        String line = CLAUDE2_RISK_PROFILE_LINES.get(profile);
+        if (line == null) {
+            throw new IllegalArgumentException("모르는 계좌2 투자 성향: " + profile);
+        }
+        return "## 투자 성향(사용자 선택 — " + profile + ")\n"
+                + "- 이 계좌는 위 프레임·하드 규칙·체결 메뉴를 그대로 따르고, 그 안에서 사용자가 고른 투자 성향으로 위험자산 비중·종목 집중도·"
+                + "현금 여력·손실 감내를 정한다. 성향은 코드가 집행하지 않는 판단 기준이다 — 하드 규칙과 부딪히면 하드 규칙을 따른다.\n"
+                + line + "\n"
+                + "- 위험자산 비중은 현금성(SHY)을 뺀 보유 평가액 ÷ 순자산이다(targetEquityExposurePct는 현금성을 포함 — 위 현금 비중 절).\n"
+                + "- exposureRationale에 이 성향을 어떻게 반영했는지 한 줄 적는다. 성향 범위를 벗어난 비중을 고르면 그 까닭을 프레임의 판단 기준으로 적는다.\n";
+    }
+
+    /** 계좌2 고정 문단(c2-1·c2-2)의 출력 절 앞에 성향 절을 끼운 글 — 출력 절 머리가 한 번이 아니면 오류(c2 문단을 만들 때와 같은 자리 검사). */
+    static String withClaude2RiskProfile(String fixedRules, String profile) {
+        if (fixedRules.indexOf(OUTPUT_HEADER) < 0 || fixedRules.indexOf(OUTPUT_HEADER) != fixedRules.lastIndexOf(OUTPUT_HEADER)) {
+            throw new IllegalStateException("계좌2 고정 문단의 출력 절 머리가 한 번이어야 성향 절을 끼울 수 있습니다");
+        }
+        return fixedRules.replace(OUTPUT_HEADER, claude2RiskProfileSection(profile) + OUTPUT_HEADER);
     }
 
     // ------------------------------------------------------------------ 2단계 E2a — 한국 책의 고정 문단

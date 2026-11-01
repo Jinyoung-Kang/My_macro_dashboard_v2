@@ -5,6 +5,7 @@ import com.macrodash.analytics.OrderValidator;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.node.ObjectNode;
 
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -105,6 +106,35 @@ class ClaudeBookProfileTest {
         assertThat(rules).contains("## 체결(고정)").contains("결정 뒤 장중 정보는 보지 못한다").contains("executionNote")
                 .contains("200자").doesNotContain("5bp");
         assertThat(rules.indexOf("## 체결(고정)")).as("체결 절은 출력 절 앞").isLessThan(rules.indexOf("## 출력(고정)"));
+    }
+
+    @Test
+    @DisplayName("계좌2 투자 성향(사용자 결정 2026-11-01, 설정 claude2.riskProfile) — 기본 적극투자형 절이 출력 절 바로 앞(c2-1·c2-2 모두), 성향을 바꾸면 그 절만 다르고, 모르는 값은 기본 성향, 계좌1·한국 렌더링에는 없음")
+    void claude2RiskProfileSection() {
+        JsonNode body = FrameworkService.interimBody(MAPPER);
+        JsonNode defaults = PaperFixtures.settings(new FakePaperStore()).defaultsJson();
+        String book2 = FrameworkService.render(ClaudeBookProfile.US_CLAUDE2, body, 0, defaults);
+        String section = ClaudePrompts.claude2RiskProfileSection("적극투자형");
+        assertThat(book2).contains(section + ClaudePrompts.OUTPUT_HEADER);
+        assertThat(FrameworkService.render(ClaudeBookProfile.US_CLAUDE2_C2, body, 0, defaults)).contains(section + ClaudePrompts.OUTPUT_HEADER);
+        assertThat(section).startsWith("## 투자 성향(사용자 선택 — 적극투자형)\n").contains("하드 규칙을 따른다").contains("현금성(SHY)을 뺀")
+                .contains("exposureRationale");
+
+        assertThat(ClaudePrompts.CLAUDE2_RISK_PROFILE_LINES.keySet()).containsExactlyInAnyOrderElementsOf(Claude2Settings.RISK_PROFILES);
+        for (String profile : Claude2Settings.RISK_PROFILES) {
+            ObjectNode settings = (ObjectNode) defaults.deepCopy();
+            ((ObjectNode) settings.path("claude2")).put("riskProfile", profile);
+            String rendered = FrameworkService.render(ClaudeBookProfile.US_CLAUDE2, body, 0, settings);
+            assertThat(rendered).as(profile).isEqualTo(book2.replace(section, ClaudePrompts.claude2RiskProfileSection(profile)));
+            assertThat(rendered).as(profile).contains("## 투자 성향(사용자 선택 — " + profile + ")")
+                    .contains(ClaudePrompts.CLAUDE2_RISK_PROFILE_LINES.get(profile));
+        }
+        ObjectNode unknown = (ObjectNode) defaults.deepCopy();
+        ((ObjectNode) unknown.path("claude2")).put("riskProfile", "안정형");
+        assertThat(FrameworkService.render(ClaudeBookProfile.US_CLAUDE2, body, 0, unknown)).as("모르는 값은 기본 성향").isEqualTo(book2);
+        assertThat(FrameworkService.render(ClaudeBookProfile.US_CLAUDE, body, 0, defaults)).doesNotContain("## 투자 성향");
+        assertThat(FrameworkService.render(ClaudeBookProfile.KR_CLAUDE, body, 0, defaults)).doesNotContain("## 투자 성향");
+        assertThatThrownBy(() -> ClaudePrompts.claude2RiskProfileSection("안정형")).isInstanceOf(IllegalArgumentException.class);
     }
 
     @Test
