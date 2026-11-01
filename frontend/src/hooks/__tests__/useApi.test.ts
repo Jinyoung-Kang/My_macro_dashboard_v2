@@ -73,6 +73,27 @@ describe("useApi", () => {
     expect(result.current.refreshError).toBe("일시 오류");
   });
 
+  it("QA-163: 실패할 때마다 failedAt이 새 값 — 같은 문구로 연달아 실패해도 바뀌고, 성공하면 비운다", async () => {
+    api.apiGetShared
+      .mockResolvedValueOnce({ v: 1 })
+      .mockRejectedValueOnce(new Error("일시 오류"))
+      .mockRejectedValueOnce(new Error("일시 오류"))
+      .mockResolvedValueOnce({ v: 2 });
+    const { result } = renderHook(() => useApi<{ v: number }>("/api/a"));
+    await waitFor(() => expect(result.current.data).toEqual({ v: 1 }));
+    expect(result.current.failedAt).toBeNull();
+
+    await act(() => result.current.reload());
+    const first = result.current.failedAt;
+    expect(first).toBeInstanceOf(Date);
+    await act(() => result.current.reload());
+    expect(result.current.refreshError).toBe("일시 오류");
+    expect(result.current.failedAt).not.toBe(first);
+
+    await act(() => result.current.reload());
+    expect(result.current).toMatchObject({ data: { v: 2 }, refreshError: null, failedAt: null });
+  });
+
   it("경로가 바뀐 뒤의 실패에는 이전 경로의 값을 남기지 않는다", async () => {
     api.apiGetShared.mockResolvedValueOnce({ v: 1 }).mockRejectedValueOnce(new Error("없음"));
     const { result, rerender } = renderHook(({ path }) => useApi<{ v: number }>(path), {

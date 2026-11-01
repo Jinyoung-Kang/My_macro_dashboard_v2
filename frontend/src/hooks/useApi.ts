@@ -16,6 +16,11 @@ interface State<T> {
   unauthorized: boolean;
   /** 이 브라우저가 마지막으로 응답을 받은 시각. 자동 갱신이 돌고 있는지 화면에 보이려고 씁니다. */
   loadedAt: Date | null;
+  /**
+   * 마지막으로 읽기가 실패한 순간(성공하면 비움). 실패마다 새 값이라 같은 문구로 연달아 실패해도 바뀝니다 — 실패를 한 번씩 받아야 하는 화면이 씁니다
+   * (`refreshError`는 문구라 같은 문구의 두 번째 실패가 변화로 오지 않음 — QA-163).
+   */
+  failedAt: Date | null;
 }
 
 const EMPTY_STATE = {
@@ -26,6 +31,7 @@ const EMPTY_STATE = {
   refreshError: null,
   unauthorized: false,
   loadedAt: null,
+  failedAt: null,
 } as const;
 
 /**
@@ -33,7 +39,7 @@ const EMPTY_STATE = {
  *
  * @param path      API 경로(lib/endpoints). **null이면 요청하지 않습니다**(조건부 조회에 씁니다)
  * @param refreshMs 자동 갱신 주기(ms). 0이면 갱신하지 않습니다
- * @returns `{ data, loading, error, unauthorized, loadedAt, reload }`
+ * @returns `{ data, loading, error, refreshError, unauthorized, loadedAt, failedAt, reload }`
  *
  * 알아 둘 것
  * - 경로가 바뀌면 **이전 요청의 결과를 버립니다**. 느린 응답이 나중에 도착해 화면을
@@ -97,8 +103,8 @@ export function useApi<T>(
       const message = error instanceof Error ? error.message : "알 수 없는 오류";
       setState((previous) =>
         previous.data !== null && previous.dataPath === path
-          ? { ...previous, loading: false, error: null, refreshError: message }
-          : { ...EMPTY_STATE, error: message },
+          ? { ...previous, loading: false, error: null, refreshError: message, failedAt: new Date() }
+          : { ...EMPTY_STATE, error: message, failedAt: new Date() },
       );
     }
     // refreshToken은 값 자체를 쓰지 않습니다. 바뀌면 load가 새로 만들어지고,

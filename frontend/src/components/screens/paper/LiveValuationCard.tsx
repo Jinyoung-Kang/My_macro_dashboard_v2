@@ -102,11 +102,12 @@ export function LiveValuationCard({
   }, [data, wakeFollowUp]);
 
   // 한 번 더 읽기가 실패하면 data가 그대로라 위 효과가 돌지 않아 표시가 남았습니다 — 그러면 다음 응답(간격 읽기·'지금 새로 읽기')이 요청한 새 수집을
-  // 한 번 더의 응답으로 소모했습니다(QA-162). 실패(refreshError — 앞 응답이 성공이라 비어 있다가 섬)를 받으면 표시를 내립니다.
-  const { refreshError } = live;
+  // 한 번 더의 응답으로 소모했습니다(QA-162). 실패를 받으면 표시를 내립니다. 실패마다 새 값인 failedAt으로 봅니다 — refreshError(문구)로 보면 20초 안에
+  // 다른 읽기가 같은 문구로 먼저 실패했을 때 한 번 더의 실패가 변화로 오지 않았습니다(QA-163).
+  const { failedAt } = live;
   useEffect(() => {
-    if (refreshError) followingUp.current = false;
-  }, [refreshError]);
+    if (failedAt) followingUp.current = false;
+  }, [failedAt]);
 
   useEffect(() => {
     const wait = msUntilNextOpen(data?.session, Date.now());
