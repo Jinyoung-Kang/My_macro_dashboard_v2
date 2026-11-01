@@ -220,7 +220,8 @@ describe("히어로(포트폴리오식 — 장중 명세 §4-1)", () => {
     reads["/api/paper/overview"] = () => Promise.resolve(OVERVIEW);
     render(<PaperPage />);
 
-    const first = await screen.findByRole("region", { name: "Claude 계좌 순자산" });
+    await settled();
+    const first = screen.getByRole("region", { name: "Claude 계좌 순자산" });
     expect(within(first).getByText("100,000.00")).toBeTruthy();
     // 시작 전 계좌는 곡선 값이 없음(선 없음 — 0으로 채우지 않음)
     expect(within(first).getByRole("list", { name: "Claude 계좌 순자산 곡선" }).getAttribute("data-values")).toBe("null,null");
@@ -249,7 +250,8 @@ describe("히어로(포트폴리오식 — 장중 명세 §4-1)", () => {
     reads["/api/paper/overview"] = () => Promise.resolve(CURRENT_OVERVIEW);
     render(<PaperPage />);
 
-    fireEvent.click(await screen.findByRole("button", { name: "규칙 계좌 상세 보기" }));
+    await settled();
+    fireEvent.click(screen.getByRole("button", { name: "규칙 계좌 상세 보기" }));
     const hero = screen.getByRole("region", { name: "규칙 계좌 순자산" });
     expect(within(hero).getByText("101,234.56")).toBeTruthy();
     expect(within(hero).getByText("+1.23%")).toBeTruthy();
@@ -291,7 +293,8 @@ describe("히어로(포트폴리오식 — 장중 명세 §4-1)", () => {
     });
     render(<PaperPage />);
 
-    expect(await screen.findByRole("tablist", { name: "순자산 곡선 기간" })).toBeTruthy();
+    await settled();
+    expect(screen.getByRole("tablist", { name: "순자산 곡선 기간" })).toBeTruthy();
     expect(screen.queryByRole("region", { name: /순자산$/ })).toBeNull();
     expect(screen.queryByText(/기간은 위 히어로에서 고릅니다/)).toBeNull();
     expect(screen.queryByText(/위 히어로·아래 장중 시세도/)).toBeNull();
@@ -303,7 +306,8 @@ describe("지금 값 — 계좌 행(장중 명세 §4-1)", () => {
     reads["/api/paper/overview"] = () => Promise.resolve(CURRENT_OVERVIEW);
     render(<PaperPage />);
 
-    const rules = await screen.findByRole("button", { name: "규칙 계좌 상세 보기" });
+    await settled();
+    const rules = screen.getByRole("button", { name: "규칙 계좌 상세 보기" });
     expect(within(rules).getByText("101,234.56")).toBeTruthy();
     expect(within(rules).getByText("+1.23%")).toBeTruthy();
     expect(within(rules).getByText("장중 추정 23:58 · 장중가 1/2종목 · 체결 대기 1건 반영 전 · 오늘 +0.42% · 10-29 잠정 대비")).toBeTruthy();
@@ -329,7 +333,8 @@ describe("지금 값 — 계좌 행(장중 명세 §4-1)", () => {
     reads["/api/paper/overview"] = () => Promise.resolve(OVERVIEW);
     render(<PaperPage />);
 
-    const rules = await screen.findByRole("button", { name: "규칙 계좌 상세 보기" });
+    await settled();
+    const rules = screen.getByRole("button", { name: "규칙 계좌 상세 보기" });
     expect(within(rules).queryByText("추정")).toBeNull();
     expect(within(rules).queryByText(/^장중 추정|^장부 /)).toBeNull();
     expect(screen.getByText(/^순자산·수익률\(출발 이후\)은 장부의 마지막 관측치 기준\(2026-10-24 05:15 KST\) · 행을 누르면/)).toBeTruthy();
@@ -343,7 +348,7 @@ describe("지금 값 — 계좌 비교(한 표 한 기준)", () => {
     reads["/api/paper/overview"] = () => Promise.resolve(CURRENT_OVERVIEW);
     render(<PaperPage />);
 
-    await screen.findByRole("table", { name: "계좌 비교" });
+    await settled();
     // 사유 괄호도 기준 줄과 같은 꼴('장부 MM-DD HH:MM')
     expect(screen.getByText("장중 추정이 아닌 계좌가 있어 표 전체를 장부 기준으로 둡니다 — 60/40 계좌(장부 10-30 23:15)")).toBeTruthy();
     expect(rowHeaders().slice(0, 1)).toEqual(["기준"]);
@@ -369,7 +374,7 @@ describe("지금 값 — 계좌 비교(한 표 한 기준)", () => {
     });
     render(<PaperPage />);
 
-    await screen.findByRole("table", { name: "계좌 비교" });
+    await settled();
     expect(screen.queryByText(/표 전체를 장부 기준으로 둡니다/)).toBeNull();
     expect(comparisonCell("기준", "규칙 계좌").textContent).toBe("장중 추정 23:58");
     expect(comparisonCell("순자산", "규칙 계좌").textContent).toBe("101,234.56 달러");
@@ -382,7 +387,7 @@ describe("지금 값 — 계좌 비교(한 표 한 기준)", () => {
     reads["/api/paper/overview"] = () => Promise.resolve(OVERVIEW);
     render(<PaperPage />);
 
-    await screen.findByRole("table", { name: "계좌 비교" });
+    await settled();
     expect(rowHeaders()).not.toEqual(expect.arrayContaining(["기준"]));
     expect(rowHeaders().some((label) => label === "오늘 변화" || label === "최근 변화" || label === "통계 기준")).toBe(false);
     expect(screen.queryByText(/^'수익률\(출발 이후\)'은 맨 위/)).toBeNull();
@@ -568,8 +573,6 @@ describe("기간별 순자산 곡선", () => {
 });
 
 describe("오늘 추정 꼬리(장중 명세 §4 '순자산 곡선 꼬리')", () => {
-  /** 곧바로 resolve하는 목 응답을 끝까지 반영합니다(QA-148 — 벽시계 한도 없이). */
-  const settled = () => act(async () => {});
   const navItems = () => within(screen.getByRole("list", { name: "순자산 계열" })).getAllByRole("listitem").map((li) => li.textContent);
   const alertOf = (region: HTMLElement) => region.querySelector('[aria-live="polite"]')?.textContent;
 
@@ -692,8 +695,6 @@ describe("작업 기록 카드(x3 — 미국 응답은 그대로, 화면이 kr. 
 });
 
 describe("장중 시세 카드 — 새 장중 값을 받으면 개요를 한 번 다시 읽는다", () => {
-  /** 곧바로 resolve하는 목 응답이 잇는 일(개요 → 카드 마운트 → /live → 커밋)을 끝까지 반영합니다(QA-148 — 벽시계 한도 없이). */
-  const settled = () => act(async () => {});
   const calls = (prefix: string) => api.apiGetShared.mock.calls.filter(([path]) => String(path).startsWith(prefix)).length;
 
   function liveAt(stamp: string) {

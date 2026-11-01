@@ -8,7 +8,7 @@
  *  - 묶음이 셋 이상이면 도넛 + 범례, 둘 이하면 한 줄 막대 + 범례, 어느 쪽이든 표(차트의 표 보기)
  *  - 최근 체결 다섯 건, "보유·체결 탭에서 전체 보기"·"결정 로그 보기"는 그 탭으로 바꾸며 이 계좌를 미리 고른다
  */
-import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { COMPOSITION_TOP_N } from "@/lib/paper";
 
@@ -39,6 +39,9 @@ vi.mock("@/components/charts", () => ({
 }));
 
 import PaperPage from "@/components/screens/paper/PaperScreen";
+
+/** 곧바로 resolve하는 목 응답을 끝까지 반영합니다(QA-147·148 — 벽시계 한도가 있는 findBy 대신). */
+const settled = () => act(async () => {});
 
 const STATS = { cumReturnPct: 1.2, cagrPct: null, volPct: null, mddPct: null, sharpe: null, excessPct: null, beta: null, sampleDays: 2 };
 
@@ -281,8 +284,10 @@ describe("상세 패널의 내용", () => {
       books: BOOKS.map((entry) => (entry.code === "rules" ? { ...entry, current: live } : entry)),
     });
     render(<PaperPage />);
-    fireEvent.click(await screen.findByRole("button", { name: /규칙 계좌 상세 보기/ }));
-    const panel = await screen.findByRole("region", { name: "규칙 계좌 상세" });
+    await settled();
+    fireEvent.click(screen.getByRole("button", { name: /규칙 계좌 상세 보기/ }));
+    await settled();
+    const panel = screen.getByRole("region", { name: "규칙 계좌 상세" });
     const numbers = within(panel).getByRole("region", { name: "핵심 숫자" });
     const tile = (label: string) => within(numbers).getByText(label).nextElementSibling?.textContent;
     expect(tile("순자산")).toBe("101,234.56 달러");
@@ -298,7 +303,8 @@ describe("상세 패널의 내용", () => {
     expect(tile("보유 종목 수")).toBe("7종목");
     expect(within(numbers).getByText("장부 마지막 관측 101,200.00 달러 (10-24 05:15) — 현금·보유 종목 수 타일과 아래 구성·체결은 장부 값")).toBeTruthy();
     // 구성 비중은 장부 순자산 기준 그대로
-    const donut = await within(panel).findByRole("list", { name: "구성 도넛" });
+    await settled();
+    const donut = within(panel).getByRole("list", { name: "구성 도넛" });
     expect(within(donut).getAllByRole("listitem")[0].textContent).toBe("NVDA 20.0%");
   });
 
@@ -313,8 +319,10 @@ describe("상세 패널의 내용", () => {
       books: BOOKS.map((entry) => (entry.code === "rules" ? { ...entry, current: ledger } : entry)),
     });
     render(<PaperPage />);
-    fireEvent.click(await screen.findByRole("button", { name: /규칙 계좌 상세 보기/ }));
-    const panel = await screen.findByRole("region", { name: "규칙 계좌 상세" });
+    await settled();
+    fireEvent.click(screen.getByRole("button", { name: /규칙 계좌 상세 보기/ }));
+    await settled();
+    const panel = screen.getByRole("region", { name: "규칙 계좌 상세" });
     const numbers = within(panel).getByRole("region", { name: "핵심 숫자" });
     expect(within(numbers).getByText("마지막 평가").nextElementSibling?.textContent).toBe("10-23 확정");
     expect(within(numbers).queryByText("추정")).toBeNull();

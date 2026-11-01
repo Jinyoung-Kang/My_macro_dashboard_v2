@@ -47,6 +47,9 @@ vi.mock("@/components/charts", () => ({
 import PaperPage from "@/components/screens/paper/PaperScreen";
 import { PENDING_BACKFILL_WARNING } from "@/lib/paperOverview";
 
+/** 곧바로 resolve하는 목 응답을 끝까지 반영합니다(QA-147·148 — 벽시계 한도가 있는 findBy 대신). */
+const settled = () => act(async () => {});
+
 const STATS = { cumReturnPct: 0.31, cagrPct: null, volPct: null, mddPct: null, sharpe: null, excessPct: null, beta: null, sampleDays: 2 };
 
 function book(code: string, over: Record<string, unknown> = {}) {
@@ -263,7 +266,8 @@ describe("지금 값 — 계좌 행(한국)", () => {
     reads["/api/paper/status?market=KR"] = () => Promise.resolve(KR_STATUS);
     render(<PaperPage market="KR" />);
 
-    const claude = await screen.findByRole("button", { name: "한국 Claude 계좌 상세 보기" });
+    await settled();
+    const claude = screen.getByRole("button", { name: "한국 Claude 계좌 상세 보기" });
     expect(within(claude).getByText("100,400,000")).toBeTruthy();
     expect(within(claude).getByText("장중 마지막 추정 15:30 · 종가 확정 전 · 시가 체결 대기 2건 반영 전 · 오늘 +0.09% · 10-29 잠정 대비"))
       .toBeTruthy();
@@ -520,8 +524,6 @@ describe("노출 맞춘 참고선(K40)", () => {
 });
 
 describe("오늘 추정 꼬리(한국)", () => {
-  /** 곧바로 resolve하는 목 응답을 끝까지 반영합니다(QA-148 — 벽시계 한도 없이). */
-  const settled = () => act(async () => {});
 
   it("계좌 선에만 꼬리 — 노출 맞춘 참고선(K40)에는 없고, 원 정수 자릿수, 히어로(기본 한국 Claude 계좌) 곡선도 꼬리 점", async () => {
     const live = {

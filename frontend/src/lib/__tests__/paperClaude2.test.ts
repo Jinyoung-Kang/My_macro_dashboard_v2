@@ -483,7 +483,7 @@ describe("결정 상세·검증·리스크·설정", () => {
   });
 });
 
-describe("🧪 장중 확인(단계 2)", () => {
+describe("장중 확인(단계 2)", () => {
   const today = {
     session: "2026-11-02", atEt: "10:30", atKst: "2026-11-03 00:30 KST", feed: "MINUTE", watch: ["AAPL", "MSFT"], status: "PLANNED",
     reason: null, decisionId: null, calledAtKst: null,

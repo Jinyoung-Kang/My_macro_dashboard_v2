@@ -475,8 +475,11 @@ describe("홈 — 추정·오래됨 배지", () => {
     reads = { ...happyReads(), [PAPER_OVERVIEW]: overview };
     renderHome(OWNER);
 
+    // 곧바로 resolve하는 목 응답을 끝까지 반영합니다(QA-147·148 — 벽시계 한도가 있는 findBy 대신).
+    await act(async () => {});
+
     // 값의 기준 줄 — 계좌 이름 뒤에 단계 표기(개요와 같은 함수), 옛 응답의 '마지막 관측' 대신.
-    const stage = await screen.findByText((_, element) => element?.tagName === "SPAN" && element.textContent === "Claude 계좌 순자산 · 장중 추정 23:58");
+    const stage = screen.getByText((_, element) => element?.tagName === "SPAN" && element.textContent === "Claude 계좌 순자산 · 장중 추정 23:58");
     expect(stage).toBeTruthy();
     const hero = region(PAPER_REGION);
     // 히어로 값과 Claude 계좌 행이 같은 지금 값을 적습니다(한 카드에 두 숫자가 보이지 않음).
