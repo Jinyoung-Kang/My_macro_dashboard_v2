@@ -129,18 +129,22 @@ describe("계좌 행 — 지금 값(current, 장중 명세 §4-1)", () => {
       .toBe("10-30 확정 · 10-30 변화 +0.42% · 10-29 확정 대비");
   });
 
-  it("이전 값 배지는 보이는 값이 장부 관측에서 나왔을 때만 — 장부 단계는 그대로(시각은 단계 표기에), 순자산 줄·모두 장중가인 추정은 없음", () => {
+  it("이전 값 배지는 보이는 값이 장부 관측에서 나왔을 때만 — 장부 단계는 그대로(시각은 단계 표기에), 확정 줄·마감 뒤 관측의 잠정 줄·모두 장중가인 추정은 없음", () => {
     const late = { quotes: { stale: true }, session: REGULAR };
     const stale = BOOKS[2] as PaperOverviewBook; // 가격 없음 2종목(장부 staleCount)
     // 장부 단계 — 값이 그 장부 상태라 사유 그대로, 같은 관측 시각은 값의 기준 한 줄('장부 23:15')에 있어 사유에서 뺌
     const ledger = live({ stage: "LEDGER", basis: "LEDGER", isEstimated: false, livePriced: 0, pendingOrders: 0, atKst: "2026-10-30 23:15 KST", note: null });
     expect(bookAssetRow({ ...stale, current: ledger }, late))
       .toMatchObject({ isStale: true, staleReason: "가격 없음 2종목 — 지난 값으로 평가 · 관측치 저장본이 늦음" });
-    // 순자산 줄(잠정·확정) — 그 거래일 마감 값이라 장부 관측과 무관: 배지 없음
-    for (const stage of ["PROVISIONAL", "FINAL"] as const) {
-      const row = live({ stage, basis: "LEDGER", isEstimated: false, livePriced: 0, pendingOrders: 0, note: null });
-      expect(bookAssetRow({ ...stale, current: row }, late)).toMatchObject({ isStale: false, staleReason: null });
-    }
+    // 확정 줄 — 그 거래일 마감 값이라 장부 관측과 무관: 배지 없음
+    const final = live({ stage: "FINAL", basis: "LEDGER", isEstimated: false, livePriced: 0, pendingOrders: 0, note: null });
+    expect(bookAssetRow({ ...stale, current: final }, late)).toMatchObject({ isStale: false, staleReason: null });
+    // 마감 뒤 관측으로 쓴 잠정 줄(가격도 다 받음) — 관측치 저장본 늦음(수집 3시간 뒤부터)은 그 값과 무관: 배지 없음(옮긴 줄은 아래 QA-158)
+    const closed = live({ stage: "PROVISIONAL", basis: "LEDGER", isEstimated: false, livePriced: 0, pendingOrders: 0, tradingDate: "2026-10-30",
+      atKst: "2026-10-31 05:00 KST", note: null });
+    const afterClose = { ...BOOKS[0], lastObservedAtKst: "2026-10-31 05:15 KST", current: closed } as PaperOverviewBook;
+    expect(bookAssetRow(afterClose, late)).toMatchObject({ isStale: false, staleReason: null });
+    expect(bookStale(afterClose, late, "hero").isStale).toBe(false);
     // 장중 추정 — 모든 보유를 장중가로 평가했으면 배지 없음, 장중가 없는 종목이 섞이면 그 종목 수를 앞에(관측 시각은 그대로 — 단계 표기는 장중 시각)
     expect(bookAssetRow({ ...stale, current: live({ livePriced: 2 }) }, late)).toMatchObject({ isStale: false, staleReason: null });
     expect(bookAssetRow({ ...stale, current: live({ livePriced: 1 }) }, late)).toMatchObject({
@@ -166,7 +170,7 @@ describe("계좌 행 — 지금 값(current, 장중 명세 §4-1)", () => {
   // QA-158: 서버의 잠정 줄은 마감 값이 아닐 때가 있습니다 — 마감 뒤 관측이 오지 않으면 결정 작업이 마지막 관측 상태를 그날 잠정 줄로 옮기고
   // (PaperLedgerService.settleNav), 지난 값으로 평가한 보유가 있으면 그날 줄이 잠정이 됩니다. 수정 전에는 잠정 단계면 배지를 늘 빼서, 장중 02:08 관측을
   // 옮긴 '10-30 잠정'이 이전 값 표시 없이 보였습니다(재현 커밋에서는 it.fails).
-  it.fails("QA-158 잠정 줄이 마감 전 관측을 옮긴 것이거나 지난 값으로 평가한 보유가 있으면 이전 값 배지 — 관측 시각도 남김(잠정 표기에는 시각이 없음)", () => {
+  it("QA-158 잠정 줄이 마감 전 관측을 옮긴 것이거나 지난 값으로 평가한 보유가 있으면 이전 값 배지 — 관측 시각도 남김(잠정 표기에는 시각이 없음)", () => {
     const closed = { phase: "CLOSED" as const, sessionDate: "2026-10-30" };
     const provisional = live({ stage: "PROVISIONAL", basis: "LEDGER", isEstimated: false, livePriced: 0, pendingOrders: 0, tradingDate: "2026-10-30",
       atKst: "2026-10-31 05:00 KST", note: null });

@@ -115,11 +115,15 @@ export interface BookStale {
  * - 옛 응답(지금 값 없음)·지금 값의 장부 단계(`LEDGER`): 값이 그 장부 상태라 사유 그대로.
  * - 장중 추정(`LIVE`·`LIVE_LAST`): 장중가가 없어 장부 관측가로 평가한 종목이 있고 장부 사유가 있을 때만 — '장중가 없는 n종목은 장부 관측가 · …'.
  *   모든 보유를 장중가로 평가했으면 배지 없음(그 값은 늦은 관측으로 평가한 값이 아님).
- * - 순자산 줄(`PROVISIONAL`·`FINAL`): 그 거래일 마감 값이라 장부 관측과 무관 — 배지 없음(예전에는 '10-30 잠정' 옆에 그보다 이른 관측이 '이전 값'으로 붙음).
+ * - 확정 줄(`FINAL`): 그 거래일 마감 값이라 장부 관측과 무관 — 배지 없음.
+ * - 잠정 줄(`PROVISIONAL`): 마감 값이 아닐 수 있어(QA-158) 장부 사유를 그대로 답니다 — 지난 값으로 평가한 보유가 있거나(`staleCount`), 마지막 관측이 그 줄의
+ *   마감(`current.atKst`)보다 이르면(마감 뒤 관측이 오지 않아 서버가 마지막 관측 상태를 잠정 줄로 옮긴 것 — `PaperLedgerService.settleNav`). 둘 다
+ *   아니면(마감 뒤 관측으로 쓴 줄) 배지 없음 — 관측치 저장본 늦음(수집 3시간 뒤부터)은 그 값과 무관합니다. 시각을 모르면 사유 그대로.
  * - 모르는 단계(새 서버 값): 장부 사유 그대로(배지를 숨기는 쪽으로 짐작하지 않음).
  *
  * `place`가 "hero"면 그 자리가 장부 관측 시각을 단계 표기로 이미 적으므로(옛 응답 '마지막 관측 …'·장부 단계 '장부 …') 사유의 '· 마지막 관측 …'을
- * 뺍니다 — 같은 시각을 한 줄에 두 번 적지 않게. 행("row")은 장부 단계일 때만(값의 기준 한 줄에 '장부 …'가 있음) 뺍니다.
+ * 뺍니다 — 같은 시각을 한 줄에 두 번 적지 않게. 행("row")은 장부 단계일 때만(값의 기준 한 줄에 '장부 …'가 있음) 뺍니다. 잠정 줄의 표기('10-30 잠정')는
+ * 관측 시각을 적지 않아 남깁니다.
  */
 export function bookStale(book: PaperOverviewBook, context: BookRowContext = {}, place: "row" | "hero" = "row"): BookStale {
   const market = context.market ?? "US";
@@ -141,11 +145,28 @@ export function bookStale(book: PaperOverviewBook, context: BookRowContext = {},
     if (isLiveStage(stage)) {
       const fallback = book.current.positionCount - book.current.livePriced;
       reasons = fallback > 0 && ledger.length > 0 ? [`장중가 없는 ${fallback}종목은 장부 관측가`, ...ledger] : [];
-    } else if (stage === "PROVISIONAL" || stage === "FINAL") {
+    } else if (stage === "FINAL" || (stage === "PROVISIONAL" && !provisionalFromLedger(book))) {
       reasons = [];
     }
   }
   return { isStale: reasons.length > 0, reason: reasons.length > 0 ? reasons.join(" · ") : null };
+}
+
+/** "2026-10-31 02:08 KST" → "2026-10-31 02:08"(분까지 — 그대로 문자열 비교가 시각 비교). 꼴이 다르면 null. */
+function minuteKey(stamp: string | null | undefined): string | null {
+  const match = /^(\d{4}-\d{2}-\d{2})[ T](\d{2}:\d{2})/.exec(stamp ?? "");
+  return match ? `${match[1]} ${match[2]}` : null;
+}
+
+/**
+ * 잠정 줄이 장부 상태에서 나왔을 수 있나(QA-158) — 지난 값으로 평가한 보유가 있거나, 마지막 관측이 그 줄의 마감보다 이름(서버가 마지막 관측 상태를
+ * 잠정 줄로 옮김). 시각을 모르면 그렇다고 봅니다(배지를 숨기는 쪽으로 짐작하지 않음).
+ */
+function provisionalFromLedger(book: PaperOverviewBook): boolean {
+  if ((book.staleCount ?? 0) > 0) return true;
+  const observed = minuteKey(book.lastObservedAtKst);
+  const close = minuteKey(book.current?.atKst);
+  return observed === null || close === null || observed < close;
 }
 
 /**
@@ -158,7 +179,8 @@ export function bookStale(book: PaperOverviewBook, context: BookRowContext = {},
  * - 순자산을 모르면 "—"(단위 없음), 수익률을 모르면 칩을 생략합니다(0.00%를 만들지 않음 — AssetRow 규칙).
  * - 이전 값 배지(`bookStale`): 가격을 새로 받지 못한 보유가 있거나(staleCount > 0 — 지난 값으로 평가), 장부 관측치 저장본이 늦었으면
  *   (quotes.stale — 서버 판정) 시작한 계좌의 장부 값은 그 늦은 관측으로 평가한 값입니다. 보이는 값이 그 장부 값일 때만(옛 응답·장부 단계, 장중가 없는
- *   종목이 섞인 장중 추정) 사유와 함께 답니다 — 순자산 줄(잠정·확정)이나 모두 장중가로 평가한 추정에는 달지 않습니다.
+ *   종목이 섞인 장중 추정, 마감 값이 아닐 수 있는 잠정 줄 — QA-158) 사유와 함께 답니다 — 확정 줄·마감 뒤 관측으로 쓴 잠정 줄·모두 장중가로 평가한 추정에는
+ *   달지 않습니다.
  * - 경고: 벤치마크가 출발일 종가를 기다리면(pendingBackfill) 그 사실.
  */
 export function bookAssetRow(book: PaperOverviewBook, context: BookRowContext = {}): BookRow {
