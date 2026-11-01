@@ -20,7 +20,7 @@ const KR_START =
   "한국 네 계좌는 출발일 S 밤의 결정으로 S+1 시가에 함께 출발합니다(사후 체결 없음). 출발 결정이 미뤄지면(Claude 출발 호출 실패 등) "
   + "네 계좌 모두 다음 KR 거래일로 함께 미뤄집니다.";
 
-/** 한국 네 계좌의 정의(계좌 코드 → 소개). 미국 표(lib/paper ACCOUNT_PROFILES)와 같은 모양입니다. */
+/** 한국 계좌의 정의(계좌 코드 → 소개 — 네 계좌와 한국 Claude 계좌2). 미국 표(lib/paper ACCOUNT_PROFILES)와 같은 모양입니다. */
 export const KR_ACCOUNT_PROFILES: Readonly<Record<string, AccountProfile>> = {
   kr_rules: {
     summary: "외국인·기관이 함께 사는 코스피 대형주를 규칙대로 따르는 대조군 — 재량 없음",
@@ -122,6 +122,65 @@ export const KR_ACCOUNT_PROFILES: Readonly<Record<string, AccountProfile>> = {
     settings: [
       { key: "model", label: "모델(두 책 공용)" },
       { key: "kr.decisionTimeKst", label: "결정 시각(KST)" },
+      { key: "kr.decisionDeadlineKst", label: "결정 기한(KST)" },
+      { key: "apiDailyCallCap", label: "하루 호출 상한(두 책 공유)", unit: "회" },
+      { key: "kr.maxWeightStockPct", label: "종목 비중 상한", unit: "%" },
+      { key: "kr.maxWeightEtfPct", label: "ETF 비중 상한", unit: "%" },
+      { key: "kr.maxPositions", label: "최대 종목 수(현금성 제외)", unit: "종목" },
+      { key: "kr.minOrderNotional", label: "최소 주문 금액", unit: "원" },
+      { key: "kr.maxDiscretionaryOrdersPerMonth", label: "월 재량 주문 상한", unit: "건" },
+      { key: "kr.minHoldTradingDaysForSell", label: "재량 매도 전 최소 보유", unit: " KR 거래일" },
+      { key: "kr.trailingStopPct", label: "트레일링 스탑", unit: "%" },
+      { key: "kr.lockoutTradingDays", label: "스탑 뒤 재진입 금지", unit: " KR 거래일" },
+      { key: "kr.cashLikeTickers", label: "현금성 종목" },
+    ],
+  },
+  kr_claude2: {
+    summary: "한국 Claude 계좌1과 같은 자료·프레임·한도에 사용자가 고른 투자 성향(기본 공격투자형)을 더해 따로 판단하는 계좌",
+    definitions: [
+      {
+        key: "method",
+        label: "운용 방식",
+        text: "KR 거래일마다 계좌1과 같은 결정 실행에서 계좌1 바로 뒤에 Claude를 부릅니다 — 같은 관측치·자료 게이트·한국 패킷 재료이고, 패킷의 "
+          + "장부(보유·대기 주문·최근 결정·이달 재량 주문 수)만 이 계좌의 것입니다(계좌1의 결정·주문은 넣지 않음 — 독립 판단). 같은 프레임 판에 "
+          + "사용자가 고른 투자 성향(설정 kr.claude2.riskProfile — 공격투자형·적극투자형·위험중립형·안정추구형, 기본 공격투자형)이 시스템 "
+          + "프롬프트의 '투자 성향' 절로 더해져 위험자산 비중(현금성 153130 제외)·종목 집중도·현금 여력·감내할 낙폭의 기준이 됩니다 — 코드가 "
+          + "집행하지 않으므로 한도·검증기·체결 시점은 계좌1과 같습니다. 체결 시점 고르기·장중 확인은 한국 1분봉 수집을 붙인 뒤 켭니다.",
+      },
+      {
+        key: "buy",
+        label: "매수",
+        text: "통과 조건은 계좌1과 같은 검증기·같은 한도입니다(UNFILLABLE·BUY_BELOW_ONE_SHARE·정수 주 포함). " + KR_FILL,
+      },
+      {
+        key: "sell",
+        label: "매도·리스크",
+        text: "재량 매도·트레일링 스탑·재진입 금지는 계좌1과 같습니다. 호출 실패·형식 오류인 날은 재량 주문이 없고, 기한이 지나면 그 세션은 "
+          + "부르지 않습니다.",
+      },
+      {
+        key: "cash",
+        label: "현금",
+        text: "현금 비중·주식 노출은 Claude가 성향을 기준으로 정하고 검증기는 보지 않습니다. 남는 현금은 153130(현금성)에 둘 수 있습니다.",
+      },
+      {
+        key: "start",
+        label: "시작·출발일",
+        text: "한국 계좌1의 출발 결정이 보낸 패킷(계좌 몫과 출발 문장만 바꿈 — 그날 밤 읽은 자료 그대로)으로 한 번 불러, 통과 주문을 계좌1과 "
+          + "같은 출발일의 금융위 확정 종가로 사후 체결해 시작합니다(사용자 결정 2026-11-02 — 미국 계좌2와 한국 계좌1·벤치마크·규칙 계좌도 "
+          + "같은 날 종가로 다시 출발).",
+      },
+      {
+        key: "purpose",
+        label: "비교 목적",
+        text: "투자 성향 실험 — 같은 자료·한도에서 성향을 더한 판단이 계좌1·규칙 계좌·KODEX 200 계좌와 어떻게 다른지 봅니다. 계좌1과는 "
+          + "성향 절과 장부만 달라, 순자산 차이에는 성향과 그동안의 결정 차이가 함께 섞입니다.",
+      },
+    ],
+    settings: [
+      { key: "kr.claude2.riskProfile", label: "투자 성향" },
+      { key: "model", label: "모델(두 책 공용)" },
+      { key: "kr.decisionTimeKst", label: "결정 시각(KST, 계좌1과 같음)" },
       { key: "kr.decisionDeadlineKst", label: "결정 기한(KST)" },
       { key: "apiDailyCallCap", label: "하루 호출 상한(두 책 공유)", unit: "회" },
       { key: "kr.maxWeightStockPct", label: "종목 비중 상한", unit: "%" },

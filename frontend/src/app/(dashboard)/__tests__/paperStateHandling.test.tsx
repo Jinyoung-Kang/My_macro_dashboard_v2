@@ -144,6 +144,7 @@ describe("초기화 전", () => {
 
     render(<PaperPage />);
 
+    fireEvent.click(await screen.findByRole("button", { name: /펼치기/ }));
     expect(await screen.findByText(LIMITS[0])).toBeTruthy();
     expect(screen.getByText(LIMITS[1])).toBeTruthy();
     // 책이 없으니 리스크 실행 버튼은 아직 없습니다.

@@ -601,6 +601,7 @@ describe("개요 — 체결 시점 실험·S = 100·한계", () => {
 
     expect(screen.getByText(/아직 계좌2가 출발하지 않았습니다 — 출발 전 구간은 계좌2 값이 없어/)).toBeTruthy();
     expect(screen.queryByRole("list", { name: "차트 S = 100 같은 구간" })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: /펼치기/ }));
     const limits = screen.getByRole("region", { name: "Claude 계좌2의 한계" });
     expect(within(limits).getAllByRole("listitem")).toHaveLength(5);
     expect(within(limits).getByText(/위 2번\(최대 1시간 묵은 지연 시세\) 대신/)).toBeTruthy();

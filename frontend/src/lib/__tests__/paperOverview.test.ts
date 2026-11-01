@@ -460,7 +460,7 @@ describe("S = 100 같은 구간(계좌2)", () => {
 describe("bookMonogram — 계좌 행 아바타 글자", () => {
   it("미국·한국 계좌 코드마다 약칭", () => {
     expect(["rules", "claude", "claude2", "bench_spy", "bench_mix"].map(bookMonogram)).toEqual(["R", "C1", "C2", "SPY", "60"]);
-    expect(["kr_rules", "kr_claude", "kr_bench_k200", "kr_bench_mix"].map(bookMonogram)).toEqual(["R", "C", "200", "60"]);
+    expect(["kr_rules", "kr_claude", "kr_claude2", "kr_bench_k200", "kr_bench_mix"].map(bookMonogram)).toEqual(["R", "C1", "C2", "200", "60"]);
   });
 
   it("모르는 코드는 null — 글자를 짐작하지 않는다(객체 기본 속성 이름도)", () => {

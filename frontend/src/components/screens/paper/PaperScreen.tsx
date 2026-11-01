@@ -2,7 +2,7 @@
 
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
-import { Banner, Card, ErrorState, Freshness, Loading, PageHeader, underlineTabClasses } from "@/components/ui";
+import { Banner, Button, Card, ErrorState, Freshness, Loading, PageHeader, underlineTabClasses } from "@/components/ui";
 import { useApi } from "@/hooks/useApi";
 import { endpoints } from "@/lib/endpoints";
 import { CLAUDE2_LIMITS, isTimedBook, PAPER_SOURCES, PAPER_TABS, type PaperTabKey } from "@/lib/paper";
@@ -57,6 +57,8 @@ export default function PaperPage({
   const [preselect, setPreselect] = useState("");
   // 결정 로그의 주간 복기에서 누른 제안 번호 — 프레임 탭이 그 제안으로 스크롤해 강조합니다(탭 단추로 옮기면 지움).
   const [focusProposal, setFocusProposal] = useState<number | null>(null);
+  // '이 장부의 한계'는 접어 둔 채 시작합니다(사용자 요청 2026-11-02 — 단추로 펼침). 글은 늘 그 카드 안에 있고 펼칠 때만 보입니다.
+  const [limitsOpen, setLimitsOpen] = useState(false);
   const { data, loading, error, reload, refreshError } = useApi<PaperOverviewResponse>(endpoints.paper.market(market).overview, 60_000);
   // 한국 화면은 이름이 다른 탭(종목 선정)만 한국 이름으로 — 일곱 탭 모두 열림(미국 화면은 PAPER_TABS 그대로).
   const tabs = PAPER_TABS.map((entry) => ({ ...entry, label: (korea ? KR_TAB_LABELS[entry.key] : undefined) ?? entry.label }));
@@ -134,7 +136,17 @@ export default function PaperPage({
       {data?.available && (
         <>
           {(data.limits ?? []).length > 0 && (
-            <Card title="이 장부의 한계" source={korea ? PAPER_SOURCES.krLedger : PAPER_SOURCES.ledger}>
+            <Card
+              title="이 장부의 한계"
+              source={korea ? PAPER_SOURCES.krLedger : PAPER_SOURCES.ledger}
+              actions={
+                <Button size="sm" variant="ghost" expanded={limitsOpen} onClick={() => setLimitsOpen((open) => !open)}>
+                  {limitsOpen ? "접기" : `펼치기(${(data.limits ?? []).length}줄)`}
+                </Button>
+              }
+            >
+              {limitsOpen && (
+              <div id="paper-ledger-limits">
               <ol className="list-decimal space-y-1 pl-5 text-xs leading-relaxed text-body">
                 {(data.limits ?? []).map((limit) => (
                   <li key={limit}>{limit}</li>
@@ -148,6 +160,8 @@ export default function PaperPage({
                     {CLAUDE2_LIMITS.map((limit) => <li key={limit}>{limit}</li>)}
                   </ul>
                 </section>
+              )}
+              </div>
               )}
             </Card>
           )}

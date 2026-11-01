@@ -58,7 +58,8 @@ const BOOK_MONOGRAMS: ReadonlyMap<string, string> = new Map([
   ["bench_spy", "SPY"],
   ["bench_mix", "60"],
   ["kr_rules", "R"],
-  ["kr_claude", "C"],
+  ["kr_claude", "C1"],
+  ["kr_claude2", "C2"],
   ["kr_bench_k200", "200"],
   ["kr_bench_mix", "60"],
 ]);

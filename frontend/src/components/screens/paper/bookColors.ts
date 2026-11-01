@@ -30,6 +30,8 @@ export const BOOK_COLORS: Record<string, string> = {
   // 한국 네 계좌 — 미국과 같은 자리(규칙 파랑·Claude 주황·지수 초록·60/40 회색)라 같은 검증 결과를 그대로 씁니다.
   kr_rules: SERIES_COLORS.blue,
   kr_claude: SERIES_COLORS.orange,
+  // 한국 Claude 계좌2(사용자 결정 2026-11-02) — 미국 계좌2와 같은 자주.
+  kr_claude2: "#a438a0",
   kr_bench_k200: SERIES_COLORS.green,
   kr_bench_mix: "#6b727e",
 };

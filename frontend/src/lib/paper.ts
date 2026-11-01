@@ -472,7 +472,7 @@ export const ACCOUNT_PROFILES: Readonly<Record<string, AccountProfile>> = {
     ],
   },
   claude2: {
-    summary: "계좌1과 같은 자료·프레임·한도에 사용자가 고른 투자 성향(기본 적극투자형)을 더해 판단하고, 주문마다 체결 시점(시가 · 10:00~15:00 ET "
+    summary: "계좌1과 같은 자료·프레임·한도에 사용자가 고른 투자 성향(기본 공격투자형)을 더해 판단하고, 주문마다 체결 시점(시가 · 10:00~15:00 ET "
       + "매시 · 종가)을 스스로 고르는 계좌",
     definitions: [
       {
@@ -480,7 +480,7 @@ export const ACCOUNT_PROFILES: Readonly<Record<string, AccountProfile>> = {
         label: "운용 방식",
         text: "미국 장 마감 뒤 하루 한 번, 계좌1과 같은 결정 실행에서 계좌1 바로 뒤에 Claude를 부릅니다. 계좌1이 그 실행에서 읽은 시장 입력을 "
           + "그대로 쓰고(입력 동결 — 매크로·FRED·레짐·게이트·트랙레코드·기관 프로필·메모 일곱 섹션은 바이트까지 같음), 같은 프레임 판에 "
-          + "사용자가 고른 투자 성향(설정 claude2.riskProfile — 공격투자형·적극투자형·위험중립형·안정추구형, 기본 적극투자형)을 더해 판단합니다 — "
+          + "사용자가 고른 투자 성향(설정 claude2.riskProfile — 공격투자형·적극투자형·위험중립형·안정추구형, 기본 공격투자형)을 더해 판단합니다 — "
           + "성향은 계좌2 시스템 프롬프트의 '투자 성향' 절로 들어가 위험자산 비중(현금성 제외)·종목 집중도·현금 여력·감내할 낙폭의 기준이 되고"
           + "(공격투자형이 가장 높고 안정추구형이 가장 낮음), 코드가 집행하지 않으므로 한도·검증기·체결 메뉴는 계좌1과 같습니다. 바꾸면 다음 계좌2 "
           + "호출부터 씁니다(결정마다 설정 판이 남음). 계좌1·한국 계좌에는 없습니다. 패킷에는 자기 보유·결정과 체결 시점 메뉴·자기 체결 기록(13_execution)이 더해지고, 계좌1의 결정·주문은 넣지 않습니다"
@@ -2984,6 +2984,7 @@ export function claudeDecisionView(source: ClaudeDecisionSource): ClaudeDecision
   const recognized = source.book === "claude"
     || source.book === "claude2"
     || source.book === "kr_claude"
+    || source.book === "kr_claude2"
     || Array.isArray(source.validation)
     || Array.isArray(record?.validation)
     || isNumber(record?.targetEquityExposurePct);

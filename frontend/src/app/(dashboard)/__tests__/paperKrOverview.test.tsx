@@ -142,9 +142,12 @@ describe("쉬는 한국", () => {
     expect(screen.getByText(/PAPER_KR_START_DATE/)).toBeTruthy();
     expect(screen.getByText(/한국 계좌가 없습니다/)).toBeTruthy();
     expect(screen.queryByRole("table", { name: "계좌 비교" })).toBeNull();
-    // 한계 문구(§6)는 쉬어도 보입니다.
+    // 한계 문구(§6)는 쉬어도 보입니다 — 접어 둔 채 시작하고 단추로 펼칩니다(사용자 요청 2026-11-02).
     expect(screen.getByText("이 장부의 한계")).toBeTruthy();
+    expect(screen.queryByText(/수익률을 서로 비교하지 않습니다/)).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: /펼치기/ }));
     expect(screen.getByText(/수익률을 서로 비교하지 않습니다/)).toBeTruthy();
+    expect(screen.getByRole("button", { name: "접기" }).getAttribute("aria-expanded")).toBe("true");
   });
 });
 
@@ -201,7 +204,8 @@ describe("자료", () => {
     expect(nav.getAttribute("data-axis-width")).toBe("84");
     expect(screen.getByText(/KR 거래일별 순자산\(원\)/)).toBeTruthy();
 
-    // 한계 문구(§6)
+    // 한계 문구(§6) — 펼친 뒤
+    fireEvent.click(screen.getByRole("button", { name: /펼치기/ }));
     const limits = screen.getByText("이 장부의 한계").closest("section") ?? document.body;
     expect(within(limits).getByText(/수익률을 서로 비교하지 않습니다/)).toBeTruthy();
 
