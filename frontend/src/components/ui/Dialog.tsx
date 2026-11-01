@@ -23,6 +23,8 @@ const FADE_IN = "motion-safe:transition-opacity motion-safe:duration-150 motion-
  * - 이름 필수: `title`이 대화상자의 이름(aria-labelledby)입니다. 화면에 안 보이게 하려면 `hideTitle`(이름은 남음).
  * - 연 단추로 포커스 돌려주기: Radix는 Trigger로만 돌려주므로, Trigger 없이 여는 확인 창도 닫은 뒤 연 단추로 돌아가게 합니다.
  * - `dismissible={false}`: 처리 중에는 Esc·바깥 누르기·닫기 단추로 닫히지 않습니다(결과가 나온 뒤 부르는 쪽이 닫음).
+ * - `placement="top"`: 화면 위쪽(높이의 12% — 좁은 화면은 1rem)에 붙여 그립니다. 가운데 두면 내용 높이가 바뀔 때마다(검색 결과 수) 위 끝이
+ *   오르내려 입력칸이 움직였습니다(사용자 요청 2026-11-02). 기본은 가운데입니다.
  *
  * 열림 상태는 부르는 쪽이 쥡니다(`open`·`onOpenChange`). 닫혀 있으면 내용이 DOM에 없고, 열리면 body 끝으로 옮겨 그립니다(portal).
  */
@@ -36,6 +38,7 @@ export function Dialog({
   size = "md",
   dismissible = true,
   showClose = true,
+  placement = "center",
   children,
 }: {
   open: boolean;
@@ -53,6 +56,8 @@ export function Dialog({
   dismissible?: boolean;
   /** 오른쪽 위 닫기(✕) 단추. 확인 창처럼 취소 단추가 따로 있으면 끕니다. */
   showClose?: boolean;
+  /** 세로 자리 — 가운데(기본) 또는 위쪽 고정(내용 높이가 바뀌어도 위 끝이 그대로). */
+  placement?: "center" | "top";
   children?: ReactNode;
 }) {
   // 열기 직전에 포커스가 있던 요소. 이벤트 처리기에서만 읽고 씁니다.
@@ -92,7 +97,11 @@ export function Dialog({
           }}
           onEscapeKeyDown={blockWhenBusy}
           onInteractOutside={blockWhenBusy}
-          className={`fixed left-1/2 top-1/2 z-50 max-h-[calc(100dvh-2rem)] w-[calc(100%-2rem)] ${WIDTH[size]} -translate-x-1/2 -translate-y-1/2 overflow-y-auto rounded-card border border-border bg-surface p-6 text-text shadow-overlay outline-none ${FADE_IN}`}
+          className={`fixed left-1/2 z-50 w-[calc(100%-2rem)] ${WIDTH[size]} -translate-x-1/2 ${
+            placement === "top"
+              ? "top-4 max-h-[calc(100dvh-2rem)] sm:top-[12dvh] sm:max-h-[calc(88dvh-1rem)]"
+              : "top-1/2 max-h-[calc(100dvh-2rem)] -translate-y-1/2"
+          } overflow-y-auto rounded-card border border-border bg-surface p-6 text-text shadow-overlay outline-none ${FADE_IN}`}
         >
           {hideTitle ? <VisuallyHidden.Root asChild>{heading}</VisuallyHidden.Root> : heading}
           {description && (

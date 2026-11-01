@@ -160,6 +160,7 @@ export function SearchCommand({ user }: { user?: SessionUser }) {
       title="통합 검색"
       hideTitle
       size="lg"
+      placement="top"
       trigger={
         // 투명 1px 테두리 — 고대비(forced-colors) 모드에서 바탕색이 지워져도 알약 경계가 시스템 색 테두리로 남습니다(단추와 같음, 명세 D9).
         <button

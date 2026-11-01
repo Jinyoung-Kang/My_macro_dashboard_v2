@@ -175,6 +175,56 @@ describe("종목 상세 — 미국", () => {
     ]);
   });
 
+  it("한국어 개요(네이버 해외주식)가 있으면 제목은 한글 이름·영문은 보조 줄, 개요·업종·섹터·나라는 한국어, 출처 링크", async () => {
+    reads = appleReads();
+    reads[QUOTE] = {
+      available: true,
+      quote: appleQuote({
+        nameKo: "애플",
+        profile: { sector: "Technology", industry: "Consumer Electronics", country: "United States", website: null, employees: null,
+          summary: "Apple designs devices.", summaryKo: "애플은 기기를 설계한다.\n서비스도 판다.", industryKo: "전화 및 소형 장치",
+          koSource: { label: "네이버 증권 해외주식 기업 개요", url: "https://m.stock.naver.com/worldstock/stock/AAPL.O/overview" } },
+      }),
+    };
+    renderAs(PRO, <StockDetailScreen market="us" code="AAPL" />);
+    expect(await screen.findByRole("heading", { level: 1, name: "애플" })).toBeTruthy();
+    expect(screen.getByText("Apple Inc. · AAPL · NasdaqGS · 주식 · USD")).toBeTruthy();
+    const card = screen.getByRole("heading", { name: "회사 개요" }).closest("section") as HTMLElement;
+    expect(within(card).getByText("기술")).toBeTruthy();
+    expect(within(card).getByText("전화 및 소형 장치")).toBeTruthy();
+    expect(within(card).getByText("미국")).toBeTruthy();
+    expect(within(card).getByText(/애플은 기기를 설계한다/)).toBeTruthy();
+    expect(within(card).queryByText("Apple designs devices.")).toBeNull();
+    expect(within(card).getByRole("link", { name: /한국어 개요 출처/ }).getAttribute("href")).toBe(
+      "https://m.stock.naver.com/worldstock/stock/AAPL.O/overview");
+  });
+
+  it("뉴스는 한 쪽에 5건 — 이전·다음 단추와 쪽 표시", async () => {
+    reads = appleReads();
+    reads[NEWS] = {
+      available: true,
+      news: {
+        items: Array.from({ length: 12 }, (_, at) => ({
+          title: `기사 ${at + 1}`, url: `https://news.example/${at + 1}`, publisher: "연합인포맥스",
+          publishedAt: "2026-11-01T12:30:00Z", source: "연합인포맥스",
+        })),
+        errors: {}, error: null, fetchedAt: "2026-11-01T14:29:00Z",
+      },
+    };
+    renderAs(PRO, <StockDetailScreen market="us" code="AAPL" />);
+    expect(await screen.findByRole("link", { name: /기사 1\b/ })).toBeTruthy();
+    const pager = screen.getByRole("navigation", { name: "뉴스 쪽" });
+    expect(within(pager).getByText("1 / 3쪽 · 12건")).toBeTruthy();
+    expect(screen.queryByRole("link", { name: /기사 6/ })).toBeNull();
+    expect((within(pager).getByRole("button", { name: "이전" }) as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.click(within(pager).getByRole("button", { name: "다음" }));
+    expect(screen.getByRole("link", { name: /기사 6/ })).toBeTruthy();
+    expect(screen.queryByRole("link", { name: /기사 1\b/ })).toBeNull();
+    fireEvent.click(within(pager).getByRole("button", { name: "다음" }));
+    expect(within(pager).getByText("3 / 3쪽 · 12건")).toBeTruthy();
+    expect((within(pager).getByRole("button", { name: "다음" }) as HTMLButtonElement).disabled).toBe(true);
+  });
+
   it("AI 요약 — 누를 때만 부르고, 근거 번호를 출처 링크로 바꾼다", async () => {
     reads = appleReads();
     api.apiPost.mockResolvedValue({

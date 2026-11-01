@@ -243,6 +243,62 @@ export function newsTime(iso: string | null | undefined, now: Date): string {
   return formatKst(iso);
 }
 
+/** Yahoo 섹터 → 한국어(GICS 11 섹터의 Yahoo 이름). 모르면 받은 글 그대로. */
+const SECTOR_KO: Readonly<Record<string, string>> = {
+  Technology: "기술",
+  Healthcare: "헬스케어",
+  "Financial Services": "금융",
+  "Consumer Cyclical": "경기소비재",
+  "Consumer Defensive": "필수소비재",
+  "Communication Services": "커뮤니케이션 서비스",
+  Industrials: "산업재",
+  Energy: "에너지",
+  Utilities: "유틸리티",
+  "Real Estate": "부동산",
+  "Basic Materials": "소재",
+};
+
+export function sectorKo(sector: string | null | undefined): string | null {
+  if (!sector) return null;
+  return SECTOR_KO[sector] ?? sector;
+}
+
+/** Yahoo 나라 이름 → 한국어(자주 나오는 것만). 모르면 받은 글 그대로. */
+const COUNTRY_KO: Readonly<Record<string, string>> = {
+  "United States": "미국",
+  China: "중국",
+  Japan: "일본",
+  "United Kingdom": "영국",
+  "South Korea": "한국",
+  Taiwan: "대만",
+  Netherlands: "네덜란드",
+  Germany: "독일",
+  France: "프랑스",
+  Canada: "캐나다",
+  Switzerland: "스위스",
+  Ireland: "아일랜드",
+  Israel: "이스라엘",
+  "Hong Kong": "홍콩",
+  Singapore: "싱가포르",
+  Australia: "호주",
+  India: "인도",
+  Bermuda: "버뮤다",
+};
+
+export function countryKo(country: string | null | undefined): string | null {
+  if (!country) return null;
+  return COUNTRY_KO[country] ?? country;
+}
+
+/** 뉴스 한 쪽 — 쪽당 {@code perPage}건(기본 5), 쪽 번호는 1부터, 범위 밖이면 가까운 끝 쪽. */
+export const NEWS_PER_PAGE = 5;
+
+export function newsPage<T>(items: readonly T[], page: number, perPage: number = NEWS_PER_PAGE): { items: T[]; page: number; pages: number } {
+  const pages = Math.max(1, Math.ceil(items.length / perPage));
+  const at = Math.min(Math.max(1, Math.floor(page) || 1), pages);
+  return { items: items.slice((at - 1) * perPage, at * perPage), page: at, pages };
+}
+
 // ------------------------------------------------------------------ 검색어·이름
 
 /** 지표 이름 → 뉴스 검색어 — 괄호 안(영문 약칭·단위)과 '($)' 같은 단위 꼬리를 뗍니다("미국채 10년물 수익률(%)" → "미국채 10년물 수익률"). */

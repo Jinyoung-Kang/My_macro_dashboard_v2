@@ -5,6 +5,7 @@
  * 수집 오류·경고 수). 여기서는 고르고, 이름을 붙이고, 자산 행·타일 모양으로 옮기기만 합니다 — 판정 글을 지어내거나
  * 일간 변화처럼 응답에 없는 숫자를 빼기로 만들지 않습니다. 모르는 값은 null(화면 "—")이고 0으로 채우지 않습니다.
  */
+import { indicatorHref } from "./detail";
 import { delayLabel, EMPTY, formatDate, formatKst, formatNumber, formatSigned, formatWithUnit, withoutLeadingIcon } from "./format";
 import { MARKETS, sessionStatus, tradeDayFrom, tradeTimeFrom } from "./marketSessions";
 import { TABS } from "./nav";
@@ -294,17 +295,18 @@ export type MarketGroup = { id: string; title: string; rows: HomeRow[] };
 /**
  * 매크로 개요의 범주 순서 그대로 범주별 행 묶음. 제목 앞 그림 문자는 뗍니다(카드 제목에 아이콘을 쓰지 않음). 응답이 없으면 빈 목록.
  * 장 상태의 멈춤 판정에 쓰는 수집 시각은 개요의 collectedAtKst입니다(/macro SessionBadge와 같음).
+ * 행이 가는 곳은 {@code href}를 주면 모든 행이 그곳, 주지 않으면 행마다 그 지표의 상세(/markets/i/<키> — 사용자 요청 2026-11-02).
  */
 export function marketGroups(
   overview: Pick<MacroOverview, "categories" | "collectedAtKst"> | null | undefined,
   clock: Omit<MarketClock, "collectedAt">,
-  href: string = MARKET_HREF,
+  href?: string,
 ): MarketGroup[] {
   const withCollected: MarketClock = { ...clock, collectedAt: overview?.collectedAtKst ?? null };
   return (overview?.categories ?? []).map((category: MacroCategory) => ({
     id: category.id,
     title: withoutLeadingIcon(category.title) || category.title,
-    rows: (category.items ?? []).map((item) => macroCardRow(item, withCollected, href)),
+    rows: (category.items ?? []).map((item) => macroCardRow(item, withCollected, href ?? indicatorHref(item.key))),
   }));
 }
 

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { LineChart } from "@/components/charts";
 import { ChangeChip, Hero, RangeTabs, Skeleton } from "@/components/patterns";
 import { Banner, Button, Card, ErrorState } from "@/components/ui";
@@ -12,7 +12,7 @@ import { useMinuteClock } from "@/hooks/useMinuteClock";
 import { useSessionUser } from "@/hooks/useSessionUser";
 import { isDemo } from "@/lib/access";
 import { apiPost } from "@/lib/api";
-import { CHART_KEY, chartRows, DETAIL_RANGES, type DetailRange, type ExternalLink, newsTime, summaryLines } from "@/lib/detail";
+import { CHART_KEY, chartRows, DETAIL_RANGES, type DetailRange, type ExternalLink, newsPage, newsTime, summaryLines } from "@/lib/detail";
 import { endpoints } from "@/lib/endpoints";
 import { formatNumber } from "@/lib/format";
 import { hasLineValues, scrubModel } from "@/lib/lineChart";
@@ -139,20 +139,25 @@ export function statRows(stats: readonly DetailStat[], text: (stat: DetailStat) 
 }
 
 /**
- * 주요 뉴스 — 종목 뉴스(Yahoo·네이버)와 구글 뉴스 검색을 합친 목록(수집기가 같은 제목을 빼고 최신순으로). 제목은 원문 기사로 가는 새 창 링크,
- * 아래 줄은 언론사·시각·받은 곳. 출처 하나가 실패하면 그 사실을 한 줄로 적습니다(나머지는 그대로).
+ * 주요 뉴스 — 종목 뉴스(Yahoo·네이버)·연합인포맥스·구글 뉴스 검색을 합친 목록(수집기가 같은 제목을 빼고 최신순으로). 한 쪽에 5건씩(사용자 요청
+ * 2026-11-02 — 이전·다음 단추와 'n / m쪽'), 경로가 바뀌면 첫 쪽으로. 제목은 원문 기사로 가는 새 창 링크, 아래 줄은 언론사·시각·받은 곳. 출처 하나가
+ * 실패하면 그 사실을 한 줄로 적습니다(나머지는 그대로).
  */
 export function NewsCard({ path, title = "주요 뉴스" }: { path: string | null; title?: string }) {
   const news = useApi<DetailNewsResponse>(path);
   const now = useMinuteClock();
-  const items = news.data?.news?.items ?? [];
+  const [page, setPage] = useState(1);
+  useEffect(() => setPage(1), [path]);
+  const all = news.data?.news?.items ?? [];
+  const shown = newsPage(all, page);
+  const items = shown.items;
   const failures = Object.entries(news.data?.news?.errors ?? {});
   let body: ReactNode;
   if (!news.data) {
     body = news.error ? <ErrorState message={news.error} onRetry={() => void news.reload()} /> : <Skeleton lines={5} label="뉴스를 불러오는 중" />;
   } else if (!news.data.available) {
     body = <p className="text-sm text-text-2">{news.data.message ?? "뉴스를 조회하지 않습니다."}</p>;
-  } else if (items.length === 0) {
+  } else if (all.length === 0) {
     body = <p className="text-sm text-text-2">{news.data.news?.error ?? "최근 뉴스를 찾지 못했습니다."}</p>;
   } else {
     body = (
@@ -171,8 +176,21 @@ export function NewsCard({ path, title = "주요 뉴스" }: { path: string | nul
     );
   }
   return (
-    <Card title={title} source="Yahoo Finance · 네이버 증권 · Google News(최근 7일 검색) — 제목을 누르면 원문 기사">
+    <Card title={title} source="Yahoo Finance · 네이버 증권 · 연합인포맥스 · Google News(최근 7일 검색) — 제목을 누르면 원문 기사">
       {body}
+      {shown.pages > 1 ? (
+        <nav aria-label="뉴스 쪽" className="mt-3 flex items-center justify-between gap-3 border-t border-border pt-3 text-sm">
+          <Button size="sm" variant="ghost" disabled={shown.page <= 1} onClick={() => setPage(shown.page - 1)}>
+            이전
+          </Button>
+          <span className="tabular-nums text-text-2" aria-live="polite">
+            {shown.page} / {shown.pages}쪽 · {all.length}건
+          </span>
+          <Button size="sm" variant="ghost" disabled={shown.page >= shown.pages} onClick={() => setPage(shown.page + 1)}>
+            다음
+          </Button>
+        </nav>
+      ) : null}
       {failures.length > 0 ? (
         <p className="mt-3 text-xs text-text-3">
           일부 출처를 받지 못했습니다 — {failures.map(([source, reason]) => `${source}: ${reason}`).join(" · ")}

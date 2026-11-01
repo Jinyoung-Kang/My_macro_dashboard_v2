@@ -21,6 +21,8 @@ export type DetailQuote = {
   /** 차트(GET /api/macro/ticker)에 쓸 Yahoo 심볼 — 국내는 코스피 '.KS'·코스닥 '.KQ'. */
   yahooSymbol: string;
   name: string | null;
+  /** 한글 이름(미국 주식·ETF — 네이버 증권 해외주식, 못 찾으면 없음). */
+  nameKo?: string | null;
   exchange: string | null;
   currency: string | null;
   kind: string | null;
@@ -38,7 +40,13 @@ export type DetailQuote = {
     website: string | null;
     employees: number | null;
     summary: string | null;
+    /** 한국어 기업 개요·업종(미국 주식·ETF — 네이버 증권 해외주식 기업 개요). 없으면 영문 summary·industry. */
+    summaryKo?: string | null;
+    industryKo?: string | null;
+    koSource?: { label: string; url: string } | null;
   } | null;
+  /** 한국어 개요를 받지 못한 사유(영문 개요는 그대로). */
+  profileKoError?: string | null;
   consensus: { targetMean: number | null; recommendation: string | null; analysts: number | null } | null;
   research: { title: string | null; broker: string | null; date: string | null; url: string }[];
   source: { label: string; url: string } | null;

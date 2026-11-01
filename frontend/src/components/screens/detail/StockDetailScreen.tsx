@@ -6,6 +6,7 @@ import { Banner, Card, PageHeader } from "@/components/ui";
 import { useApi } from "@/hooks/useApi";
 import {
   chartSymbol,
+  countryKo,
   currencyUnit,
   externalLinks,
   holderQuery,
@@ -14,6 +15,7 @@ import {
   marketStateText,
   priceDigits,
   recommendationText,
+  sectorKo,
   statText,
 } from "@/lib/detail";
 import { endpoints } from "@/lib/endpoints";
@@ -35,10 +37,12 @@ const HOLDERS_SHOWN = 10;
 export function StockDetailScreen({ market, code }: { market: DetailMarket; code: string }) {
   const quoteState = useApi<DetailQuoteResponse>(endpoints.detail.quote(market, code));
   const quote = quoteState.data?.quote ?? null;
-  const name = quote?.name ?? code;
+  const name = quote?.nameKo ?? quote?.name ?? code;
   const symbol = chartSymbol(market, code, quote);
   const digits = priceDigits(quote?.price, quote?.currency);
-  const sub = [code, quote?.exchange, kindText(quote?.kind), quote?.currency].filter(Boolean).join(" · ");
+  // 한글 이름이 있으면(미국 주식 — 네이버 해외주식) 제목은 한글, 영문 이름은 보조 줄에.
+  const sub = [quote?.nameKo && quote?.name ? quote.name : null, code, quote?.exchange, kindText(quote?.kind), quote?.currency]
+    .filter(Boolean).join(" · ");
   const holders = market === "us" && (quote?.kind ?? "").toUpperCase() === "EQUITY" ? holderQuery(quote?.name) : null;
 
   let placeholder;
@@ -102,21 +106,26 @@ export function StockDetailScreen({ market, code }: { market: DetailMarket; code
   );
 }
 
-/** 회사 개요 — 업종·나라·홈페이지·직원 수·사업 설명(Yahoo). 하나도 없으면 그리지 않습니다. */
+/**
+ * 회사 개요 — 섹터·업종·나라·직원 수·사업 설명·홈페이지. 한국어로(사용자 요청 2026-11-02): 개요·업종은 네이버 증권 해외주식 기업 개요(있으면 — 출처
+ * 링크), 섹터·나라는 한국어 이름 표. 한국어 개요가 없으면 Yahoo 영문 개요를 그렇다고 적고 보입니다. 하나도 없으면 그리지 않습니다.
+ */
 function ProfileCard({ quote }: { quote: DetailQuote }) {
   const profile = quote.profile;
   if (!profile) return null;
+  const summary = profile.summaryKo ?? profile.summary;
+  const english = !profile.summaryKo && Boolean(profile.summary);
   const rows = [
-    { label: "섹터", value: profile.sector },
-    { label: "업종", value: profile.industry },
-    { label: "나라", value: profile.country },
+    { label: "섹터", value: sectorKo(profile.sector) },
+    { label: "업종", value: profile.industryKo ?? profile.industry },
+    { label: "나라", value: countryKo(profile.country) },
     { label: "직원 수", value: profile.employees !== null ? `${formatNumber(profile.employees, 0)}명` : null },
   ].filter((row): row is { label: string; value: string } => Boolean(row.value));
   // 홈페이지는 http(s) 주소만 링크로(수집한 글을 그대로 href에 넣지 않음).
   const website = profile.website && /^https?:\/\//i.test(profile.website) ? profile.website : null;
-  if (rows.length === 0 && !profile.summary && !website) return null;
+  if (rows.length === 0 && !summary && !website) return null;
   return (
-    <Card title="회사 개요" source={quote.source?.label ?? undefined}>
+    <Card title="회사 개요" source={profile.koSource ? `${profile.koSource.label} · ${quote.source?.label ?? "Yahoo Finance"}` : quote.source?.label ?? undefined}>
       {rows.length > 0 ? (
         <dl className="flex flex-col">
           {rows.map((row) => (
@@ -127,7 +136,13 @@ function ProfileCard({ quote }: { quote: DetailQuote }) {
           ))}
         </dl>
       ) : null}
-      {profile.summary ? <p className="mt-3 line-clamp-6 text-sm leading-relaxed text-text-2">{profile.summary}</p> : null}
+      {summary ? <p className="mt-3 line-clamp-[10] whitespace-pre-line text-sm leading-relaxed text-text-2">{summary}</p> : null}
+      {english ? <p className="mt-1 text-xs text-text-3">한국어 개요가 없어 Yahoo 영문 원문을 보입니다.</p> : null}
+      {profile.koSource ? (
+        <p className="mt-2 text-xs">
+          <ExternalAnchor href={profile.koSource.url}>한국어 개요 출처 — {profile.koSource.label}</ExternalAnchor>
+        </p>
+      ) : null}
       {website ? (
         <p className="mt-3 text-sm">
           <ExternalAnchor href={website}>회사 홈페이지</ExternalAnchor>

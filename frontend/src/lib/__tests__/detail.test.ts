@@ -18,9 +18,12 @@ import {
   institutionNames,
   institutionValueRows,
   kindText,
+  countryKo,
   marketStateText,
   moneyText,
+  newsPage,
   newsTime,
+  sectorKo,
   parseCik,
   parseIndicatorKey,
   parseStockRoute,
@@ -149,6 +152,27 @@ describe("값 글", () => {
     expect(newsTime("2026-11-02T00:00:00Z", now)).toBe("2026-11-02 09:00");
     expect(newsTime(null, now)).toBe("시각 모름");
     expect(newsTime("어제", now)).toBe("시각 모름");
+  });
+});
+
+describe("한국어 이름·뉴스 쪽", () => {
+  it("섹터·나라는 한국어 이름, 모르면 받은 글 그대로, 없으면 null", () => {
+    expect(sectorKo("Technology")).toBe("기술");
+    expect(sectorKo("Consumer Cyclical")).toBe("경기소비재");
+    expect(sectorKo("Shell Companies")).toBe("Shell Companies");
+    expect(sectorKo(null)).toBeNull();
+    expect(countryKo("United States")).toBe("미국");
+    expect(countryKo("Luxembourg")).toBe("Luxembourg");
+    expect(countryKo(undefined)).toBeNull();
+  });
+
+  it("뉴스는 쪽당 5건 — 쪽 수는 올림, 범위 밖 쪽은 가까운 끝, 비면 1쪽", () => {
+    const items = Array.from({ length: 12 }, (_, at) => at);
+    expect(newsPage(items, 1)).toEqual({ items: [0, 1, 2, 3, 4], page: 1, pages: 3 });
+    expect(newsPage(items, 3)).toEqual({ items: [10, 11], page: 3, pages: 3 });
+    expect(newsPage(items, 9).page).toBe(3);
+    expect(newsPage(items, 0).page).toBe(1);
+    expect(newsPage([], 1)).toEqual({ items: [], page: 1, pages: 1 });
   });
 });
 

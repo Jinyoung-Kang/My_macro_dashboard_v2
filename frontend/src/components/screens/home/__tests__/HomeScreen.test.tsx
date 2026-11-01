@@ -188,7 +188,7 @@ describe("홈 — 값 있음(운영자)", () => {
     expect(api.apiPost).not.toHaveBeenCalled();
   });
 
-  it("시장 — 범주별 자산 행(링크 → /macro, 범주는 h3), 출처·장 상태·지연·시각 배지, 참고 시세, 저장본 수집 시각", async () => {
+  it("시장 — 범주별 자산 행(링크 → 지표 상세 /markets/i/<키>, 범주는 h3), 출처·장 상태·지연·시각 배지, 참고 시세, 저장본 수집 시각", async () => {
     reads = happyReads();
     renderHome(OWNER);
     await screen.findByText("원/달러 (USD/KRW)");
@@ -199,7 +199,7 @@ describe("홈 — 값 있음(운영자)", () => {
       .toEqual(["통화 및 환율", "미국 주가지수 및 선물", "아시아 주요 주가지수"]);
     expect(within(market).queryAllByRole("region")).toHaveLength(0);
     const usdkrw = marketRow("원/달러 (USD/KRW)");
-    expect(usdkrw.getAttribute("href")).toBe("/macro");
+    expect(usdkrw.getAttribute("href")).toBe("/markets/i/usdkrw");
     expect(within(usdkrw).getByText("1,322.28")).toBeTruthy();
     // 열린 장만 지연을 적습니다("개장 · 실시간", "개장 · 10분 지연" — /macro SessionBadge와 같은 규칙).
     expect(within(usdkrw).getByText("Yahoo Finance (KRW=X) · 개장 · 실시간 · 2026-10-26 16:51")).toBeTruthy();

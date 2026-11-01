@@ -122,9 +122,11 @@ describe("여닫기", () => {
     expect(screen.getByRole("dialog", { name: "통합 검색" })).toBeTruthy();
   });
 
-  it("열면 포커스가 검색어 입력칸으로 간다", () => {
-    openSearch();
+  it("열면 포커스가 검색어 입력칸으로 간다 — 대화상자는 위쪽에 고정(결과 수가 바뀌어도 입력칸이 움직이지 않게 — 가운데 정렬 아님)", () => {
+    const dialog = openSearch();
     expect(document.activeElement).toBe(input());
+    expect(dialog.className).toContain("sm:top-[12dvh]");
+    expect(dialog.className).not.toContain("top-1/2");
   });
 
   it("Esc로 닫고, 다시 열면 검색어가 비어 있다", () => {
