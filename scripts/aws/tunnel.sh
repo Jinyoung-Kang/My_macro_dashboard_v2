@@ -22,7 +22,7 @@ MAX_QUICK_FAILS=5
 SIGN_IN_RETRIES=6       # 끊긴 뒤 로그인 확인을 10초 간격으로 몇 번 더 할지(약 1분)
 
 die() {
-    echo "❌ $*" >&2
+    echo "✗ $*" >&2
     exit 1
 }
 

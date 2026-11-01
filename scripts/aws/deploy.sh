@@ -24,7 +24,7 @@ set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/../.."
 
 die() {
-    echo "❌ $*" >&2
+    echo "✗ $*" >&2
     exit 1
 }
 
@@ -32,7 +32,7 @@ die() {
 [ "$(basename "$PWD")" = "My_macro_dashboard_v2" ] ||
     die "폴더 이름이 My_macro_dashboard_v2가 아닙니다($(basename "$PWD")). compose 프로젝트·DB 볼륨 이름이 폴더 이름을 따릅니다."
 [ -f .env ] || die ".env가 없습니다 — docs/DEVELOPMENT.md '서버 .env 전달'을 보세요."
-[ -n "$(find .env -maxdepth 0 -perm 600)" ] || echo "⚠️  .env 권한이 600이 아닙니다(비밀값) — chmod 600 .env"
+[ -n "$(find .env -maxdepth 0 -perm 600)" ] || echo "경고: .env 권한이 600이 아닙니다(비밀값) — chmod 600 .env"
 
 # 서버 .env에 적지 않는 이름(.env.aws.example). 포트 네 줄이 들어오면 로컬 포트(3002…)로 뜨고, 나머지는
 # compose.aws.yml이 박아 둔 값이라 적어도 쓰이지 않아 헷갈리기만 합니다. 이름만 봅니다.
@@ -44,10 +44,10 @@ for name in DATABASE_PORT BACKEND_PORT COLLECTOR_PORT FRONTEND_PORT LOCAL_NO_LOG
 done
 [ -z "$unwanted" ] || die "서버 .env에 적지 않는 이름이 있습니다:$unwanted — 그 줄을 지우고 다시 실행하세요(.env.aws.example)."
 if grep -Eq '^[[:space:]]*COOKIE_SECURE=' .env; then
-    echo "ℹ️  .env에 COOKIE_SECURE가 있어 기본값(true) 대신 그 값을 씁니다(ADR 0019)."
+    echo "참고: .env에 COOKIE_SECURE가 있어 기본값(true) 대신 그 값을 씁니다(ADR 0019)."
 fi
 if grep -Eiq '^[[:space:]]*(export[[:space:]]+)?PAPER_ENABLED=[[:space:]]*["'"'"']?(false|0|off|no)' .env; then
-    echo "ℹ️  .env의 PAPER_ENABLED=false — 🧪 모의 매매 정기 작업이 꺼진 채 뜹니다."
+    echo "참고: .env의 PAPER_ENABLED=false — 모의 매매 정기 작업이 꺼진 채 뜹니다."
 fi
 
 # 대화형 셸에서 물려받은 umask(예: .env를 받을 때의 077)로 git이 파일을 0600으로 쓰면 컨테이너(root가 아닌 사용자)가 읽지 못합니다.
@@ -90,7 +90,7 @@ docker compose pull --quiet caddy postgres
 if ! bash scripts/aws/update-cloudfront-ranges.sh; then
     [ -s deploy/aws/trusted_proxies.caddy ] ||
         die "CloudFront 대역 파일을 만들지 못했습니다(deploy/aws/trusted_proxies.caddy) — scripts/aws/update-cloudfront-ranges.sh"
-    echo "⚠️  CloudFront 대역을 새로 받지 못해 지난 파일을 씁니다."
+    echo "경고: CloudFront 대역을 새로 받지 못해 지난 파일을 씁니다."
 fi
 
 # ---------------------------------------------------------------- 5) 기동·스키마
@@ -98,13 +98,13 @@ echo "기동합니다(건강해질 때까지 최대 5분)…"
 docker compose up -d --no-build --wait --wait-timeout 300
 
 # make migrate와 같은 반복. 수집기는 기동할 때만 스키마를 적용해, 스키마와 백엔드만 바뀐 배포에서는 새 스키마가
-# 빠집니다(QA-016). 10번 모두 실패하면 ⚠️와 0이 아닌 값(QA-118).
+# 빠집니다(QA-016). 10번 모두 실패하면 경고와 0이 아닌 값(QA-118).
 ok=
 for i in 1 2 3 4 5 6 7 8 9 10; do
     docker compose exec -T collector python -c "from app import store; store.init_schema()" >/dev/null 2>&1 && { ok=1; break; }
     sleep 3
 done
-[ -n "$ok" ] || { echo "⚠️  스키마를 적용하지 못했습니다 — docker compose logs collector를 보세요." >&2; exit 1; }
+[ -n "$ok" ] || { echo "경고: 스키마를 적용하지 못했습니다 — docker compose logs collector를 보세요." >&2; exit 1; }
 echo "  스키마: 최신 (db/migrations)"
 # Caddyfile은 파일 하나를 bind mount해, git이 새 파일로 바꿔도 돌던 컨테이너는 옛 내용을 계속 봅니다 — 늘 다시 만듭니다(앞단만 1초 안팎 끊김).
 docker compose up -d --no-deps --force-recreate --wait --wait-timeout 60 caddy
@@ -117,5 +117,5 @@ docker builder prune -f --filter until=168h >/dev/null
 echo ""
 docker compose ps --format 'table {{.Service}}\t{{.Status}}'
 echo ""
-echo "✅ 배포했습니다: $APP_VERSION — 공개 주소(CloudFront, 잠금화면) 또는 PC에서 bash scripts/aws/tunnel.sh → http://localhost:8201"
+echo "✓ 배포했습니다: $APP_VERSION — 공개 주소(CloudFront, 잠금화면) 또는 PC에서 bash scripts/aws/tunnel.sh → http://localhost:8201"
 echo "   디스크: $(df -P / | awk 'NR == 2 {print $5}') 사용"

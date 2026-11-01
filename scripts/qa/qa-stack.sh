@@ -71,7 +71,7 @@ FRONTEND_PORT=13002
 QA_PROXY_PORT=18890
 BACKUP_KEEP=5
 ENV
-  echo "✅ .env.qa 생성(새 비밀값). 비밀번호는 'bash scripts/qa/qa-stack.sh api …'가 파일에서 읽습니다."
+  echo "✓ .env.qa 생성(새 비밀값). 비밀번호는 'bash scripts/qa/qa-stack.sh api …'가 파일에서 읽습니다."
 }
 
 env_value() { grep -s "^$1=" .env.qa | head -1 | cut -d= -f2-; }
@@ -84,12 +84,12 @@ case "$cmd" in
       APP_UPDATED="$(TZ=Asia/Seoul git log -1 --format=%cd --date=format-local:%Y-%m-%d 2>/dev/null)" \
       docker compose up -d --build "$@"
     # 수집기는 기동할 때만 스키마를 적용합니다 — 백엔드만 바뀐 배포에서도 새 테이블이 생기게 지금 적용(QA-016).
-    # 10번 모두 실패하면 ⚠️를 찍고 0이 아닌 값으로 끝냅니다(QA-126, make migrate·README와 같은 모양 — QA-118).
+    # 10번 모두 실패하면 경고를 찍고 0이 아닌 값으로 끝냅니다(QA-126, make migrate·README와 같은 모양 — QA-118).
     ok=; for i in 1 2 3 4 5 6 7 8 9 10; do
       docker compose exec -T collector python -c "from app import store; store.init_schema()" >/dev/null 2>&1 && { ok=1; break; }
       sleep 3
     done
-    [ -n "$ok" ] || { echo "⚠️ 스키마를 적용하지 못했습니다 — 'bash scripts/qa/qa-stack.sh logs collector'를 보세요" >&2; false; }
+    [ -n "$ok" ] || { echo "경고: 스키마를 적용하지 못했습니다 — 'bash scripts/qa/qa-stack.sh logs collector'를 보세요" >&2; false; }
     docker compose ps
     ;;
   down)

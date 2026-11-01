@@ -22,7 +22,7 @@ source "$(dirname "${BASH_SOURCE[0]}")/../db-common.sh"   # DB_NAME · BACKUP_DI
 tag=my-macro-backup
 fail() {
     logger -t "$tag" -p user.err "백업 실패: $*" || true
-    echo "❌ 백업 실패: $*" >&2
+    echo "✗ 백업 실패: $*" >&2
     exit 1
 }
 
@@ -41,7 +41,7 @@ if ! output="$(make --no-print-directory backup 2>&1)"; then
     # 전체 출력은 소유자만 읽는 파일로. syslog에는 원인 줄 하나만 — compose의 .env 해석 오류는 값을 찍을 수 있어 빼고 적습니다.
     (umask 077 && printf '%s\n' "$output" > "$BACKUP_DIR/backup-s3-last-error.log") || true
     # compose 경고(level=warning … "X" variable is not set)는 .env 값의 조각을 담을 수 있어 원인 후보에서 뺍니다.
-    reason="$(printf '%s\n' "$output" | grep -v -e '^make: \*\*\*' -e '^❌' -e 'level=warning' -e '^WARN' | tail -n 1)" || true
+    reason="$(printf '%s\n' "$output" | grep -v -e '^make: \*\*\*' -e '^✗' -e 'level=warning' -e '^WARN' | tail -n 1)" || true
     case "$reason" in *.env*|*"failed to read"*|*"variable is not set"*) reason="(.env 해석 오류 — 값 생략)" ;; esac
     fail "make backup — ${reason:-원인 모름} (전체 출력: backups/backup-s3-last-error.log)"
 fi
@@ -55,4 +55,4 @@ if ! upload="$(aws s3 cp --only-show-errors "$latest" "s3://$bucket/$key" 2>&1)"
 fi
 size="$(du -h "$latest" | cut -f1)"
 logger -t "$tag" "백업을 올렸습니다: s3://$bucket/$key ($size)" || true
-echo "✅ s3://$bucket/$key ($size)"
+echo "✓ s3://$bucket/$key ($size)"

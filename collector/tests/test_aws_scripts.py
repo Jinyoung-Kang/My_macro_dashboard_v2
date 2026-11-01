@@ -55,7 +55,7 @@ esac
 """
 _FAKE_MAKE = """#!/usr/bin/env bash
 echo "make $*" >> "$FAKE_LOG"
-[ "${FAKE_MAKE_RC:-0}" = 0 ] || { echo "${FAKE_MAKE_MSG:-pg_dump: error: connection failed}" >&2; echo "❌ 백업 실패: pg_dump가 오류로 끝났습니다(위 메시지 참고)." >&2; echo "make: *** [Makefile:215: backup] Error 1" >&2; exit 2; }
+[ "${FAKE_MAKE_RC:-0}" = 0 ] || { echo "${FAKE_MAKE_MSG:-pg_dump: error: connection failed}" >&2; echo "✗ 백업 실패: pg_dump가 오류로 끝났습니다(위 메시지 참고)." >&2; echo "make: *** [Makefile:215: backup] Error 1" >&2; exit 2; }
 [ -n "${FAKE_MAKE_NOFILE:-}" ] || : > "backups/macrodash-$(date +%Y%m%d-%H%M%S).sql"
 [ -z "${FAKE_MAKE_TWO:-}" ] || : > "backups/macrodash-20991231-000000.sql"
 """
@@ -397,7 +397,7 @@ def test_backup_s3는_make_backup이_실패하면_올리지_않고_syslog에_원
     calls = _calls(fakes)
     assert not any(c.startswith("aws s3") for c in calls)
     errors = [c for c in calls if c.startswith("logger -t my-macro-backup -p user.err")]
-    assert len(errors) == 1 and "connection failed" in errors[0], "일반 문구(❌·make: ***)가 아니라 원인 줄"
+    assert len(errors) == 1 and "connection failed" in errors[0], "일반 문구(✗·make: ***)가 아니라 원인 줄"
     log = backup_root / "backups/backup-s3-last-error.log"
     assert stat.S_IMODE(log.stat().st_mode) == 0o600 and "connection failed" in log.read_text(encoding="utf-8")
 

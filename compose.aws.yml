@@ -9,9 +9,9 @@
 #   docker compose up -d && docker compose up -d --no-deps --force-recreate caddy   # 바뀐 Caddyfile(파일 하나 bind mount)
 #   ok=; for i in 1 2 3 4 5 6 7 8 9 10; do docker compose \
 #     exec -T collector python -c "from app import store; store.init_schema()" && { ok=1; break; }; sleep 3; done; \
-#     [ -n "$ok" ] || { echo "⚠️ 스키마를 적용하지 못했습니다 — 수집기 로그(logs collector)를 보세요" >&2; false; }   # 스키마 적용
+#     [ -n "$ok" ] || { echo "경고: 스키마를 적용하지 못했습니다 — 수집기 로그(logs collector)를 보세요" >&2; false; }   # 스키마 적용
 #   ↑ make migrate와 같음. 수집기는 기동할 때만 db/migrations를 적용해, 스키마와 백엔드만 바뀐 배포에서는 up -d가
-#     수집기를 다시 만들지 않아 새 스키마가 빠집니다(QA-016). 이미 적용한 파일은 건너뜀. 10번 모두 실패하면 ⚠️와
+#     수집기를 다시 만들지 않아 새 스키마가 빠집니다(QA-016). 이미 적용한 파일은 건너뜀. 10번 모두 실패하면 경고와
 #     0이 아닌 종료 코드(QA-118) — exit 대신 false라 대화형 셸에 붙여 넣어도 창이 닫히지 않음
 #
 # 사용자는 1명(운영자)입니다. 길은 둘(ADR 0019 결정 16, 2026-10-29):

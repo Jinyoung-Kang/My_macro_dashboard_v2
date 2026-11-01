@@ -20,7 +20,7 @@ set -euo pipefail
 source "$(dirname "${BASH_SOURCE[0]}")/db-common.sh"
 
 die() {
-    echo "❌ $*" >&2
+    echo "✗ $*" >&2
     exit 1
 }
 
@@ -35,7 +35,7 @@ dump_is_complete "$file" || die "끝까지 기록되지 않은 백업입니다(p
 
 if [ "$assume_yes" != "yes" ]; then
     [ -t 0 ] || die "확인 없이 복원하지 않습니다. 터미널에서 실행하거나 --yes를 붙이세요."
-    echo "⚠️  DB '$DB_NAME'의 지금 내용을 모두 지우고 $file 로 바꿉니다."
+    echo "경고: DB '$DB_NAME'의 지금 내용을 모두 지우고 $file 로 바꿉니다."
     echo "   (바꾸기 전에 지금 상태를 backups/pre-restore-….sql로 먼저 백업합니다)"
     read -r -p "계속할까요? [y/N] " answer
     [ "$answer" = "y" ] || die "취소했습니다. 아무것도 바꾸지 않았습니다."
@@ -62,7 +62,7 @@ restart_services() {
     if [ -n "$stopped" ]; then
         echo "3/3 멈췄던 서비스를 다시 켭니다:$stopped"
         # shellcheck disable=SC2086
-        docker compose start $stopped >/dev/null || echo "⚠️  서비스를 다시 켜지 못했습니다. make up으로 켜세요." >&2
+        docker compose start $stopped >/dev/null || echo "경고: 서비스를 다시 켜지 못했습니다. make up으로 켜세요." >&2
     fi
 }
 trap restart_services EXIT
@@ -96,5 +96,5 @@ if [ "${output##*$'\n'}" != "$committed_marker" ]; then
     die "복원에 실패해 전부 되돌렸습니다. DB는 복원 전과 같습니다(복원 전 백업: $safety)."
 fi
 
-echo "✅ 복원했습니다: $file"
+echo "✓ 복원했습니다: $file"
 echo "   되돌리려면: make restore F=$safety"

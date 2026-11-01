@@ -70,13 +70,13 @@ version: ## 지금 체크아웃된 코드의 브랜치·커밋과 원격 대비 
 	@bash scripts/version.sh
 
 up: ## 전체 스택 기동 (최초 빌드는 5~10분)
-	@test -f .env || (echo "⚠️  .env가 없습니다. 먼저 'make setup'을 실행하세요." && exit 1)
+	@test -f .env || (echo "경고: .env가 없습니다. 먼저 'make setup'을 실행하세요." && exit 1)
 	@# 포트가 겹치면 compose는 나머지를 다 띄운 뒤 백엔드만 실패시켜, 화면이 백엔드
 	@# 없이 멈춥니다. 누가 포트를 잡았는지 먼저 확인하고 겹치면 시작하지 않습니다.
 	@bash scripts/ports.sh check
 	@# 베이스 이미지(JRE·Node·Python·Alpine)의 보안 패치를 받으려면 빌드할 때 새로 받아야 합니다 — 받아 둔 이미지를
 	@# 계속 쓰면 패치가 들어가지 않습니다. 오프라인이면 받아 둔 이미지로 빌드합니다.
-	@$(COMPOSE) build --pull || { echo "ℹ️  베이스 이미지를 새로 받지 못해(오프라인?) 받아 둔 이미지로 빌드합니다."; $(COMPOSE) build; }
+	@$(COMPOSE) build --pull || { echo "참고: 베이스 이미지를 새로 받지 못해(오프라인?) 받아 둔 이미지로 빌드합니다."; $(COMPOSE) build; }
 	$(COMPOSE) up -d
 	@$(MAKE) --no-print-directory migrate
 	@echo ""
@@ -99,7 +99,7 @@ migrate: ## 대기 중인 스키마 파일(db/migrations)을 지금 적용 (make
 	@for i in 1 2 3 4 5 6 7 8 9 10; do \
 		$(COMPOSE) exec -T collector python -c "from app import store; store.init_schema()" >/dev/null 2>&1 && \
 		{ echo "  스키마: 최신 (db/migrations)"; exit 0; }; sleep 3; done; \
-		echo "⚠️  스키마를 적용하지 못했습니다. 'make logs S=collector'를 보세요." ; exit 1
+		echo "경고: 스키마를 적용하지 못했습니다. 'make logs S=collector'를 보세요." ; exit 1
 
 down: ## 정지 (데이터는 보존)
 	$(COMPOSE) down
@@ -145,7 +145,7 @@ doctor: ## 어디가 막혔는지 한 번에 진단 (데이터가 안 보일 때
 # ------------------------------------------------------------------ 테스트
 test: test-collector test-backend test-frontend test-gate ## 전체 테스트
 
-# ⚠️ 테스트는 운영 DB(macrodash)를 쓰지 않습니다.
+# 주의: 테스트는 운영 DB(macrodash)를 쓰지 않습니다.
 #
 # 백엔드 통합 테스트는 매 테스트 시작 시 snapshots를 비웁니다. 접속 기본값이
 # 운영 DB였을 때는 `make test-backend` 한 번으로 수집해 둔 데이터가 전부
@@ -166,10 +166,10 @@ db-test: ## 테스트 전용 DB 준비 (없으면 만들고 스키마 적용)
 		$(COMPOSE) exec -T postgres psql -q -v ON_ERROR_STOP=1 -U $${DATABASE_USER:-macro} \
 			-d $(TEST_DB_NAME) -f /dev/stdin < "$$f" >/dev/null || exit 1; \
 	done
-	@echo "✅ 테스트 DB 준비: $(TEST_DB_NAME) (운영 DB는 건드리지 않습니다)"
+	@echo "✓ 테스트 DB 준비: $(TEST_DB_NAME) (운영 DB는 건드리지 않습니다)"
 
 test-collector: db-test ## 수집기 린트(ruff) + 테스트 (PostgreSQL 필요)
-	@test -x $(VENV_PY) || echo "ℹ️  collector/.venv가 없어 $(PY)로 실행합니다. 'No module named pytest'가 나오면 docs/LOCAL_SETUP.md의 가상환경 절을 보세요."
+	@test -x $(VENV_PY) || echo "참고: collector/.venv가 없어 $(PY)로 실행합니다. 'No module named pytest'가 나오면 docs/LOCAL_SETUP.md의 가상환경 절을 보세요."
 	cd collector && $(if $(filter $(VENV_PY),$(PY)),.venv/bin/python,python3) -m ruff check app tests
 	cd collector && TEST_DATABASE_URL=$${TEST_DATABASE_URL:-postgresql://$${DATABASE_USER:-macro}:$${DATABASE_PASSWORD:-macro}@localhost:$(DATABASE_PORT)/$(TEST_DB_NAME)} \
 		$(if $(filter $(VENV_PY),$(PY)),.venv/bin/python,python3) -m pytest tests -q
@@ -196,7 +196,7 @@ dev-collector dev-backend: export COLLECTOR_API_TOKEN := $(COLLECTOR_API_TOKEN)
 dev-collector: export COLLECTOR_ALLOW_NO_TOKEN := $(COLLECTOR_ALLOW_NO_TOKEN)
 
 dev-collector: ## 수집기 개발 서버 (자동 리로드 · collector/.venv 필요)
-	@test -x $(VENV_PY) || (echo "⚠️  collector/.venv가 없습니다. 먼저:" && \
+	@test -x $(VENV_PY) || (echo "경고: collector/.venv가 없습니다. 먼저:" && \
 		echo "    python3 -m venv collector/.venv && collector/.venv/bin/pip install -r collector/requirements-dev.txt -c collector/constraints.txt" && exit 1)
 	@# DB 포트는 .env의 DATABASE_PORT(make infra가 여는 포트)를 따릅니다. 예전에는 5432로 박혀 있었습니다.
 	cd collector && DATABASE_URL=postgresql://$${DATABASE_USER:-macro}:$${DATABASE_PASSWORD:-macro}@localhost:$(DATABASE_PORT)/$${DATABASE_NAME:-macrodash} \
@@ -221,7 +221,7 @@ restore: ## 백업으로 DB 전체 교체 (make restore F=backups/xxx.sql · 교
 	@test -n "$(F)" || (echo "사용법: make restore F=backups/파일.sql" && exit 1)
 	@bash scripts/db-restore.sh "$(F)"
 
-reset: ## ⚠️ 전체 삭제 후 재기동 (수집 이력까지 사라집니다)
+reset: ## 주의: 전체 삭제 후 재기동 (수집 이력까지 사라집니다)
 	@printf "정말 모든 데이터를 지울까요? 누적 수급 이력은 복구할 수 없습니다 [y/N] " && read ans && [ "$$ans" = "y" ]
 	$(COMPOSE) down -v
 	$(COMPOSE) up -d --build

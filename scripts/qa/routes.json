@@ -1,5 +1,5 @@
 {
-  "_comment": "백엔드 API 경로와 파라미터 종류(docs/API.md 기준). auth-probe.sh·fuzz-api.py가 읽습니다. kind: int|str|date|list|enum|bool|path. public = 로그인 없이 열린 경로(AccessPolicy의 PUBLIC과 같음), routes = 그 밖의 모든 경로 — 둘을 합치면 백엔드 경로 전체이고 RouteInventoryTest가 대조합니다. mutating = 상태를 바꿈, fuzz: false = 퍼저가 부르지 않음(계정·사용자·알림 규칙을 바꾸거나 세션을 끊음, 🧪 모의 매매의 Claude 호출(비용 — 결정·프레임 제안·주간 복기)·실험 설정·프레임 판·메모·장부 초기화).",
+  "_comment": "백엔드 API 경로와 파라미터 종류(docs/API.md 기준). auth-probe.sh·fuzz-api.py가 읽습니다. kind: int|str|date|list|enum|bool|path. public = 로그인 없이 열린 경로(AccessPolicy의 PUBLIC과 같음), routes = 그 밖의 모든 경로 — 둘을 합치면 백엔드 경로 전체이고 RouteInventoryTest가 대조합니다. mutating = 상태를 바꿈, fuzz: false = 퍼저가 부르지 않음(계정·사용자·알림 규칙을 바꾸거나 세션을 끊음, 모의 매매의 Claude 호출(비용 — 결정·프레임 제안·주간 복기)·실험 설정·프레임 판·메모·장부 초기화).",
   "public": [
     "GET /api/health",
     "GET /api/auth/session",

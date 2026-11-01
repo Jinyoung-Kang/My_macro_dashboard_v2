@@ -72,12 +72,12 @@ dump_to() {
     umask 077
     if ! run_pg_dump > "$partial"; then
         rm -f "$partial"
-        echo "❌ 백업 실패: pg_dump가 오류로 끝났습니다(위 메시지 참고). 파일을 남기지 않았습니다." >&2
+        echo "✗ 백업 실패: pg_dump가 오류로 끝났습니다(위 메시지 참고). 파일을 남기지 않았습니다." >&2
         return 1
     fi
     if ! dump_is_complete "$partial"; then
         rm -f "$partial"
-        echo "❌ 백업 실패: 덤프가 끝까지 기록되지 않았습니다. 파일을 남기지 않았습니다." >&2
+        echo "✗ 백업 실패: 덤프가 끝까지 기록되지 않았습니다. 파일을 남기지 않았습니다." >&2
         return 1
     fi
     mv "$partial" "$file"

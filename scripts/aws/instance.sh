@@ -20,7 +20,7 @@ REGION="${AWS_REGION:-ap-northeast-2}"
 WINDOW="매일 21:55~08:00 KST(토요일은 10:00까지)"
 
 die() {
-    echo "❌ $*" >&2
+    echo "✗ $*" >&2
     exit 1
 }
 
@@ -66,7 +66,7 @@ case "$action" in
         aws ec2 start-instances --region "$REGION" --instance-ids "$instance" >/dev/null
         echo "켜는 중입니다…"
         aws ec2 wait instance-running --region "$REGION" --instance-ids "$instance"
-        echo "✅ 켜졌습니다. 컨테이너가 뜨는 데 1~2분 걸립니다 — 그다음 bash scripts/aws/tunnel.sh"
+        echo "✓ 켜졌습니다. 컨테이너가 뜨는 데 1~2분 걸립니다 — 그다음 bash scripts/aws/tunnel.sh"
         echo "   다음 정지 일정(일~금 08:00, 토 10:00 KST)에 꺼집니다. 그 전에 끄려면 bash scripts/aws/instance.sh stop"
         ;;
     stop)
@@ -79,6 +79,6 @@ case "$action" in
         aws ec2 stop-instances --region "$REGION" --instance-ids "$instance" >/dev/null
         echo "끄는 중입니다…"
         aws ec2 wait instance-stopped --region "$REGION" --instance-ids "$instance"
-        echo "✅ 꺼졌습니다. 다음 켜기 일정은 매일 21:55 KST입니다."
+        echo "✓ 꺼졌습니다. 다음 켜기 일정은 매일 21:55 KST입니다."
         ;;
 esac

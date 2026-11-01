@@ -14,11 +14,11 @@ scripts/aws/deploy.sh를 가리키고(그 스크립트의 스키마 적용은 te
 손으로 배포할 때의 명령이 남습니다.
 
 QA-118: 그 반복문(`… && break; sleep 3; done`)은 10번 모두 실패해도 마지막 명령이 `sleep`이라 종료 코드 0으로
-끝났습니다. 문서는 'make migrate와 같다'고 적지만 make migrate는 ⚠️를 찍고 exit 1입니다. SSM이나 `&&`로 이은
+끝났습니다. 문서는 'make migrate와 같다'고 적지만 make migrate는 경고를 찍고 exit 1입니다. SSM이나 `&&`로 이은
 스크립트로 배포하면 스키마가 빠진 배포가 성공으로 보입니다. 문서의 명령을 그대로 셸에 넘겨(docker는 가짜 함수)
 실패 경로를 확인합니다.
 
-QA-126: QA 스택(`scripts/qa/qa-stack.sh up`)의 같은 반복문이 그대로 남아, 10번 모두 실패해도 ⚠️ 없이 0으로
+QA-126: QA 스택(`scripts/qa/qa-stack.sh up`)의 같은 반복문이 그대로 남아, 10번 모두 실패해도 경고 없이 0으로
 끝났습니다. 스키마가 빠진 QA 스택이 정상으로 보여 그 위의 시험 결과가 틀어집니다. up 블록의 스키마 적용 부분을
 떼어 같은 방법으로 실패·성공 경로를 확인합니다.
 """
@@ -118,7 +118,7 @@ def test_QA118_스키마_적용이_10번_모두_실패하면_알리고_0이_아�
     result = _run_schema(shell, docker_rc=1)
     assert "calls=10" in result.stdout, f"10번 다시 시도해야 합니다 — {result.stdout!r} {result.stderr!r}"
     assert result.returncode != 0, f"compose.aws.yml({shell}): 10번 모두 실패했는데 종료 코드 0 — 배포가 성공으로 보입니다"
-    assert "스키마" in result.stderr, "실패를 사람에게도 알려야 합니다(make migrate의 ⚠️처럼)"
+    assert "스키마" in result.stderr, "실패를 사람에게도 알려야 합니다(make migrate의 경고처럼)"
 
 
 @pytest.mark.parametrize("shell", _SHELLS)
@@ -149,7 +149,7 @@ def test_QA126_QA_스택_up의_스키마_적용이_10번_모두_실패하면_알
     result = _run_qa_stack_schema(shell, docker_rc=1)
     assert "calls=10" in result.stdout, f"10번 다시 시도해야 합니다 — {result.stdout!r} {result.stderr!r}"
     assert result.returncode != 0, f"qa-stack.sh({shell}): 10번 모두 실패했는데 종료 코드 0 — 스키마 없는 QA 스택이 정상으로 보입니다"
-    assert "스키마" in result.stderr, "실패를 사람에게도 알려야 합니다(make migrate의 ⚠️처럼)"
+    assert "스키마" in result.stderr, "실패를 사람에게도 알려야 합니다(make migrate의 경고처럼)"
 
 
 @pytest.mark.parametrize("shell", _SHELLS)

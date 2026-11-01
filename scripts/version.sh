@@ -48,14 +48,14 @@ done < <(git for-each-ref --sort=-committerdate refs/remotes/origin \
 
 if [ "$brief" = "1" ]; then
   if [ "$ahead" != "0" ] && [ "$behind" = "0" ]; then
-    echo "  ℹ️  로컬에만 있는 커밋 ${ahead}개 — 'git push origin $branch' (원격에는 아직 없습니다)"
+    echo "  참고: 로컬에만 있는 커밋 ${ahead}개 — 'git push origin $branch' (원격에는 아직 없습니다)"
     echo ""
   fi
   if [ "$behind" != "0" ]; then
-    echo "  ❗ 원격 $branch 에 새 커밋 ${behind}개가 있습니다 — 'make update' 후 'make up'"
+    echo "  주의: 원격 $branch 에 새 커밋 ${behind}개가 있습니다 — 'make update' 후 'make up'"
     echo ""
   elif [ -n "$others" ]; then
-    echo "  ❗ 다른 브랜치에 이 브랜치에 없는 작업이 있습니다: $others"
+    echo "  주의: 다른 브랜치에 이 브랜치에 없는 작업이 있습니다: $others"
     echo "     ('make update'가 자세히 알려 줍니다)"
     echo ""
   fi
