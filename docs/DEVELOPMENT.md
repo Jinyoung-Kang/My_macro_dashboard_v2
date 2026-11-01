@@ -82,9 +82,9 @@ cd collector && TEST_DATABASE_URL=postgresql://macro:macro@localhost:5434/macrod
 | `RouteInventoryTest` | 컨트롤러를 옮기다 경로가 빠지는 것, API.md와 실제 경로가 어긋나는 것 |
 | `test_equities.py` | 모르는 종목 이름에 엉뚱한 티커가 붙는 것 |
 | `marketCalendar.check.mts` | 공휴일과 거래소 휴장일을 혼동하는 것 |
-| `useVisibleWake.test.ts`·`useShownOnce.test.ts`·`paperLive.test.tsx` | 아무도 보지 않는 탭(숨긴 탭·백그라운드로 연 탭)이 장중 시세를 읽어 수집을 깨우는 것(QA-154·156), 장중 카드 시험이 돌린 시각에 따라 갈리는 것(QA-155), 탭 복귀 읽기가 요청한 새 수집을 카드가 다음 간격까지 읽지 않는 것(QA-157·159 — 간격이 있을 때와 끄기), 실패한 한 번 더 읽기가 다음 응답의 새 수집 요청을 소모하는 것(QA-162) |
+| `useVisibleWake.test.ts`·`useShownOnce.test.ts`·`paperLive.test.tsx` | 아무도 보지 않는 탭(숨긴 탭·백그라운드로 연 탭)이 장중 시세를 읽어 수집을 깨우는 것(QA-154·156), 장중 카드 시험이 돌린 시각에 따라 갈리는 것(QA-155), 탭 복귀 읽기가 요청한 새 수집을 카드가 다음 간격까지 읽지 않는 것(QA-157·159 — 간격이 있을 때와 끄기), 실패한 한 번 더 읽기가 다음 응답의 새 수집 요청을 소모하는 것(QA-162·163 — 같은 문구로 연달아 실패해도) |
 | `paperOverview.test.ts` | 마감 값이 아닌 잠정 줄(마감 + 15분 전 관측을 옮긴 줄·지난 값 보유가 든 줄)이 이전 값 표시 없이 보이는 것(QA-158·160), 한국 관측치 늦음(수집을 놓침)이 순자산 줄 단계에서 사라지는 것(QA-161) |
-| `useApi.test.ts` | 자동 갱신 한 번 실패로 화면이 비는 것, 수동 새로고침이 세션 확인까지 다시 돌려 화면 상태가 초기화되는 것, 늦게 온 이전 응답이 화면을 되돌리는 것 |
+| `useApi.test.ts` | 자동 갱신 한 번 실패로 화면이 비는 것, 수동 새로고침이 세션 확인까지 다시 돌려 화면 상태가 초기화되는 것, 늦게 온 이전 응답이 화면을 되돌리는 것, 같은 문구로 연달아 실패하면 실패를 한 번씩 받지 못하는 것(`failedAt`, QA-163) |
 | `ArchitectureRulesTest` | 계산 패키지가 스프링·JSON을 알게 되는 것, 컨트롤러가 저장소·수집기를 직접 부르는 것, 패키지 사이 순환(기반 패키지 포함, [ADR 0001](adr/0001-feature-modules-and-dependency-rules.md)) |
 | `test_db_scripts.py` | 백업·복원이 실패를 성공으로 알리는 것, 복원이 반만 되는 것([ADR 0003](adr/0003-backup-and-restore.md)) |
 | `test_aws_scripts.py` | AWS 서버 배포가 한꺼번에 빌드하거나 실패를 성공으로 알리는 것, 서버 `.env`에 로컬 포트가 섞이는 것, 지난 백업을 다시 올리는 것, 터널이 꺼진 서버에 끝없이 다시 붙는 것([ADR 0019](adr/0019-aws-personal-deployment.md)) |
