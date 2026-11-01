@@ -100,8 +100,11 @@ public class RegimeLogService {
         this.recordHourKst = recordHourKst;
     }
 
-    /** 정기 실행. 실패해도 다음 주기에 다시 시도합니다(같은 날 두 번 기록되지는 않음). */
-    @Scheduled(initialDelayString = "${dashboard.scheduler.regime-initial-delay-ms:60000}",
+    /**
+     * 정기 실행. 실패해도 다음 주기에 다시 시도합니다(같은 날 두 번 기록되지는 않음). 첫 실행은 기동 15분 뒤입니다 — 겨울 밤 창은 23:20에
+     * 켜져, 기동 직후 실행이 수집기의 기동 수집 전 저장본(낮 창 값)으로 기록하므로(ADR 0019 결정 14, 2026-11-02).
+     */
+    @Scheduled(initialDelayString = "${dashboard.scheduler.regime-initial-delay-ms:900000}",
             fixedDelayString = "${dashboard.scheduler.regime-interval-ms:1800000}")
     public void scheduledRecord() {
         try {
