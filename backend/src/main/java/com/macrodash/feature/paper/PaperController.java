@@ -73,6 +73,11 @@ public class PaperController {
         return query.status(market);
     }
 
+    @GetMapping("/names")
+    public Map<String, Object> names(@RequestParam(required = false) String market) {
+        return query.names(market);
+    }
+
     @GetMapping("/books/{code}/positions")
     public Map<String, Object> positions(@PathVariable String code) {
         return query.positions(code);

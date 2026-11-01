@@ -427,6 +427,22 @@ public class PaperQueryService {
     }
 
     /**
+     * GET /api/paper/names?market= — 종목 이름 표(사용자 결정 2026-11-02 — 한국 화면에 종목 코드 대신 기업명, {@link PaperMarketData#krNames}) →
+     * {@code {available, market, names:{코드: 이름}, count, source}}. 미국은 티커가 곧 표시 이름이라 빈 표입니다. 저장본은 조용히 읽습니다.
+     */
+    public Map<String, Object> names(String market) {
+        PaperMarket requested = markets.requested(market);
+        Map<String, String> names = requested == KrPaperMarket.INSTANCE ? reader.quietly(marketData::krNames) : Map.of();
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("available", true);
+        out.put("market", requested.code());
+        out.put("names", names == null ? Map.of() : names);
+        out.put("count", names == null ? 0 : names.size());
+        out.put("source", requested == KrPaperMarket.INSTANCE ? "토스 종목 상태(paper.kr.quotes) · 금융위 유니버스(kr_paper_universe)" : null);
+        return out;
+    }
+
+    /**
      * 그 시장의 상태 — 초기화 판정·관측치·출발일·초기 현금·작업 기록은 그 시장 것, 호출 사용량(상한 공유)은 시장과 상관없이 하나. 미국 밖 시장은
      * {@link #overview(PaperMarket)}처럼 머리 칸({@code market}·{@code currency}·{@code dormantReason})을 싣고, 설정 판·기본값으로 읽은 키는 그 조회
      * 실행이 읽은 설정 행의 그 시장 키(한국 {@code kr.*} — 설정 화면의 한국 읽기와 같은 목록, {@link PaperSettingsService#krFallbacks}), 미국 수집

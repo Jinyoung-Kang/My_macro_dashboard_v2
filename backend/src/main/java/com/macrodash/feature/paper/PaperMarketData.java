@@ -277,6 +277,33 @@ public class PaperMarketData {
     }
 
     /**
+     * 한국 종목 이름(사용자 결정 2026-11-02 — 한국 화면에 종목 코드 대신 기업명) — 관측치 저장본({@code paper.kr.quotes})의 종목마다 토스 이름을 먼저,
+     * 없으면 저장된 가장 최근 금융위 유니버스({@code kr_paper_universe}) 행의 이름. 모르는 종목은 결과에 없습니다(짐작하지 않음). 화면 표시용이라
+     * 장부·패킷은 쓰지 않습니다. 부르는 쪽이 {@link StoreReader#quietly} 안에서 부릅니다(수집을 깨우지 않게).
+     */
+    Map<String, String> krNames() {
+        Map<String, String> out = new TreeMap<>();
+        LocalDate base = repository.latestObservationDate(Datasets.OBS_KR_PAPER_UNIVERSE);
+        List<JsonNode> rows = base == null ? null : repository.readObservations(Datasets.OBS_KR_PAPER_UNIVERSE, base, null, null);
+        if (rows != null) {
+            for (JsonNode row : rows) {
+                putName(out, Json.asText(row, "code"), Json.asText(row, "name"));
+            }
+        }
+        store.read(Datasets.SNAP_KR_PAPER_QUOTES, Datasets.MAX_AGE_DAILY, KrPaperMarket.INSTANCE.quotesTask())
+                .map(snapshot -> Json.child(snapshot.payload(), "codes"))
+                .filter(JsonNode::isObject)
+                .ifPresent(codes -> codes.properties().forEach(e -> putName(out, e.getKey(), Json.asText(e.getValue(), "name"))));
+        return out;
+    }
+
+    private static void putName(Map<String, String> out, String code, String name) {
+        if (code != null && !code.isBlank() && name != null && !name.isBlank()) {
+            out.put(code.strip(), name.strip());
+        }
+    }
+
+    /**
      * 한국 종목들의 수급 기록({@code kr_paper_flow}) — {@code from}(포함) 이후 날짜, 종목 → 기록(최신 날짜 먼저, 각 payload에 {@code obsDate}).
      * 뒤쪽 날짜를 자르지 않습니다 — 기준 세션 뒤 날짜·결정 시각 뒤에 받은 기록을 빼는 것은 부르는 쪽(한국 규칙 계좌의 입력 읽기)이 하고 그 수를
      * 결정 행에 남깁니다. 수집기 테이블을 읽기만 합니다.

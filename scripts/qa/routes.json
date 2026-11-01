@@ -577,6 +577,10 @@
     },
     {
       "m": "GET",
+      "p": "/api/paper/names"
+    },
+    {
+      "m": "GET",
       "p": "/api/paper/books/{code}/positions",
       "path": {
         "code": "str"

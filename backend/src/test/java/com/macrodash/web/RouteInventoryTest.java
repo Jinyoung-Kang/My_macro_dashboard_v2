@@ -90,7 +90,8 @@ class RouteInventoryTest {
             // 검색 상세 화면
             "GET /api/detail/quote", "GET /api/detail/news", "GET /api/detail/symbols", "POST /api/detail/summary",
             // 모의 매매(운영자 전용)
-            "GET /api/paper/overview", "GET /api/paper/live", "GET /api/paper/status", "GET /api/paper/books/{code}/positions",
+            "GET /api/paper/overview", "GET /api/paper/live", "GET /api/paper/status", "GET /api/paper/names",
+            "GET /api/paper/books/{code}/positions",
             "GET /api/paper/books/{code}/orders", "GET /api/paper/books/{code}/fills",
             "GET /api/paper/books/{code}/nav", "GET /api/paper/books/{code}/execution", "POST /api/paper/init",
             "POST /api/paper/books/{code}/status",
