@@ -6,9 +6,9 @@ tests/test_task_coalescing.py
 병렬로 읽고, 오래된 것마다 수집을 요청해 같은 태스크가 네 번 시작됐습니다.
 
     05:02:02 수집 시작 (cot_history): 1개 작업   ← 같은 초에 4번
-    05:02:26 ✅ fred_series 80.03s   ← 스케줄러
-    05:03:07 ✅ fred_series 36.30s   ← 요청 1
-    05:03:08 ✅ fred_series 50.43s   ← 요청 2
+    05:02:26 ✓ fred_series 80.03s   ← 스케줄러
+    05:03:07 ✓ fred_series 36.30s   ← 요청 1
+    05:03:08 ✓ fred_series 50.43s   ← 요청 2
 
 FRED·SEC는 호출 한도가 있고, 같은 행을 동시에 쓰는 것도 안전하지 않습니다.
 """
@@ -221,7 +221,7 @@ def test_QA117_좀비가_도는_동안의_호출도_실행_기록을_한_줄_남
     기다립니다. 좀비가 도는 동안의 호출은 '이전 수집이 아직 진행 중'을 돌려주기만 하고 기록을 남기지 않아, 화면이
     15분을 기다린 뒤 '아직 진행 중… 끝나면 아래 표에 결과가 나타납니다'라고 틀리게 안내했습니다(좀비의 늦은 결과는
     기록되지 않으므로 표에 새 행이 생기지 않음). 그 15분 동안 다른 태스크의 '다시 실행'도 막혔습니다.
-    곧바로 ⚠️(기존 저장본 유지) 한 줄을 남겨 화면 폴링이 바로 끝나고 사실대로 안내되게 합니다.
+    곧바로 empty(기존 저장본 유지) 한 줄을 남겨 화면 폴링이 바로 끝나고 사실대로 안내되게 합니다.
     """
     monkeypatch.setitem(tasks.TASK_DEADLINE_SECONDS, "fast", 0.2)
     recorded: list[dict] = []
@@ -244,7 +244,7 @@ def test_QA117_좀비가_도는_동안의_호출도_실행_기록을_한_줄_남
     assert len(recorded) == 2, f"좀비가 도는 동안의 호출이 실행 기록을 {len(recorded) - 1}건 남겼습니다(1건이어야 함)"
     row = recorded[-1]
     assert row["run_id"] == 2 and row["task"] == "zombie_task" and row["speed"] == "fast"
-    assert row["status"] == "empty", "✅로 적으면 아무것도 받지 않았는데 정상으로 보입니다"
+    assert row["status"] == "empty", "ok로 적으면 아무것도 받지 않았는데 정상으로 보입니다"
     assert row["duration_ms"] == 0
     assert row["detail"] == detail
     assert row["started_at"] is not None

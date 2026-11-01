@@ -12,11 +12,11 @@ app/tasks/ — 수집 작업 정의(패키지).
   slow   (1시간): fred_series · fed_liquidity · krx_futures · sector_history · fx_history ·
                   volatility_history · cot_history · daum_futures_trend · fsc_prices · fsc_etf_prices
   weekly (12시간): sec_13f · kr_holidays · dart_fundamentals
-  session (5분) : 🧪 paper_watch_us(계좌2 장중 확인 감시 — 확인 시각 앞뒤에만 외부 호출)
+  session (5분) : paper_watch_us(계좌2 장중 확인 감시 — 확인 시각 앞뒤에만 외부 호출)
 
 [규칙]
 - 수집이 예외 없이 끝났지만 쓸 데이터가 없으면 EmptyResult로 **실패 집계**
-  합니다. 이것을 성공으로 보고하면 "✅ 0/10 수집" 같은 모순된 로그가 남고
+  합니다. 이것을 성공으로 보고하면 "✓ 0/10 수집" 같은 모순된 로그가 남고
   운영자가 장애를 알아채지 못합니다.
 - 빈 결과로 **기존 저장본을 덮어쓰지 않습니다.** 네트워크 일시 장애로 어제
   받아 둔 데이터를 날리면 안 됩니다.

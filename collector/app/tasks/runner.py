@@ -31,9 +31,9 @@ logger = logging.getLogger(__name__)
 #   05:02:02 수집 시작 (cot_history): 1개 작업
 #   05:02:02 수집 시작 (cot_history): 1개 작업
 #
-#   05:02:26 ✅ fred_series 80.03s   ← 스케줄러(slow)
-#   05:03:07 ✅ fred_series 36.30s   ← 요청 1
-#   05:03:08 ✅ fred_series 50.43s   ← 요청 2  (셋이 동시에 FRED를 두드림)
+#   05:02:26 ✓ fred_series 80.03s   ← 스케줄러(slow)
+#   05:03:07 ✓ fred_series 36.30s   ← 요청 1
+#   05:03:08 ✓ fred_series 50.43s   ← 요청 2  (셋이 동시에 FRED를 두드림)
 #
 # 외부 API 호출이 그대로 몇 배가 되고(FRED·SEC는 호출 한도가 있습니다),
 # 같은 행을 동시에 쓰게 됩니다.
@@ -112,13 +112,13 @@ def _still_running(task: Task, run_id: int | None) -> tuple[bool, str]:
     기다리게 하면 스케줄러의 그룹 실행이 좀비 수명만큼 길어집니다. 실패가 아닙니다(앞선 실행이 이미 '시간 초과'로
     기록됐고, 그 작업이 끝나면 저장본은 그 작업이 씁니다) — 합류 대기 한도를 넘긴 경우와 같은 이유로 성공으로 둡니다.
 
-    실행 기록은 한 줄 남깁니다 — ⚠️ empty(이번 호출은 아무것도 받지 않음, 기존 저장본 유지), 소요 0. 상태 화면의
+    실행 기록은 한 줄 남깁니다 — empty(이번 호출은 아무것도 받지 않음, 기존 저장본 유지), 소요 0. 상태 화면의
     '다시 실행'은 시작만 요청하고 실행 기록에 새 행이 생길 때까지 기다리는데, 남기지 않으면 15분을 기다린 뒤
-    '끝나면 아래 표에 결과가 나타납니다'라고 틀리게 안내했습니다(좀비의 늦은 결과는 로그에만 남음). ✅로 적지 않는
+    '끝나면 아래 표에 결과가 나타납니다'라고 틀리게 안내했습니다(좀비의 늦은 결과는 로그에만 남음). ✓로 적지 않는
     것은 아무것도 받지 않았는데 정상으로 보이기 때문입니다(QA-117).
     """
     logger.info("%s: 시간 상한을 넘긴 이전 실행이 아직 끝나지 않아 새로 시작하지 않습니다.", task.name)
-    # 앞머리(store.STILL_RUNNING_PREFIX)로 태스크별 요약이 이 행을 건너뜁니다 — 요약은 앞선 ❌ 시간 초과를 계속 보입니다(QA-139).
+    # 앞머리(store.STILL_RUNNING_PREFIX)로 태스크별 요약이 이 행을 건너뜁니다 — 요약은 앞선 ✗ 시간 초과를 계속 보입니다(QA-139).
     detail = (f"{store.STILL_RUNNING_PREFIX} — 시간 상한을 넘긴 앞선 실행이 끝나지 않아 새로 시작하지 않았습니다"
               "(그 실행이 끝나면 결과가 저장본에 반영됩니다)")
     store.record_task_run(
@@ -152,7 +152,7 @@ def _wait_for_inflight(task: Task, entry: "_InFlight") -> tuple[bool, str]:
 
 EMPTY_PREFIX = "수집 결과 없음: "
 
-# 출처가 거부해 아무것도 받지 못한 실행의 detail 앞머리(상태는 error — ❌). '수집 결과 없음'(⚠️, 소스가 새 데이터를 안 줌)과
+# 출처가 거부해 아무것도 받지 못한 실행의 detail 앞머리(상태는 error). '수집 결과 없음'(empty, 소스가 새 데이터를 안 줌)과
 # 가릅니다: 거부는 기다리거나 조치(키·UA·요청 빈도)가 필요한 일이고, 저장본은 그대로 남습니다(http.SourceRejected).
 REJECTED_PREFIX = f"{http.REJECTED_MARK}: "
 
@@ -192,12 +192,12 @@ def _run_status(ok_count: int, failures: list[str]) -> str:
 # '연결은 받고 응답하지 않는' 상태에서는 2초짜리 fast 태스크가 3~4분씩 돌았습니다(QA-011). 상한을 넘기면
 # 실패로 기록하고 다음 태스크로 넘어갑니다. 작업 스레드는 요청 timeout들이 끝날 때까지 남아 뒤늦게
 # 끝나는데, 그 결과는 로그로만 남깁니다(저장본은 그 작업이 알아서 씁니다 — 진짜 데이터입니다). 그동안 같은
-# 태스크는 새로 시작하지 않고 ⚠️ '이전 수집이 아직 진행 중' 한 줄만 기록합니다(QA-079·QA-117). 상한에는
+# 태스크는 새로 시작하지 않고 empty '이전 수집이 아직 진행 중' 한 줄만 기록합니다(QA-079·QA-117). 상한에는
 # 대기열에서 워커를 기다린 시간도 들어가므로, 아직 시작도 못 한 작업은 취소하고 '워커 대기 초과'로 따로
 # 적습니다 — 외부 장애가 아니라 풀이 꽉 찬 것입니다.
 # weekly(13F)는 한 태스크가 10분 넘게 걸리는 것이 정상이라 길게 둡니다.
 # live: 정기 수집이 없고 화면이 볼 때만 백엔드가 부르는 장중 평가(paper_live_*) — 보유 종목 수십 개라 1분이면 넉넉합니다.
-# session: 🧪 계좌2 장중 확인 감시(paper_watch_us, 5분마다) — 감시·보유·대기 종목 1분봉 배치 한 번이라 1분이면 넉넉하고, 주기(300초)보다 짧아야
+# session: 계좌2 장중 확인 감시(paper_watch_us, 5분마다) — 감시·보유·대기 종목 1분봉 배치 한 번이라 1분이면 넉넉하고, 주기(300초)보다 짧아야
 # 다음 회차와 겹치지 않습니다.
 TASK_DEADLINE_SECONDS: dict[str, float] = {"fast": 120.0, "slow": 600.0, "weekly": 1800.0, "live": 60.0, "session": 60.0}
 _task_threads = ThreadPoolExecutor(max_workers=8, thread_name_prefix="task")
@@ -259,7 +259,7 @@ def _execute_task(task: Task, run_id: int | None, entry: "_InFlight | None" = No
         logger.debug(traceback.format_exc())
 
     elapsed = time.perf_counter() - started
-    icon = {"ok": "✅", "empty": "⚠️", "error": "❌"}[status]
+    icon = {"ok": "✓", "empty": "!", "error": "✗"}[status]
     (logger.info if ok else logger.warning)(
         "  %s %-22s %6.2fs  %s", icon, task.name, elapsed, detail
     )
@@ -289,9 +289,9 @@ def _log_late_finish(name: str, started: float, done) -> None:
     elapsed = time.perf_counter() - started
     exc = done.exception()
     if exc is None:
-        logger.warning("  ⏱️ %-22s %6.1fs  뒤늦게 끝남(이미 시간 초과로 기록): %s", name, elapsed, done.result())
+        logger.warning("  ! %-22s %6.1fs  뒤늦게 끝남(이미 시간 초과로 기록): %s", name, elapsed, done.result())
     else:
-        logger.warning("  ⏱️ %-22s %6.1fs  뒤늦게 실패(이미 시간 초과로 기록): %s: %s", name, elapsed, type(exc).__name__, exc)
+        logger.warning("  ! %-22s %6.1fs  뒤늦게 실패(이미 시간 초과로 기록): %s: %s", name, elapsed, type(exc).__name__, exc)
 
 
 def run_group(group: str | None = None, task_name: str | None = None) -> dict:
