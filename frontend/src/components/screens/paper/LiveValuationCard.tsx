@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { type Column, DataTable } from "@/components/patterns";
-import { Banner, Button, Card, inputClasses } from "@/components/ui";
+import { Banner, Button, Card, NativeSelect } from "@/components/ui";
 import { useApi } from "@/hooks/useApi";
 import { useShownOnce } from "@/hooks/useShownOnce";
 import { useVisibleWake } from "@/hooks/useVisibleWake";
@@ -112,10 +112,10 @@ export function LiveValuationCard({
         <div className="flex flex-wrap items-center gap-2">
           <label className="flex items-center gap-1.5 text-xs text-muted">
             <span className="whitespace-nowrap">새로고침</span>
-            <select
+            <NativeSelect
               value={String(minutes)}
               onChange={(event) => setMinutes(Number(event.target.value))}
-              className={`${inputClasses("sm")}`}
+              inputSize="sm"
               aria-label="장중 평가 새로고침 간격"
             >
               {LIVE_REFRESH_OPTIONS.map((option) => (
@@ -123,7 +123,7 @@ export function LiveValuationCard({
                   {option.label}
                 </option>
               ))}
-            </select>
+            </NativeSelect>
           </label>
           <Button onClick={() => void reload()} disabled={live.loading}>
             {live.loading ? "읽는 중…" : "지금 새로 읽기"}

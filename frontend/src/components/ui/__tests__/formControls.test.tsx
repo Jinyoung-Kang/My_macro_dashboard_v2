@@ -97,7 +97,7 @@ describe("화면 소스", () => {
     expect(offenders).toEqual([]);
   });
 
-  it("날 <select>는 공용 조각(ui/index.tsx의 Select·NativeSelect) 안에만 — 남은 한 곳은 모의매매 장중 카드(명세 D1, 다음 단계)", () => {
+  it("날 <select>는 공용 조각(ui/index.tsx의 Select·NativeSelect) 안에만", () => {
     const root = resolve(__dirname, "../../..");
     const files: string[] = [];
     const walk = (dir: string) => {
@@ -112,6 +112,6 @@ describe("화면 소스", () => {
     };
     walk(root);
     const raw = files.filter((path) => /<select\b/.test(readFileSync(path, "utf8"))).map((path) => relative(root, path)).sort();
-    expect(raw).toEqual(["components/screens/paper/LiveValuationCard.tsx", "components/ui/index.tsx"]);
+    expect(raw).toEqual(["components/ui/index.tsx"]);
   });
 });

@@ -129,6 +129,8 @@ describe("정규장", () => {
     const { unmount } = render(<LiveValuationCard />);
     await settle();
     const select = screen.getByLabelText("장중 평가 새로고침 간격") as HTMLSelectElement;
+    // 공용 고르기 상자(NativeSelect — 브라우저 화살표 대신 공용 칸 모양과 화살표 아이콘).
+    expect(select.className).toContain("appearance-none");
     expect(Array.from(select.options).map((option) => option.textContent)).toEqual(
       ["끄기", "1분", "2분", "5분", "10분", "15분", "30분", "1시간", "3시간"]);
 
