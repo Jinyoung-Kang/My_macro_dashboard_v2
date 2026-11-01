@@ -82,7 +82,7 @@ cd collector && TEST_DATABASE_URL=postgresql://macro:macro@localhost:5434/macrod
 | `RouteInventoryTest` | 컨트롤러를 옮기다 경로가 빠지는 것, API.md와 실제 경로가 어긋나는 것 |
 | `test_equities.py` | 모르는 종목 이름에 엉뚱한 티커가 붙는 것 |
 | `marketCalendar.check.mts` | 공휴일과 거래소 휴장일을 혼동하는 것 |
-| `useVisibleWake.test.ts`·`useShownOnce.test.ts`·`paperLive.test.tsx` | 아무도 보지 않는 탭(숨긴 탭·백그라운드로 연 탭)이 장중 시세를 읽어 수집을 깨우는 것(QA-154·156), 장중 카드 시험이 돌린 시각에 따라 갈리는 것(QA-155) |
+| `useVisibleWake.test.ts`·`useShownOnce.test.ts`·`paperLive.test.tsx` | 아무도 보지 않는 탭(숨긴 탭·백그라운드로 연 탭)이 장중 시세를 읽어 수집을 깨우는 것(QA-154·156), 장중 카드 시험이 돌린 시각에 따라 갈리는 것(QA-155), 탭 복귀 읽기가 요청한 새 수집을 카드가 다음 간격까지 읽지 않는 것(QA-157) |
 | `useApi.test.ts` | 자동 갱신 한 번 실패로 화면이 비는 것, 수동 새로고침이 세션 확인까지 다시 돌려 화면 상태가 초기화되는 것, 늦게 온 이전 응답이 화면을 되돌리는 것 |
 | `ArchitectureRulesTest` | 계산 패키지가 스프링·JSON을 알게 되는 것, 컨트롤러가 저장소·수집기를 직접 부르는 것, 패키지 사이 순환(기반 패키지 포함, [ADR 0001](adr/0001-feature-modules-and-dependency-rules.md)) |
 | `test_db_scripts.py` | 백업·복원이 실패를 성공으로 알리는 것, 복원이 반만 되는 것([ADR 0003](adr/0003-backup-and-restore.md)) |

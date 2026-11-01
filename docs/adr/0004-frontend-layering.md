@@ -76,4 +76,6 @@
 - `components/ui/classes.ts`(와 `components/auth/classes.ts`): 단추·입력칸·고르기 조각(기간 알약·세그먼트·밑줄 탭·거르기 칩)·고른 행 막대의 클래스 문자열을
   React 없는 순수 모듈로 둡니다 — `"use client"`인 `ui/index.tsx`의 함수는 서버 컴포넌트(`/privacy`)에서 부를 수 없어서입니다. `@/components/ui`가 다시 내보냅니다.
 - 차트 문지르기: 상태는 훅 `hooks/useChartScrub.ts`, 표시 값은 순수 함수 `lib/lineChart.ts`의 `scrubIndex`·`scrubModel`, 그리기는 `LineChart variant="hero"`와
-  `Hero scrub`(차트는 여전히 `@/components/charts`에서만). 서버·DB 글의 그림 문자 정리(`withoutLeadingIcon`)와 표시 모델(`holdingActionView`·`taskStatusView` 등)도 `lib/`입니다.
+  `Hero scrub`(차트는 여전히 `@/components/charts`에서만 — 예외 하나: 차트가 없는 화면이 계열 색 상수만 쓸 때는 recharts를 가져오지 않는 차트 틀
+  `@/components/charts/frame`에서 `SERIES_COLORS`를 가져와도 됩니다. 모의매매 계좌 색 표 `components/screens/paper/bookColors.ts`가 그렇습니다 — 배럴에서
+  가져오면 홈 '/'가 계좌 행 색 고리 때문에 recharts 조각을 실었습니다, 장중 명세 2026-10-31 §4-1). 서버·DB 글의 그림 문자 정리(`withoutLeadingIcon`)와 표시 모델(`holdingActionView`·`taskStatusView` 등)도 `lib/`입니다.
