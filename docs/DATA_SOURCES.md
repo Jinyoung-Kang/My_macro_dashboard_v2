@@ -464,6 +464,20 @@ EQUITY_MAP = {
 
 ---
 
+## 6-1. 검색 상세 화면의 실시간 조회 (저장하지 않음)
+
+검색 상세 화면(종목 `/s/…`·지표 `/markets/i/…`·기관 `/institutions/<CIK>` — [명세](specs/2026-11-01-search-detail.md))은 수집 태스크가 아니라 화면이 볼 때만
+수집기 `/live/quote`·`/live/news`·`/live/symbols`를 부릅니다(`collector/app/services/detail.py`). 테이블·스냅샷을 만들지 않고 뉴스 제목도 남기지 않습니다.
+
+| 출처 | 받는 것 | 캐시 | 한계 |
+|---|---|---|---|
+| Yahoo(yfinance `Ticker.info`·`Search`) | 미국·해외 종목·지수·환율·선물의 시세·핵심 지표·개요·컨센서스, 종목 뉴스, 종목 찾기 | 시세 5분·뉴스 15분·찾기 1시간 | 비공식 내부 호출·종목마다 지연. 429면 공용 거부 래치(`http.YAHOO_HOST`)가 닫혀 다른 Yahoo 수집과 함께 쉼 |
+| 네이버 증권 모바일 API(`m.stock.naver.com/api/stock/{code}/basic`·`/integration`·`/api/news/stock/{code}`, 자동완성 `ac.stock.naver.com/ac`) | 국내 종목 시세·지표(네이버가 적은 글 그대로)·컨센서스·증권사 리포트·종목 뉴스, 종목 찾기 | 같음 | 비공식 — 응답 형식이 예고 없이 바뀔 수 있음. 뉴스 시각은 KST(`yyyyMMddHHmm`)라 UTC로 바꿔 냄 |
+| 구글 뉴스 RSS 검색(`news.google.com/rss/search`, `when:7d`) | 검색어(회사·지표·기관 이름) 뉴스 — 한글이면 한국어 판 | 15분 | 이름 검색이라 관련 없는 기사가 섞일 수 있음. 제목 끝의 ' - 언론사'를 떼어 언론사 칸으로 |
+
+- robots.txt가 막는 출처(Yahoo·구글 뉴스 검색 등)도 씁니다 — 개인·비상업 프로젝트라 사용자가 허락했습니다([decisions.md](decisions.md) 2026-11-01). 출처 링크와
+  받은 시각을 함께 내고, 실패는 출처별로(`errors`) 보이며, 실패한 응답은 1분만 캐시합니다. 모의매매 사건 헤드라인(`news_headlines`)의 출처 규칙은 그대로입니다.
+
 ## 7. 국내 공공 API
 
 키 두 개로 네 서비스를 씁니다. 공공데이터포털은 **키 하나에 서비스별 활용신청**이라,

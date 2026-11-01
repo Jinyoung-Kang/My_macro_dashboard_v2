@@ -130,6 +130,7 @@ pandas DataFrame을 JSON 문자열로 저장하면 **dtype을 따로 실어야**
 feature/<기능>/  기능 하나의 컨트롤러(HTTP 경계) + 서비스(저장본을 읽어 analytics에 넘기고
                  화면용 응답으로 조립). auth · macro · institution · insight · positioning ·
                  publicdata · status · snapshot(전체 원본 텍스트) · ai · toss · alert ·
+                 detail(검색 상세 화면 — 수집기 실시간 조회 중계·AI 요약, 저장하지 않음) ·
                  paper(모의 매매, 운영자 전용)
 analytics/       스프링도 DB도 모릅니다. 입력은 숫자와 날짜, 출력도 숫자입니다.
 read/            읽기 정책(StoreReader) — 저장본이 오래됐으면 읽기 모드에 따라 수집을 요청하고 다시 읽음
@@ -231,14 +232,17 @@ config/          설정 값(AppProperties) · 정기 작업 켜기 — 여러 �
 ```
 app/(dashboard)/layout.tsx  세션·읽지 않은 알림 수를 한 번 읽어 셸에 넘김(셸은 다시 읽지 않음)
 components/shell/           왼쪽 내비(1024px 이상)·하단 탭(그 아래)·상단바(통합 검색 ⌘K·알림 벨)·하위 메뉴 줄 — 메뉴 표는 lib/nav.ts 하나
-components/screens/<탭>/    화면 조립(홈·모의매매 — 미국·한국은 같은 조립에 시장 인자) — 구역마다 따로 읽어 한 구역의 실패가 다른 구역을 비우지 않음
+components/screens/<탭>/    화면 조립(홈·모의매매 — 미국·한국은 같은 조립에 시장 인자, 검색 상세 — 종목·지표·기관) — 구역마다 따로 읽어 한 구역의 실패가 다른 구역을 비우지 않음
 components/patterns/        자산 행·히어로·통계 타일·표·배지 — 빈값 "—"·추정·이전 값·출처 표시를 여기서 강제
 components/charts/ · ui/    Recharts 래퍼(축 규칙) · 기본 조각(Radix 대화상자·토스트)
 lib/                        표시 규칙(서식·메뉴·검색·테마·화면 모델) — React를 모르는 순수 함수
 ```
 
-- **정보 구조**: 다섯 탭 + 더보기. 1단계는 옛 화면의 경로를 그대로 탭에 묶기만 하고(시장 → `/macro` 등), 새 경로(`/markets/…`)와
-  지표·종목 상세 화면은 4단계입니다. 모의매매만 `/paper/us/*`로 옮겼고(옛 `/paper`는 리디렉션) 한국 책은 `/paper/kr/*`(같은 일곱 탭, 2단계 F2)입니다.
+- **정보 구조**: 다섯 탭 + 더보기. 1단계는 옛 화면의 경로를 그대로 탭에 묶기만 하고(시장 → `/macro` 등), 옛 화면을 `/markets/…`로 옮기는 일은
+  4단계입니다. 모의매매만 `/paper/us/*`로 옮겼고(옛 `/paper`는 리디렉션) 한국 책은 `/paper/kr/*`(같은 일곱 탭, 2단계 F2)입니다. 검색 상세 화면
+  (지표 `/markets/i/<키>`·종목 `/s/<시장>/<코드>`·기관 `/institutions/<CIK>`)은 2026-11-01에 열었습니다 — 시세·뉴스·종목 찾기는 백엔드
+  `feature.detail`이 수집기 `/live/quote`·`/live/news`·`/live/symbols`(Yahoo·네이버·구글 뉴스, 짧은 캐시)를 중계하고 저장하지 않으며, 차트·13F는
+  기존 경로를 씁니다([명세](specs/2026-11-01-search-detail.md)).
 - **모의매매의 시장 인자**: 화면은 시장(`US`·`KR`) 하나를 받아 통화·주당 가격 자릿수·거래일 이름은 `lib/paperMarket.ts`, API 경로는
   `endpoints.paper.market(m)`(한국은 `?market=KR`)에서 고릅니다. 한국에만 있는 칸(잠정·확정과 확정 조정, 묶인 평가의 출처, 수집 상태, 노출 맞춘
   참고선)은 `lib/paperKr.ts`가 화면 모델로 바꿉니다. 미국 응답은 글자 그대로(고정본 `paper-overview-us.json`·`paper-status-us.json` — 장부 응답이고, 개요 경로가 덧붙이는 지금 값
