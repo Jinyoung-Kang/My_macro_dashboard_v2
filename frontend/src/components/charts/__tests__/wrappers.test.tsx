@@ -134,6 +134,22 @@ describe("MultiLineSeries — 격자 없는 여러 선", () => {
     expect(container.querySelector("svg.recharts-surface")?.getAttribute("aria-label")).toBe("종가와 미결제약정");
   });
 
+  // QA-164: 표시선 이름을 늘 선 오른쪽(insideTopLeft)에 적어, 마지막 날짜의 선(순자산 곡선의 마지막 프레임 경계)은 이름이 그림 오른쪽에서 잘림.
+  it.fails("표시선 이름은 선 오른쪽, 마지막 날짜의 선은 왼쪽(그림 끝에서 잘리지 않게)", () => {
+    observeAs(600, 300);
+    const { container } = render(
+      <MultiLineSeries
+        data={ROWS}
+        series={[{ key: "a", name: "종가", color: SERIES_COLORS.blue }]}
+        markers={[{ x: "2026-10-01", label: "프레임 v1" }, { x: "2026-10-03", label: "프레임 v5" }]}
+      />,
+    );
+    const anchorOf = (text: string) =>
+      [...container.querySelectorAll("text.recharts-label")].find((node) => node.textContent === text)?.getAttribute("text-anchor");
+    expect(anchorOf("프레임 v1")).toBe("start");
+    expect(anchorOf("프레임 v5")).toBe("end");
+  });
+
   it("계열 하나면 범례 없음, 고정 domain이면 그 범위 안의 둥근 간격(0~100 → 25)", () => {
     observeAs(600, 300);
     const { container } = render(
