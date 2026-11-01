@@ -115,7 +115,8 @@ export interface BookStale {
  * - 옛 응답(지금 값 없음)·지금 값의 장부 단계(`LEDGER`): 값이 그 장부 상태라 사유 그대로.
  * - 장중 추정(`LIVE`·`LIVE_LAST`): 장중가가 없어 장부 관측가로 평가한 종목이 있고 장부 사유가 있을 때만 — '장중가 없는 n종목은 장부 관측가 · …'.
  *   모든 보유를 장중가로 평가했으면 배지 없음(그 값은 늦은 관측으로 평가한 값이 아님).
- * - 확정 줄(`FINAL`): 그 거래일 마감 값이라 장부 관측과 무관 — 배지 없음.
+ * - 확정 줄(`FINAL`): 그 거래일 마감 값이라 장부 관측과 무관 — 배지 없음. 다만 한국 관측치 늦음(달력 기준 — 다음 세션 수집을 놓침, 지금 값이 앞 세션 줄에
+ *   머묾)은 잠정·확정 줄 단계에서도 남깁니다(QA-161). 미국 늦음은 수집 + 3시간이라 주말·아침에 늘 서서 줄 값과 무관합니다.
  * - 잠정 줄(`PROVISIONAL`): 마감 값이 아닐 수 있어(QA-158) 장부 사유를 그대로 답니다 — 지난 값으로 평가한 보유가 있거나(`staleCount`), 마지막 관측이 그 줄의
  *   마감(`current.atKst`) + 15분보다 이르면(그날 줄을 쓸 수 있는 관측이 오지 않아 서버가 마지막 관측 상태를 잠정 줄로 옮긴 것 — `PaperLedgerService.settleNav`,
  *   QA-160). 둘 다 아니면(마감 + 15분부터의 관측으로 쓴 줄) 배지 없음 — 미국 관측치 저장본 늦음(수집 3시간 뒤부터)은 그 값과 무관합니다. 시각을 모르면 사유 그대로.
@@ -134,19 +135,18 @@ export function bookStale(book: PaperOverviewBook, context: BookRowContext = {},
     ? place === "hero" && view.stageLabel !== null
     : stage === "LEDGER" && started;
   const observed = book.lastObservedAtKst;
-  const ledger = [
-    bookCard(book, [], market).staleWarning,
-    context.quotes?.stale === true && observed
-      ? observedShown ? "관측치 저장본이 늦음" : `관측치 저장본이 늦음 · 마지막 관측 ${formatKst(observed)}`
-      : null,
-  ].filter((reason): reason is string => reason !== null);
+  const lateQuotes = context.quotes?.stale === true && observed
+    ? observedShown ? "관측치 저장본이 늦음" : `관측치 저장본이 늦음 · 마지막 관측 ${formatKst(observed)}`
+    : null;
+  const ledger = [bookCard(book, [], market).staleWarning, lateQuotes].filter((reason): reason is string => reason !== null);
   let reasons = ledger;
   if (view.from === "current" && book.current) {
     if (isLiveStage(stage)) {
       const fallback = book.current.positionCount - book.current.livePriced;
       reasons = fallback > 0 && ledger.length > 0 ? [`장중가 없는 ${fallback}종목은 장부 관측가`, ...ledger] : [];
     } else if (stage === "FINAL" || (stage === "PROVISIONAL" && !provisionalFromLedger(book))) {
-      reasons = [];
+      // 한국 관측치 늦음은 달력 기준(다음 수집 예정 + 2시간 5분)이라 서면 다음 세션 수집을 놓친 것 — 지금 값이 앞 세션 줄에 머물므로 남깁니다(QA-161).
+      reasons = market === "KR" && lateQuotes ? [lateQuotes] : [];
     }
   }
   return { isStale: reasons.length > 0, reason: reasons.length > 0 ? reasons.join(" · ") : null };
