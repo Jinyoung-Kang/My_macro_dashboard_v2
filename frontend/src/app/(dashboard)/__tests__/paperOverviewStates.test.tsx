@@ -271,7 +271,7 @@ describe("지금 값 — 계좌 행(장중 명세 §4-1)", () => {
     expect(within(claude).queryByText(/출발 전|추정/)).toBeNull();
 
     expect(screen.getByText(/^순자산·수익률\(출발 이후\)은 지금 값 기준\(행마다 단계 표기\) — 장중 추정은 표시 전용 · 행을 누르면/)).toBeTruthy();
-    expect(screen.queryByText(/장부의 마지막 관측치 기준\(/)).toBeNull();
+    expect(screen.queryByText(/^순자산·수익률\(출발 이후\)은 장부의 마지막 관측치 기준/)).toBeNull();
   });
 
   it("옛 응답(current 없음)은 장부 표시 그대로 — 부제는 '장부의 마지막 관측치 기준(시각 KST)', 기준 한 줄·추정 배지 없음", async () => {
@@ -282,6 +282,55 @@ describe("지금 값 — 계좌 행(장중 명세 §4-1)", () => {
     expect(within(rules).queryByText("추정")).toBeNull();
     expect(within(rules).queryByText(/^장중 추정|^장부 /)).toBeNull();
     expect(screen.getByText(/^순자산·수익률\(출발 이후\)은 장부의 마지막 관측치 기준\(2026-10-24 05:15 KST\) · 행을 누르면/)).toBeTruthy();
+  });
+});
+
+describe("지금 값 — 계좌 비교(한 표 한 기준)", () => {
+  const rowHeaders = () => within(screen.getByRole("table", { name: "계좌 비교" })).getAllByRole("rowheader").map((th) => th.textContent);
+
+  it("장중이 아닌 비중립 계좌가 있으면 표 전체 장부 칸 + 사유 — 기준 줄·오늘 변화(장부 하루)·통계 기준·두 수익률 설명", async () => {
+    reads["/api/paper/overview"] = () => Promise.resolve(CURRENT_OVERVIEW);
+    render(<PaperPage />);
+
+    await screen.findByRole("table", { name: "계좌 비교" });
+    expect(screen.getByText("장중 추정이 아닌 계좌가 있어 표 전체를 장부 기준으로 둡니다 — 60/40 계좌(장부 23:15)")).toBeTruthy();
+    expect(rowHeaders().slice(0, 1)).toEqual(["기준"]);
+    expect(rowHeaders()).toEqual(expect.arrayContaining(["오늘 변화", "통계 기준"]));
+    expect(comparisonCell("기준", "규칙 계좌").textContent).toBe("장부 10-24 05:15");
+    expect(comparisonCell("기준", "Claude 계좌").textContent).toBe("출발 전");
+    // 장부 칸 — 순자산·수익률은 장부(BookSummary), 오늘 변화는 ledgerDay(지금 값과 섞지 않음)
+    expect(comparisonCell("순자산", "규칙 계좌").textContent).toBe("101,200.00 달러");
+    expect(comparisonCell("오늘 변화", "규칙 계좌").textContent).toBe("+0.30%10-29 확정 대비");
+    expect(comparisonCell("통계 기준", "규칙 계좌").textContent).toBe("마감 10-29 확정");
+    expect(screen.getByText(/^'수익률\(출발 이후\)'은 맨 위 '기준' 줄의 값이고, 통계 일곱 칸은 거래일 마감 순자산 줄/)).toBeTruthy();
+    expect(screen.getByText(/순자산·수익률·오늘 변화·노출은 장부의 마지막 관측치 기준\(맨 위 기준 줄\)/)).toBeTruthy();
+  });
+
+  it("판정 대상이 모두 장중 추정이면 지금 값 칸 — 사유 없음, 순자산·오늘 변화는 지금 값", async () => {
+    reads["/api/paper/overview"] = () => Promise.resolve({
+      ...CURRENT_OVERVIEW,
+      books: CURRENT_BOOKS.map((entry) => (entry.code === "bench_mix"
+        ? { ...entry, current: current({ nav: 100500, returnPct: 0.5, dayChangePct: 0.05 }) } : entry)),
+    });
+    render(<PaperPage />);
+
+    await screen.findByRole("table", { name: "계좌 비교" });
+    expect(screen.queryByText(/표 전체를 장부 기준으로 둡니다/)).toBeNull();
+    expect(comparisonCell("기준", "규칙 계좌").textContent).toBe("장중 추정 23:58");
+    expect(comparisonCell("순자산", "규칙 계좌").textContent).toBe("101,234.56 달러");
+    expect(comparisonCell("수익률(출발 이후)", "규칙 계좌").textContent).toBe("+1.23%");
+    expect(comparisonCell("오늘 변화", "규칙 계좌").textContent).toBe("+0.42%10-29 잠정 대비");
+    expect(screen.getByText(/순자산·수익률·오늘 변화·노출은 맨 위 기준 줄\(장중 추정은 표시 전용\)/)).toBeTruthy();
+  });
+
+  it("옛 응답(current 없음)은 예전 표 — 기준·오늘 변화·통계 기준 줄과 두 수익률 설명이 없다", async () => {
+    reads["/api/paper/overview"] = () => Promise.resolve(OVERVIEW);
+    render(<PaperPage />);
+
+    await screen.findByRole("table", { name: "계좌 비교" });
+    expect(rowHeaders()).not.toEqual(expect.arrayContaining(["기준"]));
+    expect(rowHeaders().some((label) => label === "오늘 변화" || label === "하루 변화" || label === "통계 기준")).toBe(false);
+    expect(screen.queryByText(/^'수익률\(출발 이후\)'은 맨 위/)).toBeNull();
   });
 });
 

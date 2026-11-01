@@ -3,7 +3,8 @@
  *
  *  - 계좌 행: 이름 · 종류 · 상태 · 소개, 순자산(달러), 출발 이후 수익률(모르면 null — 칩 생략), 이전 값·사후 체결 대기 배지,
  *    지금 값(current)이 있으면 그 값과 값의 기준 한 줄(단계 표기·덧붙임·하루 변화)·추정 배지 — 옛 응답은 예전 모양 그대로
- *  - 비교 표: 예전 카드의 칸이 전부 항목 줄로(값은 bookCard 표시 글 그대로, 모르면 "—"), 비교 기준은 따로 한 줄
+ *  - 비교 표: 예전 카드의 칸이 전부 항목 줄로(값은 bookCard 표시 글 그대로, 모르면 "—"), 비교 기준은 따로 한 줄. 지금 값이 있으면
+ *    한 표 한 기준 — 맨 위 기준 줄·'오늘 변화'(장부 칸이고 지금 세션이 아니면 '하루 변화')·통계 기준 줄, 칸 값은 지금 값 또는 장부(섞지 않음)
  *  - 기간: 저장된 기록보다 긴 기간 탭은 없고 "전체"는 늘 있다, 자를 때 날짜와 값 배열을 같은 자리에서 자른다,
  *    프레임 경계 세로선은 고른 기간 안의 날짜만
  *  - S = 100 같은 구간(계좌2): 계좌2 출발일 S부터 계좌1·계좌2·SPY 계좌를 각자 S 순자산으로 나눠 100에 — S 전 구간·출발 전은 그리지 않고,
@@ -136,6 +137,73 @@ describe("계좌 행 — 지금 값(current, 장중 명세 §4-1)", () => {
     expect("caption" in row).toBe(false);
     expect("isEstimated" in row).toBe(false);
     expect(row.value).toBe(100123.45);
+  });
+});
+
+describe("계좌 비교 표 — 지금 값(한 표 한 기준, 장중 명세 §4)", () => {
+  const REGULAR = { phase: "REGULAR" as const, sessionDate: "2026-10-30" };
+  const SUNDAY = { phase: "CLOSED" as const, sessionDate: "2026-10-30" };
+  const cur = (over: Partial<PaperCurrentValue> = {}): PaperCurrentValue => ({
+    nav: 101234.56, returnPct: 1.23, exposurePct: 98.7, dayChangePct: 0.42, previousTradingDate: "2026-10-29", previousNavFinal: false,
+    basis: "LIVE", stage: "LIVE", tradingDate: "2026-10-30", atKst: "2026-10-30 23:58 KST", isEstimated: true, livePriced: 2,
+    positionCount: 2, pendingOrders: 0, neutral: false, note: null, ...over,
+  });
+  const ledgerDay = { tradingDate: "2026-10-30", dayChangePct: 0.3, previousTradingDate: "2026-10-29", previousNavFinal: true };
+  const withCurrent = (mixStage: PaperCurrentValue["stage"]): PaperOverviewBook[] => [
+    { ...BOOKS[0], current: cur(), ledgerDay, lastNavTradingDate: "2026-10-29", lastNavFinal: true },
+    { ...BOOKS[1], current: cur({ nav: 100000, returnPct: null, stage: "LEDGER", basis: "LEDGER", isEstimated: false, neutral: true, livePriced: 0 }),
+      ledgerDay: null, lastNavTradingDate: null, lastNavFinal: null },
+    { ...BOOKS[2], current: cur({ nav: 100600, dayChangePct: -0.1, stage: "LIVE_LAST" }), ledgerDay, lastNavTradingDate: "2026-10-29", lastNavFinal: false },
+    { ...BOOKS[3], current: cur({ stage: mixStage, basis: mixStage === "LIVE" ? "LIVE" : "LEDGER", isEstimated: mixStage === "LIVE",
+      atKst: "2026-10-30 23:15 KST", livePriced: 0, positionCount: 0, neutral: mixStage !== "LIVE" }), ledgerDay, lastNavTradingDate: "2026-10-29",
+      lastNavFinal: true },
+  ];
+  const cells = (rows: ReturnType<typeof accountComparisonRows>, key: string) => {
+    const found = rows.find((entry) => entry.key === key);
+    if (!found) throw new Error(`줄 없음: ${key}`);
+    return BOOKS.map((entry) => found.cells[entry.code]);
+  };
+
+  it("모두 장중(현금뿐은 판정에서 뺌)이면 지금 값 칸 — 맨 위 기준 줄, 수익률 다음 '오늘 변화'(기준 글), 통계 앞 '통계 기준'", () => {
+    const rows = accountComparisonRows(withCurrent("LEDGER"), "US", { session: REGULAR });
+    expect(rows.map((row) => row.label)).toEqual([
+      "기준", "상태", "종류", "출발", "처음 현금", "순자산", "수익률(출발 이후)", "오늘 변화", "주식 노출", "현금", "보유", "마지막 관측", "가격 없음",
+      "통계 기준", "누적 수익률", "연율 수익률", "변동성(연율)", "최대 낙폭", "샤프", "초과 수익률", "베타", "비교 기준",
+    ]);
+    expect(cells(rows, "basis").map((cell) => cell.text)).toEqual([
+      "장중 추정 23:58", "출발 전", "장중 마지막 추정 23:58 · 종가 확정 전", "장부 23:15 · 현금뿐",
+    ]);
+    expect(rows.find((row) => row.key === "basis")?.wrap).toBe(true);
+    expect(cells(rows, "nav")[0].text).toBe("101,234.56 달러");
+    expect(cells(rows, "returnPct")[0]).toEqual({ text: "+1.23%", className: "text-up" });
+    expect(cells(rows, "exposure")[0].text).toBe("98.7%");
+    expect(cells(rows, "day")[0]).toEqual({ text: "+0.42%", className: "text-up", sub: "10-29 잠정 대비" });
+    expect(cells(rows, "day")[2]).toEqual({ text: "-0.10%", className: "text-down", sub: "10-29 잠정 대비" });
+    expect(cells(rows, "statsBasis").map((cell) => cell.text)).toEqual(["마감 10-29 확정", "—", "마감 10-29 잠정", "마감 10-29 확정"]);
+    // 장부 칸은 그대로(현금·마지막 관측·통계)
+    expect(cells(rows, "cash")[0].text).toBe("12.34 달러");
+    expect(cells(rows, "stat-cumReturnPct")[0].text).toBe("+1.23%");
+  });
+
+  it("비중립 계좌 하나라도 장중이 아니면 표 전체 장부 칸 — 순자산·수익률은 BookSummary, 하루 변화는 ledgerDay, 기준 줄은 '장부 MM-DD HH:MM'", () => {
+    const books = withCurrent("LEDGER").map((entry) => (entry.code === "bench_mix" ? { ...entry, current: { ...entry.current!, neutral: false, positionCount: 2 } } : entry));
+    const rows = accountComparisonRows(books, "US", { session: REGULAR });
+    expect(cells(rows, "basis").map((cell) => cell.text)).toEqual(["장부 10-24 05:15", "출발 전", "장부 10-24 05:15", "장부 10-24 05:15"]);
+    expect(cells(rows, "nav")[0].text).toBe("100,123.45 달러");
+    expect(cells(rows, "returnPct")[0]).toEqual({ text: "-1.50%", className: "text-down" });
+    expect(cells(rows, "day")[0]).toEqual({ text: "+0.30%", className: "text-up", sub: "10-29 확정 대비" });
+    // 출발 전 계좌(장부 하루 변화 없음)는 '—'
+    expect(cells(rows, "day")[1]).toEqual({ text: "—", className: null });
+    expect(rows.find((row) => row.key === "day")?.label).toBe("오늘 변화");
+  });
+
+  it("장 밖(휴장)이면 '하루 변화' — 칸 아래 기준 글 앞에 그 값의 날짜", () => {
+    const books = withCurrent("LEDGER").map((entry) => ({
+      ...entry, current: entry.current ? { ...entry.current, stage: "FINAL" as const, basis: "LEDGER" as const, isEstimated: false } : entry.current,
+    }));
+    const rows = accountComparisonRows(books, "US", { session: SUNDAY });
+    expect(rows.find((row) => row.key === "day")?.label).toBe("하루 변화");
+    expect(cells(rows, "day")[0]).toEqual({ text: "+0.30%", className: "text-up", sub: "10-30 · 10-29 확정 대비" });
   });
 });
 

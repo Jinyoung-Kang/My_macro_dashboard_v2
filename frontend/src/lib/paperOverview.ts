@@ -4,11 +4,23 @@
  * 숫자·서식은 lib/paper.ts의 bookCard·statCells·sampleNote를 그대로 씁니다 — 카드에 있던 칸을 행·표로 옮길 뿐, 새 숫자를 만들지 않습니다.
  * 개요 응답에 없는 값(예: 출발 이후 변화 금액)은 계산해 넣지 않습니다.
  */
-import { deltaColor, EMPTY, formatKst, formatNumber } from "./format";
+import { deltaColor, EMPTY, formatKst, formatNumber, formatPercent, formatWithUnit } from "./format";
 import { accountProfile, benchmarkLabel, bookCard, isTimedBook, type NavSeriesLine, primaryClaudeBook, statCells } from "./paper";
 import type { LineRow, LineSeriesSpec } from "./lineChart";
-import { type CurrentView, currentSource, currentView, type DayChange } from "./paperCurrent";
-import { marketMeta, type PaperMarketCode } from "./paperMarket";
+import {
+  type ComparisonBasis,
+  comparisonBasis,
+  type CurrentView,
+  currentSource,
+  currentView,
+  type DayChange,
+  dayBaseText,
+  dayLabel,
+  monthDay,
+  stageLabel,
+  stampText,
+} from "./paperCurrent";
+import { formatMoney, marketMeta, type PaperMarketCode } from "./paperMarket";
 import type { PaperBookSummary, PaperLiveSessionSummary, PaperOverviewBook, PaperOverviewResponse, PaperQuotesSummary } from "./types";
 
 // ---------------------------------------------------------------- 계좌 행(AssetRow)
@@ -239,6 +251,8 @@ export function overviewHeroModel(
 export interface ComparisonCell {
   text: string;
   className: string | null;
+  /** 값 아래 작은 글(하루 변화의 기준 '10-29 잠정 대비' 등) — 없으면 없음. */
+  sub?: string | null;
 }
 
 /** 비교 표의 한 줄(항목 하나). `cells`는 계좌 코드 → 칸. */
@@ -247,6 +261,8 @@ export interface ComparisonRow {
   label: string;
   /** 상태 줄은 배지로 그립니다(글자색이 아니라 테두리·바탕이 있는 배지 클래스). */
   badge?: boolean;
+  /** 긴 글이라 칸 안에서 줄을 바꿔도 되는 줄(기준 줄). */
+  wrap?: boolean;
   cells: Record<string, ComparisonCell>;
 }
 
@@ -261,6 +277,43 @@ function staleCell(book: PaperBookSummary): ComparisonCell {
   return toned(`${formatNumber(count, 0)}종목 — 지난 값으로 평가`, "text-warn");
 }
 
+/** 하루 변화 칸 — 글은 부호 % 와 방향색, 아래 작은 글은 그 값의 날짜(지금 세션이 아니면 'MM-DD')와 기준('10-29 잠정 대비'). 모르면 "—". */
+function dayCell(
+  source: { tradingDate: string | null; dayChangePct: number | null; previousTradingDate: string | null; previousNavFinal: boolean | null } | null | undefined,
+  session: PaperLiveSessionSummary | null | undefined,
+): ComparisonCell {
+  if (!source) return plain(EMPTY);
+  const text = formatPercent(source.dayChangePct);
+  if (text === EMPTY) return plain(EMPTY);
+  const date = dayLabel(source.tradingDate, session) === "오늘" ? null : monthDay(source.tradingDate);
+  const sub = [date, dayBaseText(source.previousTradingDate, source.previousNavFinal)].filter(Boolean).join(" · ");
+  return { text, className: deltaColor(source.dayChangePct), sub: sub || null };
+}
+
+/** 기준 줄 칸 — 지금 값 칸이면 그 계좌의 단계 표기(현금뿐이면 ' · 현금뿐'), 장부 칸이면 '장부 MM-DD HH:MM'(출발 전 '출발 전'). */
+function basisCell(book: PaperOverviewBook, basis: ComparisonBasis, session: PaperLiveSessionSummary | null | undefined): ComparisonCell {
+  if (book.status === "NOT_STARTED") return plain("출발 전");
+  if (basis.mode === "live") {
+    if (!book.current) return plain(EMPTY);
+    return plain(`${stageLabel(book.current, { status: book.status, session })}${book.current.neutral ? " · 현금뿐" : ""}`);
+  }
+  const at = stampText(book.lastObservedAtKst);
+  return plain(at ? `장부 ${at}` : EMPTY);
+}
+
+/** 통계 기준 칸 — 그 계좌 마지막 순자산 줄 '마감 10-29 확정·잠정'(확정 여부를 모르면 '마감 10-29'), 줄이 없으면 "—". */
+function statsBasisCell(book: PaperOverviewBook): ComparisonCell {
+  const md = monthDay(book.lastNavTradingDate);
+  if (!md) return plain(EMPTY);
+  const word = book.lastNavFinal === true ? " 확정" : book.lastNavFinal === false ? " 잠정" : "";
+  return plain(`마감 ${md}${word}`);
+}
+
+/** 비교 표가 읽는 것 — 개요의 장 상태(지금 값의 '오늘'·단계 표기). */
+export interface ComparisonContext {
+  session?: PaperLiveSessionSummary | null;
+}
+
 /**
  * 계좌 비교 표 — 예전 계좌 카드 네 장의 칸을 항목별 줄로 모읍니다(상태·종류·출발·처음 현금·순자산·수익률·노출·현금·보유 수·
  * 마지막 관측·가격 없음·통계 일곱 칸·비교 기준). 값은 bookCard·statCells의 표시 글 그대로("—" 포함). 표본 설명은 문장이라 표 밖
@@ -268,8 +321,20 @@ function staleCell(book: PaperBookSummary): ComparisonCell {
  *
  * 초과 수익률·베타의 비교 기준은 계좌마다 다를 수 있어(SPY 계좌 자신은 기준 없음) 항목 이름에 적지 않고 "비교 기준" 줄로 따로 둡니다.
  * 돈 칸은 그 개요 시장의 통화입니다(`market` — 기본 미국 달러, 한국은 원 정수).
+ *
+ * 지금 값(장중 명세 §4 — 개요 계좌 줄의 `current`)이 있으면 한 표 한 기준(lib/paperCurrent `comparisonBasis`): 맨 위 '기준' 줄(계좌마다 단계 표기
+ * 또는 '장부 MM-DD HH:MM'), '수익률(출발 이후)' 다음 '오늘 변화'(장부 칸이고 지금 세션이 아니면 '하루 변화' — 칸 아래 기준 글), 통계 일곱 칸 앞
+ * '통계 기준'('마감 10-29 확정'). 순자산·수익률·노출·하루 변화는 지금 값 칸이면 `current`, 장부 칸이면 BookSummary와 `ledgerDay`(navSeries로
+ * 계산하지 않음). 현금·보유·처음 현금·출발·마지막 관측·가격 없음·통계·비교 기준은 장부 그대로. 지금 값이 없는 옛 응답은 예전 줄 목록 그대로입니다.
  */
-export function accountComparisonRows(books: readonly PaperBookSummary[], market: PaperMarketCode = "US"): ComparisonRow[] {
+export function accountComparisonRows(
+  books: readonly PaperOverviewBook[],
+  market: PaperMarketCode = "US",
+  context: ComparisonContext = {},
+): ComparisonRow[] {
+  const session = context.session ?? null;
+  const basis = comparisonBasis(books, session);
+  const live = basis.hasCurrent && basis.mode === "live";
   const cards = books.map((book) => ({ book, card: bookCard(book, books, market) }));
   const row = (key: string, label: string, cell: (entry: (typeof cards)[number]) => ComparisonCell, badge = false): ComparisonRow => ({
     key,
@@ -284,20 +349,43 @@ export function accountComparisonRows(books: readonly PaperBookSummary[], market
       return plain(value);
     }),
   );
+  // 지금 값 칸(모두 장중)이면 current, 아니면 장부(BookSummary) — 한 표에 두 기준을 섞지 않습니다.
+  const now = (book: PaperOverviewBook) => (live ? book.current ?? null : null);
+  const navRow = row("nav", "순자산", ({ book, card }) => {
+    const current = now(book);
+    return plain(current ? formatMoney(current.nav, market) : card.nav);
+  });
+  const returnRow = row("returnPct", "수익률(출발 이후)", ({ book, card }) => {
+    const current = now(book);
+    return current ? toned(formatPercent(current.returnPct), deltaColor(current.returnPct)) : toned(card.returnPct, deltaColor(book.returnPct));
+  });
+  const exposureRow = row("exposure", "주식 노출", ({ book, card }) => {
+    const current = now(book);
+    return plain(current ? formatWithUnit(current.exposurePct, 1, "%") : card.exposure);
+  });
+  const common = {
+    status: row("status", "상태", ({ card }) => ({ text: card.status.label, className: card.status.className }), true),
+    kind: row("kind", "종류", ({ card }) => plain(card.kind)),
+    startedOn: row("startedOn", "출발", ({ card }) => plain(card.startedOn)),
+    initialCash: row("initialCash", "처음 현금", ({ card }) => plain(card.initialCash)),
+    cash: row("cash", "현금", ({ card }) => plain(card.cash)),
+    positions: row("positions", "보유", ({ card }) => plain(card.positions)),
+    lastObserved: row("lastObserved", "마지막 관측", ({ card }) => plain(card.lastObserved)),
+    stale: row("stale", "가격 없음", ({ book }) => staleCell(book)),
+    benchmark: row("benchmark", "비교 기준", ({ book }) => plain(benchmarkLabel(book, books) ?? EMPTY)),
+  };
+  if (!basis.hasCurrent) {
+    return [
+      common.status, common.kind, common.startedOn, common.initialCash, navRow, returnRow, exposureRow, common.cash, common.positions,
+      common.lastObserved, common.stale, ...statRows, common.benchmark,
+    ];
+  }
+  const basisRow: ComparisonRow = { ...row("basis", "기준", ({ book }) => basisCell(book, basis, session)), wrap: true };
+  const dayRow = row("day", basis.dayLabel, ({ book }) => dayCell(live ? book.current : book.ledgerDay, session));
+  const statsBasisRow = row("statsBasis", "통계 기준", ({ book }) => statsBasisCell(book));
   return [
-    row("status", "상태", ({ card }) => ({ text: card.status.label, className: card.status.className }), true),
-    row("kind", "종류", ({ card }) => plain(card.kind)),
-    row("startedOn", "출발", ({ card }) => plain(card.startedOn)),
-    row("initialCash", "처음 현금", ({ card }) => plain(card.initialCash)),
-    row("nav", "순자산", ({ card }) => plain(card.nav)),
-    row("returnPct", "수익률(출발 이후)", ({ book, card }) => toned(card.returnPct, deltaColor(book.returnPct))),
-    row("exposure", "주식 노출", ({ card }) => plain(card.exposure)),
-    row("cash", "현금", ({ card }) => plain(card.cash)),
-    row("positions", "보유", ({ card }) => plain(card.positions)),
-    row("lastObserved", "마지막 관측", ({ card }) => plain(card.lastObserved)),
-    row("stale", "가격 없음", ({ book }) => staleCell(book)),
-    ...statRows,
-    row("benchmark", "비교 기준", ({ book }) => plain(benchmarkLabel(book, books) ?? EMPTY)),
+    basisRow, common.status, common.kind, common.startedOn, common.initialCash, navRow, returnRow, dayRow, exposureRow, common.cash,
+    common.positions, common.lastObserved, common.stale, statsBasisRow, ...statRows, common.benchmark,
   ];
 }
 

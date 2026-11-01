@@ -21,7 +21,7 @@ import type {
 } from "./types";
 
 /** "2026-10-30" → "10-30". 날짜 꼴이 아니면 null. */
-function monthDay(date: string | null | undefined): string | null {
+export function monthDay(date: string | null | undefined): string | null {
   const match = /^\d{4}-(\d{2})-(\d{2})$/.exec(date ?? "");
   return match ? `${match[1]}-${match[2]}` : null;
 }
@@ -30,6 +30,12 @@ function monthDay(date: string | null | undefined): string | null {
 function stampParts(stamp: string | null | undefined): { md: string; hm: string } | null {
   const match = /^\d{4}-(\d{2})-(\d{2})[ T](\d{2}:\d{2})/.exec(stamp ?? "");
   return match ? { md: `${match[1]}-${match[2]}`, hm: match[3] } : null;
+}
+
+/** "2026-10-30 23:15 KST" → "10-30 23:15"(꼴이 다르면 null — 장부 표기·비교 표 기준 줄). */
+export function stampText(stamp: string | null | undefined): string | null {
+  const at = stampParts(stamp);
+  return at ? `${at.md} ${at.hm}` : null;
 }
 
 /** 장중 1분봉이 든 단계인가(`LIVE` 정규장 장중 추정 · `LIVE_LAST` 마감 뒤 같은 날 장중 마지막 추정). */

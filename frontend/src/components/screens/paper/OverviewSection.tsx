@@ -452,7 +452,7 @@ export function OverviewSection({
         )}
       </Card>
 
-      {books.length > 0 && <AccountComparisonCard books={books} market={market} />}
+      {books.length > 0 && <AccountComparisonCard books={books} market={market} session={session} />}
 
       {!korea && book2 && <SameWindowCard overview={overview} books={books} />}
 
