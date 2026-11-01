@@ -162,6 +162,10 @@ describe("홈 — 값 있음(운영자)", () => {
     const rows = within(hero).getAllByRole("link");
     expect(rows.map((row) => row.getAttribute("href"))).toEqual([PAPER_HREF, PAPER_HREF, PAPER_HREF, PAPER_HREF]);
     expect(within(rows[1]).getByText("Claude 계좌")).toBeTruthy();
+    // 계좌 행 아바타(약칭)와 모의매매 개요 곡선과 같은 계좌 색 고리(Claude = 주황) — 장식이라 링크 이름에 섞이지 않음
+    const avatar = rows[1].querySelector('[aria-hidden="true"].rounded-full') as HTMLElement;
+    expect(avatar.textContent).toBe("C1");
+    expect(avatar.style.getPropertyValue("--avatar-ring")).toBe("#d95926");
     expect(within(rows[1]).getByText(/^Claude · 운용 중/)).toBeTruthy();
     expect(within(rows[1]).getByText("−0.03%")).toBeTruthy();
     expect(within(hero).getByText("출발 2026-10-23 · 처음 현금 100,000 달러 · 변화율은 출발 대비")).toBeTruthy();

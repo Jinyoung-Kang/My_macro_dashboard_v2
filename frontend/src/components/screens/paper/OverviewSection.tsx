@@ -81,7 +81,7 @@ import type {
   PaperStatusResponse,
 } from "@/lib/types";
 import { AccountDetailPanel, accountDetailTitleId } from "./AccountDetailPanel";
-import { BOOK_COLORS, REFERENCE_COLOR, SPARE_COLORS } from "./bookColors";
+import { BOOK_COLORS, bookColor, REFERENCE_COLOR, SPARE_COLORS } from "./bookColors";
 import { Claude2StartSection } from "./Claude2StartSection";
 import { ClaudeStartSection } from "./ClaudeStartSection";
 import { ExecutionExperimentCard } from "./ExecutionExperimentCard";
@@ -207,7 +207,7 @@ export function OverviewSection({
   const navY = navAxis(chart);
   const series = chart.series.map((line, index) => ({
     ...line,
-    color: line.key === KR_REFERENCE_KEY ? REFERENCE_COLOR : BOOK_COLORS[line.key] ?? SPARE_COLORS[index % SPARE_COLORS.length],
+    color: line.key === KR_REFERENCE_KEY ? REFERENCE_COLOR : bookColor(line.key, index),
     // 원 단위 정수 장부 — 툴팁에 없는 소수 자리를 붙이지 않음(미국은 기본 2자리 그대로).
     ...(korea ? { valueDigits: 0 } : {}),
     ...(line.key === KR_REFERENCE_KEY ? { dashed: true } : {}),
@@ -381,12 +381,13 @@ export function OverviewSection({
           <>
             {/* 계좌 행(설계서 §7) — 행 전체가 펼침 단추(aria-expanded·aria-controls)라 어디를 눌러도 상세가 열리고 다시 누르면 닫힙니다. */}
             <ul aria-label="계좌 목록" className="overflow-hidden rounded-xl border border-border bg-surface">
-              {books.map((book) => {
+              {books.map((book, index) => {
                 const open = book.code === selected;
                 return (
                   <li key={book.code} className="border-t border-border first:border-t-0">
                     <AssetRow
-                      row={bookAssetRow(book, { pendingBackfill: overview.pendingBackfill, quotes, market, session })}
+                      // 아바타 고리는 그 계좌의 곡선 색(같은 색 표 — 장식, 뜻은 이름이 나름).
+                      row={{ ...bookAssetRow(book, { pendingBackfill: overview.pendingBackfill, quotes, market, session }), avatarRing: bookColor(book.code, index) }}
                       onSelect={toggleAccount}
                       selected={open}
                       disclosure={{
@@ -657,7 +658,7 @@ function SameWindowCard({ overview, books }: { overview: PaperOverviewResponse; 
   const view = sameWindowIndex(overview.navSeries, books);
   const series = (view?.series ?? []).map((line, index) => ({
     ...line,
-    color: BOOK_COLORS[line.key] ?? SPARE_COLORS[index % SPARE_COLORS.length],
+    color: bookColor(line.key, index),
   }));
   return (
     <Card

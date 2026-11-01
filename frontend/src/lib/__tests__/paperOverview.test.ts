@@ -52,7 +52,7 @@ describe("계좌 행(AssetRow 자료)", () => {
   it("값 있음 — 이름·종류·상태·소개, 순자산 숫자와 달러, 수익률은 칩 자료로(서버 값 그대로)", () => {
     const row = bookAssetRow(BOOKS[0]);
     expect(row).toEqual({
-      id: "rules", name: "규칙 계좌", sub: "규칙 · 운용 중 · 13F 신호만 규칙대로 따르는 대조군 — 매크로 판단·재량 없음",
+      id: "rules", name: "규칙 계좌", avatarText: "R", sub: "규칙 · 운용 중 · 13F 신호만 규칙대로 따르는 대조군 — 매크로 판단·재량 없음",
       value: 100123.45, unit: "달러", changePct: -1.5, isStale: false, staleReason: null, warning: null,
     });
   });
@@ -87,8 +87,10 @@ describe("계좌 행(AssetRow 자료)", () => {
     expect(bookAssetRow(BOOKS[0], { pendingBackfill: null }).warning).toBeNull();
   });
 
-  it("소개가 없는 계좌(모르는 코드)는 종류·상태만", () => {
+  it("소개가 없는 계좌(모르는 코드)는 종류·상태만 — 아바타 약칭도 짓지 않음(null)", () => {
     expect(bookAssetRow(book("x", { label: "새 계좌" })).sub).toBe("벤치마크 · 운용 중");
+    expect(bookAssetRow(book("x", { label: "새 계좌" })).avatarText).toBeNull();
+    expect(BOOKS.map((entry) => bookAssetRow(entry).avatarText)).toEqual(["R", "C1", "SPY", "60"]);
   });
 });
 

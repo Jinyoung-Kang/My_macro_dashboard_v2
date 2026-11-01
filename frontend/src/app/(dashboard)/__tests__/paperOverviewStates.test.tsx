@@ -153,6 +153,11 @@ describe("값 있음 — 계좌 행·비교 표·곡선", () => {
     expect(within(rules).getByText("상승")).toBeTruthy();
     expect(within(rules).getByText(/^규칙 · 운용 중 · /)).toBeTruthy();
     expect(within(screen.getByRole("list", { name: "계좌 목록" })).getAllByRole("listitem")).toHaveLength(4);
+    // 아바타(장식 — 단추 이름에 섞이지 않음)와 그 계좌의 곡선 색 고리(규칙 계좌 = 계열 파랑, 60/40 = 회색)
+    const avatar = (button: HTMLElement) => button.querySelector('[aria-hidden="true"].rounded-full') as HTMLElement | null;
+    expect(avatar(rules)?.textContent).toBe("R");
+    expect(avatar(rules)?.style.getPropertyValue("--avatar-ring")).toBe("#3987e5");
+    expect(avatar(row(/^60\/40 계좌 상세 보기/))?.style.getPropertyValue("--avatar-ring")).toBe("#6b727e");
 
     const table = screen.getByRole("table", { name: "계좌 비교" });
     expect(within(table).getAllByRole("columnheader").map((th) => th.textContent)).toEqual([

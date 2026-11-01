@@ -11,7 +11,7 @@ import { TABS } from "./nav";
 import { formatDollars, isTimedBook, primaryClaudeBook, withParticle } from "./paper";
 import { formatMoney, marketMeta, type PaperMarketCode } from "./paperMarket";
 import { currentSource, currentView, type DayChange } from "./paperCurrent";
-import { bookAssetRow, bookMonogram, type BookRow } from "./paperOverview";
+import { bookAssetRow, type BookRow } from "./paperOverview";
 import { assetMonogram } from "./patternRows";
 import { paperMarketPath } from "./paperRoutes";
 import { presentText } from "./patterns";
@@ -324,10 +324,10 @@ export const PAPER_COMPARE_NOTE =
 export const PAPER_KR_HREF = paperMarketPath("KR");
 
 /**
- * 홈의 계좌 행 — 모의매매 개요와 같은 행 규칙(lib/paperOverview bookAssetRow) + 모의매매 화면으로 가는 링크 + 아바타 약칭(`bookMonogram`,
- * 모르는 계좌면 null). 아바타는 홈에만 답니다 — 개요 계좌 행의 아바타는 장중 값 단계(명세 D1).
+ * 홈의 계좌 행 — 모의매매 개요와 같은 행 규칙(lib/paperOverview bookAssetRow — 아바타 약칭 `bookMonogram` 포함) + 모의매매 화면으로 가는 링크.
+ * 아바타 고리 색은 화면(PaperHero)이 개요와 같은 색 표로 붙입니다.
  */
-export type PaperHomeRow = BookRow & { href: string; avatarText: string | null };
+export type PaperHomeRow = BookRow & { href: string };
 
 export type PaperHomeModel = {
   /** 이 모델의 시장(히어로 탭). */
@@ -409,7 +409,7 @@ export function paperHomeModel(
   const context = available
     ? { pendingBackfill: overview?.pendingBackfill ?? [], quotes: overview?.quotes ?? null, ...(korea ? { market } : {}), session }
     : {};
-  const rows: PaperHomeRow[] = books.map((book) => ({ ...bookAssetRow(book, context), href, avatarText: bookMonogram(book.code) }));
+  const rows: PaperHomeRow[] = books.map((book) => ({ ...bookAssetRow(book, context), href }));
 
   // 히어로는 그 시장의 기본 Claude 계좌(미국 계좌1·한국 kr_claude) — 계좌2(체결 시점 실험)는 행으로만 보입니다(계좌2 명세 §13-3).
   const claude = primaryClaudeBook(books);

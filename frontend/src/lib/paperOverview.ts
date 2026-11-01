@@ -56,6 +56,8 @@ export function bookMonogram(code: string): string | null {
 export interface BookRow {
   id: string;
   name: string;
+  /** 아바타 약칭(`bookMonogram` — 모르는 계좌면 null, 아바타 없음). 장식이라 뜻은 이름이 나릅니다. 개요·홈이 같이 씁니다. */
+  avatarText: string | null;
   sub: string;
   value: number | null;
   /** 서식된 값 — 한국 계좌만(원 단위 정수, 모르면 null → "—"). 미국 행에는 이 칸이 없어 자산 행이 value를 소수 둘째 자리로 찍습니다. */
@@ -79,7 +81,8 @@ function rowCaption(view: CurrentView, book: PaperBookSummary): string | null {
 }
 
 /**
- * 계좌 하나 → 자산 행. 이름 · 보조(종류 · 상태 · 한 줄 소개) · 순자산(달러) · 출발 이후 수익률 칩 · 배지.
+ * 계좌 하나 → 자산 행. (아바타 약칭) · 이름 · 보조(종류 · 상태 · 한 줄 소개) · 순자산(달러) · 출발 이후 수익률 칩 · 배지.
+ * 아바타 고리 색(차트 계열 색과 같은 계좌 색)은 화면이 붙입니다(색 표는 components/screens/paper/bookColors — lib는 components를 가져오지 않음).
  *
  * - 순자산·수익률은 개요의 지금 값(`current` — lib/paperCurrent `currentView`)이고, 지금 값이 없는 옛 응답은 장부 값 그대로입니다.
  *   지금 값이면 값의 기준 한 줄(`caption` — 단계 표기 '장중 추정 23:58'·덧붙임 '장중가 1/2종목'·'체결 대기 1건 반영 전'·하루 변화
@@ -103,6 +106,7 @@ export function bookAssetRow(book: PaperOverviewBook, context: BookRowContext = 
   return {
     id: book.code,
     name: book.label,
+    avatarText: bookMonogram(book.code),
     sub: [card.kind, card.status.label, summary].filter((part) => part && part !== EMPTY).join(" · "),
     value: view.nav,
     ...(korea ? { valueText: nav === EMPTY ? null : nav } : {}),

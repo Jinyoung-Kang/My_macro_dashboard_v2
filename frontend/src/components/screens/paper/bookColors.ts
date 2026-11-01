@@ -1,8 +1,11 @@
 /**
  * 모의매매 계좌 코드별 색 — 개요의 순자산 곡선·노출 추이·'S = 100 같은 구간' 계열이 씁니다. 계좌 행 색 고리처럼 다른 화면 폴더(홈)도 같은 표를
  * 쓸 수 있게 OverviewSection에서 옮겼습니다(값·검증 기록 그대로 — Coinbase식 개편 명세 §12).
+ *
+ * 계열 색은 차트 배럴(`@/components/charts`)이 아니라 차트 틀(`frame.tsx` — 같은 SERIES_COLORS, recharts를 가져오지 않음)에서 가져옵니다. 배럴에서
+ * 가져오면 차트가 없는 홈('/')이 색 고리 때문에 recharts 조각(약 430KB)까지 싣습니다(next build 결과로 확인 — 장중 명세 §4-1).
  */
-import { SERIES_COLORS } from "@/components/charts";
+import { SERIES_COLORS } from "@/components/charts/frame";
 
 /**
  * 책 코드별 선 색. 앞 셋은 charts의 검증된 팔레트, 혼합 벤치마크는 회색입니다
@@ -36,3 +39,11 @@ export const SPARE_COLORS = ["#a371f7", "#22a2bd", "#db6d28"];
  * 놓여 계좌 선과 색·선 모양 둘 다 다르고, 범례 이름 '…(계좌 아님)'이 함께 뜻을 나릅니다.
  */
 export const REFERENCE_COLOR = SPARE_COLORS[0];
+
+/**
+ * 계좌 하나의 색 — 표에 있으면 그 색, 없으면 남는 색을 자리(`index`)대로 돌려 씁니다. 순자산 곡선의 계열 색과 계좌 행 아바타의 고리(개요·홈)가
+ * 같은 규칙이라 같은 계좌가 같은 색입니다(고리는 장식 — 뜻은 계좌 이름이 나름).
+ */
+export function bookColor(code: string, index: number): string {
+  return BOOK_COLORS[code] ?? SPARE_COLORS[((index % SPARE_COLORS.length) + SPARE_COLORS.length) % SPARE_COLORS.length];
+}

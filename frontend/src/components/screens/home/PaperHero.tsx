@@ -11,6 +11,7 @@ import { endpoints } from "@/lib/endpoints";
 import { HOME_REFRESH_MS, paperHomeModel } from "@/lib/home";
 import type { PaperMarketCode } from "@/lib/paperMarket";
 import type { PaperOverviewResponse, PaperStatusResponse } from "@/lib/types";
+import { bookColor } from "../paper/bookColors";
 import { HomeCard, SectionError } from "./HomeCard";
 
 // 불러오는 중·오류·읽은 뒤 모두 같은 구역 이름입니다(HomeCard와 Hero 제목). 큰 숫자가 무엇인지(Claude 계좌 순자산)를 제목에 함께 적어
@@ -116,9 +117,10 @@ export function PaperHero() {
         // 구분선은 카드 가장자리까지 펼치고(-mx-6·lg:-mx-8 = 히어로 안쪽 여백), 줄 안쪽 여백(px-2·lg:px-3)을 더해 행 글자(행 자체 px-4·lg:px-5)를
         // 히어로 글과 같은 세로줄(24·32px)에 맞춥니다.
         <ul className="-mx-6 divide-y divide-border border-y border-border lg:-mx-8">
-          {model.rows.map((row) => (
+          {model.rows.map((row, index) => (
             <li key={row.id} className="px-2 lg:px-3">
-              <AssetRow row={row} />
+              {/* 아바타 고리는 모의매매 개요의 그 계좌 곡선 색(같은 색 표 — 장식, 뜻은 계좌 이름이 나름). */}
+              <AssetRow row={{ ...row, avatarRing: bookColor(row.id, index) }} />
             </li>
           ))}
         </ul>
