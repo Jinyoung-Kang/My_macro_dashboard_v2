@@ -51,6 +51,9 @@ PostgreSQL ← 수집기(FastAPI, `collector/`). Docker Compose 네 컨테이너
   두 곳에서 정기 작업(리스크 점검·결정·체결)이 동시에 돌면 안 된다 — 서버에는 v2만 둔다(서버 v1은 2026-10-31에 지움 — 다시 올리지 않는다).
   로컬 `.env`를 서버로 보낼 때는 그 줄과 포트 네 줄 등을 뺀다(`.env.aws.example`).
 - 날짜는 `Kst.today()`(Java)·KST 기준. `LocalDate.now()`를 쓰지 않는다(서버 TZ는 UTC).
+- **이모지를 쓰지 않는다**(2026-10-31 사용자 지시) — 화면·코드·주석·문서·스크립트 출력·커밋 메시지 모두. 화면은 `components/ui/icons`의 SVG와 글, 스크립트는 ✓·✗와
+  `경고:`·`참고:`. 예외는 Claude 프롬프트·패킷·AI 입력 원문과 그 고정본(실험 조건), 스냅숏으로 AI 입력이 되는 수집 데이터의 기존 글(기관 이름·카드 제목·'이전 값' 꼬리 등),
+  지난 기록(docs/qa·reviews·improve). `frontend/src/lib/__tests__/noEmoji.test.ts`가 화면 글과 스크립트·compose·env 예시·주요 문서를 막는다.
 - **테이블마다 쓰는 프로세스는 하나**(ADR 0008). 수집기 테이블은 백엔드가 읽기만, 백엔드 테이블(`regime_log` 등)은 백엔드만 쓴다.
   스키마 파일은 `db/migrations/` 한 곳(수집기가 기동 시 적용). 백엔드 DB 접근은 `store`에서만. 정기 작업은 `StoreReader.quietly`로 읽는다(수집 유발 금지).
 - 데이터셋 이름은 `collector/app/catalog.py`와 `backend/.../store/Datasets.java` 둘 다 고친다

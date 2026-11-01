@@ -501,6 +501,20 @@ Tailwind 4.3.3은 `--text-*--line-height`·`--text-*--font-weight`·`--text-*--l
   시험하는 입력이라 남김). 화면의 표시 정리(`withoutLeadingIcon`·`holdingActionView`·`engineLabel`)는 옛 DB 행 때문에 그대로 둔다.
 - 이 작업 환경에는 JDK 21이 없어(25뿐) 백엔드는 JDK 25로만 쟀다 — 바꾼 것은 문자열 리터럴뿐이라 판에 따른 차이는 없다 [추정].
 
+### 8-8. 구현 메모(이모지 단계 — 주석·문서·스크립트, 2026-11-01) [확인 grep·시험]
+
+- **바꾼 곳**(브랜치 `claude/emoji-sweep-2026-11`, §12 '이모지 나머지'): 코드 주석·독스트링·시험 이름(백엔드·수집기·프런트), 문서(README·CLAUDE.md·docs 최상위·ADR·명세),
+  Makefile·scripts 출력, compose·env 예시 주석, 수집기 실행 로그 아이콘과 태스크 설명. 표식이던 그림 문자는 지우고, 뜻이 있던 것은 글자로 —
+  [확인]→✓, [가위표]→✗, 줄 머리 [경고]→'주의:'(스크립트 출력은 '경고:'), [정보] U+2139→'참고:', [느낌표] U+2757→'주의:', 그림 화살표 U+25B6·U+25C0→►·◄,
+  수집기 로그의 ok·empty·error·늦은 끝(U+23F1)→✓·!·✗·!.
+  범례 표식은 꼬리표로 — DATA_SOURCES `[키]`·`[토스]`·`[정리]`·`[모의]`, ARCHITECTURE 분석 표 `[모의]`, API 수집기 표 `[토큰]`. 주석의 상태 기호는 상태 이름(`empty`·`error`)으로.
+- **그대로 둔 것**: D7 목록과 그 고정본, 스냅숏으로 AI 입력이 되는 수집·서버 데이터의 글(기관 이름 국기·매크로 카드 제목·'이전 값' 꼬리·수급 판정 — `indicators.py`·
+  `Institutions.java`·`markets.py`·`macro_cards.py`·`krx.py`)과 그것을 흉내 내는 시험 고정본, 그 글을 인용한 주석(`format.ts`·`holdings.ts`·`taskRun.ts`·`types/macro.ts`·
+  `markdown.ts`), 체크섬이 걸린 `db/migrations`, 지난 기록(docs/qa·reviews·improve), 퍼저 입력(`scripts/qa/fuzz-api.py`).
+- **맞물린 곳**: `backup-s3.sh`는 make 출력의 일반 실패 줄을 `^✗`로 거른다 — `db-common.sh`의 '✗ 백업 실패'와 짝이고 `test_aws_scripts.py`의 가짜 make 출력도 같이 바꿨다.
+- **시험**: `noEmoji.test.ts` 둘째 시험 — Makefile·scripts(.sh·.yml)·compose 둘·env 예시 둘·README·CLAUDE.md·docs(.md, 지난 기록 셋 제외) 75개 파일의 줄에 그림 문자 0
+  (허용: 화면 시험의 글자 기호 + ®·™). 코드 주석은 위 인용 때문에 넣지 않았다.
+
 ## 9. 시험 영향
 
 - 시험은 바뀐 코드와 같은 커밋에서 고친다. 뜻을 보는 단언(role·aria-label·aria-current·aria-sort·aria-expanded·sr-only 글·`text-warn`/`text-up`/`text-down`/`tabular-nums`/`sr-only`)은 지키고,
@@ -557,7 +571,8 @@ Tailwind 4.3.3은 `--text-*--line-height`·`--text-*--font-weight`·`--text-*--l
 - **KRX 이중 축을 패널 둘로**(D3, PRINCIPLES '이중 축 금지'): `krx/page.tsx`의 두 차트. 화면 배치가 바뀌는 선택이라 사용자 확인 뒤.
 - **인쇄 규칙**(D9): 지금 없음.
 - **이모지 나머지**: 코드 주석(프런트 약 120줄·백엔드 217·수집기 100)·문서 약 422줄·README 48·CLAUDE.md 2·Makefile·scripts 콘솔 출력 — 별도 chore 커밋 묶음, 사용자 확인 뒤.
-- **지킴 시험 더**: 백엔드 화면 문구의 noEmoji 시험, 데이터 영역의 `text-accent`·`bg-accent` 위치를 고정하는 시험(A1).
+  — 2026-11-01 정리함(§8-8).
+- **지킴 시험 더**: 백엔드 화면 문구의 noEmoji 시험(스크립트·문서는 §8-8에서 더함), 데이터 영역의 `text-accent`·`bg-accent` 위치를 고정하는 시험(A1).
 - **Y 끝값 눈금**(§5-1): 여백 포함 범위 끝 대신 데이터 최고·최저를 적거나, 묶인 지수(0~100)는 범위 상한을 받게 — 1단계 결정(`lineYAxis` 눈금 = 범위 끝)을 바꾸는 일이라 사용자 확인 뒤.
   — **히어로만** 2026-11-01 장중 화면 검토 반영에서 바꿈(`03526dc3`·`d17a2485`): 히어로(`LineChart variant="hero"`)는 축 눈금 글 없이 본 계열의 실제 최고·최저를 그 점
   위·아래에 적는다(`lib/lineChart` `heroExtremes` — 꼬리 계열 제외). 히어로에서는 범위 끝 글(예: 최댓값 100,556.89에 위 끝값 100,604.06)이 큰 숫자 옆의
