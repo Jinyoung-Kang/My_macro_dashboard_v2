@@ -212,9 +212,9 @@ export function OverviewSection({
   const hero = overview.initialized !== false && heroCode ? overviewHeroModel(overview, heroCode, navWindow, market) : null;
   const rangeLabel = NAV_RANGES.find((entry) => entry.key === range)?.label ?? "전체";
   const accounts = navChart(navWindow, books);
-  // 한국은 노출 맞춘 참고선(K40 — 계산만, 계좌 아님)을 같은 축의 점선 계열로 더합니다(출발 전·F2 전 서버면 계열 없음).
+  // 한국은 노출 맞춘 참고선(K40 — 계산만, 계좌 아님)을 같은 축의 긴 점선 계열로 더합니다(출발 전·F2 전 서버면 계열 없음).
   const reference = korea ? withKrReference(accounts.rows, overview.exposureReference) : { rows: accounts.rows, series: [] };
-  // 오늘 추정 꼬리(장중 명세 §4 — 표시 전용): 기간 창·참고선 뒤에 계좌마다 마지막 줄 → 오늘 추정 점의 점선을 붙입니다(참고선·S = 100 카드에는 없음).
+  // 오늘 추정 꼬리(장중 명세 §4 — 표시 전용): 기간 창·참고선 뒤에 계좌마다 마지막 줄 → 오늘 추정 점의 짧은 점선을 붙입니다(참고선·S = 100 카드에는 없음).
   // 그날 순자산 줄이 생기면 서버가 navEstimate를 보내지 않아 사라집니다.
   const chart = withNavEstimateTail({ rows: reference.rows, series: [...accounts.series, ...reference.series] }, overview.navEstimate, books);
   const tailNote = navTailNote(chart.tailDate);

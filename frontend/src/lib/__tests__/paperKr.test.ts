@@ -262,6 +262,8 @@ describe("노출 맞춘 참고선(K40)", () => {
   it("곡선 아래 글 — 정의·마지막 값의 날과 그날 쓴 비중·멈춘 사유, 참고선이 없으면 null", () => {
     const notes = krReferenceNotes(REFERENCE);
     expect(notes?.[0]).toContain("069500 x% + 153130 (100−x)%");
+    // 모양을 밝힌 이름 — 같은 곡선의 오늘 추정 꼬리(짧은 점선)와 헷갈리지 않게
+    expect(notes?.[0]).toMatch(/^긴 점선\(범례에 있음\) = 노출 맞춘 참고선 — /);
     expect(notes?.[1]).toBe("마지막 값 2026-10-30(그날 쓴 전날 규칙 계좌 주식 비중 0.00%) — 금융위 확정 종가가 들어온 날까지라 보통 하루 늦습니다.");
     expect(notes).toContain("멈춤: 2026-10-30 규칙 계좌 주식 비중을 모릅니다");
     expect(krReferenceNotes({ ...REFERENCE, asOfDate: null, stoppedReason: null })?.[1]).toContain("아직 값이 없습니다");

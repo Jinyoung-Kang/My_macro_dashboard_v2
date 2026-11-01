@@ -560,6 +560,11 @@ describe("오늘 추정 꼬리(한국)", () => {
     // 참고선은 꼬리 점의 날에 값이 없음(계산만 하는 선 — 오늘 추정을 붙이지 않음)
     expect(within(nav).getByText("노출 맞춘 참고선(계좌 아님)").getAttribute("data-values")).toBe("100000000,100100000,null");
     expect(screen.getByRole("list", { name: "한국 Claude 계좌 순자산 곡선" }).getAttribute("data-estimate")).toBe("null,100312450,100400000");
-    expect(screen.getByText(/^점선 꼬리 = 11-02 순자산 줄이 생기기 전의 지금 값/)).toBeTruthy();
+    // 꼬리(짧은 점선 '3 3', 범례에 없음)와 참고선(긴 점선 '6 4', 범례에 있음)이 한 곡선에 — 두 설명이 모양으로 서로를 가름
+    expect(screen.getByText(/^짧은 점선 꼬리\(범례에 없음\) = 11-02 순자산 줄이 생기기 전의 지금 값/)).toBeTruthy();
+    expect(within(screen.getByRole("list", { name: "노출 맞춘 참고선 설명" })).getByText(/^긴 점선\(범례에 있음\) = 노출 맞춘 참고선 — /))
+      .toBeTruthy();
+    expect(screen.getByText(/— 긴 점선\(노출 맞춘 참고선 — 출발 뒤/)).toBeTruthy();
+    expect(screen.queryByText(/^점선 /)).toBeNull();
   });
 });

@@ -576,7 +576,7 @@ describe("오늘 추정 꼬리(장중 명세 §4 '순자산 곡선 꼬리')", ()
 
     expect(navItems()).toEqual(["규칙 계좌", "SPY 계좌", "규칙 계좌 · 추정 23:58", "SPY 계좌 · 추정 23:57"]);
     expect(screen.getByRole("list", { name: "순자산 계열" }).getAttribute("data-rows")).toBe("3");
-    expect(screen.getByText(/^점선 꼬리 = 10-30 순자산 줄이 생기기 전의 지금 값/)).toBeTruthy();
+    expect(screen.getByText(/^짧은 점선 꼬리\(범례에 없음\) = 10-30 순자산 줄이 생기기 전의 지금 값/)).toBeTruthy();
     // 곡선 카드의 출처가 그 점의 출처(장중 1분봉으로 다시 평가한 표시 전용 추정)를 함께 — 기본 히어로(출발 전 Claude 계좌)는 장부 출처
     expect(screen.getAllByText(/보유를 장중 1분봉 시세로 다시 평가한 표시 전용 추정/)).toHaveLength(1);
     // 출발 전 계좌의 히어로 곡선에는 꼬리가 없음(navEstimate의 그 계좌 값이 null — 짓지 않음)
@@ -646,7 +646,7 @@ describe("오늘 추정 꼬리(장중 명세 §4 '순자산 곡선 꼬리')", ()
 
     expect(navItems()).toEqual(["규칙 계좌", "SPY 계좌"]);
     expect(screen.getByRole("list", { name: "순자산 계열" }).getAttribute("data-rows")).toBe("2");
-    expect(screen.queryByText(/^점선 꼬리/)).toBeNull();
+    expect(screen.queryByText(/점선 꼬리/)).toBeNull();
   });
 });
 

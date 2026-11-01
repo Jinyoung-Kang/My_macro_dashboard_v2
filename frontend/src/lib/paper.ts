@@ -5472,13 +5472,14 @@ export function noteArchiveConfirm(row: Pick<NoteRow, "id" | "title">): string {
 
 /**
  * 순자산 곡선 아래 한 줄 — 규칙 계좌 결과는 종목 신호와 주식 노출(남는 현금을 두는 현금성 종목 — 미국 SHY·한국 153130, 설정 기본값)이 섞인
- * 값입니다. 한국은 노출 맞춘 참고선(점선)과 함께 보라고 적습니다(참고선의 정의·마지막 값은 lib/paperKr krReferenceNotes). 미국 응답·한계 문구는
+ * 값입니다. 한국은 노출 맞춘 참고선(긴 점선 — 오늘 추정 꼬리의 짧은 점선과 다름)과 함께 보라고 적습니다(참고선의 정의·마지막 값은 lib/paperKr
+ * krReferenceNotes). 미국 응답·한계 문구는
  * 그대로이고 화면 글만 더합니다.
  */
 export function exposureNote(market: PaperMarketCode = "US"): string {
   const cashLike = marketMeta(market).cashLike;
   return market === "KR"
-    ? `규칙 계좌 결과는 종목 신호와 주식 노출(후보가 모자란 만큼과 남는 현금은 ${cashLike})이 섞인 값입니다 — 점선(노출 맞춘 참고선 — 출발 뒤 `
+    ? `규칙 계좌 결과는 종목 신호와 주식 노출(후보가 모자란 만큼과 남는 현금은 ${cashLike})이 섞인 값입니다 — 긴 점선(노출 맞춘 참고선 — 출발 뒤 `
       + "금융위 확정 종가가 들어온 날부터 그림)과 함께 보면 주식 노출 몫을 뗀 종목 신호 몫이 보입니다"
     : `규칙 계좌 결과는 13F 종목 신호와 주식 노출(남는 현금은 ${cashLike})이 섞인 값입니다 — 주식 비중이 낮은 날은 ${cashLike} 수익이 섞입니다`;
 }

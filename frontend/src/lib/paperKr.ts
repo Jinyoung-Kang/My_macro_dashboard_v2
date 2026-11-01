@@ -410,6 +410,8 @@ export function withKrReference(
 
 /**
  * 곡선 아래 참고선 설명 — 정의 한 줄과 마지막 값의 날·그날 쓴 규칙 계좌 주식 비중, 멈췄으면 그 사유. 참고선이 없으면 null(글 없음).
+ * 같은 곡선에 오늘 추정 꼬리(짧은 점선 '3 3' — 범례에 없음, lib/paperOverview `navTailNote`)가 함께 그려질 수 있어, 참고선은 '긴 점선'(6 4 —
+ * 범례에 있음)으로 모양을 밝혀 적습니다 — 그냥 '점선'이면 꼬리를 참고선으로 읽을 수 있었습니다.
  */
 export function krReferenceNotes(reference: PaperExposureReference | null | undefined): string[] | null {
   if (!reference) return null;
@@ -418,7 +420,7 @@ export function krReferenceNotes(reference: PaperExposureReference | null | unde
   const weight = lastIndex >= 0 ? numberOf(weights[lastIndex]) : null;
   const notes = [
     // 왜 보는지(규칙 계좌 결과의 노출 혼합)는 곡선 아래 노출 문구(lib/paper exposureNote)가 한 줄로 적습니다 — 여기서는 정의만.
-    "점선 = 노출 맞춘 참고선 — 전날 규칙 계좌 주식 비중 x%를 069500 x% + 153130 (100−x)%로 맞춰 이은 선입니다(계산만 하고 계좌가 아님, "
+    "긴 점선(범례에 있음) = 노출 맞춘 참고선 — 전날 규칙 계좌 주식 비중 x%를 069500 x% + 153130 (100−x)%로 맞춰 이은 선입니다(계산만 하고 계좌가 아님, "
       + "비용 없음, 금융위원회 증권상품시세 확정 종가).",
     reference.asOfDate
       ? `마지막 값 ${reference.asOfDate}(그날 쓴 전날 규칙 계좌 주식 비중 ${weight === null ? EMPTY : `${formatNumber(weight, 2)}%`}) — `
