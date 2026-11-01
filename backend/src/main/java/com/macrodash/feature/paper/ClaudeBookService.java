@@ -149,6 +149,12 @@ public class ClaudeBookService {
      */
     static final String KR_SCHEMA_RESOURCE = "paper/kr-decision.schema.json";
     /**
+     * 한국 Claude 계좌2의 응답 스키마(단계 2a — 명세 2026-11-02-kr-claude2-stage2 §2·§4) — 한국 파일({@value #KR_SCHEMA_RESOURCE})과 다른 점은
+     * 주문의 {@code timing} enum({@link PaperBooks#KR_CLAUDE2_TIMINGS} 여덟)과 주문마다 필수인 {@code executionNote}(200자 이내)뿐입니다(미국 계좌2
+     * 파일과 같은 두 곳). 한국 파일은 바이트 그대로입니다.
+     */
+    static final String KR_CLAUDE2_SCHEMA_RESOURCE = "paper/kr-claude2-decision.schema.json";
+    /**
      * 미국 Claude 계좌2의 응답 스키마(계좌2 명세 §9-2 — 단계 1) — 미국 파일과 같은 {@code schemaVersion} 2이고 다른 점은 주문의 {@code timing} enum
      * ({@link PaperBooks#CLAUDE2_TIMINGS} 여덟)과 주문마다 필수인 {@code executionNote}(200자 이내)뿐입니다. 장중 확인({@code checkpoint})은 단계 2.
      */

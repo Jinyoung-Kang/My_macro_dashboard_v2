@@ -624,6 +624,13 @@ final class ClaudeDecisionPipeline {
         if (profile.timed()) {
             timingRules = timingRules.withClosed(UsTimedFills.closedTimings(profile.timings(), asOf, clock.instant(),
                     market.calendar()));
+        } else if (market.definition() == KrPaperMarket.INSTANCE) {
+            // 한국 매시 시점(한국 Claude 계좌2 — 단계 2a): 장 시간 변경일의 정규장 밖·종가 단일가 시간, 지금 + 60초 안. 매시 시점이 없는 계좌는 빈 표.
+            Map<String, OrderValidator.Closed> closed = KrTimedLadder.closedTimings(profile.timings(), asOf, clock.instant(),
+                    market.calendar());
+            if (!closed.isEmpty()) {
+                timingRules = timingRules.withClosed(closed);
+            }
         }
         List<Verdict> verdicts = OrderValidator.validate(proposed, ctx, limits, timingRules);
 

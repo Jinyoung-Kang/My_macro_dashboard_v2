@@ -72,7 +72,7 @@ class DecisionTimingsLockTest {
                         KrPaperMarket.INSTANCE.code());
         assertThat(contexts.get(2).market()).isSameAs(KrPaperMarket.INSTANCE);
         assertThat(contexts.get(2).schemaResource()).isEqualTo(ClaudeBookService.KR_SCHEMA_RESOURCE);
-        assertThat(contexts.get(3).schemaResource()).isEqualTo(ClaudeBookService.KR_SCHEMA_RESOURCE);
+        assertThat(contexts.get(3).schemaResource()).isEqualTo(ClaudeBookService.KR_CLAUDE2_SCHEMA_RESOURCE);
         assertThat(contexts).extracting(context -> context.shared() != null).as("미국 둘만 시장 입력을 함께 씀(입력 동결)")
                 .containsExactly(true, true, false, false);
         assertThat(ClaudeBookService.marketContexts(mock(PacketBuilder.class), null)).as("한국 패킷 빌더가 없으면 미국 둘(시험)")
@@ -97,11 +97,9 @@ class DecisionTimingsLockTest {
                     .containsAll(profile.timings());
             assertThat(profile.timed()).as(code + " 시각 지정 체결 계좌 = 정의의 실행 프로필 TIMED")
                     .isEqualTo(PaperBooks.find(code).map(PaperBooks.Definition::timed).orElse(false));
-            if (!profile.timed()) {
-                // 시장 기본 계좌 — 시장 묶음의 받는 시점·두 갈래 순위·시장 몫 그대로.
+            if (!profile.timed() && profile.code().equals(context.market().claudeBook())) {
+                // 시장 기본 계좌 — 시장 묶음의 받는 시점·두 갈래 순위·시장 몫 그대로(한국 Claude 계좌2는 메뉴 계좌 — 아래 따로).
                 PaperMarket market = context.market();
-                // 한국 Claude 계좌2는 계좌1과 같은 시장 몫의 다른 계좌(사용자 결정 2026-11-02).
-                assertThat(profile.code()).as(code + " 프로필 계좌").isIn(market.claudeBook(), PaperBooks.KR_CLAUDE2);
                 assertThat(profile.timings()).as(code + " 시장 체결 시점").isEqualTo(market.timings());
                 assertThat(market.earlyTiming()).as(code + " 이른 시점").isEqualTo(market.timings().get(0));
                 assertThat(market.orderValidation().timings()).isEqualTo(market.timings());
@@ -166,6 +164,39 @@ class DecisionTimingsLockTest {
         List<String> mentions = rules.lines().filter(line -> line.contains(ExecutionAudit.NEXT_OBSERVATION)).toList();
         assertThat(mentions).as("NEXT_OBSERVATION은 우선순위 줄에만").containsExactly(ClaudePrompts.CLAUDE2_PRIORITY);
         assertThat(schemaTimings(ClaudeBookService.CLAUDE2_SCHEMA_RESOURCE)).doesNotContain(ExecutionAudit.NEXT_OBSERVATION);
+    }
+
+    @Test
+    @DisplayName("한국 Claude 계좌2(단계 2a): 메뉴 여덟 = 스키마 enum = 순위 0~7 = 고정 문단 timing 줄 = 장부 매시 사다리 시각 + 시가·종가 = 수집기 KR_TIMED_TIMINGS + "
+            + "NEXT_OPEN, 모두 V17 CHECK 안, NEXT_OBSERVATION은 우선순위 줄에만, 계좌1 스키마·문단은 NEXT_OPEN뿐")
+    void krClaude2MenuIsLockedEverywhere() throws IOException {
+        ClaudeBookProfile kr2 = ClaudeBookProfile.KR_CLAUDE2;
+        assertThat(kr2.timings()).containsExactly("NEXT_OPEN", "AT_1000", "AT_1100", "AT_1200", "AT_1300", "AT_1400", "AT_1500",
+                "NEXT_CLOSE").isEqualTo(PaperBooks.KR_CLAUDE2_TIMINGS).isEqualTo(schemaTimings(ClaudeBookService.KR_CLAUDE2_SCHEMA_RESOURCE));
+        assertThat(new java.util.HashSet<>(kr2.orderValidation().ranks().values())).as("시점마다 다른 때 체결").hasSize(8);
+        assertThat(kr2.orderValidation().earlyTiming()).isEqualTo(PaperBooks.NEXT_OPEN);
+        assertThat(v17Timings()).containsAll(kr2.timings());
+        assertThat(kr2.timings().stream().filter(t -> KrTimedLadder.hourly(t) != null).toList())
+                .as("장부 매시 사다리 시각").containsExactlyInAnyOrderElementsOf(KrTimedLadder.HOURLY.keySet());
+        String collector = java.nio.file.Files.readString(Path.of("../collector/app/tasks/kr_paper_timed.py"));
+        Matcher tuple = Pattern.compile("KR_TIMED_TIMINGS = \\(([^)]*)\\)").matcher(collector);
+        assertThat(tuple.find()).isTrue();
+        List<String> collected = new ArrayList<>();
+        Matcher quoted = Pattern.compile("\"([A-Z_0-9]+)\"").matcher(tuple.group(1));
+        while (quoted.find()) {
+            collected.add(quoted.group(1));
+        }
+        assertThat(collected).as("수집기가 1분봉을 받는 시점 = 메뉴의 시가 밖 일곱").containsExactlyElementsOf(kr2.timings().subList(1, 8));
+
+        String rules = kr2.fixedRules();
+        String timingLine = rules.lines().filter(line -> line.startsWith("- timing은")).findFirst().orElseThrow();
+        for (String timing : kr2.timings()) {
+            assertThat(timingLine).as("timing 줄에 " + timing).contains(timing);
+        }
+        assertThat(rules.lines().filter(line -> line.contains(ExecutionAudit.NEXT_OBSERVATION)).toList())
+                .as("NEXT_OBSERVATION은 우선순위 줄에만").singleElement().asString().startsWith("우선순위(고정)");
+        assertThat(schemaTimings(ClaudeBookService.KR_SCHEMA_RESOURCE)).as("계좌1은 그대로").containsExactly(PaperBooks.NEXT_OPEN);
+        assertThat(ClaudeBookProfile.KR_CLAUDE.fixedRules()).doesNotContain("AT_1000");
     }
 
     private static final Path V18 = Path.of("../db/migrations/V18__paper_checkpoints.sql");

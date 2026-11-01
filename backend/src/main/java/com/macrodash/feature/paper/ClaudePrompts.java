@@ -1,5 +1,6 @@
 package com.macrodash.feature.paper;
 
+import java.util.List;
 import java.util.Map;
 
 /**
@@ -200,8 +201,8 @@ final class ClaudePrompts {
     }
 
     /**
-     * 한국 Claude 계좌2(사용자 결정 2026-11-02)의 고정 문단 — 한국 고정 문단({@link #KR_FIXED_RULES})의 출력 절 앞에 성향 절(현금성 153130)을 끼운 글.
-     * 출력 절 머리가 한 번이 아니면 오류.
+     * 한국 Claude 계좌2(사용자 결정 2026-11-02)의 고정 문단 — 계좌2 고정 문단({@link #KR_CLAUDE2_FIXED_RULES} — 단계 2a 체결 절 다음)의 출력 절 앞에
+     * 성향 절(현금성 153130)을 끼운 글. 출력 절 머리가 한 번이 아니면 오류.
      */
     static String withKrClaude2RiskProfile(String fixedRules, String profile) {
         if (fixedRules.indexOf(OUTPUT_HEADER) < 0 || fixedRules.indexOf(OUTPUT_HEADER) != fixedRules.lastIndexOf(OUTPUT_HEADER)) {
@@ -278,6 +279,57 @@ final class ClaudePrompts {
                 .replace("{{TIMING_LINE}}", allowNextClose
                         ? "timing은 NEXT_OPEN(기준 거래일 다음 KRX 거래일의 정규장 시가 단일가, 기본) 또는 NEXT_CLOSE(다음 KRX 거래일의 정규장 종가 단일가)."
                         : "timing은 NEXT_OPEN(기준 거래일 다음 KRX 거래일의 정규장 시가 단일가)뿐이다.");
+    }
+
+    // ------------------------------------------------------------------ 한국 Claude 계좌2 단계 2a — 체결 시점 메뉴(명세 2026-11-02-kr-claude2-stage2 §2·§4)
+    // 한국 계좌1 문단(KR_FIXED_RULES)은 그대로 두고, 계좌2 문단은 그 글에서 세 곳만 바꿉니다(미국 계좌2 c2-1과 같은 방식): ① 우선순위 줄의 시점 읽는 법
+    // ② timing 줄 → 메뉴 줄 ③ 출력 절 앞의 체결 절. 나머지 문장은 계좌1과 글자까지 같습니다. 성향 절은 렌더링이 더합니다(withKrClaude2RiskProfile).
+
+    /** 한국 계좌1 우선순위 줄의 시점 읽는 법 — 계좌2 문단에서 메뉴 읽는 법으로 바뀌는 자리. */
+    static final String KR_TIMING_READING = "프레임의 NEXT_OBSERVATION은 한국에서 NEXT_OPEN으로 읽고(한국 체결 시점은 NEXT_OPEN뿐)";
+
+    /** 한국 계좌2 우선순위 줄의 시점 읽는 법 — 프레임의 시점 문장은 아래 메뉴로 읽음. */
+    static final String KR_CLAUDE2_TIMING_READING = "프레임의 NEXT_OBSERVATION·NEXT_CLOSE 문장은 이 계좌에서 아래 체결 시점 메뉴로 읽고"
+            + "(NEXT_OBSERVATION은 NEXT_OPEN)";
+
+    /** 한국 계좌1 문단의 timing 줄({@link #krFixedRules}의 {@code false} 판) — 계좌2 문단에서 메뉴 줄로 바뀌는 자리. */
+    static final String KR_TIMING_LINE = "- timing은 NEXT_OPEN(기준 거래일 다음 KRX 거래일의 정규장 시가 단일가)뿐이다.\n";
+
+    /**
+     * 한국 계좌2의 timing 줄 — 메뉴 여덟(시각은 KST), 매도가 현금을 만드는 순서(검증기 순위·장부 처리 순서와 같음), 매시·종가는 다음 거래일 하루의
+     * 1분봉, 장 시간 변경일에 닫히는 매시 시점({@link KrTimedLadder#closedTimings}), 주문마다 executionNote.
+     */
+    static final String KR_CLAUDE2_TIMING_LINES = """
+            - timing은 체결 시점 메뉴 여덟 중 하나다 — NEXT_OPEN(기준 거래일 다음 KRX 거래일 1_basis.nextSession의 정규장 시가 단일가), AT_1000·AT_1100·AT_1200·AT_1300·AT_1400·AT_1500(그날 그 시각에 시작한 1분봉 시가), NEXT_CLOSE(그날 정규장 종가 단일가). 시각은 한국 시간(KST)이다.
+            - 체결 순서는 NEXT_OPEN < AT_1000 < … < AT_1500 < NEXT_CLOSE다. 매도는 같은 시점이거나 더 늦은 시점 매수의 현금·종목 자리만 만든다(OVER_ALLOCATED·MAX_POSITIONS).
+            - 매시·종가 주문은 다음 KRX 거래일 하루의 1분봉으로만 체결된다 — 그날 체결되지 않으면 다음 거래일로 넘어가지 않는다. 장 시간 변경일(1_basis.nextSessionOpenKst·nextSessionCloseKst)에는 정규장 밖이거나 종가 단일가(마감 10분 전부터)에 걸리는 매시 시점이 거절된다(MALFORMED).
+            - 주문마다 executionNote(그 체결 시점을 고른 이유, 200자 이내)를 반드시 쓴다.
+            """;
+
+    /** 한국 계좌2의 체결 절 — 출력 절 앞에 넣습니다. 장중 확인은 단계 2b(그 전에는 결정 뒤 장중 정보를 보지 못함). */
+    static final String KR_CLAUDE2_FILL_SECTION = """
+            ## 체결(고정)
+            - 매시 체결가는 그 시각 T에 시작한 토스 1분봉의 시가다. 그 봉에 거래가 없으면 T+1~T+4분의 첫 거래 봉 시가, 그것도 없으면 그날 정규장 안 T 뒤 첫 거래 봉 시가(대체 체결)로 체결하고, 그날 T 뒤 정규장 거래가 없으면 체결하지 않는다. 멈춘 가격으로 채우지 않는다.
+            - NEXT_CLOSE는 정규장 마감 단일가 봉의 종가로 체결하고, 금융위 확정 종가가 들어오면 그 값으로 고친다. NEXT_OPEN은 계좌1과 같은 시가 단일가다. 비용(수수료·슬리피지·매도세)은 시점과 무관하게 같다.
+            - 결정 뒤 장중 정보는 보지 못한다 — 이 결정이 다음 거래일 주문의 마지막 판단이다. 체결은 늘 주문 뒤 그 시각의 실제 가격이다.
+            """;
+
+    /**
+     * 한국 Claude 계좌2(kr_claude2)의 고정 문단(단계 2a) — {@link #KR_FIXED_RULES}와 같은 문장에서 세 곳만 다릅니다: 우선순위 줄의 시점 읽는 법
+     * ({@link #KR_TIMING_READING} → {@link #KR_CLAUDE2_TIMING_READING}), timing 줄({@link #KR_TIMING_LINE} → {@link #KR_CLAUDE2_TIMING_LINES}), 출력 절
+     * 앞의 체결 절({@link #KR_CLAUDE2_FILL_SECTION}). 바꿀 자리가 계좌1 문단에 한 번씩이 아니면 기동하지 않습니다. 받는 체결 시점은
+     * {@link PaperBooks#KR_CLAUDE2_TIMINGS}와 같은 목록입니다({@code DecisionTimingsLockTest}).
+     */
+    static final String KR_CLAUDE2_FIXED_RULES = krClaude2FixedRules(KR_FIXED_RULES);
+
+    static String krClaude2FixedRules(String base) {
+        for (String spot : List.of(KR_TIMING_READING, KR_TIMING_LINE, OUTPUT_HEADER)) {
+            if (base.indexOf(spot) < 0 || base.indexOf(spot) != base.lastIndexOf(spot)) {
+                throw new IllegalStateException("한국 계좌2 고정 문단의 바꿀 자리가 계좌1 문단에 한 번씩 있어야 합니다: " + spot.strip());
+            }
+        }
+        return base.replace(KR_TIMING_READING, KR_CLAUDE2_TIMING_READING).replace(KR_TIMING_LINE, KR_CLAUDE2_TIMING_LINES)
+                .replace(OUTPUT_HEADER, KR_CLAUDE2_FILL_SECTION + OUTPUT_HEADER);
     }
 
     /**

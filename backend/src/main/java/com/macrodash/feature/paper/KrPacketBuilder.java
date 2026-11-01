@@ -358,7 +358,7 @@ final class KrPacketBuilder {
         Map<String, Object> notesSection = notesSection(packetNotes);
         KrEventsSection.Built events = events(run, calendar, asOf, body, readAt, lines, members, companies, etfs, paper);
         Map<String, Object> hardRules = hardRules(run, asOf, initial, limits, paper, etfs, universe, lockedOut,
-                unfillable, quotes, input.universeDate());
+                unfillable, quotes, input.universeDate(), menu());
 
         Map<String, Object> fixed = new LinkedHashMap<>();
         fixed.put(INSTRUCTIONS, instructions);
@@ -448,9 +448,9 @@ final class KrPacketBuilder {
         lines.add("출력은 주어진 스키마대로 한다. 주문이 없어도 noTradeReason을 쓴다.");
         lines.add("한국 책(" + book + ")이다 — 통화는 원(KRW), 날짜는 KRX 거래일(KST), 시각 표기도 KST다. 티커는 6자리 종목 "
                 + "코드다.");
-        lines.add(timingLine());
-        lines.add("체결은 정수 주다 — 목표 비중 증가분을 체결가(시가)와 비용으로 나눈 정수 주만 사고, 1주 가격보다 작은 매수 증가분은 체결되지 "
-                + "않는다(12_hardRules).");
+        lines.add(menu() ? KR_CLAUDE2_TIMING_LINE : timingLine());
+        lines.add("체결은 정수 주다 — 목표 비중 증가분을 체결가(" + (menu() ? "그 시점의 가격" : "시가") + ")와 비용으로 나눈 정수 주만 사고, "
+                + "1주 가격보다 작은 매수 증가분은 체결되지 않는다(12_hardRules).");
         lines.add("호가단위: " + KrxCosts.tickTableText() + " — 체결가는 관측된 단일가 그대로라 호가를 맞출 필요는 없다.");
         lines.add(costLine(rates, paper.slippageBp()));
         lines.add("가격(8_prices의 close, 9_portfolio의 price와 그 값으로 센 weightPct·unrealizedPct·stopDistancePct)은 " + PRICES_NOTE
@@ -466,6 +466,33 @@ final class KrPacketBuilder {
         out.put("lines", lines);
         return out;
     }
+
+    /**
+     * 체결 시점 메뉴를 받는 계좌인가 — 한국 Claude 계좌2(단계 2a, {@link ClaudeBookProfile#KR_CLAUDE2}). 그 계좌 패킷만 체결 시점 문장 셋(0_instructions의
+     * 시점 줄·12_hardRules의 매도 자리 줄·체결 줄)이 메뉴 판이고, 계좌1 패킷은 이 칸 전과 글자 그대로입니다.
+     */
+    private boolean menu() {
+        return PaperBooks.KR_CLAUDE2.equals(book);
+    }
+
+    /** 한국 계좌2의 체결 시점 문장(0_instructions) — 메뉴 여덟과 체결 순서, 시각은 KST. */
+    static final String KR_CLAUDE2_TIMING_LINE = "주문 timing은 체결 시점 메뉴 여덟 중 하나다 — NEXT_OPEN(기준 거래일 다음 KRX 거래일 "
+            + "1_basis.nextSession의 정규장 시가 단일가), AT_1000·AT_1100·AT_1200·AT_1300·AT_1400·AT_1500(그날 그 시각 KST에 시작한 토스 1분봉 시가), "
+            + "NEXT_CLOSE(그날 정규장 종가 단일가). 체결 순서는 NEXT_OPEN < AT_1000 < … < AT_1500 < NEXT_CLOSE이고, 주문마다 executionNote(그 시점을 "
+            + "고른 이유)를 쓴다.";
+
+    /** 한국 계좌2의 매도 자리 문장(12_hardRules) — 매도는 같은 시점이거나 더 늦은 시점 매수의 자리만 만듦(검증기 순위). */
+    static final String KR_CLAUDE2_ALLOCATION_LINE = "매수 목표 합 + 매도 뒤 남는 보유 비중이 100%를 넘으면 목표 비중이 큰 주문부터 받고 넘치는 "
+            + "주문은 거절(OVER_ALLOCATED). 매도는 같은 시점이거나 더 늦은 시점 매수의 자리만 만든다 — 체결 순서는 NEXT_OPEN < AT_1000 < … < AT_1500 "
+            + "< NEXT_CLOSE이고, 늦은 시점의 매도는 이른 시점 매수의 현금(비중 합, OVER_ALLOCATED)·종목 자리(최대 종목 수, MAX_POSITIONS)를 비우지 "
+            + "못한다. unfillableTickers 종목의 매도는 어느 시점 매수의 자리도 만들지 못한다.";
+
+    /** 한국 계좌2의 매시·종가 체결 문장(12_hardRules — 시가 체결 문장 다음). */
+    static final String KR_CLAUDE2_TIMED_FILL_LINE = "매시(AT_*)·종가(NEXT_CLOSE) 주문은 다음 KRX 거래일(1_basis.nextSession)의 토스 1분봉으로만 "
+            + "체결된다 — 매시는 그 시각 T에 시작한 봉 시가(거래 없으면 T+1~T+4분 첫 거래 봉, 그것도 없으면 그날 정규장 안 T 뒤 첫 거래 봉 — 대체 "
+            + "체결), 종가는 정규장 마감 단일가 봉 종가(금융위 확정 종가가 들어오면 그 값으로 고침). 그날 체결되지 않으면(거래정지·T 뒤 정규장 거래 "
+            + "없음) 다음 거래일로 넘어가지 않고 기준일 + 3거래일에 만료된다. 장 시간 변경일(nextSessionOpenKst·nextSessionCloseKst가 09:00·15:30이 "
+            + "아닌 날)에 정규장 밖이거나 종가 단일가(마감 10분 전부터)에 걸리는 매시 시점은 거절(MALFORMED).";
 
     /** 체결 시점 문장 — {@link KrPaperMarket#ALLOW_NEXT_CLOSE}에 따라. */
     static String timingLine() {
@@ -1274,7 +1301,7 @@ final class KrPacketBuilder {
     private static Map<String, Object> hardRules(MarketRun run, LocalDate asOf, boolean initial, Limits limits,
                                                  PaperSettings paper, Set<String> etfs, Set<String> universe,
                                                  Set<String> lockedOut, Map<String, String> unfillable,
-                                                 Optional<Quotes> quotes, LocalDate universeDate) {
+                                                 Optional<Quotes> quotes, LocalDate universeDate, boolean menu) {
         PaperSettings.CostRates rates = paper.costRates() == null ? PaperSettings.CostRates.defaults() : paper.costRates();
         String cashLike = String.join(", ", paper.cashLikeTickers());
         List<String> lines = new ArrayList<>();
@@ -1287,7 +1314,7 @@ final class KrPacketBuilder {
         lines.add("SELL의 sellFraction = 보유 수량 대비 파는 비율(0 초과 1 이하, null이면 전량). 보유가 없는 종목은 팔 수 없다. "
                 + "부분 매도는 1주 이상이어야 한다 — floor(보유 수량 × sellFraction) < 1이면 BELOW_ONE_SHARE로 거절"
                 + "(보유 수량은 9_portfolio.positions의 qty).");
-        lines.add(KrPaperMarket.ALLOW_NEXT_CLOSE
+        lines.add(menu ? KR_CLAUDE2_ALLOCATION_LINE : KrPaperMarket.ALLOW_NEXT_CLOSE
                 ? "매수 목표 합 + 매도 뒤 남는 보유 비중이 100%를 넘으면 목표 비중이 큰 주문부터 받고 넘치는 주문은 거절(OVER_ALLOCATED). "
                         + "매도는 같은 시점이거나 더 늦은 매수의 자리만 만든다 — NEXT_CLOSE 매도는 NEXT_OPEN 매수보다 늦게 체결되므로 "
                         + "NEXT_OPEN 매수의 현금(비중 합, OVER_ALLOCATED)·종목 자리(최대 종목 수, MAX_POSITIONS)를 비우지 못한다. "
@@ -1312,8 +1339,11 @@ final class KrPacketBuilder {
                 + "재진입 금지 종목의 주문은 거절. 보유 종목은 U 밖이어도 팔 수 있다. unfillableTickers(지금 체결할 수 없는 종목 — 이번 관측치에 "
                 + "봉 없음·기준 거래일 거래정지·미처리 기업행위 보유, 규칙 계좌와 같은 판정)의 매수는 UNFILLABLE로 거절. 그 종목 보유의 "
                 + "매도는 받아 대기로 두고, 만료 전에 풀리면 그 뒤 첫 시가에 체결된다(규칙 계좌와 같음).");
-        lines.add("주문은 기준 거래일 뒤 첫 관측 봉(거래량 > 0)의 시가로 체결된다 — 기준 거래일 이하 봉·주문보다 먼저 받은 관측치·거래정지일"
-                + "(거래량 0) 봉으로는 체결되지 않고, 체결되지 않은 주문은 기준일 + 3거래일에 만료된다.");
+        lines.add((menu ? "NEXT_OPEN " : "") + "주문은 기준 거래일 뒤 첫 관측 봉(거래량 > 0)의 시가로 체결된다 — 기준 거래일 이하 봉·"
+                + "주문보다 먼저 받은 관측치·거래정지일(거래량 0) 봉으로는 체결되지 않고, 체결되지 않은 주문은 기준일 + 3거래일에 만료된다.");
+        if (menu) {
+            lines.add(KR_CLAUDE2_TIMED_FILL_LINE);
+        }
         if (!initial) {
             lines.add("9_portfolio.pendingOrders(앞선 결정의 대기 주문): " + PacketBuilder.PENDING_SUPERSEDED + ".");
         }

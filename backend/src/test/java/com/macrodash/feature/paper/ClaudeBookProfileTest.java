@@ -110,26 +110,43 @@ class ClaudeBookProfileTest {
     }
 
     @Test
-    @DisplayName("한국 Claude 계좌2(사용자 결정 2026-11-02) — 계좌1과 같은 프로필(코드만 kr_claude2), 렌더링은 계좌1 + 출력 절 앞의 투자 성향 절(현금성 153130, "
-            + "기본 공격투자형 — 한국 묶음 kr.claude2.riskProfile), 계좌1 렌더링에는 없음")
+    @DisplayName("한국 Claude 계좌2(사용자 결정 2026-11-02, 단계 2a) — 계좌1과 같은 한국 묶음에 체결 시점 메뉴 여덟(순위 0~7)·응답 스키마 kr-claude2·고정 문단(계좌1에서 "
+            + "세 곳만 다름)·근거 이름(KST), 시각 지정 표시는 끔(미국 전용 분기), 렌더링은 계좌2 문단 + 출력 절 앞 투자 성향 절(현금성 153130), 계좌1 렌더링 그대로")
     void krClaude2Profile() {
         ClaudeBookProfile kr1 = ClaudeBookProfile.KR_CLAUDE;
         ClaudeBookProfile kr2 = ClaudeBookProfile.KR_CLAUDE2;
         assertThat(kr2.code()).isEqualTo(PaperBooks.KR_CLAUDE2);
         assertThat(kr2.market()).isSameAs(kr1.market());
-        assertThat(kr2.schemaResource()).isEqualTo(kr1.schemaResource());
-        assertThat(kr2.fixedRules()).isEqualTo(kr1.fixedRules());
-        assertThat(kr2.timings()).isEqualTo(kr1.timings());
-        assertThat(kr2.timingRanks()).isEqualTo(kr1.timingRanks());
+        assertThat(kr2.schemaResource()).isEqualTo(ClaudeBookService.KR_CLAUDE2_SCHEMA_RESOURCE);
+        assertThat(kr2.fixedRules()).isEqualTo(ClaudePrompts.KR_CLAUDE2_FIXED_RULES);
+        assertThat(kr2.timings()).isEqualTo(PaperBooks.KR_CLAUDE2_TIMINGS).startsWith(PaperBooks.NEXT_OPEN).endsWith(PaperBooks.NEXT_CLOSE);
+        assertThat(kr2.timingRanks().values()).containsExactly(0, 1, 2, 3, 4, 5, 6, 7);
+        assertThat(kr2.timingNames()).containsEntry(PaperBooks.NEXT_OPEN, "다음 거래일 시가")
+                .containsEntry(PaperBooks.AT_1000, "다음 거래일 10:00 KST").containsEntry(PaperBooks.AT_1500, "다음 거래일 15:00 KST")
+                .containsEntry(PaperBooks.NEXT_CLOSE, "다음 거래일 종가");
         assertThat(kr2.timed()).isFalse();
+        assertThat(kr2.checkpoints()).isFalse();
+        assertThat(kr2.packetVariant()).isNull();
+        assertThat(kr2.callCapKey()).isNull();
+
+        String rules = ClaudePrompts.KR_CLAUDE2_FIXED_RULES;
+        assertThat(rules.replace(ClaudePrompts.KR_CLAUDE2_TIMING_READING, ClaudePrompts.KR_TIMING_READING)
+                .replace(ClaudePrompts.KR_CLAUDE2_TIMING_LINES, ClaudePrompts.KR_TIMING_LINE)
+                .replace(ClaudePrompts.KR_CLAUDE2_FILL_SECTION, "")).as("계좌1 문단에서 세 곳만 다름").isEqualTo(ClaudePrompts.KR_FIXED_RULES);
+        assertThat(rules).contains("executionNote").contains("200자").contains("KST").contains("## 체결(고정)").doesNotContain("뉴욕");
+        assertThat(rules.indexOf("## 체결(고정)")).as("체결 절은 출력 절 앞").isLessThan(rules.indexOf("## 출력(고정)"));
+        assertThatThrownBy(() -> ClaudePrompts.krClaude2FixedRules(ClaudePrompts.krFixedRules(true)))
+                .as("바꿀 자리(NEXT_OPEN뿐인 timing 줄)가 없으면 기동하지 않음").isInstanceOf(IllegalStateException.class);
 
         JsonNode body = FrameworkService.interimBody(MAPPER);
         JsonNode defaults = PaperFixtures.settings(new FakePaperStore()).defaultsJson();
         String first = FrameworkService.render(kr1, body, 0, defaults);
         String second = FrameworkService.render(kr2, body, 0, defaults);
         String section = ClaudePrompts.riskProfileSection("공격투자형", "153130");
-        assertThat(first).doesNotContain("## 투자 성향");
-        assertThat(second).isEqualTo(first.replace(ClaudePrompts.OUTPUT_HEADER, section + ClaudePrompts.OUTPUT_HEADER));
+        assertThat(first).doesNotContain("## 투자 성향").contains(ClaudePrompts.KR_FIXED_RULES.strip());
+        assertThat(second).isEqualTo(first.replace(ClaudePrompts.KR_FIXED_RULES.strip(), ClaudePrompts.KR_CLAUDE2_FIXED_RULES
+                .replace(ClaudePrompts.OUTPUT_HEADER, section + ClaudePrompts.OUTPUT_HEADER).strip()));
+        assertThat(second.indexOf("## 체결(고정)")).as("체결 절 → 성향 절 → 출력 절").isLessThan(second.indexOf("## 투자 성향"));
         assertThat(section).contains("현금성(153130)을 뺀");
         ObjectNode stable = (ObjectNode) defaults.deepCopy();
         ((ObjectNode) stable.path("kr")).putObject("claude2").put("riskProfile", "안정추구형");

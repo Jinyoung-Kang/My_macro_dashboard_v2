@@ -400,7 +400,7 @@ class KrStartTest {
                             .put("open", 70_500).put("market", "KOSPI"))));
                     return out;
                 });
-        fake.answer(KrClaudeFixtures.decision(9, null, KrClaudeFixtures.order("005930", "BUY", 10.0, null)));
+        fake.answer(KrClaudeFixtures.decision(9, null, KrClaudeFixtures.claude2Order("005930", "BUY", 10.0, null, PaperBooks.NEXT_OPEN)));
 
         ClaudeBookService.KrClaude2Started started = claudeService.startKrClaude2(PaperBooks.KR_CLAUDE2);
 
@@ -444,7 +444,7 @@ class KrStartTest {
         clock.set(kst("2026-12-01T05:00"));
         assertThatThrownBy(() -> claudeService.startKrClaude2(PaperBooks.KR_CLAUDE2, "NAVER"))
                 .isInstanceOf(InvalidRequestException.class).hasMessageContaining("가격 출처");
-        fake.answer(KrClaudeFixtures.decision(9, null, KrClaudeFixtures.order("005930", "BUY", 10.0, null)));
+        fake.answer(KrClaudeFixtures.decision(9, null, KrClaudeFixtures.claude2Order("005930", "BUY", 10.0, null, PaperBooks.NEXT_OPEN)));
 
         ClaudeBookService.KrClaude2Started started = claudeService.startKrClaude2(PaperBooks.KR_CLAUDE2, StartCloseRestart.SOURCE_TOSS);
 
@@ -473,7 +473,7 @@ class KrStartTest {
         realClaude(fake);
         assertThat(runAt("2026-11-30T22:30").outcome()).isEqualTo(PaperDecisionJob.STARTED);
         clock.set(kst("2026-12-02T05:10"));   // S 밤 관측치(11-30 21:57)보다 31시간 뒤
-        fake.answer(KrClaudeFixtures.decision(9, null, KrClaudeFixtures.order("005930", "BUY", 10.0, null)));
+        fake.answer(KrClaudeFixtures.decision(9, null, KrClaudeFixtures.claude2Order("005930", "BUY", 10.0, null, PaperBooks.NEXT_OPEN)));
 
         ClaudeBookService.KrClaude2Started started = claudeService.startKrClaude2(PaperBooks.KR_CLAUDE2, StartCloseRestart.SOURCE_TOSS);
 
@@ -486,7 +486,8 @@ class KrStartTest {
 
     @Test
     @DisplayName("한국 Claude 계좌2(사용자 결정 2026-11-02) — 운용 중이면 같은 밤 계좌1 다음에 따로 정기 결정: 같은 관측치·자료 게이트, 패킷의 계좌 몫은 "
-            + "kr_claude2(자기 장부), 시스템 프롬프트에 투자 성향 절(기본 공격투자형·현금성 153130), 계좌1 결정·주문은 넣지 않음")
+            + "kr_claude2(자기 장부), 시스템 프롬프트에 투자 성향 절(기본 공격투자형·현금성 153130), 계좌1 결정·주문은 넣지 않음; 단계 2a — 계좌2만 체결 "
+            + "시점 메뉴(고정 문단·패킷 문장·응답 스키마)로 매시 주문(AT_1000 + executionNote)을 받아 대기로 둠")
     void krClaude2DecidesIndependentlyAfterAccount1() {
         KrClaudeFixtures.FakeAi fake = new KrClaudeFixtures.FakeAi();
         fake.answer(KrClaudeFixtures.decision(8, null, KrClaudeFixtures.order("005930", "BUY", 8.0, null)));
@@ -499,20 +500,33 @@ class KrStartTest {
         store.states.put(PaperBooks.KR_CLAUDE2, new com.macrodash.store.PaperStore.BookState(PaperBooks.KR_CLAUDE2, 100_000_000, 100_000_000, 0, 0,
                 first.lastObservedAt(), first.lastProcessedCollectedAt(), S, null));
 
-        fake.answer(KrClaudeFixtures.decision(8, "관망")).answer(KrClaudeFixtures.decision(0, "현금 유지"));
+        fake.answer(KrClaudeFixtures.decision(8, "관망")).answer(KrClaudeFixtures.decision(10, null,
+                KrClaudeFixtures.claude2Order("005930", "BUY", 10.0, null, PaperBooks.AT_1000)));
         sessionData(NEXT, S, everyCodeOn(NEXT));
         PaperDecisionJob.Result next = runAt("2026-12-01T22:30");
 
         assertThat(next.outcome()).isEqualTo(PaperDecisionJob.DECIDED);
         assertThat(fake.requests).as("출발 1 + 계좌1 + 계좌2").hasSize(3);
         Decision second = store.decisionFor(PaperBooks.KR_CLAUDE2, NEXT, RuleBookService.SCHEDULED).orElseThrow();
-        assertThat(second.status()).isEqualTo(ClaudeBookService.STATUS_NO_TRADE);
+        assertThat(second.status()).isEqualTo(ClaudeBookService.STATUS_OK);
+        assertThat(store.ordersOf(PaperBooks.KR_CLAUDE2)).filteredOn(o -> java.util.Objects.equals(o.decisionId(), second.id())).singleElement()
+                .satisfies(o -> {
+                    assertThat(o.timing()).isEqualTo(PaperBooks.AT_1000);
+                    assertThat(o.status()).isEqualTo(PaperBooks.ORDER_PENDING);
+                    assertThat(o.reason().path("executionNote").asString()).isEqualTo("AT_1000 고른 이유");
+                });
         assertThat(second.packet().path("1_basis").path("book").asString()).isEqualTo(PaperBooks.KR_CLAUDE2);
         assertThat(second.packet().path("9_portfolio").path("book").asString()).isEqualTo(PaperBooks.KR_CLAUDE2);
         assertThat(second.packet().path("9_portfolio").toString()).as("계좌1의 보유·주문은 넣지 않음").doesNotContain("005930");
         assertThat(second.response().path("gates").get(0).path("status").asString()).as("① kr_claude2").isEqualTo("PASS");
         assertThat(fake.requests.get(2).system()).contains("## 투자 성향(사용자 선택 — 공격투자형)").contains("현금성(153130)을 뺀");
         assertThat(fake.requests.get(1).system()).as("계좌1에는 성향 절 없음").doesNotContain("## 투자 성향");
+        assertThat(fake.requests.get(2).system()).contains(ClaudePrompts.KR_CLAUDE2_TIMING_LINES).contains("## 체결(고정)");
+        assertThat(fake.requests.get(1).system()).as("계좌1 고정 문단은 메뉴 없음").doesNotContain("AT_1000").contains(ClaudePrompts.KR_TIMING_LINE);
+        assertThat(fake.requests.get(2).user()).contains(KrPacketBuilder.KR_CLAUDE2_TIMING_LINE)
+                .contains(KrPacketBuilder.KR_CLAUDE2_ALLOCATION_LINE).contains(KrPacketBuilder.KR_CLAUDE2_TIMED_FILL_LINE);
+        assertThat(fake.requests.get(1).user()).as("계좌1 패킷은 메뉴 문장 없음").doesNotContain("AT_1000")
+                .contains(KrPacketBuilder.timingLine());
         assertThat(store.decisionFor(PaperBooks.KR_CLAUDE, NEXT, RuleBookService.SCHEDULED)).isPresent();
     }
 

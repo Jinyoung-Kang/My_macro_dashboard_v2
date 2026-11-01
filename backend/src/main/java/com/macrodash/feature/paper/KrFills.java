@@ -43,8 +43,9 @@ import java.util.function.Function;
  * 금융위 확정 때 고칩니다(K29, C3). 1분봉이 {@code FAILED}(호출 실패·'아직 묻지 못함' — 수집기가 같은 밤 다음 slow에 그 봉만 다시 물음)면
  * <b>기다립니다</b>(결정 d11) — 사다리로 내려가지 않습니다. 기다림의 끝은 벽시계가 아니라 <b>자료</b>입니다: 수집 시각이 그 봉 날짜 밤의 한국
  * 결정 기한(기본 D+1 01:00 — 그 실행 설정 판의 {@code kr.decisionDeadlineKst}) 이후인 저장본에도 FAILED면 사다리로 내려가고 사유를 남깁니다.
- * 기다리는 동안 그 주문은 대기라 결정 게이트 ①('앞 결정의 D 대상 주문이 정리됨')이 막힙니다(D1). {@code NEXT_CLOSE}는 토스 일봉 종가로
- * 체결하지 않습니다 — 1분봉 15:30 봉(G2)은 계약 1에 없고 {@link KrPaperMarket#ALLOW_NEXT_CLOSE}도 false라 그 주문은 만료됩니다.
+ * 기다리는 동안 그 주문은 대기라 결정 게이트 ①('앞 결정의 D 대상 주문이 정리됨')이 막힙니다(D1). 매시({@code AT_*})·종가({@code NEXT_CLOSE} —
+ * 한국 Claude 계좌2의 메뉴, 단계 2a)는 같은 체결 봉의 목표 세션 1분봉({@code paper.kr.timed})으로 {@link KrTimedLadder}가 풉니다 — 토스 일봉 값으로
+ * 채우지 않습니다(G2).
  *
  * <p><b>체결 조건</b>(§4-3·K31): 체결가 = 관측가 그대로, 수수료·세금·슬리피지는 비용 칸({@link KrxCosts} — 칸마다 원 미만 절사), 수량은
  * 비용 포함 유출이 예산 안. 종목 구분은 설정 ETF 목록({@code kr.cashLikeTickers} + 벤치마크 종목) → ETF, 아니면 금융위 시장 구분

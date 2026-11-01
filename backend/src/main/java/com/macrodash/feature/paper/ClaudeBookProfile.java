@@ -50,10 +50,17 @@ record ClaudeBookProfile(PaperMarket market, String code, String schemaResource,
     static final ClaudeBookProfile KR_CLAUDE = marketDefault(KrPaperMarket.INSTANCE, ClaudeBookService.KR_SCHEMA_RESOURCE);
 
     /**
-     * 한국 Claude 계좌2({@code kr_claude2}, 사용자 결정 2026-11-02) — 단계 1은 한국 계좌1과 같은 한국 묶음·응답 스키마·고정 문단·체결 시점·순위
-     * (계좌 코드만 다름 — 패킷은 {@link KrPacketBuilder#forBook}). 투자 성향 절은 렌더링이 더합니다({@link FrameworkService#render}).
+     * 한국 Claude 계좌2({@code kr_claude2}, 사용자 결정 2026-11-02) — 한국 계좌1과 같은 한국 묶음(달력·관측치·하드 규칙 줄·금액 표기 — 패킷은
+     * {@link KrPacketBuilder#forBook})에 단계 2a의 체결 시점 메뉴(명세 2026-11-02-kr-claude2-stage2 §2): 응답 스키마
+     * {@value ClaudeBookService#KR_CLAUDE2_SCHEMA_RESOURCE}·고정 문단 {@link ClaudePrompts#KR_CLAUDE2_FIXED_RULES}·메뉴
+     * {@link PaperBooks#KR_CLAUDE2_TIMINGS}(순위 NEXT_OPEN 0 &lt; AT_1000 1 &lt; … &lt; AT_1500 6 &lt; NEXT_CLOSE 7 — 장부가 이 순서로 매도 → 매수를
+     * 처리). 시각 지정 체결 표시({@link #timed})는 켜지 않습니다(미국 전용 분기 — 닫힌 시점·E 하루 만료, §9): 한국 매시 시점의 닫힘은 결정 파이프라인이
+     * {@link KrTimedLadder#closedTimings}로 더하고, 만료는 계좌1과 같은 기준일 + 3거래일입니다. 패킷 변형·소상한 키는 없음. 투자 성향 절은 렌더링이
+     * 더합니다({@link FrameworkService#render}).
      */
-    static final ClaudeBookProfile KR_CLAUDE2 = sameAs(KR_CLAUDE, PaperBooks.KR_CLAUDE2);
+    static final ClaudeBookProfile KR_CLAUDE2 = new ClaudeBookProfile(KrPaperMarket.INSTANCE, PaperBooks.KR_CLAUDE2,
+            ClaudeBookService.KR_CLAUDE2_SCHEMA_RESOURCE, ClaudePrompts.KR_CLAUDE2_FIXED_RULES, null,
+            PaperBooks.KR_CLAUDE2_TIMINGS, sequence(PaperBooks.KR_CLAUDE2_TIMINGS), null, krClaude2TimingNames(), false, false);
 
     /**
      * 미국 Claude 계좌2({@code claude2}, 계좌2 명세 §9·ADR 0022) — 계좌1과 같은 미국 시장 묶음(달력·관측치·하드 규칙 줄·금액 표기)에 응답 스키마
@@ -122,12 +129,6 @@ record ClaudeBookProfile(PaperMarket market, String code, String schemaResource,
                 market.timingNames(), false, false);
     }
 
-    /** 다른 계좌 코드로 같은 프로필(시장·스키마·고정 문단·패킷 변형·시점·순위·소상한 키·이름·체결 방식·장중 확인 판). */
-    private static ClaudeBookProfile sameAs(ClaudeBookProfile base, String code) {
-        return new ClaudeBookProfile(base.market(), code, base.schemaResource(), base.fixedRules(), base.packetVariant(),
-                base.timings(), base.timingRanks(), base.callCapKey(), base.timingNames(), base.timed(), base.checkpoints());
-    }
-
     /** 받는 순서 그대로 0, 1, 2 … 순위(시점마다 다른 때 체결 — 계좌2). */
     private static Map<String, Integer> sequence(List<String> timings) {
         Map<String, Integer> out = new LinkedHashMap<>();
@@ -147,6 +148,20 @@ record ClaudeBookProfile(PaperMarket market, String code, String schemaResource,
             }
         }
         out.put(PaperBooks.NEXT_CLOSE, OrderValidator.Market.US.timingNames().get(PaperBooks.NEXT_CLOSE));
+        return out;
+    }
+
+    /** 한국 계좌2 검증기 근거 문구의 시점 이름(예: '다음 거래일 10:00 KST(AT_1000) 매수인데 …'). 시가·종가는 한국 계좌1과 같은 이름. */
+    private static Map<String, String> krClaude2TimingNames() {
+        Map<String, String> out = new LinkedHashMap<>();
+        out.put(PaperBooks.NEXT_OPEN, "다음 거래일 시가");
+        for (String timing : PaperBooks.KR_CLAUDE2_TIMINGS) {
+            java.time.LocalTime at = KrTimedLadder.hourly(timing);
+            if (at != null) {
+                out.put(timing, "다음 거래일 " + KrTimedLadder.label(at) + " KST");
+            }
+        }
+        out.put(PaperBooks.NEXT_CLOSE, "다음 거래일 종가");
         return out;
     }
 

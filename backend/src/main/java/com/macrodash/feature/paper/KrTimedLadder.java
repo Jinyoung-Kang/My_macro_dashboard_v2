@@ -2,6 +2,7 @@ package com.macrodash.feature.paper;
 
 import com.macrodash.Kst;
 import com.macrodash.analytics.KrxCalendar;
+import com.macrodash.analytics.OrderValidator;
 import com.macrodash.analytics.TradingCalendar;
 import com.macrodash.feature.paper.KrQuotes.Bar1m;
 import com.macrodash.feature.paper.KrQuotes.Choice;
@@ -13,6 +14,8 @@ import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalTime;
+import java.time.ZonedDateTime;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -56,6 +59,11 @@ final class KrTimedLadder {
     /** 마감 봉을 덮었다고 보는 저장본 — 그날 마감 이만큼 뒤에 받음(수집기 KR_TIMED_AFTER가 보통 날 마감 + 10분). */
     static final Duration CLOSE_COVERED_AFTER = Duration.ofMinutes(10);
 
+    /** 마감 단일가 시간 — 정규장 마감 이만큼 전부터(보통 날 15:20~15:30). 매시 시점이 여기 걸리면 받지 않습니다. */
+    static final Duration CLOSING_AUCTION = Duration.ofMinutes(10);
+    /** 기준 시각이 지금 + 이만큼 안이면 늦은 주문(미국 계좌2와 같은 60초 — 주문은 검증 직후 같은 트랜잭션에서 만들어짐). */
+    static final Duration LATE_MARGIN = Duration.ofSeconds(60);
+
     /** 사다리 결과 — 체결 또는 기다림 사유. */
     record Result(Choice choice, String reason) {
     }
@@ -67,6 +75,41 @@ final class KrTimedLadder {
 
     static String label(LocalTime time) {
         return String.format(Locale.ROOT, "%02d:%02d", time.getHour(), time.getMinute());
+    }
+
+    /**
+     * 그 결정에서 닫힌 한국 매시 시점(검증기 {@link OrderValidator.Market#closed} — 명세 §2): 목표 세션 E(기준 거래일 다음 KRX 거래일)의 기준 시각 T가
+     * 그날 정규장 개장 전이거나 마감 단일가 시간(마감 10분 전부터 — {@link #CLOSING_AUCTION})에 걸리면 MALFORMED(장 시간 변경일 —
+     * {@code kr.calendar.openTimeOverrides}), T가 지금 + 60초 이전이면 LATE_FOR_TIMING. 보통 날 밤 결정에서는 아무것도 닫히지 않습니다. 시가·종가는
+     * 닫지 않습니다.
+     *
+     * @param timings 받는 체결 시점(계좌 프로필)
+     */
+    static Map<String, OrderValidator.Closed> closedTimings(List<String> timings, LocalDate asOf, Instant now,
+                                                            TradingCalendar calendar) {
+        Map<String, OrderValidator.Closed> out = new LinkedHashMap<>();
+        if (timings.stream().noneMatch(timing -> hourly(timing) != null)) {
+            return out;
+        }
+        LocalDate session = calendar.nextTradingDay(asOf);
+        Instant open = calendar.openInstant(session);
+        Instant close = calendar.closeInstant(session);
+        String hours = label(open.atZone(KrxCalendar.SEOUL).toLocalTime()) + "~" + label(close.atZone(KrxCalendar.SEOUL).toLocalTime());
+        for (String timing : timings) {
+            LocalTime at = hourly(timing);
+            if (at == null) {
+                continue;
+            }
+            Instant target = ZonedDateTime.of(session, at, KrxCalendar.SEOUL).toInstant();
+            if (target.isBefore(open) || !target.isBefore(close.minus(CLOSING_AUCTION))) {
+                out.put(timing, new OrderValidator.Closed(OrderValidator.MALFORMED, session + " 정규장 " + hours + " KST — "
+                        + timing + "(" + label(at) + ")은 정규장 밖이거나 종가 단일가 시간이라 받지 않음"));
+            } else if (!target.isAfter(now.plus(LATE_MARGIN))) {
+                out.put(timing, new OrderValidator.Closed(OrderValidator.LATE_FOR_TIMING, session + " " + timing + "(" + label(at)
+                        + " KST)이 지금 + 60초(" + Kst.stamp(now.plus(LATE_MARGIN)) + ") 이전이라 받지 않음"));
+            }
+        }
+        return out;
     }
 
     /**

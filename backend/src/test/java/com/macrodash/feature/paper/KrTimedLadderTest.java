@@ -149,6 +149,31 @@ class KrTimedLadderTest {
     }
 
     @Test
+    @DisplayName("닫힌 매시 시점: 보통 날 밤 결정은 없음, 장 시간 변경일(11:00~15:05 가정)은 개장 전 AT_1000·종가 단일가에 걸리는 AT_1500 MALFORMED, "
+            + "기준 시각이 지금 + 60초 이전이면 LATE_FOR_TIMING, 시가·종가는 닫지 않음, 매시 시점이 없는 계좌는 달력을 보지 않음")
+    void closedTimings() {
+        LocalDate asOf = LocalDate.of(2026, 11, 2);
+        assertThat(KrTimedLadder.closedTimings(PaperBooks.KR_CLAUDE2_TIMINGS, asOf, kst("2026-11-02T22:40"), CALENDAR)).isEmpty();
+
+        TradingCalendar shifted = new KrxCalendar(KrPaperMarket.holidaysByYear(KrFixtures.holidaysPayload(2026, 2027)), List.of(),
+                Map.of(E, new KrxCalendar.Hours(LocalTime.of(11, 0), LocalTime.of(15, 5))));
+        Map<String, com.macrodash.analytics.OrderValidator.Closed> closed =
+                KrTimedLadder.closedTimings(PaperBooks.KR_CLAUDE2_TIMINGS, asOf, kst("2026-11-02T22:40"), shifted);
+        assertThat(closed).containsOnlyKeys(PaperBooks.AT_1000, PaperBooks.AT_1500);
+        assertThat(closed.get(PaperBooks.AT_1000).reason()).isEqualTo(com.macrodash.analytics.OrderValidator.MALFORMED);
+        assertThat(closed.get(PaperBooks.AT_1500).detail()).contains("11:00~15:05").contains("종가 단일가");
+
+        Map<String, com.macrodash.analytics.OrderValidator.Closed> late =
+                KrTimedLadder.closedTimings(PaperBooks.KR_CLAUDE2_TIMINGS, asOf, kst("2026-11-03T10:59:30"), CALENDAR);
+        assertThat(late).containsOnlyKeys(PaperBooks.AT_1000, PaperBooks.AT_1100);
+        assertThat(late.values()).extracting(com.macrodash.analytics.OrderValidator.Closed::reason)
+                .containsOnly(com.macrodash.analytics.OrderValidator.LATE_FOR_TIMING);
+
+        assertThat(KrTimedLadder.closedTimings(List.of(PaperBooks.NEXT_OPEN), asOf, kst("2026-11-03T10:59:30"), null))
+                .as("계좌1(NEXT_OPEN뿐)은 달력을 보지 않고 빈 표").isEmpty();
+    }
+
+    @Test
     @DisplayName("매시 시점의 기준 시각은 수집기 KR_TIMED_HOURS와 같은 10:00~15:00, 그 밖은 null")
     void hourlyTimes() {
         assertThat(KrTimedLadder.HOURLY.values()).containsExactlyInAnyOrder(LocalTime.of(10, 0), LocalTime.of(11, 0),

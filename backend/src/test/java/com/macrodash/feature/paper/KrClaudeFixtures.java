@@ -170,4 +170,10 @@ final class KrClaudeFixtures {
                 + ",\"sellFraction\":" + fraction + ",\"timing\":\"NEXT_OPEN\",\"thesis\":\"" + ticker
                 + " 논거\",\"labels\":[\"사실\",\"가설\"],\"invalidation\":\"수급 반전\"}";
     }
+
+    /** 한국 Claude 계좌2 주문 한 줄(단계 2a — 메뉴 시점과 executionNote, 응답 스키마 {@value ClaudeBookService#KR_CLAUDE2_SCHEMA_RESOURCE}). */
+    static String claude2Order(String ticker, String side, Double target, Double fraction, String timing) {
+        return order(ticker, side, target, fraction).replace("\"timing\":\"NEXT_OPEN\"",
+                "\"timing\":\"" + timing + "\",\"executionNote\":\"" + timing + " 고른 이유\"");
+    }
 }
