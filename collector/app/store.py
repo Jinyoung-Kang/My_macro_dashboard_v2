@@ -556,7 +556,7 @@ def recent_observation_codes(dataset: str, since: str, limit: int) -> list[str]:
 
 def held_tickers(market: str) -> list[str]:
     """
-    🧪 모의 매매에서 지금 보유한 종목(그 시장의 출발한 계좌들, 중복 없음·정렬) — 장중 평가(paper.live.*)의 범위입니다.
+    모의 매매에서 지금 보유한 종목(그 시장의 출발한 계좌들, 중복 없음·정렬) — 장중 평가(paper.live.*)의 범위입니다.
 
     백엔드 표 ``paper_positions``·``paper_books``를 **읽기만** 합니다(쓰는 프로세스는 백엔드 하나 — ADR 0008, 이 읽기의 결정은 v2 ADR 0020).
     보유는 장부가 정하므로 수집기가 따로 셈하지 않습니다.
@@ -569,7 +569,7 @@ def held_tickers(market: str) -> list[str]:
     return [row["ticker"] for row in rows]
 
 
-# 🧪 미국 1분봉(paper.bars.us) 수집 범위의 계좌(명세 2026-10-30-claude-book2-timing-design.md §12-1) — 주문은 Claude 계좌1·계좌2, 보유는
+# 미국 1분봉(paper.bars.us) 수집 범위의 계좌(명세 2026-10-30-claude-book2-timing-design.md §12-1) — 주문은 Claude 계좌1·계좌2, 보유는
 # 계좌2만(계좌2 시각 지정 체결의 'T 시각 순자산'에 보유 종목의 창 가격이 필요 — §10-3). 계좌2(claude2)는 단계 1에서 생기지만 미리 둡니다
 # (행이 없으면 고르는 것이 없음). 코드는 백엔드 PaperBooks와 같은 글자입니다(test_paper_bars가 파일로 대조).
 TIMED_ORDER_BOOKS = {"US": ("claude", "claude2")}
@@ -581,7 +581,7 @@ TIMED_RECENT_DAYS = 8
 
 def timed_scope(market: str) -> list[str]:
     """
-    🧪 1분봉(paper.bars.us) 수집 범위 — 그 시장 Claude 계좌들의 대기 주문 ∪ 최근 ``TIMED_RECENT_DAYS``일(달력일, DB 시각)에 만든 주문(상태 무관)
+    1분봉(paper.bars.us) 수집 범위 — 그 시장 Claude 계좌들의 대기 주문 ∪ 최근 ``TIMED_RECENT_DAYS``일(달력일, DB 시각)에 만든 주문(상태 무관)
     ∪ 계좌2 보유의 종목(중복 없음·정렬). 지연 기준 종목(SPY)은 태스크가 더합니다 — 여기는 표에서 고른 것만이라 빈 목록이면 부르지 않습니다.
 
     백엔드 표 ``paper_orders``·``paper_positions``·``paper_books``를 **읽기만** 합니다(쓰는 프로세스는 백엔드 하나 — ADR 0008, held_tickers와
@@ -603,7 +603,7 @@ def timed_scope(market: str) -> list[str]:
     return [row["ticker"] for row in rows]
 
 
-# 🧪 장중 확인 감시(paper.watch.us) 범위의 계좌·피드·상태(명세 2026-10-30 §12-1, ADR 0022 단계 2) — 계좌는 백엔드 PaperBooks.CLAUDE2, 피드·상태는
+# 장중 확인 감시(paper.watch.us) 범위의 계좌·피드·상태(명세 2026-10-30 §12-1, ADR 0022 단계 2) — 계좌는 백엔드 PaperBooks.CLAUDE2, 피드·상태는
 # V18 paper_checkpoints CHECK와 같은 글자입니다(test_paper_watch가 파일로 대조). HOURLY 확인은 시간별 관측치를 쓰므로 감시 범위가 아닙니다.
 WATCH_BOOKS = {"US": "claude2"}
 FEED_MINUTE = "MINUTE"
@@ -612,7 +612,7 @@ CHECKPOINT_PLANNED = "PLANNED"
 
 def watch_scope(market: str, session: date) -> dict | None:
     """
-    🧪 장중 확인 감시 범위 — 그 시장 계좌2의 ``session``(뉴욕 날짜) 장중 확인 행 가운데 PLANNED·MINUTE인 것(계좌·세션마다 한 행)과 계좌2의
+    장중 확인 감시 범위 — 그 시장 계좌2의 ``session``(뉴욕 날짜) 장중 확인 행 가운데 PLANNED·MINUTE인 것(계좌·세션마다 한 행)과 계좌2의
     보유·대기 주문 종목. 행이 없으면 None(태스크가 Yahoo를 부르지 않음).
     ``{book, sessionDate, atEt(time), watch[…], held[…], pending[…]}``
 
@@ -641,14 +641,14 @@ def watch_scope(market: str, session: date) -> dict | None:
             "watch": list(row["watch"] or []), "held": [r["ticker"] for r in held], "pending": [r["ticker"] for r in pending]}
 
 
-# 🧪 장중 시장가(MARKET — 장중 확인 응답의 주문, 단계 2)를 내는 계좌. 1분봉 저장본에 그 주문의 기준 시각 창을 더하려고 생성 시각만 읽습니다.
+# 장중 시장가(MARKET — 장중 확인 응답의 주문, 단계 2)를 내는 계좌. 1분봉 저장본에 그 주문의 기준 시각 창을 더하려고 생성 시각만 읽습니다.
 TIMED_MARKET_BOOKS = {"US": ("claude2",)}
 MARKET_TIMING = "MARKET"
 
 
 def timed_market_targets(market: str) -> list[datetime]:
     """
-    🧪 1분봉(paper.bars.us)에 창을 더할 장중 시장가 주문의 생성 시각(UTC, 오래된 순) — 그 시장 계좌2의 ``timing = MARKET`` 주문 가운데 대기이거나
+    1분봉(paper.bars.us)에 창을 더할 장중 시장가 주문의 생성 시각(UTC, 오래된 순) — 그 시장 계좌2의 ``timing = MARKET`` 주문 가운데 대기이거나
     최근 ``TIMED_RECENT_DAYS``일(달력일, DB 시각)에 만든 것. 기준 시각(생성 + 60초 뒤 첫 분)은 태스크가 셉니다(paper_bars.market_target).
 
     백엔드 표 ``paper_orders``·``paper_books``를 **읽기만** 합니다(timed_scope와 같은 교차 읽기 — ADR 0008·0022). 종목은 timed_scope가 이미 담습니다.
@@ -997,7 +997,7 @@ def read_last_run() -> dict | None:
     return dict(row) if row else None
 
 
-# 시간 상한을 넘긴 실행이 뒤에서 계속 도는 동안의 호출이 남기는 ⚠️ 안내 행의 앞머리(tasks/runner._still_running, QA-117).
+# 시간 상한을 넘긴 실행이 뒤에서 계속 도는 동안의 호출이 남기는 empty 안내 행의 앞머리(tasks/runner._still_running, QA-117).
 # 태스크별 요약은 이 행을 최근 결과로 고르지 않습니다(QA-139). 백엔드 StoreRepository가 같은 글자를 씁니다
 # (StillRunningNoticeParityTest가 대조).
 STILL_RUNNING_PREFIX = "이전 수집이 아직 진행 중"
@@ -1014,7 +1014,7 @@ def read_task_summary(task_names: Sequence[str] | None = None) -> list[dict]:
     태스크마다 (task, id DESC) 인덱스의 첫 행만 읽습니다. 예전 DISTINCT ON은 실행 기록
     전체를 정렬해, 1년치(43만 행)에서 125ms가 걸렸습니다(지금 0.14ms).
 
-    좀비가 도는 동안의 ⚠️ 안내 행(STILL_RUNNING_PREFIX)은 건너뛰고 그 앞 실행(❌ 시간 초과)을 씁니다 — 그 행을
+    좀비가 도는 동안의 empty 안내 행(STILL_RUNNING_PREFIX)은 건너뛰고 그 앞 실행(✗ 시간 초과)을 씁니다 — 그 행을
     고르면 실제로는 멈춰 있는 태스크가 상태 화면의 '현재 오류'에서 빠졌습니다(QA-139). 실행 기록에는 그대로 남습니다.
     """
     params: list[Any] = []
@@ -1207,7 +1207,7 @@ def missing_datasets() -> list[dict]:
     if settings.dart_key():
         expected.append((catalog.SNAP_DART_FUNDAMENTALS, "국내 종목 재무 (DART)"))
     if all(settings.toss_credentials()):
-        # 🧪 한국 책 관측치 — 토스 키가 있으면 첫 slow에 생깁니다(유니버스가 없어도 ETF 2는 받음). 없으면 토스가 막혔다는 뜻입니다.
+        # 한국 책 관측치 — 토스 키가 있으면 첫 slow에 생깁니다(유니버스가 없어도 ETF 2는 받음). 없으면 토스가 막혔다는 뜻입니다.
         expected.append((catalog.SNAP_KR_PAPER_QUOTES, "모의 매매 한국 책 관측치 (토스)"))
 
     for sid in indicators.FRED_ALL_SERIES:

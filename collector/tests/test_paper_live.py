@@ -1,6 +1,6 @@
 """
 tests/test_paper_live.py
-🧪 모의 매매 장중 평가 태스크 paper_live_us·paper_live_kr (보유 종목 읽기는 PostgreSQL 필요).
+모의 매매 장중 평가 태스크 paper_live_us·paper_live_kr (보유 종목 읽기는 PostgreSQL 필요).
 
 고정하는 규칙
   1. 범위 = 그 시장의 출발한 계좌들이 지금 보유한 종목(백엔드 표 paper_positions를 읽기만) — 출발 전 계좌·다른 시장은 뺌, 중복 없음.

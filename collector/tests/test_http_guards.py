@@ -9,7 +9,7 @@ tests/test_http_guards.py
   3. 다시 보내는 것은 일시 오류(5xx·408·연결 끊김)뿐이고, 그 밖의 4xx는 한 번만 보냅니다. 태스크 안에서는 요청 timeout을 남은
      예산에 맞춰 줄이고, 다음 시도(대기 + timeout)가 예산 안에 끝나지 않으면 더 보내지 않습니다.
   4. 같은 호스트로 가는 요청 사이에는 최소 간격 + 지터를 둡니다. SEC 세션은 간격을 두지 않고 기존 토큰 버킷(초당 8건)만 씁니다.
-  5. 실행기 — 출처 거부로 아무것도 받지 못한 실행은 ❌ '거부됨: …'(⚠️ '수집 결과 없음'이 아님), 일부만 거부되면 ✅에 '· 거부됨: …'.
+  5. 실행기 — 출처 거부로 아무것도 받지 못한 실행은 error '거부됨: …'(empty '수집 결과 없음'이 아님), 일부만 거부되면 ok에 '· 거부됨: …'.
      태스크가 안에서 연 스레드 풀(bind_guard)에서 난 거부도 같습니다 — 실제 cot_history 태스크로 확인합니다.
   6. 거부를 받은 자리의 조치 안내 — BLS·SEC·FRED 세션의 403은 어댑터가 SourceRejected로 올리므로, 상태 코드가 아니라 그 예외에
      안내(UA·키)를 붙입니다. 실제 어댑터(127.0.0.1 서버)로 확인합니다.
@@ -391,7 +391,7 @@ def test_거부로_아무것도_받지_못하면_데이터_없음이_아니라_�
     ok, detail = _run(task)
 
     assert ok is False
-    assert recorded[-1]["status"] == "error", "⚠️ '데이터 없음'으로 보이면 조치(빈도·UA·키)가 필요한 줄 모릅니다"
+    assert recorded[-1]["status"] == "error", "empty '데이터 없음'으로 보이면 조치(빈도·UA·키)가 필요한 줄 모릅니다"
     assert detail == recorded[-1]["detail"]
     assert detail.startswith("거부됨: api.example.org(HTTP 429)가 요청을 거부")
     assert "0/3 시리즈 — 기존 저장본 유지" in detail
@@ -511,7 +511,7 @@ def test_bind_guard로_묶은_스레드_풀도_거부_기록과_예산을_본다
 def test_CFTC가_거부하면_cot_history는_수집_결과_없음이_아니라_거부됨(server, recorded, monkeypatch):
     """
     실제 cot_history 태스크 — 자산 여섯 개를 안쪽 스레드 풀(4개)로 묻습니다. 예전에는 그 풀의 거부가 실행 기록에 적히지 않아
-    ⚠️ '수집 결과 없음: 0/6 자산'으로 남았습니다. 첫 403 뒤의 요청은 래치에 막혀 나가지 않고, 같은 거절을 다시 묻지도 않습니다.
+    empty '수집 결과 없음: 0/6 자산'으로 남았습니다. 첫 403 뒤의 요청은 래치에 막혀 나가지 않고, 같은 거절을 다시 묻지도 않습니다.
     """
     server.routes["/cftc"] = [(403, JSON, b"{}")]
     monkeypatch.setattr(cot, "CFTC_URL", f"{server.base}/cftc")

@@ -1,6 +1,6 @@
 """
 tests/test_paper_bars.py
-🧪 미국 Claude 계좌2 단계 0 측정 — 태스크 paper_bars_us → 스냅샷 paper.bars.us (명세 2026-10-30-claude-book2-timing-design.md §12-1~12-3·§19, ADR 0022).
+미국 Claude 계좌2 단계 0 측정 — 태스크 paper_bars_us → 스냅샷 paper.bars.us (명세 2026-10-30-claude-book2-timing-design.md §12-1~12-3·§19, ADR 0022).
 
 고정하는 규칙
   1. 범위 = Claude 계좌1·계좌2의 대기 주문 ∪ 최근 8일 주문(상태 무관) ∪ 계좌2 보유 — 백엔드 표를 읽기만(읽기 전용 트랜잭션에서도 돎).
@@ -17,7 +17,7 @@ tests/test_paper_bars.py
   7. 이 저장본을 읽는 백엔드 코드는 실행 감사 작업(PaperExecutionAuditJob, 단계 0-4)과 장부의 시각 지정 체결(PaperMarketData.barsUs → UsTimedFills,
      단계 1-4 — 시각 지정 주문이 있는 계좌만), 상태 응답의 계좌2 묶음(PaperQueryService — claude2.bars, 표시용, 같은 barsUs 경유)뿐이고
      화면·패킷은 읽지 않는다.
-  8. 🧪 계좌2의 장중 시장가(MARKET, 단계 2) 주문이 대기이거나 최근 8일 것이면 기준 시각 T = (생성 + 60초)를 분으로 내린 뒤 + 1분(⑤ 엄격 —
+  8. 계좌2의 장중 시장가(MARKET, 단계 2) 주문이 대기이거나 최근 8일 것이면 기준 시각 T = (생성 + 60초)를 분으로 내린 뒤 + 1분(⑤ 엄격 —
      백엔드 ExecutionAudit.marketTarget과 같은 예시 표)을 그 T의 뉴욕 날짜 세션에만 창·첫 거래 봉 키로 더한다. 없으면 저장본 키는 메뉴 일곱 그대로.
 
 외부 네트워크를 쓰지 않습니다 — 1분봉 표는 yfinance 1.7.0 yf.download(group_by="ticker")의 모양(종목 × Open·High·Low·Close·Adj Close·Volume,
@@ -715,7 +715,7 @@ def test_장중에는_일봉을_부르지_않고_1분봉이_429면_일봉도_묻
 
 
 # ==============================================================================
-# 6. 🧪 장중 시장가(MARKET, 단계 2)의 기준 시각 창 — 명세 2026-10-30 §6-2 MARKET 줄·§8 ⑤
+# 6. 장중 시장가(MARKET, 단계 2)의 기준 시각 창 — 명세 2026-10-30 §6-2 MARKET 줄·§8 ⑤
 # ==============================================================================
 # 생성 시각(UTC) → 기준 시각 T(UTC). 백엔드 ExecutionAuditTest.marketTargetMatchesTheCollectorTable이 같은 표를 씁니다(B2-2).
 MARKET_TARGETS = [

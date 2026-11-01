@@ -78,7 +78,7 @@ def _missing_suffix(missing: list[str]) -> str:
 
 def task_paper_quotes() -> str:
     """
-    📒 모의 매매 유니버스의 최근 3개월 일봉 → 스냅샷 paper.quotes (장부 관측치의 유일한 출처).
+    모의 매매 유니버스의 최근 3개월 일봉 → 스냅샷 paper.quotes (장부 관측치의 유일한 출처).
 
     빠진 티커는 직전 저장본의 같은 티커로 잇고 ``isStale``을 붙입니다 — 장부는 isStale 봉으로 체결하지 않고,
     보유 평가는 마지막으로 본 값으로 하되 '가격 없음'으로 표시합니다. 이어받을 값도 없으면 그 티커는 저장본에서 빠집니다
@@ -115,7 +115,7 @@ def task_paper_quotes() -> str:
 
 def task_paper_price_history() -> str:
     """
-    📒 모의 매매 유니버스의 10년 일별 종가(수정주가) → timeseries ``equity_close`` (series_id = 야후 티커).
+    모의 매매 유니버스의 10년 일별 종가(수정주가) → timeseries ``equity_close`` (series_id = 야후 티커).
 
     매번 10년 전체를 보냅니다. 수정주가는 배당·분할이 생길 때마다 **과거 값이 바뀌므로** 최근 구간만 보내면
     옛 값과 새 값이 한 시계열에 섞입니다. put_timeseries가 값이 같은 행은 다시 쓰지 않아 실제로 바뀌는 행은 그 몫뿐입니다.

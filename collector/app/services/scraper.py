@@ -1,7 +1,7 @@
 """
 비공식 참고 시세 수집 (TradingView Scanner + Yahoo chart JSON).
 
-⚠️ TradingView·Yahoo는 **비공식 참고 시세**입니다. 화면은 공식 확정치와 나란히
+주의: TradingView·Yahoo는 **비공식 참고 시세**입니다. 화면은 공식 확정치와 나란히
 놓되 반드시 "참고"라고 표시해야 합니다.
 
 **HTML을 정규식으로 긁지 마세요.** 같은 값을 JSON으로 주는 공개 엔드포인트가
@@ -263,7 +263,7 @@ def _kodex_proxy_card(config: dict, reason: str | None) -> dict | None:
     """
     KODEX 200(069500.KS) 종가로 코스피200 수준을 추정한 카드.
 
-    ⚠️ 실제 야간선물 값이 아닙니다. 구버전과 동일하게 마지막 수단으로만 쓰고
+    주의: 실제 야간선물 값이 아닙니다. 구버전과 동일하게 마지막 수단으로만 쓰고
     isEstimated로 표시합니다. KODEX 200은 지수의 약 100배 가격이라 스케일을
     맞춥니다.
     """
@@ -393,7 +393,7 @@ def fetch_yahoo_chart(symbol: str) -> tuple[float | None, float | None]:
     """
     Yahoo에서 최근 종가와 직전 거래일 종가를 읽습니다.
 
-    ⚠️ 예전에는 query1.finance.yahoo.com/v8/finance/chart 를 requests로 직접
+    주의: 예전에는 query1.finance.yahoo.com/v8/finance/chart 를 requests로 직접
     호출했습니다. 그러다 429(Too Many Requests)로 WTI·브렌트유·상해종합이
     한꺼번에 막혔습니다. 같은 시각 같은 종목을 매크로 카드(yfinance)는 정상
     수집하고 있었습니다 — 차이는 클라이언트였습니다.

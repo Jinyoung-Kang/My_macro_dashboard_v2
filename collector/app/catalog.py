@@ -35,17 +35,17 @@ SNAP_PAPER_QUOTES = "paper.quotes"      # 모의 매매 유니버스 최근 3개
 # 수정 비율)·1분봉 개장 봉(09:01·10:01 라벨)·종목 상태(NXT·KRX 정지)·종목별 받은 시각. 미국 paper.quotes와 모양이 다릅니다 —
 # 계약(contract 1)은 docs/specs/2026-10-26-v2-kr-paper-spec.md §9 'paper.kr.quotes 계약'. KR 거래일 D 20:30 KST 뒤 하루 1회.
 SNAP_KR_PAPER_QUOTES = "paper.kr.quotes"
-# 🧪 모의 매매 장중 평가(표시 전용 — 체결·스탑·확정 순자산은 쓰지 않음) — 보유 종목(백엔드 표 paper_positions를 읽기만)의 최신 1분봉 가격과
+# 모의 매매 장중 평가(표시 전용 — 체결·스탑·확정 순자산은 쓰지 않음) — 보유 종목(백엔드 표 paper_positions를 읽기만)의 최신 1분봉 가격과
 # 봉 시각. 정기 수집이 없고(속도군 live) 운영자가 모의 매매 화면을 보는 정규장 동안 백엔드가 요청합니다(live 읽기 60초 하한).
 # {market, source, scope, tickers: {T: {price, at(ISO), isStale?}}, missing, error}. 미국 Yahoo(yfinance) 1분봉, 한국 토스 1분봉.
 SNAP_PAPER_LIVE_US = "paper.live.us"
 SNAP_PAPER_LIVE_KR = "paper.live.kr"
-# 🧪 미국 Claude 계좌2(체결 시점 실험)의 1분봉 — 단계 0 측정(명세 docs/specs/2026-10-30-claude-book2-timing-design.md §7-1·§12-1, ADR 0022).
+# 미국 Claude 계좌2(체결 시점 실험)의 1분봉 — 단계 0 측정(명세 docs/specs/2026-10-30-claude-book2-timing-design.md §7-1·§12-1, ADR 0022).
 # 수집 범위(Claude 계좌1·계좌2의 대기 주문 ∪ 최근 8일 주문 ∪ 계좌2 보유 — 백엔드 표를 읽기만, + 지연 기준 SPY)의 종목·세션(최근 3, 뉴욕 날짜)마다
 # 메뉴 창(09:30·10:00~15:00 ET, 각 T~T+4분) 1분봉·창마다 T 뒤 첫 거래 봉·첫/마지막 봉·검증용 일봉 시가와 저장본의 지연 lagSeconds.
 # 모양(contract 1)은 app/tasks/paper_bars.py 머리말. slow(매시) — paper.quotes 바로 뒤. 장부·패킷은 읽지 않습니다(읽는 곳은 실행 감사 작업, 단계 0-4).
 SNAP_PAPER_BARS_US = "paper.bars.us"
-# 🧪 미국 Claude 계좌2 단계 2 장중 확인 감시(명세 2026-10-30 §12-1, ADR 0022) — 계좌2의 오늘 세션 MINUTE 확인(백엔드 표 paper_checkpoints를 읽기만)
+# 미국 Claude 계좌2 단계 2 장중 확인 감시(명세 2026-10-30 §12-1, ADR 0022) — 계좌2의 오늘 세션 MINUTE 확인(백엔드 표 paper_checkpoints를 읽기만)
 # 감시 목록 ∪ 계좌2 보유·대기 ∪ {SPY, QQQ}의 최근 완성 1분봉 30개·당일 시고저·저장본 지연. 확인 시각 −15~+30분에만 받음(session, 5분).
 # 모양(contract 1)은 app/tasks/paper_watch.py 머리말. 장중 확인 패킷·예상 상태 가격에만 쓰이고 장부 체결은 읽지 않습니다.
 SNAP_PAPER_WATCH_US = "paper.watch.us"
@@ -54,18 +54,18 @@ SNAP_US_FUNDAMENTALS_STATUS = "us.fundamentals.status"  # 모의 매매 미국 �
 # 모의 매매 Claude 계좌 패킷 1b_calendar의 원자료(2단계 A) — 거시 발표일(FRED 릴리스·FOMC 상수, 앞으로 45일)과 유니버스 종목
 # (ETF 제외)의 다음 실적 발표일(yfinance). 기준일 창·보유·후보 고르기는 백엔드가 합니다.
 SNAP_US_CALENDAR = "calendar.us_events"
-# 🧪 모의 매매 한국 책 Claude 계좌 패킷 1b_calendar의 한국 거시 일정(v2 2단계 B9·K20) — 금통위 상수·연 1회 손으로 옮기는 주요 발표 상수
+# 모의 매매 한국 책 Claude 계좌 패킷 1b_calendar의 한국 거시 일정(v2 2단계 B9·K20) — 금통위 상수·연 1회 손으로 옮기는 주요 발표 상수
 # (앞으로 45일, KST). calendar.us_events와 같은 모양(macro.events·horizon, 금통위는 macro.bok, 발표 상수는 macro.releases — 날짜를 옮기지
 # 않은 발표는 status '일정 미확인'), 실적·컨센서스는 null + 사유. 외부 호출 없음.
 SNAP_KR_CALENDAR = "calendar.kr_events"
-# 🧪 미국 경제 지표 컨센서스(v2 2단계 B9·K22 — Nasdaq api/calendar/economicevents, 비공식 참고). 수집기는 **저장만** — 패킷 1b_calendar에
+# 미국 경제 지표 컨센서스(v2 2단계 B9·K22 — Nasdaq api/calendar/economicevents, 비공식 참고). 수집기는 **저장만** — 패킷 1b_calendar에
 # 싣는 것은 설정 calendar.consensus를 한국 책 출발일에 켠 뒤(백엔드 미국 패킷이 켜졌을 때만 읽음, E1b). {forDate, days: {동부 날짜: {rows: [{name, timeEt, forecast, previous, actual, unit,
 # …Text, importance null}], fetchedAt, isStale?}}, failed}. 미국 동부 오늘부터 18일 안의 평일, 하루 1회.
 SNAP_US_CONSENSUS = "calendar.us_consensus"
 # 모의 매매 Claude 계좌 패킷 11b_events(2단계 B)의 수집 상태 — 피드별 성공·실패와 사유, 7일 보관 건수, 마지막 수집 시각.
 # 헤드라인 자체는 observations news_headline에 있습니다.
 SNAP_NEWS_STATUS = "news.headlines.status"
-# 🧪 모의 매매 한국 책 Claude 계좌 패킷 11b_events(v2 2단계 B9)의 한국 사건 헤드라인 수집 상태 — news.headlines.status와 같은 칸 + 피드별
+# 모의 매매 한국 책 Claude 계좌 패킷 11b_events(v2 2단계 B9)의 한국 사건 헤드라인 수집 상태 — news.headlines.status와 같은 칸 + 피드별
 # 시각 형식(timeFormat)·형식이 다른 시각 수(skippedBadTime). 헤드라인 자체는 observations kr_news_headline에 있습니다.
 SNAP_KR_NEWS_STATUS = "kr.news.headlines.status"
 # 모의 매매 Claude 계좌 패킷 8b_fundamentals의 EPS 서프라이즈(2단계 C)의 수집 상태 — 종목별 받은 시각·저장 행 수·최신 발표일·오류와
@@ -162,7 +162,7 @@ OBS_US_FUNDAMENTALS = "us.fundamentals"
 # sha256 앞 16자, obs_date = 발행 시각의 UTC 날짜, payload {title, link, source, feed, publishedAt, fetchedAt}.
 # 같은 제목은 7일 안에 다시 넣지 않고(날짜가 달라도), 7일이 지난 행은 태스크가 지웁니다. 거르기·패킷 창은 백엔드가 합니다.
 OBS_NEWS_HEADLINE = "news_headline"
-# 🧪 모의 매매 한국 책 사건 헤드라인(v2 2단계 B9·K21 — 한국은행·재정경제부·국가데이터처·연합뉴스 마켓+ RSS 제목·링크·시각만). 미국 news_headline과
+# 모의 매매 한국 책 사건 헤드라인(v2 2단계 B9·K21 — 한국은행·재정경제부·국가데이터처·연합뉴스 마켓+ RSS 제목·링크·시각만). 미국 news_headline과
 # 따로입니다. entity = news_headline과 같은 제목 해시, obs_date = 발행 KST 날짜, payload {title, link, source, feed, feeds, publishedAt(날짜만 주는
 # 피드는 null), publishedDate, timePrecision(second·minute·date), knownAt, fetchedAt}. knownAt = '알 수 있는 시각' — 시각이 있으면 발행 시각,
 # 날짜만이면 min(처음 받은 시각, 그 KST 날짜 다음 자정)(명세 §4-11, 룩어헤드 없음). 7일이 지난 행은 태스크가 지웁니다.

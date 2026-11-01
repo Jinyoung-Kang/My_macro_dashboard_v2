@@ -1,6 +1,6 @@
 """
 app/tasks/kr_calendar.py
-weekly 그룹 — 🧪 모의 매매 한국 책 Claude 계좌 패킷 ``1b_calendar``의 한국 거시 일정(v2 2단계 명세 §4-11·K20·B9). 외부 호출 없음.
+weekly 그룹 — 모의 매매 한국 책 Claude 계좌 패킷 ``1b_calendar``의 한국 거시 일정(v2 2단계 명세 §4-11·K20·B9). 외부 호출 없음.
 
 상수(services/kr_calendar)에서 앞으로 45일(KST 오늘부터)의 금통위·주요 발표일을 골라 저장만 합니다. 기준일 다음 세션부터 10거래일 창
 (``KrxCalendar``)은 백엔드가 이 저장본을 읽어 자릅니다(ADR 0008). 지금은 저장만이고 패킷 연결은 E1입니다.

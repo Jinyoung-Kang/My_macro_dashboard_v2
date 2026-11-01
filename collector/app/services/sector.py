@@ -216,7 +216,7 @@ def _error_text(out: dict, failed: dict[str, str], batch_error: str | None) -> s
     if not out and batch_error:
         parts.insert(0, batch_error)
     elif not out and all(reason == NO_USABLE_DATA or reason.startswith("개별 재시도") for reason in failed.values()):
-        # ⚠️ yfinance는 Yahoo 응답 형식이 바뀌면 예외 없이 빈 프레임을 줍니다(예외도 429도 없음).
+        # 주의: yfinance는 Yahoo 응답 형식이 바뀌면 예외 없이 빈 프레임을 줍니다(예외도 429도 없음).
         # 사유가 없으면 "0/25 티커"만 남아 원인을 알 수 없습니다.
         silent = (f"yfinance({getattr(yf, '__version__', '?')})가 빈 응답을 받았습니다 "
                   "— Yahoo 차단 또는 라이브러리 버전 불일치를 의심하세요")

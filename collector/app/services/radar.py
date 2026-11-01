@@ -329,7 +329,7 @@ def fetch_daum_ranking(
     """
     Daum 금융 investor_purchase API (시장 전체 Top N).
 
-    ⚠️ 기관합계의 기간별 누적(5일/20일) 응답은 검증되지 않았습니다. 잘못된
+    주의: 기관합계의 기간별 누적(5일/20일) 응답은 검증되지 않았습니다. 잘못된
     기간 값을 보여주지 않도록 기관은 당일만 허용합니다.
     """
     investor_type = DAUM_INVESTOR_TYPES.get(investor)
@@ -482,7 +482,7 @@ def fetch_naver_ranking(
     """
     Naver 투자자별 매매상위 (iframe 페이지).
 
-    ⚠️ 이 페이지는 "현재 시점"의 최신 순위만 제공합니다. 과거 날짜 조회에
+    주의: 이 페이지는 "현재 시점"의 최신 순위만 제공합니다. 과거 날짜 조회에
     쓰면 안 됩니다(호출부가 그 조건을 지킵니다).
 
     구버전은 이 페이지를 헤드리스 Chromium으로 렌더링해 읽었습니다. iframe
@@ -711,7 +711,7 @@ def fetch_pykrx_ranking(
     """
     PyKrx 최종 폴백 (과거 날짜 조회가 가능한 유일한 외부 소스).
 
-    ⚠️ KRX가 JSON 대신 차단 페이지를 주면 통째로 실패합니다
+    주의: KRX가 JSON 대신 차단 페이지를 주면 통째로 실패합니다
     ("Expecting value: line 1 column 1"). 패키지 업그레이드로 해결되지
     않으며, 그때는 누적 이력으로 넘어갑니다.
     """

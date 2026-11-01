@@ -1,6 +1,6 @@
 """
 app/tasks/kr_news.py
-slow 그룹 — 🧪 모의 매매 한국 책 Claude 계좌 패킷 ``11b_events``의 한국 사건 헤드라인(v2 2단계 명세 §4-11·K21·B9).
+slow 그룹 — 모의 매매 한국 책 Claude 계좌 패킷 ``11b_events``의 한국 사건 헤드라인(v2 2단계 명세 §4-11·K21·B9).
 
 미국 ``news_headlines``(tasks/news.py)와 같은 규칙으로 받아 저장만 하고, 따로 된 데이터셋에 씁니다 — 같은 ``news_headline``에 섞으면 한국
 행의 받은 시각이 미국 패킷의 '수집 공백(STALE)' 판정을 가리고, 백엔드 설정 ``news.feeds``·``NewsFeedsParityTest``는 미국 여덟 피드가

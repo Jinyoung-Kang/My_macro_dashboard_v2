@@ -372,7 +372,7 @@ def _fallback_from_kodex(days: int) -> dict:
     KODEX 200(069500.KS) 또는 ^KS200 종가를 지수 스케일로 환산해 선물 종가를
     근사합니다. 실제 시장 가격에서 파생된 값이므로 추정치로서 의미가 있습니다.
 
-    ⚠️ 미결제약정·베이시스는 만들어내지 않습니다(null). 구버전은 sin/linspace로
+    주의: 미결제약정·베이시스는 만들어내지 않습니다(null). 구버전은 sin/linspace로
     합성했는데, 실제 OI와 무관한 숫자를 OI라고 표시하는 것은 그 자체가 오류이고
     교차 검증도 무의미해집니다.
     """
@@ -557,8 +557,8 @@ def collect_daum_intraday_acceleration(lookback_minutes: int = 30) -> dict:
     """
     Daum 시간별 선물 수급에서 최근 N분 수급 변화량(가속도)을 계산합니다.
 
-    ⚠️ 장중 누적 수급이며, 마감 후 정산 집계로 값이 달라질 수 있습니다.
-    ⚠️ Daum 내부 API 기반 비공식 데이터입니다.
+    주의: 장중 누적 수급이며, 마감 후 정산 집계로 값이 달라질 수 있습니다.
+    주의: Daum 내부 API 기반 비공식 데이터입니다.
     """
     default = {
         "available": False,

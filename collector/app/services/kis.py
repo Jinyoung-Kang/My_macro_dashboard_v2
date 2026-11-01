@@ -251,8 +251,8 @@ def fetch_deal_ranking(
     """
     FHPTJ04400000 장중 외국인·기관 가집계 Top N.
 
-    ⚠️ 장중 가집계이며 KRX 장마감 확정치와 다를 수 있습니다.
-    ⚠️ 이 TR은 당일 데이터만 조회합니다. 장 마감 후에는 정상적으로 빈 결과입니다.
+    주의: 장중 가집계이며 KRX 장마감 확정치와 다를 수 있습니다.
+    주의: 이 TR은 당일 데이터만 조회합니다. 장 마감 후에는 정상적으로 빈 결과입니다.
     """
     field_map = INVESTOR_FIELDS.get(investor)
     investor_code = DEAL_INVESTOR_CODES.get(investor)

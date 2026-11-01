@@ -156,7 +156,7 @@ def task_krx_futures() -> str:
     )
 
     if payload.get("isEstimated"):
-        # ⚠️ 추정치는 누적하지 않습니다. 실제 확정치와 섞이면 구분 불가능합니다.
+        # 주의: 추정치는 누적하지 않습니다. 실제 확정치와 섞이면 구분 불가능합니다.
         return f"{len(rows)}행 (추정치 — 누적 제외)"
 
     accumulated = 0
@@ -197,7 +197,7 @@ def task_sector_history() -> str:
 
 def task_fx_history() -> str:
     """
-    💱 환율·달러인덱스 일별 종가 (여러 계열 겹쳐 보기용).
+    환율·달러인덱스 일별 종가 (여러 계열 겹쳐 보기용).
 
     티커는 매크로 카드의 fx 카테고리에서 그대로 가져옵니다. 차트만 다른
     티커를 쓰면 카드의 최근값과 차트의 끝값이 어긋나고, 보는 사람은 둘 중
@@ -263,7 +263,7 @@ def task_fx_history() -> str:
 
 def task_equity_history() -> str:
     """
-    📈 13F 매핑 종목 + 벤치마크의 일별 종가.
+    13F 매핑 종목 + 벤치마크의 일별 종가.
 
     구루 포트폴리오 위험 분석(베타·추적오차·VaR)과 종목 스코어카드가 씁니다.
 
@@ -306,7 +306,7 @@ def task_volatility_history() -> str:
     화면이 여러 기간으로 요청하므로 가장 긴 기간(5y)으로 한 번만 저장하고,
     짧은 기간은 백엔드가 잘라 씁니다.
 
-    ⚠️ ^MOVE는 Yahoo가 제공하지 않아 ^TNX 변동성에서 역산한 추정치입니다.
+    주의: ^MOVE는 Yahoo가 제공하지 않아 ^TNX 변동성에서 역산한 추정치입니다.
     isProxy 플래그가 저장되며 화면이 경고를 띄웁니다.
     """
     period = catalog.VOLATILITY_STORE_PERIOD

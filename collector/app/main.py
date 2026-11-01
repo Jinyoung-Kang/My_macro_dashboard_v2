@@ -124,7 +124,7 @@ async def lifespan(app: FastAPI):
     global scheduler
     if settings.scheduler_enabled():
         scheduler = BackgroundScheduler(timezone="UTC")
-        # session: 🧪 계좌2 장중 확인 감시(paper_watch_us) — 확인 시각 앞뒤가 아니면 태스크가 외부를 부르지 않고 끝납니다.
+        # session: 계좌2 장중 확인 감시(paper_watch_us) — 확인 시각 앞뒤가 아니면 태스크가 외부를 부르지 않고 끝납니다.
         for group in ("fast", "slow", "weekly", "session"):
             seconds = settings.interval_seconds(group)
             scheduler.add_job(

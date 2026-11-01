@@ -1,6 +1,6 @@
 """
 app/tasks/paper_live.py
-🧪 모의 매매 장중 평가 — 보유 종목의 최신 1분봉 가격(속도군 live: 정기 수집 없음).
+모의 매매 장중 평가 — 보유 종목의 최신 1분봉 가격(속도군 live: 정기 수집 없음).
 
 운영자가 모의 매매 화면을 보는 정규장 동안에만 백엔드가 요청합니다(live 읽기 — 저장본이 60초보다 오래됐을 때). 결과는 화면의
 '장중 평가 추정'에만 쓰이고 체결·스탑·확정 순자산·통계는 지금처럼 관측치(paper.quotes·paper.kr.quotes)와 확정 종가로 합니다 — 실험
@@ -51,7 +51,7 @@ def _save(name: str, market: str, source: str, tickers: list[str], fresh: dict, 
 
 
 def task_paper_live_us() -> str:
-    """🧪 미국 보유 종목의 최신 정규장 1분봉(Yahoo) → 스냅샷 paper.live.us."""
+    """미국 보유 종목의 최신 정규장 1분봉(Yahoo) → 스냅샷 paper.live.us."""
     tickers = store.held_tickers("US")
     if not tickers:
         raise EmptyResult("미국 계좌에 보유 종목이 없습니다 — 저장하지 않음")
@@ -60,7 +60,7 @@ def task_paper_live_us() -> str:
 
 
 def task_paper_live_kr() -> str:
-    """🧪 한국 보유 종목의 최신 1분봉(토스, 원시가) → 스냅샷 paper.live.kr. 봉 시각은 KST 날짜·시각을 ISO(+09:00)로."""
+    """한국 보유 종목의 최신 1분봉(토스, 원시가) → 스냅샷 paper.live.kr. 봉 시각은 KST 날짜·시각을 ISO(+09:00)로."""
     tickers = store.held_tickers("KR")
     if not tickers:
         raise EmptyResult("한국 계좌에 보유 종목이 없습니다 — 저장하지 않음")

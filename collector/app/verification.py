@@ -112,7 +112,7 @@ def _top_ranking_row(market: str, investor: str, trade_type: str, now: datetime)
     """
     KIS 가집계와 Daum이 말하는 '1위 종목'을 각각 읽습니다.
 
-    ⚠️ 가격·지수와 시간 조건이 **정반대**입니다. KIS 가집계 TR은 장중 전용이라
+    주의: 가격·지수와 시간 조건이 **정반대**입니다. KIS 가집계 TR은 장중 전용이라
     마감 후에는 빈 데이터가 정상입니다. 그래서 이 대조는 정규장에만 가능합니다.
     """
     date_str = now.strftime("%Y%m%d")

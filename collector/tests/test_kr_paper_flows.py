@@ -1,6 +1,6 @@
 """
 tests/test_kr_paper_flows.py
-🧪 한국 책 종목별 수급 kr_paper_flows → observations kr_paper_flow + kr.paper_flows.status (v2 2단계 B4). 저장은 PostgreSQL, 토스는 가짜.
+한국 책 종목별 수급 kr_paper_flows → observations kr_paper_flow + kr.paper_flows.status (v2 2단계 B4). 저장은 PostgreSQL, 토스는 가짜.
 
 고정하는 규칙
   1. payload = 레이더 수급(toss_stock_flow)과 같은 칸 + code + fetchedAt — 토스 updatedAt(판)을 그대로 남긴다(입력 동결 K26의 근거).

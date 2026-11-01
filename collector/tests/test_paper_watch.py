@@ -1,6 +1,6 @@
 """
 tests/test_paper_watch.py
-🧪 미국 Claude 계좌2 단계 2 장중 확인 감시 — 태스크 paper_watch_us → 스냅샷 paper.watch.us (명세 2026-10-30-claude-book2-timing-design.md §5-2·§12-1·
+미국 Claude 계좌2 단계 2 장중 확인 감시 — 태스크 paper_watch_us → 스냅샷 paper.watch.us (명세 2026-10-30-claude-book2-timing-design.md §5-2·§12-1·
 §12-3, ADR 0022).
 
 고정하는 규칙

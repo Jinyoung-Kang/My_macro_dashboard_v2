@@ -42,7 +42,7 @@ def test_수집기는_백엔드_테이블에_쓰지_않는다():
     assert found == []
 
 
-# 🧪 한국 책(v2 2단계 B4) 데이터셋 — 쓰는 곳은 app/tasks/kr_paper.py 하나입니다(읽기·누락 점검은 어디서든).
+# 한국 책(v2 2단계 B4) 데이터셋 — 쓰는 곳은 app/tasks/kr_paper.py 하나입니다(읽기·누락 점검은 어디서든).
 KR_DATASETS = ("OBS_KR_PAPER_UNIVERSE", "SNAP_KR_PAPER_QUOTES", "TS_KR_CLOSE_ADJ", "OBS_KR_PAPER_FLOW",
                "SNAP_KR_PAPER_FLOWS_STATUS")
 STORE_WRITE = re.compile(
@@ -66,7 +66,7 @@ def test_한국_책_수집_범위는_백엔드_표를_읽지_않는다():
     assert "watched_stock_codes" not in text
 
 
-# 🧪 한국 책(v2 2단계 B9) 데이터셋 — 데이터셋마다 쓰는 모듈이 하나입니다(읽기는 어디서든).
+# 한국 책(v2 2단계 B9) 데이터셋 — 데이터셋마다 쓰는 모듈이 하나입니다(읽기는 어디서든).
 B9_WRITERS = {
     "OBS_KR_NEWS_HEADLINE": "tasks/kr_news.py",
     "SNAP_KR_NEWS_STATUS": "tasks/kr_news.py",
@@ -87,7 +87,7 @@ def test_B9_데이터셋은_정해진_태스크_하나만_쓴다():
     assert writers == {name: {module} for name, module in B9_WRITERS.items()}
 
 
-# 🧪 미국 Claude 계좌2 단계 0(명세 2026-10-30 §12-1·ADR 0022) — 1분봉 저장본을 쓰는 모듈은 하나입니다(읽기는 백엔드 실행 감사 작업, 0-4).
+# 미국 Claude 계좌2 단계 0(명세 2026-10-30 §12-1·ADR 0022) — 1분봉 저장본을 쓰는 모듈은 하나입니다(읽기는 백엔드 실행 감사 작업, 0-4).
 # 단계 2의 장중 확인 감시 저장본도 쓰는 모듈은 하나입니다(읽기는 백엔드 장중 확인 — B1).
 CLAUDE2_WRITERS = {"SNAP_PAPER_BARS_US": "tasks/paper_bars.py", "SNAP_PAPER_WATCH_US": "tasks/paper_watch.py"}
 CLAUDE2_WRITE = re.compile(

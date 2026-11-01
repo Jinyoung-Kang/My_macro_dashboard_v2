@@ -3,11 +3,11 @@ app/services/toss.py
 토스증권 Open API — 연결 진단 + 국내 투자자별 매매동향.
 
 쓰는 곳
-  - 🔌 외부 API 연결 테스트 (진단·환율·지수)
-  - 📡 수급 레이더 / 🇰🇷 국내 파생: 투자자별 매매 (공식 스펙 1.2.13부터 제공)
+  - 외부 API 연결 테스트 (진단·환율·지수)
+  - 수급 레이더 / 국내 파생: 투자자별 매매 (공식 스펙 1.2.13부터 제공)
       GET /api/v1/market-indicators/{KOSPI|KOSDAQ}/investor-trading  시장 전체 매매**대금**(원)
       GET /api/v1/stocks/{symbol}/investor-trading                    종목별 매매**거래량**(주)
-  - 🧪 모의 매매 한국 책(v2 2단계 B4): 종목 봉과 종목 상태
+  - 모의 매매 한국 책(v2 2단계 B4): 종목 봉과 종목 상태
       GET /api/v1/candles?symbol=&interval=1d|1m&count=&before=&adjusted=  일봉·1분봉(최신순, 한 번에 200개, before로 과거 쪽)
       GET /api/v1/stocks?symbols=                                          종목 유형·NXT 거래 여부·KRX 정지·상장일(200개씩)
 

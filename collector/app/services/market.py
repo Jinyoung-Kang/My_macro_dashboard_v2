@@ -110,7 +110,7 @@ def _download(symbol: str, period: str) -> tuple[pd.DataFrame | None, bool, str 
     분봉 우선 수집. ^TNX/^TYX 같은 심볼은 분봉이 없어 일봉으로 폴백됩니다.
     폴백 여부와 실패 사유를 호출부가 알아야 하므로 함께 돌려줍니다.
 
-    ⚠️ yfinance는 Yahoo가 응답 형식을 바꿀 때마다 깨집니다. 그때 증상은
+    주의: yfinance는 Yahoo가 응답 형식을 바꿀 때마다 깨집니다. 그때 증상은
     "예외 없이 빈 DataFrame"이라 조용한 실패로 보입니다. 사유 문자열에
     그 가능성을 명시해 운영자가 버전 업그레이드를 떠올릴 수 있게 합니다.
 
@@ -177,7 +177,7 @@ def last_two_closes(symbol: str) -> tuple[float | None, float | None, str | None
 
 def latest_minute_prices(symbols: list[str]) -> tuple[dict[str, dict], str | None]:
     """
-    🧪 모의 매매 장중 평가 — 종목마다 가장 최근 세션의 마지막 정규장 1분봉 종가와 그 봉 시각. (``{T: {price, at(ISO, UTC)}}``, 받지 못한 이유)
+    모의 매매 장중 평가 — 종목마다 가장 최근 세션의 마지막 정규장 1분봉 종가와 그 봉 시각. (``{T: {price, at(ISO, UTC)}}``, 받지 못한 이유)
 
     배치 한 번(yf.download)으로 받고 빠진 종목을 하나씩 다시 묻지 않습니다 — 화면이 볼 때만 부르고 다음 새로고침이 다시 묻습니다.
     같은 Yahoo 한도를 나눠 쓰는 다른 수집이 방금 429를 받았으면 묻지 않고, 여기서 받은 429는 래치를 닫습니다(_download와 같음).
@@ -227,7 +227,7 @@ def latest_minute_prices(symbols: list[str]) -> tuple[dict[str, dict], str | Non
 
 
 # ------------------------------------------------------------------------------
-# 🧪 미국 Claude 계좌2 단계 0 — 1분봉 원자료·검증용 일봉 시가(tasks/paper_bars.py가 메뉴 창으로 자름, 명세 2026-10-30 §12-1)
+# 미국 Claude 계좌2 단계 0 — 1분봉 원자료·검증용 일봉 시가(tasks/paper_bars.py가 메뉴 창으로 자름, 명세 2026-10-30 §12-1)
 # ------------------------------------------------------------------------------
 # yf.download는 종목마다 받은 429(YFRateLimitError)를 예외로 올리지 않습니다 — [확인] yfinance 1.7.0 multi._download_one이 종목별 예외를
 # 그 호출의 errors에 적고, _download_impl이 부른 스레드에서 'yfinance' 로거로 "['AAA', …]: YFRateLimitError('Too Many Requests. …')" 한 줄을
@@ -314,7 +314,7 @@ def _batch_reason(names: list[str], out: dict, reason: str | None) -> str | None
 
 def minute_bars(symbols: list[str], period: str) -> tuple[dict[str, list[dict]], str | None, bool]:
     """
-    🧪 미국 Claude 계좌2 단계 0 — 종목마다 그 기간의 정규장 1분봉 전부(``prepost=False``·원시가 ``auto_adjust=False``), 배치 한 번.
+    미국 Claude 계좌2 단계 0 — 종목마다 그 기간의 정규장 1분봉 전부(``prepost=False``·원시가 ``auto_adjust=False``), 배치 한 번.
     (``{T: [{at(UTC, 인덱스 라벨 그대로), open, high, low, close, volume}]}``, 받지 못한 이유, 이번 호출이 429를 받았나)
 
     시고저종 중 하나라도 없거나 0 이하인 줄은 버립니다 — 배치 표는 종목들의 분을 합쳐 만들어(yfinance reindex_dfs) 그 분에 봉이 없던 종목은
@@ -357,7 +357,7 @@ def _minute_rows(symbol: str, frame: pd.DataFrame | None) -> list[dict]:
 
 def daily_opens(symbols: list[str], period: str) -> tuple[dict[str, dict[str, float]], str | None, bool]:
     """
-    🧪 미국 Claude 계좌2 단계 0의 검증용 일봉 시가(명세 X2 — 1분봉 첫 봉 시가와의 차이), 원시가(``auto_adjust=False``) 배치 한 번.
+    미국 Claude 계좌2 단계 0의 검증용 일봉 시가(명세 X2 — 1분봉 첫 봉 시가와의 차이), 원시가(``auto_adjust=False``) 배치 한 번.
     (``{T: {동부 날짜: 시가}}``, 받지 못한 이유, 이번 호출이 429를 받았나). 값이 없거나 0 이하인 날은 뺍니다.
     """
     names = [s for s in dict.fromkeys(symbols) if s]
@@ -396,7 +396,7 @@ def _sanitize(frame: pd.DataFrame | None) -> pd.DataFrame | None:
 
 def _collect_move_proxy(symbol: str, period: str) -> dict:
     """
-    ⚠️ 실제 ICE BofA MOVE 지수가 아닙니다.
+    주의: 실제 ICE BofA MOVE 지수가 아닙니다.
 
     Yahoo는 MOVE를 제공하지 않습니다. 10년물 금리(^TNX)의 변동성에서 역산한
     대용값이며, 실제 MOVE와 수치가 다릅니다. 실제 값이 필요하면 ICE/Bloomberg

@@ -1,6 +1,6 @@
 """
 app/tasks/paper_bars.py
-🧪 미국 Claude 계좌2(체결 시점 실험)의 단계 0 측정 — 대기·최근 주문 종목의 메뉴 창 1분봉 → 스냅샷 paper.bars.us (slow, paper_quotes 바로 뒤).
+미국 Claude 계좌2(체결 시점 실험)의 단계 0 측정 — 대기·최근 주문 종목의 메뉴 창 1분봉 → 스냅샷 paper.bars.us (slow, paper_quotes 바로 뒤).
 
 명세 docs/specs/2026-10-30-claude-book2-timing-design.md §7-1·§12-1~12-3·§19(X1~X5·X9), ADR 0022. 단계 0은 **재기만** 합니다 — 이
 저장본을 읽는 것은 백엔드 실행 감사 작업(단계 0-4: 계좌1 주문의 메뉴 반사실·1분봉 지연)이고, 장부·패킷·결정은 읽지 않습니다. 체결은
@@ -325,7 +325,7 @@ def _fill_daily_opens(fresh: dict[str, dict], done: dict[str, str], fetched_at: 
 
 
 def task_paper_bars_us() -> str:
-    """🧪 Claude 계좌 주문·계좌2 보유 종목의 메뉴 창 1분봉(Yahoo) → 스냅샷 paper.bars.us (단계 0 측정 — 체결에는 아직 쓰지 않음)."""
+    """Claude 계좌 주문·계좌2 보유 종목의 메뉴 창 1분봉(Yahoo) → 스냅샷 paper.bars.us (단계 0 측정 — 체결에는 아직 쓰지 않음)."""
     global _caught_up, _rest_rounds
     scope = store.timed_scope("US")
     if not scope:

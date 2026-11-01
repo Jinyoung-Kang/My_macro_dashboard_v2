@@ -1,6 +1,6 @@
 """
 tests/test_kr_paper_quotes.py
-🧪 한국 책 관측치 kr_paper_quotes → paper.kr.quotes(계약 1)·kr_close_adj (v2 2단계 B4). 저장은 PostgreSQL, 토스는 가짜.
+한국 책 관측치 kr_paper_quotes → paper.kr.quotes(계약 1)·kr_close_adj (v2 2단계 B4). 저장은 PostgreSQL, 토스는 가짜.
 
 고정하는 규칙
   1. 저장본 모양 = 명세 §9 'paper.kr.quotes 계약' — 봉은 오래된 날부터 최근 5봉, 원시가·출처(NXT면 통합가)·수정 비율·종목별 받은 시각.

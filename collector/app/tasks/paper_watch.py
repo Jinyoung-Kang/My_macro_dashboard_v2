@@ -1,6 +1,6 @@
 """
 app/tasks/paper_watch.py
-🧪 미국 Claude 계좌2(체결 시점 실험)의 단계 2 장중 확인 — MINUTE 확인 날 감시·보유·대기 종목의 최근 1분봉 → 스냅샷 paper.watch.us
+미국 Claude 계좌2(체결 시점 실험)의 단계 2 장중 확인 — MINUTE 확인 날 감시·보유·대기 종목의 최근 1분봉 → 스냅샷 paper.watch.us
 (속도군 session, 5분).
 
 명세 docs/specs/2026-10-30-claude-book2-timing-design.md §5-2·§7-3·§9-5·§12-1·§12-3, ADR 0022. 이 저장본은 장중 확인 패킷(판단 입력)과
@@ -112,7 +112,7 @@ def _has_data(entry: dict) -> bool:
 
 
 def task_paper_watch_us() -> str:
-    """🧪 계좌2 장중 확인(MINUTE) 날 확인 시각 앞뒤의 감시·보유·대기 종목 최근 1분봉(Yahoo) → 스냅샷 paper.watch.us."""
+    """계좌2 장중 확인(MINUTE) 날 확인 시각 앞뒤의 감시·보유·대기 종목 최근 1분봉(Yahoo) → 스냅샷 paper.watch.us."""
     now = _now()
     scope = store.watch_scope("US", now.astimezone(paper_bars.NEW_YORK).date())
     if not scope:

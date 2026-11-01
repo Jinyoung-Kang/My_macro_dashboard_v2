@@ -1,6 +1,6 @@
 """
 tests/test_kr_paper_price_history.py
-🧪 한국 책 종가 이력 kr_paper_price_history → timeseries kr_close_adj (v2 2단계 B4). 저장은 PostgreSQL, 토스는 가짜(before 쪽 넘기기).
+한국 책 종가 이력 kr_paper_price_history → timeseries kr_close_adj (v2 2단계 B4). 저장은 PostgreSQL, 토스는 가짜(before 쪽 넘기기).
 
 고정하는 규칙
   1. 메우기: 저장 첫 날이 1년 전(상장일이 늦으면 상장일)보다 늦으면 그 앞을 before로 200봉씩 거슬러 받는다 — 다 메우면 호출 0회.

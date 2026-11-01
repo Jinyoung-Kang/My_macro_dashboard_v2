@@ -1,6 +1,6 @@
 """
 app/services/kr_calendar.py
-🧪 모의 매매 한국 책 Claude 계좌 패킷 ``1b_calendar``의 한국 거시 일정 상수(v2 2단계 명세 §4-11·K20).
+모의 매매 한국 책 Claude 계좌 패킷 ``1b_calendar``의 한국 거시 일정 상수(v2 2단계 명세 §4-11·K20).
 
 외부 호출이 없습니다. 금통위 일정과 주요 발표일은 받을 API가 없어 공식 페이지에서 손으로 옮긴 상수입니다 — 미국 FOMC 상수
 (services/us_calendar.FOMC_MEETINGS)와 같은 방식이고 연 1회 갱신합니다.

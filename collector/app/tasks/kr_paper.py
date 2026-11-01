@@ -1,6 +1,6 @@
 """
 app/tasks/kr_paper.py
-🧪 모의 알고리즘 매매 한국 책(v2 2단계)의 자료 — 유니버스·수집 범위·관측치(토스 봉)·종목별 수급·종가 이력.
+모의 알고리즘 매매 한국 책(v2 2단계)의 자료 — 유니버스·수집 범위·관측치(토스 봉)·종목별 수급·종가 이력.
 
 태스크는 "받아서 저장"만 합니다. 후보·점수·체결·평가·기업행위 판정은 백엔드(feature/paper)가 저장본을 읽어 합니다 — 수집기가
 장부를 건드리면 테이블마다 쓰는 프로세스가 하나라는 규칙(ADR 0008)이 깨집니다. 백엔드 표(보유·주문·설정)도 읽지 않습니다 —
@@ -157,7 +157,7 @@ def security_type_warning(members: list[dict]) -> str:
 
 def task_kr_paper_universe() -> str:
     """
-    🧪 한국 책 유니버스 U — 금융위 최신 기준일 B(< 오늘)의 코스피 시가총액 상위 100 보통주 → observations ``kr_paper_universe``.
+    한국 책 유니버스 U — 금융위 최신 기준일 B(< 오늘)의 코스피 시가총액 상위 100 보통주 → observations ``kr_paper_universe``.
 
     외부 호출 0회입니다(금융위 저장본·DART 고유번호 표만 읽음). 백엔드는 이 저장본을 그대로 쓰고 결정 행에 동결합니다 — 정의는
     수집기 한 곳(명세 §4-5).
@@ -488,7 +488,7 @@ def _adj_gap(latest: str | None, first: str) -> bool:
 
 def task_kr_paper_quotes() -> str:
     """
-    🧪 한국 책 관측치 — 수집 범위(kr_scope)의 토스 일봉 최근 5봉(원시·수정)·1분봉 개장 봉 → 스냅샷 ``paper.kr.quotes``
+    한국 책 관측치 — 수집 범위(kr_scope)의 토스 일봉 최근 5봉(원시·수정)·1분봉 개장 봉 → 스냅샷 ``paper.kr.quotes``
     (+ 수정 종가를 timeseries ``kr_close_adj``에 덧붙임). 모양은 명세 §9 'paper.kr.quotes 계약'(contract 1).
 
     규칙
@@ -680,7 +680,7 @@ KR_FLOW_RETENTION_DAYS = 400
 
 def task_kr_paper_flows() -> str:
     """
-    🧪 한국 책 종목별 수급 — 수집 범위(kr_scope)의 토스 투자자별 매매동향(주, 최근 20거래일·처음이면 100) → observations ``kr_paper_flow``
+    한국 책 종목별 수급 — 수집 범위(kr_scope)의 토스 투자자별 매매동향(주, 최근 20거래일·처음이면 100) → observations ``kr_paper_flow``
     (entity = 코드, obs_date = 기록 날짜) + 종목별 수집 상태 스냅샷 ``kr.paper_flows.status``.
 
     payload는 레이더 수급(toss_stock_flow)과 같은 칸(투자자 4분류·기관 세부 7·외국인 보유율·토스 ``updatedAt``)에 ``code``·``fetchedAt``
@@ -878,7 +878,7 @@ def _stored_differs(code: str, entry: dict) -> bool:
 
 def task_kr_paper_price_history() -> str:
     """
-    🧪 한국 책 종가 이력 — 수집 범위(kr_scope)의 토스 수정주가(adjusted=true) 일봉 종가 → timeseries ``kr_close_adj``(series = 코드).
+    한국 책 종가 이력 — 수집 범위(kr_scope)의 토스 수정주가(adjusted=true) 일봉 종가 → timeseries ``kr_close_adj``(series = 코드).
 
     kr_paper_quotes가 날마다 최근 5봉을 덧붙이고, 이 태스크는 그 앞을 메웁니다(weekly).
       - 메우기: 저장 첫 날이 1년 전(상장일이 늦으면 상장일)보다 늦으면 그 앞을 ``before``로 200봉씩 거슬러 받습니다 — 종목마다 한 번이고
