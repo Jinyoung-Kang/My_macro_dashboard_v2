@@ -106,6 +106,15 @@ describe("시장 인자를 받은 기존 함수", () => {
     expect(timingLabel("NEXT_OPEN")).toBe("다음 거래일 시가");
     expect(timingLabel("NEXT_OBSERVATION")).toBe("다음 관측치");
   });
+
+  it("체결 시점 이름 — 매시 시점은 시장의 시각(미국 ET·한국 KST, 한국 Claude 계좌2 단계 2a), 시가·종가는 두 시장이 같음, 시장을 안 주면 미국", () => {
+    expect(timingLabel("AT_1000", "KR")).toBe("다음 거래일 10:00 KST");
+    expect(timingLabel("AT_1500", "KR")).toBe("다음 거래일 15:00 KST");
+    expect(timingLabel("AT_1000", "US")).toBe("다음 거래일 10:00 ET");
+    expect(timingLabel("AT_1000")).toBe("다음 거래일 10:00 ET");
+    expect(timingLabel("NEXT_CLOSE", "KR")).toBe(timingLabel("NEXT_CLOSE"));
+    expect(timingLabel("NEXT_OPEN", "KR")).toBe("다음 거래일 시가");
+  });
 });
 
 describe("tickerName — 종목 표시 이름(사용자 결정 2026-11-02)", () => {

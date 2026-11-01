@@ -83,7 +83,7 @@ const STATUS: Pick<PaperStatusResponse, "claude2"> = {
 describe("시점 이름표·사다리·배지", () => {
   it("시가·매시·종가 — 한국·계좌1 이름표는 그대로, 모르는 시점은 받은 글자", () => {
     expect(timingLabel("NEXT_OPEN")).toBe("다음 거래일 시가");
-    expect(["AT_1000", "AT_1100", "AT_1200", "AT_1300", "AT_1400", "AT_1500"].map(timingLabel)).toEqual([
+    expect(["AT_1000", "AT_1100", "AT_1200", "AT_1300", "AT_1400", "AT_1500"].map((timing) => timingLabel(timing))).toEqual([
       "다음 거래일 10:00 ET", "다음 거래일 11:00 ET", "다음 거래일 12:00 ET",
       "다음 거래일 13:00 ET", "다음 거래일 14:00 ET", "다음 거래일 15:00 ET",
     ]);

@@ -697,7 +697,7 @@ function DecisionDetail({ id, market }: { id: number; market: PaperMarketCode })
                 </span>
               ),
             },
-            { key: "timing", header: "체결 시점", render: (row) => timingLabel(row.timing) },
+            { key: "timing", header: "체결 시점", render: (row) => timingLabel(row.timing, market) },
             { key: "expires", header: "만료", render: (row) => row.expiresOn ?? EMPTY },
             {
               key: "reason",

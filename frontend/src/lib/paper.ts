@@ -19,7 +19,7 @@ import {
 import { tradeTimeFrom } from "./marketSessions";
 import { KR_ACCOUNT_PROFILES } from "./paperKrProfiles";
 import { filerName } from "./holdings";
-import { formatMoney, formatSharePriceFor, marketMeta, type PaperMarketCode, tickerName } from "./paperMarket";
+import { formatMoney, formatSharePriceFor, marketMeta, marketOfBook, type PaperMarketCode, tickerName } from "./paperMarket";
 import type {
   PaperBookResetResult,
   PaperBookStatusResult,
@@ -1196,6 +1196,17 @@ const TIMING: Record<string, string> = {
   // 계좌2 장중 확인 결정만 내는 장중 시장가(단계 2) — 기준 시각 = 주문 생성 + 60초 뒤 첫 분, 그 1분봉 시가부터 사다리.
   MARKET: "장중 시장가(확인 직후 첫 분)",
 };
+// 한국 Claude 계좌2의 매시 시점(단계 2a — 명세 2026-11-02-kr-claude2-stage2 §2) — 목표 세션(다음 KR 거래일)의 한국 시각, 그 시각에 시작한 토스
+// 1분봉 시가. 같은 글자(AT_*)가 미국 계좌2에서는 뉴욕 시각이라 시장으로 가립니다. 시가·종가는 두 시장이 같은 이름입니다.
+const KR_TIMING: Record<string, string> = {
+  ...TIMING,
+  AT_1000: "다음 거래일 10:00 KST",
+  AT_1100: "다음 거래일 11:00 KST",
+  AT_1200: "다음 거래일 12:00 KST",
+  AT_1300: "다음 거래일 13:00 KST",
+  AT_1400: "다음 거래일 14:00 KST",
+  AT_1500: "다음 거래일 15:00 KST",
+};
 const SOURCE: Record<string, string> = {
   RULE: "규칙",
   CLAUDE: "Claude",
@@ -1208,7 +1219,9 @@ const labelOf = (table: Record<string, string>, value: string | null | undefined
   value ? (table[value] ?? value) : EMPTY;
 
 export const sideLabel = (side: string | null | undefined) => labelOf(SIDE, side);
-export const timingLabel = (timing: string | null | undefined) => labelOf(TIMING, timing);
+/** 체결 시점 이름 — 매시 시점(AT_*)은 시장의 시각(미국 ET·한국 KST), 시장을 주지 않으면 미국. */
+export const timingLabel = (timing: string | null | undefined, market: PaperMarketCode = "US") =>
+  labelOf(market === "KR" ? KR_TIMING : TIMING, timing);
 export const sourceLabel = (source: string | null | undefined) => labelOf(SOURCE, source);
 
 /** 매수는 상승색, 매도는 하락색(한국 관행, format.deltaColor와 같음). */
@@ -3013,7 +3026,7 @@ export function claudeDecisionView(source: ClaudeDecisionSource): ClaudeDecision
       side: sideLabel(side || null),
       sideKey: side,
       size: proposedSizeText(side, order.targetWeightPct, order.sellFraction),
-      timing: timingLabel(textOf(order.timing)),
+      timing: timingLabel(textOf(order.timing), marketOfBook(source.book)),
       thesis: textOf(order.thesis) ?? EMPTY,
       labels: claimLabelBadges(order.labels),
       invalidation: textOf(order.invalidation) ?? EMPTY,

@@ -456,7 +456,7 @@ const KR_ORDER_COLUMNS: readonly Column<PaperOrder>[] = [
     key: "timing",
     header: "체결 시점·출처",
     className: "min-w-[6.5rem] break-keep",
-    cell: (row) => <TwoLines top={timingLabel(row.timing)} bottom={sourceLabel(row.source)} />,
+    cell: (row) => <TwoLines top={timingLabel(row.timing, "KR")} bottom={sourceLabel(row.source)} />,
   },
   {
     key: "status",

@@ -318,7 +318,18 @@ describe("보유·체결(F2 — 세 배지·확정 조정·실효 비용·스탑
       .map((badge) => badge.label)).toEqual(["금융위 확정 미보정(ETF)"]);
     expect(krFillBadges({ confirmationState: "UNCORRECTED", confirmationNote: null, priceSource: null })[0].label).toBe("금융위 확정 못 함");
     expect(krFillBadges({ priceSource: "TOSS_1M_OPEN" })).toEqual([]);
+    // 한국 Claude 계좌2의 매시 체결(단계 2a) — 금융위에 그 시각 값이 없어 확정 조정하지 않는 것이 정상이라 경고색이 아님.
+    for (const source of ["TOSS_1M_AT", "TOSS_1M_NEXT", "TOSS_1M_LATE"]) {
+      const [badge] = krFillBadges({ confirmationState: "UNCORRECTED", confirmationNote: "금융위 확정 못 함", priceSource: source });
+      expect([badge.key, badge.label, badge.className]).toEqual(["hourly", "매시 체결 · 확정가 없음", toneClass("muted")]);
+    }
+    // 종가 체결은 확정 조정 대상 — 못 했으면 경고 그대로.
+    expect(krFillBadges({ confirmationState: "UNCORRECTED", confirmationNote: null, priceSource: "TOSS_1M_CLOSE" })[0].label)
+      .toBe("금융위 확정 못 함");
     expect(krPriceSourceLabel("TOSS_1M_OPEN")).toBe("KRX 시가 단일가(1분봉)");
+    expect(krPriceSourceLabel("TOSS_1M_AT")).toBe("그 시각 1분봉 시가");
+    expect(krPriceSourceLabel("TOSS_1M_LATE")).toBe("그날 그 시각 뒤 첫 거래 봉 시가(대체)");
+    expect(krPriceSourceLabel("TOSS_1M_CLOSE")).toBe("KRX 종가 단일가(1분봉)");
     expect(krPriceSourceLabel("NEW_SOURCE")).toBe("NEW_SOURCE");
     expect(krPriceSourceLabel(null)).toBe("—");
   });

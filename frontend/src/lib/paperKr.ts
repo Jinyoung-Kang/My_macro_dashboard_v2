@@ -439,12 +439,22 @@ const won = (value: number | null | undefined) => formatMoney(value, "KR");
 /** 부호 있는 원 금액 — "+1,000원"·"−100원"이 아니라 "-100원"(lib/format formatSigned 그대로). 모르면 "—". */
 const signedWon = (value: number | null | undefined) => formatSigned(value, 0, "원");
 
-/** 한국 체결가(시가) 출처 이름표(paper_fills.price_source — 백엔드 KrQuotes). 종가 출처는 `KR_CLOSE_SOURCE`. 모르는 값은 받은 글자 그대로. */
+/**
+ * 한국 체결가 출처 이름표(paper_fills.price_source — 백엔드 KrQuotes·KrTimedLadder). 시가 셋과 한국 Claude 계좌2의 매시·종가 넷(단계 2a — 목표 세션 토스
+ * 1분봉). 스탑 감지의 종가 출처는 `KR_CLOSE_SOURCE`. 모르는 값은 받은 글자 그대로.
+ */
 const KR_PRICE_SOURCE: Readonly<Record<string, string>> = {
   TOSS_1M_OPEN: "KRX 시가 단일가(1분봉)",
   TOSS_DAILY: "KRX 일봉 시가",
   TOSS_INTEGRATED: "KRX+NXT 통합가",
+  TOSS_1M_AT: "그 시각 1분봉 시가",
+  TOSS_1M_NEXT: "그 시각 뒤 4분 안 첫 거래 봉 시가",
+  TOSS_1M_LATE: "그날 그 시각 뒤 첫 거래 봉 시가(대체)",
+  TOSS_1M_CLOSE: "KRX 종가 단일가(1분봉)",
 };
+
+/** 매시 체결 출처(TOSS_1M_AT·NEXT·LATE) — 금융위에 그 시각 값이 없어 확정 조정하지 않는 체결(장부 KrConfirmations). */
+const KR_HOURLY_SOURCES: ReadonlySet<string> = new Set(["TOSS_1M_AT", "TOSS_1M_NEXT", "TOSS_1M_LATE"]);
 
 export function krPriceSourceLabel(source: string | null | undefined): string {
   return source ? (KR_PRICE_SOURCE[source] ?? source) : EMPTY;
@@ -511,7 +521,7 @@ function fscDatasetLabel(source: string | null | undefined): string {
 }
 
 /**
- * 한국 체결 한 줄의 배지 — 확정 상태(확정 · 확정 대기 · 금융위 확정 미보정(ETF) · 금융위 확정 못 함)와, 잠정가가 KRX+NXT 통합가(`TOSS_INTEGRATED`)면
+ * 한국 체결 한 줄의 배지 — 확정 상태(확정 · 확정 대기 · 금융위 확정 미보정(ETF) · 금융위 확정 못 함 · 매시 체결은 '확정가 없음')와, 잠정가가 KRX+NXT 통합가(`TOSS_INTEGRATED`)면
  * 그 표시 — 아직 확정되지 않은 행은 경고색 '잠정', 확정 행은 무채색 '확정 조정됨'(이미 금융위 확정가로 맞춤). 상태를 모르면(이 칸을 보내지 않는
  * 서버) 상태 배지는 없고 통합가 표시는 '잠정'입니다.
  */
@@ -528,6 +538,12 @@ export function krFillBadges(fill: Pick<PaperFill, "confirmationState" | "confir
     badges.push({
       key: "waiting", label: "확정 대기", className: toneClass("muted"),
       title: fill.confirmationNote ?? "금융위 그날 값이 아직 없습니다 — 들어오면 확정 조정 행으로 맞춥니다(보통 다음 영업일 13시 뒤).",
+    });
+  } else if (state === "UNCORRECTED" && fill.priceSource && KR_HOURLY_SOURCES.has(fill.priceSource)) {
+    badges.push({
+      key: "hourly", label: "매시 체결 · 확정가 없음", className: toneClass("muted"),
+      title: "금융위 확정 시세는 그날 시가·종가만 있어 매시 체결은 토스 1분봉 체결가 그대로입니다(확정 조정하지 않음). 보유 평가는 금융위 확정 "
+        + "종가로 합니다.",
     });
   } else if (state === "UNCORRECTED") {
     badges.push({
