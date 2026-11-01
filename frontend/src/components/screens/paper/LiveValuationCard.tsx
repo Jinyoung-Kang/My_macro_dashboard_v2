@@ -101,6 +101,13 @@ export function LiveValuationCard({
     return () => clearTimeout(timer);
   }, [data, wakeFollowUp]);
 
+  // 한 번 더 읽기가 실패하면 data가 그대로라 위 효과가 돌지 않아 표시가 남았습니다 — 그러면 다음 응답(간격 읽기·'지금 새로 읽기')이 요청한 새 수집을
+  // 한 번 더의 응답으로 소모했습니다(QA-162). 실패(refreshError — 앞 응답이 성공이라 비어 있다가 섬)를 받으면 표시를 내립니다.
+  const { refreshError } = live;
+  useEffect(() => {
+    if (refreshError) followingUp.current = false;
+  }, [refreshError]);
+
   useEffect(() => {
     const wait = msUntilNextOpen(data?.session, Date.now());
     if (wait === null || minutes === 0) return;
