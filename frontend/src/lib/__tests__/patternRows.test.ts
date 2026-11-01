@@ -56,6 +56,7 @@ describe("assetRowModel", () => {
       sub: null,
       avatarText: null,
       warning: null,
+      caption: null,
       showSpark: false,
       hasBadges: false,
     });
@@ -67,6 +68,9 @@ describe("assetRowModel", () => {
     expect(assetRowModel({ value: 1, isStale: true }).hasBadges).toBe(true);
     expect(assetRowModel({ value: 1, warning: "수집 실패" }).hasBadges).toBe(true);
     expect(assetRowModel({ value: 1 }, true).hasBadges).toBe(true);
+    expect(assetRowModel({ value: 1, caption: "장중 추정 23:58" })).toMatchObject({ caption: "장중 추정 23:58", hasBadges: true });
+    // 빈 글·'N/A'는 버림 — 빈 기준 줄로 배지 줄을 만들지 않음
+    expect(assetRowModel({ value: 1, caption: " N/A " })).toMatchObject({ caption: null, hasBadges: false });
   });
 
   it("보조·경고 글이 비었거나 'N/A'면 버린다 — 빈 경고로 배지 줄을 만들지 않음", () => {

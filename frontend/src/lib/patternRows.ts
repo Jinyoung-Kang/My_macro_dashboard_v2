@@ -29,6 +29,7 @@ export type AssetRowFlags = {
   valueText?: string | null;
   sub?: string | null;
   avatarText?: string | null;
+  caption?: string | null;
   spark?: readonly (number | null)[];
   isEstimated?: boolean;
   isProxy?: boolean;
@@ -45,9 +46,11 @@ export type AssetRowModel = {
   avatarText: string | null;
   /** 경고 글(예: "수집 실패"). 비었거나 "N/A"면 null. */
   warning: string | null;
+  /** 값의 기준 한 줄(예: 모의매매 지금 값의 단계 표기). 비었거나 "N/A"면 null. */
+  caption: string | null;
   /** 스파크라인을 그릴 수 있는가 — 알려진 점이 2개 이상. */
   showSpark: boolean;
-  /** 배지 줄을 그릴지 — 추정·대리·이전 값·경고·출처(showProvenance) 가운데 하나라도 있으면. */
+  /** 배지 줄을 그릴지 — 값의 기준 한 줄·추정·대리·이전 값·경고·출처(showProvenance) 가운데 하나라도 있으면. */
   hasBadges: boolean;
 };
 
@@ -58,13 +61,15 @@ export type AssetRowModel = {
  */
 export function assetRowModel(row: AssetRowFlags, showProvenance = false): AssetRowModel {
   const warning = presentText(row.warning);
+  const caption = presentText(row.caption);
   return {
     valueText: assetValueText(row.value, row.valueText),
     sub: presentText(row.sub),
     avatarText: presentText(row.avatarText),
     warning,
+    caption,
     showSpark: knownPointCount(row.spark) >= 2,
-    hasBadges: Boolean(row.isEstimated || row.isProxy || row.isStale || warning !== null || showProvenance),
+    hasBadges: Boolean(row.isEstimated || row.isProxy || row.isStale || warning !== null || caption !== null || showProvenance),
   };
 }
 

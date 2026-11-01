@@ -1,7 +1,7 @@
 /**
  * AssetRow·AssetList — 자산 행(설계서 §5 "값 없음 —, 변화 없음은 칩 생략, 플래그 배지는 반드시 보인다").
  * 네 상태: 값 있음(이름·보조·값+단위·변화 칩), 값 없음("—"·단위 없음·칩 생략, valueText "N/A"도 "—"),
- * 추정·대리(배지), 오래됨(⚠️ 이전 값 + 사유). 그 밖에 경고 글·출처 배지·스파크라인,
+ * 추정·대리(배지), 오래됨(경고 아이콘 + 이전 값 + 사유). 그 밖에 값의 기준 한 줄·경고 글·출처 배지·스파크라인,
  * 상호작용(href → 링크, onSelect → aria-pressed 버튼, + disclosure → aria-expanded 펼침 단추, 둘 다 없으면 그냥 줄), 목록(제목·윗선·빈 글·선택).
  */
 import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
@@ -242,6 +242,36 @@ describe("AssetRow", () => {
     render(<AssetRow row={{ id: "x", name: "X", value: 1, change: 0.004, changePct: 0.09 }} />);
     expect(screen.getByText("0.00")).toBeTruthy();
     expect(screen.getByText("(+0.09%)")).toBeTruthy();
+  });
+
+  it("값의 기준 한 줄(caption) — 배지 줄 맨 앞에 늘 보이고(추정 배지보다 앞), 빈 글·'N/A'면 그리지 않는다", () => {
+    render(<AssetRow row={{ ...SPX, isEstimated: true, caption: "장중 추정 23:58 · 장중가 1/2종목 · 오늘 +0.42% · 10-29 잠정 대비" }} />);
+    const caption = screen.getByText("장중 추정 23:58 · 장중가 1/2종목 · 오늘 +0.42% · 10-29 잠정 대비");
+    expect(caption.closest(".basis-full")).not.toBeNull();
+    // 말줄임 없음(보조 글 sub와 달리 늘 다 보임)
+    expect(caption.className).not.toContain("truncate");
+    expect(caption.compareDocumentPosition(screen.getByText("추정")) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    cleanup();
+
+    const { container } = render(<AssetRow row={{ ...SPX, caption: " N/A " }} />);
+    expect(screen.queryByText("N/A")).toBeNull();
+    // 다른 배지도 없으면 배지 줄 자체가 없습니다.
+    expect(container.querySelector(".basis-full")).toBeNull();
+  });
+
+  it("값의 기준 한 줄 — 펼침 단추에서는 배지 줄과 함께 설명으로 읽히고(이름에는 없음), 아바타가 있으면 이름과 같은 세로줄", () => {
+    render(
+      <AssetRow
+        row={{ id: "rules", name: "규칙 계좌", value: 101234.56, avatarText: "R", caption: "장부 10-30 23:15" }}
+        onSelect={() => {}}
+        disclosure={{ controls: "detail", expanded: false, hint: "상세 보기" }}
+      />,
+    );
+    const button = screen.getByRole("button", { name: "규칙 계좌 상세 보기" });
+    const ids = (button.getAttribute("aria-describedby") ?? "").split(" ");
+    expect(ids.map((id) => document.getElementById(id)?.textContent ?? "").join(" | ")).toContain("장부 10-30 23:15");
+    const badges = screen.getByText("장부 10-30 23:15").closest(".basis-full") as HTMLElement;
+    expect(badges.className.split(/\s+/)).toEqual(expect.arrayContaining(["pl-12", "sm:pl-[52px]"]));
   });
 
   it("href와 onSelect가 함께 오면 링크가 이긴다", () => {

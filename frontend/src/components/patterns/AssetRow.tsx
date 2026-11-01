@@ -47,6 +47,12 @@ export type AssetRowData = {
   avatarText?: string | null;
   /** 아바타 고리 색(예: 그 계좌의 차트 선 색) — 보조 표지일 뿐 뜻은 이름 글이 나릅니다. */
   avatarRing?: string | null;
+  /**
+   * 값의 기준 한 줄(예: 모의매매 계좌의 지금 값 단계 표기 '장중 추정 23:58 · 장중가 1/2종목 · 오늘 +0.42% · 10-29 잠정 대비') — 배지 줄 맨 앞에
+   * 늘 보이고(말줄임 없음 — 보조 글 `sub`는 한 줄로 잘림), 펼침 단추에서는 배지 줄과 함께 설명(aria-describedby)으로 읽힙니다. 설계서 §1.5 계약에
+   * 더한 선택 필드. 비었거나 "N/A"면 그리지 않습니다.
+   */
+  caption?: string | null;
 };
 
 /**
@@ -77,7 +83,7 @@ const INTERACTIVE =
 const SELECTED = "bg-surface-2";
 
 /**
- * 자산 행 — (아바타) → 이름·보조 → (스파크라인) → 값(+단위) → 변화 칩 → 배지(추정·이전 값·경고·출처).
+ * 자산 행 — (아바타) → 이름·보조 → (스파크라인) → 값(+단위) → 변화 칩 → 배지 줄(값의 기준 한 줄·추정·이전 값·경고·출처).
  *
  * - 값을 모르면 "—"(단위 없음, QA-049). 변화를 모르면 칩을 생략합니다(0.00%를 만들지 않음).
  * - 추정·대리·이전 값·경고는 있으면 반드시 보입니다(숨기는 옵션 없음). 출처 배지는 `showProvenance`일 때.
@@ -155,6 +161,8 @@ export function AssetRow({
       {model.hasBadges ? (
         // 배지 줄은 아바타가 있으면 이름과 같은 세로줄에서 시작합니다(아바타 36·40px + 간격 12px).
         <span id={parts?.badges} className={`flex basis-full flex-wrap items-center gap-1 ${model.avatarText ? "pl-12 sm:pl-[52px]" : ""}`}>
+          {/* 값의 기준 한 줄은 배지보다 앞 — '추정' 배지 바로 뒤에 '장중 추정 …'이 오면 눈에도 낭독에도 '추정 장중 추정'으로 겹칩니다. */}
+          {model.caption ? <span className="text-xs leading-4 tabular-nums text-text-2">{model.caption}</span> : null}
           <EstimateBadge estimated={row.isEstimated} proxy={row.isProxy} />
           <StaleBadge stale={row.isStale} reason={row.staleReason} />
           {model.warning ? (
