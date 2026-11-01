@@ -2,7 +2,7 @@
  * 장중 시세 카드(LiveValuationCard) — 고정하는 규칙
  *  - 계좌 표는 없고(계좌 숫자는 개요의 지금 값), 고른 계좌(bookCode — 없거나 응답에 없으면 첫 계좌)의 종목 장중가와 기준 시각
  *  - 서버가 새 시세를 요청한 응답이면(refreshRequested) 20초 뒤 한 번만 더 읽는다(되풀이 없음)
- *  - 간격 선택은 이 브라우저에 기억되고(기본 30분), 장 밖에서는 다시 읽지 않는다
+ *  - 간격 선택(끄기~30분·1시간·3시간)은 이 브라우저에 기억되고(기본 30분), 장 밖에서는 다시 읽지 않는다
  *  - 숨긴 탭에서는 '한 번 더'·'다음 개장' 깨우기가 읽지 않고, 다시 보일 때 한 번(QA-154). 숨긴 탭으로 열리면 처음 보일 때 읽는다(QA-156)
  *  - 시계는 고정한다(QA-155) — 다음 개장 깨우기가 지금 시각으로 기다릴 시간을 정하므로, 진짜 시계면 돌린 때에 따라 결과가 달라진다
  */
@@ -122,6 +122,28 @@ describe("정규장", () => {
     expect(window.localStorage.getItem("paper.liveRefreshMinutes")).toBe("1");
     await settle(60_000);
     expect(liveCalls()).toBe(2);
+  });
+
+  it("1시간을 고르면 기억하고 한 시간마다 다시 읽는다 — 다시 열어도 1시간(저장된 60이 살아남음)", async () => {
+    api.apiGetShared.mockImplementation(() => Promise.resolve(live()));
+    const { unmount } = render(<LiveValuationCard />);
+    await settle();
+    const select = screen.getByLabelText("장중 평가 새로고침 간격") as HTMLSelectElement;
+    expect(Array.from(select.options).map((option) => option.textContent)).toEqual(
+      ["끄기", "1분", "2분", "5분", "10분", "15분", "30분", "1시간", "3시간"]);
+
+    fireEvent.change(select, { target: { value: "60" } });
+    expect(window.localStorage.getItem("paper.liveRefreshMinutes")).toBe("60");
+    expect(screen.getByText("정규장 동안 1시간마다 다시 읽습니다(이 화면을 보는 동안만).")).toBeTruthy();
+    await settle(59 * 60_000);
+    expect(liveCalls()).toBe(1);
+    await settle(60_000);
+    expect(liveCalls()).toBe(2);
+
+    unmount();
+    render(<LiveValuationCard />);
+    await settle();
+    expect((screen.getByLabelText("장중 평가 새로고침 간격") as HTMLSelectElement).value).toBe("60");
   });
 });
 

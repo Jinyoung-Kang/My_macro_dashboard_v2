@@ -16,6 +16,7 @@ import {
   type LivePositionView,
   livePositionsFor,
   liveQuotesWarning,
+  liveIntervalText,
   liveRefreshMs,
   liveSessionView,
   msUntilNextOpen,
@@ -134,7 +135,7 @@ export function LiveValuationCard({
         {session.live
           ? minutes === 0
             ? "자동 새로고침이 꺼져 있습니다 — '지금 새로 읽기'를 누를 때만 다시 읽습니다."
-            : `정규장 동안 ${minutes}분마다 다시 읽습니다(이 화면을 보는 동안만).`
+            : `정규장 동안 ${liveIntervalText(minutes)}마다 다시 읽습니다(이 화면을 보는 동안만).`
           : "장 밖에서는 다시 읽지 않습니다 — 숫자는 아래 기준 시각의 값입니다."}
         {live.refreshError && <span className="ml-1 text-warn">· 새로 읽지 못함({live.refreshError})</span>}
       </p>

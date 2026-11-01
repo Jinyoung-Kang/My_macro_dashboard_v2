@@ -10,7 +10,11 @@ import { EMPTY, formatKst, formatNumber, formatPercent } from "./format";
 import { formatSharePriceFor, type PaperMarketCode } from "./paperMarket";
 import type { PaperLivePosition, PaperLiveQuotes, PaperLiveResponse, PaperLiveSession } from "./types";
 
-/** 자동 새로고침 간격(분). 0은 끄기. 시세를 받는 하한이 1분(서버 MAX_AGE_LIVE)이라 더 짧은 간격은 두지 않습니다. */
+/**
+ * 자동 새로고침 간격(분). 0은 끄기. 시세를 받는 하한이 1분(서버 MAX_AGE_LIVE)이라 더 짧은 간격은 두지 않습니다. 1시간·3시간은 사용자 결정
+ * (2026-10-31, 장중 명세 L5). 간격이 길면 그 사이 장부 관측(미국은 매시)이 돌아 개요의 지금 값이 장부 단계로 돌아가는 때가 많습니다(가격은
+ * 종목마다 장중 1분봉과 장부 관측 가운데 늦은 쪽 — 장중 추정은 이 카드가 읽은 직후에 새로 생김).
+ */
 export const LIVE_REFRESH_OPTIONS = [
   { value: 0, label: "끄기" },
   { value: 1, label: "1분" },
@@ -19,6 +23,8 @@ export const LIVE_REFRESH_OPTIONS = [
   { value: 10, label: "10분" },
   { value: 15, label: "15분" },
   { value: 30, label: "30분" },
+  { value: 60, label: "1시간" },
+  { value: 180, label: "3시간" },
 ] as const;
 
 /** 기본 간격 — 사용자 결정(2026-10-30). */
@@ -29,6 +35,11 @@ export const LIVE_FOLLOW_UP_MS = 20_000;
 /** 다음 개장 뒤 이만큼 기다렸다 깨어납니다(첫 1분봉이 생긴 뒤). */
 const OPEN_GRACE_MS = 60_000;
 const DAY_MS = 24 * 60 * 60_000;
+
+/** 간격 이름 — 선택지의 이름 그대로('30분'·'1시간'·'3시간'), 선택지에 없는 값이면 'n분'. */
+export function liveIntervalText(minutes: number): string {
+  return LIVE_REFRESH_OPTIONS.find((option) => option.value === minutes)?.label ?? `${minutes}분`;
+}
 
 /** 저장된 값이 선택지에 있으면 그것, 아니면 기본값. */
 export function normalizeLiveMinutes(value: unknown): number {

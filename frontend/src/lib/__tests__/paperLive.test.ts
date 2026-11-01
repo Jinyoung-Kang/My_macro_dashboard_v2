@@ -1,12 +1,14 @@
 /**
  * 장중 시세 화면 자료(lib/paperLive) — 고정하는 규칙
- *  - 새로고침 간격: 선택지(끄기·1·2·5·10·15·30분) 밖의 저장 값은 기본 30분, 정규장에만 그 간격(그 밖은 0 — 다시 읽지 않음)
+ *  - 새로고침 간격: 선택지(끄기·1·2·5·10·15·30분·1시간·3시간) 밖의 저장 값은 기본 30분, 정규장에만 그 간격(그 밖은 0 — 다시 읽지 않음)
  *  - 장 밖이면 다음 개장 + 1분에 한 번 깨어남(하루 넘게 남거나 시각을 모르면 깨지 않음)
  *  - 고른 계좌의 종목 줄(없거나 모르는 계좌면 첫 계좌, 계좌가 없으면 null) — 모든 가격에 기준 시각("장중 …"·"마지막 관측 …"), 모르는 값은 "—"
  */
 import { describe, expect, it } from "vitest";
 import {
   DEFAULT_LIVE_REFRESH_MINUTES,
+  LIVE_REFRESH_OPTIONS,
+  liveIntervalText,
   livePositionsFor,
   livePositionView,
   liveQuotesWarning,
@@ -45,7 +47,20 @@ describe("새로고침 간격", () => {
     expect(normalizeLiveMinutes("5")).toBe(5);
     expect(normalizeLiveMinutes("0")).toBe(0);
     expect(normalizeLiveMinutes("3")).toBe(30);
+    expect(normalizeLiveMinutes("45")).toBe(30);
     expect(normalizeLiveMinutes(undefined)).toBe(30);
+  });
+
+  it("1시간·3시간(사용자 결정 2026-10-31, 장중 명세 L5) — 저장된 60·180은 정규화에서 살아남고 이름은 '1시간'·'3시간'", () => {
+    expect(LIVE_REFRESH_OPTIONS.map((option) => option.value)).toEqual([0, 1, 2, 5, 10, 15, 30, 60, 180]);
+    expect(normalizeLiveMinutes("60")).toBe(60);
+    expect(normalizeLiveMinutes("180")).toBe(180);
+    expect(normalizeLiveMinutes(60)).toBe(60);
+    expect(liveIntervalText(30)).toBe("30분");
+    expect(liveIntervalText(60)).toBe("1시간");
+    expect(liveIntervalText(180)).toBe("3시간");
+    expect(liveIntervalText(45)).toBe("45분");
+    expect(liveRefreshMs({ available: true, session: REGULAR }, 180)).toBe(3 * 60 * 60_000);
   });
 
   it("정규장에만 그 간격, 끄기·장 밖이면 0", () => {
