@@ -22,6 +22,7 @@ import {
   lineXAxis,
   lineXTicks,
   lineYAxis,
+  markerLabelSide,
   niceAxis,
   normalizeLineRows,
   scrubIndex,
@@ -286,6 +287,24 @@ describe("lineXAxis · lineXTicks", () => {
     const rows = Array.from({ length: 11 }, (_, index) => ({ date: `p${index}` }));
     expect(lineXTicks(rows, { width: 600 })).toEqual(["p0", "p1", "p3", "p4", "p6", "p7", "p9", "p10"]);
     expect(laidOut(rows, lineXAxis(rows, { width: 120 }), 120)).toBe(true);
+  });
+});
+
+describe("markerLabelSide — 세로 표시선 이름의 자리", () => {
+  const rows = weekdays("2026-10-23", "2026-10-30");
+
+  it("기본은 선 오른쪽, 오른쪽에 적으면 그림 끝을 넘는 선만 왼쪽 — 마지막 날짜의 '프레임 v5'", () => {
+    expect(markerLabelSide(rows, "2026-10-23", "프레임 v1", { width: 880 })).toBe("right");
+    expect(markerLabelSide(rows, "2026-10-29", "프레임 v4", { width: 880 })).toBe("right");
+    expect(markerLabelSide(rows, "2026-10-30", "프레임 v5", { width: 880 })).toBe("left");
+    // 좁은 그림에서는 끝에서 둘째 선도 넘으면 왼쪽
+    expect(markerLabelSide(rows, "2026-10-29", "프레임 v4", { width: 300 })).toBe("left");
+  });
+
+  it("너비를 모르면 마지막 행의 선만 왼쪽, 행에 없는 날짜는 오른쪽(그려지지 않음)", () => {
+    expect(markerLabelSide(rows, "2026-10-30", "프레임 v5")).toBe("left");
+    expect(markerLabelSide(rows, "2026-10-29", "프레임 v4")).toBe("right");
+    expect(markerLabelSide(rows, "2026-11-30", "프레임 v9", { width: 880 })).toBe("right");
   });
 });
 

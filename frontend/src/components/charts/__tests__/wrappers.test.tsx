@@ -134,8 +134,7 @@ describe("MultiLineSeries — 격자 없는 여러 선", () => {
     expect(container.querySelector("svg.recharts-surface")?.getAttribute("aria-label")).toBe("종가와 미결제약정");
   });
 
-  // QA-164: 표시선 이름을 늘 선 오른쪽(insideTopLeft)에 적어, 마지막 날짜의 선(순자산 곡선의 마지막 프레임 경계)은 이름이 그림 오른쪽에서 잘림.
-  it.fails("표시선 이름은 선 오른쪽, 마지막 날짜의 선은 왼쪽(그림 끝에서 잘리지 않게)", () => {
+  it("표시선 이름은 선 오른쪽, 마지막 날짜의 선은 왼쪽(그림 끝에서 잘리지 않게)", () => {
     observeAs(600, 300);
     const { container } = render(
       <MultiLineSeries

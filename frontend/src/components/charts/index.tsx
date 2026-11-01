@@ -32,6 +32,7 @@ import {
   isolatedPointIndexes,
   lineXAxis,
   lineYAxis,
+  markerLabelSide,
   type LineRow,
   type LineYAxis,
   tailPointShown,
@@ -338,10 +339,8 @@ export function MultiLineSeries({
 
   // X 눈금에 줄 너비 — 그림 너비에서 왼쪽 축(눈금 글 폭 어림 또는 axisWidth)·오른쪽 축(76)·오른쪽 여백(8)을 뺍니다.
   const leftWidth = axisWidth ?? Math.max(0, ...(leftAxis?.ticks ?? []).map((tick) => axisLabelWidth(leftLabel(tick), CHART_FONT))) + 12;
-  const xAxis = lineXAxis(rows, {
-    width: width === null ? null : width - leftWidth - (usesRight ? 76 : 0) - 8,
-    fontSize: CHART_FONT,
-  });
+  const plotWidth = width === null ? null : width - leftWidth - (usesRight ? 76 : 0) - 8;
+  const xAxis = lineXAxis(rows, { width: plotWidth, fontSize: CHART_FONT });
   const xTicks = xAxis.ticks;
   const first = xTicks[0] ?? "";
   const last = xTicks[xTicks.length - 1] ?? "";
@@ -416,7 +415,10 @@ export function MultiLineSeries({
             }}
           />
           {leftAxis?.zeroLine ? <ReferenceLine yAxisId="left" y={0} stroke={GUIDE} strokeWidth={1} /> : null}
-          {/* 경계선은 계열선보다 흐린 회색 점선 — 값이 아니라 "여기서 조건이 바뀜" 표시라 계열색과 겹치지 않게 합니다. */}
+          {/*
+            경계선은 계열선보다 흐린 회색 점선 — 값이 아니라 "여기서 조건이 바뀜" 표시라 계열색과 겹치지 않게 합니다. 이름은 선 오른쪽에
+            적고, 오른쪽에 적으면 그림 끝을 넘는 선(마지막 날짜 근처)만 왼쪽에 적습니다 — 예전에는 마지막 '프레임 v5'가 잘렸습니다.
+          */}
           {markers.map((marker) => (
             <ReferenceLine
               key={`${marker.x}-${marker.label}`}
@@ -425,7 +427,14 @@ export function MultiLineSeries({
               stroke={GUIDE}
               strokeDasharray="4 3"
               strokeWidth={1}
-              label={{ value: marker.label, position: "insideTopLeft", fill: AXIS_TEXT, fontSize: CHART_FONT }}
+              label={{
+                value: marker.label,
+                position: markerLabelSide(rows, marker.x, marker.label, { width: plotWidth, fontSize: CHART_FONT }) === "left"
+                  ? "insideTopRight"
+                  : "insideTopLeft",
+                fill: AXIS_TEXT,
+                fontSize: CHART_FONT,
+              }}
             />
           ))}
           {series.map((entry) => {

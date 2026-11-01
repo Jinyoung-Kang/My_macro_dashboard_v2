@@ -361,6 +361,33 @@ function layoutXAxis(dates: readonly string[], width: number, fontSize: number, 
   return best;
 }
 
+/** 세로 표시선 이름과 선 사이(px) — Recharts 표시선 이름의 안쪽 여백(offset 5)에 한 칸 더. */
+const MARKER_LABEL_PAD = 6;
+
+/**
+ * 세로 표시선(예: 순자산 곡선의 '프레임 v5') 이름을 선의 어느 쪽에 적을지 — 기본은 오른쪽, 오른쪽에 적으면 그림 오른쪽 끝을 넘을 때만 왼쪽.
+ * 자리는 범주 축의 행 순번 비율(`lineXAxis`와 같음). 그림 너비를 모르면(측정 전) 마지막 행의 표시선만 왼쪽. 표시선 날짜가 행에 없으면 오른쪽
+ * (Recharts가 그리지 않음).
+ */
+export function markerLabelSide(
+  data: readonly LineRow[],
+  x: string,
+  label: string,
+  options: { width?: number | null; fontSize?: number } = {},
+): "right" | "left" {
+  const index = data.findIndex((row) => row.date === x);
+  if (index < 0 || data.length < 2) {
+    return "right";
+  }
+  const lastIndex = data.length - 1;
+  const width = options.width ?? 0;
+  if (!(width > 0)) {
+    return index === lastIndex ? "left" : "right";
+  }
+  const at = (index / lastIndex) * width;
+  return at + MARKER_LABEL_PAD + axisLabelWidth(label, options.fontSize ?? 12) > width ? "left" : "right";
+}
+
 /** X축 눈금 행의 date만(`lineXAxis`의 ticks) — 너비를 주지 않으면 첫·마지막. */
 export function lineXTicks(data: readonly LineRow[], options: { width?: number | null; fontSize?: number } = {}): string[] {
   return lineXAxis(data, options).ticks;
