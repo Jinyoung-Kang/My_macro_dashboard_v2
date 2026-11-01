@@ -50,13 +50,17 @@ export const TOOLTIP_BOX: CSSProperties = {
   color: "var(--text)",
 };
 
-/** 축 끝 날짜 — 첫 날짜는 왼쪽 끝에 붙여(start), 마지막은 오른쪽 끝에 붙여(end) 그립니다. 가운데 정렬이면 SVG 밖으로 잘립니다. */
+/**
+ * X 날짜 눈금 — 첫 날짜는 왼쪽 끝에 붙여(start), 마지막은 오른쪽 끝에 붙여(end), 중간 눈금은 가운데 맞춤으로 그립니다. 끝 글을 가운데 정렬하면
+ * SVG 밖으로 잘립니다. `labels`(선택)는 눈금 행의 date → 적을 글(중간 눈금의 짧은 글 — `lib/lineChart` `lineXAxis`), 없으면 date 그대로.
+ */
 export function EdgeDateTick({
   x,
   y,
   payload,
   first,
   last,
+  labels,
   fontSize = CHART_FONT,
 }: {
   x?: number | string;
@@ -64,13 +68,14 @@ export function EdgeDateTick({
   payload?: { value?: string | number };
   first: string;
   last: string;
+  labels?: Readonly<Record<string, string>>;
   fontSize?: number;
 }) {
   const value = String(payload?.value ?? "");
   const anchor = first === last ? "middle" : value === first ? "start" : value === last ? "end" : "middle";
   return (
     <text x={Number(x) || 0} y={Number(y) || 0} dy="0.71em" textAnchor={anchor} fill={AXIS_TEXT} fontSize={fontSize}>
-      {value}
+      {labels?.[value] ?? value}
     </text>
   );
 }

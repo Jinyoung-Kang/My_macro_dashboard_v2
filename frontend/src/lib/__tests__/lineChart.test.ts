@@ -1,5 +1,6 @@
 /**
- * 선 차트 규칙(lib/lineChart.ts) — 축은 데이터 범위(0 바닥을 지어내지 않음), 0선은 뜻이 있을 때만, 색은 되풀이하지 않음,
+ * 선 차트 규칙(lib/lineChart.ts) — 축은 데이터 범위(0 바닥을 지어내지 않음)를 둥근 간격의 배수로 넓히고 중간 눈금을 둠(서식이 같아지면 간격을 키움),
+ * X는 첫·마지막 날짜와 너비에 맞춘 날짜 경계의 중간 눈금(글이 겹치지 않음), 0선은 뜻이 있을 때만, 색은 되풀이하지 않음,
  * 모르는 값은 null(선 끊김)·툴팁 "—", 외딴 점은 점으로.
  * 문지르기: Recharts의 활성 자리(숫자·글)를 순번으로 바꾸고 범위를 검사, 그 점의 값·날짜·기간의 첫 유효값 대비 변화(모르면 null), 추정 점 표시.
  * 꼬리 계열(tailOf — 장중 값 단계의 오늘 추정 점선): 범례에서 빠지고, 색은 본 계열 색, 툴팁 줄은 꼬리 자신의 점에만(그 점에서는 본 계열 '—' 줄이 빠짐).
@@ -8,6 +9,8 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  axisLabelWidth,
+  fixedYAxis,
   hasLineValues,
   heroExtremes,
   inLegend,
@@ -16,13 +19,16 @@ import {
   lineSeriesColors,
   lineTooltipModel,
   lineValue,
+  lineXAxis,
   lineXTicks,
   lineYAxis,
+  niceAxis,
   normalizeLineRows,
   scrubIndex,
   scrubModel,
   tailPointShown,
   type LineRow,
+  type LineXAxis,
 } from "@/lib/lineChart";
 
 const ONE = [{ key: "v", label: "순유동성" }];
@@ -52,15 +58,18 @@ describe("lineValue · hasLineValues · normalizeLineRows", () => {
 });
 
 describe("lineYAxis", () => {
-  it("데이터 범위 — 5.85~6.0이면 0 바닥을 만들지 않고, 눈금은 범위 끝값 두 개", () => {
+  it("데이터 범위 — 5.85~6.0이면 0 바닥을 만들지 않고, 범위를 둥근 간격(0.05)의 배수로 넓혀 끝과 중간에 같은 간격의 눈금", () => {
     const axis = lineYAxis([{ date: "a", v: 5.85 }, { date: "b", v: 6.0 }], ONE);
     expect(axis).not.toBeNull();
-    const [lower, upper] = axis!.domain;
-    expect(lower).toBeGreaterThan(5);
-    expect(lower).toBeLessThan(5.85);
-    expect(upper).toBeGreaterThan(6.0);
-    expect(axis!.ticks).toEqual(axis!.domain);
+    expect(axis!.domain).toEqual([5.8, 6.05]);
+    expect(axis!.ticks).toEqual([5.8, 5.85, 5.9, 5.95, 6, 6.05]);
     expect(axis!.zeroLine).toBe(false);
+  });
+
+  it("눈금 글이 서로 같아지면 간격을 키운다 — 소수 한 자리 서식이면 0.05 대신 0.1", () => {
+    const axis = lineYAxis([{ date: "a", v: 5.85 }, { date: "b", v: 6.0 }], ONE, { format: (value) => value.toFixed(1) });
+    expect(axis!.ticks).toEqual([5.8, 5.9, 6, 6.1]);
+    expect(axis!.domain).toEqual([5.8, 6.1]);
   });
 
   it("여러 계열의 값을 모두 모아 범위를 정한다(모르는 칸은 빼고)", () => {
@@ -77,6 +86,7 @@ describe("lineYAxis", () => {
     expect(crossing!.domain[0]).toBeLessThan(0);
     expect(crossing!.domain[1]).toBeGreaterThan(0);
     expect(crossing!.zeroLine).toBe(true);
+    expect(crossing!.ticks).toEqual([-1, -0.5, 0, 0.5, 1, 1.5]);
 
     const positive = lineYAxis([{ date: "a", v: 1.2 }, { date: "b", v: 1.5 }], ONE, { includeZero: true });
     expect(positive!.domain[0]).toBe(0);
@@ -103,7 +113,7 @@ describe("lineYAxis", () => {
     expect(lower).toBeLessThan(-5);
     expect(upper).toBeGreaterThan(-3);
     expect(upper).toBeLessThan(0);
-    expect(axis!.ticks).toEqual(axis!.domain);
+    expect(axis!.ticks).toEqual([-6, -5, -4, -3, -2]);
   });
 
   it("값이 하나도 없으면 null", () => {
@@ -174,14 +184,108 @@ describe("heroExtremes — 히어로 Y 끝값(실제 최고·최저)", () => {
   });
 });
 
-describe("lineXTicks", () => {
-  it("첫 날짜와 마지막 날짜만", () => {
+describe("niceAxis · fixedYAxis — 둥근 간격의 눈금", () => {
+  it("순자산 98,896~101,765 → 1,000 간격으로 98,000~102,000(눈금 다섯)", () => {
+    expect(niceAxis(98_896, 101_765)).toEqual({ domain: [98_000, 102_000], ticks: [98_000, 99_000, 100_000, 101_000, 102_000] });
+  });
+
+  it("여러 범위에서 눈금은 3~7개, 같은 간격, 범위 끝을 담고 데이터 범위를 덮는다", () => {
+    for (const [lower, upper] of [[0.001, 0.5], [91.3, 110.2], [-2.84, 7.5], [1_335, 1_480], [5.838, 6.012], [0.42, 0.43]]) {
+      const { domain, ticks } = niceAxis(lower, upper);
+      expect(ticks.length).toBeGreaterThanOrEqual(3);
+      expect(ticks.length).toBeLessThanOrEqual(7);
+      expect(ticks[0]).toBe(domain[0]);
+      expect(ticks[ticks.length - 1]).toBe(domain[1]);
+      expect(domain[0]).toBeLessThanOrEqual(lower);
+      expect(domain[1]).toBeGreaterThanOrEqual(upper);
+      const steps = ticks.slice(1).map((tick, index) => tick - ticks[index]);
+      for (const step of steps) expect(step).toBeCloseTo(steps[0], 9);
+    }
+  });
+
+  it("서식이 같은 글을 내면 간격을 키운다 — 정수 서식에 0.5 간격이면 1", () => {
+    expect(niceAxis(0.2, 1.4, { format: (value) => value.toFixed(0) }).ticks).toEqual([0, 1, 2]);
+  });
+
+  it("고정 범위는 넓히지 않고 그 안의 둥근 간격 — 0~100이면 25 간격, 0을 가로지를 때만 0선", () => {
+    expect(fixedYAxis([0, 100])).toEqual({ domain: [0, 100], ticks: [0, 25, 50, 75, 100], zeroLine: false });
+    expect(fixedYAxis([-100, 100], { zeroLine: true })).toEqual({ domain: [-100, 100], ticks: [-100, -50, 0, 50, 100], zeroLine: true });
+  });
+});
+
+/** 2025-11-03부터 2026-10-30까지 평일 — 1년 일별 차트의 행. */
+function weekdays(from: string, to: string): LineRow[] {
+  const rows: LineRow[] = [];
+  for (let at = Date.parse(`${from}T00:00:00Z`); at <= Date.parse(`${to}T00:00:00Z`); at += 86_400_000) {
+    const day = new Date(at).getUTCDay();
+    if (day !== 0 && day !== 6) rows.push({ date: new Date(at).toISOString().slice(0, 10) });
+  }
+  return rows;
+}
+
+/** 눈금 글 상자가 그림 안에 있고 서로 16px 넘게 떨어졌는가(첫 글 왼쪽 맞춤·마지막 글 오른쪽 맞춤·중간 가운데 맞춤, 글은 axis.labels). */
+function laidOut(rows: readonly LineRow[], axis: LineXAxis, width: number): boolean {
+  const lastIndex = rows.length - 1;
+  const boxes = axis.ticks.map((tick, order) => {
+    const size = axisLabelWidth(axis.labels[tick] ?? tick, 12);
+    const x = (rows.findIndex((row) => row.date === tick) / lastIndex) * width;
+    return order === 0 ? [x, x + size] : order === axis.ticks.length - 1 ? [x - size, x] : [x - size / 2, x + size / 2];
+  });
+  return boxes.every(([left, right], order) => left >= 0 && right <= width && (order === 0 || left - boxes[order - 1][1] >= 16));
+}
+
+const shown = (axis: LineXAxis) => axis.ticks.map((tick) => axis.labels[tick]);
+
+describe("lineXAxis · lineXTicks", () => {
+  it("너비를 모르면(측정 전) 첫 날짜와 마지막 날짜만", () => {
     expect(lineXTicks([{ date: "2026-01-02" }, { date: "2026-05-01" }, { date: "2026-10-26" }])).toEqual([
       "2026-01-02",
       "2026-10-26",
     ]);
     expect(lineXTicks([{ date: "2026-10-26" }])).toEqual(["2026-10-26"]);
     expect(lineXTicks([])).toEqual([]);
+    expect(lineXTicks(weekdays("2026-10-23", "2026-10-30"), { width: 0 })).toEqual(["2026-10-23", "2026-10-30"]);
+  });
+
+  it("며칠짜리 곡선은 넓으면 모든 날짜(중간은 MM-DD), 좁으면 겹치지 않는 만큼만", () => {
+    const rows = weekdays("2026-10-23", "2026-10-30");
+    expect(shown(lineXAxis(rows, { width: 900 }))).toEqual(["2026-10-23", "10-26", "10-27", "10-28", "10-29", "2026-10-30"]);
+    for (const width of [240, 320, 480, 640]) {
+      const axis = lineXAxis(rows, { width });
+      expect(axis.ticks[0]).toBe("2026-10-23");
+      expect(axis.ticks.at(-1)).toBe("2026-10-30");
+      expect(laidOut(rows, axis, width)).toBe(true);
+    }
+  });
+
+  it("1년 일별은 분기 첫 거래일(글 YYYY-MM)에 중간 눈금, 너비가 줄면 개수가 줄되 글은 겹치지 않는다", () => {
+    const rows = weekdays("2025-11-03", "2026-10-30");
+    const wide = lineXAxis(rows, { width: 900 });
+    expect(wide.ticks).toEqual(["2025-11-03", "2026-01-01", "2026-04-01", "2026-07-01", "2026-10-30"]);
+    expect(shown(wide)).toEqual(["2025-11-03", "2026-01", "2026-04", "2026-07", "2026-10-30"]);
+    let previous = Infinity;
+    for (const width of [1200, 900, 640, 480, 360, 280]) {
+      const axis = lineXAxis(rows, { width });
+      expect(laidOut(rows, axis, width)).toBe(true);
+      expect(axis.ticks.length).toBeLessThanOrEqual(previous);
+      previous = axis.ticks.length;
+    }
+    expect(lineXTicks(rows, { width: 480 }).length).toBeGreaterThan(2);
+  });
+
+  it("좁은 그림에서 전체 날짜 사이에 중간 눈금이 없으면 양 끝을 YYYY-MM으로 줄여 연도 눈금을 둔다", () => {
+    const rows = weekdays("2023-11-03", "2026-10-29");
+    // 그림 250px(한 줄에 셋인 작은 차트) — 전체 날짜 양 끝이면 2025-01이 첫 글과 부딪혀 아무것도 못 놓음
+    expect(shown(lineXAxis(rows, { width: 250 }))).toEqual(["2023-11", "2025", "2026-10"]);
+    expect(laidOut(rows, lineXAxis(rows, { width: 250 }), 250)).toBe(true);
+    // 같은 달 안이면 줄여도 뜻이 없어 그대로 첫·마지막
+    expect(shown(lineXAxis(weekdays("2026-10-01", "2026-10-30"), { width: 150 }))).toEqual(["2026-10-01", "2026-10-30"]);
+  });
+
+  it("날짜가 아닌 글이면 고른 간격의 행(글 그대로) — 중간 상한 6개면 10 × j ÷ 7의 반올림", () => {
+    const rows = Array.from({ length: 11 }, (_, index) => ({ date: `p${index}` }));
+    expect(lineXTicks(rows, { width: 600 })).toEqual(["p0", "p1", "p3", "p4", "p6", "p7", "p9", "p10"]);
+    expect(laidOut(rows, lineXAxis(rows, { width: 120 }), 120)).toBe(true);
   });
 });
 

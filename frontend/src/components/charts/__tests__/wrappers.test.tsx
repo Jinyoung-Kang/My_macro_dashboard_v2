@@ -1,9 +1,9 @@
 /**
  * 차트 래퍼의 격자 없는 단일 선 문법(명세 docs/specs/2026-10-31-v2-coinbase-ui.md §5·D9) — 실제 Recharts로 그려 봅니다.
  *
- *  - LineSeries(옛 화면): 격자·면적 그라디언트 없음, Y축 끝값 두 개(precision + 단위), X축 첫·마지막 날짜, 툴팁은 한 자리 더
+ *  - LineSeries(옛 화면): 격자·면적 그라디언트 없음, Y축은 끝·중간의 둥근 눈금(precision + 단위), X축 첫·마지막과 중간 날짜, 툴팁은 한 자리 더
  *  - MultiLineSeries: 격자·Recharts 범례 없음, 글자 범례(두 계열 이상 — 점선 계열은 점선 표지, 이름은 부르는 쪽 그대로),
- *    Y축 끝값(데이터 범위 — 고정 domain이면 그 끝값), 모든 칸이 모름이면 빈 상태
+ *    Y축 둥근 눈금(데이터 범위를 그 간격의 배수로 — 고정 domain이면 그 안의 둥근 간격, 오른쪽 축도), X축 중간 날짜, 모든 칸이 모름이면 빈 상태
  *  - MultiLineSeries 꼬리 계열(tailOf — 장중 값 단계의 오늘 추정 점선): 범례 없음, 점선 "3 3"(참고선 "6 4"와 다름), 툴팁 줄은 꼬리 점에만
  *    (꼬리가 시작하는 마지막 줄에서는 없음 — Recharts가 formatter의 null을 그리지 않음), 앞 값 없는 외딴 꼬리 점은 점
  *  - 막대(HorizontalBars·SignedBars): 격자 없음, 0 기준선(text-3)
@@ -57,16 +57,14 @@ const LIQUIDITY = [
 ];
 
 describe("LineSeries(옛 화면) — 새 선 차트 문법", () => {
-  it("격자·면적 그라디언트 없음, Y는 끝값 두 개(precision + 단위), X는 첫·마지막 날짜, 글자 12px", () => {
+  it("격자·면적 그라디언트 없음, Y는 끝·중간의 둥근 눈금(precision + 단위), X는 첫·마지막과 중간 날짜, 글자 12px", () => {
     observeAs(600, 260);
     const { container } = render(<LineSeries data={LIQUIDITY} unit="조" precision={2} />);
     expect(container.querySelector(".recharts-cartesian-grid")).toBeNull();
     expect(container.querySelector("linearGradient")).toBeNull();
     expect(container.querySelector(".recharts-area")).toBeNull();
-    const y = yTicks(container);
-    expect(y).toHaveLength(2);
-    expect(y.every((text) => /^\d\.\d{2}조$/.test(text ?? ""))).toBe(true);
-    expect(texts(container.querySelectorAll(".recharts-xAxis-tick-labels text"))).toEqual(["2026-01-02", "2026-10-24"]);
+    expect(yTicks(container)).toEqual(["5.80조", "5.85조", "5.90조", "5.95조", "6.00조", "6.05조"]);
+    expect(texts(container.querySelectorAll(".recharts-xAxis-tick-labels text"))).toEqual(["2026-01-02", "04-01", "07-01", "2026-10-24"]);
     const line = container.querySelector("path.recharts-line-curve") as SVGPathElement;
     expect(line.getAttribute("stroke")).toBe(SERIES_COLORS.blue);
     expect(svgFontSizes(container).every((size) => size >= 12)).toBe(true);
@@ -103,7 +101,7 @@ describe("MultiLineSeries — 격자 없는 여러 선", () => {
     { date: "2026-10-03", a: 103, b: null, oi: 305_000 },
   ];
 
-  it("격자·Recharts 범례 없음, 글자 범례(점선 표지), 두 축 모두 끝값, 표시선 이름 12px", () => {
+  it("격자·Recharts 범례 없음, 글자 범례(점선 표지), 두 축 모두 둥근 눈금, 중간 날짜, 표시선 이름 12px", () => {
     observeAs(600, 300);
     const { container } = render(
       <MultiLineSeries
@@ -125,21 +123,24 @@ describe("MultiLineSeries — 격자 없는 여러 선", () => {
     const swatch = (item: HTMLElement) => item.querySelector('[aria-hidden="true"]') as HTMLElement;
     expect(swatch(items[1]).style.borderTop).toContain("dashed");
     expect(swatch(items[0]).style.borderTop).toContain("solid");
-    // 왼쪽 축 끝값 두 개(데이터 범위 98~103 — 0 바닥을 지어내지 않음), 오른쪽 축도 끝값 두 개
-    expect(yTicks(container)).toHaveLength(4);
-    expect(texts(container.querySelectorAll(".recharts-xAxis-tick-labels text"))).toEqual(["2026-10-01", "2026-10-03"]);
+    // 왼쪽 축은 데이터 범위 98~103을 2 간격으로(0 바닥을 지어내지 않음), 오른쪽 축은 30만대를 5,000 간격으로
+    expect(yTicks(container)).toEqual([
+      "96.0", "98.0", "100.0", "102.0", "104.0",
+      "295,000", "300,000", "305,000", "310,000", "315,000",
+    ]);
+    expect(texts(container.querySelectorAll(".recharts-xAxis-tick-labels text"))).toEqual(["2026-10-01", "10-02", "2026-10-03"]);
     expect(screen.getByText("프레임 v1")).toBeTruthy();
     expect(svgFontSizes(container).every((size) => size >= 12)).toBe(true);
     expect(container.querySelector("svg.recharts-surface")?.getAttribute("aria-label")).toBe("종가와 미결제약정");
   });
 
-  it("계열 하나면 범례 없음, 고정 domain이면 그 끝값이 눈금", () => {
+  it("계열 하나면 범례 없음, 고정 domain이면 그 범위 안의 둥근 간격(0~100 → 25)", () => {
     observeAs(600, 300);
     const { container } = render(
       <MultiLineSeries data={ROWS} series={[{ key: "a", name: "노출", color: SERIES_COLORS.blue }]} domain={[0, 100]} unit="%" precision={0} />,
     );
     expect(screen.queryByRole("list", { name: "범례" })).toBeNull();
-    expect(texts(container.querySelectorAll(".recharts-yAxis-tick-labels text"))).toEqual(["0%", "100%"]);
+    expect(texts(container.querySelectorAll(".recharts-yAxis-tick-labels text"))).toEqual(["0%", "25%", "50%", "75%", "100%"]);
   });
 
   it("행이 없거나 모든 칸이 모름이면 빈 상태 문구", () => {

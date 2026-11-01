@@ -25,7 +25,17 @@ import {
 } from "recharts";
 import { EMPTY, formatNumber } from "@/lib/format";
 import { type DonutLabelGeometry, donutLabelsFit, truncateToWidth } from "@/lib/chartAxis";
-import { inLegend, isolatedPointIndexes, lineXTicks, lineYAxis, type LineRow, type LineYAxis, tailPointShown } from "@/lib/lineChart";
+import {
+  axisLabelWidth,
+  fixedYAxis,
+  inLegend,
+  isolatedPointIndexes,
+  lineXAxis,
+  lineYAxis,
+  type LineRow,
+  type LineYAxis,
+  tailPointShown,
+} from "@/lib/lineChart";
 
 import {
   AXIS_LINE,
@@ -43,8 +53,8 @@ import {
 import { LineChart as SingleLineChart } from "./LineChart";
 
 /*
- * 차트 래퍼 — 격자 없는 단일 선 문법(명세 docs/specs/2026-10-31-v2-coinbase-ui.md §5): 선 차트는 격자·면적 그라디언트 없이 축 끝값 눈금
- * (lib/lineChart의 lineYAxis·lineXTicks), 글자 범례, 덮개 모양 툴팁. 막대는 격자 없이 0 기준선. 산점도만 옅은 격자(두 축이 다 데이터).
+ * 차트 래퍼 — 격자 없는 단일 선 문법(명세 docs/specs/2026-10-31-v2-coinbase-ui.md §5): 선 차트는 격자·면적 그라디언트 없이 끝과 중간 눈금
+ * (lib/lineChart의 lineYAxis·lineXAxis — Y는 둥근 간격, X는 날짜 경계), 글자 범례, 덮개 모양 툴팁. 막대는 격자 없이 0 기준선. 산점도만 옅은 격자(두 축이 다 데이터).
  * 축·기준선 색과 툴팁 상자·글자 범례·계열 색은 차트 틀(frame.tsx — LineChart와 함께 씀). SVG 글자는 12px 이상(명세 D9).
  */
 const AXIS = { fill: AXIS_TEXT, fontSize: CHART_FONT };
@@ -254,7 +264,8 @@ export type MultiSeries = {
 };
 
 /**
- * 여러 시계열 비교 — 격자 없이 축 끝값 눈금(데이터 범위 — 고정 domain이면 그 끝값)과 첫·마지막 날짜, 글자 범례(두 계열 이상), 덮개 모양 툴팁.
+ * 여러 시계열 비교 — 격자 없이 Y는 둥근 간격 눈금(데이터 범위를 그 배수로 — 고정 domain이면 그 범위 안), X는 첫·마지막 날짜와 날짜 경계의 중간 눈금
+ * (그림 너비에 맞춘 개수 — 너비를 잼), 글자 범례(두 계열 이상), 덮개 모양 툴팁.
  * 단위가 다른 계열은 오른쪽 축으로 나눌 수 있지만(KRX 두 곳) 새로 쓰지 않습니다 — 이중 축은 PRINCIPLES가 피하라는 모양이라 패널을 나누는 쪽이
  * 낫습니다(명세 §12 제안). 오른쪽 축 계열은 부르는 쪽이 이름에 어느 축인지 적습니다.
  */
@@ -312,16 +323,26 @@ export function MultiLineSeries({
   const specsOf = (side: "left" | "right") =>
     series.filter((entry) => (entry.axis ?? "left") === side).map((entry) => ({ key: entry.key, label: entry.name }));
   const usesRight = series.some((entry) => entry.axis === "right");
-  // 축 끝값 눈금 — 선 차트(LineChart)와 같은 규칙(lib/lineChart의 lineYAxis: 데이터 범위, 0은 zeroLine일 때만). 고정 범위(domain)를 주면 그 끝값.
+  // 그림 너비(px) — X 중간 눈금 개수를 고릅니다(선 차트 LineChart와 같음). 재기 전에는 null(첫·마지막만).
+  const [width, setWidth] = useState<number | null>(null);
+  const leftLabel = (value: number) => `${formatNumber(value, precision)}${unit}`;
+  const rightLabel = (value: number) => formatNumber(value, rightPrecision);
+  // 눈금 — 선 차트(LineChart)와 같은 규칙(lib/lineChart의 lineYAxis: 둥근 간격, 0은 zeroLine일 때만). 고정 범위(domain)면 그 범위 안의 둥근 간격.
   const leftAxis: LineYAxis | null = domain
-    ? { domain, ticks: domain, zeroLine: zeroLine && domain[0] < 0 && domain[1] > 0 }
-    : lineYAxis(rows, specsOf("left"), { includeZero: zeroLine });
-  const rightAxis = usesRight ? lineYAxis(rows, specsOf("right")) : null;
+    ? fixedYAxis(domain, { zeroLine, format: leftLabel })
+    : lineYAxis(rows, specsOf("left"), { includeZero: zeroLine, format: leftLabel });
+  const rightAxis = usesRight ? lineYAxis(rows, specsOf("right"), { format: rightLabel }) : null;
   if (data.length === 0 || (leftAxis === null && rightAxis === null)) {
     return <div className="py-10 text-center text-sm text-text-3">표시할 시계열이 없습니다.</div>;
   }
 
-  const xTicks = lineXTicks(rows);
+  // X 눈금에 줄 너비 — 그림 너비에서 왼쪽 축(눈금 글 폭 어림 또는 axisWidth)·오른쪽 축(76)·오른쪽 여백(8)을 뺍니다.
+  const leftWidth = axisWidth ?? Math.max(0, ...(leftAxis?.ticks ?? []).map((tick) => axisLabelWidth(leftLabel(tick), CHART_FONT))) + 12;
+  const xAxis = lineXAxis(rows, {
+    width: width === null ? null : width - leftWidth - (usesRight ? 76 : 0) - 8,
+    fontSize: CHART_FONT,
+  });
+  const xTicks = xAxis.ticks;
   const first = xTicks[0] ?? "";
   const last = xTicks[xTicks.length - 1] ?? "";
   const unitOf = (name: string) =>
@@ -335,7 +356,7 @@ export function MultiLineSeries({
   return (
     <figure className="m-0">
       <ChartLegend entries={legend} />
-      <ResponsiveContainer width="100%" height={height}>
+      <ResponsiveContainer width="100%" height={height} onResize={(nextWidth) => setWidth(nextWidth)}>
         <LineChart data={data} margin={{ top: 8, right: 8, bottom: 0, left: 0 }} aria-label={ariaLabel}>
           <XAxis
             dataKey="date"
@@ -343,7 +364,7 @@ export function MultiLineSeries({
             interval={0}
             stroke={AXIS_LINE}
             tickLine={false}
-            tick={(props) => <EdgeDateTick {...props} first={first} last={last} />}
+            tick={(props) => <EdgeDateTick {...props} first={first} last={last} labels={xAxis.labels} />}
           />
           <YAxis
             yAxisId="left"
@@ -355,7 +376,7 @@ export function MultiLineSeries({
             tickLine={false}
             tick={AXIS}
             width={axisWidth ?? "auto"}
-            tickFormatter={(value: number) => `${formatNumber(value, precision)}${unit}`}
+            tickFormatter={leftLabel}
           />
           {/*
             오른쪽 축은 쓰는 계열이 있을 때만 보입니다(빈 축은 눈금만 늘립니다).
@@ -374,7 +395,7 @@ export function MultiLineSeries({
             tickLine={false}
             tick={AXIS}
             width={76}
-            tickFormatter={(value: number) => formatNumber(value, rightPrecision)}
+            tickFormatter={rightLabel}
           />
           <Tooltip
             {...tooltipStyle()}

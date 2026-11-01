@@ -3,8 +3,9 @@
  *
  * 축은 PRINCIPLES "차트는 축부터 정직해야 합니다"를 따릅니다: Y 범위는 데이터 범위(`valueDomain`), 0은 뜻이 있는 계열만,
  * 음수가 될 수 없는 양은 0 아래로 내리지 않습니다. 모르는 값은 null로 두어 선을 끊습니다(이어 그리지 않음).
+ * 눈금은 끝만이 아니라 중간에도 둡니다(2026-11-01 사용자 요청) — Y는 둥근 간격(`lineYAxis`), X는 날짜 경계(`lineXTicks`).
  */
-import { valueDomain } from "./chartAxis";
+import { valueDomain, visualWidth } from "./chartAxis";
 import { EMPTY } from "./format";
 import { presentText } from "./patterns";
 
@@ -59,21 +60,83 @@ export function normalizeLineRows(data: readonly LineRow[], series: readonly Lin
 }
 
 export type LineYAxis = {
-  /** 축 범위 [아래, 위] — 데이터 범위 + 위아래 여백(valueDomain). */
+  /** 축 범위 [아래, 위] — 데이터 범위 + 위아래 여백(valueDomain)을 눈금 간격의 배수로 넓힌 값(고정 범위면 그대로). */
   domain: [number, number];
-  /** 눈금 — 축 끝값 두 개만. */
-  ticks: [number, number];
+  /** 눈금 — 아래 끝부터 위 끝까지 같은 간격(1·2·2.5·5 × 10ⁿ)의 둥근 수, 보통 4~6개. */
+  ticks: number[];
   /** 0 기준선을 그을지 — includeZero이고 범위가 0을 가로지를 때만. */
   zeroLine: boolean;
 };
 
+/** Y 눈금 간격 수의 목표(눈금 5개 안팎)와 상한 — 차트 높이 200~280px에 12px 글자가 겹치지 않는 개수. */
+const Y_TICK_INTERVALS = 4;
+const Y_TICK_MAX = 7;
+/** 둥근 간격의 앞자리 — 10ⁿ을 곱해 씁니다. */
+const NICE_STEPS = [1, 2, 2.5, 5, 10];
+
+/** raw 이상인 가장 작은 둥근 간격(1·2·2.5·5 × 10ⁿ). */
+function niceStep(raw: number): number {
+  const power = 10 ** Math.floor(Math.log10(raw));
+  return (NICE_STEPS.find((unit) => unit * power >= raw * (1 - 1e-9)) ?? 10) * power;
+}
+
+/** step보다 한 단계 큰 둥근 간격(2 → 2.5 → 5 → 10 → 20 …). */
+function nextNiceStep(step: number): number {
+  return niceStep(step * 1.000001);
+}
+
+/** 간격의 자릿수에 맞춰 부동소수 찌꺼기를 없앱니다(0.1 + 0.2 → 0.3). */
+function roundToStep(value: number, step: number): number {
+  const digits = Math.max(0, Math.ceil(-Math.log10(step)) + 1);
+  const rounded = Number(value.toFixed(Math.min(digits, 12)));
+  return Object.is(rounded, -0) ? 0 : rounded;
+}
+
 /**
- * Y축 — 모든 계열 값을 모아 `valueDomain`으로 범위를 정하고, 눈금은 그 끝값 두 개.
+ * 둥근 눈금 — [lower, upper]를 간격 step의 배수로 넓히고(`fixed`면 넓히지 않고 그 안의 배수만 + 양 끝), 눈금 글(`format`)이 서로 같아지거나
+ * 눈금이 너무 많으면 간격을 한 단계씩 키웁니다.
+ */
+export function niceAxis(
+  lower: number,
+  upper: number,
+  options: { fixed?: boolean; format?: (value: number) => string } = {},
+): { domain: [number, number]; ticks: number[] } {
+  if (!(upper > lower)) {
+    return { domain: [lower, upper], ticks: [lower] };
+  }
+  let step = niceStep((upper - lower) / Y_TICK_INTERVALS);
+  for (let attempt = 0; attempt < 12; attempt += 1, step = nextNiceStep(step)) {
+    const low = options.fixed ? lower : roundToStep(Math.floor(lower / step + 1e-9) * step, step);
+    const high = options.fixed ? upper : roundToStep(Math.ceil(upper / step - 1e-9) * step, step);
+    const first = Math.ceil(low / step - 1e-9);
+    const ticks: number[] = [];
+    for (let index = first; index * step <= high + step * 1e-9; index += 1) {
+      ticks.push(roundToStep(index * step, step));
+    }
+    if (options.fixed) {
+      // 고정 범위의 끝이 간격의 배수가 아니면 끝도 눈금으로 — 가장 가까운 눈금과 간격의 절반 넘게 떨어질 때만(글이 겹치지 않게).
+      if (ticks.length === 0 || ticks[0] - low > step / 2) ticks.unshift(low);
+      if (high - ticks[ticks.length - 1] > step / 2) ticks.push(high);
+    }
+    const labels = options.format ? ticks.map(options.format) : null;
+    const distinct = labels === null || new Set(labels).size === labels.length;
+    if (ticks.length <= Y_TICK_MAX && distinct) {
+      return { domain: [low, high], ticks };
+    }
+  }
+  return { domain: [lower, upper], ticks: [lower, upper] };
+}
+
+/**
+ * Y축 — 모든 계열 값을 모아 `valueDomain`으로 범위를 정하고, 그 범위를 둥근 간격의 배수로 넓혀 같은 간격의 눈금을 답니다(`niceAxis`).
  *
  * - `includeZero`: 0이 뜻을 갖는 계열(스프레드·순포지션)만 범위에 0을 넣습니다. 0 바닥을 지어내지 않습니다(5.85~6.0조에 0~6조 축 금지).
+ *   0이 범위에 들면 0은 간격의 배수라 늘 눈금입니다.
  * - `nonNegative`: 음수가 될 수 없는 양이면 아래 끝을 0 아래로 내리지 않습니다(valueDomain도 값이 모두 0 이상이면 그렇게 함 — 여기서 한 번 더 막음).
  *   그래도 음수 값이 오면 Recharts가 범위를 넓혀 그 점을 보입니다(allowDataOverflow 기본 false — 값을 숨기지 않음).
  *   값이 모두 음수면(위 끝도 0 아래) 0으로 올리지 않고 데이터 범위를 그대로 씁니다 — 올리면 아래 끝이 위 끝보다 커져 축이 뒤집힙니다.
+ *   0 이상인 아래 끝을 간격의 배수로 내려도 0 아래로는 가지 않습니다.
+ * - `format`(선택): 눈금 글 서식 — 두 눈금이 같은 글이 되면(소수 한 자리 서식에 0.05 간격 등) 간격을 키웁니다.
  * - 0 기준선은 includeZero이고 0이 범위 안쪽(끝이 아님)에 있을 때만 — 값이 모두 0 이상이면 0은 축 끝 눈금이 대신 말합니다.
  *
  * @returns 값이 하나도 없으면 null
@@ -81,7 +144,7 @@ export type LineYAxis = {
 export function lineYAxis(
   data: readonly LineRow[],
   series: readonly LineSeriesSpec[],
-  options: { includeZero?: boolean; nonNegative?: boolean } = {},
+  options: { includeZero?: boolean; nonNegative?: boolean; format?: (value: number) => string } = {},
 ): LineYAxis | null {
   const points = data.flatMap((row) => series.map((entry) => ({ value: lineValue(row, entry.key) })));
   const [rawLower, rawUpper] = valueDomain(points, options.includeZero === true);
@@ -89,11 +152,23 @@ export function lineYAxis(
     return null;
   }
   const lower = options.nonNegative && rawUpper > 0 ? Math.max(0, rawLower) : rawLower;
-  const upper = rawUpper;
+  const { domain, ticks } = niceAxis(lower, rawUpper, { format: options.format });
   return {
-    domain: [lower, upper],
-    ticks: [lower, upper],
-    zeroLine: options.includeZero === true && lower < 0 && upper > 0,
+    domain,
+    ticks,
+    zeroLine: options.includeZero === true && domain[0] < 0 && domain[1] > 0,
+  };
+}
+
+/** 고정 범위(0~100 같은 뜻이 정해진 값)의 Y축 — 범위는 그대로, 눈금은 그 안의 둥근 간격(`niceAxis` fixed). */
+export function fixedYAxis(
+  domain: [number, number],
+  options: { zeroLine?: boolean; format?: (value: number) => string } = {},
+): LineYAxis {
+  return {
+    domain,
+    ticks: niceAxis(domain[0], domain[1], { fixed: true, format: options.format }).ticks,
+    zeroLine: options.zeroLine === true && domain[0] < 0 && domain[1] > 0,
   };
 }
 
@@ -162,14 +237,133 @@ export function heroExtremes(
   return { high: point(high, "above"), low: low.value === high.value ? null : point(low, "below") };
 }
 
-/** X축 눈금 — 첫 날짜와 마지막 날짜만(행이 하나면 그 날짜 하나, 없으면 빈 목록). */
-export function lineXTicks(data: readonly LineRow[]): string[] {
+/** 축 글 폭 어림(px) — 라틴 한 칸 ≈ 글자 크기 × 0.6, 한글은 두 칸(`visualWidth`). */
+export function axisLabelWidth(text: string, fontSize: number): number {
+  return visualWidth(text) * fontSize * 0.6;
+}
+
+/** X 눈금 글 사이 최소 틈(px)과 중간 눈금 개수 상한. */
+const X_TICK_GAP = 16;
+const X_TICK_MAX_INTERIOR = 6;
+
+/** 중간 눈금의 짧은 글 — 양 끝이 연도를 나르므로 일·주는 'MM-DD', 월·분기·반기는 'YYYY-MM', 해 단위는 'YYYY'. */
+const monthDay = (date: string) => date.slice(5, 10);
+const yearMonth = (date: string) => date.slice(0, 7);
+const yearOnly = (date: string) => date.slice(0, 4);
+
+/**
+ * 날짜 경계 단위 — 잘게부터. `key`는 날짜를 그 단위의 칸 이름으로 바꾸고(칸이 바뀌는 첫 행이 경계), `label`은 그 경계의 중간 눈금 글입니다.
+ */
+const DATE_UNITS: readonly { key: (year: number, month: number, day: number) => string; label: (date: string) => string }[] = [
+  { key: (year, month, day) => `${year}-${month}-${day}`, label: monthDay },
+  {
+    // 월요일 시작 주 — 그 주 월요일의 날짜(UTC로 계산해 시간대와 무관).
+    key: (year, month, day) => {
+      const at = Date.UTC(year, month - 1, day);
+      const weekday = (new Date(at).getUTCDay() + 6) % 7;
+      return new Date(at - weekday * 86_400_000).toISOString().slice(0, 10);
+    },
+    label: monthDay,
+  },
+  { key: (year, month) => `${year}-${month}`, label: yearMonth },
+  { key: (year, month) => `${year}-q${Math.floor((month - 1) / 3)}`, label: yearMonth },
+  { key: (year, month) => `${year}-h${Math.floor((month - 1) / 6)}`, label: yearMonth },
+  { key: (year) => `${year}`, label: yearOnly },
+  { key: (year) => `${Math.floor(year / 2)}`, label: yearOnly },
+  { key: (year) => `${Math.floor(year / 5)}`, label: yearOnly },
+  { key: (year) => `${Math.floor(year / 10)}`, label: yearOnly },
+];
+
+/** X축 눈금 — 눈금 행의 date(첫·중간·마지막)와 그 글(양 끝은 date 그대로, 중간은 단위에 맞춘 짧은 글). */
+export type LineXAxis = { ticks: string[]; labels: Record<string, string> };
+
+/**
+ * X축 눈금 — 첫 날짜와 마지막 날짜, 그리고 그 사이의 중간 눈금.
+ *
+ * - `width`(그림 너비 px)를 모르면(측정 전·0) 첫·마지막만 — 너비를 모르고 중간 눈금을 달면 좁은 화면에서 글이 겹칩니다.
+ * - 중간 눈금은 날짜 경계에 둡니다 — 일·주(월요일)·월·분기·반기·연·2·5·10년 가운데 경계 수가 너비에 들어가는 개수(그 단위의 짧은 글 폭으로 잼,
+ *   많아야 6) 이하인 단위들의 경계 행(그 칸의 첫 거래일)을 놓아 보고, 가장 많이 놓이는 단위(같으면 잘은 쪽)를 씁니다 — 행 순번 자리라 경계가
+ *   양 끝 글 가까이 몰리면 덜 놓입니다. 글은 일·주 'MM-DD', 월·분기·반기 'YYYY-MM', 해 단위 'YYYY' — 양 끝의
+ *   전체 날짜가 연도를 나릅니다. 모든 행이 'YYYY-MM-DD'로 시작하지 않으면 고른 간격의 행에 글은 date 그대로.
+ * - 범주 축이라 행 순번 비율로 자리를 잽니다(첫 행 왼쪽 끝, 마지막 행 오른쪽 끝 — Recharts 선 차트의 point 축). 첫 글은 왼쪽 끝에 붙고
+ *   마지막 글은 오른쪽 끝에 붙으므로(EdgeDateTick), 중간 글은 가운데 맞춤으로 잡아 이웃·양 끝 글과 `X_TICK_GAP` 넘게 떨어진 것만 남깁니다.
+ * - 좁은 그림(작은 여러 차트)에서 전체 날짜 양 끝 사이에 중간 눈금이 하나도 들어가지 않고 양 끝의 달이 다르면, 양 끝을 'YYYY-MM'으로 줄여 한 번 더
+ *   고릅니다 — 정확한 날짜는 툴팁이 나릅니다.
+ */
+export function lineXAxis(data: readonly LineRow[], options: { width?: number | null; fontSize?: number } = {}): LineXAxis {
   if (data.length === 0) {
-    return [];
+    return { ticks: [], labels: {} };
   }
-  const first = data[0].date;
-  const last = data[data.length - 1].date;
-  return first === last ? [first] : [first, last];
+  const dates = data.map((row) => row.date);
+  const first = dates[0];
+  const last = dates[dates.length - 1];
+  const width = options.width ?? 0;
+  if (first === last || !(width > 0) || dates.length <= 2) {
+    return { ticks: first === last ? [first] : [first, last], labels: { [first]: first, [last]: last } };
+  }
+  const full = layoutXAxis(dates, width, options.fontSize ?? 12, (date) => date);
+  const dated = dates.every((date) => /^\d{4}-\d{2}-\d{2}/.test(date));
+  if (full.ticks.length > 2 || !dated || yearMonth(first) === yearMonth(last)) {
+    return full;
+  }
+  return layoutXAxis(dates, width, options.fontSize ?? 12, yearMonth);
+}
+
+/** `lineXAxis`의 한 번 고르기 — 양 끝 글은 `endLabel`(전체 날짜 또는 'YYYY-MM'). */
+function layoutXAxis(dates: readonly string[], width: number, fontSize: number, endLabel: (date: string) => string): LineXAxis {
+  const first = dates[0];
+  const last = dates[dates.length - 1];
+  const widthOf = (text: string) => axisLabelWidth(text, fontSize);
+  const free = width - widthOf(endLabel(first)) - widthOf(endLabel(last)) - X_TICK_GAP;
+  const lastIndex = dates.length - 1;
+  const roomFor = (labels: readonly string[]) =>
+    Math.min(X_TICK_MAX_INTERIOR, Math.max(0, Math.floor(free / (Math.max(0, ...labels.map(widthOf)) + X_TICK_GAP))));
+
+  const x = (index: number) => (index / lastIndex) * width;
+  const lastLeft = width - widthOf(endLabel(last));
+  // 후보 행을 왼쪽부터 놓아 봅니다 — 이웃·양 끝 글과 X_TICK_GAP 넘게 떨어진 것만.
+  const place = (candidates: readonly number[], label: (date: string) => string): LineXAxis => {
+    let right = widthOf(endLabel(first));
+    const ticks: string[] = [first];
+    const labels: Record<string, string> = { [first]: endLabel(first), [last]: endLabel(last) };
+    for (const index of candidates) {
+      const text = label(dates[index]);
+      const half = widthOf(text) / 2;
+      if (x(index) - half >= right + X_TICK_GAP && x(index) + half <= lastLeft - X_TICK_GAP) {
+        ticks.push(dates[index]);
+        labels[dates[index]] = text;
+        right = x(index) + half;
+      }
+    }
+    ticks.push(last);
+    return { ticks, labels };
+  };
+
+  const parts = dates.map((date) => /^(\d{4})-(\d{2})-(\d{2})/.exec(date));
+  if (parts.some((match) => match === null)) {
+    const room = roomFor(dates);
+    const even = Array.from({ length: room }, (_, index) => Math.round(((index + 1) * lastIndex) / (room + 1)));
+    return place(even.filter((index, at) => index > 0 && index < lastIndex && even.indexOf(index) === at), (date) => date);
+  }
+  const ymd = parts.map((match) => match!.slice(1, 4).map(Number) as [number, number, number]);
+  let best = place([], (date) => date);
+  for (const unit of DATE_UNITS) {
+    const keys = ymd.map(([year, month, day]) => unit.key(year, month, day));
+    const boundaries = keys.flatMap((key, index) => (index > 0 && index < lastIndex && key !== keys[index - 1] ? [index] : []));
+    if (boundaries.length === 0 || boundaries.length > roomFor(boundaries.map((index) => unit.label(dates[index])))) {
+      continue;
+    }
+    const placed = place(boundaries, unit.label);
+    if (placed.ticks.length > best.ticks.length) {
+      best = placed;
+    }
+  }
+  return best;
+}
+
+/** X축 눈금 행의 date만(`lineXAxis`의 ticks) — 너비를 주지 않으면 첫·마지막. */
+export function lineXTicks(data: readonly LineRow[], options: { width?: number | null; fontSize?: number } = {}): string[] {
+  return lineXAxis(data, options).ticks;
 }
 
 /**

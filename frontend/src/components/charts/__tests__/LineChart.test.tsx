@@ -1,13 +1,14 @@
 /**
  * 선 차트(LineChart) — 실제 Recharts로 그려 봅니다(설계서 §5 차트 규칙, §6 네 상태).
  *
- *  - 값 있음: 격자 없음, Y축 눈금은 범위 끝값 두 개(valueFormat), X축은 첫·마지막 날짜, 선 2px, 계열 색은 SERIES_COLORS 순서, 이중 축 없음
+ *  - 값 있음: 격자 없음, Y축 눈금은 둥근 간격의 끝·중간(valueFormat — 같은 글이 되면 간격을 키움), X축은 첫·마지막 날짜와 재어 둔 너비에 맞춘
+ *    중간 날짜, 선 2px, 계열 색은 SERIES_COLORS 순서, 이중 축 없음
  *  - 0 기준선은 includeZero이고 범위가 0을 가로지를 때만, null에서 선이 끊기고 외딴 값은 점으로
  *  - 호버 툴팁: 날짜 · 계열 값(모르면 "—") · 출처
  *  - 값 없음: 행이 없거나 전부 모름이면 "표시할 시계열이 없습니다."(옛 래퍼와 같은 문구)
  *  - 추정·오래됨: 배지가 그림 위에 반드시 보인다(빈 상태에서도)
  *  - 히어로(variant="hero", 명세 §5): 중립 잉크 선, 툴팁 상자 없음, 축선 없음·축 글자 12px, 높이 200/lg 260·touch-action pan-y,
- *    Y 끝값은 축 눈금이 아니라 본 계열의 실제 최고(점 위)·최저(점 아래) — 꼬리 계열은 빼고 봄,
+ *    Y는 기본 차트와 같은 눈금에 더해 본 계열의 실제 최고(점 위)·최저(점 아래) — 꼬리 계열은 빼고 봄,
  *    문지르기 onScrub(순번 | null) — 마우스 이동·벗어남, 터치를 떼면 null. 범례에서 뺀 계열(legend: false)
  *  - 꼬리 계열(tailOf — 장중 값 단계의 오늘 추정 점선): 점선 "3 3"·범례 없음·본 계열 색, 툴팁 줄은 꼬리 점에만, 앞 값 없는 외딴 꼬리 점은 점
  *
@@ -69,16 +70,18 @@ const yTickTexts = (container: HTMLElement) => texts(container.querySelectorAll(
 const linePaths = (container: HTMLElement) => [...container.querySelectorAll("path.recharts-line-curve")];
 
 describe("LineChart — 값 있음", () => {
-  it("격자 없음 · Y축은 범위 끝값 두 개(valueFormat) · X축은 첫·마지막 날짜 · 선 2px · 첫 기본 색", () => {
+  it("격자 없음 · Y축은 끝과 중간의 둥근 눈금(valueFormat) · X축은 첫·마지막과 중간 날짜 · 선 2px · 첫 기본 색", () => {
     observeAs(600, 240);
     const { container } = render(<LineChart data={LIQUIDITY} series={ONE_SERIES} valueFormat={pct} />);
 
     expect(container.querySelector(".recharts-cartesian-grid")).toBeNull();
-    const axis = lineYAxis(LIQUIDITY, ONE_SERIES)!;
-    expect(yTickTexts(container)).toEqual([pct(axis.domain[0]), pct(axis.domain[1])]);
-    // 0 바닥을 지어내지 않는다 — 아래 끝은 5 위.
-    expect(axis.domain[0]).toBeGreaterThan(5);
-    expect(xTickTexts(container)).toEqual(["2026-01-02", "2026-10-24"]);
+    // 소수 한 자리 서식이라 0.05 간격 대신 0.1 — 같은 글의 눈금이 없다. 0 바닥을 지어내지 않는다 — 아래 끝은 5 위.
+    expect(yTickTexts(container)).toEqual(["5.8%", "5.9%", "6.0%", "6.1%"]);
+    expect(lineYAxis(LIQUIDITY, ONE_SERIES, { format: pct })!.domain[0]).toBeGreaterThan(5);
+    // 너비 600이면 네 날짜가 다 들어간다(첫 글 왼쪽 맞춤·마지막 글 오른쪽 맞춤, 가운데 둘은 가운데 맞춤 — 연도는 양 끝이 나르므로 MM-DD).
+    expect(xTickTexts(container)).toEqual(["2026-01-02", "04-01", "07-01", "2026-10-24"]);
+    const anchors = [...container.querySelectorAll(".recharts-xAxis-tick-labels text")].map((node) => node.getAttribute("text-anchor"));
+    expect(anchors).toEqual(["start", "middle", "middle", "end"]);
 
     const paths = linePaths(container);
     expect(paths).toHaveLength(1);
@@ -91,7 +94,7 @@ describe("LineChart — 값 있음", () => {
     const { container } = render(<LineChart data={LIQUIDITY} series={ONE_SERIES} />);
     expect(container.querySelector(".recharts-xAxis line.recharts-cartesian-axis-line")?.getAttribute("stroke")).toBe("var(--border)");
     const ticks = container.querySelectorAll(".recharts-xAxis-tick-labels text, .recharts-yAxis-tick-labels text");
-    expect(ticks).toHaveLength(4);
+    expect(ticks).toHaveLength(4 + 6);
     for (const tick of ticks) {
       expect(tick.getAttribute("fill")).toBe("var(--text-3)");
     }
@@ -210,19 +213,23 @@ describe("LineChart — 히어로 · 문지르기", () => {
     expect(linePaths(container)[0].getAttribute("stroke")).toBe("var(--text)");
     expect(container.querySelector(".recharts-xAxis line.recharts-cartesian-axis-line")).toBeNull();
     expect(container.querySelector(".recharts-cartesian-grid")).toBeNull();
-    // Y는 축 눈금 글 없이 실제 최고·최저를 그 점 위·아래에 — 축 범위 끝(여백 8%를 더한, 데이터에 없는 값)을 적지 않음
-    expect(yTickTexts(container)).toEqual([]);
+    // Y는 기본 차트와 같은 둥근 눈금에 더해 실제 최고·최저를 그 점 위·아래에(눈금은 범위의 둥근 수, 최고·최저는 데이터에 있는 값)
+    expect(yTickTexts(container)).toEqual(["5.8%", "5.9%", "6.0%", "6.1%"]);
     const extremes = [...container.querySelectorAll("[data-hero-extreme]")];
     expect(extremes.map((node) => [node.getAttribute("data-hero-extreme"), node.textContent])).toEqual([["high", pct(6.0)], ["low", pct(5.85)]]);
-    const ticks = [...container.querySelectorAll(".recharts-xAxis-tick-labels text"), ...extremes];
-    expect(ticks).toHaveLength(4);
+    const ticks = [
+      ...container.querySelectorAll(".recharts-xAxis-tick-labels text"),
+      ...container.querySelectorAll(".recharts-yAxis-tick-labels text"),
+      ...extremes,
+    ];
+    expect(ticks).toHaveLength(4 + 4 + 2);
     for (const tick of ticks) expect(tick.getAttribute("font-size")).toBe("12");
     // 최고(마지막 점 — 그림 오른쪽 끝)는 끝 맞춤으로 점 위, 최저(첫 점 — 왼쪽 끝)는 시작 맞춤으로 점 아래
     const [high, low] = extremes;
     expect([high.getAttribute("text-anchor"), high.getAttribute("dy")]).toEqual(["end", "-8"]);
     expect([low.getAttribute("text-anchor"), low.getAttribute("dy")]).toEqual(["start", "17"]);
     expect(Number(high.getAttribute("y"))).toBeLessThan(Number(low.getAttribute("y")));
-    expect(xTickTexts(container)).toEqual(["2026-01-02", "2026-10-24"]);
+    expect(xTickTexts(container)).toEqual(["2026-01-02", "04-01", "07-01", "2026-10-24"]);
     const box = (container.querySelector("svg.recharts-surface") as Element).closest(".touch-pan-y") as HTMLElement;
     expect(box.className.split(/\s+/)).toEqual(expect.arrayContaining(["h-[200px]", "lg:h-[260px]"]));
     // 계열 색을 주면 그 색(계좌 색 등)
@@ -320,8 +327,9 @@ describe("LineChart — 꼬리 계열(tailOf, 장중 값 단계의 오늘 추정
     expect(paths).toHaveLength(3);
     expect(paths.map((path) => path.getAttribute("stroke-dasharray"))).toEqual([null, null, "3 3"]);
     expect(paths[2].getAttribute("stroke")).toBe(SERIES_COLORS.blue);
-    expect(xTickTexts(container)).toEqual(["2026-10-27", "2026-10-30"]);
+    expect(xTickTexts(container)).toEqual(["2026-10-27", "10-28", "10-29", "2026-10-30"]);
     expect(lineYAxis(ROWS, SERIES)!.domain[1]).toBeGreaterThanOrEqual(100_600);
+    expect(yTickTexts(container)).toEqual(["99,800.00", "100,000.00", "100,200.00", "100,400.00", "100,600.00", "100,800.00"]);
   });
 
   it("툴팁 — 꼬리 점에서는 꼬리 이름과 값(본 계열 '—' 줄 없음), 꼬리가 시작하는 마지막 줄에서는 꼬리 줄이 없다", async () => {

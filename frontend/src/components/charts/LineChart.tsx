@@ -15,6 +15,7 @@ import {
 import { EstimateBadge, StaleBadge } from "@/components/patterns/badges";
 import { formatNumber } from "@/lib/format";
 import {
+  axisLabelWidth,
   hasLineValues,
   heroExtremes,
   type HeroExtreme,
@@ -23,7 +24,7 @@ import {
   lineChartLabel,
   lineSeriesColors,
   lineTooltipModel,
-  lineXTicks,
+  lineXAxis,
   lineYAxis,
   normalizeLineRows,
   scrubIndex,
@@ -52,6 +53,9 @@ const HERO_CURSOR = "var(--border)";
 
 /** 히어로 그림 위·아래에 남기는 자리(px) — 최고 점 위·최저 점 아래에 적는 끝값 글(12px)이 그림 안에 들어오게(축 범위 여백 8%에 더함). */
 const HERO_LABEL_ROOM = 18;
+
+/** Y 눈금 글과 그림 사이(Recharts 눈금 여백) — X 눈금에 줄 그림 너비를 어림할 때 축 글 폭에 더합니다. */
+const Y_AXIS_EXTRA = 12;
 
 /**
  * 히어로의 Y 끝값 하나 — 본 계열의 실제 최고(보통 점 위)·최저(보통 점 아래) 값을 그 점에 붙여 적습니다(`lib/lineChart` `heroExtremes` — 맞춤과 위·아래는
@@ -136,9 +140,11 @@ function ScrubReporter({
 }
 
 /**
- * 선 차트 — 격자 없음, Y축은 끝값 두 개(데이터 범위 — 히어로는 실제 최고·최저), X축은 첫·마지막 날짜, 0 기준선은 뜻이 있을 때만, 이중 축 없음, 축 글자 12px.
+ * 선 차트 — 격자 없음, Y축은 둥근 간격의 눈금(데이터 범위를 그 간격의 배수로 — 히어로는 여기에 실제 최고·최저를 그 점에), X축은 첫·마지막 날짜와
+ * 그 사이 날짜 경계의 중간 눈금(그림 너비에 맞춘 개수), 0 기준선은 뜻이 있을 때만, 이중 축 없음, 축 글자 12px.
  *
- * - Y 범위·눈금·0선·색·툴팁 글은 `lib/lineChart.ts`가 정합니다(여기서는 그리기만 — ADR 0004).
+ * - Y 범위·눈금·0선·X 눈금·색·툴팁 글은 `lib/lineChart.ts`가 정합니다(여기서는 그리기만 — ADR 0004). X 눈금 개수를 고르려고 그림 너비를
+ *   잽니다(ResponsiveContainer onResize — 재기 전에는 첫·마지막만).
  * - 모르는 값(null·"N/A")에서 선을 끊습니다(connectNulls=false). 앞뒤가 모두 모름인 외딴 값은 점으로 찍어 사라지지 않게 합니다.
  * - 색은 계열의 `color`, 없으면 SERIES_COLORS 순서대로(되풀이하지 않음 — 모자라면 오류, `lineSeriesColors`).
  * - 계열이 둘 이상이면 글자 범례를 위에 둡니다(색 선은 보조, 이름이 본 뜻).
@@ -151,8 +157,8 @@ function ScrubReporter({
  * `estimated`·`stale`·`staleReason`·`ariaLabel`은 설계서 §1.5 계약에 더한 선택 props입니다.
  *
  * `variant="hero"`(히어로 안의 큰 차트, 명세 §5): 선은 중립 잉크(var(--text)) 하나 — 계열 색을 넘기지 않으면 — , 툴팁 상자 없이 세로 커서와
- * 활성 점만, Y 끝값 둘은 본 계열의 실제 최고·최저 값을 그 점 위·아래에(12px text-3 — 축 범위 끝의 여백 값을 적지 않고 선과 겹치지 않음, 꼬리 계열은
- * 빼고 보며 꼬리가 시작하는 점이면 글을 꼬리 반대쪽으로), X는 첫·마지막 날짜(축선 없음), 높이는 좁은 화면 200·lg 260(`height`를 주면 그 값),
+ * 활성 점만, Y는 기본 차트와 같은 둥근 간격 눈금에 더해 본 계열의 실제 최고·최저 값을 그 점 위·아래에(12px text-3 — 선과 겹치지 않음, 꼬리 계열은
+ * 빼고 보며 꼬리가 시작하는 점이면 글을 꼬리 반대쪽으로), X는 기본 차트와 같은 눈금(축선 없음), 높이는 좁은 화면 200·lg 260(`height`를 주면 그 값),
  * 세로 스크롤은 브라우저에 맡기고(touch-action: pan-y) 가로로 끌면 문지릅니다.
  * `onScrub(index | null)`: 가리킨 점의 행 순번(손을 떼거나 벗어나면 null) — `hooks/useChartScrub`에 그대로 넘기고, 표시 글은
  * `lib/lineChart`의 `scrubModel`, 그리는 것은 Hero의 `scrub`입니다. 터치는 손을 떼면 커서도 감춥니다(Recharts는 터치 뒤 툴팁을 남김).
@@ -199,6 +205,8 @@ export function LineChart({
   const hero = variant === "hero";
   // 터치를 뗀 뒤 커서를 감추는 표시 — 다음 터치·마우스 움직임에서 풉니다.
   const [released, setReleased] = useState(false);
+  // 그림 너비(px) — X 중간 눈금 개수를 고릅니다. 재기 전에는 null(첫·마지막만).
+  const [width, setWidth] = useState<number | null>(null);
   const colors = lineSeriesColors(
     hero ? series.map((entry) => (entry.color ? entry : { ...entry, color: HERO_INK })) : series,
     Object.values(SERIES_COLORS),
@@ -214,7 +222,7 @@ export function LineChart({
       </div>
     ) : null;
 
-  const yAxis = hasLineValues(data, series) ? lineYAxis(data, series, { includeZero, nonNegative }) : null;
+  const yAxis = hasLineValues(data, series) ? lineYAxis(data, series, { includeZero, nonNegative, format: valueFormat }) : null;
   if (!yAxis) {
     return (
       <div>
@@ -226,7 +234,10 @@ export function LineChart({
 
   const rows = normalizeLineRows(data, series);
   const extremes = hero ? heroExtremes(rows, series) : null;
-  const xTicks = lineXTicks(rows);
+  // X 눈금에 줄 너비 — 그림 너비에서 Y 눈금 글 폭(Recharts width="auto"가 재는 것의 어림)과 오른쪽 여백을 뺍니다.
+  const yLabelWidth = Math.max(...yAxis.ticks.map((tick) => axisLabelWidth(valueFormat(tick), CHART_FONT))) + Y_AXIS_EXTRA;
+  const xAxis = lineXAxis(rows, { width: width === null ? null : width - yLabelWidth - (hero ? 0 : 8), fontSize: CHART_FONT });
+  const xTicks = xAxis.ticks;
   const first = xTicks[0] ?? "";
   const last = xTicks[xTicks.length - 1] ?? "";
   const tooltipFor = (row: LineRow | undefined) =>
@@ -249,7 +260,7 @@ export function LineChart({
     : null;
 
   const chart = (
-    <ResponsiveContainer width="100%" height={fixedHeight ?? "100%"}>
+    <ResponsiveContainer width="100%" height={fixedHeight ?? "100%"} onResize={(nextWidth) => setWidth(nextWidth)}>
       {/*
         이름은 Tab으로 닿는 SVG 자체에 붙입니다 — Recharts 접근성 층이 SVG에 role="application"·tabindex=0을 달아 화살표로 점을
         고르게 하므로, 이름이 없으면 화면 낭독기가 이름 없는 'application'만 읽습니다(DonutChart와 같은 이유).
@@ -266,7 +277,7 @@ export function LineChart({
           stroke={AXIS_LINE}
           axisLine={!hero}
           tickLine={false}
-          tick={(props) => <EdgeDateTick {...props} first={first} last={last} />}
+          tick={(props) => <EdgeDateTick {...props} first={first} last={last} labels={xAxis.labels} />}
         />
         <YAxis
           type="number"
@@ -274,12 +285,10 @@ export function LineChart({
           ticks={yAxis.ticks}
           interval={0}
           width="auto"
-          // 히어로는 축 눈금 글을 두지 않고(축 자리도 없음) 실제 최고·최저를 그 점에 적습니다(아래 ReferenceDot). 위아래로 글 자리를 남깁니다.
-          orientation={hero ? "right" : "left"}
-          mirror={hero}
           axisLine={false}
           tickLine={false}
-          tick={hero ? false : { fill: AXIS_TEXT, fontSize: CHART_FONT }}
+          tick={{ fill: AXIS_TEXT, fontSize: CHART_FONT }}
+          // 히어로는 눈금에 더해 실제 최고·최저를 그 점에 적습니다(아래 ReferenceDot) — 위아래로 그 글 자리를 남깁니다.
           {...(hero ? { padding: { top: HERO_LABEL_ROOM, bottom: HERO_LABEL_ROOM } } : {})}
           tickFormatter={(value: number) => valueFormat(value)}
         />
