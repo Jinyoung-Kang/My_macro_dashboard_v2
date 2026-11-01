@@ -368,6 +368,33 @@ describe("QA-159 간격이 끄기여도 탭 복귀 읽기는 보통 읽기", () 
   });
 });
 
+describe("QA-162 실패한 한 번 더 읽기가 다음 한 번 더를 삼키지 않는다", () => {
+  // '한 번 더 읽는 중' 표시는 한 번 더 읽기가 나갈 때 서고 그 응답(새 data)을 받을 때 내립니다. 그 읽기가 실패하면 useApi가 data를 그대로 두어
+  // 표시가 남았고, 다음 응답(30분 간격 읽기·'지금 새로 읽기')이 새 수집을 요청해도 그 응답을 한 번 더의 응답으로 소모했습니다 — 카드 종목 표만 다음
+  // 간격까지 옛 시각으로 남았습니다(재현 커밋에서는 it.fails).
+  it.fails("정규장 30분 — 한 번 더가 실패한 뒤 간격 읽기가 새 수집을 요청했으면 20초 뒤 한 번 더, 그 뒤 되풀이 없음", async () => {
+    let calls = 0;
+    api.apiGetShared.mockImplementation(() => {
+      calls += 1;
+      return calls === 2
+        ? Promise.reject(new Error("백엔드 API에 연결하지 못했습니다"))
+        : Promise.resolve(live({ quotes: { source: null, collectedAtKst: null, refreshRequested: true, missing: [], error: null } }));
+    });
+    render(<LiveValuationCard />);
+    await settle();
+    expect(liveCalls()).toBe(1);
+    await settle(20_000);
+    expect(liveCalls()).toBe(2);   // 한 번 더 — 실패
+
+    await settle(30 * 60_000 - 19_000);
+    expect(liveCalls()).toBe(3);   // 30분 간격 읽기 — 새 수집 요청
+    await settle(20_000);
+    expect(liveCalls()).toBe(4);
+    await settle(60_000);
+    expect(liveCalls()).toBe(4);
+  });
+});
+
 describe("QA-156 숨긴 탭으로 열면 보일 때까지 읽지 않는다", () => {
   let visibility: DocumentVisibilityState;
   beforeEach(() => {
