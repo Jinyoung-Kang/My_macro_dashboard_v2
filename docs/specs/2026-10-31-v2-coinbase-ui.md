@@ -545,7 +545,7 @@ Tailwind 4.3.3은 `--text-*--line-height`·`--text-*--font-weight`·`--text-*--l
    오류 칸(`lib/paper`의 결정 요약·결정 행·복기 오류, `ReviewsSection`의 실행 오류, 제안 실패 문구) — 예전 시간 초과 안내의 '[번개] 자동 탐색'이 남은 행이면
    그대로 보인다(QA DB 0건, 운영 DB는 확인하지 않음). §12.
 8. MarketClock을 TopBar로 옮기면 좁은 화면 TopBar가 32px 늘어난다(정보는 그대로).
-9. 배포: `deploy.sh`는 backend·frontend·collector·gate를 모두 다시 빌드한다 — 장중 명세 위험 9와 같은 배포 창(평일 KST 21:55~22:20 또는 주말 밤)에, 화면 확인과 사용자 동의 뒤에.
+9. 배포: `deploy.sh`는 backend·frontend·collector·gate를 모두 다시 빌드한다(정기 작업이 다시 시작됨 — 장중 명세 위험 9). 시각 창은 두지 않고 화면 확인이 끝나 준비되면 바로 한다(사용자 지시 2026-10-31 밤, 서버가 꺼져 있으면 켜서).
 10. 4단계(옛 화면 18개의 경로 이식·상세 페이지)는 이번에도 하지 않는다 — 옛 화면은 공용 조각 덕에 겉모양만 바뀌고 구조(Metric 격자·옛 Table)는 남는다.
 11. 이모지 범위: 화면과 서버의 화면 문구만. 주석·문서·CLAUDE.md·Makefile 출력(약 900줄)은 별도 정리(§12).
 
