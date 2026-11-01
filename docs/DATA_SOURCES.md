@@ -474,6 +474,8 @@ EQUITY_MAP = {
 | Yahoo(yfinance `Ticker.info`·`Search`) | 미국·해외 종목·지수·환율·선물의 시세·핵심 지표·개요·컨센서스, 종목 뉴스, 종목 찾기 | 시세 5분·뉴스 15분·찾기 1시간 | 비공식 내부 호출·종목마다 지연. 429면 공용 거부 래치(`http.YAHOO_HOST`)가 닫혀 다른 Yahoo 수집과 함께 쉼 |
 | 네이버 증권 모바일 API(`m.stock.naver.com/api/stock/{code}/basic`·`/integration`·`/api/news/stock/{code}`, 자동완성 `ac.stock.naver.com/ac`) | 국내 종목 시세·지표(네이버가 적은 글 그대로)·컨센서스·증권사 리포트·종목 뉴스, 종목 찾기 | 같음 | 비공식 — 응답 형식이 예고 없이 바뀔 수 있음. 뉴스 시각은 KST(`yyyyMMddHHmm`)라 UTC로 바꿔 냄 |
 | 구글 뉴스 RSS 검색(`news.google.com/rss/search`, `when:7d`) | 검색어(회사·지표·기관 이름) 뉴스 — 한글이면 한국어 판 | 15분 | 이름 검색이라 관련 없는 기사가 섞일 수 있음. 제목 끝의 ' - 언론사'를 떼어 언론사 칸으로 |
+| 연합인포맥스(구글 뉴스 RSS 검색 + `site:news.einfomax.co.kr`) | 같은 검색어(미국 종목은 네이버 한글 이름)의 연합인포맥스 기사 — 받은 곳 '연합인포맥스' | 15분(뉴스와 함께) | 사이트 자체 검색(`articleList.html?sc_word=`)은 검색어를 무시해 최신 기사만 돌려줌(2026-11-02 확인) — 그래서 구글 검색으로 좁힘. 링크는 구글 뉴스 중계 주소 |
+| 네이버 증권 해외주식(`api.stock.naver.com/stock/{로이터 코드}/overview`, 로이터 코드는 자동완성 `target=stock,worldstock`) | 미국 주식·ETF의 한국어 기업 개요·업종·한글 이름 | 시세와 함께 5분(로이터 코드 1시간) | 비공식. 자동완성에 없는 종목(예: `BRK-B`는 `BRK.B`·`BRK B`로도 찾음)·ETF 일부는 영문 개요 그대로 |
 
 - robots.txt가 막는 출처(Yahoo·구글 뉴스 검색 등)도 씁니다 — 개인·비상업 프로젝트라 사용자가 허락했습니다([decisions.md](decisions.md) 2026-11-01). 출처 링크와
   받은 시각을 함께 내고, 실패는 출처별로(`errors`) 보이며, 실패한 응답은 1분만 캐시합니다. 모의매매 사건 헤드라인(`news_headlines`)의 출처 규칙은 그대로입니다.
