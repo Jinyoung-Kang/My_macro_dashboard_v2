@@ -20,10 +20,10 @@
 기능(메뉴) 단위로 컨트롤러와 서비스를 한 패키지에 모으고, 의존은 바깥에서 안쪽으로만 향하게 합니다.
 
 ```
-web ─▶ feature/<기능> ─▶ read ─▶ store
-             │            └──▶ collector
-             ├──▶ analytics (java.*만)
-             └──▶ support
+web ─► feature/<기능> ─► read ─► store
+             │            └──► collector
+             ├──► analytics (java.*만)
+             └──► support
 
 config(설정 값) — 기능·read·collector·web이 읽음. config는 우리 패키지를 아무것도 쓰지 않음
 ```

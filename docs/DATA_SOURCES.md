@@ -10,7 +10,7 @@
 
 ## 1. 수집 태스크 (39개)
 
-수집기가 세 그룹으로 나눠 돌립니다. 주기는 `.env`로 바꿀 수 있습니다. 장중 평가 둘(`live`)은 정기 수집이 없고 화면이 볼 때만 백엔드가 요청합니다. 🧪 계좌2 장중 확인 감시(`session`, 5분 — compose가 주기 환경변수를 넘기지 않아 코드 기본값)는 확인이 있는 날 확인 시각 앞뒤에만 외부를 부릅니다(그 밖의 회차는 호출 없이 '데이터 없음').
+수집기가 세 그룹으로 나눠 돌립니다. 주기는 `.env`로 바꿀 수 있습니다. 장중 평가 둘(`live`)은 정기 수집이 없고 화면이 볼 때만 백엔드가 요청합니다. 계좌2 장중 확인 감시(`session`, 5분 — compose가 주기 환경변수를 넘기지 않아 코드 기본값)는 확인이 있는 날 확인 시각 앞뒤에만 외부를 부릅니다(그 밖의 회차는 호출 없이 '데이터 없음').
 
 | 그룹 | 주기 | 태스크 | 받는 것 |
 |---|---|---|---|
@@ -23,43 +23,43 @@
 | | | `sector_history` | 섹터·자산군 ETF 종가 |
 | | | `fx_history` | 환율·달러인덱스 일별 종가 |
 | | | `equity_history` | 13F 매핑 종목 일별 종가 + 이름→티커 매핑표 |
-| | | `paper_quotes` | 📒 모의 매매 유니버스(13F 이름 매핑 티커 + 후보 기관 CUSIP 매핑 티커 + ETF 19개, `paper_universe.tradable()`) 최근 3개월 일봉 → 스냅샷 `paper.quotes`. 장중에는 마지막 봉이 지연 시세(장부 관측치) |
-| | | `paper_bars_us` | 🧪 미국 Claude 계좌2(체결 시점 실험) **단계 0 측정 · 단계 1 시각 지정 체결가** — Claude 계좌1·계좌2의 대기 주문 ∪ 최근 8일(달력일) 주문 ∪ 계좌2 보유(백엔드 표 `paper_orders`·`paper_positions`·`paper_books`를 읽기만 — ADR 0022) + 지연 기준 SPY의 정규장 1분봉(yfinance 배치 한 번, `prepost=False`·원시가 `auto_adjust=False`) → 스냅샷 `paper.bars.us`(종목·세션(최근 3, 뉴욕 날짜)마다 메뉴 창 09:30·10:00~15:00 ET 각 5분, 창마다 T 뒤 첫 거래 봉, 첫·마지막 봉, 검증용 일봉 시가, 저장본의 지연 `lagSeconds`). `paper_quotes` **바로 뒤**(같은 Yahoo 래치 — 1분봉이 429를 받아도 그 회차 관측치는 이미 받음). 범위가 비면 Yahoo를 부르지 않음. 기동 뒤 처음 받을 때까지 `period="5d"`(꺼졌던 세션 따라잡기), 그 뒤 `"1d"`. 패킷에는 쓰지 않음 — 읽는 곳은 단계 0-4의 실행 감사 작업, 단계 1-4의 장부 시각 지정 체결(2b·1분봉 기다림 — 시각 지정 주문이 있는 계좌만, 계좌2 정의는 1-5), 상태 응답의 계좌2 묶음(`claude2.bars` — 정규장일 때 받은 시각·지연). 단계 2: 계좌2의 장중 시장가(`MARKET` — 장중 확인 응답) 주문이 대기·최근 8일이면 그 기준 시각 T(생성 + 60초 뒤 첫 분 — `paper_bars.market_target`, 백엔드와 같은 식)를 그 세션에만 창·`firstTradeAfter` 키('HH:MM')로 더함(`store.timed_market_targets` — 읽기만, 없으면 저장본 그대로) — §5 'Claude 계좌2 1분봉' |
-| | | `us_calendar` | 📒 발표·실적 일정 → 스냅샷 `calendar.us_events`. 거시: FRED `release/dates`(CPI 10·PCE 54·고용 50·GDP 53, 앞으로 45일) + FOMC 연간 일정표 상수. 실적: 같은 유니버스(ETF 제외)의 다음 실적일 — yfinance quoteSummary `calendarEvents`, 실행당 120종목(`US_CALENDAR_EARNINGS_BUDGET`)·종목당 24시간 캐시(§5 '모의 매매가 쓰는 저장본과 한계') |
-| | | `us_calendar_consensus` | 🧪 미국 지표 컨센서스 → 스냅샷 `calendar.us_consensus` — 수집기는 **저장만**(백엔드 미국 패킷이 설정 `calendar.consensus`를 켰을 때만 읽어 `1b_calendar` 거시 줄에 붙임 — 한국 책 출발일에 켬, [명세 §4-12·K22·E1b](specs/2026-10-26-v2-kr-paper-spec.md)). Nasdaq `api/calendar/economicevents`(비공식 참고, 키 없음, 브라우저 UA)를 미국 동부 오늘부터 18일 안의 평일마다 1회(약 14회 — 패킷 창 '기준일 + 10거래일'의 끝이 공휴일 둘이면 +18일) — 같은 동부 날짜에 받은 날은 다시 묻지 않음(서버 창이 동부 한 날짜 안). **`date=D`는 동부 D−1의 행을 줘서** 날짜 E는 `date=E+1`로 묻고(2026-10-26 네 날짜로 확인), 실업수당 청구가 목요일에 하나도 없으면 어긋남이 바뀐 것으로 보고 저장하지 않음. 미국 행만, 값은 숫자 + 단위(`1,728K` → 1728·K, 못 나누면 null·글자는 `…Text`), 중요도는 Nasdaq이 주지 않아 null. 날짜 하나의 실패는 직전 값을 `isStale`로 잇고, 출처 거부면 그 실행을 멈춤. TradingView 경제 캘린더는 이 PC에서 403이라 쓰지 않음(G11) |
-| | | `news_headlines` | 📒 사건 뉴스 RSS 8개 피드(인베스팅닷컴 넷·연준·BLS 둘·SEC) → `observations` `news_headline`(제목·링크·출처·시각만 — entity = 정규화한 제목의 해시, obs_date = 발행 시각의 UTC 날짜, 7일 보관) + 수집 상태 `news.headlines.status`. 키 없음(§5 '사건 뉴스 RSS') |
-| | | `kr_news_headlines` | 🧪 한국 사건 뉴스 RSS 4개 피드(한국은행 보도자료 전체·재정경제부 보도·참고자료·국가데이터처 보도자료·연합뉴스 마켓+) → `observations` `kr_news_headline`(제목·링크·출처·시각만 — 미국 `news_headline`과 따로, obs_date = 발행 KST 날짜, 7일 보관(KST 날짜)) + 수집 상태 `kr.news.headlines.status`. 피드마다 시각 형식(`rfc822`·`yyyyMMddHHmm`·`date_only`)을 정해 원문을 직접 읽고(feedparser는 국가데이터처 시각을 버림), 날짜만 있는 항목(재정경제부)은 '알 수 있는 시각' `knownAt` = min(처음 받은 시각, 그 KST 날짜 다음 자정). 형식이 다른 시각은 건너뛰고 셈(`skippedBadTime`). 금융위원회 RSS는 점검 중(503)이라 뺌. 키 없음, 설명형 UA. 한국 Claude 계좌 패킷 `11b_events`가 읽음(E1a — 백엔드 `KrPacketBuilder`, 읽은 순간 뒤에 받은 제목은 쓰지 않고 창은 알 수 있는 시각·받은 시각 중 늦은 것으로 가름) — 연합뉴스는 이용 조건 위험('AI 학습 및 활용 금지' 문구)에도 사용자 결정(2026-10-27)으로 패킷 기본 피드에 남김, [명세 §7 G12](specs/2026-10-26-v2-kr-paper-spec.md) |
+| | | `paper_quotes` | [모의] 모의 매매 유니버스(13F 이름 매핑 티커 + 후보 기관 CUSIP 매핑 티커 + ETF 19개, `paper_universe.tradable()`) 최근 3개월 일봉 → 스냅샷 `paper.quotes`. 장중에는 마지막 봉이 지연 시세(장부 관측치) |
+| | | `paper_bars_us` | [모의] 미국 Claude 계좌2(체결 시점 실험) **단계 0 측정 · 단계 1 시각 지정 체결가** — Claude 계좌1·계좌2의 대기 주문 ∪ 최근 8일(달력일) 주문 ∪ 계좌2 보유(백엔드 표 `paper_orders`·`paper_positions`·`paper_books`를 읽기만 — ADR 0022) + 지연 기준 SPY의 정규장 1분봉(yfinance 배치 한 번, `prepost=False`·원시가 `auto_adjust=False`) → 스냅샷 `paper.bars.us`(종목·세션(최근 3, 뉴욕 날짜)마다 메뉴 창 09:30·10:00~15:00 ET 각 5분, 창마다 T 뒤 첫 거래 봉, 첫·마지막 봉, 검증용 일봉 시가, 저장본의 지연 `lagSeconds`). `paper_quotes` **바로 뒤**(같은 Yahoo 래치 — 1분봉이 429를 받아도 그 회차 관측치는 이미 받음). 범위가 비면 Yahoo를 부르지 않음. 기동 뒤 처음 받을 때까지 `period="5d"`(꺼졌던 세션 따라잡기), 그 뒤 `"1d"`. 패킷에는 쓰지 않음 — 읽는 곳은 단계 0-4의 실행 감사 작업, 단계 1-4의 장부 시각 지정 체결(2b·1분봉 기다림 — 시각 지정 주문이 있는 계좌만, 계좌2 정의는 1-5), 상태 응답의 계좌2 묶음(`claude2.bars` — 정규장일 때 받은 시각·지연). 단계 2: 계좌2의 장중 시장가(`MARKET` — 장중 확인 응답) 주문이 대기·최근 8일이면 그 기준 시각 T(생성 + 60초 뒤 첫 분 — `paper_bars.market_target`, 백엔드와 같은 식)를 그 세션에만 창·`firstTradeAfter` 키('HH:MM')로 더함(`store.timed_market_targets` — 읽기만, 없으면 저장본 그대로) — §5 'Claude 계좌2 1분봉' |
+| | | `us_calendar` | [모의] 발표·실적 일정 → 스냅샷 `calendar.us_events`. 거시: FRED `release/dates`(CPI 10·PCE 54·고용 50·GDP 53, 앞으로 45일) + FOMC 연간 일정표 상수. 실적: 같은 유니버스(ETF 제외)의 다음 실적일 — yfinance quoteSummary `calendarEvents`, 실행당 120종목(`US_CALENDAR_EARNINGS_BUDGET`)·종목당 24시간 캐시(§5 '모의 매매가 쓰는 저장본과 한계') |
+| | | `us_calendar_consensus` | [모의] 미국 지표 컨센서스 → 스냅샷 `calendar.us_consensus` — 수집기는 **저장만**(백엔드 미국 패킷이 설정 `calendar.consensus`를 켰을 때만 읽어 `1b_calendar` 거시 줄에 붙임 — 한국 책 출발일에 켬, [명세 §4-12·K22·E1b](specs/2026-10-26-v2-kr-paper-spec.md)). Nasdaq `api/calendar/economicevents`(비공식 참고, 키 없음, 브라우저 UA)를 미국 동부 오늘부터 18일 안의 평일마다 1회(약 14회 — 패킷 창 '기준일 + 10거래일'의 끝이 공휴일 둘이면 +18일) — 같은 동부 날짜에 받은 날은 다시 묻지 않음(서버 창이 동부 한 날짜 안). **`date=D`는 동부 D−1의 행을 줘서** 날짜 E는 `date=E+1`로 묻고(2026-10-26 네 날짜로 확인), 실업수당 청구가 목요일에 하나도 없으면 어긋남이 바뀐 것으로 보고 저장하지 않음. 미국 행만, 값은 숫자 + 단위(`1,728K` → 1728·K, 못 나누면 null·글자는 `…Text`), 중요도는 Nasdaq이 주지 않아 null. 날짜 하나의 실패는 직전 값을 `isStale`로 잇고, 출처 거부면 그 실행을 멈춤. TradingView 경제 캘린더는 이 PC에서 403이라 쓰지 않음(G11) |
+| | | `news_headlines` | [모의] 사건 뉴스 RSS 8개 피드(인베스팅닷컴 넷·연준·BLS 둘·SEC) → `observations` `news_headline`(제목·링크·출처·시각만 — entity = 정규화한 제목의 해시, obs_date = 발행 시각의 UTC 날짜, 7일 보관) + 수집 상태 `news.headlines.status`. 키 없음(§5 '사건 뉴스 RSS') |
+| | | `kr_news_headlines` | [모의] 한국 사건 뉴스 RSS 4개 피드(한국은행 보도자료 전체·재정경제부 보도·참고자료·국가데이터처 보도자료·연합뉴스 마켓+) → `observations` `kr_news_headline`(제목·링크·출처·시각만 — 미국 `news_headline`과 따로, obs_date = 발행 KST 날짜, 7일 보관(KST 날짜)) + 수집 상태 `kr.news.headlines.status`. 피드마다 시각 형식(`rfc822`·`yyyyMMddHHmm`·`date_only`)을 정해 원문을 직접 읽고(feedparser는 국가데이터처 시각을 버림), 날짜만 있는 항목(재정경제부)은 '알 수 있는 시각' `knownAt` = min(처음 받은 시각, 그 KST 날짜 다음 자정). 형식이 다른 시각은 건너뛰고 셈(`skippedBadTime`). 금융위원회 RSS는 점검 중(503)이라 뺌. 키 없음, 설명형 UA. 한국 Claude 계좌 패킷 `11b_events`가 읽음(E1a — 백엔드 `KrPacketBuilder`, 읽은 순간 뒤에 받은 제목은 쓰지 않고 창은 알 수 있는 시각·받은 시각 중 늦은 것으로 가름) — 연합뉴스는 이용 조건 위험('AI 학습 및 활용 금지' 문구)에도 사용자 결정(2026-10-27)으로 패킷 기본 피드에 남김, [명세 §7 G12](specs/2026-10-26-v2-kr-paper-spec.md) |
 | | | `volatility_history` | VIX·MOVE 시계열 |
 | | | `cot_history` | CFTC COT (주 1회 발표) |
 | | | `daum_futures_trend` | Daum 선물 투자주체별 수급 |
-| | | `fsc_prices` | 🔑 금융위 공식 일별 시세 — 전 종목(종목별 누적: 종가·시가·고가·저가·거래량·거래대금·상장주식수·시가총액 — 시가·고가·저가 칸은 v2 2단계 B2 코드가 받은 날부터 — 그 전에 저장된 날(2026-10-21~23 등)에는 칸이 없어 null로 읽음) + 시장별 시가총액·거래대금. 보존 400일 — 최신 쪽(저장된 마지막 기준일 뒤, 실행당 12회)을 메운 뒤 저장 첫 기준일 **이전**을 과거 쪽으로 메움(실행당 따로 90회 ≈ 30기준일, 실패한 날에서 멈춤·자료 없는 날은 건너뜀, 다 메우면 0회 — §7 '서비스별 주의') |
-| | | `fsc_etf_prices` | 🔑 금융위 공식 ETF 일별 시세(증권상품시세) — 전 ETF 약 1,180종목(종목별 누적 `fsc_etf_price`: 종가·시가·고가·저가·거래량·거래대금·시가총액·NAV·순자산총액·상장좌수·기초지수명·기초지수 종가). 모의 매매 한국 책의 ETF 확정가(069500·153130). 보존 400일 — 최신 쪽만(저장된 마지막 기준일 뒤, 되돌아보기 7거래일, 하루 1쪽), 과거 쪽 메우기 없음. `fsc_prices`와 따로 된 태스크라 한쪽이 실패해도 다른 쪽은 받음. 활용신청이 없으면 '활용신청 필요'(§7) |
-| | | `toss_market_flows` | 🅣 코스피·코스닥 전체 투자자별 매매대금 (원, 최근 30거래일) |
-| | | `toss_stock_flows` | 🅣 레이더 종목 40개 + 알림 관심 종목(최대 60, §2 '수집 범위')의 일별 투자자 매매동향 (주, 최근 20거래일, 종목별 누적) |
-| | | `toss_radar_universe` | 🅣 레이더 폴백용 — 시장 거래대금 상위 100종목의 최근 2거래일 투자자 매매 |
-| | | `kr_paper_universe` | 🧪 한국 책 유니버스 U — `fsc_price` 최신 기준일 B(< 오늘)의 코스피 시가총액 상위 100 보통주(우선주·스팩·리츠(이름 + 코드 표 — 이름에 '리츠'가 없는 맵스리얼티, 사용자 결정 2026-10-28)·투융자회사(코드 표 — 맥쿼리인프라·KB발해인프라, 사용자 결정 2026-10-27)·거래정지·DART 고유번호 없음 제외 — 규칙과 판 `kospi-mcap-top100-common/v3`는 `collector/app/tasks/kr_paper.py`) → `observations` `kr_paper_universe`(entity = 코드, obs_date = B, 순위·시총·상장주식수·종가·규칙 판, 날짜마다 통째로 교체, 400일 보관). 외부 호출 없음 — 같은 기준일이면 다시 쓰지 않음. DART 고유번호 표(`dart_fundamentals`)가 없으면 계산하지 않음. 결과 문구에 저장된 `paper.kr.quotes`의 토스 `securityType`이 STOCK이 아닌 U 종목을 '확인 필요'로 적음(경고만 — U 계산에는 쓰지 않음, 유형을 모르면 적지 않음). 한국 수집 범위(ETF 069500·153130 + 최신 U + 보관 기간 안에 U에 든 종목)의 근거 |
-| | | `kr_paper_quotes` | 🧪🅣 한국 책 장부 관측치 — 수집 범위의 토스 일봉 최근 5봉(`adjusted=false` 원시 시고저종·거래량, 같은 날 `adjusted=true` 종가·수정 비율)·1분봉 개장 봉(09:01·10:01 라벨)·종목 상태(NXT 거래 여부·KRX 정지) → 스냅샷 `paper.kr.quotes`(계약 1 — [명세 §9](specs/2026-10-26-v2-kr-paper-spec.md) 'paper.kr.quotes 계약') + 수정 종가를 `timeseries` `kr_close_adj`에 덧붙임(저장된 마지막 날과 이어지지 않으면 — 수집기가 최근 5봉보다 오래 꺼져 있었음 — 덧붙이지 않고 `adjGap`, `kr_paper_price_history`가 메운 뒤 이어 덧붙임). KR 거래일 D의 20:30 KST 뒤 하루 1회(그 뒤에 받았고 D 봉이 있는 종목은 그날 일봉을 다시 부르지 않음 — 20:30 전 실행은 전 거래일이 대상이고 오늘 장중 봉은 버림). 받았는데 D 봉이 없던 종목(토스의 늦은 판)은 다음 slow 주기에 다시 받되, 069500을 먼저 묻고 069500에 D 봉이 있을 때만 나머지를, 종목당 하룻밤 3회까지(`KR_SESSION_RETRY_LIMIT` — 늦게 지정된 휴장일에 범위 전체를 매시 부르지 않게). 1분봉 개장 봉을 묻지 못한(`FAILED`) 종목은 같은 밤 다음 slow 주기에 그 봉만 다시 묻는다. 받지 못한 종목은 직전 값을 `isStale`로 잇고, 봉 0개는 `NO_BARS`('응답에 없음'). NXT 종목 봉은 KRX+NXT 통합가(`TOSS_INTEGRATED`). 토스가 NXT 미지원으로 표시한 봉(`TOSS_DAILY`)도 시가만 KRX 시가 단일가이고 종가에는 20:00까지의 장 마감 뒤 체결이 섞일 수 있음(그렇게 표시된 주식 8종목에서 확인, ETF 둘의 종가는 금융위와 같았음 — QA-146) — §8 '한국 책 호출 예산' |
-| | | `kr_paper_flows` | 🧪🅣 한국 책 종목별 수급 — 수집 범위의 토스 투자자별 매매동향(주, KRX·NXT 통합 — 공식 스펙 1.2.24 설명) → `observations` `kr_paper_flow`(entity = 코드, obs_date = 기록 날짜, `toss_stock_flow`와 같은 칸 + 토스 `updatedAt`(판) + `fetchedAt`, 400일 보관) + 종목별 수집 상태 스냅샷 `kr.paper_flows.status`. 처음 보는 종목은 100거래일(스펙 상한), 그 뒤로는 20거래일을 다시 받아 같은 날짜를 나중 판으로 덮음 — 결정은 그때 읽은 값과 `updatedAt`을 결정 행에 동결(명세 K26). KR 거래일 D 20:30 KST 뒤 하루 1회(받았는데 D 기록이 없던 종목은 `kr_paper_quotes`의 069500에 D 봉이 있을 때만 다음 slow 주기에 다시, 종목당 하룻밤 3회까지), D보다 늦은 날짜(장중 잠정치)는 쓰지 않음. 레이더 수급(`toss_stock_flows`)과 따로 |
+| | | `fsc_prices` | [키] 금융위 공식 일별 시세 — 전 종목(종목별 누적: 종가·시가·고가·저가·거래량·거래대금·상장주식수·시가총액 — 시가·고가·저가 칸은 v2 2단계 B2 코드가 받은 날부터 — 그 전에 저장된 날(2026-10-21~23 등)에는 칸이 없어 null로 읽음) + 시장별 시가총액·거래대금. 보존 400일 — 최신 쪽(저장된 마지막 기준일 뒤, 실행당 12회)을 메운 뒤 저장 첫 기준일 **이전**을 과거 쪽으로 메움(실행당 따로 90회 ≈ 30기준일, 실패한 날에서 멈춤·자료 없는 날은 건너뜀, 다 메우면 0회 — §7 '서비스별 주의') |
+| | | `fsc_etf_prices` | [키] 금융위 공식 ETF 일별 시세(증권상품시세) — 전 ETF 약 1,180종목(종목별 누적 `fsc_etf_price`: 종가·시가·고가·저가·거래량·거래대금·시가총액·NAV·순자산총액·상장좌수·기초지수명·기초지수 종가). 모의 매매 한국 책의 ETF 확정가(069500·153130). 보존 400일 — 최신 쪽만(저장된 마지막 기준일 뒤, 되돌아보기 7거래일, 하루 1쪽), 과거 쪽 메우기 없음. `fsc_prices`와 따로 된 태스크라 한쪽이 실패해도 다른 쪽은 받음. 활용신청이 없으면 '활용신청 필요'(§7) |
+| | | `toss_market_flows` | [토스] 코스피·코스닥 전체 투자자별 매매대금 (원, 최근 30거래일) |
+| | | `toss_stock_flows` | [토스] 레이더 종목 40개 + 알림 관심 종목(최대 60, §2 '수집 범위')의 일별 투자자 매매동향 (주, 최근 20거래일, 종목별 누적) |
+| | | `toss_radar_universe` | [토스] 레이더 폴백용 — 시장 거래대금 상위 100종목의 최근 2거래일 투자자 매매 |
+| | | `kr_paper_universe` | [모의] 한국 책 유니버스 U — `fsc_price` 최신 기준일 B(< 오늘)의 코스피 시가총액 상위 100 보통주(우선주·스팩·리츠(이름 + 코드 표 — 이름에 '리츠'가 없는 맵스리얼티, 사용자 결정 2026-10-28)·투융자회사(코드 표 — 맥쿼리인프라·KB발해인프라, 사용자 결정 2026-10-27)·거래정지·DART 고유번호 없음 제외 — 규칙과 판 `kospi-mcap-top100-common/v3`는 `collector/app/tasks/kr_paper.py`) → `observations` `kr_paper_universe`(entity = 코드, obs_date = B, 순위·시총·상장주식수·종가·규칙 판, 날짜마다 통째로 교체, 400일 보관). 외부 호출 없음 — 같은 기준일이면 다시 쓰지 않음. DART 고유번호 표(`dart_fundamentals`)가 없으면 계산하지 않음. 결과 문구에 저장된 `paper.kr.quotes`의 토스 `securityType`이 STOCK이 아닌 U 종목을 '확인 필요'로 적음(경고만 — U 계산에는 쓰지 않음, 유형을 모르면 적지 않음). 한국 수집 범위(ETF 069500·153130 + 최신 U + 보관 기간 안에 U에 든 종목)의 근거 |
+| | | `kr_paper_quotes` | [모의][토스] 한국 책 장부 관측치 — 수집 범위의 토스 일봉 최근 5봉(`adjusted=false` 원시 시고저종·거래량, 같은 날 `adjusted=true` 종가·수정 비율)·1분봉 개장 봉(09:01·10:01 라벨)·종목 상태(NXT 거래 여부·KRX 정지) → 스냅샷 `paper.kr.quotes`(계약 1 — [명세 §9](specs/2026-10-26-v2-kr-paper-spec.md) 'paper.kr.quotes 계약') + 수정 종가를 `timeseries` `kr_close_adj`에 덧붙임(저장된 마지막 날과 이어지지 않으면 — 수집기가 최근 5봉보다 오래 꺼져 있었음 — 덧붙이지 않고 `adjGap`, `kr_paper_price_history`가 메운 뒤 이어 덧붙임). KR 거래일 D의 20:30 KST 뒤 하루 1회(그 뒤에 받았고 D 봉이 있는 종목은 그날 일봉을 다시 부르지 않음 — 20:30 전 실행은 전 거래일이 대상이고 오늘 장중 봉은 버림). 받았는데 D 봉이 없던 종목(토스의 늦은 판)은 다음 slow 주기에 다시 받되, 069500을 먼저 묻고 069500에 D 봉이 있을 때만 나머지를, 종목당 하룻밤 3회까지(`KR_SESSION_RETRY_LIMIT` — 늦게 지정된 휴장일에 범위 전체를 매시 부르지 않게). 1분봉 개장 봉을 묻지 못한(`FAILED`) 종목은 같은 밤 다음 slow 주기에 그 봉만 다시 묻는다. 받지 못한 종목은 직전 값을 `isStale`로 잇고, 봉 0개는 `NO_BARS`('응답에 없음'). NXT 종목 봉은 KRX+NXT 통합가(`TOSS_INTEGRATED`). 토스가 NXT 미지원으로 표시한 봉(`TOSS_DAILY`)도 시가만 KRX 시가 단일가이고 종가에는 20:00까지의 장 마감 뒤 체결이 섞일 수 있음(그렇게 표시된 주식 8종목에서 확인, ETF 둘의 종가는 금융위와 같았음 — QA-146) — §8 '한국 책 호출 예산' |
+| | | `kr_paper_flows` | [모의][토스] 한국 책 종목별 수급 — 수집 범위의 토스 투자자별 매매동향(주, KRX·NXT 통합 — 공식 스펙 1.2.24 설명) → `observations` `kr_paper_flow`(entity = 코드, obs_date = 기록 날짜, `toss_stock_flow`와 같은 칸 + 토스 `updatedAt`(판) + `fetchedAt`, 400일 보관) + 종목별 수집 상태 스냅샷 `kr.paper_flows.status`. 처음 보는 종목은 100거래일(스펙 상한), 그 뒤로는 20거래일을 다시 받아 같은 날짜를 나중 판으로 덮음 — 결정은 그때 읽은 값과 `updatedAt`을 결정 행에 동결(명세 K26). KR 거래일 D 20:30 KST 뒤 하루 1회(받았는데 D 기록이 없던 종목은 `kr_paper_quotes`의 069500에 D 봉이 있을 때만 다음 slow 주기에 다시, 종목당 하룻밤 3회까지), D보다 늦은 날짜(장중 잠정치)는 쓰지 않음. 레이더 수급(`toss_stock_flows`)과 따로 |
 | `weekly` | 12시간 | `sec_13f` | SEC 13F 기관 포트폴리오 (분기 공시) |
-| | | `sec_13f_track_record` | 📒 트랙레코드 후보 기관 27곳의 13F를 기관당 30분기 → `sec.13f.{cik}.q30` + 후보 목록·진행률 `sec.13f.track_record_index`. 저장본에 없는 공시만, 실행당 예산(`TRACK_RECORD_FETCH_BUDGET`, 기본 400건) 안에서(§5 '모의 매매 트랙레코드 후보 기관') |
-| | | `kr_holidays` | 🔑 한국 공휴일 (천문연 특일정보, 올해·내년을 받고 저장본에 없는 지난 해(2025년~작년)는 한 번 받아 2025년부터 보관 — 모의 매매 한국 책의 지난 거래일 계산·금융위 과거 쪽 메우기의 휴장일, v2 명세 K35) |
-| | | `kr_calendar` | 🧪 한국 거시 일정 → 스냅샷 `calendar.kr_events`(`calendar.us_events`와 같은 모양, 앞으로 45일·KST). 외부 호출 없음 — 금통위 2026년 8회 상수(한국은행 '통화정책방향 결정회의 일정', 확인 2026-10-26, 끝 11-26 — 창 끝이 넘으면 `bok.status` '갱신 필요', 2027 표 미게시)와 연 1회 손으로 옮기는 주요 발표 상수(소비자물가·고용·GDP 속보·경상수지·수출입 — 아직 옮기지 않아 모두 `status` '일정 미확인', 날짜를 지어내지 않음, [명세 §7 G8](specs/2026-10-26-v2-kr-paper-spec.md)). 한국 실적·컨센서스는 출처가 없어 `earnings`·`consensus` null + 사유. 한국 Claude 계좌 패킷 `1b_calendar`가 읽음(E1a — 백엔드 `KrPacketBuilder`, 읽은 순간 뒤 수집본은 쓰지 않음) |
-| | | `dart_fundamentals` | 🔑 사업보고서 주요계정 (DART) — 한국 책 수집 범위(U 순위 → 끈적 목록, ETF 제외, 최대 250)를 먼저, 수급 레이더 종목(최근 30일 빈도순 + 화면, 최대 150)을 뒤에. 회사마다 마지막 보고서 하나(`rceptNo` 포함) — 한국 책은 접수일(`rceptNo` 앞 8자리) ≤ 기준일인 회사만 씀(`Datasets.SNAP_DART_FUNDAMENTALS`) |
-| | | `paper_price_history` | 📒 같은 유니버스의 10년 일별 종가(수정주가) → `timeseries` 데이터셋 `equity_close`(종목 = `series_id`, 이력 누적·지우지 않음) |
-| | | `kr_paper_price_history` | 🧪🅣 한국 책 종가 이력 — 수집 범위의 토스 수정주가(`adjusted=true`) 일봉 종가 → `timeseries` `kr_close_adj`(series = 코드, 지우지 않음). 저장 첫 날이 1년 전(상장일이 늦으면 상장일)보다 늦으면 그 앞을 `before`로 200봉씩 거슬러 메우고(종목마다 한 번 — 다 메우면 0회), `kr_paper_quotes`가 수정주가 기준 바뀜(분할·병합 뒤 과거 수정가가 다시 쓰임 — `adjBasisChanged`)을 걸었고 저장값이 옛 기준이면 저장 구간 전체를 새 기준으로 다시 받아 **끝까지 받았을 때만** 씀(옛·새 기준이 한 시계열에 섞이지 않게), 마지막 날이 일주일 넘게 오래됐거나 관측치의 최근 5봉과 이어지지 않으면 그 사이를 메움(관측치가 기동 때 먼저 돌아도 빈 구간 너머로 덧붙이지 않아 걸림). 날마다의 최근 5봉은 `kr_paper_quotes`가 덧붙임. NXT 종목은 KRX+NXT 통합가 |
-| | | `sec_fundamentals` | 📒 같은 유니버스(ETF 제외 — 설정 ETF와 13F 매핑표의 ETP)의 미국 종목 재무 — SEC XBRL Company Facts(회사당 1건) → `observations` `us.fundamentals`(entity = 티커, obs_date = 공시일, 지우지 않음 — 티커의 CIK가 바뀌면 옛 CIK만의 행은 지움) + 회사별 수집 상태 `us.fundamentals.status`. 실행당 CIK 예산(`FUNDAMENTALS_FETCH_BUDGET`, 기본 200건)이라 약 570곳을 세 번(약 36시간)에 한 바퀴. 13F 두 태스크와 같은 SEC 토큰 버킷(§5 '모의 매매가 쓰는 저장본과 한계') |
-| | | `earnings_surprise` | 📒 같은 유니버스(ETF 제외 — `us_calendar`와 같은 범위)의 어닝 서프라이즈 — yfinance quoteSummary `earnings.earningsChart`(내부 호출, 최근 4분기 EPS 실제치·컨센서스·실제 발표 시각) → `observations` `us.earnings_surprise`(entity = 티커, obs_date = 발표 시각의 미국 동부 날짜, (날짜, 티커)마다 덮어씀·지우지 않음) + 수집 상태 `us.earnings_surprise.status`. 실행당 100종목(`EARNINGS_SURPRISE_BUDGET`, 1~600), 키 없음(§5 '어닝 서프라이즈') |
-| | | `run_log_retention` | 🧹 수집 실행 기록 중 보존 기간(`COLLECTOR_RUN_LOG_RETENTION_DAYS`, 기본 90일)이 지난 것 정리 — 외부 호출 없음, 수집한 데이터는 그대로 |
-| `session` | 5분 | `paper_watch_us` | 🧪 미국 Claude 계좌2 **단계 2 장중 확인 감시** — 계좌2의 뉴욕 오늘 세션 장중 확인 행이 `PLANNED`·`MINUTE`일 때(백엔드 표 `paper_checkpoints`·`paper_positions`·`paper_orders`를 읽기만 — ADR 0022) 그 감시 목록(≤10) ∪ 계좌2 보유·대기 주문 ∪ {SPY, QQQ}의 정규장 1분봉(yfinance 배치 한 번, `period="1d"`, Yahoo 래치 공유)을 **확인 시각 −15분 ~ +30분에만** 받아 → 스냅샷 `paper.watch.us`(contract 1 — `collector/app/tasks/paper_watch.py` 머리말: 종목마다 완성된 봉(시작 + 60초 ≤ 받은 시각) 최근 30개·당일 시고저·마지막 봉, 저장본 `lagSeconds`는 SPY 그날 정규장 안에서만). 확인이 없거나 창 밖이면 호출 없이 정상 끝('호출 0회' — session 군에는 이 태스크 하나뿐이라 `EmptyResult`면 실행이 늘 `empty`로 남음), 래치 중이면 `EmptyResult`. 받지 못한 종목은 같은 확인의 직전 값을 `isStale`로 잇고, 하나도 못 받으면 저장본 유지. 장중 확인 패킷·예상 상태 가격에만 쓰고 장부 체결은 `paper.bars.us` 그대로. 이 수집은 '실시간'이 아니라 5분마다 받은 지연 1분봉입니다 |
-| `live` | 화면이 볼 때만 | `paper_live_us` | 🧪 모의 매매 **장중 평가(표시 전용)** — 미국 보유 종목(백엔드 표 `paper_positions`를 읽기만 — 출발한 계좌)의 최신 정규장 1분봉(yfinance 배치 한 번, Yahoo 래치 공유) → 스냅샷 `paper.live.us` `{market, source, scope, tickers:{T:{price, at}}, missing, error}`. 정기 수집 없음 — 운영자가 모의 매매 화면을 보는 정규장 동안 백엔드 `GET /api/paper/live`가 저장본이 60초보다 오래됐을 때 요청. 받지 못한 종목은 직전 값을 `isStale`로 잇고(봉 시각 그대로 — 장중 값으로 쓰지 않음), 하나도 못 받으면 저장본 유지. 체결·스탑·확정 순자산에는 쓰지 않음 |
-| | | `paper_live_kr` | 🧪🅣 같은 장중 평가의 한국 판 — 한국 보유 종목의 토스 최신 1분봉(원시가 `adjusted=false`, 종목마다 1회·0.1초 간격) → `paper.live.kr`. 서버 가동 창이 한국 정규장(09:00~15:30)을 덮기 전에는 그 시간에 서버가 꺼져 있어 쓰이지 않음 |
+| | | `sec_13f_track_record` | [모의] 트랙레코드 후보 기관 27곳의 13F를 기관당 30분기 → `sec.13f.{cik}.q30` + 후보 목록·진행률 `sec.13f.track_record_index`. 저장본에 없는 공시만, 실행당 예산(`TRACK_RECORD_FETCH_BUDGET`, 기본 400건) 안에서(§5 '모의 매매 트랙레코드 후보 기관') |
+| | | `kr_holidays` | [키] 한국 공휴일 (천문연 특일정보, 올해·내년을 받고 저장본에 없는 지난 해(2025년~작년)는 한 번 받아 2025년부터 보관 — 모의 매매 한국 책의 지난 거래일 계산·금융위 과거 쪽 메우기의 휴장일, v2 명세 K35) |
+| | | `kr_calendar` | [모의] 한국 거시 일정 → 스냅샷 `calendar.kr_events`(`calendar.us_events`와 같은 모양, 앞으로 45일·KST). 외부 호출 없음 — 금통위 2026년 8회 상수(한국은행 '통화정책방향 결정회의 일정', 확인 2026-10-26, 끝 11-26 — 창 끝이 넘으면 `bok.status` '갱신 필요', 2027 표 미게시)와 연 1회 손으로 옮기는 주요 발표 상수(소비자물가·고용·GDP 속보·경상수지·수출입 — 아직 옮기지 않아 모두 `status` '일정 미확인', 날짜를 지어내지 않음, [명세 §7 G8](specs/2026-10-26-v2-kr-paper-spec.md)). 한국 실적·컨센서스는 출처가 없어 `earnings`·`consensus` null + 사유. 한국 Claude 계좌 패킷 `1b_calendar`가 읽음(E1a — 백엔드 `KrPacketBuilder`, 읽은 순간 뒤 수집본은 쓰지 않음) |
+| | | `dart_fundamentals` | [키] 사업보고서 주요계정 (DART) — 한국 책 수집 범위(U 순위 → 끈적 목록, ETF 제외, 최대 250)를 먼저, 수급 레이더 종목(최근 30일 빈도순 + 화면, 최대 150)을 뒤에. 회사마다 마지막 보고서 하나(`rceptNo` 포함) — 한국 책은 접수일(`rceptNo` 앞 8자리) ≤ 기준일인 회사만 씀(`Datasets.SNAP_DART_FUNDAMENTALS`) |
+| | | `paper_price_history` | [모의] 같은 유니버스의 10년 일별 종가(수정주가) → `timeseries` 데이터셋 `equity_close`(종목 = `series_id`, 이력 누적·지우지 않음) |
+| | | `kr_paper_price_history` | [모의][토스] 한국 책 종가 이력 — 수집 범위의 토스 수정주가(`adjusted=true`) 일봉 종가 → `timeseries` `kr_close_adj`(series = 코드, 지우지 않음). 저장 첫 날이 1년 전(상장일이 늦으면 상장일)보다 늦으면 그 앞을 `before`로 200봉씩 거슬러 메우고(종목마다 한 번 — 다 메우면 0회), `kr_paper_quotes`가 수정주가 기준 바뀜(분할·병합 뒤 과거 수정가가 다시 쓰임 — `adjBasisChanged`)을 걸었고 저장값이 옛 기준이면 저장 구간 전체를 새 기준으로 다시 받아 **끝까지 받았을 때만** 씀(옛·새 기준이 한 시계열에 섞이지 않게), 마지막 날이 일주일 넘게 오래됐거나 관측치의 최근 5봉과 이어지지 않으면 그 사이를 메움(관측치가 기동 때 먼저 돌아도 빈 구간 너머로 덧붙이지 않아 걸림). 날마다의 최근 5봉은 `kr_paper_quotes`가 덧붙임. NXT 종목은 KRX+NXT 통합가 |
+| | | `sec_fundamentals` | [모의] 같은 유니버스(ETF 제외 — 설정 ETF와 13F 매핑표의 ETP)의 미국 종목 재무 — SEC XBRL Company Facts(회사당 1건) → `observations` `us.fundamentals`(entity = 티커, obs_date = 공시일, 지우지 않음 — 티커의 CIK가 바뀌면 옛 CIK만의 행은 지움) + 회사별 수집 상태 `us.fundamentals.status`. 실행당 CIK 예산(`FUNDAMENTALS_FETCH_BUDGET`, 기본 200건)이라 약 570곳을 세 번(약 36시간)에 한 바퀴. 13F 두 태스크와 같은 SEC 토큰 버킷(§5 '모의 매매가 쓰는 저장본과 한계') |
+| | | `earnings_surprise` | [모의] 같은 유니버스(ETF 제외 — `us_calendar`와 같은 범위)의 어닝 서프라이즈 — yfinance quoteSummary `earnings.earningsChart`(내부 호출, 최근 4분기 EPS 실제치·컨센서스·실제 발표 시각) → `observations` `us.earnings_surprise`(entity = 티커, obs_date = 발표 시각의 미국 동부 날짜, (날짜, 티커)마다 덮어씀·지우지 않음) + 수집 상태 `us.earnings_surprise.status`. 실행당 100종목(`EARNINGS_SURPRISE_BUDGET`, 1~600), 키 없음(§5 '어닝 서프라이즈') |
+| | | `run_log_retention` | [정리] 수집 실행 기록 중 보존 기간(`COLLECTOR_RUN_LOG_RETENTION_DAYS`, 기본 90일)이 지난 것 정리 — 외부 호출 없음, 수집한 데이터는 그대로 |
+| `session` | 5분 | `paper_watch_us` | [모의] 미국 Claude 계좌2 **단계 2 장중 확인 감시** — 계좌2의 뉴욕 오늘 세션 장중 확인 행이 `PLANNED`·`MINUTE`일 때(백엔드 표 `paper_checkpoints`·`paper_positions`·`paper_orders`를 읽기만 — ADR 0022) 그 감시 목록(≤10) ∪ 계좌2 보유·대기 주문 ∪ {SPY, QQQ}의 정규장 1분봉(yfinance 배치 한 번, `period="1d"`, Yahoo 래치 공유)을 **확인 시각 −15분 ~ +30분에만** 받아 → 스냅샷 `paper.watch.us`(contract 1 — `collector/app/tasks/paper_watch.py` 머리말: 종목마다 완성된 봉(시작 + 60초 ≤ 받은 시각) 최근 30개·당일 시고저·마지막 봉, 저장본 `lagSeconds`는 SPY 그날 정규장 안에서만). 확인이 없거나 창 밖이면 호출 없이 정상 끝('호출 0회' — session 군에는 이 태스크 하나뿐이라 `EmptyResult`면 실행이 늘 `empty`로 남음), 래치 중이면 `EmptyResult`. 받지 못한 종목은 같은 확인의 직전 값을 `isStale`로 잇고, 하나도 못 받으면 저장본 유지. 장중 확인 패킷·예상 상태 가격에만 쓰고 장부 체결은 `paper.bars.us` 그대로. 이 수집은 '실시간'이 아니라 5분마다 받은 지연 1분봉입니다 |
+| `live` | 화면이 볼 때만 | `paper_live_us` | [모의] 모의 매매 **장중 평가(표시 전용)** — 미국 보유 종목(백엔드 표 `paper_positions`를 읽기만 — 출발한 계좌)의 최신 정규장 1분봉(yfinance 배치 한 번, Yahoo 래치 공유) → 스냅샷 `paper.live.us` `{market, source, scope, tickers:{T:{price, at}}, missing, error}`. 정기 수집 없음 — 운영자가 모의 매매 화면을 보는 정규장 동안 백엔드 `GET /api/paper/live`가 저장본이 60초보다 오래됐을 때 요청. 받지 못한 종목은 직전 값을 `isStale`로 잇고(봉 시각 그대로 — 장중 값으로 쓰지 않음), 하나도 못 받으면 저장본 유지. 체결·스탑·확정 순자산에는 쓰지 않음 |
+| | | `paper_live_kr` | [모의][토스] 같은 장중 평가의 한국 판 — 한국 보유 종목의 토스 최신 1분봉(원시가 `adjusted=false`, 종목마다 1회·0.1초 간격) → `paper.live.kr`. 서버 가동 창이 한국 정규장(09:00~15:30)을 덮기 전에는 그 시간에 서버가 꺼져 있어 쓰이지 않음 |
 
-🔑 = 국내 공공 API 키가 있어야 도는 태스크. 키가 없으면 "키 미설정"으로 기록되고
+[키] = 국내 공공 API 키가 있어야 도는 태스크. 키가 없으면 "키 미설정"으로 기록되고
 다른 태스크에는 영향이 없습니다. 자세한 규칙은 아래 "7. 국내 공공 API".
-🅣 = 토스증권 키(`TOSS_CLIENT_ID`/`SECRET`)가 있어야 도는 태스크. 아래 "8. 토스증권 Open API".
-🧹 = 데이터를 받지 않는 유지보수 태스크. 실행 기록은 하루 약 1,200행씩 쌓여(1년이면 43만 행)
+[토스] = 토스증권 키(`TOSS_CLIENT_ID`/`SECRET`)가 있어야 도는 태스크. 아래 "8. 토스증권 Open API".
+[정리] = 데이터를 받지 않는 유지보수 태스크. 실행 기록은 하루 약 1,200행씩 쌓여(1년이면 43만 행)
 상태 화면 조회를 느리게 합니다. 태스크마다 가장 최근 1건과 최근 실행 50건은 기간과 무관하게 남깁니다.
-📒 = 모의 알고리즘 매매(운영자 전용 기능)의 가격·재무·일정·사건 뉴스·어닝 서프라이즈. 🧪 = 그중 한국 책(v2 2단계 명세 §4-15). 수집기는 받아 저장만 하고 체결·평가·재무
+[모의] = 모의 알고리즘 매매(운영자 전용 기능)의 가격·재무·일정·사건 뉴스·어닝 서프라이즈(한국 책은 v2 2단계 명세 §4-15). 수집기는 받아 저장만 하고 체결·평가·재무
 계산·일정 창·뉴스 거르기·서프라이즈 시점 자르기는 백엔드가 합니다. 기존
 `equity.price_history`(5년·138종목)를 키우지 않고 따로 받는 이유는 [명세 D23](specs/2026-10-24-paper-trading-spec.md).
 
@@ -82,7 +82,7 @@ make status         # 태스크별 마지막 결과·실패 사유
 
 **출처가 거부하면(403·429·봇 차단 페이지) '데이터 없음'이 아니라 `거부됨`입니다.** 공용·FRED·SEC·BLS 세션과
 yfinance 호출(`sector`·`us_calendar`·`earnings_surprise`·매크로 카드 `market`·KRX 선물의 KODEX 폴백, 공용 이름 `finance.yahoo.com`)은
-그 호스트를 5분 동안 닫아 남은 요청을 보내지 않습니다. 아무것도 받지 못한 실행은 ❌ `거부됨: 호스트(사유)…`, 일부만 거부되면 ✅ 뒤에
+그 호스트를 5분 동안 닫아 남은 요청을 보내지 않습니다. 아무것도 받지 못한 실행은 ✗ `거부됨: 호스트(사유)…`, 일부만 거부되면 ✓ 뒤에
 `· 거부됨: …`이 붙고, 빠진 항목은 `staleReason`에 `거부됨 —`이 실린 채 직전 값을 잇습니다. 태스크가 안에서 연 스레드 풀(COT·KRX·
 13F·순유동성·참고 시세·매크로 카드)도 `http.bind_guard`로 같은 기록과 시간 예산을 씁니다. 다시 보내는 것은 5xx·408·연결 오류뿐이고,
 태스크 안에서는 요청 timeout을 남은 시간 상한에 맞춰 줄이고 다음 시도가 상한 안에 끝날 때만 다시 보냅니다(`collector/app/http.py`).
@@ -153,7 +153,7 @@ yfinance 호출(`sector`·`us_calendar`·`earnings_surprise`·매크로 카드 `
 미국 공휴일은 반영하지 않습니다. NFCI는 매주 과거 값이 개정되는데, 누적 시계열(`timeseries`)은 마지막 저장일 7일 전부터만
 다시 쓰므로 **개정본이 섞여** 있습니다(처음 수집한 날의 개정본 + 관측 1~2주 뒤 값).
 
-### ⚠️ 실제 지표가 아닌 것
+### 실제 지표가 아닌 것
 
 - **MOVE 지수** — Yahoo가 제공하지 않아 `^TNX` 변동성에서 역산한 **대용값**입니다.
   실제 ICE BofA MOVE의 임계치(80/120/140)를 이 값에 그대로 적용하면 안 됩니다.
@@ -185,8 +185,8 @@ KIS(장중 가집계) → Daum(API) → Naver → LS(OPEN API) → 토스(공식
 
 | 투자주체 | 상태 | 담당 소스 |
 |---|---|---|
-| 외국인 · 기관 | ✅ 정상 | Daum (`investorType=FOREIGN\|INSTITUTION`) |
-| 개인 · 연기금 · 금융투자 · 투신 | ⚠️ 토스 키가 있으면 **제한적으로 지원** | 토스(공식) — 거래대금 상위 100종목 안의 순위. 당일 잠정치에는 이 넷이 없어 **전 거래일 확정치**. 토스 저장본이 없으면 "지원 안 함" (Naver 페이지 폐지, HTTP 410) |
+| 외국인 · 기관 | ✓ 정상 | Daum (`investorType=FOREIGN\|INSTITUTION`) |
+| 개인 · 연기금 · 금융투자 · 투신 | △ 토스 키가 있으면 **제한적으로 지원** | 토스(공식) — 거래대금 상위 100종목 안의 순위. 당일 잠정치에는 이 넷이 없어 **전 거래일 확정치**. 토스 저장본이 없으면 "지원 안 함" (Naver 페이지 폐지, HTTP 410) |
 
 Daum API는 외국인·기관 두 가지만 받습니다. 나머지 넷은 Naver의 투자자별 매매상위
 페이지가 유일한 경로였는데 그 페이지가 없어졌습니다. 남은 폴백인 LS는 인증이
@@ -271,7 +271,7 @@ EQUITY_MAP = {
 
 ### 모의 매매 트랙레코드 후보 기관 (30분기, `sec_13f_track_record`)
 
-📒 모의 매매의 기관 선정(7년 롤링 트랙레코드, [설계 §4-0](specs/2026-10-24-paper-trading-design-plan.md))이 쓰는
+모의 매매의 기관 선정(7년 롤링 트랙레코드, [설계 §4-0](specs/2026-10-24-paper-trading-design-plan.md))이 쓰는
 13F입니다. 기존 13F 화면(12곳·q8)과 따로 받고, 그 화면과 저장본은 바뀌지 않습니다(같은 `services/sec13f.collect_13f`).
 
 - **후보와 저장본**: `indicators.TRACK_RECORD_FILERS` 27곳(액티브·롱 편향, CIK는 [단계 0 표 A](specs/2026-10-24-paper-trading-step0.md)에서
@@ -315,13 +315,13 @@ EQUITY_MAP = {
 | `sec.13f.track_record_index` (스냅샷, 12시간) | 기관 선정 탭의 수집 진행률 | 이번 실행에 못 돈(예산 소진)·실패한 기관은 저장본의 값과 `note` |
 | `us.fundamentals` (observations, 12시간) | Claude 계좌 패킷 `8b_fundamentals`(D28)만 — 규칙 계좌·검증기는 읽지 않음 | 아래 '미국 종목 재무' |
 | `calendar.us_events` (스냅샷, 1시간) | Claude 계좌 패킷 `1b_calendar`(2단계 A)·`/api/paper/status`의 `calendar`(개요의 일정 한 줄) — 규칙 계좌·검증기는 읽지 않음 | 아래 '미국 발표·실적 일정' |
-| `calendar.us_consensus` (스냅샷, 동부 하루 1회) | 🧪 미국 Claude 계좌 패킷 `1b_calendar` — 설정 `calendar.consensus`를 켰을 때만(판 6), 거시 줄의 `forecast`·`previous`·`unit`·`consensusSource`(E1b). 꺼짐이면 읽지 않음 | 위 표 `us_calendar_consensus` 줄. 비공식 참고라 발표 날짜는 FRED·FOMC가 정하고 값만 이름 대응표(백엔드 `analytics.CalendarConsensus` — FOMC·FRED 릴리스 번호 → Nasdaq 머리 지표 하나)로 붙임. 그 날 같은 이름이 두 줄(전월비·전년비 라벨 없음 — CPI·Core PCE)이면 붙이지 않고 사유 |
-| `paper.bars.us` (스냅샷, 1시간) | 🧪 실행 감사 작업 `PaperExecutionAuditJob`(단계 0-4, 5분, `StoreReader.quietly` — Claude 계좌 주문의 메뉴 반사실·1분봉 지연·늦게 풂 → `paper_order_exec`)과 장부의 시각 지정 체결(단계 1-4 `UsTimedFills` — 2b·3a·1분봉 기다림, `PaperMarketData.barsUs`가 조용히 읽음, 시각 지정 주문이 있는 계좌만)이 읽음, 상태 응답(`GET /api/paper/status`의 `claude2.bars` — 정규장일 때만 받은 시각·나이·지연)도 읽기만. 패킷은 읽지 않음 | 아래 'Claude 계좌2 1분봉' |
-| `paper.watch.us` (스냅샷, 5분 — 장중 확인 창에만) | 🧪 계좌2 장중 확인(단계 2)만 — 읽는 곳은 백엔드 장중 확인 작업(`PaperCheckpointJob` — 호출 조건·지연)·패킷(`CheckpointPacket` — `MINUTE` 자료)과 상태 응답의 계좌2 장중 확인 줄(받은 시각·나이·지연 표시만), 최대 나이 `MAX_AGE_WATCH_US` 10분. 장부 체결·계좌1은 읽지 않고 화면은 상태 응답으로만 봄 | 아래 'Claude 계좌2 1분봉'의 장중 확인 감시 줄 |
-| `calendar.kr_events` (스냅샷, 12시간) | 🧪 한국 책 Claude 계좌 패킷 `1b_calendar`가 읽음(E1a — `KrPacketBuilder`, 읽은 순간 뒤 수집본은 쓰지 않음) — 규칙 계좌·검증기는 읽지 않음 | 위 표 `kr_calendar` 줄. 상수라 임시 회의·바뀐 발표일은 들어오지 않음(손으로 갱신) |
+| `calendar.us_consensus` (스냅샷, 동부 하루 1회) | 미국 Claude 계좌 패킷 `1b_calendar` — 설정 `calendar.consensus`를 켰을 때만(판 6), 거시 줄의 `forecast`·`previous`·`unit`·`consensusSource`(E1b). 꺼짐이면 읽지 않음 | 위 표 `us_calendar_consensus` 줄. 비공식 참고라 발표 날짜는 FRED·FOMC가 정하고 값만 이름 대응표(백엔드 `analytics.CalendarConsensus` — FOMC·FRED 릴리스 번호 → Nasdaq 머리 지표 하나)로 붙임. 그 날 같은 이름이 두 줄(전월비·전년비 라벨 없음 — CPI·Core PCE)이면 붙이지 않고 사유 |
+| `paper.bars.us` (스냅샷, 1시간) | 실행 감사 작업 `PaperExecutionAuditJob`(단계 0-4, 5분, `StoreReader.quietly` — Claude 계좌 주문의 메뉴 반사실·1분봉 지연·늦게 풂 → `paper_order_exec`)과 장부의 시각 지정 체결(단계 1-4 `UsTimedFills` — 2b·3a·1분봉 기다림, `PaperMarketData.barsUs`가 조용히 읽음, 시각 지정 주문이 있는 계좌만)이 읽음, 상태 응답(`GET /api/paper/status`의 `claude2.bars` — 정규장일 때만 받은 시각·나이·지연)도 읽기만. 패킷은 읽지 않음 | 아래 'Claude 계좌2 1분봉' |
+| `paper.watch.us` (스냅샷, 5분 — 장중 확인 창에만) | 계좌2 장중 확인(단계 2)만 — 읽는 곳은 백엔드 장중 확인 작업(`PaperCheckpointJob` — 호출 조건·지연)·패킷(`CheckpointPacket` — `MINUTE` 자료)과 상태 응답의 계좌2 장중 확인 줄(받은 시각·나이·지연 표시만), 최대 나이 `MAX_AGE_WATCH_US` 10분. 장부 체결·계좌1은 읽지 않고 화면은 상태 응답으로만 봄 | 아래 'Claude 계좌2 1분봉'의 장중 확인 감시 줄 |
+| `calendar.kr_events` (스냅샷, 12시간) | 한국 책 Claude 계좌 패킷 `1b_calendar`가 읽음(E1a — `KrPacketBuilder`, 읽은 순간 뒤 수집본은 쓰지 않음) — 규칙 계좌·검증기는 읽지 않음 | 위 표 `kr_calendar` 줄. 상수라 임시 회의·바뀐 발표일은 들어오지 않음(손으로 갱신) |
 | `news_headline` (observations, 1시간) | Claude 계좌 패킷 `11b_events`(2단계 B)만 — 규칙 계좌·검증기는 읽지 않음 | 아래 '사건 뉴스 RSS' |
 | `news.headlines.status` (스냅샷, 1시간) | `/api/paper/status`의 `news`(개요의 사건 뉴스 한 줄), 정기·미리보기 패킷 `11b_events`의 `feedNote`(창 끝 3시간 전부터 실패 중인 피드) | 피드별 받은 항목·새 항목·건너뛴 수·마지막 성공 시각(`lastOkAt`)·실패 사유, 7일 보관 건수(`stored7d`). 피드가 모두 실패하면 쓰지 않음(직전 저장본 유지) |
-| `kr_news_headline`·`kr.news.headlines.status` (observations·스냅샷, 1시간) | 🧪 한국 책 Claude 계좌 패킷 `11b_events`가 읽음(E1a — `KrPacketBuilder`, 읽은 순간 뒤에 받은 제목·수집 상태는 쓰지 않음, 상태는 실패 중인 피드의 `feedNote`). 규칙 계좌·검증기는 읽지 않음 | 미국 두 저장본과 같은 규칙(제목 해시·7일·`feeds` 누적·전부 실패면 쓰지 않음)에 날짜만 KST. 상태에 피드별 `timeFormat`·`skippedBadTime` |
+| `kr_news_headline`·`kr.news.headlines.status` (observations·스냅샷, 1시간) | 한국 책 Claude 계좌 패킷 `11b_events`가 읽음(E1a — `KrPacketBuilder`, 읽은 순간 뒤에 받은 제목·수집 상태는 쓰지 않음, 상태는 실패 중인 피드의 `feedNote`). 규칙 계좌·검증기는 읽지 않음 | 미국 두 저장본과 같은 규칙(제목 해시·7일·`feeds` 누적·전부 실패면 쓰지 않음)에 날짜만 KST. 상태에 피드별 `timeFormat`·`skippedBadTime` |
 | `us.earnings_surprise` (observations, 12시간) | Claude 계좌 패킷 `8b_fundamentals` 줄마다의 `eps`(2단계 C)만 — 규칙 계좌·검증기는 읽지 않음 | 아래 '어닝 서프라이즈' |
 | `us.earnings_surprise.status` (스냅샷, 12시간) | `/api/paper/status`의 `earnings`(개요의 어닝 서프라이즈 한 줄) | 종목별 받은 시각·저장 행 수·최신 발표일·오류, 실행 집계(`covered`·`withEstimate4`·`fetchedThisRun`·`failedThisRun`·`stoppedReason`). 숫자는 저장된 행으로 셈(`withEstimate4`는 같은 분기(`periodEnd`)의 두 행을 한 번). 한 종목도 받지 못한 실행·내부 API 변경은 쓰지 않음(직전 저장본 유지). 지금 상태라 패킷에는 싣지 않음 |
 | `us.fundamentals.status` (스냅샷, 12시간) | `/api/paper/status`의 `fundamentals`(개요의 재무 수집 범위 한 줄) | 회사별 받은 시각·최신 공시일·최신 기간 end·분류체계·통화·사실 수·오류. 이번에 실패한 회사는 직전 줄을 `isStale`로 이어받음. 지금 상태라 패킷에는 싣지 않음(초기 결정의 시점 규칙) |
@@ -525,12 +525,12 @@ EQUITY_MAP = {
 
 | 쓰는 엔드포인트 | 받는 것 | 쓰는 화면 |
 |---|---|---|
-| `GET /api/v1/market-indicators/{KOSPI\|KOSDAQ}/investor-trading` | 시장 전체 투자자별 매수·매도 **대금**(원) — 개인·외국인·기관(7세부)·기타법인 | 📡 레이더 "시장 전체", 🇰🇷 "현물·선물 수급 동조" |
-| `GET /api/v1/stocks/{symbol}/investor-trading` | 종목 일별 투자자별 매수·매도·순매수 **거래량**(주), 기관 7세부, 외국인 보유율 | 📡 레이더 "수급 지속성" |
-| `GET /api/v1/candles?symbol=&interval=1d\|1m&count=&before=&adjusted=` | 종목 일봉·1분봉(최신순, 한 번에 200개, `before`로 과거 쪽 — 공식 스펙 1.2.24). 일봉 `timestamp` = 거래일 KST 자정, 1분봉 라벨 = 봉 **끝** 시각. `adjusted` 기본값은 true(수정주가)라 늘 보냄 | 🧪 한국 책 관측치·이력(`kr_paper_quotes`) |
-| `GET /api/v1/stocks?symbols=` | 종목 유형·`koreanMarketDetail`(`nxtSupported`·`krxTradingSuspended`)·상장일, 200개씩 | 📡 레이더 폴백 종목 정보, 🧪 한국 책 종목 상태 |
+| `GET /api/v1/market-indicators/{KOSPI\|KOSDAQ}/investor-trading` | 시장 전체 투자자별 매수·매도 **대금**(원) — 개인·외국인·기관(7세부)·기타법인 | 레이더 "시장 전체", "현물·선물 수급 동조" |
+| `GET /api/v1/stocks/{symbol}/investor-trading` | 종목 일별 투자자별 매수·매도·순매수 **거래량**(주), 기관 7세부, 외국인 보유율 | 레이더 "수급 지속성" |
+| `GET /api/v1/candles?symbol=&interval=1d\|1m&count=&before=&adjusted=` | 종목 일봉·1분봉(최신순, 한 번에 200개, `before`로 과거 쪽 — 공식 스펙 1.2.24). 일봉 `timestamp` = 거래일 KST 자정, 1분봉 라벨 = 봉 **끝** 시각. `adjusted` 기본값은 true(수정주가)라 늘 보냄 | 한국 책 관측치·이력(`kr_paper_quotes`) |
+| `GET /api/v1/stocks?symbols=` | 종목 유형·`koreanMarketDetail`(`nxtSupported`·`krxTradingSuspended`)·상장일, 200개씩 | 레이더 폴백 종목 정보, 한국 책 종목 상태 |
 
-### 🔍 교차 검증에 쓰는 것 (🗄️ 데이터 저장소 상태)
+### 교차 검증에 쓰는 것 (데이터 저장소 상태)
 
 | 항목 | 토스 엔드포인트 | 대조 상대 | 언제 |
 |---|---|---|---|
@@ -566,8 +566,8 @@ EQUITY_MAP = {
   429 재시도는 넣지 않은 수이고, 레이더 폴백이 랭킹·종목 정보를 1번씩 더 부릅니다(같은 그룹인지는 확인하지 못함).
 - **한도 헤더** — 응답 헤더 `X-RateLimit-Limit`로 확인한 그룹별 초당 한도는 `MARKET_DATA_CHART` 20 · `MARKET_DATA` 15 · `STOCK` 5 ·
   `MARKET_INFO` 3입니다([확인] 2026-10-26 읽기 전용 조회 — [한국 책 명세](specs/2026-10-26-v2-kr-paper-spec.md) §7의 2번). 위 `STOCK_TRADING_TREND`·
-  `MARKET_INDICATOR`는 그 조회에서 부르지 않아 모릅니다. 🧪 한국 책의 봉 호출은 `MARKET_DATA_CHART` 한도의 절반 아래(호출 사이 0.1초)로 부릅니다.
-- **한국 책 호출 예산** — 🧪 한국 책 태스크는 KR 거래일 D의 20:30 KST 뒤 하루 한 번이고(받은 종목은 그날 다시 부르지 않음 — 다음 slow 주기는 받지 못한 종목, D 자료가 없던 종목(069500에 D 봉이 있을 때·하룻밤 3회까지), 1분봉 개장 봉을 묻지 못한 종목만), 실행마다 상한이 있습니다. `kr_paper_quotes` 실행당 최대 500회(`KR_QUOTES_CALL_BUDGET` — 종목 상태 200종목에 1회 + 종목마다 일봉 원시·수정 2회 + 1분봉 개장 1회, 그룹 `MARKET_DATA_CHART`([확인] 초당 20)·`STOCK`(초당 5), 호출 사이 0.1초, 300초가 지나면 새 종목을 시작하지 않음), `kr_paper_flows` 실행당 최대 200회(`KR_FLOWS_CALL_BUDGET` — 종목마다 1회, 위 `STOCK_TRADING_TREND` 그룹, 호출 사이 0.3초, 300초), `kr_paper_price_history` 실행당 최대 300회(weekly, `KR_HISTORY_CALL_BUDGET` — 종목마다 200봉 쪽 약 2번으로 1년을 한 번 메우고 그 뒤로는 거의 0회, 그룹 `MARKET_DATA_CHART`, 호출 사이 0.1초, 900초). 수집 범위 약 140종목이면 하루 약 420 + 140회이고, 수급 그룹은 그 한 시간에 위 202회에 140회쯤이 더해집니다. 상한을 넘는 종목은 다음 주기에 이어 받습니다 — `kr_paper_quotes`는 일봉을 받는 종목마다 1분봉 1회를 떼어 두어 한 실행에 약 166종목까지 일봉과 개장 봉을 함께 받고, 그 뒤 종목은 일봉째 다음 slow 주기에 받습니다. 1분봉을 예산·시간 상한으로 묻지 못하면 결과에 '1분봉 미요청 N'을 남기고 다음 주기에 그 봉만 묻습니다.
+  `MARKET_INDICATOR`는 그 조회에서 부르지 않아 모릅니다. 한국 책의 봉 호출은 `MARKET_DATA_CHART` 한도의 절반 아래(호출 사이 0.1초)로 부릅니다.
+- **한국 책 호출 예산** — 한국 책 태스크는 KR 거래일 D의 20:30 KST 뒤 하루 한 번이고(받은 종목은 그날 다시 부르지 않음 — 다음 slow 주기는 받지 못한 종목, D 자료가 없던 종목(069500에 D 봉이 있을 때·하룻밤 3회까지), 1분봉 개장 봉을 묻지 못한 종목만), 실행마다 상한이 있습니다. `kr_paper_quotes` 실행당 최대 500회(`KR_QUOTES_CALL_BUDGET` — 종목 상태 200종목에 1회 + 종목마다 일봉 원시·수정 2회 + 1분봉 개장 1회, 그룹 `MARKET_DATA_CHART`([확인] 초당 20)·`STOCK`(초당 5), 호출 사이 0.1초, 300초가 지나면 새 종목을 시작하지 않음), `kr_paper_flows` 실행당 최대 200회(`KR_FLOWS_CALL_BUDGET` — 종목마다 1회, 위 `STOCK_TRADING_TREND` 그룹, 호출 사이 0.3초, 300초), `kr_paper_price_history` 실행당 최대 300회(weekly, `KR_HISTORY_CALL_BUDGET` — 종목마다 200봉 쪽 약 2번으로 1년을 한 번 메우고 그 뒤로는 거의 0회, 그룹 `MARKET_DATA_CHART`, 호출 사이 0.1초, 900초). 수집 범위 약 140종목이면 하루 약 420 + 140회이고, 수급 그룹은 그 한 시간에 위 202회에 140회쯤이 더해집니다. 상한을 넘는 종목은 다음 주기에 이어 받습니다 — `kr_paper_quotes`는 일봉을 받는 종목마다 1분봉 1회를 떼어 두어 한 실행에 약 166종목까지 일봉과 개장 봉을 함께 받고, 그 뒤 종목은 일봉째 다음 slow 주기에 받습니다. 1분봉을 예산·시간 상한으로 묻지 못하면 결과에 '1분봉 미요청 N'을 남기고 다음 주기에 그 봉만 묻습니다.
 - **잠정치** — 당일 기록은 장중 잠정치입니다. 종목 기록의 개인·기관 세부·기타법인·외국인 보유는 **null**
   (저녁에 확정). null을 0으로 바꾸지 않고, 누적에서 빠진 날수를 화면에 "(n일)"로 적습니다.
 - **한 시장만 실패하면** — 그 시장은 직전 값을 이어 쓰고 `isStale`·`staleSince`를 붙입니다(3일 지나면 뺌).
@@ -583,4 +583,4 @@ EQUITY_MAP = {
 **실제 응답이 아닙니다**. 키를 넣고 첫 수집 뒤 상태 화면의 `toss_market_flows`·`toss_stock_flows`
 결과를 확인하세요.
 
-🧪 한국 책(v2 2단계 B4)이 쓰는 `GET /api/v1/candles`·`GET /api/v1/stocks`의 시험 자료는 **실제 응답**입니다(2026-10-26 23:28~23:31 KST 읽기 전용 조회 — `collector/tests/fixtures/toss/README.md` '실제 응답'). 일봉 `timestamp` = 거래일 KST 자정, 1분봉 라벨 = 봉 끝 시각, 숫자는 문자열입니다. 공식 스펙은 지금 1.2.24이고, 그 판의 종목 투자자별 매매동향 설명은 '거래량은 KRX·NXT 통합 기준'입니다.
+한국 책(v2 2단계 B4)이 쓰는 `GET /api/v1/candles`·`GET /api/v1/stocks`의 시험 자료는 **실제 응답**입니다(2026-10-26 23:28~23:31 KST 읽기 전용 조회 — `collector/tests/fixtures/toss/README.md` '실제 응답'). 일봉 `timestamp` = 거래일 KST 자정, 1분봉 라벨 = 봉 끝 시각, 숫자는 문자열입니다. 공식 스펙은 지금 1.2.24이고, 그 판의 종목 투자자별 매매동향 설명은 '거래량은 KRX·NXT 통합 기준'입니다.

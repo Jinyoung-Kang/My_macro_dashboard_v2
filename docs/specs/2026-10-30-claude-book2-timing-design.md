@@ -1,4 +1,4 @@
-# 설계 — 🧪 Claude 계좌2(미국): 체결 시점과 데이터를 스스로 고르는 계좌
+# 설계 — Claude 계좌2(미국): 체결 시점과 데이터를 스스로 고르는 계좌
 
 - 작성: 2026-10-30 · 상태: **확정(2026-10-30, 사용자 "권장안대로 진행해" — T1~T19 모두 권장안).** 단계 0(측정만, §16-1 0-2~0-5)과 단계 1(1-1~1-8)을 구현했다(배포 전 —
   배포·출발 순서는 §16-2, 구현이 이 문서를 좁힌 곳은 §10-1 3a·§10-4·§17-15에 고쳐 적음). **단계 2(2-1~2-4 — 장중 확인)도 구현했다(배포 전)** —
@@ -525,7 +525,7 @@ E가 끝나면(3a) 모든 주문이 풀리므로 미룸은 그 세션 안에서 
   `lag_seconds INTEGER`, `late_resolved BOOLEAN`, `updated_at`. 계좌1 주문 행도 가진다(반사실 기준 분포). 쓰는 곳은 백엔드 `store.PaperStore`뿐(ADR 0008).
 - `executionNote`는 주문 `reason` JSON에 둔다(논거·라벨과 같은 자리). 만료 사유(`NO_TRADE_AFTER_T` 등)도 지금 취소·만료처럼 주문 행에 남긴다.
 - 함께 고칠 곳(같은 커밋): `PaperStore.ready`의 스키마 확인(`backend/.../store/PaperStore.java:602-609` — 새 열·표가 없으면 `available:false`, 백엔드만 새로 띄운 배포 QA-016)과
-  `docs/API.md`의 🧪 머리말 V 목록(`:219`), `collector/tests/test_table_ownership.py`의 `BACKEND_TABLES`(`:14-25` — 새 표를 넣어 '수집기는 쓰지 않음' 검사에 걸리게, V18의 `paper_checkpoints`도),
+  `docs/API.md`의 머리말 V 목록(`:219`), `collector/tests/test_table_ownership.py`의 `BACKEND_TABLES`(`:14-25` — 새 표를 넣어 '수집기는 쓰지 않음' 검사에 걸리게, V18의 `paper_checkpoints`도),
   `docs/ARCHITECTURE.md:54`의 `paper_*` 표 수(21개 → 22, V18에서 23), 시험 대역 `FakePaperStore`(새 store 메서드).
 
 **V18 (단계 2만)**
@@ -706,17 +706,17 @@ P_cf가 `null`인 체결은 줄마다 `excludedNoBaseline`. 평균·구간은 �
 |---|---|---|---|
 | 승인 | 0-1 `docs: Claude 계좌2(미국) 명세 확정·ADR 0022 초안` — §18 결정 반영 | — | S |
 | **0 측정만(새 계좌 없음)** | 0-2 `feat(db): V17 — 시각 지정 timing·체결 봉·실행 감사 표(더하기만)` + `test_table_ownership.BACKEND_TABLES`·`ARCHITECTURE.md:54` 표 수·API.md V 목록 | `PaperStoreDbTest`, 반복 실행 안전(`make db-test`는 파일마다 다시 실행 — V14 머리말), 수집기 시험 | S |
-| | 0-3 `feat(collector): 🧪 paper_bars_us — 대기·최근 주문 종목의 메뉴 창 1분봉` + `catalog.py`·`Datasets.java` 이름 + 태스크 수(시험 13개 파일·DATA_SOURCES·CLAUDE.md) | 수집기 시험·`DatasetsParityTest`·`test_table_ownership` | M |
-| | 0-4 `feat(backend): 🧪 실행 감사 작업 — 계좌1 주문의 메뉴 반사실·1분봉 지연` + `PaperStore.ready`에 V17 확인·`FakePaperStore` | 감사 작업 시험, 계좌1 고정본 그대로, 스키마 준비 시험 | M |
+| | 0-3 `feat(collector): paper_bars_us — 대기·최근 주문 종목의 메뉴 창 1분봉` + `catalog.py`·`Datasets.java` 이름 + 태스크 수(시험 13개 파일·DATA_SOURCES·CLAUDE.md) | 수집기 시험·`DatasetsParityTest`·`test_table_ownership` | M |
+| | 0-4 `feat(backend): 실행 감사 작업 — 계좌1 주문의 메뉴 반사실·1분봉 지연` + `PaperStore.ready`에 V17 확인·`FakePaperStore` | 감사 작업 시험, 계좌1 고정본 그대로, 스키마 준비 시험 | M |
 | | 0-5 `feat(backend): GET /api/paper/books/{code}/execution` (AccessPolicy·RouteInventoryTest·API.md·routes.json·endpoints·access 시험) | 경로 시험 | S |
 | | → 배포 → **3세션 이상** X1~X5 측정 → `docs: 미국 1분봉 확인 결과`(DATA_SOURCES) | — | S |
 | **1 계좌2** | 1-1 `refactor(paper): Claude 계좌 프로필 — 파이프라인 열쇠를 계좌로(계좌1만, 동작 그대로)` | 모든 미국·한국 고정본 바이트 | M~L |
 | | 1-2 `refactor(paper): 패킷 입력 동결(MarketInputs)과 계좌 인자(바이트 그대로)` | `G/packet-us-*` | M |
 | | 1-3 `refactor(analytics): 검증기 시점 순위(두 갈래 = 순위 0/1)` | `G/order-validator-us.txt`·동치 시험 | S |
 | | 1-4 `feat(paper): 시각 지정 체결 2b·fillable 제외·1분봉 기다림·대체 체결`(계좌 없음 → 시험만) | `G/ledger-us-week.txt`·§15 장부 시험 | M |
-| | 1-5 `feat(paper): 🧪 Claude 계좌2 — 정의·claude2.* 설정·스키마·고정 문단·13_execution·결정 작업 몫·소상한·앞으로 체결 출발` + 다섯 계좌 고정본(개요·상태) | §15 파이프라인·통합, `DecisionTimingsLockTest`·`ApiIntegrationTest`(4 → 5)·`UsPaperMarketTest`·`PaperAdminServiceTest`·`TestKrMarket`(인터페이스가 바뀌면)을 **같은 커밋에서** 고침 | L |
+| | 1-5 `feat(paper): Claude 계좌2 — 정의·claude2.* 설정·스키마·고정 문단·13_execution·결정 작업 몫·소상한·앞으로 체결 출발` + 다섯 계좌 고정본(개요·상태) | §15 파이프라인·통합, `DecisionTimingsLockTest`·`ApiIntegrationTest`(4 → 5)·`UsPaperMarketTest`·`PaperAdminServiceTest`·`TestKrMarket`(인터페이스가 바뀌면)을 **같은 커밋에서** 고침 | L |
 | | 1-6 `feat(paper): 계좌1 화면 이름 'Claude 계좌1'과 옛 이름 목록`(T3) | 이름 맞추기 시험 | S |
-| | 1-7 `feat(frontend): 🧪 계좌2 카드·색·출발 단추·시점 이름표·실행 표·S = 100 보기·한계 문구` | 화면 시험·`paperAccount.test.ts` | M |
+| | 1-7 `feat(frontend): 계좌2 카드·색·출발 단추·시점 이름표·실행 표·S = 100 보기·한계 문구` | 화면 시험·`paperAccount.test.ts` | M |
 | | 1-8 `docs: API·DATA_SOURCES·ARCHITECTURE·README(주요 기능의 '네 계좌')·CLAUDE.md·decisions.md·ADR 0020 비용·ADR 0022 확정` | — | S |
 | **2 장중 확인**(10-31 사용자 결정으로 단계 1과 함께 — 구현됨, 배포 전) | 2-1 `feat(db): V18 — CHECKPOINT·MARKET·paper_checkpoints` + `BACKEND_TABLES`·표 수·`PaperStore.ready` | DB 시험·수집기 시험 | S |
 | | 2-2 `feat(collector): session 속도군·paper_watch_us` | 수집기 시험, 태스크 39 | M |

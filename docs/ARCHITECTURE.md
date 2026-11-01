@@ -21,7 +21,7 @@
 ## 2. 데이터 흐름
 
 ```
-외부 소스 ──▶ Collector ──▶ PostgreSQL ──▶ Backend ──▶ Frontend
+외부 소스 ──► Collector ──► PostgreSQL ──► Backend ──► Frontend
                   ▲                           │
                   └───── 수집 요청 (auto 모드) ─┘
 ```
@@ -51,7 +51,7 @@
 | `regime_log` | 국면 판정 라이브 기록 — 하루 한 건, 추가만. **백엔드가 씁니다**(ADR 0008) |
 | `users`·`user_sessions`·`audit_log`·`email_tokens`·`usage_counters` | 계정·DB 세션·감사 기록·메일 링크 토큰·하루 사용량 — **백엔드가 씁니다**(ADR 0010) |
 | `alert_rules`·`alert_events`·`alert_deliveries` | 알림 규칙·사건·알림함 — **백엔드가 씁니다**(ADR 0011). 수집기는 종목 규칙의 코드만 읽습니다 |
-| `paper_*` 23개 (V8, V9~V11·V13·V15·V16은 열 추가, V12 `paper_reviews`, V14 `paper_fill_confirmations`와 한국 책 열, V15 한국 보유의 since 봉 거래량, V16 한국 장부가 그날 보류한 대기 주문의 표시, V17 `paper_order_exec`와 시각 지정 체결 시점·체결 봉 열, V18 `paper_checkpoints`와 결정 종류 `CHECKPOINT`·시점 `MARKET`) | 🧪 모의 매매(운영자 전용) — 계좌·보유·재진입 금지·주문·체결·순자산, 결정 기록, 게이트 지표, 13F 트랙레코드·기관 선정, 프레임 판·제안, 메모, 설정, 작업 기록, 출발일 종가, Claude 사용량·추정 비용, 주간 복기, 체결 확정 조정(한국), 주문별 실행 감사·장중 확인 계획과 결과(미국 Claude 계좌2 실험 — ADR 0022). **백엔드가 씁니다**(ADR 0008, JDBC는 `store.PaperStore`에만). 수집기는 쓰지 않고(`collector/tests/test_table_ownership.py`가 검사), 수집 범위를 정하려고 보유·주문 종목만 읽습니다(장중 평가 `paper_positions` — ADR 0020, 계좌2 1분봉 `paper_orders`·`paper_positions`, 계좌2 장중 확인 감시 `paper_checkpoints` — ADR 0022) |
+| `paper_*` 23개 (V8, V9~V11·V13·V15·V16은 열 추가, V12 `paper_reviews`, V14 `paper_fill_confirmations`와 한국 책 열, V15 한국 보유의 since 봉 거래량, V16 한국 장부가 그날 보류한 대기 주문의 표시, V17 `paper_order_exec`와 시각 지정 체결 시점·체결 봉 열, V18 `paper_checkpoints`와 결정 종류 `CHECKPOINT`·시점 `MARKET`) | 모의 매매(운영자 전용) — 계좌·보유·재진입 금지·주문·체결·순자산, 결정 기록, 게이트 지표, 13F 트랙레코드·기관 선정, 프레임 판·제안, 메모, 설정, 작업 기록, 출발일 종가, Claude 사용량·추정 비용, 주간 복기, 체결 확정 조정(한국), 주문별 실행 감사·장중 확인 계획과 결과(미국 Claude 계좌2 실험 — ADR 0022). **백엔드가 씁니다**(ADR 0008, JDBC는 `store.PaperStore`에만). 수집기는 쓰지 않고(`collector/tests/test_table_ownership.py`가 검사), 수집 범위를 정하려고 보유·주문 종목만 읽습니다(장중 평가 `paper_positions` — ADR 0020, 계좌2 1분봉 `paper_orders`·`paper_positions`, 계좌2 장중 확인 감시 `paper_checkpoints` — ADR 0022) |
 
 **데이터셋 이름은 두 언어에 같은 문자열로 존재합니다** — `collector/app/catalog.py`와
 `backend/.../store/Datasets.java`. `DatasetsParityTest`가 실제로 `catalog.py`를
@@ -76,16 +76,16 @@ pandas DataFrame을 JSON 문자열로 저장하면 **dtype을 따로 실어야**
 인덱스로 **요청한 종목만** 읽습니다(`StoreRepository.readObservationsFor`).
 날짜별로 쌓이므로 공식 종가 이력도 덤으로 남습니다(400일 보존).
 
-🧪 모의 매매 미국 종목 재무(`us.fundamentals`, D28)도 같은 표에 쌓습니다 — entity = 티커, **obs_date = 공시일**, payload = 그날 처음
+모의 매매 미국 종목 재무(`us.fundamentals`, D28)도 같은 표에 쌓습니다 — entity = 티커, **obs_date = 공시일**, payload = 그날 처음
 낸(또는 값이 바뀐) XBRL 사실 묶음이고 지우지 않습니다(티커의 CIK가 다른 회사로 바뀌면 옛 CIK만의 행은 수집기가 지움). 백엔드는 패킷의 종목만 `obs_date ≤ 기준일`로 읽어
 (`StoreRepository.readObservationsUntil`) 그날 몰랐던 정정값이 섞이지 않게 합니다.
 
-🧪 모의 매매 사건 뉴스(`news_headline`, 2단계 B)도 같은 표입니다 — entity = 정규화한 제목의 해시, obs_date = 발행 시각의 UTC 날짜, payload =
+모의 매매 사건 뉴스(`news_headline`, 2단계 B)도 같은 표입니다 — entity = 정규화한 제목의 해시, obs_date = 발행 시각의 UTC 날짜, payload =
 제목·링크·출처·피드·시각이고, 수집기가 7일이 지난 행을 지웁니다(같은 제목은 날짜가 달라도 다시 넣지 않고, 다른 피드가 실으면 그 행의
 `feeds`에 피드 키만 더함 — 이 표를 쓰는 것은 수집기뿐). entity로 고를 수 없어 백엔드는
 결정 창이 덮는 날짜부터 읽고(`StoreRepository.readObservationsBetween`) 거르기는 `analytics.NewsEvents`가 합니다.
 
-🧪 모의 매매 어닝 서프라이즈(`us.earnings_surprise`, 2단계 C)도 같은 표입니다 — entity = 티커, **obs_date = 실제 발표 시각의 미국 동부
+모의 매매 어닝 서프라이즈(`us.earnings_surprise`, 2단계 C)도 같은 표입니다 — entity = 티커, **obs_date = 실제 발표 시각의 미국 동부
 날짜**, payload = 분기 말·EPS 실제치·컨센서스·서프라이즈율·통화·작은 추정치 표시·발표 시각이고, 수집기가 (날짜, 티커)마다 덮어쓰며 지우지
 않습니다(출처가 최근 4분기만 줘 쌓아야 8분기가 됨). 백엔드는 재무와 같이 패킷의 종목만 `obs_date ≤ 기준일`로 읽고
 (`readObservationsUntil`), 결정 시각 전 발표만 고르는 것은 `analytics.EarningsHistory`가 합니다.
@@ -130,7 +130,7 @@ pandas DataFrame을 JSON 문자열로 저장하면 **dtype을 따로 실어야**
 feature/<기능>/  기능 하나의 컨트롤러(HTTP 경계) + 서비스(저장본을 읽어 analytics에 넘기고
                  화면용 응답으로 조립). auth · macro · institution · insight · positioning ·
                  publicdata · status · snapshot(전체 원본 텍스트) · ai · toss · alert ·
-                 paper(🧪 모의 매매, 운영자 전용)
+                 paper(모의 매매, 운영자 전용)
 analytics/       스프링도 DB도 모릅니다. 입력은 숫자와 날짜, 출력도 숫자입니다.
 read/            읽기 정책(StoreReader) — 저장본이 오래됐으면 읽기 모드에 따라 수집을 요청하고 다시 읽음
 store/           저장소 접근 · 데이터셋 이름 · 신선도 (외부 호출 없음)
@@ -151,7 +151,7 @@ config/          설정 값(AppProperties) · 정기 작업 켜기 — 여러 �
 | `AdvancedIndicators` | 심화 매크로 지표 6종(실질금리·기대인플레·10Y−3M·30Y−3M·IG 스프레드·NFCI)의 정의와 해석 임계치(참고치) — 매크로 화면 |
 | `Regime` | 성장·신용 축 × 유동성 축 4국면 판정 |
 | `RegimeBacktest` | 국면 판정 성과 — 매주 목요일 그때 발표된 값으로 판정, 다음 거래일 종가 진입, 국면 시작 주·머문 주 vs 아무 때나, 표본 부족 판정 |
-| `PointInTime` | 발표 지연을 반영한 '그날 알 수 있었던' 값(look-ahead 방지) — 국면 판정 성과, 🧪 Claude 패킷 |
+| `PointInTime` | 발표 지연을 반영한 '그날 알 수 있었던' 값(look-ahead 방지) — 국면 판정 성과, Claude 패킷 |
 | `CotExtremes` | 극단 포지션 탐지 + 이후 수익률 (look-ahead 방지) |
 | `ForwardReturns` | 신호 이후 N주 수익률(그날 이후 첫 거래일 종가 → N주 뒤 첫 거래일 종가)과 요약 — COT 백테스트·국면 판정 성과가 같은 규칙으로 잼 |
 | `PortfolioRisk` | 변동성·VaR·ES·MDD·베타·추적오차·위험 기여 |
@@ -163,28 +163,28 @@ config/          설정 값(AppProperties) · 정기 작업 켜기 — 여러 �
 | `FxIndex` | 기준일 100 재기준화, 날짜 합집합 |
 | `SupplyConsensus` | 외국인·기관 상위 목록 교집합 |
 | `KrFundamentals` | 부채비율·증가율(적자 구간은 전환 여부)·영업이익률·ROE, 공식 시가총액과 합친 PER·PBR |
-| `Fundamentals` | 🧪 미국 종목 재무(SEC XBRL, D28) — 공시일 ≤ 기준일인 사실로 TTM(누계 차감)·성장률·마진·FCF·듀퐁 세 항·ROE, 필드마다 가장 최근 end의 개념(섞지 않음), USD가 아니면 금액 null |
+| `Fundamentals` | [모의] 미국 종목 재무(SEC XBRL, D28) — 공시일 ≤ 기준일인 사실로 TTM(누계 차감)·성장률·마진·FCF·듀퐁 세 항·ROE, 필드마다 가장 최근 end의 개념(섞지 않음), USD가 아니면 금액 null |
 | `InvestorFlows` | 투자자별 매매 누적(null은 건너뛰고 일수 보고)·연속 순매수 일수·기관 세부·외국인 보유율 변화·현물/선물 방향 동조 |
 | `Verification` | 교차 검증 판정 |
 | `FlowIntegrity` | 토스 투자자별 매매대금 정합성 (매수 합계 = 매도 합계, 기관 = 세부 7개 합) |
 | `FlowRecord` | 투자자별 매매 기록 한 건(값을 모르면 null) — 수급 계산의 입력 타입 |
 | `AlertRules` | 알림 사건 판정(ADR 0011) — 국면 전환 확정(3번 연속 기록)·연속 순매수 N일 도달·13F 신규 편입 |
-| `UsMarketCalendar` | 🧪 미국 거래일·세션 날짜(휴장일 규칙은 화면 `lib/marketCalendar.ts`와 같음)·13F 공시 기한 다음 거래일. 직접 부르는 곳은 미국 전용 파일·옛 시그니처 위임뿐이고(허용 목록 `UsMarketCalendarAllowListTest`), 시장 문맥 코드는 시장 묶음의 `TradingCalendar`를 쓴다 |
-| `TradingCalendar` | 🧪 거래일 달력의 시장 중립 모양(거래일 판정·개장/마감 순간 + 다음·직전·n거래일 뒤·구간 거래일 수·최근 세션 기본 메서드) — 미국 구현은 정적 함수를 그대로 부르는 `UsMarketCalendar.CALENDAR` |
-| `CalendarWindow` | 🧪 Claude 패킷 일정 섹션 `1b_calendar`의 창(기준일 다음 세션 … 10거래일)과 줄 고르기 — 창 밖·대상 밖 제외, '다음 일정 미정'·'자료 없음'·'일정 미공개' 구분(없는 일정을 만들지 않음) |
-| `EarningsHistory` | 🧪 Claude 패킷 재무 섹션 `8b_fundamentals` 줄마다의 어닝 서프라이즈 — 발표일(미국 동부) ≤ 기준일이고 결정 시각 전에 나온 최근 4분기(같은 분기는 가장 늦은 발표 하나), 추정치 없거나 0이면 서프라이즈율 null, 작은 추정치(\|추정치\| < 0.05) 표시, 자료 없음(null)과 0건([]) 구분 |
-| `NewsEvents` | 🧪 Claude 패킷 사건 섹션 `11b_events`의 창(직전 결정 이후 — 평일 24시간, 주말·휴장 뒤는 그 사이 전부)과 헤드라인 거르기 — 대상 티커(대문자 낱말)·매크로 키워드(낱말·구절), 최신순 상한, 줄마다 걸린 이유, '꺼짐'·'자료 없음'·'해당 사건 없음'·수집 전·창 끝 수집 공백(`STALE`) 구분 |
-| `DailySeries` | 🧪 일별 값 계열(원시 배열 + 이진 탐색 — 10년 × 수백 종목을 힙에 들기 위해). 기준일 뒤 값은 `until`로 자름 |
-| `PaperLedger` | 🧪 체결(수량 십진 내림·슬리피지)·평가·노출 |
-| `TrailingStop` | 🧪 최고가 갱신·스탑 판정·재진입 금지 |
-| `SplitDetector` | 🧪 수정주가로 다시 쓰인 체결일 종가로 분할·병합 비율 판정 |
-| `PaperStats` | 🧪 누적·CAGR·변동성·MDD·샤프·초과·베타(20거래일 미만이면 누적만) |
-| `GateIndicator` | 🧪 OS 원문의 매크로 게이트 단계(L0/L1/L2) — 지표만, 어느 계좌도 구속하지 않음 |
-| `TrackRecord13F` | 🧪 13F 공시일 다음 거래일 기준 복제 수익률·커버리지·자격·순위 |
-| `Signal13F` | 🧪 신호 풀 기관의 분기 비교 → 매수 후보·매도 신호, 두 기관 그룹 섞기·배분 |
-| `OrderValidator` | 🧪 Claude가 제안한 주문의 하드 규칙 — 제안은 모델, 집행 여부는 이 검사. 받는 체결 시점·이른 시점·근거 문구의 시점 이름과 금액 표기는 시장 묶음이 넘김(`OrderValidator.Market`, 미국 값이 기본) |
+| `UsMarketCalendar` | [모의] 미국 거래일·세션 날짜(휴장일 규칙은 화면 `lib/marketCalendar.ts`와 같음)·13F 공시 기한 다음 거래일. 직접 부르는 곳은 미국 전용 파일·옛 시그니처 위임뿐이고(허용 목록 `UsMarketCalendarAllowListTest`), 시장 문맥 코드는 시장 묶음의 `TradingCalendar`를 쓴다 |
+| `TradingCalendar` | [모의] 거래일 달력의 시장 중립 모양(거래일 판정·개장/마감 순간 + 다음·직전·n거래일 뒤·구간 거래일 수·최근 세션 기본 메서드) — 미국 구현은 정적 함수를 그대로 부르는 `UsMarketCalendar.CALENDAR` |
+| `CalendarWindow` | [모의] Claude 패킷 일정 섹션 `1b_calendar`의 창(기준일 다음 세션 … 10거래일)과 줄 고르기 — 창 밖·대상 밖 제외, '다음 일정 미정'·'자료 없음'·'일정 미공개' 구분(없는 일정을 만들지 않음) |
+| `EarningsHistory` | [모의] Claude 패킷 재무 섹션 `8b_fundamentals` 줄마다의 어닝 서프라이즈 — 발표일(미국 동부) ≤ 기준일이고 결정 시각 전에 나온 최근 4분기(같은 분기는 가장 늦은 발표 하나), 추정치 없거나 0이면 서프라이즈율 null, 작은 추정치(\|추정치\| < 0.05) 표시, 자료 없음(null)과 0건([]) 구분 |
+| `NewsEvents` | [모의] Claude 패킷 사건 섹션 `11b_events`의 창(직전 결정 이후 — 평일 24시간, 주말·휴장 뒤는 그 사이 전부)과 헤드라인 거르기 — 대상 티커(대문자 낱말)·매크로 키워드(낱말·구절), 최신순 상한, 줄마다 걸린 이유, '꺼짐'·'자료 없음'·'해당 사건 없음'·수집 전·창 끝 수집 공백(`STALE`) 구분 |
+| `DailySeries` | [모의] 일별 값 계열(원시 배열 + 이진 탐색 — 10년 × 수백 종목을 힙에 들기 위해). 기준일 뒤 값은 `until`로 자름 |
+| `PaperLedger` | [모의] 체결(수량 십진 내림·슬리피지)·평가·노출 |
+| `TrailingStop` | [모의] 최고가 갱신·스탑 판정·재진입 금지 |
+| `SplitDetector` | [모의] 수정주가로 다시 쓰인 체결일 종가로 분할·병합 비율 판정 |
+| `PaperStats` | [모의] 누적·CAGR·변동성·MDD·샤프·초과·베타(20거래일 미만이면 누적만) |
+| `GateIndicator` | [모의] OS 원문의 매크로 게이트 단계(L0/L1/L2) — 지표만, 어느 계좌도 구속하지 않음 |
+| `TrackRecord13F` | [모의] 13F 공시일 다음 거래일 기준 복제 수익률·커버리지·자격·순위 |
+| `Signal13F` | [모의] 신호 풀 기관의 분기 비교 → 매수 후보·매도 신호, 두 기관 그룹 섞기·배분 |
+| `OrderValidator` | [모의] Claude가 제안한 주문의 하드 규칙 — 제안은 모델, 집행 여부는 이 검사. 받는 체결 시점·이른 시점·근거 문구의 시점 이름과 금액 표기는 시장 묶음이 넘김(`OrderValidator.Market`, 미국 값이 기본) |
 
-🧪 = 모의 알고리즘 매매(운영자 전용, 이 저장소에만 — Local_macro_dashboard_v3에는 없음). 규칙의 근거는
+[모의] = 모의 알고리즘 매매(운영자 전용, 이 저장소에만 — Local_macro_dashboard_v3에는 없음). 규칙의 근거는
 [명세](specs/2026-10-24-paper-trading-spec.md)·[설계](specs/2026-10-24-paper-trading-design-plan.md)·[ADR 0018](adr/0018-paper-trading-guardrails.md)입니다. 한국 책은
 [2단계 명세](specs/2026-10-26-v2-kr-paper-spec.md)입니다.
 
@@ -199,16 +199,16 @@ config/          설정 값(AppProperties) · 정기 작업 켜기 — 여러 �
 ### 4-2. 정기 작업과 스케줄러 스레드
 
 백엔드 정기 작업은 저장본을 `StoreReader.quietly`로만 읽고(수집을 깨우지 않음), DB 유일 제약으로 같은 일을 두 번 해도 한 번만
-남깁니다([ADR 0008](adr/0008-backend-owned-tables-and-scheduled-jobs.md)). 🧪 모의 매매가 더한 작업은 여섯입니다.
+남깁니다([ADR 0008](adr/0008-backend-owned-tables-and-scheduled-jobs.md)). 모의 매매가 더한 작업은 여섯입니다.
 
 | 작업 | 주기 | 하는 일 |
 |---|---|---|
-| `PaperRiskJob` | 5분 | 새 관측치(`paper.quotes`, 1시간마다 수집)가 있을 때만 장부에 적용 — 대기 주문 체결·스탑·분할·평가. 시장마다 차례로(시장 목록 빈 `PaperMarkets`, 운영 목록 미국 → 한국 — 한국은 출발일·한국 계좌 전에는 쉼) 그 시장 관측치를 그 시장 책에만 적용하고 기록 이름은 시장 접두어 + `risk`. 한국(`paper.kr.quotes`)은 시가 체결 장부 — 기업행위 3중 조건·미처리 보류, 밤 잠정 종가로 감지한 스탑은 다음 거래일 시가 주문(체결 때 금융위 종가로 다시 판정), 최고가는 금융위 종가로만, 보류 5거래일 넘음은 실행 기록 `detail.alerts`. 한국은 새 관측치가 없는 주기에도 금융위 확정 조정만 돌림(금융위 값은 관측치와 따로 들어옴 — 확정 조정 행을 썼거나 순자산 줄이 확정이 됐거나 새 오류가 났을 때만 기록, `detail.confirmationOnly`). 🧪 미국 Claude 계좌2의 시각 지정 주문(`NEXT_OPEN`·`AT_1000`~`AT_1500` — [ADR 0022](adr/0022-us-claude-book2-timing.md))은 시간별 관측치로 체결하지 않고(`fillable` 제외) 분할·가격 갱신 뒤의 단계 2b(`UsTimedFills`)가 1분봉 저장본(`paper.bars.us`)의 고른 시각 창으로 T 순(같은 T는 시장 시각 순 — R2b로 늦게 푼 주문은 그 봉 시각·R3는 그 관측치 수집 시각, 같은 시각은 매도 → 매수; 매수 봉보다 뒤 시각에 R2b·R3로 판 매도 대금은 그 매수의 현금·순자산에 쓰지 않음)에 풀고, 만료는 2b 뒤(그 세션 1분봉으로 풀 수 있는 것을 다 푼 다음 — 세션이 끝난 관측치면 관측치 전에 받은 1분봉 저장본의 완성된 봉도 씀, 목표 세션 가격 밖으로는 체결하지 않음)에 함. 그런 주문이 남은 관측치는 1분봉 저장본이 그 관측치 수집 시각 뒤에 들어오거나 상한(`claude2.barsWaitMinutes`)이 지날 때까지 그 계좌만 처리를 미룸(멱등 키 그대로 — 다음 점검이 다시 봄, 처음 미룸만 `waiting`으로 기록하고 같은 관측치를 다시 미루기만 한 주기는 기록하지 않음, 실패 기억에 넣지 않음). 2b 뒤에도 기준 시각이 지났는데 풀리지 않은 시각 지정 주문의 종목은 그 관측치의 스탑에서 빼고 다음 관측치에서 그 주문을 먼저 푼 뒤 그 관측치 가격으로 다시 봄(notes '스탑 판정을 다음 관측치로 미룸' — 미룬 관측치의 트리거는 이어 가지 않음) |
-| `PaperDecisionJob` | 10분 폴링 | 미국 세션 다음 날 아침(KST)에 그 거래일 결정을 한 번 — 관측치 처리 → 게이트 지표 → (재선정일이면) 기관 선정 → 규칙 계좌 → Claude 계좌. 두 계좌의 오류는 따로 잡음. 시장마다 차례로(시장 목록 빈 `PaperMarkets`, 운영 목록 미국 → 한국 — 한국은 출발일·한국 계좌 전에는 쉼) 그 시장 달력·결정 시각·관측치·책으로 돌고, 게이트·13F 선정·13F 규칙 계좌는 미국 전용 단계, 한국 규칙 계좌는 수급 규칙(`KrRuleBookService` — 재선정일·따라잡기만 매수, 입력은 결정 행에 동결, 기한 D+1 01:00이 지나면 그 세션 `NO_TRADE` 행), 한국은 '그날 종가 관측치' 대신 자료 게이트 ①~⑥(`KrDecisionGates` — 미달이면 `DATA_NOT_READY`로 기다림, 게이트 ③과 결정이 같은 입력 읽기, 수동 결정도 결정 창·게이트 안에서만), 기록 이름은 시장 접두어 + `decision`. 한국 Claude 계좌는 그 실행의 관측치·읽은 순간(그 실행의 지금)으로 한국 패킷(`KrPacketBuilder`)·한국 스키마를 쓰고 같은 관측치로 검증하며, 기한이 지나면 부르지 않고 그 세션 `SKIPPED` 행(사유·기한 전 마지막 판정 — 작업 기록 `claudeGates`)을 남김. 한국 계좌가 모두 시작 전이면 정기 결정 대신 출발(`KrStartPipeline`) — 출발일 S 이후 세션의 결정 창(S 22:30 ~ S+1 01:00, 미루면 다음 KR 거래일 창)에서 자료 게이트를 통과하면 규칙 계좌(재선정과 같은 계산)·Claude 계좌(S 밤 판 출발 패킷 — 호출 대기 한도는 기한 안으로)·벤치마크 두 계좌의 다음 거래일 시가(`NEXT_OPEN`) 주문을 네 계좌 한 트랜잭션으로 씀(`STARTED`; 기한을 넘기거나 Claude가 상한·재시도 1회 뒤 오류·거절이면, Claude 응답 뒤 쓰기가 실패해도 어느 계좌에도 쓰지 않고 `START_POSTPONED` — 다음 KR 거래일). Claude 호출의 하루 상한은 두 책 공통이고 수동 호출은 정기 작업 몫(`apiScheduledReserve`)을 남긴 문턱까지. 한국의 미룸·출발 오류 횟수·기한 전 마지막 판정·기한 지남 기록 한 번은 그 세션 작업 기록에서 다시 읽어 재기동해도 같고(기다림은 그 세션 한 줄로 기록 — 이어지면 그 줄을 늘림), 장부의 그날 보류는 주문 행 표시(V16). 🧪 미국은 규칙 → Claude 계좌1 → **Claude 계좌2**(ADR 0022 — 설정 `claude2.enabled`일 때만, 같은 잠금·같은 설정 판, 오류 횟수는 (시장, 거래일, 계좌2)로 따로). 계좌2는 계좌1이 기다리는 확정 종가 관측치에 더해 계좌2 장부가 그 관측치를 처리했어야 하고(1분봉 기다림 풀림 — 기한 뒤에도, 단 개장 전 컷오프가 지났으면 기다리지 않고 그 세션 `SKIPPED`; 계좌2만 남아 같은 관측치로 기다리기만 한 주기는 기록하지 않음 — 결과 `BARS_WAITING`(출발의 관측치 사슬 기다림도 같고, 관측치 저장본이 없는 실행은 '없음'끼리 같은 관측치), 그 주기 장부에 처리한 책·오류·알림이 있으면 기록하고 계좌2 장부가 그 관측치에서 오류로 보류됐으면 1분봉 기다림이 아니라 그 보류로 적음), 두 계좌가 한 실행에서 결정하면 시장 입력을 한 번 읽어 함께 씀(입력 동결 — 계좌 비의존 일곱 섹션은 바이트까지 같음, 결정 행 `sharedWith`·`marketSectionsSha256`). 따로 도는 실행(재시도·수동·계좌1이 앞선 실행에서 결정함)은 같은 거래일 계좌1 정기 결정 행의 일곱 섹션을 가져옴. 목표 세션 09:00 ET(개장 전 컷오프, `America/New_York`)를 넘기면 그 세션 계좌2만 `SKIPPED`, 결정 주기 호출 상한 `claude2.maxCallsPerCycle`(같은 기준 거래일의 계좌2 정기·출발·장중 확인 행 — 1 + 재시도). 단계 2(설정 `claude2.checkpoints`)를 켠 아침 결정의 응답 `checkpoint`(다음 세션의 확인 시각·자료·감시 목록)는 같은 트랜잭션에서 `paper_checkpoints`에 `PLANNED`로 쓰고(요청이 규칙에 맞지 않으면 `SKIPPED CHECKPOINT_INVALID`, 같은 세션을 다음 결정이 요청 없이 대신하면 `SKIPPED SUPERSEDED`). 계좌2가 시작 전이면 정기 결정 대신 앞으로 체결 출발(`INITIAL` — 정기와 같은 패킷, 그 거래일 창에 한 번, 해 봤는지는 작업 기록 `claude2.startTried`; 그 실행의 관측치 사슬 고리(`exec-audit`의 `quotesChain`)가 아직 없으면 부르지 않고 다음 주기 — 시도로 세지 않음, 수동 출발은 400; 성공하면 같은 트랜잭션에서 운용·출발일 S·S 순자산 줄, 실패하면 아무것도 쓰지 않고 다음 창) |
+| `PaperRiskJob` | 5분 | 새 관측치(`paper.quotes`, 1시간마다 수집)가 있을 때만 장부에 적용 — 대기 주문 체결·스탑·분할·평가. 시장마다 차례로(시장 목록 빈 `PaperMarkets`, 운영 목록 미국 → 한국 — 한국은 출발일·한국 계좌 전에는 쉼) 그 시장 관측치를 그 시장 책에만 적용하고 기록 이름은 시장 접두어 + `risk`. 한국(`paper.kr.quotes`)은 시가 체결 장부 — 기업행위 3중 조건·미처리 보류, 밤 잠정 종가로 감지한 스탑은 다음 거래일 시가 주문(체결 때 금융위 종가로 다시 판정), 최고가는 금융위 종가로만, 보류 5거래일 넘음은 실행 기록 `detail.alerts`. 한국은 새 관측치가 없는 주기에도 금융위 확정 조정만 돌림(금융위 값은 관측치와 따로 들어옴 — 확정 조정 행을 썼거나 순자산 줄이 확정이 됐거나 새 오류가 났을 때만 기록, `detail.confirmationOnly`). 미국 Claude 계좌2의 시각 지정 주문(`NEXT_OPEN`·`AT_1000`~`AT_1500` — [ADR 0022](adr/0022-us-claude-book2-timing.md))은 시간별 관측치로 체결하지 않고(`fillable` 제외) 분할·가격 갱신 뒤의 단계 2b(`UsTimedFills`)가 1분봉 저장본(`paper.bars.us`)의 고른 시각 창으로 T 순(같은 T는 시장 시각 순 — R2b로 늦게 푼 주문은 그 봉 시각·R3는 그 관측치 수집 시각, 같은 시각은 매도 → 매수; 매수 봉보다 뒤 시각에 R2b·R3로 판 매도 대금은 그 매수의 현금·순자산에 쓰지 않음)에 풀고, 만료는 2b 뒤(그 세션 1분봉으로 풀 수 있는 것을 다 푼 다음 — 세션이 끝난 관측치면 관측치 전에 받은 1분봉 저장본의 완성된 봉도 씀, 목표 세션 가격 밖으로는 체결하지 않음)에 함. 그런 주문이 남은 관측치는 1분봉 저장본이 그 관측치 수집 시각 뒤에 들어오거나 상한(`claude2.barsWaitMinutes`)이 지날 때까지 그 계좌만 처리를 미룸(멱등 키 그대로 — 다음 점검이 다시 봄, 처음 미룸만 `waiting`으로 기록하고 같은 관측치를 다시 미루기만 한 주기는 기록하지 않음, 실패 기억에 넣지 않음). 2b 뒤에도 기준 시각이 지났는데 풀리지 않은 시각 지정 주문의 종목은 그 관측치의 스탑에서 빼고 다음 관측치에서 그 주문을 먼저 푼 뒤 그 관측치 가격으로 다시 봄(notes '스탑 판정을 다음 관측치로 미룸' — 미룬 관측치의 트리거는 이어 가지 않음) |
+| `PaperDecisionJob` | 10분 폴링 | 미국 세션 다음 날 아침(KST)에 그 거래일 결정을 한 번 — 관측치 처리 → 게이트 지표 → (재선정일이면) 기관 선정 → 규칙 계좌 → Claude 계좌. 두 계좌의 오류는 따로 잡음. 시장마다 차례로(시장 목록 빈 `PaperMarkets`, 운영 목록 미국 → 한국 — 한국은 출발일·한국 계좌 전에는 쉼) 그 시장 달력·결정 시각·관측치·책으로 돌고, 게이트·13F 선정·13F 규칙 계좌는 미국 전용 단계, 한국 규칙 계좌는 수급 규칙(`KrRuleBookService` — 재선정일·따라잡기만 매수, 입력은 결정 행에 동결, 기한 D+1 01:00이 지나면 그 세션 `NO_TRADE` 행), 한국은 '그날 종가 관측치' 대신 자료 게이트 ①~⑥(`KrDecisionGates` — 미달이면 `DATA_NOT_READY`로 기다림, 게이트 ③과 결정이 같은 입력 읽기, 수동 결정도 결정 창·게이트 안에서만), 기록 이름은 시장 접두어 + `decision`. 한국 Claude 계좌는 그 실행의 관측치·읽은 순간(그 실행의 지금)으로 한국 패킷(`KrPacketBuilder`)·한국 스키마를 쓰고 같은 관측치로 검증하며, 기한이 지나면 부르지 않고 그 세션 `SKIPPED` 행(사유·기한 전 마지막 판정 — 작업 기록 `claudeGates`)을 남김. 한국 계좌가 모두 시작 전이면 정기 결정 대신 출발(`KrStartPipeline`) — 출발일 S 이후 세션의 결정 창(S 22:30 ~ S+1 01:00, 미루면 다음 KR 거래일 창)에서 자료 게이트를 통과하면 규칙 계좌(재선정과 같은 계산)·Claude 계좌(S 밤 판 출발 패킷 — 호출 대기 한도는 기한 안으로)·벤치마크 두 계좌의 다음 거래일 시가(`NEXT_OPEN`) 주문을 네 계좌 한 트랜잭션으로 씀(`STARTED`; 기한을 넘기거나 Claude가 상한·재시도 1회 뒤 오류·거절이면, Claude 응답 뒤 쓰기가 실패해도 어느 계좌에도 쓰지 않고 `START_POSTPONED` — 다음 KR 거래일). Claude 호출의 하루 상한은 두 책 공통이고 수동 호출은 정기 작업 몫(`apiScheduledReserve`)을 남긴 문턱까지. 한국의 미룸·출발 오류 횟수·기한 전 마지막 판정·기한 지남 기록 한 번은 그 세션 작업 기록에서 다시 읽어 재기동해도 같고(기다림은 그 세션 한 줄로 기록 — 이어지면 그 줄을 늘림), 장부의 그날 보류는 주문 행 표시(V16). 미국은 규칙 → Claude 계좌1 → **Claude 계좌2**(ADR 0022 — 설정 `claude2.enabled`일 때만, 같은 잠금·같은 설정 판, 오류 횟수는 (시장, 거래일, 계좌2)로 따로). 계좌2는 계좌1이 기다리는 확정 종가 관측치에 더해 계좌2 장부가 그 관측치를 처리했어야 하고(1분봉 기다림 풀림 — 기한 뒤에도, 단 개장 전 컷오프가 지났으면 기다리지 않고 그 세션 `SKIPPED`; 계좌2만 남아 같은 관측치로 기다리기만 한 주기는 기록하지 않음 — 결과 `BARS_WAITING`(출발의 관측치 사슬 기다림도 같고, 관측치 저장본이 없는 실행은 '없음'끼리 같은 관측치), 그 주기 장부에 처리한 책·오류·알림이 있으면 기록하고 계좌2 장부가 그 관측치에서 오류로 보류됐으면 1분봉 기다림이 아니라 그 보류로 적음), 두 계좌가 한 실행에서 결정하면 시장 입력을 한 번 읽어 함께 씀(입력 동결 — 계좌 비의존 일곱 섹션은 바이트까지 같음, 결정 행 `sharedWith`·`marketSectionsSha256`). 따로 도는 실행(재시도·수동·계좌1이 앞선 실행에서 결정함)은 같은 거래일 계좌1 정기 결정 행의 일곱 섹션을 가져옴. 목표 세션 09:00 ET(개장 전 컷오프, `America/New_York`)를 넘기면 그 세션 계좌2만 `SKIPPED`, 결정 주기 호출 상한 `claude2.maxCallsPerCycle`(같은 기준 거래일의 계좌2 정기·출발·장중 확인 행 — 1 + 재시도). 단계 2(설정 `claude2.checkpoints`)를 켠 아침 결정의 응답 `checkpoint`(다음 세션의 확인 시각·자료·감시 목록)는 같은 트랜잭션에서 `paper_checkpoints`에 `PLANNED`로 쓰고(요청이 규칙에 맞지 않으면 `SKIPPED CHECKPOINT_INVALID`, 같은 세션을 다음 결정이 요청 없이 대신하면 `SKIPPED SUPERSEDED`). 계좌2가 시작 전이면 정기 결정 대신 앞으로 체결 출발(`INITIAL` — 정기와 같은 패킷, 그 거래일 창에 한 번, 해 봤는지는 작업 기록 `claude2.startTried`; 그 실행의 관측치 사슬 고리(`exec-audit`의 `quotesChain`)가 아직 없으면 부르지 않고 다음 주기 — 시도로 세지 않음, 수동 출발은 400; 성공하면 같은 트랜잭션에서 운용·출발일 S·S 순자산 줄, 실패하면 아무것도 쓰지 않고 다음 창) |
 | `PaperAdminService` 출발일 종가 | 30분 | 출발일 확정 종가를 `paper_start_prices`에 한 번 얼림 — 배당락 뒤 수정주가로 낮아진 값이 사후 체결에 쓰이지 않게 |
 | `PaperReviewJob` | 30분 | 그 시장의 여는 시각(미국 토요일 09:00 · 한국 토요일 22:30 KST — 시장 코드 상수) 뒤, 미국은 그 주 확정 종가를 장부가 반영하면, 한국(확정 조정 시장)은 금요일 잠정 종가 순자산 줄이 있으면 그 주 복기를 한 번(`paper_reviews`, Claude 1회 — 하루 상한을 결정·제안과 같이 셈, 수동 실행은 상한 − `apiScheduledReserve`까지, 제안은 PENDING만). 거절 주문의 가정 진입은 시장 규칙 — 미국 다음 세션 종가, 한국 다음 세션 시가(없으면 그 세션 종가로 근사 `isProxy`, 사용자 결정 v5). 수동 실행과 한 잠금(정기는 기다리지 않음). 시장마다 차례로 그 시장 달력의 주·여는 시각·Claude 책으로 돌고 기록 이름은 시장 접두어 + `review`(복기 행은 시장마다 한 주 한 행 — V14 기본키 (market, week_ending)) |
-| `PaperExecutionAuditJob` | 5분 | 🧪 미국 Claude 계좌2 실험의 측정([ADR 0022](adr/0022-us-claude-book2-timing.md) — 단계 0부터) — 미국 Claude 계좌(계좌1·계좌2) 결정 주문 가운데 목표 세션(기준 거래일 다음 거래일)이 최근 8일 안인 것마다, 시가(09:30 ET)·매시(10:00~15:00 ET)·종가·계좌1식(실제 체결)으로 체결했다면의 원가격(반사실)과 1분봉 저장본의 지연을 `paper_order_exec`에 적음(1분봉 `paper.bars.us`·관측치 `paper.quotes`를 조용히 읽기만, 시각은 그 세션 날짜의 뉴욕 시각). 시점마다 처음 구한 값을 고치지 않고, 못 구한 시점은 null로 두었다가 다음 저장본에서 다시 봄. 장부 잠금을 잡지 않고 장부 표는 읽기만, 쓰기는 자기 트랜잭션 하나. 새로 쓴 것이 있을 때·오류일 때만 기록(`exec-audit` — 미국 개요의 작업 기록 10건 셈에서는 빼고 상태 응답에는 실림). 계좌2 주문의 계좌1식 기준(`NEXT_OBSERVATION`)은 체결 조건 ①②④를 통과한 **첫** 관측치 저장본의 종가를 그것이 첫째임을 증명한 때만 적음 — 계좌2 행이 있고 `claude2.enabled`가 켜졌거나 계좌2가 출발했을 때(배포만으로는 기록이 늘지 않음) 새 저장본을 처음 볼 때마다 작업 기록에 고리(`quotesChain` — 앞 저장본·수집기 실행 기록 `collector_task_runs`의 사이 `paper_quotes` 실행 수)를 남기고, 주문 생성 이하 고리가 모두 '사이 실행 한 번'일 때만(아니면 끝까지 null). 사슬 계산이 실패하면 그 실행은 계좌2 기준만 보지 않고 감사는 그대로(기록 `chainError`). 늦게 풂(`late_resolved`)은 체결 행으로 셈(대체 칸이거나 장부 반영이 T + 71분 뒤 — T 창을 보지 못한 첫 관측치의 다음 관측치에서 푼 것은 늦음 아님). 시장을 돌지 않는 미국 전용 작업 |
-| `PaperCheckpointJob` | 60초 | 🧪 미국 Claude 계좌2 장중 확인(단계 2 — [ADR 0022](adr/0022-us-claude-book2-timing.md), 설정 `claude2.checkpoints`) — `PLANNED` 행마다 확인 시각 T(그 세션 날짜의 뉴욕 시각) + 2분 ~ + 20분 창에서 Claude를 **한 번** 부름(재시도 없음 — 결정 행 kind `CHECKPOINT`, 기준 거래일 = 아침 결정의 d, `UNIQUE`가 세션당 한 번을 강제). `MINUTE`는 T 뒤에 받은 그 확인의 감시 저장본(`paper.watch.us`)이, `HOURLY`는 그 세션의 시간별 관측치가 있어야 부르고(창 끝까지 없으면 `EXPIRED`), 창을 놓치면 `EXPIRED WINDOW_MISSED`(나중에 대신 부르지 않음), 결정 주기·하루 상한이면 바로 `EXPIRED`, 계좌2가 운용 중이 아니거나 T가 마감 30분 전 뒤·임시 휴장이면 `SKIPPED`. 자기 잠금(결정 작업의 잠금을 쓰지 않음), 저장본은 `StoreReader.quietly`로만, 호출은 장부 잠금 밖·쓰기(확인 결정 행·REPLACE의 대기 주문 대신함과 새 주문·행 `DONE`)는 장부 잠금 안 한 트랜잭션. REPLACE는 기준 시각이 아직 오지 않은 대기 주문만 대신하고 새 주문은 T가 지난 대기 주문을 체결로 본 예상 상태로 검증(장중 시장가 `MARKET` 포함). 행 상태를 바꾼 주기·오류만 기록(`checkpoint`). 수동 실행 경로 없음 |
+| `PaperExecutionAuditJob` | 5분 | 미국 Claude 계좌2 실험의 측정([ADR 0022](adr/0022-us-claude-book2-timing.md) — 단계 0부터) — 미국 Claude 계좌(계좌1·계좌2) 결정 주문 가운데 목표 세션(기준 거래일 다음 거래일)이 최근 8일 안인 것마다, 시가(09:30 ET)·매시(10:00~15:00 ET)·종가·계좌1식(실제 체결)으로 체결했다면의 원가격(반사실)과 1분봉 저장본의 지연을 `paper_order_exec`에 적음(1분봉 `paper.bars.us`·관측치 `paper.quotes`를 조용히 읽기만, 시각은 그 세션 날짜의 뉴욕 시각). 시점마다 처음 구한 값을 고치지 않고, 못 구한 시점은 null로 두었다가 다음 저장본에서 다시 봄. 장부 잠금을 잡지 않고 장부 표는 읽기만, 쓰기는 자기 트랜잭션 하나. 새로 쓴 것이 있을 때·오류일 때만 기록(`exec-audit` — 미국 개요의 작업 기록 10건 셈에서는 빼고 상태 응답에는 실림). 계좌2 주문의 계좌1식 기준(`NEXT_OBSERVATION`)은 체결 조건 ①②④를 통과한 **첫** 관측치 저장본의 종가를 그것이 첫째임을 증명한 때만 적음 — 계좌2 행이 있고 `claude2.enabled`가 켜졌거나 계좌2가 출발했을 때(배포만으로는 기록이 늘지 않음) 새 저장본을 처음 볼 때마다 작업 기록에 고리(`quotesChain` — 앞 저장본·수집기 실행 기록 `collector_task_runs`의 사이 `paper_quotes` 실행 수)를 남기고, 주문 생성 이하 고리가 모두 '사이 실행 한 번'일 때만(아니면 끝까지 null). 사슬 계산이 실패하면 그 실행은 계좌2 기준만 보지 않고 감사는 그대로(기록 `chainError`). 늦게 풂(`late_resolved`)은 체결 행으로 셈(대체 칸이거나 장부 반영이 T + 71분 뒤 — T 창을 보지 못한 첫 관측치의 다음 관측치에서 푼 것은 늦음 아님). 시장을 돌지 않는 미국 전용 작업 |
+| `PaperCheckpointJob` | 60초 | 미국 Claude 계좌2 장중 확인(단계 2 — [ADR 0022](adr/0022-us-claude-book2-timing.md), 설정 `claude2.checkpoints`) — `PLANNED` 행마다 확인 시각 T(그 세션 날짜의 뉴욕 시각) + 2분 ~ + 20분 창에서 Claude를 **한 번** 부름(재시도 없음 — 결정 행 kind `CHECKPOINT`, 기준 거래일 = 아침 결정의 d, `UNIQUE`가 세션당 한 번을 강제). `MINUTE`는 T 뒤에 받은 그 확인의 감시 저장본(`paper.watch.us`)이, `HOURLY`는 그 세션의 시간별 관측치가 있어야 부르고(창 끝까지 없으면 `EXPIRED`), 창을 놓치면 `EXPIRED WINDOW_MISSED`(나중에 대신 부르지 않음), 결정 주기·하루 상한이면 바로 `EXPIRED`, 계좌2가 운용 중이 아니거나 T가 마감 30분 전 뒤·임시 휴장이면 `SKIPPED`. 자기 잠금(결정 작업의 잠금을 쓰지 않음), 저장본은 `StoreReader.quietly`로만, 호출은 장부 잠금 밖·쓰기(확인 결정 행·REPLACE의 대기 주문 대신함과 새 주문·행 `DONE`)는 장부 잠금 안 한 트랜잭션. REPLACE는 기준 시각이 아직 오지 않은 대기 주문만 대신하고 새 주문은 T가 지난 대기 주문을 체결로 본 예상 상태로 검증(장중 시장가 `MARKET` 포함). 행 상태를 바꾼 주기·오류만 기록(`checkpoint`). 수동 실행 경로 없음 |
 
 - **스레드 5개**(`application.yml`의 `spring.task.scheduling.pool.size`, Spring Boot 기본 1개 — 4에서 5는 계좌2 단계 2의 장중 확인 작업 때문). 결정 작업이 Claude를 부르는 몇 분
   (한도 `claude-timeout-seconds` 300초) 동안 리스크 점검·알림·국면 기록이 그 뒤에 줄을 섰기 때문입니다. 주간 복기도 Claude를 부르는
@@ -217,9 +217,9 @@ config/          설정 값(AppProperties) · 정기 작업 켜기 — 여러 �
   실행 감사 작업은 DB 읽기·쓰기만이라 짧고[추정 — 단계 0에서 작업 기록의 시작·끝 시각으로 잼], 길면 리스크 점검 뒤에 붙이는 판으로 바꿉니다.
 - 같은 작업은 fixedDelay라 스스로 겹치지 않고, 결정과 리스크 점검은 장부 잠금으로 줄을 섭니다. Claude 호출은 장부 잠금 밖에서
   하고, 응답을 받은 뒤 잠금 안에서 계좌가 일시정지·리셋됐는지 다시 봅니다. 정기 결정은 결정 잠금을 `tryLock`으로만 잡아, 수동
-  결정이 쥐고 있으면 그 주기를 건너뜁니다. 🧪 계좌2 호출도 같은 실행의 미국 차례 안이라 길면 그 주기의 한국 차례가 늦습니다 — 겨울(EST)에는 계좌2 컷오프
+  결정이 쥐고 있으면 그 주기를 건너뜁니다. 계좌2 호출도 같은 실행의 미국 차례 안이라 길면 그 주기의 한국 차례가 늦습니다 — 겨울(EST)에는 계좌2 컷오프
   23:00 KST가 한국 결정 창(22:30~)과 겹칠 수 있어 그 시간에 계좌2를 켜거나 '계좌2 시작'을 누르지 않습니다(ADR 0022 '결과').
-- `PAPER_ENABLED=false`(`dashboard.paper.enabled`)면 여섯 작업이 쉽니다. 화면의 수동 실행은 그대로 돕니다. 🧪 Claude 계좌2(ADR 0022 단계 1)는 새 작업 없이
+- `PAPER_ENABLED=false`(`dashboard.paper.enabled`)면 여섯 작업이 쉽니다. 화면의 수동 실행은 그대로 돕니다. Claude 계좌2(ADR 0022 단계 1)는 새 작업 없이
   결정 작업·리스크 점검 안에서 돌고, 단계 2의 장중 확인만 따로 작업(`PaperCheckpointJob`)입니다.
   기동할 때 `PaperStartupLog`가 이 스택에서 정기 작업이 도는지 한 줄로 남기고(`make logs S=backend`), 로그인 없는 로컬에서 돌면 경고합니다 —
   장부는 한 곳에만 두기 때문입니다(ADR 0019·0020). 기동을 막지는 않습니다.
@@ -243,7 +243,7 @@ lib/                        표시 규칙(서식·메뉴·검색·테마·화면
   `endpoints.paper.market(m)`(한국은 `?market=KR`)에서 고릅니다. 한국에만 있는 칸(잠정·확정과 확정 조정, 묶인 평가의 출처, 수집 상태, 노출 맞춘
   참고선)은 `lib/paperKr.ts`가 화면 모델로 바꿉니다. 미국 응답은 글자 그대로(고정본 `paper-overview-us.json`·`paper-status-us.json` — 장부 응답이고, 개요 경로가 덧붙이는 지금 값
   칸은 `PaperOverviewServiceTest`가 장부 부분 불변과 함께 지킴, [명세 2026-10-31](specs/2026-10-31-paper-live-overview.md))라 미국 화면은
-  기본값(US)으로 예전과 같고, 프레임·설정은 두 시장이 한 판·한 행을 함께 쓰는 공용 화면입니다. 🧪 미국 Claude 계좌2(ADR 0022)는 kind가 계좌1과 같은
+  기본값(US)으로 예전과 같고, 프레임·설정은 두 시장이 한 판·한 행을 함께 쓰는 공용 화면입니다. 미국 Claude 계좌2(ADR 0022)는 kind가 계좌1과 같은
   `CLAUDE`라 화면은 kind가 아니라 계좌 소개(`ACCOUNT_PROFILES`의 `timed`·시작 전·결정 안내)로 가르고, Claude 계좌를 하나로 읽는 곳(시작 카드·홈 히어로·
   사용량)은 기본 Claude 계좌(`primaryClaudeBook` — 계좌1)를 고릅니다. 홈 히어로 끝 줄은 계좌2가 다른 날(앞으로 체결로 늦게) 출발했으면
   그 출발을 덧붙입니다(계좌2 행의 수익률은 계좌2 자기 출발 대비). 상태 응답의 계좌2 묶음은 시작 전에는 출발 카드, 출발 뒤에는 개요 '장부 관측치'의
@@ -383,14 +383,14 @@ UTC라서 `LocalDate.now()`를 그대로 쓰면 한국 시각 00:00~09:00 사이
 - 수집기: `ZoneInfo("Asia/Seoul")`
 - 화면: 표시 시각은 백엔드가 KST 문자열로 내려보낸 것을 그대로 씁니다
 
-거래소 개장 여부는 화면이 계산합니다(`lib/marketCalendar.ts`). 🧪 모의 매매 장부가 세는 미국 거래일만 백엔드
+거래소 개장 여부는 화면이 계산합니다(`lib/marketCalendar.ts`). 모의 매매 장부가 세는 미국 거래일만 백엔드
 `analytics.UsMarketCalendar`가 같은 휴장일 규칙으로 셉니다. 공휴일 API를 쓰지
 않는 이유는 [PRINCIPLES.md](PRINCIPLES.md)를 보세요 — **공휴일과 거래소 휴장일은
 다릅니다.**
 
 ## 9. 배포 (AWS 개인용 서버)
 
-🧪 모의 매매가 미국 장·결정 시각에 돌아야 해서 운영본은 AWS 서울의 EC2 한 대에 둡니다([ADR 0019](adr/0019-aws-personal-deployment.md)).
+모의 매매가 미국 장·결정 시각에 돌아야 해서 운영본은 AWS 서울의 EC2 한 대에 둡니다([ADR 0019](adr/0019-aws-personal-deployment.md)).
 서버는 매일 KST 21:55에 켜지고 08:00(토 10:00)에 꺼집니다 — EventBridge Scheduler가 EC2 API를 바로 부릅니다.
 로컬과 같은 compose 스택에 덧붙임 `compose.aws.yml`(앞단 caddy 추가, 로그인·쿠키·출처 고정)을 얹은 것입니다.
 
@@ -402,11 +402,11 @@ UTC라서 `LocalDate.now()`를 그대로 쓰면 한국 시각 00:00~09:00 사이
     ║ SSM 세션 — 암호화(인바운드 없음)                 │ HTTP :8301 — 보안 그룹은 CloudFront 원본용 prefix list만
     ▼                                                 ▼
 [EC2 my-macro-app · t4g.medium · 인바운드는 CloudFront → 8301 한 줄 · 나머지 포트는 127.0.0.1]
- SSM 에이전트 ──▶ 127.0.0.1:8201 caddy :8301 ◀─(비밀 헤더 확인 → 잠금화면 gate:8100 → /api/admin 닫음)
-                                 caddy ─┬─ /api/* ──▶ backend:8080 ──JDBC──▶ postgres:5432 ◀──적재── collector:8000
-                                       └─ 나머지 ──▶ frontend:3000
- 나가는 통신(공인 IPv4): collector ──▶ 외부 시장 데이터 · backend ──▶ Anthropic API
- cron 06:10 KST: make backup ──▶ S3 my-macro-backups-…/db/ (60일 만료)
+ SSM 에이전트 ──► 127.0.0.1:8201 caddy :8301 ◄─(비밀 헤더 확인 → 잠금화면 gate:8100 → /api/admin 닫음)
+                                 caddy ─┬─ /api/* ──► backend:8080 ──JDBC──► postgres:5432 ◄──적재── collector:8000
+                                       └─ 나머지 ──► frontend:3000
+ 나가는 통신(공인 IPv4): collector ──► 외부 시장 데이터 · backend ──► Anthropic API
+ cron 06:10 KST: make backup ──► S3 my-macro-backups-…/db/ (60일 만료)
 
 [EventBridge Scheduler, Asia/Seoul] 21:55 ec2:StartInstances · 08:00(일~금)·10:00(토) ec2:StopInstances
 ```

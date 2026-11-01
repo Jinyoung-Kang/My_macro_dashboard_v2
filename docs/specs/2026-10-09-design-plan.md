@@ -230,7 +230,7 @@ config/WebConfig   SessionFilter가 feature/auth의 세션 조회·접근 정책
 
 **화면**
 
-- `/regime`에 "📈 판정 성과" 카드를 둡니다.
+- `/regime`에 "판정 성과" 카드를 둡니다.
 - 표 모양은 COT의 `ExtremesPanel`과 같게 합니다. 사용자가 이미 아는 읽는 법입니다.
 - 라이브 기록은 최근 순 표로 보여 줍니다.
 
@@ -301,7 +301,7 @@ config/WebConfig   SessionFilter가 feature/auth의 세션 조회·접근 정책
 | `/account` | 내 정보, 비밀번호 변경, 세션 목록과 "모두 로그아웃", 계정 삭제 |
 | `/admin/users` | `OWNER`만. 사용자 목록, 등급·역할 지정, 감사 기록 |
 
-- 사이드바에는 등급이 모자란 메뉴에 🔒 표시를 붙입니다. 누르면 안내 카드가 뜹니다.
+- 사이드바에는 등급이 모자란 메뉴에 자물쇠 표시를 붙입니다. 누르면 안내 카드가 뜹니다.
 - 판정은 `/api/auth/session`이 내려주는 `{user, entitlements}`로 합니다. 화면이 따로 계산하지 않습니다.
 - ADR 0004에 맞춰 경로는 `lib/endpoints.ts`에 모읍니다. 등급 표시 로직은 순수 함수로 두고 테스트합니다.
 
@@ -310,12 +310,12 @@ config/WebConfig   SessionFilter가 feature/auth의 세션 조회·접근 정책
 ### 4-1. 흐름
 
 ```
-5분마다 AlertEvaluator ──▶ 사건 판정(analytics/AlertRules, 순수) ──▶ alert_events (event_key UNIQUE)
+5분마다 AlertEvaluator ──► 사건 판정(analytics/AlertRules, 순수) ──► alert_events (event_key UNIQUE)
                                                                             │
-             alert_rules(사용자별) ◀── 수신자 찾기 ◀──────────────────────────┘
+             alert_rules(사용자별) ◄── 수신자 찾기 ◄──────────────────────────┘
                     │
                     ▼
-             alert_deliveries (UNIQUE event·user·channel, channel='inbox') ──▶ 화면 알림함 · 읽지 않은 수
+             alert_deliveries (UNIQUE event·user·channel, channel='inbox') ──► 화면 알림함 · 읽지 않은 수
 ```
 
 - **사건**은 "무슨 일이 있었나"(전역)입니다.

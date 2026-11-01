@@ -46,6 +46,6 @@
 
 ## 결과
 
-- `/api/analytics/regime/track-record?asset=` 경로와 국면 화면 "📈 판정 성과" 카드를 추가했습니다.
+- `/api/analytics/regime/track-record?asset=` 경로와 국면 화면 "판정 성과" 카드를 추가했습니다.
 - 자산은 SPY·QQQ·KOSPI 200 ETF(069500, 새로 수집)·IEF·GLD입니다.
 - 라이브 판정 기록([0008](0008-backend-owned-tables-and-scheduled-jobs.md), `regime_log`)이 쌓이면, 재현이 아닌 실제 판정의 성과도 같은 방식으로 낼 수 있습니다.

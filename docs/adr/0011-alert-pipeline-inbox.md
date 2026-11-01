@@ -66,7 +66,7 @@
 - V7: `alert_rules`·`alert_events`·`alert_deliveries`.
 - 경로: `/api/alerts/rules`·`inbox`·`unread-count`·`inbox/read`.
 - 화면:
-  - 🔔 알림(알림함·규칙)
+  - 알림(알림함·규칙)
   - 사이드바 뱃지와 탭 제목 앞의 읽지 않은 수
 - 등급(D5):
   - 무료는 국면 전환 1개, 유료는 20개, 운영자는 50개입니다.

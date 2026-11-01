@@ -136,7 +136,7 @@ make setup
    - `OWNER_EMAIL`(로그인 아이디로 쓸 이메일)이 비어 있으면 알려 줍니다 — 기본값이 없어 직접 넣어야 합니다
    - `APP_PASSWORD`(처음 비밀번호)가 비었거나 공개된 기본값(`admin1234@`)이면 무작위
      값을 만들어 넣고 **터미널에 한 번 보여 줍니다.** 직접 정한 값은 건드리지 않습니다
-   - 계정이 생긴 뒤에는 두 값을 읽지 않습니다. 비밀번호는 화면의 👤 내 계정에서 바꿉니다
+   - 계정이 생긴 뒤에는 두 값을 읽지 않습니다. 비밀번호는 화면의 내 계정에서 바꿉니다
 3. `COLLECTOR_API_TOKEN`(백엔드→수집기 호출 토큰)이 비어 있으면 무작위 값으로
    채웁니다. 외부 API 키가 아니라 두 컨테이너끼리만 쓰는 값이라 따로 발급받을
    필요가 없습니다. 이미 값이 있으면 그대로 둡니다
@@ -162,10 +162,10 @@ open -e .env            # 또는 code .env / vi .env
 > 형식 규칙은 세 가지뿐입니다.
 >
 > ```ini
-> APP_PASSWORD=0000                  # ✅ 줄 맨 앞에서 KEY=VALUE
-> APP_PASSWORD="0000"                # ❌ 따옴표까지 비밀번호가 됩니다
-> export APP_PASSWORD=0000           # ❌ docker compose는 export를 모릅니다
->   APP_PASSWORD=0000                # ❌ 앞에 공백이 있으면 안 됩니다
+> APP_PASSWORD=0000                  # ✓ 줄 맨 앞에서 KEY=VALUE
+> APP_PASSWORD="0000"                # ✗ 따옴표까지 비밀번호가 됩니다
+> export APP_PASSWORD=0000           # ✗ docker compose는 export를 모릅니다
+>   APP_PASSWORD=0000                # ✗ 앞에 공백이 있으면 안 됩니다
 > ```
 >
 > 값 뒤에 **공백 + `#`** 을 붙이면 그 뒤는 주석으로 처리됩니다
@@ -183,7 +183,7 @@ APP_PASSWORD=원하는_비밀번호
 
 | 키 | 발급처 | 없으면 |
 |---|---|---|
-| `FRED_API_KEY` | <https://fred.stlouisfed.org/docs/api/api_key.html> | 웹 CSV로 폴백 (대부분 정상). 🧪 모의 매매 발표·실적 일정(`us_calendar`)의 FRED 발표일(CPI·PCE·고용·GDP)은 대체 경로가 없어 비고 "키 미설정"으로 표시(FOMC 상수·실적일은 그대로) |
+| `FRED_API_KEY` | <https://fred.stlouisfed.org/docs/api/api_key.html> | 웹 CSV로 폴백 (대부분 정상). 모의 매매 발표·실적 일정(`us_calendar`)의 FRED 발표일(CPI·PCE·고용·GDP)은 대체 경로가 없어 비고 "키 미설정"으로 표시(FOMC 상수·실적일은 그대로) |
 | `KRX_API_KEY` | <http://data.krx.co.kr> | KRX 선물이 KODEX 200 기반 **추정치** |
 | `KIS_APP_KEY` / `KIS_APP_SECRET` | <https://apiportal.koreainvestment.com> | 장중 수급 가집계·교차 검증 꺼짐 |
 | `LS_APP_KEY` / `LS_APP_SECRET` | LS증권 홈 > 매매시스템 > API | 수급 레이더의 LS 단계만 건너뜀 |
@@ -269,7 +269,7 @@ make backup             # DB 백업 → backups/
 
 ## 5. 실행 (Docker 없이 — 네이티브)
 
-> ### ⚠️ Docker가 잘 돌고 있다면 이 절은 건너뛰세요.
+> ### Docker가 잘 돌고 있다면 이 절은 건너뛰세요.
 >
 > `make up`으로 컨테이너 네 개가 떠 있다면 **이 절의 작업은 전부 불필요**할
 > 뿐 아니라, 같은 포트를 두 번 잡으려다 오히려 고장납니다. 실제로 겪는 오류들:
@@ -431,7 +431,7 @@ make db-test           # 테스트 전용 DB 준비 (위 명령들이 자동으�
 `make test`는 `.env`의 `DATABASE_PORT`(이 저장소 기본 5434) PostgreSQL을 씁니다. Docker로 띄운 상태라면
 그대로 돌아가고, 아니면 `make infra`로 DB만 먼저 올리세요.
 
-> ⚠️ **테스트는 평소 쓰는 DB(`macrodash`)를 건드리지 않습니다.**
+> 주의: **테스트는 평소 쓰는 DB(`macrodash`)를 건드리지 않습니다.**
 > 백엔드 통합 테스트는 시작할 때마다 `snapshots`를 비웁니다. 그래서 테스트는
 > 전용 DB(`macrodash_test`)에서만 돌고, DB 이름이 `_test`로 끝나지 않으면
 > 지우기 전에 실행을 거부합니다. `TEST_DATABASE_URL`을 손으로 지정하실 때도
@@ -466,7 +466,7 @@ make db-test           # 테스트 전용 DB 준비 (위 명령들이 자동으�
 | 화면은 뜨는데 전부 "데이터 없음" | 아직 수집을 하지 않았습니다. `make collect` |
 | `make collect`가 "수집기에 연결하지 못했습니다" | `make logs S=collector`로 기동 여부 확인 |
 | 백엔드 빌드가 메모리 부족으로 죽음 | Docker Desktop 메모리를 4GB 이상으로 올리세요 |
-| 수집은 성공인데 숫자가 이상함 | `🗄️ 데이터 저장소 상태 → 교차 검증`을 돌려 보세요. 비공식 소스(Daum·Naver·TradingView)의 구조 변경을 먼저 의심합니다 |
+| 수집은 성공인데 숫자가 이상함 | `데이터 저장소 상태 → 교차 검증`을 돌려 보세요. 비공식 소스(Daum·Naver·TradingView)의 구조 변경을 먼저 의심합니다 |
 | 포트를 바꿨는데 화면이 API를 못 찾음 | 화면은 "열린 호스트 + `BACKEND_PORT`"로 백엔드를 찾고, 포트는 **빌드 시점**에 번들에 들어갑니다. 바꾼 뒤 `make up`(재빌드)이 필요합니다. `.env`에 `NEXT_PUBLIC_API_BASE`(전체 주소 고정, 프록시용)를 적어 두었다면 지우거나 `BACKEND_PORT`와 맞추세요 — `make up`이 기동 전에 검사합니다 |
 | `make setup`이 포트 4개를 전부 "사용 중"이라고 함 | **이미 `make up`으로 이 프로젝트가 떠 있는 상태입니다.** 정상입니다. 최신 버전은 "이 프로젝트의 컨테이너가 사용 중 (정상)"으로 구분해 표시합니다 |
 | 휴대폰 등 다른 기기에서 화면이 안 열림 | 의도한 동작입니다 — 로컬은 로그인 없이 운영자로 열리므로 화면·API를 이 맥(127.0.0.1)에만 엽니다(ADR 0016). AWS 개인용 서버도 PC의 SSM 터널(`scripts/aws/tunnel.sh`)로만 열려 휴대폰에서는 볼 수 없습니다(ADR 0019) |

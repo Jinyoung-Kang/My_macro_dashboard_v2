@@ -59,17 +59,17 @@
                                 ▼  (읽기만, quietly)
 ┌──────────────────────────── Backend feature/paper ─────────────────────────────┐
 │                                                                                │
-│  PaperRiskJob(5m) ──▶ PaperMarketData.latestObservation() ──▶ PaperLedgerService│
+│  PaperRiskJob(5m) ──► PaperMarketData.latestObservation() ──► PaperLedgerService│
 │                                                                 ├ 대기 주문 체결 │
 │                                                                 ├ 최고가·스탑    │
 │                                                                 ├ 분할 감지      │
 │                                                                 └ 평가·순자산    │
 │                                                                                │
-│  PaperDecisionJob(10m) ── 거래일 확정 종가 확인 ──┬─▶ GateIndicator → paper_gate_log│
-│                                                  ├─▶ PaperSelectionService(재선정일)│
+│  PaperDecisionJob(10m) ── 거래일 확정 종가 확인 ──┬─► GateIndicator → paper_gate_log│
+│                                                  ├─► PaperSelectionService(재선정일)│
 │                                                  │     TrackRecord13F → 순위·선정 │
-│                                                  ├─▶ RuleBookService → 주문       │
-│                                                  └─▶ ClaudeBookService           │
+│                                                  ├─► RuleBookService → 주문       │
+│                                                  └─► ClaudeBookService           │
 │                                                        ├ PacketBuilder            │
 │                                                        ├ AiService.structured(…)  │
 │                                                        ├ OrderValidator           │
@@ -179,8 +179,8 @@
 ### 3-2. 주문 상태
 
 ```
-PROPOSED ─검증 통과─▶ PENDING ─관측치─▶ FILLED
-    └─검증 거절─▶ REJECTED     └─3거래일─▶ EXPIRED
+PROPOSED ─검증 통과─► PENDING ─관측치─► FILLED
+    └─검증 거절─► REJECTED     └─3거래일─► EXPIRED
 STOP: 생성과 동시에 FILLED      일시정지·리셋: PENDING → CANCELLED
 ```
 
@@ -788,7 +788,7 @@ REBALANCE는 지난 선정이라 매수 없이 끝나 세지 않음), 다음 결
 | 문서 | 고칠 곳 |
 |---|---|
 | `docs/ARCHITECTURE.md` | §3 `paper_*` 행, §4-1 기능 목록 `paper`(누락 `alert`도), `analytics` 표 새 클래스 |
-| `docs/API.md` | §1 "🧪 모의 매매(운영자)" 29행 |
+| `docs/API.md` | §1 "모의 매매(운영자)" 29행 |
 | `docs/DATA_SOURCES.md` | 태스크 표에 새 태스크 3개(23개), 13F 소절에 "후보 기관 30분기·예산·증분", 10년 이력은 `catalog.PAPER_HISTORY_PERIOD`(10y — 기존 `PRICE_HISTORY_PERIOD` 5y는 그대로, D23), 매핑표 확장 절차, "이 기능이 쓰는 저장본과 한계" |
 | `README.md` | 주요 기능 한 줄 + 어느 저장소에 있는지(처음엔 "로컬 전용", 2026-10-25부터 My_macro_dashboard_v1) |
 | `.env.example`·`docker-compose.yml` | `PAPER_ENABLED`(기본 true), `TRACK_RECORD_FETCH_BUDGET`(기본 400, 1~2000 — §4-0 ②) |

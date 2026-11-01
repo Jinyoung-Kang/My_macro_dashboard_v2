@@ -47,7 +47,7 @@ make test-backend      # JUnit (실제 PostgreSQL 사용)
 make test-frontend     # 자가검증 + 훅 테스트(vitest) + 린트 + 빌드(타입 검사)
 ```
 
-### ⚠️ 테스트는 전용 DB에서 돕니다
+### 테스트는 전용 DB에서 돕니다
 
 백엔드 통합 테스트는 시작할 때마다 `snapshots` 테이블을 **비웁니다**. 그래서
 `macrodash_test`를 씁니다. `make test-*`가 알아서 맞춰 주지만, 직접 실행할 때는
@@ -311,7 +311,7 @@ git config credential.https://github.com.username <아이디>
 
 ## 7. AWS 개인용 서버
 
-운영본(🧪 모의 매매가 도는 곳)은 AWS 서울의 EC2 `my-macro-app` 한 대이고, 매일 KST 21:55~08:00(토 ~10:00)만 켜집니다. 구성과 이유는
+운영본(모의 매매가 도는 곳)은 AWS 서울의 EC2 `my-macro-app` 한 대이고, 매일 KST 21:55~08:00(토 ~10:00)만 켜집니다. 구성과 이유는
 [ADR 0019](adr/0019-aws-personal-deployment.md), 그림은 [ARCHITECTURE §9](ARCHITECTURE.md#9-배포-aws-개인용-서버)에 있습니다.
 셸은 SSM으로만 엽니다. 화면은 공개 주소(CloudFront + 잠금화면 — 아래 '공개 주소')나 SSM 터널로 엽니다. 아래 명령의 `<AWS_INSTANCE_ID>`·`<버킷>`은 PC `.env`의
 `AWS_INSTANCE_ID`·서버 `.env`의 `AWS_BACKUP_BUCKET` 값입니다.

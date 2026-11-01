@@ -1,6 +1,6 @@
 # CLAUDE.md — 작업 규칙 요약
 
-로컬 매크로·13F 대시보드와 🧪 모의 알고리즘 매매(운영자 전용, ADR 0018). 화면(Next.js, `frontend/`) → API(Spring Boot, `backend/`) →
+로컬 매크로·13F 대시보드와 모의 알고리즘 매매(운영자 전용, ADR 0018). 화면(Next.js, `frontend/`) → API(Spring Boot, `backend/`) →
 PostgreSQL ← 수집기(FastAPI, `collector/`). Docker Compose 네 컨테이너로 돌며, 폴더 이름
 `My_macro_dashboard_v2`가 compose 프로젝트·DB 볼륨 이름을 정한다(바꾸지 말 것).
 **v2다**: 2026-10-26에 `My_macro_dashboard_v1`을 전체 이력으로 갈라낸 저장소다(갈라낸 절차는 [docs/LOCAL_SETUP.md](docs/LOCAL_SETUP.md) §0,
@@ -47,7 +47,7 @@ PostgreSQL ← 수집기(FastAPI, `collector/`). Docker Compose 네 컨테이너
 - **새 API 경로는 `AccessPolicy` 표에 넣는다**(공개·회원·유료·운영자, ADR 0010) — 빠지면 `AccessPolicyTest`가 막는다. 사용자 정보는 `support.CurrentUser`.
   로그인은 이메일+비밀번호(DB 세션). 운영자 계정은 처음 기동 때 `.env`의 `OWNER_EMAIL`·`APP_PASSWORD`로 만든다.
   로컬 compose는 로그인 없이 이 맥에서 첫 운영자로 연다(`LOCAL_NO_LOGIN`, ADR 0016). AWS·QA 덧붙임은 `"false"` 고정(AWS 개인용 서버는 ADR 0019).
-- **🧪 모의 매매 상태는 AWS 서버(EC2 `my-macro-app`) 한 곳에만**(ADR 0019·0020) — 2026-10-29부터 서버의 v2. **이 폴더의 `.env`는 `PAPER_ENABLED=false` 고정**.
+- **모의 매매 상태는 AWS 서버(EC2 `my-macro-app`) 한 곳에만**(ADR 0019·0020) — 2026-10-29부터 서버의 v2. **이 폴더의 `.env`는 `PAPER_ENABLED=false` 고정**.
   두 곳에서 정기 작업(리스크 점검·결정·체결)이 동시에 돌면 안 된다 — 서버에는 v2만 둔다(서버 v1은 2026-10-31에 지움 — 다시 올리지 않는다).
   로컬 `.env`를 서버로 보낼 때는 그 줄과 포트 네 줄 등을 뺀다(`.env.aws.example`).
 - 날짜는 `Kst.today()`(Java)·KST 기준. `LocalDate.now()`를 쓰지 않는다(서버 TZ는 UTC).

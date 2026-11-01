@@ -91,43 +91,43 @@
 
 | 후보 | 최신 분기 보유 수 | 최신 분기 $B | 지금 매핑 최신 분기 | 지금 매핑 7년 최소·평균 | 추가 후 7년 최소·평균 | D22 자격 | 미달 사유 |
 |---|---:|---:|---:|---|---|---|---|
-| Berkshire Hathaway | 29 | 299.25 | 78.1% | 73.3% · 84.8% | 94% · 97% | ✅ | — |
-| Baupost Group | 23 | 5.42 | 35.8% | 5.3% · 14.4% | 36% · 66% | ❌ | 최소 커버리지 36% < 50%; 평균 커버리지 66% < 70% |
-| Pershing Square | 14 | 19.47 | 47.6% | 14.0% · 28.9% | 73% · 92% | ✅ | — |
-| Third Point | 42 | 4.65 | 21.1% | 17.6% · 33.5% | 68% · 84% | ✅ | — |
-| Greenlight Capital | 46 | 3.91 | 2.4% | 0.0% · 1.8% | 67% · 79% | ✅ | — |
-| Appaloosa | 25 | 7.47 | 56.4% | 30.8% · 52.1% | 75% · 93% | ✅ | — |
-| Akre Capital | 19 | 5.11 | 12.3% | 11.0% · 28.7% | 89% · 96% | ✅ | — |
-| Ruane Cunniff (Sequoia) | 54 | 6.43 | 32.3% | 31.0% · 50.1% | 70% · 88% | ✅ | — |
-| Dodge & Cox | 222 | 191.01 | 30.9% | 27.9% · 31.6% | 78% · 89% | ✅ | — |
-| Davis Selected Advisers | 112 | 23.29 | 22.6% | 21.2% · 31.4% | 78% · 91% | ✅ | — |
-| Markel | 130 | 13.13 | 65.5% | 30.3% · 54.7% | 75% · 90% | ✅ | — |
-| Himalaya Capital | 8 | 3.7 | 63.8% | 50.7% · 65.0% | 98% · 100% | ✅ | — |
-| Gardner Russo & Quinn | 85 | 8.93 | 45.1% | 33.9% · 44.0% | 87% · 93% | ✅ | — |
-| Scion Asset Management | 4 | 68.14 | 0.0% | 0.0% · 10.2% | 43% · 73% | ❌ | 최소 커버리지 43% < 50%; 최신 분기 공시 없음(마지막 2025-09-30) |
-| Tiger Global | 46 | 23.98 | 58.0% | 14.5% · 40.7% | 75% · 91% | ✅ | — |
-| Lone Pine | 34 | 16.36 | 17.0% | 3.4% · 37.9% | 73% · 91% | ✅ | — |
-| Viking Global | 90 | 35.08 | 39.0% | 27.3% · 40.0% | 74% · 87% | ✅ | — |
-| Coatue | 66 | 48.63 | 59.7% | 18.9% · 52.1% | 75% · 91% | ✅ | — |
-| Altimeter | 20 | 9.83 | 57.3% | 4.4% · 32.9% | 81% · 94% | ✅ | — |
-| D1 Capital | 55 | 34.78 | 9.4% | 9.4% · 28.9% | 85% · 93% | ✅ | — |
-| Maverick Capital | 177 | 11.08 | 41.7% | 13.7% · 29.2% | 60% · 80% | ✅ | — |
-| Baillie Gifford | 277 | 110.23 | 22.4% | 22.2% · 26.7% | 79% · 86% | ✅ | — |
-| Duquesne Family Office | 86 | 4.35 | 9.8% | 4.0% · 37.0% | 70% · 85% | ✅ | — |
-| Fisher Asset Management | 1036 | 335.83 | 47.0% | 33.9% · 48.8% | 61% · 81% | ✅ | — |
-| Bridgewater Associates | 997 | 24.38 | 26.3% | 21.2% · 36.7% | 73% · 81% | ✅ | — |
-| Soros Fund Management | 254 | 7.62 | 22.1% | 3.6% · 13.1% | 23% · 39% | ❌ | 최소 커버리지 23% < 50%; 평균 커버리지 39% < 70% |
-| Tudor Investment | 1680 | 24.22 | 0.5% | 0.0% · 2.9% | 21% · 31% | ❌ | 최소 커버리지 21% < 50%; 평균 커버리지 31% < 70% |
+| Berkshire Hathaway | 29 | 299.25 | 78.1% | 73.3% · 84.8% | 94% · 97% | ✓ | — |
+| Baupost Group | 23 | 5.42 | 35.8% | 5.3% · 14.4% | 36% · 66% | ✗ | 최소 커버리지 36% < 50%; 평균 커버리지 66% < 70% |
+| Pershing Square | 14 | 19.47 | 47.6% | 14.0% · 28.9% | 73% · 92% | ✓ | — |
+| Third Point | 42 | 4.65 | 21.1% | 17.6% · 33.5% | 68% · 84% | ✓ | — |
+| Greenlight Capital | 46 | 3.91 | 2.4% | 0.0% · 1.8% | 67% · 79% | ✓ | — |
+| Appaloosa | 25 | 7.47 | 56.4% | 30.8% · 52.1% | 75% · 93% | ✓ | — |
+| Akre Capital | 19 | 5.11 | 12.3% | 11.0% · 28.7% | 89% · 96% | ✓ | — |
+| Ruane Cunniff (Sequoia) | 54 | 6.43 | 32.3% | 31.0% · 50.1% | 70% · 88% | ✓ | — |
+| Dodge & Cox | 222 | 191.01 | 30.9% | 27.9% · 31.6% | 78% · 89% | ✓ | — |
+| Davis Selected Advisers | 112 | 23.29 | 22.6% | 21.2% · 31.4% | 78% · 91% | ✓ | — |
+| Markel | 130 | 13.13 | 65.5% | 30.3% · 54.7% | 75% · 90% | ✓ | — |
+| Himalaya Capital | 8 | 3.7 | 63.8% | 50.7% · 65.0% | 98% · 100% | ✓ | — |
+| Gardner Russo & Quinn | 85 | 8.93 | 45.1% | 33.9% · 44.0% | 87% · 93% | ✓ | — |
+| Scion Asset Management | 4 | 68.14 | 0.0% | 0.0% · 10.2% | 43% · 73% | ✗ | 최소 커버리지 43% < 50%; 최신 분기 공시 없음(마지막 2025-09-30) |
+| Tiger Global | 46 | 23.98 | 58.0% | 14.5% · 40.7% | 75% · 91% | ✓ | — |
+| Lone Pine | 34 | 16.36 | 17.0% | 3.4% · 37.9% | 73% · 91% | ✓ | — |
+| Viking Global | 90 | 35.08 | 39.0% | 27.3% · 40.0% | 74% · 87% | ✓ | — |
+| Coatue | 66 | 48.63 | 59.7% | 18.9% · 52.1% | 75% · 91% | ✓ | — |
+| Altimeter | 20 | 9.83 | 57.3% | 4.4% · 32.9% | 81% · 94% | ✓ | — |
+| D1 Capital | 55 | 34.78 | 9.4% | 9.4% · 28.9% | 85% · 93% | ✓ | — |
+| Maverick Capital | 177 | 11.08 | 41.7% | 13.7% · 29.2% | 60% · 80% | ✓ | — |
+| Baillie Gifford | 277 | 110.23 | 22.4% | 22.2% · 26.7% | 79% · 86% | ✓ | — |
+| Duquesne Family Office | 86 | 4.35 | 9.8% | 4.0% · 37.0% | 70% · 85% | ✓ | — |
+| Fisher Asset Management | 1036 | 335.83 | 47.0% | 33.9% · 48.8% | 61% · 81% | ✓ | — |
+| Bridgewater Associates | 997 | 24.38 | 26.3% | 21.2% · 36.7% | 73% · 81% | ✓ | — |
+| Soros Fund Management | 254 | 7.62 | 22.1% | 3.6% · 13.1% | 23% · 39% | ✗ | 최소 커버리지 23% < 50%; 평균 커버리지 39% < 70% |
+| Tudor Investment | 1680 | 24.22 | 0.5% | 0.0% · 2.9% | 21% · 31% | ✗ | 최소 커버리지 21% < 50%; 평균 커버리지 31% < 70% |
 
 ### D. 2026-10-23 기준 예상 순위(원형 계산, 7년 CAGR) — 구현 뒤 자바 계산과 대조
 
 | 순위 | 후보 | 구간 | CAGR | 누적 | 같은 구간 SPY 누적 | MDD | 샤프 |
 |---:|---|---:|---:|---:|---:|---:|---:|
-| 1 | Duquesne Family Office ⭐ | 29 | 27.5% | 448% | 180% | -31% | 1.18 |
-| 2 | Appaloosa ⭐ | 29 | 21.9% | 300% | 180% | -10% | 1.33 |
-| 3 | Greenlight Capital ⭐ | 29 | 19.1% | 239% | 180% | -27% | 0.87 |
-| 4 | Viking Global ⭐ | 29 | 18.0% | 220% | 180% | -30% | 1.04 |
-| 5 | Himalaya Capital ⭐ | 28 | 16.8% | 197% | 180% | -27% | 0.79 |
+| 1 | Duquesne Family Office (상위 5) | 29 | 27.5% | 448% | 180% | -31% | 1.18 |
+| 2 | Appaloosa (상위 5) | 29 | 21.9% | 300% | 180% | -10% | 1.33 |
+| 3 | Greenlight Capital (상위 5) | 29 | 19.1% | 239% | 180% | -27% | 0.87 |
+| 4 | Viking Global (상위 5) | 29 | 18.0% | 220% | 180% | -30% | 1.04 |
+| 5 | Himalaya Capital (상위 5) | 28 | 16.8% | 197% | 180% | -27% | 0.79 |
 | 6 | Coatue | 29 | 16.8% | 197% | 180% | -54% | 0.65 |
 | 7 | Baillie Gifford | 29 | 16.5% | 192% | 180% | -46% | 0.68 |
 | 8 | Fisher Asset Management | 29 | 16.4% | 190% | 180% | -26% | 1.06 |
@@ -149,210 +149,210 @@
 
 ### E. 매핑 추가 후보 상위 200개(CUSIP 단위)
 
-순위 = 7년 창의 각 분기에서 그 증권이 차지한 기관 내 비중(기관마다 같은 무게)의 합. 판정: ✅ 채택, ❌ 제외(사유), — OpenFIGI US 티커 없음(상장폐지·인수·외국 원주 등, 가격을 구할 수 없음).
+순위 = 7년 창의 각 분기에서 그 증권이 차지한 기관 내 비중(기관마다 같은 무게)의 합. 판정: ✓ 채택, ✗ 제외(사유), — OpenFIGI US 티커 없음(상장폐지·인수·외국 원주 등, 가격을 구할 수 없음).
 
 | # | CUSIP | 13F 이름(대표) | 클래스 | 보유 기관 수 | 비중 합 | OpenFIGI 티커·이름 | 종류 | SEC 등록 이름 | 야후 이력 | 판정 |
 |---:|---|---|---|---:|---:|---|---|---|---|---|
-| 1 | 30303M102 | FACEBOOK INC | CL A | 21 | 31.98 | META · META PLATFORMS INC-CLASS A | Common Stock | Meta Platforms, Inc. | 2016-10-24~2026-10-23 | ✅ |
-| 2 | 833445109 | SNOWFLAKE INC | CL A | 16 | 31.14 | SNOW · SNOWFLAKE INC | Common Stock | Snowflake Inc. | 2020-09-16~2026-10-23 | ✅ |
-| 3 | 392709101 | GREEN BRICK PARTNERS INC | COM | 3 | 27.39 | GRBK · GREEN BRICK PARTNERS INC | Common Stock | Green Brick Partners, Inc. | 2016-10-24~2026-10-23 | ✅ |
-| 4 | 01609W102 | ALIBABA GROUP HLDG LTD | SPONSORED ADS | 21 | 26.80 | BABA · ALIBABA GROUP HOLDING-SP ADR | ADR | Alibaba Group Holding Ltd | 2016-10-24~2026-10-23 | ✅ |
-| 5 | 22266T109 | COUPANG INC | CL A | 13 | 26.36 | CPNG · COUPANG INC | Common Stock | Coupang, Inc. | 2021-03-11~2026-10-23 | ✅ |
-| 6 | 060505104 | BK OF AMERICA CORP | COM | 11 | 26.25 | BAC · BANK OF AMERICA CORP | Common Stock | BANK OF AMERICA CORP /DE/ | 2016-10-24~2026-10-23 | ✅ |
-| 7 | 90353T100 | UBER TECHNOLOGIES INC | COM | 18 | 25.16 | UBER · UBER TECHNOLOGIES INC | Common Stock | Uber Technologies, Inc | 2019-05-10~2026-10-23 | ✅ |
-| 8 | 57636Q104 | MASTERCARD INCORPORATED | CL A | 18 | 18.77 | MA · MASTERCARD INC - A | Common Stock | Mastercard Inc | 2016-10-24~2026-10-23 | ✅ |
-| 9 | 47215P106 | JD.COM INC | SPON ADR CL A | 17 | 18.70 | JD · JD.COM INC-ADR | ADR | JD.com, Inc. | 2016-10-24~2026-10-23 | ✅ |
-| 10 | 14040H105 | CAPITAL ONE FINL CORP | COM | 16 | 18.43 | COF · CAPITAL ONE FINANCIAL CORP | Common Stock | CAPITAL ONE FINANCIAL CORP | 2016-10-24~2026-10-23 | ✅ |
-| 11 | 615369105 | MOODYS CORP | COM | 12 | 17.76 | MCO · MOODY'S CORP | Common Stock | MOODYS CORP /DE/ | 2016-10-24~2026-10-23 | ✅ |
-| 12 | 76131D103 | RESTAURANT BRANDS INTL INC | COM | 10 | 17.58 | QSR · RESTAURANT BRANDS INTERN | Common Stock | Restaurant Brands Internationa | 2016-10-24~2026-10-23 | ✅ |
-| 13 | 43300A203 | HILTON WORLDWIDE HLDGS INC | COM | 8 | 15.37 | HLT · HILTON WORLDWIDE HOLDINGS IN | Common Stock | Hilton Worldwide Holdings Inc. | 2016-10-24~2026-10-23 | ✅ |
-| 14 | 169656105 | CHIPOTLE MEXICAN GRILL INC | COM | 11 | 15.28 | CMG · CHIPOTLE MEXICAN GRILL INC | Common Stock | CHIPOTLE MEXICAN GRILL INC | 2016-10-24~2026-10-23 | ✅ |
-| 15 | 722304102 | PDD HOLDINGS INC | SPONSORED ADS | 14 | 13.51 | PDD · PDD HOLDINGS INC | ADR | PDD Holdings Inc. | 2018-07-26~2026-10-23 | ✅ |
-| 16 | 11271J107 | BROOKFIELD CORP | CL A LTD VT SH | 13 | 13.26 | BN · BROOKFIELD CORP | Common Stock | BROOKFIELD Corp /ON/ | 2016-10-24~2026-10-23 | ✅ |
+| 1 | 30303M102 | FACEBOOK INC | CL A | 21 | 31.98 | META · META PLATFORMS INC-CLASS A | Common Stock | Meta Platforms, Inc. | 2016-10-24~2026-10-23 | ✓ |
+| 2 | 833445109 | SNOWFLAKE INC | CL A | 16 | 31.14 | SNOW · SNOWFLAKE INC | Common Stock | Snowflake Inc. | 2020-09-16~2026-10-23 | ✓ |
+| 3 | 392709101 | GREEN BRICK PARTNERS INC | COM | 3 | 27.39 | GRBK · GREEN BRICK PARTNERS INC | Common Stock | Green Brick Partners, Inc. | 2016-10-24~2026-10-23 | ✓ |
+| 4 | 01609W102 | ALIBABA GROUP HLDG LTD | SPONSORED ADS | 21 | 26.80 | BABA · ALIBABA GROUP HOLDING-SP ADR | ADR | Alibaba Group Holding Ltd | 2016-10-24~2026-10-23 | ✓ |
+| 5 | 22266T109 | COUPANG INC | CL A | 13 | 26.36 | CPNG · COUPANG INC | Common Stock | Coupang, Inc. | 2021-03-11~2026-10-23 | ✓ |
+| 6 | 060505104 | BK OF AMERICA CORP | COM | 11 | 26.25 | BAC · BANK OF AMERICA CORP | Common Stock | BANK OF AMERICA CORP /DE/ | 2016-10-24~2026-10-23 | ✓ |
+| 7 | 90353T100 | UBER TECHNOLOGIES INC | COM | 18 | 25.16 | UBER · UBER TECHNOLOGIES INC | Common Stock | Uber Technologies, Inc | 2019-05-10~2026-10-23 | ✓ |
+| 8 | 57636Q104 | MASTERCARD INCORPORATED | CL A | 18 | 18.77 | MA · MASTERCARD INC - A | Common Stock | Mastercard Inc | 2016-10-24~2026-10-23 | ✓ |
+| 9 | 47215P106 | JD.COM INC | SPON ADR CL A | 17 | 18.70 | JD · JD.COM INC-ADR | ADR | JD.com, Inc. | 2016-10-24~2026-10-23 | ✓ |
+| 10 | 14040H105 | CAPITAL ONE FINL CORP | COM | 16 | 18.43 | COF · CAPITAL ONE FINANCIAL CORP | Common Stock | CAPITAL ONE FINANCIAL CORP | 2016-10-24~2026-10-23 | ✓ |
+| 11 | 615369105 | MOODYS CORP | COM | 12 | 17.76 | MCO · MOODY'S CORP | Common Stock | MOODYS CORP /DE/ | 2016-10-24~2026-10-23 | ✓ |
+| 12 | 76131D103 | RESTAURANT BRANDS INTL INC | COM | 10 | 17.58 | QSR · RESTAURANT BRANDS INTERN | Common Stock | Restaurant Brands Internationa | 2016-10-24~2026-10-23 | ✓ |
+| 13 | 43300A203 | HILTON WORLDWIDE HLDGS INC | COM | 8 | 15.37 | HLT · HILTON WORLDWIDE HOLDINGS IN | Common Stock | Hilton Worldwide Holdings Inc. | 2016-10-24~2026-10-23 | ✓ |
+| 14 | 169656105 | CHIPOTLE MEXICAN GRILL INC | COM | 11 | 15.28 | CMG · CHIPOTLE MEXICAN GRILL INC | Common Stock | CHIPOTLE MEXICAN GRILL INC | 2016-10-24~2026-10-23 | ✓ |
+| 15 | 722304102 | PDD HOLDINGS INC | SPONSORED ADS | 14 | 13.51 | PDD · PDD HOLDINGS INC | ADR | PDD Holdings Inc. | 2018-07-26~2026-10-23 | ✓ |
+| 16 | 11271J107 | BROOKFIELD CORP | CL A LTD VT SH | 13 | 13.26 | BN · BROOKFIELD CORP | Common Stock | BROOKFIELD Corp /ON/ | 2016-10-24~2026-10-23 | ✓ |
 | 17 | 530307305 | LIBERTY BROADBAND CORP | COM SER C | 9 | 12.46 |   |  |  | 없음 | — (OpenFIGI 티커 없음) |
-| 18 | 69331C108 | PG&E CORP | COM | 11 | 12.25 | PCG · P G & E CORP | Common Stock | PG&E Corp | 2016-10-24~2026-10-23 | ✅ |
-| 19 | 48251W104 | KKR & CO INC | COM | 13 | 11.62 | KKR · KKR & CO INC | Common Stock | KKR & Co. Inc. | 2016-10-24~2026-10-23 | ✅ |
-| 20 | 81141R100 | SEA LTD | SPONSORD ADS | 16 | 11.00 | SE · SEA LTD-ADR | ADR | Sea Ltd | 2017-10-20~2026-10-23 | ✅ |
-| 21 | 641069406 | NESTLE SA SPONSORED ADR | COM | 2 | 9.66 | NSRGY · NESTLE SA-SPONS ADR | ADR |  | 2016-10-24~2026-10-23 | ✅ |
-| 22 | 98138H101 | WORKDAY INC | CL A | 12 | 9.53 | WDAY · WORKDAY INC-CLASS A | Common Stock | Workday, Inc. | 2016-10-24~2026-10-23 | ✅ |
-| 23 | 58733R102 | MERCADOLIBRE INC | COM | 15 | 9.50 | MELI · MERCADOLIBRE INC | Common Stock | MERCADOLIBRE INC | 2016-10-24~2026-10-23 | ✅ |
-| 24 | 143130102 | CARMAX INC | COM | 13 | 9.32 | KMX · CARMAX INC | Common Stock | CARMAX INC | 2016-10-24~2026-10-23 | ✅ |
-| 25 | 10922N103 | BRIGHTHOUSE FINL INC | COM | 6 | 9.14 | BHF · BRIGHTHOUSE FINANCIAL INC | Common Stock | Brighthouse Financial, Inc. | 2017-07-17~2026-10-23 | ✅ |
-| 26 | 36162J106 | GEO GROUP INC NEW | COM | 4 | 8.73 | GEO · GEO GROUP INC/THE | Common Stock | GEO GROUP INC | 2016-10-24~2026-10-23 | ✅ |
+| 18 | 69331C108 | PG&E CORP | COM | 11 | 12.25 | PCG · P G & E CORP | Common Stock | PG&E Corp | 2016-10-24~2026-10-23 | ✓ |
+| 19 | 48251W104 | KKR & CO INC | COM | 13 | 11.62 | KKR · KKR & CO INC | Common Stock | KKR & Co. Inc. | 2016-10-24~2026-10-23 | ✓ |
+| 20 | 81141R100 | SEA LTD | SPONSORD ADS | 16 | 11.00 | SE · SEA LTD-ADR | ADR | Sea Ltd | 2017-10-20~2026-10-23 | ✓ |
+| 21 | 641069406 | NESTLE SA SPONSORED ADR | COM | 2 | 9.66 | NSRGY · NESTLE SA-SPONS ADR | ADR |  | 2016-10-24~2026-10-23 | ✓ |
+| 22 | 98138H101 | WORKDAY INC | CL A | 12 | 9.53 | WDAY · WORKDAY INC-CLASS A | Common Stock | Workday, Inc. | 2016-10-24~2026-10-23 | ✓ |
+| 23 | 58733R102 | MERCADOLIBRE INC | COM | 15 | 9.50 | MELI · MERCADOLIBRE INC | Common Stock | MERCADOLIBRE INC | 2016-10-24~2026-10-23 | ✓ |
+| 24 | 143130102 | CARMAX INC | COM | 13 | 9.32 | KMX · CARMAX INC | Common Stock | CARMAX INC | 2016-10-24~2026-10-23 | ✓ |
+| 25 | 10922N103 | BRIGHTHOUSE FINL INC | COM | 6 | 9.14 | BHF · BRIGHTHOUSE FINANCIAL INC | Common Stock | Brighthouse Financial, Inc. | 2017-07-17~2026-10-23 | ✓ |
+| 26 | 36162J106 | GEO GROUP INC NEW | COM | 4 | 8.73 | GEO · GEO GROUP INC/THE | Common Stock | GEO GROUP INC | 2016-10-24~2026-10-23 | ✓ |
 | 27 | G5480U120 | LIBERTY GLOBAL PLC | SHS CL C | 7 | 8.59 |   |  |  | 없음 | — (OpenFIGI 티커 없음) |
-| 28 | 67103H107 | OREILLY AUTOMOTIVE INC | COM | 9 | 8.53 | ORLY · O'REILLY AUTOMOTIVE INC | Common Stock | O REILLY AUTOMOTIVE INC | 2016-10-24~2026-10-23 | ✅ |
-| 29 | 82509L107 | SHOPIFY INC | CL A | 16 | 8.08 | SHOP · SHOPIFY INC - CLASS A | Common Stock | SHOPIFY INC. | 2016-10-24~2026-10-23 | ✅ |
-| 30 | 45866F104 | INTERCONTINENTAL EXCHANGE IN | COM | 10 | 8.07 | ICE · INTERCONTINENTAL EXCHANGE IN | Common Stock | Intercontinental Exchange, Inc | 2016-10-24~2026-10-23 | ✅ |
-| 31 | L8681T102 | SPOTIFY TECHNOLOGY S A | SHS | 13 | 7.48 | SPOT · SPOTIFY TECHNOLOGY SA | Common Stock | Spotify Technology S.A. | 2018-04-03~2026-10-23 | ✅ |
-| 32 | 878742204 | TECK RESOURCES LTD | CL B | 9 | 7.34 | TECK · TECK RESOURCES LTD-CLS B | Common Stock | TECK RESOURCES LTD | 2016-10-24~2026-10-23 | ✅ |
-| 33 | 30212P303 | EXPEDIA GROUP INC | COM NEW | 13 | 7.07 | EXPE · EXPEDIA GROUP INC | Common Stock | Expedia Group, Inc. | 2016-10-24~2026-10-23 | ✅ |
-| 34 | 852234103 | BLOCK INC | CL A | 14 | 7.03 | XYZ · BLOCK INC | Common Stock | Block, Inc. | 2016-10-24~2026-10-23 | ✅ |
-| 35 | 874039100 | TSMC ADR | SPONSORED ADS | 17 | 7.01 | TSM · TAIWAN SEMICONDUCTOR-SP ADR | ADR | TAIWAN SEMICONDUCTOR MANUFACTU | 2016-10-24~2026-10-23 | ✅ |
-| 36 | 31620M106 | FIDELITY NATL INFORMATION SV | COM | 13 | 6.98 | FIS · FIDELITY NATIONAL INFO SERV | Common Stock | Fidelity National Information  | 2016-10-24~2026-10-23 | ✅ |
-| 37 | 76954A103 | RIVIAN AUTOMOTIVE INC | COM CL A | 11 | 6.97 | RIVN · RIVIAN AUTOMOTIVE INC-A | Common Stock | Rivian Automotive, Inc. / DE | 2021-11-10~2026-10-23 | ✅ |
-| 38 | 718172109 | PHILIP MORRIS INTERNATIONAL IN | COM | 4 | 6.97 | PM · PHILIP MORRIS INTERNATIONAL | Common Stock | Philip Morris International In | 2016-10-24~2026-10-23 | ✅ |
-| 39 | H25662182 | COMPAGNIE FINANCIERE RICHEMONT | COM | 1 | 6.97 | CFRHF · CIE FINANCIERE RICHEMO-A REG | Common Stock |  | 2016-10-24~2026-10-23 | ✅ |
-| 40 | 22160N109 | COSTAR GROUP INC | COM | 10 | 6.91 | CSGP · COSTAR GROUP INC | Common Stock | COSTAR GROUP, INC. | 2016-10-24~2026-10-23 | ✅ |
-| 41 | 902973304 | US BANCORP DEL | COM NEW | 12 | 6.83 | USB · US BANCORP | Common Stock | US BANCORP \DE\ | 2016-10-24~2026-10-23 | ✅ |
-| 42 | 632307104 | NATERA INC | COM | 8 | 6.71 | NTRA · NATERA INC | Common Stock | Natera, Inc. | 2016-10-24~2026-10-23 | ✅ |
-| 43 | N39338194 | HEINEKEN HOLDING NV | COM | 1 | 6.70 | HKHHF · HEINEKEN HOLDING NV | Common Stock | HEINEKEN HOLDING N V | 2016-10-24~2026-10-23 | ✅ |
-| 44 | 25809K105 | DOORDASH INC | CL A | 14 | 6.65 | DASH · DOORDASH INC - A | Common Stock | DoorDash, Inc. | 2020-12-09~2026-10-23 | ✅ |
-| 45 | 125523100 | THE CIGNA GROUP | COM | 10 | 6.59 | CI · THE CIGNA GROUP | Common Stock | Cigna Group | 2016-10-24~2026-10-23 | ✅ |
-| 46 | G6683N103 | NU HLDGS LTD | ORD SHS CL A | 10 | 6.55 | NU · NU HOLDINGS LTD/CAYMAN ISL-A | Common Stock | Nu Holdings Ltd. | 2021-12-09~2026-10-23 | ✅ |
-| 47 | 776696106 | ROPER TECHNOLOGIES INC | COM | 9 | 6.55 | ROP · ROPER TECHNOLOGIES INC | Common Stock | ROPER TECHNOLOGIES INC | 2016-10-24~2026-10-23 | ✅ |
-| 48 | 60770K107 | MODERNA INC | COM | 9 | 6.51 | MRNA · MODERNA INC | Common Stock | Moderna, Inc. | 2018-12-07~2026-10-23 | ✅ |
-| 49 | 518439104 | LAUDER ESTEE COS INC | CL A | 9 | 6.32 | EL · ESTEE LAUDER COMPANIES-CL A | Common Stock | ESTEE LAUDER COMPANIES INC | 2016-10-24~2026-10-23 | ✅ |
-| 50 | 084670108 | BERKSHIRE HATHAWAY INC., CLASS A | Common | 2 | 6.29 | BRK/A · BERKSHIRE HATHAWAY INC-CL A | Common Stock | BERKSHIRE HATHAWAY INC | 2016-10-24~2026-10-23 | ✅ |
-| 51 | 02079K305 | ALPHABET INC CLASS A | COM | 4 | 6.27 | GOOGL · ALPHABET INC-CL A | Common Stock | Alphabet Inc. | 2016-10-24~2026-10-23 | ✅ |
-| 52 | 565394103 | MAPLEBEAR INC | COM | 9 | 6.21 | CART · MAPLEBEAR INC | Common Stock | Maplebear Inc. | 2023-09-19~2026-10-23 | ✅ |
-| 53 | 92552V100 | VIASAT INC | COM | 4 | 6.16 | VSAT · VIASAT INC | Common Stock | VIASAT INC | 2016-10-24~2026-10-23 | ✅ |
+| 28 | 67103H107 | OREILLY AUTOMOTIVE INC | COM | 9 | 8.53 | ORLY · O'REILLY AUTOMOTIVE INC | Common Stock | O REILLY AUTOMOTIVE INC | 2016-10-24~2026-10-23 | ✓ |
+| 29 | 82509L107 | SHOPIFY INC | CL A | 16 | 8.08 | SHOP · SHOPIFY INC - CLASS A | Common Stock | SHOPIFY INC. | 2016-10-24~2026-10-23 | ✓ |
+| 30 | 45866F104 | INTERCONTINENTAL EXCHANGE IN | COM | 10 | 8.07 | ICE · INTERCONTINENTAL EXCHANGE IN | Common Stock | Intercontinental Exchange, Inc | 2016-10-24~2026-10-23 | ✓ |
+| 31 | L8681T102 | SPOTIFY TECHNOLOGY S A | SHS | 13 | 7.48 | SPOT · SPOTIFY TECHNOLOGY SA | Common Stock | Spotify Technology S.A. | 2018-04-03~2026-10-23 | ✓ |
+| 32 | 878742204 | TECK RESOURCES LTD | CL B | 9 | 7.34 | TECK · TECK RESOURCES LTD-CLS B | Common Stock | TECK RESOURCES LTD | 2016-10-24~2026-10-23 | ✓ |
+| 33 | 30212P303 | EXPEDIA GROUP INC | COM NEW | 13 | 7.07 | EXPE · EXPEDIA GROUP INC | Common Stock | Expedia Group, Inc. | 2016-10-24~2026-10-23 | ✓ |
+| 34 | 852234103 | BLOCK INC | CL A | 14 | 7.03 | XYZ · BLOCK INC | Common Stock | Block, Inc. | 2016-10-24~2026-10-23 | ✓ |
+| 35 | 874039100 | TSMC ADR | SPONSORED ADS | 17 | 7.01 | TSM · TAIWAN SEMICONDUCTOR-SP ADR | ADR | TAIWAN SEMICONDUCTOR MANUFACTU | 2016-10-24~2026-10-23 | ✓ |
+| 36 | 31620M106 | FIDELITY NATL INFORMATION SV | COM | 13 | 6.98 | FIS · FIDELITY NATIONAL INFO SERV | Common Stock | Fidelity National Information  | 2016-10-24~2026-10-23 | ✓ |
+| 37 | 76954A103 | RIVIAN AUTOMOTIVE INC | COM CL A | 11 | 6.97 | RIVN · RIVIAN AUTOMOTIVE INC-A | Common Stock | Rivian Automotive, Inc. / DE | 2021-11-10~2026-10-23 | ✓ |
+| 38 | 718172109 | PHILIP MORRIS INTERNATIONAL IN | COM | 4 | 6.97 | PM · PHILIP MORRIS INTERNATIONAL | Common Stock | Philip Morris International In | 2016-10-24~2026-10-23 | ✓ |
+| 39 | H25662182 | COMPAGNIE FINANCIERE RICHEMONT | COM | 1 | 6.97 | CFRHF · CIE FINANCIERE RICHEMO-A REG | Common Stock |  | 2016-10-24~2026-10-23 | ✓ |
+| 40 | 22160N109 | COSTAR GROUP INC | COM | 10 | 6.91 | CSGP · COSTAR GROUP INC | Common Stock | COSTAR GROUP, INC. | 2016-10-24~2026-10-23 | ✓ |
+| 41 | 902973304 | US BANCORP DEL | COM NEW | 12 | 6.83 | USB · US BANCORP | Common Stock | US BANCORP \DE\ | 2016-10-24~2026-10-23 | ✓ |
+| 42 | 632307104 | NATERA INC | COM | 8 | 6.71 | NTRA · NATERA INC | Common Stock | Natera, Inc. | 2016-10-24~2026-10-23 | ✓ |
+| 43 | N39338194 | HEINEKEN HOLDING NV | COM | 1 | 6.70 | HKHHF · HEINEKEN HOLDING NV | Common Stock | HEINEKEN HOLDING N V | 2016-10-24~2026-10-23 | ✓ |
+| 44 | 25809K105 | DOORDASH INC | CL A | 14 | 6.65 | DASH · DOORDASH INC - A | Common Stock | DoorDash, Inc. | 2020-12-09~2026-10-23 | ✓ |
+| 45 | 125523100 | THE CIGNA GROUP | COM | 10 | 6.59 | CI · THE CIGNA GROUP | Common Stock | Cigna Group | 2016-10-24~2026-10-23 | ✓ |
+| 46 | G6683N103 | NU HLDGS LTD | ORD SHS CL A | 10 | 6.55 | NU · NU HOLDINGS LTD/CAYMAN ISL-A | Common Stock | Nu Holdings Ltd. | 2021-12-09~2026-10-23 | ✓ |
+| 47 | 776696106 | ROPER TECHNOLOGIES INC | COM | 9 | 6.55 | ROP · ROPER TECHNOLOGIES INC | Common Stock | ROPER TECHNOLOGIES INC | 2016-10-24~2026-10-23 | ✓ |
+| 48 | 60770K107 | MODERNA INC | COM | 9 | 6.51 | MRNA · MODERNA INC | Common Stock | Moderna, Inc. | 2018-12-07~2026-10-23 | ✓ |
+| 49 | 518439104 | LAUDER ESTEE COS INC | CL A | 9 | 6.32 | EL · ESTEE LAUDER COMPANIES-CL A | Common Stock | ESTEE LAUDER COMPANIES INC | 2016-10-24~2026-10-23 | ✓ |
+| 50 | 084670108 | BERKSHIRE HATHAWAY INC., CLASS A | Common | 2 | 6.29 | BRK/A · BERKSHIRE HATHAWAY INC-CL A | Common Stock | BERKSHIRE HATHAWAY INC | 2016-10-24~2026-10-23 | ✓ |
+| 51 | 02079K305 | ALPHABET INC CLASS A | COM | 4 | 6.27 | GOOGL · ALPHABET INC-CL A | Common Stock | Alphabet Inc. | 2016-10-24~2026-10-23 | ✓ |
+| 52 | 565394103 | MAPLEBEAR INC | COM | 9 | 6.21 | CART · MAPLEBEAR INC | Common Stock | Maplebear Inc. | 2023-09-19~2026-10-23 | ✓ |
+| 53 | 92552V100 | VIASAT INC | COM | 4 | 6.16 | VSAT · VIASAT INC | Common Stock | VIASAT INC | 2016-10-24~2026-10-23 | ✓ |
 | 54 | 44267D107 | HOWARD HUGHES CORP | COM | 5 | 5.95 |   |  |  | 없음 | — (OpenFIGI 티커 없음) |
-| 55 | 464287200 | ISHARES TR | CORE S&P500 ET | 5 | 5.85 | IVV · ISHARES CORE S&P 500 ETF | ETP |  | 2016-10-24~2026-10-23 | ✅ |
-| 56 | 146869102 | CARVANA CO | CL A | 13 | 5.83 | CVNA · CARVANA CO | Common Stock | CARVANA CO. | 2017-04-28~2026-10-23 | ✅ |
-| 57 | 92840M102 | VISTRA CORP | COM | 13 | 5.80 | VST · VISTRA CORP | Common Stock | Vistra Corp. | 2016-10-24~2026-10-23 | ✅ |
-| 58 | G96629103 | WILLIS TOWERS WATSON PLC LTD | SHS | 8 | 5.77 | WTW · WILLIS TOWERS WATSON PLC | Common Stock | WILLIS TOWERS WATSON PLC | 2016-10-24~2026-10-23 | ✅ |
+| 55 | 464287200 | ISHARES TR | CORE S&P500 ET | 5 | 5.85 | IVV · ISHARES CORE S&P 500 ETF | ETP |  | 2016-10-24~2026-10-23 | ✓ |
+| 56 | 146869102 | CARVANA CO | CL A | 13 | 5.83 | CVNA · CARVANA CO | Common Stock | CARVANA CO. | 2017-04-28~2026-10-23 | ✓ |
+| 57 | 92840M102 | VISTRA CORP | COM | 13 | 5.80 | VST · VISTRA CORP | Common Stock | Vistra Corp. | 2016-10-24~2026-10-23 | ✓ |
+| 58 | G96629103 | WILLIS TOWERS WATSON PLC LTD | SHS | 8 | 5.77 | WTW · WILLIS TOWERS WATSON PLC | Common Stock | WILLIS TOWERS WATSON PLC | 2016-10-24~2026-10-23 | ✓ |
 | 59 | 74736K101 | QORVO INC | COM | 7 | 5.72 |   |  |  | 없음 | — (OpenFIGI 티커 없음) |
-| 60 | 064058100 | BANK NEW YORK MELLON CORP | COM | 9 | 5.63 | BNY · BANK OF NEW YORK MELLON CORP | Common Stock | Bank of New York Mellon Corp | 2016-10-24~2026-10-23 | ✅ |
-| 61 | F72027109 | PERNOD RICARD | COM | 1 | 5.35 | PDRDF · PERNOD RICARD SA | Common Stock |  | 2016-10-24~2026-10-23 | ✅ |
-| 62 | 225310101 | CREDIT ACCEP CORP MICH | COM | 4 | 5.31 | CACC · CREDIT ACCEPTANCE CORP | Common Stock | CREDIT ACCEPTANCE CORP | 2016-10-24~2026-10-23 | ✅ |
-| 63 | 070830104 | BATH & BODY WORKS INC | COM | 7 | 5.24 | BBWI · BATH & BODY WORKS INC | Common Stock | Bath & Body Works, Inc. | 2016-10-24~2026-10-23 | ✅ |
-| 64 | 16119P108 | CHARTER COMMUNICATIONS INC N | CL A | 13 | 5.15 | CHTR · CHARTER COMMUNICATIONS INC-A | Common Stock | CHARTER COMMUNICATIONS, INC. / | 2016-10-24~2026-10-23 | ✅ |
-| 65 | 50212V100 | LPL FINL HLDGS INC | COM | 10 | 5.12 | LPLA · LPL FINANCIAL HOLDINGS INC | Common Stock | LPL Financial Holdings Inc. | 2016-10-24~2026-10-23 | ✅ |
-| 66 | 573284106 | MARTIN MARIETTA MATERIALS | COM | 7 | 4.96 | MLM · MARTIN MARIETTA MATERIALS | Common Stock | MARTIN MARIETTA MATERIALS INC | 2016-10-24~2026-10-23 | ✅ |
-| 67 | 78463V107 | SPDR GOLD TR | GOLD SHS | 5 | 4.92 | GLD · SPDR GOLD SHARES | ETP | SPDR GOLD TRUST | 2016-10-24~2026-10-23 | ✅ |
-| 68 | 44267T102 | HOWARD HUGHES HOLDINGS INC | COM | 4 | 4.85 | HHH · HOWARD HUGHES HOLDINGS INC | Common Stock | Howard Hughes Holdings Inc. | 2016-10-24~2026-10-23 | ✅ |
+| 60 | 064058100 | BANK NEW YORK MELLON CORP | COM | 9 | 5.63 | BNY · BANK OF NEW YORK MELLON CORP | Common Stock | Bank of New York Mellon Corp | 2016-10-24~2026-10-23 | ✓ |
+| 61 | F72027109 | PERNOD RICARD | COM | 1 | 5.35 | PDRDF · PERNOD RICARD SA | Common Stock |  | 2016-10-24~2026-10-23 | ✓ |
+| 62 | 225310101 | CREDIT ACCEP CORP MICH | COM | 4 | 5.31 | CACC · CREDIT ACCEPTANCE CORP | Common Stock | CREDIT ACCEPTANCE CORP | 2016-10-24~2026-10-23 | ✓ |
+| 63 | 070830104 | BATH & BODY WORKS INC | COM | 7 | 5.24 | BBWI · BATH & BODY WORKS INC | Common Stock | Bath & Body Works, Inc. | 2016-10-24~2026-10-23 | ✓ |
+| 64 | 16119P108 | CHARTER COMMUNICATIONS INC N | CL A | 13 | 5.15 | CHTR · CHARTER COMMUNICATIONS INC-A | Common Stock | CHARTER COMMUNICATIONS, INC. / | 2016-10-24~2026-10-23 | ✓ |
+| 65 | 50212V100 | LPL FINL HLDGS INC | COM | 10 | 5.12 | LPLA · LPL FINANCIAL HOLDINGS INC | Common Stock | LPL Financial Holdings Inc. | 2016-10-24~2026-10-23 | ✓ |
+| 66 | 573284106 | MARTIN MARIETTA MATERIALS | COM | 7 | 4.96 | MLM · MARTIN MARIETTA MATERIALS | Common Stock | MARTIN MARIETTA MATERIALS INC | 2016-10-24~2026-10-23 | ✓ |
+| 67 | 78463V107 | SPDR GOLD TR | GOLD SHS | 5 | 4.92 | GLD · SPDR GOLD SHARES | ETP | SPDR GOLD TRUST | 2016-10-24~2026-10-23 | ✓ |
+| 68 | 44267T102 | HOWARD HUGHES HOLDINGS INC | COM | 4 | 4.85 | HHH · HOWARD HUGHES HOLDINGS INC | Common Stock | Howard Hughes Holdings Inc. | 2016-10-24~2026-10-23 | ✓ |
 | 69 | 112585104 | BROOKFIELD ASSET MGMT INC | CL A LTD VT SH | 7 | 4.84 |   |  |  | 없음 | — (OpenFIGI 티커 없음) |
-| 70 | 27579R104 | EAST WEST BANCORP INC | COM | 6 | 4.80 | EWBC · EAST WEST BANCORP INC | Common Stock | EAST WEST BANCORP INC | 2016-10-24~2026-10-23 | ✅ |
-| 71 | N07059210 | ASML HOLDING N V | N Y REGISTRY S | 9 | 4.74 | ASML · ASML HOLDING NV-NY REG SHS | NY Reg Shrs | ASML HOLDING NV | 2016-10-24~2026-10-23 | ✅ |
-| 72 | 444859102 | HUMANA INC | COM | 14 | 4.63 | HUM · HUMANA INC | Common Stock | HUMANA INC | 2016-10-24~2026-10-23 | ✅ |
-| 73 | G61188127 | LIBERTY GLOBAL LTD | COM CL C | 4 | 4.62 | LBTYK · LIBERTY GLOBAL LTD-C | Common Stock | Liberty Global Ltd. | 2016-10-24~2026-10-23 | ✅ |
-| 74 | 808513105 | CHARLES SCHWAB CORP. | COM | 10 | 4.54 | SCHW · SCHWAB (CHARLES) CORP | Common Stock | SCHWAB CHARLES CORP | 2016-10-24~2026-10-23 | ✅ |
+| 70 | 27579R104 | EAST WEST BANCORP INC | COM | 6 | 4.80 | EWBC · EAST WEST BANCORP INC | Common Stock | EAST WEST BANCORP INC | 2016-10-24~2026-10-23 | ✓ |
+| 71 | N07059210 | ASML HOLDING N V | N Y REGISTRY S | 9 | 4.74 | ASML · ASML HOLDING NV-NY REG SHS | NY Reg Shrs | ASML HOLDING NV | 2016-10-24~2026-10-23 | ✓ |
+| 72 | 444859102 | HUMANA INC | COM | 14 | 4.63 | HUM · HUMANA INC | Common Stock | HUMANA INC | 2016-10-24~2026-10-23 | ✓ |
+| 73 | G61188127 | LIBERTY GLOBAL LTD | COM CL C | 4 | 4.62 | LBTYK · LIBERTY GLOBAL LTD-C | Common Stock | Liberty Global Ltd. | 2016-10-24~2026-10-23 | ✓ |
+| 74 | 808513105 | CHARLES SCHWAB CORP. | COM | 10 | 4.54 | SCHW · SCHWAB (CHARLES) CORP | Common Stock | SCHWAB CHARLES CORP | 2016-10-24~2026-10-23 | ✓ |
 | 75 | 20717M103 | CONFLUENT INC | CLASS A COM | 12 | 4.47 |   |  |  | 없음 | — (OpenFIGI 티커 없음) |
-| 76 | 02079K107 | ALPHABET INC CLASS C | CAP STK CL C | 4 | 4.39 | GOOG · ALPHABET INC-CL C | Common Stock | Alphabet Inc. | 2016-10-24~2026-10-23 | ✅ |
-| 77 | 036752103 | ANTHEM INC | COM | 11 | 4.38 | ELV · ELEVANCE HEALTH INC | Common Stock | Elevance Health, Inc. | 2016-10-24~2026-10-23 | ✅ |
-| 78 | 03831W108 | APPLOVIN CORP | COM CL A | 12 | 4.29 | APP · APPLOVIN CORP-CLASS A | Common Stock | AppLovin Corp | 2021-04-15~2026-10-23 | ✅ |
-| 79 | G25508105 | CRH PLC | ORD | 8 | 4.29 | CRH · CRH PLC | Common Stock | CRH PUBLIC LTD CO | 2016-10-24~2026-10-23 | ✅ |
-| 80 | G51502105 | JOHNSON CONTROLS INTERNATIONAL PLC | SHS | 10 | 4.19 | JCI · JOHNSON CONTROLS INTERNATION | Common Stock | Johnson Controls International | 2016-10-24~2026-10-23 | ✅ |
-| 81 | 03769M106 | APOLLO GLOBAL MGMT INC | COM | 10 | 4.09 | APO · APOLLO GLOBAL MANAGEMENT INC | Common Stock | Apollo Global Management, Inc. | 2016-10-24~2026-10-23 | ✅ |
-| 82 | 23804L103 | DATADOG INC | CL A COM | 13 | 4.09 | DDOG · DATADOG INC - CLASS A | Common Stock | Datadog, Inc. | 2019-09-19~2026-10-23 | ✅ |
-| 83 | 531229755 | LIBERTY MEDIA CORP DEL | COM LBTY ONE S | 9 | 4.03 | FWONK · LIBERTY MEDIA CORP-C | Common Stock | Liberty Media Corp | 2016-10-24~2026-10-23 | ✅ |
+| 76 | 02079K107 | ALPHABET INC CLASS C | CAP STK CL C | 4 | 4.39 | GOOG · ALPHABET INC-CL C | Common Stock | Alphabet Inc. | 2016-10-24~2026-10-23 | ✓ |
+| 77 | 036752103 | ANTHEM INC | COM | 11 | 4.38 | ELV · ELEVANCE HEALTH INC | Common Stock | Elevance Health, Inc. | 2016-10-24~2026-10-23 | ✓ |
+| 78 | 03831W108 | APPLOVIN CORP | COM CL A | 12 | 4.29 | APP · APPLOVIN CORP-CLASS A | Common Stock | AppLovin Corp | 2021-04-15~2026-10-23 | ✓ |
+| 79 | G25508105 | CRH PLC | ORD | 8 | 4.29 | CRH · CRH PLC | Common Stock | CRH PUBLIC LTD CO | 2016-10-24~2026-10-23 | ✓ |
+| 80 | G51502105 | JOHNSON CONTROLS INTERNATIONAL PLC | SHS | 10 | 4.19 | JCI · JOHNSON CONTROLS INTERNATION | Common Stock | Johnson Controls International | 2016-10-24~2026-10-23 | ✓ |
+| 81 | 03769M106 | APOLLO GLOBAL MGMT INC | COM | 10 | 4.09 | APO · APOLLO GLOBAL MANAGEMENT INC | Common Stock | Apollo Global Management, Inc. | 2016-10-24~2026-10-23 | ✓ |
+| 82 | 23804L103 | DATADOG INC | CL A COM | 13 | 4.09 | DDOG · DATADOG INC - CLASS A | Common Stock | Datadog, Inc. | 2019-09-19~2026-10-23 | ✓ |
+| 83 | 531229755 | LIBERTY MEDIA CORP DEL | COM LBTY ONE S | 9 | 4.03 | FWONK · LIBERTY MEDIA CORP-C | Common Stock | Liberty Media Corp | 2016-10-24~2026-10-23 | ✓ |
 | 84 | 20854L108 | CONSOL ENERGY INC NEW | COM | 3 | 3.99 |   |  |  | 없음 | — (OpenFIGI 티커 없음) |
 | 85 | 531229854 | LIBERTY MEDIA CORP DEL | COM SER C FRML | 10 | 3.98 |   |  |  | 없음 | — (OpenFIGI 티커 없음) |
-| 86 | 056752108 | BAIDU INC | SPON ADR REP A | 12 | 3.93 | BIDU · BAIDU INC - SPON ADR | ADR | Baidu, Inc. | 2016-10-24~2026-10-23 | ✅ |
-| 87 | 278642103 | EBAY INC. | COM | 8 | 3.91 | EBAY · EBAY INC | Common Stock | EBAY INC | 2016-10-24~2026-10-23 | ✅ |
-| 88 | 084670702 | BERKSHIRE HATHAWAY INC., CLASS B | Common | 3 | 3.87 | BRK/B · BERKSHIRE HATHAWAY INC-CL B | Common Stock | BERKSHIRE HATHAWAY INC | 2016-10-24~2026-10-23 | ✅ |
-| 89 | 46625H100 | J.P. MORGAN CHASE | COM | 5 | 3.80 | JPM · JPMORGAN CHASE & CO | Common Stock | JPMORGAN CHASE & CO | 2016-10-24~2026-10-23 | ✅ |
-| 90 | 31428X106 | FEDEX CORP | COM | 12 | 3.76 | FDX · FEDEX CORP | Common Stock | FEDEX CORP | 2016-10-24~2026-10-23 | ✅ |
-| 91 | 22788C105 | CROWDSTRIKE HLDGS INC | CL A | 12 | 3.73 | CRWD · CROWDSTRIKE HOLDINGS INC - A | Common Stock | CrowdStrike Holdings, Inc. | 2019-06-12~2026-10-23 | ✅ |
-| 92 | 570535104 | MARKEL CORP | COM | 8 | 3.67 | MKL · MARKEL GROUP INC | Common Stock | MARKEL GROUP INC. | 2016-10-24~2026-10-23 | ✅ |
-| 93 | 92556V106 | VIATRIS INC | COM | 8 | 3.67 | VTRS · VIATRIS INC | Common Stock | Viatris Inc | 2016-10-24~2026-10-23 | ✅ |
-| 94 | 464287242 | ISHARES TR | IBOXX INV CP E | 5 | 3.66 | LQD · ISHR IBX USD INVGD CB ETF-UI | ETP |  | 2016-10-24~2026-10-23 | ✅ |
-| 95 | 46982L108 | JACOBS SOLUTIONS INC | COM | 8 | 3.64 | J · JACOBS SOLUTIONS INC | Common Stock | JACOBS SOLUTIONS INC. | 2016-10-24~2026-10-23 | ✅ |
-| 96 | 922042858 | VANGUARD FTSE EMERGING MKT ETF | COM | 3 | 3.58 | VWO · VANGUARD FTSE EMERGING MARKE | ETP |  | 2016-10-24~2026-10-23 | ✅ |
-| 97 | 60855R100 | MOLINA HEALTHCARE INC | COM | 8 | 3.57 | MOH · MOLINA HEALTHCARE INC | Common Stock | MOLINA HEALTHCARE, INC. | 2016-10-24~2026-10-23 | ✅ |
-| 98 | 74967X103 | RH | COM | 12 | 3.53 | RH · RH | Common Stock | RH | 2016-10-24~2026-10-23 | ✅ |
-| 99 | 46434G103 | ISHARES INC | CORE MSCI EMKT | 4 | 3.52 | IEMG · ISHARES CORE MSCI EMERGING | ETP |  | 2016-10-24~2026-10-23 | ✅ |
-| 100 | 337738108 | FISERV INC | COM | 8 | 3.51 | FISV · FISERV INC | Common Stock | FISERV INC | 2016-10-24~2026-10-23 | ✅ |
-| 101 | N00985106 | AERCAP HOLDINGS NV | SHS | 6 | 3.49 | AER · AERCAP HOLDINGS NV | Common Stock | AerCap Holdings N.V. | 2016-10-24~2026-10-23 | ✅ |
-| 102 | 893641100 | TRANSDIGM GROUP INC | COM | 10 | 3.49 | TDG · TRANSDIGM GROUP INC | Common Stock | TransDigm Group INC | 2016-10-24~2026-10-23 | ✅ |
-| 103 | 36467W109 | GAMESTOP CORP NEW | CL A | 6 | 3.41 | GME · GAMESTOP CORP-CLASS A | Common Stock | GameStop Corp. | 2016-10-24~2026-10-23 | ✅ |
-| 104 | 00846U101 | AGILENT TECHNOLOGIES INC | COM | 8 | 3.40 | A · AGILENT TECHNOLOGIES INC | Common Stock | AGILENT TECHNOLOGIES, INC. | 2016-10-24~2026-10-23 | ✅ |
-| 105 | 37940X102 | GLOBAL PMTS INC | COM | 9 | 3.39 | GPN · GLOBAL PAYMENTS INC | Common Stock | GLOBAL PAYMENTS INC | 2016-10-24~2026-10-23 | ✅ |
-| 106 | 538034109 | LIVE NATION ENTERTAINMENT IN | COM | 12 | 3.34 | LYV · LIVE NATION ENTERTAINMENT IN | Common Stock | Live Nation Entertainment, Inc | 2016-10-24~2026-10-23 | ✅ |
-| 107 | 13646K108 | CANADIAN PACIFIC KANSAS CITY | COM | 10 | 3.29 | CP · CANADIAN PACIFIC KANSAS CITY | Common Stock | CANADIAN PACIFIC KANSAS CITY L | 2016-10-24~2026-10-23 | ✅ |
-| 108 | 78462F103 | SPDR S&P 500 ETF TRUST - US ETP | COM | 5 | 3.28 | SPY · SS SPDR S&P 500 ETF TRUST-US | ETP | SPDR S&P 500 ETF TRUST | 2016-10-24~2026-10-23 | ✅ |
-| 109 | 34959J108 | FORTIVE CORP | COM | 9 | 3.22 | FTV · FORTIVE CORP | Common Stock | Fortive Corp | 2016-10-24~2026-10-23 | ✅ |
-| 110 | 23331A109 | D R HORTON INC | COM | 12 | 3.20 | DHI · DR HORTON INC | Common Stock | HORTON D R INC /DE/ | 2016-10-24~2026-10-23 | ✅ |
+| 86 | 056752108 | BAIDU INC | SPON ADR REP A | 12 | 3.93 | BIDU · BAIDU INC - SPON ADR | ADR | Baidu, Inc. | 2016-10-24~2026-10-23 | ✓ |
+| 87 | 278642103 | EBAY INC. | COM | 8 | 3.91 | EBAY · EBAY INC | Common Stock | EBAY INC | 2016-10-24~2026-10-23 | ✓ |
+| 88 | 084670702 | BERKSHIRE HATHAWAY INC., CLASS B | Common | 3 | 3.87 | BRK/B · BERKSHIRE HATHAWAY INC-CL B | Common Stock | BERKSHIRE HATHAWAY INC | 2016-10-24~2026-10-23 | ✓ |
+| 89 | 46625H100 | J.P. MORGAN CHASE | COM | 5 | 3.80 | JPM · JPMORGAN CHASE & CO | Common Stock | JPMORGAN CHASE & CO | 2016-10-24~2026-10-23 | ✓ |
+| 90 | 31428X106 | FEDEX CORP | COM | 12 | 3.76 | FDX · FEDEX CORP | Common Stock | FEDEX CORP | 2016-10-24~2026-10-23 | ✓ |
+| 91 | 22788C105 | CROWDSTRIKE HLDGS INC | CL A | 12 | 3.73 | CRWD · CROWDSTRIKE HOLDINGS INC - A | Common Stock | CrowdStrike Holdings, Inc. | 2019-06-12~2026-10-23 | ✓ |
+| 92 | 570535104 | MARKEL CORP | COM | 8 | 3.67 | MKL · MARKEL GROUP INC | Common Stock | MARKEL GROUP INC. | 2016-10-24~2026-10-23 | ✓ |
+| 93 | 92556V106 | VIATRIS INC | COM | 8 | 3.67 | VTRS · VIATRIS INC | Common Stock | Viatris Inc | 2016-10-24~2026-10-23 | ✓ |
+| 94 | 464287242 | ISHARES TR | IBOXX INV CP E | 5 | 3.66 | LQD · ISHR IBX USD INVGD CB ETF-UI | ETP |  | 2016-10-24~2026-10-23 | ✓ |
+| 95 | 46982L108 | JACOBS SOLUTIONS INC | COM | 8 | 3.64 | J · JACOBS SOLUTIONS INC | Common Stock | JACOBS SOLUTIONS INC. | 2016-10-24~2026-10-23 | ✓ |
+| 96 | 922042858 | VANGUARD FTSE EMERGING MKT ETF | COM | 3 | 3.58 | VWO · VANGUARD FTSE EMERGING MARKE | ETP |  | 2016-10-24~2026-10-23 | ✓ |
+| 97 | 60855R100 | MOLINA HEALTHCARE INC | COM | 8 | 3.57 | MOH · MOLINA HEALTHCARE INC | Common Stock | MOLINA HEALTHCARE, INC. | 2016-10-24~2026-10-23 | ✓ |
+| 98 | 74967X103 | RH | COM | 12 | 3.53 | RH · RH | Common Stock | RH | 2016-10-24~2026-10-23 | ✓ |
+| 99 | 46434G103 | ISHARES INC | CORE MSCI EMKT | 4 | 3.52 | IEMG · ISHARES CORE MSCI EMERGING | ETP |  | 2016-10-24~2026-10-23 | ✓ |
+| 100 | 337738108 | FISERV INC | COM | 8 | 3.51 | FISV · FISERV INC | Common Stock | FISERV INC | 2016-10-24~2026-10-23 | ✓ |
+| 101 | N00985106 | AERCAP HOLDINGS NV | SHS | 6 | 3.49 | AER · AERCAP HOLDINGS NV | Common Stock | AerCap Holdings N.V. | 2016-10-24~2026-10-23 | ✓ |
+| 102 | 893641100 | TRANSDIGM GROUP INC | COM | 10 | 3.49 | TDG · TRANSDIGM GROUP INC | Common Stock | TransDigm Group INC | 2016-10-24~2026-10-23 | ✓ |
+| 103 | 36467W109 | GAMESTOP CORP NEW | CL A | 6 | 3.41 | GME · GAMESTOP CORP-CLASS A | Common Stock | GameStop Corp. | 2016-10-24~2026-10-23 | ✓ |
+| 104 | 00846U101 | AGILENT TECHNOLOGIES INC | COM | 8 | 3.40 | A · AGILENT TECHNOLOGIES INC | Common Stock | AGILENT TECHNOLOGIES, INC. | 2016-10-24~2026-10-23 | ✓ |
+| 105 | 37940X102 | GLOBAL PMTS INC | COM | 9 | 3.39 | GPN · GLOBAL PAYMENTS INC | Common Stock | GLOBAL PAYMENTS INC | 2016-10-24~2026-10-23 | ✓ |
+| 106 | 538034109 | LIVE NATION ENTERTAINMENT IN | COM | 12 | 3.34 | LYV · LIVE NATION ENTERTAINMENT IN | Common Stock | Live Nation Entertainment, Inc | 2016-10-24~2026-10-23 | ✓ |
+| 107 | 13646K108 | CANADIAN PACIFIC KANSAS CITY | COM | 10 | 3.29 | CP · CANADIAN PACIFIC KANSAS CITY | Common Stock | CANADIAN PACIFIC KANSAS CITY L | 2016-10-24~2026-10-23 | ✓ |
+| 108 | 78462F103 | SPDR S&P 500 ETF TRUST - US ETP | COM | 5 | 3.28 | SPY · SS SPDR S&P 500 ETF TRUST-US | ETP | SPDR S&P 500 ETF TRUST | 2016-10-24~2026-10-23 | ✓ |
+| 109 | 34959J108 | FORTIVE CORP | COM | 9 | 3.22 | FTV · FORTIVE CORP | Common Stock | Fortive Corp | 2016-10-24~2026-10-23 | ✓ |
+| 110 | 23331A109 | D R HORTON INC | COM | 12 | 3.20 | DHI · DR HORTON INC | Common Stock | HORTON D R INC /DE/ | 2016-10-24~2026-10-23 | ✓ |
 | 111 | 531229607 | LIBERTY MEDIA CORP DEL | COM C SIRIUSXM | 5 | 3.19 |   |  |  | 없음 | — (OpenFIGI 티커 없음) |
-| 112 | 40434L105 | HP INC | COM | 9 | 3.18 | HPQ · HP INC | Common Stock | HP INC | 2016-10-24~2026-10-23 | ✅ |
-| 113 | G3643J108 | FLUTTER ENTMT PLC | SHS | 12 | 3.17 | FLUT · FLUTTER ENTERTAINMENT PLC-DI | Common Stock | Flutter Entertainment plc | 2016-10-24~2026-10-23 | ✅ |
-| 114 | 36828A101 | GE VERNOVA INC | COM | 11 | 3.13 | GEV · GE VERNOVA INC | Common Stock | GE Vernova Inc. | 2024-03-27~2026-10-23 | ✅ |
-| 115 | 35137L105 | FOX CORP | CL A COM | 8 | 3.12 | FOXA · FOX CORP - CLASS A | Common Stock | Fox Corp | 2019-03-12~2026-10-23 | ✅ |
-| 116 | 910047109 | UNITED AIRLS HLDGS INC | COM | 9 | 3.11 | UAL · UNITED AIRLINES HOLDINGS INC | Common Stock | United Airlines Holdings, Inc. | 2016-10-24~2026-10-23 | ✅ |
-| 117 | 15135B101 | CENTENE CORP DEL | COM | 7 | 3.10 | CNC · CENTENE CORP | Common Stock | CENTENE CORP | 2016-10-24~2026-10-23 | ✅ |
-| 118 | 50155Q100 | KYNDRYL HLDGS INC | COMMON STOCK | 5 | 3.08 | KD · KYNDRYL HOLDINGS INC | Common Stock | Kyndryl Holdings, Inc. | 2021-10-22~2026-10-23 | ✅ |
-| 119 | 98980L101 | ZOOM VIDEO COMMUNICATIONS IN | CL A | 13 | 3.07 | ZM · ZOOM COMMUNICATIONS INC | Common Stock | Zoom Communications, Inc. | 2019-04-18~2026-10-23 | ✅ |
-| 120 | 26884L109 | EQT CORP | COM | 10 | 3.06 | EQT · EQT CORP | Common Stock | EQT Corp | 2016-10-24~2026-10-23 | ✅ |
-| 121 | 110122108 | BRISTOL-MYERS SQUIBB CO | COM | 8 | 3.06 | BMY · BRISTOL-MYERS SQUIBB CO | Common Stock | BRISTOL MYERS SQUIBB CO | 2016-10-24~2026-10-23 | ✅ |
-| 122 | 00724F101 | ADOBE SYSTEMS INCORPORATED | COM | 10 | 3.05 | ADBE · ADOBE INC | Common Stock | ADOBE INC. | 2016-10-24~2026-10-23 | ✅ |
-| 123 | N3167Y103 | FERRARI NV | COM | 6 | 3.03 | RACE · FERRARI NV | Common Stock | Ferrari N.V. | 2016-10-24~2026-10-23 | ✅ |
-| 124 | 25754A201 | DOMINOS PIZZA INC | COM | 10 | 2.99 | DPZ · DOMINO'S PIZZA INC | Common Stock | DOMINOS PIZZA INC | 2016-10-24~2026-10-23 | ✅ |
-| 125 | 40415F101 | HDFC BANK LTD | SPONSORED ADS | 10 | 2.98 | HDB · HDFC BANK LTD-ADR | ADR | HDFC BANK LTD | 2016-10-24~2026-10-23 | ✅ |
-| 126 | 670100205 | NOVO-NORDISK A S | ADR | 10 | 2.96 | NVO · NOVO-NORDISK A/S-SPONS ADR | ADR | NOVO NORDISK A S | 2016-10-24~2026-10-23 | ✅ |
-| 127 | 84615Q103 | SPACE EXPLORATION TECHN CORP | CLASS A COM ST | 11 | 2.94 | SPCX · SPACE EXPLORATION TECHN-CL A | Common Stock | SPACE EXPLORATION TECHNOLOGIES | 2026-06-12~2026-10-23 | ✅ |
-| 128 | 94419L101 | WAYFAIR INC | CL A | 9 | 2.91 | W · WAYFAIR INC- CLASS A | Common Stock | Wayfair Inc. | 2016-10-24~2026-10-23 | ✅ |
-| 129 | 29273V100 | ENERGY TRANSFER L P | COM UT LTD PTN | 4 | 2.91 | ET · ENERGY TRANSFER LP | MLP | Energy Transfer LP | 2016-10-24~2026-10-23 | ✅ |
-| 130 | 40412C101 | HCA HEALTHCARE INC | COM | 11 | 2.91 | HCA · HCA HEALTHCARE INC | Common Stock | HCA Healthcare, Inc. | 2016-10-24~2026-10-23 | ✅ |
+| 112 | 40434L105 | HP INC | COM | 9 | 3.18 | HPQ · HP INC | Common Stock | HP INC | 2016-10-24~2026-10-23 | ✓ |
+| 113 | G3643J108 | FLUTTER ENTMT PLC | SHS | 12 | 3.17 | FLUT · FLUTTER ENTERTAINMENT PLC-DI | Common Stock | Flutter Entertainment plc | 2016-10-24~2026-10-23 | ✓ |
+| 114 | 36828A101 | GE VERNOVA INC | COM | 11 | 3.13 | GEV · GE VERNOVA INC | Common Stock | GE Vernova Inc. | 2024-03-27~2026-10-23 | ✓ |
+| 115 | 35137L105 | FOX CORP | CL A COM | 8 | 3.12 | FOXA · FOX CORP - CLASS A | Common Stock | Fox Corp | 2019-03-12~2026-10-23 | ✓ |
+| 116 | 910047109 | UNITED AIRLS HLDGS INC | COM | 9 | 3.11 | UAL · UNITED AIRLINES HOLDINGS INC | Common Stock | United Airlines Holdings, Inc. | 2016-10-24~2026-10-23 | ✓ |
+| 117 | 15135B101 | CENTENE CORP DEL | COM | 7 | 3.10 | CNC · CENTENE CORP | Common Stock | CENTENE CORP | 2016-10-24~2026-10-23 | ✓ |
+| 118 | 50155Q100 | KYNDRYL HLDGS INC | COMMON STOCK | 5 | 3.08 | KD · KYNDRYL HOLDINGS INC | Common Stock | Kyndryl Holdings, Inc. | 2021-10-22~2026-10-23 | ✓ |
+| 119 | 98980L101 | ZOOM VIDEO COMMUNICATIONS IN | CL A | 13 | 3.07 | ZM · ZOOM COMMUNICATIONS INC | Common Stock | Zoom Communications, Inc. | 2019-04-18~2026-10-23 | ✓ |
+| 120 | 26884L109 | EQT CORP | COM | 10 | 3.06 | EQT · EQT CORP | Common Stock | EQT Corp | 2016-10-24~2026-10-23 | ✓ |
+| 121 | 110122108 | BRISTOL-MYERS SQUIBB CO | COM | 8 | 3.06 | BMY · BRISTOL-MYERS SQUIBB CO | Common Stock | BRISTOL MYERS SQUIBB CO | 2016-10-24~2026-10-23 | ✓ |
+| 122 | 00724F101 | ADOBE SYSTEMS INCORPORATED | COM | 10 | 3.05 | ADBE · ADOBE INC | Common Stock | ADOBE INC. | 2016-10-24~2026-10-23 | ✓ |
+| 123 | N3167Y103 | FERRARI NV | COM | 6 | 3.03 | RACE · FERRARI NV | Common Stock | Ferrari N.V. | 2016-10-24~2026-10-23 | ✓ |
+| 124 | 25754A201 | DOMINOS PIZZA INC | COM | 10 | 2.99 | DPZ · DOMINO'S PIZZA INC | Common Stock | DOMINOS PIZZA INC | 2016-10-24~2026-10-23 | ✓ |
+| 125 | 40415F101 | HDFC BANK LTD | SPONSORED ADS | 10 | 2.98 | HDB · HDFC BANK LTD-ADR | ADR | HDFC BANK LTD | 2016-10-24~2026-10-23 | ✓ |
+| 126 | 670100205 | NOVO-NORDISK A S | ADR | 10 | 2.96 | NVO · NOVO-NORDISK A/S-SPONS ADR | ADR | NOVO NORDISK A S | 2016-10-24~2026-10-23 | ✓ |
+| 127 | 84615Q103 | SPACE EXPLORATION TECHN CORP | CLASS A COM ST | 11 | 2.94 | SPCX · SPACE EXPLORATION TECHN-CL A | Common Stock | SPACE EXPLORATION TECHNOLOGIES | 2026-06-12~2026-10-23 | ✓ |
+| 128 | 94419L101 | WAYFAIR INC | CL A | 9 | 2.91 | W · WAYFAIR INC- CLASS A | Common Stock | Wayfair Inc. | 2016-10-24~2026-10-23 | ✓ |
+| 129 | 29273V100 | ENERGY TRANSFER L P | COM UT LTD PTN | 4 | 2.91 | ET · ENERGY TRANSFER LP | MLP | Energy Transfer LP | 2016-10-24~2026-10-23 | ✓ |
+| 130 | 40412C101 | HCA HEALTHCARE INC | COM | 11 | 2.91 | HCA · HCA HEALTHCARE INC | Common Stock | HCA Healthcare, Inc. | 2016-10-24~2026-10-23 | ✓ |
 | 131 | 26614N102 | DUPONT DE NEMOURS INC | COM | 10 | 2.90 |   |  |  | 없음 | — (OpenFIGI 티커 없음) |
-| 132 | 59156R108 | METLIFE INC | COM | 7 | 2.90 | MET · METLIFE INC | Common Stock | METLIFE INC | 2016-10-24~2026-10-23 | ✅ |
-| 133 | 92206C870 | VANGUARD FDS INT TERM CORP | COM | 2 | 2.89 | VCIT · VANGUARD INT-TERM CORPORATE | ETP |  | 2016-10-24~2026-10-23 | ✅ |
-| 134 | 70614W100 | PELOTON INTERACTIVE INC | CL A COM | 12 | 2.87 | PTON · PELOTON INTERACTIVE INC-A | Common Stock | PELOTON INTERACTIVE, INC. | 2019-09-26~2026-10-23 | ✅ |
+| 132 | 59156R108 | METLIFE INC | COM | 7 | 2.90 | MET · METLIFE INC | Common Stock | METLIFE INC | 2016-10-24~2026-10-23 | ✓ |
+| 133 | 92206C870 | VANGUARD FDS INT TERM CORP | COM | 2 | 2.89 | VCIT · VANGUARD INT-TERM CORPORATE | ETP |  | 2016-10-24~2026-10-23 | ✓ |
+| 134 | 70614W100 | PELOTON INTERACTIVE INC | CL A COM | 12 | 2.87 | PTON · PELOTON INTERACTIVE INC-A | Common Stock | PELOTON INTERACTIVE, INC. | 2019-09-26~2026-10-23 | ✓ |
 | 135 | 00507V109 | ACTIVISION BLIZZARD INC | COM | 14 | 2.86 |   |  |  | 없음 | — (OpenFIGI 티커 없음) |
-| 136 | 742718109 | PROCTER AND GAMBLE CO | COM | 5 | 2.82 | PG · PROCTER & GAMBLE CO/THE | Common Stock | PROCTER & GAMBLE Co | 2016-10-24~2026-10-23 | ✅ |
-| 137 | 550021109 | LULULEMON ATHLETICA INC | COM | 9 | 2.82 | LULU · LULULEMON ATHLETICA INC | Common Stock | lululemon athletica inc. | 2016-10-24~2026-10-23 | ✅ |
-| 138 | 10806X102 | BRIDGEBIO PHARMA INC | COM | 6 | 2.81 | BBIO · BRIDGEBIO PHARMA INC | Common Stock | BridgeBio Pharma, Inc. | 2019-06-27~2026-10-23 | ✅ |
-| 139 | 071813109 | BAXTER INTL INC | COM | 7 | 2.81 | BAX · BAXTER INTERNATIONAL INC | Common Stock | BAXTER INTERNATIONAL INC | 2016-10-24~2026-10-23 | ✅ |
-| 140 | 88023U101 | TEMPUR SEALY INTL INC | COM | 11 | 2.81 | SGI · SOMNIGROUP INTERNATIONAL INC | Common Stock | SOMNIGROUP INTERNATIONAL INC. | 2016-10-24~2026-10-23 | ✅ |
-| 141 | 80105N105 | SANOFI | SPONSORED ADR | 6 | 2.78 | SNY · SANOFI-ADR | ADR | Sanofi | 2016-10-24~2026-10-23 | ✅ |
-| 142 | 674599105 | OCCIDENTAL PETROLEUM CORP. | COM | 2 | 2.76 | OXY · OCCIDENTAL PETROLEUM CORP | Common Stock | OCCIDENTAL PETROLEUM CORP /DE/ | 2016-10-24~2026-10-23 | ✅ |
-| 143 | 45784P101 | INSULET CORP | COM | 9 | 2.74 | PODD · INSULET CORP | Common Stock | INSULET CORP | 2016-10-24~2026-10-23 | ✅ |
-| 144 | 00187Y100 | API GROUP CORP | COM STK | 8 | 2.71 | APG · API GROUP CORP | Common Stock | APi Group Corp | 2020-04-29~2026-10-23 | ✅ |
-| 145 | 95082P105 | WESCO INTL INC | COM | 7 | 2.69 | WCC · WESCO INTERNATIONAL INC | Common Stock | WESCO INTERNATIONAL INC | 2016-10-24~2026-10-23 | ✅ |
-| 146 | 552953101 | MGM RESORTS INTERNATIONAL | COM | 9 | 2.68 | MGM · MGM RESORTS INTERNATIONAL | Common Stock | MGM Resorts International | 2016-10-24~2026-10-23 | ✅ |
+| 136 | 742718109 | PROCTER AND GAMBLE CO | COM | 5 | 2.82 | PG · PROCTER & GAMBLE CO/THE | Common Stock | PROCTER & GAMBLE Co | 2016-10-24~2026-10-23 | ✓ |
+| 137 | 550021109 | LULULEMON ATHLETICA INC | COM | 9 | 2.82 | LULU · LULULEMON ATHLETICA INC | Common Stock | lululemon athletica inc. | 2016-10-24~2026-10-23 | ✓ |
+| 138 | 10806X102 | BRIDGEBIO PHARMA INC | COM | 6 | 2.81 | BBIO · BRIDGEBIO PHARMA INC | Common Stock | BridgeBio Pharma, Inc. | 2019-06-27~2026-10-23 | ✓ |
+| 139 | 071813109 | BAXTER INTL INC | COM | 7 | 2.81 | BAX · BAXTER INTERNATIONAL INC | Common Stock | BAXTER INTERNATIONAL INC | 2016-10-24~2026-10-23 | ✓ |
+| 140 | 88023U101 | TEMPUR SEALY INTL INC | COM | 11 | 2.81 | SGI · SOMNIGROUP INTERNATIONAL INC | Common Stock | SOMNIGROUP INTERNATIONAL INC. | 2016-10-24~2026-10-23 | ✓ |
+| 141 | 80105N105 | SANOFI | SPONSORED ADR | 6 | 2.78 | SNY · SANOFI-ADR | ADR | Sanofi | 2016-10-24~2026-10-23 | ✓ |
+| 142 | 674599105 | OCCIDENTAL PETROLEUM CORP. | COM | 2 | 2.76 | OXY · OCCIDENTAL PETROLEUM CORP | Common Stock | OCCIDENTAL PETROLEUM CORP /DE/ | 2016-10-24~2026-10-23 | ✓ |
+| 143 | 45784P101 | INSULET CORP | COM | 9 | 2.74 | PODD · INSULET CORP | Common Stock | INSULET CORP | 2016-10-24~2026-10-23 | ✓ |
+| 144 | 00187Y100 | API GROUP CORP | COM STK | 8 | 2.71 | APG · API GROUP CORP | Common Stock | APi Group Corp | 2020-04-29~2026-10-23 | ✓ |
+| 145 | 95082P105 | WESCO INTL INC | COM | 7 | 2.69 | WCC · WESCO INTERNATIONAL INC | Common Stock | WESCO INTERNATIONAL INC | 2016-10-24~2026-10-23 | ✓ |
+| 146 | 552953101 | MGM RESORTS INTERNATIONAL | COM | 9 | 2.68 | MGM · MGM RESORTS INTERNATIONAL | Common Stock | MGM Resorts International | 2016-10-24~2026-10-23 | ✓ |
 | 147 | 934423104 | WARNER BROS DISCOVERY INC | COM SER A | 11 | 2.66 |   |  |  | 없음 | — (OpenFIGI 티커 없음) |
-| 148 | 02043Q107 | ALNYLAM PHARMACEUTICALS INC | COM | 8 | 2.65 | ALNY · ALNYLAM PHARMACEUTICALS INC | Common Stock | ALNYLAM PHARMACEUTICALS, INC. | 2016-10-24~2026-10-23 | ✅ |
-| 149 | 101137107 | BOSTON SCIENTIFIC CORP | COM | 11 | 2.64 | BSX · BOSTON SCIENTIFIC CORP | Common Stock | BOSTON SCIENTIFIC CORP | 2016-10-24~2026-10-23 | ✅ |
-| 150 | 25243Q205 | DIAGEO PLC | SPON ADR NEW | 8 | 2.59 | DEO · DIAGEO PLC-SPONSORED ADR | ADR | DIAGEO PLC | 2016-10-24~2026-10-23 | ✅ |
-| 151 | 874054109 | TAKE-TWO INTERACTIVE SOFTWAR | COM | 9 | 2.52 | TTWO · TAKE-TWO INTERACTIVE SOFTWRE | Common Stock | TAKE TWO INTERACTIVE SOFTWARE  | 2016-10-24~2026-10-23 | ✅ |
-| 152 | 81730H109 | SENTINELONE INC | CL A | 7 | 2.47 | S · SENTINELONE INC -CLASS A | Common Stock | SentinelOne, Inc. | 2021-06-30~2026-10-23 | ✅ |
+| 148 | 02043Q107 | ALNYLAM PHARMACEUTICALS INC | COM | 8 | 2.65 | ALNY · ALNYLAM PHARMACEUTICALS INC | Common Stock | ALNYLAM PHARMACEUTICALS, INC. | 2016-10-24~2026-10-23 | ✓ |
+| 149 | 101137107 | BOSTON SCIENTIFIC CORP | COM | 11 | 2.64 | BSX · BOSTON SCIENTIFIC CORP | Common Stock | BOSTON SCIENTIFIC CORP | 2016-10-24~2026-10-23 | ✓ |
+| 150 | 25243Q205 | DIAGEO PLC | SPON ADR NEW | 8 | 2.59 | DEO · DIAGEO PLC-SPONSORED ADR | ADR | DIAGEO PLC | 2016-10-24~2026-10-23 | ✓ |
+| 151 | 874054109 | TAKE-TWO INTERACTIVE SOFTWAR | COM | 9 | 2.52 | TTWO · TAKE-TWO INTERACTIVE SOFTWRE | Common Stock | TAKE TWO INTERACTIVE SOFTWARE  | 2016-10-24~2026-10-23 | ✓ |
+| 152 | 81730H109 | SENTINELONE INC | CL A | 7 | 2.47 | S · SENTINELONE INC -CLASS A | Common Stock | SentinelOne, Inc. | 2021-06-30~2026-10-23 | ✓ |
 | 153 | G06242104 | ATLASSIAN CORP PLC | CL A | 11 | 2.45 |   |  |  | 없음 | — (OpenFIGI 티커 없음) |
-| 154 | 256677105 | DOLLAR GEN CORP NEW | COM | 10 | 2.40 | DG · DOLLAR GENERAL CORP | Common Stock | DOLLAR GENERAL CORP | 2016-10-24~2026-10-23 | ✅ |
-| 155 | 19247G107 | COHERENT CORP | COM | 9 | 2.34 | COHR · COHERENT CORP | Common Stock | COHERENT CORP. | 2016-10-24~2026-10-23 | ✅ |
+| 154 | 256677105 | DOLLAR GEN CORP NEW | COM | 10 | 2.40 | DG · DOLLAR GENERAL CORP | Common Stock | DOLLAR GENERAL CORP | 2016-10-24~2026-10-23 | ✓ |
+| 155 | 19247G107 | COHERENT CORP | COM | 9 | 2.34 | COHR · COHERENT CORP | Common Stock | COHERENT CORP. | 2016-10-24~2026-10-23 | ✓ |
 | 156 | 90184L102 | TWITTER INC | COM | 9 | 2.33 |   |  |  | 없음 | — (OpenFIGI 티커 없음) |
-| 157 | 888787108 | TOAST INC | CL A | 10 | 2.31 | TOST · TOAST INC-CLASS A | Common Stock | Toast, Inc. | 2021-09-22~2026-10-23 | ✅ |
-| 158 | 00650F109 | ADAPTIVE BIOTECHNOLOGIES COR | COM | 5 | 2.31 | ADPT · ADAPTIVE BIOTECHNOLOGIES | Common Stock | Adaptive Biotechnologies Corp | 2019-06-27~2026-10-23 | ✅ |
-| 159 | 65336K103 | NEXSTAR MEDIA GROUP INC | CL A | 6 | 2.29 | NXST · NEXSTAR MEDIA GROUP INC | Common Stock | NEXSTAR MEDIA GROUP, INC. | 2016-10-24~2026-10-23 | ✅ |
-| 160 | 771049103 | ROBLOX CORP | CL A | 9 | 2.29 | RBLX · ROBLOX CORP -CLASS A | Common Stock | Roblox Corp | 2021-03-10~2026-10-23 | ✅ |
+| 157 | 888787108 | TOAST INC | CL A | 10 | 2.31 | TOST · TOAST INC-CLASS A | Common Stock | Toast, Inc. | 2021-09-22~2026-10-23 | ✓ |
+| 158 | 00650F109 | ADAPTIVE BIOTECHNOLOGIES COR | COM | 5 | 2.31 | ADPT · ADAPTIVE BIOTECHNOLOGIES | Common Stock | Adaptive Biotechnologies Corp | 2019-06-27~2026-10-23 | ✓ |
+| 159 | 65336K103 | NEXSTAR MEDIA GROUP INC | CL A | 6 | 2.29 | NXST · NEXSTAR MEDIA GROUP INC | Common Stock | NEXSTAR MEDIA GROUP, INC. | 2016-10-24~2026-10-23 | ✓ |
+| 160 | 771049103 | ROBLOX CORP | CL A | 9 | 2.29 | RBLX · ROBLOX CORP -CLASS A | Common Stock | Roblox Corp | 2021-03-10~2026-10-23 | ✓ |
 | 161 | G0177J108 | ALLERGAN PLC | SHS | 6 | 2.29 |   |  |  | 없음 | — (OpenFIGI 티커 없음) |
-| 162 | 75734B100 | REDDIT INC | CL A | 11 | 2.29 | RDDT · REDDIT INC-CL A | Common Stock | Reddit, Inc. | 2024-03-21~2026-10-23 | ✅ |
-| 163 | 942622200 | WATSCO INC | COM | 6 | 2.27 | WSO · WATSCO INC | Common Stock | WATSCO INC | 2016-10-24~2026-10-23 | ✅ |
+| 162 | 75734B100 | REDDIT INC | CL A | 11 | 2.29 | RDDT · REDDIT INC-CL A | Common Stock | Reddit, Inc. | 2024-03-21~2026-10-23 | ✓ |
+| 163 | 942622200 | WATSCO INC | COM | 6 | 2.27 | WSO · WATSCO INC | Common Stock | WATSCO INC | 2016-10-24~2026-10-23 | ✓ |
 | 164 | 923454102 | VERITIV CORP | COM | 2 | 2.26 |   |  |  | 없음 | — (OpenFIGI 티커 없음) |
-| 165 | 78410G104 | SBA COMMUNICATIONS CORP NEW | CL A | 7 | 2.25 | SBAC · SBA COMMUNICATIONS CORP | REIT | SBA COMMUNICATIONS CORP | 2016-10-24~2026-10-23 | ✅ |
-| 166 | 163851108 | CHEMOURS CO | COM | 9 | 2.23 | CC · CHEMOURS CO/THE | Common Stock | Chemours Co | 2016-10-24~2026-10-23 | ✅ |
+| 165 | 78410G104 | SBA COMMUNICATIONS CORP NEW | CL A | 7 | 2.25 | SBAC · SBA COMMUNICATIONS CORP | REIT | SBA COMMUNICATIONS CORP | 2016-10-24~2026-10-23 | ✓ |
+| 166 | 163851108 | CHEMOURS CO | COM | 9 | 2.23 | CC · CHEMOURS CO/THE | Common Stock | Chemours Co | 2016-10-24~2026-10-23 | ✓ |
 | 167 | 881624209 | TEVA PHARMACEUTICAL INDS LTD | SPONSORED ADS | 7 | 2.23 |   |  |  | 없음 | — (OpenFIGI 티커 없음) |
 | 168 | 22266L106 | COUPA SOFTWARE INC | COM | 13 | 2.23 |   |  |  | 없음 | — (OpenFIGI 티커 없음) |
-| 169 | 21871N101 | CORECIVIC INC | Equity | 3 | 2.23 | CXW · CORECIVIC INC | Common Stock | CoreCivic, Inc. | 2016-10-24~2026-10-23 | ✅ |
-| 170 | G76279101 | ROIVANT SCIENCES LTD | SHS | 6 | 2.20 | ROIV · ROIVANT SCIENCES LTD | Common Stock | Roivant Sciences Ltd. | 2020-12-08~2026-10-23 | ✅ |
+| 169 | 21871N101 | CORECIVIC INC | Equity | 3 | 2.23 | CXW · CORECIVIC INC | Common Stock | CoreCivic, Inc. | 2016-10-24~2026-10-23 | ✓ |
+| 170 | G76279101 | ROIVANT SCIENCES LTD | SHS | 6 | 2.20 | ROIV · ROIVANT SCIENCES LTD | Common Stock | Roivant Sciences Ltd. | 2020-12-08~2026-10-23 | ✓ |
 | 171 | G05320109 | ASHTEAD GROUP PLC | COM | 1 | 2.19 |   |  |  | 없음 | — (OpenFIGI 티커 없음) |
-| 172 | 252131107 | DEXCOM INC | COM | 9 | 2.17 | DXCM · DEXCOM INC | Common Stock | DEXCOM INC | 2016-10-24~2026-10-23 | ✅ |
-| 173 | 655844108 | NORFOLK SOUTHN CORP | COM | 10 | 2.16 | NSC · NORFOLK SOUTHERN CORP | Common Stock | NORFOLK SOUTHERN CORP | 2016-10-24~2026-10-23 | ✅ |
-| 174 | 009066101 | AIRBNB INC | COM CL A | 12 | 2.14 | ABNB · AIRBNB INC-CLASS A | Common Stock | Airbnb, Inc. | 2020-12-10~2026-10-23 | ✅ |
-| 175 | 707569109 | PENN ENTERTAINMENT INC | COM | 6 | 2.12 | PENN · PENN ENTERTAINMENT INC | Common Stock | PENN Entertainment, Inc. | 2016-10-24~2026-10-23 | ✅ |
-| 176 | G7997R103 | SEAGATE TECHNOLOGY HLDNGS PL | ORD SHS | 11 | 2.09 | STX · SEAGATE TECHNOLOGY HOLDINGS | Common Stock | Seagate Technology Holdings pl | 2016-10-24~2026-10-23 | ✅ |
-| 177 | 459506101 | INTERNATIONAL FLAVORS&FRAGRA | COM | 10 | 2.09 | IFF · INTL FLAVORS & FRAGRANCES | Common Stock | INTERNATIONAL FLAVORS & FRAGRA | 2016-10-24~2026-10-23 | ✅ |
-| 178 | 55616P104 | MACYS INC | COM | 6 | 2.07 | M · MACY'S INC | Common Stock | Macy's, Inc. | 2016-10-24~2026-10-23 | ✅ |
-| 179 | 369550108 | GENERAL DYNAMICS CORP | COM | 6 | 2.06 | GD · GENERAL DYNAMICS CORP | Common Stock | GENERAL DYNAMICS CORP | 2016-10-24~2026-10-23 | ✅ |
-| 180 | 18915M107 | CLOUDFLARE INC | CL A COM | 8 | 2.05 | NET · CLOUDFLARE INC - CLASS A | Common Stock | Cloudflare, Inc. | 2019-09-13~2026-10-23 | ✅ |
-| 181 | 46266C105 | IQVIA HLDGS INC | COM | 13 | 2.05 | IQV · IQVIA HOLDINGS INC | Common Stock | IQVIA HOLDINGS INC. | 2016-10-24~2026-10-23 | ✅ |
+| 172 | 252131107 | DEXCOM INC | COM | 9 | 2.17 | DXCM · DEXCOM INC | Common Stock | DEXCOM INC | 2016-10-24~2026-10-23 | ✓ |
+| 173 | 655844108 | NORFOLK SOUTHN CORP | COM | 10 | 2.16 | NSC · NORFOLK SOUTHERN CORP | Common Stock | NORFOLK SOUTHERN CORP | 2016-10-24~2026-10-23 | ✓ |
+| 174 | 009066101 | AIRBNB INC | COM CL A | 12 | 2.14 | ABNB · AIRBNB INC-CLASS A | Common Stock | Airbnb, Inc. | 2020-12-10~2026-10-23 | ✓ |
+| 175 | 707569109 | PENN ENTERTAINMENT INC | COM | 6 | 2.12 | PENN · PENN ENTERTAINMENT INC | Common Stock | PENN Entertainment, Inc. | 2016-10-24~2026-10-23 | ✓ |
+| 176 | G7997R103 | SEAGATE TECHNOLOGY HLDNGS PL | ORD SHS | 11 | 2.09 | STX · SEAGATE TECHNOLOGY HOLDINGS | Common Stock | Seagate Technology Holdings pl | 2016-10-24~2026-10-23 | ✓ |
+| 177 | 459506101 | INTERNATIONAL FLAVORS&FRAGRA | COM | 10 | 2.09 | IFF · INTL FLAVORS & FRAGRANCES | Common Stock | INTERNATIONAL FLAVORS & FRAGRA | 2016-10-24~2026-10-23 | ✓ |
+| 178 | 55616P104 | MACYS INC | COM | 6 | 2.07 | M · MACY'S INC | Common Stock | Macy's, Inc. | 2016-10-24~2026-10-23 | ✓ |
+| 179 | 369550108 | GENERAL DYNAMICS CORP | COM | 6 | 2.06 | GD · GENERAL DYNAMICS CORP | Common Stock | GENERAL DYNAMICS CORP | 2016-10-24~2026-10-23 | ✓ |
+| 180 | 18915M107 | CLOUDFLARE INC | CL A COM | 8 | 2.05 | NET · CLOUDFLARE INC - CLASS A | Common Stock | Cloudflare, Inc. | 2019-09-13~2026-10-23 | ✓ |
+| 181 | 46266C105 | IQVIA HLDGS INC | COM | 13 | 2.05 | IQV · IQVIA HOLDINGS INC | Common Stock | IQVIA HOLDINGS INC. | 2016-10-24~2026-10-23 | ✓ |
 | 182 | 049164205 | ATLAS AIR WORLDWIDE HLDGS IN | COM NEW | 4 | 2.04 |   |  |  | 없음 | — (OpenFIGI 티커 없음) |
-| 183 | 91680M107 | UPSTART HLDGS INC | COM | 7 | 2.04 | UPST · UPSTART HOLDINGS INC | Common Stock | Upstart Holdings, Inc. | 2020-12-16~2026-10-23 | ✅ |
+| 183 | 91680M107 | UPSTART HLDGS INC | COM | 7 | 2.04 | UPST · UPSTART HOLDINGS INC | Common Stock | Upstart Holdings, Inc. | 2020-12-16~2026-10-23 | ✓ |
 | 184 | 469814107 | JACOBS ENGR GROUP INC | COM | 4 | 2.04 |   |  |  | 없음 | — (OpenFIGI 티커 없음) |
 | 185 | 03768E105 | APOLLO GLOBAL MGMT INC | COM CL A | 5 | 2.03 |   |  |  | 없음 | — (OpenFIGI 티커 없음) |
 | 186 | 15912K100 | CHANGE HEALTHCARE INC | COM | 5 | 2.02 |   |  |  | 없음 | — (OpenFIGI 티커 없음) |
-| 187 | 09061G101 | BIOMARIN PHARMACEUTICAL INC | COM | 10 | 2.02 | BMRN · BIOMARIN PHARMACEUTICAL INC | Common Stock | BIOMARIN PHARMACEUTICAL INC | 2016-10-24~2026-10-23 | ✅ |
-| 188 | 91332U101 | UNITY SOFTWARE INC | COM | 8 | 2.02 | U · UNITY SOFTWARE INC | Common Stock | Unity Software Inc. | 2020-09-18~2026-10-23 | ✅ |
-| 189 | 115637100 | BROWN-FORMAN CORP CL A | COM | 3 | 2.00 | BF/A · BROWN-FORMAN CORP-CLASS A | Common Stock | BROWN FORMAN CORP | 2016-10-24~2026-10-23 | ✅ |
-| 190 | G0403H108 | AON PLC | SHS CL A | 9 | 1.98 | AON · AON PLC-CLASS A | Common Stock | Aon plc | 2016-10-24~2026-10-23 | ✅ |
-| 191 | 69047Q102 | OVINTIV INC | COM | 10 | 1.97 | OVV · OVINTIV INC | Common Stock | Ovintiv Inc. | 2016-10-24~2026-10-23 | ✅ |
-| 192 | 256746108 | DOLLAR TREE INC | COM | 8 | 1.95 | DLTR · DOLLAR TREE INC | Common Stock | DOLLAR TREE, INC. | 2016-10-24~2026-10-23 | ✅ |
+| 187 | 09061G101 | BIOMARIN PHARMACEUTICAL INC | COM | 10 | 2.02 | BMRN · BIOMARIN PHARMACEUTICAL INC | Common Stock | BIOMARIN PHARMACEUTICAL INC | 2016-10-24~2026-10-23 | ✓ |
+| 188 | 91332U101 | UNITY SOFTWARE INC | COM | 8 | 2.02 | U · UNITY SOFTWARE INC | Common Stock | Unity Software Inc. | 2020-09-18~2026-10-23 | ✓ |
+| 189 | 115637100 | BROWN-FORMAN CORP CL A | COM | 3 | 2.00 | BF/A · BROWN-FORMAN CORP-CLASS A | Common Stock | BROWN FORMAN CORP | 2016-10-24~2026-10-23 | ✓ |
+| 190 | G0403H108 | AON PLC | SHS CL A | 9 | 1.98 | AON · AON PLC-CLASS A | Common Stock | Aon plc | 2016-10-24~2026-10-23 | ✓ |
+| 191 | 69047Q102 | OVINTIV INC | COM | 10 | 1.97 | OVV · OVINTIV INC | Common Stock | Ovintiv Inc. | 2016-10-24~2026-10-23 | ✓ |
+| 192 | 256746108 | DOLLAR TREE INC | COM | 8 | 1.95 | DLTR · DOLLAR TREE INC | Common Stock | DOLLAR TREE, INC. | 2016-10-24~2026-10-23 | ✓ |
 | 193 | 647581107 | NEW ORIENTAL ED & TECHNOLOGY | SPON ADR | 9 | 1.94 |   |  |  | 없음 | — (OpenFIGI 티커 없음) |
-| 194 | H42097107 | UBS GROUP AG | SHS | 8 | 1.93 | UBS · UBS GROUP AG-REG | Common Stock | UBS Group AG | 2016-10-24~2026-10-23 | ✅ |
-| 195 | 05352A100 | AVANTOR INC | COM | 9 | 1.92 | AVTR · AVANTOR INC | Common Stock | Avantor, Inc. | 2019-05-17~2026-10-23 | ✅ |
+| 194 | H42097107 | UBS GROUP AG | SHS | 8 | 1.93 | UBS · UBS GROUP AG-REG | Common Stock | UBS Group AG | 2016-10-24~2026-10-23 | ✓ |
+| 195 | 05352A100 | AVANTOR INC | COM | 9 | 1.92 | AVTR · AVANTOR INC | Common Stock | Avantor, Inc. | 2019-05-17~2026-10-23 | ✓ |
 | 196 | 88337F105 | THE ODP CORP | COM | 4 | 1.92 |   |  |  | 없음 | — (OpenFIGI 티커 없음) |
-| 197 | G1890L107 | CAPRI HOLDINGS LIMITED | SHS | 9 | 1.90 | CPRI · CAPRI HOLDINGS LTD | Common Stock | Capri Holdings Ltd | 2016-10-24~2026-10-23 | ✅ |
-| 198 | 88339J105 | THE TRADE DESK | COM CL A | 7 | 1.90 | TTD · TRADE DESK INC/THE -CLASS A | Common Stock | Trade Desk, Inc. | 2016-10-24~2026-10-23 | ✅ |
+| 197 | G1890L107 | CAPRI HOLDINGS LIMITED | SHS | 9 | 1.90 | CPRI · CAPRI HOLDINGS LTD | Common Stock | Capri Holdings Ltd | 2016-10-24~2026-10-23 | ✓ |
+| 198 | 88339J105 | THE TRADE DESK | COM CL A | 7 | 1.90 | TTD · TRADE DESK INC/THE -CLASS A | Common Stock | Trade Desk, Inc. | 2016-10-24~2026-10-23 | ✓ |
 | 199 | 13645T100 | CANADIAN PAC RY LTD | COM | 9 | 1.88 |   |  |  | 없음 | — (OpenFIGI 티커 없음) |
-| 200 | 92345Y106 | VERISK ANALYTICS INC | COM | 8 | 1.88 | VRSK · VERISK ANALYTICS INC | Common Stock | Verisk Analytics, Inc. | 2016-10-24~2026-10-23 | ✅ |
+| 200 | 92345Y106 | VERISK ANALYTICS INC | COM | 8 | 1.88 | VRSK · VERISK ANALYTICS INC | Common Stock | Verisk Analytics, Inc. | 2016-10-24~2026-10-23 | ✓ |
 
 표 E의 201위 아래(400개)도 같은 방법으로 판정했습니다. 600개 중 OpenFIGI US 티커가 있는 499개 가운데 498개를 채택했고(CTRA는 야후
 이력 없음), 101개는 티커가 없어 매핑하지 않았습니다 — 상장폐지·인수된 증권(Twitter·Activision 등)과, 역분할·합병으로 CUSIP이 바뀐
