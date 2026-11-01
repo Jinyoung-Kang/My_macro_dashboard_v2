@@ -1,5 +1,5 @@
 /**
- * 백엔드 응답 계약 — 🧪 모의 알고리즘 매매(`/api/paper/*`, 운영자 전용).
+ * 백엔드 응답 계약 — 모의 알고리즘 매매(`/api/paper/*`, 운영자 전용).
  *
  * 값이 없을 수 있는 필드는 전부 `| null`입니다. 프런트는 그 null을 그대로 "—"로 표시하고,
  * 절대 0으로 바꾸지 않습니다. 금액은 백엔드가 소수 2자리로 반올림해 보내고, 수익률·통계도 백엔드가
@@ -35,8 +35,7 @@ export interface PaperStats {
   sampleDays: number;
 }
 
-/** 책 하나의 요약(BookSummary). 개요·보유 응답과 버튼 응답이 같은 모양을 씁니다. */
-/** 🧪 장중 평가(GET /api/paper/live) — 장 상태(그 시장 달력의 정규장 기준). 시각은 "yyyy-MM-dd HH:mm KST". */
+/** 장중 평가(GET /api/paper/live) — 장 상태(그 시장 달력의 정규장 기준). 시각은 "yyyy-MM-dd HH:mm KST". */
 export interface PaperLiveSession {
   phase: "PRE" | "REGULAR" | "AFTER" | "CLOSED" | "UNKNOWN";
   sessionDate: string | null;
@@ -84,11 +83,19 @@ export interface PaperLiveBook {
   previousNav: number | null;
   /** previousNav의 거래일 — 기준 거래일 앞의 마지막 순자산 줄(잠정 포함), 그 대비가 dayChangePct */
   previousTradingDate: string | null;
+  /** 그 줄이 확정인가(false면 잠정 대비). 이 칸을 보내지 않는 백엔드(옛 응답)에서는 없습니다. */
+  previousNavFinal?: boolean | null;
   dayChangePct: number | null;
+  /** 보유 평가액 합(현금성 포함) — 장부와 같은 식. 가격 없는 보유가 있으면 null(장부는 평단으로 평가). */
+  equityValue?: number | null;
+  /** 평가액 ÷ 순자산 × 100 — equityValue와 같은 규칙으로 null. */
+  exposurePct?: number | null;
   basis: "LIVE" | "LAST_OBSERVATION";
   basisAtKst: string | null;
   liveCount: number;
   positionCount: number;
+  /** 시각이 지났는데 장부에 아직 없는 대기 주문 수(값이 체결 전 보유 기준) — 달력이 그해를 모르면 null. */
+  pendingOrders?: number | null;
   positions: PaperLivePosition[];
 }
 
@@ -104,8 +111,9 @@ export interface PaperLiveResponse {
   books?: PaperLiveBook[];
 }
 
+/** 책 하나의 요약(BookSummary). 개요·보유 응답과 버튼 응답이 같은 모양을 씁니다. */
 export interface PaperBookSummary {
-  /** 미국 rules · claude · claude2(🧪 체결 시점 실험 — 늦게 출발, ADR 0022) · bench_spy · bench_mix, 한국 kr_* 넷 */
+  /** 미국 rules · claude · claude2(체결 시점 실험 — 늦게 출발, ADR 0022) · bench_spy · bench_mix, 한국 kr_* 넷 */
   code: string;
   kind: PaperBookKind;
   label: string;
@@ -159,6 +167,92 @@ export interface PaperJobRun {
   detail: unknown;
 }
 
+/**
+ * 개요 지금 값의 단계(명세 2026-10-31 §3) — LIVE 정규장 장중 추정 · LIVE_LAST 마감 뒤 같은 날 장중 마지막 추정(종가 확정 전) · LEDGER 장부 상태
+ * (마지막 관측치 평가) · PROVISIONAL·FINAL 그 거래일 순자산 줄(잠정·확정). 화면 표기는 순수 함수 하나가 만듭니다(명세 §4-1).
+ */
+export type PaperCurrentStage = "LIVE" | "LIVE_LAST" | "LEDGER" | "PROVISIONAL" | "FINAL";
+
+/**
+ * 개요 계좌 한 줄의 지금 값(`current` — API.md 개요 줄 '지금 값'). 장부 칸(BookSummary)은 그대로 두고 덧붙는 칸이며 **표시 전용**입니다 —
+ * `isEstimated`면 장중 1분봉이 든 추정이고, 통계·순자산 줄·패킷에는 들어가지 않습니다. 시각은 "yyyy-MM-dd HH:mm KST".
+ */
+export interface PaperCurrentValue {
+  /** 출발 전이고 장부 상태도 없을 때만 null */
+  nav: number | null;
+  /** 출발 대비 %(출발 전 null) */
+  returnPct: number | null;
+  exposurePct: number | null;
+  /** previousTradingDate 줄 대비 % */
+  dayChangePct: number | null;
+  /** 값의 거래일 앞의 마지막 순자산 줄(잠정 포함)의 거래일 */
+  previousTradingDate: string | null;
+  /** 그 줄이 확정인가(false면 잠정 대비) */
+  previousNavFinal: boolean | null;
+  /** LIVE면 장중가가 든 값(stage LIVE·LIVE_LAST) */
+  basis: "LIVE" | "LEDGER";
+  stage: PaperCurrentStage;
+  /** 값이 속한 거래일(장부 상태면 관측한 세션 — 모르면 null) */
+  tradingDate: string | null;
+  /** 장중이면 장중가로 평가한 종목 가운데 가장 오래된 봉, 순자산 줄이면 그 세션 마감, 장부 상태면 마지막 관측(모르면 null) */
+  atKst: string | null;
+  /** basis LIVE일 때만 true */
+  isEstimated: boolean;
+  /** 장중가로 평가한 보유 수(장부 단계는 0) */
+  livePriced: number;
+  positionCount: number;
+  /** 시각이 지났는데 장부에 아직 없는 대기 주문 수(/live와 같은 규칙, 달력이 그해를 모르면 null) */
+  pendingOrders: number | null;
+  /** 현금뿐이거나 출발 전 — 장중 값 = 장부 값(비교 표의 '한 표 한 기준' 판정에서 뺌) */
+  neutral: boolean;
+  /** 섞임·가격 없음·체결 대기를 ' · '로 이은 서버 글(출발 전이면 '출발 전', 없으면 null) */
+  note: string | null;
+}
+
+/**
+ * 장부 칸의 그날 변화(`ledgerDay`) — 계좌 비교 표를 장부 칸으로 둘 때의 '오늘 변화'(장중 값을 쓰지 않음). 장부 상태 순자산(BookSummary `nav`) ÷
+ * 장부가 관측한 세션 앞의 마지막 순자산 줄(잠정 포함).
+ */
+export interface PaperLedgerDay {
+  /** 장부 상태가 관측한 세션(모르면 null — 그때 기준은 상태의 마지막 순자산 줄 거래일) */
+  tradingDate: string | null;
+  dayChangePct: number | null;
+  previousTradingDate: string | null;
+  previousNavFinal: boolean | null;
+}
+
+/**
+ * 순자산 곡선의 오늘 추정 점(`navEstimate`) — 정규장·마감 뒤 같은 날에 그 세션 순자산 줄이 어느 계좌에도 없고 장중 값 계좌가 하나라도 있을 때만.
+ * 계좌마다 장중 값 계좌는 그 순자산(`isEstimated:true`), 현금뿐인 운용 계좌는 장부 값(`false`), 그 밖은 `nav:null`.
+ */
+export interface PaperNavEstimate {
+  date: string;
+  /** 장중 값 계좌들 가운데 가장 오래된 기준 시각 */
+  atKst: string;
+  isEstimated: true;
+  books: Record<string, { nav: number | null; isEstimated: boolean }>;
+}
+
+/** 개요의 장 상태 요약(`liveSession`) — /live의 session과 같은 판정(CLOSED의 sessionDate는 직전 거래일). */
+export interface PaperLiveSessionSummary {
+  phase: PaperLiveSession["phase"];
+  sessionDate: string | null;
+}
+
+/**
+ * 개요 응답의 계좌 줄 — BookSummary(보유·순자산·결정 응답과 같은 모양 — 그대로)에 지금 값 칸이 덧붙습니다. 칸을 보내지 않는 백엔드(옛 응답)에서는
+ * 없고, 그때 화면은 장부 값으로 그립니다.
+ */
+export interface PaperOverviewBook extends PaperBookSummary {
+  /** 장부 응답을 읽은 뒤 그 계좌가 사라졌으면(리셋 등) null */
+  current?: PaperCurrentValue | null;
+  /** 출발 전이거나 장부 상태가 없으면 null */
+  ledgerDay?: PaperLedgerDay | null;
+  /** 그 계좌 마지막 순자산 줄의 거래일·확정 여부(줄이 없으면 null) */
+  lastNavTradingDate?: string | null;
+  lastNavFinal?: boolean | null;
+}
+
 /** GET /api/paper/overview(?market=KR) */
 export interface PaperOverviewResponse {
   available: boolean;
@@ -175,7 +269,7 @@ export interface PaperOverviewResponse {
   initialized?: boolean;
   /** 네 책의 출발(사후 체결) 거래일 — 설정 dashboard.paper.start-date. */
   startDate?: string | null;
-  books?: PaperBookSummary[];
+  books?: PaperOverviewBook[];
   /** 거래일별 순자산. books[code]는 dates와 같은 길이, 그날 기록이 없는 책은 null(곡선을 끊어 그림). */
   navSeries?: { dates: string[]; books: Record<string, (number | null)[]> } | null;
   quotes?: PaperQuotesSummary | null;
@@ -211,6 +305,10 @@ export interface PaperOverviewResponse {
    * 없습니다.
    */
   exposureReference?: PaperExposureReference | null;
+  /** 순자산 곡선의 오늘 추정 점(아니면 null). 이 칸을 보내지 않는 백엔드(옛 응답)에서는 없습니다. */
+  navEstimate?: PaperNavEstimate | null;
+  /** 장 상태 요약 — 지금 값의 '오늘' 판정에 씁니다. 이 칸을 보내지 않는 백엔드(옛 응답)에서는 없습니다. */
+  liveSession?: PaperLiveSessionSummary | null;
 }
 
 /**
@@ -375,7 +473,7 @@ export interface PaperStatusResponse {
    * 보내지 않는 백엔드에서는 없습니다.
    */
   earnings?: PaperEarningsStatus | null;
-  /** 미국 응답만 — 🧪 Claude 계좌2 묶음(계좌2 명세 §13-1). 한국 응답·이 칸을 보내지 않는 백엔드에서는 없습니다. */
+  /** 미국 응답만 — Claude 계좌2 묶음(계좌2 명세 §13-1). 한국 응답·이 칸을 보내지 않는 백엔드에서는 없습니다. */
   claude2?: PaperClaude2Status | null;
   /**
    * 한국 응답만 — 한국 수집 상태 요약(2단계 명세 §9 x4): 한국 책이 읽는 저장본 일곱 묶음의 수집 시각·세션/기준일·늦음/뒤처짐. 서버가 저장본만
@@ -406,7 +504,7 @@ export interface PaperClaude2Status {
    */
   chainReady?: boolean;
   /**
-   * 🧪 장중 확인(단계 2 — 계좌2 명세 §5-2). 서버는 늘 같은 모양으로 보냅니다(꺼져 있으면 enabled false). 이 칸을 보내지 않는 백엔드(단계 2 전)에서는
+   * 장중 확인(단계 2 — 계좌2 명세 §5-2). 서버는 늘 같은 모양으로 보냅니다(꺼져 있으면 enabled false). 이 칸을 보내지 않는 백엔드(단계 2 전)에서는
    * 없습니다(화면은 줄을 그리지 않음).
    */
   checkpoint?: PaperClaude2CheckpointStatus | null;
@@ -943,7 +1041,7 @@ export interface PaperExecutionCheckpointSummary {
   orders: number;
 }
 
-/** GET /api/paper/books/{code}/execution — 🧪 실행 감사(미국 Claude 계좌만, ADR 0022). */
+/** GET /api/paper/books/{code}/execution — 실행 감사(미국 Claude 계좌만, ADR 0022). */
 export interface PaperExecutionResponse {
   available: boolean;
   message?: string;
@@ -1264,7 +1362,7 @@ export interface PaperRerankResult {
 // ---------------------------------------------------------------- 결정 기록(paper_decisions)
 
 /** 결정 종류 — 정기(거래일마다) · 수동(버튼) · 재선정일(분기 13F 공시 기한 다음 거래일) · 초기 결정(출발일). */
-/** 결정 종류 — CHECKPOINT는 🧪 계좌2 장중 확인 결정(단계 2 — 세션당 한 번, 재시도 없음). */
+/** 결정 종류 — CHECKPOINT는 계좌2 장중 확인 결정(단계 2 — 세션당 한 번, 재시도 없음). */
 export type PaperDecisionKind = "SCHEDULED" | "MANUAL" | "REBALANCE" | "INITIAL" | "CHECKPOINT";
 
 /**
@@ -1351,7 +1449,7 @@ export interface PaperClaudeOrder {
   targetWeightPct?: number | null;
   sellFraction?: number | null;
   /** 계좌1 NEXT_OBSERVATION·NEXT_CLOSE, 계좌2(claude2-decision.schema.json) 메뉴 여덟(NEXT_OPEN·AT_1000~AT_1500·NEXT_CLOSE). */
-  /** MARKET은 🧪 계좌2 장중 확인 결정만 내는 장중 시장가(기준 시각 = 생성 + 60초 뒤 첫 분). */
+  /** MARKET은 계좌2 장중 확인 결정만 내는 장중 시장가(기준 시각 = 생성 + 60초 뒤 첫 분). */
   timing: "NEXT_OBSERVATION" | "NEXT_CLOSE" | "NEXT_OPEN" | PaperTimedTiming | "MARKET" | string;
   thesis: string;
   labels: (PaperClaudeLabel | string)[];
