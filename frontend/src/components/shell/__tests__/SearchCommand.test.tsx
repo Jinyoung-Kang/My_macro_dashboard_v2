@@ -1,9 +1,11 @@
 /**
  * 통합 검색(⌘K) — 여닫기(단추·맥 ⌘K/그 밖 Ctrl+K·Esc), 열 때만 자료를 읽기, 범주별 결과와 "N개 더", 키보드(↑↓·Enter)와 누르기로 이동,
- * 운영자 화면은 운영자에게만, 유료 화면은 무료 회원에게 자물쇠 아이콘, 비어 있는 범주는 이유를 적기.
+ * 운영자 화면은 운영자에게만, 유료 화면은 무료 회원에게 자물쇠 아이콘, 비어 있는 범주는 이유를 적기, 지표·기관·종목은 상세 화면으로,
+ * 색인 밖 종목은 입력이 멈추면 외부 검색(종목 찾기)으로.
  */
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { endpoints } from "@/lib/endpoints";
 import type { SessionUser } from "@/lib/types";
 
 const api = vi.hoisted(() => {
@@ -170,7 +172,7 @@ describe("결과", () => {
     openSearch();
     await act(async () => {});
     expect(screen.queryAllByRole("option")).toHaveLength(0);
-    expect(screen.getByText(/종목 이름·티커를 입력하세요/)).toBeTruthy();
+    expect(screen.getByText(/종목 이름·티커·국내 코드를 입력하세요/)).toBeTruthy();
 
     type("zzzz");
     expect(screen.getByText("‘zzzz’와 맞는 결과가 없습니다.")).toBeTruthy();
@@ -197,22 +199,23 @@ describe("결과", () => {
     expect(screen.getByText("‘aapl’와 맞는 결과가 아직 없습니다 — 일부 범주를 다 읽지 못했습니다(아래 안내).")).toBeTruthy();
   });
 
-  it("범주별 묶음 — 지표·기관·종목은 그 값을 고르는 화면으로 간다고 적는다", async () => {
+  it("범주별 묶음 — 지표·기관·종목은 그 상세 화면으로 간다고 적는다", async () => {
     openSearch();
     await act(async () => {});
 
     type("aapl");
     const group = screen.getByRole("group", { name: "종목" });
     const apple = within(group).getByRole("option");
-    expect(spokenText(apple)).toBe("Apple Inc.AAPL · Technology→ 종목 스코어카드");
+    expect(spokenText(apple)).toBe("Apple Inc.AAPL · Technology→ 종목 상세");
     // 왼쪽 원은 장식(aria-hidden) — 종목은 티커 모노그램, 메뉴·지표·기관은 탭 아이콘(글 없음)
     expect(apple.querySelector("span[aria-hidden='true'].rounded-full")?.textContent).toBe("AAP");
 
     type("버크셔");
     expect(within(screen.getByRole("group", { name: "기관" })).getByRole("option").textContent).toContain("버크셔 해서웨이 (Berkshire Hathaway)");
+    expect(within(screen.getByRole("group", { name: "기관" })).getByRole("option").textContent).toContain("→ 기관 상세");
 
     type("gspc");
-    expect(within(screen.getByRole("group", { name: "지표" })).getByRole("option").textContent).toContain("→ 매크로 지표");
+    expect(within(screen.getByRole("group", { name: "지표" })).getByRole("option").textContent).toContain("→ 지표 상세");
   });
 
   it("운영자 화면은 운영자에게만 — 회원이 '저장소'를 쳐도 데이터 저장소 상태가 나오지 않는다", async () => {
@@ -293,12 +296,50 @@ describe("이동", () => {
     expect(screen.getByRole("dialog")).toBeTruthy();
   });
 
-  it("결과를 누르면 그 화면으로 가고 닫힌다", async () => {
+  it("결과를 누르면 그 상세 화면으로 가고 닫힌다 — 종목 /s/us/<티커>, 지표 /markets/i/<키>, 기관 /institutions/<CIK>", async () => {
     openSearch();
     await act(async () => {});
     type("aapl");
     fireEvent.click(screen.getByRole("option", { name: /Apple Inc\./ }));
-    expect(router.push).toHaveBeenCalledWith("/scorecard");
+    expect(router.push).toHaveBeenLastCalledWith("/s/us/AAPL");
     expect(screen.queryByRole("dialog")).toBeNull();
+
+    // 닫으면 자료를 놓으므로(열 때만 읽음) 다시 열고 읽기를 기다립니다.
+    fireEvent.click(trigger());
+    await act(async () => {});
+    type("gspc");
+    fireEvent.click(screen.getByRole("option", { name: /S&P 500/ }));
+    expect(router.push).toHaveBeenLastCalledWith("/markets/i/sp500");
+
+    fireEvent.click(trigger());
+    await act(async () => {});
+    type("버크셔");
+    fireEvent.click(screen.getByRole("option", { name: /버크셔/ }));
+    expect(router.push).toHaveBeenLastCalledWith("/institutions/0001067983");
+  });
+
+  it("색인 밖 종목은 입력이 멈춘 뒤 외부 검색(종목 찾기)으로 찾고, 누르면 종목 상세로 — 한 글자는 찾지 않는다", async () => {
+    reads[endpoints.detail.symbols("삼성")] = {
+      available: true,
+      symbols: {
+        items: [
+          { market: "kr", code: "005930", yahooSymbol: "005930.KS", name: "삼성전자", exchange: "코스피", kind: "stock", source: "네이버 증권" },
+        ],
+      },
+    };
+    openSearch();
+    await act(async () => {});
+    type("삼");
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 450));
+    });
+    expect(api.apiGetShared.mock.calls.some(([path]) => String(path).startsWith("/api/detail/symbols"))).toBe(false);
+
+    type("삼성");
+    const group = await screen.findByRole("group", { name: "종목 찾기 · Yahoo·네이버" });
+    const option = within(group).getByRole("option");
+    expect(spokenText(option)).toBe("삼성전자005930 · 코스피 · 주식 · 네이버 증권→ 종목 상세");
+    fireEvent.click(option);
+    expect(router.push).toHaveBeenCalledWith("/s/kr/005930");
   });
 });

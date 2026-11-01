@@ -15,3 +15,4 @@ export * from "./types/publicData";
 export * from "./types/auth";
 export * from "./types/alerts";
 export * from "./types/paper";
+export * from "./types/detail";

@@ -178,7 +178,7 @@ export function formatShares(value: number | null | undefined): string {
  * @param suffix 통화 표기 ("달러" / "원")
  * @returns 단위가 붙은 문자열
  */
-function formatKoreanScale(value: number | null | undefined, suffix: string): string {
+export function formatKoreanScale(value: number | null | undefined, suffix: string): string {
   if (missing(value)) {
     return EMPTY;
   }

@@ -27,8 +27,10 @@ export type NavTab = {
   href: string;
   /** 이 탭에 속하는 화면(하위 메뉴 순서). */
   items: readonly NavItem[];
-  /** 하위 화면 말고도 이 탭에 속하는 경로의 앞부분 — 모의매매는 /paper 아래 전부(옛 /paper 포함). */
-  section?: string;
+  /**
+   * 하위 화면 말고도 이 탭에 속하는 경로의 앞부분 — 모의매매는 /paper 아래 전부(옛 /paper 포함), 시장은 검색 상세(지표 /markets/i/…·종목 /s/…).
+   */
+  sections?: readonly string[];
   /** 아직 없는 하위 화면 — 하위 메뉴에 표시만 하고 링크는 없습니다. */
   upcoming?: readonly UpcomingItem[];
 };
@@ -42,6 +44,8 @@ export const TABS: readonly NavTab[] = [
     key: "markets",
     label: "시장",
     href: "/macro",
+    // 검색 상세 화면(명세 2026-11-01-search-detail) — 지표 /markets/i/<id>·종목 /s/<시장>/<코드>. 기관 상세 /institutions/<CIK>는 기관 탭의 13F 포트폴리오 아래.
+    sections: ["/markets", "/s"],
     items: [
       { href: "/macro", label: "매크로 지표", keywords: ["거시경제 매크로 지표"] },
       { href: "/liquidity", label: "순유동성", keywords: ["연준 순유동성 트래커"] },
@@ -75,10 +79,10 @@ export const TABS: readonly NavTab[] = [
     key: "paper",
     label: "모의매매",
     // 시장마다 화면은 /paper/us·/paper/kr(개요)와 그 아래 탭 주소(/paper/kr/holdings 등 — 하위 화면 하나가 덮음)입니다. 옛 /paper는
-    // next.config가 /paper/us로 보내고, 탭 영역(section)은 /paper 아래 전부입니다. 이 하위 메뉴 줄이 모의매매의 시장 고르기입니다
+    // next.config가 /paper/us로 보내고, 탭 영역(sections)은 /paper 아래 전부입니다. 이 하위 메뉴 줄이 모의매매의 시장 고르기입니다
     // (화면 안에 같은 고르기를 또 두지 않음 — 두 줄로 겹쳐 보였음). 한국 책은 2단계 명세 §4-16(F2)에서 열었습니다.
     href: "/paper/us",
-    section: "/paper",
+    sections: ["/paper"],
     items: [
       { href: "/paper/us", label: "미국", title: "모의매매(미국)", keywords: ["모의 알고리즘 매매(미국)"] },
       { href: "/paper/kr", label: "한국", title: "모의매매(한국)", keywords: ["모의 알고리즘 매매(한국)", "한국 증시 모의매매"] },
@@ -115,11 +119,11 @@ export function activeItem(pathname: string): NavItem | null {
   return best;
 }
 
-/** 지금 경로가 속한 탭. 탭 첫 화면·하위 화면·탭 영역(section) 중 하나에 맞으면 그 탭입니다. */
+/** 지금 경로가 속한 탭. 탭 첫 화면·하위 화면·탭 영역(sections) 중 하나에 맞으면 그 탭입니다. */
 export function activeTab(pathname: string): NavTab | null {
   const item = activeItem(pathname);
   if (item) return TABS.find((tab) => tab.items.includes(item)) ?? null;
-  return TABS.find((tab) => covers(tab.href, pathname) || (tab.section !== undefined && covers(tab.section, pathname))) ?? null;
+  return TABS.find((tab) => covers(tab.href, pathname) || (tab.sections ?? []).some((section) => covers(section, pathname))) ?? null;
 }
 
 /** 이 사용자에게 보이는 탭(운영자가 아니면 모의매매 탭이 빠짐 — lib/access.ts 앞부분 일치). */

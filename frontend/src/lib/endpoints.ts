@@ -75,6 +75,15 @@ export const endpoints = {
     sectorRotation: (period: string) => withQuery("/api/sector/rotation", { period }),
   },
 
+  // 검색 상세 화면(종목·지표·기관) — 외부 정보(수집기 실시간 조회)와 AI 요약
+  detail: {
+    quote: (market: string, code: string) => withQuery("/api/detail/quote", { market, code }),
+    news: (params: { market?: string; code?: string; q?: string }) =>
+      withQuery("/api/detail/news", { market: params.market, code: params.code, q: params.q }),
+    symbols: (q: string) => withQuery("/api/detail/symbols", { q }),
+    summary: "/api/detail/summary",
+  },
+
   // 13F · 기관 스타일
   institution: {
     institutions: "/api/sec13f/institutions",

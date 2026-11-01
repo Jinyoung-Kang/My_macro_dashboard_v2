@@ -2,18 +2,20 @@
  * 통합 검색(⌘K)의 색인과 일치 규칙 — React를 모르는 순수 함수(ADR 0004, 1단계 브리프 §1.4).
  *
  * 범주 네 가지: 메뉴(lib/nav의 보이는 화면) · 지표(매크로 카드 이름·티커) · 기관(13F 기관 목록) · 종목(스코어카드 유니버스 티커).
- * 1단계에는 지표·종목 상세 화면(/markets/i/…, /s/…)이 없고, 옛 화면들은 쿼리 파라미터를 읽지 않습니다(useSearchParams 없음 —
- * 기관·종목은 화면 안 선택 상자의 상태). 그래서 결과는 **그 값을 고르는 화면**으로만 보내고, 어디로 가는지 결과에 적습니다(dest).
+ * 지표·기관·종목 결과는 그 상세 화면으로 갑니다(명세 2026-11-01-search-detail — 지표 /markets/i/<키>, 기관 /institutions/<CIK>,
+ * 종목 /s/<시장>/<코드>). 색인 밖의 종목은 다섯째 묶음 '종목 찾기'(외부 검색 — Yahoo·네이버, `symbolGroup`)가 찾습니다.
  *
  * 일치: 대소문자·공백·기호를 무시하고, 한글은 자모로 풀어 맞춥니다 — 입력 중인 글자("맼" → "매크로")와 초성("ㅅㅈ" → "시장")도 맞습니다.
  * 순위: 정확히 같음 > 앞부분 > 중간(같은 단계면 이름이 검색어보다 앞섬, 그다음 원래 순서). 범주마다 상한이 있고 넘친 수는 `more`로 알립니다.
  */
+import { indicatorHref, institutionHref, kindText, stockHref } from "./detail";
 import { withoutLeadingIcon } from "./format";
 import type { NavSearchItem, TabKey } from "./nav";
 import { assetMonogram } from "./patternRows";
-import type { MacroOverview, StockUniverseResponse } from "./types";
+import type { DetailSymbolsResponse, MacroOverview, StockUniverseResponse } from "./types";
 
-export type SearchKind = "menu" | "indicator" | "institution" | "ticker";
+/** 'symbol'은 색인 밖 외부 검색 묶음(종목 찾기) — 색인 일치(searchGroups)가 아니라 `symbolGroup`이 만듭니다. */
+export type SearchKind = "menu" | "indicator" | "institution" | "ticker" | "symbol";
 
 /**
  * 결과 행 왼쪽 원 안에 그릴 것 — 탭 아이콘(메뉴는 그 화면의 탭, 지표는 시장, 기관은 기관) 또는 종목 모노그램(`assetMonogram` — 티커 앞 글자).
@@ -50,12 +52,23 @@ export const SEARCH_KINDS: readonly { kind: SearchKind; label: string }[] = [
 /** 범주마다 보이는 결과 수 — 넘치면 "N개 더"로 알립니다(조용히 자르지 않음). */
 export const SEARCH_PER_GROUP = 6;
 
-/** 결과가 가는 화면 — 지금 있는 화면만(브리프 §1.4). */
+/** 결과가 가는 화면의 이름(오른쪽 '→ 화면' 캡션). 주소는 결과마다 그 상세 화면(lib/detail). */
 const DEST = {
-  indicator: { href: "/macro", name: "매크로 지표" },
-  institution: { href: "/institutions", name: "13F 포트폴리오" },
-  ticker: { href: "/scorecard", name: "종목 스코어카드" },
+  indicator: "지표 상세",
+  institution: "기관 상세",
+  ticker: "종목 상세",
 } as const;
+
+/** 외부 검색 묶음의 제목. */
+export const SYMBOL_GROUP_LABEL = "종목 찾기 · Yahoo·네이버";
+
+/**
+ * 스코어카드 유니버스 티커 → 종목 상세 주소. Yahoo 형식의 국내 종목('069500.KS'·'035720.KQ')은 국내 코드(/s/kr/069500), 그 밖은 미국·해외(/s/us/…).
+ */
+export function tickerHref(ticker: string): string {
+  const korean = /^([0-9A-Z]{6})\.(KS|KQ)$/.exec(ticker.toUpperCase());
+  return korean ? stockHref("kr", korean[1]) : stockHref("us", ticker.toUpperCase());
+}
 
 // ------------------------------------------------------------------ 정규화
 
@@ -130,8 +143,8 @@ export function indicatorEntries(overview: MacroOverview | null | undefined): Se
         label: item.name,
         // 범주 제목은 수집기가 저장한 글이라 예전 그림 문자가 붙어 옵니다(화면에서만 뗌)
         sub: item.ticker ? `${withoutLeadingIcon(category.title)} · ${item.ticker}` : withoutLeadingIcon(category.title),
-        href: DEST.indicator.href,
-        dest: DEST.indicator.name,
+        href: indicatorHref(item.key),
+        dest: DEST.indicator,
         keywords: [item.ticker, item.key].filter((word): word is string => Boolean(word)),
         avatar: { tab: "markets" },
       });
@@ -151,8 +164,8 @@ export function institutionEntries(list: InstitutionList | null | undefined): Se
     // 이름 앞 국기는 떼고 씁니다 — 결과 목록에서 이름이 같은 자리에서 시작하게(lib/format.withoutLeadingIcon)
     label: withoutLeadingIcon(entry.name),
     sub: `13F · CIK ${entry.cik}`,
-    href: DEST.institution.href,
-    dest: DEST.institution.name,
+    href: institutionHref(entry.cik),
+    dest: DEST.institution,
     keywords: [entry.cik, entry.key, entry.desc].filter((word): word is string => Boolean(word)),
     avatar: { tab: "institutions" },
   }));
@@ -168,8 +181,8 @@ export function tickerEntries(universe: StockUniverseResponse | null | undefined
       id: `ticker:${row.ticker}`,
       label: row.name,
       sub: row.sector ? `${row.ticker} · ${row.sector}` : row.ticker,
-      href: DEST.ticker.href,
-      dest: DEST.ticker.name,
+      href: tickerHref(row.ticker),
+      dest: DEST.ticker,
       keywords: [row.ticker],
       avatar: monogram ? { text: monogram } : undefined,
     };
@@ -246,6 +259,41 @@ export function searchGroups(index: SearchIndex, rawQuery: string, perGroup: num
     const items = matched.slice(0, Math.max(0, perGroup));
     return [{ kind, label, items, total: matched.length, more: matched.length - items.length }];
   });
+}
+
+/**
+ * 외부 검색 묶음 — GET /api/detail/symbols 결과(수집기가 Yahoo·네이버 자동완성을 합친 것)를 종목 상세로 가는 결과로. 이미 색인 묶음에 있는 주소는
+ * 뺍니다(같은 종목이 두 번 보이지 않게). 결과가 없거나 응답이 없으면 null(묶음을 그리지 않음).
+ *
+ * @param shown 색인 묶음들(searchGroups) — 겹침을 빼려고 봅니다
+ */
+export function symbolGroup(
+  response: DetailSymbolsResponse | null | undefined,
+  shown: readonly SearchGroup[],
+  perGroup: number = SEARCH_PER_GROUP,
+): SearchGroup | null {
+  const taken = new Set(shown.flatMap((group) => group.items.map((entry) => entry.href)));
+  const seen = new Set<string>();
+  const matched: SearchEntry[] = [];
+  for (const symbol of response?.available ? (response.symbols?.items ?? []) : []) {
+    const href = stockHref(symbol.market, symbol.code);
+    if (taken.has(href) || seen.has(href)) continue;
+    seen.add(href);
+    const monogram = assetMonogram({ name: symbol.name, ticker: symbol.code });
+    matched.push({
+      kind: "symbol",
+      id: `symbol:${symbol.market}:${symbol.code}`,
+      label: symbol.name,
+      sub: [symbol.code, symbol.exchange, kindText(symbol.kind), symbol.source].filter(Boolean).join(" · "),
+      href,
+      dest: DEST.ticker,
+      keywords: [symbol.code],
+      avatar: monogram ? { text: monogram } : undefined,
+    });
+  }
+  if (matched.length === 0) return null;
+  const items = matched.slice(0, Math.max(0, perGroup));
+  return { kind: "symbol", label: SYMBOL_GROUP_LABEL, items, total: matched.length, more: matched.length - items.length };
 }
 
 /**

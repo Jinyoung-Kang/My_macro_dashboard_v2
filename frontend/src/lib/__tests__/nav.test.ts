@@ -97,6 +97,18 @@ describe("지금 탭·화면", () => {
     expect(activeItem("/x")).toBeNull();
   });
 
+  it("검색 상세 화면 — 지표 /markets/i/…·종목 /s/…는 시장 탭 영역, 기관 /institutions/<CIK>는 13F 포트폴리오 아래", () => {
+    expect(activeTab("/markets/i/dxy")?.key).toBe("markets");
+    expect(activeTab("/s/us/AAPL")?.key).toBe("markets");
+    expect(activeTab("/s/kr/005930")?.key).toBe("markets");
+    expect(activeItem("/s/us/AAPL")).toBeNull();
+    // /s는 경로 조각 경계로만 — /style·/scorecard는 기관 탭 화면 그대로
+    expect(activeTab("/style")?.key).toBe("institutions");
+    expect(activeTab("/scorecard")?.key).toBe("institutions");
+    expect(activeItem("/institutions/0001067983")?.href).toBe("/institutions");
+    expect(activeTab("/institutions/0001067983")?.key).toBe("institutions");
+  });
+
   it("탭 링크의 aria-current — 탭 첫 화면이면 page, 같은 탭의 다른 화면이면 true, 다른 탭이면 없음", () => {
     expect(tabCurrent(tab("markets"), "/macro")).toBe("page");
     expect(tabCurrent(tab("markets"), "/liquidity")).toBe("true");

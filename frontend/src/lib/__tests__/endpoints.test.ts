@@ -31,6 +31,13 @@ const CASES: Case[] = [
   { name: "macro.ticker", before: `/api/macro/ticker?symbol=${encodeURIComponent("^VIX")}&period=${"6mo"}`,
     after: endpoints.macro.ticker("^VIX", "6mo") },
   { name: "liquidity", before: `/api/liquidity?years=${"5"}`, after: endpoints.macro.liquidity("5") },
+  { name: "detail.quote", before: `/api/detail/quote?market=us&code=${encodeURIComponent("BRK-B")}`,
+    after: endpoints.detail.quote("us", "BRK-B") },
+  { name: "detail.news 종목·검색어", before: `/api/detail/news?market=kr&code=005930&q=${encodeURIComponent("삼성전자")}`,
+    after: endpoints.detail.news({ market: "kr", code: "005930", q: "삼성전자" }) },
+  { name: "detail.news 검색어만", before: `/api/detail/news?q=${encodeURIComponent("Berkshire Hathaway")}`,
+    after: endpoints.detail.news({ q: "Berkshire Hathaway" }) },
+  { name: "detail.symbols", before: `/api/detail/symbols?q=${encodeURIComponent("삼성")}`, after: endpoints.detail.symbols("삼성") },
   { name: "sector", before: `/api/sector/rotation?period=${"1M"}`, after: endpoints.macro.sectorRotation("1M") },
   { name: "13f.portfolio", before: `/api/sec13f/portfolio?cik=${"0001067983"}&quarters=${"8"}&topN=${"15"}`,
     after: endpoints.institution.portfolio("0001067983", "8", "15") },
@@ -252,6 +259,6 @@ describe("docs/API.md 백엔드 표와 대조", () => {
     const paths = [...strings, ...CASES.map(({ after }) => after)].map(documentedForm);
     expect(paths.filter((path) => !documented.has(path))).toEqual([]);
     // 경로를 만드는 함수는 모두 위 CASES에 한 줄 이상 있습니다. 새 함수를 만들었다면 CASES에 추가하고 이 숫자를 고치세요.
-    expect(functions).toBe(55);
+    expect(functions).toBe(58);
   });
 });

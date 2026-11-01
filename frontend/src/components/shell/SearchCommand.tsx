@@ -17,17 +17,23 @@ import {
   resultSummary,
   searchGroups,
   sourceNotice,
+  SYMBOL_GROUP_LABEL,
+  symbolGroup,
   tickerEntries,
   type InstitutionList,
   type SearchEntry,
 } from "@/lib/search";
-import type { MacroOverview, SessionUser, StockUniverseResponse } from "@/lib/types";
+import type { DetailSymbolsResponse, MacroOverview, SessionUser, StockUniverseResponse } from "@/lib/types";
 import { SearchIcon, TabIcon } from "./icons";
 
 // 맥이면 ⌘K, 아니면 Ctrl K. 서버 렌더·하이드레이션 첫 그림은 Ctrl로 같게 그립니다(값은 브라우저에만 있음).
 const noSubscribe = () => () => {};
 const isMacPlatform = () => /Mac|iPhone|iPad|iPod/.test(navigator.platform || navigator.userAgent);
 const isMacServer = () => false;
+
+/** 외부 종목 찾기(GET /api/detail/symbols)를 부르기 전 기다리는 시간과 최소 글자 수 — 글자를 칠 때마다 외부 검색을 부르지 않게. */
+const SYMBOL_DEBOUNCE_MS = 350;
+const SYMBOL_MIN_CHARS = 2;
 
 /**
  * 통합 검색(⌘K) — 메뉴·지표·기관·종목을 한 입력칸에서 찾아 그 화면으로 갑니다.
@@ -38,7 +44,9 @@ const isMacServer = () => false;
  * - 키보드: ↑↓로 결과를 옮기고 Enter로 갑니다(입력칸이 combobox, 결과가 listbox — aria-activedescendant).
  * - 결과는 범주마다 상한까지만 보이고 넘친 수를 범주 제목에 적습니다. 무료 회원에게 잠긴 유료 화면은 자물쇠 아이콘.
  * - 결과 행: 왼쪽 32px 원(메뉴는 그 탭 아이콘, 지표는 시장·기관은 기관 아이콘, 종목은 티커 모노그램 — lib/search `avatar`, 장식) ·
- *   이름과 보조 글 · 오른쪽 '→ 화면' 캡션.
+ *   이름과 보조 글 · 오른쪽 '→ 화면' 캡션. 지표·기관·종목은 그 상세 화면으로 갑니다(/markets/i/…·/institutions/…·/s/…).
+ * - 색인 밖 종목: 두 글자 이상을 치고 잠시 멈추면 외부 검색(Yahoo·네이버 자동완성, GET /api/detail/symbols — 회원 경로)을 불러 마지막 묶음
+ *   '종목 찾기'에 붙입니다. 색인에 이미 있는 종목은 빼고, 지금 검색어의 응답일 때만 보입니다(앞 검색어의 결과가 남지 않게).
  */
 export function SearchCommand({ user }: { user?: SessionUser }) {
   const router = useRouter();
@@ -71,6 +79,14 @@ export function SearchCommand({ user }: { user?: SessionUser }) {
   const overview = useApi<MacroOverview>(open ? endpoints.macro.overview(false) : null);
   const institutions = useApi<InstitutionList>(open ? endpoints.institution.institutions : null);
   const universe = useApi<StockUniverseResponse>(open ? endpoints.insight.stockUniverse : null);
+  // 외부 종목 찾기 — 입력이 멈춘 뒤의 검색어로만 부릅니다.
+  const [settled, setSettled] = useState("");
+  useEffect(() => {
+    const timer = window.setTimeout(() => setSettled(query.trim()), SYMBOL_DEBOUNCE_MS);
+    return () => window.clearTimeout(timer);
+  }, [query]);
+  const symbolPath = open && settled.length >= SYMBOL_MIN_CHARS && settled === query.trim() ? endpoints.detail.symbols(settled) : null;
+  const symbols = useApi<DetailSymbolsResponse>(symbolPath);
 
   const index = useMemo(
     () =>
@@ -82,7 +98,12 @@ export function SearchCommand({ user }: { user?: SessionUser }) {
       ]),
     [user, overview.data, institutions.data, universe.data],
   );
-  const groups = useMemo(() => searchGroups(index, query), [index, query]);
+  const indexed = useMemo(() => searchGroups(index, query), [index, query]);
+  // useApi는 경로가 바뀐 직후 앞 경로의 값을 내보내지 않습니다 — 앞 검색어의 종목 찾기 결과가 새 검색어 아래 남지 않음.
+  const groups = useMemo(() => {
+    const remote = symbolGroup(symbols.data, indexed);
+    return remote ? [...indexed, remote] : indexed;
+  }, [indexed, symbols.data]);
   const flat = groups.flatMap((group) => group.items);
   // 묶음마다 첫 결과의 전체 순번(↑↓·aria-activedescendant는 묶음을 넘어 한 줄로 셉니다).
   const starts = groups.map((_, at) => groups.slice(0, at).reduce((sum, group) => sum + group.items.length, 0));
@@ -92,12 +113,14 @@ export function SearchCommand({ user }: { user?: SessionUser }) {
     sourceNotice("지표", overview),
     sourceNotice("기관", institutions),
     sourceNotice("종목", universe),
+    symbolPath !== null ? sourceNotice(SYMBOL_GROUP_LABEL, symbols) : null,
   ].filter((notice): notice is string => notice !== null);
 
   const changeOpen = (next: boolean) => {
     setOpen(next);
     if (!next) {
       setQuery("");
+      setSettled("");
       setActive(0);
     }
   };
@@ -250,7 +273,8 @@ export function SearchCommand({ user }: { user?: SessionUser }) {
 
       {trimmed === "" && (
         <p className="px-3 text-sm text-text-2">
-          메뉴 이름, 매크로 지표 이름·티커, 13F 기관 이름, 종목 이름·티커를 입력하세요. 지표·기관·종목은 그 값을 고르는 화면으로 갑니다.
+          메뉴 이름, 매크로 지표 이름·티커, 13F 기관 이름, 종목 이름·티커·국내 코드를 입력하세요. 지표·기관·종목은 시세·지표·뉴스를 모은 상세 화면으로
+          갑니다(목록에 없는 종목은 Yahoo·네이버에서 찾음).
         </p>
       )}
       {trimmed !== "" && flat.length === 0 && <p className="px-3 text-sm text-text-2">{noResultText(trimmed, notices)}</p>}

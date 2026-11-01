@@ -14,10 +14,13 @@ import {
   searchGroups,
   searchKey,
   sourceNotice,
+  SYMBOL_GROUP_LABEL,
+  symbolGroup,
   tickerEntries,
+  tickerHref,
   type SearchEntry,
 } from "../search";
-import type { MacroOverview, StockUniverseResponse } from "../types";
+import type { DetailSymbolsResponse, MacroOverview, StockUniverseResponse } from "../types";
 
 const OVERVIEW = {
   available: true,
@@ -164,10 +167,10 @@ describe("묶음과 상한", () => {
 });
 
 describe("색인 항목", () => {
-  it("지표: 매크로 카드 이름·티커 → 매크로 지표 화면, 같은 키는 한 번만, 저장본이 없으면 비어 있다", () => {
+  it("지표: 매크로 카드 이름·티커 → 지표 상세(/markets/i/<키>), 같은 키는 한 번만, 저장본이 없으면 비어 있다", () => {
     const entries = indicatorEntries(OVERVIEW);
     expect(entries.map((item) => item.label)).toEqual(["달러 인덱스 (DXY)", "원/달러 (USD/KRW)", "S&P 500", "나스닥 100"]);
-    expect(entries[0]).toMatchObject({ kind: "indicator", sub: "환율 · DX-Y.NYB", href: "/macro", dest: "매크로 지표", keywords: ["DX-Y.NYB", "dxy"] });
+    expect(entries[0]).toMatchObject({ kind: "indicator", sub: "환율 · DX-Y.NYB", href: "/markets/i/dxy", dest: "지표 상세", keywords: ["DX-Y.NYB", "dxy"] });
     expect(entries[3]).toMatchObject({ sub: "주가지수", keywords: ["ndx"] });
     // 범주 제목의 예전 그림 문자는 보조 글에서 뗀다
     const flagged = { ...OVERVIEW, categories: [{ ...OVERVIEW.categories[0], title: "💵 통화 및 환율" }] } as MacroOverview;
@@ -176,10 +179,10 @@ describe("색인 항목", () => {
     expect(indicatorEntries(null)).toEqual([]);
   });
 
-  it("기관: 국기를 뗀 이름·CIK → 13F 포트폴리오 화면, 운용자 소개로도 찾는다('달리오' → 브리지워터)", () => {
+  it("기관: 국기를 뗀 이름·CIK → 기관 상세(/institutions/<CIK>), 운용자 소개로도 찾는다('달리오' → 브리지워터)", () => {
     const entries = institutionEntries(INSTITUTIONS);
     expect(entries[0]).toMatchObject({
-      kind: "institution", label: "버크셔 해서웨이 (Berkshire Hathaway)", sub: "13F · CIK 0001067983", href: "/institutions", dest: "13F 포트폴리오",
+      kind: "institution", label: "버크셔 해서웨이 (Berkshire Hathaway)", sub: "13F · CIK 0001067983", href: "/institutions/0001067983", dest: "기관 상세",
     });
     const index = buildSearchIndex(entries);
     expect(labels(searchGroups(index, "달리오"))).toEqual([["institution", ["브리지워터 어소시에이츠 (Bridgewater)"]]]);
@@ -187,9 +190,13 @@ describe("색인 항목", () => {
     expect(institutionEntries(undefined)).toEqual([]);
   });
 
-  it("종목: 이름·티커·섹터 → 종목 스코어카드 화면, 저장본이 없으면 비어 있다", () => {
+  it("종목: 이름·티커·섹터 → 종목 상세(/s/us/<티커>, Yahoo 형식 국내 종목은 /s/kr/<코드>), 저장본이 없으면 비어 있다", () => {
     const entries = tickerEntries(UNIVERSE);
-    expect(entries[0]).toMatchObject({ kind: "ticker", label: "Apple Inc.", sub: "AAPL · Technology", href: "/scorecard", dest: "종목 스코어카드" });
+    expect(entries[0]).toMatchObject({ kind: "ticker", label: "Apple Inc.", sub: "AAPL · Technology", href: "/s/us/AAPL", dest: "종목 상세" });
+    expect(tickerHref("BRK-B")).toBe("/s/us/BRK-B");
+    expect(tickerHref("^gspc")).toBe("/s/us/%5EGSPC");
+    expect(tickerHref("069500.KS")).toBe("/s/kr/069500");
+    expect(tickerHref("035720.kq")).toBe("/s/kr/035720");
     expect(entries[1].sub).toBe("AMZN");
     expect(tickerEntries({ available: false, message: "저장본 없음", rows: [] })).toEqual([]);
   });
@@ -229,5 +236,36 @@ describe("범주 자료 상태", () => {
     expect(sourceNotice("종목", { loading: false, error: null, data: { available: false } })).toBe("종목: 저장본이 아직 없습니다");
     expect(sourceNotice("기관", { loading: false, error: null, data: INSTITUTIONS })).toBeNull();
     expect(sourceNotice("종목", { loading: false, error: null, data: null })).toBeNull();
+  });
+});
+
+describe("종목 찾기(외부 검색 묶음)", () => {
+  const SYMBOLS: DetailSymbolsResponse = {
+    available: true,
+    symbols: {
+      items: [
+        { market: "us", code: "AAPL", yahooSymbol: "AAPL", name: "Apple Inc.", exchange: "NASDAQ", kind: "EQUITY", source: "Yahoo Finance" },
+        { market: "us", code: "APLE", yahooSymbol: "APLE", name: "Apple Hospitality REIT", exchange: "NYSE", kind: "EQUITY", source: "Yahoo Finance" },
+        { market: "kr", code: "005930", yahooSymbol: "005930.KS", name: "삼성전자", exchange: "코스피", kind: "stock", source: "네이버 증권" },
+        { market: "kr", code: "005930", yahooSymbol: "005930.KS", name: "삼성전자(중복)", exchange: null, kind: null, source: "Yahoo Finance" },
+      ],
+    },
+  };
+
+  it("색인에 이미 있는 종목·겹치는 주소는 빼고 종목 상세로 — 보조 글은 코드·거래소·종류·출처", () => {
+    const shown = searchGroups(buildSearchIndex(tickerEntries(UNIVERSE)), "apple");
+    const group = symbolGroup(SYMBOLS, shown);
+    expect(group).toMatchObject({ kind: "symbol", label: SYMBOL_GROUP_LABEL, total: 2, more: 0 });
+    expect(group?.items.map((item) => [item.label, item.href, item.sub, item.dest])).toEqual([
+      ["Apple Hospitality REIT", "/s/us/APLE", "APLE · NYSE · 주식 · Yahoo Finance", "종목 상세"],
+      ["삼성전자", "/s/kr/005930", "005930 · 코스피 · 주식 · 네이버 증권", "종목 상세"],
+    ]);
+  });
+
+  it("결과가 없거나 응답이 없으면(조회하지 않음 포함) 묶음을 그리지 않는다, 상한을 넘으면 more", () => {
+    expect(symbolGroup(null, [])).toBeNull();
+    expect(symbolGroup({ available: false, message: "store_only" }, [])).toBeNull();
+    expect(symbolGroup({ available: true, symbols: { items: [] } }, [])).toBeNull();
+    expect(symbolGroup(SYMBOLS, [], 1)).toMatchObject({ total: 3, more: 2 });
   });
 });
