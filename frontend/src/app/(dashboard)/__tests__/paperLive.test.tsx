@@ -115,3 +115,30 @@ describe("장 밖", () => {
     expect(liveCalls()).toBe(1);
   });
 });
+
+/**
+ * 진짜 벽시계(Date) — 이 파일이 가짜 타이머를 걸기 전에 잡아 둡니다. QA-155 재현은 이것의 now만 바꿔 '벽시계가 그 시각인 날 이 파일을 돌린 것'을
+ * 흉내 냅니다(카드가 읽는 Date가 이 진짜 Date면 그 시각을 받음).
+ */
+const WallClock = Date;
+/** 2026-11-02 23:10 KST — 고정 응답의 다음 개장(2026-11-02 23:30 KST) 20분 전. */
+const WALL_IN_OPEN_WINDOW = Date.UTC(2026, 10, 2, 14, 10);
+
+describe("QA-155 장 밖 시험이 벽시계에 기대지 않는다(시험 흔들림)", () => {
+  // 카드의 다음 개장 깨우기는 msUntilNextOpen(session, Date.now())로 기다릴 시간을 정합니다. 수정 전 이 파일은 Date를 가짜로 두지 않아(setTimeout·
+  // setInterval만) 진짜 벽시계를 읽었고, 고정 응답의 다음 개장까지 31분이 안 남은 때(2026-11-02 23:00~23:31 KST) 돌리면 '장 밖' 시험이 31분을
+  // 흘리는 동안 깨우기가 불려 두 번째 읽기가 나가 졌습니다. 벽시계의 now만 그 창 안으로 옮겨 같은 몸체를 돌립니다(재현 커밋에서는 it.fails).
+  beforeEach(() => {
+    vi.spyOn(WallClock, "now").mockReturnValue(WALL_IN_OPEN_WINDOW);
+  });
+
+  it.fails("다음 개장 31분 안의 벽시계에서도 — 장 밖이면 31분 동안 다시 읽지 않는다", async () => {
+    api.apiGetShared.mockImplementation(() => Promise.resolve(live({ session: { ...SESSION, phase: "CLOSED" } })));
+    render(<LiveValuationCard />);
+
+    await settle();
+    expect(screen.getByText("장 밖에서는 다시 읽지 않습니다 — 숫자는 아래 기준 시각의 값입니다.")).toBeTruthy();
+    await settle(31 * 60_000);
+    expect(liveCalls()).toBe(1);
+  });
+});
