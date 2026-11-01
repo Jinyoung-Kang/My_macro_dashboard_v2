@@ -8,6 +8,7 @@ import { describe, expect, it } from "vitest";
 import {
   DEFAULT_LIVE_REFRESH_MINUTES,
   LIVE_REFRESH_OPTIONS,
+  liveIntervalNote,
   liveIntervalText,
   livePositionsFor,
   livePositionView,
@@ -61,6 +62,12 @@ describe("새로고침 간격", () => {
     expect(liveIntervalText(60)).toBe("1시간");
     expect(liveIntervalText(180)).toBe("3시간");
     expect(liveIntervalText(45)).toBe("45분");
+    // 긴 간격(1시간 이상)은 미국만 '대개 장부 단계' 안내 — 한국은 정규장에 장부 관측이 없음
+    expect(liveIntervalNote(60)).toMatch(/^간격이 길면 그 사이 매시 장부 관측이 돌아/);
+    expect(liveIntervalNote(180, "US")).not.toBeNull();
+    expect(liveIntervalNote(30)).toBeNull();
+    expect(liveIntervalNote(0)).toBeNull();
+    expect(liveIntervalNote(180, "KR")).toBeNull();
     expect(liveRefreshMs({ available: true, session: REGULAR }, 180)).toBe(3 * 60 * 60_000);
   });
 

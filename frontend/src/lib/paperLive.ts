@@ -41,6 +41,19 @@ export function liveIntervalText(minutes: number): string {
   return LIVE_REFRESH_OPTIONS.find((option) => option.value === minutes)?.label ?? `${minutes}분`;
 }
 
+/** 시간별 장부 관측과 견줄 만큼 긴 간격(분) — 이 이상이면 카드가 지금 값이 대개 장부 단계라고 알립니다. */
+const LONG_INTERVAL_MINUTES = 60;
+
+/**
+ * 긴 간격의 안내(미국만) — 가격은 종목마다 장중 1분봉과 장부 관측 가운데 늦은 쪽이라, 정규장에 매시 장부 관측이 돌면 장부가가 이겨 계좌의 지금 값이
+ * '장부' 단계로 돌아갑니다(장중 명세 §2·§4-1). 간격이 길면 장중 추정은 이 카드가 읽은 직후에만 생깁니다. 한국은 장부 관측이 그날 밤이라 정규장에는
+ * 장중가가 늘 늦은 쪽입니다(안내 없음). 짧은 간격·끄기면 null.
+ */
+export function liveIntervalNote(minutes: number, market: PaperMarketCode = "US"): string | null {
+  if (market !== "US" || minutes < LONG_INTERVAL_MINUTES) return null;
+  return "간격이 길면 그 사이 매시 장부 관측이 돌아 계좌의 지금 값이 대개 '장부' 단계입니다 — 장중 추정은 이 카드가 읽은 직후에 새로 생깁니다.";
+}
+
 /** 저장된 값이 선택지에 있으면 그것, 아니면 기본값. */
 export function normalizeLiveMinutes(value: unknown): number {
   const parsed = typeof value === "number" ? value : Number(value);

@@ -78,7 +78,9 @@ describe("정규장", () => {
     expect(within(positions).getByText("장중 10-30 23:58")).toBeTruthy();
     expect(screen.getByText(/보유 종목 — 계좌 행을 누르면 그 계좌로 바뀝니다/)).toBeTruthy();
     expect(screen.getByText("정규장 동안 30분마다 다시 읽습니다(이 화면을 보는 동안만).")).toBeTruthy();
-    expect(screen.getByText(/표시 전용 — 장부\(체결·순자산 줄·통계·결정\)는 이 시세를 쓰지 않음/)).toBeTruthy();
+    expect(screen.queryByText(/^간격이 길면/)).toBeNull();
+    expect(screen.getByText(/표시 전용 — 장부\(체결·순자산 줄·통계·결정\)는 이 시세를 쓰지 않음 · 계좌의 지금 값\(장중 추정\)은 이 시세로 평가한 값/))
+      .toBeTruthy();
   });
 
   it("종목 표는 고른 계좌를 따른다 — 없거나 모르는 계좌면 첫 계좌, 현금뿐이면 빈 표 안내, 바꿔도 다시 읽지 않음", async () => {
@@ -138,6 +140,8 @@ describe("정규장", () => {
     fireEvent.change(select, { target: { value: "60" } });
     expect(window.localStorage.getItem("paper.liveRefreshMinutes")).toBe("60");
     expect(screen.getByText("정규장 동안 1시간마다 다시 읽습니다(이 화면을 보는 동안만).")).toBeTruthy();
+    // 간격이 길면 그 사이 매시 장부 관측이 이겨 지금 값이 대개 장부 단계라고 알립니다(미국만).
+    expect(screen.getByText(/^간격이 길면 그 사이 매시 장부 관측이 돌아 계좌의 지금 값이 대개 '장부' 단계입니다/)).toBeTruthy();
     await settle(59 * 60_000);
     expect(liveCalls()).toBe(1);
     await settle(60_000);

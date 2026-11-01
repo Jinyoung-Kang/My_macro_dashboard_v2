@@ -16,6 +16,7 @@ import {
   type LivePositionView,
   livePositionsFor,
   liveQuotesWarning,
+  liveIntervalNote,
   liveIntervalText,
   liveRefreshMs,
   liveRevision,
@@ -106,6 +107,7 @@ export function LiveValuationCard({
   const session = liveSessionView(data.session, data.quotes);
   const holdings = livePositionsFor(data, bookCode, market);
   const warning = session.live ? liveQuotesWarning(data.quotes) : null;
+  const intervalNote = session.live ? liveIntervalNote(minutes, market) : null;
   const positionColumns: Column<LivePositionView>[] = [
     { key: "ticker", header: "종목", rowHeader: true, cell: (row) => row.ticker, className: "whitespace-nowrap font-semibold" },
     { key: "qty", header: "수량", align: "right", cell: (row) => <span className="tabular-nums">{row.qty}</span> },
@@ -124,7 +126,8 @@ export function LiveValuationCard({
     <Card
       title="장중 시세 (추정)"
       subtitle={`${session.label} — ${session.detail}`}
-      source={`표시 전용 — 장부(체결·순자산 줄·통계·결정)는 이 시세를 쓰지 않음 · 지금 ${formatKst(data.nowKst ?? null)}`}
+      // 계좌의 지금 값(개요 히어로·계좌 행의 장중 추정)은 서버가 이 카드가 받은 장중 저장본으로 평가한 값입니다(개요는 수집을 요청하지 않음).
+      source={`표시 전용 — 장부(체결·순자산 줄·통계·결정)는 이 시세를 쓰지 않음 · 계좌의 지금 값(장중 추정)은 이 시세로 평가한 값 · 지금 ${formatKst(data.nowKst ?? null)}`}
       actions={
         <div className="flex flex-wrap items-center gap-2">
           <label className="flex items-center gap-1.5 text-xs text-muted">
@@ -154,6 +157,7 @@ export function LiveValuationCard({
             ? "자동 새로고침이 꺼져 있습니다 — '지금 새로 읽기'를 누를 때만 다시 읽습니다."
             : `정규장 동안 ${liveIntervalText(minutes)}마다 다시 읽습니다(이 화면을 보는 동안만).`
           : "장 밖에서는 다시 읽지 않습니다 — 숫자는 아래 기준 시각의 값입니다."}
+        {intervalNote && <span className="ml-1">{intervalNote}</span>}
         {live.refreshError && <span className="ml-1 text-warn">· 새로 읽지 못함({live.refreshError})</span>}
       </p>
       {warning && <div className="mb-3"><Banner tone="warn">{warning}</Banner></div>}
