@@ -18,7 +18,8 @@
 #   · 공개 주소 — CloudFront(HTTPS, 기본 도메인) → 서버 :8301(보안 그룹이 CloudFront 원본용 대역만 들임) → caddy가 비밀 헤더
 #     (X-Origin-Verify = ORIGIN_SECRET)를 확인하고 잠금화면(gate)을 거친 요청만 앱으로. 잠금을 풀어도 앱 로그인은 그대로.
 #   · 관리용 — PC의 scripts/aws/tunnel.sh가 여는 SSM 포트 포워딩(PC localhost:8201 → 서버 127.0.0.1:8201, 잠금화면 없음).
-# 서버는 매일 KST 21:55에 켜지고 08:00(토 10:00)에 꺼집니다 — EventBridge Scheduler(ADR 0019). 그 밖에 볼 때는 scripts/aws/instance.sh start.
+# 서버는 평일 밤 뉴욕 09:20(미국 개장 10분 전)~07:00 KST, 평일 낮 08:55~15:50, 일 20:50~23:30 KST에만 켜집니다 — EventBridge Scheduler
+# (ADR 0019 결정 14, 2026-11-02). 그 밖에 볼 때는 scripts/aws/instance.sh start.
 #
 # 바뀌는 것
 #   · 앞단 caddy를 더함(deploy/aws/Caddyfile): 127.0.0.1:8201(터널)과 :8301(CloudFront)을 열고 /api/*는 backend, 나머지는 frontend로.
@@ -60,8 +61,8 @@ services:
       # 127.0.0.1의 앱 포트로 붙는 서버 안 프로세스. 바깥에서 닿는 길은 Caddy뿐이고, 서버 안의 위조는 로그인 지연만 우회한다.
       SERVER_FORWARDHEADERSSTRATEGY: native
       MAIL_HOST: ""
-      # 국면 판정 기록 시각(KST). 기본 18시는 가동 창(21:55~08:00) 밖이라, 켜자마자(21:59) 아침 08:00에 멈춘 저장본으로 기록합니다.
-      # 기동 뒤 수집이 한 바퀴 돈 23시로 둡니다(ADR 0019 — 30분 주기라 23:2x 실행이 걸림, 자정 뒤 실행은 다음 날 몫이라 18시 전처럼 기다림).
+      # 국면 판정 기록 시각(KST) — 밤 가동 창 안의 23시(ADR 0019). 첫 실행은 기동 15분 뒤라 겨울 23:20 기동이면 23:35쯤(수집기의 기동 수집 뒤),
+      # 서머타임 22:20 기동이면 23:0x에 기록합니다. 자정 뒤 실행은 다음 날 몫이라 그날 23시 전처럼 기다립니다.
       DASHBOARD_SCHEDULER_REGIMERECORDHOURKST: "23"
 
   frontend:
@@ -88,7 +89,7 @@ services:
       GATE_SECRET: "${GATE_SECRET:?GATE_SECRET 필요 — 서버 .env(.env.aws.example)}"
       GATE_CODES: "${GATE_CODES:?GATE_CODES 필요 — python3 deploy/aws/gate/gate.py hash}"
       GATE_COOKIE_SECURE: "true"
-      GATE_HOURS: "${GATE_HOURS:-매일 21:55–08:00 · 토 ~10:00 (KST)}"
+      GATE_HOURS: "${GATE_HOURS:-평일 미국 개장 10분 전–07:00 · 평일 08:55–15:50 · 일 20:50–23:30 (KST)}"
       # 잠금 해제·차단 알림(선택) — 둘 다 있어야 보냄
       TELEGRAM_BOT_TOKEN: "${TELEGRAM_BOT_TOKEN:-}"
       TELEGRAM_CHAT_ID: "${TELEGRAM_CHAT_ID:-}"

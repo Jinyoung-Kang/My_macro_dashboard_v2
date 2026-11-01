@@ -33,12 +33,12 @@ command -v aws >/dev/null || die "aws CLI가 없습니다(v2 필요)."
 command -v session-manager-plugin >/dev/null || die "session-manager-plugin이 없습니다 — AWS 문서의 'Session Manager plugin 설치'."
 signed_in() { aws sts get-caller-identity --region "$REGION" >/dev/null 2>&1; }
 signed_in || die "AWS에 로그인돼 있지 않습니다 — aws login 뒤 다시 실행하세요."
-# 서버는 매일 21:55~08:00 KST(토 ~10:00)에만 켜져 있습니다. 꺼져 있으면 붙지 못하고 곧바로 끊기기만 하므로 먼저 알립니다.
+# 서버는 정기 가동 시간(평일 밤 뉴욕 09:20~07:00 KST, 평일 낮 08:55~15:50, 일 20:50~23:30 — ADR 0019 결정 14)에만 켜져 있습니다. 꺼져 있으면 붙지 못하고 곧바로 끊기기만 하므로 먼저 알립니다.
 state="$(aws ec2 describe-instances --region "$REGION" --instance-ids "$instance" \
     --query 'Reservations[0].Instances[0].State.Name' --output text 2>/dev/null)" || state=""
 case "$state" in
     stopped|stopping)
-        die "서버가 꺼져 있습니다($state) — 정기 가동은 매일 21:55~08:00 KST(토 ~10:00). 지금 보려면 bash scripts/aws/instance.sh start" ;;
+        die "서버가 꺼져 있습니다($state) — 정기 가동은 평일 밤 뉴욕 09:20(겨울 23:20·서머타임 22:20 KST)~07:00, 평일 낮 08:55~15:50, 일요일 20:50~23:30 KST. 지금 보려면 bash scripts/aws/instance.sh start" ;;
     pending) echo "서버가 켜지는 중입니다 — 컨테이너가 뜨는 1~2분 동안은 연결이 끊겼다 다시 이어질 수 있습니다." ;;
 esac
 # 이미 다른 터널(또는 다른 프로그램)이 이 포트를 쓰면 새 터널은 바로 실패합니다.

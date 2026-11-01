@@ -14,7 +14,9 @@ import shutil
 import socket
 import stat
 import subprocess
+from datetime import datetime
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 import pytest
 
@@ -73,8 +75,11 @@ echo "curl $*" >> "$FAKE_LOG"
 out=; while [ $# -gt 0 ]; do [ "$1" = -o ] && out="$2"; shift; done
 python3 -I -c 'import json,sys; n=int(sys.argv[2]); json.dump({"syncToken": "1", "prefixes": [{"ip_prefix": f"10.0.{i}.0/24", "service": "CLOUDFRONT_ORIGIN_FACING"} for i in range(n)] + [{"ip_prefix": "1.2.3.0/24", "service": "EC2"}], "ipv6_prefixes": [{"ipv6_prefix": "2600:9000::/28", "service": "CLOUDFRONT_ORIGIN_FACING"}]}, open(sys.argv[1], "w"))' "$out" "${FAKE_CURL_RANGES:-12}"
 """
-# instance.sh가 묻는 지금(KST 요일+시분, `date +%u%H%M`)만 FAKE_NOW로 바꾸고 나머지는 진짜 date에 넘깁니다.
-_FAKE_DATE = '#!/usr/bin/env bash\nif [ -n "${FAKE_NOW:-}" ] && [ "$*" = "+%u%H%M" ]; then echo "$FAKE_NOW"; exit 0; fi\nfor d in /bin/date /usr/bin/date; do [ -x "$d" ] && exec "$d" "$@"; done\nexit 127\n'
+# instance.sh가 묻는 지금(요일+시분, `date +%u%H%M`)만 바꾸고 나머지는 진짜 date에 넘깁니다 — KST는 FAKE_NOW, TZ=America/New_York이면
+# FAKE_NOW_NY(밤 창 시작이 뉴욕 09:20이라 — 없으면 실패).
+_FAKE_DATE = ('#!/usr/bin/env bash\nif [ -n "${FAKE_NOW:-}" ] && [ "$*" = "+%u%H%M" ]; then\n'
+              '  if [ "${TZ:-}" = America/New_York ]; then echo "${FAKE_NOW_NY:?FAKE_NOW_NY}"; else echo "$FAKE_NOW"; fi; exit 0\nfi\n'
+              'for d in /bin/date /usr/bin/date; do [ -x "$d" ] && exec "$d" "$@"; done\nexit 127\n')
 
 
 def _write_exec(path: Path, text: str) -> None:
@@ -541,7 +546,7 @@ def test_tunnel은_8201을_이미_쓰고_있으면_세션을_열지_않는다(pc
 def test_tunnel은_서버가_꺼져_있으면_세션을_열지_않고_켜는_방법을_알린다(pc_root, fakes):
     result = _tunnel(pc_root, fakes, FAKE_EC2_STATE="stopped")
     assert result.returncode != 0
-    assert "instance.sh start" in result.stderr and "21:55" in result.stderr
+    assert "instance.sh start" in result.stderr and "09:20" in result.stderr and "08:55" in result.stderr
     assert not any(c.startswith("aws ssm") for c in _calls(fakes))
 
 
@@ -575,7 +580,7 @@ def test_instance_start는_켜고_running까지_기다리고_다음_정지_일�
     assert result.returncode == 0, result.stderr
     assert _ec2_calls(fakes) == [f"aws ec2 start-instances --region ap-northeast-2 --instance-ids {INSTANCE}",
                                  f"aws ec2 wait instance-running --region ap-northeast-2 --instance-ids {INSTANCE}"]
-    assert "08:00" in result.stdout and "10:00" in result.stdout
+    assert "07:00" in result.stdout and "15:50" in result.stdout and "23:30" in result.stdout
 
 
 def test_instance_start는_이미_켜져_있으면_아무것도_하지_않는다(pc_instance_root, fakes):
@@ -584,12 +589,25 @@ def test_instance_start는_이미_켜져_있으면_아무것도_하지_않는다
     assert _ec2_calls(fakes) == []
 
 
-# 요일(1=월 … 6=토 … 7=일) + KST 시분
-@pytest.mark.parametrize(("now", "in_window"), [("12300", True), ("20759", True), ("70759", True), ("62155", True),
-                                                ("60930", True), ("20800", False), ("11200", False), ("61000", False),
-                                                ("62154", False), ("70800", False)])
-def test_instance_stop은_정기_가동_시간에는_force_없이_끄지_않는다(pc_instance_root, fakes, now, in_window):
-    result = _instance(pc_instance_root, fakes, "stop", FAKE_EC2_STATE="running", FAKE_NOW=now)
+def _fake_now(kst: str) -> dict[str, str]:
+    """KST 시각 하나 → date +%u%H%M의 KST·뉴욕 값(요일 1=월 … 7=일)."""
+    at = datetime.fromisoformat(kst).replace(tzinfo=ZoneInfo("Asia/Seoul"))
+    return {"FAKE_NOW": at.strftime("%u%H%M"), "FAKE_NOW_NY": at.astimezone(ZoneInfo("America/New_York")).strftime("%u%H%M")}
+
+
+# 정기 가동 시간(ADR 0019 결정 14 — 2026-11-02): 평일 밤 뉴욕 09:20 ~ 07:00 KST, 평일 낮 08:55~15:50, 일요일 20:50~23:30 KST.
+# 2026-11-02(월)~ 은 겨울(EST — 23:20 KST 켜짐), 2026-10-27(화)~10-30(금)은 서머타임(EDT — 22:20 KST 켜짐).
+@pytest.mark.parametrize(("kst", "in_window"), [
+    ("2026-11-02T23:19", False), ("2026-11-02T23:20", True), ("2026-11-03T06:59", True), ("2026-11-03T07:00", False),
+    ("2026-11-07T06:59", True),                                  # 토 06:59 — 금요일 세션
+    ("2026-11-08T06:59", False), ("2026-11-09T06:59", False),     # 일·월 아침 — 토·일 세션 없음
+    ("2026-10-27T22:19", False), ("2026-10-27T22:20", True), ("2026-10-28T06:59", True),
+    ("2026-11-03T08:54", False), ("2026-11-03T08:55", True), ("2026-11-06T15:49", True), ("2026-11-06T15:50", False),
+    ("2026-11-07T09:00", False), ("2026-11-07T22:30", False),     # 토요일 — 창 없음
+    ("2026-11-08T20:49", False), ("2026-11-08T20:50", True), ("2026-11-08T23:29", True), ("2026-11-08T23:30", False),
+])
+def test_instance_stop은_정기_가동_시간에는_force_없이_끄지_않는다(pc_instance_root, fakes, kst, in_window):
+    result = _instance(pc_instance_root, fakes, "stop", FAKE_EC2_STATE="running", **_fake_now(kst))
     stops = [c for c in _ec2_calls(fakes) if c.startswith("aws ec2 stop-instances")]
     if in_window:
         assert result.returncode != 0 and "--force" in result.stderr and stops == []
@@ -599,7 +617,7 @@ def test_instance_stop은_정기_가동_시간에는_force_없이_끄지_않는�
 
 
 def test_instance_stop은_force면_가동_시간에도_끈다(pc_instance_root, fakes):
-    result = _instance(pc_instance_root, fakes, "stop", "--force", FAKE_EC2_STATE="running", FAKE_NOW="12300")
+    result = _instance(pc_instance_root, fakes, "stop", "--force", FAKE_EC2_STATE="running", **_fake_now("2026-11-02T23:30"))
     assert result.returncode == 0, result.stderr
     assert _ec2_calls(fakes) == [f"aws ec2 stop-instances --region ap-northeast-2 --instance-ids {INSTANCE}",
                                  f"aws ec2 wait instance-stopped --region ap-northeast-2 --instance-ids {INSTANCE}"]

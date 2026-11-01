@@ -2,8 +2,10 @@
 # =============================================================================
 # scripts/aws/backup-s3.sh — AWS 개인용 서버의 DB를 백업해 S3에 올립니다(ADR 0019).
 #
-# cron(서버의 ubuntu 사용자, 서버 시간대는 UTC) — 매일 21:10 UTC = 06:10 KST:
-#   10 21 * * * /home/ubuntu/My_macro_dashboard_v2/scripts/aws/backup-s3.sh
+# cron(서버의 ubuntu 사용자, 서버 시간대는 UTC) — 매일 21:45 UTC = 06:45 KST(미국 결정 06:30 뒤, 07:00 정지 전)와
+# 일요일 14:00 UTC = 23:00 KST(주간 복기 뒤). 서버가 꺼진 아침에는 돌지 않습니다(ADR 0019 결정 14, 2026-11-02 — 처음은 매일 06:10):
+#   45 21 * * * /home/ubuntu/My_macro_dashboard_v2/scripts/aws/backup-s3.sh
+#   0 14 * * 0 /home/ubuntu/My_macro_dashboard_v2/scripts/aws/backup-s3.sh
 # 결과는 syslog(태그 my-macro-backup):  journalctl -t my-macro-backup
 #
 # make backup(backups/에 접두어별 최근 BACKUP_KEEP개 보존, ADR 0003)이 만든 파일 하나만 s3://<AWS_BACKUP_BUCKET>/db/에
