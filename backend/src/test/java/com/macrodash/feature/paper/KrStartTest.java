@@ -10,6 +10,7 @@ import com.macrodash.store.PaperStore.NavRow;
 import com.macrodash.store.PaperStore.Order;
 import com.macrodash.support.InvalidRequestException;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import tools.jackson.databind.JsonNode;
@@ -462,6 +463,27 @@ class KrStartTest {
         assertThat(store.books.get(PaperBooks.KR_CLAUDE2).status()).isEqualTo(PaperBooks.ACTIVE);
         assertThat(store.navSeries(PaperBooks.KR_CLAUDE2)).filteredOn(n -> n.tradingDate().equals(S)).singleElement()
                 .satisfies(n -> assertThat(n.pricesFinal()).isFalse());
+    }
+
+    @Test
+    @Disabled("QA-165 재현 — 수정 전: 검증기가 S 밤 관측치의 나이를 지금 시각으로 세어 주문을 모두 STALE_INPUT으로 거절")
+    @DisplayName("QA-165: 한국 Claude 계좌2 출발이 S 밤 관측치보다 24시간 넘게 뒤(금요일 밤 → 월요일 새벽)여도 신선도는 계좌1 출발 결정 순간(입력 동결)으로 "
+            + "보아 주문을 거절하지 않고 출발일 종가로 사후 체결")
+    void qa165Claude2StartLongAfterTheStartNight() {
+        KrClaudeFixtures.FakeAi fake = new KrClaudeFixtures.FakeAi();
+        fake.answer(KrClaudeFixtures.decision(8, null, KrClaudeFixtures.order("005930", "BUY", 8.0, null)));
+        realClaude(fake);
+        assertThat(runAt("2026-11-30T22:30").outcome()).isEqualTo(PaperDecisionJob.STARTED);
+        clock.set(kst("2026-12-02T05:10"));   // S 밤 관측치(11-30 21:57)보다 31시간 뒤
+        fake.answer(KrClaudeFixtures.decision(9, null, KrClaudeFixtures.order("005930", "BUY", 10.0, null)));
+
+        ClaudeBookService.KrClaude2Started started = claudeService.startKrClaude2(PaperBooks.KR_CLAUDE2, StartCloseRestart.SOURCE_TOSS);
+
+        assertThat(started.decision().response().path("validation").get(0).path("rejectReason").isNull())
+                .as("STALE_INPUT 아님").isTrue();
+        assertThat(started.decision().status()).isEqualTo(ClaudeBookService.STATUS_OK);
+        assertThat(store.fillsOf(PaperBooks.KR_CLAUDE2)).singleElement()
+                .satisfies(f -> assertThat(f.price()).isEqualTo(10_200.0));
     }
 
     @Test
