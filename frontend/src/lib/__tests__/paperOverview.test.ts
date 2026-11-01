@@ -197,6 +197,22 @@ describe("계좌 행 — 지금 값(current, 장중 명세 §4-1)", () => {
     expect(bookStale(at("2026-10-31 05:15 KST"), late, "hero").isStale).toBe(false);
   });
 
+  // QA-161: 한국 관측치 늦음은 달력 기준(다음 수집 예정 + 2시간 5분 — KrPaperMarket.quotesLateAt)이라 서면 실제로 수집을 놓친 것입니다. 다음 세션
+  // 수집을 놓치면 지금 값이 앞 세션의 잠정·확정 줄에 머무는데, b92bf695가 순자산 줄 단계의 사유를 모두 비워 행·히어로가 늦음 표시 없이 보였습니다
+  // (미국 늦음은 수집 + 3시간이라 주말·아침에 늘 서므로 미국만 빼야 함 — 재현 커밋에서는 it.fails).
+  it.fails("QA-161 한국은 잠정·확정 줄 단계에서도 관측치 늦음을 이전 값으로(관측 시각 포함) — 미국 확정 줄은 그대로 배지 없음", () => {
+    const kr = { market: "KR" as const, quotes: { stale: true }, session: { phase: "CLOSED" as const, sessionDate: "2026-10-30" } };
+    for (const stage of ["PROVISIONAL", "FINAL"] as const) {
+      const line = live({ stage, basis: "LEDGER", isEstimated: false, livePriced: 0, pendingOrders: 0, tradingDate: "2026-10-29",
+        atKst: "2026-10-29 15:30 KST", previousNavFinal: true, note: null });
+      const book = { ...BOOKS[0], code: "kr_claude", lastObservedAtKst: "2026-10-29 22:31 KST", current: line } as PaperOverviewBook;
+      expect(bookAssetRow(book, kr)).toMatchObject({ isStale: true, staleReason: "관측치 저장본이 늦음 · 마지막 관측 2026-10-29 22:31" });
+      expect(bookStale(book, kr, "hero")).toEqual({ isStale: true, reason: "관측치 저장본이 늦음 · 마지막 관측 2026-10-29 22:31" });
+      // 늦지 않았으면 배지 없음(마감 뒤 밤 관측으로 쓴 줄)
+      expect(bookStale(book, { ...kr, quotes: { stale: false } }, "row").isStale).toBe(false);
+    }
+  });
+
   it("출발 전 계좌는 기준 한 줄 없음(보조 글이 '시작 전'), 한국은 원 정수와 '시가 체결 대기'", () => {
     const waiting = live({ nav: 100000, returnPct: null, stage: "LEDGER", basis: "LEDGER", isEstimated: false, neutral: true, note: "출발 전" });
     expect(bookAssetRow({ ...BOOKS[1], current: waiting } as PaperOverviewBook)).toMatchObject({ value: 100000, changePct: null, caption: null, isEstimated: false });
