@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { type Column, DataTable } from "@/components/patterns";
 import { Banner, Button, Card, inputClasses } from "@/components/ui";
 import { useApi } from "@/hooks/useApi";
+import { useVisibleWake } from "@/hooks/useVisibleWake";
 import { endpoints } from "@/lib/endpoints";
 import { deltaColor, EMPTY, formatKst } from "@/lib/format";
 import type { PaperMarketCode } from "@/lib/paperMarket";
@@ -23,11 +24,12 @@ import {
 import type { PaperLiveResponse } from "@/lib/types";
 
 /**
- * 🧪 장중 평가(추정) 카드 — 정규장 동안 계좌·종목 수익률이 고른 간격(기본 30분)으로 움직이고, 모든 값에 기준 시각을 붙입니다.
+ * 장중 평가(추정) 카드 — 정규장 동안 계좌·종목 수익률이 고른 간격(기본 30분)으로 움직이고, 모든 값에 기준 시각을 붙입니다.
  *
- * 표시 전용입니다. 장부(체결·확정 순자산·통계·결정)는 이 값을 쓰지 않습니다(서버 PaperLiveService). 다시 읽기 규칙은 lib/paperLive —
- * 정규장에만 간격대로, 서버가 새 시세를 요청했으면 20초 뒤 한 번만 더, 장 밖에서는 멈추고 다음 개장에 한 번 깨어납니다. 탭을 숨기면
- * useApi가 멈춥니다(보지 않는 동안 시세를 받지 않음).
+ * 표시 전용입니다. 장부(체결·순자산 줄·통계·결정)는 이 값을 쓰지 않습니다(서버 PaperLiveService). 다시 읽기 규칙은 lib/paperLive —
+ * 정규장에만 간격대로, 서버가 새 시세를 요청했으면 20초 뒤 한 번만 더, 장 밖에서는 멈추고 다음 개장에 한 번 깨어납니다. 탭을 숨기면 간격
+ * 읽기는 useApi가 멈추고, '한 번 더'·'다음 개장' 깨우기는 탭이 다시 보일 때로 미룹니다(useVisibleWake — 보지 않는 동안 시세를 받지 않음,
+ * QA-154).
  */
 export function LiveValuationCard({ market = "US" }: { market?: PaperMarketCode }) {
   const [minutes, setMinutes] = useLiveRefreshMinutes();
@@ -35,6 +37,8 @@ export function LiveValuationCard({ market = "US" }: { market?: PaperMarketCode 
   const live = useApi<PaperLiveResponse>(endpoints.paper.market(market).live, refreshMs);
   const data = live.data;
   const { reload } = live;
+  // 타이머의 다시 읽기 — 숨긴 탭이면 다시 보일 때로 미룹니다(QA-154). reload를 바로 부르면 숨긴 탭에서도 /live가 나가 정규장이면 수집을 깨웠습니다.
+  const wake = useVisibleWake(reload, refreshMs);
   const [selected, setSelected] = useState<string | null>(null);
   // 바로 앞 읽기가 '한 번 더 읽기'였으면 또 예약하지 않습니다(수집이 늦어도 20초마다 되풀이하지 않게).
   const followingUp = useRef(false);
@@ -51,16 +55,16 @@ export function LiveValuationCard({ market = "US" }: { market?: PaperMarketCode 
     }
     if (!data.quotes?.refreshRequested) return;
     followingUp.current = true;
-    const timer = setTimeout(() => void reload(), LIVE_FOLLOW_UP_MS);
+    const timer = setTimeout(wake, LIVE_FOLLOW_UP_MS);
     return () => clearTimeout(timer);
-  }, [data, reload]);
+  }, [data, wake]);
 
   useEffect(() => {
     const wait = msUntilNextOpen(data?.session, Date.now());
     if (wait === null || minutes === 0) return;
-    const timer = setTimeout(() => void reload(), wait);
+    const timer = setTimeout(wake, wait);
     return () => clearTimeout(timer);
-  }, [data, minutes, reload]);
+  }, [data, minutes, wake]);
 
   if (live.error && !data) {
     return (

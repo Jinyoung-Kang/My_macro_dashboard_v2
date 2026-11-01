@@ -3,6 +3,7 @@
  *  - 정규장이면 계좌별 순자산·출발 대비·오늘·기준 시각을 그리고, 행을 누르면 그 계좌의 종목 표
  *  - 서버가 새 시세를 요청한 응답이면(refreshRequested) 20초 뒤 한 번만 더 읽는다(되풀이 없음)
  *  - 간격 선택은 이 브라우저에 기억되고(기본 30분), 장 밖에서는 다시 읽지 않는다
+ *  - 숨긴 탭에서는 '한 번 더'·'다음 개장' 깨우기가 읽지 않고, 다시 보일 때 한 번(QA-154)
  *  - 시계는 고정한다(QA-155) — 다음 개장 깨우기가 지금 시각으로 기다릴 시간을 정하므로, 진짜 시계면 돌린 때에 따라 결과가 달라진다
  */
 import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
@@ -165,8 +166,8 @@ describe("QA-154 숨긴 탭에서는 깨우지 않는다", () => {
 
   // 카드의 '다음 개장 깨우기'·'20초 뒤 한 번 더'는 setTimeout으로 useApi의 reload를 부릅니다. reload(load)는 탭이 보이는지 보지 않아, 수정 전에는
   // 숨긴 탭에서도 /live 요청이 나갔습니다 — 정규장이면 서버가 그 요청으로 수집을 깨웁니다(시세는 화면을 볼 때만 받기로 한 결정과 어긋남).
-  // 재현 커밋에서는 it.fails.
-  it.fails("장 밖 — 다음 개장 깨우기는 숨긴 탭이면 읽지 않고, 다시 보이면 한 번 읽는다", async () => {
+  // 이제 타이머는 useVisibleWake로 부릅니다 — 숨긴 탭이면 미루고 다시 보일 때 한 번(재현 커밋에서는 it.fails).
+  it("장 밖 — 다음 개장 깨우기는 숨긴 탭이면 읽지 않고, 다시 보이면 한 번 읽는다", async () => {
     // 고정 시계(10-30 23:59 KST)에서 다음 개장이 10-31 00:10 KST → 깨우기는 12분 뒤(개장 + 1분).
     api.apiGetShared.mockImplementation(() =>
       Promise.resolve(live({ session: { ...SESSION, phase: "CLOSED", nextOpenAtKst: "2026-10-31 00:10 KST" } })));
@@ -184,7 +185,7 @@ describe("QA-154 숨긴 탭에서는 깨우지 않는다", () => {
     expect(liveCalls()).toBe(2);
   });
 
-  it.fails("정규장 — 20초 뒤 한 번 더는 숨긴 탭이면 읽지 않고, 돌아오면 useApi의 복귀 읽기 한 번뿐(셋이 아님)", async () => {
+  it("정규장 — 20초 뒤 한 번 더는 숨긴 탭이면 읽지 않고, 돌아오면 useApi의 복귀 읽기 한 번뿐(셋이 아님)", async () => {
     api.apiGetShared.mockImplementation(() =>
       Promise.resolve(live({ quotes: { source: null, collectedAtKst: null, refreshRequested: true, missing: [], error: null } })));
     render(<LiveValuationCard />);
