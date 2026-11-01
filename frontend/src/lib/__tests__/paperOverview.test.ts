@@ -163,6 +163,23 @@ describe("계좌 행 — 지금 값(current, 장중 명세 §4-1)", () => {
     expect(bookStale(BOOKS[1] as PaperOverviewBook, late, "hero").isStale).toBe(false);
   });
 
+  // QA-158: 서버의 잠정 줄은 마감 값이 아닐 때가 있습니다 — 마감 뒤 관측이 오지 않으면 결정 작업이 마지막 관측 상태를 그날 잠정 줄로 옮기고
+  // (PaperLedgerService.settleNav), 지난 값으로 평가한 보유가 있으면 그날 줄이 잠정이 됩니다. 수정 전에는 잠정 단계면 배지를 늘 빼서, 장중 02:08 관측을
+  // 옮긴 '10-30 잠정'이 이전 값 표시 없이 보였습니다(재현 커밋에서는 it.fails).
+  it.fails("QA-158 잠정 줄이 마감 전 관측을 옮긴 것이거나 지난 값으로 평가한 보유가 있으면 이전 값 배지 — 관측 시각도 남김(잠정 표기에는 시각이 없음)", () => {
+    const closed = { phase: "CLOSED" as const, sessionDate: "2026-10-30" };
+    const provisional = live({ stage: "PROVISIONAL", basis: "LEDGER", isEstimated: false, livePriced: 0, pendingOrders: 0, tradingDate: "2026-10-30",
+      atKst: "2026-10-31 05:00 KST", note: null });
+    // 마감(10-31 05:00 KST) 전 장중 관측(02:08)을 옮긴 잠정 줄 — 관측치 저장본도 늦음
+    const copied = { ...BOOKS[0], lastObservedAtKst: "2026-10-31 02:08 KST", current: provisional } as PaperOverviewBook;
+    const late = { quotes: { stale: true }, session: closed };
+    expect(bookAssetRow(copied, late)).toMatchObject({ isStale: true, staleReason: "관측치 저장본이 늦음 · 마지막 관측 2026-10-31 02:08" });
+    expect(bookStale(copied, late, "hero")).toEqual({ isStale: true, reason: "관측치 저장본이 늦음 · 마지막 관측 2026-10-31 02:08" });
+    // 마감 뒤 관측이지만 지난 값으로 평가한 보유가 든 잠정 줄(가격 없음 2종목)
+    const priced = { ...BOOKS[2], lastObservedAtKst: "2026-10-31 05:15 KST", current: provisional } as PaperOverviewBook;
+    expect(bookAssetRow(priced, { session: closed })).toMatchObject({ isStale: true, staleReason: "가격 없음 2종목 — 지난 값으로 평가" });
+  });
+
   it("출발 전 계좌는 기준 한 줄 없음(보조 글이 '시작 전'), 한국은 원 정수와 '시가 체결 대기'", () => {
     const waiting = live({ nav: 100000, returnPct: null, stage: "LEDGER", basis: "LEDGER", isEstimated: false, neutral: true, note: "출발 전" });
     expect(bookAssetRow({ ...BOOKS[1], current: waiting } as PaperOverviewBook)).toMatchObject({ value: 100000, changePct: null, caption: null, isEstimated: false });
