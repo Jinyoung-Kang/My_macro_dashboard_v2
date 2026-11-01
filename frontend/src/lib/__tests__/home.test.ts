@@ -444,6 +444,8 @@ describe("paperHomeModel — 모의매매(미국)", () => {
     const model = paperHomeModel(overview, paperStatus(true));
     expect(model.rows.every((row) => row.isStale && row.staleReason === "관측치 저장본이 늦음 · 마지막 관측 2026-10-26 04:56")).toBe(true);
     expect(model.heroStale).toBe(true);
+    // 히어로는 같은 시각을 '마지막 관측 …'으로 이미 적어 사유에서 뺌(한 줄에 같은 시각을 두 번 적지 않음)
+    expect(model.heroStaleReason).toBe("관측치 저장본이 늦음");
     // 관측이 없는 시작 전 계좌(현금만)는 늦은 관측으로 평가한 값이 아니라 이전 값이 아닙니다(모의매매 개요와 같음).
     overview.books![0] = book({ code: "rules", kind: "RULES", label: "규칙 계좌", status: "NOT_STARTED", lastObservedAtKst: null });
     expect(paperHomeModel(overview, null).rows[0].isStale).toBe(false);

@@ -18,6 +18,7 @@ import {
   accountComparisonRows,
   bookAssetRow,
   bookMonogram,
+  bookStale,
   heroNavChart,
   markersInWindow,
   monthsBefore,
@@ -126,6 +127,40 @@ describe("계좌 행 — 지금 값(current, 장중 명세 §4-1)", () => {
     const final = live({ stage: "FINAL", basis: "LEDGER", isEstimated: false, livePriced: 0, pendingOrders: 0, previousNavFinal: true, note: null });
     expect(bookAssetRow({ ...BOOKS[0], current: final } as PaperOverviewBook, { session: sunday }).caption)
       .toBe("10-30 확정 · 10-30 변화 +0.42% · 10-29 확정 대비");
+  });
+
+  it("이전 값 배지는 보이는 값이 장부 관측에서 나왔을 때만 — 장부 단계는 그대로(시각은 단계 표기에), 순자산 줄·모두 장중가인 추정은 없음", () => {
+    const late = { quotes: { stale: true }, session: REGULAR };
+    const stale = BOOKS[2] as PaperOverviewBook; // 가격 없음 2종목(장부 staleCount)
+    // 장부 단계 — 값이 그 장부 상태라 사유 그대로, 같은 관측 시각은 값의 기준 한 줄('장부 23:15')에 있어 사유에서 뺌
+    const ledger = live({ stage: "LEDGER", basis: "LEDGER", isEstimated: false, livePriced: 0, pendingOrders: 0, atKst: "2026-10-30 23:15 KST", note: null });
+    expect(bookAssetRow({ ...stale, current: ledger }, late))
+      .toMatchObject({ isStale: true, staleReason: "가격 없음 2종목 — 지난 값으로 평가 · 관측치 저장본이 늦음" });
+    // 순자산 줄(잠정·확정) — 그 거래일 마감 값이라 장부 관측과 무관: 배지 없음
+    for (const stage of ["PROVISIONAL", "FINAL"] as const) {
+      const row = live({ stage, basis: "LEDGER", isEstimated: false, livePriced: 0, pendingOrders: 0, note: null });
+      expect(bookAssetRow({ ...stale, current: row }, late)).toMatchObject({ isStale: false, staleReason: null });
+    }
+    // 장중 추정 — 모든 보유를 장중가로 평가했으면 배지 없음, 장중가 없는 종목이 섞이면 그 종목 수를 앞에(관측 시각은 그대로 — 단계 표기는 장중 시각)
+    expect(bookAssetRow({ ...stale, current: live({ livePriced: 2 }) }, late)).toMatchObject({ isStale: false, staleReason: null });
+    expect(bookAssetRow({ ...stale, current: live({ livePriced: 1 }) }, late)).toMatchObject({
+      isStale: true,
+      staleReason: "장중가 없는 1종목은 장부 관측가 · 가격 없음 2종목 — 지난 값으로 평가 · 관측치 저장본이 늦음 · 마지막 관측 2026-10-24 05:15",
+    });
+    // 장중가 없는 종목이 있어도 장부 사유가 없으면(관측이 늦지 않고 가격도 받음) 배지 없음 — 섞임은 값의 기준 한 줄('장중가 1/2종목')이 말함
+    expect(bookAssetRow({ ...BOOKS[0], current: live({ livePriced: 1 }) } as PaperOverviewBook, { session: REGULAR }).isStale).toBe(false);
+  });
+
+  it("히어로 자리의 이전 값 — 같은 규칙이고, 단계 표기가 관측 시각을 적는 자리(옛 응답 '마지막 관측 …'·장부 단계)면 사유에서 그 시각을 뺌", () => {
+    const late = { quotes: { stale: true } };
+    // 옛 응답: 행은 시각을 사유에(값의 기준 한 줄 없음), 히어로는 '마지막 관측 …' 단계 표기가 있어 뺌
+    expect(bookStale(BOOKS[0] as PaperOverviewBook, late, "row").reason).toBe("관측치 저장본이 늦음 · 마지막 관측 2026-10-24 05:15");
+    expect(bookStale(BOOKS[0] as PaperOverviewBook, late, "hero")).toEqual({ isStale: true, reason: "관측치 저장본이 늦음" });
+    // 장중 추정(섞임) — 단계 표기는 장중 시각이라 관측 시각을 남김
+    expect(bookStale({ ...BOOKS[0], current: live({ livePriced: 1 }) } as PaperOverviewBook, late, "hero").reason)
+      .toBe("장중가 없는 1종목은 장부 관측가 · 관측치 저장본이 늦음 · 마지막 관측 2026-10-24 05:15");
+    // 관측이 없는 시작 전 계좌는 이전 값이 아님
+    expect(bookStale(BOOKS[1] as PaperOverviewBook, late, "hero").isStale).toBe(false);
   });
 
   it("출발 전 계좌는 기준 한 줄 없음(보조 글이 '시작 전'), 한국은 원 정수와 '시가 체결 대기'", () => {

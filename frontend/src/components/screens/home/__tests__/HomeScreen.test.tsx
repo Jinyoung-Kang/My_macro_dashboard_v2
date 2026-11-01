@@ -497,8 +497,9 @@ describe("홈 — 추정·오래됨 배지", () => {
     renderHome(OWNER);
 
     const paper = await paperHero();
-    // 네 행 + 히어로
-    expect(within(paper).getAllByText("· 관측치 저장본이 늦음 · 마지막 관측 2026-10-26 04:56")).toHaveLength(5);
+    // 네 행은 사유에 마지막 관측 시각, 히어로는 그 시각을 값의 기준 줄('… · 마지막 관측 2026-10-26 04:56')에 이미 적어 사유에서 뺌
+    expect(within(paper).getAllByText("· 관측치 저장본이 늦음 · 마지막 관측 2026-10-26 04:56")).toHaveLength(4);
+    expect(within(paper).getAllByText("· 관측치 저장본이 늦음")).toHaveLength(1);
   });
 });
 

@@ -11,7 +11,7 @@ import { TABS } from "./nav";
 import { formatDollars, isTimedBook, primaryClaudeBook, withParticle } from "./paper";
 import { formatMoney, marketMeta, type PaperMarketCode } from "./paperMarket";
 import { currentSource, currentView, type DayChange } from "./paperCurrent";
-import { bookAssetRow, type BookRow } from "./paperOverview";
+import { bookAssetRow, type BookRow, bookStale } from "./paperOverview";
 import { assetMonogram } from "./patternRows";
 import { paperMarketPath } from "./paperRoutes";
 import { presentText } from "./patterns";
@@ -413,7 +413,7 @@ export function paperHomeModel(
 
   // 히어로는 그 시장의 기본 Claude 계좌(미국 계좌1·한국 kr_claude) — 계좌2(체결 시점 실험)는 행으로만 보입니다(계좌2 명세 §13-3).
   const claude = primaryClaudeBook(books);
-  const claudeRow = claude ? rows.find((row) => row.id === claude.code) : undefined;
+  const heroStale = claude ? bookStale(claude, context, "hero") : null;
   const view = claude ? currentView(claude, { market, session }) : null;
   const live = view?.from === "current" ? view : null;
   const nav = finite(view?.nav);
@@ -457,8 +457,9 @@ export function paperHomeModel(
     heroIsEstimated: live?.isEstimated === true,
     heroDay: live?.day?.text ? live.day : null,
     heroSource: currentSource(live?.isEstimated === true, market),
-    heroStale: claudeRow?.isStale === true,
-    heroStaleReason: claudeRow?.staleReason ?? null,
+    // 이전 값 배지는 행과 같은 규칙에 히어로 자리(위 단계 표기·'마지막 관측'이 관측 시각을 이미 적음 — 사유에서 그 시각을 뺌, lib/paperOverview bookStale).
+    heroStale: heroStale?.isStale === true,
+    heroStaleReason: heroStale?.reason ?? null,
     rows,
     startLine,
     disabledNote: status?.enabled === false ? PAPER_DISABLED_NOTE : null,

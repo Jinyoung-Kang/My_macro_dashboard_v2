@@ -17,6 +17,7 @@ import {
   type DayChange,
   dayBaseText,
   dayLabel,
+  isLiveStage,
   monthDay,
   stageLabel,
   stampText,
@@ -101,6 +102,52 @@ function rowCaption(view: CurrentView, book: PaperBookSummary): string | null {
   return parts.length > 0 ? parts.join(" · ") : null;
 }
 
+/** 이전 값 배지 — 있으면 사유를 함께(숨기는 옵션 없음). */
+export interface BookStale {
+  isStale: boolean;
+  reason: string | null;
+}
+
+/**
+ * 계좌 값의 이전 값 배지 — 보이는 값이 장부 관측에서 나왔을 때만 장부 상태의 사유(가격을 새로 받지 못한 보유 `staleCount` · 관측치 저장본이 늦음
+ * `quotes.stale`)를 답니다. 시작한 계좌만(관측이 없는 시작 전 계좌는 늦은 관측으로 평가한 값이 아님).
+ *
+ * - 옛 응답(지금 값 없음)·지금 값의 장부 단계(`LEDGER`): 값이 그 장부 상태라 사유 그대로.
+ * - 장중 추정(`LIVE`·`LIVE_LAST`): 장중가가 없어 장부 관측가로 평가한 종목이 있고 장부 사유가 있을 때만 — '장중가 없는 n종목은 장부 관측가 · …'.
+ *   모든 보유를 장중가로 평가했으면 배지 없음(그 값은 늦은 관측으로 평가한 값이 아님).
+ * - 순자산 줄(`PROVISIONAL`·`FINAL`): 그 거래일 마감 값이라 장부 관측과 무관 — 배지 없음(예전에는 '10-30 잠정' 옆에 그보다 이른 관측이 '이전 값'으로 붙음).
+ * - 모르는 단계(새 서버 값): 장부 사유 그대로(배지를 숨기는 쪽으로 짐작하지 않음).
+ *
+ * `place`가 "hero"면 그 자리가 장부 관측 시각을 단계 표기로 이미 적으므로(옛 응답 '마지막 관측 …'·장부 단계 '장부 …') 사유의 '· 마지막 관측 …'을
+ * 뺍니다 — 같은 시각을 한 줄에 두 번 적지 않게. 행("row")은 장부 단계일 때만(값의 기준 한 줄에 '장부 …'가 있음) 뺍니다.
+ */
+export function bookStale(book: PaperOverviewBook, context: BookRowContext = {}, place: "row" | "hero" = "row"): BookStale {
+  const market = context.market ?? "US";
+  const view = currentView(book, { market, session: context.session });
+  const stage = book.current?.stage ?? null;
+  const started = book.status !== "NOT_STARTED";
+  const observedShown = view.from === "ledger"
+    ? place === "hero" && view.stageLabel !== null
+    : stage === "LEDGER" && started;
+  const observed = book.lastObservedAtKst;
+  const ledger = [
+    bookCard(book, [], market).staleWarning,
+    context.quotes?.stale === true && observed
+      ? observedShown ? "관측치 저장본이 늦음" : `관측치 저장본이 늦음 · 마지막 관측 ${formatKst(observed)}`
+      : null,
+  ].filter((reason): reason is string => reason !== null);
+  let reasons = ledger;
+  if (view.from === "current" && book.current) {
+    if (isLiveStage(stage)) {
+      const fallback = book.current.positionCount - book.current.livePriced;
+      reasons = fallback > 0 && ledger.length > 0 ? [`장중가 없는 ${fallback}종목은 장부 관측가`, ...ledger] : [];
+    } else if (stage === "PROVISIONAL" || stage === "FINAL") {
+      reasons = [];
+    }
+  }
+  return { isStale: reasons.length > 0, reason: reasons.length > 0 ? reasons.join(" · ") : null };
+}
+
 /**
  * 계좌 하나 → 자산 행. (아바타 약칭) · 이름 · 보조(종류 · 상태 · 한 줄 소개) · 순자산(달러) · 출발 이후 수익률 칩 · 배지.
  * 아바타 고리 색(차트 계열 색과 같은 계좌 색)은 화면이 붙입니다(색 표는 components/screens/paper/bookColors — lib는 components를 가져오지 않음).
@@ -109,8 +156,9 @@ function rowCaption(view: CurrentView, book: PaperBookSummary): string | null {
  *   지금 값이면 값의 기준 한 줄(`caption` — 단계 표기 '장중 추정 23:58'·덧붙임 '장중가 1/2종목'·'체결 대기 1건 반영 전'·변화 한 줄
  *   '오늘 +0.42% · 10-29 잠정 대비'·'10-30 변화 -1.54% · 10-23 확정 대비')과, 장중 추정이면 추정 배지(`isEstimated`)를 답니다. 기준 중립(현금뿐)은 배지 없이 단계 표기만.
  * - 순자산을 모르면 "—"(단위 없음), 수익률을 모르면 칩을 생략합니다(0.00%를 만들지 않음 — AssetRow 규칙).
- * - 이전 값 배지: 가격을 새로 받지 못한 보유가 있거나(staleCount > 0 — 지난 값으로 평가), 장부 관측치 저장본이 늦었으면
- *   (quotes.stale — 서버 판정) 시작한 계좌의 순자산은 그 늦은 관측으로 평가한 값입니다. 사유를 함께 적습니다(장부 상태 기준 그대로).
+ * - 이전 값 배지(`bookStale`): 가격을 새로 받지 못한 보유가 있거나(staleCount > 0 — 지난 값으로 평가), 장부 관측치 저장본이 늦었으면
+ *   (quotes.stale — 서버 판정) 시작한 계좌의 장부 값은 그 늦은 관측으로 평가한 값입니다. 보이는 값이 그 장부 값일 때만(옛 응답·장부 단계, 장중가 없는
+ *   종목이 섞인 장중 추정) 사유와 함께 답니다 — 순자산 줄(잠정·확정)이나 모두 장중가로 평가한 추정에는 달지 않습니다.
  * - 경고: 벤치마크가 출발일 종가를 기다리면(pendingBackfill) 그 사실.
  */
 export function bookAssetRow(book: PaperOverviewBook, context: BookRowContext = {}): BookRow {
@@ -118,10 +166,7 @@ export function bookAssetRow(book: PaperOverviewBook, context: BookRowContext = 
   const card = bookCard(book, [], market);
   const view = currentView(book, { market, session: context.session });
   const summary = accountProfile(book.code)?.summary ?? null;
-  const staleReasons = [
-    card.staleWarning,
-    context.quotes?.stale === true && book.lastObservedAtKst ? `관측치 저장본이 늦음 · 마지막 관측 ${formatKst(book.lastObservedAtKst)}` : null,
-  ].filter((reason): reason is string => reason !== null);
+  const stale = bookStale(book, context, "row");
   const korea = market === "KR";
   const nav = korea ? formatNumber(view.nav, 0) : null;
   return {
@@ -133,8 +178,8 @@ export function bookAssetRow(book: PaperOverviewBook, context: BookRowContext = 
     ...(korea ? { valueText: nav === EMPTY ? null : nav } : {}),
     unit: marketMeta(market).unitLabel,
     changePct: view.returnPct,
-    isStale: staleReasons.length > 0,
-    staleReason: staleReasons.length > 0 ? staleReasons.join(" · ") : null,
+    isStale: stale.isStale,
+    staleReason: stale.reason,
     warning: !korea && (context.pendingBackfill ?? []).includes(book.code) ? PENDING_BACKFILL_WARNING : null,
     ...(view.from === "current" ? { isEstimated: view.isEstimated, caption: rowCaption(view, book) } : {}),
   };
@@ -246,7 +291,8 @@ export interface OverviewHeroModel {
 }
 
 /**
- * 개요 히어로 모델 — 계좌 행(`bookAssetRow`)과 같은 지금 값·이전 값·경고 규칙이고, 곡선은 고른 기간 창의 그 계좌 한 줄. 그 계좌가 목록에 없으면 null.
+ * 개요 히어로 모델 — 계좌 행(`bookAssetRow`)과 같은 지금 값·경고 규칙이고, 이전 값 배지는 같은 규칙에 히어로 자리(단계 표기가 관측 시각을 이미 적음 —
+ * `bookStale` "hero"), 곡선은 고른 기간 창의 그 계좌 한 줄. 그 계좌가 목록에 없으면 null.
  */
 export function overviewHeroModel(
   overview: Pick<PaperOverviewResponse, "books" | "pendingBackfill" | "quotes" | "liveSession" | "navEstimate">,
@@ -257,7 +303,9 @@ export function overviewHeroModel(
   const book = (overview.books ?? []).find((entry) => entry.code === code);
   if (!book) return null;
   const session = overview.liveSession ?? null;
-  const row = bookAssetRow(book, { pendingBackfill: overview.pendingBackfill, quotes: overview.quotes ?? null, market, session });
+  const context: BookRowContext = { pendingBackfill: overview.pendingBackfill, quotes: overview.quotes ?? null, market, session };
+  const row = bookAssetRow(book, context);
+  const stale = bookStale(book, context, "hero");
   const view = currentView(book, { market, session });
   const digits = market === "KR" ? 0 : 2;
   const valueText = formatNumber(view.nav, digits);
@@ -273,8 +321,8 @@ export function overviewHeroModel(
     isEstimated: view.isEstimated,
     note: view.note ?? (view.notes.length > 0 ? view.notes.join(" · ") : null),
     nowText: `지금 값 ${valueText === EMPTY ? EMPTY : `${valueText} ${marketMeta(market).unitLabel}`}`,
-    isStale: row.isStale,
-    staleReason: row.staleReason,
+    isStale: stale.isStale,
+    staleReason: stale.reason,
     warning: row.warning,
     source: currentSource(view.isEstimated, market),
     chart: heroNavChart(navWindow, code, book.label, market, navEstimatePoint(overview.navEstimate, book, code)),
