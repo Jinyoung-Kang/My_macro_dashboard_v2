@@ -603,6 +603,20 @@ def timed_scope(market: str) -> list[str]:
     return [row["ticker"] for row in rows]
 
 
+def kr_timed_orders(books, timings) -> list[tuple[str, date]]:
+    """
+    한국 시각 지정 체결 1분봉(paper.kr.timed — 한국 Claude 계좌2 단계 2a) 범위 — 그 계좌들의 그 시점(매시·종가) **대기** 주문의 (종목, 기준 거래일)
+    (중복 없음, 기준일·종목 순). 목표 세션은 태스크가 KR 달력으로 셉니다. 백엔드 표 ``paper_orders``를 읽기만 합니다(ADR 0008).
+    """
+    with connection() as conn:
+        rows = conn.execute(
+            "SELECT DISTINCT ticker, as_of_trading_date FROM paper_orders WHERE book_code = ANY(%s) AND timing = ANY(%s) "
+            "AND status = 'PENDING' AND as_of_trading_date IS NOT NULL ORDER BY 2, 1",
+            (list(books), list(timings)),
+        ).fetchall()
+    return [(row["ticker"], row["as_of_trading_date"]) for row in rows]
+
+
 # 장중 확인 감시(paper.watch.us) 범위의 계좌·피드·상태(명세 2026-10-30 §12-1, ADR 0022 단계 2) — 계좌는 백엔드 PaperBooks.CLAUDE2, 피드·상태는
 # V18 paper_checkpoints CHECK와 같은 글자입니다(test_paper_watch가 파일로 대조). HOURLY 확인은 시간별 관측치를 쓰므로 감시 범위가 아닙니다.
 WATCH_BOOKS = {"US": "claude2"}

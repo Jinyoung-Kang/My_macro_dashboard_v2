@@ -135,6 +135,9 @@ from .kr_paper import (  # noqa: F401
     KR_HISTORY_CALL_BUDGET,
     task_kr_paper_price_history,
 )
+from .kr_paper_timed import (  # noqa: F401
+    task_kr_paper_timed,
+)
 from .maintenance import (  # noqa: F401
     task_run_log_retention,
 )

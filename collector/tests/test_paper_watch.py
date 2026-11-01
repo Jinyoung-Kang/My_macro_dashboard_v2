@@ -64,7 +64,7 @@ def test_session_군에서_paper_bars_us_뒤에_돌고_태스크는_39개():
     assert task.speed == "session" and task.run is paper_watch.task_paper_watch_us
     names = [t.name for t in tasks.ALL_TASKS]
     assert names.index("paper_watch_us") == names.index("paper_bars_us") + 1
-    assert len(tasks.ALL_TASKS) == len(tasks.TASKS_BY_NAME) == 39  # 계좌2 단계 2의 paper_watch_us까지
+    assert len(tasks.ALL_TASKS) == len(tasks.TASKS_BY_NAME) == 40  # 계좌2 단계 2의 paper_watch_us·한국 계좌2 단계 2a의 kr_paper_timed까지
 
 
 def test_데이터셋_이름():

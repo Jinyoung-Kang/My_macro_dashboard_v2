@@ -523,9 +523,11 @@ def test_시간_상한은_slow_상한보다_짧다():
     assert kr_paper.KR_QUOTES_TIME_LIMIT_SECONDS < tasks.TASK_DEADLINE_SECONDS["slow"]
 
 
-def test_slow에서_유니버스_바로_뒤에_돌고_태스크는_35개():
+def test_slow에서_시각_지정_1분봉_바로_뒤에_돌고_그_앞은_유니버스():
     task = tasks.TASKS_BY_NAME["kr_paper_quotes"]
     assert task.speed == "slow" and task.run is kr_paper.task_kr_paper_quotes
     names = [t.name for t in tasks.ALL_TASKS]
-    assert names.index("kr_paper_quotes") == names.index("kr_paper_universe") + 1
-    assert len(tasks.ALL_TASKS) == len(tasks.TASKS_BY_NAME) == 39  # 장중 평가 paper_live_us·paper_live_kr·계좌2 단계 0의 paper_bars_us·계좌2 단계 2의 paper_watch_us까지
+    # 장부는 새 관측치가 들어올 때만 처리하므로, 그 밤 처리 때 계좌2 목표 세션 1분봉이 이미 있게 바로 앞(단계 2a).
+    assert names.index("kr_paper_quotes") == names.index("kr_paper_timed") + 1
+    assert names.index("kr_paper_timed") == names.index("kr_paper_universe") + 1
+    assert len(tasks.ALL_TASKS) == len(tasks.TASKS_BY_NAME) == 40  # 장중 평가 paper_live_us·paper_live_kr·계좌2 단계 0의 paper_bars_us·계좌2 단계 2의 paper_watch_us·한국 계좌2 단계 2a의 kr_paper_timed까지

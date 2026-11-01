@@ -13,6 +13,7 @@ from .korea_public import task_dart_fundamentals, task_fsc_etf_prices, task_fsc_
 from .kr_calendar import task_kr_calendar
 from .kr_news import task_kr_news_headlines
 from .kr_paper import task_kr_paper_flows, task_kr_paper_price_history, task_kr_paper_quotes, task_kr_paper_universe
+from .kr_paper_timed import task_kr_paper_timed
 from .maintenance import task_run_log_retention
 from .markets import task_macro_collected, task_radar_rankings, task_scraper_markets
 from .news import task_news_headlines
@@ -66,6 +67,8 @@ ALL_TASKS: tuple[Task, ...] = (
     Task("toss_radar_universe", "slow", task_toss_radar_universe, "레이더 폴백 — 거래대금 상위 100종목 투자자 매매 (토스증권)"),
     # 한국 책(v2 2단계 B4) — 금융위·토스 태스크 뒤(명세 §4-9 순서). 유니버스는 외부 호출 0회(금융위 저장본으로 계산).
     Task("kr_paper_universe", "slow", task_kr_paper_universe, "한국 책 유니버스 — 금융위 최신 기준일 코스피 시총 상위 100 보통주 (외부 호출 없음)"),
+    # 관측치 바로 앞 — 장부는 새 관측치(paper.kr.quotes)가 들어올 때만 처리하므로, 그 밤 처리 때 목표 세션 1분봉이 이미 있게(단계 2a).
+    Task("kr_paper_timed", "slow", task_kr_paper_timed, "한국 Claude 계좌2 시각 지정 체결 — 매시·종가 대기 주문 종목의 목표 세션 1분봉 (토스, 세션 15:40 뒤)"),
     Task("kr_paper_quotes", "slow", task_kr_paper_quotes, "한국 책 관측치 — 수집 범위 토스 일봉 최근 5봉·1분봉 개장 봉 (KR 거래일 20:30 뒤 하루 1회)"),
     Task("kr_paper_flows", "slow", task_kr_paper_flows, "한국 책 종목별 수급 — 수집 범위 토스 투자자별 매매동향 (KR 거래일 20:30 뒤 하루 1회)"),
     Task("sec_13f", "weekly", task_sec_13f, "SEC 13F 기관 포트폴리오 (분기 공시)"),

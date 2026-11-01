@@ -62,6 +62,8 @@ public final class Datasets {
      * 합니다 — 계약 {@code contract 1}은 명세 2026-10-26-v2-kr-paper-spec.md §9 'paper.kr.quotes 계약'. KR 거래일 D 20:30 KST 뒤 하루 1회.
      */
     public static final String SNAP_KR_PAPER_QUOTES = "paper.kr.quotes";
+    /** 한국 Claude 계좌2 시각 지정 체결(단계 2a)의 1분봉 — 수집기 kr_paper_timed(contract 1, 목표 세션별 창·창 뒤 첫 거래 봉·마감 봉). */
+    public static final String SNAP_KR_PAPER_TIMED = "paper.kr.timed";
     /**
      * 모의 매매 장중 평가(표시 전용) — 보유 종목의 최신 1분봉 가격·봉 시각(미국 Yahoo, 한국 토스). 정기 수집이 없고(수집기 속도군 live)
      * 운영자가 모의 매매 화면을 보는 정규장 동안 {@code GET /api/paper/live}가 live 읽기({@link #MAX_AGE_LIVE})로 요청합니다. 체결·스탑·확정

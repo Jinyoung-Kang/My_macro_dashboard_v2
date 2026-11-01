@@ -35,6 +35,8 @@ SNAP_PAPER_QUOTES = "paper.quotes"      # 모의 매매 유니버스 최근 3개
 # 수정 비율)·1분봉 개장 봉(09:01·10:01 라벨)·종목 상태(NXT·KRX 정지)·종목별 받은 시각. 미국 paper.quotes와 모양이 다릅니다 —
 # 계약(contract 1)은 docs/specs/2026-10-26-v2-kr-paper-spec.md §9 'paper.kr.quotes 계약'. KR 거래일 D 20:30 KST 뒤 하루 1회.
 SNAP_KR_PAPER_QUOTES = "paper.kr.quotes"
+# 한국 Claude 계좌2 시각 지정 체결(단계 2a)의 1분봉 — 매시·종가 대기 주문 종목의 목표 세션 창·창 뒤 첫 거래 봉·마감 봉(tasks/kr_paper_timed.py 머리말).
+SNAP_KR_PAPER_TIMED = "paper.kr.timed"
 # 모의 매매 장중 평가(표시 전용 — 체결·스탑·확정 순자산은 쓰지 않음) — 보유 종목(백엔드 표 paper_positions를 읽기만)의 최신 1분봉 가격과
 # 봉 시각. 정기 수집이 없고(속도군 live) 운영자가 모의 매매 화면을 보는 정규장 동안 백엔드가 요청합니다(live 읽기 60초 하한).
 # {market, source, scope, tickers: {T: {price, at(ISO), isStale?}}, missing, error}. 미국 Yahoo(yfinance) 1분봉, 한국 토스 1분봉.
