@@ -363,6 +363,22 @@ class PaperExecutionViewTest {
     }
 
     @Test
+    @DisplayName("고른 시점(M1): 출발일 종가로 다시 출발하며 취소한 출발 주문은 notFilled에도 세지 않음(사후 체결로 바뀌었고 감사 행이 없음 — 사용자 결정 2026-11-02)")
+    void chosenSkipsRestartedStartOrders() {
+        activeBook(store, PaperBooks.CLAUDE2, PaperBooks.KIND_CLAUDE, 100_000, null);
+        LocalDate fri = LocalDate.of(2026, 10, 30);
+        long start = store.insertDecisionIfAbsent(new com.macrodash.store.PaperStore.Decision(0, PaperBooks.CLAUDE2, fri,
+                RuleBookService.INITIAL, null, "OK", "claude-sonnet-5-5", 0, 1, null, null, null, null, null,
+                MAPPER.createObjectNode(), null, null, null, true, 5L, 0)).orElseThrow();
+        book2(start, fri, PaperBooks.BUY, PaperBooks.AT_1000, 100.0, null, null, 10, "CANCELLED", StartCloseRestart.CANCEL_REASON);
+        book2(start, fri, PaperBooks.BUY, PaperBooks.AT_1100, 100.0, null, null, 10, "EXPIRED", null);
+
+        JsonNode chosen = MAPPER.valueToTree(query.execution(PaperBooks.CLAUDE2, 50)).path("summary").path("chosen");
+        assertThat(chosen.path("notFilled").asInt()).as("만료 하나만 — 다시 출발로 취소한 주문은 빼고").isEqualTo(1);
+        assertThat(chosen.path("replacedByCheckpoint").asInt()).isZero();
+    }
+
+    @Test
     @DisplayName("고른 시점(M1): 대체 체결을 뺀 주문 10건·결정일 5일부터 금액 가중 평균·90% 구간 — 메뉴 줄과 같은 부트스트랩, 같은 자료면 같은 구간")
     void chosenWithEnoughFillsUsesTheSameBootstrap() {
         activeBook(store, PaperBooks.CLAUDE2, PaperBooks.KIND_CLAUDE, 100_000, null);

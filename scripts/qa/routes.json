@@ -649,6 +649,18 @@
     },
     {
       "m": "POST",
+      "p": "/api/paper/books/{code}/restart-at-start-close",
+      "path": {
+        "code": "str"
+      },
+      "body": {
+        "confirm": "str"
+      },
+      "mutating": true,
+      "fuzz": false
+    },
+    {
+      "m": "POST",
       "p": "/api/paper/run/risk",
       "mutating": true
     },

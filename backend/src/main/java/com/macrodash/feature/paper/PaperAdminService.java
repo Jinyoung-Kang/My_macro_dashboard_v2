@@ -112,6 +112,8 @@ public class PaperAdminService {
     private final Clock clock;
     /** 계좌 행의 시장 코드로 시장 묶음을 찾는 목록(리셋 — 그 책 시장의 기억만 지움). */
     private final PaperMarkets markets;
+    /** 출발일 종가로 다시 출발(사용자 결정 2026-11-02 — {@link StartCloseRestart}). */
+    private final StartCloseRestart restart;
     /** 출발일 종가·벤치마크 사후 체결·옛 시그니처의 시장(클래스 설명). */
     private static final PaperMarket US = UsPaperMarket.INSTANCE;
 
@@ -131,6 +133,7 @@ public class PaperAdminService {
                               PaperSettingsService settings, PaperLedgerService ledger, PaperConfig config,
                               ObjectMapper mapper, Clock clock, PaperMarkets markets) {
         this.markets = markets;
+        this.restart = new StartCloseRestart(store, marketData, reader, ledger, mapper, markets);
         this.store = store;
         this.marketData = marketData;
         this.reader = reader;
@@ -466,6 +469,14 @@ public class PaperAdminService {
             Optional<String> reason = backfill(cleared, definition.get(), current);
             return new ResetResult(code, reason.isEmpty(), reason.orElse(null));
         }));
+    }
+
+    /**
+     * 출발 주문이 아직 체결되지 않은 계좌를 출발일 종가로 다시 출발시킵니다({@link StartCloseRestart} — 사용자 결정 2026-11-02). 확인 문구로 계좌
+     * 코드를 그대로 받아야 합니다.
+     */
+    public StartCloseRestart.Result restartAtStartClose(String code, String confirm) {
+        return restart.restart(code, confirm);
     }
 
     // ------------------------------------------------------------------ 사후 체결

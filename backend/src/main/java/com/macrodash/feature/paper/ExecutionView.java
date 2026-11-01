@@ -346,7 +346,8 @@ final class ExecutionView {
      * 고른 시점(§14-2 M1 — 클래스 설명). 시각 지정 체결 계좌(계좌2)가 아니면 null. 체결이 없는 주문(대기·만료·취소)은 {@code notFilled}, 계좌1식 기준이나
      * 체결 금액이 없는 체결은 본 줄·대체 체결 줄 각각의 {@code excludedNoBaseline}으로 셉니다(빼고 셈 — 0으로 채우지 않음). {@code excludedFallback}은
      * 본 줄에서 뺀 대체 체결 전부(= 대체 체결 줄의 n + excludedNoBaseline)입니다. {@code replacedByCheckpoint}는 notFilled 가운데 장중 확인 REPLACE가
-     * 취소한 아침 주문({@link ClaudeDecisionPipeline#SUPERSEDED_BY_CHECKPOINT})입니다.
+     * 취소한 아침 주문({@link ClaudeDecisionPipeline#SUPERSEDED_BY_CHECKPOINT})입니다. 출발일 종가로 다시 출발하며 취소한 출발 주문
+     * ({@link StartCloseRestart#CANCEL_REASON})은 어디에도 세지 않습니다(그 주문은 사후 체결로 바뀌었고, 사후 체결은 감사 행이 없어 표본 밖).
      */
     private static Map<String, Object> chosen(Book book, List<OrderExec> audited, Map<Long, Order> orders,
                                               Map<Long, ExecFill> fills) {
@@ -363,6 +364,10 @@ final class ExecutionView {
             Order order = orders.get(exec.orderId());
             ExecFill fill = fills.get(exec.orderId());
             if (fill == null) {
+                if (PaperBooks.ORDER_CANCELLED.equals(order.status())
+                        && StartCloseRestart.CANCEL_REASON.equals(order.rejectReason())) {
+                    continue;                              // 출발일 종가로 다시 출발하며 취소한 출발 주문 — 고른 시점의 표본이 아님
+                }
                 notFilled++;
                 if (PaperBooks.ORDER_CANCELLED.equals(order.status())
                         && ClaudeDecisionPipeline.SUPERSEDED_BY_CHECKPOINT.equals(order.rejectReason())) {

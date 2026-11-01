@@ -8,7 +8,9 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 
 /**
@@ -152,6 +154,30 @@ public class PaperController {
         out.put("book", query.bookSummary(code));
         out.put("backfilled", result.backfilled());
         out.put("skippedReason", result.skippedReason());
+        return out;
+    }
+
+    /**
+     * 출발일 종가로 다시 출발({@link PaperAdminService#restartAtStartClose} — 사용자 결정 2026-11-02). 본문 {@code {"confirm":"<code>"}}.
+     */
+    @PostMapping("/books/{code}/restart-at-start-close")
+    public Map<String, Object> restartAtStartClose(@PathVariable String code,
+                                                   @RequestBody(required = false) ResetRequest body) {
+        if (!query.ready()) {
+            return notReady();
+        }
+        StartCloseRestart.Result result = admin.restartAtStartClose(code, body == null ? null : body.confirm());
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("ok", true);
+        out.put("book", query.bookSummary(code));
+        out.put("startDate", result.startDate().toString());
+        out.put("cancelledOrders", result.cancelled());
+        out.put("fills", query.fillRows(result.fills()));
+        List<Map<String, Object>> skipped = new ArrayList<>();
+        result.skipped().forEach(e -> skipped.add(Map.of("ticker", e.getKey(), "reason", e.getValue())));
+        out.put("skipped", skipped);
+        out.put("cash", result.cash());
+        out.put("nav", result.nav());
         return out;
     }
 
