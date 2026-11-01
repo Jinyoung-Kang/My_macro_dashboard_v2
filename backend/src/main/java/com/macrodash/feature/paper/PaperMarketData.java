@@ -277,6 +277,14 @@ public class PaperMarketData {
     }
 
     /**
+     * 한국 Claude 계좌2 시각 지정 체결의 1분봉(단계 2a — 수집기 {@code kr_paper_timed}, {@link KrQuotes#parseTimed}) — 종목 → 세션 → 칸. 수집 태스크 이름
+     * 없이 읽어(부르는 쪽 {@link StoreReader#quietly} 안) 수집을 깨우지 않습니다. 없으면 빈 표(그 주문은 기다림).
+     */
+    Map<String, Map<LocalDate, KrQuotes.Timed>> krTimed() {
+        return store.read(Datasets.SNAP_KR_PAPER_TIMED, Datasets.MAX_AGE_WEEKLY, null).map(KrQuotes::parseTimed).orElse(Map.of());
+    }
+
+    /**
      * 한국 종목 이름(사용자 결정 2026-11-02 — 한국 화면에 종목 코드 대신 기업명) — 관측치 저장본({@code paper.kr.quotes})의 종목마다 토스 이름을 먼저,
      * 없으면 저장된 가장 최근 금융위 유니버스({@code kr_paper_universe}) 행의 이름. 모르는 종목은 결과에 없습니다(짐작하지 않음). 화면 표시용이라
      * 장부·패킷은 쓰지 않습니다. 부르는 쪽이 {@link StoreReader#quietly} 안에서 부릅니다(수집을 깨우지 않게).

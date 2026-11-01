@@ -398,15 +398,17 @@ final class KrPaperMarket implements PaperMarket {
 
     /**
      * 관측치 종목마다 금융위 시장 구분({@code fsc_price.market}, 최신 기준일 — {@link PaperMarketData#fscMarkets})을 덧붙입니다. 비용 종목
-     * 구분(§4-3)이 씁니다 — 저장본(계약 1)에는 없는 칸이라 장부가 체결 전에 한 번 읽습니다.
+     * 구분(§4-3)이 씁니다 — 저장본(계약 1)에는 없는 칸이라 장부가 체결 전에 한 번 읽습니다. 한국 Claude 계좌2의 시각 지정 1분봉
+     * ({@link PaperMarketData#krTimed} — 단계 2a)도 그 종목에 세션별로 붙입니다(매시·종가 체결 사다리 — {@link KrFills}).
      */
     @Override
     public Quotes withListings(Quotes quotes, PaperMarketData data) {
         Map<String, String> markets = data.fscMarkets(quotes.bars().keySet());
+        Map<String, Map<LocalDate, KrQuotes.Timed>> timed = data.krTimed();
         Map<String, Bar> bars = new LinkedHashMap<>();
         quotes.bars().forEach((code, bar) -> bars.put(code, bar.kr() == null ? bar
                 : new Bar(bar.ticker(), bar.date(), bar.close(), bar.stale(), bar.recent(),
-                bar.kr().withFscMarket(markets.get(code)))));
+                bar.kr().withFscMarket(markets.get(code)).withTimed(timed.get(code)))));
         return new Quotes(quotes.collectedAt(), bars, quotes.session(), quotes.absent());
     }
 

@@ -14,6 +14,7 @@ import java.time.OffsetDateTime;
 import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -84,13 +85,30 @@ final class KrQuotes {
      * @param choice    체결 봉 고르기가 고른 체결(그 봉 날짜·체결가·출처) — 장부 관측치에는 없고, 고른 날의 봉에만 붙습니다
      */
     record Quote(String code, Instant fetchedAt, String securityType, Boolean nxtSupported, Boolean krxTradingSuspended,
-                 List<Day> days, String fscMarket, Choice choice) {
+                 List<Day> days, String fscMarket, Choice choice, Map<LocalDate, Timed> timed) {
 
         Quote {
             days = List.copyOf(days);
             if (days.isEmpty()) {
                 throw new IllegalArgumentException("한국 관측치 종목에 봉이 없습니다: " + code);
             }
+            timed = timed == null ? Map.of() : Map.copyOf(timed);
+        }
+
+        /** 시각 지정 1분봉 없이(장부가 체결 전에 {@link #withTimed}로 덧붙임). */
+        Quote(String code, Instant fetchedAt, String securityType, Boolean nxtSupported, Boolean krxTradingSuspended,
+              List<Day> days, String fscMarket, Choice choice) {
+            this(code, fetchedAt, securityType, nxtSupported, krxTradingSuspended, days, fscMarket, choice, Map.of());
+        }
+
+        /** 그 세션의 시각 지정 1분봉(한국 Claude 계좌2 — {@code paper.kr.timed}), 없으면 null. */
+        Timed timedOn(LocalDate session) {
+            return timed.get(session);
+        }
+
+        Quote withTimed(Map<LocalDate, Timed> sessions) {
+            return new Quote(code, fetchedAt, securityType, nxtSupported, krxTradingSuspended, days, fscMarket, choice,
+                    sessions == null ? Map.of() : sessions);
         }
 
         /** 마지막(최근) 봉. */
@@ -104,11 +122,11 @@ final class KrQuotes {
         }
 
         Quote withFscMarket(String market) {
-            return new Quote(code, fetchedAt, securityType, nxtSupported, krxTradingSuspended, days, market, choice);
+            return new Quote(code, fetchedAt, securityType, nxtSupported, krxTradingSuspended, days, market, choice, timed);
         }
 
         Quote withChoice(Choice chosen) {
-            return new Quote(code, fetchedAt, securityType, nxtSupported, krxTradingSuspended, days, fscMarket, chosen);
+            return new Quote(code, fetchedAt, securityType, nxtSupported, krxTradingSuspended, days, fscMarket, chosen, timed);
         }
     }
 
@@ -148,6 +166,122 @@ final class KrQuotes {
 
     /** 1분봉 한 개의 시가(양수, 아니면 null)·거래량(0 이상 정수, 모르면 null). */
     record Open(BigDecimal open, Long volume) {
+    }
+
+    /** 시각 지정 1분봉 상태(수집기 {@code kr_paper_timed}) — 받음·그날 봉 없음·실패(다음 slow 주기에 다시). */
+    static final String TIMED_OK = "OK";
+    static final String TIMED_NO_BARS = "NO_BARS";
+    static final String TIMED_FAILED = "FAILED";
+    /** 시각 지정 1분봉 저장본({@code paper.kr.timed})의 계약 판. */
+    static final int TIMED_CONTRACT = 1;
+
+    /**
+     * 한국 Claude 계좌2 시각 지정 체결의 1분봉 한 종목·한 세션(단계 2a — 수집기 {@code kr_paper_timed} 머리말, 명세 2026-11-02-kr-claude2-stage2 §9).
+     * 라벨은 봉 끝 시각(KST {@code "HH:mm"}).
+     *
+     * @param windows    기준 시각({@code "10:00"}…{@code "15:00"}) → 라벨 hh:01~hh:05 봉(있는 것만, 라벨 순)
+     * @param firstAfter 기준 시각 → 그날 라벨 hh:01 이후 첫 거래 봉(없으면 키에 null — 장 마감 뒤 봉일 수 있어 쓰는 쪽이 마감 라벨과 견줌)
+     * @param closes     마감 봉 라벨({@code "15:30"}·{@code "15:31"}·{@code "16:30"}·{@code "16:31"} 있는 것만) → 종가·거래량
+     */
+    record Timed(String status, String reason, Instant fetchedAt, Map<String, List<Bar1m>> windows, Map<String, Bar1m> firstAfter,
+                 Map<String, Close1m> closes) {
+
+        Timed {
+            windows = windows == null ? Map.of() : Map.copyOf(windows);
+            firstAfter = firstAfter == null ? Map.of() : Collections.unmodifiableMap(new LinkedHashMap<>(firstAfter));
+            closes = closes == null ? Map.of() : Map.copyOf(closes);
+        }
+    }
+
+    /** 1분봉 하나 — 라벨(봉 끝 시각)·시가(양수, 아니면 null)·거래량(모르면 null). */
+    record Bar1m(String label, BigDecimal open, Long volume) {
+
+        boolean traded() {
+            return open != null && volume != null && volume > 0;
+        }
+    }
+
+    /** 마감 봉 — 종가(양수, 아니면 null)·거래량(모르면 null). */
+    record Close1m(BigDecimal close, Long volume) {
+    }
+
+    /**
+     * 시각 지정 1분봉 저장본({@code paper.kr.timed}) → 종목 → 세션 → 그 칸. 모르는 계약 판·모양이면 빈 표(짐작하지 않음 — 그 주문은 기다림).
+     */
+    static Map<String, Map<LocalDate, Timed>> parseTimed(Snapshot snapshot) {
+        JsonNode payload = snapshot == null ? null : snapshot.payload();
+        JsonNode contract = payload == null ? null : payload.get("contract");
+        if (contract == null || !contract.isIntegralNumber() || contract.asInt() != TIMED_CONTRACT) {
+            return Map.of();
+        }
+        JsonNode sessions = Json.child(payload, "sessions");
+        if (sessions == null || !sessions.isObject()) {
+            return Map.of();
+        }
+        Map<String, Map<LocalDate, Timed>> out = new LinkedHashMap<>();
+        for (Map.Entry<String, JsonNode> session : sessions.properties()) {
+            LocalDate date = isoDate(session.getKey());
+            if (date == null || session.getValue() == null || !session.getValue().isObject()) {
+                continue;
+            }
+            for (Map.Entry<String, JsonNode> code : session.getValue().properties()) {
+                JsonNode entry = code.getValue();
+                if (!CODE.matcher(code.getKey()).matches() || entry == null || !entry.isObject()) {
+                    continue;
+                }
+                Map<String, List<Bar1m>> windows = new LinkedHashMap<>();
+                JsonNode w = entry.get("windows");
+                if (w != null && w.isObject()) {
+                    for (Map.Entry<String, JsonNode> at : w.properties()) {
+                        List<Bar1m> bars = new ArrayList<>();
+                        if (at.getValue() != null && at.getValue().isArray()) {
+                            for (JsonNode bar : at.getValue()) {
+                                Bar1m parsed = bar1m(bar);
+                                if (parsed != null) {
+                                    bars.add(parsed);
+                                }
+                            }
+                        }
+                        bars.sort(Comparator.comparing(Bar1m::label));
+                        windows.put(at.getKey(), bars);
+                    }
+                }
+                Map<String, Bar1m> after = new LinkedHashMap<>();
+                JsonNode f = entry.get("firstAfter");
+                if (f != null && f.isObject()) {
+                    for (Map.Entry<String, JsonNode> at : f.properties()) {
+                        after.put(at.getKey(), bar1m(at.getValue()));
+                    }
+                }
+                Map<String, Close1m> closes = new LinkedHashMap<>();
+                JsonNode c = entry.get("closes");
+                if (c != null && c.isObject()) {
+                    for (Map.Entry<String, JsonNode> label : c.properties()) {
+                        JsonNode bar = label.getValue();
+                        if (bar != null && bar.isObject()) {
+                            closes.put(label.getKey(), new Close1m(price(bar.get("close")), volume(bar.get("volume"))));
+                        }
+                    }
+                }
+                String fetched = Json.asText(entry, "fetchedAt");
+                Instant fetchedAt = null;
+                try {
+                    fetchedAt = fetched == null ? null : OffsetDateTime.parse(fetched).toInstant();
+                } catch (DateTimeParseException e) {
+                    fetchedAt = null;
+                }
+                out.computeIfAbsent(code.getKey(), k -> new LinkedHashMap<>()).put(date, new Timed(Json.asText(entry, "status"),
+                        Json.asText(entry, "reason"), fetchedAt, windows, after, closes));
+            }
+        }
+        return out;
+    }
+
+    private static Bar1m bar1m(JsonNode node) {
+        if (node == null || !node.isObject() || Json.asText(node, "label") == null) {
+            return null;
+        }
+        return new Bar1m(Json.asText(node, "label"), price(node.get("open")), volume(node.get("volume")));
     }
 
     /**

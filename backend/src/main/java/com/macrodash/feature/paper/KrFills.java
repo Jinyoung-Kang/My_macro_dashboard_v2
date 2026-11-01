@@ -91,7 +91,7 @@ final class KrFills {
             if (!opensAfterOrder(order, day.date(), calendar)) {
                 continue;                                  // ⑤ 그날 시가는 주문 전 시각 — 다음 관측 봉의 시가
             }
-            Ladder ladder = price(order, day, collectedAt, calendar, deadline);   // ③
+            Ladder ladder = price(order, quote, day, collectedAt, calendar, deadline);   // ③
             return ladder.choice() == null ? FillChoice.waiting(ladder.reason())
                     : FillChoice.of(view(bar, quote, day, ladder.choice()));
         }
@@ -110,7 +110,7 @@ final class KrFills {
         }
         Optional<Day> day = quote.day(bar.date());
         return day.isPresent() && day.get().observed() && opensAfterOrder(order, bar.date(), calendar)
-                && price(order, day.get(), collectedAt, calendar, deadline).choice() != null;
+                && price(order, quote, day.get(), collectedAt, calendar, deadline).choice() != null;
     }
 
     /**
@@ -144,7 +144,7 @@ final class KrFills {
             if (day.isEmpty() || !day.get().observed() || quote.fetchedAt() == null) {
                 return new FillTerms.Hold(bar.date() + " 봉이 관측 봉이 아니거나(거래량 0·모름·없음) 그 종목을 받은 시각을 모름");
             }
-            Ladder ladder = price(order, day.get(), quote.fetchedAt(), calendar, deadline);
+            Ladder ladder = price(order, quote, day.get(), quote.fetchedAt(), calendar, deadline);
             if (ladder.choice() == null) {
                 return new FillTerms.Hold(ladder.reason());
             }
@@ -205,14 +205,16 @@ final class KrFills {
         }
     }
 
-    private static Ladder price(Order order, Day day, Instant collectedAt, TradingCalendar calendar,
+    private static Ladder price(Order order, Quote quote, Day day, Instant collectedAt, TradingCalendar calendar,
                                 Function<LocalDate, Instant> deadline) {
-        if (PaperBooks.NEXT_CLOSE.equals(order.timing())) {
-            return Ladder.waiting("NEXT_CLOSE는 1분봉 15:30 종가 단일가 봉으로만 체결 — 계약 1에 그 봉이 없고 G2 판정 전"
-                    + "(ALLOW_NEXT_CLOSE=false)이라 토스 일봉 종가로 체결하지 않음(만료까지 대기)");
+        if (PaperBooks.NEXT_CLOSE.equals(order.timing()) || KrTimedLadder.hourly(order.timing()) != null) {
+            // 한국 Claude 계좌2의 매시·종가(단계 2a) — 목표 세션 1분봉(paper.kr.timed)의 사다리, 없으면 기다림(일봉 값으로 채우지 않음).
+            KrTimedLadder.Result timed = KrTimedLadder.price(order.timing(), quote, day.date(), collectedAt, calendar,
+                    Objects.requireNonNull(deadline.apply(day.date()), "결정 기한"));
+            return timed.choice() == null ? Ladder.waiting(timed.reason()) : Ladder.of(timed.choice());
         }
         if (!PaperBooks.NEXT_OPEN.equals(order.timing())) {
-            return Ladder.waiting("한국 체결 시점이 아님(" + order.timing() + ") — NEXT_OPEN만 체결(만료까지 대기)");
+            return Ladder.waiting("한국 체결 시점이 아님(" + order.timing() + ") — NEXT_OPEN·매시·종가만 체결(만료까지 대기)");
         }
         String label = openLabel(day.date(), calendar);
         Minute minute = day.minute();

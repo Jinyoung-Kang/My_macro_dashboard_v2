@@ -710,6 +710,72 @@ class KrLedgerTest {
         }
     }
 
+    // ------------------------------------------------------------------ 한국 Claude 계좌2 매시·종가(단계 2a)
+    @Nested
+    @DisplayName("한국 Claude 계좌2 매시·종가(단계 2a — 명세 2026-11-02-kr-claude2-stage2) — 목표 세션 1분봉(paper.kr.timed)으로 풀고, 시가 → 매시 → 종가 순, 1분봉이 없으면 기다림")
+    class TimedFills {
+
+        private static final String BOOK2 = PaperBooks.KR_CLAUDE2;
+
+        private KrQuotes.Timed timed(long tenOpen, long close) {
+            return new KrQuotes.Timed(KrQuotes.TIMED_OK, null, kst("2026-11-03T21:50"),
+                    Map.of("10:00", java.util.List.of(new KrQuotes.Bar1m("10:01", java.math.BigDecimal.valueOf(tenOpen), 300L))),
+                    Map.of(), Map.of("15:31", new KrQuotes.Close1m(java.math.BigDecimal.valueOf(close), 2_000L)));
+        }
+
+        private long order2(String ticker, String side, int qty, String timing) {
+            return store.insertOrder(new Order(0, BOOK2, null, ticker, side, qty, null, null, timing, "CLAUDE", "PENDING",
+                    null, null, D, CREATED, LocalDate.of(2026, 11, 5), null));
+        }
+
+        @Test
+        @DisplayName("매시(AT_1000)는 그 시각 봉 시가·출처 TOSS_1M_AT, 종가(NEXT_CLOSE)는 마감 봉 종가·TOSS_1M_CLOSE, 시가 매도가 먼저 — 시각 순으로 체결")
+        void hourlyAndCloseFillAtTheirBars() {
+            book(BOOK2, PaperBooks.KIND_CLAUDE, 2_000_000);
+            store.upsertPosition(new Position(BOOK2, "035720", 10, 40_000.0, D, CREATED, 40_000.0, CREATED, 40_000.0, CREATED,
+                    false, D, 40_000.0, null));
+            long close = order2("000660", PaperBooks.BUY, 2, PaperBooks.NEXT_CLOSE);
+            long ten = order2("005930", PaperBooks.BUY, 10, PaperBooks.AT_1000);
+            long open = order2("035720", PaperBooks.SELL, 10, PaperBooks.NEXT_OPEN);
+            when(marketData.krTimed()).thenReturn(Map.of("005930", Map.of(D1, timed(71_000, 71_500)),
+                    "000660", Map.of(D1, timed(400_000, 410_000))));
+            KrFixtures.Payload payload = new KrFixtures.Payload(D1);
+            openedAt(payload, "005930", 70_000);
+            openedAt(payload, "000660", 395_000);
+            openedAt(payload, "035720", 41_000);
+
+            process(payload, COLLECTED_D1);
+
+            assertThat(store.fillsOf(BOOK2)).extracting(Fill::ticker, Fill::price, Fill::priceSource)
+                    .containsExactly(org.assertj.core.groups.Tuple.tuple("035720", 41_000.0, KrQuotes.SOURCE_1M_OPEN),
+                            org.assertj.core.groups.Tuple.tuple("005930", 71_000.0, KrTimedLadder.SOURCE_AT),
+                            org.assertj.core.groups.Tuple.tuple("000660", 410_000.0, KrTimedLadder.SOURCE_CLOSE));
+            assertThat(store.orders.get(ten).status()).isEqualTo(PaperBooks.ORDER_FILLED);
+            assertThat(store.orders.get(close).status()).isEqualTo(PaperBooks.ORDER_FILLED);
+            assertThat(store.orders.get(open).status()).isEqualTo(PaperBooks.ORDER_FILLED);
+        }
+
+        @Test
+        @DisplayName("목표 세션 1분봉이 아직 없으면 매시·종가 주문은 대기로 남고(일봉 값으로 채우지 않음), 시가 주문은 지금처럼 체결")
+        void waitsWithoutTimedBars() {
+            book(BOOK2, PaperBooks.KIND_CLAUDE, 2_000_000);
+            long ten = order2("005930", PaperBooks.BUY, 10, PaperBooks.AT_1000);
+            long close = order2("000660", PaperBooks.BUY, 2, PaperBooks.NEXT_CLOSE);
+            long open = order2("035720", PaperBooks.BUY, 5, PaperBooks.NEXT_OPEN);
+            KrFixtures.Payload payload = new KrFixtures.Payload(D1);
+            openedAt(payload, "005930", 70_000);
+            openedAt(payload, "000660", 395_000);
+            openedAt(payload, "035720", 41_000);
+
+            process(payload, COLLECTED_D1);
+
+            assertThat(store.fillsOf(BOOK2)).extracting(Fill::ticker).containsExactly("035720");
+            assertThat(store.orders.get(ten).status()).isEqualTo(PaperBooks.ORDER_PENDING);
+            assertThat(store.orders.get(close).status()).isEqualTo(PaperBooks.ORDER_PENDING);
+            assertThat(store.orders.get(open).status()).isEqualTo(PaperBooks.ORDER_FILLED);
+        }
+    }
+
     // ------------------------------------------------------------------ 기업행위(K32, 결정 d12 — C2c)
     @Nested
     @DisplayName("기업행위(§4-2 K32·§5) — 3중 조건을 채운 분할·병합만 수량을 고치고, 못 채운 큰 변동·사라진 종목은 '미처리 기업행위'(평가 묶음·스탑 없음·주문 보류)")
