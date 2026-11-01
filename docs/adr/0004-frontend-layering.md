@@ -8,11 +8,10 @@
     패턴의 네 상태 테스트(`components/patterns/__tests__/*` — 값 있음·값 없음·추정·오래됨), 화면의 네 상태 테스트
     (`components/screens/home/__tests__/HomeScreen.test.tsx`, `app/(dashboard)/__tests__/paperOverviewStates.test.tsx`·`paperStateHandling.test.tsx`),
     `lib/__tests__/nav.test.ts`(탭·하위 메뉴 표, 지금 탭, 탭 제목, 검색 메뉴 항목 — 셸은 그리기만)
-  - v2 Coinbase식 덧붙임의 차트 틀 예외: `components/charts/__tests__/frameBoundary.test.ts`(차트 폴더 밖에서 차트 하위 경로를 가져오는 곳은
-    계좌 색 표의 `frame` 하나, `frame.tsx`는 recharts를 가져오지 않음)
   - v2 Coinbase식 개편(아래 두 번째 덧붙임): `components/ui/__tests__/icons.test.tsx`(아이콘 내보내기 목록·장식 aria-hidden·잠금만 이름),
     `lib/__tests__/noEmoji.test.ts`(화면 소스의 문자열·JSX 글자에 그림 문자 없음 — TypeScript AST), `components/ui/__tests__/formControls.test.tsx`(입력칸 모양·예전 포커스 표시 금지),
-    `selectionClasses.test.ts`(고르기 조각 클래스), `pageHeader.test.tsx`(화면 머리 — 예전 h1 모양 금지), `lib/__tests__/lineChart.test.ts`·`hooks/__tests__/useChartScrub.test.ts`(문지르기)
+    `selectionClasses.test.ts`(고르기 조각 클래스), `pageHeader.test.tsx`(화면 머리 — 예전 h1 모양 금지), `lib/__tests__/lineChart.test.ts`·`hooks/__tests__/useChartScrub.test.ts`(문지르기),
+    `components/charts/__tests__/frameBoundary.test.ts`(차트 틀 예외 — 차트 폴더 밖의 차트 하위 경로 가져오기는 계좌 색 표의 `frame` 하나, `frame.tsx`는 recharts 없음)
 
 ## 배경
 
