@@ -156,6 +156,16 @@ export function livePositionView(position: PaperLivePosition, market: PaperMarke
   };
 }
 
+/**
+ * 장중 값의 판 — 시세 저장본의 수집 시각과 계좌마다 기준 시각(`code=basisAtKst`)을 이은 글. 판이 바뀌면 새 장중 값을 받은 것이라 카드가 개요를
+ * 한 번 다시 읽습니다(개요의 지금 값이 같은 저장본을 읽음). 응답이 없거나 쓸 수 없으면 null.
+ */
+export function liveRevision(live: PaperLiveResponse | null | undefined): string | null {
+  if (!live?.available) return null;
+  const books = (live.books ?? []).map((book) => `${book.code}=${book.basisAtKst ?? ""}`).join(",");
+  return `${live.quotes?.collectedAtKst ?? ""}|${books}`;
+}
+
 /** 받지 못한 종목·수집 오류 한 줄(없으면 null) — 그 종목은 마지막 관측 가격으로 평가됐다는 뜻. */
 export function liveQuotesWarning(quotes: PaperLiveQuotes | null | undefined): string | null {
   if (!quotes) return null;

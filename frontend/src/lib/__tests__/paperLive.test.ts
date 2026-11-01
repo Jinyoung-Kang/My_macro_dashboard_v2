@@ -13,6 +13,7 @@ import {
   livePositionView,
   liveQuotesWarning,
   liveRefreshMs,
+  liveRevision,
   liveSessionView,
   msUntilNextOpen,
   normalizeLiveMinutes,
@@ -123,6 +124,20 @@ describe("종목 줄", () => {
       .toMatchObject({ price: "71,000", priceAt: "—" });
     expect(livePositionView({ ...book().positions[0], weightPct: null, returnPct: null, dayChangePct: null }))
       .toMatchObject({ weight: "—", returnText: "—", dayText: "—" });
+  });
+
+  it("장중 값의 판 — 수집 시각과 계좌마다 기준 시각, 쓸 수 없는 응답이면 null", () => {
+    const quotes = { source: null, collectedAtKst: "2026-10-30 23:58 KST", refreshRequested: false, missing: [], error: null };
+    const first = liveRevision({ available: true, quotes, books: [book(), book({ code: "rules", basisAtKst: null })] });
+    expect(first).toBe("2026-10-30 23:58 KST|claude=2026-10-30 23:58 KST,rules=");
+    // 같은 저장본을 다시 읽으면 같은 판, 수집 시각이나 계좌의 기준 시각이 바뀌면 다른 판.
+    expect(liveRevision({ available: true, quotes, books: [book(), book({ code: "rules", basisAtKst: null })] })).toBe(first);
+    expect(liveRevision({ available: true, quotes: { ...quotes, collectedAtKst: "2026-10-31 00:28 KST" }, books: [book()] }))
+      .not.toBe(first);
+    expect(liveRevision({ available: true, quotes, books: [book({ basisAtKst: "2026-10-31 00:27 KST" })] }))
+      .not.toBe(liveRevision({ available: true, quotes, books: [book()] }));
+    expect(liveRevision({ available: false })).toBeNull();
+    expect(liveRevision(null)).toBeNull();
   });
 
   it("받지 못한 종목 경고 — 없으면 null, 이름은 다섯 개까지", () => {

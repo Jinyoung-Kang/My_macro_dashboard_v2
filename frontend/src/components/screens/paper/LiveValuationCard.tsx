@@ -18,6 +18,7 @@ import {
   liveQuotesWarning,
   liveIntervalText,
   liveRefreshMs,
+  liveRevision,
   liveSessionView,
   msUntilNextOpen,
   normalizeLiveMinutes,
@@ -37,10 +38,16 @@ import type { PaperLiveResponse } from "@/lib/types";
 export function LiveValuationCard({
   market = "US",
   bookCode = null,
+  onUpdated,
 }: {
   market?: PaperMarketCode;
   /** 종목 표를 그릴 계좌(개요에서 고른 계좌). 없거나 응답에 없으면 첫 계좌. 바뀌어도 다시 읽지 않습니다(같은 응답의 다른 계좌). */
   bookCode?: string | null;
+  /**
+   * 새 장중 값(판 — lib/paperLive `liveRevision` — 이 바뀐 응답)을 받으면 부릅니다. 개요가 지금 값을 다시 읽게 하는 자리이고, 첫 응답은 기준으로만
+   * 기억합니다(개요는 이미 그 저장본을 읽었음). 개요를 다시 읽어도 이 카드는 /live를 다시 부르지 않습니다.
+   */
+  onUpdated?: () => void;
 }) {
   const [minutes, setMinutes] = useLiveRefreshMinutes();
   const [refreshMs, setRefreshMs] = useState(0);
@@ -51,12 +58,22 @@ export function LiveValuationCard({
   const { reload } = live;
   // 타이머의 다시 읽기 — 숨긴 탭이면 다시 보일 때로 미룹니다(QA-154). reload를 바로 부르면 숨긴 탭에서도 /live가 나가 정규장이면 수집을 깨웠습니다.
   const wake = useVisibleWake(reload, refreshMs);
+  // 처음 받은 장중 값의 판 — 그 뒤 판이 바뀔 때만 onUpdated를 부릅니다.
+  const revision = liveRevision(data);
+  const seenRevision = useRef<string | null>(null);
   // 바로 앞 읽기가 '한 번 더 읽기'였으면 또 예약하지 않습니다(수집이 늦어도 20초마다 되풀이하지 않게).
   const followingUp = useRef(false);
 
   useEffect(() => {
     setRefreshMs(liveRefreshMs(data, minutes));
   }, [data, minutes]);
+
+  useEffect(() => {
+    if (revision === null) return;
+    const previous = seenRevision.current;
+    seenRevision.current = revision;
+    if (previous !== null && previous !== revision) onUpdated?.();
+  }, [revision, onUpdated]);
 
   useEffect(() => {
     if (!data) return;

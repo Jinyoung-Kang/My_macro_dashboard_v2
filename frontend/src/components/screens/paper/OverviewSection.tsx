@@ -339,9 +339,14 @@ export function OverviewSection({
       {korea && <KrStartSection overview={overview} status={status.data ?? null} onChanged={onChanged} />}
 
       {/* 장중 시세(표시 전용 추정) — 장 상태·간격·출처와 고른 계좌의 종목 장중가. 종목 표는 상세를 연 계좌, 없으면 기본 Claude 계좌
-          (홈 히어로와 같은 규칙)를 따릅니다. 아래 계좌 목록은 장부의 마지막 관측치 값 그대로입니다. */}
+          (홈 히어로와 같은 규칙)를 따릅니다. 새 장중 값을 받으면 개요를 한 번 다시 읽습니다(onChanged — 지금 값이 같은 저장본을 읽음).
+          아래 계좌 목록은 장부의 마지막 관측치 값 그대로입니다. */}
       {overview.initialized !== false && books.length > 0 && (
-        <LiveValuationCard market={market} bookCode={selected ?? primaryClaudeBook(books)?.code ?? null} />
+        <LiveValuationCard
+          market={market}
+          bookCode={selected ?? primaryClaudeBook(books)?.code ?? null}
+          onUpdated={onChanged}
+        />
       )}
 
       <Card

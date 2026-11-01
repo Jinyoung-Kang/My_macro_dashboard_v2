@@ -3,6 +3,7 @@
  *  - 계좌 표는 없고(계좌 숫자는 개요의 지금 값), 고른 계좌(bookCode — 없거나 응답에 없으면 첫 계좌)의 종목 장중가와 기준 시각
  *  - 서버가 새 시세를 요청한 응답이면(refreshRequested) 20초 뒤 한 번만 더 읽는다(되풀이 없음)
  *  - 간격 선택(끄기~30분·1시간·3시간)은 이 브라우저에 기억되고(기본 30분), 장 밖에서는 다시 읽지 않는다
+ *  - 새 장중 값(판이 바뀐 응답)을 받으면 onUpdated를 한 번 — 첫 응답·같은 판이면 부르지 않고, 부른다고 /live를 다시 읽지 않는다
  *  - 숨긴 탭에서는 '한 번 더'·'다음 개장' 깨우기가 읽지 않고, 다시 보일 때 한 번(QA-154). 숨긴 탭으로 열리면 처음 보일 때 읽는다(QA-156)
  *  - 시계는 고정한다(QA-155) — 다음 개장 깨우기가 지금 시각으로 기다릴 시간을 정하므로, 진짜 시계면 돌린 때에 따라 결과가 달라진다
  */
@@ -146,6 +147,41 @@ describe("정규장", () => {
     render(<LiveValuationCard />);
     await settle();
     expect((screen.getByLabelText("장중 평가 새로고침 간격") as HTMLSelectElement).value).toBe("60");
+  });
+});
+
+describe("새 장중 값 알림(onUpdated)", () => {
+  it("첫 응답과 같은 판이면 부르지 않고, 판이 바뀐 응답마다 한 번 — /live 읽기 수는 늘지 않는다", async () => {
+    let reads = 0;
+    const stamps = ["2026-10-30 23:58 KST", "2026-10-30 23:58 KST", "2026-10-31 00:28 KST"];
+    api.apiGetShared.mockImplementation(() => {
+      const stamp = stamps[Math.min(reads, stamps.length - 1)];
+      reads += 1;
+      return Promise.resolve(live({
+        quotes: { source: null, collectedAtKst: stamp, refreshRequested: false, missing: [], error: null },
+        books: [{ ...live().books[0], basisAtKst: stamp }],
+      }));
+    });
+    const onUpdated = vi.fn();
+    render(<LiveValuationCard onUpdated={onUpdated} />);
+    await settle();
+    expect(liveCalls()).toBe(1);
+    expect(onUpdated).not.toHaveBeenCalled();
+
+    // 같은 저장본을 다시 읽음(판이 같음) — 개요를 다시 읽을 까닭이 없습니다.
+    fireEvent.click(screen.getByRole("button", { name: "지금 새로 읽기" }));
+    await settle();
+    expect(liveCalls()).toBe(2);
+    expect(onUpdated).not.toHaveBeenCalled();
+
+    // 새 장중 값 — 한 번.
+    fireEvent.click(screen.getByRole("button", { name: "지금 새로 읽기" }));
+    await settle();
+    expect(liveCalls()).toBe(3);
+    expect(onUpdated).toHaveBeenCalledTimes(1);
+    await settle(60_000);
+    expect(liveCalls()).toBe(3);
+    expect(onUpdated).toHaveBeenCalledTimes(1);
   });
 });
 

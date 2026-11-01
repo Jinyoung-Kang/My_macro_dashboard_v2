@@ -1,5 +1,5 @@
 /**
- * 🧪 모의매매(미국) 개요 — 네 상태 이야기(설계서 §9 DoD "없음·일부 실패·추정·오래됨").
+ * 모의매매(미국) 개요 — 네 상태 이야기(설계서 §9 DoD "없음·일부 실패·추정·오래됨").
  *
  *  - 없음: 장부가 없으면(available:false) 서버 문구만 — 제목은 남고 탭·계좌 행·비교 표는 없다 / 계좌가 0개면 안내만
  *  - 일부 실패: 상태 응답이 실패해도 개요(계좌 행·곡선·비교 표)는 그대로 — 꺼짐 배너·사용량·설정 버전만 빠진다 /
@@ -9,7 +9,7 @@
  *  - 기간별 순자산 곡선: 저장된 기록보다 긴 기간 탭은 없고, 고르면 그 기간만(경계선도 그 기간 안의 것만), 곡선 아래 노출 문구(남는 현금 SHY)
  *  - 시장 고르기: 화면 안에는 없다 — 셸의 하위 메뉴 줄(미국 | 한국 두 링크)이 맡는다(Shell.test.tsx), 제목은 '(미국)'
  */
-import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const api = vi.hoisted(() => {
@@ -339,5 +339,46 @@ describe("작업 기록 카드(x3 — 미국 응답은 그대로, 화면이 kr. 
     reads["/api/paper/overview"] = () => Promise.resolve({ ...OVERVIEW, jobs: [run("kr.risk"), run("kr.decision")] });
     render(<PaperPage />);
     expect(await screen.findByText("최근 10건 가운데 미국 작업이 없습니다 — 한국 작업은 한국 개요에 있습니다.")).toBeTruthy();
+  });
+});
+
+describe("장중 시세 카드 — 새 장중 값을 받으면 개요를 한 번 다시 읽는다", () => {
+  /** 곧바로 resolve하는 목 응답이 잇는 일(개요 → 카드 마운트 → /live → 커밋)을 끝까지 반영합니다(QA-148 — 벽시계 한도 없이). */
+  const settled = () => act(async () => {});
+  const calls = (prefix: string) => api.apiGetShared.mock.calls.filter(([path]) => String(path).startsWith(prefix)).length;
+
+  function liveAt(stamp: string) {
+    return {
+      available: true, market: "US", currency: "USD", nowKst: "2026-10-30 23:59 KST", isEstimated: true,
+      session: { phase: "REGULAR", sessionDate: "2026-10-30", openAtKst: "2026-10-30 22:30 KST", closeAtKst: "2026-10-31 05:00 KST",
+        nextOpenAtKst: "2026-11-02 23:30 KST" },
+      quotes: { source: "Yahoo(yfinance) 1분봉", collectedAtKst: stamp, refreshRequested: false, missing: [], error: null },
+      books: [{ code: "rules", label: "규칙 계좌", status: "ACTIVE", initialCash: 100000, cash: 200, nav: 101300, returnPct: 1.3,
+        previousNav: 101200, previousTradingDate: "2026-10-29", dayChangePct: 0.1, basis: "LIVE", basisAtKst: stamp,
+        liveCount: 0, positionCount: 0, positions: [] }],
+    };
+  }
+
+  it("기준 시각이 바뀐 장중 값에만 개요를 한 번 더 읽고, 그 다시 읽기는 /live를 부르지 않는다", async () => {
+    let liveReads = 0;
+    reads["/api/paper/overview"] = () => Promise.resolve(OVERVIEW);
+    reads["/api/paper/live"] = () => {
+      liveReads += 1;
+      return Promise.resolve(liveAt(liveReads === 1 ? "2026-10-30 23:58 KST" : "2026-10-31 00:28 KST"));
+    };
+    render(<PaperPage />);
+    await settled();
+    expect(screen.getByRole("heading", { name: "장중 시세 (추정)" })).toBeTruthy();
+    expect(calls("/api/paper/overview")).toBe(1);
+    expect(calls("/api/paper/live")).toBe(1);
+
+    fireEvent.click(screen.getByRole("button", { name: "지금 새로 읽기" }));
+    await settled();
+    expect(calls("/api/paper/live")).toBe(2);
+    expect(calls("/api/paper/overview")).toBe(2);
+    // 개요를 다시 읽어도 카드는 다시 마운트되지 않고 /live를 부르지 않습니다(되풀이 없음).
+    await settled();
+    expect(calls("/api/paper/live")).toBe(2);
+    expect(calls("/api/paper/overview")).toBe(2);
   });
 });
