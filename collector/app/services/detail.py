@@ -5,7 +5,9 @@
 출처
 - 미국·해외 종목·지수·환율: Yahoo Finance(yfinance `Ticker.info` — 지연 시세, 비공식 참고), 뉴스·종목 찾기는 yfinance `Search`.
 - 국내 종목: 네이버 증권 모바일 API(m.stock.naver.com `basic`·`integration`·`news`, 종목 찾기 ac.stock.naver.com).
-- 뉴스 검색어: 구글 뉴스 RSS 검색(news.google.com/rss/search, 최근 7일).
+- 뉴스 검색어: 구글 뉴스 RSS 검색(news.google.com/rss/search, 최근 7일). 연합인포맥스는 같은 검색을 그 사이트로 좁힌 것(사이트 자체 검색은
+  검색어를 무시함 — 2026-11-02 확인).
+- 미국 종목의 한국어 기업 개요·이름: 네이버 증권 해외주식(api.stock.naver.com/stock/{로이터 코드}/overview — 로이터 코드는 자동완성에서).
 Yahoo·네이버·구글 뉴스는 robots.txt가 막는 출처지만 사용자가 개인·비상업 용도로 허락했습니다(2026-11-01, docs/decisions.md). 그래도
 출처 링크·받은 시각을 함께 내고, Yahoo는 공용 거부 래치(http.YAHOO_HOST), 네이버·구글은 수집기 공용 세션의 래치·간격을 따릅니다.
 
@@ -45,7 +47,9 @@ QUOTE_TTL = 300.0
 NEWS_TTL = 900.0
 SYMBOLS_TTL = 3600.0
 FAILURE_TTL = 60.0
-NEWS_LIMIT = 15
+NEWS_LIMIT = 20
+NAVER_WORLD_API = "https://api.stock.naver.com/stock"
+INFOMAX_SITE = "news.einfomax.co.kr"
 
 US_CODE = re.compile(r"^[A-Za-z0-9^=.\-]{1,24}$")
 KR_CODE = re.compile(r"^[0-9A-Z]{6}$")
@@ -53,6 +57,7 @@ KR_CODE = re.compile(r"^[0-9A-Z]{6}$")
 YAHOO_SOURCE = "Yahoo Finance(yfinance) — 지연 시세, 비공식 참고"
 NAVER_SOURCE = "네이버 증권"
 GOOGLE_SOURCE = "Google News"
+INFOMAX_SOURCE = "연합인포맥스"
 
 # ---------------------------------------------------------------- 짧은 캐시
 
@@ -272,9 +277,78 @@ def quote(market: str, code: str) -> dict:
             if info is None:
                 return _empty_quote(market, code, error)
             out = quote_from_yahoo(code, info)
+            _with_korean_profile(out, code)
         out["fetchedAt"] = _now_iso()
         return out
     return _cached(("quote", market, code), QUOTE_TTL, fetch)
+
+
+def korean_profile_from_naver(overview: Any) -> dict | None:
+    """네이버 해외주식 기업 개요 → 한국어 칸(이름·개요·업종). 개요의 줄바꿈 태그는 줄바꿈으로, 그 밖의 태그는 지웁니다. 없으면 None."""
+    if not isinstance(overview, dict):
+        return None
+    summary = overview.get("summary")
+    text = None
+    if isinstance(summary, str) and summary.strip():
+        text = re.sub(r"<br\s*/?>", "\n", summary, flags=re.I)
+        text = html.unescape(re.sub(r"<[^>]+>", "", text))
+        text = re.sub(r"\n{3,}", "\n\n", text).strip() or None
+    industry = overview.get("industry") if isinstance(overview.get("industry"), dict) else {}
+    out = {"nameKo": _text(overview.get("companyName")), "summaryKo": text,
+           "industryKo": _text(industry.get("industryGroupKor"))}
+    return out if any(out.values()) else None
+
+
+def naver_world_item(payload: Any, code: str) -> dict | None:
+    """네이버 자동완성 → 그 미국 종목(코드가 같은 미국 주식) 한 줄 {reutersCode, name}. 'BRK-B'는 'BRK.B'·'BRK B'로도 맞춥니다."""
+    items = payload.get("items") if isinstance(payload, dict) else None
+    wanted = {code.upper(), code.upper().replace("-", "."), code.upper().replace("-", " ")}
+    for item in items if isinstance(items, list) else []:
+        if not isinstance(item, dict) or item.get("nationCode") != "USA" or item.get("category") != "stock":
+            continue
+        if str(item.get("code") or "").upper() in wanted and item.get("reutersCode"):
+            return {"reutersCode": str(item["reutersCode"]), "name": _text(item.get("name"))}
+    return None
+
+
+def _naver_world(code: str) -> dict | None:
+    """미국 종목의 네이버 해외주식 로이터 코드·한글 이름(자동완성 — 1시간 캐시, 못 찾으면 None)."""
+    def fetch() -> dict:
+        try:
+            res = get_session().get(NAVER_AC, params={"q": code, "target": "stock,worldstock"}, timeout=FETCH_TIMEOUT)
+            if res.status_code != 200:
+                return {"item": None, "error": f"HTTP {res.status_code}"}
+            return {"item": naver_world_item(res.json(), code), "error": None}
+        except Exception as exc:  # noqa: BLE001
+            return {"item": None, "error": brief_error(exc)}
+    return _cached(("naver-world", code), SYMBOLS_TTL, fetch).get("item")
+
+
+def _with_korean_profile(out: dict, code: str) -> None:
+    """미국 주식·ETF의 시세 응답에 네이버 한국어 개요를 더합니다(못 받으면 그대로 — 영문 개요가 남음, 사유는 profileKoError)."""
+    if (out.get("kind") or "").upper() not in ("EQUITY", "ETF"):
+        return
+    world = _naver_world(code)
+    if world is None:
+        out["profileKoError"] = "네이버 해외주식에서 이 종목을 찾지 못함"
+        return
+    try:
+        res = get_session().get(f"{NAVER_WORLD_API}/{world['reutersCode']}/overview", timeout=FETCH_TIMEOUT,
+                                headers={"Referer": "https://m.stock.naver.com/"})
+        korean = korean_profile_from_naver(res.json()) if res.status_code == 200 else None
+        if res.status_code != 200:
+            out["profileKoError"] = f"HTTP {res.status_code}"
+    except Exception as exc:  # noqa: BLE001
+        korean, out["profileKoError"] = None, brief_error(exc)
+    if korean is None:
+        return
+    profile = dict(out.get("profile") or {"sector": None, "industry": None, "country": None, "website": None,
+                                          "employees": None, "summary": None})
+    profile.update({"summaryKo": korean["summaryKo"], "industryKo": korean["industryKo"],
+                    "koSource": {"label": "네이버 증권 해외주식 기업 개요",
+                                 "url": f"https://m.stock.naver.com/worldstock/stock/{world['reutersCode']}/overview"}})
+    out["profile"] = profile
+    out["nameKo"] = korean["nameKo"] or world.get("name")
 
 
 def _empty_quote(market: str, code: str, error: str | None) -> dict:
@@ -373,6 +447,12 @@ def _google_news(q: str, lang: str) -> tuple[list[dict], str | None]:
         return [], brief_error(exc)
 
 
+def _infomax_news(q: str) -> tuple[list[dict], str | None]:
+    """연합인포맥스 — 구글 뉴스 RSS 검색을 그 사이트로 좁힘(최근 7일, 한국어 판). 받은 곳 칸은 '연합인포맥스'."""
+    items, error = _google_news(f"{q} site:{INFOMAX_SITE}", "ko")
+    return [dict(item, source=INFOMAX_SOURCE) for item in items], error
+
+
 def _yahoo_news(code: str) -> tuple[list[dict], str | None]:
     latched = http.active_rejection(http.YAHOO_HOST)
     if latched is not None:
@@ -387,7 +467,8 @@ def _yahoo_news(code: str) -> tuple[list[dict], str | None]:
 
 def news(market: str | None, code: str | None, q: str | None) -> dict:
     """
-    주요 뉴스 — 종목 코드가 있으면 그 종목 뉴스(미국·해외 Yahoo, 국내 네이버), 검색어가 있으면 구글 뉴스 RSS(국내 종목·한글 검색어는 한국어 판).
+    주요 뉴스 — 종목 코드가 있으면 그 종목 뉴스(미국·해외 Yahoo, 국내 네이버), 연합인포맥스(미국 종목은 한글 이름 — 그 밖은 검색어), 검색어가 있으면
+    구글 뉴스 RSS(국내 종목·한글 검색어는 한국어 판).
     출처마다 실패는 `errors`에 남기고 받은 것만 합칩니다(하나도 없으면 `error`).
     """
     def fetch() -> dict:
@@ -403,6 +484,16 @@ def news(market: str | None, code: str | None, q: str | None) -> dict:
             groups.append(items)
             if error:
                 errors["Yahoo Finance"] = error
+        # 연합인포맥스 — 미국 종목은 한글 이름(네이버 해외주식)으로, 그 밖은 검색어로. 구글 뉴스 일반 검색보다 먼저 두어 같은 기사는 이 출처로 남김.
+        infomax_q = q
+        if market == "us" and code:
+            world = _naver_world(code)
+            infomax_q = (world or {}).get("name") or q
+        if infomax_q:
+            items, error = _infomax_news(infomax_q)
+            groups.append(items)
+            if error:
+                errors[INFOMAX_SOURCE] = error
         if q:
             lang = "ko" if market == "kr" or re.search(r"[가-힣]", q) else "en"
             items, error = _google_news(q, lang)

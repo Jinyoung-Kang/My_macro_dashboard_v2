@@ -19,8 +19,10 @@ from app.services import detail
 
 
 @pytest.fixture(autouse=True)
-def _fresh_cache():
+def _fresh_cache(monkeypatch):
     detail.reset_cache()
+    # 네트워크 없이 — 네이버 해외주식 찾기는 기본으로 '못 찾음'(그 경로를 보는 시험만 바꿈).
+    monkeypatch.setattr(detail, "_naver_world", lambda code: None)
     yield
     detail.reset_cache()
 
@@ -142,6 +144,51 @@ def test_종목_찾기_Yahoo의_KS_KQ는_국내_코드로_네이버는_국내만
     assert naver == [{"market": "kr", "code": "247540", "yahooSymbol": "247540.KQ", "name": "에코프로비엠", "exchange": "코스닥",
                       "kind": "stock", "source": "네이버 증권"}]
     assert detail.symbols_from_naver(None) == [] and detail.symbols_from_naver({"items": "x"}) == []
+
+
+def test_네이버_해외주식_개요는_줄바꿈_태그를_줄로_한국어_이름·업종과_함께():
+    korean = detail.korean_profile_from_naver({
+        "companyName": "애플", "summary": "애플은 설계한다.<br>제품은 아이폰.<br><br><br>서비스 &amp; 결제<b>!</b>",
+        "industry": {"industryGroupKor": "전화 및 소형 장치"},
+    })
+    assert korean == {"nameKo": "애플", "summaryKo": "애플은 설계한다.\n제품은 아이폰.\n\n서비스 & 결제!", "industryKo": "전화 및 소형 장치"}
+    assert detail.korean_profile_from_naver({}) is None
+    assert detail.korean_profile_from_naver(None) is None
+
+
+def test_네이버_자동완성에서_같은_코드의_미국_주식만_BRK_B는_점·공백으로도_맞춤():
+    payload = {"items": [
+        {"code": "AAPL", "name": "애플 ADR?", "nationCode": "KOR", "category": "stock", "reutersCode": "X"},
+        {"code": "BRK.B", "name": "버크셔 해서웨이 B", "nationCode": "USA", "category": "stock", "reutersCode": "BRKb"},
+        {"code": "AAPL", "name": "애플", "nationCode": "USA", "category": "stock", "reutersCode": "AAPL.O"},
+    ]}
+    assert detail.naver_world_item(payload, "AAPL") == {"reutersCode": "AAPL.O", "name": "애플"}
+    assert detail.naver_world_item(payload, "BRK-B") == {"reutersCode": "BRKb", "name": "버크셔 해서웨이 B"}
+    assert detail.naver_world_item(payload, "MSFT") is None
+    assert detail.naver_world_item([], "AAPL") is None
+
+
+def test_뉴스는_연합인포맥스를_구글_일반_검색보다_먼저_미국_종목은_한글_이름으로(monkeypatch):
+    calls = []
+
+    def google(q, lang):
+        calls.append((q, lang))
+        if "site:news.einfomax.co.kr" in q:
+            return [{"title": "애플 실적 발표", "url": "https://news.google.com/a", "publisher": "연합인포맥스",
+                     "publishedAt": "2026-11-01T10:00:00+00:00", "source": detail.GOOGLE_SOURCE}], None
+        return [{"title": "애플 실적 발표", "url": "https://news.google.com/b", "publisher": "연합인포맥스",
+                 "publishedAt": "2026-11-01T10:00:00+00:00", "source": detail.GOOGLE_SOURCE},
+                {"title": "Apple beats", "url": "https://news.google.com/c", "publisher": "Reuters",
+                 "publishedAt": "2026-11-01T09:00:00+00:00", "source": detail.GOOGLE_SOURCE}], None
+
+    monkeypatch.setattr(detail, "_google_news", google)
+    monkeypatch.setattr(detail, "_yahoo_news", lambda code: ([], None))
+    monkeypatch.setattr(detail, "_naver_world", lambda code: {"reutersCode": "AAPL.O", "name": "애플"})
+    out = detail.news("us", "AAPL", "Apple Inc.")
+    assert calls == [("애플 site:news.einfomax.co.kr", "ko"), ("Apple Inc.", "en")]
+    assert [(i["url"], i["source"]) for i in out["items"]] == [
+        ("https://news.google.com/a", detail.INFOMAX_SOURCE), ("https://news.google.com/c", detail.GOOGLE_SOURCE)]
+    assert out["errors"] == {}
 
 
 def test_캐시는_같은_질의를_한_번만_부르고_실패는_짧게만_둔다(monkeypatch):
