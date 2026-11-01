@@ -234,9 +234,9 @@ class MarketRunTest {
             received.add(invocation.getArgument(0));
             return new ReviewService.Outcome(ReviewService.Kind.CALLED, krRow, null);
         });
-        Instant saturdayNight = Instant.parse("2026-10-31T14:00:00Z");   // 토 23:00 KST — 시험용 한국 복기(토 22:30) 뒤
+        Instant sundayNight = Instant.parse("2026-11-01T13:30:00Z");   // 일 22:30 KST — 시험용 한국 복기(일 22:00) 뒤
         PaperReviewJob job = new PaperReviewJob(store, reader, marketData, reviews, PaperFixtures.config(), MAPPER,
-                Clock.fixed(saturdayNight, ZoneOffset.UTC), List.of(kr));
+                Clock.fixed(sundayNight, ZoneOffset.UTC), List.of(kr));
 
         assertThat(job.run(kr).outcome()).isEqualTo(PaperReviewJob.REVIEWED);
         assertThat(opened).hasSize(1);

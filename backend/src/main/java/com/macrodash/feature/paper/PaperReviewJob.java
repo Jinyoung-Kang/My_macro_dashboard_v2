@@ -33,7 +33,7 @@ import java.util.concurrent.locks.ReentrantLock;
  * <pre>
  *  그 시장 달력이 앞 창(직전 세션 ~ 10거래일)의 해를 모름 → NO_CALENDAR(정기 실행은 그 시장·KST 날짜·빠진 해마다 한 번 기록 — 명세 K35)
  *  w = 지금 마감이 끝난 가장 최근 복기 주(그 ISO 주의 마지막 거래일 — 금요일, 휴장이면 목요일)
- *  w 주 토요일 09:00 KST 전                                  → TOO_EARLY(기록 안 함)
+ *  w 주 여는 순간 전(미국 일요일 21:00·한국 일요일 22:00 KST)  → TOO_EARLY(기록 안 함)
  *  w의 행이 이미 있음(다시 부를 API 오류가 아니면)              → ALREADY_REVIEWED
  *  Claude 계좌가 운용 중(ACTIVE)이 아니거나 출발일이 w 전이 아님 → NOT_ACTIVE(복기 없음 — 초기 결정뿐인 주·일시정지 중)
  *  w 확정 종가가 아직 없음(장부의 w 확정 순자산 줄이 없고, 관측치 저장본의 w 확정 종가를 장부가 아직 반영하지 않음)
@@ -41,7 +41,7 @@ import java.util.concurrent.locks.ReentrantLock;
  *  → 복기: 창 안 결정이 없으면 SKIPPED 행(부르지 않음), 하루 호출 상한이면 CAP_REACHED(행 없음 — 다음 주기에 다시), 아니면 Claude 한 번
  * </pre>
  *
- * <p><b>놓친 토요일</b>(맥이 꺼져 있었음): w는 다음 복기 주의 마감(다음 금요일 장 마감)까지 바뀌지 않으므로, 그사이 켜지면 첫 주기에
+ * <p><b>놓친 복기 창</b>(서버가 꺼져 있었음 — 일요일 밤 창을 놓치면 월요일 08:55 낮 창 기동 때): w는 다음 복기 주의 마감(다음 금요일 장 마감)까지 바뀌지 않으므로, 그사이 켜지면 첫 주기에
  * 그 주 복기를 냅니다. 그 뒤에는 새 주가 w가 되고 지난 주는 다시 보지 않습니다(한 주 늦은 복기보다 새 주 복기가 낫습니다 — 명세 D1).
  *
  * <p>확정 종가 조건은 Claude 계좌의 w 확정 순자산 줄이 있거나, 관측치 저장본이 w 마감 + 15분 뒤에 수집한 w 봉이고
@@ -54,10 +54,10 @@ import java.util.concurrent.locks.ReentrantLock;
  * <p><b>확정 조정 시장</b>(한국 — {@link PaperMarket#confirmsFills}, 2단계 명세 K19·K29, E3)은 <b>w 잠정 종가 순자산 줄</b>로 엽니다(금요일은
  * 잠정가): 관측치가 쓰는 순자산 줄은 늘 잠정이고(확정은 금융위 값이 들어오는 다음 거래일 밤 뒤 — 증권상품시세가 없으면 ETF 보유 계좌는 끝내
  * 확정이 아님), 장부는 그 세션 마감 뒤 수집한 관측치로만 그날 줄을 씁니다({@link PaperMarket#closeAvailable}). 그래서 Claude 계좌의 w 줄이
- * 있으면 관측치 저장본을 보지 않고 엽니다 — 토요일을 놓쳐 다음 세션 관측치가 들어온 뒤(월요일 밤 기동)에도 그 주 복기가 다음 기동 첫
+ * 있으면 관측치 저장본을 보지 않고 엽니다 — 복기 창을 놓쳐 다음 세션 관측치가 들어온 뒤(월요일 밤 기동)에도 그 주 복기가 다음 기동 첫
  * 주기에 돌고, 미확정 줄을 기다리다 주를 넘기지 않게. 미국 판정은 그대로입니다.
  *
- * <p>정기 실행과 수동 실행({@link #runNow} — 토요일 시각 조건만 빼고 같은 조건)은 한 잠금을 씁니다. 정기 실행은 잠금을 기다리지 않고
+ * <p>정기 실행과 수동 실행({@link #runNow} — 여는 시각 조건만 빼고 같은 조건)은 한 잠금을 씁니다. 정기 실행은 잠금을 기다리지 않고
  * {@value #BUSY}로 넘어가고(Claude 호출이 몇 분 걸릴 수 있음 — 스케줄러 스레드를 붙잡지 않게), 수동 실행은 429로 답합니다(두 번 눌러
  * 두 번 과금되지 않게 — 끝난 뒤 다시 누르면 남은 행을 돌려줌). 같은 주에 오류(예외)가 {@value #MAX_ATTEMPTS}번 나면 그 주는 정기 실행이
  * 더 시도하지 않습니다(30분마다 같은 오류가 작업 기록을 밀어내지 않게 — 수동 실행은 다시 시도, 재기동하면 처음부터 셈).
@@ -229,7 +229,7 @@ public class PaperReviewJob {
     }
 
     /**
-     * POST /api/paper/reviews/run — 지금 마감이 끝난 가장 최근 복기 주를 지금 복기합니다. 토요일 09:00 시각 조건만 빼고 정기 실행과 같은
+     * POST /api/paper/reviews/run — 지금 마감이 끝난 가장 최근 복기 주를 지금 복기합니다. 여는 시각 조건만 빼고 정기 실행과 같은
      * 조건이며, 그 주의 행이 이미 있으면 부르지 않고 그 행을 돌려줍니다(API 오류였으면 한 번 다시 부름).
      *
      * @return {@code {ok, outcome, review}} — 테이블이 없으면 {@code {available:false, ok:false, message}}
@@ -313,7 +313,7 @@ public class PaperReviewJob {
         return market.dormantReason(config, () -> store.books(market.code()));
     }
 
-    /** 조건을 보고(클래스 설명) 복기합니다. {@code scheduled}가 거짓(수동)이면 토요일 시각 조건과 포기 횟수를 보지 않습니다. */
+    /** 조건을 보고(클래스 설명) 복기합니다. {@code scheduled}가 거짓(수동)이면 여는 시각 조건과 포기 횟수를 보지 않습니다. */
     private Result runLocked(PaperMarket market, Instant now, boolean scheduled) {
         if (!store.ready()) {
             return new Result(NOT_READY, null, null, PaperQueryService.NOT_READY_MESSAGE);

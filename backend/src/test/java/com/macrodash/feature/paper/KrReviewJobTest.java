@@ -32,18 +32,18 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 /**
- * 한국 주간 복기 작업(2단계 명세 §4-9 '토 22:30'·K19, E3) — 실제 한국 묶음({@link KrPaperMarket}, 공휴일 저장본으로 그 실행이 만든
- * {@link KrxCalendar})으로 부르는 조건을 봅니다: 토요일 22:30 KST(코드 상수), 금요일 잠정 종가 순자산 줄로 엶, 놓친 토요일은 다음 기동
+ * 한국 주간 복기 작업(2단계 명세 §4-9·K19, E3 — 2026-11-02 토 22:30 → 일 22:00) — 실제 한국 묶음({@link KrPaperMarket}, 공휴일 저장본으로 그 실행이 만든
+ * {@link KrxCalendar})으로 부르는 조건을 봅니다: 일요일 22:00 KST(코드 상수), 금요일 잠정 종가 순자산 줄로 엶, 놓친 복기 창은 다음 기동
  * 첫 주기, 금요일 휴장이면 목요일. 복기 자체({@link ReviewService})는 가짜(mock)로 두고 불렸는지만 봅니다.
  *
- * <p>시각: 기준 주 2026-11-02(월)~11-06(금), 그 주 복기 = 토 11-07 22:30 KST = 13:30Z. 한국 출발일 10-29, 네 계좌 운용 중(10-30 출발).
+ * <p>시각: 기준 주 2026-11-02(월)~11-06(금), 그 주 복기 = 일 11-08 22:00 KST = 13:00Z. 한국 출발일 10-29, 네 계좌 운용 중(10-30 출발).
  */
 class KrReviewJobTest {
 
     private static final PaperMarket KR = KrPaperMarket.INSTANCE;
     private static final LocalDate WE = LocalDate.of(2026, 11, 6);
     private static final LocalDate STARTED = LocalDate.of(2026, 10, 30);
-    private static final Instant OPENS = kst("2026-11-07T22:30");
+    private static final Instant OPENS = kst("2026-11-08T22:00");
 
     private FakePaperStore store;
     private StoreReader reader;
@@ -104,20 +104,20 @@ class KrReviewJobTest {
     }
 
     @Test
-    @DisplayName("한국 복기는 토요일 22:30 KST(코드 상수 — 설정 아님, K38)에 열리고 금요일 잠정 종가 순자산 줄(금융위 확정 전)로 부른다 — 미국 복기 시각 토 09:00은 한국에 해당 없음, 관측치 저장본은 보지 않음, 작업 기록 kr.review")
-    void opensSaturdayTenThirtyKstOnTheProvisionalFridayRow() {
+    @DisplayName("한국 복기는 일요일 22:00 KST(코드 상수 — 설정 아님, K38)에 열리고 금요일 잠정 종가 순자산 줄(금융위 확정 전)로 부른다 — 미국 복기 시각 일 21:00은 한국에 해당 없음, 옛 시각 토 22:30도 아직, 관측치 저장본은 보지 않음, 작업 기록 kr.review")
+    void opensSundayTenPmKstOnTheProvisionalFridayRow() {
         provisionalNav(WE);
         answers(WE);
-        assertThat(KR.reviewOpening(WE)).as("기준 주 토요일 22:30 KST").isEqualTo(OPENS);
-        assertThat(KrPaperMarket.REVIEW_OPENS_ON).isEqualTo(java.time.DayOfWeek.SATURDAY);
-        assertThat(KrPaperMarket.REVIEW_OPENS_AT).isEqualTo(java.time.LocalTime.of(22, 30));
+        assertThat(KR.reviewOpening(WE)).as("기준 주 일요일 22:00 KST").isEqualTo(OPENS);
+        assertThat(KrPaperMarket.REVIEW_OPENS_ON).isEqualTo(java.time.DayOfWeek.SUNDAY);
+        assertThat(KrPaperMarket.REVIEW_OPENS_AT).isEqualTo(java.time.LocalTime.of(22, 0));
 
-        PaperReviewJob.Result morning = job(kst("2026-11-07T09:00")).run(KR);
+        PaperReviewJob.Result morning = job(kst("2026-11-07T22:30")).run(KR);
         assertThat(morning.outcome()).isEqualTo(PaperReviewJob.TOO_EARLY);
         assertThat(morning.weekEnding()).as("그 실행의 한국 달력으로 센 기준 주").isEqualTo(WE);
         PaperReviewJob.Result early = job(OPENS.minusSeconds(1)).run(KR);
         assertThat(early.outcome()).isEqualTo(PaperReviewJob.TOO_EARLY);
-        assertThat(early.message()).contains("2026-11-07 22:30 KST");
+        assertThat(early.message()).contains("2026-11-08 22:00 KST");
         verify(reviews, never()).review(any(), any(), anyBoolean());
 
         PaperReviewJob.Result result = job(OPENS).run(KR);
@@ -151,20 +151,20 @@ class KrReviewJobTest {
     }
 
     @Test
-    @DisplayName("놓친 토요일(서버 꺼짐)은 다음 기동 첫 주기에 그 주를 복기 — 일요일 밤 기동, 월요일 밤 관측치가 다음 세션으로 넘어간 뒤에도(잠정 줄 그대로), 다음 금요일 장 마감(15:30) 뒤에는 새 주를 기다림")
-    void missedSaturdayRunsOnTheNextBootsFirstCycle() {
+    @DisplayName("놓친 복기 창(서버 꺼짐)은 다음 기동 첫 주기에 그 주를 복기 — 월요일 08:55 낮 창 기동, 월요일 밤 관측치가 다음 세션으로 넘어간 뒤에도(잠정 줄 그대로), 다음 금요일 장 마감(15:30) 뒤에는 새 주를 기다림")
+    void missedReviewWindowRunsOnTheNextBootsFirstCycle() {
         provisionalNav(WE);
         answers(WE);
 
-        // 일요일 21:55 기동 + 첫 주기 지연 180초 — 새 작업 인스턴스(재기동)의 정기 실행 한 번.
-        job(kst("2026-11-08T21:58")).scheduledRun();
+        // 일요일 밤 창을 놓치고 월요일 08:55 낮 창 기동 + 첫 주기 지연 180초 — 새 작업 인스턴스(재기동)의 정기 실행 한 번.
+        job(kst("2026-11-09T08:58")).scheduledRun();
         assertThat(store.jobRuns).extracting(PaperStore.JobRun::job).containsExactly("kr.review");
         verify(reviews, times(1)).review(market(KR), eq(WE), eq(true));
 
         // 그 실행이 실패해 행이 없었다고 치고(가짜 복기 — 행을 쓰지 않음), 월요일 밤 기동: 관측치 저장본은 월요일 판(그 주를 지나감)이고
         // 금요일 줄은 여전히 잠정(ETF 확정 전) — 그래도 그 주를 복기합니다(미국 식으로 관측치를 보면 주를 넘길 때까지 기다림).
         when(marketData.quotes(market(KR))).thenReturn(mondayQuotes());
-        PaperReviewJob.Result monday = job(kst("2026-11-09T22:01")).run(KR);
+        PaperReviewJob.Result monday = job(kst("2026-11-09T23:21")).run(KR);
         assertThat(monday.outcome()).isEqualTo(PaperReviewJob.REVIEWED);
         assertThat(monday.weekEnding()).isEqualTo(WE);
 
@@ -184,7 +184,7 @@ class KrReviewJobTest {
     }
 
     @Test
-    @DisplayName("금요일이 한국 휴장이면 목요일이 기준일 — 2026-10-09(한글날, 금) 주는 10-08, 복기는 그래도 토요일 22:30 KST")
+    @DisplayName("금요일이 한국 휴장이면 목요일이 기준일 — 2026-10-09(한글날, 금) 주는 10-08, 복기는 그래도 일요일 22:00 KST")
     void hangulDayFridayUsesThursday() {
         LocalDate thursday = LocalDate.of(2026, 10, 8);
         for (PaperBooks.Definition d : PaperBooks.KR) {
@@ -198,7 +198,7 @@ class KrReviewJobTest {
         assertThat(early.outcome()).isEqualTo(PaperReviewJob.TOO_EARLY);
         assertThat(early.weekEnding()).isEqualTo(thursday);
 
-        PaperReviewJob.Result result = job(kst("2026-10-10T22:30")).run(KR);
+        PaperReviewJob.Result result = job(kst("2026-10-11T22:00")).run(KR);
         assertThat(result.outcome()).isEqualTo(PaperReviewJob.REVIEWED);
         assertThat(result.weekEnding()).isEqualTo(thursday);
         verify(reviews).review(market(KR), eq(thursday), eq(true));
@@ -212,7 +212,7 @@ class KrReviewJobTest {
         LocalDate usWeek = LocalDate.of(2026, 10, 30);
         store.upsertNav(new NavRow(PaperBooks.CLAUDE, usWeek, 101_000, 0, 101_000, 0, false));
         when(marketData.quotes(market(UsPaperMarket.INSTANCE))).thenReturn(Optional.empty());
-        PaperReviewJob job = job(Instant.parse("2026-10-31T00:00:00Z"));
+        PaperReviewJob job = job(Instant.parse("2026-11-01T12:00:00Z"));
 
         assertThat(job.finalCloseIn(UsPaperMarket.INSTANCE, usWeek)).isFalse();
         PaperReviewJob.Result us = job.run();
@@ -223,7 +223,7 @@ class KrReviewJobTest {
         assertThat(KR.confirmsFills()).isTrue();
     }
     @Test
-    @DisplayName("POST /api/paper/reviews/run?market=KR(F1b) — 컨트롤러가 한국 수동 복기를 불러 {ok, market:KR, outcome, review}(토요일 시각 조건 없이), 한 건의 retryable은 그 실행 한국 달력의 최근 복기 주로(미국 달력 판이 아님), 모르는 시장 값은 부르기 전에 400")
+    @DisplayName("POST /api/paper/reviews/run?market=KR(F1b) — 컨트롤러가 한국 수동 복기를 불러 {ok, market:KR, outcome, review}(여는 시각 조건 없이), 한 건의 retryable은 그 실행 한국 달력의 최근 복기 주로(미국 달력 판이 아님), 모르는 시장 값은 부르기 전에 400")
     void manualKrReviewRoute() {
         provisionalNav(WE);
         answers(WE);

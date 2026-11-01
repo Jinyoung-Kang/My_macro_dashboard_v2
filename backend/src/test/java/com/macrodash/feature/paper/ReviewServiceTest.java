@@ -534,7 +534,7 @@ class ReviewServiceTest {
         assertThat(row.path("status").asString()).isEqualTo("FORMAT_ERROR");
         assertThat(row.path("verdictCounts").isNull()).as("형식 오류 행의 판정 수는 null(0이 아님)").isTrue();
         assertThat(list.get("latestWeekEnding")).isEqualTo("2026-10-30");
-        assertThat(list.get("latestOpensAtKst")).isEqualTo(com.macrodash.Kst.stamp(Instant.parse("2026-10-31T00:00:00Z")));
+        assertThat(list.get("latestOpensAtKst")).isEqualTo(com.macrodash.Kst.stamp(Instant.parse("2026-11-01T12:00:00Z")));
     }
 
     @Test

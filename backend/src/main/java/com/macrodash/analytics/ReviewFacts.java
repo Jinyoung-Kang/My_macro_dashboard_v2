@@ -75,9 +75,13 @@ public final class ReviewFacts {
     /** 이보다 크면 2주로 다시 조립합니다(PacketBuilder 어림 기준 — 실측은 어림의 약 1.7배, 단계 0). */
     public static final int TOKEN_LIMIT = 25_000;
 
-    /** 복기가 열리는 요일·시각(한국 시각) — 명세 D1. 금요일 마감(한국 토요일 05:00·06:00) 뒤 확정 종가가 들어올 여유를 둡니다. */
-    public static final DayOfWeek OPENS_ON = DayOfWeek.SATURDAY;
-    public static final LocalTime OPENS_AT = LocalTime.of(9, 0);
+    /**
+     * 복기가 열리는 요일·시각(한국 시각) — 명세 D1. 금요일 마감(한국 토요일 05:00·06:00) 뒤 확정 종가가 들어올 여유를 둡니다. 처음은 토요일
+     * 09:00이었고, 2026-11-02 사용자 결정으로 서버 일요일 밤 창(20:50~23:30 KST — ADR 0019 결정 14) 안의 일요일 21:00으로 옮겼습니다
+     * (한국 복기 22:00보다 한 시간 앞).
+     */
+    public static final DayOfWeek OPENS_ON = DayOfWeek.SUNDAY;
+    public static final LocalTime OPENS_AT = LocalTime.of(21, 0);
 
     /** 글자 상한 — 결정 요약은 PacketBuilder의 앞선 결정 요약과 같은 300자. 논거·무효화 문장은 스키마 상한(600·300)이라 자르지 않음. */
     public static final int SUMMARY_CHARS = 300;
@@ -462,7 +466,7 @@ public final class ReviewFacts {
 
     /**
      * now에 마감이 끝난 가장 최근 복기 기준일 — 마감이 끝난 최근 세션이 그 주의 기준일이면 그날, 아니면(주 중간) 지난주 기준일.
-     * 금요일 마감 전까지는 지난주를 가리키므로, 놓친 복기(맥이 꺼져 있던 토요일)는 다음 주 기준일 마감 전까지 이 값으로 다시 잡힙니다.
+     * 금요일 마감 전까지는 지난주를 가리키므로, 놓친 복기(서버가 꺼져 있던 복기 창)는 다음 주 기준일 마감 전까지 이 값으로 다시 잡힙니다.
      * 미국 달력 — {@link #latestCompletedWeekEnding(TradingCalendar, Instant)}.
      */
     public static LocalDate latestCompletedWeekEnding(Instant now) {
@@ -483,7 +487,7 @@ public final class ReviewFacts {
     }
 
     /**
-     * 그 주 복기가 열리는 순간 = 기준일과 같은 ISO 주의 토요일 09:00(zone). 목요일이 기준일인 주도 토요일입니다.
+     * 그 주 복기가 열리는 순간 = 기준일과 같은 ISO 주의 일요일 21:00(zone). 목요일이 기준일인 주도 일요일입니다.
      *
      * @param zone 한국 시각(서비스가 {@code Kst.ZONE}을 넘김 — analytics는 우리 패키지를 쓰지 않아 받기만 함)
      */

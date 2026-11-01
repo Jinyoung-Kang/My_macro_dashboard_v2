@@ -70,7 +70,7 @@ import java.util.regex.Pattern;
  * PENDING(적용할 수 없으면 FAILED)으로 넣고 복기 행에 잇습니다 — 복기 행과 한 트랜잭션. <b>자동 반영은 없습니다</b>(판은 사용자가
  * 승인할 때만 오름, D3). 규칙 계좌·검증기·벤치마크는 읽기만 합니다(D6·D35).
  *
- * <p>언제 부르는지(토요일 09:00 KST·확정 종가·계좌 상태)는 {@link PaperReviewJob}이 정합니다. 이 서비스는 그 주가 정해진 뒤의 일입니다.
+ * <p>언제 부르는지(여는 시각 — 미국 일요일 21:00·한국 일요일 22:00 KST, 확정 종가, 계좌 상태)는 {@link PaperReviewJob}이 정합니다. 이 서비스는 그 주가 정해진 뒤의 일입니다.
  *
  * <p><b>시장 문맥</b>(2단계 명세 §9 A6): 입력 조립·호출은 시장 묶음({@link PaperMarket})을 받아 그 시장 Claude 책의 결정·주문·체결,
  * 그 시장 계좌 비교({@link #comparedBooks}), 그 시장 달력(가정 수익률·계좌 비교의 거래일, 체결 날짜의 시간대), 그 시장 종가 이력·기준일
@@ -174,7 +174,7 @@ public class ReviewService {
         this.mapper = mapper;
         this.timeoutSeconds = Math.max(1, timeoutSeconds);
         this.clock = clock;
-        // 스키마 파일이 깨졌으면 기동하지 않습니다 — 첫 토요일 아침에야 알게 되지 않게.
+        // 스키마 파일이 깨졌으면 기동하지 않습니다 — 첫 복기 창에야 알게 되지 않게.
         this.schema = StructuredSchema.load(SCHEMA_RESOURCE);
     }
 
@@ -688,7 +688,7 @@ public class ReviewService {
      * GET /api/paper/reviews — {@code {available, reviews:[{weekEnding, status, windowWeeks, model, verdictCounts:{유지, 반증,
      * 판단불가}, proposalId, proposalStatus, createdAtKst, error, retryCount, retryable, frameworkVersion}], latestWeekEnding,
      * latestOpensAtKst}}. 판정 수는 OK 행만(그 밖은 null — 0이 아님). {@code latestWeekEnding}은 지금 마감이 끝난 가장 최근 복기 주
-     * (수동 실행이 도는 주), {@code latestOpensAtKst}는 그 주 복기가 정기 실행으로 열리는 시각(토요일 09:00 KST).
+     * (수동 실행이 도는 주), {@code latestOpensAtKst}는 그 주 복기가 정기 실행으로 열리는 시각(일요일 21:00 KST).
      */
     public Map<String, Object> listView() {
         if (!store.ready()) {
@@ -707,7 +707,7 @@ public class ReviewService {
     /**
      * GET /api/paper/reviews?market= — 미국 밖 시장의 복기 목록(2단계 명세 §4-16, F1). {@link #listView()}와 같은 모양에 {@code available} 뒤
      * {@code market}·{@code dormantReason}(그 시장 정기 작업이 쉬는 사유, 돌면 null)을 싣고, 목록은 그 시장 행만, 최근 복기 주·여는 시각은 그 조회
-     * 실행의 달력과 그 시장의 여는 순간({@link PaperMarket#reviewOpening} — 한국 토요일 22:30 KST)입니다. 그 달력이 지금의 해를 모르면(공휴일 저장본
+     * 실행의 달력과 그 시장의 여는 순간({@link PaperMarket#reviewOpening} — 한국 일요일 22:00 KST)입니다. 그 달력이 지금의 해를 모르면(공휴일 저장본
      * 없음 — 명세 K35) 최근 복기 주·여는 시각은 null이고 {@code latestWeekEndingReason}에 사유, 다시 부를 수 있음({@code retryable})은 모두 false입니다.
      */
     Map<String, Object> listView(PaperMarkets.Scope scope) {

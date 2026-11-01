@@ -2045,7 +2045,7 @@ export interface PaperReviewsResponse {
   reviews?: PaperReviewSummary[];
   /** 지금 마감이 끝난 가장 최근 복기 주 — 수동 실행이 도는 주. */
   latestWeekEnding?: string | null;
-  /** 그 주 정기 복기가 열리는 시각(미국 토요일 09:00 KST, 한국 토요일 22:30 KST). */
+  /** 그 주 정기 복기가 열리는 시각(미국 일요일 21:00 KST, 한국 일요일 22:00 KST). */
   latestOpensAtKst?: string | null;
   /** 한국 응답만 — 최근 복기 주를 셀 수 없는 사유('달력 없음 — …', 그 실행 KRX 달력이 그 해를 모름). 보통 null. */
   latestWeekEndingReason?: string | null;
@@ -2101,7 +2101,7 @@ export interface PaperReviewResponse {
 }
 
 /**
- * POST /api/paper/reviews/run — 가장 최근 복기 주를 지금 복기합니다(토요일 시각 조건만 빼고 정기 작업과 같음). 이미 있으면 그 행
+ * POST /api/paper/reviews/run — 가장 최근 복기 주를 지금 복기합니다(여는 시각 조건만 빼고 정기 작업과 같음). 이미 있으면 그 행
  * (ALREADY_REVIEWED). 계좌·확정 종가·하루 상한 조건은 400, 다른 복기 진행 중은 429(서버 문구).
  */
 export interface PaperRunReviewResult {

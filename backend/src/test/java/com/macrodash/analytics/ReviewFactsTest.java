@@ -140,12 +140,13 @@ class ReviewFactsTest {
     }
 
     @Test
-    @DisplayName("복기는 기준일 주의 토요일 09:00 KST(= 00:00Z)부터 — 목요일 기준일인 주도 토요일")
-    void opensSaturdayNineKst() {
-        assertThat(ReviewFacts.opensAt(WE, KST)).isEqualTo(Instant.parse("2026-10-31T00:00:00Z"));
-        assertThat(ReviewFacts.isDue(Instant.parse("2026-10-30T23:59:59Z"), WE, KST)).isFalse();
-        assertThat(ReviewFacts.isDue(Instant.parse("2026-10-31T00:00:00Z"), WE, KST)).isTrue();
-        assertThat(ReviewFacts.opensAt(d("2026-06-18"), KST)).isEqualTo(Instant.parse("2026-06-20T00:00:00Z"));
+    @DisplayName("복기는 기준일 주의 일요일 21:00 KST(= 12:00Z)부터(2026-11-02 — 처음 토요일 09:00) — 목요일 기준일인 주도 일요일")
+    void opensSundayNinePmKst() {
+        assertThat(ReviewFacts.opensAt(WE, KST)).isEqualTo(Instant.parse("2026-11-01T12:00:00Z"));
+        assertThat(ReviewFacts.isDue(Instant.parse("2026-11-01T11:59:59Z"), WE, KST)).isFalse();
+        assertThat(ReviewFacts.isDue(Instant.parse("2026-10-31T00:00:00Z"), WE, KST)).as("옛 여는 시각 토 09:00").isFalse();
+        assertThat(ReviewFacts.isDue(Instant.parse("2026-11-01T12:00:00Z"), WE, KST)).isTrue();
+        assertThat(ReviewFacts.opensAt(d("2026-06-18"), KST)).isEqualTo(Instant.parse("2026-06-21T12:00:00Z"));
     }
 
     @Test
@@ -365,11 +366,11 @@ class ReviewFactsTest {
     }
 
     @Test
-    @DisplayName("기준일 뒤 체결·만료는 기준일 시점의 PENDING — 늦게 돌린 복기도 토요일에 돌린 것과 같은 입력(체결일을 싣지 않음)")
+    @DisplayName("기준일 뒤 체결·만료는 기준일 시점의 PENDING — 늦게 돌린 복기도 제때(여는 시각) 돌린 것과 같은 입력(체결일을 싣지 않음)")
     void fillAfterWeekEndingAndUnfilled() {
         DailySeries jjj = series("2026-10-30", 20, "2026-11-02", 21);
         LocalDate expires = d("2026-11-06");
-        // 토요일에 돌렸다면 금요일 결정의 주문은 아직 대기 중입니다.
+        // 제때(여는 시각에) 돌렸다면 금요일 결정의 주문은 아직 대기 중입니다.
         Order saturday = new Order(11, "JJJ", "BUY", 5.0, null, "NEXT_CLOSE", "PENDING", null, "논거 JJJ", null, null,
                 expires);
         Map<String, Object> onSaturday = buildOne(ok(1, WE, saturday), Map.of("JJJ", jjj), List.of()).toMap();
@@ -387,7 +388,7 @@ class ReviewFactsTest {
             assertThat(o.stop()).isNull();
             assertThat(o.notes()).as(late.status()).contains("미체결(PENDING)")
                     .noneSatisfy(n -> assertThat(n).contains("2026-11-02"));
-            assertThat(facts.toMap()).as(late.status() + " — 토요일 입력과 같음").isEqualTo(onSaturday);
+            assertThat(facts.toMap()).as(late.status() + " — 제때 돌린 입력과 같음").isEqualTo(onSaturday);
         }
 
         // 기준일 전에 만료된 주문은 그대로 EXPIRED

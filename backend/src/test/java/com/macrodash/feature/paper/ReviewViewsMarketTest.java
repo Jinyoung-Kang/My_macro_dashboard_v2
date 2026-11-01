@@ -23,8 +23,8 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.mock;
 
 /**
- * 복기 목록·한 건의 시장 값(2단계 명세 §4-16 '?market', F1) — 미국 응답은 그대로(미국 행만·미국 달력의 최근 주·토요일 09:00), 한국은 그 시장 행만,
- * 최근 복기 주·여는 시각·다시 부를 수 있음을 그 조회 실행의 KRX 달력과 한국 여는 순간(토요일 22:30 KST)으로 보고, 쉬는 한국은 사유를 싣습니다.
+ * 복기 목록·한 건의 시장 값(2단계 명세 §4-16 '?market', F1) — 미국 응답은 그대로(미국 행만·미국 달력의 최근 주·일요일 21:00), 한국은 그 시장 행만,
+ * 최근 복기 주·여는 시각·다시 부를 수 있음을 그 조회 실행의 KRX 달력과 한국 여는 순간(일요일 22:00 KST)으로 보고, 쉬는 한국은 사유를 싣습니다.
  */
 class ReviewViewsMarketTest {
 
@@ -83,13 +83,13 @@ class ReviewViewsMarketTest {
     }
 
     @Test
-    @DisplayName("미국 목록·한 건은 그대로 — 미국 행만, 미국 달력의 최근 주(10-09)·토요일 09:00, 한국 칸 없음, 한국 주는 400")
+    @DisplayName("미국 목록·한 건은 그대로 — 미국 행만, 미국 달력의 최근 주(10-09)·일요일 21:00, 한국 칸 없음, 한국 주는 400")
     @SuppressWarnings("unchecked")
     void usViewsAreUnchanged() {
         Map<String, Object> us = reviews.listView();
 
         assertThat(us).doesNotContainKeys("market", "dormantReason")
-                .containsEntry("latestWeekEnding", "2026-10-09").containsEntry("latestOpensAtKst", "2026-10-10 09:00 KST");
+                .containsEntry("latestWeekEnding", "2026-10-09").containsEntry("latestOpensAtKst", "2026-10-11 21:00 KST");
         assertThat((List<Map<String, Object>>) us.get("reviews")).extracting(r -> r.get("weekEnding") + " " + r.get("retryable"))
                 .containsExactly("2026-10-09 true", "2026-10-02 false");
         assertThat(((Map<String, Object>) reviews.detailView("2026-10-09").get("review"))).containsEntry("retryable", true);
@@ -98,7 +98,7 @@ class ReviewViewsMarketTest {
     }
 
     @Test
-    @DisplayName("한국 목록: 한국 행만, 최근 주는 KRX 달력(한글날 휴장 → 10-08 목요일)·여는 시각 토요일 22:30 KST, 그 주 API 오류 행만 다시 부를 수 있음")
+    @DisplayName("한국 목록: 한국 행만, 최근 주는 KRX 달력(한글날 휴장 → 10-08 목요일)·여는 시각 일요일 22:00 KST, 그 주 API 오류 행만 다시 부를 수 있음")
     @SuppressWarnings("unchecked")
     void koreanListUsesTheRunCalendar() {
         krBooks();
@@ -108,7 +108,7 @@ class ReviewViewsMarketTest {
         assertThat(List.copyOf(kr.keySet())).containsExactly("available", "market", "dormantReason", "reviews",
                 "latestWeekEnding", "latestOpensAtKst");
         assertThat(kr).containsEntry("market", "KR").containsEntry("dormantReason", null)
-                .containsEntry("latestWeekEnding", "2026-10-08").containsEntry("latestOpensAtKst", "2026-10-10 22:30 KST");
+                .containsEntry("latestWeekEnding", "2026-10-08").containsEntry("latestOpensAtKst", "2026-10-11 22:00 KST");
         assertThat((List<Map<String, Object>>) kr.get("reviews")).extracting(r -> r.get("weekEnding") + " " + r.get("retryable"))
                 .containsExactly("2026-10-08 true", "2026-10-02 false");
     }

@@ -52,12 +52,12 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 /**
- * 한국 주간 복기({@link ReviewService}의 한국 문맥 — 2단계 명세 §4-7 '한국 주간 복기 프롬프트'·§4-9 '토 22:30'·§9 'E3', 사용자 결정 v5).
+ * 한국 주간 복기({@link ReviewService}의 한국 문맥 — 2단계 명세 §4-7 '한국 주간 복기 프롬프트'·§4-9 시각표·§9 'E3', 사용자 결정 v5).
  * {@code ReviewServiceTest}의 한국판입니다: 실제 한국 실행({@link PaperMarkets#open} — 공휴일 저장본으로 만든 KrxCalendar·그 실행의 설정 행),
  * 실제 {@link PaperMarketData}(가짜 저장소 — 관측치 {@code paper.kr.quotes}·수정 종가 이력 {@code kr_close_adj}·금융위 주식시세), 가짜
  * Claude 서버(127.0.0.1 — 유료 호출 없음).
  *
- * <p>시각: 지금 = 토 2026-11-07 22:40 KST(복기 22:30 뒤). 복기 주 = 11-06(금), 4주 창 = (10-09, 11-06]. 금요일 값은 토스 잠정가(11-06 22:00 KST
+ * <p>시각: 지금 = 일 2026-11-08 22:10 KST(복기 22:00 뒤 — 2026-11-02 처음 토 22:30에서 옮김). 복기 주 = 11-06(금), 4주 창 = (10-09, 11-06]. 금요일 값은 토스 잠정가(11-06 22:00 KST
  * 수집), 금융위 주식시세 최신 기준일 11-05(금요일 행은 다음 거래일 밤), 증권상품시세는 아직 받지 않음(ETF 확정 시세 없음).
  */
 class KrReviewServiceTest {
@@ -68,8 +68,8 @@ class KrReviewServiceTest {
     private static final LocalDate WED = LocalDate.of(2026, 11, 4);
     private static final LocalDate THU = LocalDate.of(2026, 11, 5);
     private static final LocalDate STARTED = LocalDate.of(2026, 10, 30);
-    private static final Instant NOW = kst("2026-11-07T22:40");
-    private static final LocalDate TODAY_KST = LocalDate.of(2026, 11, 7);
+    private static final Instant NOW = kst("2026-11-08T22:10");
+    private static final LocalDate TODAY_KST = LocalDate.of(2026, 11, 8);
     private static final String KEY = "sk-ant-test-KR-REVIEW";
     private static final String USAGE = "{\"input_tokens\":9500,\"output_tokens\":1300,"
             + "\"cache_read_input_tokens\":0,\"cache_creation_input_tokens\":5200}";
@@ -424,7 +424,7 @@ class KrReviewServiceTest {
     }
 
     @Test
-    @DisplayName("복기 작업(토 22:30 KST) → 실제 복기 서비스: 그 실행의 한국 문맥으로 금요일 잠정 줄 복기, 작업 기록 kr.review·정기 문턱, 같은 주 다시 돌면 ALREADY_REVIEWED")
+    @DisplayName("복기 작업(일 22:00 KST) → 실제 복기 서비스: 그 실행의 한국 문맥으로 금요일 잠정 줄 복기, 작업 기록 kr.review·정기 문턱, 같은 주 다시 돌면 ALREADY_REVIEWED")
     void scheduledKrReviewEndToEnd() throws Exception {
         long[] ids = scene();
         answerJson(reviewJson(ids[0], ids[1]));

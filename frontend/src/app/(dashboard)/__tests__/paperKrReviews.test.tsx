@@ -2,7 +2,7 @@
  * 모의매매(한국) 결정 로그의 주간 복기(/paper/kr/decisions → '주간 복기', 2단계 명세 §9 E3·F2) — 네 상태 이야기와 한국 표기.
  *
  *  - 불러오는 중: 복기 목록 전에는 읽는 중 — 목록은 ?market=KR(미국 복기가 섞이지 않음)
- *  - 빈 상태: 한국 복기가 없다고 말하고 최근 복기 주·열리는 시각(토요일 22:30)을, 달력이 그 해를 모르면 그 사유를 적음
+ *  - 빈 상태: 한국 복기가 없다고 말하고 최근 복기 주·열리는 시각(일요일 22:00)을, 달력이 그 해를 모르면 그 사유를 적음
  *  - 오류: 목록을 못 읽으면 오류 + 다시 시도
  *  - 자료: 복기 한 건(?market=KR)의 가정 진입 표(금융위 확정 시가·토스 잠정 시가·종가 근사 배지)와 계좌 수익률 비교('잠정 줄 포함'),
  *    수동 실행은 확인 창에 수동 문턱 → POST /api/paper/reviews/run?market=KR
@@ -43,7 +43,7 @@ const OVERVIEW = {
 };
 
 const REVIEWS = {
-  available: true, market: "KR", dormantReason: null, latestWeekEnding: "2026-11-06", latestOpensAtKst: "2026-11-07 22:30 KST",
+  available: true, market: "KR", dormantReason: null, latestWeekEnding: "2026-11-06", latestOpensAtKst: "2026-11-08 22:00 KST",
   latestWeekEndingReason: null,
   reviews: [{
     weekEnding: "2026-11-06", status: "OK", windowWeeks: 4, model: "claude-sonnet-5-5", verdictCounts: { 유지: 1, 반증: 1, 판단불가: 0 },
@@ -135,13 +135,13 @@ describe("불러오는 중", () => {
 });
 
 describe("빈 상태", () => {
-  it("한국 복기가 없다고 말하고 최근 복기 주·열리는 시각(토요일 22:30), 한국 일정 문구", async () => {
+  it("한국 복기가 없다고 말하고 최근 복기 주·열리는 시각(일요일 22:00), 한국 일정 문구", async () => {
     reads["/api/paper/reviews?market=KR"] = () => Promise.resolve({ ...REVIEWS, reviews: [] });
     await openReviews();
-    expect(await screen.findByText(/아직 한국 복기가 없습니다 — 한국 Claude 계좌가 출발한 다음 토요일 22:30/)).toBeTruthy();
-    expect(screen.getByText("가장 최근 복기 주 2026-11-06 · 정기 복기 2026-11-07 22:30 — 아직 복기 없음.")).toBeTruthy();
-    expect(screen.getByText(/토요일 22:30 KST — 그 주 마지막 KR 거래일/)).toBeTruthy();
-    expect(screen.queryByText(/토요일 09:00\(KST\) 뒤/)).toBeNull();
+    expect(await screen.findByText(/아직 한국 복기가 없습니다 — 한국 Claude 계좌가 출발한 다음 일요일 22:00/)).toBeTruthy();
+    expect(screen.getByText("가장 최근 복기 주 2026-11-06 · 정기 복기 2026-11-08 22:00 — 아직 복기 없음.")).toBeTruthy();
+    expect(screen.getByText(/일요일 22:00 KST — 그 주 마지막 KR 거래일/)).toBeTruthy();
+    expect(screen.queryByText(/일요일 21:00\(KST\) 뒤/)).toBeNull();
   });
 
   it("달력이 그 해를 모르면 최근 복기 주 대신 그 사유", async () => {

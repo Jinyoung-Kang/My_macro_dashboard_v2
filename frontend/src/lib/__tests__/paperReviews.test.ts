@@ -216,9 +216,9 @@ describe("프레임 탭의 복기 제안", () => {
 });
 
 describe("한국 복기(F2 — 일정·가정 진입 출처·근사·잠정 배지)", () => {
-  it("일정 문구 — 미국은 그대로(토요일 09:00), 한국은 토요일 22:30·잠정 종가 순자산 줄·다음 기동 첫 주기", () => {
-    expect(REVIEW_SCHEDULE_NOTE.startsWith("매주 토요일 09:00(KST) 뒤 그 주 마지막 거래일(금요일, 휴장이면 목요일)의 확정 종가가 들어오면")).toBe(true);
-    expect(KR_REVIEW_SCHEDULE_NOTE).toContain("토요일 22:30 KST — 그 주 마지막 KR 거래일(금요일, 휴장이면 목요일)의 잠정 종가 순자산 줄로 열리고, 놓치면 다음 기동 첫 주기");
+  it("일정 문구 — 미국은 일요일 21:00, 한국은 일요일 22:00·잠정 종가 순자산 줄·다음 기동 첫 주기(2026-11-02 — 처음 토요일 09:00·22:30)", () => {
+    expect(REVIEW_SCHEDULE_NOTE.startsWith("매주 일요일 21:00(KST) 뒤 그 주 마지막 거래일(금요일, 휴장이면 목요일)의 확정 종가가 들어오면")).toBe(true);
+    expect(KR_REVIEW_SCHEDULE_NOTE).toContain("일요일 22:00 KST — 그 주 마지막 KR 거래일(금요일, 휴장이면 목요일)의 잠정 종가 순자산 줄로 열리고, 놓치면 다음 기동 첫 주기");
     expect(krManualReviewNote(13)).toContain("수동 문턱(13회");
     expect(krManualReviewNote(undefined)).toContain("수동 문턱(— —");
     expect(krLatestWeekReasonText(null, "달력 없음 — 2027년")).toBe("가장 최근 복기 주 — — 달력 없음 — 2027년");

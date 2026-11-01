@@ -409,7 +409,7 @@ interface PaperMarket {
 
     /**
      * 그 주 복기가 열리는 순간 — 복기 기준일과 같은 ISO 주의 {@link #reviewOpensOn} {@link #reviewOpensAt}(KST). 미국은
-     * {@code ReviewFacts.opensAt(weekEnding, Kst.ZONE)}(토요일 09:00)과 같습니다.
+     * {@code ReviewFacts.opensAt(weekEnding, Kst.ZONE)}(일요일 21:00)과 같습니다.
      */
     default Instant reviewOpening(LocalDate weekEnding) {
         return ZonedDateTime.of(weekEnding.with(reviewOpensOn()), reviewOpensAt(), Kst.ZONE).toInstant();

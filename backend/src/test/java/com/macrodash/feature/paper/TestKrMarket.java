@@ -341,12 +341,12 @@ final class TestKrMarket implements PaperMarket {
 
     @Override
     public DayOfWeek reviewOpensOn() {
-        return DayOfWeek.SATURDAY;
+        return DayOfWeek.SUNDAY;
     }
 
     @Override
     public LocalTime reviewOpensAt() {
-        return LocalTime.of(22, 30);
+        return LocalTime.of(22, 0);
     }
 
     @Override

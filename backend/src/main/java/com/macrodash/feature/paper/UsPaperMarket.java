@@ -36,7 +36,7 @@ import java.util.Optional;
  *   <li>Claude 체결 시점 NEXT_OBSERVATION·NEXT_CLOSE(이른 시점 NEXT_OBSERVATION), 검증기 시점 이름·금액 표기는
  *       {@link OrderValidator.Market#US}(다음 관측치·확정 종가, 달러) 그대로</li>
  *   <li>결정 07:30·기한 12:00 KST, 세션 <b>다음 KST 날</b>의 그 시각(미국 마감이 KST 새벽이라)</li>
- *   <li>복기 토요일 09:00 KST, 설정 키·작업 기록 이름은 접두어 없이 지금 그대로</li>
+ *   <li>복기 일요일 21:00 KST(2026-11-02 — 처음 토요일 09:00), 설정 키·작업 기록 이름은 접두어 없이 지금 그대로</li>
  *   <li>Claude 시스템 프롬프트의 하드 규칙 줄은 지금 렌더링의 줄({@code FrameworkService.hardRules}), 고정 문단은
  *       {@link ClaudePrompts#FIXED_RULES} — A6 전 렌더링과 글자 그대로</li>
  * </ul>

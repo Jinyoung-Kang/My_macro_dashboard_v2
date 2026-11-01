@@ -33,8 +33,8 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 /**
- * 주간 복기 작업({@link PaperReviewJob})의 부르는 조건 — 토요일 09:00 KST, 금요일 휴장(목요일 기준일), 확정 종가 기다림, 계좌 상태, 이미 있는
- * 행, 놓친 토요일, 수동 실행. 복기 자체({@link ReviewService})는 가짜(mock)로 두고 불렸는지만 봅니다.
+ * 주간 복기 작업({@link PaperReviewJob})의 부르는 조건 — 일요일 21:00 KST(2026-11-02 — 처음 토요일 09:00), 금요일 휴장(목요일 기준일), 확정 종가 기다림, 계좌 상태, 이미 있는
+ * 행, 놓친 복기 창, 수동 실행. 복기 자체({@link ReviewService})는 가짜(mock)로 두고 불렸는지만 봅니다.
  *
  * <p>시각: 2026-10-30(금) 마감 = 20:00Z(EDT) = KST 토 05:00, 그 주 복기 = KST 토 09:00 = 2026-10-31T00:00Z.
  */
@@ -44,7 +44,7 @@ class PaperReviewJobTest {
     private static final PaperMarket US = UsPaperMarket.INSTANCE;
 
     private static final LocalDate WE = LocalDate.of(2026, 10, 30);
-    private static final Instant OPENS = Instant.parse("2026-10-31T00:00:00Z");
+    private static final Instant OPENS = Instant.parse("2026-11-01T12:00:00Z");   // 일 21:00 KST
 
     private FakePaperStore store;
     private StoreReader reader;
@@ -89,13 +89,15 @@ class PaperReviewJobTest {
     }
 
     @Test
-    @DisplayName("토요일 09:00 KST 전에는 부르지 않고(TOO_EARLY), 09:00부터 그 주 복기를 한 번 부르며 작업 기록을 남긴다")
-    void saturdayNineKst() {
+    @DisplayName("일요일 21:00 KST 전에는 부르지 않고(TOO_EARLY — 옛 여는 시각 토 09:00도), 21:00부터 그 주 복기를 한 번 부르며 작업 기록을 남긴다")
+    void sundayNinePmKst() {
         finalNav(WE, true);
         answers(WE);
 
         assertThat(job(OPENS.minusSeconds(60)).run().outcome()).isEqualTo(PaperReviewJob.TOO_EARLY);
         assertThat(job(Instant.parse("2026-10-30T21:00:00Z")).run().outcome()).as("금요일 마감 뒤(KST 토 06:00)도 아직")
+                .isEqualTo(PaperReviewJob.TOO_EARLY);
+        assertThat(job(Instant.parse("2026-10-31T00:00:00Z")).run().outcome()).as("옛 여는 시각(KST 토 09:00)도 아직")
                 .isEqualTo(PaperReviewJob.TOO_EARLY);
         verify(reviews, never()).review(any());
         verify(reviews, never()).review(any(), any(), org.mockito.ArgumentMatchers.anyBoolean());
@@ -112,7 +114,7 @@ class PaperReviewJobTest {
     }
 
     @Test
-    @DisplayName("금요일이 휴장이면 목요일이 기준일 — 성금요일 2027-03-26 주는 03-25, 복기는 그래도 토요일 09:00 KST")
+    @DisplayName("금요일이 휴장이면 목요일이 기준일 — 성금요일 2027-03-26 주는 03-25, 복기는 그래도 일요일 21:00 KST")
     void holidayFridayUsesThursday() {
         LocalDate thursday = LocalDate.of(2027, 3, 25);
         finalNav(thursday, true);
@@ -122,7 +124,7 @@ class PaperReviewJobTest {
         assertThat(early.outcome()).isEqualTo(PaperReviewJob.TOO_EARLY);
         assertThat(early.weekEnding()).isEqualTo(thursday);
 
-        PaperReviewJob.Result result = job(Instant.parse("2027-03-27T00:00:00Z")).run();
+        PaperReviewJob.Result result = job(Instant.parse("2027-03-28T12:00:00Z")).run();
         assertThat(result.outcome()).isEqualTo(PaperReviewJob.REVIEWED);
         assertThat(result.weekEnding()).isEqualTo(thursday);
         verify(reviews).review(market(US), eq(thursday), org.mockito.ArgumentMatchers.anyBoolean());
@@ -153,9 +155,9 @@ class PaperReviewJobTest {
     @DisplayName("확정 관측치가 들어왔어도 장부가 아직 반영하지 않았으면(그날 순자산 줄 없음) 기다림 — 줄이 생기면(확정이 아니어도) 부름(D-COST-3)")
     void finalQuotesWaitUntilLedgerWroteTheRow() {
         answers(WE);
-        // 토 10:00 KST에 켜진 맥 — 수집기가 확정 관측치를 막 저장했고, 리스크 작업은 아직 그것을 처리하지 않음.
-        Instant now = Instant.parse("2026-10-31T01:03:00Z");
-        when(marketData.quotes(market(US))).thenReturn(Optional.of(quotes(Instant.parse("2026-10-31T01:02:30Z"),
+        // 일 21:03 KST에 켜진 서버 — 수집기가 확정 관측치를 막 저장했고, 리스크 작업은 아직 그것을 처리하지 않음.
+        Instant now = Instant.parse("2026-11-01T12:03:00Z");
+        when(marketData.quotes(market(US))).thenReturn(Optional.of(quotes(Instant.parse("2026-11-01T12:02:30Z"),
                 bar("AAA", LocalDate.of(2026, 10, 29), 99, WE, 100))));
 
         PaperReviewJob.Result waiting = job(now).run();
@@ -209,8 +211,8 @@ class PaperReviewJobTest {
     }
 
     @Test
-    @DisplayName("놓친 토요일(맥이 꺼짐)은 다음 금요일 마감 전까지 그 주로 다시 잡고, 다음 주 마감 뒤에는 새 주를 기다림")
-    void missedSaturdayRunsUntilNextFridayClose() {
+    @DisplayName("놓친 복기 창(서버 꺼짐)은 다음 금요일 마감 전까지 그 주로 다시 잡고, 다음 주 마감 뒤에는 새 주를 기다림")
+    void missedWindowRunsUntilNextFridayClose() {
         finalNav(WE, true);
         answers(WE);
 
@@ -256,8 +258,8 @@ class PaperReviewJobTest {
     }
 
     @Test
-    @DisplayName("수동 실행은 토요일 시각 조건만 뺌 — 금요일 마감 뒤 확정 종가면 부르고, 계좌·종가 조건은 400")
-    void manualRunSkipsOnlyTheSaturdayTime() {
+    @DisplayName("수동 실행은 여는 시각 조건만 뺌 — 금요일 마감 뒤 확정 종가면 부르고, 계좌·종가 조건은 400")
+    void manualRunSkipsOnlyTheOpeningTime() {
         answers(WE);
         Instant saturdayEarly = Instant.parse("2026-10-30T22:00:00Z");   // KST 토 07:00
         assertThatThrownBy(() -> job(saturdayEarly).runNow()).isInstanceOf(InvalidRequestException.class)
@@ -299,20 +301,20 @@ class PaperReviewJobTest {
         store.reviews.put(WE, row(WE, Review.OK, 0));   // 같은 주의 미국 행
         store.books.put(krBook, TestKrMarket.book(krBook, 100_000_000, PaperFixtures.FRI));
         store.upsertNav(new NavRow(krBook, WE, 101_000_000, 0, 101_000_000, 0, true));
-        // OPENS = 토 09:00 KST — 미국은 열렸고, 시험용 한국 시장(토 22:30 KST)은 아직
+        // OPENS = 일 21:00 KST — 미국은 열렸고, 시험용 한국 시장(일 22:00 KST)은 아직
         PaperReviewJob early = new PaperReviewJob(store, reader, marketData, reviews, PaperFixtures.config(), MAPPER,
                 Clock.fixed(OPENS, ZoneOffset.UTC), List.of(US, kr));
         PaperReviewJob.Result tooEarly = early.run(kr);
         assertThat(tooEarly.outcome()).isEqualTo(PaperReviewJob.TOO_EARLY);
         assertThat(tooEarly.weekEnding()).as("시험용 한국 달력의 주 마지막 거래일").isEqualTo(WE);
-        assertThat(tooEarly.message()).contains("22:30");
-        assertThat(kr.reviewOpening(WE)).isEqualTo(Instant.parse("2026-10-31T13:30:00Z"));
+        assertThat(tooEarly.message()).contains("22:00");
+        assertThat(kr.reviewOpening(WE)).isEqualTo(Instant.parse("2026-11-01T13:00:00Z"));
 
         Review krRow = new Review(WE, 4, MAPPER.createObjectNode(), null, null, null, null, null, Review.OK, null, null,
                 0, 0, null, Book.MARKET_KR);
         when(reviews.review(market(kr), eq(WE), org.mockito.ArgumentMatchers.anyBoolean())).thenReturn(new ReviewService.Outcome(ReviewService.Kind.CALLED, krRow,
                 null));
-        Instant krOpen = Instant.parse("2026-10-31T14:00:00Z");   // 토 23:00 KST
+        Instant krOpen = Instant.parse("2026-11-01T13:30:00Z");   // 일 22:30 KST
         PaperReviewJob job = new PaperReviewJob(store, reader, marketData, reviews, PaperFixtures.config(), MAPPER,
                 Clock.fixed(krOpen, ZoneOffset.UTC), List.of(US, kr));
         job.scheduledRun();

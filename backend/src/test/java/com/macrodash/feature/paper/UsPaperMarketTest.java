@@ -86,7 +86,7 @@ class UsPaperMarketTest {
             checked++;
         }
         assertThat(checked).isGreaterThan(700);
-        assertThat(US.reviewOpening(LocalDate.of(2026, 10, 30))).isEqualTo(Instant.parse("2026-10-31T00:00:00Z"));
+        assertThat(US.reviewOpening(LocalDate.of(2026, 10, 30))).isEqualTo(Instant.parse("2026-11-01T12:00:00Z"));
     }
 
     @Test
@@ -464,10 +464,10 @@ class UsPaperMarketTest {
     }
 
     @Test
-    @DisplayName("복기 = 토요일 09:00 KST — ReviewFacts의 코드 상수")
+    @DisplayName("복기 = 일요일 21:00 KST — ReviewFacts의 코드 상수(2026-11-02 — 처음 토요일 09:00)")
     void review() {
-        assertThat(US.reviewOpensOn()).isEqualTo(DayOfWeek.SATURDAY).isEqualTo(ReviewFacts.OPENS_ON);
-        assertThat(US.reviewOpensAt()).isEqualTo(LocalTime.of(9, 0)).isEqualTo(ReviewFacts.OPENS_AT);
+        assertThat(US.reviewOpensOn()).isEqualTo(DayOfWeek.SUNDAY).isEqualTo(ReviewFacts.OPENS_ON);
+        assertThat(US.reviewOpensAt()).isEqualTo(LocalTime.of(21, 0)).isEqualTo(ReviewFacts.OPENS_AT);
     }
 
     @Test

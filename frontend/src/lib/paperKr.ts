@@ -1075,20 +1075,20 @@ export function krLatestJudgedGates(jobs: readonly PaperJobRun[] | null | undefi
 
 /** 한국 복기가 언제 생기는지(서버 PaperReviewJob의 한국 조건). 미국 문구(lib/paper REVIEW_SCHEDULE_NOTE)는 그대로입니다. */
 export const KR_REVIEW_SCHEDULE_NOTE =
-  "토요일 22:30 KST — 그 주 마지막 KR 거래일(금요일, 휴장이면 목요일)의 잠정 종가 순자산 줄로 열리고, 놓치면 다음 기동 첫 주기에 한 번 — "
+  "일요일 22:00 KST — 그 주 마지막 KR 거래일(금요일, 휴장이면 목요일)의 잠정 종가 순자산 줄로 열리고, 놓치면 다음 기동 첫 주기에 한 번 — "
   + "지난 4주(입력이 크면 2주) 한국 Claude 계좌 결정을 그 뒤 가격과 대조합니다. 수익률·낙폭·스탑·가정 진입은 서버가 계산하고 Claude는 "
   + "판정만 합니다. 제안은 프레임 탭에 '승인 대기'로 들어가고 자동 반영은 없습니다. 규칙 계좌는 바꾸지 않습니다.";
 
 /** 한국 수동 복기 확인 창의 문턱 문장 — 수동 문턱(상태 응답 manualLimit)을 그대로(모르면 "—"). */
 export function krManualReviewNote(manualLimit: number | null | undefined): string {
   const limit = typeof manualLimit === "number" ? `${formatNumber(manualLimit, 0)}회` : EMPTY;
-  return `수동 복기는 그날 호출이 수동 문턱(${limit} — 하루 상한 − 정기 몫 예약) 미만일 때만 부릅니다(토요일 22:30 시각 조건 없음 — 나머지 조건은 `
+  return `수동 복기는 그날 호출이 수동 문턱(${limit} — 하루 상한 − 정기 몫 예약) 미만일 때만 부릅니다(일요일 22:00 시각 조건 없음 — 나머지 조건은 `
     + "정기 복기와 같음). 아니면 서버가 거절하고 그 문구가 아래에 보입니다.";
 }
 
 /** 한국 복기 목록이 비었을 때. */
 export const KR_REVIEW_EMPTY =
-  "아직 한국 복기가 없습니다 — 한국 Claude 계좌가 출발한 다음 토요일 22:30(KST) 뒤에 첫 복기가 생깁니다.";
+  "아직 한국 복기가 없습니다 — 한국 Claude 계좌가 출발한 다음 일요일 22:00(KST) 뒤에 첫 복기가 생깁니다.";
 
 /** 가장 최근 복기 주를 셀 수 없을 때(달력 없음)의 한 줄 — 사유가 없으면 null. */
 export function krLatestWeekReasonText(latestWeekEnding: string | null | undefined, reason: string | null | undefined): string | null {

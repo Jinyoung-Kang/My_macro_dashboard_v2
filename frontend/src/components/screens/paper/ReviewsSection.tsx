@@ -53,7 +53,7 @@ import type {
  *
  * 숫자(수익률·낙폭·판정 수)는 서버 값 그대로이고 화면은 이름을 붙여 늘어놓기만 합니다(ADR 0004). 모르는 값은 "—".
  *
- * <b>한국</b>(`market` "KR", 2단계 명세 §9 E3·F2): 같은 화면을 `?market=KR` 경로(목록·한 건·수동 실행)로 — 일정 문구는 토요일 22:30 KST, 수동 실행
+ * <b>한국</b>(`market` "KR", 2단계 명세 §9 E3·F2): 같은 화면을 `?market=KR` 경로(목록·한 건·수동 실행)로 — 일정 문구는 일요일 22:00 KST, 수동 실행
  * 확인 창에 수동 호출 문턱, 최근 복기 주를 셀 수 없으면 그 사유(달력 없음)를 적고, 복기 한 건에는 입력의 가정 진입(출처·근사 배지)과 계좌 수익률
  * 비교('잠정 줄 포함' 배지 — 계좌는 `books`의 이름) 표를 더합니다.
  */
@@ -150,7 +150,7 @@ export function ReviewsSection({
       >
         {rows.length === 0 ? (
           <p className="text-sm text-muted">
-            {korea ? KR_REVIEW_EMPTY : "아직 복기가 없습니다 — Claude 계좌가 시작한 다음 주 토요일 09:00(KST) 뒤에 첫 복기가 생깁니다."}
+            {korea ? KR_REVIEW_EMPTY : "아직 복기가 없습니다 — Claude 계좌가 시작한 다음 주 일요일 21:00(KST) 뒤에 첫 복기가 생깁니다."}
           </p>
         ) : (
           <Table<ReviewRow>

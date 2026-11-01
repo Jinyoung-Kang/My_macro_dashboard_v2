@@ -50,7 +50,7 @@ import java.util.regex.Pattern;
  *   <li>체결 시점 {@code NEXT_OPEN}뿐 — {@code NEXT_CLOSE}는 G2 판정 뒤 정하는 코드 상수 {@link #ALLOW_NEXT_CLOSE}(지금 false, K13·K38)</li>
  *   <li>결정 22:30·기한 01:00 KST(K6), 세션 D <b>그날</b>의 그 시각 — 09:00 전 시각은 D+1 아침(설정 저장 규칙과 같은 뜻, 명세 §4-13
  *       'C1b 구현에서 정한 것')</li>
- *   <li>복기 토요일 22:30 KST(K19 코드 상수) — 금요일 잠정 종가 순자산 줄로 엶({@link #confirmsFills} — 복기 작업), 거절 주문의 가정 진입은
+ *   <li>복기 일요일 22:00 KST(K19 코드 상수 — 처음 토요일 22:30, 2026-11-02 서버 일요일 밤 창으로) — 금요일 잠정 종가 순자산 줄로 엶({@link #confirmsFills} — 복기 작업), 거절 주문의 가정 진입은
  *       다음 세션 시가({@link #reviewEntry} — 금융위 확정 시가, 아직 없으면 토스 잠정 시가 {@link KrReviewOpens}, 사용자 결정 v5)</li>
  *   <li>Claude 시스템 프롬프트의 하드 규칙 줄({@link FrameworkService#krHardRules} — {@code kr.*}·원·153130·NEXT_OPEN)·고정 문단
  *       ({@link ClaudePrompts#KR_FIXED_RULES} — 첫 줄 우선순위 문장, E2a)</li>
@@ -91,9 +91,12 @@ final class KrPaperMarket implements PaperMarket {
     /** 이 시각 전의 결정·기한 시각은 세션 다음 날 아침으로 읽습니다(다음 개장 09:00 — {@link PaperSettingsService#KR_NEXT_OPEN}). */
     static final LocalTime NEXT_MORNING_BEFORE = PaperSettingsService.KR_NEXT_OPEN;
 
-    /** 한국 주간 복기 — 토요일 22:30 KST(K19, 미국 {@code ReviewFacts.OPENS_AT}처럼 코드 상수). */
-    static final DayOfWeek REVIEW_OPENS_ON = DayOfWeek.SATURDAY;
-    static final LocalTime REVIEW_OPENS_AT = LocalTime.of(22, 30);
+    /**
+     * 한국 주간 복기 — 일요일 22:00 KST(K19, 미국 {@code ReviewFacts.OPENS_AT}처럼 코드 상수). 처음은 토요일 22:30이었고, 2026-11-02 사용자
+     * 결정으로 서버 일요일 밤 창(20:50~23:30 — ADR 0019 결정 14) 안, 미국 복기(21:00) 한 시간 뒤로 옮겼습니다.
+     */
+    static final DayOfWeek REVIEW_OPENS_ON = DayOfWeek.SUNDAY;
+    static final LocalTime REVIEW_OPENS_AT = LocalTime.of(22, 0);
 
     /** 한국 계좌가 없을 때 정기 작업이 한국을 건너뛰는 사유({@link #dormantReason}). */
     static final String NOT_INITIALIZED = "한국 계좌가 없습니다 — 한국 초기화 전에는 한국 정기 작업(리스크 점검·결정·복기)을 돌리지 않습니다";

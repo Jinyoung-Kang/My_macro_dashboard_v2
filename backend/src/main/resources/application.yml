@@ -110,7 +110,7 @@ dashboard:
     risk-initial-delay-ms: 90000
     decision-interval-ms: 600000            # 결정 작업 주기(10분). 세션 다음 날 07:30 KST(설정 decisionTimeKst)부터 그 거래일 결정을 한 번
     decision-initial-delay-ms: 120000
-    review-interval-ms: 1800000             # 주간 복기 작업 주기(30분). 그 주 토요일 09:00 KST 뒤 확정 종가가 들어오면 그 주 복기를 한 번(2단계 D)
+    review-interval-ms: 1800000             # 주간 복기 작업 주기(30분). 그 주 여는 시각(미국 일요일 21:00·한국 22:00 KST) 뒤 확정 종가가 들어오면 그 주 복기를 한 번(2단계 D)
     review-initial-delay-ms: 180000
     exec-audit-interval-ms: 300000          # 실행 감사 주기(5분, 미국 Claude 계좌2 실험 단계 0 — ADR 0022). 계좌1 주문의 메뉴 반사실·1분봉 지연을 적고, 새로 적었을 때만 기록
     exec-audit-initial-delay-ms: 150000
