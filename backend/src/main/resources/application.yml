@@ -117,6 +117,11 @@ dashboard:
     checkpoint-interval-ms: 60000           # 장중 확인 작업 주기(60초, 미국 Claude 계좌2 단계 2 — ADR 0022). PLANNED 행이 있을 때만 읽고, 확인 시각 +2~+20분에 한 번 부름
     checkpoint-initial-delay-ms: 165000
     claude-timeout-seconds: 300             # Claude 책 호출 하나의 대기 한도(초). 출력 16,000토큰·effort high가 다 차도 끝나는 여유
+    notify-interval-ms: 60000               # 텔레그램 알림 주기(60초) — 체결·결정·결정 없는 주문(설정 notify.telegram, 아래 두 값이 다 있을 때만)
+    notify-initial-delay-ms: 200000
+    telegram-bot-token: ${TELEGRAM_BOT_TOKEN:}   # 서버 .env(잠금화면 알림과 같은 봇) — 로컬·QA는 비어 있어 보내지 않음
+    telegram-chat-id: ${TELEGRAM_CHAT_ID:}
+    telegram-link-base: ${PUBLIC_ORIGIN:}   # 알림 끝의 화면 링크 앞부분(서버 공개 주소) — 비면 링크 줄 없음
 
   ai:
     # Claude API (Haiku 5.5) — platform.claude.com에서 발급. 자동 탐색의 첫 엔진입니다.

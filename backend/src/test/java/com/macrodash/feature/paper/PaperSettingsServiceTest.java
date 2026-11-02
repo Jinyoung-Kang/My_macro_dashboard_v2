@@ -371,7 +371,7 @@ class PaperSettingsServiceTest {
                 "pricing.sonnet.inputUsdPerMTok", "pricing.sonnet.outputUsdPerMTok", "pricing.sonnet.cacheReadUsdPerMTok",
                 "pricing.sonnet.cacheWriteUsdPerMTok", "pricing.haiku.inputUsdPerMTok", "pricing.haiku.outputUsdPerMTok",
                 "pricing.haiku.cacheReadUsdPerMTok", "pricing.haiku.cacheWriteUsdPerMTok",
-                "calendar.consensus", "claude.schemaV3", "claude.figureCheck");
+                "calendar.consensus", "claude.schemaV3", "notify.telegram", "claude.figureCheck");
 
         PaperSettingKeys.Spec usRules = PaperSettingKeys.find("slippageBp").orElseThrow();
         PaperSettingKeys.Spec usPlain = PaperSettingKeys.find("decisionTimeKst").orElseThrow();

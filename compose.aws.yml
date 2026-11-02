@@ -64,6 +64,11 @@ services:
       # 국면 판정 기록 시각(KST) — 밤 가동 창 안의 23시(ADR 0019). 첫 실행은 기동 15분 뒤라 겨울 23:20 기동이면 23:35쯤(수집기의 기동 수집 뒤),
       # 서머타임 22:20 기동이면 23:0x에 기록합니다. 자정 뒤 실행은 다음 날 몫이라 그날 23시 전처럼 기다립니다.
       DASHBOARD_SCHEDULER_REGIMERECORDHOURKST: "23"
+      # 모의 매매 텔레그램 알림(체결·결정·결정 없는 주문 — 설정 notify.telegram) — 잠금화면 알림과 같은 봇·대화방. 둘 다 있어야 보냄.
+      TELEGRAM_BOT_TOKEN: "${TELEGRAM_BOT_TOKEN:-}"
+      TELEGRAM_CHAT_ID: "${TELEGRAM_CHAT_ID:-}"
+      # 알림 끝의 화면 링크(공개 주소). 비어 있으면 링크 줄을 붙이지 않음.
+      PUBLIC_ORIGIN: "${PUBLIC_ORIGIN:-}"
 
   frontend:
     build:

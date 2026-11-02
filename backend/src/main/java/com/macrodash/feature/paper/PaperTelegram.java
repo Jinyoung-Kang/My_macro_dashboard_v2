@@ -1,0 +1,121 @@
+package com.macrodash.feature.paper;
+
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.stereotype.Component;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
+import tools.jackson.databind.node.ObjectNode;
+
+import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
+import java.nio.charset.StandardCharsets;
+import java.time.Duration;
+
+/**
+ * 모의 매매 알림의 텔레그램 보내기(사용자 요청 2026-11-02) — Bot API {@code sendMessage} 한 번에 글 한 통. 봇 토큰·대화방은 서버 {@code .env}의
+ * {@code TELEGRAM_BOT_TOKEN}·{@code TELEGRAM_CHAT_ID}(잠금화면 알림과 같은 값 — ADR 0019 결정 16)이고 둘 다 있어야 켜집니다. 로컬·QA에는 값이 없어 보내지
+ * 않습니다.
+ *
+ * <ul>
+ *   <li>글은 그대로 보냅니다(서식 해석 없음 — 종목 이름·사유의 기호를 고칠 필요가 없게), 링크 미리보기는 끔, {@value #MAX_CHARS}자를 넘으면 자릅니다.</li>
+ *   <li>실패 사유에 봇 토큰이 섞이지 않게 합니다(주소에 토큰이 들어가므로 예외 글에서 지움). 재시도는 부르는 쪽(알림 작업 — 다음 주기)이 합니다.</li>
+ * </ul>
+ */
+@Component
+public class PaperTelegram {
+
+    static final String API = "https://api.telegram.org";
+    static final Duration TIMEOUT = Duration.ofSeconds(10);
+    /** 한 통의 글자 상한 — Bot API 4096자보다 조금 작게. */
+    static final int MAX_CHARS = 4000;
+
+    /** 보내는 길 — 시험이 가짜로 바꿔 끼웁니다. */
+    @FunctionalInterface
+    interface Sender {
+        /** 응답 상태와 본문. 연결 실패는 예외. */
+        Reply post(URI uri, String json) throws Exception;
+    }
+
+    record Reply(int status, String body) {
+    }
+
+    private final String token;
+    private final String chatId;
+    private final ObjectMapper mapper;
+    private final Sender sender;
+
+    @Autowired
+    PaperTelegram(@Value("${dashboard.paper.telegram-bot-token:}") String token,
+                  @Value("${dashboard.paper.telegram-chat-id:}") String chatId, ObjectMapper mapper) {
+        this(token, chatId, mapper, httpSender());
+    }
+
+    /** 시험용 — 보내는 길을 바꿔 끼웁니다. */
+    PaperTelegram(String token, String chatId, ObjectMapper mapper, Sender sender) {
+        this.token = token == null ? "" : token.strip();
+        this.chatId = chatId == null ? "" : chatId.strip();
+        this.mapper = mapper;
+        this.sender = sender;
+    }
+
+    /** 봇 토큰과 대화방이 둘 다 있나. */
+    boolean configured() {
+        return !token.isEmpty() && !chatId.isEmpty();
+    }
+
+    /**
+     * 한 통 보냅니다.
+     *
+     * @return 성공이면 null, 실패면 사유(토큰 없음)
+     */
+    String send(String text) {
+        if (!configured()) {
+            return "텔레그램 값(TELEGRAM_BOT_TOKEN·TELEGRAM_CHAT_ID)이 없음";
+        }
+        String body = text.length() > MAX_CHARS ? text.substring(0, MAX_CHARS - 1) + "…" : text;
+        ObjectNode payload = mapper.createObjectNode();
+        payload.put("chat_id", chatId);
+        payload.put("text", body);
+        payload.put("disable_web_page_preview", true);
+        try {
+            Reply reply = sender.post(URI.create(API + "/bot" + token + "/sendMessage"), mapper.writeValueAsString(payload));
+            if (reply.status() == 200) {
+                return null;
+            }
+            return "HTTP " + reply.status() + describe(reply.body());
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            return "보내는 중 끊김";
+        } catch (Exception e) {
+            return masked(e.getClass().getSimpleName() + (e.getMessage() == null ? "" : ": " + e.getMessage()));
+        }
+    }
+
+    /** Bot API 오류 본문의 description(있으면, 200자까지). */
+    private String describe(String body) {
+        try {
+            JsonNode node = body == null ? null : mapper.readTree(body);
+            String description = node == null ? null : node.path("description").asString(null);
+            return description == null ? "" : " — " + masked(description.length() > 200 ? description.substring(0, 200) : description);
+        } catch (RuntimeException e) {
+            return "";
+        }
+    }
+
+    private String masked(String text) {
+        return token.isEmpty() ? text : text.replace(token, "***");
+    }
+
+    private static Sender httpSender() {
+        HttpClient client = HttpClient.newBuilder().connectTimeout(TIMEOUT).build();
+        return (uri, json) -> {
+            HttpRequest request = HttpRequest.newBuilder(uri).timeout(TIMEOUT).header("Content-Type", "application/json")
+                    .POST(HttpRequest.BodyPublishers.ofString(json, StandardCharsets.UTF_8)).build();
+            HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
+            return new Reply(response.statusCode(), response.body());
+        };
+    }
+}
