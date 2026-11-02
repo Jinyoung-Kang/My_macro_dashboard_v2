@@ -162,7 +162,8 @@ export function OverviewSection({
   const [selected, setSelected] = useState<string | null>(null);
   // 순자산 곡선의 기간 — 처음엔 전체. 저장된 기록보다 긴 기간 탭은 그리지 않습니다(lib navRangeKeys). 히어로와 '순자산 곡선' 카드가 함께 씁니다.
   const [navRange, setNavRange] = useState<NavRangeKey>("all");
-  // 히어로에 그릴 계좌 — 계좌 행을 누르면 그 계좌(상세를 닫아도·개요를 다시 읽어도 남음, 목록에서 사라지면 기본 Claude 계좌 — lib heroBookCode).
+  // 히어로에 그릴 계좌 — 계좌 행을 누르거나 히어로의 고르기 상자로 고르면 그 계좌(상세를 닫아도·개요를 다시 읽어도 남음, 목록에서 사라지면
+  // 기본 Claude 계좌 — lib heroBookCode).
   const [heroPick, setHeroPick] = useState<string | null>(null);
   // 패널을 열면 초점을 패널 제목으로 옮깁니다 — 화면만 패널로 내려가고 초점이 행 단추에 남으면 다음 Tab이 다른 행 단추를 돌며
   // 화면을 다시 끌어올리고, Esc(패널 안에서만 들음)도 듣지 않았습니다. 닫으면 closeAccount가 그 행 단추로 돌려보냅니다.
@@ -301,8 +302,18 @@ export function OverviewSection({
       {/* 상태를 읽지 못하면 꺼짐·켜짐을 모릅니다 — 배너가 조용히 사라지면 켜져 있는 것으로 읽히므로 그렇다고 적습니다(홈과 같은 문구). */}
       {status.error && <Banner tone="warn">정기 작업 상태를 확인하지 못했습니다 — {status.error}</Banner>}
 
-      {/* 히어로 — 고른 계좌의 지금 값·곡선(기간 알약은 아래 '순자산 곡선' 카드와 같은 상태). 계좌가 바뀌면 문지르기 상태를 새로 둡니다. */}
-      {hero && <OverviewHero key={hero.code} model={hero} range={range} ranges={navRanges} onRange={setNavRange} />}
+      {/* 히어로 — 고른 계좌의 지금 값·곡선(기간 알약은 아래 '순자산 곡선' 카드와 같은 상태). 제목 줄 오른쪽 고르기 상자로 계좌를 바꿉니다 —
+          다시 마운트하지 않고(상자가 초점을 잃지 않음) 문지르기 상태는 히어로가 계좌 코드로 지웁니다. */}
+      {hero && (
+        <OverviewHero
+          model={hero}
+          range={range}
+          ranges={navRanges}
+          onRange={setNavRange}
+          accounts={books.map((book) => ({ code: book.code, label: book.label }))}
+          onPick={setHeroPick}
+        />
+      )}
 
       {prompt && (
         <Card title={prompt.title} source={PAPER_SOURCES.ledger}>

@@ -3,7 +3,7 @@
  * 네 상태: 값 있음(큰 숫자 + 단위 + 칩 + 판정 글), 값 없음("—" + 사유, 칩 생략, 단위 없음),
  * 추정(meta 배지), 오래됨(meta의 경고 아이콘 + 이전 값 + 사유), 자리표시(placeholder — 값 대신, 탭은 그 자리 그대로). a11y: 제목(label)이 영역 이름,
  * headingLevel. 문지르기(scrub, 명세 §4·D9): 큰 숫자는 그 점 값(눈으로만), 지금 값은 sr-only '지금 값 …', '기간 시작 대비' 칩·날짜, 배지는 그대로,
- * 알림 영역(aria-live polite)에 '날짜 값', 추정 점 배지와 그 설명(알림에도 '추정 23:58'), 장부 값 꼬리 점은 배지 없이 '장부'. 탭 자리(tabsPlacement) 위·아래.
+ * 알림 영역(aria-live polite)에 '날짜 값', 추정 점 배지와 그 설명(알림에도 '추정 23:58'), 장부 값 꼬리 점은 배지 없이 '장부'. 탭 자리(tabsPlacement) 위·아래. 제목 줄 오른쪽 actions(자리표시 동안에도 같은 자리 — 다시 마운트되지 않음).
  */
 import { cleanup, render, screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
@@ -296,5 +296,31 @@ describe("Hero", () => {
       </Hero>,
     );
     expect(order()).toBe("below");
+  });
+
+  it("actions — 제목 줄 오른쪽(제목 다음 형제)에 두고, 자리표시 ↔ 값으로 바뀌어도 같은 요소로 남는다", () => {
+    const { rerender } = render(
+      <Hero label="Claude 계좌 순자산" value={null} placeholder={<span>불러오는 중</span>} actions={<select aria-label="계좌" />}>
+        <div>차트 자리</div>
+      </Hero>,
+    );
+    const region = screen.getByRole("region", { name: "Claude 계좌 순자산" });
+    const picker = within(region).getByRole("combobox", { name: "계좌" });
+    const heading = within(region).getByRole("heading", { level: 2, name: "Claude 계좌 순자산" });
+    expect(heading.parentElement?.contains(picker)).toBe(true);
+    expect(heading.compareDocumentPosition(picker) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    rerender(
+      <Hero label="Claude 계좌 순자산" value="100,000" actions={<select aria-label="계좌" />}>
+        <div>차트 자리</div>
+      </Hero>,
+    );
+    expect(screen.getByRole("combobox", { name: "계좌" })).toBe(picker);
+    expect(screen.getByText("100,000")).toBeTruthy();
+  });
+
+  it("actions가 없으면 제목만(감싼 줄 없음)", () => {
+    render(<Hero label="순자산" value="1" />);
+    const heading = screen.getByRole("heading", { level: 2, name: "순자산" });
+    expect(heading.parentElement?.tagName).toBe("SECTION");
   });
 });

@@ -2,6 +2,7 @@
  * useChartScrub — 히어로 차트 문지르기 상태(명세 docs/specs/2026-10-31-v2-coinbase-ui.md §5).
  *  - 처음엔 null, 차트가 알린 순번을 기억하고 null이면 지운다
  *  - 기간을 바꿔 행 수가 달라지면 예전 순번을 지운다(다른 날짜를 문지르는 것처럼 보이지 않게 — 돌아와도 되살아나지 않음), 범위 밖도 null
+ *  - 대상(scope — 개요 히어로의 계좌 고르기)이 바뀌어도 같은 규칙으로 지운다(행 수가 같아도 다른 곡선)
  *  - onScrub은 같은 행 수에서는 같은 함수(차트의 알림 효과가 렌더마다 다시 돌지 않게)
  */
 import { act, cleanup, renderHook } from "@testing-library/react";
@@ -32,6 +33,18 @@ describe("useChartScrub", () => {
     expect(result.current.index).toBe(4);
     act(() => result.current.onScrub(7));
     expect(result.current.index).toBeNull();
+  });
+
+  it("대상(scope)이 바뀌면 행 수가 같아도 예전 순번은 지우고 돌아와도 되살아나지 않는다", () => {
+    const { result, rerender } = renderHook(({ scope }) => useChartScrub(5, scope), { initialProps: { scope: "claude" } });
+    act(() => result.current.onScrub(2));
+    expect(result.current.index).toBe(2);
+    rerender({ scope: "rules" });
+    expect(result.current.index).toBeNull();
+    rerender({ scope: "claude" });
+    expect(result.current.index).toBeNull();
+    act(() => result.current.onScrub(3));
+    expect(result.current.index).toBe(3);
   });
 
   it("같은 행 수에서는 onScrub이 같은 함수다", () => {

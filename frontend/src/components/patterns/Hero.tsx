@@ -39,6 +39,8 @@ export type HeroScrub = {
  * - `placeholder`(선택)를 주면 값·변화·판정·배지 대신 그것(불러오는 중 Skeleton·오류)을 그리고, 탭·본문 자리는 그대로 둡니다 — 값을 다시 읽는
  *   동안에도 같은 틀이라 탭(시장 고르기 등)이 다시 마운트되지 않아 초점을 잃지 않습니다.
  * - `tabsPlacement`(선택, 기본 "above"): 탭을 본문 위(홈의 시장 고르기)에 둘지, 본문 아래(차트 아래의 기간 알약 — 명세 §1)에 둘지.
+ * - `actions`(선택): 제목 줄 오른쪽에 둘 것(모의매매 개요의 계좌 고르기 상자 — Card의 actions와 같은 자리). 자리가 모자라면 제목 아래로 내려갑니다.
+ *   `placeholder`를 그리는 동안에도 같은 자리에 둡니다(다시 마운트되지 않아 초점을 잃지 않음).
  * - `valueKind`(선택, 기본 "number"): "label"이면 값이 숫자가 아니라 판정 라벨(예: 홈 국면 '후퇴 경계 (Late cycle)')이라 한 단계 작게
  *   (좁은 화면 28px·sm 이상 36px) 그리고 숫자 자리 맞춤(tabular-nums)을 하지 않습니다 — 44px 글자 라벨은 반 폭 히어로에서 세 줄로 접혔습니다.
  * - `scrub`(선택, 명세 §4·D9): 히어로 차트를 문지르는 동안의 그 점 값(`HeroScrub`). 값이 있으면 큰 숫자를 그 값으로, 변화 칩을 '기간 시작 대비'로
@@ -57,6 +59,7 @@ export function Hero({
   meta,
   tabs,
   tabsPlacement = "above",
+  actions,
   valueKind = "number",
   headingLevel = 2,
   placeholder,
@@ -72,6 +75,8 @@ export function Hero({
   tabs?: ReactNode;
   /** 탭 자리 — 본문 위(기본) 또는 아래. */
   tabsPlacement?: "above" | "below";
+  /** 제목 줄 오른쪽(위 설명). */
+  actions?: ReactNode;
   /** 값의 종류 — 숫자(기본) 또는 판정 라벨(한 단계 작은 글자, 숫자 자리 맞춤 없음). */
   valueKind?: "number" | "label";
   headingLevel?: 2 | 3;
@@ -95,9 +100,18 @@ export function Hero({
   const tabsBlock = tabs ? <div className="mt-4">{tabs}</div> : null;
   return (
     <section aria-labelledby={headingId} className="min-w-0 rounded-card border border-border bg-surface p-6 lg:p-8">
-      <Heading id={headingId} className="text-[15px] font-medium text-text-2">
-        {label}
-      </Heading>
+      {actions ? (
+        <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2">
+          <Heading id={headingId} className="min-w-0 text-[15px] font-medium text-text-2">
+            {label}
+          </Heading>
+          <div className="flex min-w-0 max-w-full items-center gap-2">{actions}</div>
+        </div>
+      ) : (
+        <Heading id={headingId} className="text-[15px] font-medium text-text-2">
+          {label}
+        </Heading>
+      )}
       {/* 자리마다 순서를 고정합니다(자리표시 ↔ 값으로 바뀌어도 탭·본문이 같은 자리 — 다시 마운트되지 않음). */}
       {placeholder !== undefined ? (
         <div className="mt-3 min-w-0">{placeholder}</div>

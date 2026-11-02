@@ -246,6 +246,34 @@ describe("히어로(포트폴리오식 — 장중 명세 §4-1)", () => {
     expect(screen.getByRole("region", { name: "규칙 계좌 순자산" })).toBeTruthy();
   });
 
+  it("히어로 제목 줄 오른쪽의 고르기 상자로 계좌를 바꾼다(사용자 요청 2026-11-02) — 계좌 행과 같은 상태, 상자는 초점을 잃지 않음", async () => {
+    reads["/api/paper/overview"] = () => Promise.resolve(OVERVIEW);
+    render(<PaperPage />);
+
+    await settled();
+    const first = screen.getByRole("region", { name: "Claude 계좌 순자산" });
+    const picker = within(first).getByRole("combobox", { name: "순자산을 볼 계좌" }) as HTMLSelectElement;
+    expect(picker.value).toBe("claude");
+    // 선택지는 계좌 행과 같은 계좌·같은 순서(서버 이름)
+    const rows = within(screen.getByRole("list", { name: "계좌 목록" })).getAllByRole("listitem").length;
+    expect(Array.from(picker.options).map((option) => option.textContent)).toHaveLength(rows);
+    expect(Array.from(picker.options).map((option) => option.value)).toEqual((OVERVIEW.books ?? []).map((book) => book.code));
+
+    picker.focus();
+    fireEvent.change(picker, { target: { value: "rules" } });
+    const hero = screen.getByRole("region", { name: "규칙 계좌 순자산" });
+    expect(within(hero).getByText("101,200.00")).toBeTruthy();
+    expect(within(hero).getByRole("list", { name: "규칙 계좌 순자산 곡선" }).getAttribute("data-values")).toBe("100000,101200");
+    // 다시 마운트하지 않아 같은 상자가 초점을 그대로 가짐
+    expect(within(hero).getByRole("combobox", { name: "순자산을 볼 계좌" })).toBe(picker);
+    expect(document.activeElement).toBe(picker);
+    expect(picker.value).toBe("rules");
+    // 상세는 열지 않음(고르기 상자는 히어로만 바꿈) — 계좌 행을 눌러 고른 것과 같은 상태라 행을 누르면 상자도 따라감
+    expect(screen.queryByRole("region", { name: "규칙 계좌 상세" })).toBeNull();
+    fireEvent.click(row(/^Claude 계좌 상세 보기/));
+    expect(picker.value).toBe("claude");
+  });
+
   it("지금 값 — 히어로는 단계 표기·추정 배지·서버 글 전문·변화 한 줄(서버 값)", async () => {
     reads["/api/paper/overview"] = () => Promise.resolve(CURRENT_OVERVIEW);
     render(<PaperPage />);

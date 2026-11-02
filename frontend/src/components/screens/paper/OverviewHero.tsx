@@ -2,6 +2,7 @@
 
 import { LineChart } from "@/components/charts";
 import { ChangeChip, EstimateBadge, Hero, ProvenanceBadge, RangeTabs, StaleBadge } from "@/components/patterns";
+import { NativeSelect } from "@/components/ui";
 import { AlertTriangleIcon, StatusText } from "@/components/ui/icons";
 import { useChartScrub } from "@/hooks/useChartScrub";
 import { formatNumber } from "@/lib/format";
@@ -17,6 +18,8 @@ import { HERO_NAV_KEY, NAV_RANGES, type NavRangeKey, type OverviewHeroModel } fr
  *   카드와 같은 기간 상태입니다(그 카드의 탭은 없음 — aria-label '순자산 곡선 기간'은 이 탭). 고를 기간이 '전체' 하나뿐이면 탭을 그리지 않습니다.
  * - 오늘 추정 점이 있으면(개요 `navEstimate`) 마지막 줄 → 그 점의 점선 꼬리 — 문지르면 '추정 HH:MM'(현금뿐 계좌는 '장부', 장중 명세 §4).
  * - 문지르는 동안 큰 숫자는 그 점의 값이고, 단계 표기·추정 배지·서버 글은 지금 값의 것이라 앞에 '지금 값 …'을 붙입니다(배지는 그대로 보임 — A3).
+ * - 제목 줄 오른쪽의 고르기 상자로 계좌를 바꿉니다(사용자 요청 2026-11-02 — 계좌 행을 눌러 고르는 것과 같은 상태, 계좌가 둘 이상일 때만). 계좌를
+ *   바꿔도 이 컴포넌트를 다시 마운트하지 않아(고르기 상자가 초점을 잃지 않음) 문지르기 상태는 계좌 코드로 지웁니다(`useChartScrub`의 scope).
  * - 그리기만 합니다 — 값·글은 lib, 문지르기 상태는 `hooks/useChartScrub`.
  */
 export function OverviewHero({
@@ -24,15 +27,20 @@ export function OverviewHero({
   range,
   ranges,
   onRange,
+  accounts = [],
+  onPick,
 }: {
   model: OverviewHeroModel;
   range: NavRangeKey;
   /** 고를 수 있는 기간(저장 구간 안). */
   ranges: readonly NavRangeKey[];
   onRange: (range: NavRangeKey) => void;
+  /** 고르기 상자의 계좌(계좌 행과 같은 순서 — 서버 이름). 둘 이상이고 onPick이 있을 때만 상자를 그립니다. */
+  accounts?: readonly { code: string; label: string }[];
+  onPick?: (code: string) => void;
 }) {
   const { chart } = model;
-  const { index, onScrub } = useChartScrub(chart.rows.length);
+  const { index, onScrub } = useChartScrub(chart.rows.length, model.code);
   const format = (value: number) => formatNumber(value, chart.valueDigits);
   // 그릴 값이 있을 때만 문지를 수 있는 히어로(알림 영역을 미리 둠 — 문지르지 않을 때 null). 값이 없으면 차트가 빈 상태 문구만 그립니다.
   const scrubbable = hasLineValues(chart.rows, chart.series);
@@ -96,6 +104,23 @@ export function OverviewHero({
         ) : undefined
       }
       tabsPlacement="below"
+      actions={
+        onPick && accounts.length > 1 ? (
+          <NativeSelect
+            value={model.code}
+            onChange={(event) => onPick(event.target.value)}
+            inputSize="sm"
+            aria-label="순자산을 볼 계좌"
+            wrapperClassName="inline-block max-w-full"
+          >
+            {accounts.map((account) => (
+              <option key={account.code} value={account.code}>
+                {account.label}
+              </option>
+            ))}
+          </NativeSelect>
+        ) : undefined
+      }
       scrub={scrub}
     >
       <LineChart
