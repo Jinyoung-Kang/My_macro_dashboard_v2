@@ -408,7 +408,7 @@ bash scripts/aws/tunnel.sh
 - 만든 것(처음 한 번, 2026-10-29): S3 안내 버킷(퍼블릭 차단, CloudFront 원본 접근 제어로만 읽음 — `_offline/index.html`), CloudFront 배포판
   (원본 = 서버 탄력적 IP의 공개 DNS 이름 `:8301` HTTP + 비밀 헤더 `X-Origin-Verify`, 캐시 정책 CachingDisabled, 원본 요청 정책 AllViewer,
   `/_offline/*`는 S3, 오류 502·503·504 → `/_offline/index.html`), 보안 그룹 인바운드(CloudFront 원본용 관리형 prefix list → TCP 8301),
-  서버 `.env`의 `PUBLIC_ORIGIN`·`ORIGIN_SECRET`·`GATE_SECRET`·`GATE_CODES`·`TELEGRAM_*`(이름은 [.env.aws.example](../.env.aws.example)).
+  서버 `.env`의 `PUBLIC_ORIGIN`·`ORIGIN_SECRET`·`GATE_SECRET`·`GATE_CODES`·`TELEGRAM_*`(이름은 [.env.aws.example](../.env.aws.example)). `TELEGRAM_*`·`PUBLIC_ORIGIN`은 백엔드에도 넘어가 모의 매매 텔레그램 알림(체결·결정·결정 없는 주문 — 설정 `notify.telegram`, 끝에 공개 주소 링크)을 보냅니다.
 
 ### 서버 셸 (SSM)
 
