@@ -489,7 +489,7 @@ EQUITY_MAP = {
 
 | 시장 | 출처(차례) | 한계 |
 |---|---|---|
-| 미국 | Yahoo spark(`query1.finance.yahoo.com/v7/finance/spark`, 20종목씩) → 네이버 해외주식 polling(로이터 코드 — 자동완성으로 찾아 하루 캐시) | 비공식 내부 호출. Yahoo는 공용 세션의 브라우저 표시(Chrome 124)에 429라 다른 표시로 묻고, 거부되면 `http.YAHOO_HOST` 래치가 닫혀 다른 Yahoo 수집과 함께 5분 쉼. 정규장 가격만(시간 외는 네이버가 줄 때만) |
+| 미국 | 네이버 해외주식 polling(`polling.finance.naver.com/api/realtime/worldstock/stock/<로이터 코드,…>` — 자동완성으로 찾아 하루 캐시) → 네이버가 못 주는 종목(지수·환율 등)은 Yahoo spark(`query1.finance.yahoo.com/v7/finance/spark`, 20종목씩) | 비공식 내부 호출. Yahoo spark는 1분 넘게 같은 값(캐시)이라 뒤에 둠(QA-166). Yahoo는 공용 세션의 브라우저 표시(Chrome 124)에 429라 다른 표시로 묻고, 거부되면 `http.YAHOO_HOST` 래치가 닫혀 다른 Yahoo 수집과 함께 5분 쉼. 정규장 가격만(시간 외는 네이버가 줄 때만) |
 | 국내 | 네이버 polling(`polling.finance.naver.com/api/realtime/domestic/stock/<코드,…>`) → 다음(`finance.daum.net/api/quotes/A<코드>`, Referer) → 토스 1분봉 | 가격은 KRX(정규장) — NXT 시간 외가 열려 있으면 그 가격을 따로 줌. 토스는 분 단위·종목마다 한 번 |
 
 트레이딩뷰(로그인 없이 미국 주식 15분 지연)·인베스팅(종목 ID 검색이 빈 결과)·구글 파이낸스(종목마다 1.4MB)는 2026-11-03 실측 뒤 쓰지 않기로 했습니다.

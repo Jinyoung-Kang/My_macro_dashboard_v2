@@ -3,9 +3,9 @@
 볼 때만 부릅니다(`/live/prices`, 백엔드 `feature.live`가 고른 주기마다 부름). 장부(체결·스탑·통계·결정)는 이 값을 쓰지 않습니다.
 
 출처(2026-11-03 운영 서버에서 5초 간격 12번씩 실측 — ADR 0024)
-- 미국: Yahoo spark(``v7/finance/spark`` — 한 번에 20종목, 정규장 거래 시각이 1~10초 전) → 빠진 종목은 네이버 해외주식 polling
-  (여러 종목 한 번에, 로이터 코드 — 자동완성으로 찾아 하루 캐시, 실시간). 트레이딩뷰는 로그인 없이 미국 주식이 15분 지연, 인베스팅은 종목 ID
-  검색이 빈 결과, 구글은 종목마다 1.4MB 페이지라 쓰지 않습니다.
+- 미국: 네이버 해외주식 polling(여러 종목 한 번에, 로이터 코드 — 자동완성으로 찾아 하루 캐시, 5초마다 새 거래 시각) → 네이버가 못 주는 종목
+  (지수 ^…·환율 =X 등)은 Yahoo spark(``v7/finance/spark`` — 한 번에 20종목). Yahoo spark는 1분 넘게 같은 값을 돌려주는 캐시 응답이라 먼저 묻지
+  않습니다(QA-166). 트레이딩뷰는 로그인 없이 미국 주식이 15분 지연, 인베스팅은 종목 ID 검색이 빈 결과, 구글은 종목마다 1.4MB 페이지라 쓰지 않습니다.
 - 국내: 네이버 polling(여러 종목 한 번에, 거래 시각 포함) → 다음(종목마다, Referer 필요) → 토스 1분봉(분 단위 — 마지막 대체).
 같은 종목은 :data:`TTL_SECONDS` 동안 같은 값 — 5초 주기·여러 탭·여러 화면이 출처를 한 번만 부르게. 출처 거부(403·429·봇 차단)는 공용 세션의
 5분 래치(http.py)를 따르고 다음 출처로 넘어갑니다. Yahoo는 yfinance 경로와 같은 래치 이름(:data:`http.YAHOO_HOST`)을 함께 씁니다(같은 한도).
@@ -366,7 +366,7 @@ def _fetch_toss(codes: list[str], errors: dict[str, str]) -> dict[str, dict]:
 
 
 CHAINS: dict[str, tuple[Callable[[list[str], dict[str, str]], dict[str, dict]], ...]] = {
-    "US": (_fetch_yahoo, _fetch_naver_us),
+    "US": (_fetch_naver_us, _fetch_yahoo),   # QA-166 — Yahoo spark는 1분 넘게 같은 값이라 네이버(5초마다 새 값)를 먼저
     "KR": (_fetch_naver_kr, _fetch_daum, _fetch_toss),
 }
 
@@ -378,7 +378,8 @@ def _fetch(market: str, codes: list[str], errors: dict[str, str]) -> dict[str, d
         left = [code for code in codes if code not in found]
         if not left:
             break
-        found.update(fetch(left, errors))
+        # 물은 종목만 받습니다 — 출처가 묻지 않은 종목까지 돌려줘도 앞 출처가 이미 준 값을 덮어쓰지 않게(QA-166 재현 시험이 잡음).
+        found.update({code: item for code, item in fetch(left, errors).items() if code in left})
     return found
 
 

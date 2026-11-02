@@ -228,7 +228,7 @@ GET·OPTIONS 밖(쓰기·HEAD)은 경로와 상관없이 403 `{"error":"demo_rea
 
 ### 화면 실시간 시세 ([ADR 0024](adr/0024-live-prices-sse.md))
 
-모의 매매 장중 카드·보유 표·종목 상세가 사용자가 고른 주기(5초~3시간, 기본 1시간)로 받는 가격입니다. 저장하지 않고 수집기 `/live/prices`(미국 Yahoo → 네이버,
+모의 매매 장중 카드·보유 표·종목 상세가 사용자가 고른 주기(5초~3시간, 기본 1시간)로 받는 가격입니다. 저장하지 않고 수집기 `/live/prices`(미국 네이버 → Yahoo,
 국내 네이버 → 다음 → 토스 1분봉, 3초 캐시)를 전하며, 장부(체결·스탑·통계·결정)는 쓰지 않습니다. 종목은 `items=US:AAPL,KR:005930`(Yahoo 심볼·국내 6자리,
 60개까지 — 형식이 틀리면 400). `store_only` 읽기 모드에서는 부르지 않고 `available:false`.
 
@@ -351,7 +351,7 @@ CAGR 지수도 같음), 20일 미만이면 `cumReturnPct`만 있습니다. 변�
 | [토큰] `GET /live/ticker/{symbol}?period=` | 티커 시계열 즉시 수집 |
 | [토큰] `GET /live/daum-intraday?minutes=30` | 장중 수급 가속도 |
 | [토큰] `GET /live/quote?market=us\|kr&code=` | 검색 상세의 시세·핵심 지표·개요(Yahoo·네이버, 5분 캐시) |
-| [토큰] `GET /live/prices?items=US:AAPL,KR:005930` | 화면 실시간 시세(ADR 0024 — 미국 Yahoo → 네이버, 국내 네이버 → 다음 → 토스 1분봉, 3초 캐시, 저장 안 함, 60개까지) |
+| [토큰] `GET /live/prices?items=US:AAPL,KR:005930` | 화면 실시간 시세(ADR 0024 — 미국 네이버 → Yahoo, 국내 네이버 → 다음 → 토스 1분봉, 3초 캐시, 저장 안 함, 60개까지) |
 | [토큰] `GET /live/news?market=&code=&q=` | 검색 상세의 주요 뉴스(Yahoo·네이버·구글 뉴스 RSS, 15분 캐시) |
 | [토큰] `GET /live/symbols?q=` | 종목 찾기(네이버 자동완성·Yahoo 검색, 1시간 캐시) |
 | [토큰] `GET /verify/readings?market=&investor=&tradeType=` | 검증용 원자료 (판정은 백엔드, 읽는 코드는 `app/verification.py`) |

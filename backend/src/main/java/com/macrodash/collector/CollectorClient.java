@@ -182,7 +182,7 @@ public class CollectorClient {
     }
 
     /**
-     * 화면 실시간 시세(수집기 /live/prices — 미국 Yahoo → 네이버, 국내 네이버 → 다음 → 토스 1분봉, 3초 캐시, ADR 0024).
+     * 화면 실시간 시세(수집기 /live/prices — 미국 네이버 → Yahoo, 국내 네이버 → 다음 → 토스 1분봉, 3초 캐시, ADR 0024).
      * 종목 목록('US:AAPL,KR:005930')은 URI 변수로 넘겨 ':'·','·'^'·'='까지 한 번만 인코딩합니다.
      */
     public Optional<JsonNode> livePrices(String items) {
