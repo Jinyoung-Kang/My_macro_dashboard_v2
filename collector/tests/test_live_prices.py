@@ -54,7 +54,9 @@ NAVER_KR = {"pollingInterval": 70000, "datas": [
     {"itemCode": "005930", "closePrice": "230,000", "closePriceRaw": "230000", "compareToPreviousClosePrice": "5,000",
      "compareToPreviousClosePriceRaw": "5000", "compareToPreviousPrice": {"code": "2", "name": "RISING"}, "fluctuationsRatio": "2.22",
      "localTradedAt": "2026-11-02T15:30:00+09:00", "marketStatus": "CLOSE",
-     "overMarketPriceInfo": {"tradingSessionType": "AFTER_MARKET", "overMarketStatus": "OPEN", "overPrice": "230,500"}},
+     "overMarketPriceInfo": {"tradingSessionType": "AFTER_MARKET", "overMarketStatus": "OPEN", "overPrice": "230,500",
+                             "compareToPreviousClosePrice": "5,500", "compareToPreviousPrice": {"code": "2"}, "fluctuationsRatio": "2.44",
+                             "localTradedAt": "2026-11-02T19:59:58.000000+09:00"}},
     {"itemCode": "069500", "closePrice": "92,945", "compareToPreviousClosePrice": "2,145", "compareToPreviousPrice": {"code": "5"},
      "fluctuationsRatio": "-2.36", "localTradedAt": "2026-11-03T10:15:02.000000+09:00", "marketStatus": "OPEN"},
 ]}
@@ -101,9 +103,11 @@ def test_네이버_국내는_부호_없는_글을_방향_코드로_NXT_시간_�
     samsung, kodex = out["005930"], out["069500"]
     assert samsung["price"] == 230000 and samsung["change"] == 5000 and samsung["status"] == "POST"
     assert samsung["overPrice"] == 230500 and samsung["overSession"] == "AFTER_MARKET" and samsung["currency"] == "KRW"
+    assert samsung["overChange"] == 5500 and samsung["overChangePct"] == 2.44 and samsung["overTradedAt"] == "2026-11-02T10:59:58Z"
     assert samsung["tradedAt"] == "2026-11-02T06:30:00Z"
     assert kodex["change"] == -2145, "방향 코드 5(하락)면 음수"
-    assert kodex["status"] == "OPEN" and kodex["overPrice"] is None and kodex["tradedAt"] == "2026-11-03T01:15:02Z"
+    assert kodex["status"] == "OPEN" and kodex["overPrice"] is None and kodex["overTradedAt"] is None
+    assert kodex["tradedAt"] == "2026-11-03T01:15:02Z"
 
 
 def test_다음은_KST_거래_시각을_UTC로_하락은_음수_마감은_CLOSED():

@@ -114,18 +114,23 @@ def _parse_time(text: Any) -> datetime | None:
 
 def _item(market: str, code: str, *, price: float, prev_close: float | None, change: float | None, change_pct: float | None,
           traded_at: datetime | None, status: str | None, source: str, currency: str | None,
-          over_price: float | None = None, over_session: str | None = None) -> dict:
-    """한 종목의 응답 — 등락은 주어진 값, 없으면 전일 종가로 계산(전일 종가도 없으면 None)."""
+          over: dict | None = None) -> dict:
+    """
+    한 종목의 응답 — 등락은 주어진 값, 없으면 전일 종가로 계산(전일 종가도 없으면 None). ``over``는 시간 외(미국 프리·애프터, 국내 NXT 장 전·장 후)가
+    열려 있을 때의 {price, change, changePct, tradedAt, session} — 화면은 그때 이 가격을 주 가격으로 보입니다(정규장 값은 그대로 둠).
+    """
     if change is None and prev_close:
         change = price - prev_close
     if change_pct is None and prev_close and change is not None:
         change_pct = change / prev_close * 100
     if prev_close is None and change is not None:
         prev_close = price - change
+    over = over or {}
     return {
         "market": market, "code": code, "price": price, "prevClose": prev_close, "change": change, "changePct": change_pct,
         "currency": currency, "tradedAt": _iso(traded_at), "status": status, "source": source,
-        "overPrice": over_price, "overSession": over_session,
+        "overPrice": over.get("price"), "overChange": over.get("change"), "overChangePct": over.get("changePct"),
+        "overTradedAt": _iso(over.get("tradedAt")), "overSession": over.get("session"),
     }
 
 
@@ -179,16 +184,25 @@ def _naver_change(data: dict) -> float | None:
     return change
 
 
-def _naver_status(data: dict) -> tuple[str | None, float | None, str | None]:
-    """(장 상태, 시간 외 가격, 시간 외 구분) — 정규장 OPEN이면 OPEN, 시간 외(국내 NXT·미국 프리·애프터)가 열려 있으면 PRE·POST와 그 가격."""
+def _naver_status(data: dict) -> tuple[str | None, dict | None]:
+    """
+    (장 상태, 시간 외) — 정규장 OPEN이면 OPEN, 시간 외(국내 NXT·미국 프리·애프터)가 열려 있으면 PRE·POST와 그 가격·전일 대비·거래 시각·구분.
+    시간 외 등락의 부호는 정규장과 같은 규칙(부호 없는 글은 방향 코드로).
+    """
     status = str(data.get("marketStatus") or "").upper()
     if status == "OPEN":
-        return OPEN, None, None
+        return OPEN, None
     over = data.get("overMarketPriceInfo") or data.get("nxtOverMarketPriceInfo")
     if isinstance(over, dict) and str(over.get("overMarketStatus") or "").upper() == "OPEN":
         session = str(over.get("tradingSessionType") or "").upper()
-        return (PRE if session.startswith("PRE") else POST), _positive(over.get("overPrice")), session or None
-    return (CLOSED if status else None), None, None
+        price = _positive(over.get("overPriceRaw", over.get("overPrice")))
+        detail = None if price is None else {
+            "price": price, "change": _naver_change(over),
+            "changePct": _number(over.get("fluctuationsRatioRaw", over.get("fluctuationsRatio"))),
+            "tradedAt": _parse_time(over.get("localTradedAt")), "session": session or None,
+        }
+        return (PRE if session.startswith("PRE") else POST), detail
+    return (CLOSED if status else None), None
 
 
 def naver_from_polling(payload: Any, market: str, code_of: Callable[[dict], str | None]) -> dict[str, dict]:
@@ -202,12 +216,12 @@ def naver_from_polling(payload: Any, market: str, code_of: Callable[[dict], str 
         price = _positive(data.get("closePriceRaw", data.get("closePrice")))
         if not code or price is None:
             continue
-        status, over_price, over_session = _naver_status(data)
+        status, over = _naver_status(data)
         currency = data.get("currencyType", {}).get("code") if isinstance(data.get("currencyType"), dict) else None
         out[code] = _item(market, code, price=price, prev_close=None, change=_naver_change(data),
                           change_pct=_number(data.get("fluctuationsRatioRaw", data.get("fluctuationsRatio"))),
                           traded_at=_parse_time(data.get("localTradedAt")), status=status, source=SOURCE_NAVER,
-                          currency=currency or ("KRW" if market == "KR" else None), over_price=over_price, over_session=over_session)
+                          currency=currency or ("KRW" if market == "KR" else None), over=over)
     return out
 
 
