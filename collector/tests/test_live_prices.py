@@ -219,3 +219,26 @@ def test_경로는_읽은_종목으로_부른다(client, monkeypatch):
                                                                           "fetchedAt": datetime.now(timezone.utc).isoformat()})
     res = client.get("/live/prices", params={"items": "US:AAPL,KR:005930"})
     assert res.status_code == 200 and seen == [[("US", "AAPL"), ("KR", "005930")]]
+
+
+# --------------------------------------------------------------------------- QA-166
+# 운영 배포 뒤 확인(2026-11-03 04:55 KST, 미국 정규장): Yahoo spark는 5초 간격 13번 동안 AAPL·NVDA 모두 같은 값·같은 거래 시각(1분 넘게 캐시된 응답)이었고,
+# 네이버 해외는 13번 모두 새 거래 시각(가격 9번 바뀜). 미국을 Yahoo부터 물어 Yahoo가 값을 주면 네이버는 묻지 않아, 5초 주기를 골라도 미국 가격이 1분 넘게
+# 그대로였습니다. 실시간 값을 주는 네이버를 먼저 묻고, 네이버가 못 주는 종목(지수 ^…·환율 =X 등)만 Yahoo에 묻습니다.
+@pytest.mark.xfail(strict=True, reason="QA-166 — 미국을 Yahoo부터 물어 오래된 값을 씀")
+def test_QA166_미국은_네이버를_먼저_묻고_못_준_종목만_Yahoo에(monkeypatch):
+    asked: list = []
+    stale = {"spark": {"result": [_yahoo_meta("AAPL", 330.0, at=NOW - 70), _yahoo_meta("^GSPC", 7500.0, at=NOW - 70)]}}
+
+    def fake(url, **kwargs):
+        asked.append((url, (kwargs.get("params") or {}).get("symbols")))
+        if "spark" in url:
+            return stale
+        return NAVER_WORLD
+    monkeypatch.setattr(lp, "_get_json", fake)
+    monkeypatch.setattr(lp.time, "time", lambda: NOW)
+    out = lp.prices([("US", "AAPL"), ("US", "^GSPC")])
+    assert out["items"]["US:AAPL"]["source"] == "네이버" and out["items"]["US:AAPL"]["price"] == 337.77
+    assert out["items"]["US:^GSPC"]["source"] == "Yahoo", "네이버가 못 찾는 지수는 Yahoo"
+    assert "polling.finance.naver.com" in asked[0][0], "네이버를 먼저"
+    assert [symbols for url, symbols in asked if "spark" in url] == ["^GSPC"], "Yahoo에는 네이버가 못 준 종목만"
