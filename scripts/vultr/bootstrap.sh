@@ -1,14 +1,16 @@
 #!/usr/bin/env bash
 # =============================================================================
-# scripts/vultr/bootstrap.sh — Vultr my-macro-app(서울 icn, vhf-2c-4gb, Ubuntu 24.04 LTS x64)의 첫 준비(ADR 0021).
+# scripts/vultr/bootstrap.sh — Vultr my-macro-app(서울 icn, vhf-2c-4gb, Ubuntu 24.04 LTS x64)의 첫 준비(ADR 0023).
 # 인스턴스를 만들 때 cloud-init user-data로 넣으면 첫 기동 때 root로 한 번 돕니다. 기록은 /var/log/cloud-init-output.log.
 # 다시 돌려도 됩니다(된 단계는 건너뜀). scripts/aws/bootstrap.sh에서 갈라냈고 다른 점은:
 #
 #   · Vultr 이미지는 root뿐이라 ubuntu 사용자(sudo·docker 그룹)를 만들고 root의 authorized_keys를 넘깁니다.
-#   · sshd: 비밀번호 로그인 금지, root는 키로만. 방화벽은 Vultr 방화벽 그룹(22는 PC IP만, 443 공개)이 맡습니다.
+#   · sshd: 비밀번호 로그인 금지, root는 키로만. 방화벽은 Vultr 방화벽 그룹(22/tcp는 PC IP만, 41641/udp는 Tailscale
+#     직접 연결 — 공개 TCP 포트 없음)이 맡습니다. 화면·Tailscale SSH는 scripts/vultr/tailscale-up.sh.
 #   · AWS CLI v2는 S3 백업(backup-s3.sh)을 계속 쓰기 위해 둡니다. 인증은 인스턴스 프로필이 없으니 ubuntu의 ~/.aws/credentials
 #     (백업 버킷만 쓰는 IAM 사용자 키)로 — 이 스크립트는 비밀값을 다루지 않습니다.
-#   · 나머지(Docker 공식 저장소, 스왑 2 GiB, journald 상한)는 같습니다. 디스크는 128 GB라 journald 상한은 500M.
+#   · 스왑: Vultr Ubuntu 24.04 이미지에 /swapfile(8 GiB)이 이미 있어 그대로 둡니다 — 없을 때만 2 GiB를 만듭니다.
+#   · 나머지(Docker 공식 저장소, journald 상한)는 같습니다. 디스크는 128 GB라 journald 상한은 500M.
 # =============================================================================
 set -euo pipefail
 
@@ -75,7 +77,7 @@ if [ ! -f /home/ubuntu/.aws/config ]; then
     chown ubuntu:ubuntu /home/ubuntu/.aws/config
 fi
 
-echo "== 스왑 2 GiB"
+echo "== 스왑(이미지의 /swapfile이 없을 때만 2 GiB)"
 if [ ! -f /swapfile ]; then
     fallocate -l 2G /swapfile
     chmod 600 /swapfile
