@@ -81,7 +81,8 @@ ADR 0019의 AWS 서버는 가동 창(평일 밤·평일 낮·일요일 밤)만 �
   Tailscale 주소로 로그인·직접 연결·백업 `db/vultr/`·cron. 수집 첫 바퀴 55번 ok·누락 0. 토스는 AWS → Vultr → AWS로 번갈아 불러 모두 ok(401 재발급 경로).
 - (2026-11-03 02:28~02:33 KST) **컷오버 — 사용자 결정으로 D4(첫 주말 낮)보다 앞당겨 미국 장중에 함**: AWS `.env` `PAPER_ENABLED=false` → 백엔드 다시 띄움 →
   `backup-s3.sh`(460M) → Vultr 복원 → 계좌 10개의 주문·체결·보유·최근 순자산·현금과 전체 수치(결정 24·주문 112·체결 66·작업 기록 246·실행 감사 18·저장본 104)가
-  AWS와 같음 → Vultr `.env`의 `PAPER_ENABLED=false` 삭제·`deploy.sh` → AWS EventBridge 일정 6개 DISABLE·인스턴스 정지. 미국 장중 리스크 점검은 약 3분 비었습니다.
+  AWS와 같음 → Vultr `.env`의 `PAPER_ENABLED=false` 삭제·`deploy.sh` → AWS EventBridge 일정 6개 DISABLE·인스턴스 정지. 미국 장중 리스크 점검은 약 10분 비었습니다
+  (AWS 마지막 02:27:49 → Vultr 첫 02:37:21 — 기동 뒤 첫 실행 지연 포함, 그 사이 체결·스탑 0).
   대조 중 AWS `.env`에만 있던 `PAPER_KR_START_DATE`(로컬 `.env`에는 없음)를 찾아 Vultr에 더했습니다 — `.env.vultr.example`에 적음.
 - **Tailscale SSH**: 0019가 문제 삼은 부위를 켜 둡니다(`--ssh`). tailnet 사용자는 1명이고 기본 정책(모든 기기 서로 허용)입니다. 공지가 새로 나오면
   `sudo apt-get install --only-upgrade tailscale`로 올리고, 필요하면 `tailscale set --ssh=false`로 끄고 비상용 22(PC IP만)로 대신합니다.
