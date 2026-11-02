@@ -89,6 +89,8 @@ class RouteInventoryTest {
             "GET /api/ai/toss/diagnostics", "GET /api/ai/toss/exchange-rate", "GET /api/ai/toss/indices",
             // 검색 상세 화면
             "GET /api/detail/quote", "GET /api/detail/news", "GET /api/detail/symbols", "POST /api/detail/summary",
+            // 화면 실시간 시세(ADR 0024)
+            "GET /api/live/prices", "GET /api/live/prices/stream",
             // 모의 매매(운영자 전용)
             "GET /api/paper/overview", "GET /api/paper/live", "GET /api/paper/status", "GET /api/paper/names",
             "GET /api/paper/books/{code}/positions",

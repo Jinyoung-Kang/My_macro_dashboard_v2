@@ -76,6 +76,8 @@ public final class AccessPolicy {
         // 검색 상세 화면 — 외부 정보(시세·뉴스·종목 찾기, 수집기 실시간 조회)는 회원, AI 요약(유료 API, 하루 한도)은 유료
         member("GET /api/detail/quote", "GET /api/detail/news", "GET /api/detail/symbols");
         pro("POST /api/detail/summary");
+        // 화면 실시간 시세(ADR 0024 — 모의 매매 장중 카드·보유 표·종목 상세, 저장하지 않는 외부 조회 — 상세 시세와 같은 등급)
+        member("GET /api/live/prices", "GET /api/live/prices/stream");
 
         // 알림 — 규칙·알림함(등급별 규칙 수와 종류는 AlertService가 제한)
         member("GET /api/alerts/rules", "POST /api/alerts/rules", "POST /api/alerts/rules/{id}",

@@ -226,6 +226,17 @@ GET·OPTIONS 밖(쓰기·HEAD)은 경로와 상관없이 403 `{"error":"demo_rea
 | `GET /api/detail/symbols?q=` | `{available, symbols:{items:[{market, code, yahooSymbol, name, exchange, kind, source}], errors, error}}` — 네이버 자동완성 + Yahoo 검색(한글·숫자 질의는 네이버 먼저), 10건. 검색어 40자 이내, 비면 빈 목록 |
 | `POST /api/detail/summary` | (유료) `{market?, code?, q?, label?}` → `{status, summary, model, generatedAtKst, cached, sources:[{n, label, url}], quota:{used, limit}, error}` — 서버가 모은 시세·지표·뉴스 제목만 번호를 붙여 Claude Haiku 5.5(effort medium)에 넘김, 줄 끝 [번호]가 `sources`. 같은 대상·같은 KST 날짜의 성공 요약은 다시 부르지 않음(`cached`). 하루 한도는 AI 리포트와 같은 값(`ai.detail`로 따로 셈), 모델에 닿지 않은 실패는 되돌림 |
 
+### 화면 실시간 시세 ([ADR 0024](adr/0024-live-prices-sse.md))
+
+모의 매매 장중 카드·보유 표·종목 상세가 사용자가 고른 주기(5초~3시간, 기본 1시간)로 받는 가격입니다. 저장하지 않고 수집기 `/live/prices`(미국 Yahoo → 네이버,
+국내 네이버 → 다음 → 토스 1분봉, 3초 캐시)를 전하며, 장부(체결·스탑·통계·결정)는 쓰지 않습니다. 종목은 `items=US:AAPL,KR:005930`(Yahoo 심볼·국내 6자리,
+60개까지 — 형식이 틀리면 400). `store_only` 읽기 모드에서는 부르지 않고 `available:false`.
+
+| 경로 | 설명 |
+|---|---|
+| `GET /api/live/prices?items=` | 지금 한 번 → `{available, prices:{fetchedAt, items:{'US:AAPL':{market, code, price, prevClose, change, changePct, currency, tradedAt, status(OPEN·PRE·POST·CLOSED·null), source, overPrice, overSession}}, missing:[…], errors:{출처: 사유}}}` — 모르는 값은 null |
+| `GET /api/live/prices/stream?items=&interval=` | SSE(`text/event-stream`) — 바로 한 번, 그 뒤 `interval`초(5·10·30·60·120·300·600·900·1800·3600·10800)마다 `prices` 이벤트(본문은 위와 같음), 25초마다 주석 줄. 받은 종목이 모두 장이 닫혀 있으면 다음은 5분 이상 뒤. 연결은 주기 + 5분 뒤 끝나고 브라우저가 다시 이음. 동시 연결 20개를 넘으면 429 |
+
 ### 모의 매매(미국·한국, 운영자 전용)
 
 모든 경로가 운영자 전용입니다. 테이블(V8)이나 V9~V11의 열(`paper_track_record.group_code`·`data_source`, `paper_decisions.packet_text`, `paper_api_usage.est_cost_calls`), V12의 `paper_reviews`, V13~V16의 열(`paper_books.market`·`currency`(V13), `paper_reviews.market`·`paper_notes.market`(V14), `paper_positions.fill_ref_volume`(V15), `paper_orders.ledger_hold_reason`(V16)), V17의 `paper_fills.bar_at` 열과 `paper_order_exec`, V18의 `paper_checkpoints`가 아직 없으면 `{available:false, message}`(POST·DELETE는 `ok:false`도)로 답합니다(`PaperStore.ready` — 백엔드만 새로 띄워 마이그레이션이 빠졌을 때, QA-016).
