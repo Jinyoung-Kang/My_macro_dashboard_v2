@@ -8,6 +8,8 @@ tests/test_live_prices.py
 - 거부: Yahoo 래치가 닫혀 있으면 묻지 않고, Yahoo가 거부하면 yfinance와 같은 래치 이름(YAHOO_HOST)을 닫음
 - 캐시: 같은 종목은 3초 동안 한 번만, 못 찾은 종목도 3초 동안 다시 묻지 않음
 - 경로: 형식이 틀리면 400(부르지 않음)
+- 2단계(시장 메뉴 카드): 'TV:거래소:심볼'은 트레이딩뷰 global/scan 한 번(지연은 update_mode, 거래 시각은 모름), 'NI:.INX'는 네이버 해외 지수
+- 시간 외(미국 프리·애프터, 국내 NXT): 열려 있으면 그 가격·전일 대비·거래 시각, 지연은 네이버 delayTime
 """
 from __future__ import annotations
 
@@ -69,9 +71,11 @@ DAUM = {"symbolCode": "A005930", "tradePrice": 230000.0, "tradeTime": "195900", 
 def test_요청은_US_심볼과_KR_6자리만_같은_것은_하나_대문자로():
     assert lp.parse_items("US:aapl, KR:005930,US:AAPL,us:^GSPC,KR:0088m0") == [
         ("US", "AAPL"), ("KR", "005930"), ("US", "^GSPC"), ("KR", "0088M0")]
+    assert lp.parse_items("TV:tvc:dxy,TV:CME_MINI:ES1!,NI:.INX") == [("TV", "TVC:DXY"), ("TV", "CME_MINI:ES1!"), ("NI", ".INX")]
 
 
-@pytest.mark.parametrize("text", ["", "AAPL", "JP:7203", "KR:12345", "US:" + "A" * 25, ",".join(f"US:A{i}" for i in range(61))])
+@pytest.mark.parametrize("text", ["", "AAPL", "JP:7203", "KR:12345", "US:" + "A" * 25, ",".join(f"US:A{i}" for i in range(61)),
+                                  "TV:DXY", "TV:TVC:DX Y", "NI:INX", "NI:.IN/X"])
 def test_형식이_틀리거나_60개를_넘으면_ValueError(text):
     with pytest.raises(ValueError):
         lp.parse_items(text)
@@ -245,3 +249,58 @@ def test_QA166_미국은_네이버를_먼저_묻고_못_준_종목만_Yahoo에(m
     assert out["items"]["US:^GSPC"]["source"] == "Yahoo", "네이버가 못 찾는 지수는 Yahoo"
     assert "polling.finance.naver.com" in asked[0][0], "네이버를 먼저"
     assert [symbols for url, symbols in asked if "spark" in url] == ["^GSPC"], "Yahoo에는 네이버가 못 준 종목만"
+
+
+# --------------------------------------------------------------------------- 2단계 — 지수·환율·금리·원자재
+TV_SCAN = {"totalCount": 3, "data": [
+    {"s": "TVC:DXY", "d": [101.77, -0.189, -0.193, "streaming", "market"]},
+    {"s": "NYMEX:CL1!", "d": [95.88, -7.91, -8.24, "delayed_streaming_600", "market"]},
+    {"s": "KRX:KOSPI", "d": [5859.08, 2.24, 128.34, "streaming", "out_of_session"]},
+    {"s": "BAD:NOPRICE", "d": [None, None, None, "streaming", "market"]},
+]}
+
+
+def test_트레이딩뷰는_update_mode로_지연_장_상태는_current_session_거래_시각은_모름():
+    out = lp.tradingview_from_scan(TV_SCAN)
+    assert set(out) == {"TVC:DXY", "NYMEX:CL1!", "KRX:KOSPI"}
+    dxy, wti, kospi = out["TVC:DXY"], out["NYMEX:CL1!"], out["KRX:KOSPI"]
+    assert dxy["market"] == "TV" and dxy["price"] == 101.77 and dxy["change"] == -0.193 and dxy["changePct"] == -0.189
+    assert dxy["delayMinutes"] == 0 and dxy["status"] == "OPEN" and dxy["tradedAt"] is None and dxy["source"] == "TradingView"
+    assert dxy["prevClose"] == pytest.approx(101.963)
+    assert wti["delayMinutes"] == 10, "선물은 공개 시세가 10분 지연 — 숨기지 않음"
+    assert kospi["status"] == "CLOSED"
+
+
+def test_트레이딩뷰는_global_scan_한_번에_여러_심볼(monkeypatch):
+    sent: list = []
+
+    class Res:
+        status_code = 200
+
+        @staticmethod
+        def json():
+            return TV_SCAN
+
+    class Session:
+        @staticmethod
+        def post(url, json=None, headers=None, timeout=None):
+            sent.append((url, json))
+            return Res()
+    monkeypatch.setattr(lp, "get_session", lambda: Session())
+    out = lp.prices([("TV", "TVC:DXY"), ("TV", "NYMEX:CL1!"), ("TV", "KRX:KOSPI")])
+    assert len(sent) == 1 and sent[0][0] == "https://scanner.tradingview.com/global/scan"
+    assert sent[0][1]["symbols"]["tickers"] == ["TVC:DXY", "NYMEX:CL1!", "KRX:KOSPI"]
+    assert set(out["items"]) == {"TV:TVC:DXY", "TV:NYMEX:CL1!", "TV:KRX:KOSPI"}
+
+
+def test_네이버_해외_지수는_로이터_코드로_지연은_delayTime(monkeypatch):
+    payload = {"datas": [{"reutersCode": ".INX", "closePrice": "7,541.40", "compareToPreviousClosePrice": "-38.67",
+                          "compareToPreviousPrice": {"code": "5"}, "fluctuationsRatio": "-0.51", "localTradedAt": "2026-11-02T16:16:21-05:00",
+                          "marketStatus": "CLOSE", "stockExchangeType": {"delayTime": 0}}]}
+    urls: list = []
+    monkeypatch.setattr(lp, "_get_json", lambda url, **k: urls.append(url) or payload)
+    out = lp.prices([("NI", ".INX"), ("NI", ".NDX")])
+    assert urls == ["https://polling.finance.naver.com/api/realtime/worldstock/index/.INX,.NDX"]
+    spx = out["items"]["NI:.INX"]
+    assert spx["price"] == 7541.4 and spx["change"] == -38.67 and spx["delayMinutes"] == 0 and spx["status"] == "CLOSED"
+    assert spx["tradedAt"] == "2026-11-02T21:16:21Z" and out["missing"] == ["NI:.NDX"]

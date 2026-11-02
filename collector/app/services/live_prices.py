@@ -7,6 +7,9 @@
   (지수 ^…·환율 =X 등)은 Yahoo spark(``v7/finance/spark`` — 한 번에 20종목). Yahoo spark는 1분 넘게 같은 값을 돌려주는 캐시 응답이라 먼저 묻지
   않습니다(QA-166). 트레이딩뷰는 로그인 없이 미국 주식이 15분 지연, 인베스팅은 종목 ID 검색이 빈 결과, 구글은 종목마다 1.4MB 페이지라 쓰지 않습니다.
 - 국내: 네이버 polling(여러 종목 한 번에, 거래 시각 포함) → 다음(종목마다, Referer 필요) → 토스 1분봉(분 단위 — 마지막 대체).
+- 지수·환율·금리·원자재(2단계 — 시장 메뉴 카드, 2026-11-03 실측): ``TV:거래소:심볼``은 트레이딩뷰 공개 스캐너(``global/scan`` 한 번에 여러 심볼 —
+  달러지수·환율·미국채 수익률·코스피·닛케이·항셍은 실시간, 선물·상하이는 10~15분 지연을 ``delayMinutes``로), ``NI:.INX``는 네이버 해외 지수
+  (S&P 500·나스닥 100 실시간 — 트레이딩뷰는 이 둘이 10~15분 지연).
 같은 종목은 :data:`TTL_SECONDS` 동안 같은 값 — 5초 주기·여러 탭·여러 화면이 출처를 한 번만 부르게. 출처 거부(403·429·봇 차단)는 공용 세션의
 5분 래치(http.py)를 따르고 다음 출처로 넘어갑니다. Yahoo는 yfinance 경로와 같은 래치 이름(:data:`http.YAHOO_HOST`)을 함께 씁니다(같은 한도).
 모르는 값은 None(0으로 채우지 않음). 파싱(``*_from_*``)은 순수 함수라 시험이 네트워크 없이 고정 응답으로 봅니다.
@@ -14,6 +17,7 @@
 from __future__ import annotations
 
 import logging
+import re
 import threading
 import time
 from datetime import datetime, timezone
@@ -23,6 +27,7 @@ from zoneinfo import ZoneInfo
 from .. import http
 from ..http import brief_error, get_session
 from . import detail
+from . import scraper
 from . import toss as toss_service
 
 logger = logging.getLogger(__name__)
@@ -42,11 +47,17 @@ YAHOO_HEADERS = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleW
                                "Chrome/141.0.0.0 Safari/537.36"}
 NAVER_POLLING = "https://polling.finance.naver.com/api/realtime"
 DAUM_QUOTES = "https://finance.daum.net/api/quotes"
+TRADINGVIEW_SCAN = "https://scanner.tradingview.com/global/scan"
+TRADINGVIEW_COLUMNS = ["close", "change", "change_abs", "update_mode", "current_session"]
+TRADINGVIEW_HEADERS = {"Origin": "https://www.tradingview.com", "Referer": "https://www.tradingview.com/"}
+TV_CODE = re.compile(r"^[A-Z0-9_]{1,20}:[A-Z0-9_.!]{1,20}$")
+NI_CODE = re.compile(r"^\.[A-Z0-9]{1,10}$")
 
 SOURCE_YAHOO = "Yahoo"
 SOURCE_NAVER = "네이버"
 SOURCE_DAUM = "다음"
 SOURCE_TOSS = "토스 1분봉"
+SOURCE_TRADINGVIEW = "TradingView"
 
 OPEN, PRE, POST, CLOSED = "OPEN", "PRE", "POST", "CLOSED"
 
@@ -54,7 +65,10 @@ OPEN, PRE, POST, CLOSED = "OPEN", "PRE", "POST", "CLOSED"
 
 
 def parse_items(text: str) -> list[tuple[str, str]]:
-    """``'US:AAPL,KR:005930'`` → [(시장, 코드)] — 같은 것은 하나, 순서 유지. 형식이 틀리거나 :data:`MAX_ITEMS`를 넘으면 ValueError."""
+    """
+    ``'US:AAPL,KR:005930,TV:TVC:DXY,NI:.INX'`` → [(시장, 코드)] — 같은 것은 하나, 순서 유지. 시장은 US(Yahoo 심볼)·KR(6자리)·TV(트레이딩뷰
+    '거래소:심볼')·NI(네이버 해외 지수 '.INX'). 형식이 틀리거나 :data:`MAX_ITEMS`를 넘으면 ValueError.
+    """
     out: list[tuple[str, str]] = []
     for raw in (text or "").split(","):
         raw = raw.strip()
@@ -63,12 +77,9 @@ def parse_items(text: str) -> list[tuple[str, str]]:
         market, _, code = raw.partition(":")
         market = market.strip().upper()
         code = code.strip().upper()
-        if market == "US" and detail.US_CODE.match(code):
-            pass
-        elif market == "KR" and detail.KR_CODE.match(code):
-            pass
-        else:
-            raise ValueError(f"종목은 'US:심볼' 또는 'KR:6자리'입니다: {raw[:30]}")
+        if not ((market == "US" and detail.US_CODE.match(code)) or (market == "KR" and detail.KR_CODE.match(code))
+                or (market == "TV" and TV_CODE.match(code)) or (market == "NI" and NI_CODE.match(code))):
+            raise ValueError(f"종목은 'US:심볼'·'KR:6자리'·'TV:거래소:심볼'·'NI:.지수'입니다: {raw[:30]}")
         if (market, code) not in out:
             out.append((market, code))
     if not out:
@@ -114,7 +125,7 @@ def _parse_time(text: Any) -> datetime | None:
 
 def _item(market: str, code: str, *, price: float, prev_close: float | None, change: float | None, change_pct: float | None,
           traded_at: datetime | None, status: str | None, source: str, currency: str | None,
-          over: dict | None = None) -> dict:
+          over: dict | None = None, delay_minutes: int | None = None) -> dict:
     """
     한 종목의 응답 — 등락은 주어진 값, 없으면 전일 종가로 계산(전일 종가도 없으면 None). ``over``는 시간 외(미국 프리·애프터, 국내 NXT 장 전·장 후)가
     열려 있을 때의 {price, change, changePct, tradedAt, session} — 화면은 그때 이 가격을 주 가격으로 보입니다(정규장 값은 그대로 둠).
@@ -128,7 +139,7 @@ def _item(market: str, code: str, *, price: float, prev_close: float | None, cha
     over = over or {}
     return {
         "market": market, "code": code, "price": price, "prevClose": prev_close, "change": change, "changePct": change_pct,
-        "currency": currency, "tradedAt": _iso(traded_at), "status": status, "source": source,
+        "currency": currency, "tradedAt": _iso(traded_at), "status": status, "source": source, "delayMinutes": delay_minutes,
         "overPrice": over.get("price"), "overChange": over.get("change"), "overChangePct": over.get("changePct"),
         "overTradedAt": _iso(over.get("tradedAt")), "overSession": over.get("session"),
     }
@@ -218,10 +229,35 @@ def naver_from_polling(payload: Any, market: str, code_of: Callable[[dict], str 
             continue
         status, over = _naver_status(data)
         currency = data.get("currencyType", {}).get("code") if isinstance(data.get("currencyType"), dict) else None
+        exchange = data.get("stockExchangeType") if isinstance(data.get("stockExchangeType"), dict) else {}
+        delay = _number(exchange.get("delayTime"))
         out[code] = _item(market, code, price=price, prev_close=None, change=_naver_change(data),
                           change_pct=_number(data.get("fluctuationsRatioRaw", data.get("fluctuationsRatio"))),
                           traded_at=_parse_time(data.get("localTradedAt")), status=status, source=SOURCE_NAVER,
-                          currency=currency or ("KRW" if market == "KR" else None), over=over)
+                          currency=currency or ("KRW" if market == "KR" else None), over=over,
+                          delay_minutes=int(delay) if delay is not None else None)
+    return out
+
+
+_TV_STATUS = {"market": OPEN, "pre_market": PRE, "post_market": POST, "out_of_session": CLOSED}
+
+
+def tradingview_from_scan(payload: Any) -> dict[str, dict]:
+    """트레이딩뷰 global/scan 응답(열은 :data:`TRADINGVIEW_COLUMNS` 순서) → {'거래소:심볼': 종목}. 지연은 update_mode, 거래 시각은 주지 않음(null)."""
+    out: dict[str, dict] = {}
+    rows = payload.get("data") if isinstance(payload, dict) else None
+    for row in rows if isinstance(rows, list) else []:
+        values = row.get("d") if isinstance(row, dict) else None
+        symbol = str(row.get("s") or "") if isinstance(row, dict) else ""
+        if not symbol or not isinstance(values, list) or len(values) < len(TRADINGVIEW_COLUMNS):
+            continue
+        close, pct, change, mode, session = values[:5]
+        price = _positive(close)
+        if price is None:
+            continue
+        out[symbol] = _item("TV", symbol, price=price, prev_close=None, change=_number(change), change_pct=_number(pct),
+                            traded_at=None, status=_TV_STATUS.get(str(session)), source=SOURCE_TRADINGVIEW, currency=None,
+                            delay_minutes=scraper.delay_minutes(mode))
     return out
 
 
@@ -379,9 +415,38 @@ def _fetch_toss(codes: list[str], errors: dict[str, str]) -> dict[str, dict]:
     return out
 
 
+def _fetch_tradingview(codes: list[str], errors: dict[str, str]) -> dict[str, dict]:
+    out: dict[str, dict] = {}
+    for chunk in _chunks(codes, 50):
+        try:
+            res = get_session().post(TRADINGVIEW_SCAN, json={"symbols": {"tickers": chunk}, "columns": TRADINGVIEW_COLUMNS},
+                                     headers=TRADINGVIEW_HEADERS, timeout=FETCH_TIMEOUT)
+            if res.status_code != 200:
+                raise RuntimeError(f"HTTP {res.status_code}")
+            out.update(tradingview_from_scan(res.json()))
+        except Exception as exc:  # noqa: BLE001
+            errors[SOURCE_TRADINGVIEW] = brief_error(exc)
+            break
+    return out
+
+
+def _fetch_naver_index(codes: list[str], errors: dict[str, str]) -> dict[str, dict]:
+    out: dict[str, dict] = {}
+    for chunk in _chunks(codes):
+        try:
+            payload = _get_json(f"{NAVER_POLLING}/worldstock/index/{','.join(chunk)}")
+        except Exception as exc:  # noqa: BLE001
+            errors[SOURCE_NAVER] = brief_error(exc)
+            break
+        out.update(naver_from_polling(payload, "NI", lambda data: str(data.get("reutersCode") or "").upper() or None))
+    return out
+
+
 CHAINS: dict[str, tuple[Callable[[list[str], dict[str, str]], dict[str, dict]], ...]] = {
     "US": (_fetch_naver_us, _fetch_yahoo),   # QA-166 — Yahoo spark는 1분 넘게 같은 값이라 네이버(5초마다 새 값)를 먼저
     "KR": (_fetch_naver_kr, _fetch_daum, _fetch_toss),
+    "TV": (_fetch_tradingview,),
+    "NI": (_fetch_naver_index,),
 }
 
 
