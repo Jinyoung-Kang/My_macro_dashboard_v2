@@ -365,6 +365,115 @@ class SessionFilterTest {
      * 계정 저장소는 흉내(첫 운영자 7번, 쿠키 {@code member-cookie}만 유효)이고, 필터·AuthService는 실제 코드입니다.
      */
     @Nested
+    @DisplayName("Tailscale 신원 자동 로그인(ADR 0023)")
+    class TailnetOwnerMode {
+
+        static final long OWNER_ID = 9;
+        static final String TAILNET = "https://my-macro-app.example.ts.net";
+
+        record Outcome(int status, String body, boolean reached, CurrentUser user) {
+        }
+
+        private WebConfig.SessionFilter filter(String ownerLogin) {
+            AppProperties properties = new AppProperties();
+            properties.setFrontendOrigin("http://localhost:8201,http://127.0.0.1:8201," + TAILNET);
+            properties.setFrontendPort(8201);
+            properties.setCookieSecure(true);
+            properties.setTailnetOwnerLogin(ownerLogin);
+            UserStore users = mock(UserStore.class);
+            when(users.ready()).thenReturn(true);
+            when(users.firstOwner()).thenReturn(Optional.of(new UserStore.User(OWNER_ID, "owner@test.local", "hash",
+                    "OWNER", "PRO", Instant.now(), Instant.now())));
+            SessionStore sessions = mock(SessionStore.class);
+            when(sessions.findActive(any())).thenAnswer(invocation -> {
+                byte[] hash = invocation.getArgument(0);
+                if (Arrays.equals(hash, sha256("member-cookie"))) {
+                    return Optional.of(new SessionStore.Active(UUID.randomUUID(), 2, "member@test.local", "MEMBER", "FREE",
+                            Instant.now(), Instant.now().plusSeconds(3600)));
+                }
+                return Optional.empty();
+            });
+            AuthService auth = new AuthService(properties, users, sessions, mock(AuditLogStore.class), new PasswordHasher());
+            return new WebConfig.SessionFilter(auth, WebConfig.allowedOriginPatterns(properties), false,
+                    new com.macrodash.feature.auth.TailnetLogin(properties));
+        }
+
+        /** Serve를 거친 요청처럼 서버 이름은 ts.net, caddy가 붙인 X-Forwarded-For를 둡니다. */
+        private Outcome send(WebConfig.SessionFilter filter, String method, String path, String cookie,
+                             String... headers) throws Exception {
+            MockHttpServletRequest request = new MockHttpServletRequest(method, path);
+            request.setServletPath(path);
+            request.setServerName("my-macro-app.example.ts.net");
+            request.addHeader("X-Forwarded-For", "172.18.0.1");
+            for (int i = 0; i < headers.length; i += 2) {
+                request.addHeader(headers[i], headers[i + 1]);
+            }
+            if (cookie != null) {
+                request.setCookies(new Cookie(AuthService.COOKIE_NAME, cookie));
+            }
+            MockHttpServletResponse response = new MockHttpServletResponse();
+            CurrentUser[] seen = {null};
+            boolean[] reached = {false};
+            filter.doFilter(request, response, (req, res) -> {
+                reached[0] = true;
+                seen[0] = CurrentUser.of((jakarta.servlet.http.HttpServletRequest) req);
+            });
+            return new Outcome(response.getStatus(), response.getContentAsString(StandardCharsets.UTF_8), reached[0],
+                    seen[0]);
+        }
+
+        @Test
+        @DisplayName("운영자로 정한 Tailscale 사용자의 쿠키 없는 GET은 첫 운영자로 — 운영자 경로까지, 세션 없음")
+        void ownerIdentityIsOwner() throws Exception {
+            WebConfig.SessionFilter on = filter("owner@example.invalid");
+            for (String path : new String[]{"/api/macro/overview", "/api/paper/overview", "/api/status"}) {
+                Outcome outcome = send(on, "GET", path, null, "Tailscale-User-Login", "Owner@Example.Invalid");
+                assertThat(outcome.reached()).as(path).isTrue();
+                assertThat(outcome.user().id()).isEqualTo(OWNER_ID);
+                assertThat(outcome.user().isLocalOwner()).isTrue();
+            }
+        }
+
+        @Test
+        @DisplayName("다른 Tailscale 사용자·헤더 없음(비상용 SSH 포워딩)·기능 꺼짐은 401 — 로그인 화면 그대로")
+        void othersNeedLogin() throws Exception {
+            WebConfig.SessionFilter on = filter("owner@example.invalid");
+            assertThat(send(on, "GET", "/api/macro/overview", null, "Tailscale-User-Login", "guest@example.invalid").status())
+                    .isEqualTo(401);
+            assertThat(send(on, "GET", "/api/macro/overview", null).status()).isEqualTo(401);
+            WebConfig.SessionFilter off = filter("");
+            assertThat(send(off, "GET", "/api/macro/overview", null, "Tailscale-User-Login", "owner@example.invalid").status())
+                    .as("설정이 비면 헤더를 보지 않음").isEqualTo(401);
+        }
+
+        @Test
+        @DisplayName("쓰기는 화면(Tailscale 주소)의 Origin일 때만 — Origin 없음·다른 출처는 403 bad_origin(로컬 무로그인과 같은 검사)")
+        void writesNeedTheTailnetOrigin() throws Exception {
+            WebConfig.SessionFilter on = filter("owner@example.invalid");
+            Outcome ok = send(on, "POST", "/api/alerts/rules", null, "Tailscale-User-Login", "owner@example.invalid", "Origin", TAILNET);
+            assertThat(ok.reached()).isTrue();
+            Outcome foreign = send(on, "POST", "/api/alerts/rules", null, "Tailscale-User-Login", "owner@example.invalid",
+                    "Origin", "https://attacker.example");
+            assertThat(foreign.status()).isEqualTo(403);
+            assertThat(foreign.reached()).isFalse();
+            Outcome originLess = send(on, "POST", "/api/alerts/rules", null, "Tailscale-User-Login", "owner@example.invalid");
+            assertThat(originLess.status()).isEqualTo(403);
+            Outcome crossSiteGet = send(on, "GET", "/api/status", null, "Tailscale-User-Login", "owner@example.invalid",
+                    "Sec-Fetch-Site", "cross-site");
+            assertThat(crossSiteGet.status()).as("다른 사이트의 링크·이미지로 부른 GET").isEqualTo(403);
+        }
+
+        @Test
+        @DisplayName("유효한 세션 쿠키가 있으면 세션이 이긴다 — 운영자로 올리지 않음")
+        void sessionTakesPrecedence() throws Exception {
+            Outcome member = send(filter("owner@example.invalid"), "GET", "/api/macro/overview", "member-cookie",
+                    "Tailscale-User-Login", "owner@example.invalid");
+            assertThat(member.reached()).isTrue();
+            assertThat(member.user().role()).isEqualTo("MEMBER");
+        }
+    }
+
+    @Nested
     @DisplayName("로컬 무로그인")
     class LocalNoLoginMode {
 

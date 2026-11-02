@@ -69,7 +69,9 @@ class LivePriceServiceTest {
     void items() {
         assertThat(LivePriceService.items(" us:aapl,KR:005930,US:AAPL, us:^gspc ,KR:0088m0,US:KRW=X"))
                 .containsExactly("US:AAPL", "KR:005930", "US:^GSPC", "KR:0088M0", "US:KRW=X");
-        for (String bad : new String[]{"", "AAPL", "JP:7203", "KR:12345", "US:" + "A".repeat(25), "US:AA PL"}) {
+        assertThat(LivePriceService.items("tv:tvc:dxy,TV:CME_MINI:ES1!,NI:.INX"))
+                .as("시장 메뉴 카드 — 트레이딩뷰·네이버 해외 지수").containsExactly("TV:TVC:DXY", "TV:CME_MINI:ES1!", "NI:.INX");
+        for (String bad : new String[]{"", "AAPL", "JP:7203", "KR:12345", "US:" + "A".repeat(25), "US:AA PL", "TV:DXY", "NI:INX", "TV:TVC:D/X"}) {
             assertThatThrownBy(() -> LivePriceService.items(bad)).as(bad).isInstanceOf(InvalidRequestException.class);
         }
         StringBuilder sixtyOne = new StringBuilder();

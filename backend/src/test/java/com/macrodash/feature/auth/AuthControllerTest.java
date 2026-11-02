@@ -270,6 +270,27 @@ class AuthControllerTest {
         assertThat(ownerUser.get("email")).isEqualTo(db.email("owner"));
     }
 
+    @Test
+    @DisplayName("Tailscale 신원 자동 로그인(ADR 0023): 운영자로 정한 사용자의 헤더면 noLogin·authenticated와 user.tailnet, 다른 사용자는 로그인 모드")
+    void tailnetOwnerSession() {
+        AppProperties props = new AppProperties();
+        props.setTailnetOwnerLogin("owner@example.invalid");
+        AuthController tailnet = controller(db.service(props), props);
+        MockHttpServletRequest owner = new MockHttpServletRequest();
+        owner.addHeader(TailnetLogin.HEADER, "owner@example.invalid");
+        Map<String, Object> session = tailnet.session(owner);
+        assertThat(session).containsEntry("authenticated", true).containsEntry("noLogin", true).containsEntry("ownerMissing", false);
+        Map<?, ?> user = (Map<?, ?>) session.get("user");
+        assertThat(user.get("role")).isEqualTo("OWNER");
+        assertThat(user.get("local")).isEqualTo(true);
+        assertThat(user.get("tailnet")).isEqualTo(true);
+
+        MockHttpServletRequest guest = new MockHttpServletRequest();
+        guest.addHeader(TailnetLogin.HEADER, "guest@example.invalid");
+        assertThat(tailnet.session(guest)).containsEntry("authenticated", false).containsEntry("noLogin", false);
+        assertThat(controller.session(owner)).as("기능이 꺼진 컨트롤러는 헤더를 보지 않음").containsEntry("authenticated", false);
+    }
+
     private AuthController controller(AuthService auth, AppProperties props) {
         return new AuthController(auth, accounts, new LoginThrottle(java.time.Clock.systemUTC(), millis -> { }), props);
     }

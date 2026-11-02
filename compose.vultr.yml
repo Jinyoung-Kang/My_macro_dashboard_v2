@@ -25,7 +25,8 @@
 #   · 앞단 caddy를 더함(deploy/vultr/Caddyfile): 127.0.0.1:8201 하나만 열고 /api/*는 backend, 나머지는 frontend로.
 #     TLS는 tailscale serve에서 끝남 — 평문은 서버 안 루프백에만. 화면은 NEXT_PUBLIC_API_BASE=/(같은 출처)
 #   · 잠금화면(gate)·공개 리스너(:8301)·CloudFront 비밀 헤더는 없음 — 공개 주소가 없어 그 전제가 사라짐(ADR 0023)
-#   · 로그인은 그대로(ADR 0016): 로컬의 '로그인 없이 운영자로 열기'(DASHBOARD_LOCAL_NO_LOGIN)를 "false"로 고정
+#   · 로그인은 그대로(ADR 0016): 로컬의 '로그인 없이 운영자로 열기'(DASHBOARD_LOCAL_NO_LOGIN)를 "false"로 고정. 다만 Tailscale Serve가 붙인
+#     사용자 신원(Tailscale-User-Login)이 서버 .env의 TAILNET_OWNER_LOGIN과 같으면 로그인 없이 운영자(ADR 0023 — 사용자 결정 2026-11-03)
 #   · 세션 쿠키에 Secure(COOKIE_SECURE 기본 true) — ts.net 주소는 HTTPS, 비상용 http://localhost는 Chrome·Firefox가 안전한 출처로 봐 받습니다
 #   · 허용 출처는 Tailscale 주소(PUBLIC_ORIGIN — 서버 .env, 필수)와 비상용 localhost:8201, 메일(가입·재설정)은 끔
 #   · 앞단이 넘긴 X-Forwarded-For를 Tomcat이 믿음(내부 대역에서 온 것만). tailscale serve가 루프백으로 넘긴 요청은 모두 한 주소로 보여
@@ -69,6 +70,9 @@ services:
       # PAPER_ENABLED=false(병행 기간)이면 알림 작업도 돌지 않습니다.
       TELEGRAM_BOT_TOKEN: "${TELEGRAM_BOT_TOKEN:-}"
       TELEGRAM_CHAT_ID: "${TELEGRAM_CHAT_ID:-}"
+      # Tailscale 신원 자동 로그인(ADR 0023) — 그 Tailscale 사용자의 로그인 이름(계정 고유 값이라 서버 .env에만). 비면 꺼짐(늘 로그인 화면).
+      # 앱이 루프백(127.0.0.1:8201)에만 열려 Serve를 거쳐야 닿는다는 것이 전제 — 아래 caddy 포트.
+      TAILNET_OWNER_LOGIN: "${TAILNET_OWNER_LOGIN:-}"
       # 알림 끝의 화면 링크(Tailscale 주소).
       PUBLIC_ORIGIN: "${PUBLIC_ORIGIN:?PUBLIC_ORIGIN 필요 — 서버 .env(.env.vultr.example)}"
 

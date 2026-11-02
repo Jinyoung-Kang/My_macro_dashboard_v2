@@ -78,6 +78,9 @@ dashboard:
   # 기본은 끔. 로컬 docker-compose.yml만 켜고(LOCAL_NO_LOGIN), AWS·QA 오버레이는 false로 고정합니다. 켜면 화면·API 포트는
   # 127.0.0.1에만 열립니다. 데모 열람 토큰·Secure 쿠키·앞단 헤더 신뢰·이 맥 밖의 화면 주소 중 하나라도 있으면 기동하지 않습니다.
   local-no-login: ${DASHBOARD_LOCAL_NO_LOGIN:false}
+  # Tailscale 신원 자동 로그인(ADR 0023) — 비면 꺼짐. Vultr 서버만: Tailscale Serve가 붙인 Tailscale-User-Login이 이 값(그 Tailscale 사용자의
+  # 로그인 이름)과 같으면 쿠키 없는 요청을 첫 운영자로 엽니다. 앱이 루프백에만 열려 Serve를 거쳐야 닿는다는 것이 전제(compose.vultr.yml).
+  tailnet-owner-login: ${TAILNET_OWNER_LOGIN:}
 
   # auto | store_only | live_only
   #   auto       저장본이 신선하면 사용, 오래되면 수집기에 수집 요청

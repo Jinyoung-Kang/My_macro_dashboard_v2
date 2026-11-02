@@ -5,6 +5,7 @@ import com.macrodash.feature.auth.AccessPolicy;
 import com.macrodash.feature.auth.AuthService;
 import com.macrodash.feature.auth.DemoViewer;
 import com.macrodash.feature.auth.LocalNoLogin;
+import com.macrodash.feature.auth.TailnetLogin;
 import com.macrodash.support.CurrentUser;
 import com.macrodash.feature.auth.AuthController;
 import jakarta.servlet.FilterChain;
@@ -89,9 +90,9 @@ public class WebConfig implements WebMvcConfigurer {
 
     /** {@code localNoLogin}을 받는 것은 기동 검사(웹 배포 설정과 섞였으면 기동 중단)가 필터보다 먼저 돌게 하려는 것이기도 합니다. */
     @Bean
-    public FilterRegistrationBean<SessionFilter> sessionFilter(AuthService authService, LocalNoLogin localNoLogin) {
+    public FilterRegistrationBean<SessionFilter> sessionFilter(AuthService authService, LocalNoLogin localNoLogin, TailnetLogin tailnetLogin) {
         FilterRegistrationBean<SessionFilter> registration = new FilterRegistrationBean<>();
-        registration.setFilter(new SessionFilter(authService, allowedOriginPatterns(properties), localNoLogin.enabled()));
+        registration.setFilter(new SessionFilter(authService, allowedOriginPatterns(properties), localNoLogin.enabled(), tailnetLogin));
         registration.addUrlPatterns("/api/*");
         registration.setOrder(1);
         return registration;
@@ -134,15 +135,22 @@ public class WebConfig implements WebMvcConfigurer {
         private final org.springframework.web.cors.CorsConfiguration origins = new org.springframework.web.cors.CorsConfiguration();
         /** 로컬 무로그인 모드(ADR 0016) — 이 맥에서 온 쿠키 없는 요청을 첫 운영자로 엽니다. */
         private final boolean localNoLogin;
+        /** Tailscale 신원 자동 로그인(ADR 0023) — Serve가 붙인 신원이 운영자로 정한 사용자면 쿠키 없는 요청을 첫 운영자로. 없으면 꺼짐. */
+        private final TailnetLogin tailnetLogin;
 
         public SessionFilter(AuthService authService, List<String> allowedOriginPatterns) {
             this(authService, allowedOriginPatterns, false);
         }
 
         public SessionFilter(AuthService authService, List<String> allowedOriginPatterns, boolean localNoLogin) {
+            this(authService, allowedOriginPatterns, localNoLogin, null);
+        }
+
+        public SessionFilter(AuthService authService, List<String> allowedOriginPatterns, boolean localNoLogin, TailnetLogin tailnetLogin) {
             this.authService = authService;
             this.origins.setAllowedOriginPatterns(allowedOriginPatterns);
             this.localNoLogin = localNoLogin;
+            this.tailnetLogin = tailnetLogin;
         }
 
         /**
@@ -257,13 +265,15 @@ public class WebConfig implements WebMvcConfigurer {
             // 그다음 로컬 무로그인 운영자(ADR 0016 — 켜져 있고 이 맥에서 바로 온 요청만).
             String token = AuthController.readToken(request);
             boolean localRequest = localNoLogin && LocalNoLogin.isLocalRequest(request);
-            // 쿠키 없는 이 맥 요청이 받을 사용자는 로컬 운영자뿐이라, 다른 사이트에서 온 것이면 DB를 읽기 전에 끊습니다
+            // 그다음 Tailscale 신원 운영자(ADR 0023 — Serve가 붙인 신원이 운영자로 정한 사용자일 때만).
+            boolean tailnetOwner = tailnetLogin != null && tailnetLogin.matches(request);
+            // 쿠키 없는 이 맥·tailnet 운영자 요청이 받을 사용자는 그 운영자뿐이라, 다른 사이트에서 온 것이면 DB를 읽기 전에 끊습니다
             // (다른 사이트가 <img>로 되풀이해 불러도 운영자 조회가 돌지 않게). 쿠키가 있으면 아래에서 판정합니다.
-            if (localRequest && token == null && localOwnerCrossSite(request)) {
+            if ((localRequest || tailnetOwner) && token == null && localOwnerCrossSite(request)) {
                 writeBadOrigin(response);
                 return;
             }
-            Optional<CurrentUser> user = authService.resolve(token, request.getHeader(DemoViewer.HEADER), localRequest);
+            Optional<CurrentUser> user = authService.resolve(token, request.getHeader(DemoViewer.HEADER), localRequest, tailnetOwner);
             if (user.isEmpty()) {
                 response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
                 response.setContentType("application/json;charset=UTF-8");
@@ -271,7 +281,7 @@ public class WebConfig implements WebMvcConfigurer {
                         "{\"error\":\"unauthorized\",\"message\":\"로그인이 필요합니다.\"}");
                 return;
             }
-            if (localNoLogin && user.get().isLocalOwner() && localOwnerCrossSite(request)) {
+            if ((localNoLogin || tailnetOwner) && user.get().isLocalOwner() && localOwnerCrossSite(request)) {
                 writeBadOrigin(response);
                 return;
             }

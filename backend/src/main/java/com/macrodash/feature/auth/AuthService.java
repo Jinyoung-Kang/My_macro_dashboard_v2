@@ -367,6 +367,15 @@ public class AuthService {
      *                     꺼져 있으면 보지 않습니다.
      */
     public Optional<CurrentUser> resolve(String token, String demoHeader, boolean localRequest) {
+        return resolve(token, demoHeader, localRequest, false);
+    }
+
+    /**
+     * 위와 같고, 마지막이 Tailscale 신원 운영자(ADR 0023)입니다 — 로컬 무로그인과 같은 운영자(세션 없이).
+     *
+     * @param tailnetOwner Tailscale Serve가 붙인 신원이 운영자로 정한 Tailscale 사용자인가({@link TailnetLogin#matches}).
+     */
+    public Optional<CurrentUser> resolve(String token, String demoHeader, boolean localRequest, boolean tailnetOwner) {
         Optional<CurrentUser> session = authenticate(token);
         if (session.isPresent()) {
             return session;
@@ -374,7 +383,7 @@ public class AuthService {
         if (demo.matches(demoHeader)) {
             return Optional.of(DemoViewer.user());
         }
-        if (localNoLogin && localRequest) {
+        if ((localNoLogin && localRequest) || tailnetOwner) {
             return localOwner();
         }
         return Optional.empty();

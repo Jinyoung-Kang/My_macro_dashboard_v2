@@ -301,6 +301,10 @@ jobs:
           jq -e '.services.backend.environment | .FRONTEND_ORIGIN == "http://localhost:8201,http://127.0.0.1:8201,https://my-macro-app.ci.ts.net" and .FRONTEND_PORT == "8201" and .PUBLIC_URL == "https://my-macro-app.ci.ts.net" and .PUBLIC_ORIGIN == "https://my-macro-app.ci.ts.net" and .SERVER_FORWARDHEADERSSTRATEGY == "native"' "$RUNNER_TEMP/vultr.json"
           jq -e '.services.backend.environment | has("DASHBOARD_DEMO_VIEWER_TOKEN") | not' "$RUNNER_TEMP/vultr.json"
           jq -e '.services.backend.environment.DASHBOARD_SCHEDULER_REGIMERECORDHOURKST == "23"' "$RUNNER_TEMP/vultr.json"
+          # Tailscale 신원 자동 로그인(ADR 0023)은 서버 .env의 값으로만 켬 — 기본은 빈 값(꺼짐)
+          jq -e '.services.backend.environment.TAILNET_OWNER_LOGIN == ""' "$RUNNER_TEMP/vultr.json"
+          TAILNET_OWNER_LOGIN=owner@ci.example docker compose --env-file /dev/null -f docker-compose.yml -f compose.vultr.yml config --format json \
+            | jq -e '.services.backend.environment.TAILNET_OWNER_LOGIN == "owner@ci.example"'
           jq -e '.services.frontend.build.args.NEXT_PUBLIC_API_BASE == "/"' "$RUNNER_TEMP/vultr.json"
           COOKIE_SECURE=false docker compose --env-file /dev/null -f docker-compose.yml -f compose.vultr.yml config --format json \
             | jq -e '.services.backend.environment.COOKIE_SECURE == "false"'

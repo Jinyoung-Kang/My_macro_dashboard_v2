@@ -55,6 +55,10 @@ public class LivePriceService {
     static final Pattern US_CODE = Pattern.compile("^[A-Z0-9^=.\\-]{1,24}$");
     /** 국내 — 6자리 대문자 영숫자(0088M0 같은 신규 코드 포함). */
     static final Pattern KR_CODE = Pattern.compile("^[0-9A-Z]{6}$");
+    /** 트레이딩뷰 '거래소:심볼'(TVC:DXY·CME_MINI:ES1! — 시장 메뉴 카드). */
+    static final Pattern TV_CODE = Pattern.compile("^[A-Z0-9_]{1,20}:[A-Z0-9_.!]{1,20}$");
+    /** 네이버 해외 지수 로이터 코드(.INX·.NDX). */
+    static final Pattern NI_CODE = Pattern.compile("^\\.[A-Z0-9]{1,10}$");
     static final int MAX_ITEMS = 60;
     /** 고를 수 있는 주기(초) — 화면의 선택지(lib/livePrices)와 같은 목록. */
     static final List<Integer> INTERVALS = List.of(5, 10, 30, 60, 120, 300, 600, 900, 1800, 3600, 10800);
@@ -86,7 +90,8 @@ public class LivePriceService {
     }
 
     /**
-     * 'US:AAPL,KR:005930' → 검사한 목록(시장은 대문자, 같은 것은 하나, 순서 유지).
+     * 'US:AAPL,KR:005930,TV:TVC:DXY,NI:.INX' → 검사한 목록(시장은 대문자, 같은 것은 하나, 순서 유지). 시장은 US(Yahoo 심볼)·KR(6자리)·
+     * TV(트레이딩뷰 '거래소:심볼')·NI(네이버 해외 지수).
      *
      * @throws InvalidRequestException 형식이 틀리거나 비었거나 {@link #MAX_ITEMS}를 넘음(400)
      */
@@ -101,9 +106,11 @@ public class LivePriceService {
             String market = colon < 0 ? "" : item.substring(0, colon);
             String code = colon < 0 ? "" : item.substring(colon + 1);
             boolean valid = (market.equals("US") && US_CODE.matcher(code).matches())
-                    || (market.equals("KR") && KR_CODE.matcher(code).matches());
+                    || (market.equals("KR") && KR_CODE.matcher(code).matches())
+                    || (market.equals("TV") && TV_CODE.matcher(code).matches())
+                    || (market.equals("NI") && NI_CODE.matcher(code).matches());
             if (!valid) {
-                throw new InvalidRequestException("종목은 'US:심볼' 또는 'KR:6자리'입니다.");
+                throw new InvalidRequestException("종목은 'US:심볼'·'KR:6자리'·'TV:거래소:심볼'·'NI:.지수'입니다.");
             }
             out.add(market + ":" + code);
         }

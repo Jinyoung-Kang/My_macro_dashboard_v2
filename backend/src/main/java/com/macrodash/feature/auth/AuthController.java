@@ -43,6 +43,8 @@ public class AuthController {
     /** 비밀번호 재확인(변경·탈퇴)의 지연 — 로그인과 같은 규칙, 따로 쓰는 느린 차선(QA-068). */
     private final LoginThrottle reauthThrottle;
     private final AppProperties properties;
+    /** Tailscale 신원 자동 로그인(ADR 0023) — 세션 응답이 필터와 같은 판정을 합니다. */
+    private final TailnetLogin tailnetLogin;
 
     public AuthController(AuthService authService, AccountService accounts, LoginThrottle throttle,
                           AppProperties properties) {
@@ -51,6 +53,7 @@ public class AuthController {
         this.throttle = throttle;
         this.reauthThrottle = throttle.separateLane();
         this.properties = properties;
+        this.tailnetLogin = new TailnetLogin(properties.getTailnetOwnerLogin());
     }
 
     public record LoginRequest(String email, String password) {
@@ -127,12 +130,17 @@ public class AuthController {
      * <p>로컬 무로그인 모드(ADR 0016)면 {@code noLogin: true}이고, 이 맥에서 온 쿠키 없는 요청은 첫 운영자로
      * {@code user.local: true}가 됩니다. 운영자 계정이 없으면 {@code ownerMissing: true}(화면은 계정 설정 안내).
      * 화면은 {@code noLogin}이 정확히 true일 때만 로그인 화면을 건너뜁니다 — 없거나 false면 로그인 모드(AWS·옛 백엔드).
+     *
+     * <p>Tailscale 신원 자동 로그인(ADR 0023)으로 온 요청도 {@code noLogin: true}이고 운영자는 {@code user.tailnet: true}(화면은 로그아웃 대신
+     * 'Tailscale · 로그인 없음')입니다.
      */
     @GetMapping("/session")
     public Map<String, Object> session(HttpServletRequest request) {
-        boolean noLogin = authService.localNoLogin();
-        boolean local = noLogin && LocalNoLogin.isLocalRequest(request);
-        Optional<CurrentUser> user = authService.resolve(readToken(request), request.getHeader(DemoViewer.HEADER), local);
+        boolean tailnet = tailnetLogin.matches(request);
+        boolean noLogin = authService.localNoLogin() || tailnet;
+        boolean local = (authService.localNoLogin() && LocalNoLogin.isLocalRequest(request)) || tailnet;
+        Optional<CurrentUser> user = authService.resolve(readToken(request), request.getHeader(DemoViewer.HEADER),
+                authService.localNoLogin() && LocalNoLogin.isLocalRequest(request), tailnet);
         Map<String, Object> out = new LinkedHashMap<>();
         out.put("authenticated", user.isPresent());
         // 로그인 화면이 가입·재설정 링크를 보여 줄지 정합니다(메일 발송이 설정됐을 때만).
@@ -142,7 +150,7 @@ public class AuthController {
         out.put("ownerMissing", local && user.isEmpty());
         user.ifPresent(current -> {
             out.put("readMode", properties.resolvedReadMode().name().toLowerCase(Locale.ROOT));
-            out.put("user", userMap(current));
+            out.put("user", userMap(current, tailnet));
         });
         return out;
     }
@@ -266,12 +274,17 @@ public class AuthController {
     }
 
     private static Map<String, Object> userMap(CurrentUser user) {
+        return userMap(user, false);
+    }
+
+    private static Map<String, Object> userMap(CurrentUser user, boolean tailnet) {
         Map<String, Object> out = new LinkedHashMap<>();
         out.put("email", user.email());
         out.put("role", user.role());
         out.put("tier", user.tier());
         out.put("demo", user.demo());
         out.put("local", user.isLocalOwner());
+        out.put("tailnet", tailnet && user.isLocalOwner());
         return out;
     }
 

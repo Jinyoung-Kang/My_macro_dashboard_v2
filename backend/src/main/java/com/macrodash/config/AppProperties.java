@@ -81,6 +81,12 @@ public class AppProperties {
      */
     private String demoViewerToken = "";
 
+    /**
+     * Tailscale 신원 자동 로그인(TAILNET_OWNER_LOGIN, ADR 0023). 비면 꺼짐(기본·로컬·QA·AWS). Vultr 서버에서 Tailscale Serve가 붙인
+     * {@code Tailscale-User-Login}이 이 값과 같으면 쿠키 없는 요청을 첫 운영자로 엽니다({@code feature.auth.TailnetLogin}).
+     */
+    private String tailnetOwnerLogin = "";
+
     public ReadMode resolvedReadMode() {
         return ReadMode.from(readMode);
     }
@@ -201,6 +207,14 @@ public class AppProperties {
 
     public void setFrontendOrigin(String frontendOrigin) {
         this.frontendOrigin = frontendOrigin;
+    }
+
+    public String getTailnetOwnerLogin() {
+        return tailnetOwnerLogin;
+    }
+
+    public void setTailnetOwnerLogin(String tailnetOwnerLogin) {
+        this.tailnetOwnerLogin = tailnetOwnerLogin;
     }
 
     public boolean isLocalNoLogin() {
