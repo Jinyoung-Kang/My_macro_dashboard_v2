@@ -1988,6 +1988,39 @@ class PaperStoreDbTest {
     private static final String CHECKPOINT_INSERT = "INSERT INTO paper_checkpoints (book_code, session_date, at_local, feed, "
             + "watch, question, source_decision_id, status) VALUES (?, ?, CAST(? AS time), ?, CAST(? AS text[]), ?, ?, ?)";
 
+    @Test
+    @DisplayName("텔레그램 알림 읽기(사용자 요청 2026-11-02): 번호 뒤 체결·결정 없는 주문(번호 순), (결정 시각, 번호) 뒤·기한 전 결정(재시도로 시각을 새로 쓰면 다시 나옴), 최대 번호, 번호로 주문 — 시험 행은 책과 함께 지움")
+    void notificationReadsOnRealTables() {
+        store.insertBookIfAbsent(book(BOOK, "알림 시험"));
+        long baseFill = store.maxFillId();
+        long baseOrder = store.maxOrderId();
+        long d1 = decision(BOOK, DAY, "SCHEDULED");
+        long d2 = decision(BOOK, DAY, "MANUAL");
+        jdbc.update("UPDATE paper_decisions SET decided_at = ? WHERE id = ?", java.sql.Timestamp.from(CLOSE), d1);
+        jdbc.update("UPDATE paper_decisions SET decided_at = ? WHERE id = ?", java.sql.Timestamp.from(CLOSE), d2);
+        long withDecision = store.insertOrder(new PaperStore.Order(0, BOOK, d1, "SPY", "BUY", null, 10.0, null, "NEXT_OPEN",
+                "CLAUDE", "PENDING", null, null, DAY, null, DAY.plusDays(5), null));
+        long stop = store.insertOrder(pendingBuy(BOOK, "QQQ", null));
+        long fill1 = store.insertFill(fill(withDecision, BOOK));
+        long fill2 = store.insertFill(fill(stop, BOOK));
+
+        assertThat(store.maxFillId()).isEqualTo(fill2);
+        assertThat(store.maxOrderId()).isEqualTo(stop);
+        assertThat(store.fillsAfter(baseFill, 10)).extracting(PaperStore.Fill::id).containsExactly(fill1, fill2);
+        assertThat(store.fillsAfter(fill1, 10)).extracting(PaperStore.Fill::id).containsExactly(fill2);
+        assertThat(store.ordersWithoutDecisionAfter(baseOrder, 10)).extracting(PaperStore.Order::id).containsExactly(stop);
+        assertThat(store.order(withDecision)).map(PaperStore.Order::decisionId).contains(d1);
+        assertThat(store.order(-1)).isEmpty();
+        Instant later = CLOSE.plusSeconds(3_600);
+        assertThat(store.decisionsAfter(CLOSE.minusSeconds(1), 0, later, 10)).extracting(PaperStore.Decision::id).containsExactly(d1, d2);
+        assertThat(store.decisionsAfter(CLOSE, d1, later, 10)).as("같은 시각이면 번호 뒤만").extracting(PaperStore.Decision::id)
+                .containsExactly(d2);
+        assertThat(store.decisionsAfter(CLOSE.minusSeconds(1), 0, CLOSE, 10)).as("기한 전만").isEmpty();
+        jdbc.update("UPDATE paper_decisions SET decided_at = ? WHERE id = ?", java.sql.Timestamp.from(CLOSE.plusSeconds(60)), d1);
+        assertThat(store.decisionsAfter(CLOSE, d2, later, 10)).as("재시도로 시각을 새로 쓰면 다시 나옴")
+                .extracting(PaperStore.Decision::id).containsExactly(d1);
+    }
+
     private long decision(String code, LocalDate day, String kind) {
         return store.insertDecisionIfAbsent(new PaperStore.Decision(0, code, day, kind, null, "OK", null, null, 1, null,
                 null, null, null, null, null, null, null, null, false, 1L, 0)).orElseThrow();

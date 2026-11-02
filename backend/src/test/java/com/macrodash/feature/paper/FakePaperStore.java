@@ -392,6 +392,39 @@ class FakePaperStore extends PaperStore {
     }
 
     @Override
+    public List<Fill> fillsAfter(long afterId, int limit) {
+        return fills.tailMap(afterId, false).values().stream().limit(limit).toList();
+    }
+
+    @Override
+    public List<Order> ordersWithoutDecisionAfter(long afterId, int limit) {
+        return orders.tailMap(afterId, false).values().stream().filter(o -> o.decisionId() == null).limit(limit).toList();
+    }
+
+    @Override
+    public List<Decision> decisionsAfter(Instant after, long afterId, Instant before, int limit) {
+        return decisions.values().stream()
+                .filter(d -> d.decidedAt() != null && d.decidedAt().isBefore(before)
+                        && (d.decidedAt().isAfter(after) || (d.decidedAt().equals(after) && d.id() > afterId)))
+                .sorted(Comparator.comparing(Decision::decidedAt).thenComparingLong(Decision::id)).limit(limit).toList();
+    }
+
+    @Override
+    public Optional<Order> order(long id) {
+        return Optional.ofNullable(orders.get(id));
+    }
+
+    @Override
+    public long maxFillId() {
+        return fills.isEmpty() ? 0 : fills.lastKey();
+    }
+
+    @Override
+    public long maxOrderId() {
+        return orders.isEmpty() ? 0 : orders.lastKey();
+    }
+
+    @Override
     public Optional<LocalDate> latestFillDate(String code) {
         return fills.values().stream().filter(f -> f.bookCode().equals(code)).map(Fill::observationDate)
                 .filter(java.util.Objects::nonNull).max(Comparator.naturalOrder());
