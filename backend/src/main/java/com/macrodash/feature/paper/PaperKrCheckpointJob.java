@@ -59,8 +59,8 @@ import java.util.concurrent.locks.ReentrantLock;
 @Service
 public class PaperKrCheckpointJob {
 
-    /** 작업 기록의 이름(paper_job_runs.job). */
-    static final String JOB = "checkpoint_kr";
+    /** 작업 기록의 이름(paper_job_runs.job) — 한국 접두어({@link KrPaperMarket#jobPrefix} {@code kr.})라 한국 상태 응답의 작업 목록에 보입니다. */
+    static final String JOB = KrPaperMarket.INSTANCE.jobName("checkpoint");
     /** 스위치가 꺼진 계획의 사유(미국 {@link PaperCheckpointJob#CHECKPOINTS_OFF}의 한국 키 판). */
     static final String CHECKPOINTS_OFF = "CHECKPOINTS_OFF — 설정 " + Claude2Settings.KR_CHECKPOINTS + "가 꺼져 있음";
 

@@ -632,6 +632,7 @@ class KrStartTest {
         JsonNode assumed = cp.response().path("expectedState").path("assumedFills");
         assertThat(assumed).singleElement().satisfies(a -> assertThat(a.toString()).contains("005930").contains("70100"));
         assertThat(cp.response().path("expectedState").path("note").asString()).isEqualTo(KrExpectedState.NOTE);
+        assertThat(store.jobRuns).as("행을 바꾼 주기만 한국 접두어 기록으로").anySatisfy(r -> assertThat(r.job()).isEqualTo("kr.checkpoint"));
 
         clock.set(kst("2026-12-02T11:10"));
         checkpoint.run();
