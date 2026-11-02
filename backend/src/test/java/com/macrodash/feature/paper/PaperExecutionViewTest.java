@@ -36,7 +36,7 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 /**
- * GET /api/paper/books/{code}/execution 응답({@link ExecutionView} — 명세 2026-10-30 §13-1·§14-2): 미국 Claude 계좌 밖 코드는 400, 테이블이 없으면
+ * GET /api/paper/books/{code}/execution 응답({@link ExecutionView} — 명세 2026-10-30 §13-1·§14-2): Claude 계좌(미국·한국) 밖 코드는 400, 테이블이 없으면
  * available:false, 주문은 감사 행이 있는 결정 주문만 최근 순·limit, NEXT_OPEN은 isProxy, 차이 bp, 요약은 문턱 아래 null·뺀 수, 같은 자료면 같은 구간.
  * 고른 시점(M1 — 주 판정)은 계좌2만: 체결 원가격 대비 계좌1식, 대체 체결은 따로, 기준 없는 체결·체결 없는 주문은 뺀 수, 메뉴 줄과 같은 문턱·부트스트랩.
  */
@@ -125,12 +125,13 @@ class PaperExecutionViewTest {
     }
 
     @Test
-    @DisplayName("미국 Claude 계좌가 아닌 코드는 400(규칙·벤치마크·한국·없는 코드), 테이블이 없으면 available:false, 초기화 전 claude는 없는 계좌 400")
-    void onlyUsClaudeBooks() {
+    @DisplayName("Claude 계좌(미국·한국)가 아닌 코드는 400(규칙·벤치마크·한국 규칙·없는 코드), 테이블이 없으면 available:false, 초기화 전 claude는 없는 계좌 400")
+    void onlyClaudeBooks() {
         activeBook(store, PaperBooks.BENCH_SPY, PaperBooks.KIND_BENCHMARK, 100_000, null);
-        for (String code : List.of(PaperBooks.RULES, PaperBooks.BENCH_SPY, PaperBooks.KR_CLAUDE, "nope")) {
+        for (String code : List.of(PaperBooks.RULES, PaperBooks.BENCH_SPY, PaperBooks.KR_RULES, "nope")) {
             assertThatThrownBy(() -> query.execution(code, 50)).as(code).isInstanceOf(InvalidRequestException.class)
-                    .hasMessageContaining("실행 감사는 미국 Claude 계좌만 있습니다").hasMessageContaining("(claude · claude2)");
+                    .hasMessageContaining("실행 감사는 Claude 계좌만 있습니다")
+                    .hasMessageContaining("(claude · claude2 · kr_claude · kr_claude2)");
         }
         // 계좌2(ADR 0022 — 정의 1-5)는 감사 대상이고, 그 계좌 행이 없으면(초기화 전) 다른 계좌 코드 경로처럼 '없는 계좌'.
         assertThatThrownBy(() -> query.execution(PaperBooks.CLAUDE2, 50)).isInstanceOf(InvalidRequestException.class)
@@ -158,6 +159,7 @@ class PaperExecutionViewTest {
         JsonNode body = MAPPER.valueToTree(all);
         assertThat(body.path("available").asBoolean()).isTrue();
         assertThat(body.path("book").asString()).isEqualTo("claude");
+        assertThat(body.path("market").asString()).isEqualTo("US");
         assertThat(body.path("timings")).extracting(JsonNode::asString).containsExactlyElementsOf(ExecutionAudit.TIMINGS);
         assertThat(body.path("orders")).extracting(row -> row.path("orderId").asLong()).containsExactly(newer, older);
 
@@ -529,7 +531,7 @@ class PaperExecutionViewTest {
         assertThat(rows).extracting(r -> r.get("session"))
                 .containsExactly("2026-11-05", "2026-11-04", "2026-11-03", "2026-11-02");
         Map<String, Object> done = rows.get(3);
-        assertThat(done).containsEntry("atEt", "10:30").containsEntry("atKst", "2026-11-03 00:30 KST")
+        assertThat(done).containsEntry("atEt", "10:30").containsEntry("atLocal", "10:30").containsEntry("atKst", "2026-11-03 00:30 KST")
                 .containsEntry("feed", "MINUTE").containsEntry("watch", List.of("AAPL", "MSFT"))
                 .containsEntry("status", "DONE").containsEntry("reason", null).containsEntry("decisionStatus", "NO_TRADE")
                 .containsEntry("action", "REPLACE").containsEntry("supersededOrders", 2).containsEntry("lagSeconds", 75)

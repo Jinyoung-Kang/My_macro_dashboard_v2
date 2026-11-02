@@ -896,7 +896,7 @@ class ApiIntegrationTest {
         assertThat(wrongMethod.getBody().path("error").asString()).isEqualTo("method_not_allowed");
     }
 
-    /** 모의 매매의 GET 경로(책 코드가 든 경로는 bench_spy로 — 미국 Claude 계좌만 받는 실행 감사는 claude로). */
+    /** 모의 매매의 GET 경로(책 코드가 든 경로는 bench_spy로 — Claude 계좌만 받는 실행 감사는 claude로). */
     private static final List<String> PAPER_GETS = List.of(
             "/api/paper/overview", "/api/paper/status", "/api/paper/books/bench_spy/positions",
             "/api/paper/books/bench_spy/orders?limit=5", "/api/paper/books/bench_spy/fills?limit=5",
@@ -1230,9 +1230,9 @@ class ApiIntegrationTest {
             assertThat(authorizedExchange("/api/paper/books/nope/orders", HttpMethod.GET).getStatusCode())
                     .isEqualTo(HttpStatus.BAD_REQUEST);
             ResponseEntity<JsonNode> notAudited = authorizedExchange("/api/paper/books/bench_spy/execution", HttpMethod.GET);
-            assertThat(notAudited.getStatusCode()).as("실행 감사는 미국 Claude 계좌만(초기화한 벤치마크도 400)")
+            assertThat(notAudited.getStatusCode()).as("실행 감사는 Claude 계좌만(미국·한국 — 초기화한 벤치마크도 400)")
                     .isEqualTo(HttpStatus.BAD_REQUEST);
-            assertThat(notAudited.getBody().path("message").asString()).contains("미국 Claude 계좌");
+            assertThat(notAudited.getBody().path("message").asString()).contains("Claude 계좌만").contains("kr_claude2");
             JsonNode execution = authorizedGet("/api/paper/books/claude/execution");
             assertThat(execution.path("orders").size()).as("감사 행 없음 — 빈 목록").isZero();
             assertThat(execution.path("summary").path("timings").get(0).path("meanBp").isNull()).as("표본 없음 — null").isTrue();

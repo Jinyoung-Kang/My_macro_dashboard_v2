@@ -24,6 +24,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.function.Predicate;
 
 /**
  * GET /api/paper/books/{code}/execution — 실행 감사 응답(미국 Claude 계좌2 실험 단계 0, 명세 docs/specs/2026-10-30-claude-book2-timing-design.md
@@ -45,6 +46,11 @@ import java.util.Set;
  * 장중 확인 결정(kind CHECKPOINT)이 낸 주문은 M1·메뉴 줄 어디에도 세지 않습니다(명세 §16-4의 17 — M1은 아침 결정의 시점 선택이고 장중 확인의 효과는
  * M8). 계좌1의 장중 확인(사용자 결정 2026-11-02 — {@link PaperClaude1CheckpointJob})이 낸 주문도 같은 까닭으로 메뉴 줄에서 뺍니다. 아침 주문이 장중 확인 REPLACE로 취소됐으면 지금처럼 {@code notFilled}이고, 그 가운데 수를 {@code replacedByCheckpoint}로 따로 적습니다.
  *
+ * <p><b>한국 Claude 계좌</b>(한국 계좌2 단계 2c — 명세 docs/specs/2026-11-02-kr-claude2-stage2.md §11): 같은 경로·모양이고 시장 묶음({@link Spec#KR})만
+ * 다릅니다 — 시점은 {@link KrExecutionAudit#TIMINGS}, 계좌1식 기준은 시가 반사실({@code NEXT_OPEN}), 고른 시점(M1)은 한국 계좌2, 대체 체결은 체결 출처
+ * {@link KrExecutionAudit#FALLBACK_SOURCES}, 장중 확인 기록은 한국 계좌2. M1 본 줄은 대리값 표시를 하지 않습니다(체결가와 기준이 같은 토스 1분봉 —
+ * 시가 체결이면 같은 봉). 응답의 {@code market}이 {@code "US"}·{@code "KR"}입니다.
+ *
  * <p><b>장중 확인 기록</b>(단계 2 — §5-2·§14-2 M8): {@code checkpoints}는 계좌2의 장중 확인 행({@code paper_checkpoints}) 최근
  * {@value #CHECKPOINT_ROWS}개(세션 최근 순 — 상태·사유·피드·지연·확인 결정과 그 응답의 KEEP/REPLACE), 계좌1은 빈 목록. {@code summary.checkpoints}는
  * M8(서술 — 판정 없음): 끝난 행 수·부름·놓침·건너뜀, 요청 피드 분포, 부른 확인의 REPLACE 수와 비율(분모 &lt; {@value #CHECKPOINT_MIN_ROWS}이면 비율
@@ -64,20 +70,59 @@ final class ExecutionView {
     }
 
     /**
-     * 실행 감사가 있는 계좌인가 — 미국 Claude 계좌({@link ExecutionAudit#auditedBooks} — {@code claude}·{@code claude2})만, 그 밖의 코드는 400.
+     * 시장마다 다른 것 — 감사 계좌, 시점(첫째가 계좌1식 기준), 고른 시점(M1)이 있는 계좌, 대체 체결, 장중 확인 기록이 있는 계좌, M1 본 줄에 대리값 표시를
+     * 하나(시가 체결이 섞일 때).
+     */
+    record Spec(String market, List<String> books, List<String> timings, Predicate<String> chooses, Predicate<ExecFill> fallback,
+                String checkpointBook, boolean chosenProxy) {
+
+        static final Spec US = new Spec("US", ExecutionAudit.auditedBooks(), ExecutionAudit.TIMINGS,
+                code -> PaperBooks.find(code).map(PaperBooks.Definition::timed).orElse(false),
+                fill -> fill.fillRung() != null && UsTimedFills.FALLBACK_RUNGS.contains(fill.fillRung()), PaperBooks.CLAUDE2, true);
+        static final Spec KR = new Spec("KR", KrExecutionAudit.auditedBooks(), KrExecutionAudit.TIMINGS, KrExecutionAudit::choosesTiming,
+                fill -> fill.fill().priceSource() != null && KrExecutionAudit.FALLBACK_SOURCES.contains(fill.fill().priceSource()),
+                PaperBooks.KR_CLAUDE2, false);
+
+        /** 계좌1식 기준 시점(시점 목록의 첫째). */
+        String baseline() {
+            return timings.get(0);
+        }
+
+        /** 기준을 뺀 메뉴 시점(응답 순서). */
+        List<String> menu() {
+            return timings.subList(1, timings.size());
+        }
+
+        /** 그 계좌 코드의 시장 묶음 — 실행 감사 계좌가 아니면 null. */
+        static Spec of(String code) {
+            if (code == null) {
+                return null;
+            }
+            return US.books().contains(code) ? US : KR.books().contains(code) ? KR : null;
+        }
+    }
+
+    /**
+     * 실행 감사가 있는 계좌인가 — 미국 Claude 계좌({@link ExecutionAudit#auditedBooks} — {@code claude}·{@code claude2})와 한국 Claude 계좌
+     * ({@link KrExecutionAudit#auditedBooks} — {@code kr_claude}·{@code kr_claude2})만, 그 밖의 코드는 400.
      *
-     * @throws InvalidRequestException 미국 Claude 계좌가 아님
+     * @throws InvalidRequestException Claude 계좌가 아님
      */
     static void requireAudited(String code) {
-        List<String> audited = ExecutionAudit.auditedBooks();
-        if (code == null || !audited.contains(code)) {
-            throw new InvalidRequestException("실행 감사는 미국 Claude 계좌만 있습니다: " + Params.echo(code) + " ("
+        if (Spec.of(code) == null) {
+            List<String> audited = new ArrayList<>(Spec.US.books());
+            audited.addAll(Spec.KR.books());
+            throw new InvalidRequestException("실행 감사는 Claude 계좌만 있습니다: " + Params.echo(code) + " ("
                     + String.join(" · ", audited) + ")");
         }
     }
 
     /** 응답 전체(클래스 설명). 주문은 감사 행이 있는 결정 주문만, 주문 최근 순으로 {@code limit}건 — 요약은 limit과 상관없이 그 계좌 전부. */
     static Map<String, Object> render(PaperStore store, Book book, int limit, TradingCalendar calendar) {
+        Spec spec = Spec.of(book.code());
+        if (spec == null) {
+            requireAudited(book.code());
+        }
         List<OrderExec> execs = store.orderExecs(book.code());
         Map<Long, Order> orders = new HashMap<>();
         for (Order order : store.executionOrders(book.code(), null)) {
@@ -90,15 +135,16 @@ final class ExecutionView {
         }
         List<Map<String, Object>> rows = new ArrayList<>();
         for (OrderExec exec : audited.subList(0, Math.min(limit, audited.size()))) {
-            rows.add(row(exec, orders.get(exec.orderId()), fills.get(exec.orderId()), calendar));
+            rows.add(row(spec, exec, orders.get(exec.orderId()), fills.get(exec.orderId()), calendar));
         }
         Map<String, Object> out = new LinkedHashMap<>();
         out.put("available", true);
         out.put("book", book.code());
-        out.put("timings", ExecutionAudit.TIMINGS);
+        out.put("market", spec.market());
+        out.put("timings", spec.timings());
         out.put("limit", limit);
         out.put("orders", rows);
-        boolean checkpointed = PaperBooks.CLAUDE2.equals(book.code());
+        boolean checkpointed = spec.checkpointBook().equals(book.code());
         List<Checkpoint> checkpoints = checkpointed ? store.recentCheckpoints(book.code(), CHECKPOINT_SUMMARY_ROWS) : List.of();
         Map<Long, Decision> answers = new HashMap<>();
         for (Checkpoint c : checkpoints) {
@@ -118,7 +164,7 @@ final class ExecutionView {
                     Long decision = orders.get(e.orderId()).decisionId();
                     return decision == null || !checkpointDecisions.contains(decision);   // Set.of()는 null을 받지 않음
                 }).toList();
-        Map<String, Object> summary = summary(book, audited.size(), morning, orders, fills);
+        Map<String, Object> summary = summary(spec, book, audited.size(), morning, orders, fills);
         summary.put("checkpoints", checkpointed
                 ? checkpointSummary(checkpoints, answers, audited.size() - morning.size()) : null);
         out.put("summary", summary);
@@ -129,7 +175,8 @@ final class ExecutionView {
     private static Map<String, Object> checkpointRow(Checkpoint c, Decision answer, TradingCalendar calendar) {
         Map<String, Object> row = new LinkedHashMap<>();
         row.put("session", text(c.sessionDate()));
-        row.put("atEt", CheckpointPacket.clock(c.atLocal()));
+        row.put("atEt", CheckpointPacket.clock(c.atLocal()));          // 미국 화면이 읽는 이름 — 값은 그 계좌 시장의 현지 시각(V19)
+        row.put("atLocal", CheckpointPacket.clock(c.atLocal()));
         row.put("atKst", stamp(c.sessionDate().atTime(c.atLocal()).atZone(calendar.zone()).toInstant()));
         row.put("feed", c.feed());
         row.put("watch", c.watch());
@@ -216,7 +263,8 @@ final class ExecutionView {
         return "KEEP".equals(action) || "REPLACE".equals(action) ? action : null;
     }
 
-    private static Map<String, Object> row(OrderExec exec, Order order, ExecFill fill, TradingCalendar calendar) {
+    private static Map<String, Object> row(Spec spec, OrderExec exec, Order order, ExecFill fill, TradingCalendar calendar) {
+        // 목표 세션 E = 기준 거래일 다음 거래일(그 계좌 시장 달력) — 두 시장의 판정이 같은 식.
         LocalDate session = ExecutionAudit.targetSession(order, calendar);
         Map<String, Object> row = new LinkedHashMap<>();
         row.put("orderId", order.id());
@@ -231,13 +279,13 @@ final class ExecutionView {
         row.put("createdAtKst", stamp(order.createdAt()));
         row.put("fill", fill == null ? null : fillRow(fill));
         Map<String, Object> cf = new LinkedHashMap<>();
-        for (String timing : ExecutionAudit.TIMINGS) {
+        for (String timing : spec.timings()) {
             cf.put(timing, price(exec.cf().get(timing), timing));
         }
         row.put("cf", cf);
         Map<String, Object> advantage = new LinkedHashMap<>();
-        Double baseline = raw(exec.cf(), ExecutionAudit.NEXT_OBSERVATION);
-        for (String timing : menu()) {
+        Double baseline = raw(exec.cf(), spec.baseline());
+        for (String timing : spec.menu()) {
             Double bp = ExecutionTiming.advantageBp(sign(order), baseline, raw(exec.cf(), timing));
             advantage.put(timing, PaperQueryService.round2(bp));
         }
@@ -287,17 +335,17 @@ final class ExecutionView {
     }
 
     /** 요약 — {@code audited}는 M1·메뉴 줄에 세는 주문(장중 확인 주문을 뺀 것), {@code auditedCount}는 감사한 주문 전부. */
-    private static Map<String, Object> summary(Book book, int auditedCount, List<OrderExec> audited, Map<Long, Order> orders,
-                                               Map<Long, ExecFill> fills) {
+    private static Map<String, Object> summary(Spec spec, Book book, int auditedCount, List<OrderExec> audited,
+                                               Map<Long, Order> orders, Map<Long, ExecFill> fills) {
         List<Map<String, Object>> timings = new ArrayList<>();
-        for (String timing : menu()) {
+        for (String timing : spec.menu()) {
             List<ExecutionTiming.Sample> samples = new ArrayList<>();
             int noBaseline = 0;
             int noPrice = 0;
             for (OrderExec exec : audited) {
                 Order order = orders.get(exec.orderId());
                 ExecFill fill = fills.get(exec.orderId());
-                Double baseline = raw(exec.cf(), ExecutionAudit.NEXT_OBSERVATION);
+                Double baseline = raw(exec.cf(), spec.baseline());
                 double weight = fill == null ? Double.NaN : fill.fill().gross();
                 if (baseline == null || !(weight > 0) || order.asOfTradingDate() == null) {
                     noBaseline++;
@@ -329,15 +377,16 @@ final class ExecutionView {
         interval.put("resamples", ExecutionTiming.RESAMPLES);
         interval.put("seed", ExecutionTiming.SEED);
         Map<String, Object> out = new LinkedHashMap<>();
-        out.put("baseline", ExecutionAudit.NEXT_OBSERVATION);
-        out.put("formula", "s × (P_NEXT_OBSERVATION − P_시점) ÷ P_NEXT_OBSERVATION × 10⁴ bp — s 매수 +1·매도 −1, 원가격(슬리피지 전), "
+        String base = "P_" + spec.baseline();
+        out.put("baseline", spec.baseline());
+        out.put("formula", "s × (" + base + " − P_시점) ÷ " + base + " × 10⁴ bp — s 매수 +1·매도 −1, 원가격(슬리피지 전), "
                 + "양수면 그 시점이 계좌1식보다 유리");
         out.put("weighting", "체결 금액(gross) 가중 평균");
         out.put("interval", interval);
         out.put("minOrders", ExecutionTiming.MIN_ORDERS);
         out.put("minDays", ExecutionTiming.MIN_DAYS);
         out.put("audited", auditedCount);
-        out.put("chosen", chosen(book, audited, orders, fills));
+        out.put("chosen", chosen(spec, book, audited, orders, fills));
         out.put("timings", timings);
         return out;
     }
@@ -349,9 +398,9 @@ final class ExecutionView {
      * 취소한 아침 주문({@link ClaudeDecisionPipeline#SUPERSEDED_BY_CHECKPOINT})입니다. 출발일 종가로 다시 출발하며 취소한 출발 주문
      * ({@link StartCloseRestart#CANCEL_REASON})은 어디에도 세지 않습니다(그 주문은 사후 체결로 바뀌었고, 사후 체결은 감사 행이 없어 표본 밖).
      */
-    private static Map<String, Object> chosen(Book book, List<OrderExec> audited, Map<Long, Order> orders,
+    private static Map<String, Object> chosen(Spec spec, Book book, List<OrderExec> audited, Map<Long, Order> orders,
                                               Map<Long, ExecFill> fills) {
-        if (!PaperBooks.find(book.code()).map(PaperBooks.Definition::timed).orElse(false)) {
+        if (!spec.chooses().test(book.code())) {
             return null;                                   // 계좌1 — 고른 시점이 곧 계좌1식 기준
         }
         List<ExecutionTiming.Sample> primary = new ArrayList<>();
@@ -375,9 +424,8 @@ final class ExecutionView {
                 }
                 continue;
             }
-            int group = fill.fillRung() != null && UsTimedFills.FALLBACK_RUNGS.contains(fill.fillRung()) ? 1 : 0;
-            Double bp = ExecutionTiming.advantageBp(sign(order), raw(exec.cf(), ExecutionAudit.NEXT_OBSERVATION),
-                    fill.fill().rawPrice());
+            int group = spec.fallback().test(fill) ? 1 : 0;
+            Double bp = ExecutionTiming.advantageBp(sign(order), raw(exec.cf(), spec.baseline()), fill.fill().rawPrice());
             double weight = fill.fill().gross();
             if (bp == null || !(weight > 0) || order.asOfTradingDate() == null) {
                 noBaseline[group]++;
@@ -385,10 +433,11 @@ final class ExecutionView {
             }
             (group == 0 ? primary : fallback).add(new ExecutionTiming.Sample(order.asOfTradingDate(), order.id(), weight, bp));
             // 시가 체결가는 1분봉 첫 봉 시가(R1·R2 — 공식 개장가와 같은지 확인 전, X2). 대체 체결의 늦은 봉·종가는 시가를 대신하지 않음.
-            proxy |= group == 0 && PaperBooks.NEXT_OPEN.equals(order.timing());
+            proxy |= spec.chosenProxy() && group == 0 && PaperBooks.NEXT_OPEN.equals(order.timing());
         }
         Map<String, Object> out = new LinkedHashMap<>();
-        out.put("formula", "s × (P_NEXT_OBSERVATION − P_체결) ÷ P_NEXT_OBSERVATION × 10⁴ bp — 계좌2가 고른 시점의 체결 원가격(슬리피지 전), "
+        String base = "P_" + spec.baseline();
+        out.put("formula", "s × (" + base + " − P_체결) ÷ " + base + " × 10⁴ bp — 계좌2가 고른 시점의 체결 원가격(슬리피지 전), "
                 + "양수면 고른 시점의 체결이 계좌1식보다 유리");
         out.putAll(chosenLine(ExecutionTiming.summarize(primary), noBaseline[0], proxy));
         out.put("excludedFallback", fallback.size() + noBaseline[1]);
@@ -408,11 +457,6 @@ final class ExecutionView {
         line.put("highBp", PaperQueryService.round2(s.highBp()));
         line.put("isProxy", proxy);
         return line;
-    }
-
-    /** 메뉴 여덟 시점(계좌1식 기준을 뺀 반사실 시점), 응답 순서. */
-    private static List<String> menu() {
-        return ExecutionAudit.TIMINGS.subList(1, ExecutionAudit.TIMINGS.size());
     }
 
     private static Double raw(JsonNode cf, String timing) {

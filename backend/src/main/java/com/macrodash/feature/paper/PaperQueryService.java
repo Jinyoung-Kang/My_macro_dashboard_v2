@@ -1342,8 +1342,9 @@ public class PaperQueryService {
     }
 
     /**
-     * GET /api/paper/books/{code}/execution?limit= (1–500, 주문 최근 순) — 실행 감사(미국 Claude 계좌만 — 그 밖의 코드는 400, 모양은
-     * {@link ExecutionView}). 감사 표·주문·체결을 읽기만 합니다.
+     * GET /api/paper/books/{code}/execution?limit= (1–500, 주문 최근 순) — 실행 감사(미국·한국 Claude 계좌만 — 그 밖의 코드는 400, 모양은
+     * {@link ExecutionView}). 감사 표·주문·체결을 읽기만 합니다. 달력은 그 계좌 시장의 실행 달력이고(한국은 공휴일 저장본으로 만듦), 그 달력이 주문의 해를
+     * 모르면 응답 전체를 실패시키지 않고 {@code available:false}와 사유를 냅니다.
      */
     public Map<String, Object> execution(String code, int limit) {
         if (!ready()) {
@@ -1351,7 +1352,14 @@ public class PaperQueryService {
         }
         ExecutionView.requireAudited(code);
         Book book = existing(code);
-        return ExecutionView.render(store, book, Params.clamp(limit, 1, MAX_LIMIT), marketOf(book).calendar());
+        try {
+            return ExecutionView.render(store, book, Params.clamp(limit, 1, MAX_LIMIT), markets.open(marketOf(book)).calendar());
+        } catch (CalendarUnavailableException e) {
+            Map<String, Object> out = new LinkedHashMap<>();
+            out.put("available", false);
+            out.put("message", "실행 감사를 셀 달력이 없습니다 — " + e.getMessage());
+            return out;
+        }
     }
 
     /** GET /api/paper/books/{code}/nav — 거래일 오름차순. */
