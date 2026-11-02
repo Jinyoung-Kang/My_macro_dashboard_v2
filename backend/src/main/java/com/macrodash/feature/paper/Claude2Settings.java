@@ -52,6 +52,10 @@ record Claude2Settings(boolean enabled, int maxCallsPerCycle, int barsWaitMinute
     static final String KR_RISK_PROFILE = "kr.claude2.riskProfile";
     /** 한국 Claude 계좌2의 기본 성향(사용자 결정 2026-11-02 — 미국 계좌2와 같은 성격). */
     static final String DEFAULT_KR_RISK_PROFILE = "공격투자형";
+    /** 한국 Claude 계좌2 장중 확인을 부르는가(단계 2b — 끄면 확인 작업이 부르지 않고 PLANNED 행은 창 끝에 SKIPPED, 요청은 계속 받음). */
+    static final String KR_CHECKPOINTS = "kr.claude2.checkpoints";
+    /** {@value #KR_CHECKPOINTS}의 기본값 — 켬(명세 2026-11-02 §10 — 2b 배포부터 부름). */
+    static final boolean DEFAULT_KR_CHECKPOINTS = true;
 
     static final int DEFAULT_MAX_CALLS_PER_CYCLE = 2;
     static final int MAX_CALLS_PER_CYCLE_LIMIT = 10;
@@ -97,6 +101,12 @@ record Claude2Settings(boolean enabled, int maxCallsPerCycle, int barsWaitMinute
         JsonNode value = body == null ? null : PaperSettingsService.valueAt(body, KR_RISK_PROFILE);
         return value != null && value.isString() && RISK_PROFILES.contains(value.asString()) ? value.asString()
                 : DEFAULT_KR_RISK_PROFILE;
+    }
+
+    /** 한국 Claude 계좌2 장중 확인 스위치 — 키({@value #KR_CHECKPOINTS})가 불리언이 아니면 기본({@value #DEFAULT_KR_CHECKPOINTS}). null 본문도 기본. */
+    static boolean krCheckpoints(JsonNode body) {
+        JsonNode value = body == null ? null : PaperSettingsService.valueAt(body, KR_CHECKPOINTS);
+        return value != null && value.isBoolean() ? value.booleanValue() : DEFAULT_KR_CHECKPOINTS;
     }
 
     /** 기본 설정 본문의 {@code claude2} 묶음({@link PaperSettingsService#defaultsJson}). */

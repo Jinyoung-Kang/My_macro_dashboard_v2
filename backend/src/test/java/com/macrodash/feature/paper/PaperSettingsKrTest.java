@@ -94,9 +94,11 @@ class PaperSettingsKrTest {
                 "kr.rules.minStreakDays", "kr.rules.debtRatioMaxPct", "kr.rules.reselection",
                 "kr.rules.parkCashThresholdPct", "kr.cashLikeTickers", "kr.universeExtraTickers", "kr.decisionTimeKst",
                 "kr.decisionDeadlineKst", "kr.calendar.extraClosures", "kr.calendar.openTimeOverrides", "kr.news.enabled",
-                "kr.news.maxPerDay", "kr.news.keywords", "kr.news.feeds", "kr.news.aliases", "kr.claude2.riskProfile");
+                "kr.news.maxPerDay", "kr.news.keywords", "kr.news.feeds", "kr.news.aliases", "kr.claude2.riskProfile",
+                "kr.claude2.checkpoints");
 
         JsonNode d = service.defaultsJson().path("kr");
+        assertThat(d.path("claude2").path("checkpoints").asBoolean(false)).as("한국 계좌2 장중 확인 스위치 기본 켬(단계 2b)").isTrue();
         assertThat(d.path("slippageBp").asDouble()).isEqualTo(5);
         assertThat(d.path("commissionBp").asDouble()).isEqualTo(1.5);
         KrxCosts.TaxRates law = KrxCosts.TaxRates.KRX_2026;

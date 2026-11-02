@@ -73,6 +73,21 @@ class KrTimedLadderTest {
         assertThat(KrTimedLadder.targetOn(PaperBooks.NEXT_OPEN, created, E, CALENDAR)).isNull();
     }
 
+    @Test
+    @DisplayName("장중 시장가(MARKET) 닫힘(단계 2b) — 지금 만들 주문의 기준 분이 정규장 안·종가 단일가 전이면 열림, 15:20 이후·다른 날이면 MALFORMED")
+    void closedMarket() {
+        LocalDate asOf = LocalDate.of(2026, 11, 2);
+        List<String> menu = List.of(PaperBooks.MARKET, PaperBooks.AT_1400, PaperBooks.NEXT_CLOSE);
+        assertThat(KrTimedLadder.closedTimings(menu, asOf, kst("2026-11-03T11:03"), CALENDAR)).isEmpty();
+        Map<String, com.macrodash.analytics.OrderValidator.Closed> late = KrTimedLadder.closedTimings(menu, asOf,
+                kst("2026-11-03T15:18:30"), CALENDAR);
+        assertThat(late).containsOnlyKeys(PaperBooks.MARKET, PaperBooks.AT_1400);
+        assertThat(late.get(PaperBooks.MARKET).reason()).isEqualTo(com.macrodash.analytics.OrderValidator.MALFORMED);
+        assertThat(late.get(PaperBooks.MARKET).detail()).contains("15:20").contains("종가 단일가");
+        assertThat(KrTimedLadder.closedTimings(List.of(PaperBooks.MARKET), asOf, kst("2026-11-02T22:40"), CALENDAR))
+                .as("밤 — 기준 분이 목표 세션이 아님").containsOnlyKeys(PaperBooks.MARKET);
+    }
+
     private static KrTimedLadder.Result price(String timing, Quote quote) {
         return KrTimedLadder.price(timing, null, quote, E, NIGHT, CALENDAR, DEADLINE);
     }

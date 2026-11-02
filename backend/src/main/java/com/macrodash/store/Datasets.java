@@ -304,6 +304,11 @@ public final class Datasets {
      * 감시 자료로 쓰지 않습니다(감시 수집이 한 회차 넘게 멈춘 것).
      */
     public static final long MAX_AGE_WATCH_US = 10 * 60L;
+    /**
+     * {@link #SNAP_PAPER_WATCH_KR}를 한국 장중 확인 자료로 볼 최대 나이 — 확인 시각 뒤 한 번 받으므로 호출 창 끝(T + 20분)까지 + 여유. 그 확인(계좌·세션·
+     * 시각)의 것인지·T 뒤에 받았는지는 작업이 봅니다.
+     */
+    public static final long MAX_AGE_WATCH_KR = 25 * 60L;
     /** 일별 확정치 (FRED/KRX 마감). */
     public static final long MAX_AGE_DAILY = 6 * 60 * 60L;
     /** 분기 공시(13F) 등 거의 변하지 않는 데이터. */

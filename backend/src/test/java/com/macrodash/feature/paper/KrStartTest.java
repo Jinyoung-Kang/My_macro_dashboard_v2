@@ -545,6 +545,160 @@ class KrStartTest {
         assertThat(fake.requests.get(1).user()).doesNotContain("checkpoint");
     }
 
+    // ------------------------------------------------------------------ 한국 Claude 계좌2 장중 확인(단계 2b — 명세 2026-11-02 §10)
+    /** 장중 확인 목표 세션 E(밤 결정 12-01 → 12-02). */
+    private static final LocalDate E = LocalDate.of(2026, 12, 2);
+
+    /** 출발 → 계좌2 출발 상태 → 12-01 밤 계좌2 결정(장중 확인 11:00·감시 005930, 주문은 인자). 그 밤 계좌2 결정을 돌려줍니다. */
+    private Decision krClaude2NightWithCheckpoint(KrClaudeFixtures.FakeAi fake, String... orders) {
+        fake.answer(KrClaudeFixtures.decision(8, null, KrClaudeFixtures.order("005930", "BUY", 8.0, null)));
+        realClaude(fake);
+        assertThat(runAt("2026-11-30T22:30").outcome()).isEqualTo(PaperDecisionJob.STARTED);
+        store.books.put(PaperBooks.KR_CLAUDE2, new Book(PaperBooks.KR_CLAUDE2, PaperBooks.KIND_CLAUDE, PaperBooks.KR_CLAUDE2_LABEL,
+                100_000_000, S, PaperBooks.ACTIVE, null, Book.MARKET_KR, Book.CURRENCY_KRW));
+        com.macrodash.store.PaperStore.BookState first = store.states.get(PaperBooks.KR_CLAUDE);
+        store.states.put(PaperBooks.KR_CLAUDE2, new com.macrodash.store.PaperStore.BookState(PaperBooks.KR_CLAUDE2, 100_000_000,
+                100_000_000, 0, 0, first.lastObservedAt(), first.lastProcessedCollectedAt(), S, null));
+        fake.answer(KrClaudeFixtures.decision(8, "관망")).answer(KrClaudeFixtures.withCheckpoint(
+                KrClaudeFixtures.decision(10, null, orders), "11:00", "005930"));
+        sessionData(NEXT, S, everyCodeOn(NEXT));
+        assertThat(runAt("2026-12-01T22:30").outcome()).isEqualTo(PaperDecisionJob.DECIDED);
+        return store.decisionFor(PaperBooks.KR_CLAUDE2, NEXT, RuleBookService.SCHEDULED).orElseThrow();
+    }
+
+    /** 그 확인(12-02 11:00)의 감시 저장본 — 기준 069500·005930(10:00 창 시가 70,100)·000660, 받은 시각 {@code collectedAt}, 지연 5초. */
+    private void watchKr(Instant collectedAt) {
+        tools.jackson.databind.node.ObjectNode payload = PaperFixtures.MAPPER.createObjectNode();
+        payload.put("contract", 1).put("reference", "069500").put("fetchedAt", collectedAt.toString()).put("lagSeconds", 5);
+        payload.putObject("checkpoint").put("book", PaperBooks.KR_CLAUDE2).put("sessionDate", E.toString()).put("atKst", "11:00");
+        tools.jackson.databind.node.ObjectNode tickers = payload.putObject("tickers");
+        for (String code : List.of("069500", "005930", "000660")) {
+            tools.jackson.databind.node.ObjectNode t = tickers.putObject(code);
+            t.put("session", E.toString());
+            t.putArray("bars").addObject().put("label", "11:00").put("o", 70_500).put("h", 70_600).put("l", 70_400).put("c", 70_550)
+                    .put("v", 900);
+            t.putObject("windows").putArray("10:00").addObject().put("label", "10:01").put("open", 70_100).put("volume", 300);
+            t.putObject("firstAfter");
+            t.putObject("lastBar").put("label", "11:00").put("c", 70_550).put("v", 900);
+        }
+        payload.putArray("missing");
+        KrFixtures.stub(reader, Datasets.SNAP_PAPER_WATCH_KR, KrFixtures.snapshot(Datasets.SNAP_PAPER_WATCH_KR, payload, collectedAt));
+    }
+
+    private PaperKrCheckpointJob checkpointJob() {
+        return new PaperKrCheckpointJob(store, reader, marketData, claudeService,
+                new PaperLedgerService(store, marketData, PaperFixtures.MAPPER), config(), PaperFixtures.MAPPER, clock);
+    }
+
+    private static final String KEEP = "{\"schemaVersion\":2,\"action\":\"KEEP\",\"summary\":\"밤 판단 유지\",\"orders\":[],"
+            + "\"noTradeReason\":\"흐름이 밤 가정과 같음\"}";
+
+    @Test
+    @DisplayName("한국 장중 확인(2b) — 창(T+2분) 전·감시 저장본 전에는 부르지 않고, T 뒤 저장본이 오면 한 번 불러 KEEP → 결정 CHECKPOINT(NO_TRADE)·행 DONE(지연 5초), 패킷에 감시 봉·예상 장부(10:00 매수를 그 창 시가로 체결로 봄)·밤 12_hardRules")
+    void krCheckpointKeep() {
+        KrClaudeFixtures.FakeAi fake = new KrClaudeFixtures.FakeAi();
+        Decision night = krClaude2NightWithCheckpoint(fake,
+                KrClaudeFixtures.claude2Order("005930", "BUY", 8.0, null, PaperBooks.AT_1000));
+        PaperKrCheckpointJob checkpoint = checkpointJob();
+        int calls = fake.requests.size();
+
+        clock.set(kst("2026-12-02T11:01"));
+        assertThat(checkpoint.run().changes()).as("창 시작(T + 2분) 전").isEmpty();
+        clock.set(kst("2026-12-02T11:03"));
+        assertThat(checkpoint.run().changes()).as("감시 저장본이 아직 없음 — 기다림").isEmpty();
+        assertThat(fake.requests).hasSize(calls);
+
+        watchKr(kst("2026-12-02T11:00:40"));
+        fake.answer(KEEP);
+        clock.set(kst("2026-12-02T11:04"));
+        assertThat(checkpoint.run().changes()).containsKey(E.toString());
+
+        assertThat(fake.requests).hasSize(calls + 1);
+        Decision cp = store.decisionFor(PaperBooks.KR_CLAUDE2, NEXT, RuleBookService.CHECKPOINT).orElseThrow();
+        assertThat(cp.status()).isEqualTo(ClaudeBookService.STATUS_NO_TRADE);
+        assertThat(cp.response().path("checkpoint").path("atKst").asString()).isEqualTo("11:00");
+        assertThat(cp.response().path("checkpoint").path("lagSeconds").asInt()).isEqualTo(5);
+        com.macrodash.store.PaperStore.Checkpoint row = store.checkpoint(PaperBooks.KR_CLAUDE2, E).orElseThrow();
+        assertThat(row.status()).isEqualTo(PaperBooks.CHECKPOINT_DONE);
+        assertThat(row.checkpointDecisionId()).isEqualTo(cp.id());
+        assertThat(row.lagSeconds()).isEqualTo(5);
+        assertThat(fake.requests.get(calls).system()).as("밤 결정과 같은 시스템 프롬프트").isEqualTo(fake.requests.get(calls - 1).system());
+        JsonNode packet = cp.packet();
+        assertThat(packet.path("1_basis").path("sourceDecisionId").asLong()).isEqualTo(night.id());
+        assertThat(packet.path("1_basis").path("remainingTimings").toString()).contains("MARKET").contains("AT_1200")
+                .doesNotContain("AT_1100");
+        assertThat(packet.path("5_feed").path("tickers").path("005930").path("bars").get(0).get(0).asString()).isEqualTo("11:00");
+        assertThat(packet.path(PacketBuilder.HARD_RULES)).isEqualTo(night.packet().path(PacketBuilder.HARD_RULES));
+        JsonNode assumed = cp.response().path("expectedState").path("assumedFills");
+        assertThat(assumed).singleElement().satisfies(a -> assertThat(a.toString()).contains("005930").contains("70100"));
+        assertThat(cp.response().path("expectedState").path("note").asString()).isEqualTo(KrExpectedState.NOTE);
+
+        clock.set(kst("2026-12-02T11:10"));
+        checkpoint.run();
+        assertThat(fake.requests).as("세션당 한 번").hasSize(calls + 1);
+    }
+
+    @Test
+    @DisplayName("한국 장중 확인(2b) — REPLACE: 기준 시각이 지난 10:00 주문은 남기고 아직 오지 않은 14:00 주문만 '장중 확인이 대신함'으로 취소, 새 장중 시장가(MARKET) 주문을 대기로(기준 거래일 = 밤 결정의 d)")
+    void krCheckpointReplace() {
+        KrClaudeFixtures.FakeAi fake = new KrClaudeFixtures.FakeAi();
+        krClaude2NightWithCheckpoint(fake,
+                KrClaudeFixtures.claude2Order("005930", "BUY", 8.0, null, PaperBooks.AT_1000),
+                KrClaudeFixtures.claude2Order("000660", "BUY", 5.0, null, PaperBooks.AT_1400));
+        Order ten = store.ordersOf(PaperBooks.KR_CLAUDE2).stream().filter(o -> PaperBooks.AT_1000.equals(o.timing())).findFirst().orElseThrow();
+        Order two = store.ordersOf(PaperBooks.KR_CLAUDE2).stream().filter(o -> PaperBooks.AT_1400.equals(o.timing())).findFirst().orElseThrow();
+        watchKr(kst("2026-12-02T11:00:40"));
+        fake.answer("{\"schemaVersion\":2,\"action\":\"REPLACE\",\"summary\":\"000660 대신 373220\",\"orders\":["
+                + KrClaudeFixtures.claude2Order("373220", "BUY", 5.0, null, PaperBooks.MARKET) + "],\"noTradeReason\":null}");
+        clock.set(kst("2026-12-02T11:04"));
+        checkpointJob().run();
+
+        Decision cp = store.decisionFor(PaperBooks.KR_CLAUDE2, NEXT, RuleBookService.CHECKPOINT).orElseThrow();
+        assertThat(cp.status()).isEqualTo(ClaudeBookService.STATUS_OK);
+        assertThat(cp.response().path("applied").asBoolean()).isTrue();
+        assertThat(cp.response().path("supersededOrders").toString()).isEqualTo("[" + two.id() + "]");
+        assertThat(store.orders.get(two.id()).status()).isEqualTo(PaperBooks.ORDER_CANCELLED);
+        assertThat(store.orders.get(ten.id()).status()).as("기준 시각이 지난 주문은 체결 예정").isEqualTo(PaperBooks.ORDER_PENDING);
+        assertThat(store.ordersOf(PaperBooks.KR_CLAUDE2)).filteredOn(o -> java.util.Objects.equals(o.decisionId(), cp.id()))
+                .singleElement().satisfies(o -> {
+                    assertThat(o.timing()).isEqualTo(PaperBooks.MARKET);
+                    assertThat(o.ticker()).isEqualTo("373220");
+                    assertThat(o.status()).isEqualTo(PaperBooks.ORDER_PENDING);
+                    assertThat(o.asOfTradingDate()).isEqualTo(NEXT);
+                });
+    }
+
+    @Test
+    @DisplayName("한국 장중 확인(2b) — 감시 저장본이 창 끝(T + 20분)까지 없으면 부르지 않고 EXPIRED NO_WATCH_SNAPSHOT, 스위치 kr.claude2.checkpoints를 끄면 창 끝에 SKIPPED CHECKPOINTS_OFF")
+    void krCheckpointMissedOrOff() {
+        KrClaudeFixtures.FakeAi fake = new KrClaudeFixtures.FakeAi();
+        krClaude2NightWithCheckpoint(fake, KrClaudeFixtures.claude2Order("005930", "BUY", 8.0, null, PaperBooks.AT_1000));
+        int calls = fake.requests.size();
+        PaperKrCheckpointJob checkpoint = checkpointJob();
+        clock.set(kst("2026-12-02T11:05"));
+        checkpoint.run();
+        clock.set(kst("2026-12-02T11:21"));
+        checkpoint.run();
+        assertThat(store.checkpoint(PaperBooks.KR_CLAUDE2, E).orElseThrow().reason()).startsWith("NO_WATCH_SNAPSHOT");
+        assertThat(store.checkpoint(PaperBooks.KR_CLAUDE2, E).orElseThrow().status()).isEqualTo(PaperBooks.CHECKPOINT_EXPIRED);
+
+        // 다음 세션 계획을 손으로 하나 더 두고 스위치를 끔 — 창 안에서는 그대로, 창 끝에 SKIPPED.
+        LocalDate next = LocalDate.of(2026, 12, 3);
+        store.upsertPlannedCheckpoint(new com.macrodash.store.PaperStore.Checkpoint(PaperBooks.KR_CLAUDE2, next,
+                java.time.LocalTime.of(13, 0), ExecutionSection.FEED_MINUTE, List.of("005930"), "q",
+                store.decisionFor(PaperBooks.KR_CLAUDE2, NEXT, RuleBookService.SCHEDULED).orElseThrow().id(), null,
+                PaperBooks.CHECKPOINT_PLANNED, null, null, null, null, null));
+        ((tools.jackson.databind.node.ObjectNode) store.settings.body().path("kr").path("claude2")).put("checkpoints", false);
+        clock.set(kst("2026-12-03T13:05"));
+        checkpoint.run();
+        assertThat(store.checkpoint(PaperBooks.KR_CLAUDE2, next).orElseThrow().status()).isEqualTo(PaperBooks.CHECKPOINT_PLANNED);
+        clock.set(kst("2026-12-03T13:21"));
+        checkpoint.run();
+        assertThat(store.checkpoint(PaperBooks.KR_CLAUDE2, next).orElseThrow().status()).isEqualTo(PaperBooks.CHECKPOINT_SKIPPED);
+        assertThat(store.checkpoint(PaperBooks.KR_CLAUDE2, next).orElseThrow().reason()).isEqualTo(PaperKrCheckpointJob.CHECKPOINTS_OFF);
+        assertThat(fake.requests).hasSize(calls);
+    }
+
     @Test
     @DisplayName("K28(E2b) — 출발 패킷은 읽은 순간(S 22:30) 뒤에 수집된 저장본을 쓰지 않음: 22:31에 수집된 매크로 카드·선물 일봉은 빠지고 사유가 남음(결정 시각 전 S 밤 판만 — §5 출발)")
     void claudeStartPacketLeavesOutSnapshotsAfterTheReadInstant() {

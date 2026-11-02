@@ -361,7 +361,10 @@ final class PaperSettingKeys {
             choice(Claude2Settings.KR_RISK_PROFILE, Claude2Settings.RISK_PROFILES, false,
                     "한국 Claude 계좌2 투자 성향(사용자 선택, 기본 " + Claude2Settings.DEFAULT_KR_RISK_PROFILE + ") — 한국 계좌2 시스템 프롬프트의 "
                             + "'투자 성향' 절이 이 성향으로 위험자산 비중·종목 집중도·현금 여력·손실 감내를 정하게 함. 하드 규칙·검증기·체결 시점은 "
-                            + "한국 계좌1과 같음(코드가 집행하지 않는 판단 기준), 다른 계좌는 영향 없음. 바꾸면 다음 한국 계좌2 호출부터"));
+                            + "한국 계좌1과 같음(코드가 집행하지 않는 판단 기준), 다른 계좌는 영향 없음. 바꾸면 다음 한국 계좌2 호출부터"),
+            of(Claude2Settings.KR_CHECKPOINTS, Type.BOOLEAN, false,
+                    "한국 Claude 계좌2 장중 확인(단계 2b — 세션당 최대 1회, 밤 결정이 고른 시각 뒤 토스 1분봉으로 한 번 더 판단). 끄면 확인을 "
+                            + "부르지 않고 그 세션 계획은 SKIPPED(밤 결정의 요청은 계속 받음 — 호출만 멈추는 스위치)"));
 
 
     private static final Map<String, Spec> BY_KEY;

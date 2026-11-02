@@ -56,11 +56,22 @@ record ClaudeBookProfile(PaperMarket market, String code, String schemaResource,
      * {@link PaperBooks#KR_CLAUDE2_TIMINGS}(순위 NEXT_OPEN 0 &lt; AT_1000 1 &lt; … &lt; AT_1500 6 &lt; NEXT_CLOSE 7 — 장부가 이 순서로 매도 → 매수를
      * 처리). 시각 지정 체결 표시({@link #timed})는 켜지 않습니다(미국 전용 분기 — 닫힌 시점·E 하루 만료, §9): 한국 매시 시점의 닫힘은 결정 파이프라인이
      * {@link KrTimedLadder#closedTimings}로 더하고, 만료는 계좌1과 같은 기준일 + 3거래일입니다. 패킷 변형·소상한 키는 없음. 투자 성향 절은 렌더링이
-     * 더합니다({@link FrameworkService#render}).
+     * 더합니다({@link FrameworkService#render}). 장중 확인(단계 2b)을 받는 계좌라 {@link #checkpoints}가 참입니다 — 파이프라인이 장중 확인 응답 스키마
+     * {@value KrCheckpointPacket#SCHEMA_RESOURCE}를 기동 때 읽고, 응답 검증은 {@link #KR_CLAUDE2_CHECKPOINT}가 합니다.
      */
     static final ClaudeBookProfile KR_CLAUDE2 = new ClaudeBookProfile(KrPaperMarket.INSTANCE, PaperBooks.KR_CLAUDE2,
             ClaudeBookService.KR_CLAUDE2_SCHEMA_RESOURCE, ClaudePrompts.KR_CLAUDE2_FIXED_RULES, null,
-            PaperBooks.KR_CLAUDE2_TIMINGS, sequence(PaperBooks.KR_CLAUDE2_TIMINGS), null, krClaude2TimingNames(), false, false);
+            PaperBooks.KR_CLAUDE2_TIMINGS, sequence(PaperBooks.KR_CLAUDE2_TIMINGS), null, krClaude2TimingNames(), false, true);
+
+    /**
+     * 한국 Claude 계좌2 장중 확인 응답(단계 2b — 명세 2026-11-02 §10) — 장중 확인 작업({@link PaperKrCheckpointJob})이 받은 응답의 주문을 검증할 때 씁니다
+     * (호출 자체는 {@link #KR_CLAUDE2}의 시스템 프롬프트와 {@value KrCheckpointPacket#SCHEMA_RESOURCE}). 같은 계좌 코드·시장 묶음이고, 받는 시점은
+     * {@link PaperBooks#CHECKPOINT_TIMINGS}(장중 시장가 MARKET 0 &lt; AT_1000 1 &lt; … &lt; AT_1500 6 &lt; NEXT_CLOSE 7 — 매도는 같거나 뒤 순위의 매수에만
+     * 현금을 만듦). 지난 AT_*·정규장 밖이거나 종가 단일가 시간의 MARKET은 검증기가 닫습니다({@link KrTimedLadder#closedTimings}).
+     */
+    static final ClaudeBookProfile KR_CLAUDE2_CHECKPOINT = new ClaudeBookProfile(KrPaperMarket.INSTANCE, PaperBooks.KR_CLAUDE2,
+            KrCheckpointPacket.SCHEMA_RESOURCE, ClaudePrompts.KR_CLAUDE2_FIXED_RULES, null, PaperBooks.CHECKPOINT_TIMINGS,
+            sequence(PaperBooks.CHECKPOINT_TIMINGS), null, krCheckpointTimingNames(), false, true);
 
     /**
      * 미국 Claude 계좌2({@code claude2}, 계좌2 명세 §9·ADR 0022) — 계좌1과 같은 미국 시장 묶음(달력·관측치·하드 규칙 줄·금액 표기)에 응답 스키마
@@ -162,6 +173,20 @@ record ClaudeBookProfile(PaperMarket market, String code, String schemaResource,
             }
         }
         out.put(PaperBooks.NEXT_CLOSE, "다음 거래일 종가");
+        return out;
+    }
+
+    /** 한국 장중 확인 응답 검증기 근거 문구의 시점 이름(예: '장중 시장가(MARKET) 매도'·'오늘 14:00 KST(AT_1400) 매수'). */
+    private static Map<String, String> krCheckpointTimingNames() {
+        Map<String, String> out = new LinkedHashMap<>();
+        out.put(PaperBooks.MARKET, "장중 시장가");
+        for (String timing : PaperBooks.CHECKPOINT_TIMINGS) {
+            java.time.LocalTime at = KrTimedLadder.hourly(timing);
+            if (at != null) {
+                out.put(timing, "오늘 " + KrTimedLadder.label(at) + " KST");
+            }
+        }
+        out.put(PaperBooks.NEXT_CLOSE, "오늘 종가");
         return out;
     }
 

@@ -125,7 +125,7 @@ class ClaudeBookProfileTest {
                 .containsEntry(PaperBooks.AT_1000, "다음 거래일 10:00 KST").containsEntry(PaperBooks.AT_1500, "다음 거래일 15:00 KST")
                 .containsEntry(PaperBooks.NEXT_CLOSE, "다음 거래일 종가");
         assertThat(kr2.timed()).isFalse();
-        assertThat(kr2.checkpoints()).isFalse();
+        assertThat(kr2.checkpoints()).as("장중 확인 응답 스키마를 읽는 계좌(단계 2b)").isTrue();
         assertThat(kr2.packetVariant()).isNull();
         assertThat(kr2.callCapKey()).isNull();
 

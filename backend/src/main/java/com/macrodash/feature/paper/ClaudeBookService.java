@@ -359,6 +359,14 @@ public class ClaudeBookService {
         return claude2Checkpoints;
     }
 
+    /**
+     * 한국 Claude 계좌2의 결정 파이프라인을 그 실행에 묶은 것 — 장중 확인 작업({@link PaperKrCheckpointJob}, 단계 2b)이 확인 호출({@code attemptCheckpoint})·
+     * 응답 검증({@code checkpointReplies})·결정 행에 씁니다. 한국 계좌2 문맥이 없으면(시험 서비스) 오류.
+     */
+    ClaudeDecisionPipeline krClaude2Pipeline(MarketRun run) {
+        return pipeline(KrPaperMarket.INSTANCE, PaperBooks.KR_CLAUDE2).bind(run);
+    }
+
     private static List<MarketContext> concat(List<MarketContext> first, List<MarketContext> second) {
         List<MarketContext> out = new ArrayList<>(first);
         out.addAll(second);

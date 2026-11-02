@@ -200,6 +200,10 @@ class DecisionTimingsLockTest {
         assertThat(times).isEqualTo(KrCheckpointRequest.TIMES.stream().map(KrTimedLadder::label).toList());
         assertThat(checkpoint.path("properties").has("feed")).as("한국 확인은 늘 1분봉 — 피드 칸 없음").isFalse();
         assertThat(ClaudePrompts.KR_CLAUDE2_CHECKPOINT_SECTION).contains("10:00~15:00 KST의 30분 단위");
+        assertThat(schemaTimings(KrCheckpointPacket.SCHEMA_RESOURCE)).as("한국 장중 확인 응답의 시점 = 확인 프로필")
+                .isEqualTo(PaperBooks.CHECKPOINT_TIMINGS).isEqualTo(ClaudeBookProfile.KR_CLAUDE2_CHECKPOINT.timings());
+        assertThat(ClaudeDecisionPipeline.checkpointSchemaResource(kr2)).isEqualTo(KrCheckpointPacket.SCHEMA_RESOURCE);
+        assertThat(ClaudeDecisionPipeline.checkpointSchemaResource(ClaudeBookProfile.US_CLAUDE2_C2)).isEqualTo(CheckpointPacket.SCHEMA_RESOURCE);
 
         String rules = kr2.fixedRules();
         String timingLine = rules.lines().filter(line -> line.startsWith("- timing은")).findFirst().orElseThrow();

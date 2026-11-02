@@ -197,7 +197,12 @@ final class ClaudeDecisionPipeline {
         this.timeoutSeconds = timeoutSeconds;
         // 스키마 파일이 깨졌으면 기동하지 않습니다 — 첫 결정 날 아침에야 알게 되지 않게.
         this.schema = StructuredSchema.load(context.schemaResource());
-        this.checkpointSchema = profile.checkpoints() ? StructuredSchema.load(CheckpointPacket.SCHEMA_RESOURCE) : null;
+        this.checkpointSchema = profile.checkpoints() ? StructuredSchema.load(checkpointSchemaResource(profile)) : null;
+    }
+
+    /** 장중 확인 응답 스키마 — 한국 Claude 계좌2는 {@value KrCheckpointPacket#SCHEMA_RESOURCE}(단계 2b), 그 밖(미국 계좌2)은 {@value CheckpointPacket#SCHEMA_RESOURCE}. */
+    static String checkpointSchemaResource(ClaudeBookProfile profile) {
+        return PaperBooks.KR_CLAUDE2.equals(profile.code()) ? KrCheckpointPacket.SCHEMA_RESOURCE : CheckpointPacket.SCHEMA_RESOURCE;
     }
 
     /** {@link #bind} — 같은 문맥·협력 객체·읽어 둔 스키마에 시장 문맥만 그 실행으로. */
@@ -238,7 +243,8 @@ final class ClaudeDecisionPipeline {
 
     /**
      * 장중 확인 응답을 검증·기록하는 사본(계좌2 명세 §10-5·§10-6, 단계 2) — 같은 계좌·시장 문맥·협력 객체에 프로필만
-     * {@link ClaudeBookProfile#US_CLAUDE2_CHECKPOINT}(받는 시점 MARKET·AT_*·NEXT_CLOSE, 순위 MARKET 0 &lt; … &lt; NEXT_CLOSE 7). 확인 호출은 이 사본이
+     * {@link ClaudeBookProfile#US_CLAUDE2_CHECKPOINT}(한국 Claude 계좌2는 {@link ClaudeBookProfile#KR_CLAUDE2_CHECKPOINT} — 단계 2b)(받는 시점 MARKET·AT_*·
+     * NEXT_CLOSE, 순위 MARKET 0 &lt; … &lt; NEXT_CLOSE 7). 확인 호출은 이 사본이
      * 아니라 원래 파이프라인({@link #attemptCheckpoint})이 합니다 — 이 사본은 {@link #plan}·{@link #insertOrders}·{@link #supersedePendingAfter}만.
      *
      * @throws IllegalStateException 장중 확인 판이 아닌 파이프라인
@@ -247,7 +253,8 @@ final class ClaudeDecisionPipeline {
         if (checkpointSchema == null) {
             throw new IllegalStateException(book() + " 파이프라인은 장중 확인 판이 아닙니다");
         }
-        return new ClaudeDecisionPipeline(this, market, ClaudeBookProfile.US_CLAUDE2_CHECKPOINT);
+        return new ClaudeDecisionPipeline(this, market, PaperBooks.KR_CLAUDE2.equals(book())
+                ? ClaudeBookProfile.KR_CLAUDE2_CHECKPOINT : ClaudeBookProfile.US_CLAUDE2_CHECKPOINT);
     }
 
     /** 이 파이프라인의 시장 문맥 — 서비스가 만든 것은 시장 묶음, {@link #bind}한 사본은 그 실행. */

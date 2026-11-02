@@ -102,15 +102,16 @@ final class KrTimedLadder {
     /**
      * 그 결정에서 닫힌 한국 매시 시점(검증기 {@link OrderValidator.Market#closed} — 명세 §2): 목표 세션 E(기준 거래일 다음 KRX 거래일)의 기준 시각 T가
      * 그날 정규장 개장 전이거나 마감 단일가 시간(마감 10분 전부터 — {@link #CLOSING_AUCTION})에 걸리면 MALFORMED(장 시간 변경일 —
-     * {@code kr.calendar.openTimeOverrides}), T가 지금 + 60초 이전이면 LATE_FOR_TIMING. 보통 날 밤 결정에서는 아무것도 닫히지 않습니다. 시가·종가는
-     * 닫지 않습니다.
+     * {@code kr.calendar.openTimeOverrides}), T가 지금 + 60초 이전이면 LATE_FOR_TIMING. 장중 시장가(MARKET — 장중 확인 응답, 단계 2b)는 지금 만들 주문의
+     * 기준 분({@link ExecutionAudit#marketTarget})이 그 세션 정규장 밖이거나 종가 단일가 시간이면 MALFORMED. 보통 날 밤 결정에서는 아무것도 닫히지 않습니다.
+     * 시가·종가는 닫지 않습니다.
      *
      * @param timings 받는 체결 시점(계좌 프로필)
      */
     static Map<String, OrderValidator.Closed> closedTimings(List<String> timings, LocalDate asOf, Instant now,
                                                             TradingCalendar calendar) {
         Map<String, OrderValidator.Closed> out = new LinkedHashMap<>();
-        if (timings.stream().noneMatch(timing -> hourly(timing) != null)) {
+        if (timings.stream().noneMatch(timing -> hourly(timing) != null || PaperBooks.MARKET.equals(timing))) {
             return out;
         }
         LocalDate session = calendar.nextTradingDay(asOf);
@@ -118,6 +119,15 @@ final class KrTimedLadder {
         Instant close = calendar.closeInstant(session);
         String hours = label(open.atZone(KrxCalendar.SEOUL).toLocalTime()) + "~" + label(close.atZone(KrxCalendar.SEOUL).toLocalTime());
         for (String timing : timings) {
+            if (PaperBooks.MARKET.equals(timing)) {
+                Instant target = ExecutionAudit.marketTarget(now);
+                if (!target.atZone(KrxCalendar.SEOUL).toLocalDate().equals(session) || target.isBefore(open)
+                        || !target.isBefore(close.minus(CLOSING_AUCTION))) {
+                    out.put(timing, new OrderValidator.Closed(OrderValidator.MALFORMED, session + " 정규장 " + hours + " KST — 장중 시장가의 "
+                            + "기준 분(" + Kst.stamp(target) + ")이 그 세션 정규장 밖이거나 종가 단일가 시간이라 받지 않음"));
+                }
+                continue;
+            }
             LocalTime at = hourly(timing);
             if (at == null) {
                 continue;
