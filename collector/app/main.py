@@ -40,6 +40,7 @@ from .services import (
     detail as detail_service,
     kis as kis_service,
     krx as krx_service,
+    live_prices as live_prices_service,
     ls as ls_service,
     market as market_service,
     radar as radar_service,
@@ -452,6 +453,20 @@ def live_quote(
     """검색 상세 화면의 시세·핵심 지표·개요(미국·해외 Yahoo, 국내 네이버 — services/detail.py). 저장하지 않고 5분 캐시."""
     _check_token(x_service_token)
     return detail_service.quote(*_detail_target(market, code))
+
+
+@app.get("/live/prices")
+def live_prices(
+    items: str = Query(..., max_length=1200),
+    x_service_token: str | None = Header(default=None),
+) -> dict:
+    """화면 실시간 시세(ADR 0024) — 'US:AAPL,KR:005930'(최대 60개). 저장하지 않고 3초 캐시(services/live_prices.py)."""
+    _check_token(x_service_token)
+    try:
+        targets = live_prices_service.parse_items(items)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from None
+    return live_prices_service.prices(targets)
 
 
 @app.get("/live/news")

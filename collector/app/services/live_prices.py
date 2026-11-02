@@ -1,0 +1,422 @@
+"""
+화면 실시간 시세(ADR 0024) — 모의 매매 장중 카드·보유 표·종목 상세가 SSE로 받는 가격(5초~3시간 주기, 사용자가 고름). 저장하지 않고 화면이
+볼 때만 부릅니다(`/live/prices`, 백엔드 `feature.live`가 고른 주기마다 부름). 장부(체결·스탑·통계·결정)는 이 값을 쓰지 않습니다.
+
+출처(2026-11-03 운영 서버에서 5초 간격 12번씩 실측 — ADR 0024)
+- 미국: Yahoo spark(``v7/finance/spark`` — 한 번에 20종목, 정규장 거래 시각이 1~10초 전) → 빠진 종목은 네이버 해외주식 polling
+  (여러 종목 한 번에, 로이터 코드 — 자동완성으로 찾아 하루 캐시, 실시간). 트레이딩뷰는 로그인 없이 미국 주식이 15분 지연, 인베스팅은 종목 ID
+  검색이 빈 결과, 구글은 종목마다 1.4MB 페이지라 쓰지 않습니다.
+- 국내: 네이버 polling(여러 종목 한 번에, 거래 시각 포함) → 다음(종목마다, Referer 필요) → 토스 1분봉(분 단위 — 마지막 대체).
+같은 종목은 :data:`TTL_SECONDS` 동안 같은 값 — 5초 주기·여러 탭·여러 화면이 출처를 한 번만 부르게. 출처 거부(403·429·봇 차단)는 공용 세션의
+5분 래치(http.py)를 따르고 다음 출처로 넘어갑니다. Yahoo는 yfinance 경로와 같은 래치 이름(:data:`http.YAHOO_HOST`)을 함께 씁니다(같은 한도).
+모르는 값은 None(0으로 채우지 않음). 파싱(``*_from_*``)은 순수 함수라 시험이 네트워크 없이 고정 응답으로 봅니다.
+"""
+from __future__ import annotations
+
+import logging
+import threading
+import time
+from datetime import datetime, timezone
+from typing import Any, Callable
+from zoneinfo import ZoneInfo
+
+from .. import http
+from ..http import brief_error, get_session
+from . import detail
+from . import toss as toss_service
+
+logger = logging.getLogger(__name__)
+
+KST = ZoneInfo("Asia/Seoul")
+TTL_SECONDS = 3.0
+NAMES_TTL_SECONDS = 86_400.0
+MAX_ITEMS = 60
+BATCH = 20
+FETCH_TIMEOUT = 8
+TOSS_SPACING_SECONDS = 0.1
+
+YAHOO_SPARK = "https://query1.finance.yahoo.com/v7/finance/spark"
+# Yahoo는 공용 세션의 브라우저 표시(http.BROWSER_HEADERS — 맥 Chrome 124)에 429를 돌려주고 다른 표시에는 200을 줍니다(2026-11-03 확인).
+# 공용 표시는 다른 출처가 쓰므로 그대로 두고 이 호출만 바꿉니다.
+YAHOO_HEADERS = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) "
+                               "Chrome/141.0.0.0 Safari/537.36"}
+NAVER_POLLING = "https://polling.finance.naver.com/api/realtime"
+DAUM_QUOTES = "https://finance.daum.net/api/quotes"
+
+SOURCE_YAHOO = "Yahoo"
+SOURCE_NAVER = "네이버"
+SOURCE_DAUM = "다음"
+SOURCE_TOSS = "토스 1분봉"
+
+OPEN, PRE, POST, CLOSED = "OPEN", "PRE", "POST", "CLOSED"
+
+# ---------------------------------------------------------------- 요청 읽기
+
+
+def parse_items(text: str) -> list[tuple[str, str]]:
+    """``'US:AAPL,KR:005930'`` → [(시장, 코드)] — 같은 것은 하나, 순서 유지. 형식이 틀리거나 :data:`MAX_ITEMS`를 넘으면 ValueError."""
+    out: list[tuple[str, str]] = []
+    for raw in (text or "").split(","):
+        raw = raw.strip()
+        if not raw:
+            continue
+        market, _, code = raw.partition(":")
+        market = market.strip().upper()
+        code = code.strip().upper()
+        if market == "US" and detail.US_CODE.match(code):
+            pass
+        elif market == "KR" and detail.KR_CODE.match(code):
+            pass
+        else:
+            raise ValueError(f"종목은 'US:심볼' 또는 'KR:6자리'입니다: {raw[:30]}")
+        if (market, code) not in out:
+            out.append((market, code))
+    if not out:
+        raise ValueError("종목이 없습니다.")
+    if len(out) > MAX_ITEMS:
+        raise ValueError(f"한 번에 {MAX_ITEMS}개까지입니다.")
+    return out
+
+
+# ---------------------------------------------------------------- 숫자·시각
+
+
+def _number(value: Any) -> float | None:
+    """숫자나 '1,234.5'·'-6.86' 글 → float. 없거나 읽을 수 없으면 None."""
+    if isinstance(value, bool) or value is None:
+        return None
+    if isinstance(value, (int, float)):
+        return float(value)
+    try:
+        return float(str(value).replace(",", "").strip())
+    except ValueError:
+        return None
+
+
+def _positive(value: Any) -> float | None:
+    number = _number(value)
+    return number if number is not None and number > 0 else None
+
+
+def _iso(moment: datetime | None) -> str | None:
+    return moment.astimezone(timezone.utc).isoformat().replace("+00:00", "Z") if moment else None
+
+
+def _parse_time(text: Any) -> datetime | None:
+    """네이버 '2026-11-02T13:57:58-05:00'(마이크로초가 붙기도 함) → aware datetime. 읽을 수 없으면 None."""
+    if not isinstance(text, str) or not text:
+        return None
+    try:
+        return datetime.fromisoformat(text)
+    except ValueError:
+        return None
+
+
+def _item(market: str, code: str, *, price: float, prev_close: float | None, change: float | None, change_pct: float | None,
+          traded_at: datetime | None, status: str | None, source: str, currency: str | None,
+          over_price: float | None = None, over_session: str | None = None) -> dict:
+    """한 종목의 응답 — 등락은 주어진 값, 없으면 전일 종가로 계산(전일 종가도 없으면 None)."""
+    if change is None and prev_close:
+        change = price - prev_close
+    if change_pct is None and prev_close and change is not None:
+        change_pct = change / prev_close * 100
+    if prev_close is None and change is not None:
+        prev_close = price - change
+    return {
+        "market": market, "code": code, "price": price, "prevClose": prev_close, "change": change, "changePct": change_pct,
+        "currency": currency, "tradedAt": _iso(traded_at), "status": status, "source": source,
+        "overPrice": over_price, "overSession": over_session,
+    }
+
+
+# ---------------------------------------------------------------- 파싱(순수 함수)
+
+
+def _yahoo_status(meta: dict, now: float) -> str | None:
+    """Yahoo currentTradingPeriod(pre·regular·post의 시작·끝 epoch)로 지금 장 상태. 모르면 None."""
+    periods = meta.get("currentTradingPeriod")
+    if not isinstance(periods, dict):
+        return None
+    for key, status in (("regular", OPEN), ("pre", PRE), ("post", POST)):
+        span = periods.get(key) if isinstance(periods.get(key), dict) else {}
+        start, end = _number(span.get("start")), _number(span.get("end"))
+        if start is not None and end is not None and start <= now < end:
+            return status
+    return CLOSED
+
+
+def yahoo_from_spark(payload: Any, now: float) -> dict[str, dict]:
+    """Yahoo spark 응답 → {심볼: 종목}. 가격이 없는 심볼은 뺍니다(모르는 심볼은 응답에서 아예 빠짐)."""
+    out: dict[str, dict] = {}
+    results = ((payload or {}).get("spark") or {}).get("result") if isinstance(payload, dict) else None
+    for result in results if isinstance(results, list) else []:
+        responses = result.get("response") if isinstance(result, dict) else None
+        meta = (responses[0] or {}).get("meta") if isinstance(responses, list) and responses else None
+        if not isinstance(meta, dict):
+            continue
+        code = str(meta.get("symbol") or result.get("symbol") or "").upper()
+        price = _positive(meta.get("regularMarketPrice"))
+        if not code or price is None:
+            continue
+        at = _number(meta.get("regularMarketTime"))
+        prev_close = _positive(meta.get("previousClose")) or _positive(meta.get("chartPreviousClose"))
+        out[code] = _item("US", code, price=price, prev_close=prev_close, change=None,
+                          change_pct=_number(meta.get("regularMarketChangePercent")),
+                          traded_at=datetime.fromtimestamp(at, timezone.utc) if at else None,
+                          status=_yahoo_status(meta, now), source=SOURCE_YAHOO, currency=meta.get("currency"))
+    return out
+
+
+def _naver_change(data: dict) -> float | None:
+    """네이버 전일 대비 — 글에 부호가 없으면(국내 '5,000') compareToPreviousPrice 코드로(4 하한·5 하락은 음수)."""
+    raw = data.get("compareToPreviousClosePriceRaw", data.get("compareToPreviousClosePrice"))
+    change = _number(raw)
+    if change is None:
+        return None
+    direction = data.get("compareToPreviousPrice") if isinstance(data.get("compareToPreviousPrice"), dict) else {}
+    if change > 0 and str(direction.get("code")) in ("4", "5"):
+        change = -change
+    return change
+
+
+def _naver_status(data: dict) -> tuple[str | None, float | None, str | None]:
+    """(장 상태, 시간 외 가격, 시간 외 구분) — 정규장 OPEN이면 OPEN, 시간 외(국내 NXT·미국 프리·애프터)가 열려 있으면 PRE·POST와 그 가격."""
+    status = str(data.get("marketStatus") or "").upper()
+    if status == "OPEN":
+        return OPEN, None, None
+    over = data.get("overMarketPriceInfo") or data.get("nxtOverMarketPriceInfo")
+    if isinstance(over, dict) and str(over.get("overMarketStatus") or "").upper() == "OPEN":
+        session = str(over.get("tradingSessionType") or "").upper()
+        return (PRE if session.startswith("PRE") else POST), _positive(over.get("overPrice")), session or None
+    return (CLOSED if status else None), None, None
+
+
+def naver_from_polling(payload: Any, market: str, code_of: Callable[[dict], str | None]) -> dict[str, dict]:
+    """네이버 polling(국내 ``domestic/stock/<코드,…>``·해외 ``worldstock/stock/<로이터,…>``) → {코드: 종목}. ``code_of``가 줄에서 화면 코드를 고릅니다."""
+    out: dict[str, dict] = {}
+    datas = payload.get("datas") if isinstance(payload, dict) else None
+    for data in datas if isinstance(datas, list) else []:
+        if not isinstance(data, dict):
+            continue
+        code = code_of(data)
+        price = _positive(data.get("closePriceRaw", data.get("closePrice")))
+        if not code or price is None:
+            continue
+        status, over_price, over_session = _naver_status(data)
+        currency = data.get("currencyType", {}).get("code") if isinstance(data.get("currencyType"), dict) else None
+        out[code] = _item(market, code, price=price, prev_close=None, change=_naver_change(data),
+                          change_pct=_number(data.get("fluctuationsRatioRaw", data.get("fluctuationsRatio"))),
+                          traded_at=_parse_time(data.get("localTradedAt")), status=status, source=SOURCE_NAVER,
+                          currency=currency or ("KRW" if market == "KR" else None), over_price=over_price, over_session=over_session)
+    return out
+
+
+def daum_from_quote(code: str, payload: Any) -> dict | None:
+    """다음 시세 → 종목(tradeDate·tradeTime은 KST). 가격이 없으면 None."""
+    if not isinstance(payload, dict):
+        return None
+    price = _positive(payload.get("tradePrice"))
+    if price is None:
+        return None
+    traded_at = None
+    day, clock = str(payload.get("tradeDate") or ""), str(payload.get("tradeTime") or "")
+    if len(day) == 8 and len(clock) == 6 and (day + clock).isdigit():
+        traded_at = datetime.strptime(day + clock, "%Y%m%d%H%M%S").replace(tzinfo=KST)
+    change = _number(payload.get("changePrice"))
+    if change is not None and str(payload.get("change") or "").upper() in ("FALL", "LOWER_LIMIT"):
+        change = -abs(change)
+    rate = _number(payload.get("changeRate"))
+    status = str(payload.get("marketStatus") or "").upper()
+    return _item("KR", code, price=price, prev_close=_positive(payload.get("prevClosingPrice")), change=change,
+                 change_pct=None if rate is None else rate * 100 * (-1 if change is not None and change < 0 and rate > 0 else 1),
+                 traded_at=traded_at, status=OPEN if status == "OPEN" else (CLOSED if status else None),
+                 source=SOURCE_DAUM, currency="KRW")
+
+
+def toss_from_candle(code: str, candle: dict | None) -> dict | None:
+    """토스 1분봉(정규화한 봉 — date·time은 KST) → 종목(전일 대비 모름). 봉이 없으면 None."""
+    if not candle or _positive(candle.get("close")) is None:
+        return None
+    try:
+        at = datetime.fromisoformat(f"{candle['date']}T{candle['time']}:00").replace(tzinfo=KST)
+    except (KeyError, ValueError):
+        at = None
+    return _item("KR", code, price=float(candle["close"]), prev_close=None, change=None, change_pct=None,
+                 traded_at=at, status=None, source=SOURCE_TOSS, currency="KRW")
+
+
+# ---------------------------------------------------------------- 출처 부르기
+
+
+def _chunks(values: list[str], size: int = BATCH) -> list[list[str]]:
+    return [values[index:index + size] for index in range(0, len(values), size)]
+
+
+def _get_json(url: str, **kwargs) -> Any:
+    res = get_session().get(url, timeout=FETCH_TIMEOUT, **kwargs)
+    if res.status_code != 200:
+        raise RuntimeError(f"HTTP {res.status_code}")
+    return res.json()
+
+
+def _fetch_yahoo(codes: list[str], errors: dict[str, str]) -> dict[str, dict]:
+    latched = http.active_rejection(http.YAHOO_HOST)
+    if latched is not None:
+        errors[SOURCE_YAHOO] = str(latched)
+        return {}
+    out: dict[str, dict] = {}
+    for chunk in _chunks(codes):
+        try:
+            payload = _get_json(YAHOO_SPARK, params={"symbols": ",".join(chunk), "range": "1d", "interval": "1m"},
+                                headers=YAHOO_HEADERS)
+        except http.SourceRejected as exc:
+            http.reject_host(http.YAHOO_HOST, exc.why)  # yfinance 경로(같은 Yahoo 한도)도 5분 쉼
+            errors[SOURCE_YAHOO] = brief_error(exc)
+            break
+        except Exception as exc:  # noqa: BLE001 — 출처 하나의 실패는 다음 출처로
+            errors[SOURCE_YAHOO] = brief_error(exc)
+            break
+        out.update(yahoo_from_spark(payload, time.time()))
+    return out
+
+
+_names: dict[str, tuple[float, str | None]] = {}
+_names_lock = threading.Lock()
+
+
+def _reuters_code(code: str) -> str | None:
+    """미국 심볼 → 네이버 로이터 코드(자동완성 — 하루 캐시, 못 찾으면 None도 하루 둠). 자동완성은 'BRK-B'를 'BRK B'로만 찾습니다."""
+    now = time.monotonic()
+    with _names_lock:
+        cached = _names.get(code)
+        if cached and cached[0] > now:
+            return cached[1]
+    reuters = None
+    try:
+        res = get_session().get(detail.NAVER_AC, params={"q": code.replace("-", " "), "target": "stock,worldstock"},
+                                timeout=FETCH_TIMEOUT)
+        if res.status_code == 200:
+            item = detail.naver_world_item(res.json(), code)
+            reuters = item["reutersCode"] if item else None
+    except Exception as exc:  # noqa: BLE001
+        logger.info("네이버 해외주식 코드 찾기 실패(%s): %s", code, brief_error(exc))
+        return None   # 실패는 기억하지 않음 — 다음에 다시
+    with _names_lock:
+        _names[code] = (now + NAMES_TTL_SECONDS, reuters)
+    return reuters
+
+
+def _fetch_naver_us(codes: list[str], errors: dict[str, str]) -> dict[str, dict]:
+    by_reuters = {reuters: code for code in codes if (reuters := _reuters_code(code))}
+    out: dict[str, dict] = {}
+    for chunk in _chunks(list(by_reuters)):
+        try:
+            payload = _get_json(f"{NAVER_POLLING}/worldstock/stock/{','.join(chunk)}")
+        except Exception as exc:  # noqa: BLE001
+            errors[SOURCE_NAVER] = brief_error(exc)
+            break
+        out.update(naver_from_polling(payload, "US", lambda data: by_reuters.get(str(data.get("reutersCode") or ""))))
+    return out
+
+
+def _fetch_naver_kr(codes: list[str], errors: dict[str, str]) -> dict[str, dict]:
+    out: dict[str, dict] = {}
+    for chunk in _chunks(codes):
+        try:
+            payload = _get_json(f"{NAVER_POLLING}/domestic/stock/{','.join(chunk)}")
+        except Exception as exc:  # noqa: BLE001
+            errors[SOURCE_NAVER] = brief_error(exc)
+            break
+        out.update(naver_from_polling(payload, "KR", lambda data: str(data.get("itemCode") or "").upper() or None))
+    return out
+
+
+def _fetch_daum(codes: list[str], errors: dict[str, str]) -> dict[str, dict]:
+    out: dict[str, dict] = {}
+    for code in codes:
+        try:
+            payload = _get_json(f"{DAUM_QUOTES}/A{code}", params={"summary": "false"},
+                                headers={"Referer": f"https://finance.daum.net/quotes/A{code}"})
+        except Exception as exc:  # noqa: BLE001
+            errors[SOURCE_DAUM] = brief_error(exc)
+            break
+        item = daum_from_quote(code, payload)
+        if item:
+            out[code] = item
+    return out
+
+
+def _fetch_toss(codes: list[str], errors: dict[str, str]) -> dict[str, dict]:
+    out: dict[str, dict] = {}
+    for index, code in enumerate(codes):
+        if index:
+            time.sleep(TOSS_SPACING_SECONDS)
+        try:
+            candles, _ = toss_service.fetch_candles(code, "1m", 1, adjusted=False)
+        except toss_service.TossMissingKey:
+            errors[SOURCE_TOSS] = "토스 키 없음"
+            break
+        except Exception as exc:  # noqa: BLE001 — 403(TossForbidden)도 여기서 멈춤
+            errors[SOURCE_TOSS] = brief_error(exc)
+            break
+        item = toss_from_candle(code, candles[0] if candles else None)
+        if item:
+            out[code] = item
+    return out
+
+
+CHAINS: dict[str, tuple[Callable[[list[str], dict[str, str]], dict[str, dict]], ...]] = {
+    "US": (_fetch_yahoo, _fetch_naver_us),
+    "KR": (_fetch_naver_kr, _fetch_daum, _fetch_toss),
+}
+
+
+def _fetch(market: str, codes: list[str], errors: dict[str, str]) -> dict[str, dict]:
+    """시장의 출처를 차례로 — 앞 출처가 못 준 종목만 다음 출처에 묻습니다."""
+    found: dict[str, dict] = {}
+    for fetch in CHAINS[market]:
+        left = [code for code in codes if code not in found]
+        if not left:
+            break
+        found.update(fetch(left, errors))
+    return found
+
+
+# ---------------------------------------------------------------- 캐시와 응답
+
+_cache: dict[tuple[str, str], tuple[float, dict | None]] = {}
+_cache_lock = threading.Lock()
+_fetch_lock = threading.Lock()
+
+
+def reset_cache() -> None:
+    with _cache_lock:
+        _cache.clear()
+    with _names_lock:
+        _names.clear()
+
+
+def prices(items: list[tuple[str, str]]) -> dict:
+    """종목들의 지금 가격 — {fetchedAt, items: {'US:AAPL': 종목}, missing: ['KR:…'], errors: {출처: 사유}}. :data:`TTL_SECONDS` 캐시."""
+    errors: dict[str, str] = {}
+    with _fetch_lock:   # 같은 순간의 여러 화면(SSE 구독)이 같은 종목을 두 번 묻지 않게 — 출처 응답은 수십~수백 ms
+        now = time.monotonic()
+        with _cache_lock:
+            stale = [key for key in items if key not in _cache or _cache[key][0] <= now]
+        by_market: dict[str, list[str]] = {}
+        for market, code in stale:
+            by_market.setdefault(market, []).append(code)
+        for market, codes in by_market.items():
+            found = _fetch(market, codes, errors)
+            expires = time.monotonic() + TTL_SECONDS
+            with _cache_lock:
+                for code in codes:
+                    _cache[(market, code)] = (expires, found.get(code))
+    with _cache_lock:
+        values = {key: _cache.get(key, (0.0, None))[1] for key in items}
+    return {
+        "fetchedAt": _iso(datetime.now(timezone.utc)),
+        "items": {f"{market}:{code}": value for (market, code), value in values.items() if value},
+        "missing": [f"{market}:{code}" for (market, code), value in values.items() if not value],
+        "errors": errors,
+    }

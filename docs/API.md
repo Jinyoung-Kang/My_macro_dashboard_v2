@@ -340,6 +340,7 @@ CAGR 지수도 같음), 20일 미만이면 `cumReturnPct`만 있습니다. 변�
 | [토큰] `GET /live/ticker/{symbol}?period=` | 티커 시계열 즉시 수집 |
 | [토큰] `GET /live/daum-intraday?minutes=30` | 장중 수급 가속도 |
 | [토큰] `GET /live/quote?market=us\|kr&code=` | 검색 상세의 시세·핵심 지표·개요(Yahoo·네이버, 5분 캐시) |
+| [토큰] `GET /live/prices?items=US:AAPL,KR:005930` | 화면 실시간 시세(ADR 0024 — 미국 Yahoo → 네이버, 국내 네이버 → 다음 → 토스 1분봉, 3초 캐시, 저장 안 함, 60개까지) |
 | [토큰] `GET /live/news?market=&code=&q=` | 검색 상세의 주요 뉴스(Yahoo·네이버·구글 뉴스 RSS, 15분 캐시) |
 | [토큰] `GET /live/symbols?q=` | 종목 찾기(네이버 자동완성·Yahoo 검색, 1시간 캐시) |
 | [토큰] `GET /verify/readings?market=&investor=&tradeType=` | 검증용 원자료 (판정은 백엔드, 읽는 코드는 `app/verification.py`) |
