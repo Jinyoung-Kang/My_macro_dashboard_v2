@@ -356,7 +356,7 @@ public class PaperCheckpointJob {
             }
             throw e;
         }
-        log.info("Claude 계좌2 장중 확인 {} {} {}: {} — 결정 {}", session, CheckpointPacket.clock(c.atEt()), c.feed(),
+        log.info("Claude 계좌2 장중 확인 {} {} {}: {} — 결정 {}", session, CheckpointPacket.clock(c.atLocal()), c.feed(),
                 attempt.succeeded() ? Json.asText(attempt.parsed(), "action") : attempt.status(), id);
         return PaperBooks.CHECKPOINT_DONE + " 결정 #" + id;
     }
@@ -368,7 +368,7 @@ public class PaperCheckpointJob {
                 && Duration.between(s.collectedAt(), now).getSeconds() <= Datasets.MAX_AGE_WATCH_US
                 && c.bookCode().equals(Json.asText(cp, "book"))
                 && c.sessionDate().toString().equals(Json.asText(cp, "sessionDate"))
-                && CheckpointPacket.clock(c.atEt()).equals(Json.asText(cp, "atEt"));
+                && CheckpointPacket.clock(c.atLocal()).equals(Json.asText(cp, "atEt"));
     }
 
     private List<PaperStore.Order> pendingOrders() {
@@ -491,7 +491,7 @@ public class PaperCheckpointJob {
     private ObjectNode checkpointRequest(Checkpoint c, Integer lag) {
         ObjectNode request = mapper.createObjectNode();
         request.put("session", c.sessionDate().toString());
-        request.put("atEt", CheckpointPacket.clock(c.atEt()));
+        request.put("atEt", CheckpointPacket.clock(c.atLocal()));
         request.put("feed", c.feed());
         request.put("sourceDecisionId", c.sourceDecisionId());
         request.put("lagSeconds", lag);

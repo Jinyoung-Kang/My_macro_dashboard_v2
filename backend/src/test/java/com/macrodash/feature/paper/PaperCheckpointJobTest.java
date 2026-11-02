@@ -444,7 +444,7 @@ class PaperCheckpointJobTest {
         JsonNode request = d.response().path("checkpoint");
         assertThat(request.isObject()).as("checkpoint 칸").isTrue();
         assertThat(request.path("session").asString()).isEqualTo(E.toString());
-        assertThat(request.path("atEt").asString()).isEqualTo(CheckpointPacket.clock(c.atEt()));
+        assertThat(request.path("atEt").asString()).isEqualTo(CheckpointPacket.clock(c.atLocal()));
         assertThat(request.path("feed").asString()).isEqualTo(c.feed());
         assertThat(request.path("sourceDecisionId").asLong()).isEqualTo(c.sourceDecisionId());
         assertThat(request.path("lagSeconds").asInt()).isEqualTo(75);

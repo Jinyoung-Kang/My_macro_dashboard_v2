@@ -168,7 +168,7 @@ def _checkpoint(store, book: str, session: date, feed: str = "MINUTE", status: s
             "VALUES (%s, %s, 'SCHEDULED', 'OK', 1) RETURNING id", (book, session - timedelta(days=3)),
         ).fetchone()["id"]
         conn.execute(
-            "INSERT INTO paper_checkpoints (book_code, session_date, at_et, feed, watch, question, source_decision_id, status) "
+            "INSERT INTO paper_checkpoints (book_code, session_date, at_local, feed, watch, question, source_decision_id, status) "
             "VALUES (%s, %s, %s, %s, %s, '갭 유지?', %s, %s)", (book, session, AT, feed, list(watch), decision, status),
         )
 
@@ -215,7 +215,7 @@ def test_범위는_계좌2의_오늘_PLANNED_MINUTE_확인과_보유·대기이�
     _order(store, "claude", "PEND1", "PENDING")
     _read_only(store, monkeypatch)
 
-    assert store.watch_scope("US", SESSION) == {"book": "claude2", "sessionDate": SESSION, "atEt": AT,
+    assert store.watch_scope("US", SESSION) == {"book": "claude2", "sessionDate": SESSION, "atLocal": AT,
                                                 "watch": ["NVDA", "AAPL"], "held": ["HELD2"], "pending": ["PEND2"]}
     assert store.watch_scope("US", SESSION + timedelta(days=1)) is None, "HOURLY는 감시 자료가 필요 없음"
     assert store.watch_scope("US", SESSION + timedelta(days=2)) is None, "PLANNED가 아님"
@@ -231,7 +231,7 @@ def test_범위_읽기는_쓰기_문장이_없다():
 # ==============================================================================
 # 4. 태스크 (PostgreSQL — 범위·1분봉은 바꿔 끼움)
 # ==============================================================================
-SCOPE = {"book": "claude2", "sessionDate": SESSION, "atEt": AT, "watch": ["NVDA"], "held": ["HELD"], "pending": ["PEND"]}
+SCOPE = {"book": "claude2", "sessionDate": SESSION, "atLocal": AT, "watch": ["NVDA"], "held": ["HELD"], "pending": ["PEND"]}
 
 
 @pytest.fixture()
@@ -360,7 +360,7 @@ def test_다른_확인의_저장본은_잇지_않는다(store, monkeypatch, yaho
     yahoo["minute"] = (_all(), None, False)
     paper_watch.task_paper_watch_us()
 
-    today.update(atEt=time(10, 30))         # 같은 날이라도 다른 확인 시각
+    today.update(atLocal=time(10, 30))         # 같은 날이라도 다른 확인 시각
     clock(_ny(10, 25))
     partial = _all(end=time(10, 24))
     del partial["NVDA"]

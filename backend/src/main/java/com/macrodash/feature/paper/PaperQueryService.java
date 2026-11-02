@@ -574,8 +574,8 @@ public class PaperQueryService {
     private static Map<String, Object> checkpointToday(PaperStore.Checkpoint c, TradingCalendar calendar) {
         Map<String, Object> out = new LinkedHashMap<>();
         out.put("session", c.sessionDate().toString());
-        out.put("atEt", CheckpointPacket.clock(c.atEt()));
-        out.put("atKst", stamp(c.sessionDate().atTime(c.atEt()).atZone(calendar.zone()).toInstant()));
+        out.put("atEt", CheckpointPacket.clock(c.atLocal()));
+        out.put("atKst", stamp(c.sessionDate().atTime(c.atLocal()).atZone(calendar.zone()).toInstant()));
         out.put("feed", c.feed());
         out.put("watch", c.watch());
         out.put("status", c.status());
@@ -598,7 +598,7 @@ public class PaperQueryService {
         JsonNode cp = watch.payload().get("checkpoint");
         if (cp == null || !c.bookCode().equals(Json.asText(cp, "book"))
                 || !c.sessionDate().toString().equals(Json.asText(cp, "sessionDate"))
-                || !CheckpointPacket.clock(c.atEt()).equals(Json.asText(cp, "atEt"))) {
+                || !CheckpointPacket.clock(c.atLocal()).equals(Json.asText(cp, "atEt"))) {
             return null;
         }
         Map<String, Object> out = new LinkedHashMap<>();

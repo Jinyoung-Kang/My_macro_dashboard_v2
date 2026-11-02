@@ -628,7 +628,7 @@ def watch_scope(market: str, session: date) -> dict | None:
     """
     장중 확인 감시 범위 — 그 시장 계좌2의 ``session``(뉴욕 날짜) 장중 확인 행 가운데 PLANNED·MINUTE인 것(계좌·세션마다 한 행)과 계좌2의
     보유·대기 주문 종목. 행이 없으면 None(태스크가 Yahoo를 부르지 않음).
-    ``{book, sessionDate, atEt(time), watch[…], held[…], pending[…]}``
+    ``{book, sessionDate, atLocal(time — 그 시장 현지 시각, V19), watch[…], held[…], pending[…]}``
 
     백엔드 표 ``paper_checkpoints``·``paper_positions``·``paper_orders``·``paper_books``를 **읽기만** 합니다(쓰는 프로세스는 백엔드 하나 —
     ADR 0008, timed_scope와 같은 교차 읽기 — ADR 0022). 확인 시각·감시 목록은 아침 결정이 정하고 백엔드가 적습니다.
@@ -638,7 +638,7 @@ def watch_scope(market: str, session: date) -> dict | None:
         return None
     with connection() as conn:
         row = conn.execute(
-            "SELECT c.book_code, c.session_date, c.at_et, c.watch FROM paper_checkpoints c "
+            "SELECT c.book_code, c.session_date, c.at_local, c.watch FROM paper_checkpoints c "
             "JOIN paper_books b ON b.code = c.book_code "
             "WHERE b.market = %s AND c.book_code = %s AND c.session_date = %s AND c.status = %s AND c.feed = %s",
             (market, book, session, CHECKPOINT_PLANNED, FEED_MINUTE),
@@ -651,7 +651,7 @@ def watch_scope(market: str, session: date) -> dict | None:
         pending = conn.execute(
             "SELECT DISTINCT ticker FROM paper_orders WHERE book_code = %s AND status = 'PENDING' ORDER BY ticker", (book,),
         ).fetchall()
-    return {"book": row["book_code"], "sessionDate": row["session_date"], "atEt": row["at_et"],
+    return {"book": row["book_code"], "sessionDate": row["session_date"], "atLocal": row["at_local"],
             "watch": list(row["watch"] or []), "held": [r["ticker"] for r in held], "pending": [r["ticker"] for r in pending]}
 
 

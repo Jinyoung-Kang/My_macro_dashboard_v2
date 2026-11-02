@@ -1985,7 +1985,7 @@ class PaperStoreDbTest {
 
     // ------------------------------------------------------------------ 미국 Claude 계좌2 장중 확인(V18, ADR 0022 단계 2 — 명세 §11)
     private static final Path V18 = Path.of("../db/migrations/V18__paper_checkpoints.sql");
-    private static final String CHECKPOINT_INSERT = "INSERT INTO paper_checkpoints (book_code, session_date, at_et, feed, "
+    private static final String CHECKPOINT_INSERT = "INSERT INTO paper_checkpoints (book_code, session_date, at_local, feed, "
             + "watch, question, source_decision_id, status) VALUES (?, ?, CAST(? AS time), ?, CAST(? AS text[]), ?, ?, ?)";
 
     private long decision(String code, LocalDate day, String kind) {
@@ -2016,10 +2016,10 @@ class PaperStoreDbTest {
 
         assertThat(jdbc.update(CHECKPOINT_INSERT, BOOK, session, "10:30", "MINUTE", "{SPY,NVDA}", "갭 유지?", morning,
                 "PLANNED")).isEqualTo(1);
-        assertThat(jdbc.queryForMap("SELECT at_et::text AS at_et, feed, watch::text AS watch, question, status, reason, "
+        assertThat(jdbc.queryForMap("SELECT at_local::text AS at_local, feed, watch::text AS watch, question, status, reason, "
                 + "lag_seconds, called_at, checkpoint_decision_id, created_at IS NOT NULL AND updated_at IS NOT NULL AS stamped "
                 + "FROM paper_checkpoints WHERE book_code = ? AND session_date = ?", BOOK, session))
-                .as("지연·부른 시각·확인 결정은 모름(NULL — 0으로 채우지 않음)").containsEntry("at_et", "10:30:00")
+                .as("지연·부른 시각·확인 결정은 모름(NULL — 0으로 채우지 않음)").containsEntry("at_local", "10:30:00")
                 .containsEntry("feed", "MINUTE").containsEntry("watch", "{SPY,NVDA}").containsEntry("question", "갭 유지?")
                 .containsEntry("status", "PLANNED").containsEntry("reason", null).containsEntry("lag_seconds", null)
                 .containsEntry("called_at", null).containsEntry("checkpoint_decision_id", null).containsEntry("stamped", true);
@@ -2090,6 +2090,29 @@ class PaperStoreDbTest {
     }
 
     @Test
+    @DisplayName("V19는 장중 확인 시각 칸 at_et를 at_local로 바꿀 뿐 — 값 그대로, V18과 그 뒤 파일을 두 번 더 돌려도 at_et가 되살아나지 않음 — 시험 뒤 되돌림")
+    void v19RenamesCheckpointClock() throws Exception {
+        List<String> files = migrationsFrom(18);
+        assertThat(files).as("V18·V19").hasSizeGreaterThanOrEqualTo(2);
+        class Rollback extends RuntimeException {
+        }
+        String columns = "SELECT string_agg(column_name, ',' ORDER BY column_name) FROM information_schema.columns "
+                + "WHERE table_schema = current_schema() AND table_name = 'paper_checkpoints' AND column_name IN ('at_et', 'at_local')";
+        assertThat(jdbc.queryForObject(columns, String.class)).isEqualTo("at_local");
+        store.insertBookIfAbsent(book(BOOK, "Claude 계좌2 시험"));
+        assertThatThrownBy(() -> store.atomically(() -> {
+            long morning = decision(BOOK, DAY, "SCHEDULED");
+            jdbc.update(CHECKPOINT_INSERT, BOOK, DAY.plusDays(3), "13:30", "MINUTE", "{SPY}", "질문", morning, "PLANNED");
+            for (int round = 0; round < 2; round++) {
+                files.forEach(jdbc::execute);
+            }
+            assertThat(jdbc.queryForObject(columns, String.class)).as("다시 돌려도 at_local 하나").isEqualTo("at_local");
+            assertThat(store.checkpoint(BOOK, DAY.plusDays(3)).orElseThrow().atLocal()).isEqualTo(java.time.LocalTime.of(13, 30));
+            throw new Rollback();
+        })).isInstanceOf(Rollback.class);
+    }
+
+    @Test
     @DisplayName("장중 확인 행 읽고 쓰기(B1-2): PLANNED 넣기 → 같은 세션 다시 넣으면 PLANNED일 때만 바뀜, markCheckpoint는 지금 상태가 맞을 때만(바뀐 행 수), DONE 뒤 다시 넣어도 그대로, 최근 순·PLANNED 목록·잰 지연 목록(DONE·그 피드·지연 있는 것만), 초기화가 지움 — 시험 행은 책과 함께 지움")
     void checkpointRowsOnRealTables() {
         store.insertBookIfAbsent(book(BOOK, "Claude 계좌2 시험"));
@@ -2100,7 +2123,7 @@ class PaperStoreDbTest {
                 List.of("SPY", "BRK.B"), "갭 유지?", morning, null, "PLANNED", null, null, null, null, null);
         assertThat(store.upsertPlannedCheckpoint(planned)).isTrue();
         PaperStore.Checkpoint read = store.checkpoint(BOOK, session).orElseThrow();
-        assertThat(read.atEt()).isEqualTo(java.time.LocalTime.of(10, 30));
+        assertThat(read.atLocal()).isEqualTo(java.time.LocalTime.of(10, 30));
         assertThat(read.watch()).containsExactly("SPY", "BRK.B");
         assertThat(read.feed()).isEqualTo("MINUTE");
         assertThat(read.question()).isEqualTo("갭 유지?");
@@ -2115,7 +2138,7 @@ class PaperStoreDbTest {
         assertThat(store.upsertPlannedCheckpoint(new PaperStore.Checkpoint(BOOK, session, java.time.LocalTime.of(14, 0),
                 "HOURLY", List.of(), null, manual, null, "PLANNED", null, null, null, null, null))).isTrue();
         read = store.checkpoint(BOOK, session).orElseThrow();
-        assertThat(read.atEt()).isEqualTo(java.time.LocalTime.of(14, 0));
+        assertThat(read.atLocal()).isEqualTo(java.time.LocalTime.of(14, 0));
         assertThat(read.feed()).isEqualTo("HOURLY");
         assertThat(read.watch()).isEmpty();
         assertThat(read.sourceDecisionId()).isEqualTo(manual);

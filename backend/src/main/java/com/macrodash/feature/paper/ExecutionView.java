@@ -129,8 +129,8 @@ final class ExecutionView {
     private static Map<String, Object> checkpointRow(Checkpoint c, Decision answer, TradingCalendar calendar) {
         Map<String, Object> row = new LinkedHashMap<>();
         row.put("session", text(c.sessionDate()));
-        row.put("atEt", CheckpointPacket.clock(c.atEt()));
-        row.put("atKst", stamp(c.sessionDate().atTime(c.atEt()).atZone(calendar.zone()).toInstant()));
+        row.put("atEt", CheckpointPacket.clock(c.atLocal()));
+        row.put("atKst", stamp(c.sessionDate().atTime(c.atLocal()).atZone(calendar.zone()).toInstant()));
         row.put("feed", c.feed());
         row.put("watch", c.watch());
         row.put("question", c.question());

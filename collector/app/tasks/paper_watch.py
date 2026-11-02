@@ -117,7 +117,7 @@ def task_paper_watch_us() -> str:
     scope = store.watch_scope("US", now.astimezone(paper_bars.NEW_YORK).date())
     if not scope:
         return "오늘 장중 확인(MINUTE) 계획 없음 — 호출 0회"
-    session, at_et = scope["sessionDate"], scope["atEt"]
+    session, at_et = scope["sessionDate"], scope["atLocal"]
     label = at_et.strftime("%H:%M")
     if not in_window(now, session, at_et):
         return (f"장중 확인 {session.isoformat()} {label} ET 앞 {int(WATCH_BEFORE.total_seconds() // 60)}분 ~ "

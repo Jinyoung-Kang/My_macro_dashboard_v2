@@ -1184,7 +1184,7 @@ class FakePaperStore extends PaperStore {
         if (existing != null && !"PLANNED".equals(existing.status())) {
             return false;
         }
-        checkpoints.put(key, new Checkpoint(row.bookCode(), row.sessionDate(), row.atEt(), row.feed(), row.watch(),
+        checkpoints.put(key, new Checkpoint(row.bookCode(), row.sessionDate(), row.atLocal(), row.feed(), row.watch(),
                 row.question(), row.sourceDecisionId(), existing == null ? null : existing.checkpointDecisionId(), "PLANNED",
                 null, existing == null ? null : existing.lagSeconds(), existing == null ? null : existing.calledAt(),
                 existing == null ? dbNow : existing.createdAt(), dbNow));
@@ -1210,7 +1210,7 @@ class FakePaperStore extends PaperStore {
         if (c == null || !c.status().equals(fromStatus)) {
             return 0;
         }
-        checkpoints.put(key, new Checkpoint(c.bookCode(), c.sessionDate(), c.atEt(), c.feed(), c.watch(), c.question(),
+        checkpoints.put(key, new Checkpoint(c.bookCode(), c.sessionDate(), c.atLocal(), c.feed(), c.watch(), c.question(),
                 c.sourceDecisionId(), checkpointDecisionId, status, reason, lagSeconds, calledAt, c.createdAt(), dbNow));
         return 1;
     }

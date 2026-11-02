@@ -251,7 +251,7 @@ final class CheckpointPacket {
 
     private static Map<String, Object> request(Checkpoint c) {
         Map<String, Object> out = new LinkedHashMap<>();
-        out.put("atEt", CLOCK.format(c.atEt()));
+        out.put("atEt", CLOCK.format(c.atLocal()));
         out.put("feed", c.feed());
         out.put("watch", c.watch());
         out.put("question", c.question());
@@ -417,7 +417,7 @@ final class CheckpointPacket {
         JsonNode cp = payload.get("checkpoint");
         return cp != null && c.bookCode().equals(Json.asText(cp, "book"))
                 && c.sessionDate().toString().equals(Json.asText(cp, "sessionDate"))
-                && CLOCK.format(c.atEt()).equals(Json.asText(cp, "atEt"));
+                && CLOCK.format(c.atLocal()).equals(Json.asText(cp, "atEt"));
     }
 
     /** 정규장 안인데 기준 종목의 새 봉이 {@link #STALL}보다 오래 없음(§7-3 '멈춤'). 기준 종목이 없으면 거짓(모름). */
@@ -521,7 +521,7 @@ final class CheckpointPacket {
 
     /** 확인 시각 T — 그 세션 날짜의 뉴욕 시각. */
     static Instant targetAt(Checkpoint c, TradingCalendar calendar) {
-        return ZonedDateTime.of(c.sessionDate(), c.atEt(), calendar.zone()).toInstant();
+        return ZonedDateTime.of(c.sessionDate(), c.atLocal(), calendar.zone()).toInstant();
     }
 
     private static Instant instant(JsonNode node) {

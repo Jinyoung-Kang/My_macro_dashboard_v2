@@ -274,7 +274,7 @@ class Claude2DecisionTest {
         PaperStore.Checkpoint row = store.checkpoint(PaperBooks.CLAUDE2, TUE).orElseThrow();
         assertThat(row.status()).isEqualTo(PaperBooks.CHECKPOINT_PLANNED);
         assertThat(row.sourceDecisionId()).isEqualTo(start.id());
-        assertThat(row.atEt()).isEqualTo(java.time.LocalTime.of(10, 30));
+        assertThat(row.atLocal()).isEqualTo(java.time.LocalTime.of(10, 30));
         assertThat(row.feed()).isEqualTo("MINUTE");
         assertThat(row.watch()).containsExactly("AAA", "BBB");
         assertThat(row.question()).isEqualTo("갭 뒤 거래량");
@@ -292,7 +292,7 @@ class Claude2DecisionTest {
         assertThat(monRow.sourceDecisionId()).isEqualTo(scheduled.id());
         assertThat(monRow.feed()).isEqualTo("HOURLY");
         assertThat(monRow.watch()).isEmpty();
-        assertThat(monRow.atEt()).isEqualTo(java.time.LocalTime.of(15, 0));
+        assertThat(monRow.atLocal()).isEqualTo(java.time.LocalTime.of(15, 0));
         assertThat(store.checkpoint(PaperBooks.CLAUDE2, LocalDate.of(2026, 10, 31))).as("토요일 세션 없음").isEmpty();
     }
 
@@ -311,7 +311,7 @@ class Claude2DecisionTest {
         PaperStore.Checkpoint replaced = store.checkpoint(PaperBooks.CLAUDE2, TUE).orElseThrow();
         assertThat(replaced.status()).isEqualTo(PaperBooks.CHECKPOINT_PLANNED);
         assertThat(replaced.sourceDecisionId()).isEqualTo(manual.id());
-        assertThat(replaced.atEt()).isEqualTo(java.time.LocalTime.of(11, 0));
+        assertThat(replaced.atLocal()).isEqualTo(java.time.LocalTime.of(11, 0));
 
         // 수동 결정 행을 지우고 checkpoint 없는 수동 결정 — PLANNED를 SKIPPED로.
         store.decisions.remove(manual.id());

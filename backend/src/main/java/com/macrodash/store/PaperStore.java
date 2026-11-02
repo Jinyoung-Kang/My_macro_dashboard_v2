@@ -236,11 +236,11 @@ public class PaperStore {
      * @param updatedAt    마지막으로 바꾼 시각 — 넣을 때는 보지 않습니다(DB now())
      */
     /**
-     * 장중 확인 한 행({@code paper_checkpoints}, V18 — 미국 Claude 계좌2 실험 단계 2, 명세 2026-10-30 §5-2·§11). 계좌·세션마다 하나이고 쓰는 곳은
+     * 장중 확인 한 행({@code paper_checkpoints}, V18 — 미국 Claude 계좌2 실험 단계 2, 명세 2026-10-30 §5-2·§11, 시각 칸 이름은 V19). 계좌·세션마다 하나이고 쓰는 곳은
      * 백엔드뿐입니다(아침 결정이 PLANNED로 — {@link #upsertPlannedCheckpoint}, 장중 확인 작업이 DONE·EXPIRED·SKIPPED로 — {@link #markCheckpoint}).
      *
-     * @param sessionDate          목표 세션 E(뉴욕 거래일)
-     * @param atEt                 확인 시각(E의 America/New_York 시각)
+     * @param sessionDate          목표 세션 E(그 계좌 시장의 거래일)
+     * @param atLocal              확인 시각(E의 그 계좌 시장 현지 시각 — 미국 America/New_York, 한국 Asia/Seoul, V19)
      * @param feed                 MINUTE · HOURLY
      * @param watch                감시 목록(빈 목록 가능 — HOURLY)
      * @param sourceDecisionId     요청을 낸 아침 결정
@@ -252,7 +252,7 @@ public class PaperStore {
      * @param createdAt            넣은 시각 — 넣을 때는 보지 않습니다(DB now())
      * @param updatedAt            마지막으로 바꾼 시각 — 넣을 때는 보지 않습니다(DB now())
      */
-    public record Checkpoint(String bookCode, LocalDate sessionDate, java.time.LocalTime atEt, String feed,
+    public record Checkpoint(String bookCode, LocalDate sessionDate, java.time.LocalTime atLocal, String feed,
                              List<String> watch, String question, long sourceDecisionId, Long checkpointDecisionId,
                              String status, String reason, Integer lagSeconds, Instant calledAt, Instant createdAt,
                              Instant updatedAt) {
@@ -664,7 +664,7 @@ public class PaperStore {
      * V12의 {@code paper_reviews} 테이블, V13이 더하는 {@code paper_books.market}·{@code currency} 열, V14가 더하는
      * {@code paper_reviews.market}·{@code paper_notes.market} 열, V15가 더하는 {@code paper_positions.fill_ref_volume} 열, V16이 더하는
      * {@code paper_orders.ledger_hold_reason} 열, V17이 더하는 {@code paper_fills.bar_at} 열과 {@code paper_order_exec} 테이블, V18의
-     * {@code paper_checkpoints} 테이블(계좌2 장중 확인 — 결정 종류 CHECKPOINT·시점 MARKET과 같은 파일)로 봅니다.
+     * {@code paper_checkpoints} 테이블(계좌2 장중 확인 — 결정 종류 CHECKPOINT·시점 MARKET과 같은 파일), V19가 바꾼 그 표의 {@code at_local} 열로 봅니다.
      * V8만 있는 DB(백엔드만 새로 띄운 경우, QA-016)에서 참이면
      * 트랙레코드 읽기·쓰기가 {@code group_code}·{@code data_source} 열과 새 기본키에서, 결정 읽기·쓰기가 {@code packet_text} 열에서,
      * 사용량 읽기·쓰기가 추정 비용 열에서, 주간 복기 작업·화면이 없는 테이블에서, 책 읽기·쓰기가 시장·통화 열에서, 복기·메모
@@ -681,7 +681,7 @@ public class PaperStore {
                 && schema.columnExists("paper_positions", "fill_ref_volume")
                 && schema.columnExists("paper_orders", "ledger_hold_reason")
                 && schema.columnExists("paper_fills", "bar_at") && schema.tableExists("paper_order_exec")
-                && schema.tableExists("paper_checkpoints");
+                && schema.columnExists("paper_checkpoints", "at_local");
     }
 
     /**
@@ -1329,8 +1329,8 @@ public class PaperStore {
                 }) == 1;
     }
 
-    // ------------------------------------------------------------------ 장중 확인(V18 — 미국 Claude 계좌2 실험 단계 2)
-    private static final String CHECKPOINT_COLUMNS = "book_code, session_date, at_et, feed, watch, question, "
+    // ------------------------------------------------------------------ 장중 확인(V18·V19 — 미국 계좌2 단계 2·한국 계좌2 단계 2b)
+    private static final String CHECKPOINT_COLUMNS = "book_code, session_date, at_local, feed, watch, question, "
             + "source_decision_id, checkpoint_decision_id, status, reason, lag_seconds, called_at, created_at, updated_at";
 
     /**
@@ -1341,15 +1341,15 @@ public class PaperStore {
      * @return 넣었거나 바꿨으면 true, 끝난 행이라 그대로 두었으면 false
      */
     public boolean upsertPlannedCheckpoint(Checkpoint row) {
-        return jdbc.update("INSERT INTO paper_checkpoints (book_code, session_date, at_et, feed, watch, question, "
+        return jdbc.update("INSERT INTO paper_checkpoints (book_code, session_date, at_local, feed, watch, question, "
                         + "source_decision_id, status) VALUES (?, ?, ?, ?, ?, ?, ?, 'PLANNED') "
-                        + "ON CONFLICT (book_code, session_date) DO UPDATE SET at_et = EXCLUDED.at_et, feed = EXCLUDED.feed, "
+                        + "ON CONFLICT (book_code, session_date) DO UPDATE SET at_local = EXCLUDED.at_local, feed = EXCLUDED.feed, "
                         + "watch = EXCLUDED.watch, question = EXCLUDED.question, source_decision_id = EXCLUDED.source_decision_id, "
                         + "reason = NULL, updated_at = now() WHERE paper_checkpoints.status = 'PLANNED'",
                 ps -> {
                     ps.setString(1, row.bookCode());
                     ps.setDate(2, Date.valueOf(row.sessionDate()));
-                    ps.setObject(3, row.atEt());
+                    ps.setObject(3, row.atLocal());
                     ps.setString(4, row.feed());
                     ps.setArray(5, ps.getConnection().createArrayOf("text", row.watch().toArray(new String[0])));
                     ps.setString(6, row.question());
@@ -1415,7 +1415,7 @@ public class PaperStore {
             java.sql.Array watch = rs.getArray("watch");
             List<String> tickers = watch == null ? List.of() : List.of((String[]) watch.getArray());
             return new Checkpoint(rs.getString("book_code"), date(rs, "session_date"),
-                    rs.getObject("at_et", java.time.LocalTime.class), rs.getString("feed"), tickers, rs.getString("question"),
+                    rs.getObject("at_local", java.time.LocalTime.class), rs.getString("feed"), tickers, rs.getString("question"),
                     rs.getLong("source_decision_id"), rs.getObject("checkpoint_decision_id", Long.class),
                     rs.getString("status"), rs.getString("reason"), rs.getObject("lag_seconds", Integer.class),
                     instant(rs, "called_at"), instant(rs, "created_at"), instant(rs, "updated_at"));
