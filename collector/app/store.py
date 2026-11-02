@@ -617,16 +617,31 @@ def kr_timed_orders(books, timings) -> list[tuple[str, date]]:
     return [(row["ticker"], row["as_of_trading_date"]) for row in rows]
 
 
-# 장중 확인 감시(paper.watch.us) 범위의 계좌·피드·상태(명세 2026-10-30 §12-1, ADR 0022 단계 2) — 계좌는 백엔드 PaperBooks.CLAUDE2, 피드·상태는
-# V18 paper_checkpoints CHECK와 같은 글자입니다(test_paper_watch가 파일로 대조). HOURLY 확인은 시간별 관측치를 쓰므로 감시 범위가 아닙니다.
-WATCH_BOOKS = {"US": "claude2"}
+def kr_market_orders(books) -> list[tuple[str, date, datetime]]:
+    """
+    한국 장중 시장가(MARKET — 한국 Claude 계좌2 장중 확인 응답, 단계 2b) **대기** 주문의 (종목, 기준 거래일, 생성 시각) — 시각 지정 1분봉(paper.kr.timed)에
+    그 주문의 기준 분 창을 더하려고 읽습니다. 백엔드 표 ``paper_orders``를 읽기만 합니다(ADR 0008).
+    """
+    with connection() as conn:
+        rows = conn.execute(
+            "SELECT ticker, as_of_trading_date, created_at FROM paper_orders WHERE book_code = ANY(%s) AND timing = %s "
+            "AND status = 'PENDING' AND as_of_trading_date IS NOT NULL ORDER BY 2, 1, 3",
+            (list(books), MARKET_TIMING),
+        ).fetchall()
+    return [(row["ticker"], row["as_of_trading_date"], row["created_at"]) for row in rows]
+
+
+# 장중 확인 감시(paper.watch.us·paper.watch.kr) 범위의 계좌·피드·상태(명세 2026-10-30 §12-1, ADR 0022 단계 2 · 한국 명세 2026-11-02 §10) — 계좌는
+# 백엔드 PaperBooks.CLAUDE2·KR_CLAUDE2, 피드·상태는 V18 paper_checkpoints CHECK와 같은 글자입니다(test_paper_watch가 파일로 대조). HOURLY 확인은 시간별
+# 관측치를 쓰므로 감시 범위가 아닙니다(한국 확인은 늘 MINUTE).
+WATCH_BOOKS = {"US": "claude2", "KR": "kr_claude2"}
 FEED_MINUTE = "MINUTE"
 CHECKPOINT_PLANNED = "PLANNED"
 
 
 def watch_scope(market: str, session: date) -> dict | None:
     """
-    장중 확인 감시 범위 — 그 시장 계좌2의 ``session``(뉴욕 날짜) 장중 확인 행 가운데 PLANNED·MINUTE인 것(계좌·세션마다 한 행)과 계좌2의
+    장중 확인 감시 범위 — 그 시장 계좌2의 ``session``(그 시장 날짜 — 미국 뉴욕·한국 서울) 장중 확인 행 가운데 PLANNED·MINUTE인 것(계좌·세션마다 한 행)과 계좌2의
     보유·대기 주문 종목. 행이 없으면 None(태스크가 Yahoo를 부르지 않음).
     ``{book, sessionDate, atLocal(time — 그 시장 현지 시각, V19), watch[…], held[…], pending[…]}``
 

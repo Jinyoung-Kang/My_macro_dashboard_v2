@@ -2,8 +2,9 @@
 app/tasks/kr_paper_timed.py
 한국 Claude 계좌2 시각 지정 체결의 1분봉 — 스냅샷 ``paper.kr.timed``(contract 1, 단계 2a — 명세 docs/specs/2026-11-02-kr-claude2-stage2.md §3).
 
-한국 Claude 계좌2(``kr_claude2``)가 매시(``AT_1000``~``AT_1500``)·종가(``NEXT_CLOSE``)로 낸 대기 주문의 종목마다, 목표 세션 E(기준 거래일 다음 KR
-거래일)가 끝난 뒤(E 15:40 KST) 토스 1분봉을 한 번 받아 장부가 쓸 칸만 저장합니다. 시가(``NEXT_OPEN``)는 지금처럼 ``paper.kr.quotes``의 개장 봉입니다.
+한국 Claude 계좌2(``kr_claude2``)가 매시(``AT_1000``~``AT_1500``)·종가(``NEXT_CLOSE``)·장중 시장가(``MARKET`` — 장중 확인 응답, 단계 2b)로 낸 대기 주문의
+종목마다, 목표 세션 E(기준 거래일 다음 KR 거래일)가 끝난 뒤(E 15:40 KST) 토스 1분봉을 한 번 받아 장부가 쓸 칸만 저장합니다. 시가(``NEXT_OPEN``)는 지금처럼
+``paper.kr.quotes``의 개장 봉입니다.
 
 모양(contract 1)::
 
@@ -16,6 +17,8 @@ app/tasks/kr_paper_timed.py
      }}}}
 
 - 라벨은 봉 **끝** 시각(KST ``HH:MM`` — 토스 1분봉 그대로, 개장 봉 09:01과 같은 뜻). 창 ``hh:00``의 봉은 라벨 hh:01~hh:05(봉 시작 hh:00~hh:04).
+  장중 시장가 주문은 그 기준 분 T(생성 + 60초를 분으로 올림 — 백엔드 KrTimedLadder와 같은 규칙)의 창 ``HH:MM``(라벨 T+1~T+5)을 같은 모양으로 더합니다
+  (같은 종목·세션에 그 주문이 있을 때만 — 키가 매시와 같으면 같은 창).
 - ``firstAfter[hh:00]``는 E 안에서 라벨이 hh:01 이후이고 거래량이 0보다 큰 첫 봉(창 밖 대체 체결 R2b), 없으면 null.
 - 마감 봉은 정규장 마감 단일가 봉 — 라벨이 NXT 종목은 마감 + 1분(15:31), 그 밖(NXT 미지원 표시 주식·ETF)은 마감 시각(15:30)입니다(G2, 명세
   §8). 장 시간 변경일(16:30 마감)을 위해 16:30·16:31도 싣습니다. 고르는 것은 백엔드입니다(그날 마감·NXT 여부를 앎).
@@ -57,7 +60,9 @@ KR_TIMED_CALL_BUDGET = 60
 KR_TIMED_SPACING = 0.1
 # 백엔드 PaperBooks와 같은 글자(test_kr_paper_timed가 파일로 대조).
 KR_TIMED_BOOKS = ("kr_claude2",)
-KR_TIMED_TIMINGS = ("AT_1000", "AT_1100", "AT_1200", "AT_1300", "AT_1400", "AT_1500", "NEXT_CLOSE")
+KR_TIMED_TIMINGS = ("AT_1000", "AT_1100", "AT_1200", "AT_1300", "AT_1400", "AT_1500", "NEXT_CLOSE", "MARKET")
+# 장중 시장가의 기준 분 — 생성 + 이만큼을 분으로 올림(백엔드 KrTimedLadder.MARKET_DELAY).
+KR_MARKET_DELAY = timedelta(seconds=60)
 
 
 def _now() -> datetime:
@@ -76,23 +81,41 @@ def _label(hour: int, minute: int) -> str:
     return f"{hour:02d}:{minute:02d}"
 
 
-def _summarize(candles: list[dict], session: str) -> dict:
-    """E의 봉(라벨 → 봉)에서 창·창 뒤 첫 거래 봉·마감 봉을 뽑습니다(모듈 설명의 모양)."""
-    bars = {c["time"]: c for c in candles if c.get("date") == session and c.get("time")}
+def market_target(created_at: datetime) -> str:
+    """장중 시장가 주문의 기준 분 T(KST ``HH:MM``) — 생성 + 60초를 분으로 올림(이미 분 경계면 그대로)."""
+    at = (created_at + KR_MARKET_DELAY).astimezone(KST)
+    if at.second or at.microsecond:
+        at = at.replace(second=0, microsecond=0) + timedelta(minutes=1)
+    return _label(at.hour, at.minute)
+
+
+def window_keys(extra: list[str] | tuple[str, ...] = ()) -> list[str]:
+    """창 키 — 매시 hh:00 여섯과 더할 기준 분(장중 시장가 등), 중복 없이 시각 순."""
+    return sorted({_label(hour, 0) for hour in KR_TIMED_HOURS} | set(extra))
+
+
+def summarize_windows(bars: dict[str, dict], keys: list[str]) -> tuple[dict[str, list[dict]], dict[str, dict | None]]:
+    """
+    한 세션의 봉(라벨 → 봉)에서 창 키마다 창(라벨 T+1~T+5 가운데 있는 봉)과 창 뒤 첫 거래 봉(라벨 ≥ T+1·거래량 > 0, 없으면 None)을 뽑습니다.
+    감시 저장본(paper_watch_kr)도 같은 함수를 씁니다.
+    """
     windows: dict[str, list[dict]] = {}
     first_after: dict[str, dict | None] = {}
     ordered = sorted(bars)
-    for hour in KR_TIMED_HOURS:
-        key = _label(hour, 0)
-        window = []
-        for minute in range(1, KR_TIMED_WINDOW + 1):
-            bar = bars.get(_label(hour, minute))
-            if bar is not None:
-                window.append({"label": bar["time"], "open": bar["open"], "volume": bar["volume"]})
-        windows[key] = window
-        start = _label(hour, 1)
-        after = next((bars[label] for label in ordered if label >= start and (bars[label].get("volume") or 0) > 0), None)
+    for key in keys:
+        base = datetime.strptime(key, "%H:%M")
+        labels = [(base + timedelta(minutes=minute)).strftime("%H:%M") for minute in range(1, KR_TIMED_WINDOW + 1)]
+        windows[key] = [{"label": bars[label]["time"], "open": bars[label]["open"], "volume": bars[label]["volume"]}
+                        for label in labels if label in bars]
+        after = next((bars[label] for label in ordered if label >= labels[0] and (bars[label].get("volume") or 0) > 0), None)
         first_after[key] = None if after is None else {"label": after["time"], "open": after["open"], "volume": after["volume"]}
+    return windows, first_after
+
+
+def _summarize(candles: list[dict], session: str, extra: list[str] | tuple[str, ...] = ()) -> dict:
+    """E의 봉(라벨 → 봉)에서 창·창 뒤 첫 거래 봉·마감 봉을 뽑습니다(모듈 설명의 모양)."""
+    bars = {c["time"]: c for c in candles if c.get("date") == session and c.get("time")}
+    windows, first_after = summarize_windows(bars, window_keys(extra))
     closes = {label: {"close": bars[label]["close"], "volume": bars[label]["volume"]}
               for label in KR_TIMED_CLOSE_LABELS if label in bars}
     return {"windows": windows, "firstAfter": first_after, "closes": closes}
@@ -123,6 +146,9 @@ def task_kr_paper_timed() -> str:
     previous = previous_payload(catalog.SNAP_KR_PAPER_TIMED).get("sessions") or {}
     sessions: dict[str, dict] = {key: dict(value) for key, value in previous.items() if isinstance(value, dict)}
     due: list[tuple[str, str]] = []
+    targets: dict[tuple[str, str], list[str]] = {}
+    for code, as_of, created_at in store.kr_market_orders(KR_TIMED_BOOKS):
+        targets.setdefault((code, next_trading_day(as_of).isoformat()), []).append(market_target(created_at))
     for code, as_of in store.kr_timed_orders(KR_TIMED_BOOKS, KR_TIMED_TIMINGS):
         session = next_trading_day(as_of).isoformat()
         closed_at = datetime.combine(date.fromisoformat(session), KR_TIMED_AFTER, tzinfo=KST)
@@ -161,7 +187,7 @@ def task_kr_paper_timed() -> str:
             failed += 1
             stop = "호출 예산 소진 — 나머지는 다음 주기"
             break
-        summary = _summarize(candles, session)
+        summary = _summarize(candles, session, targets.get((code, session), ()))
         has_bars = any(c.get("date") == session for c in candles)
         sessions.setdefault(session, {})[code] = {"status": "OK" if has_bars else "NO_BARS", "reason": None,
                                                   "fetchedAt": fetched_at, **summary}

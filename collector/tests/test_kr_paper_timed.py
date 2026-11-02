@@ -8,11 +8,12 @@ tests/test_kr_paper_timed.py
   3. OK·NO_BARS는 다시 받지 않고, 실패(FAILED)는 다음 주기에 그 종목만 다시. 16:36부터 거슬러 쪽을 넘기고 E 10:00 전에 닿으면 멈춘다.
   4. 받을 것이 없으면 EmptyResult(저장본 그대로).
   5. 계좌·시점 글자는 백엔드 PaperBooks와 같다.
+  6. 장중 시장가(MARKET — 단계 2b) 대기 주문은 그 기준 분 T(생성 + 60초를 분으로 올림, KST)의 창을 같은 모양으로 더한다.
 """
 from __future__ import annotations
 
 import re
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 from pathlib import Path
 
 import pytest
@@ -78,8 +79,9 @@ def toss(monkeypatch):
     return fake
 
 
-def _orders(monkeypatch, rows):
+def _orders(monkeypatch, rows, market=()):
     monkeypatch.setattr(kr_paper_timed.store, "kr_timed_orders", lambda books, timings: list(rows))
+    monkeypatch.setattr(kr_paper_timed.store, "kr_market_orders", lambda books: list(market))
 
 
 def _payload(store):
@@ -149,3 +151,38 @@ def test_계좌와_시점_글자는_백엔드와_같다():
         assert f'"{timing}"' in books, timing
     datasets = (ROOT / "backend/src/main/java/com/macrodash/store/Datasets.java").read_text(encoding="utf-8")
     assert f'SNAP_KR_PAPER_TIMED = "{catalog.SNAP_KR_PAPER_TIMED}"' in datasets
+
+
+def test_장중_시장가의_기준_분은_생성_더하기_60초를_분으로_올린다():
+    assert kr_paper_timed.market_target(datetime(2026, 11, 3, 10, 31, 0, tzinfo=KST)) == "10:32"
+    assert kr_paper_timed.market_target(datetime(2026, 11, 3, 10, 31, 0, 500, tzinfo=KST)) == "10:33"
+    assert kr_paper_timed.market_target(datetime(2026, 11, 3, 1, 59, 30, tzinfo=timezone.utc)) == "11:01"   # UTC로 와도 KST
+
+
+def test_장중_시장가_대기_주문은_그_기준_분의_창을_더한다(store, toss, monkeypatch):
+    created = datetime(2026, 11, 3, 10, 31, 20, tzinfo=KST)
+    _orders(monkeypatch, [("005930", date(2026, 11, 2))], market=[("005930", date(2026, 11, 2), created)])
+    toss.pages[("005930", E)] = _session(E)
+
+    tasks.task_kr_paper_timed()
+
+    entry = _payload(store)["sessions"][E]["005930"]
+    assert [b["label"] for b in entry["windows"]["10:33"]] == ["10:34", "10:35", "10:36", "10:37", "10:38"]
+    assert entry["firstAfter"]["10:33"]["label"] == "10:34"
+    assert {"10:00", "11:00", "15:00"} <= set(entry["windows"]), "매시 창은 그대로"
+
+
+def test_장중_시장가_범위는_그_계좌의_대기_MARKET_주문만_읽는다(store):
+    with store.connection() as conn:
+        for code in ("kr_claude2", "kr_claude"):
+            conn.execute(
+                "INSERT INTO paper_books (code, kind, label, initial_cash, started_on, status, market, currency) "
+                "VALUES (%s, 'CLAUDE', %s, 100000000, %s, 'ACTIVE', 'KR', 'KRW')", (code, code, date(2026, 10, 30)))
+        for book, ticker, timing, status in (("kr_claude2", "005930", "MARKET", "PENDING"), ("kr_claude2", "000660", "MARKET", "FILLED"),
+                                             ("kr_claude2", "035720", "AT_1100", "PENDING"), ("kr_claude", "051910", "MARKET", "PENDING")):
+            conn.execute(
+                "INSERT INTO paper_orders (book_code, ticker, side, timing, source, status, as_of_trading_date) "
+                "VALUES (%s, %s, 'BUY', %s, 'CLAUDE', %s, %s)", (book, ticker, timing, status, date(2026, 11, 2)))
+    rows = kr_paper_timed.store.kr_market_orders(kr_paper_timed.KR_TIMED_BOOKS)
+    assert [(ticker, as_of) for ticker, as_of, _ in rows] == [("005930", date(2026, 11, 2))]
+    assert rows[0][2].tzinfo is not None

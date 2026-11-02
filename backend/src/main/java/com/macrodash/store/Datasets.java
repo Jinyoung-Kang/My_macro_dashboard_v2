@@ -88,6 +88,11 @@ public final class Datasets {
      */
     public static final String SNAP_PAPER_WATCH_US = "paper.watch.us";
     /**
+     * 한국 Claude 계좌2 단계 2b 장중 확인 감시(명세 2026-11-02 §10 — 수집기 {@code paper_watch_kr}): 확인 시각 뒤 한 번 받은 감시·보유·대기 종목의 토스
+     * 1분봉. 장중 확인 작업·패킷·예상 상태만 읽습니다(장부 체결은 읽지 않음).
+     */
+    public static final String SNAP_PAPER_WATCH_KR = "paper.watch.kr";
+    /**
      * 모의 매매 트랙레코드 후보 기관 목록과 기관별 수집 진행률(저장 분기 수·완료 여부). 기관마다의 공시는
      * {@code sec13f(cik, TRACK_RECORD_QUARTERS)}에 있고, 이 저장본은 "누가 후보이고 어디까지 받았나"만 담습니다.
      */

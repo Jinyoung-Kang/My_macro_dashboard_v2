@@ -186,7 +186,9 @@ class DecisionTimingsLockTest {
         while (quoted.find()) {
             collected.add(quoted.group(1));
         }
-        assertThat(collected).as("수집기가 1분봉을 받는 시점 = 메뉴의 시가 밖 일곱").containsExactlyElementsOf(kr2.timings().subList(1, 8));
+        List<String> later = new ArrayList<>(kr2.timings().subList(1, 8));
+        later.add(PaperBooks.MARKET);
+        assertThat(collected).as("수집기가 1분봉을 받는 시점 = 메뉴의 시가 밖 일곱 + 장중 확인의 MARKET(단계 2b)").containsExactlyElementsOf(later);
 
         String rules = kr2.fixedRules();
         String timingLine = rules.lines().filter(line -> line.startsWith("- timing은")).findFirst().orElseThrow();

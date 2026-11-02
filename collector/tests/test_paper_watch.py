@@ -59,12 +59,12 @@ def _ny(hh: int, mm: int, ss: int = 0, day: date = SESSION) -> datetime:
 # ==============================================================================
 # 1. 등록·이름·백엔드와 같은 글자
 # ==============================================================================
-def test_session_군에서_paper_bars_us_뒤에_돌고_태스크는_39개():
+def test_session_군에서_paper_bars_us_뒤에_돌고_태스크는_41개():
     task = tasks.TASKS_BY_NAME["paper_watch_us"]
     assert task.speed == "session" and task.run is paper_watch.task_paper_watch_us
     names = [t.name for t in tasks.ALL_TASKS]
     assert names.index("paper_watch_us") == names.index("paper_bars_us") + 1
-    assert len(tasks.ALL_TASKS) == len(tasks.TASKS_BY_NAME) == 40  # 계좌2 단계 2의 paper_watch_us·한국 계좌2 단계 2a의 kr_paper_timed까지
+    assert len(tasks.ALL_TASKS) == len(tasks.TASKS_BY_NAME) == 41  # 계좌2 단계 2의 paper_watch_us·한국 계좌2 단계 2a의 kr_paper_timed·2b의 paper_watch_kr까지
 
 
 def test_데이터셋_이름():
@@ -82,7 +82,8 @@ def test_감시_피드와_계좌_코드는_V18·백엔드와_같은_글자():
 
     java = (ROOT / "backend/src/main/java/com/macrodash/feature/paper/PaperBooks.java").read_text(encoding="utf-8")
     claude2 = re.search(r'static final String CLAUDE2 = "([^"]+)";', java).group(1)
-    assert paper_watch.store.WATCH_BOOKS == {"US": claude2}
+    kr_claude2 = re.search(r'static final String KR_CLAUDE2 = "([^"]+)";', java).group(1)
+    assert paper_watch.store.WATCH_BOOKS == {"US": claude2, "KR": kr_claude2}
 
 
 def test_감시_저장본을_읽는_백엔드_코드는_장중_확인_작업과_패킷과_상태_표시뿐이고_화면은_읽지_않는다():

@@ -20,6 +20,7 @@ from .news import task_news_headlines
 from .paper import task_paper_price_history, task_paper_quotes
 from .paper_bars import task_paper_bars_us
 from .paper_watch import task_paper_watch_us
+from .paper_watch_kr import task_paper_watch_kr
 from .paper_live import task_paper_live_kr, task_paper_live_us
 from .series import (
     task_cot_history, task_daum_futures_trend, task_equity_history, task_fed_liquidity,
@@ -50,6 +51,7 @@ ALL_TASKS: tuple[Task, ...] = (
     Task("paper_bars_us", "slow", task_paper_bars_us, "Claude 계좌2 단계 0 측정 — 대기·최근 주문 종목의 메뉴 창 1분봉 (Yahoo, 체결에는 아직 쓰지 않음)"),
     # 속도군 session(5분) — 장중 확인(MINUTE) 날 확인 시각 −15~+30분에만 외부를 부르고, 그 밖의 회차는 호출 없이 EmptyResult(명세 2026-10-30 §12-1).
     Task("paper_watch_us", "session", task_paper_watch_us, "Claude 계좌2 장중 확인 — MINUTE 확인 날 감시 종목 1분봉 (확인 시각 −15~+30분에만, Yahoo)"),
+    Task("paper_watch_kr", "session", task_paper_watch_kr, "한국 Claude 계좌2 장중 확인 — 확인 날 감시 종목 1분봉 (확인 시각 뒤 한 번, 토스)"),
     Task("paper_live_us", "live", task_paper_live_us, "장중 평가 — 미국 보유 종목 최신 1분봉 (화면이 볼 때만, 표시 전용)"),
     Task("paper_live_kr", "live", task_paper_live_kr, "장중 평가 — 한국 보유 종목 최신 1분봉 (화면이 볼 때만, 표시 전용)"),
     Task("us_calendar", "slow", task_us_calendar, "미국 발표·실적 일정 — FRED 릴리스·FOMC 상수·yfinance 실적일 (모의 매매 Claude 계좌 패킷)"),
