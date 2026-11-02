@@ -1023,7 +1023,10 @@ export interface PaperExecutionChosenSummary extends PaperExecutionChosenLine {
 /** 실행 감사 응답의 장중 확인 한 줄(checkpoints[] — 계좌2만, 세션 최근 순 20개). */
 export interface PaperExecutionCheckpoint {
   session: string;
+  /** 확인 시각(미국 화면이 읽는 이름 — 값은 그 계좌 시장의 현지 시각, 한국 계좌면 KST). */
   atEt: string | null;
+  /** 확인 시각(그 계좌 시장의 현지 시각 — 미국 ET·한국 KST). 이 칸을 보내지 않는 백엔드에서는 없습니다. */
+  atLocal?: string | null;
   atKst: string | null;
   feed: PaperCheckpointFeed | string | null;
   watch: string[];
@@ -1063,11 +1066,13 @@ export interface PaperExecutionCheckpointSummary {
   orders: number;
 }
 
-/** GET /api/paper/books/{code}/execution — 실행 감사(미국 Claude 계좌만, ADR 0022). */
+/** GET /api/paper/books/{code}/execution — 실행 감사(미국 Claude 계좌 — ADR 0022, 한국 Claude 계좌 — 한국 계좌2 단계 2c). */
 export interface PaperExecutionResponse {
   available: boolean;
   message?: string;
   book?: string;
+  /** 그 계좌의 시장 — 이 칸을 보내지 않는 백엔드(미국만 받던 때)에서는 없습니다(미국으로 읽음). */
+  market?: PaperMarketCode;
   timings?: string[];
   limit?: number;
   orders?: PaperExecutionOrder[];

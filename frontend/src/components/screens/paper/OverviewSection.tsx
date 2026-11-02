@@ -124,7 +124,7 @@ const accountToggleId = (code: string) => `paper-account-toggle-${code}`;
  *
  * 한국(`market` "KR", 2단계 명세 §4-16): 계좌 행·순자산 곡선·비교 표·Claude 노출 추이·사용량은 같은 패턴을 원 단위 정수로 그리고, 미국 전용
  * 카드(초기화·사후 체결 대기·규칙/Claude 계좌 시작·신호 기관·OS 게이트)는 그리지 않습니다 — 한국 네 계좌는 출발일 밤 결정으로 함께 출발하고
- * 13F·게이트 지표가 없습니다. 상태·리스크 점검은 `?market=KR` 경로입니다.
+ * 13F·게이트 지표가 없습니다. 상태·리스크 점검은 `?market=KR` 경로입니다. 체결 시점 실험 카드는 한국 Claude 계좌2·계좌1의 실행 감사(단계 2c)로 그립니다.
  */
 export function OverviewSection({
   overview,
@@ -519,7 +519,7 @@ export function OverviewSection({
         </Card>
       )}
 
-      {!korea && hasClaude && <ExecutionExperimentCard books={books} />}
+      {hasClaude && <ExecutionExperimentCard books={books} market={market} />}
 
       {hasClaude && usage && (
         <Card

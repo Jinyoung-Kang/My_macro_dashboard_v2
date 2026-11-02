@@ -8,7 +8,7 @@ import { endpoints } from "@/lib/endpoints";
 import { EMPTY } from "@/lib/format";
 import {
   type Badge,
-  EXECUTION_VERDICT_RULE,
+  EXECUTION_TEXT,
   type ExecutionCheckpointRow,
   type ExecutionTimingRow,
   executionCheckpointRows,
@@ -17,7 +17,7 @@ import {
   PAPER_SOURCES,
   primaryClaudeBook,
 } from "@/lib/paper";
-import type { PaperBookSummary, PaperExecutionResponse } from "@/lib/types";
+import type { PaperBookSummary, PaperExecutionResponse, PaperMarketCode } from "@/lib/types";
 
 /** 요약만 쓰므로 주문 줄은 하나만 받습니다(요약은 limit과 상관없이 그 계좌 전부 — docs/API.md). */
 const SUMMARY_LIMIT = 1;
@@ -25,9 +25,9 @@ const SUMMARY_LIMIT = 1;
 /**
  * 표 칸 — 첫 칸 머리글과 폭만 표마다 다릅니다(고른 시점 표는 "구분" — 이름이 길어 낱말 사이 줄바꿈, 시점 표는 "시점" — 짧아 한 줄).
  * '뺀 주문'도 낱말 사이에서 줄바꿈합니다 — 두 칸을 한 줄로 두면 1280px 카드(표 상자 958px)에서 M1 표가 1,115px로 넘쳐 본 줄의 '체결 없음'이
- * 가로 스크롤 밖에 숨었습니다(QA 스택 화면).
+ * 가로 스크롤 밖에 숨었습니다(QA 스택 화면). 대리값 배지의 설명은 시장마다 다릅니다(미국 Yahoo 첫 봉·한국 토스 개장 봉).
  */
-const columns = (first: string, firstClassName: string): readonly Column<ExecutionTimingRow>[] => [
+const columns = (first: string, firstClassName: string, proxyTitle: string): readonly Column<ExecutionTimingRow>[] => [
   {
     key: "timing",
     header: first,
@@ -39,7 +39,7 @@ const columns = (first: string, firstClassName: string): readonly Column<Executi
         {row.proxy && (
           <span
             className="whitespace-nowrap rounded-full border border-warn/40 bg-warn-tint px-2 py-px text-xs text-warn"
-            title="시가(NEXT_OPEN)는 Yahoo(yfinance) 1분봉 첫 봉 시가입니다 — 공식 개장 경매가와 같은지 확인하지 못했습니다(명세 §19 X2)."
+            title={proxyTitle}
           >
             대리값
           </span>
@@ -55,8 +55,19 @@ const columns = (first: string, firstClassName: string): readonly Column<Executi
   { key: "verdict", header: "판단", className: "min-w-[12rem] break-keep", cell: (row) => row.verdict ?? "구간 참고(판정은 8주 뒤)" },
   { key: "excluded", header: "뺀 주문", className: "min-w-[9rem] break-keep text-xs", cell: (row) => row.excluded },
 ];
-const CHOSEN_COLUMNS = columns("구분", "min-w-[11rem] break-keep");
-const TIMING_COLUMNS = columns("시점", "whitespace-nowrap");
+const COLUMNS: Record<PaperMarketCode, { chosen: readonly Column<ExecutionTimingRow>[]; timing: readonly Column<ExecutionTimingRow>[] }> = {
+  US: {
+    chosen: columns("구분", "min-w-[11rem] break-keep", EXECUTION_TEXT.US.proxyTitle),
+    timing: columns("시점", "whitespace-nowrap", EXECUTION_TEXT.US.proxyTitle),
+  },
+  KR: {
+    chosen: columns("구분", "min-w-[11rem] break-keep", EXECUTION_TEXT.KR.proxyTitle),
+    timing: columns("시점", "whitespace-nowrap", EXECUTION_TEXT.KR.proxyTitle),
+  },
+};
+
+/** 실행 감사가 있는 한국 계좌 — 계좌2(체결 시점을 고름)를 앞에, 그다음 계좌1(기준 분포). 서버는 그 밖의 코드를 400으로 거절합니다. */
+const KR_AUDITED = ["kr_claude2", "kr_claude"] as const;
 
 function BadgeChip({ badge }: { badge: Badge }) {
   return (
@@ -147,11 +158,18 @@ const CHECKPOINT_COLUMNS: readonly Column<ExecutionCheckpointRow>[] = [
  * 결정 로그에 없어서, 지난 세션 확인이 어떻게 끝났는지는 이 표에서 봅니다.
  *
  * 계좌2가 출발하기 전에도 계좌1 주문의 반사실(기준 분포 — 단계 0부터)을 볼 수 있게 계좌를 고릅니다(처음엔 계좌2).
+ *
+ * 한국 개요(market KR — 한국 계좌2 단계 2c)에서는 한국 Claude 계좌2·계좌1의 같은 응답을 같은 표로 그립니다 — 계좌1식 기준은 다음 세션 시가(토스 1분봉
+ * 개장 봉 반사실)이고, 대체 체결·대리값 설명·판정 문턱 글만 시장마다 다릅니다(EXECUTION_TEXT).
  */
-export function ExecutionExperimentCard({ books }: { books: readonly PaperBookSummary[] }) {
-  // 실행 감사가 있는 계좌 — 미국 Claude 계좌(계좌2를 앞에, 그다음 계좌1). 서버는 그 밖의 코드를 400으로 거절합니다.
-  const audited = [books.find((book) => isTimedBook(book.code)), primaryClaudeBook(books)]
+export function ExecutionExperimentCard({ books, market = "US" }: { books: readonly PaperBookSummary[]; market?: PaperMarketCode }) {
+  // 실행 감사가 있는 계좌 — 그 시장의 Claude 계좌(계좌2를 앞에, 그다음 계좌1). 서버는 그 밖의 코드를 400으로 거절합니다.
+  const audited = (market === "KR"
+    ? KR_AUDITED.map((code) => books.find((book) => book.code === code))
+    : [books.find((book) => isTimedBook(book.code)), primaryClaudeBook(books)])
     .filter((book): book is PaperBookSummary => book !== undefined && book !== null);
+  const text = EXECUTION_TEXT[market];
+  const tables = COLUMNS[market];
   const [picked, setPicked] = useState<string | null>(null);
   const code = audited.find((book) => book.code === picked)?.code ?? audited[0]?.code ?? null;
   const execution = useApi<PaperExecutionResponse>(code ? endpoints.paper.execution(code, SUMMARY_LIMIT) : null, 300_000);
@@ -162,8 +180,8 @@ export function ExecutionExperimentCard({ books }: { books: readonly PaperBookSu
   return (
     <Card
       title="체결 시점 실험"
-      subtitle="계좌2가 고른 시점의 실제 체결(M1)과 시점마다의 반사실(그 계좌 주문을 그 시점에 체결했다면)이 계좌1식(다음 시간별 관측치)보다 몇 bp 나았나 — 양수면 유리 · 원가격(슬리피지 전) · 서버 계산"
-      source={PAPER_SOURCES.execution}
+      subtitle={text.subtitle}
+      source={market === "KR" ? PAPER_SOURCES.krExecution : PAPER_SOURCES.execution}
       actions={<Freshness refreshError={execution.refreshError} />}
     >
       {audited.length > 1 && (
@@ -194,7 +212,7 @@ export function ExecutionExperimentCard({ books }: { books: readonly PaperBookSu
             <section aria-label="고른 시점(M1 — 주 판정)" className="mb-3">
               <h3 className="mb-1 text-xs font-semibold text-text-2">고른 시점 — 실제 체결 대비 계좌1식(M1 — 주 판정)</h3>
               <DataTable<ExecutionTimingRow>
-                columns={CHOSEN_COLUMNS}
+                columns={tables.chosen}
                 rows={view.chosen}
                 rowKey={(row) => row.key}
                 caption="고른 시점(M1 — 주 판정)"
@@ -226,7 +244,7 @@ export function ExecutionExperimentCard({ books }: { books: readonly PaperBookSu
           )}
           <h3 className="mb-1 text-xs font-semibold text-text-2">시점마다의 반사실 — M2의 기준(판정 아님)</h3>
           <DataTable<ExecutionTimingRow>
-            columns={TIMING_COLUMNS}
+            columns={tables.timing}
             rows={view.rows}
             rowKey={(row) => row.key}
             caption="체결 시점 실험"
@@ -235,14 +253,11 @@ export function ExecutionExperimentCard({ books }: { books: readonly PaperBookSu
           />
           <ul aria-label="체결 시점 실험 설명" className="mt-2 flex flex-col gap-0.5 text-xs text-text-3">
             {view.chosenFormula && (
-              <li>
-                M1 계산: {view.chosenFormula} — 아침 결정이 낸 주문 가운데 체결된 주문만, 대체 체결(R2b T 뒤 첫 거래 봉 시가·R3 관측 종가·확정 종가)은
-                둘째 줄에 따로, 장중 확인이 낸 주문은 세지 않음(M8)
-              </li>
+              <li>M1 계산: {view.chosenFormula} — {text.chosenNote}</li>
             )}
             {view.formula && <li>시점 계산: {view.formula}</li>}
             {view.method && <li>{view.method}</li>}
-            <li>{EXECUTION_VERDICT_RULE}</li>
+            <li>{text.verdictRule}</li>
             <li>
               시점 표는 시점마다의 반사실 분포라 판정이 아닙니다 —
               계좌1식 기준이나 체결(금액 가중치)이 없거나 그 시점 반사실이 없는 주문은 빼고 셉니다(뺀 수를 함께 적음 — &apos;기준 없음&apos;에는

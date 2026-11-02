@@ -25,6 +25,7 @@ import {
   checkpointStatusBadge,
   EXECUTION_CHOSEN_FALLBACK_LABEL,
   EXECUTION_CHOSEN_LABEL,
+  EXECUTION_TEXT,
   EXECUTION_VERDICT_RULE,
   claude2StartView,
   claude2WindowLines,
@@ -698,5 +699,28 @@ describe("장중 확인(단계 2)", () => {
     expect(rows?.[1].decision).toMatch(/^#52 · /);
     expect(rows?.[1].action?.label).toBe("대신함(REPLACE)");
     expect(executionCheckpointRows({ ...EXECUTION, summary: { ...EXECUTION.summary!, checkpoints: summary } })).toEqual([]);
+  });
+
+  it("한국 계좌 응답(market KR — 단계 2c) — 확인 시각은 현지 KST(atLocal), 자료는 한국 감시 1분봉 이름, 카드 글은 시가 기준·토스 1분봉", () => {
+    const summary = {
+      definition: "M8", minRows: 5, rows: 1, planned: 1, finished: 0, called: 0, expired: 0, skipped: 0, calledPct: null,
+      feedMinute: 1, feedHourly: 0, minutePct: null, keep: 0, replace: 0, replacePct: null, orders: 0,
+    };
+    const rows = executionCheckpointRows({
+      ...EXECUTION,
+      market: "KR",
+      book: "kr_claude2",
+      summary: { ...EXECUTION.summary!, checkpoints: summary },
+      checkpoints: [{
+        session: "2026-11-03", atEt: "13:30", atLocal: "13:30", atKst: "2026-11-03 13:30 KST", feed: "MINUTE", watch: ["005930"],
+        question: null, status: "PLANNED", reason: null, sourceDecisionId: 40, decisionId: null, decisionStatus: null, action: null,
+        supersededOrders: null, lagSeconds: null, calledAtKst: null,
+      }],
+    });
+    expect(rows?.[0]).toMatchObject({ at: "2026-11-03 · 13:30 KST", atKst: "2026-11-03 13:30 KST", feed: checkpointFeedLabel("MINUTE", "KR") });
+    expect(EXECUTION_TEXT.KR.subtitle).toContain("다음 세션 시가");
+    expect(EXECUTION_TEXT.KR.proxyTitle).toContain("토스증권 1분봉");
+    expect(EXECUTION_TEXT.US.verdictRule).toBe(EXECUTION_VERDICT_RULE);
+    expect(EXECUTION_TEXT.KR.verdictRule).toContain("미국과 같은 문턱");
   });
 });

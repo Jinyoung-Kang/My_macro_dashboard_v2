@@ -111,6 +111,8 @@ export const PAPER_SOURCES = {
   // 1분봉 저장본의 데이터셋 이름은 적지 않습니다 — 화면은 그 저장본을 읽지 않고(수집기 시험 test_paper_bars가 이름으로 검사) 서버 계산만 받습니다.
   execution: "대시보드 실행 감사 (PostgreSQL paper_order_exec — 반사실은 Yahoo Finance(yfinance) 1분봉(수집 태스크 paper_bars_us)·관측치 paper.quotes, "
     + "평균·90% 구간은 대시보드 백엔드 계산)",
+  krExecution: "대시보드 실행 감사 (PostgreSQL paper_order_exec — 반사실은 토스증권 1분봉(수집 태스크 kr_paper_timed — 목표 세션 마감 뒤 받음), "
+    + "평균·90% 구간은 대시보드 백엔드 계산)",
   sameWindow: "대시보드 모의 장부 (PostgreSQL paper_nav_daily — 개요 순자산 곡선의 값을 계좌2 출발일 순자산으로 나눠 100에 맞춤)",
   // 계좌2 1분봉 줄(개요 '장부 관측치') — 위 execution과 같은 까닭으로 저장본의 데이터셋 이름은 적지 않습니다(값은 상태 응답 claude2.bars).
   bars: "Yahoo Finance (yfinance) 1분봉 — 수집 태스크 paper_bars_us(계좌2 시각 지정 체결의 자료), 받은 시각·나이·지연(SPY 기준)은 대시보드 백엔드 계산",
@@ -3668,6 +3670,37 @@ export const EXECUTION_VERDICT_RULE =
   + " 구간 상한 < 0이면 '손해였다', 그 밖은 '차이를 확인하지 못함(판단 보류)'입니다. '고르는 능력'이라고 말하려면 M2(같은 주문의 메뉴 여덟 시점 평균 대비)도"
   + " 같은 기준을 넘어야 하고, 대체 체결·수집 실패가 세션의 5% 이상이면 판정하지 않고 데이터부터 고칩니다. 이 카드는 판정을 내리지 않습니다.";
 
+/**
+ * 체결 시점 실험 카드의 시장별 글(한국 계좌2 단계 2c — 명세 2026-11-02-kr-claude2-stage2 §11). 미국은 계좌1식 기준이 다음 시간별 관측치, 한국은 다음 세션
+ * 시가(토스 1분봉 개장 봉 — 반사실)입니다. 판정 문턱은 한국도 미국과 같은 사전 등록(명세 §6)이고 화면은 판정하지 않습니다.
+ */
+export const EXECUTION_TEXT: Record<PaperMarketCode, {
+  subtitle: string;
+  proxyTitle: string;
+  /** M1 계산 줄의 뒷부분(대체 체결이 무엇인지). */
+  chosenNote: string;
+  verdictRule: string;
+}> = {
+  US: {
+    subtitle: "계좌2가 고른 시점의 실제 체결(M1)과 시점마다의 반사실(그 계좌 주문을 그 시점에 체결했다면)이 계좌1식(다음 시간별 관측치)보다 몇 bp 나았나 — "
+      + "양수면 유리 · 원가격(슬리피지 전) · 서버 계산",
+    proxyTitle: "시가(NEXT_OPEN)는 Yahoo(yfinance) 1분봉 첫 봉 시가입니다 — 공식 개장 경매가와 같은지 확인하지 못했습니다(명세 §19 X2).",
+    chosenNote: "아침 결정이 낸 주문 가운데 체결된 주문만, 대체 체결(R2b T 뒤 첫 거래 봉 시가·R3 관측 종가·확정 종가)은 둘째 줄에 따로, 장중 확인이 낸 주문은 "
+      + "세지 않음(M8)",
+    verdictRule: EXECUTION_VERDICT_RULE,
+  },
+  KR: {
+    subtitle: "한국 계좌2가 고른 시점의 실제 체결(M1)과 시점마다의 반사실(그 계좌 주문을 그 시점에 체결했다면)이 계좌1식(다음 세션 시가)보다 몇 bp 나았나 — "
+      + "양수면 유리 · 원가격(비용 전, 금융위 확정 조정 전) · 서버 계산",
+    proxyTitle: "시가(NEXT_OPEN)는 토스증권 1분봉 개장 봉 시가입니다 — 금융위 확정 시가와 같은지 대조하지 않았습니다.",
+    chosenNote: "밤 결정이 낸 주문 가운데 체결된 주문만, 대체 체결(그날 창 뒤 첫 거래 봉 시가·토스 일봉 시가)은 둘째 줄에 따로, 장중 확인이 낸 주문은 "
+      + "세지 않음(M8) — 체결가와 기준이 같은 토스 1분봉이라 대리값 표시가 없음",
+    verdictRule: "사전 등록 판정(8주 뒤 — 미국과 같은 문턱, 한국 명세 §6): 대체 체결을 뺀 M1 주문 30건 이상이고 평균 > +10bp이고 90% 구간 하한 > 0이면 "
+      + "'도움이 됐다', 구간 상한 < 0이면 '손해였다', 그 밖은 '차이를 확인하지 못함(판단 보류)'입니다. 대체 체결·수집 실패가 세션의 5% 이상이면 판정하지 않고 "
+      + "데이터부터 고칩니다. 이 카드는 판정을 내리지 않습니다.",
+  },
+};
+
 const bpText = (value: number | null | undefined) => formatSigned(value, 1, "bp");
 
 /**
@@ -3795,9 +3828,12 @@ export interface ExecutionCheckpointRow {
  */
 export function executionCheckpointRows(response: PaperExecutionResponse | null | undefined): ExecutionCheckpointRow[] | null {
   if (!response?.available || !isRecord(response.summary?.checkpoints)) return null;
+  // 확인 시각은 그 계좌 시장의 현지 시각 — 미국 ET·한국 KST(market이 없는 응답은 미국).
+  const market: PaperMarketCode = response.market === "KR" ? "KR" : "US";
+  const zone = market === "KR" ? "KST" : "ET";
   return listOf(response.checkpoints).filter(isRecord).map((row, index): ExecutionCheckpointRow => {
     const session = textOf(row.session);
-    const atEt = textOf(row.atEt);
+    const atLocal = textOf(row.atLocal) ?? textOf(row.atEt);
     const atKst = textOf(row.atKst);
     const action = textOf(row.action);
     const decisionId = numberOf(row.decisionId);
@@ -3807,9 +3843,9 @@ export function executionCheckpointRows(response: PaperExecutionResponse | null 
     const calledAt = textOf(row.calledAtKst);
     return {
       key: `${session ?? "?"}-${index}`,
-      at: `${session ?? EMPTY} · ${atEt ? `${atEt} ET` : EMPTY}`,
+      at: `${session ?? EMPTY} · ${atLocal ? `${atLocal} ${zone}` : EMPTY}`,
       atKst: atKst ? `${formatKst(atKst)} KST` : EMPTY,
-      feed: checkpointFeedLabel(textOf(row.feed)),
+      feed: checkpointFeedLabel(textOf(row.feed), market),
       status: checkpointStatusBadge(textOf(row.status)),
       reason: checkpointReasonText(textOf(row.reason)),
       decision: decisionId === null ? EMPTY
