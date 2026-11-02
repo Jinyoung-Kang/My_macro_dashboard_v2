@@ -494,6 +494,8 @@ public class PaperQueryService {
         if (korea(market)) {
             // 한국 수집 상태 요약(x4 — 사용자 결정 2026-10-29): 저장본·최신 기준일만 읽음(수집 유발 없음), 미국 응답에는 이 칸이 없음.
             out.put("collection", KrCollectionStatus.view(reader, marketData, market, clock.instant()));
+            // 한국 Claude 계좌2 장중 확인(단계 2b — 명세 2026-11-02 §10) — 한국 응답에만(미국 응답 글자 그대로).
+            out.put(PaperBooks.KR_CLAUDE2, krClaude2Status(market));
         }
         if (us) {
             // 미국 Claude 계좌2(계좌2 명세 §13-1) — 미국 응답에만(한국 응답 글자 그대로).
@@ -567,6 +569,64 @@ public class PaperQueryService {
         out.put("watch", inRegularSession(now, calendar)
                 ? today.filter(c -> ExecutionSection.FEED_MINUTE.equals(c.feed())).map(c -> watchView(now, c)).orElse(null)
                 : null);
+        return out;
+    }
+
+    /**
+     * 한국 Claude 계좌2 묶음(단계 2b) — {@code {book, status, startedOn, checkpoint:{enabled, session, today, watch}}}. 장중 확인 묶음은 미국
+     * {@link #checkpointStatus}와 같은 모양이고, {@code enabled}는 설정 {@code kr.claude2.checkpoints}, {@code session}은 지금 진행 중이거나 다음인 KR 세션,
+     * {@code today.atEt}는 늘 null(서울 시각만 — {@code atKst}), {@code watch}는 지금이 KR 정규장이고 감시 저장본이 그 확인의 것일 때만입니다. 달력이
+     * 그 해 공휴일을 모르면 세션·오늘 행·감시는 null입니다(짐작하지 않음). 저장본은 수집 요청 없이 읽기만 합니다.
+     */
+    private Map<String, Object> krClaude2Status(MarketRun market) {
+        Instant now = clock.instant();
+        TradingCalendar calendar = market.calendar();
+        Optional<Book> book = store.book(PaperBooks.KR_CLAUDE2);
+        LocalDate session;
+        boolean regular;
+        try {
+            session = calendar.nextTradingDay(calendar.lastCompletedSession(now));
+            regular = inRegularSession(now, calendar);
+        } catch (com.macrodash.analytics.CalendarUnavailableException e) {
+            // 공휴일 목록이 없는 해 — 세션을 짐작하지 않고 모름(null)으로(한국 수집 상태와 같은 규칙).
+            session = null;
+            regular = false;
+        }
+        Optional<PaperStore.Checkpoint> today = session == null ? Optional.empty() : store.checkpoint(PaperBooks.KR_CLAUDE2, session);
+        Map<String, Object> checkpoint = new LinkedHashMap<>();
+        checkpoint.put("enabled", Claude2Settings.krCheckpoints(market.settingsBody()));
+        checkpoint.put("session", session == null ? null : session.toString());
+        checkpoint.put("today", today.map(c -> {
+            Map<String, Object> row = checkpointToday(c, calendar);
+            row.put("atEt", null);
+            return row;
+        }).orElse(null));
+        checkpoint.put("watch", regular ? today.map(c -> krWatchView(now, c)).orElse(null) : null);
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("book", PaperBooks.KR_CLAUDE2);
+        out.put("status", book.map(Book::status).orElse(null));
+        out.put("startedOn", book.map(b -> text(b.startedOn())).orElse(null));
+        out.put("checkpoint", checkpoint);
+        return out;
+    }
+
+    /** 한국 감시 저장본의 받은 시각·나이·지연 — 그 확인(계좌·세션·시각 {@code atKst})의 것이 아니면 null. */
+    private Map<String, Object> krWatchView(Instant now, PaperStore.Checkpoint c) {
+        Optional<Snapshot> found = reader.quietly(() -> marketData.watchKr());
+        if (found.isEmpty() || found.get().collectedAt() == null || found.get().payload() == null) {
+            return null;
+        }
+        Snapshot watch = found.get();
+        JsonNode cp = watch.payload().get("checkpoint");
+        if (cp == null || !c.bookCode().equals(Json.asText(cp, "book"))
+                || !c.sessionDate().toString().equals(Json.asText(cp, "sessionDate"))
+                || !KrTimedLadder.label(c.atLocal()).equals(Json.asText(cp, KrCheckpointRequest.AT_FIELD))) {
+            return null;
+        }
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("collectedAtKst", stamp(watch.collectedAt()));
+        out.put("ageSeconds", Math.max(0, Duration.between(watch.collectedAt(), now).getSeconds()));
+        out.put("lagSeconds", integer(watch.payload(), "lagSeconds"));
         return out;
     }
 

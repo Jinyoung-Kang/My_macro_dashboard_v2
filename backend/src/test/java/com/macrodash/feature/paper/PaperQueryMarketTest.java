@@ -287,7 +287,7 @@ class PaperQueryMarketTest {
 
         Map<String, Object> status = query.status("KR");
         List<String> keys = List.copyOf(status.keySet());
-        assertThat(keys.subList(keys.size() - 2, keys.size())).containsExactly("earnings", "collection");
+        assertThat(keys.subList(keys.size() - 3, keys.size())).containsExactly("earnings", "collection", PaperBooks.KR_CLAUDE2);
         Map<String, Object> collection = (Map<String, Object>) status.get("collection");
         assertThat(collection.keySet()).containsExactly("quotes", "flows", "universe", "dart", "news", "calendar", "fsc");
         assertThat((Map<String, Object>) collection.get("quotes")).containsEntry("available", false);
@@ -296,6 +296,12 @@ class PaperQueryMarketTest {
         assertThat(query.status()).doesNotContainKey("collection");
         assertThat(status).as("미국 Claude 계좌2 묶음은 미국 응답에만(계좌2 명세 §13-1)").doesNotContainKey(PaperBooks.CLAUDE2);
         assertThat(query.status("US")).containsKey(PaperBooks.CLAUDE2);
+        // 한국 Claude 계좌2 장중 확인(단계 2b) — 한국 응답에만, 미국과 같은 모양(계획이 없으면 today null, 스위치 기본 켬)
+        Map<String, Object> kr2 = (Map<String, Object>) status.get(PaperBooks.KR_CLAUDE2);
+        assertThat(kr2).containsEntry("book", PaperBooks.KR_CLAUDE2).containsKey("checkpoint");
+        assertThat((Map<String, Object>) kr2.get("checkpoint")).containsEntry("enabled", true).containsEntry("today", null)
+                .containsKeys("session", "watch");
+        assertThat(query.status("US")).doesNotContainKey(PaperBooks.KR_CLAUDE2);
     }
 
     @Test
