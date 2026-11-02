@@ -83,6 +83,37 @@ class CorsOriginsTest {
         }
     }
 
+    @Test
+    @DisplayName("ADR 0023: Vultr 서버(compose.vultr.yml)의 허용 출처는 Tailscale 주소(PUBLIC_ORIGIN, 필수)와 비상용 포워딩(localhost:8201)뿐이다")
+    void vultrDeploymentAcceptsOnlyTheTailnetAndTheEmergencyForward() throws Exception {
+        Path compose = Path.of("../compose.vultr.yml");
+        assumeTrue(Files.exists(compose), "compose.vultr.yml을 찾을 수 없습니다");
+        Matcher setting = Pattern.compile("\\n\\s+FRONTEND_ORIGIN:\\s*(.+)").matcher(Files.readString(compose));
+        assertThat(setting.find()).as("compose.vultr.yml backend에 FRONTEND_ORIGIN이 있어야 함").isTrue();
+        String origins = setting.group(1).trim().replaceAll("^\"|\"$", "");
+        // 서버 .env가 끼어들 자리는 Tailscale 주소 하나뿐이고 기본값이 없음(비면 compose 해석이 실패) — FRONTEND_ORIGIN 자체는 보간하지 않음
+        Matcher slot = Pattern.compile("\\$\\{PUBLIC_ORIGIN:\\?[^}]*}").matcher(origins);
+        assertThat(slot.find()).as("PUBLIC_ORIGIN은 필수(:?)").isTrue();
+        String publicSlot = slot.group();
+        assertThat(origins.replace(publicSlot, "")).as("Tailscale 주소 밖의 보간 없음").doesNotContain("${");
+        Matcher port = Pattern.compile("\\n\\s+FRONTEND_PORT:\\s*\"(\\d+)\"").matcher(Files.readString(compose));
+        assertThat(port.find()).as("compose.vultr.yml backend에 FRONTEND_PORT 고정값이 있어야 함").isTrue();
+
+        String tailnet = "https://my-macro-app.example.ts.net";
+        AppProperties properties = new AppProperties();
+        properties.setFrontendOrigin(origins.replace(publicSlot, tailnet));
+        properties.setFrontendPort(Integer.parseInt(port.group(1)));
+        WebConfig.SessionFilter filter = new WebConfig.SessionFilter(null, WebConfig.allowedOriginPatterns(properties), false);
+
+        for (String origin : new String[]{tailnet, "http://localhost:8201", "http://127.0.0.1:8201"}) {
+            assertThat(filter.foreignOrigin(post(origin))).as(origin).isFalse();
+        }
+        for (String origin : new String[]{"https://other-host.example.ts.net", "https://my-macro-app.other.ts.net", "http://my-macro-app.example.ts.net",
+                "https://dxxxx.cloudfront.net", "https://attacker.example", "http://localhost:8202", "http://localhost:3000"}) {
+            assertThat(filter.foreignOrigin(post(origin))).as(origin).isTrue();
+        }
+    }
+
     private static MockHttpServletRequest post(String origin) {
         MockHttpServletRequest request = new MockHttpServletRequest("POST", "/api/alerts/rules");
         request.addHeader("Origin", origin);

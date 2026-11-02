@@ -267,6 +267,47 @@ jobs:
             -v "$RUNNER_TEMP/trusted_proxies.caddy:/etc/caddy/trusted_proxies.caddy:ro" caddy:2-alpine \
             caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile
 
+      - name: Vultr 덧붙임 해석 (compose.vultr.yml · deploy/vultr/Caddyfile)
+        # Vultr 서버(ADR 0023)의 덧붙임. 접속은 Tailscale 하나라 공개 리스너가 없습니다 — caddy를 포함해 모든 포트가 127.0.0.1
+        # (tailscale serve가 루프백 8201로 넘김), 잠금화면 gate·CloudFront 비밀 헤더·대역 파일 없음, Tailscale 주소(PUBLIC_ORIGIN)가
+        # 비면 해석부터 실패. 나머지(로그인 유지·Secure 쿠키·메일 끔·같은 출처·postgres 30초·국면 기록 23시)는 AWS와 같습니다.
+        # 아래 env는 서버 .env에 로컬·AWS 값이 섞여 들어온 경우를 흉내 냅니다 — 덧붙임이 덮어쓰거나 읽지 않아야 통과합니다.
+        env:
+          DATABASE_USER: ci
+          DATABASE_PASSWORD: ci
+          LOCAL_NO_LOGIN: "true"
+          MAIL_HOST: smtp.ci.example
+          FRONTEND_ORIGIN: http://localhost:3002
+          PUBLIC_URL: http://localhost:3002
+          NEXT_PUBLIC_API_BASE: http://localhost:8082
+          FRONTEND_PORT: "3002"
+          DEMO_VIEWER_TOKEN: ci-demo-viewer-token-0123456789abcdef
+          ORIGIN_SECRET: ci-origin-secret-0123456789abcdef
+          GATE_SECRET: ci-gate-secret-0123456789abcdef0123456789
+          GATE_CODES: "ci:scrypt-fake-hash"
+          PUBLIC_ORIGIN: https://my-macro-app.ci.ts.net
+        run: |
+          docker compose --env-file /dev/null -f docker-compose.yml -f compose.vultr.yml config -q
+          docker compose --env-file /dev/null -f docker-compose.yml -f compose.vultr.yml config --format json > "$RUNNER_TEMP/vultr.json"
+          jq -e '[.services[].ports[]?] | length > 0 and all(.host_ip == "127.0.0.1")' "$RUNNER_TEMP/vultr.json"
+          jq -e '.services.caddy.ports | length == 1 and .[0].published == "8201" and .[0].target == 8201' "$RUNNER_TEMP/vultr.json"
+          jq -e '.services.caddy.volumes | length == 1 and .[0].target == "/etc/caddy/Caddyfile" and (.[0].source | endswith("/deploy/vultr/Caddyfile"))' "$RUNNER_TEMP/vultr.json"
+          jq -e '(.services | has("gate") | not) and (.services.caddy.environment // {} | has("ORIGIN_SECRET") | not)' "$RUNNER_TEMP/vultr.json"
+          if env PUBLIC_ORIGIN= docker compose --env-file /dev/null -f docker-compose.yml -f compose.vultr.yml config -q 2>/dev/null; then
+            echo "::error::PUBLIC_ORIGIN이 비어도 해석됨 — 화면 주소 없이 떠 로그인할 수 없음"; exit 1
+          fi
+          jq -e '.services.postgres | (.image | startswith("postgres:")) and .stop_grace_period == "30s"' "$RUNNER_TEMP/vultr.json"
+          jq -e '.services.backend.environment | .COOKIE_SECURE == "true" and .DASHBOARD_LOCAL_NO_LOGIN == "false" and .MAIL_HOST == ""' "$RUNNER_TEMP/vultr.json"
+          jq -e '.services.backend.environment | .FRONTEND_ORIGIN == "http://localhost:8201,http://127.0.0.1:8201,https://my-macro-app.ci.ts.net" and .FRONTEND_PORT == "8201" and .PUBLIC_URL == "https://my-macro-app.ci.ts.net" and .PUBLIC_ORIGIN == "https://my-macro-app.ci.ts.net" and .SERVER_FORWARDHEADERSSTRATEGY == "native"' "$RUNNER_TEMP/vultr.json"
+          jq -e '.services.backend.environment | has("DASHBOARD_DEMO_VIEWER_TOKEN") | not' "$RUNNER_TEMP/vultr.json"
+          jq -e '.services.backend.environment.DASHBOARD_SCHEDULER_REGIMERECORDHOURKST == "23"' "$RUNNER_TEMP/vultr.json"
+          jq -e '.services.frontend.build.args.NEXT_PUBLIC_API_BASE == "/"' "$RUNNER_TEMP/vultr.json"
+          COOKIE_SECURE=false docker compose --env-file /dev/null -f docker-compose.yml -f compose.vultr.yml config --format json \
+            | jq -e '.services.backend.environment.COOKIE_SECURE == "false"'
+          # Caddyfile 문법 — compose와 같은 이미지로 검사만 합니다(네트워크·포트를 열지 않음).
+          docker run --rm -v "$PWD/deploy/vultr/Caddyfile:/etc/caddy/Caddyfile:ro" caddy:2-alpine \
+            caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile
+
       - name: 로컬·QA compose 해석 (docker-compose.yml · scripts/qa/docker-compose.qa.yml)
         # 로컬은 로그인 없이 운영자로 열리므로(ADR 0016) 포트가 루프백 밖으로 열리면 같은 와이파이의 누구나 운영자가 됩니다.
         # 기반 파일만으로 네 포트가 모두 127.0.0.1에 열리는지, 로그인 없는 열람이 기본으로 켜지고 LOCAL_NO_LOGIN=false로

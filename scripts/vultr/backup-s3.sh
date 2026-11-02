@@ -1,22 +1,24 @@
 #!/usr/bin/env bash
 # =============================================================================
-# scripts/aws/backup-s3.sh — AWS 개인용 서버의 DB를 백업해 S3에 올립니다(ADR 0019).
+# scripts/vultr/backup-s3.sh — Vultr 서버의 DB를 백업해 S3에 올립니다(ADR 0023). scripts/aws/backup-s3.sh에서 갈라냈습니다.
 #
-# cron(서버의 ubuntu 사용자, 서버 시간대는 UTC) — 매일 21:45 UTC = 06:45 KST(미국 결정 06:30 뒤, 07:00 정지 전)와
-# 일요일 14:00 UTC = 23:00 KST(주간 복기 뒤). 서버가 꺼진 아침에는 돌지 않습니다(ADR 0019 결정 14, 2026-11-02 — 처음은 매일 06:10):
-#   45 21 * * * /home/ubuntu/My_macro_dashboard_v2/scripts/aws/backup-s3.sh
-#   0 14 * * 0 /home/ubuntu/My_macro_dashboard_v2/scripts/aws/backup-s3.sh
+# cron(서버의 ubuntu 사용자, 서버 시간대는 UTC) — AWS와 같은 시각: 매일 21:45 UTC = 06:45 KST(미국 결정 06:30 뒤)와
+# 일요일 14:00 UTC = 23:00 KST(주간 복기 뒤). 서버는 24시간 켜져 있습니다:
+#   45 21 * * * /home/ubuntu/My_macro_dashboard_v2/scripts/vultr/backup-s3.sh
+#   0 14 * * 0 /home/ubuntu/My_macro_dashboard_v2/scripts/vultr/backup-s3.sh
 # 결과는 syslog(태그 my-macro-backup):  journalctl -t my-macro-backup
 #
-# make backup(backups/에 접두어별 최근 BACKUP_KEEP개 보존, ADR 0003)이 만든 파일 하나만 s3://<AWS_BACKUP_BUCKET>/db/에
-# 올립니다. 60일 지난 객체는 버킷의 수명주기가 지웁니다. 실패하면 syslog에 err로 남기고 0이 아닌 값으로 끝납니다.
-# 버킷 이름은 .env의 AWS_BACKUP_BUCKET(환경변수가 먼저). 서버의 IAM 역할이 이 버킷 하나에만 쓸 수 있습니다.
+# make backup(backups/에 접두어별 최근 BACKUP_KEEP개 보존, ADR 0003)이 만든 파일 하나만 s3://<AWS_BACKUP_BUCKET>/db/vultr/에
+# 올립니다 — AWS 서버와 같은 버킷, 접두어로 구분(병행 중 AWS의 db/와 섞이지 않게). 60일 지난 객체는 버킷 전체에 걸린 수명주기가
+# 지웁니다(db/vultr/ 포함). 실패하면 syslog에 err로 남기고 0이 아닌 값으로 끝납니다. 버킷 이름은 .env의 AWS_BACKUP_BUCKET
+# (환경변수가 먼저). 인증은 인스턴스 역할이 없어 서버 ubuntu의 ~/.aws/credentials(600) — 이 버킷의 db/vultr/에만 쓰고 db/는 읽기만 하는
+# IAM 사용자의 키입니다(ADR 0023).
 # =============================================================================
 set -euo pipefail
 
 # cron의 PATH는 /usr/bin:/bin뿐입니다 — AWS CLI v2는 /usr/local/bin에 깔립니다(뒤에 덧붙여 앞선 PATH가 먼저).
 export PATH="${PATH:+$PATH:}/usr/local/bin:/usr/bin:/bin"
-export COMPOSE_FILE=docker-compose.yml:compose.aws.yml
+export COMPOSE_FILE=docker-compose.yml:compose.vultr.yml
 export AWS_DEFAULT_REGION="${AWS_DEFAULT_REGION:-ap-northeast-2}"
 # shellcheck source=scripts/db-common.sh
 source "$(dirname "${BASH_SOURCE[0]}")/../db-common.sh"   # DB_NAME · BACKUP_DIR · env_file_value, 저장소 최상위로 이동
@@ -51,7 +53,7 @@ latest="$( (comm -13 <(printf '%s\n' "$before") <(list_backups) || true) | sed '
 [ -n "$latest" ] || fail "make backup이 새 파일을 남기지 않았습니다($BACKUP_DIR)"
 [ "$(printf '%s\n' "$latest" | wc -l | tr -d ' ')" = 1 ] || fail "새 백업 파일이 하나가 아닙니다 — 올리지 않았습니다"
 
-key="db/$(basename "$latest")"
+key="db/vultr/$(basename "$latest")"
 if ! upload="$(aws s3 cp --only-show-errors "$latest" "s3://$bucket/$key" 2>&1)"; then
     fail "S3 올리기(s3://$bucket/$key) — $(printf '%s\n' "$upload" | tail -n 2 | tr '\n' ' ')"
 fi
