@@ -500,3 +500,67 @@ S3 백업으로 되돌리기: `aws s3 ls s3://<버킷>/db/` → 받을 파일을
 - 예산 `my-macro-monthly-45usd`(80%·100% 알림, 계정 전체). 이 서버는 월 약 $17(하루 10시간)입니다.
 - CloudWatch `CPUSurplusCreditsCharged`가 0인지 — t4g 무제한 크레딧은 기준선(vCPU당 20%)을 오래 넘기면 요금이 붙습니다.
 - 디스크: `deploy.sh` 끝에 사용률을 찍습니다(30 GB, 오래된 이미지·빌드 캐시는 배포 때 정리).
+
+## 8. Vultr 서버
+
+AWS(§7)에서 옮기는 서버입니다 — Vultr 서울 `my-macro-app`(vhf-2c-4gb, 24시간). 구성과 이유는 [ADR 0023](adr/0023-vultr-deployment.md), 작업 목록과 사용자 결정은
+[Vultr 이전 명세](specs/2026-11-02-vultr-migration.md)에 있습니다. **컷오버 전까지 모의 매매 운영본은 AWS**이고 Vultr `.env`는 `PAPER_ENABLED=false`입니다.
+아래의 `<tailnet>`·`<서버 IP>`·`<버킷>`은 계정 고유 값입니다 — PC `.env`의 `TAILNET_DOMAIN`·`VULTR_SERVER_IP`, 서버 `.env`의 `AWS_BACKUP_BUCKET`.
+
+### 접속 (Tailscale)
+
+- 서버·PC·휴대폰이 같은 tailnet에 있습니다. 화면은 `https://my-macro-app.<tailnet>.ts.net`(운영자 계정 `OWNER_EMAIL`로 로그인). 서버의 `tailscale serve`가
+  HTTPS(Tailscale이 받는 인증서)를 끝내고 `127.0.0.1:8201`의 caddy로 넘깁니다. 공개 인터넷에 열린 TCP 포트는 없습니다(잠금화면도 없음).
+- 셸: `ssh ubuntu@my-macro-app`(Tailscale SSH). WSL처럼 MagicDNS 이름에 저장된 호스트 키가 없으면 tailnet 주소(`getent hosts my-macro-app`)로 붙습니다.
+- 비상용(Tailscale이 막혔을 때): `ssh -i ~/.ssh/id_ed25519_vultr ubuntu@<서버 IP>` — 방화벽 22는 PC 공인 IP/32만. 화면은 같은 명령에
+  `-L 8201:127.0.0.1:8201`을 붙여 <http://localhost:8201>. 둘 다 막히면 Vultr 콘솔의 웹 콘솔.
+- PC 공인 IP가 바뀌면: Vultr 콘솔(Account → API → Access Control)에서 API 키의 허용 IP를 먼저 고친 뒤 `bash scripts/vultr/firewall-pc-ip.sh`
+  (22 규칙을 지금 IP/32로 — 새 규칙을 넣은 뒤 옛 규칙을 지움). 상태·주소는 `bash scripts/vultr/instance.sh status`.
+
+### 서버 만들기 (처음 한 번 — 2026-11-02·03에 끝남)
+
+명세 §0에 적은 순서입니다. 인스턴스(cloud-init = `scripts/vultr/bootstrap.sh`) → 방화벽 그룹(22/tcp PC IP/32, 41641/udp v4·v6) → Tailscale
+(`scp scripts/vultr/tailscale-up.sh root@<서버 IP>:/root/` 뒤 `printf '%s\n' "$TAILSCALE_AUTH_KEY" | ssh root@<서버 IP> bash /root/tailscale-up.sh` — 키는 stdin) →
+GitHub 읽기 전용 배포 키(서버 ubuntu `~/.ssh/id_ed25519_github`, `~/.ssh/config` Host `github-v2`) → 백업용 IAM 사용자 키(서버 ubuntu `~/.aws/credentials`, 600).
+토스 허용 IP에 서버 IP를 등록합니다.
+
+### 서버 .env 전달
+
+서버 `.env` = 로컬 `.env` − 적지 않는 이름 + 서버 전용 줄([.env.vultr.example](../.env.vultr.example)). 값은 화면·로그에 찍지 않습니다.
+
+```bash
+# PC — 걸러 낸 사본을 만들어 Tailscale SSH의 stdin으로 보내고(처음부터 600 — 서버에서 파일이 잠깐이라도 남에게 읽히지 않게) 지웁니다. <버킷>은 AWS 서버 .env와 같은 값
+tmp="$(mktemp)" && grep -Ev '^[[:space:]]*(export[[:space:]]+)?(DATABASE_PORT|BACKEND_PORT|COLLECTOR_PORT|FRONTEND_PORT|COOKIE_SECURE|LOCAL_NO_LOGIN|FRONTEND_ORIGIN|PUBLIC_URL|AWS_INSTANCE_ID|PAPER_ENABLED|ORIGIN_SECRET|GATE_[A-Z_]*|VULTR_[A-Z_]*|TAILSCALE_[A-Z_]*|TAILNET_DOMAIN)=' .env > "$tmp" \
+  && printf '\nCOMPOSE_FILE=docker-compose.yml:compose.vultr.yml\nAWS_BACKUP_BUCKET=%s\nPUBLIC_ORIGIN=https://my-macro-app.%s\nPAPER_ENABLED=false\n' "<버킷>" "$(grep '^TAILNET_DOMAIN=' .env | cut -d= -f2-)" >> "$tmp" \
+  && ssh ubuntu@my-macro-app 'umask 077 && cat > My_macro_dashboard_v2/.env && chmod 600 My_macro_dashboard_v2/.env' < "$tmp"; rm -f "$tmp"
+```
+
+- 로컬 `.env` 끝 줄에 줄바꿈이 없을 수 있어 덧붙이는 줄은 `\n`으로 시작합니다.
+- 다시 전달하면 서버 `.env`를 통째로 덮어씁니다. 서버에만 적은 줄(`COOKIE_SECURE=false` 등)은 다시 덧붙입니다. 컷오버 뒤에는 `PAPER_ENABLED=false`를 덧붙이지 않습니다.
+
+### 배포
+
+```bash
+git clone git@github-v2:Jinyoung-Kang/My_macro_dashboard_v2.git ~/My_macro_dashboard_v2   # 서버(ubuntu), 처음 한 번 — 폴더 이름 고정
+bash ~/My_macro_dashboard_v2/scripts/vultr/deploy.sh
+```
+
+- AWS `deploy.sh`와 같은 순서입니다(main fast-forward → 버전 → backend → frontend → collector 하나씩 빌드 → 기동 → 스키마 → caddy 다시 만들기 → 정리).
+  gate·CloudFront 대역 단계는 없습니다. 서버 `.env`에 적지 않는 이름(AWS 공개 주소용 값·PC 전용 `VULTR_*`·`TAILSCALE_*` 포함)이 있으면 멈추고,
+  `PAPER_ENABLED=false`가 없으면 '주의'를 찍고 계속합니다(컷오버 뒤에는 그것이 맞음).
+- 데이터: S3의 AWS 백업을 받아 복원합니다 — `aws s3 ls s3://<버킷>/db/` → `aws s3 cp s3://<버킷>/db/<파일>.sql backups/` → `make restore F=backups/<파일>.sql`.
+
+### 백업 (cron)
+
+```bash
+# 서버(ubuntu) — AWS와 같은 시각: 매일 21:45 UTC(06:45 KST)와 일요일 14:00 UTC(23:00 KST). 서버 시간대는 UTC
+(crontab -l 2>/dev/null | grep -v 'scripts/vultr/backup-s3.sh'; echo '45 21 * * * /home/ubuntu/My_macro_dashboard_v2/scripts/vultr/backup-s3.sh'; echo '0 14 * * 0 /home/ubuntu/My_macro_dashboard_v2/scripts/vultr/backup-s3.sh') | crontab -
+journalctl -t my-macro-backup --since yesterday       # 결과(실패는 err)
+```
+
+올라가는 곳은 같은 버킷의 `db/vultr/`(60일 만료는 버킷 전체 수명주기)입니다. 서버의 IAM 사용자는 `db/vultr/`에만 쓰고 `db/`는 읽기만 합니다.
+
+### 날마다 볼 것 (병행 기간)
+
+백엔드 ERROR(`make logs S=backend`), 수집 누락(`make status`), 메모리(`free -h`)·디스크(`deploy.sh` 끝, 128 GB), 백업(`journalctl -t my-macro-backup`),
+`tailscale status`에서 PC·휴대폰과 직접 연결인지(relay가 아님). 컷오버(명세 §6)와 AWS 정리(§7)는 사용자가 정할 때만 합니다.

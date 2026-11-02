@@ -373,6 +373,27 @@ bash ~/My_macro_dashboard_v2/scripts/aws/deploy.sh   # main 받기 → 이미지
 - v3에서 옮겨 온 공개 데모 배포(RDS·CloudFront·데모 열람, [ADR 0012](docs/adr/0012-aws-demo-deployment.md)~[0014](docs/adr/0014-aws-demo-ai-report.md))는
   이 저장소에서 쓰지 않습니다.
 
+### Vultr 서버 (AWS에서 옮기는 중)
+
+운영 서버를 Vultr 서울의 한 대(`my-macro-app`, vhf-2c-4gb · 2 vCPU · 4 GB, 24시간, 월 $24)로 옮기고 있습니다([ADR 0023](docs/adr/0023-vultr-deployment.md)).
+지금은 AWS와 **병행** 중이라 모의 매매 정기 작업은 AWS에서만 돌고, Vultr `.env`는 `PAPER_ENABLED=false`입니다. 컷오버 뒤 AWS의 my-macro 자원은 정리합니다.
+
+- 접속은 **Tailscale 하나**입니다. 서버·PC·휴대폰이 같은 tailnet에 있고 화면은 `https://my-macro-app.<tailnet>.ts.net`(Tailscale이 받는 인증서) — 서버의
+  `tailscale serve`가 루프백의 caddy(`127.0.0.1:8201`)로 넘깁니다. 공개 인터넷에 열린 TCP 포트·잠금화면은 없고, 로그인은 그대로입니다.
+- 로컬과 다른 점은 덧붙임 [compose.vultr.yml](compose.vultr.yml)과 [scripts/vultr/](scripts/vultr/)에 있습니다(AWS 것에서 갈라냄 — gate·공개 리스너 없음).
+
+```bash
+bash scripts/vultr/instance.sh status      # PC: 서버 상태·주소(Vultr API, .env의 VULTR_API_KEY·VULTR_INSTANCE_ID)
+bash scripts/vultr/firewall-pc-ip.sh       # PC 공인 IP가 바뀌었을 때 비상용 SSH(22) 규칙을 지금 IP로
+ssh ubuntu@my-macro-app                    # 서버 셸(Tailscale SSH) — 그 안에서 bash ~/My_macro_dashboard_v2/scripts/vultr/deploy.sh
+```
+
+- 서버 `.env`는 로컬 `.env`에서 포트 네 줄·`COOKIE_SECURE`·`LOCAL_NO_LOGIN`·`FRONTEND_ORIGIN`·`PUBLIC_URL`·`AWS_INSTANCE_ID`·`VULTR_*`·`TAILSCALE_*`·`TAILNET_DOMAIN`을 빼고
+  `COMPOSE_FILE`·`AWS_BACKUP_BUCKET`·`PUBLIC_ORIGIN`(Tailscale 주소)·병행 기간의 `PAPER_ENABLED=false`를 더한 것입니다([.env.vultr.example](.env.vultr.example)).
+  PC의 `.env`에는 `VULTR_API_KEY`·`VULTR_INSTANCE_ID`·`VULTR_SERVER_IP`·`VULTR_FIREWALL_GROUP_ID`·`TAILSCALE_AUTH_KEY`·`TAILNET_DOMAIN`을 더합니다.
+- DB는 AWS와 같은 시각(06:45 KST·일 23:00 KST)에 같은 S3 버킷의 `db/vultr/`로 백업합니다(`scripts/vultr/backup-s3.sh`, cron).
+- 서버 만들기·`.env` 전달·배포·백업 절차는 [docs/DEVELOPMENT.md §8](docs/DEVELOPMENT.md#8-vultr-서버)에 있습니다.
+
 ---
 
 ## 6. 문제가 생기면

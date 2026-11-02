@@ -13,14 +13,15 @@ AWS에 그대로 둔다. 저장소는 가르지 않고 이 저장소(v2)에 Vult
   `VULTR_INSTANCE_ID`·`VULTR_SERVER_IP`·`VULTR_FIREWALL_GROUP_ID`(계정 고유 값 — 저장소에 적지 않는다, 메모리 `vultr-server-2026-11`).
 - 방화벽 그룹 `my-macro-app`: 22/tcp는 PC 공인 IP/32만, 443/tcp는 v4·v6 공개. 그 밖은 닫힘.
 - SSH 키 `~/.ssh/id_ed25519_vultr`(Vultr 이름 my-macro-app-pc). 접속 `ssh -i ~/.ssh/id_ed25519_vultr ubuntu@$VULTR_SERVER_IP`. 비밀번호 로그인은 꺼짐.
-- cloud-init = `scripts/vultr/bootstrap.sh`(커밋 전, 서버에서 실행 끝): Docker 29.9.2·compose 5.6.1·AWS CLI v2·ubuntu 사용자(sudo·docker)·스왑(이미지 기본 8 GiB)·journald 500M.
+- cloud-init = `scripts/vultr/bootstrap.sh`(서버에서 실행 끝): Docker 29.9.2·compose 5.6.1·AWS CLI v2·ubuntu 사용자(sudo·docker)·스왑(이미지 기본 8 GiB)·journald 500M.
   sshd 드롭인은 `00-my-macro.conf`(cloud-init의 50-cloud-init.conf가 PasswordAuthentication yes를 넣으므로 먼저 읽혀야 한다).
-- `.env.example`에 `VULTR_API_KEY` 이름 추가(커밋 전).
+- `.env.example`에 `VULTR_API_KEY` 이름 추가.
 - (11-03) Tailscale: 서버가 tailnet에 들어감(`my-macro-app.<tailnet>.ts.net`, `scripts/vultr/tailscale-up.sh` — 키는 stdin, 실행 방법은 머리말), Tailscale SSH 켜짐(WSL에서 `ssh ubuntu@my-macro-app` 확인),
   tailnet에서 Serve 켬(사용자), `tailscale serve --bg --https=443 http://127.0.0.1:8201` 등록·Let's Encrypt 인증서 발급 확인(PC에서 502 = caddy 없음이 정상). 방화벽: 443 삭제, 41641/udp v4·v6 추가.
 - (11-03) GitHub 읽기 전용 배포 키 `my-macro-app-vultr` = 서버 ubuntu `~/.ssh/id_ed25519_github`, `~/.ssh/config` Host github-v2(`git ls-remote` 확인). 토스 허용 IP는 사용자가 등록 끝.
 - (11-03) AWS IAM 사용자 `my-macro-vultr-backup`(ListBucket db/*, PutObject db/vultr/*, GetObject db/*) + 액세스 키 → 서버 ubuntu `~/.aws/credentials`(600, 쓰기·거부 확인). 로컬 `.env.example`에 TAILSCALE_*·VULTR_* 이름.
 - 서버에는 아직 저장소·.env·컨테이너가 없다 — 여기부터가 단계 B(§5의 4번부터).
+- (11-03) 단계 A(§3) 끝 — 브랜치 `claude/vultr-deploy-2026-11`을 main에 fast-forward. 결정은 [ADR 0023](../adr/0023-vultr-deployment.md).
 
 ## 1. 원칙(지킬 것)
 

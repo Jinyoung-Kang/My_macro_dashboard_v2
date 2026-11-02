@@ -433,3 +433,24 @@ UTC라서 `LocalDate.now()`를 그대로 쓰면 한국 시각 00:00~09:00 사이
 - **모의 매매 상태는 서버 한 곳**에만 있습니다. 서버로 옮긴 뒤 로컬 v1은 `PAPER_ENABLED=false`로 띄워 정기 작업(리스크 점검·결정·체결)을 두 곳에서 돌리지 않습니다.
 - **백업**: 06:45 KST(서버가 켜진 아침 — 화~토, 미국 결정 뒤)와 일요일 23:00 KST(주간 복기 뒤)에 `scripts/aws/backup-s3.sh`가 `make backup`(ADR 0003)의 새 파일 하나를 S3로 올립니다. 버킷은 퍼블릭 차단·SSE-S3·60일 만료이고,
   서버의 IAM 역할은 그 버킷 하나에만 쓸 수 있습니다.
+
+### Vultr 서버 (AWS에서 옮기는 중, ADR 0023)
+
+운영 서버를 Vultr 서울의 한 대(24시간)로 옮기는 중입니다([ADR 0023](adr/0023-vultr-deployment.md)). 컷오버 전까지 모의 매매 정기 작업은 위 AWS 서버에서만 돌고
+Vultr는 `PAPER_ENABLED=false`로 뜹니다. 같은 compose 스택에 덧붙임 `compose.vultr.yml`(앞단 caddy, 로그인·쿠키·출처 고정 — gate·공개 리스너 없음)을 얹습니다.
+
+```
+[PC · 휴대폰 — 같은 tailnet]                      [PC — 비상용]
+ 브라우저 https://my-macro-app.<tailnet>.ts.net      ssh -i …vultr -L 8201:127.0.0.1:8201 (방화벽 22는 PC 공인 IP/32만)
+    ║ WireGuard(Tailscale) — 직접 연결 41641/udp       ║ SSH
+    ▼                                                  ▼
+[Vultr my-macro-app · vhf-2c-4gb · 공개 TCP 포트 0 · 앱 포트는 모두 127.0.0.1]
+ tailscaled(serve https:443, 인증서는 Tailscale) ──► 127.0.0.1:8201 caddy ─┬─ /api/* ──► backend:8080 ──JDBC──► postgres:5432 ◄──적재── collector:8000
+                                                                           └─ 나머지 ──► frontend:3000
+ 나가는 통신: collector ──► 외부 시장 데이터 · backend ──► Anthropic API · git ──► GitHub(읽기 전용 배포 키)
+ cron 06:45 KST(·일 23:00): make backup ──► S3(AWS와 같은 버킷)/db/vultr/ (60일 만료, IAM 사용자 키 — db/vultr/에만 쓰기)
+```
+
+- **들어오는 길은 Tailscale 하나**(비상용 SSH 22 제외). `tailscale serve`는 tailnet 안에서만 듣고(`funnel` 안 씀) HTTPS를 끝낸 뒤 루프백의 caddy로 넘깁니다.
+  평문은 서버의 루프백·도커 네트워크에만 있습니다. 허용 출처는 Tailscale 주소(`PUBLIC_ORIGIN`)와 비상용 `http://localhost:8201`입니다.
+- **접속 주소**: AWS와 같이 caddy가 `X-Forwarded-For`를 접속 주소로 채웁니다 — tailscale serve가 넘긴 요청은 모두 같은 주소로 보여 로그인 지연은 사실상 이메일별입니다.
