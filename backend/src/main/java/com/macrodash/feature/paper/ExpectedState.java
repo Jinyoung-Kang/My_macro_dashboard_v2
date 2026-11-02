@@ -158,6 +158,27 @@ final class ExpectedState {
                 targets.put(o.id(), target);
             }
         }
+        return simulate(cash, held, price, due, targets, session, now,
+                (o, target, position) -> price(o, target, session, now, bars, watch, quotes, position, calendar));
+    }
+
+    /** 기준 시각이 지난 대기 주문 하나의 원가격 — 모르면 null(체결로 보지 않음). {@code held}는 그 순간의 예상 보유(없으면 null). */
+    @FunctionalInterface
+    interface Pricer {
+        Priced price(Order order, Instant target, Position held);
+    }
+
+    /**
+     * 체결로 보기(클래스 설명의 순서·수량 규칙) — 미국 {@link #of}와 한국 {@code KrExpectedState}(단계 2b)가 같은 계산을 씁니다(가격 고르기만 다름).
+     *
+     * @param cash    장부 현금
+     * @param held    장부 보유(종목 → 보유, 바꿈)
+     * @param price   종목 → 평가 가격(바꿈)
+     * @param due     기준 시각이 지난 대기 주문
+     * @param targets 주문 번호 → 기준 시각
+     */
+    static State simulate(double cash, Map<String, Position> held, Map<String, Double> price, List<Order> due,
+                          Map<Long, Instant> targets, LocalDate session, Instant now, Pricer pricer) {
         // 장부 2b 순서(리뷰 F3) — 기준 시각 순, 같은 시각 안에서만 매도 먼저.
         due.sort(Comparator.comparing((Order o) -> targets.get(o.id()))
                 .thenComparingInt(o -> PaperBooks.SELL.equals(o.side()) ? 0 : 1).thenComparingLong(Order::id));
@@ -165,7 +186,7 @@ final class ExpectedState {
         List<Long> unpriced = new ArrayList<>();
         for (Order o : due) {
             Instant target = targets.get(o.id());
-            Priced p = price(o, target, session, now, bars, watch, quotes, held.get(o.ticker()), calendar);
+            Priced p = pricer.price(o, target, held.get(o.ticker()));
             if (p == null) {
                 unpriced.add(o.id());
                 continue;
@@ -218,7 +239,8 @@ final class ExpectedState {
                 valued, assumed, unpriced, now);
     }
 
-    private record Priced(double raw, String source) {
+    /** 체결로 볼 원가격과 그 출처({@link #PRICE_BARS}·{@link #PRICE_WATCH}·{@link #PRICE_LAST}). */
+    record Priced(double raw, String source) {
     }
 
     private static Priced price(Order o, Instant target, LocalDate session, Instant now, JsonNode bars, JsonNode watch,
