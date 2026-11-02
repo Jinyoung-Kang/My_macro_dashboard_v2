@@ -724,8 +724,48 @@ class KrLedgerTest {
         }
 
         private long order2(String ticker, String side, int qty, String timing) {
+            return order2(ticker, side, qty, timing, CREATED);
+        }
+
+        private long order2(String ticker, String side, int qty, String timing, Instant created) {
             return store.insertOrder(new Order(0, BOOK2, null, ticker, side, qty, null, null, timing, "CLAUDE", "PENDING",
-                    null, null, D, CREATED, LocalDate.of(2026, 11, 5), null));
+                    null, null, D, created, LocalDate.of(2026, 11, 5), null));
+        }
+
+        private KrQuotes.Timed window(String key, String label, long open) {
+            return new KrQuotes.Timed(KrQuotes.TIMED_OK, null, kst("2026-11-03T21:50"),
+                    Map.of(key, java.util.List.of(new KrQuotes.Bar1m(label, java.math.BigDecimal.valueOf(open), 300L))),
+                    Map.of(), Map.of());
+        }
+
+        @Test
+        @DisplayName("장중 확인 주문(단계 2b) — 장중 시장가(MARKET)는 그 기준 분 창 시가(TOSS_1M_AT), E 장중에 만든 매시 주문도 그날 체결(⑤는 그 기준 시각), 순서는 기준 시각 순")
+        void checkpointOrdersFillAtTheirMinutes() {
+            book(BOOK2, PaperBooks.KIND_CLAUDE, 1_000_000);
+            store.upsertPosition(new Position(BOOK2, "035720", 10, 40_000.0, D, CREATED, 40_000.0, CREATED, 40_000.0, CREATED,
+                    false, D, 40_000.0, null));
+            Instant intraday = kst("2026-11-03T10:31:20");          // E(D1) 장중 확인 — 기준 분 10:33
+            long market = order2("005930", PaperBooks.BUY, 15, PaperBooks.MARKET, intraday);
+            long two = order2("000660", PaperBooks.BUY, 2, PaperBooks.AT_1400, intraday);
+            long sell = order2("035720", PaperBooks.SELL, 10, PaperBooks.AT_1100);   // 밤 결정의 11:00 매도 — MARKET(10:33)보다 뒤
+            when(marketData.krTimed()).thenReturn(Map.of("005930", Map.of(D1, window("10:33", "10:34", 72_000)),
+                    "000660", Map.of(D1, window("14:00", "14:01", 400_000)),
+                    "035720", Map.of(D1, window("11:00", "11:01", 41_500))));
+            KrFixtures.Payload payload = new KrFixtures.Payload(D1);
+            openedAt(payload, "005930", 70_000);
+            openedAt(payload, "000660", 395_000);
+            openedAt(payload, "035720", 41_000);
+
+            process(payload, COLLECTED_D1);
+
+            assertThat(store.fillsOf(BOOK2)).extracting(Fill::ticker, Fill::price, Fill::priceSource)
+                    .containsExactly(org.assertj.core.groups.Tuple.tuple("005930", 72_000.0, KrTimedLadder.SOURCE_AT),
+                            org.assertj.core.groups.Tuple.tuple("035720", 41_500.0, KrTimedLadder.SOURCE_AT),
+                            org.assertj.core.groups.Tuple.tuple("000660", 400_000.0, KrTimedLadder.SOURCE_AT));
+            assertThat(store.fillsOf(BOOK2).get(0).qty()).as("10:33 매수는 11:00 매도 대금 없이 — 현금 한도까지(13주)").isEqualTo(13);
+            assertThat(store.orders.get(market).reason().path("cashLimited").asBoolean()).isTrue();
+            assertThat(store.orders.get(two).status()).isEqualTo(PaperBooks.ORDER_FILLED);
+            assertThat(store.orders.get(sell).status()).isEqualTo(PaperBooks.ORDER_FILLED);
         }
 
         @Test

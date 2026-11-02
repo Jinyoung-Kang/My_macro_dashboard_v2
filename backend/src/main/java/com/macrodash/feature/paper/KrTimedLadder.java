@@ -21,7 +21,7 @@ import java.util.Locale;
 import java.util.Map;
 
 /**
- * 한국 Claude 계좌2의 매시·종가 체결 사다리(단계 2a — 명세 docs/specs/2026-11-02-kr-claude2-stage2.md §2·§9). 목표 세션 E의 1분봉
+ * 한국 Claude 계좌2의 매시·장중 시장가·종가 체결 사다리(단계 2a·2b — 명세 docs/specs/2026-11-02-kr-claude2-stage2.md §2·§9·§10). 목표 세션 E의 1분봉
  * ({@code paper.kr.timed} — 장부가 {@link KrPaperMarket#withListings}로 그 종목에 붙임)으로 풉니다. 라벨은 봉 끝 시각(KST)이라 기준 시각 T의 봉은 라벨
  * T + 1분입니다(개장 봉 09:01과 같은 뜻).
  *
@@ -29,6 +29,8 @@ import java.util.Map;
  *   <li><b>매시</b>({@code AT_1000}~{@code AT_1500}, T = hh:00): R1 {@value #SOURCE_AT} — 라벨 hh:01 봉 시가(거래량 &gt; 0) → R2 {@value #SOURCE_NEXT} —
  *       창(라벨 hh:02~hh:05) 안 첫 거래 봉 시가(경고) → R2b {@value #SOURCE_LATE} — 그날 마감 봉 라벨 이하에서 T 뒤 첫 거래 봉 시가(대체). 셋 다 없으면
  *       기다림(멈춘 가격으로 채우지 않음 — 만료까지).</li>
+ *   <li><b>장중 시장가</b>({@code MARKET} — 장중 확인 응답만, 단계 2b): T = 그 주문의 기준 분({@link ExecutionAudit#marketTarget} — (생성 + 60초)를 분으로
+ *       내린 뒤 + 1분, 미국과 같은 식), 사다리는 매시와 같음(창 키 'HH:MM' — 수집기가 그 주문의 창을 더함). T가 목표 세션 날짜가 아니면 체결하지 않습니다.</li>
  *   <li><b>종가</b>({@code NEXT_CLOSE}): {@value #SOURCE_CLOSE} — 마감 단일가 봉 종가(거래량 &gt; 0). 라벨은 그날 마감 시각(그 실행 달력 — 장 시간 변경일
  *       포함)에 NXT 종목이면 + 1분(G2: NXT 15:31, NXT 미지원 표시 주식·ETF 15:30). NXT 여부를 모르면 기다림. 토스 일봉 종가로 채우지 않습니다(G2 — 20:00까지
  *       체결이 섞여 18/21 다름). 금융위 종가가 들어오면 확정 조정이 그 값으로 고칩니다.</li>
@@ -73,6 +75,26 @@ final class KrTimedLadder {
         return timing == null ? null : HOURLY.get(timing);
     }
 
+    /**
+     * 그 주문의 그날 기준 시각(장부 순서·체결 조건 ⑤ — {@link KrFills#opensAfterOrder}): 매시 = 그날 hh:00 KST, 장중 시장가 = 그 주문의 기준 분
+     * ({@link ExecutionAudit#marketTarget} — 날짜와 상관없이 그 순간, 생성 시각을 모르면 null), 종가 = 그날 마감, 그 밖(시가 등)은 null.
+     */
+    static Instant targetOn(String timing, Instant createdAt, LocalDate session, TradingCalendar calendar) {
+        if (PaperBooks.MARKET.equals(timing)) {
+            return createdAt == null ? null : ExecutionAudit.marketTarget(createdAt);
+        }
+        if (PaperBooks.NEXT_CLOSE.equals(timing)) {
+            return calendar.closeInstant(session);
+        }
+        LocalTime at = hourly(timing);
+        return at == null ? null : ZonedDateTime.of(session, at, KrxCalendar.SEOUL).toInstant();
+    }
+
+    /** 이 사다리가 푸는 시점인가 — 매시·장중 시장가·종가. */
+    static boolean timed(String timing) {
+        return hourly(timing) != null || PaperBooks.MARKET.equals(timing) || PaperBooks.NEXT_CLOSE.equals(timing);
+    }
+
     static String label(LocalTime time) {
         return String.format(Locale.ROOT, "%02d:%02d", time.getHour(), time.getMinute());
     }
@@ -115,11 +137,12 @@ final class KrTimedLadder {
     /**
      * 그 주문 시점의 E 체결가(클래스 설명).
      *
+     * @param createdAt   주문 생성 시각(장중 시장가의 기준 분 — 그 밖의 시점은 보지 않음, null 가능)
      * @param collectedAt 관측치 저장본을 받은 시각(쓰지 않음 — 기다림의 끝은 수집기 다시 묻기)
      * @param deadline    그 봉 날짜 밤의 결정 기한 — 실패가 그 뒤에도 남으면 사유에 적음
      */
-    static Result price(String timing, Quote quote, LocalDate session, Instant collectedAt, TradingCalendar calendar,
-                        Instant deadline) {
+    static Result price(String timing, Instant createdAt, Quote quote, LocalDate session, Instant collectedAt,
+                        TradingCalendar calendar, Instant deadline) {
         Timed timed = quote.timedOn(session);
         String head = session + " " + timing;
         if (timed == null) {
@@ -150,10 +173,22 @@ final class KrTimedLadder {
             return new Result(new Choice(session, bar.close(), SOURCE_CLOSE, null), null);
         }
         LocalTime at = hourly(timing);
+        if (PaperBooks.MARKET.equals(timing)) {
+            Instant target = targetOn(timing, createdAt, session, calendar);
+            if (target == null || !target.atZone(KrxCalendar.SEOUL).toLocalDate().equals(session)) {
+                return new Result(null, head + " — 기준 분" + (target == null ? "(생성 시각 모름)" : " " + Kst.stamp(target))
+                        + "이 목표 세션이 아님 · 체결하지 않음(만료까지)");
+            }
+            at = target.atZone(KrxCalendar.SEOUL).toLocalTime();
+            head = session + " MARKET(" + label(at) + ")";
+        }
         if (at == null || !at.isBefore(close)) {
-            return new Result(null, head + " — 그날 마감(" + label(close) + ") 전의 매시 시점이 아님 · 체결하지 않음(만료까지)");
+            return new Result(null, head + " — 그날 마감(" + label(close) + ") 전의 매시·장중 시점이 아님 · 체결하지 않음(만료까지)");
         }
         String key = label(at);
+        if (!timed.windows().containsKey(key)) {
+            return new Result(null, head + " — 1분봉 저장본에 " + key + " 창이 없음(그 주문 뒤에 받지 않은 저장본) · 기다림");
+        }
         List<Bar1m> window = timed.windows().getOrDefault(key, List.of());
         String first = label(at.plusMinutes(1));
         for (Bar1m bar : window) {

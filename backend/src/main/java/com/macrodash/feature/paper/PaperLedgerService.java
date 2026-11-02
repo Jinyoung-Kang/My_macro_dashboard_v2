@@ -35,6 +35,7 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.Instant;
 import java.time.LocalDate;
+import java.time.LocalTime;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -903,16 +904,23 @@ public class PaperLedgerService {
         if (started) {
             corporateActions(run, pending);                             // 2. 기업행위(결정 d12)
         }
-        auctionFills(run, pending, PaperBooks.SELL, PaperBooks.NEXT_OPEN::equals);   // 3. 시가 매도(STOP 포함)
-        auctionFills(run, pending, PaperBooks.BUY, PaperBooks.NEXT_OPEN::equals);    // 4. 시가 매수
-        // 5·6. 시가 뒤 시점 — 한국 Claude 계좌2의 매시(AT_1000~AT_1500)·종가(NEXT_CLOSE, 단계 2a)를 시각 순으로, 시점마다 매도 → 매수.
-        for (String timing : KR_LATER_TIMINGS) {
-            auctionFills(run, pending, PaperBooks.SELL, timing::equals);
-            auctionFills(run, pending, PaperBooks.BUY, timing::equals);
+        Predicate<Order> open = order -> PaperBooks.NEXT_OPEN.equals(order.timing());
+        auctionFills(run, pending, PaperBooks.SELL, open);   // 3. 시가 매도(STOP 포함)
+        auctionFills(run, pending, PaperBooks.BUY, open);    // 4. 시가 매수
+        // 5·6. 시가 뒤 시점 — 한국 Claude 계좌2의 매시(AT_1000~AT_1500, 단계 2a)·장중 시장가(MARKET, 단계 2b)를 기준 시각 순으로(같은 시각은 매도 →
+        // 매수 — 검증기의 '매도는 같거나 뒤 시점 매수의 자리만'과 같은 순서), 그다음 종가(NEXT_CLOSE).
+        for (LocalTime at : intradayTimes(pending)) {
+            Predicate<Order> same = order -> at.equals(intradayTime(order));
+            auctionFills(run, pending, PaperBooks.SELL, same);
+            auctionFills(run, pending, PaperBooks.BUY, same);
         }
-        // 그 밖의 시점(검증기가 받지 않는 글자 — 손으로 넣은 주문 등)은 예전처럼 마지막에(체결 사다리가 기다림으로 둠).
-        auctionFills(run, pending, PaperBooks.SELL, timing -> !PaperBooks.NEXT_OPEN.equals(timing) && !KR_LATER_TIMINGS.contains(timing));
-        auctionFills(run, pending, PaperBooks.BUY, timing -> !PaperBooks.NEXT_OPEN.equals(timing) && !KR_LATER_TIMINGS.contains(timing));
+        Predicate<Order> close = order -> PaperBooks.NEXT_CLOSE.equals(order.timing());
+        auctionFills(run, pending, PaperBooks.SELL, close);
+        auctionFills(run, pending, PaperBooks.BUY, close);
+        // 그 밖의 시점(검증기가 받지 않는 글자 — 손으로 넣은 주문, 생성 시각 모르는 MARKET 등)은 예전처럼 마지막에(체결 사다리가 기다림으로 둠).
+        Predicate<Order> other = order -> !open.test(order) && !close.test(order) && intradayTime(order) == null;
+        auctionFills(run, pending, PaperBooks.SELL, other);
+        auctionFills(run, pending, PaperBooks.BUY, other);
         if (started) {
             raiseKrxWatermarks(run);                                    // 7. 최고가 갱신(KRX 기준가 — 금융위 확정 종가로만)
             if (PaperBooks.ACTIVE.equals(run.book.status()) && !PaperBooks.KIND_BENCHMARK.equals(run.book.kind())) {
@@ -1372,17 +1380,33 @@ public class PaperLedgerService {
     }
 
     /**
+     * 한국 장부의 장중 시점의 그날 시각(KST) — 매시(AT_1000~AT_1500)는 hh:00, 장중 시장가(MARKET)는 그 주문의 기준 분({@link ExecutionAudit#marketTarget}),
+     * 그 밖(시가·종가·생성 시각 모르는 MARKET)은 null. 한 관측치 안 처리 순서만 정합니다(가격은 {@link KrTimedLadder}).
+     */
+    static LocalTime intradayTime(Order order) {
+        LocalTime hourly = KrTimedLadder.hourly(order.timing());
+        if (hourly != null) {
+            return hourly;
+        }
+        if (PaperBooks.MARKET.equals(order.timing()) && order.createdAt() != null) {
+            return ExecutionAudit.marketTarget(order.createdAt()).atZone(com.macrodash.analytics.KrxCalendar.SEOUL).toLocalTime();
+        }
+        return null;
+    }
+
+    /** 대기 주문의 장중 시각들, 이른 순(중복 없음). */
+    private static List<LocalTime> intradayTimes(List<Order> pending) {
+        return pending.stream().map(PaperLedgerService::intradayTime).filter(java.util.Objects::nonNull).distinct().sorted().toList();
+    }
+
+    /**
      * 그쪽(매도·매수)·그 묶음(시가 = {@code NEXT_OPEN}, 종가 = 그 밖의 시점)의 대기 주문을 만든 순서대로 — 현금성(설정 {@code kr.cashLikeTickers})이
      * 아닌 것 먼저, 현금성은 그 묶음 마지막(명세 §4-2, 미국 {@link #fill}의 이유와 같음 — 남는 현금 주문이 신호 종목과 현금을 다투지 않게).
      */
-    /** 한국 장부의 시가 뒤 시점, 시각 순(매시 10:00~15:00 → 종가) — 한국 Claude 계좌2의 메뉴(단계 2a, {@link PaperBooks#KR_CLAUDE2_TIMINGS}). */
-    static final List<String> KR_LATER_TIMINGS = List.of(PaperBooks.AT_1000, PaperBooks.AT_1100, PaperBooks.AT_1200,
-            PaperBooks.AT_1300, PaperBooks.AT_1400, PaperBooks.AT_1500, PaperBooks.NEXT_CLOSE);
-
-    private void auctionFills(BookRun run, List<Order> pending, String side, Predicate<String> timing) {
+    private void auctionFills(BookRun run, List<Order> pending, String side, Predicate<Order> timing) {
         for (boolean cashLikePass : new boolean[]{false, true}) {
             for (Order order : pending) {
-                if (side.equals(order.side()) && timing.test(order.timing())
+                if (side.equals(order.side()) && timing.test(order)
                         && run.settings.cashLike(order.ticker()) == cashLikePass) {
                     if (PaperBooks.SELL.equals(side)) {
                         auctionSell(run, order);

@@ -56,8 +56,25 @@ class KrTimedLadderTest {
         return timed == null ? quote : quote.withTimed(Map.of(E, timed));
     }
 
+    @Test
+    @DisplayName("장중 시장가(MARKET, 단계 2b) — 기준 분 = (생성 + 60초)를 분으로 내린 뒤 + 1분의 창, 창이 저장본에 없으면 기다림, 기준 분이 목표 세션이 아니면 체결하지 않음")
+    void marketMinute() {
+        Instant created = Instant.parse("2026-11-03T01:31:20Z");                 // 10:31:20 KST → 기준 분 10:33
+        Quote quote = quote(true, ok(Map.of("10:33", List.of(bar("10:34", 71_034, 0), bar("10:35", 71_035, 300))), Map.of(), Map.of()));
+        KrTimedLadder.Result market = KrTimedLadder.price(PaperBooks.MARKET, created, quote, E, NIGHT, CALENDAR, DEADLINE);
+        assertThat(market.choice().price()).isEqualByComparingTo("71035");
+        assertThat(market.choice().source()).isEqualTo(KrTimedLadder.SOURCE_NEXT);
+        assertThat(KrTimedLadder.price(PaperBooks.MARKET, Instant.parse("2026-11-03T01:40:00Z"), quote, E, NIGHT, CALENDAR, DEADLINE)
+                .reason()).contains("10:42 창이 없음").contains("기다림");
+        assertThat(KrTimedLadder.price(PaperBooks.MARKET, Instant.parse("2026-11-02T01:31:20Z"), quote, E, NIGHT, CALENDAR, DEADLINE)
+                .reason()).contains("목표 세션이 아님");
+        assertThat(KrTimedLadder.price(PaperBooks.MARKET, null, quote, E, NIGHT, CALENDAR, DEADLINE).reason()).contains("생성 시각 모름");
+        assertThat(KrTimedLadder.targetOn(PaperBooks.AT_1400, null, E, CALENDAR)).isEqualTo(Instant.parse("2026-11-03T05:00:00Z"));
+        assertThat(KrTimedLadder.targetOn(PaperBooks.NEXT_OPEN, created, E, CALENDAR)).isNull();
+    }
+
     private static KrTimedLadder.Result price(String timing, Quote quote) {
-        return KrTimedLadder.price(timing, quote, E, NIGHT, CALENDAR, DEADLINE);
+        return KrTimedLadder.price(timing, null, quote, E, NIGHT, CALENDAR, DEADLINE);
     }
 
     @Test
