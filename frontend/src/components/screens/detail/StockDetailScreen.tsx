@@ -1,9 +1,13 @@
 "use client";
 
 import Link from "next/link";
+import { useMemo } from "react";
+import { LiveIntervalSelect } from "@/components/LiveIntervalSelect";
 import { ProvenanceBadge, Skeleton } from "@/components/patterns";
 import { Banner, Card, PageHeader } from "@/components/ui";
 import { useApi } from "@/hooks/useApi";
+import { useLivePrices } from "@/hooks/useLivePrices";
+import { useLiveSeconds } from "@/hooks/useLiveSeconds";
 import {
   chartSymbol,
   countryKo,
@@ -20,6 +24,7 @@ import {
 } from "@/lib/detail";
 import { endpoints } from "@/lib/endpoints";
 import { EMPTY, formatKst, formatNumber, formatUsd, withoutLeadingIcon } from "@/lib/format";
+import { liveKey, liveStatusText, tradedAtText } from "@/lib/livePrices";
 import type { DetailMarket, DetailQuote, DetailQuoteResponse, GuruHoldersResponse } from "@/lib/types";
 import { AiSummaryCard, ExternalAnchor, ExternalLinksCard, KeyStats, NewsCard, PriceHero, statRows } from "./DetailParts";
 
@@ -33,10 +38,17 @@ const HOLDERS_SHOWN = 10;
  * - 미국·해외(지수 ^·환율 =X·선물 =F 포함)는 Yahoo Finance, 국내 6자리는 네이버 증권 — 수집기 실시간 조회(GET /api/detail/quote, 5분 캐시).
  * - 차트는 Yahoo 시계열(GET /api/macro/ticker — 국내는 .KS·.KQ 심볼). 값이 없으면 "—", 받지 못한 출처는 그 이유를 적습니다.
  * - 출처 링크: 히어로 배지(시세 출처), 뉴스 제목(원문 기사), 외부 링크 묶음(Yahoo·Google Finance·Investing.com·네이버·SEC·DART).
+ * - 가격·전일 대비는 실시간 시세(ADR 0024 — 고른 주기마다 서버가 밀어 줌, 기본 1시간, 장중 카드·보유 표와 같은 주기)가 오면 그 값으로 바꿉니다
+ *   (사용자 요청 2026-11-03 — 모의 매매에서 종목을 누르면 이 화면). 지표·개요는 위 시세 응답 그대로.
  */
 export function StockDetailScreen({ market, code }: { market: DetailMarket; code: string }) {
   const quoteState = useApi<DetailQuoteResponse>(endpoints.detail.quote(market, code));
   const quote = quoteState.data?.quote ?? null;
+  const [liveSeconds] = useLiveSeconds();
+  const liveItems = useMemo(() => [liveKey(market === "kr" ? "KR" : "US", code)], [market, code]);
+  const realtime = useLivePrices(liveItems, liveSeconds, Boolean(quoteState.data?.available));
+  const live = realtime.prices[liveItems[0]] ?? null;
+  const price = live?.price ?? quote?.price ?? null;
   const name = quote?.nameKo ?? quote?.name ?? code;
   const symbol = chartSymbol(market, code, quote);
   const digits = priceDigits(quote?.price, quote?.currency);
@@ -61,10 +73,10 @@ export function StockDetailScreen({ market, code }: { market: DetailMarket; code
       <PageHeader title={name} description={sub} />
       <PriceHero
         label={`${name} 시세`}
-        valueText={quote?.price !== null && quote?.price !== undefined ? formatNumber(quote.price, digits) : null}
+        valueText={price !== null ? formatNumber(price, digits) : null}
         unit={currencyUnit(quote?.currency)}
-        change={quote?.change ?? null}
-        changePct={quote?.changePct ?? null}
+        change={live ? live.change : quote?.change ?? null}
+        changePct={live ? live.changePct : quote?.changePct ?? null}
         changeDigits={digits}
         valueDigits={digits}
         symbol={symbol}
@@ -72,7 +84,13 @@ export function StockDetailScreen({ market, code }: { market: DetailMarket; code
         meta={
           quote ? (
             <>
-              {marketStateText(quote.marketState) ? <span className="text-xs text-text-2">{marketStateText(quote.marketState)}</span> : null}
+              {live ? (
+                <span className="text-xs text-text-2" title={`출처 ${live.source}`}>
+                  실시간 {tradedAtText(live.tradedAt)} KST{liveStatusText(live.status) ? ` · ${liveStatusText(live.status)}` : ""} · {live.source}
+                </span>
+              ) : marketStateText(quote.marketState) ? <span className="text-xs text-text-2">{marketStateText(quote.marketState)}</span> : null}
+              <LiveIntervalSelect />
+              {realtime.error ? <span className="text-xs text-warn">{realtime.error}</span> : null}
               <ProvenanceBadge source={quote.source?.label} asOf={quote.asOf ? formatKst(quote.asOf) : null} />
               {quote.source?.url ? (
                 <ExternalAnchor href={quote.source.url} className="rounded-sm text-xs text-text-2 underline underline-offset-2 focus-visible:outline-2 focus-visible:outline-focus">

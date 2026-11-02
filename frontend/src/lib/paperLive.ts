@@ -3,43 +3,20 @@
  *
  * 장중 평가는 **표시 전용 추정**입니다. 서버가 정규장 동안 보유 종목을 최신 1분봉으로 다시 평가한 값이고, 장부(체결·스탑·순자산 줄·
  * 통계·결정 패킷)는 이 값을 쓰지 않습니다. 시세는 화면이 볼 때만 받습니다(사용자 결정 2026-10-30) — 그래서 이 화면은 정규장에만 고른
- * 간격(기본 30분)으로 다시 읽고, 서버가 새 시세를 요청했으면(refreshRequested) 잠시 뒤 한 번만 더 읽습니다. 장 밖에서는 다시 읽지 않고
- * 다음 개장 시각에 한 번 깨어납니다. 모르는 값은 "—"(0으로 채우지 않음)이고 모든 수익률에 기준 시각을 붙입니다.
+ * 간격(실시간 시세 주기 — lib/livePrices, 기본 1시간. 이 저장본은 1분보다 짧게 다시 읽지 않음)으로 다시 읽고, 서버가 새 시세를 요청했으면
+ * (refreshRequested) 잠시 뒤 한 번만 더 읽습니다. 장 밖에서는 다시 읽지 않고 다음 개장 시각에 한 번 깨어납니다. 종목 줄의 가격은 그 위에 실시간
+ * 시세(SSE — 고른 주기, ADR 0024)를 얹습니다. 모르는 값은 "—"(0으로 채우지 않음)이고 모든 수익률에 기준 시각을 붙입니다.
  */
 import { EMPTY, formatKst, formatNumber, formatPercent } from "./format";
+import { livePriceTitle, returnVsCost, tradedAtText } from "./livePrices";
 import { formatSharePriceFor, type PaperMarketCode, tickerName } from "./paperMarket";
-import type { PaperLivePosition, PaperLiveQuotes, PaperLiveResponse, PaperLiveSession } from "./types";
+import type { LivePrice, PaperLivePosition, PaperLiveQuotes, PaperLiveResponse, PaperLiveSession } from "./types";
 
-/**
- * 자동 새로고침 간격(분). 0은 끄기. 시세를 받는 하한이 1분(서버 MAX_AGE_LIVE)이라 더 짧은 간격은 두지 않습니다. 1시간·3시간은 사용자 결정
- * (2026-10-31, 장중 명세 L5). 간격이 길면 그 사이 장부 관측(미국은 매시)이 돌아 개요의 지금 값이 장부 단계로 돌아가는 때가 많습니다(가격은
- * 종목마다 장중 1분봉과 장부 관측 가운데 늦은 쪽 — 장중 추정은 이 카드가 읽은 직후에 새로 생김).
- */
-export const LIVE_REFRESH_OPTIONS = [
-  { value: 0, label: "끄기" },
-  { value: 1, label: "1분" },
-  { value: 2, label: "2분" },
-  { value: 5, label: "5분" },
-  { value: 10, label: "10분" },
-  { value: 15, label: "15분" },
-  { value: 30, label: "30분" },
-  { value: 60, label: "1시간" },
-  { value: 180, label: "3시간" },
-] as const;
-
-/** 기본 간격 — 사용자 결정(2026-10-30). */
-export const DEFAULT_LIVE_REFRESH_MINUTES = 30;
-export const LIVE_REFRESH_STORAGE_KEY = "paper.liveRefreshMinutes";
 /** 서버가 새 시세를 요청한 응답 뒤 한 번 더 읽기까지 — 수집(보유 수십 종목)이 끝날 만한 시간. */
 export const LIVE_FOLLOW_UP_MS = 20_000;
 /** 다음 개장 뒤 이만큼 기다렸다 깨어납니다(첫 1분봉이 생긴 뒤). */
 const OPEN_GRACE_MS = 60_000;
 const DAY_MS = 24 * 60 * 60_000;
-
-/** 간격 이름 — 선택지의 이름 그대로('30분'·'1시간'·'3시간'), 선택지에 없는 값이면 'n분'. */
-export function liveIntervalText(minutes: number): string {
-  return LIVE_REFRESH_OPTIONS.find((option) => option.value === minutes)?.label ?? `${minutes}분`;
-}
 
 /** 시간별 장부 관측과 견줄 만큼 긴 간격(분) — 이 이상이면 카드가 지금 값이 대개 장부 단계라고 알립니다. */
 const LONG_INTERVAL_MINUTES = 60;
@@ -52,12 +29,6 @@ const LONG_INTERVAL_MINUTES = 60;
 export function liveIntervalNote(minutes: number, market: PaperMarketCode = "US"): string | null {
   if (market !== "US" || minutes < LONG_INTERVAL_MINUTES) return null;
   return "간격이 길면 그 사이 매시 장부 관측이 돌아 계좌의 지금 값이 대개 '장부' 단계입니다 — 장중 추정은 이 카드가 읽은 직후에 새로 생깁니다.";
-}
-
-/** 저장된 값이 선택지에 있으면 그것, 아니면 기본값. */
-export function normalizeLiveMinutes(value: unknown): number {
-  const parsed = typeof value === "number" ? value : Number(value);
-  return LIVE_REFRESH_OPTIONS.some((option) => option.value === parsed) ? parsed : DEFAULT_LIVE_REFRESH_MINUTES;
 }
 
 /** "yyyy-MM-dd HH:mm KST" → 그 순간(ms). KST는 UTC+9(서머타임 없음). 형식이 다르면 null — 시각을 짐작하지 않습니다. */
@@ -124,26 +95,35 @@ export interface LiveHoldingsView {
 
 /**
  * 고른 계좌(개요의 계좌 행)의 종목 줄 — 그 코드가 응답에 없거나 고르지 않았으면 첫 계좌, 계좌가 없으면 null. 계좌 숫자(순자산·수익률)는 개요의
- * 지금 값이 맡아 여기서 만들지 않습니다.
+ * 지금 값이 맡아 여기서 만들지 않습니다. 실시간 시세(``'US:AAPL'`` → 가격, hooks/useLivePrices)가 있는 종목은 그 가격으로 줄을 다시 셈합니다.
  */
 export function livePositionsFor(
   live: PaperLiveResponse | null | undefined,
   bookCode: string | null | undefined,
   market: PaperMarketCode = "US",
+  realtime: Readonly<Record<string, LivePrice>> = {},
 ): LiveHoldingsView | null {
   const books = live?.books ?? [];
   const book = books.find((entry) => entry.code === bookCode) ?? books[0];
   if (!book) return null;
-  return { code: book.code, label: book.label, positions: book.positions.map((position) => livePositionView(position, market)) };
+  return {
+    code: book.code,
+    label: book.label,
+    positions: book.positions.map((position) => livePositionView(position, market, realtime[`${market}:${position.ticker.toUpperCase()}`])),
+  };
 }
 
 export interface LivePositionView {
   ticker: string;
   qty: string;
   price: string;
-  /** "장중 23:58"·"마지막 관측 10-30 06:15"·"—" */
+  /** "실시간 23:58:07"·"장중 23:58"·"마지막 관측 10-30 06:15"·"—" */
   priceAt: string;
   live: boolean;
+  /** 실시간 시세(SSE)로 다시 셈한 줄이면 true */
+  realtime: boolean;
+  /** 가격 칸 설명(실시간이면 출처·거래 시각·장 상태) — 없으면 null */
+  priceTitle: string | null;
   returnPct: number | null;
   returnText: string;
   dayChangePct: number | null;
@@ -151,21 +131,46 @@ export interface LivePositionView {
   weight: string;
 }
 
-/** 종목 한 줄 — 가격 기준(장중·마지막 관측)과 시각, 평균 단가 대비·직전 종가 대비, 비중. */
-export function livePositionView(position: PaperLivePosition, market: PaperMarketCode = "US"): LivePositionView {
+/**
+ * 종목 한 줄 — 가격 기준(장중·마지막 관측)과 시각, 평균 단가 대비·직전 종가 대비, 비중. 실시간 시세(``realtime``)가 있으면 가격·기준 시각·평균 단가
+ * 대비·직전 종가 대비를 그 값으로 다시 셈합니다(비중은 서버 평가 그대로 — 계좌 숫자는 개요의 지금 값이 맡음).
+ */
+export function livePositionView(position: PaperLivePosition, market: PaperMarketCode = "US", realtime?: LivePrice | null): LivePositionView {
   const at = shortStamp(position.priceAtKst);
   const live = position.priceBasis === "LIVE";
+  const weight = position.weightPct === null ? EMPTY : `${formatNumber(position.weightPct, 1)}%`;
+  if (realtime && realtime.price > 0) {
+    const returnPct = returnVsCost(realtime.price, position.avgCost);
+    const dayChangePct = realtime.changePct
+      ?? (position.previousClose ? (realtime.price / position.previousClose - 1) * 100 : null);
+    return {
+      ticker: position.ticker,
+      qty: formatNumber(position.qty, 0),
+      price: formatSharePriceFor(realtime.price, market),
+      priceAt: `실시간 ${tradedAtText(realtime.tradedAt)}`,
+      live: true,
+      realtime: true,
+      priceTitle: livePriceTitle(realtime, (value) => formatSharePriceFor(value, market)),
+      returnPct,
+      returnText: formatPercent(returnPct),
+      dayChangePct,
+      dayText: formatPercent(dayChangePct),
+      weight,
+    };
+  }
   return {
     ticker: position.ticker,
     qty: formatNumber(position.qty, 0),
     price: formatSharePriceFor(position.price, market),
     priceAt: at === EMPTY || position.priceBasis === null ? EMPTY : live ? `장중 ${at}` : `마지막 관측 ${at}`,
     live,
+    realtime: false,
+    priceTitle: null,
     returnPct: position.returnPct,
     returnText: formatPercent(position.returnPct),
     dayChangePct: position.dayChangePct,
     dayText: formatPercent(position.dayChangePct),
-    weight: position.weightPct === null ? EMPTY : `${formatNumber(position.weightPct, 1)}%`,
+    weight,
   };
 }
 

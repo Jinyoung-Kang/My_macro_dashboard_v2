@@ -1,14 +1,18 @@
 "use client";
 
-import { type ReactNode, useState } from "react";
+import { type ReactNode, useMemo, useState } from "react";
+import { LiveIntervalSelect } from "@/components/LiveIntervalSelect";
 import { type Column, DataTable, Empty } from "@/components/patterns";
 import { Banner, Button, Card, ErrorState, Freshness, Loading, Select } from "@/components/ui";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { useApi } from "@/hooks/useApi";
 import { useAsyncAction } from "@/hooks/useAsyncAction";
+import { useLivePrices } from "@/hooks/useLivePrices";
+import { useLiveSeconds } from "@/hooks/useLiveSeconds";
 import { apiPost } from "@/lib/api";
 import { endpoints } from "@/lib/endpoints";
 import { deltaColor, EMPTY, formatKst, formatNumber, formatPercent, formatWithUnit } from "@/lib/format";
+import { liveKey, livePriceTitle, liveSecondsText, returnVsCost, tradedAtText } from "@/lib/livePrices";
 import {
   type Badge,
   bookCard,
@@ -70,7 +74,9 @@ import type {
   PaperPosition,
   PaperPositionsResponse,
   PaperStatusResponse,
+  LivePrice,
 } from "@/lib/types";
+import { TickerLink } from "./TickerLink";
 import { TickerName } from "./TickerName";
 
 /** 주문·체결 표에 보일 최근 건수. 서버 상한은 500입니다. */
@@ -88,7 +94,7 @@ const POSITION_COLUMNS: readonly Column<PaperPosition>[] = [
     sortValue: (row) => row.ticker,
     cell: (row) => (
       <span className="flex flex-wrap items-center gap-1">
-        <span className="font-semibold text-bright">{row.ticker}</span>
+        <span className="font-semibold text-bright"><TickerLink market="US" code={row.ticker}>{row.ticker}</TickerLink></span>
         <Badges badges={positionBadges(row)} />
       </span>
     ),
@@ -121,6 +127,40 @@ const POSITION_COLUMNS: readonly Column<PaperPosition>[] = [
   { key: "stop", header: "스탑 가격", align: "right", cell: (row) => stopText(row) },
   { key: "held", header: "보유 기간", cell: (row) => heldText(row) },
 ];
+
+/**
+ * 보유 표의 '실시간' 칸(ADR 0024) — 실시간 시세 주기(lib/livePrices, 기본 1시간)마다 서버가 밀어 주는 가격과 평균 단가 대비 %·거래 시각. 장부 칸
+ * (가격·평가액·비중·평가 손익·스탑)은 그대로 장부 관측가입니다 — 체결·스탑은 이 값을 쓰지 않습니다. 받지 못한 종목은 "—".
+ */
+function liveColumn(prices: Readonly<Record<string, LivePrice>>, market: PaperMarketCode): Column<PaperPosition> {
+  const price = (value: number) => formatSharePrice(value, market);
+  return {
+    key: "live",
+    header: market === "KR" ? "실시간(원)" : "실시간(달러)",
+    align: "right",
+    cell: (row) => {
+      const live = prices[liveKey(market, row.ticker)];
+      if (!live) return EMPTY;
+      const pct = returnVsCost(live.price, row.avgCost);
+      return (
+        <span className="inline-flex flex-col items-end" title={livePriceTitle(live, price)}>
+          <span className="tabular-nums text-bright">{price(live.price)}</span>
+          <span className="whitespace-nowrap text-xs tabular-nums">
+            <span className={pct === null ? "text-muted" : deltaColor(pct)}>{formatPercent(pct)}</span>
+            <span className="text-muted"> · {tradedAtText(live.tradedAt)}</span>
+          </span>
+        </span>
+      );
+    },
+  };
+}
+
+/** 장부 칸 '가격' 바로 뒤에 '실시간' 칸을 끼웁니다. */
+export function withLiveColumn(base: readonly Column<PaperPosition>[], prices: Readonly<Record<string, LivePrice>>,
+  market: PaperMarketCode): Column<PaperPosition>[] {
+  const at = base.findIndex((column) => column.key === "lastPrice");
+  return [...base.slice(0, at + 1), liveColumn(prices, market), ...base.slice(at + 1)];
+}
 
 const LOCKOUT_COLUMNS: readonly Column<PaperLockout>[] = [
   { key: "ticker", header: "종목", cell: (row) => row.ticker },
@@ -363,7 +403,7 @@ const KR_POSITION_COLUMNS: readonly Column<PaperPosition>[] = [
     sortValue: (row) => row.ticker,
     cell: (row) => (
       <span className="flex flex-wrap items-center gap-1">
-        <span className="font-semibold text-bright"><TickerName code={row.ticker} /></span>
+        <span className="font-semibold text-bright"><TickerLink market="KR" code={row.ticker} /></span>
         <Badges badges={krPositionBadges(row)} />
       </span>
     ),
@@ -612,6 +652,17 @@ export function HoldingsSection({
   const code = resolveBookCode(picked, books);
 
   const positions = useApi<PaperPositionsResponse>(code ? endpoints.paper.positions(code) : null, 60_000);
+  // 실시간 시세(ADR 0024) — 보유 종목의 가격을 고른 주기마다 서버가 밀어 줌(장중 카드·종목 상세와 같은 주기).
+  const [liveSeconds] = useLiveSeconds();
+  const liveItems = useMemo(
+    () => (positions.data?.positions ?? []).map((row) => liveKey(market, row.ticker)),
+    [positions.data, market],
+  );
+  const realtime = useLivePrices(liveItems, liveSeconds, Boolean(positions.data?.available));
+  const positionColumns = useMemo(
+    () => withLiveColumn(korea ? KR_POSITION_COLUMNS : POSITION_COLUMNS, realtime.prices, market),
+    [korea, realtime.prices, market],
+  );
   const orders = useApi<PaperOrdersResponse>(code ? endpoints.paper.orders(code, RECENT_LIMIT) : null, 60_000);
   const fills = useApi<PaperFillsResponse>(code ? endpoints.paper.fills(code, RECENT_LIMIT) : null, 60_000);
   // 한국만 — 순자산 기록(잠정/확정)과 그 잠정 사유·확정 조정 '주의'를 고를 작업 기록(상태 응답 최근 30건, kr.risk 메모).
@@ -790,6 +841,7 @@ export function HoldingsSection({
             + "가격이 없는 보유는 지난 값(없으면 평단)으로 평가하고 스탑 판정을 건너뛰며, 미처리 기업행위 보유는 묶인 평가 그대로입니다."
           : "가격·평가액·비중·스탑은 장부가 계산한 값입니다. 가격이 없는 보유는 지난 값(없으면 평단)으로 평가하고 스탑 판정을 건너뜁니다."}
         source={ledgerSource}
+        actions={<LiveIntervalSelect />}
       >
         {positions.loading && !positions.data && <Loading label="보유를 읽는 중…" />}
         {positions.error && <ErrorState message={positions.error} onRetry={positions.reload} />}
@@ -800,7 +852,7 @@ export function HoldingsSection({
               <KrEmpty>보유가 없습니다 — 현금만 들고 있습니다.</KrEmpty>
             ) : (
               <DataTable<PaperPosition>
-                columns={korea ? KR_POSITION_COLUMNS : POSITION_COLUMNS}
+                columns={positionColumns}
                 rows={positions.data.positions ?? []}
                 rowKey={(row) => row.ticker}
                 caption="보유"
@@ -810,6 +862,13 @@ export function HoldingsSection({
             )}
             <p className="mt-2 text-xs text-muted">
               {korea ? `현금 ${formatMoney(positions.data.cash, "KR")}` : `현금 ${formatNumber(positions.data.cash, 2)} 달러`}
+            </p>
+            <p className="mt-1 text-xs text-muted">
+              {liveSeconds === 0
+                ? "실시간 칸은 화면을 열 때 한 번 읽음(자동 새로고침 꺼짐)"
+                : `실시간 칸은 ${liveSecondsText(liveSeconds)}마다 서버가 보냄(장이 닫혀 있으면 5분 이상 간격) — 표시 전용, 체결·스탑은 장부 가격`}
+              {realtime.receivedAt !== null && ` · 받은 시각 ${tradedAtText(new Date(realtime.receivedAt).toISOString())} KST`}
+              {realtime.error && <span className="text-warn"> · {realtime.error}</span>}
             </p>
           </>
         )}

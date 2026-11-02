@@ -2,7 +2,8 @@
  * 장중 시세 카드(LiveValuationCard) — 고정하는 규칙
  *  - 계좌 표는 없고(계좌 숫자는 개요의 지금 값), 고른 계좌(bookCode — 없거나 응답에 없으면 첫 계좌)의 종목 장중가와 기준 시각
  *  - 서버가 새 시세를 요청한 응답이면(refreshRequested) 20초 뒤 한 번만 더 읽는다(되풀이 없음)
- *  - 간격 선택(끄기~30분·1시간·3시간)은 이 브라우저에 기억되고(기본 30분), 장 밖에서는 다시 읽지 않는다
+ *  - 간격 선택(끄기·5·10·30초·1분~3시간 — 실시간 시세 주기, lib/livePrices)은 이 브라우저에 기억되고(기본 1시간, 2026-11-03), 장 밖에서는 다시
+ *    읽지 않는다. 계좌 숫자의 장중 저장본은 1분보다 짧게 다시 읽지 않는다(종목 가격만 실시간 시세 — SSE, 시험 환경에는 EventSource가 없음)
  *  - 새 장중 값(판이 바뀐 응답)을 받으면 onUpdated를 한 번 — 첫 응답·같은 판이면 부르지 않고, 부른다고 /live를 다시 읽지 않는다
  *  - 숨긴 탭에서는 '한 번 더'·'다음 개장' 깨우기가 읽지 않고, 다시 보일 때 한 번(QA-154). 숨긴 탭으로 열리면 처음 보일 때 읽는다(QA-156)
  *  - 미룬 '한 번 더'를 useApi의 탭 복귀 읽기에 넘기면 그 복귀 읽기는 보통 읽기 — 응답이 새 수집을 요청했으면 20초 뒤 한 번 더(QA-157), 간격이 끄기여도(QA-159)
@@ -21,6 +22,7 @@ const signal = vi.hoisted(() => ({ token: 0, reloadAll: () => {}, notifyUnauthor
 vi.mock("@/hooks/useRefreshSignal", () => ({ useRefreshSignal: () => signal }));
 
 import { LiveValuationCard } from "@/components/screens/paper/LiveValuationCard";
+import { resetLiveSecondsForTest } from "@/hooks/useLiveSeconds";
 
 const SESSION = {
   phase: "REGULAR", sessionDate: "2026-10-30", openAtKst: "2026-10-30 22:30 KST", closeAtKst: "2026-10-31 05:00 KST",
@@ -50,7 +52,11 @@ beforeEach(() => {
   vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "setInterval", "clearInterval", "Date"] });
   vi.setSystemTime(NOW);
   window.localStorage.clear();
+  resetLiveSecondsForTest();
   api.apiGetShared.mockReset();
+  // 끄기(0)의 실시간 시세 한 번 읽기(GET /api/live/prices) — 이 시험들은 장중 저장본 읽기(/api/paper/live)만 셉니다.
+  api.apiGet.mockReset();
+  api.apiGet.mockResolvedValue({ available: false, message: "시험" });
 });
 
 afterEach(() => {
@@ -79,8 +85,12 @@ describe("정규장", () => {
     expect(within(positions).getByText("+2.44%")).toBeTruthy();
     expect(within(positions).getByText("장중 10-30 23:58")).toBeTruthy();
     expect(screen.getByText(/보유 종목 — 계좌 행을 누르면 그 계좌로 바뀝니다/)).toBeTruthy();
-    expect(screen.getByText("정규장 동안 30분마다 다시 읽습니다(이 화면을 보는 동안만).")).toBeTruthy();
-    expect(screen.queryByText(/^간격이 길면/)).toBeNull();
+    expect(screen.getByText("정규장 동안 종목 가격은 1시간마다 서버가 보내 주고(실시간 시세), 계좌 숫자는 1시간마다 다시 읽습니다(이 화면을 보는 동안만)."))
+      .toBeTruthy();
+    // 기본 1시간 — 그 사이 매시 장부 관측이 돌아 지금 값이 대개 장부 단계라는 안내(미국)
+    expect(screen.getByText(/^간격이 길면/)).toBeTruthy();
+    // 종목을 누르면 종목 상세로(사용자 요청 2026-11-03)
+    expect(within(positions).getByRole("link", { name: "AAA" }).getAttribute("href")).toBe("/s/us/AAA");
     expect(screen.getByText(/표시 전용 — 장부\(체결·순자산 줄·통계·결정\)는 이 시세를 쓰지 않음 · 계좌의 지금 값\(장중 추정\)은 이 시세로 평가한 값/))
       .toBeTruthy();
   });
@@ -123,25 +133,34 @@ describe("정규장", () => {
     await settle();
     expect(screen.getByText(/정규장 —/)).toBeTruthy();
 
-    fireEvent.change(screen.getByLabelText("장중 평가 새로고침 간격"), { target: { value: "1" } });
-    expect(window.localStorage.getItem("paper.liveRefreshMinutes")).toBe("1");
+    fireEvent.change(screen.getByLabelText("새로고침 주기"), { target: { value: "60" } });
+    expect(window.localStorage.getItem("live.priceRefreshSeconds")).toBe("60");
     await settle(60_000);
     expect(liveCalls()).toBe(2);
+    // 5초를 골라도 장중 저장본(계좌 숫자)은 1분보다 짧게 다시 읽지 않습니다 — 종목 가격만 실시간 시세
+    fireEvent.change(screen.getByLabelText("새로고침 주기"), { target: { value: "5" } });
+    expect(screen.getByText(/종목 가격은 5초마다 서버가 보내 주고\(실시간 시세\), 계좌 숫자는 1분마다 다시 읽습니다/)).toBeTruthy();
+    await settle(30_000);
+    expect(liveCalls()).toBe(2);
+    await settle(30_000);
+    expect(liveCalls()).toBe(3);
   });
 
-  it("1시간을 고르면 기억하고 한 시간마다 다시 읽는다 — 다시 열어도 1시간(저장된 60이 살아남음)", async () => {
+  it("1시간을 고르면 기억하고 한 시간마다 다시 읽는다 — 다시 열어도 1시간(저장된 3600이 살아남음)", async () => {
     api.apiGetShared.mockImplementation(() => Promise.resolve(live()));
     const { unmount } = render(<LiveValuationCard />);
     await settle();
-    const select = screen.getByLabelText("장중 평가 새로고침 간격") as HTMLSelectElement;
+    const select = screen.getByLabelText("새로고침 주기") as HTMLSelectElement;
     // 공용 고르기 상자(NativeSelect — 브라우저 화살표 대신 공용 칸 모양과 화살표 아이콘).
     expect(select.className).toContain("appearance-none");
     expect(Array.from(select.options).map((option) => option.textContent)).toEqual(
-      ["끄기", "1분", "2분", "5분", "10분", "15분", "30분", "1시간", "3시간"]);
+      ["끄기", "5초", "10초", "30초", "1분", "2분", "5분", "10분", "15분", "30분", "1시간", "3시간"]);
 
-    fireEvent.change(select, { target: { value: "60" } });
-    expect(window.localStorage.getItem("paper.liveRefreshMinutes")).toBe("60");
-    expect(screen.getByText("정규장 동안 1시간마다 다시 읽습니다(이 화면을 보는 동안만).")).toBeTruthy();
+    fireEvent.change(select, { target: { value: "1800" } });
+    fireEvent.change(select, { target: { value: "3600" } });
+    expect(window.localStorage.getItem("live.priceRefreshSeconds")).toBe("3600");
+    expect(screen.getByText("정규장 동안 종목 가격은 1시간마다 서버가 보내 주고(실시간 시세), 계좌 숫자는 1시간마다 다시 읽습니다(이 화면을 보는 동안만)."))
+      .toBeTruthy();
     // 간격이 길면 그 사이 매시 장부 관측이 이겨 지금 값이 대개 장부 단계라고 알립니다(미국만).
     expect(screen.getByText(/^간격이 길면 그 사이 매시 장부 관측이 돌아 계좌의 지금 값이 대개 '장부' 단계입니다/)).toBeTruthy();
     await settle(59 * 60_000);
@@ -152,7 +171,7 @@ describe("정규장", () => {
     unmount();
     render(<LiveValuationCard />);
     await settle();
-    expect((screen.getByLabelText("장중 평가 새로고침 간격") as HTMLSelectElement).value).toBe("60");
+    expect((screen.getByLabelText("새로고침 주기") as HTMLSelectElement).value).toBe("3600");
   });
 });
 
@@ -374,6 +393,7 @@ describe("QA-162 실패한 한 번 더 읽기가 다음 한 번 더를 삼키지
   // 표시가 남았고, 다음 응답(30분 간격 읽기·'지금 새로 읽기')이 새 수집을 요청해도 그 응답을 한 번 더의 응답으로 소모했습니다 — 카드 종목 표만 다음
   // 간격까지 옛 시각으로 남았습니다(재현 커밋에서는 it.fails).
   it("정규장 30분 — 한 번 더가 실패한 뒤 간격 읽기가 새 수집을 요청했으면 20초 뒤 한 번 더, 그 뒤 되풀이 없음", async () => {
+    window.localStorage.setItem("live.priceRefreshSeconds", "1800");
     let calls = 0;
     api.apiGetShared.mockImplementation(() => {
       calls += 1;
@@ -400,6 +420,7 @@ describe("QA-163 같은 문구로 연달아 실패해도 한 번 더 표시를 �
   // QA-162 수정은 refreshError가 바뀔 때 표시를 내렸는데, 20초 안에 다른 읽기('지금 새로 읽기'·탭 복귀·셸 새로고침)가 먼저 실패하면 refreshError가
   // 이미 차 있어 같은 문구의 한 번 더 실패가 변화로 오지 않았습니다 — 표시가 남아 다음 응답의 새 수집 요청을 소모했습니다(재현 커밋에서는 it.fails).
   it("성공 → '지금 새로 읽기' 실패 → 한 번 더도 같은 문구로 실패 → 30분 간격 읽기가 새 수집을 요청했으면 20초 뒤 한 번 더", async () => {
+    window.localStorage.setItem("live.priceRefreshSeconds", "1800");
     let calls = 0;
     api.apiGetShared.mockImplementation(() => {
       calls += 1;

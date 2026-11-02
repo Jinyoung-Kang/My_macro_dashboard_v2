@@ -1,35 +1,37 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { LiveIntervalSelect } from "@/components/LiveIntervalSelect";
 import { type Column, DataTable } from "@/components/patterns";
-import { Banner, Button, Card, NativeSelect } from "@/components/ui";
+import { Banner, Button, Card } from "@/components/ui";
 import { useApi } from "@/hooks/useApi";
+import { useLivePrices } from "@/hooks/useLivePrices";
+import { useLiveSeconds } from "@/hooks/useLiveSeconds";
 import { useTickerNames } from "@/hooks/useTickerNames";
 import { useShownOnce } from "@/hooks/useShownOnce";
 import { useVisibleWake } from "@/hooks/useVisibleWake";
 import { endpoints } from "@/lib/endpoints";
 import { deltaColor, EMPTY, formatKst } from "@/lib/format";
+import { liveKey, liveSecondsText, serverRefreshMinutes, tradedAtText } from "@/lib/livePrices";
 import type { PaperMarketCode } from "@/lib/paperMarket";
 import {
   LIVE_FOLLOW_UP_MS,
-  LIVE_REFRESH_OPTIONS,
-  LIVE_REFRESH_STORAGE_KEY,
   type LivePositionView,
   livePositionsFor,
   liveQuotesWarning,
   liveIntervalNote,
-  liveIntervalText,
   liveRefreshMs,
   liveRevision,
   liveSessionView,
   msUntilNextOpen,
-  normalizeLiveMinutes,
 } from "@/lib/paperLive";
 import type { PaperLiveResponse } from "@/lib/types";
-import { TickerName } from "./TickerName";
+import { TickerLink } from "./TickerLink";
 
 /**
- * 장중 시세(추정) 카드 — 정규장 동안 고른 계좌의 종목 장중가가 고른 간격(기본 30분)으로 움직이고, 모든 값에 기준 시각을 붙입니다. 장 상태·간격
+ * 장중 시세(추정) 카드 — 정규장 동안 고른 계좌의 종목 장중가가 고른 간격(실시간 시세 주기 — 기본 1시간, 5초~3시간, lib/livePrices)으로 움직이고,
+ * 모든 값에 기준 시각을 붙입니다. 종목 가격은 서버가 그 주기마다 밀어 주는 실시간 시세(SSE, ADR 0024)이고, 종목을 누르면 종목 상세로 갑니다
+ * (사용자 요청 2026-11-03). 계좌 숫자를 낳는 장중 저장본은 1분보다 짧게 다시 읽지 않습니다(서버 하한). 장 상태·간격
  * 선택·'지금 새로 읽기'·출처·받지 못한 종목도 여기에 둡니다. 계좌 숫자(순자산·수익률)는 이 카드에서 빼고 개요의 지금 값이 같은 장중 저장본으로
  * 맡습니다(명세 2026-10-31 §4) — 계좌 고르기도 계좌 행 한 곳입니다(`bookCode`).
  *
@@ -53,7 +55,9 @@ export function LiveValuationCard({
    */
   onUpdated?: () => void;
 }) {
-  const [minutes, setMinutes] = useLiveRefreshMinutes();
+  const [seconds] = useLiveSeconds();
+  // 장중 저장본(계좌의 지금 값)은 1분보다 짧게 다시 읽지 않습니다(서버 MAX_AGE_LIVE) — 종목 가격만 고른 주기 그대로(실시간 시세).
+  const minutes = serverRefreshMinutes(seconds);
   const [refreshMs, setRefreshMs] = useState(0);
   // 숨긴 탭으로 열렸으면 처음 보일 때까지 읽지 않습니다(QA-156) — 첫 읽기도 정규장이면 수집을 깨웁니다.
   const shown = useShownOnce();
@@ -86,6 +90,13 @@ export function LiveValuationCard({
   }, [data, minutes]);
 
   const names = useTickerNames();
+
+  // 실시간 시세(SSE) — 정규장에 고른 계좌의 종목만. 훅은 아래 이른 반환보다 먼저 불러야 합니다.
+  const tickers = useMemo(
+    () => (livePositionsFor(data, bookCode, market)?.positions ?? []).map((row) => liveKey(market, row.ticker)),
+    [data, bookCode, market],
+  );
+  const realtime = useLivePrices(tickers, seconds, Boolean(data?.available) && data?.session?.phase === "REGULAR");
 
   useEffect(() => {
     if (revision === null) return;
@@ -130,13 +141,18 @@ export function LiveValuationCard({
   if (!data?.available) return null;
 
   const session = liveSessionView(data.session, data.quotes);
-  const holdings = livePositionsFor(data, bookCode, market);
+  const holdings = livePositionsFor(data, bookCode, market, realtime.prices);
   const warning = session.live ? liveQuotesWarning(data.quotes, names) : null;
   const intervalNote = session.live ? liveIntervalNote(minutes, market) : null;
   const positionColumns: Column<LivePositionView>[] = [
-    { key: "ticker", header: "종목", rowHeader: true, cell: (row) => <TickerName code={row.ticker} />, className: "whitespace-nowrap font-semibold" },
+    { key: "ticker", header: "종목", rowHeader: true, cell: (row) => <TickerLink market={market} code={row.ticker} />, className: "whitespace-nowrap font-semibold" },
     { key: "qty", header: "수량", align: "right", cell: (row) => <span className="tabular-nums">{row.qty}</span> },
-    { key: "price", header: "가격", align: "right", cell: (row) => <span className="tabular-nums">{row.price}</span> },
+    {
+      key: "price",
+      header: "가격",
+      align: "right",
+      cell: (row) => <span className={`tabular-nums ${row.realtime ? "text-bright" : ""}`} title={row.priceTitle ?? undefined}>{row.price}</span>,
+    },
     {
       key: "at",
       header: "가격 기준",
@@ -155,21 +171,7 @@ export function LiveValuationCard({
       source={`표시 전용 — 장부(체결·순자산 줄·통계·결정)는 이 시세를 쓰지 않음 · 계좌의 지금 값(장중 추정)은 이 시세로 평가한 값 · 지금 ${formatKst(data.nowKst ?? null)}`}
       actions={
         <div className="flex flex-wrap items-center gap-2">
-          <label className="flex items-center gap-1.5 text-xs text-muted">
-            <span className="whitespace-nowrap">새로고침</span>
-            <NativeSelect
-              value={String(minutes)}
-              onChange={(event) => setMinutes(Number(event.target.value))}
-              inputSize="sm"
-              aria-label="장중 평가 새로고침 간격"
-            >
-              {LIVE_REFRESH_OPTIONS.map((option) => (
-                <option key={option.value} value={option.value}>
-                  {option.label}
-                </option>
-              ))}
-            </NativeSelect>
-          </label>
+          <LiveIntervalSelect label="새로고침" />
           <Button onClick={() => void reload()} disabled={live.loading}>
             {live.loading ? "읽는 중…" : "지금 새로 읽기"}
           </Button>
@@ -178,11 +180,15 @@ export function LiveValuationCard({
     >
       <p className="mb-3 text-xs text-muted">
         {session.live
-          ? minutes === 0
+          ? seconds === 0
             ? "자동 새로고침이 꺼져 있습니다 — '지금 새로 읽기'를 누를 때만 다시 읽습니다."
-            : `정규장 동안 ${liveIntervalText(minutes)}마다 다시 읽습니다(이 화면을 보는 동안만).`
+            : `정규장 동안 종목 가격은 ${liveSecondsText(seconds)}마다 서버가 보내 주고(실시간 시세), 계좌 숫자는 ${liveSecondsText(minutes * 60)}마다 다시 읽습니다(이 화면을 보는 동안만).`
           : "장 밖에서는 다시 읽지 않습니다 — 숫자는 아래 기준 시각의 값입니다."}
         {intervalNote && <span className="ml-1">{intervalNote}</span>}
+        {session.live && realtime.receivedAt !== null && (
+          <span className="ml-1">· 실시간 시세 받은 시각 {tradedAtText(new Date(realtime.receivedAt).toISOString())} KST</span>
+        )}
+        {session.live && realtime.error && <span className="ml-1 text-warn">· {realtime.error}</span>}
         {live.refreshError && <span className="ml-1 text-warn">· 새로 읽지 못함({live.refreshError})</span>}
       </p>
       {warning && <div className="mb-3"><Banner tone="warn">{warning}</Banner></div>}
@@ -209,24 +215,4 @@ export function LiveValuationCard({
 
 function Delta({ text, value }: { text: string; value: number | null }) {
   return <span className={`tabular-nums ${text === EMPTY ? "text-muted" : deltaColor(value)}`}>{text}</span>;
-}
-
-/** 고른 간격(분)을 이 브라우저에 기억합니다 — localStorage를 못 쓰면 이번 세션만. */
-function useLiveRefreshMinutes(): [number, (minutes: number) => void] {
-  const [minutes, setMinutes] = useState(() => {
-    try {
-      return normalizeLiveMinutes(window.localStorage.getItem(LIVE_REFRESH_STORAGE_KEY) ?? undefined);
-    } catch {
-      return normalizeLiveMinutes(undefined);
-    }
-  });
-  const update = (next: number) => {
-    setMinutes(next);
-    try {
-      window.localStorage.setItem(LIVE_REFRESH_STORAGE_KEY, String(next));
-    } catch {
-      // 기억만 못 할 뿐 이번 세션에서는 그대로 동작합니다
-    }
-  };
-  return [minutes, update];
 }

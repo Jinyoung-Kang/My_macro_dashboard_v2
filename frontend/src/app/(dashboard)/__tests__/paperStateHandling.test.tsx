@@ -313,8 +313,9 @@ describe("값을 모를 때", () => {
     const cells = within(spyRow).getAllByRole("cell").map((td) => td.textContent);
     expect(cells[2]).toBe("662.0800");   // 평단 — 주당 가격은 4자리
     expect(cells[3]).toBe(NONE);   // 가격
-    expect(cells[6]).toBe(NONE);   // 평가 손익
-    expect(cells[8]).toBe(NONE);   // 스탑 가격
+    expect(cells[4]).toBe(NONE);   // 실시간(ADR 0024 — 받은 시세가 없으면 —)
+    expect(cells[7]).toBe(NONE);   // 평가 손익
+    expect(cells[9]).toBe(NONE);   // 스탑 가격
     expect(await screen.findByText("사후 체결")).toBeTruthy();
     expect(screen.getByText("재진입 금지 종목이 없습니다.")).toBeTruthy();
     expect(screen.getByText("주문이 없습니다.")).toBeTruthy();
@@ -352,9 +353,9 @@ describe("주당 가격", () => {
     const holding = within(holdingRow).getAllByRole("cell").map((td) => td.textContent);
     expect(holding[2]).toBe("9.0045");   // 평단
     expect(holding[3]).toBe("9.1000");   // 가격
-    expect(holding[4]).toBe("910.00");   // 평가액은 총액 — 2자리
-    expect(holding[7]).toBe("9.2000");   // 최고가
-    expect(holding[8]).toBe("8.4640 · 거리 7.5%");   // 스탑 가격
+    expect(holding[5]).toBe("910.00");   // 평가액은 총액 — 2자리(4는 실시간 칸)
+    expect(holding[8]).toBe("9.2000");   // 최고가
+    expect(holding[9]).toBe("8.4640 · 거리 7.5%");   // 스탑 가격
 
     const fillRow = (await screen.findByText("paper.quotes")).closest("tr") as HTMLElement;
     const fill = within(fillRow).getAllByRole("cell").map((td) => td.textContent);

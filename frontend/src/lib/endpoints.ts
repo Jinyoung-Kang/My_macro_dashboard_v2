@@ -84,6 +84,13 @@ export const endpoints = {
     summary: "/api/detail/summary",
   },
 
+  // 화면 실시간 시세(ADR 0024) — 저장하지 않는 외부 조회. 종목은 'US:AAPL'·'KR:005930', SSE는 고른 주기(초)마다 서버가 밀어 줌
+  live: {
+    prices: (items: readonly string[]) => withQuery("/api/live/prices", { items: items.join(",") }),
+    stream: (items: readonly string[], interval: number) =>
+      withQuery("/api/live/prices/stream", { items: items.join(","), interval }),
+  },
+
   // 13F · 기관 스타일
   institution: {
     institutions: "/api/sec13f/institutions",

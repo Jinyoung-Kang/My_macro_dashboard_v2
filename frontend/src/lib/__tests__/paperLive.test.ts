@@ -1,15 +1,13 @@
 /**
  * 장중 시세 화면 자료(lib/paperLive) — 고정하는 규칙
- *  - 새로고침 간격: 선택지(끄기·1·2·5·10·15·30분·1시간·3시간) 밖의 저장 값은 기본 30분, 정규장에만 그 간격(그 밖은 0 — 다시 읽지 않음)
+ *  - 새로고침 간격(분 — 실시간 시세 주기에서 lib/livePrices serverRefreshMinutes로 셈): 정규장에만 그 간격(그 밖은 0 — 다시 읽지 않음), 긴 간격은 미국만 안내
  *  - 장 밖이면 다음 개장 + 1분에 한 번 깨어남(하루 넘게 남거나 시각을 모르면 깨지 않음)
  *  - 고른 계좌의 종목 줄(없거나 모르는 계좌면 첫 계좌, 계좌가 없으면 null) — 모든 가격에 기준 시각("장중 …"·"마지막 관측 …"), 모르는 값은 "—"
+ *  - 실시간 시세(ADR 0024)가 있는 종목은 그 가격으로 다시 셈 — 기준 시각 "실시간 HH:mm:ss", 평균 단가 대비·직전 종가 대비, 비중은 서버 값 그대로
  */
 import { describe, expect, it } from "vitest";
 import {
-  DEFAULT_LIVE_REFRESH_MINUTES,
-  LIVE_REFRESH_OPTIONS,
   liveIntervalNote,
-  liveIntervalText,
   livePositionsFor,
   livePositionView,
   liveQuotesWarning,
@@ -17,11 +15,10 @@ import {
   liveRevision,
   liveSessionView,
   msUntilNextOpen,
-  normalizeLiveMinutes,
   parseKstStamp,
 } from "../paperLive";
 import { latestObserved } from "../paperOverview";
-import type { PaperBookSummary, PaperLiveBook, PaperLiveResponse, PaperLiveSession } from "../types";
+import type { LivePrice, PaperBookSummary, PaperLiveBook, PaperLiveResponse, PaperLiveSession } from "../types";
 
 const REGULAR: PaperLiveSession = {
   phase: "REGULAR", sessionDate: "2026-10-30", openAtKst: "2026-10-30 22:30 KST", closeAtKst: "2026-10-31 05:00 KST",
@@ -44,25 +41,7 @@ function book(over: Partial<PaperLiveBook> = {}): PaperLiveBook {
 }
 
 describe("새로고침 간격", () => {
-  it("선택지에 없는 저장 값은 기본 30분(사용자 결정)", () => {
-    expect(DEFAULT_LIVE_REFRESH_MINUTES).toBe(30);
-    expect(normalizeLiveMinutes("5")).toBe(5);
-    expect(normalizeLiveMinutes("0")).toBe(0);
-    expect(normalizeLiveMinutes("3")).toBe(30);
-    expect(normalizeLiveMinutes("45")).toBe(30);
-    expect(normalizeLiveMinutes(undefined)).toBe(30);
-  });
-
-  it("1시간·3시간(사용자 결정 2026-10-31, 장중 명세 L5) — 저장된 60·180은 정규화에서 살아남고 이름은 '1시간'·'3시간'", () => {
-    expect(LIVE_REFRESH_OPTIONS.map((option) => option.value)).toEqual([0, 1, 2, 5, 10, 15, 30, 60, 180]);
-    expect(normalizeLiveMinutes("60")).toBe(60);
-    expect(normalizeLiveMinutes("180")).toBe(180);
-    expect(normalizeLiveMinutes(60)).toBe(60);
-    expect(liveIntervalText(30)).toBe("30분");
-    expect(liveIntervalText(60)).toBe("1시간");
-    expect(liveIntervalText(180)).toBe("3시간");
-    expect(liveIntervalText(45)).toBe("45분");
-    // 긴 간격(1시간 이상)은 미국만 '대개 장부 단계' 안내 — 한국은 정규장에 장부 관측이 없음
+  it("긴 간격(1시간 이상)은 미국만 '대개 장부 단계' 안내 — 한국은 정규장에 장부 관측이 없음", () => {
     expect(liveIntervalNote(60)).toMatch(/^간격이 길면 그 사이 매시 장부 관측이 돌아/);
     expect(liveIntervalNote(180, "US")).not.toBeNull();
     expect(liveIntervalNote(30)).toBeNull();
@@ -131,6 +110,22 @@ describe("종목 줄", () => {
       .toMatchObject({ price: "71,000", priceAt: "—" });
     expect(livePositionView({ ...book().positions[0], weightPct: null, returnPct: null, dayChangePct: null }))
       .toMatchObject({ weight: "—", returnText: "—", dayText: "—" });
+  });
+
+  it("실시간 시세가 있으면 그 가격으로 — 기준 시각은 실시간 거래 시각, 평균 단가·직전 종가 대비는 다시 셈, 비중은 서버 값", () => {
+    const realtime: LivePrice = {
+      market: "US", code: "AAA", price: 440, prevClose: 410, change: 30, changePct: 7.32, currency: "USD",
+      tradedAt: "2026-10-30T14:58:07Z", status: "OPEN", source: "Yahoo", overPrice: null, overSession: null,
+    };
+    const view = livePositionsFor({ available: true, books: [book()] }, "claude", "US", { "US:AAA": realtime });
+    expect(view?.positions[0]).toMatchObject({
+      price: "440.0000", priceAt: "실시간 23:58:07", live: true, realtime: true, returnText: "+10.00%", dayText: "+7.32%", weight: "42.0%",
+    });
+    expect(view?.positions[0].priceTitle).toBe("실시간 Yahoo · 거래 23:58:07 KST · 정규장");
+    expect(view?.positions[1]).toMatchObject({ realtime: false, priceTitle: null, priceAt: "마지막 관측 10-30 06:05" });
+    // 등락률이 없으면 직전 종가로 셈, 평단을 모르면 "—"
+    const noPct = livePositionView({ ...book().positions[0], avgCost: null }, "US", { ...realtime, changePct: null });
+    expect(noPct).toMatchObject({ dayText: "+7.32%", returnText: "—" });
   });
 
   it("장중 값의 판 — 수집 시각과 계좌마다 기준 시각, 쓸 수 없는 응답이면 null", () => {

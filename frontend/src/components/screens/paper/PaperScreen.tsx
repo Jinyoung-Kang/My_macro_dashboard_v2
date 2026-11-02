@@ -2,6 +2,7 @@
 
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
+import { ScrollTopButton } from "@/components/ScrollTopButton";
 import { Banner, Button, Card, ErrorState, Freshness, Loading, PageHeader, underlineTabClasses } from "@/components/ui";
 import { useApi } from "@/hooks/useApi";
 import { TickerNamesProvider } from "@/hooks/useTickerNames";
@@ -233,6 +234,8 @@ function PaperScreenBody({ initialTab, market }: { initialTab: PaperTabKey; mark
           </div>
         </>
       )}
+      {/* 맨 위로(TOP) — 사용자 요청 2026-11-03. 조금 내려가면 오른쪽 아래에 나타납니다. */}
+      <ScrollTopButton />
     </div>
   );
 }
