@@ -5,8 +5,8 @@ PostgreSQL ← 수집기(FastAPI, `collector/`). Docker Compose 네 컨테이너
 `My_macro_dashboard_v2`가 compose 프로젝트·DB 볼륨 이름을 정한다(바꾸지 말 것).
 **v2다**: 2026-10-26에 `My_macro_dashboard_v1`을 전체 이력으로 갈라낸 저장소다(갈라낸 절차는 [docs/LOCAL_SETUP.md](docs/LOCAL_SETUP.md) §0,
 결정은 [ADR 0020](docs/adr/0020-v2-program.md)). 화면 전면 개편과 한국 증시 모의 매매를 여기서 한다.
-**2026-10-29 23:17 KST부터 AWS 운영본은 이 저장소(v2)다**(서버 `~/My_macro_dashboard_v2`, 4단계 교체를 사용자 결정으로 앞당김 — 남은 작업은 끝날 때마다
-서버에 `bash ~/My_macro_dashboard_v2/scripts/aws/deploy.sh`). 서버의 v1 폴더·볼륨은 2026-10-31에 지웠다(마지막 덤프 S3 `db/v1-final-20261031.sql` — ADR 0020 결과), v1은 로컬 3001 스택으로 계속 돈다. v1·v3 폴더·볼륨·스택·원격 저장소를 건드리지 않는다
+**2026-11-03 02:30 KST부터 운영본은 Vultr 서버의 이 저장소(v2)다**(ADR 0023 컷오버 — 서버 `~/My_macro_dashboard_v2`, 남은 작업은 끝날 때마다 서버에
+`bash ~/My_macro_dashboard_v2/scripts/vultr/deploy.sh`). 그 전(2026-10-29 23:17~)의 운영본은 AWS EC2였고, 지금 AWS는 `PAPER_ENABLED=false`·정지·일정 DISABLE(한 주 되돌리기용 — 정리는 명세 §7, 사용자 '지금'). 서버의 v1 폴더·볼륨은 2026-10-31에 지웠다(마지막 덤프 S3 `db/v1-final-20261031.sql` — ADR 0020 결과), v1은 로컬 3001 스택으로 계속 돈다. v1·v3 폴더·볼륨·스택·원격 저장소를 건드리지 않는다
 (v1의 긴급 수정은 v1 세션이 하고, 필요하면 여기로 손으로 옮긴다).
 
 ## 먼저 읽을 문서
@@ -26,8 +26,8 @@ PostgreSQL ← 수집기(FastAPI, `collector/`). Docker Compose 네 컨테이너
 - 테스트: `make test` (= `test-collector` + `test-backend` + `test-frontend`). CI와 같은 명령.
 - 백업·복원: `make backup` · `make restore F=backups/….sql` (ADR 0003)
 - 코드 받기는 `make update`. `git pull`은 쓰지 않는다(다른 브랜치의 작업을 조용히 놓침).
-- AWS 개인용 서버(ADR 0019, [docs/DEVELOPMENT.md §7](docs/DEVELOPMENT.md)) — **교체(4단계, 계획서 §5) 전까지 서버는 v1을 돌린다. v2를 서버에 올리지 않는다.**
-  아래는 교체 뒤 기준이다. 화면은 PC에서 `bash scripts/aws/tunnel.sh` → http://localhost:8201,
+- AWS 개인용 서버(ADR 0019, [docs/DEVELOPMENT.md §7](docs/DEVELOPMENT.md)) — **2026-11-03 02:30 KST Vultr 컷오버로 정지**(`.env` `PAPER_ENABLED=false`, EventBridge 일정 6개 DISABLE).
+  켜지 않는다(켜도 정기 작업은 꺼져 있음). 아래는 정지 전 기준의 기록이다. 화면은 PC에서 `bash scripts/aws/tunnel.sh` → http://localhost:8201,
   셸은 SSM(`aws ssm start-session` 뒤 `sudo -iu ubuntu`). **서버에서는 `make up` 대신 `bash scripts/aws/deploy.sh`**(4 GiB — 이미지를 하나씩 빌드).
   서버는 평일 밤 미국 개장 10분 전(뉴욕 09:20 — 겨울 23:20·서머타임 22:20 KST)~07:00, 평일 낮 08:55~15:50, 일요일 밤 20:50~23:30 KST만 켜진다(EventBridge Scheduler,
   2026-11-02 — ADR 0019 결정 14). 미국 결정 06:30·백업 06:45(일 23:00)·주간 복기 일 21:00(미국)·22:00(한국). 창 밖에 보려면 `bash scripts/aws/instance.sh start`
@@ -35,11 +35,11 @@ PostgreSQL ← 수집기(FastAPI, `collector/`). Docker Compose 네 컨테이너
   계정 고유 값(인스턴스 ID·버킷 이름)은 공개 저장소에 적지 않고 로컬 `.env`·메모리에만 둔다.
   공개 주소는 CloudFront 하나(ADR 0019 결정 16): 보안 그룹 인바운드는 CloudFront 원본용 prefix list → :8301 한 줄뿐이고, caddy가 비밀 헤더를 확인한 뒤
   잠금화면(gate, `deploy/aws/gate`)을 거친 요청만 앱으로 보낸다. 그 밖의 인바운드 규칙·공인 IP 앱 포트·Tailscale은 두지 않는다(AWS 기준 — Vultr는 아래). v3의 데모 스택(portfolio-*)은 건드리지 않는다.
-- Vultr 서버(ADR 0023, [docs/DEVELOPMENT.md §8](docs/DEVELOPMENT.md), 작업 목록 [Vultr 이전 명세](docs/specs/2026-11-02-vultr-migration.md)) — **AWS와 병행 중이고
-  컷오버 전까지 운영본(모의 매매 정기 작업)은 AWS**, Vultr `.env`는 `PAPER_ENABLED=false` 고정. 24시간, 접속은 Tailscale 하나(공개 TCP 포트 0, 잠금화면 없음):
+- Vultr 서버(ADR 0023, [docs/DEVELOPMENT.md §8](docs/DEVELOPMENT.md), 작업 목록 [Vultr 이전 명세](docs/specs/2026-11-02-vultr-migration.md)) — **운영본(2026-11-03 02:30 KST 컷오버,
+  모의 매매 정기 작업은 여기 한 곳)**. 24시간, 접속은 Tailscale 하나(공개 TCP 포트 0, 잠금화면 없음):
   화면 `https://my-macro-app.<tailnet>.ts.net`, 셸 `ssh ubuntu@my-macro-app`(Tailscale SSH), 비상용 `ssh -i ~/.ssh/id_ed25519_vultr ubuntu@<서버 IP>`(22는 PC IP만).
   서버에서는 `bash scripts/vultr/deploy.sh`, PC에서 `bash scripts/vultr/instance.sh status`·PC IP가 바뀌면 `firewall-pc-ip.sh`. Vultr ID·IP·tailnet 이름은
-  `.env`·메모리에만. 컷오버(명세 §6)와 AWS 정리(§7)는 사용자가 '지금'이라고 할 때만 하고, 그 전까지 `scripts/aws`·`compose.aws.yml`·`deploy/aws`는 그대로 둔다.
+  `.env`·메모리에만. AWS 정리(명세 §7)는 사용자가 '지금'이라고 할 때만 하고, 그 전까지 `scripts/aws`·`compose.aws.yml`·`deploy/aws`는 그대로 둔다.
 - QA·실험용 별도 스택: `bash scripts/qa/qa-stack.sh up|restore F=…|down` (compose 프로젝트 `my_macrodash_v2_qa`,
   포트 13002/18082/18002/15434·프록시 18890 — v3 QA(`macrodash_qa`, 13000…)·v1 QA(`my_macrodash_qa`, 13001…)와 겹치지 않음, 새 비밀값 `.env.qa`, 외부 호출은 차단 프록시). 성능 측정: `ENV_FILE=.env.qa bash scripts/bench-api.sh`(QA 스택), `scripts/qa/k6/`.
 
@@ -54,9 +54,9 @@ PostgreSQL ← 수집기(FastAPI, `collector/`). Docker Compose 네 컨테이너
 - **새 API 경로는 `AccessPolicy` 표에 넣는다**(공개·회원·유료·운영자, ADR 0010) — 빠지면 `AccessPolicyTest`가 막는다. 사용자 정보는 `support.CurrentUser`.
   로그인은 이메일+비밀번호(DB 세션). 운영자 계정은 처음 기동 때 `.env`의 `OWNER_EMAIL`·`APP_PASSWORD`로 만든다.
   로컬 compose는 로그인 없이 이 맥에서 첫 운영자로 연다(`LOCAL_NO_LOGIN`, ADR 0016). AWS·QA 덧붙임은 `"false"` 고정(AWS 개인용 서버는 ADR 0019).
-- **모의 매매 상태는 AWS 서버(EC2 `my-macro-app`) 한 곳에만**(ADR 0019·0020) — 2026-10-29부터 서버의 v2. **이 폴더의 `.env`는 `PAPER_ENABLED=false` 고정**.
-  두 곳에서 정기 작업(리스크 점검·결정·체결)이 동시에 돌면 안 된다 — 서버에는 v2만 둔다(서버 v1은 2026-10-31에 지움 — 다시 올리지 않는다).
-  로컬 `.env`를 서버로 보낼 때는 그 줄과 포트 네 줄 등을 뺀다(`.env.aws.example`).
+- **모의 매매 상태는 Vultr 서버 한 곳에만**(ADR 0019·0020·0023) — 2026-11-03 02:30 KST부터(그 전은 AWS EC2 `my-macro-app`, 지금은 `PAPER_ENABLED=false`·정지). **이 폴더의 `.env`는 `PAPER_ENABLED=false` 고정**.
+  두 곳에서 정기 작업(리스크 점검·결정·체결)이 동시에 돌면 안 된다 — AWS를 다시 켜도 그 `.env`의 `PAPER_ENABLED=false`를 지우지 않는다(서버 v1도 다시 올리지 않는다).
+  로컬 `.env`를 서버로 보낼 때는 그 줄과 포트 네 줄 등을 빼고 서버 전용 줄(`PAPER_KR_START_DATE` 포함)을 더한다(`.env.vultr.example`).
 - 날짜는 `Kst.today()`(Java)·KST 기준. `LocalDate.now()`를 쓰지 않는다(서버 TZ는 UTC).
 - **이모지를 쓰지 않는다**(2026-10-31 사용자 지시) — 화면·코드·주석·문서·스크립트 출력·커밋 메시지 모두. 화면은 `components/ui/icons`의 SVG와 글, 스크립트는 ✓·✗와
   `경고:`·`참고:`. 예외는 Claude 프롬프트·패킷·AI 입력 원문과 그 고정본(실험 조건), 스냅숏으로 AI 입력이 되는 수집 데이터의 기존 글(기관 이름·카드 제목·'이전 값' 꼬리 등),

@@ -1,6 +1,6 @@
 # 0023. Vultr 서버로 이전 — Vultr 서울 vhf-2c-4gb 한 대를 24시간, 접속은 Tailscale 하나(공개 TCP 포트 0, 잠금화면 없음), AWS와 병행한 뒤 컷오버하고 AWS my-macro 자원은 한 주 뒤 정리
 
-- 상태: 채택 (2026-11-03). 병행 중 — 운영본(모의 매매 정기 작업)은 컷오버 전까지 AWS([ADR 0019](0019-aws-personal-deployment.md))입니다.
+- 상태: 채택 (2026-11-03). **2026-11-03 02:30 KST 컷오버 — 운영본(모의 매매 정기 작업)은 Vultr**. 그 전의 AWS([ADR 0019](0019-aws-personal-deployment.md))는 정지 상태로 한 주 둡니다.
   작업 목록은 [Vultr 이전 명세](../specs/2026-11-02-vultr-migration.md)(§8 사용자 결정 D1~D6). 포트폴리오 데모(portfolio-app·RDS·CloudFront 3개)는 AWS에 그대로 둡니다.
 - 지키는 방법:
   - CI `images` 잡의 'Vultr 덧붙임 해석' 단계: 서버 `.env`에 로컬·AWS 값이 섞인 경우를 흉내 낸 가짜 값으로 `compose.vultr.yml`을 합쳐 해석 —
@@ -77,7 +77,12 @@ ADR 0019의 AWS 서버는 가동 창(평일 밤·평일 낮·일요일 밤)만 �
 
 ## 결과와 남은 위험
 
-- (2026-11-03) 저장소 작업(명세 §3)이 main에 들어갔고, 서버 올리기(명세 §5의 4번부터, 병행 시작)는 그 뒤에 합니다. 결과는 여기에 덧붙입니다.
+- (2026-11-03 01:4x) 저장소 작업(명세 §3, main 0741f7b6) → 서버 올리기(명세 §5의 4번부터): clone·`.env`·배포 6분·AWS 백업(11-02 06:45) 복원·PC와 휴대폰에서
+  Tailscale 주소로 로그인·직접 연결·백업 `db/vultr/`·cron. 수집 첫 바퀴 55번 ok·누락 0. 토스는 AWS → Vultr → AWS로 번갈아 불러 모두 ok(401 재발급 경로).
+- (2026-11-03 02:28~02:33 KST) **컷오버 — 사용자 결정으로 D4(첫 주말 낮)보다 앞당겨 미국 장중에 함**: AWS `.env` `PAPER_ENABLED=false` → 백엔드 다시 띄움 →
+  `backup-s3.sh`(460M) → Vultr 복원 → 계좌 10개의 주문·체결·보유·최근 순자산·현금과 전체 수치(결정 24·주문 112·체결 66·작업 기록 246·실행 감사 18·저장본 104)가
+  AWS와 같음 → Vultr `.env`의 `PAPER_ENABLED=false` 삭제·`deploy.sh` → AWS EventBridge 일정 6개 DISABLE·인스턴스 정지. 미국 장중 리스크 점검은 약 3분 비었습니다.
+  대조 중 AWS `.env`에만 있던 `PAPER_KR_START_DATE`(로컬 `.env`에는 없음)를 찾아 Vultr에 더했습니다 — `.env.vultr.example`에 적음.
 - **Tailscale SSH**: 0019가 문제 삼은 부위를 켜 둡니다(`--ssh`). tailnet 사용자는 1명이고 기본 정책(모든 기기 서로 허용)입니다. 공지가 새로 나오면
   `sudo apt-get install --only-upgrade tailscale`로 올리고, 필요하면 `tailscale set --ssh=false`로 끄고 비상용 22(PC IP만)로 대신합니다.
   1.104.4가 공지 TS-2026-014~017을 고쳤는지는 Tailscale 공지 원문으로 확인하지 않았습니다.

@@ -398,6 +398,8 @@ UTC라서 `LocalDate.now()`를 그대로 쓰면 한국 시각 00:00~09:00 사이
 
 ## 9. 배포 (AWS 개인용 서버)
 
+> **2026-11-03 02:30 KST에 Vultr로 옮겼습니다**(아래 'Vultr 서버', ADR 0023). AWS는 `PAPER_ENABLED=false`·정지·일정 DISABLE 상태로 한 주 둔 뒤 정리합니다 — 이 절의 AWS 그림은 정지 전 기록입니다.
+
 모의 매매가 미국 장·결정 시각에 돌아야 해서 운영본은 AWS 서울의 EC2 한 대에 둡니다([ADR 0019](adr/0019-aws-personal-deployment.md)).
 서버는 평일 밤 미국 개장 10분 전(뉴욕 09:20)~07:00 KST, 평일 낮 08:55~15:50, 일요일 밤 20:50~23:30 KST에만 켜집니다(2026-11-02 — ADR 0019 결정 14)
 — EventBridge Scheduler가 EC2 API를 바로 부릅니다.
@@ -434,10 +436,9 @@ UTC라서 `LocalDate.now()`를 그대로 쓰면 한국 시각 00:00~09:00 사이
 - **백업**: 06:45 KST(서버가 켜진 아침 — 화~토, 미국 결정 뒤)와 일요일 23:00 KST(주간 복기 뒤)에 `scripts/aws/backup-s3.sh`가 `make backup`(ADR 0003)의 새 파일 하나를 S3로 올립니다. 버킷은 퍼블릭 차단·SSE-S3·60일 만료이고,
   서버의 IAM 역할은 그 버킷 하나에만 쓸 수 있습니다.
 
-### Vultr 서버 (AWS에서 옮기는 중, ADR 0023)
+### Vultr 서버 (운영본, 2026-11-03 02:30 KST부터 — ADR 0023)
 
-운영 서버를 Vultr 서울의 한 대(24시간)로 옮기는 중입니다([ADR 0023](adr/0023-vultr-deployment.md)). 컷오버 전까지 모의 매매 정기 작업은 위 AWS 서버에서만 돌고
-Vultr는 `PAPER_ENABLED=false`로 뜹니다. 같은 compose 스택에 덧붙임 `compose.vultr.yml`(앞단 caddy, 로그인·쿠키·출처 고정 — gate·공개 리스너 없음)을 얹습니다.
+운영 서버는 Vultr 서울의 한 대(24시간)입니다([ADR 0023](adr/0023-vultr-deployment.md)). 모의 매매 정기 작업은 여기서만 돕니다(2026-11-03 02:30 KST 컷오버). 같은 compose 스택에 덧붙임 `compose.vultr.yml`(앞단 caddy, 로그인·쿠키·출처 고정 — gate·공개 리스너 없음)을 얹습니다.
 
 ```
 [PC · 휴대폰 — 같은 tailnet]                      [PC — 비상용]

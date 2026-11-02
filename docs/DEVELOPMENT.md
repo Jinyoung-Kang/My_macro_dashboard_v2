@@ -311,6 +311,8 @@ git config credential.https://github.com.username <아이디>
 
 ## 7. AWS 개인용 서버
 
+> **2026-11-03 02:30 KST에 정지했습니다** — 운영본은 §8 Vultr 서버(ADR 0023). AWS `.env`는 `PAPER_ENABLED=false`, 켜기·끄기 일정 6개는 DISABLE, 한 주 뒤 정리(Vultr 이전 명세 §7)합니다. 아래는 정지 전 절차의 기록입니다.
+
 운영본(모의 매매가 도는 곳)은 AWS 서울의 EC2 `my-macro-app` 한 대이고, 평일 밤 미국 개장 10분 전(뉴욕 09:20 — 겨울 23:20·서머타임 22:20 KST)~07:00, 평일 낮 08:55~15:50, 일요일 밤 20:50~23:30 KST에만 켜집니다(2026-11-02 — ADR 0019 결정 14). 구성과 이유는
 [ADR 0019](adr/0019-aws-personal-deployment.md), 그림은 [ARCHITECTURE §9](ARCHITECTURE.md#9-배포-aws-개인용-서버)에 있습니다.
 셸은 SSM으로만 엽니다. 화면은 공개 주소(CloudFront + 잠금화면 — 아래 '공개 주소')나 SSM 터널로 엽니다. 아래 명령의 `<AWS_INSTANCE_ID>`·`<버킷>`은 PC `.env`의
@@ -503,8 +505,8 @@ S3 백업으로 되돌리기: `aws s3 ls s3://<버킷>/db/` → 받을 파일을
 
 ## 8. Vultr 서버
 
-AWS(§7)에서 옮기는 서버입니다 — Vultr 서울 `my-macro-app`(vhf-2c-4gb, 24시간). 구성과 이유는 [ADR 0023](adr/0023-vultr-deployment.md), 작업 목록과 사용자 결정은
-[Vultr 이전 명세](specs/2026-11-02-vultr-migration.md)에 있습니다. **컷오버 전까지 모의 매매 운영본은 AWS**이고 Vultr `.env`는 `PAPER_ENABLED=false`입니다.
+운영본입니다(2026-11-03 02:30 KST에 AWS(§7)에서 옮김) — Vultr 서울 `my-macro-app`(vhf-2c-4gb, 24시간). 구성과 이유는 [ADR 0023](adr/0023-vultr-deployment.md), 작업 목록과 사용자 결정은
+[Vultr 이전 명세](specs/2026-11-02-vultr-migration.md)에 있습니다. 모의 매매 정기 작업은 이 서버 한 곳에서만 돕니다(로컬 `.env`는 `PAPER_ENABLED=false`).
 아래의 `<tailnet>`·`<서버 IP>`·`<버킷>`은 계정 고유 값입니다 — PC `.env`의 `TAILNET_DOMAIN`·`VULTR_SERVER_IP`, 서버 `.env`의 `AWS_BACKUP_BUCKET`.
 
 ### 접속 (Tailscale)
@@ -531,12 +533,14 @@ GitHub 읽기 전용 배포 키(서버 ubuntu `~/.ssh/id_ed25519_github`, `~/.ss
 ```bash
 # PC — 걸러 낸 사본을 만들어 Tailscale SSH의 stdin으로 보내고(처음부터 600 — 서버에서 파일이 잠깐이라도 남에게 읽히지 않게) 지웁니다. <버킷>은 AWS 서버 .env와 같은 값
 tmp="$(mktemp)" && grep -Ev '^[[:space:]]*(export[[:space:]]+)?(DATABASE_PORT|BACKEND_PORT|COLLECTOR_PORT|FRONTEND_PORT|COOKIE_SECURE|LOCAL_NO_LOGIN|FRONTEND_ORIGIN|PUBLIC_URL|AWS_INSTANCE_ID|PAPER_ENABLED|ORIGIN_SECRET|GATE_[A-Z_]*|VULTR_[A-Z_]*|TAILSCALE_[A-Z_]*|TAILNET_DOMAIN)=' .env > "$tmp" \
-  && printf '\nCOMPOSE_FILE=docker-compose.yml:compose.vultr.yml\nAWS_BACKUP_BUCKET=%s\nPUBLIC_ORIGIN=https://my-macro-app.%s\nPAPER_ENABLED=false\n' "<버킷>" "$(grep '^TAILNET_DOMAIN=' .env | cut -d= -f2-)" >> "$tmp" \
+  && printf '\nCOMPOSE_FILE=docker-compose.yml:compose.vultr.yml\nAWS_BACKUP_BUCKET=%s\nPUBLIC_ORIGIN=https://my-macro-app.%s\nPAPER_KR_START_DATE=2026-10-30\n' "<버킷>" "$(grep '^TAILNET_DOMAIN=' .env | cut -d= -f2-)" >> "$tmp" \
   && ssh ubuntu@my-macro-app 'umask 077 && cat > My_macro_dashboard_v2/.env && chmod 600 My_macro_dashboard_v2/.env' < "$tmp"; rm -f "$tmp"
 ```
 
 - 로컬 `.env` 끝 줄에 줄바꿈이 없을 수 있어 덧붙이는 줄은 `\n`으로 시작합니다.
-- 다시 전달하면 서버 `.env`를 통째로 덮어씁니다. 서버에만 적은 줄(`COOKIE_SECURE=false` 등)은 다시 덧붙입니다. 컷오버 뒤에는 `PAPER_ENABLED=false`를 덧붙이지 않습니다.
+- 로컬 `.env`의 `PAPER_ENABLED=false`는 거르고 다시 넣지 않습니다(서버는 비우면 켜짐). `PAPER_KR_START_DATE`는 로컬 `.env`에 없어 덧붙입니다(한국 출발일 —
+  빠지면 한국 초기화·출발이 막힘).
+- 다시 전달하면 서버 `.env`를 통째로 덮어씁니다. 서버에만 적은 줄(`COOKIE_SECURE=false` 등)은 다시 덧붙입니다.
 
 ### 배포
 
@@ -560,7 +564,7 @@ journalctl -t my-macro-backup --since yesterday       # 결과(실패는 err)
 
 올라가는 곳은 같은 버킷의 `db/vultr/`(60일 만료는 버킷 전체 수명주기)입니다. 서버의 IAM 사용자는 `db/vultr/`에만 쓰고 `db/`는 읽기만 합니다.
 
-### 날마다 볼 것 (병행 기간)
+### 날마다 볼 것
 
 백엔드 ERROR(`make logs S=backend`), 수집 누락(`make status`), 메모리(`free -h`)·디스크(`deploy.sh` 끝, 128 GB), 백업(`journalctl -t my-macro-backup`),
-`tailscale status`에서 PC·휴대폰과 직접 연결인지(relay가 아님). 컷오버(명세 §6)와 AWS 정리(§7)는 사용자가 정할 때만 합니다.
+`tailscale status`에서 PC·휴대폰과 직접 연결인지(relay가 아님). AWS 정리(명세 §7)는 사용자가 정할 때만 합니다.

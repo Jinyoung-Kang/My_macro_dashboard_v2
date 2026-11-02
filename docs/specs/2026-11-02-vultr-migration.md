@@ -90,6 +90,8 @@ PC → 서버 전달은 `scp`(Tailscale SSH 또는 `-i ~/.ssh/id_ed25519_vultr`)
 
 ## 6. 컷오버(단계 C — 사용자가 "지금"이라고 할 때, 모의 매매 정기 작업이 없는 시간)
 
+> 2026-11-03 02:30 KST 끝 — 사용자가 '지금 바로'(미국 장중)를 골라 D4보다 앞당김. 결과는 [ADR 0023](../adr/0023-vultr-deployment.md) 결과 절.
+
 1. AWS 서버 켜기(꺼져 있으면 `instance.sh start`) → AWS `.env`에 `PAPER_ENABLED=false` 넣고 `deploy.sh`(정기 작업 멈춤 확인: 새 risk 행이 안 생김) → `make backup` → S3.
 2. Vultr: 그 덤프 `make restore` → 행 수·계좌별 순자산이 AWS와 같은지 → Vultr `.env`에서 `PAPER_ENABLED=false` 줄 삭제 → `deploy.sh` → 첫 risk 행·다음 결정 시각(미국 06:30·한국 checkpoint)·텔레그램 알림이 Vultr에서 나오는지.
 3. AWS: EventBridge 일정 6개 DISABLE(다시 켜지지 않게), 인스턴스 정지. 한 주 되돌리기용으로 둔다(EBS·EIP 약 $1.5/주).

@@ -4,7 +4,7 @@
 SEC 13F · 국내 수급을 **한 화면에서** 보는 개인용 대시보드입니다. 운영자 전용
 모의 알고리즘 매매도 들어 있습니다 — 미국(규칙·Claude 계좌1·SPY·60/40 네 계좌 + 체결 시점 실험 Claude 계좌2 — 장중 확인 최대 한 번(MINUTE·HOURLY), $100k씩)과 한국(규칙·Claude·KODEX 200·60/40 네 계좌,
 1억 원씩 — 출발일 `PAPER_KR_START_DATE`를 정하면 출발, 서버 출발은 v2 4단계 교체 뒤).
-맥에서 Docker 한 줄로 띄우고, 모의 매매가 도는 운영본은 AWS의 개인용 서버(EC2 한 대, 평일 밤 미국 개장 10분 전~07:00 · 평일 낮 08:55~15:50 · 일요일 밤 20:50~23:30 KST)에 둡니다.
+맥에서 Docker 한 줄로 띄우고, 모의 매매가 도는 운영본은 Vultr 서울의 서버 한 대(24시간, 접속은 Tailscale)에 둡니다(2026-11-03 02:30 KST에 AWS EC2에서 옮김 — ADR 0023).
 
 > 이 저장소(`My_macro_dashboard_v2`)는 2026-10-26에 `My_macro_dashboard_v1`에서 전체 이력으로 갈라져 나왔습니다 — 화면 전면 개편과
 > 한국 증시 모의 매매를 여기서 합니다([v2 프로그램 계획서](docs/specs/2026-10-26-v2-program-plan.md)). **교체 전까지 AWS 운영본은 v1**이고,
@@ -336,6 +336,8 @@ make test-frontend     # 자가검증 + 훅 테스트(vitest) + 린트 + 빌드(
 
 ### AWS 개인용 서버
 
+> **2026-11-03 02:30 KST에 정지했습니다** — 운영본은 아래 'Vultr 서버'(ADR 0023). `.env`는 `PAPER_ENABLED=false`, 켜기·끄기 일정은 DISABLE, 한 주 뒤 정리합니다. 이 절은 정지 전 기록입니다.
+
 모의 매매를 돌리려고 AWS 서울의 EC2 한 대(`my-macro-app`, t4g.medium ARM · 4 GiB)에 올립니다. DB는 로컬과 같은
 Postgres 컨테이너입니다. 서버는 **평일 밤 미국 개장 10분 전(뉴욕 09:20 — 겨울 23:20·서머타임 22:20 KST)~07:00, 평일 낮 08:55~15:50, 일요일 밤 20:50~23:30 KST에만 켜집니다**(EventBridge Scheduler, 2026-11-02 —
 ADR 0019 결정 14) — 미국 장·마지막 지연 봉·06:30 미국 결정·06:45 백업(일요일은 23:00 한 번 더)·한국 장중·한국 결정 창·일요일 밤 주간 복기(미국 21:00·한국 22:00)가 이 안에 있습니다. 사용자는 1명(운영자)입니다. 화면은 **공개 주소**(CloudFront `https://dXXXX.cloudfront.net` —
@@ -373,10 +375,10 @@ bash ~/My_macro_dashboard_v2/scripts/aws/deploy.sh   # main 받기 → 이미지
 - v3에서 옮겨 온 공개 데모 배포(RDS·CloudFront·데모 열람, [ADR 0012](docs/adr/0012-aws-demo-deployment.md)~[0014](docs/adr/0014-aws-demo-ai-report.md))는
   이 저장소에서 쓰지 않습니다.
 
-### Vultr 서버 (AWS에서 옮기는 중)
+### Vultr 서버 (운영본, 2026-11-03 02:30 KST부터)
 
-운영 서버를 Vultr 서울의 한 대(`my-macro-app`, vhf-2c-4gb · 2 vCPU · 4 GB, 24시간, 월 $24)로 옮기고 있습니다([ADR 0023](docs/adr/0023-vultr-deployment.md)).
-지금은 AWS와 **병행** 중이라 모의 매매 정기 작업은 AWS에서만 돌고, Vultr `.env`는 `PAPER_ENABLED=false`입니다. 컷오버 뒤 AWS의 my-macro 자원은 정리합니다.
+운영 서버는 Vultr 서울의 한 대(`my-macro-app`, vhf-2c-4gb · 2 vCPU · 4 GB, 24시간, 월 $24)입니다([ADR 0023](docs/adr/0023-vultr-deployment.md)).
+2026-11-03 02:30 KST에 AWS에서 옮겼고(컷오버), 모의 매매 정기 작업은 여기서만 돕니다. 위 AWS 서버는 정지 상태로 한 주 두었다가 정리합니다.
 
 - 접속은 **Tailscale 하나**입니다. 서버·PC·휴대폰이 같은 tailnet에 있고 화면은 `https://my-macro-app.<tailnet>.ts.net`(Tailscale이 받는 인증서) — 서버의
   `tailscale serve`가 루프백의 caddy(`127.0.0.1:8201`)로 넘깁니다. 공개 인터넷에 열린 TCP 포트·잠금화면은 없고, 로그인은 그대로입니다.
@@ -389,7 +391,7 @@ ssh ubuntu@my-macro-app                    # 서버 셸(Tailscale SSH) — 그 �
 ```
 
 - 서버 `.env`는 로컬 `.env`에서 포트 네 줄·`COOKIE_SECURE`·`LOCAL_NO_LOGIN`·`FRONTEND_ORIGIN`·`PUBLIC_URL`·`AWS_INSTANCE_ID`·`VULTR_*`·`TAILSCALE_*`·`TAILNET_DOMAIN`을 빼고
-  `COMPOSE_FILE`·`AWS_BACKUP_BUCKET`·`PUBLIC_ORIGIN`(Tailscale 주소)·병행 기간의 `PAPER_ENABLED=false`를 더한 것입니다([.env.vultr.example](.env.vultr.example)).
+  `COMPOSE_FILE`·`AWS_BACKUP_BUCKET`·`PUBLIC_ORIGIN`(Tailscale 주소)·`PAPER_KR_START_DATE`(한국 출발일)를 더한 것입니다([.env.vultr.example](.env.vultr.example)).
   PC의 `.env`에는 `VULTR_API_KEY`·`VULTR_INSTANCE_ID`·`VULTR_SERVER_IP`·`VULTR_FIREWALL_GROUP_ID`·`TAILSCALE_AUTH_KEY`·`TAILNET_DOMAIN`을 더합니다.
 - DB는 AWS와 같은 시각(06:45 KST·일 23:00 KST)에 같은 S3 버킷의 `db/vultr/`로 백업합니다(`scripts/vultr/backup-s3.sh`, cron).
 - 서버 만들기·`.env` 전달·배포·백업 절차는 [docs/DEVELOPMENT.md §8](docs/DEVELOPMENT.md#8-vultr-서버)에 있습니다.
