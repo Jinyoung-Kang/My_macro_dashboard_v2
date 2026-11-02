@@ -45,3 +45,7 @@ f841596142ddde11e49e1869d989ad9b31664d20:.github/workflows/ci.yml:generic-api-ke
 # 그 커밋은 아직 main에 없는 브랜치 claude/us-claude2-2026-10에만 있지만, CI checkout(fetch-depth 0)이 원격 브랜치를 모두 받고 gitleaks가 모든 참조를 보므로 main에도 둔다.
 0965e0b16233394a8cd44a06e5f043563e289c04:frontend/src/lib/paper.ts:generic-api-key:506
 0965e0b16233394a8cd44a06e5f043563e289c04:frontend/src/lib/paper.ts:generic-api-key:507
+
+# 65d62543: CI 'Vultr 덧붙임 해석' 단계의 가짜 GATE_SECRET(ci-gate-secret-…) — 위 f8415961(AWS 단계)과 같은 시험 값을 옮긴 것으로, 서버 .env에
+# 섞여 들어온 AWS 값을 Vultr 덧붙임이 읽지 않는지 보려고 둔다. 로컬 .env 값과 대조해 일치 0건(2026-11-03).
+65d62543dc861063e00de28235d38b03bcbca601:.github/workflows/ci.yml:generic-api-key:286
