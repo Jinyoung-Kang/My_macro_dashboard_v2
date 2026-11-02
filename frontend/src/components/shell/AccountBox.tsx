@@ -6,7 +6,7 @@ import { useState } from "react";
 import { buttonClasses } from "@/components/ui";
 import { AlertTriangleIcon, StatusText } from "@/components/ui/icons";
 import { auth } from "@/lib/api";
-import { DEMO_READ_ONLY, LOCAL_NO_LOGIN, accountInitial, isDemo, isLocalOwner, roleLabel } from "@/lib/access";
+import { DEMO_READ_ONLY, accountInitial, isDemo, isLocalOwner, noLoginName, roleLabel } from "@/lib/access";
 import type { SessionUser } from "@/lib/types";
 
 // 계정 행(내 계정 링크) — 누르는 것이라 좁은 화면(더보기 화면 — 손가락)에서 높이 44px 이상. 원 안 글자는 이메일 첫 글자(장식).
@@ -71,7 +71,7 @@ export function AccountBox({ user }: { user?: SessionUser }) {
   }
 
   if (user && isLocalOwner(user)) {
-    return <AccountRow user={user} name={LOCAL_NO_LOGIN} />;
+    return <AccountRow user={user} name={noLoginName(user)} />;
   }
 
   return (

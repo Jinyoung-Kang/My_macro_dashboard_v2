@@ -7,7 +7,7 @@ import { StatusDot } from "@/components/ui/icons";
 import { useApi } from "@/hooks/useApi";
 import { useAsyncAction } from "@/hooks/useAsyncAction";
 import { useSessionUser } from "@/hooks/useSessionUser";
-import { LOCAL_NO_LOGIN, isDemo, isLocalOwner, roleLabel } from "@/lib/access";
+import { isDemo, isLocalOwner, noLoginName, roleLabel } from "@/lib/access";
 import { auth } from "@/lib/api";
 import { endpoints } from "@/lib/endpoints";
 import { formatKst } from "@/lib/format";
@@ -67,7 +67,9 @@ export default function AccountPage() {
 
       {local && (
         <Banner tone="info">
-          {LOCAL_NO_LOGIN} — 이 컴퓨터(localhost)에서 연 로컬 실행이라 로그인 없이 이 운영자 계정으로 열렸습니다.
+          {noLoginName(user)} — {user?.tailnet
+            ? "Tailscale 계정(운영자로 정한 사용자)으로 연 서버 화면이라"
+            : "이 컴퓨터(localhost)에서 연 로컬 실행이라"} 로그인 없이 이 운영자 계정으로 열렸습니다.
           로그인 세션이 없어 로그아웃·로그인한 기기 목록이 없습니다.
         </Banner>
       )}

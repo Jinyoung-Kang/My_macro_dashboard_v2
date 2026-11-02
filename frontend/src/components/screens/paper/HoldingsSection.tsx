@@ -12,7 +12,7 @@ import { useLiveSeconds } from "@/hooks/useLiveSeconds";
 import { apiPost } from "@/lib/api";
 import { endpoints } from "@/lib/endpoints";
 import { deltaColor, EMPTY, formatKst, formatNumber, formatPercent, formatWithUnit } from "@/lib/format";
-import { liveKey, livePriceTitle, liveSecondsText, returnVsCost, tradedAtText } from "@/lib/livePrices";
+import { liveKey, livePriceTitle, liveSecondsText, liveShown, returnVsCost, tradedAtText } from "@/lib/livePrices";
 import {
   type Badge,
   bookCard,
@@ -76,7 +76,7 @@ import type {
   PaperStatusResponse,
   LivePrice,
 } from "@/lib/types";
-import { TickerLink } from "./TickerLink";
+import { TickerQuickView } from "./TickerQuickView";
 import { TickerName } from "./TickerName";
 
 /** 주문·체결 표에 보일 최근 건수. 서버 상한은 500입니다. */
@@ -94,7 +94,7 @@ const POSITION_COLUMNS: readonly Column<PaperPosition>[] = [
     sortValue: (row) => row.ticker,
     cell: (row) => (
       <span className="flex flex-wrap items-center gap-1">
-        <span className="font-semibold text-bright"><TickerLink market="US" code={row.ticker}>{row.ticker}</TickerLink></span>
+        <span className="font-semibold text-bright"><TickerQuickView market="US" code={row.ticker}>{row.ticker}</TickerQuickView></span>
         <Badges badges={positionBadges(row)} />
       </span>
     ),
@@ -141,13 +141,14 @@ function liveColumn(prices: Readonly<Record<string, LivePrice>>, market: PaperMa
     cell: (row) => {
       const live = prices[liveKey(market, row.ticker)];
       if (!live) return EMPTY;
-      const pct = returnVsCost(live.price, row.avgCost);
+      const shown = liveShown(live);
+      const pct = returnVsCost(shown.price, row.avgCost);
       return (
         <span className="inline-flex flex-col items-end" title={livePriceTitle(live, price)}>
-          <span className="tabular-nums text-bright">{price(live.price)}</span>
+          <span className="tabular-nums text-bright">{price(shown.price)}</span>
           <span className="whitespace-nowrap text-xs tabular-nums">
             <span className={pct === null ? "text-muted" : deltaColor(pct)}>{formatPercent(pct)}</span>
-            <span className="text-muted"> · {tradedAtText(live.tradedAt)}</span>
+            <span className="text-muted"> · {shown.session ? `${shown.session} ` : ""}{tradedAtText(shown.tradedAt)}</span>
           </span>
         </span>
       );
@@ -403,7 +404,7 @@ const KR_POSITION_COLUMNS: readonly Column<PaperPosition>[] = [
     sortValue: (row) => row.ticker,
     cell: (row) => (
       <span className="flex flex-wrap items-center gap-1">
-        <span className="font-semibold text-bright"><TickerLink market="KR" code={row.ticker} /></span>
+        <span className="font-semibold text-bright"><TickerQuickView market="KR" code={row.ticker} /></span>
         <Badges badges={krPositionBadges(row)} />
       </span>
     ),

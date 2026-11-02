@@ -4,6 +4,8 @@
  * 숫자·서식은 lib/paper.ts의 bookCard·statCells·sampleNote를 그대로 씁니다 — 카드에 있던 칸을 행·표로 옮길 뿐, 새 숫자를 만들지 않습니다.
  * 개요 응답에 없는 값(예: 출발 이후 변화 금액)은 계산해 넣지 않습니다.
  */
+import type { RealtimeNav } from "./paperLive";
+import { tradedAtText } from "./livePrices";
 import { deltaColor, EMPTY, formatKst, formatNumber, formatPercent, formatWithUnit } from "./format";
 import { accountProfile, benchmarkLabel, bookCard, isTimedBook, type NavSeriesLine, primaryClaudeBook, statCells } from "./paper";
 import type { LineRow, LineSeriesSpec, ScrubEstimate } from "./lineChart";
@@ -327,6 +329,7 @@ export function overviewHeroModel(
   code: string,
   navWindow: PaperOverviewResponse["navSeries"],
   market: PaperMarketCode = "US",
+  realtime: RealtimeNav | null = null,
 ): OverviewHeroModel | null {
   const book = (overview.books ?? []).find((entry) => entry.code === code);
   if (!book) return null;
@@ -336,17 +339,20 @@ export function overviewHeroModel(
   const stale = bookStale(book, context, "hero");
   const view = currentView(book, { market, session });
   const digits = market === "KR" ? 0 : 2;
-  const valueText = formatNumber(view.nav, digits);
+  // 실시간 순자산(같은 계좌일 때만 — 장중 카드가 실시간 시세로 다시 셈, lib/paperLive realtimeBookNav). 표시 전용 추정이고 장부는 그대로.
+  const live = realtime && realtime.code === code ? realtime : null;
+  const valueText = formatNumber(live ? live.nav : view.nav, digits);
+  const day = view.day?.text ? view.day : null;
   return {
     code,
     name: book.label,
     label: `${book.label} 순자산`,
     valueText: valueText === EMPTY ? null : valueText,
     unit: marketMeta(market).unitLabel,
-    returnPct: view.returnPct,
-    day: view.day?.text ? view.day : null,
-    stageLabel: view.stageLabel,
-    isEstimated: view.isEstimated,
+    returnPct: live ? live.returnPct : view.returnPct,
+    day: live && day && live.dayChangePct !== null ? { ...day, pct: live.dayChangePct } : day,
+    stageLabel: live ? `실시간 추정 ${tradedAtText(live.at)} · 실시간 가격 ${live.priced}/${live.total}종목` : view.stageLabel,
+    isEstimated: live ? true : view.isEstimated,
     note: view.note ?? (view.notes.length > 0 ? view.notes.join(" · ") : null),
     nowText: `지금 값 ${valueText === EMPTY ? EMPTY : `${valueText} ${marketMeta(market).unitLabel}`}`,
     isStale: stale.isStale,

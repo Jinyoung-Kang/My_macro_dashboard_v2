@@ -8,9 +8,9 @@
  * 시세(SSE — 고른 주기, ADR 0024)를 얹습니다. 모르는 값은 "—"(0으로 채우지 않음)이고 모든 수익률에 기준 시각을 붙입니다.
  */
 import { EMPTY, formatKst, formatNumber, formatPercent } from "./format";
-import { livePriceTitle, returnVsCost, tradedAtText } from "./livePrices";
+import { livePriceTitle, liveShown, returnVsCost, tradedAtText } from "./livePrices";
 import { formatSharePriceFor, type PaperMarketCode, tickerName } from "./paperMarket";
-import type { LivePrice, PaperLivePosition, PaperLiveQuotes, PaperLiveResponse, PaperLiveSession } from "./types";
+import type { LivePrice, PaperLiveBook, PaperLivePosition, PaperLiveQuotes, PaperLiveResponse, PaperLiveSession } from "./types";
 
 /** 서버가 새 시세를 요청한 응답 뒤 한 번 더 읽기까지 — 수집(보유 수십 종목)이 끝날 만한 시간. */
 export const LIVE_FOLLOW_UP_MS = 20_000;
@@ -140,14 +140,16 @@ export function livePositionView(position: PaperLivePosition, market: PaperMarke
   const live = position.priceBasis === "LIVE";
   const weight = position.weightPct === null ? EMPTY : `${formatNumber(position.weightPct, 1)}%`;
   if (realtime && realtime.price > 0) {
-    const returnPct = returnVsCost(realtime.price, position.avgCost);
-    const dayChangePct = realtime.changePct
-      ?? (position.previousClose ? (realtime.price / position.previousClose - 1) * 100 : null);
+    // 프리장·애프터장이 열려 있으면 그 가격(lib/livePrices liveShown)
+    const shown = liveShown(realtime);
+    const returnPct = returnVsCost(shown.price, position.avgCost);
+    const dayChangePct = shown.changePct
+      ?? (position.previousClose ? (shown.price / position.previousClose - 1) * 100 : null);
     return {
       ticker: position.ticker,
       qty: formatNumber(position.qty, 0),
-      price: formatSharePriceFor(realtime.price, market),
-      priceAt: `실시간 ${tradedAtText(realtime.tradedAt)}`,
+      price: formatSharePriceFor(shown.price, market),
+      priceAt: `${shown.session ?? "실시간"} ${tradedAtText(shown.tradedAt)}`,
       live: true,
       realtime: true,
       priceTitle: livePriceTitle(realtime, (value) => formatSharePriceFor(value, market)),
@@ -195,4 +197,53 @@ export function liveQuotesWarning(quotes: PaperLiveQuotes | null | undefined,
   const shown = missing.slice(0, 5).map((code) => tickerName(code, names));
   const list = `${shown.join(", ")}${missing.length > 5 ? ` 외 ${missing.length - 5}` : ""}`;
   return `장중 시세를 받지 못한 종목: ${list} — 마지막 관측 가격으로 평가`;
+}
+
+/** 실시간 시세로 다시 센 계좌의 순자산(표시 전용 추정 — 개요 히어로). */
+export interface RealtimeNav {
+  code: string;
+  nav: number;
+  /** 출발 대비 %(출발 현금을 모르면 null) */
+  returnPct: number | null;
+  /** 앞의 마지막 순자산 줄 대비 %(그 줄을 모르면 null) */
+  dayChangePct: number | null;
+  /** 실시간 가격 가운데 가장 늦은 거래 시각(ISO) — 모르면 null */
+  at: string | null;
+  /** 실시간 가격으로 센 종목 수 / 보유 종목 수 */
+  priced: number;
+  total: number;
+}
+
+/**
+ * 계좌의 순자산을 실시간 시세로 다시 셉니다(사용자 결정 2026-11-03 — 개요 '계좌 순자산'이 고른 주기로 움직임): 현금 + 보유 수량 × 가격(실시간 —
+ * 프리장·애프터장이 열려 있으면 그 가격, 없으면 서버 장중 평가의 가격). 실시간 가격이 하나도 없거나, 현금·어느 보유의 가격도 모르면 null(지어내지
+ * 않음). 장부의 확정 순자산과 별개인 표시 전용 추정입니다.
+ */
+export function realtimeBookNav(book: PaperLiveBook | null | undefined, market: PaperMarketCode,
+  realtime: Readonly<Record<string, LivePrice>>): RealtimeNav | null {
+  if (!book || book.cash === null) return null;
+  let nav = book.cash;
+  let priced = 0;
+  let at: string | null = null;
+  for (const position of book.positions) {
+    const live = realtime[`${market}:${position.ticker.toUpperCase()}`];
+    const shown = live && live.price > 0 ? liveShown(live) : null;
+    const price = shown?.price ?? position.price;
+    if (price === null || price === undefined) return null;
+    nav += position.qty * price;
+    if (shown) {
+      priced += 1;
+      if (shown.tradedAt && (at === null || shown.tradedAt > at)) at = shown.tradedAt;
+    }
+  }
+  if (priced === 0) return null;
+  return {
+    code: book.code,
+    nav,
+    returnPct: book.initialCash ? (nav / book.initialCash - 1) * 100 : null,
+    dayChangePct: book.previousNav ? (nav / book.previousNav - 1) * 100 : null,
+    at,
+    priced,
+    total: book.positions.length,
+  };
 }

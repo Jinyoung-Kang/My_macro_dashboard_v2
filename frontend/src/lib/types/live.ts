@@ -14,8 +14,11 @@ export interface LivePrice {
   status: LiveMarketStatus | null;
   /** "Yahoo"·"네이버"·"다음"·"토스 1분봉" */
   source: string;
-  /** 시간 외(국내 NXT·미국 프리·애프터)가 열려 있을 때 그 가격 */
+  /** 시간 외(국내 NXT 장 전·장 후, 미국 프리·애프터)가 열려 있을 때 그 가격·전일 대비·거래 시각·구분(PRE_MARKET·AFTER_MARKET) */
   overPrice: number | null;
+  overChange: number | null;
+  overChangePct: number | null;
+  overTradedAt: string | null;
   overSession: string | null;
 }
 

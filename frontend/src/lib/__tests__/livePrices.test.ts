@@ -4,6 +4,7 @@
  *  - 새 키가 없으면 예전 장중 카드의 분 단위 값을 옮겨 읽음(고른 값을 잃지 않게)
  *  - 장중 저장본은 1분보다 짧게 다시 읽지 않음, 끄기는 0
  *  - 거래 시각은 KST 초까지, 장 상태·출처 설명, 평균 단가 대비 %
+ *  - 시간 외(프리장·애프터장, 국내 NXT)가 열려 있으면 그 가격·전일 대비·거래 시각을 보임(사용자 요청 2026-11-03)
  */
 import { describe, expect, it } from "vitest";
 import {
@@ -12,6 +13,7 @@ import {
   liveKey,
   livePriceTitle,
   liveSecondsText,
+  liveShown,
   liveStatusText,
   normalizeLiveSeconds,
   returnVsCost,
@@ -64,7 +66,8 @@ describe("주기", () => {
 describe("표시", () => {
   const price: LivePrice = {
     market: "KR", code: "005930", price: 230000, prevClose: 225000, change: 5000, changePct: 2.22, currency: "KRW",
-    tradedAt: "2026-11-03T01:15:02Z", status: "POST", source: "네이버", overPrice: 230500, overSession: "AFTER_MARKET",
+    tradedAt: "2026-11-03T01:15:02Z", status: "POST", source: "네이버", overPrice: 230500, overChange: 5500, overChangePct: 2.44,
+    overTradedAt: "2026-11-03T10:59:58Z", overSession: "AFTER_MARKET",
   };
 
   it("종목 열쇠는 서버 응답과 같은 'US:AAPL'·'KR:005930'", () => {
@@ -83,7 +86,15 @@ describe("표시", () => {
     expect(liveStatusText("PRE")).toBe("시간 외(장 전)");
     expect(liveStatusText(null)).toBe("");
     expect(livePriceTitle(price, (value) => value.toLocaleString("en-US"))).toBe(
-      "실시간 네이버 · 거래 10:15:02 KST · 시간 외(장 후) · 시간 외 230,500");
+      "실시간 네이버 · 거래 19:59:58 KST · 애프터장(NXT) · 정규장 종가 230,000");
+  });
+
+  it("시간 외가 열려 있으면 그 가격·전일 대비·거래 시각과 이름(국내는 NXT), 정규장·시간 외 가격이 없으면 정규장 값", () => {
+    expect(liveShown(price)).toEqual({ price: 230500, change: 5500, changePct: 2.44, tradedAt: "2026-11-03T10:59:58Z", session: "애프터장(NXT)" });
+    const us = { ...price, market: "US" as const, status: "PRE" as const, overPrice: 338.01, overChange: -0.31, overChangePct: -0.09 };
+    expect(liveShown(us).session).toBe("프리장");
+    expect(liveShown({ ...price, status: "OPEN" })).toMatchObject({ price: 230000, change: 5000, session: null });
+    expect(liveShown({ ...price, overPrice: null })).toMatchObject({ price: 230000, session: null });
   });
 
   it("평균 단가 대비 % — 가격·평단 중 하나라도 모르면 null", () => {

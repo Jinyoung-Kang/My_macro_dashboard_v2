@@ -582,4 +582,14 @@ describe("오늘 추정 꼬리(장중 명세 §4 '순자산 곡선 꼬리')", ()
     expect(overviewHeroModel(overview, "claude", NAV_WINDOW)?.chart.estimate).toBeNull();
     expect(overviewHeroModel({ ...overview, navEstimate: undefined }, "rules", NAV_WINDOW)?.chart.estimate).toBeNull();
   });
+
+  it("실시간 순자산(사용자 결정 2026-11-03)이 같은 계좌면 큰 숫자·출발 이후·변화를 그 값으로 — '실시간 추정'과 실시간 가격 수, 다른 계좌면 무시", () => {
+    const overview = { books, pendingBackfill: [], quotes: null, liveSession: REGULAR, navEstimate: ESTIMATE };
+    const realtime = { code: "rules", nav: 101_500.5, returnPct: 1.5, dayChangePct: 0.3, at: "2026-10-30T14:58:07Z", priced: 2, total: 3 };
+    const hero = overviewHeroModel(overview, "rules", NAV_WINDOW, "US", realtime);
+    expect(hero).toMatchObject({ valueText: "101,500.50", returnPct: 1.5, isEstimated: true,
+      stageLabel: "실시간 추정 23:58:07 · 실시간 가격 2/3종목" });
+    expect(hero?.day === null || hero?.day?.pct === 0.3).toBe(true);
+    expect(overviewHeroModel(overview, "claude", NAV_WINDOW, "US", realtime)?.stageLabel ?? "").not.toMatch(/^실시간 추정/);
+  });
 });

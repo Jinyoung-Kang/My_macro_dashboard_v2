@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { accountInitial, isDemo, isLocalOwner, isNoLogin, lockedFor, roleLabel, visibleMenus } from "../access";
+import { accountInitial, isDemo, isLocalOwner, isNoLogin, lockedFor, noLoginName, roleLabel, visibleMenus } from "../access";
 
 const MENUS = [{ href: "/macro" }, { href: "/status" }, { href: "/regime" }, { href: "/connections" }];
 
@@ -130,6 +130,9 @@ describe("로그인 없는 로컬 실행(ADR 0016)", () => {
     expect(isLocalOwner({ email: null, role: "MEMBER", tier: "PRO", demo: true, local: false })).toBe(false);
     expect(isLocalOwner(undefined)).toBe(false);
     expect(isLocalOwner(null)).toBe(false);
+    // Tailscale 신원으로 연 운영자(ADR 0023)는 이름만 다름
+    expect(noLoginName({ email: "o@x", role: "OWNER", tier: "PRO", local: true, tailnet: true })).toBe("Tailscale · 로그인 없음");
+    expect(noLoginName({ email: "o@x", role: "OWNER", tier: "PRO", local: true })).toBe("로컬 · 로그인 없음");
   });
 
   it("로컬 운영자는 운영자 메뉴를 전부 보고, 이름은 지금처럼 '운영자'", () => {

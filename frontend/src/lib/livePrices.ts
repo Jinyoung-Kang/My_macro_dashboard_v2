@@ -87,10 +87,11 @@ export function liveStatusText(status: LiveMarketStatus | null | undefined): str
 
 /** 가격 칸의 설명(title) — 출처 · 거래 시각 KST · 장 상태 · 시간 외 가격. */
 export function livePriceTitle(price: LivePrice, formatPrice: (value: number) => string): string {
-  const parts = [`실시간 ${price.source}`, `거래 ${tradedAtText(price.tradedAt)} KST`];
-  const status = liveStatusText(price.status);
+  const shown = liveShown(price);
+  const parts = [`실시간 ${price.source}`, `거래 ${tradedAtText(shown.tradedAt)} KST`];
+  const status = shown.session ?? liveStatusText(price.status);
   if (status) parts.push(status);
-  if (price.overPrice !== null) parts.push(`시간 외 ${formatPrice(price.overPrice)}`);
+  if (shown.session) parts.push(`정규장 종가 ${formatPrice(price.price)}`);
   return parts.join(" · ");
 }
 
@@ -98,4 +99,32 @@ export function livePriceTitle(price: LivePrice, formatPrice: (value: number) =>
 export function returnVsCost(price: number | null | undefined, avgCost: number | null | undefined): number | null {
   if (price === null || price === undefined || !avgCost) return null;
   return (price / avgCost - 1) * 100;
+}
+
+/** 화면에 보일 값 — 시간 외가 열려 있으면 그 가격·전일 대비·거래 시각과 이름, 아니면 정규장 값. */
+export interface LiveShown {
+  price: number;
+  change: number | null;
+  changePct: number | null;
+  tradedAt: string | null;
+  /** "프리장"·"애프터장"(국내는 "(NXT)"를 붙임), 정규장·마감이면 null */
+  session: string | null;
+}
+
+/**
+ * 실시간 값에서 화면에 보일 가격(사용자 요청 2026-11-03 — 프리장·애프터장 가격을 받을 수 있으면 보임). 장 상태가 PRE·POST이고 시간 외 가격이 있으면
+ * 그 값을, 아니면 정규장 값을 씁니다. 장부·체결은 이 값을 쓰지 않습니다.
+ */
+export function liveShown(price: LivePrice): LiveShown {
+  if ((price.status === "PRE" || price.status === "POST") && price.overPrice !== null && price.overPrice !== undefined) {
+    const name = price.status === "PRE" ? "프리장" : "애프터장";
+    return {
+      price: price.overPrice,
+      change: price.overChange ?? null,
+      changePct: price.overChangePct ?? null,
+      tradedAt: price.overTradedAt ?? price.tradedAt,
+      session: price.market === "KR" ? `${name}(NXT)` : name,
+    };
+  }
+  return { price: price.price, change: price.change, changePct: price.changePct, tradedAt: price.tradedAt, session: null };
 }

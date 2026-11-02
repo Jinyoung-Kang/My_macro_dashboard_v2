@@ -89,8 +89,11 @@ describe("정규장", () => {
       .toBeTruthy();
     // 기본 1시간 — 그 사이 매시 장부 관측이 돌아 지금 값이 대개 장부 단계라는 안내(미국)
     expect(screen.getByText(/^간격이 길면/)).toBeTruthy();
-    // 종목을 누르면 종목 상세로(사용자 요청 2026-11-03)
-    expect(within(positions).getByRole("link", { name: "AAA" }).getAttribute("href")).toBe("/s/us/AAA");
+    // 종목을 누르면 화면 안 팝업 창(사용자 결정 2026-11-03) — 창 안에 상세 화면 링크
+    fireEvent.click(within(positions).getByRole("button", { name: "AAA" }));
+    await settle();
+    const dialog = screen.getByRole("dialog", { name: "AAA" });
+    expect(within(dialog).getByRole("link", { name: "상세 화면 열기" }).getAttribute("href")).toBe("/s/us/AAA");
     expect(screen.getByText(/표시 전용 — 장부\(체결·순자산 줄·통계·결정\)는 이 시세를 쓰지 않음 · 계좌의 지금 값\(장중 추정\)은 이 시세로 평가한 값/))
       .toBeTruthy();
   });

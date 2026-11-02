@@ -1,5 +1,6 @@
 "use client";
 
+import { LiveIntervalSelect } from "@/components/LiveIntervalSelect";
 import { LineChart } from "@/components/charts";
 import { ChangeChip, EstimateBadge, Hero, ProvenanceBadge, RangeTabs, StaleBadge } from "@/components/patterns";
 import { NativeSelect } from "@/components/ui";
@@ -18,6 +19,7 @@ import { HERO_NAV_KEY, NAV_RANGES, type NavRangeKey, type OverviewHeroModel } fr
  *   카드와 같은 기간 상태입니다(그 카드의 탭은 없음 — aria-label '순자산 곡선 기간'은 이 탭). 고를 기간이 '전체' 하나뿐이면 탭을 그리지 않습니다.
  * - 오늘 추정 점이 있으면(개요 `navEstimate`) 마지막 줄 → 그 점의 점선 꼬리 — 문지르면 '추정 HH:MM'(현금뿐 계좌는 '장부', 장중 명세 §4).
  * - 문지르는 동안 큰 숫자는 그 점의 값이고, 단계 표기·추정 배지·서버 글은 지금 값의 것이라 앞에 '지금 값 …'을 붙입니다(배지는 그대로 보임 — A3).
+ * - 제목 줄 오른쪽에 실시간 주기 고르기(사용자 요청 2026-11-03 — 장중 카드·보유 표와 같은 값, 그 주기로 순자산을 실시간 시세로 다시 셈 — '실시간 추정').
  * - 제목 줄 오른쪽의 고르기 상자로 계좌를 바꿉니다(사용자 요청 2026-11-02 — 계좌 행을 눌러 고르는 것과 같은 상태, 계좌가 둘 이상일 때만). 계좌를
  *   바꿔도 이 컴포넌트를 다시 마운트하지 않아(고르기 상자가 초점을 잃지 않음) 문지르기 상태는 계좌 코드로 지웁니다(`useChartScrub`의 scope).
  * - 그리기만 합니다 — 값·글은 lib, 문지르기 상태는 `hooks/useChartScrub`.
@@ -105,21 +107,25 @@ export function OverviewHero({
       }
       tabsPlacement="below"
       actions={
-        onPick && accounts.length > 1 ? (
-          <NativeSelect
-            value={model.code}
-            onChange={(event) => onPick(event.target.value)}
-            inputSize="sm"
-            aria-label="순자산을 볼 계좌"
-            wrapperClassName="inline-block max-w-full"
-          >
-            {accounts.map((account) => (
-              <option key={account.code} value={account.code}>
-                {account.label}
-              </option>
-            ))}
-          </NativeSelect>
-        ) : undefined
+        <span className="flex flex-wrap items-center justify-end gap-2">
+          {onPick && accounts.length > 1 ? (
+            <NativeSelect
+              value={model.code}
+              onChange={(event) => onPick(event.target.value)}
+              inputSize="sm"
+              aria-label="순자산을 볼 계좌"
+              wrapperClassName="inline-block max-w-full"
+            >
+              {accounts.map((account) => (
+                <option key={account.code} value={account.code}>
+                  {account.label}
+                </option>
+              ))}
+            </NativeSelect>
+          ) : null}
+          {/* 실시간 주기(사용자 요청 2026-11-03) — 장중 카드·보유 표와 같은 값. 그 주기로 순자산이 실시간 시세로 다시 셈해집니다. */}
+          <LiveIntervalSelect label="새로고침" />
+        </span>
       }
       scrub={scrub}
     >

@@ -16,6 +16,7 @@ import {
   liveSessionView,
   msUntilNextOpen,
   parseKstStamp,
+  realtimeBookNav,
 } from "../paperLive";
 import { latestObserved } from "../paperOverview";
 import type { LivePrice, PaperBookSummary, PaperLiveBook, PaperLiveResponse, PaperLiveSession } from "../types";
@@ -115,7 +116,8 @@ describe("종목 줄", () => {
   it("실시간 시세가 있으면 그 가격으로 — 기준 시각은 실시간 거래 시각, 평균 단가·직전 종가 대비는 다시 셈, 비중은 서버 값", () => {
     const realtime: LivePrice = {
       market: "US", code: "AAA", price: 440, prevClose: 410, change: 30, changePct: 7.32, currency: "USD",
-      tradedAt: "2026-10-30T14:58:07Z", status: "OPEN", source: "Yahoo", overPrice: null, overSession: null,
+      tradedAt: "2026-10-30T14:58:07Z", status: "OPEN", source: "Yahoo", overPrice: null, overChange: null, overChangePct: null,
+      overTradedAt: null, overSession: null,
     };
     const view = livePositionsFor({ available: true, books: [book()] }, "claude", "US", { "US:AAA": realtime });
     expect(view?.positions[0]).toMatchObject({
@@ -126,6 +128,11 @@ describe("종목 줄", () => {
     // 등락률이 없으면 직전 종가로 셈, 평단을 모르면 "—"
     const noPct = livePositionView({ ...book().positions[0], avgCost: null }, "US", { ...realtime, changePct: null });
     expect(noPct).toMatchObject({ dayText: "+7.32%", returnText: "—" });
+    // 애프터장이 열려 있으면 그 가격과 이름(사용자 요청 2026-11-03)
+    const after = livePositionView(book().positions[0], "US", {
+      ...realtime, status: "POST", overPrice: 450, overChange: 10, overChangePct: 2.27, overTradedAt: "2026-10-30T21:10:00Z", overSession: "AFTER_MARKET",
+    });
+    expect(after).toMatchObject({ price: "450.0000", priceAt: "애프터장 06:10:00", dayText: "+2.27%", returnText: "+12.50%" });
   });
 
   it("장중 값의 판 — 수집 시각과 계좌마다 기준 시각, 쓸 수 없는 응답이면 null", () => {
@@ -154,5 +161,32 @@ describe("종목 줄", () => {
     const summary = (stamp: string | null) => ({ lastObservedAtKst: stamp }) as PaperBookSummary;
     expect(latestObserved([summary("2026-10-30 06:05 KST"), summary("2026-10-30 06:15 KST"), summary(null)])).toBe("2026-10-30 06:15");
     expect(latestObserved([summary(null)])).toBeNull();
+  });
+});
+
+describe("실시간 순자산(개요 히어로 — 사용자 결정 2026-11-03)", () => {
+  const live = (code: string, price: number, extra: Partial<LivePrice> = {}): LivePrice => ({
+    market: "US", code, price, prevClose: null, change: null, changePct: null, currency: "USD", tradedAt: "2026-10-30T14:58:07Z",
+    status: "OPEN", source: "네이버", overPrice: null, overChange: null, overChangePct: null, overTradedAt: null, overSession: null, ...extra,
+  });
+
+  it("현금 + 보유 수량 × 가격(실시간이 있으면 그 가격, 없으면 서버 장중 가격) — 출발·앞 줄 대비 %와 실시간 가격 수", () => {
+    // book(): 현금 10,000, AAA 100주(서버 420), BBB 200주(서버 240), 출발 100,000, 앞 줄 99,000
+    const nav = realtimeBookNav(book(), "US", { "US:AAA": live("AAA", 430) });
+    expect(nav).toMatchObject({ code: "claude", nav: 10_000 + 100 * 430 + 200 * 240, priced: 1, total: 2, at: "2026-10-30T14:58:07Z" });
+    expect(nav?.returnPct).toBeCloseTo((101_000 / 100_000 - 1) * 100);
+    expect(nav?.dayChangePct).toBeCloseTo((101_000 / 99_000 - 1) * 100);
+  });
+
+  it("애프터장이 열려 있으면 그 가격, 실시간 가격이 하나도 없거나 현금·가격을 모르면 null(지어내지 않음)", () => {
+    const after = realtimeBookNav(book(), "US", { "US:AAA": live("AAA", 430, { status: "POST", overPrice: 440, overTradedAt: "2026-10-30T21:10:00Z" }) });
+    expect(after?.nav).toBe(10_000 + 100 * 440 + 200 * 240);
+    expect(after?.at).toBe("2026-10-30T21:10:00Z");
+    expect(realtimeBookNav(book(), "US", {})).toBeNull();
+    expect(realtimeBookNav({ ...book(), cash: null }, "US", { "US:AAA": live("AAA", 430) })).toBeNull();
+    const unknown = book();
+    unknown.positions[1] = { ...unknown.positions[1], price: null };
+    expect(realtimeBookNav(unknown, "US", { "US:AAA": live("AAA", 430) })).toBeNull();
+    expect(realtimeBookNav(null, "US", { "US:AAA": live("AAA", 430) })).toBeNull();
   });
 });

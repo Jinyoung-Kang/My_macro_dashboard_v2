@@ -90,6 +90,7 @@ import { ExecutionExperimentCard } from "./ExecutionExperimentCard";
 import { GateIndicatorBody } from "./GateIndicatorBody";
 import { KrCollectionCard } from "./KrCollectionCard";
 import { KrStartSection } from "./KrStartSection";
+import type { RealtimeNav } from "@/lib/paperLive";
 import { LiveValuationCard } from "./LiveValuationCard";
 import { OverviewHero } from "./OverviewHero";
 
@@ -165,6 +166,8 @@ export function OverviewSection({
   // 히어로에 그릴 계좌 — 계좌 행을 누르거나 히어로의 고르기 상자로 고르면 그 계좌(상세를 닫아도·개요를 다시 읽어도 남음, 목록에서 사라지면
   // 기본 Claude 계좌 — lib heroBookCode).
   const [heroPick, setHeroPick] = useState<string | null>(null);
+  // 히어로 계좌의 실시간 순자산(장중 카드가 실시간 시세로 다시 셈 — 사용자 결정 2026-11-03). 표시 전용이고 장부·계좌 행은 그대로.
+  const [realtimeNav, setRealtimeNav] = useState<RealtimeNav | null>(null);
   // 패널을 열면 초점을 패널 제목으로 옮깁니다 — 화면만 패널로 내려가고 초점이 행 단추에 남으면 다음 Tab이 다른 행 단추를 돌며
   // 화면을 다시 끌어올리고, Esc(패널 안에서만 들음)도 듣지 않았습니다. 닫으면 closeAccount가 그 행 단추로 돌려보냅니다.
   // 패널은 계좌 목록 맨 아래에 열립니다 — 연 패널이 보이도록 가까운 쪽으로만 스크롤하고,
@@ -213,7 +216,7 @@ export function OverviewSection({
   const range = allowedRangeKey(navRange, NAV_RANGES, navRanges) ?? "all";
   const navWindow = navSeriesWindow(overview.navSeries, range);
   // 히어로는 시작한 장부(초기화 뒤)에 계좌가 있을 때만 — 장중 시세 카드와 같은 조건. 없으면 기간 알약은 '순자산 곡선' 카드에 둡니다.
-  const hero = overview.initialized !== false && heroCode ? overviewHeroModel(overview, heroCode, navWindow, market) : null;
+  const hero = overview.initialized !== false && heroCode ? overviewHeroModel(overview, heroCode, navWindow, market, realtimeNav) : null;
   const rangeLabel = NAV_RANGES.find((entry) => entry.key === range)?.label ?? "전체";
   const accounts = navChart(navWindow, books);
   // 한국은 노출 맞춘 참고선(K40 — 계산만, 계좌 아님)을 같은 축의 긴 점선 계열로 더합니다(출발 전·F2 전 서버면 계열 없음).
@@ -440,7 +443,7 @@ export function OverviewSection({
       {/* 장중 시세(표시 전용 추정) — 장 상태·간격·출처와 히어로 계좌의 종목 장중가(계좌 고르기는 계좌 행 한 곳). 새 장중 값을 받으면 개요를
           한 번 다시 읽습니다(onChanged — 히어로·계좌 행의 지금 값은 서버가 같은 장중 저장본을 합친 값). */}
       {overview.initialized !== false && books.length > 0 && (
-        <LiveValuationCard market={market} bookCode={heroCode} onUpdated={onChanged} />
+        <LiveValuationCard market={market} bookCode={heroCode} onUpdated={onChanged} onRealtime={setRealtimeNav} />
       )}
 
       <Card

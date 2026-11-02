@@ -14,6 +14,11 @@ export interface SessionUser {
    * 풀린 사용자. 세션이 없어 로그아웃·로그인한 기기 목록이 없습니다. 없으면(AWS·이전 백엔드) 계정 세션입니다.
    */
   local?: boolean;
+  /**
+   * Tailscale 신원으로 로그인 없이 연 운영자(ADR 0023 — Vultr 서버, Tailscale Serve가 붙인 사용자 신원이 운영자로 정한 사용자). local도 true이고,
+   * 셸·내 계정은 'Tailscale · 로그인 없음'으로 적습니다.
+   */
+  tailnet?: boolean;
 }
 
 export interface SessionResponse {
@@ -23,8 +28,8 @@ export interface SessionResponse {
   readMode?: string;
   user?: SessionUser;
   /**
-   * 로그인 없이 여는 로컬 실행인가(ADR 0016). true일 때만 로그인 화면으로 보내지 않습니다 — 없거나 false면
-   * 지금처럼 로그인(AWS 웹 데모·QA 스택은 false, 이전 백엔드는 보내지 않음).
+   * 로그인 없이 여는 로컬 실행인가(ADR 0016) — 또는 Tailscale 신원으로 연 요청(ADR 0023). true일 때만 로그인 화면으로 보내지 않습니다 —
+   * 없거나 false면 지금처럼 로그인(AWS 웹 데모·QA 스택은 false, 이전 백엔드는 보내지 않음).
    */
   noLogin?: boolean;
   /** 로그인 없이 열려는데 운영자 계정이 아직 없음 — noLogin이고 localhost 요청일 때만 true. */

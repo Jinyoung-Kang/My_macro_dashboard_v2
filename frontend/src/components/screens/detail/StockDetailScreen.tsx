@@ -1,21 +1,16 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo } from "react";
 import { LiveIntervalSelect } from "@/components/LiveIntervalSelect";
 import { ProvenanceBadge, Skeleton } from "@/components/patterns";
 import { Banner, Card, PageHeader } from "@/components/ui";
 import { useApi } from "@/hooks/useApi";
-import { useLivePrices } from "@/hooks/useLivePrices";
-import { useLiveSeconds } from "@/hooks/useLiveSeconds";
 import {
-  chartSymbol,
   countryKo,
   currencyUnit,
   externalLinks,
   holderQuery,
   institutionHref,
-  kindText,
   marketStateText,
   priceDigits,
   recommendationText,
@@ -24,9 +19,10 @@ import {
 } from "@/lib/detail";
 import { endpoints } from "@/lib/endpoints";
 import { EMPTY, formatKst, formatNumber, formatUsd, withoutLeadingIcon } from "@/lib/format";
-import { liveKey, liveStatusText, tradedAtText } from "@/lib/livePrices";
-import type { DetailMarket, DetailQuote, DetailQuoteResponse, GuruHoldersResponse } from "@/lib/types";
+import { liveStatusText, tradedAtText } from "@/lib/livePrices";
+import type { DetailMarket, DetailQuote, GuruHoldersResponse } from "@/lib/types";
 import { AiSummaryCard, ExternalAnchor, ExternalLinksCard, KeyStats, NewsCard, PriceHero, statRows } from "./DetailParts";
+import { useStockQuote } from "./useStockQuote";
 
 /** 13F 보유 기관 표에 보이는 줄 수. */
 const HOLDERS_SHOWN = 10;
@@ -42,19 +38,7 @@ const HOLDERS_SHOWN = 10;
  *   (사용자 요청 2026-11-03 — 모의 매매에서 종목을 누르면 이 화면). 지표·개요는 위 시세 응답 그대로.
  */
 export function StockDetailScreen({ market, code }: { market: DetailMarket; code: string }) {
-  const quoteState = useApi<DetailQuoteResponse>(endpoints.detail.quote(market, code));
-  const quote = quoteState.data?.quote ?? null;
-  const [liveSeconds] = useLiveSeconds();
-  const liveItems = useMemo(() => [liveKey(market === "kr" ? "KR" : "US", code)], [market, code]);
-  const realtime = useLivePrices(liveItems, liveSeconds, Boolean(quoteState.data?.available));
-  const live = realtime.prices[liveItems[0]] ?? null;
-  const price = live?.price ?? quote?.price ?? null;
-  const name = quote?.nameKo ?? quote?.name ?? code;
-  const symbol = chartSymbol(market, code, quote);
-  const digits = priceDigits(quote?.price, quote?.currency);
-  // 한글 이름이 있으면(미국 주식 — 네이버 해외주식) 제목은 한글, 영문 이름은 보조 줄에.
-  const sub = [quote?.nameKo && quote?.name ? quote.name : null, code, quote?.exchange, kindText(quote?.kind), quote?.currency]
-    .filter(Boolean).join(" · ");
+  const { quoteState, quote, realtime, live, shown, price, change, changePct, name, symbol, digits, sub } = useStockQuote(market, code);
   const holders = market === "us" && (quote?.kind ?? "").toUpperCase() === "EQUITY" ? holderQuery(quote?.name) : null;
 
   let placeholder;
@@ -75,8 +59,8 @@ export function StockDetailScreen({ market, code }: { market: DetailMarket; code
         label={`${name} 시세`}
         valueText={price !== null ? formatNumber(price, digits) : null}
         unit={currencyUnit(quote?.currency)}
-        change={live ? live.change : quote?.change ?? null}
-        changePct={live ? live.changePct : quote?.changePct ?? null}
+        change={change}
+        changePct={changePct}
         changeDigits={digits}
         valueDigits={digits}
         symbol={symbol}
@@ -84,9 +68,10 @@ export function StockDetailScreen({ market, code }: { market: DetailMarket; code
         meta={
           quote ? (
             <>
-              {live ? (
+              {live && shown ? (
                 <span className="text-xs text-text-2" title={`출처 ${live.source}`}>
-                  실시간 {tradedAtText(live.tradedAt)} KST{liveStatusText(live.status) ? ` · ${liveStatusText(live.status)}` : ""} · {live.source}
+                  {shown.session ?? "실시간"} {tradedAtText(shown.tradedAt)} KST
+                  {!shown.session && liveStatusText(live.status) ? ` · ${liveStatusText(live.status)}` : ""} · {live.source}
                 </span>
               ) : marketStateText(quote.marketState) ? <span className="text-xs text-text-2">{marketStateText(quote.marketState)}</span> : null}
               <LiveIntervalSelect />

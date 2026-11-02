@@ -73,6 +73,14 @@ export function isLocalOwner(user: SessionUser | null | undefined): boolean {
 /** 로그인 없이 연 로컬 운영자를 셸 계정 영역·내 계정에 적는 이름. */
 export const LOCAL_NO_LOGIN = "로컬 · 로그인 없음";
 
+/** Tailscale 신원으로 로그인 없이 연 운영자(ADR 0023)를 적는 이름. */
+export const TAILNET_NO_LOGIN = "Tailscale · 로그인 없음";
+
+/** 로그인 없이 연 운영자의 이름 — Tailscale 신원이면 그쪽, 아니면 로컬. */
+export function noLoginName(user: SessionUser | null | undefined): string {
+  return user?.tailnet === true ? TAILNET_NO_LOGIN : LOCAL_NO_LOGIN;
+}
+
 /** 셸 계정 행의 원 안 글자 — 이메일 첫 글자(대문자). 이메일이 없으면(데모 열람·사용자 모름) null — 빈 원을 두지 않습니다. */
 export function accountInitial(user: SessionUser | null | undefined): string | null {
   const first = Array.from(user?.email?.trim() ?? "")[0];
