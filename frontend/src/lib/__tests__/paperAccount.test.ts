@@ -94,6 +94,19 @@ describe("계좌 정의", () => {
     expect(sell).toContain("스탑이 늦거나");
   });
 
+  // 한국 다섯 계좌는 출발일 토스 종가로 사후 체결해 다시 출발했다(사용자 결정 2026-11-02 — StartCloseRestart 토스 출처). 수정 전 문장은 'S+1 시가 출발,
+  // 사후 체결 없음'(네 계좌)·'금융위 확정 종가로 사후 체결'(계좌2)이었다.
+  it("한국 계좌의 '시작·출발일'은 출발일 토스증권 종가 사후 체결을 말한다 — 금융위 확정 종가·S+1 시가 출발이라 적지 않음", () => {
+    for (const code of ["kr_rules", "kr_claude", "kr_claude2", "kr_bench_k200", "kr_bench_mix"]) {
+      const start = accountProfile(code)?.definitions.find((d) => d.key === "start")?.text ?? "";
+      expect(start).toContain("토스증권 종가");
+      expect(start).toContain("사후 체결");
+      expect(start).toContain("금융위 확정 조정을 하지 않아 토스 종가 그대로");
+      expect(start).not.toContain("금융위 확정 종가");
+      expect(start).not.toMatch(/S\+1 시가에 함께 출발합니다/);
+    }
+  });
+
   it("규칙·Claude 계좌는 결정 계좌의 규칙을, 벤치마크는 '결정을 내지 않음'을 말한다", () => {
     expect(accountProfile("rules")?.definitions.find((d) => d.key === "buy")?.text).toContain("재선정일");
     expect(accountProfile("claude")?.definitions.find((d) => d.key === "buy")?.text).toContain("검증기");
