@@ -5,10 +5,11 @@ tests/test_kr_paper_timed.py
 고정하는 규칙
   1. 범위는 계좌2의 매시·종가 대기 주문(종목, 기준 거래일) — 목표 세션 E = 다음 KR 거래일, E 15:40 KST 전에는 부르지 않는다.
   2. 저장본 = 세션 → 종목 → 창(라벨 hh:01~hh:05)·창 뒤 첫 거래 봉·마감 봉(15:30·15:31·16:30·16:31 있는 것만), 봉이 없으면 NO_BARS.
-  3. OK·NO_BARS는 다시 받지 않고, 실패(FAILED)는 다음 주기에 그 종목만 다시. 16:36부터 거슬러 쪽을 넘기고 E 10:00 전에 닿으면 멈춘다.
+  3. OK·NO_BARS는 다시 받지 않고, 실패(FAILED)는 다음 주기에 그 종목만 다시. 16:36부터 거슬러 쪽을 넘기고 E 09:01 봉에 닿으면 멈춘다.
   4. 받을 것이 없으면 EmptyResult(저장본 그대로).
   5. 계좌·시점 글자는 백엔드 PaperBooks와 같다.
   6. 장중 시장가(MARKET — 단계 2b) 대기 주문은 그 기준 분 T(생성 + 60초를 분으로 올림, KST)의 창을 같은 모양으로 더한다.
+  7. 실행 감사(단계 2c): 개장 창 09:00을 늘 싣고, 한국 Claude 계좌1·2의 최근 결정 주문도 장부 몫 뒤에 받으며, 받은 칸에 필요한 창 키가 없으면 다시 받는다.
 """
 from __future__ import annotations
 
@@ -79,9 +80,10 @@ def toss(monkeypatch):
     return fake
 
 
-def _orders(monkeypatch, rows, market=()):
+def _orders(monkeypatch, rows, market=(), audit=()):
     monkeypatch.setattr(kr_paper_timed.store, "kr_timed_orders", lambda books, timings: list(rows))
     monkeypatch.setattr(kr_paper_timed.store, "kr_market_orders", lambda books: list(market))
+    monkeypatch.setattr(kr_paper_timed.store, "kr_audit_orders", lambda books, days: list(audit))
 
 
 def _payload(store):
@@ -102,6 +104,8 @@ def test_목표_세션의_창_창_뒤_첫_거래_봉_마감_봉을_저장한다(
     assert entry["windows"]["10:00"][0]["volume"] == 0
     assert entry["firstAfter"]["10:00"]["label"] == "10:02"                  # 10:01은 거래량 0
     assert entry["windows"]["15:00"][0] == {"label": "15:01", "open": 71_501.0, "volume": 100}
+    assert [b["label"] for b in entry["windows"]["09:00"]] == ["09:01", "09:02", "09:03", "09:04", "09:05"], "개장 창(시가 반사실)"
+    assert entry["firstAfter"]["09:00"]["label"] == "09:01"
     assert entry["closes"]["15:31"] == {"close": 71_500.0, "volume": 100}
     assert set(entry["closes"]) == {"15:30", "15:31", "16:30", "16:31"}
     assert [before for _, before in toss.calls] == [f"{E}T16:36:00+09:00", f"{E}T13:17:00+09:00", f"{E}T09:58:00+09:00"][:len(toss.calls)]
@@ -188,3 +192,97 @@ def test_장중_시장가_범위는_그_계좌의_대기_MARKET_주문만_읽는
     rows = kr_paper_timed.store.kr_market_orders(kr_paper_timed.KR_TIMED_BOOKS)
     assert [(ticker, as_of) for ticker, as_of, _ in rows] == [("005930", date(2026, 11, 2))]
     assert rows[0][2].tzinfo is not None
+
+
+def test_실행_감사_주문도_장부_몫_뒤에_받는다(store, toss, monkeypatch):
+    # 계좌1 시가 주문(000660)과 계좌2 체결된 장중 시장가(035720) — 장부 몫(005930)을 먼저 부르고, 감사 MARKET 주문의 기준 분 창도 싣는다.
+    created = datetime(2026, 11, 3, 13, 14, 30, tzinfo=KST)
+    _orders(monkeypatch, [("005930", date(2026, 11, 2))],
+            audit=[("000660", date(2026, 11, 2), "NEXT_OPEN", datetime(2026, 11, 2, 22, 31, tzinfo=KST)),
+                   ("035720", date(2026, 11, 2), "MARKET", created),
+                   ("005930", date(2026, 11, 2), "AT_1100", datetime(2026, 11, 2, 22, 31, tzinfo=KST))])
+    for code in ("005930", "000660", "035720"):
+        toss.pages[(code, E)] = _session(E)
+
+    detail = tasks.task_kr_paper_timed()
+
+    order = []
+    for symbol, _ in toss.calls:
+        if symbol not in order:
+            order.append(symbol)
+    assert order == ["005930", "000660", "035720"], "장부 몫 먼저, 같은 종목·세션은 한 번"
+    sessions = _payload(store)["sessions"][E]
+    assert set(sessions) == {"005930", "000660", "035720"}
+    assert [b["label"] for b in sessions["035720"]["windows"]["13:16"]] == ["13:17", "13:18", "13:19", "13:20", "13:21"]
+    assert "13:16" not in sessions["000660"]["windows"]
+    assert detail.startswith("3/3")
+
+
+def test_예산이_모자라면_실행_감사_몫이_다음_주기로_밀린다(store, toss, monkeypatch):
+    monkeypatch.setattr(kr_paper_timed, "KR_TIMED_CALL_BUDGET", 3)
+    _orders(monkeypatch, [("005930", date(2026, 11, 2))],
+            audit=[("000660", date(2026, 11, 2), "NEXT_OPEN", datetime(2026, 11, 2, 22, 31, tzinfo=KST))])
+    for code in ("005930", "000660"):
+        toss.pages[(code, E)] = _session(E)
+
+    detail = tasks.task_kr_paper_timed()
+
+    assert {symbol for symbol, _ in toss.calls} == {"005930"}
+    assert "000660" not in _payload(store)["sessions"][E]
+    assert "예산" in detail
+
+    monkeypatch.setattr(kr_paper_timed, "KR_TIMED_CALL_BUDGET", 60)
+    tasks.task_kr_paper_timed()
+    assert _payload(store)["sessions"][E]["000660"]["status"] == "OK"
+
+
+def test_받은_칸에_필요한_창_키가_없으면_그_칸만_다시_받는다(store, toss, monkeypatch):
+    # 2c 전에 받은 칸(개장 창 09:00 없음)은 감사 주문이 있으면 한 번 다시 받고, 키가 다 있는 칸은 그대로 둔다.
+    old = {"status": "OK", "reason": None, "fetchedAt": "2026-11-03T14:30:00+00:00",
+           "windows": {f"{hour}:00": [] for hour in range(10, 16)}, "firstAfter": {}, "closes": {}}
+    full = dict(old, windows={key: [] for key in kr_paper_timed.window_keys()})
+    store.put_snapshot(catalog.SNAP_KR_PAPER_TIMED, {"contract": 1, "source": kr_paper_timed.KR_TIMED_SOURCE,
+                                                     "sessions": {E: {"005930": old, "000660": full}}})
+    _orders(monkeypatch, [], audit=[("005930", date(2026, 11, 2), "NEXT_OPEN", None),
+                                    ("000660", date(2026, 11, 2), "NEXT_OPEN", None)])
+    toss.pages[("005930", E)] = _session(E)
+
+    tasks.task_kr_paper_timed()
+
+    assert {symbol for symbol, _ in toss.calls} == {"005930"}
+    sessions = _payload(store)["sessions"][E]
+    assert "09:00" in sessions["005930"]["windows"]
+    assert sessions["000660"] == full
+
+
+def test_실행_감사_범위는_한국_Claude_계좌의_결정_주문_대기_또는_최근_8일(store):
+    with store.connection() as conn:
+        for code, market in (("kr_claude2", "KR"), ("kr_claude", "KR"), ("claude", "US")):
+            conn.execute(
+                "INSERT INTO paper_books (code, kind, label, initial_cash, started_on, status, market, currency) "
+                "VALUES (%s, 'CLAUDE', %s, 100000000, %s, 'ACTIVE', %s, %s)",
+                (code, code, date(2026, 10, 30), market, "KRW" if market == "KR" else "USD"))
+        rows = (("kr_claude", "000660", "NEXT_OPEN", "CLAUDE", "FILLED", "1 day"),
+                ("kr_claude2", "035720", "MARKET", "CLAUDE", "CANCELLED", "2 days"),
+                ("kr_claude2", "005930", "AT_1100", "CLAUDE", "PENDING", "20 days"),     # 대기면 오래돼도
+                ("kr_claude2", "051910", "NEXT_OPEN", "CLAUDE", "FILLED", "20 days"),    # 오래된 체결 — 범위 밖
+                ("kr_claude2", "068270", "BACKFILL", "CLAUDE", "FILLED", "1 day"),       # 사후 체결 — 범위 밖
+                ("kr_claude", "207940", "NEXT_OPEN", "STOP", "FILLED", "1 day"),         # 스탑 — 범위 밖
+                ("kr_claude", "105560", "NEXT_OPEN", "CLAUDE", "REJECTED", "1 day"),     # 거절 — 범위 밖
+                ("claude", "AAPL", "NEXT_OPEN", "CLAUDE", "FILLED", "1 day"))            # 미국 — 범위 밖
+        for book, ticker, timing, source, status, age in rows:
+            conn.execute(
+                "INSERT INTO paper_orders (book_code, ticker, side, timing, source, status, as_of_trading_date, created_at) "
+                "VALUES (%s, %s, 'BUY', %s, %s, %s, %s, now() - %s::interval)",
+                (book, ticker, timing, source, status, date(2026, 11, 2), age))
+    got = kr_paper_timed.store.kr_audit_orders(kr_paper_timed.KR_AUDIT_BOOKS, kr_paper_timed.KR_AUDIT_RECENT_DAYS)
+    assert sorted((ticker, timing) for ticker, _, timing, _ in got) == [("000660", "NEXT_OPEN"), ("005930", "AT_1100"),
+                                                                       ("035720", "MARKET")]
+    assert all(as_of == date(2026, 11, 2) and created.tzinfo is not None for _, as_of, _, created in got)
+
+
+def test_실행_감사_계좌_글자는_백엔드와_같다():
+    books = (ROOT / "backend/src/main/java/com/macrodash/feature/paper/PaperBooks.java").read_text(encoding="utf-8")
+    for code in kr_paper_timed.KR_AUDIT_BOOKS:
+        name = "KR_CLAUDE2" if code.endswith("2") else "KR_CLAUDE"
+        assert f'{name} = "{code}"' in books, code

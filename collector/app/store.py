@@ -631,6 +631,23 @@ def kr_market_orders(books) -> list[tuple[str, date, datetime]]:
     return [(row["ticker"], row["as_of_trading_date"], row["created_at"]) for row in rows]
 
 
+def kr_audit_orders(books, days: int) -> list[tuple[str, date, str, datetime | None]]:
+    """
+    한국 실행 감사(단계 2c — 명세 2026-11-02-kr-claude2-stage2 §11)의 1분봉 범위 — 그 계좌들의 결정 주문 가운데 대기이거나 최근 ``days``일(달력일, DB 시각)에
+    만든 것(상태 무관)의 (종목, 기준 거래일, 시점, 생성 시각), 기준일·종목·생성 순. 결정 주문의 거름은 백엔드 실행 감사(``PaperStore.executionOrders``)와 같습니다
+    (Claude가 낸 주문, 즉시·사후 체결 제외). 백엔드 표 ``paper_orders``를 읽기만 합니다(ADR 0008).
+    """
+    with connection() as conn:
+        rows = conn.execute(
+            "SELECT ticker, as_of_trading_date, timing, created_at FROM paper_orders WHERE book_code = ANY(%s) AND source = 'CLAUDE' "
+            "AND status IN ('PENDING', 'FILLED', 'EXPIRED', 'CANCELLED') AND timing NOT IN ('IMMEDIATE', 'BACKFILL') "
+            "AND as_of_trading_date IS NOT NULL AND (status = 'PENDING' OR created_at >= now() - make_interval(days => %s)) "
+            "ORDER BY 2, 1, 4",
+            (list(books), days),
+        ).fetchall()
+    return [(row["ticker"], row["as_of_trading_date"], row["timing"], row["created_at"]) for row in rows]
+
+
 # 장중 확인 감시(paper.watch.us·paper.watch.kr) 범위의 계좌·피드·상태(명세 2026-10-30 §12-1, ADR 0022 단계 2 · 한국 명세 2026-11-02 §10) — 계좌는
 # 백엔드 PaperBooks.CLAUDE2·KR_CLAUDE2, 피드·상태는 V18 paper_checkpoints CHECK와 같은 글자입니다(test_paper_watch가 파일로 대조). HOURLY 확인은 시간별
 # 관측치를 쓰므로 감시 범위가 아닙니다(한국 확인은 늘 MINUTE).
