@@ -26,6 +26,7 @@ import type {
   PaperBookSummary,
   PaperCalendarStatus,
   PaperClaude2Status,
+  PaperKrClaude2Status,
   PaperClaudePreviewResult,
   PaperDecisionDetail,
   PaperDecisionSummary,
@@ -3107,8 +3108,8 @@ export function claudeDecisionView(source: ClaudeDecisionSource): ClaudeDecision
     validation,
     watchlist,
     usage: usageCells,
-    checkpoint: checkpointKind ? checkpointDecisionView(record) : null,
-    checkpointPlan: checkpointPlanText(record?.checkpointPlan, record?.checkpointVerdict),
+    checkpoint: checkpointKind ? checkpointDecisionView(record, marketOfBook(source.book)) : null,
+    checkpointPlan: checkpointPlanText(record?.checkpointPlan, record?.checkpointVerdict, marketOfBook(source.book)),
   };
 }
 
@@ -3346,16 +3347,23 @@ const CHECKPOINT_REASON: Record<string, string> = {
   SUPERSEDED: "다음 결정이 대신함(장중 확인 요청 없음)",
 };
 
+/** 한국 Claude 계좌2 장중 확인(단계 2b)에서 뜻이 다른 사유 — 스위치 키·계좌 이름(PaperKrCheckpointJob). */
+const KR_CHECKPOINT_REASON: Record<string, string> = {
+  CHECKPOINTS_OFF: "설정 kr.claude2.checkpoints가 꺼져 있음",
+  NO_WATCH_SNAPSHOT: "확인 시각 뒤에 받은 감시 1분봉(paper_watch_kr)이 창 끝까지 없음",
+  BOOK_NOT_ACTIVE: "한국 계좌2가 운용 중이 아님",
+};
+
 /**
  * 장중 확인 사유 — 'CODE — 설명'의 코드를 한국어로(코드는 괄호에). 요청이 규칙에 맞지 않음(CHECKPOINT_INVALID)은 서버가 적은 사유를 덧붙이고, 부른 뒤
  * 실패(API_ERROR 등)는 '재시도 없음'. 모르는 코드는 받은 글자 그대로, 없으면 "—".
  */
-export function checkpointReasonText(reason: string | null | undefined): string {
+export function checkpointReasonText(reason: string | null | undefined, market: PaperMarketCode = "US"): string {
   if (!reason) return EMPTY;
   const cut = reason.indexOf(" — ");
   const code = (cut >= 0 ? reason.slice(0, cut) : reason).trim();
   const detail = cut >= 0 ? reason.slice(cut + 3).trim() : "";
-  const known = CHECKPOINT_REASON[code];
+  const known = (market === "KR" ? KR_CHECKPOINT_REASON[code] : undefined) ?? CHECKPOINT_REASON[code];
   if (known) return code === "CHECKPOINT_INVALID" && detail ? `${known}: ${detail} (${code})` : `${known} (${code})`;
   const failed = DECISION_STATUS[code];
   if (failed && CLAUDE_FAILED_STATUSES.includes(code)) return `${failed.label} — 재시도 없음 (${code})`;
@@ -3368,8 +3376,12 @@ const CHECKPOINT_FEED: Record<string, string> = {
   HOURLY: "전 종목 시간별(최대 60분 묵음)",
 };
 
-/** 장중 확인 자료(MINUTE·HOURLY) 이름. 모르는 값은 받은 글자 그대로. */
-export const checkpointFeedLabel = (feed: string | null | undefined) => labelOf(CHECKPOINT_FEED, feed);
+/** 한국 장중 확인 자료 이름 — 늘 감시 1분봉이고 확인 시각 뒤 한 번 받습니다(paper_watch_kr). */
+const KR_CHECKPOINT_FEED = "감시 1분봉(토스, 확인 시각 뒤 한 번)";
+
+/** 장중 확인 자료(MINUTE·HOURLY) 이름 — 한국은 늘 한 이름. 모르는 값은 받은 글자 그대로. */
+export const checkpointFeedLabel = (feed: string | null | undefined, market: PaperMarketCode = "US") =>
+  (market === "KR" ? KR_CHECKPOINT_FEED : labelOf(CHECKPOINT_FEED, feed));
 
 /** 확인 시각 "10:30 ET · 2026-11-03 00:30 KST"(모르는 쪽은 "—"). */
 function checkpointAt(atEt: string | null | undefined, atKst: string | null | undefined): string {
@@ -3412,8 +3424,41 @@ export function claude2CheckpointLine(group: PaperClaude2Status | null | undefin
   return `${head}: ${parts.join(" · ")}`;
 }
 
-/** 아침 결정의 장중 확인 요청 한 줄(응답 checkpointPlan·checkpointVerdict — 서버 값 그대로). 요청이 없으면 null. */
-function checkpointPlanText(plan: unknown, verdict: unknown): string | null {
+/**
+ * 한국 계좌2 '오늘 장중 확인' 한 줄(상태 응답 kr_claude2.checkpoint — 단계 2b). 미국 줄({@link claude2CheckpointLine})과 같은 규칙이고 시각은 서울 시각만,
+ * 자료는 늘 감시 1분봉입니다. 계획이 없으면 꺼짐·계획 없음이라고 적습니다(한국 밤 결정은 세션 전날 밤이라 '결정 전'을 따로 가르지 않음). 이 칸을 보내지
+ * 않는 백엔드(2b 전)면 null.
+ */
+export function krClaude2CheckpointLine(group: PaperKrClaude2Status | null | undefined): string | null {
+  const checkpoint = group?.checkpoint;
+  if (!checkpoint) return null;
+  const head = `오늘 장중 확인(한국 계좌2, 세션 ${checkpoint.session ?? EMPTY})`;
+  const today = checkpoint.today;
+  if (!today) {
+    return checkpoint.enabled
+      ? `${head}: 계획 없음 — 밤 결정이 요청하지 않았거나 아직 그 밤 결정 전입니다(세션당 최대 한 번)`
+      : `${head}: 꺼짐 — 설정 kr.claude2.checkpoints`;
+  }
+  const state = checkpointStatusLabel(today.status);
+  const parts = [
+    today.atKst ? `${formatKst(today.atKst)} KST` : EMPTY,
+    checkpointFeedLabel(today.feed, "KR"),
+    today.watch.length > 0 ? `감시 ${today.watch.join(", ")}` : null,
+    today.reason ? `${state} — ${checkpointReasonText(today.reason, "KR")}` : state,
+    !checkpoint.enabled && today.status === "PLANNED" ? "설정이 꺼져 있어 창이 끝나면 건너뜀" : null,
+    isNumber(today.decisionId) ? `확인 결정 #${today.decisionId}` : null,
+    today.calledAtKst ? `부른 시각 ${formatKst(today.calledAtKst)}` : null,
+  ].filter((part): part is string => part !== null);
+  const watch = checkpoint.watch;
+  if (watch) {
+    const lag = isNumber(watch.lagSeconds) ? formatLatency(watch.lagSeconds * 1000) : EMPTY;
+    parts.push(`감시 저장본 받은 시각 ${formatKst(watch.collectedAtKst)} · ${formatAge(watch.ageSeconds)} · 지연 ${lag}`);
+  }
+  return `${head}: ${parts.join(" · ")}`;
+}
+
+/** 아침(한국은 밤) 결정의 장중 확인 요청 한 줄(응답 checkpointPlan·checkpointVerdict — 서버 값 그대로). 요청이 없으면 null. */
+function checkpointPlanText(plan: unknown, verdict: unknown, market: PaperMarketCode = "US"): string | null {
   if (!isRecord(plan)) return null;
   const status = textOf(plan.status);
   const reason = textOf(plan.reason);
@@ -3422,17 +3467,18 @@ function checkpointPlanText(plan: unknown, verdict: unknown): string | null {
   const parts = [
     `세션 ${textOf(plan.session) ?? EMPTY}`,
     textOf(plan.atEt) ? `${textOf(plan.atEt)} ET` : null,
-    textOf(plan.feed) ? checkpointFeedLabel(textOf(plan.feed)) : null,
+    textOf(plan.atKst) ? `${textOf(plan.atKst)} KST` : null,
+    textOf(plan.feed) ? checkpointFeedLabel(textOf(plan.feed), market) : null,
     watch.length > 0 ? `감시 ${watch.join(", ")}` : null,
-    status ? (reason ? `${checkpointStatusLabel(status)} — ${checkpointReasonText(reason)}` : checkpointStatusLabel(status)) : null,
+    status ? (reason ? `${checkpointStatusLabel(status)} — ${checkpointReasonText(reason, market)}` : checkpointStatusLabel(status)) : null,
     rejected && !reason ? "요청이 규칙에 맞지 않음" : null,
     textOf(plan.note),
   ].filter((part): part is string => part !== null);
   return parts.join(" · ");
 }
 
-/** 장중 확인 결정의 본문(kind CHECKPOINT — 서버 응답 그대로). */
-function checkpointDecisionView(record: Record<string, unknown> | null): CheckpointDecisionView {
+/** 장중 확인 결정의 본문(kind CHECKPOINT — 서버 응답 그대로). 한국(단계 2b)은 시각이 KST, 금액이 원, 시점 이름이 한국 표. */
+function checkpointDecisionView(record: Record<string, unknown> | null, market: PaperMarketCode = "US"): CheckpointDecisionView {
   const request = isRecord(record?.checkpoint) ? record.checkpoint : {};
   const lag = numberOf(request.lagSeconds);
   const action = textOf(record?.action);
@@ -3440,12 +3486,12 @@ function checkpointDecisionView(record: Record<string, unknown> | null): Checkpo
   const expected = isRecord(record?.expectedState) ? record.expectedState : null;
   const expectedLines: string[] = [];
   if (expected) {
-    expectedLines.push(`현금 ${formatMoney(numberOf(expected.cash))} · 순자산 ${formatMoney(numberOf(expected.nav))} · 주식 노출 `
+    expectedLines.push(`현금 ${formatMoney(numberOf(expected.cash), market)} · 순자산 ${formatMoney(numberOf(expected.nav), market)} · 주식 노출 `
       + `${formatWithUnit(numberOf(expected.exposurePct), 1, "%")}`);
     const fills = listOf(expected.assumedFills).filter(isRecord);
     if (fills.length > 0) {
       expectedLines.push(`체결로 본 대기 주문 ${formatNumber(fills.length, 0)}건 — `
-        + fills.map((fill) => `${textOf(fill.ticker) ?? EMPTY} ${sideLabel(textOf(fill.side))} ${timingLabel(textOf(fill.timing))}`
+        + fills.map((fill) => `${textOf(fill.ticker) ?? EMPTY} ${sideLabel(textOf(fill.side))} ${timingLabel(textOf(fill.timing), market)}`
           + `(${textOf(fill.priceSource) ?? EMPTY})`).join(" · "));
     }
     const unpriced = listOf(expected.unpriced).filter(isNumber);
@@ -3457,8 +3503,8 @@ function checkpointDecisionView(record: Record<string, unknown> | null): Checkpo
     request: isRecord(record?.checkpoint)
       ? [
         `세션 ${textOf(request.session) ?? EMPTY}`,
-        textOf(request.atEt) ? `${textOf(request.atEt)} ET` : EMPTY,
-        checkpointFeedLabel(textOf(request.feed)),
+        textOf(request.atEt) ? `${textOf(request.atEt)} ET` : textOf(request.atKst) ? `${textOf(request.atKst)} KST` : EMPTY,
+        checkpointFeedLabel(textOf(request.feed), market),
         `지연 ${lag === null ? EMPTY : formatLatency(lag * 1000)}`,
       ].join(" · ")
       : EMPTY,

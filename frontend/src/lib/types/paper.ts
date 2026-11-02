@@ -489,6 +489,19 @@ export interface PaperStatusResponse {
    * 읽어 만들고(수집 유발 없음) 모르는 값은 null입니다. 이 칸을 보내지 않는 백엔드(F2 전)에서는 없습니다.
    */
   collection?: PaperKrCollection | null;
+  /** 한국 응답만 — 한국 Claude 계좌2 장중 확인(단계 2b). 이 칸을 보내지 않는 백엔드(2b 전)·미국 응답에서는 없습니다. */
+  kr_claude2?: PaperKrClaude2Status | null;
+}
+
+/**
+ * 한국 Claude 계좌2 상태(GET /api/paper/status?market=KR의 kr_claude2 — 단계 2b). 장중 확인 묶음은 미국 {@link PaperClaude2CheckpointStatus}와 같은 모양이고
+ * enabled는 설정 kr.claude2.checkpoints, today.atEt는 늘 null(서울 시각 atKst만)입니다. 달력이 그 해를 모르면 session·today·watch는 null.
+ */
+export interface PaperKrClaude2Status {
+  book: string;
+  status: PaperBookStatus | null;
+  startedOn: string | null;
+  checkpoint?: PaperClaude2CheckpointStatus | null;
 }
 
 /**

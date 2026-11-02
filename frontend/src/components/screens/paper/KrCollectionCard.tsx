@@ -2,8 +2,10 @@
 
 import { type Column, DataTable } from "@/components/patterns";
 import { Card, ErrorState, Freshness, Loading } from "@/components/ui";
-import { PAPER_SOURCES, quotesLine } from "@/lib/paper";
+import { krClaude2CheckpointLine, PAPER_SOURCES, quotesLine } from "@/lib/paper";
 import { type KrCollectionRow, type KrCollectionState, krCollectionRows } from "@/lib/paperKr";
+
+import { Claude2CheckpointLine } from "./Claude2StartSection";
 import type { PaperQuotesSummary, PaperStatusResponse } from "@/lib/types";
 
 /** 판정 배지 색 — 글(정상·늦음·뒤처짐·없음·모름)이 뜻을 나르고 색은 보조입니다(lib/paper 배지와 같은 팔레트). */
@@ -77,6 +79,10 @@ export function KrCollectionCard({
       )}
       {!status.error && collection && (
         <DataTable<KrCollectionRow> columns={COLUMNS} rows={rows} rowKey={(row) => row.key} caption="한국 수집 상태" scrollHint="overflow" />
+      )}
+      {/* 한국 계좌2 장중 확인(단계 2b) — 감시 1분봉(paper_watch_kr)의 오늘 확인 한 줄. 칸이 없는 백엔드면 그리지 않습니다. */}
+      {!status.error && (
+        <Claude2CheckpointLine line={krClaude2CheckpointLine(status.data?.available ? status.data.kr_claude2 : null)} className="mt-3" />
       )}
     </Card>
   );

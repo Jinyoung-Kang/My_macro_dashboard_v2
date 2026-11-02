@@ -15,6 +15,7 @@ import {
   candidatesNote,
   claude2CheckpointLine,
   claude2WindowLines,
+  krClaude2CheckpointLine,
   CLAUDE_COST_NOTE,
   claudeDecisionView,
   type ClosedSignalRow,
@@ -239,6 +240,10 @@ export function DecisionsSection({
         <p className="mt-3 text-xs leading-relaxed text-muted">{korea ? krDecisionBookNote(book?.kind) : decisionBookNote(book?.kind, book?.code)}</p>
         {windowLines && <Claude2WindowList lines={windowLines} className="mt-3" />}
         {windowLines && <Claude2CheckpointLine line={claude2CheckpointLine(status.data?.available ? status.data.claude2 : null)} />}
+        {/* 한국 계좌2(단계 2b) — 그 계좌를 골랐을 때 '오늘 장중 확인' 한 줄(상태 응답 kr_claude2, 칸이 없는 백엔드면 줄 없음). */}
+        {korea && code === "kr_claude2" && (
+          <Claude2CheckpointLine line={krClaude2CheckpointLine(status.data?.available ? status.data.kr_claude2 : null)} />
+        )}
         {timed && status.error && <p className="mt-2 text-xs text-warn">계좌2 결정 창을 읽지 못했습니다 — {status.error}</p>}
         {blocked && showRun && <p className="mt-2 text-xs text-warn">{blocked}</p>}
         {confirming && (

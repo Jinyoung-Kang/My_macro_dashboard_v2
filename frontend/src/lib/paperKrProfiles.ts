@@ -158,7 +158,9 @@ export const KR_ACCOUNT_PROFILES: Readonly<Record<string, AccountProfile>> = {
           + "프롬프트의 '투자 성향' 절로 더해져 위험자산 비중(현금성 153130 제외)·종목 집중도·현금 여력·감내할 낙폭의 기준이 됩니다 — 코드가 "
           + "집행하지 않으므로 한도·검증기는 계좌1과 같습니다. 계좌1과 다른 것은 체결 시점 메뉴입니다(단계 2a) — 주문마다 다음 KR 거래일의 시가"
           + "(NEXT_OPEN)·매시 10:00~15:00 KST(AT_1000~AT_1500 — 그 시각에 시작한 토스 1분봉 시가)·종가(NEXT_CLOSE — KRX 종가 단일가) 가운데 하나와 "
-          + "고른 이유(executionNote)를 냅니다. 장중 확인은 다음 단계(2b)에서 붙입니다.",
+          + "고른 이유(executionNote)를 냅니다. 밤 결정은 다음 거래일 장중 확인 한 번(10:00~15:00 KST 30분 단위·감시 종목 1~10개 — 단계 2b)을 "
+          + "요청할 수 있고, 그 시각 뒤에 받은 토스 1분봉으로 한 번 더 판단해 대기 주문을 그대로 두거나 기준 시각이 아직 오지 않은 주문만 장중 "
+          + "시장가(MARKET)·남은 매시·종가 주문으로 바꿉니다(재시도 없음, 설정 kr.claude2.checkpoints로 끔).",
       },
       {
         key: "buy",
@@ -193,6 +195,7 @@ export const KR_ACCOUNT_PROFILES: Readonly<Record<string, AccountProfile>> = {
     ],
     settings: [
       { key: "kr.claude2.riskProfile", label: "투자 성향" },
+      { key: "kr.claude2.checkpoints", label: "장중 확인(세션당 최대 한 번)" },
       { key: "model", label: "모델(두 책 공용)" },
       { key: "kr.decisionTimeKst", label: "결정 시각(KST, 계좌1과 같음)" },
       { key: "kr.decisionDeadlineKst", label: "결정 기한(KST)" },
