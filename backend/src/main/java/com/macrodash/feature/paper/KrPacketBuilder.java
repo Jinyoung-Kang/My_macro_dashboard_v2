@@ -449,6 +449,9 @@ final class KrPacketBuilder {
         lines.add("한국 책(" + book + ")이다 — 통화는 원(KRW), 날짜는 KRX 거래일(KST), 시각 표기도 KST다. 티커는 6자리 종목 "
                 + "코드다.");
         lines.add(menu() ? KR_CLAUDE2_TIMING_LINE : timingLine());
+        if (menu()) {
+            lines.add(KR_CLAUDE2_CHECKPOINT_LINE);
+        }
         lines.add("체결은 정수 주다 — 목표 비중 증가분을 체결가(" + (menu() ? "그 시점의 가격" : "시가") + ")와 비용으로 나눈 정수 주만 사고, "
                 + "1주 가격보다 작은 매수 증가분은 체결되지 않는다(12_hardRules).");
         lines.add("호가단위: " + KrxCosts.tickTableText() + " — 체결가는 관측된 단일가 그대로라 호가를 맞출 필요는 없다.");
@@ -480,6 +483,11 @@ final class KrPacketBuilder {
             + "1_basis.nextSession의 정규장 시가 단일가), AT_1000·AT_1100·AT_1200·AT_1300·AT_1400·AT_1500(그날 그 시각 KST에 시작한 토스 1분봉 시가), "
             + "NEXT_CLOSE(그날 정규장 종가 단일가). 체결 순서는 NEXT_OPEN < AT_1000 < … < AT_1500 < NEXT_CLOSE이고, 주문마다 executionNote(그 시점을 "
             + "고른 이유)를 쓴다.";
+
+    /** 한국 계좌2의 장중 확인 문장(0_instructions — 단계 2b, 체결 시점 줄 다음). */
+    static final String KR_CLAUDE2_CHECKPOINT_LINE = "checkpoint(선택)에 다음 KRX 거래일 장중 확인 한 번을 적을 수 있다 — atKst(10:00~15:00 KST 30분 "
+            + "단위)·watch(감시 종목 1~10개)·question. 그 시각 뒤에 받은 토스증권 1분봉으로 한 번 더 판단해 대기 주문을 그대로 두거나(KEEP) 기준 시각이 "
+            + "아직 오지 않은 주문만 바꾼다(REPLACE — 고정 문단 '장중 확인'). 필요 없으면 null.";
 
     /** 한국 계좌2의 매도 자리 문장(12_hardRules) — 매도는 같은 시점이거나 더 늦은 시점 매수의 자리만 만듦(검증기 순위). */
     static final String KR_CLAUDE2_ALLOCATION_LINE = "매수 목표 합 + 매도 뒤 남는 보유 비중이 100%를 넘으면 목표 비중이 큰 주문부터 받고 넘치는 "

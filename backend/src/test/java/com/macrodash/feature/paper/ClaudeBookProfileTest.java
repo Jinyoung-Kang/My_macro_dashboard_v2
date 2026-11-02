@@ -132,7 +132,10 @@ class ClaudeBookProfileTest {
         String rules = ClaudePrompts.KR_CLAUDE2_FIXED_RULES;
         assertThat(rules.replace(ClaudePrompts.KR_CLAUDE2_TIMING_READING, ClaudePrompts.KR_TIMING_READING)
                 .replace(ClaudePrompts.KR_CLAUDE2_TIMING_LINES, ClaudePrompts.KR_TIMING_LINE)
-                .replace(ClaudePrompts.KR_CLAUDE2_FILL_SECTION, "")).as("계좌1 문단에서 세 곳만 다름").isEqualTo(ClaudePrompts.KR_FIXED_RULES);
+                .replace(ClaudePrompts.KR_CLAUDE2_FILL_SECTION, "").replace(ClaudePrompts.KR_CLAUDE2_CHECKPOINT_SECTION, ""))
+                .as("계좌1 문단에서 세 곳만 다름(출력 절 앞의 체결·장중 확인 절은 한 자리)").isEqualTo(ClaudePrompts.KR_FIXED_RULES);
+        assertThat(rules.indexOf("## 장중 확인(고정)")).as("체결 절 → 장중 확인 절 → 출력 절")
+                .isGreaterThan(rules.indexOf("## 체결(고정)")).isLessThan(rules.indexOf("## 출력(고정)"));
         assertThat(rules).contains("executionNote").contains("200자").contains("KST").contains("## 체결(고정)").doesNotContain("뉴욕");
         assertThat(rules.indexOf("## 체결(고정)")).as("체결 절은 출력 절 앞").isLessThan(rules.indexOf("## 출력(고정)"));
         assertThatThrownBy(() -> ClaudePrompts.krClaude2FixedRules(ClaudePrompts.krFixedRules(true)))

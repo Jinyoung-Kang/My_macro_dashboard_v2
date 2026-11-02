@@ -306,18 +306,31 @@ final class ClaudePrompts {
             - 주문마다 executionNote(그 체결 시점을 고른 이유, 200자 이내)를 반드시 쓴다.
             """;
 
-    /** 한국 계좌2의 체결 절 — 출력 절 앞에 넣습니다. 장중 확인은 단계 2b(그 전에는 결정 뒤 장중 정보를 보지 못함). */
+    /** 한국 계좌2의 체결 절 — 출력 절 앞에 넣습니다. 결정 뒤 장중 정보는 장중 확인(단계 2b — {@link #KR_CLAUDE2_CHECKPOINT_SECTION})으로만 봅니다. */
     static final String KR_CLAUDE2_FILL_SECTION = """
             ## 체결(고정)
             - 매시 체결가는 그 시각 T에 시작한 토스 1분봉의 시가다. 그 봉에 거래가 없으면 T+1~T+4분의 첫 거래 봉 시가, 그것도 없으면 그날 정규장 안 T 뒤 첫 거래 봉 시가(대체 체결)로 체결하고, 그날 T 뒤 정규장 거래가 없으면 체결하지 않는다. 멈춘 가격으로 채우지 않는다.
             - NEXT_CLOSE는 정규장 마감 단일가 봉의 종가로 체결하고, 금융위 확정 종가가 들어오면 그 값으로 고친다. NEXT_OPEN은 계좌1과 같은 시가 단일가다. 비용(수수료·슬리피지·매도세)은 시점과 무관하게 같다.
-            - 결정 뒤 장중 정보는 보지 못한다 — 이 결정이 다음 거래일 주문의 마지막 판단이다. 체결은 늘 주문 뒤 그 시각의 실제 가격이다.
+            - 결정 뒤 장중 정보는 아래 장중 확인(세션당 최대 한 번)으로만 본다. 체결은 늘 주문 뒤 그 시각의 실제 가격이다.
             """;
 
     /**
-     * 한국 Claude 계좌2(kr_claude2)의 고정 문단(단계 2a) — {@link #KR_FIXED_RULES}와 같은 문장에서 세 곳만 다릅니다: 우선순위 줄의 시점 읽는 법
+     * 한국 계좌2의 장중 확인 절(단계 2b — 명세 2026-11-02 §5·§10, 체결 절 다음·출력 절 앞). 밤 결정의 {@code checkpoint} 요청과 장중 확인 응답의 규칙을
+     * 함께 적습니다 — 장중 확인 호출({@code PaperKrCheckpointJob})도 같은 시스템 프롬프트를 씁니다. 확인 시각은 {@link KrCheckpointRequest#TIMES}와 같은
+     * 문장입니다({@code DecisionTimingsLockTest}). '실시간'이라는 말은 쓰지 않습니다(저장본은 확인 시각 뒤 한 장).
+     */
+    static final String KR_CLAUDE2_CHECKPOINT_SECTION = """
+            ## 장중 확인(고정)
+            - 이 결정의 응답에 checkpoint를 적으면 다음 KRX 거래일(1_basis.nextSession) 장중에 한 번 더 부른다 — 세션당 최대 한 번이다. 그 시각을 놓치면(서버 꺼짐·자료 없음·호출 상한) 나중에 대신 부르지 않고 재시도도 없다. 필요 없으면 checkpoint는 null로 둔다.
+            - checkpoint.atKst는 10:00~15:00 KST의 30분 단위 시각 하나다(그날 개장 30분 뒤부터 마감 30분 전까지 — 장 시간 변경일은 1_basis.nextSessionOpenKst·nextSessionCloseKst). watch는 그때 볼 종목 1~10개(8_prices 종목이나 보유 종목, 중복 없이)이고, 보유·대기 종목과 함께 그 시각 뒤에 한 번 받은 토스증권 1분봉(종목마다 최근 30개, 저장본 지연을 함께 줌)이 장중 확인 패킷에 들어간다. question(300자 이내)은 그때 확인할 것이다.
+            - 장중 확인의 응답 action은 KEEP(아무것도 바꾸지 않음) 또는 REPLACE다. REPLACE의 응답이 형식 검사를 통과하면(주문이 없거나 모두 거절돼도) 기준 시각이 아직 오지 않은 대기 주문만 취소되고, 기준 시각이 지난 주문은 이미 체결된 것으로 보아 그날 밤 장부가 그 시각 가격으로 체결한다.
+            - 장중 확인 주문의 timing은 MARKET(응답 뒤 생성 + 60초가 지난 첫 분에 시작한 1분봉 시가 — 그 분이 마감 10분 전 이후면 거절), 아직 오지 않은 AT_* 또는 NEXT_CLOSE다. 주문마다 executionNote를 쓰고, 장중 확인의 summary는 600자 이내다.
+            """;
+
+    /**
+     * 한국 Claude 계좌2(kr_claude2)의 고정 문단(단계 2a·2b) — {@link #KR_FIXED_RULES}와 같은 문장에서 세 곳만 다릅니다: 우선순위 줄의 시점 읽는 법
      * ({@link #KR_TIMING_READING} → {@link #KR_CLAUDE2_TIMING_READING}), timing 줄({@link #KR_TIMING_LINE} → {@link #KR_CLAUDE2_TIMING_LINES}), 출력 절
-     * 앞의 체결 절({@link #KR_CLAUDE2_FILL_SECTION}). 바꿀 자리가 계좌1 문단에 한 번씩이 아니면 기동하지 않습니다. 받는 체결 시점은
+     * 앞의 체결 절·장중 확인 절({@link #KR_CLAUDE2_FILL_SECTION}·{@link #KR_CLAUDE2_CHECKPOINT_SECTION}). 바꿀 자리가 계좌1 문단에 한 번씩이 아니면 기동하지 않습니다. 받는 체결 시점은
      * {@link PaperBooks#KR_CLAUDE2_TIMINGS}와 같은 목록입니다({@code DecisionTimingsLockTest}).
      */
     static final String KR_CLAUDE2_FIXED_RULES = krClaude2FixedRules(KR_FIXED_RULES);
@@ -329,7 +342,7 @@ final class ClaudePrompts {
             }
         }
         return base.replace(KR_TIMING_READING, KR_CLAUDE2_TIMING_READING).replace(KR_TIMING_LINE, KR_CLAUDE2_TIMING_LINES)
-                .replace(OUTPUT_HEADER, KR_CLAUDE2_FILL_SECTION + OUTPUT_HEADER);
+                .replace(OUTPUT_HEADER, KR_CLAUDE2_FILL_SECTION + KR_CLAUDE2_CHECKPOINT_SECTION + OUTPUT_HEADER);
     }
 
     /**

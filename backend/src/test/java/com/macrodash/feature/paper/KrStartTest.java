@@ -500,8 +500,8 @@ class KrStartTest {
         store.states.put(PaperBooks.KR_CLAUDE2, new com.macrodash.store.PaperStore.BookState(PaperBooks.KR_CLAUDE2, 100_000_000, 100_000_000, 0, 0,
                 first.lastObservedAt(), first.lastProcessedCollectedAt(), S, null));
 
-        fake.answer(KrClaudeFixtures.decision(8, "관망")).answer(KrClaudeFixtures.decision(10, null,
-                KrClaudeFixtures.claude2Order("005930", "BUY", 10.0, null, PaperBooks.AT_1000)));
+        fake.answer(KrClaudeFixtures.decision(8, "관망")).answer(KrClaudeFixtures.withCheckpoint(KrClaudeFixtures.decision(10, null,
+                KrClaudeFixtures.claude2Order("005930", "BUY", 10.0, null, PaperBooks.AT_1000)), "11:00", "005930"));
         sessionData(NEXT, S, everyCodeOn(NEXT));
         PaperDecisionJob.Result next = runAt("2026-12-01T22:30");
 
@@ -528,6 +528,21 @@ class KrStartTest {
         assertThat(fake.requests.get(1).user()).as("계좌1 패킷은 메뉴 문장 없음").doesNotContain("AT_1000")
                 .contains(KrPacketBuilder.timingLine());
         assertThat(store.decisionFor(PaperBooks.KR_CLAUDE, NEXT, RuleBookService.SCHEDULED)).isPresent();
+        // 장중 확인 요청(단계 2b) — 목표 세션 E(12-02)의 PLANNED 행(서울 시각 11:00, 피드 MINUTE, 감시 목록), 응답에 계획을 남김
+        com.macrodash.store.PaperStore.Checkpoint planned = store.checkpoint(PaperBooks.KR_CLAUDE2, LocalDate.of(2026, 12, 2)).orElseThrow();
+        assertThat(planned.atLocal()).isEqualTo(java.time.LocalTime.of(11, 0));
+        assertThat(planned.feed()).isEqualTo(ExecutionSection.FEED_MINUTE);
+        assertThat(planned.watch()).containsExactly("005930");
+        assertThat(planned.status()).isEqualTo(PaperBooks.CHECKPOINT_PLANNED);
+        assertThat(planned.sourceDecisionId()).isEqualTo(second.id());
+        assertThat(second.response().path("checkpointPlan").path("atKst").asString()).isEqualTo("11:00");
+        assertThat(second.response().path("checkpointPlan").path("status").asString()).isEqualTo(PaperBooks.CHECKPOINT_PLANNED);
+        assertThat(second.response().path("checkpointVerdict").path("accepted").asBoolean()).isTrue();
+        assertThat(store.checkpoint(PaperBooks.KR_CLAUDE, LocalDate.of(2026, 12, 2))).as("계좌1은 장중 확인 없음").isEmpty();
+        assertThat(fake.requests.get(2).system()).contains(ClaudePrompts.KR_CLAUDE2_CHECKPOINT_SECTION);
+        assertThat(fake.requests.get(1).system()).as("계좌1 고정 문단에는 장중 확인 절 없음").doesNotContain("## 장중 확인");
+        assertThat(fake.requests.get(2).user()).contains(KrPacketBuilder.KR_CLAUDE2_CHECKPOINT_LINE);
+        assertThat(fake.requests.get(1).user()).doesNotContain("checkpoint");
     }
 
     @Test

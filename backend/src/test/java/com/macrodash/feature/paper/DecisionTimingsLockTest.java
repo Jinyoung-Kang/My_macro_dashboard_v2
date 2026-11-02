@@ -190,6 +190,17 @@ class DecisionTimingsLockTest {
         later.add(PaperBooks.MARKET);
         assertThat(collected).as("수집기가 1분봉을 받는 시점 = 메뉴의 시가 밖 일곱 + 장중 확인의 MARKET(단계 2b)").containsExactlyElementsOf(later);
 
+        // 장중 확인 요청(단계 2b) — 시각 목록이 응답 스키마 enum·의미 검사·고정 문단에서 같음.
+        JsonNode checkpoint;
+        try (InputStream in = DecisionTimingsLockTest.class.getResourceAsStream("/" + ClaudeBookService.KR_CLAUDE2_SCHEMA_RESOURCE)) {
+            checkpoint = MAPPER.readTree(in).path("properties").path("checkpoint");
+        }
+        List<String> times = new ArrayList<>();
+        checkpoint.path("properties").path("atKst").path("enum").forEach(t -> times.add(t.asString()));
+        assertThat(times).isEqualTo(KrCheckpointRequest.TIMES.stream().map(KrTimedLadder::label).toList());
+        assertThat(checkpoint.path("properties").has("feed")).as("한국 확인은 늘 1분봉 — 피드 칸 없음").isFalse();
+        assertThat(ClaudePrompts.KR_CLAUDE2_CHECKPOINT_SECTION).contains("10:00~15:00 KST의 30분 단위");
+
         String rules = kr2.fixedRules();
         String timingLine = rules.lines().filter(line -> line.startsWith("- timing은")).findFirst().orElseThrow();
         for (String timing : kr2.timings()) {

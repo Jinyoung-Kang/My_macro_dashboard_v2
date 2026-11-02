@@ -171,6 +171,13 @@ final class KrClaudeFixtures {
                 + " 논거\",\"labels\":[\"사실\",\"가설\"],\"invalidation\":\"수급 반전\"}";
     }
 
+    /** 결정 응답에 한국 계좌2 장중 확인 요청(단계 2b — {@code checkpoint {atKst, watch, question}})을 더함. */
+    static String withCheckpoint(String decision, String atKst, String... watch) {
+        String list = String.join(",", java.util.Arrays.stream(watch).map(t -> "\"" + t + "\"").toList());
+        return decision.replace(",\"confidence\":", ",\"checkpoint\":{\"atKst\":\"" + atKst + "\",\"watch\":[" + list
+                + "],\"question\":\"시가 갭이 유지되나\"},\"confidence\":");
+    }
+
     /** 한국 Claude 계좌2 주문 한 줄(단계 2a — 메뉴 시점과 executionNote, 응답 스키마 {@value ClaudeBookService#KR_CLAUDE2_SCHEMA_RESOURCE}). */
     static String claude2Order(String ticker, String side, Double target, Double fraction, String timing) {
         return order(ticker, side, target, fraction).replace("\"timing\":\"NEXT_OPEN\"",

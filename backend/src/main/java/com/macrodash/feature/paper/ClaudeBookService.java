@@ -655,6 +655,21 @@ public class ClaudeBookService {
                         + "건을 집행하지 않음(취소로 남김) — 재개한 뒤의 결정부터 다시 냅니다");
                 plan.response().put("pausedDuringCall", true);
             }
+            // 한국 Claude 계좌2의 장중 확인 계획(단계 2b — 명세 2026-11-02 §10): 밤 결정(정기·수동)의 checkpoint → 목표 세션 E의 PLANNED, 없으면 E의
+            // PLANNED를 SKIPPED. 미국 계좌2 계획(persistClaude2)과 같은 규칙이고, 일시정지면 쓰지 않습니다.
+            CheckpointPlan checkpointPlan = PaperBooks.KR_CLAUDE2.equals(pipeline.book()) && !paused
+                    && !RuleBookService.CHECKPOINT.equals(kind)
+                    ? checkpointPlan(PaperBooks.KR_CLAUDE2, attempt.parsed(), pipeline.market().calendar().nextTradingDay(asOf),
+                            pipeline.market().calendar(), checkpointUniverse(quotes, view))
+                    : null;
+            if (checkpointPlan != null) {
+                plan.response().set("checkpointPlan", checkpointPlan.view(mapper));
+                if (checkpointPlan.verdict() != null) {
+                    ObjectNode verdict = plan.response().putObject("checkpointVerdict");
+                    verdict.put("accepted", checkpointPlan.verdict().accepted());
+                    verdict.set("reasons", mapper.valueToTree(checkpointPlan.verdict().reasons()));
+                }
+            }
             return store.atomically(() -> {
                 if (!paused) {
                     List<Long> superseded = pipeline.supersedePending();
@@ -678,6 +693,9 @@ public class ClaudeBookService {
                     id = inserted.get();
                 }
                 pipeline.insertOrders(id, asOf, plan, paused ? PaperBooks.ORDER_CANCELLED : PaperBooks.ORDER_PENDING);
+                if (checkpointPlan != null) {
+                    writeCheckpointPlan(checkpointPlan, id);
+                }
                 Decision saved = store.decision(id).orElseThrow();
                 log.info("Claude 책 결정 {} {}{}: {} — 통과 {} · 거절 {}{}{}", asOf, kind, retried == null ? "" : "(재시도)",
                         status, plan.accepted(), plan.verdicts().size() - plan.accepted(),
@@ -1036,22 +1054,27 @@ public class ClaudeBookService {
      * 결정 하나가 E 세션 장중 확인 행에 할 일 — 요청({@code request} — 응답의 checkpoint, 없으면 null)과 쓰기 전 그 세션 행(없으면 null). 요청이
      * 있으면 PLANNED로 넣거나 바꾸고(끝난 행은 그대로), 없으면 남은 PLANNED 행을 {@link #CHECKPOINT_SUPERSEDED}로 SKIPPED.
      */
-    private record CheckpointPlan(LocalDate session, JsonNode request, PaperStore.Checkpoint existing,
+    private record CheckpointPlan(String book, String atField, LocalDate session, JsonNode request, PaperStore.Checkpoint existing,
                                   CheckpointRequest.Verdict verdict) {
+
+        /** 행의 피드 — 미국은 요청의 feed 그대로(없으면 null — 칸 규칙에 맞지 않아 쓰지 않음), 한국은 늘 감시 1분봉({@link KrCheckpointRequest#FEED}). */
+        String feed() {
+            return KrCheckpointRequest.AT_FIELD.equals(atField) ? KrCheckpointRequest.FEED : Json.asText(request, "feed");
+        }
 
         /** 요청이 의미 검사를 통과하지 못함(행은 SKIPPED CHECKPOINT_INVALID). */
         boolean invalid() {
             return request != null && verdict != null && !verdict.accepted();
         }
 
-        /** 아침 결정 응답의 {@code checkpointPlan} — 요청이면 {session, atEt, feed, watch, status}, 아니면 계획 행에 한 일. */
+        /** 아침(한국은 밤) 결정 응답의 {@code checkpointPlan} — 요청이면 {session, atEt|atKst, feed, watch, status}, 아니면 계획 행에 한 일. */
         ObjectNode view(ObjectMapper mapper) {
             ObjectNode out = mapper.createObjectNode();
             out.put("session", session.toString());
             boolean finished = existing != null && !PaperBooks.CHECKPOINT_PLANNED.equals(existing.status());
             if (request != null) {
-                out.put("atEt", Json.asText(request, "atEt"));
-                out.put("feed", Json.asText(request, "feed"));
+                out.put(atField, Json.asText(request, atField));
+                out.put("feed", feed());
                 out.set("watch", request.path("watch").isArray() ? request.get("watch").deepCopy()
                         : mapper.createArrayNode());
                 // 이미 끝난(DONE·EXPIRED·SKIPPED) 세션 행은 되살리지 않음 — 그 상태 그대로.
@@ -1077,15 +1100,26 @@ public class ClaudeBookService {
      * 행도 없으면 null(할 일 없음).
      */
     private CheckpointPlan checkpointPlan(JsonNode parsed, LocalDate session, TradingCalendar calendar, Set<String> universe) {
+        return checkpointPlan(PaperBooks.CLAUDE2, parsed, session, calendar, universe);
+    }
+
+    /**
+     * {@link #checkpointPlan(JsonNode, LocalDate, TradingCalendar, Set)}를 그 계좌로 — 한국 Claude 계좌2(단계 2b)면 시각 칸 {@code atKst}와 한국 의미 검사
+     * ({@link KrCheckpointRequest}), 그 밖은 미국({@code atEt}·{@link CheckpointRequest}).
+     */
+    private CheckpointPlan checkpointPlan(String book, JsonNode parsed, LocalDate session, TradingCalendar calendar,
+                                          Set<String> universe) {
+        boolean korea = PaperBooks.KR_CLAUDE2.equals(book);
         JsonNode requested = parsed == null ? null : parsed.get("checkpoint");
         JsonNode request = requested != null && requested.isObject() ? requested : null;
-        PaperStore.Checkpoint existing = store.checkpoint(PaperBooks.CLAUDE2, session).orElse(null);
+        PaperStore.Checkpoint existing = store.checkpoint(book, session).orElse(null);
         if (request == null && existing == null) {
             return null;
         }
-        CheckpointRequest.Verdict verdict = request == null ? null
+        CheckpointRequest.Verdict verdict = request == null ? null : korea
+                ? KrCheckpointRequest.validate(request, session, calendar, universe, clock.instant())
                 : CheckpointRequest.validate(request, session, calendar, universe, clock.instant());
-        return new CheckpointPlan(session, request, existing, verdict);
+        return new CheckpointPlan(book, korea ? KrCheckpointRequest.AT_FIELD : "atEt", session, request, existing, verdict);
     }
 
     /** 감시할 수 있는 티커 — 관측치 종목 + 지금 보유(검증기의 유니버스와 같은 근거). */
@@ -1100,21 +1134,21 @@ public class ClaudeBookService {
         if (plan.invalid()) {
             // 의미 검사 실패 — 남은 PLANNED가 있든 없든 그 세션 행은 이 결정의 요청으로 SKIPPED CHECKPOINT_INVALID(끝난 행은 그대로).
             // 시각·피드가 칸 규칙(V18 CHECK·TIME)에 맞을 때만 요청 값을 남기고, 아니면 남은 PLANNED만 SKIPPED로.
-            if (writableRequest(plan.request())) {
+            if (writableRequest(plan)) {
                 writePlanned(plan, decisionId);
             }
-            if (store.markCheckpoint(PaperBooks.CLAUDE2, plan.session(), PaperBooks.CHECKPOINT_PLANNED,
+            if (store.markCheckpoint(plan.book(), plan.session(), PaperBooks.CHECKPOINT_PLANNED,
                     PaperBooks.CHECKPOINT_SKIPPED, plan.verdict().reason(), null, null, null) > 0) {
-                log.info("Claude 계좌2 장중 확인 계획 {} — 요청이 규칙에 맞지 않아 건너뜀: {}", plan.session(),
+                log.info("Claude {} 장중 확인 계획 {} — 요청이 규칙에 맞지 않아 건너뜀: {}", plan.book(), plan.session(),
                         plan.verdict().reason());
             }
         } else if (plan.request() != null) {
             boolean written = writePlanned(plan, decisionId);
-            log.info("Claude 계좌2 장중 확인 계획 {} {} {}{}", plan.session(), Json.asText(plan.request(), "atEt"),
-                    Json.asText(plan.request(), "feed"), written ? "" : " — 이미 끝난 세션이라 쓰지 않음");
-        } else if (store.markCheckpoint(PaperBooks.CLAUDE2, plan.session(), PaperBooks.CHECKPOINT_PLANNED,
+            log.info("Claude {} 장중 확인 계획 {} {} {}{}", plan.book(), plan.session(), Json.asText(plan.request(), plan.atField()),
+                    plan.feed(), written ? "" : " — 이미 끝난 세션이라 쓰지 않음");
+        } else if (store.markCheckpoint(plan.book(), plan.session(), PaperBooks.CHECKPOINT_PLANNED,
                 PaperBooks.CHECKPOINT_SKIPPED, CHECKPOINT_SUPERSEDED, null, null, null) > 0) {
-            log.info("Claude 계좌2 장중 확인 계획 {} — 다음 결정({})이 대신해 건너뜀", plan.session(), decisionId);
+            log.info("Claude {} 장중 확인 계획 {} — 다음 결정({})이 대신해 건너뜀", plan.book(), plan.session(), decisionId);
         }
     }
 
@@ -1122,20 +1156,20 @@ public class ClaudeBookService {
     private boolean writePlanned(CheckpointPlan plan, long decisionId) {
         List<String> watch = new ArrayList<>();
         plan.request().path("watch").forEach(ticker -> watch.add(ticker.asString()));
-        return store.upsertPlannedCheckpoint(new PaperStore.Checkpoint(PaperBooks.CLAUDE2, plan.session(),
-                java.time.LocalTime.parse(Json.asText(plan.request(), "atEt")), Json.asText(plan.request(), "feed"),
+        return store.upsertPlannedCheckpoint(new PaperStore.Checkpoint(plan.book(), plan.session(),
+                java.time.LocalTime.parse(Json.asText(plan.request(), plan.atField())), plan.feed(),
                 watch, Json.asText(plan.request(), "question"), decisionId, null, PaperBooks.CHECKPOINT_PLANNED, null,
                 null, null, null, null));
     }
 
     /** 요청의 시각이 시각 글자이고 피드가 MINUTE·HOURLY인가(행 칸 규칙 — 스키마가 막지만 다시 봄). */
-    private static boolean writableRequest(JsonNode request) {
+    private static boolean writableRequest(CheckpointPlan plan) {
         try {
-            java.time.LocalTime.parse(Json.asText(request, "atEt"));
+            java.time.LocalTime.parse(Json.asText(plan.request(), plan.atField()));
         } catch (RuntimeException e) {
             return false;
         }
-        return ExecutionSection.FEEDS.contains(Json.asText(request, "feed"));
+        return ExecutionSection.FEEDS.contains(plan.feed());
     }
 
     // ------------------------------------------------------------------ 초기 결정·미리보기
