@@ -17,7 +17,7 @@ app/tasks/kr_paper_timed.py
      }}}}
 
 - 라벨은 봉 **끝** 시각(KST ``HH:MM`` — 토스 1분봉 그대로, 개장 봉 09:01과 같은 뜻). 창 ``hh:00``의 봉은 라벨 hh:01~hh:05(봉 시작 hh:00~hh:04).
-  장중 시장가 주문은 그 기준 분 T(생성 + 60초를 분으로 올림 — 백엔드 KrTimedLadder와 같은 규칙)의 창 ``HH:MM``(라벨 T+1~T+5)을 같은 모양으로 더합니다
+  장중 시장가 주문은 그 기준 분 T((생성 + 60초)를 분으로 내린 뒤 + 1분 — 백엔드 ExecutionAudit.marketTarget과 같은 식)의 창 ``HH:MM``(라벨 T+1~T+5)을 같은 모양으로 더합니다
   (같은 종목·세션에 그 주문이 있을 때만 — 키가 매시와 같으면 같은 창).
 - ``firstAfter[hh:00]``는 E 안에서 라벨이 hh:01 이후이고 거래량이 0보다 큰 첫 봉(창 밖 대체 체결 R2b), 없으면 null.
 - 마감 봉은 정규장 마감 단일가 봉 — 라벨이 NXT 종목은 마감 + 1분(15:31), 그 밖(NXT 미지원 표시 주식·ETF)은 마감 시각(15:30)입니다(G2, 명세
@@ -61,7 +61,7 @@ KR_TIMED_SPACING = 0.1
 # 백엔드 PaperBooks와 같은 글자(test_kr_paper_timed가 파일로 대조).
 KR_TIMED_BOOKS = ("kr_claude2",)
 KR_TIMED_TIMINGS = ("AT_1000", "AT_1100", "AT_1200", "AT_1300", "AT_1400", "AT_1500", "NEXT_CLOSE", "MARKET")
-# 장중 시장가의 기준 분 — 생성 + 이만큼을 분으로 올림(백엔드 KrTimedLadder.MARKET_DELAY).
+# 장중 시장가의 기준 분 — (생성 + 이만큼)을 분으로 내린 뒤 + 1분(백엔드 ExecutionAudit.AFTER_CREATED).
 KR_MARKET_DELAY = timedelta(seconds=60)
 
 
@@ -82,10 +82,11 @@ def _label(hour: int, minute: int) -> str:
 
 
 def market_target(created_at: datetime) -> str:
-    """장중 시장가 주문의 기준 분 T(KST ``HH:MM``) — 생성 + 60초를 분으로 올림(이미 분 경계면 그대로)."""
-    at = (created_at + KR_MARKET_DELAY).astimezone(KST)
-    if at.second or at.microsecond:
-        at = at.replace(second=0, microsecond=0) + timedelta(minutes=1)
+    """
+    장중 시장가 주문의 기준 분 T(KST ``HH:MM``) — (생성 + 60초)를 분으로 내린 뒤 + 1분이라 늘 생성 + 60초보다 뒤입니다(백엔드
+    ExecutionAudit.marketTarget·미국 paper_bars.market_target과 같은 식 — :00초 생성이면 T = 생성 + 2분).
+    """
+    at = (created_at + KR_MARKET_DELAY).astimezone(KST).replace(second=0, microsecond=0) + timedelta(minutes=1)
     return _label(at.hour, at.minute)
 
 

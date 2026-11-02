@@ -153,9 +153,11 @@ def test_계좌와_시점_글자는_백엔드와_같다():
     assert f'SNAP_KR_PAPER_TIMED = "{catalog.SNAP_KR_PAPER_TIMED}"' in datasets
 
 
-def test_장중_시장가의_기준_분은_생성_더하기_60초를_분으로_올린다():
-    assert kr_paper_timed.market_target(datetime(2026, 11, 3, 10, 31, 0, tzinfo=KST)) == "10:32"
+def test_장중_시장가의_기준_분은_생성_더하기_60초를_분으로_내린_뒤_1분_뒤():
+    # 백엔드 ExecutionAudit.marketTarget과 같은 식 — 늘 생성 + 60초보다 뒤(:00초 생성이면 + 2분).
+    assert kr_paper_timed.market_target(datetime(2026, 11, 3, 10, 31, 0, tzinfo=KST)) == "10:33"
     assert kr_paper_timed.market_target(datetime(2026, 11, 3, 10, 31, 0, 500, tzinfo=KST)) == "10:33"
+    assert kr_paper_timed.market_target(datetime(2026, 11, 3, 10, 31, 59, tzinfo=KST)) == "10:33"
     assert kr_paper_timed.market_target(datetime(2026, 11, 3, 1, 59, 30, tzinfo=timezone.utc)) == "11:01"   # UTC로 와도 KST
 
 

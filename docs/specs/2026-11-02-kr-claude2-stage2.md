@@ -112,7 +112,7 @@
   동안 5분마다 받지 않는 까닭은 토스 지연이 몇 초라 T 뒤 한 장으로 충분하고(§8) 호출을 아끼려는 것. 저장: 종목마다 완성 봉(라벨 ≤ 받은 시각) 최근 30개, 오늘
   지난 기준 시각(09:00·10:00~15:00)의 창(라벨 hh:01~hh:05)·창 뒤 첫 거래 봉, 마지막 완성 봉; `lagSeconds` = 받은 시각 − 기준 종목 마지막 완성 봉의 끝(라벨).
   실행당 호출 상한 30.
-- **장중 시장가 `MARKET`**(확인 응답만): 기준 시각 T = 생성 + 60초를 분으로 올림(KST). 체결 사다리는 매시와 같음(창·창 뒤 첫 거래 봉) — `kr_paper_timed`가 MARKET
+- **장중 시장가 `MARKET`**(확인 응답만): 기준 시각 T = (생성 + 60초)를 분으로 내린 뒤 + 1분(늘 생성 + 60초보다 뒤 — 미국 `ExecutionAudit.marketTarget`과 같은 식). 체결 사다리는 매시와 같음(창·창 뒤 첫 거래 봉) — `kr_paper_timed`가 MARKET
   대기 주문의 T 창도 함께 받는다. T가 마감 − 10분(종가 단일가) 이후면 검증기가 MALFORMED. 장부 순서: 시가 → 매시·MARKET(기준 시각 순, 같은 시각은 매도 → 매수)
   → 종가.
 - **확인 작업 `PaperKrCheckpointJob`**(60초, `PAPER_ENABLED`만): 미국 작업과 같은 상태 기계(STALE_SESSION·WINDOW_MISSED·NO_WATCH_SNAPSHOT·CALL_CAP·BOOK_NOT_ACTIVE·
