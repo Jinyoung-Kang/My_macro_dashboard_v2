@@ -2,7 +2,8 @@
 export type LiveMarketStatus = "OPEN" | "PRE" | "POST" | "CLOSED";
 
 export interface LivePrice {
-  market: "US" | "KR";
+  /** US(Yahoo 심볼)·KR(6자리)·TV(트레이딩뷰 '거래소:심볼')·NI(네이버 해외 지수 '.INX') — 시장 메뉴 카드는 TV·NI */
+  market: "US" | "KR" | "TV" | "NI";
   code: string;
   price: number;
   prevClose: number | null;
@@ -12,8 +13,10 @@ export interface LivePrice {
   /** 마지막 거래 시각(ISO UTC) */
   tradedAt: string | null;
   status: LiveMarketStatus | null;
-  /** "Yahoo"·"네이버"·"다음"·"토스 1분봉" */
+  /** "Yahoo"·"네이버"·"다음"·"토스 1분봉"·"TradingView" */
   source: string;
+  /** 출처가 밝힌 시세 지연(분, 0 = 실시간) — 모르면 null(예전 응답에는 없음) */
+  delayMinutes?: number | null;
   /** 시간 외(국내 NXT 장 전·장 후, 미국 프리·애프터)가 열려 있을 때 그 가격·전일 대비·거래 시각·구분(PRE_MARKET·AFTER_MARKET) */
   overPrice: number | null;
   overChange: number | null;

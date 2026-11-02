@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { HorizontalBars } from "@/components/charts";
+import { LiveIntervalSelect } from "@/components/LiveIntervalSelect";
 import {
   Banner,
   Card,
@@ -15,8 +16,11 @@ import {
 } from "@/components/ui";
 import { StatusText } from "@/components/ui/icons";
 import { useApi } from "@/hooks/useApi";
+import { useLivePrices } from "@/hooks/useLivePrices";
+import { useLiveSeconds } from "@/hooks/useLiveSeconds";
 import { deltaColor, EMPTY, formatNumber, formatPercent } from "@/lib/format";
-import type { SectorResponse, SectorRow } from "@/lib/types";
+import { liveKey, livePriceTitle, liveShown } from "@/lib/livePrices";
+import type { LivePrice, SectorResponse, SectorRow } from "@/lib/types";
 import { SOURCES } from "@/lib/sources";
 import { endpoints } from "@/lib/endpoints";
 import { knownBars } from "@/lib/chartData";
@@ -40,6 +44,11 @@ export default function SectorPage() {
   const sectors = data?.sectors ?? [];
   const assets = data?.assetClasses ?? [];
 
+  // 현재가는 고른 주기마다 서버가 밀어 주는 실시간 시세(ADR 0024 — 저장하지 않는 표시 전용, 주기는 모의 매매 화면과 같은 설정).
+  // 수익률·순위는 저장본(종가) 기준 그대로입니다.
+  const [liveSeconds] = useLiveSeconds();
+  const live = useLivePrices([...sectors, ...assets].map((row) => liveKey("US", row.ticker)), liveSeconds);
+
   // 값을 모르는 섹터는 막대에서 뺍니다(0으로 그리지 않음).
   const chartData = knownBars(
     sectors,
@@ -53,14 +62,19 @@ export default function SectorPage() {
         title="섹터 & 자산군 로테이션 맵"
         description={<>S&amp;P 11개 섹터 + 글로벌 자산군 모멘텀 · 벤치마크 {data?.benchmark ?? "SPY"}</>}
         actions={
-          <Freshness
-            collectedAt={data?.collectedAtKst}
-            ageSeconds={data?.ageSeconds}
-            stale={data?.stale}
-            refreshError={refreshError}
-          />
+          <>
+            <LiveIntervalSelect label="현재가 실시간" />
+            <Freshness
+              collectedAt={data?.collectedAtKst}
+              ageSeconds={data?.ageSeconds}
+              stale={data?.stale}
+              refreshError={refreshError}
+            />
+          </>
         }
-      />
+      >
+        {live.error && <p className="mt-1 text-xs text-muted">실시간 시세: {live.error} — 현재가는 저장본 값입니다.</p>}
+      </PageHeader>
 
       {/* 선택 상자가 있는 첫 카드는 늘 그리고 본문만 로딩·오류로 바꿉니다 — 페이지 전체를 바꾸면 방금 조작한
           선택 상자가 사라지고 키보드 포커스를 잃었습니다(QA-047). */}
@@ -113,15 +127,15 @@ export default function SectorPage() {
         <>
           <Card
             title="섹터 상세" source={SOURCES.yahooEtf}
-            subtitle={`표본이 부족한 기간은 —로 표시합니다. 순위는 위에서 고른 ${period} 기준입니다.`}
+            subtitle={`표본이 부족한 기간은 —로 표시합니다. 순위는 위에서 고른 ${period} 기준입니다. 현재가는 실시간 시세(아래 줄은 오늘 등락), 수익률은 저장본입니다.`}
           >
-            <ReturnsTable rows={sectors} period={period} kindLabel="유형" />
+            <ReturnsTable rows={sectors} period={period} kindLabel="유형" realtime={live.prices} />
           </Card>
 
           <Card title="자산군 상세" source={SOURCES.yahooEtf} subtitle="주식·채권·원자재·통화 전반의 상대 성과">
             {/* 초과성과(α)는 S&P 500 대비 지표라 자산군에는 의미가 없습니다.
                 전부 "—"인 열을 남겨 두면 "계산이 실패했나?"로 읽힙니다. */}
-            <ReturnsTable rows={assets} period={period} kindLabel="자산군" showAlpha={false} />
+            <ReturnsTable rows={assets} period={period} kindLabel="자산군" showAlpha={false} realtime={live.prices} />
           </Card>
         </>
       )}
@@ -134,11 +148,14 @@ function ReturnsTable({
   period,
   kindLabel,
   showAlpha = true,
+  realtime = {},
 }: {
   rows: SectorRow[];
   period: string;
   kindLabel: string;
   showAlpha?: boolean;
+  /** 'US:XLK' → 실시간 가격(없으면 저장본 현재가) */
+  realtime?: Readonly<Record<string, LivePrice>>;
 }) {
   const sorted = sortDescUnknownLast(rows, (row) => row.returns?.[period]);
 
@@ -173,7 +190,7 @@ function ReturnsTable({
           key: "price",
           header: "현재가",
           align: "right",
-          render: (row) => formatNumber(row.price, 2),
+          render: (row) => <PriceCell stored={row.price} realtime={realtime[liveKey("US", row.ticker)]} />,
         },
         // 순위를 매긴 기간 열을 밝게 둡니다. 어떤 기준으로 1위가 됐는지
         // 표 안에서 바로 보이지 않으면 위쪽 선택값을 기억해야 합니다.
@@ -213,5 +230,20 @@ function ReturnsTable({
           : []),
       ]}
     />
+  );
+}
+
+/** 현재가 칸 — 실시간 값이 있으면 그 가격과 오늘 등락(시간 외면 그 이름), 설명에 출처·거래 시각. 없으면 저장본 현재가. */
+function PriceCell({ stored, realtime }: { stored: number | null; realtime?: LivePrice }) {
+  if (!realtime) return <>{formatNumber(stored, 2)}</>;
+  const shown = liveShown(realtime);
+  return (
+    <span className="flex flex-col items-end" title={livePriceTitle(realtime, (value) => formatNumber(value, 2))}>
+      <span>{formatNumber(shown.price, 2)}</span>
+      <span className={`text-xs ${deltaColor(shown.changePct)}`}>
+        {formatPercent(shown.changePct)}
+        {shown.session ? ` · ${shown.session}` : ""}
+      </span>
+    </span>
   );
 }

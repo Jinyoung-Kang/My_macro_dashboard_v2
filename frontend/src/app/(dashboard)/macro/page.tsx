@@ -1,5 +1,6 @@
 "use client";
 
+import { useMemo } from "react";
 import {
   AutoRefreshControl,
   LIVE_THRESHOLD_SECONDS,
@@ -20,9 +21,11 @@ import {
 } from "@/components/ui";
 import { AlertTriangleIcon, StatusText } from "@/components/ui/icons";
 import { useApi } from "@/hooks/useApi";
+import { useLivePrices } from "@/hooks/useLivePrices";
 import { SOURCES, uniqueSources } from "@/lib/sources";
 import { EMPTY, formatKst, withoutLeadingIcon } from "@/lib/format";
 import { cardNotices, categoryDelay } from "@/lib/macroCards";
+import { macroLiveItem, macroLiveItems, withLive, type MacroCardView } from "@/lib/macroLive";
 import type {
   AdvancedIndicators,
   MacroItem,
@@ -90,6 +93,21 @@ export default function MacroPage() {
 
   const data = overview.data;
 
+  // 카드 값은 고른 간격마다 서버가 밀어 주는 실시간 시세로 덮습니다(ADR 0024 — 저장하지 않는 표시 전용, 끄기면 화면을 열 때 한 번).
+  // 저장본(위 overview)은 그대로 읽어 카드의 틀·전일값 출처·실시간이 없는 카드에 씁니다.
+  const liveItems = useMemo(() => macroLiveItems(data?.categories), [data?.categories]);
+  const livePrices = useLivePrices(liveItems, refreshSeconds);
+  const categories = useMemo(
+    () => data?.categories?.map((category) => ({
+      ...category,
+      items: category.items.map((item): MacroCardView => {
+        const code = macroLiveItem(item);
+        return code ? withLive(item, livePrices.prices[code], livePrices.receivedAt) : item;
+      }),
+    })),
+    [data?.categories, livePrices.prices, livePrices.receivedAt],
+  );
+
   return (
     <div className="flex flex-col gap-6 lg:gap-8">
       <PageHeader
@@ -114,11 +132,14 @@ export default function MacroPage() {
       >
         {/* 고른 간격보다 값이 늦게 바뀌는 이유를 화면에서 바로 알 수 있게 적습니다.
             적지 않으면 "10초로 해 뒀는데 숫자가 그대로"로 읽힙니다. */}
-        {live && (
+        {refreshSeconds > 0 && (
           <p className="mt-1 text-xs text-muted">
-            카드 시세는 최대 1분마다 새로 수집됩니다. 출처(Yahoo·TradingView)가
-            폴링·지연 시세라 그보다 빠르게는 바뀌지 않습니다.
+            카드 시세는 고른 간격마다 서버가 바로 받아 밀어 줍니다(TradingView·네이버, 저장하지 않음). 출처가 지연 시세인
+            카드(선물·상하이)는 배지에 그 지연을 적습니다.
           </p>
+        )}
+        {livePrices.error && (
+          <p className="mt-1 text-xs text-muted">실시간 시세: {livePrices.error} — 카드는 저장본 값입니다.</p>
         )}
       </PageHeader>
 
@@ -138,7 +159,7 @@ export default function MacroPage() {
           </Banner>
         )}
 
-        {data?.categories?.map((category) => (
+        {categories?.map((category) => (
           <Card
             key={category.id}
             title={category.title}
@@ -182,7 +203,12 @@ export default function MacroPage() {
                   caption={
                     <span className="flex flex-col gap-0.5">
                       <span>전일: {item.prevStr ?? EMPTY}</span>
-                      {item.lastTs && <span>{formatKst(item.lastTs)}</span>}
+                      {item.live ? (
+                        <span>
+                          실시간 {item.live.at} {item.live.received ? "수신" : "거래"}
+                          {item.live.session ? ` · ${item.live.session}` : ""}
+                        </span>
+                      ) : item.lastTs && <span>{formatKst(item.lastTs)}</span>}
                       {item.prevSource && <span>전일값 출처: {item.prevSource}</span>}
                     </span>
                   }
