@@ -14,7 +14,7 @@
 | 메서드 | 경로 | 설명 |
 |---|---|---|
 | POST | `/api/auth/login` | `{"email": "...", "password": "..."}` → 세션 쿠키(HttpOnly·SameSite=Strict, DB 세션 — ADR 0010)와 `{ok, user:{email, role, tier, demo:false}}`. 없는 이메일과 틀린 비밀번호는 같은 401. (접속 주소, 이메일)마다 연속 5회 실패 뒤에는 느리게(전역 1초에 1건) 처리하며 틀리면 **429 + `Retry-After`**(안내값 30초부터 2배씩, 최대 15분) — 맞는 비밀번호는 그래도 통과. 다른 느린 시도가 진행 중이면 즉시 429(1초). 본문은 4KB까지(초과 413). 다른 출처(Origin)에서 온 POST는 403 |
-| GET | `/api/auth/session` | `{"authenticated": bool, "mailAvailable": bool, "readMode": …, "user": {email, role(OWNER·MEMBER), tier(FREE·PRO), demo(bool)}}`. `mailAvailable`은 가입·재설정을 쓸 수 있는지(메일 발송 설정). `readMode`·`user`는 로그인한 경우에만 옵니다. 데모 열람(ADR 0013)이면 세션 없이도 `authenticated: true`, `user`는 `{email: null, role: "MEMBER", tier: "PRO", demo: true}`입니다. 늘 `noLogin`(로컬 무로그인이 켜져 있는가, ADR 0016)과 `ownerMissing`(켜져 있고 이 맥 요청인데 운영자 계정이 없음)이 오고, `user.local`은 쿠키 없이 첫 운영자로 연 경우 true입니다. 로컬 무로그인 운영자의 쓰기는 이 맥 화면의 `Origin`(`http://localhost:<화면 포트>` 등)이 있어야 하고, 없거나 다른 출처·다른 사이트(`Sec-Fetch-Site: cross-site`)면 403 `bad_origin`입니다. 화면은 이 값으로 메뉴를 고르고, 막는 것은 백엔드의 경로별 접근 정책입니다 |
+| GET | `/api/auth/session` | `{"authenticated": bool, "mailAvailable": bool, "readMode": …, "user": {email, role(OWNER·MEMBER), tier(FREE·PRO), demo(bool)}}`. `mailAvailable`은 가입·재설정을 쓸 수 있는지(메일 발송 설정). `readMode`·`user`는 로그인한 경우에만 옵니다. 데모 열람(ADR 0013)이면 세션 없이도 `authenticated: true`, `user`는 `{email: null, role: "MEMBER", tier: "PRO", demo: true}`입니다. 늘 `noLogin`(로컬 무로그인이 켜져 있는가, ADR 0016)과 `ownerMissing`(켜져 있고 이 맥 요청인데 운영자 계정이 없음)이 오고, `user.local`은 쿠키 없이 첫 운영자로 연 경우 true입니다. Vultr 서버에서 Tailscale 신원 자동 로그인(ADR 0023 결정 10 — `Tailscale-User-Login`이 `TAILNET_OWNER_LOGIN`과 같음)으로 연 경우도 `noLogin: true`이고 `user.tailnet: true`가 붙습니다(쓰기의 출처 검사는 같음). 로컬 무로그인 운영자의 쓰기는 이 맥 화면의 `Origin`(`http://localhost:<화면 포트>` 등)이 있어야 하고, 없거나 다른 출처·다른 사이트(`Sec-Fetch-Site: cross-site`)면 403 `bad_origin`입니다. 화면은 이 값으로 메뉴를 고르고, 막는 것은 백엔드의 경로별 접근 정책입니다 |
 | POST | `/api/auth/logout` | 쿠키 만료 + 그 세션을 DB에서 끊음(재시작 후에도 유지) |
 | POST | `/api/auth/logout-all` | 다른 기기의 내 세션을 모두 끊음(지금 기기는 남김) → `{ok, revoked}` |
 | GET | `/api/auth/sessions` | 내 로그인 세션 목록 `{sessions:[{id, current, createdAt, lastSeenAt, expiresAt, userAgent}]}` |
@@ -228,13 +228,14 @@ GET·OPTIONS 밖(쓰기·HEAD)은 경로와 상관없이 403 `{"error":"demo_rea
 
 ### 화면 실시간 시세 ([ADR 0024](adr/0024-live-prices-sse.md))
 
-모의 매매 장중 카드·보유 표·종목 상세가 사용자가 고른 주기(5초~3시간, 기본 1시간)로 받는 가격입니다. 저장하지 않고 수집기 `/live/prices`(미국 네이버 → Yahoo,
-국내 네이버 → 다음 → 토스 1분봉, 3초 캐시)를 전하며, 장부(체결·스탑·통계·결정)는 쓰지 않습니다. 종목은 `items=US:AAPL,KR:005930`(Yahoo 심볼·국내 6자리,
-60개까지 — 형식이 틀리면 400). `store_only` 읽기 모드에서는 부르지 않고 `available:false`.
+모의 매매 장중 카드·보유 표·종목 팝업·종목 상세와 [시장] 메뉴(매크로 카드·섹터 현재가)가 사용자가 고른 주기(5초~3시간)로 받는 가격입니다. 저장하지 않고 수집기
+`/live/prices`(미국 네이버 → Yahoo, 국내 네이버 → 다음 → 토스 1분봉, `TV:` TradingView global/scan, `NI:` 네이버 해외 지수, 3초 캐시)를 전하며, 장부(체결·스탑·통계·결정)는
+쓰지 않습니다. 종목은 `items=US:AAPL,KR:005930,TV:TVC:DXY,NI:.INX`(Yahoo 심볼·국내 6자리·트레이딩뷰 '거래소:심볼'·네이버 지수 로이터 코드, 60개까지 — 형식이 틀리면 400).
+`store_only` 읽기 모드에서는 부르지 않고 `available:false`.
 
 | 경로 | 설명 |
 |---|---|
-| `GET /api/live/prices?items=` | 지금 한 번 → `{available, prices:{fetchedAt, items:{'US:AAPL':{market, code, price, prevClose, change, changePct, currency, tradedAt, status(OPEN·PRE·POST·CLOSED·null), source, overPrice, overSession}}, missing:[…], errors:{출처: 사유}}}` — 모르는 값은 null |
+| `GET /api/live/prices?items=` | 지금 한 번 → `{available, prices:{fetchedAt, items:{'US:AAPL':{market, code, price, prevClose, change, changePct, currency, tradedAt, status(OPEN·PRE·POST·CLOSED·null), source, delayMinutes(출처가 밝힌 지연 분, 0 = 실시간), overPrice, overChange, overChangePct, overTradedAt, overSession(PRE_MARKET·AFTER_MARKET — 시간 외가 열려 있을 때)}}, missing:[…], errors:{출처: 사유}}}` — 모르는 값은 null |
 | `GET /api/live/prices/stream?items=&interval=` | SSE(`text/event-stream`) — 바로 한 번, 그 뒤 `interval`초(5·10·30·60·120·300·600·900·1800·3600·10800)마다 `prices` 이벤트(본문은 위와 같음), 25초마다 주석 줄. 받은 종목이 모두 장이 닫혀 있으면 다음은 5분 이상 뒤. 연결은 주기 + 5분 뒤 끝나고 브라우저가 다시 이음. 동시 연결 20개를 넘으면 429 |
 
 ### 모의 매매(미국·한국, 운영자 전용)
@@ -351,7 +352,7 @@ CAGR 지수도 같음), 20일 미만이면 `cumReturnPct`만 있습니다. 변�
 | [토큰] `GET /live/ticker/{symbol}?period=` | 티커 시계열 즉시 수집 |
 | [토큰] `GET /live/daum-intraday?minutes=30` | 장중 수급 가속도 |
 | [토큰] `GET /live/quote?market=us\|kr&code=` | 검색 상세의 시세·핵심 지표·개요(Yahoo·네이버, 5분 캐시) |
-| [토큰] `GET /live/prices?items=US:AAPL,KR:005930` | 화면 실시간 시세(ADR 0024 — 미국 네이버 → Yahoo, 국내 네이버 → 다음 → 토스 1분봉, 3초 캐시, 저장 안 함, 60개까지) |
+| [토큰] `GET /live/prices?items=US:AAPL,KR:005930,TV:TVC:DXY,NI:.INX` | 화면 실시간 시세(ADR 0024 — 미국 네이버 → Yahoo, 국내 네이버 → 다음 → 토스 1분봉, `TV:` TradingView global/scan, `NI:` 네이버 해외 지수, 종목마다 지연·시간 외 가격, 3초 캐시, 저장 안 함, 60개까지) |
 | [토큰] `GET /live/news?market=&code=&q=` | 검색 상세의 주요 뉴스(Yahoo·네이버·구글 뉴스 RSS, 15분 캐시) |
 | [토큰] `GET /live/symbols?q=` | 종목 찾기(네이버 자동완성·Yahoo 검색, 1시간 캐시) |
 | [토큰] `GET /verify/readings?market=&investor=&tradeType=` | 검증용 원자료 (판정은 백엔드, 읽는 코드는 `app/verification.py`) |

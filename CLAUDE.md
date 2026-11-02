@@ -53,7 +53,8 @@ PostgreSQL ← 수집기(FastAPI, `collector/`). Docker Compose 네 컨테이너
   추정치는 `isEstimated`/`isProxy`를 함께 내려보낸다.
 - **새 API 경로는 `AccessPolicy` 표에 넣는다**(공개·회원·유료·운영자, ADR 0010) — 빠지면 `AccessPolicyTest`가 막는다. 사용자 정보는 `support.CurrentUser`.
   로그인은 이메일+비밀번호(DB 세션). 운영자 계정은 처음 기동 때 `.env`의 `OWNER_EMAIL`·`APP_PASSWORD`로 만든다.
-  로컬 compose는 로그인 없이 이 맥에서 첫 운영자로 연다(`LOCAL_NO_LOGIN`, ADR 0016). AWS·QA 덧붙임은 `"false"` 고정(AWS 개인용 서버는 ADR 0019).
+  로컬 compose는 로그인 없이 이 맥에서 첫 운영자로 연다(`LOCAL_NO_LOGIN`, ADR 0016). AWS·QA·Vultr 덧붙임은 `"false"` 고정(AWS 개인용 서버는 ADR 0019) —
+  Vultr는 Tailscale 신원이 서버 `.env`의 `TAILNET_OWNER_LOGIN`과 같을 때만 로그인 없이 운영자(ADR 0023 결정 10, 앱 포트는 루프백만).
 - **모의 매매 상태는 Vultr 서버 한 곳에만**(ADR 0019·0020·0023) — 2026-11-03 02:30 KST부터(그 전은 AWS EC2 `my-macro-app`, 지금은 `PAPER_ENABLED=false`·정지). **이 폴더의 `.env`는 `PAPER_ENABLED=false` 고정**.
   두 곳에서 정기 작업(리스크 점검·결정·체결)이 동시에 돌면 안 된다 — AWS를 다시 켜도 그 `.env`의 `PAPER_ENABLED=false`를 지우지 않는다(서버 v1도 다시 올리지 않는다).
   로컬 `.env`를 서버로 보낼 때는 그 줄과 포트 네 줄 등을 빼고 서버 전용 줄(`PAPER_KR_START_DATE` 포함)을 더한다(`.env.vultr.example`).

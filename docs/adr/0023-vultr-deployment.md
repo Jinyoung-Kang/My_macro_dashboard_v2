@@ -12,6 +12,8 @@
     `TAILSCALE_*`·`TAILNET_DOMAIN`, `PAPER_ENABLED=false`가 없으면 막지 않고 주의, QA-145 다시 돌기, 스키마 10번 실패면 0이 아닌 값), `backup-s3.sh`(`db/vultr/`),
     `instance.sh`·`firewall-pc-ip.sh`(가짜 Vultr API — 새 22 규칙을 먼저 넣고 옛 규칙만 지움, 다른 규칙 그대로, API 키가 curl 인자에 없음, 401·403이면 콘솔 안내).
   - `collector/tests/test_deploy_migrations.py`(QA-107·118 머리말 손 배포를 두 덧붙임에), `CorsOriginsTest`(Vultr 허용 출처), 비밀 파일·이모지 시험 목록.
+  - Tailscale 신원 자동 로그인(결정 10): `TailnetLoginTest`(비면 꺼짐·대소문자·공백), `SessionFilterTest` 'Tailscale 신원 자동 로그인'(맞는 신원만 운영자, 다른 신원·
+    꺼짐은 로그인, 쿠키 없는 쓰기의 다른 사이트 출처 403), `AuthControllerTest`(세션 응답 `noLogin`·`user.tailnet`), CI 'Vultr 덧붙임 해석'(기본 빈 값·서버 `.env` 값 전달).
   - Vultr 방화벽·Tailscale 설정·IAM 사용자는 저장소 밖 자원이라 시험이 없습니다 — 명세 §0·§5에 확인한 것을 적고, 바뀌면 이 문서의 결과에 적습니다.
 
 ## 배경
@@ -50,6 +52,12 @@ ADR 0019의 AWS 서버는 가동 창(평일 밤·평일 낮·일요일 밤)만 �
    AWS 일정 6개 DISABLE·인스턴스 정지. AWS my-macro 자원은 한 주 정지 상태로 두었다가 지웁니다(D5).
 9. **AWS 파일은 컷오버 전까지 그대로** 둡니다(`scripts/aws`·`compose.aws.yml`·`deploy/aws`·`.env.aws.example`) — AWS 운영본이 쓰는 중입니다. Vultr 파일은 같은 이름·구조로
    갈라내 두어, 정리(명세 §7) 때 AWS 파일을 지우기만 하면 됩니다.
+
+10. **Tailscale 신원 자동 로그인**(2026-11-03 사용자 결정 — "Tailscale 계정이면 자동 로그인", 이메일·비밀번호 화면을 없애 달라는 요청): Tailscale Serve는 넘기는
+    요청에 사용자 신원 헤더 `Tailscale-User-Login`을 붙이고 클라이언트가 보낸 같은 이름의 헤더는 지웁니다(Tailscale 공식 문서 'Serve — identity headers', v1.92+ —
+    서버는 1.104.4). 이 값이 서버 `.env`의 `TAILNET_OWNER_LOGIN`과 같으면(대소문자 무시) 쿠키 없는 요청을 첫 운영자로 엽니다 — 로컬 무로그인(ADR 0016)과 같은
+    운영자·같은 출처 검사(쿠키 없는 쓰기는 허용 출처의 `Origin`, 다른 사이트면 403). 비면 꺼짐(로컬·QA·AWS 기본). 비상용 SSH 포워딩으로 온 요청에는 헤더가 없어
+    로그인 화면이 그대로입니다. 세션 응답은 `noLogin: true`·`user.tailnet: true`이고 계정 메뉴는 'Tailscale · 로그인 없음'.
 
 ## 이유
 
@@ -90,5 +98,8 @@ ADR 0019의 AWS 서버는 가동 창(평일 밤·평일 낮·일요일 밤)만 �
 - **접속 주소가 하나로 보임**: tailscale serve가 루프백으로 넘긴 요청은 caddy에 모두 같은 주소로 보여, 로그인 지연은 사실상 이메일별입니다(AWS 터널과 같음, 사용자 1명).
 - **병행 중 외부 호출이 두 배**: Vultr 수집기도 외부 출처를 부릅니다(정기 작업은 꺼져 있어 Claude 결정 호출은 없음). 토스는 같은 앱 키로 두 곳이 토큰을 받습니다(D3에서 감수).
 - **백업 객체 덮어쓰기**: 백업 IAM 사용자는 지우기 권한이 없지만 같은 키로 덮어쓰는 것은 막지 못합니다(0019와 같은 남은 위험). 파일 이름에 시각이 있어 평소에는 겹치지 않습니다.
+- **신원 헤더를 믿는 전제**(결정 10): 앱이 루프백(caddy `127.0.0.1:8201`·백엔드 `127.0.0.1`)에만 열려 Serve를 거치지 않고는 닿지 않아야 합니다 — 포트를 공개로
+  바꾸면 누구나 헤더를 붙여 운영자가 됩니다(CI가 포트를 봄). 서버 안의 다른 프로세스는 헤더를 붙여 루프백으로 부를 수 있습니다(같은 서버 권한이면 `.env`를 읽을 수
+  있다고 보고 받아들임 — ADR 0016과 같은 판단). tailnet에 다른 사용자를 들이면 그 사용자는 로그인 화면이고, 기기를 잃으면 Tailscale 관리 화면에서 기기를 지웁니다.
 - **비상용 22**: PC 공인 IP가 바뀌면 막힙니다 — Tailscale이 살아 있으면 상관없고, 둘 다 막히면 Vultr 콘솔(웹 콘솔)로 들어갑니다. WSL에서 Tailscale SSH가
   계속 되면 22를 닫을지 정합니다(명세 §2).

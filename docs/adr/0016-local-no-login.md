@@ -75,3 +75,5 @@
   두면 가를 수 없습니다 — 밖에서 열려면 `LOCAL_NO_LOGIN=false`로 로그인 모드를 쓰세요.
 - 쿠키 없이 이 맥에서 API에 쓰는 스크립트·curl은 `Origin: http://localhost:<화면 포트>`가 필요합니다(없으면 403).
 - 운영자 계정은 지금처럼 처음 기동 때 `OWNER_EMAIL`·`APP_PASSWORD`로 만듭니다(ADR 0010). 그 값이 없으면 화면이 안내합니다.
+- (2026-11-03 덧붙임) Vultr 서버는 로그인 모드(`DASHBOARD_LOCAL_NO_LOGIN="false"`)이지만, Tailscale Serve가 붙인 사용자 신원이 `TAILNET_OWNER_LOGIN`과 같으면
+  같은 첫 운영자로 엽니다([ADR 0023](0023-vultr-deployment.md) 결정 10). 운영자 고르기·세션 없음·출처 검사는 이 문서의 것을 그대로 씁니다.

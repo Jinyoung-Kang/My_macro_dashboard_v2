@@ -511,7 +511,8 @@ S3 백업으로 되돌리기: `aws s3 ls s3://<버킷>/db/` → 받을 파일을
 
 ### 접속 (Tailscale)
 
-- 서버·PC·휴대폰이 같은 tailnet에 있습니다. 화면은 `https://my-macro-app.<tailnet>.ts.net`(운영자 계정 `OWNER_EMAIL`로 로그인). 서버의 `tailscale serve`가
+- 서버·PC·휴대폰이 같은 tailnet에 있습니다. 화면은 `https://my-macro-app.<tailnet>.ts.net` — 서버 `.env`의 `TAILNET_OWNER_LOGIN`과 같은 Tailscale 사용자면 로그인 없이
+  운영자로 열리고(ADR 0023 결정 10), 비었거나 다른 사용자·비상용 포워딩이면 운영자 계정 `OWNER_EMAIL`로 로그인합니다. 서버의 `tailscale serve`가
   HTTPS(Tailscale이 받는 인증서)를 끝내고 `127.0.0.1:8201`의 caddy로 넘깁니다. 공개 인터넷에 열린 TCP 포트는 없습니다(잠금화면도 없음).
 - 셸: `ssh ubuntu@my-macro-app`(Tailscale SSH). WSL처럼 MagicDNS 이름에 저장된 호스트 키가 없으면 tailnet 주소(`getent hosts my-macro-app`)로 붙습니다.
 - 비상용(Tailscale이 막혔을 때): `ssh -i ~/.ssh/id_ed25519_vultr ubuntu@<서버 IP>` — 방화벽 22는 PC 공인 IP/32만. 화면은 같은 명령에
@@ -540,7 +541,10 @@ tmp="$(mktemp)" && grep -Ev '^[[:space:]]*(export[[:space:]]+)?(DATABASE_PORT|BA
 - 로컬 `.env` 끝 줄에 줄바꿈이 없을 수 있어 덧붙이는 줄은 `\n`으로 시작합니다.
 - 로컬 `.env`의 `PAPER_ENABLED=false`는 거르고 다시 넣지 않습니다(서버는 비우면 켜짐). `PAPER_KR_START_DATE`는 로컬 `.env`에 없어 덧붙입니다(한국 출발일 —
   빠지면 한국 초기화·출발이 막힘).
-- 다시 전달하면 서버 `.env`를 통째로 덮어씁니다. 서버에만 적은 줄(`COOKIE_SECURE=false` 등)은 다시 덧붙입니다.
+- 다시 전달하면 서버 `.env`를 통째로 덮어씁니다. 서버에만 적은 줄(`TAILNET_OWNER_LOGIN`·`COOKIE_SECURE=false` 등)은 다시 덧붙입니다.
+- `TAILNET_OWNER_LOGIN`은 운영자의 Tailscale 로그인 이름입니다(계정 고유 값 — 서버 `.env`에만). 값을 화면에 찍지 않고 서버에서 덧붙입니다:
+  `v="$(tailscale status --json | python3 -c 'import json,sys; d=json.load(sys.stdin); print(d["User"][str(d["Self"]["UserID"])]["LoginName"])')" && printf '\nTAILNET_OWNER_LOGIN=%s\n' "$v" >> ~/My_macro_dashboard_v2/.env`
+  (서버를 운영자 계정으로 tailnet에 넣었을 때 — 태그 기기면 PC에서 같은 명령으로 읽음) 뒤 `bash scripts/vultr/deploy.sh`. 로그에는 켜졌다는 경고 한 줄만 남습니다(값은 남기지 않음).
 
 ### 배포
 

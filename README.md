@@ -391,7 +391,8 @@ ssh ubuntu@my-macro-app                    # 서버 셸(Tailscale SSH) — 그 �
 ```
 
 - 서버 `.env`는 로컬 `.env`에서 포트 네 줄·`COOKIE_SECURE`·`LOCAL_NO_LOGIN`·`FRONTEND_ORIGIN`·`PUBLIC_URL`·`AWS_INSTANCE_ID`·`VULTR_*`·`TAILSCALE_*`·`TAILNET_DOMAIN`을 빼고
-  `COMPOSE_FILE`·`AWS_BACKUP_BUCKET`·`PUBLIC_ORIGIN`(Tailscale 주소)·`PAPER_KR_START_DATE`(한국 출발일)를 더한 것입니다([.env.vultr.example](.env.vultr.example)).
+  `COMPOSE_FILE`·`AWS_BACKUP_BUCKET`·`PUBLIC_ORIGIN`(Tailscale 주소)·`PAPER_KR_START_DATE`(한국 출발일)·`TAILNET_OWNER_LOGIN`(그 Tailscale 사용자는 로그인 없이 운영자 —
+  [ADR 0023](docs/adr/0023-vultr-deployment.md) 결정 10, 비면 로그인 화면)을 더한 것입니다([.env.vultr.example](.env.vultr.example)).
   PC의 `.env`에는 `VULTR_API_KEY`·`VULTR_INSTANCE_ID`·`VULTR_SERVER_IP`·`VULTR_FIREWALL_GROUP_ID`·`TAILSCALE_AUTH_KEY`·`TAILNET_DOMAIN`을 더합니다.
 - DB는 AWS와 같은 시각(06:45 KST·일 23:00 KST)에 같은 S3 버킷의 `db/vultr/`로 백업합니다(`scripts/vultr/backup-s3.sh`, cron).
 - 서버 만들기·`.env` 전달·배포·백업 절차는 [docs/DEVELOPMENT.md §8](docs/DEVELOPMENT.md#8-vultr-서버)에 있습니다.

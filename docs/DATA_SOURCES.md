@@ -484,15 +484,17 @@ EQUITY_MAP = {
 
 ## 6-2. 화면 실시간 시세 (저장하지 않음, [ADR 0024](adr/0024-live-prices-sse.md))
 
-모의 매매 장중 카드·보유 표·종목 상세의 가격은 수집 태스크가 아니라 화면이 SSE로 붙어 있는 동안 백엔드가 고른 주기(5초~3시간, 기본 1시간)마다 수집기
+모의 매매 장중 카드·보유 표·종목 팝업·종목 상세와 [시장] 메뉴(매크로 카드·섹터 현재가)의 가격은 수집 태스크가 아니라 화면이 SSE로 붙어 있는 동안 백엔드가 고른 주기(5초~3시간)마다 수집기
 `/live/prices`를 부릅니다(`collector/app/services/live_prices.py`). 테이블·스냅샷을 만들지 않고, 같은 종목은 3초 동안 한 번만 묻습니다.
 
 | 시장 | 출처(차례) | 한계 |
 |---|---|---|
 | 미국 | 네이버 해외주식 polling(`polling.finance.naver.com/api/realtime/worldstock/stock/<로이터 코드,…>` — 자동완성으로 찾아 하루 캐시) → 네이버가 못 주는 종목(지수·환율 등)은 Yahoo spark(`query1.finance.yahoo.com/v7/finance/spark`, 20종목씩) | 비공식 내부 호출. Yahoo spark는 1분 넘게 같은 값(캐시)이라 뒤에 둠(QA-166). Yahoo는 공용 세션의 브라우저 표시(Chrome 124)에 429라 다른 표시로 묻고, 거부되면 `http.YAHOO_HOST` 래치가 닫혀 다른 Yahoo 수집과 함께 5분 쉼. 정규장 가격만(시간 외는 네이버가 줄 때만) |
 | 국내 | 네이버 polling(`polling.finance.naver.com/api/realtime/domestic/stock/<코드,…>`) → 다음(`finance.daum.net/api/quotes/A<코드>`, Referer) → 토스 1분봉 | 가격은 KRX(정규장) — NXT 시간 외가 열려 있으면 그 가격을 따로 줌. 토스는 분 단위·종목마다 한 번 |
+| `TV:` (매크로 카드) | TradingView `scanner.tradingview.com/global/scan`(POST, Origin·Referer, 50종목씩 한 번에) | 비공식 공개 호출(참고 시세). 지연은 `update_mode`(실시간 — 달러 인덱스·환율·미국채·코스피·닛케이·항셍 지수, 10분 — CME·NYMEX·COMEX·ICE 선물, 15분 — 상하이·닛케이/항셍 선물, 20분 — 코스피200 야간선물). 거래 시각이 없어 화면은 받은 시각을 적음 |
+| `NI:` (매크로 카드) | 네이버 해외 지수 polling(`polling.finance.naver.com/api/realtime/worldstock/index/<.INX,…>`) | S&P 500·나스닥 100 지수(`delayTime 0`). 상하이·닛케이는 15분이라 쓰지 않음 |
 
-트레이딩뷰(로그인 없이 미국 주식 15분 지연)·인베스팅(종목 ID 검색이 빈 결과)·구글 파이낸스(종목마다 1.4MB)는 2026-11-03 실측 뒤 쓰지 않기로 했습니다.
+트레이딩뷰는 미국 주식 종목에는 쓰지 않습니다(로그인 없이 15분 지연). 인베스팅(종목 ID 검색이 빈 결과)·구글 파이낸스(종목마다 1.4MB)는 2026-11-03 실측 뒤 쓰지 않기로 했습니다.
 
 ## 7. 국내 공공 API
 
