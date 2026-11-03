@@ -327,19 +327,16 @@ public class PaperSelectionService {
      * 그룹 B 기관의 공시(D27) — q30이 있으면(메타의 complete와 상관없이) 그것, 없으면 기존 메뉴 저장본 q8. q30은 CUSIP 매핑
      * 티커라 같은 기관이면 커버리지가 높고, 그룹 A와 같은 공시를 쓰게 됩니다. 둘 다 없으면 공시 없음(source null).
      *
-     * <p>다만 q30이 최신 분기를 아직 받지 못한 저장본({@link #awaitingLatest})이고 q8은 아니면(그 분기를 받았거나 기한 마감 뒤에
-     * 받음) q8을 씁니다 — 트랙레코드 수집만 실패한 동안 오래된 q30 때문에 그 기관을 모름으로 두지 않게(QA-175).
+     * <p>q30이 최신 분기를 아직 받지 못한 저장본({@link #awaitingLatest})이어도 q8로 바꾸지 않습니다 — 규칙 책 신호·패킷 6b가
+     * 같은 규칙(q30이 있으면 q30)으로 그 기관의 13F를 읽으므로, q8로 뽑은 기관은 신호를 내지 못합니다. 그 기관은 그룹 A와 같이
+     * "수집 대기"입니다(QA-175).
      */
-    private StoredFilings storedGroupB(String cik, Map<String, String> pool, LocalDate latestQuarter, LocalDate asOf) {
+    private StoredFilings storedGroupB(String cik, Map<String, String> pool) {
         StoredFilings q30 = stored(cik, pool);
-        if (q30.source() != null && !awaitingLatest(q30, latestQuarter, asOf)) {
+        if (q30.source() != null) {
             return q30;
         }
-        StoredFilings q8 = stored(Datasets.sec13f(cik, Datasets.MAX_TRACKED_QUARTERS), TrackRecordRow.SOURCE_Q8, pool);
-        if (q30.source() == null || (q8.source() != null && !awaitingLatest(q8, latestQuarter, asOf))) {
-            return q8;
-        }
-        return q30;
+        return stored(Datasets.sec13f(cik, Datasets.MAX_TRACKED_QUARTERS), TrackRecordRow.SOURCE_Q8, pool);
     }
 
     /**
@@ -557,8 +554,7 @@ public class PaperSelectionService {
         inputsA.clear();
         List<GroupInput> inputsB = new ArrayList<>();
         for (MenuFiler filer : groupBCandidates()) {
-            inputsB.add(new GroupInput(filer.cik(), filer.name(), null,
-                    storedGroupB(filer.cik(), pool, latestQuarter, asOf)));
+            inputsB.add(new GroupInput(filer.cik(), filer.name(), null, storedGroupB(filer.cik(), pool)));
         }
         TrackRecord13F.Criteria criteriaB = groupBCriteria(trackSettings, blend);
         List<Scored> scoredB = score(inputsB, criteriaB, trackSettings.metric(), asOf, latestQuarter, false,

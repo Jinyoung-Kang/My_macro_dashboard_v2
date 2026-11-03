@@ -1154,20 +1154,21 @@ class PaperSelectionServiceTest {
     }
 
     @Test
-    @DisplayName("QA-175 그룹 B: q30이 최신 분기를 아직 받지 못한 저장본(기한 마감 전)이고 q8은 그 분기를 받았으면 q8을 쓴다")
-    void groupBUsesFreshQ8WhenQ30AwaitsLatestQuarter() {
+    @DisplayName("QA-175 그룹 B: q30이 최신 분기를 아직 받지 못한 저장본(기한 마감 전)이면 q8이 그 분기를 받았어도 q30 그대로 '수집 대기' — 신호·패킷 6b와 같은 출처")
+    void groupBStaleQ30IsPendingEvenWithFreshQ8() {
         reselectionFixture(AFTER_CUTOFF);
         q30(DUQ, true, quarters(FILINGS_B, "ZZZ", 100.0), BEFORE_CUTOFF);
         q8(DUQ, quarters(FILINGS_B_Q3, "ZZZ", 100.0), AFTER_CUTOFF);
         q8(FIS, quarters(FILINGS_B_Q3, "CCC", 100.0), AFTER_CUTOFF);
 
-        serviceAt(Instant.parse("2026-11-17T21:30:00Z")).compute(R);
+        PaperSelectionService.Computation computation = serviceAt(Instant.parse("2026-11-17T21:30:00Z")).compute(R);
 
         TrackRecordRow duq = rowsB(R).get(DUQ);
-        assertThat(duq.dataSource()).isEqualTo("q8");
-        assertThat(duq.ineligibleReason()).isNull();
-        assertThat(duq.rank()).isEqualTo(1);
-        assertThat(rowsB(R).get(FIS).rank()).isEqualTo(2);
+        assertThat(duq.dataSource()).as("규칙 책 신호·패킷 6b는 q30이 있으면 q30을 읽음").isEqualTo("q30");
+        assertThat(duq.ineligibleReason()).startsWith("최신 분기(2026-09-30) 수집 대기").doesNotContain("공시 없음");
+        assertThat(computation.groupB().stream().filter(s -> s.cik().equals(DUQ)).findFirst().orElseThrow()
+                .pending()).isTrue();
+        assertThat(rowsB(R).get(FIS).rank()).isEqualTo(1);
     }
 
     @Test
