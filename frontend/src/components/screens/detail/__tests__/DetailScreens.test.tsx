@@ -459,6 +459,20 @@ describe("기관 상세", () => {
       "https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=0001067983&type=13F-HR",
     );
   });
+
+  // QA-190: 13F 포트폴리오 읽기가 실패하면(추적하지 않는 CIK는 400, 백엔드 일시 실패) 히어로는 오류를 보였지만 상위 보유 종목 카드는 error를 보지 않아
+  // '불러오는 중'(role=status, aria-busy)으로 남았습니다. 카드도 오류와 다시 시도 단추를 그립니다.
+  it.fails("QA-190 13F 포트폴리오를 읽지 못하면 상위 보유 종목 카드는 '불러오는 중'이 아니라 오류와 다시 시도", async () => {
+    const path = endpoints.institution.portfolio("1234567", 8, 30);
+    reads = { [path]: new Error("추적하지 않는 기관입니다.") };
+    renderAs(PRO, <InstitutionDetailScreen cik="1234567" />);
+    await waitFor(() => expect(screen.getAllByText("추적하지 않는 기관입니다.").length).toBeGreaterThan(0));
+    expect(screen.queryByRole("status", { name: "보유 종목을 불러오는 중" })).toBeNull();
+    const card = screen.getByRole("heading", { level: 2, name: "상위 보유 종목" }).closest("section") as HTMLElement;
+    expect(within(card).getByText("추적하지 않는 기관입니다.")).toBeTruthy();
+    fireEvent.click(within(card).getByRole("button", { name: "다시 시도" }));
+    await waitFor(() => expect(requested().filter((entry) => entry === path)).toHaveLength(2));
+  });
 });
 
 describe("라우트", () => {
