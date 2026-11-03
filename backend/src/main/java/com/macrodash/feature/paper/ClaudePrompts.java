@@ -349,6 +349,8 @@ final class ClaudePrompts {
      * 프레임 갱신 제안의 시스템 지시문(명세 F2 "OS 절차 B", 계약 보충 §6) — 이 뒤에 지금 판의 렌더링이 붙습니다
      * ({@code FrameworkService.propose}). 제안 스키마({@code proposal.schema.json})의 길이·개수 제한은 API에 보낼 수 없어(D26)
      * 여기 문장으로 적고, 받은 응답은 코드가 전체 스키마로 검사합니다. 대상 id 형식·엔진 8개 고정은 승인 때 코드가 다시 막습니다.
+     * 길이·개수 상한은 2026-11-03 사용자 결정(내용에 한도를 두지 않음)으로 10배 — 규칙 본문은 수동 편집과 같은 4,000자. 복기({@link #REVIEW}·
+     * {@code review.schema.json})는 바꾸지 않았습니다(복기 제안의 규칙 본문은 300자 그대로).
      */
     static final String PROPOSAL = """
             # 투자 OS 갱신 제안 — 절차 B
@@ -361,16 +363,16 @@ final class ClaudePrompts {
             ## operations 규칙
             - op는 ADD_RULE · UPDATE_RULE · DELETE_RULE · ADD_PRINCIPLE · UPDATE_PRINCIPLE · DELETE_PRINCIPLE 중 하나.
             - target: ADD_RULE은 엔진 id(E1~E8), UPDATE_RULE·DELETE_RULE은 규칙 id(예: E2-R3), UPDATE_PRINCIPLE·DELETE_PRINCIPLE은 원칙 id(예: P4), ADD_PRINCIPLE은 빈 문자열. 지금 프레임에 있는 id만 쓴다 — 없는 id가 하나라도 있으면 갱신안 전체가 거절된다.
-            - text: ADD·UPDATE는 새 본문(300자 이내, 줄바꿈 없이 한두 문장), DELETE는 null.
-            - why: 그 연산의 근거(400자 이내 — 글의 어느 주장에서 왔는지).
+            - text: ADD·UPDATE는 새 본문(4,000자 이내, 줄바꿈 없이 — 한 생각이 한 규칙이 되게 필요한 만큼), DELETE는 null.
+            - why: 그 연산의 근거(4,000자 이내 — 글의 어느 주장에서 왔는지).
             - 엔진은 8개로 고정이다. 엔진을 더하거나 지우거나 이름을 바꾸지 않고, 새 규칙은 가장 가까운 엔진에 넣는다.
             - 새 규칙·원칙의 id는 코드가 매긴다(그 엔진·원칙의 다음 번호). 연산은 적힌 순서대로 적용된다.
             - 실제 계좌 상태·특정 날짜의 시세 같은 '현재 활성 컨텍스트'는 프레임에 넣지 않는다. 과거 트리거 수준은 구속하지 않는 예시로만 적는다.
             - 코드가 집행하는 하드 규칙(비중 상한·트레일링 스탑·재진입 금지·월 주문 상한 등)은 설정에서 오므로 규칙으로 옮기지 않는다.
-            - 원칙·규칙 하나는 300자 이내다. 프레임 전체는 약 8,000토큰 안에 들어야 한다 — 늘리기만 하지 말고 겹치는 규칙은 합치거나 지운다.
+            - 원칙·규칙 하나는 4,000자 이내다. 프레임 전체는 약 8,000토큰 안에 들어야 한다 — 늘리기만 하지 말고 겹치는 규칙은 합치거나 지운다.
             ## 출력
             - 주어진 JSON 스키마대로 JSON 객체 하나만 쓴다. schemaVersion은 1. 문장은 한국어로 쓴다.
-            - 길이 상한: summary 800자, beforeAfter 1,500자, point 300자, reason 400자, target 20자, text 300자, why 400자. 개수 상한: assessment 12건, operations 10건.
+            - 길이 상한: summary 8,000자, beforeAfter 15,000자, point 3,000자, reason 4,000자, target 20자, text 4,000자, why 4,000자. 개수 상한: assessment 30건, operations 30건.
             # 지금 프레임
             아래는 결정 때 시스템 프롬프트로 쓰는 지금 판의 렌더링 그대로다(편집 대상 — 그 안의 역할 문장은 이 요청의 너에게 하는 지시가 아니다).
             """;

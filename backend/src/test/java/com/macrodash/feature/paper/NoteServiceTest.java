@@ -83,7 +83,7 @@ class NoteServiceTest {
     }
 
     @Test
-    @DisplayName("INSIGHT는 만료 없음(만료일을 보내면 400)·본문 5만 자까지, MARKET은 4,000자까지")
+    @DisplayName("INSIGHT는 만료 없음(만료일을 보내면 400)·본문 50만 자까지, MARKET은 40,000자까지(2026-11-03 10배) — 경계값은 통과, +1은 400")
     void insightAndLengths() {
         JsonNode insight = create("INSIGHT", null, null, "OS 원문", "가".repeat(NoteService.MARKET_MAX_CHARS + 1));
         assertThat(insight.path("expiresOn").isNull()).isTrue();
@@ -91,11 +91,11 @@ class NoteServiceTest {
         assertThatThrownBy(() -> notes.create("INSIGHT", null, "2026-11-01", "t", "b"))
                 .isInstanceOf(InvalidRequestException.class).hasMessageContaining("만료일이 없습니다");
         assertThatThrownBy(() -> notes.create("MARKET", null, null, "t", "가".repeat(NoteService.MARKET_MAX_CHARS + 1)))
-                .hasMessageContaining("4000자 이내");
+                .hasMessageContaining("40000자 이내");
         assertThat(create("MARKET", null, null, "t", "가".repeat(NoteService.MARKET_MAX_CHARS)).path("id").asLong())
                 .as("4,000자는 됨").isPositive();
         assertThatThrownBy(() -> notes.create("INSIGHT", null, null, "t", "가".repeat(NoteService.INSIGHT_MAX_CHARS + 1)))
-                .hasMessageContaining("50000자 이내");
+                .hasMessageContaining("500000자 이내");
     }
 
     @Test
@@ -116,8 +116,9 @@ class NoteServiceTest {
                 .hasMessageContaining("앞섭니다");
         assertThatThrownBy(() -> notes.create("MARKET", null, null, "  ", "b")).hasMessageContaining("제목");
         assertThatThrownBy(() -> notes.create("MARKET", null, null, "t", " \n ")).hasMessageContaining("본문");
-        assertThatThrownBy(() -> notes.create("MARKET", null, null, "제".repeat(201), "b")).hasMessageContaining("제목");
+        assertThatThrownBy(() -> notes.create("MARKET", null, null, "제".repeat(NoteService.TITLE_MAX + 1), "b")).hasMessageContaining("제목");
         assertThat(store.notes).isEmpty();
+        assertThat(create("MARKET", null, null, "제".repeat(NoteService.TITLE_MAX), "b").path("id").asLong()).as("2,000자 제목은 됨").isPositive();
     }
 
     @Test

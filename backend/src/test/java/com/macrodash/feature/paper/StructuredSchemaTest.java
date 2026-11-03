@@ -51,10 +51,11 @@ class StructuredSchemaTest {
 
     // ── 고정본(2단계 묶음 A 기준선) ─────────────────────────────────────
 
-    /** 스키마 파일 바이트의 SHA-256 — 미국 실험 중 결정·제안·복기 스키마를 바꾸지 않는다(ClaudePrompts 주석, 명세 K34). */
+    /** 스키마 파일 바이트의 SHA-256 — 미국 실험 중 결정·제안·복기 스키마를 바꾸지 않는다(ClaudePrompts 주석, 명세 K34). 제안 스키마만 2026-11-03
+     * 사용자 결정(프레임·메모 내용에 한도를 두지 않음)으로 길이·개수 상한을 10배로 올렸다(decisions.md 2026-11-03 항목) — 그 밖은 그대로. */
     private static final Map<String, String> SCHEMA_SHA256 = Map.of(
             "paper/decision.schema.json", "b1799bd3c8bc3ee389c5de5e36329212825df4be6646b188bb30a0cc61db6763",
-            "paper/proposal.schema.json", "e114882f450573c571cbb0065f0cca801e02d718652a0146aa3b059d7bfc6c60",
+            "paper/proposal.schema.json", "bae8f124b144d7b96dae008f929f45d6239fedb5c22191afa6ea919a917182c1",
             "paper/review.schema.json", "2b9840e2dd6af3cda675c5452556dcddf409d67349458566e0285bbbe75bf854");
 
     @Test
@@ -714,6 +715,21 @@ class StructuredSchemaTest {
         return (ObjectNode) MAPPER.readTree(VALID_REVIEW);
     }
 
+    /** 길이·개수 상한(maxLength·maxItems) 키를 뺀 사본 — 모양만 견줄 때. */
+    private static tools.jackson.databind.JsonNode withoutLimits(tools.jackson.databind.JsonNode node) {
+        tools.jackson.databind.JsonNode copy = node.deepCopy();
+        stripLimits(copy);
+        return copy;
+    }
+
+    private static void stripLimits(tools.jackson.databind.JsonNode node) {
+        if (node instanceof tools.jackson.databind.node.ObjectNode object) {
+            object.remove("maxLength");
+            object.remove("maxItems");
+        }
+        node.values().forEach(StructuredSchemaTest::stripLimits);
+    }
+
     private static tools.jackson.databind.JsonNode rawSchema(String resource) throws Exception {
         try (java.io.InputStream in = StructuredSchemaTest.class.getClassLoader().getResourceAsStream(resource)) {
             assertThat(in).as(resource).isNotNull();
@@ -817,12 +833,17 @@ class StructuredSchemaTest {
     }
 
     @Test
-    @DisplayName("복기 제안의 operations는 프레임 제안(proposal.schema.json)과 같은 모양 — 승인·사전 검사가 그대로 돈다")
+    @DisplayName("복기 제안의 operations는 프레임 제안(proposal.schema.json)과 같은 모양 — 승인·사전 검사가 그대로 돈다(길이·개수 상한만 다름: 제안은 2026-11-03 10배, 복기는 그대로)")
     void reviewOperationsMatchProposalSchema() throws Exception {
         tools.jackson.databind.JsonNode review = rawSchema("paper/review.schema.json");
         tools.jackson.databind.JsonNode proposal = rawSchema("paper/proposal.schema.json");
-        assertThat(review.at("/properties/proposal/properties/operations"))
-                .isEqualTo(proposal.at("/properties/operations"));
+        // 복기 스키마(실험 조건)는 바꾸지 않고 제안 스키마의 길이·개수 상한만 올렸으므로 상한 키를 뺀 모양을 견준다.
+        assertThat(withoutLimits(review.at("/properties/proposal/properties/operations")))
+                .isEqualTo(withoutLimits(proposal.at("/properties/operations")));
+        assertThat(review.at("/properties/proposal/properties/operations/maxItems").asInt()).isEqualTo(10);
+        assertThat(proposal.at("/properties/operations/maxItems").asInt()).isEqualTo(30);
+        assertThat(review.at("/properties/proposal/properties/operations/items/properties/text/maxLength").asInt()).isEqualTo(300);
+        assertThat(proposal.at("/properties/operations/items/properties/text/maxLength").asInt()).isEqualTo(4_000);
         assertThat(review.at("/properties/verdicts/items/properties/thesisHeld/enum").values().stream()
                 .map(tools.jackson.databind.JsonNode::stringValue).toList())
                 .as("목록의 판정 수가 세는 값(PaperStore.ReviewSummary)")

@@ -4,24 +4,24 @@
   "required": ["schemaVersion", "summary", "assessment", "operations", "beforeAfter"],
   "properties": {
     "schemaVersion": {"const": 1},
-    "summary": {"type": "string", "maxLength": 800},
+    "summary": {"type": "string", "maxLength": 8000},
     "assessment": {
       "type": "array",
-      "maxItems": 12,
+      "maxItems": 30,
       "items": {
         "type": "object",
         "additionalProperties": false,
         "required": ["point", "verdict", "reason"],
         "properties": {
-          "point": {"type": "string", "maxLength": 300},
+          "point": {"type": "string", "maxLength": 3000},
           "verdict": {"enum": ["일치", "보완", "수정 필요", "모순"]},
-          "reason": {"type": "string", "maxLength": 400}
+          "reason": {"type": "string", "maxLength": 4000}
         }
       }
     },
     "operations": {
       "type": "array",
-      "maxItems": 10,
+      "maxItems": 30,
       "items": {
         "type": "object",
         "additionalProperties": false,
@@ -29,11 +29,11 @@
         "properties": {
           "op": {"enum": ["ADD_RULE", "UPDATE_RULE", "DELETE_RULE", "ADD_PRINCIPLE", "UPDATE_PRINCIPLE", "DELETE_PRINCIPLE"]},
           "target": {"type": "string", "maxLength": 20},
-          "text": {"type": ["string", "null"], "maxLength": 300},
-          "why": {"type": "string", "maxLength": 400}
+          "text": {"type": ["string", "null"], "maxLength": 4000},
+          "why": {"type": "string", "maxLength": 4000}
         }
       }
     },
-    "beforeAfter": {"type": "string", "maxLength": 1500}
+    "beforeAfter": {"type": "string", "maxLength": 15000}
   }
 }

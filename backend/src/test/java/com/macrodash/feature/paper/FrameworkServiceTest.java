@@ -457,7 +457,7 @@ class FrameworkServiceTest {
     }
 
     @Test
-    @DisplayName("수동 편집 형식 검사: 엔진 8개·순서·id 유일·규칙의 엔진 번호·400자·지침 2,000자·제목 100자·모르는 키·변경 기록 — 하나라도 틀리면 아무것도 바꾸지 않고 400")
+    @DisplayName("수동 편집 형식 검사: 엔진 8개·순서·id 유일·규칙의 엔진 번호·4,000자·지침 20,000자·제목 1,000자·엔진당 규칙 300개·모르는 키·변경 기록 — 하나라도 틀리면 아무것도 바꾸지 않고 400")
     void manualSaveValidation() {
         FrameworkService service = service();
         ObjectNode base = currentBody(service);
@@ -480,19 +480,37 @@ class FrameworkServiceTest {
         assertThatThrownBy(() -> service.save(wrongEngine, "x", 0)).hasMessageContaining("E1의 규칙 id가 아닙니다");
 
         ObjectNode longRule = base.deepCopy();
-        ((ObjectNode) longRule.path("engines").get(0).path("rules").get(0)).put("text", "가".repeat(401));
-        assertThatThrownBy(() -> service.save(longRule, "x", 0)).hasMessageContaining("400자 이내");
+        // 글자·개수 상한은 2026-11-03 사용자 결정으로 10배(실수 방지 안전선) — 경계값: 새 값은 통과, 새 값 + 1은 거절.
+        ((ObjectNode) longRule.path("engines").get(0).path("rules").get(0)).put("text", "가".repeat(4_001));
+        assertThatThrownBy(() -> service.save(longRule, "x", 0)).hasMessageContaining("4000자 이내");
         ObjectNode okRule = base.deepCopy();
-        ((ObjectNode) okRule.path("engines").get(0).path("rules").get(0)).put("text", "가".repeat(400));
-        assertThat(FrameworkService.check(okRule, 1, "USER").errors()).as("400자는 됨").isEmpty();
+        ((ObjectNode) okRule.path("engines").get(0).path("rules").get(0)).put("text", "가".repeat(4_000));
+        assertThat(FrameworkService.check(okRule, 1, "USER").errors()).as("4,000자는 됨").isEmpty();
+
+        ObjectNode manyRules = base.deepCopy();
+        ArrayNode e2Rules = (ArrayNode) manyRules.path("engines").get(1).path("rules");
+        for (int i = e2Rules.size() + 1; i <= 300; i++) {
+            ObjectNode rule = e2Rules.addObject();
+            rule.put("id", "E2-R" + i);
+            rule.put("text", "규칙 " + i);
+            rule.put("addedIn", 0);
+            rule.putNull("sourceNoteId");
+        }
+        assertThat(FrameworkService.check(manyRules, 1, "USER").errors()).as("엔진당 300개는 됨").isEmpty();
+        ObjectNode rule301 = e2Rules.addObject();
+        rule301.put("id", "E2-R301");
+        rule301.put("text", "규칙 301");
+        rule301.put("addedIn", 0);
+        rule301.putNull("sourceNoteId");
+        assertThatThrownBy(() -> service.save(manyRules, "x", 0)).hasMessageContaining("300개까지");
 
         ObjectNode longGuidance = base.deepCopy();
-        longGuidance.put("guidance", "나".repeat(2_001));
-        assertThatThrownBy(() -> service.save(longGuidance, "x", 0)).hasMessageContaining("guidance: 2000자 이내");
+        longGuidance.put("guidance", "나".repeat(20_001));
+        assertThatThrownBy(() -> service.save(longGuidance, "x", 0)).hasMessageContaining("guidance: 20000자 이내");
 
         ObjectNode longTitle = base.deepCopy();
-        longTitle.put("title", "다".repeat(101));
-        assertThatThrownBy(() -> service.save(longTitle, "x", 0)).hasMessageContaining("title: 100자 이내");
+        longTitle.put("title", "다".repeat(1_001));
+        assertThatThrownBy(() -> service.save(longTitle, "x", 0)).hasMessageContaining("title: 1000자 이내");
 
         ObjectNode unknown = base.deepCopy();
         unknown.put("rendered", "x");
@@ -630,7 +648,7 @@ class FrameworkServiceTest {
         assertThat(hits.get()).isZero();
 
         FrameworkService service = service();
-        answerJson("{\"schemaVersion\":1,\"summary\":\"" + "가".repeat(801) + "\",\"assessment\":[],\"operations\":[],"
+        answerJson("{\"schemaVersion\":1,\"summary\":\"" + "가".repeat(8_001) + "\",\"assessment\":[],\"operations\":[],"
                 + "\"beforeAfter\":\"\"}");
         JsonNode invalid = MAPPER.valueToTree(service.propose(null, "글").get("proposal"));
         assertThat(invalid.path("status").asString()).isEqualTo("FAILED");

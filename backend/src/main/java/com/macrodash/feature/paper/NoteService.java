@@ -54,14 +54,15 @@ public class NoteService {
     public static final String MARKET = "MARKET";
     public static final String INSIGHT = "INSIGHT";
     static final List<String> KINDS = List.of(MARKET, INSIGHT);
-    /** 시황 메모 본문 상한(F6). */
-    static final int MARKET_MAX_CHARS = 4_000;
+    /** 시황 메모 본문 상한(F6) — 처음 4,000자, 2026-11-03 사용자 결정(내용에 한도를 두지 않음 — 상수는 실수 방지 안전선)으로 10배. 패킷에는
+     * 설정 {@code notesMaxCharsInPacket}(기본 6,000)까지만 실리므로 그보다 긴 메모는 통째로 빠집니다({@link #activeMarketNotes}). */
+    static final int MARKET_MAX_CHARS = 40_000;
     /**
-     * INSIGHT 본문 상한 — 명세에 수치가 없어 정한 값입니다. OS 원문 한 편(수천~수만 자)이 들어가되, 한 번의 제안 호출 입력이 지나치게
-     * 커지지 않게(한글 1자 ≈ 1토큰 어림으로 약 5만 토큰).
+     * INSIGHT 본문 상한 — 명세에 수치가 없어 정한 값입니다. 처음 50,000자(OS 원문 한 편이 들어가되 제안 호출 입력이 지나치게 커지지 않게 —
+     * 한글 1자 ≈ 1토큰 어림), 2026-11-03 사용자 결정으로 10배(제안 호출 입력이 모델 문맥을 넘으면 그 호출이 실패로 남음).
      */
-    static final int INSIGHT_MAX_CHARS = 50_000;
-    static final int TITLE_MAX = 200;
+    static final int INSIGHT_MAX_CHARS = 500_000;
+    static final int TITLE_MAX = 2_000;
     static final int DEFAULT_EXPIRY_TRADING_DAYS = 3;
     static final int DEFAULT_MAX_CHARS_IN_PACKET = 6_000;
     /** 패킷 섹션 11의 안내(계약 보충 §5). */
@@ -422,9 +423,9 @@ public class NoteService {
         return wholeNumber(settingsBody, "notesDefaultExpiryTradingDays", 1, 60, DEFAULT_EXPIRY_TRADING_DAYS);
     }
 
-    /** 설정 {@code notesMaxCharsInPacket}(0~20,000, 없거나 범위 밖이면 {@value #DEFAULT_MAX_CHARS_IN_PACKET}). */
+    /** 설정 {@code notesMaxCharsInPacket}(0~200,000, 없거나 범위 밖이면 {@value #DEFAULT_MAX_CHARS_IN_PACKET}). */
     static int maxCharsInPacket(JsonNode settingsBody) {
-        return wholeNumber(settingsBody, "notesMaxCharsInPacket", 0, 20_000, DEFAULT_MAX_CHARS_IN_PACKET);
+        return wholeNumber(settingsBody, "notesMaxCharsInPacket", 0, 200_000, DEFAULT_MAX_CHARS_IN_PACKET);
     }
 
     private static int wholeNumber(JsonNode body, String key, int min, int max, int fallback) {
