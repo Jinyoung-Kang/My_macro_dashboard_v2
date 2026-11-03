@@ -487,7 +487,7 @@ public class PaperDecisionJob {
         }
         if (krRulesSteps(market)) {
             // 한국 묶음 — 자료 게이트 ①~⑥(§4-9)가 '그날 종가 관측치' 기다림을 대신합니다(클래스 설명 '한국 결정 게이트').
-            return decideKr(market, now, d, deadline, rulesGaveUp, claudeGaveUp, krClaude2GaveUp);
+            return decideKr(market, now, d, deadline, rulesGaveUp, claudeGaveUp, work.krClaude2(), krClaude2GaveUp);
         }
         Optional<Quotes> quotes = reader.quietly(() -> marketData.quotes(market));
         boolean closesIn = quotes.map(q -> closesFor(market, q, d)).orElse(false);
@@ -764,9 +764,11 @@ public class PaperDecisionJob {
      * 응답 {@code gates}와 작업 기록 {@code gates}에 남고, 그 세션 규칙 계좌 결정이 아직 없으면 규칙 계좌 몫의 마지막 판정을 작업 기록
      * {@value #RULES_GATES}에도 남깁니다(기한 지남 행이 다시 읽음 — 오류 기록·기다림 줄·DECIDED 모두). 결정한 계좌가 없고 ①로 기다리는 계좌만 있으면
      * {@value #DATA_NOT_READY}입니다.
+     *
+     * @param krClaude2Due 한국 Claude 계좌2가 그 세션 정기 결정을 낼 차례({@link Work#krClaude2}) — 장부·자료 게이트 오류를 그 계좌 횟수에도 셈(QA-192)
      */
     private Result decideKr(MarketRun market, Instant now, LocalDate d, Instant deadline, boolean rulesGaveUp,
-                            boolean claudeGaveUp, boolean krClaude2GaveUp) {
+                            boolean claudeGaveUp, boolean krClaude2Due, boolean krClaude2GaveUp) {
         KrDecisionGates.Inputs session = krGates.readSession(market, d);
         if (!rulesGaveUp && krRules.due(d) && krRules.paused()) {
             // 일시정지 규칙 계좌 — 입력·자료 게이트 없이 그 세션 SKIPPED(주문을 내지 않으니 가격·수급을 기다릴 까닭이 없음). Claude 쪽 일이
@@ -811,8 +813,12 @@ public class PaperDecisionJob {
         } catch (RuntimeException e) {
             putGates(detail, RULES_GATES, rulesOpen ? judged : null, now);
             putGates(detail, CLAUDE_GATES, claudeOpen ? before : null, now);
-            return failed(market, now, d, pricesFinal, detail, List.of(message(e)),
-                    List.of(market.rulesBook(), market.claudeBook()), null, null);
+            // 장부·게이트가 실패하면 세 계좌 모두 결정하지 않습니다 — 오류도 그 세션 결정을 낼 차례인 계좌2에 셉니다(미국 계좌2와 같음 — QA-192).
+            List<String> books = new ArrayList<>(List.of(market.rulesBook(), market.claudeBook()));
+            if (krClaude2Due) {
+                books.add(PaperBooks.KR_CLAUDE2);
+            }
+            return failed(market, now, d, pricesFinal, detail, List.of(message(e)), books, null, null);
         }
         judged = data;
         if (!KrDecisionGates.blocking(data).isEmpty()) {
@@ -1441,6 +1447,9 @@ public class PaperDecisionJob {
         List<String> counted = new ArrayList<>(List.of(market.rulesBook(), market.claudeBook()));
         if (usSteps(market) && store.book(PaperBooks.CLAUDE2).isPresent()) {
             counted.add(PaperBooks.CLAUDE2);   // 미국 계좌2(있을 때만 — 그 밖의 기록 모양은 그대로)
+        }
+        if (krRulesSteps(market) && store.book(PaperBooks.KR_CLAUDE2).isPresent()) {
+            counted.add(PaperBooks.KR_CLAUDE2);   // 한국 계좌2(있을 때만 — QA-192)
         }
         for (String book : counted) {
             attempts.put(book, failures.getOrDefault(new FailureKey(market.code(), d, book), 0));

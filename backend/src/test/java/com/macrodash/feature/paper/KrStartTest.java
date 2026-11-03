@@ -10,7 +10,6 @@ import com.macrodash.store.PaperStore.NavRow;
 import com.macrodash.store.PaperStore.Order;
 import com.macrodash.support.InvalidRequestException;
 import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import tools.jackson.databind.JsonNode;
@@ -711,7 +710,6 @@ class KrStartTest {
     }
 
     @Test
-    @Disabled("QA-192 재현 — 수정 전: 장부·자료 게이트 오류를 규칙·계좌1에만 세어, 계좌2가 낼 차례인 밤은 GAVE_UP에 닿지 않고 ERROR가 이어짐")
     @DisplayName("QA-192: 한국 결정의 장부·자료 게이트 오류(규칙 계좌 입력 읽기 고장)는 그 세션 결정을 낼 차례인 계좌2 오류 횟수에도 셈 — 세 번이면 GAVE_UP")
     void qa192LedgerAndGateErrorsCountForAccount2() {
         KrClaudeFixtures.FakeAi fake = new KrClaudeFixtures.FakeAi();
