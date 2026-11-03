@@ -56,9 +56,12 @@ echo "logger $*" >> "$FAKE_LOG"
 """
 # 바로 돌아옵니다.
 _FAKE_SLEEP = "#!/usr/bin/env bash\nexit 0\n"
-# 부른 인자만 남깁니다 — 서버 배포(deploy.sh)가 바깥 주소를 받지 않는지 기록으로 봅니다.
+# 부른 인자를 남깁니다 — 서버 배포(deploy.sh)가 바깥 주소를 받지 않는지 기록으로 봅니다. 설정을 stdin으로 받으면(-K -) 그 내용은
+# 기록 파일 옆 <기록>.curl-config에 따로 남깁니다(비밀값이 인자가 아니라 stdin으로만 가는지 봄). FAKE_CURL_RC로 끝납니다(기본 0).
 _FAKE_CURL = """#!/usr/bin/env bash
 echo "curl $*" >> "$FAKE_LOG"
+case " $* " in *" -K - "*) cat >> "${FAKE_LOG%.log}.curl-config" ;; esac
+exit "${FAKE_CURL_RC:-0}"
 """
 
 
