@@ -93,6 +93,26 @@ class PaperSelectionServiceTest {
             new String[]{"2026-02-13", "2025-12-31"}, new String[]{"2026-05-15", "2026-03-31"},
             new String[]{"2026-08-14", "2026-06-30"});
 
+    /**
+     * 2026-09-30 분기의 재선정일(QA-175) — 공시 기한 11-14(토) → 11-16(월), 다음 거래일 11-17(화). 기한일 EDGAR 마감(22:00 ET)은
+     * 11-17 03:00Z입니다. 결정 작업은 그 세션 마감 뒤에 돕니다(16:30 ET = 21:30Z).
+     */
+    private static final LocalDate R = LocalDate.of(2026, 11, 17);
+    private static final Instant BEFORE_CUTOFF = Instant.parse("2026-11-16T20:00:00Z");
+    private static final Instant AFTER_CUTOFF = Instant.parse("2026-11-17T12:00:00Z");
+    /** FILINGS에 2026-09-30 분기(11-13 공시)를 더한 것. */
+    private static final List<String[]> FILINGS_Q3;
+    private static final List<String[]> FILINGS_B_Q3;
+
+    static {
+        List<String[]> withQ3 = new ArrayList<>(FILINGS);
+        withQ3.add(new String[]{"2026-11-13", "2026-09-30"});
+        FILINGS_Q3 = List.copyOf(withQ3);
+        List<String[]> withQ3B = new ArrayList<>(FILINGS_B);
+        withQ3B.add(new String[]{"2026-11-13", "2026-09-30"});
+        FILINGS_B_Q3 = List.copyOf(withQ3B);
+    }
+
     private FakePaperStore store;
     private Map<String, Snapshot> snapshots;
     private Map<String, TreeMap<LocalDate, Double>> fullPrices;
@@ -212,6 +232,11 @@ class PaperSelectionServiceTest {
     }
 
     private void q30(String cik, boolean complete, List<Map<String, Object>> quarters) {
+        q30(cik, complete, quarters, COLLECTED);
+    }
+
+    /** q30 저장본 — 수집 시각(저장본 collected_at)을 정해서. */
+    private void q30(String cik, boolean complete, List<Map<String, Object>> quarters, Instant collectedAt) {
         Map<String, Object> payload = new LinkedHashMap<>();
         payload.put("cik", cik);
         payload.put("name", "기관 " + cik);
@@ -220,16 +245,20 @@ class PaperSelectionServiceTest {
         payload.put("quarters", quarters);
         payload.put("complete", complete);
         payload.put("fetchedThisRun", 0);
-        snapshot(Datasets.sec13f(cik, Datasets.TRACK_RECORD_QUARTERS), payload);
+        snapshot(Datasets.sec13f(cik, Datasets.TRACK_RECORD_QUARTERS), payload, collectedAt);
     }
 
     /** 기존 메뉴 저장본(q8) — 완료 표시가 없는 모양(task_sec_13f). */
     private void q8(String cik, List<Map<String, Object>> quarters) {
+        q8(cik, quarters, COLLECTED);
+    }
+
+    private void q8(String cik, List<Map<String, Object>> quarters, Instant collectedAt) {
         Map<String, Object> payload = new LinkedHashMap<>();
         payload.put("cik", cik);
         payload.put("error", null);
         payload.put("quarters", quarters);
-        snapshot(Datasets.sec13f(cik, Datasets.MAX_TRACKED_QUARTERS), payload);
+        snapshot(Datasets.sec13f(cik, Datasets.MAX_TRACKED_QUARTERS), payload, collectedAt);
     }
 
     /** 그룹 B 고정본 — 클래스 상수 설명대로. 기대 순위(CAGR): DUQ(ZZZ) · FIS(CCC) · BRK(AAA) · BW(BBB). */
@@ -282,8 +311,12 @@ class PaperSelectionServiceTest {
     }
 
     private void snapshot(String name, Object payload) {
+        snapshot(name, payload, COLLECTED);
+    }
+
+    private void snapshot(String name, Object payload, Instant collectedAt) {
         JsonNode json = MAPPER.valueToTree(payload);
-        snapshots.put(name, new Snapshot(name, json, "json", "ok", null, COLLECTED));
+        snapshots.put(name, new Snapshot(name, json, "json", "ok", null, collectedAt));
     }
 
     /** 설정 행(버전 version)의 trackRecord 값을 바꿉니다. 나머지 키는 기본값. */
@@ -830,6 +863,91 @@ class PaperSelectionServiceTest {
         assertThat(outcome.selection().selectedCiks()).isEmpty();
     }
 
+    // ------------------------------------------------------------------ 최신 분기 수집 대기(QA-175)
+    /** 그 시각의 시계를 쓰는 서비스 — 결정 작업이 그 세션 마감 뒤에 부르는 것과 같게. */
+    private PaperSelectionService serviceAt(Instant now) {
+        return new PaperSelectionService(store, reader, marketData, PaperFixtures.settings(store), MAPPER,
+                Clock.fixed(now, ZoneOffset.UTC));
+    }
+
+    /**
+     * 재선정일 R 고정본(그룹 A 셋) — A·B는 기한 마감 뒤에 받은 저장본에 2026-09-30 분기가 있고, D(CCC — 받으면 1위)는
+     * 2026-06-30 분기까지만 든 저장본을 dCollectedAt에 받은 것.
+     */
+    private void reselectionFixture(Instant dCollectedAt) {
+        index(A, B, D);
+        q30(A, true, quarters(FILINGS_Q3, "AAA", 100.0), AFTER_CUTOFF);
+        q30(B, true, quarters(FILINGS_Q3, "BBB", 80.0, null, 20.0), AFTER_CUTOFF);
+        q30(D, true, quarters(FILINGS, "CCC", 100.0), dCollectedAt);
+    }
+
+    @Test
+    @org.junit.jupiter.api.Disabled("QA-175 재현 — 수정 전: 기한 마감 전에 받은 저장본의 D를 '최신 분기 공시 없음'으로 빼고 선정 [A, B]를 굳힘")
+    @DisplayName("QA-175: 최신 분기가 없는 저장본을 그 분기 기한 EDGAR 마감 전에 받았으면 '수집 대기' — 선정을 남기지 않고, 받은 뒤 다시 선정")
+    void selectWaitsWhileLatestQuarterNotCollected() {
+        reselectionFixture(BEFORE_CUTOFF);
+        PaperSelectionService atR = serviceAt(Instant.parse("2026-11-17T21:30:00Z"));
+
+        PaperSelectionService.SelectionOutcome waiting = atR.select(R);
+
+        assertThat(waiting.selection()).as("모르는 것을 굳히지 않음").isNull();
+        assertThat(waiting.created()).isFalse();
+        assertThat(waiting.skippedReason()).contains("수집 대기").contains("2026-09-30").contains("기관 " + D);
+        assertThat(store.selections).isEmpty();
+        TrackRecordRow d = rows(R).get(D);
+        assertThat(d.eligible()).isFalse();
+        assertThat(d.ineligibleReason()).startsWith("최신 분기(2026-09-30) 수집 대기").doesNotContain("공시 없음");
+        assertThat(waiting.computation().candidates().stream().filter(s -> s.cik().equals(D)).findFirst()
+                .orElseThrow().missingLatest()).as("R5가 아님").isFalse();
+
+        // 수집기가 마감 뒤에 D의 9월 분기를 받으면 다음 결정 날(따라잡기 — 같은 기준일 R) 선정합니다.
+        q30(D, true, quarters(FILINGS_Q3, "CCC", 100.0), Instant.parse("2026-11-18T03:00:00Z"));
+        PaperSelectionService.SelectionOutcome done = serviceAt(Instant.parse("2026-11-18T21:30:00Z")).select(R);
+        assertThat(done.created()).isTrue();
+        assertThat(done.selection().asOfDate()).isEqualTo(R);
+        assertThat(done.selection().selectedCiks()).containsExactly(D, A);
+    }
+
+    @Test
+    @org.junit.jupiter.api.Disabled("QA-175 재현 — 수정 전: 대기 없이 R에 선정을 굳히고 D 사유는 '최신 분기(2026-09-30) 공시 없음'")
+    @DisplayName("QA-175: 대기 상한(사용자 결정 6) — R 뒤 4거래일까지는 기다리고, 5거래일째(11-24) 결정에서 받지 못한 기관을 '수집 실패로 제외'하고 선정")
+    void selectExcludesUncollectedAfterWaitLimit() {
+        reselectionFixture(BEFORE_CUTOFF);
+
+        // 11-23(월) = R 뒤 4거래일 — 아직 기다림.
+        PaperSelectionService.SelectionOutcome stillWaiting = serviceAt(Instant.parse("2026-11-23T21:30:00Z"))
+                .select(R);
+        assertThat(stillWaiting.selection()).isNull();
+        assertThat(stillWaiting.skippedReason()).contains("수집 대기").contains("2026-11-24");
+        assertThat(store.selections).isEmpty();
+
+        // 11-24(화) = R 뒤 5거래일 — 받지 못한 D를 빼고 선정.
+        PaperSelectionService.SelectionOutcome selected = serviceAt(Instant.parse("2026-11-24T21:30:00Z"))
+                .select(R);
+        assertThat(selected.created()).isTrue();
+        assertThat(selected.skippedReason()).isNull();
+        assertThat(selected.selection().asOfDate()).isEqualTo(R);
+        assertThat(selected.selection().selectedCiks()).containsExactly(A, B);
+        TrackRecordRow d = rows(R).get(D);
+        assertThat(d.eligible()).isFalse();
+        assertThat(d.rank()).isNull();
+        assertThat(d.ineligibleReason()).startsWith("최신 분기(2026-09-30) 수집 실패로 제외").doesNotContain("공시 없음");
+    }
+
+    @Test
+    @DisplayName("QA-175 대조: 기한 마감 뒤에 받은 저장본에 최신 분기가 없으면 그대로 R5('최신 분기 공시 없음') — 기다리지 않고 R에 선정")
+    void latestQuarterMissingAfterCutoffIsStillR5() {
+        reselectionFixture(AFTER_CUTOFF);
+
+        PaperSelectionService.SelectionOutcome outcome = serviceAt(Instant.parse("2026-11-17T21:30:00Z")).select(R);
+
+        assertThat(outcome.created()).isTrue();
+        assertThat(outcome.selection().selectedCiks()).containsExactly(A, B);
+        assertThat(rows(R).get(D).ineligibleReason()).isEqualTo("최신 분기(2026-09-30) 공시 없음");
+        assertThat(outcome.computation().candidates().stream().filter(s -> s.cik().equals(D)).findFirst()
+                .orElseThrow().missingLatest()).isTrue();
+    }
+
     // ------------------------------------------------------------------ 그룹 B(D27)
     @Test
     @DisplayName("그룹 B: 기존 메뉴 12곳을 2년 창으로 — q30이 있으면 q30(DUQ), 없으면 q8, 값은 계산 함수를 직접 부른 것과 같고 출처를 남긴다")
@@ -1035,6 +1153,41 @@ class PaperSelectionServiceTest {
         assertThat((List<String>) history.get("groupA")).containsExactly(A, B);
         assertThat((List<String>) history.get("groupB")).containsExactly(DUQ, FIS, BRK, BW);
         assertThat((List<String>) history.get("selectedCiks")).containsExactly(A, B, DUQ, FIS, BRK, BW);
+    }
+
+    @Test
+    @org.junit.jupiter.api.Disabled("QA-175 재현 — 수정 전: q30이 있으면 늘 q30을 써서 DUQ를 '최신 분기(2026-09-30) 공시 없음'으로 뺌")
+    @DisplayName("QA-175 그룹 B: q30이 최신 분기를 아직 받지 못한 저장본(기한 마감 전)이고 q8은 그 분기를 받았으면 q8을 쓴다")
+    void groupBUsesFreshQ8WhenQ30AwaitsLatestQuarter() {
+        reselectionFixture(AFTER_CUTOFF);
+        q30(DUQ, true, quarters(FILINGS_B, "ZZZ", 100.0), BEFORE_CUTOFF);
+        q8(DUQ, quarters(FILINGS_B_Q3, "ZZZ", 100.0), AFTER_CUTOFF);
+        q8(FIS, quarters(FILINGS_B_Q3, "CCC", 100.0), AFTER_CUTOFF);
+
+        serviceAt(Instant.parse("2026-11-17T21:30:00Z")).compute(R);
+
+        TrackRecordRow duq = rowsB(R).get(DUQ);
+        assertThat(duq.dataSource()).isEqualTo("q8");
+        assertThat(duq.ineligibleReason()).isNull();
+        assertThat(duq.rank()).isEqualTo(1);
+        assertThat(rowsB(R).get(FIS).rank()).isEqualTo(2);
+    }
+
+    @Test
+    @org.junit.jupiter.api.Disabled("QA-175 재현 — 수정 전: q8을 기한 마감 전에 받은 FIS를 '최신 분기 공시 없음'으로 빼고 선정을 굳힘")
+    @DisplayName("QA-175 그룹 B: q8만 있는 기관도 최신 분기를 기한 마감 전 저장본으로만 알면 '수집 대기' — 그 기관 때문에도 선정을 미룸")
+    void selectWaitsForGroupBLatestQuarter() {
+        reselectionFixture(AFTER_CUTOFF);
+        q8(BRK, quarters(FILINGS_B_Q3, "AAA", 100.0), AFTER_CUTOFF);
+        q8(FIS, quarters(FILINGS_B, "CCC", 100.0), BEFORE_CUTOFF);
+
+        PaperSelectionService.SelectionOutcome outcome = serviceAt(Instant.parse("2026-11-17T21:30:00Z")).select(R);
+
+        assertThat(outcome.selection()).isNull();
+        assertThat(outcome.skippedReason()).contains("수집 대기").contains("피셔");
+        assertThat(store.selections).isEmpty();
+        assertThat(rowsB(R).get(FIS).ineligibleReason()).startsWith("최신 분기(2026-09-30) 수집 대기");
+        assertThat(rowsB(R).get(BRK).rank()).isEqualTo(1);
     }
 
     @Test
