@@ -9,6 +9,7 @@ import com.macrodash.store.SessionStore;
 import com.macrodash.store.UserStore;
 import com.macrodash.support.CurrentUser;
 import jakarta.servlet.http.Cookie;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -461,6 +462,20 @@ class SessionFilterTest {
             Outcome crossSiteGet = send(on, "GET", "/api/status", null, "Tailscale-User-Login", "owner@example.invalid",
                     "Sec-Fetch-Site", "cross-site");
             assertThat(crossSiteGet.status()).as("다른 사이트의 링크·이미지로 부른 GET").isEqualTo(403);
+        }
+
+        @Test
+        @Disabled("QA-171 재현 — 수정 전: Tailscale 운영자의 출처 검사가 로그인 모드 와일드카드 http://*:8201을 써서 다른 호스트의 8201 페이지를 같은 사이트로 봄")
+        @DisplayName("QA-171: 화면 포트의 다른 호스트(http://attacker.example:8201)는 Tailscale 운영자에게 다른 사이트 — 읽기·쓰기 모두 403")
+        void wildcardPortOriginIsForeign() throws Exception {
+            WebConfig.SessionFilter on = filter("owner@example.invalid");
+            for (String[] req : new String[][]{{"GET", "/api/paper/overview"}, {"POST", "/api/paper/init"}}) {
+                Outcome outcome = send(on, req[0], req[1], null, "Tailscale-User-Login", "owner@example.invalid",
+                        "Origin", "http://attacker.example:8201");
+                assertThat(outcome.status()).as(req[1]).isEqualTo(403);
+                assertThat(outcome.body()).as(req[1]).contains("bad_origin");
+                assertThat(outcome.reached()).as(req[1]).isFalse();
+            }
         }
 
         @Test

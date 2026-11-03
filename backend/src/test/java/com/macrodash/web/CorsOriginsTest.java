@@ -1,6 +1,7 @@
 package com.macrodash.web;
 
 import com.macrodash.config.AppProperties;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.mock.web.MockHttpServletRequest;
@@ -77,6 +78,27 @@ class CorsOriginsTest {
                 "https://dxxxx.cloudfront.net", "https://attacker.example", "http://localhost:8202", "http://localhost:3000"}) {
             assertThat(filter.foreignOrigin(post(origin))).as(origin).isTrue();
         }
+    }
+
+    @Test
+    @Disabled("QA-171 재현 — 수정 전: TAILNET_OWNER_LOGIN이 켜져도 허용 출처에 http://*:포트가 남음")
+    @DisplayName("QA-171: Tailscale 신원 운영자가 켜지면 화면 포트 와일드카드(http://*:포트) 없이 명시한 출처만 — 쿠키 없는 운영자라 ADR 0016과 같은 이유")
+    void tailnetOwnerLoginDropsTheWildcard() {
+        AppProperties properties = new AppProperties();
+        properties.setFrontendOrigin("http://localhost:8201,http://127.0.0.1:8201,https://my-macro-app.example.ts.net");
+        properties.setFrontendPort(8201);
+        properties.setTailnetOwnerLogin("owner@example.invalid");
+
+        assertThat(WebConfig.allowedOriginPatterns(properties))
+                .containsExactly("http://localhost:8201", "http://127.0.0.1:8201", "https://my-macro-app.example.ts.net");
+        WebConfig.SessionFilter filter = new WebConfig.SessionFilter(null, WebConfig.allowedOriginPatterns(properties), false);
+        for (String origin : new String[]{"http://attacker.example:8201", "http://203.0.113.5:8201", "http://my-macro-app:8201"}) {
+            assertThat(filter.foreignOrigin(post(origin))).as(origin).isTrue();
+        }
+
+        properties.setTailnetOwnerLogin("");
+        assertThat(WebConfig.allowedOriginPatterns(properties)).as("꺼져 있으면(쿠키 로그인만) 지금처럼 화면 포트의 모든 호스트")
+                .contains("http://*:8201");
     }
 
     private static MockHttpServletRequest post(String origin) {
