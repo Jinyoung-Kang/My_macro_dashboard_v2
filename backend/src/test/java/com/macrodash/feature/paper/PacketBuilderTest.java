@@ -2455,6 +2455,34 @@ class PacketBuilderTest {
     }
 
     @Test
+    @org.junit.jupiter.api.Disabled("QA-179 재현 — 수정 전: 계좌1 장중 확인(CHECKPOINT) 결정이 종류만 보는 거름에 빠져 10 첫 줄이 아침 SCHEDULED, 8b에 EEE 없음")
+    @DisplayName("QA-179: 계좌1 장중 확인(정기와 같은 스키마 — 자세·노출·watchlist)은 직전 결정 — 다음 날 패킷의 10_recentDecisions 첫 줄이고 8b watchlist도 그 결정의 것")
+    void checkpointDecisionOfBook1IsAPriorDecision() {
+        activeClaude();   // 보유 BBB, 10-23 초기 결정(응답에 watchlist 없음)
+        store.insertDecisionIfAbsent(new Decision(0, PaperBooks.CLAUDE, FRI, RuleBookService.SCHEDULED, null, "OK",
+                "claude-sonnet-5-5", 1, 1, FRI, 60.0, null, null, null,
+                MAPPER.valueToTree(Map.of("schemaVersion", 2, "stance", "NEUTRAL", "targetEquityExposurePct", 60,
+                        "summary", "아침 판단", "watchlist", List.of(Map.of("ticker", "AAA", "condition", "돌파")))),
+                null, null, List.of(), true, 900L, 0));
+        // 계좌1 장중 확인 — decision.schema.json 모양(정기와 같음), 같은 기준일에 아침 결정보다 늦게 생김.
+        store.insertDecisionIfAbsent(new Decision(0, PaperBooks.CLAUDE, FRI, RuleBookService.CHECKPOINT, null, "OK",
+                "claude-sonnet-5-5", 1, 1, FRI, 30.0, null, null, null,
+                MAPPER.valueToTree(Map.of("schemaVersion", 2, "stance", "DEFENSIVE", "targetEquityExposurePct", 30,
+                        "summary", "장중 방어 전환", "watchlist", List.of(Map.of("ticker", "EEE", "condition", "실적 확인")))),
+                null, null, List.of(), true, 900L, 0));
+
+        JsonNode body = builder.build(MON, RuleBookService.SCHEDULED, false).body();
+
+        JsonNode first = body.get(PacketBuilder.DECISIONS).get("decisions").get(0);
+        assertThat(first.get("kind").asString()).isEqualTo(RuleBookService.CHECKPOINT);
+        assertThat(first.get("targetExposurePct").asDouble()).isEqualTo(30.0);
+        assertThat(first.get("stance").asString()).isEqualTo("DEFENSIVE");
+        List<String> tickers = new ArrayList<>();
+        body.get(PacketBuilder.FUNDAMENTALS).get("rows").forEach(r -> tickers.add(r.get(0).asString() + ":" + r.get(1).asString()));
+        assertThat(tickers).contains("EEE:WATCHLIST").doesNotContain("AAA:WATCHLIST");
+    }
+
+    @Test
     @DisplayName("재무(8b) 변환: 저장본 행(obsDate·facts) → 계산 입력, 틀린 칸은 null(0으로 채우지 않음), 개념 코드·메모 자르기")
     void fundamentalsConversion() {
         ObjectNode payload = MAPPER.createObjectNode();

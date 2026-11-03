@@ -655,6 +655,38 @@ class KrPacketBuilderTest {
     }
 
     @Test
+    @org.junit.jupiter.api.Disabled("QA-179 재현 — 수정 전: 한국 패킷은 CHECKPOINT를 거르지 않아 계좌2 장중 확인 행(자세·노출 없음)이 10_recentDecisions 한 칸을 차지")
+    @DisplayName("QA-179 한국: 계좌2 장중 확인(CHECKPOINT — kr-claude2-checkpoint 스키마, 자세·노출 없음)은 계좌2 패킷의 직전 결정이 아님 — 미국 계좌2와 같은 판정")
+    void krClaude2CheckpointIsNotAPriorDecision() {
+        clock.set(READ_D);
+        activeClaude();
+        store.books.put(PaperBooks.KR_CLAUDE2, new Book(PaperBooks.KR_CLAUDE2, PaperBooks.KIND_CLAUDE, PaperBooks.KR_CLAUDE2_LABEL,
+                100_000_000, S, PaperBooks.ACTIVE, null, Book.MARKET_KR, Book.CURRENCY_KRW));
+        store.states.put(PaperBooks.KR_CLAUDE2, new BookState(PaperBooks.KR_CLAUDE2, 100_000_000, 100_000_000, 0, 0,
+                kst("2026-11-03T21:57"), kst("2026-11-03T21:57"), D, kst("2026-11-03T22:10")));
+        store.dbNow = kst("2026-11-02T22:40");
+        ObjectNode scheduled = MAPPER.createObjectNode();
+        scheduled.put("schemaVersion", 2).put("summary", "밤 판단").put("stance", "중립");
+        scheduled.putArray("watchlist");
+        store.insertDecisionIfAbsent(new Decision(0, PaperBooks.KR_CLAUDE2, D1, RuleBookService.SCHEDULED, null, "OK",
+                "claude-test", 1, store.settings.version(), null, 40.0, null, null, null, scheduled, null, null, null,
+                false, null, 0));
+        store.dbNow = kst("2026-11-03T11:00");
+        ObjectNode checkpoint = MAPPER.createObjectNode();
+        checkpoint.put("schemaVersion", 2).put("action", "KEEP").put("summary", "장중 유지").put("noTradeReason", "갭 유지");
+        checkpoint.putArray("orders");
+        store.insertDecisionIfAbsent(new Decision(0, PaperBooks.KR_CLAUDE2, D1, RuleBookService.CHECKPOINT, null,
+                ClaudeBookService.STATUS_NO_TRADE, "claude-test", 1, store.settings.version(), null, null, null, null, null,
+                checkpoint, null, null, null, false, null, 0));
+
+        JsonNode body = builder.forBook(PaperBooks.KR_CLAUDE2).build(run(), D, RuleBookService.SCHEDULED, false, 3, quotesD(),
+                READ_D).body();
+
+        assertThat(body.path("10_recentDecisions").path("decisions")).extracting(d -> d.path("kind").asString())
+                .containsExactly("SCHEDULED");
+    }
+
+    @Test
     @DisplayName("이달 재량 주문 — 출발 결정(INITIAL)의 체결 주문은 세지 않고 정기 결정의 체결 주문만(미국 BACKFILL 제외와 같은 원칙)")
     void monthlyCountLeavesOutTheStartAllocation() {
         store.dbNow = kst("2026-11-02T22:40");
