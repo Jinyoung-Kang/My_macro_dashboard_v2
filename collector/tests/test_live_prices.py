@@ -18,6 +18,7 @@ import time
 from datetime import datetime, timezone
 from types import SimpleNamespace
 
+import pandas as pd
 import pytest
 import requests
 from fastapi.testclient import TestClient
@@ -25,6 +26,7 @@ from fastapi.testclient import TestClient
 from app import http, main
 from app.services import detail
 from app.services import live_prices as lp
+from app.services import sector
 
 NOW = 1793645000.0   # 2026-11-02 18:43:20 UTC — 뉴욕 정규장 안
 _REAL_REUTERS_CODE = lp._reuters_code   # 아래 fixture가 바꿔 끼우기 전의 것 — 로이터 코드 찾기 자체를 보는 시험이 씀
@@ -457,3 +459,23 @@ def test_같은_시장의_동시_조회는_잠금을_기다려_출처를_한_번
         second.join(5)
     assert calls == [["AAPL"], ["SPY"]], "앞 조회가 받은 AAPL은 캐시에서, 새 종목만 묻는다"
     assert [set(r["items"]) for r in results] == [{"US:AAPL"}, {"US:AAPL", "US:SPY"}]
+
+
+# --------------------------------------------------------------------------- QA-198
+# 화면 실시간 시세(표시 전용)가 Yahoo spark의 403·429를 받으면 yfinance 경로와 같이 쓰는 공용 래치 이름(http.YAHOO_HOST)까지 5분 닫아,
+# 장부 관측치(paper_quotes — collect_daily_closes)·계좌2 1분봉·장중 확인 수집이 그동안 멈췄습니다. 같은 한도라는 전제는 저장소 실측과 다릅니다
+# (spark는 공용 세션 표시에만 429, yfinance는 같은 시각 정상 — ADR 0024 표·market.latest_minute_prices 설명).
+@pytest.mark.xfail(strict=True, reason="QA-198 재현 — 화면 경로의 spark 거부가 공용 Yahoo 래치를 닫아 장부 관측치 수집을 막음")
+def test_QA198_화면_경로의_Yahoo_spark_거부는_장부_관측치_수집을_막지_않는다(monkeypatch):
+    def rejected(url, **kwargs):
+        raise http.reject_host(http.host_of(url), "HTTP 429")   # 공용 세션 어댑터가 하는 일 그대로 — 실제 호스트를 닫고 예외
+    monkeypatch.setattr(lp, "_get_json", rejected)
+    out = lp.prices([("US", "^VIX")])
+    assert out["errors"]["Yahoo"].startswith(http.REJECTED_MARK) and out["missing"] == ["US:^VIX"]
+    assert http.active_rejection("query1.finance.yahoo.com") is not None, "spark 호스트는 5분 쉼"
+
+    frame = pd.DataFrame({"Close": [700.0, 701.5]}, index=pd.to_datetime(["2026-11-02", "2026-11-03"]))
+    monkeypatch.setattr(sector.yf, "download", lambda tickers, **kwargs: pd.concat({"SPY": frame}, axis=1))
+    result = sector.collect_daily_closes(("SPY",), period="5d")
+    assert result["error"] is None, "yfinance 장부 수집은 화면 경로의 거부에 막히지 않음"
+    assert result["tickers"]["SPY"]["close"] == [700.0, 701.5]
