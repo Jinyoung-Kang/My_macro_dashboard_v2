@@ -12,7 +12,6 @@ import com.macrodash.store.PaperStore.NavRow;
 import com.macrodash.store.PaperStore.Order;
 import com.macrodash.store.PaperStore.Position;
 import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import tools.jackson.databind.JsonNode;
@@ -633,7 +632,6 @@ class KrConfirmationsTest {
     }
 
     @Test
-    @Disabled("QA-178 재현 — 수정 전: 매시 체결은 확정 조정 행이 영원히 없어 그날 이후 순자산 줄이 확정되지 않고, 주기마다 '확정 조정 안 함' 사유를 다시 남김")
     @DisplayName("QA-178: 매시·장중 시장가 체결(토스 1분봉 체결가가 확정가 — 명세 2026-11-02 §3)은 '확정 대기'로 세지 않음 — 그날 줄이 금융위 종가로 확정되고, "
             + "'확정 조정 안 함' 사유를 주기마다 다시 남기지 않음")
     void hourlyFillsDoNotHoldTheNavLine() {
@@ -654,7 +652,6 @@ class KrConfirmationsTest {
     }
 
     @Test
-    @Disabled("QA-178 재현 — 수정 전: 장부의 현금뿐인 줄 확정(confirmedThrough)이 매시 체결을 확정 전으로 셈")
     @DisplayName("QA-178: 장부의 순자산 줄 확정도 매시 체결을 '확정 대기'로 세지 않음 — 전날 매시 매도로 다 판 계좌의 D+1 현금뿐인 줄은 그 관측치에서 바로 확정")
     void hourlyFillsDoNotHoldTheCashLine() {
         book(1_000_000);

@@ -1731,9 +1731,12 @@ public class PaperLedgerService {
                 navDate, null));
     }
 
-    /** 그 책의 체결 중 체결일 ≤ {@code day}인 것이 모두 금융위 확정 조정을 받았나(확정 조정 시장 — K29, C3). */
+    /**
+     * 그 책의 체결 중 체결일 ≤ {@code day}인 것이 모두 금융위 확정 조정을 받았나(확정 조정 시장 — K29, C3). 토스 1분봉 체결가가 곧 확정가인 매시·장중
+     * 시장가 체결은 기다리지 않습니다({@link KrConfirmations#finalAsFilled} — QA-178).
+     */
     private boolean confirmedThrough(String code, LocalDate day) {
-        return store.unconfirmedFills(code).stream()
+        return KrConfirmations.awaiting(store, code).stream()
                 .allMatch(u -> u.fill().observationDate() != null && u.fill().observationDate().isAfter(day));
     }
 

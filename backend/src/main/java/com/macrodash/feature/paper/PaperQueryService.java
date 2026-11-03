@@ -1229,7 +1229,7 @@ public class PaperQueryService {
      * 한국 계좌 체결 목록(2단계 명세 §4-16 F2 — 화면의 잠정·확정·확정 조정·실효 비용 bp). 행은 미국 칸 뒤에 비용 칸({@code fee}·{@code tax}·
      * {@code slippageCost}, 원)·{@code costBp}(비용 합 ÷ (체결가 × 수량) × 10⁴, 소수 2자리)·{@code confirmation}(확정 조정 행 — 없으면 null)·
      * {@code confirmationState}·{@code confirmationNote}를 싣고, 맨 위 {@code confirmationTotal}은 그 계좌 전체(목록 상한과 무관)의 확정 조정 행 수·
-     * 현금 차이 합(행이 없으면 null — 0과 구분)·아직 확정 안 된 체결 수입니다.
+     * 현금 차이 합(행이 없으면 null — 0과 구분)·확정 조정을 기다리는 체결 수(토스 1분봉 체결가가 확정가인 매시·장중 시장가 체결은 빼고 — QA-178)입니다.
      *
      * <p>확정 상태는 장부의 확정 조정({@link KrConfirmations})과 같은 판정을 저장된 사실만으로 합니다 — 확정 조정 행이 있으면 {@value #CONFIRMED}, 없고
      * 그 종목 데이터셋(ETF — 그 실행 설정의 {@link KrPaperMarket#etf} — 는 증권상품시세, 나머지는 주식시세)의 최신 기준일 &lt; 체결일이면
@@ -1285,7 +1285,8 @@ public class PaperQueryService {
         Map<String, Object> total = new LinkedHashMap<>();
         total.put("rows", confirmations.size());
         total.put("cashDelta", confirmations.isEmpty() ? null : money(cashDelta));
-        total.put("unconfirmed", unconfirmedTiming.size());
+        // 남은 수는 확정 조정을 기다리는 체결만 — 매시·장중 시장가 체결은 토스 1분봉 체결가가 확정가(KrConfirmations.finalAsFilled — QA-178).
+        total.put("unconfirmed", (int) unconfirmedTiming.values().stream().filter(t -> !KrConfirmations.finalAsFilled(t)).count());
         Map<String, Object> out = new LinkedHashMap<>();
         out.put("available", true);
         out.put("confirmationTotal", total);

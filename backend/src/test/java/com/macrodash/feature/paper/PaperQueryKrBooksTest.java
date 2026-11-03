@@ -7,7 +7,6 @@ import com.macrodash.store.PaperStore.FillConfirmation;
 import com.macrodash.store.PaperStore.Order;
 import com.macrodash.store.PaperStore.Position;
 import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -198,7 +197,6 @@ class PaperQueryKrBooksTest {
     }
 
     @Test
-    @Disabled("QA-178 재현 — 수정 전: 매시 체결(확정 조정 대상 아님)을 '아직 확정 안 된 체결'로 셈")
     @DisplayName("QA-178: confirmationTotal.unconfirmed는 확정 조정이 필요한 체결(시가·종가)만 셈 — 매시 체결(토스 1분봉 체결가 = 확정가)은 빼고, 그 행은 UNCORRECTED(화면 '매시 체결 · 확정가 없음')")
     @SuppressWarnings("unchecked")
     void hourlyFillsAreNotLeftToConfirm() {

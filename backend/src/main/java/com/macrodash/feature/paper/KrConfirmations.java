@@ -63,6 +63,10 @@ import java.util.TreeSet;
  * 비었음(거래 없던 날·시가 칸 전 저장본), 체결 때 설정 판을 이력에서 찾지 못함, 종목 구분을 모름. 확정되지 않은 체결이 남은 날의 순자산은
  * 확정({@code prices_final})이 되지 않습니다.
  *
+ * <p><b>확정 조정 대상이 아닌 체결</b>({@link #finalAsFilled}): 한국 Claude 계좌2의 매시({@code AT_*})·장중 시장가({@code MARKET}) 체결은 토스 1분봉
+ * 체결가가 곧 확정가입니다(금융위에 그 시각 값이 없음 — 명세 2026-11-02 §3). 행을 쓰지 않고 '확정 대기'로도 세지 않습니다 — 세면 그 체결 뒤의
+ * 순자산 줄이 영영 확정되지 않았습니다(QA-178).
+ *
  * <p><b>확정 순자산 줄</b>({@link #rewriteNav}): 체결을 확정한 뒤 그 책의 마지막 순자산 줄(거래일 D)을 금융위 D 종가로 다시 씁니다 — 장부 상태가 D
  * 마감일 때만(마지막 관측치의 세션 = D, D 뒤 체결 없음). 그날까지의 체결이 모두 확정되고 모든 보유가 금융위 D 종가로 평가되고 D 이하 봉으로 나중에
  * 체결될 수 있는 대기 주문이 없으면({@link #pendingThrough}) {@code prices_final = true}, 아니면 잠정(이번에 확정한 체결이 있으면 고친 현금으로 다시 씀).
@@ -133,7 +137,7 @@ final class KrConfirmations {
      *                  남게)
      */
     Result confirm(MarketRun run, Book book, boolean reuseIdle) {
-        List<UnconfirmedFill> pending = store.unconfirmedFills(book.code());
+        List<UnconfirmedFill> pending = awaiting(store, book.code());
         Optional<BookState> stateRow = store.state(book.code());
         if (stateRow.isEmpty()) {
             if (pending.isEmpty()) {
@@ -160,6 +164,20 @@ final class KrConfirmations {
             idle.remove(book.code());
         }
         return result;
+    }
+
+    /**
+     * 토스 1분봉 체결가가 곧 확정가인 체결 시점인가 — 한국 Claude 계좌2의 매시({@code AT_*})·장중 시장가({@code MARKET}). 금융위에는 그 시각 값이 없어
+     * 확정 조정을 하지 않으므로(명세 2026-11-02 §3) '확정 대기'로 세지 않습니다 — 확정 순자산 줄·장부 순자산 줄의 확정·체결 목록의 남은 수(QA-178).
+     * 시가·종가({@code NEXT_OPEN}·{@code NEXT_CLOSE})는 금융위 시가·종가로 확정하고, 그 밖의 글자(손으로 넣은 주문 등)는 지금처럼 확정 전으로 남습니다.
+     */
+    static boolean finalAsFilled(String timing) {
+        return KrTimedLadder.timed(timing) && !PaperBooks.NEXT_CLOSE.equals(timing);
+    }
+
+    /** 확정 조정을 기다리는 체결 — 확정 조정 행이 없는 체결({@link PaperStore#unconfirmedFills}) 중 {@link #finalAsFilled} 시점이 아닌 것. */
+    static List<UnconfirmedFill> awaiting(PaperStore store, String bookCode) {
+        return store.unconfirmedFills(bookCode).stream().filter(u -> !finalAsFilled(u.timing())).toList();
     }
 
     /** 지난 주기와 견줄 입력 — 금융위 최신 기준일을 모르면(시세 읽기가 답하지 않음) null(늘 읽음). */
