@@ -4,7 +4,7 @@
  * 숫자·서식은 lib/paper.ts의 bookCard·statCells·sampleNote를 그대로 씁니다 — 카드에 있던 칸을 행·표로 옮길 뿐, 새 숫자를 만들지 않습니다.
  * 개요 응답에 없는 값(예: 출발 이후 변화 금액)은 계산해 넣지 않습니다.
  */
-import type { RealtimeNav } from "./paperLive";
+import { parseKstStamp, type RealtimeNav } from "./paperLive";
 import { tradedAtText } from "./livePrices";
 import { deltaColor, EMPTY, formatKst, formatNumber, formatPercent, formatWithUnit } from "./format";
 import { accountProfile, benchmarkLabel, bookCard, isTimedBook, type NavSeriesLine, primaryClaudeBook, statCells } from "./paper";
@@ -321,6 +321,17 @@ export interface OverviewHeroModel {
 }
 
 /**
+ * 히어로에 얹을 실시간 순자산 — 같은 계좌이고, 실시간 가격 시각(가장 늦은 거래)이 서버 지금 값의 기준 시각보다 이르지 않을 때만(QA-195). 실시간 순자산은
+ * 장중 카드가 앞서 읽은 /live의 현금·보유로 세므로, 체결 뒤 개요가 새 보유로 다시 읽혔으면 서버 지금 값이 더 새 값입니다. 한쪽 시각을 모르면 실시간 그대로.
+ */
+function heroRealtime(realtime: RealtimeNav | null, code: string, serverAtKst: string | null): RealtimeNav | null {
+  if (!realtime || realtime.code !== code) return null;
+  const liveAt = realtime.at ? Date.parse(realtime.at) : Number.NaN;
+  const serverAt = parseKstStamp(serverAtKst);
+  return Number.isFinite(liveAt) && serverAt !== null && liveAt < serverAt ? null : realtime;
+}
+
+/**
  * 개요 히어로 모델 — 계좌 행(`bookAssetRow`)과 같은 지금 값·경고 규칙이고, 이전 값 배지는 같은 규칙에 히어로 자리(단계 표기가 관측 시각을 이미 적음 —
  * `bookStale` "hero"), 곡선은 고른 기간 창의 그 계좌 한 줄. 그 계좌가 목록에 없으면 null.
  */
@@ -339,8 +350,9 @@ export function overviewHeroModel(
   const stale = bookStale(book, context, "hero");
   const view = currentView(book, { market, session });
   const digits = market === "KR" ? 0 : 2;
-  // 실시간 순자산(같은 계좌일 때만 — 장중 카드가 실시간 시세로 다시 셈, lib/paperLive realtimeBookNav). 표시 전용 추정이고 장부는 그대로.
-  const live = realtime && realtime.code === code ? realtime : null;
+  // 실시간 순자산(같은 계좌이고 서버 지금 값보다 이르지 않을 때만 — 장중 카드가 실시간 시세로 다시 셈, lib/paperLive realtimeBookNav). 표시 전용
+  // 추정이고 장부는 그대로.
+  const live = heroRealtime(realtime, code, view.atKst);
   const valueText = formatNumber(live ? live.nav : view.nav, digits);
   const day = view.day?.text ? view.day : null;
   return {
