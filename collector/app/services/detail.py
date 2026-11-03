@@ -50,6 +50,8 @@ NEWS_TTL = 900.0
 SYMBOLS_TTL = 3600.0
 PROFILE_TTL = 12 * 3600.0
 FAILURE_TTL = 60.0
+NAVER_WORLD_TTL = 86_400.0
+NAVER_WORLD_TIMEOUT = 8   # 실시간 시세(live_prices)의 출처 호출과 같은 8초
 NEWS_LIMIT = 20
 NAVER_WORLD_API = "https://api.stock.naver.com/stock"
 WISEREPORT_COMPANY = "https://navercomp.wisereport.co.kr/v2/company/c1010001.aspx"
@@ -87,9 +89,11 @@ def _cached(key: tuple, ttl: float, fetch: Callable[[], dict]) -> dict:
 
 
 def reset_cache() -> None:
-    """시험용 — 캐시를 비웁니다."""
+    """시험용 — 캐시를 비웁니다(네이버 해외주식 찾기 포함)."""
     with _cache_lock:
         _cache.clear()
+    with _world_lock:
+        _world.clear()
 
 
 def _now_iso() -> str:
@@ -314,6 +318,35 @@ def naver_world_item(payload: Any, code: str) -> dict | None:
         if str(item.get("code") or "").upper() in wanted and item.get("reutersCode"):
             return {"reutersCode": str(item["reutersCode"]), "name": _text(item.get("name"))}
     return None
+
+
+_world: dict[str, tuple[float, dict | None]] = {}
+_world_lock = threading.Lock()
+
+
+def naver_world(code: str) -> dict | None:
+    """
+    미국 심볼 → 네이버 해외주식 {reutersCode, name}(자동완성 — 하루 캐시, 200 응답에서 못 찾으면 None도 하루 둠). 자동완성은 'BRK-B'를 'BRK B'로만
+    찾습니다. 묻지 못하면(연결 오류·시간 초과·200이 아닌 응답 — 재시도를 다 쓴 5xx 포함) 1분(FAILURE_TTL)만 두고, 알던 것이 있으면 그것을 그대로
+    씁니다 — 일시 오류를 '없음'으로 하루 두면 그 종목이 하루 내내 Yahoo로 나가고(QA-186), 아예 두지 않으면 3초마다 다시 묻습니다.
+    """
+    now = time.monotonic()
+    with _world_lock:
+        cached = _world.get(code)
+        if cached and cached[0] > now:
+            return cached[1]
+    try:
+        res = get_session().get(NAVER_AC, params={"q": code.replace("-", " "), "target": "stock,worldstock"},
+                                timeout=NAVER_WORLD_TIMEOUT)
+        if res.status_code != 200:
+            raise RuntimeError(f"HTTP {res.status_code}")
+        item, life = naver_world_item(res.json(), code), NAVER_WORLD_TTL
+    except Exception as exc:  # noqa: BLE001
+        logger.info("네이버 해외주식 코드 찾기 실패(%s): %s", code, brief_error(exc))
+        item, life = (cached[1] if cached else None), FAILURE_TTL
+    with _world_lock:
+        _world[code] = (now + life, item)
+    return item
 
 
 def _naver_world(code: str) -> dict | None:

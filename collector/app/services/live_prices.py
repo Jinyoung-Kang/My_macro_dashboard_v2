@@ -34,7 +34,6 @@ logger = logging.getLogger(__name__)
 
 KST = ZoneInfo("Asia/Seoul")
 TTL_SECONDS = 3.0
-NAMES_TTL_SECONDS = 86_400.0
 MAX_ITEMS = 60
 BATCH = 20
 FETCH_TIMEOUT = 8
@@ -332,34 +331,10 @@ def _fetch_yahoo(codes: list[str], errors: dict[str, str]) -> dict[str, dict]:
     return out
 
 
-_names: dict[str, tuple[float, str | None]] = {}
-_names_lock = threading.Lock()
-
-
 def _reuters_code(code: str) -> str | None:
-    """
-    미국 심볼 → 네이버 로이터 코드(자동완성 — 하루 캐시, 200 응답에서 못 찾으면 None도 하루 둠). 자동완성은 'BRK-B'를 'BRK B'로만 찾습니다.
-    묻지 못하면(연결 오류·시간 초과·200이 아닌 응답 — 재시도를 다 쓴 5xx 포함) 1분(detail.FAILURE_TTL)만 두고, 알던 코드가 있으면 그것을 그대로
-    씁니다 — 일시 오류를 '없음'으로 하루 두면 그 종목이 하루 내내 Yahoo로 나가고(QA-186), 아예 두지 않으면 3초마다 다시 묻습니다.
-    """
-    now = time.monotonic()
-    with _names_lock:
-        cached = _names.get(code)
-        if cached and cached[0] > now:
-            return cached[1]
-    try:
-        res = get_session().get(detail.NAVER_AC, params={"q": code.replace("-", " "), "target": "stock,worldstock"},
-                                timeout=FETCH_TIMEOUT)
-        if res.status_code != 200:
-            raise RuntimeError(f"HTTP {res.status_code}")
-        item = detail.naver_world_item(res.json(), code)
-        reuters, life = (item["reutersCode"] if item else None), NAMES_TTL_SECONDS
-    except Exception as exc:  # noqa: BLE001
-        logger.info("네이버 해외주식 코드 찾기 실패(%s): %s", code, brief_error(exc))
-        reuters, life = (cached[1] if cached else None), detail.FAILURE_TTL
-    with _names_lock:
-        _names[code] = (now + life, reuters)
-    return reuters
+    """미국 심볼 → 네이버 로이터 코드(자동완성 — 질의·캐시·실패 처리는 :func:`detail.naver_world`). 못 찾으면 None."""
+    item = detail.naver_world(code)
+    return item["reutersCode"] if item else None
 
 
 def _fetch_naver_us(codes: list[str], errors: dict[str, str]) -> dict[str, dict]:
@@ -478,8 +453,7 @@ _fetch_lock = threading.Lock()
 def reset_cache() -> None:
     with _cache_lock:
         _cache.clear()
-    with _names_lock:
-        _names.clear()
+    detail.reset_cache()   # 로이터 코드 찾기(detail.naver_world)의 캐시
 
 
 def prices(items: list[tuple[str, str]]) -> dict:

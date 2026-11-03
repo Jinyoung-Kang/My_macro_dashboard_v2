@@ -21,6 +21,7 @@ import requests
 from fastapi.testclient import TestClient
 
 from app import http, main
+from app.services import detail
 from app.services import live_prices as lp
 
 NOW = 1793645000.0   # 2026-11-02 18:43:20 UTC — 뉴욕 정규장 안
@@ -353,7 +354,7 @@ def _ac_session(monkeypatch, responses: list) -> list:
         if isinstance(res, Exception):
             raise res
         return res
-    monkeypatch.setattr(lp, "get_session", lambda: SimpleNamespace(get=get))
+    monkeypatch.setattr(detail, "get_session", lambda: SimpleNamespace(get=get))
     return asked
 
 
@@ -379,7 +380,7 @@ def test_로이터_코드_찾기는_200에서_못_찾으면_하루_묻지_못하
 
     asked = _ac_session(monkeypatch, [_ac_res(200, {"items": []})])
     assert lp._reuters_code("^VIX") is None
-    now[0] += lp.NAMES_TTL_SECONDS - 1
+    now[0] += detail.NAVER_WORLD_TTL - 1
     assert lp._reuters_code("^VIX") is None and asked == ["^VIX"], "200에서 못 찾은 것(지수·환율)은 하루 다시 묻지 않음"
 
     asked = _ac_session(monkeypatch, [requests.exceptions.ReadTimeout("read timed out"), _ac_res(200, AC_AAPL)])
@@ -389,6 +390,6 @@ def test_로이터_코드_찾기는_200에서_못_찾으면_하루_묻지_못하
     now[0] += 31
     assert lp._reuters_code("AAPL") == "AAPL.O" and asked == ["AAPL", "AAPL"]
 
-    now[0] += lp.NAMES_TTL_SECONDS + 1
+    now[0] += detail.NAVER_WORLD_TTL + 1
     asked = _ac_session(monkeypatch, [_ac_res(502)])
     assert lp._reuters_code("AAPL") == "AAPL.O" and asked == ["AAPL"], "하루가 지나 다시 묻다 실패하면 알던 코드를 그대로"
