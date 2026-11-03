@@ -11,7 +11,7 @@ tests/test_paper_watch_kr.py
 """
 from __future__ import annotations
 
-from datetime import date, datetime, time, timedelta
+from datetime import date, datetime, time, timedelta, timezone
 from pathlib import Path
 
 import pytest
@@ -242,3 +242,22 @@ def test_한국_감시_저장본을_읽는_백엔드_코드는_한국_장중_확
                      if ".watchKr()" in path.read_text(encoding="utf-8"))
     assert callers == ["backend/src/main/java/com/macrodash/feature/paper/PaperKrCheckpointJob.java",
                        "backend/src/main/java/com/macrodash/feature/paper/PaperQueryService.java"]
+
+
+@pytest.mark.xfail(strict=True, reason="QA-193 재현 — 지연을 기준 종목이 아니라 마지막으로 받은 종목의 받은 시각으로 셈")
+def test_QA193_지연은_기준_종목을_받은_시각으로_센다(store, toss, monkeypatch):
+    # 부를 때마다 5초씩 가는 시계 — 감시 둘 뒤 기준 069500(11:04:15), 그 뒤 보유·대기 둘(11:04:25)을 받음.
+    _scope(monkeypatch, SCOPE)
+    for code in ("005930", "000660", "069500", "035720", "051910"):
+        toss.bars[code] = _day("11:05")
+    ticks = iter(range(0, 600, 5))
+    monkeypatch.setattr(paper_watch_kr, "_now", lambda: _at("11:04", next(ticks)))
+
+    detail = tasks.task_paper_watch_kr()
+
+    payload = _payload(store)
+    assert toss.calls == ["005930", "000660", "069500", "035720", "051910"]
+    assert payload["tickers"]["069500"]["fetchedAt"] == _at("11:04", 15).astimezone(timezone.utc).isoformat()
+    assert payload["lagSeconds"] == 15, "기준 종목을 받은 11:04:15 − 마지막 완성 봉 끝 11:04"
+    assert "지연 15초(069500)" in detail
+    assert payload["fetchedAt"] == _at("11:04", 25).astimezone(timezone.utc).isoformat(), "저장본 받은 시각은 마지막 종목 그대로"
