@@ -18,6 +18,7 @@ import static com.macrodash.feature.paper.PaperFixtures.MAPPER;
 import static com.macrodash.feature.paper.PaperFixtures.bar;
 import static com.macrodash.feature.paper.PaperFixtures.quotes;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
@@ -110,6 +111,46 @@ class PaperClaude1CheckpointJobTest {
         store.decisions.clear();
         assertThat(job(NOON.plusSeconds(40 * 60)).run().reason()).contains("아침 결정 없음");
         verify(claude, never()).decideCheckpoint(any(), any());
+    }
+
+    @Test
+    @DisplayName("QA-191: 부른 뒤 기록 실패(CalledNotRecorded)면 ERROR 작업 기록을 남기고 그 세션에 다시 부르지 않음 — 다음 세션은 다시 봄")
+    void calledNotRecordedIsNotCalledAgain() {
+        observed(NOON.plusSeconds(35 * 60), E);
+        when(claude.decideCheckpoint(any(), any())).thenThrow(new ClaudeBookService.CalledNotRecorded(
+                new IllegalStateException("DB 연결 끊김")));
+        PaperClaude1CheckpointJob job = job(NOON.plusSeconds(40 * 60));   // 작업 메모리는 같은 작업 객체
+
+        assertThatThrownBy(job::run).isInstanceOf(ClaudeBookService.CalledNotRecorded.class);
+        assertThat(store.jobRuns).singleElement().satisfies(r -> {
+            assertThat(r.job()).isEqualTo(PaperClaude1CheckpointJob.JOB);
+            assertThat(r.outcome()).isEqualTo(PaperDecisionJob.ERROR);
+            assertThat(r.detail().path("calledNotRecorded").asBoolean()).isTrue();
+            assertThat(r.detail().path("asOfTradingDate").asString()).isEqualTo(D.toString());
+        });
+
+        assertThat(job.run().reason()).isEqualTo(PaperClaude1CheckpointJob.CALLED_NOT_RECORDED);
+        verify(claude, times(1)).decideCheckpoint(any(), any());
+    }
+
+    @Test
+    @DisplayName("QA-191: 부르기 전 오류는 다음 주기에 다시 보되 같은 세션에 3번이면 더 시도하지 않음(결정 작업과 같은 수), 주기마다 ERROR 기록")
+    void errorsBeforeTheCallStopAfterThree() {
+        observed(NOON.plusSeconds(35 * 60), E);
+        when(claude.decideCheckpoint(any(), any())).thenThrow(new IllegalStateException("패킷 조립 실패"));
+        PaperClaude1CheckpointJob job = job(NOON.plusSeconds(40 * 60));
+
+        for (int i = 0; i < PaperDecisionJob.MAX_ATTEMPTS; i++) {
+            assertThatThrownBy(job::run).isInstanceOf(IllegalStateException.class);
+        }
+        assertThat(job.run().reason()).startsWith("오류 3번");
+
+        verify(claude, times(PaperDecisionJob.MAX_ATTEMPTS)).decideCheckpoint(any(), any());
+        assertThat(store.jobRuns).hasSize(PaperDecisionJob.MAX_ATTEMPTS).allSatisfy(r -> {
+            assertThat(r.outcome()).isEqualTo(PaperDecisionJob.ERROR);
+            assertThat(r.detail().path("calledNotRecorded").asBoolean()).isFalse();
+        });
+        assertThat(store.jobRuns).extracting(r -> r.detail().path("attempt").asInt()).containsExactlyInAnyOrder(1, 2, 3);
     }
 
     @Test

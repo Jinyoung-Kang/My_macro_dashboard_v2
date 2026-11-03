@@ -921,11 +921,16 @@ final class ClaudeDecisionPipeline {
                 attempt.packet().text());
     }
 
-    /** 호출이 실패한 결정 — 패킷·원문·사용량·사유는 남기고 주문은 없습니다(C3·C7). 재시도였으면 같은 행을 바꿉니다. */
+    /**
+     * 호출이 실패한 결정 — 패킷·원문·사용량·사유는 남기고 주문은 없습니다(C3·C7). 재시도였으면 같은 행을 바꿉니다. 계좌1 장중 확인(CHECKPOINT)은
+     * 다시 부르지 않고 아침 주문이 그대로라 계좌2 장중 확인과 같은 문구입니다(QA-191).
+     */
     Decision recordFailure(LocalDate asOf, String kind, SettingsRow row, ClaudeSettings claude,
                                    boolean pricesFinal, Attempt attempt, Decision retrying) {
         Map<String, Object> response = new LinkedHashMap<>();
-        response.put("summary", statusLabel(attempt.status()) + " — 그날 재량 주문 없음(리스크 규칙은 계속)"
+        response.put("summary", RuleBookService.CHECKPOINT.equals(kind)
+                ? statusLabel(attempt.status()) + " — 장중 확인 재시도 없음(아침 주문 그대로)"
+                : statusLabel(attempt.status()) + " — 그날 재량 주문 없음(리스크 규칙은 계속)"
                 + (STATUS_API_ERROR.equals(attempt.status()) && retrying == null ? ". 같은 거래일에 한 번 다시 부릅니다" : ""));
         response.put("book", book());
         response.put("kind", kind);

@@ -553,7 +553,6 @@ class ClaudeBookServiceTest {
     }
 
     @Test
-    @org.junit.jupiter.api.Disabled("QA-191 재현 — 수정 전: 계좌1 장중 확인 API 오류 행 요약이 '같은 거래일에 한 번 다시 부릅니다'(작업은 다시 부르지 않음)")
     @DisplayName("QA-191: 계좌1 장중 확인(CHECKPOINT)의 API 오류 행은 '장중 확인 재시도 없음(아침 주문 그대로)' — 작업이 그 세션에 다시 부르지 않는 실제 동작과 같은 문구")
     void checkpointApiErrorSaysNoRetry() {
         activeWithHolding();
@@ -568,7 +567,6 @@ class ClaudeBookServiceTest {
     }
 
     @Test
-    @org.junit.jupiter.api.Disabled("QA-191 재현 — 수정 전: 부른 뒤 결정 행·대체 기록이 모두 실패하면 다음 주기(5분 뒤)에 같은 세션을 또 부름")
     @DisplayName("QA-191: 계좌1 장중 확인 작업 — 부른 뒤 결정 행과 대체 기록이 모두 실패해도(DB 순간 장애) 그 세션에 Claude를 다시 부르지 않고, 예외로 끝난 주기는 ERROR 작업 기록")
     void checkpointJobDoesNotCallAgainAfterUnrecordedResponse() throws Exception {
         FakePaperStore failing = new FakePaperStore() {

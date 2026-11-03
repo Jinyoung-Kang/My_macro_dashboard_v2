@@ -499,7 +499,27 @@ public class ClaudeBookService {
      * 아침 결정과 같은 시점까지, QA-197)·검증·기록이고, 호출 문턱은 정기 작업(하루 상한까지). (계좌, d, CHECKPOINT)마다 한 건이라 세션당 한 번입니다.
      */
     Decision decideCheckpoint(PaperMarket market, LocalDate asOf) {
-        return decide(pipeline(market), market, asOf, RuleBookService.CHECKPOINT, false, null, null);
+        boolean[] called = {false};
+        try {
+            return decide(pipeline(market), market, asOf, RuleBookService.CHECKPOINT, false, null, null,
+                    () -> called[0] = true);
+        } catch (RuntimeException e) {
+            if (called[0]) {
+                throw new CalledNotRecorded(e);   // 부른 뒤 — 작업이 그 세션에 다시 부르지 않게(QA-191)
+            }
+            throw e;
+        }
+    }
+
+    /**
+     * Claude를 부른 뒤(응답·오류를 받음) 결정 행을 남기지 못하고 끝난 장중 확인({@link #decideCheckpoint}) — 과금됐을 수 있는 호출이라 부르는
+     * 작업({@link PaperClaude1CheckpointJob})이 그 세션에 다시 부르지 않게 구분합니다(QA-191, 계좌2 작업의 '부름' 기억과 같은 뜻). 원래 예외가 원인입니다.
+     */
+    static final class CalledNotRecorded extends RuntimeException {
+
+        CalledNotRecorded(RuntimeException cause) {
+            super("Claude를 부른 뒤 결정을 기록하지 못함(과금된 응답 — 다시 부르지 않음): " + cause, cause);
+        }
     }
 
     private Decision decide(PaperMarket market, LocalDate asOf, String kind, boolean pricesFinal,
@@ -510,6 +530,15 @@ public class ClaudeBookService {
     private Decision decide(ClaudeDecisionPipeline base, PaperMarket market, LocalDate asOf, String kind,
                             boolean pricesFinal, ClaudeDecisionPipeline.Observed observed,
                             PacketBuilder.MarketInputs inputs) {
+        return decide(base, market, asOf, kind, pricesFinal, observed, inputs, null);
+    }
+
+    /**
+     * @param called Claude를 부른 뒤(호출 한 번을 잡고 응답·오류를 받음) 한 번 부름 — 장중 확인 작업이 '부른 뒤 기록 실패'를 가리는 데 씀. null이면 없음
+     */
+    private Decision decide(ClaudeDecisionPipeline base, PaperMarket market, LocalDate asOf, String kind,
+                            boolean pricesFinal, ClaudeDecisionPipeline.Observed observed,
+                            PacketBuilder.MarketInputs inputs, Runnable called) {
         if (base.needsObservation() && observed == null) {
             throw new IllegalArgumentException(market.code() + " Claude 결정은 그 실행의 관측치·읽은 순간이 필요합니다(결정 작업이 넘김)");
         }
@@ -564,6 +593,9 @@ public class ClaudeBookService {
                 : pipeline.attempt(asOf, kind, false, row, claude, today, scheduled, observed);
         if (attempt == null) {
             return pipeline.capSkipped(asOf, kind, row, claude, pricesFinal, retrying, today, scheduled);
+        }
+        if (called != null) {
+            called.run();
         }
         if (!attempt.succeeded()) {
             return pipeline.recordFailure(asOf, kind, row, claude, pricesFinal, attempt, retrying);
