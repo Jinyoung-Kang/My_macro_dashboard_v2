@@ -97,7 +97,10 @@ PC → 서버 전달은 `scp`(Tailscale SSH 또는 `-i ~/.ssh/id_ed25519_vultr`)
 3. AWS: EventBridge 일정 6개 DISABLE(다시 켜지지 않게), 인스턴스 정지. 한 주 되돌리기용으로 둔다(EBS·EIP 약 $1.5/주).
 4. 문서·메모리: CLAUDE.md '모의 매매 상태는 Vultr 한 곳', `aws-personal-deploy-status`·`paper-trading-repo-and-deploy` 메모리 갱신, ADR 0023 결과 한 줄.
 
-## 7. AWS 정리(단계 D — 컷오버 한 주 뒤, 사용자 확인 뒤)
+## 7. AWS 정리(단계 D — 컷오버 한 주 뒤, 사용자 확인 뒤) — 끝(2026-11-03)
+
+> 사용자가 한 주 대기를 앞당겨 2026-11-03에 했습니다. 지운 것·남긴 것은 [ADR 0023](../adr/0023-vultr-deployment.md) 결과 절, 작업 지시문은
+> [단계 D 명세](2026-11-03-aws-cleanup-stage-d.md). SSM 세션 설정 문서는 계정 전체 적용이라 남겼습니다.
 
 EC2 종료·EBS·EIP 해제·일정 6개·CloudFront `my-macro v2 public`·안내 버킷 `my-macro-offline-*`·IAM 역할 `my-macro-ec2`·SSM 세션 문서(계정 전체 적용이라 그대로 둘지 확인).
 백업 버킷과 예산은 남긴다. 저장소: `scripts/aws`·`compose.aws.yml`·`deploy/aws`(gate 포함 — Vultr는 쓰지 않음)·`.env.aws.example` 삭제,

@@ -1,9 +1,9 @@
 # 0023. Vultr 서버로 이전 — Vultr 서울 vhf-2c-4gb 한 대를 24시간, 접속은 Tailscale 하나(공개 TCP 포트 0, 잠금화면 없음), AWS와 병행한 뒤 컷오버하고 AWS my-macro 자원은 한 주 뒤 정리
 
-- 상태: 채택 (2026-11-03). **2026-11-03 02:30 KST 컷오버 — 운영본(모의 매매 정기 작업)은 Vultr**. 그 전의 AWS([ADR 0019](0019-aws-personal-deployment.md))는 정지 상태로 한 주 둡니다.
+- 상태: 채택 (2026-11-03). **2026-11-03 02:30 KST 컷오버 — 운영본(모의 매매 정기 작업)은 Vultr**. 그 전의 AWS([ADR 0019](0019-aws-personal-deployment.md))는 정지 상태로 한 주 두기로 했다가 같은 날 사용자 결정으로 앞당겨 지웠습니다(단계 D — 결과 절).
   작업 목록은 [Vultr 이전 명세](../specs/2026-11-02-vultr-migration.md)(§8 사용자 결정 D1~D6). 포트폴리오 데모(portfolio-app·RDS·CloudFront 3개)는 AWS에 그대로 둡니다.
 - 지키는 방법:
-  - CI `images` 잡의 'Vultr 덧붙임 해석' 단계: 서버 `.env`에 로컬·AWS 값이 섞인 경우를 흉내 낸 가짜 값으로 `compose.vultr.yml`을 합쳐 해석 —
+  - CI `images` 잡의 'Vultr 덧붙임 해석' 단계: 서버 `.env`에 로컬·옛 AWS 값이 섞인 경우를 흉내 낸 가짜 값으로 `compose.vultr.yml`을 합쳐 해석 —
     caddy를 포함해 모든 포트가 `127.0.0.1`이고 caddy는 `8201` 하나, gate 서비스·`ORIGIN_SECRET`·대역 파일 없음, `PUBLIC_ORIGIN`이 비면 해석 실패,
     허용 출처는 Tailscale 주소와 비상용 `localhost:8201`, 로그인 유지·`Secure` 쿠키 기본·메일 끔·같은 출처(`NEXT_PUBLIC_API_BASE=/`)·postgres 30초·국면 기록 23시,
     Caddyfile 문법(`caddy validate`).
@@ -11,7 +11,9 @@
     `deploy.sh`(빌드 backend → frontend → collector — gate 없음, CloudFront 대역 단계 없음, 서버 `.env`에 적지 않는 이름에 `ORIGIN_SECRET`·`GATE_*`·`VULTR_*`·
     `TAILSCALE_*`·`TAILNET_DOMAIN`, `PAPER_ENABLED=false`가 없으면 막지 않고 주의, QA-145 다시 돌기, 스키마 10번 실패면 0이 아닌 값), `backup-s3.sh`(`db/vultr/`),
     `instance.sh`·`firewall-pc-ip.sh`(가짜 Vultr API — 새 22 규칙을 먼저 넣고 옛 규칙만 지움, 다른 규칙 그대로, API 키가 curl 인자에 없음, 401·403이면 콘솔 안내).
-  - `collector/tests/test_deploy_migrations.py`(QA-107·118 머리말 손 배포를 두 덧붙임에), `CorsOriginsTest`(Vultr 허용 출처), 비밀 파일·이모지 시험 목록.
+  - `collector/tests/test_deploy_migrations.py`(QA-107·118 머리말 손 배포·README 배포 명령을 Vultr 덧붙임에), `CorsOriginsTest`(QA-136 — Vultr 허용 출처),
+    `RegimeLogServiceTest`(국면 기록 23시가 24시간 하루에 한 번), 비밀 파일·이모지 시험 목록. 공용 가짜 실행 파일은 `collector/tests/fake_server_tools.py`.
+  - 한국 관측치 늦음 = 다음 거래일 D′ 20:30 KST + 2시간 5분(D′ 22:35): `KrPaperMarketTest`·`KrCollectionStatusTest`의 늦음 경계.
   - Tailscale 신원 자동 로그인(결정 10): `TailnetLoginTest`(비면 꺼짐·대소문자·공백), `SessionFilterTest` 'Tailscale 신원 자동 로그인'(맞는 신원만 운영자, 다른 신원·
     꺼짐은 로그인, 쿠키 없는 쓰기의 다른 사이트 출처 403), `AuthControllerTest`(세션 응답 `noLogin`·`user.tailnet`), CI 'Vultr 덧붙임 해석'(기본 빈 값·서버 `.env` 값 전달).
   - Vultr 방화벽·Tailscale 설정·IAM 사용자는 저장소 밖 자원이라 시험이 없습니다 — 명세 §0·§5에 확인한 것을 적고, 바뀌면 이 문서의 결과에 적습니다.
@@ -92,6 +94,16 @@ ADR 0019의 AWS 서버는 가동 창(평일 밤·평일 낮·일요일 밤)만 �
   AWS와 같음 → Vultr `.env`의 `PAPER_ENABLED=false` 삭제·`deploy.sh` → AWS EventBridge 일정 6개 DISABLE·인스턴스 정지. 미국 장중 리스크 점검은 약 10분 비었습니다
   (AWS 마지막 02:27:49 → Vultr 첫 02:37:21 — 기동 뒤 첫 실행 지연 포함, 그 사이 체결·스탑 0).
   대조 중 AWS `.env`에만 있던 `PAPER_KR_START_DATE`(로컬 `.env`에는 없음)를 찾아 Vultr에 더했습니다 — `.env.vultr.example`에 적음.
+- (2026-11-03 19~20시 KST) **AWS 정리(단계 D) — 사용자 결정으로 한 주 대기를 앞당김**: 지운 것 — EventBridge 일정 6개와 실행 역할, CloudFront 배포판
+  'my-macro v2 public'·OAC·안내 버킷, EC2 `my-macro-app`(루트 EBS 함께)·탄력적 IP·보안 그룹, IAM 역할·인스턴스 프로필 `my-macro-ec2`, v2 저장소의
+  AWS 서버용 GitHub 배포 키. 남긴 것 — S3 백업 버킷(Vultr가 `db/vultr/`에 씀), 예산 `my-macro-monthly-45usd`, IAM 사용자 `my-macro-vultr-backup`,
+  SSM 세션 설정 문서(계정 전체), 포트폴리오 데모 전부. AWS 운영본의 마지막 덤프(컷오버 직전 02:28 KST)는 버킷의 `archive/aws-final/`에 복사했고,
+  버킷 수명주기의 60일 만료를 버킷 전체에서 `db/` 접두어로 좁혀 `archive/`는 만료되지 않습니다(불완전 업로드 7일 정리는 버킷 전체 그대로).
+  저장소에서는 `scripts/aws`·`deploy/aws`·`compose.aws.yml`·`.env.aws.example`과 그 CI 단계·시험을 지웠습니다.
+- (2026-11-03, 단계 D) **한국 관측치 늦음 기준을 24시간 서버에 맞춤**: 다음 수집 예정 E = max(D′ 20:30, D′ 서버 기동 뉴욕 09:20)는 AWS 밤 창(한국 명세 §9 F4)의
+  전제라, 24시간 서버에서는 늦음이 실제보다 약 3시간 늦게 떴습니다(겨울 D′+1 01:25). E = D′ 20:30 KST 하나로 되돌려 늦음 = **D′ 22:35 KST**
+  (서머타임 분기 없음, 여유 2시간 5분 그대로 — slow 1시간 주기에서 20:30 뒤 첫 slow와 그 다음 slow가 연달아 못 받은 뒤). 화면·API 응답 모양은 그대로이고 값만 당겨집니다.
+  결함이 아니라 설계 변경이라 QA 번호·재현 커밋은 없습니다.
 - **Tailscale SSH**: 0019가 문제 삼은 부위를 켜 둡니다(`--ssh`). tailnet 사용자는 1명이고 기본 정책(모든 기기 서로 허용)입니다. 공지가 새로 나오면
   `sudo apt-get install --only-upgrade tailscale`로 올리고, 필요하면 `tailscale set --ssh=false`로 끄고 비상용 22(PC IP만)로 대신합니다.
   1.104.4가 공지 TS-2026-014~017을 고쳤는지는 Tailscale 공지 원문으로 확인하지 않았습니다.

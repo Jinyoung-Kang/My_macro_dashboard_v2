@@ -1,7 +1,9 @@
 # AWS 정리(단계 D) + 한국 관측치 늦음 기준을 24시간 서버에 맞춤 — 작업 지시문
 
 - 작성: 2026-11-03, 다른 세션이 읽고 실행한다. 배경은 [Vultr 이전 명세 §7](2026-11-02-vultr-migration.md) · [ADR 0023](../adr/0023-vultr-deployment.md) 결과 절 · [ADR 0019](../adr/0019-aws-personal-deployment.md).
-- 상태: 2026-11-03 02:30 KST 컷오버 끝. 운영본은 Vultr(24시간), AWS `my-macro-app`은 `PAPER_ENABLED=false`로 정지, EventBridge 일정 6개 DISABLED.
+- **끝(2026-11-03)** — 1단계(AWS 자원 삭제)·2단계(저장소 정리·한국 늦음 기준) 모두 했습니다. 결과는 [ADR 0023](../adr/0023-vultr-deployment.md) 결과 절.
+  1단계 1번은 수명주기가 버킷 전체에 걸려 있어 `db/aws-final/` 대신 `archive/aws-final/`에 복사하고 규칙을 `db/`로 좁혔습니다(사용자 확인 — AWS 덤프만 보관).
+- 상태(작성 때): 2026-11-03 02:30 KST 컷오버 끝. 운영본은 Vultr(24시간), AWS `my-macro-app`은 `PAPER_ENABLED=false`로 정지, EventBridge 일정 6개 DISABLED.
   사용자가 2026-11-03에 "이 작업을 다른 세션에서 진행"하라고 했다 — 한 주 대기(명세 §7의 D5)를 사용자가 앞당긴 것으로 본다. **되돌릴 수 없는 삭제(아래 1단계)는
   시작 직전에 한 번 더 사용자에게 확인을 받는다**(CLAUDE.md '큰 변경은 설명하고 동의를 받은 뒤').
 

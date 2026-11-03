@@ -287,7 +287,7 @@ lib/                        표시 규칙(서식·메뉴·검색·테마·화면
     (전체 요약 텍스트, 기관 프로필·유사도·위험, 보유 기관 검색의 보유 목록, 13F 포트폴리오·교집합·신규 편입, 국면·판정 성과,
     스코어카드)입니다. 캐시 밖 경로(상관 분석, 수급 이력, AI 리포트)는 요청 하나의 크기를 파라미터 상한으로 묶습니다(QA-133).
   - **동시 실행 상한**(QA-131): 캐시를 놓쳐 다시 계산하는 요청은 동시에 N개까지만 돕니다(`.env`의
-    `COMPUTE_MAX_CONCURRENT`, 비우거나 0이면 자동 = 코어 수의 절반·최소 1, AWS 2 vCPU면 1). 상한이 없을 때 QA 스택에서
+    `COMPUTE_MAX_CONCURRENT`, 비우거나 0이면 자동 = 코어 수의 절반·최소 1, 서버(Vultr) 2 vCPU면 1). 상한이 없을 때 QA 스택에서
     캐시에 없는 서로 다른 조합을 초당 50건 부르자 `/api/health`까지 20초 안에 답하지 못했습니다.
     - 자리가 없으면 먼저 온 순서로 2초 기다리고, 그래도 없거나 이미 32건이 기다리고 있으면 429 + `Retry-After: 2`로
       거절합니다(아무것도 저장하지 않음). 그래서 자리를 기다리거나 계산하는 요청 스레드는 N+32개 안팎으로 묶입니다.
@@ -322,7 +322,7 @@ lib/                        표시 규칙(서식·메뉴·검색·테마·화면
       1개면 그사이 다른 새 계산은 2초 뒤 429입니다. 그 계산을 기다리는 같은 키 요청은 상한과 상관없이 30초 뒤 429입니다
       — 같은 키를 한 번만 계산하기 전에는 상한이 2개 이상이면 각자 자리에서 같은 수집에 합류해 값을 받았으므로, 이
       경우는 그때보다 나빠졌습니다. 첫 기동처럼 저장본이 일부만 있을 때만 겪고(같은 태스크는 10분 동안 다시 기다리지
-      않음). v3의 AWS 데모(`store_only`)는 수집을 기다리지 않아 해당 없었고, 이 저장소의 AWS 서버는 로컬과 같은 `auto`입니다.
+      않음). v3의 AWS 데모(`store_only`)는 수집을 기다리지 않아 해당 없었고, 이 저장소의 서버(Vultr)는 로컬과 같은 `auto`입니다.
     - 503이 아니라 429인 이유는 [결정 기록](decisions.md)에 있습니다. 거절은 60초에 한 번 WARN 로그로 묶어 남깁니다.
 - **차트 구간 솎기 `SeriesMath.thinOlderThan`** — 1년보다 오래된 구간은 주 단위(그 주의 마지막 행)로 줄입니다
   (매크로 개요·유동성·환율). 최신값과 4주·12주 변화는 솎기 전 자료로 계산합니다.
@@ -363,14 +363,14 @@ k6가 고정된 주소를 반복하므로 "후" 값은 대부분 캐시 적중�
 | 권한 밖 기능 호출 | 경로별 접근 정책(공개·회원·유료·운영자). 미분류 경로는 빌드 실패 | `AccessPolicy`, `AccessPolicyTest` |
 | 다른 출처의 상태 변경 요청 | POST·PUT·DELETE의 `Origin`이 CORS 허용 목록에 없으면 403 | `SessionFilter.foreignOrigin` |
 | 인증 우회 경로 | 공개 경로는 정규화된 경로와 **정확히 일치**할 때만 (`/api/healthx`, `/api/health/../x` 차단). 정규화가 필요한 경로(`.`·`..` 조각, 인코딩된 점·슬래시, `//`, `;`)는 정책 검사 전에 400 — 정책(정규화 경로)과 처리기 매칭(날것 경로)이 다른 경로를 보지 않게 | `WebConfig.SessionFilter` |
-| 로그인 없는 로컬(ADR 0016) | 백엔드 기본 꺼짐, 로컬 compose만 켬(AWS·QA 덧붙임은 `"false"` 고정 + CI 확인). 화면·API는 127.0.0.1에만. 켜졌는데 데모 토큰·`COOKIE_SECURE`·앞단 헤더 신뢰(클라우드 자동 포함)·외부 `FRONTEND_ORIGIN`이 있으면 기동 실패. 쿠키 없는 요청은 Host가 localhost·127.0.0.1·[::1]이고 프록시·데모 헤더가 없을 때만 첫 운영자(DNS 리바인딩·앞단 차단). SameSite가 없는 대신 허용 출처를 이 맥 화면으로 좁히고(와일드카드 제거), 목록 밖 Origin·Origin 없는 쓰기·다른 사이트 요청은 운영자 조회 전에 403. 이 맥의 다른 프로세스는 막지 못함(ADR 0016 남은 위험) | `LocalNoLogin`, `AuthService.resolve`, `SessionFilter`, `WebConfig.allowedOriginPatterns` |
+| 로그인 없는 로컬(ADR 0016) | 백엔드 기본 꺼짐, 로컬 compose만 켬(Vultr·QA 덧붙임은 `"false"` 고정 + CI 확인). 화면·API는 127.0.0.1에만. 켜졌는데 데모 토큰·`COOKIE_SECURE`·앞단 헤더 신뢰(클라우드 자동 포함)·외부 `FRONTEND_ORIGIN`이 있으면 기동 실패. 쿠키 없는 요청은 Host가 localhost·127.0.0.1·[::1]이고 프록시·데모 헤더가 없을 때만 첫 운영자(DNS 리바인딩·앞단 차단). SameSite가 없는 대신 허용 출처를 이 맥 화면으로 좁히고(와일드카드 제거), 목록 밖 Origin·Origin 없는 쓰기·다른 사이트 요청은 운영자 조회 전에 403. 이 맥의 다른 프로세스는 막지 못함(ADR 0016 남은 위험) | `LocalNoLogin`, `AuthService.resolve`, `SessionFilter`, `WebConfig.allowedOriginPatterns` |
 | 헤더로 로그인 건너뛰기(데모 열람, v3 AWS 데모만 — 이 저장소의 어느 배포도 켜지 않음) | 기본 꺼짐. 켜려면 32자 이상 토큰(짧으면 기동 실패), 해시를 상수 시간 비교, 세션이 먼저, GET만(쓰기·HEAD 403 — AI 리포트 생성 POST 하나만 예외, ADR 0014), 운영 경로 403. 백엔드는 루프백에만 열고 앞단이 헤더를 붙이거나 지움(ADR 0013) | `DemoViewer`, `SessionFilter.demoForbidden` |
 | 응답 가로채기·끼워 넣기 | `nosniff`, `no-store`, `X-Frame-Options: DENY`, `frame-ancestors 'none'` | `SessionFilter`, `next.config.mjs` |
 | 유료 AI API 비용 폭주 | 사용자 입력 2,000자 상한(400). 하루 한도(유료 회원은 사용자별 DB, 데모 방문자는 공용 메모리). 배포별 엔진 허용 목록(v3 AWS 데모는 Haiku 하나, ADR 0014 — 이 저장소의 AWS 서버는 `.env`대로). 못 쓰는 엔진(AI 꺼짐·모르는 ID·허용 목록 밖·키 없음)은 한도를 쓰기 전·원본 텍스트를 만들기 전에 끝(QA-133). 그 밖의 실패는 모델에 닿지 않았을 때만 한도를 되돌림(거절·빈 응답·대기 시간 초과는 과금됐을 수 있어 그대로) | `AiController`, `UsageService`, `AiService`, `AiReportService` |
 | 로그로 API 키 유출 | 로깅 계층에서 키 파라미터 가림(`serviceKey`·`crtfc_key`·`key` 등 포함) | `collector/app/logredact.py` |
 
 **주의** — 실패 횟수는 (접속 주소, 이메일) 기준입니다. X-Forwarded-For는 위조할 수
-있어 믿지 않습니다(AWS 서버만 앞단 caddy가 덮어쓴 값을 믿음 — 9절). 도커 포트 포워딩·SSM 터널에서는 모든 접속이 같은 주소로 보여
+있어 믿지 않습니다(서버만 앞단 caddy가 덮어쓴 값을 믿음 — 9절). 도커 포트 포워딩·tailscale serve에서는 모든 접속이 같은 주소로 보여
 사실상 이메일별 지연이 됩니다. 공격이 계속되는 동안 그 계정 주인이 429를 받을 수 있는 것은
 남은 위험이며, 재시도로 풀립니다.
 
@@ -399,47 +399,11 @@ UTC라서 `LocalDate.now()`를 그대로 쓰면 한국 시각 00:00~09:00 사이
 않는 이유는 [PRINCIPLES.md](PRINCIPLES.md)를 보세요 — **공휴일과 거래소 휴장일은
 다릅니다.**
 
-## 9. 배포 (AWS 개인용 서버)
+## 9. 배포 (Vultr 서버)
 
-> **2026-11-03 02:30 KST에 Vultr로 옮겼습니다**(아래 'Vultr 서버', ADR 0023). AWS는 `PAPER_ENABLED=false`·정지·일정 DISABLE 상태로 한 주 둔 뒤 정리합니다 — 이 절의 AWS 그림은 정지 전 기록입니다.
+> 2026-11-03 02:30 KST에 AWS EC2([ADR 0019](adr/0019-aws-personal-deployment.md) — 밤·낮 가동 창, SSM 터널, CloudFront + 잠금화면)에서 옮겼고,
+> AWS 자원은 같은 날 지웠습니다(단계 D — 백업 버킷만 남김). 그 구성은 ADR 0019에 기록으로 남습니다.
 
-모의 매매가 미국 장·결정 시각에 돌아야 해서 운영본은 AWS 서울의 EC2 한 대에 둡니다([ADR 0019](adr/0019-aws-personal-deployment.md)).
-서버는 평일 밤 미국 개장 10분 전(뉴욕 09:20)~07:00 KST, 평일 낮 08:55~15:50, 일요일 밤 20:50~23:30 KST에만 켜집니다(2026-11-02 — ADR 0019 결정 14)
-— EventBridge Scheduler가 EC2 API를 바로 부릅니다.
-로컬과 같은 compose 스택에 덧붙임 `compose.aws.yml`(앞단 caddy 추가, 로그인·쿠키·출처 고정)을 얹은 것입니다.
-
-```
-[PC — 관리용]                                   [어디서나 — 공개 주소, ADR 0019 결정 16]
- 브라우저 http://localhost:8201                    브라우저 https://dXXXX.cloudfront.net
-    │ 루프백                                          │ HTTPS
- scripts/aws/tunnel.sh (aws ssm 포트 포워딩)        CloudFront(캐시 끔 · 비밀 헤더 X-Origin-Verify · 꺼진 시간엔 S3 안내 페이지)
-    ║ SSM 세션 — 암호화(인바운드 없음)                 │ HTTP :8301 — 보안 그룹은 CloudFront 원본용 prefix list만
-    ▼                                                 ▼
-[EC2 my-macro-app · t4g.medium · 인바운드는 CloudFront → 8301 한 줄 · 나머지 포트는 127.0.0.1]
- SSM 에이전트 ──► 127.0.0.1:8201 caddy :8301 ◄─(비밀 헤더 확인 → 잠금화면 gate:8100 → /api/admin 닫음)
-                                 caddy ─┬─ /api/* ──► backend:8080 ──JDBC──► postgres:5432 ◄──적재── collector:8000
-                                       └─ 나머지 ──► frontend:3000
- 나가는 통신(공인 IPv4): collector ──► 외부 시장 데이터 · backend ──► Anthropic API
- cron 06:45 KST(·일 23:00): make backup ──► S3 my-macro-backups-…/db/ (60일 만료)
-
-[EventBridge Scheduler] ec2:StartInstances 평일 뉴욕 09:20·평일 08:55·일 20:50 KST · ec2:StopInstances 매일 07:00·평일 15:50·일 23:30 KST
-```
-
-- **들어오는 길은 둘**입니다(2026-10-29 결정 16). 관리용은 SSM, 공개 주소는 CloudFront → caddy :8301(보안 그룹 인바운드는 CloudFront 원본용
-  prefix list 한 줄, caddy가 비밀 헤더 확인 → 잠금화면). 그 밖의 서버 포트(caddy 8201 · 화면 3000 · API 8080 · 수집기 8000 · DB 5432)는
-  `127.0.0.1`에만 열립니다. 세션은 서버의 SSM 에이전트가 AWS로 먼저 나가 연결을 열어 두는 방식이라 인바운드가 필요 없습니다. 접속 권한은 PC의 IAM 로그인(`aws login`)입니다.
-- **TLS는 없습니다.** 평문은 PC의 루프백(브라우저 ↔ session-manager-plugin)과 서버의 루프백·도커 네트워크에만 있고, 그 사이는 SSM이 암호화합니다.
-  Chrome·Firefox는 `http://localhost`를 안전한 출처로 봐서 `Secure` 세션 쿠키(`COOKIE_SECURE=true`)를 그대로 받습니다(Safari는 받지 않아
-  Safari로 열 때만 서버 `.env`에 `COOKIE_SECURE=false`).
-- **같은 출처**: 화면은 `NEXT_PUBLIC_API_BASE=/`로 빌드돼 `/api/...`를 상대 경로로 부르고, caddy가 백엔드로 보냅니다(ADR 0012의 정의).
-  허용 출처(`FRONTEND_ORIGIN`)는 터널 주소 `http://localhost:8201`·`http://127.0.0.1:8201`과 공개 주소(서버 `.env`의 `PUBLIC_ORIGIN`)입니다.
-- **접속 주소**: caddy가 `X-Forwarded-For`를 접속 주소로 채우고(들어온 값은 믿지 않음) Tomcat이 내부 대역에서 온 그 헤더만 믿습니다
-  (`SERVER_FORWARDHEADERSSTRATEGY=native` — 내부 대역은 같은 compose 네트워크의 컨테이너·서버 안 프로세스. 바깥에서 닿는 길은 caddy뿐). 터널로 들어온 요청은 모두 같은 주소로 보여, 위 6절의 로그인 지연은 서버에서도 사실상 이메일별입니다.
-- **모의 매매 상태는 서버 한 곳**에만 있습니다. 서버로 옮긴 뒤 로컬 v1은 `PAPER_ENABLED=false`로 띄워 정기 작업(리스크 점검·결정·체결)을 두 곳에서 돌리지 않습니다.
-- **백업**: 06:45 KST(서버가 켜진 아침 — 화~토, 미국 결정 뒤)와 일요일 23:00 KST(주간 복기 뒤)에 `scripts/aws/backup-s3.sh`가 `make backup`(ADR 0003)의 새 파일 하나를 S3로 올립니다. 버킷은 퍼블릭 차단·SSE-S3·60일 만료이고,
-  서버의 IAM 역할은 그 버킷 하나에만 쓸 수 있습니다.
-
-### Vultr 서버 (운영본, 2026-11-03 02:30 KST부터 — ADR 0023)
 
 운영 서버는 Vultr 서울의 한 대(24시간)입니다([ADR 0023](adr/0023-vultr-deployment.md)). 모의 매매 정기 작업은 여기서만 돕니다(2026-11-03 02:30 KST 컷오버). 같은 compose 스택에 덧붙임 `compose.vultr.yml`(앞단 caddy, 로그인·쿠키·출처 고정 — gate·공개 리스너 없음)을 얹습니다.
 
@@ -452,9 +416,9 @@ UTC라서 `LocalDate.now()`를 그대로 쓰면 한국 시각 00:00~09:00 사이
  tailscaled(serve https:443, 인증서는 Tailscale) ──► 127.0.0.1:8201 caddy ─┬─ /api/* ──► backend:8080 ──JDBC──► postgres:5432 ◄──적재── collector:8000
                                                                            └─ 나머지 ──► frontend:3000
  나가는 통신: collector ──► 외부 시장 데이터 · backend ──► Anthropic API · git ──► GitHub(읽기 전용 배포 키)
- cron 06:45 KST(·일 23:00): make backup ──► S3(AWS와 같은 버킷)/db/vultr/ (60일 만료, IAM 사용자 키 — db/vultr/에만 쓰기)
+ cron 06:45 KST(·일 23:00): make backup ──► S3 백업 버킷/db/vultr/ (db/ 60일 만료, IAM 사용자 키 — db/vultr/에만 쓰기)
 ```
 
 - **들어오는 길은 Tailscale 하나**(비상용 SSH 22 제외). `tailscale serve`는 tailnet 안에서만 듣고(`funnel` 안 씀) HTTPS를 끝낸 뒤 루프백의 caddy로 넘깁니다.
   평문은 서버의 루프백·도커 네트워크에만 있습니다. 허용 출처는 Tailscale 주소(`PUBLIC_ORIGIN`)와 비상용 `http://localhost:8201`입니다.
-- **접속 주소**: AWS와 같이 caddy가 `X-Forwarded-For`를 접속 주소로 채웁니다 — tailscale serve가 넘긴 요청은 모두 같은 주소로 보여 로그인 지연은 사실상 이메일별입니다.
+- **접속 주소**: caddy가 `X-Forwarded-For`를 접속 주소로 채우고(들어온 값은 믿지 않음) Tomcat이 내부 대역에서 온 그 헤더만 믿습니다 — tailscale serve가 넘긴 요청은 모두 같은 주소로 보여 로그인 지연은 사실상 이메일별입니다.

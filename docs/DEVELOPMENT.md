@@ -87,7 +87,7 @@ cd collector && TEST_DATABASE_URL=postgresql://macro:macro@localhost:5434/macrod
 | `useApi.test.ts` | 자동 갱신 한 번 실패로 화면이 비는 것, 수동 새로고침이 세션 확인까지 다시 돌려 화면 상태가 초기화되는 것, 늦게 온 이전 응답이 화면을 되돌리는 것, 같은 문구로 연달아 실패하면 실패를 한 번씩 받지 못하는 것(`failedAt`, QA-163) |
 | `ArchitectureRulesTest` | 계산 패키지가 스프링·JSON을 알게 되는 것, 컨트롤러가 저장소·수집기를 직접 부르는 것, 패키지 사이 순환(기반 패키지 포함, [ADR 0001](adr/0001-feature-modules-and-dependency-rules.md)) |
 | `test_db_scripts.py` | 백업·복원이 실패를 성공으로 알리는 것, 복원이 반만 되는 것([ADR 0003](adr/0003-backup-and-restore.md)) |
-| `test_aws_scripts.py` | AWS 서버 배포가 한꺼번에 빌드하거나 실패를 성공으로 알리는 것, 서버 `.env`에 로컬 포트가 섞이는 것, 지난 백업을 다시 올리는 것, 터널이 꺼진 서버에 끝없이 다시 붙는 것([ADR 0019](adr/0019-aws-personal-deployment.md)) |
+| `test_vultr_scripts.py` | 서버 배포가 한꺼번에 빌드하거나 실패를 성공으로 알리는 것, 서버 `.env`에 로컬 포트·PC 전용 값이 섞이는 것, 지난 백업을 다시 올리는 것, 방화벽 IP를 바꾸다 비상용 22 규칙이 사라지거나 API 키가 프로세스 인자에 남는 것([ADR 0023](adr/0023-vultr-deployment.md)) |
 | `endpoints.test.ts` | 화면이 만든 API 주소가 깨지거나(인코딩) 문서에 없는 경로를 부르는 것 |
 | `chartData.test.ts`·`SpreadSection.test.tsx` | 모르는 값을 0으로 채워 막대·변화량을 만드는 것 |
 
@@ -309,203 +309,9 @@ git config credential.https://github.com.username <아이디>
 
 ---
 
-## 7. AWS 개인용 서버
+## 7. Vultr 서버
 
-> **2026-11-03 02:30 KST에 정지했습니다** — 운영본은 §8 Vultr 서버(ADR 0023). AWS `.env`는 `PAPER_ENABLED=false`, 켜기·끄기 일정 6개는 DISABLE, 한 주 뒤 정리(Vultr 이전 명세 §7)합니다. 아래는 정지 전 절차의 기록입니다.
-
-운영본(모의 매매가 도는 곳)은 AWS 서울의 EC2 `my-macro-app` 한 대이고, 평일 밤 미국 개장 10분 전(뉴욕 09:20 — 겨울 23:20·서머타임 22:20 KST)~07:00, 평일 낮 08:55~15:50, 일요일 밤 20:50~23:30 KST에만 켜집니다(2026-11-02 — ADR 0019 결정 14). 구성과 이유는
-[ADR 0019](adr/0019-aws-personal-deployment.md), 그림은 [ARCHITECTURE §9](ARCHITECTURE.md#9-배포-aws-개인용-서버)에 있습니다.
-셸은 SSM으로만 엽니다. 화면은 공개 주소(CloudFront + 잠금화면 — 아래 '공개 주소')나 SSM 터널로 엽니다. 아래 명령의 `<AWS_INSTANCE_ID>`·`<버킷>`은 PC `.env`의
-`AWS_INSTANCE_ID`·서버 `.env`의 `AWS_BACKUP_BUCKET` 값입니다.
-
-> **v2(이 저장소)는 아직 서버에 없습니다.** 교체 전까지 서버는 `~/My_macro_dashboard_v1`(v1)을 돌립니다. 아래 경로는 교체 뒤(서버의
-> `~/My_macro_dashboard_v2`) 기준이고, 교체 절차는 [v2 프로그램 계획서 §5](specs/2026-10-26-v2-program-plan.md#5-aws-교체-절차-4단계)입니다.
-
-### 서버 만들기 (처음 한 번)
-
-자원은 ADR 0019 결정 1~5·13 그대로입니다(서울 리전, 태그 `Project=my-macro`). v3 데모 스택(portfolio-*)은 건드리지 않습니다.
-
-1. IAM 역할·인스턴스 프로필 `my-macro-ec2`: `AmazonSSMManagedInstanceCore` + 인라인 정책 — 백업 버킷에 `s3:ListBucket`(버킷),
-   `s3:GetObject`·`s3:PutObject`(`<버킷>/*`), `s3:DeleteObject`(`<버킷>/bootstrap/*`만 — 서버가 뚫려도 `db/` 백업을 지우지는 못하게. 같은 키로 덮어쓰는 것은 막지 못함, ADR 0019 남은 위험).
-2. S3 `my-macro-backups-<임의 8자>`: 퍼블릭 액세스 차단 넷 모두, 기본 암호화 SSE-S3, 수명주기 60일 만료. 버전 관리는 켜지 않습니다
-   (켜면 지운 `bootstrap/.env`가 이전 버전으로 남음).
-3. 보안 그룹 `my-macro-ec2`: 인바운드 규칙 없음(2026-10-29부터 CloudFront 원본용 prefix list → TCP 8301 한 줄 — 아래 '공개 주소'), 아웃바운드 전체. 예산 `my-macro-monthly-45usd`(COST, 80%·100% 알림).
-4. EC2 `my-macro-app`: SSM 공개 파라미터의 최신 Ubuntu 24.04 arm64 AMI, t4g.medium, ap-northeast-2a 기본 서브넷(공인 IPv4 자동 할당),
-   키페어 없음, 루트 gp3 30 GB 암호화, 메타데이터 `HttpTokens=required`·`HttpPutResponseHopLimit=1`(컨테이너가 인스턴스 역할의 자격 증명을
-   꺼내지 못하게 — 호스트의 aws CLI는 그대로 됨), user-data는 `scripts/aws/bootstrap.sh`. 만든 뒤 인스턴스 ID를 PC `.env`의 `AWS_INSTANCE_ID`에 적습니다.
-   탄력적 IP(태그 `Project=my-macro`·`Name=my-macro-app-eip`)를 할당해 붙이고, 그 주소를 토스 개발자 콘솔의 허용 IP에 넣습니다(ADR 0019 결정 15 —
-   매일 바뀌는 자동 할당 주소로는 토스가 403). 주소와 할당 ID는 공개 저장소에 적지 않습니다.
-5. 세션 설정(`SSM-SessionManagerRunShell`)의 유휴 제한을 60분(최대값)으로. 서버 셸(아래)에서 `tail /var/log/cloud-init-output.log`로
-   bootstrap이 끝났는지(`== 끝: Docker … · 스왑 2G`) 봅니다.
-6. 저장소 받기 — 이 저장소 하나만 읽는 **배포 키**(쓰기 권한 없음)를 씁니다. PC의 GitHub 토큰은 서버에 두지 않고, 원격 주소에 토큰을 넣지 않습니다.
-
-   ```bash
-   # 서버(ubuntu): 키를 만들고 GitHub의 호스트 키를 받아 둡니다(받지 않으면 첫 clone이 묻고 멈춤)
-   ssh-keygen -t ed25519 -N '' -C my-macro-app -f ~/.ssh/id_ed25519 && cat ~/.ssh/id_ed25519.pub
-   ssh-keyscan -t ed25519 github.com >> ~/.ssh/known_hosts && ssh-keygen -lf ~/.ssh/known_hosts
-   # PC: 위 지문이 GitHub가 공개한 값과 같은지 보고, 공개키(위 cat 출력)를 읽기 전용 배포 키로 등록합니다
-   gh api meta --jq .ssh_key_fingerprints.SHA256_ED25519
-   gh repo deploy-key add <공개키 파일> --repo Jinyoung-Kang/My_macro_dashboard_v2 --title my-macro-app
-   # 서버(ubuntu): 폴더 이름 그대로 — compose 프로젝트·DB 볼륨 이름이 폴더 이름을 따릅니다
-   git clone git@github.com:Jinyoung-Kang/My_macro_dashboard_v2.git ~/My_macro_dashboard_v2
-   ```
-
-   `gh`로 등록한 배포 키는 그때의 `gh` 인증 토큰에 묶여, 그 토큰을 끊으면 함께 지워집니다 — 서버의 `git fetch`가 `Permission denied`면 다시 등록합니다.
-7. 켜기·끄기 일정(ADR 0019 결정 14): 실행 역할 `my-macro-scheduler`(신뢰 `scheduler.amazonaws.com` + 같은 계정 조건, 그 인스턴스 하나에만
-   `ec2:StartInstances`·`ec2:StopInstances`)와 EventBridge Scheduler 여섯 개 — 시간대 `Asia/Seoul`(밤 켜기만 `America/New_York`), 범용 타깃 `arn:aws:scheduler:::aws-sdk:ec2:startInstances`
-   (끄기는 `…:stopInstances`), 입력 `{"InstanceIds":["<AWS_INSTANCE_ID>"]}`, 재시도 1시간·3번.
-
-   | 이름 | 식 | 하는 일 |
-   |---|---|---|
-   | `my-macro-start` | `cron(20 9 ? * MON-FRI *)`, `America/New_York` | 평일 뉴욕 09:20 켬(미국 개장 10분 전 — 겨울 23:20·서머타임 22:20 KST) |
-   | `my-macro-stop` | `cron(0 7 * * ? *)` | 매일 07:00 끔(토요일 07:00은 금요일 세션 뒤 — 손으로 켠 주말도 다음 아침에 꺼짐) |
-   | `my-macro-day-start` | `cron(55 8 ? * MON-FRI *)` | 평일 08:55 켬(한국 장 5분 전) |
-   | `my-macro-day-stop` | `cron(50 15 ? * MON-FRI *)` | 평일 15:50 끔 |
-   | `my-macro-sun-start` | `cron(50 20 ? * SUN *)` | 일 20:50 켬(주간 복기 — 미국 21:00·한국 22:00) |
-   | `my-macro-sun-stop` | `cron(30 23 ? * SUN *)` | 일 23:30 끔 |
-
-   처음(2026-10-26)은 세 개(매일 21:55 켬, 일~금 08:00·토 10:00 끔)였고, 2026-11-02 사용자 결정으로 지금의 여섯 개로 바꿨습니다.
-
-   데이터 전환을 마칠 때까지는 `DISABLED`로 만들어 두고(정지 일정이 빌드·전환을 끊지 않게), 전환을 확인한 뒤 켭니다.
-8. 아래 '서버 .env 전달' → '배포' → '화면 열기'로 확인 → '데이터 전환' → '백업(cron)' → 일정 켜기 순서로 이어 갑니다.
-
-### 가동 시간 (켜기·끄기)
-
-서버는 **평일 밤 미국 개장 10분 전(뉴욕 09:20 — 겨울 23:20·서머타임 22:20 KST)~07:00, 평일 낮 08:55~15:50, 일요일 밤 20:50~23:30 KST에만 켜집니다**(2026-11-02) — 미국 장·마지막 지연 봉·06:30 미국 결정·06:45 백업·한국 장중(낮 창)·
-한국 결정 창(겨울은 23:20 기동·수집 뒤)·일요일 밤 주간 복기(미국 21:00·한국 22:00, 일요일 23:00 백업)가 그 안에 있습니다.
-**창 밖에 보려면 손으로 켜고, 다음 정지 일정(매일 07:00·평일 15:50·일 23:30)에 다시 꺼집니다.** 창 밖에서 켜서 배포했으면 배포·확인 뒤
-다른 일이 없으면 `instance.sh stop --force`로 다시 끕니다(2026-11-02 사용자 결정 — 저녁에 켠 채 두면 다음 07:00까지 켜져 있음).
-
-```bash
-bash scripts/aws/instance.sh status   # 지금 켜져 있나 — 한 줄
-bash scripts/aws/instance.sh start    # 켜고 running까지 기다림(컨테이너는 그 뒤 1~2분)
-bash scripts/aws/instance.sh stop     # 끔 — 정기 가동 시간 안에는 --force 없이는 끄지 않음(모의 매매가 빠짐)
-```
-
-`instance.sh` 없이 한 줄로 보려면: `aws ec2 describe-instances --region ap-northeast-2 --instance-ids <AWS_INSTANCE_ID> --query 'Reservations[0].Instances[0].State.Name' --output text`.
-꺼져 있을 때 `tunnel.sh`를 치면 켜는 방법을 알리고 멈춥니다.
-
-### 화면 열기 (PC)
-
-```bash
-bash scripts/aws/tunnel.sh
-```
-
-- 필요한 것: aws CLI v2 · session-manager-plugin · `aws login`으로 로그인한 세션 · PC `.env`의 `AWS_INSTANCE_ID`.
-- 브라우저 <http://localhost:8201>에서 운영자 계정(`OWNER_EMAIL`)으로 로그인합니다. 비밀번호는 그 계정을 만들 때의 `APP_PASSWORD`입니다 — 로컬 DB를
-  서버로 옮긴 뒤에는 로컬에서 계정을 만들 때의 값(화면에서 바꿨다면 그 값). 메일이 꺼져 있어 재설정 화면은 없습니다.
-- 같은 PC에서 QA 스택(`localhost:13002`, 로그인 모드)도 쓰면 세션 쿠키 이름이 같아 서로 로그아웃시킵니다 — 그때는 <http://127.0.0.1:8201>로 엽니다.
-- 세션이 끊기면(유휴 제한 60분·네트워크) 3초 뒤 다시 잇습니다. 5번 연달아 곧바로 끊기면(서버가 꺼짐·SSM 에이전트 끊김) 멈추고,
-  로그인이 만료되면 `aws login`을 하라고 알리고 멈춥니다.
-- 로그인해도 다시 로그인 화면이 나오면(브라우저가 `http://localhost`의 `Secure` 쿠키를 받지 않음 — Safari가 그렇고 Chrome·Firefox는 받음)
-  서버 `.env`에 `COOKIE_SECURE=false`를 적고 `docker compose up -d backend`(서버 셸) 뒤 ADR 0019 결정 10에 기록합니다. 터널 안은 암호화돼 있습니다.
-
-### 공개 주소 (CloudFront + 잠금화면, ADR 0019 결정 16)
-
-- 주소는 CloudFront 배포판의 기본 도메인(`https://dXXXX.cloudfront.net` — 계정 고유 값이라 저장소에 적지 않고 PC `.env`·서버 `.env`의 `PUBLIC_ORIGIN`에만).
-  첫 화면에서 접근 코드를 넣으면 12시간 쿠키가 생기고, 그다음은 평소의 로그인 화면입니다. 서버가 꺼진 시간에는 S3의 안내 페이지가 보입니다.
-- 접근 코드 더하기·폐기: PC에서 `python3 deploy/aws/gate/gate.py hash`(코드를 stdin으로)로 해시를 만들고, 서버 `.env`의 `GATE_CODES`
-  (`이름:해시,이름:해시`)에 더하거나 빼서 `docker compose up -d --no-deps gate`. 코드 평문은 서버·저장소에 두지 않습니다.
-- CloudFront 원본용 대역은 `deploy.sh`가 배포 때마다 다시 받습니다(`scripts/aws/update-cloudfront-ranges.sh` → `deploy/aws/trusted_proxies.caddy`, git 제외).
-- 만든 것(처음 한 번, 2026-10-29): S3 안내 버킷(퍼블릭 차단, CloudFront 원본 접근 제어로만 읽음 — `_offline/index.html`), CloudFront 배포판
-  (원본 = 서버 탄력적 IP의 공개 DNS 이름 `:8301` HTTP + 비밀 헤더 `X-Origin-Verify`, 캐시 정책 CachingDisabled, 원본 요청 정책 AllViewer,
-  `/_offline/*`는 S3, 오류 502·503·504 → `/_offline/index.html`), 보안 그룹 인바운드(CloudFront 원본용 관리형 prefix list → TCP 8301),
-  서버 `.env`의 `PUBLIC_ORIGIN`·`ORIGIN_SECRET`·`GATE_SECRET`·`GATE_CODES`·`TELEGRAM_*`(이름은 [.env.aws.example](../.env.aws.example)). `TELEGRAM_*`·`PUBLIC_ORIGIN`은 백엔드에도 넘어가 모의 매매 텔레그램 알림(체결·결정·결정 없는 주문 — 설정 `notify.telegram`, 끝에 공개 주소 링크)을 보냅니다.
-
-### 서버 셸 (SSM)
-
-```bash
-aws ssm start-session --region ap-northeast-2 --target <AWS_INSTANCE_ID>   # PC에서
-sudo -iu ubuntu                    # SSM 셸은 ssm-user로 열립니다 — 저장소·docker는 ubuntu 사용자
-cd ~/My_macro_dashboard_v2
-docker compose ps                  # 서버 .env의 COMPOSE_FILE 덕분에 덧붙임(caddy 포함)까지 봅니다
-make logs S=backend                # make status · make db · make backup도 그대로
-```
-
-### 배포
-
-```bash
-bash ~/My_macro_dashboard_v2/scripts/aws/deploy.sh
-```
-
-- 서버에서는 **`make up`을 쓰지 않습니다** — 이미지를 한꺼번에 빌드해 4 GiB에서 메모리가 모자랄 수 있습니다. `deploy.sh`가 main을
-  fast-forward로 받고, backend → frontend → collector를 하나씩 빌드한 뒤 기동하고(건강해질 때까지 최대 5분), 스키마를 적용합니다(QA-016).
-  서버에서 고친 파일이 있거나, 서버 `.env`에 적지 않는 이름이 있거나(`COOKIE_SECURE`·`PAPER_ENABLED`는 알리기만), 어느 단계든 실패하면 멈추고
-  0이 아닌 값으로 끝납니다.
-- 첫 빌드는 15~25분 걸립니다. 빌드 중 메모리 부족(종료 코드 137, `sudo dmesg | grep -i oom`)이 나면 인스턴스를 멈추고 유형을 t4g.large로 바꿔 빌드한 뒤
-  t4g.medium으로 되돌립니다(디스크는 그대로).
-- 코드를 바꾸지 않고 `.env`만 바꿨으면 `docker compose up -d`로 컨테이너만 다시 만들어도 됩니다(화면 빌드 인자는 `.env`와 무관).
-
-### 서버 .env 전달 (처음 한 번, 바꿀 때)
-
-서버 `.env` = 로컬 `.env` − 적지 않는 이름 + 서버 전용 두 줄([.env.aws.example](../.env.aws.example)). 값은 화면·로그 어디에도 찍지 않고
-S3를 한 번만 거칩니다. 전환 뒤 로컬 `.env`의 `PAPER_ENABLED=false`도 거릅니다(서버는 비우면 켜짐).
-
-```bash
-# PC — 걸러 낸 사본을 S3에 한 번 올리고 지웁니다
-tmp="$(mktemp)" && grep -Ev '^[[:space:]]*(DATABASE_PORT|BACKEND_PORT|COLLECTOR_PORT|FRONTEND_PORT|COOKIE_SECURE|LOCAL_NO_LOGIN|FRONTEND_ORIGIN|PUBLIC_URL|AWS_INSTANCE_ID|PAPER_ENABLED)=' .env > "$tmp" \
-  && printf 'COMPOSE_FILE=docker-compose.yml:compose.aws.yml\nAWS_BACKUP_BUCKET=%s\n' "<버킷>" >> "$tmp" \
-  && aws s3 cp --only-show-errors "$tmp" "s3://<버킷>/bootstrap/.env"; rm -f "$tmp"
-# 서버(ubuntu) — 받아서 600으로 두고 S3 객체는 바로 지웁니다(umask는 괄호 안에서만 — 셸에 남으면 git이 0600 파일을 씀)
-( umask 077 && aws s3 cp --only-show-errors "s3://<버킷>/bootstrap/.env" ~/My_macro_dashboard_v2/.env ) \
-  && chmod 600 ~/My_macro_dashboard_v2/.env && aws s3 rm --only-show-errors "s3://<버킷>/bootstrap/.env"
-```
-
-다시 전달하면 서버 `.env`를 통째로 덮어씁니다. 서버에만 적은 줄(`COOKIE_SECURE=false`, 서버 정기 작업을 일부러 끈 `PAPER_ENABLED=false`,
-`COMPUTE_MAX_CONCURRENT` 등)은 다시 덧붙입니다. `deploy.sh`는 `PAPER_ENABLED`가 꺼져 있으면 알립니다.
-
-### 데이터 전환 (로컬 v1 → 서버, 한 번 — 2026-10-26에 v1에서 끝남)
-
-> v1을 처음 서버로 옮긴 기록입니다. v2로 바꾸는 교체는 이 절차가 아니라 계획서 §5(서버의 v1 백업 → v2 복원)를 따릅니다.
-
-낮에 하므로 서버는 손으로 켜 둡니다(`instance.sh start`). 일정은 아직 `DISABLED`입니다.
-
-모의 매매 정기 작업이 **두 곳에서 동시에 돌면 안 됩니다**(같은 계좌를 두 장부가 따로 결정·체결). 07:30 KST 정기 결정이 끝난 뒤 그날 22:30 KST
-전에 합니다(미국 장 밖 — 장중은 서머타임 22:30~05:00, 11월~3월 23:30~06:00 KST).
-
-1. 로컬: `.env`에 `PAPER_ENABLED=false`를 넣고 `make up` → `curl -s http://localhost:8081/api/paper/status | jq .enabled`가 `false`인지 봅니다.
-   (먼저 끄므로 백업 뒤에 로컬에서 결정·체결이 더 쌓이지 않습니다.)
-2. 로컬: `make backup` → `aws s3 cp --only-show-errors backups/<파일>.sql s3://<버킷>/db/`
-3. 서버: `aws s3 cp --only-show-errors s3://<버킷>/db/<파일>.sql backups/` → `make restore F=backups/<파일>.sql`(교체 전 자동 백업, ADR 0003)
-   → `make migrate`(스키마 적용 한 번 더 — 덤프가 서버 이미지보다 오래된 스키마일 때)
-4. 확인: 터널 화면 `/paper` 개요의 계좌 4개 순자산이 로컬과 같은지, `/api/paper/status`의 `enabled`가 `true`이고 `jobs`에 서버에서 돈
-   5분 리스크 작업(`paper_job_runs`)이 쌓이는지.
-
-되돌릴 때(서버 확인이 안 됨)는 **서버 정기 작업을 먼저 끕니다** — 서버 `.env`에 `PAPER_ENABLED=false`를 적고 `docker compose up -d backend`,
-터널 화면의 `/api/paper/status`에서 `enabled`가 `false`인지 본 뒤에 로컬 `.env`의 `PAPER_ENABLED=false`를 지우고 `make up`. 로컬 DB는 백업 시점
-그대로입니다. 컨테이너만 멈추면(`docker compose stop backend`) 다음 `deploy.sh`가 다시 켜므로 `.env`로 끕니다(`deploy.sh`도 그 줄을 보고 알림).
-다시 전환할 때는 1단계부터 하고, 서버 `.env`의 그 줄은 3단계 복원 뒤에 지우고 `docker compose up -d backend`.
-
-확인이 끝나면 서버를 끄고(`instance.sh stop` — 창 밖) 일정을 `ENABLED`로 바꿉니다. **첫 사이클**(그날 밤 켜짐 → 다음 날 07:00)에서 차례로 봅니다 —
-하나라도 빠지면 원인을 찾을 때까지 일정을 그대로 두고 보고합니다.
-
-1. 밤 자동 기동(뉴욕 09:20 — 인스턴스 running, EventBridge 일정 실행 기록)
-2. 컨테이너 다섯 개 healthy(`docker compose ps`) — 정지 뒤 다시 뜬 것이므로 postgres 복구 로그가 없어야 함(30초 안에 깨끗이 꺼졌다는 뜻)
-3. 미국 장 시작 뒤 리스크 작업 기록(`/api/paper/status`의 `jobs`에 새 `risk` 행)
-4. 06:30 결정 기록(`jobs`의 `decision` 행)
-5. 06:45 백업이 S3 `db/`에 도착(`journalctl -t my-macro-backup`)
-6. 07:00 자동 정지(인스턴스 stopped)
-
-### 백업 (cron)
-
-```bash
-# 서버(ubuntu) — 매일 21:45 UTC(06:45 KST — 미국 결정 06:30 뒤, 07:00 정지 전)와 일요일 14:00 UTC(23:00 KST — 주간 복기 뒤).
-# 서버 시간대는 UTC이고, 꺼져 있는 아침(일·월 06:45)에는 cron이 돌지 않습니다(2026-11-02 — 처음은 매일 06:10)
-(crontab -l 2>/dev/null | grep -v 'scripts/aws/backup-s3.sh'; echo '45 21 * * * /home/ubuntu/My_macro_dashboard_v2/scripts/aws/backup-s3.sh'; echo '0 14 * * 0 /home/ubuntu/My_macro_dashboard_v2/scripts/aws/backup-s3.sh') | crontab -
-journalctl -t my-macro-backup --since yesterday       # 결과(실패는 err)
-```
-
-S3 백업으로 되돌리기: `aws s3 ls s3://<버킷>/db/` → 받을 파일을 `backups/`로 받은 뒤 `make restore F=backups/<파일>.sql`.
-
-### 날마다·달마다 볼 것
-
-- 예산 `my-macro-monthly-45usd`(80%·100% 알림, 계정 전체). 이 서버는 월 약 $17(하루 10시간)입니다.
-- CloudWatch `CPUSurplusCreditsCharged`가 0인지 — t4g 무제한 크레딧은 기준선(vCPU당 20%)을 오래 넘기면 요금이 붙습니다.
-- 디스크: `deploy.sh` 끝에 사용률을 찍습니다(30 GB, 오래된 이미지·빌드 캐시는 배포 때 정리).
-
-## 8. Vultr 서버
-
-운영본입니다(2026-11-03 02:30 KST에 AWS(§7)에서 옮김) — Vultr 서울 `my-macro-app`(vhf-2c-4gb, 24시간). 구성과 이유는 [ADR 0023](adr/0023-vultr-deployment.md), 작업 목록과 사용자 결정은
+운영본입니다(2026-11-03 02:30 KST에 AWS EC2([ADR 0019](adr/0019-aws-personal-deployment.md))에서 옮김, AWS 자원은 같은 날 삭제) — Vultr 서울 `my-macro-app`(vhf-2c-4gb, 24시간). 구성과 이유는 [ADR 0023](adr/0023-vultr-deployment.md), 작업 목록과 사용자 결정은
 [Vultr 이전 명세](specs/2026-11-02-vultr-migration.md)에 있습니다. 모의 매매 정기 작업은 이 서버 한 곳에서만 돕니다(로컬 `.env`는 `PAPER_ENABLED=false`).
 아래의 `<tailnet>`·`<서버 IP>`·`<버킷>`은 계정 고유 값입니다 — PC `.env`의 `TAILNET_DOMAIN`·`VULTR_SERVER_IP`, 서버 `.env`의 `AWS_BACKUP_BUCKET`.
 
@@ -532,7 +338,7 @@ GitHub 읽기 전용 배포 키(서버 ubuntu `~/.ssh/id_ed25519_github`, `~/.ss
 서버 `.env` = 로컬 `.env` − 적지 않는 이름 + 서버 전용 줄([.env.vultr.example](../.env.vultr.example)). 값은 화면·로그에 찍지 않습니다.
 
 ```bash
-# PC — 걸러 낸 사본을 만들어 Tailscale SSH의 stdin으로 보내고(처음부터 600 — 서버에서 파일이 잠깐이라도 남에게 읽히지 않게) 지웁니다. <버킷>은 AWS 서버 .env와 같은 값
+# PC — 걸러 낸 사본을 만들어 Tailscale SSH의 stdin으로 보내고(처음부터 600 — 서버에서 파일이 잠깐이라도 남에게 읽히지 않게) 지웁니다. <버킷>은 백업 버킷 이름
 tmp="$(mktemp)" && grep -Ev '^[[:space:]]*(export[[:space:]]+)?(DATABASE_PORT|BACKEND_PORT|COLLECTOR_PORT|FRONTEND_PORT|COOKIE_SECURE|LOCAL_NO_LOGIN|FRONTEND_ORIGIN|PUBLIC_URL|AWS_INSTANCE_ID|PAPER_ENABLED|ORIGIN_SECRET|GATE_[A-Z_]*|VULTR_[A-Z_]*|TAILSCALE_[A-Z_]*|TAILNET_DOMAIN)=' .env > "$tmp" \
   && printf '\nCOMPOSE_FILE=docker-compose.yml:compose.vultr.yml\nAWS_BACKUP_BUCKET=%s\nPUBLIC_ORIGIN=https://my-macro-app.%s\nPAPER_KR_START_DATE=2026-10-30\n' "<버킷>" "$(grep '^TAILNET_DOMAIN=' .env | cut -d= -f2-)" >> "$tmp" \
   && ssh ubuntu@my-macro-app 'umask 077 && cat > My_macro_dashboard_v2/.env && chmod 600 My_macro_dashboard_v2/.env' < "$tmp"; rm -f "$tmp"
@@ -553,10 +359,11 @@ git clone git@github-v2:Jinyoung-Kang/My_macro_dashboard_v2.git ~/My_macro_dashb
 bash ~/My_macro_dashboard_v2/scripts/vultr/deploy.sh
 ```
 
-- AWS `deploy.sh`와 같은 순서입니다(main fast-forward → 버전 → backend → frontend → collector 하나씩 빌드 → 기동 → 스키마 → caddy 다시 만들기 → 정리).
-  gate·CloudFront 대역 단계는 없습니다. 서버 `.env`에 적지 않는 이름(AWS 공개 주소용 값·PC 전용 `VULTR_*`·`TAILSCALE_*` 포함)이 있으면 멈추고,
+- 순서: main fast-forward → 버전 → backend → frontend → collector 하나씩 빌드(4 GB) → 기동 → 스키마 → caddy 다시 만들기 → 정리.
+  서버 `.env`에 적지 않는 이름(옛 AWS 공개 주소용 값·PC 전용 `VULTR_*`·`TAILSCALE_*` 포함)이 있으면 멈추고,
   `PAPER_ENABLED=false`가 없으면 '주의'를 찍고 계속합니다(컷오버 뒤에는 그것이 맞음).
-- 데이터: S3의 AWS 백업을 받아 복원합니다 — `aws s3 ls s3://<버킷>/db/` → `aws s3 cp s3://<버킷>/db/<파일>.sql backups/` → `make restore F=backups/<파일>.sql`.
+- 데이터 복원: `aws s3 ls s3://<버킷>/db/vultr/` → `aws s3 cp s3://<버킷>/db/vultr/<파일>.sql backups/` → `make restore F=backups/<파일>.sql`.
+  AWS 운영본의 마지막 덤프(2026-11-03 02:28 KST)는 만료 없는 `archive/aws-final/`에 있습니다 — 서버의 IAM 사용자는 `db/`만 읽으므로 PC에서 받습니다.
 
 ### 백업 (cron)
 
@@ -566,9 +373,9 @@ bash ~/My_macro_dashboard_v2/scripts/vultr/deploy.sh
 journalctl -t my-macro-backup --since yesterday       # 결과(실패는 err)
 ```
 
-올라가는 곳은 같은 버킷의 `db/vultr/`(60일 만료는 버킷 전체 수명주기)입니다. 서버의 IAM 사용자는 `db/vultr/`에만 쓰고 `db/`는 읽기만 합니다.
+올라가는 곳은 백업 버킷의 `db/vultr/`(60일 만료는 `db/` 접두어의 수명주기 — 2026-11-03에 버킷 전체에서 좁힘, `archive/`는 만료 없음)입니다. 서버의 IAM 사용자는 `db/vultr/`에만 쓰고 `db/`는 읽기만 합니다.
 
 ### 날마다 볼 것
 
 백엔드 ERROR(`make logs S=backend`), 수집 누락(`make status`), 메모리(`free -h`)·디스크(`deploy.sh` 끝, 128 GB), 백업(`journalctl -t my-macro-backup`),
-`tailscale status`에서 PC·휴대폰과 직접 연결인지(relay가 아님). AWS 정리(명세 §7)는 사용자가 정할 때만 합니다.
+`tailscale status`에서 PC·휴대폰과 직접 연결인지(relay가 아님). AWS 예산 `my-macro-monthly-45usd`(계정 전체 — my-macro 자원으로 남은 것은 백업 버킷뿐).

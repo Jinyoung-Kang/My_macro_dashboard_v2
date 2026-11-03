@@ -7,7 +7,7 @@ SEC 13F · 국내 수급을 **한 화면에서** 보는 개인용 대시보드�
 맥에서 Docker 한 줄로 띄우고, 모의 매매가 도는 운영본은 Vultr 서울의 서버 한 대(24시간, 접속은 Tailscale)에 둡니다(2026-11-03 02:30 KST에 AWS EC2에서 옮김 — ADR 0023).
 
 > 이 저장소(`My_macro_dashboard_v2`)는 2026-10-26에 `My_macro_dashboard_v1`에서 전체 이력으로 갈라져 나왔습니다 — 화면 전면 개편과
-> 한국 증시 모의 매매를 여기서 합니다([v2 프로그램 계획서](docs/specs/2026-10-26-v2-program-plan.md)). **교체 전까지 AWS 운영본은 v1**이고,
+> 한국 증시 모의 매매를 여기서 합니다([v2 프로그램 계획서](docs/specs/2026-10-26-v2-program-plan.md)). 운영본은 2026-10-29부터 v2(지금은 Vultr 서버)이고,
 > 로컬 v2는 모의 매매 정기 작업을 끈 채(`PAPER_ENABLED=false`) 돕니다. v1은 2026-10-25에 `Local_macro_dashboard_v3`에서 갈라져 나왔습니다.
 > **공개 저장소입니다**(2026-10-26 사용자 확인 — 모의 매매 프롬프트·투자 OS 원문도 공개). 비밀값은 `.env`에만 둡니다.
 > 같은 맥에서 v3(3000/8080/8000/5432)·v1(3001/8081/8001/5433)과 함께 띄울 수 있게 이 저장소는 **3002/8082/8002/5434**를 씁니다(`.env`의 포트 값).
@@ -57,7 +57,7 @@ open http://localhost:3002
 
 로컬 실행은 **로그인 없이 이 맥에서만** 열립니다 — 화면·API는 `127.0.0.1`에만 열리고, 이 맥의 브라우저는 운영자 계정으로
 바로 들어갑니다(휴대폰 등 다른 기기에서는 열리지 않음, [ADR 0016](docs/adr/0016-local-no-login.md)). 로그인 화면은
-AWS 개인용 서버(터널로 여는 화면, [아래](#aws-개인용-서버))에만 있습니다. 운영자 계정은 처음 기동할 때 계정이 없으면 `.env`의 `OWNER_EMAIL`과 `APP_PASSWORD`로
+서버([아래](#vultr-서버-운영본) — 운영자의 Tailscale 신원이면 로그인 없이 운영자)와 QA 스택에만 있습니다. 운영자 계정은 처음 기동할 때 계정이 없으면 `.env`의 `OWNER_EMAIL`과 `APP_PASSWORD`로
 만듭니다. `APP_PASSWORD`가 비어 있으면 `make setup`이 무작위 값을 만들어 넣고 한 번 보여 주고, `OWNER_EMAIL`은 직접 넣어야
 합니다(기본값 없음). 이 비밀번호는 로그인 모드(`LOCAL_NO_LOGIN=false`)·QA 스택·이 DB를 복원한 곳에서 씁니다.
 
@@ -237,10 +237,10 @@ make down            # 정지
 │       ├── hooks/           useApi · useTheme · useUsdKrw · 새로고침 신호
 │       └── lib/             순수 함수 — 포맷·거래소 달력·메뉴 표(nav)·검색·테마·화면 모델·타입
 ├── db/migrations/      스키마
-├── deploy/aws/         AWS 개인용 서버의 앞단 설정(Caddyfile)
+├── deploy/vultr/      Vultr 서버의 앞단 설정(Caddyfile)
 ├── docs/               문서
 └── scripts/            setup · update · version · doctor
-    └── aws/             AWS 개인용 서버: bootstrap(첫 기동) · deploy(배포) · backup-s3(cron) · tunnel(PC의 SSM 터널) · instance(손으로 켜고 끄기)
+    └── vultr/           Vultr 서버: bootstrap(첫 기동) · tailscale-up · deploy(배포) · backup-s3(cron) · instance·firewall-pc-ip(PC)
 ```
 
 ### Docker 없이 개발하기
@@ -312,7 +312,7 @@ make test-frontend     # 자가검증 + 훅 테스트(vitest) + 린트 + 빌드(
 | `DATA_GO_KR_SERVICE_KEY` | 공공데이터포털 **일반 인증키 하나**로 특일정보·주식시세를 씁니다(서비스별 활용신청 필요). 없으면 시계는 내장 휴일 표(2025~2028)로, 공식 시세·PER·PBR은 비어 있음 |
 | `DART_API_KEY` | 수급 레이더의 재무 체크만 비어 있음 |
 | `LOCAL_NO_LOGIN` | 비우면 `true` — 로컬은 로그인 없이 이 맥에서 운영자로 열림. `false`면 로그인 화면(웹·QA 덧붙임은 늘 `false`로 고정, [ADR 0016](docs/adr/0016-local-no-login.md)) |
-| `COOKIE_SECURE` | HTTPS로만 접속할 때 `true` (http://에서 켜면 로그인이 안 됨). `LOCAL_NO_LOGIN=false`와 함께 — 로그인 없는 로컬과 함께 켜면 백엔드가 기동하지 않음. AWS 개인용 서버는 덧붙임이 기본 `true`로 둠(터널의 `http://localhost`는 Chrome·Firefox가 받음) — 로컬 값을 서버 `.env`에 옮기지 않음 |
+| `COOKIE_SECURE` | HTTPS로만 접속할 때 `true` (http://에서 켜면 로그인이 안 됨). `LOCAL_NO_LOGIN=false`와 함께 — 로그인 없는 로컬과 함께 켜면 백엔드가 기동하지 않음. Vultr 서버는 덧붙임이 기본 `true`로 둠(ts.net 주소는 HTTPS, 비상용 `http://localhost`는 Chrome·Firefox가 받음) — 로컬 값을 서버 `.env`에 옮기지 않음 |
 | `AI_TIMEOUT_SECONDS` | 엔진을 직접 고른 경우의 대기 한도 (기본 240초) |
 | `AI_AUTO_ATTEMPT_SECONDS` / `AI_AUTO_BUDGET_SECONDS` | `자동 탐색`의 엔진별·전체 시간 예산 (기본 60초 / 180초) |
 | `COMPUTE_MAX_CONCURRENT` | 캐시에 없는 비싼 계산(스코어카드·기관 위험·13F 조합 등)의 동시 실행 상한. 비우거나 0이면 자동(코어 수의 절반, 최소 1). 넘친 요청은 2초 기다린 뒤 429 |
@@ -334,55 +334,15 @@ make test-frontend     # 자가검증 + 훅 테스트(vitest) + 린트 + 빌드(
 (예전 `WEB_BIND_HOST`로 다른 기기에 여는 방법은 없앴습니다). 이 맥의 다른 웹사이트가 로컬 API를 부르지 못하게, 로그인 없는
 요청은 이 맥의 화면 주소에서 온 것만 받습니다 — 쿠키 없이 curl로 쓰기 요청을 보낼 때는 `Origin: http://localhost:3002`이 필요합니다.
 
-### AWS 개인용 서버
-
-> **2026-11-03 02:30 KST에 정지했습니다** — 운영본은 아래 'Vultr 서버'(ADR 0023). `.env`는 `PAPER_ENABLED=false`, 켜기·끄기 일정은 DISABLE, 한 주 뒤 정리합니다. 이 절은 정지 전 기록입니다.
-
-모의 매매를 돌리려고 AWS 서울의 EC2 한 대(`my-macro-app`, t4g.medium ARM · 4 GiB)에 올립니다. DB는 로컬과 같은
-Postgres 컨테이너입니다. 서버는 **평일 밤 미국 개장 10분 전(뉴욕 09:20 — 겨울 23:20·서머타임 22:20 KST)~07:00, 평일 낮 08:55~15:50, 일요일 밤 20:50~23:30 KST에만 켜집니다**(EventBridge Scheduler, 2026-11-02 —
-ADR 0019 결정 14) — 미국 장·마지막 지연 봉·06:30 미국 결정·06:45 백업(일요일은 23:00 한 번 더)·한국 장중·한국 결정 창·일요일 밤 주간 복기(미국 21:00·한국 22:00)가 이 안에 있습니다. 사용자는 1명(운영자)입니다. 화면은 **공개 주소**(CloudFront `https://dXXXX.cloudfront.net` —
-첫 화면에서 접근 코드를 넣은 뒤 로그인, 주소와 코드는 운영자에게만)나 PC의 SSM 포트 포워딩(관리용)으로 엽니다. 서버에 들어오는 길은 CloudFront
-원본용 대역 → 8301 한 줄뿐입니다(ADR 0019 결정 16). 로컬과 다른 점은 덧붙임 [compose.aws.yml](compose.aws.yml)과 [scripts/aws/](scripts/aws/)에 있고,
-이유는 [ADR 0019](docs/adr/0019-aws-personal-deployment.md)에 있습니다. 월 약 $17(하루 10시간 기준).
-
-```bash
-bash scripts/aws/tunnel.sh             # PC: 서버 화면을 http://localhost:8201 로 엽니다(로그인: OWNER_EMAIL · 닫기: Ctrl-C)
-bash scripts/aws/instance.sh status    # 지금 켜져 있나 — 08:00 뒤에 보려면 instance.sh start(다음 정지 일정에 다시 꺼짐)
-```
-
-새 코드를 서버에 올릴 때는 PC에서 서버 셸에 붙어(`aws ssm start-session --region ap-northeast-2 --target <AWS_INSTANCE_ID>`) 이렇게 합니다.
-
-```bash
-sudo -iu ubuntu
-bash ~/My_macro_dashboard_v2/scripts/aws/deploy.sh   # main 받기 → 이미지 하나씩 빌드 → 기동 → 스키마 적용
-```
-
-- 서버에서는 `make up` 대신 `deploy.sh`를 씁니다. 4 GiB라 이미지를 하나씩 빌드하고(backend → frontend → collector), 기동 뒤에는
-  `make migrate`와 같은 스키마 적용을 돌립니다(QA-016). 어느 단계든 실패하면 0이 아닌 값으로 끝납니다.
-- 앞단 Caddy가 서버의 `127.0.0.1:8201` 하나만 열고 `/api/*`는 백엔드, 나머지는 화면으로 보냅니다(같은 출처, `NEXT_PUBLIC_API_BASE=/`).
-  TLS는 없습니다 — 평문은 서버의 루프백과 SSM 터널(암호화) 안에서만 흐릅니다.
-- 로그인 화면은 늘 거칩니다(`compose.aws.yml`이 로그인 없는 로컬 모드를 `"false"`로 고정, [ADR 0016](docs/adr/0016-local-no-login.md)).
-  세션 쿠키에는 `Secure`가 붙습니다 — Chrome·Firefox는 `http://localhost`를 안전한 출처로 봐 받고, Safari는 받지 않습니다
-  (Safari로 열 때만 서버 `.env`에 `COOKIE_SECURE=false`, DEVELOPMENT §7). 메일(가입·재설정)은 꺼 둡니다.
-- 서버 `.env`는 로컬 `.env`에서 포트 네 줄·`COOKIE_SECURE`·`LOCAL_NO_LOGIN`·`FRONTEND_ORIGIN`·`PUBLIC_URL`·`AWS_INSTANCE_ID`를 빼고
-  `COMPOSE_FILE`·`AWS_BACKUP_BUCKET`을 더한 것입니다([.env.aws.example](.env.aws.example)). 빠져야 할 이름이 있으면 `deploy.sh`가 멈춥니다
-  (`COOKIE_SECURE`·`PAPER_ENABLED`는 알리고 계속 — Secure 쿠키를 받지 못하는 브라우저, 서버 정기 작업을 일부러 끈 경우의 자리).
-  전환 뒤 로컬의 `PAPER_ENABLED=false`도 옮기지 않습니다(서버는 비우면 켜짐). PC의 `.env`에는 `AWS_INSTANCE_ID`(서버 인스턴스 ID)만 더합니다.
-- DB는 06:45 KST(서버가 켜진 아침 — 화~토)와 일요일 23:00 KST에 S3로 백업합니다(`scripts/aws/backup-s3.sh`, cron, 60일 보관).
-- 모의 매매 정기 작업은 **서버 한 곳에서만** 돕니다. 데이터를 서버로 옮긴 뒤 로컬 v1은 `.env`에 `PAPER_ENABLED=false`를 넣고 띄웁니다
-  — 두 곳이 같은 계좌를 따로 결정·체결하면 안 됩니다.
-- 서버 만들기·데이터 전환·SSM 셸 절차는 [docs/DEVELOPMENT.md §7](docs/DEVELOPMENT.md#7-aws-개인용-서버)에 있습니다.
-- v3에서 옮겨 온 공개 데모 배포(RDS·CloudFront·데모 열람, [ADR 0012](docs/adr/0012-aws-demo-deployment.md)~[0014](docs/adr/0014-aws-demo-ai-report.md))는
-  이 저장소에서 쓰지 않습니다.
-
-### Vultr 서버 (운영본, 2026-11-03 02:30 KST부터)
+### Vultr 서버 (운영본)
 
 운영 서버는 Vultr 서울의 한 대(`my-macro-app`, vhf-2c-4gb · 2 vCPU · 4 GB, 24시간, 월 $24)입니다([ADR 0023](docs/adr/0023-vultr-deployment.md)).
-2026-11-03 02:30 KST에 AWS에서 옮겼고(컷오버), 모의 매매 정기 작업은 여기서만 돕니다. 위 AWS 서버는 정지 상태로 한 주 두었다가 정리합니다.
+2026-11-03 02:30 KST에 AWS EC2([ADR 0019](docs/adr/0019-aws-personal-deployment.md))에서 옮겼고(컷오버), 모의 매매 정기 작업은 여기서만 돕니다.
+AWS의 서버·공개 주소 자원은 같은 날 지웠습니다(남은 것은 S3 백업 버킷).
 
 - 접속은 **Tailscale 하나**입니다. 서버·PC·휴대폰이 같은 tailnet에 있고 화면은 `https://my-macro-app.<tailnet>.ts.net`(Tailscale이 받는 인증서) — 서버의
   `tailscale serve`가 루프백의 caddy(`127.0.0.1:8201`)로 넘깁니다. 공개 인터넷에 열린 TCP 포트·잠금화면은 없고, 로그인은 그대로입니다.
-- 로컬과 다른 점은 덧붙임 [compose.vultr.yml](compose.vultr.yml)과 [scripts/vultr/](scripts/vultr/)에 있습니다(AWS 것에서 갈라냄 — gate·공개 리스너 없음).
+- 로컬과 다른 점은 덧붙임 [compose.vultr.yml](compose.vultr.yml)과 [scripts/vultr/](scripts/vultr/)에 있습니다(옛 AWS 덧붙임에서 갈라냄 — gate·공개 리스너 없음).
 
 ```bash
 bash scripts/vultr/instance.sh status      # PC: 서버 상태·주소(Vultr API, .env의 VULTR_API_KEY·VULTR_INSTANCE_ID)
@@ -394,8 +354,10 @@ ssh ubuntu@my-macro-app                    # 서버 셸(Tailscale SSH) — 그 �
   `COMPOSE_FILE`·`AWS_BACKUP_BUCKET`·`PUBLIC_ORIGIN`(Tailscale 주소)·`PAPER_KR_START_DATE`(한국 출발일)·`TAILNET_OWNER_LOGIN`(그 Tailscale 사용자는 로그인 없이 운영자 —
   [ADR 0023](docs/adr/0023-vultr-deployment.md) 결정 10, 비면 로그인 화면)을 더한 것입니다([.env.vultr.example](.env.vultr.example)).
   PC의 `.env`에는 `VULTR_API_KEY`·`VULTR_INSTANCE_ID`·`VULTR_SERVER_IP`·`VULTR_FIREWALL_GROUP_ID`·`TAILSCALE_AUTH_KEY`·`TAILNET_DOMAIN`을 더합니다.
-- DB는 AWS와 같은 시각(06:45 KST·일 23:00 KST)에 같은 S3 버킷의 `db/vultr/`로 백업합니다(`scripts/vultr/backup-s3.sh`, cron).
-- 서버 만들기·`.env` 전달·배포·백업 절차는 [docs/DEVELOPMENT.md §8](docs/DEVELOPMENT.md#8-vultr-서버)에 있습니다.
+- DB는 06:45 KST(미국 결정 뒤)와 일요일 23:00 KST에 S3 백업 버킷의 `db/vultr/`로 백업합니다(`scripts/vultr/backup-s3.sh`, cron, 60일 보관).
+- 서버 만들기·`.env` 전달·배포·백업 절차는 [docs/DEVELOPMENT.md §7](docs/DEVELOPMENT.md#7-vultr-서버)에 있습니다.
+- v3에서 옮겨 온 공개 데모 배포(RDS·CloudFront·데모 열람, [ADR 0012](docs/adr/0012-aws-demo-deployment.md)~[0014](docs/adr/0014-aws-demo-ai-report.md))는
+  이 저장소에서 쓰지 않습니다.
 
 ---
 
@@ -495,7 +457,7 @@ ssh ubuntu@my-macro-app                    # 서버 셸(Tailscale SSH) — 그 �
 | AI | Claude API (Haiku 5.5, 공식 Java SDK) · NVIDIA · Cerebras · Cloudflare | 수집 원본으로 리포트 생성. 엔진이 실패하면 다음 엔진으로 자동 전환. 모의 매매 Claude 계좌는 같은 SDK의 구조화 출력으로 Sonnet 5.5(설정에서 Haiku 5.5) 한 모델만 부름(전환 없음) |
 | Store | PostgreSQL 16 | 수집기와 API가 다른 프로세스라 파일 공유 불가. JSONB로 저장해 SQL로 질의 |
 | Collector | Python 3.11 · FastAPI · pandas · yfinance · pykrx · feedparser(RSS 읽기만) | 금융 데이터 수집·파싱 라이브러리 생태계 |
-| DevOps | Docker Compose · GitHub Actions · AWS(EC2 t4g · SSM Session Manager · S3 · EventBridge Scheduler) · Caddy | 네 프로세스를 한 명령으로, 세 언어 테스트를 매 푸시마다. 운영본은 인바운드 포트 없이 SSM 터널로만 여는 EC2 한 대, 밤 10시간만 켬([ADR 0019](docs/adr/0019-aws-personal-deployment.md)) |
+| DevOps | Docker Compose · GitHub Actions · Vultr(서울 vhf-2c-4gb) · Tailscale · AWS S3(백업) · Caddy | 네 프로세스를 한 명령으로, 세 언어 테스트를 매 푸시마다. 운영본은 공개 TCP 포트 없이 Tailscale로만 여는 서버 한 대, 24시간([ADR 0023](docs/adr/0023-vultr-deployment.md)) |
 
 **의도적으로 쓰지 않은 것** — Kafka/CDC(하루 수천 건 규모라 브로커가 처리할
 트래픽이 없음), BigQuery/ClickHouse(전체 수십 MB), 네이티브 앱(같은 기능을 두 벌
