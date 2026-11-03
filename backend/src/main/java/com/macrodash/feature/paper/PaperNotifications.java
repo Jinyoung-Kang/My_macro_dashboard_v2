@@ -15,6 +15,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.regex.Pattern;
 
 /**
  * 모의 매매 텔레그램 알림의 글(사용자 요청 2026-11-02 — 체결 한 건마다 한 통, 결정마다 요약 한 통(그 결정이 낸 새 주문 포함), 결정 없이 생긴 주문 한 통).
@@ -22,6 +23,11 @@ import java.util.Map;
  * 적습니다. 이모지를 쓰지 않습니다. DB·네트워크를 읽지 않는 순수 함수입니다.
  * 모델이 쓴 글(요약·주문 없음 사유·장중 확인 사유)과 주문 근거는 자르지 않습니다(QA-168 — 길면 보내는 쪽이 여러 통으로 나눔). 자르는 것은 진단 글인
  * 오류(300자)와 거절 사유(120자)뿐입니다.
+ *
+ * <p>서식(사용자 요청 2026-11-03 — 가독성·문단 구분): 텔레그램 HTML 서식(parse_mode HTML — 보내기는 {@link PaperTelegram})으로 제목 줄과 항목 이름만
+ * 굵게 하고, 항목 사이는 빈 줄로 나눕니다. 모델이 쓴 글은 문장마다 한 줄로 보입니다({@link #paragraphs} — 문장 끝과 원 숫자 목록 앞의 공백만 줄바꿈으로
+ * 바꾸고 글자는 그대로). 서버 값·모델 글·종목 이름은 모두 {@link #esc}로 HTML 엔티티를 바꿔 넣고, 태그는 이 클래스가 붙이는 {@code <b>}뿐이며 한 줄
+ * 안에서 닫힙니다(나눠 보내도 태그가 갈라지지 않음).
  */
 final class PaperNotifications {
 
@@ -31,6 +37,10 @@ final class PaperNotifications {
     static final String EMPTY = "—";
     /** 결정 요약에 적는 주문 줄 상한(넘으면 '외 N건'). */
     static final int ORDER_LINES = 15;
+    /** 원 숫자 목록(① 브렌트 …) 앞의 공백 — 그 자리에서 줄을 바꿉니다('①과 ②를'처럼 글 안의 참조는 뒤에 공백이 없어 그대로). */
+    private static final Pattern BEFORE_LIST_ITEM = Pattern.compile("[ \\t]+(?=[\u2460-\u2473][ \\t])");
+    /** 문장 끝 — 한글·닫는 괄호·%·%p(…다.·…[사실].·…44%.·…3.44%p.) 다음 마침표 뒤의 공백. 소수점·'U.S.' 같은 약어는 건드리지 않습니다. */
+    private static final Pattern SENTENCE_END = Pattern.compile("(?<=(?:[가-힣\\]\\)%]|%p)\\.)[ \\t]+");
 
     /**
      * 체결 한 건.
@@ -41,10 +51,11 @@ final class PaperNotifications {
      */
     static String fill(Fill f, Book book, Order order, Map<String, String> names, String linkBase) {
         boolean korea = korea(book);
-        List<String> lines = new ArrayList<>();
-        lines.add("[모의매매 체결] " + label(book, f.bookCode()) + " (" + marketName(book) + ")");
-        lines.add(sideName(f.side()) + " " + ticker(f.ticker(), names, korea) + " " + count(f.qty()) + "주 @ " + money(f.price(), korea, true)
-                + " = " + money(f.gross(), korea, false));
+        List<String> blocks = new ArrayList<>();
+        blocks.add(bold("[모의매매 체결] " + label(book, f.bookCode()) + " (" + marketName(book) + ")") + "\n"
+                + esc(sideName(f.side()) + " " + ticker(f.ticker(), names, korea) + " " + count(f.qty()) + "주 @ " + money(f.price(), korea, true)
+                + " = " + money(f.gross(), korea, false)));
+        List<String> details = new ArrayList<>();
         // 비용 칸(0이 아닌 것만 — 미국은 슬리피지가 체결가에 들어 있어 비용 칸이 0이고 bp만 적음).
         List<String> costs = new ArrayList<>();
         if (f.fee() != null && f.fee().signum() != 0) {
@@ -59,15 +70,16 @@ final class PaperNotifications {
             costs.add("슬리피지 " + plain(f.slippageBp()) + "bp(가격에 포함)");
         }
         if (!costs.isEmpty()) {
-            lines.add("비용 " + String.join(" · ", costs));
+            details.add("비용 " + String.join(" · ", costs));
         }
         String timing = order == null ? null : timingName(order.timing(), korea);
-        lines.add("시점 " + (timing == null ? EMPTY : timing) + " · 가격 출처 " + (f.priceSource() == null ? EMPTY : f.priceSource())
+        details.add("시점 " + (timing == null ? EMPTY : timing) + " · 가격 출처 " + (f.priceSource() == null ? EMPTY : f.priceSource())
                 + (f.backfill() ? " · 사후 체결" : ""));
-        lines.add("체결일 " + (f.observationDate() == null ? EMPTY : f.observationDate()) + " · 기록 "
+        details.add("체결일 " + (f.observationDate() == null ? EMPTY : f.observationDate()) + " · 기록 "
                 + (f.createdAt() == null ? EMPTY : Kst.stamp(f.createdAt())));
-        link(lines, linkBase, book, "holdings");
-        return String.join("\n", lines);
+        blocks.add(esc(String.join("\n", details)));
+        link(blocks, linkBase, book, "holdings");
+        return String.join("\n\n", blocks);
     }
 
     /**
@@ -78,62 +90,66 @@ final class PaperNotifications {
     static String decision(Decision d, Book book, List<Order> orders, Map<String, String> names, String linkBase) {
         boolean korea = korea(book);
         JsonNode r = d.response();
-        List<String> lines = new ArrayList<>();
-        lines.add("[모의매매 결정] " + label(book, d.bookCode()) + " (" + marketName(book) + ") · 기준일 " + d.asOfTradingDate() + " "
-                + kindName(d.kind()) + " · " + statusName(d.status()) + (d.retryCount() > 0 ? "(재시도 " + d.retryCount() + "회)" : ""));
+        List<String> blocks = new ArrayList<>();
+        List<String> head = new ArrayList<>();
+        head.add("기준일 " + d.asOfTradingDate() + " · " + kindName(d.kind()) + " · " + statusName(d.status())
+                + (d.retryCount() > 0 ? "(재시도 " + d.retryCount() + "회)" : ""));
         String action = Json.asText(r, "action");
         if (action != null) {
-            lines.add("장중 확인 " + ("REPLACE".equals(action) ? "대신함(REPLACE)" : "KEEP".equals(action) ? "그대로 둠(KEEP)" : action)
+            head.add("장중 확인 " + ("REPLACE".equals(action) ? "대신함(REPLACE)" : "KEEP".equals(action) ? "그대로 둠(KEEP)" : action)
                     + (r.path("supersededOrders").isArray() && !r.path("supersededOrders").isEmpty()
                     ? " · 대신한 대기 주문 " + r.path("supersededOrders").size() + "건" : ""));
         }
+        blocks.add(bold("[모의매매 결정] " + label(book, d.bookCode()) + " (" + marketName(book) + ")") + "\n" + esc(String.join("\n", head)));
         String summary = Json.asText(r, "summary");
         if (summary != null && !summary.isBlank()) {
-            lines.add("요약: " + summary.strip());
+            blocks.add(section("요약", paragraphs(summary)));
         }
         Double target = Json.asDouble(r, "targetEquityExposurePct");
         if (target != null) {
-            lines.add("목표 주식 노출 " + plain(target) + "%");
+            blocks.add(bold("목표 주식 노출") + " " + esc(plain(target) + "%"));
         }
         String noTrade = Json.asText(r, "noTradeReason");
         if (orders.isEmpty()) {
-            lines.add("새 주문 없음" + (noTrade == null || noTrade.isBlank() ? "" : " — " + noTrade.strip()));
+            blocks.add(noTrade == null || noTrade.isBlank() ? bold("새 주문 없음") : section("새 주문 없음", paragraphs(noTrade)));
         } else {
-            lines.add("새 주문 " + orders.size() + "건");
+            List<String> lines = new ArrayList<>();
             for (int i = 0; i < Math.min(orders.size(), ORDER_LINES); i++) {
                 lines.add("- " + orderLine(orders.get(i), names, korea));
             }
             if (orders.size() > ORDER_LINES) {
                 lines.add("- 외 " + (orders.size() - ORDER_LINES) + "건");
             }
+            blocks.add(section("새 주문 " + orders.size() + "건", String.join("\n", lines)));
         }
         JsonNode plan = r == null ? null : r.get("checkpointPlan");
         if (plan != null && plan.isObject() && plan.hasNonNull("status")) {
             String at = Json.asText(plan, "atKst") != null ? Json.asText(plan, "atKst") + " KST"
                     : Json.asText(plan, "atEt") != null ? Json.asText(plan, "atEt") + " ET" : EMPTY;
-            lines.add("장중 확인 요청: 세션 " + Json.asText(plan, "session") + " " + at + " · " + Json.asText(plan, "status")
-                    + (Json.asText(plan, "reason") == null ? "" : " — " + Json.asText(plan, "reason")));
+            String reason = Json.asText(plan, "reason");
+            blocks.add(section("장중 확인 요청", "세션 " + Json.asText(plan, "session") + " " + at + " · " + Json.asText(plan, "status")
+                    + (reason == null || reason.isBlank() ? "" : "\n" + paragraphs(reason))));
         }
         if (d.error() != null && !d.error().isBlank()) {
-            lines.add("오류: " + clip(d.error().strip(), 300));
+            blocks.add(section("오류", clip(d.error().strip(), 300)));
         }
-        link(lines, linkBase, book, "decisions");
-        return String.join("\n", lines);
+        link(blocks, linkBase, book, "decisions");
+        return String.join("\n\n", blocks);
     }
 
     /** 결정 없이 생긴 주문 하나(스탑 매도 등). */
     static String order(Order o, Book book, Map<String, String> names, String linkBase) {
         boolean korea = korea(book);
-        List<String> lines = new ArrayList<>();
-        lines.add("[모의매매 주문] " + label(book, o.bookCode()) + " (" + marketName(book) + ")"
-                + (PaperBooks.SOURCE_STOP.equals(o.source()) ? " · 스탑" : o.source() == null ? "" : " · " + o.source()));
-        lines.add(orderLine(o, names, korea));
+        List<String> blocks = new ArrayList<>();
+        blocks.add(bold("[모의매매 주문] " + label(book, o.bookCode()) + " (" + marketName(book) + ")"
+                + (PaperBooks.SOURCE_STOP.equals(o.source()) ? " · 스탑" : o.source() == null ? "" : " · " + o.source()))
+                + "\n" + esc(orderLine(o, names, korea)));
         String note = o.reason() == null ? null : firstText(o.reason(), "note", "summary", "trigger", "basis");
         if (note != null) {
-            lines.add("근거: " + note);
+            blocks.add(section("근거", paragraphs(note)));
         }
-        link(lines, linkBase, book, "holdings");
-        return String.join("\n", lines);
+        link(blocks, linkBase, book, "holdings");
+        return String.join("\n\n", blocks);
     }
 
     /** 주문 한 줄 — 쪽·종목·크기·시점·상태(대기가 아니면). */
@@ -272,12 +288,39 @@ final class PaperNotifications {
         return null;
     }
 
-    /** 화면 링크 한 줄 — 서버 공개 주소가 있을 때만. */
-    private static void link(List<String> lines, String linkBase, Book book, String tab) {
+    /** 화면 링크 문단 — 서버 공개 주소가 있을 때만. */
+    private static void link(List<String> blocks, String linkBase, Book book, String tab) {
         if (linkBase == null || linkBase.isBlank()) {
             return;
         }
         String base = linkBase.strip().replaceAll("/+$", "");
-        lines.add(base + "/paper/" + (korea(book) ? "kr" : "us") + "/" + tab);
+        blocks.add(esc(base + "/paper/" + (korea(book) ? "kr" : "us") + "/" + tab));
+    }
+
+    // ------------------------------------------------------------------ 서식
+
+    /** HTML 서식의 글자 — {@code &}·{@code <}·{@code >}를 엔티티로(텔레그램 HTML 서식이 요구하는 셋). */
+    static String esc(String text) {
+        return text == null ? "" : text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;");
+    }
+
+    /** 굵은 글씨 한 줄(제목·항목 이름). */
+    private static String bold(String text) {
+        return "<b>" + esc(text) + "</b>";
+    }
+
+    /** 항목 하나 — 굵은 이름 줄과 그 아래 글. */
+    private static String section(String heading, String body) {
+        return bold(heading) + "\n" + esc(body);
+    }
+
+    /**
+     * 모델이 쓴 글을 문장마다 한 줄로 — 원 숫자 목록(①…) 앞과 문장 끝(한글·닫는 괄호·% 다음 마침표) 뒤의 공백만 줄바꿈으로 바꿉니다. 글자는 더하거나
+     * 빼지 않고, 원래 있던 줄바꿈은 그대로(빈 줄은 하나까지)입니다.
+     */
+    static String paragraphs(String text) {
+        String out = BEFORE_LIST_ITEM.matcher(text.strip()).replaceAll("\n");
+        out = SENTENCE_END.matcher(out).replaceAll("\n");
+        return out.replaceAll("\n{3,}", "\n\n");
     }
 }

@@ -1,5 +1,7 @@
 package com.macrodash.feature.paper;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
@@ -22,17 +24,21 @@ import java.time.Duration;
  * 않습니다.
  *
  * <ul>
- *   <li>글은 그대로 보냅니다(서식 해석 없음 — 종목 이름·사유의 기호를 고칠 필요가 없게), 링크 미리보기는 끔, {@value #MAX_CHARS}자를 넘으면 줄 경계에서 나눠 여러 통으로
- *       차례로 보냅니다(자르지 않음 — QA-168).</li>
+ *   <li>글은 텔레그램 HTML 서식(parse_mode HTML — 사용자 요청 2026-11-03, 굵은 제목·항목 이름)입니다. 글을 만드는 쪽({@link PaperNotifications})이
+ *       값을 모두 엔티티로 바꿔 넣고 태그는 한 줄 안의 {@code <b>}뿐입니다. 텔레그램이 서식을 거절하면(HTTP 400 — 엔티티 해석 실패 등) 같은 글을 태그를 떼고
+ *       평문으로 한 번 더 보냅니다({@link #plain} — 알림이 빠지지 않게, 굵은 글씨만 사라짐). 링크 미리보기는 끔({@code link_preview_options.is_disabled}).
+ *       {@value #MAX_CHARS}자를 넘으면 줄 경계에서 나눠 여러 통으로 차례로 보냅니다(자르지 않음 — QA-168).</li>
  *   <li>실패 사유에 봇 토큰이 섞이지 않게 합니다(주소에 토큰이 들어가므로 예외 글에서 지움). 재시도는 부르는 쪽(알림 작업 — 다음 주기)이 합니다.</li>
  * </ul>
  */
 @Component
 public class PaperTelegram {
 
+    private static final Logger log = LoggerFactory.getLogger(PaperTelegram.class);
+
     static final String API = "https://api.telegram.org";
     static final Duration TIMEOUT = Duration.ofSeconds(10);
-    /** 한 통의 글자 상한 — Bot API 4096자보다 조금 작게. */
+    /** 한 통의 글자 상한 — Bot API 4096자(서식을 푼 뒤)보다 조금 작게. 엔티티·태그까지 세므로 보이는 글은 늘 이보다 짧습니다. */
     static final int MAX_CHARS = 4000;
 
     /** 보내는 길 — 시험이 가짜로 바꿔 끼웁니다. */
@@ -121,12 +127,33 @@ public class PaperTelegram {
         return out;
     }
 
-    /** 한 통(상한 안의 글). */
+    /** 한 통(상한 안의 글) — HTML 서식으로, 서식을 거절하면(HTTP 400) 평문으로 한 번 더. */
     private String sendOne(String body) {
+        String error = post(body, true);
+        if (error == null || !error.startsWith("HTTP 400")) {
+            return error;
+        }
+        String plainError = post(plain(body), false);
+        if (plainError == null) {
+            log.warn("텔레그램이 HTML 서식을 거절해 평문으로 보냈습니다 — {}", error);
+        }
+        return plainError;
+    }
+
+    /** HTML 서식 글 → 평문(태그를 떼고 엔티티를 되돌림 — {@code &amp;}는 마지막에). */
+    static String plain(String html) {
+        return html.replace("<b>", "").replace("</b>", "").replace("&lt;", "<").replace("&gt;", ">").replace("&quot;", "\"")
+                .replace("&amp;", "&");
+    }
+
+    private String post(String body, boolean html) {
         ObjectNode payload = mapper.createObjectNode();
         payload.put("chat_id", chatId);
         payload.put("text", body);
-        payload.put("disable_web_page_preview", true);
+        if (html) {
+            payload.put("parse_mode", "HTML");
+        }
+        payload.putObject("link_preview_options").put("is_disabled", true);
         try {
             Reply reply = sender.post(URI.create(API + "/bot" + token + "/sendMessage"), mapper.writeValueAsString(payload));
             if (reply.status() == 200) {

@@ -31,6 +31,8 @@ import static org.mockito.Mockito.mock;
  *  - 한 통이 실패하면 그 주기를 멈추고 거기까지만 자리를 옮김 → 다음 주기에 그 통부터
  *  - 설정 notify.telegram을 끄면 보내지 않고 자리만 옮김
  *  - 글: 미국 달러·한국 원, 한국 종목 이름(코드), 시점 이름, 링크(공개 주소가 있을 때만), 토큰은 실패 사유에 나오지 않음
+ *  - 서식(사용자 요청 2026-11-03): HTML 서식으로 제목·항목 이름만 굵게, 항목 사이 빈 줄, 모델 글은 문장마다 한 줄(글자는 그대로), 값은 모두 엔티티로,
+ *    텔레그램이 서식을 거절하면(400) 같은 글을 평문으로 한 번 더
  */
 class PaperNotifyJobTest {
 
@@ -130,15 +132,28 @@ class PaperNotifyJobTest {
         clock.now = at.plusSeconds(120);
         PaperNotifyJob.Outcome outcome = job.run();
         assertThat(outcome.sent()).isEqualTo(2);
-        assertThat(sent.get(0)).startsWith("[모의매매 결정] 한국 Claude 계좌2 (한국) · 기준일 2026-11-02 정기 결정 · 주문 있음(OK)")
-                .contains("요약: 반도체 비중 확대").contains("목표 주식 노출 70%").contains("새 주문 1건")
-                .contains("- 매수 삼성전자(005930) 목표 8% · 다음 거래일 10:00 KST")
-                .endsWith("https://example.invalid/paper/kr/decisions");
-        assertThat(sent.get(1)).startsWith("[모의매매 체결] 한국 Claude 계좌2 (한국)")
-                .contains("매수 삼성전자(005930) 10주 @ 71,000원 = 710,000원").contains("비용 수수료 106원 · 슬리피지 355원")
-                .contains("시점 다음 거래일 10:00 KST · 가격 출처 TOSS_1M_AT").contains("체결일 2026-11-03")
+        assertThat(sent.get(0)).isEqualTo(String.join("\n",
+                "<b>[모의매매 결정] 한국 Claude 계좌2 (한국)</b>",
+                "기준일 2026-11-02 · 정기 결정 · 주문 있음(OK)",
+                "",
+                "<b>요약</b>",
+                "반도체 비중 확대",
+                "",
+                "<b>목표 주식 노출</b> 70%",
+                "",
+                "<b>새 주문 1건</b>",
+                "- 매수 삼성전자(005930) 목표 8% · 다음 거래일 10:00 KST",
+                "",
+                "https://example.invalid/paper/kr/decisions"));
+        assertThat(sent.get(1)).startsWith(String.join("\n",
+                        "<b>[모의매매 체결] 한국 Claude 계좌2 (한국)</b>",
+                        "매수 삼성전자(005930) 10주 @ 71,000원 = 710,000원",
+                        "",
+                        "비용 수수료 106원 · 슬리피지 355원",
+                        "시점 다음 거래일 10:00 KST · 가격 출처 TOSS_1M_AT",
+                        "체결일 2026-11-03 · 기록 "))
                 .doesNotContain("KST KST")
-                .endsWith("https://example.invalid/paper/kr/holdings");
+                .endsWith("\n\nhttps://example.invalid/paper/kr/holdings");
         clock.now = at.plusSeconds(300);
         assertThat(job.run().sent()).as("다시 보내지 않음").isZero();
         assertThat(sent).hasSize(2);
@@ -159,7 +174,7 @@ class PaperNotifyJobTest {
 
         PaperNotifyJob.Outcome retried = job.run();
         assertThat(retried.sent()).isEqualTo(2);
-        assertThat(sent.get(0)).startsWith("[모의매매 주문] Claude 계좌1 (미국) · 스탑").contains("매도 AAPL 전량 · 다음 세션 시가");
+        assertThat(sent.get(0)).startsWith("<b>[모의매매 주문] Claude 계좌1 (미국) · 스탑</b>\n매도 AAPL 전량 · 다음 세션 시가");
         assertThat(sent.get(1)).contains("매도 AAPL 10주 @ $229.85 = $2,298.50").contains("슬리피지 5bp(가격에 포함)")
                 .contains("시점 다음 세션 시가");
     }
@@ -193,7 +208,8 @@ class PaperNotifyJobTest {
         List<String> bodies = new ArrayList<>();
         PaperTelegram ok = new PaperTelegram(TOKEN, "42", MAPPER, (u, j) -> {
             bodies.add(MAPPER.readTree(j).path("text").asString());
-            assertThat(MAPPER.readTree(j).path("disable_web_page_preview").asBoolean()).isTrue();
+            assertThat(MAPPER.readTree(j).path("parse_mode").asString()).isEqualTo("HTML");
+            assertThat(MAPPER.readTree(j).path("link_preview_options").path("is_disabled").asBoolean()).isTrue();
             return new PaperTelegram.Reply(200, "{\"ok\":true}");
         });
         assertThat(ok.send("가".repeat(5_000))).isNull();
@@ -220,7 +236,7 @@ class PaperNotifyJobTest {
         Decision failed = new Decision(6, PaperBooks.CLAUDE, LocalDate.of(2026, 11, 2), RuleBookService.SCHEDULED, T0, "API_ERROR", null,
                 1, 13, null, null, null, null, null, MAPPER.createObjectNode(), null, "HTTP 529 overloaded", List.of(), false, 1L, 1, null);
         assertThat(PaperNotifications.decision(failed, us, List.of(), Map.of(), null)).contains("API 오류(API_ERROR)(재시도 1회)")
-                .contains("오류: HTTP 529 overloaded");
+                .contains("\n\n<b>오류</b>\nHTTP 529 overloaded");
         assertThat(PaperNotifications.timingName(PaperBooks.AT_1400, false)).isEqualTo("다음 세션 14:00 ET");
         assertThat(PaperNotifications.timingName(PaperBooks.MARKET, true)).isEqualTo("장중 시장가");
         Fill backfill = new Fill(1, 1, PaperBooks.CLAUDE, "SPY", "BUY", 3, 580.12, 580.0, 5, 1_740.36, T0, LocalDate.of(2026, 10, 23),
@@ -239,8 +255,8 @@ class PaperNotifyJobTest {
         Decision noTrade = new Decision(7, PaperBooks.CLAUDE, LocalDate.of(2026, 11, 2), RuleBookService.SCHEDULED, T0, "NO_TRADE", null, 1,
                 13, null, null, null, null, null, MAPPER.createObjectNode().put("summary", summary).put("noTradeReason", reason)
                 .put("targetEquityExposurePct", 62), null, null, List.of(), false, 1L, 0, null);
-        assertThat(PaperNotifications.decision(noTrade, us, List.of(), Map.of(), null)).contains("요약: " + summary)
-                .contains("새 주문 없음 — " + reason).doesNotContain("…");
+        assertThat(PaperNotifications.decision(noTrade, us, List.of(), Map.of(), null)).contains("<b>요약</b>\n" + summary)
+                .contains("<b>새 주문 없음</b>\n" + reason).doesNotContain("…");
         List<String> bodies = new ArrayList<>();
         PaperTelegram ok = new PaperTelegram(TOKEN, "42", MAPPER, (u, j) -> {
             bodies.add(MAPPER.readTree(j).path("text").asString());
@@ -250,5 +266,84 @@ class PaperNotifyJobTest {
         assertThat(ok.send(lines)).isNull();
         assertThat(bodies).hasSize(2).allSatisfy(body -> assertThat(body.length()).isLessThanOrEqualTo(PaperTelegram.MAX_CHARS));
         assertThat(String.join("\n", bodies)).isEqualTo(lines);
+    }
+
+    @Test
+    @DisplayName("서식 — 모델 글은 문장 끝·원 숫자 목록 앞에서만 줄을 바꾸고(글자·소수점·약어 그대로), 장중 확인 요청·주문 근거도 항목으로, 값의 <·>·&는 엔티티")
+    void readableParagraphs() {
+        Book us = store.books.get(PaperBooks.CLAUDE);
+        String summary = "직전 결정(10/30 RISK_OFF, 노출 20%) 대비 노출을 약 44%로 올린다. 바뀐 점: ① 브렌트 −11.6%로 유가 압력이 완화됐다 [사실]. "
+                + "② 나스닥 −1.37%인데 XLP는 고점 부근이다 [사실]. 공급 충격인지는 가를 수 없다 [확인 필요]. 앞의 ①과 ②를 합치면 U.S. 소비주가 낫다.";
+        assertThat(PaperNotifications.paragraphs(summary)).isEqualTo(String.join("\n",
+                "직전 결정(10/30 RISK_OFF, 노출 20%) 대비 노출을 약 44%로 올린다.",
+                "바뀐 점:",
+                "① 브렌트 −11.6%로 유가 압력이 완화됐다 [사실].",
+                "② 나스닥 −1.37%인데 XLP는 고점 부근이다 [사실].",
+                "공급 충격인지는 가를 수 없다 [확인 필요].",
+                "앞의 ①과 ②를 합치면 U.S. 소비주가 낫다."));
+        assertThat(PaperNotifications.paragraphs("  첫 줄.\n\n\n\n둘째 줄  ")).isEqualTo("첫 줄.\n\n둘째 줄");
+
+        ObjectNode response = MAPPER.createObjectNode().put("summary", "VIX < 20 & HY 3%p. 노출을 유지한다.").put("noTradeReason", "조건 미충족이다.");
+        response.putObject("checkpointPlan").put("session", "2026-11-04").put("atEt", "12:00").put("status", "PLANNED")
+                .put("reason", "갭이 크면 다시 본다. 아니면 그대로 둔다.");
+        Decision d = new Decision(8, PaperBooks.CLAUDE, LocalDate.of(2026, 11, 3), RuleBookService.SCHEDULED, T0, "NO_TRADE", null, 1, 13,
+                null, null, null, null, null, response, null, null, List.of(), false, 1L, 0, null);
+        assertThat(PaperNotifications.decision(d, us, List.of(), Map.of(), null)).isEqualTo(String.join("\n",
+                "<b>[모의매매 결정] Claude 계좌1 (미국)</b>",
+                "기준일 2026-11-03 · 정기 결정 · 주문 없음(NO_TRADE)",
+                "",
+                "<b>요약</b>",
+                "VIX &lt; 20 &amp; HY 3%p.",
+                "노출을 유지한다.",
+                "",
+                "<b>새 주문 없음</b>",
+                "조건 미충족이다.",
+                "",
+                "<b>장중 확인 요청</b>",
+                "세션 2026-11-04 12:00 ET · PLANNED",
+                "갭이 크면 다시 본다.",
+                "아니면 그대로 둔다."));
+
+        Order stop = new Order(9, PaperBooks.CLAUDE, null, "AAPL", "SELL", null, null, 1.0, "NEXT_OPEN", PaperBooks.SOURCE_STOP,
+                PaperBooks.ORDER_PENDING, null, MAPPER.createObjectNode().put("note", "고점 대비 −12% <스탑> 발동이다. 다음 시가에 판다."),
+                LocalDate.of(2026, 11, 3), T0, LocalDate.of(2026, 11, 4), null);
+        assertThat(PaperNotifications.order(stop, us, Map.of(), "https://example.invalid/?a=1&b=2")).isEqualTo(String.join("\n",
+                "<b>[모의매매 주문] Claude 계좌1 (미국) · 스탑</b>",
+                "매도 AAPL 전량 · 다음 세션 시가",
+                "",
+                "<b>근거</b>",
+                "고점 대비 −12% &lt;스탑&gt; 발동이다.",
+                "다음 시가에 판다.",
+                "",
+                "https://example.invalid/?a=1&amp;b=2/paper/us/holdings"));
+    }
+
+    @Test
+    @DisplayName("서식 — 텔레그램이 HTML을 거절하면(400) 태그를 떼고 엔티티를 되돌린 평문으로 한 번 더, 평문도 실패하면 그 사유, 400이 아니면 다시 보내지 않음")
+    void htmlRejectedFallsBackToPlain() {
+        assertThat(PaperTelegram.plain("<b>제목</b>\nVIX &lt; 20 &amp; 원문 &amp;lt;")).isEqualTo("제목\nVIX < 20 & 원문 &lt;");
+        List<String> modes = new ArrayList<>();
+        List<String> bodies = new ArrayList<>();
+        PaperTelegram fallback = new PaperTelegram(TOKEN, "42", MAPPER, (u, j) -> {
+            String mode = MAPPER.readTree(j).path("parse_mode").asString("");
+            modes.add(mode);
+            bodies.add(MAPPER.readTree(j).path("text").asString());
+            return mode.equals("HTML") ? new PaperTelegram.Reply(400, "{\"ok\":false,\"description\":\"Bad Request: can't parse entities\"}")
+                    : new PaperTelegram.Reply(200, "{\"ok\":true}");
+        });
+        assertThat(fallback.send("<b>제목</b>\nA &amp; B")).isNull();
+        assertThat(modes).containsExactly("HTML", "");
+        assertThat(bodies).containsExactly("<b>제목</b>\nA &amp; B", "제목\nA & B");
+
+        PaperTelegram bothFail = new PaperTelegram(TOKEN, "42", MAPPER,
+                (u, j) -> new PaperTelegram.Reply(400, "{\"ok\":false,\"description\":\"Bad Request: chat not found\"}"));
+        assertThat(bothFail.send("글")).isEqualTo("HTTP 400 — Bad Request: chat not found");
+        int[] calls = {0};
+        PaperTelegram busy = new PaperTelegram(TOKEN, "42", MAPPER, (u, j) -> {
+            calls[0]++;
+            return new PaperTelegram.Reply(429, "{\"ok\":false,\"description\":\"Too Many Requests\"}");
+        });
+        assertThat(busy.send("글")).isEqualTo("HTTP 429 — Too Many Requests");
+        assertThat(calls[0]).isEqualTo(1);
     }
 }
