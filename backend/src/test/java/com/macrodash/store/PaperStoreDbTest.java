@@ -2,7 +2,6 @@ package com.macrodash.store;
 
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.dao.DuplicateKeyException;
@@ -1070,7 +1069,6 @@ class PaperStoreDbTest {
     }
 
     @Test
-    @Disabled("QA-176 재현 — 수정 전: 선정 기준일로 찾는 질의가 상태를 보지 않아 일시정지 SKIPPED를 '그 분기 매수를 냈음'으로 셈")
     @DisplayName("QA-176: 선정 기준일로 찾을 때 일시정지로 남긴 SKIPPED는 세지 않고, NO_TRADE(이미 목표 비중)는 센다")
     void skippedDecisionIsNotTheQuarterBuy() {
         store.insertBookIfAbsent(book(BOOK, "규칙 책"));

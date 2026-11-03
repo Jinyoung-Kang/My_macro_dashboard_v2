@@ -2001,7 +2001,8 @@ public class PaperStore {
     /**
      * 한 책에서 그 종류들의 결정 중 그 선정(기준일 {@code selection_as_of})으로 낸 것이 있나 — 결정 작업이 "이 분기 재선정일 r의
      * 선정으로 매수 결정(REBALANCE·INITIAL)을 냈나"를 봅니다. 날짜가 아니라 선정으로 보는 것은, r에 선정을 건너뛰면 그날
-     * REBALANCE가 지난 선정으로(매수 없이) 남기 때문입니다. 종류가 비었거나 선정 기준일이 null이면 false.
+     * REBALANCE가 지난 선정으로(매수 없이) 남기 때문입니다. 일시정지로 남긴 SKIPPED도 세지 않습니다 — 주문을 내지 않았으므로 재개 뒤
+     * 다시 내야 합니다(QA-176). NO_TRADE(이미 목표 비중)는 셉니다. 종류가 비었거나 선정 기준일이 null이면 false.
      */
     public boolean hasDecisionWithSelection(String code, Collection<String> kinds, LocalDate selectionAsOf) {
         if (kinds == null || kinds.isEmpty() || selectionAsOf == null) {
@@ -2013,7 +2014,7 @@ public class PaperStore {
         args.addAll(kinds);
         String marks = String.join(", ", Collections.nCopies(kinds.size(), "?"));
         Boolean found = jdbc.queryForObject("SELECT EXISTS (SELECT 1 FROM paper_decisions WHERE book_code = ? "
-                + "AND selection_as_of = ? AND kind IN (" + marks + "))", Boolean.class, args.toArray());
+                + "AND selection_as_of = ? AND kind IN (" + marks + ") AND status <> 'SKIPPED')", Boolean.class, args.toArray());
         return Boolean.TRUE.equals(found);
     }
 

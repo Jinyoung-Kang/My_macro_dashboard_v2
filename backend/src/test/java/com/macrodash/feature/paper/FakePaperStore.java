@@ -841,7 +841,7 @@ class FakePaperStore extends PaperStore {
     @Override
     public boolean hasDecisionWithSelection(String code, java.util.Collection<String> kinds, LocalDate selectionAsOf) {
         return selectionAsOf != null && decisions.values().stream().anyMatch(d -> d.bookCode().equals(code)
-                && kinds.contains(d.kind()) && selectionAsOf.equals(d.selectionAsOf()));
+                && kinds.contains(d.kind()) && selectionAsOf.equals(d.selectionAsOf()) && !"SKIPPED".equals(d.status()));
     }
 
     @Override

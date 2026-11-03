@@ -12,7 +12,6 @@ import com.macrodash.store.PaperStore.Selection;
 import com.macrodash.store.Snapshot;
 import com.macrodash.support.InvalidRequestException;
 import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.env.YamlPropertySourceLoader;
@@ -390,7 +389,6 @@ class PaperDecisionJobTest {
     }
 
     @Test
-    @Disabled("QA-176 재현 — 수정 전: 재선정일 일시정지로 남긴 SKIPPED REBALANCE를 그 분기 매수로 세어 재개 뒤 따라잡기를 하지 않음")
     @DisplayName("QA-176: 재선정일에 일시정지였던 규칙 계좌는 그날 REBALANCE가 SKIPPED — 재개한 다음 결정 날에 그 분기 매수(REBALANCE)를 다시 낸다")
     void pausedReselectionIsRetriedAfterResume() {
         store.insertDecisionIfAbsent(new Decision(0, PaperBooks.RULES, FRI, "INITIAL", null, "OK", null, null, 1, FRI,
