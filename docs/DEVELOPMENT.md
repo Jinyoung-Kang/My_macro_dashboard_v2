@@ -382,7 +382,14 @@ journalctl -t my-macro-backup --since yesterday       # 결과(실패는 err)
 
 올라가는 곳은 백업 버킷의 `db/vultr/`(60일 만료는 `db/` 접두어의 수명주기 — 2026-11-03에 버킷 전체에서 좁힘, `archive/`는 만료 없음)입니다. 서버의 IAM 사용자는 `db/vultr/`에만 쓰고 `db/`는 읽기만 합니다.
 
+- 실패하면(QA-199) syslog err와 함께 서버 `.env`의 텔레그램 봇(`TELEGRAM_BOT_TOKEN`·`TELEGRAM_CHAT_ID`, 모의 매매 알림과 같은 봇)으로 'my-macro 서버 — 백업 실패: …' 한 줄을 보냅니다.
+  둘 중 하나라도 비면 보내지 않습니다. 토큰은 curl 인자가 아니라 stdin 설정으로 넘깁니다.
+- 성공하면 `backups/.last-s3-ok`(유닉스 초 · UTC 시각 · 올린 키)를 남기고, `deploy.sh` 끝 요약이 그 나이를 찍습니다 — 36시간이 넘었거나 없으면 '경고'
+  (cron이 빠진 경우는 텔레그램 알림도 없어 여기서만 보임). 이 기록이 생기기 전 판에서 처음 배포했으면 `bash scripts/vultr/backup-s3.sh`를 한 번 돌립니다.
+- `db/` 수명주기에는 '최근 N개 보존'이 없어, 실패를 60일 넘게 놓치면 `db/vultr/`의 서버 밖 사본이 모두 만료됩니다. 만료 없는 주간 사본은 `db/` 밖 접두어
+  (예: `archive/vultr-weekly/`)여야 하고 IAM 사용자 권한을 넓혀야 해(저장소 밖 자원) 이번에는 두지 않았습니다.
+
 ### 날마다 볼 것
 
-백엔드 ERROR(`make logs S=backend`), 수집 누락(`make status`), 메모리(`free -h`)·디스크(`deploy.sh` 끝, 128 GB), 백업(`journalctl -t my-macro-backup`),
+백엔드 ERROR(`make logs S=backend`), 수집 누락(`make status`), 메모리(`free -h`)·디스크(`deploy.sh` 끝, 128 GB), 백업(`journalctl -t my-macro-backup` — 실패는 텔레그램으로도 옴, 마지막 성공은 `deploy.sh` 끝),
 `tailscale status`에서 PC·휴대폰과 직접 연결인지(relay가 아님). AWS 예산 `my-macro-monthly-45usd`(계정 전체 — my-macro 자원으로 남은 것은 백업 버킷뿐).

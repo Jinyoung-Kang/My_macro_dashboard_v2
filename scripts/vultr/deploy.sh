@@ -17,7 +17,7 @@
 #      4 GB라 동시에 빌드하면 메모리가 모자랍니다(make up은 한꺼번에 빌드). caddy·postgres 이미지도 새로 받습니다.
 #   5. 배포 전 DB 덤프 backups/pre-deploy-YYYYmmdd-HHMMSS.sql(서버에만, 최근 BACKUP_KEEP개). 뜨지 못하면 배포하지 않습니다(QA-200).
 #   6. up -d(건강해질 때까지 기다림) → 스키마 적용(make migrate와 같은 반복 — QA-016·QA-118) → caddy 다시 만들기(바뀐 Caddyfile)
-#   7. 매달린 이미지·오래된 빌드 캐시 정리
+#   7. 매달린 이미지·오래된 빌드 캐시 정리. 끝 요약에 디스크와 마지막 S3 백업(backups/.last-s3-ok — 36시간 넘었거나 없으면 경고, QA-199)
 # 어느 단계든 실패하면 0이 아닌 값으로 끝납니다.
 # =============================================================================
 set -euo pipefail
@@ -133,5 +133,19 @@ docker compose ps --format 'table {{.Service}}\t{{.Status}}'
 echo ""
 echo "✓ 배포했습니다: $APP_VERSION — tailnet 안에서 https://my-macro-app.<tailnet>.ts.net(서버 .env의 PUBLIC_ORIGIN)"
 echo "   디스크: $(df -P / | awk 'NR == 2 {print $5}') 사용"
+# QA-199: 서버 밖 사본(S3 db/vultr/)을 마지막으로 올린 시각 — backup-s3.sh가 성공할 때 남깁니다. cron은 매일 06:45 KST라 36시간이 넘으면
+# 한 번 이상 놓친 것입니다. 실패는 텔레그램으로도 오지만 cron이 빠지면(crontab 유실·서버 재구성) 아무 신호가 없어 여기서 봅니다.
+last_s3="$(head -n 1 "${BACKUP_DIR:-backups}/.last-s3-ok" 2>/dev/null | cut -d' ' -f1)" || true
+case "$last_s3" in
+    '' | *[!0-9]*)
+        echo "경고: 마지막 S3 백업 기록(backups/.last-s3-ok)이 없습니다 — crontab -l과 journalctl -t my-macro-backup을 보세요(처음이면 bash scripts/vultr/backup-s3.sh를 한 번 돌리면 생김)." ;;
+    *)
+        age_h=$(( ($(date +%s) - last_s3) / 3600 ))
+        if [ "$age_h" -ge 36 ]; then
+            echo "경고: 마지막 S3 백업이 ${age_h}시간 전입니다(36시간 넘음) — journalctl -t my-macro-backup을 보세요."
+        else
+            echo "   마지막 S3 백업: ${age_h}시간 전"
+        fi ;;
+esac
 [ -z "$paper_off" ] ||
     echo "주의: 모의 매매 정기 작업이 꺼진 채 떴습니다(.env의 PAPER_ENABLED=false) — 정비가 끝났으면 그 줄을 지우고 다시 배포하세요."

@@ -7,6 +7,8 @@
 #   45 21 * * * /home/ubuntu/My_macro_dashboard_v2/scripts/vultr/backup-s3.sh
 #   0 14 * * 0 /home/ubuntu/My_macro_dashboard_v2/scripts/vultr/backup-s3.sh
 # 결과는 syslog(태그 my-macro-backup):  journalctl -t my-macro-backup
+# 실패하면 서버 .env의 텔레그램 봇(TELEGRAM_BOT_TOKEN·TELEGRAM_CHAT_ID — 모의 매매 알림과 같은 봇)으로 한 줄 알리고, 성공하면
+# backups/.last-s3-ok에 시각을 남깁니다 — deploy.sh가 그 시각이 36시간을 넘었거나 없으면 경고합니다(QA-199).
 #
 # make backup(backups/에 접두어별 최근 BACKUP_KEEP개 보존, ADR 0003)이 만든 파일 하나만 s3://<AWS_BACKUP_BUCKET>/db/vultr/에
 # 올립니다 — AWS 서버와 같은 버킷, 접두어로 구분(병행 중 AWS의 db/와 섞이지 않게). 60일 지난 객체는 db/ 아래에 걸린 수명주기가
@@ -24,9 +26,25 @@ export AWS_DEFAULT_REGION="${AWS_DEFAULT_REGION:-ap-northeast-2}"
 source "$(dirname "${BASH_SOURCE[0]}")/../db-common.sh"   # DB_NAME · BACKUP_DIR · env_file_value, 저장소 최상위로 이동
 
 tag=my-macro-backup
+# QA-199: 실패를 운영자에게 밀어서 알립니다 — syslog만으로는 journalctl을 보기 전까지 아무도 모르고, 그동안 db/ 수명주기(60일)가
+# 서버 밖 사본을 지워 갑니다. 둘 중 하나라도 비면 조용히 건너뜁니다. 토큰·채팅 ID는 curl 설정(stdin, -K -)으로 넘겨 프로세스 목록·로그에
+# 남기지 않고(출력도 버림), 알림이 실패해도 백업의 종료 코드(1)는 그대로입니다. 보내는 글은 fail의 사유 한 줄(.env 값은 이미 걸러 낸 것).
+notify_failure() {
+    local token chat
+    token="$(env_file_value TELEGRAM_BOT_TOKEN)"
+    chat="$(env_file_value TELEGRAM_CHAT_ID)"
+    [ -n "$token" ] && [ -n "$chat" ] || return 0
+    # curl 설정의 따옴표 값에 그대로 넣을 수 없는 글자가 있으면 보내지 않습니다(정상 토큰·채팅 ID에는 없음).
+    if [[ "$token$chat" =~ [[:space:]\"\\] ]]; then return 0; fi
+    command -v curl >/dev/null 2>&1 || return 0
+    printf 'url = "https://api.telegram.org/bot%s/sendMessage"\ndata-urlencode = "chat_id=%s"\n' "$token" "$chat" |
+        curl -sS --fail -o /dev/null --max-time 10 -K - --data-urlencode "text=my-macro 서버 — $1 (journalctl -t $tag)" >/dev/null 2>&1 ||
+        logger -t "$tag" -p user.warning "백업 실패 텔레그램 알림을 보내지 못했습니다" || true
+}
 fail() {
     logger -t "$tag" -p user.err "백업 실패: $*" || true
     echo "✗ 백업 실패: $*" >&2
+    notify_failure "백업 실패: $*" || true
     exit 1
 }
 
@@ -59,4 +77,9 @@ if ! upload="$(aws s3 cp --only-show-errors "$latest" "s3://$bucket/$key" 2>&1)"
 fi
 size="$(du -h "$latest" | cut -f1)"
 logger -t "$tag" "백업을 올렸습니다: s3://$bucket/$key ($size)" || true
+# QA-199: 마지막으로 서버 밖 사본을 올린 시각(유닉스 초 · UTC · 키 — 버킷 이름은 적지 않음). 쓰지 못해도 올리기는 끝났으므로 실패로 보지 않고,
+# 그러면 deploy.sh가 오래됐다고 알립니다.
+{ printf '%s %s %s\n' "$(date +%s)" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$key" > "$BACKUP_DIR/.last-s3-ok.tmp" &&
+    mv -f "$BACKUP_DIR/.last-s3-ok.tmp" "$BACKUP_DIR/.last-s3-ok"; } ||
+    logger -t "$tag" -p user.warning "마지막 성공 시각(backups/.last-s3-ok)을 남기지 못했습니다" || true
 echo "✓ s3://$bucket/$key ($size)"

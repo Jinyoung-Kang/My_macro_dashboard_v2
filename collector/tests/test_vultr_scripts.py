@@ -338,7 +338,6 @@ def _curl_config(fakes) -> str:
     return path.read_text(encoding="utf-8") if path.exists() else ""
 
 
-@pytest.mark.xfail(strict=True, reason="QA-199 재현 — 백업이 실패해도 syslog·stderr(cron이라 받는 사람 없음)에만 남고 운영자에게 알리지 않음")
 def test_QA199_backup_s3는_실패하면_서버_env의_텔레그램_봇으로_한_줄_알리고_비밀값은_인자에_남기지_않는다(backup_root, fakes):
     _with_telegram(backup_root)
     result = _backup(backup_root, fakes, FAKE_AWS_RC="1")
@@ -354,7 +353,6 @@ def test_QA199_backup_s3는_실패하면_서버_env의_텔레그램_봇으로_�
     assert f'url = "https://api.telegram.org/bot{TG_TOKEN}/sendMessage"' in config and f"chat_id={TG_CHAT}" in config
 
 
-@pytest.mark.xfail(strict=True, reason="QA-199 재현 — 올리기에 성공해도 마지막 성공 시각을 남기지 않아, cron이 빠지거나 계속 실패하는 것을 볼 곳이 없음")
 def test_QA199_backup_s3는_올리기에_성공하면_마지막_성공_시각을_남긴다(backup_root, fakes):
     started = int(time.time())
     result = _backup(backup_root, fakes)
@@ -365,7 +363,6 @@ def test_QA199_backup_s3는_올리기에_성공하면_마지막_성공_시각을
     assert fields[-1] == f"db/vultr/{new}", "올린 키(버킷 이름은 적지 않음)"
 
 
-@pytest.mark.xfail(strict=True, reason="QA-199 재현 — deploy.sh가 마지막 S3 백업 시각을 보지 않음")
 @pytest.mark.parametrize("age_hours", [None, 37])
 def test_QA199_deploy는_마지막_S3_백업이_없거나_36시간을_넘었으면_경고한다(server, fakes, age_hours):
     here, _ = server
@@ -376,6 +373,44 @@ def test_QA199_deploy는_마지막_S3_백업이_없거나_36시간을_넘었으�
     assert result.returncode == 0, "경고만 — 배포는 막지 않음"
     assert any(line.startswith("경고") and "S3 백업" in line for line in result.stdout.splitlines()), \
         "매일 06:45 KST 한 번이라 36시간이면 한 번 이상 놓친 것(cron이 빠지면 텔레그램 알림도 없음)"
+
+
+def test_QA199_deploy는_마지막_S3_백업이_36시간_안이면_경고_없이_나이만_찍는다(server, fakes):
+    here, _ = server
+    (here / "backups").mkdir(exist_ok=True)
+    (here / "backups/.last-s3-ok").write_text(f"{int(time.time()) - 3600} x db/vultr/x.sql\n", encoding="utf-8")
+    result = _deploy(server, fakes)
+    assert result.returncode == 0, result.stderr
+    assert "마지막 S3 백업: 1시간 전" in result.stdout
+    assert not any(line.startswith("경고") and "S3" in line for line in result.stdout.splitlines())
+
+
+@pytest.mark.parametrize("env_lines", ["", "TELEGRAM_BOT_TOKEN=\nTELEGRAM_CHAT_ID=1\n", f"TELEGRAM_BOT_TOKEN={TG_TOKEN}\n"])
+def test_QA199_backup_s3는_텔레그램_값이_하나라도_없으면_조용히_건너뛰고_실패_코드는_그대로(backup_root, fakes, env_lines):
+    with (backup_root / ".env").open("a", encoding="utf-8") as env_file:
+        env_file.write(env_lines)
+    result = _backup(backup_root, fakes, FAKE_AWS_RC="1")
+    assert result.returncode == 1
+    assert not any(c.startswith("curl ") for c in tools._calls(fakes))
+    assert any(c.startswith("logger -t my-macro-backup -p user.err") for c in tools._calls(fakes)), "syslog err는 그대로"
+
+
+def test_QA199_backup_s3는_텔레그램_알림이_실패해도_종료_코드를_바꾸지_않고_syslog에_남긴다(backup_root, fakes):
+    _with_telegram(backup_root)
+    result = _backup(backup_root, fakes, FAKE_AWS_RC="1", FAKE_CURL_RC="7")
+    assert result.returncode == 1
+    assert any(c.startswith("logger -t my-macro-backup -p user.warning") and "텔레그램" in c for c in tools._calls(fakes))
+    assert TG_TOKEN not in result.stdout + result.stderr + fakes[1].read_text(encoding="utf-8")
+
+
+def test_QA199_backup_s3는_make_backup이_실패해도_알리고_마지막_성공_시각은_그대로_둔다(backup_root, fakes):
+    _with_telegram(backup_root)
+    (backup_root / "backups/.last-s3-ok").write_text("1 x db/vultr/old.sql\n", encoding="utf-8")
+    result = _backup(backup_root, fakes, FAKE_MAKE_RC="1")
+    assert result.returncode == 1
+    curls = [c for c in tools._calls(fakes) if c.startswith("curl ")]
+    assert len(curls) == 1 and "make backup" in curls[0]
+    assert (backup_root / "backups/.last-s3-ok").read_text(encoding="utf-8") == "1 x db/vultr/old.sql\n"
 
 
 def test_backup_s3는_버킷_이름이_없으면_백업하지_않는다(backup_root, fakes):
