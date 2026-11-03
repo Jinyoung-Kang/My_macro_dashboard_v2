@@ -5,6 +5,7 @@ import com.macrodash.store.PaperStore.Decision;
 import com.macrodash.store.PaperStore.Fill;
 import com.macrodash.store.PaperStore.Order;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import tools.jackson.databind.node.ObjectNode;
@@ -17,6 +18,7 @@ import java.time.LocalDate;
 import java.time.ZoneId;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 
@@ -219,5 +221,29 @@ class PaperNotifyJobTest {
                 "equity_close", true, T0, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO);
         assertThat(PaperNotifications.fill(backfill, us, null, Map.of(), "")).contains("시점 — · 가격 출처 equity_close · 사후 체결")
                 .contains("3주 @ $580.12 = $1,740.36");
+    }
+
+    // QA-168: 사용자 보고(2026-11-03) — 결정 알림의 요약·주문 없음 사유가 '…'로 잘려 옴(요약 400자·사유 200자 상한, 응답 스키마는 1,200·600자).
+    @Test
+    @Disabled("QA-168 수정 전 — 결정 요약을 400자·주문 없음 사유를 200자에서 자르고, 4,000자를 넘는 글은 잘라서 한 통만 보냄")
+    @DisplayName("QA-168 결정 글은 요약·주문 없음 사유를 자르지 않고, 4,000자를 넘는 글은 줄 경계에서 나눠 모두 보낸다")
+    void qa168FullTextIsSplitNotCut() {
+        Book us = store.books.get(PaperBooks.CLAUDE);
+        String summary = "요약".repeat(550);
+        String reason = "사유".repeat(275);
+        Decision noTrade = new Decision(7, PaperBooks.CLAUDE, LocalDate.of(2026, 11, 2), RuleBookService.SCHEDULED, T0, "NO_TRADE", null, 1,
+                13, null, null, null, null, null, MAPPER.createObjectNode().put("summary", summary).put("noTradeReason", reason)
+                .put("targetEquityExposurePct", 62), null, null, List.of(), false, 1L, 0, null);
+        assertThat(PaperNotifications.decision(noTrade, us, List.of(), Map.of(), null)).contains("요약: " + summary)
+                .contains("새 주문 없음 — " + reason).doesNotContain("…");
+        List<String> bodies = new ArrayList<>();
+        PaperTelegram ok = new PaperTelegram(TOKEN, "42", MAPPER, (u, j) -> {
+            bodies.add(MAPPER.readTree(j).path("text").asString());
+            return new PaperTelegram.Reply(200, "{\"ok\":true}");
+        });
+        String lines = String.join("\n", Collections.nCopies(30, "가".repeat(199)));
+        assertThat(ok.send(lines)).isNull();
+        assertThat(bodies).hasSize(2).allSatisfy(body -> assertThat(body.length()).isLessThanOrEqualTo(PaperTelegram.MAX_CHARS));
+        assertThat(String.join("\n", bodies)).isEqualTo(lines);
     }
 }
