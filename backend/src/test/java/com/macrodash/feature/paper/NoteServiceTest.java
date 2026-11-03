@@ -3,7 +3,6 @@ package com.macrodash.feature.paper;
 import com.macrodash.store.PaperStore.Note;
 import com.macrodash.support.InvalidRequestException;
 import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import tools.jackson.databind.JsonNode;
@@ -243,7 +242,6 @@ class NoteServiceTest {
     }
 
     @Test
-    @Disabled("QA-181 재현 — 수정 전: 혼자 상한을 넘는 메모에서 full이 켜져 그보다 오래된 유효 메모까지 모두 omitted")
     @DisplayName("QA-181 혼자 글자 상한(6,000)을 넘는 메모는 빼되 더 오래된 유효 메모는 계속 실음 — 두 시장 같은 규칙")
     void oversizeSingleNoteDoesNotBlockOlder() {
         long older = market(LocalDate.of(2026, 10, 21), LocalDate.of(2026, 10, 28), "짧음", "짧은 메모");

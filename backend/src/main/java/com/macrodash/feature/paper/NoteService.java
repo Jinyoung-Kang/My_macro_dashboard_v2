@@ -55,7 +55,8 @@ public class NoteService {
     public static final String INSIGHT = "INSIGHT";
     static final List<String> KINDS = List.of(MARKET, INSIGHT);
     /** 시황 메모 본문 상한(F6) — 처음 4,000자, 2026-11-03 사용자 결정(내용에 한도를 두지 않음 — 상수는 실수 방지 안전선)으로 10배. 패킷에는
-     * 설정 {@code notesMaxCharsInPacket}(기본 6,000)까지만 실리므로 그보다 긴 메모는 통째로 빠집니다({@link #activeMarketNotes}). */
+     * 설정 {@code notesMaxCharsInPacket}(기본 6,000)까지만 실리므로 그보다 긴 메모는 통째로 빠집니다(더 오래된 메모는 계속 실음 —
+     * {@link #activeMarketNotes}). */
     static final int MARKET_MAX_CHARS = 40_000;
     /**
      * INSIGHT 본문 상한 — 명세에 수치가 없어 정한 값입니다. 처음 50,000자(OS 원문 한 편이 들어가되 제안 호출 입력이 지나치게 커지지 않게 —
@@ -302,7 +303,9 @@ public class NoteService {
     /**
      * 그 거래일 패킷에 넣을 시황 메모(클래스 설명). 최신부터 블록 단위로 쌓아 글자 수(코드 포인트, 구분자·줄바꿈 포함)가
      * {@code notesMaxCharsInPacket}을 넘는 첫 메모에서 멈춥니다 — 더 오래된 메모로 빈자리를 채우면 "최신부터"가 깨지고, 메모 하나를
-     * 중간에서 자르면 뜻이 바뀝니다. 뺀 메모 수는 {@code omitted}. 테이블이 없으면 빈 결과.
+     * 중간에서 자르면 뜻이 바뀝니다. 다만 블록 하나가 혼자 상한을 넘으면(빈 패킷에도 못 들어감) 그 메모만 빼고 다음(더 오래된) 메모로
+     * 넘어갑니다 — 거기서 멈추면 새 정보도 싣지 못한 채 다른 유효 메모까지 모두 빠집니다(QA-181). 뺀 메모 수는 {@code omitted}.
+     * 테이블이 없으면 빈 결과.
      */
     public PacketNotes activeMarketNotes(LocalDate asOf) {
         return activeMarketNotes(asOf, store.ready() ? settingsBody() : null);
@@ -333,7 +336,12 @@ public class NoteService {
             String title = stripDelimiters(FrameworkService.oneLine(n.title()));
             String body = stripDelimiters(FrameworkService.multiLine(n.body()));
             String block = block(n.id(), n.asOfDate(), n.expiresOn(), title, body);
-            int length = FrameworkService.codePoints(block) + (text.isEmpty() ? 0 : 1);
+            int blockLength = FrameworkService.codePoints(block);
+            if (blockLength > maxChars) {
+                omitted++;   // 혼자 넘는 메모 — 어느 패킷에도 못 들어가므로 멈추지 않고 건너뜀(메서드 설명)
+                continue;
+            }
+            int length = blockLength + (text.isEmpty() ? 0 : 1);
             if (full || used + length > maxChars) {
                 full = true;
                 omitted++;
