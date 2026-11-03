@@ -3,6 +3,7 @@ package com.macrodash.feature.paper;
 import com.macrodash.analytics.NewsEvents;
 import com.macrodash.support.InvalidRequestException;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import tools.jackson.databind.JsonNode;
@@ -129,6 +130,30 @@ class PaperSettingsServiceTest {
         assertThatThrownBy(() -> update("decisionDeadlineKst", "07:00")).isInstanceOf(InvalidRequestException.class)
                 .hasMessageContaining("decisionDeadlineKst");
         assertThat(update("decisionTimeKst", "06:30", "decisionDeadlineKst", "07:00").get("version")).isEqualTo(2);
+    }
+
+    @Test
+    @Disabled("QA-182 재현 — 수정 전: claude.checkpointAtEt는 HH:mm 형식만 봐 10:00~15:00 밖도 저장되고, 작업이 12:00 ET로 읽는 키가 화면 fallbacks에 없음")
+    @DisplayName("QA-182 계좌1 장중 확인 시각(claude.checkpointAtEt)은 읽는 쪽 범위(뉴욕 10:00~15:00) 밖이면 400·경계는 저장 — 손으로 고친 옛 행은 화면 fallbacks에 남기고 다른 키 저장은 막지 않음")
+    @SuppressWarnings("unchecked")
+    void claude1CheckpointTimeMustBeReadable() {
+        for (String outside : List.of("09:45", "09:59", "15:01", "15:30", "23:00")) {
+            assertThatThrownBy(() -> update(Claude1Checkpoint.AT_ET, outside)).as(outside)
+                    .isInstanceOf(InvalidRequestException.class).hasMessageContaining(Claude1Checkpoint.AT_ET)
+                    .hasMessageContaining("10:00~15:00");
+        }
+        assertThat(store.settings().orElseThrow().version()).as("아무것도 바꾸지 않음").isEqualTo(1);
+        assertThat(update(Claude1Checkpoint.AT_ET, "10:00").get("version")).isEqualTo(2);
+        assertThat(update(Claude1Checkpoint.AT_ET, "15:00").get("version")).isEqualTo(3);
+        assertThat(Claude1Checkpoint.from(body()).atEt()).isEqualTo(Claude1Checkpoint.LATEST);
+        assertThat((List<String>) service.view().get("fallbacks")).doesNotContain(Claude1Checkpoint.AT_ET);
+
+        // 손으로 고친 옛 행 — 작업은 범위 밖 값을 12:00 ET로 읽으므로 화면이 그 키를 기본값으로 읽는다고 보여야 함.
+        tools.jackson.databind.node.ObjectNode edited = (tools.jackson.databind.node.ObjectNode) body().deepCopy();
+        ((tools.jackson.databind.node.ObjectNode) edited.get("claude")).put("checkpointAtEt", "16:30");
+        store.saveSettings(edited, List.of(Claude1Checkpoint.AT_ET));
+        assertThat((List<String>) service.view().get("fallbacks")).contains(Claude1Checkpoint.AT_ET);
+        assertThat(update("slippageBp", 7).get("ok")).as("그 키를 고치지 않는 저장은 통과").isEqualTo(true);
     }
 
     @Test
