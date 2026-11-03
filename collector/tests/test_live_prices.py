@@ -14,6 +14,7 @@ tests/test_live_prices.py
 from __future__ import annotations
 
 import threading
+import time
 from datetime import datetime, timezone
 from types import SimpleNamespace
 
@@ -403,7 +404,6 @@ def _price_item(market: str, code: str, source: str) -> dict:
     return {"market": market, "code": code, "price": 1.0, "source": source}
 
 
-@pytest.mark.xfail(strict=True, reason="QA-187 재현 — 미국 출처가 느리면 국내 조회도 전역 잠금에서 기다림")
 def test_QA187_한_시장의_느린_출처가_다른_시장_조회를_막지_않는다(monkeypatch):
     entered, release = threading.Event(), threading.Event()
 
@@ -430,3 +430,30 @@ def test_QA187_한_시장의_느린_출처가_다른_시장_조회를_막지_않
         us.join(5)
         if kr.is_alive():
             kr.join(5)
+
+
+def test_같은_시장의_동시_조회는_잠금을_기다려_출처를_한_번만_부른다(monkeypatch):
+    calls: list = []
+    entered, release = threading.Event(), threading.Event()
+
+    def slow_us(codes, errors):
+        calls.append(list(codes))
+        entered.set()
+        release.wait(5)
+        return {code: _price_item("US", code, "naver_us") for code in codes}
+    monkeypatch.setattr(lp, "CHAINS", {"US": (slow_us,)})
+    results: list = []
+    first = threading.Thread(target=lambda: results.append(lp.prices([("US", "AAPL")])))
+    second = threading.Thread(target=lambda: results.append(lp.prices([("US", "AAPL"), ("US", "SPY")])))
+    first.start()
+    try:
+        assert entered.wait(2)
+        second.start()
+        time.sleep(0.2)   # 둘째가 잠금 앞에 설 시간 — 잠금이 없으면 이 사이에 출처를 한 번 더 부름
+        assert calls == [["AAPL"]], "같은 시장은 앞 조회가 끝날 때까지 기다림"
+    finally:
+        release.set()
+        first.join(5)
+        second.join(5)
+    assert calls == [["AAPL"], ["SPY"]], "앞 조회가 받은 AAPL은 캐시에서, 새 종목만 묻는다"
+    assert [set(r["items"]) for r in results] == [{"US:AAPL"}, {"US:AAPL", "US:SPY"}]

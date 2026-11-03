@@ -447,7 +447,13 @@ def _fetch(market: str, codes: list[str], errors: dict[str, str]) -> dict[str, d
 
 _cache: dict[tuple[str, str], tuple[float, dict | None]] = {}
 _cache_lock = threading.Lock()
-_fetch_lock = threading.Lock()
+_fetch_locks: dict[str, threading.Lock] = {}   # 시장(출처 사슬)마다 하나
+_fetch_locks_guard = threading.Lock()
+
+
+def _market_lock(market: str) -> threading.Lock:
+    with _fetch_locks_guard:
+        return _fetch_locks.setdefault(market, threading.Lock())
 
 
 def reset_cache() -> None:
@@ -459,18 +465,22 @@ def reset_cache() -> None:
 def prices(items: list[tuple[str, str]]) -> dict:
     """종목들의 지금 가격 — {fetchedAt, items: {'US:AAPL': 종목}, missing: ['KR:…'], errors: {출처: 사유}}. :data:`TTL_SECONDS` 캐시."""
     errors: dict[str, str] = {}
-    with _fetch_lock:   # 같은 순간의 여러 화면(SSE 구독)이 같은 종목을 두 번 묻지 않게 — 출처 응답은 수십~수백 ms
-        now = time.monotonic()
-        with _cache_lock:
-            stale = [key for key in items if key not in _cache or _cache[key][0] <= now]
-        by_market: dict[str, list[str]] = {}
-        for market, code in stale:
-            by_market.setdefault(market, []).append(code)
-        for market, codes in by_market.items():
-            found = _fetch(market, codes, errors)
+    by_market: dict[str, list[str]] = {}
+    for market, code in items:
+        by_market.setdefault(market, []).append(code)
+    for market, codes in by_market.items():
+        # 같은 순간의 여러 화면(SSE 구독)이 같은 종목을 두 번 묻지 않게 시장마다 잠금 하나 — 출처를 부르는 동안 같은 시장의 조회는 기다렸다
+        # 캐시를 읽고, 다른 시장(출처 사슬)의 조회는 기다리지 않습니다(QA-187 — 미국 보조 호스트 하나가 느리면 국내·지수 화면까지 멈췄음).
+        with _market_lock(market):
+            now = time.monotonic()
+            with _cache_lock:
+                stale = [code for code in codes if (market, code) not in _cache or _cache[(market, code)][0] <= now]
+            if not stale:
+                continue
+            found = _fetch(market, stale, errors)
             expires = time.monotonic() + TTL_SECONDS
             with _cache_lock:
-                for code in codes:
+                for code in stale:
                     _cache[(market, code)] = (expires, found.get(code))
     with _cache_lock:
         values = {key: _cache.get(key, (0.0, None))[1] for key in items}
