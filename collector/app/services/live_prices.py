@@ -197,22 +197,24 @@ def _naver_change(data: dict) -> float | None:
 
 def _naver_status(data: dict) -> tuple[str | None, dict | None]:
     """
-    (장 상태, 시간 외) — 정규장 OPEN이면 OPEN, 시간 외(국내 NXT·미국 프리·애프터)가 열려 있으면 PRE·POST와 그 가격·전일 대비·거래 시각·구분.
+    (장 상태, 시간 외) — 시간 외(국내 NXT·미국 프리·애프터)가 열려 있으면 PRE·POST와 그 가격·전일 대비·거래 시각·구분, 아니면 정규장 OPEN이면 OPEN.
+    시간 외를 먼저 봅니다: 국내 NXT 거래 종목은 정규장이 끝난 애프터마켓 중에도 marketStatus가 OPEN(상세 break)입니다(QA-169, 2026-11-03 실측).
     시간 외 등락의 부호는 정규장과 같은 규칙(부호 없는 글은 방향 코드로).
     """
     status = str(data.get("marketStatus") or "").upper()
-    if status == "OPEN":
-        return OPEN, None
     over = data.get("overMarketPriceInfo") or data.get("nxtOverMarketPriceInfo")
     if isinstance(over, dict) and str(over.get("overMarketStatus") or "").upper() == "OPEN":
         session = str(over.get("tradingSessionType") or "").upper()
-        price = _positive(over.get("overPriceRaw", over.get("overPrice")))
-        detail = None if price is None else {
-            "price": price, "change": _naver_change(over),
-            "changePct": _number(over.get("fluctuationsRatioRaw", over.get("fluctuationsRatio"))),
-            "tradedAt": _parse_time(over.get("localTradedAt")), "session": session or None,
-        }
-        return (PRE if session.startswith("PRE") else POST), detail
+        if session.startswith(("PRE", "AFTER")):
+            price = _positive(over.get("overPriceRaw", over.get("overPrice")))
+            detail = None if price is None else {
+                "price": price, "change": _naver_change(over),
+                "changePct": _number(over.get("fluctuationsRatioRaw", over.get("fluctuationsRatio"))),
+                "tradedAt": _parse_time(over.get("localTradedAt")), "session": session,
+            }
+            return (PRE if session.startswith("PRE") else POST), detail
+    if status == "OPEN":
+        return OPEN, None
     return (CLOSED if status else None), None
 
 

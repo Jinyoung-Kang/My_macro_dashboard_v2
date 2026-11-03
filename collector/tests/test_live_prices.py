@@ -132,7 +132,6 @@ NAVER_KR_NXT_AFTER = {"pollingInterval": 7000, "datas": [
 ]}
 
 
-@pytest.mark.xfail(strict=True, reason="QA-169 수정 전 — marketStatus OPEN을 먼저 보고 정규장으로 판정해 NXT 애프터마켓 가격을 버림")
 def test_QA169_정규장_뒤_NXT_애프터마켓이_열려_있으면_marketStatus가_OPEN이어도_POST와_시간_외_가격():
     out = lp.naver_from_polling(NAVER_KR_NXT_AFTER, "KR", lambda data: data["itemCode"])
     samsung, kodex = out["005930"], out["069500"]
