@@ -17,7 +17,6 @@ import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalTime;
-import java.time.ZoneId;
 import java.time.ZonedDateTime;
 import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
@@ -74,15 +73,10 @@ final class KrPaperMarket implements PaperMarket {
     /** 한국 수집 태스크가 KR 거래일 D의 값을 받기 시작하는 시각(KST) — 수집기 {@code kr_paper.KR_COLLECT_AFTER}(K17). */
     static final LocalTime COLLECT_AFTER = LocalTime.of(20, 30);
     /**
-     * 서버 밤 창이 여는 시각 — 미국 개장 10분 전 뉴욕 09:20 평일(사용자 결정 2026-10-29, v2 4단계 교체 때 적용 — 겨울 23:20·서머타임 22:20 KST).
-     * 그 뒤 첫 slow가 그날 한국 수집입니다. 늘 켜진 스택(로컬)은 20:30 뒤 첫 slow에 받아 이 기준이 넉넉한 쪽으로만 틀립니다.
-     */
-    static final LocalTime SERVER_BOOT_NEW_YORK = LocalTime.of(9, 20);
-    /** 서버 기동 일정의 시간대(EventBridge 일정 — 미국 거래일 달력이 아니라 시각만, 서머타임을 따라감). */
-    static final ZoneId SERVER_BOOT_ZONE = ZoneId.of("America/New_York");
-    /**
-     * 늦음 여유 — 다음 수집 예정에서 이만큼 지나면 늦음(명세 §4-9 'C1a에서 정한 것' 2시간 5분 = 기동 직후 slow와 그 다음 slow가 연달아
-     * 새 저장본을 내지 못한 뒤).
+     * 늦음 여유 — 다음 수집 예정({@link #COLLECT_AFTER})에서 이만큼 지나면 늦음(명세 §4-9 'C1a에서 정한 것' 2시간 5분). 수집기 slow는 1시간마다
+     * 돌아(COLLECTOR_SLOW_INTERVAL 기본 3600초, 위상은 수집기 기동 시각) 24시간 서버(ADR 0023)에서는 20:30 뒤 첫 slow가 21:30 전, 그 다음
+     * slow가 22:30 전에 돕니다 — 둘이 연달아 새 저장본을 내지 못한 뒤가 늦음입니다(밤에만 켜던 AWS 서버에서는 '기동 직후 slow와 그 다음
+     * slow'였고 값은 같음). 두 번째 slow가 22:2x에 시작해 오래 걸리면(slow 시간 상한 600초) 받기 전 몇 분 늦음으로 보일 수 있습니다.
      */
     static final Duration QUOTES_LATE_MARGIN = Duration.ofMinutes(125);
     /** 결정 시각·기한 기본값(KST, K6 — 설정 {@code kr.decisionTimeKst}·{@code kr.decisionDeadlineKst}의 기본값과 같음). */
@@ -270,9 +264,10 @@ final class KrPaperMarket implements PaperMarket {
 
     /**
      * 늦음이 되는 순간(결정 d5, 명세 §4-9 'C1a에서 정한 것'): 저장본이 덮는 세션 S(머리의 {@code session}, 없으면 수집 시각으로 수집기
-     * {@code kr_target_session}과 같은 식 — {@link #targetSession}) 다음 KR 거래일 D′의 다음 수집 예정 E = max(D′ 20:30 KST, D′ 서버 기동
-     * 뉴욕 09:20 — 두 시장의 평일 날짜가 같아 D′ 밤의 기동은 뉴욕 D′ 아침)에 여유 {@link #QUOTES_LATE_MARGIN}을 더한 순간 = <b>겨울 D′+1 01:25,
-     * 서머타임 D′+1 00:25 KST</b>(명세 §9 F4 — 그 전에는 21:55 기동 고정으로 D′+1 00:00). 금요일 저장본은 화요일 새벽부터 늦음이고(주말 없음),
+     * {@code kr_target_session}과 같은 식 — {@link #targetSession}) 다음 KR 거래일 D′의 다음 수집 예정 E = D′ 20:30 KST({@link #COLLECT_AFTER})에
+     * 여유 {@link #QUOTES_LATE_MARGIN}을 더한 순간 = <b>D′ 22:35 KST</b>(겨울·서머타임 같음). 24시간 서버(ADR 0023, 2026-11-03)로 명세 §9 F4를
+     * 되돌린 것입니다 — 밤에만 켜던 AWS 서버에서는 E = max(D′ 20:30, D′ 서버 기동 뉴욕 09:20)라 겨울 D′+1 01:25·서머타임 00:25였고, 그 전에는
+     * 21:55 기동 고정으로 D′+1 00:00이었습니다. 금요일 저장본은 월요일 22:35부터 늦음이고(주말 없음),
      * 휴장이 끼면 D′이 그만큼 뒤로 갑니다. 한국 저장본은 한 번 다 받으면 그 밤 다시 쓰지 않아 수집 시각이 하루 넘게 그대로인 것이 정상이라
      * 미국식 '나이 > 고정 시간'을 쓰지 않습니다.
      *
@@ -282,9 +277,7 @@ final class KrPaperMarket implements PaperMarket {
     public Instant quotesLateAt(Instant collectedAt, LocalDate session, TradingCalendar calendar) {
         LocalDate covered = session != null ? session : targetSession(collectedAt, calendar);
         LocalDate next = calendar.nextTradingDay(covered);
-        Instant collect = ZonedDateTime.of(next, COLLECT_AFTER, KrxCalendar.SEOUL).toInstant();
-        Instant window = ZonedDateTime.of(next, SERVER_BOOT_NEW_YORK, SERVER_BOOT_ZONE).toInstant();
-        return (collect.isAfter(window) ? collect : window).plus(QUOTES_LATE_MARGIN);
+        return ZonedDateTime.of(next, COLLECT_AFTER, KrxCalendar.SEOUL).toInstant().plus(QUOTES_LATE_MARGIN);
     }
 
     /**

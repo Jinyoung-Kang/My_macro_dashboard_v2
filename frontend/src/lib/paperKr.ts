@@ -310,7 +310,7 @@ export function krCollectionRows(
       key: "quotes", item: "관측치", source: "토스증권 · kr_paper_quotes",
       basis: `세션 ${dateOr(q.session)} · U 기준일 ${dateOr(q.universeDate)}`,
       collectedAt: formatKst(q.collectedAtKst), scope: `범위 ${count(q.scope)}종목${received}`,
-      ...lateState(q.available, q.stale, q.staleReason, "다음 수집 예정(다음 KR 거래일 서버 창) + 2시간 5분을 넘김"),
+      ...lateState(q.available, q.stale, q.staleReason, "다음 수집 예정(다음 KR 거래일 20:30) + 2시간 5분을 넘김"),
     });
   }
   const f = collection.flows;
@@ -321,7 +321,7 @@ export function krCollectionRows(
       collectedAt: formatKst(f.collectedAtKst),
       scope: `범위 ${count(f.scope)} · 정상 ${count(f.ok)}(세션 기록 없음 ${count(f.sessionMiss)}) · 기록 없음 ${count(f.noRecords)} · `
         + `이어받음 ${count(f.carried)} · 항목 없음 ${count(f.missing)}`,
-      ...lateState(f.available, f.stale, f.staleReason, "다음 수집 예정(다음 KR 거래일 서버 창) + 2시간 5분을 넘김"),
+      ...lateState(f.available, f.stale, f.staleReason, "다음 수집 예정(다음 KR 거래일 20:30) + 2시간 5분을 넘김"),
     });
   }
   const u = collection.universe;

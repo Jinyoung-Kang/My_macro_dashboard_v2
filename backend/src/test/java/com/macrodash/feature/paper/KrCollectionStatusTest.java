@@ -40,7 +40,7 @@ import static org.mockito.Mockito.when;
  */
 class KrCollectionStatusTest {
 
-    /** 금요일 세션 — 다음 수집 예정은 월요일(11-02) 서버 기동(뉴욕 09:20 = 겨울 23:20 KST)이라 늦음은 11-03 01:25부터. */
+    /** 금요일 세션 — 다음 수집 예정은 월요일(11-02) 20:30 KST라 늦음은 11-02 22:35부터. */
     private static final LocalDate SESSION = LocalDate.of(2026, 10, 30);
     private static final Instant COLLECTED = kst("2026-10-30T22:05");
 
@@ -121,15 +121,15 @@ class KrCollectionStatusTest {
     }
 
     @Test
-    @DisplayName("관측치 늦음 경계 — 금요일 세션은 월요일 서버 기동(뉴욕 09:20 = 겨울 23:20 KST) + 2시간 5분(11-03 01:25)부터 늦음, 세션·기준일·범위 수는 머리 칸 그대로(codes는 메타로 뺌)")
+    @DisplayName("관측치 늦음 경계 — 금요일 세션은 월요일 수집 예정(20:30 KST) + 2시간 5분(11-02 22:35)부터 늦음, 세션·기준일·범위 수는 머리 칸 그대로(codes는 메타로 뺌)")
     void quotesLatenessFollowsTheMarketRule() {
         stubQuotes(COLLECTED, SESSION);
 
-        Map<String, Object> before = part(view(kst("2026-11-03T01:24")), "quotes");
+        Map<String, Object> before = part(view(kst("2026-11-02T22:34")), "quotes");
         assertThat(before).containsEntry("available", true).containsEntry("collectedAtKst", "2026-10-30 22:05 KST")
                 .containsEntry("session", "2026-10-30").containsEntry("universeDate", "2026-10-29")
                 .containsEntry("scope", 3).containsEntry("stale", false).containsEntry("staleReason", null);
-        assertThat(part(view(kst("2026-11-03T01:25")), "quotes")).containsEntry("stale", true);
+        assertThat(part(view(kst("2026-11-02T22:35")), "quotes")).containsEntry("stale", true);
         verify(reader, never()).readStored(Datasets.SNAP_KR_PAPER_QUOTES);
     }
 
@@ -156,12 +156,12 @@ class KrCollectionStatusTest {
         when(reader.readStored(Datasets.SNAP_KR_PAPER_FLOWS_STATUS))
                 .thenReturn(Optional.of(snapshot(Datasets.SNAP_KR_PAPER_FLOWS_STATUS, payload, kst("2026-10-30T22:10"))));
 
-        Map<String, Object> flows = part(view(kst("2026-11-02T22:00")), "flows");
+        Map<String, Object> flows = part(view(kst("2026-11-02T22:34")), "flows");
         assertThat(flows).containsEntry("task", "kr_paper_flows").containsEntry("dataset", "kr.paper_flows.status")
                 .containsEntry("available", true).containsEntry("session", "2026-10-30").containsEntry("scope", 5)
                 .containsEntry("ok", 2).containsEntry("sessionMiss", 1).containsEntry("noRecords", 1)
                 .containsEntry("carried", 1).containsEntry("missing", 1).containsEntry("stale", false);
-        assertThat(part(view(kst("2026-11-03T01:25")), "flows")).containsEntry("stale", true);
+        assertThat(part(view(kst("2026-11-02T22:35")), "flows")).containsEntry("stale", true);
     }
 
     @Test
