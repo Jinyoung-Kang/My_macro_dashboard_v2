@@ -114,6 +114,34 @@ def test_네이버_국내는_부호_없는_글을_방향_코드로_NXT_시간_�
     assert kodex["tradedAt"] == "2026-11-03T01:15:02Z"
 
 
+# QA-169: 실제 응답(2026-11-03 15:51 KST, NXT 애프터마켓 중) — 정규장이 끝났는데 NXT 거래 종목은 marketStatus가 OPEN(상세 break)이고
+# 시간 외 가격은 overMarketPriceInfo(AFTER_MARKET·OPEN)에 옵니다. NXT에 없는 종목(069500)은 CLOSE·시간 외 없음.
+NAVER_KR_NXT_AFTER = {"pollingInterval": 7000, "datas": [
+    {"itemCode": "005930", "closePrice": "219,500", "closePriceRaw": "219500", "compareToPreviousClosePrice": "-9,500",
+     "compareToPreviousPrice": {"code": "5", "text": "하락", "name": "FALLING"}, "fluctuationsRatio": "-4.15",
+     "localTradedAt": "2026-11-03T15:30:00+09:00", "marketStatus": "OPEN", "marketSessionType": "regularMarket",
+     "marketStatusDetailType": "break", "stockExchangeType": {"code": "KS", "delayTime": 0},
+     "overMarketPriceInfo": {"tradingSessionType": "AFTER_MARKET", "overMarketStatus": "OPEN", "overPrice": "220,000",
+                             "compareToPreviousPrice": {"code": "5", "text": "하락", "name": "FALLING"},
+                             "compareToPreviousClosePrice": "-9,000", "fluctuationsRatio": "-3.93",
+                             "localTradedAt": "2026-11-03T15:51:20.641463+09:00"}},
+    {"itemCode": "069500", "closePrice": "89,325", "compareToPreviousClosePrice": "-3,620",
+     "compareToPreviousPrice": {"code": "5", "text": "하락", "name": "FALLING"}, "fluctuationsRatio": "-3.89",
+     "localTradedAt": "2026-11-03T15:30:00+09:00", "marketStatus": "CLOSE", "marketSessionType": "regularMarket",
+     "marketStatusDetailType": "close", "overMarketPriceInfo": None},
+]}
+
+
+@pytest.mark.xfail(strict=True, reason="QA-169 수정 전 — marketStatus OPEN을 먼저 보고 정규장으로 판정해 NXT 애프터마켓 가격을 버림")
+def test_QA169_정규장_뒤_NXT_애프터마켓이_열려_있으면_marketStatus가_OPEN이어도_POST와_시간_외_가격():
+    out = lp.naver_from_polling(NAVER_KR_NXT_AFTER, "KR", lambda data: data["itemCode"])
+    samsung, kodex = out["005930"], out["069500"]
+    assert samsung["status"] == "POST" and samsung["price"] == 219500 and samsung["change"] == -9500
+    assert samsung["overPrice"] == 220000 and samsung["overChange"] == -9000 and samsung["overChangePct"] == -3.93
+    assert samsung["overSession"] == "AFTER_MARKET" and samsung["overTradedAt"] == "2026-11-03T06:51:20.641463Z"
+    assert kodex["status"] == "CLOSED" and kodex["overPrice"] is None
+
+
 def test_다음은_KST_거래_시각을_UTC로_하락은_음수_마감은_CLOSED():
     out = lp.daum_from_quote("005930", DAUM)
     assert out["price"] == 230000 and out["change"] == -5000 and out["changePct"] == pytest.approx(-2.22222222)
