@@ -1,6 +1,6 @@
 /**
  * 장중 시세 카드(LiveValuationCard) — 고정하는 규칙
- *  - 계좌 표는 없고(계좌 숫자는 개요의 지금 값), 고른 계좌(bookCode — 없거나 응답에 없으면 첫 계좌)의 종목 장중가와 기준 시각
+ *  - 계좌 표는 없고(계좌 숫자는 개요의 지금 값), 고른 계좌(bookCode — 없거나 응답에 없으면 첫 계좌)의 종목 장중가와 기준 시각·평단
  *  - 서버가 새 시세를 요청한 응답이면(refreshRequested) 20초 뒤 한 번만 더 읽는다(되풀이 없음)
  *  - 간격 선택(끄기·5·10·30초·1분~3시간 — 실시간 시세 주기, lib/livePrices)은 이 브라우저에 기억되고(기본 1시간, 2026-11-03), 장 밖에서는 다시
  *    읽지 않는다. 계좌 숫자의 장중 저장본은 1분보다 짧게 다시 읽지 않는다(종목 가격만 실시간 시세 — SSE, 시험 환경에는 EventSource가 없음)
@@ -84,6 +84,9 @@ describe("정규장", () => {
     expect(within(positions).getByText("AAA")).toBeTruthy();
     expect(within(positions).getByText("+2.44%")).toBeTruthy();
     expect(within(positions).getByText("장중 10-30 23:58")).toBeTruthy();
+    // 그 계좌의 평균 단가(사용자 요청 2026-11-03) — 보유 표와 같은 칸 이름
+    expect(within(positions).getByRole("columnheader", { name: "평단(달러)" })).toBeTruthy();
+    expect(within(positions).getByText("400.0000")).toBeTruthy();
     expect(screen.getByText(/보유 종목 — 계좌 행을 누르면 그 계좌로 바뀝니다/)).toBeTruthy();
     expect(screen.getByText("정규장 동안 종목 가격은 1시간마다 서버가 보내 주고(실시간 시세), 계좌 숫자는 1시간마다 다시 읽습니다(이 화면을 보는 동안만)."))
       .toBeTruthy();

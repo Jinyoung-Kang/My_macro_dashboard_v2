@@ -87,11 +87,11 @@ describe("장 상태 문구", () => {
 });
 
 describe("종목 줄", () => {
-  it("고른 계좌의 종목 — 가격 기준(장중·마지막 관측)과 시각·직전 종가 대비·평균 단가 대비·비중", () => {
+  it("고른 계좌의 종목 — 평균 단가, 가격 기준(장중·마지막 관측)과 시각·직전 종가 대비·평균 단가 대비·비중", () => {
     const response = { available: true, books: [book(), book({ code: "rules", label: "규칙 계좌", positionCount: 0, positions: [] })] };
     const view = livePositionsFor(response, "claude");
     expect(view).toMatchObject({ code: "claude", label: "Claude 계좌" });
-    expect(view?.positions[0]).toMatchObject({ ticker: "AAA", price: "420.0000", priceAt: "장중 10-30 23:58", live: true,
+    expect(view?.positions[0]).toMatchObject({ ticker: "AAA", avgCost: "400.0000", price: "420.0000", priceAt: "장중 10-30 23:58", live: true,
       dayText: "+2.44%", returnText: "+5.00%", weight: "42.0%" });
     expect(view?.positions[1]).toMatchObject({ priceAt: "마지막 관측 10-30 06:05", live: false, dayText: "—" });
     expect(livePositionsFor(response, "rules")).toEqual({ code: "rules", label: "규칙 계좌", positions: [] });
@@ -107,8 +107,8 @@ describe("종목 줄", () => {
   });
 
   it("모르는 값은 —, 한국은 원 정수", () => {
-    expect(livePositionView({ ...book().positions[0], price: 71000, priceBasis: null, priceAtKst: null }, "KR"))
-      .toMatchObject({ price: "71,000", priceAt: "—" });
+    expect(livePositionView({ ...book().positions[0], avgCost: 70250.5, price: 71000, priceBasis: null, priceAtKst: null }, "KR"))
+      .toMatchObject({ avgCost: "70,251", price: "71,000", priceAt: "—" });
     expect(livePositionView({ ...book().positions[0], weightPct: null, returnPct: null, dayChangePct: null }))
       .toMatchObject({ weight: "—", returnText: "—", dayText: "—" });
   });
@@ -121,13 +121,14 @@ describe("종목 줄", () => {
     };
     const view = livePositionsFor({ available: true, books: [book()] }, "claude", "US", { "US:AAA": realtime });
     expect(view?.positions[0]).toMatchObject({
-      price: "440.0000", priceAt: "실시간 23:58:07", live: true, realtime: true, returnText: "+10.00%", dayText: "+7.32%", weight: "42.0%",
+      avgCost: "400.0000", price: "440.0000", priceAt: "실시간 23:58:07", live: true, realtime: true, returnText: "+10.00%", dayText: "+7.32%",
+      weight: "42.0%",
     });
     expect(view?.positions[0].priceTitle).toBe("실시간 Yahoo · 기준 23:58:07 KST · 정규장");
     expect(view?.positions[1]).toMatchObject({ realtime: false, priceTitle: null, priceAt: "마지막 관측 10-30 06:05" });
     // 등락률이 없으면 직전 종가로 셈, 평단을 모르면 "—"
     const noPct = livePositionView({ ...book().positions[0], avgCost: null }, "US", { ...realtime, changePct: null });
-    expect(noPct).toMatchObject({ dayText: "+7.32%", returnText: "—" });
+    expect(noPct).toMatchObject({ avgCost: "—", dayText: "+7.32%", returnText: "—" });
     // 애프터장이 열려 있으면 그 가격과 이름(사용자 요청 2026-11-03)
     const after = livePositionView(book().positions[0], "US", {
       ...realtime, status: "POST", overPrice: 450, overChange: 10, overChangePct: 2.27, overTradedAt: "2026-10-30T21:10:00Z", overSession: "AFTER_MARKET",

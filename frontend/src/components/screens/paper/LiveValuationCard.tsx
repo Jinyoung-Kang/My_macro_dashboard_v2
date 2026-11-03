@@ -164,6 +164,13 @@ export function LiveValuationCard({
   const positionColumns: Column<LivePositionView>[] = [
     { key: "ticker", header: "종목", rowHeader: true, cell: (row) => <TickerQuickView market={market} code={row.ticker} />, className: "whitespace-nowrap font-semibold" },
     { key: "qty", header: "수량", align: "right", cell: (row) => <span className="tabular-nums">{row.qty}</span> },
+    // 그 계좌의 평균 단가(보유 표의 평단 칸과 같은 값·같은 이름 — 사용자 요청 2026-11-03)
+    {
+      key: "avgCost",
+      header: market === "KR" ? "평단(원)" : "평단(달러)",
+      align: "right",
+      cell: (row) => <span className="tabular-nums">{row.avgCost}</span>,
+    },
     {
       key: "price",
       header: "가격",

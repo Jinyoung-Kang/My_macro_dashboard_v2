@@ -116,6 +116,8 @@ export function livePositionsFor(
 export interface LivePositionView {
   ticker: string;
   qty: string;
+  /** 그 계좌의 평균 단가(평단 — 장부 값, 실시간 시세와 무관). 모르면 "—". */
+  avgCost: string;
   price: string;
   /** "실시간 23:58:07"·"장중 23:58"·"마지막 관측 10-30 06:15"·"—" */
   priceAt: string;
@@ -132,13 +134,14 @@ export interface LivePositionView {
 }
 
 /**
- * 종목 한 줄 — 가격 기준(장중·마지막 관측)과 시각, 평균 단가 대비·직전 종가 대비, 비중. 실시간 시세(``realtime``)가 있으면 가격·기준 시각·평균 단가
+ * 종목 한 줄 — 평균 단가(평단, 사용자 요청 2026-11-03), 가격 기준(장중·마지막 관측)과 시각, 평균 단가 대비·직전 종가 대비, 비중. 실시간 시세(``realtime``)가 있으면 가격·기준 시각·평균 단가
  * 대비·직전 종가 대비를 그 값으로 다시 셈합니다(비중은 서버 평가 그대로 — 계좌 숫자는 개요의 지금 값이 맡음).
  */
 export function livePositionView(position: PaperLivePosition, market: PaperMarketCode = "US", realtime?: LivePrice | null): LivePositionView {
   const at = shortStamp(position.priceAtKst);
   const live = position.priceBasis === "LIVE";
   const weight = position.weightPct === null ? EMPTY : `${formatNumber(position.weightPct, 1)}%`;
+  const avgCost = formatSharePriceFor(position.avgCost, market);
   if (realtime && realtime.price > 0) {
     // 프리장·애프터장이 열려 있으면 그 가격(lib/livePrices liveShown)
     const shown = liveShown(realtime);
@@ -148,6 +151,7 @@ export function livePositionView(position: PaperLivePosition, market: PaperMarke
     return {
       ticker: position.ticker,
       qty: formatNumber(position.qty, 0),
+      avgCost,
       price: formatSharePriceFor(shown.price, market),
       priceAt: `${shown.session ?? "실시간"} ${tradedAtText(shown.tradedAt)}`,
       live: true,
@@ -163,6 +167,7 @@ export function livePositionView(position: PaperLivePosition, market: PaperMarke
   return {
     ticker: position.ticker,
     qty: formatNumber(position.qty, 0),
+    avgCost,
     price: formatSharePriceFor(position.price, market),
     priceAt: at === EMPTY || position.priceBasis === null ? EMPTY : live ? `장중 ${at}` : `마지막 관측 ${at}`,
     live,
