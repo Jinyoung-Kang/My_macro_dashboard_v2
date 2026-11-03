@@ -271,8 +271,8 @@ git remote prune origin
 
 | 증상 | 원인 / 해결 |
 |---|---|
-| `git push`가 `Permission to … denied` (403) | 저장소 권한이 아니라 **맥에 저장된 GitHub 토큰**이 만료됐거나 쓰기 권한이 없습니다. 이 저장소는 공개라 받기(`make update`)는 토큰 없이도 되고 push만 이 토큰을 씁니다 — 토큰 만료이거나 쓰기 권한(Contents: Read and write) 문제입니다. 아래 순서로 해결 |
-| `refusing to allow a Personal Access Token to … workflow` | `.github/workflows/`를 고친 경우입니다. 토큰 설정에서 `workflow` 권한만 체크하면 됩니다 |
+| `git push`가 `Permission to … denied` (403) | 저장소 권한이 아니라 **이 PC의 gh CLI에 저장된 GitHub 토큰**(git은 `gh auth git-credential`로 받음)이 만료됐거나 쓰기 권한이 없습니다. 이 저장소는 공개라 받기(`make update`)는 토큰 없이도 되고 push만 이 토큰을 씁니다 — 토큰 만료이거나 쓰기 권한(Contents: Read and write) 문제입니다. 아래 순서로 해결 |
+| `refusing to allow a Personal Access Token to … workflow` | `.github/workflows/`를 고친 경우입니다. `gh auth refresh -h github.com -s workflow`로 토큰에 `workflow` 권한만 더하면 됩니다 |
 | `Permission denied (publickey)` | 원격이 SSH인데 키가 없습니다. `git remote -v` 확인 후 HTTPS로 변경 |
 | `make update`가 `수정 중인 파일이 있어 당기지 않았습니다` | `git status` 확인 후 `git restore <파일>`(버리기) 또는 `git stash`(보관) |
 | `make update`가 `받지 못했습니다` + `untracked working tree files would be overwritten` | 받는 코드가 새로 만드는 파일과 같은 이름의, git이 추적하지 않는 파일이 이 폴더에 있습니다. 출력에 나온 파일을 다른 곳으로 옮기거나 지운 뒤 다시 `make update` |
@@ -281,17 +281,17 @@ git remote prune origin
 **403 해결 순서**
 
 ```bash
-# 1. 키체인의 낡은 값 삭제
-printf "protocol=https\nhost=github.com\n\n" | git credential-osxkeychain erase
+# 1. 로그인 상태와 토큰 권한(repo·workflow) 확인
+gh auth status
 
-# 2. GitHub Settings → Developer settings → Personal access tokens
-#    classic + repo 권한  (또는 fine-grained + 이 저장소의 Contents: Read and write)
+# 2. 만료됐거나 권한이 모자라면 다시 로그인(브라우저 또는 코드 입력)
+gh auth login -h github.com -p https -s repo,workflow
 
-# 3. 다시 push — 비밀번호 칸에 토큰을 붙여넣습니다
+# 3. git이 gh의 토큰을 쓰게(처음 한 번 — ~/.gitconfig에 credential.https://github.com.helper가 생김)
+gh auth setup-git
+
+# 4. 다시 push
 git push origin main
-
-# 4. 사용자 이름을 매번 치지 않으려면
-git config credential.https://github.com.username <아이디>
 ```
 
 ---

@@ -3,7 +3,7 @@
 글로벌 매크로 지표 · 연준 순유동성 · 섹터 로테이션 · CFTC COT · KRX 파생 ·
 SEC 13F · 국내 수급을 **한 화면에서** 보는 개인용 대시보드입니다. 운영자 전용
 모의 알고리즘 매매도 들어 있습니다 — 미국(규칙·Claude 계좌1·SPY·60/40 네 계좌 + 체결 시점 실험 Claude 계좌2 — 장중 확인 최대 한 번(MINUTE·HOURLY), $100k씩)과 한국(규칙·Claude·KODEX 200·60/40 네 계좌,
-1억 원씩 — 출발일 `PAPER_KR_START_DATE`를 정하면 출발, 서버 출발은 v2 4단계 교체 뒤).
+1억 원씩 — 출발일 `PAPER_KR_START_DATE`를 정하면 출발, 서버는 2026-10-30 출발).
 맥에서 Docker 한 줄로 띄우고, 모의 매매가 도는 운영본은 Vultr 서울의 서버 한 대(24시간, 접속은 Tailscale)에 둡니다(2026-11-03 02:30 KST에 AWS EC2에서 옮김 — ADR 0023).
 
 > 이 저장소(`My_macro_dashboard_v2`)는 2026-10-26에 `My_macro_dashboard_v1`에서 전체 이력으로 갈라져 나왔습니다 — 화면 전면 개편과
@@ -48,7 +48,7 @@ git clone https://github.com/Jinyoung-Kang/My_macro_dashboard_v2.git \
   ~/Projects/My_macro_dashboard_v2
 cd ~/Projects/My_macro_dashboard_v2
 
-make setup     # .env 생성 + 세션 서명 키 자동 생성
+make setup     # .env 생성 + 수집기 내부 토큰·운영자 비밀번호 자동 생성
 make up        # 전체 기동 (최초 빌드 5~10분)
 make collect   # 첫 수집 — 이걸 해야 화면에 숫자가 찹니다
 
@@ -397,7 +397,7 @@ ssh ubuntu@my-macro-app                    # 서버 셸(Tailscale SSH) — 그 �
 | LS `서버에 접속하지 못했습니다` | 키 문제가 아니라 망 문제입니다 |
 | LS `OAuth 토큰 발급 거절` | 이때가 키 문제입니다. LS 홈에서 "Open API" 사용등록 확인 |
 | 수집기 로그 첫 줄 `KRX 로그인 실패` | pykrx가 import할 때 찍는 문구입니다. 우리 앱 오류가 아닙니다 |
-| `git push`가 403 | 맥에 저장된 GitHub 토큰 문제입니다 → [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) |
+| `git push`가 403 | 이 PC에 저장된 GitHub 토큰(gh CLI) 문제입니다 → [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) |
 
 > 전체 증상 표와 맥 환경 문제는 [docs/LOCAL_SETUP.md](docs/LOCAL_SETUP.md),
 > Git 관련은 [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md)에 있습니다.

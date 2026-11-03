@@ -73,10 +73,10 @@ PostgreSQL ← 수집기(FastAPI, `collector/`). Docker Compose 네 컨테이너
   CI 가 GitHub 쪽 사정으로 취소되면("job was not acquired by Runner") 취소된 job 만 다시 돌린다 — 코드 실패와 구분해 보고한다.
 - 돌고 있는 코드를 바꾸는 변경이면 보고에 "`make up` 하세요"를 넣는다(이미 `make up`까지
   했으면 그 사실을 적는다).
-- GitHub 인증은 HTTPS + 키체인 토큰. 403이면 docs/DEVELOPMENT.md §5의 해결 순서.
+- GitHub 인증은 HTTPS + gh CLI 토큰(`gh auth setup-git` — git 자격 증명 도우미가 `gh auth git-credential`). 403이면 docs/DEVELOPMENT.md §5의 해결 순서.
 
 ## 이 환경의 함정
-- 같은 맥에서 `Local_macro_dashboard_v3`(모의 매매 개발 전 main, 3000/8080/8000/5432, compose 프로젝트 `local_macro_dashboard_v3`)와
+- 같은 PC(WSL2 Linux)에서 `Local_macro_dashboard_v3`(모의 매매 개발 전 main, 3000/8080/8000/5432, compose 프로젝트 `local_macro_dashboard_v3`)와
   `My_macro_dashboard_v1`(3001/8081/8001/5433, `my_macro_dashboard_v1`)이 따로 돈다. 이 저장소는 `.env`의 포트 3002/8082/8002/5434를 쓰고,
   명령은 이 폴더에서만 친다. v1·v3 폴더·볼륨·스택은 건드리지 않는다(데이터 이어받기는 v1 `make backup` → 여기 `make restore`, 볼륨 복사 금지).
   브라우저 쿠키는 포트를 가리지 않으므로 세션 쿠키 이름도 다르다(이 저장소 `my_macro_v2_session`, v1 `my_macro_session`, v3 `macro_session` —
@@ -84,7 +84,7 @@ PostgreSQL ← 수집기(FastAPI, `collector/`). Docker Compose 네 컨테이너
 - Claude Code 셸의 `grep`·`find`는 ugrep·bfs로 바뀌어 있어 `.gitignore` 대상(`.venv`, `.next`,
   `node_modules`, `.git`)을 건너뛴다. 파일 시스템 전체를 훑을 때는 `/usr/bin/grep`을 쓴다.
 - 테스트 DB·백업 스크립트는 `docker compose exec -T postgres`로 컨테이너 안의 psql을 쓴다.
-  맥에 `psql`·`pg_dump`가 없어도 된다(없으면 `test_db_scripts.py` 12개가 건너뛰어진다).
+  이 PC에는 `psql`·`pg_dump`가 없다 — 없어도 되고, 그러면 `test_db_scripts.py` 12개가 건너뛰어진다(CI에서는 돈다).
 - `.claude/worktrees/…` 안에서는 `git checkout main`이 실패한다. 작업은 본체 폴더에서 한다.
 - 테스트 DB를 쓰는 테스트는 postgres 컨테이너가 떠 있어야 한다(`make infra` 또는 `make up`).
 - 수집기 `/health`는 DB까지 확인한다(없으면 503). `/health`를 공개 경로 예시로 쓰는 테스트는 `store.ping`을
@@ -94,9 +94,11 @@ PostgreSQL ← 수집기(FastAPI, `collector/`). Docker Compose 네 컨테이너
 - `docker kill`로 멈춘 컨테이너는 `restart: unless-stopped`가 다시 띄우지 않는다(수동 정지로 간주). 크래시 시험에
   쓰면 안 된다.
 - 외부 패키지를 올릴 때는 Maven Central·npm에서 **실제 GA 버전을 확인**한다(마일스톤은 운영에 올리지 않음).
-- 이 맥의 `mvn`은 Homebrew JDK 27로 돈다(`java -version`은 21이어도). CI는 Temurin 21이라 JDK 27에서만 나는 컴파일 오류는 CI에서
-  안 보인다(`80db4ae` — 익명 `LinkedHashMap` 안의 `Entry`가 `Map.Entry`로 풀린 이름 충돌). CI와 같은 판으로 재려면
-  `JAVA_HOME=$(/usr/libexec/java_home -v 21) make test-backend`. 코드는 두 판 모두에서 컴파일되게 쓴다.
+- 이 PC의 JDK는 25 하나다(`/usr/lib/jvm/java-25-openjdk-amd64` — `mvn`·`make test-backend`도 25로 돈다). CI는 Temurin 21이라 JDK 판에 따라 다른
+  컴파일 오류는 한쪽에서만 보인다(`80db4ae` — 그때 맥 Homebrew JDK 27에서 익명 `LinkedHashMap` 안의 `Entry`가 `Map.Entry`로 풀린
+  이름 충돌). CI와 같은 판으로 재려면 저장소 전체를 `git archive HEAD | tar -x -C <임시>`로 풀고(백엔드 폴더만 풀면 `../db/migrations`·수집기
+  대조 파일이 없어 실패) `docker run --rm --network host -u 1000:1000 -e HOME=/tmp -e TEST_DATABASE_URL=jdbc:postgresql://localhost:5434/macrodash_test
+  -v <임시>:/w -v $HOME/.m2:/m2 -w /w/backend maven:3.9-eclipse-temurin-21 mvn -B -Dmaven.repo.local=/m2/repository verify`. 코드는 두 판 모두에서 컴파일되게 쓴다.
 - 모든 포트(화면·API·postgres·collector·새 서비스)는 127.0.0.1에만 연다(Vultr 서버도 예외 없이
   루프백 + `tailscale serve` — ADR 0023) — 로컬 화면은 로그인 없이 운영자로 열린다(ADR 0016,
   휴대폰 접속 없음). 로그인 경로를 시험하려면 QA 스택(기본 로그인), 로그인 없는 모드는 `QA_NO_LOGIN=1 bash scripts/qa/qa-stack.sh up`.
