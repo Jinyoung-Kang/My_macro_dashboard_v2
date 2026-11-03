@@ -235,7 +235,7 @@ GET·OPTIONS 밖(쓰기·HEAD)은 경로와 상관없이 403 `{"error":"demo_rea
 
 | 경로 | 설명 |
 |---|---|
-| `GET /api/live/prices?items=` | 지금 한 번 → `{available, prices:{fetchedAt, items:{'US:AAPL':{market, code, price, prevClose, change, changePct, currency, tradedAt, status(OPEN·PRE·POST·CLOSED·null), source, delayMinutes(출처가 밝힌 지연 분, 0 = 실시간), overPrice, overChange, overChangePct, overTradedAt, overSession(PRE_MARKET·AFTER_MARKET — 시간 외가 열려 있을 때)}}, missing:[…], errors:{출처: 사유}}}` — 모르는 값은 null |
+| `GET /api/live/prices?items=` | 지금 한 번 → `{available, prices:{fetchedAt, items:{'US:AAPL':{market, code, price, prevClose, change, changePct, currency, tradedAt(기준 시각 — 미국·다음·시간 외는 마지막 거래, 네이버 국내 정규장은 응답한 순간), status(OPEN·PRE·POST·CLOSED·null), source, delayMinutes(출처가 밝힌 지연 분, 0 = 실시간), overPrice, overChange, overChangePct, overTradedAt, overSession(PRE_MARKET·AFTER_MARKET — 시간 외가 열려 있을 때)}}, missing:[…], errors:{출처: 사유}}}` — 모르는 값은 null |
 | `GET /api/live/prices/stream?items=&interval=` | SSE(`text/event-stream`) — 바로 한 번, 그 뒤 `interval`초(5·10·30·60·120·300·600·900·1800·3600·10800)마다 `prices` 이벤트(본문은 위와 같음), 25초마다 주석 줄. 받은 종목이 모두 장이 닫혀 있으면 다음은 5분 이상 뒤. 연결은 주기 + 5분 뒤 끝나고 브라우저가 다시 이음. 동시 연결 20개를 넘으면 429 |
 
 ### 모의 매매(미국·한국, 운영자 전용)
