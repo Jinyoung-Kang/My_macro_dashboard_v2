@@ -14,6 +14,7 @@ tests/test_live_prices.py
 from __future__ import annotations
 
 from datetime import datetime, timezone
+from types import SimpleNamespace
 
 import pytest
 from fastapi.testclient import TestClient
@@ -22,6 +23,7 @@ from app import http, main
 from app.services import live_prices as lp
 
 NOW = 1793645000.0   # 2026-11-02 18:43:20 UTC — 뉴욕 정규장 안
+_REAL_REUTERS_CODE = lp._reuters_code   # 아래 fixture가 바꿔 끼우기 전의 것 — 로이터 코드 찾기 자체를 보는 시험이 씀
 
 
 @pytest.fixture(autouse=True)
@@ -331,3 +333,40 @@ def test_네이버_해외_지수는_로이터_코드로_지연은_delayTime(monk
     spx = out["items"]["NI:.INX"]
     assert spx["price"] == 7541.4 and spx["change"] == -38.67 and spx["delayMinutes"] == 0 and spx["status"] == "CLOSED"
     assert spx["tradedAt"] == "2026-11-02T21:16:21Z" and out["missing"] == ["NI:.NDX"]
+
+
+# --------------------------------------------------------------------------- QA-186
+# 네이버 자동완성(로이터 코드 찾기)이 재시도를 다 쓴 503을 주면(공용 세션은 raise_on_status=False라 예외가 아니라 응답을 돌려줌) '없음'을 하루 기억해,
+# 그 종목이 24시간 네이버 대신 Yahoo spark(1분 넘게 같은 값, 시간 외 가격 없음 — QA-166과 같은 증상)로 나갔습니다.
+AC_AAPL = {"items": [{"code": "AAPL", "name": "애플", "nationCode": "USA", "category": "stock", "reutersCode": "AAPL.O"}]}
+
+
+def _ac_session(monkeypatch, responses: list) -> list:
+    """자동완성 응답을 차례로 돌려주는 가짜 공용 세션 — 물은 질의어를 돌려줍니다. 응답 자리에 예외를 두면 그것을 냅니다."""
+    asked: list = []
+    queue = iter(responses)
+
+    def get(url, params=None, timeout=None, **kwargs):
+        asked.append(params["q"])
+        res = next(queue)
+        if isinstance(res, Exception):
+            raise res
+        return res
+    monkeypatch.setattr(lp, "get_session", lambda: SimpleNamespace(get=get))
+    return asked
+
+
+def _ac_res(status_code: int, payload: dict | None = None) -> SimpleNamespace:
+    return SimpleNamespace(status_code=status_code, json=lambda: payload or {})
+
+
+@pytest.mark.xfail(strict=True, reason="QA-186 재현 — 자동완성의 일시 503을 '없음'으로 하루 기억")
+def test_QA186_로이터_코드_찾기의_일시_오류는_하루_기억하지_않는다(monkeypatch):
+    monkeypatch.setattr(lp, "_reuters_code", _REAL_REUTERS_CODE)
+    asked = _ac_session(monkeypatch, [_ac_res(503), _ac_res(200, AC_AAPL)])
+    now = [1000.0]
+    monkeypatch.setattr(lp.time, "monotonic", lambda: now[0])
+    assert lp._reuters_code("AAPL") is None, "503 — 이번에는 못 찾음(이번 호출은 Yahoo로 넘어감)"
+    now[0] += 61.0
+    assert lp._reuters_code("AAPL") == "AAPL.O", "1분 뒤에는 다시 묻는다 — 일시 오류를 '없음'으로 하루 두지 않음"
+    assert asked == ["AAPL", "AAPL"]
