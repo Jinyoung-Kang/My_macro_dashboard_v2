@@ -3,7 +3,6 @@ package com.macrodash.feature.paper;
 import com.macrodash.store.PaperStore.Note;
 import com.macrodash.support.InvalidRequestException;
 import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import tools.jackson.databind.JsonNode;
@@ -221,7 +220,6 @@ class NoteServiceTest {
     }
 
     @Test
-    @Disabled("QA-180 재현 — 수정 전: ASCII 꺾쇠·\\s만 보는 옛 패턴이라 전각·작은 꺾쇠·ZWSP·NBSP·전각 공백·풀어 쓴 자모 변형이 남음")
     @DisplayName("QA-180 메모 구분자 변형도 지운다 — 꺾쇠 뒤 ZWSP·NBSP·전각 공백, 전각·작은 꺾쇠, 글자 사이 ZWSP, 풀어 쓴 자모 '메모'(NFC). 꺾쇠 수식은 그대로")
     void stripsLookalikeNoteDelimiters() {
         String[] fakes = {
