@@ -334,3 +334,22 @@ def test_QA174_다시_받기가_실패하면_직전_OK_칸을_FAILED로_덮지_�
     assert toss.calls, "다시 받으려고 부름"
     assert _payload(store)["sessions"][E]["005930"] == old
 
+@pytest.mark.xfail(strict=True, reason="QA-201 재현 — 목표 세션 E가 NO_BARS여도 다음 거래일을 받지 않아, 장부가 고르는 날(기준일 뒤 첫 관측 봉)의 1분봉이 끝내 없음")
+def test_QA201_목표_세션이_NO_BARS면_만료_창_안의_다음_거래일도_마감_뒤_받는다(store, toss, monkeypatch):
+    # 11-03을 거래소가 늦게 임시휴장으로 정함(백엔드 설정 kr.calendar.extraClosures에만 — 수집기 달력은 거래일로 앎) → 장부는 11-04 봉을 고름.
+    after = "2026-11-04"
+    _orders(monkeypatch, [("005930", date(2026, 11, 2))])
+    toss.pages[("005930", E)] = []
+    toss.pages[("005930", after)] = _session(after)
+    tasks.task_kr_paper_timed()
+    assert _payload(store)["sessions"][E]["005930"]["status"] == "NO_BARS"
+
+    toss.calls.clear()
+    monkeypatch.setattr(kr_paper_timed, "_now", lambda: datetime(2026, 11, 4, 16, 45, tzinfo=KST))
+    tasks.task_kr_paper_timed()
+
+    assert {symbol for symbol, _ in toss.calls} == {"005930"}
+    sessions = _payload(store)["sessions"]
+    assert sessions[E]["005930"]["status"] == "NO_BARS", "E 칸은 그대로"
+    assert sessions[after]["005930"]["status"] == "OK"
+    assert sessions[after]["005930"]["closes"]["15:31"] == {"close": 71_500.0, "volume": 100}
