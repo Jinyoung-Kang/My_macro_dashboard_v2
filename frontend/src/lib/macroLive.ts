@@ -56,6 +56,17 @@ export function macroLiveItems(categories: readonly MacroCategory[] | null | und
 /** 실시간 값을 얹은 카드 — live가 있으면 그 시각(KST 'HH:mm:ss')과 그것이 거래 시각인지 받은 시각인지. */
 export type MacroCardView = MacroItem & { live?: { at: string; received: boolean; session: string | null } };
 
+/** 카드에 얹을 실시간 값의 재료 — hooks/useLivePrices 상태 가운데 이것만 읽습니다. */
+export interface MacroLiveState {
+  prices: Readonly<Record<string, LivePrice>>;
+  /** 종목마다 받은 때(ms) */
+  receivedAtByKey: Readonly<Record<string, number>>;
+  /** 마지막 응답에 없던 종목 */
+  missing: readonly string[];
+  /** 연결이 닫혀 다시 열기를 기다리는 중(QA-183) */
+  disconnected: boolean;
+}
+
 /** 카드 글의 소수 자릿수 — 저장본 priceStr('4.596' → 3, '1,345.72' → 2), 모르면 2. */
 function cardDigits(priceStr: string | null | undefined): number {
   const text = (priceStr ?? "").replace(/,/g, "").trim();
@@ -89,8 +100,29 @@ function kstStamp(iso: string): string | null {
 }
 
 /**
+ * 카드 하나 → 그릴 카드(QA-184). 실시간 종목이 마지막 응답에 있었을 때만 그 값을 얹고 받은 시각은 그 종목의 것입니다. 마지막 응답에서 빠졌거나(출처
+ * 실패·받지 못한 응답) 연결이 닫혀 다시 열기를 기다리는 동안은 저장본 카드 그대로 — 옛 실시간 값을 '방금 받은 실시간'으로 그리지 않고, 저장본의 이전 값
+ * 표시도 살아납니다.
+ */
+export function macroCardView(item: MacroItem, live: MacroLiveState): MacroCardView {
+  const code = macroLiveItem(item);
+  if (!code || live.disconnected || live.missing.includes(code)) return item;
+  return withLive(item, live.prices[code], live.receivedAtByKey[code] ?? null);
+}
+
+/**
+ * 머리말의 실시간 시세 한 줄 — 사유가 없으면 null. 실시간 값을 얹은 카드가 하나도 없으면 '카드는 저장본 값', 있으면 '받지 못한 카드는 저장본 값'
+ * (일부만 받은 응답 — QA-184).
+ */
+export function macroLiveNotice(reason: string | null, categories: readonly { items: readonly MacroCardView[] }[] | null | undefined): string | null {
+  if (!reason) return null;
+  const overlaid = (categories ?? []).some((category) => category.items.some((item) => item.live !== undefined));
+  return `실시간 시세: ${reason} — ${overlaid ? "받지 못한 카드는" : "카드는"} 저장본 값입니다.`;
+}
+
+/**
  * 카드 + 실시간 값 → 그릴 카드. 값이 없으면 카드 그대로. 가격·전일 대비 자릿수는 카드 글을 따르고, 거래 시각을 모르는 출처(TradingView)는 받은 시각을
- * 적되 개장 배지에는 카드의 원래 시각을 둡니다(받은 시각을 체결 시각으로 읽어 휴장일을 놓치지 않게).
+ * 적되 개장 배지에는 카드의 원래 시각을 둡니다(받은 시각을 체결 시각으로 읽어 휴장일을 놓치지 않게). `receivedAt`은 그 종목을 받은 때(QA-184).
  */
 export function withLive(item: MacroItem, live: LivePrice | undefined, receivedAt: number | null): MacroCardView {
   if (!live || !Number.isFinite(live.price)) return item;

@@ -218,7 +218,10 @@ describe("useLivePrices", () => {
 });
 
 describe("mergeLivePrices", () => {
-  const start = { prices: { "US:AAPL": AAPL as never }, receivedAt: 1, error: null, disconnected: false };
+  const start = {
+    prices: { "US:AAPL": AAPL as never }, receivedAt: 1, receivedAtByKey: { "US:AAPL": 1 }, missing: [], error: null, sourceError: null,
+    disconnected: false,
+  };
 
   it("available:false면 문구만 바꾸고 가격은 남긴다", () => {
     const next = mergeLivePrices(start, { available: false, message: "수집기에서 응답을 받지 못했습니다." }, 2);
@@ -230,6 +233,30 @@ describe("mergeLivePrices", () => {
   it("가격을 하나도 받지 못하고 출처만 실패했으면 그 사유, 받은 것이 있으면 문구 없음", () => {
     expect(mergeLivePrices(start, body({}, { Yahoo: "거부됨" }) as never, 2).error).toBe("Yahoo: 거부됨");
     expect(mergeLivePrices(start, body({ "US:AAPL": AAPL }, { Yahoo: "거부됨" }) as never, 2).error).toBeNull();
+  });
+
+  // QA-184: 받은 시각이 응답마다 하나(지금)라 빠진 종목의 옛 값도 '방금 받은' 것처럼 보였고, missing·일부 실패의 사유를 버렸습니다.
+  it("QA-184 받은 시각은 이번에 받은 종목에만, 빠진 종목은 missing(앞 값은 남김), 빠진 종목이 있으면 일부만 받았어도 출처별 사유", () => {
+    const dxy = { ...AAPL, market: "TV", code: "TVC:DXY", source: "TradingView" } as never;
+    const both = mergeLivePrices(start, { available: true, prices: { fetchedAt: "", items: { "US:AAPL": AAPL as never, "TV:TVC:DXY": dxy },
+      missing: [], errors: {} } }, 2);
+    expect(both).toMatchObject({ receivedAtByKey: { "US:AAPL": 2, "TV:TVC:DXY": 2 }, missing: [], sourceError: null });
+
+    const partial = mergeLivePrices(both, { available: true, prices: { fetchedAt: "", items: { "US:AAPL": AAPL as never },
+      missing: ["TV:TVC:DXY"], errors: { TradingView: "HTTP 429" } } }, 3);
+    expect(partial.receivedAtByKey).toEqual({ "US:AAPL": 3, "TV:TVC:DXY": 2 });
+    expect(partial.missing).toEqual(["TV:TVC:DXY"]);
+    expect(partial.prices["TV:TVC:DXY"]).toBeDefined();
+    expect(partial.sourceError).toBe("TradingView: HTTP 429");
+    expect(partial.error).toBeNull();
+    expect(partial.receivedAt).toBe(3);
+
+    // 다른 출처가 대신 받아 빠진 종목이 없으면 사유 없음, 받지 못한 응답이면 받은 종목이 모두 빠짐(받은 시각은 그대로)
+    expect(mergeLivePrices(both, body({ "US:AAPL": AAPL, "TV:TVC:DXY": dxy }, { 네이버: "HTTP 500" }) as never, 4).sourceError).toBeNull();
+    const refused = mergeLivePrices(partial, { available: false, message: "수집기에서 응답을 받지 못했습니다." }, 5);
+    expect([...refused.missing].sort()).toEqual(["TV:TVC:DXY", "US:AAPL"]);
+    expect(refused.receivedAtByKey).toEqual(partial.receivedAtByKey);
+    expect(refused.sourceError).toBeNull();
   });
 });
 

@@ -7,12 +7,21 @@ import type { LivePrice, LivePricesResponse } from "@/lib/types";
 import { useShownOnce } from "./useShownOnce";
 
 export interface LivePricesState {
-  /** 'US:AAPL' → 최근에 받은 가격(이번 구독에서 받은 것만) */
+  /** 'US:AAPL' → 최근에 받은 가격(이번 구독에서 받은 것만 — 뒤 응답에서 빠져도 남김, 빠졌는지는 missing) */
   prices: Readonly<Record<string, LivePrice>>;
   /** 마지막으로 받은 때(ms, 브라우저 시계) — 받은 적 없으면 null */
   receivedAt: number | null;
-  /** 받지 못한 이유 한 줄(연결 끊김·서버 응답 없음·출처 거부) — 없으면 null */
+  /** 종목마다 마지막으로 받은 때(ms) — 그 종목이 든 응답의 시각(QA-184). 응답 하나의 시각을 모든 종목에 붙이지 않습니다. */
+  receivedAtByKey: Readonly<Record<string, number>>;
+  /**
+   * 마지막 응답에 없던 종목 — 받은 값이 있는데 빠진 것과 응답이 받지 못했다고 밝힌 것(받지 못한 응답이면 받은 종목 모두). 이 종목의 `prices` 값은
+   * 지금 값이 아닙니다(QA-184).
+   */
+  missing: readonly string[];
+  /** 받지 못한 이유 한 줄(연결 끊김·서버 응답 없음·출처 거부) — 하나도 받지 못했을 때만, 없으면 null */
   error: string | null;
+  /** 마지막 응답이 받지 못한 종목이 있을 때 출처별 사유 한 줄 — 일부만 받았어도(QA-184, 매크로 카드 머리말). 없으면 null. */
+  sourceError: string | null;
   /**
    * 연결이 닫혀(200이 아닌 응답 — 브라우저가 다시 잇지 않음) 다시 열기를 기다리거나 여는 중 — 다시 받을 때까지 true(QA-183). 그동안 받은 가격은 멈춘
    * 값이라, 지금 값처럼 보이는 자리(개요 히어로의 실시간 추정)는 쓰지 않습니다.
@@ -20,7 +29,9 @@ export interface LivePricesState {
   disconnected: boolean;
 }
 
-const EMPTY_STATE: LivePricesState = { prices: {}, receivedAt: null, error: null, disconnected: false };
+const EMPTY_STATE: LivePricesState = {
+  prices: {}, receivedAt: null, receivedAtByKey: {}, missing: [], error: null, sourceError: null, disconnected: false,
+};
 
 /** EventSource.readyState의 CLOSED — 시험의 가짜 EventSource에는 정적 상수가 없어 숫자로 둡니다. */
 const CLOSED = 2;
@@ -40,17 +51,34 @@ function useDocumentVisible(): boolean {
   return visible;
 }
 
-/** 받은 본문 → 다음 상태(가격은 앞 값 위에 덮음, 출처 오류·빠진 종목은 한 줄로). */
+/**
+ * 받은 본문 → 다음 상태. 가격은 앞 값 위에 덮고(빠진 종목의 앞 값은 남김), 받은 시각은 이번에 받은 종목에만, 빠진 종목은 `missing`으로(QA-184).
+ * 출처 오류는 하나도 받지 못했으면 `error`, 빠진 종목이 있으면 일부만 받았어도 `sourceError`에 한 줄로.
+ */
 export function mergeLivePrices(previous: LivePricesState, body: LivePricesResponse, now: number): LivePricesState {
   // 응답을 받았으면 연결은 살아 있습니다(닫힌 연결을 다시 연 뒤 첫 응답 — QA-183).
   if (!body.available || !body.prices) {
-    return { ...previous, error: body.message ?? "실시간 시세를 받지 못했습니다.", disconnected: false };
+    return {
+      ...previous,
+      missing: Object.keys(previous.prices),
+      error: body.message ?? "실시간 시세를 받지 못했습니다.",
+      sourceError: null,
+      disconnected: false,
+    };
   }
-  const errors = Object.entries(body.prices.errors ?? {}).map(([source, why]) => `${source}: ${why}`);
+  const items = body.prices.items ?? {};
+  const received = Object.keys(items);
+  const errors = Object.entries(body.prices.errors ?? {}).map(([source, why]) => `${source}: ${why}`).join(" · ");
+  const reported = body.prices.missing ?? [];
+  const receivedAtByKey = { ...previous.receivedAtByKey };
+  for (const key of received) receivedAtByKey[key] = now;
   return {
-    prices: { ...previous.prices, ...body.prices.items },
+    prices: { ...previous.prices, ...items },
     receivedAt: now,
-    error: errors.length > 0 && Object.keys(body.prices.items ?? {}).length === 0 ? errors.join(" · ") : null,
+    receivedAtByKey,
+    missing: [...new Set([...Object.keys(previous.prices), ...reported])].filter((key) => !(key in items)),
+    error: errors && received.length === 0 ? errors : null,
+    sourceError: errors && (received.length === 0 || reported.length > 0) ? errors : null,
     disconnected: false,
   };
 }

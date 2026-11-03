@@ -25,7 +25,7 @@ import { useLivePrices } from "@/hooks/useLivePrices";
 import { SOURCES, uniqueSources } from "@/lib/sources";
 import { EMPTY, formatKst, withoutLeadingIcon } from "@/lib/format";
 import { cardNotices, categoryDelay } from "@/lib/macroCards";
-import { macroLiveItem, macroLiveItems, withLive, type MacroCardView } from "@/lib/macroLive";
+import { macroCardView, macroLiveItems, macroLiveNotice } from "@/lib/macroLive";
 import type {
   AdvancedIndicators,
   MacroItem,
@@ -94,19 +94,18 @@ export default function MacroPage() {
   const data = overview.data;
 
   // 카드 값은 고른 간격마다 서버가 밀어 주는 실시간 시세로 덮습니다(ADR 0024 — 저장하지 않는 표시 전용, 끄기면 화면을 열 때 한 번).
-  // 저장본(위 overview)은 그대로 읽어 카드의 틀·전일값 출처·실시간이 없는 카드에 씁니다.
+  // 저장본(위 overview)은 그대로 읽어 카드의 틀·전일값 출처·실시간이 없는 카드와, 마지막 응답에서 빠진 종목·닫힌 연결의 카드에 씁니다(QA-184).
   const liveItems = useMemo(() => macroLiveItems(data?.categories), [data?.categories]);
   const livePrices = useLivePrices(liveItems, refreshSeconds);
   const categories = useMemo(
     () => data?.categories?.map((category) => ({
       ...category,
-      items: category.items.map((item): MacroCardView => {
-        const code = macroLiveItem(item);
-        return code ? withLive(item, livePrices.prices[code], livePrices.receivedAt) : item;
-      }),
+      items: category.items.map((item) => macroCardView(item, livePrices)),
     })),
-    [data?.categories, livePrices.prices, livePrices.receivedAt],
+    [data?.categories, livePrices],
   );
+  // 일부만 받았어도 출처별 사유를 적습니다(QA-184) — 연결·응답 문제(error)가 있으면 그것을 먼저.
+  const liveNotice = macroLiveNotice(livePrices.error ?? livePrices.sourceError, categories);
 
   return (
     <div className="flex flex-col gap-6 lg:gap-8">
@@ -138,9 +137,7 @@ export default function MacroPage() {
             카드(선물·상하이)는 배지에 그 지연을 적습니다.
           </p>
         )}
-        {livePrices.error && (
-          <p className="mt-1 text-xs text-muted">실시간 시세: {livePrices.error} — 카드는 저장본 값입니다.</p>
-        )}
+        {liveNotice && <p className="mt-1 text-xs text-muted">{liveNotice}</p>}
       </PageHeader>
 
       {/* 자동 갱신 간격(머리말)은 늘 그리고 본문만 로딩·오류로 바꿉니다 — 1분 경계를 넘으면 경로(live)가 바뀌어

@@ -4,9 +4,10 @@
  *  - 가격·전일 대비 자릿수는 카드 글을 따르고, 엔/원은 100엔당으로(1엔당 값 × 100), 지연은 출처가 밝힌 값
  *  - 거래 시각이 있으면 그 시각을 카드 시각으로(개장 배지가 읽는 형식), 없으면(TradingView) 받은 시각을 적되 카드 시각은 그대로
  *  - 값이 없으면 카드 그대로, 이어받은 예전 값 표시는 실시간 값이 오면 사라짐
+ *  - 마지막 응답에서 빠진 종목·닫힌 연결이면 저장본 카드 그대로, 받은 시각은 그 종목의 것, 머리말 문구는 얹은 카드가 있는지에 따라(QA-184)
  */
 import { describe, expect, it } from "vitest";
-import { MACRO_LIVE, macroLiveItem, macroLiveItems, withLive } from "../macroLive";
+import { MACRO_LIVE, macroCardView, macroLiveItem, macroLiveItems, macroLiveNotice, withLive } from "../macroLive";
 import type { LivePrice, MacroItem } from "../types";
 
 const card = (over: Partial<MacroItem>): MacroItem => ({
@@ -88,5 +89,28 @@ describe("카드에 얹기", () => {
     const stale = card({ isStale: true, staleReason: "수집 실패" });
     expect(withLive(stale, undefined, null)).toBe(stale);
     expect(withLive(stale, live({}), null)).toMatchObject({ isStale: false, staleReason: null, status: "ok" });
+  });
+});
+
+describe("마지막 응답에서 빠진 종목(QA-184)", () => {
+  const state = (over: Partial<Parameters<typeof macroCardView>[1]> = {}) => ({
+    prices: { "TV:TVC:DXY": live({}) }, receivedAtByKey: { "TV:TVC:DXY": Date.parse("2026-11-02T21:40:05Z") }, missing: [] as string[],
+    disconnected: false, ...over,
+  });
+
+  it("마지막 응답에 있으면 그 종목을 받은 시각으로 얹고, 빠졌거나 연결이 닫혔으면 저장본 카드 그대로(이전 값 표시도 그대로)", () => {
+    const stored = card({ isStale: true, staleReason: "이전 값" });
+    expect(macroCardView(stored, state()).live).toEqual({ at: "06:40:05", received: true, session: null });
+    expect(macroCardView(stored, state({ missing: ["TV:TVC:DXY"] }))).toBe(stored);
+    expect(macroCardView(stored, state({ disconnected: true }))).toBe(stored);
+    expect(macroCardView(card({ key: "vix" }), state())).toEqual(card({ key: "vix" }));
+  });
+
+  it("머리말 — 사유가 없으면 없음, 얹은 카드가 없으면 '카드는 저장본', 있으면 '받지 못한 카드는 저장본'", () => {
+    const overlaid = [{ items: [macroCardView(card({}), state())] }];
+    const stored = [{ items: [macroCardView(card({}), state({ missing: ["TV:TVC:DXY"] }))] }];
+    expect(macroLiveNotice(null, overlaid)).toBeNull();
+    expect(macroLiveNotice("TradingView: HTTP 429", stored)).toBe("실시간 시세: TradingView: HTTP 429 — 카드는 저장본 값입니다.");
+    expect(macroLiveNotice("TradingView: HTTP 429", overlaid)).toBe("실시간 시세: TradingView: HTTP 429 — 받지 못한 카드는 저장본 값입니다.");
   });
 });
