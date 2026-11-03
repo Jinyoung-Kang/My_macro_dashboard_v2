@@ -12,11 +12,15 @@ tests/test_detail.py
 """
 from __future__ import annotations
 
+from types import SimpleNamespace
+
 import pytest
 from fastapi.testclient import TestClient
 
 from app import main
 from app.services import detail
+
+_REAL_NAVER_WORLD = detail._naver_world   # 아래 fixture가 바꿔 끼우기 전의 것 — 자동완성 질의를 보는 시험이 씀
 
 
 @pytest.fixture(autouse=True)
@@ -296,3 +300,29 @@ def test_시세·뉴스·종목_찾기_경로는_검사한_값으로_부른다(c
     assert client.get("/live/symbols?q=").status_code == 422
     assert seen == [("quote", "us", "BRK-B"), ("quote", "kr", "0088M0"), ("news", "kr", "005930", "삼성전자"),
                     ("news", None, None, "Bridgewater"), ("symbols", "삼성")]
+
+
+# --------------------------------------------------------------------------- QA-188
+# 네이버 자동완성은 'BRK-B'를 'BRK B'로만 찾습니다(실시간 시세 live_prices가 2026-11-03 운영 서버 실측으로 질의를 바꿈). 상세의 같은 조회는
+# 하루 먼저 따로 만들어져 'BRK-B'를 그대로 물어, '-' 든 미국 종목(BRK-B·BF-B)의 한국어 개요·한글 이름·연합인포맥스 뉴스가 빠졌습니다.
+AC_BRK_B = {"items": [{"code": "BRK.B", "name": "버크셔 해서웨이 B", "nationCode": "USA", "category": "stock", "reutersCode": "BRKb"}]}
+OVERVIEW_BRK_B = {"companyName": "버크셔 해서웨이 B", "summary": "버크셔 해서웨이는 지주회사다.", "industry": {"industryGroupKor": "보험"}}
+
+
+@pytest.mark.xfail(strict=True, reason="QA-188 재현 — 상세가 자동완성에 'BRK-B'를 그대로 물어 못 찾음")
+def test_QA188_상세의_자동완성_질의도_BRK_B를_BRK_공백_B로_묻는다(monkeypatch):
+    monkeypatch.setattr(detail, "_naver_world", _REAL_NAVER_WORLD)
+    asked: list = []
+
+    def get(url, params=None, timeout=None, headers=None):
+        if url == detail.NAVER_AC:
+            asked.append(params["q"])
+            return SimpleNamespace(status_code=200, json=lambda: AC_BRK_B if params["q"] == "BRK B" else {"items": []})
+        assert url == f"{detail.NAVER_WORLD_API}/BRKb/overview"
+        return SimpleNamespace(status_code=200, json=lambda: OVERVIEW_BRK_B)
+    monkeypatch.setattr(detail, "get_session", lambda: SimpleNamespace(get=get))
+    monkeypatch.setattr(detail, "_yahoo_info", lambda code: ({**YAHOO_INFO, "longName": "Berkshire Hathaway Inc."}, None))
+    out = detail.quote("us", "BRK-B")
+    assert asked == ["BRK B"]
+    assert "profileKoError" not in out and out["nameKo"] == "버크셔 해서웨이 B"
+    assert out["profile"]["summaryKo"] == "버크셔 해서웨이는 지주회사다."
