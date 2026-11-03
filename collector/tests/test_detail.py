@@ -6,6 +6,7 @@ tests/test_detail.py
   숫자로·코스닥은 '.KQ' 차트 심볼
 - 뉴스: 네이버 시각(KST yyyyMMddHHmm) → UTC, 기사 주소, HTML 엔티티 풀기 / 구글 뉴스 제목 끝 ' - 매체' 떼기 / 합치기는 최신순·같은 기사 하나만
 - 종목 찾기: Yahoo '.KS'·'.KQ'는 국내 코드로, 네이버 자동완성은 국내만
+- 국내 주식 개요: WISEfn 기업개요 HTML → 항목마다 한 줄·WICS 업종·기준일, 시세 응답에 출처와 함께(ETF는 부르지 않음, 못 받으면 사유)
 - 캐시: 같은 질의는 한 번만 부르고, 실패 응답은 짧게만 둠
 - 요청 검사: 시장·코드 형식이 틀리면 400(부르지 않음)
 """
@@ -21,8 +22,9 @@ from app.services import detail
 @pytest.fixture(autouse=True)
 def _fresh_cache(monkeypatch):
     detail.reset_cache()
-    # 네트워크 없이 — 네이버 해외주식 찾기는 기본으로 '못 찾음'(그 경로를 보는 시험만 바꿈).
+    # 네트워크 없이 — 네이버 해외주식 찾기는 기본으로 '못 찾음', 국내 기업개요는 '받지 못함'(그 경로를 보는 시험만 바꿈).
     monkeypatch.setattr(detail, "_naver_world", lambda code: None)
+    monkeypatch.setattr(detail, "_wisereport_profile", lambda code: {"profile": None, "error": "시험 — 네트워크 없음"})
     yield
     detail.reset_cache()
 
@@ -154,6 +156,57 @@ def test_네이버_해외주식_개요는_줄바꿈_태그를_줄로_한국어_�
     assert korean == {"nameKo": "애플", "summaryKo": "애플은 설계한다.\n제품은 아이폰.\n\n서비스 & 결제!", "industryKo": "전화 및 소형 장치"}
     assert detail.korean_profile_from_naver({}) is None
     assert detail.korean_profile_from_naver(None) is None
+
+
+# WISEfn 기업개요(c1010001) 페이지의 필요한 조각 — 2026-11-03 실제 응답(005930)의 모양 그대로 줄임.
+WISE_PAGE = """<td class="cmp-table-cell td0101"><span class="name">삼성전자</span>
+  <dl><dt class="line-left">KOSPI : 코스피 전기·전자</dt>
+  <dt class="line-left">WICS : 반도체와반도체장비</dt></dl></td>
+<h5><span>기업개요</span></h5></dd><dd class="header-table-cell unit"><p>[기준:2026.09.14]</p></dd>
+<div class="cmp_comment">
+  <ul class="dot_cmp">
+    <li class="dot_cmp" data-cd="005930">동사는 1969년 설립된 글로벌 전자 기업으로,
+      309개의 종속기업을 보유하고 있음.</li>
+    <li class="dot_cmp" data-cd="005930">DS 부문은 DRAM, NAND Flash 등의 반도체를 생산&middot;판매하고 있음.</li>
+    <li class="dot_cmp" data-cd="005930">R&amp;D <b>투자</b>를 이어 감.</li>
+    <li class="dot_cmp" data-cd="005930">  </li>
+  </ul>
+</div>
+<dt class="right">* <b>WICS</b>: WISE Industry Classification Standard, modified by FnGuide</dt>"""
+
+
+def test_WISEfn_기업개요는_항목마다_한_줄_WICS_업종·기준일과_함께():
+    korean = detail.korean_profile_from_wisereport(WISE_PAGE)
+    assert korean == {
+        "summaryKo": "동사는 1969년 설립된 글로벌 전자 기업으로, 309개의 종속기업을 보유하고 있음.\n"
+                     "DS 부문은 DRAM, NAND Flash 등의 반도체를 생산·판매하고 있음.\nR&D 투자를 이어 감.",
+        "industryKo": "반도체와반도체장비", "basisDate": "2026-09-14"}
+    assert detail.korean_profile_from_wisereport("<html>개요 없음</html>") is None
+    assert detail.korean_profile_from_wisereport(None) is None
+
+
+def test_국내_주식_시세에는_WISEfn_개요를_출처와_함께_ETF는_부르지_않고_못_받으면_사유(monkeypatch):
+    asked = []
+    korean = detail.korean_profile_from_wisereport(WISE_PAGE)
+    monkeypatch.setattr(detail, "_naver_json", lambda path: ((NAVER_BASIC if path.endswith("/basic") else {"totalInfos": []}), None))
+    monkeypatch.setattr(detail, "_wisereport_profile", lambda code: asked.append(code) or {"profile": korean, "error": None})
+    out = detail.quote("kr", "091990")
+    assert out["profile"]["summaryKo"].startswith("동사는 1969년") and out["profile"]["industryKo"] == "반도체와반도체장비"
+    assert out["profile"]["summary"] is None and out["profile"]["country"] == "대한민국"
+    assert out["profile"]["koSource"] == {"label": "WISEfn 기업개요(네이버 증권 기업분석) — 기준 2026-09-14",
+                                          "url": "https://navercomp.wisereport.co.kr/v2/company/c1010001.aspx?cmp_cd=091990"}
+    assert asked == ["091990"] and "profileKoError" not in out
+
+    detail.reset_cache()
+    etf = {**NAVER_BASIC, "stockEndType": "etf"}
+    monkeypatch.setattr(detail, "_naver_json", lambda path: ((etf if path.endswith("/basic") else NAVER_INTEGRATION), None))
+    assert detail.quote("kr", "069500")["profile"]["summary"] == "바이오 의약품 유통" and asked == ["091990"]
+
+    detail.reset_cache()
+    monkeypatch.setattr(detail, "_naver_json", lambda path: ((NAVER_BASIC if path.endswith("/basic") else None), None))
+    monkeypatch.setattr(detail, "_wisereport_profile", lambda code: {"profile": None, "error": "HTTP 503"})
+    failed = detail.quote("kr", "091990")
+    assert failed["profileKoError"] == "HTTP 503" and "summaryKo" not in failed["profile"]
 
 
 def test_네이버_자동완성에서_같은_코드의_미국_주식만_BRK_B는_점·공백으로도_맞춤():

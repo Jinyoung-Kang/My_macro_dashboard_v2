@@ -8,7 +8,9 @@
 - 뉴스 검색어: 구글 뉴스 RSS 검색(news.google.com/rss/search, 최근 7일). 연합인포맥스는 같은 검색을 그 사이트로 좁힌 것(사이트 자체 검색은
   검색어를 무시함 — 2026-11-02 확인).
 - 미국 종목의 한국어 기업 개요·이름: 네이버 증권 해외주식(api.stock.naver.com/stock/{로이터 코드}/overview — 로이터 코드는 자동완성에서).
-Yahoo·네이버·구글 뉴스는 robots.txt가 막는 출처지만 사용자가 개인·비상업 용도로 허락했습니다(2026-11-01, docs/decisions.md). 그래도
+- 국내 주식의 기업 개요·업종: WISEfn 기업개요(네이버 증권 기업분석의 원자료 — navercomp.wisereport.co.kr c1010001, 몇 줄 요약과 WICS 업종).
+  네이버 `integration`은 ETF에만 개요(description)를 줍니다(2026-11-03 확인). 개요는 자주 바뀌지 않아 12시간 캐시합니다.
+Yahoo·네이버·구글 뉴스·WISEfn은 robots.txt가 막는 출처지만 사용자가 개인·비상업 용도로 허락했습니다(2026-11-01, docs/decisions.md). 그래도
 출처 링크·받은 시각을 함께 내고, Yahoo는 공용 거부 래치(http.YAHOO_HOST), 네이버·구글은 수집기 공용 세션의 래치·간격을 따릅니다.
 
 같은 질의는 잠깐 캐시합니다(시세·지표 5분, 뉴스 15분, 종목 찾기 1시간 — 실패한 응답은 1분) — 화면을 여러 번 열어도 출처를 두드리지 않게.
@@ -46,9 +48,11 @@ FETCH_TIMEOUT = 10
 QUOTE_TTL = 300.0
 NEWS_TTL = 900.0
 SYMBOLS_TTL = 3600.0
+PROFILE_TTL = 12 * 3600.0
 FAILURE_TTL = 60.0
 NEWS_LIMIT = 20
 NAVER_WORLD_API = "https://api.stock.naver.com/stock"
+WISEREPORT_COMPANY = "https://navercomp.wisereport.co.kr/v2/company/c1010001.aspx"
 INFOMAX_SITE = "news.einfomax.co.kr"
 
 US_CODE = re.compile(r"^[A-Za-z0-9^=.\-]{1,24}$")
@@ -272,6 +276,7 @@ def quote(market: str, code: str) -> dict:
                 return _empty_quote(market, code, error or "네이버 응답 없음")
             integration, _ = _naver_json(f"/stock/{code}/integration")
             out = quote_from_naver(code, basic, integration if isinstance(integration, dict) else None)
+            _with_kr_profile(out, code)
         else:
             info, error = _yahoo_info(code)
             if info is None:
@@ -349,6 +354,65 @@ def _with_korean_profile(out: dict, code: str) -> None:
                                  "url": f"https://m.stock.naver.com/worldstock/stock/{world['reutersCode']}/overview"}})
     out["profile"] = profile
     out["nameKo"] = korean["nameKo"] or world.get("name")
+
+
+_WISE_COMMENT = re.compile(r'<div class="cmp_comment">(.*?)</div>', re.S)
+_WISE_ITEM = re.compile(r"<li[^>]*>(.*?)</li>", re.S)
+_WISE_WICS = re.compile(r'<dt class="line-left">\s*WICS\s*:\s*([^<]+)</dt>')
+_WISE_BASIS = re.compile(r"\[기준\s*:\s*(\d{4})\.(\d{2})\.(\d{2})\]")
+
+
+def korean_profile_from_wisereport(page: Any) -> dict | None:
+    """WISEfn 기업개요(c1010001) HTML → 한국어 개요(항목마다 한 줄)·WICS 업종·기준일. 개요 항목이 없으면 None."""
+    if not isinstance(page, str):
+        return None
+    block = _WISE_COMMENT.search(page)
+    items = []
+    for raw in _WISE_ITEM.findall(block.group(1)) if block else []:
+        text = re.sub(r"\s+", " ", html.unescape(re.sub(r"<[^>]+>", "", raw))).strip()
+        if text:
+            items.append(text)
+    if not items:
+        return None
+    wics = _WISE_WICS.search(page)
+    basis = _WISE_BASIS.search(page)
+    return {"summaryKo": "\n".join(items),
+            "industryKo": (html.unescape(wics.group(1)).strip() or None) if wics else None,
+            "basisDate": f"{basis.group(1)}-{basis.group(2)}-{basis.group(3)}" if basis else None}
+
+
+def _wisereport_profile(code: str) -> dict:
+    """국내 종목의 WISEfn 기업개요 {profile, error} — 12시간 캐시(실패는 1분)."""
+    def fetch() -> dict:
+        try:
+            res = get_session().get(WISEREPORT_COMPANY, params={"cmp_cd": code}, timeout=FETCH_TIMEOUT,
+                                    headers={"Referer": "https://finance.naver.com/"})
+            if res.status_code != 200:
+                return {"profile": None, "error": f"HTTP {res.status_code}"}
+            profile = korean_profile_from_wisereport(res.text)
+            return {"profile": profile, "error": None if profile else "WISEfn 기업개요가 비어 있음"}
+        except Exception as exc:  # noqa: BLE001
+            return {"profile": None, "error": brief_error(exc)}
+    return _cached(("wisereport", code), PROFILE_TTL, fetch)
+
+
+def _with_kr_profile(out: dict, code: str) -> None:
+    """국내 주식의 시세 응답에 WISEfn 기업개요(한국어 몇 줄)·WICS 업종을 더합니다(못 받으면 그대로 — 사유는 profileKoError). ETF는 네이버
+    `integration`의 개요(summary)가 있어 부르지 않습니다."""
+    if (out.get("kind") or "").lower() != "stock" or out.get("error"):
+        return
+    got = _wisereport_profile(code)
+    korean = got.get("profile")
+    if korean is None:
+        out["profileKoError"] = got.get("error") or "WISEfn 기업개요가 비어 있음"
+        return
+    profile = dict(out.get("profile") or {"sector": None, "industry": None, "country": "대한민국", "website": None,
+                                          "employees": None, "summary": None})
+    basis = f" — 기준 {korean['basisDate']}" if korean.get("basisDate") else ""
+    profile.update({"summaryKo": korean["summaryKo"], "industryKo": korean["industryKo"],
+                    "koSource": {"label": f"WISEfn 기업개요(네이버 증권 기업분석){basis}",
+                                 "url": f"{WISEREPORT_COMPANY}?cmp_cd={code}"}})
+    out["profile"] = profile
 
 
 def _empty_quote(market: str, code: str, error: str | None) -> dict:
