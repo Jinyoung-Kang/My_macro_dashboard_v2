@@ -4,6 +4,7 @@
  *  - 탭을 숨기면 연결을 닫고, 다시 보이면 다시 잇는다(보지 않는 동안 받지 않음) — 언마운트·종목·주기가 바뀌어도 앞 연결을 닫음
  *  - 끄기(0)면 연결하지 않고 한 번만 읽음(GET /api/live/prices), 비었거나 꺼진(enabled=false) 구독은 아무것도 하지 않음
  *  - 받지 못함(available:false·출처만 실패·연결 끊김)은 한 줄 문구, 받은 가격은 남김
+ *  - 200이 아닌 응답으로 닫힌 연결(readyState CLOSED)은 닫고 5초부터 두 배씩(최대 60초) 뒤 새로 열고, 받으면 처음부터 — 그동안 disconnected(QA-183)
  *  - 주기 설정은 한 곳에서 바꾸면 같은 화면의 다른 구독도 따라 바뀌고, 이 브라우저에 기억됨(기본 1시간)
  */
 import { act, cleanup, renderHook } from "@testing-library/react";
@@ -124,7 +125,7 @@ describe("useLivePrices", () => {
 
   // QA-183: 200이 아닌 응답(배포 중 502·연결 상한 429·401)이면 브라우저가 연결을 닫고(readyState CLOSED) 다시 잇지 않습니다. 화면이 닫고 상한 있는
   // 백오프(5초에서 두 배씩, 최대 60초)로 새로 열고, 받으면 처음(5초)부터. 끊긴 동안 문구는 '끊김 — n초 뒤 다시 연결'(기다리면 될 것 같은 '다시 잇는 중'이 아님).
-  it.fails("QA-183 닫힌 연결(readyState CLOSED)은 닫고 5초부터 두 배씩(최대 60초) 뒤 새로 열고, 받으면 처음부터 — 끊긴 동안 '끊김 — n초 뒤 다시 연결'", () => {
+  it("QA-183 닫힌 연결(readyState CLOSED)은 닫고 5초부터 두 배씩(최대 60초) 뒤 새로 열고, 받으면 처음부터 — 끊긴 동안 '끊김 — n초 뒤 다시 연결'", () => {
     vi.useFakeTimers();
     try {
       const { result } = renderHook(() => useLivePrices(["US:AAPL"], 5));
@@ -133,6 +134,7 @@ describe("useLivePrices", () => {
       act(() => { first.readyState = 2; first.onerror?.(); });
       expect(first.closed).toBe(true);
       expect(result.current.error).toMatch(/끊김 — 5초 뒤 다시 연결/);
+      expect(result.current.disconnected).toBe(true);
       expect(result.current.prices["US:AAPL"].price).toBe(337.2);
       act(() => { vi.advanceTimersByTime(4_999); });
       expect(FakeEventSource.instances).toHaveLength(1);
@@ -154,6 +156,7 @@ describe("useLivePrices", () => {
       // 받으면 문구를 지우고 백오프를 처음부터
       const last = FakeEventSource.instances.at(-1)!;
       act(() => last.emit("prices", body({ "US:AAPL": { ...AAPL, price: 338 } })));
+      expect(result.current.disconnected).toBe(false);
       expect(result.current.error).toBeNull();
       expect(result.current.prices["US:AAPL"].price).toBe(338);
       act(() => { last.readyState = 2; last.onerror?.(); });
@@ -189,7 +192,7 @@ describe("useLivePrices", () => {
 });
 
 describe("mergeLivePrices", () => {
-  const start = { prices: { "US:AAPL": AAPL as never }, receivedAt: 1, error: null };
+  const start = { prices: { "US:AAPL": AAPL as never }, receivedAt: 1, error: null, disconnected: false };
 
   it("available:false면 문구만 바꾸고 가격은 남긴다", () => {
     const next = mergeLivePrices(start, { available: false, message: "수집기에서 응답을 받지 못했습니다." }, 2);
