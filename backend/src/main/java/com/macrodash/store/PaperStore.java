@@ -1019,6 +1019,20 @@ public class PaperStore {
     }
 
     /**
+     * 대기(PENDING) 주문 하나를 취소합니다 — 대기일 때만 바꾸는 한 문장이라, 그사이 체결·취소된 주문을 덮지 않습니다(QA-177). 상태를 그대로
+     * 덮어쓰는 {@link #markOrderStatus}와 따로 둡니다(그쪽 호출자는 상태 전이를 스스로 정함).
+     *
+     * @return 취소했으면 true, 없거나 이미 대기가 아니면 false(아무것도 바꾸지 않음)
+     */
+    public boolean cancelPendingOrder(long id, String rejectReason) {
+        return jdbc.update("UPDATE paper_orders SET status = 'CANCELLED', reject_reason = ? WHERE id = ? AND status = 'PENDING'",
+                ps -> {
+                    ps.setString(1, rejectReason);
+                    ps.setLong(2, id);
+                }) == 1;
+    }
+
+    /**
      * 주문 근거(JSON)를 통째로 바꿉니다(null이면 {@code {}}). 체결하면서 알게 된 사실 — 현금이 모자라 요청보다 적게 산 것
      * ({@code cashLimited}) 같은 것 — 을 그 주문 기록에 남길 때 씁니다. 부르는 쪽이 기존 근거에 덧붙인 전체를 넘깁니다.
      */

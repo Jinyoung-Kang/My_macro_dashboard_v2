@@ -569,6 +569,28 @@ class PaperStoreDbTest {
     }
 
     @Test
+    @DisplayName("대기 주문 하나 취소(QA-177): PENDING일 때만 바꾸고 true — 체결·취소된 주문은 덮지 않고 false")
+    void cancelPendingOrderOnlyWhenPending() {
+        store.insertBookIfAbsent(book(BOOK, "Claude 계좌2"));
+        long pending = store.insertOrder(pendingBuy(BOOK, "XLV", null));
+        long filled = store.insertOrder(pendingBuy(BOOK, "XLE", null));
+        store.markOrderFilled(filled, CLOSE);
+
+        assertThat(store.cancelPendingOrder(pending, "다시 출발")).isTrue();
+        assertThat(store.cancelPendingOrder(pending, "두 번째")).as("이미 취소됨").isFalse();
+        assertThat(store.cancelPendingOrder(filled, "다시 출발")).as("체결된 주문").isFalse();
+        assertThat(store.cancelPendingOrder(999_999_999L, "다시 출발")).as("없는 주문").isFalse();
+
+        Map<Long, PaperStore.Order> byId = new java.util.HashMap<>();
+        store.recentOrders(BOOK, 10).forEach(o -> byId.put(o.id(), o));
+        assertThat(byId.get(pending).status()).isEqualTo("CANCELLED");
+        assertThat(byId.get(pending).rejectReason()).isEqualTo("다시 출발");
+        assertThat(byId.get(filled).status()).isEqualTo("FILLED");
+        assertThat(byId.get(filled).rejectReason()).isNull();
+        assertThat(byId.get(filled).filledAt()).isEqualTo(CLOSE);
+    }
+
+    @Test
     @DisplayName("상태·보유·재진입 금지: 넣고 바꾸고 지운 값이 그대로 읽힌다(빈 값은 null)")
     void stateAndPositionsRoundTrip() {
         store.insertBookIfAbsent(book(BOOK, "규칙 책"));

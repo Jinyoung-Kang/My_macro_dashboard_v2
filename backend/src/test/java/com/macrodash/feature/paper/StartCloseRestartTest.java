@@ -155,7 +155,6 @@ class StartCloseRestartTest {
     }
 
     @Test
-    @org.junit.jupiter.api.Disabled("QA-177 재현 — 수정 전: 잠금 밖에서 본 '체결 없음·대기 2건'으로 취소해 FILLED를 CANCELLED로 덮고 XLV를 한 번 더 삼")
     @DisplayName("QA-177: 잠금 밖에서 대기 주문을 읽은 뒤 겹친 리스크 점검이 출발 주문 하나를 체결했으면 거절하고 아무것도 바꾸지 않는다")
     void refusesWhenFilledMeanwhile() {
         usBook(PaperBooks.CLAUDE2);
@@ -189,7 +188,6 @@ class StartCloseRestartTest {
     }
 
     @Test
-    @org.junit.jupiter.api.Disabled("QA-177 재현 — 수정 전: 거의 동시에 온 두 번째 요청이 이미 끝난 다시 출발 위에 한 번 더 사후 체결(XLV·XLE 두 번)")
     @DisplayName("QA-177: 같은 요청이 거의 동시에 두 번 오면 잠금을 늦게 얻은 쪽은 거절한다 — 사후 체결은 한 번")
     void refusesDuplicateRestart() {
         usBook(PaperBooks.CLAUDE2);

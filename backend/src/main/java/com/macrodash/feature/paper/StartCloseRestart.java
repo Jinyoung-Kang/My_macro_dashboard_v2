@@ -26,6 +26,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.TreeSet;
 
 /**
  * 출발일 종가로 다시 출발(사용자 결정 2026-11-02 — 미국 Claude 계좌2·한국 네 계좌를 2026-10-30 종가 체결로 시작). 출발 결정(INITIAL)의 주문이 아직
@@ -44,7 +45,8 @@ import java.util.Optional;
  *
  * <p>사후 체결은 출발일 S 마감의 순자산 줄(확정)을 다시 쓰고, 계좌의 관측치 처리 기억(마지막 관측·처리 수집 시각)은 앞의 값을 그대로 둡니다 — 그 뒤
  * 이미 처리한 관측치를 다시 처리하지 않고, 다음 관측치가 새 보유를 평가합니다. 하나라도 종가가 없으면 아무것도 쓰지 않습니다(전부 아니면 없음).
- * 한 트랜잭션·장부 잠금 안에서 합니다.
+ * 한 트랜잭션·장부 잠금 안에서 합니다 — 검사·대기 주문은 잠금 밖에서 먼저 읽고(종가 읽기 전), 잠금 안에서 다시 읽어 그사이 바뀌었으면 거절합니다
+ * (QA-177).
  *
  * <p>룩어헤드에 대해: 출발 결정은 S 마감 뒤의 자료로 내려졌고(미국 계좌2 10-31 16:32 KST, 한국 10-30 22:38 KST) 그 종가로 체결합니다 — 미국 계좌1
  * 출발(사후 체결)과 같은 규칙이며, 한국 명세의 '출발일 사후 체결 없음'(K28)과 계좌2의 '앞으로 체결 출발'(ADR 0022 결정 2)을 이 계좌들에 한해 바꿉니다.
@@ -136,22 +138,30 @@ final class StartCloseRestart {
         Map<String, PaperMarketData.SourcedClose> usCloses = korea ? Map.of() : usCloses(pending, start);
         Map<String, KrClose> krCloses = !korea ? Map.of()
                 : SOURCE_TOSS.equals(source) ? tossCloses(market, pending, start, current) : krCloses(market, pending, start, current);
-        List<PaperLedgerService.BackfillLeg> legs = new ArrayList<>();
-        for (Order order : pending) {
-            legs.add(new PaperLedgerService.BackfillLeg(order.ticker(), PaperBooks.BUY, order.targetWeightPct(), null,
-                    reason(order, start)));
-        }
         return ledger.exclusively(() -> store.atomically(() -> {
+            // 위의 검사·대기 주문·출발 결정은 장부 잠금 밖에서 읽었습니다(종가 읽기가 길 수 있음). 그사이 리스크 점검이 출발 주문을 체결했거나 같은
+            // 요청이 먼저 다시 출발시켰으면, 밖에서 본 목록으로 취소·사후 체결하면 체결된 주문을 덮고 같은 종목을 한 번 더 삽니다 — 잠금 안에서
+            // 다시 읽어 다르면 아무것도 쓰지 않고 거절합니다(QA-177).
+            List<Order> locked = requireUnchanged(code, start, pending, decision);
+            List<PaperLedgerService.BackfillLeg> legs = new ArrayList<>();
+            for (Order order : locked) {
+                legs.add(new PaperLedgerService.BackfillLeg(order.ticker(), PaperBooks.BUY, order.targetWeightPct(), null,
+                        reason(order, start)));
+            }
             BookState before = store.state(code).orElseThrow(() -> new IllegalStateException(code + " 계좌 상태가 없습니다"));
             List<Long> cancelled = new ArrayList<>();
-            for (Order order : pending) {
-                store.markOrderStatus(order.id(), PaperBooks.ORDER_CANCELLED, CANCEL_REASON);
+            for (Order order : locked) {
+                // 마지막 방어선 — 대기일 때만 취소(다른 경로가 그사이 바꿨으면 트랜잭션째 되돌림).
+                if (!store.cancelPendingOrder(order.id(), CANCEL_REASON)) {
+                    throw new InvalidRequestException(code + "의 출발 주문 " + order.id() + "이 그사이 대기 상태가 아니게 됐습니다 — "
+                            + "아무것도 바꾸지 않았습니다");
+                }
                 cancelled.add(order.id());
             }
             Filled filled = korea
-                    ? krBackfill(market, book, start, decision.id(), order(pending).source(), before, legs, krCloses, current,
+                    ? krBackfill(market, book, start, decision.id(), order(locked).source(), before, legs, krCloses, current,
                     SOURCE_FSC.equals(source))
-                    : usBackfill(book, start, decision.id(), order(pending).source(), before, legs, usCloses, current);
+                    : usBackfill(book, start, decision.id(), order(locked).source(), before, legs, usCloses, current);
             BookState after = store.state(code).orElseThrow();
             // 관측치 처리 기억은 앞의 값 — 출발일 뒤 이미 처리한 관측치를 다시 처리하지 않게(클래스 설명).
             store.upsertState(new BookState(code, after.cash(), after.nav(), after.equityValue(), after.exposurePct(),
@@ -163,6 +173,34 @@ final class StartCloseRestart {
     }
 
     private record Filled(List<Fill> fills, List<Map.Entry<String, String>> skipped) {
+    }
+
+    /**
+     * 장부 잠금·트랜잭션 안에서 잠금 밖에서 본 것을 다시 확인하고(QA-177) 지금의 대기 주문을 돌려줍니다 — 계좌가 그대로 운용 중·같은 출발일, 체결이
+     * 아직 없음, 대기 주문이 밖에서 본 것과 같은 번호들, 그 주문들이 같은 출발 결정의 것. 하나라도 다르면 거절합니다(아무것도 쓰기 전).
+     */
+    private List<Order> requireUnchanged(String code, LocalDate start, List<Order> seen, Decision decision) {
+        String retry = " — 아무것도 바꾸지 않았습니다. 계좌 상태를 확인하고 다시 보내세요";
+        Book now = store.book(code).orElseThrow(() -> new InvalidRequestException("없는 계좌입니다: " + Params.echo(code)));
+        if (!PaperBooks.ACTIVE.equals(now.status()) || !start.equals(now.startedOn())) {
+            throw new InvalidRequestException(code + "의 상태·출발일이 그사이 바뀌었습니다(상태 " + now.status() + ", 출발일 "
+                    + now.startedOn() + ")" + retry);
+        }
+        if (!store.recentFills(code, 1).isEmpty()) {
+            throw new InvalidRequestException(code + "에 그사이 체결이 생겼습니다(리스크 점검의 체결이나 먼저 처리된 같은 요청)" + retry);
+        }
+        List<Order> locked = store.ordersByStatus(code, PaperBooks.ORDER_PENDING);
+        if (!new TreeSet<>(ids(locked)).equals(new TreeSet<>(ids(seen)))) {
+            throw new InvalidRequestException(code + "의 대기 주문이 그사이 바뀌었습니다(" + ids(seen) + " → " + ids(locked) + ")" + retry);
+        }
+        if (startDecision(code, start, locked).id() != decision.id()) {
+            throw new InvalidRequestException(code + "의 출발 결정이 그사이 바뀌었습니다" + retry);
+        }
+        return locked;
+    }
+
+    private static List<Long> ids(List<Order> orders) {
+        return orders.stream().map(Order::id).toList();
     }
 
     /** 대기 주문이 모두 그 계좌의 출발 결정(INITIAL, 기준 거래일 = 출발일)이 낸 매수(목표 비중)인지 보고 그 결정을 돌려줍니다. */

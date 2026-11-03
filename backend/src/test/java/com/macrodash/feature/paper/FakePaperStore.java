@@ -281,6 +281,16 @@ class FakePaperStore extends PaperStore {
     }
 
     @Override
+    public boolean cancelPendingOrder(long id, String rejectReason) {
+        Order o = orders.get(id);
+        if (o == null || !"PENDING".equals(o.status())) {
+            return false;
+        }
+        orders.put(id, with(o, "CANCELLED", rejectReason, o.filledAt()));
+        return true;
+    }
+
+    @Override
     public void updateOrderReason(long id, JsonNode reason) {
         Order o = orders.get(id);
         orders.put(id, new Order(o.id(), o.bookCode(), o.decisionId(), o.ticker(), o.side(), o.qty(),
