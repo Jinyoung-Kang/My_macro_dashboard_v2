@@ -28,7 +28,7 @@ SECRET = tools.SECRET
 
 @pytest.fixture()
 def fakes(tmp_path):
-    """가짜 실행 파일 폴더와 기록 파일(AWS 시험과 같은 가짜 — tests/fake_server_tools.py). 진짜 git·bash·coreutils는 그 뒤의 PATH에서 찾습니다."""
+    """가짜 실행 파일 폴더와 기록 파일(tests/fake_server_tools.py). 진짜 git·bash·coreutils는 그 뒤의 PATH에서 찾습니다."""
     bin_dir, log = tmp_path / "bin", tmp_path / "calls.log"
     for name, text in {"docker": tools._FAKE_DOCKER, "aws": tools._FAKE_AWS, "make": tools._FAKE_MAKE,
                        "logger": tools._FAKE_LOGGER, "sleep": tools._FAKE_SLEEP, "curl": tools._FAKE_CURL}.items():

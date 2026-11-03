@@ -9,9 +9,9 @@ QA-016: 스키마 파일만 바뀐 배포에서 새 테이블이 생기지 않�
 
 QA-107: 같은 결함이 AWS 데모 배포 절차(README·compose.aws.yml 머리말)에 남아 있었습니다. 절차가 `build --pull`과
 `up -d` 두 줄뿐이라, 스키마 파일과 백엔드만 바뀐 릴리스에서는 수집기가 다시 만들어지지 않아 새 스키마가 적용되지
-않습니다. 문서에 적힌 배포 명령도 `up -d` 뒤에 스키마를 적용해야 합니다. AWS 개인용 서버(ADR 0019)에서는 README가
-scripts/aws/deploy.sh를 가리키고(그 스크립트의 스키마 적용은 tests/test_aws_scripts.py), compose.aws.yml 머리말에는
-손으로 배포할 때의 명령이 남습니다. Vultr 서버(ADR 0023)의 compose.vultr.yml 머리말도 같은 명령을 적어 같은 시험을 겁니다.
+않습니다. 문서에 적힌 배포 명령도 `up -d` 뒤에 스키마를 적용해야 합니다. 서버(Vultr, ADR 0023)에서는 README가
+scripts/vultr/deploy.sh를 가리키고(그 스크립트의 스키마 적용은 tests/test_vultr_scripts.py), compose.vultr.yml 머리말에는
+손으로 배포할 때의 명령이 남습니다(AWS 개인용 서버 ADR 0019의 compose.aws.yml도 같은 시험을 받다가 2026-11-03에 지움).
 
 QA-118: 그 반복문(`… && break; sleep 3; done`)은 10번 모두 실패해도 마지막 명령이 `sleep`이라 종료 코드 0으로
 끝났습니다. 문서는 'make migrate와 같다'고 적지만 make migrate는 경고를 찍고 exit 1입니다. SSM이나 `&&`로 이은
@@ -31,8 +31,8 @@ from pathlib import Path
 import pytest
 
 ROOT = Path(__file__).resolve().parents[2]
-# 서버 덧붙임 — 머리말에 손 배포 명령이 있는 파일(AWS 개인용 서버 ADR 0019, Vultr 서버 ADR 0023)
-OVERLAYS = ["compose.aws.yml", "compose.vultr.yml"]
+# 서버 덧붙임 — 머리말에 손 배포 명령이 있는 파일(Vultr 서버 ADR 0023)
+OVERLAYS = ["compose.vultr.yml"]
 
 
 def _recipe(makefile: str, target: str) -> str:
@@ -53,10 +53,10 @@ def test_QA016_QA_스택_up도_스키마를_적용한다():
     assert "init_schema" in up
 
 
-def _aws_readme_blocks() -> list[str]:
-    """README '### AWS 개인용 서버' 절의 bash 블록들."""
+def _server_readme_blocks() -> list[str]:
+    """README '### Vultr 서버' 절의 bash 블록들."""
     readme = (ROOT / "README.md").read_text(encoding="utf-8")
-    section = readme[readme.index("### AWS 개인용 서버"):]
+    section = readme[readme.index("### Vultr 서버"):]
     section = section[:section.index("\n## ")]
     return [chunk.split("```", 1)[0] for chunk in section.split("```bash")[1:]]
 
@@ -69,8 +69,8 @@ def _header_commands(overlay: str) -> str:
 
 
 def test_QA107_README의_서버_배포는_deploy_sh이고_손으로_적은_up_뒤에는_스키마를_적용한다():
-    blocks = _aws_readme_blocks()
-    assert any("scripts/aws/deploy.sh" in block for block in blocks), "README가 서버 배포 명령(deploy.sh)을 보여야 합니다"
+    blocks = _server_readme_blocks()
+    assert any("scripts/vultr/deploy.sh" in block for block in blocks), "README가 서버 배포 명령(deploy.sh)을 보여야 합니다"
     for block in blocks:
         if " up -d" in block:
             assert "init_schema" in block[block.index(" up -d"):], "README: up -d 뒤에 스키마 적용(init_schema)이 없습니다"

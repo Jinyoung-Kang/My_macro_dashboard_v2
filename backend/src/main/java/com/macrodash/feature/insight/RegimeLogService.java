@@ -32,8 +32,9 @@ import java.util.Map;
  * <ul>
  *   <li>기록 시각(KST, 설정 {@code dashboard.scheduler.regime-record-hour-kst}, 기본 {@value #DEFAULT_RECORD_HOUR_KST}시) 이후
  *       하루 한 건. 아침에는 밤사이 수집이 아직 안 돌았을 수 있습니다. 백엔드가 그 시각 뒤에 켜져 있어야 기록되므로,
- *       평일 08:50–18:00만 켜 두던 v3 AWS 데모는 17시로 뒀습니다(QA-093). 이 저장소의 AWS 개인용 서버는 KST 21:55–08:00에만
- *       켜져 있어, 기동 뒤 수집이 한 바퀴 돈 23시로 둡니다({@code compose.aws.yml}, ADR 0019).</li>
+ *       평일 08:50–18:00만 켜 두던 v3 AWS 데모는 17시로 뒀습니다(QA-093). 이 저장소의 서버는 23시로 둡니다
+ *       ({@code compose.vultr.yml}) — 밤에만 켜던 AWS 개인용 서버(ADR 0019, KST 21:55–08:00)에서 기동 뒤 수집이 한 바퀴 돈 시각으로
+ *       정했고, 24시간 켜 두는 Vultr(ADR 0023)도 기록 시점을 바꾸지 않았습니다.</li>
  *   <li>화면과 같은 계산({@link AnalyticsService#regimeNow()})을 쓰되, 수집을 일으키지 않고 저장본만 읽습니다.</li>
  *   <li>입력이 오래됐으면(일별 {@value #DAILY_MAX_AGE_DAYS}일, NFCI {@value #WEEKLY_MAX_AGE_DAYS}일 초과)
  *       "판정 불가"로 남깁니다 — 건너뛰면 빈 날이 보이지 않고, 오래된 값으로 판정하면 그날의 판정이 아닙니다.</li>

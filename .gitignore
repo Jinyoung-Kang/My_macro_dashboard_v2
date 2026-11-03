@@ -1,5 +1,5 @@
-# 비밀 값 — .env로 시작하는 파일은 모두(.env.qa·.env.aws 같은 복사본 포함) 막고, 키 이름만 담은 예시
-# (.env.example·.env.aws.example)만 추적합니다. 이름을 하나씩 적으면 새 복사본이 추적 대상이 됩니다(.dockerignore와 같은 방식).
+# 비밀 값 — .env로 시작하는 파일은 모두(.env.qa·.env.vultr 같은 복사본 포함) 막고, 키 이름만 담은 예시
+# (.env.example·.env.vultr.example)만 추적합니다. 이름을 하나씩 적으면 새 복사본이 추적 대상이 됩니다(.dockerignore와 같은 방식).
 .env*
 !.env*.example
 *.env.local
@@ -30,5 +30,3 @@ next-env.d.ts
 
 # 백업 (make backup) — 용량이 크고 개인 데이터입니다
 backups/
-# CloudFront 원본용 대역 — deploy.sh가 배포 때마다 만듦(scripts/aws/update-cloudfront-ranges.sh)
-deploy/aws/trusted_proxies.caddy

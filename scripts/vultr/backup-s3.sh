@@ -9,8 +9,8 @@
 # 결과는 syslog(태그 my-macro-backup):  journalctl -t my-macro-backup
 #
 # make backup(backups/에 접두어별 최근 BACKUP_KEEP개 보존, ADR 0003)이 만든 파일 하나만 s3://<AWS_BACKUP_BUCKET>/db/vultr/에
-# 올립니다 — AWS 서버와 같은 버킷, 접두어로 구분(병행 중 AWS의 db/와 섞이지 않게). 60일 지난 객체는 버킷 전체에 걸린 수명주기가
-# 지웁니다(db/vultr/ 포함). 실패하면 syslog에 err로 남기고 0이 아닌 값으로 끝납니다. 버킷 이름은 .env의 AWS_BACKUP_BUCKET
+# 올립니다 — AWS 서버와 같은 버킷, 접두어로 구분(병행 중 AWS의 db/와 섞이지 않게). 60일 지난 객체는 db/ 아래에 걸린 수명주기가
+# 지웁니다(db/vultr/ 포함 — 2026-11-03 AWS 정리 때 버킷 전체에서 db/로 좁히고 AWS 마지막 덤프는 만료 없는 archive/에 둠). 실패하면 syslog에 err로 남기고 0이 아닌 값으로 끝납니다. 버킷 이름은 .env의 AWS_BACKUP_BUCKET
 # (환경변수가 먼저). 인증은 인스턴스 역할이 없어 서버 ubuntu의 ~/.aws/credentials(600) — 이 버킷의 db/vultr/에만 쓰고 db/는 읽기만 하는
 # IAM 사용자의 키입니다(ADR 0023).
 # =============================================================================

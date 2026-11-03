@@ -29,18 +29,11 @@ esac
 if [ -n "${FAKE_DOCKER_FAIL:-}" ] && [[ "$*" == *"$FAKE_DOCKER_FAIL"* ]]; then exit 1; fi
 exit 0
 """
-# sts는 FAKE_STS_OK번째까지만 성공(기본: 늘 성공), FAKE_STS_FAIL에 적은 번째(공백으로 구분)는 연결 오류.
-# start-session은 곧바로 실패.
+# s3 cp는 FAKE_AWS_RC로 끝납니다(기본 0).
 _FAKE_AWS = """#!/usr/bin/env bash
 echo "aws $*" >> "$FAKE_LOG"
 case "$1 $2" in
-    "sts get-caller-identity")
-        n=$(($(cat "$FAKE_LOG.sts" 2>/dev/null || echo 0) + 1)); echo "$n" > "$FAKE_LOG.sts"
-        case " ${FAKE_STS_FAIL:-} " in *" $n "*) echo "Could not connect to the endpoint URL" >&2; exit 255 ;; esac
-        [ -z "${FAKE_STS_OK:-}" ] || [ "$n" -le "$FAKE_STS_OK" ] ;;
-    "ssm start-session") exit 255 ;;
     "s3 cp") exit "${FAKE_AWS_RC:-0}" ;;
-    "ec2 describe-instances") [ -z "${FAKE_EC2_FAIL:-}" ] || exit 255; echo "${FAKE_EC2_STATE:-}" ;;
     *) exit 0 ;;
 esac
 """
@@ -53,15 +46,11 @@ echo "make $*" >> "$FAKE_LOG"
 _FAKE_LOGGER = """#!/usr/bin/env bash
 echo "logger $*" >> "$FAKE_LOG"
 """
-# 바로 돌아옵니다. FAKE_SLEEP_REAL_10이 있으면 `sleep 10`(tunnel.sh의 로그인 재확인 대기)만 실제로 11초 잡니다.
-_FAKE_SLEEP = '#!/usr/bin/env bash\n[ "$1" = 10 ] && [ -n "${FAKE_SLEEP_REAL_10:-}" ] && command -p sleep 11\nexit 0\n'
-# ip-ranges.json 받기(update-cloudfront-ranges.sh) — `-o 파일`에 CloudFront 원본용 대역 FAKE_CURL_RANGES개를 씁니다(기본 12).
-# FAKE_CURL_FAIL이 있으면 연결 실패(22).
+# 바로 돌아옵니다.
+_FAKE_SLEEP = "#!/usr/bin/env bash\nexit 0\n"
+# 부른 인자만 남깁니다 — 서버 배포(deploy.sh)가 바깥 주소를 받지 않는지 기록으로 봅니다.
 _FAKE_CURL = """#!/usr/bin/env bash
 echo "curl $*" >> "$FAKE_LOG"
-[ -z "${FAKE_CURL_FAIL:-}" ] || exit 22
-out=; while [ $# -gt 0 ]; do [ "$1" = -o ] && out="$2"; shift; done
-python3 -I -c 'import json,sys; n=int(sys.argv[2]); json.dump({"syncToken": "1", "prefixes": [{"ip_prefix": f"10.0.{i}.0/24", "service": "CLOUDFRONT_ORIGIN_FACING"} for i in range(n)] + [{"ip_prefix": "1.2.3.0/24", "service": "EC2"}], "ipv6_prefixes": [{"ipv6_prefix": "2600:9000::/28", "service": "CLOUDFRONT_ORIGIN_FACING"}]}, open(sys.argv[1], "w"))' "$out" "${FAKE_CURL_RANGES:-12}"
 """
 
 

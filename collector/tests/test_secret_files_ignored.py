@@ -37,7 +37,7 @@ def test_env_파일과_복사본은_추적하지_않는다(name):
     assert _ignored(name)
 
 
-@pytest.mark.parametrize("name", [".env.example", ".env.aws.example", ".env.vultr.example"])
+@pytest.mark.parametrize("name", [".env.example", ".env.vultr.example"])
 def test_키_이름만_담은_예시는_추적한다(name):
     assert not _ignored(name)
 

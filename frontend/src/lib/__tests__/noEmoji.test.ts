@@ -90,8 +90,8 @@ describe("화면 소스에 이모지가 없다", () => {
 
 /** 문서 본문에서 글자 기호로 쓰는 ®·™까지 허용합니다(상표 표기). */
 const ALLOWED_TEXT = new Set([...ALLOWED, ..."®™"]);
-const REPO_FILES = ["Makefile", "README.md", "CLAUDE.md", "docker-compose.yml", "compose.aws.yml", "compose.vultr.yml", ".env.example",
-  ".env.aws.example", ".env.vultr.example", "deploy/vultr/Caddyfile"];
+const REPO_FILES = ["Makefile", "README.md", "CLAUDE.md", "docker-compose.yml", "compose.vultr.yml", ".env.example",
+  ".env.vultr.example", "deploy/vultr/Caddyfile"];
 
 /** 한 글에서 허용 목록 밖의 그림 문자가 있는 줄을 찾습니다 — "줄: 코드 포인트". */
 function pictographLines(text: string): string[] {

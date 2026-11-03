@@ -114,10 +114,10 @@ class RegimeLogServiceTest {
     }
 
     /**
-     * AWS 개인용 서버(ADR 0019)의 하룻밤 — 21:55에 켜지고 백엔드가 3분 안팎에 뜨면 기동 60초 뒤부터 30분마다
-     * 21:59 · 22:29 · … · 07:59에 돌고 08:00에 꺼집니다. 자정을 넘긴 실행은 다음 날 날짜로 봅니다. 실행마다 그 시각의 시계로 서비스를 만듭니다.
+     * 서버(Vultr, ADR 0023)의 하루 — 24시간 켜져 있어 백엔드가 30분마다 00:29 · 00:59 · … · 23:59에 돕니다.
+     * 실행마다 그 시각의 시계로 서비스를 만듭니다.
      */
-    private static List<RegimeLogService.Outcome> awsNight(int recordHourKst) {
+    private static List<RegimeLogService.Outcome> serverDay(int recordHourKst) {
         RegimeLogStore regimeLog = mock(RegimeLogStore.class);
         when(regimeLog.ready()).thenReturn(true);
         Set<LocalDate> recorded = new HashSet<>();
@@ -127,10 +127,9 @@ class RegimeLogServiceTest {
         when(analytics.regimeNow()).thenReturn(reading("2026-10-02"));
 
         List<RegimeLogService.Outcome> outcomes = new ArrayList<>();
-        for (int run = 0; run < 21; run++) {
-            LocalTime at = LocalTime.of(21, 59).plusMinutes(30L * run);
-            LocalDate date = at.isBefore(LocalTime.of(21, 0)) ? TODAY.plusDays(1) : TODAY;
-            Clock clock = Clock.fixed(date.atTime(at).atZone(Kst.ZONE).toInstant(), ZoneOffset.UTC);
+        for (int run = 0; run < 48; run++) {
+            LocalTime at = LocalTime.of(0, 29).plusMinutes(30L * run);
+            Clock clock = Clock.fixed(TODAY.atTime(at).atZone(Kst.ZONE).toInstant(), ZoneOffset.UTC);
             outcomes.add(new RegimeLogService(analytics, quietStore(), regimeLog, MAPPER, clock, recordHourKst)
                     .recordToday());
         }
@@ -138,13 +137,13 @@ class RegimeLogServiceTest {
     }
 
     @Test
-    @DisplayName("ADR 0019: AWS 개인용 서버(compose.aws.yml)의 기록 시각이면 가동 창(21:55~08:00) 안, 수집이 한 바퀴 돈 뒤 하룻밤에 한 번 기록한다")
-    void awsDeploymentRecordsInsideTheNightWindow() throws Exception {
-        Path compose = Path.of("../compose.aws.yml");
-        assumeTrue(Files.exists(compose), "compose.aws.yml을 찾을 수 없습니다");
+    @DisplayName("ADR 0023: 서버 덧붙임(compose.vultr.yml)의 기록 시각이면 하루에 한 번, 그 시각 뒤 첫 실행에 기록한다")
+    void serverDeploymentRecordsOnceADay() throws Exception {
+        Path compose = Path.of("../compose.vultr.yml");
+        assumeTrue(Files.exists(compose), "compose.vultr.yml을 찾을 수 없습니다");
         Matcher setting = Pattern.compile("(DASHBOARD_SCHEDULER_REGIME\\w*):\\s*\"(\\d+)\"")
                 .matcher(Files.readString(compose));
-        assertThat(setting.find()).as("compose.aws.yml backend에 판정 기록 시각 설정이 있어야 함").isTrue();
+        assertThat(setting.find()).as("compose.vultr.yml backend에 판정 기록 시각 설정이 있어야 함").isTrue();
 
         // 그 환경변수 이름이 실제로 이 설정에 붙는지 — 스프링 부트의 환경변수 이름 규칙으로 풀어 봅니다.
         StandardEnvironment env = new StandardEnvironment();
@@ -155,14 +154,11 @@ class RegimeLogServiceTest {
         int hour = Integer.parseInt(env.resolvePlaceholders("${dashboard.scheduler.regime-record-hour-kst:18}"));
         assertThat(hour).isEqualTo(Integer.parseInt(setting.group(2)));
 
-        List<RegimeLogService.Outcome> night = awsNight(hour);
-        assertThat(night).containsOnlyOnce(RegimeLogService.Outcome.RECORDED);
-        int recordedAt = night.indexOf(RegimeLogService.Outcome.RECORDED);
-        assertThat(recordedAt).as("기동(21:59) 뒤 한 시간 넘게 지난 실행 — 첫 실행이 아님").isGreaterThanOrEqualTo(2);
-        assertThat(night.subList(recordedAt + 1, night.size())).as("자정 뒤는 다음 날 몫이라 아직 이름")
-                .doesNotContain(RegimeLogService.Outcome.RECORDED);
-        assertThat(awsNight(RegimeLogService.DEFAULT_RECORD_HOUR_KST).get(0))
-                .as("기본 18시면 켜자마자(21:59) 아침 08:00에 멈춘 저장본으로 기록해 버림").isEqualTo(RegimeLogService.Outcome.RECORDED);
+        List<RegimeLogService.Outcome> day = serverDay(hour);
+        assertThat(day).containsOnlyOnce(RegimeLogService.Outcome.RECORDED);
+        int recordedAt = day.indexOf(RegimeLogService.Outcome.RECORDED);
+        assertThat(LocalTime.of(0, 29).plusMinutes(30L * recordedAt).getHour()).as("기록 시각 뒤 첫 실행").isEqualTo(hour);
+        assertThat(day.subList(0, recordedAt)).as("그 전에는 기다림").containsOnly(RegimeLogService.Outcome.TOO_EARLY);
     }
 
     @Test

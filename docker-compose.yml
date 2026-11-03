@@ -21,7 +21,7 @@
 #
 # 화면(frontend)·API(backend)도 127.0.0.1 고정입니다. 로컬은 로그인 없이 운영자로 열리므로, 다른 기기에
 # 열면 같은 와이파이의 누구나 운영자가 됩니다 — 그래서 휴대폰 접속(예전 WEB_BIND_HOST=0.0.0.0)은 없앴습니다.
-# 로그인 화면은 AWS 개인용 서버(compose.aws.yml, ADR 0019)와 QA 스택(scripts/qa/docker-compose.qa.yml)에 그대로 남습니다
+# 로그인 화면은 Vultr 서버(compose.vultr.yml, ADR 0023)와 QA 스택(scripts/qa/docker-compose.qa.yml)에 그대로 남습니다
 # — 두 덧붙임이 DASHBOARD_LOCAL_NO_LOGIN을 "false"로 고정합니다.
 # =============================================================================
 
@@ -152,7 +152,7 @@ services:
       APP_PASSWORD: "${APP_PASSWORD:-}"
       OWNER_EMAIL: "${OWNER_EMAIL:-}"
       # 로컬은 로그인 없이 운영자 계정으로 엽니다(ADR 0016). 백엔드는 Host가 localhost·127.0.0.1·::1이고 프록시 헤더가
-      # 없는 요청에만 적용합니다. .env에 LOCAL_NO_LOGIN=false면 로그인 화면. AWS·QA 덧붙임은 "false"로 고정합니다.
+      # 없는 요청에만 적용합니다. .env에 LOCAL_NO_LOGIN=false면 로그인 화면. Vultr·QA 덧붙임은 "false"로 고정합니다.
       DASHBOARD_LOCAL_NO_LOGIN: "${LOCAL_NO_LOGIN:-true}"
       MAIL_HOST: "${MAIL_HOST:-}"
       MAIL_PORT: "${MAIL_PORT:-587}"
