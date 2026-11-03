@@ -17,7 +17,7 @@ paper.kr.quotes·paper.kr.timed입니다(체결 출처를 늘리지 않음).
 [저장본 모양 — contract 1]
   {contract, source, barLabel "END", reference "069500", checkpoint {book, sessionDate, atKst "HH:MM"}, scope [종목…], fetchedAt,
    attempt,                 # 이 확인에서 T 뒤에 받은 회차(1부터)
-   lagSeconds,              # 받은 시각 − 기준 종목의 마지막 완성 봉 끝(라벨), 이번 회차에 받은 그날 봉일 때만, 아니면 null
+   lagSeconds,              # 기준 종목을 받은 시각 − 그 종목의 마지막 완성 봉 끝(라벨), 이번 회차에 받은 그날 봉일 때만, 아니면 null
    tickers {종목: {fetchedAt,
        session,             # 마지막 완성 봉의 날짜(오늘이 아니면 그 종목은 받지 못한 것으로 봄 — 휴장·정지)
        bars [{label, o, h, l, c, v}…],   # 그날 완성 봉 최근 BARS_KEPT개, 오래된 것부터(라벨은 봉 끝 KST HH:MM)
@@ -144,6 +144,7 @@ def task_paper_watch_kr() -> str:
     failed: list[str] = []
     reason = None
     fetched_at = now
+    reference_at = None   # 기준 종목을 받은 시각 — 지연은 이것으로(뒤에 받는 보유·대기 종목의 시각을 섞지 않음 — QA-193)
     for index, code in enumerate(asked):
         if index and SPACING_SECONDS:
             time.sleep(SPACING_SECONDS)
@@ -164,6 +165,8 @@ def task_paper_watch_kr() -> str:
             failed.append(f"{code} 그날 완성 봉 없음")
             continue
         fresh[code] = entry
+        if code == REFERENCE:
+            reference_at = fetched_at
     if len(tickers) > len(asked):
         failed.append(f"호출 상한 {WATCH_CALL_BUDGET}회 — {len(tickers) - len(asked)}종목 묻지 않음")
     if failed:
@@ -174,7 +177,7 @@ def task_paper_watch_kr() -> str:
     received = sorted(fresh)
     missing = [code for code in tickers if code not in fresh]
     carried = carry_over_missing(fresh, previous["tickers"] if same else {}, tickers, reason, _has_data)
-    lag = lag_seconds(fetched_at, fresh.get(REFERENCE))
+    lag = lag_seconds(reference_at, fresh.get(REFERENCE)) if reference_at is not None else None
     store.put_snapshot(catalog.SNAP_PAPER_WATCH_KR, {
         "contract": CONTRACT,
         "source": SOURCE,
