@@ -17,6 +17,7 @@ from datetime import datetime, timezone
 from types import SimpleNamespace
 
 import pytest
+import requests
 from fastapi.testclient import TestClient
 
 from app import http, main
@@ -360,7 +361,6 @@ def _ac_res(status_code: int, payload: dict | None = None) -> SimpleNamespace:
     return SimpleNamespace(status_code=status_code, json=lambda: payload or {})
 
 
-@pytest.mark.xfail(strict=True, reason="QA-186 재현 — 자동완성의 일시 503을 '없음'으로 하루 기억")
 def test_QA186_로이터_코드_찾기의_일시_오류는_하루_기억하지_않는다(monkeypatch):
     monkeypatch.setattr(lp, "_reuters_code", _REAL_REUTERS_CODE)
     asked = _ac_session(monkeypatch, [_ac_res(503), _ac_res(200, AC_AAPL)])
@@ -370,3 +370,25 @@ def test_QA186_로이터_코드_찾기의_일시_오류는_하루_기억하지_�
     now[0] += 61.0
     assert lp._reuters_code("AAPL") == "AAPL.O", "1분 뒤에는 다시 묻는다 — 일시 오류를 '없음'으로 하루 두지 않음"
     assert asked == ["AAPL", "AAPL"]
+
+
+def test_로이터_코드_찾기는_200에서_못_찾으면_하루_묻지_못하면_1분_알던_코드는_그대로(monkeypatch):
+    monkeypatch.setattr(lp, "_reuters_code", _REAL_REUTERS_CODE)
+    now = [1000.0]
+    monkeypatch.setattr(lp.time, "monotonic", lambda: now[0])
+
+    asked = _ac_session(monkeypatch, [_ac_res(200, {"items": []})])
+    assert lp._reuters_code("^VIX") is None
+    now[0] += lp.NAMES_TTL_SECONDS - 1
+    assert lp._reuters_code("^VIX") is None and asked == ["^VIX"], "200에서 못 찾은 것(지수·환율)은 하루 다시 묻지 않음"
+
+    asked = _ac_session(monkeypatch, [requests.exceptions.ReadTimeout("read timed out"), _ac_res(200, AC_AAPL)])
+    assert lp._reuters_code("AAPL") is None
+    now[0] += 30
+    assert lp._reuters_code("AAPL") is None and asked == ["AAPL"], "시간 초과도 1분은 다시 묻지 않음(3초마다 두드리지 않게)"
+    now[0] += 31
+    assert lp._reuters_code("AAPL") == "AAPL.O" and asked == ["AAPL", "AAPL"]
+
+    now[0] += lp.NAMES_TTL_SECONDS + 1
+    asked = _ac_session(monkeypatch, [_ac_res(502)])
+    assert lp._reuters_code("AAPL") == "AAPL.O" and asked == ["AAPL"], "하루가 지나 다시 묻다 실패하면 알던 코드를 그대로"
