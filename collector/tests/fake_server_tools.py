@@ -21,9 +21,16 @@ _GIT_ENV = {
 }
 
 # 기록 파일에 한 줄씩: 인자 | 그때의 COMPOSE_FILE · APP_VERSION
+# postgres 안의 pg_dump는 끝 표시가 있는 덤프를 내고(FAKE_PG_DUMP_RC가 0이 아니면 실패), `exec -T postgres true`(떠 있는지 보기)는
+# FAKE_PG_DOWN이 있으면 실패합니다. 그 밖의 exec(스키마 적용 등)는 FAKE_EXEC_RC로 끝납니다.
 _FAKE_DOCKER = """#!/usr/bin/env bash
 echo "$* | COMPOSE_FILE=${COMPOSE_FILE:-} APP_VERSION=${APP_VERSION:-}" >> "$FAKE_LOG"
 case " $* " in
+    *" exec -T postgres pg_dump "*)
+        [ "${FAKE_PG_DUMP_RC:-0}" = 0 ] || { echo "pg_dump: error: connection to server failed" >&2; exit 1; }
+        printf '%s\\n' 'COPY public.t (a) FROM stdin;' '\\.' '-- PostgreSQL database dump complete'
+        exit 0 ;;
+    *" exec -T postgres true "*) [ -z "${FAKE_PG_DOWN:-}" ]; exit $? ;;
     *" exec "*) exit "${FAKE_EXEC_RC:-0}" ;;
 esac
 if [ -n "${FAKE_DOCKER_FAIL:-}" ] && [[ "$*" == *"$FAKE_DOCKER_FAIL"* ]]; then exit 1; fi

@@ -83,6 +83,8 @@ def server(tmp_path):
     tools._git(seed, "symbolic-ref", "HEAD", "refs/heads/main")
     (seed / "scripts/vultr").mkdir(parents=True)
     shutil.copy(ROOT / "scripts/vultr/deploy.sh", seed / "scripts/vultr/deploy.sh")
+    for name in ("db-backup.sh", "db-common.sh"):   # 배포 전 덤프(QA-200)가 부르는 것
+        shutil.copy(ROOT / "scripts" / name, seed / "scripts" / name)
     (seed / "deploy/vultr").mkdir(parents=True)
     shutil.copy(ROOT / "deploy/vultr/Caddyfile", seed / "deploy/vultr/Caddyfile")
     (seed / "README.md").write_text("readme\n", encoding="utf-8")
@@ -227,6 +229,39 @@ def test_QA118_deploy의_스키마_적용이_10번_모두_실패하면_알리고
     assert len([c for c in _docker_calls(fakes) if "init_schema" in c]) == 10
     assert "스키마" in result.stderr
     assert not any("prune" in c for c in _docker_calls(fakes)), "실패한 배포는 거기서 멈춤"
+
+
+UP = "compose up -d --no-build --wait --wait-timeout 300"
+
+
+def _dump_calls(calls: list[str]) -> list[int]:
+    return [i for i, c in enumerate(calls) if c.startswith("compose exec -T postgres pg_dump")]
+
+
+@pytest.mark.xfail(strict=True, reason="QA-200 재현 — deploy.sh가 기동(컨테이너 교체·마이그레이션) 전에 DB를 덤프하지 않음")
+def test_QA200_deploy는_빌드_뒤_기동_전에_배포_전_덤프를_따로_이름_붙여_남긴다(server, fakes):
+    here, _ = server
+    result = _deploy(server, fakes)
+    assert result.returncode == 0, result.stderr
+    calls = _docker_calls(fakes)
+    dumps = _dump_calls(calls)
+    assert len(dumps) == 1, "배포마다 한 번"
+    assert calls.index("compose build --pull collector") < dumps[0] < calls.index(UP), \
+        "빌드가 성공한 뒤, 수집기가 기동하며 마이그레이션을 적용하기(up) 전"
+    saved = sorted(p.name for p in (here / "backups").glob("*.sql"))
+    assert len(saved) == 1 and saved[0].startswith("pre-deploy-"), \
+        f"정기 백업(macrodash-…)·복원 전 백업과 섞이지 않는 접두어 — {saved}"
+
+
+@pytest.mark.xfail(strict=True, reason="QA-200 재현 — 배포 전 덤프가 없어, 덤프를 못 떠도 그대로 기동함")
+def test_QA200_deploy는_배포_전_덤프가_실패하면_기동하지_않고_0이_아닌_값으로_끝난다(server, fakes):
+    here, _ = server
+    result = _deploy(server, fakes, FAKE_PG_DUMP_RC="1")
+    assert result.returncode != 0
+    assert "배포 전" in result.stderr
+    assert not any(c.startswith("compose up") for c in _docker_calls(fakes)), "되돌릴 시점 없이 기동하지 않음"
+    left = sorted(p.name for p in (here / "backups").glob("*")) if (here / "backups").exists() else []
+    assert left == [], f"반쯤 쓴 덤프(.partial)를 남기지 않음 — {left}"
 
 
 # --------------------------------------------------------------------------- backup-s3.sh
