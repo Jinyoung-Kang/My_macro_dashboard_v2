@@ -155,6 +155,63 @@ class StartCloseRestartTest {
     }
 
     @Test
+    @org.junit.jupiter.api.Disabled("QA-177 재현 — 수정 전: 잠금 밖에서 본 '체결 없음·대기 2건'으로 취소해 FILLED를 CANCELLED로 덮고 XLV를 한 번 더 삼")
+    @DisplayName("QA-177: 잠금 밖에서 대기 주문을 읽은 뒤 겹친 리스크 점검이 출발 주문 하나를 체결했으면 거절하고 아무것도 바꾸지 않는다")
+    void refusesWhenFilledMeanwhile() {
+        usBook(PaperBooks.CLAUDE2);
+        long xlv = store.ordersOf(PaperBooks.CLAUDE2).stream().filter(o -> o.ticker().equals("XLV")).findFirst()
+                .orElseThrow().id();
+        Instant filledAt = Instant.parse("2026-10-26T14:05:00Z");   // 월 10:05 ET — AT_1000 체결
+        when(marketData.sourcedCloseOn("XLV", FRI)).thenReturn(Optional.of(new SourcedClose(150, "equity_close")));
+        // XLE 종가 읽기는 대기 주문을 읽은 뒤·장부 잠금 앞 — 그 사이 리스크 점검이 XLV를 체결해 커밋한 것처럼.
+        when(marketData.sourcedCloseOn("XLE", FRI)).thenAnswer(invocation -> {
+            store.markOrderFilled(xlv, filledAt);
+            store.insertFill(new Fill(0, xlv, PaperBooks.CLAUDE2, "XLV", PaperBooks.BUY, 53, 151.0755, 151.0, 5,
+                    PaperLedger.round4(53 * 151.0755), filledAt, PaperFixtures.MON, "paper.bars", false, null,
+                    BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO));
+            store.upsertPosition(new Position(PaperBooks.CLAUDE2, "XLV", 53, 151.0755, PaperFixtures.MON, filledAt,
+                    151.0755, filledAt, 151.0, filledAt, false, PaperFixtures.MON, 151.0, null));
+            store.upsertState(new BookState(PaperBooks.CLAUDE2, PaperLedger.round4(100_000 - 53 * 151.0755), 99_996.0,
+                    53 * 151.0, 8.0, filledAt, filledAt, FRI, null));
+            return Optional.of(new SourcedClose(90, "equity_close"));
+        });
+
+        assertThatThrownBy(() -> restart.restart(PaperBooks.CLAUDE2, PaperBooks.CLAUDE2))
+                .isInstanceOf(InvalidRequestException.class);
+
+        assertThat(store.ordersOf(PaperBooks.CLAUDE2)).filteredOn(o -> o.id() == xlv).singleElement()
+                .satisfies(o -> assertThat(o.status()).isEqualTo(PaperBooks.ORDER_FILLED));
+        assertThat(store.ordersOf(PaperBooks.CLAUDE2)).filteredOn(o -> o.ticker().equals("XLE")).singleElement()
+                .satisfies(o -> assertThat(o.status()).isEqualTo(PaperBooks.ORDER_PENDING));
+        assertThat(store.fillsOf(PaperBooks.CLAUDE2)).as("겹친 체결 하나 그대로").hasSize(1);
+        assertThat(store.ordersOf(PaperBooks.CLAUDE2)).noneMatch(o -> PaperBooks.BACKFILL.equals(o.timing()));
+        assertThat(store.navSeries(PaperBooks.CLAUDE2)).as("출발일 확정 순자산 줄을 쓰지 않음").isEmpty();
+    }
+
+    @Test
+    @org.junit.jupiter.api.Disabled("QA-177 재현 — 수정 전: 거의 동시에 온 두 번째 요청이 이미 끝난 다시 출발 위에 한 번 더 사후 체결(XLV·XLE 두 번)")
+    @DisplayName("QA-177: 같은 요청이 거의 동시에 두 번 오면 잠금을 늦게 얻은 쪽은 거절한다 — 사후 체결은 한 번")
+    void refusesDuplicateRestart() {
+        usBook(PaperBooks.CLAUDE2);
+        when(marketData.sourcedCloseOn("XLV", FRI)).thenReturn(Optional.of(new SourcedClose(150, "equity_close")));
+        boolean[] first = {true};
+        // 바깥 요청이 대기 주문을 읽은 뒤·잠금 앞에서, 다른 요청이 처음부터 끝까지 다시 출발을 마친 것처럼.
+        when(marketData.sourcedCloseOn("XLE", FRI)).thenAnswer(invocation -> {
+            if (first[0]) {
+                first[0] = false;
+                restart.restart(PaperBooks.CLAUDE2, PaperBooks.CLAUDE2);
+            }
+            return Optional.of(new SourcedClose(90, "equity_close"));
+        });
+
+        assertThatThrownBy(() -> restart.restart(PaperBooks.CLAUDE2, PaperBooks.CLAUDE2))
+                .isInstanceOf(InvalidRequestException.class);
+
+        assertThat(store.fillsOf(PaperBooks.CLAUDE2)).as("먼저 끝난 다시 출발의 두 건만").hasSize(2);
+        assertThat(store.ordersOf(PaperBooks.CLAUDE2)).filteredOn(o -> PaperBooks.BACKFILL.equals(o.timing())).hasSize(2);
+    }
+
+    @Test
     @DisplayName("출발 결정이 아닌 대기 주문(정기 결정의 주문)이 섞였으면 거절한다")
     void onlyStartOrders() {
         long start = usBook(PaperBooks.CLAUDE2);
