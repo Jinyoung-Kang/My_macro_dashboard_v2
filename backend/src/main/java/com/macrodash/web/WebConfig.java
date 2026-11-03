@@ -70,6 +70,8 @@ public class WebConfig implements WebMvcConfigurer {
     /**
      * 로그인 모드: FRONTEND_ORIGIN의 명시 목록 + 화면 포트의 모든 호스트(http://*:포트).
      * 로컬 무로그인(ADR 0016): 이 맥의 화면 주소 셋(localhost·127.0.0.1·[::1]의 화면 포트)뿐 — 와일드카드 없음.
+     * Tailscale 신원 운영자(ADR 0023): FRONTEND_ORIGIN의 명시 목록뿐 — 와일드카드 없음. 쿠키가 아니라 네트워크가 붙이는 자격이라
+     * SameSite가 막아 주지 않아, 와일드카드가 남으면 아무 호스트의 화면 포트 페이지가 운영자로 읽고 씁니다(QA-171).
      * FRONTEND_ORIGIN은 기동 때 이 맥의 http 주소인지만 확인합니다({@link LocalNoLogin}).
      */
     static List<String> allowedOriginPatterns(AppProperties properties) {
@@ -81,6 +83,9 @@ public class WebConfig implements WebMvcConfigurer {
                 .map(String::trim)
                 .filter(origin -> !origin.isBlank())
                 .toList());
+        if (properties.getTailnetOwnerLogin() != null && !properties.getTailnetOwnerLogin().isBlank()) {
+            return List.copyOf(patterns);
+        }
         String anyHost = "http://*:" + properties.getFrontendPort();
         if (!patterns.contains(anyHost)) {
             patterns.add(anyHost);
