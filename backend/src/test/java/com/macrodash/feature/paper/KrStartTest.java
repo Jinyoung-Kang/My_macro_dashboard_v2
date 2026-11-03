@@ -10,6 +10,7 @@ import com.macrodash.store.PaperStore.NavRow;
 import com.macrodash.store.PaperStore.Order;
 import com.macrodash.support.InvalidRequestException;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import tools.jackson.databind.JsonNode;
@@ -28,6 +29,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyCollection;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
@@ -706,6 +708,32 @@ class KrStartTest {
                 });
         assertThat(cp.status()).isEqualTo(ClaudeBookService.STATUS_OK);
         assertThat(store.orders.get(two.id()).status()).isEqualTo(PaperBooks.ORDER_CANCELLED);
+    }
+
+    @Test
+    @Disabled("QA-192 재현 — 수정 전: 장부·자료 게이트 오류를 규칙·계좌1에만 세어, 계좌2가 낼 차례인 밤은 GAVE_UP에 닿지 않고 ERROR가 이어짐")
+    @DisplayName("QA-192: 한국 결정의 장부·자료 게이트 오류(규칙 계좌 입력 읽기 고장)는 그 세션 결정을 낼 차례인 계좌2 오류 횟수에도 셈 — 세 번이면 GAVE_UP")
+    void qa192LedgerAndGateErrorsCountForAccount2() {
+        KrClaudeFixtures.FakeAi fake = new KrClaudeFixtures.FakeAi();
+        fake.answer(KrClaudeFixtures.decision(8, null, KrClaudeFixtures.order("005930", "BUY", 8.0, null)));
+        realClaude(fake);
+        assertThat(runAt("2026-11-30T22:30").outcome()).isEqualTo(PaperDecisionJob.STARTED);
+        store.books.put(PaperBooks.KR_CLAUDE2, new Book(PaperBooks.KR_CLAUDE2, PaperBooks.KIND_CLAUDE, PaperBooks.KR_CLAUDE2_LABEL,
+                100_000_000, S, PaperBooks.ACTIVE, null, Book.MARKET_KR, Book.CURRENCY_KRW));
+        com.macrodash.store.PaperStore.BookState first = store.states.get(PaperBooks.KR_CLAUDE);
+        store.states.put(PaperBooks.KR_CLAUDE2, new com.macrodash.store.PaperStore.BookState(PaperBooks.KR_CLAUDE2, 100_000_000,
+                100_000_000, 0, 0, first.lastObservedAt(), first.lastProcessedCollectedAt(), S, null));
+        sessionData(NEXT, S, everyCodeOn(NEXT));
+        doThrow(new IllegalStateException("수급 읽기 고장")).when(repository)
+                .readObservationSeries(eq(Datasets.OBS_KR_PAPER_FLOW), anyCollection(), any(LocalDate.class));
+
+        for (String at : List.of("2026-12-01T22:30", "2026-12-01T22:40", "2026-12-01T22:50")) {
+            assertThat(runAt(at).outcome()).as(at).isEqualTo(PaperDecisionJob.ERROR);
+        }
+        JsonNode attempts = krRuns().getLast().detail().path("attempts");
+        assertThat(runAt("2026-12-01T23:00").outcome()).isEqualTo(PaperDecisionJob.GAVE_UP);
+        assertThat(attempts.path(PaperBooks.KR_CLAUDE2).asInt()).as("계좌2 횟수").isEqualTo(PaperDecisionJob.MAX_ATTEMPTS);
+        assertThat(fake.requests).as("출발 한 번 — 오류 동안 Claude를 부르지 않음").hasSize(1);
     }
 
     /** E(12-02) 밤 자료 — 관측치(모든 종목 E 봉)·금융위(12-01)·U 여덟 종목의 E 수급(20:21 판, 21:18에 받음). 1분봉(paper.kr.timed)은 넣지 않음. */
