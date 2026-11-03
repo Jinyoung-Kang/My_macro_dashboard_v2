@@ -553,6 +553,69 @@ class ClaudeBookServiceTest {
     }
 
     @Test
+    @org.junit.jupiter.api.Disabled("QA-191 재현 — 수정 전: 계좌1 장중 확인 API 오류 행 요약이 '같은 거래일에 한 번 다시 부릅니다'(작업은 다시 부르지 않음)")
+    @DisplayName("QA-191: 계좌1 장중 확인(CHECKPOINT)의 API 오류 행은 '장중 확인 재시도 없음(아침 주문 그대로)' — 작업이 그 세션에 다시 부르지 않는 실제 동작과 같은 문구")
+    void checkpointApiErrorSaysNoRetry() {
+        activeWithHolding();
+        answer(429, RATE_LIMITED);
+
+        Decision d = service().decideCheckpoint(UsPaperMarket.INSTANCE, MON);
+
+        assertThat(d.kind()).isEqualTo(RuleBookService.CHECKPOINT);
+        assertThat(d.status()).isEqualTo(ClaudeBookService.STATUS_API_ERROR);
+        assertThat(d.response().path("summary").asString()).doesNotContain("다시 부릅니다")
+                .isEqualTo("API 오류 — 장중 확인 재시도 없음(아침 주문 그대로)");
+    }
+
+    @Test
+    @org.junit.jupiter.api.Disabled("QA-191 재현 — 수정 전: 부른 뒤 결정 행·대체 기록이 모두 실패하면 다음 주기(5분 뒤)에 같은 세션을 또 부름")
+    @DisplayName("QA-191: 계좌1 장중 확인 작업 — 부른 뒤 결정 행과 대체 기록이 모두 실패해도(DB 순간 장애) 그 세션에 Claude를 다시 부르지 않고, 예외로 끝난 주기는 ERROR 작업 기록")
+    void checkpointJobDoesNotCallAgainAfterUnrecordedResponse() throws Exception {
+        FakePaperStore failing = new FakePaperStore() {
+            @Override
+            public Optional<Long> insertDecisionIfAbsent(Decision d) {
+                if (RuleBookService.CHECKPOINT.equals(d.kind())) {
+                    throw new org.springframework.dao.DataAccessResourceFailureException("DB 연결 끊김(시험)");
+                }
+                return super.insertDecisionIfAbsent(d);
+            }
+        };
+        failing.dbNow = NOW;
+        store = failing;
+        settings = PaperFixtures.settings(store);
+        store.initSettingsIfAbsent(settings.defaultsJson());
+        ledger = new PaperLedgerService(store, marketData, MAPPER);
+        ObjectNode body = (ObjectNode) store.settings.body().deepCopy();
+        ((ObjectNode) body.get("claude")).put("checkpoint", true).put("checkpointAtEt", "12:00");
+        store.settings = new PaperStore.SettingsRow(store.settings.version(), body, store.settings.updatedAt());
+        activeWithHolding();
+        store.insertDecisionIfAbsent(new Decision(0, PaperBooks.CLAUDE, MON, RuleBookService.SCHEDULED, null, "OK",
+                "claude-sonnet-5-5", 0, 1, FRI, 60.0, null, null, null, MAPPER.createObjectNode(), null, null, null,
+                true, 0L, 0));
+        // 화 세션(10-27) 12:00 ET(16:00Z) 뒤 그날 시간별 관측치 — 기준 거래일 d = 월(10-26).
+        LocalDate tue = LocalDate.of(2026, 10, 27);
+        when(marketData.quotes()).thenReturn(Optional.of(quotes(Instant.parse("2026-10-27T16:20:00Z"),
+                bar("SPY", MON, 681, tue, 683))));
+        answerJson(decision(55, null, order("AAA", "BUY", 8.0, null, "NEXT_OBSERVATION")));
+        answerJson(decision(55, null, order("AAA", "BUY", 8.0, null, "NEXT_OBSERVATION")));
+        PaperClaude1CheckpointJob job = new PaperClaude1CheckpointJob(store, reader, marketData, service(),
+                PaperFixtures.config(), MAPPER, Clock.fixed(Instant.parse("2026-10-27T16:30:00Z"), ZoneOffset.UTC));
+
+        assertThatThrownBy(job::run).isInstanceOf(RuntimeException.class);
+        assertThat(hits.get()).isEqualTo(1);
+        assertThat(store.decisionFor(PaperBooks.CLAUDE, MON, RuleBookService.CHECKPOINT)).as("행을 남기지 못함").isEmpty();
+
+        Throwable again = org.assertj.core.api.Assertions.catchThrowable(job::run);   // 5분 뒤 다음 주기의 대역
+
+        assertThat(hits.get()).as("같은 세션에 다시 부르지 않음(과금된 응답)").isEqualTo(1);
+        assertThat(again).isNull();
+        assertThat(store.jobRuns).anySatisfy(r -> {
+            assertThat(r.job()).isEqualTo(PaperClaude1CheckpointJob.JOB);
+            assertThat(r.outcome()).isEqualTo("ERROR");
+        });
+    }
+
+    @Test
     @DisplayName("재시도한 API 오류가 또 실패하면 그 행은 API_ERROR·retryCount 1로 끝난다(세 번째는 없음)")
     void secondApiErrorEndsRetries() {
         activeWithHolding();
