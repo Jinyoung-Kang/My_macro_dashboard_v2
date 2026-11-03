@@ -48,7 +48,7 @@ ALL_TASKS: tuple[Task, ...] = (
     Task("equity_history", "slow", task_equity_history, "13F 매핑 종목 일별 종가"),
     Task("paper_quotes", "slow", task_paper_quotes, "모의 매매 유니버스 최근 3개월 일봉 (장부 관측치)"),
     # 관측치 바로 뒤 — 같은 Yahoo 래치를 나눠 써서, 1분봉이 429를 받아도 그 회차 장부 관측치는 이미 받은 뒤입니다(명세 2026-10-30 §12-2).
-    Task("paper_bars_us", "slow", task_paper_bars_us, "Claude 계좌2 단계 0 측정 — 대기·최근 주문 종목의 메뉴 창 1분봉 (Yahoo, 체결에는 아직 쓰지 않음)"),
+    Task("paper_bars_us", "slow", task_paper_bars_us, "Claude 계좌2 시각 지정 체결·실행 감사 — 대기·최근 주문 종목의 메뉴 창 1분봉 (Yahoo)"),
     # 속도군 session(5분) — 장중 확인(MINUTE) 날 확인 시각 −15~+30분에만 외부를 부르고, 그 밖의 회차는 호출 없이 EmptyResult(명세 2026-10-30 §12-1).
     Task("paper_watch_us", "session", task_paper_watch_us, "Claude 계좌2 장중 확인 — MINUTE 확인 날 감시 종목 1분봉 (확인 시각 −15~+30분에만, Yahoo)"),
     Task("paper_watch_kr", "session", task_paper_watch_kr, "한국 Claude 계좌2 장중 확인 — 확인 날 감시 종목 1분봉 (확인 시각 뒤 한 번, 토스)"),

@@ -1,10 +1,11 @@
 """
 app/tasks/paper_bars.py
-미국 Claude 계좌2(체결 시점 실험)의 단계 0 측정 — 대기·최근 주문 종목의 메뉴 창 1분봉 → 스냅샷 paper.bars.us (slow, paper_quotes 바로 뒤).
+미국 Claude 계좌2(체결 시점 실험)의 1분봉 — 대기·최근 주문 종목의 메뉴 창 1분봉 → 스냅샷 paper.bars.us (slow, paper_quotes 바로 뒤).
 
-명세 docs/specs/2026-10-30-claude-book2-timing-design.md §7-1·§12-1~12-3·§19(X1~X5·X9), ADR 0022. 단계 0은 **재기만** 합니다 — 이
-저장본을 읽는 것은 백엔드 실행 감사 작업(단계 0-4: 계좌1 주문의 메뉴 반사실·1분봉 지연)이고, 장부·패킷·결정은 읽지 않습니다. 체결은
-지금처럼 paper.quotes 관측치로만 합니다.
+명세 docs/specs/2026-10-30-claude-book2-timing-design.md §7-1·§12-1~12-3·§19(X1~X5·X9), ADR 0022. 단계 0에서는 재기만 했고(백엔드 실행 감사
+작업 — 주문의 메뉴 반사실·1분봉 지연), 단계 1부터는 장부가 계좌2의 시각 지정 주문(NEXT_OPEN·AT_*, 단계 2의 MARKET)을 이 저장본의 그 시각 봉으로
+체결합니다(백엔드 UsTimedFills — 시각 지정 체결가의 출처는 이 저장본 하나, 1분봉 자료가 없을 때만 관측치로 대체). 계좌2 장중 확인의 예상
+상태(T 가격)도 이것을 읽고, 아침 결정 패킷은 읽지 않습니다. 계좌1 체결은 지금처럼 paper.quotes 관측치로만 합니다.
 
 [범위] store.timed_scope("US") — Claude 계좌1·계좌2의 대기 주문 ∪ 최근 8일(달력일)에 만든 주문 ∪ 계좌2 보유(백엔드 표를 읽기만 — ADR 0008·0022)
   + 지연 기준 SPY. 표에서 고른 종목이 없으면 EmptyResult이고 Yahoo를 부르지 않습니다 — SPY 혼자서는 묻지 않습니다(잴 주문이 없음).
@@ -12,7 +13,7 @@ app/tasks/paper_bars.py
   T = market_target(생성)(생성 + 60초 뒤 첫 분 — 백엔드 ExecutionAudit와 같은 식)을 그 T의 뉴욕 날짜 세션에만 메뉴처럼 창·첫 거래 봉 키로 더합니다.
   MARKET 주문이 없으면 저장본은 메뉴 일곱 키 그대로입니다(더하기만 — contract 1 그대로).
 [받는 법] yf.download(interval="1m", prepost=False, auto_adjust=False) 배치 한 번. 이 프로세스에서 1분봉을 처음 받기 전까지는 period "5d"
-  (서버가 꺼졌던 세션 따라잡기 — 서버는 밤에만 켜져 날마다 새로 기동), 한 번 받은 뒤로는 "1d". 1d가 장 전·마감 뒤에 어느 세션을 주는지,
+  (수집기가 꺼졌던 동안의 세션 따라잡기 — 기동 직후), 한 번 받은 뒤로는 "1d". 1d가 장 전·마감 뒤에 어느 세션을 주는지,
   5d가 며칠 전 세션까지 주는지는 [모름 — X9, 기동 직후 저장본의 세션 날짜로 확인]. 확정된 세션(동부 16:15 뒤 — paper.latest_final_date)은
   검증용 일봉 시가(X2) 배치를 세션마다 한 번 더 부릅니다(dailyOpenSessions에 적어 다시 부르지 않음).
 [래치] Yahoo 공용 래치(http.YAHOO_HOST)가 닫혀 있으면 그 회차는 묻지 않고(빠진 창은 다음 slow 회차의 같은 날 다운로드에 들어 있음), 이 회차가
@@ -325,7 +326,7 @@ def _fill_daily_opens(fresh: dict[str, dict], done: dict[str, str], fetched_at: 
 
 
 def task_paper_bars_us() -> str:
-    """Claude 계좌 주문·계좌2 보유 종목의 메뉴 창 1분봉(Yahoo) → 스냅샷 paper.bars.us (단계 0 측정 — 체결에는 아직 쓰지 않음)."""
+    """Claude 계좌 주문·계좌2 보유 종목의 메뉴 창 1분봉(Yahoo) → 스냅샷 paper.bars.us (계좌2 시각 지정 체결가·실행 감사)."""
     global _caught_up, _rest_rounds
     scope = store.timed_scope("US")
     if not scope:
