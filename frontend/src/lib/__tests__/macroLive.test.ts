@@ -5,9 +5,12 @@
  *  - 거래 시각이 있으면 그 시각을 카드 시각으로(개장 배지가 읽는 형식), 없으면(TradingView) 받은 시각을 적되 카드 시각은 그대로
  *  - 값이 없으면 카드 그대로, 이어받은 예전 값 표시는 실시간 값이 오면 사라짐
  *  - 마지막 응답에서 빠진 종목·닫힌 연결이면 저장본 카드 그대로, 받은 시각은 그 종목의 것, 머리말 문구는 얹은 카드가 있는지에 따라(QA-184)
+ *  - 카드 단위 배율(엔/원 100엔당)은 수집기 market.quote_scale과 같은 규칙 — 그 소스와 대조(QA-185, 지표 상세 차트도 이 규칙)
  */
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
-import { MACRO_LIVE, macroCardView, macroLiveItem, macroLiveItems, macroLiveNotice, withLive } from "../macroLive";
+import { MACRO_LIVE, macroCardView, macroLiveItem, macroLiveItems, macroLiveNotice, scaleFor, withLive } from "../macroLive";
 import type { LivePrice, MacroItem } from "../types";
 
 const card = (over: Partial<MacroItem>): MacroItem => ({
@@ -112,5 +115,26 @@ describe("마지막 응답에서 빠진 종목(QA-184)", () => {
     expect(macroLiveNotice(null, overlaid)).toBeNull();
     expect(macroLiveNotice("TradingView: HTTP 429", stored)).toBe("실시간 시세: TradingView: HTTP 429 — 카드는 저장본 값입니다.");
     expect(macroLiveNotice("TradingView: HTTP 429", overlaid)).toBe("실시간 시세: TradingView: HTTP 429 — 받지 못한 카드는 저장본 값입니다.");
+  });
+});
+
+describe("카드 단위 배율 — 수집기 market.quote_scale과 대조(QA-185)", () => {
+  // 수집기가 카드·환율 차트에 쓰는 규칙(collector/app/services/market.py quote_scale)을 소스에서 읽어, 화면 규칙(scaleFor — 카드 실시간 값·지표 상세
+  // 차트)이 같은 키·경계·배율인지 봅니다. 한쪽만 바뀌면 같은 지표가 카드와 차트에서 100배 다르게 그려집니다.
+  const source = readFileSync(resolve(__dirname, "../../../../collector/app/services/market.py"), "utf8");
+  const body = /def quote_scale\(.*\n([\s\S]*?)\n(?=\S)/.exec(source)?.[1] ?? "";
+  const rules = [...body.matchAll(/if key == "(\w+)" and raw_value < ([\d.]+):\s*\n\s*return ([\d.]+)/g)]
+    .map(([, key, below, factor]) => ({ key, below: Number(below), factor: Number(factor) }));
+
+  it("수집기 규칙마다 같은 경계·배율, 규칙에 없는 카드는 늘 1", () => {
+    expect(rules.length).toBeGreaterThan(0);
+    expect(body).toMatch(/\n\s*return 1\.0\s*$/);
+    for (const rule of rules) {
+      expect(scaleFor(rule.key, rule.below - 0.01)).toBe(rule.factor);
+      expect(scaleFor(rule.key, rule.below)).toBe(1);
+    }
+    for (const key of Object.keys(MACRO_LIVE).filter((name) => !rules.some((rule) => rule.key === name))) {
+      expect(scaleFor(key, 0.5)).toBe(1);
+    }
   });
 });

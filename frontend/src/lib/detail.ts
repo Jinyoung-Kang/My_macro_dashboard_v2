@@ -6,6 +6,7 @@
  */
 import { EMPTY, formatKoreanScale, formatKst, formatNumber, withoutLeadingIcon } from "./format";
 import type { LineRow } from "./lineChart";
+import { scaleFor } from "./macroLive";
 import type { DetailMarket, DetailQuote, DetailStat } from "./types/detail";
 import type { MacroCategory, MacroItem, MacroOverview } from "./types/macro";
 
@@ -92,6 +93,20 @@ export function chartRows(points: readonly { date: string; close?: number | null
 
 /** 차트 행의 값 키. */
 export const CHART_KEY = "close";
+
+/**
+ * 지표 차트 행 — 카드와 같은 단위(QA-185). 엔/원 카드는 100엔당이라 1엔당(50 미만)으로 온 점에 100을 곱합니다(카드와 같은 배율 규칙 — lib/macroLive
+ * scaleFor, 수집기 market.quote_scale). 점마다 판정해 이미 100엔당으로 온 점은 그대로 둡니다. 다른 지표는 chartRows 그대로.
+ */
+export function indicatorChartRows(
+  key: string,
+  points: readonly { date: string; close?: number | null; value?: number | null }[] | null | undefined,
+): LineRow[] {
+  return chartRows(points).map((row) => {
+    const value = row[CHART_KEY];
+    return typeof value === "number" ? { ...row, [CHART_KEY]: value * scaleFor(key, value) } : row;
+  });
+}
 
 // ------------------------------------------------------------------ 지표
 

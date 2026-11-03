@@ -10,6 +10,7 @@ import {
   externalLinks,
   findIndicator,
   holderQuery,
+  indicatorChartRows,
   indicatorChartSymbol,
   indicatorHref,
   indicatorNewsQuery,
@@ -223,6 +224,13 @@ describe("지표", () => {
     expect(findIndicator(OVERVIEW, "us10y")?.category.id).toBe("ust");
     expect(findIndicator(OVERVIEW, "nope")).toBeNull();
     expect(findIndicator(null, "us10y")).toBeNull();
+  });
+
+  it("QA-185 지표 차트 행은 카드 단위 — 엔/원은 1엔당 점만 × 100(이미 100엔당인 점·모르는 값은 그대로), 다른 지표는 원값", () => {
+    const points = [{ date: "2026-10-01", close: 9.31 }, { date: "2026-10-02", close: 935.5 }, { date: "2026-10-03", close: null }];
+    expect(indicatorChartRows("jpykrw", points).map((row) => row.close)).toEqual([931, 935.5, null]);
+    expect(indicatorChartRows("usdjpy", [{ date: "2026-10-01", close: 9.31 }])).toEqual(chartRows([{ date: "2026-10-01", close: 9.31 }]));
+    expect(indicatorChartRows("jpykrw", undefined)).toEqual([]);
   });
 
   it("차트 심볼 — 카드 티커, 뜻이 다른 티커(2년물 ZT=F 선물 가격)·티커 없음은 null", () => {

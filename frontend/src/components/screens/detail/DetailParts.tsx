@@ -12,7 +12,7 @@ import { useMinuteClock } from "@/hooks/useMinuteClock";
 import { useSessionUser } from "@/hooks/useSessionUser";
 import { isDemo } from "@/lib/access";
 import { apiPost } from "@/lib/api";
-import { CHART_KEY, chartRows, DETAIL_RANGES, type DetailRange, type ExternalLink, newsPage, newsTime, summaryLines } from "@/lib/detail";
+import { CHART_KEY, chartRows, DETAIL_RANGES, type DetailRange, type ExternalLink, indicatorChartRows, newsPage, newsTime, summaryLines } from "@/lib/detail";
 import { endpoints } from "@/lib/endpoints";
 import { formatNumber } from "@/lib/format";
 import { hasLineValues, scrubModel } from "@/lib/lineChart";
@@ -55,6 +55,7 @@ export function PriceHero({
   noChartReason,
   valueDigits,
   placeholder,
+  cardKey,
 }: {
   label: string;
   valueText: string | null;
@@ -69,12 +70,14 @@ export function PriceHero({
   /** 차트 값(문지른 점) 자릿수. */
   valueDigits: number;
   placeholder?: ReactNode;
+  /** 지표 상세의 카드 키 — 차트 점을 카드와 같은 단위로(엔/원 100엔당, lib/detail indicatorChartRows — QA-185). 없으면 원값(종목 상세). */
+  cardKey?: string;
 }) {
   const [range, setRange] = useState<DetailRange>("1y");
   const series = useApi<{ available: boolean; message?: string; points: { date: string; close: number | null; value?: number | null }[] }>(
     symbol ? endpoints.macro.ticker(symbol, range) : null,
   );
-  const rows = chartRows(series.data?.points);
+  const rows = cardKey ? indicatorChartRows(cardKey, series.data?.points) : chartRows(series.data?.points);
   const lineSeries = [{ key: CHART_KEY, label }];
   const { index, onScrub } = useChartScrub(rows.length);
   const format = (value: number) => formatNumber(value, valueDigits);

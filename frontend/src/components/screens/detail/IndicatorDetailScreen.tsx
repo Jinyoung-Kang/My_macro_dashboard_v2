@@ -28,6 +28,7 @@ import { AiSummaryCard, ExternalLinksCard, NewsCard, PriceHero } from "./DetailP
  *
  * - 값은 매크로 개요 저장본(live 없이, 홈 시장 행과 같은 5분 간격)의 카드 그대로 — 출처·장 상태·지연·이전 값·추정 배지를 홈 시장 행과 같은 규칙으로.
  * - 차트는 카드 티커의 Yahoo 시계열입니다. 카드 값이 TradingView 실시간 시세면 차트(Yahoo)와 마지막 값이 조금 다를 수 있어 차트 출처를 따로 적습니다.
+ *   점은 카드와 같은 단위입니다(엔/원 100엔당 — QA-185).
  */
 export function IndicatorDetailScreen({ indicatorKey }: { indicatorKey: string }) {
   const overview = useApi<MacroOverview>(endpoints.macro.overview(false), HOME_REFRESH_MS.macro);
@@ -87,6 +88,7 @@ export function IndicatorDetailScreen({ indicatorKey }: { indicatorKey: string }
         changeDigits={row.changeDigits ?? 2}
         valueDigits={row.changeDigits ?? 2}
         symbol={symbol}
+        cardKey={item.key}
         noChartReason={INDICATOR_NO_CHART[item.key] ?? "이 카드는 Yahoo 티커가 없어 차트를 그리지 않습니다."}
         meta={
           <>

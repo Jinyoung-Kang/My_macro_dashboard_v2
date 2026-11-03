@@ -82,8 +82,11 @@ function signed(value: number, digits: number): string {
   return `${value < 0 ? "-" : "+"}${fixed(Math.abs(value), digits)}`;
 }
 
-/** 엔/원은 100엔당 카드 — 1엔당(50 미만)으로 온 값은 100을 곱합니다(수집기 market.quote_scale과 같은 규칙). */
-function scaleFor(key: string, raw: number): number {
+/**
+ * 엔/원은 100엔당 카드 — 1엔당(50 미만)으로 온 값은 100을 곱합니다(수집기 market.quote_scale과 같은 규칙 — macroLive 시험이 그 소스와 대조).
+ * 카드의 실시간 값과 지표 상세 차트(lib/detail indicatorChartRows — QA-185)가 함께 씁니다.
+ */
+export function scaleFor(key: string, raw: number): number {
   return key === "jpykrw" && raw < 50 ? 100 : 1;
 }
 
