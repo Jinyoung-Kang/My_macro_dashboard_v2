@@ -592,4 +592,22 @@ describe("오늘 추정 꼬리(장중 명세 §4 '순자산 곡선 꼬리')", ()
     expect(hero?.day === null || hero?.day?.pct === 0.3).toBe(true);
     expect(overviewHeroModel(overview, "claude", NAV_WINDOW, "US", realtime)?.stageLabel ?? "").not.toMatch(/^실시간 추정/);
   });
+
+  // QA-195: 히어로가 실시간 순자산이 있으면 서버 지금 값을 무조건 버렸습니다 — 체결 뒤 개요(60초마다)는 새 보유인데, 실시간 순자산은 장중 카드가 앞서
+  // 읽은 /live(기본 최대 60분 간격)의 체결 전 보유로 센 값이었습니다. 실시간 가격 시각이 서버 지금 값의 기준 시각보다 이르면 서버 지금 값을 씁니다.
+  it.fails("QA-195 실시간 가격 시각이 서버 지금 값의 기준 시각보다 이르면 서버 지금 값 — 같거나 늦거나 한쪽 시각을 모르면 실시간 추정", () => {
+    // 체결 뒤 리스크 점검이 남긴 장부 단계의 지금 값(10-31 00:05 KST) — 실시간 가격의 가장 늦은 거래 시각은 그보다 이른 10-30 23:58:07 KST
+    const ledger = { ...books[0], current: { ...live("2026-10-31 00:05 KST"), stage: "LEDGER" as const, basis: "LEDGER" as const,
+      isEstimated: false, livePriced: 0, nav: 99_800 } };
+    const overview = { books: [ledger, ...books.slice(1)], pendingBackfill: [], quotes: null, liveSession: REGULAR, navEstimate: ESTIMATE };
+    const realtime = { code: "rules", nav: 101_500.5, returnPct: 1.5, dayChangePct: 0.3, at: "2026-10-30T14:58:07Z", priced: 2, total: 3 };
+    const older = overviewHeroModel(overview, "rules", NAV_WINDOW, "US", realtime);
+    expect(older?.valueText).toBe("99,800.00");
+    expect(older?.stageLabel ?? "").not.toMatch(/^실시간 추정/);
+    expect(older?.isEstimated).toBe(false);
+    // 같은 분(서버 시각은 분 단위)이거나 늦으면, 또는 실시간 시각을 모르면 실시간 추정
+    for (const at of ["2026-10-30T15:05:00Z", "2026-10-30T15:06:30Z", null]) {
+      expect(overviewHeroModel(overview, "rules", NAV_WINDOW, "US", { ...realtime, at })?.valueText).toBe("101,500.50");
+    }
+  });
 });
