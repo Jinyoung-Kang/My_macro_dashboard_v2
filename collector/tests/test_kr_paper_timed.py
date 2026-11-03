@@ -286,3 +286,51 @@ def test_실행_감사_계좌_글자는_백엔드와_같다():
     for code in kr_paper_timed.KR_AUDIT_BOOKS:
         name = "KR_CLAUDE2" if code.endswith("2") else "KR_CLAUDE"
         assert f'{name} = "{code}"' in books, code
+
+
+def _until(bars, last):
+    """그 라벨까지의 봉만(그 시각에 받은 것처럼 — 장 시간 변경일 16:30 마감의 장중 저장본)."""
+    return [b for b in bars if b["time"] <= last]
+
+
+@pytest.mark.xfail(strict=True, reason="QA-174 재현 — 16:40 전에 받은 OK 칸을 다시 받지 않아 장 시간 변경일(16:30 마감)의 마감 봉이 끝내 없음")
+def test_QA174_가장_늦은_마감_더하기_10분_전에_받은_OK_칸은_그_뒤_한_번_더_받는다(store, toss, monkeypatch):
+    _orders(monkeypatch, [("005930", date(2026, 11, 2))])
+    toss.pages[("005930", E)] = _until(_session(E), "15:50")
+    monkeypatch.setattr(kr_paper_timed, "_now", lambda: datetime(2026, 11, 3, 15, 50, tzinfo=KST))
+    tasks.task_kr_paper_timed()
+    first = _payload(store)["sessions"][E]["005930"]
+    assert first["status"] == "OK" and "16:31" not in first["closes"]
+
+    toss.pages[("005930", E)] = _session(E)
+    toss.calls.clear()
+    monkeypatch.setattr(kr_paper_timed, "_now", lambda: datetime(2026, 11, 3, 16, 45, tzinfo=KST))
+    tasks.task_kr_paper_timed()
+
+    assert {symbol for symbol, _ in toss.calls} == {"005930"}
+    again = _payload(store)["sessions"][E]["005930"]
+    assert "16:31" in again["closes"]
+    assert datetime.fromisoformat(again["fetchedAt"]) >= datetime(2026, 11, 3, 16, 40, tzinfo=KST)
+
+    toss.calls.clear()
+    monkeypatch.setattr(kr_paper_timed, "_now", lambda: datetime(2026, 11, 3, 17, 45, tzinfo=KST))
+    with pytest.raises(EmptyResult):
+        tasks.task_kr_paper_timed()
+    assert toss.calls == [], "16:40 뒤에 받은 칸은 다시 받지 않음"
+
+
+@pytest.mark.xfail(strict=True, reason="QA-174 재현 — 다시 받기가 실패하면 직전 OK 칸을 FAILED로 덮음(직전 저장 값을 버림)")
+def test_QA174_다시_받기가_실패하면_직전_OK_칸을_FAILED로_덮지_않는다(store, toss, monkeypatch):
+    # 창 키가 빠진 칸(2c 전)을 다시 받는 길 — 받기가 실패해도 장부가 쓰던 OK 칸은 그대로 두고 다음 주기에 다시.
+    old = {"status": "OK", "reason": None, "fetchedAt": "2026-11-03T14:30:00+00:00",
+           "windows": {f"{hour}:00": [] for hour in range(10, 16)}, "firstAfter": {}, "closes": {"15:31": {"close": 71_500.0, "volume": 100}}}
+    store.put_snapshot(catalog.SNAP_KR_PAPER_TIMED, {"contract": 1, "source": kr_paper_timed.KR_TIMED_SOURCE,
+                                                     "sessions": {E: {"005930": old}}})
+    _orders(monkeypatch, [("005930", date(2026, 11, 2))])
+    toss.errors["005930"] = toss_service.TossError("HTTP 500")
+
+    with pytest.raises(EmptyResult):
+        tasks.task_kr_paper_timed()
+
+    assert toss.calls, "다시 받으려고 부름"
+    assert _payload(store)["sessions"][E]["005930"] == old

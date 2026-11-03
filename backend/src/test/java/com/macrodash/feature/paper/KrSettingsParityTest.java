@@ -1,5 +1,6 @@
 package com.macrodash.feature.paper;
 
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -22,12 +23,15 @@ import static org.junit.jupiter.api.Assumptions.assumeTrue;
  *       없고, 백엔드에만 있으면 늘 빔(미국 판은 {@link NewsFeedsParityTest})</li>
  *   <li>{@code kr.cashLikeTickers}가 받는 ETF = 수집기 {@code tasks.kr_paper.KR_SCOPE_ETFS}(늘 받는 수집 범위)</li>
  *   <li>{@code kr.calendar.openTimeOverrides}가 받는 개장 + 1분 = 수집기 {@code KR_OPEN_PROBE_LABELS}(1분봉 개장 봉 라벨, 계약 1)</li>
+ *   <li>{@code kr.calendar.openTimeOverrides}가 받는 마감의 상한 = 수집기 {@code kr_paper_timed}가 덮는 가장 늦은 마감(마감 봉 라벨·받는 끝·다시 받는
+ *       시각 — QA-174)</li>
  * </ul>
  */
 class KrSettingsParityTest {
 
     private static final Path NEWS = Path.of("../collector/app/services/news.py");
     private static final Path KR_PAPER = Path.of("../collector/app/tasks/kr_paper.py");
+    private static final Path KR_PAPER_TIMED = Path.of("../collector/app/tasks/kr_paper_timed.py");
 
     @Test
     @DisplayName("한국 피드 키가 수집기 services.news.KR_FEEDS의 키와 같고 순서도 같다")
@@ -61,6 +65,25 @@ class KrSettingsParityTest {
         List<String> labels = tuple(Files.readString(KR_PAPER), "KR_OPEN_PROBE_LABELS");
         assertThat(PaperSettingKeys.KR_OVERRIDE_OPENS.stream().map(open -> LocalTime.parse(open).plusMinutes(1).toString())
                 .toList()).isEqualTo(labels);
+    }
+
+    @Test
+    @Disabled("QA-174 재현 — 수정 전: 마감 상한 20:00인데 수집기 마감 봉 라벨·받는 끝은 16:30 마감까지만 덮음")
+    @DisplayName("QA-174: 장 시간 변경일 마감 상한이 수집기 kr_paper_timed가 덮는 마감 안 — 마감 봉 라벨(마감·마감 + 1분)이 있고, 받는 끝(KR_TIMED_BEFORE)이 "
+            + "마감 + 1분 뒤, 다시 받는 시각(KR_TIMED_RECHECK)이 마감 + 10분(백엔드가 마감 봉을 덮었다고 보는 저장본) 이후")
+    void overrideCloseLatestMatchesCollectorTimed() throws IOException {
+        assumeTrue(Files.exists(KR_PAPER_TIMED), "collector/app/tasks/kr_paper_timed.py를 찾을 수 없습니다");
+        String source = Files.readString(KR_PAPER_TIMED);
+        LocalTime latest = LocalTime.parse(PaperSettingKeys.KR_OVERRIDE_CLOSE_LATEST);
+        assertThat(tuple(source, "KR_TIMED_CLOSE_LABELS")).as("마감 봉 라벨")
+                .contains(latest.toString(), latest.plusMinutes(1).toString());
+        Matcher before = Pattern.compile("\\nKR_TIMED_BEFORE\\s*=\\s*\"(\\d{2}:\\d{2})\"").matcher(source);
+        assertThat(before.find()).as("KR_TIMED_BEFORE를 찾지 못했습니다").isTrue();
+        assertThat(LocalTime.parse(before.group(1))).as("받는 끝").isAfter(latest.plusMinutes(1));
+        Matcher recheck = Pattern.compile("\\nKR_TIMED_RECHECK\\s*=\\s*clock_time\\((\\d+),\\s*(\\d+)\\)").matcher(source);
+        assertThat(recheck.find()).as("KR_TIMED_RECHECK를 찾지 못했습니다").isTrue();
+        assertThat(LocalTime.of(Integer.parseInt(recheck.group(1)), Integer.parseInt(recheck.group(2)))).as("다시 받는 시각")
+                .isAfterOrEqualTo(latest.plus(KrTimedLadder.CLOSE_COVERED_AFTER));
     }
 
     /** 파이썬 상수 {@code NAME = ("a", "b")}의 글자 목록. */
