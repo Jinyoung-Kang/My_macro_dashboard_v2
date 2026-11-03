@@ -1017,6 +1017,26 @@ class PacketBuilderTest {
     }
 
     @Test
+    @org.junit.jupiter.api.Disabled("QA-197 재현 — 수정 전: 장중 확인 줄이 '8_prices·9_portfolio는 장중 시간별 관측치'라고 적지만 8_prices는 기준일 종가까지")
+    @DisplayName("QA-197: 계좌1 장중 확인 지시 줄은 패킷과 맞다 — 8_prices는 기준일 종가까지(장중 아님), 장중 가격은 9_portfolio 보유 종목뿐, 1b·8b·11b는 아침 결정 시점까지")
+    void checkpointInstructionMatchesPacketPrices() {
+        activeClaude();
+        Packet checkpoint = builder.build(MON, RuleBookService.CHECKPOINT, false, 0, store.settings);
+
+        List<String> lines = new ArrayList<>();
+        checkpoint.body().path("0_instructions").path("lines").forEach(line -> lines.add(line.asString()));
+        String line = lines.get(lines.size() - 1);
+        assertThat(line).doesNotContain("8_prices·9_portfolio는 장중")
+                .contains("8_prices는 기준일 " + MON + " 종가까지")
+                .contains("9_portfolio")
+                .contains("1b·8b·11b");
+        // 그 말이 자료와 맞음 — 8_prices의 날짜 열은 기준일 이하.
+        int date = PacketBuilder.PRICE_COLUMNS.indexOf("date");
+        checkpoint.body().path(PacketBuilder.PRICES).path("rows").forEach(row ->
+                assertThat(LocalDate.parse(row.get(date).asString())).isBeforeOrEqualTo(MON));
+    }
+
+    @Test
     @DisplayName("고정본(묶음 A 기준선): 미국 초기·정기 패킷 글자·해시·메모 번호·측정 태그가 시장 추상화 전과 바이트까지 같다")
     void goldenUsPackets() {
         store.insertNote(new Note(0, NoteService.MARKET, FRI, TUE, "금요일 시황", "10년물 4.6%·브렌트 88", false, null));
