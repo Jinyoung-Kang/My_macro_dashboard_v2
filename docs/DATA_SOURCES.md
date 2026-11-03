@@ -490,7 +490,7 @@ EQUITY_MAP = {
 
 | 시장 | 출처(차례) | 한계 |
 |---|---|---|
-| 미국 | 네이버 해외주식 polling(`polling.finance.naver.com/api/realtime/worldstock/stock/<로이터 코드,…>` — 자동완성으로 찾아 하루 캐시) → 네이버가 못 주는 종목(지수·환율 등)은 Yahoo spark(`query1.finance.yahoo.com/v7/finance/spark`, 20종목씩) | 비공식 내부 호출. Yahoo spark는 1분 넘게 같은 값(캐시)이라 뒤에 둠(QA-166). Yahoo는 공용 세션의 브라우저 표시(Chrome 124)에 429라 다른 표시로 묻고, 거부되면 `http.YAHOO_HOST` 래치가 닫혀 다른 Yahoo 수집과 함께 5분 쉼. 정규장 가격만(시간 외는 네이버가 줄 때만) |
+| 미국 | 네이버 해외주식 polling(`polling.finance.naver.com/api/realtime/worldstock/stock/<로이터 코드,…>` — 자동완성으로 찾아 하루 캐시) → 네이버가 못 주는 종목(지수·환율 등)은 Yahoo spark(`query1.finance.yahoo.com/v7/finance/spark`, 20종목씩) | 비공식 내부 호출. Yahoo spark는 1분 넘게 같은 값(캐시)이라 뒤에 둠(QA-166). Yahoo는 공용 세션의 브라우저 표시(Chrome 124)에 429라 다른 표시로 묻고, 거부되면 spark 호스트만 5분 쉼(yfinance 수집과 같이 쓰는 `http.YAHOO_HOST` 래치는 읽기만 — 닫혀 있으면 묻지 않음, QA-198). 정규장 가격만(시간 외는 네이버가 줄 때만) |
 | 국내 | 네이버 polling(`polling.finance.naver.com/api/realtime/domestic/stock/<코드,…>`) → 다음(`finance.daum.net/api/quotes/A<코드>`, Referer) → 토스 1분봉 | 가격은 KRX(정규장) — NXT 시간 외가 열려 있으면 그 가격을 따로 줌. 토스는 분 단위·종목마다 한 번 |
 | `TV:` (매크로 카드) | TradingView `scanner.tradingview.com/global/scan`(POST, Origin·Referer, 50종목씩 한 번에) | 비공식 공개 호출(참고 시세). 지연은 `update_mode`(실시간 — 달러 인덱스·환율·미국채·코스피·닛케이·항셍 지수, 10분 — CME·NYMEX·COMEX·ICE 선물, 15분 — 상하이·닛케이/항셍 선물, 20분 — 코스피200 야간선물). 거래 시각이 없어 화면은 받은 시각을 적음 |
 | `NI:` (매크로 카드) | 네이버 해외 지수 polling(`polling.finance.naver.com/api/realtime/worldstock/index/<.INX,…>`) | S&P 500·나스닥 100 지수(`delayTime 0`). 상하이·닛케이는 15분이라 쓰지 않음 |

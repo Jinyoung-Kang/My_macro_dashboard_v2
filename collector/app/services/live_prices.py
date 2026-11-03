@@ -11,7 +11,9 @@
   달러지수·환율·미국채 수익률·코스피·닛케이·항셍은 실시간, 선물·상하이는 10~15분 지연을 ``delayMinutes``로), ``NI:.INX``는 네이버 해외 지수
   (S&P 500·나스닥 100 실시간 — 트레이딩뷰는 이 둘이 10~15분 지연).
 같은 종목은 :data:`TTL_SECONDS` 동안 같은 값 — 5초 주기·여러 탭·여러 화면이 출처를 한 번만 부르게. 출처 거부(403·429·봇 차단)는 공용 세션의
-5분 래치(http.py)를 따르고 다음 출처로 넘어갑니다. Yahoo는 yfinance 경로와 같은 래치 이름(:data:`http.YAHOO_HOST`)을 함께 씁니다(같은 한도).
+5분 래치(http.py — 그 호스트만)를 따르고 다음 출처로 넘어갑니다. Yahoo는 yfinance 경로의 공용 래치(:data:`http.YAHOO_HOST`)를 읽기만 합니다 —
+닫혀 있으면 묻지 않지만, spark의 거부는 spark 호스트만 쉬게 하고 그 래치를 닫지 않습니다. 표시 전용 화면이 장부 관측치·1분봉 수집(yfinance)을
+멈추지 않게(QA-198 — spark는 공용 세션 표시에만 429, yfinance는 같은 시각 정상이라 같은 한도라는 전제도 실측과 다름).
 모르는 값은 None(0으로 채우지 않음). 파싱(``*_from_*``)은 순수 함수라 시험이 네트워크 없이 고정 응답으로 봅니다.
 """
 from __future__ import annotations
@@ -320,11 +322,7 @@ def _fetch_yahoo(codes: list[str], errors: dict[str, str]) -> dict[str, dict]:
         try:
             payload = _get_json(YAHOO_SPARK, params={"symbols": ",".join(chunk), "range": "1d", "interval": "1m"},
                                 headers=YAHOO_HEADERS)
-        except http.SourceRejected as exc:
-            http.reject_host(http.YAHOO_HOST, exc.why)  # yfinance 경로(같은 Yahoo 한도)도 5분 쉼
-            errors[SOURCE_YAHOO] = brief_error(exc)
-            break
-        except Exception as exc:  # noqa: BLE001 — 출처 하나의 실패는 다음 출처로
+        except Exception as exc:  # noqa: BLE001 — 출처 하나의 실패는 다음 출처로. 거부(403·429)는 어댑터가 spark 호스트만 5분 닫음(QA-198)
             errors[SOURCE_YAHOO] = brief_error(exc)
             break
         out.update(yahoo_from_spark(payload, time.time()))

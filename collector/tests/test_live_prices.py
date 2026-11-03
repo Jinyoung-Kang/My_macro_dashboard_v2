@@ -5,7 +5,7 @@ tests/test_live_prices.py
 - 요청 읽기: 'US:심볼'·'KR:6자리'만, 같은 것은 하나, 60개까지
 - 파싱: Yahoo spark(정규장 시각으로 장 상태, 전일 대비 계산), 네이버(국내 부호 없는 글은 방향 코드로, NXT 시간 외), 다음(KST 거래 시각), 토스 1분봉
 - 출처 순서: 앞 출처가 못 준 종목만 다음 출처에 — 미국 네이버 → Yahoo(QA-166), 국내 네이버 → 다음 → 토스
-- 거부: Yahoo 래치가 닫혀 있으면 묻지 않고, Yahoo가 거부하면 yfinance와 같은 래치 이름(YAHOO_HOST)을 닫음
+- 거부: Yahoo 공용 래치(YAHOO_HOST)가 닫혀 있으면 묻지 않고, spark가 거부해도 그 래치는 닫지 않음(spark 호스트만 쉼 — QA-198)
 - 캐시: 같은 종목은 3초 동안 한 번만, 못 찾은 종목도 3초 동안 다시 묻지 않음
 - 경로: 형식이 틀리면 400(부르지 않음)
 - 2단계(시장 메뉴 카드): 'TV:거래소:심볼'은 트레이딩뷰 global/scan 한 번(지연은 update_mode, 거래 시각은 모름), 'NI:.INX'는 네이버 해외 지수
@@ -213,13 +213,15 @@ def test_Yahoo_래치가_닫혀_있으면_묻지_않고_사유를_남긴다(monk
     assert "거부됨" in errors["Yahoo"]
 
 
-def test_Yahoo가_거부하면_yfinance와_같은_래치_이름을_닫는다(monkeypatch):
+def test_Yahoo가_거부하면_spark_호스트만_쉬고_yfinance와_같이_쓰는_래치는_닫지_않는다(monkeypatch):
     def rejected(*args, **kwargs):
-        raise http.SourceRejected("query1.finance.yahoo.com", "HTTP 429")
+        raise http.reject_host("query1.finance.yahoo.com", "HTTP 429")   # 공용 세션 어댑터가 하는 일 그대로
     monkeypatch.setattr(lp, "_get_json", rejected)
     errors: dict = {}
     assert lp._fetch_yahoo(["AAPL"], errors) == {}
-    assert http.active_rejection(http.YAHOO_HOST) is not None, "같은 Yahoo 한도 — 장중 1분봉·매크로 수집도 5분 쉼"
+    assert "거부됨" in errors["Yahoo"]
+    assert http.active_rejection("query1.finance.yahoo.com") is not None, "spark는 5분 쉼(어댑터가 닫은 실제 호스트 래치)"
+    assert http.active_rejection(http.YAHOO_HOST) is None, "표시 전용 — 장부 관측치·장중 1분봉 수집(yfinance)은 쉬지 않음(QA-198)"
 
 
 def test_Yahoo는_공용_세션과_다른_브라우저_표시로_묻는다(monkeypatch):
@@ -464,8 +466,7 @@ def test_같은_시장의_동시_조회는_잠금을_기다려_출처를_한_번
 # --------------------------------------------------------------------------- QA-198
 # 화면 실시간 시세(표시 전용)가 Yahoo spark의 403·429를 받으면 yfinance 경로와 같이 쓰는 공용 래치 이름(http.YAHOO_HOST)까지 5분 닫아,
 # 장부 관측치(paper_quotes — collect_daily_closes)·계좌2 1분봉·장중 확인 수집이 그동안 멈췄습니다. 같은 한도라는 전제는 저장소 실측과 다릅니다
-# (spark는 공용 세션 표시에만 429, yfinance는 같은 시각 정상 — ADR 0024 표·market.latest_minute_prices 설명).
-@pytest.mark.xfail(strict=True, reason="QA-198 재현 — 화면 경로의 spark 거부가 공용 Yahoo 래치를 닫아 장부 관측치 수집을 막음")
+# (spark는 공용 세션 표시에만 429, yfinance는 같은 시각 정상 — ADR 0024 표·market.last_two_closes 설명).
 def test_QA198_화면_경로의_Yahoo_spark_거부는_장부_관측치_수집을_막지_않는다(monkeypatch):
     def rejected(url, **kwargs):
         raise http.reject_host(http.host_of(url), "HTTP 429")   # 공용 세션 어댑터가 하는 일 그대로 — 실제 호스트를 닫고 예외

@@ -175,7 +175,8 @@ REJECT_LATCH_SECONDS = 300.0
 REJECTED_MARK = "거부됨"
 # yfinance는 자기 세션(curl_cffi)으로 query1·query2.finance.yahoo.com에 가서 이 층을 거치지 않습니다. 부르는 쪽
 # (services/sector·us_calendar·earnings_surprise·market·krx의 KODEX 폴백)이 이 이름 하나로 래치를 함께 씁니다 — 같은 Yahoo
-# 한도를 나눠 씀. 호스트 간격은 sector의 개별 재시도만 둡니다.
+# 한도를 나눠 씀. 호스트 간격은 sector의 개별 재시도만 둡니다. 화면 실시간 시세(live_prices — requests로 spark)는 이 래치를 읽기만
+# 합니다(spark의 거부는 어댑터가 spark 호스트만 닫음 — QA-198).
 YAHOO_HOST = "finance.yahoo.com"
 
 # 봇 차단(챌린지) 응답의 표지. 공용 세션은 HTML 페이지(Daum·Naver)도 받으므로 'HTML이면 거부'로 보지 않고(Vibe의 Stooq
