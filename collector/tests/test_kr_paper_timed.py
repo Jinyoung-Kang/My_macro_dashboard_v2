@@ -379,7 +379,6 @@ def test_만료_창은_백엔드_주문_만료와_같다():
     assert re.search(rf"ORDER_EXPIRY_TRADING_DAYS = {kr_paper_timed.KR_TIMED_EXPIRY_SESSIONS};", rules)
 
 
-@pytest.mark.xfail(strict=True, reason="QA-174 재현 — 16:40 뒤 다시 받은 응답에 그날 봉이 없으면 직전 OK 칸을 NO_BARS로 덮음")
 def test_QA174_다시_받은_응답에_그날_봉이_없으면_직전_OK_칸을_NO_BARS로_덮지_않는다(store, toss, monkeypatch):
     # 15:50에 받은 OK 칸(봉 있음 — 그날 거래가 있었음)을 16:45에 다시 받았는데 응답이 비면 받기 이상으로 보고 OK 칸을 그대로 둠.
     _orders(monkeypatch, [("005930", date(2026, 11, 2))])

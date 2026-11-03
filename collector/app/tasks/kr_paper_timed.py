@@ -30,7 +30,8 @@ app/tasks/kr_paper_timed.py
   §8). 장 시간 변경일(16:30 마감)을 위해 16:30·16:31도 싣습니다. 고르는 것은 백엔드입니다(그날 마감·NXT 여부를 앎).
 - E 봉이 하나도 없으면 ``NO_BARS``(거래 정지·휴장), 호출이 실패하면 ``FAILED``(다음 slow 주기에 그 종목만 다시). ``OK``·``NO_BARS``는 다시 받지 않습니다
   — 다만 ``OK`` 칸을 E ``KR_TIMED_RECHECK``(16:40 — 덮는 가장 늦은 마감 16:30 + 10분) 전에 받았으면 그 뒤 한 번 더 받습니다(장 시간 변경일의 마감 봉 —
-  수집기는 그날 마감을 모름, QA-174). 다시 받기가 실패하면 직전 ``OK`` 칸을 ``FAILED``로 덮지 않고 그대로 둡니다(다음 slow 주기에 다시).
+  수집기는 그날 마감을 모름, QA-174). 다시 받기가 실패하거나 다시 받은 응답에 그날 봉이 없으면 직전 ``OK`` 칸을 ``FAILED``·``NO_BARS``로 덮지 않고
+  그대로 둡니다(다음 slow 주기에 다시).
 - 세션은 최근 ``KR_TIMED_KEEP_SESSIONS``개만 남깁니다(늦게 푸는 장부·실행 감사가 볼 기간).
 
 범위는 백엔드 표 ``paper_orders``를 읽기만 합니다(store.kr_timed_orders·kr_market_orders·kr_audit_orders — ADR 0008). 토스 차트 그룹(초당 20회)의 간격은 한국 관측치 태스크와 같습니다.
@@ -271,6 +272,12 @@ def task_kr_paper_timed() -> str:
             break
         summary = _summarize(candles, session, targets.get((code, session), ()))
         has_bars = any(c.get("date") == session for c in candles)
+        previous = sessions.get(session, {}).get(code)
+        if not has_bars and isinstance(previous, dict) and previous.get("status") == "OK":
+            # 봉이 있던 칸을 다시 받았는데 응답에 그날 봉이 없음 — 받기 이상으로 보고 직전 OK 칸을 그대로 둠(다음 slow 주기에 다시).
+            failed += 1
+            kept += 1
+            continue
         sessions.setdefault(session, {})[code] = {"status": "OK" if has_bars else "NO_BARS", "reason": None,
                                                   "fetchedAt": fetched_at, **summary}
         done += 1
