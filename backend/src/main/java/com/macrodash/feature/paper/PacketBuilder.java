@@ -721,11 +721,13 @@ public class PacketBuilder {
                     + "매크로 카드는 기준일 값이 없어 현재 수집본(asOfMismatch, 참고만)이다. 통과한 주문은 기준일 종가로 사후 체결된다.");
         }
         if (RuleBookService.CHECKPOINT.equals(kind)) {
-            // 계좌1 장중 확인(사용자 결정 2026-11-02) — 이 줄이 없는 종류의 패킷은 글자 그대로.
-            lines.add("이번은 장중 확인이다(기준일 " + asOf + "의 아침 결정 뒤 다음 세션 장중, 세션당 한 번) — 8_prices·9_portfolio는 장중 시간별 "
-                    + "관측치(지연 시세)다. 10_recentDecisions의 같은 기준일 결정이 오늘 아침 결정이다. 통과한 주문은 다음 시간별 관측치"
-                    + "(NEXT_OBSERVATION) 또는 오늘 종가(NEXT_CLOSE)에 체결되고, 이 결정이 남은 대기 주문을 모두 대신한다. 바꿀 이유가 약하면 주문 "
-                    + "없이 noTradeReason을 쓴다.");
+            // 계좌1 장중 확인(사용자 결정 2026-11-02) — 이 줄이 없는 종류의 패킷은 글자 그대로. 패킷 자료는 정기 결정과 같은 기준일 d까지이고 장중
+            // 값은 장부가 반영한 보유 가격뿐이라 그대로 적습니다(QA-197, 사용자 결정 2026-11-04 — 자료는 그대로, 지시문만 실제와 맞춤).
+            lines.add("이번은 장중 확인이다(기준일 " + asOf + "의 아침 결정 뒤 다음 세션 장중, 세션당 한 번) — 장중 가격은 9_portfolio 보유 종목의 "
+                    + "price(장부에 마지막으로 반영된 시간별 관측치, 지연 시세)뿐이다. 8_prices는 기준일 " + asOf + " 종가까지(장중 값이 아님)이고, "
+                    + "1b·8b·11b도 아침 결정과 같은 시점까지의 자료다. 10_recentDecisions의 같은 기준일 결정이 오늘 아침 결정이다. 통과한 주문은 다음 "
+                    + "시간별 관측치(NEXT_OBSERVATION) 또는 오늘 종가(NEXT_CLOSE)에 체결되고, 이 결정이 남은 대기 주문을 모두 대신한다. 바꿀 이유가 "
+                    + "약하면 주문 없이 noTradeReason을 쓴다.");
         }
         Map<String, Object> out = new LinkedHashMap<>();
         out.put("lines", lines);

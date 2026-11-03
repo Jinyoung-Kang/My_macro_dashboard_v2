@@ -1017,7 +1017,6 @@ class PacketBuilderTest {
     }
 
     @Test
-    @org.junit.jupiter.api.Disabled("QA-197 재현 — 수정 전: 장중 확인 줄이 '8_prices·9_portfolio는 장중 시간별 관측치'라고 적지만 8_prices는 기준일 종가까지")
     @DisplayName("QA-197: 계좌1 장중 확인 지시 줄은 패킷과 맞다 — 8_prices는 기준일 종가까지(장중 아님), 장중 가격은 9_portfolio 보유 종목뿐, 1b·8b·11b는 아침 결정 시점까지")
     void checkpointInstructionMatchesPacketPrices() {
         activeClaude();
@@ -1030,10 +1029,15 @@ class PacketBuilderTest {
                 .contains("8_prices는 기준일 " + MON + " 종가까지")
                 .contains("9_portfolio")
                 .contains("1b·8b·11b");
-        // 그 말이 자료와 맞음 — 8_prices의 날짜 열은 기준일 이하.
+        // 그 말이 자료와 맞음 — 8_prices의 날짜 열은 기준일 이하(가격이 없는 줄은 날짜도 null).
         int date = PacketBuilder.PRICE_COLUMNS.indexOf("date");
-        checkpoint.body().path(PacketBuilder.PRICES).path("rows").forEach(row ->
-                assertThat(LocalDate.parse(row.get(date).asString())).isBeforeOrEqualTo(MON));
+        List<LocalDate> dates = new ArrayList<>();
+        checkpoint.body().path(PacketBuilder.PRICES).path("rows").forEach(row -> {
+            if (!row.get(date).isNull()) {
+                dates.add(LocalDate.parse(row.get(date).asString()));
+            }
+        });
+        assertThat(dates).isNotEmpty().allSatisfy(d -> assertThat(d).isBeforeOrEqualTo(MON));
     }
 
     @Test
