@@ -15,7 +15,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const api = vi.hoisted(() => {
   class UnauthorizedError extends Error {}
-  return { apiGet: vi.fn(), apiPost: vi.fn(), apiGetShared: vi.fn(), UnauthorizedError };
+  // apiBase — 실시간 시세 SSE 주소(QA-183 묶음만 EventSource를 둠)
+  return { apiGet: vi.fn(), apiPost: vi.fn(), apiGetShared: vi.fn(), apiBase: () => "http://backend", UnauthorizedError };
 });
 vi.mock("@/lib/api", () => api);
 const signal = vi.hoisted(() => ({ token: 0, reloadAll: () => {}, notifyUnauthorized: () => {} }));
@@ -474,5 +475,63 @@ describe("QA-156 숨긴 탭으로 열면 보일 때까지 읽지 않는다", () 
     await settle();
     expect(liveCalls()).toBe(1);
     expect(screen.getByText(/정규장 — 장중 1분봉 시세로 다시 평가/)).toBeTruthy();
+  });
+});
+
+describe("QA-183 실시간 시세 연결이 닫히면 히어로의 실시간 추정을 멈춘다", () => {
+  class FakeEventSource {
+    static instances: FakeEventSource[] = [];
+    readonly listeners = new Map<string, ((event: MessageEvent<string>) => void)[]>();
+    onerror: (() => void) | null = null;
+    readyState = 0;
+    closed = false;
+    constructor(readonly url: string) {
+      FakeEventSource.instances.push(this);
+    }
+    addEventListener(name: string, listener: (event: MessageEvent<string>) => void) {
+      this.listeners.set(name, [...(this.listeners.get(name) ?? []), listener]);
+    }
+    close() {
+      this.closed = true;
+    }
+    emit(name: string, body: unknown) {
+      (this.listeners.get(name) ?? []).forEach((listener) => listener({ data: JSON.stringify(body) } as MessageEvent<string>));
+    }
+  }
+  const prices = (price: number) => ({ available: true, prices: {
+    fetchedAt: "2026-10-30T14:58:10Z", missing: [], errors: {},
+    items: { "US:AAA": { market: "US", code: "AAA", price, prevClose: 410, change: null, changePct: null, currency: "USD",
+      tradedAt: "2026-10-30T14:58:07Z", status: "OPEN", source: "네이버", overPrice: null, overChange: null, overChangePct: null,
+      overTradedAt: null, overSession: null } },
+  } });
+
+  beforeEach(() => {
+    FakeEventSource.instances = [];
+    vi.stubGlobal("EventSource", FakeEventSource);
+  });
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  // 배포 중 백엔드가 다시 뜨는 동안의 재연결은 502라 브라우저가 연결을 닫고 다시 잇지 않습니다. 그동안 히어로가 멈춘 가격의 '실시간 추정'을 서버 지금
+  // 값보다 앞세웠습니다(재현 커밋에서는 it.fails). 닫힌 동안은 실시간 순자산을 내지 않고(null — 히어로는 서버 지금 값), 다시 받으면 되살립니다.
+  it.fails("QA-183 닫힌 동안은 실시간 순자산을 내지 않고(null), 다시 열어 받으면 되살린다", async () => {
+    api.apiGetShared.mockImplementation(() => Promise.resolve(live()));
+    const onRealtime = vi.fn();
+    render(<LiveValuationCard bookCode="claude" onRealtime={onRealtime} />);
+    await settle();
+    const first = FakeEventSource.instances[0];
+    await act(async () => first.emit("prices", prices(430)));
+    // 현금 10,000 + AAA 100주 × 430
+    expect(onRealtime).toHaveBeenLastCalledWith(expect.objectContaining({ code: "claude", nav: 53_000, priced: 1 }));
+
+    await act(async () => { first.readyState = 2; first.onerror?.(); });
+    expect(onRealtime).toHaveBeenLastCalledWith(null);
+    expect(screen.getByText(/끊김 — 5초 뒤 다시 연결/)).toBeTruthy();
+
+    await settle(5_000);
+    expect(FakeEventSource.instances).toHaveLength(2);
+    await act(async () => FakeEventSource.instances[1].emit("prices", prices(431)));
+    expect(onRealtime).toHaveBeenLastCalledWith(expect.objectContaining({ code: "claude", nav: 53_100 }));
   });
 });
