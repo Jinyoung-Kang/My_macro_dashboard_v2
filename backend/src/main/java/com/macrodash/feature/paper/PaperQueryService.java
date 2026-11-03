@@ -479,6 +479,8 @@ public class PaperQueryService {
             List<String> fallbacks = new ArrayList<>(current.settings().fallbacks());
             fallbacks.addAll(current.settings().blend().fallbacks());
             fallbacks.addAll(current.settings().rules().fallbacks());
+            // 계좌1 장중 확인(claude.checkpoint·claude.checkpointAtEt) — 손으로 고친 행의 범위 밖 시각을 작업이 12:00 ET로 읽는 것도(QA-182).
+            market.settingsRow().ifPresent(row -> fallbacks.addAll(Claude1Checkpoint.from(row.body()).fallbacks()));
             out.put("settingsFallbacks", fallbacks);
         } else {
             out.put("settingsVersion", market.settingsVersion());

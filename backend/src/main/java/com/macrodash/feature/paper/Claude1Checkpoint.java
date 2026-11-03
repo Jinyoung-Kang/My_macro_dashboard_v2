@@ -10,7 +10,8 @@ import java.util.List;
 /**
  * 미국 Claude 계좌1의 장중 확인 설정(사용자 결정 2026-11-02 — 계좌1도 장중 확인 '없음' → '세션당 한 번'). 설정 한 행의 {@code claude.checkpoint}
  * (켜기, 기본 꺼짐)·{@code claude.checkpointAtEt}(뉴욕 시각 HH:mm, 10:00~15:00, 기본 12:00). 키가 없거나 형·범위 밖이면 그 키만 기본값으로 읽고
- * {@link #fallbacks}에 남깁니다({@link Claude2Settings}와 같은 방식).
+ * {@link #fallbacks}에 남깁니다({@link Claude2Settings}와 같은 방식 — 설정 화면·상태의 fallbacks에 실림). 범위는 쓰기 검사
+ * ({@link PaperSettingKeys#policy})도 같은 상수로 막으므로 범위 밖 값은 손으로 고친 행에만 있습니다(QA-182).
  *
  * <p>계좌2의 장중 확인(아침 결정이 시각·자료를 고르는 시각 지정 체결용 장치)과 달리, 계좌1은 정한 시각 뒤 첫 시간별 관측치로 계좌1의 정기 결정과
  * 같은 패킷·검증을 한 번 더 돌립니다({@link PaperClaude1CheckpointJob} — 결정 종류 {@code CHECKPOINT}, 통과 주문은 다음 시간별 관측치·종가 체결이고

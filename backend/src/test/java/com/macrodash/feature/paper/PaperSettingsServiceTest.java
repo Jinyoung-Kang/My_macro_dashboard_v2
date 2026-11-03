@@ -3,7 +3,6 @@ package com.macrodash.feature.paper;
 import com.macrodash.analytics.NewsEvents;
 import com.macrodash.support.InvalidRequestException;
 import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import tools.jackson.databind.JsonNode;
@@ -133,7 +132,6 @@ class PaperSettingsServiceTest {
     }
 
     @Test
-    @Disabled("QA-182 재현 — 수정 전: claude.checkpointAtEt는 HH:mm 형식만 봐 10:00~15:00 밖도 저장되고, 작업이 12:00 ET로 읽는 키가 화면 fallbacks에 없음")
     @DisplayName("QA-182 계좌1 장중 확인 시각(claude.checkpointAtEt)은 읽는 쪽 범위(뉴욕 10:00~15:00) 밖이면 400·경계는 저장 — 손으로 고친 옛 행은 화면 fallbacks에 남기고 다른 키 저장은 막지 않음")
     @SuppressWarnings("unchecked")
     void claude1CheckpointTimeMustBeReadable() {

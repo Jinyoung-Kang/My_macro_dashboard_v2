@@ -7,6 +7,7 @@ import tools.jackson.databind.node.JsonNodeFactory;
 import tools.jackson.databind.node.ObjectNode;
 
 import java.time.LocalDate;
+import java.time.LocalTime;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.LinkedHashMap;
@@ -439,6 +440,8 @@ final class PaperSettingKeys {
      *       섭니다({@code KrxCosts.fill}). 새 세율은 시행일 당일에 저장합니다</li>
      *   <li>{@code kr.calendar.openTimeOverrides}: 개장은 {@link #KR_OVERRIDE_OPENS}만(수집기가 싣는 1분봉 라벨 − 1분), 마감은
      *       {@value #KR_OVERRIDE_CLOSE_LATEST}까지</li>
+     *   <li>{@code claude.checkpointAtEt}: 읽는 쪽({@link Claude1Checkpoint#from})의 범위 {@link Claude1Checkpoint#EARLIEST}~{@link
+     *       Claude1Checkpoint#LATEST}(뉴욕) 안만 — 밖이면 장중 확인 작업이 조용히 {@link Claude1Checkpoint#DEFAULT_AT}으로 읽습니다(QA-182)</li>
      * </ul>
      */
     static String policy(Spec spec, JsonNode value, LocalDate today) {
@@ -476,6 +479,13 @@ final class PaperSettingKeys {
                     }
                 }
                 return null;
+            }
+            case Claude1Checkpoint.AT_ET -> {
+                LocalTime at = LocalTime.parse(value.asString(""));
+                return at.isBefore(Claude1Checkpoint.EARLIEST) || at.isAfter(Claude1Checkpoint.LATEST)
+                        ? key + ": 뉴욕 시각 " + Claude1Checkpoint.EARLIEST + "~" + Claude1Checkpoint.LATEST + " 범위여야 합니다 — "
+                                + "장중 확인 작업은 그 밖의 값을 " + Claude1Checkpoint.DEFAULT_AT + "로 읽습니다 — " + at
+                        : null;
             }
             default -> {
                 return null;

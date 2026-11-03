@@ -203,7 +203,7 @@ public class PaperSettingsService {
     /**
      * GET /api/paper/settings — {@code {available, version, updatedAtKst, body, defaults, keys:[{key, type, min, max, affectsRules,
      * market, description, options}], fallbacks}}({@code market} = 그 키를 읽는 책 US·KR, 두 책 공통이면 null). 행이 없으면(초기화 전) {@code version:null}이고 {@code body}는 기본값입니다.
-     * {@code fallbacks}는 지금 본문에서 없거나 범위 밖이라 기본값으로 읽는 키(장부·섞기·규칙 책 묶음·Claude 책·추정 비용 단가·사건 뉴스 +
+     * {@code fallbacks}는 지금 본문에서 없거나 범위 밖이라 기본값으로 읽는 키(장부·섞기·규칙 책 묶음·Claude 책·계좌1 장중 확인·추정 비용 단가·사건 뉴스 +
      * 한국 장부 키·{@code kr.rules}·비용 요율 {@code kr.commissionBp}·{@code kr.tax.*} — 한국 키를 아직 쓰지 않은 행이면 {@code kr.slippageBp} 같은
      * 접두어 이름, 한국 초기화가 채우면 사라짐).
      */
@@ -218,6 +218,7 @@ public class PaperSettingsService {
         fallbacks.addAll(parsed.blend().fallbacks());
         fallbacks.addAll(parsed.rules().fallbacks());
         fallbacks.addAll(ClaudeBookService.ClaudeSettings.from(body).fallbacks());
+        fallbacks.addAll(Claude1Checkpoint.from(body).fallbacks());
         fallbacks.addAll(PaperApiCalls.Pricing.from(body).fallbacks());
         fallbacks.addAll(EventsSection.settings(body).fallbacks());
         fallbacks.addAll(krFallbacks(body));

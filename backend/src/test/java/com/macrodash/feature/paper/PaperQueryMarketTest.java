@@ -8,7 +8,6 @@ import com.macrodash.store.PaperStore.NavRow;
 import com.macrodash.store.StoreRepository;
 import com.macrodash.support.InvalidRequestException;
 import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -238,7 +237,6 @@ class PaperQueryMarketTest {
     }
 
     @Test
-    @Disabled("QA-182 재현 — 수정 전: 미국 상태의 settingsFallbacks가 장부·섞기·규칙 책 키만 봐, 장중 확인 작업이 12:00 ET로 읽는 시각이 빠짐")
     @DisplayName("QA-182 미국 상태의 설정 키: 손으로 고친 행의 claude.checkpointAtEt가 범위(10:00~15:00) 밖이면 settingsFallbacks에 그 키(작업이 12:00 ET로 읽음)")
     @SuppressWarnings("unchecked")
     void usStatusListsCheckpointTimeFallback() {
