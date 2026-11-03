@@ -1,7 +1,7 @@
 # 수집기 의존성
 fastapi==0.143.5
 uvicorn[standard]==0.54.0
-psycopg[binary]==3.3.6
+psycopg[binary]==3.3.7
 psycopg-pool==3.3.3
 APScheduler==3.11.3
 requests==2.34.2

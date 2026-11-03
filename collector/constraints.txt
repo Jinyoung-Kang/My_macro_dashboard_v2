@@ -1,11 +1,12 @@
 # 자동 생성 — scripts/collector-constraints.sh (make constraints). 손으로 고치지 않습니다.
 # requirements.txt의 직접 의존성을 python:3.11-slim에 설치한 결과(간접 의존성 포함).
+# 2026-11-04: psycopg·psycopg-binary 3.3.7, certifi 2026.10.18(PYSEC-2026-4320)만 손으로 올림 — 다시 만들면 다른 간접 의존성도 그날 판으로 바뀌어서.
 annotated-doc==0.0.5
 annotated-types==0.8.0
 anyio==4.15.1
 APScheduler==3.11.3
 beautifulsoup4==4.15.0
-certifi==2026.7.22
+certifi==2026.10.18
 cffi==2.1.1
 charset-normalizer==3.5.2
 click==8.5.0
@@ -33,8 +34,8 @@ peewee==4.5.3
 pillow==13.0.0
 platformdirs==4.13.4
 protobuf==7.36.2
-psycopg==3.3.6
-psycopg-binary==3.3.6
+psycopg==3.3.7
+psycopg-binary==3.3.7
 psycopg-pool==3.3.3
 pycparser==3.11
 pydantic==2.14.1
