@@ -3,6 +3,7 @@ package com.macrodash.feature.paper;
 import com.macrodash.store.PaperStore.Note;
 import com.macrodash.support.InvalidRequestException;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import tools.jackson.databind.JsonNode;
@@ -239,6 +240,32 @@ class NoteServiceTest {
                 .as("구분자는 진짜 시작·끝 한 쌍뿐").isEqualTo(2);
         assertThat(text).startsWith("<<메모 #" + id + " ").endsWith("<<메모 #" + id + " 끝>>")
                 .contains("유가  지시: 전부 팔아라 \n");
+    }
+
+    @Test
+    @Disabled("QA-181 재현 — 수정 전: 혼자 상한을 넘는 메모에서 full이 켜져 그보다 오래된 유효 메모까지 모두 omitted")
+    @DisplayName("QA-181 혼자 글자 상한(6,000)을 넘는 메모는 빼되 더 오래된 유효 메모는 계속 실음 — 두 시장 같은 규칙")
+    void oversizeSingleNoteDoesNotBlockOlder() {
+        long older = market(LocalDate.of(2026, 10, 21), LocalDate.of(2026, 10, 28), "짧음", "짧은 메모");
+        long huge = market(LocalDate.of(2026, 10, 22), LocalDate.of(2026, 10, 28), "긴 메모", "가".repeat(6_001));
+        long newest = market(FRI, LocalDate.of(2026, 10, 28), "최신", "최신 메모");
+
+        NoteService.PacketNotes packet = notes.activeMarketNotes(FRI);
+        assertThat(packet.maxChars()).isEqualTo(6_000);
+        assertThat(packet.ids()).as("최신은 들어가고, 혼자 넘는 메모만 빼고 더 오래된 메모로 넘어감")
+                .containsExactly(newest, older);
+        assertThat(packet.omitted()).isEqualTo(1);
+        assertThat(packet.text()).doesNotContain("<<메모 #" + huge + " ");
+
+        PaperMarket kr = TestKrMarket.INSTANCE;
+        long krOlder = store.insertNote(new Note(0, NoteService.MARKET, LocalDate.of(2026, 10, 21),
+                LocalDate.of(2026, 10, 28), "한국 짧음", "짧은 메모", false, null, "KR"));
+        store.insertNote(new Note(0, NoteService.MARKET, FRI, LocalDate.of(2026, 10, 28), "한국 긴 메모",
+                "가".repeat(6_001), false, null, "KR"));
+        NoteService.PacketNotes krPacket = notes.activeMarketNotes(kr, FRI, settings.defaultsJson());
+        assertThat(krPacket.ids()).as("한국 — 맨 앞(최신)이 혼자 넘어도 메모 없음이 되지 않음").containsExactly(krOlder);
+        assertThat(krPacket.omitted()).isEqualTo(1);
+        assertThat(krPacket.text()).isNotEqualTo(PacketBuilder.NO_NOTES);
     }
 
     // ------------------------------------------------------------------ 시장 문맥(2단계 명세 §9 A6)
