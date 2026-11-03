@@ -12,6 +12,7 @@ import com.macrodash.store.PaperStore.Selection;
 import com.macrodash.store.Snapshot;
 import com.macrodash.support.InvalidRequestException;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.env.YamlPropertySourceLoader;
@@ -386,6 +387,46 @@ class PaperDecisionJobTest {
         job(Instant.parse("2026-11-19T23:00:00Z")).run();
         assertThat(decided).containsExactly("2026-11-18 REBALANCE true", "2026-11-19 SCHEDULED true");
         verify(selection).select(RESELECTION);   // 여전히 한 번
+    }
+
+    @Test
+    @Disabled("QA-176 재현 — 수정 전: 재선정일 일시정지로 남긴 SKIPPED REBALANCE를 그 분기 매수로 세어 재개 뒤 따라잡기를 하지 않음")
+    @DisplayName("QA-176: 재선정일에 일시정지였던 규칙 계좌는 그날 REBALANCE가 SKIPPED — 재개한 다음 결정 날에 그 분기 매수(REBALANCE)를 다시 낸다")
+    void pausedReselectionIsRetriedAfterResume() {
+        store.insertDecisionIfAbsent(new Decision(0, PaperBooks.RULES, FRI, "INITIAL", null, "OK", null, null, 1, FRI,
+                null, null, null, null, null, null, null, null, true, 0L, 0));
+        // 진짜 규칙 책처럼: 일시정지면 r 선정을 문맥으로 SKIPPED(selection_as_of = r)를 남기고, 재개 뒤에는 NO_TRADE로 남깁니다.
+        boolean[] paused = {true};
+        doAnswer(invocation -> {
+            LocalDate d = invocation.getArgument(1);
+            String kind = invocation.getArgument(2);
+            boolean pricesFinal = invocation.getArgument(3);
+            decided.add(d + " " + kind + " " + pricesFinal);
+            store.insertDecisionIfAbsent(new Decision(0, PaperBooks.RULES, d, kind, null, paused[0] ? "SKIPPED" : "NO_TRADE",
+                    null, null, 1, RESELECTION, null, null, null, null, MAPPER.valueToTree(Map.of("summary", "주문 없음")), null,
+                    null, null, pricesFinal, 0L, 0));
+            return store.decisionFor(PaperBooks.RULES, d, kind).orElseThrow();
+        }).when(rules).decide(any(PaperMarket.class), any(), anyString(), anyBoolean());
+        when(selection.select(RESELECTION)).thenReturn(new PaperSelectionService.SelectionOutcome(RESELECTION, true,
+                new Selection(RESELECTION, List.of("0000000001"), null, 1, null), null, null));
+
+        observed(Instant.parse("2026-11-17T21:30:00Z"), RESELECTION);
+        assertThat(job(Instant.parse("2026-11-17T23:00:00Z")).run().outcome()).isEqualTo(PaperDecisionJob.DECIDED);
+        assertThat(decided).containsExactly("2026-11-17 REBALANCE true");
+
+        // 11-18: 운영자가 재개 — 그 분기 매수를 한 번도 내지 않았으니 따라잡기 REBALANCE
+        paused[0] = false;
+        LocalDate wednesday = LocalDate.of(2026, 11, 18);
+        observed(Instant.parse("2026-11-18T21:30:00Z"), wednesday);
+        job(Instant.parse("2026-11-18T23:00:00Z")).run();
+        assertThat(decided).containsExactly("2026-11-17 REBALANCE true", "2026-11-18 REBALANCE true");
+        assertThat(store.jobRuns.get(1).detail().path("catchUpReselection").asString()).isEqualTo("2026-11-17");
+
+        // 11-19: 재개 뒤 낸 REBALANCE(NO_TRADE — 이미 목표 비중)는 셈 — 매일 다시 내지 않음
+        LocalDate thursday = LocalDate.of(2026, 11, 19);
+        observed(Instant.parse("2026-11-19T21:30:00Z"), thursday);
+        job(Instant.parse("2026-11-19T23:00:00Z")).run();
+        assertThat(decided).containsExactly("2026-11-17 REBALANCE true", "2026-11-18 REBALANCE true", "2026-11-19 SCHEDULED true");
     }
 
     @Test
