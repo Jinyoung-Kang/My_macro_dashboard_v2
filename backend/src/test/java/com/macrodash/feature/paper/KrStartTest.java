@@ -10,6 +10,7 @@ import com.macrodash.store.PaperStore.NavRow;
 import com.macrodash.store.PaperStore.Order;
 import com.macrodash.support.InvalidRequestException;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import tools.jackson.databind.JsonNode;
@@ -568,13 +569,18 @@ class KrStartTest {
 
     /** 그 확인(12-02 11:00)의 감시 저장본 — 기준 069500·005930(10:00 창 시가 70,100)·000660, 받은 시각 {@code collectedAt}, 지연 5초. */
     private void watchKr(Instant collectedAt) {
+        watchKr(E, collectedAt);
+    }
+
+    /** {@link #watchKr(Instant)}를 확인 세션 {@code session}으로. */
+    private void watchKr(LocalDate session, Instant collectedAt) {
         tools.jackson.databind.node.ObjectNode payload = PaperFixtures.MAPPER.createObjectNode();
         payload.put("contract", 1).put("reference", "069500").put("fetchedAt", collectedAt.toString()).put("lagSeconds", 5);
-        payload.putObject("checkpoint").put("book", PaperBooks.KR_CLAUDE2).put("sessionDate", E.toString()).put("atKst", "11:00");
+        payload.putObject("checkpoint").put("book", PaperBooks.KR_CLAUDE2).put("sessionDate", session.toString()).put("atKst", "11:00");
         tools.jackson.databind.node.ObjectNode tickers = payload.putObject("tickers");
         for (String code : List.of("069500", "005930", "000660")) {
             tools.jackson.databind.node.ObjectNode t = tickers.putObject(code);
-            t.put("session", E.toString());
+            t.put("session", session.toString());
             t.putArray("bars").addObject().put("label", "11:00").put("o", 70_500).put("h", 70_600).put("l", 70_400).put("c", 70_550)
                     .put("v", 900);
             t.putObject("windows").putArray("10:00").addObject().put("label", "10:01").put("open", 70_100).put("volume", 300);
@@ -667,6 +673,41 @@ class KrStartTest {
                     assertThat(o.status()).isEqualTo(PaperBooks.ORDER_PENDING);
                     assertThat(o.asOfTradingDate()).isEqualTo(NEXT);
                 });
+    }
+
+    @Test
+    @Disabled("QA-172 재현 — 수정 전: 장중 확인 검증이 밤 관측치의 나이를 지금 시각으로 세어 휴장·주말 다음 세션의 새 주문을 모두 STALE_INPUT으로 거절")
+    @DisplayName("QA-172: 휴장(주말) 다음 세션의 장중 확인 REPLACE — 밤 관측치의 신선도를 밤 결정 순간으로 세어 새 주문을 받음(지금 시각으로 세면 24시간이 넘어 전부 STALE_INPUT)")
+    void krCheckpointReplaceAfterClosure() {
+        // 12-02를 임시휴장으로 — 12-01 밤 결정의 장중 확인 세션이 12-03이 되고, 12-01 21:57 관측치는 그때 37시간 지남(금요일 밤 → 월요일과 같은 모양).
+        LocalDate after = LocalDate.of(2026, 12, 3);
+        tools.jackson.databind.node.ObjectNode body = (tools.jackson.databind.node.ObjectNode) store.settings.body().deepCopy();
+        tools.jackson.databind.node.ObjectNode kr = (tools.jackson.databind.node.ObjectNode) body.path("kr");
+        tools.jackson.databind.node.ObjectNode calendar = kr.has("calendar")
+                ? (tools.jackson.databind.node.ObjectNode) kr.get("calendar") : kr.putObject("calendar");
+        calendar.putArray("extraClosures").add(E.toString());
+        store.saveSettings(body, List.of("kr.calendar.extraClosures"));
+        KrClaudeFixtures.FakeAi fake = new KrClaudeFixtures.FakeAi();
+        krClaude2NightWithCheckpoint(fake,
+                KrClaudeFixtures.claude2Order("005930", "BUY", 8.0, null, PaperBooks.AT_1000),
+                KrClaudeFixtures.claude2Order("000660", "BUY", 5.0, null, PaperBooks.AT_1400));
+        assertThat(store.checkpoint(PaperBooks.KR_CLAUDE2, after)).as("확인 세션 = 휴장 다음 거래일").isPresent();
+        Order two = store.ordersOf(PaperBooks.KR_CLAUDE2).stream().filter(o -> PaperBooks.AT_1400.equals(o.timing())).findFirst().orElseThrow();
+        watchKr(after, kst("2026-12-03T11:00:40"));
+        fake.answer("{\"schemaVersion\":2,\"action\":\"REPLACE\",\"summary\":\"000660 대신 373220\",\"orders\":["
+                + KrClaudeFixtures.claude2Order("373220", "BUY", 5.0, null, PaperBooks.MARKET) + "],\"noTradeReason\":null}");
+        clock.set(kst("2026-12-03T11:04"));
+        checkpointJob().run();
+
+        Decision cp = store.decisionFor(PaperBooks.KR_CLAUDE2, NEXT, RuleBookService.CHECKPOINT).orElseThrow();
+        assertThat(store.ordersOf(PaperBooks.KR_CLAUDE2)).filteredOn(o -> java.util.Objects.equals(o.decisionId(), cp.id()))
+                .singleElement().satisfies(o -> {
+                    assertThat(o.timing()).isEqualTo(PaperBooks.MARKET);
+                    assertThat(o.rejectReason()).as("밤 결정이 본 관측치 그대로 — STALE_INPUT 아님").isNull();
+                    assertThat(o.status()).isEqualTo(PaperBooks.ORDER_PENDING);
+                });
+        assertThat(cp.status()).isEqualTo(ClaudeBookService.STATUS_OK);
+        assertThat(store.orders.get(two.id()).status()).isEqualTo(PaperBooks.ORDER_CANCELLED);
     }
 
     @Test
