@@ -1,6 +1,52 @@
-# 개선 작업 진행 기록 (2026-10 3차 리뷰)
+# 개선 작업 진행 기록
 
-이 파일만 읽고 이어갈 수 있게 씁니다. 계획은 [PLAN.md](PLAN.md), 결과는 [REPORT.md](REPORT.md).
+이 파일만 읽고 이어갈 수 있게 씁니다. 새 회차를 위에 쌓고, 지난 회차 기록은 아래에 그대로 둡니다.
+
+# 4차 리뷰 (2026-11)
+
+계획은 [2026-11-04-plan.md](2026-11-04-plan.md), 결과는 [2026-11-04-report.md](2026-11-04-report.md)(쓰면 링크가 살아남).
+
+## 작업 위치
+- 브랜치 `claude/improve-2026-11` (기준 `main@4d6e47f3`). 지난 회차 끝(`8dcb3531`, 2026-10-21) 뒤 커밋 약 950개 —
+  v2 갈라내기·모의 매매(미국·한국)·Vultr 이전·화면 개편이 그 사이에 들어왔습니다.
+- 작업 머신은 **WSL2 Linux**입니다(CLAUDE.md의 맥·Homebrew JDK 27 설명과 다름). 로컬 JDK는 25뿐이라, CI와 같은 JDK 21은
+  받아 둔 `maven:3.9-eclipse-temurin-21` 이미지로 돌립니다. 저장소 전체를 `git archive`로 임시 폴더에 풀어
+  `--network host -u 1000:1000`으로 `mvn -B verify`(백엔드 폴더만 풀면 `../db/migrations`·수집기 대조 파일이 없어 오류 1·건너뜀 32).
+- 테스트 DB는 로컬 postgres 컨테이너(5434)의 `macrodash_test`만 씁니다. 운영본(Vultr)·운영 DB에는 붙지 않습니다.
+
+## 0단계 — 기준선 (2026-11-04, `4d6e47f3`, 변경 전)
+
+| 묶음 | 명령 | 결과 | 시간 |
+|---|---|---|---|
+| 수집기 | `make test-collector` (ruff + pytest) | ruff 통과 · **1288 통과 · 12 건너뜀** · 경고 2 | 3m18s |
+| 백엔드 | `make test-backend` (로컬 JDK 25) | **2347 통과**, 실패 0 | 1m56s |
+| 백엔드 | 위 컨테이너(JDK 21) `mvn -B verify` | **2347 통과**, 실패 0 | 1m41s |
+| 화면 | `make test-frontend` (자가검증 + vitest + eslint + `next build`/tsc) | 자가검증 통과 · **vitest 133파일 1770 통과** · eslint · 빌드 통과 | 50s |
+| GitHub CI `main` | `gh run list` | `4d6e47f3` run 41642028395 성공 | — |
+
+- 건너뛴 12개: 이 머신에 `psql`·`pg_dump`가 없어 `test_db_scripts.py`가 건너뜀(CI에서는 돔). 지난 회차와 같습니다.
+- 경고 2: `StarletteDeprecationWarning`(테스트 클라이언트), pykrx의 `importlib.resources.path` 폐기 예정. 동작 영향 없음.
+- 기준선에서 이미 실패하는 항목: **없음**.
+- 의존성(공식 저장소에서 확인, 2026-11-04):
+  - Spring Boot 4.1.2 GA(10-22). 4.1.2가 관리하는 Jackson 3.1.7·2.21.7·Tomcat 11.0.27이 `backend/pom.xml`의 임시 덮어쓰기와 같음.
+  - CI pip-audit 경고: `certifi 2026.7.22` PYSEC-2026-4320(고친 판 2026.10.18). `continue-on-error`라 CI는 초록.
+  - npm audit: 운영 의존성 0건, 개발 도구 minimatch moderate(eslint 계열).
+  - 메이저 후보: anthropic-java 3.x, TypeScript 7, jsdom 30, pandas 3.
+
+## 1단계 — 리뷰·계획 (계획 승인 대기)
+- 워크플로 `wf_63ebc92d-1c8`(에이전트 48개): 읽기 전용 리뷰 13관점, S1~S3은 지적마다 반박 검증 1명, S4는 관점마다 묶어서 1명.
+  - 42건: 확인 27 · 좁혀짐 15 · 반박 0. 중복 5쌍을 합쳐 37건 → 결함 번호 QA-171~201(31개) + 의존성·문서·성능 의심 6건.
+  - 원자료(리뷰·검증 전문)는 세션 임시 폴더에 있습니다(저장소 밖). 결함별 근거 요약은 계획서 표에 옮겼습니다.
+- 계획서 [2026-11-04-plan.md](2026-11-04-plan.md). §5 결정 1~9를 사용자께 여쭙니다.
+- 날짜가 걸린 것: QA-172(11-06 금 밤 → 11-09 월 장중 확인), QA-175·176(11-17 재선정, 결정 11-18 06:30 KST),
+  QA-174(수능일 11-19, 설정을 넣을 때).
+
+## 결정 대기
+- 계획 §5 결정 1~9(배포, QA-197~200, QA-175 대기 상한, QA-178 지난 줄 확정, CLAUDE.md 환경 설명, 메이저 업그레이드 보류).
+
+# 3차 리뷰 (2026-10) — 지난 회차 기록
+
+계획은 [PLAN.md](PLAN.md), 결과는 [REPORT.md](REPORT.md).
 
 ## 작업 위치
 - 브랜치 `claude/improve-2026-10` (기준 `main@097d98d`). 프로젝트 규칙(CLAUDE.md)에 맞춰 `claude/<주제>-YYYY-MM` 이름을 씁니다.
