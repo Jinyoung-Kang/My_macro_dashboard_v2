@@ -1,6 +1,5 @@
 package com.macrodash.feature.paper;
 
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -68,7 +67,6 @@ class KrSettingsParityTest {
     }
 
     @Test
-    @Disabled("QA-174 재현 — 수정 전: 마감 상한 20:00인데 수집기 마감 봉 라벨·받는 끝은 16:30 마감까지만 덮음")
     @DisplayName("QA-174: 장 시간 변경일 마감 상한이 수집기 kr_paper_timed가 덮는 마감 안 — 마감 봉 라벨(마감·마감 + 1분)이 있고, 받는 끝(KR_TIMED_BEFORE)이 "
             + "마감 + 1분 뒤, 다시 받는 시각(KR_TIMED_RECHECK)이 마감 + 10분(백엔드가 마감 봉을 덮었다고 보는 저장본) 이후")
     void overrideCloseLatestMatchesCollectorTimed() throws IOException {

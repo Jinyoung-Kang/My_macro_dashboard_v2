@@ -221,7 +221,7 @@ class PaperSettingsKrTest {
     }
 
     @Test
-    @DisplayName("kr.calendar.openTimeOverrides(결정 d8) — 날짜마다 개장·마감 쌍, 개장은 수집기 1분봉 라벨의 09:00·10:00만, 마감은 20:00까지")
+    @DisplayName("kr.calendar.openTimeOverrides(결정 d8) — 날짜마다 개장·마감 쌍, 개장은 수집기 1분봉 라벨의 09:00·10:00만, 마감은 수집기가 덮는 16:30까지(QA-174)")
     void openTimeOverrides() {
         Map<String, Object> overrides = new LinkedHashMap<>();
         overrides.put("2026-11-19", pair("10:00", "16:30"));
@@ -238,9 +238,11 @@ class PaperSettingsKrTest {
 
         assertThatThrownBy(() -> update("kr.calendar.openTimeOverrides", Map.of("2026-11-19", pair("09:30", "15:30"))))
                 .hasMessageContaining("개장은 09:00·10:00만").hasMessageContaining("09:30");
-        assertThatThrownBy(() -> update("kr.calendar.openTimeOverrides", Map.of("2026-11-19", pair("10:00", "20:30"))))
-                .hasMessageContaining("마감은 20:00까지");
-        assertThat(update("kr.calendar.openTimeOverrides", Map.of("2026-11-19", pair("09:00", "20:00"))).get("ok"))
+        assertThatThrownBy(() -> update("kr.calendar.openTimeOverrides", Map.of("2026-11-19", pair("10:00", "16:31"))))
+                .hasMessageContaining("마감은 16:30까지");
+        assertThatThrownBy(() -> update("kr.calendar.openTimeOverrides", Map.of("2026-11-19", pair("10:00", "20:00"))))
+                .as("예전 상한(통합 세션 마감) — 수집기가 그 마감 봉을 받지 않음").hasMessageContaining("마감은 16:30까지");
+        assertThat(update("kr.calendar.openTimeOverrides", Map.of("2026-11-19", pair("09:00", "16:30"))).get("ok"))
                 .as("경계 포함").isEqualTo(true);
         assertThat(update("kr.calendar.openTimeOverrides", Map.of()).get("changedKeys"))
                 .isEqualTo(List.of("kr.calendar.openTimeOverrides"));

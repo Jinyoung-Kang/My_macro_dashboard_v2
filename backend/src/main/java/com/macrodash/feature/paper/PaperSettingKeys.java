@@ -176,8 +176,12 @@ final class PaperSettingKeys {
      * 계약 1 — {@code KrSettingsParityTest})뿐이라 다른 개장 시각은 받을 봉이 없습니다(수집기 계약을 함께 바꿔야 함).
      */
     static final List<String> KR_OVERRIDE_OPENS = List.of("09:00", "10:00");
-    /** 장 시간 변경일 마감의 상한 — 통합(KRX+NXT) 세션 마감 20:00(그 뒤 20:30 수집이 그날을 다 받은 것으로 봄, K17). */
-    static final String KR_OVERRIDE_CLOSE_LATEST = "20:00";
+    /**
+     * 장 시간 변경일 마감의 상한 — 수집기 {@code kr_paper_timed}가 덮는 가장 늦은 정규장 마감(마감 단일가 봉 라벨 16:30·16:31, 받는 끝 16:36, 다시 받는
+     * 시각 16:40 = 이 마감 + 10분 — {@code KrSettingsParityTest}). 예전 상한 20:00(통합 세션 마감)은 그 범위 밖이라 그보다 늦은 마감의 종가 봉을 끝내
+     * 받지 못했습니다(QA-174).
+     */
+    static final String KR_OVERRIDE_CLOSE_LATEST = "16:30";
 
     /** 화면에 보이는 순서이기도 합니다(점 경로의 첫 마디로 묶음). */
     static final List<Spec> ALL = List.of(

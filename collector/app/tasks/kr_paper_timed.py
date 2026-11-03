@@ -26,7 +26,9 @@ app/tasks/kr_paper_timed.py
 - ``firstAfter[hh:00]``는 E 안에서 라벨이 hh:01 이후이고 거래량이 0보다 큰 첫 봉(창 밖 대체 체결 R2b), 없으면 null.
 - 마감 봉은 정규장 마감 단일가 봉 — 라벨이 NXT 종목은 마감 + 1분(15:31), 그 밖(NXT 미지원 표시 주식·ETF)은 마감 시각(15:30)입니다(G2, 명세
   §8). 장 시간 변경일(16:30 마감)을 위해 16:30·16:31도 싣습니다. 고르는 것은 백엔드입니다(그날 마감·NXT 여부를 앎).
-- E 봉이 하나도 없으면 ``NO_BARS``(거래 정지·휴장), 호출이 실패하면 ``FAILED``(다음 slow 주기에 그 종목만 다시). ``OK``·``NO_BARS``는 다시 받지 않습니다.
+- E 봉이 하나도 없으면 ``NO_BARS``(거래 정지·휴장), 호출이 실패하면 ``FAILED``(다음 slow 주기에 그 종목만 다시). ``OK``·``NO_BARS``는 다시 받지 않습니다
+  — 다만 ``OK`` 칸을 E ``KR_TIMED_RECHECK``(16:40 — 덮는 가장 늦은 마감 16:30 + 10분) 전에 받았으면 그 뒤 한 번 더 받습니다(장 시간 변경일의 마감 봉 —
+  수집기는 그날 마감을 모름, QA-174). 다시 받기가 실패하면 직전 ``OK`` 칸을 ``FAILED``로 덮지 않고 그대로 둡니다(다음 slow 주기에 다시).
 - 세션은 최근 ``KR_TIMED_KEEP_SESSIONS``개만 남깁니다(늦게 푸는 장부·실행 감사가 볼 기간).
 
 범위는 백엔드 표 ``paper_orders``를 읽기만 합니다(store.kr_timed_orders·kr_market_orders·kr_audit_orders — ADR 0008). 토스 차트 그룹(초당 20회)의 간격은 한국 관측치 태스크와 같습니다.
@@ -47,8 +49,12 @@ logger = logging.getLogger(__name__)
 KR_TIMED_CONTRACT = 1
 KR_TIMED_SOURCE = "토스증권 1분봉(원시가)"
 # E가 끝났다고 보는 시각(KST) — 정규장 마감(15:30) + 10분. 장 시간 변경일(16:30 마감)에는 이 시각에 받은 봉이 마감 봉을 덮지 못할 수 있어
-# 마감 + 10분(16:40) 전에 받은 저장본은 백엔드가 '아직 받지 않음'으로 봅니다(종가만).
+# 마감 + 10분(16:40) 전에 받은 저장본은 백엔드가 '아직 받지 않음'으로 봅니다(종가만) — 그래서 아래 KR_TIMED_RECHECK 뒤에 한 번 더 받습니다.
 KR_TIMED_AFTER = clock_time(15, 40)
+# 이 시각(KST — 덮는 가장 늦은 마감 16:30 + 10분, 백엔드 KrTimedLadder.CLOSE_COVERED_AFTER) 전에 받은 OK 칸은 이 시각 뒤에 한 번 더 받습니다(QA-174).
+# 수집기는 백엔드 설정(kr.calendar.openTimeOverrides)을 읽지 않아 그날 마감을 모르므로 보통 날에도 (종목, E)마다 한 번 더 부릅니다. 덮는 마감의
+# 상한은 백엔드 PaperSettingKeys.KR_OVERRIDE_CLOSE_LATEST와 같습니다(마감 봉 라벨 KR_TIMED_CLOSE_LABELS·받는 끝 KR_TIMED_BEFORE도 — KrSettingsParityTest).
+KR_TIMED_RECHECK = clock_time(16, 40)
 # 매시 창의 기준 시각(KST) — 백엔드 PaperBooks.AT_1000~AT_1500과 같은 시각.
 KR_TIMED_HOURS = (10, 11, 12, 13, 14, 15)
 # 개장 창(시가 반사실 — 실행 감사, 단계 2c)의 키와 그 첫 라벨. 1분봉은 이 라벨까지 거슬러 받습니다.
@@ -154,14 +160,37 @@ def _fetch(code: str, session: str, budget: list[int]) -> tuple[list[dict], bool
     return candles, True
 
 
-def _done(entry, keys: list[str]) -> bool:
-    """그 종목·세션을 다시 받지 않아도 되나 — 그날 봉 없음(NO_BARS)이거나, 받았고(OK) 필요한 창 키가 모두 있음."""
+def _done(entry, keys: list[str], recheck_at: datetime, now: datetime) -> bool:
+    """
+    그 종목·세션을 다시 받지 않아도 되나 — 그날 봉 없음(NO_BARS)이거나, 받았고(OK) 필요한 창 키가 모두 있고 E ``KR_TIMED_RECHECK``(``recheck_at``)
+    뒤에 받았거나 아직 그 시각 전(``now``)임. 받은 시각을 읽지 못하는 OK 칸도 그 시각 뒤 한 번 더 받습니다.
+    """
     if not isinstance(entry, dict):
         return False
     if entry.get("status") == "NO_BARS":
         return True
     windows = entry.get("windows")
-    return entry.get("status") == "OK" and isinstance(windows, dict) and set(keys) <= set(windows)
+    if not (entry.get("status") == "OK" and isinstance(windows, dict) and set(keys) <= set(windows)):
+        return False
+    if now < recheck_at:
+        return True
+    try:
+        fetched = datetime.fromisoformat(entry.get("fetchedAt") or "")
+    except (TypeError, ValueError):
+        return False
+    return fetched.tzinfo is not None and fetched >= recheck_at
+
+
+def _failed(sessions: dict[str, dict], session: str, code: str, reason: str, fetched_at: str) -> bool:
+    """
+    받기 실패를 적습니다 — 직전 칸이 OK면 덮지 않고 그대로 둡니다(장부·실행 감사가 쓰던 값 — 수집 실패는 직전 값을 버리지 않음, 다음 slow
+    주기에 다시). FAILED를 새로 적었으면 True.
+    """
+    previous = sessions.get(session, {}).get(code)
+    if isinstance(previous, dict) and previous.get("status") == "OK":
+        return False
+    sessions.setdefault(session, {})[code] = {"status": "FAILED", "reason": reason, "fetchedAt": fetched_at}
+    return True
 
 
 def task_kr_paper_timed() -> str:
@@ -184,7 +213,8 @@ def task_kr_paper_timed() -> str:
         closed_at = datetime.combine(date.fromisoformat(session), KR_TIMED_AFTER, tzinfo=KST)
         if now < closed_at:
             continue
-        if _done(sessions.get(session, {}).get(code), window_keys(targets.get((code, session), ()))):
+        recheck_at = datetime.combine(date.fromisoformat(session), KR_TIMED_RECHECK, tzinfo=KST)
+        if _done(sessions.get(session, {}).get(code), window_keys(targets.get((code, session), ())), recheck_at, now):
             continue
         if (code, session) not in due:
             due.append((code, session))
@@ -193,7 +223,7 @@ def task_kr_paper_timed() -> str:
 
     fetched_at = now.astimezone(timezone.utc).isoformat()
     budget = [KR_TIMED_CALL_BUDGET]
-    done = failed = 0
+    done = failed = kept = 0
     stop = ""
     for code, session in due:
         if budget[0] <= 0:
@@ -207,13 +237,14 @@ def task_kr_paper_timed() -> str:
             stop = f"토스 거부로 멈춤({exc})"
             break
         except toss_service.TossError as exc:
-            sessions.setdefault(session, {})[code] = {"status": "FAILED", "reason": str(exc), "fetchedAt": fetched_at}
             failed += 1
+            if not _failed(sessions, session, code, str(exc), fetched_at):
+                kept += 1
             continue
         if not complete:
-            sessions.setdefault(session, {})[code] = {"status": "FAILED", "reason": "호출 예산 소진 — 다음 주기에 다시",
-                                                      "fetchedAt": fetched_at}
             failed += 1
+            if not _failed(sessions, session, code, "호출 예산 소진 — 다음 주기에 다시", fetched_at):
+                kept += 1
             stop = "호출 예산 소진 — 나머지는 다음 주기"
             break
         summary = _summarize(candles, session, targets.get((code, session), ()))
@@ -221,8 +252,11 @@ def task_kr_paper_timed() -> str:
         sessions.setdefault(session, {})[code] = {"status": "OK" if has_bars else "NO_BARS", "reason": None,
                                                   "fetchedAt": fetched_at, **summary}
         done += 1
-    if done == 0 and failed == 0:
-        raise EmptyResult(stop or "받은 것 없음 — 기존 저장본 유지")
+    if done == 0 and failed == kept:
+        # 바뀐 칸이 없음 — 받은 것도, 새로 적은 실패도 없음(다시 받기 실패는 직전 OK 칸 그대로).
+        note = f"다시 받기 실패 {kept} — 직전 OK 칸 유지" if kept else ""
+        raise EmptyResult(" · ".join(part for part in (stop, note) if part) or "받은 것 없음 — 기존 저장본 유지")
     kept = dict(sorted(sessions.items())[-KR_TIMED_KEEP_SESSIONS:])
     store.put_snapshot(catalog.SNAP_KR_PAPER_TIMED, {"contract": KR_TIMED_CONTRACT, "source": KR_TIMED_SOURCE, "sessions": kept})
-    return f"{done}/{len(due)} 종목·세션" + (f", 실패 {failed}" if failed else "") + (f" — {stop}" if stop else "")
+    return (f"{done}/{len(due)} 종목·세션" + (f", 실패 {failed}" if failed else "")
+            + (f"(직전 OK 칸 유지 {kept})" if kept else "") + (f" — {stop}" if stop else ""))

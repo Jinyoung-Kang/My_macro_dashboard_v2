@@ -6,6 +6,7 @@ tests/test_kr_paper_timed.py
   1. 범위는 계좌2의 매시·종가 대기 주문(종목, 기준 거래일) — 목표 세션 E = 다음 KR 거래일, E 15:40 KST 전에는 부르지 않는다.
   2. 저장본 = 세션 → 종목 → 창(라벨 hh:01~hh:05)·창 뒤 첫 거래 봉·마감 봉(15:30·15:31·16:30·16:31 있는 것만), 봉이 없으면 NO_BARS.
   3. OK·NO_BARS는 다시 받지 않고, 실패(FAILED)는 다음 주기에 그 종목만 다시. 16:36부터 거슬러 쪽을 넘기고 E 09:01 봉에 닿으면 멈춘다.
+     E 16:40(덮는 가장 늦은 마감 + 10분) 전에 받은 OK 칸은 그 뒤 한 번 더 받고, 다시 받기가 실패하면 직전 OK 칸을 덮지 않는다(QA-174).
   4. 받을 것이 없으면 EmptyResult(저장본 그대로).
   5. 계좌·시점 글자는 백엔드 PaperBooks와 같다.
   6. 장중 시장가(MARKET — 단계 2b) 대기 주문은 그 기준 분 T(생성 + 60초를 분으로 올림, KST)의 창을 같은 모양으로 더한다.
@@ -293,7 +294,6 @@ def _until(bars, last):
     return [b for b in bars if b["time"] <= last]
 
 
-@pytest.mark.xfail(strict=True, reason="QA-174 재현 — 16:40 전에 받은 OK 칸을 다시 받지 않아 장 시간 변경일(16:30 마감)의 마감 봉이 끝내 없음")
 def test_QA174_가장_늦은_마감_더하기_10분_전에_받은_OK_칸은_그_뒤_한_번_더_받는다(store, toss, monkeypatch):
     _orders(monkeypatch, [("005930", date(2026, 11, 2))])
     toss.pages[("005930", E)] = _until(_session(E), "15:50")
@@ -319,7 +319,6 @@ def test_QA174_가장_늦은_마감_더하기_10분_전에_받은_OK_칸은_그_
     assert toss.calls == [], "16:40 뒤에 받은 칸은 다시 받지 않음"
 
 
-@pytest.mark.xfail(strict=True, reason="QA-174 재현 — 다시 받기가 실패하면 직전 OK 칸을 FAILED로 덮음(직전 저장 값을 버림)")
 def test_QA174_다시_받기가_실패하면_직전_OK_칸을_FAILED로_덮지_않는다(store, toss, monkeypatch):
     # 창 키가 빠진 칸(2c 전)을 다시 받는 길 — 받기가 실패해도 장부가 쓰던 OK 칸은 그대로 두고 다음 주기에 다시.
     old = {"status": "OK", "reason": None, "fetchedAt": "2026-11-03T14:30:00+00:00",
@@ -334,3 +333,4 @@ def test_QA174_다시_받기가_실패하면_직전_OK_칸을_FAILED로_덮지_�
 
     assert toss.calls, "다시 받으려고 부름"
     assert _payload(store)["sessions"][E]["005930"] == old
+
