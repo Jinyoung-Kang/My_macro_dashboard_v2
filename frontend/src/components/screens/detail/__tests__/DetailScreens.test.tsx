@@ -288,6 +288,25 @@ describe("종목 상세 — 미국", () => {
     // 회사 이름을 모르면 13F 보유 기관을 찾지 않는다
     expect(requested().some((path) => path.startsWith("/api/guru/holders"))).toBe(false);
   });
+
+  // QA-190과 같은 원인: 시세 읽기가 실패했거나 조회하지 않으면(store_only) 히어로는 그 이유를 적지만, '핵심 지표' 카드는 시세가 없으면 늘 '불러오는 중'
+  // (role=status, aria-busy)이었습니다. 카드도 그 이유를, 실패면 다시 시도 단추를 그립니다.
+  it.fails("QA-190 시세를 읽지 못했거나 조회하지 않으면 핵심 지표 카드도 '불러오는 중'이 아니라 그 이유(실패면 다시 시도)", async () => {
+    reads = { [QUOTE]: { available: false, message: "store_only 모드에서는 외부 시세를 조회하지 않습니다." } };
+    const { unmount } = renderAs(PRO, <StockDetailScreen market="us" code="AAPL" />);
+    await screen.findAllByText("store_only 모드에서는 외부 시세를 조회하지 않습니다.");
+    expect(screen.queryByRole("status", { name: "핵심 지표를 불러오는 중" })).toBeNull();
+    unmount();
+
+    reads = { [QUOTE]: new Error("시세 서버가 응답하지 않습니다.") };
+    renderAs(PRO, <StockDetailScreen market="us" code="AAPL" />);
+    await waitFor(() => expect(screen.getAllByText("시세 서버가 응답하지 않습니다.").length).toBeGreaterThan(0));
+    expect(screen.queryByRole("status", { name: "핵심 지표를 불러오는 중" })).toBeNull();
+    const card = screen.getByRole("heading", { level: 2, name: "핵심 지표" }).closest("section") as HTMLElement;
+    const before = requested().filter((entry) => entry === QUOTE).length;
+    fireEvent.click(within(card).getByRole("button", { name: "다시 시도" }));
+    await waitFor(() => expect(requested().filter((entry) => entry === QUOTE)).toHaveLength(before + 1));
+  });
 });
 
 describe("종목 상세 — 국내", () => {
