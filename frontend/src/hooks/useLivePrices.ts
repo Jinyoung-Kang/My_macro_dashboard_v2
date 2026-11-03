@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { apiBase, apiGet } from "@/lib/api";
 import { endpoints } from "@/lib/endpoints";
 import type { LivePrice, LivePricesResponse } from "@/lib/types";
+import { useShownOnce } from "./useShownOnce";
 
 export interface LivePricesState {
   /** 'US:AAPL' → 최근에 받은 가격(이번 구독에서 받은 것만) */
@@ -56,7 +57,8 @@ export function mergeLivePrices(previous: LivePricesState, body: LivePricesRespo
 
 /**
  * 종목들의 실시간 가격(ADR 0024) — 주기가 있으면 SSE(GET /api/live/prices/stream)로 서버가 그 주기마다 밀어 주고, 끄기(0)면 화면을 열 때 한 번만
- * 읽습니다(GET /api/live/prices). 탭을 숨기면 연결을 닫고 다시 보이면 다시 이어 바로 한 번 받습니다. 연결이 끊기면 브라우저(EventSource)가 다시
+ * 읽습니다(GET /api/live/prices — 숨긴 탭으로 열렸으면 처음 보일 때, 그 뒤 탭을 숨기거나 다시 보일 때는 읽지 않음, QA-189). 탭을 숨기면 연결을 닫고
+ * 다시 보이면 다시 이어 바로 한 번 받습니다. 연결이 끊기면 브라우저(EventSource)가 다시
  * 잇습니다 — 다만 다시 이은 응답이 200이 아니면(배포 중 502·연결 상한 429·401) 브라우저가 연결을 닫고 다시 잇지 않으므로, 그때는 닫고 5초부터 두
  * 배씩(최대 60초) 기다렸다 새로 엽니다(받으면 처음부터 — QA-183). 표시 전용 — 장부는 이 값을 쓰지 않습니다.
  *
@@ -67,25 +69,32 @@ export function mergeLivePrices(previous: LivePricesState, body: LivePricesRespo
 export function useLivePrices(items: readonly string[], seconds: number, enabled = true): LivePricesState {
   const key = items.join(",");
   const visible = useDocumentVisible();
+  // 끄기의 한 번 읽기는 탭이 처음 보인 뒤에만 — 숨김·보임이 바뀔 때마다 다시 읽지 않습니다(QA-189, 보지 않는 동안 받지 않음).
+  const shown = useShownOnce();
   const [state, setState] = useState<LivePricesState>(EMPTY_STATE);
   // 닫힌 연결을 새로 여는 차례 — 올리면 아래 효과가 새 EventSource를 엽니다(QA-183). 기다린 횟수는 받으면 0(ref — 바꿔도 다시 열지 않음).
   const [reopen, setReopen] = useState(0);
   const closedCount = useRef(0);
 
+  // 끄기(0) — 화면을 열 때 한 번. 의존성에 탭 보임(visible)을 두지 않습니다: 두면 숨길 때 숨은 탭에서, 돌아올 때 또 읽었습니다(QA-189).
   useEffect(() => {
     const list = key ? key.split(",") : [];
-    if (!enabled || list.length === 0) return;
-    if (seconds <= 0) {
-      const controller = new AbortController();
-      apiGet<LivePricesResponse>(endpoints.live.prices(list), controller.signal)
-        .then((body) => setState((previous) => mergeLivePrices(previous, body, Date.now())))
-        .catch((error: unknown) => {
-          if (!controller.signal.aborted) {
-            setState((previous) => ({ ...previous, error: error instanceof Error ? error.message : "실시간 시세를 받지 못했습니다." }));
-          }
-        });
-      return () => controller.abort();
-    }
+    if (!enabled || list.length === 0 || seconds > 0 || !shown) return;
+    const controller = new AbortController();
+    apiGet<LivePricesResponse>(endpoints.live.prices(list), controller.signal)
+      .then((body) => setState((previous) => mergeLivePrices(previous, body, Date.now())))
+      .catch((error: unknown) => {
+        if (!controller.signal.aborted) {
+          setState((previous) => ({ ...previous, error: error instanceof Error ? error.message : "실시간 시세를 받지 못했습니다." }));
+        }
+      });
+    return () => controller.abort();
+  }, [key, seconds, enabled, shown]);
+
+  // 주기가 있으면 SSE — 탭이 보이는 동안만 엽니다.
+  useEffect(() => {
+    const list = key ? key.split(",") : [];
+    if (!enabled || list.length === 0 || seconds <= 0) return;
     if (!visible || typeof EventSource === "undefined") return;
     const source = new EventSource(`${apiBase()}${endpoints.live.stream(list, seconds)}`, { withCredentials: true });
     let reopenTimer: ReturnType<typeof setTimeout> | null = null;
