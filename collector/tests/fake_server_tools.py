@@ -1,0 +1,96 @@
+"""
+tests/fake_server_tools.py
+서버 스크립트 시험(tests/test_*_scripts.py)이 같이 쓰는 가짜 실행 파일과 도우미 — test_aws_scripts.py에서 옮겼습니다.
+
+docker·aws·make·logger·sleep·curl은 PATH 앞에 둔 가짜 실행 파일로 바꿉니다(부른 인자를 기록 파일에 남김). git은 진짜를
+쓰되 사용자 git 설정은 읽지 않습니다.
+"""
+from __future__ import annotations
+
+import os
+import stat
+import subprocess
+from pathlib import Path
+
+SECRET = "ci-secret-value-must-not-be-printed"
+
+_GIT_ENV = {
+    "GIT_CONFIG_GLOBAL": os.devnull, "GIT_CONFIG_NOSYSTEM": "1",
+    "GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@example.invalid",
+    "GIT_COMMITTER_NAME": "t", "GIT_COMMITTER_EMAIL": "t@example.invalid",
+}
+
+# 기록 파일에 한 줄씩: 인자 | 그때의 COMPOSE_FILE · APP_VERSION
+_FAKE_DOCKER = """#!/usr/bin/env bash
+echo "$* | COMPOSE_FILE=${COMPOSE_FILE:-} APP_VERSION=${APP_VERSION:-}" >> "$FAKE_LOG"
+case " $* " in
+    *" exec "*) exit "${FAKE_EXEC_RC:-0}" ;;
+esac
+if [ -n "${FAKE_DOCKER_FAIL:-}" ] && [[ "$*" == *"$FAKE_DOCKER_FAIL"* ]]; then exit 1; fi
+exit 0
+"""
+# sts는 FAKE_STS_OK번째까지만 성공(기본: 늘 성공), FAKE_STS_FAIL에 적은 번째(공백으로 구분)는 연결 오류.
+# start-session은 곧바로 실패.
+_FAKE_AWS = """#!/usr/bin/env bash
+echo "aws $*" >> "$FAKE_LOG"
+case "$1 $2" in
+    "sts get-caller-identity")
+        n=$(($(cat "$FAKE_LOG.sts" 2>/dev/null || echo 0) + 1)); echo "$n" > "$FAKE_LOG.sts"
+        case " ${FAKE_STS_FAIL:-} " in *" $n "*) echo "Could not connect to the endpoint URL" >&2; exit 255 ;; esac
+        [ -z "${FAKE_STS_OK:-}" ] || [ "$n" -le "$FAKE_STS_OK" ] ;;
+    "ssm start-session") exit 255 ;;
+    "s3 cp") exit "${FAKE_AWS_RC:-0}" ;;
+    "ec2 describe-instances") [ -z "${FAKE_EC2_FAIL:-}" ] || exit 255; echo "${FAKE_EC2_STATE:-}" ;;
+    *) exit 0 ;;
+esac
+"""
+_FAKE_MAKE = """#!/usr/bin/env bash
+echo "make $*" >> "$FAKE_LOG"
+[ "${FAKE_MAKE_RC:-0}" = 0 ] || { echo "${FAKE_MAKE_MSG:-pg_dump: error: connection failed}" >&2; echo "✗ 백업 실패: pg_dump가 오류로 끝났습니다(위 메시지 참고)." >&2; echo "make: *** [Makefile:215: backup] Error 1" >&2; exit 2; }
+[ -n "${FAKE_MAKE_NOFILE:-}" ] || : > "backups/macrodash-$(date +%Y%m%d-%H%M%S).sql"
+[ -z "${FAKE_MAKE_TWO:-}" ] || : > "backups/macrodash-20991231-000000.sql"
+"""
+_FAKE_LOGGER = """#!/usr/bin/env bash
+echo "logger $*" >> "$FAKE_LOG"
+"""
+# 바로 돌아옵니다. FAKE_SLEEP_REAL_10이 있으면 `sleep 10`(tunnel.sh의 로그인 재확인 대기)만 실제로 11초 잡니다.
+_FAKE_SLEEP = '#!/usr/bin/env bash\n[ "$1" = 10 ] && [ -n "${FAKE_SLEEP_REAL_10:-}" ] && command -p sleep 11\nexit 0\n'
+# ip-ranges.json 받기(update-cloudfront-ranges.sh) — `-o 파일`에 CloudFront 원본용 대역 FAKE_CURL_RANGES개를 씁니다(기본 12).
+# FAKE_CURL_FAIL이 있으면 연결 실패(22).
+_FAKE_CURL = """#!/usr/bin/env bash
+echo "curl $*" >> "$FAKE_LOG"
+[ -z "${FAKE_CURL_FAIL:-}" ] || exit 22
+out=; while [ $# -gt 0 ]; do [ "$1" = -o ] && out="$2"; shift; done
+python3 -I -c 'import json,sys; n=int(sys.argv[2]); json.dump({"syncToken": "1", "prefixes": [{"ip_prefix": f"10.0.{i}.0/24", "service": "CLOUDFRONT_ORIGIN_FACING"} for i in range(n)] + [{"ip_prefix": "1.2.3.0/24", "service": "EC2"}], "ipv6_prefixes": [{"ipv6_prefix": "2600:9000::/28", "service": "CLOUDFRONT_ORIGIN_FACING"}]}, open(sys.argv[1], "w"))' "$out" "${FAKE_CURL_RANGES:-12}"
+"""
+
+
+def _write_exec(path: Path, text: str) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(text, encoding="utf-8")
+    path.chmod(path.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
+
+
+def _env(fakes, **extra: str) -> dict[str, str]:
+    bin_dir, log = fakes
+    # 개발자 셸의 AWS·DB·compose 값이 끼어들지 않게 최소한의 환경만 넘깁니다.
+    env = {"PATH": f"{bin_dir}{os.pathsep}{os.environ.get('PATH', '')}", "HOME": str(bin_dir.parent),
+           "LANG": "C.UTF-8", "FAKE_LOG": str(log)}
+    env.update(_GIT_ENV)
+    env.update(extra)
+    return env
+
+
+def _calls(fakes) -> list[str]:
+    return fakes[1].read_text(encoding="utf-8").splitlines()
+
+
+def _run(script: Path, cwd: Path, env: dict[str, str]) -> subprocess.CompletedProcess:
+    return subprocess.run(["bash", str(script)], cwd=cwd, env=env, capture_output=True, text=True,
+                          encoding="utf-8", errors="replace", timeout=60)
+
+
+def _git(cwd: Path, *args: str) -> str:
+    env = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
+    env.update(_GIT_ENV)
+    return subprocess.run(["git", *args], cwd=cwd, env=env, check=True, capture_output=True, text=True).stdout.strip()

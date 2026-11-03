@@ -2,7 +2,7 @@
 tests/test_vultr_scripts.py
 Vultr 서버(ADR 0023)의 스크립트 시험 — scripts/vultr/{bootstrap,tailscale-up,deploy,backup-s3,instance,firewall-pc-ip}.sh.
 
-deploy.sh·backup-s3.sh는 scripts/aws의 같은 이름에서 갈라냈으므로, 같은 가짜 실행 파일(tests/test_aws_scripts.py — docker·aws·make·
+deploy.sh·backup-s3.sh는 scripts/aws의 같은 이름에서 갈라냈으므로, 같은 가짜 실행 파일(tests/fake_server_tools.py — docker·aws·make·
 logger·sleep)과 임시 git 원격으로 Vultr에서 달라진 점을 봅니다: 덧붙임 파일(compose.vultr.yml), gate·CloudFront 대역 단계가 없음,
 서버 .env에 적지 않는 이름(AWS 공개 주소용 값·PC 전용 값 더함), 병행 기간의 PAPER_ENABLED 알림, 백업 접두어 db/vultr/.
 PC용 instance.sh·firewall-pc-ip.sh(api-common.sh)는 Vultr API를 흉내 내는 가짜 curl(상태 JSON 파일에 규칙을 들고 있음)로
@@ -19,26 +19,26 @@ from pathlib import Path
 
 import pytest
 
-from tests import test_aws_scripts as aws
+from tests import fake_server_tools as tools
 
 ROOT = Path(__file__).resolve().parents[2]
 SCRIPTS = ["bootstrap.sh", "tailscale-up.sh", "deploy.sh", "backup-s3.sh", "instance.sh", "firewall-pc-ip.sh"]
-SECRET = aws.SECRET
+SECRET = tools.SECRET
 
 
 @pytest.fixture()
 def fakes(tmp_path):
-    """가짜 실행 파일 폴더와 기록 파일(AWS 시험과 같은 가짜). 진짜 git·bash·coreutils는 그 뒤의 PATH에서 찾습니다."""
+    """가짜 실행 파일 폴더와 기록 파일(AWS 시험과 같은 가짜 — tests/fake_server_tools.py). 진짜 git·bash·coreutils는 그 뒤의 PATH에서 찾습니다."""
     bin_dir, log = tmp_path / "bin", tmp_path / "calls.log"
-    for name, text in {"docker": aws._FAKE_DOCKER, "aws": aws._FAKE_AWS, "make": aws._FAKE_MAKE,
-                       "logger": aws._FAKE_LOGGER, "sleep": aws._FAKE_SLEEP, "curl": aws._FAKE_CURL}.items():
-        aws._write_exec(bin_dir / name, text)
+    for name, text in {"docker": tools._FAKE_DOCKER, "aws": tools._FAKE_AWS, "make": tools._FAKE_MAKE,
+                       "logger": tools._FAKE_LOGGER, "sleep": tools._FAKE_SLEEP, "curl": tools._FAKE_CURL}.items():
+        tools._write_exec(bin_dir / name, text)
     log.touch()
     return bin_dir, log
 
 
 def _docker_calls(fakes) -> list[str]:
-    return [line.split(" | ")[0] for line in aws._calls(fakes)]
+    return [line.split(" | ")[0] for line in tools._calls(fakes)]
 
 
 # --------------------------------------------------------------------------- 공통
@@ -78,19 +78,19 @@ def server(tmp_path):
         pytest.skip("git이 없어 건너뜁니다.")
     origin, here = tmp_path / "origin.git", tmp_path / "home" / "My_macro_dashboard_v2"
     seed = tmp_path / "seed"
-    aws._git(tmp_path, "init", "-q", "--bare", "-b", "main", str(origin))
-    aws._git(tmp_path, "clone", "-q", str(origin), str(seed))
-    aws._git(seed, "symbolic-ref", "HEAD", "refs/heads/main")
+    tools._git(tmp_path, "init", "-q", "--bare", "-b", "main", str(origin))
+    tools._git(tmp_path, "clone", "-q", str(origin), str(seed))
+    tools._git(seed, "symbolic-ref", "HEAD", "refs/heads/main")
     (seed / "scripts/vultr").mkdir(parents=True)
     shutil.copy(ROOT / "scripts/vultr/deploy.sh", seed / "scripts/vultr/deploy.sh")
     (seed / "deploy/vultr").mkdir(parents=True)
     shutil.copy(ROOT / "deploy/vultr/Caddyfile", seed / "deploy/vultr/Caddyfile")
     (seed / "README.md").write_text("readme\n", encoding="utf-8")
-    aws._git(seed, "add", ".")
-    aws._git(seed, "commit", "-q", "-m", "seed")
-    aws._git(seed, "push", "-q", "origin", "main")
+    tools._git(seed, "add", ".")
+    tools._git(seed, "commit", "-q", "-m", "seed")
+    tools._git(seed, "push", "-q", "origin", "main")
     here.parent.mkdir(parents=True)
-    aws._git(tmp_path, "clone", "-q", "-b", "main", str(origin), str(here))
+    tools._git(tmp_path, "clone", "-q", "-b", "main", str(origin), str(here))
     (here / ".env").write_text(f"OWNER_EMAIL=owner@example.invalid\nAPP_PASSWORD={SECRET}\n"
                                "COMPOSE_FILE=docker-compose.yml:compose.vultr.yml\nAWS_BACKUP_BUCKET=b\n"
                                "PUBLIC_ORIGIN=https://my-macro-app.example.ts.net\nPAPER_ENABLED=false\n", encoding="utf-8")
@@ -99,7 +99,7 @@ def server(tmp_path):
 
 def _deploy(server, fakes, **extra: str) -> subprocess.CompletedProcess:
     here, _ = server
-    return aws._run(here / "scripts/vultr/deploy.sh", here, aws._env(fakes, **extra))
+    return tools._run(here / "scripts/vultr/deploy.sh", here, tools._env(fakes, **extra))
 
 
 def test_deploy는_gate_없이_하나씩_빌드하고_Vultr_덧붙임으로_기동한_뒤_스키마를_적용한다(server, fakes):
@@ -109,15 +109,15 @@ def test_deploy는_gate_없이_하나씩_빌드하고_Vultr_덧붙임으로_기�
     builds = [c for c in calls if c.startswith("compose build")]
     assert builds == ["compose build --pull backend", "compose build --pull frontend", "compose build --pull collector"], \
         "4 GB — 서비스를 하나씩, gate는 Vultr에 없음(ADR 0023)"
-    assert not any(c.startswith("curl ") for c in aws._calls(fakes)), "CloudFront 대역을 받지 않습니다(공개 주소 없음)"
+    assert not any(c.startswith("curl ") for c in tools._calls(fakes)), "CloudFront 대역을 받지 않습니다(공개 주소 없음)"
     assert not (server[0] / "deploy/vultr/trusted_proxies.caddy").exists()
     up = calls.index("compose up -d --no-build --wait --wait-timeout 300")
     assert up > calls.index("compose build --pull collector")
     schema = [i for i, c in enumerate(calls) if " exec -T collector " in f" {c} " and "init_schema" in c]
     assert len(schema) == 1 and schema[0] > up, "up -d 뒤 스키마 적용(QA-016)"
     assert calls.index("compose up -d --no-deps --force-recreate --wait --wait-timeout 60 caddy") > schema[0]
-    head = aws._git(server[0], "rev-parse", "--short", "HEAD")
-    for line in aws._calls(fakes):
+    head = tools._git(server[0], "rev-parse", "--short", "HEAD")
+    for line in tools._calls(fakes):
         assert f"COMPOSE_FILE=docker-compose.yml:compose.vultr.yml APP_VERSION=main@{head}" in line, line
     assert "PAPER_ENABLED=false" in result.stdout and "주의" not in result.stdout
     assert SECRET not in result.stdout + result.stderr, "서버 .env의 값을 찍지 않습니다"
@@ -165,7 +165,7 @@ def test_deploy는_폴더_이름이_다르면_멈춘다(server, fakes):
     here, _ = server
     moved = here.with_name("My_macro_dashboard_v2-copy")
     here.rename(moved)
-    result = aws._run(moved / "scripts/vultr/deploy.sh", moved, aws._env(fakes))
+    result = tools._run(moved / "scripts/vultr/deploy.sh", moved, tools._env(fakes))
     assert result.returncode != 0
     assert "My_macro_dashboard_v2" in result.stderr
     assert _docker_calls(fakes) == []
@@ -173,9 +173,9 @@ def test_deploy는_폴더_이름이_다르면_멈춘다(server, fakes):
 
 def test_deploy는_받은_main에_Caddyfile이_없으면_기동하지_않는다(server, fakes):
     _, seed = server
-    aws._git(seed, "mv", "deploy/vultr/Caddyfile", "deploy/vultr/Caddyfile.new")
-    aws._git(seed, "commit", "-q", "-m", "rename caddyfile")
-    aws._git(seed, "push", "-q", "origin", "main")
+    tools._git(seed, "mv", "deploy/vultr/Caddyfile", "deploy/vultr/Caddyfile.new")
+    tools._git(seed, "commit", "-q", "-m", "rename caddyfile")
+    tools._git(seed, "push", "-q", "origin", "main")
     result = _deploy(server, fakes)
     assert result.returncode != 0
     assert "deploy/vultr/Caddyfile" in result.stderr
@@ -187,8 +187,8 @@ def test_QA145_deploy는_받은_main의_deploy_sh가_바뀌었으면_새_판으�
     script = seed / "scripts/vultr/deploy.sh"
     script.write_text(script.read_text(encoding="utf-8").replace(
         'echo "코드를 받습니다(main)…"', 'echo "새 판 deploy.sh"\necho "코드를 받습니다(main)…"', 1), encoding="utf-8")
-    aws._git(seed, "commit", "-qam", "new deploy.sh")
-    aws._git(seed, "push", "-q", "origin", "main")
+    tools._git(seed, "commit", "-qam", "new deploy.sh")
+    tools._git(seed, "push", "-q", "origin", "main")
     result = _deploy(server, fakes)
     assert result.returncode == 0, result.stderr
     assert "새 판 deploy.sh" in result.stdout
@@ -218,13 +218,13 @@ def backup_root(tmp_path):
 
 
 def _backup(root: Path, fakes, **extra: str) -> subprocess.CompletedProcess:
-    return aws._run(root / "scripts/vultr/backup-s3.sh", root, aws._env(fakes, **extra))
+    return tools._run(root / "scripts/vultr/backup-s3.sh", root, tools._env(fakes, **extra))
 
 
 def test_backup_s3는_이번에_만든_백업_하나만_db_vultr_아래에_올리고_syslog에_남긴다(backup_root, fakes):
     result = _backup(backup_root, fakes)
     assert result.returncode == 0, result.stderr
-    calls = aws._calls(fakes)
+    calls = tools._calls(fakes)
     assert calls[0] == "make --no-print-directory backup"
     new = sorted(p.name for p in (backup_root / "backups").glob("macrodash-*.sql"))[-1]
     assert new != "macrodash-20200101-000000.sql"
@@ -244,7 +244,7 @@ def test_backup_s3는_Vultr_덧붙임으로_백업한다():
 def test_backup_s3는_S3_올리기가_실패하면_0이_아닌_값과_syslog_err(backup_root, fakes):
     result = _backup(backup_root, fakes, FAKE_AWS_RC="1")
     assert result.returncode != 0
-    assert any(c.startswith("logger -t my-macro-backup -p user.err") for c in aws._calls(fakes))
+    assert any(c.startswith("logger -t my-macro-backup -p user.err") for c in tools._calls(fakes))
 
 
 def test_backup_s3는_버킷_이름이_없으면_백업하지_않는다(backup_root, fakes):
@@ -252,7 +252,7 @@ def test_backup_s3는_버킷_이름이_없으면_백업하지_않는다(backup_r
     result = _backup(backup_root, fakes)
     assert result.returncode != 0
     assert "AWS_BACKUP_BUCKET" in result.stderr
-    assert not any(c.startswith(("make", "aws")) for c in aws._calls(fakes))
+    assert not any(c.startswith(("make", "aws")) for c in tools._calls(fakes))
 
 
 def test_api_common은_source로만_읽고_키를_curl_인자에_넣지_않는다():
@@ -341,7 +341,7 @@ def pc(tmp_path):
     shutil.copy(ROOT / "scripts/db-common.sh", root / "scripts/db-common.sh")
     (root / ".env").write_text(f"VULTR_API_KEY={API_KEY}\nVULTR_INSTANCE_ID={INSTANCE_ID}\nVULTR_FIREWALL_GROUP_ID={GROUP_ID}\n",
                                encoding="utf-8")
-    aws._write_exec(bin_dir / "curl", _FAKE_VULTR_CURL)
+    tools._write_exec(bin_dir / "curl", _FAKE_VULTR_CURL)
     log.touch()
     state.write_text(json.dumps({
         "group": GROUP_ID,
