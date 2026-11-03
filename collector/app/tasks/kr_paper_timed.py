@@ -4,7 +4,9 @@ app/tasks/kr_paper_timed.py
 
 한국 Claude 계좌2(``kr_claude2``)가 매시(``AT_1000``~``AT_1500``)·종가(``NEXT_CLOSE``)·장중 시장가(``MARKET`` — 장중 확인 응답, 단계 2b)로 낸 대기 주문의
 종목마다, 목표 세션 E(기준 거래일 다음 KR 거래일)가 끝난 뒤(E 15:40 KST) 토스 1분봉을 한 번 받아 장부가 쓸 칸만 저장합니다. 시가(``NEXT_OPEN``)
-체결은 지금처럼 ``paper.kr.quotes``의 개장 봉입니다.
+체결은 지금처럼 ``paper.kr.quotes``의 개장 봉입니다. E 칸이 ``NO_BARS``(그날 봉 없음 — 종목 종일 정지, 백엔드 설정에만 있는 늦은 임시휴장)면 만료 창
+(기준일 + ``KR_TIMED_EXPIRY_SESSIONS`` 거래일) 안의 다음 거래일도 그날이 끝난 뒤 받습니다 — 장부는 기준일 뒤 **첫 관측 봉**(거래량 > 0)의 날로 체결하므로
+그날과 받는 날을 같게(QA-201).
 
 실행 감사(단계 2c — 명세 §11)를 위해 장부 몫 뒤에 **한국 Claude 계좌1·2의 최근 결정 주문**(상태 무관, 최근 ``KR_AUDIT_RECENT_DAYS``일)의 (종목, E)도
 같은 모양으로 받습니다. 개장 창(``09:00`` — 시가 반사실)도 늘 싣고, 이미 받은 칸에 필요한 창 키가 없으면 그 칸만 다시 받습니다.
@@ -68,6 +70,9 @@ KR_TIMED_BEFORE = "16:36"
 KR_TIMED_PAGE = 200
 KR_TIMED_PAGES = 3
 KR_TIMED_KEEP_SESSIONS = 8
+# 계좌2 주문의 만료 창 — 기준일 + 3거래일(백엔드 RuleBookService.ORDER_EXPIRY_TRADING_DAYS, test_kr_paper_timed가 파일로 대조). 목표 세션 E가 NO_BARS면
+# 이 창 안의 다음 거래일까지 차례로 받습니다(장부가 그 봉을 고름 — QA-201).
+KR_TIMED_EXPIRY_SESSIONS = 3
 # 실행당 토스 호출 상한 — 종목·세션 × 최대 3쪽. 장부 몫(계좌2 대기 주문)을 먼저 받고 실행 감사 몫은 남은 예산으로, 넘치면 다음 slow 주기
 # (DATA_SOURCES.md '한국 책 호출 예산').
 KR_TIMED_CALL_BUDGET = 60
@@ -94,6 +99,23 @@ def next_trading_day(day: date) -> date:
     while not krcalendar.is_trading_day(candidate):
         candidate += timedelta(days=1)
     return candidate
+
+
+def target_sessions(code: str, as_of: date, sessions: dict[str, dict]) -> list[str]:
+    """
+    그 주문 종목의 목표 세션들(ISO 날짜, 차례로) — 기준일 다음 KR 거래일 E, 그 칸이 ``NO_BARS``면 만료 창(기준일 + ``KR_TIMED_EXPIRY_SESSIONS`` 거래일)
+    안의 다음 거래일도. 백엔드 장부(KrFills.choose)는 기준일 뒤 첫 관측 봉의 날을 고르는데, 수집기 달력은 백엔드 설정의 임시휴장을 모르고 종목
+    정지도 달력에 없으므로 E에 봉이 없으면 다음 날을 고릅니다(QA-201). 그 칸이 아직 없거나 봉이 있으면 거기서 멈춥니다.
+    """
+    out: list[str] = []
+    session = next_trading_day(as_of)
+    for _ in range(KR_TIMED_EXPIRY_SESSIONS):
+        out.append(session.isoformat())
+        entry = sessions.get(session.isoformat(), {}).get(code)
+        if not (isinstance(entry, dict) and entry.get("status") == "NO_BARS"):
+            break
+        session = next_trading_day(session)
+    return out
 
 
 def _label(hour: int, minute: int) -> str:
@@ -209,15 +231,15 @@ def task_kr_paper_timed() -> str:
     # 장부 몫(계좌2 대기 주문 — 그 밤 체결에 필요)을 먼저, 그 뒤 실행 감사 몫 — 예산이 모자라면 뒤쪽이 다음 주기로 밀림.
     wanted = list(store.kr_timed_orders(KR_TIMED_BOOKS, KR_TIMED_TIMINGS)) + [(code, as_of) for code, as_of, _, _ in audit]
     for code, as_of in wanted:
-        session = next_trading_day(as_of).isoformat()
-        closed_at = datetime.combine(date.fromisoformat(session), KR_TIMED_AFTER, tzinfo=KST)
-        if now < closed_at:
-            continue
-        recheck_at = datetime.combine(date.fromisoformat(session), KR_TIMED_RECHECK, tzinfo=KST)
-        if _done(sessions.get(session, {}).get(code), window_keys(targets.get((code, session), ())), recheck_at, now):
-            continue
-        if (code, session) not in due:
-            due.append((code, session))
+        for session in target_sessions(code, as_of, sessions):
+            closed_at = datetime.combine(date.fromisoformat(session), KR_TIMED_AFTER, tzinfo=KST)
+            if now < closed_at:
+                break
+            recheck_at = datetime.combine(date.fromisoformat(session), KR_TIMED_RECHECK, tzinfo=KST)
+            if _done(sessions.get(session, {}).get(code), window_keys(targets.get((code, session), ())), recheck_at, now):
+                continue
+            if (code, session) not in due:
+                due.append((code, session))
     if not due:
         raise EmptyResult("받을 시각 지정 주문 1분봉 없음 — 기존 저장본 유지")
 

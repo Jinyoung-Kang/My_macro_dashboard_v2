@@ -11,6 +11,7 @@ tests/test_kr_paper_timed.py
   5. 계좌·시점 글자는 백엔드 PaperBooks와 같다.
   6. 장중 시장가(MARKET — 단계 2b) 대기 주문은 그 기준 분 T(생성 + 60초를 분으로 올림, KST)의 창을 같은 모양으로 더한다.
   7. 실행 감사(단계 2c): 개장 창 09:00을 늘 싣고, 한국 Claude 계좌1·2의 최근 결정 주문도 장부 몫 뒤에 받으며, 받은 칸에 필요한 창 키가 없으면 다시 받는다.
+  8. 목표 세션 E가 NO_BARS면 만료 창(기준일 + 3거래일) 안의 다음 거래일도 그날 끝난 뒤 받는다(장부가 고르는 첫 관측 봉의 날 — QA-201).
 """
 from __future__ import annotations
 
@@ -334,7 +335,6 @@ def test_QA174_다시_받기가_실패하면_직전_OK_칸을_FAILED로_덮지_�
     assert toss.calls, "다시 받으려고 부름"
     assert _payload(store)["sessions"][E]["005930"] == old
 
-@pytest.mark.xfail(strict=True, reason="QA-201 재현 — 목표 세션 E가 NO_BARS여도 다음 거래일을 받지 않아, 장부가 고르는 날(기준일 뒤 첫 관측 봉)의 1분봉이 끝내 없음")
 def test_QA201_목표_세션이_NO_BARS면_만료_창_안의_다음_거래일도_마감_뒤_받는다(store, toss, monkeypatch):
     # 11-03을 거래소가 늦게 임시휴장으로 정함(백엔드 설정 kr.calendar.extraClosures에만 — 수집기 달력은 거래일로 앎) → 장부는 11-04 봉을 고름.
     after = "2026-11-04"
@@ -353,3 +353,27 @@ def test_QA201_목표_세션이_NO_BARS면_만료_창_안의_다음_거래일도
     assert sessions[E]["005930"]["status"] == "NO_BARS", "E 칸은 그대로"
     assert sessions[after]["005930"]["status"] == "OK"
     assert sessions[after]["005930"]["closes"]["15:31"] == {"close": 71_500.0, "volume": 100}
+
+
+def test_QA201_E에_봉이_있으면_다음_날을_받지_않고_만료_창_밖은_받지_않는다(store, toss, monkeypatch):
+    # E(11-03) 봉 있음 → 11-04는 받지 않음. 11-03~11-05 모두 NO_BARS여도 만료 창(기준일 11-02 + 3거래일 = 11-05) 밖 11-06은 받지 않음.
+    _orders(monkeypatch, [("005930", date(2026, 11, 2)), ("000660", date(2026, 11, 2))])
+    toss.pages[("005930", E)] = _session(E)
+    monkeypatch.setattr(kr_paper_timed, "_now", lambda: datetime(2026, 11, 6, 17, 0, tzinfo=KST))
+    for _ in range(4):
+        try:
+            tasks.task_kr_paper_timed()
+        except EmptyResult:
+            break
+
+    sessions = _payload(store)["sessions"]
+    assert set(sessions) == {E, "2026-11-04", "2026-11-05"}
+    assert set(sessions[E]) == {"005930", "000660"}
+    assert sessions["2026-11-04"].keys() == {"000660"} and sessions["2026-11-05"].keys() == {"000660"}
+    assert all(sessions[day]["000660"]["status"] == "NO_BARS" for day in (E, "2026-11-04", "2026-11-05"))
+    assert kr_paper_timed.target_sessions("000660", date(2026, 11, 2), sessions) == [E, "2026-11-04", "2026-11-05"]
+
+
+def test_만료_창은_백엔드_주문_만료와_같다():
+    rules = (ROOT / "backend/src/main/java/com/macrodash/feature/paper/RuleBookService.java").read_text(encoding="utf-8")
+    assert re.search(rf"ORDER_EXPIRY_TRADING_DAYS = {kr_paper_timed.KR_TIMED_EXPIRY_SESSIONS};", rules)
