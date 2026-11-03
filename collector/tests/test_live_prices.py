@@ -13,6 +13,7 @@ tests/test_live_prices.py
 """
 from __future__ import annotations
 
+import threading
 from datetime import datetime, timezone
 from types import SimpleNamespace
 
@@ -393,3 +394,39 @@ def test_로이터_코드_찾기는_200에서_못_찾으면_하루_묻지_못하
     now[0] += detail.NAVER_WORLD_TTL + 1
     asked = _ac_session(monkeypatch, [_ac_res(502)])
     assert lp._reuters_code("AAPL") == "AAPL.O" and asked == ["AAPL"], "하루가 지나 다시 묻다 실패하면 알던 코드를 그대로"
+
+
+# --------------------------------------------------------------------------- QA-187
+# prices()가 전역 잠금 하나를 출처를 부르는 동안 쥐고 있어, 미국의 보조 호스트(네이버 자동완성 — 응답이 없으면 종목 하나에 약 25초)가 느리면
+# 국내·TV·NI만 묻는 다른 화면의 조회도 그 잠금에서 기다렸습니다(백엔드는 90초 뒤 '수집기에서 응답을 받지 못했습니다' → 5분 쉼).
+def _price_item(market: str, code: str, source: str) -> dict:
+    return {"market": market, "code": code, "price": 1.0, "source": source}
+
+
+@pytest.mark.xfail(strict=True, reason="QA-187 재현 — 미국 출처가 느리면 국내 조회도 전역 잠금에서 기다림")
+def test_QA187_한_시장의_느린_출처가_다른_시장_조회를_막지_않는다(monkeypatch):
+    entered, release = threading.Event(), threading.Event()
+
+    def slow_us(codes, errors):
+        entered.set()
+        release.wait(5)
+        return {}
+
+    def fast_kr(codes, errors):
+        return {code: _price_item("KR", code, "naver_kr") for code in codes}
+    monkeypatch.setattr(lp, "CHAINS", {"US": (slow_us,), "KR": (fast_kr,)})
+    got: dict = {}
+    us = threading.Thread(target=lp.prices, args=([("US", "AAPL")],))
+    kr = threading.Thread(target=lambda: got.update(lp.prices([("KR", "005930")])))
+    us.start()
+    try:
+        assert entered.wait(2), "미국 조회가 출처를 부르는 중"
+        kr.start()
+        kr.join(1.0)
+        assert not kr.is_alive(), "국내 조회는 미국 출처를 기다리지 않음"
+        assert set(got["items"]) == {"KR:005930"}
+    finally:
+        release.set()
+        us.join(5)
+        if kr.is_alive():
+            kr.join(5)
