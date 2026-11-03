@@ -13,7 +13,8 @@
 Yahoo·네이버·구글 뉴스·WISEfn은 robots.txt가 막는 출처지만 사용자가 개인·비상업 용도로 허락했습니다(2026-11-01, docs/decisions.md). 그래도
 출처 링크·받은 시각을 함께 내고, Yahoo는 공용 거부 래치(http.YAHOO_HOST), 네이버·구글은 수집기 공용 세션의 래치·간격을 따릅니다.
 
-같은 질의는 잠깐 캐시합니다(시세·지표 5분, 뉴스 15분, 종목 찾기 1시간 — 실패한 응답은 1분) — 화면을 여러 번 열어도 출처를 두드리지 않게.
+같은 질의는 잠깐 캐시합니다(시세·지표 5분, 뉴스 15분, 종목 찾기 1시간, 미국 종목의 로이터 코드 하루 — 실패한 응답은 1분) — 화면을 여러 번
+열어도 출처를 두드리지 않게.
 파싱(`*_from_*`)은 순수 함수라 시험이 네트워크 없이 고정 응답으로 봅니다.
 """
 from __future__ import annotations
@@ -329,6 +330,8 @@ def naver_world(code: str) -> dict | None:
     미국 심볼 → 네이버 해외주식 {reutersCode, name}(자동완성 — 하루 캐시, 200 응답에서 못 찾으면 None도 하루 둠). 자동완성은 'BRK-B'를 'BRK B'로만
     찾습니다. 묻지 못하면(연결 오류·시간 초과·200이 아닌 응답 — 재시도를 다 쓴 5xx 포함) 1분(FAILURE_TTL)만 두고, 알던 것이 있으면 그것을 그대로
     씁니다 — 일시 오류를 '없음'으로 하루 두면 그 종목이 하루 내내 Yahoo로 나가고(QA-186), 아예 두지 않으면 3초마다 다시 묻습니다.
+    검색 상세(한국어 개요·한글 이름·연합인포맥스 검색어)와 실시간 시세(live_prices — 로이터 코드)가 이 함수 하나를 씁니다. 두 벌일 때 상세만
+    'BRK-B'를 그대로 물어 '-' 든 종목을 찾지 못했습니다(QA-188).
     """
     now = time.monotonic()
     with _world_lock:
@@ -349,24 +352,11 @@ def naver_world(code: str) -> dict | None:
     return item
 
 
-def _naver_world(code: str) -> dict | None:
-    """미국 종목의 네이버 해외주식 로이터 코드·한글 이름(자동완성 — 1시간 캐시, 못 찾으면 None)."""
-    def fetch() -> dict:
-        try:
-            res = get_session().get(NAVER_AC, params={"q": code, "target": "stock,worldstock"}, timeout=FETCH_TIMEOUT)
-            if res.status_code != 200:
-                return {"item": None, "error": f"HTTP {res.status_code}"}
-            return {"item": naver_world_item(res.json(), code), "error": None}
-        except Exception as exc:  # noqa: BLE001
-            return {"item": None, "error": brief_error(exc)}
-    return _cached(("naver-world", code), SYMBOLS_TTL, fetch).get("item")
-
-
 def _with_korean_profile(out: dict, code: str) -> None:
     """미국 주식·ETF의 시세 응답에 네이버 한국어 개요를 더합니다(못 받으면 그대로 — 영문 개요가 남음, 사유는 profileKoError)."""
     if (out.get("kind") or "").upper() not in ("EQUITY", "ETF"):
         return
-    world = _naver_world(code)
+    world = naver_world(code)
     if world is None:
         out["profileKoError"] = "네이버 해외주식에서 이 종목을 찾지 못함"
         return
@@ -588,7 +578,7 @@ def news(market: str | None, code: str | None, q: str | None) -> dict:
         # 연합인포맥스 — 미국 종목은 한글 이름(네이버 해외주식)으로, 그 밖은 검색어로. 구글 뉴스 일반 검색보다 먼저 두어 같은 기사는 이 출처로 남김.
         infomax_q = q
         if market == "us" and code:
-            world = _naver_world(code)
+            world = naver_world(code)
             infomax_q = (world or {}).get("name") or q
         if infomax_q:
             items, error = _infomax_news(infomax_q)

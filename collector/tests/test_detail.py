@@ -19,15 +19,16 @@ from fastapi.testclient import TestClient
 
 from app import main
 from app.services import detail
+from app.services import live_prices
 
-_REAL_NAVER_WORLD = detail._naver_world   # 아래 fixture가 바꿔 끼우기 전의 것 — 자동완성 질의를 보는 시험이 씀
+_REAL_NAVER_WORLD = detail.naver_world   # 아래 fixture가 바꿔 끼우기 전의 것 — 자동완성 질의를 보는 시험이 씀
 
 
 @pytest.fixture(autouse=True)
 def _fresh_cache(monkeypatch):
     detail.reset_cache()
     # 네트워크 없이 — 네이버 해외주식 찾기는 기본으로 '못 찾음', 국내 기업개요는 '받지 못함'(그 경로를 보는 시험만 바꿈).
-    monkeypatch.setattr(detail, "_naver_world", lambda code: None)
+    monkeypatch.setattr(detail, "naver_world", lambda code: None)
     monkeypatch.setattr(detail, "_wisereport_profile", lambda code: {"profile": None, "error": "시험 — 네트워크 없음"})
     yield
     detail.reset_cache()
@@ -248,7 +249,7 @@ def test_뉴스는_연합인포맥스를_구글_일반_검색보다_먼저_미�
 
     monkeypatch.setattr(detail, "_google_news", google)
     monkeypatch.setattr(detail, "_yahoo_news", lambda code: ([], None))
-    monkeypatch.setattr(detail, "_naver_world", lambda code: {"reutersCode": "AAPL.O", "name": "애플"})
+    monkeypatch.setattr(detail, "naver_world", lambda code: {"reutersCode": "AAPL.O", "name": "애플"})
     out = detail.news("us", "AAPL", "Apple Inc.")
     assert calls == [("애플 site:news.einfomax.co.kr", "ko"), ("Apple Inc.", "en")]
     assert [(i["url"], i["source"]) for i in out["items"]] == [
@@ -309,9 +310,8 @@ AC_BRK_B = {"items": [{"code": "BRK.B", "name": "버크셔 해서웨이 B", "nat
 OVERVIEW_BRK_B = {"companyName": "버크셔 해서웨이 B", "summary": "버크셔 해서웨이는 지주회사다.", "industry": {"industryGroupKor": "보험"}}
 
 
-@pytest.mark.xfail(strict=True, reason="QA-188 재현 — 상세가 자동완성에 'BRK-B'를 그대로 물어 못 찾음")
 def test_QA188_상세의_자동완성_질의도_BRK_B를_BRK_공백_B로_묻는다(monkeypatch):
-    monkeypatch.setattr(detail, "_naver_world", _REAL_NAVER_WORLD)
+    monkeypatch.setattr(detail, "naver_world", _REAL_NAVER_WORLD)
     asked: list = []
 
     def get(url, params=None, timeout=None, headers=None):
@@ -326,3 +326,16 @@ def test_QA188_상세의_자동완성_질의도_BRK_B를_BRK_공백_B로_묻는�
     assert asked == ["BRK B"]
     assert "profileKoError" not in out and out["nameKo"] == "버크셔 해서웨이 B"
     assert out["profile"]["summaryKo"] == "버크셔 해서웨이는 지주회사다."
+
+
+def test_실시간_시세와_검색_상세는_자동완성_조회_하나를_함께_쓴다(monkeypatch):
+    monkeypatch.setattr(detail, "naver_world", _REAL_NAVER_WORLD)
+    asked: list = []
+
+    def get(url, params=None, timeout=None, headers=None):
+        asked.append(params["q"])
+        return SimpleNamespace(status_code=200, json=lambda: AC_BRK_B if params["q"] == "BRK B" else {"items": []})
+    monkeypatch.setattr(detail, "get_session", lambda: SimpleNamespace(get=get))
+    assert live_prices._reuters_code("BRK-B") == "BRKb"
+    assert detail.naver_world("BRK-B") == {"reutersCode": "BRKb", "name": "버크셔 해서웨이 B"}
+    assert asked == ["BRK B"], "한 번 찾은 것을 두 화면이 함께 씀(질의·캐시·실패 처리가 한 곳)"

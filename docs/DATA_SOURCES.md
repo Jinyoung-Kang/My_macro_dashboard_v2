@@ -477,7 +477,7 @@ EQUITY_MAP = {
 | 네이버 증권 모바일 API(`m.stock.naver.com/api/stock/{code}/basic`·`/integration`·`/api/news/stock/{code}`, 자동완성 `ac.stock.naver.com/ac`) | 국내 종목 시세·지표(네이버가 적은 글 그대로)·컨센서스·증권사 리포트·종목 뉴스, 종목 찾기 | 같음 | 비공식 — 응답 형식이 예고 없이 바뀔 수 있음. 뉴스 시각은 KST(`yyyyMMddHHmm`)라 UTC로 바꿔 냄 |
 | 구글 뉴스 RSS 검색(`news.google.com/rss/search`, `when:7d`) | 검색어(회사·지표·기관 이름) 뉴스 — 한글이면 한국어 판 | 15분 | 이름 검색이라 관련 없는 기사가 섞일 수 있음. 제목 끝의 ' - 언론사'를 떼어 언론사 칸으로 |
 | 연합인포맥스(구글 뉴스 RSS 검색 + `site:news.einfomax.co.kr`) | 같은 검색어(미국 종목은 네이버 한글 이름)의 연합인포맥스 기사 — 받은 곳 '연합인포맥스' | 15분(뉴스와 함께) | 사이트 자체 검색(`articleList.html?sc_word=`)은 검색어를 무시해 최신 기사만 돌려줌(2026-11-02 확인) — 그래서 구글 검색으로 좁힘. 링크는 구글 뉴스 중계 주소 |
-| 네이버 증권 해외주식(`api.stock.naver.com/stock/{로이터 코드}/overview`, 로이터 코드는 자동완성 `target=stock,worldstock`) | 미국 주식·ETF의 한국어 기업 개요·업종·한글 이름 | 시세와 함께 5분(로이터 코드 1시간) | 비공식. 자동완성에 없는 종목(예: `BRK-B`는 `BRK.B`·`BRK B`로도 찾음)·ETF 일부는 영문 개요 그대로 |
+| 네이버 증권 해외주식(`api.stock.naver.com/stock/{로이터 코드}/overview`, 로이터 코드는 자동완성 `target=stock,worldstock`) | 미국 주식·ETF의 한국어 기업 개요·업종·한글 이름 | 시세와 함께 5분(로이터 코드 하루 — 실시간 시세와 같은 조회 하나, 묻지 못하면 1분) | 비공식. 자동완성은 `BRK-B`를 `BRK B`로만 찾아 '-'를 공백으로 바꿔 물음(QA-188). 자동완성에 없는 종목·ETF 일부는 영문 개요 그대로 |
 | WISEfn 기업개요(네이버 증권 기업분석의 원자료 — `navercomp.wisereport.co.kr/v2/company/c1010001.aspx?cmp_cd={code}`, 2026-11-03) | 국내 주식의 한국어 기업 개요(몇 줄 요약 — 항목마다 한 줄)·WICS 업종·기준일 | 12시간(실패 1분) | 비공식 HTML(`div.cmp_comment` 목록)이라 모양이 바뀌면 개요만 빠지고 사유(`profileKoError`)를 냄. ETF는 이 페이지가 없어(302) 부르지 않음 — 국내 ETF 개요는 네이버 `integration`의 `description`(주식에는 비어 있음) |
 
 - robots.txt가 막는 출처(Yahoo·구글 뉴스 검색·WISEfn 등)도 씁니다 — 개인·비상업 프로젝트라 사용자가 허락했습니다([decisions.md](decisions.md) 2026-11-01). 출처 링크와
