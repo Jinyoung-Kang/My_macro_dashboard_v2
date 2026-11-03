@@ -363,7 +363,10 @@ _WISE_BASIS = re.compile(r"\[기준\s*:\s*(\d{4})\.(\d{2})\.(\d{2})\]")
 
 
 def korean_profile_from_wisereport(page: Any) -> dict | None:
-    """WISEfn 기업개요(c1010001) HTML → 한국어 개요(항목마다 한 줄)·WICS 업종·기준일. 개요 항목이 없으면 None."""
+    """WISEfn 기업개요(c1010001) HTML → 한국어 개요(항목마다 한 줄)·WICS 업종·기준일. 개요 항목이 없으면 None.
+
+    기준일은 '기업개요' 머리와 개요 목록 사이의 것만 봅니다 — 페이지 앞뒤의 시세 표에도 '[기준:…]'이 있어 첫 것을 잡으면 시세 기준일이
+    됩니다(QA-170)."""
     if not isinstance(page, str):
         return None
     block = _WISE_COMMENT.search(page)
@@ -375,7 +378,8 @@ def korean_profile_from_wisereport(page: Any) -> dict | None:
     if not items:
         return None
     wics = _WISE_WICS.search(page)
-    basis = _WISE_BASIS.search(page)
+    heading = page.find("기업개요</span>")
+    basis = _WISE_BASIS.search(page, heading, block.start()) if 0 <= heading < block.start() else None
     return {"summaryKo": "\n".join(items),
             "industryKo": (html.unescape(wics.group(1)).strip() or None) if wics else None,
             "basisDate": f"{basis.group(1)}-{basis.group(2)}-{basis.group(3)}" if basis else None}
