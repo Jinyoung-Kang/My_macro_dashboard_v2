@@ -256,7 +256,7 @@ public class PaperKrCheckpointJob {
         long id;
         try {
             id = ledger.exclusively(() -> store.atomically(() -> write(pipeline, c, asOf, row, claudeSettings, attempt, lag,
-                    calledAt, snapshot.payload(), quotes, calendar)));
+                    calledAt, snapshot.payload(), quotes, calendar, source.decidedAt())));
         } catch (RuntimeException e) {
             // 과금된 응답 — 쓰기가 되돌려져도 다시 부르지 않음. 실패 결정 행을 따로 남기고 행을 DONE으로.
             called.add(key(c));
@@ -290,10 +290,15 @@ public class PaperKrCheckpointJob {
                 .filter(o -> PacketBuilder.SOURCE_CLAUDE.equals(o.source())).toList();
     }
 
-    /** 확인 결정 행과 장중 확인 행 DONE(장부 잠금 안 한 트랜잭션) — 미국 {@link PaperCheckpointJob}의 쓰기와 같은 규칙(클래스 설명). */
+    /**
+     * 확인 결정 행과 장중 확인 행 DONE(장부 잠금 안 한 트랜잭션) — 미국 {@link PaperCheckpointJob}의 쓰기와 같은 규칙(클래스 설명).
+     * REPLACE 검증의 신선도는 밤 결정 순간({@code sourceDecidedAt})으로 셉니다 — 검증이 쓰는 관측치·12_hardRules가 그 결정의 입력 그대로라서
+     * (입력 동결). 지금 시각으로 세면 주말·휴장 다음 세션에는 밤 관측치가 24시간을 넘어 새 주문이 모두 STALE_INPUT이 됩니다(QA-172, QA-165와 같은 원인).
+     * 새로 받은 입력인 감시 저장본은 {@link #freshWatch}가 따로 봅니다.
+     */
     private long write(ClaudeDecisionPipeline pipeline, Checkpoint c, LocalDate asOf, SettingsRow row,
                        ClaudeSettings claudeSettings, Attempt attempt, Integer lag, Instant calledAt, JsonNode watch,
-                       Optional<Quotes> quotes, TradingCalendar calendar) {
+                       Optional<Quotes> quotes, TradingCalendar calendar, Instant sourceDecidedAt) {
         ObjectNode response;
         String status;
         String error = null;
@@ -314,7 +319,7 @@ public class PaperKrCheckpointJob {
                 expected.positions().forEach(p -> universe.add(p.ticker()));
                 try {
                     plan = replies.plan(asOf, RuleBookService.CHECKPOINT, false, attempt, expected.view(), row, claudeSettings,
-                            quotes, universe, Map.of(), dueDiscretionary(expected, pending, asOf));
+                            quotes, universe, Map.of(), dueDiscretionary(expected, pending, asOf), sourceDecidedAt);
                 } catch (RuntimeException e) {
                     notApplied = "검증할 수 없어 적용하지 않음: " + e.getMessage();
                     log.warn("한국 장중 확인 {} REPLACE 검증 실패 — 적용하지 않음: {}", c.sessionDate(), e.toString());

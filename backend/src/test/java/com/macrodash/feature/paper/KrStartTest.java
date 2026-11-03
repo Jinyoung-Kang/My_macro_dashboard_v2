@@ -10,7 +10,6 @@ import com.macrodash.store.PaperStore.NavRow;
 import com.macrodash.store.PaperStore.Order;
 import com.macrodash.support.InvalidRequestException;
 import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import tools.jackson.databind.JsonNode;
@@ -676,7 +675,6 @@ class KrStartTest {
     }
 
     @Test
-    @Disabled("QA-172 재현 — 수정 전: 장중 확인 검증이 밤 관측치의 나이를 지금 시각으로 세어 휴장·주말 다음 세션의 새 주문을 모두 STALE_INPUT으로 거절")
     @DisplayName("QA-172: 휴장(주말) 다음 세션의 장중 확인 REPLACE — 밤 관측치의 신선도를 밤 결정 순간으로 세어 새 주문을 받음(지금 시각으로 세면 24시간이 넘어 전부 STALE_INPUT)")
     void krCheckpointReplaceAfterClosure() {
         // 12-02를 임시휴장으로 — 12-01 밤 결정의 장중 확인 세션이 12-03이 되고, 12-01 21:57 관측치는 그때 37시간 지남(금요일 밤 → 월요일과 같은 모양).
