@@ -12,6 +12,7 @@ import com.macrodash.store.PaperStore.NavRow;
 import com.macrodash.store.PaperStore.Order;
 import com.macrodash.store.PaperStore.Position;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import tools.jackson.databind.JsonNode;
@@ -620,6 +621,49 @@ class KrConfirmationsTest {
         assertThat(outcome.notes()).anySatisfy(note -> assertThat(note).contains("순자산 2026-11-03 확정(금융위 종가) 997538원"));
         assertThat(store.states.get(BOOK).nav()).as("상태는 토스 평가 + 확정 현금(지금 평가는 다음 관측치가 씀)")
                 .isEqualTo(287_538 + 714_000);
+    }
+
+    /** 한국 Claude 계좌2의 매시 체결 한 건(장부를 거치지 않음 — 현금·보유 그대로, 확정 판정만 봄): 기준일 {@code asOf}, 체결일 {@code day}. */
+    private Fill hourlyFill(String side, LocalDate asOf, LocalDate day, Instant observedAt) {
+        long orderId = store.insertOrder(new Order(0, BOOK, null, "005930", side, 10, null, null, PaperBooks.AT_1000, "CLAUDE",
+                PaperBooks.ORDER_FILLED, null, null, asOf, CREATED, asOf.plusDays(4), observedAt));
+        long id = store.insertFill(new Fill(0, orderId, BOOK, "005930", side, 10, 71_300, 71_300, 5, 713_000, observedAt, day,
+                KrTimedLadder.SOURCE_AT, false, null, BigDecimal.valueOf(106), BigDecimal.ZERO, BigDecimal.valueOf(356)));
+        return store.fills.get(id);
+    }
+
+    @Test
+    @Disabled("QA-178 재현 — 수정 전: 매시 체결은 확정 조정 행이 영원히 없어 그날 이후 순자산 줄이 확정되지 않고, 주기마다 '확정 조정 안 함' 사유를 다시 남김")
+    @DisplayName("QA-178: 매시·장중 시장가 체결(토스 1분봉 체결가가 확정가 — 명세 2026-11-02 §3)은 '확정 대기'로 세지 않음 — 그날 줄이 금융위 종가로 확정되고, "
+            + "'확정 조정 안 함' 사유를 주기마다 다시 남기지 않음")
+    void hourlyFillsDoNotHoldTheNavLine() {
+        book(1_000_000);
+        order("005930", PaperBooks.BUY, 10, D, CREATED);
+        process(nightD1("005930", 71_300), COLLECTED_D1);
+        Fill hourly = hourlyFill(PaperBooks.BUY, D, D1, COLLECTED_D1);
+        fsc("005930", KrConfirmed.SOURCE_FSC, D1, day(D1, 71_200L, 71_000, 5_000_000, "KOSPI"));
+
+        Outcome outcome = confirm();
+
+        NavRow line = navOn(D1);
+        assertThat(line.pricesFinal()).as("그날까지 확정할 체결(시가) 확정·보유 금융위 종가").isTrue();
+        assertThat(line.equityValue()).isEqualTo(710_000);
+        assertThat(outcome.notes()).noneSatisfy(note -> assertThat(note).contains("체결 " + hourly.id()));
+        assertThat(store.fillConfirmations(BOOK)).extracting(FillConfirmation::fillId).doesNotContain(hourly.id());
+        assertThat(confirm().notes()).as("다음 주기도 그 체결의 사유를 남기지 않음").isEmpty();
+    }
+
+    @Test
+    @Disabled("QA-178 재현 — 수정 전: 장부의 현금뿐인 줄 확정(confirmedThrough)이 매시 체결을 확정 전으로 셈")
+    @DisplayName("QA-178: 장부의 순자산 줄 확정도 매시 체결을 '확정 대기'로 세지 않음 — 전날 매시 매도로 다 판 계좌의 D+1 현금뿐인 줄은 그 관측치에서 바로 확정")
+    void hourlyFillsDoNotHoldTheCashLine() {
+        book(1_000_000);
+        hourlyFill(PaperBooks.SELL, LocalDate.of(2026, 10, 30), D, kst("2026-11-02T21:57"));
+
+        process(nightD1("005930", 71_300), COLLECTED_D1);
+
+        assertThat(navOn(D1).pricesFinal()).isTrue();
+        assertThat(navOn(D1).nav()).isEqualTo(1_000_000);
     }
 
     @Test

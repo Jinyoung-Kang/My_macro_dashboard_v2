@@ -7,6 +7,7 @@ import com.macrodash.store.PaperStore.FillConfirmation;
 import com.macrodash.store.PaperStore.Order;
 import com.macrodash.store.PaperStore.Position;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -194,6 +195,23 @@ class PaperQueryKrBooksTest {
         assertThat(total.get("cashDelta")).isEqualTo(503.0);   // 1,000 − 497
         assertThat(total.get("unconfirmed")).isEqualTo(0);
         assertThat(body.keySet()).containsExactly("available", "confirmationTotal", "fills");
+    }
+
+    @Test
+    @Disabled("QA-178 재현 — 수정 전: 매시 체결(확정 조정 대상 아님)을 '아직 확정 안 된 체결'로 셈")
+    @DisplayName("QA-178: confirmationTotal.unconfirmed는 확정 조정이 필요한 체결(시가·종가)만 셈 — 매시 체결(토스 1분봉 체결가 = 확정가)은 빼고, 그 행은 UNCORRECTED(화면 '매시 체결 · 확정가 없음')")
+    @SuppressWarnings("unchecked")
+    void hourlyFillsAreNotLeftToConfirm() {
+        fscLatest(D1, D1);
+        fill("005930", PaperBooks.BUY, 10, 71_300, D1, FILLED_D1, 106, 0, 356);
+        long orderId = store.insertOrder(new Order(0, BOOK, null, "000660", PaperBooks.BUY, 5, null, null, PaperBooks.AT_1000,
+                "CLAUDE", "FILLED", null, null, D1.minusDays(1), CREATED, D1.plusDays(4), FILLED_D1));
+        store.insertFill(new Fill(0, orderId, BOOK, "000660", PaperBooks.BUY, 5, 200_000, 200_000, 5, 1_000_000, FILLED_D1, D1,
+                KrTimedLadder.SOURCE_AT, false, FILLED_D1, BigDecimal.valueOf(150), BigDecimal.ZERO, BigDecimal.valueOf(500)));
+
+        Map<String, Object> body = query.fills(BOOK, 50);
+        assertThat(((Map<String, Object>) body.get("confirmationTotal")).get("unconfirmed")).as("시가 체결 하나만").isEqualTo(1);
+        assertThat(row(body, "000660").get("confirmationState")).isEqualTo("UNCORRECTED");
     }
 
     @Test
