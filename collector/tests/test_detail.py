@@ -185,6 +185,15 @@ def test_WISEfn_기업개요는_항목마다_한_줄_WICS_업종·기준일과_�
     assert detail.korean_profile_from_wisereport(None) is None
 
 
+# QA-170: 운영 확인(2026-11-03 21:5x KST) — 실제 페이지에는 기업개요 머리보다 앞에 시세 표의 '[기준:2026.11.02]'가 둘 있어(그리고 뒤에 하나 더),
+# 첫 '[기준:…]'을 잡으면 출처 이름의 기업개요 기준일이 시세 기준일(11-02)로 틀리게 나옴 — 기업개요의 기준일은 09-14.
+@pytest.mark.xfail(strict=True, reason="QA-170 수정 전 — 페이지의 첫 '[기준:…]'(시세 표)을 기업개요 기준일로 잡음")
+def test_QA170_WISEfn_기업개요_기준일은_기업개요_머리_아래의_것():
+    page = ('<p class="date">[기준:2026.11.02]</p><table>시세</table><span class="unit">[기준: 2026.11.02]</span>\n'
+            + WISE_PAGE + '\n<p>[기준:2026.11.02]</p>')
+    assert detail.korean_profile_from_wisereport(page)["basisDate"] == "2026-09-14"
+
+
 def test_국내_주식_시세에는_WISEfn_개요를_출처와_함께_ETF는_부르지_않고_못_받으면_사유(monkeypatch):
     asked = []
     korean = detail.korean_profile_from_wisereport(WISE_PAGE)
