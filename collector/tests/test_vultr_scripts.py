@@ -238,7 +238,6 @@ def _dump_calls(calls: list[str]) -> list[int]:
     return [i for i, c in enumerate(calls) if c.startswith("compose exec -T postgres pg_dump")]
 
 
-@pytest.mark.xfail(strict=True, reason="QA-200 재현 — deploy.sh가 기동(컨테이너 교체·마이그레이션) 전에 DB를 덤프하지 않음")
 def test_QA200_deploy는_빌드_뒤_기동_전에_배포_전_덤프를_따로_이름_붙여_남긴다(server, fakes):
     here, _ = server
     result = _deploy(server, fakes)
@@ -253,7 +252,6 @@ def test_QA200_deploy는_빌드_뒤_기동_전에_배포_전_덤프를_따로_�
         f"정기 백업(macrodash-…)·복원 전 백업과 섞이지 않는 접두어 — {saved}"
 
 
-@pytest.mark.xfail(strict=True, reason="QA-200 재현 — 배포 전 덤프가 없어, 덤프를 못 떠도 그대로 기동함")
 def test_QA200_deploy는_배포_전_덤프가_실패하면_기동하지_않고_0이_아닌_값으로_끝난다(server, fakes):
     here, _ = server
     result = _deploy(server, fakes, FAKE_PG_DUMP_RC="1")
@@ -262,6 +260,24 @@ def test_QA200_deploy는_배포_전_덤프가_실패하면_기동하지_않고_0
     assert not any(c.startswith("compose up") for c in _docker_calls(fakes)), "되돌릴 시점 없이 기동하지 않음"
     left = sorted(p.name for p in (here / "backups").glob("*")) if (here / "backups").exists() else []
     assert left == [], f"반쯤 쓴 덤프(.partial)를 남기지 않음 — {left}"
+
+
+def test_QA200_deploy는_postgres가_떠_있지_않으면_postgres만_먼저_띄워_덤프한다(server, fakes):
+    result = _deploy(server, fakes, FAKE_PG_DOWN="1")
+    assert result.returncode == 0, result.stderr
+    calls = _docker_calls(fakes)
+    start = calls.index("compose up -d --no-build --wait --wait-timeout 120 postgres")
+    dumps = _dump_calls(calls)
+    assert len(dumps) == 1 and start < dumps[0] < calls.index(UP), "새 서버의 첫 배포·손으로 down한 뒤에도 막히지 않음"
+
+
+def test_QA200_deploy는_postgres가_떠_있으면_덤프_전에_컨테이너를_건드리지_않는다(server, fakes):
+    result = _deploy(server, fakes)
+    assert result.returncode == 0, result.stderr
+    calls = _docker_calls(fakes)
+    before = calls[:_dump_calls(calls)[0]]
+    assert not any(c.startswith(("compose up", "compose stop", "compose down", "compose restart")) for c in before), \
+        "평소에는 돌던 DB를 그대로 뜸 — 컨테이너를 바꾸기 전 상태"
 
 
 # --------------------------------------------------------------------------- backup-s3.sh

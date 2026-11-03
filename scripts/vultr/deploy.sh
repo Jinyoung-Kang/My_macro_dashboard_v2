@@ -15,8 +15,9 @@
 #   3. 화면 왼쪽 아래 버전(APP_VERSION·APP_UPDATED)
 #   4. 이미지를 하나씩 빌드: backend → frontend → collector(베이스 이미지 보안 패치까지 --pull).
 #      4 GB라 동시에 빌드하면 메모리가 모자랍니다(make up은 한꺼번에 빌드). caddy·postgres 이미지도 새로 받습니다.
-#   5. up -d(건강해질 때까지 기다림) → 스키마 적용(make migrate와 같은 반복 — QA-016·QA-118) → caddy 다시 만들기(바뀐 Caddyfile)
-#   6. 매달린 이미지·오래된 빌드 캐시 정리
+#   5. 배포 전 DB 덤프 backups/pre-deploy-YYYYmmdd-HHMMSS.sql(서버에만, 최근 BACKUP_KEEP개). 뜨지 못하면 배포하지 않습니다(QA-200).
+#   6. up -d(건강해질 때까지 기다림) → 스키마 적용(make migrate와 같은 반복 — QA-016·QA-118) → caddy 다시 만들기(바뀐 Caddyfile)
+#   7. 매달린 이미지·오래된 빌드 캐시 정리
 # 어느 단계든 실패하면 0이 아닌 값으로 끝납니다.
 # =============================================================================
 set -euo pipefail
@@ -93,7 +94,20 @@ for service in backend frontend collector; do
 done
 docker compose pull --quiet caddy postgres
 
-# ---------------------------------------------------------------- 5) 기동·스키마
+# ---------------------------------------------------------------- 5) 배포 전 덤프(QA-200)
+# up이 컨테이너를 바꾸고 수집기가 기동하며 새 마이그레이션을 적용하기 전의 DB를 한 번 떠 둡니다. 배포가 장부를 망가뜨린 것을 곧바로
+# 알아채면 그날 06:45 정기 백업이 아니라 이 시점으로 되돌릴 수 있습니다(make restore F=… — 그 뒤 쌓인 행도 함께 되돌아감).
+# 접두어가 달라 정기 백업(macrodash-…, S3로 올리는 것)·복원 전 백업(pre-restore-…)의 정리와 섞이지 않고, 접두어별로 BACKUP_KEEP개(기본 10)만 남습니다.
+# pg_dump는 일관된 스냅숏이라 정기 작업이 쓰는 중에 떠도 됩니다. postgres가 떠 있지 않으면(새 서버의 첫 배포, 손으로 down한 뒤) 그것만 먼저 띄웁니다.
+echo "배포 전 DB 덤프(backups/pre-deploy-…)…"
+if ! docker compose exec -T postgres true >/dev/null 2>&1; then
+    docker compose up -d --no-build --wait --wait-timeout 120 postgres ||
+        die "postgres를 띄우지 못해 배포 전 덤프를 뜨지 못했습니다 — 배포하지 않았습니다(docker compose logs postgres)."
+fi
+bash scripts/db-backup.sh pre-deploy ||
+    die "배포 전 DB 덤프에 실패해 배포하지 않았습니다(돌던 컨테이너 그대로) — 위 메시지와 df -h를 보세요."
+
+# ---------------------------------------------------------------- 6) 기동·스키마
 echo "기동합니다(건강해질 때까지 최대 5분)…"
 docker compose up -d --no-build --wait --wait-timeout 300
 
@@ -109,7 +123,7 @@ echo "  스키마: 최신 (db/migrations)"
 # Caddyfile은 파일 하나를 bind mount해, git이 새 파일로 바꿔도 돌던 컨테이너는 옛 내용을 계속 봅니다 — 늘 다시 만듭니다(앞단만 1초 안팎 끊김).
 docker compose up -d --no-deps --force-recreate --wait --wait-timeout 60 caddy
 
-# ---------------------------------------------------------------- 6) 정리
+# ---------------------------------------------------------------- 7) 정리
 # 다시 빌드할 때마다 이름 없는 옛 이미지가 남습니다(128 GB 디스크지만 쌓이면 끝이 없음). 빌드 캐시는 다음 빌드를 빠르게 하므로 일주일 넘은 것만.
 docker image prune -f >/dev/null
 docker builder prune -f --filter until=168h >/dev/null

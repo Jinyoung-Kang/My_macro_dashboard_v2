@@ -9,7 +9,7 @@
     Caddyfile 문법(`caddy validate`).
   - `collector/tests/test_vultr_scripts.py`: 여섯 스크립트의 문법·`set -euo pipefail`, `tailscale-up.sh`(auth key는 stdin만, serve는 tailnet 안 — funnel 없음),
     `deploy.sh`(빌드 backend → frontend → collector — gate 없음, CloudFront 대역 단계 없음, 서버 `.env`에 적지 않는 이름에 `ORIGIN_SECRET`·`GATE_*`·`VULTR_*`·
-    `TAILSCALE_*`·`TAILNET_DOMAIN`, `PAPER_ENABLED=false`면 막지 않고 '주의'(끝 요약에도)·없으면 '참고: 정기 작업 켜짐'만 — QA-194, QA-145 다시 돌기, 스키마 10번 실패면 0이 아닌 값), `backup-s3.sh`(`db/vultr/`),
+    `TAILSCALE_*`·`TAILNET_DOMAIN`, `PAPER_ENABLED=false`면 막지 않고 '주의'(끝 요약에도)·없으면 '참고: 정기 작업 켜짐'만 — QA-194, 빌드 뒤·기동 전 배포 전 덤프 `pre-deploy-…`(실패하면 기동하지 않음, postgres가 꺼져 있으면 그것만 먼저 띄움 — QA-200), QA-145 다시 돌기, 스키마 10번 실패면 0이 아닌 값), `backup-s3.sh`(`db/vultr/`),
     `instance.sh`·`firewall-pc-ip.sh`(가짜 Vultr API — 새 22 규칙을 먼저 넣고 옛 규칙만 지움, 다른 규칙 그대로, API 키가 curl 인자에 없음, 401·403이면 콘솔 안내).
   - `collector/tests/test_deploy_migrations.py`(QA-107·118 머리말 손 배포·README 배포 명령을 Vultr 덧붙임에), `CorsOriginsTest`(QA-136 — Vultr 허용 출처),
     `RegimeLogServiceTest`(국면 기록 23시가 24시간 하루에 한 번), 비밀 파일·이모지 시험 목록. 공용 가짜 실행 파일은 `collector/tests/fake_server_tools.py`.
@@ -109,6 +109,9 @@ ADR 0019의 AWS 서버는 가동 창(평일 밤·평일 낮·일요일 밤)만 �
 - (2026-11-04, 4차 리뷰) **배포 점검을 운영본 기준으로**: `deploy.sh`의 `PAPER_ENABLED` 점검이 병행 기간 방향 그대로라 정상 배포마다
   '주의 — AWS 서버의 정기 작업이 꺼져 있는지 확인'을 찍고, 정기 작업이 멈춘 채 뜨는 `false`는 '참고'뿐이었습니다(QA-194). 이제 `false`면 '주의'(끝 요약에도),
   없으면 '참고: 정기 작업 켜짐'입니다. 백엔드 기동 경고의 '장부는 AWS 서버 한 곳에만'도 Vultr로 고쳤습니다.
+  배포에 직전 덤프가 없어 배포가 장부를 망가뜨리면 되돌릴 시점이 그날 06:45 백업뿐이었습니다(QA-200 — 사용자 결정 2026-11-04). 이제 빌드가 끝나고
+  기동하기 전에 서버 `backups/pre-deploy-…`를 뜨고, 뜨지 못하면 배포하지 않습니다(서버에만 — S3에는 올리지 않음, 덤프 하나 약 460 MB·10개 보존).
+  이 덤프가 줄이는 것은 06:45부터 배포까지의 구간이고, 배포 뒤 늦게 알아채면 통째 복원은 그 뒤 쌓인 장부까지 되돌립니다(DEVELOPMENT §7 '되돌리기').
 - **Tailscale SSH**: 0019가 문제 삼은 부위를 켜 둡니다(`--ssh`). tailnet 사용자는 1명이고 기본 정책(모든 기기 서로 허용)입니다. 공지가 새로 나오면
   `sudo apt-get install --only-upgrade tailscale`로 올리고, 필요하면 `tailscale set --ssh=false`로 끄고 비상용 22(PC IP만)로 대신합니다.
   1.104.4가 공지 TS-2026-014~017을 고쳤는지는 Tailscale 공지 원문으로 확인하지 않았습니다.
