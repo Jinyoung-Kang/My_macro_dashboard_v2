@@ -20,6 +20,8 @@ class FakeEventSource {
   static instances: FakeEventSource[] = [];
   readonly listeners = new Map<string, ((event: MessageEvent<string>) => void)[]>();
   onerror: (() => void) | null = null;
+  /** 2면 CLOSED(200이 아닌 응답으로 닫힘 — QA-183) */
+  readyState = 0;
   constructor(readonly url: string) {
     FakeEventSource.instances.push(this);
   }
@@ -96,5 +98,53 @@ describe("매크로 카드 실시간 값", () => {
     });
     expect(screen.getByText(/실시간 시세: 수집기에서 응답을 받지 못했습니다\. — 카드는 저장본 값입니다\./)).toBeTruthy();
     expect(screen.getByText("101.77")).toBeTruthy();
+  });
+
+  // QA-184: 훅이 앞 값 위에 받은 것만 덮고(빠진 종목의 값은 남김) 받은 시각은 이벤트마다 하나(지금)라, TradingView만 실패한 이벤트 뒤에도 달러 인덱스
+  // 카드가 옛 가격을 '방금 받은 실시간'으로 그렸고, 네이버 지수를 받았으면 사유 줄도 없었습니다. 이번 응답에서 빠진 종목은 저장본으로 돌아가고, 일부만
+  // 받아도 출처별 사유를 한 줄로 적습니다. 받지 못한 응답(available:false)·닫힌 연결(QA-183)이면 모든 카드가 저장본입니다.
+  it.fails("QA-184 이번 응답에서 빠진 종목의 카드는 저장본으로 돌아가고 출처별 사유를 한 줄로 — 받지 못한 응답·닫힌 연결이면 모든 카드가 저장본", async () => {
+    const overview = { ...OVERVIEW, categories: [{ id: "idx", title: "지수", items: [
+      card({ key: "dxy", name: "달러 인덱스", priceStr: "101.77", source: "TradingView (TVC:DXY)", lastTs: "2026-11-03 06:30 KST" }),
+      card({ key: "sp500", name: "S&P 500", priceStr: "6,800.00", source: "Yahoo Finance (^GSPC)", lastTs: "2026-11-03 06:00 KST" }),
+    ] }] };
+    api.apiGetShared.mockImplementation((path: string) =>
+      path.startsWith("/api/macro/overview") ? Promise.resolve(overview) : new Promise(() => {}));
+    const none = { currency: null, overPrice: null, overChange: null, overChangePct: null, overTradedAt: null, overSession: null };
+    const dxy = { market: "TV", code: "TVC:DXY", price: 101.812, prevClose: 101.964, change: -0.152, changePct: -0.149, tradedAt: null,
+      status: "OPEN", source: "TradingView", delayMinutes: 0, ...none };
+    const inx = (price: number) => ({ market: "NI", code: ".INX", price, prevClose: 6790.1, change: price - 6790.1, changePct: null,
+      tradedAt: "2026-11-02T21:40:00Z", status: "OPEN", source: "네이버", delayMinutes: 0, ...none });
+    const event = (items: Record<string, unknown>, missing: string[] = [], errors: Record<string, string> = {}) =>
+      ({ available: true, prices: { fetchedAt: "2026-11-02T21:40:05Z", items, missing, errors } });
+
+    render(<MacroPage />);
+    await screen.findByText("101.77");
+    await waitFor(() => expect(FakeEventSource.instances).toHaveLength(1));
+    const source = FakeEventSource.instances[0];
+    await act(async () => source.emit("prices", event({ "TV:TVC:DXY": dxy, "NI:.INX": inx(6812.5) })));
+    expect(screen.getByText("101.81")).toBeTruthy();
+    expect(screen.getByText("6,812.50")).toBeTruthy();
+
+    // TradingView만 실패 — 달러 인덱스는 저장본, 지수는 새 값, 사유 한 줄
+    await act(async () => source.emit("prices", event({ "NI:.INX": inx(6815.25) }, ["TV:TVC:DXY"], { TradingView: "HTTP 429" })));
+    expect(screen.getByText("101.77")).toBeTruthy();
+    expect(screen.queryByText("101.81")).toBeNull();
+    expect(screen.getByText("6,815.25")).toBeTruthy();
+    expect(screen.getByText(/실시간 시세: TradingView: HTTP 429/)).toBeTruthy();
+
+    // 받지 못한 응답 — 모든 카드가 저장본
+    await act(async () => source.emit("prices", { available: false, message: "수집기에서 응답을 받지 못했습니다." }));
+    expect(screen.getByText("6,800.00")).toBeTruthy();
+    expect(screen.queryByText("6,815.25")).toBeNull();
+    expect(screen.getByText(/실시간 시세: 수집기에서 응답을 받지 못했습니다\. — 카드는 저장본 값입니다\./)).toBeTruthy();
+
+    // 다시 받으면 덮고, 연결이 닫히면(200이 아닌 응답) 다시 저장본
+    await act(async () => source.emit("prices", event({ "TV:TVC:DXY": dxy, "NI:.INX": inx(6812.5) })));
+    expect(screen.getByText("101.81")).toBeTruthy();
+    await act(async () => { source.readyState = 2; source.onerror?.(); });
+    expect(screen.getByText("101.77")).toBeTruthy();
+    expect(screen.getByText("6,800.00")).toBeTruthy();
+    expect(screen.getByText(/실시간 시세: .*끊김.* — 카드는 저장본 값입니다\./)).toBeTruthy();
   });
 });
