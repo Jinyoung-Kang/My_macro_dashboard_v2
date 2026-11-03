@@ -10,6 +10,7 @@ import com.macrodash.store.PaperStore.NavRow;
 import com.macrodash.store.PaperStore.Order;
 import com.macrodash.support.InvalidRequestException;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import tools.jackson.databind.JsonNode;
@@ -706,6 +707,44 @@ class KrStartTest {
                 });
         assertThat(cp.status()).isEqualTo(ClaudeBookService.STATUS_OK);
         assertThat(store.orders.get(two.id()).status()).isEqualTo(PaperBooks.ORDER_CANCELLED);
+    }
+
+    /** E(12-02) 밤 자료 — 관측치(모든 종목 E 봉)·금융위(12-01)·U 여덟 종목의 E 수급(20:21 판, 21:18에 받음). 1분봉(paper.kr.timed)은 넣지 않음. */
+    private void eNightData() {
+        sessionData(E, NEXT, everyCodeOn(E));
+        for (String code : List.of("005930", "000660", "373220", "207940", "005380", "068270", "105560", "000270")) {
+            rulesData.flow(code, E, 1_000L, 1_000L, E + "T20:21:26.000+09:00", kst(E + "T21:18"));
+        }
+    }
+
+    @Test
+    @Disabled("QA-173 재현 — 수정 전: 게이트 ①이 시각 지정 대기 주문을 세지 않아 계좌2가 E 밤 결정(NO_TRADE)을 내고 그 주문을 '다음 결정이 대신함'으로 취소")
+    @DisplayName("QA-173: 한국 계좌2의 매시·종가·장중 시장가 대기 주문이 목표 세션 E의 1분봉을 기다리는 밤(paper.kr.timed 칸이 아직 없음 — 실패·예산 소진 등)에는 "
+            + "게이트 ①이 그 계좌 결정을 막음 — 그 밤 결정이 '다음 결정이 대신함'으로 취소하지 않고 주문은 대기 그대로(다음 관측치에 E 봉으로 풂, 명세 §3·§4)")
+    void qa173TimedOrdersWaitingForMinuteBarsHoldGateOne() {
+        KrClaudeFixtures.FakeAi fake = new KrClaudeFixtures.FakeAi();
+        krClaude2NightWithCheckpoint(fake,
+                KrClaudeFixtures.claude2Order("005930", "BUY", 8.0, null, PaperBooks.AT_1000),
+                KrClaudeFixtures.claude2Order("000660", "BUY", 5.0, null, PaperBooks.NEXT_CLOSE));
+        // 장중 확인 REPLACE가 E 장중에 낸 장중 시장가(기준일 = 밤 결정의 d) — 모양만(확인 작업은 krCheckpointReplace가 봄)
+        long market = store.insertOrder(new Order(0, PaperBooks.KR_CLAUDE2, null, "373220", PaperBooks.BUY, null, 5.0, null,
+                PaperBooks.MARKET, PacketBuilder.SOURCE_CLAUDE, PaperBooks.ORDER_PENDING, null, null, NEXT, kst("2026-12-02T10:31"),
+                LocalDate.of(2026, 12, 4), null));
+        List<Long> timed = store.ordersOf(PaperBooks.KR_CLAUDE2).stream().filter(o -> !PaperBooks.NEXT_OPEN.equals(o.timing()))
+                .map(Order::id).toList();
+        assertThat(timed).hasSize(3).contains(market);
+
+        fake.answer(KrClaudeFixtures.decision(8, "관망")).answer(KrClaudeFixtures.decision(10, "관망"));
+        eNightData();
+        runAt("2026-12-02T22:30");
+
+        assertThat(store.decisionFor(PaperBooks.KR_CLAUDE, E, RuleBookService.SCHEDULED)).as("계좌1은 따로 결정").isPresent();
+        assertThat(store.decisionFor(PaperBooks.KR_CLAUDE2, E, RuleBookService.SCHEDULED)).as("계좌2는 ①에서 기다림").isEmpty();
+        assertThat(timed).allSatisfy(id -> assertThat(store.orders.get(id).status()).as("주문 " + id + " — 취소하지 않음")
+                .isEqualTo(PaperBooks.ORDER_PENDING));
+        JsonNode detail = krRuns().getLast().detail();
+        assertThat(detail.path(PaperBooks.KR_CLAUDE2).asString())
+                .contains("① kr_claude2 — 기준일 < " + E + "인 대기 주문 3건");
     }
 
     @Test
