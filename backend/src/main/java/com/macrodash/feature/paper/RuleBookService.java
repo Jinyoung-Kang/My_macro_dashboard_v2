@@ -889,6 +889,12 @@ public class RuleBookService {
                 draft.skip(a.ticker(), "이미 대기 중인 매수 주문이 있음");
                 continue;
             }
+            if (view.pendingSells().containsKey(a.ticker())) {
+                // 장부는 같은 관측치에서 매도를 먼저 체결하므로, 팔기 전 보유로 센 부족분만 사면 목표보다 적게 남습니다(QA-196 — 한국 규칙
+                // 계좌와 같은 선택). 현금 어림은 그 매도 대금을 이미 셉니다(pendingCash).
+                draft.skip(a.ticker(), "대기 중인 매도 주문이 있음 — 같은 관측치에 사고팔지 않음");
+                continue;
+            }
             double current = view.weight(a.ticker());
             double shortfall = a.targetWeightPct() - current;
             if (!(shortfall > 0)) {

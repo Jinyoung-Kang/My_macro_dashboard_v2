@@ -419,7 +419,6 @@ class RuleBookServiceTest {
     }
 
     @Test
-    @org.junit.jupiter.api.Disabled("QA-196 재현 — 수정 전: 대기 전량 매도가 있는 CCC를 '팔기 전 보유' 기준 부족분(5%)만 사서 체결 뒤 목표 10%가 아니라 5%")
     @DisplayName("QA-196: 재선정일 매수 후보에 대기 매도 주문이 있으면 한국처럼 건너뛰고 사유를 남긴다 — 같은 관측치에 사고팔지 않음")
     void reselectionSkipsCandidateWithPendingSell() {
         selection(Q2_RESELECTION);
