@@ -290,6 +290,53 @@ export function countryKo(country: string | null | undefined): string | null {
   return COUNTRY_KO[country] ?? country;
 }
 
+/** 팝업 창의 기업 설명 글자 상한(사용자 요청 2026-11-03 — 간략하게, 전체 개요는 상세 화면). */
+export const QUICK_PROFILE_CHARS = 160;
+
+/**
+ * 개요 앞부분 — 문장 단위로 상한(`maxChars`) 안에서 담고, 첫 문장부터 길거나 짧은 조각(예: 'Apple Inc.')뿐이면 상한에서 단어 경계로 잘라 '…'.
+ * 줄바꿈은 공백으로. 문장 끝은 마침표·물음표·느낌표 뒤 공백이고, 한국어는 '…다.한국거래소'처럼 띄어 쓰지 않은 문장 끝도 나눕니다. 없으면 null.
+ */
+export function briefSummary(text: string | null | undefined, maxChars: number = QUICK_PROFILE_CHARS): string | null {
+  const flat = (text ?? "").replace(/\s+/g, " ").trim();
+  if (!flat) return null;
+  if (flat.length <= maxChars) return flat;
+  let out = "";
+  for (const sentence of flat.split(/(?<=[.!?。])\s+|(?<=[가-힣]\.)(?=[가-힣A-Za-z])/)) {
+    const next = out ? `${out} ${sentence}` : sentence;
+    if (next.length > maxChars) break;
+    out = next;
+  }
+  if (out.length >= maxChars / 3) return out;
+  const cut = flat.slice(0, maxChars);
+  const space = cut.lastIndexOf(" ");
+  return `${(space > maxChars / 2 ? cut.slice(0, space) : cut).replace(/[\s,;:·(]+$/, "")}…`;
+}
+
+/** 팝업 창의 기업 설명 한 벌 — 업종 줄·개요 앞부분·영문 원문인지·출처 이름. */
+export type QuickProfile = { industry: string | null; text: string; english: boolean; source: string | null };
+
+/**
+ * 종목 팝업 창의 간략한 기업 설명(사용자 요청 2026-11-03) — 상세 화면 '회사 개요'와 같은 시세 응답의 개요(한국어가 있으면 한국어: 미국은 네이버
+ * 해외주식, 국내 주식은 WISEfn 기업개요, 국내 ETF는 네이버 개요). 업종은 섹터·업종을 한국어 이름으로. 개요가 없으면 null(지어내지 않음).
+ */
+export function quickProfile(quote: DetailQuote | null | undefined, maxChars: number = QUICK_PROFILE_CHARS): QuickProfile | null {
+  const profile = quote?.profile;
+  if (!profile) return null;
+  const korean = briefSummary(profile.summaryKo, maxChars);
+  const text = korean ?? briefSummary(profile.summary, maxChars);
+  if (!text) return null;
+  const parts = [sectorKo(profile.sector), profile.industryKo ?? profile.industry].filter((part): part is string => Boolean(part));
+  const industry = parts.length > 0 ? [...new Set(parts)].join(" · ") : null;
+  return {
+    industry,
+    text,
+    // 미국 종목의 영문 개요(Yahoo) — 국내는 한국어 원문이 summary 칸에 옵니다(네이버 ETF 개요).
+    english: !korean && quote?.market === "us",
+    source: korean ? profile.koSource?.label ?? quote?.source?.label ?? null : quote?.source?.label ?? null,
+  };
+}
+
 /** 뉴스 한 쪽 — 쪽당 {@code perPage}건(기본 5), 쪽 번호는 1부터, 범위 밖이면 가까운 끝 쪽. */
 export const NEWS_PER_PAGE = 5;
 

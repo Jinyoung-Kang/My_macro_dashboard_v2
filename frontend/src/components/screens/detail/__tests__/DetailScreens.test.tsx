@@ -4,6 +4,7 @@
  *  - 값 없음: 조회하지 않음(store_only)·받지 못함은 그 이유, 모르는 값은 "—"(0으로 채우지 않음), http(s)가 아닌 주소는 링크로 두지 않음
  *  - AI 요약: 유료·운영자만 단추, 누를 때만 부르고 근거 번호를 출처 링크로, 무료 회원은 자물쇠 안내
  *  - 라우트: 시장·코드·CIK·지표 키 모양이 틀리면 404(notFound)
+ *  - 종목 팝업 창: 이름 아래 간략한 기업 설명(업종·한국어 개요 앞부분·출처), 영문 원문이면 그렇게 적고, 개요가 없으면 그리지 않는다
  */
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import type { ReactElement } from "react";
@@ -36,6 +37,7 @@ import StockDetailPage from "@/app/(dashboard)/s/[market]/[code]/page";
 import { IndicatorDetailScreen } from "../IndicatorDetailScreen";
 import { InstitutionDetailScreen } from "../InstitutionDetailScreen";
 import { StockDetailScreen } from "../StockDetailScreen";
+import { StockQuickView } from "../StockQuickView";
 
 const PRO: SessionUser = { email: "p@test.local", role: "MEMBER", tier: "PRO" };
 const FREE: SessionUser = { email: "f@test.local", role: "MEMBER", tier: "FREE" };
@@ -307,6 +309,47 @@ describe("종목 상세 — 국내", () => {
     expect(requested().some((path) => path.startsWith("/api/guru/holders"))).toBe(false);
     const links = screen.getByRole("heading", { name: "다른 곳에서 보기" }).closest("section") as HTMLElement;
     expect(within(links).getAllByRole("link")[0].textContent).toContain("네이버 증권");
+  });
+});
+
+describe("종목 팝업 창", () => {
+  const trigger = <button type="button">AAPL 열기</button>;
+  const koSource = { label: "네이버 증권 해외주식 기업 개요", url: "https://m.stock.naver.com/worldstock/stock/AAPL.O/overview" };
+
+  it("이름 아래 간략한 기업 설명 — 업종(한국어)·개요 앞 문장들·출처, 전체 개요는 상세 화면", async () => {
+    const summaryKo = "애플은 스마트폰, 개인용 컴퓨터, 태블릿, 웨어러블을 설계·제조·판매한다.\n제품은 iPhone, Mac, iPad를 포함한다.\n\n"
+      + "서비스는 광고, AppleCare, 클라우드 서비스, 디지털 콘텐츠와 결제 서비스를 포함하며 앱스토어를 통해 다양한 앱을 판다.\n"
+      + "고객이 애플리케이션과 책, 음악, 비디오, 게임, 팟캐스트를 찾아 내려받을 수 있는 플랫폼도 운영한다.";
+    reads = { [QUOTE]: { available: true, quote: appleQuote({ nameKo: "애플",
+      profile: { ...appleQuote().profile!, summaryKo, industryKo: "전화 및 소형 장치", koSource } }) } };
+    renderAs(PRO, <StockQuickView market="us" code="AAPL" trigger={trigger} />);
+    fireEvent.click(screen.getByRole("button", { name: "AAPL 열기" }));
+
+    const brief = await screen.findByRole("region", { name: "기업 설명" });
+    expect(within(brief).getByText("기술 · 전화 및 소형 장치")).toBeTruthy();
+    // 160자 안의 문장까지(넷째 문장은 빠짐 — 줄바꿈은 공백)
+    expect(within(brief).getByText("애플은 스마트폰, 개인용 컴퓨터, 태블릿, 웨어러블을 설계·제조·판매한다. 제품은 iPhone, Mac, iPad를 포함한다. "
+      + "서비스는 광고, AppleCare, 클라우드 서비스, 디지털 콘텐츠와 결제 서비스를 포함하며 앱스토어를 통해 다양한 앱을 판다.")).toBeTruthy();
+    expect(within(brief).queryByText(/팟캐스트/)).toBeNull();
+    expect(within(brief).getByText("출처 네이버 증권 해외주식 기업 개요 · 전체 개요는 상세 화면")).toBeTruthy();
+    expect(screen.getByRole("link", { name: "상세 화면 열기" }).getAttribute("href")).toBe("/s/us/AAPL");
+  });
+
+  it("한국어 개요가 없으면 영문 원문 앞부분이라고 적고, 개요가 없으면 설명을 그리지 않는다", async () => {
+    reads = { [QUOTE]: { available: true, quote: appleQuote() } };
+    const { unmount } = renderAs(PRO, <StockQuickView market="us" code="AAPL" trigger={trigger} />);
+    fireEvent.click(screen.getByRole("button", { name: "AAPL 열기" }));
+    const brief = await screen.findByRole("region", { name: "기업 설명" });
+    expect(within(brief).getByText("Apple designs devices.")).toBeTruthy();
+    expect(within(brief).getByText(/한국어 개요가 없어 영문 원문의 앞부분입니다/)).toBeTruthy();
+    unmount();
+
+    reads = { [QUOTE]: { available: true, quote: appleQuote({ profile: null }) } };
+    renderAs(PRO, <StockQuickView market="us" code="AAPL" trigger={trigger} />);
+    fireEvent.click(screen.getByRole("button", { name: "AAPL 열기" }));
+    await screen.findByRole("link", { name: "상세 화면 열기" });
+    await waitFor(() => expect(screen.getByText("Apple Inc.")).toBeTruthy());
+    expect(screen.queryByRole("region", { name: "기업 설명" })).toBeNull();
   });
 });
 

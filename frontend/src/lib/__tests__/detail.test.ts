@@ -3,6 +3,7 @@
  */
 import { describe, expect, it } from "vitest";
 import {
+  briefSummary,
   chartRows,
   chartSymbol,
   countText,
@@ -31,6 +32,7 @@ import {
   recommendationText,
   statText,
   stockHref,
+  quickProfile,
   summaryLines,
 } from "../detail";
 import type { DetailQuote, MacroOverview } from "../types";
@@ -152,6 +154,39 @@ describe("값 글", () => {
     expect(newsTime("2026-11-02T00:00:00Z", now)).toBe("2026-11-02 09:00");
     expect(newsTime(null, now)).toBe("시각 모름");
     expect(newsTime("어제", now)).toBe("시각 모름");
+  });
+});
+
+describe("팝업 창의 기업 설명", () => {
+  it("짧으면 그대로, 길면 상한 안의 문장까지 — 줄바꿈은 공백, 띄어 쓰지 않은 한국어 문장 끝도 나눔", () => {
+    expect(briefSummary("동사는 반도체 기업임.\n주력은 DRAM임.", 160)).toBe("동사는 반도체 기업임. 주력은 DRAM임.");
+    expect(briefSummary("첫 문장입니다. 둘째 문장은 조금 깁니다. 셋째 문장은 상한을 넘깁니다.", 30)).toBe("첫 문장입니다. 둘째 문장은 조금 깁니다.");
+    expect(briefSummary("목표로 합니다.한국거래소가 산출하는 지수는 200개 종목입니다.", 20)).toBe("목표로 합니다.");
+    expect(briefSummary("  ", 10)).toBeNull();
+    expect(briefSummary(null)).toBeNull();
+  });
+
+  it("첫 문장부터 길거나 짧은 조각뿐이면 상한에서 단어 경계로 자르고 '…'", () => {
+    const apple = "Apple Inc. designs, manufactures, and markets smartphones, personal computers, tablets, wearables, and accessories worldwide.";
+    expect(briefSummary(apple, 40)).toBe("Apple Inc. designs, manufactures, and…");
+    expect(briefSummary("가".repeat(50), 20)).toBe(`${"가".repeat(20)}…`);
+  });
+
+  it("한국어 개요가 있으면 한국어와 그 출처, 없으면 원문(미국이면 영문 표시), 업종은 한국어 이름, 개요가 없으면 null", () => {
+    const base = { market: "us", source: { label: "Yahoo Finance", url: "https://finance.yahoo.com/quote/AAPL" } };
+    const profile = { sector: "Technology", industry: "Consumer Electronics", country: null, website: null, employees: null,
+      summary: "Apple designs phones.", summaryKo: "애플은 휴대폰을 설계한다.", industryKo: "전화 및 소형 장치",
+      koSource: { label: "네이버 증권 해외주식 기업 개요", url: "https://m.stock.naver.com/worldstock/stock/AAPL.O/overview" } };
+    expect(quickProfile({ ...base, profile } as unknown as DetailQuote)).toEqual({
+      industry: "기술 · 전화 및 소형 장치", text: "애플은 휴대폰을 설계한다.", english: false, source: "네이버 증권 해외주식 기업 개요" });
+    expect(quickProfile({ ...base, profile: { ...profile, summaryKo: null, industryKo: null, koSource: null } } as unknown as DetailQuote))
+      .toEqual({ industry: "기술 · Consumer Electronics", text: "Apple designs phones.", english: true, source: "Yahoo Finance" });
+    const etf = { market: "kr", source: { label: "네이버 증권", url: "https://m.stock.naver.com" },
+      profile: { sector: null, industry: null, country: "대한민국", website: null, employees: null, summary: "KOSPI200을 따라갑니다." } };
+    expect(quickProfile(etf as unknown as DetailQuote)).toEqual({ industry: null, text: "KOSPI200을 따라갑니다.", english: false, source: "네이버 증권" });
+    expect(quickProfile({ ...etf, profile: { ...etf.profile, summary: null } } as unknown as DetailQuote)).toBeNull();
+    expect(quickProfile({ ...etf, profile: null } as unknown as DetailQuote)).toBeNull();
+    expect(quickProfile(null)).toBeNull();
   });
 });
 
