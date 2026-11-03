@@ -123,7 +123,7 @@ describe("종목 줄", () => {
     expect(view?.positions[0]).toMatchObject({
       price: "440.0000", priceAt: "실시간 23:58:07", live: true, realtime: true, returnText: "+10.00%", dayText: "+7.32%", weight: "42.0%",
     });
-    expect(view?.positions[0].priceTitle).toBe("실시간 Yahoo · 거래 23:58:07 KST · 정규장");
+    expect(view?.positions[0].priceTitle).toBe("실시간 Yahoo · 기준 23:58:07 KST · 정규장");
     expect(view?.positions[1]).toMatchObject({ realtime: false, priceTitle: null, priceAt: "마지막 관측 10-30 06:05" });
     // 등락률이 없으면 직전 종가로 셈, 평단을 모르면 "—"
     const noPct = livePositionView({ ...book().positions[0], avgCost: null }, "US", { ...realtime, changePct: null });

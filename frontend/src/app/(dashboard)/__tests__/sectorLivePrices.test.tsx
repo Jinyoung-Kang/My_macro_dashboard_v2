@@ -81,7 +81,7 @@ describe("섹터·자산군 현재가 실시간", () => {
     const xlk = screen.getByText("정보기술").closest("tr")!;
     expect(within(xlk).getByText("252.34")).toBeTruthy();
     expect(within(xlk).getByText("+0.90%")).toBeTruthy();
-    expect(within(xlk).getByTitle(/실시간 네이버 · 거래 23:40:01 KST · 정규장/)).toBeTruthy();
+    expect(within(xlk).getByTitle(/실시간 네이버 · 기준 23:40:01 KST · 정규장/)).toBeTruthy();
     const gld = screen.getByText("금").closest("tr")!;
     expect(within(gld).getByText("370.40")).toBeTruthy();
   });

@@ -86,12 +86,12 @@ describe("표시", () => {
     expect(liveStatusText("PRE")).toBe("시간 외(장 전)");
     expect(liveStatusText(null)).toBe("");
     expect(livePriceTitle(price, (value) => value.toLocaleString("en-US"))).toBe(
-      "실시간 네이버 · 거래 19:59:58 KST · 애프터장(NXT) · 정규장 종가 230,000");
+      "실시간 네이버 · 기준 19:59:58 KST · 애프터장(NXT) · 정규장 종가 230,000");
   });
 
   // QA-167: 네이버 국내 polling의 정규장 localTradedAt은 체결 시각이 아니라 응답 시각입니다(2026-11-03 09:08 KST — 오늘 거래량이 없는
   // 종목도 매번 지금 시각). 설명은 '거래'가 아니라 '기준' 시각이라고 적어야 합니다(미국·다음·시간 외는 마지막 거래 시각이라 '기준'도 맞음).
-  it.fails("QA-167 설명의 시각은 '기준' — 네이버 국내 정규장은 응답 시각이라 '거래'라고 적지 않는다", () => {
+  it("QA-167 설명의 시각은 '기준' — 네이버 국내 정규장은 응답 시각이라 '거래'라고 적지 않는다", () => {
     const regular = { ...price, status: "OPEN" as const, tradedAt: "2026-11-03T00:08:47Z", overPrice: null, overChange: null,
       overChangePct: null, overTradedAt: null, overSession: null };
     const title = livePriceTitle(regular, (value) => value.toLocaleString("en-US"));

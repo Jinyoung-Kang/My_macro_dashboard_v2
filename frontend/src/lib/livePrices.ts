@@ -61,7 +61,7 @@ export function liveKey(market: "US" | "KR", code: string): string {
   return `${market}:${code.trim().toUpperCase()}`;
 }
 
-/** 거래 시각 → KST "HH:mm:ss"(모르면 "—"). */
+/** 출처가 밝힌 시각(livePriceTitle의 '기준' 시각) → KST "HH:mm:ss"(모르면 "—"). */
 export function tradedAtText(iso: string | null | undefined): string {
   if (!iso) return EMPTY;
   const at = new Date(iso);
@@ -85,10 +85,13 @@ export function liveStatusText(status: LiveMarketStatus | null | undefined): str
   }
 }
 
-/** 가격 칸의 설명(title) — 출처 · 거래 시각 KST · 장 상태 · 시간 외 가격. */
+/**
+ * 가격 칸의 설명(title) — 출처 · 기준 시각 KST · 장 상태 · 시간 외 가격. 시각은 '거래'가 아니라 '기준'입니다: 미국·다음·시간 외는 마지막
+ * 거래 시각이지만 네이버 국내 정규장은 응답한 순간이라 체결이 없던 종목도 지금 시각입니다(QA-167).
+ */
 export function livePriceTitle(price: LivePrice, formatPrice: (value: number) => string): string {
   const shown = liveShown(price);
-  const parts = [`실시간 ${price.source}`, `거래 ${tradedAtText(shown.tradedAt)} KST`];
+  const parts = [`실시간 ${price.source}`, `기준 ${tradedAtText(shown.tradedAt)} KST`];
   const status = shown.session ?? liveStatusText(price.status);
   if (status) parts.push(status);
   if (shown.session) parts.push(`정규장 종가 ${formatPrice(price.price)}`);
