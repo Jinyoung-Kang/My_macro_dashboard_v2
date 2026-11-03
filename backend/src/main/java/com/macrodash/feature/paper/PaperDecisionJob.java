@@ -64,8 +64,8 @@ import java.util.concurrent.locks.ReentrantLock;
  * SCHEDULED(매도 신호와 남는 현금 SHY만)입니다. <b>재선정일을 놓친 경우</b>(그날 결정 창 동안 작업이 한 번도 끝나지 못함 — 맥 꺼짐·오류 계속):
  * 규칙 책이 그 분기 재선정일 r 전에 시작했는데 <b>r 선정으로 낸</b> 매수 결정(REBALANCE·INITIAL, {@code selection_as_of = r})이
  * 없으면, 다음 결정 날에 r 기준으로 선정하고({@code select(r)} — d가 아니라 r이라 언제 따라잡아도 같은 선정) 그날 REBALANCE를
- * 냅니다. 그러지 않으면 그 분기 매수가 통째로 사라져 다음 재선정일까지 지난 분기 신호로 갑니다. r에 선정을 건너뛴 경우(수집 중·후보
- * 목록 없음 — {@link PaperSelectionService#select})도 같습니다: 그날 REBALANCE는 지난 선정이라 매수 없이 끝나므로 세지 않고, 다음
+ * 냅니다. 그러지 않으면 그 분기 매수가 통째로 사라져 다음 재선정일까지 지난 분기 신호로 갑니다. r에 선정을 건너뛴 경우(수집 중·최신
+ * 분기 수집 대기(QA-175)·후보 목록 없음 — {@link PaperSelectionService#select})도 같습니다: 그날 REBALANCE는 지난 선정이라 매수 없이 끝나므로 세지 않고, 다음
  * 결정 날마다 {@code select(r)}를 다시 불러 수집이 끝난 뒤 그 분기 매수를 냅니다. 시작 전 책은 결정을 내지 않고, 초기화 전(책이
  * 없음)이면 아무것도 하지 않습니다.
  *

@@ -882,7 +882,6 @@ class PaperSelectionServiceTest {
     }
 
     @Test
-    @org.junit.jupiter.api.Disabled("QA-175 재현 — 수정 전: 기한 마감 전에 받은 저장본의 D를 '최신 분기 공시 없음'으로 빼고 선정 [A, B]를 굳힘")
     @DisplayName("QA-175: 최신 분기가 없는 저장본을 그 분기 기한 EDGAR 마감 전에 받았으면 '수집 대기' — 선정을 남기지 않고, 받은 뒤 다시 선정")
     void selectWaitsWhileLatestQuarterNotCollected() {
         reselectionFixture(BEFORE_CUTOFF);
@@ -909,7 +908,6 @@ class PaperSelectionServiceTest {
     }
 
     @Test
-    @org.junit.jupiter.api.Disabled("QA-175 재현 — 수정 전: 대기 없이 R에 선정을 굳히고 D 사유는 '최신 분기(2026-09-30) 공시 없음'")
     @DisplayName("QA-175: 대기 상한(사용자 결정 6) — R 뒤 4거래일까지는 기다리고, 5거래일째(11-24) 결정에서 받지 못한 기관을 '수집 실패로 제외'하고 선정")
     void selectExcludesUncollectedAfterWaitLimit() {
         reselectionFixture(BEFORE_CUTOFF);
@@ -1156,7 +1154,6 @@ class PaperSelectionServiceTest {
     }
 
     @Test
-    @org.junit.jupiter.api.Disabled("QA-175 재현 — 수정 전: q30이 있으면 늘 q30을 써서 DUQ를 '최신 분기(2026-09-30) 공시 없음'으로 뺌")
     @DisplayName("QA-175 그룹 B: q30이 최신 분기를 아직 받지 못한 저장본(기한 마감 전)이고 q8은 그 분기를 받았으면 q8을 쓴다")
     void groupBUsesFreshQ8WhenQ30AwaitsLatestQuarter() {
         reselectionFixture(AFTER_CUTOFF);
@@ -1174,7 +1171,6 @@ class PaperSelectionServiceTest {
     }
 
     @Test
-    @org.junit.jupiter.api.Disabled("QA-175 재현 — 수정 전: q8을 기한 마감 전에 받은 FIS를 '최신 분기 공시 없음'으로 빼고 선정을 굳힘")
     @DisplayName("QA-175 그룹 B: q8만 있는 기관도 최신 분기를 기한 마감 전 저장본으로만 알면 '수집 대기' — 그 기관 때문에도 선정을 미룸")
     void selectWaitsForGroupBLatestQuarter() {
         reselectionFixture(AFTER_CUTOFF);

@@ -34,6 +34,8 @@ import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDate;
+import java.time.LocalTime;
+import java.time.ZonedDateTime;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
@@ -47,6 +49,7 @@ import java.util.Set;
 import java.util.TreeSet;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.function.DoublePredicate;
+import java.util.stream.Stream;
 
 /**
  * 기관 선정 — 후보 기관의 13F 트랙레코드를 계산해 순위를 매기고, 재선정일에 상위 N곳을 선정으로 남깁니다(명세 R1·R5·R7~R10,
@@ -64,7 +67,8 @@ import java.util.function.DoublePredicate;
  * <p><b>자격</b>은 {@link TrackRecord13F}의 기준(구간 수·커버리지)에 두 가지를 더합니다. ① 30분기 수집이 아직 끝나지 않은 기관
  * ({@code complete=false})은 "수집 중" — 창의 앞쪽 공시가 비어 구간 수·수익률이 실제보다 짧은 기간의 값이라 순위에 올리지
  * 않습니다(설계 §6-4). ② 그 기준일에 공시 기한이 지난 최신 분기를 공시하지 않은 기관은 그 분기 선정에서 빠집니다(R5, 사이언).
- * 수치는 둘 다 그대로 계산해 화면이 보이게 합니다.
+ * 다만 최신 분기가 없는 저장본을 그 분기 기한 EDGAR 마감 전에 받았으면 공시했는지 모르므로 R5가 아니라 "수집 대기"로 두고
+ * 선정을 미룹니다({@link #select} ③, QA-175). 수치는 모두 그대로 계산해 화면이 보이게 합니다.
  *
  * <p><b>선정은 한 번</b>: {@link #select}는 그 기준일에 선정이 이미 있으면 바꾸지 않고, {@link #rerank}(수동 재계산)는
  * 트랙레코드만 다시 계산합니다 — 그 선정으로 낸 주문 기록과 어긋나지 않게(설계 §4-0 ⑤).
@@ -101,6 +105,24 @@ public class PaperSelectionService {
     static final String COLLECTING_SKIP_REASON = "수집 중 %d곳(후보 %d곳) — 자격 있는 기관이 아직 없어 선정을 남기지 "
             + "않습니다. 수집이 덜 끝나서인지 기준 미달인지 몰라 '자격 기관 없음'으로 굳히지 않습니다 — 수집이 끝난 뒤 다시 "
             + "선정합니다.";
+    /**
+     * 13F 공시 기한일에 EDGAR가 공시를 받는 마지막 시각(동부). 이 뒤에 받은 저장본에 그 분기가 없으면 '공시하지 않음'(R5), 앞이면
+     * '아직 받지 못함'입니다(QA-175).
+     */
+    static final LocalTime EDGAR_CLOSE = LocalTime.of(22, 0);
+    /**
+     * 최신 분기를 아직 받지 못한 기관을 기다리는 거래일 수(사용자 결정 6, QA-175) — 그 분기 재선정일 r에서 이만큼 지난 세션(r+5)의
+     * 결정부터는 기다리지 않고 받지 못한 기관을 '수집 실패로 제외'한 채 선정합니다. 영구 실패 기관 하나가 그 분기 선정을 끝까지
+     * 막지 않게.
+     */
+    static final int PENDING_WAIT_TRADING_DAYS = 5;
+    /**
+     * 선정을 남기지 않은 이유 — 최신 분기를 아직 받지 못한 기관이 있음(QA-175). %s = 최신 분기, %d = 기관 수, %s = 기관 이름,
+     * %s = 공시 기한, %s = 기다리는 마지막 세션.
+     */
+    static final String PENDING_SKIP_REASON = "최신 분기(%s) 13F 수집 대기 %d곳(%s) — 그 분기 공시 기한(%s) EDGAR 마감 "
+            + "전에 받은 저장본이라 공시했는지 모릅니다. '최신 분기 공시 없음'으로 빼고 선정을 굳히지 않고, 수집기가 받은 뒤 다시 "
+            + "선정합니다(%s 결정까지 받지 못하면 그 기관을 '수집 실패로 제외'하고 선정).";
     /** 수동 재계산이 겹쳤을 때 다시 누를 때까지의 안내 시간. 27곳 계산은 보통 몇 초입니다. */
     static final Duration BUSY_RETRY = Duration.ofSeconds(15);
 
@@ -243,11 +265,14 @@ public class PaperSelectionService {
     }
 
     /**
-     * 기관 하나의 13F 저장본을 계산이 받는 모양으로. 저장본이 없으면 공시 없음·수집 중이고 source는 null.
+     * 기관 하나의 13F 저장본을 계산이 받는 모양으로. 저장본이 없으면 공시 없음·수집 중이고 source·collectedAt은 null.
      *
-     * @param source 읽은 저장본(TrackRecordRow.SOURCE_Q30·SOURCE_Q8)
+     * @param source      읽은 저장본(TrackRecordRow.SOURCE_Q30·SOURCE_Q8)
+     * @param collectedAt 그 저장본을 마지막으로 받은 시각 — 수집기는 실패하면 저장본을 덮지 않으므로 이 시각 뒤의 공시는
+     *                    모릅니다(QA-175)
      */
-    record StoredFilings(List<Filing> filings, int storedQuarters, boolean complete, String source) {
+    record StoredFilings(List<Filing> filings, int storedQuarters, boolean complete, String source,
+                         Instant collectedAt) {
     }
 
     /** 그룹 B 후보 한 곳(D27) — 기존 13F 메뉴 목록({@link Institutions#ALL})의 이름·설명 그대로. */
@@ -301,13 +326,20 @@ public class PaperSelectionService {
     /**
      * 그룹 B 기관의 공시(D27) — q30이 있으면(메타의 complete와 상관없이) 그것, 없으면 기존 메뉴 저장본 q8. q30은 CUSIP 매핑
      * 티커라 같은 기관이면 커버리지가 높고, 그룹 A와 같은 공시를 쓰게 됩니다. 둘 다 없으면 공시 없음(source null).
+     *
+     * <p>다만 q30이 최신 분기를 아직 받지 못한 저장본({@link #awaitingLatest})이고 q8은 아니면(그 분기를 받았거나 기한 마감 뒤에
+     * 받음) q8을 씁니다 — 트랙레코드 수집만 실패한 동안 오래된 q30 때문에 그 기관을 모름으로 두지 않게(QA-175).
      */
-    private StoredFilings storedGroupB(String cik, Map<String, String> pool) {
+    private StoredFilings storedGroupB(String cik, Map<String, String> pool, LocalDate latestQuarter, LocalDate asOf) {
         StoredFilings q30 = stored(cik, pool);
-        if (q30.source() != null) {
+        if (q30.source() != null && !awaitingLatest(q30, latestQuarter, asOf)) {
             return q30;
         }
-        return stored(Datasets.sec13f(cik, Datasets.MAX_TRACKED_QUARTERS), TrackRecordRow.SOURCE_Q8, pool);
+        StoredFilings q8 = stored(Datasets.sec13f(cik, Datasets.MAX_TRACKED_QUARTERS), TrackRecordRow.SOURCE_Q8, pool);
+        if (q30.source() == null || (q8.source() != null && !awaitingLatest(q8, latestQuarter, asOf))) {
+            return q8;
+        }
+        return q30;
     }
 
     /**
@@ -320,7 +352,7 @@ public class PaperSelectionService {
     private StoredFilings stored(String name, String source, Map<String, String> pool) {
         Optional<Snapshot> meta = reader.readStoredMeta(name, "quarters");
         if (meta.isEmpty()) {
-            return new StoredFilings(List.of(), 0, false, null);
+            return new StoredFilings(List.of(), 0, false, null, null);
         }
         List<StoreRepository.HoldingRow> rows = reader.readStoredHoldings(name);
         Map<Integer, List<StoreRepository.HoldingRow>> byQuarter = new LinkedHashMap<>();
@@ -345,7 +377,8 @@ public class PaperSelectionService {
             }
             filings.add(new Filing(filingDate, Json.parseDate(first.reportDate()), holdings));
         }
-        return new StoredFilings(filings, byQuarter.size(), Json.asBoolean(meta.get().payload(), "complete"), source);
+        return new StoredFilings(filings, byQuarter.size(), Json.asBoolean(meta.get().payload(), "complete"), source,
+                meta.get().collectedAt());
     }
 
     /**
@@ -380,6 +413,22 @@ public class PaperSelectionService {
                 && !f.reportDate().isBefore(quarterEnd));
     }
 
+    /** 그 분기 13F 공시 기한일의 EDGAR 마감 순간(22:00 동부) — 기한 안에 낸 공시가 모두 EDGAR에 올라온 뒤(QA-175). */
+    static Instant filingCutoff(LocalDate quarterEnd) {
+        return ZonedDateTime.of(UsMarketCalendar.thirteenFDeadline(quarterEnd), EDGAR_CLOSE, UsMarketCalendar.NEW_YORK)
+                .toInstant();
+    }
+
+    /**
+     * 최신 분기를 아직 받지 못한 저장본인가(QA-175) — 그 분기 공시가 없는데 저장본을 그 분기 기한 EDGAR 마감 전에 받았음.
+     * 수집기는 실패·예산 소진이면 저장본을 덮지 않으므로, 그 뒤에 낸 공시는 '공시하지 않음'(R5)과 구별되지 않습니다.
+     * 수집 시각을 모르면(저장본 없음) 거짓입니다.
+     */
+    static boolean awaitingLatest(StoredFilings stored, LocalDate latestQuarter, LocalDate asOf) {
+        return stored.collectedAt() != null && stored.collectedAt().isBefore(filingCutoff(latestQuarter))
+                && !filedQuarter(stored.filings(), latestQuarter, asOf);
+    }
+
     // ------------------------------------------------------------------ 계산
     /**
      * 후보 한 곳의 최종 결과.
@@ -388,10 +437,12 @@ public class PaperSelectionService {
      * @param rank          자격 있는 기관의 순위(1부터), 없으면 null
      * @param collecting    30분기 수집이 끝나지 않아 자격에서 뺌(그룹 A만 — 그룹 B는 늘 false)
      * @param missingLatest 기준일에 공시 기한이 지난 최신 분기를 공시하지 않아 자격에서 뺌(R5)
+     * @param pending       최신 분기를 아직 받지 못해 자격에서 뺌({@link PaperSelectionService#awaitingLatest} — 공시했는지
+     *                      모름, QA-175). missingLatest와 함께 참이 되지 않습니다
      * @param source        계산에 쓴 저장본(q30·q8). 저장본이 없으면 null
      */
     public record Scored(String cik, String name, String style, Result result, Integer rank, boolean collecting,
-                         boolean missingLatest, int storedQuarters, boolean complete, String source) {
+                         boolean missingLatest, boolean pending, int storedQuarters, boolean complete, String source) {
     }
 
     /**
@@ -403,10 +454,14 @@ public class PaperSelectionService {
      * @param skippedReason   계산하지 못한 이유(후보 목록 없음 등). 계산했으면 null — 이때만 저장합니다
      * @param blend           두 그룹 섞기 설정(D27) — 그룹 B 기준·선정 수·기관 가중의 g
      * @param groupB          그룹 B 후보(D27), 기존 메뉴 순서. 건너뛰었으면 빈 목록
+     * @param waitUntil       최신 분기를 받지 못한 기관을 기다리는 끝 세션(재선정일 +
+     *                        {@value PaperSelectionService#PENDING_WAIT_TRADING_DAYS}거래일, QA-175) — 이 세션의 결정부터는
+     *                        기다리지 않음
+     * @param waitOver        계산한 때(마지막 완료 세션)가 waitUntil 이상 — 받지 못한 기관을 '수집 실패로 제외'하고 선정
      */
     public record Computation(LocalDate asOf, Integer settingsVersion, TrackRecordSettings settings,
                               LocalDate latestQuarter, List<Scored> candidates, String skippedReason,
-                              PaperSettings.Blend blend, List<Scored> groupB) {
+                              PaperSettings.Blend blend, List<Scored> groupB, LocalDate waitUntil, boolean waitOver) {
 
         public Computation {
             candidates = List.copyOf(candidates);
@@ -461,12 +516,17 @@ public class PaperSelectionService {
         }
         requireReady();
         LocalDate latestQuarter = UsMarketCalendar.latestQuarterEndReselectedBy(asOf);
+        // 최신 분기를 받지 못한 기관을 기다리는 끝(QA-175) — 그 분기 재선정일에서 센 세션. 결정 작업은 기준일이 r(따라잡기여도)이라
+        // 지금(마지막 완료 세션 = 결정하는 세션)으로 셉니다.
+        LocalDate waitUntil = UsMarketCalendar.addTradingDays(UsMarketCalendar.reselectionDay(latestQuarter),
+                PENDING_WAIT_TRADING_DAYS);
+        boolean waitOver = !UsMarketCalendar.lastCompletedSession(clock.instant()).isBefore(waitUntil);
         Optional<CollectionIndex> index = index();
         // 후보 목록이 없으면 그룹 B도 계산하지 않습니다 — 선정은 그룹 A 없이 남기지 않으므로(그룹 B만으로 선정하지 않음)
         // 그룹 B 행만 남기면 "계산했는데 선정이 없는" 기준일이 생깁니다.
         if (index.isEmpty()) {
             return new Computation(asOf, null, currentSettings(), latestQuarter, List.of(), NO_INDEX_REASON,
-                    currentBlend(), List.of());
+                    currentBlend(), List.of(), waitUntil, waitOver);
         }
         // 저장할 행에는 설정 버전이 필요합니다. 초기화 전이면 기본값으로 설정 행을 만듭니다(초기화가 만드는 것과 같은 값).
         SettingsRow row = settingsRow();
@@ -482,7 +542,7 @@ public class PaperSelectionService {
                 .toList();
         if (candidates.isEmpty()) {
             return new Computation(asOf, row.version(), trackSettings, latestQuarter, List.of(), NO_CANDIDATE_REASON,
-                    blend, List.of());
+                    blend, List.of(), waitUntil, waitOver);
         }
 
         // 그룹마다 따로 계산합니다 — 창이 달라 가격 범위가 다르고, 한 그룹의 저장본·가격을 다 쓴 뒤 다음 그룹을 읽어 힙에
@@ -493,14 +553,16 @@ public class PaperSelectionService {
             inputsA.add(new GroupInput(filer.cik(), filer.name(), filer.style(), stored(filer.cik(), pool)));
         }
         List<Scored> scoredA = score(inputsA, trackSettings.criteria(), trackSettings.metric(), asOf, latestQuarter,
-                true);
+                true, waitOver);
         inputsA.clear();
         List<GroupInput> inputsB = new ArrayList<>();
         for (MenuFiler filer : groupBCandidates()) {
-            inputsB.add(new GroupInput(filer.cik(), filer.name(), null, storedGroupB(filer.cik(), pool)));
+            inputsB.add(new GroupInput(filer.cik(), filer.name(), null,
+                    storedGroupB(filer.cik(), pool, latestQuarter, asOf)));
         }
         TrackRecord13F.Criteria criteriaB = groupBCriteria(trackSettings, blend);
-        List<Scored> scoredB = score(inputsB, criteriaB, trackSettings.metric(), asOf, latestQuarter, false);
+        List<Scored> scoredB = score(inputsB, criteriaB, trackSettings.metric(), asOf, latestQuarter, false,
+                waitOver);
         inputsB.clear();
 
         List<TrackRecordRow> rows = new ArrayList<>();
@@ -521,7 +583,8 @@ public class PaperSelectionService {
         log.info("13F 트랙레코드 계산: 기준일 {}, 그룹 A 후보 {}곳·자격 {}곳, 그룹 B 후보 {}곳·자격 {}곳", asOf, scoredA.size(),
                 scoredA.stream().filter(x -> x.rank() != null).count(), scoredB.size(),
                 scoredB.stream().filter(x -> x.rank() != null).count());
-        return new Computation(asOf, row.version(), trackSettings, latestQuarter, scoredA, null, blend, scoredB);
+        return new Computation(asOf, row.version(), trackSettings, latestQuarter, scoredA, null, blend, scoredB,
+                waitUntil, waitOver);
     }
 
     /** 한 그룹의 계산 입력 — 후보 한 곳과 그 저장본. */
@@ -534,9 +597,10 @@ public class PaperSelectionService {
      *
      * @param collectingRule 30분기 수집이 끝나지 않은 기관을 "수집 중"으로 자격에서 뺌(그룹 A). 그룹 B는 q8에 완료 표시가 없어
      *                       false — 짧은 저장본은 구간 수 기준이 거릅니다
+     * @param waitOver       최신 분기를 받지 못한 기관을 기다리는 끝이 지남 — 사유를 '수집 대기' 대신 '수집 실패로 제외'로(QA-175)
      */
     private List<Scored> score(List<GroupInput> inputs, TrackRecord13F.Criteria criteria, TrackRecord13F.Metric metric,
-                               LocalDate asOf, LocalDate latestQuarter, boolean collectingRule) {
+                               LocalDate asOf, LocalDate latestQuarter, boolean collectingRule, boolean waitOver) {
         LocalDate windowStart = asOf.minusYears(criteria.windowYears());
         Set<String> tickers = new TreeSet<>();
         tickers.add(SPY);
@@ -555,9 +619,12 @@ public class PaperSelectionService {
             StoredFilings stored = input.stored();
             Result raw = TrackRecord13F.compute(input.cik(), stored.filings(), prices::get, spy, asOf, criteria);
             boolean collecting = collectingRule && !stored.complete();
-            // 공시가 하나도 없으면 사유 "공시 없음"이 이미 모든 것을 말합니다.
-            boolean missingLatest = raw.lastFilingDate() != null
+            // 공시가 하나도 없으면 사유 "공시 없음"이 이미 모든 것을 말합니다. 최신 분기가 없어도 기한 마감 전에 받은 저장본이면
+            // 공시하지 않았는지 아직 받지 못했는지 모릅니다 — R5가 아니라 "수집 대기"(QA-175).
+            boolean latestAbsent = raw.lastFilingDate() != null
                     && !filedQuarter(stored.filings(), latestQuarter, asOf);
+            boolean pending = latestAbsent && awaitingLatest(stored, latestQuarter, asOf);
+            boolean missingLatest = latestAbsent && !pending;
             List<String> reasons = new ArrayList<>();
             if (collecting) {
                 reasons.add(COLLECTING_PREFIX + "저장 분기 " + stored.storedQuarters() + "/"
@@ -566,12 +633,17 @@ public class PaperSelectionService {
             if (missingLatest) {
                 reasons.add("최신 분기(" + latestQuarter + ") 공시 없음");
             }
+            if (pending) {
+                reasons.add("최신 분기(" + latestQuarter + ") " + (waitOver ? "수집 실패로 제외" : "수집 대기")
+                        + "(마지막 수집 " + Kst.stamp(stored.collectedAt()) + " — 공시 기한 "
+                        + UsMarketCalendar.thirteenFDeadline(latestQuarter) + " EDGAR 마감 전)");
+            }
             if (!raw.eligible() && raw.ineligibleReason() != null) {
                 reasons.add(raw.ineligibleReason());
             }
             Result result = finite(raw, reasons.isEmpty() && raw.eligible(), String.join("; ", reasons));
             unranked.add(new Scored(input.cik(), input.name(), input.style(), result, null, collecting, missingLatest,
-                    stored.storedQuarters(), stored.complete(), stored.source()));
+                    pending, stored.storedQuarters(), stored.complete(), stored.source()));
         }
 
         Map<String, Integer> rankByCik = new HashMap<>();
@@ -579,8 +651,8 @@ public class PaperSelectionService {
             rankByCik.put(ranked.result().cik(), ranked.rank());
         }
         return unranked.stream().map(s -> new Scored(s.cik(), s.name(), s.style(), s.result(),
-                rankByCik.get(s.cik()), s.collecting(), s.missingLatest(), s.storedQuarters(), s.complete(),
-                s.source())).toList();
+                rankByCik.get(s.cik()), s.collecting(), s.missingLatest(), s.pending(), s.storedQuarters(),
+                s.complete(), s.source())).toList();
     }
 
     /**
@@ -644,7 +716,10 @@ public class PaperSelectionService {
      * <p>선정을 남기지 않는 경우(모르는 것을 '자격 기관 없음'으로 굳히지 않게 — 같은 기준일은 다시 계산하지 않으므로 한 번 남긴
      * 빈 선정은 다음 재선정일까지 갑니다): ① 후보 목록 저장본이 없음, ② 자격 기관이 0곳인데 수집 중인 후보가 있음 — 처음 기동한
      * 뒤 30분기를 채우는 동안(실행 몇 번)에 불리면 0곳이 기준 미달 때문인지 수집이 덜 끝나서인지 알 수 없습니다. 이때 그룹 B만으로
-     * 선정하지도 않습니다 — 그룹 B만의 풀이 다음 재선정일까지 굳습니다. 트랙레코드 계산은 둘째 경우에도 저장합니다.
+     * 선정하지도 않습니다 — 그룹 B만의 풀이 다음 재선정일까지 굳습니다. ③ 두 그룹 어디든 최신 분기를 아직 받지 못한 기관
+     * ({@link Scored#pending}, 수집 중인 그룹 A 후보는 빼고 셈 — 그 후보는 ②의 규칙대로 빠짐)이 있고 기다리는 끝
+     * ({@link Computation#waitUntil}) 전 — SEC 장애·수집 실패가 기한과 재선정일 사이에 겹치면 공시한 기관을 R5로 빼고 석 달을
+     * 굳히게 됩니다(QA-175). 끝이 지나면 그 기관을 '수집 실패로 제외'한 채 선정합니다. 트랙레코드 계산은 ②·③에도 저장합니다.
      */
     public SelectionOutcome select(LocalDate asOf) {
         if (asOf == null) {
@@ -660,6 +735,21 @@ public class PaperSelectionService {
             Computation computation = computeLocked(asOf);
             if (computation.skippedReason() != null) {
                 return new SelectionOutcome(asOf, false, null, computation, computation.skippedReason());
+            }
+            List<Scored> pending = Stream.concat(computation.candidates().stream(),
+                    computation.groupB().stream()).filter(s -> s.pending() && !s.collecting()).toList();
+            if (!pending.isEmpty() && !computation.waitOver()) {
+                String names = pending.stream().limit(5).map(s -> s.name() == null ? s.cik() : s.name())
+                        .reduce((a, b) -> a + ", " + b).orElse("") + (pending.size() > 5 ? " …" : "");
+                String reason = String.format(Locale.ROOT, PENDING_SKIP_REASON, computation.latestQuarter(),
+                        pending.size(), names, UsMarketCalendar.thirteenFDeadline(computation.latestQuarter()),
+                        computation.waitUntil());
+                log.info("기관 선정 건너뜀: 기준일 {}, {}", asOf, reason);
+                return new SelectionOutcome(asOf, false, null, computation, reason);
+            }
+            if (!pending.isEmpty()) {
+                log.warn("기관 선정: 기준일 {}, 최신 분기({})를 {}까지 받지 못한 기관 {}곳을 수집 실패로 빼고 선정합니다", asOf,
+                        computation.latestQuarter(), computation.waitUntil(), pending.size());
             }
             List<Scored> ranked = computation.ranked();
             long collecting = computation.candidates().stream().filter(Scored::collecting).count();
