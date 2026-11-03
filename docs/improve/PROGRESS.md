@@ -56,7 +56,17 @@
 ### 묶음 1 (급함) — 본체 폴더, 브랜치에서 직접
 - QA-171 `bd5fbac0` → `97486f2b`, QA-172 `a197b014` → `3834c213`, QA-176 `a3c30223` → `f7547dd0`. 결함 기록 [2026-11-04-defects.md](../qa/2026-11-04-defects.md).
 - ADR 0023 결정 10·남은 위험에 QA-171을 적음.
-- 다음: 전체 `make test` + JDK 21 → 커밋별 재검증 → `main` 병합·push·CI → Vultr 배포 → 확인.
+- 검증: 끝 커밋 `4edb182e`에서 `make test` 통과(수집기 1288·12 건너뜀, 백엔드 2352, 화면 1770 + build), JDK 21 컨테이너 2352 통과.
+  커밋별 재검증 8개 모두 통과(별도 worktree·`macrodash_verify_test`, 스크립트는 세션 임시 폴더 `verify/percommit.sh`).
+- `main` fast-forward → push → CI run 41671578169 6/6 성공.
+- **Vultr 배포 2026-11-04 01:15~01:18 KST, main@4edb182e**. 배포 전 서버 덤프 `backups/pre-deploy-20261103-161541.sql`(464M, 테이블 39).
+  - 확인(PC, tailnet): Origin `http://attacker.example:8201`·`http://203.0.113.5:8201`의 운영자 GET·POST → 403, `/api/auth/session`에
+    CORS 허용 머리글 없음. 자기 출처 200, `/api/health` 200. 백엔드 시작 로그 '모의 매매 정기 작업 켜짐'.
+  - 수집기 이미지는 바뀌지 않아 그대로(3시간째). 리스크 점검은 매시 43분(시간별 관측치) — 배포 뒤 첫 실행은 01:43 예정.
+
+### 묶음 2~4 — 영역별 worktree(워크플로 `wf_a8019462-b39`)
+- 기준 `4edb182e`. 세션 임시 폴더 `wt/{kr,notes,us,ops,live,fe}`, 브랜치 `claude/improve-2026-11-<영역>`, 테스트 DB `macrodash_w<영역>_test`.
+- 레인 넷: [kr → notes], [us → ops], [live], [fe]. 결함별 브리프(리뷰 원문·검증 메모)는 세션 임시 폴더 `briefs/QA-###.md`.
 
 # 3차 리뷰 (2026-10) — 지난 회차 기록
 
