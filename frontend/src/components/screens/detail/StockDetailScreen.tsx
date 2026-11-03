@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { LiveIntervalSelect } from "@/components/LiveIntervalSelect";
 import { ProvenanceBadge, Skeleton } from "@/components/patterns";
-import { Banner, Card, PageHeader } from "@/components/ui";
+import { Banner, Card, ErrorState, PageHeader } from "@/components/ui";
 import { useApi } from "@/hooks/useApi";
 import {
   countryKo,
@@ -91,7 +91,16 @@ export function StockDetailScreen({ market, code }: { market: DetailMarket; code
       <div className="grid min-w-0 gap-6 lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)] lg:gap-8">
         <div className="flex min-w-0 flex-col gap-6 lg:gap-8">
           <Card title="핵심 지표" source={quote?.source?.label ?? undefined}>
-            {quote ? <KeyStats rows={statRows(quote.stats, (stat) => statText(stat, quote.currency))} /> : <Skeleton lines={4} label="핵심 지표를 불러오는 중" />}
+            {/* 시세를 읽지 못했거나 받지 않았으면(store_only 등 — 이유는 히어로가 적음) '불러오는 중'으로 두지 않습니다(QA-190). */}
+            {quote ? (
+              <KeyStats rows={statRows(quote.stats, (stat) => statText(stat, quote.currency))} />
+            ) : quoteState.error ? (
+              <ErrorState message={quoteState.error} onRetry={() => void quoteState.reload()} />
+            ) : quoteState.data ? (
+              <p className="text-sm text-text-2">시세를 받지 않아 핵심 지표가 없습니다.</p>
+            ) : (
+              <Skeleton lines={4} label="핵심 지표를 불러오는 중" />
+            )}
           </Card>
           <AiSummaryCard request={{ market, code, q: quote?.name ?? undefined, label: name }} />
           {/* 회사 이름(구글 뉴스 검색어)은 시세 응답에 있어, 시세를 읽기 전에는 부르지 않습니다 — 이름 없이 한 번, 이름과 함께 또 한 번 부르지 않게. */}

@@ -291,11 +291,12 @@ describe("종목 상세 — 미국", () => {
 
   // QA-190과 같은 원인: 시세 읽기가 실패했거나 조회하지 않으면(store_only) 히어로는 그 이유를 적지만, '핵심 지표' 카드는 시세가 없으면 늘 '불러오는 중'
   // (role=status, aria-busy)이었습니다. 카드도 그 이유를, 실패면 다시 시도 단추를 그립니다.
-  it.fails("QA-190 시세를 읽지 못했거나 조회하지 않으면 핵심 지표 카드도 '불러오는 중'이 아니라 그 이유(실패면 다시 시도)", async () => {
+  it("QA-190 시세를 읽지 못했거나 조회하지 않으면 핵심 지표 카드도 '불러오는 중'이 아니라 그 이유(실패면 다시 시도)", async () => {
     reads = { [QUOTE]: { available: false, message: "store_only 모드에서는 외부 시세를 조회하지 않습니다." } };
     const { unmount } = renderAs(PRO, <StockDetailScreen market="us" code="AAPL" />);
     await screen.findAllByText("store_only 모드에서는 외부 시세를 조회하지 않습니다.");
     expect(screen.queryByRole("status", { name: "핵심 지표를 불러오는 중" })).toBeNull();
+    expect(screen.getByText("시세를 받지 않아 핵심 지표가 없습니다.")).toBeTruthy();
     unmount();
 
     reads = { [QUOTE]: new Error("시세 서버가 응답하지 않습니다.") };
@@ -481,7 +482,7 @@ describe("기관 상세", () => {
 
   // QA-190: 13F 포트폴리오 읽기가 실패하면(추적하지 않는 CIK는 400, 백엔드 일시 실패) 히어로는 오류를 보였지만 상위 보유 종목 카드는 error를 보지 않아
   // '불러오는 중'(role=status, aria-busy)으로 남았습니다. 카드도 오류와 다시 시도 단추를 그립니다.
-  it.fails("QA-190 13F 포트폴리오를 읽지 못하면 상위 보유 종목 카드는 '불러오는 중'이 아니라 오류와 다시 시도", async () => {
+  it("QA-190 13F 포트폴리오를 읽지 못하면 상위 보유 종목 카드는 '불러오는 중'이 아니라 오류와 다시 시도", async () => {
     const path = endpoints.institution.portfolio("1234567", 8, 30);
     reads = { [path]: new Error("추적하지 않는 기관입니다.") };
     renderAs(PRO, <InstitutionDetailScreen cik="1234567" />);

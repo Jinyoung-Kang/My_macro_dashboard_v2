@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { LineChart } from "@/components/charts";
 import { Hero, ProvenanceBadge, Skeleton } from "@/components/patterns";
-import { Banner, Card, Freshness, PageHeader } from "@/components/ui";
+import { Banner, Card, ErrorState, Freshness, PageHeader } from "@/components/ui";
 import { useApi } from "@/hooks/useApi";
 import { CHART_KEY, institutionLinks, institutionNames, institutionValueRows } from "@/lib/detail";
 import { endpoints } from "@/lib/endpoints";
@@ -84,8 +84,13 @@ export function InstitutionDetailScreen({ cik }: { cik: string }) {
               </Link>
             }
           >
+            {/* 읽기가 실패했으면 '불러오는 중'으로 두지 않고 오류와 다시 시도(QA-190 — 추적하지 않는 CIK는 백엔드 400). */}
             {!data ? (
-              <Skeleton lines={5} label="보유 종목을 불러오는 중" />
+              portfolio.error ? (
+                <ErrorState message={portfolio.error} onRetry={() => void portfolio.reload()} />
+              ) : (
+                <Skeleton lines={5} label="보유 종목을 불러오는 중" />
+              )
             ) : holdings.length === 0 ? (
               <p className="text-sm text-text-2">{data.message ?? "보유 종목이 없습니다."}</p>
             ) : (
