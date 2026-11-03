@@ -732,8 +732,11 @@ public class PaperSelectionService {
             if (computation.skippedReason() != null) {
                 return new SelectionOutcome(asOf, false, null, computation, computation.skippedReason());
             }
-            List<Scored> pending = Stream.concat(computation.candidates().stream(),
-                    computation.groupB().stream()).filter(s -> s.pending() && !s.collecting()).toList();
+            // 두 그룹에 모두 있는 기관(q30을 함께 씀)은 한 번만 셉니다.
+            Map<String, Scored> waiting = new LinkedHashMap<>();
+            Stream.concat(computation.candidates().stream(), computation.groupB().stream())
+                    .filter(s -> s.pending() && !s.collecting()).forEach(s -> waiting.putIfAbsent(s.cik(), s));
+            List<Scored> pending = List.copyOf(waiting.values());
             if (!pending.isEmpty() && !computation.waitOver()) {
                 String names = pending.stream().limit(5).map(s -> s.name() == null ? s.cik() : s.name())
                         .reduce((a, b) -> a + ", " + b).orElse("") + (pending.size() > 5 ? " …" : "");

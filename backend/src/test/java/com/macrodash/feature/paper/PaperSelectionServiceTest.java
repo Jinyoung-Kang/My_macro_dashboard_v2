@@ -1172,6 +1172,21 @@ class PaperSelectionServiceTest {
     }
 
     @Test
+    @DisplayName("QA-175: 두 그룹에 모두 있는 기관(같은 q30)이 수집 대기면 선정을 미루는 사유에 한 번만 센다")
+    void pendingFilerInBothGroupsCountsOnce() {
+        reselectionFixture(AFTER_CUTOFF);
+        index(A, B, D, DUQ);   // DUQ를 그룹 A 후보에도
+        q30(DUQ, true, quarters(FILINGS, "ZZZ", 100.0), BEFORE_CUTOFF);
+
+        PaperSelectionService.SelectionOutcome outcome = serviceAt(Instant.parse("2026-11-17T21:30:00Z")).select(R);
+
+        assertThat(outcome.selection()).isNull();
+        assertThat(outcome.skippedReason()).contains("수집 대기 1곳(기관 " + DUQ + ")");
+        assertThat(rows(R).get(DUQ).ineligibleReason()).startsWith("최신 분기(2026-09-30) 수집 대기");
+        assertThat(rowsB(R).get(DUQ).ineligibleReason()).startsWith("최신 분기(2026-09-30) 수집 대기");
+    }
+
+    @Test
     @DisplayName("QA-175 그룹 B: q8만 있는 기관도 최신 분기를 기한 마감 전 저장본으로만 알면 '수집 대기' — 그 기관 때문에도 선정을 미룸")
     void selectWaitsForGroupBLatestQuarter() {
         reselectionFixture(AFTER_CUTOFF);
