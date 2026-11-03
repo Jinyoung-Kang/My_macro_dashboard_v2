@@ -9,7 +9,7 @@
 # 순서
 #   1. 점검: 폴더 이름(My_macro_dashboard_v2 — compose 프로젝트·DB 볼륨 이름이 폴더 이름을 따름), .env가 있고
 #      서버에 적지 않는 이름(포트 네 줄·AWS 공개 주소용 값·PC 전용 값 등, .env.vultr.example)이 없는지. 값은 읽지도 찍지도 않습니다.
-#      PAPER_ENABLED가 false가 아니면 모의 매매 정기 작업이 켜진 채 뜬다고 알립니다(AWS와 병행하는 동안은 false — ADR 0023).
+#      PAPER_ENABLED=false가 있으면 운영본의 모의 매매 정기 작업이 꺼진 채 뜬다고 '주의'를 찍습니다(끝 요약에도 다시 — QA-194).
 #   2. git fetch → main 체크아웃 → origin/main으로 fast-forward. 서버에서 고친 파일이 있거나 갈라졌으면 멈춥니다.
 #      받은 main에서 이 스크립트가 바뀌었으면 새 판으로 처음부터 한 번 다시 돕니다(QA-145).
 #   3. 화면 왼쪽 아래 버전(APP_VERSION·APP_UPDATED)
@@ -47,11 +47,14 @@ done
 if grep -Eq '^[[:space:]]*COOKIE_SECURE=' .env; then
     echo "참고: .env에 COOKIE_SECURE가 있어 기본값(true) 대신 그 값을 씁니다(ADR 0023)."
 fi
+# 운영본은 이 서버 한 곳이라(ADR 0023 — 2026-11-03 컷오버) 그 줄이 없는 것(켜짐)이 정상입니다. false는 정비 때 일부러 끄는 경우라
+# 막지는 않지만, 지우는 것을 잊으면 리스크 점검(스탑)·결정·체결이 조용히 멈추므로 '주의'로 알리고 끝 요약에서 한 번 더 찍습니다(QA-194).
+paper_off=
 if grep -Eiq '^[[:space:]]*(export[[:space:]]+)?PAPER_ENABLED=[[:space:]]*["'"'"']?(false|0|off|no)' .env; then
-    echo "참고: .env의 PAPER_ENABLED=false — 모의 매매 정기 작업이 꺼진 채 뜹니다."
+    paper_off=1
+    echo "주의: .env의 PAPER_ENABLED=false — 운영본의 모의 매매 정기 작업(리스크 점검·결정·체결)이 꺼진 채 뜹니다. 정비가 끝났으면 그 줄을 지우고 다시 배포하세요."
 else
-    # 막지는 않습니다 — 컷오버(ADR 0023)는 이 줄을 지우고 배포하는 것이라서. 정기 작업이 두 곳에서 돌면 안 됩니다(ADR 0019·0020).
-    echo "주의: .env에 PAPER_ENABLED=false가 없어 모의 매매 정기 작업이 켜진 채 뜹니다 — AWS 서버의 정기 작업이 꺼져 있는지(컷오버 뒤인지) 확인하세요."
+    echo "참고: 모의 매매 정기 작업 켜짐(.env에 PAPER_ENABLED=false 없음 — 정기 작업은 이 서버 한 곳에서만)."
 fi
 
 # 대화형 셸에서 물려받은 umask(예: .env를 받을 때의 077)로 git이 파일을 0600으로 쓰면 컨테이너(root가 아닌 사용자)가 읽지 못합니다.
@@ -116,3 +119,5 @@ docker compose ps --format 'table {{.Service}}\t{{.Status}}'
 echo ""
 echo "✓ 배포했습니다: $APP_VERSION — tailnet 안에서 https://my-macro-app.<tailnet>.ts.net(서버 .env의 PUBLIC_ORIGIN)"
 echo "   디스크: $(df -P / | awk 'NR == 2 {print $5}') 사용"
+[ -z "$paper_off" ] ||
+    echo "주의: 모의 매매 정기 작업이 꺼진 채 떴습니다(.env의 PAPER_ENABLED=false) — 정비가 끝났으면 그 줄을 지우고 다시 배포하세요."

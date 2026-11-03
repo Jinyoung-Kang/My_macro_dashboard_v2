@@ -361,7 +361,8 @@ bash ~/My_macro_dashboard_v2/scripts/vultr/deploy.sh
 
 - 순서: main fast-forward → 버전 → backend → frontend → collector 하나씩 빌드(4 GB) → 기동 → 스키마 → caddy 다시 만들기 → 정리.
   서버 `.env`에 적지 않는 이름(옛 AWS 공개 주소용 값·PC 전용 `VULTR_*`·`TAILSCALE_*` 포함)이 있으면 멈추고,
-  `PAPER_ENABLED=false`가 없으면 '주의'를 찍고 계속합니다(컷오버 뒤에는 그것이 맞음).
+  `PAPER_ENABLED=false`가 있으면 운영본의 정기 작업(리스크 점검·결정·체결)이 꺼진 채 뜬다고 '주의'를 찍고(끝 요약에도 다시) 계속합니다 —
+  정비 때 일부러 끈 것이 아니면 그 줄을 지우고 다시 배포합니다. 없으면 '참고: 모의 매매 정기 작업 켜짐' 한 줄입니다(QA-194).
 - 데이터 복원: `aws s3 ls s3://<버킷>/db/vultr/` → `aws s3 cp s3://<버킷>/db/vultr/<파일>.sql backups/` → `make restore F=backups/<파일>.sql`.
   AWS 운영본의 마지막 덤프(2026-11-03 02:28 KST)는 만료 없는 `archive/aws-final/`에 있습니다 — 서버의 IAM 사용자는 `db/`만 읽으므로 PC에서 받습니다.
 

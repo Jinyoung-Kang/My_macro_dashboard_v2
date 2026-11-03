@@ -88,7 +88,7 @@ class PaperStartupLogTest {
 
         assertThat(messages(Level.INFO)).singleElement().satisfies(line -> assertThat(line).contains("모의 매매 정기 작업 켜짐"));
         assertThat(messages(Level.WARN)).singleElement().satisfies(line -> assertThat(line).contains(
-                "LOCAL_NO_LOGIN=true", "AWS 서버 한 곳에만", "PAPER_ENABLED=false를 적고"));
+                "LOCAL_NO_LOGIN=true", "Vultr 서버 한 곳에만", "PAPER_ENABLED=false를 적고"));
     }
 
     @Test

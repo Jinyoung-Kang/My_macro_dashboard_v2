@@ -4,7 +4,7 @@ Vultr 서버(ADR 0023)의 스크립트 시험 — scripts/vultr/{bootstrap,tails
 
 deploy.sh·backup-s3.sh는 scripts/aws의 같은 이름에서 갈라냈으므로, 같은 가짜 실행 파일(tests/fake_server_tools.py — docker·aws·make·
 logger·sleep)과 임시 git 원격으로 Vultr에서 달라진 점을 봅니다: 덧붙임 파일(compose.vultr.yml), gate·CloudFront 대역 단계가 없음,
-서버 .env에 적지 않는 이름(AWS 공개 주소용 값·PC 전용 값 더함), 병행 기간의 PAPER_ENABLED 알림, 백업 접두어 db/vultr/.
+서버 .env에 적지 않는 이름(AWS 공개 주소용 값·PC 전용 값 더함), 운영본의 PAPER_ENABLED 알림(QA-194), 백업 접두어 db/vultr/.
 PC용 instance.sh·firewall-pc-ip.sh(api-common.sh)는 Vultr API를 흉내 내는 가짜 curl(상태 JSON 파일에 규칙을 들고 있음)로
 규칙 교체 순서·건드리지 않는 규칙·API 키가 curl 인자에 남지 않는지·거절(401·403) 안내를 봅니다.
 서버·Vultr·AWS·DB 없이 돕니다.
@@ -73,7 +73,7 @@ def test_bootstrap은_비밀번호_로그인을_막는_sshd_드롭인이_cloud_i
 # --------------------------------------------------------------------------- deploy.sh
 @pytest.fixture()
 def server(tmp_path):
-    """원격 origin(bare)과 서버 역할의 클론 ~/My_macro_dashboard_v2(폴더 이름 규칙), 서버 .env(병행 기간 — PAPER_ENABLED=false)."""
+    """원격 origin(bare)과 서버 역할의 클론 ~/My_macro_dashboard_v2(폴더 이름 규칙), 서버 .env(운영본 — PAPER_ENABLED 줄 없음 = 켜짐)."""
     if shutil.which("git") is None:
         pytest.skip("git이 없어 건너뜁니다.")
     origin, here = tmp_path / "origin.git", tmp_path / "home" / "My_macro_dashboard_v2"
@@ -93,7 +93,7 @@ def server(tmp_path):
     tools._git(tmp_path, "clone", "-q", "-b", "main", str(origin), str(here))
     (here / ".env").write_text(f"OWNER_EMAIL=owner@example.invalid\nAPP_PASSWORD={SECRET}\n"
                                "COMPOSE_FILE=docker-compose.yml:compose.vultr.yml\nAWS_BACKUP_BUCKET=b\n"
-                               "PUBLIC_ORIGIN=https://my-macro-app.example.ts.net\nPAPER_ENABLED=false\n", encoding="utf-8")
+                               "PUBLIC_ORIGIN=https://my-macro-app.example.ts.net\n", encoding="utf-8")
     return here, seed
 
 
@@ -119,7 +119,7 @@ def test_deploy는_gate_없이_하나씩_빌드하고_Vultr_덧붙임으로_기�
     head = tools._git(server[0], "rev-parse", "--short", "HEAD")
     for line in tools._calls(fakes):
         assert f"COMPOSE_FILE=docker-compose.yml:compose.vultr.yml APP_VERSION=main@{head}" in line, line
-    assert "PAPER_ENABLED=false" in result.stdout and "주의" not in result.stdout
+    assert "정기 작업 켜짐" in result.stdout and "주의" not in result.stdout
     assert SECRET not in result.stdout + result.stderr, "서버 .env의 값을 찍지 않습니다"
 
 
@@ -152,16 +152,16 @@ def test_deploy는_적지_않는_이름이_여럿이면_모두_한_번에_알린
 
 
 @pytest.mark.parametrize("line", ["PAPER_ENABLED=true", "PAPER_ENABLED=", None])
-def test_deploy는_병행_기간의_PAPER_ENABLED_false가_없으면_막지_않고_주의를_알린다(server, fakes, line):
+def test_deploy는_PAPER_ENABLED_false가_없으면_막지_않고_정기_작업_켜짐만_알린다(server, fakes, line):
     here, _ = server
-    env = (here / ".env").read_text(encoding="utf-8").replace("PAPER_ENABLED=false\n", "" if line is None else line + "\n")
-    (here / ".env").write_text(env, encoding="utf-8")
+    if line is not None:
+        with (here / ".env").open("a", encoding="utf-8") as env_file:
+            env_file.write(line + "\n")
     result = _deploy(server, fakes)
     assert result.returncode == 0, result.stderr
-    assert "주의" in result.stdout and "PAPER_ENABLED" in result.stdout, "컷오버 전이면 정기 작업이 두 곳에서 돕니다"
+    assert "정기 작업 켜짐" in result.stdout and "주의" not in result.stdout, "운영본(ADR 0023)에서는 켜짐이 정상(QA-194)"
 
 
-@pytest.mark.xfail(strict=True, reason="QA-194 재현 — PAPER_ENABLED=false가 '참고' 한 줄뿐, 운영본 정기 작업이 꺼진 채 뜨는 것을 주의로 알리지 않음")
 def test_QA194_deploy는_PAPER_ENABLED_false면_운영본의_정기_작업이_꺼진_채_뜬다고_주의를_알린다(server, fakes):
     here, _ = server
     env = (here / ".env").read_text(encoding="utf-8").replace("PAPER_ENABLED=false\n", "") + "PAPER_ENABLED=false\n"
@@ -175,7 +175,6 @@ def test_QA194_deploy는_PAPER_ENABLED_false면_운영본의_정기_작업이_�
     assert warned[-1] > done, "빌드 출력에 묻히지 않게 끝 요약에도 다시"
 
 
-@pytest.mark.xfail(strict=True, reason="QA-194 재현 — PAPER_ENABLED=false가 없는 정상 배포마다 지운 AWS 서버·컷오버를 확인하라는 '주의'를 찍음")
 def test_QA194_deploy는_PAPER_ENABLED_false가_없으면_주의_없이_켜짐만_알리고_AWS를_말하지_않는다(server, fakes):
     here, _ = server
     env = (here / ".env").read_text(encoding="utf-8").replace("PAPER_ENABLED=false\n", "")
