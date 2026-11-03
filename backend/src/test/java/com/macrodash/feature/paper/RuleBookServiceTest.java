@@ -419,6 +419,24 @@ class RuleBookServiceTest {
     }
 
     @Test
+    @org.junit.jupiter.api.Disabled("QA-196 재현 — 수정 전: 대기 전량 매도가 있는 CCC를 '팔기 전 보유' 기준 부족분(5%)만 사서 체결 뒤 목표 10%가 아니라 5%")
+    @DisplayName("QA-196: 재선정일 매수 후보에 대기 매도 주문이 있으면 한국처럼 건너뛰고 사유를 남긴다 — 같은 관측치에 사고팔지 않음")
+    void reselectionSkipsCandidateWithPendingSell() {
+        selection(Q2_RESELECTION);
+        activeRules(PaperBooks.ACTIVE, 51_000, "OLD", 100, 100, "ONE", 100, 100, "CCC", 50, 100, "SHY", 300, 80);
+        pendingOrder("CCC", PaperBooks.SELL, null, LocalDate.of(2026, 8, 14));   // 앞선 결정의 전량 매도(아직 체결 전)
+
+        Decision decision = rules.decide(Q2_RESELECTION, RuleBookService.REBALANCE);
+
+        assertThat(ordersOf(decision)).noneMatch(o -> o.ticker().equals("CCC") && PaperBooks.BUY.equals(o.side()));
+        assertThat(skippedReasons(decision, "CCC")).anySatisfy(reason -> assertThat(reason).contains("대기 중인 매도 주문"));
+        assertThat(ordersOf(decision)).anySatisfy(o -> {
+            assertThat(o.ticker()).isEqualTo("BBB");
+            assertThat(o.targetWeightPct()).as("다른 후보는 그대로").isEqualTo(8.0);
+        });
+    }
+
+    @Test
     @DisplayName("blend.allocation = EQUAL이면 예전 동일 비중 — 상위 후보 모두 min(100/N, 상한) = 10%, 점수는 순서에만")
     void equalAllocationMode() {
         blend("allocation", "EQUAL");
