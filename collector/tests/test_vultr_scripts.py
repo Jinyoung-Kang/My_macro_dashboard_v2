@@ -161,6 +161,32 @@ def test_deploy는_병행_기간의_PAPER_ENABLED_false가_없으면_막지_않�
     assert "주의" in result.stdout and "PAPER_ENABLED" in result.stdout, "컷오버 전이면 정기 작업이 두 곳에서 돕니다"
 
 
+@pytest.mark.xfail(strict=True, reason="QA-194 재현 — PAPER_ENABLED=false가 '참고' 한 줄뿐, 운영본 정기 작업이 꺼진 채 뜨는 것을 주의로 알리지 않음")
+def test_QA194_deploy는_PAPER_ENABLED_false면_운영본의_정기_작업이_꺼진_채_뜬다고_주의를_알린다(server, fakes):
+    here, _ = server
+    env = (here / ".env").read_text(encoding="utf-8").replace("PAPER_ENABLED=false\n", "") + "PAPER_ENABLED=false\n"
+    (here / ".env").write_text(env, encoding="utf-8")
+    result = _deploy(server, fakes)
+    assert result.returncode == 0, "막지는 않음 — 정비 때 일부러 끌 수 있음"
+    lines = result.stdout.splitlines()
+    warned = [i for i, line in enumerate(lines) if line.startswith("주의") and "꺼진 채" in line]
+    assert warned, "운영본(ADR 0023)에서는 정기 작업(리스크 점검·결정·체결)이 멈춘 상태 — '참고'가 아니라 '주의'"
+    done = next(i for i, line in enumerate(lines) if "배포했습니다" in line)
+    assert warned[-1] > done, "빌드 출력에 묻히지 않게 끝 요약에도 다시"
+
+
+@pytest.mark.xfail(strict=True, reason="QA-194 재현 — PAPER_ENABLED=false가 없는 정상 배포마다 지운 AWS 서버·컷오버를 확인하라는 '주의'를 찍음")
+def test_QA194_deploy는_PAPER_ENABLED_false가_없으면_주의_없이_켜짐만_알리고_AWS를_말하지_않는다(server, fakes):
+    here, _ = server
+    env = (here / ".env").read_text(encoding="utf-8").replace("PAPER_ENABLED=false\n", "")
+    (here / ".env").write_text(env, encoding="utf-8")
+    result = _deploy(server, fakes)
+    assert result.returncode == 0, result.stderr
+    assert "주의" not in result.stdout, "컷오버(2026-11-03) 뒤에는 이것이 정상 — 배포마다 주의가 나오면 무시하는 습관이 듦"
+    assert "AWS" not in result.stdout and "컷오버" not in result.stdout, "AWS 서버는 2026-11-03에 지웠음"
+    assert any(line.startswith("참고") and "정기 작업 켜짐" in line for line in result.stdout.splitlines())
+
+
 def test_deploy는_폴더_이름이_다르면_멈춘다(server, fakes):
     here, _ = server
     moved = here.with_name("My_macro_dashboard_v2-copy")
