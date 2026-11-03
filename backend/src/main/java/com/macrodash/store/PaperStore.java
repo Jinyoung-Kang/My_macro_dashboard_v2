@@ -100,7 +100,8 @@ public class PaperStore {
 
     /**
      * 한국 장부가 그 관측치(수집 시각 {@code collectedAt})를 처리하며 그날 보류한 대기 주문의 표시({@code paper_orders.ledger_hold_reason}·
-     * {@code ledger_hold_collected_at}, V16 — 2단계 명세 §4-9 'E0'). 결정 게이트 ①이 같은 관측치로 판정할 때 그 주문을 기다리지 않습니다.
+     * {@code ledger_hold_collected_at}, V16 — 2단계 명세 §4-9 'E0') — 기업행위로 그 종목 주문을 보류했거나 그 관측치의 자료로는 만료까지 체결하지
+     * 않는 주문(QA-173). 결정 게이트 ①이 같은 관측치로 판정할 때 그 주문을 기다리지 않습니다.
      */
     public record LedgerHold(long orderId, String bookCode, String ticker, String reason, Instant collectedAt) {
     }
@@ -1091,12 +1092,27 @@ public class PaperStore {
      * @throws IllegalArgumentException 보류가 있는데 수집 시각이 없거나 사유가 비었음
      */
     public void markLedgerHolds(String code, Instant collectedAt, Map<String, String> byTicker) {
-        if (!byTicker.isEmpty() && collectedAt == null) {
+        markLedgerHolds(code, collectedAt, byTicker, Map.of());
+    }
+
+    /**
+     * {@link #markLedgerHolds(String, Instant, Map)}에 주문 하나씩의 표시(주문 번호 → 사유 — 그 관측치의 자료로는 만료까지 체결하지 않는 주문, QA-173)를
+     * 더합니다. 종목 표시는 그 종목의 대기 주문 모두에, 주문 표시는 그 대기 주문 하나에만 씁니다(같은 칸 — 읽는 쪽은 {@link #ledgerHolds}로 주문마다).
+     *
+     * @throws IllegalArgumentException 보류가 있는데 수집 시각이 없거나 사유가 비었음
+     */
+    public void markLedgerHolds(String code, Instant collectedAt, Map<String, String> byTicker, Map<Long, String> byOrder) {
+        if ((!byTicker.isEmpty() || !byOrder.isEmpty()) && collectedAt == null) {
             throw new IllegalArgumentException("장부 보류 표시에 관측치 수집 시각이 없습니다: " + code);
         }
         for (Map.Entry<String, String> hold : byTicker.entrySet()) {
             if (hold.getValue() == null || hold.getValue().isBlank()) {
                 throw new IllegalArgumentException("장부 보류 사유가 비었습니다: " + code + " " + hold.getKey());
+            }
+        }
+        for (Map.Entry<Long, String> hold : byOrder.entrySet()) {
+            if (hold.getValue() == null || hold.getValue().isBlank()) {
+                throw new IllegalArgumentException("장부 보류 사유가 비었습니다: " + code + " 주문 " + hold.getKey());
             }
         }
         jdbc.update("UPDATE paper_orders SET ledger_hold_reason = NULL, ledger_hold_collected_at = NULL "
@@ -1108,6 +1124,15 @@ public class PaperStore {
                         setInstant(ps, 2, collectedAt);
                         ps.setString(3, code);
                         ps.setString(4, hold.getKey());
+                    });
+        }
+        for (Map.Entry<Long, String> hold : byOrder.entrySet()) {
+            jdbc.update("UPDATE paper_orders SET ledger_hold_reason = ?, ledger_hold_collected_at = ? "
+                    + "WHERE book_code = ? AND status = 'PENDING' AND id = ?", ps -> {
+                        ps.setString(1, hold.getValue());
+                        setInstant(ps, 2, collectedAt);
+                        ps.setString(3, code);
+                        ps.setLong(4, hold.getKey());
                     });
         }
     }

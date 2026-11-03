@@ -469,26 +469,32 @@ class KrRulesJobTest {
     }
 
     @Test
-    @DisplayName("게이트 ①은 자기 판정(결정 e3) — 기준일 < D 대기 주문이 체결 조건 ⑤(D 개장 뒤 생성)로만 막혀 순자산 확정에서는 빠져도 게이트 ①은 '정리 안 됨', 기준일 = D 주문(그날 밤 스탑)·그 시장이 체결하지 않는 시점(NEXT_CLOSE)은 막지 않음")
+    @DisplayName("게이트 ①은 자기 판정(결정 e3) — 기준일 < D 대기 주문이 체결 조건 ⑤(D 개장 뒤 생성)로만 막혀 순자산 확정에서는 빠져도 게이트 ①은 '정리 안 됨', 장부가 1분봉 사다리로 체결하는 시점(NEXT_CLOSE — 단계 2, QA-173)도 '정리 안 됨', 기준일 = D 주문(그날 밤 스탑)·장부가 체결하지 않는 시점(검증기가 받지 않는 글자)은 막지 않음")
     void gateOneIgnoresConditionFive() {
         session(R);
         long afterOpen = pending("005930", PaperBooks.BUY, PaperBooks.NEXT_OPEN, RuleBookService.SOURCE_RULE, FRI,
                 "2026-11-02T10:00");
         pending("373220", PaperBooks.SELL, PaperBooks.NEXT_OPEN, PaperBooks.SOURCE_STOP, R, "2026-11-02T21:58");
-        pending("000660", PaperBooks.BUY, "NEXT_CLOSE", RuleBookService.SOURCE_RULE, FRI, "2026-10-30T22:30");
+        long close = pending("000660", PaperBooks.BUY, "NEXT_CLOSE", RuleBookService.SOURCE_RULE, FRI, "2026-10-30T22:30");
+        pending("105560", PaperBooks.BUY, "AT_0930", RuleBookService.SOURCE_RULE, FRI, "2026-10-30T22:30");
 
         PaperDecisionJob.Result blocked = runAt("2026-11-02T22:30");
 
         assertThat(blocked.outcome()).isEqualTo(PaperDecisionJob.DATA_NOT_READY);
-        assertThat(blocked.message()).contains("① kr_rules — 기준일 < 2026-11-02인 대기 주문 1건 #" + afterOpen + " BUY 005930");
+        assertThat(blocked.message()).contains("① kr_rules — 기준일 < 2026-11-02인 대기 주문 2건 #")
+                .contains("#" + afterOpen + " BUY 005930").contains("#" + close + " BUY 000660");
         assertThat(store.orders.get(afterOpen).status()).as("R 시가는 주문 뒤가 아님(⑤) — 다음 관측 봉을 기다림")
                 .isEqualTo(PaperBooks.ORDER_PENDING);
-        assertThat(KrConfirmations.pendingThrough(store, KrPaperMarket.INSTANCE, KrRulesFixtures.CALENDAR,
-                PaperBooks.KR_RULES, R)).as("확정 순자산 줄의 조건은 ⑤까지 봐 이 주문을 세지 않음").isEmpty();
-        assertThat(KrConfirmations.pendingBefore(store, KrPaperMarket.INSTANCE, PaperBooks.KR_RULES, R))
-                .extracting(Order::id).as("공통 거름 — 기준일 < D·체결하는 시점").containsExactly(afterOpen);
+        assertThat(store.orders.get(close).status()).as("R 1분봉(paper.kr.timed)을 아직 받지 않음 — 기다림")
+                .isEqualTo(PaperBooks.ORDER_PENDING);
+        assertThat(KrConfirmations.pendingThrough(store, KrRulesFixtures.CALENDAR, PaperBooks.KR_RULES, R))
+                .as("확정 순자산 줄의 조건은 ⑤까지 봐 시가 주문은 세지 않고, 종가 주문은 R 마감이 주문 뒤라 셈")
+                .singleElement(org.assertj.core.api.InstanceOfAssertFactories.STRING).contains("주문 " + close + " BUY 000660");
+        assertThat(KrConfirmations.pendingBefore(store, PaperBooks.KR_RULES, R))
+                .extracting(Order::id).as("공통 거름 — 기준일 < D·장부가 체결하는 시점").containsExactlyInAnyOrder(afterOpen, close);
 
         store.markOrderStatus(afterOpen, PaperBooks.ORDER_CANCELLED, "시험 — 정리됨");
+        store.markOrderStatus(close, PaperBooks.ORDER_CANCELLED, "시험 — 정리됨");
         PaperDecisionJob.Result decided = runAt("2026-11-02T22:40");
         assertThat(decided.outcome()).as("남은 두 대기 주문은 게이트 ①을 막지 않음").isEqualTo(PaperDecisionJob.DECIDED);
         assertThat(decided.rules().response().path("gates").get(0).path("status").asString()).isEqualTo("PASS");
@@ -1043,7 +1049,7 @@ class KrRulesJobTest {
                 .allSatisfy(o -> assertThat(o.status()).isEqualTo("FILLED"));
         assertThat(store.ordersByDecision(next.rules().id())).as("대기 매도가 있어 다시 내지 않음")
                 .noneMatch(o -> "373220".equals(o.ticker()));
-        assertThat(KrConfirmations.pendingThrough(store, KrPaperMarket.INSTANCE, KrRulesFixtures.CALENDAR,
+        assertThat(KrConfirmations.pendingThrough(store, KrRulesFixtures.CALENDAR,
                 PaperBooks.KR_RULES, R1)).as("확정 순자산 줄 조건은 ①의 면제를 쓰지 않음 — 다음 저장본이 지난 봉을 채우면 R1 날짜로 체결될 수 있음")
                 .singleElement(org.assertj.core.api.InstanceOfAssertFactories.STRING)
                 .contains("주문 " + sell.id() + " SELL 373220");

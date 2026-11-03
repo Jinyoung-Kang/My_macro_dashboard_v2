@@ -66,8 +66,18 @@ final class KrTimedLadder {
     /** 기준 시각이 지금 + 이만큼 안이면 늦은 주문(미국 계좌2와 같은 60초 — 주문은 검증 직후 같은 트랜잭션에서 만들어짐). */
     static final Duration LATE_MARGIN = Duration.ofSeconds(60);
 
-    /** 사다리 결과 — 체결 또는 기다림 사유. */
-    record Result(Choice choice, String reason) {
+    /**
+     * 사다리 결과 — 체결 또는 기다림 사유.
+     *
+     * @param unfillable 체결이 없을 때 그 목표 세션 자료로는 만료까지 체결하지 않음(그날 1분봉 없음·마감 봉 없음·T 뒤 정규장 거래 없음·기준 분이 그
+     *                   세션 밖 — 사유가 '체결하지 않음(만료까지)'). 거짓이면 자료를 기다림(아직 받지 않음·FAILED·NXT 여부 모름·마감 전 저장본·창 없음).
+     *                   장부가 그 주문에 그날 표시를 남겨 결정 게이트 ①이 기다리지 않습니다(QA-173)
+     */
+    record Result(Choice choice, String reason, boolean unfillable) {
+
+        Result(Choice choice, String reason) {
+            this(choice, reason, false);
+        }
     }
 
     /** 매시 시점의 기준 시각, 매시 시점이 아니면 null. */
@@ -159,7 +169,7 @@ final class KrTimedLadder {
             return new Result(null, head + " — 목표 세션 1분봉(paper.kr.timed)을 아직 받지 않음(수집기 kr_paper_timed — 세션 15:40 뒤) · 기다림");
         }
         if (KrQuotes.TIMED_NO_BARS.equals(timed.status())) {
-            return new Result(null, head + " — 그날 1분봉 없음(거래 정지 등) · 체결하지 않음(만료까지)");
+            return new Result(null, head + " — 그날 1분봉 없음(거래 정지 등) · 체결하지 않음(만료까지)", true);
         }
         if (!KrQuotes.TIMED_OK.equals(timed.status())) {
             return new Result(null, head + " — 1분봉 " + timed.status() + (timed.reason() == null ? "" : "(" + timed.reason() + ")")
@@ -178,7 +188,7 @@ final class KrTimedLadder {
             Close1m bar = timed.closes().get(label);
             if (bar == null || bar.close() == null || bar.volume() == null || bar.volume() <= 0) {
                 return new Result(null, head + " — 마감 단일가 봉(라벨 " + label + ") " + (bar == null ? "없음" : "거래 없음")
-                        + " · 토스 일봉 종가로 채우지 않음(G2) — 만료까지");
+                        + " · 토스 일봉 종가로 채우지 않음(G2) — 만료까지", true);
             }
             return new Result(new Choice(session, bar.close(), SOURCE_CLOSE, null), null);
         }
@@ -187,13 +197,13 @@ final class KrTimedLadder {
             Instant target = targetOn(timing, createdAt, session, calendar);
             if (target == null || !target.atZone(KrxCalendar.SEOUL).toLocalDate().equals(session)) {
                 return new Result(null, head + " — 기준 분" + (target == null ? "(생성 시각 모름)" : " " + Kst.stamp(target))
-                        + "이 목표 세션이 아님 · 체결하지 않음(만료까지)");
+                        + "이 목표 세션이 아님 · 체결하지 않음(만료까지)", true);
             }
             at = target.atZone(KrxCalendar.SEOUL).toLocalTime();
             head = session + " MARKET(" + label(at) + ")";
         }
         if (at == null || !at.isBefore(close)) {
-            return new Result(null, head + " — 그날 마감(" + label(close) + ") 전의 매시·장중 시점이 아님 · 체결하지 않음(만료까지)");
+            return new Result(null, head + " — 그날 마감(" + label(close) + ") 전의 매시·장중 시점이 아님 · 체결하지 않음(만료까지)", true);
         }
         String key = label(at);
         if (!timed.windows().containsKey(key)) {
@@ -214,6 +224,6 @@ final class KrTimedLadder {
             return new Result(new Choice(session, late.open(), SOURCE_LATE,
                     key + " 창(라벨 " + first + "~) 안 거래 없음 → 그날 T 뒤 첫 거래 봉(라벨 " + late.label() + ") 시가(대체)"), null);
         }
-        return new Result(null, head + " — 그날 " + key + " 뒤 정규장 거래 없음(거래 정지·무거래 가능) · 체결하지 않음(만료까지)");
+        return new Result(null, head + " — 그날 " + key + " 뒤 정규장 거래 없음(거래 정지·무거래 가능) · 체결하지 않음(만료까지)", true);
     }
 }

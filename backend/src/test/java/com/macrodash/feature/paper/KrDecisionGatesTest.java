@@ -33,15 +33,15 @@ class KrDecisionGatesTest {
     }
 
     @Test
-    @DisplayName("관측치가 없으면 봉으로는 판정하지 않음(막음 — null), 저장된 미처리 기업행위 보유·장부가 그 관측치에서 보류한 종목은 관측치 없이도 사유")
+    @DisplayName("관측치가 없으면 봉으로는 판정하지 않음(막음 — null), 저장된 미처리 기업행위 보유·장부가 그 관측치에서 보류한 주문은 관측치 없이도 사유")
     void withoutAnObservationOnlyHoldsExempt() {
         assertThat(KrDecisionGates.unworkable(sell("005930", FRI), Optional.empty(), Map.of(), Map.of())).isNull();
         assertThat(KrDecisionGates.unworkable(sell("005930", FRI), Optional.empty(), Map.of("005930", "큰 변동"), Map.of()))
                 .isEqualTo("미처리 기업행위 보유(큰 변동) — 장부가 그 종목 주문을 보류");
         assertThat(KrDecisionGates.unworkable(sell("005930", FRI), Optional.empty(), Map.of(),
-                Map.of("005930", "기업행위 판정 대기 — …"))).isEqualTo("장부가 이번 관측치로는 보류 — 기업행위 판정 대기 — …");
+                Map.of(7L, "기업행위 판정 대기 — …"))).isEqualTo("장부가 이번 관측치로는 보류 — 기업행위 판정 대기 — …");
         assertThat(KrDecisionGates.unworkable(sell("005930", FRI), Optional.empty(), Map.of("000660", "큰 변동"),
-                Map.of("000660", "판정 대기"))).as("다른 종목의 보류는 상관없음").isNull();
+                Map.of(8L, "판정 대기"))).as("다른 종목·다른 주문의 보류는 상관없음").isNull();
     }
 
     @Test

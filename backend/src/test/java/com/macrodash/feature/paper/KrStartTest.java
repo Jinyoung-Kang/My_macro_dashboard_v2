@@ -10,7 +10,6 @@ import com.macrodash.store.PaperStore.NavRow;
 import com.macrodash.store.PaperStore.Order;
 import com.macrodash.support.InvalidRequestException;
 import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import tools.jackson.databind.JsonNode;
@@ -718,7 +717,6 @@ class KrStartTest {
     }
 
     @Test
-    @Disabled("QA-173 재현 — 수정 전: 게이트 ①이 시각 지정 대기 주문을 세지 않아 계좌2가 E 밤 결정(NO_TRADE)을 내고 그 주문을 '다음 결정이 대신함'으로 취소")
     @DisplayName("QA-173: 한국 계좌2의 매시·종가·장중 시장가 대기 주문이 목표 세션 E의 1분봉을 기다리는 밤(paper.kr.timed 칸이 아직 없음 — 실패·예산 소진 등)에는 "
             + "게이트 ①이 그 계좌 결정을 막음 — 그 밤 결정이 '다음 결정이 대신함'으로 취소하지 않고 주문은 대기 그대로(다음 관측치에 E 봉으로 풂, 명세 §3·§4)")
     void qa173TimedOrdersWaitingForMinuteBarsHoldGateOne() {
@@ -745,6 +743,35 @@ class KrStartTest {
         JsonNode detail = krRuns().getLast().detail();
         assertThat(detail.path(PaperBooks.KR_CLAUDE2).asString())
                 .contains("① kr_claude2 — 기준일 < " + E + "인 대기 주문 3건");
+    }
+
+    @Test
+    @DisplayName("QA-173: 장부가 1분봉 사다리로 '체결하지 않음(만료까지)'이라 본 시각 지정 주문(E 1분봉 OK인데 10:00 뒤 정규장 거래 없음)은 그 주문 하나에 "
+            + "그날 표시를 남겨 게이트 ①이 기다리지 않음 — 만료(기준일 + 3거래일)까지 계좌2 결정이 막히지 않음")
+    void qa173UnfillableTimedOrderDoesNotHoldGateOne() {
+        KrClaudeFixtures.FakeAi fake = new KrClaudeFixtures.FakeAi();
+        krClaude2NightWithCheckpoint(fake, KrClaudeFixtures.claude2Order("005930", "BUY", 8.0, null, PaperBooks.AT_1000));
+        Order ten = store.ordersOf(PaperBooks.KR_CLAUDE2).stream().filter(o -> PaperBooks.AT_1000.equals(o.timing())).findFirst()
+                .orElseThrow();
+        tools.jackson.databind.node.ObjectNode payload = PaperFixtures.MAPPER.createObjectNode().put("contract", 1);
+        tools.jackson.databind.node.ObjectNode entry = payload.putObject("sessions").putObject(E.toString()).putObject("005930")
+                .put("status", "OK").put("fetchedAt", "2026-12-02T06:41:00+00:00");
+        entry.putObject("windows").putArray("10:00");
+        entry.putObject("firstAfter").putNull("10:00");
+        entry.putObject("closes");
+        KrFixtures.stub(reader, Datasets.SNAP_KR_PAPER_TIMED, KrFixtures.snapshot(Datasets.SNAP_KR_PAPER_TIMED, payload,
+                kst("2026-12-02T15:41")));
+
+        fake.answer(KrClaudeFixtures.decision(8, "관망")).answer(KrClaudeFixtures.decision(10, "관망"));
+        eNightData();
+        runAt("2026-12-02T22:30");
+
+        Decision second = store.decisionFor(PaperBooks.KR_CLAUDE2, E, RuleBookService.SCHEDULED).orElseThrow();
+        JsonNode first = second.response().path("gates").get(0);
+        assertThat(first.path("status").asString()).isEqualTo("PASS");
+        assertThat(first.path("note").asString()).startsWith("kr_claude2").contains("#" + ten.id() + " BUY 005930")
+                .contains("장부가 이번 관측치로는 보류").contains("10:00 뒤 정규장 거래 없음").contains("체결하지 않음(만료까지)")
+                .contains("기다리지 않음");
     }
 
     @Test

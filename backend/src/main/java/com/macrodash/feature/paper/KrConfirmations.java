@@ -270,7 +270,7 @@ final class KrConfirmations {
                 provisional.add("체결 " + unconfirmed.fill().id() + " " + unconfirmed.fill().ticker() + "(" + filled + ") 확정 전");
             }
         }
-        provisional.addAll(pendingThrough(store, run, run.calendar(), book.code(), day));
+        provisional.addAll(pendingThrough(store, run.calendar(), book.code(), day));
         boolean pricesFinal = provisional.isEmpty();
         if (!cashChanged && !pricesFinal) {
             return null;   // 고칠 현금도, 확정할 수도 없음 — 줄 그대로
@@ -289,9 +289,9 @@ final class KrConfirmations {
     }
 
     /**
-     * 그 책의 대기 주문 중 그날({@code day}) 이하 봉으로 <b>나중에</b> 체결될 수 있는 것 — 기준 거래일 &lt; 그날이고 그 시장이 체결하는 시점
-     * ({@link PaperMarket#timings})이고 그날 개장 순간이 주문 생성 뒤인(체결 조건 ⑤ {@link KrFills#opensAfterOrder} — 스탑 제외) 대기 주문(사람이
-     * 읽을 한 줄씩). 한국 체결은 기준일 뒤 <b>첫 관측 봉</b>의 시가라(§4-2 'C2b') 1분봉 {@code FAILED} 기다림(결정 d11)·기업행위·종목 구분·세율
+     * 그 책의 대기 주문 중 그날({@code day}) 이하 봉으로 <b>나중에</b> 체결될 수 있는 것 — 기준 거래일 &lt; 그날이고 장부가 체결하는 시점
+     * ({@link KrFills#fills} — 시가와 한국 Claude 계좌2의 매시·장중 시장가·종가)이고 그날 체결가의 순간(시가는 개장, 시각 지정은 그 기준 시각)이 주문
+     * 생성 뒤인(체결 조건 ⑤ {@link KrFills#opensAfterOrder} — 스탑 제외) 대기 주문(사람이 읽을 한 줄씩). 한국 체결은 기준일 뒤 <b>첫 관측 봉</b>의 시가라(§4-2 'C2b') 1분봉 {@code FAILED} 기다림(결정 d11)·기업행위·종목 구분·세율
      * 보류로 대기하던 주문이 다음 밤 저장본에서 그날 날짜로 체결될 수 있습니다. 그런 주문이 있는 날의 순자산 줄은 확정으로 쓰지 않습니다 — 확정
      * 줄은 잠정 줄로 덮이지 않고 확정 조정은 마지막 줄만 다시 쓰므로, 그 체결이 빠진 확정 줄이 영구히 남기 때문입니다(묶음 C 리뷰). 기준일 = 그날인
      * 주문(그날 밤 결정·스탑 감지)은 그날 뒤 봉으로만 체결되므로 세지 않습니다. 그날 개장 뒤에 만든 주문(기준일 D, 생성 D+1 10:00 — 수동 결정 등)도
@@ -304,10 +304,9 @@ final class KrConfirmations {
      *
      * @param calendar 그 실행의 달력(장 시간 변경일 포함 — 체결 봉 고르기와 같은 개장 순간)
      */
-    static List<String> pendingThrough(PaperStore store, PaperMarket market, TradingCalendar calendar, String bookCode,
-                                       LocalDate day) {
+    static List<String> pendingThrough(PaperStore store, TradingCalendar calendar, String bookCode, LocalDate day) {
         List<String> out = new ArrayList<>();
-        for (Order order : pendingBefore(store, market, bookCode, day)) {
+        for (Order order : pendingBefore(store, bookCode, day)) {
             if (KrFills.opensAfterOrder(order, day, calendar)) {
                 out.add("주문 " + order.id() + " " + order.side() + " " + order.ticker() + "(기준일 " + order.asOfTradingDate()
                         + ") 대기 — " + day + " 이하 봉으로 체결될 수 있음");
@@ -317,16 +316,17 @@ final class KrConfirmations {
     }
 
     /**
-     * 그 책의 대기 주문 중 기준 거래일 &lt; 그날({@code day})이고 그 시장이 체결하는 시점({@link PaperMarket#timings})인 것 — 확정 순자산 줄의 대기
+     * 그 책의 대기 주문 중 기준 거래일 &lt; 그날({@code day})이고 장부가 체결하는 시점({@link KrFills#fills})인 것 — 확정 순자산 줄의 대기
      * 주문 조건({@link #pendingThrough} — 여기에 체결 조건 ⑤를 더함)과 결정 게이트 ①('기준일 &lt; D인 대기 주문 = 정리 안 됨', 결정 d11 — ⑤는 보지
      * 않고, 장부가 그 관측치로 체결할 수 없는 주문을 뺌 — u2)이 함께 쓰는 거름입니다(명세 §9 'D1 — 게이트 ①과 확정 순자산 줄의 판정' — 둘이 다른 데서
-     * 갈라지지 않게).
+     * 갈라지지 않게). 시점은 Claude에게 보이는 시장 묶음의 시점({@link PaperMarket#timings} — {@code NEXT_OPEN})이 아니라 장부가 실제로 체결하는 시점입니다
+     * — 한국 Claude 계좌2의 매시·장중 시장가·종가 대기 주문을 빼면 1분봉을 기다리던 주문을 그 밤 결정이 '다음 결정이 대신함'으로 취소했습니다(QA-173,
+     * 명세 2026-11-02 §3·§4 '그사이 게이트 ①이 막음').
      */
-    static List<Order> pendingBefore(PaperStore store, PaperMarket market, String bookCode, LocalDate day) {
+    static List<Order> pendingBefore(PaperStore store, String bookCode, LocalDate day) {
         List<Order> out = new ArrayList<>();
         for (Order order : store.ordersByStatus(bookCode, PaperBooks.ORDER_PENDING)) {
-            if (order.asOfTradingDate() != null && order.asOfTradingDate().isBefore(day)
-                    && market.timings().contains(order.timing())) {
+            if (order.asOfTradingDate() != null && order.asOfTradingDate().isBefore(day) && KrFills.fills(order.timing())) {
                 out.add(order);
             }
         }

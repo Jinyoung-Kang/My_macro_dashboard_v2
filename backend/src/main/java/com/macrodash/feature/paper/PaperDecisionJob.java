@@ -1008,13 +1008,13 @@ public class PaperDecisionJob {
     }
 
     /**
-     * 그 계좌의 게이트 ①({@link KrDecisionGates#ledger}) — 장부가 그 실행의 관측치를 처리하면서 그날 보류한 주문 종목(이 작업이나 리스크 점검이
+     * 그 계좌의 게이트 ①({@link KrDecisionGates#ledger}) — 장부가 그 실행의 관측치를 처리하면서 그날 보류한 대기 주문(이 작업이나 리스크 점검이
      * 처리한 것, {@link PaperLedgerService#orderHolds(PaperMarket, String, Instant)})과 함께.
      */
     private KrDecisionGates.Gate ledgerGate(MarketRun market, String book, LocalDate d, KrDecisionGates.Inputs inputs) {
-        Map<String, String> held = inputs.quotes().map(q -> ledger.orderHolds(market, book, q.collectedAt()))
+        Map<Long, String> held = inputs.quotes().map(q -> ledger.orderHolds(market, book, q.collectedAt()))
                 .orElse(Map.of());
-        return KrDecisionGates.ledger(store, market, book, d, inputs, held);
+        return KrDecisionGates.ledger(store, book, d, inputs, held);
     }
 
     /** ①(그 계좌) 다음에 ②~⑥. */

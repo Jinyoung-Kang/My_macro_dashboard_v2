@@ -93,8 +93,10 @@ final class KrFills {
                 continue;                                  // ⑤ 그날 시가는 주문 전 시각 — 다음 관측 봉의 시가
             }
             Ladder ladder = price(order, quote, day, collectedAt, calendar, deadline);   // ③
-            return ladder.choice() == null ? FillChoice.waiting(ladder.reason())
-                    : FillChoice.of(view(bar, quote, day, ladder.choice()));
+            if (ladder.choice() == null) {
+                return ladder.unfillable() ? FillChoice.untilExpiry(ladder.reason()) : FillChoice.waiting(ladder.reason());
+            }
+            return FillChoice.of(view(bar, quote, day, ladder.choice()));
         }
         return FillChoice.NONE;
     }
@@ -112,6 +114,15 @@ final class KrFills {
         Optional<Day> day = quote.day(bar.date());
         return day.isPresent() && day.get().observed() && opensAfterOrder(order, bar.date(), calendar)
                 && price(order, quote, day.get(), collectedAt, calendar, deadline).choice() != null;
+    }
+
+    /**
+     * 장부가 체결하는 한국 시점인가 — 시가({@code NEXT_OPEN} — 스탑 포함)와 1분봉 사다리 시점({@link KrTimedLadder#timed} — 한국 Claude 계좌2의 매시·
+     * 장중 시장가·종가, 단계 2a·2b). 체결 사다리({@link #price})·결정 게이트 ①·확정 순자산 줄의 대기 주문 거름({@link KrConfirmations#pendingBefore})이
+     * 이 한 판정을 씁니다 — Claude에게 보이는 시장 묶음의 시점({@link PaperMarket#timings} — 계좌1·규칙 계좌의 {@code NEXT_OPEN})과 다릅니다(QA-173).
+     */
+    static boolean fills(String timing) {
+        return PaperBooks.NEXT_OPEN.equals(timing) || KrTimedLadder.timed(timing);
     }
 
     /**
@@ -198,28 +209,35 @@ final class KrFills {
     }
 
     // ------------------------------------------------------------------ 시가 사다리
-    /** 사다리 결과 — 체결(가격·출처·내려간 사유) 또는 기다림 사유. */
-    private record Ladder(Choice choice, String reason) {
+    /** 사다리 결과 — 체결(가격·출처·내려간 사유) 또는 기다림 사유(만료까지 체결하지 않으면 {@code unfillable}). */
+    private record Ladder(Choice choice, String reason, boolean unfillable) {
 
         static Ladder of(Choice choice) {
-            return new Ladder(choice, null);
+            return new Ladder(choice, null, false);
         }
 
         static Ladder waiting(String reason) {
-            return new Ladder(null, reason);
+            return new Ladder(null, reason, false);
+        }
+
+        static Ladder untilExpiry(String reason) {
+            return new Ladder(null, reason, true);
         }
     }
 
     private static Ladder price(Order order, Quote quote, Day day, Instant collectedAt, TradingCalendar calendar,
                                 Function<LocalDate, Instant> deadline) {
+        if (!fills(order.timing())) {
+            return Ladder.untilExpiry("한국 체결 시점이 아님(" + order.timing() + ") — NEXT_OPEN·매시·종가만 체결(만료까지 대기)");
+        }
         if (KrTimedLadder.timed(order.timing())) {
             // 한국 Claude 계좌2의 매시·장중 시장가·종가(단계 2a·2b) — 목표 세션 1분봉(paper.kr.timed)의 사다리, 없으면 기다림(일봉 값으로 채우지 않음).
             KrTimedLadder.Result timed = KrTimedLadder.price(order.timing(), order.createdAt(), quote, day.date(), collectedAt,
                     calendar, Objects.requireNonNull(deadline.apply(day.date()), "결정 기한"));
-            return timed.choice() == null ? Ladder.waiting(timed.reason()) : Ladder.of(timed.choice());
-        }
-        if (!PaperBooks.NEXT_OPEN.equals(order.timing())) {
-            return Ladder.waiting("한국 체결 시점이 아님(" + order.timing() + ") — NEXT_OPEN·매시·종가만 체결(만료까지 대기)");
+            if (timed.choice() == null) {
+                return timed.unfillable() ? Ladder.untilExpiry(timed.reason()) : Ladder.waiting(timed.reason());
+            }
+            return Ladder.of(timed.choice());
         }
         String label = openLabel(day.date(), calendar);
         Minute minute = day.minute();

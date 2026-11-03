@@ -178,18 +178,25 @@ interface PaperMarket {
      * @param bar        체결할 봉(그 시장이 고른 날·가격을 담음 — 장부는 이 봉의 날짜를 체결 행의 관측일로 씀). null이면 이 관측치로는 체결하지 않음
      * @param waitReason 체결하지 않는 사유 중 사람이 알아야 할 것(한국 1분봉 기다림 등 — 장부가 작업 기록에 남김). 아직 새 봉이 없는 것처럼
      *                   늘 있는 기다림이면 null
+     * @param unfillable 그 주문이 고른 봉의 자료로는 만료까지 체결되지 않음(한국 시각 지정 주문의 '체결하지 않음(만료까지)' — 그날 1분봉 없음 등).
+     *                   장부가 그 주문에 그날 표시를 남겨 결정 게이트 ①이 기다리지 않습니다(QA-173). 기다림(자료가 오면 체결)은 거짓
      */
-    record FillChoice(Bar bar, String waitReason) {
+    record FillChoice(Bar bar, String waitReason, boolean unfillable) {
 
         /** 이 관측치로는 체결하지 않음(남길 사유 없음). */
-        static final FillChoice NONE = new FillChoice(null, null);
+        static final FillChoice NONE = new FillChoice(null, null, false);
 
         static FillChoice of(Bar bar) {
-            return new FillChoice(java.util.Objects.requireNonNull(bar, "bar"), null);
+            return new FillChoice(java.util.Objects.requireNonNull(bar, "bar"), null, false);
         }
 
         static FillChoice waiting(String reason) {
-            return new FillChoice(null, java.util.Objects.requireNonNull(reason, "reason"));
+            return new FillChoice(null, java.util.Objects.requireNonNull(reason, "reason"), false);
+        }
+
+        /** 만료까지 체결하지 않음({@code unfillable}) — 사유는 작업 기록과 장부의 그날 표시에. */
+        static FillChoice untilExpiry(String reason) {
+            return new FillChoice(null, java.util.Objects.requireNonNull(reason, "reason"), true);
         }
     }
 

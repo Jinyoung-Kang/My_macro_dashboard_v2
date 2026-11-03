@@ -1821,6 +1821,38 @@ class PaperStoreDbTest {
     }
 
     @Test
+    @DisplayName("QA-173 장부의 주문 하나 표시(만료까지 체결하지 않는 시각 지정 주문): 그 대기 주문에만 쓰고 같은 종목의 다른 주문은 그대로, 종목 표시와 함께 쓰면 둘 다, 다음 처리는 지우고 다시 씀, 빈 사유·수집 시각 없음은 막음")
+    void ledgerHoldMarksPerOrder() {
+        store.insertBookIfAbsent(book(BOOK, "규칙 책"));
+        long unfillable = store.insertOrder(pendingBuy(BOOK, "000660", null));
+        long waiting = store.insertOrder(pendingBuy(BOOK, "000660", null));
+        long other = store.insertOrder(pendingBuy(BOOK, "005930", null));
+        Instant collected = Instant.parse("2026-11-03T12:57:12.345678Z");
+        String reason = "2026-11-03 AT_1000 — 그날 10:00 뒤 정규장 거래 없음(거래 정지·무거래 가능) · 체결하지 않음(만료까지)";
+
+        store.markLedgerHolds(BOOK, collected, Map.of(), Map.of(unfillable, reason));
+        assertThat(store.ledgerHolds(BOOK)).singleElement().satisfies(h -> {
+            assertThat(h.orderId()).isEqualTo(unfillable);
+            assertThat(h.ticker()).isEqualTo("000660");
+            assertThat(h.reason()).isEqualTo(reason);
+            assertThat(h.collectedAt()).isEqualTo(collected);
+        });
+
+        store.markLedgerHolds(BOOK, collected, Map.of("005930", "미처리 기업행위 보유 — 시험"), Map.of(unfillable, reason));
+        assertThat(store.ledgerHolds(BOOK)).extracting(PaperStore.LedgerHold::orderId).as("같은 종목의 기다리는 주문은 표시 없음")
+                .containsExactly(unfillable, other).doesNotContain(waiting);
+
+        Instant next = collected.plusSeconds(86_400);
+        store.markLedgerHolds(BOOK, next, Map.of(), Map.of());
+        assertThat(store.ledgerHolds(BOOK)).as("다음 처리 — 지우기만").isEmpty();
+
+        assertThatThrownBy(() -> store.markLedgerHolds(BOOK, next, Map.of(), Map.of(unfillable, " ")))
+                .isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> store.markLedgerHolds(BOOK, null, Map.of(), Map.of(unfillable, reason)))
+                .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
     @DisplayName("V16 전 DB(paper_orders.ledger_hold_reason 열 없음)는 준비 안 됨 — 한국 장부의 SQL 오류 대신 안내 문구, 시험 뒤 되돌림")
     void readyRequiresV16() {
         class Rollback extends RuntimeException {

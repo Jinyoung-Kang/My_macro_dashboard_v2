@@ -320,13 +320,18 @@ class FakePaperStore extends PaperStore {
     }
 
     @Override
-    public void markLedgerHolds(String code, Instant collectedAt, Map<String, String> byTicker) {
-        if (!byTicker.isEmpty() && collectedAt == null) {
+    public void markLedgerHolds(String code, Instant collectedAt, Map<String, String> byTicker, Map<Long, String> byOrder) {
+        if ((!byTicker.isEmpty() || !byOrder.isEmpty()) && collectedAt == null) {
             throw new IllegalArgumentException("장부 보류 표시에 관측치 수집 시각이 없습니다: " + code);
         }
         byTicker.forEach((ticker, reason) -> {
             if (reason == null || reason.isBlank()) {
                 throw new IllegalArgumentException("장부 보류 사유가 비었습니다: " + code + " " + ticker);
+            }
+        });
+        byOrder.forEach((id, reason) -> {
+            if (reason == null || reason.isBlank()) {
+                throw new IllegalArgumentException("장부 보류 사유가 비었습니다: " + code + " 주문 " + id);
             }
         });
         ledgerHoldMarks.values().removeIf(h -> h.bookCode().equals(code));
@@ -336,6 +341,12 @@ class FakePaperStore extends PaperStore {
                 ledgerHoldMarks.put(o.id(), new LedgerHold(o.id(), code, o.ticker(), reason, collectedAt));
             }
         }
+        byOrder.forEach((id, reason) -> {
+            Order o = orders.get(id);
+            if (o != null && o.bookCode().equals(code) && "PENDING".equals(o.status())) {
+                ledgerHoldMarks.put(o.id(), new LedgerHold(o.id(), code, o.ticker(), reason, collectedAt));
+            }
+        });
     }
 
     @Override
