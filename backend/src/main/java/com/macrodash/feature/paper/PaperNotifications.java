@@ -20,6 +20,8 @@ import java.util.Map;
  * 모의 매매 텔레그램 알림의 글(사용자 요청 2026-11-02 — 체결 한 건마다 한 통, 결정마다 요약 한 통(그 결정이 낸 새 주문 포함), 결정 없이 생긴 주문 한 통).
  * 글은 서버 값 그대로이고(없는 숫자를 만들지 않음 — 모르면 '—'), 금액은 그 계좌 통화(미국 달러 소수 둘째, 한국 원 정수), 시각은 KST, 한국 종목은 이름(코드)로
  * 적습니다. 이모지를 쓰지 않습니다. DB·네트워크를 읽지 않는 순수 함수입니다.
+ * 모델이 쓴 글(요약·주문 없음 사유·장중 확인 사유)과 주문 근거는 자르지 않습니다(QA-168 — 길면 보내는 쪽이 여러 통으로 나눔). 자르는 것은 진단 글인
+ * 오류(300자)와 거절 사유(120자)뿐입니다.
  */
 final class PaperNotifications {
 
@@ -27,8 +29,6 @@ final class PaperNotifications {
     }
 
     static final String EMPTY = "—";
-    /** 결정 요약 글자 상한. */
-    static final int SUMMARY_CHARS = 400;
     /** 결정 요약에 적는 주문 줄 상한(넘으면 '외 N건'). */
     static final int ORDER_LINES = 15;
 
@@ -89,7 +89,7 @@ final class PaperNotifications {
         }
         String summary = Json.asText(r, "summary");
         if (summary != null && !summary.isBlank()) {
-            lines.add("요약: " + clip(summary.strip(), SUMMARY_CHARS));
+            lines.add("요약: " + summary.strip());
         }
         Double target = Json.asDouble(r, "targetEquityExposurePct");
         if (target != null) {
@@ -97,7 +97,7 @@ final class PaperNotifications {
         }
         String noTrade = Json.asText(r, "noTradeReason");
         if (orders.isEmpty()) {
-            lines.add("새 주문 없음" + (noTrade == null || noTrade.isBlank() ? "" : " — " + clip(noTrade.strip(), 200)));
+            lines.add("새 주문 없음" + (noTrade == null || noTrade.isBlank() ? "" : " — " + noTrade.strip()));
         } else {
             lines.add("새 주문 " + orders.size() + "건");
             for (int i = 0; i < Math.min(orders.size(), ORDER_LINES); i++) {
@@ -112,7 +112,7 @@ final class PaperNotifications {
             String at = Json.asText(plan, "atKst") != null ? Json.asText(plan, "atKst") + " KST"
                     : Json.asText(plan, "atEt") != null ? Json.asText(plan, "atEt") + " ET" : EMPTY;
             lines.add("장중 확인 요청: 세션 " + Json.asText(plan, "session") + " " + at + " · " + Json.asText(plan, "status")
-                    + (Json.asText(plan, "reason") == null ? "" : " — " + clip(Json.asText(plan, "reason"), 200)));
+                    + (Json.asText(plan, "reason") == null ? "" : " — " + Json.asText(plan, "reason")));
         }
         if (d.error() != null && !d.error().isBlank()) {
             lines.add("오류: " + clip(d.error().strip(), 300));
@@ -130,7 +130,7 @@ final class PaperNotifications {
         lines.add(orderLine(o, names, korea));
         String note = o.reason() == null ? null : firstText(o.reason(), "note", "summary", "trigger", "basis");
         if (note != null) {
-            lines.add("근거: " + clip(note, 300));
+            lines.add("근거: " + note);
         }
         link(lines, linkBase, book, "holdings");
         return String.join("\n", lines);

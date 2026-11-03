@@ -5,7 +5,6 @@ import com.macrodash.store.PaperStore.Decision;
 import com.macrodash.store.PaperStore.Fill;
 import com.macrodash.store.PaperStore.Order;
 import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import tools.jackson.databind.node.ObjectNode;
@@ -183,7 +182,7 @@ class PaperNotifyJobTest {
     }
 
     @Test
-    @DisplayName("전송기 — 값이 하나라도 없으면 꺼짐, 연결 오류 글의 토큰은 가림, 4,000자를 넘으면 자름")
+    @DisplayName("전송기 — 값이 하나라도 없으면 꺼짐, 연결 오류 글의 토큰은 가림, 4,000자를 넘는 한 줄은 상한마다 끊어 여러 통(QA-168), 뒤 통 실패는 몇 번째인지")
     void telegramTransport() {
         assertThat(new PaperTelegram("", "42", MAPPER, (u, j) -> null).configured()).isFalse();
         assertThat(new PaperTelegram(TOKEN, " ", MAPPER, (u, j) -> null).configured()).isFalse();
@@ -198,7 +197,14 @@ class PaperNotifyJobTest {
             return new PaperTelegram.Reply(200, "{\"ok\":true}");
         });
         assertThat(ok.send("가".repeat(5_000))).isNull();
-        assertThat(bodies.get(0)).hasSize(PaperTelegram.MAX_CHARS).endsWith("…");
+        assertThat(bodies).hasSize(2);
+        assertThat(bodies.get(0)).hasSize(PaperTelegram.MAX_CHARS);
+        assertThat(String.join("", bodies)).isEqualTo("가".repeat(5_000));
+        int[] calls = {0};
+        PaperTelegram secondFails = new PaperTelegram(TOKEN, "42", MAPPER, (u, j) -> ++calls[0] == 1
+                ? new PaperTelegram.Reply(200, "{\"ok\":true}") : new PaperTelegram.Reply(429, "{\"ok\":false,\"description\":\"Too Many Requests\"}"));
+        assertThat(secondFails.send("나".repeat(4_001))).isEqualTo("2/2통째 — HTTP 429 — Too Many Requests");
+        assertThat(PaperTelegram.parts("짧은 글")).containsExactly("짧은 글");
     }
 
     @Test
@@ -225,7 +231,6 @@ class PaperNotifyJobTest {
 
     // QA-168: 사용자 보고(2026-11-03) — 결정 알림의 요약·주문 없음 사유가 '…'로 잘려 옴(요약 400자·사유 200자 상한, 응답 스키마는 1,200·600자).
     @Test
-    @Disabled("QA-168 수정 전 — 결정 요약을 400자·주문 없음 사유를 200자에서 자르고, 4,000자를 넘는 글은 잘라서 한 통만 보냄")
     @DisplayName("QA-168 결정 글은 요약·주문 없음 사유를 자르지 않고, 4,000자를 넘는 글은 줄 경계에서 나눠 모두 보낸다")
     void qa168FullTextIsSplitNotCut() {
         Book us = store.books.get(PaperBooks.CLAUDE);
