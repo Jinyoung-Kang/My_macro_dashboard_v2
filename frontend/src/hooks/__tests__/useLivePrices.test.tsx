@@ -114,6 +114,31 @@ describe("useLivePrices", () => {
     expect(FakeEventSource.instances).toHaveLength(0);
   });
 
+  // QA-189: 끄기(0)의 한 번 읽기가 탭 보임을 보지 않아, 탭을 숨길 때마다 숨은 탭에서 /api/live/prices(→ 수집기 → 외부 시세)를 읽고 돌아올 때 또
+  // 읽었습니다. 끄기는 '화면을 열 때 한 번'이고 보지 않는 동안 받지 않습니다 — 처음 보일 때 한 번, 숨김·보임 전환에는 읽지 않습니다.
+  it.fails("QA-189 끄기(0)면 탭을 숨기거나 다시 보일 때 읽지 않는다 — 숨긴 탭으로 열리면 처음 보일 때 한 번", async () => {
+    api.apiGet.mockResolvedValue(body({ "US:AAPL": AAPL }));
+    renderHook(() => useLivePrices(["US:AAPL"], 0));
+    await act(async () => {});
+    expect(api.apiGet).toHaveBeenCalledTimes(1);
+    await setVisibility("hidden");
+    expect(api.apiGet).toHaveBeenCalledTimes(1);
+    await setVisibility("visible");
+    expect(api.apiGet).toHaveBeenCalledTimes(1);
+    cleanup();
+
+    visibility = "hidden";
+    renderHook(() => useLivePrices(["US:AAPL"], 0));
+    await act(async () => {});
+    expect(api.apiGet).toHaveBeenCalledTimes(1);
+    await setVisibility("visible");
+    expect(api.apiGet).toHaveBeenCalledTimes(2);
+    await setVisibility("hidden");
+    await setVisibility("visible");
+    expect(api.apiGet).toHaveBeenCalledTimes(2);
+    expect(FakeEventSource.instances).toHaveLength(0);
+  });
+
   it("연결이 끊기면 다시 잇는 중이라고 적고 받은 가격은 남긴다", () => {
     const { result } = renderHook(() => useLivePrices(["US:AAPL"], 5));
     const source = FakeEventSource.instances[0];
