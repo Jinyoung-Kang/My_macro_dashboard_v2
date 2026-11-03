@@ -21,8 +21,13 @@ const api = vi.hoisted(() => {
 vi.mock("@/lib/api", () => api);
 const signal = vi.hoisted(() => ({ token: 0, reloadAll: () => {}, notifyUnauthorized: () => {} }));
 vi.mock("@/hooks/useRefreshSignal", () => ({ useRefreshSignal: () => signal }));
+// 그림 대신 이름만 — 차트가 받은 행과 문지르기 함수는 마지막 것을 charts에 둡니다(지표 상세의 단위 배율 시험, QA-185).
+const charts = vi.hoisted(() => ({ last: null as null | { data: Record<string, unknown>[]; onScrub?: (index: number | null) => void } }));
 vi.mock("@/components/charts", () => ({
-  LineChart: ({ ariaLabel }: { ariaLabel?: string }) => <div role="img" aria-label={ariaLabel} />,
+  LineChart: ({ ariaLabel, data, onScrub }: { ariaLabel?: string; data: Record<string, unknown>[]; onScrub?: (index: number | null) => void }) => {
+    charts.last = { data, onScrub };
+    return <div role="img" aria-label={ariaLabel} />;
+  },
 }));
 const navigation = vi.hoisted(() => ({
   notFound: vi.fn(() => {
@@ -388,6 +393,33 @@ describe("지표 상세", () => {
     renderAs(PRO, <IndicatorDetailScreen indicatorKey="nope" />);
     expect(await screen.findByRole("heading", { level: 1, name: "지표를 찾지 못했습니다" })).toBeTruthy();
     expect(screen.getByRole("link", { name: "매크로 지표 전체 보기" }).getAttribute("href")).toBe("/macro");
+  });
+
+  // QA-185: 엔/원 카드는 100엔당(수집기 market.quote_scale이 1엔당 값에 100을 곱함)인데, 지표 상세 차트는 카드 티커 JPYKRW=X의 Yahoo 1엔당 원값을
+  // 그대로 그려 차트·문지른 큰 숫자가 940에서 9.4로 바뀌었습니다. 차트 점에도 카드와 같은 배율 규칙(점마다 — 이미 100엔당이면 그대로)을 씁니다.
+  it.fails("QA-185 엔/원 100엔당 카드의 차트·문지른 값은 카드와 같은 단위(1엔당 점 × 100, 이미 100엔당인 점은 그대로)", async () => {
+    const overview = macroOverview();
+    overview.categories.push({
+      id: "fx2",
+      title: "환율",
+      items: [{ key: "jpykrw", name: "엔/원 100엔당 (JPY/KRW)", ticker: "JPYKRW=X", status: "ok", priceStr: "940.12", deltaStr: "+1.20 (+0.13%)",
+        market: "fx" }],
+    });
+    reads = {
+      [endpoints.macro.overview(false)]: overview,
+      [KR_HOLIDAYS]: { available: true, years: {} },
+      [endpoints.macro.ticker("JPYKRW=X", "1y")]: { available: true, points: [
+        { date: "2026-10-01", close: 9.31 }, { date: "2026-10-02", close: 935.5 }, { date: "2026-11-03", close: 9.41 },
+      ] },
+    };
+    renderAs(PRO, <IndicatorDetailScreen indicatorKey="jpykrw" />);
+    const hero = await screen.findByRole("region", { name: "엔/원 100엔당 (JPY/KRW)" });
+    await waitFor(() => expect(within(hero).getByRole("img", { name: "엔/원 100엔당 (JPY/KRW) 가격 차트" })).toBeTruthy());
+    const values = (charts.last?.data ?? []).map((row) => row.close as number);
+    expect(values.map((value) => Math.round(value * 100) / 100)).toEqual([931, 935.5, 941]);
+    act(() => charts.last?.onScrub?.(2));
+    expect(within(hero).getByText("941.00")).toBeTruthy();
+    expect(within(hero).queryByText("9.41")).toBeNull();
   });
 });
 
