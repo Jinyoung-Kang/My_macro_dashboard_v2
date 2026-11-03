@@ -655,7 +655,6 @@ class KrPacketBuilderTest {
     }
 
     @Test
-    @org.junit.jupiter.api.Disabled("QA-179 재현 — 수정 전: 한국 패킷은 CHECKPOINT를 거르지 않아 계좌2 장중 확인 행(자세·노출 없음)이 10_recentDecisions 한 칸을 차지")
     @DisplayName("QA-179 한국: 계좌2 장중 확인(CHECKPOINT — kr-claude2-checkpoint 스키마, 자세·노출 없음)은 계좌2 패킷의 직전 결정이 아님 — 미국 계좌2와 같은 판정")
     void krClaude2CheckpointIsNotAPriorDecision() {
         clock.set(READ_D);

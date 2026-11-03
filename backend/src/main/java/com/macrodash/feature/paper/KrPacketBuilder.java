@@ -1220,8 +1220,13 @@ final class KrPacketBuilder {
     }
 
     // ------------------------------------------------------------------ 10·11 최근 결정·메모
+    /**
+     * 기준일 앞의 그 계좌 결정(최근 순) — 미국 패킷과 같은 규칙: 같은 (날, 종류)는 재시도라 빼고, 계좌2 장중 확인(CHECKPOINT — 자세·노출 없는
+     * 장중 판단)은 직전 결정이 아님({@link PacketBuilder#priorDecisionKind}, QA-179).
+     */
     private List<DecisionSummary> priorDecisions(LocalDate asOf, String kind, boolean initial) {
         return store.decisions(book, MAX_RECENT_DECISIONS * 4).stream()
+                .filter(d -> PacketBuilder.priorDecisionKind(book, d.kind()))
                 .filter(d -> d.asOfTradingDate().isBefore(asOf)
                         || !initial && d.asOfTradingDate().equals(asOf) && !d.kind().equals(kind))
                 .limit(MAX_RECENT_DECISIONS).toList();

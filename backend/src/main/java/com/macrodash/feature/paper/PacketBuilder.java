@@ -2088,14 +2088,30 @@ public class PacketBuilder {
 
     // ------------------------------------------------------------------ 10·11 최근 결정·메모
     /**
+     * 장중 확인 결정(CHECKPOINT)을 장중 확인 전용 스키마({@code claude2-checkpoint}·{@code kr-claude2-checkpoint} — 자세·목표 노출·watchlist
+     * 없음)로 남기는 계좌(QA-179). 미국 계좌1의 장중 확인은 정기 결정과 같은 스키마의 완전한 결정이라 들지 않습니다. 프로필 판(계좌2 단계 1·2)이
+     * 아니라 계좌 코드로 가릅니다 — 단계를 껐다 켜도 지난 CHECKPOINT 행은 남습니다.
+     */
+    static final Set<String> CHECKPOINT_SCHEMA_BOOKS = Set.of(PaperBooks.CLAUDE2, PaperBooks.KR_CLAUDE2);
+
+    /**
+     * 그 계좌의 그 종류 결정이 다음 패킷의 직전 결정(10_recentDecisions·8b watchlist 대상)인가 — 장중 확인 스키마 계좌의 CHECKPOINT만
+     * 아닙니다({@link #CHECKPOINT_SCHEMA_BOOKS}). 미국·한국 패킷이 같은 판정을 씁니다(QA-179).
+     */
+    static boolean priorDecisionKind(String book, String kind) {
+        return !(RuleBookService.CHECKPOINT.equals(kind) && CHECKPOINT_SCHEMA_BOOKS.contains(book));
+    }
+
+    /**
      * 기준일 앞의 그 Claude 계좌 결정(같은 날의 다른 종류 포함, 최근 순 5건) — 같은 (날, 종류)의 결정은 지금 다시 만드는 그 결정(재시도)이라
      * 뺍니다. 섹션 10과 재무 섹션의 watchlist(8b)가 같은 목록을 봅니다. 계좌2 장중 확인 결정(CHECKPOINT — 단계 2)은 자세·목표 노출·watchlist가
      * 없는 장중 판단이라 넣지 않습니다(리뷰 F4 — 같은 d에 아침 결정보다 늦게 생겨 8b watchlist를 빈 목록으로 지우고 5칸 하나를 차지했음). 그 결과
-     * (대신한·새 주문과 체결)는 대기 주문·체결 칸으로 보입니다. CHECKPOINT 행이 없는 계좌는 이 거름 전과 바이트까지 같습니다.
+     * (대신한·새 주문과 체결)는 대기 주문·체결 칸으로 보입니다. 계좌1 장중 확인(정기와 같은 스키마 — 자세·노출·watchlist)은 그 뒤의 직전 결정이라
+     * 넣습니다({@link #priorDecisionKind}, QA-179). CHECKPOINT 행이 없는 계좌는 이 거름 전과 바이트까지 같습니다.
      */
     private List<DecisionSummary> priorDecisions(String book, LocalDate asOf, String kind, boolean initial) {
         return store.decisions(book, MAX_RECENT_DECISIONS * 4).stream()
-                .filter(d -> !RuleBookService.CHECKPOINT.equals(d.kind()))
+                .filter(d -> priorDecisionKind(book, d.kind()))
                 .filter(d -> d.asOfTradingDate().isBefore(asOf)
                         || !initial && d.asOfTradingDate().equals(asOf) && !d.kind().equals(kind))
                 .limit(MAX_RECENT_DECISIONS).toList();

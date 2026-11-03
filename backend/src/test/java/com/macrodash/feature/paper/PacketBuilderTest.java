@@ -2430,32 +2430,37 @@ class PacketBuilderTest {
     }
 
     @Test
-    @DisplayName("장중 확인(CHECKPOINT) 결정은 직전 결정이 아님 — 같은 기준일에 더 늦게 생긴 확인 결정(watchlist 칸 없음)이 있어도 8b watchlist는 아침 결정의 것이고 10_recentDecisions에 CHECKPOINT 줄이 없음")
+    @DisplayName("계좌2 장중 확인(CHECKPOINT — claude2-checkpoint 스키마)은 직전 결정이 아님 — 같은 기준일에 더 늦게 생긴 확인 결정(watchlist 칸 없음)이 있어도 8b watchlist는 앞선 결정의 것이고 10_recentDecisions에 CHECKPOINT 줄이 없음")
     void checkpointDecisionIsNotAPriorDecision() {
-        activeClaude();   // 보유 BBB, 10-23 초기 결정(응답에 watchlist 없음)
-        store.insertDecisionIfAbsent(new Decision(0, PaperBooks.CLAUDE, FRI, RuleBookService.MANUAL, null, "OK",
+        activeClaude();
+        activeClaude2();   // 10-22 출발, 10-23 정기 결정(응답에 watchlist 없음)
+        store.insertDecisionIfAbsent(new Decision(0, PaperBooks.CLAUDE2, FRI, RuleBookService.MANUAL, null, "OK",
                 "claude-sonnet-5-5", 1, 1, FRI, 50.0, null, null, null,
                 MAPPER.valueToTree(Map.of("schemaVersion", 2, "stance", "NEUTRAL", "summary", "관찰", "watchlist", List.of(
-                        Map.of("ticker", "EEE", "condition", "실적 확인")))),
+                        Map.of("ticker", "DDD", "condition", "실적 확인")))),
                 null, null, List.of(), true, 900L, 0));
-        // 장중 확인 응답(claude2-checkpoint.schema.json — schemaVersion 2, watchlist 칸 없음). 종류로 거르므로 계좌는 상관없음.
-        store.insertDecisionIfAbsent(new Decision(0, PaperBooks.CLAUDE, FRI, RuleBookService.CHECKPOINT, null,
+        // 계좌2 장중 확인 응답(claude2-checkpoint.schema.json — schemaVersion 2, watchlist 칸 없음). 계좌로 거름(QA-179 — 계좌1 장중 확인은 넣음).
+        store.insertDecisionIfAbsent(new Decision(0, PaperBooks.CLAUDE2, FRI, RuleBookService.CHECKPOINT, null,
                 ClaudeBookService.STATUS_NO_TRADE, "claude-sonnet-5-5", 1, 1, null, null, null, null, null,
                 MAPPER.valueToTree(Map.of("schemaVersion", 2, "action", "KEEP", "summary", "장중 판단", "orders", List.of(),
                         "noTradeReason", "갭 유지")),
                 null, null, List.of(), true, 900L, 0));
 
-        JsonNode body = builder.build(MON, RuleBookService.SCHEDULED, false).body();
+        JsonNode body = builder.assemble(builder.read(MON, false, store.settings), ClaudeBookProfile.US_CLAUDE2_C2,
+                RuleBookService.SCHEDULED, 0).body();
         List<String> tickers = new ArrayList<>();
         body.get(PacketBuilder.FUNDAMENTALS).get("rows").forEach(r -> tickers.add(r.get(0).asString() + ":" + r.get(1).asString()));
-        assertThat(tickers).contains("EEE:WATCHLIST");
+        assertThat(tickers).contains("DDD:WATCHLIST");
         List<String> kinds = new ArrayList<>();
         body.get(PacketBuilder.DECISIONS).get("decisions").forEach(r -> kinds.add(r.get("kind").asString()));
         assertThat(kinds).doesNotContain(RuleBookService.CHECKPOINT).contains(RuleBookService.MANUAL);
+        assertThat(PacketBuilder.priorDecisionKind(PaperBooks.CLAUDE2, RuleBookService.CHECKPOINT)).isFalse();
+        assertThat(PacketBuilder.priorDecisionKind(PaperBooks.KR_CLAUDE2, RuleBookService.CHECKPOINT)).isFalse();
+        assertThat(PacketBuilder.priorDecisionKind(PaperBooks.CLAUDE, RuleBookService.CHECKPOINT)).isTrue();
+        assertThat(PacketBuilder.priorDecisionKind(PaperBooks.CLAUDE2, RuleBookService.SCHEDULED)).isTrue();
     }
 
     @Test
-    @org.junit.jupiter.api.Disabled("QA-179 재현 — 수정 전: 계좌1 장중 확인(CHECKPOINT) 결정이 종류만 보는 거름에 빠져 10 첫 줄이 아침 SCHEDULED, 8b에 EEE 없음")
     @DisplayName("QA-179: 계좌1 장중 확인(정기와 같은 스키마 — 자세·노출·watchlist)은 직전 결정 — 다음 날 패킷의 10_recentDecisions 첫 줄이고 8b watchlist도 그 결정의 것")
     void checkpointDecisionOfBook1IsAPriorDecision() {
         activeClaude();   // 보유 BBB, 10-23 초기 결정(응답에 watchlist 없음)
