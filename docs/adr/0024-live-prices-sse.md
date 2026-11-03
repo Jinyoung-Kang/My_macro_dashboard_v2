@@ -12,9 +12,9 @@
   - `LivePriceServiceTest`: 종목(TV·NI 포함)·주기 검사(400), store_only·무응답은 `available:false`, 받은 종목이 모두 장이 닫혀 있으면 다음 보내기 5분 이상, 연결 20개 상한(429),
     SSE 구독이 바로 `prices` 이벤트(`text/event-stream`). `AccessPolicyTest`·`RouteInventoryTest`(문서·QA routes.json — SSE는 퍼저 제외).
   - 화면: `lib/__tests__/livePrices.test.ts`(선택지·기본 1시간·예전 분 단위 값 옮겨 읽기·장중 저장본 1분 하한), `hooks/__tests__/useLivePrices.test.tsx`(SSE 주소·쿠키,
-    탭을 숨기면 닫고 다시 이음, 끄기는 한 번만 읽기, 주기 공유), `lib/__tests__/paperLive.test.ts`(실시간 값으로 종목 줄 다시 셈), 장중 카드 화면 시험(QA-154~163 그대로),
+    탭을 숨기면 닫고 다시 이음, 끄기는 한 번만 읽기·숨김 전환에 읽지 않음(QA-189), 주기 공유, 200이 아닌 응답으로 닫히면 백오프로 다시 엶(QA-183)), `lib/__tests__/paperLive.test.ts`(실시간 값으로 종목 줄 다시 셈), 장중 카드 화면 시험(QA-154~163 그대로),
     `components/__tests__/ScrollTopButton.test.tsx`. 2단계: `livePrices.test.ts`(시간 외 가격·이름), `paperLive.test.ts`·`paperOverview.test.ts`(실시간 추정 순자산 —
-    모르는 것이 하나라도 있으면 없음), 장중 카드 시험(종목을 누르면 팝업 창), `lib/__tests__/macroLive.test.ts`(카드 → 종목, 자릿수·엔/원 100엔당·지연·받은 시각),
+    모르는 것이 하나라도 있으면 없음), 장중 카드 시험(종목을 누르면 팝업 창), `lib/__tests__/macroLive.test.ts`(카드 → 종목, 자릿수·엔/원 100엔당·지연·받은 시각, 마지막 응답에서 빠진 종목은 저장본(QA-184), 배율이 수집기 `quote_scale`과 같음(QA-185)),
     `macroLiveCards.test.tsx`·`sectorLivePrices.test.tsx`·`macroAutoRefresh.test.tsx`(자동 갱신 선택지가 모두 서버 주기).
 
 ## 배경
@@ -29,10 +29,12 @@
 1. **저장하지 않는 길을 새로 냅니다**: 화면 → 백엔드 `GET /api/live/prices`·`/api/live/prices/stream`(feature.live) → 수집기 `GET /live/prices`(3초 메모리 캐시)
    → 출처. 테이블·스냅샷을 만들지 않습니다(검색 상세의 `/live/quote`와 같은 선례 — [decisions.md 2026-11-01](../decisions.md)).
 2. **서버가 밀어 줍니다(SSE)** — 사용자 결정. 구독하면 바로 한 번, 그 뒤 고른 주기마다 `prices` 이벤트. 25초마다 주석 줄(하트비트), 연결은 주기 + 5분 뒤 끝나고
-   브라우저(EventSource)가 다시 잇습니다. 받은 종목이 모두 장이 닫혀 있으면(CLOSED·모름) 다음 보내기는 5분 이상 뒤. 동시 연결 20개 상한. 화면은 탭을 숨기면
+   브라우저(EventSource)가 다시 잇습니다. 200이 아닌 응답(배포 중 502, 연결 상한 429, 세션 만료 401)이면 브라우저 규칙상 다시 잇지 않으므로 화면이 5초부터
+   두 배씩 최대 60초 간격으로 새로 열고, 그동안 '연결이 끊김 — n초 뒤 다시 연결' 문구와 함께 개요 히어로는 서버 지금 값을 씁니다(QA-183, 2026-11-04). 받은 종목이 모두 장이 닫혀 있으면(CLOSED·모름) 다음 보내기는 5분 이상 뒤. 동시 연결 20개 상한. 화면은 탭을 숨기면
    연결을 닫고 다시 보이면 다시 잇습니다(보지 않는 동안 받지 않음 — ADR 0020의 '화면을 볼 때만').
 3. **주기는 하나**: 끄기·5·10·30초·1·2·5·10·15·30분·1·3시간, **기본 1시간**(사용자 결정). 이 브라우저에 기억(`live.priceRefreshSeconds`)하고 장중 카드·보유 표·
-   종목 상세가 같은 값을 씁니다. 예전 장중 카드의 분 단위 값(`paper.liveRefreshMinutes`)은 한 번 옮겨 읽습니다. 끄기는 화면을 열 때 한 번만 읽습니다.
+   종목 상세가 같은 값을 씁니다. 예전 장중 카드의 분 단위 값(`paper.liveRefreshMinutes`)은 한 번 옮겨 읽습니다. 끄기는 화면을 열 때 한 번만 읽습니다(숨긴 탭으로 열렸으면 처음 보일 때 —
+   숨김·보임 전환에는 읽지 않음, QA-189).
 4. **출처 순서**(앞 출처가 못 준 종목만 다음 출처에):
    - 미국: 네이버 해외주식 polling(로이터 코드 — 자동완성으로 찾아 하루 캐시, 여러 종목 한 번에) → 네이버가 못 주는 종목(지수 ^…·환율 =X 등)은 Yahoo spark
      (`v7/finance/spark`, 한 번에 20종목). 처음에는 Yahoo가 먼저였으나 배포 뒤 실측에서 Yahoo spark가 1분 넘게 같은 값이라 바꿨습니다(QA-166).
