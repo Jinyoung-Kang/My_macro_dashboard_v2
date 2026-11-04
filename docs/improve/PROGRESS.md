@@ -117,7 +117,12 @@
 - **서버 배포는 막힘(17:06 KST)**: Tailscale SSH가 재인증 약 40분 뒤 다시 추가 인증을 요구 — 접속 단계에서 끊겨 서버에서는 아무것도 돌지 않음.
   서버는 `main@7975350a` 그대로 정상(health 200, 메모 응답에 `packetMaxChars` 없음으로 확인). 비상용 22번 SSH는 쓰지 않음.
   두 세션에 멈춤을 풀고 상태를 알림 — 다음에 누가 배포하든 묶음 5가 같이 들어감.
-- 다음: 사용자 재인증 뒤 `deploy.sh` → 확인(메모 응답의 `packetMaxChars`·`inPacket`, 설정 400 문구는 시험으로만).
+- **배포 19:08:50~19:11:30 KST, `main@b39a7e4b`**(사용자 Tailscale 재인증 뒤, 두 세션에 미리 알리고 끝난 뒤 알림): 배포 직전 덤프
+  `backups/pre-deploy-20261104-101019.sql`(466M, 테이블 39), 컨테이너 모두 healthy, 디스크 32%. 확인(읽기만): `/api/health` 200, QA-171 그대로,
+  메모 목록 `packetMaxChars` 6000·미국 22건 모두 INSIGHT(`inPacket:false`)·한국 MARKET 1건 `inPacket:true`·빠진 유효 MARKET 0, 미국·한국 정기 작업 켜짐·
+  설정 판 14, 기동 뒤 백엔드 ERROR 0·수집기 오류 0. `.last-s3-ok` 없음 경고는 11-05 06:45 정기 백업 뒤 사라질 것(그때 확인).
+- 세션 정리: 커밋별 검증이 끝난 뒤에도 남아 있던 감시 명령(자기 명령 줄을 검증 프로세스로 세어 끝나지 않음)을 찾아 종료. 다 쓴 worktree는 모두 지움
+  (`/tmp` 12 GB tmpfs). 테스트 DB `macrodash_w*_test`·`macrodash_verify*_test`는 로컬 postgres에 남아 있음(운영과 무관).
 
 # 3차 리뷰 (2026-10) — 지난 회차 기록
 
