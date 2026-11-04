@@ -7,7 +7,6 @@ import com.macrodash.support.InvalidRequestException;
 import com.macrodash.support.TooManyRequestsException;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.test.web.servlet.MockMvc;
@@ -196,7 +195,6 @@ class LivePriceServiceTest {
     }
 
     @Test
-    @Disabled("QA-254 후속 재현 — 수정 전: 닫힌 구독의 진행 중 읽기는 상한 밖이라, 다시 연 구독마다 수집기 읽기가 더해져 연결 상한(20)을 넘어 늘어남")
     @DisplayName("QA-254 후속: 닫힌 구독의 읽기가 아직 끝나지 않아도 동시 수집기 읽기는 연결 상한을 넘지 않음 — 새 구독의 읽기는 자리가 나면 이어서 돎")
     void inFlightReadsStayWithinTheStreamLimit() throws Exception {
         CountDownLatch release = new CountDownLatch(1);
@@ -218,8 +216,8 @@ class LivePriceServiceTest {
                 }
                 if (round == 0) {
                     verify(collector, timeout(3000).times(LivePriceService.MAX_STREAMS)).livePrices(anyString());
+                    closeAllStreams();   // 읽기는 남은 채 구독만 닫힘 — 다시 연 스무 구독은 열린 채로 둠
                 }
-                closeAllStreams();
             }
             Thread.sleep(1_500);
             assertThat(peak.get()).as("동시 수집기 읽기").isLessThanOrEqualTo(LivePriceService.MAX_STREAMS);
