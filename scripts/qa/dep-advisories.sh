@@ -5,7 +5,7 @@
 set -uo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 export JAVA_HOME="${JAVA_HOME:-$(/usr/libexec/java_home -v 21 2>/dev/null)}"
-list="$(mktemp -t mvndeps)"; trap 'rm -f "$list"' EXIT
+list="$(mktemp "${TMPDIR:-/tmp}/mvndeps.XXXXXX")"; trap 'rm -f "$list"' EXIT
 (cd "$ROOT/backend" && mvn -q -B dependency:list -DincludeScope=runtime -DoutputFile="$list" >/dev/null) || { echo "mvn dependency:list 실패"; exit 1; }
 found=0
 grep -E "^\s+[a-zA-Z]" "$list" | sed -E 's/^\s+//; s/:(jar|pom):/:/; s/:(compile|runtime).*//' | sort -u | while IFS=: read -r group artifact version; do

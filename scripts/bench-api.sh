@@ -28,7 +28,7 @@ PASSWORD=$(get_env APP_PASSWORD)
 EMAIL=$(get_env OWNER_EMAIL)
 if [ -z "$PASSWORD" ] || [ -z "$EMAIL" ]; then echo "OWNER_EMAIL·APP_PASSWORD가 $ENV_FILE에 없습니다(운영자 계정)" >&2; exit 1; fi
 
-JAR=$(mktemp -t bench-cookie); trap 'rm -f "$JAR"' EXIT
+JAR=$(mktemp "${TMPDIR:-/tmp}/bench-cookie.XXXXXX"); trap 'rm -f "$JAR"' EXIT
 code=$(curl -s -o /dev/null -w '%{http_code}' -c "$JAR" -H 'Content-Type: application/json' \
   -H "Origin: http://localhost:${FRONTEND_PORT}" \
   --data-binary "$(EMAIL="$EMAIL" PASSWORD="$PASSWORD" python3 -c 'import json,os; print(json.dumps({"email": os.environ["EMAIL"], "password": os.environ["PASSWORD"]}))')" \

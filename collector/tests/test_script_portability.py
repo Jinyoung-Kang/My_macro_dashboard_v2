@@ -11,8 +11,6 @@ import re
 import subprocess
 from pathlib import Path
 
-import pytest
-
 ROOT = Path(__file__).resolve().parents[2]
 
 # `$(mktemp …)`의 인자 — 따옴표 안의 변수까지 그대로 셸에 넘깁니다.
@@ -33,7 +31,6 @@ def test_mktemp_호출을_찾는다():
     assert any(path == "scripts/qa/qa-stack.sh" for path, _ in _calls())
 
 
-@pytest.mark.xfail(strict=True, reason="QA-250 재현 — 수정 전: mktemp -t 이름(BSD 문법)이 GNU mktemp에서 실패")
 def test_QA250_스크립트의_mktemp는_이_OS에서_임시_파일을_만든다(tmp_path):
     failed = []
     for path, args in _calls():

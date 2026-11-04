@@ -113,7 +113,7 @@ case "$cmd" in
     ;;
   api)
     port="$(env_value BACKEND_PORT)"; port="${port:-18082}"
-    jar="$(mktemp -t qacookie)"; trap 'rm -f "$jar"' EXIT
+    jar="$(mktemp "${TMPDIR:-/tmp}/qacookie.XXXXXX")"; trap 'rm -f "$jar"' EXIT
     body="$( (env_value OWNER_EMAIL; env_value APP_PASSWORD) | python3 -c 'import json,sys; e,p=sys.stdin.read().split("\n")[:2]; print(json.dumps({"email": e.strip(), "password": p.strip()}))')"
     curl -s -o /dev/null -c "$jar" -H 'Content-Type: application/json' -H "Origin: http://localhost:$(env_value FRONTEND_PORT)" \
       --data-binary "$body" "http://127.0.0.1:$port/api/auth/login"

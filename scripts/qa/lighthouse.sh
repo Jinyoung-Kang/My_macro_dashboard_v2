@@ -6,7 +6,7 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"; cd "$ROOT"
 OUT="${1:-/tmp/lighthouse-qa}"; mkdir -p "$OUT"
 env_value() { grep -s "^$1=" .env.qa | head -1 | cut -d= -f2-; }
 FRONT="http://localhost:$(env_value FRONTEND_PORT)"; BACK="http://127.0.0.1:$(env_value BACKEND_PORT)"
-JAR="$(mktemp -t lhcookie)"; trap 'rm -f "$JAR"' EXIT
+JAR="$(mktemp "${TMPDIR:-/tmp}/lhcookie.XXXXXX")"; trap 'rm -f "$JAR"' EXIT
 curl -s -o /dev/null -c "$JAR" -H 'Content-Type: application/json' -H "Origin: $FRONT" \
   --data-binary "$( (env_value OWNER_EMAIL; env_value APP_PASSWORD) | python3 -c 'import json,sys; e,p=sys.stdin.read().split("\n")[:2]; print(json.dumps({"email": e.strip(), "password": p.strip()}))')" "$BACK/api/auth/login"
 COOKIE="$(awk '$6=="my_macro_v2_session"{print $7}' "$JAR")"
