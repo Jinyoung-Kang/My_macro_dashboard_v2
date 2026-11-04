@@ -28,7 +28,6 @@ import com.macrodash.store.StoreRepository;
 import com.macrodash.store.StoreRepository.HoldingRow;
 import com.macrodash.store.StoreRepository.TimeseriesColumns;
 import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import tools.jackson.databind.JsonNode;
@@ -1018,7 +1017,7 @@ class PacketBuilderTest {
     }
 
     @Test
-    @DisplayName("QA-197: 계좌1 장중 확인 지시 줄은 패킷과 맞다 — 8_prices는 기준일 종가까지(장중 아님), 장중 가격은 9_portfolio 보유 종목뿐, 1b·8b·11b는 아침 결정 시점까지")
+    @DisplayName("QA-197: 계좌1 장중 확인 지시 줄은 패킷과 맞다 — 8_prices는 기준일 종가까지(장중 아님), 종목의 장중 가격은 9_portfolio 보유 종목뿐, 1b·8b·11b는 아침 결정 시점까지")
     void checkpointInstructionMatchesPacketPrices() {
         activeClaude();
         Packet checkpoint = builder.build(MON, RuleBookService.CHECKPOINT, false, 0, store.settings);
@@ -1042,7 +1041,6 @@ class PacketBuilderTest {
     }
 
     @Test
-    @Disabled("QA-203 재현 — 수정 전: 장중 확인 지시 줄이 '장중 가격은 9_portfolio … 뿐'이라 적고 2_macroCards(확인 시각에 읽은 장중 수집본)를 말하지 않음")
     @DisplayName("QA-203: 계좌1 장중 확인 지시 줄은 2_macroCards가 지금 수집본(장중 값일 수 있음 — lastTs·asOfMismatch)이라고 적고, 장중 가격을 9_portfolio로 "
             + "가두는 말은 종목 가격으로만 한다")
     void checkpointInstructionDescribesIntradayMacroCards() {

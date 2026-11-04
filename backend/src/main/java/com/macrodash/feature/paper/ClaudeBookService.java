@@ -495,8 +495,9 @@ public class ClaudeBookService {
 
     /**
      * 미국 Claude 계좌1의 장중 확인 결정(사용자 결정 2026-11-02 — {@link PaperClaude1CheckpointJob}): 기준 거래일 {@code asOf}(그 아침 결정과 같은 d)의
-     * 종류 {@code CHECKPOINT} 결정 — 정기 결정과 같은 패킷(장중 확인 지시 한 줄 — 장중 가격은 장부에 반영된 보유 가격뿐, 8_prices·1b·8b·11b는 기준일 d
-     * 아침 결정과 같은 시점까지, QA-197)·검증·기록이고, 호출 문턱은 정기 작업(하루 상한까지). (계좌, d, CHECKPOINT)마다 한 건이라 세션당 한 번입니다.
+     * 종류 {@code CHECKPOINT} 결정 — 정기 결정과 같은 패킷(장중 확인 지시 한 줄 — 종목의 장중 가격은 장부에 반영된 보유 가격뿐, 2_macroCards는 지금
+     * 수집본이라 장중 값일 수 있음, 8_prices·1b·8b·11b는 기준일 d 아침 결정과 같은 시점까지, QA-197·QA-203)·검증·기록이고, 호출 문턱은 정기
+     * 작업(하루 상한까지). (계좌, d, CHECKPOINT)마다 한 건이라 세션당 한 번입니다.
      */
     Decision decideCheckpoint(PaperMarket market, LocalDate asOf) {
         boolean[] called = {false};
