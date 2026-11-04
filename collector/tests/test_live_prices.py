@@ -220,7 +220,8 @@ def test_Yahoo가_거부하면_spark_호스트만_쉬고_yfinance와_같이_쓰�
     errors: dict = {}
     assert lp._fetch_yahoo(["AAPL"], errors) == {}
     assert "거부됨" in errors["Yahoo"]
-    assert http.active_rejection("query1.finance.yahoo.com") is not None, "spark는 5분 쉼(어댑터가 닫은 실제 호스트 래치)"
+    assert http.active_rejection("query1.finance.yahoo.com") is not None, \
+        "전제 확인 — 가짜 _get_json이 어댑터를 흉내 내 닫은 래치(실제 어댑터가 닫는지는 test_QA198_spark의_429는_…)"
     assert http.active_rejection(http.YAHOO_HOST) is None, "표시 전용 — 장부 관측치·장중 1분봉 수집(yfinance)은 쉬지 않음(QA-198)"
 
 
@@ -473,10 +474,39 @@ def test_QA198_화면_경로의_Yahoo_spark_거부는_장부_관측치_수집을
     monkeypatch.setattr(lp, "_get_json", rejected)
     out = lp.prices([("US", "^VIX")])
     assert out["errors"]["Yahoo"].startswith(http.REJECTED_MARK) and out["missing"] == ["US:^VIX"]
-    assert http.active_rejection("query1.finance.yahoo.com") is not None, "spark 호스트는 5분 쉼"
+    assert http.active_rejection("query1.finance.yahoo.com") is not None, \
+        "전제 확인 — 가짜 _get_json이 어댑터를 흉내 내 닫은 래치(실제 어댑터가 닫는지는 test_QA198_spark의_429는_…)"
 
     frame = pd.DataFrame({"Close": [700.0, 701.5]}, index=pd.to_datetime(["2026-11-02", "2026-11-03"]))
     monkeypatch.setattr(sector.yf, "download", lambda tickers, **kwargs: pd.concat({"SPY": frame}, axis=1))
     result = sector.collect_daily_closes(("SPY",), period="5d")
     assert result["error"] is None, "yfinance 장부 수집은 화면 경로의 거부에 막히지 않음"
     assert result["tickers"]["SPY"]["close"] == [700.0, 701.5]
+
+
+def test_QA198_spark의_429는_실제_공용_세션_어댑터가_spark_호스트만_닫고_다음_조회는_나가지_않는다(monkeypatch):
+    # 위 두 시험은 가짜 _get_json이 래치를 스스로 닫음. 여기서는 _get_json·공용 세션(get_session — _GuardedAdapter)을 그대로 두고 전송 층만
+    # 429로 바꿔, spark가 공용 세션을 거쳐 그 호스트만 쉬는지 봄. HTTPAdapter.send는 _GuardedAdapter가 super로 부르는 것 — 캐시된 공용
+    # 세션에도 닿게 클래스에서 바꿈(monkeypatch가 되돌림). 래치 호스트가 실제 spark 호스트여야 하므로 로컬 서버를 쓰지 않음.
+    sent: list[str] = []
+
+    def too_many(self, request, **kwargs):
+        sent.append(http.host_of(request.url))
+        res = requests.Response()
+        res.status_code, res.url, res.request = 429, request.url, request
+        res.headers = requests.structures.CaseInsensitiveDict({"Content-Type": "application/json"})
+        res._content, res._content_consumed = b"{}", True
+        return res
+    monkeypatch.setattr(requests.adapters.HTTPAdapter, "send", too_many)
+    monkeypatch.setattr(http, "_sleep", lambda seconds: None)   # 호스트 간격을 실제로 자지 않음
+
+    first: dict = {}
+    assert lp._fetch_yahoo(["AAPL"], first) == {}
+    assert first["Yahoo"].startswith(http.REJECTED_MARK)
+    again: dict = {}
+    assert lp._fetch_yahoo(["AAPL"], again) == {}
+    assert again["Yahoo"].startswith(http.REJECTED_MARK)
+
+    assert sent == ["query1.finance.yahoo.com"], "두 번째 조회는 어댑터가 보내기 전에 막음 — 3초 캐시가 끝날 때마다 Yahoo를 두드리지 않음"
+    assert http.active_rejection("query1.finance.yahoo.com") is not None, "어댑터가 spark 호스트를 5분 닫음"
+    assert http.active_rejection(http.YAHOO_HOST) is None, "yfinance와 같이 쓰는 공용 래치는 닫지 않음"
