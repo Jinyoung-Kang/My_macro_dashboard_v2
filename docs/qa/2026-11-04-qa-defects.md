@@ -9,6 +9,8 @@
 >   심각도는 재현 판정의 값이고, 후보와 다르면 둘 다 적었습니다(같은 결함이 두 영역에서 나온 것은 QA-260 하나로 합침). S3은 이번 회차에 고치고
 >   S4는 기록만 합니다(계획 §6). 영역별로 확인해서 문제없던 것·못 한 것·측정값은 [2026-11-04-qa-results.md](2026-11-04-qa-results.md),
 >   구조 개선 제안은 [IMPROVEMENTS.md](IMPROVEMENTS.md)에 있습니다. 증거 파일 안의 `$SP`는 세션 임시 폴더(원본 위치)입니다.
+> - 4단계 독립 검토(수정마다 검토 + 기록·규칙·빈틈 감사 8개, 지적마다 반박 2개 — 워크플로 `wf_c4a7e2a1-fff`)가 확인한 것: QA-253 수정의 회귀(확인 결정 번호가 없는
+>   행만 있으면 500 — 같은 번호로 재현·수정 두 커밋 더), QA-251·QA-254 수정의 빈 곳(같은 번호 후속 두 커밋씩), 새 결함 QA-285·286(S4 기록), QA-255 영향 범위 보강.
 
 ## 요약
 
@@ -49,6 +51,8 @@
 | QA-282 | S4 | 성능·장부 조회 | `paper_orders.decision_id` 색인이 없어 결정 요약의 상관 COUNT가 주문 표를 훑음 — 개요가 주문 누적에 비례해 느려짐 | 기록 · 승인 필요 |
 | QA-283 | S4 | 화면 성능 | 홈·매크로 등 여러 화면의 CLS가 0.25를 넘음 — 불러오는 중 자리가 실제 내용보다 낮음(부분 재현) | 기록 |
 | QA-284 | S4 | QA 도구 | WSL2에서 Linux Chromium으로 Lighthouse를 돌리면 저장소 최상위에 `C:\Users\…\lighthouse.*` 프로필 폴더가 남음 | 기록 |
+| QA-285 | S4 | 수집기·검색 | 종목 찾기·뉴스의 일부 출처 실패 응답이 수집기에서 성공처럼 1시간(뉴스 15분) 캐시됨 — QA-256 뒤 '일부 출처를 받지 못했습니다'가 그동안 남음 | 기록(독립 검토) |
+| QA-286 | S4 | 장부·장중 확인 | 장중 확인 Claude 호출 중 계좌를 리셋하면 리셋 전 장부로 만든 확인 결정을 새(시작 전) 책에 남김 — 정기 결정의 판(Generation) 검사가 없음 | 기록(독립 검토) |
 
 ## QA-250 스크립트의 `mktemp -t 이름`이 Linux(GNU mktemp)에서 실패
 
@@ -92,7 +96,7 @@
   유료 결정 호출이 날 수 있음(미검증 — 지금 셸에는 export 없음, QA-072에 맥 셸 프로필 선례). 문서도 이 길을 경고하지 않음(README:11, DEVELOPMENT §1, LOCAL_SETUP 예시).
   같은 단일 프로세스 가정: `PaperDecisionJob`·`PaperReviewJob`·장중 확인 세 작업·`PaperNotifyJob`의 `running`, `PaperSettingsService.writing`,
   `FrameworkService.writing·proposing`, `ClaudeBookService.initialCall`, `PaperSelectionService.computing`. 기본값 문제는 `PAPER_ENABLED`만(나머지는 빠지면 꺼짐 쪽).
-- **상태: 수정됨(Makefile 부분)** — 재현 `8d7718a7` → 수정 `fe21deb1`: `make dev-backend`가 .env의 `PAPER_ENABLED`를 넘기고 줄이 없으면 `false`(셸에서 export한 값이 먼저), LOCAL_SETUP에 `mvn spring-boot:run` 직접 실행은 이 값이 빠진다고 적음. 남은 것: 기동 경고 확대·DB 잠금(advisory lock)은 하지 않음 — 잠금은 승인 필요(IMPROVEMENTS), 같은 DB를 쓰는 두 프로세스는 설계 밖(코드 주석 '백엔드는 한 프로세스')이라 이번 회차는 기록만.
+- **상태: 수정됨(Makefile 부분)** — 재현 `8d7718a7` → 수정 `fe21deb1`: `make dev-backend`가 .env의 `PAPER_ENABLED`를 넘기고 줄이 없으면 `false`(셸에서 export한 값이 먼저), LOCAL_SETUP에 `mvn spring-boot:run` 직접 실행은 이 값이 빠진다고 적음. 남은 것: 기동 경고 확대·DB 잠금(advisory lock)은 하지 않음 — 잠금은 승인 필요(IMPROVEMENTS), 같은 DB를 쓰는 두 프로세스는 설계 밖(코드 주석 '백엔드는 한 프로세스')이라 이번 회차는 기록만. 독립 검토 후속: 따옴표·줄 끝 주석·중복 줄 값을 그대로 넘겨 백엔드가 'Invalid boolean value'로 뜨지 않던 빈 곳 — 재현 `37b6733c` → 수정 `7d9cc691`(마지막 줄 값의 따옴표·주석을 떼고 `true`일 때만 켬, 늘 true·false로만 넘김, 빈 값의 뜻을 `.env.example`·README에 적음).
   DB 단위 단일 작성자 보장(`pg_advisory_xact_lock` 또는 책 행 `SELECT … FOR UPDATE`)은 **승인 필요**(장부 구조 변경) — 수정안만 [IMPROVEMENTS.md](IMPROVEMENTS.md) 1번에.
 - **재발 방지 제안**: `make -n dev-backend` 출력에 `PAPER_ENABLED`가 있는지 보는 스크립트 시험(collector/tests의 스크립트 시험 방식), `PaperStartupLogTest`에
   '정기 작업 켜짐 + 서버 표지(`PUBLIC_ORIGIN` 등) 없음 → 경고'(QA 스택에서 정기 작업을 켜는 시험과 충돌하지 않게). 잠금을 넣으면 두 벌 시험을 회귀 시험으로.
@@ -154,7 +158,7 @@
   (모두 상한 있음·미측정): `PaperQueryService.claude2Status:526-527`(존재만 확인), `PaperDecisionJob.pastDeadlineRecordMissing:1155-1162`,
   `PaperCheckpointJob.dueDiscretionary:517`, `PaperKrCheckpointJob:410`, `PacketBuilder:1921·2072·2127`, `KrPacketBuilder:1130·1201·1238`, `ReviewService:384`.
   `Dockerfile`의 `-XX:+ExitOnOutOfMemoryError`(ADR 0014) 때문에 힙 고갈은 곧 재기동(메모리 상태 소실). 운영 패킷 크기·행 수는 확인 안 함(Vultr 금지).
-- **상태: 수정됨** — 재현 `d1f1cb5a` → 수정 `94d0a320`: `PaperStore.checkpointAnswers(ids)`(한 질의 — `id = ANY(?)`로 상태·`response->>'action'`·`supersededOrders` 배열 길이만, 패킷·응답 전체는 읽지 않음)를 `ExecutionView`가 씀. 응답 모양은 그대로. 시험: `PaperExecutionViewTest`(결정 전체 읽기 0회·행 값·M8 같음), `PaperStoreDbTest.checkpointAnswersReadOnlyTheAuditColumns`(문자열 아닌 action·배열 아닌 칸·응답 없음·없는 번호). 남은 것: 실행 감사 응답의 비싼 계산 자리 제한(ComputedCache)은 넣지 않음.
+- **상태: 수정됨** — 재현 `d1f1cb5a` → 수정 `94d0a320`: `PaperStore.checkpointAnswers(ids)`(한 질의 — `id = ANY(?)`로 상태·`response->>'action'`·`supersededOrders` 배열 길이만, 패킷·응답 전체는 읽지 않음)를 `ExecutionView`가 씀. 응답 모양은 그대로. 시험: `PaperExecutionViewTest`(결정 전체 읽기 0회·행 값·M8 같음), `PaperStoreDbTest.checkpointAnswersReadOnlyTheAuditColumns`(문자열 아닌 action·배열 아닌 칸·응답 없음·없는 번호). 남은 것: 실행 감사 응답의 비싼 계산 자리 제한(ComputedCache)은 넣지 않음. **독립 검토가 찾은 회귀(배포 전에 고침)**: 확인 결정 번호가 있는 행이 하나도 없으면(계획·건너뜀·놓침뿐) 저장소가 불변 빈 Map을 돌려주고 null 키 조회로 NullPointerException → 실행 감사 500. 가짜 저장소가 빈 입력에도 HashMap을 돌려줘 시험이 놓침 — 재현 `e4d7fae4`(가짜를 실제처럼 맞추자 기존 한국 시험도 드러냄) → 수정 `9ab07501`(번호 없는 행은 Map을 찾지 않음).
 - **재발 방지 제안**: PaperStore에 묶음 질의(`SELECT id, status, response->>'action', <supersededOrders가 배열이면 길이> FROM paper_decisions WHERE id = ANY(?)` —
   `jsonb_array_length`는 배열이 아니면 오류라 `jsonb_typeof`로 막음)를 두고 ExecutionView가 가벼운 행을 씀(API 모양 그대로). 시험: claude2·kr_claude2 장중 확인 300행에서
   `decision(long)` 호출 0회, `checkpoints[]`·`summary.checkpoints`가 수정 전과 같음(가짜 저장소로 셈). 같은 꼴 정리와 힙 여유는 IMPROVEMENTS 6번.
@@ -183,7 +187,7 @@
 - **영향 범위**: 백엔드에서 직접 만든 실행기·`SseEmitter` 사용처는 이것 하나(모의 매매 `@Scheduled` 풀과 별개). 연결 상한은 20인데 실행 스레드는 4개.
   `close()`가 `cancel(false)`라 이미 수집기 호출에 막힌 스레드는 탭을 닫아도 풀리지 않음(코드 읽기, 미검증). 하트비트가 밀릴 때 앞단(Caddy·tailscale serve)이
   연결을 끊는지는 미확인. QA-206에 남은 갈래(미국 자동완성 종목마다 약 25초)가 이 결합을 키움.
-- **상태: 수정됨** — 재현 `3a68e508` → 수정 `29844564`: 수집기 읽기와 그 결과 보내기를 따로 늘어나는 실행기(`live-prices-read-N`, 쉬는 스레드는 60초 뒤 사라짐 — 구독마다 읽기는 많아야 하나라 열린 구독 수만큼만 늘어남)로 옮기고, 스케줄러(스레드 4)는 다음 읽기 예약과 하트비트만. 시험: `LivePriceServiceTest.slowReadsDoNotStarveOtherStreams`(US 읽기 넷을 막은 채 KR 구독의 첫 읽기가 2초 안). 남은 것: live 경로의 짧은 읽기 상한·같은 종목 묶음 합치기는 하지 않음, 하트비트 25초 밀림은 단위 시험으로 직접 재지 않음(스케줄러가 막히는 일을 하지 않는 구조로 막음).
+- **상태: 수정됨** — 재현 `3a68e508` → 수정 `29844564`: 수집기 읽기와 그 결과 보내기를 따로 늘어나는 실행기(`live-prices-read-N`, 쉬는 스레드는 60초 뒤 사라짐)로 옮기고, 스케줄러(스레드 4)는 다음 읽기 예약과 하트비트만. 시험: `LivePriceServiceTest.slowReadsDoNotStarveOtherStreams`(US 읽기 넷을 막은 채 KR 구독의 첫 읽기가 2초 안). 남은 것: live 경로의 짧은 읽기 상한·같은 종목 묶음 합치기는 하지 않음, 하트비트 25초 밀림은 단위 시험으로 직접 재지 않음(스케줄러가 막히는 일을 하지 않는 구조로 막음). 독립 검토 후속: 닫힌 구독의 끝나지 않은 읽기는 연결 수에서 빠져, 탭을 숨겼다 다시 여는 동안 동시 수집기 읽기가 20을 넘어 쌓임(검토 실측 60) — 재현 `07353cfc` → 수정 `575c6a4b`(동시 읽기 자리 20개 세마포어, 자리가 없으면 1초 뒤 다시).
 - **재발 방지 제안**: 하트비트를 tick과 다른 가벼운 실행기(단일 스레드)로, tick의 블로킹 호출은 구독 수만큼 늘 수 있는 실행기(가상 스레드 등)나 짧은 live 읽기 상한으로.
   실패 뒤 다음 tick이 300초 뒤로 밀리는 `nextDelaySeconds(every, false)`도 같이 고려. 시험: 첫 4 tick을 붙잡는 가짜 CollectorClient에서 5번째 구독의 첫 send와
   하트비트가 1초 안에(하트비트 주기를 주입 가능하게 해 @Disabled 시험을 짧게).
@@ -215,6 +219,11 @@
   :193·281), `sector.py:74·237`, `us_calendar.py:224`, `earnings_surprise.py:64`, `krx.py:388`, `detail.py:258`(종목 상세 화면). 태스크 paper_watch_us·paper_bars_us·
   paper_live_us·sector_history·fx_history·equity_history·paper_quotes. 증권사·공공 API 세션(`get_api_session`·`publicapi`)도 가드 밖(미측정). 좀비가 작업 스레드 8개를
   채우는 풀 고갈과 crumb 잠금이 paper_watch_us·종목 상세를 늦추는지는 미측정.
+- **독립 검토 보강(영향 범위)**: 수집기 작업 스레드는 8개 하나뿐(`runner.py:203`)이고 fast·slow 그룹의 yfinance 태스크가 8개를 넘어, 좀비가 스레드를 모두 쥐면
+  Yahoo와 무관한 한국 장부 입력(`kr_paper_timed`·`kr_paper_quotes`·`kr_paper_flows`, slow 목록 맨 뒤)이 '워커 대기 초과(시작 못 함)'로 밀릴 수 있음 — 실제
+  `run_task`로 한 시뮬레이션에서 재현(좀비를 풀면 정상). 그러면 그 밤 한국 관측치가 늦어 한국 결정이 기한 뒤 NO_TRADE가 될 수 있음. 다만 반박 검토가 잰 바로는
+  운영 중 수집기처럼 crumb을 이미 가진 상태면 무응답 요청이 잠금에 줄 서지 않고 각 10초로 끝나(새로 뜬 프로세스는 요청마다 30~60초 줄) 좀비가 그렇게 오래
+  남는지는 미측정. 심각도는 S3 유지, 다음 회차 첫 순위(IMPROVEMENTS 7번).
 - **상태: 미수정(이번 회차에 고치지 않음)** — yfinance 호출처가 여럿(참고 시세·매크로 카드·종목 상세·실적 일정·실적 서프라이즈·장부 분봉)이고 프로세스 전역 crumb 잠금(`YfData._cookie_lock`)과 고정 timeout(crumb 30초·시간대 10초)이 라이브러리 안에 있어, 계획 §6의 '작고 부작용이 적은 수정'이 아님. 이번 회차는 문서(`docs/DATA_SOURCES.md` '시간 예산' 문단)와 `runner.py` 주석이 실제보다 많이 보장하던 것만 바로잡음. 다음 회차 수정안은 아래 재발 방지 칸.
 - **재발 방지 제안**: `history`·`download`에 timeout을 넘기는 것만으로는 crumb·시간대 조회가 남음 — yfinance 세션 자리에 남은 예산(`http.time_left()`)으로 timeout을 줄이고
   0 이하면 바로 실패하는 curl_cffi 세션 하위 클래스를 넣거나(threads=False), Yahoo 연결 시간 초과가 연달아 나면 공용 래치를 잠시 닫는 '무응답 래치', 폴백은 예외면 멈춤.
@@ -734,3 +743,37 @@
 - **상태: 기록(S4 — 이번 회차는 수정 안 함)**
 - **재발 방지 제안**: lighthouse 호출만 `mktemp -d "${TMPDIR:-/tmp}/lhwork.XXXXXX"` 안 하위 셸에서 돌리고 trap으로 지움(.env.qa 값은 ROOT에서 먼저 읽음), .gitignore에 `C:*` 검토,
   주석에 CHROME_PATH 필요를 맞춤. 시험: npx 대역으로 호출 cwd ≠ ROOT(xfail 먼저 — 실제 크롬 불필요).
+
+## QA-285 종목 찾기·뉴스의 일부 출처 실패 응답이 수집기에서 성공처럼 1시간(뉴스 15분) 캐시됨
+
+- **심각도: S4**(독립 검토, 반박 2개 모두 S4) — 기존 동작이고 QA-256 수정으로 화면에 드러남. 검색어를 바꾸거나 캐시 시간이 지나면 풀림, 장부·권한 무관.
+- **영역**: 수집기 종목 상세 서비스(`/detail/symbols`·`/detail/news`) → 화면 통합 검색·종목 상세 뉴스
+- **환경**: `8e8014ea`, 저장소 밖 스크립트로 외부 호출을 스텁해 실행(실제 Yahoo·네이버 호출 없음).
+- **재현 절차**: 1. 한 출처(Yahoo)만 실패하고 다른 출처(네이버)가 결과를 주는 응답을 만듦 2. FAILURE_TTL(60초)이 지난 뒤 Yahoo를 성공으로 바꾸고 같은 검색어로 다시 부름.
+- **기대 결과**: 실패가 섞인 응답은 실패 캐시 시간(1분)만 — 명세 `docs/specs/2026-11-01-search-detail.md` §2 '실패한 응답은 1분만 캐시', `_cached` 설명
+  '오류가 있는 응답은 FAILURE_TTL만'. **실제 결과**: 같은 객체·같은 `errors`가 `SYMBOLS_TTL`(3600초) 동안 나옴 — QA-256 뒤 화면은 그동안 '일부 출처를 받지 못했습니다(Yahoo Finance)'.
+- **증거**: 독립 검토 워크플로 `wf_c4a7e2a1-fff`(검토 `qa256`, 반박 2개 재현).
+- **원인 위치**: `collector/app/services/detail.py:83` `life = FAILURE_TTL if value.get("error") else ttl` — `error`는 결과가 0건일 때만 채워지므로(`:596`·`:676`) 결과가 있는
+  일부 실패는 성공 TTL을 받음.
+- **영향 범위**: 같은 `_cached`를 쓰는 `symbols`(1시간)·`news`(15분).
+- **상태: 기록(S4 — 이번 회차는 수정 안 함)**
+- **재발 방지 제안**: TTL 판정을 `value.get("error") or value.get("errors")`로(일부 실패도 FAILURE_TTL) — 출처 호출이 조금 늘어남. 시험: 스텁 출처로 일부 실패 응답의 캐시
+  수명이 FAILURE_TTL인지(xfail 먼저).
+
+## QA-286 장중 확인 Claude 호출 중 계좌를 리셋하면 리셋 전 장부로 만든 확인 결정을 새(시작 전) 책에 남김
+
+- **심각도: S4**(독립 검토, 반박 2개 모두 S4) — 운영자가 호출 중(최대 수 분)에 그 계좌를 리셋해야 생기고, 결과는 이력 오염(시작 전 책의 결정 목록·알림에 확인 결정 한 줄).
+  리셋 + 다시 출발까지 호출 중에 끝나면 새 책의 대기 주문을 취소하고 리셋 전 판단의 주문을 넣지만, 미국 계좌2 수동 출발 창·한국 K28 때문에 운영에서는 닿기 어려움.
+- **영역**: 모의 매매 장중 확인(미국 계좌2 `PaperCheckpointJob`, 한국 계좌2 `PaperKrCheckpointJob`)
+- **환경**: `8e8014ea`, 단위 시험(가짜 저장소·가짜 Claude, `duringCall` 훅으로 호출 중 리셋).
+- **재현 절차**: 1. 계좌2 장중 확인 행을 계획 2. Claude 호출 중 `PaperAdminService.reset(claude2)` 3. 응답(KEEP) 도착.
+- **기대 결과**: 정기 결정 경로(`ClaudeBookService.persist`)처럼 NOT_STARTED·판(출발일 + INITIAL 결정 번호)이 다르면 쓰지 않음. **실제 결과**: 시작 전 책에
+  `CHECKPOINT/…/NO_TRADE` 결정 행이 생김(`markCheckpoint`는 0행이라 경고만), REPLACE면 SKIPPED 행.
+- **증거**: 독립 검토 워크플로 `wf_c4a7e2a1-fff`(검토 `gaps`, 임시 시험 두 개 — KEEP·리셋 뒤 다시 출발 — 출력 보존, 반박 2개 재현).
+- **원인 위치**: `backend/src/main/java/com/macrodash/feature/paper/PaperCheckpointJob.java:416-418`(`write`가 책 상태만 봄)·`:476`(`insertDecisionIfAbsent`),
+  `PaperKrCheckpointJob.java:314`·`:371`. 대조: `ClaudeBookService.java:670-679`(판 비교로 거절).
+- **영향 범위**: 두 장중 확인 작업(계좌1 장중 확인 `PaperClaude1CheckpointJob`도 같은 구조인지 확인 필요 — 미확인).
+- **상태: 기록(S4 — 이번 회차는 수정 안 함)**
+- **재발 방지 제안**: 호출 전 판(출발일·INITIAL 결정 번호)과 원래 결정(`c.sourceDecisionId`)을 잡아 두고 `write()` 안(장부 잠금·트랜잭션)에서 NOT_STARTED·판 다름·원래 결정
+  없음이면 결정 행을 쓰지 않고 끝냄 — `ClaudeBookService.persist`와 같은 규칙. 시험: 위 두 시나리오(@Disabled 먼저).
+

@@ -340,8 +340,9 @@ export function sourceNotice(label: string, state: SourceState): string | null {
 
 /**
  * 종목 찾기(외부 검색)의 자료 상태 — {@link sourceNotice}에 더해 200 응답 안의 출처 실패도 적습니다(QA-256). 수집기는 출처마다 실패를
- * `symbols.errors`에 남기고 받은 것만 돌려주므로(검색·상세 명세 §2), 모든 출처가 실패해 목록이 비어도 HTTP는 200입니다 — 그때 '맞는 결과가
- * 없습니다'로 단정하지 않게 받지 못한 출처 이름을 적습니다. 원문 오류(프록시·연결 오류 문구)는 길어서 이름만 적습니다.
+ * `symbols.errors`에 남기고 받은 것만 돌려주며(검색·상세 명세 §2), 결과가 0건이고 실패한 출처가 하나라도 있으면 `symbols.error`를 채웁니다
+ * (모든 출처가 실패했다는 뜻은 아님). 그때 '맞는 결과가 없습니다'로 단정하지 않게 받지 못한 출처 이름을 적습니다. 원문 오류(프록시·연결 오류
+ * 문구)는 길어서 이름만 적습니다.
  */
 export function symbolNotice(state: SourceState): string | null {
   const base = sourceNotice(SYMBOL_GROUP_LABEL, state);

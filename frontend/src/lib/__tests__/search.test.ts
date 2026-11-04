@@ -239,7 +239,7 @@ describe("범주 자료 상태", () => {
     expect(sourceNotice("종목", { loading: false, error: null, data: null })).toBeNull();
   });
 
-  it("종목 찾기는 200 응답 안의 출처 실패도 적는다(QA-256) — 모두 실패는 출처 이름(없으면 원문), 일부 실패는 그 출처, 실패 없으면 null", () => {
+  it("종목 찾기는 200 응답 안의 출처 실패도 적는다(QA-256) — 결과 0건 + 실패(error)는 실패한 출처 이름(없으면 원문), 결과가 있는 일부 실패는 그 출처, 실패 없으면 null", () => {
     const state = (symbols: DetailSymbolsResponse["symbols"]) =>
       ({ loading: false, error: null, data: { available: true, symbols } satisfies DetailSymbolsResponse });
     expect(symbolNotice(state({ items: [], errors: { "네이버 증권": "x", "Yahoo Finance": "y" }, error: "x; y" })))

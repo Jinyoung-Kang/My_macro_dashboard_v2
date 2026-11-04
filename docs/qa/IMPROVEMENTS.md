@@ -90,10 +90,11 @@
 ## 6. 백엔드 메모리 여유와 목적별 가벼운 조회
 
 - **문제**: 백엔드 1GiB에 `MaxRAMPercentage=70`이라 힙 718MiB, 메모리가 1792MB 미만이라 JVM이 SerialGC를 고릅니다. 무거운 응답 몇 개가 겹치면 힙이 바로 고갈되고
-  `ExitOnOutOfMemoryError`로 재기동합니다(QA-253 — 지난 회차 O-5와 같은 여유 부족). 여러 경로가 작은 칸 하나 때문에 결정 전체(패킷 60~165KB)를 읽습니다 — 실행 감사(QA-253),
+  `ExitOnOutOfMemoryError`로 재기동합니다(QA-253 — 지난 회차 O-5와 같은 여유 부족). 여러 경로가 작은 칸 하나 때문에 결정 전체(패킷 60~165KB)를 읽습니다 — 실행 감사(QA-253 — 이번 회차 `94d0a320`·`9ab07501`에서 묶음 질의로 고침),
   상태의 존재 확인(`decisionFor().isPresent()`), 개요의 노출 추이(결정 요약 500건 + 주문 COUNT — QA-282), 정기 작업·패킷 조립의 kind·response만 쓰는 곳. 홈이 1분마다 부르는
   `/api/status`·`/api/status/issues`는 수집기 `/status`를 거쳐 매번 `timeseries`(152만 행)·`observations`(80만 행)를 `COUNT(*)`로 셈(각 55~62ms, 혼합 부하에서 50ms 넘는 질의의 대부분).
-- **제안**: PaperStore에 목적별 질의 — `targetExposureByDate(book)`, `decisionExists(book, date, kind)`, `decisionKind(id)`·`decisionResponse(id)`, 실행 감사용 묶음 질의. 큰 JSON 칸은
+- **제안**: PaperStore에 목적별 질의 — `targetExposureByDate(book)`, `decisionExists(book, date, kind)`, `decisionKind(id)`·`decisionResponse(id)`(실행 감사용 묶음 질의
+  `checkpointAnswers`는 이번 회차에 넣음). 큰 JSON 칸은
   실제로 그리는 경로(`/api/paper/decisions/{id}`)에서만 읽음. `paper_orders.decision_id`(+ `paper_checkpoints` 두 외래 키) 색인 마이그레이션. 무거운 paper 조회(execution·decisions
   limit 500)는 `ComputedCache`의 비싼 계산 자리 제한(QA-131)처럼 동시 실행 수를 묶음. 수집기 `store_stats`의 행 수는 `pg_class.reltuples` 추정치나 짧은 TTL 캐시로, 백엔드
   `DataStatusService.issues()`는 행 수가 없는 가벼운 경로를 씀. 그래도 여유가 필요하면 Vultr 4GB 기준 백엔드 `mem_limit` 1.25~1.5g이나 GC 명시를 정해 기록.
@@ -115,10 +116,11 @@
 
 ## 8. 실시간 시세 연결 관리
 
-- **문제**: 구독마다 tick과 하트비트를 스레드 4개짜리 실행기 하나에서 돌려 느린 출처가 다른 구독을 굶김(QA-254). 연결 상한은 전역 20개이고 닫힌 연결은 다음 하트비트(25초)까지 자리를
+- **문제**: (이번 회차에 고침 — QA-254 `29844564`·`575c6a4b`: 수집기 읽기를 따로 늘어나는 실행기로 옮기고, 동시 읽기는 닫힌 구독의 끝나지 않은 읽기까지 세어
+  20개로 묶음 — 아래는 남은 것) 연결 상한은 전역 20개이고 닫힌 연결은 다음 하트비트(25초)까지 자리를
   차지하며, 주기 선택 상자는 ↑↓를 누를 때마다 새 연결을 엶(화면 영역 실측 — ↑ 3번에 연결 3개). 상한 응답 429는 EventSource에서 500이 됨(QA-266). 세션을 취소해도 열린 연결은 시한까지
   남음(QA-281). 받은 종목이 하나도 없으면('모름') 장이 닫힌 것과 똑같이 다음 보내기를 5분 뒤로 미뤄 장중 일시 장애 뒤 회복이 최대 5분 늦음(ADR 0024의 'CLOSED·모름' 설계라 결함 아님).
-- **제안**: 하트비트는 별도 가벼운 실행기, tick의 블로킹 호출은 늘어날 수 있는 실행기(가상 스레드 등). 사용자(세션)별 상한을 두고 같은 사용자가 새로 연결하면 가장 오래된 연결부터 닫음,
+- **제안**: live 경로만의 짧은 수집기 읽기 상한(예: 10~15초 — 지금은 수집기 읽기 상한 90초라 닫힌 구독의 읽기가 그만큼 자리를 쥠). 사용자(세션)별 상한을 두고 같은 사용자가 새로 연결하면 가장 오래된 연결부터 닫음,
   화면은 주기 변경에 300~500ms 디바운스나 blur 때 적용. 구독에 세션 id를 달아 tick 때 확인. `available:false`·전부 missing은 '닫힘'과 구분해 짧은 백오프(예: 30초 → 주기)로 다시 묻고
   status가 CLOSED로 확인된 때만 5분으로 늦춤.
 - **기대 효과**: 키보드 조작·빠른 화면 이동·탭 여러 개로 실시간 시세가 잠시 모두 멈추는 일을 막고, 장중 일시 장애 뒤 표시가 빨리 회복됨.
