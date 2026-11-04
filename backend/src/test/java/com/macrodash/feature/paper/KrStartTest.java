@@ -552,6 +552,15 @@ class KrStartTest {
 
     /** 출발 → 계좌2 출발 상태 → 12-01 밤 계좌2 결정(장중 확인 11:00·감시 005930, 주문은 인자). 그 밤 계좌2 결정을 돌려줍니다. */
     private Decision krClaude2NightWithCheckpoint(KrClaudeFixtures.FakeAi fake, String... orders) {
+        return krClaude2NightWithCheckpoint(fake, (Instant) null, orders);
+    }
+
+    /**
+     * {@link #krClaude2NightWithCheckpoint(KrClaudeFixtures.FakeAi, String...)} — {@code nightDecidedAt}이 있으면 12-01 밤 실행 바로 앞에 가짜
+     * 저장소의 DB 시각({@code dbNow})을 그 시각으로 옮겨, 밤 결정 행의 {@code decidedAt}이 기본값(10-26)이 아니라 그 시각이 되게 합니다(운영 DB는
+     * decided_at = now()). 그 뒤 쓰는 주문·상태 행 시각도 이 값이라, 장중 확인을 돌리기 전에 부르는 쪽이 확인 시각으로 다시 옮깁니다.
+     */
+    private Decision krClaude2NightWithCheckpoint(KrClaudeFixtures.FakeAi fake, Instant nightDecidedAt, String... orders) {
         fake.answer(KrClaudeFixtures.decision(8, null, KrClaudeFixtures.order("005930", "BUY", 8.0, null)));
         realClaude(fake);
         assertThat(runAt("2026-11-30T22:30").outcome()).isEqualTo(PaperDecisionJob.STARTED);
@@ -563,6 +572,9 @@ class KrStartTest {
         fake.answer(KrClaudeFixtures.decision(8, "관망")).answer(KrClaudeFixtures.withCheckpoint(
                 KrClaudeFixtures.decision(10, null, orders), "11:00", "005930"));
         sessionData(NEXT, S, everyCodeOn(NEXT));
+        if (nightDecidedAt != null) {
+            store.dbNow = nightDecidedAt;
+        }
         assertThat(runAt("2026-12-01T22:30").outcome()).isEqualTo(PaperDecisionJob.DECIDED);
         return store.decisionFor(PaperBooks.KR_CLAUDE2, NEXT, RuleBookService.SCHEDULED).orElseThrow();
     }
@@ -679,22 +691,20 @@ class KrStartTest {
     @DisplayName("QA-172: 휴장(주말) 다음 세션의 장중 확인 REPLACE — 밤 관측치의 신선도를 밤 결정 순간으로 세어 새 주문을 받음(지금 시각으로 세면 24시간이 넘어 전부 STALE_INPUT)")
     void krCheckpointReplaceAfterClosure() {
         // 12-02를 임시휴장으로 — 12-01 밤 결정의 장중 확인 세션이 12-03이 되고, 12-01 21:57 관측치는 그때 37시간 지남(금요일 밤 → 월요일과 같은 모양).
-        LocalDate after = LocalDate.of(2026, 12, 3);
-        tools.jackson.databind.node.ObjectNode body = (tools.jackson.databind.node.ObjectNode) store.settings.body().deepCopy();
-        tools.jackson.databind.node.ObjectNode kr = (tools.jackson.databind.node.ObjectNode) body.path("kr");
-        tools.jackson.databind.node.ObjectNode calendar = kr.has("calendar")
-                ? (tools.jackson.databind.node.ObjectNode) kr.get("calendar") : kr.putObject("calendar");
-        calendar.putArray("extraClosures").add(E.toString());
-        store.saveSettings(body, List.of("kr.calendar.extraClosures"));
+        LocalDate after = closeE();
         KrClaudeFixtures.FakeAi fake = new KrClaudeFixtures.FakeAi();
-        krClaude2NightWithCheckpoint(fake,
+        Decision night = krClaude2NightWithCheckpoint(fake, kst("2026-12-01T22:30"),
                 KrClaudeFixtures.claude2Order("005930", "BUY", 8.0, null, PaperBooks.AT_1000),
                 KrClaudeFixtures.claude2Order("000660", "BUY", 5.0, null, PaperBooks.AT_1400));
+        // 전제: 밤 결정 순간 = 실제 밤(12-01 22:30 — 관측치 12-01 21:57보다 33분 뒤). 가짜 저장소 기본값(10-26)이면 관측치보다 한 달 앞이라
+        // 신선도 기준을 무엇으로 잡든(EPOCH·관측치 수집 시각 등) STALE이 아니게 되어 '밤 결정 순간으로 셈'을 가르지 못함.
+        assertThat(night.decidedAt()).isEqualTo(kst("2026-12-01T22:30"));
         assertThat(store.checkpoint(PaperBooks.KR_CLAUDE2, after)).as("확인 세션 = 휴장 다음 거래일").isPresent();
         Order two = store.ordersOf(PaperBooks.KR_CLAUDE2).stream().filter(o -> PaperBooks.AT_1400.equals(o.timing())).findFirst().orElseThrow();
         watchKr(after, kst("2026-12-03T11:00:40"));
         fake.answer("{\"schemaVersion\":2,\"action\":\"REPLACE\",\"summary\":\"000660 대신 373220\",\"orders\":["
                 + KrClaudeFixtures.claude2Order("373220", "BUY", 5.0, null, PaperBooks.MARKET) + "],\"noTradeReason\":null}");
+        store.dbNow = kst("2026-12-03T11:04");   // 확인 결정·새 주문의 DB 시각 = 확인 시각(주문 createdAt이 MARKET 기준 시각을 정함)
         clock.set(kst("2026-12-03T11:04"));
         checkpointJob().run();
 
@@ -706,7 +716,50 @@ class KrStartTest {
                     assertThat(o.status()).isEqualTo(PaperBooks.ORDER_PENDING);
                 });
         assertThat(cp.status()).isEqualTo(ClaudeBookService.STATUS_OK);
+        assertThat(cp.response().path("inputsStale").asBoolean(true)).as("검증 응답의 신선도 판정").isFalse();
         assertThat(store.orders.get(two.id()).status()).isEqualTo(PaperBooks.ORDER_CANCELLED);
+    }
+
+    @Test
+    @DisplayName("QA-172 반대 경우: 밤 결정 순간이 관측치 수집보다 24시간 넘게 뒤였으면 장중 확인 REPLACE의 새 주문은 여전히 STALE_INPUT — 신선도 기준이 밤 결정 "
+            + "순간이지 '절대 묵지 않는' 시각(EPOCH·관측치 수집 시각)이 아님")
+    void krCheckpointReplaceStaysStaleWhenNightInputsWereOld() {
+        LocalDate after = closeE();
+        KrClaudeFixtures.FakeAi fake = new KrClaudeFixtures.FakeAi();
+        // 밤 결정 행의 decided_at(DB 시각)을 12-02 22:30으로 — 관측치(12-01 21:57)보다 24시간 33분 뒤. 실제 한국 밤 결정은 기한 안이라 이런 간격이
+        // 생기지 않지만, 장중 확인 검증이 쓰는 기준 시각만 가르려고 나머지(관측치·감시 저장본·응답·확인 시각)는 위 QA-172 시험과 같게 둡니다.
+        Decision night = krClaude2NightWithCheckpoint(fake, kst("2026-12-02T22:30"),
+                KrClaudeFixtures.claude2Order("005930", "BUY", 8.0, null, PaperBooks.AT_1000),
+                KrClaudeFixtures.claude2Order("000660", "BUY", 5.0, null, PaperBooks.AT_1400));
+        assertThat(night.decidedAt()).isEqualTo(kst("2026-12-02T22:30"));
+        assertThat(store.checkpoint(PaperBooks.KR_CLAUDE2, after)).as("확인 세션 = 휴장 다음 거래일").isPresent();
+        watchKr(after, kst("2026-12-03T11:00:40"));
+        fake.answer("{\"schemaVersion\":2,\"action\":\"REPLACE\",\"summary\":\"000660 대신 373220\",\"orders\":["
+                + KrClaudeFixtures.claude2Order("373220", "BUY", 5.0, null, PaperBooks.MARKET) + "],\"noTradeReason\":null}");
+        store.dbNow = kst("2026-12-03T11:04");
+        clock.set(kst("2026-12-03T11:04"));
+        checkpointJob().run();
+
+        Decision cp = store.decisionFor(PaperBooks.KR_CLAUDE2, NEXT, RuleBookService.CHECKPOINT).orElseThrow();
+        assertThat(store.ordersOf(PaperBooks.KR_CLAUDE2)).filteredOn(o -> java.util.Objects.equals(o.decisionId(), cp.id()))
+                .singleElement().satisfies(o -> {
+                    assertThat(o.timing()).isEqualTo(PaperBooks.MARKET);
+                    assertThat(o.rejectReason()).as("밤 결정 순간에 이미 24시간 넘게 묵은 관측치").isEqualTo("STALE_INPUT");
+                    assertThat(o.status()).isEqualTo("REJECTED");
+                });
+        assertThat(cp.response().path("inputsStale").asBoolean(false)).as("검증 응답의 신선도 판정").isTrue();
+        assertThat(cp.status()).isEqualTo(ClaudeBookService.STATUS_NO_TRADE);
+    }
+
+    /** 확인 세션 E(12-02)를 설정 임시휴장으로 — 12-01 밤 결정의 장중 확인 세션이 12-03이 됨. 그 세션(12-03)을 돌려줍니다. 밤 실행·dbNow를 옮기기 전에 부름. */
+    private LocalDate closeE() {
+        tools.jackson.databind.node.ObjectNode body = (tools.jackson.databind.node.ObjectNode) store.settings.body().deepCopy();
+        tools.jackson.databind.node.ObjectNode kr = (tools.jackson.databind.node.ObjectNode) body.path("kr");
+        tools.jackson.databind.node.ObjectNode calendar = kr.has("calendar")
+                ? (tools.jackson.databind.node.ObjectNode) kr.get("calendar") : kr.putObject("calendar");
+        calendar.putArray("extraClosures").add(E.toString());
+        store.saveSettings(body, List.of("kr.calendar.extraClosures"));
+        return LocalDate.of(2026, 12, 3);
     }
 
     @Test
