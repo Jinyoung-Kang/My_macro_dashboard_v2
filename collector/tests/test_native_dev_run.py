@@ -25,7 +25,8 @@ FAKE_TOKEN = "fake-token-from-env-file"
 
 pytestmark = pytest.mark.skipif(shutil.which("make") is None, reason="make가 없어 건너뜁니다.")
 
-_PRINT_ENV = '#!/bin/sh\nprintf "TOKEN=%s\\nURL=%s\\n" "$COLLECTOR_API_TOKEN" "$DATABASE_URL"\n'
+_PRINT_ENV = ('#!/bin/sh\nprintf "TOKEN=%s\\nURL=%s\\nPAPER=%s\\n" "$COLLECTOR_API_TOKEN" "$DATABASE_URL" '
+              '"${PAPER_ENABLED-(unset)}"\n')
 
 
 def _fake_exe(path: Path) -> None:
@@ -34,13 +35,13 @@ def _fake_exe(path: Path) -> None:
     path.chmod(0o755)
 
 
-def _run(tmp_path: Path, target: str, extra_env: dict[str, str] | None = None) -> dict[str, str]:
-    (tmp_path / ".env").write_text(f"COLLECTOR_API_TOKEN={FAKE_TOKEN}\nDATABASE_PORT=5433\n", encoding="utf-8")
+def _run(tmp_path: Path, target: str, extra_env: dict[str, str] | None = None, env_file: str = "") -> dict[str, str]:
+    (tmp_path / ".env").write_text(f"COLLECTOR_API_TOKEN={FAKE_TOKEN}\nDATABASE_PORT=5433\n{env_file}", encoding="utf-8")
     _fake_exe(tmp_path / "collector/.venv/bin/python")   # make dev-collector가 부르는 해석기
     _fake_exe(tmp_path / "bin/mvn")                      # make dev-backend가 부르는 mvn
     (tmp_path / "backend").mkdir(exist_ok=True)
     drop = {"COLLECTOR_API_TOKEN", "COLLECTOR_ALLOW_NO_TOKEN", "DATABASE_URL", "DATABASE_PORT",
-            "DATABASE_USER", "DATABASE_PASSWORD", "DATABASE_NAME", "MAKEFLAGS", "MFLAGS", "MAKELEVEL"}
+            "DATABASE_USER", "DATABASE_PASSWORD", "DATABASE_NAME", "PAPER_ENABLED", "MAKEFLAGS", "MFLAGS", "MAKELEVEL"}
     env = {k: v for k, v in os.environ.items() if k not in drop}
     env["PATH"] = f"{tmp_path / 'bin'}{os.pathsep}{env.get('PATH', '')}"
     env.update(extra_env or {})
@@ -50,9 +51,9 @@ def _run(tmp_path: Path, target: str, extra_env: dict[str, str] | None = None) -
     )
     assert result.returncode == 0, result.stdout + result.stderr
     # 토큰 값이 make가 찍는 명령 줄에 그대로 보이면 안 됩니다(터미널·로그에 남음).
-    echoed = [line for line in result.stdout.splitlines() if not line.startswith(("TOKEN=", "URL="))]
+    echoed = [line for line in result.stdout.splitlines() if not line.startswith(("TOKEN=", "URL=", "PAPER="))]
     assert not any(FAKE_TOKEN in line for line in echoed), echoed
-    return dict(re.findall(r"^(TOKEN|URL)=(.*)$", result.stdout, re.M))
+    return dict(re.findall(r"^(TOKEN|URL|PAPER)=(.*)$", result.stdout, re.M))
 
 
 def test_QA106_dev_collector는_env_파일의_토큰과_DB_포트로_띄운다(tmp_path):
@@ -71,7 +72,19 @@ def test_셸에서_준_값이_env_파일보다_앞선다(tmp_path):
     # LOCAL_SETUP 터미널 2처럼 DATABASE_URL을 직접 주면 그 값을 씁니다. 토큰도 셸 값이 먼저입니다.
     explicit = "jdbc:postgresql://localhost:6543/macrodash"
     seen = _run(tmp_path, "dev-backend", {"DATABASE_URL": explicit, "COLLECTOR_API_TOKEN": "from-shell"})
-    assert seen == {"TOKEN": "from-shell", "URL": explicit}
+    assert seen["TOKEN"] == "from-shell" and seen["URL"] == explicit
+
+
+@pytest.mark.xfail(strict=True, reason="QA-251 재현 — 수정 전: dev-backend가 .env의 PAPER_ENABLED를 넘기지 않아 백엔드가 기본값(켜짐)으로 "
+                                       "모의 매매 정기 작업을 돌림")
+def test_QA251_dev_backend는_env_파일의_PAPER_ENABLED를_넘기고_줄이_없으면_끈다(tmp_path):
+    # 장부는 Vultr 서버 한 곳에만(ADR 0019·0020·0023) — 로컬 .env는 PAPER_ENABLED=false 고정인데 백엔드 기본값은 켜짐입니다.
+    assert _run(tmp_path, "dev-backend", env_file="PAPER_ENABLED=false\n")["PAPER"] == "false"
+    assert _run(tmp_path, "dev-backend")["PAPER"] == "false", ".env에 줄이 없어도 네이티브 백엔드는 끔"
+    # 셸에서 일부러 켠 값은 그대로(다른 값들처럼 셸 값이 먼저).
+    assert _run(tmp_path, "dev-backend", {"PAPER_ENABLED": "true"}, env_file="PAPER_ENABLED=false\n")["PAPER"] == "true"
+    # 수집기에는 넘기지 않음(수집기는 이 값을 쓰지 않음).
+    assert _run(tmp_path, "dev-collector", env_file="PAPER_ENABLED=false\n")["PAPER"] == "(unset)"
 
 
 def test_QA106_문서가_빈_토큰을_인증_끔으로_적지_않고_launchd에_토큰을_넘긴다():
