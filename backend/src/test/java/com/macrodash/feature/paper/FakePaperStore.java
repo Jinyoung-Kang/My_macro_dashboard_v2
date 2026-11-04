@@ -853,6 +853,9 @@ class FakePaperStore extends PaperStore {
 
     @Override
     public Map<Long, CheckpointAnswer> checkpointAnswers(java.util.Collection<Long> ids) {
+        if (ids.isEmpty()) {
+            return Map.of();   // 실제 저장소와 같게 — 불변 빈 Map(null 키 조회는 NullPointerException)
+        }
         Map<Long, CheckpointAnswer> out = new java.util.HashMap<>();
         for (Long id : ids) {
             Decision d = decisions.get(id);
