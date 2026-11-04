@@ -179,10 +179,11 @@ class SessionFilterTest {
         }
 
         @Test
-        @DisplayName("QA-020 로그인했거나 데모인 쓰기 요청도 본문이 64KB를 넘으면 파싱 전에 413")
+        @DisplayName("QA-020 로그인했거나 데모인 쓰기 요청도 본문이 4MB(MAX_WRITE_BODY_BYTES)를 넘으면 파싱 전에 413 — 상한 안(프레임 v8 본문 크기 67KB)은 통과")
         void oversizedAuthenticatedWriteIsRejected() throws Exception {
             WebConfig.SessionFilter on = filter(TOKEN);
-            byte[] huge = new byte[128 * 1024];
+            assertThat(WebConfig.SessionFilter.MAX_WRITE_BODY_BYTES).isEqualTo(4L * 1024 * 1024);
+            byte[] huge = new byte[(int) WebConfig.SessionFilter.MAX_WRITE_BODY_BYTES + 1];
             Arrays.fill(huge, (byte) 'A');
 
             MockHttpServletRequest demo = new MockHttpServletRequest("POST", "/api/ai/report");
@@ -203,6 +204,17 @@ class SessionFilterTest {
             on.doFilter(member, memberResponse, (req, res) -> reached[0] = true);
             assertThat(memberResponse.getStatus()).isEqualTo(413);
             assertThat(reached[0]).isFalse();
+
+            byte[] frameworkSized = new byte[67 * 1024];
+            Arrays.fill(frameworkSized, (byte) 'A');
+            MockHttpServletRequest within = new MockHttpServletRequest("POST", "/api/alerts/rules");
+            within.setServletPath("/api/alerts/rules");
+            within.setCookies(new Cookie(AuthService.COOKIE_NAME, "member-cookie"));
+            within.setContent(frameworkSized);
+            MockHttpServletResponse withinResponse = new MockHttpServletResponse();
+            on.doFilter(within, withinResponse, (req, res) -> reached[0] = true);
+            assertThat(withinResponse.getStatus()).as("옛 상한 64KB를 넘지만 4MB 안인 본문은 컨트롤러로 간다").isEqualTo(200);
+            assertThat(reached[0]).isTrue();
         }
 
         @Test
