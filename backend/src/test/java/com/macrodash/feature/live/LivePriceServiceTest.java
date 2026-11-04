@@ -7,7 +7,6 @@ import com.macrodash.support.InvalidRequestException;
 import com.macrodash.support.TooManyRequestsException;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.test.web.servlet.MockMvc;
@@ -158,7 +157,6 @@ class LivePriceServiceTest {
     }
 
     @Test
-    @Disabled("QA-254 재현 — 수정 전: 구독의 주기 실행과 하트비트가 스레드 4개짜리 실행기 하나를 같이 써, 느린 출처를 기다리는 구독 넷이 다른 구독의 첫 값을 막음")
     @DisplayName("QA-254: 느린 출처를 기다리는 구독이 넷이어도 다른 구독의 첫 읽기는 바로 — 수집기 호출을 기다리는 구독이 실행기를 독차지하지 않음")
     void slowReadsDoNotStarveOtherStreams() throws Exception {
         CountDownLatch release = new CountDownLatch(1);

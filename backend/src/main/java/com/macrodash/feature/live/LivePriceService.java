@@ -24,7 +24,9 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
@@ -44,6 +46,9 @@ import java.util.regex.Pattern;
  *   <li><b>연결</b>: 연결 상한 {@link #MAX_STREAMS}, 25초마다 주석 줄(하트비트 — 끊긴 연결을 알아채고 앞단이 유휴로 끊지 않게), 연결 시간은
  *       주기 + 5분(브라우저 EventSource가 다시 잇고, 다시 이으면 바로 한 번 보냄).</li>
  *   <li><b>store_only</b>(저장본만 읽는 배포): 외부 호출을 일으키지 않고 {@code available:false}(DetailService와 같은 약속).</li>
+ *   <li><b>실행기</b>: 시각 맞추기(다음 읽기 예약·하트비트)는 막히지 않는 작은 스케줄러, 수집기 읽기(출처가 응답하지 않으면 수집기 읽기 상한까지
+ *       기다림)는 따로 늘어나는 실행기에서 — 구독마다 읽기는 많아야 하나라 연결 상한만큼만 늘어납니다. 둘이 한 풀을 같이 쓰면 느린 출처를 기다리는
+ *       구독 넷이 다른 구독의 첫 값과 모든 하트비트를 멈췄습니다(QA-254).</li>
  * </ul>
  */
 @Service
@@ -69,7 +74,10 @@ public class LivePriceService {
 
     private final StoreReader store;
     private final CollectorClient collector;
+    /** 다음 읽기 예약·하트비트만 — 막히는 일(수집기 읽기)을 올리지 않습니다. */
     private final ScheduledExecutorService scheduler;
+    /** 수집기 읽기와 그 결과 보내기 — 구독마다 많아야 하나라 열린 구독 수만큼만 늘어남(쉬는 스레드는 60초 뒤 사라짐). */
+    private final ExecutorService readers;
     private final Set<Stream> streams = ConcurrentHashMap.newKeySet();
 
     public LivePriceService(StoreReader store, CollectorClient collector) {
@@ -81,12 +89,19 @@ public class LivePriceService {
             thread.setDaemon(true);
             return thread;
         });
+        AtomicInteger readerCounter = new AtomicInteger();
+        this.readers = Executors.newCachedThreadPool(runnable -> {
+            Thread thread = new Thread(runnable, "live-prices-read-" + readerCounter.incrementAndGet());
+            thread.setDaemon(true);
+            return thread;
+        });
     }
 
     @PreDestroy
     void shutdown() {
         streams.forEach(Stream::close);
         scheduler.shutdownNow();
+        readers.shutdownNow();
     }
 
     /**
@@ -211,8 +226,20 @@ public class LivePriceService {
         }
 
         void start() {
-            next = scheduler.schedule(this::tick, 0, TimeUnit.SECONDS);
+            next = scheduler.schedule(this::dispatch, 0, TimeUnit.SECONDS);
             heartbeat = scheduler.scheduleAtFixedRate(this::beat, HEARTBEAT.toSeconds(), HEARTBEAT.toSeconds(), TimeUnit.SECONDS);
+        }
+
+        /** 예약 시각이 되면 읽기를 읽기 실행기로 넘깁니다 — 스케줄러 스레드는 수집기를 기다리지 않음(QA-254). */
+        private void dispatch() {
+            if (closed.get()) {
+                return;
+            }
+            try {
+                readers.execute(this::tick);
+            } catch (RejectedExecutionException e) {
+                close();   // 종료 중
+            }
         }
 
         private void tick() {
@@ -233,7 +260,7 @@ public class LivePriceService {
                 return;
             }
             if (!closed.get()) {
-                next = scheduler.schedule(this::tick, nextDelaySeconds(every, anyTrading(body)), TimeUnit.SECONDS);
+                next = scheduler.schedule(this::dispatch, nextDelaySeconds(every, anyTrading(body)), TimeUnit.SECONDS);
             }
         }
 
