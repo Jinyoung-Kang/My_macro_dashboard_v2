@@ -7,6 +7,7 @@ import com.macrodash.support.InvalidRequestException;
 import com.macrodash.support.TooManyRequestsException;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.test.web.servlet.MockMvc;
@@ -16,12 +17,16 @@ import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.json.JsonMapper;
 
 import java.nio.charset.StandardCharsets;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.startsWith;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.timeout;
@@ -150,5 +155,27 @@ class LivePriceServiceTest {
         assertThat(result.getResponse().getContentType()).startsWith("text/event-stream");
         assertThat(body).contains("event:prices").contains("\"available\":true").contains("\"US:T0\"");
         assertThat(service.openStreams()).isEqualTo(1);
+    }
+
+    @Test
+    @Disabled("QA-254 재현 — 수정 전: 구독의 주기 실행과 하트비트가 스레드 4개짜리 실행기 하나를 같이 써, 느린 출처를 기다리는 구독 넷이 다른 구독의 첫 값을 막음")
+    @DisplayName("QA-254: 느린 출처를 기다리는 구독이 넷이어도 다른 구독의 첫 읽기는 바로 — 수집기 호출을 기다리는 구독이 실행기를 독차지하지 않음")
+    void slowReadsDoNotStarveOtherStreams() throws Exception {
+        CountDownLatch release = new CountDownLatch(1);
+        when(collector.livePrices(startsWith("US:"))).thenAnswer(invocation -> {
+            release.await(30, TimeUnit.SECONDS);   // 프록시가 응답하지 않는 출처(수집기 읽기 상한까지 기다림)
+            return Optional.of(payload("OPEN"));
+        });
+        when(collector.livePrices("KR:005930")).thenReturn(Optional.of(payload("OPEN")));
+        try {
+            for (String ticker : List.of("CSCO", "INTC", "AMD", "QCOM")) {
+                service.stream("US:" + ticker, 5);
+            }
+            verify(collector, timeout(3000).times(4)).livePrices(startsWith("US:"));
+            service.stream("KR:005930", 5);
+            verify(collector, timeout(2000)).livePrices("KR:005930");
+        } finally {
+            release.countDown();
+        }
     }
 }
