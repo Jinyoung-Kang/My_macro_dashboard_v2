@@ -131,9 +131,12 @@ public class WebConfig implements WebMvcConfigurer {
         /**
          * 로그인한(또는 데모 열람) 쓰기 요청의 본문 상한(바이트, QA-020). Jackson 3의 기본 문자열 상한은 1억 자라,
          * 상한이 없으면 데모 방문자가 {@code POST /api/ai/report}에 수천만 자를 보내 파싱만으로 힙을 고갈시킬 수
-         * 있었습니다(길이 검사는 파싱 뒤). 가장 큰 정상 본문이 AI 추가 지시 2,000자(한글 약 6KB)라 64KB면 넉넉합니다.
+         * 있었습니다(길이 검사는 파싱 뒤). 처음(2026-10)에는 가장 큰 정상 본문이 AI 추가 지시 2,000자(한글 약 6KB)라 64KB였고,
+         * 2026-11-04부터 4MB입니다 — 투자 OS 프레임의 한도를 10배로 올린 뒤(2026-11-03, 규칙 4,000자·엔진당 300개·INSIGHT 메모 500,000자)
+         * 프레임 v8의 수동 편집 본문(규칙 128개, 약 67KB)이 64KB에 걸렸고, INSIGHT 메모 상한(한글 500,000자 ≈ 1.5MB, 유니코드 이스케이프면
+         * 최대 3MB)을 실을 수 있어야 합니다. 4MB 파싱은 힙을 위협하지 않습니다(JSON 문자열 길이 검사는 그 뒤).
          */
-        static final long MAX_WRITE_BODY_BYTES = 64 * 1024;
+        static final long MAX_WRITE_BODY_BYTES = 4L * 1024 * 1024;
 
         private final AuthService authService;
         /** 상태를 바꾸는 요청(POST·PUT·DELETE)의 Origin이 이 목록(CORS와 같음)에 맞아야 합니다. */
