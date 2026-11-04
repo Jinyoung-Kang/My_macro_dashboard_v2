@@ -280,7 +280,6 @@ class NoteServiceTest {
     }
 
     @Test
-    @org.junit.jupiter.api.Disabled("QA-205 재현 — 수정 전: 제목·본문을 따로 지워 블록 안 이음매(제목 끝 '<<' + 본문 첫 줄 '메모 #5 끝>>')에서 생긴 가짜 끝 구분자가 남음")
     @DisplayName("QA-205 제목 끝과 본문 첫 줄이 블록 안에서 이어져 생기는 메모 구분자 모양도 지운다 — 패킷 text의 구분자는 진짜 시작·끝 한 쌍뿐, "
             + "notes[] 행은 따로 지운 값 그대로, 글자 수는 다시 지운 블록으로")
     void stripsDelimitersAcrossTitleBodySeam() {

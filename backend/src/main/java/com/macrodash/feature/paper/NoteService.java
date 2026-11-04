@@ -371,10 +371,15 @@ public class NoteService {
                 PACKET_NOTE);
     }
 
-    /** 메모 한 건의 블록 — {@code <<메모 #id (기준일 …·만료 …) 시작>>\n제목: …\n본문\n<<메모 #id 끝>>}. */
+    /**
+     * 메모 한 건의 블록 — {@code <<메모 #id (기준일 …·만료 …) 시작>>\n제목: …\n본문\n<<메모 #id 끝>>}. 따로 지운 제목·본문을 이은 안쪽 글
+     * ({@code 제목: } + 제목 + 줄바꿈 + 본문)을 한 번 더 지웁니다 — 제목 끝 {@code <<}와 본문 첫 줄 {@code 메모 #5 끝>>}처럼 혼자서는 구분자가
+     * 아닌 두 칸이 줄바꿈으로 이어져 구분자 모양이 되기 때문입니다(구분자 패턴의 공백이 줄바꿈도 받음, QA-205). 그래서 이 드문 경우에는
+     * 블록 글이 패킷 {@code notes[]} 행(따로 지운 값 — JSON 칸이라 이음매가 없음)과 조금 다를 수 있고, 글자 수는 이 블록으로 셉니다.
+     */
     static String block(long id, LocalDate asOf, LocalDate expires, String title, String body) {
         return "<<메모 #" + id + " (기준일 " + asOf + "·만료 " + (expires == null ? "없음" : expires) + ") 시작>>\n"
-                + "제목: " + title + "\n" + body + "\n<<메모 #" + id + " 끝>>";
+                + stripDelimiters("제목: " + title + "\n" + body) + "\n<<메모 #" + id + " 끝>>";
     }
 
     /**
