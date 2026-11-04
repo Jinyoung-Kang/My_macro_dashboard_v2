@@ -29,7 +29,9 @@ source "$(dirname "${BASH_SOURCE[0]}")/../db-common.sh"   # DB_NAME · BACKUP_DI
 tag=my-macro-backup
 # QA-199: 실패를 운영자에게 밀어서 알립니다 — syslog만으로는 journalctl을 보기 전까지 아무도 모르고, 그동안 db/ 수명주기(60일)가
 # 서버 밖 사본을 지워 갑니다. 둘 중 하나라도 비면 조용히 건너뜁니다. 토큰·채팅 ID는 curl 설정(stdin, -K -)으로 넘겨 프로세스 목록·로그에
-# 남기지 않고(출력도 버림), 알림이 실패해도 백업의 종료 코드(1)는 그대로입니다. 보내는 글은 fail의 사유 한 줄(.env 값은 이미 걸러 낸 것).
+# 남기지 않고(출력도 버림), 알림이 실패해도 백업의 종료 코드(1)는 그대로입니다. 보내는 글은 fail의 사유 한 줄 그대로입니다 — 걸러 내는 것은
+# make backup 출력에서 고른 원인 줄뿐이고(compose 경고 줄을 빼고, .env 해석 오류로 보이면 '값 생략'으로 바꿈 — 아래), S3 올리기 실패는
+# 버킷 이름(.env의 AWS_BACKUP_BUCKET)과 aws 오류 끝 두 줄을 그대로 담습니다.
 notify_failure() {
     local token chat
     token="$(env_file_value TELEGRAM_BOT_TOKEN)"

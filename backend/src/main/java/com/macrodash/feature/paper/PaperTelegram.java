@@ -20,7 +20,7 @@ import java.time.Duration;
 
 /**
  * 모의 매매 알림의 텔레그램 보내기(사용자 요청 2026-11-02) — Bot API {@code sendMessage} 한 번에 글 한 통(길면 여러 통). 봇 토큰·대화방은 서버 {@code .env}의
- * {@code TELEGRAM_BOT_TOKEN}·{@code TELEGRAM_CHAT_ID}(잠금화면 알림과 같은 값 — ADR 0019 결정 16)이고 둘 다 있어야 켜집니다. 로컬·QA에는 값이 없어 보내지
+ * {@code TELEGRAM_BOT_TOKEN}·{@code TELEGRAM_CHAT_ID}(S3 백업 실패 알림과 같은 값 — scripts/vultr/backup-s3.sh, QA-199)이고 둘 다 있어야 켜집니다. 로컬·QA에는 값이 없어 보내지
  * 않습니다.
  *
  * <ul>

@@ -44,7 +44,7 @@
 403 `{"error":"forbidden","required":"OWNER"|"PRO"}`입니다. 운영 경로(수집 실행·새로고침·`/api/status*`·
 공공 API 진단·레이더 진단·토스 진단·AI 연결 시험·교차 검증)는 운영자만 부릅니다.
 
-**데모 열람**(ADR 0013, v3의 AWS 공개 데모에서만 — 기본은 꺼짐, 이 저장소의 AWS 서버는 켜지 않음): 백엔드에 `DASHBOARD_DEMO_VIEWER_TOKEN`이 있고 요청 헤더
+**데모 열람**(ADR 0013, v3의 AWS 공개 데모에서만 — 기본은 꺼짐, 이 저장소의 Vultr 서버는 켜지 않음): 백엔드에 `DASHBOARD_DEMO_VIEWER_TOKEN`이 있고 요청 헤더
 `X-Demo-Viewer`가 그 값과 같으면, 세션 쿠키 없이 일반 회원·유료 등급의 데모 사용자로 GET을 받습니다(운영 경로는 그대로 403).
 GET·OPTIONS 밖(쓰기·HEAD)은 경로와 상관없이 403 `{"error":"demo_read_only","message":"데모에서는 조회만 가능합니다."}`입니다.
 예외는 AI 리포트 생성(POST `/api/ai/report`) 하나로, 방문자 전체가 하루 한도를 함께 씁니다(ADR 0014, 아래 AI 절).
