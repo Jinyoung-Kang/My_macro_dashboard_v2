@@ -28,6 +28,7 @@ import com.macrodash.store.StoreRepository;
 import com.macrodash.store.StoreRepository.HoldingRow;
 import com.macrodash.store.StoreRepository.TimeseriesColumns;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import tools.jackson.databind.JsonNode;
@@ -1038,6 +1039,33 @@ class PacketBuilderTest {
             }
         });
         assertThat(dates).isNotEmpty().allSatisfy(d -> assertThat(d).isBeforeOrEqualTo(MON));
+    }
+
+    @Test
+    @Disabled("QA-203 재현 — 수정 전: 장중 확인 지시 줄이 '장중 가격은 9_portfolio … 뿐'이라 적고 2_macroCards(확인 시각에 읽은 장중 수집본)를 말하지 않음")
+    @DisplayName("QA-203: 계좌1 장중 확인 지시 줄은 2_macroCards가 지금 수집본(장중 값일 수 있음 — lastTs·asOfMismatch)이라고 적고, 장중 가격을 9_portfolio로 "
+            + "가두는 말은 종목 가격으로만 한다")
+    void checkpointInstructionDescribesIntradayMacroCards() {
+        activeClaude();
+        // 확인 시각(d 다음 세션 장중) — 매크로 카드 수집본이 10-27(화) 12:05 ET = 10-28 01:05 KST 값(5분마다 다시 씀).
+        snapshot(Datasets.SNAP_MACRO_COLLECTED, Map.of("categories", List.of(category("us_equity",
+                List.of(card("sp500", "S&P 500", 5_880, 6_000, "2026-10-28 01:05"),
+                        card("vix", "VIX", 24.5, 18.0, "2026-10-28 01:05"))))),
+                Instant.parse("2026-10-27T16:06:00Z"));
+        Packet checkpoint = builder.build(MON, RuleBookService.CHECKPOINT, false, 0, store.settings);
+
+        JsonNode cards = checkpoint.body().path(PacketBuilder.MACRO).path("cards").path("items");
+        assertThat(cards).hasSize(2).allSatisfy(card -> assertThat(card.path("asOfMismatch").asBoolean())
+                .as(card.path("key").asString() + " — 기준일 " + MON + " 뒤 장중 값").isTrue());
+        List<String> lines = new ArrayList<>();
+        checkpoint.body().path("0_instructions").path("lines").forEach(line -> lines.add(line.asString()));
+        String line = lines.get(lines.size() - 1);
+        assertThat(line).as("매크로 카드까지 빼는 배타 표현이 아님").doesNotContain("— 장중 가격은 9_portfolio")
+                .contains("종목의 장중 가격은 9_portfolio")
+                .contains("2_macroCards는 지금 수집본이라 장중 값일 수 있다")
+                .contains("lastTs·asOfMismatch")
+                .contains("8_prices는 기준일 " + MON + " 종가까지")
+                .contains("1b·8b·11b도 아침 결정과 같은 시점까지");
     }
 
     @Test
