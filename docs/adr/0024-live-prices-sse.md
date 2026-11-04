@@ -113,6 +113,11 @@
   `overMarketPriceInfo`(AFTER_MARKET·OPEN — 삼성전자 220,000, 정규장 종가 219,500)에 옵니다. NXT에 없는 종목(069500)은 CLOSE·시간 외 없음. 2단계는 이때
   CLOSE를 짐작한 고정본으로만 시험해, 운영에서 시간 외 가격을 버리고 '정규장'으로 적었습니다(QA-169 — 시간 외가 열려 있으면 먼저 봄). 장 전(08:00~08:50)
   모양은 아직 실측하지 않았습니다. 정규장이 끝난 뒤 `localTradedAt`은 15:30:00(마감 시각)이고, 시간 외의 `localTradedAt`은 정규장 중과 같이 응답 시각입니다.
+- 국내 NXT 애프터마켓 뒤쪽 실측(2026-11-03 16:36 KST): 네이버 국내 polling의 맨 위 `closePrice`가 정규장 종가(15:50에 삼성전자 219,500)가 아니라 NXT 가격
+  (220,000 — `overMarketPriceInfo.overPrice`와 같음, `marketSessionType` afterMarket·`marketStatusDetailType` open, SK하이닉스도 둘이 같음)으로 바뀌고, 다음도
+  같은 값(`tradePrice` 220,000·`marketStatus` AFTER_MARKET)이라 이때는 두 출처 모두 KRX 정규장 종가를 주지 않습니다. 화면은 시간 외 가격 설명에 그 값을
+  '정규장 종가'로 적으므로(`frontend/src/lib/livePrices.ts`) 이 시각 뒤에는 '정규장 종가'가 NXT 가격으로 보입니다(알려진 한계 — 15:50과 16:36 사이 언제
+  바뀌는지는 재지 않음). 한국 모의 매매의 장부(토스·금융위)와 장중 평가(`paper_live_kr`, 토스 1분봉)는 이 경로를 쓰지 않습니다.
 - TradingView `global/scan`은 공개 화면이 쓰는 비공식 호출입니다(ADR 0017의 참고 시세와 같은 성격 — 출처 줄에 '참고 시세'). 막히면 그 카드는 저장본 값으로
   남고 머리말에 받지 못한 사유가 한 줄 뜹니다. 연결 선물(`1!`)은 만기 월물이 바뀌는 날 저장본(Yahoo `=F`)과 잠깐 다른 월물일 수 있습니다.
 - 매크로 화면을 5초로 열어 두면 TradingView 한 번·네이버 한 번이 5초마다입니다(3초 캐시라 여러 탭이어도 같음). 장이 모두 닫힌 시간(주말)은 5분 간격입니다.
