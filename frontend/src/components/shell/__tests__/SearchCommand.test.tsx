@@ -344,4 +344,37 @@ describe("이동", () => {
     fireEvent.click(option);
     expect(router.push).toHaveBeenCalledWith("/s/kr/005930");
   });
+
+  // QA-256 재현 — 수정 전: 200 응답 안의 출처 실패(symbols.error·errors)를 보지 않아 '맞는 결과가 없습니다'로 단정함.
+  it.fails("종목 찾기가 200 응답 안에서 출처 실패를 알리면 '맞는 결과가 없습니다'로 단정하지 않고 받지 못한 출처를 적는다(모두 실패·일부 실패)", async () => {
+    reads[endpoints.detail.symbols("삼성전자")] = {
+      available: true,
+      symbols: {
+        items: [],
+        errors: { "네이버 증권": "ProxyError", "Yahoo Finance": "ConnectionError" },
+        error: "네이버 증권: ProxyError; Yahoo Finance: ConnectionError",
+      },
+    };
+    reads[endpoints.detail.symbols("삼성")] = {
+      available: true,
+      symbols: {
+        items: [
+          { market: "kr", code: "005930", yahooSymbol: "005930.KS", name: "삼성전자", exchange: "코스피", kind: "stock", source: "Yahoo Finance" },
+        ],
+        errors: { "네이버 증권": "ProxyError" },
+        error: null,
+      },
+    };
+    openSearch();
+    await act(async () => {});
+    type("삼성전자");
+    const status = await screen.findByRole("list", { name: "검색 자료 상태" });
+    expect(within(status).getByText("종목 찾기 · Yahoo·네이버: 출처를 받지 못했습니다(네이버 증권·Yahoo Finance)")).toBeTruthy();
+    expect(screen.getByText("‘삼성전자’와 맞는 결과가 아직 없습니다 — 일부 범주를 다 읽지 못했습니다(아래 안내).")).toBeTruthy();
+
+    type("삼성");
+    await screen.findByRole("group", { name: "종목 찾기 · Yahoo·네이버" });
+    expect(within(screen.getByRole("list", { name: "검색 자료 상태" }))
+      .getByText("종목 찾기 · Yahoo·네이버: 일부 출처를 받지 못했습니다(네이버 증권)")).toBeTruthy();
+  });
 });
