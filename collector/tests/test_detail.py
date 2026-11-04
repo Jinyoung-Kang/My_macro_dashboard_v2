@@ -15,6 +15,7 @@ from __future__ import annotations
 from types import SimpleNamespace
 
 import pytest
+import requests
 from fastapi.testclient import TestClient
 
 from app import main
@@ -339,3 +340,29 @@ def test_실시간_시세와_검색_상세는_자동완성_조회_하나를_함�
     assert live_prices._reuters_code("BRK-B") == "BRKb"
     assert detail.naver_world("BRK-B") == {"reutersCode": "BRKb", "name": "버크셔 해서웨이 B"}
     assert asked == ["BRK B"], "한 번 찾은 것을 두 화면이 함께 씀(질의·캐시·실패 처리가 한 곳)"
+
+
+# --------------------------------------------------------------------------- QA-206
+# 자동완성 실패의 1분 기억(FAILURE_TTL — QA-186)이 조회 전에 잡은 시각부터 세어져, 응답 없는 호스트의 느린 시간 초과(8초 × 3회, 약 25초)
+# 뒤에는 실제로 약 35초만 남았습니다. 캐시가 빈 미국 종목을 잇달아 묻는 실시간 시세에서는 앞 종목의 기억이 루프가 끝나기 전에 풀려 다음 조회가
+# 다시 25초씩 묻습니다. 만료는 실패를 적는 순간부터 셉니다(성공 하루는 그대로).
+@pytest.mark.xfail(strict=True, reason="QA-206 재현 — 실패 기억의 만료를 조회 전 시각부터 세어, 25초 걸린 시간 초과 뒤 35초만 남음")
+def test_QA206_자동완성_실패_기억은_느린_시간_초과가_끝난_때부터_1분(monkeypatch):
+    monkeypatch.setattr(detail, "naver_world", _REAL_NAVER_WORLD)
+    now = [1000.0]
+    monkeypatch.setattr(detail.time, "monotonic", lambda: now[0])
+    asked: list = []
+
+    def get(url, params=None, timeout=None, headers=None):
+        asked.append(params["q"])
+        now[0] += 25.0                       # 응답 없는 호스트 — 시간 초과를 다 겪은 뒤에 실패
+        raise requests.exceptions.ReadTimeout("read timed out")
+    monkeypatch.setattr(detail, "get_session", lambda: SimpleNamespace(get=get))
+
+    assert detail.naver_world("AAPL") is None and now[0] == 1025.0
+    now[0] += detail.FAILURE_TTL - 1         # 실패를 적은 때(1025)부터 59초 — 조회 전(1000)부터는 84초
+    assert detail.naver_world("AAPL") is None
+    assert asked == ["AAPL"], "실패를 적은 때부터 1분은 다시 묻지 않음"
+    now[0] += 2
+    detail.naver_world("AAPL")
+    assert asked == ["AAPL", "AAPL"], "1분이 지나면 다시 묻는다(기억을 늘리지는 않음)"
