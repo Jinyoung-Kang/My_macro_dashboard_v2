@@ -343,12 +343,13 @@ def naver_world(code: str) -> dict | None:
                                 timeout=NAVER_WORLD_TIMEOUT)
         if res.status_code != 200:
             raise RuntimeError(f"HTTP {res.status_code}")
-        item, life = naver_world_item(res.json(), code), NAVER_WORLD_TTL
+        item, until = naver_world_item(res.json(), code), now + NAVER_WORLD_TTL
     except Exception as exc:  # noqa: BLE001
         logger.info("네이버 해외주식 코드 찾기 실패(%s): %s", code, brief_error(exc))
-        item, life = (cached[1] if cached else None), FAILURE_TTL
+        # 실패 1분은 적는 순간부터 — 조회 전 시각부터 세면 느린 시간 초과(약 25초) 뒤 실제 기억이 35초로 줄어 잇단 조회가 다시 묻습니다(QA-206).
+        item, until = (cached[1] if cached else None), time.monotonic() + FAILURE_TTL
     with _world_lock:
-        _world[code] = (now + life, item)
+        _world[code] = (until, item)
     return item
 
 
