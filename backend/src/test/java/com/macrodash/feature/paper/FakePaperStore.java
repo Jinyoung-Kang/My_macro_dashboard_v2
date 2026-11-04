@@ -842,8 +842,12 @@ class FakePaperStore extends PaperStore {
         return Optional.of(id);
     }
 
+    /** {@link #decision(long)}(결정 한 건 전체 — 패킷 포함)를 부른 횟수. 목록 화면이 행마다 통째로 읽지 않는지 봅니다(QA-253). */
+    int decisionReads;
+
     @Override
     public Optional<Decision> decision(long id) {
+        decisionReads++;
         return Optional.ofNullable(decisions.get(id));
     }
 

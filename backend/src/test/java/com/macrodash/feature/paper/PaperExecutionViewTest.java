@@ -7,6 +7,7 @@ import com.macrodash.store.PaperStore.Order;
 import com.macrodash.store.PaperStore.OrderExec;
 import com.macrodash.support.InvalidRequestException;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import tools.jackson.databind.JsonNode;
@@ -572,5 +573,28 @@ class PaperExecutionViewTest {
         Map<String, Object> book1 = query.execution(PaperBooks.CLAUDE, 50);
         assertThat(book1).containsEntry("checkpoints", List.of());
         assertThat((Map<String, Object>) book1.get("summary")).containsEntry("checkpoints", null);
+    }
+
+    @Test
+    @Disabled("QA-253 재현 — 수정 전: 장중 확인 행마다 store.decision(id)로 확인 결정 전체(패킷·응답)를 하나씩 읽음(N+1)")
+    @SuppressWarnings("unchecked")
+    @DisplayName("QA-253: 실행 감사는 장중 확인 결정을 한 건씩 통째로 읽지 않음(결정 전체 읽기 0회) — 행의 상태·KEEP/REPLACE·대신한 주문 수와 M8은 같음")
+    void checkpointAnswersAreNotReadOneByOne() {
+        activeBook(store, PaperBooks.CLAUDE2, PaperBooks.KIND_CLAUDE, 100_000, null);
+        LocalDate mon = LocalDate.of(2026, 11, 2);
+        checkpoint(mon, ExecutionSection.FEED_MINUTE, PaperBooks.CHECKPOINT_DONE, "REPLACE");
+        checkpoint(mon.plusDays(1), ExecutionSection.FEED_HOURLY, PaperBooks.CHECKPOINT_DONE, "KEEP");
+        checkpoint(mon.plusDays(2), ExecutionSection.FEED_MINUTE, PaperBooks.CHECKPOINT_DONE, null);
+        store.decisionReads = 0;
+
+        Map<String, Object> out = query.execution(PaperBooks.CLAUDE2, 1);
+
+        assertThat(store.decisionReads).as("확인 결정 전체(패킷 포함) 읽기").isZero();
+        List<Map<String, Object>> rows = (List<Map<String, Object>>) out.get("checkpoints");
+        assertThat(rows).extracting(r -> r.get("action")).containsExactly(null, "KEEP", "REPLACE");
+        assertThat(rows).extracting(r -> r.get("decisionStatus")).containsExactly("API_ERROR", "NO_TRADE", "NO_TRADE");
+        assertThat(rows).extracting(r -> r.get("supersededOrders")).containsExactly(null, 2, 2);
+        Map<String, Object> m8 = (Map<String, Object>) ((Map<String, Object>) out.get("summary")).get("checkpoints");
+        assertThat(m8).containsEntry("called", 3).containsEntry("keep", 1).containsEntry("replace", 1);
     }
 }
