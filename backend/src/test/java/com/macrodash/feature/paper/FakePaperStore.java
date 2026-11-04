@@ -852,6 +852,22 @@ class FakePaperStore extends PaperStore {
     }
 
     @Override
+    public Map<Long, CheckpointAnswer> checkpointAnswers(java.util.Collection<Long> ids) {
+        Map<Long, CheckpointAnswer> out = new java.util.HashMap<>();
+        for (Long id : ids) {
+            Decision d = decisions.get(id);
+            if (d != null) {
+                JsonNode response = d.response();
+                JsonNode action = response == null ? null : response.get("action");
+                JsonNode superseded = response == null ? null : response.get("supersededOrders");
+                out.put(id, new CheckpointAnswer(id, d.status(), action == null || action.isNull() ? null : action.asString(),
+                        superseded != null && superseded.isArray() ? superseded.size() : null));
+            }
+        }
+        return out;
+    }
+
+    @Override
     public java.util.Set<Long> decisionIds(String code, String kind) {
         return decisions.values().stream().filter(d -> d.bookCode().equals(code) && d.kind().equals(kind))
                 .map(Decision::id).collect(java.util.stream.Collectors.toCollection(java.util.HashSet::new));

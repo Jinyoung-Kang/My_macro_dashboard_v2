@@ -6,7 +6,7 @@ import com.macrodash.analytics.TradingCalendar;
 import com.macrodash.store.PaperStore;
 import com.macrodash.store.PaperStore.Book;
 import com.macrodash.store.PaperStore.Checkpoint;
-import com.macrodash.store.PaperStore.Decision;
+import com.macrodash.store.PaperStore.CheckpointAnswer;
 import com.macrodash.store.PaperStore.ExecFill;
 import com.macrodash.store.PaperStore.Fill;
 import com.macrodash.store.PaperStore.Order;
@@ -23,6 +23,7 @@ import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.function.Predicate;
 
@@ -146,12 +147,9 @@ final class ExecutionView {
         out.put("orders", rows);
         boolean checkpointed = spec.checkpointBook().equals(book.code());
         List<Checkpoint> checkpoints = checkpointed ? store.recentCheckpoints(book.code(), CHECKPOINT_SUMMARY_ROWS) : List.of();
-        Map<Long, Decision> answers = new HashMap<>();
-        for (Checkpoint c : checkpoints) {
-            if (c.checkpointDecisionId() != null) {
-                store.decision(c.checkpointDecisionId()).ifPresent(d -> answers.put(d.id(), d));
-            }
-        }
+        // 확인 결정은 쓰는 칸(상태·action·대신한 주문 수)만 한 번에 — 행마다 결정 전체(패킷 포함)를 읽지 않음(QA-253).
+        Map<Long, CheckpointAnswer> answers = store.checkpointAnswers(checkpoints.stream()
+                .map(Checkpoint::checkpointDecisionId).filter(Objects::nonNull).toList());
         List<Map<String, Object>> checkpointRows = new ArrayList<>();
         for (Checkpoint c : checkpoints.subList(0, Math.min(CHECKPOINT_ROWS, checkpoints.size()))) {
             checkpointRows.add(checkpointRow(c, answers.get(c.checkpointDecisionId()), calendar));
@@ -172,7 +170,7 @@ final class ExecutionView {
     }
 
     /** 장중 확인 행 하나(클래스 설명) — 확인 결정이 없거나 응답에 action이 없으면(실패) 그 칸은 null. */
-    private static Map<String, Object> checkpointRow(Checkpoint c, Decision answer, TradingCalendar calendar) {
+    private static Map<String, Object> checkpointRow(Checkpoint c, CheckpointAnswer answer, TradingCalendar calendar) {
         Map<String, Object> row = new LinkedHashMap<>();
         row.put("session", text(c.sessionDate()));
         row.put("atEt", CheckpointPacket.clock(c.atLocal()));          // 미국 화면이 읽는 이름 — 값은 그 계좌 시장의 현지 시각(V19)
@@ -187,15 +185,14 @@ final class ExecutionView {
         row.put("decisionId", c.checkpointDecisionId());
         row.put("decisionStatus", answer == null ? null : answer.status());
         row.put("action", action(answer));
-        JsonNode superseded = answer == null || answer.response() == null ? null : answer.response().get("supersededOrders");
-        row.put("supersededOrders", superseded != null && superseded.isArray() ? superseded.size() : null);
+        row.put("supersededOrders", answer == null ? null : answer.supersededOrders());
         row.put("lagSeconds", c.lagSeconds());
         row.put("calledAtKst", stamp(c.calledAt()));
         return row;
     }
 
     /** M8(클래스 설명) — 서술 지표, 판정 없음. */
-    private static Map<String, Object> checkpointSummary(List<Checkpoint> checkpoints, Map<Long, Decision> answers,
+    private static Map<String, Object> checkpointSummary(List<Checkpoint> checkpoints, Map<Long, CheckpointAnswer> answers,
                                                          int checkpointOrders) {
         int planned = 0;
         int called = 0;
@@ -255,11 +252,8 @@ final class ExecutionView {
     }
 
     /** 확인 결정 응답의 KEEP·REPLACE(결정이 없거나 실패 응답이면 null). */
-    private static String action(Decision answer) {
-        if (answer == null || answer.response() == null) {
-            return null;
-        }
-        String action = Json.asText(answer.response(), "action");
+    private static String action(CheckpointAnswer answer) {
+        String action = answer == null ? null : answer.action();
         return "KEEP".equals(action) || "REPLACE".equals(action) ? action : null;
     }
 

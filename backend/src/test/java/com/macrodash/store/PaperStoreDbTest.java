@@ -1221,6 +1221,30 @@ class PaperStoreDbTest {
     }
 
     @Test
+    @DisplayName("장중 확인 결정의 실행 감사 칸(QA-253) — 번호들을 한 질의로: 상태·action(문자열 그대로)·대신한 주문 수(배열일 때만), 응답 없음은 null, 없는 번호는 빠짐")
+    void checkpointAnswersReadOnlyTheAuditColumns() {
+        store.insertBookIfAbsent(book(BOOK, "Claude 계좌2 시험"));
+        tools.jackson.databind.node.ObjectNode replace = MAPPER.createObjectNode().put("action", "REPLACE");
+        replace.putArray("supersededOrders").add(7).add(8);
+        tools.jackson.databind.node.ObjectNode odd = MAPPER.createObjectNode().put("action", 5).put("supersededOrders", "x");
+        long a = store.insertDecisionIfAbsent(checkpointAnswer(DAY, "NO_TRADE", replace)).orElseThrow();
+        long b = store.insertDecisionIfAbsent(checkpointAnswer(DAY.plusDays(1), "FORMAT_ERROR", odd)).orElseThrow();
+        long c = store.insertDecisionIfAbsent(checkpointAnswer(DAY.plusDays(2), "API_ERROR", null)).orElseThrow();
+
+        Map<Long, PaperStore.CheckpointAnswer> read = store.checkpointAnswers(List.of(a, b, c, Long.MAX_VALUE));
+        assertThat(read).containsOnlyKeys(a, b, c);
+        assertThat(read.get(a)).isEqualTo(new PaperStore.CheckpointAnswer(a, "NO_TRADE", "REPLACE", 2));
+        assertThat(read.get(b)).isEqualTo(new PaperStore.CheckpointAnswer(b, "FORMAT_ERROR", "5", null));
+        assertThat(read.get(c)).isEqualTo(new PaperStore.CheckpointAnswer(c, "API_ERROR", null, null));
+        assertThat(store.checkpointAnswers(List.of())).isEmpty();
+    }
+
+    private static PaperStore.Decision checkpointAnswer(LocalDate day, String status, JsonNode response) {
+        return new PaperStore.Decision(0, BOOK, day, "CHECKPOINT", null, status, "claude-sonnet-5-5", 0, 1, null, null, null,
+                null, null, response, null, null, null, false, 5L, 0);
+    }
+
+    @Test
     @DisplayName("게이트 지표: 거래일마다 한 번(두 번째 넣기는 처음 값 그대로), 직전 기록·최근 순 — 시험 뒤 되돌림")
     void gateLogOncePerTradingDay() {
         class Rollback extends RuntimeException {

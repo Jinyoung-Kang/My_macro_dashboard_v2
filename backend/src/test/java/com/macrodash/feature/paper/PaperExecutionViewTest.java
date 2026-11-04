@@ -7,7 +7,6 @@ import com.macrodash.store.PaperStore.Order;
 import com.macrodash.store.PaperStore.OrderExec;
 import com.macrodash.support.InvalidRequestException;
 import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import tools.jackson.databind.JsonNode;
@@ -576,7 +575,6 @@ class PaperExecutionViewTest {
     }
 
     @Test
-    @Disabled("QA-253 재현 — 수정 전: 장중 확인 행마다 store.decision(id)로 확인 결정 전체(패킷·응답)를 하나씩 읽음(N+1)")
     @SuppressWarnings("unchecked")
     @DisplayName("QA-253: 실행 감사는 장중 확인 결정을 한 건씩 통째로 읽지 않음(결정 전체 읽기 0회) — 행의 상태·KEEP/REPLACE·대신한 주문 수와 M8은 같음")
     void checkpointAnswersAreNotReadOneByOne() {

@@ -23,6 +23,7 @@ import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
@@ -456,6 +457,13 @@ public class PaperStore {
         public Selection {
             selectedCiks = selectedCiks == null ? List.of() : List.copyOf(selectedCiks);
         }
+    }
+
+    /**
+     * 장중 확인 결정에서 실행 감사가 쓰는 칸만 — 상태, 응답의 {@code action}(문자열 그대로, 없으면 null), 응답의 {@code supersededOrders}
+     * 배열 길이(배열이 아니면 null). 패킷·응답 전체는 읽지 않습니다({@link #checkpointAnswers}).
+     */
+    public record CheckpointAnswer(long id, String status, String action, Integer supersededOrders) {
     }
 
     /**
@@ -2022,6 +2030,27 @@ public class PaperStore {
     public Optional<Decision> decision(long id) {
         return jdbc.query("SELECT " + DECISION_COLUMNS + " FROM paper_decisions WHERE id = ?", decisionMapper(), id)
                 .stream().findFirst();
+    }
+
+    /**
+     * 결정 번호들의 {@link CheckpointAnswer} — 한 번의 질의로, 패킷·응답 전체는 읽지 않습니다. 실행 감사의 장중 확인 행(최대 500행)이
+     * 행마다 {@link #decision(long)}으로 결정 전체를 읽으면 1년치에서 요청 하나가 수백 MB를 붙잡습니다(QA-253). 없는 번호는 빠집니다.
+     */
+    public Map<Long, CheckpointAnswer> checkpointAnswers(Collection<Long> ids) {
+        if (ids.isEmpty()) {
+            return Map.of();
+        }
+        Long[] array = ids.toArray(new Long[0]);
+        List<CheckpointAnswer> rows = jdbc.query("SELECT id, status, response->>'action' AS action, "
+                        + "CASE WHEN jsonb_typeof(response->'supersededOrders') = 'array' "
+                        + "THEN jsonb_array_length(response->'supersededOrders') END AS superseded "
+                        + "FROM paper_decisions WHERE id = ANY(?)",
+                ps -> ps.setArray(1, ps.getConnection().createArrayOf("bigint", array)),
+                (rs, rowNum) -> new CheckpointAnswer(rs.getLong("id"), rs.getString("status"), rs.getString("action"),
+                        (Integer) rs.getObject("superseded", Integer.class)));
+        Map<Long, CheckpointAnswer> out = new HashMap<>();
+        rows.forEach(row -> out.put(row.id(), row));
+        return out;
     }
 
     /** 그 책에서 그 종류인 결정의 번호(순서 없음) — 큰 JSON은 읽지 않습니다. 실행 감사 요약이 장중 확인(CHECKPOINT) 결정의 주문을 가릴 때 씁니다. */
