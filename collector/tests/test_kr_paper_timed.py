@@ -398,7 +398,6 @@ def test_QA174_다시_받은_응답에_그날_봉이_없으면_직전_OK_칸을_
 # --------------------------------------------------------------------------- QA-202
 # QA-174 수정이 '다시 받기 실패로 직전 OK 칸을 둔 수'를 정수 kept로 셌는데, 저장 직전의 기존 줄이 같은 이름에 잘라 낸 저장본 사전을 다시 넣어
 # 결과 문구가 정상 실행마다 '(직전 OK 칸 유지 {세션: {종목: …}})'를 붙였습니다(태스크 기록 detail — 운영자가 보는 신호를 알아볼 수 없음).
-@pytest.mark.xfail(strict=True, reason="QA-202 재현 — 정상 실행의 결과 문구에 저장본 사전이 '직전 OK 칸 유지'로 붙음")
 def test_QA202_정상_실행의_결과_문구에는_직전_OK_칸_유지가_없다(store, toss, monkeypatch):
     _orders(monkeypatch, [("005930", date(2026, 11, 2))])
     toss.pages[("005930", E)] = _session(E)
@@ -406,7 +405,6 @@ def test_QA202_정상_실행의_결과_문구에는_직전_OK_칸_유지가_없�
     assert tasks.task_kr_paper_timed() == "1/1 종목·세션"
 
 
-@pytest.mark.xfail(strict=True, reason="QA-202 재현 — 다시 받기 실패로 둔 칸의 수 대신 저장본 사전을 적음")
 def test_QA202_다시_받기_실패가_섞이면_결과_문구가_직전_칸을_둔_수를_적는다(store, toss, monkeypatch):
     # 005930은 창 키가 빠진 OK 칸을 다시 받다 실패(직전 칸 유지), 000660은 새로 받음.
     old = {"status": "OK", "reason": None, "fetchedAt": "2026-11-03T14:30:00+00:00",

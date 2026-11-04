@@ -285,7 +285,7 @@ def task_kr_paper_timed() -> str:
         # 바뀐 칸이 없음 — 받은 것도, 새로 적은 실패도 없음(다시 받기 실패는 직전 OK 칸 그대로).
         note = f"다시 받기 실패 {kept} — 직전 OK 칸 유지" if kept else ""
         raise EmptyResult(" · ".join(part for part in (stop, note) if part) or "받은 것 없음 — 기존 저장본 유지")
-    kept = dict(sorted(sessions.items())[-KR_TIMED_KEEP_SESSIONS:])
-    store.put_snapshot(catalog.SNAP_KR_PAPER_TIMED, {"contract": KR_TIMED_CONTRACT, "source": KR_TIMED_SOURCE, "sessions": kept})
+    trimmed = dict(sorted(sessions.items())[-KR_TIMED_KEEP_SESSIONS:])
+    store.put_snapshot(catalog.SNAP_KR_PAPER_TIMED, {"contract": KR_TIMED_CONTRACT, "source": KR_TIMED_SOURCE, "sessions": trimmed})
     return (f"{done}/{len(due)} 종목·세션" + (f", 실패 {failed}" if failed else "")
             + (f"(직전 OK 칸 유지 {kept})" if kept else "") + (f" — {stop}" if stop else ""))
