@@ -7,7 +7,6 @@ import com.macrodash.store.PaperStore.Order;
 import com.macrodash.store.PaperStore.OrderExec;
 import com.macrodash.support.InvalidRequestException;
 import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import tools.jackson.databind.JsonNode;
@@ -598,7 +597,6 @@ class PaperExecutionViewTest {
     }
 
     @Test
-    @Disabled("QA-253 회귀 재현 — 수정 전: 장중 확인 행에 확인 결정 번호가 하나도 없으면 빈 불변 Map에 null 키로 조회해 NullPointerException(500)")
     @SuppressWarnings("unchecked")
     @DisplayName("QA-253 회귀: 장중 확인 행이 모두 결정 번호 없이(계획·건너뜀·놓침) 있어도 실행 감사는 행과 M8을 돌려줌 — 결정 칸은 null")
     void checkpointRowsWithoutAnswersStillRender() {

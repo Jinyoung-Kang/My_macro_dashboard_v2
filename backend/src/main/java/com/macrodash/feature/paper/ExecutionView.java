@@ -152,7 +152,7 @@ final class ExecutionView {
                 .map(Checkpoint::checkpointDecisionId).filter(Objects::nonNull).toList());
         List<Map<String, Object>> checkpointRows = new ArrayList<>();
         for (Checkpoint c : checkpoints.subList(0, Math.min(CHECKPOINT_ROWS, checkpoints.size()))) {
-            checkpointRows.add(checkpointRow(c, answers.get(c.checkpointDecisionId()), calendar));
+            checkpointRows.add(checkpointRow(c, answerOf(answers, c), calendar));
         }
         out.put("checkpoints", checkpointRows);
         // 장중 확인 결정이 낸 주문은 M1·메뉴 줄에서 뺌(클래스 설명, 계좌1·계좌2 모두) — 감사한 주문 수(summary.audited)에는 그대로 셈.
@@ -216,7 +216,7 @@ final class ExecutionView {
                 hourly++;
             }
             String action = PaperBooks.CHECKPOINT_DONE.equals(c.status())
-                    ? action(answers.get(c.checkpointDecisionId())) : null;
+                    ? action(answerOf(answers, c)) : null;
             if ("REPLACE".equals(action)) {
                 replace++;
             } else if ("KEEP".equals(action)) {
@@ -249,6 +249,14 @@ final class ExecutionView {
     /** 비율(%) — 분모가 {@link #CHECKPOINT_MIN_ROWS}보다 적으면 null(0으로 채우지 않음). */
     private static Double pct(int part, int whole) {
         return whole < CHECKPOINT_MIN_ROWS ? null : PaperQueryService.round2(100.0 * part / whole);
+    }
+
+    /**
+     * 그 행의 확인 결정 칸 — 결정 번호가 없으면(계획·건너뜀·놓침) null. 번호 없이 Map을 찾지 않습니다: 확인 결정이 하나도 없으면
+     * {@link PaperStore#checkpointAnswers}가 불변 빈 Map을 돌려주고, 그 Map은 null 키 조회에 예외를 던집니다(QA-253 수정의 회귀).
+     */
+    private static CheckpointAnswer answerOf(Map<Long, CheckpointAnswer> answers, Checkpoint c) {
+        return c.checkpointDecisionId() == null ? null : answers.get(c.checkpointDecisionId());
     }
 
     /** 확인 결정 응답의 KEEP·REPLACE(결정이 없거나 실패 응답이면 null). */
