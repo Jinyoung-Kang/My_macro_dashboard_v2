@@ -85,6 +85,17 @@ def test_QA251_dev_backend는_env_파일의_PAPER_ENABLED를_넘기고_줄이_�
     assert _run(tmp_path, "dev-collector", env_file="PAPER_ENABLED=false\n")["PAPER"] == "(unset)"
 
 
+@pytest.mark.xfail(strict=True, reason="QA-251 후속 재현 — 수정 전: .env 값을 따옴표·줄 끝 주석째 넘겨 백엔드가 "
+                                       "'Invalid boolean value'로 뜨지 않음, 같은 줄이 둘이면 둘 다 넘김")
+def test_QA251_dev_backend는_따옴표_주석_중복_줄에도_true_false만_넘긴다(tmp_path):
+    # compose와 deploy.sh는 따옴표·줄 끝 주석을 받으므로(LOCAL_SETUP '형식 규칙'), 네이티브 백엔드도 기동이 깨지지 않게 true·false로만 넘깁니다.
+    assert _run(tmp_path, "dev-backend", env_file='PAPER_ENABLED="false"\n')["PAPER"] == "false"
+    assert _run(tmp_path, "dev-backend", env_file="PAPER_ENABLED=false # 로컬은 끔\n")["PAPER"] == "false"
+    assert _run(tmp_path, "dev-backend", env_file="PAPER_ENABLED=true\nPAPER_ENABLED=false\n")["PAPER"] == "false", "마지막 줄"
+    assert _run(tmp_path, "dev-backend", env_file="PAPER_ENABLED=yes\n")["PAPER"] == "false", "true가 아니면 끔"
+    assert _run(tmp_path, "dev-backend", env_file="PAPER_ENABLED='true'\n")["PAPER"] == "true"
+
+
 def test_QA106_문서가_빈_토큰을_인증_끔으로_적지_않고_launchd에_토큰을_넘긴다():
     api = (ROOT / "docs/API.md").read_text(encoding="utf-8")
     principles = (ROOT / "docs/PRINCIPLES.md").read_text(encoding="utf-8")
