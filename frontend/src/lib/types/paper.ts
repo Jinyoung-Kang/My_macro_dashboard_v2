@@ -2001,6 +2001,11 @@ export interface PaperNote {
   archived: boolean;
   /** 패킷에 실리는가(서버 판정). 한국 메모는 KRX 달력이 지금의 해를 모르면 MARKET 메모가 null(가를 수 없음). */
   active: boolean | null;
+  /**
+   * 기준 거래일의 결정 패킷에 실제로 실리는가(서버 — 패킷과 같은 함수로 셈, QA-181). 유효(active)해도 혼자 글자 상한을 넘거나 더 최신 메모로
+   * 상한이 차면 false. 기준일을 모르면 MARKET은 null, 보관·방법론 메모는 false. 이 칸이 없는 옛 응답이면 없음.
+   */
+  inPacket?: boolean | null;
   createdAtKst: string | null;
 }
 
@@ -2014,6 +2019,8 @@ export interface PaperNotesResponse {
   market?: PaperMarketCode;
   dormantReason?: string | null;
   referenceDateReason?: string | null;
+  /** 패킷 11_notes의 글자 수 상한(설정 notesMaxCharsInPacket — QA-181). */
+  packetMaxChars?: number | null;
   notes?: PaperNote[];
 }
 

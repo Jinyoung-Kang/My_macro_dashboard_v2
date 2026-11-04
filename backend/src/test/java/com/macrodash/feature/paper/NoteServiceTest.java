@@ -3,7 +3,6 @@ package com.macrodash.feature.paper;
 import com.macrodash.store.PaperStore.Note;
 import com.macrodash.support.InvalidRequestException;
 import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import tools.jackson.databind.JsonNode;
@@ -350,7 +349,6 @@ class NoteServiceTest {
     }
 
     @Test
-    @Disabled("QA-181 보완 재현 — 수정 전: 목록·저장 응답에 패킷 포함 여부가 없어 혼자 상한을 넘는 메모도 active:true(화면 '패킷에 실음')로만 보임")
     @DisplayName("QA-181 보완: 목록·저장 응답의 inPacket은 다음 결정 패킷과 같은 함수로 셈 — 혼자 상한을 넘는 메모는 active:true여도 inPacket:false, "
             + "목록에 패킷 글자 상한(packetMaxChars)")
     void listAndCreateTellWhetherTheNoteIsInThePacket() {

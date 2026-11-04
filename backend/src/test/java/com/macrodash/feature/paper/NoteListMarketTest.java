@@ -93,7 +93,7 @@ class NoteListMarketTest {
         Map<String, Object> kr = notes.list(scope(krConfig()), false);
 
         assertThat(List.copyOf(kr.keySet())).containsExactly("available", "market", "dormantReason", "referenceDate",
-                "notes");
+                "packetMaxChars", "notes");
         assertThat(kr).containsEntry("market", "KR").containsEntry("dormantReason", null)
                 .containsEntry("referenceDate", "2026-10-08");
         assertThat(rows(kr)).containsExactly("한국 유효 true", "한국 방법론 true");
@@ -140,6 +140,12 @@ class NoteListMarketTest {
 
         assertThat(kr).containsEntry("referenceDate", null);
         assertThat((String) kr.get("referenceDateReason")).startsWith("달력 없음");
+        // QA-181: 기준일을 모르면 어느 패킷에 실리는지도 가를 수 없어 MARKET의 inPacket은 null(INSIGHT는 패킷에 싣지 않아 false)
+        for (Object row : (List<?>) kr.get("notes")) {
+            Map<?, ?> note = (Map<?, ?>) row;
+            assertThat(note.get("inPacket")).as(String.valueOf(note.get("title")))
+                    .isEqualTo(NoteService.INSIGHT.equals(note.get("kind")) ? Boolean.FALSE : null);
+        }
         assertThat(rows(kr)).containsExactly("한국 유효 null", "한국 방법론 true", "한국 만료 null");
         assertThat(rows(notes.list(scope(krConfig()), true)))
                 .containsExactly("한국 유효 null", "한국 방법론 true", "한국 만료 null", "한국 보관 false");

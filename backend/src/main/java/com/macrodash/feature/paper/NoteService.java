@@ -20,6 +20,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.regex.Pattern;
 
 /**
@@ -124,13 +125,15 @@ public class NoteService {
             return notReady();
         }
         LocalDate reference = referenceDate(market);
+        PacketNotes packet = activeMarketNotes(market, reference, settingsBody());
         List<Map<String, Object>> rows = new ArrayList<>();
         for (Note n : store.notes(market.code(), includeExpired, reference)) {
-            rows.add(view(n, reference));
+            rows.add(view(n, reference, Set.copyOf(packet.ids())));
         }
         Map<String, Object> out = new LinkedHashMap<>();
         out.put("available", true);
         out.put("referenceDate", reference.toString());
+        out.put("packetMaxChars", packet.maxChars());
         out.put("notes", rows);
         return out;
     }
@@ -157,9 +160,11 @@ public class NoteService {
         List<Note> notes = reference != null ? store.notes(market.code(), includeExpired, reference)
                 : store.notes(market.code(), true, Kst.today(clock)).stream()
                         .filter(n -> includeExpired || !n.archived()).toList();
+        JsonNode body = settingsBody();
+        Set<Long> packetIds = reference == null ? null : Set.copyOf(activeMarketNotes(scope.run(), reference, body).ids());
         List<Map<String, Object>> rows = new ArrayList<>();
         for (Note n : notes) {
-            rows.add(view(n, reference));
+            rows.add(view(n, reference, packetIds));
         }
         Map<String, Object> out = new LinkedHashMap<>();
         out.put("available", true);
@@ -169,6 +174,7 @@ public class NoteService {
         if (referenceReason != null) {
             out.put("referenceDateReason", referenceReason);
         }
+        out.put("packetMaxChars", maxCharsInPacket(body));
         out.put("notes", rows);
         return out;
     }
@@ -279,9 +285,11 @@ public class NoteService {
         }
         long id = store.insertNote(new Note(0, k, asOf, expires, t, b, false, null, market.code()));
         log.info("메모 #{} ({}, 기준일 {}{}) {}자", id, k, asOf, expires == null ? "" : ", 만료 " + expires, chars);
+        LocalDate shownFor = reference != null ? reference : referenceDate(market);
         Map<String, Object> out = new LinkedHashMap<>();
         out.put("ok", true);
-        out.put("note", view(store.note(id).orElseThrow(), reference != null ? reference : referenceDate(market)));
+        out.put("note", view(store.note(id).orElseThrow(), shownFor,
+                Set.copyOf(activeMarketNotes(market, shownFor, settingsBody()).ids())));
         return out;
     }
 
@@ -398,7 +406,12 @@ public class NoteService {
     }
 
     // ------------------------------------------------------------------ 조각
-    private Map<String, Object> view(Note n, LocalDate reference) {
+    /**
+     * 메모 한 줄. {@code inPacket}은 {@code reference} 거래일의 결정 패킷에 실제로 실리는가 — 패킷과 같은 {@link #activeMarketNotes}로 센 번호
+     * ({@code packetIds})에 들었는지입니다. 유효(active)해도 혼자 글자 상한을 넘거나 더 최신 메모로 상한이 차면 false(QA-181), 기준일을 모르면
+     * ({@code packetIds} null) MARKET은 null, 보관·INSIGHT는 패킷에 싣지 않아 false.
+     */
+    private Map<String, Object> view(Note n, LocalDate reference, Set<Long> packetIds) {
         Map<String, Object> row = new LinkedHashMap<>();
         row.put("id", n.id());
         row.put("kind", n.kind());
@@ -408,6 +421,8 @@ public class NoteService {
         row.put("body", n.body());
         row.put("archived", n.archived());
         row.put("active", reference == null ? activeWithoutReference(n) : (Boolean) active(n, reference));
+        row.put("inPacket", n.archived() || INSIGHT.equals(n.kind()) ? Boolean.FALSE
+                : packetIds == null ? null : (Boolean) packetIds.contains(n.id()));
         row.put("createdAtKst", stamp(n.createdAt()));
         return row;
     }

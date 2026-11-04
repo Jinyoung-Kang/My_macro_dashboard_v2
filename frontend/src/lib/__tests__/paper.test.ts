@@ -725,7 +725,7 @@ describe("메모 안내 — 시장 인자(미국 문구 그대로, 한국은 KRX
     expect(noteStateBadge({ kind: "INSIGHT", archived: false, active: null }).label).toBe("프레임 제안용");
   });
 
-  it.fails("QA-181 보완: 유효해도 서버가 패킷에서 뺀 메모(inPacket:false — 글자 상한)는 '패킷에 실음'이 아니라 경고", () => {
+  it("QA-181 보완: 유효해도 서버가 패킷에서 뺀 메모(inPacket:false — 글자 상한)는 '패킷에 실음'이 아니라 경고", () => {
     const leftOut = { kind: "MARKET", archived: false, active: true, inPacket: false };
     const included = { kind: "MARKET", archived: false, active: true, inPacket: true };
     const left = noteStateBadge(leftOut);

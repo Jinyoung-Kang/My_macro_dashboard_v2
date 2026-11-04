@@ -495,7 +495,7 @@ describe("메모(F6)", () => {
     expect(noteArchiveConfirm({ id: 12, title: "유가" })).toContain("이 메모(#12 유가)를 보관할까요? 지우지 않고");
   });
 
-  it.fails("QA-181 보완: 유효하지만 패킷 글자 상한에 들어가지 못한 시황 메모(inPacket:false)는 저장 결과가 경고", () => {
+  it("QA-181 보완: 유효하지만 패킷 글자 상한에 들어가지 못한 시황 메모(inPacket:false)는 저장 결과가 경고", () => {
     const leftOut = { ...NOTES[0], id: 13, active: true, inPacket: false };
     const view = noteCreateResultView({ ok: true, note: leftOut as never });
     expect(view.tone).toBe("warn");

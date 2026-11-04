@@ -5376,15 +5376,23 @@ export function noteKindBadge(kind: string | null | undefined): Badge {
 }
 
 /**
- * 메모 상태 배지 — 보관 · 프레임 제안용(방법론) · 유효(패킷에 실음) · 패킷 밖(만료·기준일 전). 유효한지는 서버 판정(active)이고 화면이 날짜를
- * 다시 비교하지 않습니다. 유효해도 패킷에는 최신부터 합계 글자 수 상한(설정 notesMaxCharsInPacket)까지만 실립니다.
+ * 메모 상태 배지 — 보관 · 프레임 제안용(방법론) · 유효(패킷에 실음) · 유효하지만 패킷에 안 실림(글자 상한) · 패킷 밖(만료·기준일 전). 유효한지
+ * (active)와 실제로 실리는지(inPacket)는 서버 판정이고 화면이 날짜·글자 수를 다시 셈하지 않습니다. 유효해도 패킷에는 최신부터 합계 글자 수 상한
+ * (설정 notesMaxCharsInPacket)까지만 실려, 서버가 inPacket:false를 보내면 경고로 그립니다(QA-181 — 칸이 없는 옛 응답은 예전처럼).
  */
-export function noteStateBadge(note: { kind?: unknown; archived?: unknown; active?: unknown }): Badge {
+export function noteStateBadge(note: { kind?: unknown; archived?: unknown; active?: unknown; inPacket?: unknown }): Badge {
   if (note.archived === true) {
     return { key: "note-archived", label: "보관", className: TONE.muted, title: "지우지 않고 보관했습니다 — 패킷에 싣지 않습니다." };
   }
   if (note.kind === "INSIGHT") {
     return { key: "note-insight", label: "프레임 제안용", className: TONE.muted, title: NOTE_KIND.INSIGHT.title };
+  }
+  if (note.active === true && note.inPacket === false) {
+    return {
+      key: "note-active-left-out", label: "유효 — 패킷에 안 실림(글자 상한)", className: TONE.warn,
+      title: "기준일~만료일 안이지만 패킷 글자 수 상한(설정 notesMaxCharsInPacket)에 들어가지 못해 다음 Claude 결정 패킷에서 빠집니다"
+        + "(혼자 상한을 넘거나 더 최신 메모로 상한이 참) — 메모를 나누거나 상한을 올리세요.",
+    };
   }
   if (note.active === true) {
     return {
@@ -5568,6 +5576,13 @@ export function noteCreateResultView(
       tone: "warn",
       text: `${head}${reference ? `${reference} 거래일` : "지금 기준 거래일"}의 Claude 결정 패킷에는 실리지 않습니다(서버 판정 — 기준일이 `
         + "그보다 뒤이거나 이미 만료). 기준일~만료일 사이 거래일의 결정부터 실립니다.",
+    };
+  }
+  if (note.inPacket === false) {
+    return {
+      tone: "warn",
+      text: `${head}유효하지만 패킷 글자 수 상한(설정 notesMaxCharsInPacket)에 들어가지 못해 다음 Claude 결정 패킷에는 실리지 않습니다(서버 판정 — `
+        + "혼자 상한을 넘거나 더 최신 메모로 상한이 참). 메모를 나누거나 상한을 올리세요.",
     };
   }
   return { tone: "info", text: `${head}유효한 동안 Claude 결정 패킷에 자료로 실립니다.` };
