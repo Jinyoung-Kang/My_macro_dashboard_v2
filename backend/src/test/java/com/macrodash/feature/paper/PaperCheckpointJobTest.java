@@ -402,7 +402,6 @@ class PaperCheckpointJobTest {
     }
 
     @Test
-    @Disabled("QA-252 재현 — 수정 전: 스키마 검사가 비유한 숫자에 예외를 던져 '부르기 전 오류'로 처리되고 창 안 매 주기 다시 부름(결정 행 없음)")
     @DisplayName("QA-252: 응답의 숫자가 double 범위를 넘으면(1e400) 형식 오류로 한 번만 — 결정 행 FORMAT_ERROR·행 DONE, 창 안 다음 주기에 다시 부르지 않음, 결정 주기 호출 수에 셈")
     void nonFiniteNumberIsAFormatErrorCalledOnce() {
         answer = ok("{\"schemaVersion\":1e400,\"action\":\"KEEP\",\"summary\":\"계획대로\",\"orders\":[],\"noTradeReason\":\"갭 유지\"}");

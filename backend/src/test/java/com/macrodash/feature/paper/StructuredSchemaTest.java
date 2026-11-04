@@ -1,7 +1,6 @@
 package com.macrodash.feature.paper;
 
 import com.macrodash.Golden;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import tools.jackson.databind.ObjectMapper;
@@ -337,7 +336,6 @@ class StructuredSchemaTest {
     }
 
     @Test
-    @Disabled("QA-252 재현 — 수정 전: double 범위를 넘는 숫자(1e400)가 DoubleNode(Infinity)로 읽혀 decimalValue()에서 예외를 던짐")
     @DisplayName("QA-252: double 범위를 넘는 숫자(1e400·-1e400·1E+999)는 예외 없이 칸마다 위반 한 줄 — number·integer·const·enum·uniqueItems·형이 다른 칸 모두")
     void nonFiniteNumbersAreViolationsNotExceptions() throws Exception {
         StructuredSchema schema = StructuredSchema.parse("t", """

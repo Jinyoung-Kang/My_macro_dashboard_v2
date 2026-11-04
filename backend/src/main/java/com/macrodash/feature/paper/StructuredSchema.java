@@ -141,6 +141,12 @@ public final class StructuredSchema {
     // ── 검사 ───────────────────────────────────────────────────────────
 
     private void check(JsonNode schema, JsonNode value, String path, List<String> out) {
+        // double 범위를 넘는 숫자(1e400 등)는 DoubleNode(±Infinity)로 읽혀 decimalValue()가 예외를 던집니다 — 형·범위·const·enum을
+        // 보기 전에 위반으로 끝내 검사가 늘 목록을 돌려주게 합니다(QA-252: 예외면 과금된 응답이 '부르기 전 오류'가 되어 다시 부름).
+        if (nonFinite(value)) {
+            out.add("%s: 유한한 숫자가 아닙니다 — 실제 %s".formatted(path, value.doubleValue()));
+            return;
+        }
         JsonNode type = schema.get("type");
         if (type != null && !typeMatches(type, value)) {
             out.add("%s: 형이 맞지 않습니다 — 기대 %s, 실제 %s".formatted(path, typeLabel(type), actualType(value)));
@@ -280,6 +286,10 @@ public final class StructuredSchema {
         };
     }
 
+    private static boolean nonFinite(JsonNode value) {
+        return value.isNumber() && (value.isDouble() || value.isFloat()) && !Double.isFinite(value.doubleValue());
+    }
+
     private static boolean isIntegral(JsonNode number) {
         if (number.isIntegralNumber()) {
             return true;
@@ -324,6 +334,9 @@ public final class StructuredSchema {
      * {@code const: 2}에 2.0을 거절합니다.
      */
     private static boolean jsonEquals(JsonNode a, JsonNode b) {
+        if (nonFinite(a) || nonFinite(b)) {
+            return false;   // 비유한 값은 비교하지 않음 — 항목 검사가 그 값을 위반으로 잡음(QA-252)
+        }
         if (a.isNumber() && b.isNumber()) {
             return a.decimalValue().compareTo(b.decimalValue()) == 0;
         }
