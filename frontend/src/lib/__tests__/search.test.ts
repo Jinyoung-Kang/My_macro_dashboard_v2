@@ -16,6 +16,7 @@ import {
   sourceNotice,
   SYMBOL_GROUP_LABEL,
   symbolGroup,
+  symbolNotice,
   tickerEntries,
   tickerHref,
   type SearchEntry,
@@ -236,6 +237,18 @@ describe("범주 자료 상태", () => {
     expect(sourceNotice("종목", { loading: false, error: null, data: { available: false } })).toBe("종목: 저장본이 아직 없습니다");
     expect(sourceNotice("기관", { loading: false, error: null, data: INSTITUTIONS })).toBeNull();
     expect(sourceNotice("종목", { loading: false, error: null, data: null })).toBeNull();
+  });
+
+  it("종목 찾기는 200 응답 안의 출처 실패도 적는다(QA-256) — 모두 실패는 출처 이름(없으면 원문), 일부 실패는 그 출처, 실패 없으면 null", () => {
+    const state = (symbols: DetailSymbolsResponse["symbols"]) =>
+      ({ loading: false, error: null, data: { available: true, symbols } satisfies DetailSymbolsResponse });
+    expect(symbolNotice(state({ items: [], errors: { "네이버 증권": "x", "Yahoo Finance": "y" }, error: "x; y" })))
+      .toBe(`${SYMBOL_GROUP_LABEL}: 출처를 받지 못했습니다(네이버 증권·Yahoo Finance)`);
+    expect(symbolNotice(state({ items: [], error: "시간 초과" }))).toBe(`${SYMBOL_GROUP_LABEL}: 출처를 받지 못했습니다 — 시간 초과`);
+    expect(symbolNotice(state({ items: [], errors: { "네이버 증권": "x" }, error: null })))
+      .toBe(`${SYMBOL_GROUP_LABEL}: 일부 출처를 받지 못했습니다(네이버 증권)`);
+    expect(symbolNotice(state({ items: [], errors: {}, error: null }))).toBeNull();
+    expect(symbolNotice({ loading: false, error: "연결 실패", data: null })).toBe(`${SYMBOL_GROUP_LABEL}: 불러오지 못했습니다 — 연결 실패`);
   });
 });
 

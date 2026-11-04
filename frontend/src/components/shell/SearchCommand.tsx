@@ -17,7 +17,7 @@ import {
   resultSummary,
   searchGroups,
   sourceNotice,
-  SYMBOL_GROUP_LABEL,
+  symbolNotice,
   symbolGroup,
   tickerEntries,
   type InstitutionList,
@@ -113,7 +113,7 @@ export function SearchCommand({ user }: { user?: SessionUser }) {
     sourceNotice("지표", overview),
     sourceNotice("기관", institutions),
     sourceNotice("종목", universe),
-    symbolPath !== null ? sourceNotice(SYMBOL_GROUP_LABEL, symbols) : null,
+    symbolPath !== null ? symbolNotice(symbols) : null,
   ].filter((notice): notice is string => notice !== null);
 
   const changeOpen = (next: boolean) => {

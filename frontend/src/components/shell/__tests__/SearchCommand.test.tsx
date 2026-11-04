@@ -345,8 +345,8 @@ describe("이동", () => {
     expect(router.push).toHaveBeenCalledWith("/s/kr/005930");
   });
 
-  // QA-256 재현 — 수정 전: 200 응답 안의 출처 실패(symbols.error·errors)를 보지 않아 '맞는 결과가 없습니다'로 단정함.
-  it.fails("종목 찾기가 200 응답 안에서 출처 실패를 알리면 '맞는 결과가 없습니다'로 단정하지 않고 받지 못한 출처를 적는다(모두 실패·일부 실패)", async () => {
+  // QA-256: 200 응답 안의 출처 실패(symbols.error·errors)도 자료 상태로 적는다.
+  it("종목 찾기가 200 응답 안에서 출처 실패를 알리면 '맞는 결과가 없습니다'로 단정하지 않고 받지 못한 출처를 적는다(모두 실패·일부 실패)", async () => {
     reads[endpoints.detail.symbols("삼성전자")] = {
       available: true,
       symbols: {
