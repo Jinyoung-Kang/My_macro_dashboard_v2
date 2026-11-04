@@ -178,11 +178,12 @@ final class PaperSettingKeys {
      */
     static final List<String> KR_OVERRIDE_OPENS = List.of("09:00", "10:00");
     /**
-     * 장 시간 변경일 마감의 상한 — 수집기 {@code kr_paper_timed}가 덮는 가장 늦은 정규장 마감(마감 단일가 봉 라벨 16:30·16:31, 받는 끝 16:36, 다시 받는
-     * 시각 16:40 = 이 마감 + 10분 — {@code KrSettingsParityTest}). 예전 상한 20:00(통합 세션 마감)은 그 범위 밖이라 그보다 늦은 마감의 종가 봉을 끝내
-     * 받지 못했습니다(QA-174).
+     * 장 시간 변경일에 받는 마감 시각 — 수집기 {@code kr_paper_timed}가 마감 단일가 봉(마감·마감 + 1분 라벨 {@code KR_TIMED_CLOSE_LABELS})을 싣는
+     * 두 마감뿐입니다. 가장 늦은 16:30은 받는 끝 16:36·다시 받는 시각 16:40(= 마감 + 10분)이 덮습니다({@code KrSettingsParityTest}). 예전에는 20:00(통합
+     * 세션 마감)까지, QA-174 수정 뒤에는 16:30 이하 범위로 받아 그 사이 마감(16:00 등)은 받을 마감 봉이 없었습니다(사용자 결정 2026-11-04 — 개장처럼
+     * 정확한 목록).
      */
-    static final String KR_OVERRIDE_CLOSE_LATEST = "16:30";
+    static final List<String> KR_OVERRIDE_CLOSES = List.of("15:30", "16:30");
 
     /** 화면에 보이는 순서이기도 합니다(점 경로의 첫 마디로 묶음). */
     static final List<Spec> ALL = List.of(
@@ -354,8 +355,8 @@ final class PaperSettingKeys {
                             + "규칙 계좌 실험 조건이 아님"),
             of("kr.calendar.openTimeOverrides", Type.DATE_TIME_MAP, false,
                     "장 시간 변경일(날짜 → 개장·마감, 예 수능일 2026-11-19 10:00~16:30) — 1분봉 시가 봉(개장 + 1분)을 고름. 개장은 "
-                            + "수집기가 싣는 " + String.join("·", KR_OVERRIDE_OPENS) + "만, 마감은 " + KR_OVERRIDE_CLOSE_LATEST
-                            + "까지"),
+                            + "수집기가 싣는 " + String.join("·", KR_OVERRIDE_OPENS) + "만, 마감은 " + String.join("·", KR_OVERRIDE_CLOSES)
+                            + "만"),
             of("kr.news.enabled", Type.BOOLEAN, false, "한국 Claude 패킷에 사건 뉴스 11b_events를 넣음 — 꺼도 수집은 계속"),
             integer("kr.news.maxPerDay", 0, NewsEvents.MAX_PER_DAY_LIMIT, false, "한국 패킷에 싣는 사건 헤드라인 상한"),
             of("kr.news.keywords", Type.PHRASES, false,
@@ -439,7 +440,7 @@ final class PaperSettingKeys {
      *   <li>{@code kr.tax.effectiveFrom}: 오늘(KST) 이하만(결정 d7) — 새 세율을 시행일 전에 저장하면 그 사이 매도가 '세율 모름'으로
      *       섭니다({@code KrxCosts.fill}). 새 세율은 시행일 당일에 저장합니다</li>
      *   <li>{@code kr.calendar.openTimeOverrides}: 개장은 {@link #KR_OVERRIDE_OPENS}만(수집기가 싣는 1분봉 라벨 − 1분), 마감은
-     *       {@value #KR_OVERRIDE_CLOSE_LATEST}까지</li>
+     *       {@link #KR_OVERRIDE_CLOSES}만(수집기가 마감 봉을 싣는 마감)</li>
      *   <li>{@code claude.checkpointAtEt}: 읽는 쪽({@link Claude1Checkpoint#from})의 범위 {@link Claude1Checkpoint#EARLIEST}~{@link
      *       Claude1Checkpoint#LATEST}(뉴욕) 안만 — 밖이면 장중 확인 작업이 조용히 {@link Claude1Checkpoint#DEFAULT_AT}으로 읽습니다(QA-182)</li>
      * </ul>
@@ -474,8 +475,9 @@ final class PaperSettingKeys {
                         return key + ": " + entry.getKey() + " — 개장은 " + String.join("·", KR_OVERRIDE_OPENS) + "만 받습니다(수집기가 "
                                 + "싣는 1분봉 개장 봉이 그 + 1분뿐) — " + open;
                     }
-                    if (close.compareTo(KR_OVERRIDE_CLOSE_LATEST) > 0) {
-                        return key + ": " + entry.getKey() + " — 마감은 " + KR_OVERRIDE_CLOSE_LATEST + "까지입니다 — " + close;
+                    if (!KR_OVERRIDE_CLOSES.contains(close)) {
+                        return key + ": " + entry.getKey() + " — 마감은 " + String.join("·", KR_OVERRIDE_CLOSES) + "만 받습니다(수집기가 "
+                                + "마감 봉을 싣는 마감 — 그 밖의 마감은 종가 주문이 체결되지 않음) — " + close;
                     }
                 }
                 return null;

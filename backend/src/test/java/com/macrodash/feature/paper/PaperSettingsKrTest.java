@@ -3,7 +3,6 @@ package com.macrodash.feature.paper;
 import com.macrodash.analytics.KrxCosts;
 import com.macrodash.support.InvalidRequestException;
 import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import tools.jackson.databind.JsonNode;
@@ -222,7 +221,7 @@ class PaperSettingsKrTest {
     }
 
     @Test
-    @DisplayName("kr.calendar.openTimeOverrides(결정 d8) — 날짜마다 개장·마감 쌍, 개장은 수집기 1분봉 라벨의 09:00·10:00만, 마감은 수집기가 덮는 16:30까지(QA-174)")
+    @DisplayName("kr.calendar.openTimeOverrides(결정 d8) — 날짜마다 개장·마감 쌍, 개장은 수집기 1분봉 라벨의 09:00·10:00만, 마감은 수집기가 마감 봉을 싣는 15:30·16:30만(QA-174)")
     void openTimeOverrides() {
         Map<String, Object> overrides = new LinkedHashMap<>();
         overrides.put("2026-11-19", pair("10:00", "16:30"));
@@ -240,9 +239,9 @@ class PaperSettingsKrTest {
         assertThatThrownBy(() -> update("kr.calendar.openTimeOverrides", Map.of("2026-11-19", pair("09:30", "15:30"))))
                 .hasMessageContaining("개장은 09:00·10:00만").hasMessageContaining("09:30");
         assertThatThrownBy(() -> update("kr.calendar.openTimeOverrides", Map.of("2026-11-19", pair("10:00", "16:31"))))
-                .hasMessageContaining("마감은 16:30까지");
+                .hasMessageContaining("마감은 15:30·16:30만");
         assertThatThrownBy(() -> update("kr.calendar.openTimeOverrides", Map.of("2026-11-19", pair("10:00", "20:00"))))
-                .as("예전 상한(통합 세션 마감) — 수집기가 그 마감 봉을 받지 않음").hasMessageContaining("마감은 16:30까지");
+                .as("예전 상한(통합 세션 마감) — 수집기가 그 마감 봉을 받지 않음").hasMessageContaining("마감은 15:30·16:30만");
         assertThat(update("kr.calendar.openTimeOverrides", Map.of("2026-11-19", pair("09:00", "16:30"))).get("ok"))
                 .as("경계 포함").isEqualTo(true);
         assertThat(update("kr.calendar.openTimeOverrides", Map.of()).get("changedKeys"))
@@ -250,7 +249,6 @@ class PaperSettingsKrTest {
     }
 
     @Test
-    @Disabled("QA-174 보완 재현 — 수정 전: 마감을 16:30 이하 범위로 받아 수집기에 마감 봉 라벨이 없는 16:00 등도 저장됨")
     @DisplayName("QA-174 보완: 장 시간 변경일 마감은 수집기가 마감 봉(마감·마감 + 1분)을 받는 15:30·16:30만 — 그 사이(16:00 등)는 받을 봉이 없어 종가 주문이 체결되지 않음")
     void overrideClosesAreOnlyTheCollectorCloseLabels() {
         for (String close : List.of("16:00", "15:45", "16:15")) {

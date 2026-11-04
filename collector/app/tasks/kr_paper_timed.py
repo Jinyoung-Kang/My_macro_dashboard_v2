@@ -56,7 +56,7 @@ KR_TIMED_SOURCE = "토스증권 1분봉(원시가)"
 KR_TIMED_AFTER = clock_time(15, 40)
 # 이 시각(KST — 덮는 가장 늦은 마감 16:30 + 10분, 백엔드 KrTimedLadder.CLOSE_COVERED_AFTER) 전에 받은 OK 칸은 이 시각 뒤에 한 번 더 받습니다(QA-174).
 # 수집기는 백엔드 설정(kr.calendar.openTimeOverrides)을 읽지 않아 그날 마감을 모르므로 보통 날에도 (종목, E)마다 한 번 더 부릅니다. 덮는 마감의
-# 상한은 백엔드 PaperSettingKeys.KR_OVERRIDE_CLOSE_LATEST와 같습니다(마감 봉 라벨 KR_TIMED_CLOSE_LABELS·받는 끝 KR_TIMED_BEFORE도 — KrSettingsParityTest).
+# 목록은 백엔드 PaperSettingKeys.KR_OVERRIDE_CLOSES(15:30·16:30)와 같습니다(마감 봉 라벨 KR_TIMED_CLOSE_LABELS·받는 끝 KR_TIMED_BEFORE도 — KrSettingsParityTest).
 KR_TIMED_RECHECK = clock_time(16, 40)
 # 매시 창의 기준 시각(KST) — 백엔드 PaperBooks.AT_1000~AT_1500과 같은 시각.
 KR_TIMED_HOURS = (10, 11, 12, 13, 14, 15)

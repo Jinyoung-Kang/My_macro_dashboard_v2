@@ -67,14 +67,19 @@ class KrSettingsParityTest {
     }
 
     @Test
-    @DisplayName("QA-174: 장 시간 변경일 마감 상한이 수집기 kr_paper_timed가 덮는 마감 안 — 마감 봉 라벨(마감·마감 + 1분)이 있고, 받는 끝(KR_TIMED_BEFORE)이 "
-            + "마감 + 1분 뒤, 다시 받는 시각(KR_TIMED_RECHECK)이 마감 + 10분(백엔드가 마감 봉을 덮었다고 보는 저장본) 이후")
-    void overrideCloseLatestMatchesCollectorTimed() throws IOException {
+    @DisplayName("QA-174: 장 시간 변경일에 받는 마감이 수집기 kr_paper_timed가 덮는 마감과 같음 — 마감마다 마감 봉 라벨(마감·마감 + 1분)이 있고, 받는 끝"
+            + "(KR_TIMED_BEFORE)이 가장 늦은 마감 + 1분 뒤, 다시 받는 시각(KR_TIMED_RECHECK)이 가장 늦은 마감 + 10분(백엔드가 마감 봉을 덮었다고 보는 저장본) 이후")
+    void overrideClosesMatchCollectorTimed() throws IOException {
         assumeTrue(Files.exists(KR_PAPER_TIMED), "collector/app/tasks/kr_paper_timed.py를 찾을 수 없습니다");
         String source = Files.readString(KR_PAPER_TIMED);
-        LocalTime latest = LocalTime.parse(PaperSettingKeys.KR_OVERRIDE_CLOSE_LATEST);
-        assertThat(tuple(source, "KR_TIMED_CLOSE_LABELS")).as("마감 봉 라벨")
-                .contains(latest.toString(), latest.plusMinutes(1).toString());
+        List<String> labels = tuple(source, "KR_TIMED_CLOSE_LABELS");
+        List<String> expected = new ArrayList<>();
+        for (String close : PaperSettingKeys.KR_OVERRIDE_CLOSES) {
+            expected.add(close);
+            expected.add(LocalTime.parse(close).plusMinutes(1).toString());
+        }
+        assertThat(labels).as("마감 봉 라벨 = 받는 마감마다 마감·마감 + 1분").isEqualTo(expected);
+        LocalTime latest = PaperSettingKeys.KR_OVERRIDE_CLOSES.stream().map(LocalTime::parse).max(LocalTime::compareTo).orElseThrow();
         Matcher before = Pattern.compile("\\nKR_TIMED_BEFORE\\s*=\\s*\"(\\d{2}:\\d{2})\"").matcher(source);
         assertThat(before.find()).as("KR_TIMED_BEFORE를 찾지 못했습니다").isTrue();
         assertThat(LocalTime.parse(before.group(1))).as("받는 끝").isAfter(latest.plusMinutes(1));
