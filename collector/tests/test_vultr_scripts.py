@@ -421,6 +421,86 @@ def test_backup_s3는_버킷_이름이_없으면_백업하지_않는다(backup_r
     assert not any(c.startswith(("make", "aws")) for c in tools._calls(fakes))
 
 
+# --------------------------------------------------------------------------- make status (QA-199 보완 — 서버의 마지막 S3 백업)
+# 계획(사용자 결정 4)은 'make status가 36시간 넘으면 경고'였는데 deploy.sh 끝 요약에만 들어가, crontab이 빠지고(텔레그램 알림도 없음)
+# 배포도 없으면 날마다 보는 make status에는 아무 신호가 없었습니다. 저장소의 Makefile을 임시 저장소 최상위에서 진짜 make로 돌리고,
+# 수집기는 늘 연결되지 않는 가짜 curl(fakes, FAKE_CURL_RC=7)로 바꿉니다 — 수집기가 꺼져 있어도 나이는 찍어야 합니다.
+REAL_MAKE = shutil.which("make")
+needs_make = pytest.mark.skipif(REAL_MAKE is None, reason="make가 없어 건너뜁니다.")
+QA199_STATUS = "QA-199 보완 재현 — 수정 전: make status는 수집기 /status만 찍고 backups/.last-s3-ok를 보지 않음"
+
+
+@pytest.fixture()
+def status_root(tmp_path):
+    """make status를 돌릴 저장소 최상위 — 레시피가 최상위 기준 상대 경로로 부르는 scripts/만 복사합니다(.env 없음 — 기본 포트)."""
+    root = tmp_path / "status-root"
+    shutil.copytree(ROOT / "scripts", root / "scripts")
+    return root
+
+
+def _write_last_s3(root: Path, age_hours: int) -> None:
+    (root / "backups").mkdir(exist_ok=True)
+    # 시간의 한가운데(+30분)로 적어, 두 번 돌리는 사이에 시간 경계를 넘지 않게 합니다.
+    then = int(time.time()) - age_hours * 3600 - 1800
+    (root / "backups/.last-s3-ok").write_text(f"{then} x db/vultr/x.sql\n", encoding="utf-8")
+
+
+def _make_status(root: Path, fakes) -> subprocess.CompletedProcess:
+    # fakes의 가짜 make가 PATH 앞에 있어 진짜 make를 절대 경로로 부릅니다.
+    assert REAL_MAKE is not None
+    return subprocess.run([REAL_MAKE, "--no-print-directory", "-C", str(root), "-f", str(ROOT / "Makefile"), "status"],
+                          env=tools._env(fakes, FAKE_CURL_RC="7"), capture_output=True, text=True,
+                          encoding="utf-8", errors="replace", timeout=60)
+
+
+def _s3_lines(stdout: str) -> list[str]:
+    return [line.strip() for line in stdout.splitlines() if "S3 백업" in line]
+
+
+@needs_make
+@pytest.mark.xfail(strict=True, reason=QA199_STATUS)
+def test_QA199_make_status는_서버의_마지막_S3_백업이_36시간을_넘었으면_수집기가_꺼져_있어도_경고한다(status_root, fakes):
+    _write_last_s3(status_root, 37)
+    result = _make_status(status_root, fakes)
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "수집기에 연결하지 못했습니다." in result.stdout
+    assert any(line.startswith("경고:") and "S3 백업이 37시간 전" in line for line in result.stdout.splitlines()), \
+        "cron이 빠지면(crontab 유실·서버 재구성) 텔레그램 알림도 없어, 날마다 보는 make status가 잡아야 합니다"
+
+
+@needs_make
+@pytest.mark.xfail(strict=True, reason=QA199_STATUS)
+def test_QA199_make_status는_마지막_S3_백업이_36시간_안이면_경고_없이_나이만_찍는다(status_root, fakes):
+    _write_last_s3(status_root, 1)
+    result = _make_status(status_root, fakes)
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert _s3_lines(result.stdout) == ["마지막 S3 백업: 1시간 전"]
+    assert not any(line.startswith("경고") for line in result.stdout.splitlines())
+
+
+@needs_make
+def test_QA199_make_status는_마지막_S3_백업_기록이_없으면_그_줄을_찍지_않는다(status_root, fakes):
+    # PC에는 S3 cron이 없어 기록 파일이 늘 없습니다. '없음' 경고는 서버를 다시 만든 직후를 잡는 deploy.sh만 냅니다.
+    result = _make_status(status_root, fakes)
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "S3" not in result.stdout + result.stderr
+    assert not any(line.startswith("경고") for line in result.stdout.splitlines())
+
+
+@needs_make
+@pytest.mark.xfail(strict=True, reason=QA199_STATUS)
+@pytest.mark.parametrize("age_hours", [1, 37])
+def test_QA199_make_status와_deploy는_마지막_S3_백업을_같은_줄로_판정한다(server, fakes, age_hours):
+    here, _ = server
+    _write_last_s3(here, age_hours)
+    deployed = _deploy(server, fakes)
+    assert deployed.returncode == 0, deployed.stderr
+    status = _make_status(here, fakes)
+    assert status.returncode == 0, status.stdout + status.stderr
+    assert len(_s3_lines(deployed.stdout)) == 1
+    assert _s3_lines(status.stdout) == _s3_lines(deployed.stdout), "36시간 판정·문구가 두 곳에서 갈라지면 안 됩니다"
+
+
 def test_api_common은_source로만_읽고_키를_curl_인자에_넣지_않는다():
     text = (ROOT / "scripts/vultr/api-common.sh").read_text(encoding="utf-8")
     assert text.startswith("# shellcheck shell=bash\n"), "db-common.sh처럼 source로 읽는 파일"
