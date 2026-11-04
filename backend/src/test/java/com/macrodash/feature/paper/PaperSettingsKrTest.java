@@ -3,6 +3,7 @@ package com.macrodash.feature.paper;
 import com.macrodash.analytics.KrxCosts;
 import com.macrodash.support.InvalidRequestException;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import tools.jackson.databind.JsonNode;
@@ -246,6 +247,18 @@ class PaperSettingsKrTest {
                 .as("경계 포함").isEqualTo(true);
         assertThat(update("kr.calendar.openTimeOverrides", Map.of()).get("changedKeys"))
                 .isEqualTo(List.of("kr.calendar.openTimeOverrides"));
+    }
+
+    @Test
+    @Disabled("QA-174 보완 재현 — 수정 전: 마감을 16:30 이하 범위로 받아 수집기에 마감 봉 라벨이 없는 16:00 등도 저장됨")
+    @DisplayName("QA-174 보완: 장 시간 변경일 마감은 수집기가 마감 봉(마감·마감 + 1분)을 받는 15:30·16:30만 — 그 사이(16:00 등)는 받을 봉이 없어 종가 주문이 체결되지 않음")
+    void overrideClosesAreOnlyTheCollectorCloseLabels() {
+        for (String close : List.of("16:00", "15:45", "16:15")) {
+            assertThatThrownBy(() -> update("kr.calendar.openTimeOverrides", Map.of("2026-11-19", pair("10:00", close))))
+                    .as(close).hasMessageContaining("마감은 15:30·16:30만").hasMessageContaining(close);
+        }
+        assertThat(update("kr.calendar.openTimeOverrides", Map.of("2026-11-19", pair("10:00", "15:30"))).get("ok")).isEqualTo(true);
+        assertThat(update("kr.calendar.openTimeOverrides", Map.of("2026-11-19", pair("10:00", "16:30"))).get("ok")).isEqualTo(true);
     }
 
     @Test
