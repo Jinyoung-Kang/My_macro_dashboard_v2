@@ -308,7 +308,9 @@ make dev-collector      # 내부적으로 collector/.venv/bin/python -m uvicorn 
 
 > `make dev-collector`·`make dev-backend`는 `.env`의 `COLLECTOR_API_TOKEN`(`make setup`이 만듦)을 둘 다에
 > 넘기고, DB는 `.env`의 `DATABASE_PORT`로 붙습니다. 토큰이 비어 있으면 수집기는 기동하지 않습니다
-> (`COLLECTOR_API_TOKEN이 비어 있습니다`) — `make setup`을 먼저 실행하세요.
+> (`COLLECTOR_API_TOKEN이 비어 있습니다`) — `make setup`을 먼저 실행하세요. `make dev-backend`는 `.env`의
+> `PAPER_ENABLED`도 넘기고 그 줄이 없으면 `false`로 띄웁니다(모의 매매 정기 작업은 Vultr 서버 한 곳에서만 — QA-251).
+> `mvn spring-boot:run`을 직접 치면 이 값이 빠져 백엔드 기본값(켜짐)으로 뜹니다.
 
 > `source .venv/bin/activate` 후 `uvicorn ...`을 직접 치지 마세요. conda나
 > pyenv가 PATH 앞에 있으면 **다른 파이썬의 uvicorn**이 잡혀

@@ -31,6 +31,8 @@ COLLECTOR_API_TOKEN ?= $(shell grep -s '^COLLECTOR_API_TOKEN=' .env | cut -d= -f
 TOKEN_HEADER := $(if $(COLLECTOR_API_TOKEN),-H "X-Service-Token: $(COLLECTOR_API_TOKEN)",)
 # 토큰 없이 띄우겠다는 명시(로컬 개발용, .env.example 참고). make dev-collector가 수집기에 넘깁니다.
 COLLECTOR_ALLOW_NO_TOKEN ?= $(shell grep -s '^COLLECTOR_ALLOW_NO_TOKEN=' .env | cut -d= -f2-)
+# 모의 매매 정기 작업은 Vultr 서버 한 곳에서만 돕니다(ADR 0019·0020·0023) — make dev-backend가 넘깁니다(아래).
+PAPER_ENABLED ?= $(shell grep -s '^PAPER_ENABLED=' .env | cut -d= -f2-)
 
 .DEFAULT_GOAL := help
 .PHONY: help setup update version up migrate down restart logs ps collect collect-all status verify \
@@ -194,6 +196,9 @@ test-frontend: ## 화면 자가검증 + 훅 테스트 + 린트 + 빌드(타입 �
 # 찍는 명령에도 토큰이 보이지 않습니다. 예전에는 넘기지 않아 make dev-collector가 뜨지 않았습니다(QA-106).
 dev-collector dev-backend: export COLLECTOR_API_TOKEN := $(COLLECTOR_API_TOKEN)
 dev-collector: export COLLECTOR_ALLOW_NO_TOKEN := $(COLLECTOR_ALLOW_NO_TOKEN)
+# 백엔드의 PAPER_ENABLED 기본값은 켜짐이라, 넘기지 않으면 네이티브 백엔드가 로컬 DB에서 정기 작업(리스크 점검·결정·체결)을 돌립니다.
+# .env의 값을 넘기고, 줄이 없으면 끕니다(셸에 export한 값이 있으면 그것이 먼저 — QA-251).
+dev-backend: export PAPER_ENABLED := $(if $(PAPER_ENABLED),$(PAPER_ENABLED),false)
 
 dev-collector: ## 수집기 개발 서버 (자동 리로드 · collector/.venv 필요)
 	@test -x $(VENV_PY) || (echo "경고: collector/.venv가 없습니다. 먼저:" && \

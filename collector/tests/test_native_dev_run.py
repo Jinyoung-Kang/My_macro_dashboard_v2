@@ -75,8 +75,6 @@ def test_셸에서_준_값이_env_파일보다_앞선다(tmp_path):
     assert seen["TOKEN"] == "from-shell" and seen["URL"] == explicit
 
 
-@pytest.mark.xfail(strict=True, reason="QA-251 재현 — 수정 전: dev-backend가 .env의 PAPER_ENABLED를 넘기지 않아 백엔드가 기본값(켜짐)으로 "
-                                       "모의 매매 정기 작업을 돌림")
 def test_QA251_dev_backend는_env_파일의_PAPER_ENABLED를_넘기고_줄이_없으면_끈다(tmp_path):
     # 장부는 Vultr 서버 한 곳에만(ADR 0019·0020·0023) — 로컬 .env는 PAPER_ENABLED=false 고정인데 백엔드 기본값은 켜짐입니다.
     assert _run(tmp_path, "dev-backend", env_file="PAPER_ENABLED=false\n")["PAPER"] == "false"
