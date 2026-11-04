@@ -7,6 +7,7 @@ import com.macrodash.support.InvalidRequestException;
 import com.macrodash.support.TooManyRequestsException;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.test.web.servlet.MockMvc;
@@ -15,17 +16,23 @@ import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.json.JsonMapper;
 
+import java.lang.reflect.Field;
+import java.lang.reflect.Method;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.startsWith;
+import static org.mockito.Mockito.atLeast;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.timeout;
@@ -175,5 +182,51 @@ class LivePriceServiceTest {
         } finally {
             release.countDown();
         }
+    }
+
+    /** 열린 구독을 모두 닫음 — 하트비트 보내기가 실패해 서버가 구독을 닫은 것과 같음(브라우저가 탭을 숨겼다 다시 열 때). */
+    private void closeAllStreams() throws Exception {
+        Field field = LivePriceService.class.getDeclaredField("streams");
+        field.setAccessible(true);
+        for (Object stream : new ArrayList<>((Set<?>) field.get(service))) {
+            Method close = stream.getClass().getDeclaredMethod("close");
+            close.setAccessible(true);
+            close.invoke(stream);
+        }
+    }
+
+    @Test
+    @Disabled("QA-254 후속 재현 — 수정 전: 닫힌 구독의 진행 중 읽기는 상한 밖이라, 다시 연 구독마다 수집기 읽기가 더해져 연결 상한(20)을 넘어 늘어남")
+    @DisplayName("QA-254 후속: 닫힌 구독의 읽기가 아직 끝나지 않아도 동시 수집기 읽기는 연결 상한을 넘지 않음 — 새 구독의 읽기는 자리가 나면 이어서 돎")
+    void inFlightReadsStayWithinTheStreamLimit() throws Exception {
+        CountDownLatch release = new CountDownLatch(1);
+        AtomicInteger inFlight = new AtomicInteger();
+        AtomicInteger peak = new AtomicInteger();
+        when(collector.livePrices(anyString())).thenAnswer(invocation -> {
+            peak.accumulateAndGet(inFlight.incrementAndGet(), Math::max);
+            try {
+                release.await(30, TimeUnit.SECONDS);   // 출처가 응답하지 않음(수집기 읽기 상한까지 기다림)
+            } finally {
+                inFlight.decrementAndGet();
+            }
+            return Optional.of(payload("OPEN"));
+        });
+        try {
+            for (int round = 0; round < 2; round++) {
+                for (int i = 0; i < LivePriceService.MAX_STREAMS; i++) {
+                    service.stream("US:T" + i, 5);
+                }
+                if (round == 0) {
+                    verify(collector, timeout(3000).times(LivePriceService.MAX_STREAMS)).livePrices(anyString());
+                }
+                closeAllStreams();
+            }
+            Thread.sleep(1_500);
+            assertThat(peak.get()).as("동시 수집기 읽기").isLessThanOrEqualTo(LivePriceService.MAX_STREAMS);
+        } finally {
+            release.countDown();
+        }
+        // 막힌 읽기가 풀리면 기다리던 새 구독도 읽음(굶지 않음).
+        verify(collector, timeout(5000).atLeast(LivePriceService.MAX_STREAMS + 1)).livePrices(anyString());
     }
 }
