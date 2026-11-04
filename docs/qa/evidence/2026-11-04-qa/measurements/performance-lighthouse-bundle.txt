@@ -1,0 +1,59 @@
+# 출처: $SP/qa/lanes/performance/ev/61-lighthouse-summary.txt (전체) — Lighthouse 13.6.0, 페이지마다 1회 표본
+페이지-폼                    성능   접근성   모범    FCP    LCP   TBT    CLS     SI   JS전송KB   요청  최종URL / 런타임 오류
+institutions-desktop     99   100  100    209    833     2  0.004    438      527   58  http://localhost:13002/institutions 
+institutions-mobile      81   100  100    758   3373   356  0.092   1231      523   55  http://localhost:13002/institutions 
+macro-desktop            80   100  100    210   1254   105  0.305    678      534   69  http://localhost:13002/macro 
+macro-mobile             64   100  100    760   3625   856  0.151   1458      531   66  http://localhost:13002/macro 
+paper_kr-desktop         99   100  100    208    860     0  0.000    446      508   51  http://localhost:13002/paper/kr 
+paper_kr-mobile          81   100  100    757   4307   242  0.000   1409      505   48  http://localhost:13002/paper/kr 
+paper_us-desktop         99   100  100    207    938     4  0.000    594      508   53  http://localhost:13002/paper/us 
+paper_us-mobile          72   100  100    762   4079   566  0.000   1978      505   50  http://localhost:13002/paper/us 
+root-desktop             83   100  100    210    807    11  0.337    367      514   56  http://localhost:13002/ 
+root-mobile              55   100  100    764   4102   684  0.279    779      511   53  http://localhost:13002/ 
+
+# 출처: $SP/qa/lanes/performance/ev/62-cls-sources.txt (전체)
+== / 1350x940 CLS 합 0.337 (항목 1)
+  {"t":206,"v":0.3372,"src":[{"label":"시장","prevH":172,"curH":0,"prevY":323,"curY":0},{"label":"알림","prevH":151,"curH":0,"prevY":527,"curY":0},{"label":"데이터 저장소 상태","prevH":84,"curH":0,"prevY":709,"curY":0}]}
+== /macro 1350x940 CLS 합 0.293 (항목 1)
+  {"t":244,"v":0.2929,"src":[{"label":"환율·달러인덱스 비교","prevH":302,"curH":0,"prevY":565,"curY":0},{"label":"신용 리스크, 은행권 및 시장 변동성","prevH":42,"curH":0,"prevY":899,"curY":0},{"label":"자동 갱신끄기5초10초30초1분5분10분30분1시간3시간↻ 23:17수집2026-11-04 23:15","prevH":32,"curH":32,"prevY":195,"curY":195}]}
+== / 412x823 CLS 합 0.279 (항목 1)
+  {"t":199,"v":0.2791,"src":[{"label":"시장","prevH":188,"curH":0,"prevY":550,"curY":0},{"label":"알림","prevH":61,"curH":0,"prevY":762,"curY":0}]}
+
+# 출처: $SP/qa/lanes/performance/ev/60-bundle.txt (전체)
+/app
+next.config.mjs
+node_modules
+package.json
+public
+2208	.next/static
+51
+1
+428	.next/static/chunks/0bnq7dgpz-ugw.js
+240	.next/static/chunks/25q1oeyzyxmou.js
+224	.next/static/chunks/34-s9nvef5sdp.js
+172	.next/static/chunks/0svmo6t5bwy0k.js
+160	.next/static/chunks/2et2xbhc_g02x.js
+112	.next/static/chunks/0cz1d0mv5g_q7.js
+48	.next/static/chunks/1z34gdy5-u8hl.js
+44	.next/static/chunks/2ykphcnu0ifbd.css
+44	.next/static/chunks/1qpjk7ugj1k1h.js
+44	.next/static/chunks/1h18d2y_gnqme.js
+36	.next/static/chunks/3q-2jnz6q_rxm.js
+36	.next/static/chunks/3fmt_2zyq808d.js
+2180	.next/static/chunks
+8	.next/static/media
+16	.next/static/woXRIpoOzEdOa-s1NjqHX
+.next/static/chunks/0bnq7dgpz-ugw.js 434924 bytes, gzip 123028
+.next/static/chunks/25q1oeyzyxmou.js 243906 bytes, gzip 66255
+.next/static/chunks/34-s9nvef5sdp.js 229288 bytes, gzip 71744
+.........i......................i............[]...p....[......t...t.p..........nt.......nt...rr.nt..ript:..i.............t.r.......n.ti.n.r........tri.t....r.n.i..pr..i.i.n:...r..n.in.:..t...p...:...t...p...:.......:....................................................................................
+     92 recharts
+.next/static/chunks/0bnq7dgpz-ugw.js
+HTTP/1.1 200 OK
+Cache-Control: public, max-age=31536000, immutable
+ETag: W/"6a2ec-1a1a6c75620"
+Content-Encoding: gzip
+HTTP/1.1 200 OK
+Cache-Control: public, max-age=31536000, immutable
+ETag: W/"a7c3-1a1a6c75620"
+Content-Encoding: gzip

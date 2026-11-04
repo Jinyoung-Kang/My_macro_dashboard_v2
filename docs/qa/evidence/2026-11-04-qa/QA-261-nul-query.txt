@@ -1,0 +1,94 @@
+# 출처: $SP/qa/lanes/repro4/nul/summary.txt (전체)
+재현 4 — 후보 'NUL(%00) 쿼리 값 500'(security) 독립 재현, 코드 기준 49a7d62b(HEAD 7213c6f0은 문서만 다름), 2026-11-04 23:24 KST QA 스택
+결과: 재현됨(6 조합 모두 500). 비교 ranking·obsDate는 400. 30회 연속 뒤에도 풀·헬스 정상(pool-after-repeat.txt).
+원인 위치(로그 스택으로 확인):
+- radar/consensus: PositioningController.radarConsensus(111~118) 검증 없음 → RadarService.consensus:263 → ranking:139 → StoreReader.readStored:244 → StoreRepository.readSnapshot:73 (snapshots WHERE name=?, 22021 0x00)
+- radar/history: PositioningController.radarHistory(120~129) 검증 없음 → RadarService.history:402(전 기간)·:389(latest) → StoreRepository.queryObservations:400·listObservationDates:572 (payload @> ?::jsonb, 22P05 unsupported Unicode escape)
+- status/history: 후보 설명과 다름 — 수집기 500을 그대로 넘기는 것이 아니라, CollectorClient가 빈 결과로 바꾼 뒤 DataStatusService.taskHistory:175의 DB 직접 읽기 폴백(StoreRepository.readTaskHistory:631)이 0x00으로 실패해 500
+- 수집기 /task-history: main.py:276 → store.py:1112 psycopg.DataError(클라이언트 쪽 NUL 거절) → 처리 안 됨 → 평문 500. 토큰 검사 없음(127.0.0.1·Caddy는 /api/*만)
+덧붙임: consensus?tradeType=XYZ는 200 + '외국인·기관 수급을 받지 못해' 문구(수집기가 400으로 막아 저장은 없음) — 같은 검증 누락의 다른 모습.
+
+# 출처: $SP/qa/lanes/repro4/nul/backend-probe.txt (전체)
+=== GET /api/radar/consensus?tradeType=%00
+{"error":"internal_server_error","message":"서버 내부 오류가 발생했습니다. 백엔드 로그를 확인하세요."}
+[HTTP 500 0.012894s]
+
+=== GET /api/radar/consensus?intervalType=%00
+{"error":"internal_server_error","message":"서버 내부 오류가 발생했습니다. 백엔드 로그를 확인하세요."}
+[HTTP 500 0.004721s]
+
+=== GET /api/radar/consensus?market=%00
+{"market":"\u0000","tradeType":"순매수","intervalType":"TODAY","topN":30,"available":false,"rows":[],"message":"외국인·기관 수급을 받지 못해 교집합을 만들 수 없습니다. 한쪽만으로는 '둘이 함께 샀다'를 말할 수 없습니다.","reasons":[]}
+[HTTP 200 0.014492s]
+
+=== GET /api/radar/history?market=%00
+{"error":"internal_server_error","message":"서버 내부 오류가 발생했습니다. 백엔드 로그를 확인하세요."}
+[HTTP 500 0.005197s]
+
+=== GET /api/radar/history?investor=%00
+{"error":"internal_server_error","message":"서버 내부 오류가 발생했습니다. 백엔드 로그를 확인하세요."}
+[HTTP 500 0.005660s]
+
+=== GET /api/radar/history?tradeType=%00
+{"error":"internal_server_error","message":"서버 내부 오류가 발생했습니다. 백엔드 로그를 확인하세요."}
+[HTTP 500 0.004616s]
+
+=== GET /api/radar/history?market=%00&latest=true
+{"error":"internal_server_error","message":"서버 내부 오류가 발생했습니다. 백엔드 로그를 확인하세요."}
+[HTTP 500 0.004895s]
+
+=== GET /api/radar/history?obsDate=%00
+{"error":"bad_request","message":"obsDate 날짜 형식이 올바르지 않습니다: \u0000 (예: 2026-09-18)"}
+[HTTP 400 0.003149s]
+
+=== GET /api/status/history?task=%00
+{"error":"internal_server_error","message":"서버 내부 오류가 발생했습니다. 백엔드 로그를 확인하세요."}
+[HTTP 500 0.010765s]
+
+=== GET /api/radar/ranking?market=KOSPI&investor=%00
+{"error":"bad_request","message":"investor는 외국인 · 기관 · 개인 · 연기금 · 금융투자 · 투신 가운데 하나여야 합니다: \u0000"}
+[HTTP 400 0.002990s]
+
+=== GET /api/radar/ranking?tradeType=%00
+{"error":"bad_request","message":"tradeType는 순매수 · 순매도 가운데 하나여야 합니다: \u0000"}
+[HTTP 400 0.002473s]
+
+=== GET /api/radar/ranking?market=%00
+{"market":"\u0000","investor":"외국인","tradeType":"순매수","intervalType":"TODAY","readMode":"auto","available":false,"rows":[],"message":"수급 데이터를 얻지 못했습니다. 수집기 상태를 확인하세요.","reasons":[]}
+[HTTP 200 0.004698s]
+
+=== GET /api/radar/consensus?tradeType=XYZ
+{"market":"KOSPI","tradeType":"XYZ","intervalType":"TODAY","topN":30,"available":false,"rows":[],"message":"외국인·기관 수급을 받지 못해 교집합을 만들 수 없습니다. 한쪽만으로는 '둘이 함께 샀다'를 말할 수 없습니다.","reasons":[]}
+[HTTP 200 0.006835s]
+
+=== GET /api/radar/history?investor=XYZ
+{"dates":["2026-11-04","2026-11-03","2026-11-02","2026-10-30","2026-10-29","2026-10-28","2026-10-27","2026-10-26","2026-10-23","2026-10-22"],"rows":[],"rowLimit":5000,"truncated":false,"note":"Naver·Daum·KRX는 과거 날짜 조회를 지원하지 않습니다. 이 이력은 수집기가 돌 때마다 쌓아 온 값이라 외부에서 다시 받을 수 없습니다 — 데이터베이스를 백업할 가치가 있습니다."}
+[HTTP 200 0.003943s]
+
+=== GET /api/status/history?task=XYZ
+{"history":[]}
+[HTTP 200 0.005263s]
+
+
+# 출처: $SP/qa/lanes/repro4/nul/collector-probe.txt (전체)
+=== GET (collector, no token) /task-history?task=%00
+Internal Server Error
+[HTTP 500 0.002801s]
+
+=== GET (collector, no token) /task-history?task=XYZ
+{"history":[]}
+[HTTP 200 0.002887s]
+
+=== GET (collector, no token) /task-history?task=a%00b
+Internal Server Error
+[HTTP 500 0.002191s]
+
+
+# 출처: $SP/qa/lanes/repro4/nul/pool-after-repeat.txt (전체)
+# 연속 30회 NUL 요청 뒤 연결 풀·헬스 확인
+collector /task-history?task=%00 x30: 500 500 500 500 500 500 500 500 500 500 500 500 500 500 500 500 500 500 500 500 500 500 500 500 500 500 500 500 500 500
+backend /api/radar/history?investor=%00 x30: 500 500 500 500 500 500 500 500 500 500 500 500 500 500 500 500 500 500 500 500 500 500 500 500 500 500 500 500 500 500
+after: collector /task-history?task=XYZ -> {"history":[]} [200]
+after: collector /health -> {"status":"ok","database":"ok","schedulerEnabled":false} [200]
+after: backend /api/radar/history?latest=true -> 200
+after: backend /api/health -> {"status":"ok","database":"ok"} [200]

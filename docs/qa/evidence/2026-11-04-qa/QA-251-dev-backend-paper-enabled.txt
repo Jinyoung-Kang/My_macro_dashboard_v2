@@ -1,0 +1,52 @@
+# 출처: $SP/qa/lanes/repro0/commands.txt (전체) — 재현 절차(독립 재현, 49a7d62b)
+repro0 - candidate (paper): make dev-backend ignores .env PAPER_ENABLED=false; two ledger instances double STOP fill
+base commit 49a7d62b, worktree wt-repro0 (removed after run), test DB macrodash_qa_repro0_test (local postgres 5434)
+
+1) make db-test TEST_DB_NAME=macrodash_qa_repro0_test                      (repo top)
+2) worktree .env = "PAPER_ENABLED=false\nDATABASE_PORT=5434"; make -n dev-backend   -> dev-backend-dryrun.txt (PAPER count 0)
+3) env -u ANTHROPIC_API_KEY -u TELEGRAM_BOT_TOKEN -u PAPER_ENABLED SERVER_PORT=18997 COLLECTOR_URL=http://127.0.0.1:9 \
+     DATABASE_URL=jdbc:postgresql://localhost:5434/macrodash_qa_repro0_test MAVEN_ARGS=-o setsid make dev-backend
+   -> dev-backend-run.log line 65: PaperStartupLog "모의 매매 정기 작업 켜짐 - PAPER_ENABLED=true ... LOCAL_NO_LOGIN=false", no WARN; killed after startup
+4) TEST_DATABASE_URL=jdbc:postgresql://localhost:5434/macrodash_qa_repro0_test mvn -o -B -q test -Dtest=QaPaperConcurrencyDbTest
+   -> concurrency-run1.log (4 tests, twoLedgerInstancesSameStopObservation fails: stopOrders=2 stopFills=2, cash 90095.05->99000.595, recon 107906.14)
+5) + control test (same ledger instance, 2 threads, same STOP observation): concurrency-run2.log, concurrency-run3.log
+   -> control stopFills=1 violations=[]; two instances stopFills=2 (3/3 runs)
+
+# 출처: $SP/qa/lanes/repro0/dev-backend-dryrun.txt (전체) — make -n dev-backend — PAPER_ENABLED가 넘어가지 않음
+$ cat .env
+PAPER_ENABLED=false
+DATABASE_PORT=5434
+$ make -n dev-backend
+# DATABASE_URL을 직접 주지 않았으면 .env의 DATABASE_PORT로 붙습니다(수집기와 같은 DB).
+cd backend && DATABASE_URL=${DATABASE_URL:-jdbc:postgresql://localhost:5434/${DATABASE_NAME:-macrodash}} \
+	mvn spring-boot:run
+--- grep PAPER in dry-run: 0
+
+# 출처: $SP/qa/lanes/repro0/dev-backend-run.log (줄 거름 /PaperStartupLog|Started MacroDashboard/) — 기동 로그에서 정기 작업 줄만
+2026-11-04T23:26:23.130+09:00  INFO 3651084 --- [macro-dashboard-backend] [           main] c.macrodash.MacroDashboardApplication    : Started MacroDashboardApplication in 2.229 seconds (process running for 2.497)
+2026-11-04T23:26:23.240+09:00  INFO 3651084 --- [macro-dashboard-backend] [           main] c.m.feature.paper.PaperStartupLog        : 모의 매매 정기 작업 켜짐 — PAPER_ENABLED=true · 스케줄러(dashboard.scheduler.enabled)=켜짐 · LOCAL_NO_LOGIN=false · 화면 포트 3000 · 출발일 2026-10-23 (정기 작업은 한 곳에서만, ADR 0019·0020)
+
+# 출처: $SP/qa/lanes/repro0/concurrency-run1.log (JVM·Maven 경고 줄 뺌) — 장부 서비스 두 벌 시험(수정 전 실패)
+QA sameObservationTwoThreads processed=[rules, claude, claude2, bench_spy, bench_mix] filled=1
+QA pauseRacesWithFill outcomes=[CANCELLED/0, CANCELLED/0, CANCELLED/0, CANCELLED/0, CANCELLED/0, CANCELLED/0]
+QA twoLedgerInstances results=[stopped=1 processed=[rules, claude, claude2, bench_spy, bench_mix] errors=[], stopped=1 processed=[rules, claude, claude2, bench_spy, bench_mix] errors=[]] stopOrders=2 stopFills=2 cash 90095.05 -> 99000.595 violations=[cash recon claude state=99000.5950 recon=107906.1400, net fills w/o position claude AAA]
+[ERROR] Tests run: 4, Failures: 1, Errors: 0, Skipped: 0, Time elapsed: 8.155 s <<< FAILURE! -- in com.macrodash.feature.paper.QaPaperConcurrencyDbTest
+[ERROR] com.macrodash.feature.paper.QaPaperConcurrencyDbTest.twoLedgerInstancesSameStopObservation -- Time elapsed: 0.803 s <<< FAILURE!
+org.opentest4j.AssertionFailedError: 
+[두 프로세스에서도 스탑 체결은 1회여야 함] 
+expected: 1L
+ but was: 2L
+	at com.macrodash.feature.paper.QaPaperConcurrencyDbTest.twoLedgerInstancesSameStopObservation(QaPaperConcurrencyDbTest.java:290)
+
+[ERROR] Failures: 
+[ERROR]   QaPaperConcurrencyDbTest.twoLedgerInstancesSameStopObservation:290 [두 프로세스에서도 스탑 체결은 1회여야 함] 
+expected: 1L
+ but was: 2L
+[ERROR] Tests run: 4, Failures: 1, Errors: 0, Skipped: 0
+[ERROR] Failed to execute goal org.apache.maven.plugins:maven-surefire-plugin:3.5.6:test (default-test) on project macro-dashboard-backend: There are test failures.
+
+# 출처: $SP/qa/lanes/repro0/concurrency-run2.log (줄 거름 /^QA |Tests run/) — 대조 시험 포함 2회차 요약
+QA control oneLedgerInstance stopFills=1 violations=[]
+QA twoLedgerInstances results=[stopped=1 processed=[rules, claude, claude2, bench_spy, bench_mix] errors=[], stopped=1 processed=[rules, claude, claude2, bench_spy, bench_mix] errors=[]] stopOrders=2 stopFills=2 cash 90095.05 -> 99000.595 violations=[cash recon claude state=99000.5950 recon=107906.1400, net fills w/o position claude AAA]
+[ERROR] Tests run: 2, Failures: 1, Errors: 0, Skipped: 0, Time elapsed: 3.699 s <<< FAILURE! -- in com.macrodash.feature.paper.QaPaperConcurrencyDbTest
+[ERROR] Tests run: 2, Failures: 1, Errors: 0, Skipped: 0

@@ -1,0 +1,67 @@
+# 출처: $SP/qa/lanes/repro26/commands.txt (전체)
+# repro26 — 후보 "pre-restore 백업이 BACKUP_KEEP로 정리되지 않음" 재현 (커밋 49a7d62b, worktree wt-repro26)
+# A) stub psql/pg_dump(DB 없음): PATH=<lane>/stub/bin, DB_EXEC= , DATABASE_NAME=stubdb, BACKUP_DIR=<lane>/stub/backups, ENV_FILE=<없는 파일>, BACKUP_KEEP 미설정
+#    pre-restore-202610DD-000000.sql 12개 → db-backup.sh → db-restore.sh <백업> --yes → 13개 (stub-restore-prune.log)
+#    대조: db-backup.sh pre-restore → "정리: 오래된 pre-restore 백업 3개 삭제" → 10개
+# B) 일회용 컨테이너 docker run --rm --network none postgres:16-alpine (qa-repro26-pg, DB qa_repro26_test, 끝나고 stop)
+#    DB_EXEC="docker exec -i qa-repro26-pg" RESTORE_STOP_SERVICES= … 같은 순서 → 복원 성공(값 backup-time), pre-restore 13개 (realdb-restore-prune.log)
+# 로컬·QA 스택·운영 DB는 쓰지 않음. 로컬 backups/는 개수만 ls(읽기): pre-restore 1개(2026-10-26, 33M), macrodash 10개.
+
+# 출처: $SP/qa/lanes/repro26/stub-restore-prune.log (전체)
+$ (stub psql/pg_dump, DB 없음) pre-restore 12개, BACKUP_KEEP 미설정(기본 10), ENV_FILE 없음
+before: pre-restore=12
+$ DB_EXEC= DATABASE_NAME=stubdb BACKUP_DIR=<lane>/backups ENV_FILE=<없음> bash scripts/db-backup.sh
+
+  파일     : <lane>/backups/stubdb-20261104-233620.sql (4.0K)
+  테이블   : 0개
+
+backup exit=0
+$ … bash scripts/db-restore.sh <방금 백업> --yes
+1/3 지금 DB를 먼저 백업합니다…
+    → <lane>/backups/pre-restore-20261104-233620.sql
+2/3 복원합니다 (한 트랜잭션 — 실패하면 전부 되돌립니다)…
+✓ 복원했습니다: <lane>/backups/stubdb-20261104-233620.sql
+   되돌리려면: make restore F=<lane>/backups/pre-restore-20261104-233620.sql
+restore exit=0
+after restore: pre-restore=13  stubdb=1
+$ 다시 restore 한 번 더
+restore exit=0
+after 2nd restore: pre-restore=13
+--- 대조: db-backup.sh를 접두어 pre-restore로 부르면 prune_backups가 돌아 10개로 줄어듦
+  정리     : 오래된 pre-restore 백업 3개 삭제 (최근 10개 보존)
+after backup-with-prefix: pre-restore=10
+
+# 출처: $SP/qa/lanes/repro26/realdb-restore-prune.log (전체)
+$ (일회용 컨테이너 postgres:16-alpine, --network none, DB qa_repro26_test) pre-restore 12개, BACKUP_KEEP 미설정(기본 10)
+before: pre-restore=12
+$ DB_EXEC="docker exec -i qa-repro26-pg" DATABASE_NAME=qa_repro26_test RESTORE_STOP_SERVICES= BACKUP_DIR=<lane> bash scripts/db-backup.sh
+
+  파일     : <lane>/backups/qa_repro26_test-20261104-233639.sql (4.0K)
+  테이블   : 1개
+ERROR:  relation "observations" does not exist
+backup exit=0
+$ … bash scripts/db-restore.sh <방금 백업> --yes
+1/3 지금 DB를 먼저 백업합니다…
+    → <lane>/backups/pre-restore-20261104-233640.sql
+2/3 복원합니다 (한 트랜잭션 — 실패하면 전부 되돌립니다)…
+psql:<stdin>:3: NOTICE:  drop cascades to table t
+✓ 복원했습니다: <lane>/backups/qa_repro26_test-20261104-233639.sql
+   되돌리려면: make restore F=<lane>/backups/pre-restore-20261104-233640.sql
+restore exit=0
+value after restore: backup-time
+after: pre-restore=13
+total 56
+-rw-r--r-- 1 <사용자> <사용자>  37 2026-10-01 pre-restore-20261001-000000.sql
+-rw-r--r-- 1 <사용자> <사용자>  37 2026-10-02 pre-restore-20261002-000000.sql
+-rw-r--r-- 1 <사용자> <사용자>  37 2026-10-03 pre-restore-20261003-000000.sql
+-rw-r--r-- 1 <사용자> <사용자>  37 2026-10-04 pre-restore-20261004-000000.sql
+-rw-r--r-- 1 <사용자> <사용자>  37 2026-10-05 pre-restore-20261005-000000.sql
+-rw-r--r-- 1 <사용자> <사용자>  37 2026-10-06 pre-restore-20261006-000000.sql
+-rw-r--r-- 1 <사용자> <사용자>  37 2026-10-07 pre-restore-20261007-000000.sql
+-rw-r--r-- 1 <사용자> <사용자>  37 2026-10-08 pre-restore-20261008-000000.sql
+-rw-r--r-- 1 <사용자> <사용자>  37 2026-10-09 pre-restore-20261009-000000.sql
+-rw-r--r-- 1 <사용자> <사용자>  37 2026-10-10 pre-restore-20261010-000000.sql
+-rw-r--r-- 1 <사용자> <사용자>  37 2026-10-11 pre-restore-20261011-000000.sql
+-rw-r--r-- 1 <사용자> <사용자>  37 2026-10-12 pre-restore-20261012-000000.sql
+-rw------- 1 <사용자> <사용자> 973 2026-11-04 pre-restore-20261104-233640.sql
+-rw------- 1 <사용자> <사용자> 975 2026-11-04 qa_repro26_test-20261104-233639.sql

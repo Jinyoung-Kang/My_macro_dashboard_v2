@@ -1,0 +1,154 @@
+# 출처: $SP/qa/lanes/repro27/SUMMARY.txt (전체)
+# repro27 요약 (49a7d62b, 2026-11-04 23:46:33 KST)
+방법: worktree에서 빌드한 백엔드 jar(JDK 25)를 로컬 postgres의 테스트 DB macrodash_qa_repro27_test에 붙여 127.0.0.1:18927로 따로 띄움(QA·로컬 스택 컨테이너 재시작 없음). 운영자는 실행마다 새로 만든 버리는 계정. 없는 이메일 35회 실패 → 30행 + 넘침 5(메모리). SIGTERM 뒤 유예가 지나면 SIGKILL(docker stop과 같은 처리).
+
+## A-nosse-grace10
+23:42:21.796 case=A-nosse-grace10 sse=0 grace=10s extra=none jar=macro-dashboard-backend-2.0.0.jar
+23:42:28.030 process ended rc=143 killed=0 after 0.4s
+23:42:29.346 suppressed rows: {"to": "2026-11-04T14:42:27.594913949Z", "from": "2026-11-04T14:42:26.126268267Z", "count": 5, "limit": 30} 
+o.s.boot.tomcat.GracefulShutdown         : Graceful shutdown complete
+
+## B-sse-grace10
+23:42:36.754 case=B-sse-grace10 sse=1 grace=10s extra=none jar=macro-dashboard-backend-2.0.0.jar
+23:42:55.535 grace 10s elapsed, still alive -> SIGKILL (docker와 같은 처리)
+23:42:55.587 process ended rc=137 killed=1 after 10.1s
+23:42:56.913 suppressed rows: 
+
+## C-sse-grace45
+23:43:02.757 case=C-sse-grace45 sse=1 grace=45s extra=none jar=macro-dashboard-backend-2.0.0.jar
+23:43:42.042 process ended rc=143 killed=0 after 30.4s
+23:43:43.385 suppressed rows: {"to": "2026-11-04T14:43:41.608654637Z", "from": "2026-11-04T14:43:07.109759902Z", "count": 5, "limit": 30} 
+o.s.c.support.DefaultLifecycleProcessor  : Shutdown phase 2147482623 ends with 1 bean still running after timeout of 30000ms: [webServ
+o.s.boot.tomcat.GracefulShutdown         : Graceful shutdown aborted with one or more requests still active
+
+## D-sse-grace10-phase5s
+23:43:50.512 case=D-sse-grace10-phase5s sse=1 grace=10s extra=-Dspring.lifecycle.timeout-per-shutdown-phase=5s jar=macro-dashboard-backend-2.0.0.jar
+23:44:05.737 process ended rc=143 killed=0 after 5.3s
+23:44:07.090 suppressed rows: {"to": "2026-11-04T14:44:05.407742701Z", "from": "2026-11-04T14:43:55.833667603Z", "count": 5, "limit": 30} 
+o.s.c.support.DefaultLifecycleProcessor  : Shutdown phase 2147482623 ends with 1 bean still running after timeout of 5000ms: [webServe
+o.s.boot.tomcat.GracefulShutdown         : Graceful shutdown aborted with one or more requests still active
+
+## E-fixexp-sse-grace10
+23:44:45.583 case=E-fixexp-sse-grace10 sse=1 grace=10s extra=none jar=fix-experiment.jar
+23:44:55.842 process ended rc=143 killed=0 after 0.4s
+23:44:57.225 suppressed rows: {"to": "2026-11-04T14:44:55.463685441Z", "from": "2026-11-04T14:44:50.847546415Z", "count": 5, "limit": 30} 
+o.s.boot.tomcat.GracefulShutdown         : Graceful shutdown complete
+
+## F-plainhang-grace10
+23:45:14.767 case=F-plainhang-grace10 sse=2 grace=10s extra=none jar=orig.jar
+23:45:35.075 grace 10s elapsed, still alive -> SIGKILL (docker와 같은 처리)
+23:45:35.127 process ended rc=137 killed=1 after 10.1s
+23:45:36.508 suppressed rows: 
+
+## docker stop 기본 유예(이 PC)
+## docker stop 기본 유예 확인 (SIGTERM을 무시하는 컨테이너, 2026-11-04 23:40:08 KST)
+docker stop (no -t): 3.341925541 s
+Config.StopTimeout=<nil>
+docker stop #2 (no -t): 3.320286447 s, exit=137
+
+# 출처: $SP/qa/lanes/repro27/01-docker-stop-default.txt (전체)
+## docker stop 기본 유예 확인 (SIGTERM을 무시하는 컨테이너, 2026-11-04 23:40:08 KST)
+docker stop (no -t): 3.341925541 s
+Config.StopTimeout=<nil>
+docker stop #2 (no -t): 3.320286447 s, exit=137
+
+# 출처: $SP/qa/lanes/repro27/A-nosse-grace10/steps.txt (전체)
+23:42:21.796 case=A-nosse-grace10 sse=0 grace=10s extra=none jar=macro-dashboard-backend-2.0.0.jar
+23:42:24.976 backend up pid=3714930
+23:42:26.085 owner login http=200
+23:42:27.396 unknown-email failures http: 401 401 401 401 401 401 401 401 401 401 401 401 401 401 401 401 401 401 401 401 401 401 401 401 401 401 401 401 401 401 401 401 401 401 401
+23:42:27.573 audit before stop: login.failure=30 login.success=1 owner.created=1 
+23:42:27.578 SIGTERM -> pid 3714930
+23:42:28.030 process ended rc=143 killed=0 after 0.4s
+23:42:29.192 audit after stop: login.failure=30 login.failure.suppressed=1 login.success=1 owner.created=1 
+23:42:29.346 suppressed rows: {"to": "2026-11-04T14:42:27.594913949Z", "from": "2026-11-04T14:42:26.126268267Z", "count": 5, "limit": 30} 
+23:42:29.352 shutdown log lines:
+    2026-11-04T23:42:27.588+09:00  INFO 3714930 --- [macro-dashboard-backend] [ionShutdownHook] o.s.boot.tomcat.GracefulShutdown         : Commencing graceful shutdown. Waiting for active requests to complete
+    2026-11-04T23:42:27.590+09:00  INFO 3714930 --- [macro-dashboard-backend] [tomcat-shutdown] o.s.boot.tomcat.GracefulShutdown         : Graceful shutdown complete
+    2026-11-04T23:42:27.600+09:00  INFO 3714930 --- [macro-dashboard-backend] [ionShutdownHook] com.zaxxer.hikari.HikariDataSource       : HikariPool-1 - Shutdown initiated...
+    2026-11-04T23:42:27.603+09:00  INFO 3714930 --- [macro-dashboard-backend] [ionShutdownHook] com.zaxxer.hikari.HikariDataSource       : HikariPool-1 - Shutdown completed.
+
+# 출처: $SP/qa/lanes/repro27/B-sse-grace10/steps.txt (전체)
+23:42:36.754 case=B-sse-grace10 sse=1 grace=10s extra=none jar=macro-dashboard-backend-2.0.0.jar
+23:42:39.891 backend up pid=3715479
+23:42:40.994 owner login http=200
+23:42:42.315 unknown-email failures http: 401 401 401 401 401 401 401 401 401 401 401 401 401 401 401 401 401 401 401 401 401 401 401 401 401 401 401 401 401 401 401 401 401 401 401
+23:42:42.475 audit before stop: login.failure=30 login.success=1 owner.created=1 
+23:42:45.487 SSE opened: first lines: 23:42:42.526 event:prices 23:42:42.531 data:{"available":false,"message":"수집기에서 응답을 받지 못했습니다."} 23:42:42.535  
+23:42:45.492 SIGTERM -> pid 3715479
+23:42:55.535 grace 10s elapsed, still alive -> SIGKILL (docker와 같은 처리)
+23:42:55.587 process ended rc=137 killed=1 after 10.1s
+23:42:56.754 audit after stop: login.failure=30 login.success=1 owner.created=1 
+23:42:56.913 suppressed rows: 
+23:42:56.918 shutdown log lines:
+    2026-11-04T23:42:45.502+09:00  INFO 3715479 --- [macro-dashboard-backend] [ionShutdownHook] o.s.boot.tomcat.GracefulShutdown         : Commencing graceful shutdown. Waiting for active requests to complete
+
+# 출처: $SP/qa/lanes/repro27/C-sse-grace45/steps.txt (전체)
+23:43:02.757 case=C-sse-grace45 sse=1 grace=45s extra=none jar=macro-dashboard-backend-2.0.0.jar
+23:43:05.967 backend up pid=3717774
+23:43:07.066 owner login http=200
+23:43:08.407 unknown-email failures http: 401 401 401 401 401 401 401 401 401 401 401 401 401 401 401 401 401 401 401 401 401 401 401 401 401 401 401 401 401 401 401 401 401 401 401
+23:43:08.572 audit before stop: login.failure=30 login.success=1 owner.created=1 
+23:43:11.584 SSE opened: first lines: 23:43:08.616 event:prices 23:43:08.620 data:{"available":false,"message":"수집기에서 응답을 받지 못했습니다."} 23:43:08.624  
+23:43:11.589 SIGTERM -> pid 3717774
+23:43:42.042 process ended rc=143 killed=0 after 30.4s
+23:43:43.217 audit after stop: login.failure=30 login.failure.suppressed=1 login.success=1 owner.created=1 
+23:43:43.385 suppressed rows: {"to": "2026-11-04T14:43:41.608654637Z", "from": "2026-11-04T14:43:07.109759902Z", "count": 5, "limit": 30} 
+23:43:43.390 shutdown log lines:
+    2026-11-04T23:43:11.599+09:00  INFO 3717774 --- [macro-dashboard-backend] [ionShutdownHook] o.s.boot.tomcat.GracefulShutdown         : Commencing graceful shutdown. Waiting for active requests to complete
+    2026-11-04T23:43:41.601+09:00  INFO 3717774 --- [macro-dashboard-backend] [ionShutdownHook] o.s.c.support.DefaultLifecycleProcessor  : Shutdown phase 2147482623 ends with 1 bean still running after timeout of 30000ms: [webServ
+    2026-11-04T23:43:41.620+09:00  INFO 3717774 --- [macro-dashboard-backend] [ionShutdownHook] com.zaxxer.hikari.HikariDataSource       : HikariPool-1 - Shutdown initiated...
+    2026-11-04T23:43:41.623+09:00  INFO 3717774 --- [macro-dashboard-backend] [ionShutdownHook] com.zaxxer.hikari.HikariDataSource       : HikariPool-1 - Shutdown completed.
+    2026-11-04T23:43:41.625+09:00  INFO 3717774 --- [macro-dashboard-backend] [tomcat-shutdown] o.s.boot.tomcat.GracefulShutdown         : Graceful shutdown aborted with one or more requests still active
+
+# 출처: $SP/qa/lanes/repro27/E-fixexp-sse-grace10/steps.txt (전체)
+23:44:45.583 case=E-fixexp-sse-grace10 sse=1 grace=10s extra=none jar=fix-experiment.jar
+23:44:49.707 backend up pid=3722803
+23:44:50.809 owner login http=200
+23:44:52.210 unknown-email failures http: 401 401 401 401 401 401 401 401 401 401 401 401 401 401 401 401 401 401 401 401 401 401 401 401 401 401 401 401 401 401 401 401 401 401 401
+23:44:52.376 audit before stop: login.failure=30 login.success=1 owner.created=1 
+23:44:55.388 SSE opened: first lines: 23:44:52.421 event:prices 23:44:52.425 data:{"available":false,"message":"수집기에서 응답을 받지 못했습니다."} 23:44:52.429  
+23:44:55.394 SIGTERM -> pid 3722803
+23:44:55.842 process ended rc=143 killed=0 after 0.4s
+23:44:57.046 audit after stop: login.failure=30 login.failure.suppressed=1 login.success=1 owner.created=1 
+23:44:57.225 suppressed rows: {"to": "2026-11-04T14:44:55.463685441Z", "from": "2026-11-04T14:44:50.847546415Z", "count": 5, "limit": 30} 
+23:44:57.230 shutdown log lines:
+    2026-11-04T23:44:55.407+09:00  INFO 3722803 --- [macro-dashboard-backend] [ionShutdownHook] o.s.boot.tomcat.GracefulShutdown         : Commencing graceful shutdown. Waiting for active requests to complete
+    2026-11-04T23:44:55.459+09:00  INFO 3722803 --- [macro-dashboard-backend] [tomcat-shutdown] o.s.boot.tomcat.GracefulShutdown         : Graceful shutdown complete
+    2026-11-04T23:44:55.470+09:00  INFO 3722803 --- [macro-dashboard-backend] [ionShutdownHook] com.zaxxer.hikari.HikariDataSource       : HikariPool-1 - Shutdown initiated...
+    2026-11-04T23:44:55.473+09:00  INFO 3722803 --- [macro-dashboard-backend] [ionShutdownHook] com.zaxxer.hikari.HikariDataSource       : HikariPool-1 - Shutdown completed.
+
+# 출처: $SP/qa/lanes/repro27/F-plainhang-grace10/steps.txt (전체)
+23:45:14.767 case=F-plainhang-grace10 sse=2 grace=10s extra=none jar=orig.jar
+23:45:18.887 backend up pid=3723796
+23:45:19.982 owner login http=200
+23:45:21.295 unknown-email failures http: 401 401 401 401 401 401 401 401 401 401 401 401 401 401 401 401 401 401 401 401 401 401 401 401 401 401 401 401 401 401 401 401 401 401 401
+23:45:21.490 audit before stop: login.failure=30 login.success=1 owner.created=1 
+23:45:25.005 plain GET /api/live/prices pending (collector hangs)
+23:45:25.011 SIGTERM -> pid 3723796
+23:45:35.075 grace 10s elapsed, still alive -> SIGKILL (docker와 같은 처리)
+23:45:35.127 process ended rc=137 killed=1 after 10.1s
+23:45:36.316 audit after stop: login.failure=30 login.success=1 owner.created=1 
+23:45:36.508 suppressed rows: 
+23:45:36.516 shutdown log lines:
+    2026-11-04T23:45:25.030+09:00  INFO 3723796 --- [macro-dashboard-backend] [ionShutdownHook] o.s.boot.tomcat.GracefulShutdown         : Commencing graceful shutdown. Waiting for active requests to complete
+
+# 출처: $SP/qa/lanes/repro27/fix-experiment.diff (전체) — 수정 실험(ContextClosedEvent) — 저장소에 반영한 것 아님
+diff --git a/backend/src/main/java/com/macrodash/feature/live/LivePriceService.java b/backend/src/main/java/com/macrodash/feature/live/LivePriceService.java
+index 46acdc16..65fec57c 100644
+--- a/backend/src/main/java/com/macrodash/feature/live/LivePriceService.java
++++ b/backend/src/main/java/com/macrodash/feature/live/LivePriceService.java
+@@ -83,6 +83,13 @@ public class LivePriceService {
+         });
+     }
+ 
++    /** 실험(QA 재현 전용): 웹 서버 정상 종료보다 먼저 구독을 끝냄. */
++    <메일 가림>(org.springframework.context.event.ContextClosedEvent.class)
++    void closeStreamsBeforeGracefulShutdown() {
++        log.info("experiment: closing {} live streams on ContextClosedEvent", streams.size());
++        streams.forEach(Stream::close);
++    }
++
+     @PreDestroy
+     void shutdown() {
+         streams.forEach(Stream::close);

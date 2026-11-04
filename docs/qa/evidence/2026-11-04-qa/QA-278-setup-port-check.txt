@@ -1,0 +1,169 @@
+# 출처: $SP/qa/lanes/repro24/SUMMARY.txt (전체)
+repro24 — 후보 "make setup 포트 점검이 .env 포트가 아니라 3000/8080/8000/5432를 보고, WSL2에서 lsof가 리스너를 못 봄" (영역 regression)
+기준: 49a7d62b, 새 worktree(.env 없음)에서 make setup. 판정: 재현됨, S4 유지.
+- setup.log: make setup 4절이 3000/8080/8000/5432만 보고 '비어 있음', 같은 폴더 .env는 3002/8082/8002/5434 (APP_PASSWORD 출력은 <가림>)
+- ports-check.log: 같은 폴더 bash scripts/ports.sh check -> 네 포트 모두 다른 컨테이너(my_macro_dashboard_v2-*), exit=1
+- lsof-vs-ss.log: 3002/8082/8002/5434/3001/8081/13002 모두 lsof exit=1, ss·/dev/tcp는 LISTEN. 리스너는 root의 docker-desktop-user-distro proxy(Docker Desktop WSL 통합) — 후보가 쓴 'docker-proxy'와 이름만 다름
+- sec4-harness.log: setup.sh 228~282줄을 그대로 eval. A) 본 폴더: OWN_PORTS=[3002 5434 8002 8082]를 알아내지만 3000..과 비교해 '(정상)'이 절대 안 나옴
+  B) 포트만 .env 값으로 바꾸면 '(정상)' 4개  C) 새 폴더에서 .env 포트로 불러도 lsof만으로는 v2·v1 스택 포트 전부 '비어 있음'(포트만 고치는 수정은 불충분)
+
+# 출처: $SP/qa/lanes/repro24/setup.log (전체)
+$ make setup  (cwd=$SP/qa/wt-repro24, HEAD=49a7d62b, 2026-11-04 23:34:53 KST)
+My Macro Dashboard v2 — 준비
+경로: $SP/qa/wt-repro24
+
+1. 환경 파일
+  ✓ .env를 만들었습니다 (.env.example 복사)
+  ! OWNER_EMAIL이 비어 있습니다. .env에 운영자 계정 이메일(로그인 아이디)을 넣으세요 (예: OWNER_EMAIL=<가림>
+    넣은 뒤 make up — 그 전에는 운영자 계정이 없어 화면을 열 수 없습니다
+  ✓ COLLECTOR_API_TOKEN(수집기 내부 토큰)을 무작위 값으로 생성했습니다 — 'make up'으로 반영하세요
+  ✓ APP_PASSWORD(운영자 계정 비밀번호)를 무작위 값으로 만들었습니다: <가림>
+    처음 기동할 때 운영자 계정을 만드는 데 씁니다. 로컬 화면은 로그인 없이 그 계정으로 열리고,
+    로그인 화면을 켜면(LOCAL_NO_LOGIN=false) 이 비밀번호로 들어갑니다. 원하는 값으로 바꾸려면 .env의 APP_PASSWORD를 고치고 'make up' 하세요.
+
+2. 외부 API 키 (없어도 실행됩니다)
+  ! FRED 없음 → 웹 CSV로 폴백 (대부분 정상 동작)
+  ! KRX 없음 → 선물이 KODEX 200 기반 추정치로 표시
+  ! 한국투자증권 없음 → 장중 수급 가집계·교차 검증 비활성화
+  ! LS증권 없음 → 수급 레이더에서 LS 단계만 건너뜀
+  ! AI(NVIDIA) 없음 → AI 메뉴 비활성화 (Cerebras/Cloudflare로 대체 가능)
+  ! SEC 연락처 없음 → 13F 수집 중단 — .env에 본인 이메일을 넣으세요 (키 아님)
+
+3. 실행 방법 확인
+  ✓ Docker 실행 중 → 'make up' 한 줄로 전체 스택을 띄울 수 있습니다
+    Docker를 쓰면 Java·Maven·Node·psql을 따로 설치하지 않아도 됩니다
+
+4. 포트 확인
+  ✓ 3000 (화면) 비어 있음
+  ✓ 8080 (백엔드 API) 비어 있음
+  ✓ 8000 (수집기) 비어 있음
+  ✓ 5432 (PostgreSQL) 비어 있음
+
+다음 단계
+    make up        # 전체 스택 기동 (최초 빌드 5~10분)
+    make collect   # 첫 데이터 수집 (없으면 화면이 비어 있습니다)
+    open http://localhost:3002
+
+exit=0
+
+# 출처: $SP/qa/lanes/repro24/ports-check.log (전체)
+$ bash scripts/ports.sh check
+포트 점검
+  ✗ 3002 (화면) — 다른 컨테이너가 이 포트를 잡고 있습니다
+      · my_macro_dashboard_v2-frontend-1 (compose 프로젝트: my_macro_dashboard_v2)
+    그 컨테이너가 필요 없다면:  docker stop <이름>
+    둘 다 써야 한다면: .env의 FRONTEND_PORT를 비어 있는 다른 번호로 바꾸세요
+  ✗ 8082 (백엔드 API) — 다른 컨테이너가 이 포트를 잡고 있습니다
+      · my_macro_dashboard_v2-backend-1 (compose 프로젝트: my_macro_dashboard_v2)
+    그 컨테이너가 필요 없다면:  docker stop <이름>
+    둘 다 써야 한다면: .env의 BACKEND_PORT를 비어 있는 다른 번호로 바꾸세요
+  ✗ 8002 (수집기) — 다른 컨테이너가 이 포트를 잡고 있습니다
+      · my_macro_dashboard_v2-collector-1 (compose 프로젝트: my_macro_dashboard_v2)
+    그 컨테이너가 필요 없다면:  docker stop <이름>
+    둘 다 써야 한다면: .env의 COLLECTOR_PORT를 비어 있는 다른 번호로 바꾸세요
+  ✗ 5434 (PostgreSQL) — 다른 컨테이너가 이 포트를 잡고 있습니다
+      · my_macro_dashboard_v2-postgres-1 (compose 프로젝트: my_macro_dashboard_v2)
+    그 컨테이너가 필요 없다면:  docker stop <이름>
+    둘 다 써야 한다면: .env의 DATABASE_PORT를 비어 있는 다른 번호로 바꾸세요
+
+  위 문제를 해결한 뒤 다시 make up 하세요. 포트 번호를 바꿨다면 --build가 필요합니다
+    (화면이 백엔드 주소를 빌드할 때 새겨 두기 때문입니다 — make up은 항상 --build로 띄웁니다)
+exit=1
+
+# 출처: $SP/qa/lanes/repro24/lsof-vs-ss.log (전체)
+$ lsof -nP -iTCP:3002 -sTCP:LISTEN
+exit=1
+$ ss -ltnH 'sport = :3002'
+LISTEN 0      4096   127.0.0.1:3002 0.0.0.0:*
+exit=0
+$ (exec 3<>/dev/tcp/127.0.0.1/3002)
+exit=0
+
+$ lsof -nP -iTCP:8082 -sTCP:LISTEN
+exit=1
+$ ss -ltnH 'sport = :8082'
+LISTEN 0      4096   127.0.0.1:8082 0.0.0.0:*
+exit=0
+$ (exec 3<>/dev/tcp/127.0.0.1/8082)
+exit=0
+
+$ lsof -nP -iTCP:8002 -sTCP:LISTEN
+exit=1
+$ ss -ltnH 'sport = :8002'
+LISTEN 0      4096   127.0.0.1:8002 0.0.0.0:*
+exit=0
+$ (exec 3<>/dev/tcp/127.0.0.1/8002)
+exit=0
+
+$ lsof -nP -iTCP:5434 -sTCP:LISTEN
+exit=1
+$ ss -ltnH 'sport = :5434'
+LISTEN 0      4096   127.0.0.1:5434 0.0.0.0:*
+exit=0
+$ (exec 3<>/dev/tcp/127.0.0.1/5434)
+exit=0
+
+$ lsof -nP -iTCP:3001 -sTCP:LISTEN
+exit=1
+$ ss -ltnH 'sport = :3001'
+LISTEN 0      4096   127.0.0.1:3001 0.0.0.0:*
+exit=0
+$ (exec 3<>/dev/tcp/127.0.0.1/3001)
+exit=0
+
+$ lsof -nP -iTCP:8081 -sTCP:LISTEN
+exit=1
+$ ss -ltnH 'sport = :8081'
+LISTEN 0      4096   127.0.0.1:8081 0.0.0.0:*
+exit=0
+$ (exec 3<>/dev/tcp/127.0.0.1/8081)
+exit=0
+
+$ lsof -nP -iTCP:13002 -sTCP:LISTEN
+exit=1
+$ ss -ltnH 'sport = :13002'
+LISTEN 0      4096   127.0.0.1:13002 0.0.0.0:*
+exit=0
+$ (exec 3<>/dev/tcp/127.0.0.1/13002)
+exit=0
+
+$ ps -o user,pid,comm -C docker-proxy | head
+USER         PID COMMAND
+$ for p in 3000 8080 8000 5432: ss / /dev/tcp
+3000 ss=0 devtcp=closed
+8080 ss=0 devtcp=closed
+8000 ss=0 devtcp=closed
+5432 ss=0 devtcp=closed
+
+# 출처: $SP/qa/lanes/repro24/sec4-harness.log (전체)
+### A. 본 저장소 폴더(v2 스택이 떠 있음)에서 setup.sh 4절 그대로 — 읽기만(docker compose ps)
+
+4. 포트 확인
+  OK 3000 (화면) 비어 있음
+  OK 8080 (백엔드 API) 비어 있음
+  OK 8000 (수집기) 비어 있음
+  OK 5432 (PostgreSQL) 비어 있음
+OWN_PORTS=[3002 5434 8002 8082]
+CONFLICT=0
+
+### B. 같은 폴더, 가정: 호출 포트만 .env 값(3002 8082 8002 5434)으로 바꾼 경우 — owned_by_us는 맞게 동작하는지
+
+4. 포트 확인
+  OK 3002 (port) — 이 프로젝트의 컨테이너가 사용 중 (정상)
+  OK 8082 (port) — 이 프로젝트의 컨테이너가 사용 중 (정상)
+  OK 8002 (port) — 이 프로젝트의 컨테이너가 사용 중 (정상)
+  OK 5434 (port) — 이 프로젝트의 컨테이너가 사용 중 (정상)
+OWN_PORTS=[3002 5434 8002 8082]
+CONFLICT=0
+
+### C. 새 폴더(worktree, 자기 컨테이너 없음), 가정: .env 포트로 호출 — 다른 스택이 잡은 포트를 lsof만으로 잡는지
+
+4. 포트 확인
+  OK 3002 (port) 비어 있음
+  OK 8082 (port) 비어 있음
+  OK 8002 (port) 비어 있음
+  OK 5434 (port) 비어 있음
+  OK 3001 (port) 비어 있음
+  OK 8081 (port) 비어 있음
+OWN_PORTS=[]
+CONFLICT=0

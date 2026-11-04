@@ -1,0 +1,334 @@
+# 출처: $SP/qa/lanes/regression/SUMMARY.txt (전체)
+회귀 영역(regression) 증거 요약 — 2026-11-04 20:28~21:30 KST, 대상 49a7d62b (worktree, 제품 코드 변경 없음)
+
+[1] 전체 시험 세 번 (rounds/, rounds-compare.txt)
+  수집기 ruff 통과 x3 · pytest 1330 통과/12 건너뜀 x3 (345s/404s/366s — 다른 영역 부하로 기준선 193s보다 느림)
+  백엔드 mvn -q verify 2387 통과 x3 (surefire 합계 85s/109s/80s)
+  화면 npm run check 통과 x3 · vitest 133파일 1786 통과 x3 · eslint 통과 x3 · tsc --noEmit 통과(1회, fe-tsc.log)
+  회차마다 결과가 다른 시험: 0 (세 묶음 모두)
+ 추가 실행
+  순서 섞기: 화면 vitest --sequence.shuffle seed 7·20261104 → 1786 통과 x2
+             백엔드 runOrder=random + JUnit 클래스·메서드 Random seed 20261104 → 1 실패(PaperStoreDbTest.v18RerunIsSafe), seed 7(별도 DB) → 통과
+             수집기 플러그인 qa_shuffle seed 20261104 → 2 실패(test_radar_pykrx 가격 시험 둘)
+  시계 탐침(libfaketime, apt-get download + dpkg -x, 설치 안 함): 토 2026-11-07 10:00 / 자정 넘김 2026-11-04 23:59:40 / 6주 뒤 2026-12-16 11:00 / KST 이른 아침 2026-11-05 07:00
+             화면: 모두 1786 통과(+check 통과), TZ=America/New_York·UTC도 통과
+             백엔드: TZ=America/New_York 2387 통과. libfaketime 아래 전체 실행은 ApiIntegrationTest(HTTP)에서 10분 넘게 멈춰(CPU 586%, JDK HttpClient 대기 — 도구 흔적) 중단,
+                     HTTP 통합 두 클래스(46건)를 뺀 2341건은 토·6주 뒤·이른 아침 모두 통과
+             수집기: TZ=America/New_York 1330 통과. 시계 탐침 실패 10·8·10건은 모두 DB now()(실제 시각)와 앱 시계(가짜)를 섞는 시험이나
+                     가짜 시계를 물려받지 않는 하위 프로세스(배포 스크립트) — 도구 흔적으로 판정(probes/*/failed.txt)
+  커버리지(작업 환경에서만): 백엔드 JaCoCo 0.8.16 줄 91.0%·분기 78.3% (coverage/jacoco-report, backend-gaps.txt)
+                             수집기 coverage.py 7.17.1 문장 87% (coverage/collector-cov.txt, collector-gaps.txt)
+
+[2] 흔들림 원인
+  A. PaperStoreDbTest.v18RerunIsSafe: pg_indexes를 스키마 없이 tablename만으로 셈 → 같은 시험 DB에서 수집기 시험이 만드는 test_<uuid> 스키마의
+     paper_checkpoints 색인까지 셈. 수집기 시험과 동시에 8번 돌려 2번 실패(v18-repro/with-collector-summary.txt). 단독 3번 통과.
+  B. test_radar_pykrx: '응답 없음' 시험이 모듈 전역 _pykrx_blocked_until(600초)을 되돌리지 않음 → 뒤에 오는 pykrx 시험이 빈 결과.
+     순서를 지정해 결정적으로 재현(pykrx-order-repro.log).
+  C. (환경) 수집기 test_api_token의 /health·/status 시험은 기본 DATABASE_URL(localhost:5432/macrodash = 이 PC의 v3 운영 DB 자리)로 접속,
+     닿지 않으면 풀 대기 5초씩(coverage/dbwatch.jsonl, 회차별 5.01~5.04s).
+
+[3] 새 폴더(fresh-clone, 49a7d62b)에서 문서만 보고
+  make setup 동작(.env 생성·토큰·비밀번호) — 그러나 포트 점검은 3000/8080/8000/5432 고정이고 lsof가 root의 docker-proxy를 못 봐 '비어 있음'(fresh-make-setup.log)
+  make up의 ports.sh check는 3002/8082/8002/5434 충돌을 정확히 잡음(fresh-ports-check.log)
+  docker compose config(로컬·QA·Vultr 덧붙임) 해석 통과, 포트 전부 127.0.0.1, Vultr는 PUBLIC_ORIGIN 없으면 해석 실패(fresh-compose-*.log)
+  문서의 make 타깃은 모두 Makefile에 있음. make -n up/collect/test 등 정상(fresh-make-n.log, 토큰 가림)
+  python3.11 없음(시스템 3.14, ensurepip 없음) → 문서의 venv 명령 실패, 실제 .venv는 문서에 없는 uv의 3.11.17(fresh-venv.log)
+  open·brew·launchd 없음(WSL2)
+
+[기타 실행 확인]
+  백업·복원 시험 12건(이 PC에서는 psql 없어 늘 건너뜀) — docker postgres:16-alpine psql·pg_dump 대역으로 12/12 통과(db-scripts-with-pgshim.log)
+  deploy.sh 시험 없는 갈래 4개(추적 파일 수정·main 갈라짐·.env 권한·기동 실패) 임시 시험 4/4 통과(deploy-branch-probe.log, test_qa_regression_probe_deploy.py)
+  정기 작업 PAPER_ENABLED=false 게이트(시험 없는 5개 작업) 임시 시험: 의존성 호출 0(sched-gate-probe.keep.log)
+  QA 수집기 토큰 없는 호출: /collect/task·/live/* 401, /tasks·/task-history 200(qa-collector-token-probe.log)
+  QA 백엔드 /error 본문 {error,message}만, Tomcat 400은 버전 없는 HTML(qa-error-body-probe.log)
+  pre-restore 백업은 정리되지 않음(restore-prune.log)
+
+# 출처: $SP/qa/lanes/regression/rounds-compare.txt (전체)
+
+## collector: 회차 ['r1', 'r2', 'r3']
+  r1: 시험 1342 {'passed': 1330, 'skipped': 12} 합계시간 340.3s
+  r2: 시험 1342 {'passed': 1330, 'skipped': 12} 합계시간 395.9s
+  r3: 시험 1342 {'passed': 1330, 'skipped': 12} 합계시간 359.0s
+  결과가 회차마다 다른 시험: 0
+  일부 회차에만 있는 시험: 0
+  시간이 크게 흔들린 시험(최대 1초 이상·최대/최소 3배 이상): 12
+    ('tests.test_kr_paper_quotes', 'test_예산은_일봉을_받은_종목의_1분봉_몫을_떼어_두고_나머지_종목은_다음_주기') [3.41, 0.91, 0.89]
+    ('tests.test_kr_paper_quotes', 'test_수정주가_호출만_실패하면_비율은_모름이고_이력에_쓰지_않는다') [3.01, 0.84, 1.0]
+    ('tests.test_vultr_scripts', 'test_QA145_deploy는_받은_main의_deploy_sh가_바뀌었으면_새_판으로_다시_돈다') [0.44, 1.36, 0.34]
+    ('tests.test_vultr_scripts', 'test_QA200_deploy는_postgres가_떠_있지_않으면_postgres만_먼저_띄워_덤프한다') [0.31, 1.29, 0.23]
+    ('tests.test_vultr_scripts', 'test_QA118_deploy의_스키마_적용이_10번_모두_실패하면_알리고_0이_아닌_값으로_끝난다') [0.37, 1.23, 0.27]
+    ('tests.test_vultr_scripts', 'test_QA200_deploy는_postgres가_떠_있으면_덤프_전에_컨테이너를_건드리지_않는다') [0.28, 1.16, 0.22]
+    ('tests.test_vultr_scripts', 'test_QA199_deploy는_마지막_S3_백업이_없거나_36시간을_넘었으면_경고한다[37]') [0.23, 1.16, 0.23]
+    ('tests.test_vultr_scripts', 'test_QA199_deploy는_마지막_S3_백업이_없거나_36시간을_넘었으면_경고한다[None]') [0.25, 1.14, 0.22]
+    ('tests.test_vultr_scripts', 'test_QA199_deploy는_마지막_S3_백업이_36시간_안이면_경고_없이_나이만_찍는다') [0.23, 1.13, 0.22]
+    ('tests.test_http_guards', 'test_CFTC가_거부하면_cot_history는_수집_결과_없음이_아니라_거부됨') [1.06, 0.96, 0.06]
+    ('tests.test_vultr_scripts', 'test_QA194_deploy는_PAPER_ENABLED_false면_운영본의_정기_작업이_꺼진_채_뜬다고_주의를_알린다') [0.3, 1.02, 0.24]
+    ('tests.test_vultr_scripts', 'test_QA200_deploy는_빌드_뒤_기동_전에_배포_전_덤프를_따로_이름_붙여_남긴다') [0.31, 1.0, 0.22]
+
+## backend: 회차 ['r1', 'r2', 'r3']
+  r1: 시험 2387 {'passed': 2387} 합계시간 85.4s
+  r2: 시험 2387 {'passed': 2387} 합계시간 108.5s
+  r3: 시험 2387 {'passed': 2387} 합계시간 79.5s
+  결과가 회차마다 다른 시험: 0
+  일부 회차에만 있는 시험: 0
+  시간이 크게 흔들린 시험(최대 1초 이상·최대/최소 3배 이상): 3
+    ('로컬 무로그인', 'forwardedRequestIsUnauthorized') [1.23, 3.03, 0.82]
+    ('com.macrodash.web.ApiIntegrationTest', 'paperInitWithoutPricesSkipsBenchmarks') [0.5, 1.55, 0.47]
+    ('com.macrodash.web.ApiIntegrationTest', 'paperMarketParameter') [0.33, 1.01, 0.3]
+
+## frontend: 회차 ['r1', 'r2', 'r3']
+  r1: 시험 1786 {'passed': 1786} 합계시간 87.7s
+  r2: 시험 1786 {'passed': 1786} 합계시간 133.6s
+  r3: 시험 1786 {'passed': 1786} 합계시간 113.7s
+  결과가 회차마다 다른 시험: 0
+  일부 회차에만 있는 시험: 0
+  시간이 크게 흔들린 시험(최대 1초 이상·최대/최소 3배 이상): 0
+
+# 출처: $SP/qa/lanes/regression/coverage/backend-gaps.txt (전체) — JaCoCo 0.8.16(작업 환경에서만)
+## 영역별 줄 커버리지(실행된 줄/전체)
+  AlertStore: 50/59 = 84.7%
+  AlertStore$Event: 1/1 = 100.0%
+  AlertStore$InboxItem: 1/1 = 100.0%
+  AlertStore$Rule: 1/1 = 100.0%
+  ApiExceptionHandler: 32/39 = 82.1%
+  ApiExceptionHandler$ApiError: 1/1 = 100.0%
+  AppProperties: 59/65 = 90.8%
+  AppProperties$ReadMode: 7/8 = 87.5%
+  AuditLogStore: 12/12 = 100.0%
+  AuditLogStore$Entry: 1/1 = 100.0%
+  CurrentUser: 11/11 = 100.0%
+  Datasets: 13/13 = 100.0%
+  EmailTokenStore: 12/12 = 100.0%
+  ErrorResponseConfig: 2/2 = 100.0%
+  ErrorResponseConfig$1: 1/7 = 14.3%
+  PaperStore: 895/897 = 99.8%
+  PaperStore$ApiUsage: 3/3 = 100.0%
+  PaperStore$ApiUsageTotal: 1/3 = 33.3%
+  PaperStore$Book: 6/6 = 100.0%
+  PaperStore$BookLedger: 1/1 = 100.0%
+  PaperStore$BookState: 1/1 = 100.0%
+  PaperStore$Checkpoint: 3/3 = 100.0%
+  PaperStore$CorpActionHold: 1/1 = 100.0%
+  PaperStore$Decision: 5/5 = 100.0%
+  PaperStore$DecisionSummary: 1/1 = 100.0%
+  PaperStore$ExecFill: 1/1 = 100.0%
+  PaperStore$Fill: 13/14 = 92.9%
+  PaperStore$FillConfirmation: 16/18 = 88.9%
+  PaperStore$FrameworkBoundary: 1/1 = 100.0%
+  PaperStore$FrameworkProposal: 1/1 = 100.0%
+  PaperStore$FrameworkVersion: 1/1 = 100.0%
+  PaperStore$FrameworkVersionSummary: 1/1 = 100.0%
+  PaperStore$GateRow: 1/1 = 100.0%
+  PaperStore$JobRun: 1/1 = 100.0%
+  PaperStore$LedgerHold: 1/1 = 100.0%
+  PaperStore$Lockout: 1/1 = 100.0%
+  PaperStore$NavRow: 1/1 = 100.0%
+  PaperStore$Note: 5/5 = 100.0%
+  PaperStore$Order: 1/1 = 100.0%
+  PaperStore$OrderExec: 3/4 = 75.0%
+  PaperStore$Position: 1/1 = 100.0%
+  PaperStore$Review: 12/12 = 100.0%
+  PaperStore$ReviewSummary: 1/1 = 100.0%
+  PaperStore$Selection: 3/3 = 100.0%
+  PaperStore$SettingsHistoryRow: 3/3 = 100.0%
+  PaperStore$SettingsRow: 1/1 = 100.0%
+  PaperStore$StartPrice: 1/1 = 100.0%
+  PaperStore$TrackRecordRow: 10/10 = 100.0%
+  PaperStore$UnconfirmedFill: 1/1 = 100.0%
+  RegimeLogStore: 30/33 = 90.9%
+  RegimeLogStore$Entry: 1/1 = 100.0%
+  SchedulingConfig: 1/1 = 100.0%
+  SchemaCheck: 20/20 = 100.0%
+  SessionStore: 28/31 = 90.3%
+  SessionStore$Active: 1/1 = 100.0%
+  SessionStore$Listed: 1/1 = 100.0%
+  Snapshot: 9/10 = 90.0%
+  StoreRepository: 183/220 = 83.2%
+  StoreRepository$ColumnCollector: 22/23 = 95.7%
+  StoreRepository$HoldingRow: 1/1 = 100.0%
+  StoreRepository$Loaded: 1/1 = 100.0%
+  StoreRepository$ObservationPage: 1/1 = 100.0%
+  StoreRepository$TimeseriesColumns: 4/5 = 80.0%
+  StoreRepository$TimeseriesPoint: 1/1 = 100.0%
+  UsageStore: 13/13 = 100.0%
+  UserStore: 40/41 = 97.6%
+  UserStore$User: 1/1 = 100.0%
+  WebConfig: 27/27 = 100.0%
+  WebConfig$SessionFilter: 124/126 = 98.4%
+  WebConfig$SessionFilter$CappedBodyRequest: 6/10 = 60.0%
+  WebConfig$SessionFilter$CappedBodyRequest$1: 2/5 = 40.0%
+  auth: 841/946 = 88.9%
+  paper: 18144/19433 = 93.4%
+
+## 한 번도 실행되지 않은 메서드(줄 4개 이상): 20
+  feature/auth/AccountMail.send (줄 61, 미실행 17줄)
+  feature/paper/PacketBuilder.withSectionsOf (줄 648, 미실행 17줄)
+  feature/paper/PaperClaude1CheckpointJob.scheduledRun (줄 98, 미실행 7줄)
+  feature/paper/PaperController.restartAtStartClose (줄 176, 미실행 16줄)
+  feature/paper/PaperDecisionController.claude2Start (줄 206, 미실행 10줄)
+  feature/paper/PaperDecisionController.claudeStart (줄 220, 미실행 8줄)
+  feature/paper/PaperDecisionController.krClaude2Start (줄 150, 미실행 14줄)
+  feature/paper/PaperKrCheckpointJob.doneReason (줄 421, 미실행 5줄)
+  feature/paper/PaperKrCheckpointJob.scheduledRun (줄 109, 미실행 9줄)
+  feature/paper/PaperNotifications.orderStatusName (줄 220, 미실행 8줄)
+  feature/paper/PaperNotifyJob.scheduledRun (줄 111, 미실행 9줄)
+  feature/paper/PaperQueryService.krWatchView (줄 617, 미실행 14줄)
+  feature/paper/PaperQueryService.names (줄 434, 미실행 9줄)
+  feature/paper/PaperTelegram.lambda$httpSender$0 (줄 189, 미실행 4줄)
+  feature/paper/ReviewService.proposalSummary (줄 896, 미실행 9줄)
+  feature/paper/ReviewService.recordAfterResponse (줄 648, 미실행 12줄)
+  store/AlertStore.countStockCodes (줄 76, 미실행 4줄)
+  store/StoreRepository.lambda$listSnapshotMeta$0 (줄 138, 미실행 6줄)
+  store/StoreRepository.readObservationsFor (줄 421, 미실행 9줄)
+  web/ErrorResponseConfig$1.getErrorAttributes (줄 28, 미실행 6줄)
+
+## 분기 절반 이상이 한 번도 안 간 메서드(분기 6개·줄 10개 이상): 6
+  feature/paper/StructuredSchema.jsonEquals (줄 327, 안 간 분기 21/28, 안 간 줄 14/19)
+  feature/paper/KrExpectedState.price (줄 91, 안 간 분기 21/26, 안 간 줄 16/24)
+  feature/paper/PacketBuilder.weights (줄 1493, 안 간 분기 10/18, 안 간 줄 1/16)
+  feature/paper/ClaudeBookService.ensureStartSelection (줄 1772, 안 간 분기 5/8, 안 간 줄 10/15)
+  feature/paper/PaperNotifications.statusName (줄 205, 안 간 분기 5/9, 안 간 줄 5/10)
+  feature/paper/PaperKrExecutionAuditJob.scheduledRun (줄 116, 안 간 분기 5/6, 안 간 줄 9/11)
+
+# 출처: $SP/qa/lanes/regression/coverage/collector-cov.txt (전체) — coverage.py 7.17.1(작업 환경에서만)
+Name                                Stmts   Miss  Cover
+-------------------------------------------------------
+app/__init__.py                         0      0   100%
+app/catalog.py                         70      0   100%
+app/equities.py                       113      1    99%
+app/equities_cusip.py                   3      0   100%
+app/http.py                           295      4    99%
+app/indicators.py                      35      1    97%
+app/krcalendar.py                      55      3    95%
+app/kst.py                             11      0   100%
+app/logredact.py                       54      2    96%
+app/macro_cards.py                    170     24    86%
+app/main.py                           236     38    84%
+app/migrations.py                      45      0   100%
+app/numbers.py                         35      0   100%
+app/paper_universe.py                   9      0   100%
+app/publicapi.py                       99      1    99%
+app/services/__init__.py                0      0   100%
+app/services/cot.py                    66     12    82%
+app/services/dart.py                   98     13    87%
+app/services/detail.py                406     93    77%
+app/services/earnings_surprise.py     108      1    99%
+app/services/fred.py                   89     51    43%
+app/services/fsc.py                    62      1    98%
+app/services/kasi.py                   27      2    93%
+app/services/kis.py                   168     83    51%
+app/services/kr_calendar.py            37      0   100%
+app/services/krx.py                   307    111    64%
+app/services/liquidity.py              36     20    44%
+app/services/live_prices.py           321     63    80%
+app/services/ls.py                    160    105    34%
+app/services/market.py                376     65    83%
+app/services/news.py                  180      5    97%
+app/services/publicprobe.py            44      6    86%
+app/services/radar.py                 438     95    78%
+app/services/scraper.py               164     50    70%
+app/services/sec13f.py                301     28    91%
+app/services/sec_fundamentals.py      181     10    94%
+app/services/sector.py                134     19    86%
+app/services/toss.py                  265     87    67%
+app/services/us_calendar.py           147      4    97%
+app/services/us_consensus.py           75      0   100%
+app/settings.py                       107      6    94%
+app/store.py                          493     36    93%
+app/tasks/__init__.py                  22      0   100%
+app/tasks/base.py                      57      0   100%
+app/tasks/earnings_surprise.py        186      4    98%
+app/tasks/filings.py                  143      7    95%
+app/tasks/fundamentals.py             191      9    95%
+app/tasks/korea_public.py             292     16    95%
+app/tasks/kr_calendar.py               37      1    97%
+app/tasks/kr_news.py                  136     10    93%
+app/tasks/kr_paper.py                 561     23    96%
+app/tasks/kr_paper_timed.py           173     15    91%
+app/tasks/maintenance.py                9      0   100%
+app/tasks/markets.py                   76     17    78%
+app/tasks/news.py                     123      6    95%
+app/tasks/paper.py                     81      1    99%
+app/tasks/paper_bars.py               201      5    98%
+app/tasks/paper_live.py                57      7    88%
+app/tasks/paper_watch.py               74      2    97%
+app/tasks/paper_watch_kr.py           109      7    94%
+app/tasks/registry.py                  26      0   100%
+app/tasks/runner.py                   163     10    94%
+app/tasks/series.py                   160     34    79%
+app/tasks/toss.py                     134     19    86%
+app/tasks/us_calendar.py              234     10    96%
+app/tasks/us_consensus.py              92      3    97%
+app/verification.py                    42      0   100%
+app/webguard.py                        29      0   100%
+app/yfcache.py                         24      6    75%
+-------------------------------------------------------
+TOTAL                                9452   1252    87%
+
+# 출처: $SP/qa/lanes/regression/coverage/collector-gaps.txt (전체)
+## 수집기: 한 번도 실행되지 않은 함수(문장 3개 이상) — 위험 4 관련 파일
+  app/main.py:_run_group_job (문장 4, 줄 170)
+  app/main.py:collect_task (문장 7, 줄 314)
+  app/services/detail.py:_yahoo_info (문장 9, 줄 254)
+  app/services/detail.py:_naver_json (문장 7, 줄 266)
+  app/services/detail.py:_wisereport_profile.fetch (문장 8, 줄 415)
+  app/services/detail.py:_google_news (문장 9, 줄 531)
+  app/services/detail.py:_yahoo_news (문장 9, 줄 549)
+  app/services/detail.py:symbols.fetch (문장 29, 줄 646)
+  app/services/kis.py:get_access_token (문장 13, 줄 82)
+  app/services/kis.py:_request_token (문장 12, 줄 100)
+  app/services/kis.py:call_api (문장 22, 줄 126)
+  app/services/kis.py:fetch_index_close (문장 7, 줄 178)
+  app/services/kis.py:fetch_kospi200_futures (문장 12, 줄 203)
+  app/services/kis.py:test_connection (문장 8, 줄 363)
+  app/services/krx.py:fetch_derivatives_daily (문장 15, 줄 81)
+  app/services/krx.py:fetch_kospi200_index_close (문장 20, 줄 114)
+  app/services/krx.py:_extract_rows (문장 11, 줄 146)
+  app/services/krx.py:collect_futures_history (문장 28, 줄 174)
+  app/services/live_prices.py:_fetch_naver_kr (문장 9, 줄 352)
+  app/services/live_prices.py:_fetch_daum (문장 11, 줄 364)
+  app/services/live_prices.py:_fetch_toss (문장 16, 줄 379)
+  app/services/radar.py:fetch_daum_ranking (문장 30, 줄 335)
+  app/services/radar.py:test_toss_connection (문장 8, 줄 691)
+  app/services/radar.py:test_daum_connection (문장 4, 줄 957)
+  app/services/radar.py:test_pykrx_connection (문장 6, 줄 985)
+  app/services/toss.py:test_connection (문장 20, 줄 113)
+  app/services/toss.py:get_exchange_rate (문장 9, 줄 158)
+  app/services/toss.py:get_index_prices (문장 9, 줄 176)
+  app/services/toss.py:fetch_trading_amount_leaders (문장 9, 줄 368)
+  app/services/toss.py:test_connection_flows (문장 12, 줄 558)
+  app/store.py:kr_timed_orders (문장 3, 줄 611)
+  app/tasks/markets.py:task_radar_rankings (문장 16, 줄 118)
+  app/tasks/series.py:task_fed_liquidity (문장 11, 줄 104)
+  app/tasks/series.py:task_volatility_history (문장 15, 줄 312)
+  app/tasks/series.py:task_daum_futures_trend (문장 5, 줄 371)
+
+## 부분 실행(안 간 문장 5개 이상)
+  app/main.py:lifespan 안 간 12/28 줄 [112, 113, 114, 119, 120, 128, 130, 131, 132, 144, 145, 152]
+  app/services/detail.py:_with_korean_profile 안 간 5/19 줄 [359, 369, 370, 371, 373]
+  app/services/detail.py:news.fetch 안 간 7/29 줄 [570, 571, 572, 573, 578, 588, 594]
+  app/services/kis.py:fetch_deal_ranking 안 간 9/51 줄 [286, 287, 290, 299, 310, 311, 312, 314, 317]
+  app/services/krx.py:_parse_futures_day 안 간 6/25 줄 [238, 245, 251, 262, 269, 270]
+  app/services/krx.py:collect_daum_futures_trend 안 간 10/33 줄 [475, 476, 477, 480, 481, 485, 486, 489, 490, 513]
+  app/services/krx.py:collect_daum_intraday_acceleration 안 간 18/46 줄 [579, 580, 583, 587, 588, 594, 597, 598, 601, 628, 629, 630]
+  app/services/market.py:_download 안 간 8/21 줄 [129, 130, 131, 132, 133, 140, 141, 142]
+  app/services/market.py:latest_minute_prices 안 간 12/38 줄 [188, 195, 196, 197, 198, 199, 207, 210, 211, 212, 213, 224]
+  app/services/market.py:_collect_move_proxy 안 간 9/14 줄 [409, 410, 411, 413, 414, 415, 416, 417, 419]
+  app/services/market.py:_previous_session_close 안 간 5/13 줄 [655, 656, 659, 663, 664]
+  app/services/market.py:previous_close_from_daily 안 간 5/24 줄 [733, 746, 749, 750, 754]
+  app/services/radar.py:diagnose_sources 안 간 5/21 줄 [270, 274, 278, 283, 288]
+  app/services/radar.py:fetch_naver_ranking 안 간 6/19 줄 [494, 495, 514, 515, 516, 517]
+  app/services/radar.py:fetch_toss_ranking 안 간 8/38 줄 [631, 632, 641, 642, 654, 655, 667, 685]
+  app/services/radar.py:fetch_pykrx_ranking 안 간 6/43 줄 [719, 720, 744, 745, 753, 757]
+  app/services/radar.py:read_from_history 안 간 5/21 줄 [922, 927, 947, 948, 949]
+  app/services/toss.py:_issue_token 안 간 8/20 줄 [80, 95, 96, 97, 98, 99, 100, 104]
+  app/services/toss.py:api_get 안 간 9/29 줄 [244, 250, 251, 259, 260, 266, 269, 270, 271]
+  app/store.py:_pid_is_alive 안 간 5/11 줄 [963, 968, 969, 970, 971]
+  app/tasks/korea_public.py:task_dart_fundamentals 안 간 5/47 줄 [443, 449, 450, 483, 491]
+  app/tasks/kr_paper.py:task_kr_paper_quotes 안 간 9/133 줄 [537, 555, 573, 574, 605, 606, 607, 608, 648]
+  app/tasks/kr_paper_timed.py:task_kr_paper_timed 안 간 8/65 줄 [258, 260, 261, 268, 269, 270, 271, 272]
+  app/tasks/paper_live.py:task_paper_live_kr 안 간 7/29 줄 [66, 71, 77, 78, 79, 84, 85]
+  app/tasks/paper_watch_kr.py:task_paper_watch_kr 안 간 6/60 줄 [150, 154, 156, 157, 158, 171]
+  app/tasks/runner.py:run_group 안 간 6/35 줄 [304, 306, 320, 321, 357, 358]
+  app/tasks/toss.py:task_toss_stock_flows 안 간 5/29 줄 [134, 145, 149, 150, 151]
+  app/tasks/toss.py:task_toss_radar_universe 안 간 9/33 줄 [184, 185, 186, 187, 189, 202, 203, 204, 209]

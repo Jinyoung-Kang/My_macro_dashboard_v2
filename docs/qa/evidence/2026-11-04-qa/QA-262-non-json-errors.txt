@@ -1,0 +1,158 @@
+# 출처: $SP/qa/lanes/repro5/summary.txt (전체)
+재현 대상: "JSON이 아닌 오류 본문 세 갈래"(security 후보), 커밋 49a7d62b, QA 스택(18082/18002)에서만. 운영 서버는 조회하지 않음.
+repro.sh / repro-out.txt:
+ 1a/1b %2F 경로(로그인) -> 400 text/html 435B, 보안 머리글 없음. 1c 대조(없는 계좌 코드) -> 400 application/json + 보안 머리글.
+ 2 items 3000개(20999자) -> 400 text/html.
+ 3a GET /api/auth/session Origin evil -> 403 'Invalid CORS request', Content-Type 없음(보안 머리글은 있음). 3c OPTIONS 사전 요청도 같음.
+ 3b POST Origin evil -> 403 JSON bad_origin(SessionFilter) — 쓰기 거절은 JSON. 3d 허용 출처 -> 200.
+ 4 수집기 /task-history?task=%00 -> 500 text/plain 'Internal Server Error'(수집기 로그 psycopg.DataError NUL).
+ 5 /error 직접 -> HTTP 500, 본문 error "error"(internal_server_error 아님).
+repro2.sh / repro2-out.txt: 요청 줄 경계 — 질의 7699자 JSON 400, 8049자부터 HTML 400(기본 8KB). %5C 경로·비로그인 %2F도 HTML 400.
+repro-out-backend-history.txt: 백엔드 GET /api/status/history?task=%00 -> 500 JSON internal_server_error(DataStatusService.java:175 DB 대체 읽기의 DataIntegrityViolationException) — 형식은 JSON이나 400이어야 할 입력(별건).
+
+# 출처: $SP/qa/lanes/repro5/repro-out.txt (전체)
+login -> 200
+===== 1a GET encoded-slash path (paper positions)
+HTTP/1.1 400 
+Content-Type: text/html;charset=utf-8
+Content-Language: en
+Content-Length: 435
+Date: Wed, 04 Nov 2026 14:23:49 GMT
+Connection: close
+
+<!doctype html><html lang="en"><head><title>HTTP Status 400 – Bad Request</title><style type="text/css">body {font-family:Tahoma,Arial,sans-serif;} h1, h2, h3, b {color:white;background-color:#525D76;} h1 {font-size:22px;} h2 {font-size:16px;} h3 {font-size:14px;} p {font-size:12px;} a {color:black;} .line {height:1px;background-color:#525D76;border:none;}</style></head><body><h1>HTTP Status 400 – …(줄 자름)
+
+===== 1b GET encoded-slash simple (abc%2Fdef)
+HTTP/1.1 400 
+Content-Type: text/html;charset=utf-8
+Content-Language: en
+Content-Length: 435
+Date: Wed, 04 Nov 2026 14:23:49 GMT
+Connection: close
+
+<!doctype html><html lang="en"><head><title>HTTP Status 400 – Bad Request</title><style type="text/css">body {font-family:Tahoma,Arial,sans-serif;} h1, h2, h3, b {color:white;background-color:#525D76;} h1 {font-size:22px;} h2 {font-size:16px;} h3 {font-size:14px;} p {font-size:12px;} a {color:black;} .line {height:1px;background-color:#525D76;border:none;}</style></head><body><h1>HTTP Status 400 – …(줄 자름)
+
+===== 1c control: GET unknown book code (no %2F)
+HTTP/1.1 400 
+X-Content-Type-Options: nosniff
+Cache-Control: no-store
+X-Frame-Options: DENY
+Content-Security-Policy: default-src 'none'; frame-ancestors 'none'
+Referrer-Policy: no-referrer
+Vary: origin,access-control-request-method,access-control-request-headers,accept-encoding
+Content-Type: application/json
+Transfer-Encoding: chunked
+Date: Wed, 04 Nov 2026 14:23:49 GMT
+Connection: close
+
+{"error":"bad_request","message":"없는 계좌입니다: nosuchbook (rules · claude · bench_spy · bench_mix)"}
+
+items length: 20999
+===== 2 GET /api/live/prices with ~21KB query
+HTTP/1.1 400 
+Content-Type: text/html;charset=utf-8
+Content-Language: en
+Content-Length: 435
+Date: Wed, 04 Nov 2026 14:23:49 GMT
+Connection: close
+
+<!doctype html><html lang="en"><head><title>HTTP Status 400 – Bad Request</title><style type="text/css">body {font-family:Tahoma,Arial,sans-serif;} h1, h2, h3, b {color:white;background-color:#525D76;} h1 {font-size:22px;} h2 {font-size:16px;} h3 {font-size:14px;} p {font-size:12px;} a {color:black;} .line {height:1px;background-color:#525D76;border:none;}</style></head><body><h1>HTTP Status 400 – …(줄 자름)
+
+===== 3a GET /api/auth/session Origin evil (QA stack)
+HTTP/1.1 403 
+X-Content-Type-Options: nosniff
+Cache-Control: no-store
+X-Frame-Options: DENY
+Content-Security-Policy: default-src 'none'; frame-ancestors 'none'
+Referrer-Policy: no-referrer
+Vary: Origin
+Vary: Access-Control-Request-Method
+Vary: Access-Control-Request-Headers
+Transfer-Encoding: chunked
+Date: Wed, 04 Nov 2026 14:23:49 GMT
+
+Invalid CORS request
+
+===== 3b POST /api/auth/logout Origin evil
+HTTP/1.1 403 
+X-Content-Type-Options: nosniff
+Cache-Control: no-store
+X-Frame-Options: DENY
+Content-Security-Policy: default-src 'none'; frame-ancestors 'none'
+Referrer-Policy: no-referrer
+Content-Type: application/json;charset=UTF-8
+Content-Length: 89
+Date: Wed, 04 Nov 2026 14:23:49 GMT
+
+{"error":"bad_origin","message":"다른 출처에서 온 요청은 받지 않습니다."}
+
+===== 3c OPTIONS preflight Origin evil
+HTTP/1.1 403 
+X-Content-Type-Options: nosniff
+Cache-Control: no-store
+X-Frame-Options: DENY
+Content-Security-Policy: default-src 'none'; frame-ancestors 'none'
+Referrer-Policy: no-referrer
+Vary: Origin
+Vary: Access-Control-Request-Method
+Vary: Access-Control-Request-Headers
+Transfer-Encoding: chunked
+Date: Wed, 04 Nov 2026 14:23:49 GMT
+
+Invalid CORS request
+
+===== 3d control: GET /api/auth/session Origin allowed
+HTTP/1.1 200 
+X-Content-Type-Options: nosniff
+Cache-Control: no-store
+X-Frame-Options: DENY
+Content-Security-Policy: default-src 'none'; frame-ancestors 'none'
+Referrer-Policy: no-referrer
+Vary: Origin
+Vary: Access-Control-Request-Method
+Vary: Access-Control-Request-Headers
+Access-Control-Allow-Origin: http://localhost:13002
+Access-Control-Allow-Credentials: true
+Content-Type: application/json
+Content-Length: 207
+Date: Wed, 04 Nov 2026 14:23:49 GMT
+
+{"authenticated":true,"mailAvailable":false,"noLogin":false,"ownerMissing":false,"readMode":"auto","user":{"email":"<masked>","role":"OWNER","tier":"PRO","demo":false,"local":false,"tailnet":false}}
+
+===== 4 collector /task-history?task=%00 (no token)
+HTTP/1.1 500 Internal Server Error
+date: Wed, 04 Nov 2026 14:23:48 GMT
+server: uvicorn
+content-length: 21
+content-type: text/plain; charset=utf-8
+
+Internal Server Error
+
+===== 5 /error direct
+HTTP/1.1 500 
+vary: accept-encoding
+Content-Type: application/json
+Transfer-Encoding: chunked
+Date: Wed, 04 Nov 2026 14:23:49 GMT
+Connection: close
+
+{"error":"error","message":"서버 내부 오류가 발생했습니다. 백엔드 로그를 확인하세요."}
+
+
+# 출처: $SP/qa/lanes/repro5/repro2-out.txt (전체)
+items n=1000 querylen=6999 -> 400 application/json body={"error":"bad_request","message":"종목은 'US:심볼'·'KR:6자리'·'TV:거래소:심�
+items n=1100 querylen=7699 -> 400 application/json body={"error":"bad_request","message":"종목은 'US:심볼'·'KR:6자리'·'TV:거래소:심�
+items n=1150 querylen=8049 -> 400 text/html;charset=utf-8 body=<!doctype html><html lang="en"><head><title>HTTP Status 400 – Bad Request</title><style 
+items n=1200 querylen=8399 -> 400 text/html;charset=utf-8 body=<!doctype html><html lang="en"><head><title>HTTP Status 400 – Bad Request</title><style 
+items n=1300 querylen=9099 -> 400 text/html;charset=utf-8 body=<!doctype html><html lang="en"><head><title>HTTP Status 400 – Bad Request</title><style 
+--- backslash path
+400 text/html;charset=utf-8
+--- unauthenticated encoded slash (no cookie)
+400 text/html;charset=utf-8
+
+# 출처: $SP/qa/lanes/repro5/repro-out-backend-history.txt (전체)
+HTTP/1.1 500 
+X-Content-Type-Options: nosniff
+Cache-Control: no-store
+
+{"error":"internal_server_error","message":"서버 내부 오류가 발생했습니다. 백엔드 로그를 확인하세요."}

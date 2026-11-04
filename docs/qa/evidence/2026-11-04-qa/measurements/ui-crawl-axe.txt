@@ -1,0 +1,377 @@
+# 출처: $SP/qa/lanes/ui/crawl.log (전체) — 36화면 × 1280·768·360 첫 로드(axe 열 포함)
+1280 / -> / nav=200 load=3013ms settle=1719 api=9 bad=0 slow=0 dup=0 cons=0 perr=0 hscroll=1280/1280 small=4 axe=
+1280 /macro -> /macro nav=200 load=4040ms settle=2015 api=10 bad=0 slow=0 dup=0 cons=0 perr=0 hscroll=1280/1280 small=1 axe=
+1280 /liquidity -> /liquidity nav=200 load=2726ms settle=1815 api=5 bad=0 slow=0 dup=0 cons=0 perr=0 hscroll=1280/1280 small=1 axe=
+1280 /sector -> /sector nav=200 load=2916ms settle=1614 api=4 bad=0 slow=0 dup=0 cons=0 perr=0 hscroll=1280/1280 small=1 axe=
+1280 /correlation -> /correlation nav=200 load=3204ms settle=2217 api=5 bad=0 slow=0 dup=0 cons=0 perr=0 hscroll=1280/1280 small=1 axe=aria-hidden-focus:1
+1280 /cot -> /cot nav=200 load=2878ms settle=1714 api=7 bad=0 slow=0 dup=0 cons=0 perr=0 hscroll=1280/1280 small=1 axe=
+1280 /regime -> /regime nav=200 load=3088ms settle=1713 api=6 bad=0 slow=0 dup=0 cons=0 perr=0 hscroll=1280/1280 small=1 axe=
+1280 /institutions -> /institutions nav=200 load=3079ms settle=1710 api=6 bad=0 slow=0 dup=0 cons=0 perr=0 hscroll=1280/1280 small=1 axe=
+1280 /consensus -> /consensus nav=200 load=4045ms settle=2619 api=7 bad=0 slow=0 dup=0 cons=0 perr=0 hscroll=1280/1280 small=1 axe=
+1280 /style -> /style nav=200 load=2683ms settle=1510 api=7 bad=0 slow=0 dup=0 cons=0 perr=0 hscroll=1280/1280 small=2 axe=
+1280 /scorecard -> /scorecard nav=200 load=2338ms settle=1509 api=5 bad=0 slow=0 dup=0 cons=0 perr=0 hscroll=1280/1280 small=1 axe=
+1280 /radar -> /radar nav=200 load=3290ms settle=1609 api=10 bad=0 slow=0 dup=0 cons=0 perr=0 hscroll=1280/1280 small=1 axe=
+1280 /krx -> /krx nav=200 load=3428ms settle=2420 api=8 bad=0 slow=0 dup=0 cons=0 perr=0 hscroll=1280/1280 small=1 axe=
+1280 /paper/us -> /paper/us nav=200 load=2962ms settle=1710 api=6 bad=0 slow=0 dup=0 cons=0 perr=0 hscroll=1280/1280 small=1 axe=
+1280 /paper/us/selection -> /paper/us/selection nav=200 load=3162ms settle=1512 api=5 bad=0 slow=0 dup=0 cons=0 perr=0 hscroll=1280/1280 small=1 axe=
+1280 /paper/us/holdings -> /paper/us/holdings nav=200 load=3060ms settle=1608 api=7 bad=0 slow=0 dup=0 cons=0 perr=0 hscroll=1280/1280 small=13 axe=
+1280 /paper/us/decisions -> /paper/us/decisions nav=200 load=2308ms settle=1510 api=5 bad=0 slow=0 dup=0 cons=0 perr=0 hscroll=1280/1280 small=1 axe=
+1280 /paper/us/framework -> /paper/us/framework nav=200 load=2588ms settle=1510 api=11 bad=0 slow=0 dup=0 cons=0 perr=0 hscroll=1280/1280 small=2 axe=scrollable-region-focusable:2
+1280 /paper/us/notes -> /paper/us/notes nav=200 load=2398ms settle=1610 api=6 bad=0 slow=0 dup=0 cons=0 perr=0 hscroll=1280/1280 small=3 axe=
+1280 /paper/us/settings -> /paper/us/settings nav=200 load=2803ms settle=1611 api=6 bad=0 slow=0 dup=0 cons=0 perr=0 hscroll=1280/1280 small=13 axe=
+1280 /paper/kr -> /paper/kr nav=200 load=2303ms settle=1510 api=6 bad=0 slow=0 dup=0 cons=0 perr=0 hscroll=1280/1280 small=1 axe=
+1280 /paper/kr/selection -> /paper/kr/selection nav=200 load=2239ms settle=1508 api=6 bad=0 slow=0 dup=0 cons=0 perr=0 hscroll=1280/1280 small=1 axe=
+1280 /paper/kr/holdings -> /paper/kr/holdings nav=200 load=2223ms settle=1510 api=5 bad=0 slow=0 dup=0 cons=0 perr=0 hscroll=1280/1280 small=1 axe=
+1280 /paper/kr/decisions -> /paper/kr/decisions nav=200 load=2229ms settle=1509 api=6 bad=0 slow=0 dup=0 cons=0 perr=0 hscroll=1280/1280 small=1 axe=
+1280 /paper/kr/framework -> /paper/kr/framework nav=200 load=2411ms settle=1506 api=12 bad=0 slow=0 dup=0 cons=0 perr=0 hscroll=1280/1280 small=2 axe=scrollable-region-focusable:2
+1280 /paper/kr/notes -> /paper/kr/notes nav=200 load=2242ms settle=1509 api=7 bad=0 slow=0 dup=0 cons=0 perr=0 hscroll=1280/1280 small=2 axe=
+1280 /paper/kr/settings -> /paper/kr/settings nav=200 load=2554ms settle=1511 api=7 bad=0 slow=0 dup=0 cons=0 perr=0 hscroll=1280/1280 small=7 axe=
+1280 /alerts -> /alerts nav=200 load=2211ms settle=1510 api=6 bad=0 slow=0 dup=0 cons=0 perr=0 hscroll=1280/1280 small=1 axe=
+1280 /ai/report -> /ai/report nav=200 load=2217ms settle=1509 api=6 bad=0 slow=0 dup=0 cons=0 perr=0 hscroll=1280/1280 small=1 axe=
+1280 /status -> /status nav=200 load=2961ms settle=1609 api=5 bad=0 slow=0 dup=0 cons=0 perr=0 hscroll=1280/1280 small=1 axe=
+1280 /connections -> /connections nav=200 load=2309ms settle=1507 api=4 bad=0 slow=0 dup=0 cons=0 perr=0 hscroll=1280/1280 small=1 axe=
+1280 /admin/users -> /admin/users nav=200 load=2272ms settle=1510 api=5 bad=0 slow=0 dup=0 cons=0 perr=0 hscroll=1280/1280 small=1 axe=
+1280 /account -> /account nav=200 load=2241ms settle=1509 api=5 bad=0 slow=0 dup=1 cons=0 perr=0 hscroll=1280/1280 small=1 axe=
+1280 /more -> /more nav=200 load=2241ms settle=1508 api=3 bad=0 slow=0 dup=0 cons=0 perr=0 hscroll=1280/1280 small=1 axe=
+1280 /s/us/AAPL -> /s/us/AAPL nav=200 load=3661ms settle=2818 api=6 bad=0 slow=0 dup=0 cons=0 perr=0 hscroll=1280/1280 small=1 axe=
+1280 /s/kr/005930 -> /s/kr/005930 nav=200 load=4230ms settle=3420 api=6 bad=0 slow=0 dup=0 cons=0 perr=0 hscroll=1280/1280 small=1 axe=
+768 / -> / nav=200 load=2467ms settle=1509 api=10 bad=0 slow=0 dup=1 cons=0 perr=0 hscroll=768/768 small=1 axe=
+768 /macro -> /macro nav=200 load=3151ms settle=1810 api=10 bad=0 slow=0 dup=0 cons=0 perr=0 hscroll=768/768 small=1 axe=
+768 /liquidity -> /liquidity nav=200 load=2370ms settle=1608 api=5 bad=0 slow=0 dup=0 cons=0 perr=0 hscroll=768/768 small=1 axe=
+768 /sector -> /sector nav=200 load=2468ms settle=1508 api=4 bad=0 slow=0 dup=0 cons=0 perr=0 hscroll=768/768 small=1 axe=
+768 /correlation -> /correlation nav=200 load=2655ms settle=1812 api=5 bad=0 slow=0 dup=0 cons=0 perr=0 hscroll=768/768 small=1 axe=aria-hidden-focus:1
+768 /cot -> /cot nav=200 load=2509ms settle=1609 api=7 bad=0 slow=0 dup=0 cons=0 perr=0 hscroll=768/768 small=1 axe=
+768 /regime -> /regime nav=200 load=2574ms settle=1508 api=6 bad=0 slow=0 dup=0 cons=0 perr=0 hscroll=768/768 small=1 axe=
+768 /institutions -> /institutions nav=200 load=2604ms settle=1508 api=6 bad=0 slow=0 dup=0 cons=0 perr=0 hscroll=768/768 small=1 axe=
+768 /consensus -> /consensus nav=200 load=3002ms settle=1605 api=7 bad=0 slow=0 dup=0 cons=0 perr=0 hscroll=768/768 small=1 axe=
+768 /style -> /style nav=200 load=2807ms settle=1612 api=7 bad=0 slow=0 dup=0 cons=0 perr=0 hscroll=768/768 small=2 axe=
+768 /scorecard -> /scorecard nav=200 load=2359ms settle=1509 api=5 bad=0 slow=0 dup=0 cons=0 perr=0 hscroll=768/768 small=1 axe=
+768 /radar -> /radar nav=200 load=3227ms settle=1609 api=10 bad=0 slow=0 dup=0 cons=0 perr=0 hscroll=768/768 small=1 axe=
+768 /krx -> /krx nav=200 load=3286ms settle=2414 api=8 bad=0 slow=0 dup=0 cons=0 perr=0 hscroll=768/768 small=1 axe=
+768 /paper/us -> /paper/us nav=200 load=3024ms settle=1712 api=7 bad=0 slow=0 dup=0 cons=0 perr=0 hscroll=768/768 small=9 axe=
+768 /paper/us/selection -> /paper/us/selection nav=200 load=2767ms settle=1511 api=5 bad=0 slow=0 dup=0 cons=0 perr=0 hscroll=768/768 small=1 axe=
+768 /paper/us/holdings -> /paper/us/holdings nav=200 load=2640ms settle=1505 api=7 bad=0 slow=0 dup=0 cons=0 perr=0 hscroll=768/768 small=13 axe=
+768 /paper/us/decisions -> /paper/us/decisions nav=200 load=2256ms settle=1508 api=5 bad=0 slow=0 dup=0 cons=0 perr=0 hscroll=768/768 small=1 axe=
+768 /paper/us/framework -> /paper/us/framework nav=200 load=2405ms settle=1508 api=11 bad=0 slow=0 dup=0 cons=0 perr=0 hscroll=768/768 small=2 axe=scrollable-region-focusable:2
+768 /paper/us/notes -> /paper/us/notes nav=200 load=2275ms settle=1508 api=6 bad=0 slow=0 dup=0 cons=0 perr=0 hscroll=768/768 small=2 axe=
+768 /paper/us/settings -> /paper/us/settings nav=200 load=2692ms settle=1515 api=6 bad=0 slow=0 dup=0 cons=0 perr=0 hscroll=768/768 small=13 axe=
+768 /paper/kr -> /paper/kr nav=200 load=2285ms settle=1508 api=6 bad=0 slow=0 dup=0 cons=0 perr=0 hscroll=768/768 small=1 axe=
+768 /paper/kr/selection -> /paper/kr/selection nav=200 load=2218ms settle=1509 api=6 bad=0 slow=0 dup=0 cons=0 perr=0 hscroll=768/768 small=1 axe=
+768 /paper/kr/holdings -> /paper/kr/holdings nav=200 load=2255ms settle=1507 api=5 bad=0 slow=0 dup=0 cons=0 perr=0 hscroll=768/768 small=1 axe=
+768 /paper/kr/decisions -> /paper/kr/decisions nav=200 load=2138ms settle=1408 api=6 bad=0 slow=0 dup=0 cons=0 perr=0 hscroll=768/768 small=1 axe=
+768 /paper/kr/framework -> /paper/kr/framework nav=200 load=2417ms settle=1507 api=12 bad=0 slow=0 dup=0 cons=0 perr=0 hscroll=768/768 small=2 axe=scrollable-region-focusable:2
+768 /paper/kr/notes -> /paper/kr/notes nav=200 load=2245ms settle=1510 api=7 bad=0 slow=0 dup=0 cons=0 perr=0 hscroll=768/768 small=2 axe=
+768 /paper/kr/settings -> /paper/kr/settings nav=200 load=2498ms settle=1508 api=7 bad=0 slow=0 dup=0 cons=0 perr=0 hscroll=768/768 small=7 axe=
+768 /alerts -> /alerts nav=200 load=2123ms settle=1406 api=6 bad=0 slow=0 dup=0 cons=0 perr=0 hscroll=768/768 small=1 axe=
+768 /ai/report -> /ai/report nav=200 load=2259ms settle=1507 api=6 bad=0 slow=0 dup=0 cons=0 perr=0 hscroll=768/768 small=1 axe=
+768 /status -> /status nav=200 load=2902ms settle=1611 api=5 bad=0 slow=0 dup=0 cons=0 perr=0 hscroll=768/768 small=1 axe=
+768 /connections -> /connections nav=200 load=2249ms settle=1511 api=4 bad=0 slow=0 dup=0 cons=0 perr=0 hscroll=768/768 small=1 axe=
+768 /admin/users -> /admin/users nav=200 load=2172ms settle=1409 api=5 bad=0 slow=0 dup=0 cons=0 perr=0 hscroll=768/768 small=1 axe=
+768 /account -> /account nav=200 load=2230ms settle=1506 api=5 bad=0 slow=0 dup=1 cons=0 perr=0 hscroll=768/768 small=1 axe=
+768 /more -> /more nav=200 load=2108ms settle=1407 api=3 bad=0 slow=0 dup=0 cons=0 perr=0 hscroll=768/768 small=1 axe=
+768 /s/us/AAPL -> /s/us/AAPL nav=200 load=2235ms settle=1508 api=6 bad=0 slow=0 dup=0 cons=0 perr=0 hscroll=768/768 small=1 axe=
+768 /s/kr/005930 -> /s/kr/005930 nav=200 load=4142ms settle=3421 api=6 bad=0 slow=0 dup=0 cons=0 perr=0 hscroll=768/768 small=1 axe=
+360 / -> / nav=200 load=2732ms settle=1610 api=10 bad=0 slow=0 dup=1 cons=0 perr=0 hscroll=360/360 small=1 axe=
+360 /macro -> /macro nav=200 load=3403ms settle=1811 api=10 bad=0 slow=0 dup=0 cons=0 perr=0 hscroll=360/360 small=1 axe=
+360 /liquidity -> /liquidity nav=200 load=2476ms settle=1708 api=5 bad=0 slow=0 dup=0 cons=0 perr=0 hscroll=360/360 small=1 axe=
+360 /sector -> /sector nav=200 load=2732ms settle=1613 api=4 bad=0 slow=0 dup=0 cons=0 perr=0 hscroll=360/360 small=1 axe=
+360 /correlation -> /correlation nav=200 load=3326ms settle=2416 api=5 bad=0 slow=0 dup=0 cons=0 perr=0 hscroll=360/360 small=1 axe=aria-hidden-focus:1
+360 /cot -> /cot nav=200 load=2530ms settle=1609 api=7 bad=0 slow=0 dup=0 cons=0 perr=0 hscroll=360/360 small=1 axe=
+360 /regime -> /regime nav=200 load=2835ms settle=1508 api=6 bad=0 slow=0 dup=0 cons=0 perr=0 hscroll=360/360 small=1 axe=
+360 /institutions -> /institutions nav=200 load=3109ms settle=1608 api=6 bad=0 slow=0 dup=0 cons=0 perr=0 hscroll=360/360 small=1 axe=
+360 /consensus -> /consensus nav=200 load=3729ms settle=1811 api=7 bad=0 slow=0 dup=0 cons=0 perr=0 hscroll=360/360 small=1 axe=
+360 /style -> /style nav=200 load=3132ms settle=1612 api=7 bad=0 slow=0 dup=0 cons=0 perr=0 hscroll=360/360 small=2 axe=
+360 /scorecard -> /scorecard nav=200 load=2644ms settle=1712 api=5 bad=0 slow=0 dup=0 cons=0 perr=0 hscroll=360/360 small=1 axe=
+360 /radar -> /radar nav=200 load=3711ms settle=1814 api=10 bad=0 slow=0 dup=0 cons=0 perr=0 hscroll=360/360 small=1 axe=
+360 /krx -> /krx nav=200 load=3557ms settle=2420 api=8 bad=0 slow=0 dup=0 cons=0 perr=0 hscroll=360/360 small=1 axe=
+360 /paper/us -> /paper/us nav=200 load=3459ms settle=1912 api=7 bad=0 slow=0 dup=0 cons=0 perr=0 hscroll=360/360 small=9 axe=
+360 /paper/us/selection -> /paper/us/selection nav=200 load=3292ms settle=1713 api=5 bad=0 slow=0 dup=0 cons=0 perr=0 hscroll=360/360 small=1 axe=
+360 /paper/us/holdings -> /paper/us/holdings nav=200 load=2709ms settle=1608 api=7 bad=0 slow=0 dup=0 cons=0 perr=0 hscroll=360/360 small=13 axe=
+360 /paper/us/decisions -> /paper/us/decisions nav=200 load=2257ms settle=1507 api=5 bad=0 slow=0 dup=0 cons=0 perr=0 hscroll=360/360 small=1 axe=
+360 /paper/us/framework -> /paper/us/framework nav=200 load=2360ms settle=1508 api=11 bad=0 slow=0 dup=0 cons=0 perr=0 hscroll=360/360 small=2 axe=scrollable-region-focusable:2
+360 /paper/us/notes -> /paper/us/notes nav=200 load=2253ms settle=1507 api=6 bad=0 slow=0 dup=0 cons=0 perr=0 hscroll=360/360 small=2 axe=
+360 /paper/us/settings -> /paper/us/settings nav=200 load=2817ms settle=1510 api=6 bad=0 slow=0 dup=0 cons=0 perr=0 hscroll=360/360 small=13 axe=
+360 /paper/kr -> /paper/kr nav=200 load=2646ms settle=1615 api=6 bad=0 slow=0 dup=0 cons=0 perr=0 hscroll=360/360 small=1 axe=
+360 /paper/kr/selection -> /paper/kr/selection nav=200 load=2222ms settle=1514 api=6 bad=0 slow=0 dup=0 cons=0 perr=0 hscroll=360/360 small=1 axe=
+360 /paper/kr/holdings -> /paper/kr/holdings nav=200 load=2172ms settle=1409 api=5 bad=0 slow=0 dup=0 cons=0 perr=0 hscroll=360/360 small=1 axe=
+360 /paper/kr/decisions -> /paper/kr/decisions nav=200 load=2278ms settle=1507 api=6 bad=0 slow=0 dup=0 cons=0 perr=0 hscroll=360/360 small=1 axe=
+360 /paper/kr/framework -> /paper/kr/framework nav=200 load=2723ms settle=1712 api=12 bad=0 slow=0 dup=0 cons=0 perr=0 hscroll=360/360 small=2 axe=scrollable-region-focusable:2
+360 /paper/kr/notes -> /paper/kr/notes nav=200 load=2404ms settle=1509 api=7 bad=0 slow=0 dup=0 cons=0 perr=0 hscroll=360/360 small=2 axe=
+360 /paper/kr/settings -> /paper/kr/settings nav=200 load=2764ms settle=1612 api=7 bad=0 slow=0 dup=0 cons=0 perr=0 hscroll=360/360 small=7 axe=
+360 /alerts -> /alerts nav=200 load=2382ms settle=1611 api=6 bad=0 slow=0 dup=0 cons=0 perr=0 hscroll=360/360 small=1 axe=
+360 /ai/report -> /ai/report nav=200 load=2294ms settle=1513 api=6 bad=0 slow=0 dup=0 cons=0 perr=0 hscroll=360/360 small=1 axe=
+360 /status -> /status nav=200 load=3196ms settle=1609 api=5 bad=0 slow=0 dup=0 cons=0 perr=0 hscroll=360/360 small=1 axe=
+360 /connections -> /connections nav=200 load=2548ms settle=1615 api=4 bad=0 slow=0 dup=0 cons=0 perr=0 hscroll=360/360 small=1 axe=
+360 /admin/users -> /admin/users nav=200 load=2518ms settle=1514 api=5 bad=0 slow=0 dup=0 cons=0 perr=0 hscroll=360/360 small=1 axe=
+360 /account -> /account nav=200 load=2524ms settle=1614 api=5 bad=0 slow=0 dup=1 cons=0 perr=0 hscroll=360/360 small=1 axe=
+360 /more -> /more nav=200 load=2313ms settle=1509 api=3 bad=0 slow=0 dup=0 cons=0 perr=0 hscroll=360/360 small=1 axe=
+360 /s/us/AAPL -> /s/us/AAPL nav=200 load=3693ms settle=2919 api=6 bad=0 slow=0 dup=0 cons=0 perr=0 hscroll=360/360 small=1 axe=
+360 /s/kr/005930 -> /s/kr/005930 nav=200 load=2405ms settle=1613 api=6 bad=0 slow=0 dup=0 cons=0 perr=0 hscroll=360/360 small=1 axe=
+EXIT 0
+
+# 출처: $SP/qa/lanes/ui/crawl-detail.log (전체) — 상세 29화면
+360 /markets/i/dxy -> /markets/i/dxy nav=200 load=4291ms settle=3528 api=6 bad=0 slow=1 dup=0 cons=0 perr=0 hscroll=360/360 small=2 axe=
+360 /markets/i/usdkrw -> /markets/i/usdkrw nav=200 load=4176ms settle=3422 api=6 bad=0 slow=1 dup=0 cons=0 perr=0 hscroll=360/360 small=2 axe=
+360 /markets/i/usdjpy -> /markets/i/usdjpy nav=200 load=4285ms settle=3523 api=6 bad=0 slow=1 dup=0 cons=0 perr=0 hscroll=360/360 small=2 axe=
+360 /markets/i/jpykrw -> /markets/i/jpykrw nav=200 load=4205ms settle=3425 api=6 bad=0 slow=1 dup=0 cons=0 perr=0 hscroll=360/360 small=2 axe=
+360 /markets/i/us02y -> /markets/i/us02y nav=200 load=4248ms settle=3526 api=5 bad=0 slow=1 dup=0 cons=0 perr=0 hscroll=360/360 small=1 axe=
+360 /markets/i/us10y -> /markets/i/us10y nav=200 load=4144ms settle=3420 api=6 bad=0 slow=1 dup=0 cons=0 perr=0 hscroll=360/360 small=2 axe=
+360 /markets/i/us30y -> /markets/i/us30y nav=200 load=4165ms settle=3420 api=6 bad=0 slow=1 dup=0 cons=0 perr=0 hscroll=360/360 small=2 axe=
+360 /markets/i/wti -> /markets/i/wti nav=200 load=4183ms settle=3422 api=6 bad=0 slow=1 dup=0 cons=0 perr=0 hscroll=360/360 small=2 axe=
+360 /markets/i/brent -> /markets/i/brent nav=200 load=4185ms settle=3423 api=6 bad=0 slow=1 dup=0 cons=0 perr=0 hscroll=360/360 small=2 axe=
+360 /markets/i/gold -> /markets/i/gold nav=200 load=4285ms settle=3425 api=6 bad=0 slow=1 dup=0 cons=0 perr=0 hscroll=360/360 small=2 axe=
+360 /markets/i/sp500 -> /markets/i/sp500 nav=200 load=4514ms settle=3538 api=6 bad=0 slow=1 dup=0 cons=0 perr=0 hscroll=360/360 small=2 axe=
+360 /markets/i/sp500_fut -> /markets/i/sp500_fut nav=200 load=4607ms settle=3548 api=6 bad=0 slow=1 dup=0 cons=0 perr=0 hscroll=360/360 small=2 axe=
+360 /markets/i/ndx -> /markets/i/ndx nav=200 load=4520ms settle=3543 api=6 bad=0 slow=1 dup=0 cons=0 perr=0 hscroll=360/360 small=2 axe=
+360 /markets/i/ndx_fut -> /markets/i/ndx_fut nav=200 load=4670ms settle=3675 api=6 bad=0 slow=1 dup=0 cons=0 perr=0 hscroll=360/360 small=2 axe=
+360 /markets/i/kospi -> /markets/i/kospi nav=200 load=4950ms settle=3659 api=6 bad=0 slow=1 dup=0 cons=0 perr=0 hscroll=360/360 small=2 axe=
+360 /markets/i/nikkei -> /markets/i/nikkei nav=200 load=4881ms settle=3775 api=6 bad=0 slow=1 dup=0 cons=0 perr=0 hscroll=360/360 small=2 axe=
+360 /markets/i/shanghai -> /markets/i/shanghai nav=200 load=5015ms settle=3849 api=6 bad=0 slow=1 dup=0 cons=0 perr=0 hscroll=360/360 small=2 axe=
+360 /markets/i/hsi -> /markets/i/hsi nav=200 load=4691ms settle=3659 api=6 bad=0 slow=1 dup=0 cons=0 perr=0 hscroll=360/360 small=2 axe=
+360 /markets/i/kospi200_night_scraped -> /markets/i/kospi200_night_scraped nav=200 load=4716ms settle=3666 api=5 bad=0 slow=1 dup=0 cons=0 perr=0 hscroll=360/360 small=1 axe=
+360 /markets/i/nikkei_fut_scraped -> /markets/i/nikkei_fut_scraped nav=200 load=4666ms settle=3668 api=5 bad=0 slow=1 dup=0 cons=0 perr=0 hscroll=360/360 small=1 axe=
+360 /markets/i/hsi_fut_scraped -> /markets/i/hsi_fut_scraped nav=200 load=4629ms settle=3558 api=5 bad=0 slow=1 dup=0 cons=0 perr=0 hscroll=360/360 small=1 axe=
+360 /institutions/0001067983 -> /institutions/0001067983 nav=200 load=4912ms settle=3769 api=6 bad=0 slow=2 dup=0 cons=0 perr=0 hscroll=360/360 small=2 axe=
+360 /institutions/0001608046 -> /institutions/0001608046 nav=200 load=5124ms settle=3866 api=6 bad=0 slow=2 dup=0 cons=0 perr=0 hscroll=360/360 small=2 axe=
+360 /institutions/0001374170 -> /institutions/0001374170 nav=200 load=5227ms settle=3970 api=6 bad=0 slow=2 dup=0 cons=0 perr=0 hscroll=360/360 small=2 axe=
+360 /institutions/0001767640 -> /institutions/0001767640 nav=200 load=5059ms settle=3770 api=6 bad=0 slow=2 dup=0 cons=0 perr=0 hscroll=360/360 small=2 axe=
+360 /s/us/SPY -> /s/us/SPY nav=200 load=2732ms settle=1728 api=6 bad=0 slow=0 dup=0 cons=0 perr=0 hscroll=360/360 small=1 axe=
+360 /s/kr/069500 -> /s/kr/069500 nav=200 load=4554ms settle=3676 api=6 bad=0 slow=0 dup=0 cons=0 perr=0 hscroll=360/360 small=1 axe=
+360 /s/us/BRK-B -> /s/us/BRK-B nav=200 load=3599ms settle=2642 api=6 bad=0 slow=0 dup=0 cons=0 perr=0 hscroll=360/360 small=1 axe=
+360 /s/kr/000660 -> /s/kr/000660 nav=200 load=4456ms settle=3543 api=6 bad=0 slow=0 dup=0 cons=0 perr=0 hscroll=360/360 small=1 axe=
+1280 /markets/i/dxy -> /markets/i/dxy nav=200 load=4538ms settle=3543 api=6 bad=0 slow=1 dup=0 cons=0 perr=0 hscroll=1280/1280 small=2 axe=
+1280 /markets/i/usdkrw -> /markets/i/usdkrw nav=200 load=4628ms settle=3657 api=6 bad=0 slow=1 dup=0 cons=0 perr=0 hscroll=1280/1280 small=2 axe=
+1280 /markets/i/usdjpy -> /markets/i/usdjpy nav=200 load=4851ms settle=3659 api=6 bad=0 slow=1 dup=0 cons=0 perr=0 hscroll=1280/1280 small=2 axe=
+1280 /markets/i/jpykrw -> /markets/i/jpykrw nav=200 load=4626ms settle=3553 api=6 bad=0 slow=1 dup=0 cons=0 perr=0 hscroll=1280/1280 small=2 axe=
+1280 /markets/i/us02y -> /markets/i/us02y nav=200 load=4617ms settle=3651 api=5 bad=0 slow=1 dup=0 cons=0 perr=0 hscroll=1280/1280 small=1 axe=
+1280 /markets/i/us10y -> /markets/i/us10y nav=200 load=4983ms settle=3855 api=6 bad=0 slow=1 dup=0 cons=0 perr=0 hscroll=1280/1280 small=2 axe=
+1280 /markets/i/us30y -> /markets/i/us30y nav=200 load=4587ms settle=3645 api=6 bad=0 slow=1 dup=0 cons=0 perr=0 hscroll=1280/1280 small=2 axe=
+1280 /markets/i/wti -> /markets/i/wti nav=200 load=4559ms settle=3559 api=6 bad=0 slow=1 dup=0 cons=0 perr=0 hscroll=1280/1280 small=2 axe=
+1280 /markets/i/brent -> /markets/i/brent nav=200 load=4681ms settle=3697 api=6 bad=0 slow=1 dup=0 cons=0 perr=0 hscroll=1280/1280 small=2 axe=
+1280 /markets/i/gold -> /markets/i/gold nav=200 load=4711ms settle=3772 api=6 bad=0 slow=1 dup=0 cons=0 perr=0 hscroll=1280/1280 small=2 axe=
+1280 /markets/i/sp500 -> /markets/i/sp500 nav=200 load=4550ms settle=3551 api=6 bad=0 slow=1 dup=0 cons=0 perr=0 hscroll=1280/1280 small=2 axe=
+1280 /markets/i/sp500_fut -> /markets/i/sp500_fut nav=200 load=4592ms settle=3550 api=6 bad=0 slow=1 dup=0 cons=0 perr=0 hscroll=1280/1280 small=2 axe=
+1280 /markets/i/ndx -> /markets/i/ndx nav=200 load=4663ms settle=3555 api=6 bad=0 slow=1 dup=0 cons=0 perr=0 hscroll=1280/1280 small=2 axe=
+1280 /markets/i/ndx_fut -> /markets/i/ndx_fut nav=200 load=4793ms settle=3655 api=6 bad=0 slow=1 dup=0 cons=0 perr=0 hscroll=1280/1280 small=2 axe=
+1280 /markets/i/kospi -> /markets/i/kospi nav=200 load=4738ms settle=3641 api=6 bad=0 slow=1 dup=0 cons=0 perr=0 hscroll=1280/1280 small=2 axe=
+1280 /markets/i/nikkei -> /markets/i/nikkei nav=200 load=4695ms settle=3653 api=6 bad=0 slow=1 dup=0 cons=0 perr=0 hscroll=1280/1280 small=2 axe=
+1280 /markets/i/shanghai -> /markets/i/shanghai nav=200 load=4676ms settle=3656 api=6 bad=0 slow=1 dup=0 cons=0 perr=0 hscroll=1280/1280 small=2 axe=
+1280 /markets/i/hsi -> /markets/i/hsi nav=200 load=4734ms settle=3645 api=6 bad=0 slow=1 dup=0 cons=0 perr=0 hscroll=1280/1280 small=2 axe=
+1280 /markets/i/kospi200_night_scraped -> /markets/i/kospi200_night_scraped nav=200 load=4706ms settle=3639 api=5 bad=0 slow=1 dup=0 cons=0 perr=0 hscroll=1280/1280 small=1 axe=
+1280 /markets/i/nikkei_fut_scraped -> /markets/i/nikkei_fut_scraped nav=200 load=4638ms settle=3638 api=5 bad=0 slow=1 dup=0 cons=0 perr=0 hscroll=1280/1280 small=1 axe=
+1280 /markets/i/hsi_fut_scraped -> /markets/i/hsi_fut_scraped nav=200 load=4601ms settle=3648 api=5 bad=0 slow=1 dup=0 cons=0 perr=0 hscroll=1280/1280 small=1 axe=
+1280 /institutions/0001067983 -> /institutions/0001067983 nav=200 load=4819ms settle=3836 api=6 bad=0 slow=2 dup=0 cons=0 perr=0 hscroll=1280/1280 small=2 axe=
+1280 /institutions/0001608046 -> /institutions/0001608046 nav=200 load=4812ms settle=3840 api=6 bad=0 slow=2 dup=0 cons=0 perr=0 hscroll=1280/1280 small=2 axe=
+1280 /institutions/0001374170 -> /institutions/0001374170 nav=200 load=4834ms settle=3767 api=6 bad=0 slow=2 dup=0 cons=0 perr=0 hscroll=1280/1280 small=2 axe=
+1280 /institutions/0001767640 -> /institutions/0001767640 nav=200 load=4878ms settle=3834 api=6 bad=0 slow=2 dup=0 cons=0 perr=0 hscroll=1280/1280 small=2 axe=
+1280 /s/us/SPY -> /s/us/SPY nav=200 load=3509ms settle=2628 api=6 bad=0 slow=0 dup=0 cons=0 perr=0 hscroll=1280/1280 small=1 axe=
+1280 /s/kr/069500 -> /s/kr/069500 nav=200 load=4401ms settle=3540 api=6 bad=0 slow=0 dup=0 cons=0 perr=0 hscroll=1280/1280 small=1 axe=
+1280 /s/us/BRK-B -> /s/us/BRK-B nav=200 load=3526ms settle=2625 api=6 bad=0 slow=0 dup=0 cons=0 perr=0 hscroll=1280/1280 small=1 axe=
+1280 /s/kr/000660 -> /s/kr/000660 nav=200 load=4582ms settle=3679 api=6 bad=0 slow=0 dup=0 cons=0 perr=0 hscroll=1280/1280 small=1 axe=
+EXIT 0
+
+# 출처: $SP/qa/lanes/ui/tabwalk-1280.log (전체)
+/: stops=45 cycled=false noInd=0 offView=0 zero=0
+/macro: stops=52 cycled=false noInd=0 offView=0 zero=0
+/liquidity: stops=25 cycled=false noInd=0 offView=0 zero=0
+/sector: stops=26 cycled=false noInd=0 offView=0 zero=0
+/correlation: stops=27 cycled=false noInd=0 offView=0 zero=0
+/cot: stops=28 cycled=false noInd=0 offView=0 zero=0
+/regime: stops=29 cycled=false noInd=0 offView=0 zero=0
+/institutions: stops=24 cycled=false noInd=0 offView=0 zero=0
+/consensus: stops=36 cycled=false noInd=0 offView=0 zero=0
+/style: stops=31 cycled=false noInd=0 offView=0 zero=0
+/scorecard: stops=23 cycled=false noInd=0 offView=0 zero=0
+/radar: stops=53 cycled=false noInd=0 offView=0 zero=0
+/krx: stops=22 cycled=false noInd=0 offView=0 zero=0
+/paper/us: stops=57 cycled=false noInd=0 offView=0 zero=0
+/paper/us/selection: stops=69 cycled=false noInd=0 offView=0 zero=0
+/paper/us/holdings: stops=46 cycled=false noInd=0 offView=0 zero=0
+/paper/us/decisions: stops=27 cycled=false noInd=0 offView=0 zero=0
+/paper/us/framework: stops=35 cycled=false noInd=0 offView=0 zero=0
+/paper/us/notes: stops=29 cycled=true noInd=0 offView=0 zero=0
+/paper/us/settings: stops=128 cycled=false noInd=0 offView=0 zero=0
+/paper/kr: stops=26 cycled=false noInd=0 offView=0 zero=0
+/paper/kr/selection: stops=24 cycled=false noInd=0 offView=0 zero=0
+/paper/kr/holdings: stops=24 cycled=false noInd=0 offView=0 zero=0
+/paper/kr/decisions: stops=24 cycled=false noInd=0 offView=0 zero=0
+/paper/kr/framework: stops=35 cycled=false noInd=0 offView=0 zero=0
+/paper/kr/notes: stops=26 cycled=true noInd=0 offView=0 zero=0
+/paper/kr/settings: stops=80 cycled=false noInd=0 offView=0 zero=0
+/alerts: stops=22 cycled=false noInd=0 offView=0 zero=0
+/ai/report: stops=25 cycled=false noInd=0 offView=0 zero=0
+/status: stops=66 cycled=false noInd=0 offView=0 zero=0
+/connections: stops=27 cycled=false noInd=0 offView=0 zero=0
+/admin/users: stops=31 cycled=false noInd=0 offView=0 zero=0
+/account: stops=25 cycled=false noInd=0 offView=0 zero=0
+/more: stops=30 cycled=false noInd=0 offView=0 zero=0
+/s/us/AAPL: stops=27 cycled=false noInd=0 offView=0 zero=0
+/s/kr/005930: stops=28 cycled=false noInd=0 offView=0 zero=0
+EXIT 0
+
+# 출처: $SP/qa/lanes/ui/contrast-light.log (전체)
+/ {"nonBmp":27,"elmPartiallyObscured":4} computedFails 0
+/macro {"imgNode":53} computedFails 0
+/liquidity {"imgNode":34} computedFails 0
+/sector {"imgNode":27} computedFails 0
+/correlation {"imgNode":21} computedFails 0
+/cot {"imgNode":10} computedFails 0
+/regime {} computedFails 0
+/institutions {"imgNode":13} computedFails 0
+/consensus {"imgNode":35,"elmPartiallyObscured":1} computedFails 0
+/style {"elmPartiallyObscured":52,"imgNode":15} computedFails 0
+/scorecard {"imgNode":15} computedFails 0
+/radar {"imgNode":90} computedFails 0
+/krx {"imgNode":50} computedFails 0
+/paper/us {"nonBmp":6,"bgOverlap":2,"imgNode":24,"elmPartiallyObscured":31} computedFails 0
+/paper/us/selection {"elmPartiallyObscured":287} computedFails 0
+/paper/us/holdings {"elmPartiallyObscured":32} computedFails 0
+/paper/us/decisions {} computedFails 0
+/paper/us/framework {"elmPartiallyObscured":135} computedFails 0
+/paper/us/notes {"elmPartiallyObscured":1} computedFails 0
+/paper/us/settings {"elmPartiallyObscured":12} computedFails 0
+/paper/kr {} computedFails 0
+/paper/kr/selection {} computedFails 0
+/paper/kr/holdings {} computedFails 0
+/paper/kr/decisions {} computedFails 0
+/paper/kr/framework {"elmPartiallyObscured":135} computedFails 0
+/paper/kr/notes {"elmPartiallyObscured":1} computedFails 0
+/paper/kr/settings {"elmPartiallyObscured":7} computedFails 0
+/alerts {} computedFails 0
+/ai/report {"elmPartiallyObscured":1} computedFails 0
+/status {"elmPartiallyObscured":1} computedFails 0
+/connections {"elmPartiallyObscured":2} computedFails 0
+/admin/users {} computedFails 0
+/account {} computedFails 0
+/more {"elmPartiallyObscured":5} computedFails 0
+/s/us/AAPL {} computedFails 0
+/s/kr/005930 {} computedFails 0
+
+# 출처: $SP/qa/lanes/ui/contrast-dark.log (전체)
+/ {"nonBmp":27,"elmPartiallyObscured":4} computedFails 0
+/macro {"imgNode":53} computedFails 0
+/liquidity {"imgNode":34} computedFails 0
+/sector {"imgNode":27} computedFails 0
+/correlation {"imgNode":21} computedFails 0
+/cot {"imgNode":10} computedFails 0
+/regime {} computedFails 0
+/institutions {"imgNode":13} computedFails 0
+/consensus {"imgNode":35,"elmPartiallyObscured":1} computedFails 0
+/style {"elmPartiallyObscured":52,"imgNode":15} computedFails 0
+/scorecard {"imgNode":15} computedFails 0
+/radar {"imgNode":90} computedFails 0
+/krx {"imgNode":50} computedFails 0
+/paper/us {"nonBmp":6,"bgOverlap":2,"imgNode":24,"elmPartiallyObscured":31} computedFails 0
+/paper/us/selection {"elmPartiallyObscured":287} computedFails 0
+/paper/us/holdings {"elmPartiallyObscured":32} computedFails 0
+/paper/us/decisions {} computedFails 0
+/paper/us/framework {"elmPartiallyObscured":135} computedFails 0
+/paper/us/notes {"elmPartiallyObscured":1} computedFails 0
+/paper/us/settings {"elmPartiallyObscured":12} computedFails 0
+/paper/kr {} computedFails 0
+/paper/kr/selection {} computedFails 0
+/paper/kr/holdings {} computedFails 0
+/paper/kr/decisions {} computedFails 0
+/paper/kr/framework {"elmPartiallyObscured":135} computedFails 0
+/paper/kr/notes {"elmPartiallyObscured":1} computedFails 0
+/paper/kr/settings {"elmPartiallyObscured":7} computedFails 0
+/alerts {} computedFails 0
+/ai/report {"elmPartiallyObscured":1} computedFails 0
+/status {"elmPartiallyObscured":1} computedFails 0
+/connections {"elmPartiallyObscured":2} computedFails 0
+/admin/users {} computedFails 0
+/account {} computedFails 0
+/more {"elmPartiallyObscured":5} computedFails 0
+/s/us/AAPL {} computedFails 0
+/s/kr/005930 {} computedFails 0
+EXIT
+
+# 출처: $SP/qa/lanes/ui/interact-1280.log (전체)
+/: cand=2 tried=2 errs=0 events=1 ov=0
+/macro: cand=24 tried=22 errs=8 events=2 ov=0
+/liquidity: cand=1 tried=1 errs=0 events=0 ov=0
+/sector: cand=3 tried=3 errs=0 events=0 ov=0
+/correlation: cand=5 tried=5 errs=0 events=0 ov=0
+/cot: cand=3 tried=3 errs=0 events=0 ov=0
+/regime: cand=3 tried=2 errs=0 events=0 ov=0
+/institutions: cand=3 tried=3 errs=0 events=0 ov=0
+/consensus: cand=15 tried=15 errs=0 events=0 ov=0
+/style: cand=8 tried=5 errs=1 events=0 ov=0
+/scorecard: cand=3 tried=3 errs=0 events=0 ov=0
+/radar: cand=8 tried=6 errs=1 events=0 ov=0
+/krx: cand=0 tried=0 errs=0 events=0 ov=0
+/paper/us: cand=29 tried=22 errs=8 events=0 ov=0
+/paper/us/selection: cand=48 tried=47 errs=0 events=0 ov=0
+/paper/us/holdings: cand=26 tried=23 errs=0 events=4 ov=0
+/paper/us/decisions: cand=15 tried=12 errs=0 events=0 ov=0
+/paper/us/framework: cand=15 tried=11 errs=0 events=0 ov=0
+/paper/us/notes: cand=15 tried=10 errs=1 events=0 ov=0
+/paper/us/settings: cand=30 tried=28 errs=0 events=0 ov=0
+/paper/kr: cand=8 tried=8 errs=0 events=0 ov=0
+/paper/kr/selection: cand=8 tried=8 errs=0 events=0 ov=0
+/paper/kr/holdings: cand=8 tried=8 errs=0 events=0 ov=0
+/paper/kr/decisions: cand=8 tried=8 errs=0 events=0 ov=0
+/paper/kr/framework: cand=15 tried=11 errs=0 events=0 ov=0
+/paper/kr/notes: cand=11 tried=9 errs=0 events=0 ov=0
+/paper/kr/settings: cand=22 tried=20 errs=0 events=0 ov=0
+/alerts: cand=5 tried=1 errs=0 events=0 ov=0
+/ai/report: cand=5 tried=1 errs=0 events=0 ov=0
+/status: cand=43 tried=0 errs=0 events=0 ov=0
+/connections: cand=6 tried=1 errs=0 events=0 ov=0
+/admin/users: cand=8 tried=7 errs=0 events=36 ov=0
+/account: cand=2 tried=0 errs=0 events=0 ov=0
+/more: cand=5 tried=3 errs=0 events=0 ov=0
+/s/us/AAPL: cand=6 tried=5 errs=0 events=0 ov=0
+/s/kr/005930: cand=6 tried=5 errs=0 events=0 ov=0
+blocked non-GET: 18 [
+  'POST /api/admin/users/2',
+  'POST /api/admin/users/2',
+  'POST /api/admin/users/2',
+  'POST /api/admin/users/2',
+  'POST /api/admin/users/2',
+  'POST /api/admin/users/2',
+  'POST /api/admin/users/3',
+  'POST /api/admin/users/3',
+  'POST /api/admin/users/3',
+  'POST /api/admin/users/3',
+  'POST /api/admin/users/3',
+  'POST /api/admin/users/3',
+  'POST /api/admin/users/4',
+  'POST /api/admin/users/4',
+  'POST /api/admin/users/4',
+  'POST /api/admin/users/4',
+  'POST /api/admin/users/4',
+  'POST /api/admin/users/4'
+]
+EXIT 0
+
+# 출처: $SP/qa/lanes/ui/interact-360.log (전체)
+/: cand=2 tried=2 errs=0 events=6 ov=0
+/macro: cand=24 tried=22 errs=8 events=0 ov=0
+/sector: cand=3 tried=3 errs=0 events=0 ov=0
+/correlation: cand=5 tried=5 errs=0 events=0 ov=0
+/consensus: cand=15 tried=15 errs=0 events=0 ov=0
+/institutions: cand=3 tried=3 errs=0 events=0 ov=0
+/style: cand=8 tried=5 errs=1 events=0 ov=0
+/radar: cand=8 tried=6 errs=1 events=0 ov=0
+/paper/us: cand=29 tried=22 errs=8 events=0 ov=0
+/paper/us/holdings: cand=26 tried=23 errs=0 events=3 ov=0
+/paper/us/decisions: cand=15 tried=12 errs=0 events=0 ov=0
+/paper/us/notes: cand=15 tried=10 errs=1 events=0 ov=0
+/alerts: cand=5 tried=1 errs=0 events=0 ov=0
+/s/us/AAPL: cand=6 tried=5 errs=0 events=0 ov=0
+/paper/kr: cand=8 tried=8 errs=0 events=0 ov=0
+blocked non-GET: 0 []
+EXIT 0
+
+# 출처: $SP/qa/lanes/ui/sortcheck.log (전체)
+OK  /paper/us/holdings t0 [종목 ↕] click1 aria-sort=ascending rows=9 text asc
+OK  /paper/us/holdings t0 [종목 ↕] click2 aria-sort=descending rows=9 text desc
+OK  /paper/us/holdings t0 [수량 ↕] click1 aria-sort=ascending rows=9 asc nulls=0
+OK  /paper/us/holdings t0 [수량 ↕] click2 aria-sort=descending rows=9 desc nulls=0
+OK  /paper/us/holdings t0 [평가액(달러) ↕] click1 aria-sort=ascending rows=9 asc nulls=0
+OK  /paper/us/holdings t0 [평가액(달러) ↕] click2 aria-sort=descending rows=9 desc nulls=0
+OK  /paper/us/holdings t0 [비중 ↕] click1 aria-sort=ascending rows=9 asc nulls=0
+OK  /paper/us/holdings t0 [비중 ↕] click2 aria-sort=descending rows=9 desc nulls=0
+OK  /paper/us/holdings t0 [평가 손익 ↕] click1 aria-sort=ascending rows=9 asc nulls=0
+OK  /paper/us/holdings t0 [평가 손익 ↕] click2 aria-sort=descending rows=9 desc nulls=0

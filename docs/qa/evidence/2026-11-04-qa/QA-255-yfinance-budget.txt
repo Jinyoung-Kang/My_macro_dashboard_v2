@@ -1,0 +1,118 @@
+# 출처: $SP/qa/lanes/repro29/ev/summary.txt (전체)
+## repro29 요약 (2026-11-04 23:40~23:47 KST, unshare -r -n 네트워크 네임스페이스 + 자체 blackhole-proxy hang 127.0.0.1:28929, 커밋 49a7d62b)
+--- control
+[control +    1.3s] result='EXC ConnectionError: HTTPSConnectionPool(host=\'qa-control.example.test\', port=443): Max retries exceeded with url: / (Caused by ReadTimeoutError("HTTPSConnectionPool(host=\'qa-contro'
+[control +    1.3s] elapsed=1.3s budget=15s
+--- yf_last2
+[yf_last2 +  130.0s] result=(None, None, 'Timeout — 응답이 없어 시간이 초과됐습니다')
+[yf_last2 +  130.0s] elapsed=130.0s budget=15s
+--- yf_5d
+[yf_5d +  130.0s] result={'symbol': 'CL=F', 'error': 'Timeout — 응답이 없어 시간이 초과됐습니다', 'points': 0}
+[yf_5d +  130.0s] elapsed=130.0s budget=15s
+--- macro4
+[macro4 +  400.1s] result=[('CL=F', 'fail'), ('GC=F', 'fail'), ('^VIX', 'fail'), ('DX-Y.NYB', 'fail')]
+[macro4 +  400.1s] elapsed=400.1s budget=15s
+--- runner
+[runner +   15.4s] 1st run_task returned ok=False detail='시간 초과: 15초 안에 끝나지 않았습니다 — 외부 응답 없음 의심. 작업은 뒤에서 계속 끝나기를 기다립니다'
+[runner +   15.4s] 2nd run_task (during zombie) ok=True detail='이전 수집이 아직 진행 중 — 시간 상한을 넘긴 앞선 실행이 끝나지 않아 새로 시작하지 않았습니다(그 실행이 끝나면 결과가 저'
+[runner +  130.4s] inflight released (zombie ended) — deadline was 15s
+[runner +  130.4s] recorded statuses=[('error', 15000), ('empty', 0)]
+2026-11-04 23:41:09,992 WARNING app.tasks.runner:   ✗ repro_yf                15.00s  시간 초과: 15초 안에 끝나지 않았습니다 — 외부 응답 없음 의심. 작업은 뒤에서 계�
+[runner +   15.4s] 1st run_task returned ok=False detail='시간 초과: 15초 안에 끝나지 않았습니다 — 외부 응답 없음 의심. 작업은 뒤에서 계속 끝나기를 기다립니다
+2026-11-04 23:43:05,008 WARNING app.tasks.runner:   ! repro_yf                130.0s  뒤늦게 끝남(이미 시간 초과로 기록): cur=None prev=None why=Timeout — 응답이 없어 시간이 �
+--- pytest(budget 5s)
+============================= slowest 1 durations ==============================
+130.35s call     tests/test_repro29_yf_budget.py::test_yfinance_호출도_태스크_예산_안에_끝난다
+XFAIL tests/test_repro29_yf_budget.py::test_yfinance_호출도_태스크_예산_안에_끝난다 - repro29: yfinance(curl_cffi)는 TaskGuard 예산을 보지 않음
+1 xfailed, 1 warning in 130.63s (0:02:10)
+
+# 출처: $SP/qa/lanes/repro29/ev/run-control-15.txt (전체)
+[control +    1.3s] result='EXC ConnectionError: HTTPSConnectionPool(host=\'qa-control.example.test\', port=443): Max retries exceeded with url: / (Caused by ReadTimeoutError("HTTPSConnectionPool(host=\'qa-contro'
+[control +    1.3s] elapsed=1.3s budget=15s
+
+# 출처: $SP/qa/lanes/repro29/ev/run-yf_last2-15.txt (전체)
+2026-11-04 23:41:24,592 WARNING yfinance: Cookie fetch from fc.yahoo.com failed (Timeout), continuing without it
+2026-11-04 23:41:54,594 WARNING yfinance: Cookie/crumb fetch failed (Timeout), continuing without crumb
+2026-11-04 23:42:04,597 ERROR yfinance: Failed to get ticker 'CL=F' reason: Failed to perform, curl: (28) Connection timed out after 10002 milliseconds. See https://curl.se/libcurl/c/libcurl-errors.html first for more details.
+2026-11-04 23:42:34,599 WARNING yfinance: Cookie/crumb fetch failed (Timeout), continuing without crumb
+2026-11-04 23:43:04,601 WARNING app.services.market: yfinance 수집 예외 (CL=F): Failed to perform, curl: (28) Connection timed out after 30001 milliseconds. See https://curl.se/libcurl/c/libcurl-errors.html first for more details.
+[yf_last2 +  130.0s] result=(None, None, 'Timeout — 응답이 없어 시간이 초과됐습니다')
+[yf_last2 +  130.0s] elapsed=130.0s budget=15s
+
+# 출처: $SP/qa/lanes/repro29/ev/run-runner-15.txt (전체)
+2026-11-04 23:41:09,992 WARNING app.tasks.runner:   ✗ repro_yf                15.00s  시간 초과: 15초 안에 끝나지 않았습니다 — 외부 응답 없음 의심. 작업은 뒤에서 계속 끝나기를 기다립니다(결과는 로그에만, 끝날 때까지 같은 태스크는 새로 시작하지 않음)
+[runner +   15.4s] 1st run_task returned ok=False detail='시간 초과: 15초 안에 끝나지 않았습니다 — 외부 응답 없음 의심. 작업은 뒤에서 계속 끝나기를 기다립니다'
+[runner +   15.4s] 2nd run_task (during zombie) ok=True detail='이전 수집이 아직 진행 중 — 시간 상한을 넘긴 앞선 실행이 끝나지 않아 새로 시작하지 않았습니다(그 실행이 끝나면 결과가 저'
+2026-11-04 23:41:24,997 WARNING yfinance: Cookie fetch from fc.yahoo.com failed (Timeout), continuing without it
+2026-11-04 23:41:55,000 WARNING yfinance: Cookie/crumb fetch failed (Timeout), continuing without crumb
+2026-11-04 23:42:05,002 ERROR yfinance: Failed to get ticker 'CL=F' reason: Failed to perform, curl: (28) Connection timed out after 10002 milliseconds. See https://curl.se/libcurl/c/libcurl-errors.html first for more details.
+2026-11-04 23:42:35,006 WARNING yfinance: Cookie/crumb fetch failed (Timeout), continuing without crumb
+2026-11-04 23:43:05,008 WARNING app.services.market: yfinance 수집 예외 (CL=F): Failed to perform, curl: (28) Connection timed out after 30002 milliseconds. See https://curl.se/libcurl/c/libcurl-errors.html first for more details.
+2026-11-04 23:43:05,008 WARNING app.tasks.runner:   ! repro_yf                130.0s  뒤늦게 끝남(이미 시간 초과로 기록): cur=None prev=None why=Timeout — 응답이 없어 시간이 초과됐습니다
+[runner +  130.4s] inflight released (zombie ended) — deadline was 15s
+[runner +  130.4s] recorded statuses=[('error', 15000), ('empty', 0)]
+
+# 출처: $SP/qa/lanes/repro29/ev/pytest-repro29.txt (전체)
+x                                                                        [100%]
+=============================== warnings summary ===============================
+tests/test_repro29_yf_budget.py::test_yfinance_호출도_태스크_예산_안에_끝난다
+  $SP/qa/wt-repro29/collector/.venv/lib/python3.11/site-packages/yfinance/__init__.py:56: DeprecationWarning: Set proxy via new config control: yf.config.network.proxy = proxy
+    warnings.warn("Set proxy via new config control: yf.config.network.proxy = proxy", DeprecationWarning)
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+============================= slowest 1 durations ==============================
+130.35s call     tests/test_repro29_yf_budget.py::test_yfinance_호출도_태스크_예산_안에_끝난다
+=========================== short test summary info ============================
+XFAIL tests/test_repro29_yf_budget.py::test_yfinance_호출도_태스크_예산_안에_끝난다 - repro29: yfinance(curl_cffi)는 TaskGuard 예산을 보지 않음
+1 xfailed, 1 warning in 130.63s (0:02:10)
+
+# 출처: $SP/qa/lanes/repro29/ev/yf-fixed-timeouts.txt (전체)
+## yfinance 1.7.0 고정 timeout·잠금 (설치본 grep)
+135:            self._price_history = PriceHistory(self._data, self.ticker, self._get_ticker_tz(timeout=10))
+503:        tz = self._get_ticker_tz(timeout=10)
+441:            crumb, strategy = self._get_cookie_and_crumb()
+100:        self._cookie_lock = threading.Lock()
+112:        with self._cookie_lock:
+133:        with self._cookie_lock:
+148:        with self._cookie_lock:
+380:    def _get_cookie_and_crumb(self, timeout=30):
+385:        with self._cookie_lock:
+32:        n.retries = 0
+108:                rounding=False, timeout=10,
+
+# 출처: $SP/qa/lanes/resilience/ev/11-proxy-hang-fast.txt (전체) — QA 스택 hang 모드 실측
+## 2026-11-04 21:50:04 KST proxy=hang
+[scraper_markets #1 start=21:50:04] wall=120.03s 0 1 [(False, '시간 초과: 120초 안에 끝나지 않았습니다 — 외부 응답 없음 의심. 작업은 뒤에서 계속 끝나기를 기다립니다(결과는 로그에만, 끝날 때까지 같은 태스크는 새로 시작하지 않음)')]
+[scraper_markets #2 start=21:50:06] wall=118.02s 0 1 [(False, '시간 초과: 120초 안에 끝나지 않았습니다 — 외부 응답 없음 의심. 작업은 뒤에서 계속 끝나기를 기다립니다(결과는 로그에만, 끝날 때까지 같은 태스크는 새로 시작하지 않음) (동시에 실행 중이던 수집 결과를 함께 사용)')]
+[macro_collected #1 start=21:50:06] wall=120.03s 0 1 [(False, '시간 초과: 120초 안에 끝나지 않았습니다 — 외부 응답 없음 의심. 작업은 뒤에서 계속 끝나기를 기다립니다(결과는 로그에만, 끝날 때까지 같은 태스크는 새로 시작하지 않음)')]
+## after: 21:52:06
+[scraper_markets #3 start=21:52:06] wall=0.02s 1 0 [(True, '이전 수집이 아직 진행 중 — 시간 상한을 넘긴 앞선 실행이 끝나지 않아 새로 시작하지 않았습니다(그 실행이 끝나면 결과가 저장본에 반영됩니다)')]
+## lock release check 22:09:01 proxy=block
+[scraper_markets #4] wall=5.68s [(False, '수집 결과 없음: 0/16 소스 — 기존 저장본 유지')]
+collector-1  | 21:58:09 WARNING app.tasks.runner:   ! macro_collected         483.9s  뒤늦게 끝남(이미 시간 초과로 기록): 3/21 지표 수집 (이전 값 유지 18)
+
+# 출처: $SP/qa/lanes/resilience/ev/11-proxy-hosts-summary.txt (전체)
+hang scanner.tradingview.com 45 12:50:04 12:56:06
+hang guce.yahoo.com 16 12:50:04 12:57:34
+hang query2.finance.yahoo.com 15 12:50:34 12:57:34
+hang ac.stock.naver.com 9 12:52:38 12:56:02
+hang query1.finance.yahoo.com 9 12:53:03 12:56:27
+hang polling.finance.naver.com 12 12:53:28 12:56:31
+hang finance.daum.net 6 12:53:54 12:55:41
+block polling.finance.naver.com 3 12:57:52 12:57:53
+block finance.daum.net 3 12:57:53 12:57:54
+block guce.yahoo.com12:58:04 5 12:58:04 12:58:04
+block query2.finance.yahoo.com12:58:04 2 12:58:04 12:58:04
+block guce.yahoo.com 65 12:58:04 12:58:07
+block query2.finance.yahoo.com 66 12:58:04 12:58:07
+block scanner.tradingview.com 20 12:58:04 12:58:09
+
+# 출처: $SP/qa/lanes/resilience/ev/15-yf-guard.txt (전체)
+## 2026-11-04 22:10:33 KST proxy=hang — yfinance 한 번(가드 안, 예산 30초)
+WARNING:yfinance:Cookie fetch from fc.yahoo.com failed (Timeout), continuing without it
+WARNING:yfinance:Cookie/crumb fetch failed (Timeout), continuing without crumb
+ERROR:yfinance:Failed to get ticker 'CL=F' reason: Failed to perform, curl: (28) Connection timed out after 10003 milliseconds. See https://curl.se/libcurl/c/libcurl-errors.html first for more details.
+WARNING:yfinance:Cookie/crumb fetch failed (Timeout), continuing without crumb
+WARNING:app.services.market:yfinance 수집 예외 (CL=F): Failed to perform, curl: (28) Connection timed out after 30002 milliseconds. See https://curl.se/libcurl/c/libcurl-errors.html first for more details.
+result (None, None, 'Timeout — 응답이 없어 시간이 초과됐습니다')
+elapsed 130.0s (guard budget 30s)

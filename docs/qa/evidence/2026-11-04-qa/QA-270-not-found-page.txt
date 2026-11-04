@@ -1,0 +1,73 @@
+# 출처: $SP/qa/lanes/repro15/summary.txt (전체)
+재현 대상: ui 후보 "없는 주소가 Next 기본 영어 404" (커밋 49a7d62b, QA 프런트 이미지는 qa@7213c6f0 — 49a7d62b..7213c6f0 사이 frontend 변경 없음, bc22e799..49a7d62b도 없음)
+1) curl(curl-status.txt): /paper/us/overview·/paper/KR·/paper/us/unknown·/paper/kr/overview·/nonexistent-page = HTTP 404, <title>Global Macro &amp; 13F Dashboard</title>
+   /s/xx/AAPL·/institutions/abc = HTTP 200(본문에 NEXT_HTTP_ERROR_FALLBACK;404, "could not be found") — 셸 안 notFound()는 스트리밍 뒤라 상태 200(소프트 404)
+2) Playwright 1280px 로그인(notfound-1280.json, shots/): 셸 밖 404 다섯 곳 nav=0 links=0, 본문 "404 / This page could not be found.", 제목 "Global Macro & 13F Dashboard"
+   /s/xx/AAPL·/institutions/abc: 셸(nav 3, 링크 19~21)은 있으나 같은 영어 문구. /markets/i/zzz는 한국어 "지표를 찾지 못했습니다"(화면 자체 처리)
+3) 제목(title-race.txt): /institutions/abc 3회 모두 "Global Macro & 13F Dashboard" → "13F 포트폴리오 · 매크로 대시보드"로 끝남 — 후보의 '404: This page could not be found.' 제목은 이번 6회에서 못 봄(SSR HTML에 그 <title>이 2개 있어 순서 경합으로 보일 수는 있음 — 미확인)
+4) 코드: git ls-tree 49a7d62b frontend/src 에 not-found.tsx·error.tsx·global-error.tsx 없음. app/layout.tsx:6 title "Global Macro & 13F Dashboard", app/login/page.tsx:75 h1 같은 옛 이름, lib/nav.ts:180 APP_TITLE "매크로 대시보드", SideNav.tsx:25 "My Macro Dashboard v2"
+5) 의도 확인: /paper/us/overview 404 자체는 의도(paperRoutes.ts:27 주석, paperRoutes.test.ts:66·98, docs/specs/2026-10-26-v2-paper-us-port.md:12). 이 주소는 한 번도 유효한 적 없음(옛 탭 아님). 결함은 404 화면의 표시(영어 기본·셸·링크 없음)와 이름 불일치뿐
+비밀값: OWNER_EMAIL은 JSON·스크린샷에서 ***OWNER_EMAIL***로 바꿈(첫 실행 출력은 덮어씀)
+
+# 출처: $SP/qa/lanes/repro15/curl-status.txt (전체)
+/paper/us/overview 404 <title>Global Macro &amp; 13F Dashboard</title>
+/paper/KR 404 <title>Global Macro &amp; 13F Dashboard</title>
+/paper/us/unknown 404 <title>Global Macro &amp; 13F Dashboard</title>
+/nonexistent-page 404 <title>Global Macro &amp; 13F Dashboard</title>
+/paper/kr/overview 404 <title>Global Macro &amp; 13F Dashboard</title>
+/s/xx/AAPL 200 <title>Global Macro &amp; 13F Dashboard</title>
+/institutions/abc 200 <title>Global Macro &amp; 13F Dashboard</title>
+/paper/us 200 <title>Global Macro &amp; 13F Dashboard</title>
+/ 200 <title>Global Macro &amp; 13F Dashboard</title>
+
+# 출처: $SP/qa/lanes/repro15/title-race.txt (전체)
+/institutions/abc run0 ["Global Macro & 13F Dashboard","13F 포트폴리오 · 매크로 대시보드"]
+/institutions/abc run1 ["Global Macro & 13F Dashboard","13F 포트폴리오 · 매크로 대시보드"]
+/institutions/abc run2 ["Global Macro & 13F Dashboard","13F 포트폴리오 · 매크로 대시보드"]
+/s/xx/AAPL run0 ["시장 · 매크로 대시보드"]
+/s/xx/AAPL run1 ["Global Macro & 13F Dashboard","시장 · 매크로 대시보드"]
+/s/xx/AAPL run2 ["시장 · 매크로 대시보드"]
+node:internal/process/promises:394
+    triggerUncaughtException(err, true /* fromPromise */);
+    ^
+
+page.click: Timeout 30000ms exceeded.
+Call log:
+  - waiting for locator('#x')
+    - locator resolved to <a id="x" href="/institutions/abc"></a>
+  - attempting click action
+    2 × waiting for element to be visible, enabled and stable
+      - element is not visible
+    - retrying click action
+    - waiting 20ms
+    2 × waiting for element to be visible, enabled and stable
+      - element is not visible
+    - retrying click action
+      - waiting 100ms
+    58 × waiting for element to be visible, enabled and stable
+       - element is not visible
+     - retrying click action
+       - waiting 500ms
+
+    at $SP/qa/lanes/repro15/title-race.cjs:19:14 {
+  log: [
+    "  - waiting for locator('#x')",
+    '    - locator resolved to <a id="x" href="/institutions/abc"></a>',
+    '  - attempting click action',
+    '    2 × waiting for element to be visible, enabled and stable',
+    '      - element is not visible',
+    '    - retrying click action',
+    '    - waiting 20ms',
+    '    2 × waiting for element to be visible, enabled and stable',
+    '      - element is not visible',
+    '    - retrying click action',
+    '      - waiting 100ms',
+    '    58 × waiting for element to be visible, enabled and stable',
+    '       - element is not visible',
+    '     - retrying click action',
+    '       - waiting 500ms'
+  ],
+  name: 'TimeoutError'
+}
+
+Node.js v24.22.1

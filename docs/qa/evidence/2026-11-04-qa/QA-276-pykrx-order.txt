@@ -1,0 +1,120 @@
+# 출처: $SP/qa/lanes/repro22/SUMMARY.txt (전체)
+repro22 — 후보: 수집기 test_radar_pykrx 순서 의존(_pykrx_blocked_until 600초 차단 누수), 커밋 49a7d62b
+판정: 재현됨. 심각도 S4 유지(시험 신뢰도, 제품 동작 영향 없음).
+- run1-candidate-order.log: 후보 순서 79 -> 38 -> 67 = 2 failed, 1 passed
+- run2-orders-and-probe.log: 기본 순서 5 passed / 79 -> 99 -> 38 = 38 실패 / probe: 79 뒤 600.0s, 99 뒤 599.6s(99의 monkeypatch가 미래 값으로 되돌림)
+- run3-fix-control.log: 79에 monkeypatch.setattr(radar, "_pykrx_blocked_until", 0.0) 한 줄(worktree 임시) -> 두 순서 모두 3 passed, 기본 5 passed, 되돌림
+- run4-shuffle-seeds.log: 파일 하나 순서 섞기 seed 1~20 중 16개 실패
+- run5-seed4-and-test56.log: 영향 시험은 셋(38, 56, 67) — 후보가 빠뜨린 test_가격_조회가_실패하면_가격은_모르는_값이다(56)도 79 뒤면 실패
+- 기본 순서(CI·make test) 기준선: 1328 passed, 12 skipped(scratchpad/qa/baseline-make-test.log), CI에는 순서 섞기 플러그인 없음
+
+# 출처: $SP/qa/lanes/repro22/run1-candidate-order.log (전체)
+$ git rev-parse HEAD: 49a7d62b0230efde1644f592322bcdda7cc9174d
+$ .venv/bin/python -m pytest -q -p no:cacheprovider "tests/test_radar_pykrx.py::test_pykrx가_응답하지_않으면_정해진_시간_뒤에_포기한다" "tests/test_radar_pykrx.py::test_가격은_날짜_하나와_시장으로_조회한다" "tests/test_radar_pykrx.py::test_가격_표에_같은_종목이_두_번_있어도_깨지지_않는다"
+Python 3.11.17
+        monkeypatch.setattr(radar, "pykrx_stock", fake)
+    
+        rows = radar.fetch_pykrx_ranking("20260911", "KOSPI", "외국인", "순매수", 30)
+    
+>       assert fake.ohlcv_calls == [(("20260911",), {"market": "KOSPI"})]
+E       AssertionError: assert [] == [(('20260911'...t': 'KOSPI'})]
+E         
+E         Right contains one more item: (('20260911',), {'market': 'KOSPI'})
+E         Use -v to get more diff
+
+tests/test_radar_pykrx.py:50: AssertionError
+______________________ test_가격_표에_같은_종목이_두_번_있어도_깨지지_않는다 _______________________
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7851662c4650>
+pykrx_available = None
+
+    def test_가격_표에_같은_종목이_두_번_있어도_깨지지_않는다(monkeypatch, pykrx_available):
+        """중복 인덱스에서 .loc[code]는 DataFrame을 돌려줘 float()가 TypeError를 냈고, 그 예외는
+        try 밖이라 태스크 전체가 멈췄습니다."""
+        prices = pd.DataFrame({"종가": [71000.0, 71000.0], "등락률": [1.25, 1.25]},
+                              index=pd.Index(["005930", "005930"], name="티커"))
+        monkeypatch.setattr(radar, "pykrx_stock", _FakePykrx(prices))
+    
+        rows = radar.fetch_pykrx_ranking("20260911", "KOSPI", "외국인", "순매수", 30)
+    
+>       assert rows[0]["price"] == 71000.0
+               ^^^^^^^
+E       IndexError: list index out of range
+
+tests/test_radar_pykrx.py:76: IndexError
+=============================== warnings summary ===============================
+.venv/lib/python3.11/site-packages/pykrx/__init__.py:14
+  $SP/qa/wt-repro22/collector/.venv/lib/python3.11/site-packages/pykrx/__init__.py:14: DeprecationWarning: path is deprecated. Use files() instead. Refer to https://importlib-resources.readthedocs.io/en/latest/using.html#migrating-from-legacy for migration advice.
+    with resources.path("pykrx", "NanumBarunGothic.ttf") as font_path:
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ============================
+FAILED tests/test_radar_pykrx.py::test_가격은_날짜_하나와_시장으로_조회한다
+FAILED tests/test_radar_pykrx.py::test_가격_표에_같은_종목이_두_번_있어도_깨지지_않는다
+2 failed, 1 passed, 1 warning in 2.02s
+
+# 출처: $SP/qa/lanes/repro22/run2-orders-and-probe.log (전체)
+=== A. 기본 순서(파일 전체) ===
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+5 passed, 1 warning in 1.26s
+=== B. 순서 79(응답 없음) -> 99(한 번 응답 없으면 건너뜀) -> 38(가격 시험) ===
+FAILED tests/test_radar_pykrx.py::test_가격은_날짜_하나와_시장으로_조회한다
+1 failed, 2 passed, 1 warning in 1.43s
+=== C. 전역 값 측정(probe 플러그인, -s) 순서 79 -> 99 -> 38 ===
+[probe] after test_pykrx가_응답하지_않으면_정해진_시간_뒤에_포기한다: blocked_until - monotonic = 600.0s
+[probe] after test_pykrx가_한_번_응답하지_않으면_한동안_바로_건너뛴다: blocked_until - monotonic = 599.6s
+[probe] after test_가격은_날짜_하나와_시장으로_조회한다: blocked_until - monotonic = 599.5s
+1 failed, 2 passed, 1 warning in 1.51s
+
+# 출처: $SP/qa/lanes/repro22/run3-fix-control.log (전체)
+=== D. 대조 실험: 79번 시험에 monkeypatch.setattr(radar, '_pykrx_blocked_until', 0.0) 한 줄만 더함(worktree 임시 수정) ===
+ collector/tests/test_radar_pykrx.py | 1 +
+ 1 file changed, 1 insertion(+)
+--- 후보 순서 79 -> 38 -> 67
+3 passed, 1 warning in 1.02s
+--- 순서 79 -> 99 -> 38
+3 passed, 1 warning in 1.43s
+--- 기본 순서
+5 passed, 1 warning in 1.30s
+임시 수정 되돌림
+
+# 출처: $SP/qa/lanes/repro22/run4-shuffle-seeds.log (전체)
+=== E. tests/test_radar_pykrx.py 순서 섞기(seed 1~20, qa_shuffle.py 복사본) ===
+seed 1: 2 failed, 3 passed, 1 warning in 1.25s
+seed 2: 1 failed, 4 passed, 1 warning in 1.36s
+seed 3: 1 failed, 4 passed, 1 warning in 1.44s
+seed 4: 3 failed, 2 passed, 1 warning in 1.57s
+seed 5: 1 failed, 4 passed, 1 warning in 1.79s
+seed 6: 3 failed, 2 passed, 1 warning in 1.41s
+seed 7: 2 failed, 3 passed, 1 warning in 1.58s
+seed 8: 3 failed, 2 passed, 1 warning in 1.55s
+seed 9: 5 passed, 1 warning in 1.39s
+seed 10: 3 failed, 2 passed, 1 warning in 1.48s
+seed 11: 5 passed, 1 warning in 1.28s
+seed 12: 5 passed, 1 warning in 1.33s
+seed 13: 1 failed, 4 passed, 1 warning in 1.40s
+seed 14: 2 failed, 3 passed, 1 warning in 1.45s
+seed 15: 3 failed, 2 passed, 1 warning in 1.40s
+seed 16: 1 failed, 4 passed, 1 warning in 1.38s
+seed 17: 5 passed, 1 warning in 1.31s
+seed 18: 3 failed, 2 passed, 1 warning in 1.26s
+seed 19: 2 failed, 3 passed, 1 warning in 1.26s
+seed 20: 2 failed, 3 passed, 1 warning in 1.24s
+
+# 출처: $SP/qa/lanes/repro22/run5-seed4-and-test56.log (전체)
+=== F. seed 4 순서와 실패 시험 ===
+FAILED tests/test_radar_pykrx.py::test_가격은_날짜_하나와_시장으로_조회한다
+FAILED tests/test_radar_pykrx.py::test_가격_표에_같은_종목이_두_번_있어도_깨지지_않는다
+FAILED tests/test_radar_pykrx.py::test_가격_조회가_실패하면_가격은_모르는_값이다
+3 failed, 2 passed, 1 warning in 1.54s
+--- 순서
+tests/test_radar_pykrx.py::test_pykrx가_응답하지_않으면_정해진_시간_뒤에_포기한다
+tests/test_radar_pykrx.py::test_pykrx가_한_번_응답하지_않으면_한동안_바로_건너뛴다
+tests/test_radar_pykrx.py::test_가격은_날짜_하나와_시장으로_조회한다
+tests/test_radar_pykrx.py::test_가격_표에_같은_종목이_두_번_있어도_깨지지_않는다
+tests/test_radar_pykrx.py::test_가격_조회가_실패하면_가격은_모르는_값이다
+=== G. 79 -> 56(가격 조회 실패 시험) ===
+E       assert 0 == 1
+E        +  where 0 = len([])
+FAILED tests/test_radar_pykrx.py::test_가격_조회가_실패하면_가격은_모르는_값이다
+1 failed, 1 passed, 1 warning in 0.97s

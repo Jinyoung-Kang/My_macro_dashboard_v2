@@ -1,0 +1,102 @@
+# 출처: $SP/qa/lanes/repro25/SUMMARY.txt (전체)
+repro25 — 후보 '설치·실행 문서(WSL2에서 venv 막힘·옛 사실)' 독립 재현, 대상 49a7d62b(HEAD 7213c6f0와 README/LOCAL_SETUP/DEVELOPMENT 차이 없음)
+- env-python.log: WSL2 Ubuntu 26.04.1, python3.11 없음, python3 3.14.4, ensurepip 없음(python3.x-venv 패키지 없음), pytest PATH에 없음, open/xdg-open/brew/launchctl 없음, uv 0.13.5 있음
+  collector/.venv/pyvenv.cfg: home=~/.local/share/uv/python/cpython-3.11.17 (uv가 받은 3.11로 python3.11 -m venv)
+- doc-venv-cmds.log: 문서 명령 python3.11 -m venv → 127, python3 -m venv → ensurepip 없음 exit 1  [재현]
+- system-python-fallback.log: Makefile 대체 PY=python3에는 ruff·pytest·pip 없음 → .venv 없으면 make test-collector 실패
+- pytest-collect.log: 1342 수집(= 1330 통과 + 12 건너뜀) vs LOCAL_SETUP:425 '129건'
+- junit-annot-count.log: @Test 2379 + @ParameterizedTest 1 vs LOCAL_SETUP:426 '83건'
+- 문서 위치: LOCAL_SETUP:303·:444(python3.11), DEVELOPMENT:25(python3.11)·:59(맨 pytest), LOCAL_SETUP:38(AWS v1), :472(scripts/aws/tunnel.sh — 49a7d62b에 scripts/aws 없음),
+  :78(node@22) vs :427(Node 24), scripts/setup.sh:294(open), README:55·LOCAL_SETUP:25(open), Makefile:200(python3 -m venv 안내 — 문서 3.11과도 다름)
+- 반박 시도: LOCAL_SETUP은 제목부터 '(macOS)'라 맥에서는 brew python@3.11로 명령이 됨 → '틀린 명령'이 아니라 '작업 PC(WSL2) 절 없음'. DEVELOPMENT는 WSL2를 작업 환경으로 밝히지 않음(§7에 WSL 언급 하나) — CLAUDE.md:79만 밝힘.
+판정: 부분 재현(사실관계 모두 재현, 표현 일부 과장), 심각도 S4 유지.
+
+# 출처: $SP/qa/lanes/repro25/doc-venv-cmds.log (전체)
+$ python3.11 -m venv collector/.venv
+/bin/bash: line 1: python3.11: command not found
+exit=127
+$ python3 -m venv py314
+The virtual environment was not created successfully because ensurepip is not
+available.  On Debian/Ubuntu systems, you need to install the python3-venv
+package using the following command.
+
+    apt install python3.14-venv
+
+You may need to use sudo with that command.  After installing the python3-venv
+package, recreate your virtual environment.
+
+Failing command: $SP/qa/repro25-venv/py314/bin/python3
+
+exit=1
+python
+python3
+python3.14
+𝜋thon
+
+# 출처: $SP/qa/lanes/repro25/env-python.log (전체)
+++ uname -r
+6.18.54.1-microsoft-standard-WSL2
+++ head -3
+++ cat /etc/os-release
+PRETTY_NAME="Ubuntu 26.04.1 LTS"
+NAME="Ubuntu"
+VERSION_ID="26.04"
+++ command -v python3.11
+++ echo exit=1
+exit=1
+++ command -v python3
+/usr/bin/python3
+++ python3 --version
+Python 3.14.4
+++ ls /usr/bin/python3 /usr/bin/python3.14
+/usr/bin/python3
+/usr/bin/python3.14
+++ command -v uv
+~/.local/bin/uv
+++ uv --version
+uv 0.13.5 (x86_64-unknown-linux-gnu)
+++ command -v pytest
+++ echo 'pytest exit=1'
+pytest exit=1
+++ command -v open xdg-open brew launchctl
+++ echo exit=1
+exit=1
+++ cat ~/Projects/My_macro_dashboard_v2/collector/.venv/pyvenv.cfg
+home = ~/.local/share/uv/python/cpython-3.11.17-linux-x86_64-gnu/bin
+include-system-site-packages = false
+version = 3.11.17
+executable = ~/.local/share/uv/python/cpython-3.11.17-linux-x86_64-gnu/bin/python3.11
+command = ~/.local/share/uv/python/cpython-3.11.17-linux-x86_64-gnu/bin/python3.11 -m venv ~/Projects/My_macro_dashboard_v2/collector/.venv
+++ python3 -c 'import ensurepip'
+Traceback (most recent call last):
+  File "<string>", line 1, in <module>
+    import ensurepip
+ModuleNotFoundError: No module named 'ensurepip'
+++ echo 'ensurepip exit=1'
+ensurepip exit=1
+++ dpkg -l
+++ /usr/bin/grep -E 'python3(\.[0-9]+)?-venv'
+++ echo 'venv pkg exit=1'
+venv pkg exit=1
++ pwd -P
+
+# 출처: $SP/qa/lanes/repro25/system-python-fallback.log (전체)
+$ python3 -m ruff --version (Makefile fallback PY=python3)
+/usr/bin/python3: No module named ruff
+exit=1
+$ python3 -m pytest --version
+/usr/bin/python3: No module named pytest
+exit=1
+$ python3 -m pip --version
+/usr/bin/python3: No module named pip
+exit=1
+
+# 출처: $SP/qa/lanes/repro25/pytest-collect.log (전체)
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+1342 tests collected in 4.86s
+
+# 출처: $SP/qa/lanes/repro25/junit-annot-count.log (전체)
+JUnit @Test/@ParameterizedTest annotations:
+      1 @ParameterizedTest
+   2379 @Test

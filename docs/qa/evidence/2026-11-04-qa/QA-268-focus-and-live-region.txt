@@ -1,0 +1,217 @@
+# 출처: $SP/qa/lanes/repro12/SUMMARY.txt (전체)
+repro12 — 후보 "메모 저장·알림 규칙 만들기 뒤 초점 소실·결과 배너 라이브 영역 아님" 독립 재현 (커밋 49a7d62b 코드, QA 스택 13002/18082)
+- focus-repro.js / focus-repro.out.json : 실제 POST(메모 #4 → 끝에 DELETE로 보관, 알림 규칙 #3 → 끝에 DELETE). Enter 직후 초점=disabled 단추('저장 중…'/'만드는 중…'), 150ms 뒤 body.
+  메모: 성공 뒤 단추 계속 disabled(입력 비움). 알림: 단추는 다시 enabled지만 초점은 body. 두 배너 모두 조상에 role=status/alert/aria-live 없음.
+  페이지의 라이브 영역은 RefreshButton의 빈 <p role=status class=sr-only> 하나.
+- focus-order.js / focus-order.out.json : 쓰기 없음(알림 POST는 가짜 응답). 초점 소실 뒤 Shift+Tab → 바로 앞 select(탭 순서 index 24/26) — Chrome은 순차 초점 시작점을 단추 자리에 유지.
+  Tab → 단추가 마지막 요소라 문서 밖(body) → 다음 Tab에 '본문으로 건너뛰기'. 메모 화면도 다음 Tab이 단추 뒤의 '맨 위로'.
+  => 후보의 "다음 Tab은 문서 처음부터"는 Chrome에서 사실 아님(키보드 영향 작음). 낭독기 미알림(4.1.3)은 DOM으로 확인, 실제 낭독기는 안 돌림.
+- jsdom-disable.cjs : jsdom 29.1.1은 초점 단추를 disabled로 만들어도 activeElement가 단추 그대로 — vitest로 'body로 빠짐'은 재현 안 됨, role=status 단언이 확실.
+- 정리 확인: paper_notes #4 archived=t, alerts rules = [1]만.
+
+# 출처: $SP/qa/lanes/repro12/focus-repro.out.json (전체)
+{
+ "writes": [
+  "POST /api/auth/login",
+  "POST /api/paper/notes",
+  "DELETE /api/paper/notes/4",
+  "POST /api/alerts/rules",
+  "DELETE /api/alerts/rules/3"
+ ],
+ "notes": {
+  "tabsToSelect": 30,
+  "kind": "INSIGHT",
+  "onBody": {
+   "tag": "textarea",
+   "text": "",
+   "disabled": false
+  },
+  "beforeEnter": {
+   "tag": "button",
+   "text": "메모 저장",
+   "disabled": false
+  },
+  "t0": {
+   "tag": "button",
+   "text": "저장 중…",
+   "disabled": true
+  },
+  "resp": "200 ok=true id=4",
+  "t150ms": {
+   "tag": "body"
+  },
+  "after3s": {
+   "tag": "body"
+  },
+  "button": {
+   "text": "메모 저장",
+   "disabled": true
+  },
+  "banner": [
+   {
+    "text": "방법론 메모(#4)를 저장했습니다 — 결정 패킷에는 싣지 않고 프레임 제안에만 씁니다. 프레임 탭의 제안 카드에서 이 메모를 골라 제안을 요청하",
+    "live": null
+   }
+  ],
+  "liveRegions": [
+   "<p role=\"status\" class=\"sr-only\"></p>"
+  ],
+  "nextTab": {
+   "tag": "button",
+   "text": "맨 위로",
+   "disabled": false
+  },
+  "nextTabInForm": false,
+  "archive": "200 {\"ok\":true}"
+ },
+ "alerts": {
+  "rulesBefore": [
+   1
+  ],
+  "tabsToButton": 24,
+  "beforeEnter": {
+   "tag": "button",
+   "text": "규칙 만들기",
+   "disabled": false
+  },
+  "t0": {
+   "tag": "button",
+   "text": "만드는 중…",
+   "disabled": true
+  },
+  "resp": "200 {\"message\":\"알림 규칙을 만들었습니다. 지금부터 생기는 사건만 알림함에 들어옵니다(과거 사건은 보내지 않음).\",\"ok\":true}",
+  "t150ms": {
+   "tag": "body"
+  },
+  "after3s": {
+   "tag": "body"
+  },
+  "button": {
+   "text": "규칙 만들기",
+   "disabled": false
+  },
+  "banner": [
+   {
+    "text": "알림 규칙\n\n2/50개 · 규칙을 만든 날 이후의 사건만 들어옵니다",
+    "live": null
+   },
+   {
+    "text": "알림 규칙을 만들었습니다. 지금부터 생기는 사건만 알림함에 들어옵니다(과거 사건은 보내지 않음).",
+    "live": null
+   }
+  ],
+  "liveRegions": [
+   "<p role=\"status\" class=\"sr-only\"></p>"
+  ],
+  "nextTab": {
+   "tag": "body"
+  },
+  "rulesAfter": [
+   1,
+   3
+  ],
+  "deleted": [
+   "3: 200 {\"message\":\"지웠습니다.\",\"ok\":true}"
+  ]
+ }
+}
+
+# 출처: $SP/qa/lanes/repro12/focus-order.out.json (전체)
+{
+ "notesOrder": [
+  {
+   "i": 0,
+   "tag": "a",
+   "text": "본문으로 건너뛰기",
+   "disabled": false
+  },
+  {
+   "i": 1,
+   "tag": "a",
+   "text": "홈",
+   "disabled": false
+  },
+  {
+   "i": 2,
+   "tag": "a",
+   "text": "시장",
+   "disabled": false
+  },
+  {
+   "i": 32,
+   "tag": "input",
+   "text": "",
+   "disabled": false
+  },
+  {
+   "i": 33,
+   "tag": "textarea",
+   "text": "",
+   "disabled": false
+  },
+  {
+   "i": 34,
+   "tag": "button",
+   "text": "메모 저장",
+   "disabled": true
+  }
+ ],
+ "alertsOrder": [
+  {
+   "i": 0,
+   "tag": "a",
+   "text": "본문으로 건너뛰기",
+   "disabled": false
+  },
+  {
+   "i": 1,
+   "tag": "a",
+   "text": "홈",
+   "disabled": false
+  },
+  {
+   "i": 2,
+   "tag": "a",
+   "text": "시장",
+   "disabled": false
+  },
+  {
+   "i": 24,
+   "tag": "button",
+   "text": "지우기",
+   "disabled": false
+  },
+  {
+   "i": 25,
+   "tag": "select",
+   "text": "국면 전환 (새 판정이 3일 이어질 때) 외국인 N일 ",
+   "disabled": false
+  },
+  {
+   "i": 26,
+   "tag": "button",
+   "text": "규칙 만들기",
+   "disabled": false
+  }
+ ],
+ "alertsTabs": 24,
+ "alertsAfter": {
+  "tag": "body"
+ },
+ "alertsShiftTab": {
+  "tag": "select",
+  "text": "국면 전환 (새 판정이 3일 이어질 때)\n외국인 N일 연속 순매수 · 유",
+  "index": 24,
+  "of": 26
+ },
+ "alertsTab1": {
+  "tag": "body"
+ },
+ "alertsTab2": {
+  "tag": "a",
+  "text": "본문으로 건너뛰기",
+  "index": 0,
+  "of": 26
+ },
+ "blocked": []
+}

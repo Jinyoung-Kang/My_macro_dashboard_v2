@@ -1,0 +1,116 @@
+# 출처: $SP/qa/lanes/repro9/curl-cors.txt (전체)
+# repro9 curl 확인 2026-11-04 23:24:20 KST
+$ curl -sD- -o /dev/null -H 'Origin: http://localhost:13002' http://127.0.0.1:18082/api/alerts/unread-count
+HTTP/1.1 401 
+$ curl -sD- -o /dev/null -H 'Origin: http://localhost:13002' http://127.0.0.1:18082/api/paper/overview
+HTTP/1.1 401 
+$ curl -sD- -o /dev/null -H 'Origin: http://localhost:13002' http://127.0.0.1:18082/api/auth/session
+HTTP/1.1 200 
+Vary: Origin
+Vary: Access-Control-Request-Method
+Vary: Access-Control-Request-Headers
+Access-Control-Allow-Origin: http://localhost:13002
+Access-Control-Allow-Credentials: true
+$ curl -X POST (쿠키 없음, Origin 허용) /api/paper/notes
+HTTP/1.1 401 
+$ curl 경로 비정규화 /api/./macro/overview (--path-as-is)
+HTTP/1.1 400 
+$ curl -X OPTIONS preflight /api/paper/notes
+HTTP/1.1 200 
+Vary: Origin
+Vary: Access-Control-Request-Method
+Vary: Access-Control-Request-Headers
+Access-Control-Allow-Origin: http://localhost:13002
+Access-Control-Allow-Methods: GET,POST,PUT,DELETE,OPTIONS
+Access-Control-Allow-Headers: content-type
+Access-Control-Allow-Credentials: true
+Access-Control-Max-Age: 3600
+
+# 출처: $SP/qa/lanes/repro9/curl-413.txt (전체)
+# 413(본문 상한) 응답의 CORS 머리글 — 운영자 세션 쿠키 + 허용 Origin, 2026-11-04 23:27:57 KST
+login -> 200
+$ curl -X POST -b <세션> -H "Origin: http://localhost:13002" --data <메일 가림> /api/paper/notes
+HTTP/1.1 100 
+HTTP/1.1 413 
+$ 비교: 같은 세션으로 GET /api/paper/overview(200)
+HTTP/1.1 200 
+Access-Control-Allow-Origin: http://localhost:13002
+Access-Control-Allow-Credentials: true
+$ 로그아웃
+200
+
+# 출처: $SP/qa/lanes/repro9/browser-plain.txt (전체)
+login status 200
+cookie set true
+## plain 0. 로그인 상태로 /paper/us url=/paper/us ["앞으로 체결 출발 — 마감이 끝난 최근 미국 세션 기준 출발 결정 · 다음 세션에 고른 시점으로 체결 · 사후 체결·미리보기 없음","Claude 계좌2는 아직 현금만 들고 있습니다. 출발은 사후 체결이 아니라 앞으로 체결입니다 — 마감이 끝난 최근 미국 세션 S 기준으로 정기 결정과 같은 패킷(사후 체결 문장 없음)을 Claude에 한 번 보내고, 검증을 통과한 주문은 다음 세션에 주문마다 고른 시점(시가 · 10:00~15:00 ET 매시 · 종가)으로 체결됩니다. 성공하면 출발일 = S(그날 순자산 = 처음 현금)로 운용을 시작하고, 실패하면 아무것도 쓰지 않고 다음 미국 결정 창에 다시 합니다. 미리보기는 없습니다.", …(줄 자름)
+## plain 1. 쿠키 지움 → 보유·체결 탭 url=/paper/us/holdings ["백엔드 API(http://localhost:18082)에 연결하지 못했습니다","다시 시도","백엔드 API(http://localhost:18082)에 연결하지 못했습니다","다시 시도","백엔드 API(http://localhost:18082)에 연결하지 못했습니다","다시 시도"]
+  ev ["FAILED GET /api/live/prices/stream?items=US%3AAR%2CUS%3AMRK%2CUS%3APYPL%2CUS%3ASHY%2CUS%3ASPY%2CUS%3AUUP%2CUS%3AXLE%2CUS%3AXLV&interval=3600 net::ERR_ABORTED","console Access to fetch at 'http://localhost:18082/api/paper/books/rules/positions' from origin 'http://localhost:13002' has been blocked by CORS policy: No '","FAILED GET /api/paper/books/rules/positions net::ERR_FAILED","console Fa …(줄 자름)
+## plain 2. 65초 뒤 url=/paper/us/holdings ["백엔드 API(http://localhost:18082)에 연결하지 못했습니다","다시 시도","백엔드 API(http://localhost:18082)에 연결하지 못했습니다","다시 시도","백엔드 API(http://localhost:18082)에 연결하지 못했습니다","다시 시도"]
+  ev ["console Access to fetch at 'http://localhost:18082/api/paper/overview' from origin 'http://localhost:13002' has been blocked by CORS policy: No 'Access-Contro","FAILED GET /api/paper/overview net::ERR_FAILED","console Failed to load resource: net::ERR_FAILED","console Access to fetch at 'http://localhost:18082/api/paper/books/rules/positions' from origin 'http://localhost:13002' has been bl …(줄 자름)
+logout status 200
+
+# 출처: $SP/qa/lanes/repro9/browser-patched.txt (전체)
+login status 200
+cookie set true
+## patched 0. 로그인 상태로 /paper/us url=/paper/us ["앞으로 체결 출발 — 마감이 끝난 최근 미국 세션 기준 출발 결정 · 다음 세션에 고른 시점으로 체결 · 사후 체결·미리보기 없음","Claude 계좌2는 아직 현금만 들고 있습니다. 출발은 사후 체결이 아니라 앞으로 체결입니다 — 마감이 끝난 최근 미국 세션 S 기준으로 정기 결정과 같은 패킷(사후 체결 문장 없음)을 Claude에 한 번 보내고, 검증을 통과한 주문은 다음 세션에 주문마다 고른 시점(시가 · 10:00~15:00 ET
+## patched 1. 쿠키 지움 → 보유·체결 탭 url=/login ["로그인"]
+  ev ["FAILED GET /api/live/prices/stream?items=US%3AAR%2CUS%3AMRK%2CUS%3APYPL%2CUS%3ASHY%2CUS%3ASPY%2CUS%3AUUP%2CUS%3AXLE%2CUS%3AXLV&interval=3600 net::ERR_ABORTED","resp 401 GET /api/paper/books/rules/positions","console Failed to load resource: the server responded with a status of 401 (Unauthorized)","resp 401 GET /api/paper/books/rules/orders?limit=50","console Failed to load resource: the se …(줄 자름)
+logout status 200
+node:internal/process/promises:394
+    triggerUncaughtException(err, true /* fromPromise */);
+    ^
+
+TargetClosedError2: "route.fetch: Request context disposed.
+Call log:
+  - → GET http://localhost:18082/api/live/prices/stream?items=US%3AAR%2CUS%3AMRK%2CUS%3APYPL%2CUS%3ASHY%2CUS%3ASPY%2CUS%3AUUP%2CUS%3AXLE%2CUS%3AXLV&interval=3600
+    - user-agent: Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/156.0.0.0 Safari/537.36
+    - accept: text/event-stream
+    - accept-encoding: gzip,deflate,br
+    - accept-language: ko-KR
+    - cookie: <가림>
+    - origin: http://localhost:13002
+    - referer: http://localhost:13002/
+    - sec-ch-ua: "Not:A-Brand";v="8", "Chromium";v="156"
+    - sec-ch-ua-mobile: ?0
+    - sec-ch-ua-platform: "Linux"
+" while running route callback.
+Consider awaiting `await page.unrouteAll({ behavior: 'ignoreErrors' })`
+before the end of the test to ignore remaining routes in flight.
+    at $SP/qa/lanes/repro9/scripts/repro.js:27:32 {
+  log: [
+    '  - → GET http://localhost:18082/api/live/prices/stream?items=US%3AAR%2CUS%3AMRK%2CUS%3APYPL%2CUS%3ASHY%2CUS%3ASPY%2CUS%3AUUP%2CUS%3AXLE%2CUS%3AXLV&interval=3600',
+    '    - user-agent: Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/156.0.0.0 Safari/537.36',
+    '    - accept: text/event-stream',
+    '    - accept-encoding: gzip,deflate,br',
+    '    - accept-language: ko-KR',
+    '    - cookie: <가림>
+    '    - origin: http://localhost:13002',
+    '    - referer: http://localhost:13002/',
+    '    - sec-ch-ua: "Not:A-Brand";v="8", "Chromium";v="156"',
+    '    - sec-ch-ua-mobile: ?0',
+    '    - sec-ch-ua-platform: "Linux"'
+  ]
+}
+
+Node.js v24.22.1
+
+# 출처: $SP/qa/lanes/repro9/browser-write.txt (전체)
+login status 200
+cookie set true
+## plain W. 쿠키 지움 → 메모 저장 url=/paper/us/notes ["만료한 메모도 보기","시황 메모(MARKET)는 기준일~만료일 사이 Claude 결정 패킷(섹션 11)에 구분자로 감싼 자료로 실립니다 — 지시가 아니고, 메모의 숫자보다 패킷의 숫자가 우선합니다. 유효한 메모는 최신부터 합계 글자 수 상한(설정 notesMaxCharsInPacket)까지 싣습니다. 방법론 메모(INSIGHT)는 패킷에 싣지 않고 프레임 제안에만 씁니
+  ev ["console Access to fetch at 'http://localhost:18082/api/paper/notes' from origin 'http://localhost:13002' has been blocked by CORS policy: No 'Access-Control-A","FAILED POST /api/paper/notes net::ERR_FAILED","console Failed to load resource: net::ERR_FAILED"]
+logout status 200
+login status 200
+cookie set true
+## patched W. 쿠키 지움 → 메모 저장 url=/login ["로그인"]
+  ev ["resp 401 POST /api/paper/notes","console Failed to load resource: the server responded with a status of 401 (Unauthorized)","resp 200 GET /api/auth/session"]
+logout status 200
+
+# 출처: $SP/qa/lanes/repro9/browser-reload.txt (전체)
+login status 200
+## plain 0. 로그인 상태로 /paper/us url=/paper/us ...
+## plain 1. 쿠키 지움 → 보유·체결 탭 url=/paper/us/holdings ...
+## plain R. 브라우저 새로고침(F5) url=/login ...
+logout status 200
+## plain 1. 쿠키 지움 → 보유·체결 탭 url=/paper/us/holdings ["백엔드 API(http://localhost:18082)에 연결하지 못했습니다","다시 시도","백엔드 API(http://localhost:18082)에 연결하지 못했습니다","다시 시도","백엔드 API(http://localhost:18082)에 연결하
+## plain R. 브라우저 새로고침(F5) url=/login ["로그인"]

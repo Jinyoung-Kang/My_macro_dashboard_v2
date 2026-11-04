@@ -1,0 +1,190 @@
+# 출처: $SP/qa/lanes/repro28/00-summary.txt (전체)
+repro28 — 후보: 실시간 시세 SSE 백엔드 스케줄러(스레드 4) 고갈 (영역 resilience), 커밋 49a7d62b
+1) 단위 재현(worktree, JDK 25, mvn -Dtest=LivePricePoolStarvationReproTest): 01-unit-repro-jdk25.txt, 시험 원본 bin/LivePricePoolStarvationReproTest.java
+   - N=4 막힌 US tick: 나중 KR 구독은 27초 동안 수집기 호출조차 안 됨, 5개 구독 모두 25초 하트비트 0개. 풀리자 0.05초 안에 KR 첫 값·하트비트.
+   - N=3 대조: KR 첫 값 0.10초, 27초 시점 모든 구독 하트비트 1개.
+2) QA 스택 실측(프록시 모드 바꾸지 않음 — block 그대로): 02-live-block-run1.txt, bin/sse_starve.py
+   - 캐시 안 된 US 구독 4개(수집기 US 잠금으로 5초씩 줄 섬) + 0.5초 뒤 KR 구독: KR 첫 값 6.54초, 같은 순간 대조 GET 2.02초.
+   - hang 조건(하트비트 지연)은 프록시 모드 변경 금지라 QA 스택에서 다시 하지 않음 — 단위 시험으로 확인.
+3) worktree 제거함. 비밀값 출력 없음(쿠키·자격 마스킹).
+
+# 출처: $SP/qa/lanes/repro28/01-unit-repro-jdk25.txt (JVM·Maven 경고 줄 뺌)
+23:38:07.435 [main] INFO org.springframework.mock.web.MockServletContext -- Initializing Spring TestDispatcherServlet ''
+23:38:07.436 [main] INFO org.springframework.test.web.servlet.TestDispatcherServlet -- Initializing Servlet ''
+23:38:07.438 [main] INFO org.springframework.test.web.servlet.TestDispatcherServlet -- Completed initialization in 2 ms
+[N=3] US 수집기 호출 진입 3개 (t=0.16s)
+[N=3] KR 구독 엶 t=0.16s
+[N=3] KR 첫 값(3초 안): 0.10s 뒤
+[N=3] t=27.08s 하트비트·이벤트: US1 keepalive=1 prices=0; US2 keepalive=1 prices=0; US3 keepalive=1 prices=0; KR keepalive=1 prices=6
+[N=3] KR 수집기 호출 시각: t=0.16s
+[N=3] 풀린 뒤 KR 첫 값까지 0.00s, 상태: US1 keepalive=1 prices=1; US2 keepalive=1 prices=1; US3 keepalive=1 prices=1; KR keepalive=1 prices=6
+[N=3] KR 첫 값까지(구독 연 때부터) 0.10s
+23:38:34.845 [main] INFO org.springframework.mock.web.MockServletContext -- Initializing Spring TestDispatcherServlet ''
+23:38:34.846 [main] INFO org.springframework.test.web.servlet.TestDispatcherServlet -- Initializing Servlet ''
+23:38:34.846 [main] INFO org.springframework.test.web.servlet.TestDispatcherServlet -- Completed initialization in 0 ms
+[N=4] US 수집기 호출 진입 4개 (t=0.10s)
+[N=4] KR 구독 엶 t=0.11s
+[N=4] KR 첫 값(3초 안): 없음
+[N=4] t=27.13s 하트비트·이벤트: US1 keepalive=0 prices=0; US2 keepalive=0 prices=0; US3 keepalive=0 prices=0; US4 keepalive=0 prices=0; KR keepalive=0 prices=0
+[N=4] KR 수집기 호출 시각: 아직 안 불림
+[N=4] 풀린 뒤 KR 첫 값까지 0.05s, 상태: US1 keepalive=1 prices=1; US2 keepalive=1 prices=1; US3 keepalive=1 prices=1; US4 keepalive=1 prices=1; KR keepalive=1 prices=1
+[N=4] KR 첫 값까지(구독 연 때부터) 27.08s
+
+real	1m11.504s
+user	0m43.769s
+sys	0m2.389s
+
+# 출처: $SP/qa/lanes/repro28/02-live-block-run1.txt (전체)
+## 2026-11-04 23:40:42 KST run1 proxy=block — US 4개(캐시 안 된 종목 각 4개) → 0.5초 뒤 KR 구독 + 대조 GET
+login http=200 (cookie masked)
+23:40:42.680 t=  0.00s (+  0.00s since open) [US1] open items=US:ZION,US:WAL,US:KEY,US:HBAN
+23:40:42.681 t=  0.00s (+  0.00s since open) [US2] open items=US:RF,US:CFG,US:FITB,US:MTB
+23:40:42.681 t=  0.00s (+  0.00s since open) [US3] open items=US:CMA,US:SNV,US:FHN,US:BOKF
+23:40:42.682 t=  0.00s (+  0.00s since open) [US4] open items=US:CBSH,US:WTFC,US:PNFP,US:ONB
+23:40:43.182 t=  0.50s (+  0.00s since open) [KR-late] open items=KR:005380
+23:40:45.205 t=  2.53s (+  2.02s since open) [CTRL] control GET http=200 available=True missing=['KR:000270'] took=2.02s
+23:40:47.712 t=  5.03s (+  5.03s since open) [US1] HTTP 200 text/event-stream
+23:40:47.712 t=  5.03s (+  5.03s since open) [US1] event prices available=True items=[] missing=['US:ZION', 'US:WAL', 'US:KEY', 'US:HBAN']
+23:40:49.725 t=  7.05s (+  6.54s since open) [KR-late] HTTP 200 text/event-stream
+23:40:49.725 t=  7.05s (+  6.54s since open) [KR-late] event prices available=True items=[] missing=['KR:005380']
+23:40:52.743 t= 10.06s (+ 10.06s since open) [US4] HTTP 200 text/event-stream
+23:40:52.743 t= 10.06s (+ 10.06s since open) [US4] event prices available=True items=[] missing=['US:CBSH', 'US:WTFC', 'US:PNFP', 'US:ONB']
+23:40:57.768 t= 15.09s (+ 15.09s since open) [US2] HTTP 200 text/event-stream
+23:40:57.768 t= 15.09s (+ 15.09s since open) [US2] event prices available=True items=[] missing=['US:RF', 'US:CFG', 'US:FITB', 'US:MTB']
+23:41:02.792 t= 20.11s (+ 20.11s since open) [US3] HTTP 200 text/event-stream
+23:41:02.792 t= 20.11s (+ 20.11s since open) [US3] event prices available=True items=[] missing=['US:CMA', 'US:SNV', 'US:FHN', 'US:BOKF']
+23:41:07.682 t= 25.00s (+ 25.00s since open) [US3] comment :keepalive
+23:41:07.682 t= 25.00s (+ 25.00s since open) [US2] comment :keepalive
+23:41:07.682 t= 25.00s (+ 25.00s since open) [US4] comment :keepalive
+23:41:07.682 t= 25.00s (+ 25.00s since open) [US1] comment :keepalive
+23:41:08.186 t= 25.51s (+ 25.01s since open) [KR-late] comment :keepalive
+
+# 출처: $SP/qa/lanes/resilience/ev/13-sse-pool-starvation.txt (전체) — 외부 장애 영역 — hang 3회차 포함
+## 2026-11-04 21:58:43 KST 4 US streams under hang, then proxy=block and 1 KR stream
+{"mode": "hang", "at
+{"mode": "block", "a (switched at 21:58:47)
+21:58:49 control GET /api/live/prices?items=KR:005930 http=200 t=2.014006s
+21:58:53 +  10.0s [US1] HTTP 200 text/event-stream
+21:58:53 +  10.0s [US3] HTTP 200 text/event-stream
+21:58:53 +  10.0s [US1] event prices available=True items=[] missing=['US:AAPL'] errors=null
+21:58:53 +  10.0s [US3] event prices available=True items=[] missing=['US:AAPL'] errors={"Yahoo": "ProxyError — 프록시가 연결을 막았습니다 (회사망·보안 프로그램·Docker 프록시 설정 확인)"}
+21:58:53 +  10.0s [US2] HTTP 200 text/event-stream
+21:58:53 +  10.0s [US2] event prices available=True items=[] missing=['US:AAPL'] errors=null
+21:58:53 +  10.0s [US4] HTTP 200 text/event-stream
+21:58:53 +  10.0s [US4] event prices available=True items=[] missing=['US:AAPL'] errors=null
+21:58:53 +   5.0s [KR-late] HTTP 200 text/event-stream
+21:58:53 +   5.0s [KR-late] event prices available=True items=[] missing=['KR:005930'] errors=null
+21:59:08 +  25.0s [US1] comment :keepalive
+21:59:08 +  25.0s [US3] comment :keepalive
+21:59:08 +  25.0s [US4] comment :keepalive
+21:59:08 +  25.0s [US2] comment :keepalive
+21:59:13 +  25.0s [KR-late] comment :keepalive
+21:59:33 +  50.0s [US3] comment :keepalive
+21:59:33 +  50.0s [US1] comment :keepalive
+21:59:33 +  50.0s [US4] comment :keepalive
+21:59:33 +  50.0s [US2] comment :keepalive
+21:59:38 +  50.0s [KR-late] comment :keepalive
+21:59:58 +  75.0s [US3] comment :keepalive
+21:59:58 +  75.0s [US1] comment :keepalive
+21:59:58 +  75.0s [US4] comment :keepalive
+21:59:58 +  75.0s [US2] comment :keepalive
+22:00:03 +  75.0s [KR-late] comment :keepalive
+22:00:23 + 100.0s [US1] comment :keepalive
+22:00:23 + 100.0s [US3] comment :keepalive
+22:00:23 + 100.0s [US4] done
+22:00:23 + 100.0s [US2] done
+22:00:28 + 100.0s [KR-late] done
+22:00:48 + 125.0s [US3] done
+22:00:48 + 125.0s [US1] done
+
+## run2 2026-11-04 22:01:05 KST 4 US streams(새 종목 각 4개) under hang, then proxy=block and 1 KR stream
+{"mode": "hang", "at
+{"mode": "block", "a (switched at 22:01:09)
+22:01:11 control GET /api/live/prices?items=KR:000660 http=200 t=2.014108s
+22:01:18 +  13.0s [US1] HTTP 200 text/event-stream
+22:01:18 +  13.0s [US1] event prices available=True items=[] missing=['US:MSFT', 'US:NVDA', 'US:GOOGL', 'US:AMZN'] errors={"Yahoo": "ProxyError — 프록시가 연결을 막았습니다 (회사망·보안 프로그램·Docker 프록시 설정 확인)"}
+22:01:20 +  10.0s [KR-late] HTTP 200 text/event-stream
+22:01:20 +  10.0s [KR-late] event prices available=True items=[] missing=['KR:000660'] errors={"네이버": "ProxyError — 프록시가 연결을 막았습니다 (회사망·보안 프로그램·Docker 프록시 설정 확인)", "다음": "ProxyError — 프록시가 연결을 막았습니다 (회사망·보안 프로그램·Do
+22:01:23 +  18.1s [US4] HTTP 200 text/event-stream
+22:01:23 +  18.1s [US4] event prices available=True items=[] missing=['US:XOM', 'US:KO', 'US:PEP', 'US:WMT'] errors={"Yahoo": "ProxyError — 프록시가 연결을 막았습니다 (회사망·보안 프로그램·Docker 프록시 설정 확인)"}
+22:01:28 +  23.1s [US2] HTTP 200 text/event-stream
+22:01:28 +  23.1s [US2] event prices available=True items=[] missing=['US:META', 'US:TSLA', 'US:AVGO', 'US:ORCL'] errors={"Yahoo": "ProxyError — 프록시가 연결을 막았습니다 (회사망·보안 프로그램·Docker 프록시 설정 확인)"}
+22:01:30 +  25.0s [US2] comment :keepalive
+22:01:30 +  25.0s [US4] comment :keepalive
+22:01:30 +  25.0s [US1] comment :keepalive
+22:01:30 +  25.0s [US3] HTTP 200 text/event-stream
+22:01:30 +  25.0s [US3] comment :keepalive
+22:01:33 +  28.1s [US3] event prices available=True items=[] missing=['US:JPM', 'US:V', 'US:MA', 'US:UNH'] errors={"Yahoo": "ProxyError — 프록시가 연결을 막았습니다 (회사망·보안 프로그램·Docker 프록시 설정 확인)"}
+22:01:35 +  25.0s [KR-late] comment :keepalive
+22:01:55 +  50.0s [US2] comment :keepalive
+22:01:55 +  50.0s [US1] comment :keepalive
+22:01:55 +  50.0s [US4] comment :keepalive
+22:01:55 +  50.0s [US3] comment :keepalive
+22:02:00 +  50.0s [KR-late] comment :keepalive
+22:02:20 +  75.0s [US4] comment :keepalive
+22:02:20 +  75.0s [US1] comment :keepalive
+22:02:20 +  75.0s [US2] comment :keepalive
+22:02:20 +  75.0s [US3] comment :keepalive
+22:02:25 +  75.0s [KR-late] comment :keepalive
+22:02:45 + 100.0s [US1] comment :keepalive
+22:02:45 + 100.0s [US4] comment :keepalive
+22:02:45 + 100.0s [US2] comment :keepalive
+22:02:45 + 100.0s [US3] comment :keepalive
+22:02:50 + 100.0s [KR-late] comment :keepalive
+22:03:10 + 125.0s [US4] comment :keepalive
+22:03:10 + 125.0s [US2] comment :keepalive
+22:03:10 + 125.0s [US1] comment :keepalive
+22:03:10 + 125.0s [US3] comment :keepalive
+22:03:15 + 125.0s [KR-late] comment :keepalive
+22:03:35 + 150.0s [US1] done
+22:03:35 + 150.0s [US4] done
+22:03:35 + 150.0s [US2] done
+22:03:35 + 150.0s [US3] done
+22:03:40 + 150.0s [KR-late] done
+
+## run3 2026-11-04 22:04:07 KST hang 60s 동안 US 스트림 4개(새 종목) → block 전환 → KR 스트림 1개 + 대조 GET
+{"mode": "hang", "at
+{"mode": "block", "a (switched at 22:05:07)
+22:05:09 control GET /api/live/prices?items=KR:035720 http=200 t=2.016846s
+22:05:16 +  69.1s [US2] HTTP 200 text/event-stream
+22:05:16 +  69.1s [US2] event prices available=True items=[] missing=['US:IBM', 'US:TXN', 'US:MU', 'US:ADBE'] errors={"Yahoo": "ProxyError — 프록시가 연결을 막았습니다 (회사망·보안 프로그램·Docker 프록시 설정 확인)"}
+22:05:16 +  69.1s [US2] comment :keepalive
+22:05:16 +  69.1s [US2] comment :keepalive
+22:05:16 +  69.1s [US1] HTTP 200 text/event-stream
+22:05:16 +  69.1s [US3] HTTP 200 text/event-stream
+22:05:16 +  69.1s [US4] HTTP 200 text/event-stream
+22:05:16 +  69.1s [US3] comment :keepalive
+22:05:16 +  69.1s [US4] comment :keepalive
+22:05:16 +  69.1s [US1] comment :keepalive
+22:05:16 +  69.1s [US4] comment :keepalive
+22:05:16 +  69.1s [US3] comment :keepalive
+22:05:16 +  69.1s [US1] comment :keepalive
+22:05:18 +  10.1s [KR-late] HTTP 200 text/event-stream
+22:05:18 +  10.1s [KR-late] event prices available=True items=[] missing=['KR:035420'] errors={"네이버": "ProxyError — 프록시가 연결을 막았습니다 (회사망·보안 프로그램·Docker 프록시 설정 확인)", "다음": "ProxyError — 프록시가 연결을 막았습니다 (회사망·보안 프로그램·Do
+22:05:21 +  74.1s [US4] event prices available=True items=[] missing=['US:BA', 'US:CAT', 'US:GE', 'US:HON'] errors={"Yahoo": "ProxyError — 프록시가 연결을 막았습니다 (회사망·보안 프로그램·Docker 프록시 설정 확인)"}
+22:05:22 +  75.0s [US4] comment :keepalive
+22:05:22 +  75.0s [US1] comment :keepalive
+22:05:22 +  75.0s [US2] comment :keepalive
+22:05:22 +  75.0s [US3] comment :keepalive
+22:05:26 +  79.1s [US1] event prices available=True items=[] missing=['US:CSCO', 'US:INTC', 'US:AMD', 'US:QCOM'] errors={"Yahoo": "ProxyError — 프록시가 연결을 막았습니다 (회사망·보안 프로그램·Docker 프록시 설정 확인)"}
+22:05:31 +  84.2s [US3] event prices available=True items=[] missing=['US:CRM', 'US:NFLX', 'US:DIS', 'US:NKE'] errors={"Yahoo": "ProxyError — 프록시가 연결을 막았습니다 (회사망·보안 프로그램·Docker 프록시 설정 확인)"}
+22:05:33 +  25.0s [KR-late] comment :keepalive
+22:05:47 + 100.0s [US2] comment :keepalive
+22:05:47 + 100.0s [US4] comment :keepalive
+22:05:47 + 100.0s [US1] comment :keepalive
+22:05:47 + 100.0s [US3] comment :keepalive
+22:05:58 +  50.0s [KR-late] comment :keepalive
+22:06:12 + 125.0s [US1] comment :keepalive
+22:06:12 + 125.0s [US4] comment :keepalive
+22:06:12 + 125.0s [US2] comment :keepalive
+22:06:12 + 125.0s [US3] comment :keepalive
+22:06:23 +  75.0s [KR-late] comment :keepalive
+22:06:37 + 150.0s [US2] comment :keepalive
+22:06:37 + 150.0s [US1] comment :keepalive
+22:06:37 + 150.0s [US4] comment :keepalive
+22:06:37 + 150.0s [US3] comment :keepalive
+22:06:48 + 100.0s [KR-late] done
+22:07:02 + 175.0s [US4] done
+22:07:02 + 175.0s [US2] done
+22:07:02 + 175.0s [US1] done
+22:07:02 + 175.0s [US3] done

@@ -217,7 +217,8 @@ def _execute_task(task: Task, run_id: int | None, entry: "_InFlight | None" = No
 
     deadline = deadline_for(task)
     # 작업 스레드에 시간 예산과 '이번 실행이 만난 출처 거부' 기록을 겁니다(http.TaskGuard). 예산은 이 상한과 같은 시각에
-    # 끝나 — 대기열에서 기다린 시간도 셈 — 재시도가 상한을 넘겨 좀비로 남지 않게 합니다.
+    # 끝나 — 대기열에서 기다린 시간도 셈 — 재시도가 상한을 넘겨 좀비로 남지 않게 합니다. yfinance(자기 curl_cffi 세션)는 이 예산을 따르지
+    # 않아 출처가 응답하지 않으면 상한을 넘깁니다(QA-255, 미수정).
     guard = http.TaskGuard(deadline=time.monotonic() + deadline)
     future = _task_threads.submit(http.run_guarded, guard, task.run)
     try:

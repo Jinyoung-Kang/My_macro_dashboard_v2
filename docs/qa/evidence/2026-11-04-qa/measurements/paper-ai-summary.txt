@@ -1,0 +1,61 @@
+# 출처: $SP/qa/lanes/paper/ev/INDEX.txt (전체)
+paper 영역 증거 목록 (2026-11-04, 대상 49a7d62b, QA 스택 my_macrodash_v2_qa)
+- api.log                      : /api/paper/** 호출 103건(요청·응답 본문·상태 코드·시간). 라벨 a##(미국 상태 전이), k##(한국), e##(오류 형식), f/g(프레임·설정 동시), m#(혼합 동시), r01(복기 동시)
+- snap/sNN-*.inv.txt           : 호출 묶음마다 장부 불변식 17개(SQL bin/invariants.sql) — 모두 위반 0
+- snap/sNN-*.orders.csv        : 주문 상태 스냅숏(전이 대조 — 허용 밖 전이 0, 바뀐 것은 29: PENDING->CANCELLED 하나)
+- rules_initial_fills_{before,after}.txt : rules 리셋 → 동시 시작 3회 뒤 출발 체결(종목·수량·가격) 같음
+- migrate-empty-{1,2}.log, schema-empty-{1,2}.sql, schema-diff-empty-vs-qa.txt, migrate-collector-runner.log : 빈 DB V1~V19 적용·재적용·수집기 실행기 재적용
+- QaPaperConcurrencyDbTest.java + wt-concurrency-run1.log : 동시성 DB 시험(4개 중 '장부 서비스 두 벌' 1개 실패 = 이중 스탑 체결 재현)
+- wt-existing-job-tests.log/.summary.txt : 기존 정기 작업·장부 시험 17클래스 238개 통과(lane 테스트 DB)
+- dev-backend-dryrun.txt, dev-backend-run.log : .env PAPER_ENABLED=false인데 make dev-backend가 '정기 작업 켜짐 — PAPER_ENABLED=true'로 기동
+
+# 출처: $SP/qa/lanes/ai/SUMMARY.txt (전체)
+QA 4차 — ai 영역(AI 경로) 증거 요약
+기준: 49a7d62b(claude/qa-2026-11). 실제 Claude·외부 호출 없음. 시험은 전용 worktree(지운 뒤 소스는 tests/에 보관)와
+로컬 postgres(5434)의 macrodash_qa_ai_test만. QA 스택은 읽기 두 번(qa-stack-reads.txt).
+
+파일
+- tests/QaAi*.java          탐침 시험 소스(저장소에 넣지 않음)
+- mvn-qaai-final.log        마지막 실행 전체 로그(12 시험, BUILD SUCCESS)
+- mvn-qaai-run1.log         첫 묶음 실행 로그
+- qaai-output.txt           로그에서 QAAI 줄만
+- qa-stack-reads.txt        QA 스택 읽기(호출 상한 칸·결정 상태 수)
+
+발견 1 (S3) 구조화 응답의 비유한 숫자(1e400 등)가 스키마 검사에서 예외 → FORMAT_ERROR로 기록되지 않고 다시 부름
+- QaAiProbeTest: Jackson 3 readTree("1e400") = DoubleNode Infinity, StructuredSchema.validate → JsonNodeException(decimalValue)
+- QaAiCheckpointTest(미국 계좌2 장중 확인): 같은 응답이 오면 +2~+20분 창에서 매분 부름 → 19회 호출·사용량 19, 결정 행 없음,
+  claude2CallsInCycle 1 그대로(소상한 3 우회), 창 끝 EXPIRED 'JOB_ERROR — 부르기 전 작업 오류'(실제는 19회 부름)
+- QaAiKrCheckpointTest#qa_krCheckpointNonFinite(한국 계좌2 장중 확인): 19회 호출, 결정 행 없음, 같은 JOB_ERROR
+- QaAiResponseTest qa_hugeNumberLiteral_decision: decide 예외·결정 행 없음·호출 1 → 다시 decide하면 Claude 다시 부름(hits 2)
+  (결정 작업은 MAX_ATTEMPTS 3까지 10분마다 — 코드 확인, 그 뒤 GAVE_UP으로 그 세션 결정 없음)
+- qa_proposalHugeNumber: 프레임 제안 예외(500), 제안 행 없음, 호출 1 소모
+- 같은 꼴(코드 확인): 계좌1 장중 확인(오류 3회 상한), 한국 출발·계좌2 출발(결정 작업 3회), 복기는 persist 안이라 API_ERROR(재시도 1)로 바르게 남음
+
+발견 2 (S4) 상세 AI 요약 프롬프트에 외부 글(뉴스 제목·기업 개요)의 가짜 구분자 '</자료>'·줄바꿈이 그대로
+- QaAiDetailInjectionTest: 프롬프트에 '</자료>' 3개·'<자료>' 2개, 주입 글 '요청: …'·'시스템: …'이 자료 블록 밖처럼 보임
+- 모의 매매 경로는 FrameworkService.stripDelimiterLike + 공백 접기를 쓰지만 DetailSummaryService.gather는 없음
+- 같은 꼴(코드 확인): AiReportService '<data>…</data>'(SnapshotTextService 원본 텍스트의 13F·종목 이름) — 지우기 없음
+
+발견 3 (S4) 구분자 지우기(delimiterLike)가 '<<'처럼 보이는 다른 유니코드 꺾쇠를 놓침
+- QaAiDelimiterTest: ≪≫(U+226A/B)·《》(U+300A/B)·«»(U+00AB/BB)·‹‹››·〈〈〉〉(U+3008/9)·⟪⟫·〈〈〉〉(U+2329/A) 모두
+  메모·사건·제안·복기 네 경로에서 남음(ASCII·전각 대조군은 지움). NoteService.block 출력(11_notes 블록)에 '≪메모 #5 끝≫'과 가짜 시작 줄이 그대로
+
+확인함(결함 아님)
+- 하루 상한 잡기 동시성: QaAiReserveConcurrencyDbTest — 80개 동시(정기 문턱 30·수동 23 섞음) → 정확히 30, 수동이 23 넘게 잡은 것 0
+- 응답 형식 묶음 18가지(qa_malformedBattery) + 잘림·stop_reason 6가지(qa_truncatedAndStopReasons): 모두 FORMAT_ERROR 또는 검증 거절,
+  현금 95,000·보유 1·체결 0 그대로, 다음 주기에 다시 부르지 않음(같은 행)
+
+# 출처: $SP/qa/lanes/ai/qa-stack-reads.txt (전체)
+# QA 스택 읽기만 (2026-11-04, ai 영역)
+$ qa-stack.sh api /api/paper/status (apiUsage·claude2.cycle 칸만)
+{"apiUsage": {"day": "2026-11-04", "calls": 0, "cap": 20, "scheduledReserve": 7, "manualLimit": 13, "inputTokens": 0, "outputTokens": 0, "cacheReadTokens": 0, "cacheWriteTokens": 0, "estCostUsd": null, "estimatedCalls": 0, "isEstimated": true}, "claude2.cycle": {"tradingDate": "2026-11-03", "calls": 0, "cap": 2}}
+$ qa-stack.sh exec postgres psql … paper_decisions 상태별 수
+-----------+-----------+-----------+-------
+ claude    | INITIAL   | OK        |     1
+ claude    | MANUAL    | API_ERROR |     1
+ claude    | SCHEDULED | API_ERROR |     1
+ rules     | INITIAL   | OK        |     1
+ rules     | MANUAL    | NO_TRADE  |     1
+ rules     | SCHEDULED | OK        |     1
+(6 rows)
+

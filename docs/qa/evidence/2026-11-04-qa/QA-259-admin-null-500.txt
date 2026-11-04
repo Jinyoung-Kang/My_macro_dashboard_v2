@@ -1,0 +1,31 @@
+# 출처: $SP/qa/lanes/repro2/repro-output.txt (전체)
+login -> 200
+== start 2026-11-04T14:23:54Z
+/api/admin/users/3           {}                                                      -> {"error":"internal_server_error","message":"서버 내부 오류가 발생했습니다. 백엔드 로그를 확인하세요."} [500]
+/api/admin/users/3           {"role":"MEMBER"}                                       -> {"error":"internal_server_error","message":"서버 내부 오류가 발생했습니다. 백엔드 로그를 확인하세요."} [500]
+/api/admin/users/3           {"tier":"FREE"}                                         -> {"error":"internal_server_error","message":"서버 내부 오류가 발생했습니다. 백엔드 로그를 확인하세요."} [500]
+/api/admin/users/3           {"role":null,"tier":null}                               -> {"error":"internal_server_error","message":"서버 내부 오류가 발생했습니다. 백엔드 로그를 확인하세요."} [500]
+/api/admin/users/3           {"role":"BOGUS","tier":"FREE"}                          -> {"message":"역할은 OWNER·MEMBER, 등급은 FREE·PRO 중 하나여야 합니다.","ok":false} [400]
+/api/admin/users/999999      {"role":"MEMBER"}                                       -> {"error":"internal_server_error","message":"서버 내부 오류가 발생했습니다. 백엔드 로그를 확인하세요."} [500]
+/api/admin/users             {"email":"<메일 가림>","password":"<가림>"} -> {"error":"internal_server_error","message":"서버 내부 오류가 발생했습니다. 백엔드 로그를 확인하세요."} [500]
+/api/admin/users             {"email":"<메일 가림>","password":"<가림>","tier":null} -> {"error":"internal_server_error","message":"서버 내부 오류가 발생했습니다. 백엔드 로그를 확인하세요."} [500]
+/api/admin/users             {"email":"<메일 가림>","password":"<가림>","tier":"BOGUS"} -> {"message":"등급은 FREE·PRO 중 하나여야 합니다.","ok":false} [400]
+/api/admin/users             {"email":"<메일 가림>"}                           -> {"error":"internal_server_error","message":"서버 내부 오류가 발생했습니다. 백엔드 로그를 확인하세요."} [500]
+/api/admin/users             {}                                                      -> {"message":"메일 주소 형식이 아닙니다.","ok":false} [400]
+== end 2026-11-04T14:23:54Z
+
+# 출처: $SP/qa/lanes/repro2/unit-run.txt (JVM·Maven 경고 줄 뺌)
+com.macrodash.feature.auth.QaRepro2AdminNullTest tests=4 failures=0
+com.macrodash.feature.paper.QaRepro2CheckpointNullTest tests=1 failures=0
+
+# 출처: $SP/qa/lanes/repro2/db-before.txt (전체)
+3|4
+58|59
+
+# 출처: $SP/qa/lanes/repro2/db-after.txt (전체)
+3|4
+65|66
+2|OWNER|PRO
+3|MEMBER|FREE
+4|MEMBER|PRO
+0

@@ -1,0 +1,55 @@
+# 출처: $SP/qa/lanes/repro23/summary.txt (전체)
+repro23 — 후보: 수집기 test_api_token의 /health·/status 시험이 기본 DATABASE_URL(localhost:5432/macrodash)로 접속
+기준 커밋 49a7d62b, worktree wt-repro23, 셸에 DATABASE_URL 없음(make test-collector도 DATABASE_URL을 주지 않음 — Makefile:177)
+
+1) r1: test_api_token.py만 (env -u DATABASE_URL, 자체 플러그인 plugins/r23_dbwatch.py — psycopg.Connection.connect 감쌈, 비밀번호 기록 안 함)
+   23 passed in 11.49s; [/health] 5.01s, [/status] 5.00s; 접속 시도 8건 모두 localhost:5432/macrodash user=macro, Connection refused
+   -> r1_api_token.log, r1_dbwatch.jsonl
+2) r2: 수집기 전체(TEST_DATABASE_URL=localhost:5434/macrodash_qa_repro23_test)
+   1330 passed, 12 skipped in 368.83s; 시험 DB가 아닌 접속 시도는 위 2개 시험의 8건뿐(그 밖 664건은 모두 _test DB)
+   -> r2_full.log, r2_dbwatch.jsonl
+3) docker inspect(읽기만): local_macro_dashboard_v3-postgres-1 = 127.0.0.1:5432, POSTGRES_DB=macrodash, POSTGRES_USER=macro,
+   POSTGRES_PASSWORD가 기본 URL의 비밀번호와 같음(yes/no 비교만, 값은 출력 안 함) — 지금은 Exited(5일 전).
+   => v3가 켜져 있으면 이 시험은 v3 DB에 인증까지 성공해 SELECT 1과 store_stats(SELECT만)를 실행함(추정 아님: 자격·포트·DB 이름 일치 확인, 실제 접속은 안 해 봄).
+4) store_stats의 하위 함수(list_snapshots·count_timeseries·count_observations·read_last_run·read_task_summary·missing_datasets)는 모두 SELECT — 쓰기 없음.
+5) 원인 위치: app/settings.py:71-76(기본 URL), tests/test_api_token.py:43-55(client fixture가 store.ping·store_stats를 스텁하지 않음),
+   tests/conftest.py(store fixture에서만 DATABASE_URL 교체). 호출 지점 app/main.py:219(store.ping), app/main.py:244 -> app/store.py:1163-1164(store_stats).
+   같은 파일 묶음의 다른 시험(test_request_guards·test_cross_site·test_live_prices·test_detail)은 main.store.ping을 스텁함 — CLAUDE.md '이 환경의 함정' 규약.
+6) 백엔드 시험 기본 URL은 jdbc:postgresql://localhost:5432/macrodash_test 12곳 — 같은 패턴 없음.
+
+# 출처: $SP/qa/lanes/repro23/r1_api_token.log (전체)
+.......................                                                  [100%]
+=============================== warnings summary ===============================
+.venv/lib/python3.11/site-packages/fastapi/testclient.py:1
+  $SP/qa/wt-repro23/collector/.venv/lib/python3.11/site-packages/fastapi/testclient.py:1: StarletteDeprecationWarning: Using `httpx` with `starlette.testclient` is deprecated; install `httpx2` instead.
+    from starlette.testclient import TestClient as TestClient  # noqa
+
+.venv/lib/python3.11/site-packages/pykrx/__init__.py:14
+  $SP/qa/wt-repro23/collector/.venv/lib/python3.11/site-packages/pykrx/__init__.py:14: DeprecationWarning: path is deprecated. Use files() instead. Refer to https://importlib-resources.readthedocs.io/en/latest/using.html#migrating-from-legacy for migration advice.
+    with resources.path("pykrx", "NanumBarunGothic.ttf") as font_path:
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+============================= slowest 5 durations ==============================
+5.01s call     tests/test_api_token.py::test_상태_경로는_토큰_없이도_401이_아니다[/health]
+5.00s call     tests/test_api_token.py::test_상태_경로는_토큰_없이도_401이_아니다[/status]
+0.01s call     tests/test_api_token.py::test_토큰_없으면_401[get-/toss/indices?symbols=KOSPI]
+0.01s call     tests/test_api_token.py::test_토큰_없으면_401[get-/diagnostics/connections]
+0.01s call     tests/test_api_token.py::test_토큰_없으면_401[get-/live/ticker/^VIX]
+23 passed, 2 warnings in 11.49s
+
+real	0m12.338s
+user	0m2.517s
+sys	0m0.398s
+
+# 출처: $SP/qa/lanes/repro23/r1_dbwatch.jsonl (전체)
+{"test": "tests/test_api_token.py::test_상태_경로는_토큰_없이도_401이_아니다[/health]", "host": "localhost", "port": "5432", "dbname": "macrodash", "user": "macro", "options": null, "result": "OperationalError: connection failed: connection to server at \"127.0.0.1\", port 5432 failed: Connection refused", "sec": 0.002}
+{"test": "tests/test_api_token.py::test_상태_경로는_토큰_없이도_401이_아니다[/health]", "host": "localhost", "port": "5432", "dbname": "macrodash", "user": "macro", "options": null, "result": "OperationalError: connection failed: connection to server at \"127.0.0.1\", port 5432 failed: Connection refused", "sec": 0.001}
+{"test": "tests/test_api_token.py::test_상태_경로는_토큰_없이도_401이_아니다[/health]", "host": "localhost", "port": "5432", "dbname": "macrodash", "user": "macro", "options": null, "result": "OperationalError: connection failed: connection to server at \"127.0.0.1\", port 5432 failed: Connection refused", "sec": 0.001}
+{"test": "tests/test_api_token.py::test_상태_경로는_토큰_없이도_401이_아니다[/health]", "host": "localhost", "port": "5432", "dbname": "macrodash", "user": "macro", "options": null, "result": "OperationalError: connection failed: connection to server at \"127.0.0.1\", port 5432 failed: Connection refused", "sec": 0.0}
+{"test": "tests/test_api_token.py::test_상태_경로는_토큰_없이도_401이_아니다[/health]", "host": "localhost", "port": "5432", "dbname": "macrodash", "user": "macro", "options": null, "result": "OperationalError: connection failed: connection to server at \"127.0.0.1\", port 5432 failed: Connection refused", "sec": 0.001}
+{"test": "tests/test_api_token.py::test_상태_경로는_토큰_없이도_401이_아니다[/health]", "host": "localhost", "port": "5432", "dbname": "macrodash", "user": "macro", "options": null, "result": "OperationalError: connection failed: connection to server at \"127.0.0.1\", port 5432 failed: Connection refused", "sec": 0.0}
+{"test": "tests/test_api_token.py::test_상태_경로는_토큰_없이도_401이_아니다[/status]", "host": "localhost", "port": "5432", "dbname": "macrodash", "user": "macro", "options": null, "result": "OperationalError: connection failed: connection to server at \"127.0.0.1\", port 5432 failed: Connection refused", "sec": 0.001}
+{"test": "tests/test_api_token.py::test_상태_경로는_토큰_없이도_401이_아니다[/status]", "host": "localhost", "port": "5432", "dbname": "macrodash", "user": "macro", "options": null, "result": "OperationalError: connection failed: connection to server at \"127.0.0.1\", port 5432 failed: Connection refused", "sec": 0.0}
+
+# 출처: $SP/qa/lanes/repro23/r2_full.log (줄 거름 /passed|failed|5432|macrodash\b|dbwatch/) — 전체 실행 요약 줄만
+1330 passed, 12 skipped, 2 warnings in 368.83s (0:06:08)

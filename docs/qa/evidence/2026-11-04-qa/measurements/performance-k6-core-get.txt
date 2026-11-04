@@ -1,0 +1,238 @@
+# 출처: $SP/qa/lanes/performance/ev/00-conditions.txt (전체) — 측정 조건
+# 측정 조건 2026-11-04 22:52:07 KST
+nproc=12
+model name	: AMD Ryzen 9 7940HS w/ Radeon 780M Graphics
+               total        used        free      shared  buff/cache   available
+Mem:            23Gi       8.0Gi       4.3Gi       2.7Gi        13Gi        15Gi
+6.18.54.1-microsoft-standard-WSL2
+git HEAD(본체)=7213c6f0 대상 이미지 빌드=qa@
+backend cmd=[java -XX:MaxRAMPercentage=70 -XX:+ExitOnOutOfMemoryError -jar app.jar]<no value> mem_limit=1073741824 cpus=0
+postgres mem_limit=536870912
+collector mem_limit=1073741824
+frontend mem_limit=268435456
+      int ActiveProcessorCount                     = -1                                        {product} {default}
+   size_t MaxHeapSize                              = 752877568                                 {product} {ergonomic}
+     bool UseG1GC                                  = false                                     {product} {default}
+     bool UseSerialGC                              = true                                      {product} {ergonomic}
+QA DB 크기·행수:
+570 MB
+timeseries=1520827
+observations=799055
+collector_task_runs=17719
+collector_runs=4570
+paper_start_prices=615
+snapshots=107
+paper_job_runs=56
+audit_log=39
+paper_track_record=39
+user_sessions=32
+paper_orders=27
+paper_fills=26
+paper_positions=20
+schema_migrations=19
+regime_log=12
+paper_nav_daily=8
+paper_settings_history=7
+paper_decisions=6
+paper_book_state=5
+paper_books=5
+paper_lockouts=3
+paper_framework_versions=3
+paper_notes=3
+users=3
+paper_gate_log=2
+paper_api_usage=2
+alert_events=1
+alert_rules=1
+paper_settings=1
+paper_selection_log=1
+
+# 출처: $SP/qa/lanes/performance/ev/k6-table.txt (전체) — 핵심 GET 11경로 혼합, 1·5·20·50명 각 60초
+vu1: 전체 p50 6.0 p95 71.7 p99 1009.0 max 4026ms · 27.5 req/s · 실패율 0.00% · 429 0 · 그밖 오류 0
+   detail_quote_us      p50 2.8 p95 4.1 p99 7.0
+   home_issues          p50 70.6 p95 79.9 p99 89.3
+   home_regime          p50 2.0 p95 3.4 p99 5.5
+   home_unread          p50 1.2 p95 2.0 p99 2.3
+   live_prices          p50 2.7 p95 2014.0 p99 2015.5
+   macro_overview       p50 17.3 p95 21.9 p99 23.8
+   paper_overview_kr    p50 6.0 p95 8.3 p99 9.5
+   paper_overview_us    p50 18.1 p95 23.0 p99 26.6
+   paper_status_kr      p50 9.2 p95 13.1 p99 16.4
+   paper_status_us      p50 26.1 p95 30.9 p99 33.5
+   sec13f_institutions  p50 1.3 p95 2.2 p99 2.6
+vu5: 전체 p50 7.5 p95 88.4 p99 1004.0 max 4029ms · 121.4 req/s · 실패율 0.00% · 429 0 · 그밖 오류 0
+   detail_quote_us      p50 2.6 p95 5.0 p99 5.8
+   home_issues          p50 86.0 p95 100.2 p99 124.5
+   home_regime          p50 1.8 p95 4.1 p99 5.9
+   home_unread          p50 1.1 p95 2.8 p99 4.3
+   live_prices          p50 2.8 p95 1913.2 p99 2015.4
+   macro_overview       p50 21.0 p95 26.6 p99 31.0
+   paper_overview_kr    p50 6.6 p95 9.6 p99 11.5
+   paper_overview_us    p50 21.5 p95 27.2 p99 30.6
+   paper_status_kr      p50 10.7 p95 13.9 p99 16.7
+   paper_status_us      p50 31.9 p95 38.7 p99 41.7
+   sec13f_institutions  p50 1.0 p95 3.1 p99 4.1
+vu20: 전체 p50 23.4 p95 206.4 p99 1828.3 max 4034ms · 206.2 req/s · 실패율 0.00% · 429 0 · 그밖 오류 0
+   detail_quote_us      p50 8.3 p95 32.0 p99 82.0
+   home_issues          p50 131.3 p95 214.9 p99 266.8
+   home_regime          p50 4.9 p95 27.2 p99 79.6
+   home_unread          p50 2.1 p95 19.1 p99 71.5
+   live_prices          p50 15.9 p95 2181.4 p99 3354.2
+   macro_overview       p50 71.0 p95 170.9 p99 208.3
+   paper_overview_kr    p50 19.2 p95 82.4 p99 118.4
+   paper_overview_us    p50 72.3 p95 164.4 p99 198.0
+   paper_status_kr      p50 32.8 p95 113.4 p99 149.6
+   paper_status_us      p50 129.5 p95 242.3 p99 285.4
+   sec13f_institutions  p50 2.0 p95 21.9 p99 67.8
+vu50: 전체 p50 100.6 p95 562.2 p99 1971.2 max 4056ms · 250.8 req/s · 실패율 0.00% · 429 0 · 그밖 오류 0
+   detail_quote_us      p50 18.7 p95 115.1 p99 1119.8
+   home_issues          p50 193.7 p95 403.7 p99 1596.0
+   home_regime          p50 20.2 p95 119.9 p99 162.1
+   home_unread          p50 12.6 p95 76.2 p99 117.9
+   live_prices          p50 87.8 p95 2626.6 p99 3743.4
+   macro_overview       p50 181.3 p95 365.2 p99 473.0
+   paper_overview_kr    p50 98.7 p95 256.1 p99 319.7
+   paper_overview_us    p50 253.1 p95 478.3 p99 553.9
+   paper_status_kr      p50 175.5 p95 361.5 p99 438.3
+   paper_status_us      p50 345.0 p95 579.5 p99 685.8
+   sec13f_institutions  p50 10.8 p95 90.3 p99 159.2
+
+# 출처: $SP/qa/lanes/performance/ev/k6-stats-summary.txt (전체) — 부하 중 컨테이너 자원(docker stats 2초 간격)
+k6-vu1.stats.csv backend: 표본 31 CPU 평균 22% 최대 84% · 메모리 최소 246MiB 최대 267MiB | collector: 표본 31 CPU 평균 3% 최대 10% · 메모리 최소 130MiB 최대 132MiB | postgres: 표본 31 CPU 평균 36% 최대 119% · 메모리 최소 335MiB 최대 352MiB
+k6-vu5.stats.csv backend: 표본 31 CPU 평균 86% 최대 251% · 메모리 최소 268MiB 최대 287MiB | collector: 표본 31 CPU 평균 10% 최대 38% · 메모리 최소 131MiB 최대 133MiB | postgres: 표본 31 CPU 평균 198% 최대 565% · 메모리 최소 348MiB 최대 365MiB
+k6-vu20.stats.csv backend: 표본 31 CPU 평균 148% 최대 286% · 메모리 최소 284MiB 최대 310MiB | collector: 표본 31 CPU 평균 16% 최대 33% · 메모리 최소 133MiB 최대 135MiB | postgres: 표본 31 CPU 평균 316% 최대 689% · 메모리 최소 356MiB 최대 372MiB
+k6-vu50.stats.csv backend: 표본 31 CPU 평균 204% 최대 297% · 메모리 최소 315MiB 최대 351MiB | collector: 표본 31 CPU 평균 22% 최대 35% · 메모리 최소 135MiB 최대 138MiB | postgres: 표본 31 CPU 평균 400% 최대 693% · 메모리 최소 355MiB 최대 369MiB
+k6-exec-claude2-vu5.stats.csv backend: 표본 15 CPU 평균 176% 최대 192% · 메모리 최소 732MiB 최대 865MiB | collector: 표본 15 CPU 평균 1% 최대 7% · 메모리 최소 140MiB 최대 141MiB | postgres: 표본 15 CPU 평균 140% 최대 161% · 메모리 최소 295MiB 최대 306MiB
+k6-overview-stageC-vu5.stats.csv backend: 표본 15 CPU 평균 48% 최대 51% · 메모리 최소 863MiB 최대 864MiB | collector: 표본 15 CPU 평균 1% 최대 9% · 메모리 최소 140MiB 최대 141MiB | postgres: 표본 15 CPU 평균 435% 최대 441% · 메모리 최소 312MiB 최대 314MiB
+k6-exec-claude2-l500-vu20.stats.csv backend: 표본 19 CPU 평균 47% 최대 353% · 메모리 최소 131MiB 최대 904MiB | collector: 표본 20 CPU 평균 1% 최대 6% · 메모리 최소 140MiB 최대 141MiB | postgres: 표본 20 CPU 평균 6% 최대 87% · 메모리 최소 287MiB 최대 326MiB
+k6-exec-claude2-l1-vu10.stats.csv backend: 표본 15 CPU 평균 247% 최대 401% · 메모리 최소 828MiB 최대 874MiB | collector: 표본 15 CPU 평균 0% 최대 0% · 메모리 최소 140MiB 최대 140MiB | postgres: 표본 15 CPU 평균 132% 최대 160% · 메모리 최소 314MiB 최대 340MiB
+k6-exec-claude2-l50-vu20.stats.csv backend: 표본 18 CPU 평균 46% 최대 319% · 메모리 최소 74MiB 최대 868MiB | collector: 표본 18 CPU 평균 0% 최대 0% · 메모리 최소 140MiB 최대 140MiB | postgres: 표본 18 CPU 평균 4% 최대 65% · 메모리 최소 287MiB 최대 317MiB
+k6-exec-claude-l50-vu20.stats.csv backend: 표본 15 CPU 평균 279% 최대 446% · 메모리 최소 571MiB 최대 858MiB | collector: 표본 15 CPU 평균 1% 최대 6% · 메모리 최소 140MiB 최대 141MiB | postgres: 표본 15 CPU 평균 82% 최대 109% · 메모리 최소 311MiB 최대 331MiB
+k6-exec-claude2-l1-vu15.stats.csv backend: 표본 18 CPU 평균 44% 최대 311% · 메모리 최소 51MiB 최대 863MiB | collector: 표본 18 CPU 평균 0% 최대 0% · 메모리 최소 140MiB 최대 141MiB | postgres: 표본 18 CPU 평균 7% 최대 107% · 메모리 최소 288MiB 최대 316MiB
+k6-exec-claude2-cp500-l1-vu5.stats.csv backend: 표본 15 CPU 평균 185% 최대 251% · 메모리 최소 831MiB 최대 870MiB | collector: 표본 15 CPU 평균 1% 최대 10% · 메모리 최소 140MiB 최대 141MiB | postgres: 표본 15 CPU 평균 166% 최대 204% · 메모리 최소 310MiB 최대 314MiB
+k6-exec-claude2-cp500-l1-vu8.stats.csv backend: 표본 17 CPU 평균 94% 최대 334% · 메모리 최소 127MiB 최대 868MiB | collector: 표본 17 CPU 평균 1% 최대 6% · 메모리 최소 140MiB 최대 141MiB | postgres: 표본 17 CPU 평균 31% 최대 148% · 메모리 최소 286MiB 최대 314MiB
+
+# 출처: $SP/qa/lanes/performance/ev/core-stmtcount.txt (전체) — 요청 하나당 DB 문장 수(지금 데이터)
+/api/analytics/regime?years=5 | http 200 2666 0.009761 | 문장 8개 · DB 합 1.9ms · 모양 6개 · 가장 많이 반복 3회
+    x3 execute S_7: SELECT name, payload, kind, status, error, collected_at, pg_column_size(payload) AS bytes FROM snapshots WHERE name = $N
+/api/status/issues | http 200 982 0.074774 | 문장 28개 · DB 합 58.2ms · 모양 12개 · 가장 많이 반복 7회
+    x7 statement: 
+    x6 statement: BEGIN
+    x6 statement: COMMIT
+/api/alerts/unread-count | http 200 12 0.003020 | 문장 3개 · DB 합 0.1ms · 모양 3개 · 가장 많이 반복 1회
+/api/macro/overview | http 200 11971 0.036402 | 문장 12개 · DB 합 7.3ms · 모양 7개 · 가장 많이 반복 5회
+    x5 execute S_7: SELECT name, payload, kind, status, error, collected_at, pg_column_size(payload) AS bytes FROM snapshots WHERE name = $N
+    x2 statement: 
+/api/paper/overview | http 200 3260 0.018772 | 문장 48개 · DB 합 1.5ms · 모양 21개 · 가장 많이 반복 10회
+    x10 execute S_9: SELECT book_code, cash, nav, equity_value, exposure_pct, last_observed_at, last_processed_collected_at, last_nav_trading_date, updated_at FROM paper_book_state WHERE book_code = $N
+    x10 execute S_10: SELECT book_code, ticker, qty, avg_cost, opened_on, opened_at, high_watermark, watermark_at, last_price, last_price_at, price_stale, fill_ref_date, fill_ref_close, split_note FROM paper_
+    x5 execute S_12: SELECT book_code, trading_date, nav, cash, equity_value, exposure_pct, prices_final FROM paper_nav_daily WHERE book_code = $N ORDER BY trading_date
+/api/paper/overview?market=KR | http 200 2377 0.007844 | 문장 18개 · DB 합 0.4ms · 모양 15개 · 가장 많이 반복 3회
+    x3 execute S_11: SELECT code, kind, label, initial_cash, started_on, status, created_at, market, currency FROM paper_books WHERE market = $N ORDER BY code
+    x2 execute S_7: SELECT name, payload, kind, status, error, collected_at, pg_column_size(payload) AS bytes FROM snapshots WHERE name = $N
+/api/paper/status | http 200 2457 0.026708 | 문장 23개 · DB 합 3.9ms · 모양 13개 · 가장 많이 반복 5회
+    x5 execute S_4: SELECT id, book_code, as_of_trading_date, kind, decided_at, status, model, framework_version, settings_version, selection_as_of, target_exposure_pct, COALESCE(packet_text, packet::text) A
+    x4 execute S_3: SELECT name, payload, kind, status, error, collected_at, pg_column_size(payload) AS bytes FROM snapshots WHERE name = $N
+    x3 execute <unnamed>: SELECT version, body::text AS body, updated_at FROM paper_settings WHERE id = N
+/api/paper/status?market=KR | http 200 1320 0.011759 | 문장 23개 · DB 합 2.2ms · 모양 14개 · 가장 많이 반복 5회
+    x5 execute S_1: SELECT name, payload, kind, status, error, collected_at, pg_column_size(payload) AS bytes FROM snapshots WHERE name = $N
+    x3 execute S_8: SELECT MAX(obs_date) FROM observations WHERE dataset = $N
+    x2 execute S_5: SELECT code, kind, label, initial_cash, started_on, status, created_at, market, currency FROM paper_books WHERE market = $N ORDER BY code
+/api/sec13f/institutions | http 200 1103 0.002384 | 문장 2개 · DB 합 0.1ms · 모양 2개 · 가장 많이 반복 1회
+/api/detail/quote?market=us&code=AAPL | http 200 481 0.008409 | 문장 2개 · DB 합 0.1ms · 모양 2개 · 가장 많이 반복 1회
+/api/live/prices?items=US:AAPL,KR:005930 | http 200 556 4.024797 | 문장 3개 · DB 합 0.1ms · 모양 2개 · 가장 많이 반복 2회
+    x2 statement: 
+/api/status | http 200 4797 0.070473 | 문장 28개 · DB 합 56.3ms · 모양 12개 · 가장 많이 반복 7회
+    x7 statement: 
+    x6 statement: BEGIN
+    x6 statement: COMMIT
+/api/paper/live | http 200 1540 0.016758 | 문장 32개 · DB 합 0.5ms · 모양 16개 · 가장 많이 반복 5회
+    x5 execute S_9: SELECT book_code, cash, nav, equity_value, exposure_pct, last_observed_at, last_processed_collected_at, last_nav_trading_date, updated_at FROM paper_book_state WHERE book_code = $N
+    x5 execute S_10: SELECT book_code, ticker, qty, avg_cost, opened_on, opened_at, high_watermark, watermark_at, last_price, last_price_at, price_stale, fill_ref_date, fill_ref_close, split_note FROM paper_
+    x5 execute S_11: SELECT book_code, trading_date, nav, cash, equity_value, exposure_pct, prices_final FROM paper_nav_daily WHERE book_code = $N ORDER BY trading_date
+
+# 출처: $SP/qa/lanes/performance/ev/50-response-sizes.txt (전체) — 응답 크기·압축
+      원본B   전송B(gzip 요청)    인코딩   코드   ms(원본)    최장목록  경로 / 최장 목록 위치
+   354826          29538   gzip  200       14     930  /api/radar/history  $.rows
+   287314          45246   gzip  200       21    2496  /api/analytics/correlation?x=fred:DGS10&y=fred:DGS2&window=250&years=10&mode=change  $.scatter
+   188107          17294   gzip  200        9     398  /api/paper/decisions/8  $.decision.response.signals.events
+   184569          23649   gzip  200       19      29  /api/paper/track-record  $.candidates[].periods
+   126645          24331   gzip  200       16     720  /api/liquidity?years=10  $.rows
+    87281          11175   gzip  200        9    2497  /api/macro/fred/DGS10?years=10  $.points
+    78716          11976   gzip  200       31     732  /api/macro/overview  $.spreads.official30y2y.points
+    70259          22884   gzip  200        5      55  /api/paper/decisions/5  $.decision.packet.8_prices.rows
+    46525          12179   gzip  200       10     470  /api/macro/fx?ids=usdkrw,dxy&period=5y&mode=index  $.series[].points
+    42425           7028   gzip  200        9     200  /api/guru/holders?q=C  $.rows
+    37269           3558   gzip  200        4      90  /api/radar/history?latest=true  $.rows
+    34007           4393   gzip  200       15     732  /api/macro/spread?longId=DGS10&shortId=DGS2  $.points
+    32222           8175   gzip  200        4     102  /api/paper/settings  $.keys
+    25537           3138   gzip  200        5      30  /api/sec13f/consensus?minHolders=2  $.rows
+    24904           2666   gzip  200        4     261  /api/analytics/regime?years=5  $.timeline
+    24051           6248   gzip  200        6     120  /api/kr/market-totals?days=180  $.markets[].tradingValue
+    23769           4810   gzip  200       77     107  /api/status  $.snapshots
+    21732           6629   gzip  200        7       8  /api/paper/framework  $.current.body.engines
+    20593           6266   gzip  200        5       8  /api/paper/framework/versions/2  $.version.body.engines
+    19499           5960   gzip  200        3       9  /api/snapshot/text  $.sections
+    16207           2457   gzip  200       39      30  /api/paper/status  $.jobs
+    15281           4093   gzip  200        5       3  /api/paper/notes?includeExpired=true  $.notes
+    13992           3259   gzip  200       34      10  /api/paper/overview  $.jobs
+    12668           2209   gzip  200        4      40  /api/krx/futures?days=60  $.rows
+    11396           1584   gzip  200        5      28  /api/radar/ranking  $.rows
+    10303           3802   gzip  200        4      30  /api/sec13f/portfolio?cik=0001067983&quarters=8&topN=30  $.holdings
+     9348            987   gzip  200        3      27  /api/paper/settings/history  $.history[].body.trackRecord.candidateCiks
+     9265           3238   gzip  200        3      12  /api/guru/similarity  $.overlap[]
+     9098           2206   gzip  200        2     136  /api/stock/universe  $.rows
+     8896           3661   gzip  200       16      11  /api/sector/rotation?period=1M  $.sectors
+     8526           2558   gzip  200       17      20  /api/kr/investor-flows  $.markets.KOSPI.series
+     8371           2023   gzip  200        4      10  /api/paper/books/claude/orders?limit=500  $.orders
+     8089           2559   gzip  200        3       5  /api/analytics/regime/track-record?asset=SPY  $.limits
+     7730           1037   gzip  200        6      40  /api/status/history?limit=40  $.history
+     7672           1863   gzip  200        4      35  /api/auth/sessions  $.sessions
+     7202           2860   gzip  200       11      11  /api/sector/momentum  $.sectors
+     6722           1538   gzip  200       23       9  /api/paper/live  $.books[].positions
+     6501           1503   gzip  200        4      16  /api/macro/scraped  $.items
+     5515           1925   gzip  200        4      41  /api/status/tasks  $.tasks
+     5058            739   gzip  200        4      56  /api/admin/audit?limit=100  $.entries
+     5001           2178   gzip  200        5      12  /api/guru/profiles  $.rows
+     4963           1230   gzip  200       15      78  /api/macro/risk  $.cpSpread.points
+     4838           2169   gzip  200        4      20  /api/guru/risk?cik=0001067983&benchmark=SPY&years=1  $.coverage.uncovered
+     4783           2376   gzip  200       11      16  /api/paper/overview?market=KR  $.limits
+     4163           1099   gzip  200        5       7  /api/kr/stock-flows?codes=005930,000660  $.stocks[].breakdown
+     4047            731   gzip  200        4      12  /api/analytics/regime/log?limit=90  $.entries
+     3946           1642   gzip  200       33       6  /api/macro/advanced  $.order
+     3833            978   gzip  200       82       5  /api/status/issues  $.recent
+     3753           1446   gzip  200        6      12  /api/cot/extremes?name=S%26P%20500%20E-Mini&percentile=95&lookbackWeeks=52  $.recentEvents
+     3705           1036   gzip  200        7       8  /api/paper/books/claude/positions  $.positions
+     3364            777   gzip  200        3      24  /api/calendar/kr-holidays  $.years.2027.holidays
+     2814           1021   gzip  200        4       9  /api/paper/books/claude2/execution?limit=500  $.timings
+     2747           1399   gzip  200        5       0  /api/paper/names?market=KR  $.source
+     2690            983   gzip  200        3       9  /api/ai/engines  $.engines
+     2452            531   gzip  200        4      10  /api/paper/books/claude/fills?limit=500  $.fills
+     2338            745   gzip  200        4      20  /api/analytics/series  $.series
+     2188           1103   gzip  200        3      12  /api/sec13f/institutions  $.institutions
+     2173           1065   gzip  200        4       3  /api/paper/decisions?book=claude&limit=500  $.decisions
+     1802           1802      -  200        5       6  /api/radar/consensus  $.rows
+     1597           1597      -  200        4       6  /api/cot/overview  $.assets
+     1575           1575      -  200        4       5  /api/stock/scorecard?symbol=AAPL&benchmark=SPY&years=1  $.metrics
+     1542           1542      -  200        5       4  /api/krx/spot-futures  $.rows
+     1480           1480      -  200        4       2  /api/kr/fundamentals?codes=005930,000660  $.companies
+     1357           1357      -  200        4      11  /api/sec13f/new-buys?minHolders=3  $.participants
+     1289           1289      -  200        3      10  /api/krx/investor-trend  $.rows
+     1213           1213      -  200     2025       0  /api/radar/diagnostics  $.sources.toss.stage
+     1195           1195      -  200        4       3  /api/paper/decisions?book=rules&limit=500  $.decisions
+      746            746      -  200        3       7  /api/radar/options  $.fallbackChain
+      744            744      -  200        5       2  /api/paper/books/claude/nav  $.series
+      642            642      -  200        4       0  /api/detail/symbols?q=sam  $.symbols.items
+      483            483      -  200        5       3  /api/status/public-apis  $.apis
+      435            435      -  400        2       0  /api/macro/ticker?symbol=^VIX&period=5y  -
+      390            390      -  200        4       3  /api/admin/users  $.users
+      388            388      -  200        3       6  /api/cot/assets  $.assets
+      387            387      -  200     1011       0  /api/krx/intraday?minutes=30  $.source
+      204            204      -  200        3       1  /api/alerts/rules  $.rules
+      195            195      -  200        5       0  /api/macro/usdkrw  $.source
+      105            105      -  200        4       0  /api/paper/reviews  $.reviews
+      100            100      -  200        3       3  /api/ai/report-types  $.types
+       76             76      -  200        4       0  /api/krx/oi-trend  $.previous
+       76             76      -  200        3       6  /api/macro/fx/options  $.periods
+       33             33      -  200        3       0  /api/paper/framework/proposals  $.proposals
+       23             23      -  200        3       0  /api/alerts/inbox?limit=50  $.unread

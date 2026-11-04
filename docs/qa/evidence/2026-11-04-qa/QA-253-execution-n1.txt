@@ -1,0 +1,150 @@
+# 출처: $SP/qa/lanes/repro31/SUMMARY.txt (전체) — 독립 재현 요약(전용 테스트 DB)
+repro31 — 실행 감사 N+1(후보: performance) 독립 재현, 커밋 49a7d62b
+방법: 전용 worktree + 테스트 DB macrodash_qa_repro31_test(로컬 5434). QA 스택에는 쓰지 않음(OOM 재기동이 다른 에이전트를 방해하므로).
+시험 코드: Repro31ExecutionN1DbTest.java (ExecutionView.render 직접 호출, limit=1, 연결 프록시로 문장 수 셈, Hikari 10)
+패킷: golden = packet-us-claude2-checkpoint-minute.json(8,196자), est = 같은 구조에 5_feed 종목을 늘려 35,646자(설계 '약 10K토큰[추정]'),
+      synth = 후보 방식(문자열 한 칸 약 44,568자)
+결과(01·02·03 log):
+ est   rows 0/125/250/500 : 문장 4/129/254/504, decision(id) 0/125/250/500, 중앙 2.4/101.8/299.5/522.8ms,
+                            render 1회 할당 0/59/119/244MiB, answers가 붙잡는 힙 0/37/75/150MiB, 쓰는 칸만 묶음 질의 0.6/1.3/1.5/1.6ms
+ golden rows 250          : 중앙 154.5ms, 할당 35MiB, 붙잡음 17.9MiB (500행 35.6MiB)
+ synth  rows 250          : 중앙 272.5ms, 할당 110MiB, 붙잡음 35.5MiB (500행 85.5MiB)
+ kr_claude2 est rows 250  : 문장 254, decision(id) 250, 중앙 328.6ms, 붙잡음 74.7MiB — 같은 경로(Spec.KR.checkpointBook)
+동시(04 log, -Xmx718m -XX:+UseSerialGC, 빈 JVM 기준 사용 힙 14MiB, rows 250, 스레드마다 render 5회):
+ est  : k=5 통과(p50 690ms), k=8 통과(p50 1617ms — GC 몰림), k=10 OutOfMemoryError
+ synth: k=5~15 통과(k=15 p50 891ms), k=20 OutOfMemoryError
+→ 실제 백엔드는 스프링 문맥·캐시가 힙을 더 차지하므로 문턱은 이보다 낮음(후보 k6: synth 250행 10 통과·15 OOM과 맞음).
+QA 스택 재실행(k6·OOM)은 하지 않음 — 후보 증거(performance/ev/k6-*, 30-oom-log.txt, 99-final-state.txt restarts=4)를 읽어 대조만.
+미검증: 운영 장중 확인 패킷 실제 크기·현재 행 수(운영 서버 접근 금지).
+
+# 출처: $SP/qa/lanes/repro31/01-measure-est.log (전체)
+WARNING: A terminally deprecated method in sun.misc.Unsafe has been called
+WARNING: sun.misc.Unsafe::objectFieldOffset has been called by com.google.common.util.concurrent.AbstractFuture$UnsafeAtomicHelper (file:/usr/share/maven/lib/guava.jar)
+WARNING: Please consider reporting this to the maintainers of class com.google.common.util.concurrent.AbstractFuture$UnsafeAtomicHelper
+WARNING: sun.misc.Unsafe::objectFieldOffset will be removed in a future release
+23:43:42.556 [main] INFO com.zaxxer.hikari.HikariDataSource -- HikariPool-1 - Starting...
+23:43:42.698 [main] INFO com.zaxxer.hikari.pool.HikariPool -- HikariPool-1 - Added connection org.postgresql.jdbc.PgConnection@62d0ac62
+23:43:42.699 [main] INFO com.zaxxer.hikari.HikariDataSource -- HikariPool-1 - Start completed.
+REPRO31 mode=est book=claude2 packetChars=35646 maxHeapMiB=694
+REPRO31 rows=0 statements=4 decisionById=0 renderMedianMs=2.4 renderMaxMs=3.6 allocPerRenderMiB=0.0 heldDecisions=0 retainedMiB=-1.0 lightQueryMedianMs=0.60 summaryRows=0 replace=0
+REPRO31 rows=125 statements=129 decisionById=125 renderMedianMs=101.8 renderMaxMs=143.4 allocPerRenderMiB=59.1 heldDecisions=125 retainedMiB=37.4 lightQueryMedianMs=1.30 summaryRows=125 replace=41
+REPRO31 rows=250 statements=254 decisionById=250 renderMedianMs=299.5 renderMaxMs=375.9 allocPerRenderMiB=119.3 heldDecisions=250 retainedMiB=74.8 lightQueryMedianMs=1.47 summaryRows=250 replace=83
+REPRO31 rows=500 statements=504 decisionById=500 renderMedianMs=522.8 renderMaxMs=615.3 allocPerRenderMiB=243.5 heldDecisions=500 retainedMiB=149.5 lightQueryMedianMs=1.60 summaryRows=500 replace=166
+23:44:06.761 [main] INFO com.zaxxer.hikari.HikariDataSource -- HikariPool-1 - Shutdown initiated...
+23:44:06.764 [main] INFO com.zaxxer.hikari.HikariDataSource -- HikariPool-1 - Shutdown completed.
+
+# 출처: $SP/qa/lanes/repro31/02-measure-golden.log (전체)
+WARNING: A terminally deprecated method in sun.misc.Unsafe has been called
+WARNING: sun.misc.Unsafe::objectFieldOffset has been called by com.google.common.util.concurrent.AbstractFuture$UnsafeAtomicHelper (file:/usr/share/maven/lib/guava.jar)
+WARNING: Please consider reporting this to the maintainers of class com.google.common.util.concurrent.AbstractFuture$UnsafeAtomicHelper
+WARNING: sun.misc.Unsafe::objectFieldOffset will be removed in a future release
+23:44:19.430 [main] INFO com.zaxxer.hikari.HikariDataSource -- HikariPool-1 - Starting...
+23:44:19.566 [main] INFO com.zaxxer.hikari.pool.HikariPool -- HikariPool-1 - Added connection org.postgresql.jdbc.PgConnection@62d0ac62
+23:44:19.567 [main] INFO com.zaxxer.hikari.HikariDataSource -- HikariPool-1 - Start completed.
+REPRO31 mode=golden book=claude2 packetChars=8196 maxHeapMiB=694
+REPRO31 rows=0 statements=4 decisionById=0 renderMedianMs=2.7 renderMaxMs=3.6 allocPerRenderMiB=0.0 heldDecisions=0 retainedMiB=0.0 lightQueryMedianMs=0.50 summaryRows=0 replace=0
+REPRO31 rows=125 statements=129 decisionById=125 renderMedianMs=71.2 renderMaxMs=87.8 allocPerRenderMiB=16.9 heldDecisions=125 retainedMiB=8.9 lightQueryMedianMs=0.89 summaryRows=125 replace=41
+REPRO31 rows=250 statements=254 decisionById=250 renderMedianMs=154.5 renderMaxMs=196.4 allocPerRenderMiB=35.0 heldDecisions=250 retainedMiB=17.9 lightQueryMedianMs=1.47 summaryRows=250 replace=83
+REPRO31 rows=500 statements=504 decisionById=500 renderMedianMs=257.5 renderMaxMs=319.7 allocPerRenderMiB=74.9 heldDecisions=500 retainedMiB=35.6 lightQueryMedianMs=1.79 summaryRows=500 replace=166
+23:44:36.542 [main] INFO com.zaxxer.hikari.HikariDataSource -- HikariPool-1 - Shutdown initiated...
+23:44:36.545 [main] INFO com.zaxxer.hikari.HikariDataSource -- HikariPool-1 - Shutdown completed.
+
+# 출처: $SP/qa/lanes/repro31/03-measure-kr.log (전체)
+WARNING: A terminally deprecated method in sun.misc.Unsafe has been called
+WARNING: sun.misc.Unsafe::objectFieldOffset has been called by com.google.common.util.concurrent.AbstractFuture$UnsafeAtomicHelper (file:/usr/share/maven/lib/guava.jar)
+WARNING: Please consider reporting this to the maintainers of class com.google.common.util.concurrent.AbstractFuture$UnsafeAtomicHelper
+WARNING: sun.misc.Unsafe::objectFieldOffset will be removed in a future release
+23:45:05.430 [main] INFO com.zaxxer.hikari.HikariDataSource -- HikariPool-1 - Starting...
+23:45:05.588 [main] INFO com.zaxxer.hikari.pool.HikariPool -- HikariPool-1 - Added connection org.postgresql.jdbc.PgConnection@62d0ac62
+23:45:05.589 [main] INFO com.zaxxer.hikari.HikariDataSource -- HikariPool-1 - Start completed.
+REPRO31 mode=est book=kr_claude2 packetChars=35646 maxHeapMiB=694
+REPRO31 rows=0 statements=4 decisionById=0 renderMedianMs=2.9 renderMaxMs=4.6 allocPerRenderMiB=0.0 heldDecisions=0 retainedMiB=-1.0 lightQueryMedianMs=0.51 summaryRows=0 replace=0
+REPRO31 rows=250 statements=254 decisionById=250 renderMedianMs=328.6 renderMaxMs=387.3 allocPerRenderMiB=119.4 heldDecisions=250 retainedMiB=74.7 lightQueryMedianMs=1.76 summaryRows=250 replace=83
+23:45:13.861 [main] INFO com.zaxxer.hikari.HikariDataSource -- HikariPool-1 - Shutdown initiated...
+23:45:13.863 [main] INFO com.zaxxer.hikari.HikariDataSource -- HikariPool-1 - Shutdown completed.
+
+# 출처: $SP/qa/lanes/repro31/04-concurrent-est-250.log (전체)
+WARNING: A terminally deprecated method in sun.misc.Unsafe has been called
+WARNING: sun.misc.Unsafe::objectFieldOffset has been called by com.google.common.util.concurrent.AbstractFuture$UnsafeAtomicHelper (file:/usr/share/maven/lib/guava.jar)
+WARNING: Please consider reporting this to the maintainers of class com.google.common.util.concurrent.AbstractFuture$UnsafeAtomicHelper
+WARNING: sun.misc.Unsafe::objectFieldOffset will be removed in a future release
+23:45:24.718 [main] INFO com.zaxxer.hikari.HikariDataSource -- HikariPool-1 - Starting...
+23:45:24.855 [main] INFO com.zaxxer.hikari.pool.HikariPool -- HikariPool-1 - Added connection org.postgresql.jdbc.PgConnection@62d0ac62
+23:45:24.856 [main] INFO com.zaxxer.hikari.HikariDataSource -- HikariPool-1 - Start completed.
+REPRO31-C mode=est rows=250 maxHeapMiB=694 baselineUsedMiB=14
+REPRO31-C k=5 oom=false completed=25 p50Ms=690
+REPRO31-C k=8 oom=false completed=40 p50Ms=1617
+REPRO31-C k=10 oom=true completed=9 p50Ms=16480
+23:45:56.211 [main] INFO com.zaxxer.hikari.HikariDataSource -- HikariPool-1 - Shutdown initiated...
+23:45:56.214 [main] INFO com.zaxxer.hikari.HikariDataSource -- HikariPool-1 - Shutdown completed.
+
+# 출처: $SP/qa/lanes/repro31/04-concurrent-synth-250.log (전체)
+WARNING: A terminally deprecated method in sun.misc.Unsafe has been called
+WARNING: sun.misc.Unsafe::objectFieldOffset has been called by com.google.common.util.concurrent.AbstractFuture$UnsafeAtomicHelper (file:/usr/share/maven/lib/guava.jar)
+WARNING: Please consider reporting this to the maintainers of class com.google.common.util.concurrent.AbstractFuture$UnsafeAtomicHelper
+WARNING: sun.misc.Unsafe::objectFieldOffset will be removed in a future release
+23:45:58.852 [main] INFO com.zaxxer.hikari.HikariDataSource -- HikariPool-1 - Starting...
+23:45:58.981 [main] INFO com.zaxxer.hikari.pool.HikariPool -- HikariPool-1 - Added connection org.postgresql.jdbc.PgConnection@62d0ac62
+23:45:58.982 [main] INFO com.zaxxer.hikari.HikariDataSource -- HikariPool-1 - Start completed.
+REPRO31-C mode=synth rows=250 maxHeapMiB=694 baselineUsedMiB=14
+REPRO31-C k=5 oom=false completed=25 p50Ms=310
+REPRO31-C k=8 oom=false completed=40 p50Ms=380
+REPRO31-C k=10 oom=false completed=50 p50Ms=473
+REPRO31-C k=12 oom=false completed=60 p50Ms=659
+REPRO31-C k=15 oom=false completed=75 p50Ms=891
+REPRO31-C k=20 oom=true completed=22 p50Ms=4363
+23:46:21.606 [main] INFO com.zaxxer.hikari.HikariDataSource -- HikariPool-1 - Shutdown initiated...
+23:46:21.611 [main] INFO com.zaxxer.hikari.HikariDataSource -- HikariPool-1 - Shutdown completed.
+
+# 출처: $SP/qa/lanes/performance/ev/stageB-stmtcount.txt (전체) — 성능 영역 — 요청 하나의 문장 수
+/api/paper/books/claude2/execution?limit=50 | http 200 4598 0.345411 | 문장 259개 · DB 합 104.0ms · 모양 10개 · 가장 많이 반복 250회
+    x250 execute S_28: SELECT id, book_code, as_of_trading_date, kind, decided_at, status, model, framework_version, settings_version, selection_as_of, target_exposure_pct, COALESCE(packet_text, packet::text) 
+/api/paper/books/claude/execution?limit=50 | http 200 3412 0.062534 | 문장 8개 · DB 합 19.5ms · 모양 8개 · 가장 많이 반복 1회
+/api/paper/overview | http 200 4667 0.068436 | 문장 48개 · DB 합 48.1ms · 모양 21개 · 가장 많이 반복 10회
+    x10 execute S_9: SELECT book_code, cash, nav, equity_value, exposure_pct, last_observed_at, last_processed_collected_at, last_nav_trading_date, updated_at FROM paper_book_state WHERE book_code = $N
+    x10 execute S_10: SELECT book_code, ticker, qty, avg_cost, opened_on, opened_at, high_watermark, watermark_at, last_price, last_price_at, price_stale, fill_ref_date, fill_ref_close, split_note FROM paper_
+    x5 execute S_12: SELECT book_code, trading_date, nav, cash, equity_value, exposure_pct, prices_final FROM paper_nav_daily WHERE book_code = $N ORDER BY trading_date
+/api/paper/decisions?book=claude&limit=500 | http 200 5800 0.049092 | 문장 3개 · DB 합 44.3ms · 모양 3개 · 가장 많이 반복 1회
+
+# 출처: $SP/qa/lanes/performance/ev/26-n1-sql.txt (전체) — 같은 데이터를 한 번에 읽을 때
+Timing is on.
+                                             QUERY PLAN                                             
+----------------------------------------------------------------------------------------------------
+ Index Scan using paper_decisions_pkey on paper_decisions (actual time=0.061..0.062 rows=1 loops=1)
+   Index Cond: (id = 900301)
+   Buffers: shared hit=6
+ Planning:
+   Buffers: shared hit=215
+ Planning Time: 1.579 ms
+ Execution Time: 0.168 ms
+(7 rows)
+
+Time: 3.045 ms
+Time: 67.616 ms
+Time: 1.604 ms
+  n  | bytes_full 
+-----+------------
+ 250 | 11 MB
+(1 row)
+
+Time: 35.527 ms
+
+# 출처: $SP/qa/lanes/performance/ev/30-oom-log.txt (전체) — QA 백엔드 메모리 부족 로그
+Terminating due to java.lang.OutOfMemoryError: Java heap space
+
+  .   ____          _            __ _ _
+
+# 출처: $SP/qa/lanes/performance/ev/k6-runs.log (전체) — k6 실행 목록
+label=vu1 vus=1 dur=60s image=grafana/k6:2.3.0 rc=0 start=1793800344 end=1793800406
+label=vu5 vus=5 dur=60s image=grafana/k6:2.3.0 rc=0 start=1793800417 end=1793800478
+label=vu20 vus=20 dur=60s image=grafana/k6:2.3.0 rc=0 start=1793800488 end=1793800549
+label=vu50 vus=50 dur=60s image=grafana/k6:2.3.0 rc=0 start=1793800560 end=1793800622
+label=exec-claude2-vu5 vus=5 dur=30s image=grafana/k6:2.3.0 rc=0 start=1793801074 end=1793801105
+label=overview-stageC-vu5 vus=5 dur=30s image=grafana/k6:2.3.0 rc=0 start=1793801108 end=1793801139
+label=exec-claude2-l500-vu20 vus=20 dur=30s image=grafana/k6:2.3.0 rc=0 start=1793801155 end=1793801193
+label=exec-claude2-l1-vu10 vus=10 dur=30s image=grafana/k6:2.3.0 rc=0 start=1793801244 end=1793801275
+label=exec-claude2-l50-vu20 vus=20 dur=30s image=grafana/k6:2.3.0 rc=0 start=1793801286 end=1793801324
+label=exec-claude-l50-vu20 vus=20 dur=30s image=grafana/k6:2.3.0 rc=0 start=1793801365 end=1793801396
+label=exec-claude2-l1-vu15 vus=15 dur=30s image=grafana/k6:2.3.0 rc=0 start=1793801408 end=1793801446
+label=exec-claude2-cp500-l1-vu5 vus=5 dur=30s image=grafana/k6:2.3.0 rc=0 start=1793801484 end=1793801515
+label=exec-claude2-cp500-l1-vu8 vus=8 dur=30s image=grafana/k6:2.3.0 rc=0 start=1793801524 end=1793801559

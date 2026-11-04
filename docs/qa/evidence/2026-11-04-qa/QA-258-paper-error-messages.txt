@@ -1,0 +1,54 @@
+# 출처: $SP/qa/lanes/repro1/paper-msg-summary.txt (전체)
+후보: 없는 계좌·초기화 안내 문구가 미국 4계좌 시절 그대로 (영역 paper) — 재현자 repro1, 커밋 49a7d62b
+QA DB paper_books: bench_mix/bench_spy/claude/rules(US ACTIVE), claude2(US NOT_STARTED), 한국 계좌 없음, KR dormantReason=KR_START_MISSING
+재현(paper-msg-repro.log):
+- GET books/kr_rules/positions, claude3/nav, kr_claude/nav, kr_claude/execution, POST books/kr_rules/reset, books/nope/status -> 400 '없는 계좌입니다: … (rules · claude · bench_spy · bench_mix)'
+- POST run/kr-claude2-start {"confirm":"kr_claude2"} -> 400 'Claude 계좌가 없습니다 — 먼저 초기화(POST /api/paper/init)를 누르세요.'
+- 대조: POST run/decision?market=KR, run/initial-decision?market=KR, reviews/run?market=KR -> 400 KR_START_MISSING 사유(올바른 안내)
+원인 위치 확인: PaperAdminService.java:544, PaperQueryService.java:1623, ClaudeBookService.java:1916(호출 1446 startKrClaude2 — dormant 검사 없음)
+POST /api/paper/init 은 market 없으면 US(PaperController.java:112-130)
+same_pattern 좁힘: RuleBookService:1373(US rules)·PaperDecisionJob:1612(US claude2, US init이 PaperBooks.ALL로 만듦)·PaperReviewJob:384(KR은 dormantReason이 먼저 막음)은 미국 안내로 맞음
+추가 같은 패턴(주석): frontend/src/lib/endpoints.ts:187 코드 목록에 claude2·kr_claude2 없음
+docs/API.md:244 는 claude2·kr_* 다섯을 유효 코드로 적음 — 문구가 문서와 어긋남
+
+# 출처: $SP/qa/lanes/repro1/paper-msg-repro.log (전체)
+### /api/paper/books/kr_rules/positions -w \n[HTTP %{http_code}]\n
+{"error":"bad_request","message":"없는 계좌입니다: kr_rules (rules · claude · bench_spy · bench_mix)"}
+[HTTP 400]
+
+### /api/paper/books/claude3/nav -w \n[HTTP %{http_code}]\n
+{"error":"bad_request","message":"없는 계좌입니다: claude3 (rules · claude · bench_spy · bench_mix)"}
+[HTTP 400]
+
+### /api/paper/books/kr_claude/nav -w \n[HTTP %{http_code}]\n
+{"error":"bad_request","message":"없는 계좌입니다: kr_claude (rules · claude · bench_spy · bench_mix)"}
+[HTTP 400]
+
+### /api/paper/books/kr_rules/reset -X POST -H Content-Type: application/json -H Origin: http://localhost:13002 -w \n[HTTP %{http_code}]\n --data {"confirm":"kr_rules"}
+{"error":"bad_request","message":"없는 계좌입니다: kr_rules (rules · claude · bench_spy · bench_mix)"}
+[HTTP 400]
+
+### /api/paper/books/nope/status -X POST -H Content-Type: application/json -H Origin: http://localhost:13002 -w \n[HTTP %{http_code}]\n --data {"status":"PAUSED"}
+{"error":"bad_request","message":"없는 계좌입니다: nope (rules · claude · bench_spy · bench_mix)"}
+[HTTP 400]
+
+### /api/paper/run/kr-claude2-start -X POST -H Content-Type: application/json -H Origin: http://localhost:13002 -w \n[HTTP %{http_code}]\n --data {"confirm":"kr_claude2"}
+{"error":"bad_request","message":"Claude 계좌가 없습니다 — 먼저 초기화(POST /api/paper/init)를 누르세요."}
+[HTTP 400]
+
+### /api/paper/reviews/run?market=KR -X POST -H Content-Type: application/json -H Origin: http://localhost:13002 -w \n[HTTP %{http_code}]\n --data {}
+{"error":"bad_request","message":"한국 책 출발일(dashboard.paper.kr.start-date — .env PAPER_KR_START_DATE)이 비어 있어 한국 초기화·출발을 하지 않습니다"}
+[HTTP 400]
+
+### /api/paper/run/decision?market=KR -X POST -H Content-Type: application/json -H Origin: http://localhost:13002 -w \n[HTTP %{http_code}]\n --data {"book":"kr_claude"}
+{"error":"bad_request","message":"한국 책 출발일(dashboard.paper.kr.start-date — .env PAPER_KR_START_DATE)이 비어 있어 한국 초기화·출발을 하지 않습니다"}
+[HTTP 400]
+
+### /api/paper/run/initial-decision?market=KR -X POST -H Content-Type: application/json -H Origin: http://localhost:13002 -w \n[HTTP %{http_code}]\n
+{"error":"bad_request","message":"한국 책 출발일(dashboard.paper.kr.start-date — .env PAPER_KR_START_DATE)이 비어 있어 한국 초기화·출발을 하지 않습니다"}
+[HTTP 400]
+
+### /api/paper/books/kr_claude/execution -w \n[HTTP %{http_code}]\n
+{"error":"bad_request","message":"없는 계좌입니다: kr_claude (rules · claude · bench_spy · bench_mix)"}
+[HTTP 400]
+

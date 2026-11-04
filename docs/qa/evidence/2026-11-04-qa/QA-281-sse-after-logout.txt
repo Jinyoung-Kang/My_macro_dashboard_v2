@@ -1,0 +1,44 @@
+# 출처: $SP/qa/lanes/repro30/00-summary.txt (전체)
+# repro30 — 후보 "로그아웃 뒤에도 열린 실시간 시세 SSE가 계속 이벤트를 받음" 독립 재현 (커밋 49a7d62b, QA 스택 18082, 2026-11-04 23:39~23:45 KST)
+판정: 재현됨, S4 유지.
+- 01-sse-after-logout.txt: 로그인 → stream(KR:005930, interval=5) 200 → +5.1s 로그아웃 200(DB revoked_at 기록 — 02) → 같은 쿠키로 /api/auth/session authenticated:false,
+  GET /api/live/prices 401, 새 stream 401. 그런데 이미 열린 연결은 25초마다 keepalive, +304.1s에 새 fetchedAt(14:44:13Z)의 prices 이벤트(로그아웃 뒤 수집기 새 호출),
+  +366.1s 서버가 닫음(SseEmitter 시한 305s보다 약 61초 늦음 — 원인 미확인).
+- 02-db-session-revoked.txt: user_sessions 23:39:09 생성, 23:39:14 revoked.
+- 원인(코드): WebConfig.java SessionFilter.doFilterInternal(:284 resolve)가 요청 시작 때 한 번만 확인. LivePriceService.java:146 SseEmitter(주기+STREAM_SLACK), Stream(:199)은 세션을 모름.
+  세션 취소 경로 AuthService.java:439(logout)·:444(logout-all)·:488(비밀번호 변경)·AccountService.java:194(재설정) 어디도 열린 구독을 닫지 않음.
+- 같은 패턴: 오래 사는 응답은 LivePriceService의 SseEmitter 하나뿐(ResponseBodyEmitter·StreamingResponseBody·DeferredResult 없음).
+- 실행 안 함: logout-all·비밀번호 변경(공용 QA 운영자 계정의 다른 에이전트 세션을 끊으므로) — 코드로만 확인.
+
+# 출처: $SP/qa/lanes/repro30/01-sse-after-logout.txt (전체)
+## 2026-11-04 23:39:09 KST QA 스택 18082 — 로그인 쿠키로 SSE(KR:005930, 5초) 연 뒤 5초에 로그아웃 → 같은 연결을 최대 420초 읽음
+23:39:09 +    0.1s login: 200 cookie=my_macro_v2_session=<가림>
+23:39:09 +    0.1s session before: 200 {"authenticated":true,"mailAvailable":false,"noLogin":false,
+23:39:11 +    2.1s [stream] HTTP 200 text/event-stream
+23:39:11 +    2.1s [stream] event prices available=True items=[] missing=['KR:005930'] fetchedAt=2026-11-04T14:39:11.170864Z
+23:39:14 +    5.1s logout: 200 set-cookie-expires=True
+23:39:14 +    5.1s session after: 200 {"authenticated":false,"mailAvailable":false,"noLogin":false
+23:39:14 +    5.1s GET /api/live/prices (same cookie) after logout: 401 {"error":"unauthorized","message":"로그인이 필요합니다."}
+23:39:14 +    5.1s new stream (same cookie) after logout: 401 {"error":"unauthorized","message":"로그인이 필요합니다."}
+23:39:34 +   25.1s [stream] comment :keepalive
+23:39:59 +   50.1s [stream] comment :keepalive
+23:40:24 +   75.1s [stream] comment :keepalive
+23:40:49 +  100.6s [stream] comment :keepalive
+23:41:14 +  125.1s [stream] comment :keepalive
+23:41:39 +  150.1s [stream] comment :keepalive
+23:42:04 +  175.1s [stream] comment :keepalive
+23:42:29 +  200.1s [stream] comment :keepalive
+23:42:54 +  225.1s [stream] comment :keepalive
+23:43:19 +  250.1s [stream] comment :keepalive
+23:43:44 +  275.1s [stream] comment :keepalive
+23:44:09 +  300.1s [stream] comment :keepalive
+23:44:13 +  304.1s [stream] event prices available=True items=[] missing=['KR:005930'] fetchedAt=2026-11-04T14:44:13.169821Z
+23:45:15 +  366.1s [stream] EOF (server closed)
+23:45:15 +  366.1s done
+
+# 출처: $SP/qa/lanes/repro30/02-db-session-revoked.txt (전체)
+ created_kst | revoked_kst 
+-------------+-------------
+ 23:39:09    | 23:39:14
+(1 row)
+

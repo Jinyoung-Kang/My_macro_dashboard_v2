@@ -1,0 +1,191 @@
+# 출처: $SP/qa/lanes/security/SUMMARY.txt (전체)
+보안 영역(QA 4차) 증거 색인 — 2026-11-04 20:25~20:50 KST, 대상 QA 스택(18082·13002·18002)·운영 읽기 GET 3경로
+auth/matrix.py, matrix-result.md   경로 129 × 신원 4(비로그인·회원 FREE·유료 PRO·운영자) + HEAD 32 — 접근 정책 실패 0, 운영자 POST /api/admin/users/{id} {} → 500(NPE)
+auth/path-variants.txt              경로 변형(끝 /, 대소문자, %6F, ./, .., ;) — 우회 0
+auth/cookie-logout.txt              쿠키 속성·로그아웃·logout-all 무효화
+auth/body-caps.txt                  로그인 전 4KB·로그인 뒤 4MB(길이·chunked), 인증 없는 10MB → 401
+auth/json-malformed.txt             깊은 중첩·큰 수·NUL·깨진 UTF-8·XML(XXE)·form → 400/415
+auth/cors-origin.txt, auth-probe-lane.txt (실패 0), idor-alerts.txt, collector-probe.txt
+unit/QaSecurityLaneTest.java, result.txt  Tailscale 신원·로컬 무로그인 갈래 12 통과, AdminService null 2 실패(NPE 재현)
+fuzz/fuzz-lane.py, routes-lane.json, missing-params.txt, fuzz-results.jsonl, fuzz-summary.md   1522건 5xx 0·10초 초과 0
+fuzz/nul-sweep.py, nul-sweep-2.jsonl  NUL·깨진 UTF-8 → 500 (깨진 UTF-8: 문자열 쿼리 경로 35/35, NUL: 6 파라미터)
+prod/connect.txt, headers.txt, tls.txt, identity-header.txt   운영 GET 3경로(머리글·TLS·CORS) — 도메인은 <tailnet>
+gitleaks/*.json, envscan.py, author-emails.txt   이력 1796커밋 누출 0, .env 실제 값 이력·빌드 산출물·로그 0
+deps/npm-audit-*.json, pip-audit.txt, maven-advisories.txt, otel-*, eol/*.json   의존성·EOL
+trivy/*.json                        이미지 5개 HIGH·CRITICAL
+logs/*-after.log                    QA 로그(이메일·토큰·비밀값 0)
+QA DB에 만든 것: users <메일 가림>(FREE)<메일 가림>(PRO) — 비밀번호는 secret/accounts.env(600)
+
+# 출처: $SP/qa/lanes/security/fuzz/fuzz-summary.md (앞 80줄)
+# fuzz-api 결과 — 요청 1522건, 표시 113건
+
+| 경로 | 파라미터 | 값 | 상태 | ms | 표시 | 응답 앞부분 |
+|---|---|---|---|---|---|---|
+| GET /api/macro/fx | ids | `005930,005930,005930,005930,005930,005930,005930,005930,0059` | 400 | 7 | 오류 형식 불일치(JSON 아님) | <!doctype html><html lang="en"><head><title>HTTP Status 400 – Bad Request</title><style type="text/css">body {font-famil |
+| GET /api/macro/fred/{seriesId} | years | `-1` | 200 | 4 | 비정상 숫자를 200으로 받음 | {"seriesId":"DGS10","available":true,"collectedAtKst":"2026-11-04 19:34 KST","ageSeconds":3790,"points":[{"date":"2016-0 |
+| GET /api/macro/fred/{seriesId} | years | `-2147483648` | 200 | 4 | 비정상 숫자를 200으로 받음 | {"seriesId":"DGS10","available":true,"collectedAtKst":"2026-11-04 19:34 KST","ageSeconds":3790,"points":[{"date":"2016-0 |
+| GET /api/macro/fred/{seriesId} | seriesId | `../../../etc/passwd` | 400 | 1 | 오류 형식 불일치(JSON 아님) | <!doctype html><html lang="en"><head><title>HTTP Status 400 – Bad Request</title><style type="text/css">body {font-famil |
+| GET /api/macro/fred/{seriesId} | seriesId | `<script>alert(1)</script>` | 400 | 2 | 오류 형식 불일치(JSON 아님) | <!doctype html><html lang="en"><head><title>HTTP Status 400 – Bad Request</title><style type="text/css">body {font-famil |
+| GET /api/macro/fred/{seriesId} | seriesId | `${jndi:ldap://x}` | 400 | 1 | 오류 형식 불일치(JSON 아님) | <!doctype html><html lang="en"><head><title>HTTP Status 400 – Bad Request</title><style type="text/css">body {font-famil |
+| GET /api/macro/fred/{seriesId} | seriesId | `\` | 400 | 1 | 오류 형식 불일치(JSON 아님) | <!doctype html><html lang="en"><head><title>HTTP Status 400 – Bad Request</title><style type="text/css">body {font-famil |
+| GET /api/liquidity | years | `-1` | 200 | 5 | 비정상 숫자를 200으로 받음 | {"available":true,"isEstimated":false,"collectedAtKst":"2026-11-04 19:34 KST","ageSeconds":3776,"stale":false,"rows":[{" |
+| GET /api/liquidity | years | `-2147483648` | 200 | 5 | 비정상 숫자를 200으로 받음 | {"available":true,"isEstimated":false,"collectedAtKst":"2026-11-04 19:34 KST","ageSeconds":3776,"stale":false,"rows":[{" |
+| GET /api/sec13f/portfolio | quarters | `-1` | 200 | 6 | 비정상 숫자를 200으로 받음 | {"cik":"0001608046","quartersRequested":-1,"quartersUsed":1,"available":true,"collectedAtKst":"2026-11-04 19:34 KST","ag |
+| GET /api/sec13f/portfolio | quarters | `-2147483648` | 200 | 5 | 비정상 숫자를 200으로 받음 | {"cik":"0001608046","quartersRequested":-2147483648,"quartersUsed":1,"available":true,"collectedAtKst":"2026-11-04 19:34 |
+| GET /api/sec13f/portfolio | topN | `-1` | 200 | 15 | 비정상 숫자를 200으로 받음 | {"cik":"0001608046","quartersRequested":8,"quartersUsed":8,"available":true,"collectedAtKst":"2026-11-04 19:34 KST","age |
+| GET /api/sec13f/portfolio | topN | `-2147483648` | 200 | 10 | 비정상 숫자를 200으로 받음 | {"cik":"0001608046","quartersRequested":8,"quartersUsed":8,"available":true,"collectedAtKst":"2026-11-04 19:34 KST","age |
+| GET /api/sec13f/consensus | ciks | `005930,005930,005930,005930,005930,005930,005930,005930,0059` | 400 | 1 | 오류 형식 불일치(JSON 아님) | <!doctype html><html lang="en"><head><title>HTTP Status 400 – Bad Request</title><style type="text/css">body {font-famil |
+| GET /api/sec13f/consensus | reportDate | `9999-99-99` | 200 | 3 | 비정상 날짜를 200으로 받음 | {"participants":[],"participantCount":0,"availableDates":["2026-06-30","2026-03-31","2025-12-31","2025-09-30","2025-06-3 |
+| GET /api/sec13f/consensus | reportDate | `2026-02-30` | 200 | 3 | 비정상 날짜를 200으로 받음 | {"participants":[],"participantCount":0,"availableDates":["2026-06-30","2026-03-31","2025-12-31","2025-09-30","2025-06-3 |
+| GET /api/sec13f/consensus | reportDate | `now` | 200 | 4 | 비정상 날짜를 200으로 받음 | {"participants":[],"participantCount":0,"availableDates":["2026-06-30","2026-03-31","2025-12-31","2025-09-30","2025-06-3 |
+| GET /api/sec13f/consensus | reportDate | `2026-13-01` | 200 | 3 | 비정상 날짜를 200으로 받음 | {"participants":[],"participantCount":0,"availableDates":["2026-06-30","2026-03-31","2025-12-31","2025-09-30","2025-06-3 |
+| GET /api/sec13f/consensus | reportDate | `' OR 1=1` | 200 | 3 | 비정상 날짜를 200으로 받음 | {"participants":[],"participantCount":0,"availableDates":["2026-06-30","2026-03-31","2025-12-31","2025-09-30","2025-06-3 |
+| GET /api/sec13f/consensus | minHolders | `-1` | 200 | 4 | 비정상 숫자를 200으로 받음 | {"participants":["<U+1F1F0><U+1F1F7> 국민연금 (National Pension Service)","<U+1F1F3><U+1F1F4> 노르웨이 국부펀드 (Norges Bank / GPFG)"],"participantCount":2,"availab |
+| GET /api/sec13f/consensus | minHolders | `-2147483648` | 200 | 5 | 비정상 숫자를 200으로 받음 | {"participants":["<U+1F1F0><U+1F1F7> 국민연금 (National Pension Service)","<U+1F1F3><U+1F1F4> 노르웨이 국부펀드 (Norges Bank / GPFG)"],"participantCount":2,"availab |
+| GET /api/sec13f/new-buys | ciks | `005930,005930,005930,005930,005930,005930,005930,005930,0059` | 400 | 2 | 오류 형식 불일치(JSON 아님) | <!doctype html><html lang="en"><head><title>HTTP Status 400 – Bad Request</title><style type="text/css">body {font-famil |
+| GET /api/sec13f/new-buys | reportDate | `9999-99-99` | 200 | 4 | 비정상 날짜를 200으로 받음 | {"participants":[],"participantCount":0,"availableDates":["2026-06-30","2026-03-31","2025-12-31","2025-09-30","2025-06-3 |
+| GET /api/sec13f/new-buys | reportDate | `2026-02-30` | 200 | 3 | 비정상 날짜를 200으로 받음 | {"participants":[],"participantCount":0,"availableDates":["2026-06-30","2026-03-31","2025-12-31","2025-09-30","2025-06-3 |
+| GET /api/sec13f/new-buys | reportDate | `now` | 200 | 3 | 비정상 날짜를 200으로 받음 | {"participants":[],"participantCount":0,"availableDates":["2026-06-30","2026-03-31","2025-12-31","2025-09-30","2025-06-3 |
+| GET /api/sec13f/new-buys | reportDate | `2026-13-01` | 200 | 3 | 비정상 날짜를 200으로 받음 | {"participants":[],"participantCount":0,"availableDates":["2026-06-30","2026-03-31","2025-12-31","2025-09-30","2025-06-3 |
+| GET /api/sec13f/new-buys | reportDate | `' OR 1=1` | 200 | 3 | 비정상 날짜를 200으로 받음 | {"participants":[],"participantCount":0,"availableDates":["2026-06-30","2026-03-31","2025-12-31","2025-09-30","2025-06-3 |
+| GET /api/sec13f/new-buys | minHolders | `-1` | 200 | 4 | 비정상 숫자를 200으로 받음 | {"participants":["<U+1F1F0><U+1F1F7> 국민연금 (National Pension Service)"],"participantCount":1,"availableDates":["2026-06-30","2026-03-31", |
+| GET /api/sec13f/new-buys | minHolders | `-2147483648` | 200 | 4 | 비정상 숫자를 200으로 받음 | {"participants":["<U+1F1F0><U+1F1F7> 국민연금 (National Pension Service)"],"participantCount":1,"availableDates":["2026-06-30","2026-03-31", |
+| GET /api/guru/risk | years | `-1` | 200 | 30 | 비정상 숫자를 200으로 받음 | {"cik":"0001608046","benchmark":"SPY","years":1,"institution":{"desc":"글로벌 자산배분 및 미국 대형 우량주 중심 장기 투자","name":"<U+1F1F0><U+1F1F7> 국민연금 (N |
+| GET /api/guru/risk | years | `-2147483648` | 200 | 36 | 비정상 숫자를 200으로 받음 | {"cik":"0001608046","benchmark":"SPY","years":1,"institution":{"desc":"글로벌 자산배분 및 미국 대형 우량주 중심 장기 투자","name":"<U+1F1F0><U+1F1F7> 국민연금 (N |
+| GET /api/stock/scorecard | symbol | `' OR '1'='1` | 200 | 4 | 내부 정보 노출 의심 | {"symbol":"' OR '1'='1","benchmark":"SPY","years":3,"universeLabel":"13F 매핑 대형주","missing":["재무 안정성 (부채비율·이자보상배율)","성장성  |
+| GET /api/stock/scorecard | symbol | `"; DROP TABLE snapshots; --` | 200 | 3 | 내부 정보 노출 의심 | {"symbol":"\"; DROP TABLE snapshots; --","benchmark":"SPY","years":3,"universeLabel":"13F 매핑 대형주","missing":["재무 안정성 (부채 |
+| GET /api/stock/scorecard | symbol | `../../../etc/passwd` | 200 | 3 | 내부 정보 노출 의심 | {"symbol":"../../../etc/passwd","benchmark":"SPY","years":3,"universeLabel":"13F 매핑 대형주","missing":["재무 안정성 (부채비율·이자보상배율 |
+| GET /api/stock/scorecard | symbol | `%00` | 200 | 3 | 내부 정보 노출 의심 | {"symbol":"%00","benchmark":"SPY","years":3,"universeLabel":"13F 매핑 대형주","missing":["재무 안정성 (부채비율·이자보상배율)","성장성 (매출·이익 증 |
+| GET /api/stock/scorecard | symbol | `<script>alert(1)</script>` | 200 | 3 | 내부 정보 노출 의심 | {"symbol":"<script>alert(1)</script>","benchmark":"SPY","years":3,"universeLabel":"13F 매핑 대형주","missing":["재무 안정성 (부채비율· |
+| GET /api/stock/scorecard | symbol | `{{7*7}}` | 200 | 3 | 내부 정보 노출 의심 | {"symbol":"{{7*7}}","benchmark":"SPY","years":3,"universeLabel":"13F 매핑 대형주","missing":["재무 안정성 (부채비율·이자보상배율)","성장성 (매출· |
+| GET /api/stock/scorecard | symbol | `${jndi:ldap://x}` | 200 | 3 | 내부 정보 노출 의심 | {"symbol":"${jndi:ldap://x}","benchmark":"SPY","years":3,"universeLabel":"13F 매핑 대형주","missing":["재무 안정성 (부채비율·이자보상배율)", |
+| GET /api/stock/scorecard | symbol | `삼성전자` | 200 | 2 | 내부 정보 노출 의심 | {"symbol":"삼성전자","benchmark":"SPY","years":3,"universeLabel":"13F 매핑 대형주","missing":["재무 안정성 (부채비율·이자보상배율)","성장성 (매출·이익  |
+| GET /api/stock/scorecard | symbol | `%` | 200 | 3 | 내부 정보 노출 의심 | {"symbol":"%","benchmark":"SPY","years":3,"universeLabel":"13F 매핑 대형주","missing":["재무 안정성 (부채비율·이자보상배율)","성장성 (매출·이익 증가율 |
+| GET /api/stock/scorecard | symbol | `_` | 200 | 2 | 내부 정보 노출 의심 | {"symbol":"_","benchmark":"SPY","years":3,"universeLabel":"13F 매핑 대형주","missing":["재무 안정성 (부채비율·이자보상배율)","성장성 (매출·이익 증가율 |
+| GET /api/stock/scorecard | symbol | `\` | 200 | 3 | 내부 정보 노출 의심 | {"symbol":"\\","benchmark":"SPY","years":3,"universeLabel":"13F 매핑 대형주","missing":["재무 안정성 (부채비율·이자보상배율)","성장성 (매출·이익 증가 |
+| GET /api/stock/scorecard | symbol | `' UNION SELECT NULL--` | 200 | 3 | 내부 정보 노출 의심 | {"symbol":"' UNION SELECT NULL--","benchmark":"SPY","years":3,"universeLabel":"13F 매핑 대형주","missing":["재무 안정성 (부채비율·이자보상 |
+| GET /api/stock/scorecard | symbol | `` | 200 | 3 | 내부 정보 노출 의심 | {"symbol":"","benchmark":"SPY","years":3,"universeLabel":"13F 매핑 대형주","missing":["재무 안정성 (부채비율·이자보상배율)","성장성 (매출·이익 증가율) |
+| GET /api/stock/scorecard | symbol | `AAPL
+X-Injected: 1` | 200 | 3 | 내부 정보 노출 의심 | {"symbol":"AAPL\r\nX-Injected: 1","benchmark":"SPY","years":3,"universeLabel":"13F 매핑 대형주","missing":["재무 안정성 (부채비율·이자보상 |
+| GET /api/stock/scorecard | symbol | `<U+1F642>` | 200 | 2 | 내부 정보 노출 의심 | {"symbol":"<U+1F642>","benchmark":"SPY","years":3,"universeLabel":"13F 매핑 대형주","missing":["재무 안정성 (부채비율·이자보상배율)","성장성 (매출·이익 증가율 |
+| GET /api/stock/scorecard | symbol | `DGS10;ls` | 200 | 2 | 내부 정보 노출 의심 | {"symbol":"DGS10;ls","benchmark":"SPY","years":3,"universeLabel":"13F 매핑 대형주","missing":["재무 안정성 (부채비율·이자보상배율)","성장성 (매출 |
+| GET /api/stock/scorecard | years | `-1` | 200 | 40 | 비정상 숫자를 200으로 받음 | {"symbol":"AAPL","benchmark":"SPY","years":1,"universeLabel":"13F 매핑 대형주","missing":["재무 안정성 (부채비율·이자보상배율)","성장성 (매출·이익  |
+| GET /api/stock/scorecard | years | `-2147483648` | 200 | 39 | 비정상 숫자를 200으로 받음 | {"symbol":"AAPL","benchmark":"SPY","years":1,"universeLabel":"13F 매핑 대형주","missing":["재무 안정성 (부채비율·이자보상배율)","성장성 (매출·이익  |
+| GET /api/krx/futures | days | `-1` | 200 | 3 | 비정상 숫자를 200으로 받음 | {"available":true,"isEstimated":false,"collectedAtKst":"2026-11-04 19:35 KST","ageSeconds":3748,"stale":false,"rows":[{" |
+| GET /api/krx/futures | days | `-2147483648` | 200 | 2 | 비정상 숫자를 200으로 받음 | {"available":true,"isEstimated":false,"collectedAtKst":"2026-11-04 19:35 KST","ageSeconds":3748,"stale":false,"rows":[{" |
+| GET /api/krx/intraday | minutes | `-1` | 200 | 3 | 비정상 숫자를 200으로 받음 | {"available":false,"message":"수집기에서 장중 수급을 받지 못했습니다."} |
+| GET /api/krx/intraday | minutes | `-2147483648` | 200 | 4 | 비정상 숫자를 200으로 받음 | {"available":false,"message":"수집기에서 장중 수급을 받지 못했습니다."} |
+| GET /api/radar/ranking | topN | `-1` | 200 | 3 | 비정상 숫자를 200으로 받음 | {"market":"KOSPI","investor":"외국인","tradeType":"순매수","intervalType":"TODAY","readMode":"auto","available":false,"rows":[ |
+| GET /api/radar/ranking | topN | `-2147483648` | 200 | 6 | 비정상 숫자를 200으로 받음 | {"market":"KOSPI","investor":"외국인","tradeType":"순매수","intervalType":"TODAY","readMode":"auto","available":false,"rows":[ |
+| GET /api/radar/ranking | targetDate | `9999-99-99` | 200 | 5 | 비정상 날짜를 200으로 받음 | {"market":"KOSPI","investor":"외국인","tradeType":"순매수","intervalType":"TODAY","readMode":"auto","available":false,"rows":[ |
+| GET /api/radar/ranking | targetDate | `2026-02-30` | 200 | 4 | 비정상 날짜를 200으로 받음 | {"market":"KOSPI","investor":"외국인","tradeType":"순매수","intervalType":"TODAY","readMode":"auto","available":false,"rows":[ |
+| GET /api/radar/ranking | targetDate | `now` | 200 | 4 | 비정상 날짜를 200으로 받음 | {"market":"KOSPI","investor":"외국인","tradeType":"순매수","intervalType":"TODAY","readMode":"auto","available":false,"rows":[ |
+| GET /api/radar/ranking | targetDate | `2026-13-01` | 200 | 4 | 비정상 날짜를 200으로 받음 | {"market":"KOSPI","investor":"외국인","tradeType":"순매수","intervalType":"TODAY","readMode":"auto","available":false,"rows":[ |
+| GET /api/radar/ranking | targetDate | `' OR 1=1` | 200 | 5 | 비정상 날짜를 200으로 받음 | {"market":"KOSPI","investor":"외국인","tradeType":"순매수","intervalType":"TODAY","readMode":"auto","available":false,"rows":[ |
+| GET /api/radar/consensus | topN | `-1` | 200 | 5 | 비정상 숫자를 200으로 받음 | {"market":"KOSPI","tradeType":"순매수","intervalType":"TODAY","topN":-1,"available":false,"rows":[],"message":"외국인·기관 수급을 받 |
+| GET /api/radar/consensus | topN | `-2147483648` | 200 | 6 | 비정상 숫자를 200으로 받음 | {"market":"KOSPI","tradeType":"순매수","intervalType":"TODAY","topN":-2147483648,"available":false,"rows":[],"message":"외국인 |
+| GET /api/kr/fundamentals | codes | `005930,005930,005930,005930,005930,005930,005930,005930,0059` | 400 | 1 | 오류 형식 불일치(JSON 아님) | <!doctype html><html lang="en"><head><title>HTTP Status 400 – Bad Request</title><style type="text/css">body {font-famil |
+| GET /api/kr/market-totals | days | `-1` | 200 | 5 | 비정상 숫자를 200으로 받음 | {"collectedAtKst":"2026-11-04 11:13 KST","ageSeconds":33911,"available":true,"source":"금융위원회 주식시세정보 (거래소 확정치, 기준일 다음 영업일 |
+| GET /api/kr/market-totals | days | `-2147483648` | 200 | 4 | 비정상 숫자를 200으로 받음 | {"collectedAtKst":"2026-11-04 11:13 KST","ageSeconds":33911,"available":true,"source":"금융위원회 주식시세정보 (거래소 확정치, 기준일 다음 영업일 |
+| GET /api/kr/stock-flows | codes | `005930,005930,005930,005930,005930,005930,005930,005930,0059` | 400 | 1 | 오류 형식 불일치(JSON 아님) | <!doctype html><html lang="en"><head><title>HTTP Status 400 – Bad Request</title><style type="text/css">body {font-famil |
+| GET /api/status/history | limit | `-1` | 200 | 5 | 비정상 숫자를 200으로 받음 | {"history":[{"task":"fsc_prices","speed":"slow","status":"ok","startedAt":"2026-11-04T11:38:22.439802+00:00","durationMs |
+| GET /api/status/history | limit | `-2147483648` | 200 | 5 | 비정상 숫자를 200으로 받음 | {"history":[{"task":"fsc_prices","speed":"slow","status":"ok","startedAt":"2026-11-04T11:38:22.439802+00:00","durationMs |
+| POST /api/status/run/{taskName} | taskName | `../../../etc/passwd` | 400 | 2 | 오류 형식 불일치(JSON 아님) | <!doctype html><html lang="en"><head><title>HTTP Status 400 – Bad Request</title><style type="text/css">body {font-famil |
+| POST /api/status/run/{taskName} | taskName | `<script>alert(1)</script>` | 400 | 1 | 오류 형식 불일치(JSON 아님) | <!doctype html><html lang="en"><head><title>HTTP Status 400 – Bad Request</title><style type="text/css">body {font-famil |
+| POST /api/status/run/{taskName} | taskName | `${jndi:ldap://x}` | 400 | 2 | 오류 형식 불일치(JSON 아님) | <!doctype html><html lang="en"><head><title>HTTP Status 400 – Bad Request</title><style type="text/css">body {font-famil |
+| POST /api/status/run/{taskName} | taskName | `\` | 400 | 1 | 오류 형식 불일치(JSON 아님) | <!doctype html><html lang="en"><head><title>HTTP Status 400 – Bad Request</title><style type="text/css">body {font-famil |
+| GET /api/analytics/correlation | window | `-1` | 200 | 9 | 비정상 숫자를 200으로 받음 | {"x":{"id":"fred:DGS10","label":"미국채 10년물","group":"금리","unit":"%","source":"FRED (일간 확정치)","isEstimated":false},"y":{"i |
+| GET /api/analytics/correlation | window | `-2147483648` | 200 | 9 | 비정상 숫자를 200으로 받음 | {"x":{"id":"fred:DGS10","label":"미국채 10년물","group":"금리","unit":"%","source":"FRED (일간 확정치)","isEstimated":false},"y":{"i |
+| GET /api/analytics/correlation | years | `-1` | 200 | 9 | 비정상 숫자를 200으로 받음 | {"x":{"id":"fred:DGS10","label":"미국채 10년물","group":"금리","unit":"%","source":"FRED (일간 확정치)","isEstimated":false},"y":{"i |
+
+# 출처: $SP/qa/lanes/security/deps/maven-advisories.txt (전체)
+WARNING: A terminally deprecated method in sun.misc.Unsafe has been called
+WARNING: sun.misc.Unsafe::objectFieldOffset has been called by com.google.common.util.concurrent.AbstractFuture$UnsafeAtomicHelper (file:/usr/share/maven/lib/guava.jar)
+WARNING: Please consider reporting this to the maintainers of class com.google.common.util.concurrent.AbstractFuture$UnsafeAtomicHelper
+WARNING: sun.misc.Unsafe::objectFieldOffset will be removed in a future release
+✓ ch.qos.logback:logback-classic:1.5.38
+✓ ch.qos.logback:logback-core:1.5.38
+✓ com.anthropic:anthropic-java-client-okhttp:2.75.0
+✓ com.anthropic:anthropic-java-core:2.75.0
+✓ com.anthropic:anthropic-java:2.75.0
+✓ com.fasterxml.jackson.core:jackson-annotations:2.21
+✓ com.fasterxml.jackson.core:jackson-core:2.21.7
+✓ com.fasterxml.jackson.core:jackson-databind:2.21.7
+✓ com.fasterxml.jackson.datatype:jackson-datatype-jdk8:2.21.7
+✓ com.fasterxml.jackson.datatype:jackson-datatype-jsr310:2.21.7
+✓ com.fasterxml.jackson.module:jackson-module-kotlin:2.21.7
+✓ com.fasterxml:classmate:1.7.3
+✓ com.github.victools:jsonschema-generator:4.38.0
+✓ com.github.victools:jsonschema-module-jackson:4.38.0
+✓ com.github.victools:jsonschema-module-swagger-2:4.38.0
+✓ com.google.errorprone:error_prone_annotations:2.50.0
+✓ com.squareup.okhttp3:okhttp:4.12.0
+✓ com.squareup.okio:okio-jvm:3.6.0
+✓ com.squareup.okio:okio:3.6.0
+✓ com.standardwebhooks:standardwebhooks:1.2.0
+✓ com.zaxxer:HikariCP:7.0.2
+✓ commons-logging:commons-logging:1.3.6
+✓ io.micrometer:micrometer-commons:1.17.2
+✓ io.micrometer:micrometer-observation:1.17.2
+✗ io.opentelemetry:opentelemetry-api:1.62.0
+    medium GHSA-ccrj-gw8r-854m CVE-2026-118259 opentelemetry-java: Quadratic CPU consumption in W3C tracestate parsing
+✓ io.opentelemetry:opentelemetry-common:1.62.0
+✓ io.opentelemetry:opentelemetry-context:1.62.0
+✓ io.swagger.core.v3:swagger-annotations:2.2.50
+✓ jakarta.activation:jakarta.activation-api:2.1.4
+✓ jakarta.annotation:jakarta.annotation-api:3.0.0
+✓ jakarta.mail:jakarta.mail-api:2.1.5
+✓ org.apache.logging.log4j:log4j-api:2.25.5
+✓ org.apache.logging.log4j:log4j-to-slf4j:2.25.5
+✓ org.apache.tomcat.embed:tomcat-embed-core:11.0.27
+✓ org.apache.tomcat.embed:tomcat-embed-el:11.0.27
+✓ org.apache.tomcat.embed:tomcat-embed-websocket:11.0.27
+✓ org.bouncycastle:bcprov-jdk18on:1.86
+✓ org.checkerframework:checker-qual:3.55.1
+✓ org.eclipse.angus:angus-activation:2.0.3
+✓ org.eclipse.angus:angus-mail:2.0.5
+✓ org.jetbrains.kotlin:kotlin-reflect:2.3.21
+✓ org.jetbrains.kotlin:kotlin-stdlib-common:1.9.10
+✓ org.jetbrains.kotlin:kotlin-stdlib-jdk7:2.3.21
+✓ org.jetbrains.kotlin:kotlin-stdlib-jdk8:2.3.21
+✓ org.jetbrains.kotlin:kotlin-stdlib:2.3.21
+✓ org.jetbrains:annotations:13.0
+✓ org.jspecify:jspecify:1.0.1
+✓ org.postgresql:postgresql:42.7.14
+✓ org.slf4j:jul-to-slf4j:2.0.20
+✓ org.slf4j:slf4j-api:2.0.20
+✓ org.springframework.boot:spring-boot-autoconfigure:4.1.2
+✓ org.springframework.boot:spring-boot-http-converter:4.1.2
+✓ org.springframework.boot:spring-boot-jackson:4.1.2
+✓ org.springframework.boot:spring-boot-jdbc:4.1.2
+✓ org.springframework.boot:spring-boot-mail:4.1.2
+✓ org.springframework.boot:spring-boot-persistence:4.1.2
+✓ org.springframework.boot:spring-boot-servlet:4.1.2
+✓ org.springframework.boot:spring-boot-sql:4.1.2
+✓ org.springframework.boot:spring-boot-starter-jackson:4.1.2
+✓ org.springframework.boot:spring-boot-starter-jdbc:4.1.2
+✓ org.springframework.boot:spring-boot-starter-logging:4.1.2
+✓ org.springframework.boot:spring-boot-starter-mail:4.1.2
+✓ org.springframework.boot:spring-boot-starter-tomcat-runtime:4.1.2
+✓ org.springframework.boot:spring-boot-starter-tomcat:4.1.2
+✓ org.springframework.boot:spring-boot-starter-webmvc:4.1.2
+✓ org.springframework.boot:spring-boot-starter:4.1.2
+✓ org.springframework.boot:spring-boot-tomcat:4.1.2
+✓ org.springframework.boot:spring-boot-transaction:4.1.2
+✓ org.springframework.boot:spring-boot-web-server:4.1.2
+✓ org.springframework.boot:spring-boot-webmvc:4.1.2
+✓ org.springframework.boot:spring-boot:4.1.2
+✓ org.springframework.security:spring-security-crypto:7.1.2
+✓ org.springframework:spring-aop:7.0.10
+✓ org.springframework:spring-beans:7.0.10
+✓ org.springframework:spring-context-support:7.0.10
+✓ org.springframework:spring-context:7.0.10
+✓ org.springframework:spring-core:7.0.10
+✓ org.springframework:spring-expression:7.0.10
+✓ org.springframework:spring-jdbc:7.0.10
+✓ org.springframework:spring-tx:7.0.10
+✓ org.springframework:spring-web:7.0.10
+✓ org.springframework:spring-webmvc:7.0.10
+✓ org.yaml:snakeyaml:2.6
+✓ tools.jackson.core:jackson-core:3.1.7
+✓ tools.jackson.core:jackson-databind:3.1.7

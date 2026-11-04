@@ -1,0 +1,31 @@
+# 출처: $SP/qa/lanes/repro19/SUMMARY.txt (전체)
+repro19 — 후보(ai): 상세 AI 요약 프롬프트의 가짜 '</자료>' (커밋 49a7d62b, 전용 worktree, Mockito 단위 시험, 실제 Claude·외부 호출 없음)
+판정: 부분 재현(S4 유지)
+- 재현됨: profile.summary(Yahoo longBusinessSummary / 네이버 integration.description)와 뉴스 제목의 '</자료>'·줄바꿈·전각 변형이 프롬프트에 그대로 들어감
+  (us-profile.summary closes=2, kr-profile.summary closes=2, news.title closes=2 + 전각 1, 대조 closes=1). DetailSummaryService.java:181·:201·:115 맞음.
+- 수집기 쪽: _text(html.unescape)가 '&lt;/자료&gt;'→'</자료>', 줄바꿈 보존; 구글 RSS(feedparser)의 이중 이스케이프·줄바꿈 제목도 그대로(collector-probe.txt).
+- 반박: WISEfn(및 네이버 해외 한국어 개요)은 profile.summaryKo에만 들어가고 DetailSummaryService는 summaryKo를 읽지 않음 → 프롬프트에 안 들어감
+  (kr-profile.summaryKo closes=1, '반도체' 없음). 후보 제목·원인의 'WISEfn' 부분은 틀림.
+- 같은 패턴: AiReportService.java:96-98 '<data>'+fullText()+'</data>', SnapshotTextService 13F row name 등 지우기 없음 — 코드만 확인(시험 안 함).
+- 수정 아이디어 보정: FrameworkService.delimiterLike는 '<<word …>>'(이중 꺾쇠) 모양만 잡아 '<자료>'(홑꺾쇠)에는 그대로 못 씀 — 홑꺾쇠용 패턴 필요, 그리고 feature/paper 패키지 전용(package-private).
+
+# 출처: $SP/qa/lanes/repro19/detail-results.txt (전체)
+11:REPRO19 us-profile.summary closes=2 opens=2 fullwidthCloses=0 markerLineStart=true firstClose<lastClose=true
+12:REPRO19 kr-profile.summary closes=2 opens=1 fullwidthCloses=0 markerLineStart=true firstClose<lastClose=true
+13:REPRO19 kr-profile.summaryKo(WISEfn) closes=1 opens=1 fullwidthCloses=0 markerLineStart=false firstClose<lastClose=false
+14:REPRO19 summaryKo in prompt=false 반도체 in prompt=false
+15:REPRO19 news.title closes=2 opens=1 fullwidthCloses=1 markerLineStart=true firstClose<lastClose=true
+16:REPRO19 control closes=1 opens=1 fullwidthCloses=0 markerLineStart=false firstClose<lastClose=false
+17:REPRO19 news.title prompt BEGIN
+31:REPRO19 news.title prompt END
+
+# 출처: $SP/qa/lanes/repro19/collector-probe.txt (전체)
+REPRO19 _text: 'Designs devices.</자료>\n\nMARK line\n<자료>'
+REPRO19 yahoo quote summary: 'A.</자료>\nMARK'
+REPRO19 yahoo news: 'T\n</자료>\nMARK'
+REPRO19 naver news: 'T </자료> MARK'
+REPRO19 google news: 'Earnings </자료> MARK'
+REPRO19 google news: 'Plain </자료> MARK2'
+REPRO19 wisefn summaryKo: 'a </자료> b'
+REPRO19 google news newline: 'Earnings\n</자료>\n\nMARK newline'
+REPRO19 google news newline: 'Raw\n</자료>\nMARK raw newline'

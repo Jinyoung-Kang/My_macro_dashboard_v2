@@ -1,0 +1,57 @@
+# 출처: $SP/qa/lanes/repro10/summary.txt (전체)
+repro10 — SSE 경로 4xx 예외가 Accept: text/event-stream에서 500 (후보: ui 영역)
+커밋 49a7d62b, QA 스택 API 18082, 2026-11-04 23:27~23:30 KST
+1) sse-status.sh / sse-status.out: 61개·interval=7·items=abc — Accept text/event-stream만 500(본문·Content-Type 없음), application/json·*/*·"text/event-stream, application/json"은 400 JSON.
+2) backend-log-2327.txt: 세 요청 모두 WARN 'Failure in @ExceptionHandler ApiExceptionHandler#invalidRequest — HttpMediaTypeNotAcceptableException' + ERROR 'Servlet.service() ... threw exception [InvalidRequestException]'.
+3) LivePriceSseErrorReproTest.java / mvn-repro-summary.txt (worktree, MockMvc standalone + ApiExceptionHandler): 연결 20개 채운 뒤 21번째 — text/event-stream은 처리 안 된 ServletException(root TooManyRequestsException), application/json·*/*는 429 + Retry-After 30. 61개·interval=7도 같은 갈림.
+4) sse-status2.sh / sse-status2.out: Spring 표준 예외(items·interval 누락, interval=abc)는 같은 Accept에서 400 — 처리기 실패 뒤 DefaultHandlerExceptionResolver가 받아 줌(로그는 WARN만). 비로그인은 세션 필터가 직접 써서 401.
+=> 500은 우리 예외(InvalidRequestException·TooManyRequestsException 등 ApiExceptionHandler만 아는 것)에만.
+
+# 출처: $SP/qa/lanes/repro10/sse-status.out (전체)
+login -> 200
+2026-11-04 23:27:14 KST
+[61개] Accept: text/event-stream -> HTTP/1.1 500  | no content-type | no retry-after | body=
+[interval=7] Accept: text/event-stream -> HTTP/1.1 500  | no content-type | no retry-after | body=
+[items 형식 틀림(abc)] Accept: text/event-stream -> HTTP/1.1 500  | no content-type | no retry-after | body=
+[61개] Accept: application/json -> HTTP/1.1 400  | Content-Type: application/json | no retry-after | body={"error":"bad_request","message":"한 번에 60개까지입니다."}
+[interval=7] Accept: application/json -> HTTP/1.1 400  | Content-Type: application/json | no retry-after | body={"error":"bad_request","message":"주기는 [5, 10, 30, 60, 120, 300, 600, 900, 1800, 3600, 10800]초 가운데 하나입니다."}
+[items 형식 틀림(abc)] Accept: application/json -> HTTP/1.1 400  | Content-Type: application/json | no retry-after | body={"error":"bad_request","message":"종목은 'US:심볼'·'KR:6자리'·'TV:거래소:심볼'·'NI:.지수'입니다."}
+[61개] Accept: */* -> HTTP/1.1 400  | Content-Type: application/json | no retry-after | body={"error":"bad_request","message":"한 번에 60개까지입니다."}
+[interval=7] Accept: */* -> HTTP/1.1 400  | Content-Type: application/json | no retry-after | body={"error":"bad_request","message":"주기는 [5, 10, 30, 60, 120, 300, 600, 900, 1800, 3600, 10800]초 가운데 하나입니다."}
+[items 형식 틀림(abc)] Accept: */* -> HTTP/1.1 400  | Content-Type: application/json | no retry-after | body={"error":"bad_request","message":"종목은 'US:심볼'·'KR:6자리'·'TV:거래소:심볼'·'NI:.지수'입니다."}
+[61개] Accept: text/event-stream, application/json -> HTTP/1.1 400  | Content-Type: application/json | no retry-after | body={"error":"bad_request","message":"한 번에 60개까지입니다."}
+[interval=7] Accept: text/event-stream, application/json -> HTTP/1.1 400  | Content-Type: application/json | no retry-after | body={"error":"bad_request","message":"주기는 [5, 10, 30, 60, 120, 300, 600, 900, 1800, 3600, 10800]초 가운데 하나입니다."}
+[items 형식 틀림(abc)] Accept: text/event-stream, application/json -> HTTP/1.1 400  | Content-Type: application/json | no retry-after | body={"error":"bad_request","message":"종목은 'US:심볼'·'KR:6자리'·'TV:거래소:심볼'·'NI:.지수'입니다."}
+
+# 출처: $SP/qa/lanes/repro10/sse-status2.out (전체)
+2026-11-04 23:29:44 KST
+[items=US:AAPL] Accept: text/event-stream -> 400
+[items=US:AAPL&interval=abc] Accept: text/event-stream -> 400
+[interval=60] Accept: text/event-stream -> 400
+[비로그인] Accept: text/event-stream -> 401
+
+# 출처: $SP/qa/lanes/repro10/mvn-repro-summary.txt (전체)
+REPRO10 [61개] Accept=text/event-stream -> UNHANDLED ServletException (root InvalidRequestException: 한 번에 60개까지입니다.)
+REPRO10 [interval=7] Accept=text/event-stream -> UNHANDLED ServletException (root InvalidRequestException: 주기는 [5, 10, 30, 60, 120, 300, 600, 900, 1800, 3600, 10800]초 가운데 하나입니다.)
+REPRO10 [61개] Accept=application/json -> status=400 Retry-After=null resolvedException=InvalidRequestException body={"error":"bad_request","message":"한 번에 60개까지입니다."}
+REPRO10 [interval=7] Accept=application/json -> status=400 Retry-After=null resolvedException=InvalidRequestException body={"error":"bad_request","message":"주기는 [5, 10, 30, 60, 120, 300, 600, 900, 1800, 3600, 10800]초 가운데 하나입니다."}
+REPRO10 [61개] Accept=*/* -> status=400 Retry-After=null resolvedException=InvalidRequestException body={"error":"bad_request","message":"한 번에 60개까지입니다."}
+REPRO10 [interval=7] Accept=*/* -> status=400 Retry-After=null resolvedException=InvalidRequestException body={"error":"bad_request","message":"주기는 [5, 10, 30, 60, 120, 300, 600, 900, 1800, 3600, 10800]초 가운데 하나입니다."}
+REPRO10 openStreams=20
+REPRO10 [상한(21번째)] Accept=text/event-stream -> UNHANDLED ServletException (root TooManyRequestsException: 실시간 시세 연결이 너무 많습니다 — 다른 탭을 닫고 다시 여세요.)
+REPRO10 [상한(21번째)] Accept=application/json -> status=429 Retry-After=30 resolvedException=TooManyRequestsException body={"error":"too_many_requests","message":"실시간 시세 연결이 너무 많습니다 — 다른 탭을 닫고 다시 여세요."}
+REPRO10 [상한(21번째)] Accept=*/* -> status=429 Retry-After=30 resolvedException=TooManyRequestsException body={"error":"too_many_requests","message":"실시간 시세 연결이 너무 많습니다 — 다른 탭을 닫고 다시 여세요."}
+
+# 출처: $SP/qa/lanes/repro10/backend-log-2327.txt (전체)
+2026-11-04T23:27:15.005+09:00  WARN 1 --- [macro-dashboard-backend] [io-8080-exec-10] .m.m.a.ExceptionHandlerExceptionResolver : Failure in @ExceptionHandler com.macrodash.web.ApiExceptionHandler#invalidRequest(InvalidRequestException)
+org.springframework.web.HttpMediaTypeNotAcceptableException: No acceptable representation
+2026-11-04T23:27:15.006+09:00 ERROR 1 --- [macro-dashboard-backend] [io-8080-exec-10] o.a.c.c.C.[.[.[/].[dispatcherServlet]    : Servlet.service() for servlet [dispatcherServlet] in context with path [] threw exception [Request processing failed: com.macrodash.support.InvalidRequestException: 한 번에 60개까지입니다.] wi
+com.macrodash.support.InvalidRequestException: 한 번에 60개까지입니다.
+2026-11-04T23:27:15.037+09:00  WARN 1 --- [macro-dashboard-backend] [nio-8080-exec-4] .m.m.a.ExceptionHandlerExceptionResolver : Failure in @ExceptionHandler com.macrodash.web.ApiExceptionHandler#invalidRequest(InvalidRequestException)
+org.springframework.web.HttpMediaTypeNotAcceptableException: No acceptable representation
+2026-11-04T23:27:15.038+09:00 ERROR 1 --- [macro-dashboard-backend] [nio-8080-exec-4] o.a.c.c.C.[.[.[/].[dispatcherServlet]    : Servlet.service() for servlet [dispatcherServlet] in context with path [] threw exception [Request processing failed: com.macrodash.support.InvalidRequestException: 주기는 [5, 10, 30, 60, 120, 300, 
+com.macrodash.support.InvalidRequestException: 주기는 [5, 10, 30, 60, 120, 300, 600, 900, 1800, 3600, 10800]초 가운데 하나입니다.
+2026-11-04T23:27:15.062+09:00  WARN 1 --- [macro-dashboard-backend] [nio-8080-exec-6] .m.m.a.ExceptionHandlerExceptionResolver : Failure in @ExceptionHandler com.macrodash.web.ApiExceptionHandler#invalidRequest(InvalidRequestException)
+org.springframework.web.HttpMediaTypeNotAcceptableException: No acceptable representation
+2026-11-04T23:27:15.062+09:00 ERROR 1 --- [macro-dashboard-backend] [nio-8080-exec-6] o.a.c.c.C.[.[.[/].[dispatcherServlet]    : Servlet.service() for servlet [dispatcherServlet] in context with path [] threw exception [Request processing failed: com.macrodash.support.InvalidRequestException: 종목은 'US:심볼'·'KR:6자리'�
+com.macrodash.support.InvalidRequestException: 종목은 'US:심볼'·'KR:6자리'·'TV:거래소:심볼'·'NI:.지수'입니다.

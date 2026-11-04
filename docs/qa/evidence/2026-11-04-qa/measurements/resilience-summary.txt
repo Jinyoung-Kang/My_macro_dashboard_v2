@@ -1,0 +1,235 @@
+# 출처: $SP/qa/lanes/resilience/INDEX.txt (전체)
+resilience 영역 증거 목록 (2026-11-04 21:48~22:44 KST, QA 스택 my_macrodash_v2_qa, 대상 49a7d62b + 문서 커밋 7213c6f0으로 빌드된 이미지)
+bin/                : 도구(login.sh·ctok.sh는 비밀값을 출력하지 않음, invariants.sql·invariants17.sql(paper 영역 것 복사), snap.sh, sse_probe.py, restart-trial.sh, badlogin.sh, nologin-probe.sh)
+pw/                 : playwright 스크립트(sse-restart.js — 실제 재시작·502 흉내·탭 숨김·끄기, nologin-ui.js)
+ev/00,01            : 시험 전 장부 불변식·QA 백업(backups/qa/macrodash-20261104-214856.sql)
+ev/10~17            : 외부 장애(block·hang·slow:5) — 수집 태스크 시간 상한·합치기·좀비 수명(11-*, 15-yf-guard), 실시간 시세·상세 지연(12, 14), SSE 스케줄러 굶주림(13), 매크로 isStale(17)
+ev/20~22            : 브라우저 SSE — 백엔드 재시작·502 백오프(20), 탭 숨김·끄기(21·22)
+ev/30~32            : 모의 매매 수동 작업 + 백엔드 재시작 → 불변식 17개
+ev/40,41            : 종료 신호(SSE 열림 → SIGKILL 137, 유예 45초면 30초 대기 뒤 143), 수집기 실행 중 재시작
+ev/50~53            : 로그인 시도 제한, 종료 때 넘침 요약 유실(51), 세션 로그아웃·만료·취소·재시작·다른 기기(52), 로그아웃 뒤 SSE 계속(53)
+ev/60~64            : 로그인 모드·무로그인 모드 출처 검사(60·62), 무로그인 화면(63), 모드 전환 로그
+ev/70~72, snap-*    : 배포 직전 덤프로 되돌리기 절차·최종 복원·대조, 최종 상태
+남긴 QA 백업(저장소 backups/qa, gitignore): pre-deploy-20261104-223922.sql·223941.sql, pre-restore-20261104-223946.sql·(최종 복원 때 1개), macrodash-20261104-214856.sql
+
+# 출처: $SP/qa/lanes/resilience/ev/16-proxy-slow.txt (전체)
+## 2026-11-04 22:13:02 KST proxy=slow:5
+[radar_rankings] wall=90.1s [(True, '3/3 조합 수집')]
+[scraper_markets] wall=61.08s [(False, '수집 결과 없음: 0/16 소스 — 기존 저장본 유지')]
+22:15:33 /api/live/prices KR:005930 http=200 t=32.024963s
+22:16:05 /api/detail/quote kr 005930 http=200 t=16.011419s
+
+# 출처: $SP/qa/lanes/resilience/ev/50-login-throttle.txt (전체)
+## 2026-11-04 22:27:54 KST 틀린 비밀번호 순차 8회 → 동시 5회 → 맞는 비밀번호
+seq#1 http=000 t=0.000088s
+seq#2 http=000 t=0.000047s
+seq#3 http=000 t=0.000044s
+seq#4 http=000 t=0.000048s
+seq#5 http=000 t=0.000047s
+seq#6 http=000 t=0.000041s
+seq#7 http=000 t=0.000045s
+seq#8 http=000 t=0.000047s
+par#5 http=000 t=0.000083s
+par#2 http=000 t=0.000083s
+par#1 http=000 t=0.000083s
+par#3 http=000 t=0.000048s
+par#4 http=000 t=0.000044s
+correct#1 000
+correct#2 000
+
+## (재실행) 2026-11-04 22:28:10 KST 백엔드 기동 뒤 — 틀린 비밀번호 순차 8회 → 동시 5회 → 맞는 비밀번호
+seq#1 http=401 t=0.088244s
+seq#2 http=401 t=0.030912s
+seq#3 http=401 t=0.024265s
+seq#4 http=401 t=0.032013s
+seq#5 http=401 t=0.111336s
+seq#6 http=429 t=1.026122s
+seq#7 http=429 t=1.026760s
+seq#8 http=429 t=1.030726s
+par#2 http=429 t=0.003317s
+par#1 http=429 t=0.003516s
+par#3 http=429 t=0.003795s
+par#5 http=429 t=0.003871s
+par#4 http=429 t=1.084309s
+correct#1 200 t=1.07s
+correct#2 200 t=0.06s
+44|login.success|13:26:38|{}
+45|login.failure|13:28:10|{"failures": 1}
+46|login.failure|13:28:11|{"failures": 5}
+47|login.failure|13:28:14|{"failures": 8}
+48|login.success|13:28:16|{"priorFailures": 9}
+49|login.success|13:28:16|{}
+
+# 출처: $SP/qa/lanes/resilience/ev/32-restart-during-paper.txt (전체)
+### r1-risk 22:25:04 delay=0.02s POST /api/paper/run/risk?market=US
+quotes.collected_at=2026-11-04 13:25:04.256403+00
+UPDATE 1
+before state: rules@13:24:34.268 claude@13:24:34.268 claude2@13:24:34.268 bench_spy@13:24:34.268 bench_mix@13:24:34.268
+before jobs max id=91 n=59
+RESP http=200 t=0.087486s
+restart cmd took 0.9s
+resp body: {"ok":true,"outcome":{"filled":0,"stopped":0,"expired":0,"splits":0,"booksProcessed":["rules","claude","claude2","bench_spy","bench_mix"],"skippedReason":null,"notes":[],"errors":[]}}
+after state: rules@13:25:04.256 claude@13:25:04.256 claude2@13:25:04.256 bench_spy@13:25:04.256 bench_mix@13:25:04.256
+after jobs: 90:decision:DECIDED:13:24:43 91:decision:DECIDED:13:24:43 92:risk:OK:13:25:04
+invariants17: all 0
+unfinished job runs: 0
+### r2-risk 22:25:10 delay=0.06s POST /api/paper/run/risk?market=US
+quotes.collected_at=2026-11-04 13:25:10.485274+00
+UPDATE 1
+before state: rules@13:25:04.256 claude@13:25:04.256 claude2@13:25:04.256 bench_spy@13:25:04.256 bench_mix@13:25:04.256
+before jobs max id=92 n=60
+RESP http=200 t=0.246366s
+restart cmd took 1.0s
+resp body: {"ok":true,"outcome":{"filled":0,"stopped":0,"expired":0,"splits":0,"booksProcessed":["rules","claude","claude2","bench_spy","bench_mix"],"skippedReason":null,"notes":[],"errors":[]}}
+after state: rules@13:25:10.485 claude@13:25:10.485 claude2@13:25:10.485 bench_spy@13:25:10.485 bench_mix@13:25:10.485
+after jobs: 91:decision:DECIDED:13:24:43 92:risk:OK:13:25:04 93:risk:OK:13:25:10
+invariants17: all 0
+unfinished job runs: 0
+
+# 출처: $SP/qa/lanes/resilience/ev/70-rollback-procedure.txt (전체)
+## 2026-11-04 22:39:21 KST 1) 배포 직전 상태 S1 기록 + 배포 직전 덤프(deploy.sh 5단계와 같은 명령: db-backup.sh pre-deploy)
+200 /api/auth/session
+paper_notes|3|641557a382cc3e53644afb39755ce45b
+paper_decisions|6|882aaf2e01e314227785d55b089545ae
+paper_nav_daily|8|6a2c6a59d5f31c8f8d272ef77d898737
+paper_book_state|5|9f4d862982e4d1f697f6a4db4ef70ef7
+paper_positions|20|d3750eb9f58e5e4eeeb8c89586e1f245
+paper_settings|1|08bc076a1447738a134535337d9e5de6
+paper_fills|26|77c7d7e2e75566f7ccf342290a5da239
+sessions|46|
+paper_orders|27|ba48b79060bfd55e17d3e82d6f37355f
+snapshots|107|0398209a9eb8ce479c9fec78458db0d3
+users|3|
+observations|798747|2026-11-04
+timeseries|1520827|
+
+  파일     : ~/Projects/My_macro_dashboard_v2/backups/qa/pre-deploy-20261104-223922.sql (464M)
+  테이블   : 39개
+-rw------- 1 <사용자> <사용자> 486516199 Nov  4 22:39 pre-deploy-20261104-223922.sql
+## 22:39:40 2) '문제 배포'가 데이터를 망가뜨림(흉내 — 잘못된 데이터 변경 마이그레이션): claude 체결·보유 삭제, rules 현금 음수, 관측치 하루치 삭제
+BEGIN
+DELETE 10
+DELETE 8
+UPDATE 1
+DELETE 478
+COMMIT
+                 chk                  | count |                                                  string_agg                                                  
+--------------------------------------+-------+--------------------------------------------------------------------------------------------------------------
+ cash<0                               |     1 | rules cash=-1.0000
+ FILLED order w/o fill                |    10 | 20 claude; 15 claude; 16 claude; 17 claude; 18 claude; 19 claude; 21 claude; 22 claude; 23 claude; 28 claude
+ cash != initial - fills              |     2 | claude state=37889.0516 recon=100000.0000; rules state=-1.0000 recon=12729.8707
+## 22:39:40 3) 알아챔 → 코드 되돌리는 배포(이것도 덤프를 하나 더 뜸)
+
+## 4) 문서 절차: ls -t backups/pre-deploy-*.sql 의 둘째
+backups/qa/pre-deploy-20261104-223941.sql
+backups/qa/pre-deploy-20261104-223922.sql
+picked: backups/qa/pre-deploy-20261104-223922.sql
+## 22:39:46 5) 복원(QA: qa-stack.sh restore — 문서의 make restore와 같은 db-restore.sh, 확인은 --yes)
+ Container my_macrodash_v2_qa-backend-1 Starting 
+ Container my_macrodash_v2_qa-postgres-1 Healthy 
+ Container my_macrodash_v2_qa-qaproxy-1 Healthy 
+ Container my_macrodash_v2_qa-collector-1 Starting 
+ Container my_macrodash_v2_qa-backend-1 Started 
+ Container my_macrodash_v2_qa-collector-1 Started 
+restore took 22s
+my_macrodash_v2_qa-backend-1 (health: starting)
+my_macrodash_v2_qa-collector-1 (health: starting)
+my_macrodash_v2_qa-frontend-1 minutes (healthy)
+my_macrodash_v2_qa-postgres-1 hours (healthy)
+my_macrodash_v2_qa-qaproxy-1 hours (healthy)
+## 22:40:21 6) 복원 뒤 S1과 대조
+-rw------- 1 <사용자> <사용자> 486516199 Nov  4 22:39 pre-deploy-20261104-223922.sql
+-rw------- 1 <사용자> <사용자> 486275026 Nov  4 22:39 pre-deploy-20261104-223941.sql
+-rw------- 1 <사용자> <사용자>     66313 Nov  4 20:22 pre-restore-20261104-202215.sql
+-rw------- 1 <사용자> <사용자> 486275026 Nov  4 22:39 pre-restore-20261104-223946.sql
+-- DB 지문 diff (S1 vs 복원 뒤):
+10c10
+< sessions|46|
+---
+> sessions|47|
+-- API 응답 diff(시각 필드 제외):
+  _api_auth_session.json: 같음
+  _api_flows_radar_market_KOSPI.json: 같음
+  _api_macro_overview.json: 같음
+  _api_paper_books_claude_fills_limit_50.json: 같음
+  _api_paper_books_claude_positions.json: 같음
+  _api_paper_books_rules_nav.json: 같음
+  _api_paper_books_rules_orders_limit_50.json: 같음
+  _api_paper_decisions_book_claude_limit_50.json: 같음
+  _api_paper_notes_market_US.json: 같음
+  _api_paper_overview_market_US.json: 같음
+  _api_paper_settings.json: 같음
+  _api_paper_status_market_US.json: 같음
+  _api_status.json: 다름
+      @@ -23 +23 @@
+      -"heartbeatAt": "2026-11-04T13:39:22.493022+00:00",
+      +"heartbeatAt": "2026-11-04T13:40:21.928665+00:00",
+      @@ -25 +25 @@
+      -"id": 4620,
+      +"id": 4621,
+      @@ -28 +28 @@
+      -"startedAt": "2026-11-04T13:39:22.493022+00:00",
+      +"startedAt": "2026-11-04T13:40:21.928665+00:00",
+invariants17: all 0
+
+# 출처: $SP/qa/lanes/resilience/ev/40-stop-backend.txt (앞 60줄)
+## A 2026-11-04 22:25:56 KST SSE 1개 열고 docker compose stop backend (요청 없음 외)
+22:25:58 +   2.1s [S1] HTTP 200 text/event-stream
+22:25:58 +   2.1s [S1] event prices available=True items=[] missing=['KR:005930'] errors={"네이버": "ProxyError — 프록시가 연결을 막았습니다 (회사망·보안 프로그램·Docker 프록시 설정 확인)", "다음": "ProxyError — 프록시가 연결을 막았습니다 (회사망·보안 프로그램·Do
+22:26:04 +   8.1s [S1] EOF (server closed)
+22:26:04 +   8.1s [S1] done
+ Container my_macrodash_v2_qa-backend-1 Stopping 
+ Container my_macrodash_v2_qa-backend-1 Stopped 
+stop took 3.4s exit=137
+backend-1  | 2026-11-04T22:25:11.072+09:00  INFO 1 --- [macro-dashboard-backend] [tomcat-shutdown] o.s.boot.tomcat.GracefulShutdown         : Graceful shutdown complete
+backend-1  | 2026-11-04T22:25:11.078+09:00  INFO 1 --- [macro-dashboard-backend] [ionShutdownHook] com.zaxxer.hikari.HikariDataSource       : HikariPool-1 - Shutdown initiated...
+backend-1  | 2026-11-04T22:25:11.084+09:00  INFO 1 --- [macro-dashboard-backend] [ionShutdownHook] com.zaxxer.hikari.HikariDataSource       : HikariPool-1 - Shutdown completed.
+backend-1  | 2026-11-04T22:25:15.012+09:00  INFO 1 --- [macro-dashboard-backend] [           main] com.zaxxer.hikari.HikariDataSource       : HikariPool-1 - Starting...
+backend-1  | 2026-11-04T22:25:15.158+09:00  INFO 1 --- [macro-dashboard-backend] [           main] com.zaxxer.hikari.pool.HikariPool        : HikariPool-1 - Added connection org.postgresql.jdbc.PgConn
+backend-1  | 2026-11-04T22:25:15.160+09:00  INFO 1 --- [macro-dashboard-backend] [           main] com.zaxxer.hikari.HikariDataSource       : HikariPool-1 - Start completed.
+backend-1  | 2026-11-04T22:26:01.500+09:00  INFO 1 --- [macro-dashboard-backend] [ionShutdownHook] o.s.boot.tomcat.GracefulShutdown         : Commencing graceful shutdown. Waiting for active requests 
+backend up 22:26:09
+## B 2026-11-04 22:26:32 KST 열린 연결 없이 docker compose stop backend
+stop took 0.7s exit=143
+backend-1  | 2026-11-04T22:26:09.035+09:00  INFO 1 --- [macro-dashboard-backend] [           main] c.m.feature.paper.PaperStartupLog        : 모의 매매 정기 작업 켜짐 — PAPER_ENABLED=true 
+backend-1  | 2026-11-04T22:26:09.812+09:00  INFO 1 --- [macro-dashboard-backend] [nio-8080-exec-1] o.a.c.c.C.[Tomcat].[localhost].[/]       : Initializing Spring DispatcherServlet 'dispatcherServlet'
+backend-1  | 2026-11-04T22:26:09.813+09:00  INFO 1 --- [macro-dashboard-backend] [nio-8080-exec-1] o.s.web.servlet.DispatcherServlet        : Initializing Servlet 'dispatcherServlet'
+backend-1  | 2026-11-04T22:26:09.814+09:00  INFO 1 --- [macro-dashboard-backend] [nio-8080-exec-1] o.s.web.servlet.DispatcherServlet        : Completed initialization in 1 ms
+backend-1  | 2026-11-04T22:26:32.275+09:00  INFO 1 --- [macro-dashboard-backend] [ionShutdownHook] o.s.boot.tomcat.GracefulShutdown         : Commencing graceful shutdown. Waiting for active requests 
+backend-1  | 2026-11-04T22:26:32.277+09:00  INFO 1 --- [macro-dashboard-backend] [tomcat-shutdown] o.s.boot.tomcat.GracefulShutdown         : Graceful shutdown complete
+backend-1  | 2026-11-04T22:26:32.282+09:00  INFO 1 --- [macro-dashboard-backend] [ionShutdownHook] com.zaxxer.hikari.HikariDataSource       : HikariPool-1 - Shutdown initiated...
+backend-1  | 2026-11-04T22:26:32.287+09:00  INFO 1 --- [macro-dashboard-backend] [ionShutdownHook] com.zaxxer.hikari.HikariDataSource       : HikariPool-1 - Shutdown completed.
+backend up 22:26:37
+## C 22:26:37 SSE 1개 + docker events로 신호 관찰
+22:26:40 +   2.1s [S1] HTTP 200 text/event-stream
+22:26:40 +   2.1s [S1] event prices available=True items=[] missing=['KR:005930'] errors={"네이버": "ProxyError — 프록시가 연결을 막았습니다 (회사망·보안 프로그램·Docker 프록시 설정 확인)", "다음": "ProxyError — 프록시가 연결을 막았습니다 (회사망·보안 프로그램·Do
+1793798802 kill 15 
+1793798805 kill 9 
+22:26:45 +   7.1s [S1] EOF (server closed)
+22:26:45 +   7.1s [S1] done
+1793798805 stop  
+1793798805 die  137
+stop took 3.4s exit=137
+backend-1  | 2026-11-04T22:26:35.767+09:00  INFO 1 --- [macro-dashboard-backend] [           main] b.w.c.s.WebApplicationContextInitializer : Root WebApplicationContext: initialization completed in 1131 ms
+backend-1  | 2026-11-04T22:26:36.332+09:00  INFO 1 --- [macro-dashboard-backend] [           main] com.macrodash.read.ComputedCache         : 비싼 계산 동시 실행 상한 6개(자동, 코어 12개, 대기 2초, 대
+backend-1  | 2026-11-04T22:26:37.017+09:00  INFO 1 --- [macro-dashboard-backend] [           main] o.s.boot.tomcat.TomcatWebServer          : Tomcat started on port 8080 (http) with context path '/'
+backend-1  | 2026-11-04T22:26:37.031+09:00  INFO 1 --- [macro-dashboard-backend] [           main] c.macrodash.MacroDashboardApplication    : Started MacroDashboardApplication in 2.836 seconds (process running for 3.272)
+backend-1  | 2026-11-04T22:26:37.040+09:00  INFO 1 --- [macro-dashboard-backend] [           main] com.zaxxer.hikari.HikariDataSource       : HikariPool-1 - Starting...
+backend-1  | 2026-11-04T22:26:37.187+09:00  INFO 1 --- [macro-dashboard-backend] [           main] com.zaxxer.hikari.pool.HikariPool        : HikariPool-1 - Added connection org.postgresql.jdbc.PgConnection@3fe98084
+backend-1  | 2026-11-04T22:26:37.189+09:00  INFO 1 --- [macro-dashboard-backend] [           main] com.zaxxer.hikari.HikariDataSource       : HikariPool-1 - Start completed.
+backend-1  | 2026-11-04T22:26:37.223+09:00  INFO 1 --- [macro-dashboard-backend] [           main] c.m.feature.paper.PaperStartupLog        : 모의 매매 정기 작업 켜짐 — PAPER_ENABLED=true · 스케줄러(dash
+backend-1  | 2026-11-04T22:26:37.862+09:00  INFO 1 --- [macro-dashboard-backend] [nio-8080-exec-1] o.a.c.c.C.[Tomcat].[localhost].[/]       : Initializing Spring DispatcherServlet 'dispatcherServlet'
+backend-1  | 2026-11-04T22:26:37.862+09:00  INFO 1 --- [macro-dashboard-backend] [nio-8080-exec-1] o.s.web.servlet.DispatcherServlet        : Initializing Servlet 'dispatcherServlet'
+backend-1  | 2026-11-04T22:26:37.863+09:00  INFO 1 --- [macro-dashboard-backend] [nio-8080-exec-1] o.s.web.servlet.DispatcherServlet        : Completed initialization in 1 ms
+backend-1  | 2026-11-04T22:26:42.258+09:00  INFO 1 --- [macro-dashboard-backend] [ionShutdownHook] o.s.boot.tomcat.GracefulShutdown         : Commencing graceful shutdown. Waiting for active requests to complete
+## D 2026-11-04 22:43:23 KST SSE 1개 + docker compose stop -t 45 backend (유예를 길게) — Spring 쪽 대기 시간 확인
+22:43:25 +   2.0s [S1] HTTP 200 text/event-stream
+22:43:25 +   2.0s [S1] event prices available=True items=[] missing=['KR:005930'] errors={"네이버": "ProxyError — 프록시가 연결을 막았습니다 (회사망·보안 프로그램·Docker 프록시 설정 확인)", "다음": "ProxyError — 프록시가 연결을 막았습니다 (회사망·보안 프로그램·Do
+22:43:48 +  25.0s [S1] comment :keepalive
+22:43:57 +  34.1s [S1] EOF (server closed)
+22:43:57 +  34.1s [S1] done
+stop took 30.8s exit=143
+backend-1  | 2026-11-04T22:43:27.691+09:00  INFO 1 --- [macro-dashboard-backend] [ionShutdownHook] o.s.boot.tomcat.GracefulShutdown         : Commencing graceful shutdown. Waiting for active requests to complet
+backend-1  | 2026-11-04T22:43:57.694+09:00  INFO 1 --- [macro-dashboard-backend] [ionShutdownHook] o.s.c.support.DefaultLifecycleProcessor  : Shutdown phase 2147482623 ends with 1 bean still running after timeo
+backend-1  | 2026-11-04T22:43:57.702+09:00  INFO 1 --- [macro-dashboard-backend] [ionShutdownHook] com.zaxxer.hikari.HikariDataSource       : HikariPool-1 - Shutdown initiated...
+backend-1  | 2026-11-04T22:43:57.705+09:00  INFO 1 --- [macro-dashboard-backend] [ionShutdownHook] com.zaxxer.hikari.HikariDataSource       : HikariPool-1 - Shutdown completed.

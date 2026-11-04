@@ -1,0 +1,174 @@
+# 출처: $SP/qa/lanes/repro33/ev/00-README.txt (전체)
+repro33 — 후보 "홈·매크로 CLS poor" 독립 재현 (커밋 49a7d62b, QA 스택 13002, 읽기만)
+01-cls-trace.txt            Playwright: layout-shift 항목 + 출처 노드의 지금 위치(boundingNow) + 구역 타임라인(rAF) + API 응답 시각  (pw/cls-trace.js)
+02-lighthouse-summary.txt   Lighthouse 13.6.0 /, /macro 모바일·데스크톱 (bin/lh.sh, 쿠키 마스킹, 화면 이미지 항목 제거)
+03-cls-delay-attribution.txt 브라우저 쪽 page.route로 특정 API만 1.5초 늦춰 이동이 그 응답을 따라가는지 (pw/cls-delay.js)
+04-cls-sweep.txt            대시보드 화면 24개 x 1350/412 CLS(세션 창 규칙) — 같은 패턴 찾기 (pw/cls-sweep.js)
+ssr_.html / ssr_macro.html  첫 HTML(서버 렌더) — '세션을 확인하는 중…'만 있음
+
+# 출처: $SP/qa/lanes/repro33/ev/02-lighthouse-summary.txt (전체)
+페이지-폼            성능  CLS    LCPms  TBTms  최종URL / 런타임오류
+macro-desktop          80  0.305    1250    105  http://localhost:13002/macro 
+     shift score=0.305 node='통화 및 환율\n\n출처 · TradingView · Yahoo Finance\n\n달러 인덱스 ' selector=main#main > div.mx-auto > div.flex > section.rounded-card
+     shift score=0.290 node="환율·달러인덱스 비교\n\n기준일을 100으로 맞춰 겹칩니다 — 단위가 달라도 '무엇이 더 움" selector=main#main > div.mx-auto > div.flex > section.rounded-card
+macro-mobile           65  0.151    3602    777  http://localhost:13002/macro 
+     shift score=0.151 node="환율·달러인덱스 비교\n\n기준일을 100으로 맞춰 겹칩니다 — 단위가 달라도 '무엇이 더 움" selector=main#main > div.mx-auto > div.flex > section.rounded-card
+root-desktop           83  0.337     844     33  http://localhost:13002/ 
+     shift score=0.337 node='시장\n수집\n2026-11-04 23:40\n매크로 지표 전체 보기\n통화 및 환율\nDX\n달러 ' selector=main#main > div.mx-auto > div.flex > section.flex
+root-mobile            60  0.279    3882    554  http://localhost:13002/ 
+     shift score=0.279 node='시장\n수집\n2026-11-04 23:40\n매크로 지표 전체 보기\n통화 및 환율\nDX\n달러 ' selector=main#main > div.mx-auto > div.flex > section.flex
+
+# 출처: $SP/qa/lanes/repro33/ev/03-cls-delay-attribution.txt (전체)
+== / 지연=none 합 0.337
+    {"t":213,"v":0.3372,"src":["시장","알림","데이터 저장소 상태데이터 저장소 상태"]}
+== / 지연=macro/overview 1.5s 합 0.158
+    {"t":193,"v":0.1576,"src":["시장","알림","데이터 저장소 상태데이터 저장소 상태"]}
+== / 지연=regime+paper 1.5s 합 0.380
+    {"t":192,"v":0,"src":["읽지 않음 0건알림 전체 보기"]}
+    {"t":228,"v":0.1973,"src":["알림","데이터 저장소 상태데이터 저장소 상태","수집2026-11-04 23:41매크"]}
+    {"t":1675,"v":0.1528,"src":["시장"]}
+    {"t":1712,"v":0.0302,"src":["시장"]}
+== /macro 지연=none 합 0.293
+    {"t":266,"v":0.2929,"src":["환율·달러인덱스 비교","신용 리스크, 은행권 및 시장 변동성","자동 갱신끄기5초10초30초1분5분1"]}
+== /macro 지연=macro/overview 1.5s 합 0.359
+    {"t":250,"v":0.0392,"src":["조회 기간최근 1개월최근 3개월최근 ","신용 리스크, 은행권 및 시장 변동성"]}
+    {"t":1872,"v":0.3195,"src":["환율·달러인덱스 비교","자동 갱신끄기5초10초30초1분5분1"]}
+
+# 출처: $SP/qa/lanes/repro33/ev/04-cls-sweep.txt (전체)
+/                            1350  CLS=0.337 POOR  url=/ ok  top=212ms 0.337 ["시장","알림","데이터 저장소 상태데이터 저장소 "]
+/                             412  CLS=0.279 POOR  url=/ ok  top=248ms 0.279 ["시장","알림"]
+/macro                       1350  CLS=0.359 POOR  url=/macro ok  top=529ms 0.320 ["환율·달러인덱스 비교","자동 갱신끄기5초10초30초1분5"]
+/macro                        412  CLS=0.163 NI  url=/macro ok  top=269ms 0.163 ["환율·달러인덱스 비교"]
+/paper/us                    1350  CLS=0.000 good  url=/paper/us ok  top=-
+/paper/us                     412  CLS=0.000 good  url=/paper/us ok  top=-
+/paper/kr                    1350  CLS=0.000 good  url=/paper/kr ok  top=-
+/paper/kr                     412  CLS=0.000 good  url=/paper/kr ok  top=-
+/institutions                1350  CLS=0.004 good  url=/institutions ok  top=220ms 0.004 ["조회 분기 수최근 1개 분기최근 ","표시 종목 수상위 10개상위 20",""]
+/institutions                 412  CLS=0.092 good  url=/institutions ok  top=207ms 0.092 ["분석할 기관국민연금 (Nation"]
+/radar                       1350  CLS=0.202 NI  url=/radar ok  top=315ms 0.202 ["외국인·기관 공통 순매수","수집2026-11-04 23:32","표시 종목 수상위 10개상위 20","조회 기간당일5거래일20거래일","매매 구분순매수순매도"]
+/radar                        412  CLS=0.024 good  url=/radar ok  top=256ms 0.024 ["데이터 소스 연결 테스트","표시 종목 수상위 10개상위 20","투자 주체외국인기관개인연기금금융투","매매 구분순매수순매도","출처 · 토스증권 Open API"]
+/regime                      1350  CLS=0.369 POOR  url=/regime ok  top=212ms 0.369 ["판정 성과","판정 기록"]
+/regime                       412  CLS=0.472 POOR  url=/regime ok  top=242ms 0.472 ["판정 성과","판정 기록"]
+/liquidity                   1350  CLS=0.001 good  url=/liquidity ok  top=194ms 0.001 ["조회 기간최근 1년최근 2년최근 "]
+/liquidity                    412  CLS=0.000 good  url=/liquidity ok  top=-
+/markets/i/usdkrw            1350  CLS=0.049 good  url=/markets/i/usdkrw ok  top=256ms 0.049 ["AI 요약","1개월6개월1년5년"]
+/markets/i/usdkrw             412  CLS=0.058 good  url=/markets/i/usdkrw ok  top=257ms 0.058 ["AI 요약","1개월6개월1년5년"]
+/consensus                   1350  CLS=0.286 POOR  url=/consensus ok  top=240ms 0.286 ["이번 분기 공통 신규 매수","기준 분기각 기관의 최신 분기20"]
+/consensus                    412  CLS=0.311 POOR  url=/consensus ok  top=224ms 0.311 ["이번 분기 공통 신규 매수","기준 분기각 기관의 최신 분기20"]
+/correlation                 1350  CLS=0.009 good  url=/correlation ok  top=225ms 0.009 ["비교 방식변화끼리 (권장)수준끼리","지표 Y미국채 10년물 · 금리미","롤링 창20 관측60 관측120 ","조회 기간최근 1년최근 3년최근 ",""]
+/correlation                  412  CLS=0.033 good  url=/correlation ok  top=234ms 0.033 ["비교 방식변화끼리 (권장)수준끼리","지표 Y미국채 10년물 · 금리미","롤링 창20 관측60 관측120 ","조회 기간최근 1년최근 3년최근 ",""]
+/cot                         1350  CLS=0.195 NI  url=/cot ok  top=240ms 0.195 ["포지셔닝 추이","극단 포지션 이후 성적 (백테스트"]
+/cot                          412  CLS=0.391 POOR  url=/cot ok  top=209ms 0.391 ["자산별 요약","포지셔닝 추이"]
+/krx                         1350  CLS=0.000 good  url=/krx ok  top=-
+/krx                          412  CLS=0.000 good  url=/krx ok  top=-
+/scorecard                   1350  CLS=0.012 good  url=/scorecard ok  top=269ms 0.007 ["종목AAPL · APPLE INC","대비 백분위로"]
+/scorecard                    412  CLS=0.162 NI  url=/scorecard ok  top=228ms 0.162 ["종목AAPL · APPLE INC","주의: 이 카드는 종합 점수가 아","대비 백분위로"]
+/sector                      1350  CLS=0.001 good  url=/sector ok  top=208ms 0.001 ["현재가 실시간끄기5초10초30초1"]
+/sector                       412  CLS=0.000 good  url=/sector ok  top=-
+/status                      1350  CLS=0.067 good  url=/status ok  top=362ms 0.067 ["외부 API 키 보유 현황","태스크별 최근 결과"]
+/status                       412  CLS=0.000 good  url=/status ok  top=-
+/alerts                      1350  CLS=0.000 good  url=/alerts ok  top=-
+/alerts                       412  CLS=0.000 good  url=/alerts ok  top=-
+/connections                 1350  CLS=0.165 NI  url=/connections ok  top=261ms 0.165 ["호출 테스트","토스증권","한국어로 한 문장만 답하십시오: ","추천 프롬프트한국어로 한 문장만 ","선택 모델 호출"]
+/connections                  412  CLS=0.363 POOR  url=/connections ok  top=238ms 0.363 ["호출 테스트"]
+/ai/report                   1350  CLS=0.157 NI  url=/ai/report ok  top=226ms 0.157 ["리포트 설정"]
+/ai/report                    412  CLS=0.249 NI  url=/ai/report ok  top=173ms 0.249 ["리포트 설정","AI에 전달되는 원본 데이터 보기","원본 데이터 복사"]
+/account                     1350  CLS=0.000 good  url=/account ok  top=-
+/account                      412  CLS=0.000 good  url=/account ok  top=-
+/admin/users                 1350  CLS=0.000 good  url=/admin/users ok  top=-
+/admin/users                  412  CLS=0.000 good  url=/admin/users ok  top=-
+/more                        1350  CLS=0.000 good  url=/more ok  top=-
+/more                         412  CLS=0.000 good  url=/more ok  top=-
+/style                       1350  CLS=0.297 POOR  url=/style ok  top=207ms 0.297 ["기관 간 유사도","포트폴리오 위험","유효 종목 수 = 1 ÷ 허핀달 ","출처 · SEC EDGAR 13F"]
+/style                        412  CLS=0.218 NI  url=/style ok  top=210ms 0.218 ["기관 간 유사도","유효 종목 수 = 1 ÷ 허핀달 ","출처 · SEC EDGAR 13F","새로고침"]
+/s/us/AAPL                   1350  CLS=0.076 good  url=/s/us/AAPL ok  top=208ms 0.076 ["핵심 지표","외부 소스에서 시계열을 받지 못했","1개월6개월1년5년","—값 없음","주요 뉴스"]
+/s/us/AAPL                    412  CLS=0.088 good  url=/s/us/AAPL ok  top=192ms 0.088 ["외부 소스에서 시계열을 받지 못했","핵심 지표","1개월6개월1년5년","AI 요약","—값 없음"]
+
+# 출처: $SP/qa/lanes/repro33/ev/01-cls-trace.txt (전체)
+
+===== / 1350x940 layout-shift 합(관측기 기준, 창 구분 없음) 0.489 항목 2
+  shift {"t":241,"v":0.4593,"src":[{"label":"시장","tag":"SECTION","prev":[323,172],"cur":[725,215],"boundingNow":{"y":725,"h":1758,"connected":true}},{"label":"알림","tag":"SECTION","prev":[527,151],"cur":[0,0],"boundingNow":{"y":2515,"h":105,"connected":true}},{"label":"데이터 저장소 상태","tag":"SECTION","prev":[709,84],"cur":[0,0],"boundingNow":{"y":2652,"h":84,"connected":true}}]}
+  shift {"t":268,"v":0.0302,"src":[{"label":"시장","tag":"SECTION","prev":[725,215],"cur":[0,0],"boundingNow":{"y":954,"h":1758,"connected":true}}]}
+  -- 구역 타임라인(제목@y+높이, performance.now ms)
+  t=22 
+  t=172 오늘의 국면@96+195 | 모의매매 · Claude 계좌 순@96+195 | 시장@323+172 | 알림@527+151 | 데이터 저장소 상태@709+84
+  t=240 오늘의 국면@96+597 | 모의매매 · Claude 계좌 순@96+597 | 시장@725+1758 | 통화 및 환율@765+473 | 미국 국채 수익률@765+473 | 원자재@1262+417 | 미국 주가지수 및 선물@1262+417 | 아시아 주요 주가지수@1703+780 | 알림@2515+105 | 데이터 저장소 상태@2652+84
+  t=267 오늘의 국면@96+826 | 모의매매 · Claude 계좌 순@96+826 | 시장@954+1758 | 통화 및 환율@994+473 | 미국 국채 수익률@994+473 | 원자재@1491+417 | 미국 주가지수 및 선물@1491+417 | 아시아 주요 주가지수@1932+780 | 알림@2744+105 | 데이터 저장소 상태@2880+84
+  t=304 오늘의 국면@96+826 | 모의매매 · Claude 계좌 순@96+826 | 시장@954+1758 | 통화 및 환율@994+473 | 미국 국채 수익률@994+473 | 원자재@1491+417 | 미국 주가지수 및 선물@1491+417 | 아시아 주요 주가지수@1932+780 | 알림@2744+105 | 데이터 저장소 상태@2880+64
+  -- API 응답(상대 ms, goto 기준)
+  119 200 /api/alerts/unread-count
+  123 200 /api/auth/session
+  184 200 /api/calendar/kr-holidays
+  185 200 /api/alerts/inbox?limit=3
+  188 200 /api/alerts/unread-count
+  196 200 /api/analytics/regime?years=5
+  196 200 /api/macro/overview
+  201 200 /api/paper/overview
+  224 200 /api/paper/status
+  281 200 /api/status/issues
+
+===== /macro 1350x940 layout-shift 합(관측기 기준, 창 구분 없음) 0.293 항목 1
+  shift {"t":261,"v":0.2929,"src":[{"label":"환율·달러인덱스 비교","tag":"SECTION","prev":[565,302],"cur":[0,0],"boundingNow":{"y":2554,"h":783,"connected":true}},{"label":"신용 리스크, 은행권 및 시장 변동성","tag":"SECTION","prev":[899,42],"cur":[0,0],"boundingNow":{"y":5446,"h":727,"connected":true}},{"label":"자동 갱신끄기5초10초30초1분5분10분30분1시간3시간↻ 23:40수집","tag":"DIV","prev":[195,32],"cur":[195,32],"boundingNow":{"y":195," …(줄 자름)
+  -- 구역 타임라인(제목@y+높이, performance.now ms)
+  t=70 
+  t=193 전체 대시보드 원본 데이터 보기 @259+158 | 환율·달러인덱스 비교@565+302 | 신용 리스크, 은행권 및 시장 변@899+178 | 심화 매크로 지표@1109+178 | 지표별 기간별 단독 차트@1319+278 | 비공식 스크래핑 시세 비교@1628+222
+  t=258 전체 대시보드 원본 데이터 보기 @259+158 | 통화 및 환율@449+346 | 미국 국채 수익률@827+346 | 원자재@1204+330 | 미국 주가지수 및 선물@1566+330 | 아시아 주요 주가지수@1927+595 | 환율·달러인덱스 비교@2554+783 | 10Y−2Y 장단기 금리차@3369+833 | 30Y−2Y 장단기 금리차@4234+833 | 장단기 금리차 해석 기준@5099+315 | 신용 리스크, 은행권 및 시장 변@5446+727 | 심화 매크로 지표@6205+1129
+  -- API 응답(상대 ms, goto 기준)
+  138 200 /api/auth/session
+  138 200 /api/alerts/unread-count
+  202 200 /api/macro/ticker?symbol=%5EVIX&period=1y
+  202 200 /api/calendar/kr-holidays
+  202 200 /api/macro/fx?ids=usdkrw%2Cdxy&period=1y&mode=index
+  202 200 /api/macro/fred/T10Y3M?years=10
+  202 200 /api/macro/scraped
+  202 200 /api/macro/risk
+  204 200 /api/macro/overview?live=true
+  204 200 /api/macro/advanced
+
+===== / 412x823 layout-shift 합(관측기 기준, 창 구분 없음) 0.279 항목 1
+  shift {"t":216,"v":0.2791,"src":[{"label":"시장","tag":"SECTION","prev":[550,188],"cur":[0,0],"boundingNow":{"y":1676,"h":2868,"connected":true}},{"label":"알림","tag":"SECTION","prev":[762,61],"cur":[0,0],"boundingNow":{"y":4568,"h":118,"connected":true}}]}
+  -- 구역 타임라인(제목@y+높이, performance.now ms)
+  t=20 
+  t=159 오늘의 국면@129+187 | 모의매매 · Claude 계좌 순@340+187 | 시장@550+188 | 알림@762+164 | 데이터 저장소 상태@950+84
+  t=215 오늘의 국면@129+656 | 모의매매 · Claude 계좌 순@809+843 | 시장@1676+2868 | 통화 및 환율@1732+543 | 미국 국채 수익률@2299+433 | 원자재@2756+385 | 미국 주가지수 및 선물@3164+495 | 아시아 주요 주가지수@3683+861 | 알림@4568+118 | 데이터 저장소 상태@4710+84
+  t=243 오늘의 국면@129+656 | 모의매매 · Claude 계좌 순@809+843 | 시장@1676+2868 | 통화 및 환율@1732+543 | 미국 국채 수익률@2299+433 | 원자재@2756+385 | 미국 주가지수 및 선물@3164+495 | 아시아 주요 주가지수@3683+861 | 알림@4568+118 | 데이터 저장소 상태@4710+94
+  -- API 응답(상대 ms, goto 기준)
+  103 200 /api/alerts/unread-count
+  106 200 /api/auth/session
+  168 200 /api/calendar/kr-holidays
+  169 200 /api/analytics/regime?years=5
+  169 200 /api/alerts/unread-count
+  170 200 /api/alerts/inbox?limit=3
+  170 200 /api/macro/overview
+  170 200 /api/paper/overview
+  175 200 /api/paper/status
+  235 200 /api/status/issues
+
+===== /macro 412x823 layout-shift 합(관측기 기준, 창 구분 없음) 0.199 항목 2
+  shift {"t":258,"v":0.1625,"src":[{"label":"환율·달러인덱스 비교","tag":"SECTION","prev":[678,145],"cur":[0,0],"boundingNow":{"y":5924,"h":1091,"connected":true}}]}
+  shift {"t":2754,"v":0.0369,"src":[{"label":"통화 및 환율","tag":"SECTION","prev":[570,253],"cur":[622,201],"boundingNow":{"y":622,"h":1004,"connected":true}},{"label":"전체 대시보드 원본 데이터 보기 / 복사","tag":"SECTION","prev":[352,194],"cur":[404,194],"boundingNow":{"y":404,"h":194,"connected":true}},{"label":"자동 갱신끄기5초10초30초1분5분10분30분1시간3시간↻ 23:40수집","tag":"DIV","prev":[284,44],"cur":[336,44],"boundingNow":{"y …(줄 자름)
+  -- 구역 타임라인(제목@y+높이, performance.now ms)
+  t=22 
+  t=193 전체 대시보드 원본 데이터 보기 @352+194 | 환율·달러인덱스 비교@678+346 | 신용 리스크, 은행권 및 시장 변@1048+170 | 심화 매크로 지표@1242+170 | 지표별 기간별 단독 차트@1436+274 | 비공식 스크래핑 시세 비교@1733+262
+  t=256 전체 대시보드 원본 데이터 보기 @352+194 | 통화 및 환율@570+1004 | 미국 국채 수익률@1598+777 | 원자재@2399+777 | 미국 주가지수 및 선물@3199+1004 | 아시아 주요 주가지수@4227+1673 | 환율·달러인덱스 비교@5924+1091 | 10Y−2Y 장단기 금리차@7039+1254 | 30Y−2Y 장단기 금리차@8316+1254 | 장단기 금리차 해석 기준@9594+365 | 신용 리스크, 은행권 및 시장 변@9983+1414 | 심화 매크로 지표@11420+2136
+  t=2637 전체 대시보드 원본 데이터 보기 @404+194 | 통화 및 환율@622+1004 | 미국 국채 수익률@1650+777 | 원자재@2451+777 | 미국 주가지수 및 선물@3251+1004 | 아시아 주요 주가지수@4279+1673 | 환율·달러인덱스 비교@5976+1091 | 10Y−2Y 장단기 금리차@7091+1254 | 30Y−2Y 장단기 금리차@8368+1254 | 장단기 금리차 해석 기준@9646+365 | 신용 리스크, 은행권 및 시장 변@10035+1414 | 심화 매크로 지표@11472+2136
+  -- API 응답(상대 ms, goto 기준)
+  137 200 /api/auth/session
+  137 200 /api/alerts/unread-count
+  206 200 /api/calendar/kr-holidays
+  206 200 /api/macro/scraped
+  206 200 /api/macro/fx?ids=usdkrw%2Cdxy&period=1y&mode=index
+  206 200 /api/macro/ticker?symbol=%5EVIX&period=1y
+  206 200 /api/macro/fred/T10Y3M?years=10
+  206 200 /api/macro/risk
+  207 200 /api/macro/overview?live=true
+  207 200 /api/macro/advanced
+  2602 200 /api/live/prices/stream?items=TV%3ATVC%3ADXY%2CTV%3AFX_IDC%3AUSDKRW%2CTV%3AFX_IDC%3AUSDJPY%2CTV%3AFX_IDC%3AJPYKRW%2CTV%3ATVC%3AUS02Y%2CTV%3ATVC%3AUS10Y%2CTV%3ATVC%3AUS30Y%2CTV%3ANYMEX%3ACL1!%2CTV%3AICEEUR%3ABRN1!%2CTV%3ACOMEX%3AGC1!%2CNI%3A.INX%2CTV%3ACME_MINI%3AES1!%2CNI%3A.NDX%2CTV%3ACME_MINI%3ANQ1!%2CTV%3AKRX%3AKOSPI%2CTV%3ATVC%3ANI225%2CTV%3ASSE%3A000001%2CTV%3ATVC%3AHSI%2CTV%3AKRX% …(줄 자름)
+
+# 출처: $SP/qa/lanes/performance/ev/62-cls-sources.txt (전체) — 성능 영역 — 이동 출처
+== / 1350x940 CLS 합 0.337 (항목 1)
+  {"t":206,"v":0.3372,"src":[{"label":"시장","prevH":172,"curH":0,"prevY":323,"curY":0},{"label":"알림","prevH":151,"curH":0,"prevY":527,"curY":0},{"label":"데이터 저장소 상태","prevH":84,"curH":0,"prevY":709,"curY":0}]}
+== /macro 1350x940 CLS 합 0.293 (항목 1)
+  {"t":244,"v":0.2929,"src":[{"label":"환율·달러인덱스 비교","prevH":302,"curH":0,"prevY":565,"curY":0},{"label":"신용 리스크, 은행권 및 시장 변동성","prevH":42,"curH":0,"prevY":899,"curY":0},{"label":"자동 갱신끄기5초10초30초1분5분10분30분1시간3시간↻ 23:17수집2026-11-04 23:15","prevH":32,"curH":32,"prevY":195,"curY":195}]}
+== / 412x823 CLS 합 0.279 (항목 1)
+  {"t":199,"v":0.2791,"src":[{"label":"시장","prevH":188,"curH":0,"prevY":550,"curY":0},{"label":"알림","prevH":61,"curH":0,"prevY":762,"curY":0}]}

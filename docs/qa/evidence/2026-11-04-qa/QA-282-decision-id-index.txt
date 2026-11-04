@@ -1,0 +1,285 @@
+# 출처: $SP/qa/lanes/repro32/INDEX.txt (전체)
+repro32 — 후보 'paper_orders.decision_id 색인 없음 → 결정 요약 질의의 상관 COUNT가 주문 표 전체를 훑음'(performance) 독립 재현, 2026-11-04, 커밋 49a7d62b
+방법: 공용 QA DB에는 합성 행을 넣지 않음(다른 재현 에이전트와 공유). QA DB는 읽기만(색인 목록·현재 데이터 EXPLAIN·GET 응답 시간, 세션은 로그아웃).
+      규모 시험은 로컬 postgres(5434)의 내 몫 테스트 DB macrodash_qa_repro32_test(make db-test, V1~V19)에 합성 → 끝나고 DROP DATABASE.
+ev/01  QA DB paper_orders 색인 = pkey·(book_code,status)·(book_code,created_at)뿐 — decision_id 색인 없음
+ev/02  QA DB 현재 데이터(주문 27) EXPLAIN: SubPlan Seq Scan on paper_orders, Filter decision_id = d.id
+ev/03  QA 스택 GET(현재 데이터) overview 19.3ms, decisions limit=500 2.2~2.5ms
+ev/10~18 테스트 DB 합성: A 주문 4,212(claude 253결정·claude2 500결정) / C +rules 결정 없는 주문 8,000(합 12,212) / C+색인
+       EXPLAIN(ANALYZE, TIMING OFF) 10회 중앙값 — claude(500 한도) 87.6 → 120.7ms, 색인 1.96ms / claude2 157.0 → 209.1ms, 색인 2.87ms
+       claudeExposureSeries가 실제 쓰는 칸만 읽는 가벼운 질의 0.23~0.32ms(색인 없이도)
+ev/19  계좌 초기화(resetBook) 결정 500건 지우기의 외래 키 검사: 색인 없음 150.6ms, 있음 10.9ms(ROLLBACK) — paper_checkpoints의 두 결정 외래 키도 색인 없음
+ev/21  화면 결정 목록이 실제 쓰는 limit=50: 단계 C 색인 없이 19.4~22.2ms
+
+# 출처: $SP/qa/lanes/repro32/ev/01-qa-db-state.txt (전체)
+$ qa-stack.sh exec postgres psql -U macro -d macrodash -c "<indexes, counts>"
+      indexname      |                                             indexdef                                             
+---------------------+--------------------------------------------------------------------------------------------------
+ paper_orders_open   | CREATE INDEX paper_orders_open ON public.paper_orders USING btree (book_code, status)
+ paper_orders_pkey   | CREATE UNIQUE INDEX paper_orders_pkey ON public.paper_orders USING btree (id)
+ paper_orders_recent | CREATE INDEX paper_orders_recent ON public.paper_orders USING btree (book_code, created_at DESC)
+(3 rows)
+
+ book_code | count 
+-----------+-------
+ bench_mix |     2
+ bench_spy |     1
+ claude    |    10
+ rules     |    14
+(4 rows)
+
+ book_code | count 
+-----------+-------
+ claude    |     3
+ rules     |     3
+(2 rows)
+
+                                         version                                          
+------------------------------------------------------------------------------------------
+ PostgreSQL 16.15 on x86_64-pc-linux-musl, compiled by gcc (Alpine 15.2.0) 15.2.0, 64-bit
+(1 row)
+
+
+# 출처: $SP/qa/lanes/repro32/ev/02-qa-explain-current.txt (전체)
+$ qa-stack.sh exec postgres psql -U macro -d macrodash -v book=claude -f /dev/stdin < bin/explain-summary.sql
+                                         QUERY PLAN                                         
+--------------------------------------------------------------------------------------------
+ Limit (actual time=0.517..0.539 rows=3 loops=1)
+   Buffers: shared hit=67
+   ->  Result (actual time=0.516..0.537 rows=3 loops=1)
+         Buffers: shared hit=67
+         ->  Sort (actual time=0.465..0.466 rows=3 loops=1)
+               Sort Key: d.as_of_trading_date DESC, d.decided_at DESC, d.id DESC
+               Sort Method: quicksort  Memory: 27kB
+               Buffers: shared hit=43
+               ->  Seq Scan on paper_decisions d (actual time=0.348..0.361 rows=3 loops=1)
+                     Filter: (book_code = 'claude'::text)
+                     Rows Removed by Filter: 3
+                     Buffers: shared hit=34
+         SubPlan 1
+           ->  Aggregate (actual time=0.014..0.014 rows=1 loops=3)
+                 Buffers: shared hit=12
+                 ->  Seq Scan on paper_orders o (actual time=0.011..0.012 rows=3 loops=3)
+                       Filter: (decision_id = d.id)
+                       Rows Removed by Filter: 24
+                       Buffers: shared hit=12
+         SubPlan 2
+           ->  Aggregate (actual time=0.005..0.005 rows=1 loops=3)
+                 Buffers: shared hit=12
+                 ->  Seq Scan on paper_orders o_1 (actual time=0.005..0.005 rows=0 loops=3)
+                       Filter: ((decision_id = d.id) AND (status = 'REJECTED'::text))
+                       Rows Removed by Filter: 27
+                       Buffers: shared hit=12
+ Planning:
+   Buffers: shared hit=255
+ Planning Time: 2.907 ms
+ Execution Time: 0.721 ms
+(30 rows)
+
+
+# 출처: $SP/qa/lanes/repro32/ev/03-qa-api-baseline.txt (전체)
+# QA 스택(현재 데이터 — 주문 27·결정 6, 합성 없음) 읽기 전용 GET 응답 시간, 10회(첫 1회 데우기 제외) — login http=200
+/api/paper/overview http=200  median_ms=19.3
+/api/paper/decisions?book=claude&limit=500 http=200  median_ms=2.5
+/api/paper/decisions?book=claude2&limit=500 http=200  median_ms=2.2
+logout http=200
+
+# 출처: $SP/qa/lanes/repro32/ev/12-measure-A.txt (전체)
+# 측정: EXPLAIN (ANALYZE, TIMING OFF) Execution Time 10회 중앙값(행별 시간 계측 끔 — 실제 실행에 가까움)
+A(주문4212,색인없음) summary book=claude n=10 median_ms=87.644 all=[82.454 82.810 84.812 85.794 87.400 87.888 90.083 93.941 94.662 98.656 ]
+A(주문4212,색인없음) light book=claude n=10 median_ms=0.235 all=[0.215 0.223 0.226 0.229 0.235 0.235 0.238 0.242 0.272 0.305 ]
+A(주문4212,색인없음) summary book=claude2 n=10 median_ms=156.947 all=[150.644 154.272 154.658 155.957 156.592 157.303 158.353 163.123 173.900 176.066 ]
+A(주문4212,색인없음) light book=claude2 n=10 median_ms=0.316 all=[0.290 0.293 0.299 0.309 0.314 0.318 0.320 0.321 0.329 0.356 ]
+
+# 출처: $SP/qa/lanes/repro32/ev/14-measure-C.txt (전체)
+# 단계 C(주문 12,212, 색인 없음) — EXPLAIN (ANALYZE, TIMING OFF) 10회 중앙값
+C(주문12212,색인없음) summary book=claude n=10 median_ms=120.701 all=[115.656 117.817 117.899 118.005 119.022 122.379 126.375 127.891 128.138 129.915 ]
+C(주문12212,색인없음) light book=claude n=10 median_ms=0.233 all=[0.222 0.222 0.226 0.229 0.231 0.234 0.240 0.242 0.280 0.338 ]
+C(주문12212,색인없음) summary book=claude2 n=10 median_ms=209.069 all=[202.565 203.298 207.379 207.749 208.828 209.310 209.531 215.424 217.035 238.984 ]
+C(주문12212,색인없음) light book=claude2 n=10 median_ms=0.303 all=[0.284 0.292 0.294 0.299 0.302 0.304 0.311 0.326 0.389 0.843 ]
+
+# 출처: $SP/qa/lanes/repro32/ev/15-explain-C-claude2-noindex.txt (전체)
+$ psql -v book=claude2 -f bin/explain-summary.sql  (단계 C, 색인 없음)
+                                                         QUERY PLAN                                                         
+----------------------------------------------------------------------------------------------------------------------------
+ Limit (actual time=13.175..192.938 rows=500 loops=1)
+   Buffers: shared hit=126510
+   ->  Result (actual time=1.055..180.748 rows=500 loops=1)
+         Buffers: shared hit=126510
+         ->  Incremental Sort (actual time=0.229..1.451 rows=500 loops=1)
+               Sort Key: d.as_of_trading_date DESC, d.decided_at DESC, d.id DESC
+               Presorted Key: d.as_of_trading_date
+               Full-sort Groups: 16  Sort Method: quicksort  Average Memory: 41kB  Peak Memory: 41kB
+               Buffers: shared hit=510
+               ->  Index Scan using paper_decisions_recent on paper_decisions d (actual time=0.045..1.061 rows=500 loops=1)
+                     Index Cond: (book_code = 'claude2'::text)
+                     Buffers: shared hit=498
+         SubPlan 1
+           ->  Aggregate (actual time=0.316..0.316 rows=1 loops=500)
+                 Buffers: shared hit=88500
+                 ->  Seq Scan on paper_orders o (actual time=0.146..0.315 rows=4 loops=500)
+                       Filter: (decision_id = d.id)
+                       Rows Removed by Filter: 12208
+                       Buffers: shared hit=88500
+         SubPlan 2
+           ->  Aggregate (actual time=0.041..0.041 rows=1 loops=500)
+                 Buffers: shared hit=37500
+                 ->  Bitmap Heap Scan on paper_orders o_1 (actual time=0.036..0.037 rows=0 loops=500)
+                       Recheck Cond: (status = 'REJECTED'::text)
+                       Filter: (decision_id = d.id)
+                       Rows Removed by Filter: 236
+                       Heap Blocks: exact=30000
+                       Buffers: shared hit=37500
+                       ->  Bitmap Index Scan on paper_orders_open (actual time=0.014..0.014 rows=236 loops=500)
+                             Index Cond: (status = 'REJECTED'::text)
+                             Buffers: shared hit=7500
+ Planning:
+   Buffers: shared hit=243
+ Planning Time: 1.454 ms
+ Execution Time: 213.152 ms
+(35 rows)
+
+
+# 출처: $SP/qa/lanes/repro32/ev/17-explain-C-claude2-indexed.txt (전체)
+$ psql -v book=claude2 -f bin/explain-summary.sql  (단계 C, 색인 있음)
+                                                           QUERY PLAN                                                            
+---------------------------------------------------------------------------------------------------------------------------------
+ Limit (actual time=0.269..2.998 rows=500 loops=1)
+   Buffers: shared hit=4722 read=5
+   ->  Result (actual time=0.269..2.971 rows=500 loops=1)
+         Buffers: shared hit=4722 read=5
+         ->  Incremental Sort (actual time=0.190..1.465 rows=500 loops=1)
+               Sort Key: d.as_of_trading_date DESC, d.decided_at DESC, d.id DESC
+               Presorted Key: d.as_of_trading_date
+               Full-sort Groups: 16  Sort Method: quicksort  Average Memory: 41kB  Peak Memory: 41kB
+               Buffers: shared hit=510
+               ->  Index Scan using paper_decisions_recent on paper_decisions d (actual time=0.037..1.004 rows=500 loops=1)
+                     Index Cond: (book_code = 'claude2'::text)
+                     Buffers: shared hit=498
+         SubPlan 1
+           ->  Aggregate (actual time=0.001..0.001 rows=1 loops=500)
+                 Buffers: shared hit=1024 read=5
+                 ->  Index Only Scan using repro32_orders_decision on paper_orders o (actual time=0.001..0.001 rows=4 loops=500)
+                       Index Cond: (decision_id = d.id)
+                       Heap Fetches: 28
+                       Buffers: shared hit=1024 read=5
+         SubPlan 2
+           ->  Aggregate (actual time=0.001..0.002 rows=1 loops=500)
+                 Buffers: shared hit=3188
+                 ->  Index Scan using repro32_orders_decision on paper_orders o_1 (actual time=0.001..0.001 rows=0 loops=500)
+                       Index Cond: (decision_id = d.id)
+                       Filter: (status = 'REJECTED'::text)
+                       Rows Removed by Filter: 4
+                       Buffers: shared hit=3188
+ Planning:
+   Buffers: shared hit=256 read=1
+ Planning Time: 1.941 ms
+ Execution Time: 3.151 ms
+(31 rows)
+
+
+# 출처: $SP/qa/lanes/repro32/ev/18-measure-C-indexed.txt (전체)
+# 단계 C(주문 12,212) + 색인 paper_orders(decision_id) — EXPLAIN (ANALYZE, TIMING OFF) 10회 중앙값
+C+색인 summary book=claude n=10 median_ms=1.964 all=[1.765 1.768 1.804 1.831 1.945 1.982 2.024 2.031 2.263 2.765 ]
+C+색인 summary book=claude2 n=10 median_ms=2.865 all=[2.519 2.692 2.718 2.720 2.778 2.953 3.156 3.602 4.466 6.046 ]
+
+# 출처: $SP/qa/lanes/repro32/ev/19-reset-fk.txt (전체)
+$ psql -f bin/reset-fk.sql  (첫 묶음 색인 없음, 둘째 묶음 색인 있음, 모두 ROLLBACK)
+BEGIN
+DROP INDEX
+DELETE 2188
+                                   QUERY PLAN                                    
+---------------------------------------------------------------------------------
+ Delete on paper_decisions (actual rows=0 loops=1)
+   ->  Seq Scan on paper_decisions (actual rows=500 loops=1)
+         Filter: (book_code = 'claude2'::text)
+         Rows Removed by Filter: 253
+ Planning Time: 0.506 ms
+ Trigger for constraint paper_orders_decision_id_fkey: calls=500
+ Trigger for constraint paper_checkpoints_source_decision_id_fkey: calls=500
+ Trigger for constraint paper_checkpoints_checkpoint_decision_id_fkey: calls=500
+ Execution Time: 150.582 ms
+(9 rows)
+
+ROLLBACK
+BEGIN
+DELETE 2188
+                                   QUERY PLAN                                    
+---------------------------------------------------------------------------------
+ Delete on paper_decisions (actual rows=0 loops=1)
+   ->  Seq Scan on paper_decisions (actual rows=500 loops=1)
+         Filter: (book_code = 'claude2'::text)
+         Rows Removed by Filter: 253
+ Planning Time: 0.060 ms
+ Trigger for constraint paper_orders_decision_id_fkey: calls=500
+ Trigger for constraint paper_checkpoints_source_decision_id_fkey: calls=500
+ Trigger for constraint paper_checkpoints_checkpoint_decision_id_fkey: calls=500
+ Execution Time: 10.903 ms
+(9 rows)
+
+ROLLBACK
+
+# 출처: $SP/qa/lanes/repro32/ev/21-measure-C-limit50.txt (전체)
+# 단계 C(주문 12,212, 색인 없음), 화면 결정 목록이 실제로 쓰는 limit=50(DecisionsSection.tsx:87 RECENT_LIMIT) — 10회 중앙값
+C limit50 summary book=claude n=10 median_ms=19.432 all=[18.752 18.797 18.873 19.175 19.399 19.465 20.236 20.346 21.628 23.178 ]
+C limit50 summary book=claude2 n=10 median_ms=22.169 all=[18.796 19.165 19.448 19.897 22.104 22.235 23.367 23.583 24.462 27.197 ]
+
+# 출처: $SP/qa/lanes/performance/ev/20-synthetic-measure.txt (전체) — 성능 영역 — API 수준 측정(합성 1년치)
+0 기준(합성 전) | /api/paper/books/claude2/execution?limit=50 | http 200 | 중앙 4.7ms 최대 7.4ms (n=10) | gzip 1022B 원본 2813B
+0 기준(합성 전) | /api/paper/books/claude/execution?limit=50 | http 200 | 중앙 3.7ms 최대 4.1ms (n=10) | gzip 1782B 원본 1782B
+0 기준(합성 전) | /api/paper/overview | http 200 | 중앙 17.0ms 최대 22.1ms (n=10) | gzip 3258B 원본 13992B
+0 기준(합성 전) | /api/paper/decisions?book=claude2&limit=50 | http 200 | 중앙 2.0ms 최대 2.4ms (n=10) | gzip 33B 원본 33B
+0 기준(합성 전) | /api/paper/decisions?book=claude&limit=500 | http 200 | 중앙 2.5ms 최대 3.1ms (n=10) | gzip 1065B 원본 2173B
+0 기준(합성 전) | /api/paper/status | http 200 | 중앙 24.6ms 최대 30.8ms (n=10) | gzip 2457B 원본 16207B
+0 기준(합성 전) | /api/paper/books/claude2/orders?limit=500 | http 200 | 중앙 2.1ms 최대 2.5ms (n=10) | gzip 30B 원본 30B
+A 계좌2 125세션(결정 250·주문 1082) | /api/paper/books/claude2/execution?limit=50 | http 500 | 중앙 31.8ms 최대 46.3ms (n=10) | gzip 153B 원본 126B  <- 합성 데이터 실수(잘린 JSON 패킷), 제품 결함 아님 — 아래 줄이 정정 뒤 값
+A 계좌2 125세션(결정 250·주문 1082) | /api/paper/books/claude2/execution?limit=500 | http 500 | 중앙 42.2ms 최대 58.6ms (n=10) | gzip 153B 원본 126B  <- 합성 데이터 실수(잘린 JSON 패킷), 제품 결함 아님 — 아래 줄이 정정 뒤 값
+A 계좌2 125세션(결정 250·주문 1082) | /api/paper/books/claude/execution?limit=50 | http 200 | 중앙 4.0ms 최대 4.4ms (n=10) | gzip 1782B 원본 1782B
+A 계좌2 125세션(결정 250·주문 1082) | /api/paper/overview | http 200 | 중앙 18.8ms 최대 21.5ms (n=10) | gzip 3258B 원본 13992B
+A 계좌2 125세션(결정 250·주문 1082) | /api/paper/decisions?book=claude2&limit=50 | http 200 | 중앙 7.1ms 최대 8.1ms (n=10) | gzip 2045B 원본 106957B
+A 계좌2 125세션(결정 250·주문 1082) | /api/paper/decisions?book=claude2&limit=500 | http 200 | 중앙 22.0ms 최대 25.3ms (n=10) | gzip 5959B 원본 534657B
+A 계좌2 125세션(결정 250·주문 1082) | /api/paper/status | http 200 | 중앙 24.0ms 최대 31.8ms (n=10) | gzip 2457B 원본 16207B
+A 계좌2 125세션(결정 250·주문 1082) | /api/paper/books/claude2/orders?limit=500 | http 200 | 중앙 6.7ms 최대 9.2ms (n=10) | gzip 5672B 원본 186709B
+A 계좌2 125세션(결정 250·주문 1082) | /api/paper/books/claude2/execution?limit=50 | http 200 | 중앙 153.5ms 최대 223.7ms (n=10) | gzip 4597B 원본 98116B
+A 계좌2 125세션(결정 250·주문 1082) | /api/paper/books/claude2/execution?limit=500 | http 200 | 중앙 155.8ms 최대 216.9ms (n=10) | gzip 23228B 원본 887318B
+B 1년(결정 750·주문 4166) | /api/paper/books/claude2/execution?limit=50 | http 200 | 중앙 319.3ms 최대 346.3ms (n=10) | gzip 4598B 원본 97555B
+B 1년(결정 750·주문 4166) | /api/paper/books/claude2/execution?limit=500 | http 200 | 중앙 283.0ms 최대 359.3ms (n=10) | gzip 23277B 원본 887246B
+B 1년(결정 750·주문 4166) | /api/paper/books/claude/execution?limit=50 | http 200 | 중앙 52.9ms 최대 67.7ms (n=10) | gzip 3412B 원본 88650B
+B 1년(결정 750·주문 4166) | /api/paper/books/claude/execution?limit=500 | http 200 | 중앙 73.3ms 최대 91.4ms (n=10) | gzip 21140B 원본 872905B
+B 1년(결정 750·주문 4166) | /api/paper/overview | http 200 | 중앙 68.1ms 최대 72.8ms (n=10) | gzip 4667B 원본 33799B
+B 1년(결정 750·주문 4166) | /api/paper/decisions?book=claude&limit=50 | http 200 | 중앙 11.5ms 최대 13.7ms (n=10) | gzip 2118B 원본 56411B
+B 1년(결정 750·주문 4166) | /api/paper/decisions?book=claude&limit=500 | http 200 | 중앙 47.8ms 최대 58.5ms (n=10) | gzip 5800B 원본 290673B
+B 1년(결정 750·주문 4166) | /api/paper/decisions?book=claude2&limit=500 | http 200 | 중앙 100.3ms 최대 272.2ms (n=10) | gzip 10673B 원본 1069282B
+B 1년(결정 750·주문 4166) | /api/paper/status | http 200 | 중앙 23.2ms 최대 26.3ms (n=10) | gzip 2458B 원본 16207B
+B 1년(결정 750·주문 4166) | /api/paper/books/claude/orders?limit=500 | http 200 | 중앙 6.6ms 최대 7.0ms (n=10) | gzip 6472B 원본 195686B
+B 1년(결정 750·주문 4166) | /api/paper/books/claude/fills?limit=500 | http 200 | 중앙 5.8ms 최대 6.5ms (n=10) | gzip 4967B 원본 123993B
+B 1년(결정 750·주문 4166) | /api/paper/books/claude/nav | http 200 | 중앙 2.9ms 최대 4.5ms (n=10) | gzip 744B 원본 744B
+B + 임시 색인 decision_id | /api/paper/overview | http 200 | 중앙 31.5ms 최대 34.8ms (n=10) | gzip 4667B 원본 33799B
+B + 임시 색인 decision_id | /api/paper/decisions?book=claude&limit=500 | http 200 | 중앙 12.1ms 최대 13.6ms (n=10) | gzip 5800B 원본 290673B
+B + 임시 색인 decision_id | /api/paper/decisions?book=claude2&limit=500 | http 200 | 중앙 22.0ms 최대 26.3ms (n=10) | gzip 10673B 원본 1069282B
+B + 임시 색인 decision_id | /api/paper/books/claude2/execution?limit=50 | http 200 | 중앙 263.5ms 최대 366.0ms (n=10) | gzip 4598B 원본 97555B
+C 주문 표 12.2k(결정 750) | /api/paper/overview | http 200 | 중앙 123.8ms 최대 154.6ms (n=10) | gzip 4667B 원본 33799B
+C 주문 표 12.2k(결정 750) | /api/paper/decisions?book=claude&limit=500 | http 200 | 중앙 103.4ms 최대 121.1ms (n=10) | gzip 5800B 원본 290673B
+C 주문 표 12.2k(결정 750) | /api/paper/decisions?book=claude2&limit=500 | http 200 | 중앙 203.7ms 최대 207.1ms (n=10) | gzip 10673B 원본 1069282B
+C 주문 표 12.2k(결정 750) | /api/paper/decisions/900700 | http 200 | 중앙 6.5ms 최대 9.9ms (n=10) | gzip 25545B 원본 82760B
+C 주문 표 12.2k(결정 750) | /api/paper/books/claude/orders?limit=50 | http 200 | 중앙 2.9ms 최대 3.3ms (n=10) | gzip 2578B 원본 23645B
+C 주문 표 12.2k(결정 750) | /api/paper/books/rules/orders?limit=500 | http 200 | 중앙 5.4ms 최대 7.2ms (n=10) | gzip 5664B 원본 167326B
+D 계좌2 장중 확인 500(상한) | /api/paper/books/claude2/execution?limit=1 | http 200 | 중앙 510.0ms 최대 608.6ms (n=10) | gzip 2380B 원본 11822B
+D 계좌2 장중 확인 500(상한) | /api/paper/books/claude2/execution?limit=50 | http 200 | 중앙 478.5ms 최대 497.8ms (n=10) | gzip 4603B 원본 97555B
+
+# 출처: $SP/qa/lanes/performance/ev/03-slowlog-all-summary.txt (전체)
+50ms 이상 2409건, 모양 14개 (구간: 느린 질의 기록을 켠 뒤 전체 — 부하·합성 측정 포함)
+[PostgreSQL JDBC Driver] n=1149 합=128.3s 중앙=108ms 최대=198ms :: SELECT d.id, d.book_code, d.as_of_trading_date, d.kind, d.decided_at, d.status, d.model, d.framework_version, d.settings_version, d.selection_as_of, d.target_exposure_pct, d.response->>? AS summary, d.error, d.prices_final, (SELECT COUNT(*) FROM paper_orders o WHERE o.decision_id = d.id) AS order_co
+[[unknown]] n=612 합=40.0s 중앙=62ms 최대=130ms :: SELECT COUNT(*) AS n FROM timeseries
+[[unknown]] n=627 합=35.9s 중앙=55ms 최대=100ms :: SELECT COUNT(*) AS n FROM observations
+[PostgreSQL JDBC Driver] n=8 합=0.7s 중앙=70ms 최대=202ms :: SELECT e.order_id, e.book_code, e.timing, e.target_at, e.cf::text AS cf, e.lag_seconds, e.late_resolved, e.updated_at FROM paper_order_exec e JOIN paper_orders o ON o.id = e.order_id WHERE e.book_code = $N ORDER BY o.created_at DESC, o.id DESC
+[psql] n=3 합=0.3s 중앙=121ms 최대=154ms :: INSERT INTO paper_decisions (id, book_code, as_of_trading_date, kind, decided_at, status, model, framework_version, settings_version,
+[psql] n=1 합=0.3s 중앙=319ms 최대=319ms :: DELETE FROM paper_orders WHERE id >= N;
+[psql] n=1 합=0.2s 중앙=199ms 최대=199ms :: DELETE FROM paper_decisions WHERE id >= N;
+[psql] n=1 합=0.2s 중앙=151ms 최대=151ms :: UPDATE paper_decisions SET packet_text = jsonb_build_object(?, left(packet_text, N))::text WHERE id BETWEEN N AND N AND kind=?
+[psql] n=2 합=0.1s 중앙=89ms 최대=89ms :: INSERT INTO paper_order_exec (order_id, book_code, timing, target_at, cf, lag_seconds, late_resolved)
+[psql] n=1 합=0.1s 중앙=87ms 최대=87ms :: ANALYZE paper_decisions, paper_orders, paper_fills, paper_order_exec, paper_checkpoints
+[psql] n=1 합=0.1s 중앙=67ms 최대=67ms :: COPY (SELECT id, COALESCE(packet_text, packet::text) AS packet, response::text AS response, usage::text FROM paper_decisions WHERE id IN (SELECT checkpoint_decision_id FROM paper_checkpoints WHERE book_code = ? ORDER BY session_date DESC LIMIT N)) TO STDOUT;
+[psql] n=1 합=0.1s 중앙=61ms 최대=61ms :: select pg_sleep(N)
+[psql] n=1 합=0.1s 중앙=59ms 최대=59ms :: DELETE FROM paper_fills WHERE id >= N;
+[psql] n=1 합=0.1s 중앙=58ms 최대=58ms :: INSERT INTO paper_orders (id, book_code, decision_id, ticker, side, qty, timing, source, status, reason, as_of_trading_date, created_at, expires_on) SELECT N + g, ?, NULL, ?, ?, N, ?, ?, ?, ?::jsonb, date ? + (g % N), now() - ((g % N) || ?)::interval, date ? + (g % N) FROM generate_series(N, N) g

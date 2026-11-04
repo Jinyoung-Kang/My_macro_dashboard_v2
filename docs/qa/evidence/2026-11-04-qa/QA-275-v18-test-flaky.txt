@@ -1,0 +1,154 @@
+# 출처: $SP/qa/lanes/repro21/summary.txt (전체)
+재현 21 — PaperStoreDbTest.v18RerunIsSafe 흔들림(대상 49a7d62b, 시험 DB macrodash_qa_repro21_test @ 로컬 5434)
+- 단독 1회: 통과(alone-1.log, testcase time 0.769s, skipped 0)
+- 수집기 시험 5개 파일(store fixture가 시험마다 test_<uuid> 스키마 생성·마이그레이션·삭제)을 같은 DB에 되풀이하며 백엔드 시험 반복:
+  1차 8회 중 0회 실패, 2차 30회 중 7회 실패(with-collector-summary-30.txt) — 양방향(2벌→1벌, 1벌→2벌) 모두
+- 작업 트리에서 2168줄에 AND schemaname = current_schema() 추가(fix-candidate.diff) 뒤 같은 조건 30회: 0회 실패(with-collector-summary-30-fixed.txt)
+- 결정적 확인(deterministic-psql.txt): 다른 스키마에 paper_checkpoints가 있으면 조건 없는 pg_indexes 질의가 색인을 2벌 셈, schemaname 조건이면 1벌
+- 같은 꼴: 저장소의 카탈로그 질의 중 스키마 조건 없는 곳은 PaperStoreDbTest:2168 하나(나머지는 ::regclass·to_regclass·current_schema())
+
+# 출처: $SP/qa/lanes/repro21/with-collector-summary-30.txt (전체) — 수정 전 30회
+수집기 시험과 함께 1: exit=0
+수집기 시험과 함께 2: exit=0
+수집기 시험과 함께 3: exit=0
+수집기 시험과 함께 4: exit=0
+수집기 시험과 함께 5: exit=0
+수집기 시험과 함께 6: exit=0
+수집기 시험과 함께 7: exit=0
+수집기 시험과 함께 8: exit=0
+수집기 시험과 함께 9: exit=0
+수집기 시험과 함께 10: exit=1
+    org.opentest4j.AssertionFailedError: [색인 그대로] 
+  expected: "paper_checkpoints_pkey, paper_checkpoints_pkey, paper_checkpoints_status, paper_checkpoints_status"
+   but was: "paper_checkpoints_pkey, paper_checkpoints_status"
+  	at com.macrodash.store.PaperStoreDbTest.lambda$v18RerunIsSafe$1(PaperStoreDbTest.java:2181)
+수집기 시험과 함께 11: exit=1
+    org.opentest4j.AssertionFailedError: [색인 그대로] 
+  expected: "paper_checkpoints_pkey, paper_checkpoints_status"
+   but was: "paper_checkpoints_pkey, paper_checkpoints_pkey, paper_checkpoints_status, paper_checkpoints_status"
+  	at com.macrodash.store.PaperStoreDbTest.lambda$v18RerunIsSafe$1(PaperStoreDbTest.java:2181)
+수집기 시험과 함께 12: exit=0
+수집기 시험과 함께 13: exit=0
+수집기 시험과 함께 14: exit=0
+수집기 시험과 함께 15: exit=0
+수집기 시험과 함께 16: exit=0
+수집기 시험과 함께 17: exit=1
+    org.opentest4j.AssertionFailedError: [색인 그대로] 
+  expected: "paper_checkpoints_pkey, paper_checkpoints_pkey, paper_checkpoints_status, paper_checkpoints_status"
+   but was: "paper_checkpoints_pkey, paper_checkpoints_status"
+  	at com.macrodash.store.PaperStoreDbTest.lambda$v18RerunIsSafe$1(PaperStoreDbTest.java:2181)
+수집기 시험과 함께 18: exit=0
+수집기 시험과 함께 19: exit=1
+    org.opentest4j.AssertionFailedError: [색인 그대로] 
+  expected: "paper_checkpoints_pkey, paper_checkpoints_pkey, paper_checkpoints_status, paper_checkpoints_status"
+   but was: "paper_checkpoints_pkey, paper_checkpoints_status"
+  	at com.macrodash.store.PaperStoreDbTest.lambda$v18RerunIsSafe$1(PaperStoreDbTest.java:2181)
+수집기 시험과 함께 20: exit=0
+수집기 시험과 함께 21: exit=1
+    org.opentest4j.AssertionFailedError: [색인 그대로] 
+  expected: "paper_checkpoints_pkey, paper_checkpoints_pkey, paper_checkpoints_status, paper_checkpoints_status"
+   but was: "paper_checkpoints_pkey, paper_checkpoints_status"
+  	at com.macrodash.store.PaperStoreDbTest.lambda$v18RerunIsSafe$1(PaperStoreDbTest.java:2181)
+수집기 시험과 함께 22: exit=0
+수집기 시험과 함께 23: exit=1
+    org.opentest4j.AssertionFailedError: [색인 그대로] 
+  expected: "paper_checkpoints_pkey, paper_checkpoints_pkey, paper_checkpoints_status, paper_checkpoints_status"
+   but was: "paper_checkpoints_pkey, paper_checkpoints_status"
+  	at com.macrodash.store.PaperStoreDbTest.lambda$v18RerunIsSafe$1(PaperStoreDbTest.java:2181)
+수집기 시험과 함께 24: exit=0
+수집기 시험과 함께 25: exit=0
+수집기 시험과 함께 26: exit=0
+수집기 시험과 함께 27: exit=0
+수집기 시험과 함께 28: exit=0
+수집기 시험과 함께 29: exit=0
+수집기 시험과 함께 30: exit=1
+    org.opentest4j.AssertionFailedError: [색인 그대로] 
+  expected: "paper_checkpoints_pkey, paper_checkpoints_status"
+   but was: "paper_checkpoints_pkey, paper_checkpoints_pkey, paper_checkpoints_status, paper_checkpoints_status"
+  	at com.macrodash.store.PaperStoreDbTest.lambda$v18RerunIsSafe$1(PaperStoreDbTest.java:2181)
+      2 collector round exit=0
+
+# 출처: $SP/qa/lanes/repro21/with-collector-summary-30-fixed.txt (전체) — schemaname 조건만 더한 뒤 30회(시험 삼아, 저장소 반영 아님)
+수집기 시험과 함께 1: exit=0
+수집기 시험과 함께 2: exit=0
+수집기 시험과 함께 3: exit=0
+수집기 시험과 함께 4: exit=0
+수집기 시험과 함께 5: exit=0
+수집기 시험과 함께 6: exit=0
+수집기 시험과 함께 7: exit=0
+수집기 시험과 함께 8: exit=0
+수집기 시험과 함께 9: exit=0
+수집기 시험과 함께 10: exit=0
+수집기 시험과 함께 11: exit=0
+수집기 시험과 함께 12: exit=0
+수집기 시험과 함께 13: exit=0
+수집기 시험과 함께 14: exit=0
+수집기 시험과 함께 15: exit=0
+수집기 시험과 함께 16: exit=0
+수집기 시험과 함께 17: exit=0
+수집기 시험과 함께 18: exit=0
+수집기 시험과 함께 19: exit=0
+수집기 시험과 함께 20: exit=0
+수집기 시험과 함께 21: exit=0
+수집기 시험과 함께 22: exit=0
+수집기 시험과 함께 23: exit=0
+수집기 시험과 함께 24: exit=0
+수집기 시험과 함께 25: exit=0
+수집기 시험과 함께 26: exit=0
+수집기 시험과 함께 27: exit=0
+수집기 시험과 함께 28: exit=0
+수집기 시험과 함께 29: exit=0
+수집기 시험과 함께 30: exit=0
+      2 collector round exit=0
+
+# 출처: $SP/qa/lanes/repro21/deterministic-psql.txt (전체)
+-- 1) 다른 스키마가 없을 때
+                    no_filter                     
+--------------------------------------------------
+ paper_checkpoints_pkey, paper_checkpoints_status
+(1 row)
+
+-- 2) 수집기 store fixture처럼 다른 스키마에 paper_checkpoints가 생긴 동안
+CREATE SCHEMA
+SET
+RESET
+CREATE TABLE
+CREATE INDEX
+ current_schema 
+----------------
+ public
+(1 row)
+
+                                             no_filter                                              
+----------------------------------------------------------------------------------------------------
+ paper_checkpoints_pkey, paper_checkpoints_pkey, paper_checkpoints_status, paper_checkpoints_status
+(1 row)
+
+                   with_filter                    
+--------------------------------------------------
+ paper_checkpoints_pkey, paper_checkpoints_status
+(1 row)
+
+NOTICE:  drop cascades to table qa_repro21_other.paper_checkpoints
+DROP SCHEMA
+-- 3) 지운 뒤
+                    no_filter                     
+--------------------------------------------------
+ paper_checkpoints_pkey, paper_checkpoints_status
+(1 row)
+
+
+# 출처: $SP/qa/lanes/repro21/fix-candidate.diff (전체)
+diff --git a/backend/src/test/java/com/macrodash/store/PaperStoreDbTest.java b/backend/src/test/java/com/macrodash/store/PaperStoreDbTest.java
+index 2e1e3126..870f5760 100644
+--- a/backend/src/test/java/com/macrodash/store/PaperStoreDbTest.java
++++ b/backend/src/test/java/com/macrodash/store/PaperStoreDbTest.java
+@@ -2165,7 +2165,7 @@ class PaperStoreDbTest {
+         String constraints = "SELECT string_agg(conname || ' ' || pg_get_constraintdef(oid), '; ' ORDER BY conname) "
+                 + "FROM pg_constraint WHERE conrelid IN ('paper_decisions'::regclass, 'paper_orders'::regclass, "
+                 + "'paper_checkpoints'::regclass)";
+-        String indexes = "SELECT string_agg(indexname, ', ' ORDER BY indexname) FROM pg_indexes WHERE tablename = 'paper_checkpoints'";
++        String indexes = "SELECT string_agg(indexname, ', ' ORDER BY indexname) FROM pg_indexes WHERE schemaname = current_schema() AND tablename = 'paper_checkpoints'";
+         String before = jdbc.queryForObject(constraints, String.class);
+         String beforeIndexes = jdbc.queryForObject(indexes, String.class);
+         assertThat(before).contains("'CHECKPOINT'").contains("'MARKET'").contains("'MINUTE'");

@@ -1,0 +1,155 @@
+# 출처: $SP/qa/lanes/repro3/SUMMARY.txt (전체) — 보안 영역 후보([3]) 독립 재현
+재현자 repro3 — 후보 "쿼리 값의 깨진 UTF-8 퍼센트 인코딩에 500과 ERROR 스택" (커밋 49a7d62b, QA 스택 18082)
+1) QA 스택 직접 재현: invalid_utf8_repro.py → repro-run.txt
+   anon cot/asset?name=%C0%AE 401, anon health?x= 200 / member cot/asset %C0%AE·%ED%A0%80 500 / owner paper/status %ED%A0%80·%C0%AE 500
+   추가: 파라미터 이름이 깨져도(?%C0%AE=1&market=US), 관계없는 파라미터만 깨져도(?market=US&junk=%C0%AE), int 자리(admin/audit?limit=)도 500
+   로그(backend-since.log): 500 7건 = ERROR 7건 = InvalidParameterException 7건, 건당 64줄(448줄/7)
+2) 워크트리 실제 Tomcat 시험(QaRepro3InvalidUtf8Test, RANDOM_PORT + java.net.http): 수정 전 500(mvn-before-fix.summary.txt)
+   MockMvc는 %C0%AE를 글자 그대로 넘겨 200(재현 못 함 — 후보의 test_idea 주장 맞음)
+3) 시험 수정(trial-fix.diff: InvalidParameterException 처리기 → 400 + WARN 한 줄): 400 JSON, ArchitectureRulesTest 11·ApiExceptionHandlerTest 6 통과(mvn-after-fix.summary.txt)
+4) Tomcat 11.0.27 InvalidParameterException(String)의 기본 errorCode = 400(javap) — Tomcat 자체가 400을 의도
+5) 보안 영역 증거 대조: nul-sweep-2.jsonl 두 값 35경로/58조합 모두 500, backend-after.log InvalidParameterException 305건(파일로 확인)
+
+# 출처: $SP/qa/lanes/repro3/repro-run.txt (전체)
+login owner=200 member=200 (쿠키 값은 출력 안 함)
+anon   GET /api/health?x=%C0%AE -> 200 [application/json] {"status":"ok","database":"ok"}
+anon   GET /api/macro/risk?x=%C0%AE -> 401 [application/json;charset=UTF-8] {"error":"unauthorized","message":"로그인이 필요합니다."}
+anon   GET /api/cot/asset?name=%C0%AE -> 401 [application/json;charset=UTF-8] {"error":"unauthorized","message":"로그인이 필요합니다."}
+member GET /api/cot/asset?name=%C0%AE -> 500 [application/json] {"error":"internal_server_error","message":"서버 내부 오류가 발생했습니다. 백엔드 로그를 확인하세요."}
+member GET /api/cot/asset?name=%ED%A0%80 -> 500 [application/json] {"error":"internal_server_error","message":"서버 내부 오류가 발생했습니다. 백엔드 로그를 확인하세요."}
+member GET /api/cot/asset?name=Gold -> 200 [application/json] {"asset":"Gold","available":false,"message":"알 수 없는 자산입니다: Gold"}
+member GET /api/macro/risk?x=%C0%AE -> 200 [application/json] {"vix":{"symbol":"^VIX","available":true,"value":18.229999542236328,"previous":20.829999923706055,"delta":-2.6000003814697266,"pct":-12.48199899660459,"isProxy":false,"sourceLabel":null,"collectedAtKs
+owner  GET /api/paper/status?market=%ED%A0%80 -> 500 [application/json] {"error":"internal_server_error","message":"서버 내부 오류가 발생했습니다. 백엔드 로그를 확인하세요."}
+owner  GET /api/paper/status?market=%C0%AE -> 500 [application/json] {"error":"internal_server_error","message":"서버 내부 오류가 발생했습니다. 백엔드 로그를 확인하세요."}
+owner  GET /api/paper/status?market=US -> 200 [application/json] {"available":true,"schemaReady":true,"initialized":true,"enabled":true,"startDate":"2026-10-23","initialCash":100000.0,"quotes":{"collectedAtKst":"2026-11-04 19:36 KST","ageSeconds":13700,"barDate":"2
+owner  GET /api/paper/status?%C0%AE=1&market=US -> 500 [application/json] {"error":"internal_server_error","message":"서버 내부 오류가 발생했습니다. 백엔드 로그를 확인하세요."}
+owner  GET /api/paper/status?market=US&junk=%C0%AE -> 500 [application/json] {"error":"internal_server_error","message":"서버 내부 오류가 발생했습니다. 백엔드 로그를 확인하세요."}
+owner  GET /api/admin/audit?limit=%C0%AE -> 500 [application/json] {"error":"internal_server_error","message":"서버 내부 오류가 발생했습니다. 백엔드 로그를 확인하세요."}
+
+# 출처: $SP/qa/lanes/repro3/mvn-before-fix.summary.txt (전체)
+QA-REPRO3 real-tomcat /api/cot/asset?name=Gold -> 200 {"asset":"Gold","available":false,"message":"알 수 없는 자산입니다: Gold"}
+QA-REPRO3 real-tomcat /api/cot/asset?name=%C0%AE -> 500 {"error":"internal_server_error","message":"서버 내부 오류가 발생했습니다. 백엔드 로그를 확인하세요."}
+QA-REPRO3 real-tomcat /api/cot/asset?name=%ED%A0%80 -> 500 {"error":"internal_server_error","message":"서버 내부 오류가 발생했습니다. 백엔드 로그를 확인하세요."}
+QA-REPRO3 real-tomcat /api/paper/status?market=%ED%A0%80 -> 500 {"error":"internal_server_error","message":"서버 내부 오류가 발생했습니다. 백엔드 로그를 확인하세요."}
+QA-REPRO3 real-tomcat /api/admin/audit?limit=%C0%AE -> 500 {"error":"internal_server_error","message":"서버 내부 오류가 발생했습니다. 백엔드 로그를 확인하세요."}
+QA-REPRO3 real-tomcat /api/paper/status?market=US&junk=%C0%AE -> 500 {"error":"internal_server_error","message":"서버 내부 오류가 발생했습니다. 백엔드 로그를 확인하세요."}
+QA-REPRO3 real-tomcat /api/macro/risk?x=%C0%AE -> 200 {"vix":{"symbol":"^VIX","available":false},"move":{"symbol":"^MOVE","available":false},"hyOas":{"seriesId":"BAMLH0A0HYM2","label":"하이일드 스프레드 (HY OAS)","unit":"%
+QA-REPRO3 mockmvc /echo?name=%C0%AE -> 200 len=6 cp=[25, 43, 30, 25, 41, 45]
+QA-REPRO3 mockmvc /echo?name=%ED%A0%80 -> 200 len=9 cp=[25, 45, 44, 25, 41, 30, 25, 38, 30]
+
+# 출처: $SP/qa/lanes/repro3/mvn-after-fix.summary.txt (전체) — 처리기를 시험 삼아 넣었을 때(저장소 반영 아님)
+QA-REPRO3 real-tomcat /api/cot/asset?name=Gold -> 200 {"asset":"Gold","available":false,"message":"알 수 없는 자산입니다: Gold"}
+2026-11-04T23:26:57.504+09:00  WARN 3653448 --- [macro-dashboard-backend] [o-auto-1-exec-2] com.macrodash.web.ApiExceptionHandler    : 요청 파라미터를 풀지 못했습니다 (GET /api/cot/asset)
+QA-REPRO3 real-tomcat /api/cot/asset?name=%C0%AE -> 400 {"error":"bad_request","message":"요청 파라미터의 문자 인코딩이 올바르지 않습니다."}
+2026-11-04T23:26:57.531+09:00  WARN 3653448 --- [macro-dashboard-backend] [o-auto-1-exec-3] com.macrodash.web.ApiExceptionHandler    : 요청 파라미터를 풀지 못했습니다 (GET /api/cot/asset)
+QA-REPRO3 real-tomcat /api/cot/asset?name=%ED%A0%80 -> 400 {"error":"bad_request","message":"요청 파라미터의 문자 인코딩이 올바르지 않습니다."}
+2026-11-04T23:26:57.538+09:00  WARN 3653448 --- [macro-dashboard-backend] [o-auto-1-exec-4] com.macrodash.web.ApiExceptionHandler    : 요청 파라미터를 풀지 못했습니다 (GET /api/paper/status)
+QA-REPRO3 real-tomcat /api/paper/status?market=%ED%A0%80 -> 400 {"error":"bad_request","message":"요청 파라미터의 문자 인코딩이 올바르지 않습니다."}
+2026-11-04T23:26:57.544+09:00  WARN 3653448 --- [macro-dashboard-backend] [o-auto-1-exec-5] com.macrodash.web.ApiExceptionHandler    : 요청 파라미터를 풀지 못했습니다 (GET /api/admin/audit)
+QA-REPRO3 real-tomcat /api/admin/audit?limit=%C0%AE -> 400 {"error":"bad_request","message":"요청 파라미터의 문자 인코딩이 올바르지 않습니다."}
+2026-11-04T23:26:57.549+09:00  WARN 3653448 --- [macro-dashboard-backend] [o-auto-1-exec-6] com.macrodash.web.ApiExceptionHandler    : 요청 파라미터를 풀지 못했습니다 (GET /api/paper/status)
+QA-REPRO3 real-tomcat /api/paper/status?market=US&junk=%C0%AE -> 400 {"error":"bad_request","message":"요청 파라미터의 문자 인코딩이 올바르지 않습니다."}
+QA-REPRO3 real-tomcat /api/macro/risk?x=%C0%AE -> 200 {"vix":{"symbol":"^VIX","available":false},"move":{"symbol":"^MOVE","available":false},"hyOas":{"seriesId":"BAMLH0A0HYM2","label":"하이일드 스프레드 (HY OAS)","unit":"%
+QA-REPRO3 mockmvc /echo?name=%C0%AE -> 200 len=6 cp=[25, 43, 30, 25, 41, 45]
+QA-REPRO3 mockmvc /echo?name=%ED%A0%80 -> 200 len=9 cp=[25, 45, 44, 25, 41, 30, 25, 38, 30]
+
+# 출처: $SP/qa/lanes/repro14/SUMMARY.md (전체) — 화면 영역 후보([14]) 독립 재현
+# repro14 — 깨진 퍼센트 인코딩 쿼리 → 500 (커밋 49a7d62b, QA 스택 18082)
+
+판정: 재현됨, S4 유지. 원인 위치 맞음(ApiExceptionHandler.java:124-137 catch-all이 Tomcat InvalidParameterException(errorCode 400)을 500으로 바꿈).
+
+- run1.txt: 운영자 세션 8개 요청 모두 500 + 일반 문구, 비로그인은 401(파라미터 파싱 전에 세션 필터가 막음), /api/health?x=%%%·/api/auth/session?x=%%%(파라미터를 읽지 않는 공개 경로)는 200.
+  %ZZ, %C3%28(잘못된 UTF-8), 처리기가 받지 않는 x=%%%(파라미터 하나라도 읽는 경로면 쿼리 전체를 파싱)도 500.
+- backend-log-summary.txt: 요청마다 ERROR '처리하지 못한 예외' + InvalidParameterException 스택(약 60줄).
+- sse-run.txt: /api/live/prices/stream에 Accept: text/event-stream이면 처리기 응답(JSON)을 쓸 수 없어 HttpMediaTypeNotAcceptableException → 원 예외가 Tomcat으로 → 400 빈 본문, 로그는 ERROR 2 + WARN 1.
+- Tomcat 11.0.27 바이트코드(javap): InvalidParameterException 기본 errorCode=400, StandardWrapperValve가 getErrorCode()로 응답 — 앱 catch-all이 없으면 400.
+- QaRepro14Test.java(워크트리, 지움): handler.unexpected(InvalidParameterException) → 500 (tests=1 failures=0).
+- forge-run.txt: 부수 관찰 — %0A가 섞인 값이 예외 문구로 ERROR 로그에 그대로 찍혀 가짜 로그 줄을 만들 수 있음(로그인 필요).
+- 화면(lib/endpoints.ts withQuery)은 encodeURIComponent로 보내므로 정상 사용으로는 생기지 않음 — 손으로 만든 URL만.
+
+# 출처: $SP/qa/lanes/repro14/run1.txt (전체)
+2026-11-04 23:29:18 KST
+login -> 200
+owner  /api/macro/ticker?symbol=%%%bad&period=1y                    -> 500 {"error":"internal_server_error","message":"서버 내부 오류가 발생했습니다. 백엔드 로그를 확인하세요."}
+anon   /api/macro/ticker?symbol=%%%bad&period=1y                    -> 401 {"error":"unauthorized","message":"로그인이 필요합니다."}
+owner  /api/macro/ticker?symbol=%E0%A4%A&period=1y                  -> 500 {"error":"internal_server_error","message":"서버 내부 오류가 발생했습니다. 백엔드 로그를 확인하세요."}
+anon   /api/macro/ticker?symbol=%E0%A4%A&period=1y                  -> 401 {"error":"unauthorized","message":"로그인이 필요합니다."}
+owner  /api/sector/rotation?period=%%%                              -> 500 {"error":"internal_server_error","message":"서버 내부 오류가 발생했습니다. 백엔드 로그를 확인하세요."}
+anon   /api/sector/rotation?period=%%%                              -> 401 {"error":"unauthorized","message":"로그인이 필요합니다."}
+owner  /api/detail/symbols?q=%%%                                    -> 500 {"error":"internal_server_error","message":"서버 내부 오류가 발생했습니다. 백엔드 로그를 확인하세요."}
+anon   /api/detail/symbols?q=%%%                                    -> 401 {"error":"unauthorized","message":"로그인이 필요합니다."}
+owner  /api/live/prices/stream?items=%%%bad&interval=60             -> 500 {"error":"internal_server_error","message":"서버 내부 오류가 발생했습니다. 백엔드 로그를 확인하세요."}
+anon   /api/live/prices/stream?items=%%%bad&interval=60             -> 401 {"error":"unauthorized","message":"로그인이 필요합니다."}
+owner  /api/macro/ticker?symbol=SPY&period=1y&x=%%%                 -> 500 {"error":"internal_server_error","message":"서버 내부 오류가 발생했습니다. 백엔드 로그를 확인하세요."}
+anon   /api/macro/ticker?symbol=SPY&period=1y&x=%%%                 -> 401 {"error":"unauthorized","message":"로그인이 필요합니다."}
+owner  /api/health?x=%%%                                            -> 200 {"status":"ok","database":"ok"}
+anon   /api/health?x=%%%                                            -> 200 {"status":"ok","database":"ok"}
+owner  /api/macro/ticker?symbol=%ZZ&period=1y                       -> 500 {"error":"internal_server_error","message":"서버 내부 오류가 발생했습니다. 백엔드 로그를 확인하세요."}
+anon   /api/macro/ticker?symbol=%ZZ&period=1y                       -> 401 {"error":"unauthorized","message":"로그인이 필요합니다."}
+owner  /api/macro/ticker?symbol=%C3%28&period=1y                    -> 500 {"error":"internal_server_error","message":"서버 내부 오류가 발생했습니다. 백엔드 로그를 확인하세요."}
+anon   /api/macro/ticker?symbol=%C3%28&period=1y                    -> 401 {"error":"unauthorized","message":"로그인이 필요합니다."}
+owner  /api/sector/rotation?period=1y                               -> 200 {"periods":["1W","1M","3M","6M","YTD","1Y"],"period":"1M","available":true,"collectedAtKst":"2026-11-04 19:35 KST","ageSeconds":14029,"stale":false,"benchmark":"SPY","benchmarkReturns":{"1W":-1.989189
+anon   /api/sector/rotation?period=1y                               -> 401 {"error":"unauthorized","message":"로그인이 필요합니다."}
+
+# 출처: $SP/qa/lanes/repro14/sse-run.txt (전체)
+== Accept: text/event-stream
+HTTP/1.1 400 
+X-Content-Type-Options: nosniff
+Cache-Control: no-store
+X-Frame-Options: DENY
+Content-Security-Policy: default-src 'none'; frame-ancestors 'none'
+Referrer-Policy: no-referrer
+Vary: Origin
+Vary: Access-Control-Request-Method
+Vary: Access-Control-Request-Headers
+Content-Length: 0
+Date: Wed, 04 Nov 2026 14:30:39 GMT
+Connection: close
+
+
+== Accept: */*
+HTTP/1.1 500 
+X-Content-Type-Options: nosniff
+Cache-Control: no-store
+X-Frame-Options: DENY
+Content-Security-Policy: default-src 'none'; frame-ancestors 'none'
+Referrer-Policy: no-referrer
+Vary: origin,access-control-request-method,access-control-request-headers,accept-encoding
+Content-Type: application/json
+Transfer-Encoding: chunked
+Date: Wed, 04 Nov 2026 14:30:39 GMT
+Connection: close
+
+{"error":"internal_server_error","message":"서버 내부 오류가 발생했습니다. 백엔드 로그를 확인하세요."}
+== POST with broken query (handler with no @RequestParam?)
+
+# 출처: $SP/qa/lanes/repro14/forge-run.txt (전체) — 로그 위조 관찰
+owner  /api/macro/ticker?symbol=QA14%0A2026-11-04T00:00:00.000%2B09:00%20ERROR%201%20---%20FORGED-LINE-QA14%ZZ&period=1y -> 500 {"error":"internal_server_error","message":"서버 내부 오류가 발생했습니다. 백엔드 로그를 확인하세요."}
+3:org.apache.tomcat.util.http.InvalidParameterException: Character decoding failed. Parameter [symbol] with value [QA14
+4:2026-11-04T00:00:00.000+09:00 ERROR 1 --- FORGED-LINE-QA14ED-LINE-QA14%ZZ] has been ignored. Note that the name and value quoted here may be corrupted due to the failed decoding. Use debug level log
+
+# 출처: $SP/qa/lanes/repro14/backend-log-summary.txt (전체)
+2026-11-04T23:29:18.349+09:00 ERROR 1 --- [macro-dashboard-backend] [nio-8080-exec-2] com.macrodash.web.ApiExceptionHandler    : 처리하지 못한 예외 (GET /api/macro/ticker)
+org.apache.tomcat.util.http.InvalidParameterException: Character decoding failed. Parameter [symbol] with value [%%%bad] has been ignored. Note that the name and value quoted here may be corrupted due to the failed decoding. Use debug level
+Caused by: org.apache.tomcat.util.buf.UDecoder$DecodeException: The hexadecimal encoding is invalid
+2026-11-04T23:29:18.377+09:00 ERROR 1 --- [macro-dashboard-backend] [nio-8080-exec-6] com.macrodash.web.ApiExceptionHandler    : 처리하지 못한 예외 (GET /api/macro/ticker)
+org.apache.tomcat.util.http.InvalidParameterException: Character decoding failed. Parameter [symbol] with value [à¤0%A4%A] has been ignored. Note that the name and value quoted here may be corrupted due to the failed decoding. Use debug l
+Caused by: org.apache.tomcat.util.buf.UDecoder$DecodeException: End of file (EOF)
+2026-11-04T23:29:18.405+09:00 ERROR 1 --- [macro-dashboard-backend] [nio-8080-exec-3] com.macrodash.web.ApiExceptionHandler    : 처리하지 못한 예외 (GET /api/sector/rotation)
+org.apache.tomcat.util.http.InvalidParameterException: Character decoding failed. Parameter [period] with value [%%%] has been ignored. Note that the name and value quoted here may be corrupted due to the failed decoding. Use debug level lo
+Caused by: org.apache.tomcat.util.buf.UDecoder$DecodeException: The hexadecimal encoding is invalid
+2026-11-04T23:29:18.434+09:00 ERROR 1 --- [macro-dashboard-backend] [io-8080-exec-10] com.macrodash.web.ApiExceptionHandler    : 처리하지 못한 예외 (GET /api/detail/symbols)
+org.apache.tomcat.util.http.InvalidParameterException: Character decoding failed. Parameter [q] with value [%%%] has been ignored. Note that the name and value quoted here may be corrupted due to the failed decoding. Use debug level logging
+Caused by: org.apache.tomcat.util.buf.UDecoder$DecodeException: The hexadecimal encoding is invalid
+2026-11-04T23:29:18.463+09:00 ERROR 1 --- [macro-dashboard-backend] [nio-8080-exec-1] com.macrodash.web.ApiExceptionHandler    : 처리하지 못한 예외 (GET /api/live/prices/stream)
+org.apache.tomcat.util.http.InvalidParameterException: Character decoding failed. Parameter [items] with value [%%%bad] has been ignored. Note that the name and value quoted here may be corrupted due to the failed decoding. Use debug level 
+Caused by: org.apache.tomcat.util.buf.UDecoder$DecodeException: The hexadecimal encoding is invalid
+2026-11-04T23:29:18.492+09:00 ERROR 1 --- [macro-dashboard-backend] [nio-8080-exec-4] com.macrodash.web.ApiExceptionHandler    : 처리하지 못한 예외 (GET /api/macro/ticker)
+org.apache.tomcat.util.http.InvalidParameterException: Character decoding failed. Parameter [x] with value [%%%] has been ignored. Note that the name and value quoted here may be corrupted due to the failed decoding. Use debug level logging
+Caused by: org.apache.tomcat.util.buf.UDecoder$DecodeException: The hexadecimal encoding is invalid
+2026-11-04T23:29:18.554+09:00 ERROR 1 --- [macro-dashboard-backend] [nio-8080-exec-1] com.macrodash.web.ApiExceptionHandler    : 처리하지 못한 예외 (GET /api/macro/ticker)
+org.apache.tomcat.util.http.InvalidParameterException: Character decoding failed. Parameter [symbol] with value [%ZZ] has been ignored. Note that the name and value quoted here may be corrupted due to the failed decoding. Use debug level lo
+Caused by: org.apache.tomcat.util.buf.UDecoder$DecodeException: The hexadecimal encoding is invalid
+2026-11-04T23:29:18.584+09:00 ERROR 1 --- [macro-dashboard-backend] [nio-8080-exec-4] com.macrodash.web.ApiExceptionHandler    : 처리하지 못한 예외 (GET /api/macro/ticker)
+org.apache.tomcat.util.http.InvalidParameterException: Character decoding failed. Parameter [symbol] with value [�(] has been ignored. Note that the name and value quoted here may be corrupted due to the failed decoding. Use debug level l
+Caused by: java.nio.charset.MalformedInputException: Input length = 1

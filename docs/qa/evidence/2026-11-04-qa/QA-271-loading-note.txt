@@ -1,0 +1,66 @@
+# 출처: $SP/qa/lanes/repro16/evidence/SUMMARY.txt (전체)
+repro16 — 후보 '로딩 중 값 없음·원/달러 생략 문구' 재현 (49a7d62b, QA 스택 1280px)
+1) timeline-all-3000.txt: 모든 GET 3초 지연(후보 절차). /consensus '이번 분기 공통 신규 매수' 부제에 '원/달러 값이 없어 원화 환산은 생략했습니다.'가
+   0.2s~3.3s 동안 보이고 같은 시점에 로딩 표시도 있음 -> 재현. /institutions·/liquidity·/style은 문구 없음(카드가 자기 데이터 뒤에 그려짐).
+   홈 알림 '읽지 않음' 칸: 보이는 글은 '—', '값 없음'은 sr-only(1x1) — 컴포넌트 주석(AlertsSummary.tsx:16-18)과 QA-050 수정이 정한 동작.
+2) timeline-usdkrw-only-3000.txt: /api/macro/usdkrw만 3초 지연 -> /consensus 두 카드, /institutions 총액 메모·보유 종목 상세 부제, /liquidity 순유동성 메모에
+   로딩 표시 없이 생략 문구가 약 3초 보였다가 '원/달러 N 기준'으로 바뀜.
+3) timeline-usdkrw-fail.txt: usdkrw 500 -> 같은 문구가 남음(실패 때는 맞는 글).
+4) flash-nodelay.txt: 지연 주입 없이 5회씩 — /consensus는 매번 문구가 DOM에 잠깐 나타남(처음 142~181ms, 환율 글 187~234ms), /institutions·/liquidity는 0/5.
+5) vitest-useUsdKrw.txt(+scripts/repro16UsdKrw.test.ts): 읽는 중(끝나지 않는 응답)과 실패의 note가 같은 '값이 없어 … 생략' — useUsdKrw.ts:27,62-64.
+정리: 세션 로그아웃(200)·state.json 삭제, worktree 삭제.
+
+# 출처: $SP/qa/lanes/repro16/evidence/flash-nodelay.txt (전체)
+/consensus [{"first":156,"last":156,"rateAt":210},{"first":181,"last":181,"rateAt":234},{"first":142,"last":142,"rateAt":187},{"first":145,"last":145,"rateAt":189},{"first":146,"last":146,"rateAt":196}]
+/institutions [{"first":null,"last":null,"rateAt":223},{"first":null,"last":null,"rateAt":179},{"first":null,"last":null,"rateAt":183},{"first":null,"last":null,"rateAt":181},{"first":null,"last":null,"rateAt":221}]
+/liquidity [{"first":null,"last":null,"rateAt":178},{"first":null,"last":null,"rateAt":168},{"first":null,"last":null,"rateAt":176},{"first":null,"last":null,"rateAt":222},{"first":null,"last":null,"rateAt":169}]
+
+# 출처: $SP/qa/lanes/repro16/evidence/timeline-all-3000.txt (전체)
+== / MODE=all DELAY=3000
+{"t":55,"omitNote":[],"rateNote":false,"loading":true}
+{"t":208,"omitNote":[],"rateNote":false,"loading":true,"unread":{"innerText":"— 값 없음","visibleGlyph":"—","srOnly":"값 없음","srOnlyRect":"1x1"}}
+{"t":3122,"omitNote":[],"rateNote":false,"loading":true,"unread":{"innerText":"0건","visibleGlyph":"0건","srOnly":null,"srOnlyRect":null}}
+{"t":3276,"omitNote":[],"rateNote":false,"loading":false,"unread":{"innerText":"0건","visibleGlyph":"0건","srOnly":null,"srOnlyRect":null}}
+== /consensus MODE=all DELAY=3000
+{"t":46,"omitNote":[],"rateNote":false,"loading":true}
+{"t":200,"omitNote":["이번 분기 공통 신규 매수"],"rateNote":false,"loading":true}
+{"t":3291,"omitNote":[],"rateNote":true,"loading":false}
+== /institutions MODE=all DELAY=3000
+{"t":41,"omitNote":[],"rateNote":false,"loading":true}
+{"t":3248,"omitNote":[],"rateNote":true,"loading":false}
+== /liquidity MODE=all DELAY=3000
+{"t":52,"omitNote":[],"rateNote":false,"loading":true}
+{"t":3316,"omitNote":[],"rateNote":true,"loading":false}
+== /style MODE=all DELAY=3000
+{"t":53,"omitNote":[],"rateNote":false,"loading":true}
+{"t":3500,"omitNote":[],"rateNote":false,"loading":false}
+
+# 출처: $SP/qa/lanes/repro16/evidence/timeline-usdkrw-only-3000.txt (전체)
+== /consensus MODE=usdkrw DELAY=3000
+{"t":91,"omitNote":[],"rateNote":false,"loading":true}
+{"t":427,"omitNote":["교집합 상세","이번 분기 공통 신규 매수"],"rateNote":false,"loading":false}
+{"t":3350,"omitNote":[],"rateNote":true,"loading":false}
+== /institutions MODE=usdkrw DELAY=3000
+{"t":69,"omitNote":[],"rateNote":false,"loading":true}
+{"t":445,"omitNote":["?","보유 종목 상세 (기준일 2026-06-30)"],"rateNote":false,"loading":false}
+{"t":3366,"omitNote":[],"rateNote":true,"loading":false}
+== /liquidity MODE=usdkrw DELAY=3000
+{"t":60,"omitNote":[],"rateNote":false,"loading":true}
+{"t":378,"omitNote":["?"],"rateNote":false,"loading":false}
+{"t":3283,"omitNote":[],"rateNote":true,"loading":false}
+
+# 출처: $SP/qa/lanes/repro16/evidence/timeline-usdkrw-fail.txt (전체)
+== /consensus MODE=usdkrw-fail DELAY=1500
+{"t":56,"omitNote":[],"rateNote":false,"loading":true}
+{"t":214,"omitNote":["이번 분기 공통 신규 매수"],"rateNote":false,"loading":true}
+{"t":371,"omitNote":["교집합 상세","이번 분기 공통 신규 매수"],"rateNote":false,"loading":false}
+== /institutions MODE=usdkrw-fail DELAY=1500
+{"t":56,"omitNote":[],"rateNote":false,"loading":true}
+{"t":373,"omitNote":["?","보유 종목 상세 (기준일 2026-06-30)"],"rateNote":false,"loading":false}
+
+# 출처: $SP/qa/lanes/repro16/evidence/vitest-useUsdKrw.txt (전체)
+ RUN  v5.1.0 $SP/qa/wt-repro16/frontend
+ Test Files  1 passed (1)
+      Tests  3 passed (3)
+   Start at  23:35:51
+   Duration  1.11s (environment 68%, import 13%, tests 11%, transform 7%, worker 1%, setup 1%)

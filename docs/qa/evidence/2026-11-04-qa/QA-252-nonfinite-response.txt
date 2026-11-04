@@ -1,0 +1,100 @@
+# 출처: $SP/qa/lanes/repro18/SUMMARY.txt (전체) — 독립 재현 요약
+repro18 — ai 후보 '구조화 응답의 비유한 숫자(1e400)가 스키마 검사에서 예외' 독립 재현 (커밋 49a7d62b)
+환경: 전용 worktree(끝나고 지움), 로컬 postgres 5434의 macrodash_qa_repro18_test, FakePaperStore·가짜 AiService·가짜 Anthropic 서버. QA 스택·실제 API 안 씀.
+명령: cd <wt>/backend && TEST_DATABASE_URL=jdbc:postgresql://localhost:5434/macrodash_qa_repro18_test mvn -B -q test \
+  -Dtest='QaRepro18MapperTest,QaAiProbeTest,QaAiCheckpointTest,QaAiResponseTest#qa_hugeNumberLiteral_decision+qa_hugeNumberLiteral_inOrderWeight+qa_proposalHugeNumber,QaAiKrCheckpointTest#qa_krCheckpointNonFinite'
+  -> 10 시험 통과(관찰용 출력), 전체 로그 mvn-repro18.log, 요약 줄 repro18-output.txt, 소스 tests/
+결과
+- 운영과 같은 Spring Boot 자동 구성 JsonMapper(application.yml의 jackson 속성 그대로): 1e400·-1e400·1E+999 -> DoubleNode(+-Infinity), decimalValue() JsonNodeException. 1e308은 정상.
+- StructuredSchema.validate: checkpoint REPLACE orders[0].targetWeightPct=1e400(스키마 const 지킴) -> 예외. 대조 1e300 -> 위반 1건(최댓값 100), 8 -> 위반 0.
+- 미국 계좌2 장중 확인(+2~+21분 매분): 후보의 schemaVersion=1e400 응답과 현실적 벡터 targetWeightPct=1e400 둘 다 sent=19, apiUsage calls=19, claude2CallsInCycle=1(소상한 3), 확인 결정 행 없음, 행 EXPIRED 'JOB_ERROR — 부르기 전 작업 오류…', 현금 100,000·주문 0.
+  대조(1e300): sent=1, 행 DONE 'FORMAT_ERROR — 재시도 없음', 결정 FORMAT_ERROR, cycle 2.
+- 한국 계좌2 장중 확인: calls=19, 결정 행 없음, EXPIRED JOB_ERROR.
+- 정기 decide(계좌1, 실제 AiService + 가짜 HTTP 서버): 예외·행 없음·hits 1 -> 두 번째 decide hits 2(행 없음), 현금 95,000·주문 0 그대로. 주문 비중 1E+999도 같은 예외.
+- 프레임 제안: 예외, hits 1·calls 1, 제안 행 0.
+- forApi: 결정·확인 스키마 모두 minimum/maximum 없음(number 칸 4개씩) — API가 크기를 막지 못함.
+미확인: 실제 Claude 구조화 출력이 1e400 같은 지수 리터럴을 낼 수 있는지(실제 API 호출 금지). 운영 하루 상한 값(Vultr 금지).
+
+# 출처: $SP/qa/lanes/repro18/repro18-output.txt (전체) — 시험 출력(호출 수·결정 행·주기 셈)
+REPRO18 boot mapper class=tools.jackson.databind.json.JsonMapper
+REPRO18 boot readTree 1e400 -> DoubleNode "Infinity" decimalValue=EXC JsonNodeException
+REPRO18 boot readTree -1e400 -> DoubleNode "-Infinity" decimalValue=EXC JsonNodeException
+REPRO18 boot readTree 1E+999 -> DoubleNode "Infinity" decimalValue=EXC JsonNodeException
+REPRO18 boot readTree 1e308 -> DoubleNode 1.0E308 decimalValue=1.0E+308
+REPRO18 boot readTree 2 -> IntNode 2 decimalValue=2
+REPRO18 checkpoint REPLACE targetWeightPct=1e400 EXC tools.jackson.databind.exc.JsonNodeException: 'DoubleNode' method `decimalValue()` cannot convert value Infinity to `java.math.BigDecimal`: value non-Finite ('NaN')
+REPRO18 checkpoint REPLACE targetWeightPct=1e300 (control, finite over max) violations=[$.orders[0].targetWeightPct: 최댓값 100보다 큽니다 — 실제 1.0E300]
+REPRO18 checkpoint REPLACE targetWeightPct=8 (control ok) violations=[]
+REPRO18 checkpoint KEEP schemaVersion=1e400 EXC tools.jackson.databind.exc.JsonNodeException: 'DoubleNode' method `decimalValue()` cannot convert value Infinity to `java.math.BigDecimal`: value non-Finite ('NaN')
+REPRO18 kr checkpoint schema(api) = {"type":"object","additionalProperties":false,"required":["schemaVersion","action","summary","orders","noTradeReason"],"properties":{"schemaVersion":{"const":2},"action":{"enum":["KEEP","REPLACE"]},"summary":{"type":"string"},"orders":{"type":"array","items":{"type":"object","additionalProperties":false,"required":["ticker","side","timing","executionNote","thesi
+REPRO18 us checkpoint schema(api) = {"type":"object","additionalProperties":false,"required":["schemaVersion","action","summary","orders","noTradeReason"],"properties":{"schemaVersion":{"const":2},"action":{"enum":["KEEP","REPLACE"]},"summary":{"type":"string"},"orders":{"type":"array","items":{"type":"object","additionalProperties":false,"required":["ticker","side","timing","executionNote","thesi
+REPRO18 forApi paper/decision.schema.json has minimum/maximum? false numberFields=4 integerFields=0
+REPRO18 forApi paper/claude2-decision.schema.json has minimum/maximum? false numberFields=4 integerFields=0
+REPRO18 forApi paper/claude2-decision-c2.schema.json has minimum/maximum? false numberFields=4 integerFields=0
+REPRO18 forApi paper/kr-decision.schema.json has minimum/maximum? false numberFields=4 integerFields=0
+REPRO18 forApi paper/kr-claude2-decision.schema.json has minimum/maximum? false numberFields=4 integerFields=0
+REPRO18 forApi paper/proposal.schema.json has minimum/maximum? false numberFields=0 integerFields=0
+REPRO18 forApi paper/review.schema.json has minimum/maximum? false numberFields=0 integerFields=1
+QAAI propose thrown=JsonNodeException: 'DoubleNode' method `decimalValue()` cannot convert value Infinity to `java.math.BigDecimal`: value non-Finite ('NaN') hits=1 callsToday=1 proposals=0
+QAAI orderWeight thrown=JsonNodeException hits=1 rows=false orders=0
+QAAI decide#1 thrown=tools.jackson.databind.exc.JsonNodeException: 'DoubleNode' method `decimalValue()` cannot convert value Infinity to `java.math.BigDecimal`: value non-Finite ('NaN') decision=null
+QAAI after#1 hits=1 callsToday=1 decisionRow=(none) orders=0 cash=95000.0
+QAAI decide#2 thrown=JsonNodeException hits=2 callsToday=2 decisionRow=(none)
+QAAI huge parsed node: DoubleNode "Infinity"
+QAAI schema validate EXC tools.jackson.databind.exc.JsonNodeException: 'DoubleNode' method `decimalValue()` cannot convert value Infinity to `java.math.BigDecimal`: value non-Finite ('NaN')
+QAAI ObjectMapper huge -> parsed: {"x":"Infinity"} (type of first numeric: NUMBER/DoubleNode)
+QAAI ObjectMapper trailing -> EXC MismatchedInputException: Trailing token (`JsonToken.START_OBJECT`) found after value (bound as `tools.jackson.databind.JsonNode`): not allowed as per `DeserializationFeature.FAIL_ON_TRAILING_TOKENS`
+QAAI ObjectMapper trailingGarbage -> EXC StreamReadException: Unrecognized token 'garbage': was expecting (JSON String, Number, Array, Object or token 'null', 'true' or 'false')
+QAAI ObjectMapper dupKey -> parsed: {"x":2} (type of first numeric: NUMBER/IntNode)
+QAAI ObjectMapper NaN -> EXC StreamReadException: Non-standard token 'NaN': enable `JsonReadFeature.ALLOW_NON_NUMERIC_NUMBERS` to allow
+QAAI JsonMapper huge -> parsed: {"x":"Infinity"} (type of first numeric: NUMBER/DoubleNode)
+QAAI JsonMapper trailing -> EXC MismatchedInputException: Trailing token (`JsonToken.START_OBJECT`) found after value (bound as `tools.jackson.databind.JsonNode`): not allowed as per `DeserializationFeature.FAIL_ON_TRAILING_TOKENS`
+QAAI JsonMapper trailingGarbage -> EXC StreamReadException: Unrecognized token 'garbage': was expecting (JSON String, Number, Array, Object or token 'null', 'true' or 'false')
+QAAI JsonMapper dupKey -> parsed: {"x":2} (type of first numeric: NUMBER/IntNode)
+QAAI JsonMapper NaN -> EXC StreamReadException: Non-standard token 'NaN': enable `JsonReadFeature.ALLOW_NON_NUMERIC_NUMBERS` to allow
+QAAI kr cp +2m calls=1 row=PLANNED null
+QAAI kr cp +21m calls=19 row=EXPIRED JOB_ERROR — 부르기 전 작업 오류가 창 끝까지 이어짐(서버는 켜져 있었음): tools.jackso
+QAAI kr cp total calls=19 decisionRow=(none)
+REPRO18 control total sent=1 row=DONE reason=FORMAT_ERROR — 재시도 없음 cycleCalls=2 checkpointDecision=FORMAT_ERROR/응답 형식 오류 — 스키마 위반 1건: $.orders[0].targetWeightPct: 최댓값 100보다 큽니다 — 실제 1.0E300
+REPRO18 cpW +2m sent=1 row=PLANNED reason=null err=2026-11-02: tools.jackson.databind.exc.JsonNodeException: 'DoubleNode' method `decimalValue()` cannot convert 
+REPRO18 cpW +21m sent=19 row=EXPIRED reason=JOB_ERROR — 부르기 전 작업 오류가 창 끝까지 이어짐(서버는 켜져 있었음): tools.jackson.databind.exc.JsonNodeException: 'DoubleNode' method `decimalValue()` cannot convert value Infinity to `java.math.BigDecimal`: value non-Finite ('NaN') err=null
+REPRO18 cpW total sent=19 apiUsageCalls(KST 11-03)=19 cycleCalls=1 maxCallsPerCycle=3 checkpointDecision=(none) cash=100000.0 orders=0
+QAAI cp +2m sent=1 row=PLANNED reason=null err=2026-11-02: tools.jackson.databind.exc.JsonNodeException: 'DoubleNode' method `decimalValu
+QAAI cp +21m sent=19 row=EXPIRED reason=JOB_ERROR — 부르기 전 작업 오류가 창 끝까지 이어짐(서버는 켜져 있었음): tools.jackson.databind.exc.JsonNodeException: 'DoubleNode' method `decimalValue()` cannot convert value Infinity to `java.math.BigDecimal`: value non-Finite ('NaN') err=null
+QAAI cp total sent=19 apiUsageCalls(KST 11-03)=19 cycleCalls=1 checkpointDecision=(none)
+
+# 출처: $SP/qa/lanes/ai/SUMMARY.txt (전체) — AI 영역 요약(후보 발견 시점)
+QA 4차 — ai 영역(AI 경로) 증거 요약
+기준: 49a7d62b(claude/qa-2026-11). 실제 Claude·외부 호출 없음. 시험은 전용 worktree(지운 뒤 소스는 tests/에 보관)와
+로컬 postgres(5434)의 macrodash_qa_ai_test만. QA 스택은 읽기 두 번(qa-stack-reads.txt).
+
+파일
+- tests/QaAi*.java          탐침 시험 소스(저장소에 넣지 않음)
+- mvn-qaai-final.log        마지막 실행 전체 로그(12 시험, BUILD SUCCESS)
+- mvn-qaai-run1.log         첫 묶음 실행 로그
+- qaai-output.txt           로그에서 QAAI 줄만
+- qa-stack-reads.txt        QA 스택 읽기(호출 상한 칸·결정 상태 수)
+
+발견 1 (S3) 구조화 응답의 비유한 숫자(1e400 등)가 스키마 검사에서 예외 → FORMAT_ERROR로 기록되지 않고 다시 부름
+- QaAiProbeTest: Jackson 3 readTree("1e400") = DoubleNode Infinity, StructuredSchema.validate → JsonNodeException(decimalValue)
+- QaAiCheckpointTest(미국 계좌2 장중 확인): 같은 응답이 오면 +2~+20분 창에서 매분 부름 → 19회 호출·사용량 19, 결정 행 없음,
+  claude2CallsInCycle 1 그대로(소상한 3 우회), 창 끝 EXPIRED 'JOB_ERROR — 부르기 전 작업 오류'(실제는 19회 부름)
+- QaAiKrCheckpointTest#qa_krCheckpointNonFinite(한국 계좌2 장중 확인): 19회 호출, 결정 행 없음, 같은 JOB_ERROR
+- QaAiResponseTest qa_hugeNumberLiteral_decision: decide 예외·결정 행 없음·호출 1 → 다시 decide하면 Claude 다시 부름(hits 2)
+  (결정 작업은 MAX_ATTEMPTS 3까지 10분마다 — 코드 확인, 그 뒤 GAVE_UP으로 그 세션 결정 없음)
+- qa_proposalHugeNumber: 프레임 제안 예외(500), 제안 행 없음, 호출 1 소모
+- 같은 꼴(코드 확인): 계좌1 장중 확인(오류 3회 상한), 한국 출발·계좌2 출발(결정 작업 3회), 복기는 persist 안이라 API_ERROR(재시도 1)로 바르게 남음
+
+발견 2 (S4) 상세 AI 요약 프롬프트에 외부 글(뉴스 제목·기업 개요)의 가짜 구분자 '</자료>'·줄바꿈이 그대로
+- QaAiDetailInjectionTest: 프롬프트에 '</자료>' 3개·'<자료>' 2개, 주입 글 '요청: …'·'시스템: …'이 자료 블록 밖처럼 보임
+- 모의 매매 경로는 FrameworkService.stripDelimiterLike + 공백 접기를 쓰지만 DetailSummaryService.gather는 없음
+- 같은 꼴(코드 확인): AiReportService '<data>…</data>'(SnapshotTextService 원본 텍스트의 13F·종목 이름) — 지우기 없음
+
+발견 3 (S4) 구분자 지우기(delimiterLike)가 '<<'처럼 보이는 다른 유니코드 꺾쇠를 놓침
+- QaAiDelimiterTest: ≪≫(U+226A/B)·《》(U+300A/B)·«»(U+00AB/BB)·‹‹››·〈〈〉〉(U+3008/9)·⟪⟫·〈〈〉〉(U+2329/A) 모두
+  메모·사건·제안·복기 네 경로에서 남음(ASCII·전각 대조군은 지움). NoteService.block 출력(11_notes 블록)에 '≪메모 #5 끝≫'과 가짜 시작 줄이 그대로
+
+확인함(결함 아님)
+- 하루 상한 잡기 동시성: QaAiReserveConcurrencyDbTest — 80개 동시(정기 문턱 30·수동 23 섞음) → 정확히 30, 수동이 23 넘게 잡은 것 0
+- 응답 형식 묶음 18가지(qa_malformedBattery) + 잘림·stop_reason 6가지(qa_truncatedAndStopReasons): 모두 FORMAT_ERROR 또는 검증 거절,
+  현금 95,000·보유 1·체결 0 그대로, 다음 주기에 다시 부르지 않음(같은 행)

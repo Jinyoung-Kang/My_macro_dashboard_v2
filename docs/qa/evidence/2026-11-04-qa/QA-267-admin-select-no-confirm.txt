@@ -1,0 +1,50 @@
+# 출처: $SP/qa/lanes/repro11/summary.txt (전체)
+repro11 — 후보(ui): 사용자 관리 역할·등급 select 즉시 저장
+기준 커밋 49a7d62b(HEAD 7213c6f0와 차이는 docs 2개뿐). QA 스택 13002/18082, Chromium 1248 headless 1280px.
+쓰기(POST)는 route abort로 막고 기록. 실행 전후 QA DB users = (2 OWNER PRO)(3 MEMBER FREE)(4 MEMBER PRO) 그대로.
+
+run1.txt (adminkeys-repro.js):
+ - 회원(3) 역할 MEMBER에 초점 + ArrowUp -> dialogs=0, POST /api/admin/users/3 {"role":"OWNER","tier":"FREE"}
+ - 같은 상자 ArrowDown(마지막 항목) -> 요청 없음
+ - 회원(3) 등급 FREE + ArrowDown -> POST /api/admin/users/3 {"role":"MEMBER","tier":"PRO"}
+ - 첫 select(자기 역할)로 Tab 진입 + ArrowDown -> POST /api/admin/users/2 {"role":"MEMBER","tier":"PRO"} (서버는 자기 강등 거절 — AdminService.java:65)
+run2.txt (adminkeys-repro2.js):
+ - 유료 회원(4) 등급 PRO + ArrowUp -> POST /api/admin/users/4 {"role":"MEMBER","tier":"FREE"}
+ - 같은 상자 Home -> 같은 POST
+ - 'f' 입력 -> 요청 없음
+원인: frontend/src/app/(dashboard)/admin/users/page.tsx:82·95 onChange -> change() :39-48 -> update.run :42 (확인 없음),
+      Select가 change 이벤트마다 onChange 전달(components/ui/index.tsx:375).
+부작용(코드·기존 시험 ApiIntegrationTest#tierDowngradeDisablesPaidAlertRules 읽음, 실행 안 함):
+  유료->무료 저장은 회원의 유료 알림 규칙을 끔(AdminService.java:72·80), 다시 유료로 올려도 자동으로 켜지지 않음 -> '되돌릴 수 있음'은 역할만.
+
+# 출처: $SP/qa/lanes/repro11/run1.txt (전체)
+login status 200
+session cookie present true domain 127.0.0.1
+url /admin/users
+selects [{"i":0,"v":"OWNER","kind":"role","lab":"***OWNER*** 역할"},{"i":1,"v":"PRO","kind":"tier","lab":"***OWNER*** 등급"},{"i":2,"v":"MEMBER","kind":"role","lab":"<메일 가림> 역할"},{"i":3,"v":"FREE","kind":"tier","lab":"<메일 가림> 등급"},{"i":4,"v":"MEMBER","kind":"role","lab":"<메일 가림> 역할"},{"i":5,"v":"PRO","kind":"tier","lab":"<메일 가림> 등급"}]
+console.error Failed to load resource: net::ERR_FAILED
+[member role ArrowUp] focus=SELECT key=ArrowUp before=MEMBER afterUI=MEMBER dialogs=0 writes=["POST /api/admin/users/3 {\"role\":\"OWNER\",\"tier\":\"FREE\"}"] banners=[]
+[member role ArrowDown (last option)] focus=SELECT key=ArrowDown before=MEMBER afterUI=MEMBER dialogs=0 writes=[] banners=[]
+console.error Failed to load resource: net::ERR_FAILED
+[free tier ArrowDown] focus=SELECT key=ArrowDown before=FREE afterUI=FREE dialogs=0 writes=["POST /api/admin/users/3 {\"role\":\"MEMBER\",\"tier\":\"PRO\"}"] banners=[]
+console.error Failed to load resource: net::ERR_FAILED
+[Tab into first select then ArrowDown] active=SELECT:***OWNER*** 역할 writes=["POST /api/admin/users/2 {\"role\":\"MEMBER\",\"tier\":\"PRO\"}"]
+2|OWNER|PRO
+3|MEMBER|FREE
+4|MEMBER|PRO
+
+# 출처: $SP/qa/lanes/repro11/run2.txt (전체)
+login status 200
+session cookie present true domain 127.0.0.1
+url /admin/users
+selects [{"i":0,"v":"OWNER","kind":"role","lab":"***OWNER*** 역할"},{"i":1,"v":"PRO","kind":"tier","lab":"***OWNER*** 등급"},{"i":2,"v":"MEMBER","kind":"role","lab":"<메일 가림> 역할"},{"i":3,"v":"FREE","kind":"tier","lab":"<메일 가림> 등급"},{"i":4,"v":"MEMBER","kind":"role","lab":"<메일 가림> 역할"},{"i":5,"v":"PRO","kind":"tier","lab":"<메일 가림> 등급"}]
+console.error Failed to load resource: net::ERR_FAILED
+[PRO member tier ArrowUp] focus=SELECT key=ArrowUp before=PRO afterUI=PRO dialogs=0 writes=["POST /api/admin/users/4 {\"role\":\"MEMBER\",\"tier\":\"FREE\"}"] banners=[]
+console.error Failed to load resource: net::ERR_FAILED
+[PRO member tier Home] focus=SELECT key=Home before=PRO afterUI=PRO dialogs=0 writes=["POST /api/admin/users/4 {\"role\":\"MEMBER\",\"tier\":\"FREE\"}"] banners=[]
+[PRO member tier type f] focus=SELECT key=KeyF before=PRO afterUI=PRO dialogs=0 writes=[] banners=[]
+console.error Failed to load resource: net::ERR_FAILED
+[Tab into first select then ArrowDown] active=SELECT:***OWNER*** 역할 writes=["POST /api/admin/users/2 {\"role\":\"MEMBER\",\"tier\":\"PRO\"}"]
+2|OWNER|PRO
+3|MEMBER|FREE
+4|MEMBER|PRO

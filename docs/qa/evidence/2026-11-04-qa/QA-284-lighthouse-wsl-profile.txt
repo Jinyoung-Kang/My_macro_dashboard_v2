@@ -1,0 +1,130 @@
+# 출처: $SP/qa/lanes/repro34/ev/A-direct.txt (전체)
+# A. qatools lighthouse 13.6.0 (chrome-launcher 1.2.2), CHROME_PATH=Linux Chromium 1248, cwd=$SP/qa/lanes/repro34/cwd-direct
+## before: ls -A cwd
+## before: /mnt/c/Users/<사용자>/AppData/Local/lighthouse.*
+ls: cannot access '/mnt/c/Users/<사용자>/AppData/Local/lighthouse.*': No such file or directory
+## during (t=1s): node mkdtemp dir on Windows FS: /mnt/c/Users/<사용자>/AppData/Local/lighthouse.m7br1U
+chrome-err.log
+chrome-out.log
+chrome.pid
+lighthouse rc=0
+## during: chrome args user-data-dir (from any lighthouse chrome now running, for reference)
+## after: ls -A cwd
+C:\Users\<사용자>\AppData\Local\lighthouse.m7br1U
+## after: du
+3.2M	./C:\Users\<사용자>\AppData\Local\lighthouse.m7br1U
+## after: /mnt/c/Users/<사용자>/AppData/Local/lighthouse.*
+ls: cannot access '/mnt/c/Users/<사용자>/AppData/Local/lighthouse.*': No such file or directory
+## report exists?
+256800 $SP/qa/lanes/repro34/ev/A-login.json
+
+# 출처: $SP/qa/lanes/repro34/ev/A3-cookies-names.txt (전체)
+cookie rows (host,name only): []
+308K	C:\Users\<사용자>\AppData\Local\lighthouse.m7br1U/Default/Cache
+
+# 출처: $SP/qa/lanes/repro34/ev/B-script-run.txt (앞 60줄)
+# B. 실제 scripts/qa/lighthouse.sh(49a7d62b, worktree $SP/qa/wt-repro34) — 호출 cwd=$SP/qa/lanes/repro34, npx는 대역(첫 호출만 진짜 npx lighthouse@12), CHROME_PATH=Linux Chromium 1248
+## before: git -C WT status --short
+페이지        폼팩터 성능 접근성 모범  LCP(ms)  TBT(ms)    CLS
+/login           desktop    100   100   100      492        0  0.000
+/login           mobile   실패
+/                desktop  실패
+/                mobile   실패
+/macro           desktop  실패
+/macro           mobile   실패
+/institutions    desktop  실패
+/institutions    mobile   실패
+/radar           desktop  실패
+/radar           mobile   실패
+/status          desktop  실패
+/status          mobile   실패
+/paper/us        desktop  실패
+/paper/us        mobile   실패
+script rc=0
+## after: git -C WT status --short
+?? "C:\Users\<사용자>\\AppData\\Local\\lighthouse.16EWWm/"
+## after: du
+3.2M	$SP/qa/wt-repro34/C:\Users\<사용자>\AppData\Local\lighthouse.16EWWm
+16K	$SP/qa/wt-repro34/CLAUDE.md
+## after: /mnt/c/Users/<사용자>/AppData/Local/lighthouse.* (node mkdtemp dir, should be gone)
+ls: cannot access '/mnt/c/Users/<사용자>/AppData/Local/lighthouse.*': No such file or directory
+## npx calls log
+call=1 cwd=$SP/qa/wt-repro34 CHROME_PATH=~/.cache/ms-playwright/chromium-1248/chrome-linux64/chrome args=--yes lighthouse@12 http://localhost:13002/login --quiet --chrome-flags=--headless=new\ --no-sandbox --only-categories=performance\,accessibility\,best-practices --output=json --o …(줄 자름)
+call=1 real npx rc=0
+12.8.2
+masked cookie in $SP/qa/lanes/repro34/ev/B-lhout/login-desktop.json: 0
+logout http=200
+call=2 cwd=$SP/qa/wt-repro34 CHROME_PATH=~/.cache/ms-playwright/chromium-1248/chrome-linux64/chrome args=--yes lighthouse@12 http://localhost:13002/login --quiet --chrome-flags=--headless=new\ --no-sandbox --only-categories=performance\,accessibility\,best-practices --output=json --o …(줄 자름)
+call=3 cwd=$SP/qa/wt-repro34 CHROME_PATH=~/.cache/ms-playwright/chromium-1248/chrome-linux64/chrome args=--yes lighthouse@12 http://localhost:13002/ --quiet --chrome-flags=--headless=new\ --no-sandbox --only-categories=performance\,accessibility\,best-practices --output=json --output …(줄 자름)
+call=4 cwd=$SP/qa/wt-repro34 CHROME_PATH=~/.cache/ms-playwright/chromium-1248/chrome-linux64/chrome args=--yes lighthouse@12 http://localhost:13002/ --quiet --chrome-flags=--headless=new\ --no-sandbox --only-categories=performance\,accessibility\,best-practices --output=json --output …(줄 자름)
+call=5 cwd=$SP/qa/wt-repro34 CHROME_PATH=~/.cache/ms-playwright/chromium-1248/chrome-linux64/chrome args=--yes lighthouse@12 http://localhost:13002/macro --quiet --chrome-flags=--headless=new\ --no-sandbox --only-categories=performance\,accessibility\,best-practices --output=json --o …(줄 자름)
+call=6 cwd=$SP/qa/wt-repro34 CHROME_PATH=~/.cache/ms-playwright/chromium-1248/chrome-linux64/chrome args=--yes lighthouse@12 http://localhost:13002/macro --quiet --chrome-flags=--headless=new\ --no-sandbox --only-categories=performance\,accessibility\,best-practices --output=json --o …(줄 자름)
+call=7 cwd=$SP/qa/wt-repro34 CHROME_PATH=~/.cache/ms-playwright/chromium-1248/chrome-linux64/chrome args=--yes lighthouse@12 http://localhost:13002/institutions --quiet --chrome-flags=--headless=new\ --no-sandbox --only-categories=performance\,accessibility\,best-practices --output=j …(줄 자름)
+call=8 cwd=$SP/qa/wt-repro34 CHROME_PATH=~/.cache/ms-playwright/chromium-1248/chrome-linux64/chrome args=--yes lighthouse@12 http://localhost:13002/institutions --quiet --chrome-flags=--headless=new\ --no-sandbox --only-categories=performance\,accessibility\,best-practices --output=j …(줄 자름)
+call=9 cwd=$SP/qa/wt-repro34 CHROME_PATH=~/.cache/ms-playwright/chromium-1248/chrome-linux64/chrome args=--yes lighthouse@12 http://localhost:13002/radar --quiet --chrome-flags=--headless=new\ --no-sandbox --only-categories=performance\,accessibility\,best-practices --output=json --o …(줄 자름)
+call=10 cwd=$SP/qa/wt-repro34 CHROME_PATH=~/.cache/ms-playwright/chromium-1248/chrome-linux64/chrome args=--yes lighthouse@12 http://localhost:13002/radar --quiet --chrome-flags=--headless=new\ --no-sandbox --only-categories=performance\,accessibility\,best-practices --output=json -- …(줄 자름)
+call=11 cwd=$SP/qa/wt-repro34 CHROME_PATH=~/.cache/ms-playwright/chromium-1248/chrome-linux64/chrome args=--yes lighthouse@12 http://localhost:13002/status --quiet --chrome-flags=--headless=new\ --no-sandbox --only-categories=performance\,accessibility\,best-practices --output=json - …(줄 자름)
+call=12 cwd=$SP/qa/wt-repro34 CHROME_PATH=~/.cache/ms-playwright/chromium-1248/chrome-linux64/chrome args=--yes lighthouse@12 http://localhost:13002/status --quiet --chrome-flags=--headless=new\ --no-sandbox --only-categories=performance\,accessibility\,best-practices --output=json - …(줄 자름)
+call=13 cwd=$SP/qa/wt-repro34 CHROME_PATH=~/.cache/ms-playwright/chromium-1248/chrome-linux64/chrome args=--yes lighthouse@12 http://localhost:13002/paper/us --quiet --chrome-flags=--headless=new\ --no-sandbox --only-categories=performance\,accessibility\,best-practices --output=json …(줄 자름)
+call=14 cwd=$SP/qa/wt-repro34 CHROME_PATH=~/.cache/ms-playwright/chromium-1248/chrome-linux64/chrome args=--yes lighthouse@12 http://localhost:13002/paper/us --quiet --chrome-flags=--headless=new\ --no-sandbox --only-categories=performance\,accessibility\,best-practices --output=json …(줄 자름)
+
+# 출처: $SP/qa/lanes/repro34/ev/B2-cookie-in-report.txt (전체)
+B-lhout/login-desktop.json 안의 마스킹된 쿠키 자리 수(=원래 평문 쿠키가 보고서에 있던 횟수): 1
+
+# 출처: $SP/qa/lanes/repro34/ev/C-chrome-finder.txt (전체)
+# C. CHROME_PATH 없이 chrome-launcher 1.2.2가 고르는 크롬(실행하지 않음, 탐색만)
+platform= wsl CHROME_PATH= <unset>
+Launcher.getInstallations()= ["/mnt/c/Program Files/Google/Chrome/Application/chrome.exe"]
+# C'. CHROME_PATH=Linux Chromium
+platform= wsl CHROME_PATH= ~/.cache/ms-playwright/chromium-1248/chrome-linux64/chrome
+Launcher.getInstallations()= ["~/.cache/ms-playwright/chromium-1248/chrome-linux64/chrome","/mnt/c/Program Files/Google/Chrome/Application/chrome.exe"]
+
+# 출처: $SP/qa/lanes/repro34/ev/D-root-cause-lines.txt (전체)
+# D. 원인 위치
+5:ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"; cd "$ROOT"
+19:    npx --yes lighthouse@12 "$FRONT$page" --quiet --chrome-flags="--headless=new --no-sandbox" \
+-- chrome-launcher 1.2.2 dist/chrome-launcher.js
+            // Place Chrome profile in a custom location we'll rm -rf later
+            // If in WSL, we need to use the Windows format
+            flags.push(`--user-data-dir=${isWsl ? toWin32Path(this.userDataDir) : this.userDataDir}`);
+        }
+-- dist/utils.js
+export function makeTmpDir() {
+    switch (getPlatform()) {
+        case 'darwin':
+        case 'linux':
+            return makeUnixTmpDir();
+        case 'wsl':
+            // We populate the user's Windows temp dir so the folder is correctly created later
+            process.env.TEMP = getWSLLocalAppDataPath(`${process.env.PATH}`);
+        case 'win32':
+export function getWSLLocalAppDataPath(path) {
+    const userRegExp = /\/([a-z])\/Users\/([^\/:]+)\/AppData\//;
+    const results = userRegExp.exec(path) || [];
+    return toWSLPath(`${results[1]}:\\Users\\${results[2]}\\AppData\\Local`, getLocalAppDataPath(path));
+}
+-- playwright-core (해당 없음 확인)
+-- 저장소에서 chrome-launcher/lighthouse를 부르는 곳
+./docs/specs/2026-10-26-v2-step0-fork.md
+./docs/qa/2026-11-04-qa-defects.md
+./docs/qa/PROGRESS.md
+./docs/qa/2026-10-02-qa-report.md
+./docs/qa/2026-10-02-qa-plan.md
+./scripts/qa/lighthouse.sh
+
+# 출처: $SP/qa/lanes/repro34/ev/99-final-state.txt (전체)
+# 99. 마무리 상태 2026-11-04 23:45:32 KST
+## 본체 저장소 git status --short (내가 만든 것 아님 — 다른 재현 에이전트 repro33의 실행이 저장소 최상위에서 남긴 것으로 보임)
+?? "C:\Users\<사용자>\\AppData\\Local\\lighthouse.Le9zge/"
+?? "C:\Users\<사용자>\\AppData\\Local\\lighthouse.e3i1lw/"
+?? "C:\Users\<사용자>\\AppData\\Local\\lighthouse.eLJIS2/"
+?? "C:\Users\<사용자>\\AppData\\Local\\lighthouse.yjmBIe/"
+## ls -d C:*
+2026-11-04 23:41:16.566141643 +0900 C:\Users\<사용자>\AppData\Local\lighthouse.Le9zge
+2026-11-04 23:41:51.425213130 +0900 C:\Users\<사용자>\AppData\Local\lighthouse.e3i1lw
+2026-11-04 23:41:28.111272621 +0900 C:\Users\<사용자>\AppData\Local\lighthouse.eLJIS2
+2026-11-04 23:41:39.515537330 +0900 C:\Users\<사용자>\AppData\Local\lighthouse.yjmBIe
+## /mnt/c/.../lighthouse.*
+ls: cannot access '/mnt/c/Users/<사용자>/AppData/Local/lighthouse.*': No such file or directory
+## 남은 lighthouse 프로세스 수
+1

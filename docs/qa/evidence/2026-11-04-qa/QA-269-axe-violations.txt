@@ -1,0 +1,243 @@
+# 출처: $SP/qa/lanes/repro13/SUMMARY.txt (전체)
+repro13 — 후보 "axe WCAG 2.1 A·AA 위반 2종"(ui) 독립 재현, 기준 49a7d62b(작업 HEAD 7213c6f0 = 문서만 다름)
+환경: QA 스택 13002/18082, Chromium 156.0.8078.4, axe-core 4.11.0, 태그 wcag2a·2aa·21a·21aa
+1) axe13.js 1280 light / 768 dark / 360 light (axe13-*.json, axe13-*.log)
+   /correlation -> aria-hidden-focus(serious,1): svg.recharts-surface role=application tabindex=0 (aria-hidden div 안)
+   /paper/us/framework, /paper/kr/framework -> scrollable-region-focusable(serious,2): section[aria-label="v1 렌더링"] > pre, "v2 렌더링" > pre
+   (QA DB 판 번호는 지금 v1·v2 — 후보의 v0·v1과 다름, 같은 RenderedPane)
+2) kbd13.js Tab 순회(kbd13.json): /correlation에서 aria-hidden 안 svg가 Tab 정지점(이름 없음, outline auto 5px).
+   /paper/us/framework 비교 pre 두 개가 Tab으로 닿음(tabindex 속성 없음, tabIndex=-1 — Chromium 키보드 초점 스크롤러), 화살표·PageDown으로 scrollTop 0→528.
+   '렌더링 미리보기' details를 열면 details > pre(FrameworkSection.tsx:212)도 같은 위반(3노드).
+3) vitest(worktree, 지운 뒤 repro13.test.tsx·worktree-fix-a.diff 보관): 수정 전 [aria-hidden] 안 svg tabindex=0 1개로 실패,
+   ScatterChart accessibilityLayer={false} 뒤 통과 + wrappers.test 포함 13/13 통과(vitest-fix-a.log)
+4) 같은 패턴(samepat13.js): /paper/us/notes details를 열면 NotesSection.tsx:147 p.max-h-64.overflow-auto 위반 1노드.
+   코드 검색상 tabIndex 없는 max-h overflow-auto pre: DecisionsSection 741/747/753, ReviewsSection 362/368, ClaudeStartSection 131,
+   KrRuleDecisionBody 234, ai/report/page.tsx 161, connections/TossSection.tsx 85 (넘칠 때만 axe가 잡음 — 이번엔 미검증)
+
+# 출처: $SP/qa/lanes/repro13/axe13-1280-light.log (전체)
+/correlation axe 4.11.0 -> aria-hidden-focus(serious,1)
+  ariaHiddenFocusables [{"tag":"svg","role":"application","tabindex":"0","cls":"recharts-surface"}]
+  pres []
+/paper/us/framework axe 4.11.0 -> scrollable-region-focusable(serious,2)
+  ariaHiddenFocusables []
+  pres [{"s":null,"det":true,"open":false,"ti":null,"role":null,"sh":1716,"ch":512},{"s":"v1 렌더링","det":false,"open":null,"ti":null,"role":null,"sh":2652,"ch":512},{"s":"v2 렌더링","det":false,"open":null,"ti":null,"role":null,"sh":2691,"ch":512}]
+/paper/kr/framework axe 4.11.0 -> scrollable-region-focusable(serious,2)
+  ariaHiddenFocusables []
+  pres [{"s":null,"det":true,"open":false,"ti":null,"role":null,"sh":1716,"ch":512},{"s":"v1 렌더링","det":false,"open":null,"ti":null,"role":null,"sh":2652,"ch":512},{"s":"v2 렌더링","det":false,"open":null,"ti":null,"role":null,"sh":2691,"ch":512}]
+browser 156.0.8078.4 login 200
+
+# 출처: $SP/qa/lanes/repro13/axe13-other.log (전체)
+/correlation axe 4.11.0 -> aria-hidden-focus(serious,1)
+/paper/us/framework axe 4.11.0 -> scrollable-region-focusable(serious,2)
+/paper/kr/framework axe 4.11.0 -> scrollable-region-focusable(serious,2)
+browser 156.0.8078.4 login 200
+/correlation axe 4.11.0 -> aria-hidden-focus(serious,1)
+/paper/us/framework axe 4.11.0 -> scrollable-region-focusable(serious,2)
+/paper/kr/framework axe 4.11.0 -> scrollable-region-focusable(serious,2)
+browser 156.0.8078.4 login 200
+
+# 출처: $SP/qa/lanes/repro13/kbd13.log (전체)
+{
+ "correlation": {
+  "svgStops": [
+   {
+    "i": 23,
+    "tag": "svg",
+    "role": "application",
+    "tabindex": "0",
+    "label": "선 차트: 값 · 2024-11-05 ~ 2026-11-03",
+    "section": null,
+    "inAriaHidden": false,
+    "outline": "auto 5px",
+    "text": "2024-11-052025-072026-012026-072026-11-0",
+    "cls": "recharts-surface"
+   },
+   {
+    "i": 24,
+    "tag": "svg",
+    "role": "application",
+    "tabindex": "0",
+    "label": null,
+    "section": null,
+    "inAriaHidden": true,
+    "outline": "auto 5px",
+    "text": "-0.30-0.150.000.150.30연준 순유동성 (조 달러)-50.",
+    "cls": "recharts-surface"
+   },
+   {
+    "i": 50,
+    "tag": "svg",
+    "role": "application",
+    "tabindex": "0",
+    "label": "선 차트: 값 · 2024-11-05 ~ 2026-11-03",
+    "section": null,
+    "inAriaHidden": false,
+    "outline": "auto 5px",
+    "text": "2024-11-052025-072026-012026-072026-11-0",
+    "cls": "recharts-surface"
+   },
+   {
+    "i": 51,
+    "tag": "svg",
+    "role": "application",
+    "tabindex": "0",
+    "label": null,
+    "section": null,
+    "inAriaHidden": true,
+    "outline": "auto 5px",
+    "text": "-0.30-0.150.000.150.30연준 순유동성 (조 달러)-50.",
+    "cls": "recharts-surface"
+   },
+   {
+    "i": 77,
+    "tag": "svg",
+    "role": "application",
+    "tabindex": "0",
+    "label": "선 차트: 값 · 2024-11-05 ~ 2026-11-03",
+    "section": null,
+    "inAriaHidden": false,
+    "outline": "auto 5px",
+    "text": "2024-11-052025-072026-012026-072026-11-0",
+    "cls": "recharts-surface"
+   },
+   {
+    "i": 78,
+    "tag": "svg",
+    "role": "application",
+    "tabindex": "0",
+    "label": null,
+    "section": null,
+    "inAriaHidden": true,
+    "outline": "auto 5px",
+    "text": "-0.30-0.150.000.150.30연준 순유동성 (조 달러)-50.",
+    "cls": "recharts-surface"
+   },
+   {
+    "i": 104,
+    "tag": "svg",
+    "role": "application",
+    "tabindex": "0",
+    "label": "선 차트: 값 · 2024-11-05 ~ 2026-11-03",
+    "section": null,
+    "inAriaHidden": false,
+    "outline": "auto 5px",
+    "text": "2024-11-052025-072026-012026-072026-11-0",
+    "cls": "recharts-surface"
+   },
+   {
+    "i": 105,
+    "tag": "svg",
+    "role": "application",
+    "tabindex": "0",
+    "label": null,
+    "section": null,
+    "inAriaHidden": true,
+    "outline": "auto 5px",
+    "text": "-0.30-0.150.000.150.30연준 순유동성 (조 달러)-50.",
+    "cls": "recharts-surface"
+   }
+  ],
+  "total": 120,
+  "tooltipAfterArrow": {
+   "visible": "hidden",
+   "text": ""
+  }
+ },
+ "/paper/us/framework": {
+  "preStops": [
+   {
+    "i": 29,
+    "section": "v1 렌더링",
+    "tabindex": null,
+    "role": null,
+    "label": null,
+    "outline": "auto 1px"
+   },
+   {
+    "i": 30,
+    "section": "v2 렌더링",
+    "tabindex": null,
+    "role": null,
+    "label": null,
+    "outline": "auto 1px"
+   },
+   {
+    "i": 64,
+    "section": "v1 렌더링",
+    "tabindex": null,
+    "role": null,
+    "label": null,
+    "outline": "auto 1px"
+   },
+   {
+    "i": 65,
+    "section": "v2 렌더링",
+    "tabindex": null,
+    "role": null,
+    "label": null,
+    "outline": "auto 1px"
+   },
+   {
+    "i": 99,
+    "section": "v1 렌더링",
+    "tabindex": null,
+    "role": null,
+    "label": null,
+    "outline": "auto 1px"
+   },
+   {
+    "i": 100,
+    "section": "v2 렌더링",
+    "tabindex": null,
+    "role": null,
+    "label": null,
+    "outline": "auto 1px"
+   },
+   {
+    "i": 134,
+    "section": "v1 렌더링",
+    "tabindex": null,
+    "role": null,
+    "label": null,
+    "outline": "auto 1px"
+   },
+   {
+    "i": 135,
+    "section": "v2 렌더링",
+    "tabindex": null,
+    "role": null,
+    "label": null,
+    "outline": "auto 1px"
+   }
+  ],
+  "focusViaScript": true,
+  "scrollAfterKeys": {
+   "before": 0,
+   "after": 528
+  },
+  "a11yName": {
+   "role": null,
+   "label": null,
+   "tabindex": -1
+  },
+  "axeWithPreviewOpen": [
+   {
+    "id": "scrollable-region-focusable",
+    "nodes": [
+     "details > pre",
+     "section[aria-label=\"v1 렌더링\"] > pre",
+     "section[aria-label=\"v2 렌더링\"] > pre"
+    ]
+   }
+  ]
+ }
+}
+
+# 출처: $SP/qa/lanes/repro13/samepat13.log (전체)
+/paper/us/decisions details 0 scrollable-region-focusable nodes 0 
+/paper/kr/decisions details 0 scrollable-region-focusable nodes 0 
+/paper/us/notes details 2 scrollable-region-focusable nodes 1 .last\:border-0:nth-child(2) > .min-w-\[12rem\] > details > .max-h-64.overflow-auto.whitespace-pre-wrap
+/paper/us details 0 scrollable-region-focusable nodes 0 
+/paper/kr details 0 scrollable-region-focusable nodes 0 
+/ai/report details 0 scrollable-region-focusable nodes 0 
+/connections details 0 scrollable-region-focusable nodes 0 

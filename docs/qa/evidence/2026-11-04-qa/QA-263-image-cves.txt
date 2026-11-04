@@ -1,0 +1,105 @@
+# trivy 0.76.0 image --scanners vuln --severity HIGH,CRITICAL 결과 요약(로컬 이미지, 2026-11-04 20:28~20:30 KST 스캔, 23:24 재스캔에서 같음)
+# 출처: $SP/qa/lanes/security/trivy/*.json — 수정판(FixedVersion)이 있는 것만 패키지별로 묶음
+
+== caddy_2-alpine: HIGH 9 · CRITICAL 1 · 수정판 있는 항목 9
+   brotli-libs 1.2.0-r0 -> 1.2.1-r0  [caddy:2-alpine (alpine 3.23.7)]  CVE-2026-111497(C)
+   curl 8.22.0-r0 -> 8.23.0-r0  [caddy:2-alpine (alpine 3.23.7)]  CVE-2026-92392(H)
+   libcurl 8.22.0-r0 -> 8.23.0-r0  [caddy:2-alpine (alpine 3.23.7)]  CVE-2026-92392(H)
+   github.com/go-jose/go-jose/v4 v4.1.5 -> 4.1.6  [usr/bin/caddy]  CVE-2026-116587(H)
+   golang.org/x/net v0.59.0 -> 0.60.0  [usr/bin/caddy]  CVE-2026-78669(H)
+   stdlib v1.26.8 -> 1.26.10, 1.27.3  [usr/bin/caddy]  CVE-2026-111943(H)
+   stdlib v1.26.8 -> 1.26.9, 1.27.2  [usr/bin/caddy]  CVE-2026-78667(H), CVE-2026-78669(H), CVE-2026-97031(H)
+
+== my_macrodash_v2_qa-backend_latest: HIGH 3 · CRITICAL 0 · 수정판 있는 항목 3
+   libexpat 2.9.0-r0 -> 2.10.0-r0  [my_macrodash_v2_qa-backend:latest (alpine 3.24.3)]  CVE-2026-113351(H), CVE-2026-117610(H), CVE-2026-118370(H)
+
+== my_macrodash_v2_qa-frontend_latest: HIGH 6 · CRITICAL 0 · 수정판 있는 항목 6
+   brace-expansion 5.0.9 -> 5.0.10, 3.0.7, 2.1.5, 1.1.19  [Node.js]  CVE-2026-102276(H)
+   brace-expansion 5.0.9 -> 5.0.11, 3.0.8, 2.1.6, 1.1.20  [Node.js]  CVE-2026-102278(H)
+   undici 6.28.0 -> 6.28.1, 7.29.1, 8.10.2  [Node.js]  CVE-2026-19534(H)
+   undici 6.28.0 -> 6.29.1, 7.30.1, 8.12.2  [Node.js]  CVE-2026-109383(H), CVE-2026-109869(H), CVE-2026-87018(H)
+
+== postgres_16-alpine: HIGH 25 · CRITICAL 1 · 수정판 있는 항목 26
+   stdlib v1.24.6 -> 1.24.11, 1.25.5  [usr/local/bin/gosu]  CVE-2025-61729(H)
+   stdlib v1.24.6 -> 1.24.12, 1.25.6  [usr/local/bin/gosu]  CVE-2025-61726(H)
+   stdlib v1.24.6 -> 1.24.13, 1.25.7, 1.26.0-rc.3  [usr/local/bin/gosu]  CVE-2025-68121(C)
+   stdlib v1.24.6 -> 1.25.10, 1.26.3  [usr/local/bin/gosu]  CVE-2026-33811(H), CVE-2026-33814(H), CVE-2026-39820(H), CVE-2026-39836(H), CVE-2026-42499(H)
+   stdlib v1.24.6 -> 1.25.11, 1.26.4  [usr/local/bin/gosu]  CVE-2026-27145(H), CVE-2026-42504(H)
+   stdlib v1.24.6 -> 1.25.12, 1.26.5, 1.27.0-rc.2  [usr/local/bin/gosu]  CVE-2026-39822(H)
+   stdlib v1.24.6 -> 1.25.13, 1.26.6, 1.27.0-rc.3  [usr/local/bin/gosu]  CVE-2026-33818(H), CVE-2026-39821(H), CVE-2026-56853(H), CVE-2026-56858(H), CVE-2026-56859(H), CVE-2026-56860(H) 외 1
+   stdlib v1.24.6 -> 1.25.8, 1.26.1  [usr/local/bin/gosu]  CVE-2026-25679(H)
+   stdlib v1.24.6 -> 1.25.9, 1.26.2  [usr/local/bin/gosu]  CVE-2026-32280(H), CVE-2026-32281(H), CVE-2026-32283(H)
+   stdlib v1.24.6 -> 1.26.10, 1.27.3  [usr/local/bin/gosu]  CVE-2026-111943(H)
+   stdlib v1.24.6 -> 1.26.9, 1.27.2  [usr/local/bin/gosu]  CVE-2026-78667(H), CVE-2026-78669(H), CVE-2026-97031(H)
+
+== my_macrodash_v2_qa-collector_latest: HIGH 61 · CRITICAL 2 · 수정판 있는 항목 2
+   jaraco.context 5.3.0 -> 6.1.0  [Python]  CVE-2026-23949(H)
+   wheel 0.45.1 -> 0.46.2  [Python]  CVE-2026-24049(H)
+
+
+# 출처: $SP/qa/lanes/repro6/trivy-image/README.txt (전체) — 독립 재현(원격 이미지 대조 포함)
+재현: 보안 후보 "컨테이너 이미지의 HIGH·CRITICAL 중 수정판이 있는 것" (커밋 49a7d62b, 2026-11-04 23:24~23:40 KST)
+
+1) 로컬 이미지 다시 스캔 (trivy 0.76.0, DB 23:24 새로 받음, 자기 캐시 볼륨 qa_repro6_trivy_cache — 끝나고 지움)
+   docker run --rm -v /var/run/docker.sock:/var/run/docker.sock -v qa_repro6_trivy_cache:/root/.cache/ aquasec/trivy:0.76.0 \
+     image [--skip-db-update] --scanners vuln --severity HIGH,CRITICAL --format json <이미지>
+   결과(summary-4.txt, summary-collector.txt):
+   - caddy:2-alpine(alpine 3.23.7, caddy v2.11.7): CRITICAL 1·HIGH 9, 수정판 있는 것 9(go-jose v3 하나만 없음) — 후보와 같음
+   - qa-backend(alpine 3.24.3): libexpat 2.9.0-r0 HIGH 3 → 2.10.0-r0 — 같음
+   - qa-frontend(22:37 다시 빌드된 이미지): /usr/local/lib/node_modules/npm 아래 undici 6.28.0 HIGH 4·brace-expansion 5.0.9 HIGH 2 — 같음
+   - postgres:16-alpine: /usr/local/bin/gosu(Go 1.24.6) CRITICAL 1·HIGH 25 — 같음
+   - collector(debian 13.7): OS 61건(HIGH 59·CRITICAL 2) 전부 수정판 없음, setuptools/_vendor의 jaraco.context 5.3.0·wheel 0.45.1 HIGH(수정판 있음)
+
+2) 지금 올라와 있는 베이스 이미지(원격) — 서버 deploy.sh가 --pull·pull로 받는 것
+   docker buildx imagetools inspect <이미지> / trivy image --image-src remote --platform linux/amd64 (remote_*.json, summary-remote.txt)
+   - eclipse-temurin:21-jre-alpine(10-29 빌드)·node:24-alpine(10-28): QA 빌드가 쓴 digest와 같음, libexpat·npm undici 그대로
+   - caddy:2-alpine·postgres:16-alpine: 원격 config 생성 시각이 로컬과 나노초까지 같음(10-21) — 위 목록 그대로
+   → 서버(19:11 배포)도 같은 결함을 가졌을 것으로 추정(서버는 스캔하지 않음 — 운영본 접근 금지)
+
+3) 도달 경로 확인
+   - caddy: /usr/bin/caddy는 정적 바이너리(ldd: Not a valid dynamic program), brotli-libs ← libcurl ← curl만 씀, caddy 서비스에 헬스체크 없음
+   - Vultr Caddyfile(auto_https off, reverse_proxy만, file_server 없음)로 caddy:2-alpine을 127.0.0.1:18299에 잠시 띄워 봄:
+     curl --http2-prior-knowledge → HTTP/2 응답(502, 위쪽 backend 없음) — h2c가 켜져 있음. 로그 protocols ["h1","h2","h3"]
+     → x509·ECH(TLS 안 함)·Range(ServeContent 안 씀)·go-jose(ACME 안 씀)는 닿지 않음, HTTP/2 SETTINGS CPU DoS(CVE-2026-78669)만 h2c로 닿음
+       (127.0.0.1:8201에 붙을 수 있는 쪽 = 서버 안 프로세스·tailscale serve·운영자 SSH -L)
+   - backend: libexpat ← fontconfig ← font-dejavu, backend/src/main에 java.awt·ImageIO 사용 없음
+   - frontend: node v24.22.2 내장 undici 7.30.1(수정판), /app/node_modules에 undici·brace-expansion 없음, CMD는 node 직접, 헬스체크 wget
+   - postgres: gosu는 엔트리포인트의 권한 내리기만
+
+4) 수정 아이디어 확인(실험 이미지 — 끝나고 지움)
+   - FROM qa-backend + apk upgrade --no-cache → HIGH·CRITICAL 0 (apk policy: libexpat 2.10.0-r0이 v3.24/main에 있음, backend-apk-policy.txt)
+   - FROM qa-frontend + rm -rf npm·npx → HIGH·CRITICAL 0, next start 기동·/login 200
+
+# 출처: $SP/qa/lanes/repro6/trivy-image/caddy-desc.txt (전체)
+## CVE-2026-111497 brotli-libs  CRITICAL
+   A buffer overflow vulnerability in the Brotli decoder (c/dec/decode.c) in Google Brotli versions 1.0.3 through 1.2.0 on all platforms allows a remote unauthenticated attacker to corrupt adjacent decoder state memory, disclose sensitive memory contents, cause a denial of service, or potentially execute arbitrary code using a crafted Brotli-compressed stream.      Users need to update any Brotli  …(줄 자름)
+## CVE-2026-92392 curl  HIGH
+   During an upload, curl mishandles HTTP/2 `RST_STREAM` received from the server (with reason `HTTP_1_1_REQUIRED` or `REFUSED_STREAM`) leading to a use after free of a `struct Curl_easy` object.
+## CVE-2026-92392 libcurl  HIGH
+   During an upload, curl mishandles HTTP/2 `RST_STREAM` received from the server (with reason `HTTP_1_1_REQUIRED` or `REFUSED_STREAM`) leading to a use after free of a `struct Curl_easy` object.
+## CVE-2026-116587 github.com/go-jose/go-jose/v3  HIGH
+   Go JOSE provides an implementation of the Javascript Object Signing and Encryption set of standards in Go, including support for JSON Web Encryption (JWE), JSON Web Signature (JWS), and JSON Web Token (JWT) standards. Prior to 4.1.6, go-jose parses attacker-controlled RSA modulus and prime values from JWKs without enforcing size and consistency bounds before passing them to crypto/rsa.PrivateKe …(줄 자름)
+## CVE-2026-116587 github.com/go-jose/go-jose/v4  HIGH
+   Go JOSE provides an implementation of the Javascript Object Signing and Encryption set of standards in Go, including support for JSON Web Encryption (JWE), JSON Web Signature (JWS), and JSON Web Token (JWT) standards. Prior to 4.1.6, go-jose parses attacker-controlled RSA modulus and prime values from JWKs without enforcing size and consistency bounds before passing them to crypto/rsa.PrivateKe …(줄 자름)
+## CVE-2026-78669 golang.org/x/net  HIGH
+   A malicious HTTP/2 peer can cause excessive CPU consumption in the client or server by opening a large number of streams and then sending many small SETTINGS frames containing SETTINGS_INITIAL_WINDOW_SIZE values.
+## CVE-2026-111943 stdlib  HIGH
+   On most platforms, Go uses the given system root certificates. However, in some narrower cases, the system trust stores may not be updated without further action. To defend against the narrower set of cases that may remain affected, a denylist was added in crypto/x509 to return an error when calling Verify with any of the known intermediate certificates that are no longer considered to be trust …(줄 자름)
+## CVE-2026-78667 stdlib  HIGH
+   When parsing a Range header containing a large number of small ranges, FileServer(FS), ServeContent, and ServeFile(FS) can consume an excessive amount of CPU.
+## CVE-2026-78669 stdlib  HIGH
+   A malicious HTTP/2 peer can cause excessive CPU consumption in the client or server by opening a large number of streams and then sending many small SETTINGS frames containing SETTINGS_INITIAL_WINDOW_SIZE values.
+## CVE-2026-97031 stdlib  HIGH
+   Multiple ECH outer extension references are not permitted under RFC 9849; previously, a client could send a well-crafted packet that could trigger memory exhaustion in the server process by specifying multiple references. We now reject these as malformed and curb the memory amplification vector as a result.
+
+# 출처: $SP/qa/lanes/repro6/trivy-image/backend-apk-policy.txt (전체)
+libexpat policy:
+  2.9.0-r0:
+    lib/apk/db/installed
+  2.10.0-r0:
+    https://dl-cdn.alpinelinux.org/alpine/v3.24/main
+Installed:                                Available:
+apk-tools-3.0.8-r0                      < 3.0.9-r0 
+libapk-3.0.8-r0                         < 3.0.9-r0 
+libexpat-2.9.0-r0                       < 2.10.0-r0 
+tzdata-2026e-r0                         < 2026f-r0 
