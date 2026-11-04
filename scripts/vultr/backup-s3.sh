@@ -8,7 +8,8 @@
 #   0 14 * * 0 /home/ubuntu/My_macro_dashboard_v2/scripts/vultr/backup-s3.sh
 # 결과는 syslog(태그 my-macro-backup):  journalctl -t my-macro-backup
 # 실패하면 서버 .env의 텔레그램 봇(TELEGRAM_BOT_TOKEN·TELEGRAM_CHAT_ID — 모의 매매 알림과 같은 봇)으로 한 줄 알리고, 성공하면
-# backups/.last-s3-ok에 시각을 남깁니다 — deploy.sh가 그 시각이 36시간을 넘었거나 없으면 경고합니다(QA-199).
+# backups/.last-s3-ok에 시각을 남깁니다 — make status와 deploy.sh 끝 요약이 그 시각이 36시간을 넘으면 경고합니다(deploy.sh는 없을 때도,
+# 판정은 scripts/vultr/backup-age.sh — QA-199).
 #
 # make backup(backups/에 접두어별 최근 BACKUP_KEEP개 보존, ADR 0003)이 만든 파일 하나만 s3://<AWS_BACKUP_BUCKET>/db/vultr/에
 # 올립니다 — AWS 서버와 같은 버킷, 접두어로 구분(병행 중 AWS의 db/와 섞이지 않게). 60일 지난 객체는 db/ 아래에 걸린 수명주기가
@@ -78,7 +79,7 @@ fi
 size="$(du -h "$latest" | cut -f1)"
 logger -t "$tag" "백업을 올렸습니다: s3://$bucket/$key ($size)" || true
 # QA-199: 마지막으로 서버 밖 사본을 올린 시각(유닉스 초 · UTC · 키 — 버킷 이름은 적지 않음). 쓰지 못해도 올리기는 끝났으므로 실패로 보지 않고,
-# 그러면 deploy.sh가 오래됐다고 알립니다.
+# 그러면 make status·deploy.sh가 오래됐다고 알립니다(backup-age.sh).
 { printf '%s %s %s\n' "$(date +%s)" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$key" > "$BACKUP_DIR/.last-s3-ok.tmp" &&
     mv -f "$BACKUP_DIR/.last-s3-ok.tmp" "$BACKUP_DIR/.last-s3-ok"; } ||
     logger -t "$tag" -p user.warning "마지막 성공 시각(backups/.last-s3-ok)을 남기지 못했습니다" || true

@@ -1,6 +1,7 @@
 """
 tests/test_vultr_scripts.py
-Vultr 서버(ADR 0023)의 스크립트 시험 — scripts/vultr/{bootstrap,tailscale-up,deploy,backup-s3,instance,firewall-pc-ip}.sh.
+Vultr 서버(ADR 0023)의 스크립트 시험 — scripts/vultr/{bootstrap,tailscale-up,deploy,backup-s3,backup-age,instance,firewall-pc-ip}.sh
+와 make status의 마지막 S3 백업 나이(QA-199).
 
 deploy.sh·backup-s3.sh는 scripts/aws의 같은 이름에서 갈라냈으므로, 같은 가짜 실행 파일(tests/fake_server_tools.py — docker·aws·make·
 logger·sleep)과 임시 git 원격으로 Vultr에서 달라진 점을 봅니다: 덧붙임 파일(compose.vultr.yml), gate·CloudFront 대역 단계가 없음,
@@ -23,7 +24,7 @@ import pytest
 from tests import fake_server_tools as tools
 
 ROOT = Path(__file__).resolve().parents[2]
-SCRIPTS = ["bootstrap.sh", "tailscale-up.sh", "deploy.sh", "backup-s3.sh", "instance.sh", "firewall-pc-ip.sh"]
+SCRIPTS = ["bootstrap.sh", "tailscale-up.sh", "deploy.sh", "backup-s3.sh", "backup-age.sh", "instance.sh", "firewall-pc-ip.sh"]
 SECRET = tools.SECRET
 
 
@@ -84,6 +85,7 @@ def server(tmp_path):
     tools._git(seed, "symbolic-ref", "HEAD", "refs/heads/main")
     (seed / "scripts/vultr").mkdir(parents=True)
     shutil.copy(ROOT / "scripts/vultr/deploy.sh", seed / "scripts/vultr/deploy.sh")
+    shutil.copy(ROOT / "scripts/vultr/backup-age.sh", seed / "scripts/vultr/backup-age.sh")   # 끝 요약의 S3 백업 나이(QA-199)
     for name in ("db-backup.sh", "db-common.sh"):   # 배포 전 덤프(QA-200)가 부르는 것
         shutil.copy(ROOT / "scripts" / name, seed / "scripts" / name)
     (seed / "deploy/vultr").mkdir(parents=True)
@@ -427,7 +429,6 @@ def test_backup_s3는_버킷_이름이_없으면_백업하지_않는다(backup_r
 # 수집기는 늘 연결되지 않는 가짜 curl(fakes, FAKE_CURL_RC=7)로 바꿉니다 — 수집기가 꺼져 있어도 나이는 찍어야 합니다.
 REAL_MAKE = shutil.which("make")
 needs_make = pytest.mark.skipif(REAL_MAKE is None, reason="make가 없어 건너뜁니다.")
-QA199_STATUS = "QA-199 보완 재현 — 수정 전: make status는 수집기 /status만 찍고 backups/.last-s3-ok를 보지 않음"
 
 
 @pytest.fixture()
@@ -458,7 +459,6 @@ def _s3_lines(stdout: str) -> list[str]:
 
 
 @needs_make
-@pytest.mark.xfail(strict=True, reason=QA199_STATUS)
 def test_QA199_make_status는_서버의_마지막_S3_백업이_36시간을_넘었으면_수집기가_꺼져_있어도_경고한다(status_root, fakes):
     _write_last_s3(status_root, 37)
     result = _make_status(status_root, fakes)
@@ -469,7 +469,6 @@ def test_QA199_make_status는_서버의_마지막_S3_백업이_36시간을_넘�
 
 
 @needs_make
-@pytest.mark.xfail(strict=True, reason=QA199_STATUS)
 def test_QA199_make_status는_마지막_S3_백업이_36시간_안이면_경고_없이_나이만_찍는다(status_root, fakes):
     _write_last_s3(status_root, 1)
     result = _make_status(status_root, fakes)
@@ -488,7 +487,6 @@ def test_QA199_make_status는_마지막_S3_백업_기록이_없으면_그_줄을
 
 
 @needs_make
-@pytest.mark.xfail(strict=True, reason=QA199_STATUS)
 @pytest.mark.parametrize("age_hours", [1, 37])
 def test_QA199_make_status와_deploy는_마지막_S3_백업을_같은_줄로_판정한다(server, fakes, age_hours):
     here, _ = server
