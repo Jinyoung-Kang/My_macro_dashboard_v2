@@ -402,6 +402,27 @@ class PaperCheckpointJobTest {
     }
 
     @Test
+    @Disabled("QA-252 재현 — 수정 전: 스키마 검사가 비유한 숫자에 예외를 던져 '부르기 전 오류'로 처리되고 창 안 매 주기 다시 부름(결정 행 없음)")
+    @DisplayName("QA-252: 응답의 숫자가 double 범위를 넘으면(1e400) 형식 오류로 한 번만 — 결정 행 FORMAT_ERROR·행 DONE, 창 안 다음 주기에 다시 부르지 않음, 결정 주기 호출 수에 셈")
+    void nonFiniteNumberIsAFormatErrorCalledOnce() {
+        answer = ok("{\"schemaVersion\":1e400,\"action\":\"KEEP\",\"summary\":\"계획대로\",\"orders\":[],\"noTradeReason\":\"갭 유지\"}");
+        // 수집기가 감시 저장본을 계속 새로 받는 운영처럼 — 매 주기 30초 전에 받은 그 확인의 저장본
+        when(marketData.watchUs()).thenAnswer(inv -> Optional.of(watch(E, LocalTime.of(10, 0), clock.now.minusSeconds(30), E)));
+        PaperCheckpointJob job = job(true);
+        for (int minute = 3; minute <= 12; minute++) {
+            runAt(job, T.plus(Duration.ofMinutes(minute)));
+        }
+        assertThat(sent).as("과금된 응답 — 다시 부르지 않음").hasSize(1);
+        assertThat(store.apiUsage(LocalDate.of(2026, 11, 3)).map(ApiUsage::calls)).contains(1);
+        Decision d = checkpointDecision();
+        assertThat(d.status()).isEqualTo(ClaudeBookService.STATUS_FORMAT_ERROR);
+        assertThat(d.response().path("summary").asString()).contains("재시도 없음");
+        assertThat(row(E).status()).isEqualTo(PaperBooks.CHECKPOINT_DONE);
+        assertThat(row(E).checkpointDecisionId()).isEqualTo(d.id());
+        assertThat(ClaudeBookService.claude2CallsInCycle(store, D)).isEqualTo(2);
+    }
+
+    @Test
     @DisplayName("재시도 없음(쓰기 실패): 응답을 받은 뒤 쓰기(행 DONE·확인 결정 넣기)가 DB 순간 장애로 실패해도 다음 주기에 다시 부르지 않음 — 실패 결정 행(API_ERROR·AFTER_RESPONSE)이 따로 남고 행 DONE, 호출·사용량 1")
     void writeFailureAfterTheCallDoesNotCallAgain() {
         failDone = 1;

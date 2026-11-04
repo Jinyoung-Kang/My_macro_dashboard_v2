@@ -1,6 +1,7 @@
 package com.macrodash.feature.paper;
 
 import com.macrodash.Golden;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import tools.jackson.databind.ObjectMapper;
@@ -333,6 +334,41 @@ class StructuredSchemaTest {
                 "$.d: 0.25의 배수가 아닙니다 — 실제 0.3");
         assertThat(schema.validate(MAPPER.readTree("{\"a\":\"ab\",\"b\":[1,2],\"c\":0,\"d\":1}")))
                 .containsExactly("$.c: 0보다 커야 합니다 — 실제 0");
+    }
+
+    @Test
+    @Disabled("QA-252 재현 — 수정 전: double 범위를 넘는 숫자(1e400)가 DoubleNode(Infinity)로 읽혀 decimalValue()에서 예외를 던짐")
+    @DisplayName("QA-252: double 범위를 넘는 숫자(1e400·-1e400·1E+999)는 예외 없이 칸마다 위반 한 줄 — number·integer·const·enum·uniqueItems·형이 다른 칸 모두")
+    void nonFiniteNumbersAreViolationsNotExceptions() throws Exception {
+        StructuredSchema schema = StructuredSchema.parse("t", """
+                {"type":"object","additionalProperties":false,"required":["n","i","k","e","u","s"],
+                 "properties":{"n":{"type":["number","null"],"minimum":0,"maximum":100},
+                               "i":{"type":"integer"},
+                               "k":{"const":2},
+                               "e":{"enum":[1,2]},
+                               "u":{"type":"array","uniqueItems":true,"items":{"type":"number"}},
+                               "s":{"type":"string"}}}
+                """);
+
+        assertThat(schema.validate(MAPPER.readTree(
+                "{\"n\":1e400,\"i\":-1e400,\"k\":1e400,\"e\":1E+999,\"u\":[1e400,1e400],\"s\":1e400}")))
+                .containsExactly(
+                        "$.n: 유한한 숫자가 아닙니다 — 실제 Infinity",
+                        "$.i: 유한한 숫자가 아닙니다 — 실제 -Infinity",
+                        "$.k: 유한한 숫자가 아닙니다 — 실제 Infinity",
+                        "$.e: 유한한 숫자가 아닙니다 — 실제 Infinity",
+                        "$.u[0]: 유한한 숫자가 아닙니다 — 실제 Infinity",
+                        "$.u[1]: 유한한 숫자가 아닙니다 — 실제 Infinity",
+                        "$.s: 유한한 숫자가 아닙니다 — 실제 Infinity");
+        // 결정 스키마 그대로 — 주문 비중 칸(number|null)에 1e400이면 그 칸 위반 하나(C3 형식 오류)
+        ObjectNode response = valid();
+        firstOrder(response).set("targetWeightPct", MAPPER.readTree("1e400"));
+        assertThat(DECISION.validate(response))
+                .containsExactly("$.orders[0].targetWeightPct: 유한한 숫자가 아닙니다 — 실제 Infinity");
+        // 유한한 큰 수(1e308)는 지금처럼 범위 위반
+        firstOrder(response).set("targetWeightPct", MAPPER.readTree("1e308"));
+        assertThat(DECISION.validate(response)).singleElement().asString()
+                .startsWith("$.orders[0].targetWeightPct: 최댓값");
     }
 
     @Test
