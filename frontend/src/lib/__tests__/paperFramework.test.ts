@@ -494,6 +494,15 @@ describe("메모(F6)", () => {
     expect(noteCreateResultView({ ok: true, note: NOTES[2] as never }).text).toContain("프레임 탭의 제안 카드에서 이 메모를 골라");
     expect(noteArchiveConfirm({ id: 12, title: "유가" })).toContain("이 메모(#12 유가)를 보관할까요? 지우지 않고");
   });
+
+  it.fails("QA-181 보완: 유효하지만 패킷 글자 상한에 들어가지 못한 시황 메모(inPacket:false)는 저장 결과가 경고", () => {
+    const leftOut = { ...NOTES[0], id: 13, active: true, inPacket: false };
+    const view = noteCreateResultView({ ok: true, note: leftOut as never });
+    expect(view.tone).toBe("warn");
+    expect(view.text).toContain("시황 메모(#13)를 저장했습니다");
+    expect(view.text).toContain("글자 수 상한(설정 notesMaxCharsInPacket)");
+    expect(view.text).not.toContain("유효한 동안 Claude 결정 패킷에 자료로 실립니다");
+  });
 });
 
 describe("메모 기준일(F4)", () => {

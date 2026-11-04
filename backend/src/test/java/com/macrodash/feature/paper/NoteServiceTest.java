@@ -3,6 +3,7 @@ package com.macrodash.feature.paper;
 import com.macrodash.store.PaperStore.Note;
 import com.macrodash.support.InvalidRequestException;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import tools.jackson.databind.JsonNode;
@@ -346,6 +347,36 @@ class NoteServiceTest {
         assertThat(krPacket.ids()).as("한국 — 맨 앞(최신)이 혼자 넘어도 메모 없음이 되지 않음").containsExactly(krOlder);
         assertThat(krPacket.omitted()).isEqualTo(1);
         assertThat(krPacket.text()).isNotEqualTo(PacketBuilder.NO_NOTES);
+    }
+
+    @Test
+    @Disabled("QA-181 보완 재현 — 수정 전: 목록·저장 응답에 패킷 포함 여부가 없어 혼자 상한을 넘는 메모도 active:true(화면 '패킷에 실음')로만 보임")
+    @DisplayName("QA-181 보완: 목록·저장 응답의 inPacket은 다음 결정 패킷과 같은 함수로 셈 — 혼자 상한을 넘는 메모는 active:true여도 inPacket:false, "
+            + "목록에 패킷 글자 상한(packetMaxChars)")
+    void listAndCreateTellWhetherTheNoteIsInThePacket() {
+        long older = market(LocalDate.of(2026, 10, 21), LocalDate.of(2026, 10, 28), "짧음", "짧은 메모");
+        long huge = market(LocalDate.of(2026, 10, 22), LocalDate.of(2026, 10, 28), "긴 메모", "가".repeat(6_001));
+        long newest = market(FRI, LocalDate.of(2026, 10, 28), "최신", "최신 메모");
+        long insight = MAPPER.valueToTree(notes.create("INSIGHT", null, null, "방법론", "글").get("note")).path("id").asLong();
+
+        Map<String, Object> listed = notes.list(false);
+        assertThat(listed.get("packetMaxChars")).isEqualTo(6_000);
+        Map<Long, JsonNode> rows = new java.util.HashMap<>();
+        for (JsonNode row : MAPPER.valueToTree(listed.get("notes"))) {
+            rows.put(row.path("id").asLong(), row);
+        }
+        assertThat(rows.get(huge).path("active").asBoolean()).isTrue();
+        assertThat(rows.get(huge).path("inPacket").isBoolean()).as("칸이 있음").isTrue();
+        assertThat(rows.get(huge).path("inPacket").asBoolean()).as("혼자 상한을 넘어 패킷에서 빠짐").isFalse();
+        assertThat(rows.get(newest).path("inPacket").asBoolean()).isTrue();
+        assertThat(rows.get(older).path("inPacket").asBoolean()).isTrue();
+        assertThat(rows.get(insight).path("inPacket").asBoolean(true)).as("방법론 메모는 패킷에 싣지 않음").isFalse();
+
+        JsonNode created = MAPPER.valueToTree(notes.create("MARKET", FRI.toString(), "2026-10-28", "또 긴 메모", "나".repeat(6_001))
+                .get("note"));
+        assertThat(created.path("active").asBoolean()).isTrue();
+        assertThat(created.path("inPacket").isBoolean()).isTrue();
+        assertThat(created.path("inPacket").asBoolean()).as("저장 응답도 같은 판정").isFalse();
     }
 
     // ------------------------------------------------------------------ 시장 문맥(2단계 명세 §9 A6)
