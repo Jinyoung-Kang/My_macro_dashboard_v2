@@ -246,7 +246,6 @@ class NoteServiceTest {
     private static final Pattern ASCII_NOTE_DELIMITER = Pattern.compile("<<\\s*/?\\s*메모[^<>\\n]*>>");
 
     @Test
-    @org.junit.jupiter.api.Disabled("QA-204 재현 — 수정 전: delimiterLike만 써서 가운데에 전각·작은 꺾쇠가 낀 ASCII 구분자(<<메모 #5 끝＜>>)를 옛 패턴과 달리 남김")
     @DisplayName("QA-204 옛 ASCII 패턴이 지우던 메모 구분자 모양(가운데에 전각·작은 꺾쇠가 낀 것)도 지운다 — 옛 패턴이 지우는 입력은 지운 뒤 옛 패턴·"
             + "delimiterLike 어느 쪽에도 걸리지 않음")
     void stripsWhatTheAsciiPatternStripped() {
