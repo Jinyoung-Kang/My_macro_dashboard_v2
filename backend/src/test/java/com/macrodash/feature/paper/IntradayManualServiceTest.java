@@ -217,4 +217,51 @@ class IntradayManualServiceTest {
         assertThat(missing.get("ok")).isEqualTo(false);
         assertThat(missing.get("available")).isEqualTo(false);
     }
+
+    @Test
+    @DisplayName("상태 응답의 장중 판단 묶음(intraday): 스위치가 켜진 계좌와 그 세션의 계획 행(순번·시각·피드·상태·수동 여부) — 스위치가 모두 꺼져 있고 계획 "
+            + "행도 없으면 칸이 없음(응답이 그대로). 주문 행은 분 단위 지정 시각이면 targetLocal을 더함")
+    @SuppressWarnings("unchecked")
+    void statusShowsTheIntradayPlans() {
+        PaperQueryService query = new PaperQueryService(store, mock(PaperMarketData.class), reader, PaperFixtures.settings(store),
+                new PaperConfig(true, PaperFixtures.FRI, 100_000), clock);
+        plan(PaperBooks.CLAUDE, 1, LocalTime.of(13, 30), PaperBooks.CHECKPOINT_PLANNED);
+        service(true).pull(UsPaperMarket.INSTANCE, PaperBooks.CLAUDE);
+
+        Map<String, Object> intraday = (Map<String, Object>) query.status().get("intraday");
+
+        assertThat(intraday.get("session")).isEqualTo("2026-11-02");
+        assertThat(intraday.get("maxPerSession")).isEqualTo(2);
+        List<Map<String, Object>> books = (List<Map<String, Object>>) intraday.get("books");
+        assertThat(books).extracting(b -> b.get("book") + " " + b.get("freeTiming")).containsExactly("claude true", "claude2 true");
+        List<Map<String, Object>> plans = (List<Map<String, Object>>) books.get(0).get("plans");
+        assertThat(plans).singleElement().satisfies(p -> {
+            assertThat(p.get("slot")).isEqualTo(1);
+            assertThat(p.get("at")).isEqualTo("10:13");
+            assertThat(p.get("feed")).isEqualTo("MINUTE");
+            assertThat(p.get("manual")).isEqualTo(true);
+            assertThat(p.get("status")).isEqualTo("PLANNED");
+            assertThat(p.get("decisionId")).isNull();
+        });
+        assertThat((List<?>) books.get(1).get("plans")).as("계좌2는 스위치만 켜져 있고 예약 없음").isEmpty();
+
+        // 스위치를 모두 끄고 계획 행도 없으면 칸이 없음 — 스위치를 꺼도 남은 계획 행이 있는 계좌는 보임.
+        ((ObjectNode) store.settings.body().get("claude")).put("freeTiming", false);
+        ((ObjectNode) store.settings.body().get("claude2")).put("freeTiming", false);
+        Map<String, Object> remaining = (Map<String, Object>) query.status().get("intraday");
+        assertThat((List<Map<String, Object>>) remaining.get("books")).extracting(b -> b.get("book") + " " + b.get("freeTiming"))
+                .containsExactly("claude false");
+        store.intradayPlans.clear();
+        assertThat(query.status()).doesNotContainKey("intraday");
+
+        // 주문 행 — 분 단위 지정 시각이면 그 시각, 그 밖의 시점은 칸이 없음.
+        store.insertOrder(new com.macrodash.store.PaperStore.Order(0, PaperBooks.CLAUDE, morning, "AAA", PaperBooks.BUY, null, 5.0, null,
+                PaperBooks.AT_MINUTE, "CLAUDE", PaperBooks.ORDER_PENDING, null, null, D, NOW, E, null, LocalTime.of(10, 47)));
+        store.insertOrder(new com.macrodash.store.PaperStore.Order(0, PaperBooks.CLAUDE, morning, "BBB", PaperBooks.BUY, null, 5.0, null,
+                PaperBooks.NEXT_CLOSE, "CLAUDE", PaperBooks.ORDER_PENDING, null, null, D, NOW, E, null));
+        List<Map<String, Object>> orders = (List<Map<String, Object>>) query.orders(PaperBooks.CLAUDE, 10).get("orders");
+        assertThat(orders).extracting(o -> o.get("ticker") + " " + o.get("timing") + " " + o.get("targetLocal"))
+                .containsExactlyInAnyOrder("AAA AT_MINUTE 10:47", "BBB NEXT_CLOSE null");
+        assertThat(orders.stream().filter(o -> "BBB".equals(o.get("ticker"))).findFirst().orElseThrow()).doesNotContainKey("targetLocal");
+    }
 }

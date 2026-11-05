@@ -803,4 +803,40 @@ class ReviewServiceTest {
         assertThat(listed).as("화면 목록은 미국 행만(시장을 받지 않는 화면 응답 = 미국)").singleElement()
                 .satisfies(row -> assertThat(row.get("weekEnding")).isEqualTo(WE.toString()));
     }
+
+    @Test
+    @DisplayName("자유 시점 판의 장중 판단(INTRADAY_* — ADR 0027 결정 10)은 복기 입력의 결정 목록에 넣지 않음 — 그 세션의 결정(같은 기준 거래일에 판단을 낸 결정 "
+            + "가운데 가장 늦은 것)에 그 판단들이 낸 주문과 '장중 판단 n회(유지·교체)' 한 줄을 붙임. 장중 판단 행이 없으면 입력이 그대로")
+    void intradayJudgmentsFoldIntoTheSessionDecision() {
+        long scheduled = decision(MON, RuleBookService.SCHEDULED, "OK", 30.0, null);
+        long manual = decision(MON, RuleBookService.MANUAL, "NO_TRADE", 30.0, "관망");
+        buyOrder(scheduled, "AAA", PaperBooks.ORDER_FILLED, null, reason("아침 논거", "무효화", 5.0, "NEXT_CLOSE"), 5.0);
+        FrameworkService.Frame frame = new FrameworkService.Frame(0, "INTERIM", "임시", MAPPER.createObjectNode(), "", 0, null, null, null);
+        ReviewService service = service();
+        com.macrodash.analytics.ReviewFacts.Inputs before = service.inputs(WE, frame);
+        assertThat(before.decisions()).extracting(com.macrodash.analytics.ReviewFacts.Decision::id).containsExactlyInAnyOrder(scheduled, manual);
+        String plain = before.decisions().stream().filter(d -> d.id() == manual).findFirst().orElseThrow().summary();
+        assertThat(plain).isEqualTo("요약 " + MON);
+
+        long keep = store.insertDecisionIfAbsent(new Decision(0, PaperBooks.CLAUDE, MON, RuleBookService.INTRADAY_1, null, "NO_TRADE",
+                "claude-sonnet-5-5", 0, 1, null, null, null, null, null, MAPPER.readTree("{\"action\":\"KEEP\",\"summary\":\"유지\"}"), null,
+                null, null, false, null, 0)).orElseThrow();
+        long replace = store.insertDecisionIfAbsent(new Decision(0, PaperBooks.CLAUDE, MON, RuleBookService.INTRADAY_2, null, "OK",
+                "claude-sonnet-5-5", 0, 1, null, null, null, null, null, MAPPER.readTree("{\"action\":\"REPLACE\",\"summary\":\"교체\"}"),
+                null, null, null, false, null, 0)).orElseThrow();
+        long intradayOrder = store.insertOrder(new Order(0, PaperBooks.CLAUDE, replace, "BBB", PaperBooks.BUY, null, 4.0, null,
+                PaperBooks.MARKET, PacketBuilder.SOURCE_CLAUDE, PaperBooks.ORDER_FILLED, null, reason("장중 논거", "무효화", 4.0, "MARKET"), MON,
+                null, null, null));
+
+        com.macrodash.analytics.ReviewFacts.Inputs in = service.inputs(WE, frame);
+
+        assertThat(in.decisions()).extracting(com.macrodash.analytics.ReviewFacts.Decision::id).as("장중 판단 행은 목록에 없음")
+                .containsExactlyInAnyOrder(scheduled, manual).doesNotContain(keep, replace);
+        com.macrodash.analytics.ReviewFacts.Decision host = in.decisions().stream().filter(d -> d.id() == manual).findFirst().orElseThrow();
+        assertThat(host.summary()).as("그 세션에서 가장 늦게 판단을 낸 결정(수동)에 붙음").isEqualTo("요약 " + MON + " [장중 판단 2회 — 유지 1 · 교체 1]");
+        assertThat(host.orders()).extracting(com.macrodash.analytics.ReviewFacts.Order::id).containsExactly(intradayOrder);
+        com.macrodash.analytics.ReviewFacts.Decision other = in.decisions().stream().filter(d -> d.id() == scheduled).findFirst().orElseThrow();
+        assertThat(other.summary()).as("같은 날의 다른 결정은 그대로").isEqualTo("요약 " + MON);
+        assertThat(other.orders()).hasSize(1);
+    }
 }

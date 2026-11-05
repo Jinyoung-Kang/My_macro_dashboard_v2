@@ -1201,6 +1201,8 @@ const TIMING: Record<string, string> = {
   AT_1500: "다음 거래일 15:00 ET",
   // 계좌2 장중 확인 결정만 내는 장중 시장가(단계 2) — 기준 시각 = 주문 생성 + 60초 뒤 첫 분, 그 1분봉 시가부터 사다리.
   MARKET: "장중 시장가(확인 직후 첫 분)",
+  // 분 단위 지정 시각(ADR 0027) — 목표 세션의 그 분에 시작한 1분봉 시가. 시각은 주문 행의 targetLocal(timingLabel의 셋째 인자).
+  AT_MINUTE: "지정 시각",
 };
 // 한국 Claude 계좌2의 매시 시점(단계 2a — 명세 2026-11-02-kr-claude2-stage2 §2) — 목표 세션(다음 KR 거래일)의 한국 시각, 그 시각에 시작한 토스
 // 1분봉 시가. 같은 글자(AT_*)가 미국 계좌2에서는 뉴욕 시각이라 시장으로 가립니다. 시가·종가는 두 시장이 같은 이름입니다.
@@ -1226,8 +1228,15 @@ const labelOf = (table: Record<string, string>, value: string | null | undefined
 
 export const sideLabel = (side: string | null | undefined) => labelOf(SIDE, side);
 /** 체결 시점 이름 — 매시 시점(AT_*)은 시장의 시각(미국 ET·한국 KST), 시장을 주지 않으면 미국. */
-export const timingLabel = (timing: string | null | undefined, market: PaperMarketCode = "US") =>
-  labelOf(market === "KR" ? KR_TIMING : TIMING, timing);
+export const timingLabel = (
+  timing: string | null | undefined,
+  market: PaperMarketCode = "US",
+  /** 분 단위 지정 시각(AT_MINUTE)의 그 시장 현지 시각 'HH:MM' — 있으면 '지정 시각 10:47 ET'. */
+  targetLocal?: string | null,
+) => {
+  const label = labelOf(market === "KR" ? KR_TIMING : TIMING, timing);
+  return timing === "AT_MINUTE" && targetLocal ? `${label} ${targetLocal} ${market === "KR" ? "KST" : "ET"}` : label;
+};
 export const sourceLabel = (source: string | null | undefined) => labelOf(SOURCE, source);
 
 /** 매수는 상승색, 매도는 하락색(한국 관행, format.deltaColor와 같음). */
@@ -1973,6 +1982,9 @@ const DECISION_KIND: Record<string, string> = {
   INITIAL: "초기 결정",
   // 계좌2 장중 확인 결정(단계 2) — 세션당 한 번, 재시도 없음.
   CHECKPOINT: "장중 확인",
+  // 자유 시점 판의 장중 판단(ADR 0027) — 세션마다 계좌별 최대 두 번, 재시도 없음.
+  INTRADAY_1: "장중 판단 1",
+  INTRADAY_2: "장중 판단 2",
 };
 
 /** 결정 종류 이름. 모르는 값은 받은 글자 그대로. */
@@ -1994,7 +2006,8 @@ const DECISION_STATUS: Record<string, { label: string; tone: BadgeTone }> = {
 export function decisionStatusBadge(status: string | null | undefined, kind?: string | null): Badge {
   const known = status ? DECISION_STATUS[status] : undefined;
   const label = known?.label ?? status ?? EMPTY;
-  const noRetry = kind === "CHECKPOINT" && status !== null && status !== undefined && CLAUDE_FAILED_STATUSES.includes(status);
+  const once = kind === "CHECKPOINT" || kind === "INTRADAY_1" || kind === "INTRADAY_2";
+  const noRetry = once && status !== null && status !== undefined && CLAUDE_FAILED_STATUSES.includes(status);
   return { key: status ?? "unknown", label: noRetry ? `${label}(재시도 없음)` : label, className: TONE[known?.tone ?? "muted"] };
 }
 

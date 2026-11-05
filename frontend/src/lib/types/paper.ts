@@ -491,6 +491,10 @@ export interface PaperStatusResponse {
   collection?: PaperKrCollection | null;
   /** 한국 응답만 — 한국 Claude 계좌2 장중 확인(단계 2b). 이 칸을 보내지 않는 백엔드(2b 전)·미국 응답에서는 없습니다. */
   kr_claude2?: PaperKrClaude2Status | null;
+  /**
+   * 자유 시점 판의 장중 판단(ADR 0027) — 그 시장의 스위치가 하나라도 켜져 있거나 그 세션의 계획 행이 있을 때만 옵니다(없으면 칸이 없음).
+   */
+  intraday?: PaperIntradayStatus | null;
 }
 
 /**
@@ -827,6 +831,8 @@ export interface PaperOrder {
    * (뉴욕 매시)·NEXT_CLOSE 여덟 가운데 주문마다 고릅니다(계좌2 명세 §6-2 — NEXT_OBSERVATION은 메뉴에 없음).
    */
   timing: "NEXT_OBSERVATION" | "NEXT_CLOSE" | "IMMEDIATE" | "BACKFILL" | "NEXT_OPEN" | PaperTimedTiming;
+  /** 분 단위 지정 시각(AT_MINUTE — ADR 0027)의 그 시장 현지 시각 'HH:MM'. 다른 시점의 주문에는 이 칸이 없습니다. */
+  targetLocal?: string | null;
   source: "RULE" | "CLAUDE" | "STOP" | "BENCHMARK" | "INITIAL";
   status: PaperOrderStatus;
   rejectReason: string | null;
@@ -959,6 +965,8 @@ export interface PaperExecutionOrder {
   side: "BUY" | "SELL" | string;
   status: PaperOrderStatus | string;
   timing: string;
+  /** 분 단위 지정 시각(AT_MINUTE)의 그 시장 현지 시각 'HH:MM'(그 밖의 시점은 없음). */
+  targetLocal?: string | null;
   asOfTradingDate: string | null;
   /** 목표 세션 E(기준 거래일 다음 거래일 — 미국 동부 날짜). */
   targetSession: string | null;
@@ -2144,4 +2152,55 @@ export interface PaperRunReviewResult {
   outcome?: "REVIEWED" | "SKIPPED" | "ALREADY_REVIEWED" | string;
   review?: PaperReviewDetail | null;
   message?: string;
+}
+
+/** 상태 응답 intraday.books[].plans[] — 장중 판단 계획 행 하나(paper_intraday_plans). 시각은 그 시장 현지 시각 'HH:MM'. */
+export interface PaperIntradayPlan {
+  slot?: number | null;
+  at?: string | null;
+  feed?: string | null;
+  watch?: string[] | null;
+  question?: string | null;
+  /** 운영자가 당기거나 넣은 판단인가. */
+  manual?: boolean | null;
+  /** PLANNED · DONE · EXPIRED · SKIPPED · SUPERSEDED */
+  status?: string | null;
+  reason?: string | null;
+  decisionId?: number | null;
+  lagSeconds?: number | null;
+  calledAtKst?: string | null;
+}
+
+/** 상태 응답 intraday.books[] — 계좌 하나의 스위치와 그 세션의 계획 행. */
+export interface PaperIntradayBook {
+  book?: string | null;
+  freeTiming?: boolean | null;
+  plans?: PaperIntradayPlan[] | null;
+}
+
+/** 상태 응답 intraday(ADR 0027 결정 3) — 지금 진행 중이거나 다음인 세션과 세션당 횟수, 계좌별 계획. */
+export interface PaperIntradayStatus {
+  session?: string | null;
+  maxPerSession?: number | null;
+  books?: PaperIntradayBook[] | null;
+}
+
+/** POST /api/paper/run/intraday 응답 — 예약만 했음(호출은 장중 판단 작업이 그 창에서). */
+export interface PaperRunIntradayResult {
+  ok?: boolean;
+  available?: boolean;
+  message?: string;
+  market?: PaperMarketCode;
+  planned?: {
+    book?: string | null;
+    session?: string | null;
+    slot?: number | null;
+    atEt?: string | null;
+    atKst?: string | null;
+    feed?: string | null;
+    manual?: boolean | null;
+    created?: boolean | null;
+    status?: string | null;
+  } | null;
+  note?: string | null;
 }

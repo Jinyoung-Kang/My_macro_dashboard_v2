@@ -174,7 +174,7 @@ const ORDER_COLUMNS: readonly Column<PaperOrder>[] = [
   { key: "ticker", header: "종목", cell: (row) => row.ticker },
   { key: "side", header: "방향", cell: (row) => <span className={sideClass(row.side)}>{sideLabel(row.side)}</span> },
   { key: "size", header: "크기", align: "right", cell: (row) => orderSizeText(row) },
-  { key: "timing", header: "체결 시점", cell: (row) => timingLabel(row.timing) },
+  { key: "timing", header: "체결 시점", cell: (row) => timingLabel(row.timing, "US", row.targetLocal) },
   { key: "source", header: "출처", cell: (row) => sourceLabel(row.source) },
   {
     key: "status",
@@ -273,7 +273,7 @@ function timedOrderColumns(audit: ReadonlyMap<number, PaperExecutionOrder>): Col
       header: "체결 시점·목표 시각",
       className: "whitespace-nowrap",
       cell: (row) => (
-        <TwoLines top={part(timingLabel(row.timing))} bottom={part(formatKst(audit.get(row.id)?.targetAtKst ?? null), "목표")} />
+        <TwoLines top={part(timingLabel(row.timing, "US", row.targetLocal))} bottom={part(formatKst(audit.get(row.id)?.targetAtKst ?? null), "목표")} />
       ),
     },
     {
@@ -497,7 +497,7 @@ const KR_ORDER_COLUMNS: readonly Column<PaperOrder>[] = [
     key: "timing",
     header: "체결 시점·출처",
     className: "min-w-[6.5rem] break-keep",
-    cell: (row) => <TwoLines top={timingLabel(row.timing, "KR")} bottom={sourceLabel(row.source)} />,
+    cell: (row) => <TwoLines top={timingLabel(row.timing, "KR", row.targetLocal)} bottom={sourceLabel(row.source)} />,
   },
   {
     key: "status",

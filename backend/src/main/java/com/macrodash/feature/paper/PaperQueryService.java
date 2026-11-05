@@ -503,6 +503,68 @@ public class PaperQueryService {
             // 미국 Claude 계좌2(계좌2 명세 §13-1) — 미국 응답에만(한국 응답 글자 그대로).
             out.put(PaperBooks.CLAUDE2, claude2Status(market));
         }
+        if (us || korea(market)) {
+            // 자유 시점 판의 장중 판단(ADR 0027 결정 3) — 그 시장의 스위치가 하나라도 켜져 있거나 계획 행이 있을 때만(없으면 응답이 그대로).
+            Map<String, Object> intraday = intradayStatus(market);
+            if (intraday != null) {
+                out.put("intraday", intraday);
+            }
+        }
+        return out;
+    }
+
+    /**
+     * 자유 시점 판의 장중 판단 묶음(ADR 0027 결정 3) — {@code {session, maxPerSession, books:[{book, freeTiming, plans:[{slot, at(그 시장 현지 시각
+     * 'HH:MM'), feed, watch, question, manual, status, reason, decisionId, lagSeconds, calledAtKst}]}]}}. {@code session}은 지금 진행 중이거나 다음인
+     * 세션, 계좌는 그 시장의 Claude 계좌 가운데 스위치가 켜져 있거나 그 세션의 계획 행이 있는 것만입니다. 그런 계좌가 없으면 null(칸을 넣지 않음 —
+     * 스위치가 꺼진 응답은 이 묶음이 생기기 전과 같음). 달력이 그 해를 모르면 세션은 null이고 계획은 빈 목록입니다.
+     */
+    private Map<String, Object> intradayStatus(MarketRun market) {
+        boolean kr = korea(market);
+        FreeTimingSettings free = FreeTimingSettings.from(market.settingsBody());
+        LocalDate session;
+        try {
+            session = market.calendar().nextTradingDay(market.calendar().lastCompletedSession(clock.instant()));
+        } catch (com.macrodash.analytics.CalendarUnavailableException e) {
+            session = null;
+        }
+        List<Map<String, Object>> books = new ArrayList<>();
+        int max = 0;
+        for (String code : kr ? PaperKrIntradayJob.BOOKS : PaperIntradayJob.BOOKS) {
+            max = free.intradayMax(code);
+            List<PaperStore.IntradayPlan> plans = session == null ? List.of() : store.intradayPlans(code, session);
+            if (!free.on(code) && plans.isEmpty()) {
+                continue;
+            }
+            List<Map<String, Object>> rows = new ArrayList<>();
+            for (PaperStore.IntradayPlan p : plans) {
+                Map<String, Object> row = new LinkedHashMap<>();
+                row.put("slot", p.slot());
+                row.put("at", FreeTiming.label(p.atLocal()));
+                row.put("feed", p.feed());
+                row.put("watch", p.watch());
+                row.put("question", p.question());
+                row.put("manual", p.manual());
+                row.put("status", p.status());
+                row.put("reason", p.reason());
+                row.put("decisionId", p.intradayDecisionId());
+                row.put("lagSeconds", p.lagSeconds());
+                row.put("calledAtKst", p.calledAt() == null ? null : stamp(p.calledAt()));
+                rows.add(row);
+            }
+            Map<String, Object> book = new LinkedHashMap<>();
+            book.put("book", code);
+            book.put("freeTiming", free.on(code));
+            book.put("plans", rows);
+            books.add(book);
+        }
+        if (books.isEmpty()) {
+            return null;
+        }
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("session", session == null ? null : session.toString());
+        out.put("maxPerSession", max);
+        out.put("books", books);
         return out;
     }
 
@@ -1167,6 +1229,10 @@ public class PaperQueryService {
         row.put("targetWeightPct", o.targetWeightPct());
         row.put("sellFraction", o.sellFraction());
         row.put("timing", o.timing());
+        if (o.targetLocal() != null) {
+            // 분 단위 지정 시각(AT_MINUTE — ADR 0027)의 그 시장 현지 시각 'HH:MM'. 다른 시점의 주문에는 이 칸이 없습니다(응답이 그대로).
+            row.put("targetLocal", FreeTiming.label(o.targetLocal()));
+        }
         row.put("source", o.source());
         row.put("status", o.status());
         row.put("rejectReason", o.rejectReason());

@@ -156,7 +156,10 @@ final class ExecutionView {
         }
         out.put("checkpoints", checkpointRows);
         // 장중 확인 결정이 낸 주문은 M1·메뉴 줄에서 뺌(클래스 설명, 계좌1·계좌2 모두) — 감사한 주문 수(summary.audited)에는 그대로 셈.
-        Set<Long> checkpointDecisions = store.decisionIds(book.code(), RuleBookService.CHECKPOINT);
+        // 자유 시점 판의 장중 판단 결정(INTRADAY_* — ADR 0027)이 낸 주문도 같은 뜻으로 뺍니다(아침 결정의 시점 선택이 아니라 장중 교체).
+        Set<Long> checkpointDecisions = new java.util.HashSet<>(store.decisionIds(book.code(), RuleBookService.CHECKPOINT));
+        checkpointDecisions.addAll(store.decisionIds(book.code(), RuleBookService.INTRADAY_1));
+        checkpointDecisions.addAll(store.decisionIds(book.code(), RuleBookService.INTRADAY_2));
         List<OrderExec> morning = audited.stream()
                 .filter(e -> {
                     Long decision = orders.get(e.orderId()).decisionId();
@@ -275,6 +278,9 @@ final class ExecutionView {
         row.put("side", order.side());
         row.put("status", order.status());
         row.put("timing", order.timing());
+        if (order.targetLocal() != null) {
+            row.put("targetLocal", FreeTiming.label(order.targetLocal()));
+        }
         row.put("asOfTradingDate", text(order.asOfTradingDate()));
         row.put("targetSession", text(session));
         row.put("targetAtKst", stamp(exec.targetAt()));

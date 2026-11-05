@@ -359,6 +359,35 @@ public class ReviewService {
      * 그 시장의 조립 재료 — 그 시장 Claude 책·계좌 비교·체결 날짜 시간대·종가({@link #inputs(LocalDate, FrameworkService.Frame)}의 시장 판),
      * 시가 진입 시장(한국 — {@link PaperMarket#reviewEntry})이면 거절 주문 종목의 창 안 세션 시가({@link #opens}).
      */
+    /**
+     * 그 세션의 장중 판단을 한 줄로 — '[장중 판단 2회 — 유지 1 · 교체 1]'(실패한 호출은 '실패 n'). 응답의 action만 읽습니다(행 전체를 읽지 않음).
+     * 그 판단들이 낸 주문은 그 세션 결정의 주문 목록에 함께 들어갑니다({@link #inputs}).
+     */
+    private String intradayNote(List<DecisionSummary> judgments) {
+        Map<Long, com.macrodash.store.PaperStore.CheckpointAnswer> answers = store.checkpointAnswers(
+                judgments.stream().map(DecisionSummary::id).toList());
+        int keep = 0;
+        int replace = 0;
+        int failed = 0;
+        for (DecisionSummary judgment : judgments) {
+            com.macrodash.store.PaperStore.CheckpointAnswer answer = answers.get(judgment.id());
+            String action = answer == null ? null : answer.action();
+            if ("KEEP".equals(action)) {
+                keep++;
+            } else if ("REPLACE".equals(action)) {
+                replace++;
+            } else {
+                failed++;
+            }
+        }
+        StringBuilder out = new StringBuilder("[장중 판단 ").append(judgments.size()).append("회 — 유지 ").append(keep)
+                .append(" · 교체 ").append(replace);
+        if (failed > 0) {
+            out.append(" · 실패 ").append(failed);
+        }
+        return out.append("]").toString();
+    }
+
     ReviewFacts.Inputs inputs(PaperMarket market, LocalDate weekEnding, FrameworkService.Frame frame) {
         ReviewFacts.Window window = ReviewFacts.window(weekEnding, ReviewFacts.DEFAULT_WEEKS);
         ZoneId zone = market.calendar().zone();
@@ -369,8 +398,22 @@ public class ReviewService {
         List<ReviewFacts.Decision> decisions = new ArrayList<>();
         Set<String> tickers = new TreeSet<>();
         Set<String> rejected = new TreeSet<>();
-        for (DecisionSummary s : store.decisions(market.claudeBook(), DECISION_SCAN)) {
-            if (!window.contains(s.asOfTradingDate())) {
+        List<DecisionSummary> summaries = store.decisions(market.claudeBook(), DECISION_SCAN).stream()
+                .filter(s -> window.contains(s.asOfTradingDate())).toList();
+        // 자유 시점 판의 장중 판단(INTRADAY_* — ADR 0027 결정 10)은 결정 목록에 넣지 않습니다(자세·노출이 없는 응답이고 상한 40건을 채움) — 그 세션의
+        // 결정(같은 기준 거래일에 판단을 낸 결정 가운데 가장 늦은 것)에 그 판단들이 낸 주문과 '장중 판단 n회(유지·교체)' 한 줄을 붙입니다. 끈 판에는 그
+        // 행이 없어 입력이 그대로입니다.
+        Map<LocalDate, List<DecisionSummary>> intraday = new HashMap<>();
+        Map<LocalDate, Long> hosts = new HashMap<>();
+        for (DecisionSummary s : summaries) {
+            if (RuleBookService.intraday(s.kind())) {
+                intraday.computeIfAbsent(s.asOfTradingDate(), day -> new ArrayList<>()).add(s);
+            } else if (ClaudeBookService.STATUS_OK.equals(s.status()) || ClaudeBookService.STATUS_NO_TRADE.equals(s.status())) {
+                hosts.merge(s.asOfTradingDate(), s.id(), Math::max);
+            }
+        }
+        for (DecisionSummary s : summaries) {
+            if (RuleBookService.intraday(s.kind())) {
                 continue;
             }
             boolean judged = ClaudeBookService.STATUS_OK.equals(s.status())
@@ -395,8 +438,23 @@ public class ReviewService {
                 }
             }
             JsonNode response = d.response();
+            String summary = Json.asText(response, "summary");
+            List<DecisionSummary> judgments = Long.valueOf(d.id()).equals(hosts.get(d.asOfTradingDate()))
+                    ? intraday.getOrDefault(d.asOfTradingDate(), List.of()) : List.of();
+            if (!judgments.isEmpty()) {
+                for (DecisionSummary judgment : judgments) {
+                    for (Order o : store.ordersByDecision(judgment.id())) {
+                        orders.add(order(o, fillsByOrder.get(o.id()), zone));
+                        tickers.add(o.ticker());
+                        if (ReviewFacts.REJECTED.equals(o.status())) {
+                            rejected.add(o.ticker());
+                        }
+                    }
+                }
+                summary = (summary == null ? "" : summary + " ") + intradayNote(judgments);
+            }
             decisions.add(new ReviewFacts.Decision(d.id(), d.kind(), d.asOfTradingDate(), d.status(),
-                    Json.asText(response, "stance"), d.targetExposurePct(), Json.asText(response, "summary"),
+                    Json.asText(response, "stance"), d.targetExposurePct(), summary,
                     Json.asText(response, "exposureRationale"), Json.asText(response, "noTradeReason"),
                     d.frameworkVersion(), orders));
         }

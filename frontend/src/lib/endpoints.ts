@@ -207,6 +207,8 @@ export const endpoints = {
         init: scoped("/api/paper/init"),
         runRisk: scoped("/api/paper/run/risk"),
         runDecision: scoped("/api/paper/run/decision"),
+        /** 장중 판단을 지금으로 당김(자유 시점 판 — 예약만, 호출은 작업이) — 본문 `{book}`. */
+        runIntraday: scoped("/api/paper/run/intraday"),
         runInitialDecision: scoped("/api/paper/run/initial-decision"),
         notes: (includeExpired: boolean) =>
           withQuery("/api/paper/notes", { includeExpired, market: korea ? "KR" : undefined }),

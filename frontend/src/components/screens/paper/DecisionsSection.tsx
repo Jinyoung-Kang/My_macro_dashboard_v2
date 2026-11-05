@@ -2,6 +2,7 @@
 
 import { Fragment, type ReactNode, useState } from "react";
 import { Banner, Button, Card, ErrorState, FOCUS_RING, Freshness, Loading, SEGMENT_TRACK, segmentClasses, Select, Table } from "@/components/ui";
+import { IntradayPlansPanel } from "@/components/screens/paper/IntradayPlansPanel";
 import { useApi } from "@/hooks/useApi";
 import { useAsyncAction } from "@/hooks/useAsyncAction";
 import { useElapsedSeconds } from "@/hooks/useElapsedSeconds";
@@ -140,8 +141,9 @@ export function DecisionsSection({
   // 한국 — 출발·게이트 기록(작업 기록)과 수동 호출 문턱(호출 사용량), 확인 창의 결정 창(설정). 미국 Claude 계좌2를 고르면 — 결정 창 세 줄(상태 응답
   // claude2 묶음: 다음 결정·개장 전 컷오프·이번 결정 주기 호출 / 상한 — 출발 뒤에는 출발 카드가 없어 여기서 봄, 화면 점검 권장 ⓐ).
   const timed = !korea && isTimedBook(code);
+  // 미국 계좌1(claude)도 상태를 읽습니다 — 자유 시점 판을 켰을 때의 장중 판단 묶음(status.intraday, ADR 0027). 꺼져 있으면 그 칸이 없어 그리지 않습니다.
   const status = useApi<PaperStatusResponse>(
-    korea ? endpoints.paper.market("KR").status : timed ? endpoints.paper.status : null, 60_000,
+    korea ? endpoints.paper.market("KR").status : timed || code === "claude" ? endpoints.paper.status : null, 60_000,
   );
   // 분 시계 — 다음 결정 시각이 지났으면 '결정 창 열림'(출발 카드와 같은 줄, lib/paper claude2WindowLines).
   const now = useMinuteClock();
@@ -243,6 +245,18 @@ export function DecisionsSection({
         {/* 한국 계좌2(단계 2b) — 그 계좌를 골랐을 때 '오늘 장중 확인' 한 줄(상태 응답 kr_claude2, 칸이 없는 백엔드면 줄 없음). */}
         {korea && code === "kr_claude2" && (
           <Claude2CheckpointLine line={krClaude2CheckpointLine(status.data?.available ? status.data.kr_claude2 : null)} />
+        )}
+        {/* 자유 시점 판의 장중 판단(ADR 0027) — 그 계좌의 스위치가 켜져 있거나 계획 행이 있을 때만(상태 응답 intraday). */}
+        {claude && status.data?.available && (
+          <IntradayPlansPanel
+            intraday={status.data.intraday}
+            book={code}
+            market={market}
+            onChanged={() => {
+              void status.reload();
+              onChanged();
+            }}
+          />
         )}
         {timed && status.error && <p className="mt-2 text-xs text-warn">계좌2 결정 창을 읽지 못했습니다 — {status.error}</p>}
         {blocked && showRun && <p className="mt-2 text-xs text-warn">{blocked}</p>}
@@ -702,7 +716,7 @@ function DecisionDetail({ id, market }: { id: number; market: PaperMarketCode })
                 </span>
               ),
             },
-            { key: "timing", header: "체결 시점", render: (row) => timingLabel(row.timing, market) },
+            { key: "timing", header: "체결 시점", render: (row) => timingLabel(row.timing, market, row.targetLocal) },
             { key: "expires", header: "만료", render: (row) => row.expiresOn ?? EMPTY },
             {
               key: "reason",
