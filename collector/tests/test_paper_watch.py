@@ -59,12 +59,12 @@ def _ny(hh: int, mm: int, ss: int = 0, day: date = SESSION) -> datetime:
 # ==============================================================================
 # 1. 등록·이름·백엔드와 같은 글자
 # ==============================================================================
-def test_session_군에서_paper_bars_us_뒤에_돌고_태스크는_41개():
+def test_session_군에서_paper_bars_us_뒤에_돈다():
     task = tasks.TASKS_BY_NAME["paper_watch_us"]
     assert task.speed == "session" and task.run is paper_watch.task_paper_watch_us
     names = [t.name for t in tasks.ALL_TASKS]
     assert names.index("paper_watch_us") == names.index("paper_bars_us") + 1
-    assert len(tasks.ALL_TASKS) == len(tasks.TASKS_BY_NAME) == 41  # 계좌2 단계 2의 paper_watch_us·한국 계좌2 단계 2a의 kr_paper_timed·2b의 paper_watch_kr까지
+    assert len(tasks.ALL_TASKS) == len(tasks.TASKS_BY_NAME)  # 태스크 수는 test_task_registry.py 한 곳에서 셉니다
 
 
 def test_데이터셋_이름():
