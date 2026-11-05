@@ -112,12 +112,13 @@ def test_deploy는_gate_없이_하나씩_빌드하고_Vultr_덧붙임으로_기�
     assert result.returncode == 0, result.stderr
     calls = _docker_calls(fakes)
     builds = [c for c in calls if c.startswith("compose build")]
-    assert builds == ["compose build --pull backend", "compose build --pull frontend", "compose build --pull collector"], \
-        "4 GB — 서비스를 하나씩, gate는 Vultr에 없음(ADR 0023)"
+    assert builds == ["compose build --pull backend", "compose build --pull frontend", "compose build --pull collector",
+                      "compose build --pull browser"], \
+        "4 GB — 서비스를 하나씩, gate는 Vultr에 없음(ADR 0023), browser는 차단 통과 수집 계층의 브라우저 컨테이너(ADR 0026)"
     assert not any(c.startswith("curl ") for c in tools._calls(fakes)), "CloudFront 대역을 받지 않습니다(공개 주소 없음)"
     assert not (server[0] / "deploy/vultr/trusted_proxies.caddy").exists()
     up = calls.index("compose up -d --no-build --wait --wait-timeout 300")
-    assert up > calls.index("compose build --pull collector")
+    assert up > calls.index("compose build --pull browser")
     schema = [i for i, c in enumerate(calls) if " exec -T collector " in f" {c} " and "init_schema" in c]
     assert len(schema) == 1 and schema[0] > up, "up -d 뒤 스키마 적용(QA-016)"
     assert calls.index("compose up -d --no-deps --force-recreate --wait --wait-timeout 60 caddy") > schema[0]
@@ -223,7 +224,7 @@ def test_QA145_deploy는_받은_main의_deploy_sh가_바뀌었으면_새_판으�
     assert result.returncode == 0, result.stderr
     assert "새 판 deploy.sh" in result.stdout
     assert result.stdout.count("코드를 받습니다") == 2, "옛 판이 받은 뒤 새 판으로 한 번만 다시 돈다(되풀이 없음)"
-    assert len([c for c in _docker_calls(fakes) if c.startswith("compose build")]) == 3, "빌드는 새 판에서 한 번만"
+    assert len([c for c in _docker_calls(fakes) if c.startswith("compose build")]) == 4, "빌드는 새 판에서 한 번만"
 
 
 def test_QA118_deploy의_스키마_적용이_10번_모두_실패하면_알리고_0이_아닌_값으로_끝난다(server, fakes):

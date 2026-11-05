@@ -23,7 +23,7 @@ from typing import Any, Callable
 import requests
 
 from .. import http
-from . import impersonate, pacing, policy, state
+from . import browser_client, impersonate, pacing, policy, state
 from .reply import CHALLENGE_HUMAN, CHALLENGE_JS, Reply, TransportError
 
 logger = logging.getLogger(__name__)
@@ -82,9 +82,10 @@ def _send_impersonate(method: str, url: str, *, host: str, headers, params, data
     return impersonate.send(method, url, profile=state.profile_for(host), headers=headers, params=params, data=data)
 
 
-# 계층 → (보내는 함수, 지금 쓸 수 있는가). 계층 2는 브라우저 컨테이너를 붙이는 단계가 여기에 더합니다.
+# 계층 → (보내는 함수, 지금 쓸 수 있는가). 계층 2는 브라우저 컨테이너의 주소와 공유 비밀이 설정된 곳(운영 서버)에서만 쓸 수 있습니다.
 _SENDERS: dict[str, tuple[Callable[..., Reply], Callable[[], bool]]] = {
     policy.TIER_IMPERSONATE: (_send_impersonate, lambda: True),
+    policy.TIER_BROWSER: (browser_client.send, browser_client.available),
 }
 
 
@@ -188,3 +189,4 @@ def reset() -> None:
     """프로세스 안의 기록(지연·세션)을 비웁니다(시험 사이의 격리용). 표의 값은 건드리지 않습니다."""
     pacing.reset()
     impersonate.reset()
+    browser_client.reset()

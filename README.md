@@ -310,6 +310,7 @@ make test-frontend     # 자가검증 + 훅 테스트(vitest) + 린트 + 빌드(
 | `EARNINGS_SURPRISE_BUDGET` | 어닝 서프라이즈 수집(`earnings_surprise`, 12시간마다)이 한 번에 yfinance에 묻는 종목 수. 비우면 100(1~600) — 유니버스(ETF 제외) 약 576종목을 약 3일에 한 바퀴(실적 발표가 나왔을 법한 종목을 먼저) |
 | `TOSS_*` | 토스 연결 테스트 + 레이더의 "시장 전체·수급 지속성", 국내 파생의 "현물·선물 수급 동조" 카드가 비활성화되고, 한국 모의 책의 토스 태스크(관측치·수급·이력·1분봉 — `kr_paper_quotes`·`kr_paper_flows`·`kr_paper_price_history`·`kr_paper_timed`·`paper_watch_kr`·`paper_live_kr`)도 돌지 않아 한국 책 장부가 새 관측치를 받지 못함. 서버의 실제 계좌 탭은 키 미설정(`NOT_CONFIGURED`) 안내만(나머지 메뉴는 그대로) |
 | `TOSS_ACCOUNT_ENABLED` | 비우면 꺼짐. 운영 서버 `.env`에서 `true`일 때만 모의매매(한국·미국) 화면의 '실제 계좌' 탭이 토스증권 실제 계좌를 읽기 전용으로 보임([ADR 0025](docs/adr/0025-toss-real-account-readonly.md) — 주문 기능 없음, 저장하지 않음). 로컬 compose는 `"false"`로 고정해 `.env`에 적어도 쓰이지 않음(토큰은 키 하나에 1개라 로컬이 부르면 서버의 토큰을 무효로 만들고, 토스 허용 IP는 서버). 서비스 토큰(`COLLECTOR_API_TOKEN`) 없이 뜬 수집기에서도 꺼짐 |
+| `BROWSER_FETCH_URL`·`BROWSER_FETCH_TOKEN` | 비우면 꺼짐. 운영 서버 `.env`에 둘 다 있을 때만 차단 통과 수집 계층이 브라우저 컨테이너(계층 2)를 부릅니다([ADR 0026](docs/adr/0026-polite-fetch-layers.md)). 로컬 compose는 빈 값 고정 |
 | `DATA_GO_KR_SERVICE_KEY` | 공공데이터포털 **일반 인증키 하나**로 특일정보·주식시세를 씁니다(서비스별 활용신청 필요). 없으면 시계는 내장 휴일 표(2025~2028)로, 공식 시세·PER·PBR은 비어 있음 |
 | `DART_API_KEY` | 수급 레이더의 재무 체크만 비어 있음 |
 | `LOCAL_NO_LOGIN` | 비우면 `true` — 로컬은 로그인 없이 이 맥에서 운영자로 열림. `false`면 로그인 화면(웹·QA 덧붙임은 늘 `false`로 고정, [ADR 0016](docs/adr/0016-local-no-login.md)) |
@@ -353,7 +354,7 @@ ssh ubuntu@my-macro-app                    # 서버 셸(Tailscale SSH) — 그 �
 
 - 서버 `.env`는 로컬 `.env`에서 포트 네 줄·`COOKIE_SECURE`·`LOCAL_NO_LOGIN`·`FRONTEND_ORIGIN`·`PUBLIC_URL`·`AWS_INSTANCE_ID`·`VULTR_*`·`TAILSCALE_*`·`TAILNET_DOMAIN`·`TOSS_ACCOUNT_ENABLED`를 빼고
   `COMPOSE_FILE`·`AWS_BACKUP_BUCKET`·`PUBLIC_ORIGIN`(Tailscale 주소)·`PAPER_KR_START_DATE`(한국 출발일)·`TAILNET_OWNER_LOGIN`(그 Tailscale 사용자는 로그인 없이 운영자 —
-  [ADR 0023](docs/adr/0023-vultr-deployment.md) 결정 10, 비면 로그인 화면)·`TOSS_ACCOUNT_ENABLED`(켤 때만 `true` — 토스 실제 계좌 읽기 전용 조회, [ADR 0025](docs/adr/0025-toss-real-account-readonly.md))를 더한 것입니다([.env.vultr.example](.env.vultr.example)).
+  [ADR 0023](docs/adr/0023-vultr-deployment.md) 결정 10, 비면 로그인 화면)·`TOSS_ACCOUNT_ENABLED`(켤 때만 `true` — 토스 실제 계좌 읽기 전용 조회, [ADR 0025](docs/adr/0025-toss-real-account-readonly.md))·`BROWSER_FETCH_URL`·`BROWSER_FETCH_TOKEN`(켤 때만 — 브라우저 컨테이너, [ADR 0026](docs/adr/0026-polite-fetch-layers.md))을 더한 것입니다([.env.vultr.example](.env.vultr.example)).
   PC의 `.env`에는 `VULTR_API_KEY`·`VULTR_INSTANCE_ID`·`VULTR_SERVER_IP`·`VULTR_FIREWALL_GROUP_ID`·`TAILSCALE_AUTH_KEY`·`TAILNET_DOMAIN`을 더합니다.
 - DB는 06:45 KST(미국 결정 뒤)와 일요일 23:00 KST에 S3 백업 버킷의 `db/vultr/`로 백업합니다(`scripts/vultr/backup-s3.sh`, cron, 60일 보관).
 - 서버 만들기·`.env` 전달·배포·백업 절차는 [docs/DEVELOPMENT.md §7](docs/DEVELOPMENT.md#7-vultr-서버)에 있습니다.

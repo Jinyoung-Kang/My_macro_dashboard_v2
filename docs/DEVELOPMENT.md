@@ -345,7 +345,7 @@ GitHub 읽기 전용 배포 키(서버 ubuntu `~/.ssh/id_ed25519_github`, `~/.ss
 
 ```bash
 # PC — 걸러 낸 사본을 만들어 Tailscale SSH의 stdin으로 보내고(처음부터 600 — 서버에서 파일이 잠깐이라도 남에게 읽히지 않게) 지웁니다. <버킷>은 백업 버킷 이름
-tmp="$(mktemp)" && grep -Ev '^[[:space:]]*(export[[:space:]]+)?(DATABASE_PORT|BACKEND_PORT|COLLECTOR_PORT|FRONTEND_PORT|COOKIE_SECURE|LOCAL_NO_LOGIN|FRONTEND_ORIGIN|PUBLIC_URL|AWS_INSTANCE_ID|PAPER_ENABLED|TOSS_ACCOUNT_ENABLED|ORIGIN_SECRET|GATE_[A-Z_]*|VULTR_[A-Z_]*|TAILSCALE_[A-Z_]*|TAILNET_DOMAIN)=' .env > "$tmp" \
+tmp="$(mktemp)" && grep -Ev '^[[:space:]]*(export[[:space:]]+)?(DATABASE_PORT|BACKEND_PORT|COLLECTOR_PORT|FRONTEND_PORT|COOKIE_SECURE|LOCAL_NO_LOGIN|FRONTEND_ORIGIN|PUBLIC_URL|AWS_INSTANCE_ID|PAPER_ENABLED|TOSS_ACCOUNT_ENABLED|BROWSER_[A-Z_]*|ORIGIN_SECRET|GATE_[A-Z_]*|VULTR_[A-Z_]*|TAILSCALE_[A-Z_]*|TAILNET_DOMAIN)=' .env > "$tmp" \
   && printf '\nCOMPOSE_FILE=docker-compose.yml:compose.vultr.yml\nAWS_BACKUP_BUCKET=%s\nPUBLIC_ORIGIN=https://my-macro-app.%s\nPAPER_KR_START_DATE=2026-10-30\n' "<버킷>" "$(grep '^TAILNET_DOMAIN=' .env | cut -d= -f2-)" >> "$tmp" \
   && ssh ubuntu@my-macro-app 'umask 077 && cat > My_macro_dashboard_v2/.env && chmod 600 My_macro_dashboard_v2/.env' < "$tmp"; rm -f "$tmp"
 ```
@@ -354,10 +354,28 @@ tmp="$(mktemp)" && grep -Ev '^[[:space:]]*(export[[:space:]]+)?(DATABASE_PORT|BA
 - 로컬 `.env`의 `PAPER_ENABLED=false`는 거르고 다시 넣지 않습니다(서버는 비우면 켜짐). `PAPER_KR_START_DATE`는 로컬 `.env`에 없어 덧붙입니다(한국 출발일 —
   빠지면 한국 초기화·출발이 막힘).
 - 로컬 `.env`의 `TOSS_ACCOUNT_ENABLED` 줄도 거릅니다(로컬은 늘 꺼짐 — 서버에서만 켬, 아래 '토스 실제 계좌 조회 켜기').
-- 다시 전달하면 서버 `.env`를 통째로 덮어씁니다. 서버에만 적은 줄(`TAILNET_OWNER_LOGIN`·`TOSS_ACCOUNT_ENABLED=true`·`COOKIE_SECURE=false` 등)은 다시 덧붙입니다.
+- 로컬 `.env`의 `BROWSER_*` 줄도 거릅니다(브라우저 컨테이너는 서버에만 있음 — 아래 '브라우저 컨테이너 켜기').
+- 다시 전달하면 서버 `.env`를 통째로 덮어씁니다. 서버에만 적은 줄(`TAILNET_OWNER_LOGIN`·`TOSS_ACCOUNT_ENABLED=true`·`BROWSER_FETCH_URL`·`BROWSER_FETCH_TOKEN`·`COOKIE_SECURE=false` 등)은 다시 덧붙입니다.
 - `TAILNET_OWNER_LOGIN`은 운영자의 Tailscale 로그인 이름입니다(계정 고유 값 — 서버 `.env`에만). 값을 화면에 찍지 않고 서버에서 덧붙입니다:
   `v="$(tailscale status --json | python3 -c 'import json,sys; d=json.load(sys.stdin); print(d["User"][str(d["Self"]["UserID"])]["LoginName"])')" && printf '\nTAILNET_OWNER_LOGIN=%s\n' "$v" >> ~/My_macro_dashboard_v2/.env`
   (서버를 운영자 계정으로 tailnet에 넣었을 때 — 태그 기기면 PC에서 같은 명령으로 읽음) 뒤 `bash scripts/vultr/deploy.sh`. 로그에는 켜졌다는 경고 한 줄만 남습니다(값은 남기지 않음).
+
+### 브라우저 컨테이너 켜기 (차단 통과 수집 계층의 계층 2 — ADR 0026)
+
+브라우저 컨테이너(`browser`)는 배포하면 늘 뜨지만, 서버 `.env`에 주소와 공유 비밀이 둘 다 있을 때만 수집기가 부릅니다. 비밀은 서버에서만 만듭니다(값을 화면에 찍지 않음).
+
+```bash
+# 서버(ubuntu) — 처음 한 번. 그 뒤 다시 배포
+printf '\nBROWSER_FETCH_URL=http://browser:8191\nBROWSER_FETCH_TOKEN=%s\n' "$(openssl rand -hex 24)" >> ~/My_macro_dashboard_v2/.env
+bash ~/My_macro_dashboard_v2/scripts/vultr/deploy.sh
+```
+
+- 확인: `docker compose exec -T browser python -c "import urllib.request; print(urllib.request.urlopen('http://localhost:8191/health').read().decode())"` —
+  `tokenConfigured`가 `true`. 계층 2를 쓴 실행은 상태 화면의 그 태스크 기록에 `계층 browser`로 보입니다.
+- 끄려면 서버 `.env`의 `BROWSER_FETCH_URL` 줄을 지우고 다시 배포합니다(컨테이너는 떠 있되 불리지 않음).
+- Chrome이 뜨지 않으면(`docker compose logs browser`에 샌드박스 오류) 서버 `.env`에 `BROWSER_SANDBOX=false`를 적고 다시 배포한 뒤 ADR 0026에 기록합니다 —
+  호스트가 컨테이너의 사용자 네임스페이스를 막는 경우입니다.
+- 메모리: `docker stats --no-stream`으로 `browser`(상한 1g)와 `collector`를 함께 봅니다. 수집기·백엔드가 밀리면 끕니다.
 
 ### 배포
 
@@ -366,7 +384,7 @@ git clone git@github-v2:Jinyoung-Kang/My_macro_dashboard_v2.git ~/My_macro_dashb
 bash ~/My_macro_dashboard_v2/scripts/vultr/deploy.sh
 ```
 
-- 순서: main fast-forward → 버전 → backend → frontend → collector 하나씩 빌드(4 GB) → 배포 전 DB 덤프 → 기동 → 스키마 → caddy 다시 만들기 → 정리.
+- 순서: main fast-forward → 버전 → backend → frontend → collector → browser 하나씩 빌드(4 GB) → 배포 전 DB 덤프 → 기동 → 스키마 → caddy 다시 만들기 → 정리.
   서버 `.env`에 적지 않는 이름(옛 AWS 공개 주소용 값·PC 전용 `VULTR_*`·`TAILSCALE_*` 포함)이 있으면 멈추고,
   `PAPER_ENABLED=false`가 있으면 운영본의 정기 작업(리스크 점검·결정·체결)이 꺼진 채 뜬다고 '주의'를 찍고(끝 요약에도 다시) 계속합니다 —
   정비 때 일부러 끈 것이 아니면 그 줄을 지우고 다시 배포합니다. 없으면 '참고: 모의 매매 정기 작업 켜짐' 한 줄입니다(QA-194).

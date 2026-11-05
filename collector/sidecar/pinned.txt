@@ -1,0 +1,22 @@
+# 브라우저 컨테이너(sidecar)의 의존성 — 간접 의존성까지 전부 고정합니다(같은 커밋이면 언제 빌드해도 같은 판). CI의 pip-audit가 함께 봅니다.
+# 2026-11-06 python:3.11-slim에서 `pip install fastapi uvicorn patchright -c ../constraints.txt` 뒤 `pip freeze`한 결과입니다.
+# fastapi·uvicorn·starlette·pydantic 등 수집기와 겹치는 것은 수집기 constraints.txt와 같은 판입니다.
+# patchright(Apache-2.0)는 Playwright 호환 드라이버입니다. Chrome 자체는 이미지 빌드 때 안정 채널을 받습니다(Dockerfile).
+annotated-doc==0.0.5
+annotated-types==0.8.0
+anyio==4.15.1
+click==8.5.0
+fastapi==0.143.5
+greenlet==3.5.6
+h11==0.16.0
+idna==3.20
+opentelemetry-api==1.45.1
+packaging==26.3
+patchright==1.64.4
+pydantic==2.14.1
+pydantic_core==2.50.1
+pyee==13.0.1
+starlette==1.8.0
+typing-inspection==0.4.4
+typing_extensions==4.16.0
+uvicorn==0.54.0

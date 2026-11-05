@@ -57,17 +57,17 @@ jobs:
       # 로컬에서 쓰는 린터(ruff, requirements-dev.txt에 버전 고정)를 CI에서도 돌립니다.
       - name: 린트 (ruff)
         working-directory: collector
-        run: ruff check app tests
+        run: ruff check app tests sidecar
 
       # 알려진 취약점 점검. 실패해도 빌드를 막지 않고 경고로 남깁니다 — 고치는 쪽이 사람이고,
       # 새 공시가 올라올 때마다 모든 PR이 빨개지면 아무도 보지 않게 됩니다.
-      # 감사 대상은 이미지(Dockerfile)·위 설치와 같은 constraints.txt의 고정판입니다. `-r requirements.txt`는
+      # 감사 대상은 이미지(Dockerfile)·위 설치와 같은 constraints.txt의 고정판과 브라우저 컨테이너 이미지의 고정판(sidecar/pinned.txt)입니다. `-r requirements.txt`는
       # 임시 환경에서 constraints 없이 다시 해석해 그날의 최신 간접 의존성을 검사했습니다 — 고정판에 공시가 나고
       # 상위 판에서 고쳐지면 경고가 뜨지 않았습니다(QA-108). --no-deps·--disable-pip: 다시 해석·설치하지 않음.
       - name: 취약점 점검 (pip-audit)
         working-directory: collector
         continue-on-error: true
-        run: pip install pip-audit==2.10.1 && pip-audit --disable-pip --no-deps -r constraints.txt
+        run: pip install pip-audit==2.10.1 && pip-audit --disable-pip --no-deps -r constraints.txt -r sidecar/pinned.txt
 
       - name: 스키마 적용 (번호 순서)
         env:
@@ -200,7 +200,7 @@ jobs:
   images:
     name: 도커 이미지 빌드
     runs-on: ubuntu-latest
-    # make up이 쓰는 세 이미지(수집기·백엔드·프런트)가 지금 코드로 빌드되는지 확인합니다.
+    # make up이 쓰는 세 이미지(수집기·백엔드·프런트)와 서버 덧붙임에만 있는 브라우저 컨테이너 이미지가 지금 코드로 빌드되는지 확인합니다.
     # 위 잡들은 이미지 없이 소스로 돌아서, Dockerfile이나 운영 이미지 의존성만 깨진 경우
     # (예: 프레임워크를 올린 뒤 이미지 안의 빌드 단계 실패)를 잡지 못합니다.
     steps:
@@ -251,18 +251,33 @@ jobs:
           jq -e '.services.backend.environment | has("TOSS_ACCOUNT_ENABLED") | not' "$RUNNER_TEMP/vultr.json"
           TOSS_ACCOUNT_ENABLED=true docker compose --env-file /dev/null -f docker-compose.yml -f compose.vultr.yml config --format json \
             | jq -e '.services.collector.environment.TOSS_ACCOUNT_ENABLED == "true" and (.services.backend.environment | has("TOSS_ACCOUNT_ENABLED") | not)'
+          # 브라우저 컨테이너(차단 통과 수집 계층의 계층 2 — ADR 0026): 포트 없음, 망은 fetchnet 하나(기본 망의 postgres·backend에 닿지 못함),
+          # 권한 전부 제거·권한 상승 금지·seccomp 프로필. 수집기만 두 망에 붙고 나머지 서비스는 기본 망에만 있습니다.
+          jq -e '.services.browser | ((.ports // []) | length == 0) and (.networks | keys == ["fetchnet"]) and .cap_drop == ["ALL"]' "$RUNNER_TEMP/vultr.json"
+          jq -e '.services.browser.security_opt | (index("no-new-privileges:true") != null) and (map(startswith("seccomp:")) | any)' "$RUNNER_TEMP/vultr.json"
+          jq -e '.services.collector.networks | keys == ["default", "fetchnet"]' "$RUNNER_TEMP/vultr.json"
+          jq -e '[.services | to_entries[] | select(.key != "browser" and .key != "collector") | .value.networks | keys] | all(. == ["default"])' "$RUNNER_TEMP/vultr.json"
+          # 계층 2는 서버 .env의 값으로만 켬 — 기본은 빈 값(꺼짐). 공유 비밀은 수집기와 브라우저 컨테이너만 받고 백엔드에는 이 이름들이 없음
+          jq -e '.services.collector.environment | .BROWSER_FETCH_URL == "" and .BROWSER_FETCH_TOKEN == ""' "$RUNNER_TEMP/vultr.json"
+          jq -e '.services.backend.environment | (has("BROWSER_FETCH_URL") or has("BROWSER_FETCH_TOKEN")) | not' "$RUNNER_TEMP/vultr.json"
+          BROWSER_FETCH_URL=http://browser:8191 BROWSER_FETCH_TOKEN=ci-browser-token docker compose --env-file /dev/null -f docker-compose.yml -f compose.vultr.yml config --format json \
+            | jq -e '.services.collector.environment.BROWSER_FETCH_URL == "http://browser:8191" and .services.collector.environment.BROWSER_FETCH_TOKEN == "ci-browser-token" and .services.browser.environment.BROWSER_FETCH_TOKEN == "ci-browser-token"'
           jq -e '.services.frontend.build.args.NEXT_PUBLIC_API_BASE == "/"' "$RUNNER_TEMP/vultr.json"
           COOKIE_SECURE=false docker compose --env-file /dev/null -f docker-compose.yml -f compose.vultr.yml config --format json \
             | jq -e '.services.backend.environment.COOKIE_SECURE == "false"'
           # Caddyfile 문법 — compose와 같은 이미지로 검사만 합니다(네트워크·포트를 열지 않음).
           docker run --rm -v "$PWD/deploy/vultr/Caddyfile:/etc/caddy/Caddyfile:ro" caddy:2-alpine \
             caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile
+          # 브라우저 컨테이너 이미지는 이 덧붙임에만 있어 아래 '이미지 빌드' 단계(기반 파일)가 만들지 않습니다 — 여기서 빌드합니다.
+          docker compose --env-file /dev/null -f docker-compose.yml -f compose.vultr.yml build browser
 
       - name: 로컬·QA compose 해석 (docker-compose.yml · scripts/qa/docker-compose.qa.yml)
         # 로컬은 로그인 없이 운영자로 열리므로(ADR 0016) 포트가 루프백 밖으로 열리면 같은 와이파이의 누구나 운영자가 됩니다.
         # 기반 파일만으로 네 포트가 모두 127.0.0.1에 열리는지, 로그인 없는 열람이 기본으로 켜지고 LOCAL_NO_LOGIN=false로
         # 끌 수 있는지, QA 덧붙임은 셸에 LOCAL_NO_LOGIN=true가 있어도 끄는지(auth-probe.sh가 401을 기대) 봅니다.
         # 토스 실제 계좌 읽기 전용 조회(ADR 0025)는 운영 서버에서만 켜므로, 셸에 TOSS_ACCOUNT_ENABLED=true가 있어도 로컬·QA 해석은 "false"여야 합니다.
+        # 브라우저 컨테이너(ADR 0026)도 운영 서버에만 있습니다 — 로컬·QA 해석에는 그 서비스가 없고, 셸에 BROWSER_FETCH_URL·BROWSER_FETCH_TOKEN이
+        # 있어도 수집기의 값은 빈 값이어야 합니다(QA 스택에서 계층 2가 실제 사이트로 나가지 않게).
         run: |
           docker compose --env-file /dev/null -f docker-compose.yml config -q
           docker compose --env-file /dev/null -f docker-compose.yml config --format json > "$RUNNER_TEMP/local.json"
@@ -274,10 +289,15 @@ jobs:
           jq -e '.services.collector.environment.TOSS_ACCOUNT_ENABLED == "false"' "$RUNNER_TEMP/local.json"
           TOSS_ACCOUNT_ENABLED=true docker compose --env-file /dev/null -f docker-compose.yml config --format json \
             | jq -e '.services.collector.environment.TOSS_ACCOUNT_ENABLED == "false" and (.services.backend.environment | has("TOSS_ACCOUNT_ENABLED") | not)'
-          LOCAL_NO_LOGIN=true TOSS_ACCOUNT_ENABLED=true docker compose --env-file /dev/null -f docker-compose.yml -f scripts/qa/docker-compose.qa.yml \
+          jq -e '(.services | has("browser") | not) and (.services.collector.environment | .BROWSER_FETCH_URL == "" and .BROWSER_FETCH_TOKEN == "")' "$RUNNER_TEMP/local.json"
+          BROWSER_FETCH_URL=http://browser:8191 BROWSER_FETCH_TOKEN=ci-browser-token docker compose --env-file /dev/null -f docker-compose.yml config --format json \
+            | jq -e '.services.collector.environment | .BROWSER_FETCH_URL == "" and .BROWSER_FETCH_TOKEN == ""'
+          LOCAL_NO_LOGIN=true TOSS_ACCOUNT_ENABLED=true BROWSER_FETCH_URL=http://browser:8191 BROWSER_FETCH_TOKEN=ci-browser-token \
+            docker compose --env-file /dev/null -f docker-compose.yml -f scripts/qa/docker-compose.qa.yml \
             config --format json > "$RUNNER_TEMP/qa.json"
           jq -e '.services.backend.environment.DASHBOARD_LOCAL_NO_LOGIN == "false"' "$RUNNER_TEMP/qa.json"
           jq -e '.services.collector.environment.TOSS_ACCOUNT_ENABLED == "false"' "$RUNNER_TEMP/qa.json"
+          jq -e '(.services | has("browser") | not) and (.services.collector.environment | .BROWSER_FETCH_URL == "" and .BROWSER_FETCH_TOKEN == "")' "$RUNNER_TEMP/qa.json"
           jq -e '[.services[].ports[]?] | length > 0 and all(.host_ip == "127.0.0.1")' "$RUNNER_TEMP/qa.json"
 
       - name: 이미지 빌드 (docker compose build)

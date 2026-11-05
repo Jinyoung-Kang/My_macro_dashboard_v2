@@ -1,7 +1,7 @@
 # CLAUDE.md — 작업 규칙 요약
 
 로컬 매크로·13F 대시보드와 모의 알고리즘 매매(운영자 전용, ADR 0018). 화면(Next.js, `frontend/`) → API(Spring Boot, `backend/`) →
-PostgreSQL ← 수집기(FastAPI, `collector/`). Docker Compose 네 컨테이너로 돌며, 폴더 이름
+PostgreSQL ← 수집기(FastAPI, `collector/`). Docker Compose 네 컨테이너로 돌며(운영 서버는 앞단 caddy와 차단 통과 수집용 브라우저 컨테이너 `browser`가 더 있음 — ADR 0026), 폴더 이름
 `My_macro_dashboard_v2`가 compose 프로젝트·DB 볼륨 이름을 정한다(바꾸지 말 것).
 **v2다**: 2026-10-26에 `My_macro_dashboard_v1`을 전체 이력으로 갈라낸 저장소다(갈라낸 절차는 [docs/LOCAL_SETUP.md](docs/LOCAL_SETUP.md) §0,
 결정은 [ADR 0020](docs/adr/0020-v2-program.md)). 화면 전면 개편과 한국 증시 모의 매매를 여기서 한다.

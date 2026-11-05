@@ -5,7 +5,8 @@
 # 손으로 할 때(서버의 ubuntu 사용자):
 #   export COMPOSE_FILE=docker-compose.yml:compose.vultr.yml   # 두 파일을 늘 함께(서버 .env에도 같은 값)
 #   export APP_VERSION="main@$(git rev-parse --short HEAD)" APP_UPDATED="$(TZ=Asia/Seoul git log -1 --format=%cd --date=format-local:%Y-%m-%d)"
-#   docker compose build --pull backend && docker compose build --pull frontend && docker compose build --pull collector   # 4 GB — 하나씩
+#   docker compose build --pull backend && docker compose build --pull frontend && docker compose build --pull collector \
+#     && docker compose build --pull browser   # 4 GB — 하나씩
 #   docker compose up -d && docker compose up -d --no-deps --force-recreate caddy   # 바뀐 Caddyfile(파일 하나 bind mount)
 #   ok=; for i in 1 2 3 4 5 6 7 8 9 10; do docker compose \
 #     exec -T collector python -c "from app import store; store.init_schema()" && { ok=1; break; }; sleep 3; done; \
@@ -32,6 +33,8 @@
 #   · 앞단이 넘긴 X-Forwarded-For를 Tomcat이 믿음(내부 대역에서 온 것만). tailscale serve가 루프백으로 넘긴 요청은 모두 한 주소로 보여
 #     로그인 제한은 사실상 이메일별 — 사용자 1명이라 그대로 둠(ADR 0023)
 #   · 수집기의 토스 실제 계좌 읽기 전용 조회(TOSS_ACCOUNT_ENABLED)는 서버 .env 값을 따름 — 기반 파일은 "false" 고정이라 여기서만 켤 수 있음(ADR 0025)
+#   · 브라우저 컨테이너(browser — 차단 통과 수집 계층의 계층 2, ADR 0026)를 더함: 포트 없음, 수집기와만 통하는 망 fetchnet, 서버 .env의
+#     BROWSER_FETCH_URL·BROWSER_FETCH_TOKEN이 둘 다 있을 때만 수집기가 부름(기반 파일은 빈 값 고정이라 여기서만 켤 수 있음)
 #   · 국면 판정 기록은 23시(AWS와 같은 값 — 24시간이라 시각 제약은 없지만 기록 시점을 바꾸지 않음), postgres는 꺼질 때 30초까지 기다림
 #     (재부팅·업데이트 때 복구부터 하지 않게)
 # 바뀌지 않는 것: postgres 컨테이너(볼륨 my_macro_dashboard_v2_postgres-data — 폴더 이름을 따름), 나머지 포트는 기반 파일 그대로
@@ -51,6 +54,12 @@ services:
       # 토스 실제 계좌 읽기 전용 조회(ADR 0025) — 서버 .env에 TOSS_ACCOUNT_ENABLED=true가 있을 때만 켬(비면 꺼짐). 기반 파일은 보간 없는 "false"라
       # 이 덧붙임을 읽는 곳(운영 서버)에서만 켤 수 있습니다. 백엔드는 이 이름을 받지 않습니다(켜짐 여부는 수집기 응답의 enabled).
       TOSS_ACCOUNT_ENABLED: "${TOSS_ACCOUNT_ENABLED:-false}"
+      # 차단 통과 수집 계층의 계층 2(ADR 0026) — 서버 .env에 BROWSER_FETCH_URL=http://browser:8191과 BROWSER_FETCH_TOKEN이 둘 다 있을 때만
+      # 브라우저 컨테이너를 부릅니다(비면 꺼짐 — 계층 1의 거부가 최종). 끄려면 서버 .env에서 BROWSER_FETCH_URL 줄을 지우고 deploy.sh.
+      BROWSER_FETCH_URL: "${BROWSER_FETCH_URL:-}"
+      BROWSER_FETCH_TOKEN: "${BROWSER_FETCH_TOKEN:-}"
+    # 브라우저 컨테이너와만 통하는 망을 하나 더 붙입니다. networks를 적으면 기본 망이 빠지므로 default를 함께 적습니다(postgres·backend).
+    networks: [default, fetchnet]
 
   backend:
     environment:
@@ -111,3 +120,51 @@ services:
     ports:
       # 루프백 하나 — tailscale serve(같은 서버)와 비상용 SSH 포트 포워딩만 닿습니다. 공개 리스너는 없습니다(ADR 0023).
       - "127.0.0.1:8201:8201"
+
+  # 브라우저 컨테이너 — 차단 통과 수집 계층의 계층 2(ADR 0026 결정 8, collector/sidecar). 작은 내부 서비스가 수집기의 요청이 올 때만 Chrome을
+  # 띄우고 끝나면 닫습니다(상주 브라우저 없음). 이 덧붙임에만 있어 로컬·QA 스택에는 이 서비스가 없습니다.
+  #   · 포트를 게시하지 않습니다. 망은 fetchnet 하나 — 수집기만 닿고, 이 컨테이너는 기본 망(postgres·backend·frontend·caddy)에 닿지 못합니다.
+  #   · 공유 비밀(BROWSER_FETCH_TOKEN — 서버 .env에서만 만듦)이 맞아야 일하고, 비밀이 없으면 뜨기만 하고 모든 요청을 거절합니다.
+  #   · 갈 수 있는 곳은 BROWSER_ALLOWED_HOSTS의 https 주소뿐입니다 — 수집기 정책 표에서 계층 2를 쓰는 호스트와 같아야 합니다(시험이 대조).
+  #   · 굳히기: 비root(이미지의 uid 10001)·권한 전부 제거·권한 상승 금지. seccomp은 도커 기본에 Chrome 샌드박스가 쓰는 시스템 콜 넷
+  #     (사용자 네임스페이스 clone·setns·unshare와 그 안의 chroot)만 더한 프로필입니다(Playwright의 utils/docker/seccomp_profile.json + chroot) —
+  #     기본 프로필은 권한을 뺀 컨테이너에서 이것을 막아 Chrome 샌드박스가 뜨지 않습니다. 호스트가 사용자 네임스페이스를 막아 그래도 뜨지 않을
+  #     때만 서버 .env에 BROWSER_SANDBOX=false를 적고 ADR 0026에 기록합니다.
+  browser:
+    build:
+      context: ./collector
+      dockerfile: sidecar/Dockerfile
+    restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    # 빈 페이지 하나에 368 MiB(2026-11-06 개발 PC — 같은 굳히기 설정). 실제 페이지는 더 쓰므로 여유를 둡니다. 서버에서 재면 고칩니다.
+    mem_limit: 1g
+    shm_size: 256m
+    # Chrome이 남긴 자식 프로세스를 거둡니다(요청마다 띄우고 닫음).
+    init: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true", "seccomp:./collector/sidecar/seccomp.json"]
+    environment:
+      BROWSER_FETCH_TOKEN: "${BROWSER_FETCH_TOKEN:-}"
+      # 계층 2를 쓰는 호스트(쉼표). 지금은 없습니다 — 출처를 연결하는 커밋이 수집기 정책 표(collector/app/fetch/policy.py)와 함께 더합니다.
+      BROWSER_ALLOWED_HOSTS: ""
+      BROWSER_SANDBOX: "${BROWSER_SANDBOX:-true}"
+    volumes:
+      # 브라우저 프로필(쿠키) — 요청 사이에 이어 씁니다. 백업 대상이 아닙니다(지워도 다음 요청이 새로 만듦).
+      - browser-profile:/profile
+    networks: [fetchnet]
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8191/health')"]
+      interval: 20s
+      timeout: 5s
+      retries: 5
+
+networks:
+  # 수집기와 브라우저 컨테이너만 붙는 망. 바깥으로는 나갑니다(브라우저가 출처에 가야 함).
+  fetchnet: {}
+
+volumes:
+  browser-profile: {}

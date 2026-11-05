@@ -13,7 +13,8 @@
 #   2. git fetch → main 체크아웃 → origin/main으로 fast-forward. 서버에서 고친 파일이 있거나 갈라졌으면 멈춥니다.
 #      받은 main에서 이 스크립트가 바뀌었으면 새 판으로 처음부터 한 번 다시 돕니다(QA-145).
 #   3. 화면 왼쪽 아래 버전(APP_VERSION·APP_UPDATED)
-#   4. 이미지를 하나씩 빌드: backend → frontend → collector(베이스 이미지 보안 패치까지 --pull).
+#   4. 이미지를 하나씩 빌드: backend → frontend → collector → browser(베이스 이미지 보안 패치까지 --pull). browser는 차단 통과 수집 계층의
+#      브라우저 컨테이너(ADR 0026 — Chrome 안정 채널을 빌드 때 받음).
 #      4 GB라 동시에 빌드하면 메모리가 모자랍니다(make up은 한꺼번에 빌드). caddy·postgres 이미지도 새로 받습니다.
 #   5. 배포 전 DB 덤프 backups/pre-deploy-YYYYmmdd-HHMMSS.sql(서버에만, 최근 BACKUP_KEEP개). 뜨지 못하면 배포하지 않습니다(QA-200).
 #   6. up -d(건강해질 때까지 기다림) → 스키마 적용(make migrate와 같은 반복 — QA-016·QA-118) → caddy 다시 만들기(바뀐 Caddyfile)
@@ -89,7 +90,7 @@ export APP_VERSION APP_UPDATED
 echo "  코드: $APP_VERSION (최종 수정 $APP_UPDATED)"
 
 # ---------------------------------------------------------------- 4) 빌드(하나씩)
-for service in backend frontend collector; do
+for service in backend frontend collector browser; do
     echo "빌드: $service"
     docker compose build --pull "$service"
 done

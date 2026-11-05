@@ -81,7 +81,8 @@ polite 틱(5분 + 지터) ── 때가 된 태스크만 ──> 태스크(colle
 
 ## 5. 브라우저 컨테이너
 
-- 위치 `collector/sidecar/`(앱·Dockerfile·의존성 고정). 시험은 `collector/tests/`에서 가짜 드라이버로 돌립니다(CI job 수는 그대로).
+- 위치 `collector/sidecar/`(`guard.py` 문지기 · `app.py` 내부 서비스 · `driver.py` 브라우저 드라이버 · `Dockerfile` · `pinned.txt` · `seccomp.json`).
+  시험은 `collector/tests/`에서 가짜 드라이버로 돌립니다(CI job 수는 그대로 — 이미지는 `images` 잡의 Vultr 덧붙임 단계가 빌드).
 - compose: `compose.vultr.yml`에만 서비스 `browser`를 정의합니다. 기반·QA에는 없습니다. 포트 미게시, 새 망 `fetchnet`에 `collector`(기본 망과 함께)와 `browser`만,
   `browser`는 기본 망에 붙이지 않습니다(postgres·backend에 닿지 못함).
 - 환경: 기반 compose `BROWSER_FETCH_URL: ""`(보간 없음), Vultr 덧붙임 `"${BROWSER_FETCH_URL:-}"` — 서버 `.env` 한 줄로 켜고 끕니다. `BROWSER_FETCH_TOKEN`은
@@ -90,8 +91,12 @@ polite 틱(5분 + 지터) ── 때가 된 태스크만 ──> 태스크(colle
 - 보호: 공유 비밀, 최상위 이동은 허용 호스트만, 리다이렉트·하위 요청이 전역 주소가 아닌 목적지(사설·루프백·링크 로컬·CGNAT 대역)면 중단, 내려받기·서비스 워커 끔,
   동시 1건, 요청당 90초 상한.
 - 브라우저는 요청마다 띄우고 닫습니다. 프로필(쿠키)은 이름 있는 볼륨에 둡니다. 크래시 보고·배경 통신·구성요소 갱신을 끕니다.
-- 굳히기: 비root, `cap_drop: [ALL]`, `no-new-privileges`, `mem_limit: 768m`. 브라우저 샌드박스를 살리는 설정을 먼저 시도하고 안 되면 그 사실을 ADR 0026에 적습니다.
-- 드라이버는 인터페이스 뒤에 둡니다. 종류와 판은 그 단계에서 PyPI의 GA 판·유지 상태를 다시 확인해 고정합니다(1순위 patchright, 대안 SeleniumBase CDP 모드).
+- 굳히기: 비root, `cap_drop: [ALL]`, `no-new-privileges`, `mem_limit: 1g`, `init: true`. Chrome 샌드박스는 켭니다 — 도커 기본 seccomp은 권한을 뺀 컨테이너에서
+  사용자 네임스페이스와 그 안의 `chroot`를 막아 Chrome이 뜨지 않으므로, 그 넷(`clone`·`setns`·`unshare`·`chroot`)만 더한 프로필 `collector/sidecar/seccomp.json`을 씁니다
+  (Playwright의 `utils/docker/seccomp_profile.json` + `chroot`). 2026-11-06 개발 PC 확인: 기본 seccomp은 실패, Playwright 프로필만으로도 실패, `chroot`를 더하면 성공.
+  빈 페이지 하나에 약 2초·메모리 정점 368 MiB. 서버에서 뜨지 않으면 서버 `.env`의 `BROWSER_SANDBOX=false`로 끄고 ADR 0026에 적습니다.
+- 드라이버는 인터페이스 뒤에 둡니다(`sidecar/app.py`의 `Driver`). patchright 1.64.4(Apache-2.0, 2026-11-06 PyPI 확인)와 Chrome 안정 채널(이미지 빌드 때 받음 — 판을
+  고정하지 않음)을 씁니다. 의존성은 간접 의존성까지 `collector/sidecar/pinned.txt`에 고정하고 CI의 pip-audit가 함께 봅니다. 대안은 SeleniumBase CDP 모드.
 - 배포: `scripts/vultr/deploy.sh` 빌드 목록과 그것을 고정한 시험·문서(여섯 곳)를 함께 고칩니다.
 
 ## 6. 출처
@@ -137,7 +142,7 @@ polite 틱(5분 + 지터) ── 때가 된 태스크만 ──> 태스크(colle
 | A0 | ADR 0026 · 이 명세 · 결정 기록 | 끝 |
 | A1 | `fetch` 코어(정책·지연·상태·계층) + 계층 1 + V21 | 끝 |
 | A2 | `polite` 속도군과 틱 + TradingView 경제 캘린더 | 끝 |
-| A3 | 브라우저 컨테이너(앱·이미지·compose·배포 스크립트·CI 단언) + 계층 2 호출 | |
+| A3 | 브라우저 컨테이너(앱·이미지·compose·배포 스크립트·CI 단언) + 계층 2 호출 | 끝(서버 기동·메모리는 첫 배포 때 확인) |
 | A4 | 인베스팅닷컴 경제 캘린더 | |
 | A5 | 인베스팅닷컴 뉴스 HTML + RSS 보호 | |
 | A6 | KRX 정보데이터시스템 | |

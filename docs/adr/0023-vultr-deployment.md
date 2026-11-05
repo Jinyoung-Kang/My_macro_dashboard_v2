@@ -8,7 +8,7 @@
     허용 출처는 Tailscale 주소와 비상용 `localhost:8201`, 로그인 유지·`Secure` 쿠키 기본·메일 끔·같은 출처(`NEXT_PUBLIC_API_BASE=/`)·postgres 30초·국면 기록 23시,
     Caddyfile 문법(`caddy validate`).
   - `collector/tests/test_vultr_scripts.py`: 일곱 스크립트의 문법·`set -euo pipefail`, `tailscale-up.sh`(auth key는 stdin만, serve는 tailnet 안 — funnel 없음),
-    `deploy.sh`(빌드 backend → frontend → collector — gate 없음, CloudFront 대역 단계 없음, 서버 `.env`에 적지 않는 이름에 `ORIGIN_SECRET`·`GATE_*`·`VULTR_*`·
+    `deploy.sh`(빌드 backend → frontend → collector → browser(ADR 0026의 브라우저 컨테이너) — gate 없음, CloudFront 대역 단계 없음, 서버 `.env`에 적지 않는 이름에 `ORIGIN_SECRET`·`GATE_*`·`VULTR_*`·
     `TAILSCALE_*`·`TAILNET_DOMAIN`, `PAPER_ENABLED=false`면 막지 않고 '주의'(끝 요약에도)·없으면 '참고: 정기 작업 켜짐'만 — QA-194, 빌드 뒤·기동 전 배포 전 덤프 `pre-deploy-…`(실패하면 기동하지 않음, postgres가 꺼져 있으면 그것만 먼저 띄움 — QA-200), QA-145 다시 돌기, 스키마 10번 실패면 0이 아닌 값, 끝 요약의 마지막 S3 백업 나이 — 36시간 넘거나 없으면 경고, 판정은 `make status`와 같이 쓰는 `backup-age.sh`, QA-199), `backup-s3.sh`(`db/vultr/`, 실패하면 텔레그램 한 줄 — 토큰은 curl 인자에 없음·값이 없으면 건너뜀·알림 실패가 종료 코드를 바꾸지 않음, 성공하면 `backups/.last-s3-ok` — QA-199),
     `make status`(마지막 S3 백업 나이 — 기록이 있을 때만 찍고 36시간 넘으면 경고, 수집기가 꺼져 있어도, `deploy.sh`와 같은 줄 — QA-199),
     `instance.sh`·`firewall-pc-ip.sh`(가짜 Vultr API — 새 22 규칙을 먼저 넣고 옛 규칙만 지움, 다른 규칙 그대로, API 키가 curl 인자에 없음, 401·403이면 콘솔 안내).
@@ -125,6 +125,8 @@ ADR 0019의 AWS 서버는 가동 창(평일 밤·평일 낮·일요일 밤)만 �
 - **병행 중 외부 호출이 두 배**: Vultr 수집기도 외부 출처를 부릅니다(정기 작업은 꺼져 있어 Claude 결정 호출은 없음). 토스는 같은 앱 키로 두 곳이 토큰을 받습니다(D3에서 감수).
 - **백업 객체 덮어쓰기**: 백업 IAM 사용자는 지우기 권한이 없지만 같은 키로 덮어쓰는 것은 막지 못합니다(0019와 같은 남은 위험). 파일 이름에 시각이 있어 평소에는 겹치지 않습니다.
 - **신원 헤더를 믿는 전제**(결정 10): 앱이 루프백(caddy `127.0.0.1:8201`·백엔드 `127.0.0.1`)에만 열려 Serve를 거치지 않고는 닿지 않아야 합니다 — 포트를 공개로
+  (2026-11-06 [ADR 0026](0026-polite-fetch-layers.md): 제3자 스크립트를 실행하는 브라우저 컨테이너가 더해졌습니다. 그 컨테이너는 기본 망에 붙지 않아 caddy·백엔드에
+  이름으로 닿지 못하고, 브라우저가 보내는 요청은 전역 주소가 아닌 목적지면 막습니다 — CI가 망 구성을 봅니다.)
   바꾸면 누구나 헤더를 붙여 운영자가 됩니다(CI가 포트를 봄). 서버 안의 다른 프로세스는 헤더를 붙여 루프백으로 부를 수 있습니다(같은 서버 권한이면 `.env`를 읽을 수
   있다고 보고 받아들임 — ADR 0016과 같은 판단). 이 자격은 운영자 기기의 네트워크가 붙이므로 운영자 브라우저에서 연 다른 사이트의 요청에도 붙습니다 — 허용 출처가
   명시 목록이어야 하는 이유입니다(2026-11-03 07:30~11-04 배포 전에는 `http://*:8201`이 남아 있었음, QA-171). tailnet에 다른 사용자를 들이면 그 사용자는 로그인 화면이고, 기기를 잃으면 Tailscale 관리 화면에서 기기를 지웁니다.
