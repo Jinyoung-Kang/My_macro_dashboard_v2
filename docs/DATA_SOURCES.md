@@ -119,6 +119,9 @@ yfinance 호출(`sector`·`us_calendar`·`earnings_surprise`·매크로 카드 `
 - **닫힘·포기를 푸는 방법**(운영자): 그 호스트의 행을 지웁니다 —
   `docker compose exec -T postgres psql -U "$DATABASE_USER" -d "$DATABASE_NAME" -c "DELETE FROM fetch_hosts WHERE host = '호스트'"`. 다음 실행부터 처음처럼 시도합니다.
 - 받은 자료는 운영자 화면 전용이고 저장본에 `source`·`collectedAt`·`fetchTier`(통과한 계층)를 싣습니다. Claude 결정 패킷의 입력은 바뀌지 않습니다.
+  경제 캘린더는 매크로 화면의 운영자 전용 카드(`GET /api/macro/econ-calendar` — 저장본만 읽어 화면을 열어도 수집이 일어나지 않음)에 '우회 수집' 표기와 함께 보입니다.
+- **알림**: 출처가 사람 확인으로 닫히거나 포기로 넘어가면 텔레그램 한 통을 보냅니다(백엔드 `FetchClosureNotifyJob`, 5분 — 모의 매매 알림과 같은 봇). 보통의 거부 뒤
+  물러남은 알리지 않고 상태 화면의 그 태스크 기록에 `거부됨`으로 보입니다.
 
 ### 같은 태스크가 동시에 요청되면
 

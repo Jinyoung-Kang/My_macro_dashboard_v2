@@ -70,8 +70,8 @@ public class PaperTelegram {
         this.sender = sender;
     }
 
-    /** 봇 토큰과 대화방이 둘 다 있나. */
-    boolean configured() {
+    /** 봇 토큰과 대화방이 둘 다 있나. (수집 출처 닫힘 알림 — feature.status — 도 같은 봇으로 보냅니다, ADR 0026) */
+    public boolean configured() {
         return !token.isEmpty() && !chatId.isEmpty();
     }
 
@@ -81,7 +81,7 @@ public class PaperTelegram {
      * @return 모두 보냈으면 null, 실패면 사유(토큰 없음 — 나눠 보낸 글이면 몇 번째 통에서인지). 앞 통이 나간 뒤 실패하면 부르는 쪽이 다음 주기에 글
      *         전체를 다시 보내 앞 통이 한 번 더 갈 수 있습니다.
      */
-    String send(String text) {
+    public String send(String text) {
         if (!configured()) {
             return "텔레그램 값(TELEGRAM_BOT_TOKEN·TELEGRAM_CHAT_ID)이 없음";
         }

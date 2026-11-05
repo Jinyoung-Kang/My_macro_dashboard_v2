@@ -30,7 +30,13 @@
     - 계층 2는 서버에서만(결정 8): `test_기반_compose는_계층_2를_끄고_서버_덧붙임만_서버_env_값을_넘긴다`·`test_계층_2가_꺼져_있으면_계층_1의_거부가_최종`·
       `test_서버_compose의_허용_호스트는_정책_표에서_계층_2를_쓰는_호스트와_같다`, CI의 compose 해석 단언(브라우저 서비스는 Vultr 덧붙임에만·포트 없음·
       기본 망에 없음·권한 제거, 로컬·QA 해석의 `BROWSER_FETCH_URL`은 셸 값이 있어도 빈 값)과 브라우저 이미지 빌드
-  - 뒤 단계가 더할 것: 인베스팅닷컴 RSS 보호(A5), 화면 읽기가 수집을 일으키지 않음·운영자 전용 경로(A7)
+  - 있음(A7·A8 — 백엔드·화면):
+    - 화면 읽기가 수집을 일으키지 않음·운영자 전용(결정 10): `EconCalendarServiceTest.readsTheStoredSnapshotOnly`·`missingSnapshotIsUnavailable`,
+      `AccessPolicy`의 운영자 표(`AccessPolicyTest`·`RouteInventoryTest`), 화면 `macroEconCalendar.test.tsx`(회원·데모에게는 카드가 없고 경로를 부르지 않음,
+      없는 값은 '—', 출처·수집 시각·'우회 수집' 표기)
+    - 닫힘 알림(결정 4·5): `FetchClosureNotifyJobTest`(사람 확인·포기만, 닫힘 하나에 한 통, 처음 뜰 때 닫혀 있던 것은 알리지 않음, 보통의 물러남은 조용히,
+      사람 확인 표지가 수집기 글과 같음), `FetchStateStoreDbTest`(백엔드는 그 표를 읽기만 — 쓰는 메서드 없음)
+  - 뒤 단계가 더할 것: 인베스팅닷컴 RSS 보호(A5)
 
 ## 배경
 

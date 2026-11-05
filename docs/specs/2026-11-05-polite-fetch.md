@@ -121,8 +121,9 @@ polite 틱(5분 + 지터) ── 때가 된 태스크만 ──> 태스크(colle
 - 데이터셋 이름은 `collector/app/catalog.py`·`backend/.../store/Datasets.java`·`DatasetsParityTest` 세 곳을 같은 커밋에서 고칩니다.
 - 읽기 경로 둘(경제 캘린더, 헤드라인 — 인베스팅닷컴)은 운영자 전용이고 저장본만 읽습니다(태스크 이름 없이 — 화면 조회가 수집을 일으키지 않음).
 - 화면: 매크로 화면에 운영자에게만 보이는 카드 둘. 출처·수집 시각·'우회 수집' 표기는 기존 출처 캡션 패턴에 얹습니다. 없는 값은 '—'.
-- 알림: 사람 확인으로 닫히거나 포기로 넘어가면 텔레그램 한 통. 보내기는 기존 `feature.paper.PaperTelegram`을 그대로 쓰고(옮기지 않음), 보낸 자리는 백엔드가 가집니다.
-  `PAPER_ENABLED`와 무관하게 돕니다.
+- 알림: 사람 확인으로 닫히거나 포기로 넘어가면 텔레그램 한 통(`feature.status.FetchClosureNotifyJob`, 5분). 보내기는 기존 `feature.paper.PaperTelegram`을 그대로 쓰고
+  (옮기지 않음 — `configured`·`send`만 공개), 수집기 표는 `store.FetchStateStore`로 읽기만 합니다. 보낸 것은 메모리에 두어 백엔드가 다시 뜨면 그때 닫혀 있던 것은
+  알린 것으로 칩니다. `PAPER_ENABLED`와 무관하게 돕니다. 보통의 거부 뒤 물러남은 알리지 않습니다(상태 화면의 태스크 기록에 보임).
 
 ## 8. 시험
 
@@ -146,8 +147,8 @@ polite 틱(5분 + 지터) ── 때가 된 태스크만 ──> 태스크(colle
 | A4 | 인베스팅닷컴 경제 캘린더 | |
 | A5 | 인베스팅닷컴 뉴스 HTML + RSS 보호 | |
 | A6 | KRX 정보데이터시스템 | |
-| A7 | 백엔드 읽기 경로 · 매크로 화면 카드 | |
-| A8 | 닫힘·포기 알림 | |
+| A7 | 백엔드 읽기 경로 · 매크로 화면 카드 | 경제 캘린더(TradingView) 끝 — `GET /api/macro/econ-calendar`, 매크로 화면의 운영자 전용 카드. 헤드라인 카드는 A5, 레이더 연결은 A6과 함께 |
+| A8 | 닫힘·포기 알림 | 끝 — 백엔드 `FetchClosureNotifyJob`(5분) |
 | A9 | 문서 마무리(DATA_SOURCES·PRINCIPLES·README·CLAUDE.md 등) · 병합 · 배포 | |
 
 - 태스크를 등록하는 커밋마다 태스크 수 단언과 문서 숫자를 함께 올립니다. 모든 커밋이 `make test`를 통과합니다.
