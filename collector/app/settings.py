@@ -227,6 +227,17 @@ def toss_credentials() -> tuple[str, str]:
     return get_secret("toss.client_id"), get_secret("toss.client_secret")
 
 
+def toss_account_enabled() -> bool:
+    """
+    토스증권 실제 계좌 읽기 전용 조회(ADR 0025, services/toss_account) 켬 여부.
+
+    환경변수 ``TOSS_ACCOUNT_ENABLED``가 앞뒤 공백을 뺀 뒤 **정확히** ``true``일 때만 켭니다(``1``·``yes``·``TRUE``는 끔).
+    키가 아니라 운영 서버에서만 켜는 스위치라 secrets.toml·get_secret은 보지 않습니다 — 기반 compose는 ``"false"`` 고정이고
+    Vultr 덧붙임만 서버 ``.env`` 값을 넘깁니다.
+    """
+    return (os.environ.get("TOSS_ACCOUNT_ENABLED") or "").strip() == "true"
+
+
 # ---- 국내 공공 API --------------------------------------------------------------
 # 공공데이터포털(data.go.kr)은 계정 하나에 인증키 하나이고, 활용 신청한 서비스마다
 # 같은 키를 씁니다. 그래서 특일정보·주식시세가 한 값을 공유합니다.

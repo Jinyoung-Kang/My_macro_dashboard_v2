@@ -45,6 +45,7 @@ from .services import (
     market as market_service,
     radar as radar_service,
     toss as toss_service,
+    toss_account as toss_account_service,
 )
 
 logging.basicConfig(
@@ -589,3 +590,23 @@ def toss_indices(
 ) -> dict:
     _check_token(x_service_token)
     return toss_service.get_index_prices([s.strip() for s in symbols.split(",") if s.strip()])
+
+
+@app.get("/toss/account")
+def toss_account(
+    x_service_token: str | None = Header(default=None),
+) -> dict:
+    """
+    토스증권 실제 계좌 읽기 전용 조회(ADR 0025, 명세 docs/specs/2026-11-05-toss-account-readonly.md §3). 토큰 검사 뒤에는 늘 200.
+
+    서비스 토큰 없이 뜬 수집기(COLLECTOR_ALLOW_NO_TOKEN)에서는 이 경로를 막을 문이 없으므로 토스를 부르지 않습니다.
+    본문 전체를 감싸, 예상 못 한 예외는 클래스 이름만 로그에 남깁니다 — 예외 문구·스택에 계좌 값이 섞일 수 있어서입니다.
+    """
+    _check_token(x_service_token)
+    try:
+        if not API_TOKEN:
+            return toss_account_service.empty_view(enabled=False, reason="no-service-token")
+        return toss_account_service.get_account()
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("토스 계좌 조회 중 예상 못 한 예외: %s", type(exc).__name__)
+        return toss_account_service.empty_view(enabled=settings.toss_account_enabled(), reason="internal")

@@ -1,0 +1,32 @@
+{
+  "_synthetic": "합성 응답 — 공식 스펙 1.2.28 예시값으로 만든 것이며 실제 계좌 응답이 아닙니다(README '실제 계좌')",
+  "result": {
+    "orders": [
+      {
+        "orderId": "0d5QIHjmtksbsmM-hBRAgP-ExI8iodGm9fAR5txelPfnMM8XQ_swoJdwL5RpGWMo",
+        "symbol": "005930",
+        "side": "BUY",
+        "orderType": "LIMIT",
+        "timeInForce": "DAY",
+        "status": "FILLED",
+        "price": "70000",
+        "quantity": "10",
+        "orderAmount": null,
+        "currency": "KRW",
+        "orderedAt": "2026-03-28T09:30:00+09:00",
+        "canceledAt": null,
+        "execution": {
+          "filledQuantity": "10",
+          "averageFilledPrice": "70000",
+          "filledAmount": "700000",
+          "commission": "1400",
+          "tax": "0",
+          "filledAt": "2026-03-28T09:31:15+09:00",
+          "settlementDate": "2026-03-30"
+        }
+      }
+    ],
+    "nextCursor": "eyJvcmRlcmVkQXQiOiIyMDI2LTAzLTI4VDA5OjMwOjAwKzA5OjAwIiwib3JkZXJJZCI6Ik9SRDIwMjYwMzI4MDAxIn0=",
+    "hasNext": true
+  }
+}

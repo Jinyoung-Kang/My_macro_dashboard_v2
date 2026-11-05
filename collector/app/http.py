@@ -591,7 +591,7 @@ def get_bls_session() -> requests.Session:
     return _get("bls", headers=BLS_HEADERS, retries=2, backoff=0.8, pool=2, min_interval=DEFAULT_HOST_INTERVAL)
 
 
-def get_api_session(name: str) -> requests.Session:
+def get_api_session(name: str, adapter_class: type[HTTPAdapter] | None = None) -> requests.Session:
     """
     증권사 Open API(토스·KIS·LS)용 세션 — 연결(TCP·TLS)만 재사용합니다.
 
@@ -603,18 +603,28 @@ def get_api_session(name: str) -> requests.Session:
     인증 헤더는 요청마다 넘깁니다(세션에 두지 않음). 거부 래치·호스트 간격도 걸지 않습니다(같은 이유 — 부르는 쪽이 다룸).
 
     :param name: 클라이언트 이름 (toss / kis / ls). 이름마다 세션이 하나입니다
+    :param adapter_class: ``HTTPAdapter`` 대신 붙일 하위 클래스(토스의 읽기 전용 가드 — ADR 0025). 이 잠금 안에서 붙이므로 그 세션을
+        처음 받는 쪽부터 가드를 거칩니다. 이미 있는 세션의 어댑터가 그 클래스가 아니면 바꿔 붙이고, 주지 않은 호출은 붙어 있는
+        하위 클래스를 떼지 않습니다
     """
+    wanted = adapter_class or HTTPAdapter
     with _lock:
         session = _sessions.get(name)
         if session is None:
             session = requests.Session()
             session.cookies.set_policy(DefaultCookiePolicy(allowed_domains=[]))
-            adapter = HTTPAdapter(pool_connections=4, pool_maxsize=8)  # max_retries 기본값 0
-            session.mount("https://", adapter)
-            session.mount("http://", adapter)
+            _mount_api_adapter(session, wanted)
             _sessions[name] = session
             logger.debug("HTTP 세션 생성: %s", name)
+        elif not all(isinstance(session.adapters.get(prefix), wanted) for prefix in ("https://", "http://")):
+            _mount_api_adapter(session, wanted)
         return session
+
+
+def _mount_api_adapter(session: requests.Session, adapter_class: type[HTTPAdapter]) -> None:
+    adapter = adapter_class(pool_connections=4, pool_maxsize=8)  # max_retries 기본값 0
+    session.mount("https://", adapter)
+    session.mount("http://", adapter)
 
 
 def _get(

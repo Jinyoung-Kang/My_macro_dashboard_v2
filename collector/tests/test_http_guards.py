@@ -356,9 +356,11 @@ def test_세션별_간격과_SEC는_토큰_버킷만(monkeypatch):
     assert app_http.get_fred_session().get_adapter(url).min_interval == app_http.FRED_HOST_INTERVAL
     assert app_http.get_bls_session().get_adapter(url).min_interval == app_http.DEFAULT_HOST_INTERVAL
     assert app_http.get_sec_session().get_adapter(url).min_interval == 0, "SEC 속도는 sec_rate_limit이 정합니다"
-    # 증권사 Open API 세션은 이 층을 거치지 않습니다(401·403·429를 부르는 쪽이 다룸).
-    api_adapter = app_http.get_api_session("toss").get_adapter(url)
+    # 증권사 Open API 세션은 이 층을 거치지 않습니다(401·403·429를 부르는 쪽이 다룸). 토스 세션에는 이 층 대신 읽기 전용
+    # 가드만 붙습니다(ADR 0025, test_toss_account) — 앞선 시험이 토스 세션을 만들었는지에 따라 달라지지 않게 KIS로 봅니다.
+    api_adapter = app_http.get_api_session("kis").get_adapter(url)
     assert type(api_adapter) is HTTPAdapter
+    assert not isinstance(app_http.get_api_session("toss").get_adapter(url), app_http._GuardedAdapter)
 
     # SEC 토큰 버킷은 그대로 — 전체 합계 초당 8건(연달아 부르면 1/8초 간격).
     assert app_http._SEC_MAX_RPS == 8.0

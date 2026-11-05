@@ -1,0 +1,7 @@
+{
+  "_synthetic": "합성 응답 — 공식 스펙 1.2.28 예시값으로 만든 것이며 실제 계좌 응답이 아닙니다(README '실제 계좌')",
+  "result": {
+    "currency": "KRW",
+    "cashBuyingPower": "5000000"
+  }
+}

@@ -23,6 +23,9 @@ app/services/toss.py
   - 당일 잠정 기록은 개인·기관 세부·기타법인이 null입니다. **null을 0으로 바꾸지
     않습니다** — "개인 순매수 0"은 "모름"과 정반대의 신호입니다.
   - 오류 문구에 client_secret·토큰이 섞이지 않게 합니다(토큰은 헤더로만 보냄).
+  - **이 모듈의 세션은 읽기 전용입니다**(ADR 0025). 키에 권한 구분(scope)이 없어 같은 키로 주문 POST가 나갈 수 있으므로,
+    세션 자체에 가드 어댑터(:class:`_ReadOnlyAdapter`)를 붙여 GET과 토큰 발급 POST 하나만 내보냅니다. 실제 계좌 조회
+    (services/toss_account.py)도 이 세션과 이 모듈의 토큰을 씁니다.
 """
 from __future__ import annotations
 
@@ -30,17 +33,25 @@ import logging
 import threading
 import time
 from datetime import datetime
+from typing import Callable
+from urllib.parse import urlsplit
 from zoneinfo import ZoneInfo
 
 import requests
+from requests.adapters import HTTPAdapter
 
 from ..numbers import to_float, to_int
 from .. import http, settings
 
 logger = logging.getLogger(__name__)
 
-BASE_URL = "https://openapi.tossinvest.com"
-AUTH_URL = f"{BASE_URL}/oauth2/token"
+_HOST = "openapi.tossinvest.com"
+BASE_URL = f"https://{_HOST}"
+AUTH_PATH = "/oauth2/token"
+AUTH_URL = f"{BASE_URL}{AUTH_PATH}"
+# 계좌 문맥 API에 싣는 헤더(값은 /api/v1/accounts의 accountSeq). 이름을 여기 한 곳에 둡니다 — 호스트 이름이 들어간 글자는
+# 이 모듈 밖에 두지 않습니다(test_toss_account의 AST 시험).
+ACCOUNT_HEADER = "X-Tossinvest-Account"
 
 _lock = threading.Lock()
 # 발급 자체를 한 번에 하나로 묶습니다. client당 유효 토큰이 1개라, 두 곳이 동시에 발급하면
@@ -50,8 +61,13 @@ _token_cache: tuple[str, float] | None = None
 
 
 def _http() -> requests.Session:
-    """이 클라이언트 전용 세션 — 연결만 재사용합니다(재시도·쿠키 없음, app/http.py)."""
-    return http.get_api_session("toss")
+    """
+    이 클라이언트 전용 세션 — 연결만 재사용합니다(재시도·쿠키 없음, app/http.py).
+
+    읽기 전용 가드(:class:`_ReadOnlyAdapter`)를 ``https://``·``http://`` 둘 다에 붙입니다(ADR 0025). 이 세션으로 나가는
+    요청은 GET과 ``POST /oauth2/token``뿐이고, 나머지는 네트워크에 나가기 전에 :class:`TossReadOnlyViolation`으로 끝납니다.
+    """
+    return http.get_api_session("toss", adapter_class=_ReadOnlyAdapter)
 
 
 def has_credentials() -> bool:
@@ -194,7 +210,18 @@ def get_index_prices(symbols: list[str]) -> dict:
 # 공통 GET — 401 재발급·429 대기
 # ==============================================================================
 class TossError(RuntimeError):
-    """토스 API 호출 실패. 메시지에는 비밀값이 없습니다(상태 화면에 그대로 나갑니다)."""
+    """
+    토스 API 호출 실패. 메시지에는 비밀값이 없습니다(상태 화면에 그대로 나갑니다).
+
+    ``status``는 HTTP 상태(응답을 받지 못했으면 None), ``code``는 토스 오류 envelope의 ``error.code``(없으면 None) —
+    토큰 발급 실패는 ``token-ip-denied``(발급 403)·``token-failed``(그 밖)입니다. 실제 계좌 조회는 메시지(토스 ``message`` 포함)를
+    쓰지 않고 이 두 속성으로만 사유를 정합니다(ADR 0025).
+    """
+
+    def __init__(self, message: str = "", *, status: int | None = None, code: str | None = None) -> None:
+        super().__init__(message)
+        self.status = status
+        self.code = code
 
 
 class TossMissingKey(TossError):
@@ -203,6 +230,62 @@ class TossMissingKey(TossError):
 
 class TossForbidden(TossError):
     """403 — 허용 IP 목록 문제일 가능성이 높습니다. 같은 실행에서 더 부르지 않습니다."""
+
+
+class TossReadOnlyViolation(TossError):
+    """
+    읽기 전용 가드가 막은 요청(ADR 0025) — 네트워크에 나가지 않았습니다.
+
+    ``requests.RequestException``이 아니라서 :func:`_authorized_get`의 '연결 실패'로 바뀌지 않고 그대로 올라갑니다.
+    """
+
+
+def _read_only_check(request: requests.PreparedRequest) -> None:
+    """
+    이 세션이 보내도 되는 요청인지 봅니다 — ``https://openapi…`` 호스트(포트 없음·443)이고, 본문 없는 GET이거나
+    ``POST /oauth2/token``일 때만 통과합니다. 주문·정정·취소·조건주문(POST·DELETE)과 다른 호스트·http는 여기서 끝납니다.
+
+    경로는 비교만 하고 메시지에 싣지 않습니다(주문 번호가 경로에 들어갈 수 있음). 쿼리·본문도 싣지 않습니다.
+
+    :raises TossReadOnlyViolation: 허용 밖의 요청
+    """
+    method = (request.method or "").upper()
+    try:
+        parts = urlsplit(request.url or "")
+        port = parts.port
+    except ValueError:
+        parts, port = None, -1
+    scheme = parts.scheme.lower() if parts else ""
+    host = (parts.hostname or "").lower() if parts else ""
+    if scheme == "https" and host == _HOST and port in (None, 443):
+        if method == "GET" and not request.body:
+            return
+        if method == "POST" and parts.path == AUTH_PATH:
+            return
+    raise TossReadOnlyViolation(
+        f"토스 세션은 읽기 전용입니다 — {method} {scheme}://{host} 요청을 보내지 않았습니다"
+        f"(허용: {BASE_URL}의 GET, POST {AUTH_PATH})"
+    )
+
+
+class _ReadOnlyAdapter(HTTPAdapter):
+    """
+    토스 공유 세션의 어댑터 — 보내기 전에 :func:`_read_only_check`를 거칩니다(app/http.py ``_GuardedAdapter``와 같은 자리).
+
+    리다이렉트의 다음 요청도 이 ``send``를 거치므로, 다른 호스트로 넘기는 응답이 와도 토큰·계좌 헤더가 그쪽으로 나가지 않습니다.
+    """
+
+    def send(self, request, stream=False, timeout=None, **kwargs):
+        _read_only_check(request)
+        return super().send(request, stream=stream, timeout=timeout, **kwargs)
+
+
+def _cached_token() -> str | None:
+    """지금 캐시에 있는 유효한 토큰(없으면 None). 발급하지 않습니다."""
+    with _lock:
+        if _token_cache and _token_cache[1] > time.time():
+            return _token_cache[0]
+        return None
 
 
 def _invalidate_token(failed: str | None = None) -> None:
@@ -227,6 +310,17 @@ def _error_text(res: requests.Response) -> str:
         return f"HTTP {res.status_code}"
 
 
+def _error_code(res: requests.Response) -> str | None:
+    """토스 오류 envelope의 ``error.code``. 없거나 JSON이 아니면 None(message는 읽지 않음)."""
+    try:
+        body = res.json()
+    except ValueError:
+        return None
+    err = body.get("error") if isinstance(body, dict) else None
+    code = err.get("code") if isinstance(err, dict) else None
+    return code if isinstance(code, str) and code else None
+
+
 def api_get(path: str, params: dict | None = None, timeout: float = 10.0) -> dict | list:
     """
     인증이 필요한 GET 한 번. 응답 envelope의 ``result``를 돌려줍니다.
@@ -239,32 +333,68 @@ def api_get(path: str, params: dict | None = None, timeout: float = 10.0) -> dic
 
 
 def _authorized_get(session: requests.Session, path: str, params: dict | None = None,
-                    timeout: float = 10.0) -> dict | list:
+                    timeout: float | tuple[float, float] = 10.0, extra_headers: dict | None = None, *,
+                    reissue_codes: frozenset[str] | set[str] | None = None, retry_on_429: bool = True,
+                    on_reissue: Callable[[], None] | None = None,
+                    remaining: Callable[[], float] | None = None) -> dict | list:
     """
     ``api_get``의 본체 — 토큰을 붙인 GET과 401(한 번 재발급)·429(Retry-After)·403 처리.
 
     토큰 캐시·발급은 이 모듈 한 곳에만 있습니다(client당 유효 토큰 1개). 세션을 인자로 받는 것은 부르는 쪽이
     연결을 고르게 하려는 것이고, 토큰을 따로 갖게 하려는 것이 아닙니다.
+
+    :param extra_headers: 더 실을 헤더(계좌 문맥 API의 :data:`ACCOUNT_HEADER`). ``Authorization``은 덮어쓰지 못합니다
+    :param reissue_codes: None이면 첫 401에 늘 재발급(지금까지의 동작). 주면 401의 ``error.code``가 그 안에 있을 때만
+        재발급하고, 아니면 토큰을 버리지 않고 ``TossError(status=401)``로 끝냅니다 — 실제 계좌 조회가 운영 1분봉의 토큰을
+        함부로 무효화하지 않게(ADR 0025). 빈 집합이면 재발급하지 않습니다
+    :param retry_on_429: False면 429에서 잠들지 않고 바로 ``TossError(status=429)`` — 요청 스레드를 붙잡지 않게
+    :param on_reissue: 401 때문에 토큰을 버린 바로 뒤에 부릅니다(부르는 쪽이 재발급 횟수를 셈). 다른 곳이 이미 새 토큰을
+        받아 둔 401은 발급 없이 그 토큰으로 한 번 더 보내고 부르지 않습니다
+    :param remaining: 남은 시간(초)을 돌려주는 함수. 주면 시도마다 0 이하인지 보고(그러면 보내지 않고 ``TossError`` —
+        ``status`` 없음), GET 시간 상한을 남은 시간 안으로 줄입니다. 진행 중인 토큰 발급은 끊지 않습니다 — 발급 응답을 못 받으면
+        서버에서는 새 토큰이 나가 다른 경로의 토큰만 무효가 될 수 있습니다
+    :raises TossMissingKey: 키 미설정 (호출하지 않음)
+    :raises TossForbidden: 403
+    :raises TossReadOnlyViolation: 세션 가드가 막음(GET이 아니게 된 요청 — 보내지 않음)
+    :raises TossError: 그 밖의 실패. ``status``·``code`` 속성을 채웁니다
     """
     if not has_credentials():
         raise TossMissingKey("TOSS_CLIENT_ID / TOSS_CLIENT_SECRET이 설정되지 않았습니다")
 
     for attempt in range(3):
+        if remaining is not None and remaining() <= 0:
+            raise TossError("시간 예산 초과")
         token, error = get_access_token()
         if not token:
-            raise TossError(f"토큰 발급 실패 — {error}")
+            code = "token-ip-denied" if (error or "").startswith("HTTP 403") else "token-failed"
+            raise TossError(f"토큰 발급 실패 — {error}", code=code)
+        headers = {key: value for key, value in (extra_headers or {}).items() if str(key).lower() != "authorization"}
+        headers["Authorization"] = f"Bearer {token}"
+        send_timeout = timeout
+        if remaining is not None:
+            left = remaining()   # 토큰 발급을 기다린 만큼 줄어 있을 수 있음
+            if left <= 0:
+                raise TossError("시간 예산 초과")
+            send_timeout = (tuple(min(part, left) for part in timeout) if isinstance(timeout, tuple)
+                            else min(timeout, left))
         try:
             res = session.get(
-                f"{BASE_URL}{path}", headers={"Authorization": f"Bearer {token}"},
-                params=params, timeout=timeout,
+                f"{BASE_URL}{path}", headers=headers,
+                params=params, timeout=send_timeout,
             )
         except requests.RequestException as exc:
             raise TossError(f"연결 실패: {type(exc).__name__}") from None
 
         if res.status_code == 401 and attempt == 0:
-            _invalidate_token(token)  # 다른 곳에서 재발급해 무효가 됐을 수 있습니다 — 한 번만 다시
-            continue
-        if res.status_code == 429 and attempt < 2:
+            current = _cached_token()
+            if current is not None and current != token:
+                continue  # 다른 곳이 이미 새 토큰을 받아 둠 — 발급 없이 그 토큰으로 한 번 더
+            if reissue_codes is None or _error_code(res) in reissue_codes:
+                _invalidate_token(token)  # 다른 곳에서 재발급해 무효가 됐을 수 있습니다 — 한 번만 다시
+                if on_reissue is not None:
+                    on_reissue()
+                continue
+        if res.status_code == 429 and retry_on_429 and attempt < 2:
             try:
                 wait = float(res.headers.get("Retry-After", "1"))
             except ValueError:
@@ -272,13 +402,14 @@ def _authorized_get(session: requests.Session, path: str, params: dict | None = 
             time.sleep(min(max(wait, 0.5), 5.0))
             continue
         if res.status_code == 403:
-            raise TossForbidden(f"{_error_text(res)} — 토스 개발자 콘솔의 허용 IP에 이 맥의 공인 IP가 있는지 확인하세요")
+            raise TossForbidden(f"{_error_text(res)} — 토스 개발자 콘솔의 허용 IP에 이 맥의 공인 IP가 있는지 확인하세요",
+                                status=403, code=_error_code(res))
         if res.status_code != 200:
-            raise TossError(_error_text(res))
+            raise TossError(_error_text(res), status=res.status_code, code=_error_code(res))
         try:
             return (res.json() or {}).get("result")
         except ValueError:
-            raise TossError("JSON이 아닌 응답") from None
+            raise TossError("JSON이 아닌 응답", status=200) from None
     raise TossError("재시도 한도 초과 (401/429)")
 
 
