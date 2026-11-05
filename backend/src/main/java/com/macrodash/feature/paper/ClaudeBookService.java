@@ -165,6 +165,19 @@ public class ClaudeBookService {
      * {@code claude2.checkpoints}를 끄면 보내는 스키마가 단계 1과 같습니다(§16-3).
      */
     static final String CLAUDE2_C2_SCHEMA_RESOURCE = "paper/claude2-decision-c2.schema.json";
+    /**
+     * 미국 자유 시점 판의 응답 스키마(ADR 0027 결정 2 — {@link ClaudeBookProfile#US_CLAUDE_FT}·{@link ClaudeBookProfile#US_CLAUDE2_FT}) — 계좌2 단계 1
+     * 파일({@value #CLAUDE2_SCHEMA_RESOURCE})에서 두 곳만 다릅니다: 주문의 {@code timing} enum({@link FreeTiming#DECISION_TIMINGS} 셋)과 선택 칸
+     * {@code atLocal}(뉴욕 시각 'HH:MM' — {@code AT_MINUTE} 주문의 시각, 그 밖의 시점은 null). 'AT_MINUTE면 atLocal 필수'는 스키마가 아니라 검증
+     * (형식 오류 거절 행)이 막습니다 — 스키마 검사기는 조건부 필수를 받지 않습니다. 끈 판의 파일들은 바이트 그대로입니다.
+     */
+    static final String US_FT_SCHEMA_RESOURCE = "paper/us-decision-ft.schema.json";
+    /**
+     * 한국 자유 시점 판의 응답 스키마({@link ClaudeBookProfile#KR_CLAUDE_FT}·{@link ClaudeBookProfile#KR_CLAUDE2_FT}) — 한국 계좌2 파일
+     * ({@value #KR_CLAUDE2_SCHEMA_RESOURCE})에서 주문의 {@code timing} enum({@link FreeTiming#DECISION_TIMINGS} 셋)·선택 칸 {@code atLocal}(한국 시간
+     * 'HH:MM')이 다르고 기존 장중 확인 요청 칸({@code checkpoint})이 없습니다. 끈 판의 파일들은 바이트 그대로입니다.
+     */
+    static final String KR_FT_SCHEMA_RESOURCE = "paper/kr-decision-ft.schema.json";
     /** 목표 노출과 주문 반영 뒤 예상 노출의 차이가 이보다 크면 exposureMismatch(설계 §5-3). */
     static final double MISMATCH_PCT = 15;
     /** 종목 저장본이 이보다 오래되면 그날 재량 주문 전부 STALE_INPUT(설계 §5-4). */
@@ -270,11 +283,17 @@ public class ClaudeBookService {
      * {@link #decideClaude2}가 그 실행 설정의 {@code claude2.checkpoints}로 이것과 맵의 계좌2 파이프라인 가운데 하나를 고릅니다.
      */
     private final ClaudeDecisionPipeline claude2Checkpoints;
+    /**
+     * 자유 시점 판의 파이프라인(ADR 0027 결정 2) — 계좌 코드 → 그 계좌의 켠 판({@link #freeContexts}). 계좌 코드가 끈 판과 같아 {@link #pipelines}
+     * 맵 밖에 따로 둡니다({@link #claude2Checkpoints}와 같은 까닭). 결정마다 그 실행 설정의 스위치({@link FreeTimingSettings})로 이것과 끈 판 가운데
+     * 하나를 고릅니다({@link #variant}) — 스위치가 꺼진 계좌는 이 맵을 쓰지 않아 끈 판과 바이트까지 같습니다.
+     */
+    private final Map<String, ClaudeDecisionPipeline> freeTiming;
     /** 미리보기·시작이 겹치지 않게(두 번 눌러 두 번 과금되지 않게). 정기 결정은 결정 작업의 잠금이 줄을 세웁니다. */
     private final ReentrantLock initialCall = new ReentrantLock();
 
-    /** 생성자가 받는 결정 문맥 목록(시험 생성자와 시그니처가 겹치지 않게 감쌈). */
-    private record Contexts(List<MarketContext> all) {
+    /** 생성자가 받는 결정 문맥 목록(시험 생성자와 시그니처가 겹치지 않게 감쌈) — 운영 문맥과 자유 시점 판 문맥({@link #freeContexts}). */
+    private record Contexts(List<MarketContext> all, List<MarketContext> free) {
     }
 
     @Autowired
@@ -308,7 +327,8 @@ public class ClaudeBookService {
                       PaperConfig config, ObjectMapper mapper, int timeoutSeconds, Clock clock,
                       KrPacketBuilder krPackets) {
         this(store, reader, marketData, selection, ledger, admin, packets, framework, calls, ai, settings, config, mapper,
-                timeoutSeconds, clock, new Contexts(marketContexts(packets, Objects.requireNonNull(krPackets, "krPackets"))));
+                timeoutSeconds, clock, new Contexts(marketContexts(packets, Objects.requireNonNull(krPackets, "krPackets")),
+                        freeContexts(packets, krPackets)));
     }
 
     /**
@@ -321,7 +341,8 @@ public class ClaudeBookService {
                       PaperConfig config, ObjectMapper mapper, int timeoutSeconds, Clock clock,
                       List<MarketContext> otherMarkets) {
         this(store, reader, marketData, selection, ledger, admin, packets, framework, calls, ai, settings, config, mapper,
-                timeoutSeconds, clock, new Contexts(concat(marketContexts(packets, null), otherMarkets)));
+                timeoutSeconds, clock, new Contexts(concat(marketContexts(packets, null), otherMarkets),
+                        freeContexts(packets, null)));
     }
 
     private ClaudeBookService(PaperStore store, StoreReader reader, PaperMarketData marketData,
@@ -352,6 +373,27 @@ public class ClaudeBookService {
         this.pipelines = Map.copyOf(byBook);
         this.claude2Checkpoints = new ClaudeDecisionPipeline(checkpointContext(packets), store, framework, calls, ai, mapper,
                 clock, Math.max(1, timeoutSeconds));
+        Map<String, ClaudeDecisionPipeline> free = new LinkedHashMap<>();
+        for (MarketContext context : contexts.free()) {
+            // 켠 판 스키마 파일도 기동 때 읽습니다 — 스위치를 켠 날 아침에야 깨진 파일을 알게 되지 않게.
+            free.put(context.profile().code(), new ClaudeDecisionPipeline(context, store, framework, calls, ai, mapper, clock,
+                    Math.max(1, timeoutSeconds)));
+        }
+        this.freeTiming = Map.copyOf(free);
+    }
+
+    /**
+     * 그 실행 설정에서 그 계좌가 자유 시점 판이면 켠 판의 파이프라인, 아니면 {@code base} 그대로(ADR 0027 결정 2 — 판은 결정 때 정해지고, 그 세션의
+     * 장중 판단은 결정이 쓴 판을 따름). 켠 판이 없는 계좌(시험용 시장)는 늘 {@code base}입니다.
+     */
+    private ClaudeDecisionPipeline variant(ClaudeDecisionPipeline base, SettingsRow row) {
+        ClaudeDecisionPipeline free = freeTiming.get(base.book());
+        return free != null && row != null && FreeTimingSettings.from(row.body()).on(base.book()) ? free : base;
+    }
+
+    /** 그 계좌의 자유 시점 판 파이프라인(없으면 null) — 시험과 장중 판단 작업이 씁니다. */
+    ClaudeDecisionPipeline freeTimingPipeline(String book) {
+        return freeTiming.get(book);
     }
 
     /** 장중 확인을 켠 계좌2 파이프라인({@link #claude2Checkpoints}) — 장중 확인 작업({@link PaperCheckpointJob})이 확인 호출에 씁니다. */
@@ -397,6 +439,30 @@ public class ClaudeBookService {
             out.add(new MarketContext(ClaudeBookProfile.KR_CLAUDE2, null,
                     (run, asOf, kind, initial, version, quotes, readAt) -> krPackets.forBook(PaperBooks.KR_CLAUDE2)
                             .build(run, asOf, kind, initial, version, quotes, readAt)));
+        }
+        return List.copyOf(out);
+    }
+
+    /**
+     * 자유 시점 판의 결정 문맥(ADR 0027 결정 2) — 미국 계좌1({@link ClaudeBookProfile#US_CLAUDE_FT})·계좌2({@link ClaudeBookProfile#US_CLAUDE2_FT})와
+     * 한국 계좌1({@link ClaudeBookProfile#KR_CLAUDE_FT})·계좌2({@link ClaudeBookProfile#KR_CLAUDE2_FT}). 끈 판 문맥({@link #marketContexts})과 같은
+     * 패킷 조립(미국은 같은 시장 입력 — 입력 동결 그대로)에 프로필만 켠 판입니다. 한국 패킷 빌더가 null이면 미국 둘(시험). 운영 문맥 목록에는 넣지
+     * 않습니다(계좌 코드가 끈 판과 같음 — {@link #freeTiming}).
+     */
+    static List<MarketContext> freeContexts(PacketBuilder packets, KrPacketBuilder krPackets) {
+        List<MarketContext> out = new ArrayList<>();
+        for (ClaudeBookProfile profile : List.of(ClaudeBookProfile.US_CLAUDE_FT, ClaudeBookProfile.US_CLAUDE2_FT)) {
+            out.add(new MarketContext(profile,
+                    (asOf, kind, initial, version, row) -> packets.assemble(packets.read(asOf, initial, row), profile, kind, version),
+                    null, (inputs, kind, version) -> packets.assemble(inputs, profile, kind, version)));
+        }
+        if (krPackets != null) {
+            // 한국 계좌1·계좌2의 켠 판 — 같은 한국 자료, 패킷의 시점 문장만 켠 판(KrPacketBuilder.forFree).
+            for (ClaudeBookProfile profile : List.of(ClaudeBookProfile.KR_CLAUDE_FT, ClaudeBookProfile.KR_CLAUDE2_FT)) {
+                out.add(new MarketContext(profile, null,
+                        (run, asOf, kind, initial, version, quotes, readAt) -> krPackets.forFree(profile.code())
+                                .build(run, asOf, kind, initial, version, quotes, readAt)));
+            }
         }
         return List.copyOf(out);
     }
@@ -553,7 +619,11 @@ public class ClaudeBookService {
         // 그 실행의 시장 문맥(결정 작업이 연 실행 — 시장 묶음을 받으면 고정 달력과 지금 설정 행으로 엶): 파이프라인의 달력·설정 판이
         // 이 실행 하나입니다(클래스 설명).
         MarketRun run = MarketRun.of(market, store);
-        ClaudeDecisionPipeline pipeline = base.bind(run);
+        // 자유 시점 판(ADR 0027 결정 2) — 그 실행 설정의 스위치가 켜진 계좌는 켠 판 파이프라인으로. 계좌1의 기존 장중 확인(종류 CHECKPOINT — 끈 판의
+        // 전체 결정)은 늘 끈 판입니다(두 스위치를 함께 켜는 저장은 거절되지만, 손으로 고친 행에서도 켠 판 주문을 끈 판 결정이 대신하지 않게).
+        ClaudeDecisionPipeline chosen = RuleBookService.CHECKPOINT.equals(kind) ? base
+                : run.settingsRow().map(found -> variant(base, found)).orElse(base);
+        ClaudeDecisionPipeline pipeline = chosen.bind(run);
         Decision retrying = null;
         Optional<Decision> existing = store.decisionFor(pipeline.book(), asOf, kind);
         if (existing.isPresent()) {
@@ -849,10 +919,12 @@ public class ClaudeBookService {
         ClaudeSettings claude = ClaudeSettings.from(row.body());
         Claude2Settings book2 = Claude2Settings.from(row.body());
         // 장중 확인(단계 2)을 켠 실행 설정이면 c2 판(스키마 checkpoint 칸·고정 문단 c2-2·패킷 판 2), 끄면 단계 1 판 그대로(바이트까지 — §16-3).
-        ClaudeDecisionPipeline base = book2.checkpoints() ? claude2Checkpoints : pipelines.get(PaperBooks.CLAUDE2);
-        if (base == null) {
+        // 자유 시점 판(ADR 0027 — claude2.freeTiming)을 켠 실행 설정이면 그 둘 대신 켠 판(시가·분 단위 지정 시각·종가).
+        ClaudeDecisionPipeline off = book2.checkpoints() ? claude2Checkpoints : pipelines.get(PaperBooks.CLAUDE2);
+        if (off == null) {
             throw new IllegalArgumentException("계좌2 결정 문맥이 없습니다");
         }
+        ClaudeDecisionPipeline base = variant(off, row);
         ClaudeDecisionPipeline pipeline = base.bind(run);
         boolean initial = RuleBookService.INITIAL.equals(kind);
         Decision retrying = null;

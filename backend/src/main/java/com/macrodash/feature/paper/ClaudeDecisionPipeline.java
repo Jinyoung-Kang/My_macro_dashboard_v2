@@ -591,9 +591,20 @@ final class ClaudeDecisionPipeline {
 
         List<JsonNode> rawOrders = Json.array(attempt.parsed(), "orders");
         List<Proposed> proposed = new ArrayList<>();
+        // 자유 시점 판(ADR 0027 결정 8): 분 단위 지정 시각 주문은 시점 글자를 그 주문의 시각 열쇠(AT_MINUTE@HH:MM)로 바꿔 검증기에 넘깁니다 —
+        // 그 결정만의 검증 표(아래 timingRules)가 열쇠마다 순위·닫힘을 갖고, 주문 행에서는 AT_MINUTE + target_local로 되돌립니다(orderRows).
+        List<java.time.LocalTime> minutes = new ArrayList<>();
         for (JsonNode o : rawOrders) {
+            String timing = Json.asText(o, "timing");
+            if (profile.freeTiming()) {
+                timing = FreeTiming.proposedTiming(timing, Json.asText(o, "atLocal"));
+                java.time.LocalTime minute = FreeTiming.timeOf(timing);
+                if (minute != null) {
+                    minutes.add(minute);
+                }
+            }
             proposed.add(new Proposed(Json.asText(o, "ticker"), Json.asText(o, "side"), Json.asDouble(o, "targetWeightPct"),
-                    Json.asDouble(o, "sellFraction"), Json.asText(o, "timing")));
+                    Json.asDouble(o, "sellFraction"), timing));
         }
 
         if (!(view.nav() > 0)) {
@@ -638,6 +649,12 @@ final class ClaudeDecisionPipeline {
             if (!closed.isEmpty()) {
                 timingRules = timingRules.withClosed(closed);
             }
+        }
+        if (profile.freeTiming()) {
+            // 받는 시점 이름(시가·종가)의 닫힘은 위에서 정해졌고, 여기서 응답에 나온 지정 시각마다 열쇠를 더합니다 — 순위는 기준 시각 순,
+            // 범위 밖·지난 시각·시각 없는 AT_MINUTE는 닫힘.
+            timingRules = FreeTiming.validation(timingRules, minutes, market.calendar().nextTradingDay(asOf), clock.instant(),
+                    market.calendar(), market.definition() == KrPaperMarket.INSTANCE, false);
         }
         List<Verdict> verdicts = OrderValidator.validate(proposed, ctx, limits, timingRules);
 
@@ -774,6 +791,10 @@ final class ClaudeDecisionPipeline {
             }
         }
         proposedNode.put("timing", Json.asText(raw, "timing"));
+        if (raw.has("atLocal")) {
+            // 자유 시점 판 응답만(스키마에 atLocal이 있는 판) — 받은 글자 그대로(시각 없음·틀린 모양도 그대로 남겨 거절 사유와 함께 보이게).
+            proposedNode.set("atLocal", raw.get("atLocal").deepCopy());
+        }
         reason.set("proposed", proposedNode);
         // 매수의 목표 비중(체결 뒤 그 종목 비중)을 규칙 책과 같은 키에도 — 주문 행의 targetWeightPct는 통과하면 살 금액(목표 − 현재)이라
         // 화면이 둘이 다를 때 "(목표 …%)"를 함께 적습니다(orderSizeText).
@@ -798,7 +819,11 @@ final class ClaudeDecisionPipeline {
         row.put("side", o == null ? null : o.side());
         row.put("targetWeightPct", o == null ? null : o.targetWeightPct());
         row.put("sellFraction", o == null ? null : o.sellFraction());
-        row.put("timing", o == null ? null : o.timing());
+        row.put("timing", o == null ? null : FreeTiming.orderTiming(o.timing()));
+        if (o != null && FreeTiming.keyed(o.timing())) {
+            // 분 단위 지정 시각 주문 — 검증 표의 열쇠 대신 시점 이름과 시각(그 시장 현지 시각)으로.
+            row.put("atLocal", FreeTiming.label(FreeTiming.timeOf(o.timing())));
+        }
         row.put("accepted", v.accepted());
         row.put("rejectReason", v.rejectReason());
         row.put("detail", v.detail());
@@ -836,13 +861,15 @@ final class ClaudeDecisionPipeline {
                     continue;
                 }
                 out.add(new Order(0, book(), decisionId, o.ticker(), o.side(), null,
-                        buy ? p.orderWeightPct() : null, buy ? null : p.sellFraction(), o.timing(),
+                        buy ? p.orderWeightPct() : null, buy ? null : p.sellFraction(), FreeTiming.orderTiming(o.timing()),
                         PacketBuilder.SOURCE_CLAUDE, accepted, pending ? null : PAUSED_DURING_CALL, p.reason(), asOf,
-                        null, pending ? expires : null, null));
+                        null, pending ? expires : null, null, FreeTiming.timeOf(o.timing())));
             } else {
+                // 거절 행은 받은 값 그대로 — 시각을 읽지 못한 AT_MINUTE는 시각 없이(V22 CHECK가 거절 행에는 시각을 요구하지 않음).
                 out.add(new Order(0, book(), decisionId, o.ticker(), o.side(), null,
-                        buy ? o.targetWeightPct() : null, buy ? null : o.sellFraction(), o.timing(),
-                        PacketBuilder.SOURCE_CLAUDE, "REJECTED", v.rejectReason(), p.reason(), asOf, null, null, null));
+                        buy ? o.targetWeightPct() : null, buy ? null : o.sellFraction(), FreeTiming.orderTiming(o.timing()),
+                        PacketBuilder.SOURCE_CLAUDE, "REJECTED", v.rejectReason(), p.reason(), asOf, null, null, null,
+                        FreeTiming.timeOf(o.timing())));
             }
         }
         return out;

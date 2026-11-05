@@ -288,6 +288,10 @@ final class PaperSettingKeys {
             of(Claude1Checkpoint.AT_ET, Type.TIME, false,
                     "Claude 계좌1 장중 확인 시각(뉴욕 시각 HH:mm, 10:00~15:00, 기본 12:00) — 그 시각 뒤 수집된 그날 시간별 관측치가 오면 부름, "
                             + "마감 30분 전까지 못 부르면 그 세션은 건너뜀"),
+            of(FreeTimingSettings.US_CLAUDE, Type.BOOLEAN, false,
+                    "Claude 계좌1 자유 시점 판(ADR 0027, 기본 꺼짐) — 켜면 다음 미국 결정부터 시가·분 단위 지정 시각(AT_MINUTE, 정규장 안)·종가를 "
+                            + "받는 판으로 부름(다음 관측치 NEXT_OBSERVATION은 내지 않음, 주문은 다음 세션 하루짜리). claude.checkpoint와 함께 켤 수 "
+                            + "없음. 끄면 다음 결정부터 지금 판(프롬프트·스키마·패킷이 바이트까지 같음)"),
             // ---- 미국 Claude 계좌2(체결 시점 실험 — 계좌2 명세 §13-2, ADR 0022). 모두 규칙 계좌 영향 없음, 기본은 꺼짐·단계 1 값.
             of(Claude2Settings.ENABLED, Type.BOOLEAN, false,
                     "Claude 계좌2(체결 시점 실험) — 켜면 다음 미국 결정 창에 앞으로 체결로 출발하고(INITIAL — 사후 체결 없음) 그 뒤 "
@@ -301,6 +305,10 @@ final class PaperSettingKeys {
                             + "처리(계좌2만 — 그동안 계좌2 스탑 판정이 늦음). 0이면 기다리지 않음"),
             of(Claude2Settings.EXECUTION_RECORD, Type.BOOLEAN, false,
                     "계좌2 패킷 13_execution.record — 최근 체결 20건(고른 시점·체결 원가격·사다리 칸·계좌1식 대비 bp, 사실만)"),
+            of(FreeTimingSettings.US_CLAUDE2, Type.BOOLEAN, false,
+                    "Claude 계좌2 자유 시점 판(ADR 0027, 기본 꺼짐) — 켜면 다음 미국 결정부터 매시 정각 메뉴 대신 시가·분 단위 지정 시각"
+                            + "(AT_MINUTE)·종가를 받는 판으로 부름. 켠 판은 claude2.checkpoints의 장중 확인(30분 격자 한 번)을 쓰지 않음. "
+                            + "끄면 다음 결정부터 지금 판"),
             of(Claude2Settings.CHECKPOINTS, Type.BOOLEAN, false,
                     "계좌2 장중 확인(단계 2 — 세션당 최대 1회, 켜면 아침 결정이 확인 시각·자료를 고를 수 있음). "
                             + "켜는 저장에서 apiScheduledReserve 10·claude2.maxCallsPerCycle 3 권장"),
@@ -373,7 +381,13 @@ final class PaperSettingKeys {
                             + "한국 계좌1과 같음(코드가 집행하지 않는 판단 기준), 다른 계좌는 영향 없음. 바꾸면 다음 한국 계좌2 호출부터"),
             of(Claude2Settings.KR_CHECKPOINTS, Type.BOOLEAN, false,
                     "한국 Claude 계좌2 장중 확인(단계 2b — 세션당 최대 1회, 밤 결정이 고른 시각 뒤 토스 1분봉으로 한 번 더 판단). 끄면 확인을 "
-                            + "부르지 않고 그 세션 계획은 SKIPPED(밤 결정의 요청은 계속 받음 — 호출만 멈추는 스위치)"));
+                            + "부르지 않고 그 세션 계획은 SKIPPED(밤 결정의 요청은 계속 받음 — 호출만 멈추는 스위치)"),
+            of(FreeTimingSettings.KR_CLAUDE, Type.BOOLEAN, false,
+                    "한국 Claude 계좌1 자유 시점 판(ADR 0027, 기본 꺼짐) — 켜면 다음 한국 결정부터 시가·분 단위 지정 시각(AT_MINUTE, "
+                            + "09:01~15:19 KST)·종가를 받는 판으로 부름. 장중 체결에는 금융위 확정 조정이 없음. 끄면 다음 결정부터 지금 판"),
+            of(FreeTimingSettings.KR_CLAUDE2, Type.BOOLEAN, false,
+                    "한국 Claude 계좌2 자유 시점 판(ADR 0027, 기본 꺼짐) — 켜면 다음 한국 결정부터 매시 정각 메뉴 대신 시가·분 단위 지정 시각"
+                            + "(AT_MINUTE)·종가를 받는 판으로 부름. 끄면 다음 결정부터 지금 판"));
 
 
     private static final Map<String, Spec> BY_KEY;

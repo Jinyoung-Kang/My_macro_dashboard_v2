@@ -124,7 +124,7 @@ class PaperAdminKrInitTest {
         assertThat(result.startDate()).isEqualTo(S);
         assertThat(result.settingsCreated()).isFalse();
         assertThat(result.settingsVersion()).isEqualTo(2);
-        assertThat(result.settingsKeysWritten()).containsExactlyElementsOf(krKeys()).hasSize(34);   // 한국 계좌2 장중 확인 스위치(kr.claude2.checkpoints — 단계 2b)까지
+        assertThat(result.settingsKeysWritten()).containsExactlyElementsOf(krKeys()).hasSize(36);   // 한국 자유 시점 판 스위치 둘(kr.claude.freeTiming·kr.claude2.freeTiming — ADR 0027)까지
         assertThat(store.settings.version()).isEqualTo(2);
         assertThat(store.settingsChangedKeys.get(2)).containsExactlyElementsOf(krKeys());
         JsonNode kr = store.settings.body().get("kr");
@@ -191,7 +191,8 @@ class PaperAdminKrInitTest {
         PaperAdminService.KrInitResult result = admin(S, BEFORE).initKr();
 
         assertThat(result.settingsKeysWritten()).doesNotContain("kr.slippageBp", "kr.calendar.extraClosures")
-                .contains("kr.commissionBp", "kr.calendar.openTimeOverrides", "kr.claude2.riskProfile", "kr.claude2.checkpoints").hasSize(32);
+                .contains("kr.commissionBp", "kr.calendar.openTimeOverrides", "kr.claude2.riskProfile", "kr.claude2.checkpoints",
+                        "kr.claude.freeTiming", "kr.claude2.freeTiming").hasSize(34);
         assertThat(store.settings.body().at("/kr/slippageBp").asDouble()).isEqualTo(7);
         assertThat(store.settings.body().at("/kr/calendar/extraClosures/0").asString()).isEqualTo("2026-12-29");
         assertThat(store.settings.body().at("/kr/tax/kospi/sttBp").asDouble()).isEqualTo(5);

@@ -179,6 +179,23 @@ final class ExecutionSection {
      */
     static Map<String, Object> build(LocalDate asOf, List<String> timings, TradingCalendar calendar, double slippageBp,
                                      boolean record, PaperStore store, String book, boolean checkpoints) {
+        return build(asOf, timings, calendar, slippageBp, record, store, book, checkpoints, false);
+    }
+
+    /** 분 단위 지정 시각 메뉴 한 줄의 뜻(자유 시점 판). */
+    static final String AT_MINUTE_MEANING = "atLocal에 적은 분(뉴욕 시각 HH:MM)에 시작한 1분봉 시가 — atMinute 범위 안의 분만 받음";
+    /** 자유 시점 판 출처 사실 한 줄 — 분 단위 시각의 뜻. */
+    static final String FREE_SOURCE_FACT = "분 단위 지정 시각은 그 분에 시작한 1분봉의 시가다 — 호가·체결 틱이 아니라 1분봉이라 분보다 가는 시각은 고를 수 없다.";
+
+    /**
+     * {@link #build(LocalDate, List, TradingCalendar, double, boolean, PaperStore, String, boolean)}에 자유 시점 판(ADR 0027 결정 2)을 더한 것 —
+     * {@code free}가 참이면 메뉴가 시가·분 단위 지정 시각·종가 셋이고({@code AT_MINUTE} 줄은 받는 범위), {@code atMinute}(그 세션의 받는 범위 —
+     * 첫 분·마지막 분, ET·KST)가 더해지며 판은 {@value PacketBuilder#EXECUTION_MENU_VERSION_FREE}입니다. 거짓이면 그 전과 글자 그대로입니다.
+     *
+     * @param free 자유 시점 판 결정인가({@link ClaudeBookProfile#freeTiming})
+     */
+    static Map<String, Object> build(LocalDate asOf, List<String> timings, TradingCalendar calendar, double slippageBp,
+                                     boolean record, PaperStore store, String book, boolean checkpoints, boolean free) {
         LocalDate session = calendar.nextTradingDay(asOf);
         Instant open = calendar.openInstant(session);
         Instant close = calendar.closeInstant(session);
@@ -194,7 +211,18 @@ final class ExecutionSection {
 
         List<List<Object>> menu = new ArrayList<>();
         List<String> closed = new ArrayList<>();
+        FreeTiming.Window window = free ? FreeTiming.window(session, calendar, false) : null;
         for (String timing : timings) {
+            if (free && PaperBooks.AT_MINUTE.equals(timing)) {
+                // 분 단위 지정 시각 — 시각 하나가 아니라 받는 범위(첫 분 ~ 마지막 분). 닫힘은 이름이 아니라 주문의 시각으로 정해집니다.
+                List<Object> row = new ArrayList<>(MENU_COLUMNS.size());
+                row.add(timing);
+                row.add(et(window.first(), calendar) + "~" + et(window.last(), calendar));
+                row.add(Kst.stamp(window.first()) + " ~ " + Kst.stamp(window.last()));
+                row.add(AT_MINUTE_MEANING);
+                menu.add(row);
+                continue;
+            }
             Instant at = ExecutionAudit.targetAt(timing, session, calendar);
             boolean shut = at != null && UsTimedFills.timed(timing) && !at.isBefore(close);
             if (shut) {
@@ -212,14 +240,27 @@ final class ExecutionSection {
         menuView.put("rows", menu);
 
         Map<String, Object> out = new LinkedHashMap<>();
-        out.put("executionMenuVersion", checkpoints ? PacketBuilder.EXECUTION_MENU_VERSION_C2
-                : PacketBuilder.EXECUTION_MENU_VERSION);
+        out.put("executionMenuVersion", free ? PacketBuilder.EXECUTION_MENU_VERSION_FREE
+                : checkpoints ? PacketBuilder.EXECUTION_MENU_VERSION_C2 : PacketBuilder.EXECUTION_MENU_VERSION);
         out.put("session", sessionView);
         out.put("menu", menuView);
+        if (free) {
+            Map<String, Object> range = new LinkedHashMap<>();
+            range.put("firstEt", et(window.first(), calendar));
+            range.put("lastEt", et(window.last(), calendar));
+            range.put("firstKst", Kst.stamp(window.first()));
+            range.put("lastKst", Kst.stamp(window.last()));
+            range.put("note", "AT_MINUTE 주문의 atLocal은 이 범위(양 끝 포함)의 뉴욕 시각 HH:MM — 개장 순간은 NEXT_OPEN, 마감 5분 전부터는 받지 않음");
+            out.put("atMinute", range);
+        }
         out.put("closedTimings", closed);
         out.put("ladder", LADDER);
         out.put("barsSource", BARS_SOURCE);
-        if (checkpoints) {
+        if (free) {
+            List<String> facts = new ArrayList<>(SOURCE_FACTS);
+            facts.add(FREE_SOURCE_FACT);
+            out.put("sourceFacts", facts);
+        } else if (checkpoints) {
             List<String> facts = new ArrayList<>(SOURCE_FACTS);
             facts.add(CHECKPOINT_SOURCE_FACT);
             out.put("sourceFacts", facts);
@@ -305,7 +346,9 @@ final class ExecutionSection {
             row.add(text(f.fill().observationDate()));
             row.add(order.ticker());
             row.add(order.side());
-            row.add(order.timing());
+            // 분 단위 지정 시각은 고른 시각까지('AT_MINUTE 10:47' — 뉴욕 시각). 그 밖의 시점은 이름 그대로.
+            row.add(PaperBooks.AT_MINUTE.equals(order.timing()) && order.targetLocal() != null
+                    ? order.timing() + " " + FreeTiming.label(order.targetLocal()) : order.timing());
             row.add(PacketBuilder.decimal(f.fill().rawPrice(), 4));
             row.add(f.fillRung());
             row.add(f.fillRung() != null && UsTimedFills.FALLBACK_RUNGS.contains(f.fillRung()));

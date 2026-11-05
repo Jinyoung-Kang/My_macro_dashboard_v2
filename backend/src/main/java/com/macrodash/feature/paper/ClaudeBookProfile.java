@@ -38,10 +38,15 @@ import java.util.Objects;
  *                       이달 재량 주문 수에서 출발(INITIAL) 결정의 주문을 뺌(한국 계산 — 계좌2 명세 §4-1의 5·§10-5). 기본 계좌는 거짓
  * @param checkpoints    장중 확인 판인가(계좌2 단계 2 — 설정 {@value Claude2Settings#CHECKPOINTS}를 켠 결정, {@link #US_CLAUDE2_C2}): 응답 스키마에
  *                       {@code checkpoint} 칸, 고정 문단 c2-2, 패킷 {@code executionMenuVersion} 2·{@code 13_execution.checkpointOptions}. 그 밖은 거짓
+ * @param freeTiming     자유 시점 판인가(ADR 0027 결정 2 — 그 계좌의 스위치 {@link FreeTimingSettings}를 켠 결정): 받는 시점은
+ *                       {@link FreeTiming#DECISION_TIMINGS}(시가·분 단위 지정 시각·종가), 검증 표는 결정마다 주문의 시각으로 만들고
+ *                       ({@link FreeTiming#validation}), 주문 행은 {@code AT_MINUTE} + {@code target_local}. 그 밖은 거짓 — 끈 판의 프로필은
+ *                       이 칸이 생기기 전과 같은 값이라 프롬프트·스키마·패킷·검증이 바이트까지 같습니다
  */
 record ClaudeBookProfile(PaperMarket market, String code, String schemaResource, String fixedRules,
                          String packetVariant, List<String> timings, Map<String, Integer> timingRanks,
-                         String callCapKey, Map<String, String> timingNames, boolean timed, boolean checkpoints) {
+                         String callCapKey, Map<String, String> timingNames, boolean timed, boolean checkpoints,
+                         boolean freeTiming) {
 
     /** 미국 Claude 계좌1({@code claude}) — 미국 시장 묶음의 값 그대로, 응답 스키마 {@value ClaudeBookService#SCHEMA_RESOURCE}. */
     static final ClaudeBookProfile US_CLAUDE = marketDefault(UsPaperMarket.INSTANCE, ClaudeBookService.SCHEMA_RESOURCE);
@@ -106,6 +111,45 @@ record ClaudeBookProfile(PaperMarket market, String code, String schemaResource,
             PaperBooks.CHECKPOINT_TIMINGS, sequence(PaperBooks.CHECKPOINT_TIMINGS), Claude2Settings.MAX_CALLS_PER_CYCLE,
             checkpointTimingNames(), true, true);
 
+    /**
+     * 미국 Claude 계좌1의 자유 시점 판(ADR 0027 결정 2 — 스위치 {@value FreeTimingSettings#US_CLAUDE}) — 계좌1과 같은 계좌 코드·미국 시장 묶음에,
+     * 응답 스키마 {@value ClaudeBookService#US_FT_SCHEMA_RESOURCE}·고정 문단 {@link ClaudePrompts#US_FT_FIXED_RULES}·계좌2의 패킷 변형
+     * ({@code 13_execution} — 자기 체결 기록)·받는 시점 {@link FreeTiming#DECISION_TIMINGS}·시각 지정 체결(주문은 다음 세션 하루짜리). 다음 관측치
+     * (NEXT_OBSERVATION)는 받지 않습니다(참고 지표의 기준으로만 남음). 소상한 키는 없습니다(계좌1은 하루 상한만). 결정 파이프라인 맵 밖의 따로 만든
+     * 파이프라인이 씁니다({@link ClaudeBookService}).
+     */
+    static final ClaudeBookProfile US_CLAUDE_FT = new ClaudeBookProfile(UsPaperMarket.INSTANCE, PaperBooks.CLAUDE,
+            ClaudeBookService.US_FT_SCHEMA_RESOURCE, ClaudePrompts.US_FT_FIXED_RULES, PacketBuilder.VARIANT_CLAUDE2,
+            FreeTiming.DECISION_TIMINGS, sequence(FreeTiming.DECISION_TIMINGS), null, usFreeTimingNames(), true, false, true);
+
+    /**
+     * 미국 Claude 계좌2의 자유 시점 판(스위치 {@value FreeTimingSettings#US_CLAUDE2}) — {@link #US_CLAUDE_FT}와 같은 스키마·고정 문단·패킷 변형·받는
+     * 시점이고, 다른 것은 계좌 코드와 소상한 키({@value Claude2Settings#MAX_CALLS_PER_CYCLE})뿐입니다(투자 성향 절은 렌더링이 계좌 코드로 더함).
+     * 매시 정각 메뉴({@link #US_CLAUDE2})와 장중 확인 판({@link #US_CLAUDE2_C2})을 대신합니다.
+     */
+    static final ClaudeBookProfile US_CLAUDE2_FT = new ClaudeBookProfile(UsPaperMarket.INSTANCE, PaperBooks.CLAUDE2,
+            ClaudeBookService.US_FT_SCHEMA_RESOURCE, ClaudePrompts.US_FT_FIXED_RULES, PacketBuilder.VARIANT_CLAUDE2,
+            FreeTiming.DECISION_TIMINGS, sequence(FreeTiming.DECISION_TIMINGS), Claude2Settings.MAX_CALLS_PER_CYCLE,
+            usFreeTimingNames(), true, false, true);
+
+    /**
+     * 한국 Claude 계좌1의 자유 시점 판(스위치 {@value FreeTimingSettings#KR_CLAUDE}) — 한국 계좌1과 같은 계좌 코드·한국 묶음에, 응답 스키마
+     * {@value ClaudeBookService#KR_FT_SCHEMA_RESOURCE}·고정 문단 {@link ClaudePrompts#KR_FT_FIXED_RULES}·받는 시점
+     * {@link FreeTiming#DECISION_TIMINGS}. 한국 계좌2처럼 시각 지정 체결 표시({@link #timed})는 켜지 않습니다(미국 전용 분기 — 만료는 기준일 +
+     * 3거래일 그대로이고, 장부는 목표 세션에서 풀지 못한 지정 시각 주문을 다음 날로 넘기지 않음). 패킷은 {@link KrPacketBuilder#forFree}가 만듭니다.
+     */
+    static final ClaudeBookProfile KR_CLAUDE_FT = new ClaudeBookProfile(KrPaperMarket.INSTANCE, PaperBooks.KR_CLAUDE,
+            ClaudeBookService.KR_FT_SCHEMA_RESOURCE, ClaudePrompts.KR_FT_FIXED_RULES, null, FreeTiming.DECISION_TIMINGS,
+            sequence(FreeTiming.DECISION_TIMINGS), null, krFreeTimingNames(), false, false, true);
+
+    /**
+     * 한국 Claude 계좌2의 자유 시점 판(스위치 {@value FreeTimingSettings#KR_CLAUDE2}) — {@link #KR_CLAUDE_FT}와 같은 스키마·고정 문단·받는 시점이고
+     * 계좌 코드만 다릅니다(투자 성향 절은 렌더링이 계좌 코드로 더함). 매시 정각 메뉴와 기존 장중 확인({@link #KR_CLAUDE2})을 대신합니다.
+     */
+    static final ClaudeBookProfile KR_CLAUDE2_FT = new ClaudeBookProfile(KrPaperMarket.INSTANCE, PaperBooks.KR_CLAUDE2,
+            ClaudeBookService.KR_FT_SCHEMA_RESOURCE, ClaudePrompts.KR_FT_FIXED_RULES, null, FreeTiming.DECISION_TIMINGS,
+            sequence(FreeTiming.DECISION_TIMINGS), null, krFreeTimingNames(), false, false, true);
+
     ClaudeBookProfile {
         Objects.requireNonNull(market, "market");
         Objects.requireNonNull(code, "code");
@@ -133,6 +177,14 @@ record ClaudeBookProfile(PaperMarket market, String code, String schemaResource,
         timingNames = Collections.unmodifiableMap(names);
     }
 
+    /** 자유 시점 판이 아닌 계좌(끈 판) — ADR 0027 전의 열한 칸 그대로. */
+    ClaudeBookProfile(PaperMarket market, String code, String schemaResource, String fixedRules, String packetVariant,
+                      List<String> timings, Map<String, Integer> timingRanks, String callCapKey,
+                      Map<String, String> timingNames, boolean timed, boolean checkpoints) {
+        this(market, code, schemaResource, fixedRules, packetVariant, timings, timingRanks, callCapKey, timingNames, timed,
+                checkpoints, false);
+    }
+
     /** 근거 문구의 시점 이름을 그 시장 묶음의 것({@link PaperMarket#timingNames})으로, 시각 지정 체결이 아닌 계좌 — 시장 기본 계좌·시험용 계좌. */
     ClaudeBookProfile(PaperMarket market, String code, String schemaResource, String fixedRules, String packetVariant,
                       List<String> timings, Map<String, Integer> timingRanks, String callCapKey) {
@@ -146,6 +198,27 @@ record ClaudeBookProfile(PaperMarket market, String code, String schemaResource,
         for (String timing : timings) {
             out.put(timing, out.size());
         }
+        return out;
+    }
+
+    /**
+     * 미국 자유 시점 판 검증기 근거 문구의 시점 이름 — 시가·종가는 계좌2와 같은 이름, 분 단위 지정 시각은 이름만('지정 시각' — 시각이 없는 주문의
+     * 거절 문구에 쓰임). 시각이 있는 주문의 이름('다음 세션 10:47 ET')은 결정마다 {@link FreeTiming#validation}이 만듭니다.
+     */
+    private static Map<String, String> usFreeTimingNames() {
+        Map<String, String> out = new LinkedHashMap<>();
+        out.put(PaperBooks.NEXT_OPEN, "다음 세션 시가");
+        out.put(PaperBooks.AT_MINUTE, "지정 시각");
+        out.put(PaperBooks.NEXT_CLOSE, OrderValidator.Market.US.timingNames().get(PaperBooks.NEXT_CLOSE));
+        return out;
+    }
+
+    /** 한국 자유 시점 판 검증기 근거 문구의 시점 이름 — 시가·종가는 한국 계좌2와 같은 이름, 분 단위 지정 시각은 이름만(시각은 결정마다). */
+    private static Map<String, String> krFreeTimingNames() {
+        Map<String, String> out = new LinkedHashMap<>();
+        out.put(PaperBooks.NEXT_OPEN, "다음 거래일 시가");
+        out.put(PaperBooks.AT_MINUTE, "지정 시각");
+        out.put(PaperBooks.NEXT_CLOSE, "다음 거래일 종가");
         return out;
     }
 

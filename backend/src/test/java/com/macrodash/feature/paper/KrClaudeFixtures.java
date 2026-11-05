@@ -178,6 +178,15 @@ final class KrClaudeFixtures {
                 + "],\"question\":\"시가 갭이 유지되나\"},\"confidence\":");
     }
 
+    /**
+     * 한국 자유 시점 판 주문 한 줄(ADR 0027 — 응답 스키마 {@value ClaudeBookService#KR_FT_SCHEMA_RESOURCE}): 시점과 executionNote, 분 단위 지정 시각이면
+     * {@code atLocal}(한국 시간 'HH:MM' — null이면 그 칸을 null로 씀).
+     */
+    static String freeOrder(String ticker, String side, Double target, Double fraction, String timing, String atLocal) {
+        return claude2Order(ticker, side, target, fraction, timing).replace("\"timing\":\"" + timing + "\"",
+                "\"timing\":\"" + timing + "\",\"atLocal\":" + (atLocal == null ? "null" : "\"" + atLocal + "\""));
+    }
+
     /** 한국 Claude 계좌2 주문 한 줄(단계 2a — 메뉴 시점과 executionNote, 응답 스키마 {@value ClaudeBookService#KR_CLAUDE2_SCHEMA_RESOURCE}). */
     static String claude2Order(String ticker, String side, Double target, Double fraction, String timing) {
         return order(ticker, side, target, fraction).replace("\"timing\":\"NEXT_OPEN\"",

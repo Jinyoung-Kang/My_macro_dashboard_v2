@@ -299,6 +299,72 @@ class PaperDecisionJobClaude2Test {
         assertThat(calls).filteredOn(c -> c.startsWith("claude2")).containsExactly("claude2 2026-10-26 SCHEDULED");
     }
 
+    /** 자유 시점 판을 켠 계좌1의 대기 주문 — 기준 시각(월 15:00 ET)이 관측치 전인 분 단위 지정 시각 매수(계좌1 장부가 1분봉을 기다리게 함). */
+    private void dueFreeTimingOrder() {
+        store.insertOrder(new Order(0, PaperBooks.CLAUDE, null, "SPY", "BUY", null, 3.0, null, PaperBooks.AT_MINUTE,
+                "CLAUDE", PaperBooks.ORDER_PENDING, null, MAPPER.createObjectNode(), FRI, FRI_CLOSE, MON, null,
+                java.time.LocalTime.of(15, 0)));
+    }
+
+    @Test
+    @DisplayName("자유 시점 판을 켠 계좌1(ADR 0027 결정 7): 계좌1 장부가 기준 시각이 지난 시각 지정 주문 때문에 이번 관측치를 미뤘으면 계좌1은 결정하지 않고 다음 주기 — "
+            + "규칙 계좌는 그대로, 기다림이 풀리면 결정. 풀리지 않은 주문을 새 결정이 '대신함'으로 지우지 않게")
+    void freeTimingBook1WaitsForTheMinuteBars() {
+        ((ObjectNode) store.settings.body().get("claude")).put("freeTiming", true);
+        dueFreeTimingOrder();
+        Instant observedAt = Instant.parse("2026-10-26T22:50:00Z");
+        observed(observedAt, MON);
+
+        job(MON_RUN, observedAt.plusSeconds(60)).run();
+
+        assertThat(calls).containsExactly("rules 2026-10-26 SCHEDULED");
+        assertThat(lastRun().path("claude").asString()).contains("계좌1 장부가 관측치").contains("1분봉 기다림");
+
+        job(MON_RUN.plusSeconds(600), observedAt.plusSeconds(16 * 60)).run();
+        assertThat(calls).filteredOn(c -> c.startsWith("claude ")).containsExactly("claude 2026-10-26 SCHEDULED");
+    }
+
+    @Test
+    @DisplayName("스위치가 꺼져 있으면(기본) 계좌1은 그 기다림을 보지 않음 — 끈 판의 결정 시각은 그대로")
+    void book1DoesNotWaitWhenFreeTimingIsOff() {
+        dueFreeTimingOrder();
+        Instant observedAt = Instant.parse("2026-10-26T22:50:00Z");
+        observed(observedAt, MON);
+
+        job(MON_RUN, observedAt.plusSeconds(60)).run();
+
+        assertThat(calls).containsExactly("rules 2026-10-26 SCHEDULED", "claude 2026-10-26 SCHEDULED");
+    }
+
+    @Test
+    @DisplayName("자유 시점 판을 켠 계좌1의 수동 결정 run/decision {book:claude}: 정규장 중(다음 세션 09:00 ET 뒤)과 계좌1 장부가 관측치를 아직 처리하지 않은 때는 "
+            + "400(부르지 않음·기록 없음), 창 안이면 그대로. 스위치가 꺼져 있으면 정규장 중에도 받음(지금 그대로)")
+    void manualFreeTimingBook1Decision() {
+        observed(Instant.parse("2026-10-27T14:00:00Z"), TUE);
+        Decision off = job(Instant.parse("2026-10-27T15:00:00Z")).runNow(PaperBooks.CLAUDE);
+        assertThat(off.bookCode()).isEqualTo(PaperBooks.CLAUDE);
+        assertThat(calls).containsExactly("claude 2026-10-26 MANUAL");
+
+        calls.clear();
+        store.jobRuns.clear();
+        ((ObjectNode) store.settings.body().get("claude")).put("freeTiming", true);
+        assertThatThrownBy(() -> job(Instant.parse("2026-10-27T15:00:00Z")).runNow(PaperBooks.CLAUDE))
+                .isInstanceOf(InvalidRequestException.class).hasMessageContaining("정규장 중에는 받지 않음").hasMessageContaining("계좌1");
+        // 장부 처리 기억을 되돌려(위 실행이 화요일 관측치를 처리함) 월요일 밤의 창으로 — 기준 시각이 지난 지정 시각 주문이 1분봉을 기다리는 중.
+        store.states.put(PaperBooks.CLAUDE, state(PaperBooks.CLAUDE));
+        dueFreeTimingOrder();
+        Instant observedAt = Instant.parse("2026-10-26T22:50:00Z");
+        observed(observedAt, MON);
+        assertThatThrownBy(() -> job(MON_RUN, observedAt.plusSeconds(60)).runNow(PaperBooks.CLAUDE))
+                .isInstanceOf(InvalidRequestException.class).hasMessageContaining("1분봉 기다림");
+        assertThat(calls).isEmpty();
+        assertThat(store.jobRuns).isEmpty();
+
+        Decision manual = job(MON_RUN.plusSeconds(600), observedAt.plusSeconds(16 * 60)).runNow(PaperBooks.CLAUDE);
+        assertThat(manual.bookCode()).isEqualTo(PaperBooks.CLAUDE);
+        assertThat(calls).containsExactly("claude 2026-10-26 MANUAL");
+    }
+
     /** 규칙·계좌1이 그 거래일을 이미 결정함(저장된 정기 결정 행) — 계좌2만 할 일이 남은 실행. */
     private void book1AndRulesDecided() {
         store.insertDecisionIfAbsent(row(0, PaperBooks.RULES, MON, RuleBookService.SCHEDULED));

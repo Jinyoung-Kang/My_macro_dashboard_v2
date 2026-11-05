@@ -114,6 +114,24 @@ class PaperClaude1CheckpointJobTest {
     }
 
     @Test
+    @DisplayName("자유 시점 판(ADR 0027 결정 3)이 켜져 있으면 부르지 않음 — 이 장중 확인은 끈 판의 전체 결정이라 켠 판의 시각 지정 대기 주문을 모두 대신함. "
+            + "스위치를 끄면 다시 부름")
+    void doesNotCallWhileFreeTimingIsOn() {
+        observed(NOON.plusSeconds(35 * 60), E);
+        ((ObjectNode) store.settings.body().get("claude")).put("freeTiming", true);
+
+        PaperClaude1CheckpointJob.Outcome skipped = job(NOON.plusSeconds(40 * 60)).run();
+
+        assertThat(skipped.reason()).startsWith("자유 시점 판이 켜져 있어 부르지 않음").contains("claude.freeTiming");
+        verify(claude, never()).decideCheckpoint(any(), any());
+        assertThat(store.jobRuns).as("부르지 않은 주기는 기록하지 않음").isEmpty();
+
+        ((ObjectNode) store.settings.body().get("claude")).put("freeTiming", false);
+        assertThat(job(NOON.plusSeconds(41 * 60)).run().reason()).isNull();
+        verify(claude, times(1)).decideCheckpoint(UsPaperMarket.INSTANCE, D);
+    }
+
+    @Test
     @DisplayName("QA-191: 부른 뒤 기록 실패(CalledNotRecorded)면 ERROR 작업 기록을 남기고 그 세션에 다시 부르지 않음 — 다음 세션은 다시 봄")
     void calledNotRecordedIsNotCalledAgain() {
         observed(NOON.plusSeconds(35 * 60), E);

@@ -983,6 +983,58 @@ class KrPacketBuilderTest {
         assertThat(PacketBuilder.estimateTokens(scheduled.text())).isLessThan(KrPacketBuilder.TARGET_TOKENS);
     }
 
+    @Test
+    @DisplayName("고정본(자유 시점 판 — ADR 0027 결정 2): 한국 계좌1 켠 판의 정기 패킷 — 끈 판 패킷과 0_instructions의 시점 줄·체결가 낱말, 1_basis의 세 칸(variant·fixedRules·"
+            + "atMinute 범위 09:01~15:19), 12_hardRules의 매도 자리 줄·시가 줄 머리·지정 시각 체결 줄·받는 시점만 다르고 그 밖은 바이트 그대로. 계좌2 켠 판은 기존 장중 확인 "
+            + "문장이 없음. 끈 판 패킷은 그대로")
+    void goldenKrFreeTimingPacket() {
+        Packet off = scheduled();
+        Packet on = builder.forFree(PaperBooks.KR_CLAUDE).build(run(), D, RuleBookService.SCHEDULED, false, 3, quotesD(), READ_D);
+
+        Golden.assertMatches("packet-kr-scheduled.json", off.text());
+        Golden.assertMatches("packet-kr-ft-scheduled.json", on.text());
+        assertThat(PacketBuilder.estimateTokens(on.text())).isLessThan(KrPacketBuilder.TARGET_TOKENS);
+
+        JsonNode basis = on.body().get(PacketBuilder.BASIS);
+        assertThat(basis.get("variant").asString()).isEqualTo("freeTiming");
+        assertThat(basis.get("fixedRules").asString()).isEqualTo("kr-ft-1");
+        assertThat(basis.get("atMinute").get("firstKst").asString()).isEqualTo("09:01");
+        assertThat(basis.get("atMinute").get("lastKst").asString()).isEqualTo("15:19");
+        assertThat(basis.get("book").asString()).isEqualTo(PaperBooks.KR_CLAUDE);
+        List<String> instructions = new ArrayList<>();
+        on.body().get(PacketBuilder.INSTRUCTIONS).get("lines").forEach(line -> instructions.add(line.asString()));
+        assertThat(instructions).contains(KrPacketBuilder.KR_FT_TIMING_LINE).doesNotContain(KrPacketBuilder.timingLine());
+        assertThat(instructions).noneMatch(line -> line.contains("checkpoint"));
+        List<String> rules = new ArrayList<>();
+        on.body().get(PacketBuilder.HARD_RULES).get("lines").forEach(line -> rules.add(line.asString()));
+        assertThat(rules).contains(KrPacketBuilder.KR_FT_ALLOCATION_LINE, KrPacketBuilder.KR_FT_TIMED_FILL_LINE);
+        assertThat(rules).anyMatch(line -> line.startsWith("NEXT_OPEN 주문은 기준 거래일 뒤 첫 관측 봉"));
+        List<String> timings = new ArrayList<>();
+        on.body().get(PacketBuilder.HARD_RULES).get("timings").forEach(t -> timings.add(t.asString()));
+        assertThat(timings).containsExactly("NEXT_OPEN", "AT_MINUTE", "NEXT_CLOSE");
+        assertThat(on.text()).doesNotContain("AT_1000").doesNotContain("NEXT_OPEN뿐").doesNotContain("실시간");
+
+        // 다른 곳만 걷어 내면 끈 판 패킷과 같음.
+        ObjectNode a = (ObjectNode) off.body().deepCopy();
+        ObjectNode b = (ObjectNode) on.body().deepCopy();
+        for (ObjectNode node : List.of(a, b)) {
+            ((ObjectNode) node.get(PacketBuilder.INSTRUCTIONS)).remove("lines");
+            ((ObjectNode) node.get(PacketBuilder.BASIS)).remove(List.of("variant", "fixedRules", "atMinute"));
+            ((ObjectNode) node.get(PacketBuilder.HARD_RULES)).remove(List.of("lines", "timings"));
+        }
+        assertThat(b).as("그 밖은 끈 판 한국 패킷과 같음").isEqualTo(a);
+        assertThat(on.noteIds()).isEqualTo(off.noteIds());
+
+        // 계좌2 켠 판 — 매시 메뉴 문장도, 기존 장중 확인 문장도 없음(계좌 몫은 계좌2의 것).
+        JsonNode two = builder.forFree(PaperBooks.KR_CLAUDE2).build(run(), D, RuleBookService.SCHEDULED, false, 3, quotesD(), READ_D).body();
+        List<String> twoLines = new ArrayList<>();
+        two.get(PacketBuilder.INSTRUCTIONS).get("lines").forEach(line -> twoLines.add(line.asString()));
+        assertThat(twoLines).contains(KrPacketBuilder.KR_FT_TIMING_LINE)
+                .doesNotContain(KrPacketBuilder.KR_CLAUDE2_TIMING_LINE, KrPacketBuilder.KR_CLAUDE2_CHECKPOINT_LINE);
+        assertThat(two.get(PacketBuilder.BASIS).get("book").asString()).isEqualTo(PaperBooks.KR_CLAUDE2);
+        assertThat(two.get(PacketBuilder.HARD_RULES).get("lines").toString()).doesNotContain("AT_1000");
+    }
+
     private static String meta(String name, Packet packet) {
         return name + " sha256=" + packet.sha256() + " chars=" + packet.text().length() + " tokens="
                 + PacketBuilder.estimateTokens(packet.text()) + " noteIds=" + packet.noteIds() + " measure="

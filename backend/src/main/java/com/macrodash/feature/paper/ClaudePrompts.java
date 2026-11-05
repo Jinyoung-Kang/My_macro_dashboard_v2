@@ -159,6 +159,33 @@ final class ClaudePrompts {
                 .replace(OUTPUT_HEADER, CLAUDE2_CHECKPOINT_SECTION + OUTPUT_HEADER);
     }
 
+    // ------------------------------------------------------------------ 미국 자유 시점 판(ADR 0027 결정 2 — 판 ft-1)
+    // 계좌2 단계 1 문단(c2-1)에서 timing 줄만 바꿉니다 — 매시 정각 메뉴 대신 시가·분 단위 지정 시각·종가. 우선순위 줄·체결 절(사다리·슬리피지)은
+    // c2-1과 같은 문장이고, 미국 계좌1·계좌2의 켠 판이 이 문단을 함께 씁니다(계좌2는 렌더링이 투자 성향 절을 더함). 끈 판 문단은 그대로입니다.
+
+    /** 자유 시점 판의 timing 줄 — 시점 셋, AT_MINUTE의 시각 칸과 범위, 모든 주문은 다음 세션 하루짜리, 주문마다 executionNote. */
+    static final String US_FT_TIMING_LINES = """
+            - timing은 13_execution.menu의 세 시점 중 하나다 — NEXT_OPEN(다음 세션 09:30 ET 개장 첫 1분봉 시가), AT_MINUTE(다음 세션의 네가 정한 분 — atLocal에 뉴욕 시각 HH:MM을 적고, 그 분에 시작한 1분봉 시가), NEXT_CLOSE(다음 세션 확정 종가).
+            - AT_MINUTE의 atLocal은 13_execution.atMinute의 범위 안이어야 한다(정규장 안 — 보통 날 09:31~15:54 ET, 조기 폐장일은 12:54까지). atLocal이 없거나 범위 밖이면 그 주문은 거절된다(MALFORMED). 다른 시점의 주문은 atLocal을 null로 둔다.
+            - 모든 주문은 다음 세션(13_execution.session) 하루짜리다 — 그날 체결되지 않으면 만료되고 다음 세션으로 넘어가지 않는다.
+            - 주문마다 executionNote(그 체결 시점과 시각을 고른 이유, 200자 이내)를 반드시 쓴다.
+            """;
+
+    /**
+     * 미국 자유 시점 판의 고정 문단(판 {@code ft-1}) — {@link #CLAUDE2_FIXED_RULES}(c2-1)에서 timing 줄({@link #CLAUDE2_TIMING_LINES} →
+     * {@link #US_FT_TIMING_LINES})만 다릅니다. 날짜·설정값이 없는 상수입니다(범위 숫자는 달력 규칙 — 그 세션의 값은 패킷 13_execution.atMinute에).
+     * 받는 체결 시점은 {@link FreeTiming#DECISION_TIMINGS}와 같은 목록입니다. 바꿀 자리가 c2-1 문단에 한 번이 아니면 기동하지 않습니다.
+     */
+    static final String US_FT_FIXED_RULES = usFreeTimingRules();
+
+    private static String usFreeTimingRules() {
+        String base = CLAUDE2_FIXED_RULES;
+        if (base.indexOf(CLAUDE2_TIMING_LINES) < 0 || base.indexOf(CLAUDE2_TIMING_LINES) != base.lastIndexOf(CLAUDE2_TIMING_LINES)) {
+            throw new IllegalStateException("미국 자유 시점 판 문단의 바꿀 자리(timing 줄)가 계좌2 c2-1 문단에 한 번 있어야 합니다");
+        }
+        return base.replace(CLAUDE2_TIMING_LINES, US_FT_TIMING_LINES);
+    }
+
     // ------------------------------------------------------------------ 계좌2 투자 성향(사용자 결정 2026-11-01 — 설정 claude2.riskProfile)
     // 계좌2 고정 문단(c2-1·c2-2)은 그대로 두고, 렌더링이 결정 시점 설정의 성향 절을 출력 절 앞에 끼웁니다(FrameworkService.render). 성향은
     // 코드가 집행하지 않는 판단 기준이라 하드 규칙·검증기·체결 메뉴·응답 스키마는 바뀌지 않습니다. 계좌1·한국 계좌의 렌더링은 바이트 그대로입니다.
@@ -343,6 +370,45 @@ final class ClaudePrompts {
         }
         return base.replace(KR_TIMING_READING, KR_CLAUDE2_TIMING_READING).replace(KR_TIMING_LINE, KR_CLAUDE2_TIMING_LINES)
                 .replace(OUTPUT_HEADER, KR_CLAUDE2_FILL_SECTION + KR_CLAUDE2_CHECKPOINT_SECTION + OUTPUT_HEADER);
+    }
+
+    // ------------------------------------------------------------------ 한국 자유 시점 판(ADR 0027 결정 2 — 판 kr-ft-1)
+    // 한국 계좌1 문단(KR_FIXED_RULES)에서 세 곳만 바꿉니다(한국 계좌2 문단과 같은 자리): ① 우선순위 줄의 시점 읽는 법 ② timing 줄 → 시가·분 단위 지정
+    // 시각·종가 ③ 출력 절 앞의 체결 절. 한국 계좌1·계좌2의 켠 판이 이 문단을 함께 씁니다(계좌2는 렌더링이 투자 성향 절을 더함). 끈 판 문단은 그대로입니다.
+
+    /** 한국 자유 시점 판의 timing 줄 — 시점 셋, AT_MINUTE의 시각 칸과 범위, 체결 순서(기준 시각 순), 다음 거래일 하루, 주문마다 executionNote. */
+    static final String KR_FT_TIMING_LINES = """
+            - timing은 세 시점 중 하나다 — NEXT_OPEN(기준 거래일 다음 KRX 거래일 1_basis.nextSession의 정규장 시가 단일가), AT_MINUTE(그날의 네가 정한 분 — atLocal에 한국 시간 HH:MM을 적고, 그 분에 시작한 토스 1분봉 시가), NEXT_CLOSE(그날 정규장 종가 단일가).
+            - AT_MINUTE의 atLocal은 1_basis.atMinute의 범위 안이어야 한다(정규장 안 — 그날 개장 1분 뒤부터 종가 단일가 시간 앞까지, 보통 날 09:01~15:19 KST). atLocal이 없거나 범위 밖이면 그 주문은 거절된다(MALFORMED). 다른 시점의 주문은 atLocal을 null로 둔다.
+            - 체결 순서는 기준 시각 순이다 — NEXT_OPEN < AT_MINUTE(atLocal이 이른 순) < NEXT_CLOSE. 매도는 같은 시각이거나 더 늦은 시각 매수의 현금·종목 자리만 만든다(OVER_ALLOCATED·MAX_POSITIONS).
+            - 지정 시각·종가 주문은 다음 KRX 거래일 하루의 1분봉으로만 체결된다 — 그날 체결되지 않으면 다음 거래일로 넘어가지 않는다.
+            - 주문마다 executionNote(그 체결 시점과 시각을 고른 이유, 200자 이내)를 반드시 쓴다.
+            """;
+
+    /** 한국 자유 시점 판의 체결 절 — 출력 절 앞에 넣습니다. */
+    static final String KR_FT_FILL_SECTION = """
+            ## 체결(고정)
+            - 지정 시각 체결가는 그 분 T에 시작한 토스 1분봉의 시가다. 그 봉에 거래가 없으면 T+1~T+4분의 첫 거래 봉 시가, 그것도 없으면 그날 정규장 안 T 뒤 첫 거래 봉 시가(대체 체결)로 체결하고, 그날 T 뒤 정규장 거래가 없으면 체결하지 않는다. 멈춘 가격으로 채우지 않는다. 장중 체결가는 금융위 확정가로 고치지 않는다.
+            - NEXT_CLOSE는 정규장 마감 단일가 봉의 종가로 체결하고, 금융위 확정 종가가 들어오면 그 값으로 고친다. NEXT_OPEN은 시가 단일가다. 비용(수수료·슬리피지·매도세)은 시점과 무관하게 같다.
+            - 결정 뒤 장중 정보는 보지 못한다 — 이 결정이 다음 거래일 주문의 마지막 판단이다. 체결은 늘 주문 뒤 그 시각의 실제 가격이다.
+            """;
+
+    /**
+     * 한국 자유 시점 판의 고정 문단(판 {@code kr-ft-1}) — {@link #KR_FIXED_RULES}와 같은 문장에서 세 곳만 다릅니다: 우선순위 줄의 시점 읽는 법
+     * ({@link #KR_TIMING_READING} → {@link #KR_CLAUDE2_TIMING_READING} — 프레임의 시점 문장은 아래 메뉴로 읽음), timing 줄({@link #KR_TIMING_LINE} →
+     * {@link #KR_FT_TIMING_LINES}), 출력 절 앞의 체결 절({@link #KR_FT_FILL_SECTION}). 받는 체결 시점은 {@link FreeTiming#DECISION_TIMINGS}와 같은
+     * 목록입니다. 바꿀 자리가 계좌1 문단에 한 번씩이 아니면 기동하지 않습니다.
+     */
+    static final String KR_FT_FIXED_RULES = krFreeTimingRules(KR_FIXED_RULES);
+
+    static String krFreeTimingRules(String base) {
+        for (String spot : List.of(KR_TIMING_READING, KR_TIMING_LINE, OUTPUT_HEADER)) {
+            if (base.indexOf(spot) < 0 || base.indexOf(spot) != base.lastIndexOf(spot)) {
+                throw new IllegalStateException("한국 자유 시점 판 문단의 바꿀 자리가 계좌1 문단에 한 번씩 있어야 합니다: " + spot.strip());
+            }
+        }
+        return base.replace(KR_TIMING_READING, KR_CLAUDE2_TIMING_READING).replace(KR_TIMING_LINE, KR_FT_TIMING_LINES)
+                .replace(OUTPUT_HEADER, KR_FT_FILL_SECTION + OUTPUT_HEADER);
     }
 
     /**

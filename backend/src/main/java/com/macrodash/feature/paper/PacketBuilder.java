@@ -233,6 +233,14 @@ public class PacketBuilder {
     /** 장중 확인을 켠 계좌2 고정 문단의 판({@link ClaudePrompts#CLAUDE2_FIXED_RULES_C2}). */
     static final String CLAUDE2_FIXED_RULES_VERSION_C2 = "c2-2";
     /**
+     * 자유 시점 판 패킷의 변형 이름·{@code 13_execution} 판·고정 문단 판(ADR 0027 결정 2 — {@link ClaudeBookProfile#freeTiming}). 패킷의 모양은
+     * 계좌2 변형과 같은 줄기({@code 13_execution} 섹션 — {@link ClaudeBookProfile#packetVariant}는 {@value #VARIANT_CLAUDE2})이고, 머리의 이 세 칸과
+     * 섹션의 메뉴(시가·분 단위 지정 시각·종가)·하드 규칙의 시점 문장만 다릅니다. 미국 계좌1·계좌2의 켠 판이 함께 씁니다.
+     */
+    static final String VARIANT_FREE = "freeTiming";
+    static final int EXECUTION_MENU_VERSION_FREE = 3;
+    static final String FREE_FIXED_RULES_VERSION = "ft-1";
+    /**
      * 장중 확인을 켠 계좌2 패킷의 목표 크기에 더하는 {@code 13_execution.checkpointOptions} 몫(토큰 어림) — 시각 열하나(ET·KST)·피드 뜻·규칙 세 줄
      * (packet-us-claude2-c2-meta.txt). 단계 1 패킷은 이 몫이 없습니다.
      */
@@ -618,7 +626,7 @@ public class PacketBuilder {
             // 계좌2만 — 체결 시점 메뉴·사다리·출처 사실·자기 체결 기록(계좌2 명세 §9-3). 계좌1 패킷에는 이 섹션이 없습니다(고정본 그대로).
             root.put(EXECUTION, ExecutionSection.build(asOf, book.timings(), UsMarketCalendar.CALENDAR,
                     in.paper().slippageBp(), Claude2Settings.from(in.settingsBody()).executionRecord(), store, book.code(),
-                    book.checkpoints()));
+                    book.checkpoints(), book.freeTiming()));
         }
 
         JsonNode body = toNode(root);
@@ -751,9 +759,11 @@ public class PacketBuilder {
         out.put("packetVersion", packetVersion);
         if (VARIANT_CLAUDE2.equals(book.packetVariant())) {
             // 계좌2 패킷 머리(계좌2 명세 §9-6) — 변형·체결 메뉴 판·고정 문단 판(장중 확인을 켠 결정은 2·c2-2). 계좌1 패킷에는 이 칸들이 없습니다.
-            out.put("variant", VARIANT_CLAUDE2);
-            out.put("executionMenuVersion", book.checkpoints() ? EXECUTION_MENU_VERSION_C2 : EXECUTION_MENU_VERSION);
-            out.put("fixedRules", book.checkpoints() ? CLAUDE2_FIXED_RULES_VERSION_C2 : CLAUDE2_FIXED_RULES_VERSION);
+            out.put("variant", book.freeTiming() ? VARIANT_FREE : VARIANT_CLAUDE2);
+            out.put("executionMenuVersion", book.freeTiming() ? EXECUTION_MENU_VERSION_FREE
+                    : book.checkpoints() ? EXECUTION_MENU_VERSION_C2 : EXECUTION_MENU_VERSION);
+            out.put("fixedRules", book.freeTiming() ? FREE_FIXED_RULES_VERSION
+                    : book.checkpoints() ? CLAUDE2_FIXED_RULES_VERSION_C2 : CLAUDE2_FIXED_RULES_VERSION);
         }
         out.put("book", book.code());
         out.put("asOfTradingDate", asOf.toString());
@@ -2224,7 +2234,7 @@ public class PacketBuilder {
         lines.add("SELL의 sellFraction = 보유 수량 대비 파는 비율(0 초과 1 이하, null이면 전량). 보유가 없는 종목은 팔 수 없다. "
                 + "부분 매도는 1주 이상이어야 한다 — floor(보유 수량 × sellFraction) < 1이면 BELOW_ONE_SHARE로 거절"
                 + "(보유 수량은 9_portfolio.positions의 qty, 장부는 1주 미만 매도를 전량으로 집행하므로 받지 않음).");
-        lines.add(timed ? rankRule(book)
+        lines.add(book.freeTiming() ? FREE_RANK_RULE : timed ? rankRule(book)
                 : "매수 목표 합 + 매도 뒤 남는 보유 비중이 100%를 넘으면 목표 비중이 큰 주문부터 받고 넘치는 주문은 거절(OVER_ALLOCATED). "
                 + "매도는 같은 시점이거나 더 늦은 매수의 자리만 만든다 — NEXT_CLOSE 매도는 NEXT_OBSERVATION 매수보다 늦게 체결되므로 "
                 + "NEXT_CLOSE 전량 매도도 NEXT_OBSERVATION 매수의 현금(비중 합, OVER_ALLOCATED)·종목 자리(최대 종목 수, MAX_POSITIONS)를 "
@@ -2253,6 +2263,10 @@ public class PacketBuilder {
                         + "검증 시각보다 " + staleHours + "시간 넘게 오래되면 그날 주문 전부 거절(STALE_INPUT) — inputsStale이 true면 "
                         + "지금 그 상태다.");
         lines.add(initial ? "초기 결정의 통과 주문은 기준일(" + asOf + ") 종가로 사후 체결된다."
+                : book.freeTiming() ? "주문은 다음 세션(13_execution.session.date) 하루짜리로, 주문마다 고른 시점(13_execution.menu — AT_MINUTE는 "
+                        + "atLocal에 적은 분)의 가격으로 체결된다 — 기준 거래일 봉으로는 체결되지 않고, 그날 체결되지 않으면 만료된다. "
+                        + "AT_MINUTE의 atLocal이 없거나 13_execution.atMinute 범위 밖이면 MALFORMED, 기준 시각이 주문 생성 + 60초 이전이면 "
+                        + "LATE_FOR_TIMING으로 거절."
                 : timed ? "주문은 다음 세션(13_execution.session.date) 하루짜리로, 주문마다 고른 시점(13_execution.menu)의 가격으로 "
                         + "체결된다 — 기준 거래일 봉으로는 체결되지 않고, 그날 체결되지 않으면 만료된다. 조기 폐장일의 마감 뒤 시점은 "
                         + "MALFORMED, 기준 시각이 주문 생성 + 60초 이전인 시점은 LATE_FOR_TIMING으로 거절."
@@ -2283,6 +2297,16 @@ public class PacketBuilder {
         out.put("universe", String.join(",", universe));
         return out;
     }
+
+    /**
+     * 자유 시점 판의 100% 검사·종목 자리 문장(ADR 0027 결정 8) — 순위는 시점 이름이 아니라 기준 시각 순입니다(검증기에 넘기는 그 결정의 표 —
+     * {@link FreeTiming#validation}).
+     */
+    static final String FREE_RANK_RULE = "매수 목표 합 + 매도 뒤 남는 보유 비중이 100%를 넘으면 목표 비중이 큰 주문부터 받고 넘치는 주문은 거절"
+            + "(OVER_ALLOCATED). 체결 순서는 기준 시각 순이다 — NEXT_OPEN(개장) < AT_MINUTE(atLocal이 이른 순) < NEXT_CLOSE(마감). 매도는 같은 "
+            + "시각이거나 더 늦은 시각의 매수에만 현금(비중 합, OVER_ALLOCATED)과 종목 자리(최대 종목 수, MAX_POSITIONS)를 만든다 — 예: NEXT_OPEN "
+            + "전량 매도는 AT_MINUTE 10:00 매수의 자리를 비우지만 AT_MINUTE 14:00 전량 매도는 AT_MINUTE 10:00 매수의 자리를 비우지 못한다. "
+            + "100% 검사·종목 수는 매수가 있는 시각마다 본다.";
 
     /**
      * 계좌2의 100% 검사·종목 자리 문장(계좌2 명세 §10-5) — 시점 순위를 그 계좌 프로필의 순서로 적습니다(검증기 {@code OrderValidator}의 순위와 같은

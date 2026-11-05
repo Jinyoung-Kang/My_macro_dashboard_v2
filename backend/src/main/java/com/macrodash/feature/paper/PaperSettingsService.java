@@ -308,6 +308,7 @@ public class PaperSettingsService {
             }
             requireDeadlineAfterDecision(body);
             requireKrDecisionWindow(body);
+            requireOneIntradayMode(body);
             Map<String, Object> out = new LinkedHashMap<>();
             out.put("ok", true);
             if (changed.isEmpty()) {
@@ -402,6 +403,21 @@ public class PaperSettingsService {
             }
         }
         node.set(parts[parts.length - 1], value);
+    }
+
+    /**
+     * 미국 Claude 계좌1의 장중 방식은 하나입니다(ADR 0027 결정 3) — 기존 장중 확인({@value Claude1Checkpoint#ENABLED} — 12:00 ET 무렵의 전체 결정,
+     * 통과 주문은 다음 시간별 관측치로 체결하고 남은 대기 주문을 모두 대신함)과 자유 시점 판({@value FreeTimingSettings#US_CLAUDE} — 시각 지정
+     * 주문과 장중 판단)을 함께 켜면, 장중 확인이 시각 지정 대기 주문을 지우고 끈 판의 시점으로 다시 냅니다. 저장 뒤 본문(저장된 값과 합친 것)으로 봅니다.
+     *
+     * @throws InvalidRequestException 두 키가 함께 켜짐
+     */
+    private static void requireOneIntradayMode(JsonNode body) {
+        if (Claude1Checkpoint.from(body).enabled() && FreeTimingSettings.from(body).claude()) {
+            throw new InvalidRequestException("설정을 저장하지 않았습니다 — " + Claude1Checkpoint.ENABLED + "(계좌1 장중 확인)와 "
+                    + FreeTimingSettings.US_CLAUDE + "(계좌1 자유 시점 판)는 함께 켤 수 없습니다. 자유 시점 판을 켜려면 같은 저장에서 "
+                    + Claude1Checkpoint.ENABLED + "를 끄세요");
+        }
     }
 
     /** 확정 종가를 기다리는 기한이 결정 시각보다 이르면 막습니다(결정 작업은 그런 기한을 결정 시각으로 읽어 기다리지 않게 됨). */
@@ -553,6 +569,8 @@ public class PaperSettingsService {
         // 계좌1 장중 확인(사용자 결정 2026-11-02) — 꺼짐, 시각 12:00 ET.
         claude.put("checkpoint", Claude1Checkpoint.DEFAULTS.enabled());
         claude.put("checkpointAtEt", Claude1Checkpoint.DEFAULT_AT.toString());
+        // 자유 시점 판(ADR 0027) — 꺼짐. 이 키가 없는 지금 행도 꺼짐으로 읽힙니다(FreeTimingSettings — 배포만으로 바뀌지 않음).
+        claude.put("freeTiming", FreeTimingSettings.DEFAULT);
         body.put("claude", claude);
         // 미국 Claude 계좌2(계좌2 명세 §13-2) — 꺼짐·단계 1 값. 이 키가 없는 지금 행도 같은 값으로 읽힙니다(Claude2Settings — 배포만으로 바뀌지 않음).
         body.put("claude2", Claude2Settings.defaultsBody());
@@ -616,7 +634,10 @@ public class PaperSettingsService {
         Map<String, Object> claude2 = new LinkedHashMap<>();
         claude2.put("riskProfile", Claude2Settings.DEFAULT_KR_RISK_PROFILE);
         claude2.put("checkpoints", Claude2Settings.DEFAULT_KR_CHECKPOINTS);
+        // 자유 시점 판(ADR 0027) — 한국 Claude 두 계좌 모두 꺼짐.
+        claude2.put("freeTiming", FreeTimingSettings.DEFAULT);
         kr.put("claude2", claude2);
+        kr.put("claude", Map.of("freeTiming", FreeTimingSettings.DEFAULT));
         return kr;
     }
 }

@@ -59,6 +59,115 @@ class DecisionTimingsLockTest {
         return out;
     }
 
+    /** 마이그레이션 가운데 마지막으로 {@code paper_orders.timing} CHECK를 다시 만드는 파일의 값(번호 순). */
+    private static List<String> latestTimings() throws IOException {
+        Path dir = Path.of("../db/migrations");
+        assumeTrue(Files.isDirectory(dir), "db/migrations를 찾을 수 없습니다");
+        List<String> out = new ArrayList<>();
+        List<Path> ordered;
+        try (var files = Files.list(dir)) {
+            ordered = files.filter(p -> p.getFileName().toString().matches("V\\d+__.*\\.sql")).sorted(java.util.Comparator.comparing(
+                    p -> Integer.parseInt(p.getFileName().toString().replaceAll("^V(\\d+)__.*$", "$1")))).toList();
+        }
+        for (Path file : ordered) {
+            Matcher check = Pattern.compile("CHECK \\(timing IN \\(([^)]*)\\)\\)").matcher(Files.readString(file));
+            if (check.find()) {
+                out.clear();
+                Matcher value = Pattern.compile("'([A-Z_0-9]+)'").matcher(check.group(1));
+                while (value.find()) {
+                    out.add(value.group(1));
+                }
+            }
+        }
+        return out;
+    }
+
+    @Test
+    @DisplayName("자유 시점 판(ADR 0027 결정 2)의 문맥 — 미국·한국 계좌1·계좌2: 스키마 timing enum = 프로필의 받는 시점 = NEXT_OPEN·AT_MINUTE·NEXT_CLOSE, atLocal은 선택 "
+            + "칸이고 pattern이 읽는 식과 같음, 고정 문단 timing 줄이 셋을 모두 말하고 매시 정각 이름은 말하지 않음, 받는 시점은 마지막 timing CHECK 안, 끈 판 프로필은 모두 "
+            + "freeTiming 거짓")
+    void freeTimingContextsAreLocked() throws IOException {
+        List<ClaudeDecisionPipeline.MarketContext> contexts = ClaudeBookService.freeContexts(mock(PacketBuilder.class),
+                mock(KrPacketBuilder.class));
+        assertThat(contexts).extracting(context -> context.profile().code()).containsExactly(PaperBooks.CLAUDE, PaperBooks.CLAUDE2,
+                PaperBooks.KR_CLAUDE, PaperBooks.KR_CLAUDE2);
+        assertThat(contexts).extracting(context -> context.profile()).containsExactly(ClaudeBookProfile.US_CLAUDE_FT,
+                ClaudeBookProfile.US_CLAUDE2_FT, ClaudeBookProfile.KR_CLAUDE_FT, ClaudeBookProfile.KR_CLAUDE2_FT);
+        assertThat(contexts).extracting(context -> context.shared() != null).as("끈 판처럼 미국 둘만 시장 입력을 함께 씀(입력 동결)")
+                .containsExactly(true, true, false, false);
+        assertThat(ClaudeBookService.freeContexts(mock(PacketBuilder.class), null)).as("한국 패킷 빌더가 없으면 미국 둘(시험)")
+                .extracting(context -> context.profile().code()).containsExactly(PaperBooks.CLAUDE, PaperBooks.CLAUDE2);
+        List<String> latest = latestTimings();
+        for (ClaudeDecisionPipeline.MarketContext context : contexts) {
+            ClaudeBookProfile profile = context.profile();
+            boolean korea = profile.market() == KrPaperMarket.INSTANCE;
+            String code = profile.code() + "(자유 시점 판)";
+            assertThat(profile.freeTiming()).as(code).isTrue();
+            assertThat(profile.timed()).as(code + " 미국은 시각 지정 방식(다음 세션 하루짜리), 한국은 계좌2처럼 켜지 않음").isEqualTo(!korea);
+            assertThat(profile.checkpoints()).as(code + " 기존 장중 확인 판이 아님").isFalse();
+            assertThat(profile.timings()).as(code).containsExactly("NEXT_OPEN", "AT_MINUTE", "NEXT_CLOSE")
+                    .isEqualTo(FreeTiming.DECISION_TIMINGS).isEqualTo(schemaTimings(context.schemaResource()));
+            assertThat(context.schemaResource()).isEqualTo(korea ? ClaudeBookService.KR_FT_SCHEMA_RESOURCE
+                    : ClaudeBookService.US_FT_SCHEMA_RESOURCE);
+            OrderValidator.Market validation = profile.orderValidation();
+            assertThat(validation.timings()).isEqualTo(profile.timings());
+            assertThat(validation.earlyTiming()).isEqualTo(PaperBooks.NEXT_OPEN);
+            assertThat(validation.closed()).as(code + " 닫힘은 결정마다(FreeTiming.validation)").isEmpty();
+            assertThat(latest).as(code + " 받는 시점은 마지막 timing CHECK 안").containsAll(profile.timings());
+            String timingLine = profile.fixedRules().lines().filter(line -> line.startsWith("- timing은")).findFirst().orElseThrow();
+            for (String timing : profile.timings()) {
+                assertThat(timingLine).as(code + " timing 줄에 " + timing).contains(timing);
+            }
+            assertThat(profile.fixedRules()).as(code + " 매시 정각 이름·장중 확인 절이 없음").doesNotContain("AT_1000").doesNotContain("AT_1500")
+                    .doesNotContain("## 장중 확인(고정)").contains("atLocal");
+            List<String> mentions = profile.fixedRules().lines().filter(line -> line.contains(ExecutionAudit.NEXT_OBSERVATION)).toList();
+            assertThat(mentions).as(code + " NEXT_OBSERVATION은 우선순위 줄에만").hasSize(1);
+            assertThat(mentions.get(0)).startsWith("우선순위(고정)");
+            if (korea) {
+                assertThat(mentions.get(0)).contains(ClaudePrompts.KR_CLAUDE2_TIMING_READING);
+                assertThat(profile.packetVariant()).as(code + " 한국 패킷은 KrPacketBuilder.forFree").isNull();
+                assertThat(profile.fixedRules()).isEqualTo(ClaudePrompts.KR_FT_FIXED_RULES).doesNotContain("NEXT_OPEN뿐");
+            } else {
+                assertThat(mentions.get(0)).isEqualTo(ClaudePrompts.CLAUDE2_PRIORITY);
+                assertThat(profile.packetVariant()).as(code + " 13_execution이 있는 줄기").isEqualTo(PacketBuilder.VARIANT_CLAUDE2);
+            }
+        }
+        assertThat(ClaudeBookProfile.KR_CLAUDE_FT.fixedRules()).as("한국 두 계좌도 같은 문단(계좌2의 투자 성향 절은 렌더링이 더함)")
+                .isEqualTo(ClaudeBookProfile.KR_CLAUDE2_FT.fixedRules());
+        assertThat(ClaudeBookProfile.US_CLAUDE_FT.callCapKey()).as("계좌1은 소상한 없음").isNull();
+        assertThat(ClaudeBookProfile.US_CLAUDE2_FT.callCapKey()).isEqualTo(Claude2Settings.MAX_CALLS_PER_CYCLE);
+        assertThat(ClaudeBookProfile.US_CLAUDE_FT.fixedRules()).as("두 계좌가 같은 문단(계좌2의 투자 성향 절은 렌더링이 더함)")
+                .isEqualTo(ClaudeBookProfile.US_CLAUDE2_FT.fixedRules()).isEqualTo(ClaudePrompts.US_FT_FIXED_RULES);
+
+        for (String resource : List.of(ClaudeBookService.US_FT_SCHEMA_RESOURCE, ClaudeBookService.KR_FT_SCHEMA_RESOURCE)) {
+            JsonNode schema;
+            try (InputStream in = DecisionTimingsLockTest.class.getResourceAsStream("/" + resource)) {
+                schema = MAPPER.readTree(in);
+            }
+            JsonNode item = schema.path("properties").path("orders").path("items");
+            assertThat(item.path("properties").path("atLocal").path("pattern").asString()).as(resource).isEqualTo(FreeTiming.CLOCK_PATTERN);
+            assertThat(item.path("properties").path("atLocal").path("type").toString()).isEqualTo("[\"string\",\"null\"]");
+            List<String> required = new ArrayList<>();
+            item.path("required").forEach(node -> required.add(node.asString()));
+            assertThat(required).as(resource + " atLocal은 선택 칸 — 'AT_MINUTE면 필수'는 검증이 막음").doesNotContain("atLocal")
+                    .contains("timing", "executionNote");
+            assertThat(schema.path("properties").has("checkpoint")).as(resource + " 기존 장중 확인 요청 칸 없음").isFalse();
+        }
+        // 한국 켠 판의 하드 규칙 줄 — 시장 묶음의 'NEXT_OPEN뿐'이 아니라 그 프로필의 받는 시점 셋. 끈 판 줄은 그대로.
+        String krOn = FrameworkService.render(ClaudeBookProfile.KR_CLAUDE_FT, FrameworkService.interimBody(MAPPER), 0, null);
+        String krOff = FrameworkService.render(ClaudeBookProfile.KR_CLAUDE, FrameworkService.interimBody(MAPPER), 0, null);
+        assertThat(krOn).contains("- 체결 시점은 NEXT_OPEN(다음 거래일 시가)·AT_MINUTE(다음 거래일의 지정한 분 — atLocal에 한국 시간 HH:MM)·"
+                + "NEXT_CLOSE(다음 거래일 종가), 정수 주").doesNotContain("NEXT_OPEN(다음 거래일 시가)뿐");
+        assertThat(krOff).contains("- 체결 시점은 NEXT_OPEN(다음 거래일 시가)뿐, 정수 주");
+
+        for (ClaudeBookProfile off : List.of(ClaudeBookProfile.US_CLAUDE, ClaudeBookProfile.US_CLAUDE2, ClaudeBookProfile.US_CLAUDE2_C2,
+                ClaudeBookProfile.US_CLAUDE2_CHECKPOINT, ClaudeBookProfile.KR_CLAUDE, ClaudeBookProfile.KR_CLAUDE2,
+                ClaudeBookProfile.KR_CLAUDE2_CHECKPOINT)) {
+            assertThat(off.freeTiming()).as("끈 판 " + off.code() + " " + off.schemaResource()).isFalse();
+            assertThat(off.timings()).as("끈 판은 분 단위 지정 시각을 받지 않음").doesNotContain(PaperBooks.AT_MINUTE);
+        }
+    }
+
     @Test
     @DisplayName("운영 결정 문맥(계좌마다 — 미국 계좌1·계좌2·한국)마다 스키마 timing enum = 프로필의 받는 시점(순서까지) = 검증기가 받는 시점·순위 키, 이른 시점이 그 첫째, 시점마다 고정 문단에 그 이름, 모두 V17 CHECK 안")
     void schemaMarketAndPromptAgree() throws IOException {

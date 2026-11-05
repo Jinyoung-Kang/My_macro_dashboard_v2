@@ -267,11 +267,26 @@ public class FrameworkService {
                 : PaperBooks.KR_CLAUDE2.equals(profile.code())
                 ? ClaudePrompts.withKrClaude2RiskProfile(profile.fixedRules(), Claude2Settings.krRiskProfile(settingsBody))
                 : profile.fixedRules();
-        return render(profile.market(), fixedRules, body, version, settingsBody);
+        // 자유 시점 판(ADR 0027 결정 2)의 한국 계좌 — 하드 규칙의 체결 시점 줄을 시장 묶음(NEXT_OPEN뿐)이 아니라 그 프로필의 받는 시점으로 적습니다.
+        // '코드가 집행' 머리 아래의 줄이라 고정 문단의 우선순위 문장으로는 덮이지 않습니다. 끈 판과 미국(시점 줄이 없음)은 시장 묶음 줄 그대로입니다.
+        List<String> hardRules = profile.freeTiming() && profile.market() == KrPaperMarket.INSTANCE
+                ? krHardRules(profile.market(), settingsBody, profile.timings(), KR_FT_TIMING_TEXT)
+                : profile.market().promptHardRules(settingsBody);
+        return render(hardRules, fixedRules, body, version, settingsBody);
     }
 
-    /** 렌더링 본체 — 하드 규칙 줄은 {@code market}, 끝의 고정 문단은 {@code fixedRules}. */
+    /** 한국 자유 시점 판 하드 규칙 줄의 시점 표기 — 시점(뜻). 분 단위 지정 시각은 시각 칸까지 적습니다. */
+    static final Map<String, String> KR_FT_TIMING_TEXT = Map.of(PaperBooks.NEXT_OPEN, "다음 거래일 시가",
+            PaperBooks.AT_MINUTE, "다음 거래일의 지정한 분 — atLocal에 한국 시간 HH:MM", PaperBooks.NEXT_CLOSE, "다음 거래일 종가");
+
+    /** 그 시장 묶음의 하드 규칙 줄로 렌더링(시장 단위 경로 — 주간 복기). */
     private static String render(PaperMarket market, String fixedRules, JsonNode body, int version,
+                                 JsonNode settingsBody) {
+        return render(market.promptHardRules(settingsBody), fixedRules, body, version, settingsBody);
+    }
+
+    /** 렌더링 본체 — 하드 규칙 줄은 {@code hardRules}, 끝의 고정 문단은 {@code fixedRules}. */
+    private static String render(List<String> hardRules, String fixedRules, JsonNode body, int version,
                                  JsonNode settingsBody) {
         List<String> lines = new ArrayList<>();
         lines.add("# 투자 OS — v" + version + " (" + oneLine(Json.asText(body, "title")) + ")");
@@ -299,7 +314,7 @@ public class FrameworkService {
         String guidance = multiLine(Json.asText(body, "guidance"));
         lines.add(guidance.isEmpty() ? "(없음)" : guidance);
         lines.add("## 하드 규칙(코드가 집행 — 어기는 주문은 거절된다)");
-        lines.addAll(market.promptHardRules(settingsBody));
+        lines.addAll(hardRules);
         lines.add(fixedRules);
         // 줄마다 끝 공백을 지우고 빈 줄을 빼 한 모양으로(고정 문단의 텍스트 블록 끝 줄바꿈 포함).
         List<String> out = new ArrayList<>();
@@ -344,12 +359,23 @@ public class FrameworkService {
      * 정수 주(1주 체결 금액보다 작은 매수 증가분은 검증기가 BUY_BELOW_ONE_SHARE로 거절). 날짜는 넣지 않습니다(캐시 블록).
      */
     static List<String> krHardRules(PaperMarket market, JsonNode settingsBody) {
+        return krHardRules(market, settingsBody, market.timings(), market.timingNames());
+    }
+
+    /**
+     * {@link #krHardRules(PaperMarket, JsonNode)}의 체결 시점 줄을 주어진 시점·표기로 적은 것 — 자유 시점 판의 한국 계좌가 씁니다(그 프로필의 받는 시점).
+     * 나머지 줄은 같은 글자입니다.
+     *
+     * @param accepted 받는 체결 시점(적는 순서)
+     * @param names    시점 → 괄호 안 표기(받는 시점마다 있어야 함)
+     */
+    static List<String> krHardRules(PaperMarket market, JsonNode settingsBody, List<String> accepted, Map<String, String> names) {
         PacketBuilder.Limits limits = PacketBuilder.Limits.from(settingsBody, market);
         PaperSettings paper = PaperSettings.from(settingsBody, market);
         String cashLike = String.join(", ", paper.cashLikeTickers());
         List<String> timings = new ArrayList<>();
-        for (String timing : market.timings()) {
-            timings.add(timing + "(" + market.timingNames().get(timing) + ")");
+        for (String timing : accepted) {
+            timings.add(timing + "(" + java.util.Objects.requireNonNull(names.get(timing), timing) + ")");
         }
         List<String> out = new ArrayList<>();
         out.add("- 종목 비중 ≤ " + plain(limits.maxWeightStockPct()) + "%, ETF ≤ " + plain(limits.maxWeightEtfPct())

@@ -318,13 +318,64 @@ class PaperSettingsServiceTest {
     }
 
     @Test
+    @DisplayName("자유 시점 판 스위치(ADR 0027 결정 2): 계좌별 넷 모두 기본 꺼짐·규칙 계좌 영향 없음, 키가 없는 옛 행은 꺼짐으로 읽고 판 그대로, 켜는 저장 한 번이 "
+            + "판 +1, 계좌1 장중 확인(claude.checkpoint)과 함께 켜는 저장은 거절 — 같은 저장에서 장중 확인을 끄면 받음")
+    void freeTimingSwitches() {
+        JsonNode defaults = service.defaultsJson();
+        for (String key : List.of("claude.freeTiming", "claude2.freeTiming", "kr.claude.freeTiming", "kr.claude2.freeTiming")) {
+            assertThat(PaperSettingsService.valueAt(defaults, key).booleanValue()).as(key + " 기본").isFalse();
+            PaperSettingKeys.Spec spec = PaperSettingKeys.find(key).orElseThrow();
+            assertThat(spec.type()).as(key).isEqualTo(PaperSettingKeys.Type.BOOLEAN);
+            assertThat(spec.affectsRules()).as(key).isFalse();
+        }
+        assertThat(PaperSettingKeys.find("claude.freeTiming").orElseThrow().scope()).isEqualTo(PaperSettingKeys.Scope.US);
+        assertThat(PaperSettingKeys.find("claude2.freeTiming").orElseThrow().scope()).isEqualTo(PaperSettingKeys.Scope.CLAUDE2);
+        assertThat(PaperSettingKeys.find("kr.claude.freeTiming").orElseThrow().scope()).isEqualTo(PaperSettingKeys.Scope.KR);
+        assertThat(FreeTimingSettings.from(defaults)).isEqualTo(FreeTimingSettings.OFF);
+        assertThat(FreeTimingSettings.from(null)).isEqualTo(FreeTimingSettings.OFF);
+        assertThat(FreeTimingSettings.key(PaperBooks.KR_CLAUDE2)).isEqualTo("kr.claude2.freeTiming");
+        assertThat(FreeTimingSettings.key(PaperBooks.RULES)).as("규칙 계좌의 체결 시각은 다른 키").isNull();
+
+        // 이 키들이 없는 옛 행(서버의 지금 행) — 꺼짐으로 읽고 판 그대로.
+        ((tools.jackson.databind.node.ObjectNode) body().get("claude")).remove("freeTiming");
+        ((tools.jackson.databind.node.ObjectNode) body().get("claude2")).remove("freeTiming");
+        ((tools.jackson.databind.node.ObjectNode) body()).remove("kr");
+        assertThat(service.current().version()).isEqualTo(1);
+        assertThat(FreeTimingSettings.from(body())).isEqualTo(FreeTimingSettings.OFF);
+
+        Map<String, Object> out = update("claude2.freeTiming", true, "kr.claude.freeTiming", true);
+        assertThat(out.get("version")).isEqualTo(2);
+        assertThat(out.get("changedKeys")).isEqualTo(List.of("claude2.freeTiming", "kr.claude.freeTiming"));
+        assertThat(out.get("warning")).as("규칙 계좌 영향 키가 아님").isNull();
+        FreeTimingSettings on = FreeTimingSettings.from(body());
+        assertThat(on).isEqualTo(new FreeTimingSettings(false, true, true, false));
+        assertThat(on.on(PaperBooks.CLAUDE2)).isTrue();
+        assertThat(on.on(PaperBooks.KR_CLAUDE)).isTrue();
+        assertThat(on.on(PaperBooks.CLAUDE)).isFalse();
+        assertThat(on.on(PaperBooks.KR_RULES)).isFalse();
+        assertThat(on.on(null)).isFalse();
+
+        // 계좌1: 기존 장중 확인과 함께 켤 수 없음(장중 확인이 시각 지정 대기 주문을 지우고 끈 판 시점으로 다시 냄).
+        update("claude.checkpoint", true);
+        assertThatThrownBy(() -> update("claude.freeTiming", true)).isInstanceOf(InvalidRequestException.class)
+                .hasMessageContaining("claude.checkpoint").hasMessageContaining("claude.freeTiming").hasMessageContaining("함께 켤 수 없습니다");
+        assertThat(FreeTimingSettings.from(body()).claude()).as("거절된 저장은 아무것도 바꾸지 않음").isFalse();
+        Map<String, Object> both = update("claude.freeTiming", true, "claude.checkpoint", false);
+        assertThat(both.get("changedKeys")).isEqualTo(List.of("claude.freeTiming", "claude.checkpoint"));
+        assertThat(FreeTimingSettings.from(body()).claude()).isTrue();
+        assertThatThrownBy(() -> update("claude.checkpoint", true)).as("켠 판에서 장중 확인을 다시 켜는 저장도 거절")
+                .isInstanceOf(InvalidRequestException.class);
+        assertThatThrownBy(() -> update("claude.freeTiming", "yes")).as("불리언만").isInstanceOf(InvalidRequestException.class);
+    }
+
+    @Test
     @DisplayName("계좌2 키(claude2.*, 계좌2 명세 §13-2): 꺼짐·소상한 2·기다림 15·체결 기록 켬·장중 확인 꺼짐·투자 성향 공격투자형이 기본(11-02에 적극투자형에서 바꿈), 범위 CLAUDE2(시장 US)·규칙 계좌 영향 없음, 형·범위대로 검사 — 키가 없는 옛 행은 같은 값으로 읽히고 판이 오르지 않음")
     void claude2Keys() {
         JsonNode defaults = service.defaultsJson().path("claude2");
         assertThat(defaults.toString()).isEqualTo("{\"enabled\":false,\"maxCallsPerCycle\":2,\"barsWaitMinutes\":15,"
-                + "\"executionRecord\":true,\"checkpoints\":false,\"riskProfile\":\"공격투자형\"}");
+                + "\"executionRecord\":true,\"checkpoints\":false,\"riskProfile\":\"공격투자형\",\"freeTiming\":false}");
         List<String> keys = List.of("claude2.enabled", "claude2.maxCallsPerCycle", "claude2.barsWaitMinutes",
-                "claude2.executionRecord", "claude2.checkpoints", "claude2.riskProfile");
+                "claude2.executionRecord", "claude2.checkpoints", "claude2.riskProfile", "claude2.freeTiming");
         for (String key : keys) {
             PaperSettingKeys.Spec spec = PaperSettingKeys.find(key).orElseThrow();
             assertThat(spec.scope()).as(key).isEqualTo(PaperSettingKeys.Scope.CLAUDE2);
@@ -353,7 +404,9 @@ class PaperSettingsServiceTest {
         assertThat(old.maxCallsPerCycle()).isEqualTo(2);
         assertThat(old.barsWaitMinutes()).isEqualTo(15);
         assertThat(old.riskProfile()).as("키가 없는 옛 행도 기본 성향(사용자 결정 2026-11-01, 11-02에 공격투자형으로)").isEqualTo("공격투자형");
-        assertThat(old.fallbacks()).containsExactlyElementsOf(keys);
+        assertThat(old.fallbacks()).as("자유 시점 판 스위치(claude2.freeTiming)는 FreeTimingSettings가 읽음 — 없으면 꺼짐, 여기 남기지 않음")
+                .containsExactlyElementsOf(keys.subList(0, 6));
+        assertThat(FreeTimingSettings.from(body())).isEqualTo(FreeTimingSettings.OFF);
         Map<String, Object> switches = new LinkedHashMap<>();
         switches.put("enabled", true);
         switches.put("maxCallsPerCycle", 2);

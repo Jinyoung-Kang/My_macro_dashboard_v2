@@ -118,6 +118,8 @@ record Claude2Settings(boolean enabled, int maxCallsPerCycle, int barsWaitMinute
         out.put("executionRecord", DEFAULTS.executionRecord());
         out.put("checkpoints", DEFAULTS.checkpoints());
         out.put("riskProfile", DEFAULTS.riskProfile());
+        // 자유 시점 판(ADR 0027) — 꺼짐(FreeTimingSettings가 읽음).
+        out.put("freeTiming", FreeTimingSettings.DEFAULT);
         return out;
     }
 

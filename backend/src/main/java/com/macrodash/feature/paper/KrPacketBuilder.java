@@ -184,6 +184,8 @@ final class KrPacketBuilder {
      * 기본은 한국 Claude 계좌1({@link PaperBooks#KR_CLAUDE} — 그 패킷은 이 칸 전과 글자 그대로), 계좌2는 {@link #forBook}.
      */
     private final String book;
+    /** 자유 시점 판 패킷을 만드는 빌더인가({@link #forFree} — ADR 0027 결정 2). 거짓이면 이 칸이 생기기 전과 같은 글자. */
+    private final boolean free;
 
     KrPacketBuilder(PaperStore store, StoreReader reader, StoreRepository repository, RegimeLogStore regimeLog,
                     PaperMarketData marketData, NoteService notes, KrRuleBookService rules, PaperConfig config,
@@ -196,12 +198,13 @@ final class KrPacketBuilder {
                     PaperMarketData marketData, NoteService notes, KrRuleBookService rules, PaperConfig config,
                     ObjectMapper mapper, int targetTokens) {
         this(store, reader, repository, regimeLog, marketData, notes, rules, config, mapper, targetTokens,
-                PaperBooks.KR_CLAUDE);
+                PaperBooks.KR_CLAUDE, false);
     }
 
     private KrPacketBuilder(PaperStore store, StoreReader reader, StoreRepository repository, RegimeLogStore regimeLog,
                             PaperMarketData marketData, NoteService notes, KrRuleBookService rules, PaperConfig config,
-                            ObjectMapper mapper, int targetTokens, String book) {
+                            ObjectMapper mapper, int targetTokens, String book, boolean free) {
+        this.free = free;
         this.book = Objects.requireNonNull(book, "book");
         this.targetTokens = targetTokens;
         this.store = Objects.requireNonNull(store, "store");
@@ -221,7 +224,17 @@ final class KrPacketBuilder {
      */
     KrPacketBuilder forBook(String code) {
         return new KrPacketBuilder(store, reader, repository, regimeLog, marketData, notes, rules, config, mapper,
-                targetTokens, code);
+                targetTokens, code, false);
+    }
+
+    /**
+     * 그 한국 Claude 계좌의 자유 시점 판 패킷을 만드는 빌더(ADR 0027 결정 2 — {@link ClaudeBookProfile#KR_CLAUDE_FT}·
+     * {@link ClaudeBookProfile#KR_CLAUDE2_FT}) — {@link #forBook}과 같은 재료·같은 계좌 몫이고, 체결 시점 문장(0_instructions의 시점 줄·12_hardRules의
+     * 매도 자리 줄·체결 줄·받는 시점)과 1_basis의 판 표시·지정 시각 범위({@code atMinute})만 켠 판입니다. 끈 판 빌더의 패킷은 그대로입니다.
+     */
+    KrPacketBuilder forFree(String code) {
+        return new KrPacketBuilder(store, reader, repository, regimeLog, marketData, notes, rules, config, mapper,
+                targetTokens, code, true);
     }
 
     /**
@@ -358,7 +371,7 @@ final class KrPacketBuilder {
         Map<String, Object> notesSection = notesSection(packetNotes);
         KrEventsSection.Built events = events(run, calendar, asOf, body, readAt, lines, members, companies, etfs, paper);
         Map<String, Object> hardRules = hardRules(run, asOf, initial, limits, paper, etfs, universe, lockedOut,
-                unfillable, quotes, input.universeDate(), menu());
+                unfillable, quotes, input.universeDate(), menu(), free);
 
         Map<String, Object> fixed = new LinkedHashMap<>();
         fixed.put(INSTRUCTIONS, instructions);
@@ -448,11 +461,11 @@ final class KrPacketBuilder {
         lines.add("출력은 주어진 스키마대로 한다. 주문이 없어도 noTradeReason을 쓴다.");
         lines.add("한국 책(" + book + ")이다 — 통화는 원(KRW), 날짜는 KRX 거래일(KST), 시각 표기도 KST다. 티커는 6자리 종목 "
                 + "코드다.");
-        lines.add(menu() ? KR_CLAUDE2_TIMING_LINE : timingLine());
-        if (menu()) {
+        lines.add(free ? KR_FT_TIMING_LINE : menu() ? KR_CLAUDE2_TIMING_LINE : timingLine());
+        if (menu() && !free) {
             lines.add(KR_CLAUDE2_CHECKPOINT_LINE);
         }
-        lines.add("체결은 정수 주다 — 목표 비중 증가분을 체결가(" + (menu() ? "그 시점의 가격" : "시가") + ")와 비용으로 나눈 정수 주만 사고, "
+        lines.add("체결은 정수 주다 — 목표 비중 증가분을 체결가(" + (free || menu() ? "그 시점의 가격" : "시가") + ")와 비용으로 나눈 정수 주만 사고, "
                 + "1주 가격보다 작은 매수 증가분은 체결되지 않는다(12_hardRules).");
         lines.add("호가단위: " + KrxCosts.tickTableText() + " — 체결가는 관측된 단일가 그대로라 호가를 맞출 필요는 없다.");
         lines.add(costLine(rates, paper.slippageBp()));
@@ -477,6 +490,29 @@ final class KrPacketBuilder {
     private boolean menu() {
         return PaperBooks.KR_CLAUDE2.equals(book);
     }
+
+    /** 자유 시점 판의 체결 시점 문장(0_instructions — ADR 0027) — 시점 셋과 체결 순서, 지정 시각은 atLocal(KST)에. */
+    static final String KR_FT_TIMING_LINE = "주문 timing은 세 시점 중 하나다 — NEXT_OPEN(기준 거래일 다음 KRX 거래일 1_basis.nextSession의 정규장 "
+            + "시가 단일가), AT_MINUTE(그날의 네가 정한 분 — atLocal에 한국 시간 HH:MM, 1_basis.atMinute 범위 안, 그 분에 시작한 토스 1분봉 시가), "
+            + "NEXT_CLOSE(그날 정규장 종가 단일가). 체결 순서는 기준 시각 순(NEXT_OPEN < AT_MINUTE의 이른 시각 < 늦은 시각 < NEXT_CLOSE)이고, "
+            + "주문마다 executionNote(그 시점과 시각을 고른 이유)를 쓴다.";
+
+    /** 자유 시점 판의 매도 자리 문장(12_hardRules) — 순위는 시점 이름이 아니라 기준 시각 순(검증기에 넘기는 그 결정의 표). */
+    static final String KR_FT_ALLOCATION_LINE = "매수 목표 합 + 매도 뒤 남는 보유 비중이 100%를 넘으면 목표 비중이 큰 주문부터 받고 넘치는 "
+            + "주문은 거절(OVER_ALLOCATED). 체결 순서는 기준 시각 순이다 — NEXT_OPEN(개장) < AT_MINUTE(atLocal이 이른 순) < NEXT_CLOSE(마감). "
+            + "매도는 같은 시각이거나 더 늦은 시각 매수의 자리만 만든다 — 늦은 시각의 매도는 이른 시각 매수의 현금(비중 합, OVER_ALLOCATED)·종목 "
+            + "자리(최대 종목 수, MAX_POSITIONS)를 비우지 못한다. unfillableTickers 종목의 매도는 어느 시각 매수의 자리도 만들지 못한다.";
+
+    /** 자유 시점 판의 지정 시각·종가 체결 문장(12_hardRules — 시가 체결 문장 다음). */
+    static final String KR_FT_TIMED_FILL_LINE = "지정 시각(AT_MINUTE)·종가(NEXT_CLOSE) 주문은 다음 KRX 거래일(1_basis.nextSession)의 토스 1분봉으로만 "
+            + "체결된다 — 지정 시각은 그 분 T에 시작한 봉 시가(거래 없으면 T+1~T+4분 첫 거래 봉, 그것도 없으면 그날 정규장 안 T 뒤 첫 거래 봉 — 대체 "
+            + "체결, 금융위 확정 조정 없음), 종가는 정규장 마감 단일가 봉 종가(금융위 확정 종가가 들어오면 그 값으로 고침). 그날 체결되지 않으면"
+            + "(거래정지·T 뒤 정규장 거래 없음) 다음 거래일로 넘어가지 않고 기준일 + 3거래일에 만료된다. AT_MINUTE의 atLocal이 없거나 "
+            + "1_basis.atMinute 범위(그날 개장 1분 뒤 ~ 종가 단일가 시간 앞) 밖이면 MALFORMED, 기준 시각이 주문 생성 + 60초 이전이면 "
+            + "LATE_FOR_TIMING으로 거절.";
+
+    /** 자유 시점 판 패킷의 판 표시({@code 1_basis.variant}·{@code fixedRules} — 한국 켠 판 고정 문단 {@link ClaudePrompts#KR_FT_FIXED_RULES}). */
+    static final String KR_FREE_FIXED_RULES_VERSION = "kr-ft-1";
 
     /** 한국 계좌2의 체결 시점 문장(0_instructions) — 메뉴 여덟과 체결 순서, 시각은 KST. */
     static final String KR_CLAUDE2_TIMING_LINE = "주문 timing은 체결 시점 메뉴 여덟 중 하나다 — NEXT_OPEN(기준 거래일 다음 KRX 거래일 "
@@ -536,6 +572,18 @@ final class KrPacketBuilder {
         out.put("nextSession", next.toString());
         out.put("nextSessionOpenKst", HOUR_MINUTE.format(calendar.openInstant(next).atZone(Kst.ZONE)));
         out.put("nextSessionCloseKst", HOUR_MINUTE.format(calendar.closeInstant(next).atZone(Kst.ZONE)));
+        if (free) {
+            // 자유 시점 판만 — 판 표시와 분 단위 지정 시각(AT_MINUTE)의 받는 범위(그 세션의 개장 + 1분 ~ 종가 단일가 시간 앞, 양 끝 포함).
+            FreeTiming.Window window = FreeTiming.window(next, calendar, true);
+            out.put("variant", PacketBuilder.VARIANT_FREE);
+            out.put("fixedRules", KR_FREE_FIXED_RULES_VERSION);
+            Map<String, Object> range = new LinkedHashMap<>();
+            range.put("firstKst", HOUR_MINUTE.format(window.first().atZone(Kst.ZONE)));
+            range.put("lastKst", HOUR_MINUTE.format(window.last().atZone(Kst.ZONE)));
+            range.put("note", "AT_MINUTE 주문의 atLocal은 이 범위(양 끝 포함)의 한국 시간 HH:MM — 개장 순간은 NEXT_OPEN, 종가 단일가 시간(마감 10분 "
+                    + "전부터)은 NEXT_CLOSE");
+            out.put("atMinute", range);
+        }
         List<String> closures = new ArrayList<>();
         String closuresReason = null;
         try {
@@ -1314,7 +1362,7 @@ final class KrPacketBuilder {
     private static Map<String, Object> hardRules(MarketRun run, LocalDate asOf, boolean initial, Limits limits,
                                                  PaperSettings paper, Set<String> etfs, Set<String> universe,
                                                  Set<String> lockedOut, Map<String, String> unfillable,
-                                                 Optional<Quotes> quotes, LocalDate universeDate, boolean menu) {
+                                                 Optional<Quotes> quotes, LocalDate universeDate, boolean menu, boolean free) {
         PaperSettings.CostRates rates = paper.costRates() == null ? PaperSettings.CostRates.defaults() : paper.costRates();
         String cashLike = String.join(", ", paper.cashLikeTickers());
         List<String> lines = new ArrayList<>();
@@ -1327,7 +1375,7 @@ final class KrPacketBuilder {
         lines.add("SELL의 sellFraction = 보유 수량 대비 파는 비율(0 초과 1 이하, null이면 전량). 보유가 없는 종목은 팔 수 없다. "
                 + "부분 매도는 1주 이상이어야 한다 — floor(보유 수량 × sellFraction) < 1이면 BELOW_ONE_SHARE로 거절"
                 + "(보유 수량은 9_portfolio.positions의 qty).");
-        lines.add(menu ? KR_CLAUDE2_ALLOCATION_LINE : KrPaperMarket.ALLOW_NEXT_CLOSE
+        lines.add(free ? KR_FT_ALLOCATION_LINE : menu ? KR_CLAUDE2_ALLOCATION_LINE : KrPaperMarket.ALLOW_NEXT_CLOSE
                 ? "매수 목표 합 + 매도 뒤 남는 보유 비중이 100%를 넘으면 목표 비중이 큰 주문부터 받고 넘치는 주문은 거절(OVER_ALLOCATED). "
                         + "매도는 같은 시점이거나 더 늦은 매수의 자리만 만든다 — NEXT_CLOSE 매도는 NEXT_OPEN 매수보다 늦게 체결되므로 "
                         + "NEXT_OPEN 매수의 현금(비중 합, OVER_ALLOCATED)·종목 자리(최대 종목 수, MAX_POSITIONS)를 비우지 못한다. "
@@ -1352,9 +1400,11 @@ final class KrPacketBuilder {
                 + "재진입 금지 종목의 주문은 거절. 보유 종목은 U 밖이어도 팔 수 있다. unfillableTickers(지금 체결할 수 없는 종목 — 이번 관측치에 "
                 + "봉 없음·기준 거래일 거래정지·미처리 기업행위 보유, 규칙 계좌와 같은 판정)의 매수는 UNFILLABLE로 거절. 그 종목 보유의 "
                 + "매도는 받아 대기로 두고, 만료 전에 풀리면 그 뒤 첫 시가에 체결된다(규칙 계좌와 같음).");
-        lines.add((menu ? "NEXT_OPEN " : "") + "주문은 기준 거래일 뒤 첫 관측 봉(거래량 > 0)의 시가로 체결된다 — 기준 거래일 이하 봉·"
+        lines.add((menu || free ? "NEXT_OPEN " : "") + "주문은 기준 거래일 뒤 첫 관측 봉(거래량 > 0)의 시가로 체결된다 — 기준 거래일 이하 봉·"
                 + "주문보다 먼저 받은 관측치·거래정지일(거래량 0) 봉으로는 체결되지 않고, 체결되지 않은 주문은 기준일 + 3거래일에 만료된다.");
-        if (menu) {
+        if (free) {
+            lines.add(KR_FT_TIMED_FILL_LINE);
+        } else if (menu) {
             lines.add(KR_CLAUDE2_TIMED_FILL_LINE);
         }
         if (!initial) {
@@ -1373,7 +1423,7 @@ final class KrPacketBuilder {
         out.put("minHoldTradingDaysForSell", limits.minHoldTradingDaysForSell());
         out.put("trailingStopPct", PacketBuilder.decimal(paper.trailingStopPct(), 4));
         out.put("lockoutTradingDays", paper.lockoutTradingDays());
-        out.put("timings", run.timings());
+        out.put("timings", free ? FreeTiming.DECISION_TIMINGS : run.timings());
         out.put("commissionBp", PacketBuilder.decimal(rates.commissionBp(), 4));
         out.put("slippageBp", PacketBuilder.decimal(paper.slippageBp(), 4));
         Map<String, Object> tax = new LinkedHashMap<>();

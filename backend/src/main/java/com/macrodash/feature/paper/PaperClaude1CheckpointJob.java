@@ -125,6 +125,11 @@ public class PaperClaude1CheckpointJob {
         if (!settings.enabled()) {
             return new Outcome(null, "꺼짐(claude.checkpoint)");
         }
+        if (FreeTimingSettings.from(row == null ? null : row.body()).claude()) {
+            // 자유 시점 판(ADR 0027 결정 3) — 이 장중 확인은 끈 판의 전체 결정이라, 통과 주문을 다음 시간별 관측치로 체결하고 남은 대기 주문(켠 판의
+            // 시각 지정 주문)을 모두 대신합니다. 두 키를 함께 켜는 저장은 거절되지만 손으로 고친 행에서도 부르지 않습니다.
+            return new Outcome(null, "자유 시점 판이 켜져 있어 부르지 않음(" + FreeTimingSettings.US_CLAUDE + ")");
+        }
         Instant now = clock.instant();
         LocalDate session = now.atZone(calendar.zone()).toLocalDate();
         if (!calendar.isTradingDay(session)) {

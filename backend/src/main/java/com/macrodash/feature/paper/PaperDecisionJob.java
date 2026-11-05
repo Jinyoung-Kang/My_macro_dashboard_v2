@@ -556,6 +556,10 @@ public class PaperDecisionJob {
             try {
                 String claudeSkip = claudeSkipReason(market, store.book(market.claudeBook()), d);
                 if (claudeSkip == null) {
+                    // 자유 시점 판(ADR 0027 결정 7) — 계좌1 장부가 이번 관측치를 처리한 뒤에만(1분봉 기다림이 풀린 뒤). 다음 주기에 다시 봅니다.
+                    claudeSkip = freeTimingWait(market, quotes);
+                }
+                if (claudeSkip == null) {
                     shared = claude2Kind == null ? null : sharedInputs(market, d);
                     claudeDecision = shared != null
                             ? claude.decideWith(market, d, RuleBookService.SCHEDULED, pricesFinal, shared)
@@ -697,20 +701,42 @@ public class PaperDecisionJob {
      * 다시 시도하지 않음 — {@link PaperLedgerService#failedBooks}) 1분봉 기다림이 아니라 그 보류를 사유로 적습니다.
      */
     private String claude2BarsWait(MarketRun market, Optional<Quotes> quotes) {
+        return timedBookWait(market, quotes, PaperBooks.CLAUDE2, "계좌2");
+    }
+
+    /**
+     * 시각 지정 주문을 내는 계좌(계좌2, 자유 시점 판의 계좌1 — ADR 0027 결정 7)의 결정을 기다려야 하나: 그 계좌 장부가 이번 관측치를 아직 처리하지
+     * 않았으면 그 사유, 처리했거나 관측치가 없으면 null. 장부는 기준 시각이 지난 시각 지정 주문이 있으면 1분봉 저장본을 기다리느라 그 관측치의 처리를
+     * 미루는데, 그 사이에 새 결정을 내면 아직 풀리지 않은 주문을 '다음 결정이 대신함'으로 지웁니다.
+     *
+     * @param label 사유 문구의 계좌 이름('계좌2'·'계좌1')
+     */
+    private String timedBookWait(MarketRun market, Optional<Quotes> quotes, String book, String label) {
         if (quotes.isEmpty() || quotes.get().collectedAt() == null) {
             return null;
         }
-        Instant processed = store.state(PaperBooks.CLAUDE2).map(PaperStore.BookState::lastProcessedCollectedAt)
-                .orElse(null);
+        Instant processed = store.state(book).map(PaperStore.BookState::lastProcessedCollectedAt).orElse(null);
         if (processed != null && !processed.isBefore(quotes.get().collectedAt())) {
             return null;
         }
-        if (ledger.failedBooks(market, quotes.get()).contains(PaperBooks.CLAUDE2)) {
-            return "계좌2 장부가 관측치(수집 " + Kst.stamp(quotes.get().collectedAt()) + ")를 처리하다 오류가 나 보류 중입니다 — 같은 관측치로는 "
+        if (ledger.failedBooks(market, quotes.get()).contains(book)) {
+            return label + " 장부가 관측치(수집 " + Kst.stamp(quotes.get().collectedAt()) + ")를 처리하다 오류가 나 보류 중입니다 — 같은 관측치로는 "
                     + "다시 시도하지 않고 새 관측치에서 다시(수동 리스크 점검은 한 번 더 시도)";
         }
-        return "계좌2 장부가 관측치(수집 " + Kst.stamp(quotes.get().collectedAt()) + ")를 아직 처리하지 않았습니다(1분봉 기다림) — "
+        return label + " 장부가 관측치(수집 " + Kst.stamp(quotes.get().collectedAt()) + ")를 아직 처리하지 않았습니다(1분봉 기다림) — "
                 + "다음 주기에 다시";
+    }
+
+    /**
+     * 자유 시점 판을 켠 미국 계좌1의 결정을 이번 주기에 미뤄야 하는 사유(없으면 null) — 그 실행 설정의 {@value FreeTimingSettings#US_CLAUDE}가 켜져
+     * 있고 계좌1 장부가 이번 관측치를 아직 처리하지 않았을 때({@link #timedBookWait}). 스위치가 꺼져 있으면 늘 null이라 끈 판의 결정 시각은 그대로입니다.
+     * 한국 켠 판은 밤 장부 뒤의 결정 게이트 ①(1분봉이 실패면 그 계좌의 결정을 보류)이 같은 일을 합니다.
+     */
+    private String freeTimingWait(MarketRun market, Optional<Quotes> quotes) {
+        if (!usSteps(market) || !FreeTimingSettings.from(market.settingsBody()).claude()) {
+            return null;
+        }
+        return timedBookWait(market, quotes, market.claudeBook(), "계좌1");
     }
 
     /**
@@ -1561,6 +1587,21 @@ public class PaperDecisionJob {
             detail.put("tradingDate", d.toString());
             detail.put("pricesFinal", pricesFinal);
             quotes.ifPresent(q -> detail.put("ledger", ledgerDetail(ledger.process(market, q))));
+            if (usSteps(market) && market.claudeBook().equals(code) && FreeTimingSettings.from(market.settingsBody()).claude()) {
+                // 자유 시점 판을 켠 계좌1의 수동 결정(ADR 0027 결정 7) — 계좌2 수동 결정과 같은 창: 다음 세션 09:00 ET 전이고 계좌1 장부가 이번
+                // 관측치를 처리한 뒤. 정규장 중에 받으면 앞선 결정의 시각 지정 주문(1분봉을 기다리는 것 포함)을 '다음 결정이 대신함'으로 지웁니다.
+                Instant cutoff = ClaudeBookService.claude2Cutoff(market.calendar(), d);
+                if (!now.isBefore(cutoff)) {
+                    throw new InvalidRequestException("자유 시점 판을 켠 계좌1의 수동 결정은 확정 종가 처리 뒤 ~ 다음 세션 09:00 ET("
+                            + Kst.stamp(cutoff) + ") 전에만 받습니다(정규장 중에는 받지 않음 — 앞선 결정의 시각 지정 주문을 장중에 대신하면 체결 "
+                            + "순서가 깨짐) — 지금 " + Kst.stamp(now) + "(기준 거래일 " + d + ")");
+                }
+                String waiting = timedBookWait(market, quotes, code, "계좌1");
+                if (waiting != null) {
+                    throw new InvalidRequestException("자유 시점 판을 켠 계좌1의 수동 결정은 계좌1 장부가 관측치를 처리한 뒤(1분봉 기다림 풀림 "
+                            + "포함)에만 받습니다 — " + waiting);
+                }
+            }
             if (session != null) {
                 // 장부를 처리한 뒤 ③(같은 읽기)과 그 계좌의 ① — 정기 결정과 같은 판정(클래스 설명 '한국 결정 게이트').
                 KrDecisionGates.Inputs inputs = krGates.withRules(market, session, now);

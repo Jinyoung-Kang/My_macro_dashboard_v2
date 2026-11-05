@@ -39,7 +39,7 @@
 
   | | 결정의 `AT_MINUTE` | 장중 판단 시각 | 장중 판단의 `MARKET` 닫힘(지금 그대로) |
   |---|---|---|---|
-  | 미국 | 개장 + 1분 ~ 마감 − 5분(보통 09:31~15:55 ET) | 개장 + 5분 ~ 마감 − 30분(09:35~15:30 ET) | 마감 5분 전 뒤 |
+  | 미국 | 개장 + 1분 ~ 마감 5분 전 앞(보통 09:31~15:54 ET, 조기 폐장일 12:54까지) | 개장 + 5분 ~ 마감 − 30분(09:35~15:30 ET) | 마감 5분 전 뒤 |
   | 한국 | 09:01 ~ 15:19 KST | 09:05 ~ 14:50 KST | 15:20(종가 단일가) 뒤 |
 
   조기 폐장일(예: 2026-11-27 13:00 ET)과 한국 개장 시각 변경일(`kr.calendar.openTimeOverrides`)은 그날의 개장·마감으로 계산합니다.
@@ -137,11 +137,13 @@ CREATE TABLE IF NOT EXISTS paper_intraday_plans (
 
 ## 6. Claude 계좌의 켠 판
 
-- 프로필(`ClaudeBookProfile`) 넷과 장중 판단 응답 프로필 넷을 더합니다: `US_CLAUDE_FT`·`US_CLAUDE2_FT`·`KR_CLAUDE_FT`·`KR_CLAUDE2_FT`와 각 `_INTRADAY`.
-  계좌2의 c2 판처럼 결정 파이프라인 맵 밖의 따로 만든 파이프라인이고, 결정마다 그 실행 때의 설정으로 고릅니다. 한국에는 끈 판 선례가 없어 맵 밖 파이프라인을 새로 둡니다.
-- 응답 스키마(새 파일): 결정 넷 — `timing` enum {`NEXT_OPEN`, `AT_MINUTE`, `NEXT_CLOSE`}, 주문의 선택 칸 `atLocal`("HH:MM" pattern), `checkpoints[]`(최대 2, 각 `{at, feed, watch, question}`).
-  장중 판단 — `action`(KEEP·REPLACE), 주문 `timing` enum {`MARKET`, `AT_MINUTE`, `NEXT_CLOSE`}, 선택 칸 `nextCheckpoint`. 스키마 검사기(`StructuredSchema`)는 pattern을 받고 조건부 필수는 받지 않으므로
-  '`AT_MINUTE`면 `atLocal` 필수', 시각 범위, 30분 간격, 남은 횟수, 시각 순서는 의미 검사입니다(어기면 그 주문·예약만 거절하고 사유를 남김).
+- 프로필(`ClaudeBookProfile`의 새 칸 `freeTiming`) 넷: `US_CLAUDE_FT`·`US_CLAUDE2_FT`·`KR_CLAUDE_FT`·`KR_CLAUDE2_FT`(B2 — 끝). 장중 판단 응답 프로필은 B3에서 더합니다.
+  계좌2의 c2 판처럼 결정 파이프라인 맵 밖의 따로 만든 파이프라인(`ClaudeBookService.freeTiming`)이고, 결정마다 그 실행 설정의 스위치(`FreeTimingSettings`)로 고릅니다(`variant`).
+  미국 계좌1의 시작·미리보기·기존 장중 확인(종류 `CHECKPOINT`)은 늘 끈 판 파이프라인입니다.
+- 응답 스키마(새 파일 둘 — 시장마다 하나, 그 시장의 두 계좌가 함께 씀): `paper/us-decision-ft.schema.json`·`paper/kr-decision-ft.schema.json`. `timing` enum {`NEXT_OPEN`, `AT_MINUTE`, `NEXT_CLOSE`},
+  주문의 선택 칸 `atLocal`("HH:MM" pattern — `FreeTiming.CLOCK_PATTERN`), 주문마다 `executionNote`. B3에서 `checkpoints[]`(최대 2, 각 `{at, feed, watch, question}`)와
+  장중 판단 스키마(`action` KEEP·REPLACE, 주문 `timing` enum {`MARKET`, `AT_MINUTE`, `NEXT_CLOSE`}, 선택 칸 `nextCheckpoint`)를 더합니다. 스키마 검사기(`StructuredSchema`)는 pattern을 받고 조건부 필수는 받지 않으므로
+  '`AT_MINUTE`면 `atLocal` 필수'와 시각 범위는 검증 표의 닫힘으로, 30분 간격·남은 횟수·시각 순서는 의미 검사로 막습니다(어기면 그 주문·예약만 거절하고 사유를 남김).
 - 고정 문단(새 판, 계좌별): 받는 시점 셋, 시각 범위, 'E 하루짜리', 장중 판단의 뜻(확인 시각 뒤 첫 수집본으로 부름 — 몇 분 뒤, 실시간 아님), 횟수.
   설정값(최대 횟수·남은 횟수)은 고정 문단이 아니라 패킷 칸에 싣습니다(고정 문단은 설정값 없는 상수 규칙).
   계좌2 켠 판 문단은 성향 절이 끼워지는 '출력 절 머리'를 하나만 가져야 합니다(`ClaudePrompts`·`FrameworkService.render`의 기동 때 치환 검사).
@@ -150,15 +152,20 @@ CREATE TABLE IF NOT EXISTS paper_intraday_plans (
 - 미국 계좌1 켠 판은 계좌2의 패킷 변형(`13_execution`)을 쓰고, 자기 체결 기록을 싣습니다.
 - 지난 결정 목록(`10_recentDecisions`)에서 장중 판단 행(종류 `INTRADAY_*`)은 '직전 결정'이 아닙니다(자세·노출·관심 목록이 없는 응답 — QA-179). 계좌 코드가 아니라 행의 종류로 가르므로,
   미국 계좌1의 옛 `CHECKPOINT` 행(전체 결정 모양)은 지금처럼 목록에 남고 끈 판 패킷이 바뀌지 않습니다. 옛 `CHECKPOINT` 행이 있는 상태의 끈 판 고정본 시험을 더합니다.
-- 검증기(`OrderValidator`): 결정 파이프라인이 주문마다 T를 계산해 넘기는 새 진입점(주문 단위 순위·닫힘, 근거 문구의 시점 이름은 'HH:MM')을 더합니다. 제안 레코드에 시각 칸.
-  기존 진입점과 고정본 `order-validator-us.txt`는 그대로이고, 끈 판 고정본이 바이트 그대로인 것이 B2의 통과 조건입니다.
-- 결정 창 가드(계좌 코드 → 방식):
-  - 개장 전 컷오프(E 09:00 ET 뒤면 그 세션 결정 `SKIPPED`)와 장중 판단 계획 쓰기 — 지금 `decideClaude2`에만 있음.
-  - '그 계좌 장부가 이번 관측치를 처리했는가(1분봉 기다림 풀림)' — `PaperDecisionJob`에 계좌 코드로 박혀 있음. 없으면 결정의 `supersedePending()`이 T가 지났지만 아직 풀리지 않은 주문을 지웁니다.
-  - 정규장 중 수동 결정 거절(400) — 지금 계좌2만.
-  - 규칙 계좌는 체결 시각이 기본이 아닐 때 같은 확인(재선정일의 주차 주문 교체가 풀리지 않은 주문을 취소하지 않게).
+- 검증기(`OrderValidator`)는 고치지 않습니다. 결정 파이프라인이 응답 주문의 시각마다 열쇠 `AT_MINUTE@HH:MM`을 만들어 그 결정만의 검증 표를 넘깁니다(`FreeTiming.validation` —
+  순위는 기준 시각 순·같은 시각은 같은 순위, 범위 밖은 `MALFORMED`, 지금 + 60초 이전은 `LATE_FOR_TIMING`, 시각 없는 `AT_MINUTE`는 `MALFORMED`, 근거 문구의 이름은 '다음 세션 10:47 ET'·
+  '다음 거래일 10:47 KST'). 주문 행·판정 기록에서는 열쇠를 `AT_MINUTE` + `target_local`(`atLocal`)로 되돌립니다. 고정본 `order-validator-us.txt`와 끈 판 고정본이 바이트 그대로인 것이 B2의 통과 조건입니다.
+- 패킷: 미국 켠 판은 계좌2 변형의 줄기(`13_execution`)에 `1_basis.variant = freeTiming`·`executionMenuVersion 3`·`fixedRules ft-1`, 메뉴 셋(`AT_MINUTE` 줄은 범위)·`13_execution.atMinute`(그 세션의 첫 분·마지막 분),
+  `12_hardRules`의 시점 문장 둘. 한국 켠 판은 `KrPacketBuilder.forFree` — `1_basis`의 `variant`·`fixedRules kr-ft-1`·`atMinute`, `0_instructions`의 시점 줄, `12_hardRules`의 매도 자리 줄·지정 시각 체결 줄·받는 시점.
+- 결정 창 가드(계좌 코드 → 방식, B2 — 끝):
+  - '그 계좌 장부가 이번 관측치를 처리했는가(1분봉 기다림 풀림)' — 켠 판 계좌1의 정기 결정에도(`PaperDecisionJob.freeTimingWait` — 처리하지 않았으면 그 주기는 건너뛰고 다음 주기에).
+    없으면 결정의 `supersedePending()`이 T가 지났지만 아직 풀리지 않은 주문을 지웁니다.
+  - 정규장 중 수동 결정 거절(400) — 켠 판 계좌1도 계좌2와 같은 창(확정 종가 처리 뒤 ~ 다음 세션 09:00 ET 전).
+  - 정기 결정을 건너뛰는 개장 전 컷오프는 계좌2에만 그대로 둡니다(켠 판은 늦은 결정에서도 남은 시각의 주문을 낼 수 있고 지난 시각은 주문 단위로 닫힘).
+  - 한국은 결정 게이트 ①과 결정 창이 같은 일을 합니다(계좌마다 따로 봄 — 켠 계좌1도 걸림).
+  - 규칙 계좌는 체결 시각이 기본이 아닐 때 같은 확인(재선정일의 주차 주문 교체가 풀리지 않은 주문을 취소하지 않게) — B4.
 - 미국 계좌1의 시작·미리보기는 늘 끈 판 프로필입니다(초기 배분은 출발일 종가 사후 체결 — 켠 판의 닫힌 시점 검사에 걸리지 않게).
-- 계좌1 장중 확인 작업(`PaperClaude1CheckpointJob`)은 `claude.freeTiming`이 켜져 있으면 부르지 않습니다. 두 키를 함께 켜는 저장은 `PaperSettingsService.update`의 병합 뒤 검사에서 거절합니다.
+- 계좌1 장중 확인 작업(`PaperClaude1CheckpointJob`)은 `claude.freeTiming`이 켜져 있으면 부르지 않습니다. 두 키를 함께 켜는 저장은 `PaperSettingsService.update`의 병합 뒤 검사에서 거절합니다(B2 — 끝).
 - 스위치를 켤 때 남아 있는 끈 판의 대기 주문은 손대지 않습니다 — 다음 결정이 대신하고 그 전까지는 지금 경로로 체결됩니다.
 
 ## 7. 장중 판단
@@ -257,7 +264,7 @@ CREATE TABLE IF NOT EXISTS paper_intraday_plans (
 |---|---|---|
 | B0 | 문서(ADR 0027·이 명세) + 읽기 전용 측정(§16) | 끝 |
 | B1 | V22 + `AT_MINUTE` 장부(미국·한국)·수집 범위. 아직 어느 계좌도 쓰지 않음 | 끝 |
-| B2 | Claude 켠 판(프로필·스키마·고정 문단·패킷·검증기 주문 단위 진입점) + 결정 창 가드 일반화. 스위치 기본 꺼짐 | |
+| B2 | Claude 켠 판(프로필·스키마·고정 문단·패킷·그 결정의 검증 표) + 결정 창 가드 일반화. 스위치 기본 꺼짐 | 끝 — 장중 판단 예약(`checkpoints[]`)과 켠 판의 장중 문장은 B3 |
 | B3 | V23 + 장중 판단(새 표·새 종류·작업·감시 계약 2·수동 경로) + 호출 상한 | |
 | B4 | 규칙 계좌 설정 키·닫힌 시점·다시 내기 | |
 | B5 | 참고 지표·복기·응답·화면 | |
@@ -269,7 +276,9 @@ CREATE TABLE IF NOT EXISTS paper_intraday_plans (
 - **B1**: `DecisionTimingsLockTest`(마지막으로 timing CHECK를 다시 만드는 파일 — 번호를 글자로 박은 단언을 번호가 바뀌어도 되게, `UsTimedFills.TIMINGS`),
   `UsTimedFillsTest`·`UsPaperMarketTest`의 시점 목록(수집기 `store.TIMED_TIMINGS`와 대조 포함), `PaperStore.ready()`와 `PaperStoreDbTest`(거절 행 `AT_MINUTE` + NULL이 들어가는지 포함),
   `test_paper_bars.py`의 범위·장중 시장가 시험, `test_kr_paper_timed.py`, `PaperNotifyJobTest` 시점 이름, 주문을 복사하는 곳(`FakePaperStore`·`KrStartPipeline` — 지정 시각 칸을 떨어뜨리지 않게).
-- **B2**: 끈 판 고정본 전부가 바이트 그대로(프롬프트·스키마·패킷·검증기), `StructuredSchemaTest`(새 스키마 파일), `PaperSettingTypesTest`·`KrSettingsParityTest`·`PaperSettingsServiceTest`(새 키), 켠 판 고정본.
+- **B2**: 끈 판 고정본 전부가 바이트 그대로(프롬프트·스키마·패킷·검증기), 키 목록을 단언하는 시험(`PaperSettingsServiceTest`·`PaperSettingsKrTest`·`PaperAdminKrInitTest`),
+  켠 판 고정본(`render-us-ft-*`·`render-kr-ft-*`·`packet-us-ft-*`·`packet-kr-ft-scheduled.json`·`decision-schema-forapi-us-ft.json`), 켠 판 시험(`FreeTimingTest`·`FreeTimingDecisionTest`·
+  `DecisionTimingsLockTest.freeTimingContextsAreLocked`·`KrStartTest.krFreeTimingDecisionsUseTheOnVariant`·`PaperDecisionJobClaude2Test`의 계좌1 가드 셋).
 - **B3**: `test_table_ownership.py`(새 표), `PaperStore.ready()`(새 표), `test_paper_watch.py`·`test_paper_watch_kr.py`(계약 2), `RouteInventoryTest`·`AccessPolicyTest`·`docs/API.md`·`routes.json`·`endpoints.test.ts`,
   `PaperSettingsServiceTest`(상한 문구), ADR 0020 결정 6 문구.
 - **B5**: `PaperQueryUsGoldenTest`(상태 응답 고정본 — 따로 뗀 커밋), `paperClaude2.test.ts(x)`·`paperAccount.test.ts`·`paperKrCheckpoint.test.ts`.
