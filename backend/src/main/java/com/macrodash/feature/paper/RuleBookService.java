@@ -107,6 +107,28 @@ public class RuleBookService {
      * '세션당 한 번'을 강제합니다. 계좌2의 확인 패킷은 따로({@link CheckpointPacket}), 계좌1 장중 확인(사용자 결정 2026-11-02 — {@link PaperClaude1CheckpointJob})은 아침 패킷 빌더로 만듭니다({@link PacketBuilder#KINDS}). 결정 작업은 재시도하지 않습니다.
      */
     public static final String CHECKPOINT = "CHECKPOINT";
+    /**
+     * 자유 시점 판의 장중 판단 응답 결정(V23 — ADR 0027 결정 3·4): 세션마다 계좌별 최대 두 번이라 종류도 둘입니다. 기준 거래일은 그 세션의 아침(한국은
+     * 밤) 결정과 같은 d라 UNIQUE(book, d, kind)가 '순번마다 한 번'을 강제합니다. 끈 판의 {@link #CHECKPOINT}와 달리 전체 결정이 아니라
+     * 유지·교체 응답이라, 지난 결정 목록의 '직전 결정'으로 읽지 않습니다({@link #intraday}).
+     */
+    public static final String INTRADAY_1 = "INTRADAY_1";
+    public static final String INTRADAY_2 = "INTRADAY_2";
+    /** 세션마다 계좌별 장중 판단의 최대 횟수(사용자 결정 2026-11-05 — 2). 종류 값·순번 CHECK(V23)와 같은 수입니다. */
+    public static final int INTRADAY_MAX = 2;
+
+    /** 그 순번(1부터)의 장중 판단 결정 종류. */
+    public static String intradayKind(int slot) {
+        if (slot < 1 || slot > INTRADAY_MAX) {
+            throw new IllegalArgumentException("장중 판단 순번은 1~" + INTRADAY_MAX + "입니다: " + slot);
+        }
+        return "INTRADAY_" + slot;
+    }
+
+    /** 자유 시점 판의 장중 판단 결정 종류인가. */
+    public static boolean intraday(String kind) {
+        return INTRADAY_1.equals(kind) || INTRADAY_2.equals(kind);
+    }
 
     /** 결정 상태(paper_decisions.status). */
     static final String STATUS_OK = "OK";

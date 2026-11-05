@@ -276,6 +276,51 @@ public class PaperStore {
         }
     }
 
+    /**
+     * 자유 시점 판의 장중 판단 계획 한 행({@code paper_intraday_plans}, V23 — ADR 0027 결정 3·4): 계좌·세션·순번마다 한 행. 쓰는 곳은 백엔드뿐입니다
+     * (결정이 PLANNED로 — {@link #upsertPlannedIntradayPlan}, 장중 판단 작업이 DONE·EXPIRED·SKIPPED로 — {@link #markIntradayPlan}, 뒤 결정이
+     * SUPERSEDED로 — {@link #supersedeIntradayPlans}). 끈 판의 장중 확인({@link Checkpoint} — 계좌·세션마다 한 행)과 따로입니다.
+     *
+     * @param sessionDate           목표 세션 E(그 시장 거래일)
+     * @param slot                  그 세션의 몇 번째 판단인가(1·2 — 응답 결정의 종류가 INTRADAY_&lt;slot&gt;)
+     * @param atLocal               확인 시각(그 시장 현지 시각, 분 단위)
+     * @param feed                  볼 자료(MINUTE·HOURLY — 한국은 늘 MINUTE)
+     * @param variant               그 세션의 결정이 쓴 판 이름 — 장중 판단은 이 판으로 부릅니다(스위치를 바꾼 날에도)
+     * @param manual                운영자가 당기거나 넣은 행인가(수동 호출 문턱으로 부름)
+     * @param sourceDecisionId      그 세션의 아침(한국은 밤) 결정 — 장중 판단 패킷이 하드 규칙·가격·선정 기준일을 읽는 결정. 다음 판단을 예약한 장중
+     *                              판단이 있어도 바뀌지 않습니다
+     * @param requestedByDecisionId 이 행을 예약한 장중 판단({@code nextCheckpoint}) — 아침 결정이 예약했으면 null
+     * @param intradayDecisionId    응답 결정(부르기 전·놓침은 null)
+     * @param status                PLANNED · DONE · EXPIRED · SKIPPED · SUPERSEDED
+     * @param lagSeconds            그 판단이 읽은 감시 저장본의 지연(모르면 null — 0으로 채우지 않음)
+     */
+    public record IntradayPlan(String bookCode, LocalDate sessionDate, int slot, LocalTime atLocal, String feed,
+                               List<String> watch, String question, String variant, boolean manual, long sourceDecisionId,
+                               Long requestedByDecisionId, Long intradayDecisionId, String status, String reason,
+                               Integer lagSeconds, Instant calledAt, Instant createdAt, Instant updatedAt) {
+
+        public IntradayPlan {
+            watch = watch == null ? List.of() : List.copyOf(watch);
+        }
+
+        /** 넣을 PLANNED 행 — 상태·사유·응답 결정·지연·시각은 저장소가 정합니다. */
+        public static IntradayPlan planned(String bookCode, LocalDate sessionDate, int slot, LocalTime atLocal, String feed,
+                                           List<String> watch, String question, String variant, boolean manual,
+                                           long sourceDecisionId, Long requestedByDecisionId) {
+            return new IntradayPlan(bookCode, sessionDate, slot, atLocal, feed, watch, question, variant, manual,
+                    sourceDecisionId, requestedByDecisionId, null, "PLANNED", null, null, null, null, null);
+        }
+
+        /**
+         * 장중 확인 행과 같은 모양으로 — 장중 확인 패킷·작업이 함께 쓰는 칸(계좌·세션·시각·피드·감시 목록·질문·아침 결정·상태). 순번·판·수동 표시는
+         * 이 모양에 없습니다.
+         */
+        public Checkpoint asCheckpoint() {
+            return new Checkpoint(bookCode, sessionDate, atLocal, feed, watch, question, sourceDecisionId, intradayDecisionId,
+                    status, reason, lagSeconds, calledAt, createdAt, updatedAt);
+        }
+    }
+
     public record OrderExec(long orderId, String bookCode, String timing, Instant targetAt, JsonNode cf,
                             Integer lagSeconds, Boolean lateResolved, Instant updatedAt) {
 
@@ -686,7 +731,8 @@ public class PaperStore {
      * {@code paper_reviews.market}·{@code paper_notes.market} 열, V15가 더하는 {@code paper_positions.fill_ref_volume} 열, V16이 더하는
      * {@code paper_orders.ledger_hold_reason} 열, V17이 더하는 {@code paper_fills.bar_at} 열과 {@code paper_order_exec} 테이블, V18의
      * {@code paper_checkpoints} 테이블(계좌2 장중 확인 — 결정 종류 CHECKPOINT·시점 MARKET과 같은 파일), V19가 바꾼 그 표의 {@code at_local} 열,
-     * V22가 더하는 {@code paper_orders.target_local} 열(분 단위 지정 시각 — 주문 조회가 모두 이 열을 읽음)로 봅니다.
+     * V22가 더하는 {@code paper_orders.target_local} 열(분 단위 지정 시각 — 주문 조회가 모두 이 열을 읽음), V23의 {@code paper_intraday_plans} 테이블
+     * (자유 시점 판의 장중 판단 계획 — 결정 종류 INTRADAY_*와 같은 파일)로 봅니다.
      * V8만 있는 DB(백엔드만 새로 띄운 경우, QA-016)에서 참이면
      * 트랙레코드 읽기·쓰기가 {@code group_code}·{@code data_source} 열과 새 기본키에서, 결정 읽기·쓰기가 {@code packet_text} 열에서,
      * 사용량 읽기·쓰기가 추정 비용 열에서, 주간 복기 작업·화면이 없는 테이블에서, 책 읽기·쓰기가 시장·통화 열에서, 복기·메모
@@ -704,7 +750,8 @@ public class PaperStore {
                 && schema.columnExists("paper_orders", "ledger_hold_reason")
                 && schema.columnExists("paper_fills", "bar_at") && schema.tableExists("paper_order_exec")
                 && schema.columnExists("paper_checkpoints", "at_local")
-                && schema.columnExists("paper_orders", "target_local");
+                && schema.columnExists("paper_orders", "target_local")
+                && schema.tableExists("paper_intraday_plans");
     }
 
     /**
@@ -1519,6 +1566,124 @@ public class PaperStore {
             return new Checkpoint(rs.getString("book_code"), date(rs, "session_date"),
                     rs.getObject("at_local", java.time.LocalTime.class), rs.getString("feed"), tickers, rs.getString("question"),
                     rs.getLong("source_decision_id"), rs.getObject("checkpoint_decision_id", Long.class),
+                    rs.getString("status"), rs.getString("reason"), rs.getObject("lag_seconds", Integer.class),
+                    instant(rs, "called_at"), instant(rs, "created_at"), instant(rs, "updated_at"));
+        };
+    }
+
+    // ------------------------------------------------------------------ 장중 판단 계획(V23 — 자유 시점 판, ADR 0027 결정 3·4)
+    private static final String INTRADAY_PLAN_COLUMNS = "book_code, session_date, slot, at_local, feed, watch, question, variant, "
+            + "manual, source_decision_id, requested_by_decision_id, intraday_decision_id, status, reason, lag_seconds, called_at, "
+            + "created_at, updated_at";
+
+    /**
+     * 장중 판단 예약을 그 세션·순번의 PLANNED 행으로 넣거나 바꿉니다(계좌·세션·순번마다 한 행). 이미 행이 있으면 <b>PLANNED일 때만</b> 시각·피드·감시
+     * 목록·질문·판·수동 표시·아침 결정·예약한 장중 판단을 이번 값으로 바꾸고(뒤 결정이나 {@code nextCheckpoint}·수동 당김이 그 순번을 대신함),
+     * DONE·EXPIRED·SKIPPED·SUPERSEDED인 행은 그대로 둡니다 — 끝난 판단을 되살리지 않게. 상태·사유·응답 결정·지연·부른 시각은 받은 값을 보지 않습니다.
+     *
+     * @return 넣었거나 바꿨으면 true, 끝난 행이라 그대로 두었으면 false
+     */
+    public boolean upsertPlannedIntradayPlan(IntradayPlan row) {
+        return jdbc.update("INSERT INTO paper_intraday_plans (book_code, session_date, slot, at_local, feed, watch, question, "
+                        + "variant, manual, source_decision_id, requested_by_decision_id, status) "
+                        + "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'PLANNED') "
+                        + "ON CONFLICT (book_code, session_date, slot) DO UPDATE SET at_local = EXCLUDED.at_local, "
+                        + "feed = EXCLUDED.feed, watch = EXCLUDED.watch, question = EXCLUDED.question, variant = EXCLUDED.variant, "
+                        + "manual = EXCLUDED.manual, source_decision_id = EXCLUDED.source_decision_id, "
+                        + "requested_by_decision_id = EXCLUDED.requested_by_decision_id, reason = NULL, updated_at = now() "
+                        + "WHERE paper_intraday_plans.status = 'PLANNED'",
+                ps -> {
+                    ps.setString(1, row.bookCode());
+                    ps.setDate(2, Date.valueOf(row.sessionDate()));
+                    ps.setInt(3, row.slot());
+                    ps.setObject(4, row.atLocal());
+                    ps.setString(5, row.feed());
+                    ps.setArray(6, ps.getConnection().createArrayOf("text", row.watch().toArray(new String[0])));
+                    ps.setString(7, row.question());
+                    ps.setString(8, row.variant());
+                    ps.setBoolean(9, row.manual());
+                    ps.setLong(10, row.sourceDecisionId());
+                    setLong(ps, 11, row.requestedByDecisionId());
+                }) == 1;
+    }
+
+    /** 그 계좌·세션의 장중 판단 계획 행 전부, 순번 순. */
+    public List<IntradayPlan> intradayPlans(String code, LocalDate session) {
+        return jdbc.query("SELECT " + INTRADAY_PLAN_COLUMNS + " FROM paper_intraday_plans WHERE book_code = ? AND session_date = ? "
+                + "ORDER BY slot", intradayPlanMapper(), code, Date.valueOf(session));
+    }
+
+    /** 그 계좌들의 PLANNED 장중 판단 계획 행 — 세션·확인 시각·계좌·순번 순(이른 것부터 처리). */
+    public List<IntradayPlan> plannedIntradayPlans(java.util.Collection<String> codes) {
+        if (codes.isEmpty()) {
+            return List.of();
+        }
+        return jdbc.query(con -> {
+            java.sql.PreparedStatement ps = con.prepareStatement("SELECT " + INTRADAY_PLAN_COLUMNS + " FROM paper_intraday_plans "
+                    + "WHERE book_code = ANY(?) AND status = 'PLANNED' ORDER BY session_date, at_local, book_code, slot");
+            ps.setArray(1, con.createArrayOf("text", codes.toArray(new String[0])));
+            return ps;
+        }, intradayPlanMapper());
+    }
+
+    /**
+     * 장중 판단 계획 행의 상태를 조건부로 바꿉니다 — 지금 상태가 {@code fromStatus}일 때만(둘이 같은 행을 동시에 바꾸지 않게). 응답 결정·지연·부른
+     * 시각은 받은 값 그대로 씁니다(null이면 null).
+     *
+     * @return 바뀐 행 수(0 또는 1)
+     */
+    public int markIntradayPlan(String code, LocalDate session, int slot, String fromStatus, String status, String reason,
+                                Long intradayDecisionId, Integer lagSeconds, Instant calledAt) {
+        return jdbc.update("UPDATE paper_intraday_plans SET status = ?, reason = ?, intraday_decision_id = ?, lag_seconds = ?, "
+                        + "called_at = ?, updated_at = now() WHERE book_code = ? AND session_date = ? AND slot = ? AND status = ?",
+                ps -> {
+                    ps.setString(1, status);
+                    ps.setString(2, reason);
+                    setLong(ps, 3, intradayDecisionId);
+                    setInteger(ps, 4, lagSeconds);
+                    setInstant(ps, 5, calledAt);
+                    ps.setString(6, code);
+                    ps.setDate(7, Date.valueOf(session));
+                    ps.setInt(8, slot);
+                    ps.setString(9, fromStatus);
+                });
+    }
+
+    /**
+     * 그 계좌·세션의 PLANNED 행 가운데 순번이 {@code fromSlot} 이상인 것을 SUPERSEDED로 닫습니다 — 뒤 결정(수동·재시도)이 그 세션을 대신하면서 예약을
+     * 줄였을 때(남은 순번을 되살리지 않게). 끝난 행은 그대로입니다.
+     *
+     * @return 닫은 행 수
+     */
+    public int supersedeIntradayPlans(String code, LocalDate session, int fromSlot, String reason) {
+        return jdbc.update("UPDATE paper_intraday_plans SET status = 'SUPERSEDED', reason = ?, updated_at = now() "
+                        + "WHERE book_code = ? AND session_date = ? AND slot >= ? AND status = 'PLANNED'",
+                reason, code, Date.valueOf(session), fromSlot);
+    }
+
+    /** 그 계좌의 최근 장중 판단 계획 행 {@code limit}개 — 세션 최근 순, 같은 세션은 순번 순. */
+    public List<IntradayPlan> recentIntradayPlans(String code, int limit) {
+        return jdbc.query("SELECT " + INTRADAY_PLAN_COLUMNS + " FROM paper_intraday_plans WHERE book_code = ? "
+                + "ORDER BY session_date DESC, slot LIMIT ?", intradayPlanMapper(), code, limit);
+    }
+
+    /**
+     * 그 계좌에서 부른(DONE) 그 피드의 장중 판단이 잰 지연(초), 최근 순 {@code limit}개 — 지연을 모르는 행(null)은 빼고 셉니다(0으로 채우지 않음).
+     */
+    public List<Integer> recentIntradayLags(String code, String feed, int limit) {
+        return jdbc.query("SELECT lag_seconds FROM paper_intraday_plans WHERE book_code = ? AND feed = ? AND status = 'DONE' "
+                        + "AND lag_seconds IS NOT NULL ORDER BY session_date DESC, slot DESC LIMIT ?",
+                (rs, rowNum) -> rs.getInt("lag_seconds"), code, feed, limit);
+    }
+
+    private static RowMapper<IntradayPlan> intradayPlanMapper() {
+        return (rs, rowNum) -> {
+            java.sql.Array watch = rs.getArray("watch");
+            List<String> tickers = watch == null ? List.of() : List.of((String[]) watch.getArray());
+            return new IntradayPlan(rs.getString("book_code"), date(rs, "session_date"), rs.getInt("slot"),
+                    rs.getObject("at_local", LocalTime.class), rs.getString("feed"), tickers, rs.getString("question"),
+                    rs.getString("variant"), rs.getBoolean("manual"), rs.getLong("source_decision_id"),
+                    rs.getObject("requested_by_decision_id", Long.class), rs.getObject("intraday_decision_id", Long.class),
                     rs.getString("status"), rs.getString("reason"), rs.getObject("lag_seconds", Integer.class),
                     instant(rs, "called_at"), instant(rs, "created_at"), instant(rs, "updated_at"));
         };

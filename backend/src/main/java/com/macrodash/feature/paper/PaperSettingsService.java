@@ -572,6 +572,8 @@ public class PaperSettingsService {
         // 자유 시점 판(ADR 0027) — 꺼짐. 이 키가 없는 지금 행도 꺼짐으로 읽힙니다(FreeTimingSettings — 배포만으로 바뀌지 않음).
         claude.put("freeTiming", FreeTimingSettings.DEFAULT);
         body.put("claude", claude);
+        // 세션마다 계좌별 장중 판단 횟수(ADR 0027 결정 3) — 2. 켠 판의 결정만 읽습니다(끈 판에는 영향 없음).
+        body.put(FreeTimingSettings.US_INTRADAY_MAX, FreeTimingSettings.DEFAULT_INTRADAY_MAX);
         // 미국 Claude 계좌2(계좌2 명세 §13-2) — 꺼짐·단계 1 값. 이 키가 없는 지금 행도 같은 값으로 읽힙니다(Claude2Settings — 배포만으로 바뀌지 않음).
         body.put("claude2", Claude2Settings.defaultsBody());
         // 텔레그램 알림(사용자 요청 2026-11-02, 두 책 공통) — 켬. 이 키가 없는 지금 행도 켬으로 읽힙니다(PaperNotifyJob.on).
@@ -638,6 +640,7 @@ public class PaperSettingsService {
         claude2.put("freeTiming", FreeTimingSettings.DEFAULT);
         kr.put("claude2", claude2);
         kr.put("claude", Map.of("freeTiming", FreeTimingSettings.DEFAULT));
+        kr.put("intradayMaxPerSession", FreeTimingSettings.DEFAULT_INTRADAY_MAX);
         return kr;
     }
 }

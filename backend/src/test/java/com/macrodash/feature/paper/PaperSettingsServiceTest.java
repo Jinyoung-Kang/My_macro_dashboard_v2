@@ -310,8 +310,8 @@ class PaperSettingsServiceTest {
         assertThat(out.get("warning")).as("규칙 계좌가 읽지 않는 키").isNull();
         assertThat(body().path("claude").path("figureCheck").asBoolean()).isTrue();
 
-        assertThatThrownBy(() -> update("apiScheduledReserve", 51)).hasMessageContaining("0~50");
-        assertThatThrownBy(() -> update("apiScheduledReserve", -1)).hasMessageContaining("0~50");
+        assertThatThrownBy(() -> update("apiScheduledReserve", 101)).hasMessageContaining("0~100");
+        assertThatThrownBy(() -> update("apiScheduledReserve", -1)).hasMessageContaining("0~100");
         assertThatThrownBy(() -> update("claude.schemaV3", "true")).hasMessageContaining("true·false");
         assertThatThrownBy(() -> update("calendar", true)).as("묶음 자리에 값").hasMessageContaining("모르는 설정 키: calendar");
         assertThatThrownBy(() -> update("claude.unknownSwitch", true)).hasMessageContaining("모르는 설정 키: claude.unknownSwitch");
@@ -335,6 +335,12 @@ class PaperSettingsServiceTest {
         assertThat(FreeTimingSettings.from(null)).isEqualTo(FreeTimingSettings.OFF);
         assertThat(FreeTimingSettings.key(PaperBooks.KR_CLAUDE2)).isEqualTo("kr.claude2.freeTiming");
         assertThat(FreeTimingSettings.key(PaperBooks.RULES)).as("규칙 계좌의 체결 시각은 다른 키").isNull();
+        // 세션마다 계좌별 장중 판단 횟수 — 기본 2, 0~2, 시장마다 따로.
+        assertThat(defaults.path("intradayMaxPerSession").asInt()).isEqualTo(2);
+        assertThat(defaults.path("kr").path("intradayMaxPerSession").asInt()).isEqualTo(2);
+        assertThat(PaperSettingKeys.find("intradayMaxPerSession").orElseThrow()).extracting(PaperSettingKeys.Spec::min,
+                PaperSettingKeys.Spec::max, PaperSettingKeys.Spec::affectsRules).containsExactly(0.0, 2.0, false);
+        assertThat(PaperSettingKeys.find("kr.intradayMaxPerSession").orElseThrow().scope()).isEqualTo(PaperSettingKeys.Scope.KR);
 
         // 이 키들이 없는 옛 행(서버의 지금 행) — 꺼짐으로 읽고 판 그대로.
         ((tools.jackson.databind.node.ObjectNode) body().get("claude")).remove("freeTiming");
@@ -348,7 +354,7 @@ class PaperSettingsServiceTest {
         assertThat(out.get("changedKeys")).isEqualTo(List.of("claude2.freeTiming", "kr.claude.freeTiming"));
         assertThat(out.get("warning")).as("규칙 계좌 영향 키가 아님").isNull();
         FreeTimingSettings on = FreeTimingSettings.from(body());
-        assertThat(on).isEqualTo(new FreeTimingSettings(false, true, true, false));
+        assertThat(on).isEqualTo(new FreeTimingSettings(false, true, true, false, 2, 2));
         assertThat(on.on(PaperBooks.CLAUDE2)).isTrue();
         assertThat(on.on(PaperBooks.KR_CLAUDE)).isTrue();
         assertThat(on.on(PaperBooks.CLAUDE)).isFalse();
@@ -366,6 +372,17 @@ class PaperSettingsServiceTest {
         assertThatThrownBy(() -> update("claude.checkpoint", true)).as("켠 판에서 장중 확인을 다시 켜는 저장도 거절")
                 .isInstanceOf(InvalidRequestException.class);
         assertThatThrownBy(() -> update("claude.freeTiming", "yes")).as("불리언만").isInstanceOf(InvalidRequestException.class);
+
+        // 장중 판단 횟수 — 0~2만 받고 시장마다 따로 읽음(키가 없는 옛 행은 2).
+        assertThat(FreeTimingSettings.from(body()).intradayMax(PaperBooks.KR_CLAUDE)).as("kr 묶음이 없던 행 — 기본 2").isEqualTo(2);
+        assertThatThrownBy(() -> update("intradayMaxPerSession", 3)).as("최대 2회(사용자 결정)").isInstanceOf(InvalidRequestException.class);
+        update("intradayMaxPerSession", 1, "kr.intradayMaxPerSession", 0);
+        FreeTimingSettings counts = FreeTimingSettings.from(body());
+        assertThat(counts.intradayMax(PaperBooks.CLAUDE)).isEqualTo(1);
+        assertThat(counts.intradayMax(PaperBooks.CLAUDE2)).isEqualTo(1);
+        assertThat(counts.intradayMax(PaperBooks.KR_CLAUDE2)).isZero();
+        assertThat(counts.intradayMax(PaperBooks.RULES)).isZero();
+        update("intradayMaxPerSession", 2, "kr.intradayMaxPerSession", 2);
     }
 
     @Test

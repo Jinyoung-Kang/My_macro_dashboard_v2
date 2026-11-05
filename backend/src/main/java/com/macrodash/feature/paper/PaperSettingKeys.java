@@ -288,6 +288,9 @@ final class PaperSettingKeys {
             of(Claude1Checkpoint.AT_ET, Type.TIME, false,
                     "Claude 계좌1 장중 확인 시각(뉴욕 시각 HH:mm, 10:00~15:00, 기본 12:00) — 그 시각 뒤 수집된 그날 시간별 관측치가 오면 부름, "
                             + "마감 30분 전까지 못 부르면 그 세션은 건너뜀"),
+            integer(FreeTimingSettings.US_INTRADAY_MAX, 0, RuleBookService.INTRADAY_MAX, false,
+                    "미국 세션마다 계좌별 장중 판단 횟수(ADR 0027 — 자유 시점 판을 켠 계좌만, 0~2, 기본 2). 그 계좌의 결정이 다음 세션 장중에 "
+                            + "다시 판단할 시각을 이 수까지 예약함(분 단위). 0이면 예약을 받지 않음(분 단위 지정 시각 주문만)"),
             of(FreeTimingSettings.US_CLAUDE, Type.BOOLEAN, false,
                     "Claude 계좌1 자유 시점 판(ADR 0027, 기본 꺼짐) — 켜면 다음 미국 결정부터 시가·분 단위 지정 시각(AT_MINUTE, 정규장 안)·종가를 "
                             + "받는 판으로 부름(다음 관측치 NEXT_OBSERVATION은 내지 않음, 주문은 다음 세션 하루짜리). claude.checkpoint와 함께 켤 수 "
@@ -382,6 +385,8 @@ final class PaperSettingKeys {
             of(Claude2Settings.KR_CHECKPOINTS, Type.BOOLEAN, false,
                     "한국 Claude 계좌2 장중 확인(단계 2b — 세션당 최대 1회, 밤 결정이 고른 시각 뒤 토스 1분봉으로 한 번 더 판단). 끄면 확인을 "
                             + "부르지 않고 그 세션 계획은 SKIPPED(밤 결정의 요청은 계속 받음 — 호출만 멈추는 스위치)"),
+            integer(FreeTimingSettings.KR_INTRADAY_MAX, 0, RuleBookService.INTRADAY_MAX, false,
+                    "한국 세션마다 계좌별 장중 판단 횟수(ADR 0027 — 자유 시점 판을 켠 계좌만, 0~2, 기본 2). 0이면 예약을 받지 않음"),
             of(FreeTimingSettings.KR_CLAUDE, Type.BOOLEAN, false,
                     "한국 Claude 계좌1 자유 시점 판(ADR 0027, 기본 꺼짐) — 켜면 다음 한국 결정부터 시가·분 단위 지정 시각(AT_MINUTE, "
                             + "09:01~15:19 KST)·종가를 받는 판으로 부름. 장중 체결에는 금융위 확정 조정이 없음. 끄면 다음 결정부터 지금 판"),

@@ -54,6 +54,8 @@ class FakePaperStore extends PaperStore {
     TreeMap<Long, ExecFill> fillBars = new TreeMap<>();
     /** "책|세션" → 장중 확인 행({@code paper_checkpoints}, V18 — 계좌·세션마다 한 행, 요청 결정을 지우면 함께). */
     TreeMap<String, Checkpoint> checkpoints = new TreeMap<>();
+    /** "책|세션|순번" → 장중 판단 계획 행({@code paper_intraday_plans}, V23 — 계좌·세션·순번마다 한 행, 아침 결정을 지우면 함께). */
+    TreeMap<String, IntradayPlan> intradayPlans = new TreeMap<>();
     Map<String, TreeMap<LocalDate, NavRow>> nav = new HashMap<>();
     List<JobRun> jobRuns = new ArrayList<>();
     Map<String, StartPrice> startPrices = new TreeMap<>();
@@ -1307,9 +1309,93 @@ class FakePaperStore extends PaperStore {
                 .toList();
     }
 
+    private static String intradayKey(String code, LocalDate session, int slot) {
+        return code + "|" + session + "|" + slot;
+    }
+
+    /** PaperStore와 같은 규칙 — 없으면 PLANNED로 넣고, PLANNED 행만 이번 값으로 바꾸며, 끝난 행은 그대로(false). 순번은 1·2뿐(V23 CHECK). */
+    @Override
+    public boolean upsertPlannedIntradayPlan(IntradayPlan row) {
+        if (!decisions.containsKey(row.sourceDecisionId())) {
+            throw new org.springframework.dao.DataIntegrityViolationException("paper_intraday_plans_source_decision_id_fkey: "
+                    + row.sourceDecisionId());
+        }
+        if (row.slot() < 1 || row.slot() > 2 || row.atLocal().getSecond() != 0) {
+            throw new org.springframework.dao.DataIntegrityViolationException("paper_intraday_plans CHECK: 순번 " + row.slot()
+                    + " · 시각 " + row.atLocal());
+        }
+        String key = intradayKey(row.bookCode(), row.sessionDate(), row.slot());
+        IntradayPlan existing = intradayPlans.get(key);
+        if (existing != null && !"PLANNED".equals(existing.status())) {
+            return false;
+        }
+        intradayPlans.put(key, new IntradayPlan(row.bookCode(), row.sessionDate(), row.slot(), row.atLocal(), row.feed(),
+                row.watch(), row.question(), row.variant(), row.manual(), row.sourceDecisionId(), row.requestedByDecisionId(),
+                existing == null ? null : existing.intradayDecisionId(), "PLANNED", null,
+                existing == null ? null : existing.lagSeconds(), existing == null ? null : existing.calledAt(),
+                existing == null ? dbNow : existing.createdAt(), dbNow));
+        return true;
+    }
+
+    @Override
+    public List<IntradayPlan> intradayPlans(String code, LocalDate session) {
+        return intradayPlans.values().stream().filter(p -> p.bookCode().equals(code) && p.sessionDate().equals(session))
+                .sorted(Comparator.comparingInt(IntradayPlan::slot)).toList();
+    }
+
+    @Override
+    public List<IntradayPlan> plannedIntradayPlans(java.util.Collection<String> codes) {
+        return intradayPlans.values().stream().filter(p -> codes.contains(p.bookCode()) && "PLANNED".equals(p.status()))
+                .sorted(Comparator.comparing(IntradayPlan::sessionDate).thenComparing(IntradayPlan::atLocal)
+                        .thenComparing(IntradayPlan::bookCode).thenComparingInt(IntradayPlan::slot)).toList();
+    }
+
+    @Override
+    public int markIntradayPlan(String code, LocalDate session, int slot, String fromStatus, String status, String reason,
+                                Long intradayDecisionId, Integer lagSeconds, Instant calledAt) {
+        String key = intradayKey(code, session, slot);
+        IntradayPlan p = intradayPlans.get(key);
+        if (p == null || !p.status().equals(fromStatus)) {
+            return 0;
+        }
+        intradayPlans.put(key, new IntradayPlan(p.bookCode(), p.sessionDate(), p.slot(), p.atLocal(), p.feed(), p.watch(),
+                p.question(), p.variant(), p.manual(), p.sourceDecisionId(), p.requestedByDecisionId(), intradayDecisionId, status,
+                reason, lagSeconds, calledAt, p.createdAt(), dbNow));
+        return 1;
+    }
+
+    @Override
+    public int supersedeIntradayPlans(String code, LocalDate session, int fromSlot, String reason) {
+        int closed = 0;
+        for (IntradayPlan p : intradayPlans(code, session)) {
+            if (p.slot() >= fromSlot && "PLANNED".equals(p.status())) {
+                closed += markIntradayPlan(code, session, p.slot(), "PLANNED", "SUPERSEDED", reason, p.intradayDecisionId(),
+                        p.lagSeconds(), p.calledAt());
+            }
+        }
+        return closed;
+    }
+
+    @Override
+    public List<IntradayPlan> recentIntradayPlans(String code, int limit) {
+        return intradayPlans.values().stream().filter(p -> p.bookCode().equals(code))
+                .sorted(Comparator.comparing(IntradayPlan::sessionDate).reversed().thenComparingInt(IntradayPlan::slot))
+                .limit(limit).toList();
+    }
+
+    @Override
+    public List<Integer> recentIntradayLags(String code, String feed, int limit) {
+        return intradayPlans.values().stream().filter(p -> p.bookCode().equals(code) && p.feed().equals(feed)
+                        && "DONE".equals(p.status()) && p.lagSeconds() != null)
+                .sorted(Comparator.comparing(IntradayPlan::sessionDate).reversed()
+                        .thenComparing(Comparator.comparingInt(IntradayPlan::slot).reversed()))
+                .limit(limit).map(IntradayPlan::lagSeconds).toList();
+    }
+
     @Override
     public void resetBook(String code) {
         checkpoints.values().removeIf(c -> c.bookCode().equals(code));
+        intradayPlans.values().removeIf(p -> p.bookCode().equals(code));
         decisions.values().removeIf(d -> d.bookCode().equals(code));
         orders.values().removeIf(o -> o.bookCode().equals(code));
         ledgerHoldMarks.keySet().removeIf(id -> !orders.containsKey(id));
@@ -1331,7 +1417,7 @@ class FakePaperStore extends PaperStore {
                             Map<String, TreeMap<String, Lockout>> lockouts, TreeMap<Long, Order> orders,
                             TreeMap<Long, LedgerHold> ledgerHoldMarks, TreeMap<Long, Fill> fills, TreeMap<Long, FillConfirmation> confirmations,
                             TreeMap<Long, OrderExec> execs, TreeMap<String, Checkpoint> checkpoints,
-                            Map<String, TreeMap<LocalDate, NavRow>> nav,
+                            TreeMap<String, IntradayPlan> intradayPlans, Map<String, TreeMap<LocalDate, NavRow>> nav,
                             List<JobRun> jobRuns, Map<String, StartPrice> startPrices, SettingsRow settings,
                             TreeMap<LocalDate, TreeMap<String, TrackRecordRow>> trackRecords,
                             TreeMap<LocalDate, Selection> selections, TreeMap<Long, Decision> decisions,
@@ -1343,7 +1429,7 @@ class FakePaperStore extends PaperStore {
             this(new TreeMap<>(s.books), new TreeMap<>(s.states), deep(s.positions), deep(s.corpHolds),
                     deep(s.refVolumes), deep(s.lockouts),
                     new TreeMap<>(s.orders), new TreeMap<>(s.ledgerHoldMarks), new TreeMap<>(s.fills), new TreeMap<>(s.confirmations),
-                    new TreeMap<>(s.execs), new TreeMap<>(s.checkpoints), deep(s.nav),
+                    new TreeMap<>(s.execs), new TreeMap<>(s.checkpoints), new TreeMap<>(s.intradayPlans), deep(s.nav),
                     new ArrayList<>(s.jobRuns),
                     new TreeMap<>(s.startPrices), s.settings, deepDates(s.trackRecords), new TreeMap<>(s.selections),
                     new TreeMap<>(s.decisions), new TreeMap<>(s.gates), new TreeMap<>(s.frameworks),
@@ -1364,6 +1450,7 @@ class FakePaperStore extends PaperStore {
             s.confirmations = confirmations;
             s.execs = execs;
             s.checkpoints = checkpoints;
+            s.intradayPlans = intradayPlans;
             s.nav = nav;
             s.jobRuns = jobRuns;
             s.startPrices = startPrices;

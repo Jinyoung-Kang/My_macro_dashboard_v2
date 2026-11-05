@@ -137,8 +137,11 @@ public class ClaudeBookService {
     static final String DEFAULT_MODEL = "claude-sonnet-5-5";
     static final String DEFAULT_EFFORT = "high";
     static final int DEFAULT_DAILY_CALL_CAP = 30;
-    /** 일일 호출 상한의 최댓값 — 설정 실수(600)로 하루 비용이 백 배가 되지 않게. */
-    static final int MAX_DAILY_CALL_CAP = 50;
+    /**
+     * 일일 호출 상한의 최댓값 — 설정 실수(600)로 하루 비용이 백 배가 되지 않게. 50에서 100으로 넓혔습니다(ADR 0027 결정 9 — 자유 시점 판을 켜는 저장에서
+     * 상한 60·예약 20: 네 계좌 × (결정 1 + 재시도 1 + 장중 판단 2) = 정기 호출 하루 최대 16). 기본값({@value #DEFAULT_DAILY_CALL_CAP})은 그대로입니다.
+     */
+    static final int MAX_DAILY_CALL_CAP = 100;
 
     /** 응답 스키마(설계 §5-3) — API용(제약을 걷어 낸 것)과 검사용(전체)이 같은 파일입니다(D26). */
     static final String SCHEMA_RESOURCE = "paper/decision.schema.json";

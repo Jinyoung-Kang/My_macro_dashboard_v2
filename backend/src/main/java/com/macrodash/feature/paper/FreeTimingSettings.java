@@ -14,24 +14,42 @@ import tools.jackson.databind.JsonNode;
  * @param claude2   미국 Claude 계좌2({@value #US_CLAUDE2})
  * @param krClaude  한국 Claude 계좌1({@value #KR_CLAUDE})
  * @param krClaude2 한국 Claude 계좌2({@value #KR_CLAUDE2})
+ * @param intradayMaxUs 미국 세션마다 계좌별 장중 판단 횟수({@value #US_INTRADAY_MAX} — 0~{@value RuleBookService#INTRADAY_MAX}, 0이면 장중 판단 없음)
+ * @param intradayMaxKr 한국 세션마다 계좌별 장중 판단 횟수({@value #KR_INTRADAY_MAX})
  */
-record FreeTimingSettings(boolean claude, boolean claude2, boolean krClaude, boolean krClaude2) {
+record FreeTimingSettings(boolean claude, boolean claude2, boolean krClaude, boolean krClaude2, int intradayMaxUs,
+                          int intradayMaxKr) {
 
     static final String US_CLAUDE = "claude.freeTiming";
     static final String US_CLAUDE2 = "claude2.freeTiming";
     static final String KR_CLAUDE = "kr.claude.freeTiming";
     static final String KR_CLAUDE2 = "kr.claude2.freeTiming";
 
+    /** 세션마다 계좌별 장중 판단 횟수(ADR 0027 결정 3 — 사용자 결정 최대 2회). 켠 판의 결정이 예약할 수 있는 수이고, 0이면 예약을 받지 않습니다. */
+    static final String US_INTRADAY_MAX = "intradayMaxPerSession";
+    static final String KR_INTRADAY_MAX = "kr.intradayMaxPerSession";
+
     /** 이 키가 생기기 전 행·빈 본문의 값. */
     static final boolean DEFAULT = false;
-    static final FreeTimingSettings OFF = new FreeTimingSettings(DEFAULT, DEFAULT, DEFAULT, DEFAULT);
+    static final int DEFAULT_INTRADAY_MAX = RuleBookService.INTRADAY_MAX;
+    static final FreeTimingSettings OFF = new FreeTimingSettings(DEFAULT, DEFAULT, DEFAULT, DEFAULT, DEFAULT_INTRADAY_MAX,
+            DEFAULT_INTRADAY_MAX);
 
     /** 설정 본문에서 읽습니다(클래스 설명). null 본문은 모두 꺼짐. */
     static FreeTimingSettings from(JsonNode body) {
         if (body == null) {
             return OFF;
         }
-        return new FreeTimingSettings(bool(body, US_CLAUDE), bool(body, US_CLAUDE2), bool(body, KR_CLAUDE), bool(body, KR_CLAUDE2));
+        return new FreeTimingSettings(bool(body, US_CLAUDE), bool(body, US_CLAUDE2), bool(body, KR_CLAUDE), bool(body, KR_CLAUDE2),
+                count(body, US_INTRADAY_MAX), count(body, KR_INTRADAY_MAX));
+    }
+
+    /** 그 계좌 시장의 세션당 장중 판단 횟수. Claude 계좌 넷 밖이면 0. */
+    int intradayMax(String book) {
+        if (PaperBooks.CLAUDE.equals(book) || PaperBooks.CLAUDE2.equals(book)) {
+            return intradayMaxUs;
+        }
+        return PaperBooks.KR_CLAUDE.equals(book) || PaperBooks.KR_CLAUDE2.equals(book) ? intradayMaxKr : 0;
     }
 
     /** 그 계좌가 켠 판인가. Claude 계좌 넷 밖의 코드는 늘 거짓(규칙 계좌의 체결 시각은 다른 키). */
@@ -60,6 +78,15 @@ record FreeTimingSettings(boolean claude, boolean claude2, boolean krClaude, boo
             case PaperBooks.KR_CLAUDE2 -> KR_CLAUDE2;
             default -> null;
         };
+    }
+
+    /** 0~{@value RuleBookService#INTRADAY_MAX}의 정수. 없거나 범위 밖이면 기본({@value RuleBookService#INTRADAY_MAX}). */
+    private static int count(JsonNode body, String key) {
+        JsonNode value = PaperSettingsService.valueAt(body, key);
+        if (value != null && value.isIntegralNumber() && value.asInt() >= 0 && value.asInt() <= RuleBookService.INTRADAY_MAX) {
+            return value.asInt();
+        }
+        return DEFAULT_INTRADAY_MAX;
     }
 
     private static boolean bool(JsonNode body, String key) {

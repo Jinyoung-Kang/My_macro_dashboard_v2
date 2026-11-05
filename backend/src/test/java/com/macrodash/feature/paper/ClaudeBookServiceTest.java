@@ -978,8 +978,8 @@ class ClaudeBookServiceTest {
         assertThat(reserved.callLimit(false)).isEqualTo(11);
         assertThat(ClaudeBookService.ClaudeSettings.from(MAPPER.valueToTree(Map.of("apiScheduledReserve", 2.5)))
                 .scheduledReserve()).isEqualTo(7);
-        // 범위(0~50) 밖은 아래·위 모두 기본 7 — 음수 예약을 받으면 수동 문턱이 상한을 넘음(20 − (−1) = 21).
-        for (int outside : new int[] {-1, 51}) {
+        // 범위(0~100 — ADR 0027 결정 9로 50에서 넓힘) 밖은 아래·위 모두 기본 7 — 음수 예약을 받으면 수동 문턱이 상한을 넘음(20 − (−1) = 21).
+        for (int outside : new int[] {-1, 101}) {
             ClaudeBookService.ClaudeSettings clamped = ClaudeBookService.ClaudeSettings.from(MAPPER.valueToTree(Map.of(
                     "apiDailyCallCap", 20, "apiScheduledReserve", outside)));
             assertThat(clamped.scheduledReserve()).as("apiScheduledReserve " + outside).isEqualTo(7);
@@ -987,8 +987,12 @@ class ClaudeBookServiceTest {
             assertThat(clamped.callLimit(true)).isEqualTo(20);
         }
         ClaudeBookService.ClaudeSettings edges = ClaudeBookService.ClaudeSettings.from(MAPPER.valueToTree(Map.of(
-                "apiDailyCallCap", 50, "apiScheduledReserve", 50)));
-        assertThat(edges.scheduledReserve()).as("끝값 50은 받음").isEqualTo(50);
+                "apiDailyCallCap", 100, "apiScheduledReserve", 100)));
+        assertThat(edges.scheduledReserve()).as("끝값 100은 받음").isEqualTo(100);
+        ClaudeBookService.ClaudeSettings free = ClaudeBookService.ClaudeSettings.from(MAPPER.valueToTree(Map.of(
+                "apiDailyCallCap", 60, "apiScheduledReserve", 20)));
+        assertThat(free.callLimit(true)).as("자유 시점 판을 켜는 저장의 값(ADR 0027) — 정기 60").isEqualTo(60);
+        assertThat(free.callLimit(false)).as("수동 40").isEqualTo(40);
         assertThat(ClaudeBookService.ClaudeSettings.from(MAPPER.valueToTree(Map.of("apiScheduledReserve", 0)))
                 .scheduledReserve()).as("끝값 0은 받음").isZero();
         assertThat(bad.fallbacks()).doesNotContain("apiScheduledReserve");
