@@ -53,6 +53,18 @@
   - 문서·주석 바로잡음: IMPROVEMENTS 6·8번(이미 고친 것을 남은 문제로 적음), `symbolNotice` 설명(`symbols.error`는 '결과 0건 + 실패 출처 있음').
   - 반박됨: QA-250 재발 방지 시험이 백틱 형식을 놓친다(저장소에 그런 호출 없음), make 밖 네이티브 실행도 정기 작업을 켠다(문서가 `make dev-backend`만 안내).
 
+## 5단계 — 보고·전달
+- 커밋별 재검증(독립 검토 반영 8커밋 `8e8014ea`~`601b22a6`) 모두 통과, CI와 같은 JDK 21 백엔드 시험(`601b22a6`) 2394 통과.
+  지금 시험 수: 수집기 1332·12 건너뜀, 백엔드 2394(JDK 25·21 같음), 화면 vitest 133파일 1788 + build.
+- 최종 보고 [2026-11-05-qa-report.md](2026-11-05-qa-report.md) `fee1edeb` — 판정 조건부.
+- 2026-11-05 12:25 KST `main` fast-forward `bc22e799..fee1edeb` push, CI 41961541243 6/6 통과(12:30). 'v2 작업 1'·'프레임 v'·'토스증권 실제 계좌 접근' 세션에 먼저 알림.
+- 배포 전 운영 DB 읽기 조회: 남은 장중 확인 계획(PLANNED) 없음, 마지막 결정은 11-05 06:30 KST 미국 정기 결정 — 진행 중인 Claude 호출 없음.
+- Vultr 배포 12:30~12:33 KST `deploy.sh` → `main@fee1edeb`(배포 직전 덤프 `backups/pre-deploy-20261105-033216.sql` 469M, 디스크 34%, 컨테이너 모두 healthy).
+  로컬 스택도 `make up`(`main@fee1edeb`).
+- 배포 뒤 읽기 전용 확인(tailnet 주소, GET만): 실행 감사 `claude`·`claude2`·`kr_claude`·`kr_claude2` 모두 200, 종목 찾기(`/api/detail/symbols?q=apple`) 200·5건·실패 출처 없음,
+  실시간 시세 SSE(`KR:005930`, 5초) 13초에 `prices` 3회, 배포 뒤 백엔드 로그 `Exception`·`ERROR` 0건·수집기 Traceback 0건.
+  운영 `paper_checkpoints`는 지금 행이 없어 QA-253 회귀 경로(결정 번호 없는 확인 행)는 운영에서는 아직 지나지 않음 — 시험(`checkpointRowsWithoutAnswersStillRender`·한국 `checkpoints`)이 맡음.
+
 ## 결정 대기
 - 승인 필요 항목(이번 회차는 수정안만): QA-251의 DB 잠금(advisory lock — 두 프로세스가 같은 DB를 쓸 때 장부 이중 처리 방지), QA-263 컨테이너 기본 이미지 올리기,
   QA-264 의존성(opentelemetry-api) 올리기, QA-282 `paper_orders.decision_id` 색인(DB 스키마). 최종 보고 때 한 번에 여쭙니다.
