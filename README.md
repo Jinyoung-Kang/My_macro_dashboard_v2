@@ -4,6 +4,8 @@
 SEC 13F · 국내 수급을 **한 화면에서** 보는 개인용 대시보드입니다. 운영자 전용
 모의 알고리즘 매매도 들어 있습니다 — 미국(규칙·Claude 계좌1·SPY·60/40 네 계좌 + 체결 시점 실험 Claude 계좌2 — 장중 확인 최대 한 번(MINUTE·HOURLY), $100k씩)과 한국(규칙·Claude·KODEX 200·60/40 네 계좌,
 1억 원씩 — 출발일 `PAPER_KR_START_DATE`를 정하면 출발, 서버는 2026-10-30 출발).
+체결 시점은 설정으로 넓힐 수 있습니다([ADR 0027](docs/adr/0027-free-fill-timing.md)) — 네 Claude 계좌는 계좌별 스위치(`claude.freeTiming` 등, 기본 꺼짐)를 켜면
+다음 세션의 시가·분 단위 지정 시각·종가 주문과 장중 판단(세션마다 계좌별 최대 2번, Claude가 시각을 고름)을 쓰고, 규칙 계좌는 `rules.timing`·`kr.rules.timing`으로 체결 시각을 정합니다(기본은 지금 그대로).
 맥에서 Docker 한 줄로 띄우고, 모의 매매가 도는 운영본은 Vultr 서울의 서버 한 대(24시간, 접속은 Tailscale)에 둡니다(2026-11-03 02:30 KST에 AWS EC2에서 옮김 — ADR 0023).
 
 > 이 저장소(`My_macro_dashboard_v2`)는 2026-10-26에 `My_macro_dashboard_v1`에서 전체 이력으로 갈라져 나왔습니다 — 화면 전면 개편과

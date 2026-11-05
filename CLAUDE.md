@@ -50,6 +50,8 @@ PostgreSQL ← 수집기(FastAPI, `collector/`). Docker Compose 네 컨테이너
 - **모의 매매 상태는 Vultr 서버 한 곳에만**(ADR 0019·0020·0023) — 2026-11-03 02:30 KST부터(그 전은 AWS EC2 `my-macro-app` — 같은 날 지움). **이 폴더의 `.env`는 `PAPER_ENABLED=false` 고정**.
   두 곳에서 정기 작업(리스크 점검·결정·체결)이 동시에 돌면 안 된다(서버 v1도 다시 올리지 않는다).
   로컬 `.env`를 서버로 보낼 때는 그 줄과 포트 네 줄 등을 빼고 서버 전용 줄(`PAPER_KR_START_DATE` 포함)을 더한다(`.env.vultr.example`).
+- **체결 시점 자유화(ADR 0027)의 스위치는 모두 기본 꺼짐** — 네 Claude 계좌의 `*.freeTiming`(분 단위 지정 시각 `AT_MINUTE` + 장중 판단)과 규칙 계좌의 `rules.timing`·`kr.rules.timing`.
+  끈 판의 프롬프트·스키마·패킷 고정본은 바이트까지 그대로여야 한다(고정본 시험). **켜는 설정 저장은 시장별로 따로, 그때 사용자에게 다시 확인받는다**(상한 60·예약 20·`claude2.maxCallsPerCycle` 4 이상·`claude.checkpoint` 끔을 함께).
 - **실제 계좌(토스, ADR 0025) 자료는 모의 장부·패킷·프롬프트·로그·시험 자료·커밋·QA 기록·텔레그램에 넣지 않는다.** 조회는 서버(Vultr)에서만 켜고
   (`TOSS_ACCOUNT_ENABLED` — 로컬 compose는 `"false"` 고정), 쓰기(주문) 경로는 새 ADR과 사용자 승인 없이 만들지 않는다(공유 토스 세션 가드와 쓰기 금지 시험을 풀면 그것이 결정).
 - 날짜는 `Kst.today()`(Java)·KST 기준. `LocalDate.now()`를 쓰지 않는다(서버 TZ는 UTC).
