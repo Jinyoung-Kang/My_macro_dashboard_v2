@@ -144,9 +144,10 @@ def test_1분봉_저장본을_읽는_백엔드_코드는_실행_감사_작업_�
     callers = sorted(path.relative_to(ROOT).as_posix() for path in (ROOT / "backend/src/main/java").rglob("*.java")
                      if ".barsUs()" in path.read_text(encoding="utf-8"))
     assert callers == ["backend/src/main/java/com/macrodash/feature/paper/PaperCheckpointJob.java",
+                       "backend/src/main/java/com/macrodash/feature/paper/PaperIntradayJob.java",
                        "backend/src/main/java/com/macrodash/feature/paper/PaperLedgerService.java",
                        "backend/src/main/java/com/macrodash/feature/paper/PaperQueryService.java"], \
-        "PaperMarketData.barsUs()를 부르는 곳 = 장부(시각 지정 체결)·상태 응답(claude2.bars)·장중 확인 작업(예상 상태의 T 가격)"
+        "PaperMarketData.barsUs()를 부르는 곳 = 장부(시각 지정 체결)·상태 응답(claude2.bars)·장중 확인 작업과 장중 판단 작업(예상 상태의 T 가격)"
 
 
 # ==============================================================================

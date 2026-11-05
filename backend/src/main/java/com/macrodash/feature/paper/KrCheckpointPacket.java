@@ -53,6 +53,8 @@ final class KrCheckpointPacket {
     static final int CHECKPOINT_VERSION = 1;
     /** 장중 확인 응답 스키마(미국과 같은 모양, 종목 코드만 6자리). */
     static final String SCHEMA_RESOURCE = "paper/kr-claude2-checkpoint.schema.json";
+    /** 자유 시점 판의 한국 장중 판단 응답 스키마(ADR 0027 결정 3 — 시점 셋·{@code atLocal}·{@code nextCheckpoint}). */
+    static final String FREE_SCHEMA_RESOURCE = "paper/kr-intraday-ft.schema.json";
     /** 목표 크기(토큰 어림) — 넘으면 경고 로그만. */
     static final int TARGET_TOKENS = 12_000;
     /** 종목마다 싣는 완성 봉 수(수집기 BARS_KEPT와 같음). */

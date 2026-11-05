@@ -2114,7 +2114,8 @@ public class PacketBuilder {
      * 아닙니다({@link #CHECKPOINT_SCHEMA_BOOKS}). 미국·한국 패킷이 같은 판정을 씁니다(QA-179).
      */
     static boolean priorDecisionKind(String book, String kind) {
-        return !(RuleBookService.CHECKPOINT.equals(kind) && CHECKPOINT_SCHEMA_BOOKS.contains(book));
+        // 자유 시점 판의 장중 판단(INTRADAY_* — ADR 0027)도 자세·목표 노출·watchlist가 없는 응답이라 직전 결정이 아닙니다(어느 계좌든 — 종류로 가름).
+        return !RuleBookService.intraday(kind) && !(RuleBookService.CHECKPOINT.equals(kind) && CHECKPOINT_SCHEMA_BOOKS.contains(book));
     }
 
     /**

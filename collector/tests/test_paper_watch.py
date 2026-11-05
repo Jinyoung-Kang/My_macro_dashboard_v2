@@ -87,10 +87,10 @@ def test_감시_피드와_계좌_코드는_V18·백엔드와_같은_글자():
 
 
 def test_감시_저장본을_읽는_백엔드_코드는_장중_확인_작업과_패킷과_상태_표시뿐이고_화면은_읽지_않는다():
-    """읽는 곳은 PaperMarketData.watchUs(조용히 읽음)를 부르는 장중 확인 작업(PaperCheckpointJob — 호출 조건·지연)과 장중 확인 패킷
-    (CheckpointPacket — MINUTE 피드)(판단 입력), 상태 응답의 계좌2 장중 확인 묶음(PaperQueryService — 받은 시각·나이·지연 표시만)뿐입니다.
-    체결(장부)은 paper.bars.us 한 출처이고 이 저장본을 읽지 않습니다. 이름을 쓰지 않고 PaperMarketData.watchUs()를 거치는 새 독자도 잡도록
-    부르는 파일도 셉니다."""
+    """읽는 곳은 PaperMarketData.watchUs(조용히 읽음)를 부르는 장중 확인 작업(PaperCheckpointJob — 호출 조건·지연)·자유 시점 판의 장중 판단 작업
+    (PaperIntradayJob — ADR 0027, 같은 조건)과 장중 확인 패킷(CheckpointPacket — MINUTE 피드)(판단 입력), 상태 응답의 계좌2 장중 확인 묶음
+    (PaperQueryService — 받은 시각·나이·지연 표시만)뿐입니다. 체결(장부)은 paper.bars.us 한 출처이고 이 저장본을 읽지 않습니다. 이름을 쓰지 않고
+    PaperMarketData.watchUs()를 거치는 새 독자도 잡도록 부르는 파일도 셉니다."""
     readers = []
     for folder in (ROOT / "backend/src/main/java", ROOT / "frontend/src"):
         if not folder.exists():
@@ -107,8 +107,9 @@ def test_감시_저장본을_읽는_백엔드_코드는_장중_확인_작업과_
     callers = sorted(path.relative_to(ROOT).as_posix() for path in (ROOT / "backend/src/main/java").rglob("*.java")
                      if ".watchUs()" in path.read_text(encoding="utf-8"))
     assert callers == ["backend/src/main/java/com/macrodash/feature/paper/PaperCheckpointJob.java",
+                       "backend/src/main/java/com/macrodash/feature/paper/PaperIntradayJob.java",
                        "backend/src/main/java/com/macrodash/feature/paper/PaperQueryService.java"], \
-        "PaperMarketData.watchUs()를 부르는 곳 = 장중 확인 작업과 상태 응답(표시)뿐"
+        "PaperMarketData.watchUs()를 부르는 곳 = 장중 확인 작업·장중 판단 작업과 상태 응답(표시)뿐"
     java = (ROOT / "backend/src/main/java/com/macrodash/store/Datasets.java").read_text(encoding="utf-8")
     assert re.search(r"MAX_AGE_WATCH_US = 10 \* 60L;", java), "session 주기(300초) + 여유"
 

@@ -150,6 +150,28 @@ record ClaudeBookProfile(PaperMarket market, String code, String schemaResource,
             ClaudeBookService.KR_FT_SCHEMA_RESOURCE, ClaudePrompts.KR_FT_FIXED_RULES, null, FreeTiming.DECISION_TIMINGS,
             sequence(FreeTiming.DECISION_TIMINGS), null, krFreeTimingNames(), false, false, true);
 
+    /**
+     * 자유 시점 판 계좌의 장중 판단 응답 프로필(ADR 0027 결정 3) — 장중 판단 작업({@link PaperIntradayJob}·한국 작업)이 받은 응답의 주문을 검증할 때
+     * 씁니다(호출 자체는 그 계좌의 자유 시점 판 프로필의 시스템 프롬프트와 장중 판단 응답 스키마). 같은 계좌 코드·시장 묶음·고정 문단·패킷 변형·소상한
+     * 키·시각 지정 체결 여부이고, 받는 시점만 {@link FreeTiming#INTRADAY_TIMINGS}(장중 시장가 · 그날 남은 분 단위 지정 시각 · 그날 종가)입니다. 순위는
+     * 결정마다 기준 시각 순으로 다시 만듭니다({@link FreeTiming#validation}).
+     *
+     * @throws IllegalArgumentException 자유 시점 판 프로필이 아님
+     */
+    static ClaudeBookProfile intradayReplies(ClaudeBookProfile free) {
+        if (!free.freeTiming()) {
+            throw new IllegalArgumentException("자유 시점 판 프로필이 아닙니다: " + free.code());
+        }
+        boolean korea = free.market() == KrPaperMarket.INSTANCE;
+        Map<String, String> names = new LinkedHashMap<>();
+        names.put(PaperBooks.MARKET, "장중 시장가");
+        names.put(PaperBooks.AT_MINUTE, "지정 시각");
+        names.put(PaperBooks.NEXT_CLOSE, korea ? "오늘 종가" : OrderValidator.Market.US.timingNames().get(PaperBooks.NEXT_CLOSE));
+        return new ClaudeBookProfile(free.market(), free.code(), ClaudeDecisionPipeline.checkpointSchemaResource(free),
+                free.fixedRules(), free.packetVariant(), FreeTiming.INTRADAY_TIMINGS, sequence(FreeTiming.INTRADAY_TIMINGS),
+                free.callCapKey(), names, free.timed(), false, true);
+    }
+
     ClaudeBookProfile {
         Objects.requireNonNull(market, "market");
         Objects.requireNonNull(code, "code");

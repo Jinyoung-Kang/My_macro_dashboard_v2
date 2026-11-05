@@ -49,6 +49,11 @@ import java.util.Set;
  * 버린 뒤 그 수를 적습니다({@code 5_feed.dropped}). 주문의 {@code created_at}은 응답 뒤 DB now()라 늘 이 시각보다 늦습니다(작업 시험이 단언).
  *
  * <p>입력({@link Inputs})을 받아 조립만 합니다 — 저장소·저장본을 읽지 않아 같은 입력이면 같은 글자입니다(고정본 시험).
+ *
+ * <p><b>자유 시점 판의 장중 판단</b>(ADR 0027 결정 3 — {@link Free}가 있을 때): 같은 섹션·같은 자료에 그 계좌(계좌1·계좌2)와 순번을 적고, 남은 시점은
+ * 장중 시장가·그날 남은 분 단위 지정 시각({@code 1_basis.atMinute} 범위)·그날 종가, 다음 판단을 예약할 수 있는지({@code 1_basis.nextCheckpoint}),
+ * 지시문·하드 규칙 문장은 그 판의 것입니다. 응답 스키마는 {@value #FREE_SCHEMA_RESOURCE}. MINUTE 피드는 그 계획의 종목(감시 목록·보유·대기·기준
+ * 종목)만 싣습니다 — 감시 저장본 한 장이 다른 계좌 계획의 종목도 싣기 때문입니다. {@link Free}가 없으면 끈 판 장중 확인 글자 그대로입니다.
  */
 final class CheckpointPacket {
 
@@ -61,6 +66,8 @@ final class CheckpointPacket {
     static final int CHECKPOINT_VERSION = 1;
     /** 장중 확인 응답 스키마(API용과 검사용이 같은 파일 — D26). */
     static final String SCHEMA_RESOURCE = "paper/claude2-checkpoint.schema.json";
+    /** 자유 시점 판의 장중 판단 응답 스키마(ADR 0027 결정 3 — 시점 셋·{@code atLocal}·{@code nextCheckpoint}). */
+    static final String FREE_SCHEMA_RESOURCE = "paper/us-intraday-ft.schema.json";
     /** 결정 종류(paper_decisions.kind — V18). */
     static final String KIND = RuleBookService.CHECKPOINT;
     /** 목표 크기(토큰 어림) — 넘으면 경고 로그만(§9-5 '약 10K'). */
@@ -96,9 +103,29 @@ final class CheckpointPacket {
     private static final DateTimeFormatter CLOCK = DateTimeFormatter.ofPattern("HH:mm", Locale.ROOT);
 
     /**
+     * 자유 시점 판의 장중 판단으로 조립할 때의 차이(ADR 0027 결정 3) — 없으면(null) 끈 판 장중 확인.
+     *
+     * @param book   계좌 코드(미국 Claude 계좌1·계좌2)
+     * @param slot   그 세션의 몇 번째 판단인가(결정 종류 {@code INTRADAY_<slot>})
+     * @param max    그 호출이 읽은 설정의 세션당 장중 판단 횟수
+     * @param manual 운영자가 당긴 판단인가
+     */
+    record Free(String book, int slot, int max, boolean manual) {
+
+        Free {
+            Objects.requireNonNull(book, "book");
+        }
+
+        /** 이 판단의 결정 종류. */
+        String kind() {
+            return RuleBookService.intradayKind(slot);
+        }
+    }
+
+    /**
      * 조립 재료.
      *
-     * @param checkpoint       그 세션의 PLANNED 장중 확인 행
+     * @param checkpoint       그 세션의 PLANNED 장중 확인 행(자유 시점 판이면 장중 판단 계획 행을 같은 모양으로 — {@code IntradayPlan.asCheckpoint})
      * @param asOf             아침 결정의 기준 거래일 d
      * @param morning          요청을 낸 아침 결정 행(보낸 패킷의 selectionAsOf·8_prices·12_hardRules를 읽음)
      * @param state            계좌2 장부 상태(현금·순자산)
@@ -114,11 +141,21 @@ final class CheckpointPacket {
      * @param calendar         미국 달력
      * @param assembledAt      조립 시각(⑨)
      * @param bars             1분봉 저장본(예상 상태의 T 가격 — 없으면 empty, 조립 뒤에 받은 것은 쓰지 않음)
+     * @param free             자유 시점 판의 장중 판단이면 그 차이({@link Free}), 끈 판 장중 확인이면 null
      */
     record Inputs(Checkpoint checkpoint, LocalDate asOf, Decision morning, BookState state, List<Position> positions,
                   List<Order> pending, List<Fill> todayFills, Optional<Snapshot> watch, Optional<Quotes> quotes,
                   JsonNode macroCards, Integer frameworkVersion, Integer settingsVersion, List<Integer> recentLags,
-                  TradingCalendar calendar, Instant assembledAt, Optional<Snapshot> bars) {
+                  TradingCalendar calendar, Instant assembledAt, Optional<Snapshot> bars, Free free) {
+
+        /** 끈 판 장중 확인(계좌2 단계 2) — 자유 시점 판 칸({@code free}) 없이. */
+        Inputs(Checkpoint checkpoint, LocalDate asOf, Decision morning, BookState state, List<Position> positions,
+               List<Order> pending, List<Fill> todayFills, Optional<Snapshot> watch, Optional<Quotes> quotes,
+               JsonNode macroCards, Integer frameworkVersion, Integer settingsVersion, List<Integer> recentLags,
+               TradingCalendar calendar, Instant assembledAt, Optional<Snapshot> bars) {
+            this(checkpoint, asOf, morning, state, positions, pending, todayFills, watch, quotes, macroCards,
+                    frameworkVersion, settingsVersion, recentLags, calendar, assembledAt, bars, null);
+        }
 
         /** 1분봉 저장본 없이(예상 상태는 감시 봉·마지막 가격으로). */
         Inputs(Checkpoint checkpoint, LocalDate asOf, Decision morning, BookState state, List<Position> positions,
@@ -162,14 +199,14 @@ final class CheckpointPacket {
                 : PacketBuilder.readSent(in.morning().packetText(), mapper);
         LocalDate session = in.checkpoint().sessionDate();
         Map<String, Object> root = new LinkedHashMap<>();
-        root.put("0_instructions", instructions());
+        root.put("0_instructions", in.free() == null ? instructions() : freeInstructions());
         root.put("1_basis", basis(in, session, morningPacket));
         root.put("2_macroCards", in.macroCards());
-        root.put("3_request", request(in.checkpoint()));
+        root.put("3_request", request(in.checkpoint(), in.free()));
         root.put("4_portfolio", portfolio(in, session));
         root.put("5_feed", ExecutionSection.FEED_MINUTE.equals(in.checkpoint().feed()) ? minuteFeed(in, session)
                 : hourlyFeed(in, morningPacket));
-        root.put("6_hardRules", hardRules(morningPacket));
+        root.put("6_hardRules", hardRules(morningPacket, in.free() != null));
         JsonNode body = PacketBuilder.toNode(root);
         String text = mapper.writer().without(SerializationFeature.INDENT_OUTPUT).writeValueAsString(body);
         int tokens = PacketBuilder.estimateTokens(text);
@@ -194,18 +231,41 @@ final class CheckpointPacket {
         return out;
     }
 
+    /** 자유 시점 판 장중 판단의 지시문 — 끈 판과 같은 뜻에 순번·남은 시점(장중 시장가·지정 시각·종가)·다음 판단 예약을 적습니다. */
+    private static Map<String, Object> freeInstructions() {
+        List<String> lines = List.of(
+                "장중 판단이다 — 이 세션의 결정(1_basis.sourceDecisionId) 또는 앞선 장중 판단이 예약한 시각에 한 번만 부른다(1_basis.slot번째, "
+                        + "세션당 1_basis.maxPerSession번까지). 재시도는 없다.",
+                "자료는 조립 시각(1_basis.asOfInstant) 전에 끝난 봉·받은 값만 실었다. 지연 자료로 더 좋은 체결가를 얻을 수는 없다 — 체결은 늘 주문 뒤 그 시각의 1분봉이다.",
+                "action이 KEEP이면 아무것도 바꾸지 않는다. REPLACE이면 기준 시각이 아직 오지 않은 대기 주문(4_portfolio.pending의 state '"
+                        + PENDING_AHEAD + "')만 취소되고 새 주문을 받는다 — 기준 시각이 지난 주문은 체결 예정으로 남는다.",
+                "주문 timing은 1_basis.remainingTimings 가운데 하나다 — AT_MINUTE이면 atLocal(뉴욕 시각 HH:MM)을 1_basis.atMinute 범위 안에서 "
+                        + "적는다. 주문마다 executionNote를 쓰고, 주문이 없으면 noTradeReason을 쓴다.",
+                "다음 판단이 필요하면 nextCheckpoint에 시각을 적는다(1_basis.nextCheckpoint — available이 false면 적어도 버려진다). 필요 없으면 null로 둔다.",
+                "시각 표기 …Et는 뉴욕 시각, …Kst는 한국 시각이다.");
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("lines", lines);
+        return out;
+    }
+
     private static Map<String, Object> basis(Inputs in, LocalDate session, JsonNode morningPacket) {
         TradingCalendar calendar = in.calendar();
         Instant now = in.assembledAt();
         Instant close = calendar.closeInstant(session);
         Map<String, Object> out = new LinkedHashMap<>();
+        Free free = in.free();
         out.put("checkpointVersion", CHECKPOINT_VERSION);
-        out.put("variant", PacketBuilder.VARIANT_CLAUDE2);
-        out.put("fixedRules", PacketBuilder.CLAUDE2_FIXED_RULES_VERSION_C2);
-        out.put("book", PaperBooks.CLAUDE2);
+        out.put("variant", free == null ? PacketBuilder.VARIANT_CLAUDE2 : PacketBuilder.VARIANT_FREE);
+        out.put("fixedRules", free == null ? PacketBuilder.CLAUDE2_FIXED_RULES_VERSION_C2 : PacketBuilder.FREE_FIXED_RULES_VERSION);
+        out.put("book", free == null ? PaperBooks.CLAUDE2 : free.book());
         out.put("asOfTradingDate", in.asOf());
         out.put("session", session);
-        out.put("decisionKind", KIND);
+        out.put("decisionKind", free == null ? KIND : free.kind());
+        if (free != null) {
+            out.put("slot", free.slot());
+            out.put("maxPerSession", free.max());
+            out.put("manual", free.manual());
+        }
         out.put("sourceDecisionId", in.checkpoint().sourceDecisionId());
         out.put("selectionAsOf", morningPacket == null ? null
                 : Json.asText(Json.child(morningPacket, "1_basis"), "selectionAsOf"));
@@ -215,7 +275,19 @@ final class CheckpointPacket {
         out.put("closeEt", et(close, calendar));
         out.put("minutesToClose", Duration.between(now, close).toMinutes());
         out.put("earlyClose", calendar.isEarlyClose(session));
-        out.put("remainingTimings", remainingTimings(session, calendar, now));
+        if (free == null) {
+            out.put("remainingTimings", remainingTimings(session, calendar, now));
+        } else {
+            Instant[] minutes = freeMinutes(session, calendar, now);
+            out.put("remainingTimings", freeRemainingTimings(session, calendar, now));
+            Map<String, Object> range = new LinkedHashMap<>();
+            range.put("firstEt", minutes == null ? null : et(minutes[0], calendar));
+            range.put("lastEt", minutes == null ? null : et(minutes[1], calendar));
+            range.put("note", "AT_MINUTE 주문의 atLocal은 이 범위(양 끝 포함)의 뉴욕 시각 HH:MM — 주문 생성 + 60초 뒤의 분부터 마감 5분 전 앞까지. "
+                    + "null이면 남은 분이 없다");
+            out.put("atMinute", range);
+            out.put("nextCheckpoint", nextCheckpoint(free, in.checkpoint(), session, calendar, now));
+        }
         out.put("frameworkVersion", in.frameworkVersion());
         out.put("settingsVersion", in.settingsVersion());
         return out;
@@ -249,19 +321,95 @@ final class CheckpointPacket {
         return out;
     }
 
-    private static Map<String, Object> request(Checkpoint c) {
+    /**
+     * 자유 시점 판 장중 판단 주문이 아직 고를 수 있는 분 단위 지정 시각의 범위 {@code [첫 분, 마지막 분]} — 검증({@link FreeTiming#validation})과 같은
+     * 규칙: 그 세션의 받는 범위({@link FreeTiming#window}) 안이고 지금 + 60초보다 뒤. 남은 분이 없으면 null.
+     */
+    static Instant[] freeMinutes(LocalDate session, TradingCalendar calendar, Instant now) {
+        if (!calendar.isTradingDay(session)) {
+            return null;
+        }
+        FreeTiming.Window window = FreeTiming.window(session, calendar, false);
+        // 지금 + 60초보다 '뒤'인 첫 분 — (지금 + 60초)를 분으로 내린 뒤 + 1분(장중 시장가의 기준 분과 같은 식).
+        Instant first = ExecutionAudit.marketTarget(now);
+        if (first.isBefore(window.first())) {
+            first = window.first();
+        }
+        return window.accepts(first) ? new Instant[]{first, window.last()} : null;
+    }
+
+    /**
+     * 자유 시점 판 장중 판단 주문이 아직 고를 수 있는 시점({@link FreeTiming#INTRADAY_TIMINGS} 가운데) — 장중 시장가는 끈 판과 같은 규칙
+     * ({@link UsTimedFills#closedTimings}), 분 단위 지정 시각은 남은 분이 있을 때({@link #freeMinutes}), 그날 종가는 마감 전일 때.
+     */
+    static List<String> freeRemainingTimings(LocalDate session, TradingCalendar calendar, Instant now) {
+        List<String> out = new ArrayList<>();
+        if (!calendar.isTradingDay(session)) {
+            return out;
+        }
+        for (String timing : FreeTiming.INTRADAY_TIMINGS) {
+            if (PaperBooks.MARKET.equals(timing)) {
+                if (UsTimedFills.closedTimings(List.of(timing), calendar.previousTradingDay(session), now, calendar).isEmpty()) {
+                    out.add(timing);
+                }
+            } else if (PaperBooks.AT_MINUTE.equals(timing)) {
+                if (freeMinutes(session, calendar, now) != null) {
+                    out.add(timing);
+                }
+            } else if (calendar.closeInstant(session).isAfter(now.plus(ExecutionAudit.AFTER_CREATED))) {
+                out.add(timing);
+            }
+        }
+        return out;
+    }
+
+    /**
+     * 다음 판단을 예약할 수 있는가({@code 1_basis.nextCheckpoint}) — 순번이 남았고(이 판단의 순번 < 세션당 횟수) 받는 범위에 이 판단 시각 + 최소 간격
+     * 뒤의 시각이 남아 있을 때. 범위는 {@link IntradayRequest#window}, 가장 이른 시각은 이 판단의 예약 시각 + {@link IntradayRequest#MIN_GAP}과
+     * 지금(호출 창 시작이 지금보다 뒤 — 지금 − 2분의 다음 분) 가운데 늦은 쪽입니다.
+     */
+    private static Map<String, Object> nextCheckpoint(Free free, Checkpoint c, LocalDate session, TradingCalendar calendar,
+                                                      Instant now) {
+        IntradayRequest.Window window = IntradayRequest.window(session, calendar, false);
+        Instant earliest = targetAt(c, calendar).plus(IntradayRequest.MIN_GAP);
+        Instant afterNow = now.minus(PaperCheckpointJob.WINDOW_START).truncatedTo(java.time.temporal.ChronoUnit.MINUTES)
+                .plus(Duration.ofMinutes(1));
+        if (afterNow.isAfter(earliest)) {
+            earliest = afterNow;
+        }
+        if (earliest.isBefore(window.first())) {
+            earliest = window.first();
+        }
+        boolean room = free.slot() < Math.min(free.max(), RuleBookService.INTRADAY_MAX);
+        boolean available = room && calendar.isTradingDay(session) && !earliest.isAfter(window.last());
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("available", available);
+        out.put("firstEt", available ? et(earliest, calendar) : null);
+        out.put("lastEt", available ? et(window.last(), calendar) : null);
+        out.put("minGapMinutes", IntradayRequest.MIN_GAP.toMinutes());
+        out.put("note", !room ? "세션당 횟수를 다 썼다 — nextCheckpoint를 적어도 버려진다"
+                : !available ? "받는 범위에 남은 시각이 없다 — nextCheckpoint를 적어도 버려진다"
+                : "nextCheckpoint.at은 이 범위(양 끝 포함)의 뉴욕 시각 HH:MM — 이 판단 시각과 " + IntradayRequest.MIN_GAP.toMinutes()
+                + "분 이상 떨어져야 한다. 남은 예약이 있으면 그 시각을 대신한다");
+        return out;
+    }
+
+    private static Map<String, Object> request(Checkpoint c, Free free) {
         Map<String, Object> out = new LinkedHashMap<>();
         out.put("atEt", CLOCK.format(c.atLocal()));
         out.put("feed", c.feed());
         out.put("watch", c.watch());
         out.put("question", c.question());
+        if (free != null && free.manual()) {
+            out.put("note", "운영자가 당긴 판단이다 — 예약한 시각이 아니라 지금 부른다");
+        }
         return out;
     }
 
     private static Map<String, Object> portfolio(Inputs in, LocalDate session) {
         TradingCalendar calendar = in.calendar();
         Map<String, Object> out = new LinkedHashMap<>();
-        out.put("book", PaperBooks.CLAUDE2);
+        out.put("book", in.free() == null ? PaperBooks.CLAUDE2 : in.free().book());
         out.put("cash", in.state() == null ? null : PacketBuilder.decimal(in.state().cash(), 2));
         out.put("nav", in.state() == null ? null : PacketBuilder.decimal(in.state().nav(), 2));
         List<Map<String, Object>> positions = new ArrayList<>();
@@ -325,7 +473,7 @@ final class CheckpointPacket {
             status = "NO_SNAPSHOT";
         } else if (snapshot.collectedAt() == null || snapshot.collectedAt().isAfter(now)) {
             status = "AFTER_ASSEMBLY";   // ⑨ — 조립 뒤에 받은 저장본은 싣지 않음
-        } else if (!matches(payload, in.checkpoint())) {
+        } else if (!matches(payload, in.checkpoint(), in.free())) {
             status = "OTHER_CHECKPOINT";
         } else {
             status = "OK";
@@ -342,8 +490,13 @@ final class CheckpointPacket {
         int droppedBars = 0;
         int otherSession = 0;
         Instant referenceEnd = null;
+        // 자유 시점 판: 저장본 한 장이 창 안 계획 여럿(다른 계좌 포함)의 종목을 실으므로 이 계획의 종목만 — 감시 목록·보유·대기·기준 종목.
+        Set<String> scope = in.free() == null ? null : feedScope(in, payload);
         if (ok && payload.path("tickers").isObject()) {
             for (Map.Entry<String, JsonNode> e : payload.get("tickers").properties()) {
+                if (scope != null && !scope.contains(e.getKey())) {
+                    continue;
+                }
                 JsonNode entry = e.getValue();
                 Instant fetched = instant(entry.get("fetchedAt"));
                 if (fetched == null || fetched.isAfter(now)) {
@@ -412,9 +565,20 @@ final class CheckpointPacket {
         return out;
     }
 
-    /** 저장본이 이 확인(계좌·세션·시각, 순번 없음)을 싣고 있는가 — 수집기 모양의 신원({@link WatchIdentity}). */
-    private static boolean matches(JsonNode payload, Checkpoint c) {
-        return WatchIdentity.carries(payload, WatchIdentity.US_AT, c.bookCode(), c.sessionDate(), CLOCK.format(c.atLocal()), null);
+    /** 저장본이 이 확인(계좌·세션·시각 — 장중 판단이면 순번까지)을 싣고 있는가 — 수집기 모양의 신원({@link WatchIdentity}). */
+    private static boolean matches(JsonNode payload, Checkpoint c, Free free) {
+        return WatchIdentity.carries(payload, WatchIdentity.US_AT, c.bookCode(), c.sessionDate(), CLOCK.format(c.atLocal()),
+                free == null ? null : free.slot());
+    }
+
+    /** 자유 시점 판 MINUTE 피드에 싣는 종목 — 그 계획의 감시 목록 ∪ 그 계좌 보유·대기 ∪ 기준 종목(저장본의 reference)·QQQ. */
+    private static Set<String> feedScope(Inputs in, JsonNode payload) {
+        Set<String> out = new LinkedHashSet<>(in.checkpoint().watch());
+        in.positions().forEach(p -> out.add(p.ticker()));
+        in.pending().forEach(o -> out.add(o.ticker()));
+        out.add(REFERENCE);
+        out.add("QQQ");
+        return out;
     }
 
     /** 정규장 안인데 기준 종목의 새 봉이 {@link #STALL}보다 오래 없음(§7-3 '멈춤'). 기준 종목이 없으면 거짓(모름). */
@@ -494,9 +658,18 @@ final class CheckpointPacket {
         return out;
     }
 
-    private static Map<String, Object> hardRules(JsonNode morningPacket) {
+    private static Map<String, Object> hardRules(JsonNode morningPacket, boolean free) {
         Map<String, Object> out = new LinkedHashMap<>();
-        List<String> lines = List.of(
+        List<String> lines = free ? List.of(
+                "주문 timing은 " + String.join("·", FreeTiming.INTRADAY_TIMINGS) + " 가운데 아직 고를 수 있는 것(1_basis.remainingTimings)만 받는다. "
+                        + "MARKET은 응답 뒤 생성 + 60초가 지난 첫 분의 1분봉 시가로 체결하고, 그 분이 마감 5분 전(조기 폐장일 12:55 ET) 이후면 "
+                        + "MALFORMED로 거절. AT_MINUTE은 atLocal의 분에 시작한 1분봉 시가 — atLocal이 없거나 받는 범위 밖이면 MALFORMED, 주문 생성 "
+                        + "+ 60초 이전의 분이면 LATE_FOR_TIMING으로 거절(1_basis.atMinute). NEXT_CLOSE는 이 세션 확정 종가.",
+                "매도는 같은 시각이거나 더 늦은 시각 매수의 현금·종목 자리만 만든다(기준 시각 순 — MARKET < AT_MINUTE(이른 순) < NEXT_CLOSE).",
+                "REPLACE는 기준 시각이 아직 오지 않은 대기 주문만 대신한다(취소) — 기준 시각이 지난 대기 주문은 이미 체결된 주문으로 보고 자료가 "
+                        + "오는 대로 체결한다. 형식 검사를 통과하면 새 주문이 모두 거절돼도 그 취소는 일어난다. KEEP은 아무것도 바꾸지 않는다.",
+                "한도·재량 매도 보유 기간·월 상한·재진입 금지는 이 세션의 결정과 같다(아래 값).")
+                : List.of(
                 "주문 timing은 " + String.join("·", TIMINGS) + " 가운데 기준 시각이 지금 + 60초보다 뒤인 것(1_basis.remainingTimings)만 "
                         + "받는다 — 지난 시점은 LATE_FOR_TIMING, 조기 폐장일 마감 뒤 시점은 MALFORMED로 거절. MARKET은 응답 뒤 생성 + 60초가 "
                         + "지난 첫 분의 1분봉 시가로 체결하고, 그 분이 마감 5분 전(조기 폐장일 12:55 ET) 이후면 MALFORMED로 거절.",

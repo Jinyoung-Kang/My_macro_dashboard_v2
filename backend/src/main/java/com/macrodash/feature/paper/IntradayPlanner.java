@@ -48,7 +48,7 @@ final class IntradayPlanner {
      * @param existing  쓰기 전 그 세션의 행 전부(순번 순)
      */
     record Plan(String book, LocalDate session, String variant, int max, int firstSlot, boolean closing,
-                IntradayRequest.Verdict verdict, List<IntradayPlan> existing, Long requestedBy) {
+                IntradayRequest.Verdict verdict, List<IntradayPlan> existing) {
 
         Plan {
             existing = List.copyOf(existing);
@@ -123,17 +123,16 @@ final class IntradayPlanner {
         IntradayRequest.Verdict verdict = requested && max <= 0
                 ? disabled(requests)
                 : IntradayRequest.validate(requests, session, calendar, universe, now, room, taken, korea);
-        return new Plan(profile.code(), session, variant(profile), max, firstSlot, true, verdict, existing, null);
+        return new Plan(profile.code(), session, variant(profile), max, firstSlot, true, verdict, existing);
     }
 
     /**
      * 장중 판단 응답의 {@code nextCheckpoint}와 그 세션의 지금 행 — 다음 순번이 없거나({@code slot}이 마지막) 예약이 없으면 null(남은 예약 그대로).
      *
-     * @param slot       지금 부른 판단의 순번
-     * @param intradayId 그 판단의 응답 결정 번호(예약한 장중 판단)
+     * @param slot 지금 부른 판단의 순번
      */
     Plan next(ClaudeBookProfile profile, JsonNode parsed, LocalDate session, int slot, TradingCalendar calendar, Set<String> universe,
-              int max, Instant now, long intradayId, ObjectMapper mapper) {
+              int max, Instant now, ObjectMapper mapper) {
         JsonNode request = parsed == null ? null : parsed.get("nextCheckpoint");
         if (request == null || !request.isObject()) {
             return null;
@@ -148,15 +147,25 @@ final class IntradayPlanner {
                 ? new IntradayRequest.Verdict(List.of(), List.of(new IntradayRequest.Rejected(text(request, "at"),
                         "CHECKPOINT_INVALID — 세션당 장중 판단 횟수(" + limit + "번)를 다 써서 다음 판단을 예약할 수 없음")))
                 : IntradayRequest.validate(requests, session, calendar, universe, now, 1, taken, korea);
-        return new Plan(profile.code(), session, variant(profile), max, slot + 1, false, verdict, existing, intradayId);
+        return new Plan(profile.code(), session, variant(profile), max, slot + 1, false, verdict, existing);
     }
 
-    /** 계획을 씁니다 — 받은 예약을 순번대로 PLANNED로(끝난 순번은 그대로), 결정이면 남은 PLANNED 순번을 닫음. */
+    /** 결정의 계획을 씁니다({@link #plan}) — 받은 예약을 순번대로 PLANNED로(끝난 순번은 그대로), 남은 PLANNED 순번을 닫음. */
     void write(Plan plan, long sourceDecisionId) {
+        write(plan, sourceDecisionId, null);
+    }
+
+    /**
+     * 계획을 씁니다 — 받은 예약을 순번대로 PLANNED로(끝난 순번은 그대로), 결정이면 남은 PLANNED 순번을 닫음.
+     *
+     * @param sourceDecisionId 그 세션의 결정(장중 판단 패킷이 하드 규칙·가격을 읽는 결정 — {@code nextCheckpoint}로 예약해도 그대로)
+     * @param requestedBy      이 예약을 낸 장중 판단의 응답 결정({@link #next}) — 결정이 예약했으면 null
+     */
+    void write(Plan plan, long sourceDecisionId, Long requestedBy) {
         int slot = plan.firstSlot();
         for (IntradayRequest.Item item : plan.verdict().accepted()) {
             store.upsertPlannedIntradayPlan(IntradayPlan.planned(plan.book(), plan.session(), slot, item.at(), item.feed(),
-                    item.watch(), item.question(), plan.variant(), false, sourceDecisionId, plan.requestedBy()));
+                    item.watch(), item.question(), plan.variant(), false, sourceDecisionId, requestedBy));
             slot++;
         }
         if (plan.closing()) {

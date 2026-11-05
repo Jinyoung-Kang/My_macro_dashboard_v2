@@ -19,6 +19,7 @@ import java.util.regex.Pattern;
 
 import static com.macrodash.feature.paper.PaperFixtures.MAPPER;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
 import static org.mockito.Mockito.mock;
 
@@ -132,6 +133,46 @@ class DecisionTimingsLockTest {
                 assertThat(profile.packetVariant()).as(code + " 13_execution이 있는 줄기").isEqualTo(PacketBuilder.VARIANT_CLAUDE2);
             }
         }
+        // 장중 판단 응답(ADR 0027 결정 3) — 그 시장의 장중 판단 스키마의 timing enum = 응답 프로필의 받는 시점 = INTRADAY_TIMINGS, 계좌 몫은 그대로.
+        for (ClaudeDecisionPipeline.MarketContext context : contexts) {
+            ClaudeBookProfile profile = context.profile();
+            boolean korea = profile.market() == KrPaperMarket.INSTANCE;
+            String resource = ClaudeDecisionPipeline.checkpointSchemaResource(profile);
+            assertThat(resource).as(profile.code()).isEqualTo(korea ? KrCheckpointPacket.FREE_SCHEMA_RESOURCE
+                    : CheckpointPacket.FREE_SCHEMA_RESOURCE);
+            ClaudeBookProfile replies = ClaudeBookProfile.intradayReplies(profile);
+            assertThat(replies.timings()).as(profile.code() + " 장중 판단 응답").containsExactly("MARKET", "AT_MINUTE", "NEXT_CLOSE")
+                    .isEqualTo(FreeTiming.INTRADAY_TIMINGS).isEqualTo(schemaTimings(resource));
+            assertThat(replies.code()).isEqualTo(profile.code());
+            assertThat(replies.schemaResource()).isEqualTo(resource);
+            assertThat(replies.fixedRules()).isEqualTo(profile.fixedRules());
+            assertThat(replies.callCapKey()).isEqualTo(profile.callCapKey());
+            assertThat(replies.timed()).isEqualTo(profile.timed());
+            assertThat(replies.freeTiming()).isTrue();
+            assertThat(replies.checkpoints()).isFalse();
+            assertThat(replies.orderValidation().earlyTiming()).isEqualTo(PaperBooks.MARKET);
+            assertThat(latest).as("장중 판단이 받는 시점도 마지막 timing CHECK 안").containsAll(replies.timings());
+            JsonNode schema;
+            try (InputStream in = DecisionTimingsLockTest.class.getResourceAsStream("/" + resource)) {
+                schema = MAPPER.readTree(in);
+            }
+            JsonNode item = schema.path("properties").path("orders").path("items").path("properties");
+            assertThat(item.path("atLocal").path("pattern").asString()).isEqualTo(FreeTiming.CLOCK_PATTERN);
+            List<String> actions = new ArrayList<>();
+            schema.path("properties").path("action").path("enum").forEach(node -> actions.add(node.asString()));
+            assertThat(actions).containsExactly("KEEP", "REPLACE");
+            JsonNode next = schema.path("properties").path("nextCheckpoint");
+            assertThat(next.path("type").toString()).as(resource + " nextCheckpoint는 null을 받는 선택 칸").isEqualTo("[\"object\",\"null\"]");
+            List<String> top = new ArrayList<>();
+            schema.path("required").forEach(node -> top.add(node.asString()));
+            assertThat(top).doesNotContain("nextCheckpoint");
+            assertThat(next.path("properties").path("at").path("pattern").asString()).isEqualTo(FreeTiming.CLOCK_PATTERN);
+            assertThat(next.path("properties").path("watch").path("maxItems").asInt()).isEqualTo(ExecutionSection.WATCH_MAX);
+            assertThat(next.path("properties").has("feed")).as(resource + " 피드 칸은 미국만").isEqualTo(!korea);
+        }
+        assertThatThrownBy(() -> ClaudeBookProfile.intradayReplies(ClaudeBookProfile.US_CLAUDE2)).as("끈 판 프로필은 장중 판단 응답 프로필이 없음")
+                .isInstanceOf(IllegalArgumentException.class);
+
         assertThat(ClaudeBookProfile.KR_CLAUDE_FT.fixedRules()).as("한국 두 계좌도 같은 문단(계좌2의 투자 성향 절은 렌더링이 더함)")
                 .isEqualTo(ClaudeBookProfile.KR_CLAUDE2_FT.fixedRules());
         assertThat(ClaudeBookProfile.US_CLAUDE_FT.callCapKey()).as("계좌1은 소상한 없음").isNull();

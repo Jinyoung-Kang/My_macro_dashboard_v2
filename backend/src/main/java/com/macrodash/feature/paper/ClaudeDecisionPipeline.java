@@ -176,8 +176,9 @@ final class ClaudeDecisionPipeline {
     private final int timeoutSeconds;
     private final StructuredSchema schema;
     /**
-     * 장중 확인 응답 스키마({@value CheckpointPacket#SCHEMA_RESOURCE}) — 장중 확인을 켠 계좌2 판({@link ClaudeBookProfile#checkpoints})의 파이프라인만
-     * 기동 때 읽습니다(깨졌으면 기동 실패). 그 밖은 null.
+     * 장중 확인 응답 스키마({@value CheckpointPacket#SCHEMA_RESOURCE}) — 장중 확인을 켠 계좌2 판({@link ClaudeBookProfile#checkpoints})과 자유 시점 판
+     * ({@link ClaudeBookProfile#freeTiming} — 장중 판단 응답 스키마 {@value CheckpointPacket#FREE_SCHEMA_RESOURCE}·
+     * {@value KrCheckpointPacket#FREE_SCHEMA_RESOURCE})의 파이프라인만 기동 때 읽습니다(깨졌으면 기동 실패). 그 밖은 null.
      */
     private final StructuredSchema checkpointSchema;
 
@@ -197,11 +198,20 @@ final class ClaudeDecisionPipeline {
         this.timeoutSeconds = timeoutSeconds;
         // 스키마 파일이 깨졌으면 기동하지 않습니다 — 첫 결정 날 아침에야 알게 되지 않게.
         this.schema = StructuredSchema.load(context.schemaResource());
-        this.checkpointSchema = profile.checkpoints() ? StructuredSchema.load(checkpointSchemaResource(profile)) : null;
+        this.checkpointSchema = profile.checkpoints() || profile.freeTiming()
+                ? StructuredSchema.load(checkpointSchemaResource(profile)) : null;
     }
 
-    /** 장중 확인 응답 스키마 — 한국 Claude 계좌2는 {@value KrCheckpointPacket#SCHEMA_RESOURCE}(단계 2b), 그 밖(미국 계좌2)은 {@value CheckpointPacket#SCHEMA_RESOURCE}. */
+    /**
+     * 장중 확인 응답 스키마 — 한국 Claude 계좌2는 {@value KrCheckpointPacket#SCHEMA_RESOURCE}(단계 2b), 그 밖(미국 계좌2)은
+     * {@value CheckpointPacket#SCHEMA_RESOURCE}. 자유 시점 판(ADR 0027 결정 3)은 그 시장의 장중 판단 응답 스키마
+     * ({@value CheckpointPacket#FREE_SCHEMA_RESOURCE}·{@value KrCheckpointPacket#FREE_SCHEMA_RESOURCE} — 시점 셋·{@code atLocal}·{@code nextCheckpoint}).
+     */
     static String checkpointSchemaResource(ClaudeBookProfile profile) {
+        if (profile.freeTiming()) {
+            return profile.market() == KrPaperMarket.INSTANCE ? KrCheckpointPacket.FREE_SCHEMA_RESOURCE
+                    : CheckpointPacket.FREE_SCHEMA_RESOURCE;
+        }
         return PaperBooks.KR_CLAUDE2.equals(profile.code()) ? KrCheckpointPacket.SCHEMA_RESOURCE : CheckpointPacket.SCHEMA_RESOURCE;
     }
 
@@ -246,12 +256,17 @@ final class ClaudeDecisionPipeline {
      * {@link ClaudeBookProfile#US_CLAUDE2_CHECKPOINT}(한국 Claude 계좌2는 {@link ClaudeBookProfile#KR_CLAUDE2_CHECKPOINT} — 단계 2b)(받는 시점 MARKET·AT_*·
      * NEXT_CLOSE, 순위 MARKET 0 &lt; … &lt; NEXT_CLOSE 7). 확인 호출은 이 사본이
      * 아니라 원래 파이프라인({@link #attemptCheckpoint})이 합니다 — 이 사본은 {@link #plan}·{@link #insertOrders}·{@link #supersedePendingAfter}만.
+     * 자유 시점 판의 파이프라인이면 그 계좌의 장중 판단 응답 프로필({@link ClaudeBookProfile#intradayReplies} — 장중 시장가·그날 남은 지정 시각·그날
+     * 종가)입니다.
      *
      * @throws IllegalStateException 장중 확인 판이 아닌 파이프라인
      */
     ClaudeDecisionPipeline checkpointReplies() {
         if (checkpointSchema == null) {
             throw new IllegalStateException(book() + " 파이프라인은 장중 확인 판이 아닙니다");
+        }
+        if (profile.freeTiming()) {
+            return new ClaudeDecisionPipeline(this, market, ClaudeBookProfile.intradayReplies(profile));
         }
         return new ClaudeDecisionPipeline(this, market, PaperBooks.KR_CLAUDE2.equals(book())
                 ? ClaudeBookProfile.KR_CLAUDE2_CHECKPOINT : ClaudeBookProfile.US_CLAUDE2_CHECKPOINT);
@@ -403,12 +418,21 @@ final class ClaudeDecisionPipeline {
      */
     Attempt attemptCheckpoint(java.util.function.IntFunction<Packet> packetFor, SettingsRow row, ClaudeSettings claude,
                               LocalDate today) {
+        return attemptCheckpoint(packetFor, row, claude, today, true);
+    }
+
+    /**
+     * {@link #attemptCheckpoint(java.util.function.IntFunction, SettingsRow, ClaudeSettings, LocalDate)}를 그 문턱으로 — 자유 시점 판의 장중 판단
+     * (ADR 0027 결정 3)에서 운영자가 당긴 판단은 수동 문턱(상한 − 정기 작업 몫 예약, {@code scheduled} 거짓), 예약한 판단은 정기 문턱입니다.
+     */
+    Attempt attemptCheckpoint(java.util.function.IntFunction<Packet> packetFor, SettingsRow row, ClaudeSettings claude,
+                              LocalDate today, boolean scheduled) {
         if (checkpointSchema == null) {
             throw new IllegalStateException(book() + " 파이프라인은 장중 확인 판이 아닙니다");
         }
         FrameworkService.Frame frame = framework.current();
         Packet packet = packetFor.apply(frame.version());
-        return send(frame, packet, row, claude, today, true, null, checkpointSchema);
+        return send(frame, packet, row, claude, today, scheduled, null, checkpointSchema);
     }
 
     /** 시장 입력을 함께 쓰는 문맥인가({@link #attempt(PacketBuilder.MarketInputs, String, SettingsRow, ClaudeSettings, LocalDate, boolean)}). */
@@ -654,7 +678,7 @@ final class ClaudeDecisionPipeline {
             // 받는 시점 이름(시가·종가)의 닫힘은 위에서 정해졌고, 여기서 응답에 나온 지정 시각마다 열쇠를 더합니다 — 순위는 기준 시각 순,
             // 범위 밖·지난 시각·시각 없는 AT_MINUTE는 닫힘.
             timingRules = FreeTiming.validation(timingRules, minutes, market.calendar().nextTradingDay(asOf), clock.instant(),
-                    market.calendar(), market.definition() == KrPaperMarket.INSTANCE, false);
+                    market.calendar(), market.definition() == KrPaperMarket.INSTANCE, profile.timings().contains(PaperBooks.MARKET));
         }
         List<Verdict> verdicts = OrderValidator.validate(proposed, ctx, limits, timingRules);
 
@@ -1015,9 +1039,12 @@ final class ClaudeDecisionPipeline {
                                      JsonNode checkpointRequest) {
         String message = clip("응답을 받은 뒤 검증·저장 중 오류(과금된 응답 — 다시 부르지 않음): " + cause, ERROR_CHARS);
         boolean checkpoint = RuleBookService.CHECKPOINT.equals(kind);
+        boolean intraday = RuleBookService.intraday(kind);
         try {
             Map<String, Object> response = new LinkedHashMap<>();
-            response.put("summary", checkpoint
+            response.put("summary", intraday
+                    ? "응답을 받은 뒤 검증·저장 중 오류 — 장중 판단 재시도 없음(대기 주문 그대로). 과금된 응답이라 다시 부르지 않습니다"
+                    : checkpoint
                     ? "응답을 받은 뒤 검증·저장 중 오류 — 장중 확인 재시도 없음(아침 주문 그대로). 과금된 응답이라 다시 부르지 않습니다"
                     : "응답을 받은 뒤 검증·저장 중 오류 — 그날 재량 주문 없음(리스크 규칙은 계속). 과금된 응답이라 같은 "
                     + "거래일에 다시 부르지 않습니다");

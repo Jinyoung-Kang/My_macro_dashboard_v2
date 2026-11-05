@@ -868,7 +868,9 @@ public class ClaudeBookService {
      */
     static int claude2CallsInCycle(PaperStore store, LocalDate asOf) {
         int calls = 0;
-        for (String kind : List.of(RuleBookService.SCHEDULED, RuleBookService.INITIAL, RuleBookService.CHECKPOINT)) {
+        // 자유 시점 판의 장중 판단(INTRADAY_1·INTRADAY_2 — ADR 0027 결정 3, 재시도 없음)도 같은 결정 주기의 호출입니다. 끈 판에는 그 행이 없습니다.
+        for (String kind : List.of(RuleBookService.SCHEDULED, RuleBookService.INITIAL, RuleBookService.CHECKPOINT,
+                RuleBookService.INTRADAY_1, RuleBookService.INTRADAY_2)) {
             Optional<Decision> row = store.decisionFor(PaperBooks.CLAUDE2, asOf, kind);
             if (row.isPresent() && row.get().model() != null) {
                 calls += 1 + row.get().retryCount();

@@ -310,4 +310,113 @@ class CheckpointPacketTest {
         assertThat(none.get("status").asString()).isEqualTo("NO_SNAPSHOT");
         assertThat(none.get("grade").asString()).isEqualTo("지연 모름");
     }
+
+    // ------------------------------------------------------------------ 자유 시점 판의 장중 판단(ADR 0027 결정 3)
+    /** 켠 판 계좌1의 둘째 판단(10:30 ET, 순번 2 — 세션당 2) — 대기 주문에 분 단위 지정 시각이 섞여 있고, 감시 저장본은 두 계획의 것. */
+    private static CheckpointPacket.Inputs freeInputs(int slot, int max, boolean manual) {
+        Checkpoint plan = new Checkpoint(PaperBooks.CLAUDE, E, LocalTime.of(10, 30), "MINUTE", List.of("NVDA"), "반등이 이어지나", 41L,
+                null, PaperBooks.CHECKPOINT_PLANNED, null, null, null, null, null);
+        List<Order> pending = List.of(
+                new Order(201, PaperBooks.CLAUDE, 41L, "AAPL", "SELL", null, null, 0.5, PaperBooks.NEXT_OPEN, "CLAUDE",
+                        PaperBooks.ORDER_PENDING, null, null, D, MORNING_CREATED, E, null, null),
+                new Order(202, PaperBooks.CLAUDE, 41L, "NVDA", "BUY", null, 5.0, null, PaperBooks.AT_MINUTE, "CLAUDE",
+                        PaperBooks.ORDER_PENDING, null, null, D, MORNING_CREATED, E, null, LocalTime.of(10, 5)),
+                new Order(203, PaperBooks.CLAUDE, 41L, "MSFT", "BUY", null, 5.0, null, PaperBooks.AT_MINUTE, "CLAUDE",
+                        PaperBooks.ORDER_PENDING, null, null, D, MORNING_CREATED, E, null, LocalTime.of(13, 47)),
+                new Order(204, PaperBooks.CLAUDE, 41L, "XLK", "BUY", null, 5.0, null, PaperBooks.NEXT_CLOSE, "CLAUDE",
+                        PaperBooks.ORDER_PENDING, null, null, D, MORNING_CREATED, E, null, null));
+        Snapshot watch = watch(FETCHED, watchTickers());
+        ObjectNode payload = (ObjectNode) watch.payload();
+        ArrayNode identities = payload.putArray("checkpoints");
+        identities.addObject().put("book", PaperBooks.CLAUDE2).put("sessionDate", E.toString()).put("atEt", "10:30").putNull("slot");
+        identities.addObject().put("book", PaperBooks.CLAUDE).put("sessionDate", E.toString()).put("atEt", "10:30").put("slot", slot);
+        // 다른 계좌(계좌2) 계획의 감시 종목 — 이 계획의 패킷에는 싣지 않음.
+        ((ObjectNode) payload.get("tickers")).set("AMD", ticker(FETCHED, E, Instant.parse("2026-11-02T15:02:00Z"), 30, 150.0, 40_000));
+        return new CheckpointPacket.Inputs(plan, D, morning(),
+                new BookState(PaperBooks.CLAUDE, 60_000, 100_000, 40_000, 40, null, null, D, null),
+                List.of(new Position(PaperBooks.CLAUDE, "AAPL", 100, 225.5, D, MORNING_CREATED, 232, MORNING_CREATED, 230.0,
+                        Instant.parse("2026-11-02T15:20:00Z"), false, null, 0, null)),
+                pending, List.of(), Optional.of(watch),
+                Optional.of(quotes(Instant.parse("2026-11-02T15:20:00Z"), bar("AAPL", E, 230.4), bar("MSFT", E, 521.0),
+                        bar("NVDA", E, 181.2), bar("XLK", D, 280.0))),
+                MAPPER.readTree("{\"source\":\"macro.collected\",\"cards\":[{\"key\":\"vix\",\"value\":17.2,\"delay\":\"15분 지연\"}]}"),
+                5, 12, List.of(60, 70), UsMarketCalendar.CALENDAR, ASSEMBLED, Optional.empty(),
+                new CheckpointPacket.Free(PaperBooks.CLAUDE, slot, max, manual));
+    }
+
+    @Test
+    @DisplayName("고정본(자유 시점 판 장중 판단 — MINUTE): 계좌·순번·종류 INTRADAY_n·판 ft-1, 남은 시점은 장중 시장가·남은 지정 시각(10:35~15:54)·그날 종가, "
+            + "대기 주문의 지정 시각은 그 분으로 지남/대기를 가르고, MINUTE 피드는 이 계획의 종목만(다른 계좌 계획의 AMD는 빠짐), 순번을 다 쓴 판단은 다음 "
+            + "예약을 받지 않음. 끈 판 장중 확인 고정본은 그대로")
+    void goldenFreeMinute() {
+        PacketBuilder.Packet packet = CheckpointPacket.build(freeInputs(2, 2, false), MAPPER);
+        Golden.assertMatches("packet-us-ft-intraday-minute.json", packet.text());
+        JsonNode body = packet.body();
+        List<String> keys = new ArrayList<>();
+        body.propertyNames().forEach(keys::add);
+        assertThat(keys).as("섹션은 끈 판과 같은 일곱").containsExactly("0_instructions", "1_basis", "2_macroCards", "3_request",
+                "4_portfolio", "5_feed", "6_hardRules");
+        JsonNode basis = body.get("1_basis");
+        assertThat(basis.get("book").asString()).isEqualTo(PaperBooks.CLAUDE);
+        assertThat(basis.get("variant").asString()).isEqualTo("freeTiming");
+        assertThat(basis.get("fixedRules").asString()).isEqualTo("ft-1");
+        assertThat(basis.get("decisionKind").asString()).isEqualTo("INTRADAY_2");
+        assertThat(basis.get("slot").asInt()).isEqualTo(2);
+        assertThat(basis.get("remainingTimings").toString()).isEqualTo("[\"MARKET\",\"AT_MINUTE\",\"NEXT_CLOSE\"]");
+        assertThat(basis.get("atMinute").get("firstEt").asString()).as("10:33:10 + 60초 = 10:34:10 → 다음 분").isEqualTo("10:35");
+        assertThat(basis.get("atMinute").get("lastEt").asString()).isEqualTo("15:54");
+        assertThat(basis.get("nextCheckpoint").get("available").asBoolean()).as("순번 2 = 세션당 2 — 다 씀").isFalse();
+        assertThat(basis.get("nextCheckpoint").get("firstEt").isNull()).isTrue();
+        JsonNode pending = body.get("4_portfolio").get("pending");
+        assertThat(pending).extracting(p -> p.get("timing").asString() + " " + p.get("targetAtEt").asString() + " " + p.get("state").asString())
+                .containsExactly("NEXT_OPEN 09:30 " + CheckpointPacket.PENDING_DUE, "AT_MINUTE 10:05 " + CheckpointPacket.PENDING_DUE,
+                        "AT_MINUTE 13:47 " + CheckpointPacket.PENDING_AHEAD, "NEXT_CLOSE 16:00 " + CheckpointPacket.PENDING_AHEAD);
+        assertThat(body.get("4_portfolio").get("book").asString()).isEqualTo(PaperBooks.CLAUDE);
+        JsonNode feed = body.get("5_feed");
+        assertThat(feed.get("status").asString()).as("신원 목록의 둘째가 이 계획").isEqualTo("OK");
+        assertThat(feed.get("tickers").propertyNames()).as("감시·보유·대기·기준 종목만 — AMD는 다른 계좌 계획의 것").containsExactly("SPY", "NVDA",
+                "AAPL");
+        assertThat(body.get("0_instructions").get("lines").get(0).asString()).startsWith("장중 판단이다");
+        assertThat(body.get("6_hardRules").get("lines").toString()).contains("MARKET·AT_MINUTE·NEXT_CLOSE").contains("기준 시각 순")
+                .doesNotContain("AT_1000");
+        assertThat(body.get("6_hardRules").get("maxPositions").asInt()).isEqualTo(20);
+        assertThat(packet.text()).doesNotContain("실시간").doesNotContain("AT_1100").doesNotContain("claude2");
+        assertThat(PacketBuilder.estimateTokens(packet.text())).isLessThanOrEqualTo(CheckpointPacket.CHECKPOINT_TARGET_TOKENS);
+
+        // 저장본에 이 계획의 신원(순번)이 없으면 다른 확인의 저장본.
+        JsonNode other = CheckpointPacket.build(freeInputs(1, 2, false), MAPPER).body();
+        assertThat(other.get("5_feed").get("status").asString()).isEqualTo("OK");
+        CheckpointPacket.Inputs mismatched = freeInputs(1, 2, false);
+        ((ArrayNode) mismatched.watch().orElseThrow().payload().get("checkpoints")).remove(1);
+        assertThat(CheckpointPacket.build(mismatched, MAPPER).body().get("5_feed").get("status").asString()).isEqualTo("OTHER_CHECKPOINT");
+    }
+
+    @Test
+    @DisplayName("자유 시점 판 장중 판단의 남은 것: 첫 판단(순번 1 < 세션당 2)은 다음 예약 가능(이 판단 시각 + 30분 ~ 15:30), 운영자가 당긴 판단은 그 표시, 마감 "
+            + "5분 전부터는 장중 시장가·지정 시각이 닫히고 종가만, 마감 뒤에는 남은 시점 없음")
+    void freeRemainingOptions() {
+        JsonNode first = CheckpointPacket.build(freeInputs(1, 2, true), MAPPER).body();
+        JsonNode next = first.get("1_basis").get("nextCheckpoint");
+        assertThat(next.get("available").asBoolean()).isTrue();
+        assertThat(next.get("firstEt").asString()).as("10:30 + 30분").isEqualTo("11:00");
+        assertThat(next.get("lastEt").asString()).isEqualTo("15:30");
+        assertThat(next.get("minGapMinutes").asInt()).isEqualTo(30);
+        assertThat(first.get("1_basis").get("manual").asBoolean()).isTrue();
+        assertThat(first.get("3_request").get("note").asString()).contains("운영자가 당긴 판단");
+        assertThat(CheckpointPacket.build(freeInputs(1, 1, false), MAPPER).body().get("1_basis").get("nextCheckpoint").get("available")
+                .asBoolean()).as("세션당 1번 — 다 씀").isFalse();
+
+        var calendar = UsMarketCalendar.CALENDAR;
+        assertThat(CheckpointPacket.freeRemainingTimings(E, calendar, Instant.parse("2026-11-02T20:52:30Z")))
+                .as("15:52:30 — 시장가 기준 분 15:54는 마감 5분 전(15:55) 앞").containsExactly("MARKET", "AT_MINUTE", "NEXT_CLOSE");
+        assertThat(CheckpointPacket.freeMinutes(E, calendar, Instant.parse("2026-11-02T20:52:30Z")))
+                .containsExactly(Instant.parse("2026-11-02T20:54:00Z"), Instant.parse("2026-11-02T20:54:00Z"));
+        assertThat(CheckpointPacket.freeRemainingTimings(E, calendar, Instant.parse("2026-11-02T20:54:00Z")))
+                .as("15:54:00 — 기준 분 15:56은 닫힘").containsExactly("NEXT_CLOSE");
+        assertThat(CheckpointPacket.freeMinutes(E, calendar, Instant.parse("2026-11-02T20:54:00Z"))).isNull();
+        assertThat(CheckpointPacket.freeRemainingTimings(E, calendar, Instant.parse("2026-11-02T21:00:00Z"))).as("마감 뒤").isEmpty();
+        assertThat(CheckpointPacket.freeMinutes(E, calendar, Instant.parse("2026-11-02T14:00:00Z")))
+                .as("개장 전 — 받는 범위의 첫 분 09:31부터").containsExactly(Instant.parse("2026-11-02T14:31:00Z"),
+                        Instant.parse("2026-11-02T20:54:00Z"));
+    }
 }

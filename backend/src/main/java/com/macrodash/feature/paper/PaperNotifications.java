@@ -213,6 +213,8 @@ final class PaperNotifications {
             case RuleBookService.INITIAL -> "출발 결정";
             case RuleBookService.REBALANCE -> "재선정";
             case RuleBookService.CHECKPOINT -> "장중 확인";
+            case RuleBookService.INTRADAY_1 -> "장중 판단 1";
+            case RuleBookService.INTRADAY_2 -> "장중 판단 2";
             default -> kind;
         };
     }
