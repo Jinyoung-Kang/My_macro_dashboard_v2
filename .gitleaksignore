@@ -37,6 +37,11 @@ fe4e4c611fd9fda0bc99f1c28e888e0ec5df3bd1:backend/src/test/resources/paper/golden
 bf5fb9760c6c75b691aaab89f6fdba33613d38e1:backend/src/test/resources/paper/golden/packet-kr-initial.json:generic-api-key:1
 bf5fb9760c6c75b691aaab89f6fdba33613d38e1:backend/src/test/resources/paper/golden/packet-kr-scheduled.json:generic-api-key:1
 
+# f5378ee · 9964f69: 한국 자유 시점 판 패킷 고정본(packet-kr-ft-scheduled.json — ADR 0027)의 같은 시장 지표 칸 키 문자열(kospi200_night_scraped) — 위 한국 패킷
+# 고정본과 같은 까닭의 오탐(항목 이름이 "key"). 고정본을 다시 만든 두 커밋의 지문.
+f5378eecbabf1dc0f7e8c43b55a5425f697739b0:backend/src/test/resources/paper/golden/packet-kr-ft-scheduled.json:generic-api-key:1
+9964f69702339c3ff8c8348807a92b42b0e5d36a:backend/src/test/resources/paper/golden/packet-kr-ft-scheduled.json:generic-api-key:1
+
 # f8415961: CI 'AWS 덧붙임 해석' 단계의 가짜 GATE_SECRET(ci-gate-secret-…) — compose 해석용 시험 값. 서버의 실제 값과 대조해 일치 0건(2026-10-30).
 f841596142ddde11e49e1869d989ad9b31664d20:.github/workflows/ci.yml:generic-api-key:236
 
