@@ -120,6 +120,9 @@ def _download(symbol: str, period: str) -> tuple[pd.DataFrame | None, bool, str 
     latched = http.active_rejection(http.YAHOO_HOST)
     if latched is not None:
         return None, False, str(latched)
+    unavailable = yahoo.unavailable_reason()     # 무응답 래치·예산 부족 — 보내지 않고 그 이유를 사유로(QA-255)
+    if unavailable is not None:
+        return None, False, unavailable
     try:
         ticker = yf.Ticker(symbol)
 
@@ -189,6 +192,9 @@ def latest_minute_prices(symbols: list[str]) -> tuple[dict[str, dict], str | Non
     latched = http.active_rejection(http.YAHOO_HOST)
     if latched is not None:
         return {}, str(latched)
+    unavailable = yahoo.unavailable_reason()
+    if unavailable is not None:
+        return {}, unavailable
     try:
         raw = yf.download(tickers=" ".join(names), period="1d", interval="1m", prepost=False, auto_adjust=False,
                           actions=False, progress=False, group_by="ticker", threads=True, session=yahoo.session())
@@ -276,6 +282,9 @@ def _yahoo_batch(names: list[str], **kwargs) -> tuple[pd.DataFrame | None, str |
     latched = http.active_rejection(http.YAHOO_HOST)
     if latched is not None:
         return None, str(latched), False
+    unavailable = yahoo.unavailable_reason()
+    if unavailable is not None:
+        return None, unavailable, False
     try:
         with _watch_rate_limit() as watcher:
             raw = yf.download(tickers=" ".join(names), actions=False, progress=False, group_by="ticker", threads=True,
@@ -380,7 +389,8 @@ def daily_opens(symbols: list[str], period: str) -> tuple[dict[str, dict[str, fl
 
 
 def _empty_reason() -> str:
-    return (
+    # 부르는 동안 무응답 래치가 닫혔거나 예산이 떨어졌으면 그것이 빈 표의 이유입니다 — yfinance는 그 예외를 삼키고 빈 표를 돌려줍니다(QA-255).
+    return yahoo.unavailable_reason() or (
         f"yfinance({getattr(yf, '__version__', '?')})가 빈 응답을 받았습니다 "
         "— Yahoo 차단 또는 라이브러리 버전 불일치를 의심하세요"
     )

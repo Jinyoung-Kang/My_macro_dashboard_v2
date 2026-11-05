@@ -222,7 +222,7 @@ def _execute_task(task: Task, run_id: int | None, entry: "_InFlight | None" = No
     deadline = deadline_for(task)
     # 작업 스레드에 시간 예산과 '이번 실행이 만난 출처 거부' 기록을 겁니다(http.TaskGuard). 예산은 이 상한과 같은 시각에
     # 끝나 — 대기열에서 기다린 시간도 셈 — 재시도가 상한을 넘겨 좀비로 남지 않게 합니다. yfinance(자기 curl_cffi 세션)도 app.yahoo가 넣은
-    # 세션으로 같은 예산을 봅니다(QA-255 — crumb 잠금을 기다리는 동안은 빼고).
+    # 세션으로 같은 예산을 봅니다(QA-255 — 예산 밖에 남는 기다림은 app.yahoo 모듈 설명의 '남는 것').
     guard = http.TaskGuard(deadline=time.monotonic() + deadline)
     pool = _yahoo_task_threads if task.yahoo else _task_threads
     future = pool.submit(http.run_guarded, guard, task.run)

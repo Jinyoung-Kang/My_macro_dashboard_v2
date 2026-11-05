@@ -138,18 +138,24 @@ def test_QA255_yf_download_배치의_종목_스레드도_예산을_본다(blackh
 
 
 def test_QA255_연달아_응답이_없으면_Yahoo_요청을_잠시_멈춘다(blackhole, monkeypatch):
+    from curl_cffi.requests import exceptions as curl_exceptions
+
     yahoo = _yahoo_module()
     monkeypatch.setattr(yahoo, "NO_RESPONSE_LIMIT", 1)
 
-    finished, elapsed, _ = _call(blackhole, lambda: market.last_two_closes("CL=F"), budget=BUDGET)
-    assert finished, f"래치를 닫는 첫 호출이 {elapsed:.1f}초 넘게 끝나지 않음"
+    # 무응답 출처에 자기 timeout(예산 때문에 줄인 것이 아님)으로 끝난 요청 — 운영에서는 yfinance의 10~30초 timeout이 태스크 예산 안이라 이 경우.
+    proxy = f"http://127.0.0.1:{blackhole.port}"
+    with pytest.raises(curl_exceptions.Timeout):
+        yahoo.session().get("https://query1.finance.yahoo.com/v8/finance/chart/CL=F", timeout=0.5,
+                            proxies={"http": proxy, "https": proxy})
+    assert yahoo._closed_until is not None
 
     # 태스크 밖(화면 상세·/live 경로 — 예산 없음)도 래치가 닫힌 동안은 기다리지 않고 바로 끝납니다.
     accepted = blackhole.accepted
     finished, elapsed, result = _call(blackhole, lambda: market.last_two_closes("CL=F"), budget=None)
     assert finished and elapsed < 1.5, f"래치가 닫힌 뒤 예산 없는 호출이 {elapsed:.1f}초 걸림"
     assert blackhole.accepted == accepted, "래치가 닫힌 동안 Yahoo로 연결을 새로 열었습니다"
-    assert result[0] is None and result[2], result
+    assert result[0] is None and result[2] and "Yahoo 응답 없음" in result[2], result
 
 
 def test_QA255_Yahoo_태스크의_좀비가_다른_태스크의_작업_스레드를_뺏지_않는다(monkeypatch):
@@ -219,12 +225,13 @@ def test_download_뒤에도_yfinance_세션은_예산_세션이다(blackhole):
 
 def test_timeout은_남은_예산_안으로_줄인다():
     yahoo = _yahoo_module()
-    assert yahoo._fit(30, 30, 5.0) == 5.0
-    assert yahoo._fit(3, 30, 5.0) == 3.0
-    assert yahoo._fit(None, 30, 5.0) == 5.0
-    assert yahoo._fit(object(), 30, 5.0) == 5.0                 # 넘기지 않은 값(curl_cffi NOT_SET) → 세션 기본값 30 → 5
-    assert yahoo._fit((10, 30), 30, 8.0) == (2.0, 6.0)
-    assert yahoo._fit((1, 2), 30, 8.0) == (1.0, 2.0)
+    assert yahoo._fit(30, 30, 5.0) == (5.0, True)
+    assert yahoo._fit(3, 30, 5.0) == (3.0, False)
+    assert yahoo._fit(None, 30, 5.0) == (5.0, True)
+    assert yahoo._fit(object(), 30, 5.0) == (5.0, True)         # 넘기지 않은 값(curl_cffi NOT_SET) → 세션 기본값 30 → 5
+    assert yahoo._fit(object(), 3, 5.0) == (3.0, False)
+    assert yahoo._fit((10, 30), 30, 8.0) == ((2.0, 6.0), True)
+    assert yahoo._fit((1, 2), 30, 8.0) == ((1.0, 2.0), False)
 
 
 def test_예산이_요청_하나도_못_보낼_만큼이면_보내지_않는다(blackhole):
@@ -282,7 +289,6 @@ def slow_yahoo(monkeypatch):
     yahoo.reset_for_tests()
 
 
-@pytest.mark.xfail(strict=True, reason="QA-255 후속 재현 — 예산 때문에 줄인 timeout의 시간 초과도 '무응답'으로 세어 살아 있는 Yahoo를 닫음")
 def test_QA255_후속_예산_때문에_줄인_timeout의_시간_초과는_래치에_세지_않는다(slow_yahoo):
     from curl_cffi.requests import exceptions as curl_exceptions
 
@@ -295,7 +301,6 @@ def test_QA255_후속_예산_때문에_줄인_timeout의_시간_초과는_래치
     assert yahoo.session().get(slow_yahoo.url, timeout=10).status_code == 200
 
 
-@pytest.mark.xfail(strict=True, reason="QA-255 후속 재현 — 래치가 닫힌 뒤 응답이 와도 기한까지 닫혀 있음")
 def test_QA255_후속_응답이_오면_래치를_바로_푼다():
     yahoo = _yahoo_module()
     yahoo.reset_for_tests()
@@ -309,7 +314,6 @@ def test_QA255_후속_응답이_오면_래치를_바로_푼다():
         yahoo.reset_for_tests()
 
 
-@pytest.mark.xfail(strict=True, reason="QA-255 후속 재현 — yf.download 종목 스레드가 다운로드 풀 자리를 기다리는 동안 예산을 보지 않음")
 def test_QA255_후속_다운로드_풀_자리를_기다리는_동안에도_예산을_본다(blackhole):
     import multitasking
 
@@ -334,7 +338,6 @@ def _close_latch(yahoo) -> None:
     assert yahoo._closed_until is not None
 
 
-@pytest.mark.xfail(strict=True, reason="QA-255 후속 재현 — 무응답 래치로 보내지 않은 배치의 사유가 '버전 불일치를 의심'으로 보임")
 def test_QA255_후속_래치가_닫히면_사유에_그_이유가_보인다(blackhole):
     from app.services import sector
 
@@ -352,7 +355,6 @@ def test_QA255_후속_래치가_닫히면_사유에_그_이유가_보인다(blac
     assert blackhole.accepted == 0, "래치가 닫힌 동안 Yahoo로 연결을 열었습니다"
 
 
-@pytest.mark.xfail(strict=True, reason="QA-255 후속 재현 — 예산이 다 돼 보내지 않은 배치의 사유가 '버전 불일치를 의심'으로 보임")
 def test_QA255_후속_예산이_모자라면_사유에_그_이유가_보인다(blackhole):
     guard = app_http.TaskGuard(deadline=time.monotonic() + RESERVE + 0.2)
     _bars, reason, _ = app_http.run_guarded(guard, lambda: market.minute_bars(["AAA", "BBB"], "1d"))
@@ -360,7 +362,6 @@ def test_QA255_후속_예산이_모자라면_사유에_그_이유가_보인다(b
     assert blackhole.accepted == 0
 
 
-@pytest.mark.xfail(strict=True, reason="QA-255 후속 재현 — timeout 0(curl_cffi에서 '끝없이')을 예산 안으로 줄이지 않음")
 def test_QA255_후속_timeout_0도_예산_안으로_줄인다():
     yahoo = _yahoo_module()
     fitted, clamped = yahoo._fit(0, 30, 5.0)

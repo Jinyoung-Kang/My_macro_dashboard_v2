@@ -65,6 +65,9 @@ def collect_etf_history(tickers: tuple[str, ...], period: str = "2y") -> dict:
     latched = http.active_rejection(http.YAHOO_HOST)
     if latched is not None:
         return {"tickers": {}, "error": str(latched)}
+    unavailable = yahoo.unavailable_reason()     # 무응답 래치·예산 부족 — 보내지 않고 그 이유를 사유로(QA-255)
+    if unavailable is not None:
+        return {"tickers": {}, "error": unavailable}
 
     frames: dict[str, pd.DataFrame] = {}
     failed: dict[str, str] = {}       # 티커 → 받지 못한 이유
@@ -191,6 +194,9 @@ def _stop_reason(received: int, consecutive: int) -> str | None:
     latched = http.active_rejection(http.YAHOO_HOST)
     if latched is not None:
         return str(latched)
+    unavailable = yahoo.unavailable_reason()
+    if unavailable is not None:
+        return unavailable
     if not received and consecutive >= SINGLE_RETRY_STOP_AFTER:
         return f"개별 재시도가 {consecutive}번 연달아 실패해 멈춤 — 다음 실행"
     left = http.time_left()
@@ -219,8 +225,8 @@ def _error_text(out: dict, failed: dict[str, str], batch_error: str | None) -> s
     elif not out and all(reason == NO_USABLE_DATA or reason.startswith("개별 재시도") for reason in failed.values()):
         # 주의: yfinance는 Yahoo 응답 형식이 바뀌면 예외 없이 빈 프레임을 줍니다(예외도 429도 없음).
         # 사유가 없으면 "0/25 티커"만 남아 원인을 알 수 없습니다.
-        silent = (f"yfinance({getattr(yf, '__version__', '?')})가 빈 응답을 받았습니다 "
-                  "— Yahoo 차단 또는 라이브러리 버전 불일치를 의심하세요")
+        silent = yahoo.unavailable_reason() or (f"yfinance({getattr(yf, '__version__', '?')})가 빈 응답을 받았습니다 "
+                                                "— Yahoo 차단 또는 라이브러리 버전 불일치를 의심하세요")
         if set(groups) == {NO_USABLE_DATA}:
             return silent
         parts.insert(0, silent)

@@ -122,6 +122,10 @@ ALL_TASKS = (..., Task("my_thing", "slow", task_my_thing, "설명"),)
 
 `store.py`의 기대 목록(`expected`)에도 추가하면 `make status`에 나타납니다.
 
+Yahoo(yfinance)를 늘 부르는 태스크는 `Task(..., yahoo=True)`로 표시합니다 — 따로 둔 작업 스레드에서 돌아, Yahoo가 응답하지 않을 때
+다른 태스크의 작업 스레드를 차지하지 않습니다(QA-255). `yf.download`에는 `session=yahoo.session()`을 넘깁니다(넘기지 않으면 yfinance가
+태스크 예산을 보는 세션을 새 기본 세션으로 바꿈). 두 규약은 `collector/tests/test_yahoo_budget.py`가 확인합니다.
+
 ### ③ 계산 — `backend/.../analytics/`
 
 **순수 함수로 작성하고 테스트를 여기에 붙입니다.** 저장소나 스프링에 의존하지
