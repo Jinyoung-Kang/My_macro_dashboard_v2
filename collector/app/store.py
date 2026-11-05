@@ -24,7 +24,7 @@ import socket
 import threading
 from contextlib import contextmanager
 from dataclasses import dataclass
-from datetime import date, datetime, timedelta, timezone
+from datetime import date, datetime, time, timedelta, timezone
 from pathlib import Path
 from typing import Any, Iterable, Sequence
 
@@ -574,6 +574,10 @@ def held_tickers(market: str) -> list[str]:
 # (행이 없으면 고르는 것이 없음). 코드는 백엔드 PaperBooks와 같은 글자입니다(test_paper_bars가 파일로 대조).
 TIMED_ORDER_BOOKS = {"US": ("claude", "claude2")}
 TIMED_HOLDING_BOOKS = {"US": ("claude2",)}
+# 시각 지정 체결 시점 — 이 시점의 주문은 1분봉 창 가격으로 체결됩니다(백엔드 UsTimedFills.TIMINGS와 같은 글자 — UsTimedFillsTest가 이 줄과 대조).
+# 위 계좌 목록 밖의 책(규칙 계좌 등 — ADR 0027)도 이 시점의 주문이 있으면 그 종목과 그 책의 보유('T 시각 순자산')가 범위에 듭니다. 그런 주문이
+# 없는 동안(체결 시각 설정이 기본값) 범위는 위 목록 그대로입니다.
+TIMED_TIMINGS = ("NEXT_OPEN", "AT_1000", "AT_1100", "AT_1200", "AT_1300", "AT_1400", "AT_1500", "MARKET", "AT_MINUTE")
 # 최근 주문을 범위에 두는 달력일 수 — 수집기는 미국 거래일을 모릅니다. 마감 뒤 결정(기준일) → 다음 세션 E → 서버가 꺼졌던 세션의 늦은
 # 따라잡기까지, 긴 연휴를 넘어도 덮는 길이입니다(1분봉을 되짚을 수 있는 기간도 8일 안 — yfinance period="max" 기준).
 TIMED_RECENT_DAYS = 8
@@ -582,7 +586,9 @@ TIMED_RECENT_DAYS = 8
 def timed_scope(market: str) -> list[str]:
     """
     1분봉(paper.bars.us) 수집 범위 — 그 시장 Claude 계좌들의 대기 주문 ∪ 최근 ``TIMED_RECENT_DAYS``일(달력일, DB 시각)에 만든 주문(상태 무관)
-    ∪ 계좌2 보유의 종목(중복 없음·정렬). 지연 기준 종목(SPY)은 태스크가 더합니다 — 여기는 표에서 고른 것만이라 빈 목록이면 부르지 않습니다.
+    ∪ 계좌2 보유의 종목(중복 없음·정렬). 그 시장의 다른 책도 시각 지정 시점(``TIMED_TIMINGS``)의 대기·최근 주문이 있으면 그 주문 종목과 그 책의
+    보유를 더합니다(ADR 0027 — 규칙 계좌의 체결 시각을 지정했거나 계좌1이 자유 시점 판일 때. 그런 주문이 없으면 더하는 것이 없음).
+    지연 기준 종목(SPY)은 태스크가 더합니다 — 여기는 표에서 고른 것만이라 빈 목록이면 부르지 않습니다.
 
     백엔드 표 ``paper_orders``·``paper_positions``·``paper_books``를 **읽기만** 합니다(쓰는 프로세스는 백엔드 하나 — ADR 0008, held_tickers와
     같은 교차 읽기 — v2 ADR 0020·0022). 범위를 정하는 시점·주문은 백엔드가 정하므로 수집기가 따로 셈하지 않습니다.
@@ -593,19 +599,22 @@ def timed_scope(market: str) -> list[str]:
     with connection() as conn:
         rows = conn.execute(
             "SELECT o.ticker FROM paper_orders o JOIN paper_books b ON b.code = o.book_code "
-            "WHERE b.market = %s AND o.book_code = ANY(%s) "
+            "WHERE b.market = %s AND (o.book_code = ANY(%s) OR o.timing = ANY(%s)) "
             "AND (o.status = 'PENDING' OR o.created_at >= now() - make_interval(days => %s)) "
             "UNION "
             "SELECT p.ticker FROM paper_positions p JOIN paper_books b ON b.code = p.book_code "
-            "WHERE b.market = %s AND p.book_code = ANY(%s) ORDER BY 1",
-            (market, list(order_books), TIMED_RECENT_DAYS, market, list(TIMED_HOLDING_BOOKS.get(market, ()))),
+            "WHERE b.market = %s AND (p.book_code = ANY(%s) OR p.book_code IN ("
+            "SELECT o.book_code FROM paper_orders o WHERE o.timing = ANY(%s) "
+            "AND (o.status = 'PENDING' OR o.created_at >= now() - make_interval(days => %s)))) ORDER BY 1",
+            (market, list(order_books), list(TIMED_TIMINGS), TIMED_RECENT_DAYS,
+             market, list(TIMED_HOLDING_BOOKS.get(market, ())), list(TIMED_TIMINGS), TIMED_RECENT_DAYS),
         ).fetchall()
     return [row["ticker"] for row in rows]
 
 
 def kr_timed_orders(books, timings) -> list[tuple[str, date]]:
     """
-    한국 시각 지정 체결 1분봉(paper.kr.timed — 한국 Claude 계좌2 단계 2a) 범위 — 그 계좌들의 그 시점(매시·종가) **대기** 주문의 (종목, 기준 거래일)
+    한국 시각 지정 체결 1분봉(paper.kr.timed — 한국 Claude 계좌2 단계 2a, ADR 0027) 범위 — 그 계좌들의 그 시점(매시·종가) **대기** 주문의 (종목, 기준 거래일)
     (중복 없음, 기준일·종목 순). 목표 세션은 태스크가 KR 달력으로 셉니다. 백엔드 표 ``paper_orders``를 읽기만 합니다(ADR 0008).
     """
     with connection() as conn:
@@ -629,6 +638,21 @@ def kr_market_orders(books) -> list[tuple[str, date, datetime]]:
             (list(books), MARKET_TIMING),
         ).fetchall()
     return [(row["ticker"], row["as_of_trading_date"], row["created_at"]) for row in rows]
+
+
+def kr_minute_orders(books) -> list[tuple[str, date, time]]:
+    """
+    한국 분 단위 지정 시각(AT_MINUTE — ADR 0027) **대기** 주문의 (종목, 기준 거래일, 지정 시각 KST) — 시각 지정 1분봉(paper.kr.timed)에 그 주문의
+    지정 시각 창을 더하려고 읽습니다(중복 없음, 기준일·종목·시각 순). 시각이 없는 행은 뺍니다(거절 행뿐 — 대기 주문은 DB가 시각을 요구).
+    백엔드 표 ``paper_orders``를 읽기만 합니다(ADR 0008).
+    """
+    with connection() as conn:
+        rows = conn.execute(
+            "SELECT DISTINCT ticker, as_of_trading_date, target_local FROM paper_orders WHERE book_code = ANY(%s) AND timing = %s "
+            "AND status = 'PENDING' AND target_local IS NOT NULL AND as_of_trading_date IS NOT NULL ORDER BY 2, 1, 3",
+            (list(books), MINUTE_TIMING),
+        ).fetchall()
+    return [(row["ticker"], row["as_of_trading_date"], row["target_local"]) for row in rows]
 
 
 def kr_audit_orders(books, days: int) -> list[tuple[str, date, str, datetime | None]]:
@@ -687,29 +711,52 @@ def watch_scope(market: str, session: date) -> dict | None:
             "watch": list(row["watch"] or []), "held": [r["ticker"] for r in held], "pending": [r["ticker"] for r in pending]}
 
 
-# 장중 시장가(MARKET — 장중 확인 응답의 주문, 단계 2)를 내는 계좌. 1분봉 저장본에 그 주문의 기준 시각 창을 더하려고 생성 시각만 읽습니다.
-TIMED_MARKET_BOOKS = {"US": ("claude2",)}
+# 장중 시장가(MARKET — 장중 확인·장중 판단 응답의 주문)와 분 단위 지정 시각(AT_MINUTE — ADR 0027)은 주문마다 기준 시각이 다릅니다. 1분봉
+# 저장본에 그 주문의 기준 시각 창을 더하려고 생성 시각(MARKET)·기준일과 지정 시각(AT_MINUTE)만 읽습니다. 어느 계좌의 주문이든 읽습니다 —
+# 그 시점을 내는 계좌는 백엔드가 정하고(스위치가 꺼진 동안 MARKET은 계좌2뿐, AT_MINUTE는 없음), 종목은 timed_scope가 담습니다.
 MARKET_TIMING = "MARKET"
+MINUTE_TIMING = "AT_MINUTE"
 
 
 def timed_market_targets(market: str) -> list[datetime]:
     """
-    1분봉(paper.bars.us)에 창을 더할 장중 시장가 주문의 생성 시각(UTC, 오래된 순) — 그 시장 계좌2의 ``timing = MARKET`` 주문 가운데 대기이거나
+    1분봉(paper.bars.us)에 창을 더할 장중 시장가 주문의 생성 시각(UTC, 오래된 순) — 그 시장 책의 ``timing = MARKET`` 주문 가운데 대기이거나
     최근 ``TIMED_RECENT_DAYS``일(달력일, DB 시각)에 만든 것. 기준 시각(생성 + 60초 뒤 첫 분)은 태스크가 셉니다(paper_bars.market_target).
 
-    백엔드 표 ``paper_orders``·``paper_books``를 **읽기만** 합니다(timed_scope와 같은 교차 읽기 — ADR 0008·0022). 종목은 timed_scope가 이미 담습니다.
+    백엔드 표 ``paper_orders``·``paper_books``를 **읽기만** 합니다(timed_scope와 같은 교차 읽기 — ADR 0008·0022). 1분봉을 받는 시장
+    (``TIMED_ORDER_BOOKS``)이 아니면 빈 목록입니다.
     """
-    books = TIMED_MARKET_BOOKS.get(market)
-    if not books:
+    if market not in TIMED_ORDER_BOOKS:
         return []
     with connection() as conn:
         rows = conn.execute(
             "SELECT o.created_at FROM paper_orders o JOIN paper_books b ON b.code = o.book_code "
-            "WHERE b.market = %s AND o.book_code = ANY(%s) AND o.timing = %s "
+            "WHERE b.market = %s AND o.timing = %s "
             "AND (o.status = 'PENDING' OR o.created_at >= now() - make_interval(days => %s)) ORDER BY 1",
-            (market, list(books), MARKET_TIMING, TIMED_RECENT_DAYS),
+            (market, MARKET_TIMING, TIMED_RECENT_DAYS),
         ).fetchall()
     return [row["created_at"].astimezone(timezone.utc) for row in rows]
+
+
+def timed_minute_targets(market: str) -> list[tuple[date, time]]:
+    """
+    1분봉(paper.bars.us)에 창을 더할 분 단위 지정 시각 주문의 (기준 거래일, 지정 시각 — 그 시장 현지 시각) — 그 시장 책의 ``timing = AT_MINUTE``
+    주문 가운데 대기이거나 최근 ``TIMED_RECENT_DAYS``일(달력일, DB 시각)에 만든 것(중복 없음, 기준일·시각 순). 거절 행(시장에 나가지 않음 — 시각이
+    없거나 범위 밖일 수 있음)과 시각이 없는 행은 뺍니다. 목표 세션의 날짜는 태스크가 정합니다(paper_bars.minute_labels).
+
+    백엔드 표 ``paper_orders``·``paper_books``를 **읽기만** 합니다(timed_market_targets와 같은 교차 읽기 — ADR 0008·0027).
+    """
+    if market not in TIMED_ORDER_BOOKS:
+        return []
+    with connection() as conn:
+        rows = conn.execute(
+            "SELECT DISTINCT o.as_of_trading_date, o.target_local FROM paper_orders o JOIN paper_books b ON b.code = o.book_code "
+            "WHERE b.market = %s AND o.timing = %s AND o.status <> 'REJECTED' AND o.target_local IS NOT NULL "
+            "AND o.as_of_trading_date IS NOT NULL "
+            "AND (o.status = 'PENDING' OR o.created_at >= now() - make_interval(days => %s)) ORDER BY 1, 2",
+            (market, MINUTE_TIMING, TIMED_RECENT_DAYS),
+        ).fetchall()
+    return [(row["as_of_trading_date"], row["target_local"]) for row in rows]
 
 
 def latest_observation_date(dataset: str) -> str | None:

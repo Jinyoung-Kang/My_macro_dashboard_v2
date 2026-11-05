@@ -444,6 +444,91 @@ def test_범위는_Claude_계좌의_대기·최근_8일_주문과_계좌2_보유
     assert store.timed_scope("KR") == []
 
 
+def _timed_order(store, book: str, ticker: str, timing: str, status: str, days_ago: int, at: str | None = None) -> None:
+    with store.connection() as conn:
+        conn.execute(
+            "INSERT INTO paper_orders (book_code, ticker, side, timing, source, status, as_of_trading_date, created_at, target_local) "
+            "VALUES (%s, %s, 'BUY', %s, 'RULE', %s, %s, now() - make_interval(days => %s), %s::time)",
+            (book, ticker, timing, status, date(2026, 10, 29), days_ago, at),
+        )
+
+
+def test_다른_책도_시각_지정_주문이_있으면_그_종목과_그_책_보유가_범위에_든다(store, monkeypatch):
+    """ADR 0027 — 규칙 계좌의 체결 시각을 지정했거나 계좌1이 자유 시점 판일 때. 그런 주문이 없는 책은 위 시험 그대로(주문·보유 모두 범위 밖)."""
+    _book(store, "claude")
+    _book(store, "claude2")
+    _book(store, "rules", kind="RULES")
+    _book(store, "bench_spy", kind="BENCHMARK")
+    _book(store, "kr_rules", kind="RULES", market="KR")
+    _order(store, "rules", "PLAIN", "PENDING", 0)                               # 다음 관측치 주문 → 범위 밖
+    _hold(store, "rules", "RHELD")
+    _hold(store, "claude", "HELD1")
+    _hold(store, "bench_spy", "BHELD")
+    assert store.timed_scope("US") == [], "시각 지정 주문이 없으면 규칙 계좌·계좌1 보유는 범위 밖"
+
+    _timed_order(store, "rules", "RMIN", "AT_MINUTE", "PENDING", 0, "10:47")    # 규칙 계좌의 분 단위 지정 시각
+    _timed_order(store, "rules", "ROLD", "NEXT_OPEN", "FILLED", 20)             # 오래된 체결 → 뺌
+    _timed_order(store, "claude", "CMKT", "MARKET", "FILLED", 2)                # 계좌1의 최근 장중 시장가 → 계좌1 보유도
+    _timed_order(store, "kr_rules", "005930", "AT_MINUTE", "PENDING", 0, "10:00")   # 한국 → 미국 범위 밖
+
+    @contextmanager
+    def read_only():
+        with store.get_pool().connection() as conn:
+            conn.execute("SET TRANSACTION READ ONLY")
+            yield conn
+
+    monkeypatch.setattr(store, "connection", read_only)
+
+    assert store.timed_scope("US") == ["CMKT", "HELD1", "RHELD", "RMIN"], "벤치마크 보유·다음 관측치 주문은 그대로 범위 밖"
+    assert store.timed_scope("KR") == []
+
+
+def test_분_단위_지정_시각_범위는_대기·최근_AT_MINUTE_주문의_기준일과_시각이고_읽기만_한다(store, monkeypatch):
+    _book(store, "claude")
+    _book(store, "rules", kind="RULES")
+    _book(store, "kr_claude", market="KR")
+    _timed_order(store, "claude", "AAA", "AT_MINUTE", "PENDING", 20, "10:47")     # 오래됐어도 대기 → 넣음
+    _timed_order(store, "rules", "BBB", "AT_MINUTE", "FILLED", 1, "13:05")        # 최근 → 상태 무관, 어느 책이든
+    _timed_order(store, "claude", "CCC", "AT_MINUTE", "FILLED", 1, "10:47")       # 같은 (기준일, 시각) → 하나
+    _timed_order(store, "claude", "DDD", "AT_MINUTE", "EXPIRED", 9, "15:55")      # 9일 전 → 뺌
+    _timed_order(store, "claude", "EEE", "AT_MINUTE", "REJECTED", 0, "03:00")     # 거절 행(범위 밖 시각) → 뺌
+    _timed_order(store, "claude", "FFF", "AT_MINUTE", "REJECTED", 0)              # 거절 행(시각 없음) → 뺌
+    _timed_order(store, "claude", "GGG", "NEXT_OPEN", "PENDING", 0)               # AT_MINUTE 아님 → 뺌
+    _timed_order(store, "kr_claude", "005930", "AT_MINUTE", "PENDING", 0, "09:05")   # 한국 → 뺌
+
+    @contextmanager
+    def read_only():
+        with store.get_pool().connection() as conn:
+            conn.execute("SET TRANSACTION READ ONLY")
+            yield conn
+
+    monkeypatch.setattr(store, "connection", read_only)
+
+    assert store.timed_minute_targets("US") == [(date(2026, 10, 29), time(10, 47)), (date(2026, 10, 29), time(13, 5))]
+    assert store.timed_minute_targets("KR") == []
+
+
+def test_분_단위_지정_시각_창은_기준일_뒤_7일_안의_세션에_더하고_겹치면_하나():
+    extra = paper_bars.minute_labels([(date(2026, 10, 29), time(10, 47)), (date(2026, 10, 30), time(10, 47)),
+                                      (date(2026, 10, 29), time(10, 0))])
+    assert list(extra) == [(date(2026, 10, 30) + timedelta(days=i)).isoformat() for i in range(8)], "기준일 다음 날부터 7일(두 주문의 합)"
+    assert extra["2026-10-30"] == ["10:00", "10:47"] and extra["2026-11-06"] == ["10:47"]
+    merged = paper_bars.merge_labels(paper_bars.market_labels([datetime(2026, 10, 30, 14, 32, 10, tzinfo=UTC)]), extra)
+    assert merged["2026-10-30"] == ["10:00", "10:34", "10:47"]
+
+    est_day = date(2026, 11, 2)
+    rows = _session(date(2026, 10, 29)) + _session(date(2026, 10, 30)) + _session(est_day)
+    entries = paper_bars.session_entries(rows, FETCHED, merged)
+    menu = {"09:30", "10:00", "11:00", "12:00", "13:00", "14:00", "15:00"}
+    assert set(entries["2026-10-29"]["windows"]) == menu, "기준일 당일과 그 전 세션에는 더하지 않음"
+    assert set(entries["2026-10-30"]["windows"]) == set(entries["2026-10-30"]["firstTradeAfter"]) == menu | {"10:34", "10:47"}
+    est = entries[est_day.isoformat()]
+    assert set(est["windows"]) == menu | {"10:47"}, "주말을 넘은 세션(서머타임이 끝난 주)에도 뉴욕 시각 그대로"
+    assert [bar["t"] for bar in est["windows"]["10:47"]] == [_at(est_day, 10, 47 + i).isoformat() for i in range(5)]
+    assert est["firstTradeAfter"]["10:47"]["t"] == "2026-11-02T15:47:00+00:00"
+    assert paper_bars.minute_labels([]) == {} and paper_bars.merge_labels({}, {}) == {}
+
+
 # ==============================================================================
 # 5. 태스크 (PostgreSQL — 범위·1분봉은 바꿔 끼움)
 # ==============================================================================
@@ -733,13 +818,17 @@ def test_장중_시장가의_기준_시각은_생성_60초_뒤_첫_분(created, 
     assert at > datetime.fromisoformat(created) + timedelta(seconds=60), "⑤ T > 생성 + 60초(엄격)"
 
 
-def test_장중_시장가_이름과_계좌는_V18·백엔드와_같은_글자():
+def test_장중_시장가·분_단위_지정_시각_이름은_마이그레이션·백엔드와_같은_글자():
     sql = next((ROOT / "db/migrations").glob("V18__*.sql")).read_text(encoding="utf-8")
     check = re.search(r"CHECK \(timing IN \(([^)]*)\)\)", sql)
     assert check and paper_bars.store.MARKET_TIMING in re.findall(r"'([A-Z_0-9]+)'", check.group(1))
+    v22 = next((ROOT / "db/migrations").glob("V22__*.sql")).read_text(encoding="utf-8")
+    latest = re.findall(r"'([A-Z_0-9]+)'", re.search(r"CHECK \(timing IN \(([^)]*)\)\)", v22).group(1))
+    assert paper_bars.store.MINUTE_TIMING in latest and set(paper_bars.store.TIMED_TIMINGS) <= set(latest)
     java = (ROOT / "backend/src/main/java/com/macrodash/feature/paper/PaperBooks.java").read_text(encoding="utf-8")
-    claude2 = re.search(r'static final String CLAUDE2 = "([^"]+)";', java).group(1)
-    assert paper_bars.store.TIMED_MARKET_BOOKS == {"US": (claude2,)}
+    assert re.search(r'static final String AT_MINUTE = "([^"]+)";', java).group(1) == paper_bars.store.MINUTE_TIMING
+    assert re.search(r'static final String MARKET = "([^"]+)";', java).group(1) == paper_bars.store.MARKET_TIMING
+    assert paper_bars.store.TIMED_TIMINGS == tuple(paper_bars.MENU) + (paper_bars.store.MARKET_TIMING, paper_bars.store.MINUTE_TIMING)
     assert paper_bars.MARKET_AFTER_CREATED == timedelta(seconds=60)
 
 
@@ -769,14 +858,16 @@ def _market_order(store, book: str, ticker: str, status: str, created: str) -> N
         )
 
 
-def test_장중_시장가_범위는_계좌2의_대기·최근_MARKET_주문이고_읽기만_한다(store, monkeypatch):
+def test_장중_시장가_범위는_그_시장의_대기·최근_MARKET_주문이고_읽기만_한다(store, monkeypatch):
     _book(store, "claude")
     _book(store, "claude2")
     recent = datetime.now(UTC) - timedelta(days=1)
     _market_order(store, "claude2", "AAA", "PENDING", "2020-01-02T15:00:00+00:00")      # 오래됐어도 대기 → 넣음
     _market_order(store, "claude2", "BBB", "FILLED", recent.isoformat())                 # 최근 → 상태 무관
     _market_order(store, "claude2", "CCC", "FILLED", "2020-01-03T15:00:00+00:00")        # 오래된 체결 → 뺌
-    _market_order(store, "claude", "DDD", "PENDING", recent.isoformat())                 # 계좌1 → 뺌(MARKET은 장중 확인 응답만)
+    _book(store, "kr_claude2", market="KR")
+    _market_order(store, "kr_claude2", "005930", "PENDING", recent.isoformat())          # 한국 → 뺌(한국은 kr_paper_timed가 받음)
+    _market_order(store, "claude", "DDD", "PENDING", "2020-01-01T15:00:00+00:00")        # 계좌1(자유 시점 판 — ADR 0027)도 넣음
     _order(store, "claude2", "EEE", "PENDING", 0)                                        # MARKET 아님 → 뺌
 
     @contextmanager
@@ -787,7 +878,7 @@ def test_장중_시장가_범위는_계좌2의_대기·최근_MARKET_주문이�
 
     monkeypatch.setattr(store, "connection", read_only)
     got = store.timed_market_targets("US")
-    assert [at.isoformat() for at in got] == ["2020-01-02T15:00:00+00:00", recent.isoformat()]
+    assert [at.isoformat() for at in got] == ["2020-01-01T15:00:00+00:00", "2020-01-02T15:00:00+00:00", recent.isoformat()]
     assert all(at.tzinfo is not None for at in got)
     assert store.timed_market_targets("KR") == []
 

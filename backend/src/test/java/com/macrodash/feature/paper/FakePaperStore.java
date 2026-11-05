@@ -252,7 +252,8 @@ class FakePaperStore extends PaperStore {
         long id = ++sequence;
         orders.put(id, new Order(id, o.bookCode(), o.decisionId(), o.ticker(), o.side(), o.qty(), o.targetWeightPct(),
                 o.sellFraction(), o.timing(), o.source(), o.status(), o.rejectReason(), o.reason(),
-                o.asOfTradingDate(), o.createdAt() == null ? dbNow : o.createdAt(), o.expiresOn(), o.filledAt()));
+                o.asOfTradingDate(), o.createdAt() == null ? dbNow : o.createdAt(), o.expiresOn(), o.filledAt(),
+                o.targetLocal()));
         return id;
     }
 
@@ -296,7 +297,7 @@ class FakePaperStore extends PaperStore {
         orders.put(id, new Order(o.id(), o.bookCode(), o.decisionId(), o.ticker(), o.side(), o.qty(),
                 o.targetWeightPct(), o.sellFraction(), o.timing(), o.source(), o.status(), o.rejectReason(),
                 reason == null ? new ObjectMapper().createObjectNode() : reason, o.asOfTradingDate(), o.createdAt(),
-                o.expiresOn(), o.filledAt()));
+                o.expiresOn(), o.filledAt(), o.targetLocal()));
     }
 
     @Override
@@ -374,7 +375,7 @@ class FakePaperStore extends PaperStore {
     private static Order with(Order o, String status, String rejectReason, Instant filledAt) {
         return new Order(o.id(), o.bookCode(), o.decisionId(), o.ticker(), o.side(), o.qty(), o.targetWeightPct(),
                 o.sellFraction(), o.timing(), o.source(), status, rejectReason, o.reason(), o.asOfTradingDate(),
-                o.createdAt(), o.expiresOn(), filledAt);
+                o.createdAt(), o.expiresOn(), filledAt, o.targetLocal());
     }
 
     @Override

@@ -8,10 +8,13 @@ app/tasks/paper_bars.py
 상태(T 가격)도 이것을 읽고, 아침 결정 패킷은 읽지 않습니다. 계좌1 체결은 지금처럼 paper.quotes 관측치로만 합니다.
 
 [범위] store.timed_scope("US") — Claude 계좌1·계좌2의 대기 주문 ∪ 최근 8일(달력일)에 만든 주문 ∪ 계좌2 보유(백엔드 표를 읽기만 — ADR 0008·0022)
-  + 지연 기준 SPY. 표에서 고른 종목이 없으면 EmptyResult이고 Yahoo를 부르지 않습니다 — SPY 혼자서는 묻지 않습니다(잴 주문이 없음).
-[장중 시장가] store.timed_market_targets("US") — 계좌2의 MARKET 주문(장중 확인 응답, 단계 2) 가운데 대기·최근 8일 것의 생성 시각. 주문마다 기준 시각
+  + 지연 기준 SPY. 다른 책(규칙 계좌 등)도 시각 지정 시점의 주문이 있으면 그 종목과 그 책 보유가 더해집니다(ADR 0027 — 없으면 그대로).
+  표에서 고른 종목이 없으면 EmptyResult이고 Yahoo를 부르지 않습니다 — SPY 혼자서는 묻지 않습니다(잴 주문이 없음).
+[장중 시장가] store.timed_market_targets("US") — MARKET 주문(장중 확인·장중 판단 응답) 가운데 대기·최근 8일 것의 생성 시각. 주문마다 기준 시각
   T = market_target(생성)(생성 + 60초 뒤 첫 분 — 백엔드 ExecutionAudit와 같은 식)을 그 T의 뉴욕 날짜 세션에만 메뉴처럼 창·첫 거래 봉 키로 더합니다.
-  MARKET 주문이 없으면 저장본은 메뉴 일곱 키 그대로입니다(더하기만 — contract 1 그대로).
+[분 단위 지정 시각] store.timed_minute_targets("US") — AT_MINUTE 주문(ADR 0027) 가운데 대기·최근 8일 것의 (기준 거래일, 지정 시각). 그 시각을
+  기준일 뒤 7일 안의 세션에 창·첫 거래 봉 키로 더합니다(minute_labels — 수집기는 달력을 몰라 목표 세션 하나를 고르지 않음).
+  MARKET·AT_MINUTE 주문이 없으면 저장본은 메뉴 일곱 키 그대로입니다(더하기만 — contract 1 그대로).
 [받는 법] yf.download(interval="1m", prepost=False, auto_adjust=False) 배치 한 번. 이 프로세스에서 1분봉을 처음 받기 전까지는 period "5d"
   (수집기가 꺼졌던 동안의 세션 따라잡기 — 기동 직후), 한 번 받은 뒤로는 "1d". 1d가 장 전·마감 뒤에 어느 세션을 주는지,
   5d가 며칠 전 세션까지 주는지는 [모름 — X9, 기동 직후 저장본의 세션 날짜로 확인]. 확정된 세션(동부 16:15 뒤 — paper.latest_final_date)은
@@ -35,7 +38,7 @@ app/tasks/paper_bars.py
        fetchedAt, barCount,
        firstBar {t, o, v}, lastBar {t, o, h, l, c, v},
        windows {"09:30"|"10:00"…"15:00": [{t, o, h, l, c, v}…] | null},   # T ~ T+4분에 시작한 봉. 없으면 null(아직·조기 폐장·무거래)
-                                                                        # 키는 메뉴 일곱 + 그 세션의 대기 MARKET 기준 시각('HH:MM' — 메뉴와 겹치면 하나)
+                                                                        # 키는 메뉴 일곱 + 그 세션의 MARKET 기준 시각·AT_MINUTE 지정 시각('HH:MM' — 겹치면 하나)
        firstTradeAfter {"HH:MM": {t, o, v} | null},                    # T 이후(T 포함) 그 세션의 첫 거래량 > 0 봉. 없으면 null
        dailyOpen}},                                                   # 검증용 일봉 시가(X2). 확정 전·못 받음은 null
      noBarSessions?,        # 봉 0개 항목만 — SPY가 이번 회차에 받은 세션(뉴욕 날짜) 가운데 이 종목 봉이 하나도 없던 세션. sessions는 직전 것 그대로(없으면 {})
@@ -82,6 +85,8 @@ MENU = {
 WINDOW = timedelta(minutes=5)
 # 장중 시장가(MARKET)의 기준 시각 — 생성 + 60초보다 **엄격히** 뒤인 첫 분(⑤ 'T > 생성 + 60초', 백엔드 ExecutionAudit.AFTER_CREATED와 같은 60초).
 MARKET_AFTER_CREATED = timedelta(seconds=60)
+# 분 단위 지정 시각(AT_MINUTE) 주문의 창을 더하는 날짜 폭 — 기준 거래일 뒤 이 달력일 수 안의 세션(목표 세션 E가 그 안에 듦, minute_labels).
+MINUTE_SESSION_DAYS = 7
 SESSIONS_KEPT = 3
 # 지연(lagSeconds)을 재는 기준 종목. 범위가 있을 때만 함께 받습니다.
 REFERENCE = "SPY"
@@ -148,13 +153,39 @@ def market_labels(created: list[datetime]) -> dict[str, list[str]]:
     return {day: sorted(labels) for day, labels in sorted(out.items())}
 
 
+def minute_labels(orders: list[tuple[date, time]]) -> dict[str, list[str]]:
+    """
+    분 단위 지정 시각(AT_MINUTE — ADR 0027) 주문의 (기준 거래일, 지정 시각) → {뉴욕 날짜: ['HH:MM'…]}(중복 없음·정렬). 외부 호출·DB 없음.
+
+    목표 세션 E는 기준 거래일 다음 거래일인데 수집기는 미국 달력을 모릅니다. 그래서 기준일 뒤 ``MINUTE_SESSION_DAYS``일(달력일) 안의 날짜 모두에
+    라벨을 더합니다 — 세션이 없는 날짜의 라벨은 쓰이지 않고(session_entries는 받은 세션에만 더함), E 뒤 세션의 창은 장부가 읽지 않습니다
+    (장부는 그 주문의 E 세션 항목에서만 찾음). 긴 연휴(주말 + 휴장일)를 넘어도 E가 그 안에 듭니다.
+    """
+    out: dict[str, set[str]] = {}
+    for as_of, at in orders:
+        label = at.strftime("%H:%M")
+        for offset in range(1, MINUTE_SESSION_DAYS + 1):
+            out.setdefault((as_of + timedelta(days=offset)).isoformat(), set()).add(label)
+    return {day: sorted(labels) for day, labels in sorted(out.items())}
+
+
+def merge_labels(*parts: dict[str, list[str]]) -> dict[str, list[str]]:
+    """세션(뉴욕 날짜)마다 더할 창 라벨들을 합칩니다(중복 없음·정렬) — 장중 시장가와 분 단위 지정 시각."""
+    out: dict[str, set[str]] = {}
+    for part in parts:
+        for day, labels in part.items():
+            out.setdefault(day, set()).update(labels)
+    return {day: sorted(labels) for day, labels in sorted(out.items())}
+
+
 def session_entries(rows: list[dict], fetched_at: datetime,
                     extra: dict[str, list[str]] | None = None) -> dict[str, dict]:
     """
     한 종목의 1분봉(market.minute_bars의 줄) → 뉴욕 날짜별 세션 항목(모양은 머리말). 외부 호출·DB 없음 — 시험이 직접 부릅니다.
 
     창 시각 T는 그 세션 날짜의 America/New_York 시각으로 만들어 UTC로 바꿉니다(서머타임 전환 주에도 같은 규칙). ``extra``는 세션(뉴욕 날짜)마다
-    더할 창 라벨('HH:MM' — 대기 MARKET 주문의 기준 시각, market_labels)이고, 메뉴 라벨과 겹치면 하나만 둡니다. 그 세션에만 더합니다.
+    더할 창 라벨('HH:MM' — 대기 MARKET 주문의 기준 시각 market_labels, AT_MINUTE 주문의 지정 시각 minute_labels)이고, 메뉴 라벨과 겹치면 하나만
+    둡니다. 그 세션에만 더합니다.
     """
     by_day: dict[str, list[tuple[datetime, dict]]] = {}
     for row in rows:
@@ -341,7 +372,7 @@ def task_paper_bars_us() -> str:
         raise EmptyResult(f"0/{len(tickers)} 종목 — 기존 저장본 유지 ({latched})")
 
     period = STEADY_PERIOD if _caught_up else CATCH_UP_PERIOD
-    extra = market_labels(store.timed_market_targets("US"))
+    extra = merge_labels(market_labels(store.timed_market_targets("US")), minute_labels(store.timed_minute_targets("US")))
     rows, reason, limited = market_service.minute_bars(tickers, period)
     fetched_at = _now()
     _after_round(limited)

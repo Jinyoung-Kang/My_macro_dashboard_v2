@@ -72,7 +72,7 @@ final class PaperNotifications {
         if (!costs.isEmpty()) {
             details.add("비용 " + String.join(" · ", costs));
         }
-        String timing = order == null ? null : timingName(order.timing(), korea);
+        String timing = timingName(order, korea);
         details.add("시점 " + (timing == null ? EMPTY : timing) + " · 가격 출처 " + (f.priceSource() == null ? EMPTY : f.priceSource())
                 + (f.backfill() ? " · 사후 체결" : ""));
         details.add("체결일 " + (f.observationDate() == null ? EMPTY : f.observationDate()) + " · 기록 "
@@ -162,13 +162,29 @@ final class PaperNotifications {
         } else {
             size = o.sellFraction() == null || o.sellFraction() >= 1.0 ? "전량" : plain(o.sellFraction() * 100) + "%";
         }
-        String timing = timingName(o.timing(), korea);
+        String timing = timingName(o, korea);
         String status = PaperBooks.ORDER_PENDING.equals(o.status()) ? "" : " · " + orderStatusName(o.status())
                 + (o.rejectReason() == null ? "" : "(" + clip(o.rejectReason(), 120) + ")");
         return sideName(o.side()) + " " + ticker(o.ticker(), names, korea) + " " + size + " · " + (timing == null ? EMPTY : timing) + status;
     }
 
     // ------------------------------------------------------------------ 이름
+    /**
+     * 주문의 체결 시점 이름 — 분 단위 지정 시각({@value PaperBooks#AT_MINUTE})은 그 주문의 시각까지 적습니다('지정 시각 10:47 ET'). 아침(밤) 결정의
+     * 주문이면 다음 세션의, 장중 판단의 주문이면 그날의 시각이라 세션 말은 붙이지 않습니다. 그 밖은 {@link #timingName(String, boolean)}.
+     */
+    static String timingName(Order order, boolean korea) {
+        if (order == null) {
+            return null;
+        }
+        if (PaperBooks.AT_MINUTE.equals(order.timing())) {
+            return order.targetLocal() == null ? "지정 시각(시각 없음)"
+                    : "지정 시각 " + String.format(Locale.ROOT, "%02d:%02d", order.targetLocal().getHour(),
+                            order.targetLocal().getMinute()) + (korea ? " KST" : " ET");
+        }
+        return timingName(order.timing(), korea);
+    }
+
     static String timingName(String timing, boolean korea) {
         if (timing == null) {
             return null;

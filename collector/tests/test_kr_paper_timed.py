@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import re
 from datetime import date, datetime, timezone
+from datetime import time as clock_time
 from pathlib import Path
 
 import pytest
@@ -82,9 +83,10 @@ def toss(monkeypatch):
     return fake
 
 
-def _orders(monkeypatch, rows, market=(), audit=()):
+def _orders(monkeypatch, rows, market=(), audit=(), minute=()):
     monkeypatch.setattr(kr_paper_timed.store, "kr_timed_orders", lambda books, timings: list(rows))
     monkeypatch.setattr(kr_paper_timed.store, "kr_market_orders", lambda books: list(market))
+    monkeypatch.setattr(kr_paper_timed.store, "kr_minute_orders", lambda books: list(minute))
     monkeypatch.setattr(kr_paper_timed.store, "kr_audit_orders", lambda books, days: list(audit))
 
 
@@ -153,6 +155,10 @@ def test_봉이_없으면_NO_BARS_실패는_FAILED로_다음_주기에_다시(st
 def test_계좌와_시점_글자는_백엔드와_같다():
     books = (ROOT / "backend/src/main/java/com/macrodash/feature/paper/PaperBooks.java").read_text(encoding="utf-8")
     assert re.search(r'KR_CLAUDE2 = "kr_claude2"', books)
+    declared = {name: re.search(rf'static final String {name} = "([^"]+)";', books).group(1) for name in ("KR_CLAUDE2", "KR_CLAUDE", "KR_RULES")}
+    assert kr_paper_timed.KR_TIMED_BOOKS == (declared["KR_CLAUDE2"], declared["KR_CLAUDE"], declared["KR_RULES"])
+    assert re.search(r'static final String AT_MINUTE = "([^"]+)";', books).group(1) == kr_paper_timed.store.MINUTE_TIMING
+    assert kr_paper_timed.store.MINUTE_TIMING not in kr_paper_timed.KR_TIMED_TIMINGS, "지정 시각 주문은 kr_minute_orders가 따로 읽음(시각이 주문에 있음)"
     for timing in kr_paper_timed.KR_TIMED_TIMINGS:
         assert f'"{timing}"' in books, timing
     datasets = (ROOT / "backend/src/main/java/com/macrodash/store/Datasets.java").read_text(encoding="utf-8")
@@ -180,6 +186,54 @@ def test_장중_시장가_대기_주문은_그_기준_분의_창을_더한다(st
     assert {"10:00", "11:00", "15:00"} <= set(entry["windows"]), "매시 창은 그대로"
 
 
+def test_분_단위_지정_시각_대기_주문은_그_지정_시각의_창을_더하고_장부_몫으로_먼저_받는다(store, toss, monkeypatch):
+    # ADR 0027 — 한국 계좌1(kr_claude)의 10:47 주문과 규칙 계좌(kr_rules)의 13:05 주문. 감사 주문(035720)보다 먼저 부르고, 그 종목·세션에만 창을 더한다.
+    _orders(monkeypatch, [], minute=[("005930", date(2026, 11, 2), clock_time(10, 47)), ("000660", date(2026, 11, 2), clock_time(13, 5)),
+                                     ("005930", date(2026, 11, 2), clock_time(14, 20))],
+            audit=[("035720", date(2026, 11, 2), "NEXT_OPEN", None)])
+    for code in ("005930", "000660", "035720"):
+        toss.pages[(code, E)] = _session(E)
+
+    tasks.task_kr_paper_timed()
+
+    assert [symbol for symbol, _ in toss.calls][:1] == ["005930"] and toss.calls[-1][0] == "035720", "장부 몫이 먼저, 감사 몫이 뒤"
+    sessions = _payload(store)["sessions"][E]
+    first = sessions["005930"]
+    assert [b["label"] for b in first["windows"]["10:47"]] == ["10:48", "10:49", "10:50", "10:51", "10:52"]
+    assert first["firstAfter"]["10:47"]["label"] == "10:48" and "14:20" in first["windows"]
+    assert "13:05" in sessions["000660"]["windows"] and "10:47" not in sessions["000660"]["windows"], "그 종목의 주문 시각만"
+    assert not {"10:47", "13:05", "14:20"} & set(sessions["035720"]["windows"]), "지정 시각 주문이 없는 종목은 매시 창 그대로"
+    assert {"09:00", "10:00", "15:00"} <= set(first["windows"])
+
+    # 이미 받은 칸에 새 지정 시각 창이 없으면 그 칸만 다시 받는다(장중 시장가와 같은 규칙).
+    before = len(toss.calls)
+    _orders(monkeypatch, [], minute=[("005930", date(2026, 11, 2), clock_time(10, 47)), ("005930", date(2026, 11, 2), clock_time(11, 11))])
+    tasks.task_kr_paper_timed()
+    assert {symbol for symbol, _ in toss.calls[before:]} == {"005930"}
+    assert "11:11" in _payload(store)["sessions"][E]["005930"]["windows"]
+
+
+def test_분_단위_지정_시각_범위는_그_계좌들의_대기_AT_MINUTE_주문만_읽는다(store):
+    with store.connection() as conn:
+        for code, kind in (("kr_claude2", "CLAUDE"), ("kr_claude", "CLAUDE"), ("kr_rules", "RULES"), ("kr_bench_200", "BENCHMARK")):
+            conn.execute(
+                "INSERT INTO paper_books (code, kind, label, initial_cash, started_on, status, market, currency) "
+                "VALUES (%s, %s, %s, 100000000, %s, 'ACTIVE', 'KR', 'KRW')", (code, kind, code, date(2026, 10, 30)))
+        for book, ticker, timing, status, at in (
+                ("kr_claude", "005930", "AT_MINUTE", "PENDING", "10:47"), ("kr_rules", "000660", "AT_MINUTE", "PENDING", "13:05"),
+                ("kr_claude2", "005930", "AT_MINUTE", "PENDING", "10:47"),      # 같은 (종목, 기준일, 시각) → 하나
+                ("kr_claude2", "035720", "AT_MINUTE", "FILLED", "09:05"),       # 대기가 아님 → 뺌
+                ("kr_claude2", "051910", "AT_MINUTE", "REJECTED", None),        # 거절 행(시각 없음) → 뺌
+                ("kr_claude2", "066570", "AT_1100", "PENDING", None),           # 매시 → kr_timed_orders 몫
+                ("kr_bench_200", "069500", "AT_MINUTE", "PENDING", "09:30")):   # 범위 밖 계좌 → 뺌
+            conn.execute(
+                "INSERT INTO paper_orders (book_code, ticker, side, timing, source, status, as_of_trading_date, target_local) "
+                "VALUES (%s, %s, 'BUY', %s, 'CLAUDE', %s, %s, %s::time)", (book, ticker, timing, status, date(2026, 11, 2), at))
+    rows = kr_paper_timed.store.kr_minute_orders(kr_paper_timed.KR_TIMED_BOOKS)
+    assert rows == [("000660", date(2026, 11, 2), clock_time(13, 5)), ("005930", date(2026, 11, 2), clock_time(10, 47))]
+    assert kr_paper_timed.store.kr_timed_orders(kr_paper_timed.KR_TIMED_BOOKS, kr_paper_timed.KR_TIMED_TIMINGS) == [("066570", date(2026, 11, 2))]
+
+
 def test_장중_시장가_범위는_그_계좌의_대기_MARKET_주문만_읽는다(store):
     with store.connection() as conn:
         for code in ("kr_claude2", "kr_claude"):
@@ -191,9 +245,12 @@ def test_장중_시장가_범위는_그_계좌의_대기_MARKET_주문만_읽는
             conn.execute(
                 "INSERT INTO paper_orders (book_code, ticker, side, timing, source, status, as_of_trading_date) "
                 "VALUES (%s, %s, 'BUY', %s, 'CLAUDE', %s, %s)", (book, ticker, timing, status, date(2026, 11, 2)))
-    rows = kr_paper_timed.store.kr_market_orders(kr_paper_timed.KR_TIMED_BOOKS)
+    rows = kr_paper_timed.store.kr_market_orders(("kr_claude2",))
     assert [(ticker, as_of) for ticker, as_of, _ in rows] == [("005930", date(2026, 11, 2))]
     assert rows[0][2].tzinfo is not None
+    wide = kr_paper_timed.store.kr_market_orders(kr_paper_timed.KR_TIMED_BOOKS)
+    assert [(ticker, as_of) for ticker, as_of, _ in wide] == [("005930", date(2026, 11, 2)), ("051910", date(2026, 11, 2))], \
+        "계좌1(자유 시점 판 — ADR 0027)의 장중 시장가도 범위 — 끈 판은 MARKET을 내지 않음"
 
 
 def test_실행_감사_주문도_장부_몫_뒤에_받는다(store, toss, monkeypatch):

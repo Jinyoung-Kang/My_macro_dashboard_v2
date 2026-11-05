@@ -101,7 +101,8 @@ final class UsTimedFills {
 
     /**
      * 시각 지정 시점 — 실행 감사의 메뉴({@link ExecutionAudit#MENU} — V17 timing CHECK·수집기 MENU와 같은 글자)와 장중 확인 응답의 장중 시장가
-     * {@value PaperBooks#MARKET}(단계 2 — V18, 기준 시각은 그 주문의 생성 + 60초 뒤 첫 분 {@link ExecutionAudit#marketTarget}). 이 목록이 시간별 체결에서
+     * {@value PaperBooks#MARKET}(단계 2 — V18, 기준 시각은 그 주문의 생성 + 60초 뒤 첫 분 {@link ExecutionAudit#marketTarget}), 분 단위 지정 시각
+     * {@value PaperBooks#AT_MINUTE}(V22 — ADR 0027 결정 1, 기준 시각은 E의 그 주문 시각 {@code target_local}). 이 목록이 시간별 체결에서
      * 빼는 시점({@code UsPaperMarket.fillable})·장부 만료 단계가 남기는 시점·2b가 푸는 시점을 함께 정합니다.
      */
     static final Set<String> TIMINGS = timings();
@@ -168,6 +169,7 @@ final class UsTimedFills {
     private static Set<String> timings() {
         Set<String> out = new java.util.LinkedHashSet<>(ExecutionAudit.MENU.keySet());
         out.add(PaperBooks.MARKET);
+        out.add(PaperBooks.AT_MINUTE);
         return java.util.Collections.unmodifiableSet(out);
     }
 
@@ -425,7 +427,8 @@ final class UsTimedFills {
         LocalDate session = due.session();
         Instant target = due.target();
         if (session == null || target == null) {
-            return Look.invalid("기준 거래일이 없어 목표 세션을 정할 수 없습니다");
+            return Look.invalid(session != null && PaperBooks.AT_MINUTE.equals(order.timing())
+                    ? "지정 시각(target_local)이 없어 기준 시각을 정할 수 없습니다" : "기준 거래일이 없어 목표 세션을 정할 수 없습니다");
         }
         if (order.createdAt() == null || !target.isAfter(order.createdAt().plus(ExecutionAudit.AFTER_CREATED))) {
             return Look.invalid("LATE_FOR_TIMING — 기준 시각 " + et(target, calendar) + "이 주문 생성 + 60초 이전입니다(⑤)");
@@ -991,8 +994,8 @@ final class UsTimedFills {
 
     // ------------------------------------------------------------------ 표기
     /**
-     * 메뉴 시점의 창 키 'HH:MM'(저장본 {@code windows}·{@code firstTradeAfter}의 키) — MARKET처럼 주문마다 기준 시각이 다른 시점은 null이라 장부는
-     * 주문의 기준 시각으로 셉니다({@link ExecutionAudit#label(Instant, TradingCalendar)}).
+     * 메뉴 시점의 창 키 'HH:MM'(저장본 {@code windows}·{@code firstTradeAfter}의 키) — MARKET·AT_MINUTE처럼 주문마다 기준 시각이 다른 시점은 null이라
+     * 장부는 주문의 기준 시각으로 셉니다({@link ExecutionAudit#label(Instant, TradingCalendar)}).
      */
     static String label(String timing) {
         LocalTime at = ExecutionAudit.MENU.get(timing);

@@ -444,7 +444,7 @@ final class KrStartPipeline {
                 boolean pending = PaperBooks.ORDER_PENDING.equals(o.status());
                 orderIds.add(store.insertOrder(new Order(0, o.bookCode(), id, o.ticker(), o.side(), o.qty(),
                         o.targetWeightPct(), o.sellFraction(), o.timing(), o.source(), o.status(), o.rejectReason(),
-                        o.reason(), d, o.createdAt(), pending ? expires : null, null)));
+                        o.reason(), d, o.createdAt(), pending ? expires : null, null, o.targetLocal())));
             }
             store.updateBookStatus(book.code(), PaperBooks.ACTIVE);
             store.updateBookStartedOn(book.code(), d);

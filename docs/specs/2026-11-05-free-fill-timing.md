@@ -109,8 +109,10 @@ CREATE TABLE IF NOT EXISTS paper_intraday_plans (
 - 수집기 `paper_bars`:
   - 범위(`store.timed_scope`, `TIMED_ORDER_BOOKS`·`TIMED_MARKET_BOOKS`·`TIMED_HOLDING_BOOKS`): 계좌2는 지금 그대로(그 책의 대기·최근 8일 주문 전부), 그 밖의 책은 **체결 시점이 시각 지정 값인 주문만**.
     스위치가 꺼진 동안 범위가 지금과 같다는 것을 시험으로 고정합니다. 매수 수량의 'T 시각 순자산'은 보유 종목의 T 창 가격을 쓰므로 보유 범위도 같은 규칙으로 넓힙니다.
-  - `AT_MINUTE`의 창 키: 대기·최근 8일 `AT_MINUTE` 주문의 `target_local`을 날짜 구분 없는 라벨로, 받은 모든 세션의 창·`firstTradeAfter` 키에 더합니다
-    (미국 수집기에는 거래일 달력이 없어 목표 세션을 계산하지 않음 — `session_entries`에 날짜 무관 라벨 인자). 창 키가 저장본에 없으면 장부가 그 주문을 '거래 없음'으로 잘못 만료시킵니다.
+  - `AT_MINUTE`의 창 키: 대기·최근 8일 `AT_MINUTE` 주문의 (기준 거래일, `target_local`)을 읽어, 그 시각을 **기준일 뒤 7일(달력일) 안의 세션**에 창·`firstTradeAfter` 키로 더합니다
+    (`store.timed_minute_targets`·`paper_bars.minute_labels`). 미국 수집기에는 거래일 달력이 없어 목표 세션 하나를 고르지 못하므로 그 폭 안의 세션 모두에 더하고,
+    E 뒤 세션의 창은 장부가 읽지 않습니다. 날짜 없이 모든 세션에 더하면 저장본이 주문 수에 비례해 커집니다. 창 키가 저장본에 없으면 장부가 그 주문을 '거래 없음'으로 잘못 만료시킵니다.
+  - 장중 시장가(`MARKET`) 창도 계좌2만이 아니라 그 시장 책의 주문 모두에서 읽습니다(끈 판에서 `MARKET`을 내는 것은 계좌2뿐이라 지금 범위는 그대로).
 - 스탑: 시간별 관측치에서 즉시(그대로). 'T가 지났는데 아직 풀리지 않은 주문의 종목은 그 관측치의 스탑 판정에서 뺀다'가 시각 지정 주문을 가진 모든 책에 적용됩니다 —
   규칙 계좌의 체결 시각이 기본이 아닐 때 그 종목의 스탑 판정이 한 관측치 늦을 수 있습니다.
 - 1분봉 기다림 `claude2.barsWaitMinutes`는 장부가 이미 모든 미국 책에 읽습니다. 규칙 주문이 시각 지정이 되면 규칙 계좌의 처리 지연도 정하므로 이 키를 규칙 계좌 영향 키로 바꿉니다
@@ -121,10 +123,12 @@ CREATE TABLE IF NOT EXISTS paper_intraday_plans (
 - `KrTimedLadder.timed()` 한 판정에 체결·결정 게이트 ①·확정 조정 제외가 걸려 있어 `AT_MINUTE`를 여기에 넣으면 함께 따라옵니다. 장부의 장중 시각 정렬(`PaperLedgerService` 한국 분기)에도 더합니다.
 - 장중 체결에는 금융위 확정 조정이 없습니다(지금 계좌2와 같음 — `KrConfirmations`).
 - 수집기 `kr_paper_timed`:
-  - `KR_TIMED_BOOKS`를 한국 Claude 두 계좌와 규칙 계좌로, 다만 계좌2가 아닌 책은 시각 지정 주문이 있을 때만 범위에 듭니다. `kr_timed_orders`·`kr_audit_orders`가 `target_local`을 읽고,
-    `window_keys(extra)`(임의 HH:MM 창을 이미 받음)에 넘깁니다.
-  - 실행당 호출 상한(지금 60)은 창 수로 다시 계산해 올리고, `docs/DATA_SOURCES.md`의 '한국 책 호출 예산' 줄과 같은 커밋에서 고칩니다(`test_toss_call_budget.py`가 문서 숫자와 대조).
-  - `KR_TIMED_TIMINGS`가 '메뉴 일곱 + MARKET'인지 보는 잠금 시험(`DecisionTimingsLockTest`)을 같은 커밋에서 고칩니다.
+  - `KR_TIMED_BOOKS`를 한국 Claude 두 계좌와 규칙 계좌로 넓힙니다. 범위는 시점으로 갈리므로(매시·종가·장중 시장가) 계좌1·규칙 계좌의 시가 주문은 지금처럼 고르지 않습니다.
+    `AT_MINUTE` 대기 주문은 `store.kr_minute_orders`가 (종목, 기준 거래일, 지정 시각)으로 따로 읽고, 그 시각을 그 종목·목표 세션의 창 키로 더합니다(`window_keys(extra)`).
+    `KR_TIMED_TIMINGS`(메뉴 일곱 + MARKET)는 그대로입니다.
+  - 실행당 호출 상한(지금 60)은 종목·세션 수로 정해집니다(창 수와 무관 — 한 번 받은 봉에서 창을 뽑음). 규칙 계좌가 재선정일에 낼 수 있는 주문 수가 가장 크므로,
+    규칙 계좌 체결 시각을 여는 B4에서 다시 계산해 `docs/DATA_SOURCES.md`의 '한국 책 호출 예산' 줄과 같은 커밋에서 고칩니다(`test_toss_call_budget.py`가 문서 숫자와 대조).
+  - 실행 감사가 체결된 `AT_MINUTE` 주문의 창을 다시 받게 하는 일(`kr_audit_orders`가 지정 시각을 읽음)은 B5입니다.
 - 결정 게이트 ①(1분봉이 FAILED면 그 계좌의 다음 결정을 보류)이 켠 계좌1과 시각을 지정한 규칙 계좌에도 걸립니다 — 받아들입니다.
 - 한국 장중 판단의 검증은 지금 계좌2처럼 예상 상태(`KrExpectedState`)로 합니다. 감시 저장본의 창은 09:00과 매시뿐이라, 앞선 장중 판단이 낸 `MARKET`·`AT_MINUTE` 주문의 기준 분 창을
   감시 범위에 함께 싣습니다(없으면 예상 상태가 그 시각이 아닌 마지막 봉 종가로 어림).
@@ -251,8 +255,8 @@ CREATE TABLE IF NOT EXISTS paper_intraday_plans (
 
 | 단계 | 내용 | 상태 |
 |---|---|---|
-| B0 | 문서(ADR 0027·이 명세) + 읽기 전용 측정(§16) | 이 커밋 |
-| B1 | V22 + `AT_MINUTE` 장부(미국·한국)·수집 범위. 아직 어느 계좌도 쓰지 않음 | |
+| B0 | 문서(ADR 0027·이 명세) + 읽기 전용 측정(§16) | 끝 |
+| B1 | V22 + `AT_MINUTE` 장부(미국·한국)·수집 범위. 아직 어느 계좌도 쓰지 않음 | 끝 |
 | B2 | Claude 켠 판(프로필·스키마·고정 문단·패킷·검증기 주문 단위 진입점) + 결정 창 가드 일반화. 스위치 기본 꺼짐 | |
 | B3 | V23 + 장중 판단(새 표·새 종류·작업·감시 계약 2·수동 경로) + 호출 상한 | |
 | B4 | 규칙 계좌 설정 키·닫힌 시점·다시 내기 | |
@@ -262,9 +266,9 @@ CREATE TABLE IF NOT EXISTS paper_intraday_plans (
 
 단계마다 같은 커밋에서 함께 고쳐야 `make test`가 통과하는 곳:
 
-- **B1**: `DecisionTimingsLockTest`(마지막으로 timing CHECK를 다시 만드는 파일 — 번호를 글자로 박은 단언을 번호가 바뀌어도 되게, `UsTimedFills.TIMINGS`·수집기 `KR_TIMED_TIMINGS` 대조),
-  `PaperStore.ready()`와 `PaperStoreDbTest`(거절 행 `AT_MINUTE` + NULL이 들어가는지 포함), `test_paper_bars.py`의 범위 고정 시험 둘, `test_kr_paper_timed.py`,
-  `test_toss_call_budget.py` + `docs/DATA_SOURCES.md` 예산 줄, `PaperNotifications` 시점 이름 시험.
+- **B1**: `DecisionTimingsLockTest`(마지막으로 timing CHECK를 다시 만드는 파일 — 번호를 글자로 박은 단언을 번호가 바뀌어도 되게, `UsTimedFills.TIMINGS`),
+  `UsTimedFillsTest`·`UsPaperMarketTest`의 시점 목록(수집기 `store.TIMED_TIMINGS`와 대조 포함), `PaperStore.ready()`와 `PaperStoreDbTest`(거절 행 `AT_MINUTE` + NULL이 들어가는지 포함),
+  `test_paper_bars.py`의 범위·장중 시장가 시험, `test_kr_paper_timed.py`, `PaperNotifyJobTest` 시점 이름, 주문을 복사하는 곳(`FakePaperStore`·`KrStartPipeline` — 지정 시각 칸을 떨어뜨리지 않게).
 - **B2**: 끈 판 고정본 전부가 바이트 그대로(프롬프트·스키마·패킷·검증기), `StructuredSchemaTest`(새 스키마 파일), `PaperSettingTypesTest`·`KrSettingsParityTest`·`PaperSettingsServiceTest`(새 키), 켠 판 고정본.
 - **B3**: `test_table_ownership.py`(새 표), `PaperStore.ready()`(새 표), `test_paper_watch.py`·`test_paper_watch_kr.py`(계약 2), `RouteInventoryTest`·`AccessPolicyTest`·`docs/API.md`·`routes.json`·`endpoints.test.ts`,
   `PaperSettingsServiceTest`(상한 문구), ADR 0020 결정 6 문구.

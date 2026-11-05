@@ -86,6 +86,12 @@ final class PaperBooks {
      * 첫 분({@link ExecutionAudit#marketTarget} — ⑤ 'T &gt; 생성 + 60초'를 엄격하게, 수집기 {@code paper_bars.market_target}과 같은 식).
      */
     static final String MARKET = "MARKET";
+    /**
+     * 분 단위 지정 시각(V22 timing CHECK — ADR 0027 결정 1, 명세 2026-11-05-free-fill-timing §2): 목표 세션 E의 그 시장 현지 시각, 시각은 주문의
+     * {@code target_local}({@link com.macrodash.store.PaperStore.Order#targetLocal}). 매시 값({@link #AT_1000} 등)과 달리 이름만으로는 기준 시각을 알 수
+     * 없어, 기준 시각·닫힘·순위는 주문 단위로 정합니다. 이름을 AT_TIME으로 하지 않은 것은 알림의 'AT_ + 네 글자' 해석과 겹치기 때문입니다.
+     */
+    static final String AT_MINUTE = "AT_MINUTE";
     /** 장중 확인 응답이 받는 체결 시점, 이른 것부터(MARKET 0 &lt; AT_1000 1 &lt; … &lt; AT_1500 6 &lt; NEXT_CLOSE 7 — 확인 스키마 enum과 같은 목록). */
     static final List<String> CHECKPOINT_TIMINGS = List.of(MARKET, AT_1000, AT_1100, AT_1200, AT_1300, AT_1400, AT_1500,
             NEXT_CLOSE);

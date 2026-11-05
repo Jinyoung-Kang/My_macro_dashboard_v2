@@ -83,7 +83,7 @@ final class KrExpectedState {
         if (PaperBooks.NEXT_OPEN.equals(order.timing())) {
             return calendar.openInstant(session);
         }
-        return KrTimedLadder.targetOn(order.timing(), order.createdAt(), session, calendar);
+        return KrTimedLadder.targetOn(order, session, calendar);
     }
 
     private static ExpectedState.Priced price(Order o, Instant target, Instant now, JsonNode watch, Quotes quotes,

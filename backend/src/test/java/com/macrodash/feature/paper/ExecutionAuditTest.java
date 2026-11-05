@@ -55,7 +55,7 @@ class ExecutionAuditTest {
         Order o = claudeOrder("AAPL", PaperBooks.BUY, timing, "PENDING", asOf, createdAt);
         return new Order(7, o.bookCode(), o.decisionId(), o.ticker(), o.side(), o.qty(), o.targetWeightPct(),
                 o.sellFraction(), o.timing(), o.source(), o.status(), o.rejectReason(), o.reason(), o.asOfTradingDate(),
-                o.createdAt(), o.expiresOn(), o.filledAt());
+                o.createdAt(), o.expiresOn(), o.filledAt(), o.targetLocal());
     }
 
     /** 월요일 세션을 보고 화요일 아침에 낸 계좌1식 주문(목표 세션 E = 화요일). */

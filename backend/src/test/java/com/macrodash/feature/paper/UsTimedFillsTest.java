@@ -1671,6 +1671,140 @@ class UsTimedFillsTest {
         }
     }
 
+    // ------------------------------------------------------------------ 분 단위 지정 시각 AT_MINUTE(ADR 0027 결정 1)
+    /** 결정이 낸 분 단위 지정 시각 주문 — 목표 세션 E(기준 거래일 다음 거래일)의 뉴욕 시각 {@code at}. */
+    private long atMinute(String ticker, String side, Integer qty, Double fraction, java.time.LocalTime at, LocalDate asOf,
+                          Instant created) {
+        return store.insertOrder(new Order(0, BOOK, 1L, ticker, side, qty, null, fraction, PaperBooks.AT_MINUTE, "CLAUDE",
+                PaperBooks.ORDER_PENDING, null, null, asOf, created, US.nextTradingDay(asOf), null, at));
+    }
+
+    @Nested
+    @DisplayName("분 단위 지정 시각 AT_MINUTE — 기준 시각 T = E의 주문 시각(target_local, 뉴욕), 매시 시점과 같은 사다리 R1→R2→R2b·3a")
+    class AtMinute {
+
+        private final java.time.LocalTime at = java.time.LocalTime.of(10, 47);
+        private final Instant target = et(TUE, 10, 47);
+
+        @Test
+        @DisplayName("R1 Y1M_AT — T(10:47) 봉 시가, T 앞 봉(10:46)은 쓰지 않음, 실행 감사·예상 상태가 쓰는 기준 시각도 같은 T")
+        void atMinuteR1AtTheTargetMinute() {
+            long id = atMinute("AAPL", PaperBooks.BUY, 10, null, at, MON, MON_DECIDED);
+            assertThat(ExecutionAudit.targetAt(order(id), TUE, US)).isEqualTo(target);
+            assertThat(UsTimedFills.timed(PaperBooks.AT_MINUTE)).isTrue();
+            assertThat(UsTimedFills.label(PaperBooks.AT_MINUTE)).as("이름만으로는 창 키가 없음 — 주문의 시각으로 셈").isNull();
+            bars(new Bars(et(TUE, 11, 21)).market(at)
+                    .bar("AAPL", TUE, et(TUE, 10, 46), 99.0, 500.0).bar("AAPL", TUE, target, 100.0, 500.0)
+                    .bar("AAPL", TUE, et(TUE, 10, 48), 100.4, 300.0));
+
+            observe(et(TUE, 11, 20), bar("AAPL", MON, 99.0, TUE, 103.0));
+
+            assertThat(fillOf(id).rawPrice()).isEqualTo(100.0);
+            assertThat(barOf(id).barAt()).isEqualTo(target);
+            assertThat(barOf(id).fillRung()).isEqualTo("Y1M_AT");
+            assertThat(fillOf(id).observationDate()).isEqualTo(TUE);
+            assertThat(order(id).targetLocal()).as("상태가 바뀌어도 시각은 그대로").isEqualTo(at);
+        }
+
+        @Test
+        @DisplayName("T 전의 관측치에서는 풀지 않음 — T(10:47) 앞 W(10:40)에는 대기, 시간별 경로(fillable)도 체결하지 않음")
+        void atMinuteWaitsUntilTheTarget() {
+            long id = atMinute("AAPL", PaperBooks.BUY, 10, null, at, MON, MON_DECIDED);
+            assertThat(UsPaperMarket.INSTANCE.fillable(order(id), bar("AAPL", MON, 99.0, TUE, 101.0), et(TUE, 10, 40), US))
+                    .as("다음 관측치로 체결하지 않음").isFalse();
+            bars(new Bars(et(TUE, 10, 41)).market(at).bar("AAPL", TUE, et(TUE, 10, 39), 99.0, 500.0));
+
+            observe(et(TUE, 10, 40), bar("AAPL", MON, 99.0, TUE, 101.0));
+
+            assertThat(order(id).status()).isEqualTo("PENDING");
+            assertThat(store.fillsOf(BOOK)).isEmpty();
+        }
+
+        @Test
+        @DisplayName("R2 Y1M_NEXT — T 봉이 거래 없음이면 T+1~T+4분 첫 거래 봉")
+        void atMinuteR2NextTradedBar() {
+            long id = atMinute("AAPL", PaperBooks.BUY, 10, null, at, MON, MON_DECIDED);
+            bars(new Bars(et(TUE, 11, 21)).market(at)
+                    .bar("AAPL", TUE, target, 100.0, 0.0).bar("AAPL", TUE, et(TUE, 10, 49), 100.6, 50.0)
+                    .bar("AAPL", TUE, et(TUE, 10, 50), 100.8, 50.0));
+
+            observe(et(TUE, 11, 20), bar("AAPL", MON, 99.0, TUE, 103.0));
+
+            assertThat(fillOf(id).rawPrice()).isEqualTo(100.6);
+            assertThat(barOf(id).fillRung()).isEqualTo("Y1M_NEXT");
+        }
+
+        @Test
+        @DisplayName("R2b Y1M_LATE(대체) — 창 안 거래가 없고 T 뒤 첫 거래 봉(firstTradeAfter['10:47'])이 있으면 그 봉 시가")
+        void atMinuteR2bAfterTheWindow() {
+            long id = atMinute("AAPL", PaperBooks.SELL, null, 1.0, at, MON, MON_DECIDED);
+            hold("AAPL", 10, 90.0, 99.0, 99.0);
+            bars(new Bars(et(TUE, 11, 21)).market(at)
+                    .bar("AAPL", TUE, target, 100.0, 0.0).bar("AAPL", TUE, et(TUE, 11, 5), 98.0, 400.0)
+                    .bar("AAPL", TUE, et(TUE, 11, 6), 98.1, 400.0));
+
+            observe(et(TUE, 11, 20), bar("AAPL", MON, 99.0, TUE, 97.0));
+
+            assertThat(fillOf(id).rawPrice()).isEqualTo(98.0);
+            assertThat(barOf(id).barAt()).isEqualTo(et(TUE, 11, 5));
+            assertThat(barOf(id).fillRung()).isEqualTo("Y1M_LATE");
+        }
+
+        @Test
+        @DisplayName("3a — E 확정 종가 관측치(마감 + 15분 뒤)까지 1분봉이 T 뒤 거래를 보이지 않으면 EXPIRED NO_TRADE_AFTER_T, 다음 세션으로 넘기지 않음")
+        void atMinuteExpiresAfterTheSession() {
+            long id = atMinute("AAPL", PaperBooks.BUY, 10, null, at, MON, MON_DECIDED);
+            Bars bars = new Bars(et(TUE, 16, 21)).market(at)
+                    .bar("AAPL", TUE, et(TUE, 10, 0), 99.0, 500.0).bar("AAPL", TUE, et(TUE, 10, 20), 99.5, 500.0);
+            session(bars, "SPY", TUE, 580, et(TUE, 16, 0));
+            bars(bars);
+
+            Outcome outcome = observe(et(TUE, 16, 20), bar("AAPL", MON, 99.0, TUE, 99.5));
+
+            assertThat(order(id).status()).isEqualTo("EXPIRED");
+            assertThat(order(id).rejectReason()).startsWith("NO_TRADE_AFTER_T — ");
+            assertThat(fillOf(id)).isNull();
+            assertThat(outcome.expired()).isEqualTo(1);
+        }
+
+        @Test
+        @DisplayName("⑤ T ≤ 주문 생성 + 60초(E 장중에 만든 주문의 지난 시각) — 체결하지 않고 취소 + 운영 알림, 조기 폐장일의 마감 뒤 시각도 같음")
+        void atMinuteLateOrAfterTheCloseIsCancelled() {
+            long late = atMinute("AAPL", PaperBooks.BUY, 10, null, at, MON, et(TUE, 10, 46).plusSeconds(10));
+            bars(new Bars(et(TUE, 11, 21)).market(at).bar("AAPL", TUE, target, 100.0, 500.0)
+                    .bar("AAPL", TUE, et(TUE, 10, 48), 100.1, 500.0));
+
+            Outcome outcome = observe(et(TUE, 11, 20), bar("AAPL", MON, 99.0, TUE, 103.0));
+
+            assertThat(order(late).status()).isEqualTo("CANCELLED");
+            assertThat(order(late).rejectReason()).contains("LATE_FOR_TIMING");
+            assertThat(outcome.alerts()).hasSize(1);
+            assertThat(fillOf(late)).isNull();
+
+            LocalDate wed = LocalDate.of(2026, 11, 25);
+            LocalDate fri = LocalDate.of(2026, 11, 27);
+            Instant created = Instant.parse("2026-11-25T22:31:00Z");
+            long before = atMinute("AAPL", PaperBooks.BUY, 10, null, java.time.LocalTime.of(12, 47), wed, created);
+            long after = atMinute("MSFT", PaperBooks.BUY, 1, null, java.time.LocalTime.of(13, 0), wed, created);
+            bars(new Bars(et(fri, 13, 21)).market(java.time.LocalTime.of(12, 47)).bar("AAPL", fri, et(fri, 12, 47), 100.0, 500.0)
+                    .bar("AAPL", fri, et(fri, 12, 48), 100.0, 500.0).bar("MSFT", fri, et(fri, 12, 59), 400.0, 500.0));
+
+            Outcome early = observe(et(fri, 13, 20), bar("AAPL", wed, 99.0, fri, 101.0), bar("MSFT", wed, 399.0, fri, 401.0));
+
+            assertThat(fillOf(before).observationDate()).as("조기 폐장일의 마감 전 시각은 체결").isEqualTo(fri);
+            assertThat(order(after).status()).isEqualTo("CANCELLED");
+            assertThat(order(after).rejectReason()).contains("조기 폐장");
+            assertThat(early.alerts()).hasSize(1);
+        }
+
+        @Test
+        @DisplayName("이름 단위의 닫힌 시점 표는 AT_MINUTE를 판정하지 않음 — 주문마다 시각이 달라 닫힘은 주문 단위(검증기 새 진입점)가 맡음")
+        void nameBasedClosureIgnoresAtMinute() {
+            assertThat(UsTimedFills.closedTimings(List.of(PaperBooks.NEXT_OPEN, PaperBooks.AT_MINUTE, PaperBooks.NEXT_CLOSE), MON,
+                    et(TUE, 9, 59).plusSeconds(30), US)).containsOnlyKeys(PaperBooks.NEXT_OPEN);
+        }
+    }
+
     // ------------------------------------------------------------------ 폴링 불변
     @Test
     @DisplayName("폴링 불변 — 같은 1분봉을 마감 뒤 한 번에 넣은 결과 = 장중 30회에 나눠 넣은 결과(체결 행·현금이 같음)")
@@ -1780,9 +1914,10 @@ class UsTimedFillsTest {
     // ------------------------------------------------------------------ 계약 대조
     private static final Path V17 = Path.of("../db/migrations/V17__paper_timed_fills_and_exec.sql");
     private static final Path COLLECTOR_BARS = Path.of("../collector/app/tasks/paper_bars.py");
+    private static final Path COLLECTOR_STORE = Path.of("../collector/app/store.py");
 
     @Test
-    @DisplayName("봉 라벨 START = 수집기 paper_bars.BAR_LABEL, 사다리 칸 다섯 = V17 fill_rung CHECK, 시각 지정 시점 = 실행 감사 메뉴 + MARKET")
+    @DisplayName("봉 라벨 START = 수집기 paper_bars.BAR_LABEL, 사다리 칸 다섯 = V17 fill_rung CHECK, 시각 지정 시점 = 실행 감사 메뉴 + MARKET + AT_MINUTE")
     void contractMatchesTheCollectorAndTheMigration() throws IOException {
         assumeTrue(Files.exists(V17) && Files.exists(COLLECTOR_BARS), "V17·수집기 파일을 찾을 수 없습니다");
         assertThat(Files.readString(COLLECTOR_BARS)).contains("BAR_LABEL = \"" + UsTimedFills.BAR_LABEL + "\"");
@@ -1797,9 +1932,19 @@ class UsTimedFillsTest {
         assertThat(rungs).containsExactlyInAnyOrder(UsTimedFills.RUNG_AT, UsTimedFills.RUNG_NEXT, UsTimedFills.RUNG_LATE,
                 UsTimedFills.RUNG_FALLBACK, UsTimedFills.RUNG_CLOSE);
         assertThat(UsTimedFills.FALLBACK_RUNGS).containsExactlyInAnyOrder("Y1M_LATE", "QUOTES_FALLBACK", "QUOTES_CLOSE");
-        assertThat(UsTimedFills.TIMINGS).as("시각 지정 시점 = 실행 감사 메뉴 + 장중 시장가")
+        assertThat(UsTimedFills.TIMINGS).as("시각 지정 시점 = 실행 감사 메뉴 + 장중 시장가 + 분 단위 지정 시각(ADR 0027)")
                 .containsExactlyElementsOf(java.util.stream.Stream.concat(ExecutionAudit.MENU.keySet().stream(),
-                        java.util.stream.Stream.of(PaperBooks.MARKET)).toList());
+                        java.util.stream.Stream.of(PaperBooks.MARKET, PaperBooks.AT_MINUTE)).toList());
+        // 수집기의 1분봉 범위는 이 시점의 주문이 있는 책까지 넓어집니다(store.timed_scope) — 같은 글자·같은 순서.
+        assumeTrue(Files.exists(COLLECTOR_STORE), "수집기 store.py를 찾을 수 없습니다");
+        Matcher tuple = Pattern.compile("TIMED_TIMINGS = \\(([^)]*)\\)").matcher(Files.readString(COLLECTOR_STORE));
+        assertThat(tuple.find()).isTrue();
+        List<String> collected = new ArrayList<>();
+        Matcher quoted = Pattern.compile("\"([A-Z_0-9]+)\"").matcher(tuple.group(1));
+        while (quoted.find()) {
+            collected.add(quoted.group(1));
+        }
+        assertThat(collected).as("수집기 store.TIMED_TIMINGS").containsExactlyElementsOf(UsTimedFills.TIMINGS);
     }
 
     /** 움직이는 시계 — 1분봉 기다림의 상한을 셉니다. */

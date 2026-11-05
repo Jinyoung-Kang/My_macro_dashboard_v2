@@ -92,6 +92,15 @@ final class KrExecutionAudit {
                 : KrTimedLadder.targetOn(timing, createdAt, session, calendar);
     }
 
+    /** 그 주문 자신의 기준 시각 T — 분 단위 지정 시각이면 주문의 시각까지 봅니다({@link KrTimedLadder#targetOn(Order, LocalDate, TradingCalendar)}). */
+    static Instant targetAt(Order order, LocalDate session, TradingCalendar calendar) {
+        if (session == null) {
+            return null;
+        }
+        return PaperBooks.NEXT_OPEN.equals(order.timing()) ? calendar.openInstant(session)
+                : KrTimedLadder.targetOn(order, session, calendar);
+    }
+
     /** 시가·매시 시점 하나의 반사실 — 그 창의 R1·R2(클래스 설명). 못 구하면 null. */
     static Price fromWindow(Order order, String timing, LocalDate session, Timed timed, TradingCalendar calendar) {
         boolean open = PaperBooks.NEXT_OPEN.equals(timing);

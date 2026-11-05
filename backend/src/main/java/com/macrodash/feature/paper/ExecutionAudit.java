@@ -143,7 +143,8 @@ final class ExecutionAudit {
     }
 
     /**
-     * 주문의 기준 시각 T — MARKET이면 그 주문의 생성 시각으로({@link #marketTarget}, 생성 시각을 모르면 null), 그 밖은
+     * 주문의 기준 시각 T — MARKET이면 그 주문의 생성 시각으로({@link #marketTarget}, 생성 시각을 모르면 null), 분 단위 지정 시각
+     * ({@value PaperBooks#AT_MINUTE} — ADR 0027 결정 1)이면 E의 그 주문 시각({@code target_local}, 뉴욕 — 시각이 없으면 null), 그 밖은
      * {@link #targetAt(String, LocalDate, TradingCalendar)}.
      */
     static Instant targetAt(Order order, LocalDate session, TradingCalendar calendar) {
@@ -153,7 +154,16 @@ final class ExecutionAudit {
         if (PaperBooks.MARKET.equals(order.timing())) {
             return order.createdAt() == null ? null : marketTarget(order.createdAt());
         }
+        if (PaperBooks.AT_MINUTE.equals(order.timing())) {
+            return order.targetLocal() == null ? null
+                    : ZonedDateTime.of(session, order.targetLocal(), calendar.zone()).toInstant();
+        }
         return targetAt(order.timing(), session, calendar);
+    }
+
+    /** 주문마다 기준 시각이 다른 시점인가 — 장중 시장가(생성 시각에서)·분 단위 지정 시각(주문의 시각). 메뉴 시점은 이름이 시각을 정합니다. */
+    static boolean perOrder(String timing) {
+        return PaperBooks.MARKET.equals(timing) || PaperBooks.AT_MINUTE.equals(timing);
     }
 
     /** 기준 시각의 창 키 'HH:MM'(그 시각의 뉴욕 시각 — 메뉴 시점은 메뉴 시각, MARKET은 T). */
@@ -167,16 +177,16 @@ final class ExecutionAudit {
      * @param payload 1분봉 저장본 본문(없으면 null)
      */
     static Price fromBars(Order order, String timing, LocalDate session, JsonNode payload, TradingCalendar calendar) {
-        boolean market = PaperBooks.MARKET.equals(timing);
-        if ((!market && !MENU.containsKey(timing)) || (market && !timing.equals(order.timing())) || session == null
+        boolean own = perOrder(timing);
+        if ((!own && !MENU.containsKey(timing)) || (own && !timing.equals(order.timing())) || session == null
                 || payload == null || order.createdAt() == null || !calendar.isTradingDay(session)
                 || payload.path("contract").asInt(-1) != BARS_CONTRACT) {
             return null;
         }
-        // 창은 기준 시각의 'HH:MM' — 메뉴 시점은 메뉴 시각, MARKET은 그 주문의 T(수집기가 대기 MARKET 주문의 T 창을 더함).
-        Instant target = market ? marketTarget(order.createdAt()) : targetAt(timing, session, calendar);
-        if (!target.atZone(calendar.zone()).toLocalDate().equals(session)) {
-            return null;                                   // ⑥ 그 세션 밖의 기준 시각(MARKET)
+        // 창은 기준 시각의 'HH:MM' — 메뉴 시점은 메뉴 시각, MARKET·AT_MINUTE는 그 주문의 T(수집기가 그 주문의 T 창을 더함).
+        Instant target = own ? targetAt(order, session, calendar) : targetAt(timing, session, calendar);
+        if (target == null || !target.atZone(calendar.zone()).toLocalDate().equals(session)) {
+            return null;                                   // ⑥ 그 세션 밖의 기준 시각(MARKET) · 시각을 모르는 주문
         }
         LocalTime at = target.atZone(calendar.zone()).toLocalTime();
         Instant close = calendar.closeInstant(session);

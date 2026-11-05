@@ -239,6 +239,14 @@ class PaperNotifyJobTest {
                 .contains("\n\n<b>오류</b>\nHTTP 529 overloaded");
         assertThat(PaperNotifications.timingName(PaperBooks.AT_1400, false)).isEqualTo("다음 세션 14:00 ET");
         assertThat(PaperNotifications.timingName(PaperBooks.MARKET, true)).isEqualTo("장중 시장가");
+        // 분 단위 지정 시각(ADR 0027) — 이름만으로는 시각을 모르므로 주문의 target_local까지 적음. 'AT_ + 네 글자'로 읽지 않음.
+        com.macrodash.store.PaperStore.Order minute = new com.macrodash.store.PaperStore.Order(9, PaperBooks.CLAUDE, 5L, "SPY", "BUY",
+                null, 5.0, null, PaperBooks.AT_MINUTE, "CLAUDE", "PENDING", null, null, LocalDate.of(2026, 11, 2), T0, null, null,
+                java.time.LocalTime.of(10, 47));
+        assertThat(PaperNotifications.timingName(minute, false)).isEqualTo("지정 시각 10:47 ET");
+        assertThat(PaperNotifications.timingName(minute, true)).isEqualTo("지정 시각 10:47 KST");
+        assertThat(PaperNotifications.timingName(PaperBooks.AT_MINUTE, false)).as("시각 없이 이름만 — 글자 그대로").isEqualTo("AT_MINUTE");
+        assertThat(PaperNotifications.timingName((com.macrodash.store.PaperStore.Order) null, false)).isNull();
         Fill backfill = new Fill(1, 1, PaperBooks.CLAUDE, "SPY", "BUY", 3, 580.12, 580.0, 5, 1_740.36, T0, LocalDate.of(2026, 10, 23),
                 "equity_close", true, T0, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO);
         assertThat(PaperNotifications.fill(backfill, us, null, Map.of(), "")).contains("시점 — · 가격 출처 equity_close · 사후 체결")

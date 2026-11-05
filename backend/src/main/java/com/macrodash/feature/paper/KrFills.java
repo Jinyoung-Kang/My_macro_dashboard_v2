@@ -135,7 +135,7 @@ final class KrFills {
         if (PaperBooks.SOURCE_STOP.equals(order.source()) || order.createdAt() == null) {
             return true;
         }
-        Instant target = KrTimedLadder.targetOn(order.timing(), order.createdAt(), barDate, calendar);
+        Instant target = KrTimedLadder.targetOn(order, barDate, calendar);
         return (target != null ? target : calendar.openInstant(barDate)).isAfter(order.createdAt());
     }
 
@@ -232,8 +232,8 @@ final class KrFills {
         }
         if (KrTimedLadder.timed(order.timing())) {
             // 한국 Claude 계좌2의 매시·장중 시장가·종가(단계 2a·2b) — 목표 세션 1분봉(paper.kr.timed)의 사다리, 없으면 기다림(일봉 값으로 채우지 않음).
-            KrTimedLadder.Result timed = KrTimedLadder.price(order.timing(), order.createdAt(), quote, day.date(), collectedAt,
-                    calendar, Objects.requireNonNull(deadline.apply(day.date()), "결정 기한"));
+            KrTimedLadder.Result timed = KrTimedLadder.price(order.timing(), order.createdAt(), order.targetLocal(), quote,
+                    day.date(), collectedAt, calendar, Objects.requireNonNull(deadline.apply(day.date()), "결정 기한"));
             if (timed.choice() == null) {
                 return timed.unfillable() ? Ladder.untilExpiry(timed.reason()) : Ladder.waiting(timed.reason());
             }

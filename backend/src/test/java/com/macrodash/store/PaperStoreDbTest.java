@@ -16,6 +16,7 @@ import java.nio.file.Path;
 import java.sql.Timestamp;
 import java.time.Instant;
 import java.time.LocalDate;
+import java.time.LocalTime;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -2309,6 +2310,66 @@ class PaperStoreDbTest {
             throw new Rollback();
         })).isInstanceOf(Rollback.class);
         assertThat(new PaperStore(jdbc, MAPPER, new SchemaCheck(jdbc)).ready()).as("되돌린 뒤").isTrue();
+    }
+
+    private static PaperStore.Order atMinute(String code, String status, LocalTime at) {
+        return new PaperStore.Order(0, code, null, "SPY", "BUY", null, 10.0, null, "AT_MINUTE", "CLAUDE", status,
+                "REJECTED".equals(status) ? "MALFORMED" : null, null, DAY, null, DAY.plusDays(3), null, at);
+    }
+
+    @Test
+    @DisplayName("V22(ADR 0027): 주문 시점 AT_MINUTE와 지정 시각 target_local — 읽으면 그 시각 그대로, 다른 시점의 주문은 시각이 NULL, 시각은 AT_MINUTE에만·초는 0, "
+            + "시장에 나가는 AT_MINUTE는 시각이 있어야 하고 거절 행은 시각 없이도 남음(받은 값 그대로), V18 열두 값은 그대로, 초기화가 행을 지움")
+    void v22AtMinuteTimingAndTargetLocal() {
+        store.insertBookIfAbsent(book(BOOK, "자유 시점 시험"));
+        long at = store.insertOrder(atMinute(BOOK, "PENDING", LocalTime.of(10, 47)));
+        assertThat(store.order(at)).get().extracting(PaperStore.Order::timing, PaperStore.Order::targetLocal)
+                .containsExactly("AT_MINUTE", LocalTime.of(10, 47));
+        long open = store.insertOrder(timedBuy(BOOK, "NEXT_OPEN"));
+        assertThat(store.order(open)).get().extracting(PaperStore.Order::targetLocal).as("다른 시점은 시각 없음").isNull();
+        assertThat(store.ordersByStatus(BOOK, "PENDING")).extracting(PaperStore.Order::targetLocal)
+                .as("목록 조회도 같은 칸을 읽음").containsExactly(LocalTime.of(10, 47), null);
+
+        long rejected = store.insertOrder(atMinute(BOOK, "REJECTED", null));
+        assertThat(store.order(rejected)).get().extracting(PaperStore.Order::status, PaperStore.Order::targetLocal)
+                .as("시각이 빠진 AT_MINUTE 응답도 거절 행으로 남음 — 결정 기록을 쓰는 트랜잭션이 되돌려지지 않게").containsExactly("REJECTED", null);
+        assertThat(store.insertOrder(atMinute(BOOK, "REJECTED", LocalTime.of(3, 0)))).as("거절 행은 받은 시각 그대로(범위 밖도)").isPositive();
+
+        assertThatThrownBy(() -> store.insertOrder(atMinute(BOOK, "PENDING", null)))
+                .as("시장에 나가는 AT_MINUTE는 시각 필수").isInstanceOf(org.springframework.dao.DataIntegrityViolationException.class);
+        assertThatThrownBy(() -> jdbc.update("UPDATE paper_orders SET status = 'PENDING' WHERE id = ?", rejected))
+                .as("거절 행을 시각 없이 되살릴 수 없음").isInstanceOf(org.springframework.dao.DataIntegrityViolationException.class);
+        assertThatThrownBy(() -> jdbc.update("UPDATE paper_orders SET target_local = '10:00' WHERE id = ?", open))
+                .as("시각은 AT_MINUTE에만").isInstanceOf(org.springframework.dao.DataIntegrityViolationException.class);
+        assertThatThrownBy(() -> jdbc.update("UPDATE paper_orders SET target_local = '10:47:30' WHERE id = ?", at))
+                .as("분 단위 — 초는 0").isInstanceOf(org.springframework.dao.DataIntegrityViolationException.class);
+        for (String timing : List.of("NEXT_OBSERVATION", "NEXT_OPEN", "NEXT_CLOSE", "IMMEDIATE", "BACKFILL", "AT_1000", "AT_1100",
+                "AT_1200", "AT_1300", "AT_1400", "AT_1500", "MARKET")) {
+            assertThat(jdbc.update("UPDATE paper_orders SET timing = ? WHERE id = ?", timing, open)).as("V18의 " + timing).isEqualTo(1);
+        }
+        assertThatThrownBy(() -> jdbc.update("UPDATE paper_orders SET timing = 'AT_TIME' WHERE id = ?", open))
+                .as("모르는 시점").isInstanceOf(org.springframework.dao.DataIntegrityViolationException.class);
+
+        store.resetBook(BOOK);
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM paper_orders WHERE book_code = ?", Integer.class, BOOK))
+                .as("초기화가 AT_MINUTE 주문도 지움 — V14·V17·V18 재실행이 막히지 않게").isZero();
+    }
+
+    @Test
+    @DisplayName("V22 전 DB(paper_orders.target_local 열 없음)는 준비 안 됨 — 백엔드만 새로 띄운 배포(QA-016)에서 주문 조회의 SQL 오류 대신 안내 문구, 시험 뒤 되돌림")
+    void readyRequiresV22() {
+        class Rollback extends RuntimeException {
+        }
+        assertThat(store.ready()).as("make db-test로 V22까지 적용했는가").isTrue();
+        assertThatThrownBy(() -> store.atomically(() -> {
+            jdbc.execute("ALTER TABLE paper_orders DROP COLUMN target_local");
+            assertThat(new PaperStore(jdbc, MAPPER, new SchemaCheck(jdbc)).ready()).as("지정 시각 칸이 없으면 준비 안 됨").isFalse();
+            throw new Rollback();
+        })).isInstanceOf(Rollback.class);
+        assertThat(new PaperStore(jdbc, MAPPER, new SchemaCheck(jdbc)).ready()).as("되돌린 뒤").isTrue();
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM pg_constraint WHERE conrelid = 'paper_orders'::regclass "
+                + "AND conname IN ('paper_orders_target_local_timing', 'paper_orders_at_minute_target')", Integer.class))
+                .as("되돌린 뒤 CHECK 둘도 그대로").isEqualTo(2);
     }
 
     @Test

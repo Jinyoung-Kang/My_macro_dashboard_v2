@@ -1383,12 +1383,16 @@ public class PaperLedgerService {
 
     /**
      * 한국 장부의 장중 시점의 그날 시각(KST) — 매시(AT_1000~AT_1500)는 hh:00, 장중 시장가(MARKET)는 그 주문의 기준 분({@link ExecutionAudit#marketTarget}),
-     * 그 밖(시가·종가·생성 시각 모르는 MARKET)은 null. 한 관측치 안 처리 순서만 정합니다(가격은 {@link KrTimedLadder}).
+     * 분 단위 지정 시각(AT_MINUTE — ADR 0027)은 그 주문의 시각, 그 밖(시가·종가·생성 시각 모르는 MARKET·시각 없는 AT_MINUTE)은 null. 한 관측치 안 처리
+     * 순서만 정합니다(가격은 {@link KrTimedLadder}).
      */
     static LocalTime intradayTime(Order order) {
         LocalTime hourly = KrTimedLadder.hourly(order.timing());
         if (hourly != null) {
             return hourly;
+        }
+        if (PaperBooks.AT_MINUTE.equals(order.timing())) {
+            return order.targetLocal();
         }
         if (PaperBooks.MARKET.equals(order.timing()) && order.createdAt() != null) {
             return ExecutionAudit.marketTarget(order.createdAt()).atZone(com.macrodash.analytics.KrxCalendar.SEOUL).toLocalTime();

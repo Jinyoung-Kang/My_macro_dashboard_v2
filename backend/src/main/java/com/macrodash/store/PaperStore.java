@@ -20,6 +20,7 @@ import java.sql.Timestamp;
 import java.sql.Types;
 import java.time.Instant;
 import java.time.LocalDate;
+import java.time.LocalTime;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
@@ -114,11 +115,22 @@ public class PaperStore {
     /**
      * 주문. 수량({@code qty})·목표 비중({@code targetWeightPct})·매도 비율({@code sellFraction})은 주문 종류에 따라 하나만
      * 차 있고 나머지는 null입니다. {@code reason}은 근거 JSON(넣을 때 null이면 {@code {}}).
+     * {@code targetLocal}(V22 — ADR 0027 결정 1)은 분 단위 지정 시각 주문({@code timing} AT_MINUTE)의 시각으로, 그 시장의 현지 시각이고 초는 0입니다.
+     * 다른 시점의 주문은 null이어야 하고(DB CHECK), AT_MINUTE인데 null인 것은 거절 행뿐입니다(받은 값 그대로 남김).
      */
     public record Order(long id, String bookCode, Long decisionId, String ticker, String side, Integer qty,
                         Double targetWeightPct, Double sellFraction, String timing, String source, String status,
                         String rejectReason, JsonNode reason, LocalDate asOfTradingDate, Instant createdAt,
-                        LocalDate expiresOn, Instant filledAt) {
+                        LocalDate expiresOn, Instant filledAt, LocalTime targetLocal) {
+
+        /** 지정 시각이 없는 주문(AT_MINUTE가 아닌 모든 시점) — V22 전의 열일곱 칸 그대로. */
+        public Order(long id, String bookCode, Long decisionId, String ticker, String side, Integer qty,
+                     Double targetWeightPct, Double sellFraction, String timing, String source, String status,
+                     String rejectReason, JsonNode reason, LocalDate asOfTradingDate, Instant createdAt,
+                     LocalDate expiresOn, Instant filledAt) {
+            this(id, bookCode, decisionId, ticker, side, qty, targetWeightPct, sellFraction, timing, source, status,
+                    rejectReason, reason, asOfTradingDate, createdAt, expiresOn, filledAt, null);
+        }
     }
 
     /**
@@ -598,7 +610,7 @@ public class PaperStore {
             + "split_note";
     private static final String ORDER_COLUMNS = "id, book_code, decision_id, ticker, side, qty, target_weight_pct, "
             + "sell_fraction, timing, source, status, reject_reason, reason::text AS reason, as_of_trading_date, "
-            + "created_at, expires_on, filled_at";
+            + "created_at, expires_on, filled_at, target_local";
     private static final String FILL_COLUMNS = "id, order_id, book_code, ticker, side, qty, price, raw_price, "
             + "slippage_bp, gross, observed_at, observation_date, price_source, is_backfill, created_at, fee, tax, "
             + "slippage_cost";
@@ -673,7 +685,8 @@ public class PaperStore {
      * V12의 {@code paper_reviews} 테이블, V13이 더하는 {@code paper_books.market}·{@code currency} 열, V14가 더하는
      * {@code paper_reviews.market}·{@code paper_notes.market} 열, V15가 더하는 {@code paper_positions.fill_ref_volume} 열, V16이 더하는
      * {@code paper_orders.ledger_hold_reason} 열, V17이 더하는 {@code paper_fills.bar_at} 열과 {@code paper_order_exec} 테이블, V18의
-     * {@code paper_checkpoints} 테이블(계좌2 장중 확인 — 결정 종류 CHECKPOINT·시점 MARKET과 같은 파일), V19가 바꾼 그 표의 {@code at_local} 열로 봅니다.
+     * {@code paper_checkpoints} 테이블(계좌2 장중 확인 — 결정 종류 CHECKPOINT·시점 MARKET과 같은 파일), V19가 바꾼 그 표의 {@code at_local} 열,
+     * V22가 더하는 {@code paper_orders.target_local} 열(분 단위 지정 시각 — 주문 조회가 모두 이 열을 읽음)로 봅니다.
      * V8만 있는 DB(백엔드만 새로 띄운 경우, QA-016)에서 참이면
      * 트랙레코드 읽기·쓰기가 {@code group_code}·{@code data_source} 열과 새 기본키에서, 결정 읽기·쓰기가 {@code packet_text} 열에서,
      * 사용량 읽기·쓰기가 추정 비용 열에서, 주간 복기 작업·화면이 없는 테이블에서, 책 읽기·쓰기가 시장·통화 열에서, 복기·메모
@@ -690,7 +703,8 @@ public class PaperStore {
                 && schema.columnExists("paper_positions", "fill_ref_volume")
                 && schema.columnExists("paper_orders", "ledger_hold_reason")
                 && schema.columnExists("paper_fills", "bar_at") && schema.tableExists("paper_order_exec")
-                && schema.columnExists("paper_checkpoints", "at_local");
+                && schema.columnExists("paper_checkpoints", "at_local")
+                && schema.columnExists("paper_orders", "target_local");
     }
 
     /**
@@ -967,9 +981,9 @@ public class PaperStore {
     public long insertOrder(Order o) {
         List<Long> ids = jdbc.query("INSERT INTO paper_orders (book_code, decision_id, ticker, side, qty, "
                         + "target_weight_pct, sell_fraction, timing, source, status, reject_reason, reason, "
-                        + "as_of_trading_date, created_at, expires_on, filled_at) "
+                        + "as_of_trading_date, created_at, expires_on, filled_at, target_local) "
                         + "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, COALESCE(CAST(? AS jsonb), '{}'::jsonb), ?, "
-                        + "COALESCE(CAST(? AS timestamptz), now()), ?, ?) RETURNING id",
+                        + "COALESCE(CAST(? AS timestamptz), now()), ?, ?, ?) RETURNING id",
                 ps -> {
                     ps.setString(1, o.bookCode());
                     setLong(ps, 2, o.decisionId());
@@ -987,6 +1001,7 @@ public class PaperStore {
                     setInstant(ps, 14, o.createdAt());
                     setDate(ps, 15, o.expiresOn());
                     setInstant(ps, 16, o.filledAt());
+                    setTime(ps, 17, o.targetLocal());
                 },
                 (rs, rowNum) -> rs.getLong("id"));
         return single(ids, "주문");
@@ -2651,7 +2666,7 @@ public class PaperStore {
                 nullableDouble(rs, "sell_fraction"), rs.getString("timing"), rs.getString("source"),
                 rs.getString("status"), rs.getString("reject_reason"), json(rs, "reason"),
                 date(rs, "as_of_trading_date"), instant(rs, "created_at"), date(rs, "expires_on"),
-                instant(rs, "filled_at"));
+                instant(rs, "filled_at"), rs.getObject("target_local", LocalTime.class));
     }
 
     private static RowMapper<StartPrice> startPriceMapper() {
@@ -2789,6 +2804,14 @@ public class PaperStore {
             ps.setNull(index, Types.DATE);
         } else {
             ps.setDate(index, Date.valueOf(value));
+        }
+    }
+
+    private static void setTime(PreparedStatement ps, int index, LocalTime value) throws SQLException {
+        if (value == null) {
+            ps.setNull(index, Types.TIME);
+        } else {
+            ps.setObject(index, value);
         }
     }
 

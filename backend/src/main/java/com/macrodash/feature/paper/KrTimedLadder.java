@@ -9,6 +9,7 @@ import com.macrodash.feature.paper.KrQuotes.Choice;
 import com.macrodash.feature.paper.KrQuotes.Close1m;
 import com.macrodash.feature.paper.KrQuotes.Quote;
 import com.macrodash.feature.paper.KrQuotes.Timed;
+import com.macrodash.store.PaperStore.Order;
 
 import java.time.Duration;
 import java.time.Instant;
@@ -87,11 +88,17 @@ final class KrTimedLadder {
 
     /**
      * 그 주문의 그날 기준 시각(장부 순서·체결 조건 ⑤ — {@link KrFills#opensAfterOrder}): 매시 = 그날 hh:00 KST, 장중 시장가 = 그 주문의 기준 분
-     * ({@link ExecutionAudit#marketTarget} — 날짜와 상관없이 그 순간, 생성 시각을 모르면 null), 종가 = 그날 마감, 그 밖(시가 등)은 null.
+     * ({@link ExecutionAudit#marketTarget} — 날짜와 상관없이 그 순간, 생성 시각을 모르면 null), 분 단위 지정 시각({@value PaperBooks#AT_MINUTE} — ADR 0027
+     * 결정 1) = 그날의 그 주문 시각({@code targetLocal}, KST — 시각이 없으면 null), 종가 = 그날 마감, 그 밖(시가 등)은 null.
+     *
+     * @param targetLocal 분 단위 지정 시각 주문의 시각(그 밖의 시점은 보지 않음, null 가능)
      */
-    static Instant targetOn(String timing, Instant createdAt, LocalDate session, TradingCalendar calendar) {
+    static Instant targetOn(String timing, Instant createdAt, LocalTime targetLocal, LocalDate session, TradingCalendar calendar) {
         if (PaperBooks.MARKET.equals(timing)) {
             return createdAt == null ? null : ExecutionAudit.marketTarget(createdAt);
+        }
+        if (PaperBooks.AT_MINUTE.equals(timing)) {
+            return targetLocal == null ? null : ZonedDateTime.of(session, targetLocal, KrxCalendar.SEOUL).toInstant();
         }
         if (PaperBooks.NEXT_CLOSE.equals(timing)) {
             return calendar.closeInstant(session);
@@ -100,9 +107,20 @@ final class KrTimedLadder {
         return at == null ? null : ZonedDateTime.of(session, at, KrxCalendar.SEOUL).toInstant();
     }
 
-    /** 이 사다리가 푸는 시점인가 — 매시·장중 시장가·종가. */
+    /** {@link #targetOn(String, Instant, LocalTime, LocalDate, TradingCalendar)}를 주문 하나로 — 주문의 시점·생성 시각·지정 시각 그대로. */
+    static Instant targetOn(Order order, LocalDate session, TradingCalendar calendar) {
+        return targetOn(order.timing(), order.createdAt(), order.targetLocal(), session, calendar);
+    }
+
+    /** 지정 시각이 없는 시점(매시·장중 시장가·종가 — 이름과 생성 시각으로 정해짐)의 기준 시각. 분 단위 지정 시각은 주문을 받는 쪽을 씁니다. */
+    static Instant targetOn(String timing, Instant createdAt, LocalDate session, TradingCalendar calendar) {
+        return targetOn(timing, createdAt, null, session, calendar);
+    }
+
+    /** 이 사다리가 푸는 시점인가 — 매시·장중 시장가·분 단위 지정 시각·종가. */
     static boolean timed(String timing) {
-        return hourly(timing) != null || PaperBooks.MARKET.equals(timing) || PaperBooks.NEXT_CLOSE.equals(timing);
+        return hourly(timing) != null || PaperBooks.MARKET.equals(timing) || PaperBooks.AT_MINUTE.equals(timing)
+                || PaperBooks.NEXT_CLOSE.equals(timing);
     }
 
     static String label(LocalTime time) {
@@ -154,15 +172,22 @@ final class KrTimedLadder {
         return out;
     }
 
+    /** 지정 시각이 없는 시점의 E 체결가 — {@link #price(String, Instant, LocalTime, Quote, LocalDate, Instant, TradingCalendar, Instant)}. */
+    static Result price(String timing, Instant createdAt, Quote quote, LocalDate session, Instant collectedAt,
+                        TradingCalendar calendar, Instant deadline) {
+        return price(timing, createdAt, null, quote, session, collectedAt, calendar, deadline);
+    }
+
     /**
      * 그 주문 시점의 E 체결가(클래스 설명).
      *
      * @param createdAt   주문 생성 시각(장중 시장가의 기준 분 — 그 밖의 시점은 보지 않음, null 가능)
+     * @param targetLocal 분 단위 지정 시각 주문의 시각(KST — 그 밖의 시점은 보지 않음, null 가능)
      * @param collectedAt 관측치 저장본을 받은 시각(쓰지 않음 — 기다림의 끝은 수집기 다시 묻기)
      * @param deadline    그 봉 날짜 밤의 결정 기한 — 실패가 그 뒤에도 남으면 사유에 적음
      */
-    static Result price(String timing, Instant createdAt, Quote quote, LocalDate session, Instant collectedAt,
-                        TradingCalendar calendar, Instant deadline) {
+    static Result price(String timing, Instant createdAt, LocalTime targetLocal, Quote quote, LocalDate session,
+                        Instant collectedAt, TradingCalendar calendar, Instant deadline) {
         Timed timed = quote.timedOn(session);
         String head = session + " " + timing;
         if (timed == null) {
@@ -201,6 +226,16 @@ final class KrTimedLadder {
             }
             at = target.atZone(KrxCalendar.SEOUL).toLocalTime();
             head = session + " MARKET(" + label(at) + ")";
+        }
+        if (PaperBooks.AT_MINUTE.equals(timing)) {
+            // 분 단위 지정 시각(ADR 0027) — 그날의 그 시각. 시각이 없거나 그날 개장 전이면 그 세션에는 그 분의 창이 생기지 않으므로 기다리지 않습니다.
+            LocalTime open = calendar.openInstant(session).atZone(KrxCalendar.SEOUL).toLocalTime();
+            if (targetLocal == null || targetLocal.isBefore(open)) {
+                return new Result(null, head + " — 지정 시각" + (targetLocal == null ? "이 없음" : " " + label(targetLocal) + "이 그날 개장("
+                        + label(open) + ") 전") + " · 체결하지 않음(만료까지)", true);
+            }
+            at = targetLocal;
+            head = session + " AT_MINUTE(" + label(at) + ")";
         }
         if (at == null || !at.isBefore(close)) {
             return new Result(null, head + " — 그날 마감(" + label(close) + ") 전의 매시·장중 시점이 아님 · 체결하지 않음(만료까지)", true);

@@ -74,6 +74,54 @@ class KrTimedLadderTest {
     }
 
     @Test
+    @DisplayName("분 단위 지정 시각(AT_MINUTE, ADR 0027) — 그날 주문 시각의 창: T 봉(라벨 T+1분) 시가 → 창 안 첫 거래 봉 → 그날 T 뒤 첫 거래 봉(대체), 창이 저장본에 "
+            + "없으면 기다림, 시각이 없거나 그날 개장 전·마감 뒤면 체결하지 않음(만료까지)")
+    void atMinuteLadder() {
+        Map<String, List<Bar1m>> windows = new LinkedHashMap<>();
+        windows.put("10:47", List.of(bar("10:48", 71_048, 300), bar("10:49", 71_049, 300)));
+        windows.put("13:05", List.of(bar("13:06", 71_306, 0), bar("13:08", 71_308, 40)));
+        windows.put("14:10", List.of());
+        Quote quote = quote(true, ok(windows, Map.of("14:10", bar("14:31", 71_431, 90)), Map.of()));
+
+        KrTimedLadder.Result exact = atMinute(LocalTime.of(10, 47), quote);
+        assertThat(exact.choice().price()).isEqualByComparingTo("71048");
+        assertThat(exact.choice().source()).isEqualTo(KrTimedLadder.SOURCE_AT);
+        assertThat(exact.choice().note()).isNull();
+        KrTimedLadder.Result next = atMinute(LocalTime.of(13, 5), quote);
+        assertThat(next.choice().price()).isEqualByComparingTo("71308");
+        assertThat(next.choice().source()).isEqualTo(KrTimedLadder.SOURCE_NEXT);
+        KrTimedLadder.Result late = atMinute(LocalTime.of(14, 10), quote);
+        assertThat(late.choice().price()).isEqualByComparingTo("71431");
+        assertThat(late.choice().source()).isEqualTo(KrTimedLadder.SOURCE_LATE);
+
+        KrTimedLadder.Result missing = atMinute(LocalTime.of(11, 11), quote);
+        assertThat(missing.choice()).isNull();
+        assertThat(missing.reason()).contains("AT_MINUTE(11:11)").contains("11:11 창이 없음").contains("기다림");
+        assertThat(missing.unfillable()).as("수집기가 그 창을 아직 받지 않음 — 기다림").isFalse();
+        for (LocalTime bad : new LocalTime[]{null, LocalTime.of(8, 59), LocalTime.of(15, 30), LocalTime.of(18, 0)}) {
+            KrTimedLadder.Result none = atMinute(bad, quote);
+            assertThat(none.choice()).as("시각 " + bad).isNull();
+            assertThat(none.unfillable()).as("시각 " + bad + " — 그 세션에는 그 분이 없음").isTrue();
+            assertThat(none.reason()).contains("체결하지 않음(만료까지)");
+        }
+        assertThat(atMinute(null, quote).reason()).contains("지정 시각이 없음");
+        assertThat(atMinute(LocalTime.of(8, 59), quote).reason()).contains("08:59").contains("개장(09:00) 전");
+
+        assertThat(KrTimedLadder.timed(PaperBooks.AT_MINUTE)).isTrue();
+        assertThat(KrFills.fills(PaperBooks.AT_MINUTE)).isTrue();
+        assertThat(KrTimedLadder.hourly(PaperBooks.AT_MINUTE)).as("매시 표에는 없음 — 시각은 주문이 가짐").isNull();
+        assertThat(KrTimedLadder.targetOn(PaperBooks.AT_MINUTE, null, LocalTime.of(10, 47), E, CALENDAR))
+                .isEqualTo(Instant.parse("2026-11-03T01:47:00Z"));
+        assertThat(KrTimedLadder.targetOn(PaperBooks.AT_MINUTE, null, null, E, CALENDAR)).isNull();
+        assertThat(KrTimedLadder.targetOn(PaperBooks.AT_1400, null, LocalTime.of(10, 47), E, CALENDAR))
+                .as("매시 시점은 이름이 시각을 정함 — 지정 시각 칸을 보지 않음").isEqualTo(Instant.parse("2026-11-03T05:00:00Z"));
+    }
+
+    private static KrTimedLadder.Result atMinute(LocalTime at, Quote quote) {
+        return KrTimedLadder.price(PaperBooks.AT_MINUTE, null, at, quote, E, NIGHT, CALENDAR, DEADLINE);
+    }
+
+    @Test
     @DisplayName("장중 시장가(MARKET) 닫힘(단계 2b) — 지금 만들 주문의 기준 분이 정규장 안·종가 단일가 전이면 열림, 15:20 이후·다른 날이면 MALFORMED")
     void closedMarket() {
         LocalDate asOf = LocalDate.of(2026, 11, 2);

@@ -147,9 +147,10 @@ class DecisionTimingsLockTest {
         // 실행 감사 메뉴(반사실 시점) = 계좌2의 시각 지정 시점, 장부 2b가 받는 시점도 같음.
         List<String> timed = book2.timings().subList(0, book2.timings().size() - 1);
         assertThat(ExecutionAudit.MENU.keySet()).containsExactlyElementsOf(timed);
-        assertThat(UsTimedFills.TIMINGS).as("장부 2b가 받는 시점 = 메뉴의 시각 지정 일곱 + 장중 확인의 MARKET")
+        assertThat(UsTimedFills.TIMINGS).as("장부 2b가 받는 시점 = 메뉴의 시각 지정 일곱 + 장중 확인의 MARKET + 분 단위 지정 시각(ADR 0027 — 어느 메뉴에도 아직 없음)")
                 .containsExactlyInAnyOrderElementsOf(java.util.stream.Stream.concat(timed.stream(),
-                        java.util.stream.Stream.of(PaperBooks.MARKET)).toList());
+                        java.util.stream.Stream.of(PaperBooks.MARKET, PaperBooks.AT_MINUTE)).toList());
+        assertThat(book2.timings()).as("끈 판 메뉴에는 분 단위 지정 시각이 없음").doesNotContain(PaperBooks.AT_MINUTE);
         assertThat(ExecutionAudit.TIMINGS).as("반사실 = 계좌1식 기준 + 계좌2 메뉴").containsExactlyElementsOf(
                 java.util.stream.Stream.concat(java.util.stream.Stream.of(ExecutionAudit.NEXT_OBSERVATION),
                         book2.timings().stream()).toList());
@@ -298,7 +299,8 @@ class DecisionTimingsLockTest {
         assertThat(section).contains(PaperBooks.MARKET).contains(PaperBooks.NEXT_CLOSE).contains("AT_*");
         assertThat(reply.fixedRules()).contains(section);
 
-        // 마이그레이션 가운데 마지막으로 paper_orders_timing_check를 다시 만드는 파일(V18)이 확인 시점을 모두 받음. V17 대조(v17Timings)는 그대로.
+        // 마이그레이션 가운데 마지막으로 paper_orders_timing_check를 다시 만드는 파일이 확인 시점을 모두 받음(V18이 MARKET을, V22가 AT_MINUTE를 더함 — 뒤 파일은
+        // 늘 앞 파일의 상위 집합이어야 하므로 파일 번호를 박지 않음). V17 대조(v17Timings)는 그대로.
         Path last = null;
         try (var files = Files.list(Path.of("../db/migrations"))) {
             for (Path file : files.filter(p -> p.getFileName().toString().matches("V\\d+__.*\\.sql")).sorted(java.util.Comparator.comparing(p -> Integer.parseInt(
@@ -311,7 +313,6 @@ class DecisionTimingsLockTest {
             assumeTrue(false, "db/migrations를 찾을 수 없습니다");
         }
         assertThat(last).isNotNull();
-        assertThat(last.getFileName().toString()).startsWith("V18__");
         Matcher check = Pattern.compile("CHECK \\(timing IN \\(([^)]*)\\)\\)").matcher(Files.readString(last));
         assertThat(check.find()).isTrue();
         List<String> latest = new ArrayList<>();
@@ -319,11 +320,13 @@ class DecisionTimingsLockTest {
         while (value.find()) {
             latest.add(value.group(1));
         }
-        assertThat(latest).containsAll(reply.timings()).containsAll(PaperBooks.CLAUDE2_TIMINGS).containsAll(v17Timings());
+        assertThat(latest).containsAll(reply.timings()).containsAll(PaperBooks.CLAUDE2_TIMINGS).containsAll(v17Timings())
+                .contains(PaperBooks.AT_MINUTE);
         assertThat(v17Timings()).doesNotContain(PaperBooks.MARKET);
 
         assertThat(UsTimedFills.TIMINGS).containsExactlyInAnyOrderElementsOf(java.util.stream.Stream.concat(
-                ExecutionAudit.MENU.keySet().stream(), java.util.stream.Stream.of(PaperBooks.MARKET)).toList());
+                ExecutionAudit.MENU.keySet().stream(), java.util.stream.Stream.of(PaperBooks.MARKET, PaperBooks.AT_MINUTE)).toList());
+        assertThat(reply.timings()).as("끈 판의 장중 확인 응답에는 분 단위 지정 시각이 없음").doesNotContain(PaperBooks.AT_MINUTE);
     }
 
     /**

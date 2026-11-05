@@ -234,7 +234,7 @@ public class PaperKrExecutionAuditJob {
                     continue;                              // 새로 채울 값이 없음 — 쓰지 않음
                 }
                 OrderExec row = new OrderExec(order.id(), code, order.timing(),
-                        KrExecutionAudit.targetAt(order.timing(), order.createdAt(), session, calendar), cf, null, late, null);
+                        KrExecutionAudit.targetAt(order, session, calendar), cf, null, late, null);
                 if (store.mergeOrderExec(row)) {
                     rows++;
                     values += fresh;
