@@ -9,6 +9,7 @@ tests/test_migrations.py
 """
 from __future__ import annotations
 
+import re
 import uuid
 from pathlib import Path
 
@@ -155,6 +156,27 @@ def test_V2는_기본키와_겹치는_인덱스를_지우고_GIN을_레이더_�
     assert not {"idx_timeseries_lookup", "idx_observations_lookup", "idx_observations_radar_filter"} & indexes.keys()
     # 부분 인덱스는 조건의 데이터셋 이름이 정확히 같아야 쓰입니다.
     assert f"WHERE (dataset = '{catalog.OBS_RADAR}'::text)" in indexes["idx_observations_radar_payload"]
+
+
+@pytest.mark.xfail(strict=True, reason="QA-282 재현 — 수정 전에는 결정 번호 외래 키 세 칸에 색인이 없음")
+def test_QA282_결정_번호로_주문과_장중_확인을_찾는_색인이_있다(store):
+    """QA-282. 결정 요약(PaperStore DECISION_SUMMARY_COLUMNS)의 결정별 주문 COUNT가 결정마다 주문 표 전체를 훑어,
+    개요·결정 목록이 주문 누적에 비례해 느려졌습니다(QA 스택 합성 주문 12.2k에서 개요 17ms → 124ms, 색인 31.5ms).
+    장중 확인 표의 결정 번호 외래 키 둘도 색인이 없어 계좌 초기화(결정 행 삭제)의 외래 키 검사가 표 전체를 훑었습니다."""
+    with store.connection() as conn:
+        rows = conn.execute(
+            "SELECT tablename, indexdef FROM pg_indexes "
+            "WHERE schemaname = current_schema() AND tablename IN ('paper_orders', 'paper_checkpoints')"
+        ).fetchall()
+    # 색인의 첫 열만 봅니다 — 그 열로 시작하는 색인이면 그 열의 같음 조건을 색인으로 찾습니다.
+    leading = set()
+    for r in rows:
+        m = re.search(r"USING \w+ \((\w+)", r["indexdef"])
+        if m:
+            leading.add((r["tablename"], m.group(1)))
+    assert {("paper_orders", "decision_id"),
+            ("paper_checkpoints", "source_decision_id"),
+            ("paper_checkpoints", "checkpoint_decision_id")} <= leading
 
 
 def test_번호_파일이_없으면_아무것도_적용하지_않고_기동을_이어_간다(store, tmp_path):
