@@ -179,7 +179,7 @@ final class ExecutionSection {
      */
     static Map<String, Object> build(LocalDate asOf, List<String> timings, TradingCalendar calendar, double slippageBp,
                                      boolean record, PaperStore store, String book, boolean checkpoints) {
-        return build(asOf, timings, calendar, slippageBp, record, store, book, checkpoints, false);
+        return build(asOf, timings, calendar, slippageBp, record, store, book, checkpoints, false, 0);
     }
 
     /** 분 단위 지정 시각 메뉴 한 줄의 뜻(자유 시점 판). */
@@ -190,12 +190,15 @@ final class ExecutionSection {
     /**
      * {@link #build(LocalDate, List, TradingCalendar, double, boolean, PaperStore, String, boolean)}에 자유 시점 판(ADR 0027 결정 2)을 더한 것 —
      * {@code free}가 참이면 메뉴가 시가·분 단위 지정 시각·종가 셋이고({@code AT_MINUTE} 줄은 받는 범위), {@code atMinute}(그 세션의 받는 범위 —
-     * 첫 분·마지막 분, ET·KST)가 더해지며 판은 {@value PacketBuilder#EXECUTION_MENU_VERSION_FREE}입니다. 거짓이면 그 전과 글자 그대로입니다.
+     * 첫 분·마지막 분, ET·KST)와 {@code intraday}(장중 판단 선택지 — 세션당 횟수·그 세션의 받는 범위·간격·피드 뜻·감시 상한·최근 잰 지연·규칙)가
+     * 더해지며 판은 {@value PacketBuilder#EXECUTION_MENU_VERSION_FREE}입니다. 거짓이면 그 전과 글자 그대로입니다.
      *
-     * @param free 자유 시점 판 결정인가({@link ClaudeBookProfile#freeTiming})
+     * @param free        자유 시점 판 결정인가({@link ClaudeBookProfile#freeTiming})
+     * @param intradayMax 그 결정이 읽은 설정의 세션당 장중 판단 횟수({@link FreeTimingSettings#intradayMax} — {@code free}일 때만 봄)
      */
     static Map<String, Object> build(LocalDate asOf, List<String> timings, TradingCalendar calendar, double slippageBp,
-                                     boolean record, PaperStore store, String book, boolean checkpoints, boolean free) {
+                                     boolean record, PaperStore store, String book, boolean checkpoints, boolean free,
+                                     int intradayMax) {
         LocalDate session = calendar.nextTradingDay(asOf);
         Instant open = calendar.openInstant(session);
         Instant close = calendar.closeInstant(session);
@@ -273,6 +276,38 @@ final class ExecutionSection {
             out.put("checkpointOptions", checkpointOptions(session, calendar,
                     lagSummary(store.recentCheckpointLags(book, FEED_MINUTE, RECENT_LAG_SESSIONS))));
         }
+        if (free) {
+            out.put("intraday", intradayOptions(session, calendar, intradayMax,
+                    lagSummary(store.recentIntradayLags(book, FEED_MINUTE, RECENT_LAG_SESSIONS))));
+        }
+        return out;
+    }
+
+    /** 장중 판단 규칙(자유 시점 판 — 고정 문단 장중 판단 절과 같은 뜻). */
+    static final List<String> INTRADAY_RULES = List.of(
+            "예약한 시각 + 2분 ~ + 20분에 한 번 부른다 — 두 시각은 30분 이상 떨어져야 한다",
+            "재시도 없음 — 호출이 실패해도 다시 부르지 않는다",
+            "놓치면 없음 — 서버 꺼짐·자료 없음·호출 상한으로 그 창을 놓치면 나중에 대신 부르지 않고, 대기 주문은 그대로 체결된다");
+
+    /**
+     * 장중 판단 선택지(자유 시점 판 — ADR 0027 결정 3) — 세션당 횟수(설정)·그 세션의 받는 범위(개장 5분 뒤 ~ 마감 30분 전, ET·KST —
+     * {@link IntradayRequest#window})·두 시각의 최소 간격·피드 뜻·감시 상한·최근 잰 지연 요약·규칙.
+     */
+    private static Map<String, Object> intradayOptions(LocalDate session, TradingCalendar calendar, int max,
+                                                       Map<String, Object> recentLag) {
+        IntradayRequest.Window window = IntradayRequest.window(session, calendar, false);
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("maxPerSession", max);
+        out.put("firstEt", et(window.first(), calendar));
+        out.put("lastEt", et(window.last(), calendar));
+        out.put("firstKst", Kst.stamp(window.first()));
+        out.put("lastKst", Kst.stamp(window.last()));
+        out.put("minGapMinutes", IntradayRequest.MIN_GAP.toMinutes());
+        out.put("feeds", FEED_MEANINGS);
+        out.put("watchMax", WATCH_MAX);
+        // 최근 장중 판단(MINUTE, 부른 것)에서 잰 지연 요약 — 최근 5번이 모이기 전에는 null(0으로 채우지 않음).
+        out.put("recentLag", recentLag);
+        out.put("rules", INTRADAY_RULES);
         return out;
     }
 

@@ -519,8 +519,10 @@ class KrStartTest {
                     .doesNotContain("NEXT_OPEN뿐").doesNotContain("AT_1000").doesNotContain("## 장중 확인(고정)");
             assertThat(request.user()).as("켠 판 패킷 문장 " + i).contains(KrPacketBuilder.KR_FT_TIMING_LINE)
                     .contains(KrPacketBuilder.KR_FT_ALLOCATION_LINE).contains("\"variant\":\"freeTiming\"").contains("\"lastKst\":\"15:19\"");
-            assertThat(request.schema().toString()).as("켠 판 스키마 " + i).contains("atLocal").contains("AT_MINUTE").doesNotContain("AT_1000")
-                    .doesNotContain("checkpoint");
+            assertThat(request.schema().toString()).as("켠 판 스키마 " + i).contains("atLocal").contains("AT_MINUTE").contains("checkpoints=")
+                    .doesNotContain("AT_1000").as("끈 판의 요청 칸(checkpoint — 단수·atKst)은 없음").doesNotContain("checkpoint=")
+                    .doesNotContain("atKst");
+            assertThat(request.system()).as("켠 판 장중 판단 절 " + i).contains("## 장중 판단(고정)").contains("1_basis.intraday");
         }
         assertThat(fake.requests.get(1).system()).as("계좌1에는 성향 절 없음").doesNotContain("## 투자 성향");
         assertThat(fake.requests.get(2).system()).contains("## 투자 성향(사용자 선택 — 공격투자형)");

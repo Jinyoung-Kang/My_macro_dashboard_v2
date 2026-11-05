@@ -1019,10 +1019,16 @@ class KrPacketBuilderTest {
         ObjectNode b = (ObjectNode) on.body().deepCopy();
         for (ObjectNode node : List.of(a, b)) {
             ((ObjectNode) node.get(PacketBuilder.INSTRUCTIONS)).remove("lines");
-            ((ObjectNode) node.get(PacketBuilder.BASIS)).remove(List.of("variant", "fixedRules", "atMinute"));
+            ((ObjectNode) node.get(PacketBuilder.BASIS)).remove(List.of("variant", "fixedRules", "atMinute", "intraday"));
             ((ObjectNode) node.get(PacketBuilder.HARD_RULES)).remove(List.of("lines", "timings"));
         }
         assertThat(b).as("그 밖은 끈 판 한국 패킷과 같음").isEqualTo(a);
+        // 장중 판단 선택지 — 세션당 횟수(설정 기본 2)와 그날의 받는 범위(개장 5분 뒤 ~ 종가 단일가 시작 30분 전).
+        JsonNode intraday = on.body().get(PacketBuilder.BASIS).get("intraday");
+        assertThat(intraday.get("maxPerSession").asInt()).isEqualTo(FreeTimingSettings.DEFAULT_INTRADAY_MAX);
+        assertThat(intraday.get("firstKst").asString() + "~" + intraday.get("lastKst").asString()).isEqualTo("09:05~14:50");
+        assertThat(intraday.get("minGapMinutes").asInt()).isEqualTo(30);
+        assertThat(off.body().get(PacketBuilder.BASIS).has("intraday")).as("끈 판에는 없음").isFalse();
         assertThat(on.noteIds()).isEqualTo(off.noteIds());
 
         // 계좌2 켠 판 — 매시 메뉴 문장도, 기존 장중 확인 문장도 없음(계좌 몫은 계좌2의 것).

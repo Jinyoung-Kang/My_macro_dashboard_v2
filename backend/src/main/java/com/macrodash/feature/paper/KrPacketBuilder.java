@@ -583,6 +583,17 @@ final class KrPacketBuilder {
             range.put("note", "AT_MINUTE 주문의 atLocal은 이 범위(양 끝 포함)의 한국 시간 HH:MM — 개장 순간은 NEXT_OPEN, 종가 단일가 시간(마감 10분 "
                     + "전부터)은 NEXT_CLOSE");
             out.put("atMinute", range);
+            // 장중 판단 선택지(ADR 0027 결정 3) — 세션당 횟수(설정)와 그날의 받는 범위(개장 5분 뒤 ~ 종가 단일가 시작 30분 전, 양 끝 포함).
+            IntradayRequest.Window judgments = IntradayRequest.window(next, calendar, true);
+            Map<String, Object> intraday = new LinkedHashMap<>();
+            intraday.put("maxPerSession", FreeTimingSettings.from(run.settingsBody()).intradayMax(book));
+            intraday.put("firstKst", HOUR_MINUTE.format(judgments.first().atZone(Kst.ZONE)));
+            intraday.put("lastKst", HOUR_MINUTE.format(judgments.last().atZone(Kst.ZONE)));
+            intraday.put("minGapMinutes", IntradayRequest.MIN_GAP.toMinutes());
+            intraday.put("watchMax", ExecutionSection.WATCH_MAX);
+            intraday.put("note", "checkpoints의 at은 이 범위(양 끝 포함)의 한국 시간 HH:MM — 예약한 시각 + 2분 ~ + 20분에 한 번 부르고, 놓치면 "
+                    + "다시 부르지 않는다");
+            out.put("intraday", intraday);
         }
         List<String> closures = new ArrayList<>();
         String closuresReason = null;

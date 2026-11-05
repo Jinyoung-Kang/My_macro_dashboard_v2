@@ -626,7 +626,8 @@ public class PacketBuilder {
             // 계좌2만 — 체결 시점 메뉴·사다리·출처 사실·자기 체결 기록(계좌2 명세 §9-3). 계좌1 패킷에는 이 섹션이 없습니다(고정본 그대로).
             root.put(EXECUTION, ExecutionSection.build(asOf, book.timings(), UsMarketCalendar.CALENDAR,
                     in.paper().slippageBp(), Claude2Settings.from(in.settingsBody()).executionRecord(), store, book.code(),
-                    book.checkpoints(), book.freeTiming()));
+                    book.checkpoints(), book.freeTiming(),
+                    FreeTimingSettings.from(in.settingsBody()).intradayMax(book.code())));
         }
 
         JsonNode body = toNode(root);

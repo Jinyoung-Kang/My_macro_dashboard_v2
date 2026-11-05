@@ -43,6 +43,21 @@
         }
       }
     },
+    "checkpoints": {
+      "type": "array",
+      "maxItems": 2,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["at", "feed", "watch", "question"],
+        "properties": {
+          "at": {"type": "string", "pattern": "^([01][0-9]|2[0-3]):[0-5][0-9]$"},
+          "feed": {"enum": ["MINUTE", "HOURLY"]},
+          "watch": {"type": "array", "maxItems": 10, "items": {"type": "string", "pattern": "^[A-Z.\\-]{1,8}$"}},
+          "question": {"type": "string", "maxLength": 300}
+        }
+      }
+    },
     "confidence": {"type": "number", "minimum": 0, "maximum": 1}
   }
 }

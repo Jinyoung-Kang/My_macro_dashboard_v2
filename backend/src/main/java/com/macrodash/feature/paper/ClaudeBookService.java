@@ -294,6 +294,8 @@ public class ClaudeBookService {
     private final Map<String, ClaudeDecisionPipeline> freeTiming;
     /** 미리보기·시작이 겹치지 않게(두 번 눌러 두 번 과금되지 않게). 정기 결정은 결정 작업의 잠금이 줄을 세웁니다. */
     private final ReentrantLock initialCall = new ReentrantLock();
+    /** 자유 시점 판 결정의 장중 판단 예약을 계획 행으로 옮기는 곳({@link IntradayPlanner} — ADR 0027 결정 3). */
+    private final IntradayPlanner intraday;
 
     /** 생성자가 받는 결정 문맥 목록(시험 생성자와 시그니처가 겹치지 않게 감쌈) — 운영 문맥과 자유 시점 판 문맥({@link #freeContexts}). */
     private record Contexts(List<MarketContext> all, List<MarketContext> free) {
@@ -364,6 +366,7 @@ public class ClaudeBookService {
         this.config = config;
         this.mapper = mapper;
         this.clock = clock;
+        this.intraday = new IntradayPlanner(store);
         Map<String, ClaudeDecisionPipeline> byBook = new LinkedHashMap<>();
         for (MarketContext context : contexts.all()) {
             // 스키마 파일이 깨졌으면 기동하지 않습니다(파이프라인이 만들 때 읽음) — 첫 결정 날 아침에야 알게 되지 않게.
@@ -784,6 +787,8 @@ public class ClaudeBookService {
                     verdict.set("reasons", mapper.valueToTree(checkpointPlan.verdict().reasons()));
                 }
             }
+            IntradayPlanner.Plan intradayPlan = intradayPlan(pipeline, kind, paused, attempt,
+                    pipeline.market().calendar().nextTradingDay(asOf), row, quotes, view, plan.response());
             return store.atomically(() -> {
                 if (!paused) {
                     List<Long> superseded = pipeline.supersedePending();
@@ -809,6 +814,9 @@ public class ClaudeBookService {
                 pipeline.insertOrders(id, asOf, plan, paused ? PaperBooks.ORDER_CANCELLED : PaperBooks.ORDER_PENDING);
                 if (checkpointPlan != null) {
                     writeCheckpointPlan(checkpointPlan, id);
+                }
+                if (intradayPlan != null) {
+                    intraday.write(intradayPlan, id);
                 }
                 Decision saved = store.decision(id).orElseThrow();
                 log.info("Claude 책 결정 {} {}{}: {} — 통과 {} · 거절 {}{}{}", asOf, kind, retried == null ? "" : "(재시도)",
@@ -1103,7 +1111,9 @@ public class ClaudeBookService {
             }
             // 장중 확인 계획(단계 2 — 켠 판의 결정만, 일시정지면 쓰지 않음): 응답의 checkpoint → E 세션 PLANNED, 없으면 E의 PLANNED를 SKIPPED.
             // 요청은 의미 검사(CheckpointRequest — 시각·감시 목록·피드)를 거치고, 실패하면 행만 SKIPPED CHECKPOINT_INVALID(아침 주문 판정은 그대로).
-            CheckpointPlan checkpointPlan = pipeline.profile().checkpoints() && !paused
+            // 켠 판(자유 시점)의 결정도 끈 판이 남긴 그 세션의 PLANNED 장중 확인 행을 닫습니다(응답에 checkpoint 칸이 없어 '요청 없음' — 이 결정이
+            // 그 세션의 대기 주문을 대신했으므로 옛 요청이 새 주문 위에서 불리지 않게).
+            CheckpointPlan checkpointPlan = (pipeline.profile().checkpoints() || pipeline.profile().freeTiming()) && !paused
                     ? checkpointPlan(attempt.parsed(), session, pipeline.market().calendar(), checkpointUniverse(quotes, view))
                     : null;
             if (checkpointPlan != null) {
@@ -1114,6 +1124,7 @@ public class ClaudeBookService {
                     verdict.set("reasons", mapper.valueToTree(checkpointPlan.verdict().reasons()));
                 }
             }
+            IntradayPlanner.Plan intradayPlan = intradayPlan(pipeline, kind, paused, attempt, session, row, quotes, view, response);
             return store.atomically(() -> {
                 int superseded = 0;
                 if (!paused) {
@@ -1140,6 +1151,9 @@ public class ClaudeBookService {
                 pipeline.insertOrders(id, asOf, plan, paused ? PaperBooks.ORDER_CANCELLED : PaperBooks.ORDER_PENDING);
                 if (checkpointPlan != null) {
                     writeCheckpointPlan(checkpointPlan, id);
+                }
+                if (intradayPlan != null) {
+                    intraday.write(intradayPlan, id);
                 }
                 if (initial) {
                     // 앞으로 체결 출발(§4-1의 3) — 운용 전환·출발일 S·S 순자산 줄(전액 현금이라 가격이 들지 않아 확정).
@@ -1236,6 +1250,29 @@ public class ClaudeBookService {
                 ? KrCheckpointRequest.validate(request, session, calendar, universe, clock.instant())
                 : CheckpointRequest.validate(request, session, calendar, universe, clock.instant());
         return new CheckpointPlan(book, korea ? KrCheckpointRequest.AT_FIELD : "atEt", session, request, existing, verdict);
+    }
+
+    /**
+     * 결정 하나가 목표 세션 {@code session}의 장중 판단 계획 행({@code paper_intraday_plans})에 할 일(ADR 0027 결정 3 — 장부 잠금 안에서 부름).
+     * 켠 판 결정이면 응답의 {@code checkpoints}를 의미 검사해({@link IntradayRequest}) 받은 예약을 순번대로 넣고 남은 PLANNED 순번을 닫습니다.
+     * 끈 판 결정은 예약을 읽지 않고, 그 세션에 켠 판이 남긴 PLANNED 행이 있을 때만 닫습니다(스위치를 끈 뒤의 결정이 그 세션을 대신함 — 그런 행이
+     * 없으면 null이라 응답이 이 칸이 생기기 전과 같음). 일시정지 중이거나 장중 확인 결정(CHECKPOINT)이면 하지 않습니다. 할 일이 있으면 응답에
+     * {@code intradayPlan}(받은 예약·버린 예약과 사유·닫은 행 수)을 남깁니다.
+     */
+    private IntradayPlanner.Plan intradayPlan(ClaudeDecisionPipeline pipeline, String kind, boolean paused, Attempt attempt,
+                                              LocalDate session, SettingsRow row, Optional<Quotes> quotes, LedgerView view,
+                                              ObjectNode response) {
+        if (paused || RuleBookService.CHECKPOINT.equals(kind)) {
+            return null;
+        }
+        ClaudeBookProfile profile = pipeline.profile();
+        IntradayPlanner.Plan plan = intraday.plan(profile, profile.freeTiming() ? attempt.parsed() : null, session,
+                pipeline.market().calendar(), checkpointUniverse(quotes, view),
+                FreeTimingSettings.from(row.body()).intradayMax(profile.code()), clock.instant());
+        if (plan != null) {
+            response.set("intradayPlan", plan.view(mapper, profile.market() == KrPaperMarket.INSTANCE ? "atKst" : "atEt"));
+        }
+        return plan;
     }
 
     /** 감시할 수 있는 티커 — 관측치 종목 + 지금 보유(검증기의 유니버스와 같은 근거). */

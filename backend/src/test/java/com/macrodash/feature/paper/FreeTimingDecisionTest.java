@@ -181,6 +181,17 @@ class FreeTimingDecisionTest {
                 + "\"confidence\":0.6}";
     }
 
+    /** 장중 판단 예약을 적은 결정 — {@code checkpoints}는 배열 글자 그대로. */
+    private static String decisionWith(String checkpoints, String... orders) {
+        return "{\"schemaVersion\":2,\"stance\":\"RISK_ON\",\"targetEquityExposurePct\":10,\"exposureRationale\":\"r\","
+                + "\"summary\":\"자유 시점 판단\",\"orders\":[" + String.join(",", orders) + "],\"noTradeReason\":null,"
+                + "\"checkpoints\":" + checkpoints + ",\"confidence\":0.6}";
+    }
+
+    private static String checkpoint(String at, String feed, String watch, String question) {
+        return "{\"at\":\"" + at + "\",\"feed\":\"" + feed + "\",\"watch\":" + watch + ",\"question\":\"" + question + "\"}";
+    }
+
     private String[] sent() {
         JsonNode request = requests.get(requests.size() - 1);
         return new String[]{request.path("system").get(0).path("text").asString(),
@@ -213,7 +224,11 @@ class FreeTimingDecisionTest {
         Golden.assertMatches("decision-schema-forapi-us-ft.json", on[2]);
         assertThat(on[0]).contains("AT_MINUTE").contains("atLocal").contains("## 투자 성향").doesNotContain("AT_1000")
                 .doesNotContain("## 장중 확인(고정)").doesNotContain("실시간");
-        assertThat(on[2]).contains("atLocal").contains("AT_MINUTE").doesNotContain("AT_1000").doesNotContain("checkpoint");
+        assertThat(on[2]).contains("atLocal").contains("AT_MINUTE").contains("\"checkpoints\"").doesNotContain("AT_1000")
+                .as("끈 판의 장중 확인 요청 칸(checkpoint — 단수)은 없음").doesNotContain("\"checkpoint\"");
+        assertThat(on[0]).contains("## 장중 판단(고정)").contains("nextCheckpoint");
+        assertThat(d.response().has("intradayPlan")).as("예약도 남은 계획 행도 없으면 칸이 없음").isFalse();
+        assertThat(store.intradayPlans(PaperBooks.CLAUDE2, TUE)).isEmpty();
         verify(packets).assemble(any(), eq(ClaudeBookProfile.US_CLAUDE2_FT), eq(RuleBookService.SCHEDULED), any());
         verify(packets, never()).assemble(any(), eq(ClaudeBookProfile.US_CLAUDE2_C2), anyString(), any());
         verify(packets, never()).assemble(any(), eq(ClaudeBookProfile.US_CLAUDE2), anyString(), any());
@@ -346,6 +361,104 @@ class FreeTimingDecisionTest {
     }
 
     @Test
+    @DisplayName("장중 판단 예약(계좌2): 켠 판 결정의 checkpoints가 시각 순으로 순번 1·2의 PLANNED 행(판 ft-1·그 결정)이 됨. 같은 세션의 뒤 결정(수동)이 "
+            + "예약을 줄이면 첫 순번은 새 값으로 바뀌고 남은 순번은 SUPERSEDED, 규칙에 맞지 않는 항목만 버려지고 주문 판정은 그대로")
+    void checkpointsBecomePlanRowsAndALaterDecisionReplacesThem() {
+        active(PaperBooks.CLAUDE2);
+        set("claude2", "freeTiming", true);
+        answerJson(decisionWith("[" + checkpoint("13:30", "HOURLY", "[]", "오후 확인") + ","
+                + checkpoint("10:15", "MINUTE", "[\"AAA\",\"SHY\"]", "개장 뒤 확인") + "]", buy("AAA", 5, "AT_MINUTE", "10:47")));
+
+        Decision d = service().decideClaude2(MarketRun.of(UsPaperMarket.INSTANCE, store), MON, RuleBookService.SCHEDULED, true, null,
+                null, true).decision();
+
+        assertThat(d.error()).isNull();
+        assertThat(orderOf(PaperBooks.CLAUDE2, "AAA").status()).isEqualTo(PaperBooks.ORDER_PENDING);
+        List<com.macrodash.store.PaperStore.IntradayPlan> plans = store.intradayPlans(PaperBooks.CLAUDE2, TUE);
+        assertThat(plans).extracting(p -> p.slot() + " " + p.atLocal() + " " + p.feed() + " " + p.watch() + " " + p.status() + " "
+                + p.variant() + " " + p.manual()).as("시각 순으로 순번")
+                .containsExactly("1 10:15 MINUTE [AAA, SHY] PLANNED ft-1 false", "2 13:30 HOURLY [] PLANNED ft-1 false");
+        assertThat(plans).allSatisfy(p -> {
+            assertThat(p.sourceDecisionId()).isEqualTo(d.id());
+            assertThat(p.requestedByDecisionId()).as("아침 결정이 예약").isNull();
+            assertThat(p.intradayDecisionId()).isNull();
+        });
+        assertThat(plans.get(0).question()).isEqualTo("개장 뒤 확인");
+        JsonNode view = d.response().path("intradayPlan");
+        assertThat(view.path("session").asString()).isEqualTo(TUE.toString());
+        assertThat(view.path("maxPerSession").asInt()).isEqualTo(2);
+        assertThat(view.path("planned").size()).isEqualTo(2);
+        assertThat(view.path("planned").get(0).path("slot").asInt()).isEqualTo(1);
+        assertThat(view.path("planned").get(0).path("atEt").asString()).isEqualTo("10:15");
+        assertThat(view.path("planned").get(1).path("status").asString()).isEqualTo(PaperBooks.CHECKPOINT_PLANNED);
+        assertThat(view.path("rejected").size()).isZero();
+        assertThat(view.path("superseded").asInt()).isZero();
+        assertThat(store.checkpoints).as("끈 판의 장중 확인 표는 쓰지 않음").isEmpty();
+
+        // 같은 세션을 대신하는 수동 결정 — 하나는 유니버스 밖 감시 종목이라 버리고 하나만 받음.
+        answerJson(decisionWith("[" + checkpoint("11:00", "MINUTE", "[\"ZZZ\"]", "없는 종목") + ","
+                + checkpoint("14:00", "HOURLY", "[]", "늦은 확인") + "]", buy("BBB", 5, "NEXT_OPEN", null)));
+        Decision manual = service().decideClaude2(MarketRun.of(UsPaperMarket.INSTANCE, store), MON, RuleBookService.MANUAL, true, null,
+                null, false).decision();
+
+        assertThat(manual.error()).isNull();
+        assertThat(orderOf(PaperBooks.CLAUDE2, "BBB").status()).as("예약이 버려져도 주문 판정은 그대로").isEqualTo(PaperBooks.ORDER_PENDING);
+        assertThat(store.intradayPlans(PaperBooks.CLAUDE2, TUE)).extracting(p -> p.slot() + " " + p.atLocal() + " " + p.feed() + " "
+                + p.status() + " " + p.sourceDecisionId() + " " + p.reason()).containsExactly(
+                "1 14:00 HOURLY PLANNED " + manual.id() + " null", "2 13:30 HOURLY SUPERSEDED " + d.id() + " " + IntradayPlanner.SUPERSEDED);
+        JsonNode second = manual.response().path("intradayPlan");
+        assertThat(second.path("planned").size()).isEqualTo(1);
+        assertThat(second.path("rejected").get(0).path("atEt").asString()).isEqualTo("11:00");
+        assertThat(second.path("rejected").get(0).path("reason").asString())
+                .startsWith(com.macrodash.analytics.OrderValidator.CHECKPOINT_INVALID).contains("유니버스 밖 티커: ZZZ");
+        assertThat(second.path("superseded").asInt()).isEqualTo(1);
+    }
+
+    @Test
+    @DisplayName("장중 판단 예약(계좌1): 세션당 횟수 설정이 0이면 예약을 받지 않고 사유를 남김. 횟수 1이면 이른 것 하나만. 스위치를 끈 뒤의 결정(끈 판)은 "
+            + "예약을 읽지 않고 그 세션의 남은 계획 행만 닫음")
+    void sessionLimitAndOffVariantDecisionClosesThePlans() {
+        active(PaperBooks.CLAUDE);
+        ((ObjectNode) store.settings.body().get("claude")).put("freeTiming", true);
+        ((ObjectNode) store.settings.body()).put(FreeTimingSettings.US_INTRADAY_MAX, 0);
+        String two = "[" + checkpoint("10:00", "HOURLY", "[]", "첫 확인") + "," + checkpoint("12:00", "HOURLY", "[]", "둘째 확인") + "]";
+        answerJson(decisionWith(two));
+
+        Decision none = service().decide(MON, RuleBookService.SCHEDULED, true);
+
+        assertThat(none.error()).isNull();
+        assertThat(store.intradayPlans(PaperBooks.CLAUDE, TUE)).as("횟수 0 — 행을 쓰지 않음").isEmpty();
+        JsonNode disabled = none.response().path("intradayPlan");
+        assertThat(disabled.path("maxPerSession").asInt()).isZero();
+        assertThat(disabled.path("planned").size()).isZero();
+        assertThat(disabled.path("rejected").size()).isEqualTo(2);
+        assertThat(disabled.path("rejected").get(0).path("reason").asString()).isEqualTo(IntradayPlanner.DISABLED);
+
+        // 횟수 1 — 이른 것 하나만 받음(수동 결정이 같은 세션을 대신함).
+        ((ObjectNode) store.settings.body()).put(FreeTimingSettings.US_INTRADAY_MAX, 1);
+        answerJson(decisionWith(two));
+        Decision one = service().decide(MON, RuleBookService.MANUAL, true);
+        assertThat(one.error()).isNull();
+        assertThat(store.intradayPlans(PaperBooks.CLAUDE, TUE)).extracting(p -> p.slot() + " " + p.atLocal() + " " + p.status())
+                .containsExactly("1 10:00 PLANNED");
+        assertThat(one.response().path("intradayPlan").path("rejected").get(0).path("atEt").asString()).isEqualTo("12:00");
+        assertThat(one.response().path("intradayPlan").path("rejected").get(0).path("reason").asString()).contains("횟수");
+
+        // 스위치를 끈 뒤 같은 세션의 정기 결정이 다시 남(재시도 차례를 흉내 — 정기 행을 지우고 다시) — 끈 판은 checkpoints를 읽지 않고 남은 행만 닫음.
+        store.decisions.remove(none.id());
+        ((ObjectNode) store.settings.body().get("claude")).put("freeTiming", false);
+        answerJson("{\"schemaVersion\":2,\"stance\":\"NEUTRAL\",\"targetEquityExposurePct\":0,\"exposureRationale\":\"r\","
+                + "\"summary\":\"s\",\"orders\":[],\"noTradeReason\":\"없음\",\"confidence\":0.5}");
+        Decision off = service().decide(MON, RuleBookService.SCHEDULED, true);
+        assertThat(off.error()).isNull();
+        Golden.assertMatches("render-us-v0-default.txt", sent()[0]);
+        assertThat(store.intradayPlans(PaperBooks.CLAUDE, TUE)).extracting(p -> p.slot() + " " + p.status() + " " + p.reason())
+                .containsExactly("1 SUPERSEDED " + IntradayPlanner.SUPERSEDED);
+        assertThat(off.response().path("intradayPlan").path("superseded").asInt()).isEqualTo(1);
+        assertThat(off.response().path("intradayPlan").path("planned").size()).isZero();
+    }
+
+    @Test
     @DisplayName("스위치가 꺼져 있으면(기본·키 없음) 두 계좌 모두 끈 판 그대로 — 켠 판 프로필로 패킷을 조립하지 않음")
     void switchesOffKeepTheOffVariants() {
         active(PaperBooks.CLAUDE);
@@ -353,11 +466,15 @@ class FreeTimingDecisionTest {
         ((ObjectNode) store.settings.body().get("claude")).remove("freeTiming");
         ((ObjectNode) store.settings.body().get("claude2")).remove("freeTiming");
         answerJson(decision());
-        service().decide(MON, RuleBookService.SCHEDULED, true);
+        Decision first = service().decide(MON, RuleBookService.SCHEDULED, true);
         String[] one = sent();
         answerJson(decision());
-        service().decideClaude2(MarketRun.of(UsPaperMarket.INSTANCE, store), MON, RuleBookService.SCHEDULED, true, null, null, true);
+        Decision second = service().decideClaude2(MarketRun.of(UsPaperMarket.INSTANCE, store), MON, RuleBookService.SCHEDULED, true, null,
+                null, true).decision();
         String[] two = sent();
+        assertThat(first.response().has("intradayPlan")).as("끈 판 — 계획 행이 없으면 응답에 그 칸이 없음").isFalse();
+        assertThat(second.response().has("intradayPlan")).isFalse();
+        assertThat(store.intradayPlans).isEmpty();
 
         Golden.assertMatches("render-us-v0-default.txt", one[0]);
         Golden.assertMatches("decision-schema-forapi-us.json", one[2]);

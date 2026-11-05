@@ -1505,13 +1505,21 @@ class PacketBuilderTest {
         assertThat(rules).contains(PacketBuilder.FREE_RANK_RULE);
         assertThat(rules).anyMatch(line -> line.contains("AT_MINUTE의 atLocal이 없거나 13_execution.atMinute 범위 밖이면 MALFORMED"));
 
-        // 다른 곳: 1_basis 세 칸, 12_hardRules의 줄, 13_execution 다섯 칸. 그 밖의 섹션은 끈 판 계좌2 패킷과 바이트 그대로.
+        // 장중 판단 선택지 — 세션당 횟수는 그 결정이 읽은 설정(기본 2), 받는 범위는 개장 5분 뒤 ~ 마감 30분 전.
+        JsonNode intraday = execution.get("intraday");
+        assertThat(intraday.get("maxPerSession").asInt()).isEqualTo(FreeTimingSettings.DEFAULT_INTRADAY_MAX);
+        assertThat(intraday.get("firstEt").asString() + "~" + intraday.get("lastEt").asString()).isEqualTo("09:35~15:30");
+        assertThat(intraday.get("rules")).hasSize(ExecutionSection.INTRADAY_RULES.size());
+
+        // 다른 곳: 1_basis 세 칸, 12_hardRules의 줄, 13_execution 다섯 칸(메뉴 판·메뉴·지정 시각 범위·출처 사실·장중 판단 선택지). 그 밖의 섹션은 끈 판
+        // 계좌2 패킷과 바이트 그대로.
         ObjectNode a = (ObjectNode) c1.body().deepCopy();
         ObjectNode b = (ObjectNode) ft2.body().deepCopy();
         for (ObjectNode node : List.of(a, b)) {
             ((ObjectNode) node.get(PacketBuilder.BASIS)).remove(List.of("variant", "executionMenuVersion", "fixedRules"));
             ((ObjectNode) node.get(PacketBuilder.HARD_RULES)).remove("lines");
-            ((ObjectNode) node.get(PacketBuilder.EXECUTION)).remove(List.of("executionMenuVersion", "menu", "atMinute", "sourceFacts"));
+            ((ObjectNode) node.get(PacketBuilder.EXECUTION)).remove(List.of("executionMenuVersion", "menu", "atMinute", "sourceFacts",
+                    "intraday"));
         }
         assertThat(b).as("그 밖은 끈 판 계좌2 패킷과 같음").isEqualTo(a);
         assertThat(PacketBuilder.marketSectionsSha256(ft2.body(), MAPPER)).isEqualTo(PacketBuilder.marketSectionsSha256(c1.body(), MAPPER));
@@ -1527,19 +1535,30 @@ class PacketBuilderTest {
     }
 
     @Test
-    @DisplayName("13_execution 자유 시점 판: 조기 폐장일(E 11-27 — 마감 13:00)의 지정 시각 범위는 12:54까지, 서머타임이 끝난 주(E 11-02)의 09:31 ET = 23:31 KST, 체결 기록의 "
-            + "분 단위 지정 시각 줄은 고른 시각까지('AT_MINUTE 10:47')")
+    @DisplayName("13_execution 자유 시점 판: 조기 폐장일(E 11-27 — 마감 13:00)의 지정 시각 범위는 12:54까지·장중 판단은 12:30까지, 서머타임이 끝난 주(E 11-02)의 "
+            + "09:31 ET = 23:31 KST, 장중 판단 선택지는 세션당 횟수(설정)·09:35~15:30 ET·간격 30분·지연 요약은 모이기 전 null")
     void executionSectionFreeTiming() {
         activeClaude2();
         JsonNode early = MAPPER.valueToTree(PacketBuilder.toNode(ExecutionSection.build(LocalDate.of(2026, 11, 25),
-                FreeTiming.DECISION_TIMINGS, UsMarketCalendar.CALENDAR, 5, true, store, PaperBooks.CLAUDE2, false, true)));
+                FreeTiming.DECISION_TIMINGS, UsMarketCalendar.CALENDAR, 5, true, store, PaperBooks.CLAUDE2, false, true, 2)));
         assertThat(early.get("atMinute").get("lastEt").asString()).isEqualTo("12:54");
         assertThat(early.get("menu").get("rows").get(1).get(1).asString()).isEqualTo("09:31~12:54");
         assertThat(early.get("session").get("earlyClose").asBoolean()).isTrue();
+        assertThat(early.get("intraday").get("firstEt").asString()).isEqualTo("09:35");
+        assertThat(early.get("intraday").get("lastEt").asString()).as("조기 폐장일 — 마감 13:00의 30분 전").isEqualTo("12:30");
         JsonNode est = MAPPER.valueToTree(PacketBuilder.toNode(ExecutionSection.build(LocalDate.of(2026, 10, 30),
-                FreeTiming.DECISION_TIMINGS, UsMarketCalendar.CALENDAR, 5, true, store, PaperBooks.CLAUDE2, false, true)));
+                FreeTiming.DECISION_TIMINGS, UsMarketCalendar.CALENDAR, 5, true, store, PaperBooks.CLAUDE2, false, true, 1)));
         assertThat(est.get("atMinute").get("firstKst").asString()).isEqualTo("2026-11-02 23:31 KST");
         assertThat(est.get("atMinute").get("lastKst").asString()).isEqualTo("2026-11-03 05:54 KST");
+        JsonNode intraday = est.get("intraday");
+        assertThat(intraday.get("maxPerSession").asInt()).as("그 결정이 읽은 설정값").isEqualTo(1);
+        assertThat(intraday.get("firstEt").asString() + "~" + intraday.get("lastEt").asString()).isEqualTo("09:35~15:30");
+        assertThat(intraday.get("firstKst").asString()).isEqualTo("2026-11-02 23:35 KST");
+        assertThat(intraday.get("minGapMinutes").asInt()).isEqualTo(30);
+        assertThat(intraday.get("watchMax").asInt()).isEqualTo(ExecutionSection.WATCH_MAX);
+        assertThat(intraday.get("recentLag").isNull()).as("잰 지연이 모이기 전 — 0으로 채우지 않음").isTrue();
+        assertThat(intraday.get("feeds").propertyNames()).containsExactly("MINUTE", "HOURLY");
+        assertThat(est.has("checkpointOptions")).as("끈 판의 장중 확인 선택지는 없음").isFalse();
     }
 
     @Test

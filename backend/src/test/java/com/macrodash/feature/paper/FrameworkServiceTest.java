@@ -295,12 +295,15 @@ class FrameworkServiceTest {
 
         assertThat(one).contains("- 체결 시점은 NEXT_OPEN(다음 거래일 시가)·AT_MINUTE(다음 거래일의 지정한 분 — atLocal에 한국 시간 HH:MM)·"
                 + "NEXT_CLOSE(다음 거래일 종가), 정수 주").contains("## 체결(고정)").doesNotContain("NEXT_OPEN뿐").doesNotContain("AT_1000")
-                .doesNotContain("## 장중 확인(고정)").doesNotContain("실시간").doesNotContain("## 투자 성향");
+                .doesNotContain("## 장중 확인(고정)").doesNotContain("실시간").doesNotContain("## 투자 성향")
+                .contains("## 장중 판단(고정)").contains("1_basis.intraday.maxPerSession").contains("nextCheckpoint");
+        assertThat(one.indexOf("## 체결(고정)")).as("체결 절 → 장중 판단 절 → 출력 절").isLessThan(one.indexOf("## 장중 판단(고정)"));
+        assertThat(one.indexOf("## 장중 판단(고정)")).isLessThan(one.indexOf(ClaudePrompts.OUTPUT_HEADER.strip()));
         assertThat(two).contains("## 투자 성향");
-        // 끈 판에 없는 줄 = 켠 판이 바꾼 줄뿐(하드 규칙 시점 줄 · 우선순위 줄 · timing 줄 다섯 · 체결 절 넷).
+        // 끈 판에 없는 줄 = 켠 판이 바꾼 줄뿐(하드 규칙 시점 줄 · 우선순위 줄 · timing 줄 다섯 · 체결 절 넷 · 장중 판단 절 여섯).
         List<String> offLines = off.lines().toList();
         List<String> added = one.lines().filter(line -> !offLines.contains(line)).toList();
-        assertThat(added).hasSize(11);
+        assertThat(added).hasSize(17);
         assertThat(added.get(0)).startsWith("- 체결 시점은 NEXT_OPEN(다음 거래일 시가)·AT_MINUTE");
         assertThat(added.get(1)).startsWith("우선순위(고정)").contains(ClaudePrompts.KR_CLAUDE2_TIMING_READING);
         List<String> oneLines = one.lines().toList();

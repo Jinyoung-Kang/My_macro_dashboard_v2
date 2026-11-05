@@ -152,7 +152,47 @@ class DecisionTimingsLockTest {
             assertThat(required).as(resource + " atLocal은 선택 칸 — 'AT_MINUTE면 필수'는 검증이 막음").doesNotContain("atLocal")
                     .contains("timing", "executionNote");
             assertThat(schema.path("properties").has("checkpoint")).as(resource + " 기존 장중 확인 요청 칸 없음").isFalse();
+            // 장중 판단 예약(ADR 0027 결정 3) — 선택 칸 checkpoints: 세션당 최대 횟수·감시 상한·시각 글자가 코드 상수와 같고, 피드는 미국만.
+            boolean korea = resource.equals(ClaudeBookService.KR_FT_SCHEMA_RESOURCE);
+            JsonNode requests = schema.path("properties").path("checkpoints");
+            List<String> top = new ArrayList<>();
+            schema.path("required").forEach(node -> top.add(node.asString()));
+            assertThat(top).as(resource + " checkpoints는 선택 칸").doesNotContain("checkpoints");
+            assertThat(requests.path("maxItems").asInt()).as(resource).isEqualTo(RuleBookService.INTRADAY_MAX);
+            JsonNode request = requests.path("items").path("properties");
+            assertThat(request.path("at").path("pattern").asString()).isEqualTo(FreeTiming.CLOCK_PATTERN);
+            assertThat(request.path("watch").path("maxItems").asInt()).isEqualTo(ExecutionSection.WATCH_MAX);
+            assertThat(request.path("watch").path("items").path("pattern").asString()).as(resource + " 감시 종목은 주문 티커와 같은 식")
+                    .isEqualTo(item.path("properties").path("ticker").path("pattern").asString());
+            List<String> feeds = new ArrayList<>();
+            request.path("feed").path("enum").forEach(node -> feeds.add(node.asString()));
+            assertThat(feeds).as(resource + " 한국은 늘 감시 1분봉이라 피드 칸이 없음").isEqualTo(korea ? List.of() : ExecutionSection.FEEDS);
         }
+        // 장중 판단 절의 숫자 = 의미 검사의 상수(보통 날의 받는 범위·간격·호출 창), 장중 판단이 받는 시점 = INTRADAY_TIMINGS.
+        java.time.LocalDate usDay = java.time.LocalDate.of(2026, 10, 27);
+        IntradayRequest.Window us = IntradayRequest.window(usDay, UsPaperMarket.INSTANCE.calendar(), false);
+        String usRange = FreeTiming.label(us.first().atZone(UsPaperMarket.INSTANCE.calendar().zone()).toLocalTime()) + "~"
+                + FreeTiming.label(us.last().atZone(UsPaperMarket.INSTANCE.calendar().zone()).toLocalTime());
+        assertThat(usRange).isEqualTo("09:35~15:30");
+        assertThat(ClaudePrompts.US_FT_INTRADAY_SECTION).contains(usRange + " ET").contains(IntradayRequest.MIN_GAP.toMinutes() + "분 이상")
+                .contains("13_execution.intraday.maxPerSession").contains("nextCheckpoint").doesNotContain("실시간");
+        assertThat(ClaudePrompts.KR_FT_INTRADAY_SECTION).contains("09:05~14:50 KST").contains(IntradayRequest.MIN_GAP.toMinutes() + "분 이상")
+                .contains("1_basis.intraday.maxPerSession").contains("nextCheckpoint").doesNotContain("실시간").doesNotContain("feed");
+        assertThat(IntradayRequest.AFTER_OPEN.toMinutes()).isEqualTo(5);
+        assertThat(IntradayRequest.BEFORE_CLOSE).isEqualTo(ExecutionSection.CHECKPOINT_BEFORE_CLOSE);
+        for (String section : List.of(ClaudePrompts.US_FT_INTRADAY_SECTION, ClaudePrompts.KR_FT_INTRADAY_SECTION)) {
+            String timingLine = section.lines().filter(line -> line.startsWith("- 장중 판단 주문의 timing은")).findFirst().orElseThrow();
+            for (String timing : FreeTiming.INTRADAY_TIMINGS) {
+                assertThat(timingLine).as("장중 판단 timing 줄에 " + timing).contains(timing);
+            }
+            assertThat(timingLine).doesNotContain("NEXT_OPEN");
+        }
+        assertThat(ClaudePrompts.US_FT_FIXED_RULES).contains(ClaudePrompts.US_FT_INTRADAY_SECTION + ClaudePrompts.OUTPUT_HEADER)
+                .contains(ClaudePrompts.US_FT_INTRADAY_LINE).doesNotContain(ClaudePrompts.CLAUDE2_NO_INTRADAY_LINE);
+        assertThat(ClaudePrompts.KR_FT_FIXED_RULES).contains(ClaudePrompts.KR_FT_FILL_SECTION + ClaudePrompts.KR_FT_INTRADAY_SECTION
+                + ClaudePrompts.OUTPUT_HEADER).doesNotContain("장중 정보는 보지 못한다");
+        assertThat(ExecutionSection.INTRADAY_RULES.get(0)).contains("+ " + PaperCheckpointJob.WINDOW_START_MINUTES + "분")
+                .contains("+ " + PaperCheckpointJob.WINDOW_END_MINUTES + "분").contains(IntradayRequest.MIN_GAP.toMinutes() + "분 이상");
         // 한국 켠 판의 하드 규칙 줄 — 시장 묶음의 'NEXT_OPEN뿐'이 아니라 그 프로필의 받는 시점 셋. 끈 판 줄은 그대로.
         String krOn = FrameworkService.render(ClaudeBookProfile.KR_CLAUDE_FT, FrameworkService.interimBody(MAPPER), 0, null);
         String krOff = FrameworkService.render(ClaudeBookProfile.KR_CLAUDE, FrameworkService.interimBody(MAPPER), 0, null);

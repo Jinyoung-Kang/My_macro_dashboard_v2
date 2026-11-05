@@ -52,6 +52,11 @@ final class PaperBooks {
     static final String CHECKPOINT_DONE = "DONE";
     static final String CHECKPOINT_EXPIRED = "EXPIRED";
     static final String CHECKPOINT_SKIPPED = "SKIPPED";
+    /**
+     * 장중 판단 계획 행만의 상태(paper_intraday_plans.status, V23 — 자유 시점 판): 뒤 결정이 그 세션을 대신하면서 닫은 예약. 부른 적이 없는
+     * 예약이라 그 순번을 다시 예약할 수 있습니다(끝난 판단 DONE·EXPIRED·SKIPPED와 다름). 나머지 상태는 장중 확인 행과 같은 글자입니다.
+     */
+    static final String INTRADAY_SUPERSEDED = "SUPERSEDED";
 
     /** 주문 시점(paper_orders.timing). {@link #NEXT_OPEN}은 한국 책의 다음 거래일 시가(V14, 2단계 K13). */
     static final String NEXT_CLOSE = "NEXT_CLOSE";

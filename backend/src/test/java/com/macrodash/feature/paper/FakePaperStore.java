@@ -1326,7 +1326,7 @@ class FakePaperStore extends PaperStore {
         }
         String key = intradayKey(row.bookCode(), row.sessionDate(), row.slot());
         IntradayPlan existing = intradayPlans.get(key);
-        if (existing != null && !"PLANNED".equals(existing.status())) {
+        if (existing != null && !"PLANNED".equals(existing.status()) && !"SUPERSEDED".equals(existing.status())) {
             return false;
         }
         intradayPlans.put(key, new IntradayPlan(row.bookCode(), row.sessionDate(), row.slot(), row.atLocal(), row.feed(),

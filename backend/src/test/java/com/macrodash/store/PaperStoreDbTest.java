@@ -2441,6 +2441,13 @@ class PaperStoreDbTest {
                 .containsExactly("1 DONE null", "2 SUPERSEDED 뒤 결정이 대신함");
         assertThat(store.plannedIntradayPlans(List.of(BOOK))).isEmpty();
 
+        // 뒤 결정이 닫은 순번은 부른 적이 없는 예약이라 다시 예약할 수 있음 — PLANNED로 되돌아오고 사유는 지워짐.
+        assertThat(store.upsertPlannedIntradayPlan(PaperStore.IntradayPlan.planned(BOOK, session, 2, LocalTime.of(13, 30), "HOURLY",
+                List.of(), "다시 예약", "ft-1", false, morning, null))).as("SUPERSEDED 순번은 다시 씀").isTrue();
+        assertThat(store.intradayPlans(BOOK, session)).extracting(p -> p.slot() + " " + p.status() + " " + p.reason() + " "
+                + p.atLocal()).containsExactly("1 DONE null 10:47", "2 PLANNED null 13:30");
+        assertThat(store.supersedeIntradayPlans(BOOK, session, 2, "뒤 결정이 대신함")).isEqualTo(1);
+
         // CHECK: 순번 1·2, 분 단위, 피드·상태 값.
         LocalDate next = session.plusDays(1);
         assertThatThrownBy(() -> store.upsertPlannedIntradayPlan(PaperStore.IntradayPlan.planned(BOOK, next, 3, LocalTime.of(10, 0),

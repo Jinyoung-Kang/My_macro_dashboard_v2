@@ -1577,9 +1577,10 @@ public class PaperStore {
             + "created_at, updated_at";
 
     /**
-     * 장중 판단 예약을 그 세션·순번의 PLANNED 행으로 넣거나 바꿉니다(계좌·세션·순번마다 한 행). 이미 행이 있으면 <b>PLANNED일 때만</b> 시각·피드·감시
-     * 목록·질문·판·수동 표시·아침 결정·예약한 장중 판단을 이번 값으로 바꾸고(뒤 결정이나 {@code nextCheckpoint}·수동 당김이 그 순번을 대신함),
-     * DONE·EXPIRED·SKIPPED·SUPERSEDED인 행은 그대로 둡니다 — 끝난 판단을 되살리지 않게. 상태·사유·응답 결정·지연·부른 시각은 받은 값을 보지 않습니다.
+     * 장중 판단 예약을 그 세션·순번의 PLANNED 행으로 넣거나 바꿉니다(계좌·세션·순번마다 한 행). 이미 행이 있으면 <b>PLANNED이거나 SUPERSEDED일
+     * 때만</b> 시각·피드·감시 목록·질문·판·수동 표시·아침 결정·예약한 장중 판단을 이번 값으로 바꾸고 PLANNED로 둡니다(뒤 결정이나
+     * {@code nextCheckpoint}·수동 당김이 그 순번을 대신함 — 뒤 결정이 닫은 SUPERSEDED 행은 부른 적이 없는 예약이라 다시 쓸 수 있음).
+     * DONE·EXPIRED·SKIPPED인 행은 그대로 둡니다 — 끝난 판단을 되살리지 않게. 상태·사유·응답 결정·지연·부른 시각은 받은 값을 보지 않습니다.
      *
      * @return 넣었거나 바꿨으면 true, 끝난 행이라 그대로 두었으면 false
      */
@@ -1590,8 +1591,8 @@ public class PaperStore {
                         + "ON CONFLICT (book_code, session_date, slot) DO UPDATE SET at_local = EXCLUDED.at_local, "
                         + "feed = EXCLUDED.feed, watch = EXCLUDED.watch, question = EXCLUDED.question, variant = EXCLUDED.variant, "
                         + "manual = EXCLUDED.manual, source_decision_id = EXCLUDED.source_decision_id, "
-                        + "requested_by_decision_id = EXCLUDED.requested_by_decision_id, reason = NULL, updated_at = now() "
-                        + "WHERE paper_intraday_plans.status = 'PLANNED'",
+                        + "requested_by_decision_id = EXCLUDED.requested_by_decision_id, status = 'PLANNED', reason = NULL, "
+                        + "updated_at = now() WHERE paper_intraday_plans.status IN ('PLANNED', 'SUPERSEDED')",
                 ps -> {
                     ps.setString(1, row.bookCode());
                     ps.setDate(2, Date.valueOf(row.sessionDate()));

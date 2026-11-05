@@ -171,19 +171,42 @@ final class ClaudePrompts {
             - 주문마다 executionNote(그 체결 시점과 시각을 고른 이유, 200자 이내)를 반드시 쓴다.
             """;
 
+    /** 자유 시점 판 체결 절의 장중 정보 줄 — c2-1의 {@link #CLAUDE2_NO_INTRADAY_LINE} 자리. 결정 뒤 장중 정보는 장중 판단으로만 봄. */
+    static final String US_FT_INTRADAY_LINE = "- 결정 뒤 장중 정보는 아래 장중 판단(세션당 13_execution.intraday.maxPerSession번까지)으로만 본다. "
+            + "체결은 늘 주문 뒤 그 시각의 실제 가격이라 지연 시세로 더 좋은 체결가를 얻을 수는 없다.\n";
+
     /**
-     * 미국 자유 시점 판의 고정 문단(판 {@code ft-1}) — {@link #CLAUDE2_FIXED_RULES}(c2-1)에서 timing 줄({@link #CLAUDE2_TIMING_LINES} →
-     * {@link #US_FT_TIMING_LINES})만 다릅니다. 날짜·설정값이 없는 상수입니다(범위 숫자는 달력 규칙 — 그 세션의 값은 패킷 13_execution.atMinute에).
-     * 받는 체결 시점은 {@link FreeTiming#DECISION_TIMINGS}와 같은 목록입니다. 바꿀 자리가 c2-1 문단에 한 번이 아니면 기동하지 않습니다.
+     * 자유 시점 판의 장중 판단 절(ADR 0027 결정 3 — 출력 절 앞). 결정의 {@code checkpoints} 예약과 장중 판단 응답의 규칙을 함께 적습니다 — 장중 판단
+     * 호출도 같은 시스템 프롬프트를 씁니다. 날짜·설정값이 없는 상수입니다(세션당 횟수와 그 세션의 받는 범위는 패킷 13_execution.intraday에).
+     * 범위·간격은 {@link IntradayRequest}, 장중 판단이 받는 시점은 {@link FreeTiming#INTRADAY_TIMINGS}와 같습니다({@code DecisionTimingsLockTest}).
+     * '실시간'이라는 말은 쓰지 않습니다(끈 판의 장중 확인 절과 같은 까닭).
+     */
+    static final String US_FT_INTRADAY_SECTION = """
+            ## 장중 판단(고정)
+            - 이 결정의 응답 checkpoints에 항목을 적으면 목표 세션(13_execution.session) 장중 그 시각에 다시 부른다 — 세션당 13_execution.intraday.maxPerSession번까지다(0이면 받지 않는다). 그 시각을 놓치면(서버 꺼짐·자료 없음·호출 상한) 나중에 대신 부르지 않고 재시도도 없다. 호출마다 비용이 드니 그 시각에 판단할 것이 분명할 때만 적고, 필요 없으면 checkpoints를 비운다.
+            - 항목은 at(뉴욕 시각 HH:MM — 13_execution.intraday의 firstEt~lastEt 안, 보통 날 09:35~15:30 ET), feed, watch, question(그때 판단할 것, 300자 이내)이다. 두 시각은 30분 이상 떨어져야 한다. feed는 MINUTE(watch의 감시 종목 10개 이하 + 보유·대기 종목의 1분봉, 5분마다 수집, 잰 지연을 함께 줌 — watch에 한 종목 이상) 또는 HOURLY(유니버스 전 종목의 시간별 관측치, 최대 60분 묵음)다. watch는 8_prices 종목이나 보유 종목이다. 규칙에 맞지 않는 항목만 버려지고(CHECKPOINT_INVALID) 이 결정의 주문 판정은 그대로다.
+            - 장중 판단의 응답 action은 KEEP(아무것도 바꾸지 않음) 또는 REPLACE다. REPLACE의 응답이 형식 검사를 통과하면(주문이 없거나 모두 거절돼도) 기준 시각이 아직 오지 않은 대기 주문만 취소되고, 기준 시각이 지난 주문은 이미 체결된 것으로 보아 자료가 오는 대로 체결한다.
+            - 장중 판단 주문의 timing은 MARKET(응답 뒤 생성 + 60초가 지난 첫 분에 시작한 1분봉 시가 — 마감 5분 전부터는 거절), AT_MINUTE(그날 아직 오지 않은 분 — atLocal) 또는 NEXT_CLOSE(그날 확정 종가)다. 주문마다 executionNote를 쓰고, 장중 판단의 summary는 600자 이내다.
+            - 장중 판단의 응답 nextCheckpoint에 같은 모양의 항목 하나를 적으면 그날의 다음 판단을 그 시각으로 예약하거나 바꾼다(세션당 횟수를 다 썼으면 버려진다). null이면 남은 예약은 그대로다.
+            """;
+
+    /**
+     * 미국 자유 시점 판의 고정 문단(판 {@code ft-1}) — {@link #CLAUDE2_FIXED_RULES}(c2-1)에서 세 곳만 다릅니다: timing 줄({@link #CLAUDE2_TIMING_LINES} →
+     * {@link #US_FT_TIMING_LINES}), 체결 절의 장중 정보 줄({@link #CLAUDE2_NO_INTRADAY_LINE} → {@link #US_FT_INTRADAY_LINE}), 출력 절 앞의 장중 판단 절
+     * ({@link #US_FT_INTRADAY_SECTION}). 날짜·설정값이 없는 상수입니다(범위 숫자는 달력 규칙 — 그 세션의 값은 패킷 13_execution.atMinute·intraday에).
+     * 받는 체결 시점은 {@link FreeTiming#DECISION_TIMINGS}와 같은 목록입니다. 바꿀 자리가 c2-1 문단에 한 번씩이 아니면 기동하지 않습니다.
      */
     static final String US_FT_FIXED_RULES = usFreeTimingRules();
 
     private static String usFreeTimingRules() {
         String base = CLAUDE2_FIXED_RULES;
-        if (base.indexOf(CLAUDE2_TIMING_LINES) < 0 || base.indexOf(CLAUDE2_TIMING_LINES) != base.lastIndexOf(CLAUDE2_TIMING_LINES)) {
-            throw new IllegalStateException("미국 자유 시점 판 문단의 바꿀 자리(timing 줄)가 계좌2 c2-1 문단에 한 번 있어야 합니다");
+        for (String spot : List.of(CLAUDE2_TIMING_LINES, CLAUDE2_NO_INTRADAY_LINE, OUTPUT_HEADER)) {
+            if (base.indexOf(spot) < 0 || base.indexOf(spot) != base.lastIndexOf(spot)) {
+                throw new IllegalStateException("미국 자유 시점 판 문단의 바꿀 자리가 계좌2 c2-1 문단에 한 번씩 있어야 합니다: " + spot.strip());
+            }
         }
-        return base.replace(CLAUDE2_TIMING_LINES, US_FT_TIMING_LINES);
+        return base.replace(CLAUDE2_TIMING_LINES, US_FT_TIMING_LINES).replace(CLAUDE2_NO_INTRADAY_LINE, US_FT_INTRADAY_LINE)
+                .replace(OUTPUT_HEADER, US_FT_INTRADAY_SECTION + OUTPUT_HEADER);
     }
 
     // ------------------------------------------------------------------ 계좌2 투자 성향(사용자 결정 2026-11-01 — 설정 claude2.riskProfile)
@@ -390,14 +413,28 @@ final class ClaudePrompts {
             ## 체결(고정)
             - 지정 시각 체결가는 그 분 T에 시작한 토스 1분봉의 시가다. 그 봉에 거래가 없으면 T+1~T+4분의 첫 거래 봉 시가, 그것도 없으면 그날 정규장 안 T 뒤 첫 거래 봉 시가(대체 체결)로 체결하고, 그날 T 뒤 정규장 거래가 없으면 체결하지 않는다. 멈춘 가격으로 채우지 않는다. 장중 체결가는 금융위 확정가로 고치지 않는다.
             - NEXT_CLOSE는 정규장 마감 단일가 봉의 종가로 체결하고, 금융위 확정 종가가 들어오면 그 값으로 고친다. NEXT_OPEN은 시가 단일가다. 비용(수수료·슬리피지·매도세)은 시점과 무관하게 같다.
-            - 결정 뒤 장중 정보는 보지 못한다 — 이 결정이 다음 거래일 주문의 마지막 판단이다. 체결은 늘 주문 뒤 그 시각의 실제 가격이다.
+            - 결정 뒤 장중 정보는 아래 장중 판단(세션당 1_basis.intraday.maxPerSession번까지)으로만 본다. 체결은 늘 주문 뒤 그 시각의 실제 가격이다.
+            """;
+
+    /**
+     * 한국 자유 시점 판의 장중 판단 절(ADR 0027 결정 3 — 체결 절 다음·출력 절 앞). 밤 결정의 {@code checkpoints} 예약과 장중 판단 응답의 규칙을 함께
+     * 적습니다 — 장중 판단 호출도 같은 시스템 프롬프트를 씁니다. 날짜·설정값이 없는 상수입니다(세션당 횟수와 그날의 받는 범위는 패킷
+     * 1_basis.intraday에). 범위·간격은 {@link IntradayRequest}, 장중 판단이 받는 시점은 {@link FreeTiming#INTRADAY_TIMINGS}와 같습니다.
+     */
+    static final String KR_FT_INTRADAY_SECTION = """
+            ## 장중 판단(고정)
+            - 이 결정의 응답 checkpoints에 항목을 적으면 다음 KRX 거래일(1_basis.nextSession) 장중 그 시각에 다시 부른다 — 세션당 1_basis.intraday.maxPerSession번까지다(0이면 받지 않는다). 그 시각을 놓치면(서버 꺼짐·자료 없음·호출 상한) 나중에 대신 부르지 않고 재시도도 없다. 호출마다 비용이 드니 그 시각에 판단할 것이 분명할 때만 적고, 필요 없으면 checkpoints를 비운다.
+            - 항목은 at(한국 시간 HH:MM — 1_basis.intraday의 firstKst~lastKst 안, 보통 날 09:05~14:50 KST), watch, question(그때 판단할 것, 300자 이내)이다. 두 시각은 30분 이상 떨어져야 한다. watch는 그때 볼 종목 1~10개(8_prices 종목이나 보유 종목, 중복 없이)이고, 보유·대기 종목과 함께 그 시각 뒤에 한 번 받은 토스증권 1분봉(종목마다 최근 30개, 저장본 지연을 함께 줌)이 장중 판단 패킷에 들어간다. 규칙에 맞지 않는 항목만 버려지고(CHECKPOINT_INVALID) 이 결정의 주문 판정은 그대로다.
+            - 장중 판단의 응답 action은 KEEP(아무것도 바꾸지 않음) 또는 REPLACE다. REPLACE의 응답이 형식 검사를 통과하면(주문이 없거나 모두 거절돼도) 기준 시각이 아직 오지 않은 대기 주문만 취소되고, 기준 시각이 지난 주문은 이미 체결된 것으로 보아 그날 밤 장부가 그 시각 가격으로 체결한다.
+            - 장중 판단 주문의 timing은 MARKET(응답 뒤 생성 + 60초가 지난 첫 분에 시작한 1분봉 시가 — 그 분이 마감 10분 전 이후면 거절), AT_MINUTE(그날 아직 오지 않은 분 — atLocal) 또는 NEXT_CLOSE(그날 종가 단일가)다. 주문마다 executionNote를 쓰고, 장중 판단의 summary는 600자 이내다.
+            - 장중 판단의 응답 nextCheckpoint에 같은 모양의 항목 하나를 적으면 그날의 다음 판단을 그 시각으로 예약하거나 바꾼다(세션당 횟수를 다 썼으면 버려진다). null이면 남은 예약은 그대로다.
             """;
 
     /**
      * 한국 자유 시점 판의 고정 문단(판 {@code kr-ft-1}) — {@link #KR_FIXED_RULES}와 같은 문장에서 세 곳만 다릅니다: 우선순위 줄의 시점 읽는 법
      * ({@link #KR_TIMING_READING} → {@link #KR_CLAUDE2_TIMING_READING} — 프레임의 시점 문장은 아래 메뉴로 읽음), timing 줄({@link #KR_TIMING_LINE} →
-     * {@link #KR_FT_TIMING_LINES}), 출력 절 앞의 체결 절({@link #KR_FT_FILL_SECTION}). 받는 체결 시점은 {@link FreeTiming#DECISION_TIMINGS}와 같은
-     * 목록입니다. 바꿀 자리가 계좌1 문단에 한 번씩이 아니면 기동하지 않습니다.
+     * {@link #KR_FT_TIMING_LINES}), 출력 절 앞의 체결 절·장중 판단 절({@link #KR_FT_FILL_SECTION}·{@link #KR_FT_INTRADAY_SECTION}). 받는 체결 시점은
+     * {@link FreeTiming#DECISION_TIMINGS}와 같은 목록입니다. 바꿀 자리가 계좌1 문단에 한 번씩이 아니면 기동하지 않습니다.
      */
     static final String KR_FT_FIXED_RULES = krFreeTimingRules(KR_FIXED_RULES);
 
@@ -408,7 +445,7 @@ final class ClaudePrompts {
             }
         }
         return base.replace(KR_TIMING_READING, KR_CLAUDE2_TIMING_READING).replace(KR_TIMING_LINE, KR_FT_TIMING_LINES)
-                .replace(OUTPUT_HEADER, KR_FT_FILL_SECTION + OUTPUT_HEADER);
+                .replace(OUTPUT_HEADER, KR_FT_FILL_SECTION + KR_FT_INTRADAY_SECTION + OUTPUT_HEADER);
     }
 
     /**
