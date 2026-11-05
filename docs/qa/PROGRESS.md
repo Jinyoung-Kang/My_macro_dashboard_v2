@@ -84,3 +84,11 @@
   - 새 기록 QA-287(S4 — 수집기 시험 하나가 실제 Yahoo로 나감, 기존). 제안만: `apk upgrade` 층 정기 갱신(deploy.sh·Makefile 빌드 인자 — 승인 필요).
 - 커밋별 재검증: 검증 스크립트가 백엔드 시험 전에 그 커밋의 마이그레이션을 시험 DB에 적용하지 않아 V20 뒤 세 커밋에서 `PaperStoreDbTest.v18RerunIsSafe`가
   실패 → 스크립트를 `make test-backend`처럼 고쳐 다시 돌려 통과(커밋 결함 아님 — 검토 note와 같은 원인).
+- 2026-11-05 14:2x KST 다른 세션 넷에 알린 뒤 `main` fast-forward `fe7326b9..644142c6` push, CI 41975717094 6/6 통과. 배포 전 운영 DB 읽기 조회: 장중 확인 계획 0, 06:30 뒤 새 결정 없음.
+- Vultr 배포 14:48~14:50 KST `deploy.sh` → `main@644142c6`(배포 직전 덤프 `backups/pre-deploy-20261105-054947.sql` 469M, 스키마 최신, 디스크 34%, 컨테이너 모두 healthy).
+  로컬 스택도 `make up`(`main@644142c6`, V20 적용).
+- 배포 뒤 읽기 전용 확인: `schema_migrations` 최대 20·V20 색인 셋 있음, 수집기 yfinance 세션 `BudgetedSession`·다운로드 풀 `_ContextThread`·`_BudgetedSlots`·Yahoo 태스크 13개,
+  백엔드 이미지 libexpat 2.10.0-r0, 화면 이미지 npm·npx 없음. API 네 곳(실행 감사 `claude2`·`kr_claude2`, 개요, 종목 찾기) 200, SSE 12초에 `prices` 3회, 백엔드 예외 0·수집기 Traceback 0.
+  배포 뒤 첫 회차 Yahoo 태스크 모두 정상(`scraper_markets` 16/16, `macro_collected` 21/21, `sector_history` 25/25, `equity_history` 138/138, `paper_quotes` 615/615 125.9초,
+  `paper_bars_us` 13/13, `volatility_history` 2/2), 한국 장부 입력 태스크 정상. 걸린 시간은 지난 3일 범위 안(`paper_quotes` 중앙 91.1·최대 130.2초, `equity_history` 29.1·43.6초 —
+  재기동 직후 첫 회차라 캐시가 빔).
