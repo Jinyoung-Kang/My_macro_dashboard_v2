@@ -158,7 +158,6 @@ def test_V2는_기본키와_겹치는_인덱스를_지우고_GIN을_레이더_�
     assert f"WHERE (dataset = '{catalog.OBS_RADAR}'::text)" in indexes["idx_observations_radar_payload"]
 
 
-@pytest.mark.xfail(strict=True, reason="QA-282 재현 — 수정 전에는 결정 번호 외래 키 세 칸에 색인이 없음")
 def test_QA282_결정_번호로_주문과_장중_확인을_찾는_색인이_있다(store):
     """QA-282. 결정 요약(PaperStore DECISION_SUMMARY_COLUMNS)의 결정별 주문 COUNT가 결정마다 주문 표 전체를 훑어,
     개요·결정 목록이 주문 누적에 비례해 느려졌습니다(QA 스택 합성 주문 12.2k에서 개요 17ms → 124ms, 색인 31.5ms).
