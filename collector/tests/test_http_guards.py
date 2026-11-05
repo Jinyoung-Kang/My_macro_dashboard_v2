@@ -24,7 +24,6 @@ import time
 import types
 from concurrent.futures import ThreadPoolExecutor
 from datetime import date
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import pytest
 import requests
@@ -45,57 +44,6 @@ CLOUDFLARE_CHALLENGE = (b"<!DOCTYPE html><html lang=\"en-US\"><head><title>Just 
 NORMAL_PAGE = ("<html><head><title>코스피 지수 : 네이버페이 증권</title>"
                "<script src=\"/cdn-cgi/challenge-platform/scripts/jsd/main.js\"></script></head>"
                "<body>로그인 captcha 안내 · 코스피 2,600.12</body></html>").encode("utf-8")
-
-
-@pytest.fixture()
-def server(monkeypatch):
-    """
-    경로마다 응답 목록을 차례로 주는 로컬 서버. 목록의 마지막 응답은 계속 반복합니다. 쿼리 문자열은 떼고 경로로 찾습니다.
-    응답 대신 "RESET"이면 아무것도 보내지 않고 연결을 끊습니다(연결 끊김 — 일시 오류). "HANG"이면 2초 동안 답하지 않다가
-    끊습니다(응답 없는 서버 — 읽기 시간 초과).
-    """
-    monkeypatch.setenv("NO_PROXY", "127.0.0.1,localhost")
-    monkeypatch.setenv("no_proxy", "127.0.0.1,localhost")
-    routes: dict[str, list] = {}
-    hits: list[str] = []
-
-    class Handler(BaseHTTPRequestHandler):
-        protocol_version = "HTTP/1.1"
-
-        def do_GET(self):  # noqa: N802 — http.server 규약
-            path = self.path.split("?", 1)[0]
-            hits.append(path)
-            queue = routes.get(path) or [(200, JSON, b"{}")]
-            answer = queue.pop(0) if len(queue) > 1 else queue[0]
-            if answer in ("RESET", "HANG"):
-                if answer == "HANG":
-                    time.sleep(2)
-                self.close_connection = True
-                return
-            status, headers, body = answer
-            self.send_response(status)
-            for name, value in headers.items():
-                self.send_header(name, value)
-            self.send_header("Content-Length", str(len(body)))
-            self.end_headers()
-            self.wfile.write(body)
-
-        def log_message(self, *args):
-            pass
-
-    class Server(ThreadingHTTPServer):
-        def handle_error(self, request, client_address):
-            pass        # 클라이언트가 먼저 끊은 연결(거부 뒤 close·RESET)의 BrokenPipe를 테스트 출력에 찍지 않습니다
-
-    httpd = Server(("127.0.0.1", 0), Handler)
-    thread = threading.Thread(target=httpd.serve_forever, kwargs={"poll_interval": 0.05}, daemon=True)
-    thread.start()
-    port = httpd.server_address[1]
-    try:
-        yield types.SimpleNamespace(base=f"http://127.0.0.1:{port}", port=port, routes=routes, hits=hits)
-    finally:
-        httpd.shutdown()
-        httpd.server_close()
 
 
 @pytest.fixture()
