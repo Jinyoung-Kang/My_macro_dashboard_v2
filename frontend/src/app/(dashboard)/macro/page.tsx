@@ -22,6 +22,8 @@ import {
 import { AlertTriangleIcon, StatusText } from "@/components/ui/icons";
 import { useApi } from "@/hooks/useApi";
 import { useLivePrices } from "@/hooks/useLivePrices";
+import { useSessionUser } from "@/hooks/useSessionUser";
+import { isOwner } from "@/lib/access";
 import { SOURCES, uniqueSources } from "@/lib/sources";
 import { EMPTY, formatKst, withoutLeadingIcon } from "@/lib/format";
 import { cardNotices, categoryDelay } from "@/lib/macroCards";
@@ -38,6 +40,7 @@ import { RiskSection } from "./RiskSection";
 import { AdvancedSection } from "./AdvancedSection";
 import { SingleChartSection } from "./SingleChartSection";
 import { ScrapedSection } from "./ScrapedSection";
+import { EconCalendarSection } from "./EconCalendarSection";
 import { endpoints } from "@/lib/endpoints";
 
 /** warn이면 그 상태를 경고 아이콘과 함께 그립니다(글에는 기호를 넣지 않음). */
@@ -64,6 +67,8 @@ const SPREAD_TABLE: { state: string; warn?: boolean; value: string; reading: str
 ];
 
 export default function MacroPage() {
+  // 운영자 전용 카드(경제 캘린더)를 그릴지 — 사용자를 아직 모르면(세션 응답 전) 그리지 않습니다.
+  const owner = isOwner(useSessionUser());
   const [refreshSeconds, setRefreshSeconds] = useAutoRefreshSeconds();
   const refreshMs = refreshSeconds * 1000;
 
@@ -265,6 +270,8 @@ export default function MacroPage() {
       />
       <SingleChartSection />
       <ScrapedSection />
+      {/* 경제 캘린더는 운영자 전용 경로입니다(ADR 0026 — 차단 통과 수집으로 받은 자료). 회원·데모 방문자에게는 카드를 그리지 않습니다. */}
+      {owner && <EconCalendarSection />}
     </div>
   );
 }

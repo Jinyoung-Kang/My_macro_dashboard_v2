@@ -123,6 +123,7 @@ GET·OPTIONS 밖(쓰기·HEAD)은 경로와 상관없이 403 `{"error":"demo_rea
 | `GET /api/macro/spread?longId=DGS10&shortId=DGS2` | 공식 일별 스프레드 시계열 |
 | `GET /api/macro/fred/{seriesId}?years=10` | FRED 시리즈 원본 |
 | `GET /api/macro/ticker?symbol=^VIX&period=1y` | 개별 지표 차트 |
+| `GET /api/macro/econ-calendar` | **운영자 전용.** 경제 캘린더(미국·한국 지표 일정·예상치·이전치·실제치·중요도 — TradingView, 비공식). 수집기가 차단 통과 수집 계층으로 받아 둔 저장본만 읽고 수집을 요청하지 않음([ADR 0026](adr/0026-polite-fetch-layers.md)). `{available, collectedAtKst, ageSeconds, source, sourceUrl, sourceNote, fetchTier, window, events: [{country, title, at, atKst, importance(-1·0·1·null), actual, forecast, previous, unit, scale, period, …}]}` — 없는 값은 null, 저장본이 없으면 `available: false` |
 
 ### 나머지 메뉴
 

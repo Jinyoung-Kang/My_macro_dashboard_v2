@@ -58,7 +58,7 @@ class RouteInventoryTest {
             "GET /api/macro/overview", "GET /api/macro/risk", "GET /api/macro/advanced",
             "GET /api/macro/usdkrw", "GET /api/macro/fx", "GET /api/macro/fx/options",
             "GET /api/macro/scraped", "GET /api/macro/spread", "GET /api/macro/fred/{seriesId}",
-            "GET /api/macro/ticker", "GET /api/liquidity",
+            "GET /api/macro/ticker", "GET /api/macro/econ-calendar", "GET /api/liquidity",
             "GET /api/sector/rotation", "GET /api/sector/momentum",
             // 13F · 기관 스타일
             "GET /api/sec13f/institutions", "GET /api/sec13f/portfolio",

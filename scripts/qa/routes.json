@@ -48,6 +48,10 @@
     },
     {
       "m": "GET",
+      "p": "/api/macro/econ-calendar"
+    },
+    {
+      "m": "GET",
       "p": "/api/macro/spread",
       "q": {
         "longId": "str",

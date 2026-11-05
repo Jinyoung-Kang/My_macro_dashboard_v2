@@ -12,7 +12,7 @@ import java.util.Map;
  * 거시경제 매크로 지표 · 연준 순유동성 · 섹터 &amp; 자산군 로테이션.
  *
  * <pre>
- *  GET /api/macro/*       매크로 카드·위험·심화 지표·환율·FRED·티커
+ *  GET /api/macro/*       매크로 카드·위험·심화 지표·환율·FRED·티커·경제 캘린더(운영자 전용)
  *  GET /api/liquidity     순유동성
  *  GET /api/sector/*      로테이션·모멘텀
  * </pre>
@@ -25,15 +25,18 @@ public class MacroController {
     private final FxService fx;
     private final LiquidityService liquidity;
     private final SectorService sector;
+    private final EconCalendarService econCalendar;
 
     public MacroController(MacroService macro,
                            FxService fx,
                            LiquidityService liquidity,
-                           SectorService sector) {
+                           SectorService sector,
+                           EconCalendarService econCalendar) {
         this.macro = macro;
         this.fx = fx;
         this.liquidity = liquidity;
         this.sector = sector;
+        this.econCalendar = econCalendar;
     }
 
     // ------------------------------------------------------- 매크로
@@ -56,6 +59,15 @@ public class MacroController {
     @GetMapping("/macro/advanced")
     public Map<String, Object> macroAdvanced() {
         return macro.advancedIndicators();
+    }
+
+    /**
+     * 경제 캘린더(미국·한국 지표 일정·예상치·중요도) — 운영자 전용, 저장본만 읽습니다(ADR 0026).
+     * 차단 통과 수집 계층으로 받은 자료라 화면이 수집을 일으키지 않습니다.
+     */
+    @GetMapping("/macro/econ-calendar")
+    public Map<String, Object> econCalendar() {
+        return econCalendar.calendar();
     }
 
     /** 원/달러 환율 (달러 금액을 원화로 병기할 때 씁니다). */

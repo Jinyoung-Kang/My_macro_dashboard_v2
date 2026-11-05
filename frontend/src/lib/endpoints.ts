@@ -67,6 +67,8 @@ export const endpoints = {
     advanced: "/api/macro/advanced",
     usdkrw: "/api/macro/usdkrw",
     scraped: "/api/macro/scraped",
+    // 운영자 전용 — 차단 통과 수집 계층으로 받은 경제 캘린더(ADR 0026). 백엔드는 저장본만 읽습니다.
+    econCalendar: "/api/macro/econ-calendar",
     fx: (ids: readonly string[], period: string, mode: string) =>
       withQuery("/api/macro/fx", { ids: ids.join(","), period, mode }),
     fred: (seriesId: string, years: number) => withQuery(`/api/macro/fred/${segment(seriesId)}`, { years }),
