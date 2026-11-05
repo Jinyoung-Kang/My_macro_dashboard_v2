@@ -407,6 +407,23 @@ def rejection_reason(response: requests.Response, *, streamed: bool = False) -> 
     return None
 
 
+def challenge_sign(headers, content: bytes | None) -> str | None:
+    """
+    차단 서비스가 붙이는 챌린지 머리글이나 차단 페이지 본문 표지가 있으면 그 이름("cf-mitigated", "Cloudflare 챌린지" 등), 없으면 None.
+
+    새 수집 계층(app/fetch — ADR 0026)이 상태 코드와 따로 판정에 쓰는 입력입니다. 표지 목록은 위 :func:`rejection_reason`과 같은 것이고,
+    공용 세션의 판정과 래치는 그대로입니다(이 함수는 아무것도 닫지 않습니다).
+    """
+    for name, values in _CHALLENGE_HEADERS:
+        if (headers.get(name) or "").strip().lower() in values:
+            return name
+    head = (content or b"")[:_CHALLENGE_SCAN_BYTES].lower()
+    for marker, label in _CHALLENGE_MARKERS:
+        if marker in head:
+            return label
+    return None
+
+
 class _BudgetRetry(Retry):
     """
     urllib3 Retry에 두 가지를 더합니다.

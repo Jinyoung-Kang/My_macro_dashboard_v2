@@ -18,7 +18,7 @@
 ## 결정
 
 1. **테이블마다 쓰는 프로세스는 하나입니다.**
-   - 수집기: `snapshots`·`timeseries`·`observations`·`collector_*`·`refresh_requests`·`schema_migrations`
+   - 수집기: `snapshots`·`timeseries`·`observations`·`collector_*`·`refresh_requests`·`schema_migrations`·`fetch_hosts`·`fetch_schedule`(차단 통과 수집 계층의 상태 — [ADR 0026](0026-polite-fetch-layers.md))
    - 백엔드: `regime_log`부터, 이후 계정·알림 테이블
    - 반대쪽은 읽기만 합니다.
 2. **스키마 파일은 지금처럼 `db/migrations/` 한 곳**에 번호를 매기고, 수집기가 기동할 때 적용합니다.

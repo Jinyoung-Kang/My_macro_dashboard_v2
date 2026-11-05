@@ -48,6 +48,7 @@
 | `collector_task_runs` | 태스크별 결과 (상태·소요·실패 이유) |
 | `refresh_requests` | 수동 새로고침 기준 시각 |
 | `schema_migrations` | 적용한 스키마 버전 (3-2 참고) |
+| `fetch_hosts`·`fetch_schedule` | 차단 통과 수집 계층의 상태 — 호스트별 고정 프로필·거부 뒤 물러남·포기·하루 예산, 태스크별 다음 실행 시각. 수집기가 씁니다([ADR 0026](adr/0026-polite-fetch-layers.md)) |
 | `regime_log` | 국면 판정 라이브 기록 — 하루 한 건, 추가만. **백엔드가 씁니다**(ADR 0008) |
 | `users`·`user_sessions`·`audit_log`·`email_tokens`·`usage_counters` | 계정·DB 세션·감사 기록·메일 링크 토큰·하루 사용량 — **백엔드가 씁니다**(ADR 0010) |
 | `alert_rules`·`alert_events`·`alert_deliveries` | 알림 규칙·사건·알림함 — **백엔드가 씁니다**(ADR 0011). 수집기는 종목 규칙의 코드만 읽습니다 |

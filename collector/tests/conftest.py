@@ -28,12 +28,15 @@ def _reset_http_guards():
     호스트(127.0.0.1, finance.yahoo.com)나 Yahoo가 다음 테스트의 요청까지 막지 않게 테스트마다 비웁니다.
     """
     from app import http, yahoo
+    from app.fetch import ladder
 
     http.reset_guards()
     yahoo.reset_for_tests()       # Yahoo 무응답 래치·셈도 프로세스 전역입니다(app/yahoo.py, QA-255)
+    ladder.reset()                # 차단 통과 계층의 지연 기록·세션(쿠키)도 프로세스 전역입니다(app/fetch)
     yield
     http.reset_guards()
     yahoo.reset_for_tests()
+    ladder.reset()
 
 
 @pytest.fixture()
@@ -47,6 +50,7 @@ def server(monkeypatch):
     monkeypatch.setenv("no_proxy", "127.0.0.1,localhost")
     routes: dict[str, list] = {}
     hits: list[str] = []
+    seen: list[dict[str, str]] = []      # 받은 요청의 머리글(이름은 소문자), hits와 같은 순서
 
     class Handler(BaseHTTPRequestHandler):
         protocol_version = "HTTP/1.1"
@@ -54,6 +58,7 @@ def server(monkeypatch):
         def do_GET(self):  # noqa: N802 — http.server 규약
             path = self.path.split("?", 1)[0]
             hits.append(path)
+            seen.append({name.lower(): value for name, value in self.headers.items()})
             queue = routes.get(path) or [(200, {"Content-Type": "application/json"}, b"{}")]
             answer = queue.pop(0) if len(queue) > 1 else queue[0]
             if answer in ("RESET", "HANG"):
@@ -81,7 +86,7 @@ def server(monkeypatch):
     thread.start()
     port = httpd.server_address[1]
     try:
-        yield types.SimpleNamespace(base=f"http://127.0.0.1:{port}", port=port, routes=routes, hits=hits)
+        yield types.SimpleNamespace(base=f"http://127.0.0.1:{port}", port=port, routes=routes, hits=hits, seen=seen)
     finally:
         httpd.shutdown()
         httpd.server_close()

@@ -249,6 +249,8 @@ frontend/src/
 `requirements.txt`는 직접 의존성만 고정하고, 간접 의존성(starlette·pydantic·urllib3 …)은 `constraints.txt`가
 고정합니다. 이미지·CI는 둘을 함께 써서(`-c constraints.txt`) 같은 커밋이면 언제 빌드해도 같은 판을 받습니다.
 `requirements.txt`를 바꾸면 `make constraints`로 다시 만들고 함께 커밋합니다 — 그대로 두면 판이 어긋나 설치가 실패합니다.
+다시 만들면 다른 간접 의존성도 그날 판으로 움직입니다. 이미 `constraints.txt`에 고정된 패키지를 같은 판으로 직접 의존성에 올리기만 할 때는 다시 만들지 않고,
+`constraints.txt` 머리말에 그 사실을 한 줄 적습니다(2026-11-05 `curl_cffi` 선례).
 
 ## 5. Git
 

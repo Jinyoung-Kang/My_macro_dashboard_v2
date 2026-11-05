@@ -1328,7 +1328,84 @@ def purge_run_logs(days: int) -> dict[str, int]:
 
 
 # ==============================================================================
-# 7. 내부 헬퍼
+# 7. 차단 통과 수집 계층의 상태 (fetch_hosts · fetch_schedule — ADR 0026, V21)
+# ==============================================================================
+# 규칙(물러남 구간·포기·프로필 고르기)은 app/fetch/state.py에 있고 여기는 읽고 쓰기만 합니다.
+_FETCH_HOST_COLUMNS = (
+    "profile", "profile_lib", "last_good_tier", "fail_level", "blocked_until", "blocked_reason", "given_up",
+)
+
+
+def fetch_host(host: str) -> dict | None:
+    """그 호스트의 상태 행(없으면 None)."""
+    with connection() as conn:
+        return conn.execute("SELECT * FROM fetch_hosts WHERE host = %s", (host,)).fetchone()
+
+
+def save_fetch_host(host: str, **fields: Any) -> None:
+    """
+    그 호스트 행의 준 칸만 고칩니다(없으면 만듦). 하루 예산 칸은 :func:`take_fetch_budget`만 씁니다.
+
+    :raises ValueError: 모르는 칸 이름
+    """
+    unknown = sorted(set(fields) - set(_FETCH_HOST_COLUMNS))
+    if unknown or not fields:
+        raise ValueError(f"fetch_hosts에 쓸 수 없는 칸: {unknown or '(없음)'}")
+    names = list(fields)
+    columns = ", ".join(names)
+    marks = ", ".join(["%s"] * len(names))
+    updates = ", ".join(f"{name} = EXCLUDED.{name}" for name in names)
+    with connection() as conn:
+        conn.execute(
+            f"INSERT INTO fetch_hosts (host, {columns}) VALUES (%s, {marks}) "
+            f"ON CONFLICT (host) DO UPDATE SET {updates}, updated_at = now()",
+            (host, *(fields[name] for name in names)),
+        )
+
+
+def take_fetch_budget(host: str, day: date, limit: int) -> bool:
+    """
+    그 호스트의 ``day``(KST 날짜) 요청 예산에서 한 건을 씁니다. 이미 ``limit``건을 썼으면 쓰지 않고 False.
+
+    한 문장으로 세고 올려, 두 태스크가 같은 호스트를 함께 불러도 예산을 넘기지 않습니다. 날짜가 바뀌면 1부터 다시 셉니다.
+    """
+    if limit <= 0:
+        return False
+    with connection() as conn:
+        row = conn.execute(
+            """
+            INSERT INTO fetch_hosts (host, budget_day, budget_used) VALUES (%s, %s, 1)
+            ON CONFLICT (host) DO UPDATE SET
+                budget_used = CASE WHEN fetch_hosts.budget_day = EXCLUDED.budget_day
+                                   THEN fetch_hosts.budget_used + 1 ELSE 1 END,
+                budget_day  = EXCLUDED.budget_day,
+                updated_at  = now()
+            WHERE fetch_hosts.budget_day IS DISTINCT FROM EXCLUDED.budget_day OR fetch_hosts.budget_used < %s
+            RETURNING budget_used
+            """,
+            (host, day, limit),
+        ).fetchone()
+    return row is not None
+
+
+def fetch_due_at(task: str) -> datetime | None:
+    """그 태스크의 다음 실행 시각(정한 적이 없으면 None)."""
+    with connection() as conn:
+        row = conn.execute("SELECT next_due_at FROM fetch_schedule WHERE task = %s", (task,)).fetchone()
+    return row["next_due_at"] if row else None
+
+
+def set_fetch_due_at(task: str, when: datetime) -> None:
+    with connection() as conn:
+        conn.execute(
+            "INSERT INTO fetch_schedule (task, next_due_at) VALUES (%s, %s) "
+            "ON CONFLICT (task) DO UPDATE SET next_due_at = EXCLUDED.next_due_at, updated_at = now()",
+            (task, when),
+        )
+
+
+# ==============================================================================
+# 8. 내부 헬퍼
 # ==============================================================================
 def _coerce_date(value: Any) -> date | None:
     if value is None:

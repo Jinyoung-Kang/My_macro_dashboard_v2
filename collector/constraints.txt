@@ -1,6 +1,7 @@
 # 자동 생성 — scripts/collector-constraints.sh (make constraints). 손으로 고치지 않습니다.
 # requirements.txt의 직접 의존성을 python:3.11-slim에 설치한 결과(간접 의존성 포함).
 # 2026-11-04: psycopg·psycopg-binary 3.3.7, certifi 2026.10.18(PYSEC-2026-4320)만 손으로 올림 — 다시 만들면 다른 간접 의존성도 그날 판으로 바뀌어서.
+# 2026-11-05: curl_cffi를 requirements.txt의 직접 의존성으로 올림(같은 판 0.16.3) — 이 파일의 고정은 그대로라 다시 만들지 않음.
 annotated-doc==0.0.5
 annotated-types==0.8.0
 anyio==4.15.1
