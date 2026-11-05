@@ -12,6 +12,7 @@ yfinance는 자기 curl_cffi 세션(프로세스에 하나)으로 Yahoo에 가�
 from __future__ import annotations
 
 import ast
+import http.server
 import importlib
 import socket
 import threading
@@ -92,7 +93,10 @@ def blackhole(monkeypatch):
     for thread in started:
         thread.join(30)
     try:
-        _yahoo_module().reset_for_tests()
+        yahoo = _yahoo_module()
+        yahoo.reset_for_tests()
+        # yfinance는 설정의 프록시를 세션에 직접 적어 두고 지우지 않습니다 — 닫은 프록시가 다음 시험의 세션에 남지 않게.
+        yahoo.session().proxies = {}
     except ModuleNotFoundError:
         pass
 
@@ -229,3 +233,135 @@ def test_예산이_요청_하나도_못_보낼_만큼이면_보내지_않는다(
     with pytest.raises(yahoo.YahooBudgetExhausted):
         app_http.run_guarded(guard, lambda: yahoo.session().get("https://query1.finance.yahoo.com/v8/finance/chart/AAA"))
     assert blackhole.accepted == 0
+
+
+
+# ==============================================================================
+# QA-255 후속 — 독립 검토(워크플로 wf_9076167a-f79)가 찾은 빈 곳
+# ==============================================================================
+class _SlowServer:
+    """``delay``초 뒤에 200으로 답하는 로컬 HTTP 서버(살아 있지만 느린 Yahoo 자리)."""
+
+    def __init__(self, delay: float) -> None:
+        class Handler(http.server.BaseHTTPRequestHandler):
+            def do_GET(self):  # noqa: N802 — http.server 규약
+                time.sleep(delay)
+                try:
+                    self.send_response(200)
+                    self.send_header("Content-Length", "2")
+                    self.end_headers()
+                    self.wfile.write(b"{}")
+                except OSError:
+                    pass
+
+            def log_message(self, *args):
+                pass
+
+        self.server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+        self.server.daemon_threads = True
+        self.url = f"http://127.0.0.1:{self.server.server_address[1]}/v8/finance/chart/AAA"
+        self._thread = threading.Thread(target=self.server.serve_forever, daemon=True)
+        self._thread.start()
+
+    def close(self) -> None:
+        self.server.shutdown()
+        self.server.server_close()
+
+
+@pytest.fixture()
+def slow_yahoo(monkeypatch):
+    for name in ("HTTPS_PROXY", "HTTP_PROXY", "ALL_PROXY", "https_proxy", "http_proxy", "all_proxy"):
+        monkeypatch.delenv(name, raising=False)
+    monkeypatch.setattr(app_http, "RETRY_RESERVE_SECONDS", RESERVE)
+    yahoo = _yahoo_module()
+    yahoo.reset_for_tests()
+    monkeypatch.setattr(yahoo.session(), "proxies", {})
+    server = _SlowServer(delay=2.0)
+    yield server
+    server.close()
+    yahoo.reset_for_tests()
+
+
+@pytest.mark.xfail(strict=True, reason="QA-255 후속 재현 — 예산 때문에 줄인 timeout의 시간 초과도 '무응답'으로 세어 살아 있는 Yahoo를 닫음")
+def test_QA255_후속_예산_때문에_줄인_timeout의_시간_초과는_래치에_세지_않는다(slow_yahoo):
+    from curl_cffi.requests import exceptions as curl_exceptions
+
+    yahoo = _yahoo_module()
+    for _ in range(yahoo.NO_RESPONSE_LIMIT):
+        guard = app_http.TaskGuard(deadline=time.monotonic() + RESERVE + 1.3)     # 요청 timeout이 약 1.3초로 줄어듦 — 서버는 2초 뒤 답
+        with pytest.raises(curl_exceptions.Timeout):
+            app_http.run_guarded(guard, lambda: yahoo.session().get(slow_yahoo.url))
+    assert yahoo._closed_until is None, "자기 예산 때문에 끝난 요청으로 Yahoo를 모든 태스크·화면에 닫았습니다"
+    assert yahoo.session().get(slow_yahoo.url, timeout=10).status_code == 200
+
+
+@pytest.mark.xfail(strict=True, reason="QA-255 후속 재현 — 래치가 닫힌 뒤 응답이 와도 기한까지 닫혀 있음")
+def test_QA255_후속_응답이_오면_래치를_바로_푼다():
+    yahoo = _yahoo_module()
+    yahoo.reset_for_tests()
+    try:
+        for _ in range(yahoo.NO_RESPONSE_LIMIT):
+            yahoo._note_timeout()
+        assert yahoo._closed_until is not None
+        yahoo._note_response()            # 닫히기 전에 나간 요청이 늦게나마 답을 받음 — Yahoo는 살아 있음
+        assert yahoo._closed_until is None
+    finally:
+        yahoo.reset_for_tests()
+
+
+@pytest.mark.xfail(strict=True, reason="QA-255 후속 재현 — yf.download 종목 스레드가 다운로드 풀 자리를 기다리는 동안 예산을 보지 않음")
+def test_QA255_후속_다운로드_풀_자리를_기다리는_동안에도_예산을_본다(blackhole):
+    import multitasking
+
+    slots = multitasking.config["POOLS"][multitasking.config["POOL_NAME"]]["pool"]
+    inner = getattr(slots, "_inner", slots)          # 수정 뒤에는 예산을 보는 감싸개 안에 원래 세마포어가 있음
+    taken = 0
+    while inner.acquire(blocking=False):             # 다른 태스크의 큰 배치가 자리를 모두 쥔 상태(운영 서버는 cpu_count = 2자리)
+        taken += 1
+    try:
+        assert taken > 0
+        finished, elapsed, result = _call(blackhole, lambda: market.minute_bars(["AAA"], "1d"), budget=BUDGET)
+        assert finished and elapsed <= BUDGET + 0.5, f"예산 {BUDGET}초인 배치가 자리를 기다리느라 {elapsed:.1f}초 넘게 걸림"
+        assert result[0] == {} and result[1], result
+    finally:
+        for _ in range(taken):
+            inner.release()
+
+
+def _close_latch(yahoo) -> None:
+    for _ in range(yahoo.NO_RESPONSE_LIMIT):
+        yahoo._note_timeout()
+    assert yahoo._closed_until is not None
+
+
+@pytest.mark.xfail(strict=True, reason="QA-255 후속 재현 — 무응답 래치로 보내지 않은 배치의 사유가 '버전 불일치를 의심'으로 보임")
+def test_QA255_후속_래치가_닫히면_사유에_그_이유가_보인다(blackhole):
+    from app.services import sector
+
+    yahoo = _yahoo_module()
+    _close_latch(yahoo)
+
+    _bars, reason, _ = market.minute_bars(["AAA", "BBB"], "1d")
+    assert reason and reason.startswith("Yahoo 응답 없음"), reason
+    _prices, reason = market.latest_minute_prices(["AAA"])
+    assert reason and reason.startswith("Yahoo 응답 없음"), reason
+    _cur, _prev, reason = market.last_two_closes("CL=F")
+    assert reason and "Yahoo 응답 없음" in reason, reason
+    error = sector.collect_etf_history(("XLK", "XLF"))["error"]
+    assert error and "Yahoo 응답 없음" in error and "버전 불일치" not in error, error
+    assert blackhole.accepted == 0, "래치가 닫힌 동안 Yahoo로 연결을 열었습니다"
+
+
+@pytest.mark.xfail(strict=True, reason="QA-255 후속 재현 — 예산이 다 돼 보내지 않은 배치의 사유가 '버전 불일치를 의심'으로 보임")
+def test_QA255_후속_예산이_모자라면_사유에_그_이유가_보인다(blackhole):
+    guard = app_http.TaskGuard(deadline=time.monotonic() + RESERVE + 0.2)
+    _bars, reason, _ = app_http.run_guarded(guard, lambda: market.minute_bars(["AAA", "BBB"], "1d"))
+    assert reason and "시간 예산" in reason, reason
+    assert blackhole.accepted == 0
+
+
+@pytest.mark.xfail(strict=True, reason="QA-255 후속 재현 — timeout 0(curl_cffi에서 '끝없이')을 예산 안으로 줄이지 않음")
+def test_QA255_후속_timeout_0도_예산_안으로_줄인다():
+    yahoo = _yahoo_module()
+    fitted, clamped = yahoo._fit(0, 30, 5.0)
+    assert (fitted, clamped) == (5.0, True)
