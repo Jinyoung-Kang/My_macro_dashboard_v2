@@ -28,7 +28,7 @@ function matches(source: string, pathname: string): boolean {
   return getPathMatch(source, { strict: true, removeUnnamedParams: true })(pathname) !== false;
 }
 
-/** 모의매매(미국) 화면의 주소 전부 — 개요 + 여섯 탭. */
+/** 모의매매(미국) 화면의 주소 전부 — 개요 + 일곱 탭(마지막은 실제 계좌). */
 const PAPER_US_PATHS = [PAPER_US_PATH, ...PAPER_TAB_SLUGS.map((slug) => paperTabPath(slug))];
 
 describe("next.config 리디렉션", () => {
@@ -40,7 +40,7 @@ describe("next.config 리디렉션", () => {
 
   it("어떤 source도 /paper/us와 그 아래 탭 주소에 맞지 않는다 — 맞으면 끝없는 리디렉션", async () => {
     const redirects = await loadRedirects();
-    expect(PAPER_US_PATHS).toHaveLength(7);
+    expect(PAPER_US_PATHS).toHaveLength(8);
     for (const pathname of PAPER_US_PATHS) {
       expect(redirects.filter((entry) => matches(entry.source, pathname)), pathname).toEqual([]);
     }

@@ -84,7 +84,7 @@ function proposal(over: Partial<PaperFrameworkProposal> = {}): PaperFrameworkPro
 
 describe("탭", () => {
   it("프레임·메모는 두 탭으로 열렸다(준비 중 아님)", () => {
-    expect(PAPER_TABS.map((tab) => tab.label)).toEqual(["개요", "기관 선정", "보유·체결", "결정 로그", "프레임", "메모", "설정"]);
+    expect(PAPER_TABS.map((tab) => tab.label)).toEqual(["개요", "기관 선정", "보유·체결", "결정 로그", "프레임", "메모", "설정", "실제 계좌"]);
     expect(PAPER_TABS.every((tab) => tab.opensIn === null)).toBe(true);
   });
 });

@@ -228,7 +228,7 @@ describe("초기화 전", () => {
 
     // 프레임·메모 탭은 단계 3b에서 열렸습니다 — 자리 문구도 '(준비 중)' 표시도 없습니다.
     expect(screen.getAllByRole("tab").map((tab) => tab.textContent)).toEqual([
-      "개요", "기관 선정", "보유·체결", "결정 로그", "프레임", "메모", "설정",
+      "개요", "기관 선정", "보유·체결", "결정 로그", "프레임", "메모", "설정", "실제 계좌",
     ]);
     fireEvent.click(screen.getByRole("tab", { name: "프레임" }));
     expect(screen.getByRole("tab", { name: "프레임" }).getAttribute("aria-selected")).toBe("true");

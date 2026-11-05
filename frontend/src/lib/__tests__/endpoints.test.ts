@@ -159,6 +159,9 @@ const CASES: Case[] = [
   { name: "paper.market(KR).review", before: `/api/paper/reviews/${"2026-10-30"}?market=KR`,
     after: endpoints.paper.market("KR").review("2026-10-30") },
   { name: "paper.market(KR).runReview", before: "/api/paper/reviews/run?market=KR", after: endpoints.paper.market("KR").runReview },
+  // 토스증권 실제 계좌(읽기 전용, ADR 0025) — 시장 쪽 하나(원화 KR·달러 US).
+  { name: "brokerage.account(KR)", before: "/api/brokerage/account?market=KR", after: endpoints.brokerage.account("KR") },
+  { name: "brokerage.account(US)", before: "/api/brokerage/account?market=US", after: endpoints.brokerage.account("US") },
 ];
 
 describe("API 경로 — 예전 조립식과 서버가 받는 값이 같다", () => {
@@ -225,6 +228,14 @@ describe("모의 매매 시장 단위 경로", () => {
   });
 });
 
+describe("실제 계좌 경로(ADR 0025)", () => {
+  it("읽기 경로 하나뿐이고 /api/paper 밖 — 주문·취소 경로가 없다", () => {
+    expect(Object.keys(endpoints.brokerage)).toEqual(["account"]);
+    expect(endpoints.brokerage.account("KR")).toBe("/api/brokerage/account?market=KR");
+    expect(endpoints.brokerage.account("US")).toBe("/api/brokerage/account?market=US");
+  });
+});
+
 describe("모의 매매 주간 복기 경로", () => {
   it("목록 아래에 주(날짜)별 한 건과 수동 실행", () => {
     expect(endpoints.paper.reviews).toBe("/api/paper/reviews");
@@ -265,6 +276,6 @@ describe("docs/API.md 백엔드 표와 대조", () => {
     const paths = [...strings, ...CASES.map(({ after }) => after)].map(documentedForm);
     expect(paths.filter((path) => !documented.has(path))).toEqual([]);
     // 경로를 만드는 함수는 모두 위 CASES에 한 줄 이상 있습니다. 새 함수를 만들었다면 CASES에 추가하고 이 숫자를 고치세요.
-    expect(functions).toBe(60);
+    expect(functions).toBe(61);
   });
 });

@@ -1,11 +1,11 @@
 /**
- * 모의매매(미국) 경로 — /paper/us(개요)·/paper/us/[tab](여섯 탭)과 화면의 주소 맞추기.
- * 모의매매(한국) 경로 — /paper/kr·/paper/kr/[tab](미국과 같은 탭 키, 2단계 명세 §4-16): 같은 규칙, 일곱 탭 모두 한국 화면,
+ * 모의매매(미국) 경로 — /paper/us(개요)·/paper/us/[tab](일곱 탭 — 마지막은 실제 계좌, ADR 0025)과 화면의 주소 맞추기.
+ * 모의매매(한국) 경로 — /paper/kr·/paper/kr/[tab](미국과 같은 탭 키, 2단계 명세 §4-16): 같은 규칙, 여덟 탭 모두 한국 화면,
  *    selection 키의 이름은 '종목 선정',
  *    프레임·설정은 두 시장 공용 안내와 함께 그대로, 주소 맞추기는 그 시장 주소만
  *
- *  - [tab] 라우트: 여섯 키만 만들고(generateStaticParams), 그 탭을 처음 탭으로 넘긴다 — 모르는 조각·overview는 404(notFound)
- *  - 처음 탭(initialTab)으로 그 탭이 열린다(눌러 보지 않아도) — 7탭 마크업(role=tab·paper-tab-*·aria-controls)은 그대로
+ *  - [tab] 라우트: 일곱 키만 만들고(generateStaticParams), 그 탭을 처음 탭으로 넘긴다 — 모르는 조각·overview는 404(notFound)
+ *  - 처음 탭(initialTab)으로 그 탭이 열린다(눌러 보지 않아도) — 8탭 마크업(role=tab·paper-tab-*·aria-controls)은 그대로
  *  - 탭을 누르면 주소만 그 탭의 것으로(history.replaceState — 기록을 쌓지 않음), 계좌 상세의 "보유·체결 탭에서 전체 보기"도 같다
  *  - 셸의 링크로 주소가 바뀌면(라우터의 usePathname) 그 주소의 탭으로 — 미리 고른 계좌는 지움. 라우터가 아직 옛 주소를 들고
  *    있는 동안(탭을 막 바꾼 직후)은 방금 고른 탭을 되돌리지 않는다
@@ -95,10 +95,11 @@ afterEach(() => {
 const selectedTab = () => screen.getAllByRole("tab").find((tab) => tab.getAttribute("aria-selected") === "true")?.textContent;
 
 describe("라우트 파일", () => {
-  it("[tab]: 여섯 키만 만들고 그 탭을 처음 탭으로 — 탭마다 다른 화면(key)", async () => {
+  it("[tab]: 일곱 키만 만들고 그 탭을 처음 탭으로 — 탭마다 다른 화면(key)", async () => {
     expect(dynamicParams).toBe(false);
     expect(generateStaticParams()).toEqual([
       { tab: "selection" }, { tab: "holdings" }, { tab: "decisions" }, { tab: "framework" }, { tab: "notes" }, { tab: "settings" },
+      { tab: "real" },
     ]);
     const element = await PaperUsTabPage({ params: Promise.resolve({ tab: "holdings" }) });
     expect(isValidElement(element) && element.type).toBe(PaperScreen);
@@ -120,7 +121,7 @@ describe("라우트 파일", () => {
 });
 
 describe("처음 탭", () => {
-  it("initialTab으로 그 탭이 열린다 — 7탭의 이름·순서·마크업은 그대로", async () => {
+  it("initialTab으로 그 탭이 열린다 — 8탭의 이름·순서·마크업은 그대로", async () => {
     window.history.replaceState(null, "", "/paper/us/holdings");
     render(<PaperScreen initialTab="holdings" />);
 
@@ -129,7 +130,7 @@ describe("처음 탭", () => {
     expect(holdings.id).toBe("paper-tab-holdings");
     expect(holdings.getAttribute("aria-controls")).toBe("paper-tabpanel");
     expect(screen.getAllByRole("tab").map((tab) => tab.textContent)).toEqual([
-      "개요", "기관 선정", "보유·체결", "결정 로그", "프레임", "메모", "설정",
+      "개요", "기관 선정", "보유·체결", "결정 로그", "프레임", "메모", "설정", "실제 계좌",
     ]);
     expect(screen.getByRole("tabpanel").getAttribute("aria-labelledby")).toBe("paper-tab-holdings");
     expect(screen.getByLabelText("계좌 고르기")).toBeTruthy();
@@ -226,7 +227,7 @@ describe("한국 화면(/paper/kr)", () => {
     });
   });
 
-  it("라우트 파일: [tab]은 미국과 같은 여섯 키·404 규칙, 개요·탭 모두 한국 화면(market KR)", async () => {
+  it("라우트 파일: [tab]은 미국과 같은 일곱 키·404 규칙, 개요·탭 모두 한국 화면(market KR)", async () => {
     expect(krDynamicParams).toBe(false);
     expect(krStaticParams()).toEqual(generateStaticParams());
     const element = await PaperKrTabPage({ params: Promise.resolve({ tab: "settings" }) });
@@ -250,13 +251,13 @@ describe("한국 화면(/paper/kr)", () => {
     expect(window.location.pathname).toBe("/paper/kr");
   });
 
-  it("일곱 탭 모두 한국 화면(준비 중 없음 — selection 키의 이름은 '종목 선정'), 프레임·설정은 두 시장 공용 안내와 함께", async () => {
+  it("여덟 탭 모두 한국 화면(준비 중 없음 — selection 키의 이름은 '종목 선정'), 프레임·설정은 두 시장 공용 안내와 함께", async () => {
     render(<PaperScreen market="KR" initialTab="notes" />);
     const notes = await screen.findByRole("tab", { name: "메모" });
     expect(notes.getAttribute("aria-selected")).toBe("true");
     expect(screen.queryByText(/탭은 다음 단계에서 엽니다/)).toBeNull();
     expect(screen.getAllByRole("tab").map((tab) => tab.textContent)).toEqual([
-      "개요", "종목 선정", "보유·체결", "결정 로그", "프레임", "메모", "설정",
+      "개요", "종목 선정", "보유·체결", "결정 로그", "프레임", "메모", "설정", "실제 계좌",
     ]);
 
     fireEvent.click(screen.getByRole("tab", { name: "설정" }));

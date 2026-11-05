@@ -1,8 +1,8 @@
 /**
  * 모의매매 화면 경로 ↔ 시장·탭 — 순수 함수(ADR 0004). 라우트 파일(app/(dashboard)/paper/us/…·paper/kr/…)과 화면(PaperScreen)이 같이 씁니다.
  *
- * 시장마다 개요는 `/paper/us`·`/paper/kr`, 나머지 여섯 탭은 `/paper/<시장>/<탭 키>`입니다(탭 키가 곧 주소 조각 — 따로 이름표를 두지 않음,
- * 한국도 미국과 같은 일곱 탭 — 사용자 결정 2026-10-29). 옛 `/paper`는 next.config의 리디렉션이 `/paper/us`로 보냅니다(임시 리디렉션 —
+ * 시장마다 개요는 `/paper/us`·`/paper/kr`, 나머지 일곱 탭은 `/paper/<시장>/<탭 키>`입니다(탭 키가 곧 주소 조각 — 따로 이름표를 두지 않음,
+ * 한국도 미국과 같은 여덟 탭 — 사용자 결정 2026-10-29, 마지막 '실제 계좌'(`real`)는 ADR 0025). 옛 `/paper`는 next.config의 리디렉션이 `/paper/us`로 보냅니다(임시 리디렉션 —
  * `/paper`를 시장 고르는 화면으로 쓸 수 있게).
  */
 import { PAPER_TABS, type PaperTabKey } from "./paper";
@@ -18,13 +18,13 @@ export function paperMarketPath(market: PaperMarketCode = "US"): string {
   return market === "KR" ? PAPER_KR_PATH : PAPER_US_PATH;
 }
 
-/** 주소 조각이 있는 탭(개요 밖의 여섯) — `[tab]` 라우트의 generateStaticParams가 이 목록을 그대로 씁니다. 순서는 탭 순서. 두 시장 같음. */
+/** 주소 조각이 있는 탭(개요 밖의 일곱) — `[tab]` 라우트의 generateStaticParams가 이 목록을 그대로 씁니다. 순서는 탭 순서. 두 시장 같음. */
 export const PAPER_TAB_SLUGS: readonly Exclude<PaperTabKey, "overview">[] = PAPER_TABS.map((tab) => tab.key).filter(
   (key): key is Exclude<PaperTabKey, "overview"> => key !== "overview",
 );
 
 /**
- * 주소 조각 → 탭. 여섯 탭 키만 받습니다 — "overview"는 뿌리 경로가 맡으므로 `/paper/us/overview`는 없는 화면(null → 404),
+ * 주소 조각 → 탭. 일곱 탭 키만 받습니다 — "overview"는 뿌리 경로가 맡으므로 `/paper/us/overview`는 없는 화면(null → 404),
  * 대소문자·앞뒤 공백이 다르거나 모르는 글자도 null입니다(비슷한 주소를 조용히 다른 탭으로 열지 않음).
  */
 export function paperTabFromSlug(slug: string | null | undefined): Exclude<PaperTabKey, "overview"> | null {

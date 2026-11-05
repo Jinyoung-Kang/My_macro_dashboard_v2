@@ -3,6 +3,7 @@
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 import { ScrollTopButton } from "@/components/ScrollTopButton";
+import { BrokerageSection } from "@/components/screens/brokerage/BrokerageSection";
 import { Banner, Button, Card, ErrorState, Freshness, Loading, PageHeader, underlineTabClasses } from "@/components/ui";
 import { useApi } from "@/hooks/useApi";
 import { TickerNamesProvider } from "@/hooks/useTickerNames";
@@ -42,10 +43,14 @@ import { SettingsSection } from "./SettingsSection";
  * 새로고침·링크 공유는 그 탭으로 열립니다(뒤로 가기 기록은 쌓지 않음). 반대로 같은 화면을 띄운 채 셸의 링크(예: 모의매매 탭 → /paper/us)로
  * 주소가 바뀌면 그 주소의 탭으로 맞춥니다.
  *
- * <p><b>한국</b>(`market` "KR", 2단계 명세 §4-16 — /paper/kr·/paper/kr/&lt;탭&gt;): 같은 일곱 탭이고 개요는 `?market=KR` 응답(원 단위 정수,
+ * <p><b>한국</b>(`market` "KR", 2단계 명세 §4-16 — /paper/kr·/paper/kr/&lt;탭&gt;): 같은 여덟 탭이고 개요는 `?market=KR` 응답(원 단위 정수,
  * 네 계좌 kr_rules·kr_claude·kr_bench_k200·kr_bench_mix)입니다. 정기 작업이 쉬면 그 사유(dormantReason)를 맨 위에 적습니다. 종목 선정 탭(키
  * selection — 미국 '기관 선정' 자리)은 한국 규칙 계좌의 재선정 기록(KrSelectionSection), 메모 탭은 한국 메모(`?market=KR`)입니다. 프레임·설정은
  * 두 시장이 함께 쓰는 화면이라 같은 섹션에 시장을 넘겨 공용임을 밝힙니다(설정은 '한국 + 공용' 보기가 기본). 주소 맞추기는 그 시장의 주소만 봅니다(다른 시장 주소는 무시).
+ *
+ * <p><b>실제 계좌</b> 탭(키 real, ADR 0025)은 모의 장부가 아니라 토스증권 실제 계좌의 읽기 전용 화면입니다 — 한국 화면은 원화 쪽, 미국 화면은
+ * 달러 쪽. 개요 응답을 쓰지 않고 BrokerageSection이 그 탭이 열릴 때만 스스로 읽습니다(자동 갱신·셸 새로고침 없음). 이 파일은 그 섹션을 붙이기만
+ * 하고 실제 계좌 자료를 다른 탭에 넘기지 않습니다(경계 시험 components/screens/brokerage/__tests__/brokerageBoundary.test.ts).
  */
 export default function PaperPage({
   initialTab = "overview",
@@ -72,7 +77,7 @@ function PaperScreenBody({ initialTab, market }: { initialTab: PaperTabKey; mark
   // '이 장부의 한계'는 접어 둔 채 시작합니다(사용자 요청 2026-11-02 — 단추로 펼침). 글은 늘 그 카드 안에 있고 펼칠 때만 보입니다.
   const [limitsOpen, setLimitsOpen] = useState(false);
   const { data, loading, error, reload, refreshError } = useApi<PaperOverviewResponse>(endpoints.paper.market(market).overview, 60_000);
-  // 한국 화면은 이름이 다른 탭(종목 선정)만 한국 이름으로 — 일곱 탭 모두 열림(미국 화면은 PAPER_TABS 그대로).
+  // 한국 화면은 이름이 다른 탭(종목 선정)만 한국 이름으로 — 여덟 탭 모두 열림(미국 화면은 PAPER_TABS 그대로).
   const tabs = PAPER_TABS.map((entry) => ({ ...entry, label: (korea ? KR_TAB_LABELS[entry.key] : undefined) ?? entry.label }));
   const current = tabs.find((entry) => entry.key === tab) ?? tabs[0];
   // 라우터 밖(테스트)에서는 null입니다 — 그때는 주소를 따라가지 않습니다.
@@ -225,6 +230,8 @@ function PaperScreenBody({ initialTab, market }: { initialTab: PaperTabKey; mark
             {current.key === "framework" && <FrameworkSection focusProposalId={focusProposal} market={market} />}
             {current.opensIn === null && current.key === "notes" && <NotesSection startDate={data.startDate ?? null} market={market} />}
             {current.key === "settings" && <SettingsSection market={market} />}
+            {/* 실제 계좌(ADR 0025) — 모의 장부와 별개, 읽기 전용. 이 탭일 때만 붙어 그때만 읽습니다(개요 응답·장부 값을 넘기지 않음). */}
+            {current.key === "real" && <BrokerageSection market={market} />}
             {current.opensIn && (
               <Banner tone="info">
                 <strong>{current.label}</strong> 탭은 다음 단계에서 엽니다 — {current.opensIn}.

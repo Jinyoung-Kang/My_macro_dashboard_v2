@@ -1,7 +1,7 @@
 /**
  * 모의매매(미국) 경로 ↔ 탭(lib/paperRoutes) — `[tab]` 라우트와 화면의 주소 맞추기가 같은 규칙을 쓴다.
  *
- *  - 개요는 /paper/us, 여섯 탭은 /paper/us/<키>(탭 순서 그대로) — generateStaticParams가 이 목록을 쓴다
+ *  - 개요는 /paper/us, 일곱 탭은 /paper/us/<키>(탭 순서 그대로 — 마지막은 실제 계좌 real, ADR 0025) — generateStaticParams가 이 목록을 쓴다
  *  - 모르는 조각·"overview"·대소문자 다른 글자는 null(라우트가 404) — 비슷한 주소를 다른 탭으로 열지 않는다
  *  - 지금 주소 → 탭: /paper/us(끝 '/' 허용)는 개요, 옛 /paper·/paper/kr·더 깊은 경로는 null(지금 탭을 그대로 둠)
  *  - 한국(2단계 명세 §4-16, 사용자 결정 2026-10-29): /paper/kr 개요 + /paper/kr/<미국과 같은 탭 키>, 시장 인자 기본값은 미국 그대로
@@ -21,8 +21,8 @@ import {
 } from "../paperRoutes";
 
 describe("탭 주소", () => {
-  it("개요 밖의 여섯 탭 — 탭 순서 그대로, 키가 곧 주소 조각", () => {
-    expect(PAPER_TAB_SLUGS).toEqual(["selection", "holdings", "decisions", "framework", "notes", "settings"]);
+  it("개요 밖의 일곱 탭 — 탭 순서 그대로, 키가 곧 주소 조각", () => {
+    expect(PAPER_TAB_SLUGS).toEqual(["selection", "holdings", "decisions", "framework", "notes", "settings", "real"]);
     expect(PAPER_TAB_SLUGS).toEqual(PAPER_TABS.slice(1).map((tab) => tab.key));
   });
 
@@ -31,20 +31,21 @@ describe("탭 주소", () => {
     expect(paperTabPath("overview")).toBe("/paper/us");
     expect(paperTabPath("holdings")).toBe("/paper/us/holdings");
     expect(paperTabPath("settings")).toBe("/paper/us/settings");
+    expect(paperTabPath("real")).toBe("/paper/us/real");
     expect(PAPER_TABS.map((tab) => paperTabPath(tab.key))).toEqual([
       "/paper/us", "/paper/us/selection", "/paper/us/holdings", "/paper/us/decisions",
-      "/paper/us/framework", "/paper/us/notes", "/paper/us/settings",
+      "/paper/us/framework", "/paper/us/notes", "/paper/us/settings", "/paper/us/real",
     ]);
   });
 });
 
 describe("주소 조각 → 탭([tab] 라우트)", () => {
-  it("여섯 키는 그 탭", () => {
+  it("일곱 키는 그 탭", () => {
     for (const slug of PAPER_TAB_SLUGS) expect(paperTabFromSlug(slug)).toBe(slug);
   });
 
   it("모르는 조각·overview·대소문자·공백이 다른 글자·빈 값은 null — 라우트가 404로 보낸다", () => {
-    for (const slug of ["overview", "Holdings", " holdings", "holdings ", "reviews", "", "us", "holdings/x"]) {
+    for (const slug of ["overview", "Holdings", " holdings", "holdings ", "reviews", "", "us", "holdings/x", "Real", "brokerage"]) {
       expect(paperTabFromSlug(slug), slug).toBeNull();
     }
     expect(paperTabFromSlug(null)).toBeNull();
@@ -71,16 +72,17 @@ describe("지금 주소 → 탭(화면이 주소를 따라감)", () => {
 });
 
 describe("한국 화면 주소(/paper/kr)", () => {
-  it("뿌리 경로와 탭 주소 — 미국과 같은 일곱 탭, 시장 인자 기본값은 미국", () => {
+  it("뿌리 경로와 탭 주소 — 미국과 같은 여덟 탭, 시장 인자 기본값은 미국", () => {
     expect(PAPER_KR_PATH).toBe("/paper/kr");
     expect(paperMarketPath("KR")).toBe("/paper/kr");
     expect(paperMarketPath("US")).toBe("/paper/us");
     expect(paperMarketPath()).toBe("/paper/us");
     expect(paperTabPath("overview", "KR")).toBe("/paper/kr");
     expect(paperTabPath("holdings", "KR")).toBe("/paper/kr/holdings");
+    expect(paperTabPath("real", "KR")).toBe("/paper/kr/real");
     expect(PAPER_TABS.map((tab) => paperTabPath(tab.key, "KR"))).toEqual([
       "/paper/kr", "/paper/kr/selection", "/paper/kr/holdings", "/paper/kr/decisions",
-      "/paper/kr/framework", "/paper/kr/notes", "/paper/kr/settings",
+      "/paper/kr/framework", "/paper/kr/notes", "/paper/kr/settings", "/paper/kr/real",
     ]);
   });
 

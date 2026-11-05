@@ -32,6 +32,7 @@ export const SOURCES = {
   aiInput: "대시보드 저장본 전체 — 각 섹션에 원래 출처·데이터 성격을 함께 적음",
   aiEngines: "각 AI 제공사 API (백엔드가 호출, 키는 .env)",
   toss: "토스증권 Open API (공식)",
+  tossAccount: "토스증권 Open API (공식) — 실제 계좌 조회(읽기 전용, 모의 장부와 별개)",
 } as const;
 
 /** "Yahoo Finance (^GSPC)" → "Yahoo Finance". 카드 전체 출처를 모을 때 씁니다. */

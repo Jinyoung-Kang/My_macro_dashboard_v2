@@ -2,7 +2,7 @@ import { notFound } from "next/navigation";
 import PaperScreen from "@/components/screens/paper/PaperScreen";
 import { PAPER_TAB_SLUGS, paperTabFromSlug } from "@/lib/paperRoutes";
 
-/** 여섯 탭 주소만 만듭니다 — 목록 밖의 조각은 만들지 않고 404(아래 notFound는 같은 규칙의 두 번째 울타리). */
+/** 일곱 탭 주소만 만듭니다 — 목록 밖의 조각은 만들지 않고 404(아래 notFound는 같은 규칙의 두 번째 울타리). */
 export const dynamicParams = false;
 
 export function generateStaticParams() {
@@ -10,7 +10,7 @@ export function generateStaticParams() {
 }
 
 /**
- * 모의 알고리즘 매매(미국)의 탭 화면(/paper/us/selection|holdings|decisions|framework|notes|settings, 운영자 전용).
+ * 모의 알고리즘 매매(미국)의 탭 화면(/paper/us/selection|holdings|decisions|framework|notes|settings|real, 운영자 전용).
  * 개요는 /paper/us(../page.tsx). 화면 안에서 탭을 바꾸면 PaperScreen이 주소만 바꿉니다(이 파일을 다시 그리지 않음).
  */
 export default async function PaperUsTabPage({ params }: { params: Promise<{ tab: string }> }) {

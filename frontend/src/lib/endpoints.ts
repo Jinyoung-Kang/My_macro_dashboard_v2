@@ -273,6 +273,12 @@ export const endpoints = {
     runReview: "/api/paper/reviews/run",
   },
 
+  // 토스증권 실제 계좌(운영자 전용, 읽기 전용 — ADR 0025). 모의 장부와 별개라 /api/paper 밖에 둡니다. GET 하나뿐이고 주문·취소 경로는 없습니다.
+  brokerage: {
+    /** 시장 쪽 하나 — "KR"은 원화(국내 주식·원화 매수 가능 금액), "US"는 달러(미국 주식·달러 매수 가능 금액). */
+    account: (market: "KR" | "US") => withQuery("/api/brokerage/account", { market }),
+  },
+
   // 토스증권 연결 테스트 (경로는 /api/ai/toss 이지만 AI와 관계없음)
   toss: {
     diagnostics: (run: number) => withQuery("/api/ai/toss/diagnostics", { run }),

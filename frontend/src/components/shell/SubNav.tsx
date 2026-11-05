@@ -13,7 +13,7 @@ import type { SessionUser } from "@/lib/types";
  * 보이는 글이라 키보드·터치 사용자도 봅니다. 유료 화면은 무료 회원에게 자물쇠 아이콘(눌러도 되며 화면이 안내).
  * 고른 링크의 aria-current는 그 주소 그대로면 "page", 그 화면의 아래 주소(/paper/us/holdings)면 "true"입니다(lib/nav currentAria).
  *
- * 모양은 밑줄 탭(`underlineTabClasses` md — 15px·높이 48px). 모의매매 화면 안의 7탭은 한 단계 작은 sm(14px·44px)이라 두 줄이
+ * 모양은 밑줄 탭(`underlineTabClasses` md — 15px·높이 48px). 모의매매 화면 안의 탭 줄은 한 단계 작은 sm(14px·44px)이라 두 줄이
  * 같은 모양으로 겹쳐 위계가 흐려지지 않습니다(명세 §4). 바깥 줄은 폭 전체, 안의 목록은 본문 열(최대 1280px)과 같은 세로줄에 글을 맞춥니다
  * — 탭 안쪽 여백(12px)만큼 목록 여백을 줄였습니다.
  */
