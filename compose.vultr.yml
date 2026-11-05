@@ -31,6 +31,7 @@
 #   · 허용 출처는 Tailscale 주소(PUBLIC_ORIGIN — 서버 .env, 필수)와 비상용 localhost:8201, 메일(가입·재설정)은 끔
 #   · 앞단이 넘긴 X-Forwarded-For를 Tomcat이 믿음(내부 대역에서 온 것만). tailscale serve가 루프백으로 넘긴 요청은 모두 한 주소로 보여
 #     로그인 제한은 사실상 이메일별 — 사용자 1명이라 그대로 둠(ADR 0023)
+#   · 수집기의 토스 실제 계좌 읽기 전용 조회(TOSS_ACCOUNT_ENABLED)는 서버 .env 값을 따름 — 기반 파일은 "false" 고정이라 여기서만 켤 수 있음(ADR 0025)
 #   · 국면 판정 기록은 23시(AWS와 같은 값 — 24시간이라 시각 제약은 없지만 기록 시점을 바꾸지 않음), postgres는 꺼질 때 30초까지 기다림
 #     (재부팅·업데이트 때 복구부터 하지 않게)
 # 바뀌지 않는 것: postgres 컨테이너(볼륨 my_macro_dashboard_v2_postgres-data — 폴더 이름을 따름), 나머지 포트는 기반 파일 그대로
@@ -44,6 +45,12 @@ services:
     # 24시간 켜 두지만 재부팅·OS 업데이트 때 dockerd가 컨테이너를 멈춥니다. 기본 10초가 지나면 강제 종료돼 다음 기동 때
     # 복구(WAL 재생)부터 하므로, 깨끗이 끝낼 시간을 줍니다.
     stop_grace_period: 30s
+
+  collector:
+    environment:
+      # 토스 실제 계좌 읽기 전용 조회(ADR 0025) — 서버 .env에 TOSS_ACCOUNT_ENABLED=true가 있을 때만 켬(비면 꺼짐). 기반 파일은 보간 없는 "false"라
+      # 이 덧붙임을 읽는 곳(운영 서버)에서만 켤 수 있습니다. 백엔드는 이 이름을 받지 않습니다(켜짐 여부는 수집기 응답의 enabled).
+      TOSS_ACCOUNT_ENABLED: "${TOSS_ACCOUNT_ENABLED:-false}"
 
   backend:
     environment:

@@ -131,7 +131,8 @@ feature/<기능>/  기능 하나의 컨트롤러(HTTP 경계) + 서비스(저장
                  화면용 응답으로 조립). auth · macro · institution · insight · positioning ·
                  publicdata · status · snapshot(전체 원본 텍스트) · ai · toss · alert ·
                  detail(검색 상세 화면 — 수집기 실시간 조회 중계·AI 요약, 저장하지 않음) ·
-                 paper(모의 매매, 운영자 전용)
+                 paper(모의 매매, 운영자 전용) ·
+                 brokerage(토스증권 실제 계좌 읽기 전용 조회 — 운영자 전용, 저장하지 않음, 다른 기능과 서로 모름, ADR 0025)
 analytics/       스프링도 DB도 모릅니다. 입력은 숫자와 날짜, 출력도 숫자입니다.
 read/            읽기 정책(StoreReader) — 저장본이 오래됐으면 읽기 모드에 따라 수집을 요청하고 다시 읽음
 store/           저장소 접근 · 데이터셋 이름 · 신선도 (외부 호출 없음)
@@ -243,7 +244,7 @@ lib/                        표시 규칙(서식·메뉴·검색·테마·화면
 ```
 
 - **정보 구조**: 다섯 탭 + 더보기. 1단계는 옛 화면의 경로를 그대로 탭에 묶기만 하고(시장 → `/macro` 등), 옛 화면을 `/markets/…`로 옮기는 일은
-  4단계입니다. 모의매매만 `/paper/us/*`로 옮겼고(옛 `/paper`는 리디렉션) 한국 책은 `/paper/kr/*`(같은 일곱 탭, 2단계 F2)입니다. 검색 상세 화면
+  4단계입니다. 모의매매만 `/paper/us/*`로 옮겼고(옛 `/paper`는 리디렉션) 한국 책은 `/paper/kr/*`(같은 탭, 2단계 F2)입니다. 두 시장 모두 마지막 탭 '실제 계좌'는 모의 장부와 별개인 토스증권 실계좌 읽기 전용 조회입니다([ADR 0025](adr/0025-toss-real-account-readonly.md)). 검색 상세 화면
   (지표 `/markets/i/<키>`·종목 `/s/<시장>/<코드>`·기관 `/institutions/<CIK>`)은 2026-11-01에 열었습니다 — 시세·뉴스·종목 찾기는 백엔드
   `feature.detail`이 수집기 `/live/quote`·`/live/news`·`/live/symbols`(Yahoo·네이버·구글 뉴스, 짧은 캐시)를 중계하고 저장하지 않으며, 차트·13F는
   기존 경로를 씁니다([명세](specs/2026-11-01-search-detail.md)).
@@ -368,6 +369,7 @@ k6가 고정된 주소를 반복하므로 "후" 값은 대부분 캐시 적중�
 | 응답 가로채기·끼워 넣기 | `nosniff`, `no-store`, `X-Frame-Options: DENY`, `frame-ancestors 'none'` | `SessionFilter`, `next.config.mjs` |
 | 유료 AI API 비용 폭주 | 사용자 입력 2,000자 상한(400). 하루 한도(유료 회원은 사용자별 DB, 데모 방문자는 공용 메모리). 배포별 엔진 허용 목록(v3 AWS 데모는 Haiku 하나, ADR 0014 — 이 저장소의 Vultr 서버는 `.env`대로). 못 쓰는 엔진(AI 꺼짐·모르는 ID·허용 목록 밖·키 없음)은 한도를 쓰기 전·원본 텍스트를 만들기 전에 끝(QA-133). 그 밖의 실패는 모델에 닿지 않았을 때만 한도를 되돌림(거절·빈 응답·대기 시간 초과는 과금됐을 수 있어 그대로) | `AiController`, `UsageService`, `AiService`, `AiReportService` |
 | 로그로 API 키 유출 | 로깅 계층에서 키 파라미터 가림(`serviceKey`·`crtfc_key`·`key` 등 포함) | `collector/app/logredact.py` |
+| 실제 계좌 자료 노출·실주문([ADR 0025](adr/0025-toss-real-account-readonly.md)) | 운영자 전용 GET 하나(`/api/brokerage/account`), 수집기 `/toss/account`는 서비스 토큰이 있고 `TOSS_ACCOUNT_ENABLED`가 `true`일 때만 — 로컬·QA compose는 `"false"` 고정, 운영 서버 덧붙임만 서버 `.env` 값(CI 'compose 해석'이 확인). 저장하지 않음(수집기 메모리 60초·실패 때 직전 값 30분, DB·스냅숏·백업에 없음). 계좌번호·계좌 식별 키·주문 번호·모르는 필드는 수집기에서 버리고 백엔드도 칸마다 옮김, 토스 오류 문구·본문은 싣지 않음. 토스 키는 scope가 비어 주문도 낼 수 있어, 공유 `toss` 세션이 GET과 토큰 발급 POST·토스 호스트만 보내고 나머지는 네트워크 전에 막음. 모의 장부·Claude 패킷·복기·알림·AI 리포트와는 패키지 의존으로 분리(다른 패키지는 `feature.brokerage`를 모르고, brokerage는 `store`를 쓰지 않음) | `collector/app/services/toss_account.py`·`toss.py`, `BrokerageService`, `AccessPolicy`, `ArchitectureRulesTest.brokerageIsIsolated`, `BrokerageIsolationTest`, `collector/tests/test_toss_account.py` |
 
 **주의** — 실패 횟수는 (접속 주소, 이메일) 기준입니다. X-Forwarded-For는 위조할 수
 있어 믿지 않습니다(서버만 앞단 caddy가 덮어쓴 값을 믿음 — 9절). 도커 포트 포워딩·tailscale serve에서는 모든 접속이 같은 주소로 보여

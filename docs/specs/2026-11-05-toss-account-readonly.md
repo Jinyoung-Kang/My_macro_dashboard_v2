@@ -26,11 +26,15 @@
 화면 탭 `/paper/kr/real`·`/paper/us/real` → 백엔드 `GET /api/brokerage/account?market=KR|US`(운영자 전용) → 수집기 `GET /toss/account`(X-Service-Token) → 토스.
 
 - **저장하지 않는다.** DB 표·스냅숏·수집 태스크·마이그레이션이 없다. 수집기 메모리에만 둔다(S3 백업·배포 전 덤프·QA 복원·태스크 기록·`/status`로 퍼지지 않음).
-- **수집기 캐시** — 성공 60초 TTL. 갱신이 실패하면 직전 성공값 **전체**를 `isStale: true`로 최대 30분 보이고(그 뒤 버림), 실패 직후 30초는 토스를 다시 부르지 않는다.
+- **수집기 캐시** — 성공 60초 TTL. 갱신이 실패하면 직전 성공값 **전체**를 `isStale: true`로 그 값을 받은 시각(`fetchedAt`)부터 최대 30분 보이고(그 뒤 버림), 실패 직후 30초는 토스를 다시 부르지 않는다.
   한 갱신의 호출이 **모두** 성공해야 캐시를 바꾼다(새 값과 옛 값을 섞지 않음). 동시에 들어온 요청은 기다리지 않는다 — 갱신 중이면 지금 캐시를 그대로,
   캐시가 없으면 `reason: "refreshing"`을 바로 돌려준다.
 - **호출** — 갱신 한 번: holdings 1 + buying-power 2 + orders OPEN 1 + CLOSED 1~3 = 5~7회. `accountSeq`는 메모리에 두고 `/accounts`는 처음과
-  `account-not-found` 뒤에만 부른다. 호출 하나 timeout `(3, 4)`초, 갱신 전체 예산 12초(넘으면 남은 호출을 하지 않고 실패), 429는 잠들지 않고 바로 실패.
+  `account-not-found` 뒤에만 부른다. 호출 하나 timeout `(3, 4)`초, 새 호출은 갱신 시작 뒤 12초 안에서만 보낸다(토큰을 얻은 뒤·401 재시도 직전에도 남은 시간을
+  다시 보고, 0 이하면 보내지 않고 `timeout`). 진행 중인 토큰 발급(연결 8초 + 읽기 8초)은 끊지 않는다 — 발급 응답을 못 받으면 서버에서는 새 토큰이 나가 운영 1분봉의
+  토큰만 무효가 될 수 있다. 그래서 최악은 약 28초이고 백엔드는 35초, 화면은 40초를 기다린다. 429는 잠들지 않고 바로 실패.
+- **토큰** — 계좌 경로의 401은 다른 곳이 이미 새 토큰을 받아 두었으면 발급 없이 그 토큰으로 한 번 더 보낸다. 아니면 `expired-token`·`token-revoked`·`invalid-token`일
+  때만 토큰을 버리고 다시 받으며, 이 재발급은 10분에 한 번까지다.
 - **켬** — 수집기 환경변수 `TOSS_ACCOUNT_ENABLED`가 정확히 `true`(앞뒤 공백 제거)이고 서비스 토큰(`API_TOKEN`)이 있을 때만. 기반 `docker-compose.yml`은
   `"false"` 고정이고 `compose.vultr.yml`만 서버 `.env` 값을 넘긴다(운영 서버에서만 켬). 백엔드는 이 이름을 읽지 않는다.
 
@@ -44,7 +48,7 @@
 | `ok` | bool | 보일 데이터(새 값이나 이전 값)가 있으면 true |
 | `enabled` | bool | 켬 조건(§2)을 모두 채우면 true |
 | `reason` | string \| null | `ok`이고 새 값이면 null. 아니면 아래 표의 하나(이전 값을 보일 때는 그 갱신이 실패한 사유) |
-| `errorCode` | string \| null | 토스 `error.code`가 `^[a-z0-9-]{1,40}$`일 때만. 토스 `message`·응답 본문은 어디에도 싣지 않음 |
+| `errorCode` | string \| null | 토스 `error.code`가 `^[a-z0-9-]{1,40}$`일 때만(토큰 발급 실패는 토스 code가 아니라 null). 토스 `message`·응답 본문은 어디에도 싣지 않음 |
 | `fetchedAt` | string \| null | 보이는 데이터를 받은 시각 |
 | `isStale` | bool | 이전 값을 보이면 true |
 | `staleSince` | string \| null | `isStale`일 때 첫 실패 시각 |
@@ -52,7 +56,7 @@
 | `accountCount` | int \| null | `/accounts`가 준 BROKERAGE 계좌 수(`no-account` 안내용) |
 | `sides` | `{KR: Side, US: Side}` \| null | |
 | `closedFrom` | string \| null | CLOSED 조회 시작일 `YYYY-MM-DD`(KST 오늘 − 30일) |
-| `closedTruncated` | bool | CLOSED를 3쪽에서 끊었으면(토스 `hasNext`가 남음) true. 데이터 없으면 false |
+| `closedTruncated` | bool | CLOSED를 3쪽에서 끊었거나 `hasNext`인데 `nextCursor`가 없으면 true. 데이터 없으면 false |
 | `unclassifiedCount` | int | 보유 `(KR,KRW)`·`(US,USD)`에 맞지 않는 항목 + 통화가 KRW·USD가 아닌 주문. 데이터 없으면 0 |
 
 **reason 값**
@@ -76,9 +80,9 @@
 | 필드 | 출처 |
 |---|---|
 | `currency` | `"KRW"` / `"USD"` |
-| `buyingPower` | 그 통화의 `cashBuyingPower` |
+| `buyingPower` | 그 통화의 `cashBuyingPower`(응답의 `currency`가 요청과 다르면 null) |
 | `summary` | `HoldingsOverview`에서 KR은 `.krw`, US는 `.usd`: `purchaseAmount`(`totalPurchaseAmount`), `marketValue`(`marketValue.amount`), `marketValueAfterCost`(`marketValue.amountAfterCost`), `profitLoss`(`profitLoss.amount`), `profitLossAfterCost`(`profitLoss.amountAfterCost`), `dailyProfitLoss`(`dailyProfitLoss.amount`). 요약의 `rate`·`rateAfterCost`·`dailyProfitLoss.rate`(원화 환산 합산)는 옮기지 않음 |
-| `holdings` | Holding[] — `marketCountry`·`currency`가 둘 다 그 쪽일 때만 |
+| `holdings` | Holding[] — `marketCountry`·`currency`가 둘 다 그 쪽일 때만(`symbol`이 없는 항목은 빼고 `unclassifiedCount`에 셈) |
 | `openOrders` | Order[] — `currency`로 나눔(KRW→KR, USD→US) |
 | `closedOrders` | Order[] — 같은 규칙, `orderedAt` 내림차순 |
 
@@ -94,7 +98,7 @@
 ## 4. 백엔드 `GET /api/brokerage/account?market=KR|US`
 
 운영자 전용(AccessPolicy owner). `market`이 없거나 틀리면 400(`Params.oneOf`), 그 밖에는 **늘 200**(paper·live와 같은 약속).
-숫자는 JSON number 또는 null(`BigDecimal`, 변환 실패는 예외 없이 null). 시각은 `Kst.DISPLAY`(`yyyy-MM-dd HH:mm`).
+숫자는 JSON number 또는 null(`BigDecimal`, 변환 실패는 예외 없이 null — 받는 모양은 부호·정수부·선택 소수부의 평범한 decimal이고 토스 상한대로 30자까지, 지수 표기·쉼표·NaN은 null). 시각은 `Kst.DISPLAY`(`yyyy-MM-dd HH:mm`).
 
 | 필드 | 형 | 규칙 |
 |---|---|---|
@@ -129,12 +133,12 @@
 | `ok:true`, `isStale:false` | `OK` |
 | `ok:true`, `isStale:true` | `OK`, `isStale:true`, `staleReason`은 그 실패의 state |
 
-수집기 호출은 전용 조용한 경로(읽기 20초)로 한다 — 실패하면 로그에 상태 코드나 예외 클래스 이름만 남기고 응답 본문은 남기지 않는다.
+수집기 호출은 전용 조용한 경로(읽기 35초 — §2의 최악값보다 길게)로 한다 — 실패하면 로그에 상태 코드나 예외 클래스 이름만 남기고 응답 본문은 남기지 않는다.
 
 ## 5. 화면 — 두 시장 화면의 탭 `실제 계좌`(키 `real`)
 
 - `PAPER_TABS` 맨 끝(설정 뒤)에 `{ key: "real", label: "실제 계좌", opensIn: null, upcoming: null }`. 주소 `/paper/kr/real`·`/paper/us/real`.
-- `PaperScreen`이 그 탭일 때만 `BrokerageSection`을 마운트한다 — 읽기는 탭을 열 때만. `useApi(endpoints.brokerage.account(market), 0, { followRefresh: false, timeoutMs: 25_000 })`,
+- `PaperScreen`이 그 탭일 때만 `BrokerageSection`을 마운트한다 — 읽기는 탭을 열 때만. `useApi(endpoints.brokerage.account(market), 0, { followRefresh: false, timeoutMs: 40_000 })`,
   '다시 읽기' 단추(`reload`).
 - 맨 위 `Banner`(`LockIcon`): "실제 계좌(토스증권) — 모의 장부와 별개 · 읽기 전용 · 이 화면에서는 주문할 수 없습니다". 한국 탭은 "원화 자산만 — 달러 자산은 모의매매(미국)의 실제 계좌 탭",
   미국 탭은 그 반대와 링크(`paperTabPath("real", 다른 시장)`).

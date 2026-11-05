@@ -200,6 +200,9 @@ dev-collector: export COLLECTOR_ALLOW_NO_TOKEN := $(COLLECTOR_ALLOW_NO_TOKEN)
 # .env의 마지막 줄 값(셸에 export한 값이 있으면 그것)이 true일 때만 켜고, 그 밖(줄 없음·빈 값 포함)은 끕니다(QA-251). 따옴표와 줄 끝
 # 주석은 떼고 true·false로만 넘깁니다 — 그대로 넘기면 백엔드가 'Invalid boolean value'로 뜨지 않습니다.
 dev-backend: export PAPER_ENABLED := $(if $(filter true,$(subst ",,$(subst ',,$(firstword $(PAPER_ENABLED))))),true,false)
+# 실제 계좌 조회(ADR 0025)는 운영 서버에서만 켭니다. 셸에 TOSS_ACCOUNT_ENABLED=true가 남아 있어도 네이티브 수집기는 끈 채로 띄웁니다 —
+# 같은 토스 키로 토큰을 새로 받으면 서버 수집기의 토큰이 무효가 됩니다(compose의 "false" 고정과 같은 이유).
+dev-collector: export TOSS_ACCOUNT_ENABLED := false
 
 dev-collector: ## 수집기 개발 서버 (자동 리로드 · collector/.venv 필요)
 	@test -x $(VENV_PY) || (echo "경고: collector/.venv가 없습니다. 먼저:" && \

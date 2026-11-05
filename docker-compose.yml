@@ -105,6 +105,9 @@ services:
       LS_APP_SECRET: "${LS_APP_SECRET:-}"
       TOSS_CLIENT_ID: "${TOSS_CLIENT_ID:-}"
       TOSS_CLIENT_SECRET: "${TOSS_CLIENT_SECRET:-}"
+      # 토스 실제 계좌 읽기 전용 조회(ADR 0025)는 운영 서버에서만 켭니다 — 보간 없는 값이라 로컬 .env·셸의 TOSS_ACCOUNT_ENABLED가
+      # 끼어들 자리가 없습니다(토큰은 키 하나에 1개라 로컬이 부르면 서버의 토큰을 무효로 만들고, 토스 허용 IP는 서버). 서버는 compose.vultr.yml이 넘깁니다.
+      TOSS_ACCOUNT_ENABLED: "false"
       # SEC EDGAR는 연락처 없는 요청을 403으로 막습니다(13F 메뉴).
       SEC_USER_AGENT: "${SEC_USER_AGENT:-}"
       # 모의 매매 13F 트랙레코드 수집의 실행당 공시 예산. 비우면 400(collector/app/settings.py).

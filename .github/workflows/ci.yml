@@ -246,6 +246,11 @@ jobs:
           jq -e '.services.backend.environment.TAILNET_OWNER_LOGIN == ""' "$RUNNER_TEMP/vultr.json"
           TAILNET_OWNER_LOGIN=owner@ci.example docker compose --env-file /dev/null -f docker-compose.yml -f compose.vultr.yml config --format json \
             | jq -e '.services.backend.environment.TAILNET_OWNER_LOGIN == "owner@ci.example"'
+          # 토스 실제 계좌 읽기 전용 조회(ADR 0025)도 서버 .env의 값으로만 켬 — 기본 "false", 켜짐 여부는 수집기 하나가 받고 백엔드에는 이 이름이 없음
+          jq -e '.services.collector.environment.TOSS_ACCOUNT_ENABLED == "false"' "$RUNNER_TEMP/vultr.json"
+          jq -e '.services.backend.environment | has("TOSS_ACCOUNT_ENABLED") | not' "$RUNNER_TEMP/vultr.json"
+          TOSS_ACCOUNT_ENABLED=true docker compose --env-file /dev/null -f docker-compose.yml -f compose.vultr.yml config --format json \
+            | jq -e '.services.collector.environment.TOSS_ACCOUNT_ENABLED == "true" and (.services.backend.environment | has("TOSS_ACCOUNT_ENABLED") | not)'
           jq -e '.services.frontend.build.args.NEXT_PUBLIC_API_BASE == "/"' "$RUNNER_TEMP/vultr.json"
           COOKIE_SECURE=false docker compose --env-file /dev/null -f docker-compose.yml -f compose.vultr.yml config --format json \
             | jq -e '.services.backend.environment.COOKIE_SECURE == "false"'
@@ -257,6 +262,7 @@ jobs:
         # 로컬은 로그인 없이 운영자로 열리므로(ADR 0016) 포트가 루프백 밖으로 열리면 같은 와이파이의 누구나 운영자가 됩니다.
         # 기반 파일만으로 네 포트가 모두 127.0.0.1에 열리는지, 로그인 없는 열람이 기본으로 켜지고 LOCAL_NO_LOGIN=false로
         # 끌 수 있는지, QA 덧붙임은 셸에 LOCAL_NO_LOGIN=true가 있어도 끄는지(auth-probe.sh가 401을 기대) 봅니다.
+        # 토스 실제 계좌 읽기 전용 조회(ADR 0025)는 운영 서버에서만 켜므로, 셸에 TOSS_ACCOUNT_ENABLED=true가 있어도 로컬·QA 해석은 "false"여야 합니다.
         run: |
           docker compose --env-file /dev/null -f docker-compose.yml config -q
           docker compose --env-file /dev/null -f docker-compose.yml config --format json > "$RUNNER_TEMP/local.json"
@@ -265,9 +271,13 @@ jobs:
           jq -e '.services.backend.environment.DASHBOARD_LOCAL_NO_LOGIN == "true"' "$RUNNER_TEMP/local.json"
           LOCAL_NO_LOGIN=false docker compose --env-file /dev/null -f docker-compose.yml config --format json \
             | jq -e '.services.backend.environment.DASHBOARD_LOCAL_NO_LOGIN == "false"'
-          LOCAL_NO_LOGIN=true docker compose --env-file /dev/null -f docker-compose.yml -f scripts/qa/docker-compose.qa.yml \
+          jq -e '.services.collector.environment.TOSS_ACCOUNT_ENABLED == "false"' "$RUNNER_TEMP/local.json"
+          TOSS_ACCOUNT_ENABLED=true docker compose --env-file /dev/null -f docker-compose.yml config --format json \
+            | jq -e '.services.collector.environment.TOSS_ACCOUNT_ENABLED == "false" and (.services.backend.environment | has("TOSS_ACCOUNT_ENABLED") | not)'
+          LOCAL_NO_LOGIN=true TOSS_ACCOUNT_ENABLED=true docker compose --env-file /dev/null -f docker-compose.yml -f scripts/qa/docker-compose.qa.yml \
             config --format json > "$RUNNER_TEMP/qa.json"
           jq -e '.services.backend.environment.DASHBOARD_LOCAL_NO_LOGIN == "false"' "$RUNNER_TEMP/qa.json"
+          jq -e '.services.collector.environment.TOSS_ACCOUNT_ENABLED == "false"' "$RUNNER_TEMP/qa.json"
           jq -e '[.services[].ports[]?] | length > 0 and all(.host_ip == "127.0.0.1")' "$RUNNER_TEMP/qa.json"
 
       - name: 이미지 빌드 (docker compose build)

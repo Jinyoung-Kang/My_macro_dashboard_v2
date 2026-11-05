@@ -562,7 +562,8 @@ EQUITY_MAP = {
 ## 8. 토스증권 Open API (공식)
 
 수급 레이더와 국내 파생 화면의 **투자자별 매매**를 보탭니다. 키는 기존
-`TOSS_CLIENT_ID`/`TOSS_CLIENT_SECRET`(연결 테스트 메뉴와 같은 값)을 씁니다.
+`TOSS_CLIENT_ID`/`TOSS_CLIENT_SECRET`(연결 테스트 메뉴와 같은 값)을 씁니다. 같은 키로 한국 모의 책의 관측치·1분봉과
+운영 서버의 실제 계좌 읽기 전용 조회(아래 '실제 계좌 조회')도 부릅니다.
 
 | 쓰는 엔드포인트 | 받는 것 | 쓰는 화면 |
 |---|---|---|
@@ -625,3 +626,38 @@ EQUITY_MAP = {
 결과를 확인하세요.
 
 한국 책(v2 2단계 B4)이 쓰는 `GET /api/v1/candles`·`GET /api/v1/stocks`의 시험 자료는 **실제 응답**입니다(2026-10-26 23:28~23:31 KST 읽기 전용 조회 — `collector/tests/fixtures/toss/README.md` '실제 응답'). 일봉 `timestamp` = 거래일 KST 자정, 1분봉 라벨 = 봉 끝 시각, 숫자는 문자열입니다. 공식 스펙은 지금 1.2.24이고, 그 판의 종목 투자자별 매매동향 설명은 '거래량은 KRX·NXT 통합 기준'입니다.
+
+### 실제 계좌 조회(읽기 전용, 저장하지 않음)
+
+출처 줄: "토스증권 Open API (공식) — 실제 계좌 조회(읽기 전용, 모의 장부와 별개)". 결정은 [ADR 0025](adr/0025-toss-real-account-readonly.md), 응답 계약은
+[명세](specs/2026-11-05-toss-account-readonly.md)입니다. 모의매매(한국)·(미국) 화면의 '실제 계좌' 탭을 열었을 때만 백엔드 `GET /api/brokerage/account` → 수집기
+`GET /toss/account`가 부릅니다. 수집 태스크가 아니고(§1의 41개에 들지 않음) 테이블·스냅숏·마이그레이션이 없어, 백업(S3)·배포 전 덤프·QA 복원·`/status`로
+퍼지지 않습니다. 켜는 곳은 운영 서버 하나입니다(`TOSS_ACCOUNT_ENABLED=true` — 로컬 compose는 `"false"` 고정, 서비스 토큰 없이 뜬 수집기도 꺼짐).
+
+| 쓰는 엔드포인트(공식 스펙 1.2.28) | 받는 것 | 호출 한도 묶음 |
+|---|---|---|
+| `GET /api/v1/accounts` | 계좌 유형·`accountSeq`(헤더 값으로만 — 응답에 싣지 않음). 계좌번호 `accountNo`는 읽지 않고 버림 | ACCOUNT 초당 1회 |
+| `GET /api/v1/holdings` | 통화별 보유 요약(`Price.krw`·`Price.usd`)과 종목 목록 | ASSET 초당 5회 |
+| `GET /api/v1/buying-power?currency=KRW` · `?currency=USD` | `cashBuyingPower`(현금 기반 매수 가능 금액, 미수 미발생 기준) — 예수금 엔드포인트는 없음 | ORDER_INFO 초당 6회(09:00~09:10 KST 3회) |
+| `GET /api/v1/orders?status=OPEN` | 진행 중 주문 전부(쪽 나눔 없음) | ORDER_HISTORY 초당 5회 |
+| `GET /api/v1/orders?status=CLOSED&from=&limit=100&cursor=` | 최근 30일 끝난 주문, 최대 3쪽 | ORDER_HISTORY |
+
+- **헤더** — 계좌 문맥 API는 `X-Tossinvest-Account: {accountSeq}`가 필요합니다. `accountSeq`는 수집기 메모리에 두고 `/accounts`는 처음과 `account-not-found` 뒤에만
+  부릅니다. BROKERAGE 계좌가 정확히 1개일 때만 진행합니다(0개·여러 개는 고르지 않고 `no-account`).
+- **갱신당 호출** — holdings 1 + buying-power 2 + 진행 중 주문 1 + 끝난 주문 1~3 = 5~7회(`/accounts`를 부를 때는 1회 더). 호출 하나 timeout (3, 4)초, 새 호출은 갱신 시작 뒤 12초 안에서만
+  (넘으면 남은 호출을 하지 않고 `timeout` — 진행 중인 토큰 발급(최대 16초)은 끊지 않아 최악 약 28초, 백엔드 35초·화면 40초). 계좌 경로는 429에서 기다리지 않고 바로 `rate-limited`로 답합니다(수집기 스레드 보호).
+- **캐시** — 성공은 60초 메모리 캐시라, 탭을 연 화면이 몇 개든 갱신은 60초에 한 번(5~7회)까지입니다. 갱신이 실패하면 직전 성공값 전체를 `isStale`로 최대 30분
+  보이고, 실패 직후 30초는 다시 부르지 않습니다. 한 갱신의 호출이 모두 성공해야 캐시를 바꿉니다(새 값과 옛 값을 섞지 않음). 갱신 중에 온 요청은 기다리지 않고
+  지금 캐시(없으면 `refreshing`)를 받습니다. 수집기를 다시 띄우면 캐시가 비어 처음 한 번은 새로 부릅니다.
+- **주문 권한** — OAuth `scopes`가 비어 있어(공식 스펙) 시세·계좌 조회에 쓰는 이 키로 주문 POST도 나갈 수 있고, 샌드박스(모의 환경)도 없습니다(실제로 보내 보지는
+  않음). 그래서 막는 곳을 키가 아니라 수집기의 공유 `toss` 세션에 둡니다 — GET과 `POST /oauth2/token`만, 호스트는 `https://openapi.tossinvest.com`만 보내고 그 밖은
+  네트워크 전에 `TossReadOnlyViolation`(`collector/tests/test_toss_account.py`). 계좌 모듈도 같은 세션을 씁니다. 키가 새면 실제 매매 위험이라 키는 `.env`에만 둡니다.
+- **허용 IP** — 토스 개발자 콘솔의 허용 IP는 운영 서버(Vultr 공인 IP — ADR 0023)입니다. 밖에서 부르면 403 `ip-not-allowed`(토큰 발급은 403)이고 화면은
+  `IP_NOT_ALLOWED` 안내를 보입니다.
+- **토큰 공유** — 토큰은 키 하나에 1개라 실제 계좌 조회도 레이더·한국 책 1분봉(`kr_paper_timed`·`paper_watch_kr`)과 같은 토큰을 씁니다. 계좌 경로는 401 가운데
+  `expired-token`·`token-revoked`·`invalid-token`일 때만, 10분에 한 번까지만 재발급해 한국 책 수집의 토큰을 자주 무효로 만들지 않습니다. 그 밖의 401은 `auth-failed`로
+  끝내고 토큰을 버리지 않습니다. 로컬에서도 켜면 서버의 토큰과 서로 무효화하므로 켜지 않습니다.
+- **오류 문구** — 토스 오류의 `message`·응답 본문은 응답·로그 어디에도 싣지 않고, `error.code`는 `^[a-z0-9-]{1,40}$`일 때만 옮깁니다. 예상 못 한 예외는 로그에
+  클래스 이름만 남깁니다. 주문 번호(`orderId`)는 진행 중·끝난 주문의 중복 제거에만 쓰고 응답에 싣지 않습니다.
+- **시험 자료** — 계좌 경로의 시험 자료는 공식 스펙 예시로 만든 **합성본**만 씁니다. 위 시세 쪽의 '실제 응답' 관례를 따르지 않습니다 — 실제 계좌 응답은 저장소
+  (공개) 어디에도 커밋하지 않고, 시험은 실제 토스를 부르지 못하게 막습니다. 운영 확인은 상태와 키 이름만 찍는 한 줄로 합니다([DEVELOPMENT.md §7](DEVELOPMENT.md#7-vultr-서버)).

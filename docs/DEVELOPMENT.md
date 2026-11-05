@@ -343,7 +343,7 @@ GitHub 읽기 전용 배포 키(서버 ubuntu `~/.ssh/id_ed25519_github`, `~/.ss
 
 ```bash
 # PC — 걸러 낸 사본을 만들어 Tailscale SSH의 stdin으로 보내고(처음부터 600 — 서버에서 파일이 잠깐이라도 남에게 읽히지 않게) 지웁니다. <버킷>은 백업 버킷 이름
-tmp="$(mktemp)" && grep -Ev '^[[:space:]]*(export[[:space:]]+)?(DATABASE_PORT|BACKEND_PORT|COLLECTOR_PORT|FRONTEND_PORT|COOKIE_SECURE|LOCAL_NO_LOGIN|FRONTEND_ORIGIN|PUBLIC_URL|AWS_INSTANCE_ID|PAPER_ENABLED|ORIGIN_SECRET|GATE_[A-Z_]*|VULTR_[A-Z_]*|TAILSCALE_[A-Z_]*|TAILNET_DOMAIN)=' .env > "$tmp" \
+tmp="$(mktemp)" && grep -Ev '^[[:space:]]*(export[[:space:]]+)?(DATABASE_PORT|BACKEND_PORT|COLLECTOR_PORT|FRONTEND_PORT|COOKIE_SECURE|LOCAL_NO_LOGIN|FRONTEND_ORIGIN|PUBLIC_URL|AWS_INSTANCE_ID|PAPER_ENABLED|TOSS_ACCOUNT_ENABLED|ORIGIN_SECRET|GATE_[A-Z_]*|VULTR_[A-Z_]*|TAILSCALE_[A-Z_]*|TAILNET_DOMAIN)=' .env > "$tmp" \
   && printf '\nCOMPOSE_FILE=docker-compose.yml:compose.vultr.yml\nAWS_BACKUP_BUCKET=%s\nPUBLIC_ORIGIN=https://my-macro-app.%s\nPAPER_KR_START_DATE=2026-10-30\n' "<버킷>" "$(grep '^TAILNET_DOMAIN=' .env | cut -d= -f2-)" >> "$tmp" \
   && ssh ubuntu@my-macro-app 'umask 077 && cat > My_macro_dashboard_v2/.env && chmod 600 My_macro_dashboard_v2/.env' < "$tmp"; rm -f "$tmp"
 ```
@@ -351,7 +351,8 @@ tmp="$(mktemp)" && grep -Ev '^[[:space:]]*(export[[:space:]]+)?(DATABASE_PORT|BA
 - 로컬 `.env` 끝 줄에 줄바꿈이 없을 수 있어 덧붙이는 줄은 `\n`으로 시작합니다.
 - 로컬 `.env`의 `PAPER_ENABLED=false`는 거르고 다시 넣지 않습니다(서버는 비우면 켜짐). `PAPER_KR_START_DATE`는 로컬 `.env`에 없어 덧붙입니다(한국 출발일 —
   빠지면 한국 초기화·출발이 막힘).
-- 다시 전달하면 서버 `.env`를 통째로 덮어씁니다. 서버에만 적은 줄(`TAILNET_OWNER_LOGIN`·`COOKIE_SECURE=false` 등)은 다시 덧붙입니다.
+- 로컬 `.env`의 `TOSS_ACCOUNT_ENABLED` 줄도 거릅니다(로컬은 늘 꺼짐 — 서버에서만 켬, 아래 '토스 실제 계좌 조회 켜기').
+- 다시 전달하면 서버 `.env`를 통째로 덮어씁니다. 서버에만 적은 줄(`TAILNET_OWNER_LOGIN`·`TOSS_ACCOUNT_ENABLED=true`·`COOKIE_SECURE=false` 등)은 다시 덧붙입니다.
 - `TAILNET_OWNER_LOGIN`은 운영자의 Tailscale 로그인 이름입니다(계정 고유 값 — 서버 `.env`에만). 값을 화면에 찍지 않고 서버에서 덧붙입니다:
   `v="$(tailscale status --json | python3 -c 'import json,sys; d=json.load(sys.stdin); print(d["User"][str(d["Self"]["UserID"])]["LoginName"])')" && printf '\nTAILNET_OWNER_LOGIN=%s\n' "$v" >> ~/My_macro_dashboard_v2/.env`
   (서버를 운영자 계정으로 tailnet에 넣었을 때 — 태그 기기면 PC에서 같은 명령으로 읽음) 뒤 `bash scripts/vultr/deploy.sh`. 로그에는 켜졌다는 경고 한 줄만 남습니다(값은 남기지 않음).
@@ -375,6 +376,24 @@ bash ~/My_macro_dashboard_v2/scripts/vultr/deploy.sh
   그 배포 뒤에 쌓인 장부(체결·결정·작업 기록)와 수집 저장본도 함께 그 시점으로 돌아가므로, 늦게 알아챘으면 통째 복원보다 SQL로 고쳐 앞으로 가는 쪽을 먼저 봅니다.
 - 데이터 복원: `aws s3 ls s3://<버킷>/db/vultr/` → `aws s3 cp s3://<버킷>/db/vultr/<파일>.sql backups/` → `make restore F=backups/<파일>.sql`.
   AWS 운영본의 마지막 덤프(2026-11-03 02:28 KST)는 만료 없는 `archive/aws-final/`에 있습니다 — 서버의 IAM 사용자는 `db/`만 읽으므로 PC에서 받습니다.
+
+### 토스 실제 계좌 조회 켜기 ([ADR 0025](adr/0025-toss-real-account-readonly.md))
+
+모의매매(한국)·(미국) 화면의 '실제 계좌' 탭(토스증권 실제 계좌 읽기 전용 조회 — [명세](specs/2026-11-05-toss-account-readonly.md))은 서버 `.env`의 `TOSS_ACCOUNT_ENABLED=true`로만
+켭니다. 로컬 compose는 `"false"` 고정이고(토큰은 키 하나에 1개, 토스 허용 IP는 서버 IP), 서비스 토큰(`COLLECTOR_API_TOKEN`) 없이 뜬 수집기에서도 꺼져 있습니다.
+
+1. 플래그 없이 `bash scripts/vultr/deploy.sh`로 배포하고 정상인지 봅니다(두 탭 모두 꺼짐 안내, 수집기 로그에 계좌 호출 없음).
+2. 서버에서 `printf '\nTOSS_ACCOUNT_ENABLED=true\n' >> ~/My_macro_dashboard_v2/.env` 뒤 다시 `bash scripts/vultr/deploy.sh`(환경이 바뀐 수집기가 새 값으로 다시 만들어짐).
+3. 아래 한 줄로 확인하고, 같은 시간대 수집기 로그에서 한국 책 1분봉 태스크(`kr_paper_timed`·`paper_watch_kr`)의 401·토큰 재발급이 늘지 않았는지 개수만 봅니다.
+   끌 때는 그 줄을 지우고 다시 배포합니다.
+
+**검증 출력 규칙**(명세 §8): 에이전트(사람이 아닌 자동 작업)는 운영 응답의 금액·수량·개수·종목을 출력하거나 문서·커밋·QA 기록에 적지 않습니다. 서버 확인은
+`~/My_macro_dashboard_v2`에서 아래 한 줄만 씁니다 — 수집기 이미지에는 curl이 없어 파이썬 표준 라이브러리로 부르고, 출력은 상태와 각 쪽의 **키 이름**뿐입니다.
+화면 `/paper/kr/real`·`/paper/us/real`의 숫자 확인은 운영자가 직접 합니다.
+
+```bash
+docker compose exec -T collector python -c 'import json,os,urllib.request as u; d=json.load(u.urlopen(u.Request("http://localhost:8000/toss/account",headers={"X-Service-Token":os.environ["COLLECTOR_API_TOKEN"]}))); print({k:d.get(k) for k in ("ok","enabled","reason","isStale")}, {s:sorted(v) for s,v in (d.get("sides") or {}).items()})'
+```
 
 ### 백업 (cron)
 
