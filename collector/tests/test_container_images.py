@@ -15,8 +15,6 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-import pytest
-
 ROOT = Path(__file__).resolve().parents[2]
 
 
@@ -32,13 +30,11 @@ def _runtime_runs(dockerfile: Path) -> str:
     return "\n".join(m.group(0) for m in re.finditer(r"(?ms)^RUN\s.*?(?<!\\)$", before_user))
 
 
-@pytest.mark.xfail(strict=True, reason="QA-263 재현 — 수정 전에는 백엔드 실행 단계가 apk upgrade를 하지 않음")
 def test_QA263_백엔드_실행_이미지는_alpine_수정판까지_올린다():
     runs = _runtime_runs(ROOT / "backend" / "Dockerfile")
     assert re.search(r"\bapk\s+upgrade\b", runs), runs
 
 
-@pytest.mark.xfail(strict=True, reason="QA-263 재현 — 수정 전에는 화면 실행 이미지에 npm CLI가 남음")
 def test_QA263_화면_실행_이미지에는_npm_CLI가_없다():
     runs = _runtime_runs(ROOT / "frontend" / "Dockerfile")
     for path in ("/usr/local/lib/node_modules/npm", "/usr/local/bin/npm", "/usr/local/bin/npx"):

@@ -13,8 +13,10 @@ FROM eclipse-temurin:21-jre-alpine
 WORKDIR /app
 
 # wget은 헬스체크에 씁니다.
+# apk upgrade: 베이스 이미지가 만들어진 뒤 alpine 저장소에 나온 수정판까지 올립니다(QA-263 — libexpat 2.9.0 HIGH가 남았음).
 # root로 돌지 않습니다. 쓰는 곳은 /tmp(내장 톰캣 작업 폴더)뿐이고 app.jar는 읽기만 합니다.
-RUN apk add --no-cache wget tzdata \
+RUN apk upgrade --no-cache \
+    && apk add --no-cache wget tzdata \
     && addgroup -S app && adduser -S -G app -u 10001 app
 ENV TZ=Asia/Seoul
 

@@ -47,6 +47,10 @@ COPY --from=prod-deps /app/node_modules ./node_modules
 COPY --from=build --chown=node:node /app/.next ./.next
 COPY --from=build /app/public ./public
 
+# 실행에 쓰지 않는 npm CLI를 지웁니다 — 그 안의 undici·brace-expansion에 HIGH가 남았습니다(QA-263). 앱은 아래 CMD처럼 node로 직접 뜨고,
+# 헬스체크는 wget이라 npm을 부르는 곳이 없습니다.
+RUN rm -rf /usr/local/lib/node_modules/npm /usr/local/bin/npm /usr/local/bin/npx
+
 # root로 돌지 않습니다(node 이미지에 들어 있는 비루트 사용자).
 USER node
 
