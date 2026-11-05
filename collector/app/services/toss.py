@@ -235,6 +235,17 @@ def api_get(path: str, params: dict | None = None, timeout: float = 10.0) -> dic
     :raises TossForbidden: 403
     :raises TossError: 그 밖의 실패
     """
+    return _authorized_get(_http(), path, params, timeout)
+
+
+def _authorized_get(session: requests.Session, path: str, params: dict | None = None,
+                    timeout: float = 10.0) -> dict | list:
+    """
+    ``api_get``의 본체 — 토큰을 붙인 GET과 401(한 번 재발급)·429(Retry-After)·403 처리.
+
+    토큰 캐시·발급은 이 모듈 한 곳에만 있습니다(client당 유효 토큰 1개). 세션을 인자로 받는 것은 부르는 쪽이
+    연결을 고르게 하려는 것이고, 토큰을 따로 갖게 하려는 것이 아닙니다.
+    """
     if not has_credentials():
         raise TossMissingKey("TOSS_CLIENT_ID / TOSS_CLIENT_SECRET이 설정되지 않았습니다")
 
@@ -243,7 +254,7 @@ def api_get(path: str, params: dict | None = None, timeout: float = 10.0) -> dic
         if not token:
             raise TossError(f"토큰 발급 실패 — {error}")
         try:
-            res = _http().get(
+            res = session.get(
                 f"{BASE_URL}{path}", headers={"Authorization": f"Bearer {token}"},
                 params=params, timeout=timeout,
             )
