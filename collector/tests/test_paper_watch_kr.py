@@ -296,8 +296,9 @@ def test_계좌_글자와_저장본_이름은_백엔드와_같다():
 
 
 def test_한국_감시_저장본을_읽는_백엔드_코드는_한국_장중_확인_작업과_상태_표시뿐이고_화면은_읽지_않는다():
-    """읽는 곳은 PaperMarketData.watchKr(조용히 읽음)를 부르는 한국 장중 확인 작업(PaperKrCheckpointJob — 호출 조건)과 그 작업이 넘기는 패킷·예상 상태
-    (KrCheckpointPacket·KrExpectedState — 판단 입력), 상태 응답의 한국 계좌2 묶음(PaperQueryService — 받은 시각·나이·지연 표시만)뿐입니다. 체결(장부)은 paper.kr.quotes·paper.kr.timed이고 이 저장본을 읽지 않습니다."""
+    """읽는 곳은 PaperMarketData.watchKr(조용히 읽음)를 부르는 한국 장중 확인 작업(PaperKrCheckpointJob — 호출 조건)·자유 시점 판의 한국 장중 판단
+    작업(PaperKrIntradayJob — ADR 0027, 같은 조건)과 그 작업들이 넘기는 패킷·예상 상태(KrCheckpointPacket·KrExpectedState — 판단 입력), 상태 응답의
+    한국 계좌2 묶음(PaperQueryService — 받은 시각·나이·지연 표시만)뿐입니다. 체결(장부)은 paper.kr.quotes·paper.kr.timed이고 이 저장본을 읽지 않습니다."""
     readers = []
     for folder in (ROOT / "backend/src/main/java", ROOT / "frontend/src"):
         for path in folder.rglob("*"):
@@ -308,11 +309,13 @@ def test_한국_감시_저장본을_읽는_백엔드_코드는_한국_장중_확
     assert sorted(readers) == ["backend/src/main/java/com/macrodash/feature/paper/KrCheckpointPacket.java",
                                "backend/src/main/java/com/macrodash/feature/paper/KrExpectedState.java",
                                "backend/src/main/java/com/macrodash/feature/paper/PaperKrCheckpointJob.java",
+                               "backend/src/main/java/com/macrodash/feature/paper/PaperKrIntradayJob.java",
                                "backend/src/main/java/com/macrodash/feature/paper/PaperMarketData.java",
                                "backend/src/main/java/com/macrodash/store/Datasets.java"]
     callers = sorted(path.relative_to(ROOT).as_posix() for path in (ROOT / "backend/src/main/java").rglob("*.java")
                      if ".watchKr()" in path.read_text(encoding="utf-8"))
     assert callers == ["backend/src/main/java/com/macrodash/feature/paper/PaperKrCheckpointJob.java",
+                       "backend/src/main/java/com/macrodash/feature/paper/PaperKrIntradayJob.java",
                        "backend/src/main/java/com/macrodash/feature/paper/PaperQueryService.java"]
 
 

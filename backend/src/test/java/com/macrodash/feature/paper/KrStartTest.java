@@ -814,6 +814,205 @@ class KrStartTest {
         assertThat(cp.status()).isEqualTo(ClaudeBookService.STATUS_NO_TRADE);
     }
 
+    // ------------------------------------------------------------------ 한국 장중 판단(자유 시점 판 — ADR 0027 결정 3)
+    private PaperKrIntradayJob intradayJob() {
+        return new PaperKrIntradayJob(store, reader, marketData, claudeService,
+                new PaperLedgerService(store, marketData, PaperFixtures.MAPPER), config(), PaperFixtures.MAPPER, clock);
+    }
+
+    /** 출발 → 계좌2 운용 상태 → 두 계좌의 자유 시점 판 스위치를 켬. */
+    private void startWithFreeTiming(KrClaudeFixtures.FakeAi fake) {
+        fake.answer(KrClaudeFixtures.decision(8, null, KrClaudeFixtures.order("005930", "BUY", 8.0, null)));
+        realClaude(fake);
+        assertThat(runAt("2026-11-30T22:30").outcome()).isEqualTo(PaperDecisionJob.STARTED);
+        store.books.put(PaperBooks.KR_CLAUDE2, new Book(PaperBooks.KR_CLAUDE2, PaperBooks.KIND_CLAUDE, PaperBooks.KR_CLAUDE2_LABEL,
+                100_000_000, S, PaperBooks.ACTIVE, null, Book.MARKET_KR, Book.CURRENCY_KRW));
+        com.macrodash.store.PaperStore.BookState first = store.states.get(PaperBooks.KR_CLAUDE);
+        store.states.put(PaperBooks.KR_CLAUDE2, new com.macrodash.store.PaperStore.BookState(PaperBooks.KR_CLAUDE2, 100_000_000,
+                100_000_000, 0, 0, first.lastObservedAt(), first.lastProcessedCollectedAt(), S, null));
+        tools.jackson.databind.node.ObjectNode kr = (tools.jackson.databind.node.ObjectNode) store.settings.body().get("kr");
+        ((tools.jackson.databind.node.ObjectNode) kr.get("claude2")).put("freeTiming", true);
+        ((tools.jackson.databind.node.ObjectNode) kr.get("claude")).put("freeTiming", true);
+    }
+
+    /** 자유 시점 판 결정 응답에 장중 판단 예약({@code checkpoints} — 배열 글자 그대로)을 더함. */
+    private static String withCheckpoints(String decision, String checkpoints) {
+        return decision.replace(",\"confidence\":", ",\"checkpoints\":" + checkpoints + ",\"confidence\":");
+    }
+
+    /** 감시 저장본 — 신원 목록({@code identities} — '계좌 시각 순번')과 069500·005930·000660의 봉·09:00 창(시가 70,100). */
+    private void watchKrPlans(Instant collectedAt, String... identities) {
+        tools.jackson.databind.node.ObjectNode payload = PaperFixtures.MAPPER.createObjectNode();
+        payload.put("contract", 1).put("reference", "069500").put("fetchedAt", collectedAt.toString()).put("lagSeconds", 4);
+        tools.jackson.databind.node.ArrayNode list = payload.putArray("checkpoints");
+        for (String identity : identities) {
+            String[] parts = identity.split(" ");
+            list.addObject().put("book", parts[0]).put("sessionDate", E.toString()).put("atKst", parts[1])
+                    .put("slot", Integer.parseInt(parts[2]));
+        }
+        payload.set("checkpoint", ((tools.jackson.databind.node.ObjectNode) list.get(0).deepCopy()).without("slot"));
+        String label = KrTimedLadder.label(collectedAt.atZone(com.macrodash.analytics.KrxCalendar.SEOUL).toLocalTime().withSecond(0));
+        tools.jackson.databind.node.ObjectNode tickers = payload.putObject("tickers");
+        for (String code : List.of("069500", "005930", "000660", "005380", "373220")) {
+            tools.jackson.databind.node.ObjectNode t = tickers.putObject(code);
+            t.put("session", E.toString());
+            t.putArray("bars").addObject().put("label", label).put("o", 70_500).put("h", 70_600).put("l", 70_400).put("c", 70_550)
+                    .put("v", 900);
+            t.putObject("windows").putArray("09:00").addObject().put("label", "09:01").put("open", 70_100).put("volume", 300);
+            t.putObject("firstAfter");
+            t.putObject("lastBar").put("label", label).put("c", 70_550).put("v", 900);
+        }
+        payload.putArray("missing");
+        KrFixtures.stub(reader, Datasets.SNAP_PAPER_WATCH_KR, KrFixtures.snapshot(Datasets.SNAP_PAPER_WATCH_KR, payload, collectedAt));
+    }
+
+    private static String intradayReply(String action, String next, String... orders) {
+        return "{\"schemaVersion\":2,\"action\":\"" + action + "\",\"summary\":\"장중 판단\",\"orders\":[" + String.join(",", orders)
+                + "],\"noTradeReason\":" + (orders.length == 0 ? "\"관망\"" : "null") + ",\"nextCheckpoint\":" + next + "}";
+    }
+
+    @Test
+    @DisplayName("한국 장중 판단(ADR 0027 결정 3) — 켠 판 계좌1의 밤 결정이 09:10·13:00 판단을 예약 → 09:13에 그 계획의 감시 저장본이 오면 한 번 부름(밤 결정과 "
+            + "같은 시스템 프롬프트·한국 장중 판단 스키마·패킷의 계좌·순번·남은 시점). REPLACE: 이미 지난 시가 주문(09:00)은 남기고 13:30 지정 시각 주문만 "
+            + "대신함 — 한국 시가를 미국 표(09:30)로 세지 않음. 새 장중 시장가 주문은 대기, nextCheckpoint가 둘째 예약(13:00)을 10:30으로 바꿈")
+    void krIntradayJudgmentReplacesAndReschedules() {
+        KrClaudeFixtures.FakeAi fake = new KrClaudeFixtures.FakeAi();
+        startWithFreeTiming(fake);
+        fake.answer(withCheckpoints(KrClaudeFixtures.decision(15, null,
+                        KrClaudeFixtures.freeOrder("005380", "BUY", 6.0, null, PaperBooks.NEXT_OPEN, null),
+                        KrClaudeFixtures.freeOrder("000660", "BUY", 5.0, null, PaperBooks.AT_MINUTE, "13:30")),
+                        "[{\"at\":\"13:00\",\"watch\":[\"000660\"],\"question\":\"오후 확인\"},"
+                                + "{\"at\":\"09:10\",\"watch\":[\"005930\"],\"question\":\"시가 갭이 유지되나\"}]"))
+                .answer(KrClaudeFixtures.decision(8, "관망"));
+        sessionData(NEXT, S, everyCodeOn(NEXT));
+        assertThat(runAt("2026-12-01T22:30").outcome()).isEqualTo(PaperDecisionJob.DECIDED);
+        Decision night = store.decisionFor(PaperBooks.KR_CLAUDE, NEXT, RuleBookService.SCHEDULED).orElseThrow();
+        assertThat(store.intradayPlans(PaperBooks.KR_CLAUDE, E)).extracting(p -> p.slot() + " " + p.atLocal() + " " + p.feed() + " "
+                + p.watch() + " " + p.status() + " " + p.variant()).as("시각 순으로 순번 — 한국은 늘 감시 1분봉")
+                .containsExactly("1 09:10 MINUTE [005930] PLANNED kr-ft-1", "2 13:00 MINUTE [000660] PLANNED kr-ft-1");
+        assertThat(night.response().path("intradayPlan").path("planned").get(0).path("atKst").asString()).isEqualTo("09:10");
+        assertThat(store.intradayPlans(PaperBooks.KR_CLAUDE2, E)).as("계좌2는 예약하지 않음").isEmpty();
+        assertThat(store.checkpoint(PaperBooks.KR_CLAUDE2, E)).as("끈 판의 장중 확인 표는 쓰지 않음").isEmpty();
+        Order open = store.ordersOf(PaperBooks.KR_CLAUDE).stream().filter(o -> java.util.Objects.equals(o.decisionId(), night.id())
+                && PaperBooks.NEXT_OPEN.equals(o.timing())).findFirst().orElseThrow();
+        assertThat(open.status()).as("밤 결정의 시가 주문은 대기").isEqualTo(PaperBooks.ORDER_PENDING);
+        Order afternoon = store.ordersOf(PaperBooks.KR_CLAUDE).stream().filter(o -> PaperBooks.AT_MINUTE.equals(o.timing()))
+                .findFirst().orElseThrow();
+        PaperKrIntradayJob intraday = intradayJob();
+        int calls = fake.requests.size();
+
+        clock.set(kst("2026-12-02T09:11"));
+        assertThat(intraday.run().changes()).as("창 시작(T + 2분) 전").isEmpty();
+        clock.set(kst("2026-12-02T09:13"));
+        watchKrPlans(kst("2026-12-02T09:10:30"), PaperBooks.KR_CLAUDE2 + " 09:10 1");
+        assertThat(intraday.run().changes()).as("다른 계좌 계획의 저장본 — 기다림").isEmpty();
+        assertThat(fake.requests).hasSize(calls);
+
+        watchKrPlans(kst("2026-12-02T09:10:40"), PaperBooks.KR_CLAUDE2 + " 09:10 1", PaperBooks.KR_CLAUDE + " 09:10 1");
+        fake.answer(intradayReply("REPLACE", "{\"at\":\"10:30\",\"watch\":[\"373220\"],\"question\":\"수급이 이어지나\"}",
+                KrClaudeFixtures.freeOrder("373220", "BUY", 5.0, null, PaperBooks.MARKET, null)));
+        clock.set(kst("2026-12-02T09:14"));
+        store.dbNow = kst("2026-12-02T09:14");
+        assertThat(intraday.run().changes()).containsKey("kr_claude " + E + " #1");
+
+        assertThat(fake.requests).hasSize(calls + 1);
+        KrClaudeFixtures.Request request = fake.requests.get(calls);
+        assertThat(request.system()).as("밤 결정과 같은 시스템 프롬프트(켠 판)").isEqualTo(fake.requests.get(calls - 2).system())
+                .contains("## 장중 판단(고정)");
+        assertThat(request.schema().toString()).contains("nextCheckpoint=").contains("AT_MINUTE").contains("KEEP")
+                .doesNotContain("AT_1000").doesNotContain("stance");
+        Decision d = store.decisionFor(PaperBooks.KR_CLAUDE, NEXT, RuleBookService.INTRADAY_1).orElseThrow();
+        JsonNode basis = d.packet().path("1_basis");
+        assertThat(basis.path("book").asString()).isEqualTo(PaperBooks.KR_CLAUDE);
+        assertThat(basis.path("decisionKind").asString()).isEqualTo("INTRADAY_1");
+        assertThat(basis.path("variant").asString()).isEqualTo(PacketBuilder.VARIANT_FREE);
+        assertThat(basis.path("fixedRules").asString()).isEqualTo(KrPacketBuilder.KR_FREE_FIXED_RULES_VERSION);
+        assertThat(basis.path("slot").asInt()).isEqualTo(1);
+        assertThat(basis.path("sourceDecisionId").asLong()).isEqualTo(night.id());
+        assertThat(basis.path("remainingTimings").toString()).isEqualTo("[\"MARKET\",\"AT_MINUTE\",\"NEXT_CLOSE\"]");
+        assertThat(basis.path("atMinute").path("firstKst").asString()).as("09:14 + 60초 뒤의 다음 분").isEqualTo("09:16");
+        assertThat(basis.path("atMinute").path("lastKst").asString()).isEqualTo("15:19");
+        assertThat(basis.path("nextCheckpoint").path("available").asBoolean()).isTrue();
+        assertThat(basis.path("nextCheckpoint").path("firstKst").asString()).as("09:10 + 30분").isEqualTo("09:40");
+        assertThat(basis.path("nextCheckpoint").path("lastKst").asString()).isEqualTo("14:50");
+        assertThat(d.packet().path("0_instructions").path("lines").get(0).asString()).startsWith("장중 판단이다");
+        assertThat(d.packet().path("5_feed").path("tickers").propertyNames()).as("이 계획의 감시·보유·대기·기준 종목만 — 373220은 다른 계획의 것")
+                .containsExactlyInAnyOrder("069500", "005930", "000660", "005380");
+        assertThat(d.packet().path(PacketBuilder.HARD_RULES)).isEqualTo(night.packet().path(PacketBuilder.HARD_RULES));
+
+        assertThat(d.status()).isEqualTo(ClaudeBookService.STATUS_OK);
+        assertThat(d.response().path("applied").asBoolean()).isTrue();
+        assertThat(d.response().path("supersededOrders").toString()).isEqualTo("[" + afternoon.id() + "]");
+        assertThat(store.orders.get(open.id()).status()).as("한국 시가(09:00)는 이미 지남 — 체결 예정으로 남김").isEqualTo(PaperBooks.ORDER_PENDING);
+        assertThat(store.orders.get(afternoon.id()).status()).isEqualTo(PaperBooks.ORDER_CANCELLED);
+        assertThat(d.response().path("expectedState").path("assumedFills")).singleElement()
+                .satisfies(a -> assertThat(a.toString()).contains("005380").contains("70100"));
+        assertThat(store.ordersOf(PaperBooks.KR_CLAUDE)).filteredOn(o -> java.util.Objects.equals(o.decisionId(), d.id())).singleElement()
+                .satisfies(o -> {
+                    assertThat(o.timing()).isEqualTo(PaperBooks.MARKET);
+                    assertThat(o.ticker()).isEqualTo("373220");
+                    assertThat(o.status()).isEqualTo(PaperBooks.ORDER_PENDING);
+                    assertThat(o.asOfTradingDate()).isEqualTo(NEXT);
+                });
+        assertThat(store.intradayPlans(PaperBooks.KR_CLAUDE, E)).extracting(p -> p.slot() + " " + p.atLocal() + " " + p.watch() + " "
+                + p.status() + " " + p.sourceDecisionId() + " " + p.requestedByDecisionId()).containsExactly(
+                "1 09:10 [005930] DONE " + night.id() + " null", "2 10:30 [373220] PLANNED " + night.id() + " " + d.id());
+        assertThat(store.intradayPlans(PaperBooks.KR_CLAUDE, E).get(0).lagSeconds()).isEqualTo(4);
+        assertThat(d.response().path("intradayPlan").path("planned").get(0).path("atKst").asString()).isEqualTo("10:30");
+        assertThat(store.jobRuns).anySatisfy(r -> assertThat(r.job()).isEqualTo("kr.intraday"));
+
+        clock.set(kst("2026-12-02T09:20"));
+        intraday.run();
+        assertThat(fake.requests).as("순번마다 한 번").hasSize(calls + 1);
+        assertThat(checkpointJob().run().planned()).as("끈 판의 장중 확인 작업은 장중 판단 계획 행을 보지 않음").isZero();
+    }
+
+    @Test
+    @DisplayName("한국 장중 판단 — 세션당 횟수 설정(kr.intradayMaxPerSession) 0이면 부르지 않고 창 뒤 SKIPPED INTRADAY_OFF, 창을 놓치면 EXPIRED, 응답이 "
+            + "실패하면 결정 행(API_ERROR)·계획 행 DONE으로 끝내고 다시 부르지 않음")
+    void krIntradayOffMissedAndNoRetry() {
+        KrClaudeFixtures.FakeAi fake = new KrClaudeFixtures.FakeAi();
+        startWithFreeTiming(fake);
+        String both = "[{\"at\":\"09:10\",\"watch\":[\"005930\"],\"question\":\"첫 확인\"},"
+                + "{\"at\":\"11:00\",\"watch\":[\"005930\"],\"question\":\"둘째 확인\"}]";
+        fake.answer(withCheckpoints(KrClaudeFixtures.decision(8, "관망"), both))
+                .answer(withCheckpoints(KrClaudeFixtures.decision(8, "관망"), both));
+        sessionData(NEXT, S, everyCodeOn(NEXT));
+        assertThat(runAt("2026-12-01T22:30").outcome()).isEqualTo(PaperDecisionJob.DECIDED);
+        PaperKrIntradayJob intraday = intradayJob();
+        int calls = fake.requests.size();
+        tools.jackson.databind.node.ObjectNode kr = (tools.jackson.databind.node.ObjectNode) store.settings.body().get("kr");
+
+        // 09:10 판단 — 횟수 0: 창 안에서는 그대로, 창 뒤 SKIPPED.
+        kr.put("intradayMaxPerSession", 0);
+        watchKrPlans(kst("2026-12-02T09:10:40"), PaperBooks.KR_CLAUDE + " 09:10 1", PaperBooks.KR_CLAUDE2 + " 09:10 1");
+        clock.set(kst("2026-12-02T09:14"));
+        assertThat(intraday.run().changes()).isEmpty();
+        clock.set(kst("2026-12-02T09:31"));
+        intraday.run();
+        assertThat(store.intradayPlans(PaperBooks.KR_CLAUDE, E).get(0).reason()).isEqualTo(PaperIntradayJob.INTRADAY_OFF);
+        assertThat(store.intradayPlans(PaperBooks.KR_CLAUDE2, E).get(0).status()).isEqualTo(PaperBooks.CHECKPOINT_SKIPPED);
+        assertThat(fake.requests).hasSize(calls);
+
+        // 11:00 판단 — 계좌1은 응답 실패(재시도 없음), 계좌2는 감시 저장본이 끝까지 없어 놓침.
+        kr.put("intradayMaxPerSession", 2);
+        watchKrPlans(kst("2026-12-02T11:00:40"), PaperBooks.KR_CLAUDE + " 11:00 2");
+        fake.fail("API_ERROR", "overloaded");
+        clock.set(kst("2026-12-02T11:03"));
+        store.dbNow = kst("2026-12-02T11:03");
+        intraday.run();
+        Decision failed = store.decisionFor(PaperBooks.KR_CLAUDE, NEXT, RuleBookService.INTRADAY_2).orElseThrow();
+        assertThat(failed.status()).isEqualTo("API_ERROR");
+        assertThat(failed.response().path("summary").asString()).contains("장중 판단 재시도 없음");
+        assertThat(store.intradayPlans(PaperBooks.KR_CLAUDE, E).get(1).status()).isEqualTo(PaperBooks.CHECKPOINT_DONE);
+        assertThat(store.intradayPlans(PaperBooks.KR_CLAUDE, E).get(1).reason()).isEqualTo("API_ERROR — 재시도 없음");
+        clock.set(kst("2026-12-02T11:21"));
+        intraday.run();
+        assertThat(fake.requests).as("다시 부르지 않음").hasSize(calls + 1);
+        assertThat(store.intradayPlans(PaperBooks.KR_CLAUDE2, E).get(1).status()).isEqualTo(PaperBooks.CHECKPOINT_EXPIRED);
+        assertThat(store.intradayPlans(PaperBooks.KR_CLAUDE2, E).get(1).reason()).isEqualTo(PaperCheckpointJob.NO_WATCH_SNAPSHOT);
+    }
+
     /** 확인 세션 E(12-02)를 설정 임시휴장으로 — 12-01 밤 결정의 장중 확인 세션이 12-03이 됨. 그 세션(12-03)을 돌려줍니다. 밤 실행·dbNow를 옮기기 전에 부름. */
     private LocalDate closeE() {
         tools.jackson.databind.node.ObjectNode body = (tools.jackson.databind.node.ObjectNode) store.settings.body().deepCopy();

@@ -402,6 +402,15 @@ public class ClaudeBookService {
         return freeTiming.get(book);
     }
 
+    /**
+     * 그 계좌의 자유 시점 판 파이프라인을 그 실행에 묶은 것(없으면 null) — 한국 장중 판단 작업({@link PaperKrIntradayJob})이 확인 호출·응답 검증·결정
+     * 행에 씁니다(달력·설정이 그 실행의 한 벌).
+     */
+    ClaudeDecisionPipeline freeTimingPipeline(String book, MarketRun run) {
+        ClaudeDecisionPipeline pipeline = freeTiming.get(book);
+        return pipeline == null ? null : pipeline.bind(run);
+    }
+
     /** 장중 확인을 켠 계좌2 파이프라인({@link #claude2Checkpoints}) — 장중 확인 작업({@link PaperCheckpointJob})이 확인 호출에 씁니다. */
     ClaudeDecisionPipeline claude2CheckpointPipeline() {
         return claude2Checkpoints;

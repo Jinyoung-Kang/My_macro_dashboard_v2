@@ -926,8 +926,12 @@ final class ClaudeDecisionPipeline {
             if (!PacketBuilder.SOURCE_CLAUDE.equals(order.source())) {
                 continue;
             }
-            Instant target = ExecutionAudit.targetAt(order, ExecutionAudit.targetSession(order, market.calendar()),
-                    market.calendar());
+            // 한국 주문의 기준 시각은 한국 표로(시가 = 그날 개장 — 예상 상태·패킷과 같은 함수). 미국 표로 세면 한국 시가(09:00)를 09:30으로 보아
+            // 09:30 전의 교체가 이미 체결된 것으로 본 시가 주문을 취소합니다(ADR 0027 명세 §5 — 한국 장중 판단은 09:05부터).
+            java.time.LocalDate session = ExecutionAudit.targetSession(order, market.calendar());
+            Instant target = session == null ? null : market.definition() == KrPaperMarket.INSTANCE
+                    ? KrExpectedState.targetAt(order, session, market.calendar())
+                    : ExecutionAudit.targetAt(order, session, market.calendar());
             if (target != null && target.isAfter(now)) {
                 store.markOrderStatus(order.id(), PaperBooks.ORDER_CANCELLED, SUPERSEDED_BY_CHECKPOINT);
                 out.add(order.id());

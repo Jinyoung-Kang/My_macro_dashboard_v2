@@ -1,0 +1,406 @@
+package com.macrodash.feature.paper;
+
+import com.macrodash.Kst;
+import com.macrodash.analytics.KrxCalendar;
+import com.macrodash.analytics.TradingCalendar;
+import com.macrodash.feature.paper.ClaudeBookService.ClaudeSettings;
+import com.macrodash.feature.paper.ClaudeDecisionPipeline.Attempt;
+import com.macrodash.feature.paper.PaperMarketData.Quotes;
+import com.macrodash.read.StoreReader;
+import com.macrodash.store.PaperStore;
+import com.macrodash.store.PaperStore.Book;
+import com.macrodash.store.PaperStore.Checkpoint;
+import com.macrodash.store.PaperStore.Decision;
+import com.macrodash.store.PaperStore.IntradayPlan;
+import com.macrodash.store.PaperStore.SettingsRow;
+import com.macrodash.store.Snapshot;
+import com.macrodash.support.Json;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.scheduling.annotation.Scheduled;
+import org.springframework.stereotype.Service;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
+import tools.jackson.databind.node.ObjectNode;
+
+import java.time.Clock;
+import java.time.Instant;
+import java.time.LocalDate;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Optional;
+import java.util.Set;
+import java.util.TreeSet;
+import java.util.concurrent.locks.ReentrantLock;
+
+/**
+ * 한국 장중 판단 정기 작업(자유 시점 판 — ADR 0027 결정 3·4, 명세 docs/specs/2026-11-05-free-fill-timing.md §7) — 60초마다 한국 Claude 계좌 둘
+ * ({@code kr_claude}·{@code kr_claude2})의 PLANNED 장중 판단 계획 행({@code paper_intraday_plans} — 계좌·세션·순번)을 보고, 확인 시각 T(그 세션 날짜의
+ * 서울 시각) + {@value PaperCheckpointJob#WINDOW_START_MINUTES}분 ~ + {@value PaperCheckpointJob#WINDOW_END_MINUTES}분 창에서 T 뒤에 받은 그 계획의
+ * 감시 저장본({@code paper.watch.kr} — 신원 목록에 자기 행이 있는 것)이 있을 때 <b>한 번</b> Claude를 부릅니다(재시도 없음). 끈 판의 한국 장중 확인
+ * 작업({@link PaperKrCheckpointJob} — {@code paper_checkpoints}, 계좌2만)과 같은 규칙이고, 다른 것은 미국 장중 판단 작업({@link PaperIntradayJob})과
+ * 같습니다 — 계좌·순번마다 한 행, 응답 결정 종류 {@code INTRADAY_<순번>}, 그 계좌의 자유 시점 판 파이프라인, 예약 행은 정기 문턱·당긴 행은 수동 문턱,
+ * 응답 시점 셋({@link FreeTiming#INTRADAY_TIMINGS})과 다음 판단 예약({@code nextCheckpoint}). 한국에는 결정 주기 소상한이 없습니다(하루 상한만).
+ *
+ * <p>REPLACE 검증의 신선도는 그 세션 결정의 순간으로 셉니다(입력 동결 — 한국 장중 확인 작업과 같은 까닭, QA-172). 멈추려면 세션당 횟수 설정
+ * ({@value FreeTimingSettings#KR_INTRADAY_MAX})을 0으로 두거나 계좌를 일시정지합니다. 자기 잠금으로 겹치지 않고, 작업 기록 이름은 {@link #JOB}입니다.
+ */
+@Service
+public class PaperKrIntradayJob {
+
+    /** 작업 기록의 이름(paper_job_runs.job) — 'kr.intraday'. */
+    static final String JOB = KrPaperMarket.INSTANCE.jobName(PaperIntradayJob.JOB);
+    /** 이 작업이 보는 계좌 — 한국 Claude 계좌 둘. */
+    static final List<String> BOOKS = List.of(PaperBooks.KR_CLAUDE, PaperBooks.KR_CLAUDE2);
+
+    private static final Logger log = LoggerFactory.getLogger(PaperKrIntradayJob.class);
+
+    private final PaperStore store;
+    private final StoreReader reader;
+    private final PaperMarketData marketData;
+    private final ClaudeBookService claude;
+    private final PaperLedgerService ledger;
+    private final PaperConfig config;
+    private final ObjectMapper mapper;
+    private final Clock clock;
+    private final PaperMarkets markets;
+    private final IntradayPlanner planner;
+    private final ReentrantLock running = new ReentrantLock();
+    private final Map<String, String> waiting = new HashMap<>();
+    private final Set<String> called = new HashSet<>();
+
+    @Autowired
+    PaperKrIntradayJob(PaperStore store, StoreReader reader, PaperMarketData marketData, ClaudeBookService claude,
+                       PaperLedgerService ledger, PaperConfig config, ObjectMapper mapper) {
+        this(store, reader, marketData, claude, ledger, config, mapper, Clock.systemUTC());
+    }
+
+    /** 테스트용 — 시계를 움직입니다. */
+    PaperKrIntradayJob(PaperStore store, StoreReader reader, PaperMarketData marketData, ClaudeBookService claude,
+                       PaperLedgerService ledger, PaperConfig config, ObjectMapper mapper, Clock clock) {
+        this.store = store;
+        this.reader = reader;
+        this.marketData = marketData;
+        this.claude = claude;
+        this.ledger = ledger;
+        this.config = config;
+        this.mapper = mapper;
+        this.clock = clock;
+        this.markets = new PaperMarkets(store, reader);
+        this.planner = new IntradayPlanner(store);
+    }
+
+    /** 정기 실행 — 꺼져 있으면 아무것도 하지 않습니다. 예외는 로그로만 남깁니다. */
+    @Scheduled(initialDelayString = "${dashboard.paper.kr-intraday-initial-delay-ms:185000}",
+            fixedDelayString = "${dashboard.paper.kr-intraday-interval-ms:60000}")
+    public void scheduledRun() {
+        if (!config.enabled()) {
+            return;
+        }
+        try {
+            PaperIntradayJob.Outcome outcome = run();
+            if (outcome != null && outcome.error() != null) {
+                log.warn("한국 장중 판단 작업 실패 — 다음 주기에 다시 봅니다: {}", outcome.error());
+            }
+        } catch (RuntimeException e) {
+            log.warn("한국 장중 판단 작업 실패 — 다음 주기에 다시 봅니다: {}", e.toString());
+        }
+    }
+
+    /** 한 주기 — 테스트가 부릅니다. 앞 주기가 도는 중이면 null. */
+    PaperIntradayJob.Outcome run() {
+        if (!running.tryLock()) {
+            return null;
+        }
+        try {
+            return cycle();
+        } finally {
+            running.unlock();
+        }
+    }
+
+    private PaperIntradayJob.Outcome cycle() {
+        if (!store.ready()) {
+            return new PaperIntradayJob.Outcome(0, Map.of(), null);
+        }
+        Instant started = clock.instant();
+        List<IntradayPlan> planned = store.plannedIntradayPlans(BOOKS);
+        if (planned.isEmpty()) {
+            waiting.clear();
+            called.clear();
+            return new PaperIntradayJob.Outcome(0, Map.of(), null);
+        }
+        MarketRun run = markets.open(KrPaperMarket.INSTANCE);
+        SettingsRow row = run.settingsRow().orElse(null);
+        Map<String, String> changes = new LinkedHashMap<>();
+        String error = null;
+        for (IntradayPlan p : planned) {
+            String key = PaperIntradayJob.key(p);
+            try {
+                String change = handle(p, row, run);
+                if (change != null) {
+                    changes.put(key, change);
+                    waiting.remove(key);
+                    called.remove(key);
+                }
+            } catch (RuntimeException e) {
+                error = key + ": " + e;
+                log.warn("한국 장중 판단 {} 처리 실패 — 다음 주기에 다시 봅니다: {}", key, e.toString());
+                if (!called.contains(key)) {
+                    String cause = e.toString();
+                    waiting.put(key, PaperCheckpointJob.JOB_ERROR + ": " + (cause.length() > PaperCheckpointJob.JOB_ERROR_CAUSE_CHARS
+                            ? cause.substring(0, PaperCheckpointJob.JOB_ERROR_CAUSE_CHARS) + "…" : cause));
+                }
+            }
+        }
+        if (!changes.isEmpty() || error != null) {
+            Map<String, Object> detail = new LinkedHashMap<>();
+            detail.put("changes", changes);
+            detail.put("error", error);
+            try {
+                store.recordJobRun(JOB, started, clock.instant(), error == null ? "OK" : "ERROR", mapper.valueToTree(detail));
+            } catch (RuntimeException e) {
+                log.warn("한국 장중 판단 작업 기록 실패: {}", e.toString());
+            }
+        }
+        return new PaperIntradayJob.Outcome(planned.size(), changes, error);
+    }
+
+    /** 행 하나 — 바꾼 상태 문구, 기다리면 null. */
+    private String handle(IntradayPlan p, SettingsRow row, MarketRun run) {
+        Instant now = clock.instant();
+        String code = p.bookCode();
+        String key = PaperIntradayJob.key(p);
+        LocalDate session = p.sessionDate();
+        Checkpoint c = p.asCheckpoint();
+        TradingCalendar calendar = run.calendar();
+        Instant at = KrCheckpointRequest.targetAt(session, p.atLocal());
+        boolean stale = session.isBefore(now.atZone(KrxCalendar.SEOUL).toLocalDate());
+        boolean windowOver = stale || now.isAfter(at.plus(PaperCheckpointJob.WINDOW_END));
+        int max = row == null ? 0 : FreeTimingSettings.from(row.body()).intradayMax(code);
+        if (row == null || max <= 0) {
+            return windowOver ? mark(p, PaperBooks.CHECKPOINT_SKIPPED, PaperIntradayJob.INTRADAY_OFF) : null;
+        }
+        if (stale) {
+            return mark(p, PaperBooks.CHECKPOINT_EXPIRED, PaperCheckpointJob.STALE_SESSION);
+        }
+        if (now.isBefore(at.plus(PaperCheckpointJob.WINDOW_START))) {
+            return null;
+        }
+        if (windowOver) {
+            return mark(p, PaperBooks.CHECKPOINT_EXPIRED, waiting.getOrDefault(key, PaperCheckpointJob.WINDOW_MISSED));
+        }
+        Book book = store.book(code).orElse(null);
+        if (book == null || !PaperBooks.ACTIVE.equals(book.status())) {
+            return mark(p, PaperBooks.CHECKPOINT_SKIPPED, "BOOK_NOT_ACTIVE — 계좌 " + code + "가 운용 중이 아님");
+        }
+        if (!calendar.isTradingDay(session)) {
+            return mark(p, PaperBooks.CHECKPOINT_SKIPPED, PaperCheckpointJob.NO_SESSION_BARS);
+        }
+        if (!IntradayRequest.window(session, calendar, true).accepts(at)) {
+            return mark(p, PaperBooks.CHECKPOINT_SKIPPED, PaperIntradayJob.OUT_OF_RANGE);
+        }
+        ClaudeDecisionPipeline pipeline = claude.freeTimingPipeline(code, run);
+        if (pipeline == null) {
+            return mark(p, PaperBooks.CHECKPOINT_SKIPPED, PaperIntradayJob.NO_PIPELINE);
+        }
+        Decision source = store.decision(p.sourceDecisionId()).orElse(null);
+        if (source == null) {
+            return null;   // 그 세션의 결정을 지우면 행도 함께 지워짐(V23 CASCADE) — 그사이의 경합
+        }
+        LocalDate asOf = source.asOfTradingDate();
+        String kind = RuleBookService.intradayKind(p.slot());
+        Optional<Decision> decided = store.decisionFor(code, asOf, kind);
+        if (decided.isPresent()) {
+            store.markIntradayPlan(code, session, p.slot(), PaperBooks.CHECKPOINT_PLANNED, PaperBooks.CHECKPOINT_DONE,
+                    PaperCheckpointJob.doneReason(decided.get()), decided.get().id(), null, decided.get().decidedAt());
+            return PaperBooks.CHECKPOINT_DONE + " 결정 #" + decided.get().id() + "(이미 부름)";
+        }
+        if (called.contains(key)) {
+            return mark(p, PaperBooks.CHECKPOINT_EXPIRED, PaperCheckpointJob.CALLED_NOT_RECORDED);
+        }
+
+        Snapshot snapshot = reader.quietly(() -> marketData.watchKr())
+                .filter(s -> PaperKrCheckpointJob.freshWatch(s, c, p.slot(), at, now)).orElse(null);
+        if (snapshot == null) {
+            waiting.put(key, PaperCheckpointJob.NO_WATCH_SNAPSHOT);
+            return null;
+        }
+        JsonNode reference = snapshot.payload().path("tickers").path(Json.asText(snapshot.payload(), "reference"));
+        if (reference.isObject() && !session.toString().equals(Json.asText(reference, "session"))) {
+            return mark(p, PaperBooks.CHECKPOINT_SKIPPED, PaperCheckpointJob.NO_SESSION_BARS);
+        }
+        JsonNode measured = snapshot.payload().get("lagSeconds");
+        Integer lag = measured != null && measured.isNumber() ? measured.asInt() : null;
+        Optional<Quotes> quotes = reader.quietly(() -> marketData.quotes(KrPaperMarket.INSTANCE));
+
+        ClaudeSettings claudeSettings = ClaudeSettings.from(row.body());
+        LocalDate today = Kst.today(clock);
+        boolean scheduled = !p.manual();
+        if (pipeline.callsLeft(today, claudeSettings, scheduled) <= 0) {
+            return mark(p, PaperBooks.CHECKPOINT_EXPIRED, PaperCheckpointJob.CALL_CAP);
+        }
+        Optional<Snapshot> watch = Optional.of(snapshot);
+        Instant calledAt = clock.instant();
+        KrCheckpointPacket.Free free = new KrCheckpointPacket.Free(code, p.slot(), max, p.manual());
+        Attempt attempt = pipeline.attemptCheckpoint(version -> KrCheckpointPacket.build(new KrCheckpointPacket.Inputs(c, asOf,
+                source, store.state(code).orElse(null), store.positions(code), pendingOrders(code), watch, quotes, version,
+                row.version(), calendar, clock.instant(), free), mapper), row, claudeSettings, today, scheduled);
+        if (attempt == null) {
+            return mark(p, PaperBooks.CHECKPOINT_EXPIRED, PaperCheckpointJob.CALL_CAP);
+        }
+        long id;
+        try {
+            id = ledger.exclusively(() -> store.atomically(() -> write(pipeline, p, asOf, kind, max, row, claudeSettings, attempt,
+                    lag, calledAt, snapshot.payload(), quotes, calendar, source.decidedAt())));
+        } catch (RuntimeException e) {
+            // 과금된 응답 — 쓰기가 되돌려져도 다시 부르지 않음. 실패 결정 행을 따로 남기고 행을 DONE으로.
+            called.add(key);
+            pipeline.recordAfterResponse(asOf, kind, row, claudeSettings, false, attempt, null, e, request(p, lag));
+            try {
+                store.decisionFor(code, asOf, kind).ifPresent(d -> store.markIntradayPlan(code, session, p.slot(),
+                        PaperBooks.CHECKPOINT_PLANNED, PaperBooks.CHECKPOINT_DONE, PaperCheckpointJob.doneReason(d), d.id(), lag,
+                        calledAt));
+            } catch (RuntimeException again) {
+                e.addSuppressed(again);
+            }
+            throw e;
+        }
+        log.info("한국 Claude {} 장중 판단 {} #{} {} KST: {} — 결정 {}", code, session, p.slot(), KrTimedLadder.label(p.atLocal()),
+                attempt.succeeded() ? Json.asText(attempt.parsed(), "action") : attempt.status(), id);
+        return PaperBooks.CHECKPOINT_DONE + " 결정 #" + id;
+    }
+
+    private List<PaperStore.Order> pendingOrders(String code) {
+        return store.ordersByStatus(code, PaperBooks.ORDER_PENDING).stream()
+                .filter(o -> PacketBuilder.SOURCE_CLAUDE.equals(o.source())).toList();
+    }
+
+    /**
+     * 판단 결정 행과 계획 행 DONE(장부 잠금 안 한 트랜잭션) — 한국 장중 확인 작업의 쓰기와 같은 규칙에 다음 판단 예약({@code nextCheckpoint})을 더한 것
+     * (미국 {@link PaperIntradayJob}과 같음). REPLACE 검증의 신선도는 그 세션 결정의 순간({@code sourceDecidedAt})으로 셉니다.
+     */
+    private long write(ClaudeDecisionPipeline pipeline, IntradayPlan p, LocalDate asOf, String kind, int max, SettingsRow row,
+                       ClaudeSettings claudeSettings, Attempt attempt, Integer lag, Instant calledAt, JsonNode watch,
+                       Optional<Quotes> quotes, TradingCalendar calendar, Instant sourceDecidedAt) {
+        String code = p.bookCode();
+        ObjectNode response;
+        String status;
+        String error = null;
+        ClaudeDecisionPipeline replies = null;
+        ClaudeDecisionPipeline.Plan plan = null;
+        IntradayPlanner.Plan next = null;
+        if (attempt.succeeded()) {
+            Instant now = clock.instant();
+            List<PaperStore.Order> pending = pendingOrders(code);
+            ExpectedState.State expected = KrExpectedState.of(store.state(code).orElse(null), store.positions(code), pending,
+                    p.sessionDate(), now, watch, quotes.orElse(null), calendar);
+            Book current = store.book(code).orElse(null);
+            boolean replace = "REPLACE".equals(Json.asText(attempt.parsed(), "action"));
+            boolean active = current != null && PaperBooks.ACTIVE.equals(current.status());
+            Set<String> universe = new TreeSet<>(ClaudeDecisionPipeline.observedUniverse(quotes));
+            expected.positions().forEach(position -> universe.add(position.ticker()));
+            String notApplied = null;
+            if (replace && active) {
+                replies = pipeline.checkpointReplies();
+                try {
+                    plan = replies.plan(asOf, kind, false, attempt, expected.view(), row, claudeSettings, quotes, universe, Map.of(),
+                            PaperCheckpointJob.dueDiscretionary(store, expected, pending, asOf), sourceDecidedAt);
+                } catch (RuntimeException e) {
+                    notApplied = "검증할 수 없어 적용하지 않음: " + e.getMessage();
+                    log.warn("한국 장중 판단 {} REPLACE 검증 실패 — 적용하지 않음: {}", PaperIntradayJob.key(p), e.toString());
+                }
+            }
+            if (plan != null) {
+                response = plan.response();
+                status = plan.status();
+                List<Long> superseded = replies.supersedePendingAfter(now);
+                response.set("supersededOrders", mapper.valueToTree(superseded));
+                response.put("applied", true);
+            } else {
+                response = (ObjectNode) attempt.parsed().deepCopy();
+                status = ClaudeBookService.STATUS_NO_TRADE;
+                if (replace && !active) {
+                    status = ClaudeBookService.STATUS_SKIPPED;
+                    response.put("applied", false);
+                    response.put("pausedDuringCall", true);
+                    response.put("appliedNote", "Claude를 부르는 사이에 계좌가 운용 중이 아니게 돼(상태 "
+                            + (current == null ? "없음" : current.status()) + ") 대기 주문·새 주문을 바꾸지 않음");
+                } else if (replace) {
+                    response.put("applied", false);
+                    response.put("appliedNote", notApplied + " — 대기 주문·새 주문을 바꾸지 않음");
+                }
+            }
+            Map<String, Object> expectedView = expected.toMap(calendar);
+            expectedView.put("note", KrExpectedState.NOTE);
+            response.set("expectedState", mapper.valueToTree(expectedView));
+            if (active) {
+                next = planner.next(pipeline.profile(), attempt.parsed(), p.sessionDate(), p.slot(), calendar, universe, max, now,
+                        mapper);
+                if (next != null) {
+                    response.set("intradayPlan", next.view(mapper, KrCheckpointRequest.AT_FIELD));
+                }
+            }
+        } else {
+            response = mapper.createObjectNode();
+            status = attempt.status();
+            error = attempt.error();
+            response.put("summary", ClaudeDecisionPipeline.statusLabel(attempt.status()) + " — 장중 판단 재시도 없음(대기 주문 그대로)");
+            ObjectNode failure = response.putObject("failure");
+            failure.put("status", attempt.status());
+            failure.put("errorKind", attempt.result().errorKind());
+            failure.put("message", attempt.error());
+            failure.put("charged", attempt.result().charged());
+            failure.set("violations", mapper.valueToTree(attempt.violations()));
+        }
+        response.put("book", code);
+        response.put("kind", kind);
+        response.put("asOfTradingDate", asOf.toString());
+        response.set("checkpoint", request(p, lag));
+        response.put("retry", false);
+        response.set("framework", mapper.valueToTree(FrameworkService.decisionView(attempt.frame())));
+        Decision decision = pipeline.decisionRow(0, asOf, kind, status, row, claudeSettings, attempt, null, response, error, false, 0);
+        Optional<Long> inserted = store.insertDecisionIfAbsent(decision);
+        long id = inserted.orElseGet(() -> store.decisionFor(code, asOf, kind).map(Decision::id).orElseThrow());
+        if (plan != null && inserted.isPresent()) {
+            replies.insertOrders(id, asOf, plan, PaperBooks.ORDER_PENDING);
+        }
+        int marked = store.markIntradayPlan(code, p.sessionDate(), p.slot(), PaperBooks.CHECKPOINT_PLANNED, PaperBooks.CHECKPOINT_DONE,
+                attempt.succeeded() ? null : attempt.status() + " — 재시도 없음", id, lag, calledAt);
+        if (marked == 0) {
+            log.warn("한국 장중 판단 {} 행이 그사이 PLANNED가 아니게 됨 — 결정 {}은 남김", PaperIntradayJob.key(p), id);
+        }
+        if (next != null && inserted.isPresent()) {
+            planner.write(next, p.sourceDecisionId(), id);
+        }
+        return id;
+    }
+
+    /** 판단 결정 응답의 {@code checkpoint} 칸 — 그 계획(세션·순번·시각·피드·그 세션의 결정·수동 여부)과 감시 저장본 지연. */
+    private ObjectNode request(IntradayPlan p, Integer lag) {
+        ObjectNode request = mapper.createObjectNode();
+        request.put("session", p.sessionDate().toString());
+        request.put("slot", p.slot());
+        request.put(KrCheckpointRequest.AT_FIELD, KrTimedLadder.label(p.atLocal()));
+        request.put("feed", p.feed());
+        request.put("sourceDecisionId", p.sourceDecisionId());
+        request.put("manual", p.manual());
+        request.put("lagSeconds", lag);
+        return request;
+    }
+
+    /** 상태만 바꿈(부르지 않음) — 바꾼 상태 문구. 그사이 PLANNED가 아니면 null. */
+    private String mark(IntradayPlan p, String status, String reason) {
+        int marked = store.markIntradayPlan(p.bookCode(), p.sessionDate(), p.slot(), PaperBooks.CHECKPOINT_PLANNED, status, reason,
+                null, null, null);
+        if (marked == 0) {
+            return null;
+        }
+        log.info("한국 장중 판단 {} {} — {}", PaperIntradayJob.key(p), status, reason);
+        return status + " " + reason;
+    }
+}
