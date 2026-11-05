@@ -430,7 +430,7 @@ public class PaperCheckpointJob {
                 store.positions(PaperBooks.CLAUDE2).forEach(p -> universe.add(p.ticker()));
                 try {
                     plan = replies.plan(asOf, RuleBookService.CHECKPOINT, false, attempt, expected.view(), row,
-                            claudeSettings, feeds.quotes(), universe, Map.of(), dueDiscretionary(expected, pending, asOf));
+                            claudeSettings, feeds.quotes(), universe, Map.of(), dueDiscretionary(store, expected, pending, asOf));
                 } catch (RuntimeException e) {
                     // 과금된 응답 — 검증할 수 없어도(예: 예상 순자산 0) 결정 행과 DONE을 남겨 다시 부르지 않음(재시도 없음).
                     notApplied = "검증할 수 없어 적용하지 않음: " + e.getMessage();
@@ -508,9 +508,10 @@ public class PaperCheckpointJob {
      * 이달 재량 주문 수에 더 셀 대기 주문 수(리뷰 F2) — 예상 상태가 기준 시각이 지나 체결로 본 주문({@code assumed})과 가격을 몰라 빼 둔 주문
      * ({@code unpriced} — 장부가 곧 체결할 수 있어 보수적으로 셈) 가운데 월 수의 규칙({@link KrPacketBuilder#monthlyDiscretionaryOrders(PaperStore,
      * String, LocalDate)} — 출처 CLAUDE·기준일이 그 달이고 기준일 이하·출발 결정 INITIAL의 주문이 아님)에 드는 것. 아직 체결되지 않아 장부의 월 수에는
-     * 없습니다. 기준 시각이 아직 오지 않은 대기 주문은 REPLACE가 대신하므로 세지 않습니다(⑩).
+     * 없습니다. 기준 시각이 아직 오지 않은 대기 주문은 REPLACE가 대신하므로 세지 않습니다(⑩). 자유 시점 판의 장중 판단 작업
+     * ({@link PaperIntradayJob})도 같은 셈을 씁니다.
      */
-    private int dueDiscretionary(ExpectedState.State expected, List<PaperStore.Order> pending, LocalDate asOf) {
+    static int dueDiscretionary(PaperStore store, ExpectedState.State expected, List<PaperStore.Order> pending, LocalDate asOf) {
         Set<Long> due = new HashSet<>(expected.unpriced());
         expected.assumed().forEach(a -> due.add(a.orderId()));
         YearMonth month = YearMonth.from(asOf);
@@ -533,7 +534,7 @@ public class PaperCheckpointJob {
      * 이미 있는 확인 결정으로 행을 DONE으로 둘 때의 사유 — 응답 뒤 쓰기 실패로 남긴 행이면 {@link #AFTER_RESPONSE}, 그 밖의 실패 응답이면
      * '상태 — 재시도 없음'({@link #write}와 같음), 성공 응답이면 null.
      */
-    private static String doneReason(Decision d) {
+    static String doneReason(Decision d) {
         JsonNode failure = d.response() == null ? null : d.response().get("failure");
         if (failure == null || !failure.isObject()) {
             return null;
@@ -542,7 +543,7 @@ public class PaperCheckpointJob {
     }
 
     /** 지금 이전에 받은 저장본의 본문(⑨ — 예상 상태는 그 뒤 자료를 쓰지 않음), 아니면 null. */
-    private static JsonNode before(Optional<Snapshot> snapshot, Instant now) {
+    static JsonNode before(Optional<Snapshot> snapshot, Instant now) {
         return snapshot.filter(s -> s.collectedAt() != null && !s.collectedAt().isAfter(now)).map(Snapshot::payload)
                 .orElse(null);
     }
