@@ -33,7 +33,7 @@ import yfinance as yf
 from yfinance.exceptions import YFRateLimitError
 
 from ..numbers import to_float, to_int
-from .. import http, indicators, yfcache
+from .. import http, indicators, yahoo, yfcache
 from .. import kst
 
 from ..http import brief_error
@@ -191,7 +191,7 @@ def latest_minute_prices(symbols: list[str]) -> tuple[dict[str, dict], str | Non
         return {}, str(latched)
     try:
         raw = yf.download(tickers=" ".join(names), period="1d", interval="1m", prepost=False, auto_adjust=False,
-                          actions=False, progress=False, group_by="ticker", threads=True)
+                          actions=False, progress=False, group_by="ticker", threads=True, session=yahoo.session())
     except YFRateLimitError:
         return {}, str(http.reject_host(http.YAHOO_HOST, "HTTP 429(요청 제한)"))
     except Exception as exc:  # noqa: BLE001 — 배치 하나의 실패는 사유로 돌려줍니다
@@ -279,7 +279,7 @@ def _yahoo_batch(names: list[str], **kwargs) -> tuple[pd.DataFrame | None, str |
     try:
         with _watch_rate_limit() as watcher:
             raw = yf.download(tickers=" ".join(names), actions=False, progress=False, group_by="ticker", threads=True,
-                              **kwargs)
+                              session=yahoo.session(), **kwargs)
     except YFRateLimitError:
         return None, str(http.reject_host(http.YAHOO_HOST, "HTTP 429(요청 제한)")), True
     except Exception as exc:  # noqa: BLE001 — 배치 하나의 실패는 사유로 돌려줍니다

@@ -11,10 +11,12 @@ yfinance는 자기 curl_cffi 세션(프로세스에 하나)으로 Yahoo에 가�
 """
 from __future__ import annotations
 
+import ast
 import importlib
 import socket
 import threading
 import time
+from pathlib import Path
 
 import pytest
 import yfinance as yf
@@ -114,7 +116,6 @@ def _call(hole: _Blackhole, fn, *, budget: float | None):
     return not thread.is_alive(), time.monotonic() - t0, box.get("result")
 
 
-@pytest.mark.xfail(strict=True, reason="QA-255 재현 — yfinance 요청이 태스크 예산을 보지 않아 응답 없는 출처에서 130초 걸림")
 def test_QA255_yfinance_요청도_태스크_예산_안에_끝난다(blackhole):
     finished, elapsed, result = _call(blackhole, lambda: market.last_two_closes("CL=F"), budget=BUDGET)
 
@@ -123,7 +124,6 @@ def test_QA255_yfinance_요청도_태스크_예산_안에_끝난다(blackhole):
     assert result[0] is None and result[2], result
 
 
-@pytest.mark.xfail(strict=True, reason="QA-255 재현 — yf.download(threads=True)의 종목 스레드에는 태스크 예산이 넘어가지 않음")
 def test_QA255_yf_download_배치의_종목_스레드도_예산을_본다(blackhole):
     finished, elapsed, result = _call(blackhole, lambda: market.minute_bars(["AAA", "BBB"], "1d"), budget=BUDGET)
 
@@ -133,7 +133,6 @@ def test_QA255_yf_download_배치의_종목_스레드도_예산을_본다(blackh
     assert bars == {} and reason, result
 
 
-@pytest.mark.xfail(strict=True, reason="QA-255 재현 — Yahoo가 연달아 응답하지 않아도 다음 요청을 그대로 보냄(무응답 래치 없음)")
 def test_QA255_연달아_응답이_없으면_Yahoo_요청을_잠시_멈춘다(blackhole, monkeypatch):
     yahoo = _yahoo_module()
     monkeypatch.setattr(yahoo, "NO_RESPONSE_LIMIT", 1)
@@ -149,7 +148,6 @@ def test_QA255_연달아_응답이_없으면_Yahoo_요청을_잠시_멈춘다(bl
     assert result[0] is None and result[2], result
 
 
-@pytest.mark.xfail(strict=True, reason="QA-255 재현 — Yahoo 태스크가 다른 태스크와 같은 작업 스레드 8개를 써서, 좀비가 한국 장부 입력을 밀어냄")
 def test_QA255_Yahoo_태스크의_좀비가_다른_태스크의_작업_스레드를_뺏지_않는다(monkeypatch):
     monkeypatch.setattr(tasks.store, "record_task_run", lambda *a, **kw: None)
     monkeypatch.setitem(tasks.runner.TASK_DEADLINE_SECONDS, "fast", 0.3)
@@ -185,9 +183,49 @@ YAHOO_TASKS = {
 }
 
 
-@pytest.mark.xfail(strict=True, reason="QA-255 재현 — 태스크 목록에 Yahoo 태스크 표시가 없음")
 def test_QA255_Yahoo가_주_출처인_태스크만_따로_표시한다():
     marked = {task.name for task in tasks.ALL_TASKS if getattr(task, "yahoo", False)}
     assert marked == YAHOO_TASKS
     # 한국 장부 입력은 Yahoo 몫에 넣지 않습니다(그 좀비에 밀리지 않게).
     assert not marked & {"kr_paper_timed", "kr_paper_quotes", "kr_paper_flows", "paper_watch_kr", "paper_live_kr"}
+
+
+def test_저장소의_yf_download는_모두_예산_세션을_넘긴다():
+    # 넘기지 않으면 yfinance 1.7.0이 부를 때마다 새 기본 세션으로 싱글턴의 세션을 바꿔, 그 뒤 모든 Yahoo 요청이 예산을 보지 않습니다.
+    root = Path(__file__).resolve().parents[1] / "app"
+    calls = []
+    for path in sorted(root.rglob("*.py")):
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        for node in ast.walk(tree):
+            if (isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute) and node.func.attr == "download"
+                    and isinstance(node.func.value, ast.Name) and node.func.value.id == "yf"):
+                session = next((k.value for k in node.keywords if k.arg == "session"), None)
+                calls.append((f"{path.relative_to(root)}:{node.lineno}", ast.unparse(session) if session else None))
+    assert len(calls) >= 3, calls
+    assert [where for where, session in calls if session != "yahoo.session()"] == []
+
+
+def test_download_뒤에도_yfinance_세션은_예산_세션이다(blackhole):
+    from yfinance.data import YfData
+
+    yahoo = _yahoo_module()
+    _call(blackhole, lambda: market.minute_bars(["AAA"], "1d"), budget=BUDGET)
+    assert YfData()._session is yahoo.session()
+
+
+def test_timeout은_남은_예산_안으로_줄인다():
+    yahoo = _yahoo_module()
+    assert yahoo._fit(30, 30, 5.0) == 5.0
+    assert yahoo._fit(3, 30, 5.0) == 3.0
+    assert yahoo._fit(None, 30, 5.0) == 5.0
+    assert yahoo._fit(object(), 30, 5.0) == 5.0                 # 넘기지 않은 값(curl_cffi NOT_SET) → 세션 기본값 30 → 5
+    assert yahoo._fit((10, 30), 30, 8.0) == (2.0, 6.0)
+    assert yahoo._fit((1, 2), 30, 8.0) == (1.0, 2.0)
+
+
+def test_예산이_요청_하나도_못_보낼_만큼이면_보내지_않는다(blackhole):
+    yahoo = _yahoo_module()
+    guard = app_http.TaskGuard(deadline=time.monotonic() + RESERVE + 0.2)
+    with pytest.raises(yahoo.YahooBudgetExhausted):
+        app_http.run_guarded(guard, lambda: yahoo.session().get("https://query1.finance.yahoo.com/v8/finance/chart/AAA"))
+    assert blackhole.accepted == 0

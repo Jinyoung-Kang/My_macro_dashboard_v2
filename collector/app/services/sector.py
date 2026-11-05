@@ -21,7 +21,7 @@ import pandas as pd
 import yfinance as yf
 from yfinance.exceptions import YFRateLimitError
 
-from .. import http, yfcache
+from .. import http, yahoo, yfcache
 
 from ..http import brief_error
 
@@ -80,6 +80,7 @@ def collect_etf_history(tickers: tuple[str, ...], period: str = "2y") -> dict:
             progress=False,
             group_by="ticker",
             threads=True,
+            session=yahoo.session(),     # 넘기지 않으면 yfinance가 예산 세션을 새 기본 세션으로 바꿈(app.yahoo)
         )
     except Exception as exc:  # noqa: BLE001
         logger.warning("ETF 배치 수집 실패, 개별 수집으로 폴백합니다: %s", exc)

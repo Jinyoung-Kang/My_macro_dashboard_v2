@@ -121,4 +121,7 @@ class Task:
                           # | session(5분 — 장중 확인 날 확인 시각 앞뒤에만 외부 호출, 그 밖은 EmptyResult)
     run: Callable[[], str]
     description: str
+    # Yahoo(yfinance)가 주 출처 — 실행기가 따로 둔 작업 스레드에서 돌립니다. Yahoo가 응답하지 않을 때 그 좀비가 다른 태스크(한국 장부 입력 등)의
+    # 작업 스레드를 차지하지 않게(QA-255). 폴백으로만 Yahoo를 쓰는 태스크(krx_futures의 KODEX)는 표시하지 않습니다.
+    yahoo: bool = False
 

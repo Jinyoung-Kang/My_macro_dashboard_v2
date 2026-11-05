@@ -201,6 +201,10 @@ def _run_status(ok_count: int, failures: list[str]) -> str:
 # 다음 회차와 겹치지 않습니다.
 TASK_DEADLINE_SECONDS: dict[str, float] = {"fast": 120.0, "slow": 600.0, "weekly": 1800.0, "live": 60.0, "session": 60.0}
 _task_threads = ThreadPoolExecutor(max_workers=8, thread_name_prefix="task")
+# Yahoo가 주 출처인 태스크(Task.yahoo)는 따로 둔 작업 스레드에서 돕니다. Yahoo가 응답하지 않을 때 그 좀비가 위 8개를 모두 차지해 Yahoo와
+# 무관한 태스크(한국 장부 입력 kr_paper_* 등)가 '워커 대기 초과'로 밀리지 않게(QA-255). 동시에 도는 Yahoo 태스크는 보통 속도군마다 하나라
+# (fast·slow·weekly·session·live) 6개면 기다리지 않습니다.
+_yahoo_task_threads = ThreadPoolExecutor(max_workers=6, thread_name_prefix="task-yahoo")
 
 
 def deadline_for(task: Task) -> float:
@@ -217,10 +221,11 @@ def _execute_task(task: Task, run_id: int | None, entry: "_InFlight | None" = No
 
     deadline = deadline_for(task)
     # 작업 스레드에 시간 예산과 '이번 실행이 만난 출처 거부' 기록을 겁니다(http.TaskGuard). 예산은 이 상한과 같은 시각에
-    # 끝나 — 대기열에서 기다린 시간도 셈 — 재시도가 상한을 넘겨 좀비로 남지 않게 합니다. yfinance(자기 curl_cffi 세션)는 이 예산을 따르지
-    # 않아 출처가 응답하지 않으면 상한을 넘깁니다(QA-255, 미수정).
+    # 끝나 — 대기열에서 기다린 시간도 셈 — 재시도가 상한을 넘겨 좀비로 남지 않게 합니다. yfinance(자기 curl_cffi 세션)도 app.yahoo가 넣은
+    # 세션으로 같은 예산을 봅니다(QA-255 — crumb 잠금을 기다리는 동안은 빼고).
     guard = http.TaskGuard(deadline=time.monotonic() + deadline)
-    future = _task_threads.submit(http.run_guarded, guard, task.run)
+    pool = _yahoo_task_threads if task.yahoo else _task_threads
+    future = pool.submit(http.run_guarded, guard, task.run)
     try:
         detail = future.result(timeout=deadline) or ""
         if guard.rejected:
