@@ -11,17 +11,20 @@
 >   구조 개선 제안은 [IMPROVEMENTS.md](IMPROVEMENTS.md)에 있습니다. 증거 파일 안의 `$SP`는 세션 임시 폴더(원본 위치)입니다.
 > - 4단계 독립 검토(수정마다 검토 + 기록·규칙·빈틈 감사 8개, 지적마다 반박 2개 — 워크플로 `wf_c4a7e2a1-fff`)가 확인한 것: QA-253 수정의 회귀(확인 결정 번호가 없는
 >   행만 있으면 500 — 같은 번호로 재현·수정 두 커밋 더), QA-251·QA-254 수정의 빈 곳(같은 번호 후속 두 커밋씩), 새 결함 QA-285·286(S4 기록), QA-255 영향 범위 보강.
+> - 2026-11-05 후속(사용자 승인 — QA-282 색인·QA-263 이미지 보안판·QA-255 수정, QA-251 DB 잠금·QA-264는 보류): 브랜치 `claude/qa-followup-2026-11`.
+>   독립 검토(관점 7개 + 지적마다 반박 2개 — 워크플로 `wf_9076167a-f79`, 지적 23건(같은 내용 중복 포함): 확인 20·그럴듯함 3·반박 0)를 반영해 QA-255는 같은 번호 후속 두 커밋과
+>   시험 보강 한 커밋을 더함. 새 기록 QA-287(S4). 증거 `evidence/2026-11-05-followup/`.
 
 ## 요약
 
 | 번호 | 심각도 | 영역 | 제목 | 상태 |
 |---|---|---|---|---|
 | QA-250 | S3 | 운영 도구 | 스크립트의 `mktemp -t 이름`이 Linux(GNU)에서 실패 — QA 도우미·Lighthouse·의존성 공시·API 측정이 시작하자마자 멈춤 | 수정됨 |
-| QA-251 | S3 | 장부·정기 작업 | `make dev-backend`가 .env의 `PAPER_ENABLED=false`를 넘기지 않아 정기 작업이 켜진 채 경고 없이 뜸(장부 작성자가 둘이면 스탑 이중 체결) | 수정됨(Makefile) — DB 잠금은 승인 필요 |
+| QA-251 | S3 | 장부·정기 작업 | `make dev-backend`가 .env의 `PAPER_ENABLED=false`를 넘기지 않아 정기 작업이 켜진 채 경고 없이 뜸(장부 작성자가 둘이면 스탑 이중 체결) | 수정됨(Makefile) — DB 잠금은 사용자 보류(11-05) |
 | QA-252 | S3 | AI 경로 | 구조화 응답의 비유한 숫자(`1e400`)에 스키마 검사가 예외 — 장중 확인이 창 안 매 주기 다시 부름(19회), 정기 결정은 3회 뒤 GAVE_UP | 수정됨 |
 | QA-253 | S3 | 성능·장부 조회 | 실행 감사가 장중 확인 행마다 결정 전체(패킷 포함)를 읽음(N+1) — 1년치에서 동시 10~15건이면 백엔드 힙 고갈·재기동 | 수정됨 |
 | QA-254 | S3 | 외부 장애·실시간 시세 | SSE 스케줄러 스레드 4개를 tick과 하트비트가 함께 써서, 느린 출처를 기다리는 구독 4개가 다른 시장 첫 값·모든 하트비트를 멈춤 | 수정됨 |
-| QA-255 | S3 | 외부 장애·수집기 | yfinance 경로가 태스크 시간 예산을 따르지 않아 외부 무응답 때 좀비가 상한의 4배 넘게 남고 그동안 같은 태스크를 건너뜀 | 미수정(작지 않음 — 다음 회차) |
+| QA-255 | S3 | 외부 장애·수집기 | yfinance 경로가 태스크 시간 예산을 따르지 않아 외부 무응답 때 좀비가 상한의 4배 넘게 남고 그동안 같은 태스크를 건너뜀 | 수정됨(11-05 후속) |
 | QA-256 | S3 | 화면·검색 | 통합 검색이 외부 종목 찾기 실패를 '맞는 결과가 없습니다'로 보임 — 출처 장애 때 한국 종목을 못 찾고 실패 흔적도 없음 | 수정됨 |
 | QA-257 | S4 | 배포·종료 | SSE가 열려 있으면 백엔드 정상 종료가 끝나지 않아 SIGKILL — `@PreDestroy` 정리(로그인 실패 넘침 요약)가 안 돎 | 기록 |
 | QA-258 | S4 | 장부 API 문구 | 없는 계좌·초기화 안내 문구가 미국 4계좌 시절 그대로(claude2·한국 코드 없음, 한국 출발이 미국 초기화를 안내) | 기록 |
@@ -29,8 +32,8 @@
 | QA-260 | S4 | 입력 검증 | 쿼리의 깨진 퍼센트 인코딩에 400이 아니라 500 + ERROR 스택(`@RequestParam`을 읽는 모든 경로) | 기록 |
 | QA-261 | S4 | 입력 검증 | NUL(`%00`) 쿼리 값이 검증 없이 DB 질의로 가 500(레이더 consensus·history, 상태 이력, 수집기 `/task-history`) | 기록 |
 | QA-262 | S4 | 오류 형식 | JSON이 아닌 오류 본문 세 갈래(Tomcat HTML 400, CORS 평문 403, 수집기 평문 500) | 기록 |
-| QA-263 | S4 | 의존성·이미지 | 컨테이너 이미지에 수정판이 있는 HIGH·CRITICAL(caddy·backend libexpat·frontend npm CLI·postgres gosu) | 기록 · 승인 필요 |
-| QA-264 | S4 | 의존성·Maven | `opentelemetry-api` 1.62.0 공시(GHSA-ccrj-gw8r-854m, medium) — 판은 Spring Boot BOM이 정함 | 기록 · 승인 필요 |
+| QA-263 | S4 | 의존성·이미지 | 컨테이너 이미지에 수정판이 있는 HIGH·CRITICAL(caddy·backend libexpat·frontend npm CLI·postgres gosu) | 수정됨(backend·frontend, 11-05) — caddy·postgres는 공식 이미지 대기 |
+| QA-264 | S4 | 의존성·Maven | `opentelemetry-api` 1.62.0 공시(GHSA-ccrj-gw8r-854m, medium) — 판은 Spring Boot BOM이 정함 | 기록 · 사용자 보류(11-05) |
 | QA-265 | S4 | 인증·CORS | SessionFilter가 직접 쓰는 401·413 등에 CORS 머리글이 없어 교차 출처 로그인 모드에서 만료가 '연결하지 못했습니다'로 보임 | 기록 |
 | QA-266 | S4 | 실시간 시세 | SSE 경로의 429·400이 `Accept: text/event-stream`에서는 500 + ERROR 스택 | 기록 |
 | QA-267 | S4 | 화면·사용자 관리 | 역할·등급 선택 상자가 확인 없이 즉시 저장 — 초점을 둔 채 ↑ 한 번이면 회원을 운영자로 올림 | 기록 |
@@ -48,11 +51,12 @@
 | QA-279 | S4 | 설치 문서 | WSL2에서 문서만으로는 수집기 가상환경을 못 만들고, 옛 사실(시험 수·AWS v1·없는 스크립트)이 남음(부분 재현) | 기록 |
 | QA-280 | S4 | 백업·복원 | 복원 전 백업(`pre-restore-…`)은 정리되지 않는데 deploy.sh 주석은 정리된다고 적음 | 기록 |
 | QA-281 | S4 | 인증·세션 | 로그아웃·다른 기기 끊기 뒤에도 이미 열린 실시간 시세 SSE가 연결 수명(최대 3시간 5분) 동안 이벤트를 받음 | 기록 |
-| QA-282 | S4 | 성능·장부 조회 | `paper_orders.decision_id` 색인이 없어 결정 요약의 상관 COUNT가 주문 표를 훑음 — 개요가 주문 누적에 비례해 느려짐 | 기록 · 승인 필요 |
+| QA-282 | S4 | 성능·장부 조회 | `paper_orders.decision_id` 색인이 없어 결정 요약의 상관 COUNT가 주문 표를 훑음 — 개요가 주문 누적에 비례해 느려짐 | 수정됨(V20, 11-05) |
 | QA-283 | S4 | 화면 성능 | 홈·매크로 등 여러 화면의 CLS가 0.25를 넘음 — 불러오는 중 자리가 실제 내용보다 낮음(부분 재현) | 기록 |
 | QA-284 | S4 | QA 도구 | WSL2에서 Linux Chromium으로 Lighthouse를 돌리면 저장소 최상위에 `C:\Users\…\lighthouse.*` 프로필 폴더가 남음 | 기록 |
 | QA-285 | S4 | 수집기·검색 | 종목 찾기·뉴스의 일부 출처 실패 응답이 수집기에서 성공처럼 1시간(뉴스 15분) 캐시됨 — QA-256 뒤 '일부 출처를 받지 못했습니다'가 그동안 남음 | 기록(독립 검토) |
 | QA-286 | S4 | 장부·장중 확인 | 장중 확인 Claude 호출 중 계좌를 리셋하면 리셋 전 장부로 만든 확인 결정을 새(시작 전) 책에 남김 — 정기 결정의 판(Generation) 검사가 없음 | 기록(독립 검토) |
+| QA-287 | S4 | 시험·외부 호출 | 수집기 시험 `test_market_cards::test_intraday_timestamp_is_kst`가 실제 Yahoo로 나감(직전 종가 조회를 바꿔 끼우지 않음) — 막힌 망에서 30초 | 기록 |
 
 ## QA-250 스크립트의 `mktemp -t 이름`이 Linux(GNU mktemp)에서 실패
 
@@ -96,7 +100,7 @@
   유료 결정 호출이 날 수 있음(미검증 — 지금 셸에는 export 없음, QA-072에 맥 셸 프로필 선례). 문서도 이 길을 경고하지 않음(README:11, DEVELOPMENT §1, LOCAL_SETUP 예시).
   같은 단일 프로세스 가정: `PaperDecisionJob`·`PaperReviewJob`·장중 확인 세 작업·`PaperNotifyJob`의 `running`, `PaperSettingsService.writing`,
   `FrameworkService.writing·proposing`, `ClaudeBookService.initialCall`, `PaperSelectionService.computing`. 기본값 문제는 `PAPER_ENABLED`만(나머지는 빠지면 꺼짐 쪽).
-- **상태: 수정됨(Makefile 부분)** — 재현 `8d7718a7` → 수정 `fe21deb1`: `make dev-backend`가 .env의 `PAPER_ENABLED`를 넘기고 줄이 없으면 `false`(셸에서 export한 값이 먼저), LOCAL_SETUP에 `mvn spring-boot:run` 직접 실행은 이 값이 빠진다고 적음. 남은 것: 기동 경고 확대·DB 잠금(advisory lock)은 하지 않음 — 잠금은 승인 필요(IMPROVEMENTS), 같은 DB를 쓰는 두 프로세스는 설계 밖(코드 주석 '백엔드는 한 프로세스')이라 이번 회차는 기록만. 독립 검토 후속: 따옴표·줄 끝 주석·중복 줄 값을 그대로 넘겨 백엔드가 'Invalid boolean value'로 뜨지 않던 빈 곳 — 재현 `37b6733c` → 수정 `7d9cc691`(마지막 줄 값의 따옴표·주석을 떼고 `true`일 때만 켬, 늘 true·false로만 넘김, 빈 값의 뜻을 `.env.example`·README에 적음).
+- **상태: 수정됨(Makefile 부분)** — 재현 `8d7718a7` → 수정 `fe21deb1`: `make dev-backend`가 .env의 `PAPER_ENABLED`를 넘기고 줄이 없으면 `false`(셸에서 export한 값이 먼저), LOCAL_SETUP에 `mvn spring-boot:run` 직접 실행은 이 값이 빠진다고 적음. 남은 것: 기동 경고 확대·DB 잠금(advisory lock)은 하지 않음 — 잠금은 승인 필요(IMPROVEMENTS), 같은 DB를 쓰는 두 프로세스는 설계 밖(코드 주석 '백엔드는 한 프로세스')이라 이번 회차는 기록만. 2026-11-05 사용자 결정: DB 잠금은 보류(이번에 하지 않음). 독립 검토 후속: 따옴표·줄 끝 주석·중복 줄 값을 그대로 넘겨 백엔드가 'Invalid boolean value'로 뜨지 않던 빈 곳 — 재현 `37b6733c` → 수정 `7d9cc691`(마지막 줄 값의 따옴표·주석을 떼고 `true`일 때만 켬, 늘 true·false로만 넘김, 빈 값의 뜻을 `.env.example`·README에 적음).
   DB 단위 단일 작성자 보장(`pg_advisory_xact_lock` 또는 책 행 `SELECT … FOR UPDATE`)은 **승인 필요**(장부 구조 변경) — 수정안만 [IMPROVEMENTS.md](IMPROVEMENTS.md) 1번에.
 - **재발 방지 제안**: `make -n dev-backend` 출력에 `PAPER_ENABLED`가 있는지 보는 스크립트 시험(collector/tests의 스크립트 시험 방식), `PaperStartupLogTest`에
   '정기 작업 켜짐 + 서버 표지(`PUBLIC_ORIGIN` 등) 없음 → 경고'(QA 스택에서 정기 작업을 켜는 시험과 충돌하지 않게). 잠금을 넣으면 두 벌 시험을 회귀 시험으로.
@@ -224,7 +228,16 @@
   `run_task`로 한 시뮬레이션에서 재현(좀비를 풀면 정상). 그러면 그 밤 한국 관측치가 늦어 한국 결정이 기한 뒤 NO_TRADE가 될 수 있음. 다만 반박 검토가 잰 바로는
   운영 중 수집기처럼 crumb을 이미 가진 상태면 무응답 요청이 잠금에 줄 서지 않고 각 10초로 끝나(새로 뜬 프로세스는 요청마다 30~60초 줄) 좀비가 그렇게 오래
   남는지는 미측정. 심각도는 S3 유지, 다음 회차 첫 순위(IMPROVEMENTS 7번).
-- **상태: 미수정(이번 회차에 고치지 않음)** — yfinance 호출처가 여럿(참고 시세·매크로 카드·종목 상세·실적 일정·실적 서프라이즈·장부 분봉)이고 프로세스 전역 crumb 잠금(`YfData._cookie_lock`)과 고정 timeout(crumb 30초·시간대 10초)이 라이브러리 안에 있어, 계획 §6의 '작고 부작용이 적은 수정'이 아님. 이번 회차는 문서(`docs/DATA_SOURCES.md` '시간 예산' 문단)와 `runner.py` 주석이 실제보다 많이 보장하던 것만 바로잡음. 다음 회차 수정안은 아래 재발 방지 칸.
+- **상태: 수정됨(2026-11-05 후속, 사용자 승인)** — 4차 본 회차에는 작지 않아 미뤘고(문서·주석의 과한 보장만 바로잡음), 11-05에 고침.
+  재현 `4eefd2aa` → 수정 `734a8c54`: 새 모듈 `collector/app/yahoo.py` — yfinance 싱글턴 세션 자리에 예산 세션(요청마다 timeout을 남은 예산 − 10초로 줄이고
+  모자라면 보내지 않음), `yf.download` 세 곳에 `session=yahoo.session()`(넘기지 않으면 yfinance가 부를 때마다 세션을 새 기본 세션으로 바꿈 — 1차 구현에서
+  찾은 함정), multitasking 다운로드 스레드가 만든 쪽의 contextvars를 이어받게, 무응답 래치(연달아 3번 시간 초과 → 2분), Yahoo를 늘 부르는 태스크 13개는
+  따로 둔 작업 스레드 6개(`Task.yahoo`). 독립 검토 후속: 재현 `f1504b86` → 수정 `1e475792` — 예산 때문에 줄인 timeout의 시간 초과는 래치에 세지 않고 응답이
+  오면 래치를 풂, 다운로드 풀의 동시 실행 자리(cpu_count — 서버 2)도 예산만큼만 기다림(예외로 끊지 않음 — yfinance가 그 종목 결과를 끝없이 기다림), 래치·예산
+  때문에 보내지 않은 회차의 사유를 'Yahoo 응답 없음'·'태스크 시간 예산이 …'로(yfinance가 예외를 삼켜 '버전 불일치 의심'으로 보였음), timeout 0 처리,
+  끝난 스레드의 컨텍스트 해제. 시험 보강 `31e32f2d`. QA 스택 실측(hang): `scraper_markets` 100.1초·`macro_collected` 108.6초에 끝남(고치기 전 480초 좀비),
+  '뒤늦게 끝남' 없음, 래치 동작 — [`QA-255-qa-stack-hang.txt`](evidence/2026-11-05-followup/QA-255-qa-stack-hang.txt).
+  남는 것: crumb 잠금(프로세스에 하나)을 기다리는 동안은 예산 밖 — 예산 없는 화면 요청(종목 상세)이 잠금을 쥐면 crumb을 새로 받을 때 최대 약 60초.
 - **재발 방지 제안**: `history`·`download`에 timeout을 넘기는 것만으로는 crumb·시간대 조회가 남음 — yfinance 세션 자리에 남은 예산(`http.time_left()`)으로 timeout을 줄이고
   0 이하면 바로 실패하는 curl_cffi 세션 하위 클래스를 넣거나(threads=False), Yahoo 연결 시간 초과가 연달아 나면 공용 래치를 잠시 닫는 '무응답 래치', 폴백은 예외면 멈춤.
   의존성 업그레이드는 필요 없어 보임(추정). 시험: 로컬 무응답 소켓을 `yf.config.network.proxy`로 명시(HTTPS_PROXY는 curl_cffi가 무시하면 실제 Yahoo로 나감)하고
@@ -383,7 +396,11 @@
 - **원인 위치**: `backend/Dockerfile:17`(apk upgrade 없음 — 원격 베이스 자체에 libexpat 2.9.0이라 `--pull`로 안 고쳐짐), `frontend/Dockerfile:37`(runtime 단계가 npm CLI를 남김),
   `compose.vultr.yml:85`·`docker-compose.yml:48`(공식 이미지 갱신 대기 — 저장소 쪽 원인 없음), `collector/Dockerfile:2`.
 - **영향 범위**: 다섯 이미지 모두. QA 도구 `qa-stack.sh`는 `--pull` 없이 빌드해 로컬 collector 베이스가 원격보다 오래됨.
-- **상태: 기록(S4 — 이번 회차는 수정 안 함)** — **승인 필요**: Dockerfile·CI 변경(배포·인프라 설정, 계획 §6)
+- **상태: 수정됨(backend·frontend, 2026-11-05 사용자 승인)** — 재현 `d410e56c` → 수정 `8abfb290`: backend 실행 단계 `apk upgrade --no-cache`, frontend 실행 단계에서
+  npm·npx 삭제. 다시 빌드한 두 이미지 trivy HIGH·CRITICAL 0, libexpat 2.10.0-r0, 화면 `/login` 200 — [`QA-263-image-rescan.txt`](evidence/2026-11-05-followup/QA-263-image-rescan.txt).
+  남은 것: caddy·postgres(gosu)는 공식 이미지 갱신 대기(deploy.sh가 pull), collector의 setuptools 동봉 jaraco.context·wheel(이번 승인 범위 밖), Caddy h2c 끄기(서버 확인 뒤 — 보류).
+  독립 검토 지적(확인, S4): `apk upgrade` 층은 베이스 digest와 그 줄이 같으면 `build --pull`도 캐시를 다시 써, 다음 alpine 수정판은 베이스가 다시 게시되거나 층이
+  다시 빌드될 때까지 들어오지 않음 — Dockerfile 주석을 바로잡음. 정기 갱신(빌드 인자로 하루·주 단위 캐시 무효화)은 deploy.sh·Makefile 변경이라 제안만(승인 필요).
 - **재발 방지 제안**: backend `apk upgrade --no-cache`(실험 이미지 H·C 0), frontend runtime에서 npm·npx 삭제(실험 이미지 H 0·`next start` 기동·/login 200). Caddyfile `servers { protocols h1 }`로
   h2c 끄기는 tailscale serve가 HTTP/1.1로 넘기는지 서버에서 확인한 뒤(승인 대상). 다음 배포 뒤 서버 이미지 `trivy --ignore-unfixed` 한 번, CI 정보성 job(IMPROVEMENTS 13번).
 
@@ -399,7 +416,7 @@
   `<opentelemetry.version>1.62.0`, ADR 0007:37 'Spring Boot 관리판 1.62'). `pom.xml:61-64` anthropic-java는 들어오는 경로일 뿐 — 후보의 'anthropic-java 다음 판' 안은 효과 없음
   (2.x 최신 2.75.0, 3.4.0도 1.62.0 선언, Boot 관리 판이 이김). CI에 Maven 공시 점검·dependabot 없음(`ci.yml:67-70` pip-audit, `:173-176` npm audit만).
 - **영향 범위**: 다른 84개 런타임 의존성은 공시 0(opentelemetry-context·common 1.62.0도 0).
-- **상태: 기록(S4 — 이번 회차는 수정 안 함)** — **승인 필요**: 의존성 변경
+- **상태: 기록(S4 — 이번 회차는 수정 안 함)** — **승인 필요**: 의존성 변경. 2026-11-05 사용자 결정: 보류(Boot 판을 올릴 때 함께).
 - **재발 방지 제안**: `backend/pom.xml` `<properties>`에 `<opentelemetry.version>1.67.0</opentelemetry.version>`(Maven Central GA 확인, `-D`로 덮어 AI 시험 70개 통과 — JDK 25에서만,
   커밋 전 JDK 21 컨테이너로 verify), Boot 4.2 GA(RC1 BOM이 1.67.0)로 올릴 때 지움. 시험: 해석 판 >= 1.67.0 대조나 CI 정보성 Maven 공시 조회.
 
@@ -701,7 +718,9 @@
 - **영향 범위**: 같은 열 — `PaperQueryService.decisions:326`(화면은 limit=50이라 색인 없이 19.4~22.2ms; 500은 화면 경로 아님), `PacketBuilder:2117`·`KrPacketBuilder:1228`(정기 작업),
   `ReviewService:372`(200건), `PaperStore:1001`(12.2k에서 6.5ms). `V18__paper_checkpoints.sql:40-41`의 두 외래 키도 색인 없음 — 계좌 초기화 외래 키 검사 150.6ms(색인 10.9ms, 드문 동작).
   느린 질의 1위(1,149회)는 k6 부하에서 나온 횟수(실제는 홈 1분 주기 1회).
-- **상태: 기록(S4 — 이번 회차는 수정 안 함)** — **승인 필요**: (가) 색인 추가는 DB 스키마 변경(새 마이그레이션 V20). (나)는 내부 질의만이라 승인 불필요.
+- **상태: 수정됨((가), 2026-11-05 사용자 승인)** — 재현 `c5a7c558` → 수정 `0bfc9946`: V20 `paper_orders_decision`(decision_id) + 장중 확인 표의 결정 번호 외래 키 둘
+  (`paper_checkpoints_source_decision`·`paper_checkpoints_checkpoint_decision`). (나) 노출 추이의 가벼운 질의는 하지 않음(색인으로 증가가 멈춤 — 기록만).
+  참고(독립 검토 note): `PaperStoreDbTest.v18RerunIsSafe`는 시험 DB에 V20이 먼저 적용돼 있어야 통과함 — `make test-backend`·CI는 먼저 적용하므로 결함 아님.
 - **재발 방지 제안**: (나) 먼저 — claudeExposureSeries가 COUNT 없는 가벼운 질의(기존 decisions()와 같은 정렬이라야 같은 날 나중 결정 우선이 유지)를 씀, 이것만으로 개요 증가가 멈춤.
   (가) V20 `CREATE INDEX IF NOT EXISTS paper_orders_decision ON paper_orders (decision_id)`(+ paper_checkpoints 두 외래 키를 함께 정할지). 시험: 개요가 `store.decisions(…, 500)`을
   부르지 않음(가짜 저장소), 마이그레이션 시험에 색인 존재 단언.
@@ -776,4 +795,15 @@
 - **상태: 기록(S4 — 이번 회차는 수정 안 함)**
 - **재발 방지 제안**: 호출 전 판(출발일·INITIAL 결정 번호)과 원래 결정(`c.sourceDecisionId`)을 잡아 두고 `write()` 안(장부 잠금·트랜잭션)에서 NOT_STARTED·판 다름·원래 결정
   없음이면 결정 행을 쓰지 않고 끝냄 — `ClaudeBookService.persist`와 같은 규칙. 시험: 위 두 시나리오(@Disabled 먼저).
+
+## QA-287 수집기 시험 `test_market_cards::test_intraday_timestamp_is_kst`가 실제 Yahoo로 나감
+
+- **심각도: S4**(독립 검토 `wf_9076167a-f79` — 반박 2개 모두 확인, note·S4) — 이번 범위 밖의 기존 결함(`fe7326b9`에서도 같음). 시험 결과는 통과하지만 `make test`·CI가
+  매번 외부 호출을 내고, 막힌 망에서는 30초 걸림. QA-255 뒤로는 그 요청이 예산 세션을 지나 시간 초과가 무응답 래치 셈에 들어감(시험마다 래치를 비우므로 다른 시험에는 안 번짐).
+- **영역**: 시험·외부 호출(수집기)
+- **재현 절차 / 실제 결과**: 외부 경로가 없는 네트워크 이름공간에서 `tests/test_market_cards.py`만 돌림 → '13 passed in 30.46s', DNS 질의 query1·query2.finance.yahoo.com 각 4회.
+- **원인 위치**: `collector/tests/test_market_cards.py:124-126` — `market._build_card(SPEC, …)`(DX-Y.NYB, 장중)를 바꿔 끼우지 않고 불러 `previous_close_from_daily` →
+  `collect_ticker` → `_download` → `yf.Ticker.history`로 이어짐(같은 파일의 다른 시험은 바꿔 끼움).
+- **상태: 기록(S4 — 이번에 고치지 않음)**
+- **재발 방지 제안**: 그 시험에서 `market.previous_close_from_daily`를 monkeypatch, 수집기 시험 전체에 외부 연결을 막는 conftest 장치(소켓 연결을 127.0.0.1만 허용)를 두면 같은 종류를 한 번에 잡음.
 

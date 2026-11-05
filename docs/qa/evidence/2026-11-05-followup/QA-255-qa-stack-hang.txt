@@ -1,0 +1,56 @@
+# QA-255 수정 뒤 QA 스택 실측 (2026-11-05 13:20~13:24 KST, 수집기 main 브랜치 claude/qa-followup-2026-11 @734a8c54, 차단 프록시 hang, COLLECTOR_SCHEDULER=false, 수동 실행)
+# 고치기 전(2026-11-04 기록 QA-255): scraper_markets 120초 시간 초과 뒤 480.2초 '뒤늦게 실패', macro_collected 483.9초 '뒤늦게 끝남'
+
+## 설치 확인(컨테이너 안): YfData 세션 종류, multitasking 풀 스레드 종류
+BudgetedSession ['_ContextThread']
+
+## 두 태스크 동시 호출(POST /collect/task/<이름>, wait=true) — 걸린 초와 응답
+scraper_markets (100.1, '{"group": "scraper_markets", "runId": 4627, "okCount": 0, "failCount": 1, "elapsedSeconds": 100.08, "results": [{"task": "scraper_markets", "speed": "fast", "ok": false, "detail": "수집 결과 없음: 0/16 소스 — 기존 저장본 유지"}]}')
+macro_collected (108.6, '{"group": "macro_collected", "runId": 4626, "okCount": 1, "failCount": 0, "elapsedSeconds": 108.56, "results": [{"task": "macro_collected", "speed": "fast", "ok": true, "detail": "3/21 지표 수집 (이전 값 유지 18)"}]}')
+
+## 수집기 로그(그 5분, 관련 줄)
+13:20:55 INFO    app.tasks.runner: 수집 시작 (scraper_markets): 1개 작업
+13:20:55 INFO    app.tasks.runner: 수집 시작 (macro_collected): 1개 작업
+13:22:05 WARNING app.yahoo: Yahoo가 연달아 3번 응답하지 않아 120초 동안 Yahoo 요청을 멈춥니다
+13:22:25 ERROR   yfinance: Failed to get ticker 'KRW=X' reason: Yahoo 응답 없음 — 연달아 3번 시간 초과, 100초 더 Yahoo 요청을 멈춤
+13:22:25 ERROR   yfinance: Failed to get ticker '000001.SS' reason: Yahoo 응답 없음 — 연달아 3번 시간 초과, 100초 더 Yahoo 요청을 멈춤
+13:22:25 ERROR   yfinance: Failed to get ticker 'JPYKRW=X' reason: Yahoo 응답 없음 — 연달아 3번 시간 초과, 100초 더 Yahoo 요청을 멈춤
+13:22:25 ERROR   yfinance: Failed to get ticker '^TYX' reason: Yahoo 응답 없음 — 연달아 3번 시간 초과, 100초 더 Yahoo 요청을 멈춤
+13:22:25 ERROR   yfinance: Failed to get ticker 'JPY=X' reason: Yahoo 응답 없음 — 연달아 3번 시간 초과, 100초 더 Yahoo 요청을 멈춤
+13:22:25 ERROR   yfinance: Failed to get ticker 'ZT=F' reason: Yahoo 응답 없음 — 연달아 3번 시간 초과, 100초 더 Yahoo 요청을 멈춤
+13:22:25 ERROR   yfinance: Failed to get ticker '^TNX' reason: Yahoo 응답 없음 — 연달아 3번 시간 초과, 100초 더 Yahoo 요청을 멈춤
+13:22:25 ERROR   yfinance: Failed to get ticker 'BZ=F' reason: Yahoo 응답 없음 — 연달아 3번 시간 초과, 100초 더 Yahoo 요청을 멈춤
+13:22:25 ERROR   yfinance: Failed to get ticker 'CL=F' reason: Yahoo 응답 없음 — 연달아 3번 시간 초과, 100초 더 Yahoo 요청을 멈춤
+13:22:25 ERROR   yfinance: Failed to get ticker 'CL=F' reason: Yahoo 응답 없음 — 연달아 3번 시간 초과, 100초 더 Yahoo 요청을 멈춤
+13:22:25 ERROR   yfinance: Failed to get ticker '^GSPC' reason: Yahoo 응답 없음 — 연달아 3번 시간 초과, 100초 더 Yahoo 요청을 멈춤
+13:22:25 ERROR   yfinance: Failed to get ticker 'BZ=F' reason: Yahoo 응답 없음 — 연달아 3번 시간 초과, 100초 더 Yahoo 요청을 멈춤
+13:22:25 ERROR   yfinance: Failed to get ticker 'ES=F' reason: Yahoo 응답 없음 — 연달아 3번 시간 초과, 100초 더 Yahoo 요청을 멈춤
+13:22:25 ERROR   yfinance: Failed to get ticker 'GC=F' reason: Yahoo 응답 없음 — 연달아 3번 시간 초과, 100초 더 Yahoo 요청을 멈춤
+13:22:25 ERROR   yfinance: Failed to get ticker '069500.KS' reason: Yahoo 응답 없음 — 연달아 3번 시간 초과, 100초 더 Yahoo 요청을 멈춤
+13:22:25 WARNING app.services.market: yfinance 수집 예외 (DX-Y.NYB): Yahoo 응답 없음 — 연달아 3번 시간 초과, 100초 더 Yahoo 요청을 멈춤
+13:22:25 WARNING app.services.market: yfinance 수집 예외 (KRW=X): Yahoo 응답 없음 — 연달아 3번 시간 초과, 100초 더 Yahoo 요청을 멈춤
+13:22:25 WARNING app.services.market: yfinance 수집 실패 (DX-Y.NYB): YahooNoResponse: Yahoo 응답 없음 — 연달아 3번 시간 초과, 100초 더 Yahoo 요청을 멈춤
+13:22:25 WARNING app.services.market: yfinance 수집 실패 (KRW=X): YahooNoResponse: Yahoo 응답 없음 — 연달아 3번 시간 초과, 100초 더 Yahoo 요청을 멈춤
+13:22:25 ERROR   yfinance: Failed to get ticker '^NDX' reason: Yahoo 응답 없음 — 연달아 3번 시간 초과, 100초 더 Yahoo 요청을 멈춤
+13:22:25 ERROR   yfinance: Failed to get ticker 'NQ=F' reason: Yahoo 응답 없음 — 연달아 3번 시간 초과, 100초 더 Yahoo 요청을 멈춤
+13:22:25 ERROR   yfinance: Failed to get ticker '^KS11' reason: Yahoo 응답 없음 — 연달아 3번 시간 초과, 100초 더 Yahoo 요청을 멈춤
+13:22:25 ERROR   yfinance: Failed to get ticker '^N225' reason: Yahoo 응답 없음 — 연달아 3번 시간 초과, 100초 더 Yahoo 요청을 멈춤
+13:22:25 ERROR   yfinance: Failed to get ticker '000001.SS' reason: Yahoo 응답 없음 — 연달아 3번 시간 초과, 100초 더 Yahoo 요청을 멈춤
+13:22:25 ERROR   yfinance: Failed to get ticker '^HSI' reason: Yahoo 응답 없음 — 연달아 3번 시간 초과, 100초 더 Yahoo 요청을 멈춤
+13:22:25 ERROR   yfinance: Failed to get ticker 'CL=F' reason: Yahoo 응답 없음 — 연달아 3번 시간 초과, 100초 더 Yahoo 요청을 멈춤
+13:22:25 ERROR   yfinance: Failed to get ticker 'BZ=F' reason: Yahoo 응답 없음 — 연달아 3번 시간 초과, 100초 더 Yahoo 요청을 멈춤
+13:22:25 ERROR   yfinance: Failed to get ticker '000001.SS' reason: Yahoo 응답 없음 — 연달아 3번 시간 초과, 100초 더 Yahoo 요청을 멈춤
+13:22:35 WARNING app.tasks.runner:   ! scraper_markets        100.07s  수집 결과 없음: 0/16 소스 — 기존 저장본 유지
+13:22:35 INFO    app.tasks.runner: 수집 완료 (scraper_markets): 성공 0 · 실패 1 · 100.1s
+13:22:37 ERROR   yfinance: Failed to get ticker '069500.KS' reason: Yahoo 응답 없음 — 연달아 3번 시간 초과, 88초 더 Yahoo 요청을 멈춤
+13:22:44 INFO    app.tasks.runner:   ✓ macro_collected        108.55s  3/21 지표 수집 (이전 값 유지 18)
+13:22:44 INFO    app.tasks.runner: 수집 완료 (macro_collected): 성공 1 · 실패 0 · 108.6s
+13:22:53 INFO    app.tasks.runner: 수집 시작 (scraper_markets): 1개 작업
+13:22:53 ERROR   yfinance: Failed to get ticker 'CL=F' reason: Yahoo 응답 없음 — 연달아 3번 시간 초과, 72초 더 Yahoo 요청을 멈춤
+13:22:53 ERROR   yfinance: Failed to get ticker 'BZ=F' reason: Yahoo 응답 없음 — 연달아 3번 시간 초과, 72초 더 Yahoo 요청을 멈춤
+13:22:53 ERROR   yfinance: Failed to get ticker '000001.SS' reason: Yahoo 응답 없음 — 연달아 3번 시간 초과, 72초 더 Yahoo 요청을 멈춤
+
+## 래치가 닫힌 뒤 scraper_markets 다시 호출
+second scraper_markets 65.4초 — 수집 결과 없음: 0/16 소스 — 기존 저장본 유지 (Yahoo가 아닌 TradingView 등 출처는 공용 세션 예산 층이 묶음)
+
+## '뒤늦게 끝남/실패' 줄: 없음(두 태스크 모두 상한 120초 전에 끝나 좀비가 생기지 않음)

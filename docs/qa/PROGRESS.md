@@ -65,6 +65,22 @@
   실시간 시세 SSE(`KR:005930`, 5초) 13초에 `prices` 3회, 배포 뒤 백엔드 로그 `Exception`·`ERROR` 0건·수집기 Traceback 0건.
   운영 `paper_checkpoints`는 지금 행이 없어 QA-253 회귀 경로(결정 번호 없는 확인 행)는 운영에서는 아직 지나지 않음 — 시험(`checkpointRowsWithoutAnswersStillRender`·한국 `checkpoints`)이 맡음.
 
-## 결정 대기
-- 승인 필요 항목(이번 회차는 수정안만): QA-251의 DB 잠금(advisory lock — 두 프로세스가 같은 DB를 쓸 때 장부 이중 처리 방지), QA-263 컨테이너 기본 이미지 올리기,
-  QA-264 의존성(opentelemetry-api) 올리기, QA-282 `paper_orders.decision_id` 색인(DB 스키마). 최종 보고 때 한 번에 여쭙니다.
+## 결정 (2026-11-05 12:4x KST, 최종 보고 뒤 한 번에 여쭘)
+- 사용자 선택: **QA-282 색인·QA-263 이미지 보안판 진행, QA-255도 이어서 고침**. QA-251 DB 잠금·QA-264 opentelemetry는 보류.
+
+## 6단계 — 승인 항목 후속 (2026-11-05 오후, 브랜치 `claude/qa-followup-2026-11`, 기준 `main@fe7326b9`)
+- 다른 세션('v2 작업 1'·'프레임 v')에 마이그레이션 V20을 이 세션이 쓴다고 알림(둘 다 V21부터 쓰기로 답함).
+- QA-282 `c5a7c558` → `0bfc9946`(V20 색인 셋). QA-263 `d410e56c` → `8abfb290`(다시 빌드한 두 이미지 trivy HIGH·CRITICAL 0 — 증거 `evidence/2026-11-05-followup/`).
+  QA-255 `4eefd2aa` → `734a8c54`(예산 세션·download 스레드·무응답 래치·Yahoo 태스크 따로 둔 작업 스레드). 1차 구현 중 찾은 함정: `yf.download`가 `session`을
+  넘기지 않으면 부를 때마다 싱글턴 세션을 새 기본 세션으로 바꿈 → 세 곳에 `session=yahoo.session()`, AST 시험으로 고정.
+- QA 스택 실측(수집기만 `734a8c54`로 다시 빌드, 프록시 hang): `scraper_markets` 100.1초·`macro_collected` 108.6초에 끝남(고치기 전 480초 좀비), 좀비 없음, 래치 동작.
+  프록시는 block으로 되돌림. QA 스택 수집기는 새 코드로 남겨 둠(QA 전용).
+- 독립 검토 워크플로 `wf_9076167a-f79`(관점 7개 + 지적마다 반박 2개, 에이전트 53): 지적 23건(중복 포함) — 확인 20·그럴듯함 3·반박 0, S1·S2 0.
+  - 고침(QA-255 후속): 재현 `f1504b86` → 수정 `1e475792` — 예산 때문에 줄인 timeout은 래치에 세지 않음·응답이 오면 래치 풂, 다운로드 풀 자리(서버 2자리)도 예산만큼만
+    기다림, 래치·예산으로 보내지 않은 회차의 사유, timeout 0, 끝난 스레드의 컨텍스트 해제. 시험 보강 `31e32f2d`(예산 안 끝남 재기·다운로드 모양 넓혀 훑기·작업
+    스레드 수·래치 초기화).
+  - 문서·주석 바로잡음: crumb 잠금 대기 설명(예산 없는 화면 요청이 쥐면 최대 약 60초), '수집 결과 없음'(empty)으로 적힘, `Task.yahoo` 기준, DEVELOPMENT 규약,
+    Dockerfile `apk upgrade` 캐시 한계.
+  - 새 기록 QA-287(S4 — 수집기 시험 하나가 실제 Yahoo로 나감, 기존). 제안만: `apk upgrade` 층 정기 갱신(deploy.sh·Makefile 빌드 인자 — 승인 필요).
+- 커밋별 재검증: 검증 스크립트가 백엔드 시험 전에 그 커밋의 마이그레이션을 시험 DB에 적용하지 않아 V20 뒤 세 커밋에서 `PaperStoreDbTest.v18RerunIsSafe`가
+  실패 → 스크립트를 `make test-backend`처럼 고쳐 다시 돌려 통과(커밋 결함 아님 — 검토 note와 같은 원인).

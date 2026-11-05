@@ -1,0 +1,14 @@
+# QA-263 수정 뒤 이미지 재검사 (2026-11-05 13시 전후 KST — 커밋 8abfb290과 같은 Dockerfile을 커밋 직전 작업 트리에서 빌드)
+# 명령: docker build --pull -t qa263-<이름>:test <폴더>/ → aquasec/trivy:0.76.0 image --scanners vuln --severity HIGH,CRITICAL --format json (이미지는 검사 뒤 지움)
+# 고치기 전(2026-11-04 기록 QA-263): backend libexpat 2.9.0-r0 HIGH 3, frontend /usr/local/lib/node_modules/npm 의 undici·brace-expansion HIGH 6
+
+qa263-backend_test: HIGH 0 · CRITICAL 0 (대상 2개)
+qa263-frontend_test: HIGH 0 · CRITICAL 0 (대상 2개)
+
+## 실행 확인
+frontend /login=200 after 2s
+no-npm
+no-npx
+corepack
+libexpat-2.10.0-r0
+openjdk version "21.0.13" 2026-10-20 LTS
