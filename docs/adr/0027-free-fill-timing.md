@@ -1,13 +1,20 @@
 # 0027. 체결 시점 자유화: 분 단위 지정 시각(`AT_MINUTE`)과 장중 판단(세션당 계좌별 최대 2회, Claude가 시각을 고름)을 네 Claude 계좌에, 규칙 계좌는 설정으로 체결 시각 지정(기본값 그대로), 스키마는 더하기만·스위치는 계좌별·끄면 바이트까지 같음, 계좌2 체결 시점 실험은 조건 변경으로 종료
 
-- 상태: 채택 (2026-11-05, 사용자 승인 — 질문 네 개의 답과 승인 때의 수정 "장 중 확인을 최대 2회로", "하루 호출 상한을 60, 예약을 20으로"). **구현 전** —
+- 상태: 채택 (2026-11-05, 사용자 승인 — 질문 네 개의 답과 승인 때의 수정 "장 중 확인을 최대 2회로", "하루 호출 상한을 60, 예약을 20으로"). **구현 중**(B0~B3 끝, B4~B6 남음) —
   단계와 커밋 순서는 [명세](../specs/2026-11-05-free-fill-timing.md) §13, 끝난 단계는 그 표에 적습니다. 스위치는 모두 기본 꺼짐이라 배포만으로는 어느 계좌의
   결정·체결도 바뀌지 않습니다. **켜는 설정 저장은 그때 사용자에게 다시 확인받습니다**(결정 12).
 - 근거: [명세](../specs/2026-11-05-free-fill-timing.md) · [ADR 0018](0018-paper-trading-guardrails.md)(미국 책 가드레일) · [ADR 0020](0020-v2-program.md)(호출 상한) ·
   [ADR 0021](0021-kr-paper-prices-fills-start.md)(한국 책 가격·체결) · [ADR 0022](0022-us-claude-book2-timing.md)(계좌2 체결 시점 실험) ·
   [ADR 0008](0008-backend-owned-tables-and-scheduled-jobs.md)(테이블마다 쓰는 쪽 하나)
 - 고치는 기존 결정: ADR 0018 결정 2·8, ADR 0020 결정 6, ADR 0021 결정 1·2·3, ADR 0022 결정 1·3·4·5·9·10·11·12·13(아래 결정마다 어느 것을 어떻게 고치는지 적습니다).
-- 지키는 방법: 단계가 끝날 때마다 그 단계의 시험 이름을 여기에 적습니다(명세 §14가 단계별 시험 목록). 구현 전에는 없습니다.
+- 지키는 방법: 단계가 끝날 때마다 그 단계의 시험 이름을 여기에 적습니다(명세 §14가 단계별 시험 목록).
+  - B1(장부·수집): `UsTimedFillsTest`(지정 시각 사다리·수집기와 같은 시점 목록), `KrTimedLadderTest`·`KrLedgerTest`, `PaperStoreDbTest`(V22), `test_paper_bars.py`·`test_kr_paper_timed.py`.
+  - B2(켠 판 결정): `FreeTimingTest`(범위·그 결정의 검증 표), `FreeTimingDecisionTest`(스위치·주문 행), `DecisionTimingsLockTest.freeTimingContextsAreLocked`(스키마·프로필·고정 문단이 같은 목록),
+    켠 판 고정본(`render-*-ft-*`·`packet-*-ft-*`·`decision-schema-forapi-us-ft.json`)과 **끈 판 고정본이 그대로인 것**(같은 시험들이 함께 대조).
+  - B3(장중 판단): `IntradayRequestTest`(범위·간격·횟수), `PaperStoreDbTest`(V23·`readyRequiresV23`), `PaperIntradayJobTest`(미국 — 한 번·판·문턱·교체·다음 예약·재시도 없음·두 작업이 서로의 표를 보지 않음),
+    `KrStartTest.krIntraday*`(한국 — 한국 시가 주문을 남기는 재현 시험 포함), `CheckpointPacketTest.goldenFreeMinute`(장중 판단 패킷 고정본)·`KrIntradayPacketTest`,
+    `WatchIdentityTest`·`test_paper_watch.py`·`test_paper_watch_kr.py`(계획 여럿·신원 목록), `IntradayManualServiceTest`(수동 경로 — 예약만·409),
+    `RouteInventoryTest`·`AccessPolicyTest`(새 경로), `test_table_ownership.py`(새 표는 백엔드만 씀).
 
 ## 배경
 

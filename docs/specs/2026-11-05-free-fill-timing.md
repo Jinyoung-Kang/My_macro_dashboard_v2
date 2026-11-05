@@ -72,7 +72,7 @@ CHECK (status = 'REJECTED' OR timing <> 'AT_MINUTE' OR target_local IS NOT NULL)
 CREATE TABLE IF NOT EXISTS paper_intraday_plans (
     book_code                TEXT        NOT NULL REFERENCES paper_books (code) ON DELETE CASCADE,
     session_date             DATE        NOT NULL,                 -- 목표 세션 E(그 시장 거래일)
-    slot                     SMALLINT    NOT NULL CHECK (slot >= 1),  -- 그 세션의 몇 번째 판단인가 — 결정 종류 INTRADAY_<slot>
+    slot                     SMALLINT    NOT NULL CHECK (slot BETWEEN 1 AND 2),  -- 그 세션의 몇 번째 판단인가 — 결정 종류 INTRADAY_<slot>
     at_local                 TIME        NOT NULL,                 -- 확인 시각(그 시장 현지 시각, 분 단위)
     feed                     TEXT        NOT NULL CHECK (feed IN ('MINUTE', 'HOURLY')),
     watch                    TEXT[]      NOT NULL DEFAULT '{}',
@@ -187,6 +187,23 @@ CREATE TABLE IF NOT EXISTS paper_intraday_plans (
 - 새 경로 `POST /api/paper/run/intraday {book}`(운영자) — 새 컨트롤러(기존 둘은 생성자 인자 한도). 예약만 하고 '예약됨'을 돌려줍니다(호출은 작업이 자기 잠금 안에서 — 같은 창의 정기 주기와 겹쳐 두 번 과금되지 않게).
   `AccessPolicy`·`RouteInventoryTest`·`docs/API.md`·`scripts/qa/routes.json`(mutating, fuzz 제외 — `run/decision`과 같은 모양)·`endpoints.ts`.
 
+- **B3에서 정한 것**(구현 뒤 — 위 문장과 다르면 이쪽이 맞습니다):
+  - 예약 칸의 시각 이름은 두 시장 모두 `at`(그 시장 현지 시각 'HH:MM')입니다. 미국은 `feed`(`MINUTE`·`HOURLY`)가 필수, 한국은 피드 칸이 없고 늘 감시 1분봉입니다.
+    의미 검사(`IntradayRequest`)는 어긴 항목만 버리고 사유(`CHECKPOINT_INVALID — …`)를 결정 기록 `intradayPlan.rejected`에 남깁니다. 이른 시각부터 받습니다.
+  - 뒤 결정이 닫은 행(`SUPERSEDED`)은 부른 적이 없는 예약이라 그 순번을 다시 예약할 수 있습니다(끝난 판단 `DONE`·`EXPIRED`·`SKIPPED`는 되살리지 않음).
+    끈 판 결정도 그 세션에 켠 판이 남긴 `PLANNED` 행이 있으면 닫습니다(스위치를 끈 뒤의 결정이 그 세션을 대신함). 반대로 켠 판 결정은 끈 판의 `PLANNED` 장중 확인 행을 닫습니다.
+  - 감시 저장본은 **모양 판 1 그대로**이고 칸 하나(`checkpoints` — 창 안 계획 전부의 신원 `{book, sessionDate, atEt|atKst, slot}`)를 더했습니다. 예전 칸 `checkpoint`는 가장 이른 계획입니다.
+    읽는 쪽(`WatchIdentity`)은 목록이 있으면 목록에서 자기 행을 찾고, 목록이 없는 예전 저장본은 순번 없는 계획(끈 판 장중 확인)으로만 봅니다. 수집기 범위는 `store.watch_plans`.
+  - 작업은 계획 행을 쓴 결정의 판으로 부릅니다 — 결정 뒤에 스위치를 꺼도 그 세션의 남은 판단은 그 판으로 부릅니다. **멈추는 손잡이는 세션당 횟수 설정**
+    (`intradayMaxPerSession`·`kr.intradayMaxPerSession`을 0으로, 미국 계좌2는 `claude2.enabled`)과 계좌 일시정지입니다 — 그 행은 창 뒤 `SKIPPED INTRADAY_OFF`.
+  - 장중 판단 패킷은 장중 확인 패킷(`CheckpointPacket`·`KrCheckpointPacket`)에 자유 시점 판 칸을 더한 것입니다: `1_basis`의 계좌·순번·종류·`maxPerSession`·`manual`,
+    남은 시점(`MARKET`·`AT_MINUTE`·`NEXT_CLOSE`)과 남은 지정 시각 범위 `atMinute`, 다음 예약 가능 여부 `nextCheckpoint`. `MINUTE` 피드는 그 계획의 종목만 싣습니다
+    (저장본 한 장이 다른 계좌 계획의 종목도 실음).
+  - 수동 경로는 '예약만'입니다(§7 본문 그대로): 가장 이른 남은 예약을 지금 + 1분으로 당기거나 새 행(미국 `HOURLY`·한국 `MINUTE`, 감시 목록 없음)을 넣습니다.
+    새 행은 **오늘 세션의 결정이 자유 시점 판일 때만**(보낸 패킷 `1_basis.variant`) — 스위치를 결정 뒤에 켰으면 400입니다. `PAPER_ENABLED=false`인 서버는 부를 작업이 없어 400.
+  - 한국 '기준 시각이 남은 주문' 판정(`supersedePendingAfter`)은 한국 주문이면 `KrExpectedState.targetAt`입니다(재현 시험: 09:14 교체가 시가 주문을 남김).
+  - 화면에 장중 판단 줄·수동 단추를 보이는 일(상태 응답·알림 문구·`endpoints.ts`)은 B5입니다 — 지금 응답으로는 결정 기록의 `INTRADAY_<순번>` 행과 작업 기록(`intraday`·`kr.intraday`)으로 봅니다.
+
 ## 8. 규칙 계좌
 
 - 설정 키 넷(규칙 계좌 영향 키 — 저장 전 확인 창): `rules.timing`·`rules.timingAtEt`, `kr.rules.timing`·`kr.rules.timingAtKst`. `AT_MINUTE`인데 시각이 없거나 범위 밖이면 저장 거절.
@@ -265,7 +282,7 @@ CREATE TABLE IF NOT EXISTS paper_intraday_plans (
 | B0 | 문서(ADR 0027·이 명세) + 읽기 전용 측정(§16) | 끝 |
 | B1 | V22 + `AT_MINUTE` 장부(미국·한국)·수집 범위. 아직 어느 계좌도 쓰지 않음 | 끝 |
 | B2 | Claude 켠 판(프로필·스키마·고정 문단·패킷·그 결정의 검증 표) + 결정 창 가드 일반화. 스위치 기본 꺼짐 | 끝 — 장중 판단 예약(`checkpoints[]`)과 켠 판의 장중 문장은 B3 |
-| B3 | V23 + 장중 판단(새 표·새 종류·작업·감시 계약 2·수동 경로) + 호출 상한 | |
+| B3 | V23 + 장중 판단(새 표·새 종류·작업·감시 계약 2·수동 경로) + 호출 상한 | 끝 — 구현하며 정한 것은 §7 끝의 'B3에서 정한 것' |
 | B4 | 규칙 계좌 설정 키·닫힌 시점·다시 내기 | |
 | B5 | 참고 지표·복기·응답·화면 | |
 | B6 | QA 스택 확인(§14) → `main` 병합·CI → 서버 배포(꺼진 채) | |

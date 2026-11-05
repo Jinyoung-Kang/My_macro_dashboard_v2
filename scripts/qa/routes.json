@@ -745,6 +745,15 @@
     },
     {
       "m": "POST",
+      "p": "/api/paper/run/intraday",
+      "body": {
+        "book": "enum"
+      },
+      "mutating": true,
+      "fuzz": false
+    },
+    {
+      "m": "POST",
       "p": "/api/paper/run/initial-decision",
       "body": {
         "book": "enum",

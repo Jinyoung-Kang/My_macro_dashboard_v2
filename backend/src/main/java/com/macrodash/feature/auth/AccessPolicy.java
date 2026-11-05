@@ -106,8 +106,8 @@ public final class AccessPolicy {
                 "POST /api/paper/run/kr-claude2-start",
                 "POST /api/paper/run/risk", "GET /api/paper/track-record",
                 "POST /api/paper/run/rerank", "GET /api/paper/decisions", "GET /api/paper/decisions/{id}",
-                "POST /api/paper/run/decision", "POST /api/paper/run/initial-decision", "GET /api/paper/settings",
-                "POST /api/paper/settings", "GET /api/paper/settings/history");
+                "POST /api/paper/run/decision", "POST /api/paper/run/initial-decision", "POST /api/paper/run/intraday",
+                "GET /api/paper/settings", "POST /api/paper/settings", "GET /api/paper/settings/history");
         //    투자 OS 프레임·메모(단계 3b) — 프레임 판·제안 승인이 Claude 책의 시스템 프롬프트를 바꾸고, 제안은 Claude를 부름(비용)
         owner("GET /api/paper/framework", "GET /api/paper/framework/versions/{version}", "POST /api/paper/framework",
                 "GET /api/paper/framework/proposals", "POST /api/paper/framework/proposals",
