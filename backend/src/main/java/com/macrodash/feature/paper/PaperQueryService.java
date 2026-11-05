@@ -619,10 +619,8 @@ public class PaperQueryService {
             return null;
         }
         Snapshot watch = found.get();
-        JsonNode cp = watch.payload().get("checkpoint");
-        if (cp == null || !c.bookCode().equals(Json.asText(cp, "book"))
-                || !c.sessionDate().toString().equals(Json.asText(cp, "sessionDate"))
-                || !KrTimedLadder.label(c.atLocal()).equals(Json.asText(cp, KrCheckpointRequest.AT_FIELD))) {
+        if (!WatchIdentity.carries(watch.payload(), WatchIdentity.KR_AT, c.bookCode(), c.sessionDate(),
+                KrTimedLadder.label(c.atLocal()), null)) {
             return null;
         }
         Map<String, Object> out = new LinkedHashMap<>();
@@ -657,10 +655,8 @@ public class PaperQueryService {
             return null;
         }
         Snapshot watch = found.get();
-        JsonNode cp = watch.payload().get("checkpoint");
-        if (cp == null || !c.bookCode().equals(Json.asText(cp, "book"))
-                || !c.sessionDate().toString().equals(Json.asText(cp, "sessionDate"))
-                || !CheckpointPacket.clock(c.atLocal()).equals(Json.asText(cp, "atEt"))) {
+        if (!WatchIdentity.carries(watch.payload(), WatchIdentity.US_AT, c.bookCode(), c.sessionDate(),
+                CheckpointPacket.clock(c.atLocal()), null)) {
             return null;
         }
         Map<String, Object> out = new LinkedHashMap<>();

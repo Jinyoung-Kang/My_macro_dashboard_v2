@@ -276,13 +276,19 @@ public class PaperKrCheckpointJob {
         return PaperBooks.CHECKPOINT_DONE + " 결정 #" + id;
     }
 
-    /** 그 확인의 감시 저장본인가 — 계좌·세션·시각이 같고, T 뒤·지금 앞에 받았음. */
+    /**
+     * 그 확인의 감시 저장본인가 — 저장본이 이 행(계좌·세션·시각, 순번 없음)을 싣고 있고({@link WatchIdentity} — 창 안 계획이 여럿이면 목록에서 찾음),
+     * T 뒤·지금 앞에 받았음.
+     */
     private static boolean freshWatch(Snapshot s, Checkpoint c, Instant at, Instant now) {
-        JsonNode cp = s.payload() == null ? null : s.payload().get("checkpoint");
-        return cp != null && s.collectedAt() != null && !s.collectedAt().isBefore(at) && !s.collectedAt().isAfter(now)
-                && c.bookCode().equals(Json.asText(cp, "book"))
-                && c.sessionDate().toString().equals(Json.asText(cp, "sessionDate"))
-                && KrTimedLadder.label(c.atLocal()).equals(Json.asText(cp, KrCheckpointRequest.AT_FIELD));
+        return freshWatch(s, c, null, at, now);
+    }
+
+    /** {@link #freshWatch(Snapshot, Checkpoint, Instant, Instant)}를 순번이 있는 계획(켠 판 장중 판단 — {@code slot} 1·2)으로. */
+    static boolean freshWatch(Snapshot s, Checkpoint c, Integer slot, Instant at, Instant now) {
+        return s.collectedAt() != null && !s.collectedAt().isBefore(at) && !s.collectedAt().isAfter(now)
+                && WatchIdentity.carries(s.payload(), WatchIdentity.KR_AT, c.bookCode(), c.sessionDate(),
+                        KrTimedLadder.label(c.atLocal()), slot);
     }
 
     private List<PaperStore.Order> pendingOrders() {

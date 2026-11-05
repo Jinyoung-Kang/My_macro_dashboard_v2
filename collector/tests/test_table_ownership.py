@@ -108,14 +108,21 @@ def test_계좌2_1분봉·감시_데이터셋은_정해진_태스크_하나만_�
 
 
 def test_계좌2_감시_범위는_백엔드_표를_읽기만_한다():
-    """장중 확인 감시(paper_watch.py)는 범위를 store.watch_scope로만 읽습니다 — 태스크 모듈에는 SQL이 없고, 범위 함수에는 쓰기 문장이 없습니다."""
+    """장중 감시(paper_watch.py·paper_watch_kr.py)는 범위를 store.watch_plans(끈 판 장중 확인 행 watch_scope + 켠 판 장중 판단 행
+    intraday_watch_plans — ADR 0027)로만 읽습니다 — 태스크 모듈에는 SQL이 없고, 범위 함수에는 쓰기 문장이 없습니다."""
     import inspect
 
     from app import store
 
-    task = (APP / "tasks" / "paper_watch.py").read_text(encoding="utf-8")
-    assert [name for name in BACKEND_TABLES if re.search(rf"\b{name}\b", task)] == []
-    assert not re.search(r"(?i)\b(SELECT|INSERT|UPDATE|DELETE|TRUNCATE)\s", task)
+    for module in ("paper_watch.py", "paper_watch_kr.py"):
+        task = (APP / "tasks" / module).read_text(encoding="utf-8")
+        assert [name for name in BACKEND_TABLES if re.search(rf"\b{name}\b", task)] == [], module
+        assert not re.search(r"(?i)\b(SELECT|INSERT|UPDATE|DELETE|TRUNCATE)\s", task), module
+        assert "store.watch_plans(" in task and "store.watch_scope(" not in task, module
     scope = inspect.getsource(store.watch_scope)
     assert not re.search(r"(?i)\b(INSERT|UPDATE|DELETE|TRUNCATE)\b", scope)
     assert "paper_checkpoints" in scope
+    plans = inspect.getsource(store.intraday_watch_plans)
+    assert not re.search(r"(?i)\b(INSERT|UPDATE|DELETE|TRUNCATE)\b", plans)
+    assert "paper_intraday_plans" in plans
+    assert not re.search(r"(?i)\b(SELECT|INSERT|UPDATE|DELETE|TRUNCATE)\s", inspect.getsource(store.watch_plans))

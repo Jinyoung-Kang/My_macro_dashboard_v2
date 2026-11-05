@@ -137,6 +137,8 @@ def test_T_뒤_한_번_감시_기준_보유_대기_순으로_받아_저장하고
     payload = _payload(store)
     assert payload["contract"] == 1 and payload["barLabel"] == "END" and payload["reference"] == "069500"
     assert payload["checkpoint"] == {"book": "kr_claude2", "sessionDate": "2026-11-03", "atKst": "11:00"}
+    assert payload["checkpoints"] == [{"book": "kr_claude2", "sessionDate": "2026-11-03", "atKst": "11:00", "slot": None}], \
+        "창 안 계획의 신원 목록 — 끈 판 장중 확인 행은 순번 없음"
     assert payload["scope"] == ["005930", "000660", "069500", "035720", "051910"]
     assert payload["attempt"] == 1 and payload["missing"] == [] and payload["error"] is None
     assert payload["lagSeconds"] == 4
@@ -192,6 +194,76 @@ def test_다른_확인의_저장본은_잇지_않는다(store, toss, monkeypatch
     payload = _payload(store)
     assert payload["checkpoint"]["atKst"] == "11:30" and payload["attempt"] == 1
     assert "000660" not in payload["tickers"] and payload["missing"] == ["000660"]
+
+
+def test_창_안_계획이_여럿이면_합집합을_받고_계획이_더해지면_다시_받는다(store, toss, monkeypatch):
+    """끈 판 계좌2의 장중 확인(11:00)과 켠 판 계좌1의 장중 판단(11:10 — ADR 0027)이 겹칩니다. 11:02에는 11:00 계획만 창 안(T ~ T + 20분),
+    11:12에는 둘 다 — 직전 저장본에 11:10 계획의 신원이 없으므로 '이미 받음'이 아니라 다시 받습니다(회차는 1부터)."""
+    plans = [dict(SCOPE, slot=None),
+             {"book": "kr_claude", "sessionDate": SESSION, "atLocal": time(11, 10), "slot": 1, "watch": ["035420"],
+              "held": ["035720"], "pending": []}]
+    monkeypatch.setattr(paper_watch_kr.store, "watch_plans", lambda market, day: [dict(plan) for plan in plans])
+    for code in ("005930", "000660", "069500", "035720", "051910", "035420"):
+        toss.bars[code] = _day("11:20")
+    _clock(monkeypatch, "11:02", 4)
+    tasks.task_paper_watch_kr()
+    first = _payload(store)
+    assert [item["atKst"] for item in first["checkpoints"]] == ["11:00"] and "035420" not in first["scope"]
+
+    _clock(monkeypatch, "11:07")
+    assert "호출 0회" in tasks.task_paper_watch_kr(), "11:00 계획은 이미 받음, 11:10 계획은 아직 창 전"
+
+    _clock(monkeypatch, "11:12", 3)
+    detail = tasks.task_paper_watch_kr()
+    payload = _payload(store)
+    assert payload["checkpoint"] == {"book": "kr_claude2", "sessionDate": "2026-11-03", "atKst": "11:00"}
+    assert payload["checkpoints"] == [
+        {"book": "kr_claude2", "sessionDate": "2026-11-03", "atKst": "11:00", "slot": None},
+        {"book": "kr_claude", "sessionDate": "2026-11-03", "atKst": "11:10", "slot": 1},
+    ]
+    assert payload["scope"] == ["005930", "000660", "035420", "069500", "035720", "051910"], "감시 목록(두 계획)·기준 종목 먼저"
+    assert payload["attempt"] == 1, "더해진 계획의 첫 회차"
+    assert "한국 장중 확인 2026-11-03 11:00·11:10 KST" in detail
+
+    _clock(monkeypatch, "11:17")
+    assert "호출 0회" in tasks.task_paper_watch_kr(), "두 계획 모두 가장 늦은 확인 시각 뒤에 받은 저장본이 있음"
+
+    _clock(monkeypatch, "11:25")          # 11:00 계획의 창이 끝남 — 11:10 계획만, 그 신원의 저장본이 이미 있음
+    assert "11:10 KST 감시 저장본 있음" in tasks.task_paper_watch_kr()
+
+
+def test_그_계좌_대기_주문의_지정_시각과_장중_시장가_기준_분도_창으로_뽑는다(store, toss, monkeypatch):
+    """예상 상태가 기준 시각이 지난 대기 주문(AT_MINUTE 10:47·MARKET 생성 10:31:20 → 기준 분 10:33)의 가격을 감시 저장본의 창에서 읽습니다.
+    아직 오지 않은 지정 시각(13:15)·다른 계좌의 주문·다른 세션의 주문은 창을 만들지 않습니다."""
+    with store.connection() as conn:
+        for code in ("kr_claude", "kr_claude2"):
+            conn.execute(
+                "INSERT INTO paper_books (code, kind, label, initial_cash, started_on, status, market, currency) "
+                "VALUES (%s, 'CLAUDE', %s, 100000000, %s, 'ACTIVE', 'KR', 'KRW')", (code, code, date(2026, 10, 30)))
+        for book, ticker, timing, at, as_of, created in (
+                ("kr_claude", "005930", "AT_MINUTE", time(10, 47), date(2026, 11, 2), None),
+                ("kr_claude", "000660", "AT_MINUTE", time(13, 15), date(2026, 11, 2), None),
+                ("kr_claude", "035720", "MARKET", None, date(2026, 11, 2), datetime(2026, 11, 3, 10, 31, 20, tzinfo=KST)),
+                ("kr_claude", "051910", "AT_MINUTE", time(9, 40), date(2026, 10, 30), None),      # 지난 세션의 주문
+                ("kr_claude2", "005930", "AT_MINUTE", time(10, 5), date(2026, 11, 2), None)):     # 다른 계좌
+            conn.execute(
+                "INSERT INTO paper_orders (book_code, ticker, side, timing, target_local, source, status, as_of_trading_date, "
+                "created_at) VALUES (%s, %s, 'BUY', %s, %s, 'CLAUDE', 'PENDING', %s, COALESCE(%s, now()))",
+                (book, ticker, timing, at, as_of, created))
+    plan = {"book": "kr_claude", "sessionDate": SESSION, "atLocal": AT, "slot": 2, "watch": ["005930"], "held": [],
+            "pending": ["000660", "005930", "035720", "051910"]}
+    monkeypatch.setattr(paper_watch_kr.store, "watch_plans", lambda market, day: [dict(plan)])
+    for code in ("005930", "069500", "000660", "035720", "051910"):
+        toss.bars[code] = _day("11:03")
+    _clock(monkeypatch, "11:02", 4)
+
+    tasks.task_paper_watch_kr()
+
+    windows = _payload(store)["tickers"]["005930"]["windows"]
+    assert set(windows) == {"09:00", "10:00", "10:33", "10:47", "11:00"}, "지난 기준 시각만 — 13:15는 아직, 10:05·09:40은 이 계획의 것이 아님"
+    assert [bar["label"] for bar in windows["10:47"]] == ["10:48", "10:49", "10:50", "10:51", "10:52"]
+    assert _payload(store)["tickers"]["035720"]["firstAfter"]["10:33"]["label"] == "10:34"
+    assert _payload(store)["checkpoints"] == [{"book": "kr_claude", "sessionDate": "2026-11-03", "atKst": "11:00", "slot": 2}]
 
 
 # ==============================================================================

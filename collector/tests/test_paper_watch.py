@@ -225,8 +225,55 @@ def test_범위는_계좌2의_오늘_PLANNED_MINUTE_확인과_보유·대기이�
 
 
 def test_범위_읽기는_쓰기_문장이_없다():
-    source = inspect.getsource(paper_watch.store.watch_scope)
-    assert not re.search(r"(?i)\b(INSERT|UPDATE|DELETE|TRUNCATE)\b", source)
+    for function in (paper_watch.store.watch_scope, paper_watch.store.intraday_watch_plans, paper_watch.store.watch_plans):
+        source = inspect.getsource(function)
+        assert not re.search(r"(?i)\b(INSERT|UPDATE|DELETE|TRUNCATE)\b", source)
+
+
+def _plan(store, book: str, session: date, slot: int, at: time, feed: str = "MINUTE", status: str = "PLANNED",
+          watch: tuple[str, ...] = ("MSFT",)) -> None:
+    """켠 판(자유 시점 — ADR 0027) 장중 판단 계획 행 하나(V23 paper_intraday_plans) — 백엔드가 쓰는 표를 시험이 직접 채웁니다."""
+    with store.connection() as conn:
+        decision = conn.execute(
+            "INSERT INTO paper_decisions (book_code, as_of_trading_date, kind, status, settings_version) "
+            "VALUES (%s, %s, 'SCHEDULED', 'OK', 1) ON CONFLICT (book_code, as_of_trading_date, kind) DO UPDATE SET status = 'OK' "
+            "RETURNING id", (book, session - timedelta(days=4)),
+        ).fetchone()["id"]
+        conn.execute(
+            "INSERT INTO paper_intraday_plans (book_code, session_date, slot, at_local, feed, watch, question, variant, "
+            "source_decision_id, status) VALUES (%s, %s, %s, %s, %s, %s, '반등 확인', 'ft-1', %s, %s)",
+            (book, session, slot, at, feed, list(watch), decision, status),
+        )
+
+
+def test_계획_전부는_끈_판_장중_확인_행과_켠_판_장중_판단_행을_시각_순으로_읽기만_한다(store, monkeypatch):
+    _book(store, "claude")
+    _book(store, "claude2")
+    _book(store, "kr_claude", market="KR")
+    _checkpoint(store, "claude2", SESSION)                                   # 끈 판 계좌2 — 10:00
+    _plan(store, "claude", SESSION, 1, time(9, 47))                          # 켠 판 계좌1 — 09:47
+    _plan(store, "claude", SESSION, 2, time(13, 30), feed="HOURLY")          # HOURLY는 감시 자료가 필요 없음
+    _plan(store, "claude2", SESSION, 1, time(10, 0), status="SUPERSEDED")    # 닫힌 예약
+    _plan(store, "claude2", SESSION, 2, time(14, 5), watch=("AMD", "NVDA"))
+    _plan(store, "kr_claude", SESSION, 1, time(9, 30), watch=("005930",))    # 다른 시장
+    _plan(store, "claude", SESSION + timedelta(days=1), 1, time(9, 40))      # 다른 날
+    _hold(store, "claude", "HELD1")
+    _hold(store, "claude2", "HELD2")
+    _order(store, "claude", "PEND1", "PENDING")
+    _order(store, "claude2", "DONE2", "FILLED")
+    _read_only(store, monkeypatch)
+
+    assert store.intraday_watch_plans("US", SESSION) == [
+        {"book": "claude", "sessionDate": SESSION, "atLocal": time(9, 47), "slot": 1, "watch": ["MSFT"], "held": ["HELD1"],
+         "pending": ["PEND1"]},
+        {"book": "claude2", "sessionDate": SESSION, "atLocal": time(14, 5), "slot": 2, "watch": ["AMD", "NVDA"],
+         "held": ["HELD2"], "pending": []},
+    ]
+    plans = store.watch_plans("US", SESSION)
+    assert [(plan["book"], plan["atLocal"], plan["slot"]) for plan in plans] == [
+        ("claude", time(9, 47), 1), ("claude2", time(10, 0), None), ("claude2", time(14, 5), 2)], "확인 시각 순 — 끈 판 행은 순번 없음"
+    assert [(plan["book"], plan["slot"]) for plan in store.watch_plans("KR", SESSION)] == [("kr_claude", 1)]
+    assert store.watch_plans("US", SESSION + timedelta(days=2)) == []
 
 
 # ==============================================================================
@@ -313,6 +360,8 @@ def test_창_안이면_배치_한_번이고_저장본_모양과_지연(store, ya
     payload = store.read_snapshot(catalog.SNAP_PAPER_WATCH_US).payload
     assert payload["contract"] == 1 and payload["barLabel"] == "START" and payload["reference"] == "SPY"
     assert payload["checkpoint"] == {"book": "claude2", "sessionDate": "2026-11-02", "atEt": "10:00"}
+    assert payload["checkpoints"] == [{"book": "claude2", "sessionDate": "2026-11-02", "atEt": "10:00", "slot": None}], \
+        "창 안 계획의 신원 목록 — 끈 판 장중 확인 행은 순번 없음"
     assert payload["scope"] == ["HELD", "NVDA", "PEND", "QQQ", "SPY"] and payload["missing"] == []
     assert payload["fetchedAt"] == "2026-11-02T15:05:30+00:00"
     assert payload["lagSeconds"] == -30, "진행 중인 10:05 봉까지 받음 — 10:05:30 − (10:05 + 60초)(X1 단서)"
@@ -353,6 +402,57 @@ def test_빠진_종목은_같은_확인의_직전_값을_잇고_하나도_못_�
     with pytest.raises(EmptyResult, match="0/5 종목 — 기존 저장본 유지"):
         paper_watch.task_paper_watch_us()
     assert store.read_snapshot(catalog.SNAP_PAPER_WATCH_US).payload["fetchedAt"] == "2026-11-02T15:10:00+00:00"
+
+
+def test_창_안_계획이_여럿이면_저장본_한_장이_종목_합집합과_신원_목록을_싣는다(store, monkeypatch, yahoo, clock):
+    """켠 판 두 계좌의 장중 판단(09:55·10:10)과 끈 판 장중 확인(10:00)이 겹치는 시각 — 가장 이른 것이 예전 모양의 checkpoint, 전부가 checkpoints.
+    창 밖 계획(14:05)의 종목은 받지 않습니다."""
+    plans = [
+        {"book": "claude", "sessionDate": SESSION, "atLocal": time(9, 55), "slot": 1, "watch": ["MSFT"], "held": ["H1"], "pending": []},
+        dict(SCOPE, slot=None),
+        {"book": "claude2", "sessionDate": SESSION, "atLocal": time(10, 10), "slot": 2, "watch": ["AMD"], "held": ["HELD"],
+         "pending": ["P2"]},
+        {"book": "claude", "sessionDate": SESSION, "atLocal": time(14, 5), "slot": 2, "watch": ["LATE"], "held": ["H1"], "pending": []},
+    ]
+    monkeypatch.setattr(store, "watch_plans", lambda market, session: [dict(plan) for plan in plans])
+    wanted = ("AMD", "H1", "HELD", "MSFT", "NVDA", "P2", "PEND", "QQQ", "SPY")
+    yahoo["minute"] = ({ticker: _rows(SESSION, time(9, 30), time(10, 4)) for ticker in wanted}, None, False)
+
+    detail = paper_watch.task_paper_watch_us()
+
+    assert yahoo["calls"] == [(wanted, "1d")], "창 안 계획 셋의 감시 ∪ 보유 ∪ 대기 ∪ {SPY, QQQ} — 14:05 계획의 LATE는 아직"
+    payload = store.read_snapshot(catalog.SNAP_PAPER_WATCH_US).payload
+    assert payload["checkpoint"] == {"book": "claude", "sessionDate": "2026-11-02", "atEt": "09:55"}
+    assert payload["checkpoints"] == [
+        {"book": "claude", "sessionDate": "2026-11-02", "atEt": "09:55", "slot": 1},
+        {"book": "claude2", "sessionDate": "2026-11-02", "atEt": "10:00", "slot": None},
+        {"book": "claude2", "sessionDate": "2026-11-02", "atEt": "10:10", "slot": 2},
+    ]
+    assert payload["scope"] == list(wanted)
+    assert "장중 확인 2026-11-02 09:55·10:00·10:10 ET" in detail
+
+    # 10:27 — 09:55 계획의 창(뒤 30분)이 끝남. 남은 둘의 신원이 직전 저장본에 있으므로 빠진 종목은 잇습니다.
+    clock(_ny(10, 27))
+    partial = {ticker: _rows(SESSION, time(9, 30), time(10, 26)) for ticker in ("HELD", "NVDA", "P2", "PEND", "QQQ", "SPY")}
+    yahoo["minute"] = (partial, "받지 못함 1개(AMD)", False)
+    paper_watch.task_paper_watch_us()
+    payload = store.read_snapshot(catalog.SNAP_PAPER_WATCH_US).payload
+    assert [item["atEt"] for item in payload["checkpoints"]] == ["10:00", "10:10"]
+    assert payload["tickers"]["AMD"]["isStale"] is True and "MSFT" not in payload["tickers"], "창이 끝난 계획의 종목은 받지 않음"
+
+    # 창 밖(13:00) — 남은 계획의 시각을 모두 적고 호출 0회.
+    clock(_ny(13, 0))
+    calls = len(yahoo["calls"])
+    assert paper_watch.task_paper_watch_us().startswith("장중 확인 2026-11-02 09:55·10:00·10:10·14:05 ET 앞 15분")
+    assert len(yahoo["calls"]) == calls
+
+
+def test_신원_목록이_없는_예전_저장본은_checkpoint_하나를_순번_없는_신원으로_읽는다():
+    old = {"checkpoint": {"book": "claude2", "sessionDate": "2026-11-02", "atEt": "10:00"}}
+    assert paper_watch.identities(old) == [{"book": "claude2", "sessionDate": "2026-11-02", "atEt": "10:00", "slot": None}]
+    assert paper_watch.identities({}) == []
+    listed = {"checkpoint": old["checkpoint"], "checkpoints": [{"book": "claude", "sessionDate": "2026-11-02", "atEt": "09:55", "slot": 1}]}
+    assert paper_watch.identities(listed) == listed["checkpoints"], "목록이 있으면 목록만"
 
 
 def test_다른_확인의_저장본은_잇지_않는다(store, monkeypatch, yahoo, clock):

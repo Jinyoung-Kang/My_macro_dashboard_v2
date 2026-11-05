@@ -412,12 +412,9 @@ final class CheckpointPacket {
         return out;
     }
 
-    /** 저장본이 이 확인(계좌·세션·시각)의 것인가 — 수집기 모양의 {@code checkpoint}. */
+    /** 저장본이 이 확인(계좌·세션·시각, 순번 없음)을 싣고 있는가 — 수집기 모양의 신원({@link WatchIdentity}). */
     private static boolean matches(JsonNode payload, Checkpoint c) {
-        JsonNode cp = payload.get("checkpoint");
-        return cp != null && c.bookCode().equals(Json.asText(cp, "book"))
-                && c.sessionDate().toString().equals(Json.asText(cp, "sessionDate"))
-                && CLOCK.format(c.atLocal()).equals(Json.asText(cp, "atEt"));
+        return WatchIdentity.carries(payload, WatchIdentity.US_AT, c.bookCode(), c.sessionDate(), CLOCK.format(c.atLocal()), null);
     }
 
     /** 정규장 안인데 기준 종목의 새 봉이 {@link #STALL}보다 오래 없음(§7-3 '멈춤'). 기준 종목이 없으면 거짓(모름). */

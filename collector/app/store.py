@@ -711,6 +711,52 @@ def watch_scope(market: str, session: date) -> dict | None:
             "watch": list(row["watch"] or []), "held": [r["ticker"] for r in held], "pending": [r["ticker"] for r in pending]}
 
 
+def intraday_watch_plans(market: str, session: date) -> list[dict]:
+    """
+    자유 시점 판 장중 판단(ADR 0027 결정 3 — ``paper_intraday_plans``, V23)의 감시 범위 — 그 시장 모든 계좌의 ``session`` 계획 행 가운데
+    PLANNED·MINUTE인 것 전부(확인 시각·계좌·순번 순)와 그 계좌의 보유·대기 주문 종목. 행이 없으면 빈 목록.
+    ``[{book, sessionDate, atLocal(time — 그 시장 현지 시각), slot, watch[…], held[…], pending[…]}]``
+
+    백엔드 표 ``paper_intraday_plans``·``paper_positions``·``paper_orders``·``paper_books``를 **읽기만** 합니다(watch_scope와 같은 교차 읽기 —
+    ADR 0008). 확인 시각·감시 목록은 결정(또는 앞선 장중 판단·운영자의 당김)이 정하고 백엔드가 적습니다.
+    """
+    with connection() as conn:
+        rows = conn.execute(
+            "SELECT p.book_code, p.session_date, p.at_local, p.slot, p.watch FROM paper_intraday_plans p "
+            "JOIN paper_books b ON b.code = p.book_code "
+            "WHERE b.market = %s AND p.session_date = %s AND p.status = %s AND p.feed = %s "
+            "ORDER BY p.at_local, p.book_code, p.slot",
+            (market, session, CHECKPOINT_PLANNED, FEED_MINUTE),
+        ).fetchall()
+        out = []
+        for row in rows:
+            held = conn.execute(
+                "SELECT ticker FROM paper_positions WHERE book_code = %s ORDER BY ticker", (row["book_code"],),
+            ).fetchall()
+            pending = conn.execute(
+                "SELECT DISTINCT ticker FROM paper_orders WHERE book_code = %s AND status = 'PENDING' ORDER BY ticker",
+                (row["book_code"],),
+            ).fetchall()
+            out.append({"book": row["book_code"], "sessionDate": row["session_date"], "atLocal": row["at_local"],
+                        "slot": row["slot"], "watch": list(row["watch"] or []), "held": [r["ticker"] for r in held],
+                        "pending": [r["ticker"] for r in pending]})
+    return out
+
+
+def watch_plans(market: str, session: date) -> list[dict]:
+    """
+    그 시장 ``session``의 장중 감시 계획 전부 — 끈 판 장중 확인 행(``watch_scope`` — 계좌2 하나, ``slot`` None)과 켠 판 장중 판단 행
+    (``intraday_watch_plans`` — 모든 계좌, ``slot`` 1·2)을 확인 시각·계좌 순으로. 감시 태스크(paper_watch_us·paper_watch_kr)가 이것으로 지금
+    창 안인 계획을 고릅니다 — 계획이 여럿이어도 저장본 한 장이 그 계획들의 신원(``checkpoints``)과 종목 합집합을 싣습니다.
+    """
+    plans = []
+    legacy = watch_scope(market, session)
+    if legacy:
+        plans.append({**legacy, "slot": None})
+    plans.extend(intraday_watch_plans(market, session))
+    return sorted(plans, key=lambda plan: (plan["atLocal"], plan["book"], plan["slot"] or 0))
+
+
 # 장중 시장가(MARKET — 장중 확인·장중 판단 응답의 주문)와 분 단위 지정 시각(AT_MINUTE — ADR 0027)은 주문마다 기준 시각이 다릅니다. 1분봉
 # 저장본에 그 주문의 기준 시각 창을 더하려고 생성 시각(MARKET)·기준일과 지정 시각(AT_MINUTE)만 읽습니다. 어느 계좌의 주문이든 읽습니다 —
 # 그 시점을 내는 계좌는 백엔드가 정하고(스위치가 꺼진 동안 MARKET은 계좌2뿐, AT_MINUTE는 없음), 종목은 timed_scope가 담습니다.

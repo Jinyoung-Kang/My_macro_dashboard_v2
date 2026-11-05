@@ -6,20 +6,24 @@ app/tasks/paper_watch.py
 명세 docs/specs/2026-10-30-claude-book2-timing-design.md §5-2·§7-3·§9-5·§12-1·§12-3, ADR 0022. 이 저장본은 장중 확인 패킷(판단 입력)과
 예상 상태의 가격에만 쓰입니다 — 장부 체결은 지금처럼 paper.bars.us 한 출처입니다(체결 출처를 둘로 늘리지 않음).
 
-[범위] store.watch_scope("US", 뉴욕 오늘) — 계좌2의 오늘(뉴욕 날짜) 세션 장중 확인 행 가운데 PLANNED·MINUTE인 것 하나(확인 시각·감시 목록)와
-  계좌2 보유·대기 주문 종목(백엔드 표를 읽기만 — ADR 0008·0022) + 기준 종목 SPY·QQQ. 행이 없으면 Yahoo를 부르지 않고 정상으로 끝냅니다
-  ('… 호출 0회').
+[범위] store.watch_plans("US", 뉴욕 오늘) — 오늘(뉴욕 날짜) 세션의 PLANNED·MINUTE 계획 전부: 끈 판 계좌2의 장중 확인 행 하나(store.watch_scope)와
+  켠 판(자유 시점 — ADR 0027) 계좌들의 장중 판단 행(store.intraday_watch_plans), 그리고 그 계좌의 보유·대기 주문 종목(백엔드 표를 읽기만 —
+  ADR 0008·0022) + 기준 종목 SPY·QQQ. 계획이 없으면 Yahoo를 부르지 않고 정상으로 끝냅니다('… 호출 0회'). 지금 창 안인 계획이 여럿이면 저장본 한
+  장이 그 계획들의 종목 합집합과 신원 목록(checkpoints)을 싣습니다.
 [창] 확인 시각 T(그 세션 날짜의 America/New_York 시각)의 −WATCH_BEFORE ~ +WATCH_AFTER 안에서만 묻습니다. 그 밖도 호출 0회로 정상 끝 —
   확인이 없는 날·시각에는 외부 호출이 없습니다(§12-3: MINUTE 확인 날만 약 10건). 계획 없음·창 밖은 하루의 거의 전부라 EmptyResult로 두면
   이 태스크 하나뿐인 session 군 실행이 늘 'empty'가 되어 상태 경고·doctor 비정상·마지막 실행 가림이 생깁니다(리뷰 OPS-2 — us_consensus의
   '호출 0회' 선례). EmptyResult는 받으려 했는데 못 받은 경우(래치·0종목)에만 씁니다.
 [받는 법] market.minute_bars(…, "1d") 배치 한 번(paper_bars_us와 같은 함수 — 정규장·원시가). 공용 Yahoo 래치(http.YAHOO_HOST)가 닫혀 있으면
   그 회차는 묻지 않습니다(다음 session 회차가 다시 봄). 이 회차가 받은 429는 같은 함수가 래치를 닫습니다.
-[실패] 받지 못한 종목은 같은 확인(계좌·세션·시각)의 직전 저장본에서 잇고 isStale. 다른 확인의 저장본은 잇지 않습니다(어제 값을 오늘 감시로
-  보이지 않게). 하나도 받지 못하면 EmptyResult로 저장본을 둡니다.
+[실패] 받지 못한 종목은 같은 확인(계좌·세션·시각 — 지금 창 안인 계획 가운데 하나라도 직전 저장본의 신원에 있음)의 직전 저장본에서 잇고 isStale.
+  다른 확인의 저장본은 잇지 않습니다(어제 값을 오늘 감시로 보이지 않게). 하나도 받지 못하면 EmptyResult로 저장본을 둡니다.
 
 [저장본 모양 — contract 1]
-  {contract, source, barLabel "START", reference "SPY", checkpoint {book, sessionDate, atEt "HH:MM"}, scope [티커…], fetchedAt,
+  {contract, source, barLabel "START", reference "SPY", checkpoint {book, sessionDate, atEt "HH:MM"},   # 창 안 계획 가운데 가장 이른 것
+   checkpoints [{book, sessionDate, atEt, slot}…],   # 창 안 계획 전부(끈 판 장중 확인은 slot null, 켠 판 장중 판단은 1·2) — 백엔드는 자기 행의
+                                                    # 신원이 여기(또는 checkpoint)에 있을 때만 이 저장본을 씁니다
+   scope [티커…], fetchedAt,
    lagSeconds,              # paper_bars.lag_seconds와 같은 뜻 — fetchedAt − (SPY 마지막 봉 시작 + 60초), 이번 회차에 받은 SPY의 그날 정규장
                             # 안에서만, 아니면 null. 진행 중인 봉까지 받았으면 음수(X1 단서 — 그 봉은 bars에는 넣지 않음)
    declaredDelayMin null,   # 출처가 밝힌 지연 — yf.download 응답에 없어 늘 null(§7-3)
@@ -74,6 +78,23 @@ def in_window(now: datetime, session: date, at_et: time) -> bool:
     return target - WATCH_BEFORE <= now <= target + WATCH_AFTER
 
 
+def identity(plan: dict) -> dict:
+    """계획 하나의 신원(저장본 checkpoints의 한 줄) — 계좌·세션·확인 시각(ET)·순번(끈 판 장중 확인은 None)."""
+    return {"book": plan["book"], "sessionDate": plan["sessionDate"].isoformat(), "atEt": plan["atLocal"].strftime("%H:%M"),
+            "slot": plan.get("slot")}
+
+
+def identities(payload: dict) -> list[dict]:
+    """
+    저장본이 실은 계획 신원 — ``checkpoints`` 목록, 없으면(이 목록이 생기기 전 저장본) ``checkpoint`` 하나를 순번 없는 신원으로. 둘 다 없으면 빈 목록.
+    """
+    listed = payload.get("checkpoints")
+    if isinstance(listed, list):
+        return [item for item in listed if isinstance(item, dict)]
+    single = payload.get("checkpoint")
+    return [{**single, "slot": None}] if isinstance(single, dict) else []
+
+
 def ticker_entry(rows: list[dict], fetched_at: datetime) -> dict | None:
     """
     한 종목의 1분봉(market.minute_bars의 줄) → 항목(모양은 머리말). 완성된 봉(시작 + 60초 ≤ 받은 시각)만 쓰고, 마지막 완성 봉의 뉴욕 날짜
@@ -114,25 +135,32 @@ def _has_data(entry: dict) -> bool:
 def task_paper_watch_us() -> str:
     """계좌2 장중 확인(MINUTE) 날 확인 시각 앞뒤의 감시·보유·대기 종목 최근 1분봉(Yahoo) → 스냅샷 paper.watch.us."""
     now = _now()
-    scope = store.watch_scope("US", now.astimezone(paper_bars.NEW_YORK).date())
-    if not scope:
+    plans = store.watch_plans("US", now.astimezone(paper_bars.NEW_YORK).date())
+    if not plans:
         return "오늘 장중 확인(MINUTE) 계획 없음 — 호출 0회"
-    session, at_et = scope["sessionDate"], scope["atLocal"]
-    label = at_et.strftime("%H:%M")
-    if not in_window(now, session, at_et):
-        return (f"장중 확인 {session.isoformat()} {label} ET 앞 {int(WATCH_BEFORE.total_seconds() // 60)}분 ~ "
+    session = plans[0]["sessionDate"]
+    active = [plan for plan in plans if in_window(now, plan["sessionDate"], plan["atLocal"])]
+    if not active:
+        labels = "·".join(dict.fromkeys(plan["atLocal"].strftime("%H:%M") for plan in plans))
+        return (f"장중 확인 {session.isoformat()} {labels} ET 앞 {int(WATCH_BEFORE.total_seconds() // 60)}분 ~ "
                 f"뒤 {int(WATCH_AFTER.total_seconds() // 60)}분 밖 — 호출 0회")
-    tickers = sorted(set(scope["watch"]) | set(scope["held"]) | set(scope["pending"]) | set(BENCHMARKS))
+    label = "·".join(dict.fromkeys(plan["atLocal"].strftime("%H:%M") for plan in active))
+    wanted: set[str] = set(BENCHMARKS)
+    for plan in active:
+        wanted |= set(plan["watch"]) | set(plan["held"]) | set(plan["pending"])
+    tickers = sorted(wanted)
     latched = http.active_rejection(http.YAHOO_HOST)
     if latched is not None:
         raise EmptyResult(f"0/{len(tickers)} 종목 — 기존 저장본 유지 ({latched})")
 
     rows, reason, _limited = market_service.minute_bars(tickers, PERIOD)
     fetched_at = _now()
-    checkpoint = {"book": scope["book"], "sessionDate": session.isoformat(), "atEt": label}
+    checkpoints = [identity(plan) for plan in active]
+    checkpoint = {key: checkpoints[0][key] for key in ("book", "sessionDate", "atEt")}
 
     previous = previous_payload(catalog.SNAP_PAPER_WATCH_US)
-    same = previous.get("checkpoint") == checkpoint and isinstance(previous.get("tickers"), dict)
+    carried_from = identities(previous)
+    same = any(item in carried_from for item in checkpoints) and isinstance(previous.get("tickers"), dict)
     before = previous["tickers"] if same else {}
     fresh: dict[str, dict] = {}
     for ticker in tickers:
@@ -152,6 +180,7 @@ def task_paper_watch_us() -> str:
         "barLabel": paper_bars.BAR_LABEL,
         "reference": REFERENCE,
         "checkpoint": checkpoint,
+        "checkpoints": checkpoints,
         "scope": tickers,
         "fetchedAt": fetched_at.isoformat(),
         "lagSeconds": lag,
