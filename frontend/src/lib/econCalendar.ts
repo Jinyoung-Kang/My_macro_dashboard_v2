@@ -47,10 +47,15 @@ export function importanceLabel(importance: number | null | undefined): string {
   return IMPORTANCE[importance] ?? EMPTY;
 }
 
+/** 숫자 앞에 붙이는 통화 기호 단위. 그 밖의 글자 단위(KRW·cf 등)는 숫자 뒤에 띄어 적습니다. */
+const CURRENCY_SYMBOLS = new Set(["$", "€", "£", "¥", "₩"]);
+
 /**
- * 값 한 칸 — 숫자와 단위("3.10%", "218K"). 값이 없으면 '—'(0으로 그리지 않음).
+ * 값 한 칸 — 숫자와 배수·단위("3.1%", "218K", "$61.46B", "1.2T KRW"). 값이 없으면 '—'(0으로 그리지 않음).
  *
  * 소수 자릿수는 출처가 준 그대로 둡니다(정수는 0자리, 소수는 최대 2자리) — 자릿수를 늘려 없는 정밀도를 만들지 않습니다.
+ * 단위 자리는 출처가 주는 조합에 맞춥니다(2026-11-06 실제 응답: 단위 %·$·KRW·cf, 배수 K·M·B·T): 통화 기호는 숫자 앞(음수는 부호 뒤),
+ * %는 붙여서, 글자 단위는 띄어서.
  */
 export function valueText(
   value: number | null | undefined,
@@ -59,7 +64,14 @@ export function valueText(
 ): string {
   if (value === null || value === undefined || Number.isNaN(value)) return EMPTY;
   const digits = Number.isInteger(value) ? 0 : Math.min(2, decimals(value));
-  return `${format(value, digits)}${event.scale ?? ""}${event.unit ?? ""}`;
+  const scale = event.scale ?? "";
+  const unit = event.unit ?? "";
+  if (CURRENCY_SYMBOLS.has(unit)) {
+    return `${value < 0 ? "-" : ""}${unit}${format(Math.abs(value), digits)}${scale}`;
+  }
+  const number = `${format(value, digits)}${scale}`;
+  if (unit === "" || unit === "%") return `${number}${unit}`;
+  return `${number} ${unit}`;
 }
 
 function decimals(value: number): number {

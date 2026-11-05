@@ -139,6 +139,12 @@ describe("표시 규칙", () => {
     expect(valueText(1.23456, {}, formatNumber)).toBe("1.23");
     expect(valueText(null, { unit: "%" }, formatNumber)).toBe("—");
     expect(valueText(0, { unit: "%" }, formatNumber)).toBe("0%");
+    // 실제 응답의 단위·배수 조합(2026-11-06) — 통화 기호는 숫자 앞(음수는 부호 뒤), 글자 단위는 띄어서.
+    expect(valueText(61.46, { unit: "$", scale: "B" }, formatNumber)).toBe("$61.46B");
+    expect(valueText(-7.5, { unit: "$", scale: "B" }, formatNumber)).toBe("-$7.5B");
+    expect(valueText(1.2, { unit: "KRW", scale: "T" }, formatNumber)).toBe("1.2T KRW");
+    expect(valueText(33, { unit: "cf", scale: "B" }, formatNumber)).toBe("33B cf");
+    expect(valueText(86, { unit: null, scale: "K" }, formatNumber)).toBe("86K");
   });
 
   it("우회 수집 표기는 통과한 계층을 알 때만", () => {
