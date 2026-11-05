@@ -124,7 +124,7 @@ def test_QA255_yfinance_요청도_태스크_예산_안에_끝난다(blackhole):
     finished, elapsed, result = _call(blackhole, lambda: market.last_two_closes("CL=F"), budget=BUDGET)
 
     assert blackhole.accepted > 0, "요청이 무응답 프록시로 가지 않았습니다 — 시험 설정 확인"
-    assert finished, f"예산 {BUDGET}초인 호출이 {elapsed:.1f}초 넘게 끝나지 않음"
+    assert finished and elapsed <= BUDGET + 0.5, f"예산 {BUDGET}초인 호출이 {elapsed:.1f}초 걸림(또는 끝나지 않음)"
     assert result[0] is None and result[2], result
 
 
@@ -132,7 +132,7 @@ def test_QA255_yf_download_배치의_종목_스레드도_예산을_본다(blackh
     finished, elapsed, result = _call(blackhole, lambda: market.minute_bars(["AAA", "BBB"], "1d"), budget=BUDGET)
 
     assert blackhole.accepted > 0, "요청이 무응답 프록시로 가지 않았습니다 — 시험 설정 확인"
-    assert finished, f"예산 {BUDGET}초인 배치가 {elapsed:.1f}초 넘게 끝나지 않음"
+    assert finished and elapsed <= BUDGET + 0.5, f"예산 {BUDGET}초인 배치가 {elapsed:.1f}초 걸림(또는 끝나지 않음)"
     bars, reason, _limited = result
     assert bars == {} and reason, result
 
@@ -164,8 +164,9 @@ def test_QA255_Yahoo_태스크의_좀비가_다른_태스크의_작업_스레드
     tasks._inflight.clear()
     release = threading.Event()
     try:
-        # 응답 없는 Yahoo 태스크 8개(지금 작업 스레드 수) — 상한 0.3초에 '시간 초과'로 기록되고 작업 스레드는 좀비로 남습니다.
-        zombies = [tasks.Task(f"yahoo_probe_{i}", "fast", lambda: release.wait(10) and "끝", "") for i in range(8)]
+        # 응답 없는 Yahoo 태스크를 일반 작업 스레드 수만큼 — 상한 0.3초에 '시간 초과'로 기록되고 작업 스레드는 좀비로 남습니다.
+        workers = tasks.runner._task_threads._max_workers
+        zombies = [tasks.Task(f"yahoo_probe_{i}", "fast", lambda: release.wait(10) and "끝", "") for i in range(workers)]
         for task in zombies:
             object.__setattr__(task, "yahoo", True)      # 태스크 목록의 Yahoo 표시와 같음(수정 전에도 같은 모양으로 재현)
         runners = [threading.Thread(target=tasks.run_task, args=(task,), daemon=True) for task in zombies]
@@ -202,13 +203,26 @@ def test_QA255_Yahoo가_주_출처인_태스크만_따로_표시한다():
 
 def test_저장소의_yf_download는_모두_예산_세션을_넘긴다():
     # 넘기지 않으면 yfinance 1.7.0이 부를 때마다 새 기본 세션으로 싱글턴의 세션을 바꿔, 그 뒤 모든 Yahoo 요청이 예산을 보지 않습니다.
+    # 모양: yf.download·yfinance.download·from yfinance import download·Tickers(…)(그 history·download도 multi.download를 부름).
     root = Path(__file__).resolve().parents[1] / "app"
     calls = []
     for path in sorted(root.rglob("*.py")):
         tree = ast.parse(path.read_text(encoding="utf-8"))
+        modules = {"yfinance"}
+        imported = set()
         for node in ast.walk(tree):
-            if (isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute) and node.func.attr == "download"
-                    and isinstance(node.func.value, ast.Name) and node.func.value.id == "yf"):
+            if isinstance(node, ast.Import):
+                modules |= {alias.asname or alias.name for alias in node.names if alias.name == "yfinance"}
+            elif isinstance(node, ast.ImportFrom) and node.module == "yfinance":
+                imported |= {alias.asname or alias.name for alias in node.names if alias.name in ("download", "Tickers")}
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Call):
+                continue
+            func = node.func
+            hit = ((isinstance(func, ast.Attribute) and func.attr in ("download", "Tickers")
+                    and isinstance(func.value, ast.Name) and func.value.id in modules)
+                   or (isinstance(func, ast.Name) and func.id in imported))
+            if hit:
                 session = next((k.value for k in node.keywords if k.arg == "session"), None)
                 calls.append((f"{path.relative_to(root)}:{node.lineno}", ast.unparse(session) if session else None))
     assert len(calls) >= 3, calls

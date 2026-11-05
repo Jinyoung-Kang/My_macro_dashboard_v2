@@ -20,14 +20,16 @@ os.environ.setdefault("COLLECTOR_ALLOWED_HOSTS", "localhost,127.0.0.1,[::1],coll
 @pytest.fixture(autouse=True)
 def _reset_http_guards():
     """
-    공용 HTTP 층의 거부 래치·호스트 간격 기록은 프로세스 전역입니다(app/http.py). 한 테스트가 닫은 호스트(127.0.0.1,
-    finance.yahoo.com)가 5분 동안 다음 테스트의 요청까지 막지 않게 테스트마다 비웁니다.
+    공용 HTTP 층의 거부 래치·호스트 간격 기록과 Yahoo 무응답 래치는 프로세스 전역입니다(app/http.py·app/yahoo.py). 한 테스트가 닫은
+    호스트(127.0.0.1, finance.yahoo.com)나 Yahoo가 다음 테스트의 요청까지 막지 않게 테스트마다 비웁니다.
     """
-    from app import http
+    from app import http, yahoo
 
     http.reset_guards()
+    yahoo.reset_for_tests()       # Yahoo 무응답 래치·셈도 프로세스 전역입니다(app/yahoo.py, QA-255)
     yield
     http.reset_guards()
+    yahoo.reset_for_tests()
 
 
 @pytest.fixture(scope="session")
