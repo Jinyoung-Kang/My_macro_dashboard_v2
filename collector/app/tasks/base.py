@@ -119,6 +119,7 @@ class Task:
     name: str
     speed: str            # fast | slow | weekly | live(정기 수집 없음 — 화면이 볼 때만 백엔드가 요청)
                           # | session(5분 — 장중 확인 날 확인 시각 앞뒤에만 외부 호출, 그 밖은 EmptyResult)
+                          # | polite(비주기 — 차단 통과 수집 계층, 때가 된 태스크만 이름으로 실행. app/tasks/polite, ADR 0026)
     run: Callable[[], str]
     description: str
     # Yahoo(yfinance)를 늘 부르는 태스크 — 실행기가 따로 둔 작업 스레드에서 돌립니다. Yahoo가 응답하지 않을 때 그 태스크가 다른 태스크(한국 장부

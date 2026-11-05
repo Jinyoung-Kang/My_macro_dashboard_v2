@@ -64,6 +64,10 @@ KST = ZoneInfo("Asia/Seoul")
 
 scheduler: BackgroundScheduler | None = None
 
+# polite 속도군의 틱 — 이 간격으로 "때가 된 태스크가 있나"만 봅니다(외부 호출 없음). 지터는 틱이 정각에 맞물리지 않게 하는 정도.
+POLITE_TICK_SECONDS = 300
+POLITE_TICK_JITTER_SECONDS = 120
+
 # 내부 서비스 간 호출용 토큰. make setup이 무작위 값으로 채웁니다.
 # 비어 있으면 기동하지 않습니다 — COLLECTOR_ALLOW_NO_TOKEN=1을 명시했을 때만 경고하고 기동합니다.
 API_TOKEN = os.environ.get("COLLECTOR_API_TOKEN", "")
@@ -143,6 +147,19 @@ async def lifespan(app: FastAPI):
                 next_run_time=datetime.now(tz=ZoneInfo("UTC")),
             )
             logger.info("스케줄 등록: %s 주기 %d초", group, seconds)
+        # polite(차단 통과 수집 계층 — ADR 0026): 틱마다 때가 된 태스크만 실행합니다. next_run_time을 주지 않아 기동 직후에는 돌지 않고
+        # (첫 틱은 한 주기 뒤), 틱 자체도 매번 0~POLITE_TICK_JITTER_SECONDS초 늦춰 정각에 맞물리지 않게 합니다. 태스크의 실행 시각은
+        # 이 틱이 아니라 태스크마다 무작위로 정한 다음 실행 시각(표 fetch_schedule)이 정합니다.
+        scheduler.add_job(
+            _run_polite_job,
+            "interval",
+            seconds=POLITE_TICK_SECONDS,
+            jitter=POLITE_TICK_JITTER_SECONDS,
+            id="collect-polite",
+            max_instances=1,
+            coalesce=True,
+        )
+        logger.info("스케줄 등록: polite 틱 %d초(+지터 %d초) — 때가 된 태스크만", POLITE_TICK_SECONDS, POLITE_TICK_JITTER_SECONDS)
         scheduler.start()
     else:
         logger.info("스케줄러 비활성화 — REST 요청으로만 수집합니다.")
@@ -172,6 +189,13 @@ def _run_group_job(group: str) -> None:
         tasks.run_group(group)
     except Exception as exc:  # noqa: BLE001
         logger.exception("스케줄 수집 실패 (%s): %s", group, exc)
+
+
+def _run_polite_job() -> None:
+    try:
+        tasks.run_polite_due()
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("스케줄 수집 실패 (polite): %s", exc)
 
 
 def _check_token(token: str | None) -> None:

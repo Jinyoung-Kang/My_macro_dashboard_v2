@@ -69,6 +69,10 @@ SNAP_KR_CALENDAR = "calendar.kr_events"
 # 싣는 것은 설정 calendar.consensus를 한국 책 출발일에 켠 뒤(백엔드 미국 패킷이 켜졌을 때만 읽음, E1b). {forDate, days: {동부 날짜: {rows: [{name, timeEt, forecast, previous, actual, unit,
 # …Text, importance null}], fetchedAt, isStale?}}, failed}. 미국 동부 오늘부터 18일 안의 평일, 하루 1회.
 SNAP_US_CONSENSUS = "calendar.us_consensus"
+# 경제 캘린더(미국·한국 지표 일정과 예상치·이전치·실제치·중요도 — TradingView, 비공식). 차단 통과 수집 계층(ADR 0026)으로 받고 운영자 화면만
+# 읽습니다 — Claude 결정 패킷은 읽지 않습니다(패킷의 캘린더는 calendar.us_events·calendar.kr_events·calendar.us_consensus 그대로).
+# 모양(contract 1)은 app/tasks/econ_calendar.py 머리말. polite 속도군(3~6시간에 한 번, 기동 직후에는 받지 않음).
+SNAP_ECON_CALENDAR_TV = "calendar.econ.tradingview"
 # 모의 매매 Claude 계좌 패킷 11b_events(2단계 B)의 수집 상태 — 피드별 성공·실패와 사유, 7일 보관 건수, 마지막 수집 시각.
 # 헤드라인 자체는 observations news_headline에 있습니다.
 SNAP_NEWS_STATUS = "news.headlines.status"

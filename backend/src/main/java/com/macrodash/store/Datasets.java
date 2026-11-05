@@ -125,6 +125,14 @@ public final class Datasets {
      */
     public static final String SNAP_US_CONSENSUS = "calendar.us_consensus";
     /**
+     * 경제 캘린더(미국·한국 지표 일정과 예상치·이전치·실제치·중요도 — TradingView, 비공식). 수집기가 차단 통과 수집 계층(ADR 0026)으로 받고
+     * 운영자 화면만 읽습니다 — 모의 매매 패킷은 읽지 않습니다(패킷의 캘린더는 {@link #SNAP_US_CALENDAR}·{@link #SNAP_KR_CALENDAR}·
+     * {@link #SNAP_US_CONSENSUS} 그대로). 읽을 때는 태스크 이름을 넘기지 않습니다 — 화면 조회가 수집을 일으키면 그 출처의 비주기 일정과
+     * 하루 예산을 건너뜁니다. {@code {collectedAt, source, sourceUrl, fetchTier, events: [{country, title, at, atKst, importance, actual,
+     * forecast, previous, unit, ...}]}} — 없는 값은 null입니다.
+     */
+    public static final String SNAP_ECON_CALENDAR_TV = "calendar.econ.tradingview";
+    /**
      * 모의 매매 Claude 계좌 패킷 {@code 11b_events}(2단계 B)의 수집 상태 — 피드별 성공·실패와 사유({@code feeds}·{@code failedFeeds}),
      * {@code feedsOk}·{@code feedsTotal}, 7일 보관 건수 {@code stored7d}, 마지막 수집 시각 {@code generatedAt}(UTC). 헤드라인 자체는
      * {@link #OBS_NEWS_HEADLINE}에 있습니다.

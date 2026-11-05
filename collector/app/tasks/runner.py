@@ -13,6 +13,7 @@ from datetime import datetime, timezone
 
 from .. import http, store
 
+from . import polite
 from .base import EmptyResult, Task
 from .registry import ALL_TASKS, TASKS_BY_NAME
 
@@ -199,7 +200,11 @@ def _run_status(ok_count: int, failures: list[str]) -> str:
 # live: 정기 수집이 없고 화면이 볼 때만 백엔드가 부르는 장중 평가(paper_live_*) — 보유 종목 수십 개라 1분이면 넉넉합니다.
 # session: 계좌2 장중 확인 감시(paper_watch_us, 5분마다) — 감시·보유·대기 종목 1분봉 배치 한 번이라 1분이면 넉넉하고, 주기(300초)보다 짧아야
 # 다음 회차와 겹치지 않습니다.
-TASK_DEADLINE_SECONDS: dict[str, float] = {"fast": 120.0, "slow": 600.0, "weekly": 1800.0, "live": 60.0, "session": 60.0}
+# polite: 차단 통과 수집 계층(ADR 0026)의 태스크 — 요청 사이에 4~15초(가끔 20~45초)를 쉬며 몇 건을 받으므로 길게 둡니다. 다른 속도군처럼
+# 주기로 돌지 않고, 때가 된 태스크만 run_polite_due가 이름으로 돌립니다.
+TASK_DEADLINE_SECONDS: dict[str, float] = {
+    "fast": 120.0, "slow": 600.0, "weekly": 1800.0, "live": 60.0, "session": 60.0, "polite": 900.0,
+}
 _task_threads = ThreadPoolExecutor(max_workers=8, thread_name_prefix="task")
 # Yahoo가 주 출처인 태스크(Task.yahoo)는 따로 둔 작업 스레드에서 돕니다. Yahoo가 응답하지 않을 때 그 좀비가 위 8개를 모두 차지해 Yahoo와
 # 무관한 태스크(한국 장부 입력 kr_paper_* 등)가 '워커 대기 초과'로 밀리지 않게(QA-255). 동시에 도는 Yahoo 태스크는 보통 속도군마다 하나라
@@ -377,3 +382,25 @@ def run_group(group: str | None = None, task_name: str | None = None) -> dict:
         "results": results,
     }
 
+
+def run_polite_due() -> list[str]:
+    """
+    polite 속도군에서 때가 된 태스크만 차례로 실행합니다(스케줄러의 틱이 부름) → 실행한 태스크 이름.
+
+    다른 속도군은 주기마다 그 군 전체를 돌리지만, polite 태스크는 저마다 다음 실행 시각(표 fetch_schedule — 실행이 끝날 때 무작위로 정함)이
+    있습니다. 때가 아닌 태스크는 부르지 않아 실행 기록에 빈 줄이 쌓이지 않습니다. 태스크 머리의 확인(app/tasks/polite)도 같은 표를 보므로
+    틱 밖에서 불려도(수동 실행·전체 수집) 때가 아니면 외부를 부르지 않습니다.
+    """
+    ran: list[str] = []
+    for task in ALL_TASKS:
+        if task.speed != polite.SPEED:
+            continue
+        try:
+            due = polite.should_run(task.name)
+        except Exception as exc:  # noqa: BLE001 — 일정 표를 읽지 못하면 그 태스크만 이번 틱을 건너뜁니다
+            logger.warning("polite 일정 확인 실패(%s): %s", task.name, exc)
+            continue
+        if due:
+            run_group(task_name=task.name)
+            ran.append(task.name)
+    return ran

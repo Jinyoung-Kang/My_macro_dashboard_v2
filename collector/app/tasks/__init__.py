@@ -6,6 +6,7 @@ app/tasks/ — 수집 작업 정의(패키지).
 모듈(`app.tasks.toss` 등)을 대상으로 해야 합니다.
 
   base · markets(fast) · series · filings · fundamentals · korea_public · toss · kr_paper · kr_news · kr_calendar · us_consensus · maintenance · registry · runner
+  polite(비주기 일정) · econ_calendar(polite)
 
 [작업군과 주기 — 구버전과 동일]
   fast   (5분)  : scraper_markets · macro_collected · radar_rankings
@@ -13,6 +14,7 @@ app/tasks/ — 수집 작업 정의(패키지).
                   volatility_history · cot_history · daum_futures_trend · fsc_prices · fsc_etf_prices
   weekly (12시간): sec_13f · kr_holidays · dart_fundamentals
   session (5분) : paper_watch_us(계좌2 장중 확인 감시 — 확인 시각 앞뒤에만 외부 호출) · paper_watch_kr(한국 계좌2 장중 확인 감시 — 확인 시각 뒤 한 번)
+  polite (비주기): econ_calendar_tradingview — 차단 통과 수집 계층(ADR 0026). 태스크마다 다음 실행 시각을 무작위로 정하고 때가 된 것만 실행
 
 [규칙]
 - 수집이 예외 없이 끝났지만 쓸 데이터가 없으면 EmptyResult로 **실패 집계**
@@ -162,6 +164,9 @@ from .kr_calendar import (  # noqa: F401
 from .earnings_surprise import (  # noqa: F401
     task_earnings_surprise,
 )
+from .econ_calendar import (  # noqa: F401
+    task_econ_calendar_tradingview,
+)
 from .registry import (  # noqa: F401
     ALL_TASKS,
     TASKS_BY_NAME,
@@ -182,5 +187,6 @@ from .runner import (  # noqa: F401
     _execute_task,
     _log_late_finish,
     run_group,
+    run_polite_due,
 )
-from . import base, earnings_surprise, filings, fundamentals, korea_public, kr_calendar, kr_news, kr_paper, maintenance, markets, news, registry, runner, series, toss, us_calendar, us_consensus  # noqa: F401,E402
+from . import base, earnings_surprise, econ_calendar, filings, fundamentals, korea_public, kr_calendar, kr_news, kr_paper, maintenance, markets, news, polite, registry, runner, series, toss, us_calendar, us_consensus  # noqa: F401,E402

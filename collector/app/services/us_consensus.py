@@ -9,7 +9,8 @@ app/services/us_consensus.py
 [출처 — Nasdaq ``api/calendar/economicevents``, ADR 0017과 같은 '비공식 참고']
 - TradingView 경제 캘린더(``economic-calendar.tradingview.com/events``)는 이 PC에서 HTTP 403입니다(2026-10-26 두 번·10-27 한 번, 기본 요청).
   명세 §7 G11대로 머리글을 바꾼 재시도는 하지 않고(교체 뒤 서버에서 기본 요청 1회) Nasdaq만 씁니다(K22 'Nasdaq 먼저'). Nasdaq은 중요도를
-  주지 않아 ``importance``는 null입니다.
+  주지 않아 ``importance``는 null입니다. 화면용 경제 캘린더는 2026-11-05부터 따로 받습니다(services/tv_calendar — ADR 0026, 이 저장본과
+  패킷은 그대로).
 - 응답: ``{data: {asOf, headers, rows: [{gmt, country, eventName, actual, consensus, previous, description}]}, message, status: {rCode}}``.
   행에 날짜가 없고, 값은 단위가 붙은 글자(``'1,728K'``·``'-130.80B'``·``'4.00%'``·``'80.5'``)이며 빈 값은 ``' '``·``'&nbsp;'``입니다.
 - **``date=D``는 미국 동부 D−1의 행을 줍니다** — [확인] 2026-10-26 23:3x UTC: date=10-22 → 수 10-21(MBA·EIA 원유 재고), 10-23 → 목 10-22
@@ -43,7 +44,8 @@ FETCH_TIMEOUT = (10, 20)
 TRADINGVIEW_NOTE = {
     "status": "HTTP 403",
     "checkedAt": "2026-10-27",
-    "note": "이 PC에서 기본 요청 403(2026-10-26 두 번·10-27 한 번) — 교체 뒤 서버에서 기본 요청 1회(G11), 머리글을 바꾼 재시도는 하지 않음",
+    "note": ("이 PC에서 기본 요청 403(2026-10-26 두 번·10-27 한 번) — 이 저장본(패킷 입력)은 머리글을 바꾼 재시도를 하지 않고 Nasdaq만 씀. "
+             "화면용 경제 캘린더는 2026-11-05부터 따로 받음(태스크 econ_calendar_tradingview, ADR 0026)"),
 }
 
 

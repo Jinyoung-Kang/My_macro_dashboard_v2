@@ -45,7 +45,13 @@ class HostPolicy:
 
 
 # 출처를 연결하는 커밋이 자기 호스트를 여기에 더합니다(명세 §6). 표에 없는 호스트는 이 계층으로 받지 않습니다.
-POLICIES: dict[str, HostPolicy] = {}
+POLICIES: dict[str, HostPolicy] = {
+    policy.host: policy
+    for policy in (
+        # TradingView 경제 캘린더(services/tv_calendar) — JSON API라 계층 1에서 끝납니다. 3~6시간에 한 번 1건이라 하루 4~8건.
+        HostPolicy("economic-calendar.tradingview.com", (TIER_IMPERSONATE,), daily_budget=12),
+    )
+}
 
 # 거부 뒤 물러남(분) — 연속 거부 1회·2회·3회 이상. 구간 안에서 무작위로 고릅니다(정각에 다시 오지 않게).
 BACKOFF_MINUTES: tuple[tuple[int, int], ...] = ((30, 60), (180, 360), (720, 1440))
