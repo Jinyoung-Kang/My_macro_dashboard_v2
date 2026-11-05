@@ -91,6 +91,8 @@ class RouteInventoryTest {
             "GET /api/detail/quote", "GET /api/detail/news", "GET /api/detail/symbols", "POST /api/detail/summary",
             // 화면 실시간 시세(ADR 0024)
             "GET /api/live/prices", "GET /api/live/prices/stream",
+            // 실제 계좌(토스증권, 읽기 전용 — 운영자 전용, ADR 0025)
+            "GET /api/brokerage/account",
             // 모의 매매(운영자 전용)
             "GET /api/paper/overview", "GET /api/paper/live", "GET /api/paper/status", "GET /api/paper/names",
             "GET /api/paper/books/{code}/positions",

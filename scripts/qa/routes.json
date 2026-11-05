@@ -439,6 +439,13 @@
       "fuzz": false
     },
     {
+      "m": "GET",
+      "p": "/api/brokerage/account",
+      "q": {
+        "market": "enum"
+      }
+    },
+    {
       "m": "POST",
       "p": "/api/detail/summary",
       "body": {

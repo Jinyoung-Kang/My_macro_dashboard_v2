@@ -54,6 +54,23 @@ class AccessPolicyTest {
     }
 
     @Test
+    @DisplayName("실제 계좌 경로(/api/brokerage, ADR 0025)는 모두 운영자만이고 GET뿐이다 — 쓰기를 열려면 새 ADR과 이 시험을 일부러 고쳐야 한다")
+    void brokerageRoutesAreOwnerOnlyAndGetOnly() throws ClassNotFoundException {
+        java.util.List<String> declared = RouteInventoryTest.declaredRoutes().stream()
+                .filter(route -> route.split(" ")[1].startsWith("/api/brokerage/")).toList();
+        java.util.List<String> listed = AccessPolicy.routes().keySet().stream()
+                .filter(route -> route.split(" ")[1].startsWith("/api/brokerage/")).toList();
+        assertThat(declared).as("컨트롤러가 여는 실제 계좌 경로").contains("GET /api/brokerage/account");
+        assertThat(listed).containsExactlyInAnyOrderElementsOf(declared);
+        declared.forEach(route -> assertThat(route).as("읽기 전용").startsWith("GET "));
+        listed.forEach(route -> assertThat(AccessPolicy.routes().get(route)).as(route)
+                .isEqualTo(AccessPolicy.Access.OWNER));
+        assertThat(AccessPolicy.required("GET", "/api/brokerage/account")).isEqualTo(AccessPolicy.Access.OWNER);
+        assertThat(AccessPolicy.required("HEAD", "/api/brokerage/account")).isEqualTo(AccessPolicy.Access.OWNER);
+        assertThat(AccessPolicy.allows(AccessPolicy.Access.OWNER, "MEMBER", "PRO")).as("유료 회원도 못 봄").isFalse();
+    }
+
+    @Test
     @DisplayName("운영자는 모든 등급 경로를, 무료 회원은 운영·유료 경로를 못 쓴다")
     void allows() {
         assertThat(AccessPolicy.allows(AccessPolicy.Access.OWNER, "MEMBER", "PRO")).isFalse();

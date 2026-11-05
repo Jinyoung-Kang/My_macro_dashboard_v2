@@ -6,6 +6,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
+import org.springframework.web.client.RestClientResponseException;
 import org.springframework.web.util.UriBuilder;
 import tools.jackson.databind.JsonNode;
 
@@ -38,14 +39,22 @@ public class CollectorClient {
      */
     static final Duration CONTROL_READ_TIMEOUT = Duration.ofSeconds(3);
 
+    /**
+     * 실제 계좌 조회({@link #tossAccount()})의 읽기 타임아웃. 수집기의 갱신 예산(12초)에, 끊지 않는 토큰 발급 하나(최대 16초)를 더한 최악값보다 길게 —
+     * 일반 호출의 90초를 쓰면 토스가 느릴 때 요청 스레드가 그만큼 묶입니다(명세 docs/specs/2026-11-05-toss-account-readonly.md §2).
+     */
+    static final Duration ACCOUNT_READ_TIMEOUT = Duration.ofSeconds(35);
+
     private final RestClient client;
     private final RestClient controlClient;
+    private final RestClient accountClient;
     private final AppProperties properties;
 
     public CollectorClient(AppProperties properties) {
         this.properties = properties;
         this.client = build(properties, Duration.ofSeconds(properties.getCollectorTimeoutSeconds()));
         this.controlClient = build(properties, CONTROL_READ_TIMEOUT);
+        this.accountClient = build(properties, ACCOUNT_READ_TIMEOUT);
     }
 
     private static RestClient build(AppProperties properties, Duration readTimeout) {
@@ -127,6 +136,25 @@ public class CollectorClient {
         return get(uri -> uri.path("/toss/indices")
                 .queryParam("symbols", symbols)
                 .build(), "/toss/indices");
+    }
+
+    /**
+     * 토스증권 실제 계좌 읽기 전용 조회(수집기 {@code GET /toss/account}, ADR 0025). 파라미터 없음 — 계좌 식별 값은 수집기만 쥡니다.
+     *
+     * <p>전용 조용한 경로입니다. 일반 {@link #get}은 실패 때 {@code e.getMessage()}를 남기는데, Spring 7은 4xx·5xx 응답 본문을 자르지 않고
+     * 그 메시지에 넣습니다 — 계좌 값이 백엔드 로그로 새지 않게 상태 코드나 예외 클래스 이름만 남깁니다.
+     */
+    public Optional<JsonNode> tossAccount() {
+        try {
+            return Optional.ofNullable(accountClient.get().uri(builder -> builder.path("/toss/account").build())
+                    .retrieve().body(JsonNode.class));
+        } catch (RestClientResponseException e) {
+            log.warn("수집기 호출 실패 (GET /toss/account): HTTP {}", e.getStatusCode().value());
+            return Optional.empty();
+        } catch (RuntimeException e) {
+            log.warn("수집기 호출 실패 (GET /toss/account): {}", e.getClass().getSimpleName());
+            return Optional.empty();
+        }
     }
 
     public Optional<JsonNode> verificationReadings(String market, String investor, String tradeType) {

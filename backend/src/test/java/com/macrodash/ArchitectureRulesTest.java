@@ -220,6 +220,34 @@ class ArchitectureRulesTest {
         assertThat(found).isEmpty();
     }
 
+    private static final String BROKERAGE = "com.macrodash.feature.brokerage";
+
+    /**
+     * 실제 계좌(토스증권, ADR 0025)는 다른 기능과 주고받지 않습니다 — 모의 장부·패킷·프롬프트·복기·알림·AI 리포트로 가는 길이 없게. 저장하지
+     * 않으므로 store·read도 쓰지 않습니다. 문자열·저장본을 거친 흐름은 이 시험이 못 보므로 저장하지 않는 것이 함께 지키는 조건입니다.
+     */
+    @Test
+    @DisplayName("실제 계좌(feature.brokerage)는 고립 — 다른 패키지가 참조하지 않고, 자기는 자기 패키지·CollectorClient·config·support·Kst만 쓴다")
+    void brokerageIsIsolated() {
+        assertThat(SOURCES.values()).as("feature.brokerage 패키지가 있음")
+                .anyMatch(source -> source.pkg().equals(BROKERAGE));
+        List<String> inbound = new ArrayList<>();
+        SOURCES.values().forEach(source -> {
+            if (source.pkg().equals(BROKERAGE) || source.pkg().startsWith(BROKERAGE + ".")) {
+                return;
+            }
+            source.refs().stream().filter(ref -> ref.startsWith(BROKERAGE + "."))
+                    .forEach(ref -> inbound.add(source.simpleName() + " → " + ref));
+        });
+        assertThat(inbound).as("feature.brokerage를 참조하는 다른 패키지").isEmpty();
+        assertThat(violations(BROKERAGE, ref -> isOurs(ref)
+                && !ref.startsWith(BROKERAGE + ".")
+                && !ref.equals("com.macrodash.collector.CollectorClient")
+                && !startsWithAny(ref, "com.macrodash.config.", "com.macrodash.support.")
+                && !ref.equals("com.macrodash.Kst") && !ref.startsWith("com.macrodash.Kst.")))
+                .as("feature.brokerage가 쓰는 우리 패키지").isEmpty();
+    }
+
     @Test
     @DisplayName("기능 사이 의존에 순환이 없다")
     void noCyclesBetweenFeatures() {

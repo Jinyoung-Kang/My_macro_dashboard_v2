@@ -238,6 +238,16 @@ GET·OPTIONS 밖(쓰기·HEAD)은 경로와 상관없이 403 `{"error":"demo_rea
 | `GET /api/live/prices?items=` | 지금 한 번 → `{available, prices:{fetchedAt, items:{'US:AAPL':{market, code, price, prevClose, change, changePct, currency, tradedAt(기준 시각 — 미국·다음·시간 외는 마지막 거래, 네이버 국내 정규장은 응답한 순간), status(OPEN·PRE·POST·CLOSED·null), source, delayMinutes(출처가 밝힌 지연 분, 0 = 실시간), overPrice, overChange, overChangePct, overTradedAt, overSession(PRE_MARKET·AFTER_MARKET — 시간 외가 열려 있을 때)}}, missing:[…], errors:{출처: 사유}}}` — 모르는 값은 null |
 | `GET /api/live/prices/stream?items=&interval=` | SSE(`text/event-stream`) — 바로 한 번, 그 뒤 `interval`초(5·10·30·60·120·300·600·900·1800·3600·10800)마다 `prices` 이벤트(본문은 위와 같음), 25초마다 주석 줄. 받은 종목이 모두 장이 닫혀 있으면 다음은 5분 이상 뒤. 연결은 주기 + 5분 뒤 끝나고 브라우저가 다시 이음. 동시 연결 20개를 넘으면 429 |
 
+### 실제 계좌(토스증권, 운영자 전용, 읽기 전용 — [ADR 0025](adr/0025-toss-real-account-readonly.md))
+
+운영자의 토스증권 실제 계좌를 **읽기만** 합니다(주문·정정·취소 경로 없음, 돈이 움직이지 않음). 모의 장부와 별개 기능이고 저장하지 않습니다 — 수집기 `/toss/account`의 메모리
+캐시(60초, 실패하면 직전 값을 30분까지 `isStale`)를 전합니다. 수집기가 꺼져 있거나(`TOSS_ACCOUNT_ENABLED`가 서버 `.env`에서만 `true`) `store_only` 읽기 모드면
+`state:"DISABLED"`이고, 그 밖의 실패도 늘 200 + `available:false` + 고정 문구입니다. 응답 계약 전체는 [명세 §4](specs/2026-11-05-toss-account-readonly.md).
+
+| 경로 | 설명 |
+|---|---|
+| `GET /api/brokerage/account?market=KR` | `market=KR`(원화 — 국내 주식·원화 매수 가능 금액) 또는 `US`(달러 — 미국 주식·달러 매수 가능 금액), 없거나 틀리면 400 → `{available, state(OK·DISABLED·NOT_CONFIGURED·COLLECTOR_UNREACHABLE·IP_NOT_ALLOWED·AUTH_FAILED·RATE_LIMITED·NO_ACCOUNT·REFRESHING·UPSTREAM_ERROR), message, market, currency, accountLabel, accountCount, fetchedAtKst, staleSinceKst, ageSeconds, isStale, staleReason, upstreamCode, buyingPower, summary:{purchaseAmount, marketValue, marketValueAfterCost, profitLoss, profitLossAfterCost, dailyProfitLoss, profitLossPct, profitLossPctAfterCost(두 Pct는 같은 통화끼리 대시보드 계산)}, holdings:[…], openOrders:[…], closedOrders:[…](최근 30일, 최신순), closedFromDate, closedTruncated, unclassifiedCount}` — 계좌번호·계좌 식별 키·주문 번호는 싣지 않음, 모르는 값은 null |
+
 ### 모의 매매(미국·한국, 운영자 전용)
 
 모든 경로가 운영자 전용입니다. 테이블(V8)이나 V9~V11의 열(`paper_track_record.group_code`·`data_source`, `paper_decisions.packet_text`, `paper_api_usage.est_cost_calls`), V12의 `paper_reviews`, V13~V16의 열(`paper_books.market`·`currency`(V13), `paper_reviews.market`·`paper_notes.market`(V14), `paper_positions.fill_ref_volume`(V15), `paper_orders.ledger_hold_reason`(V16)), V17의 `paper_fills.bar_at` 열과 `paper_order_exec`, V18의 `paper_checkpoints`가 아직 없으면 `{available:false, message}`(POST·DELETE는 `ok:false`도)로 답합니다(`PaperStore.ready` — 백엔드만 새로 띄워 마이그레이션이 빠졌을 때, QA-016).
@@ -359,5 +369,6 @@ CAGR 지수도 같음), 20일 미만이면 `cumReturnPct`만 있습니다. 변�
 | [토큰] `GET /diagnostics/connections` | KIS·LS·Daum·Naver·PyKrx 진단 |
 | [토큰] `GET /diagnostics/public-apis` | 특일정보·주식시세·DART 진단 (API당 1회) |
 | [토큰] `GET /diagnostics/toss`, `/toss/*` | 토스 진단·조회 |
+| [토큰] `GET /toss/account` | 실제 계좌 읽기 전용 조회(ADR 0025 — 보유·매수 가능 금액·주문 내역을 원화 `KR`·달러 `US` 쪽으로 나눠 늘 200, 메모리 캐시 60초, 저장 안 함). `TOSS_ACCOUNT_ENABLED`가 `true`가 아니거나 서비스 토큰 없이 뜬 수집기에서는 토스를 부르지 않고 `{ok:false, enabled:false, reason}` |
 
 FastAPI 자동 문서: <http://localhost:8002/docs>

@@ -189,6 +189,44 @@ class ApiIntegrationTest {
     }
 
     @Test
+    @DisplayName("실제 계좌(ADR 0025): 회원은 403(required=OWNER), 운영자는 store_only라 수집기를 부르지 않고 200 available:false·DISABLED, "
+            + "market이 없거나 틀리면 400(내부 정보 없음)")
+    void brokerageAccountRoute() {
+        HttpHeaders member = new HttpHeaders();
+        member.add(HttpHeaders.COOKIE, login(MEMBER, "test-password"));
+        for (String market : List.of("KR", "US")) {
+            ResponseEntity<JsonNode> denied = rest.exchange(url("/api/brokerage/account?market=" + market), HttpMethod.GET,
+                    new HttpEntity<>(null, member), JsonNode.class);
+            assertThat(denied.getStatusCode()).as("회원 " + market).isEqualTo(HttpStatus.FORBIDDEN);
+            assertThat(denied.getBody().path("required").asString()).isEqualTo("OWNER");
+        }
+
+        // 이 테스트 설정은 read-mode=store_only·수집기 주소 localhost:1 — 수집기를 불렀다면 COLLECTOR_UNREACHABLE이 됩니다.
+        for (Map.Entry<String, String> side : Map.of("KR", "KRW", "US", "USD").entrySet()) {
+            JsonNode body = authorizedGet("/api/brokerage/account?market=" + side.getKey());
+            assertThat(body.path("available").asBoolean(true)).as(side.getKey()).isFalse();
+            assertThat(body.path("state").asString()).as(side.getKey()).isEqualTo("DISABLED");
+            assertThat(body.path("message").asString()).as(side.getKey()).isNotBlank();
+            assertThat(body.path("market").asString()).isEqualTo(side.getKey());
+            assertThat(body.path("currency").asString()).isEqualTo(side.getValue());
+            assertThat(body.path("holdings").isArray()).isTrue();
+            assertThat(body.path("holdings").size()).isZero();
+            assertThat(body.path("buyingPower").isNull()).as("모르는 값은 0이 아니라 null").isTrue();
+            assertThat(body.path("isStale").isBoolean()).as("칸 이름 isStale 그대로(앱 ObjectMapper)").isTrue();
+            assertThat(body.has("accountNo")).isFalse();
+        }
+
+        for (String path : List.of("/api/brokerage/account", "/api/brokerage/account?market=JP",
+                "/api/brokerage/account?market=kr", "/api/brokerage/account?market=")) {
+            ResponseEntity<JsonNode> response = authorizedExchange(path, HttpMethod.GET);
+            assertThat(response.getStatusCode()).as(path).isEqualTo(HttpStatus.BAD_REQUEST);
+            assertThat(response.getBody().path("error").asString()).as(path).isEqualTo("bad_request");
+            assertThat(response.getBody().path("message").asString()).as(path).contains("market", "KR · US");
+            assertThat(response.getBody().toString()).as(path).doesNotContain("java.", "Exception", "SQL");
+        }
+    }
+
+    @Test
     @DisplayName("QA-093: 판정 기록 시각은 설정값을 따른다 — AWS 데모(평일 08:50–18:00 운영)는 18시 전에 기록해야 쌓인다")
     void regimeRecordHourFollowsConfiguration() {
         JsonNode log = authorizedGet("/api/analytics/regime/log");
