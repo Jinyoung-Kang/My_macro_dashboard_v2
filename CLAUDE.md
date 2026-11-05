@@ -52,8 +52,10 @@ PostgreSQL ← 수집기(FastAPI, `collector/`). Docker Compose 네 컨테이너
   로컬 `.env`를 서버로 보낼 때는 그 줄과 포트 네 줄 등을 빼고 서버 전용 줄(`PAPER_KR_START_DATE` 포함)을 더한다(`.env.vultr.example`).
 - **체결 시점 자유화(ADR 0027)의 스위치는 모두 기본 꺼짐** — 네 Claude 계좌의 `*.freeTiming`(분 단위 지정 시각 `AT_MINUTE` + 장중 판단)과 규칙 계좌의 `rules.timing`·`kr.rules.timing`.
   끈 판의 프롬프트·스키마·패킷 고정본은 바이트까지 그대로여야 한다(고정본 시험). **켜는 설정 저장은 시장별로 따로, 그때 사용자에게 다시 확인받는다**(상한 60·예약 20·`claude2.maxCallsPerCycle` 4 이상·`claude.checkpoint` 끔을 함께).
-- **실제 계좌(토스, ADR 0025) 자료는 모의 장부·패킷·프롬프트·로그·시험 자료·커밋·QA 기록·텔레그램에 넣지 않는다.** 조회는 서버(Vultr)에서만 켜고
-  (`TOSS_ACCOUNT_ENABLED` — 로컬 compose는 `"false"` 고정), 쓰기(주문) 경로는 새 ADR과 사용자 승인 없이 만들지 않는다(공유 토스 세션 가드와 쓰기 금지 시험을 풀면 그것이 결정).
+- **실제 계좌(토스, ADR 0025·0028) 자료는 모의 장부·패킷·프롬프트·로그·시험 자료·커밋·QA 기록·텔레그램에 넣지 않는다.** 조회는 서버(Vultr)에서만 켜고
+  (`TOSS_ACCOUNT_ENABLED` — 로컬 compose는 `"false"` 고정), 주문은 ADR 0028의 길(수집기 `toss_trade.py` 전용 세션, 세 스위치 `TOSS_TRADING_ENABLED`·`REAL_TRADE_ENABLED`(로컬·QA compose는 `"false"` 고정)·화면)로만 —
+  그 밖의 쓰기 경로는 새 ADR과 사용자 승인 없이 만들지 않는다(공유 토스 세션 가드와 쓰기 금지 시험을 풀면 그것이 결정). 실제 매매 기록은 `real_trade_*` 표에만, 텔레그램은 상태·건수·사유 코드만.
+  **에이전트는 실제 매매 끄기(`POST /api/realtrade/disable`) 외의 켜기류 API(enable·update·resume)를 부르지 않는다** — 켜기는 사용자가 화면에서 확인 글자와 비밀번호로.
 - 날짜는 `Kst.today()`(Java)·KST 기준. `LocalDate.now()`를 쓰지 않는다(서버 TZ는 UTC).
 - **이모지를 쓰지 않는다**(2026-10-31 사용자 지시) — 화면·코드·주석·문서·스크립트 출력·커밋 메시지 모두. 화면은 `components/ui/icons`의 SVG와 글, 스크립트는 ✓·✗와
   `경고:`·`참고:`. 예외는 Claude 프롬프트·패킷·AI 입력 원문과 그 고정본(실험 조건), 스냅숏으로 AI 입력이 되는 수집 데이터의 기존 글(기관 이름·카드 제목·'이전 값' 꼬리 등),
