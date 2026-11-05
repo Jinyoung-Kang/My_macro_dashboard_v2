@@ -13,6 +13,8 @@ import { Empty } from "./Empty";
  * - 추정·대리·이전 값 플래그가 있으면 배지가 반드시 보입니다. `isProxy`·`isStale`·`staleReason`은
  *   설계서 §1.5 계약에 더한 선택 props입니다(AssetRowData와 같은 이름).
  * - 타일 하나가 라벨 이름의 묶음(role="group")이라 읽어 주기에서 라벨과 값이 함께 읽힙니다.
+ * - `valueClassName`은 값 글자색(선택 — 없으면 본문색). 손익처럼 부호가 뜻인 값에 `deltaColor`를 넘깁니다. 색만으로 뜻을 전하지 않게
+ *   `format`이 부호(+·−)를 함께 찍어야 합니다.
  */
 export function StatTile({
   label,
@@ -25,6 +27,7 @@ export function StatTile({
   staleReason,
   emptyReason,
   format,
+  valueClassName,
 }: {
   label: string;
   value: number | string | null;
@@ -36,6 +39,7 @@ export function StatTile({
   staleReason?: string | null;
   emptyReason?: string | null;
   format?: (v: number) => string;
+  valueClassName?: string | null;
 }) {
   const text = statValueText(value, format);
   const flagged = Boolean(isEstimated || isProxy || isStale);
@@ -50,7 +54,7 @@ export function StatTile({
           </span>
         ) : (
           <>
-            <span className="text-2xl font-semibold tabular-nums text-text">{text}</span>
+            <span className={`text-2xl font-semibold tabular-nums ${valueClassName || "text-text"}`}>{text}</span>
             {unit ? <span className="text-sm text-text-3">{unit}</span> : null}
           </>
         )}

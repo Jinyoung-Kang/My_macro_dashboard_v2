@@ -43,6 +43,21 @@ describe("StatTile", () => {
     expect(within(tile).queryByText("—")).toBeNull();
   });
 
+  it("valueClassName이 있으면 값 글자색을 그것으로, 없으면 본문색(text-text) — 값이 없으면 칠하지 않는다", () => {
+    render(
+      <>
+        <StatTile label="손익" value={-3} format={(v) => `${v}`} valueClassName="text-down" />
+        <StatTile label="표본" value={784} />
+        <StatTile label="빈 손익" value={null} valueClassName="text-up" />
+      </>,
+    );
+    const loss = within(screen.getByRole("group", { name: "손익" })).getByText("-3");
+    expect(loss.className).toContain("text-down");
+    expect(loss.className).not.toContain("text-text");
+    expect(within(screen.getByRole("group", { name: "표본" })).getByText("784.00").className).toContain("text-text");
+    expect(screen.getByRole("group", { name: "빈 손익" }).querySelector(".text-up")).toBeNull();
+  });
+
   it("값 없음 — '—'와 사유, 단위는 붙이지 않는다(—% 없음)", () => {
     render(<StatTile label="연환산 변동성" value={null} unit="%" emptyReason="표본 부족(20일 미만)" />);
     const tile = screen.getByRole("group", { name: "연환산 변동성" });

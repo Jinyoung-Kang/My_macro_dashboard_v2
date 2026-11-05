@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 import { StatGrid, StatTile } from "@/components/patterns";
 import { Card } from "@/components/ui";
 import {
+  amountDigits,
   brokerageScope,
   BUYING_POWER_NOTE,
   DAILY_PROFIT_NOTE,
@@ -10,7 +11,7 @@ import {
   marketValueNote,
   profitLossNote,
 } from "@/lib/brokerage";
-import { formatKst } from "@/lib/format";
+import { deltaColor, formatKst } from "@/lib/format";
 import { marketMeta, type PaperMarketCode } from "@/lib/paperMarket";
 import { SOURCES } from "@/lib/sources";
 import type { BrokerageAccountResponse } from "@/lib/types/brokerage";
@@ -20,7 +21,8 @@ import type { BrokerageAccountResponse } from "@/lib/types/brokerage";
  *
  * 토스 요약의 비율은 원화·달러 자산을 원화로 환산해 합친 값이라 싣지 않습니다 — 손익률은 백엔드가 같은 통화끼리 계산해 보낸 값이고
  * "대시보드 계산"이라고 적습니다. 예수금 엔드포인트가 없어 '예수금'·'총자산'이라 부르지 않습니다(현금 쪽 수치는 매수 가능 금액 하나).
- * 모르는 값은 타일이 "—"로 그립니다(0으로 채우지 않음).
+ * 모르는 값은 타일이 "—"로 그립니다(0으로 채우지 않음). 평가손익·일간 손익은 아래 보유 표와 같은 색(이익 빨강·손실 파랑, 보이는 값이 0이면
+ * 보조색)이고, 부호(+·−)를 함께 찍어 색만으로 뜻을 전하지 않습니다.
  */
 export function BrokerageSummary({
   data,
@@ -36,6 +38,7 @@ export function BrokerageSummary({
   const summary = data.summary;
   const amount = (value: number) => formatAmount(value, market);
   const signed = (value: number) => formatSignedAmount(value, market);
+  const tone = (value: number | null | undefined) => deltaColor(value, amountDigits(market));
   const received = data.fetchedAtKst ? `받은 시각 ${formatKst(data.fetchedAtKst)}` : "받은 시각 —";
 
   return (
@@ -48,8 +51,22 @@ export function BrokerageSummary({
       <StatGrid cols={3}>
         <StatTile label="평가금액" value={summary?.marketValue ?? null} format={amount} unit={unit} note={marketValueNote(summary, market)} />
         <StatTile label="매입금액" value={summary?.purchaseAmount ?? null} format={amount} unit={unit} />
-        <StatTile label="평가손익" value={summary?.profitLoss ?? null} format={signed} unit={unit} note={profitLossNote(summary, market)} />
-        <StatTile label="일간 손익" value={summary?.dailyProfitLoss ?? null} format={signed} unit={unit} note={DAILY_PROFIT_NOTE} />
+        <StatTile
+          label="평가손익"
+          value={summary?.profitLoss ?? null}
+          format={signed}
+          unit={unit}
+          note={profitLossNote(summary, market)}
+          valueClassName={tone(summary?.profitLoss)}
+        />
+        <StatTile
+          label="일간 손익"
+          value={summary?.dailyProfitLoss ?? null}
+          format={signed}
+          unit={unit}
+          note={DAILY_PROFIT_NOTE}
+          valueClassName={tone(summary?.dailyProfitLoss)}
+        />
         <StatTile
           label={`매수 가능 금액(${scope.currencyLabel})`}
           value={data.buyingPower ?? null}

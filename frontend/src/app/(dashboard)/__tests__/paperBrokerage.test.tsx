@@ -141,6 +141,14 @@ afterEach(() => {
 
 const panel = () => screen.getByRole("tabpanel");
 const tile = (name: string | RegExp) => within(panel()).getByRole("group", { name });
+/** 타일의 값 글자(카드 숫자 24px) — 색 구분을 보려고. */
+const tileValue = (name: string | RegExp): HTMLElement => {
+  const value = tile(name).querySelector<HTMLElement>("span.text-2xl");
+  if (value === null) {
+    throw new Error(`타일 값이 없습니다: ${String(name)}`);
+  }
+  return value;
+};
 
 describe("읽는 때", () => {
   it("개요 탭만 보면 /api/brokerage를 부르지 않고, 실제 계좌 탭을 누르면 그 시장 쪽 하나를 GET(40초 한도)", async () => {
@@ -177,6 +185,11 @@ describe("시장 쪽 나누기", () => {
     expect(tile("평가손익").textContent).toContain("+700,000원");
     expect(tile("평가손익").textContent).toContain("손익률 +10.77%(대시보드 계산)");
     expect(tile("일간 손익").textContent).toContain("+50,000원");
+    // 손익 두 타일만 색 — 이익은 빨강(text-up), 평가금액 같은 금액 타일은 본문색 그대로
+    expect(tileValue("평가손익").className).toContain("text-up");
+    expect(tileValue("일간 손익").className).toContain("text-up");
+    expect(tileValue("평가금액").className).toContain("text-text");
+    expect(tileValue("평가금액").className).not.toMatch(/text-(up|down)/);
     expect(tile("매수 가능 금액(원화)").textContent).toContain("1,000,000원");
     expect(tile("매수 가능 금액(원화)").textContent).toContain("통화별 현금 기반 — 두 화면의 금액을 더하지 마세요");
     for (const name of ["평가금액", "매입금액", "평가손익", "일간 손익", "매수 가능 금액(원화)"]) {
@@ -210,6 +223,8 @@ describe("시장 쪽 나누기", () => {
 
     expect(tile("평가금액").textContent).toContain("18.55달러");
     expect(tile("일간 손익").textContent).toContain("-0.12달러");
+    expect(tileValue("일간 손익").className).toContain("text-down");   // 손실은 파랑
+    expect(tileValue("평가손익").className).toContain("text-up");
     expect(tile("매수 가능 금액(달러)").textContent).toContain("2,500.50달러");
     for (const name of ["평가금액", "매입금액", "평가손익", "일간 손익", "매수 가능 금액(달러)"]) {
       expect(tile(name).textContent, name).not.toMatch(/원$|원[^화]/);
