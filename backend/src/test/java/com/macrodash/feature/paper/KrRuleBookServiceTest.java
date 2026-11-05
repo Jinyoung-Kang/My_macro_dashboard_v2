@@ -196,6 +196,47 @@ class KrRuleBookServiceTest {
     }
 
     @Test
+    @DisplayName("체결 시각 설정(ADR 0027 결정 5): kr.rules.timing이 AT_MINUTE(10:47)이면 그 결정의 주문 전부가 다음 거래일의 그 분(AT_MINUTE + target_local), "
+            + "만료는 기준일 + 3거래일 그대로, 결정 기록에 timing·timingSetting. 기본 설정이면 NEXT_OPEN 그대로이고 timingSetting 칸이 없음. 받는 범위 밖 시각"
+            + "(손으로 고친 행의 15:25)이면 시가로 내고 사유를 남김")
+    void ruleTimingSettingSetsTheOrderTiming() {
+        Decision standard = decideAt(FRI, "22:30");
+        assertThat(ordersOf(standard)).allSatisfy(o -> {
+            assertThat(o.timing()).isEqualTo(PaperBooks.NEXT_OPEN);
+            assertThat(o.targetLocal()).isNull();
+        });
+        assertThat(standard.response().path("timing").asString()).isEqualTo(PaperBooks.NEXT_OPEN);
+        assertThat(standard.response().has("timingSetting")).as("기본 설정 — 이 설정이 생기기 전과 같은 기록").isFalse();
+
+        store.decisions.clear();
+        store.orders.clear();
+        tools.jackson.databind.node.ObjectNode rules = (tools.jackson.databind.node.ObjectNode) store.settings.body().get("kr").get("rules");
+        rules.put("timing", "AT_MINUTE").put("timingAtKst", "10:47");
+        Decision minute = decideAt(FRI, "22:30");
+        assertThat(ordersOf(minute)).isNotEmpty().allSatisfy(o -> {
+            assertThat(o.timing()).isEqualTo(PaperBooks.AT_MINUTE);
+            assertThat(o.targetLocal()).isEqualTo(java.time.LocalTime.of(10, 47));
+            assertThat(o.source()).isEqualTo(RuleBookService.SOURCE_RULE);
+            assertThat(o.expiresOn()).as("기준일 10-30 + 3거래일").isEqualTo(LocalDate.of(2026, 11, 4));
+        });
+        assertThat(minute.response().path("timing").asString()).isEqualTo("AT_MINUTE 10:47");
+        assertThat(minute.response().path("timingSetting").asString()).isEqualTo("AT_MINUTE 10:47");
+
+        store.decisions.clear();
+        store.orders.clear();
+        rules.put("timingAtKst", "15:25");
+        Decision closed = decideAt(FRI, "22:30");
+        assertThat(ordersOf(closed)).isNotEmpty().allSatisfy(o -> {
+            assertThat(o.timing()).isEqualTo(PaperBooks.NEXT_OPEN);
+            assertThat(o.targetLocal()).isNull();
+        });
+        assertThat(closed.response().path("timing").asString()).isEqualTo(PaperBooks.NEXT_OPEN);
+        assertThat(closed.response().path("timingSetting").asString()).isEqualTo("AT_MINUTE 15:25");
+        assertThat(closed.response().path("notes").toString()).contains("체결 시각 설정(AT_MINUTE 15:25)").contains("09:01~15:19 KST")
+                .contains("기본 시점(NEXT_OPEN)");
+    }
+
+    @Test
     @DisplayName("그 주기 매수 결정이 생긴 뒤에는 다시 선정하지 않음 — 11-02 REBALANCE OK 뒤 11-03은 SCHEDULED(매수 없음)")
     void selectsOncePerCycle() {
         decideAt(R, "22:30");

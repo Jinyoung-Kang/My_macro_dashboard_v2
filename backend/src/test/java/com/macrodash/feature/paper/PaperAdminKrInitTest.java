@@ -124,7 +124,7 @@ class PaperAdminKrInitTest {
         assertThat(result.startDate()).isEqualTo(S);
         assertThat(result.settingsCreated()).isFalse();
         assertThat(result.settingsVersion()).isEqualTo(2);
-        assertThat(result.settingsKeysWritten()).containsExactlyElementsOf(krKeys()).hasSize(37);   // 한국 자유 시점 판 스위치 둘과 장중 판단 횟수(kr.claude.freeTiming·kr.claude2.freeTiming·kr.intradayMaxPerSession — ADR 0027)까지
+        assertThat(result.settingsKeysWritten()).containsExactlyElementsOf(krKeys()).hasSize(39);   // 한국 자유 시점 판 스위치 둘과 장중 판단 횟수(kr.claude.freeTiming·kr.claude2.freeTiming·kr.intradayMaxPerSession — ADR 0027)까지
         assertThat(store.settings.version()).isEqualTo(2);
         assertThat(store.settingsChangedKeys.get(2)).containsExactlyElementsOf(krKeys());
         JsonNode kr = store.settings.body().get("kr");
@@ -192,7 +192,8 @@ class PaperAdminKrInitTest {
 
         assertThat(result.settingsKeysWritten()).doesNotContain("kr.slippageBp", "kr.calendar.extraClosures")
                 .contains("kr.commissionBp", "kr.calendar.openTimeOverrides", "kr.claude2.riskProfile", "kr.claude2.checkpoints",
-                        "kr.claude.freeTiming", "kr.claude2.freeTiming", "kr.intradayMaxPerSession").hasSize(35);
+                        "kr.claude.freeTiming", "kr.claude2.freeTiming", "kr.intradayMaxPerSession", "kr.rules.timing",
+                        "kr.rules.timingAtKst").hasSize(37);
         assertThat(store.settings.body().at("/kr/slippageBp").asDouble()).isEqualTo(7);
         assertThat(store.settings.body().at("/kr/calendar/extraClosures/0").asString()).isEqualTo("2026-12-29");
         assertThat(store.settings.body().at("/kr/tax/kospi/sttBp").asDouble()).isEqualTo(5);

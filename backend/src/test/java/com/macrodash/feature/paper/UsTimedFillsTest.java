@@ -1768,6 +1768,54 @@ class UsTimedFillsTest {
         }
 
         @Test
+        @DisplayName("규칙 주문 다시 내기(ADR 0027 결정 5) — 지정 시각 규칙 주문(출처 RULE)이 그 세션에 체결되지 못하면 만료로 닫고 같은 결정·같은 크기의 다음 "
+                + "관측치 주문(기준 거래일 = E, 만료 = 원래 만료일, 근거에 원래 주문 번호)으로 다시 냄. 수명이 E까지인 규칙 주문과 Claude 주문은 다시 내지 않음")
+        void unfilledRuleOrderIsReissuedAsTheNextObservationOrder() {
+            LocalDate thu = LocalDate.of(2026, 10, 29);
+            long rule = store.insertOrder(new Order(0, BOOK, 7L, "AAPL", PaperBooks.BUY, null, 5.0, null, PaperBooks.AT_MINUTE,
+                    RuleBookService.SOURCE_RULE, PaperBooks.ORDER_PENDING, null, MAPPER.readTree("{\"rule\":\"R2\",\"text\":\"2곳 신규\"}"),
+                    MON, MON_DECIDED, thu, null, at));
+            long ending = store.insertOrder(new Order(0, BOOK, 7L, "MSFT", PaperBooks.BUY, null, 5.0, null, PaperBooks.AT_MINUTE,
+                    RuleBookService.SOURCE_RULE, PaperBooks.ORDER_PENDING, null, null, MON, MON_DECIDED, TUE, null, at));
+            long claude = atMinute("NVDA", PaperBooks.BUY, 10, null, at, MON, MON_DECIDED);
+            Bars bars = new Bars(et(TUE, 16, 21)).market(at);
+            for (String ticker : List.of("AAPL", "MSFT", "NVDA")) {
+                bars.bar(ticker, TUE, et(TUE, 10, 0), 99.0, 500.0).bar(ticker, TUE, et(TUE, 10, 20), 99.5, 500.0);
+            }
+            session(bars, "SPY", TUE, 580, et(TUE, 16, 0));
+            bars(bars);
+
+            Outcome outcome = observe(et(TUE, 16, 20), bar("AAPL", MON, 99.0, TUE, 99.5), bar("MSFT", MON, 399.0, TUE, 399.5),
+                    bar("NVDA", MON, 179.0, TUE, 179.5));
+
+            assertThat(outcome.expired()).isEqualTo(3);
+            for (long id : List.of(rule, ending, claude)) {
+                assertThat(order(id).status()).as("주문 " + id).isEqualTo("EXPIRED");
+                assertThat(order(id).rejectReason()).startsWith("NO_TRADE_AFTER_T — ");
+            }
+            List<Order> reissued = store.ordersOf(BOOK).stream().filter(o -> o.reason() != null && o.reason().has(UsTimedFills.REISSUED_FROM))
+                    .toList();
+            assertThat(reissued).as("수명이 남은 규칙 주문 하나만").hasSize(1);
+            Order again = reissued.get(0);
+            assertThat(again.reason().path(UsTimedFills.REISSUED_FROM).asLong()).isEqualTo(rule);
+            assertThat(again.reason().path(UsTimedFills.REISSUED_TIMING).asString()).isEqualTo("AT_MINUTE 10:47");
+            assertThat(again.reason().path(UsTimedFills.REISSUED_BECAUSE).asString()).startsWith("NO_TRADE_AFTER_T");
+            assertThat(again.reason().path("rule").asString()).as("원래 근거 그대로").isEqualTo("R2");
+            assertThat(again.timing()).isEqualTo(ExecutionAudit.NEXT_OBSERVATION);
+            assertThat(again.targetLocal()).isNull();
+            assertThat(again.source()).isEqualTo(RuleBookService.SOURCE_RULE);
+            assertThat(again.status()).isEqualTo(PaperBooks.ORDER_PENDING);
+            assertThat(again.decisionId()).isEqualTo(7L);
+            assertThat(again.ticker()).isEqualTo("AAPL");
+            assertThat(again.targetWeightPct()).isEqualTo(5.0);
+            assertThat(again.asOfTradingDate()).as("E의 봉으로는 체결하지 않고 그다음 관측치부터").isEqualTo(TUE);
+            assertThat(again.expiresOn()).as("원래 만료일").isEqualTo(thu);
+            assertThat(order(rule).rejectReason()).contains("다음 관측치 주문 " + again.id() + "로 다시 냄");
+            assertThat(order(ending).rejectReason()).as("수명이 E까지 — 다시 내지 않음").doesNotContain("다시 냄");
+            assertThat(order(claude).rejectReason()).as("Claude 주문은 그 세션 하루짜리 그대로").doesNotContain("다시 냄");
+        }
+
+        @Test
         @DisplayName("⑤ T ≤ 주문 생성 + 60초(E 장중에 만든 주문의 지난 시각) — 체결하지 않고 취소 + 운영 알림, 조기 폐장일의 마감 뒤 시각도 같음")
         void atMinuteLateOrAfterTheCloseIsCancelled() {
             long late = atMinute("AAPL", PaperBooks.BUY, 10, null, at, MON, et(TUE, 10, 46).plusSeconds(10));

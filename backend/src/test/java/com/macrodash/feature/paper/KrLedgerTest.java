@@ -811,6 +811,46 @@ class KrLedgerTest {
         }
 
         @Test
+        @DisplayName("규칙 주문 다시 내기(ADR 0027 결정 5) — 지정 시각 규칙 주문(출처 RULE)이 목표 세션에 체결되지 못하면(그날 1분봉 없음) 만료로 닫고 같은 결정·"
+                + "같은 크기의 다음 거래일 시가 주문(기준 거래일 = 그 세션, 만료 = 원래 만료일, 근거에 원래 주문 번호)으로 다시 냄. Claude 주문은 대기 그대로")
+        void unfilledRuleOrderIsReissuedAsTheNextOpenOrder() {
+            book(BOOK2, PaperBooks.KIND_CLAUDE, 2_000_000);   // 장부는 계좌 종류가 아니라 주문의 출처·시점으로 가름
+            LocalDate expires = LocalDate.of(2026, 11, 5);
+            long rule = store.insertOrder(new Order(0, BOOK2, 9L, "005930", PaperBooks.BUY, null, 5.0, null, PaperBooks.AT_MINUTE,
+                    RuleBookService.SOURCE_RULE, "PENDING", null, PaperFixtures.MAPPER.readTree("{\"rule\":\"K7\"}"), D, CREATED, expires,
+                    null, java.time.LocalTime.of(10, 47)));
+            long claude = minute2("000660", PaperBooks.BUY, 1, java.time.LocalTime.of(10, 47), CREATED);
+            KrQuotes.Timed none = new KrQuotes.Timed(KrQuotes.TIMED_NO_BARS, null, kst("2026-11-03T21:50"), Map.of(), Map.of(), Map.of());
+            when(marketData.krTimed()).thenReturn(Map.of("005930", Map.of(D1, none), "000660", Map.of(D1, none)));
+            KrFixtures.Payload payload = new KrFixtures.Payload(D1);
+            openedAt(payload, "005930", 70_000);
+            openedAt(payload, "000660", 395_000);
+
+            process(payload, COLLECTED_D1);
+
+            assertThat(store.fillsOf(BOOK2)).isEmpty();
+            Order closed = store.orders.get(rule);
+            assertThat(closed.status()).isEqualTo(PaperBooks.ORDER_EXPIRED);
+            java.util.List<Order> reissued = store.ordersOf(BOOK2).stream()
+                    .filter(o -> o.reason() != null && o.reason().has(UsTimedFills.REISSUED_FROM)).toList();
+            assertThat(reissued).hasSize(1);
+            Order again = reissued.get(0);
+            assertThat(closed.rejectReason()).contains("다음 거래일 시가 주문 " + again.id() + "로 다시 냄");
+            assertThat(again.reason().path(UsTimedFills.REISSUED_FROM).asLong()).isEqualTo(rule);
+            assertThat(again.reason().path(UsTimedFills.REISSUED_TIMING).asString()).isEqualTo("AT_MINUTE 10:47");
+            assertThat(again.reason().path("rule").asString()).as("원래 근거 그대로").isEqualTo("K7");
+            assertThat(again.timing()).isEqualTo(PaperBooks.NEXT_OPEN);
+            assertThat(again.targetLocal()).isNull();
+            assertThat(again.source()).isEqualTo(RuleBookService.SOURCE_RULE);
+            assertThat(again.status()).isEqualTo(PaperBooks.ORDER_PENDING);
+            assertThat(again.decisionId()).isEqualTo(9L);
+            assertThat(again.targetWeightPct()).isEqualTo(5.0);
+            assertThat(again.asOfTradingDate()).as("이 관측치의 세션 — 그다음 거래일 시가에 체결").isEqualTo(D1);
+            assertThat(again.expiresOn()).as("원래 만료일").isEqualTo(expires);
+            assertThat(store.orders.get(claude).status()).as("Claude 주문은 만료까지 대기 그대로(다시 내지 않음)").isEqualTo(PaperBooks.ORDER_PENDING);
+        }
+
+        @Test
         @DisplayName("매시(AT_1000)는 그 시각 봉 시가·출처 TOSS_1M_AT, 종가(NEXT_CLOSE)는 마감 봉 종가·TOSS_1M_CLOSE, 시가 매도가 먼저 — 시각 순으로 체결")
         void hourlyAndCloseFillAtTheirBars() {
             book(BOOK2, PaperBooks.KIND_CLAUDE, 2_000_000);

@@ -356,9 +356,21 @@ public class RuleBookService {
             String status = paused ? STATUS_SKIPPED : draft.orders.isEmpty() ? STATUS_NO_TRADE : STATUS_OK;
             String summary = paused ? "일시정지 중 — 주문을 내지 않습니다"
                     : summary(kind, draft, context == null ? null : context.selection());
+            // 체결 시각 설정(ADR 0027 결정 5) — 기본(다음 시간별 관측치)이면 이 설정 전과 같은 주문·같은 기록. 기본이 아니면 그 결정의 주문 전부를 그
+            // 시점으로 내고, 그 시점이 이 결정에서 닫혔으면(조기 폐장·세션 도중) 기본 시점으로 내며 사유를 남깁니다.
+            RuleTiming configured = RuleTiming.us(row.body());
+            RuleTiming.Chosen timing = draft.orders.isEmpty() ? new RuleTiming.Chosen(NEXT_OBSERVATION, null, null)
+                    : configured.choose(asOf, clock.instant(), UsMarketCalendar.CALENDAR, false);
+            if (timing.note() != null) {
+                draft.notes.add(timing.note());
+            }
             Map<String, Object> response = response(asOf, kind, summary, context, draft, view, rules, paper, universe);
+            if (!configured.standard(false)) {
+                response.put("timing", timing.at() == null ? timing.timing() : timing.timing() + " " + FreeTiming.label(timing.at()));
+                response.put("timingSetting", configured.label());
+            }
             Decision decision = record(asOf, kind, status, row.version(), context, response, draft, pricesFinal,
-                    started);
+                    started, timing);
             log.info("규칙 책 결정 {} {}: {} — {}", asOf, kind, status, summary);
             return decision;
         });
@@ -1074,7 +1086,8 @@ public class RuleBookService {
 
     // ------------------------------------------------------------------ 기록
     private Decision record(LocalDate asOf, String kind, String status, int settingsVersion, SignalContext context,
-                            Map<String, Object> response, Draft draft, boolean pricesFinal, Instant started) {
+                            Map<String, Object> response, Draft draft, boolean pricesFinal, Instant started,
+                            RuleTiming.Chosen timing) {
         return store.atomically(() -> {
             Optional<Long> id = store.insertDecisionIfAbsent(new Decision(0, PaperBooks.RULES, asOf, kind, null, status,
                     null, null, settingsVersion, context == null ? null : context.selection().asOfDate(), null, null,
@@ -1085,8 +1098,9 @@ public class RuleBookService {
             LocalDate expires = UsMarketCalendar.addTradingDays(asOf, ORDER_EXPIRY_TRADING_DAYS);
             for (PlannedOrder order : draft.orders) {
                 store.insertOrder(new Order(0, PaperBooks.RULES, id.get(), order.ticker(), order.side(), null,
-                        order.targetWeightPct(), order.sellFraction(), NEXT_OBSERVATION, SOURCE_RULE,
-                        PaperBooks.ORDER_PENDING, null, mapper.valueToTree(order.reason()), asOf, null, expires, null));
+                        order.targetWeightPct(), order.sellFraction(), timing.timing(), SOURCE_RULE,
+                        PaperBooks.ORDER_PENDING, null, mapper.valueToTree(order.reason()), asOf, null, expires, null,
+                        timing.at()));
             }
             return store.decision(id.get()).orElseThrow();
         });

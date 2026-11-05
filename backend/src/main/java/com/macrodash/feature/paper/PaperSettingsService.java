@@ -309,6 +309,10 @@ public class PaperSettingsService {
             requireDeadlineAfterDecision(body);
             requireKrDecisionWindow(body);
             requireOneIntradayMode(body);
+            String ruleTiming = RuleTiming.invalid(body);
+            if (ruleTiming != null) {
+                throw new InvalidRequestException("설정을 저장하지 않았습니다 — " + ruleTiming);
+            }
             Map<String, Object> out = new LinkedHashMap<>();
             out.put("ok", true);
             if (changed.isEmpty()) {
@@ -526,6 +530,9 @@ public class PaperSettingsService {
         // 규칙 책 묶음(rules.*) — 단계 2에 더한 키라 그 전에 만든 설정 행에는 없고, 그 행은 PaperSettings.Rules가 이 기본값으로 읽습니다.
         Map<String, Object> rulesBody = new LinkedHashMap<>();
         rulesBody.put("parkCashThresholdPct", PaperSettings.Rules.DEFAULT_PARK_CASH_THRESHOLD_PCT);
+        // 규칙 계좌 체결 시각(ADR 0027) — 기본은 지금 그대로(다음 시간별 관측치). 지정 시각은 AT_MINUTE일 때만 읽습니다.
+        rulesBody.put("timing", RuleTiming.US_OPTIONS.get(0));
+        rulesBody.put("timingAtEt", RuleTiming.DEFAULT_AT);
         body.put("rules", rulesBody);
         // 두 기관 그룹 섞기(D27) — D27 전에 만든 설정 행에는 없고, 그 행은 PaperSettings.Blend가 이 기본값으로 읽습니다.
         PaperSettings.Blend blend = PaperSettings.Blend.defaults();
@@ -616,6 +623,8 @@ public class PaperSettingsService {
         rules.put("debtRatioMaxPct", KR_DEFAULT_DEBT_RATIO_MAX_PCT);
         rules.put("reselection", "MONTHLY_FIRST");
         rules.put("parkCashThresholdPct", PaperSettings.Rules.DEFAULT_PARK_CASH_THRESHOLD_PCT);
+        rules.put("timing", RuleTiming.KR_OPTIONS.get(0));
+        rules.put("timingAtKst", RuleTiming.DEFAULT_AT);
         kr.put("rules", rules);
         kr.put("cashLikeTickers", KR_DEFAULT_CASH_LIKE);
         kr.put("universeExtraTickers", List.of());

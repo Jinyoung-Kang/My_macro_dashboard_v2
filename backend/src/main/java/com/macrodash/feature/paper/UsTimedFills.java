@@ -987,9 +987,42 @@ final class UsTimedFills {
     }
 
     private void expire(BookRun run, Order order, String reason) {
-        store.markOrderStatus(order.id(), PaperBooks.ORDER_EXPIRED, reason);
+        Long reissued = reissueRuleOrder(run, order, reason);
+        String text = reissued == null ? reason : reason + " — 다음 관측치 주문 " + reissued + "로 다시 냄";
+        store.markOrderStatus(order.id(), PaperBooks.ORDER_EXPIRED, text);
         run.expired++;
-        run.note("주문 " + order.id() + " " + order.side() + " " + order.ticker() + " 만료 — " + reason);
+        run.note("주문 " + order.id() + " " + order.side() + " " + order.ticker() + " 만료 — " + text);
+    }
+
+    /** 다시 낸 주문의 근거에 남기는 칸 — 원래 주문 번호·원래 시점·다시 낸 사유. */
+    static final String REISSUED_FROM = "reissuedFrom";
+    static final String REISSUED_TIMING = "reissuedTiming";
+    static final String REISSUED_BECAUSE = "reissuedBecause";
+
+    /**
+     * 시각을 지정한 <b>규칙 주문</b>(출처 RULE — 설정 {@code rules.timing}, ADR 0027 결정 5)이 목표 세션 E에 체결되지 못했을 때 기본 시점(다음 시간별
+     * 관측치)의 새 대기 주문으로 다시 냅니다 — 같은 결정 번호·같은 크기, 기준 거래일 = E(E의 봉으로는 체결하지 않고 그다음 관측치부터), 만료 = 원래
+     * 만료일. 근거에 {@value #REISSUED_FROM}(원래 주문 번호)·원래 시점·사유를 남깁니다. 규칙 신호는 시각이 아니라 방향이라, 그 시각의 봉이 없었다고
+     * 주문을 버리지 않습니다. 원래 만료일이 E 이하면(수명이 끝남) 다시 내지 않습니다. Claude 주문·스탑 주문은 대상이 아닙니다(그 세션 하루짜리 그대로).
+     *
+     * @return 새 주문 번호(다시 내지 않았으면 null)
+     */
+    private Long reissueRuleOrder(BookRun run, Order order, String reason) {
+        if (!RuleBookService.SOURCE_RULE.equals(order.source())) {
+            return null;
+        }
+        LocalDate session = ExecutionAudit.targetSession(order, run.market.calendar());
+        if (session == null || order.expiresOn() == null || !order.expiresOn().isAfter(session)) {
+            return null;
+        }
+        tools.jackson.databind.node.ObjectNode basis = order.reason() instanceof tools.jackson.databind.node.ObjectNode existing
+                ? existing.deepCopy() : mapper.createObjectNode();
+        basis.put(REISSUED_FROM, order.id());
+        basis.put(REISSUED_TIMING, order.targetLocal() == null ? order.timing() : order.timing() + " " + FreeTiming.label(order.targetLocal()));
+        basis.put(REISSUED_BECAUSE, reason);
+        return store.insertOrder(new Order(0, order.bookCode(), order.decisionId(), order.ticker(), order.side(), order.qty(),
+                order.targetWeightPct(), order.sellFraction(), ExecutionAudit.NEXT_OBSERVATION, order.source(), PaperBooks.ORDER_PENDING,
+                null, basis, session, null, order.expiresOn(), null));
     }
 
     // ------------------------------------------------------------------ 표기

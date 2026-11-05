@@ -1,6 +1,6 @@
 # 0027. 체결 시점 자유화: 분 단위 지정 시각(`AT_MINUTE`)과 장중 판단(세션당 계좌별 최대 2회, Claude가 시각을 고름)을 네 Claude 계좌에, 규칙 계좌는 설정으로 체결 시각 지정(기본값 그대로), 스키마는 더하기만·스위치는 계좌별·끄면 바이트까지 같음, 계좌2 체결 시점 실험은 조건 변경으로 종료
 
-- 상태: 채택 (2026-11-05, 사용자 승인 — 질문 네 개의 답과 승인 때의 수정 "장 중 확인을 최대 2회로", "하루 호출 상한을 60, 예약을 20으로"). **구현 중**(B0~B3 끝, B4~B6 남음) —
+- 상태: 채택 (2026-11-05, 사용자 승인 — 질문 네 개의 답과 승인 때의 수정 "장 중 확인을 최대 2회로", "하루 호출 상한을 60, 예약을 20으로"). **구현 중**(B0~B4 끝, B5~B6 남음) —
   단계와 커밋 순서는 [명세](../specs/2026-11-05-free-fill-timing.md) §13, 끝난 단계는 그 표에 적습니다. 스위치는 모두 기본 꺼짐이라 배포만으로는 어느 계좌의
   결정·체결도 바뀌지 않습니다. **켜는 설정 저장은 그때 사용자에게 다시 확인받습니다**(결정 12).
 - 근거: [명세](../specs/2026-11-05-free-fill-timing.md) · [ADR 0018](0018-paper-trading-guardrails.md)(미국 책 가드레일) · [ADR 0020](0020-v2-program.md)(호출 상한) ·
@@ -15,6 +15,9 @@
     `KrStartTest.krIntraday*`(한국 — 한국 시가 주문을 남기는 재현 시험 포함), `CheckpointPacketTest.goldenFreeMinute`(장중 판단 패킷 고정본)·`KrIntradayPacketTest`,
     `WatchIdentityTest`·`test_paper_watch.py`·`test_paper_watch_kr.py`(계획 여럿·신원 목록), `IntradayManualServiceTest`(수동 경로 — 예약만·409),
     `RouteInventoryTest`·`AccessPolicyTest`(새 경로), `test_table_ownership.py`(새 표는 백엔드만 씀).
+  - B4(규칙 계좌): `RuleTimingTest`(읽기·그 결정의 시점 고르기·저장 검사), `RuleBookServiceTest.ruleTimingSettingSetsTheOrderTiming`·`KrRuleBookServiceTest.ruleTimingSettingSetsTheOrderTiming`
+    (기본 설정이면 주문·기록이 그대로), `UsTimedFillsTest…unfilledRuleOrderIsReissuedAsTheNextObservationOrder`·`KrLedgerTest…unfilledRuleOrderIsReissuedAsTheNextOpenOrder`(다시 내기 — Claude 주문은 아님),
+    `PaperDecisionJobClaude2Test.timedRulesBookWaitsForTheMinuteBars`, `PaperSettingsServiceTest`(저장 거절·규칙 영향 키), `KrRuleBookServiceTest.affectsRulesMatchesTheKeysRead`, `test_toss_call_budget.py`(상한 180).
 
 ## 배경
 

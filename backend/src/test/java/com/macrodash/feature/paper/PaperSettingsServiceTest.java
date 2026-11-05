@@ -361,6 +361,25 @@ class PaperSettingsServiceTest {
         assertThat(on.on(PaperBooks.KR_RULES)).isFalse();
         assertThat(on.on(null)).isFalse();
 
+        // 규칙 계좌 체결 시각(ADR 0027 결정 5) — 기본은 지금 그대로, AT_MINUTE이면 지정 시각이 범위 안이어야 저장됨. 규칙 계좌 영향 키라 경고가 붙음.
+        assertThat(service.defaultsJson().path("rules").path("timing").asString()).isEqualTo("NEXT_OBSERVATION");
+        assertThat(service.defaultsJson().path("kr").path("rules").path("timing").asString()).isEqualTo("NEXT_OPEN");
+        for (String key : List.of("rules.timing", "rules.timingAtEt", "kr.rules.timing", "kr.rules.timingAtKst")) {
+            assertThat(PaperSettingKeys.find(key).orElseThrow().affectsRules()).as(key).isTrue();
+        }
+        assertThat(PaperSettingKeys.find("rules.timing").orElseThrow().options()).isEqualTo(RuleTiming.US_OPTIONS);
+        assertThat(PaperSettingKeys.find("kr.rules.timing").orElseThrow().options()).isEqualTo(RuleTiming.KR_OPTIONS);
+        assertThatThrownBy(() -> update("rules.timing", "AT_MINUTE", "rules.timingAtEt", "16:00")).isInstanceOf(InvalidRequestException.class)
+                .hasMessageContaining("rules.timingAtEt").hasMessageContaining("09:31~15:54 ET");
+        assertThatThrownBy(() -> update("rules.timing", "AT_1000")).isInstanceOf(InvalidRequestException.class);
+        Map<String, Object> minute = update("rules.timing", "AT_MINUTE", "rules.timingAtEt", "10:47");
+        assertThat(minute.get("changedKeys")).isEqualTo(List.of("rules.timing", "rules.timingAtEt"));
+        assertThat((String) minute.get("warning")).as("규칙 계좌 영향 키").isNotNull();
+        assertThat(RuleTiming.us(body())).isEqualTo(new RuleTiming("AT_MINUTE", java.time.LocalTime.of(10, 47)));
+        assertThatThrownBy(() -> update("rules.timingAtEt", "08:00")).as("AT_MINUTE인 채로 시각만 범위 밖으로")
+                .isInstanceOf(InvalidRequestException.class);
+        update("rules.timing", "NEXT_OBSERVATION");
+
         // 계좌1: 기존 장중 확인과 함께 켤 수 없음(장중 확인이 시각 지정 대기 주문을 지우고 끈 판 시점으로 다시 냄).
         update("claude.checkpoint", true);
         assertThatThrownBy(() -> update("claude.freeTiming", true)).isInstanceOf(InvalidRequestException.class)
@@ -397,7 +416,8 @@ class PaperSettingsServiceTest {
             PaperSettingKeys.Spec spec = PaperSettingKeys.find(key).orElseThrow();
             assertThat(spec.scope()).as(key).isEqualTo(PaperSettingKeys.Scope.CLAUDE2);
             assertThat(spec.view().get("market")).as(key).isEqualTo("US");
-            assertThat(spec.affectsRules()).as(key).isFalse();
+            // 1분봉 기다림은 시각 지정 주문이 있는 모든 미국 책의 처리 지연을 정함 — 체결 시각을 정한 규칙 계좌 포함(ADR 0027 결정 5).
+            assertThat(spec.affectsRules()).as(key).isEqualTo(key.equals("claude2.barsWaitMinutes"));
         }
         assertThat(PaperSettingKeys.find("claude2.maxCallsPerCycle").orElseThrow())
                 .extracting(PaperSettingKeys.Spec::min, PaperSettingKeys.Spec::max).containsExactly(0.0, 10.0);

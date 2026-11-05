@@ -1434,7 +1434,9 @@ public class PaperLedgerService {
         }
         PaperMarket.FillChoice choice = run.chooseFill(order, observed);
         if (choice.bar() == null) {
-            waitNote(run, order, choice);
+            if (!reissuedRuleOrder(run, order, choice)) {
+                waitNote(run, order, choice);
+            }
             return;
         }
         Holding holding = run.holdings.get(order.ticker());
@@ -1486,7 +1488,9 @@ public class PaperLedgerService {
         }
         PaperMarket.FillChoice choice = run.chooseFill(order, observed);
         if (choice.bar() == null) {
-            waitNote(run, order, choice);
+            if (!reissuedRuleOrder(run, order, choice)) {
+                waitNote(run, order, choice);
+            }
             return;
         }
         Bar bar = choice.bar();
@@ -1602,6 +1606,37 @@ public class PaperLedgerService {
         ObjectNode reason = order.reason() instanceof ObjectNode existing ? existing.deepCopy() : mapper.createObjectNode();
         fields.forEach((key, value) -> reason.set(key, mapper.valueToTree(value)));
         return reason;
+    }
+
+    /**
+     * 시각을 지정한 한국 <b>규칙 주문</b>(출처 RULE — 설정 {@code kr.rules.timing}, ADR 0027 결정 5)이 목표 세션에서 체결되지 못했을 때
+     * ({@link PaperMarket.FillChoice#unfillable} — 그날 1분봉 없음·T 뒤 거래 없음·마감 봉 없음) 그 행을 사유와 함께 만료로 닫고, 기본 시점(다음 거래일
+     * 시가)의 새 대기 주문으로 다시 냅니다 — 같은 결정 번호·같은 크기, 기준 거래일 = 이 관측치의 세션(그다음 거래일 시가에 체결), 만료 = 원래 만료일.
+     * 한국 책은 만료가 기준일 + 3거래일이라 그대로 두면 사흘 동안 풀리지 않는 대기 주문으로 남습니다. 원래 만료일이 이 세션 이하면(수명이 끝남) 다시
+     * 내지 않고 기다림으로 둡니다(만료 정리가 닫음). Claude 주문·스탑 주문·시가 주문은 대상이 아닙니다(미국 {@link UsTimedFills}의 다시 내기와 같은 뜻).
+     *
+     * @return 다시 냈으면 참(그 주문은 만료로 닫힘)
+     */
+    private boolean reissuedRuleOrder(BookRun run, Order order, PaperMarket.FillChoice choice) {
+        if (!choice.unfillable() || !RuleBookService.SOURCE_RULE.equals(order.source())
+                || PaperBooks.NEXT_OPEN.equals(order.timing()) || order.expiresOn() == null
+                || !order.expiresOn().isAfter(run.session)) {
+            return false;
+        }
+        String reason = choice.waitReason() == null ? "그 세션에 체결되지 못함" : choice.waitReason();
+        ObjectNode basis = order.reason() instanceof ObjectNode existing ? existing.deepCopy() : mapper.createObjectNode();
+        basis.put(UsTimedFills.REISSUED_FROM, order.id());
+        basis.put(UsTimedFills.REISSUED_TIMING, order.targetLocal() == null ? order.timing()
+                : order.timing() + " " + FreeTiming.label(order.targetLocal()));
+        basis.put(UsTimedFills.REISSUED_BECAUSE, reason);
+        long reissued = store.insertOrder(new Order(0, order.bookCode(), order.decisionId(), order.ticker(), order.side(), order.qty(),
+                order.targetWeightPct(), order.sellFraction(), PaperBooks.NEXT_OPEN, order.source(), PaperBooks.ORDER_PENDING, null,
+                basis, run.session, null, order.expiresOn(), null));
+        String text = reason + " — 다음 거래일 시가 주문 " + reissued + "로 다시 냄";
+        store.markOrderStatus(order.id(), PaperBooks.ORDER_EXPIRED, text);
+        run.expired++;
+        run.note("주문 " + order.id() + " " + order.side() + " " + order.ticker() + " 만료 — " + text);
+        return true;
     }
 
     /**

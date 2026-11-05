@@ -244,6 +244,13 @@ final class PaperSettingKeys {
             number("trackRecord.avgCoverage", 0, 1, true, "자격: 평균 커버리지(0~1, R9)"),
             of("trackRecord.candidateCiks", Type.CIKS, true, "후보 기관 CIK 목록(D21) — 바꾸면 그룹 A 순위가 달라짐"),
             number("rules.parkCashThresholdPct", 0, 20, true, "재선정일이 아닌 날 남는 현금을 SHY에 두는 기준(순자산 %)"),
+            choice(RuleTiming.US_TIMING, RuleTiming.US_OPTIONS, true,
+                    "미국 규칙 계좌의 체결 시각(ADR 0027) — 다음 시간별 관측치(NEXT_OBSERVATION, 기본)·다음 세션 시가(NEXT_OPEN)·다음 세션의 지정한 분"
+                            + "(AT_MINUTE — rules.timingAtEt)·다음 세션 확정 종가(NEXT_CLOSE). 기본이 아니면 그 결정의 주문 전부를 그 시각에 내고, 그날 "
+                            + "체결되지 못한 시가·지정 시각 주문은 다음 관측치 주문으로 다시 냄. 스탑 주문은 그대로"),
+            of(RuleTiming.US_AT, Type.TIME, true,
+                    "미국 규칙 계좌의 지정 시각(뉴욕 시각 HH:mm, 09:31~15:54) — rules.timing이 AT_MINUTE일 때만 읽음. 조기 폐장일처럼 그날 받는 범위 "
+                            + "밖이면 그 결정의 주문은 기본 시점으로 냄"),
             integer("blend.groupB.topN", 1, 12, true, "그룹 B 선정 수(D27)"),
             integer("blend.groupB.windowYears", 1, 2, true, "그룹 B 트랙레코드 창(년, D27)"),
             integer("blend.groupB.minPeriods", 1, 8, true, "그룹 B 자격: 최소 구간 수(D27)"),
@@ -303,9 +310,10 @@ final class PaperSettingKeys {
             integer(Claude2Settings.MAX_CALLS_PER_CYCLE, 0, Claude2Settings.MAX_CALLS_PER_CYCLE_LIMIT, false,
                     "계좌2 소상한 — 같은 기준 거래일(결정 주기)의 계좌2 정기 결정·출발·재시도·장중 확인 호출 수(결정 행마다 1 + 재시도 수). "
                             + "단계 1은 2, 장중 확인(단계 2)을 켜면 3. 0이면 계좌2 정기 호출 없음"),
-            integer(Claude2Settings.BARS_WAIT_MINUTES, 0, Claude2Settings.MAX_BARS_WAIT_MINUTES, false,
+            integer(Claude2Settings.BARS_WAIT_MINUTES, 0, Claude2Settings.MAX_BARS_WAIT_MINUTES, true,
                     "1분봉 기다림 상한(분) — 기준 시각이 지난 시각 지정 주문이 있으면 그 관측치 뒤의 1분봉 저장본을 이만큼 기다린 뒤 "
-                            + "처리(계좌2만 — 그동안 계좌2 스탑 판정이 늦음). 0이면 기다리지 않음"),
+                            + "처리(시각 지정 주문이 있는 모든 미국 책 — 계좌2, 자유 시점 판 계좌1, 체결 시각을 정한 규칙 계좌. 그동안 그 책의 스탑 "
+                            + "판정이 늦음). 0이면 기다리지 않음"),
             of(Claude2Settings.EXECUTION_RECORD, Type.BOOLEAN, false,
                     "계좌2 패킷 13_execution.record — 최근 체결 20건(고른 시점·체결 원가격·사다리 칸·계좌1식 대비 bp, 사실만)"),
             of(FreeTimingSettings.US_CLAUDE2, Type.BOOLEAN, false,
@@ -350,6 +358,13 @@ final class PaperSettingKeys {
             choice("kr.rules.reselection", List.of("MONTHLY_FIRST", "TWICE_MONTHLY"), true,
                     "재선정 주기(K10) — 그 달 첫 KR 거래일(MONTHLY_FIRST)·월 2회(TWICE_MONTHLY: 첫째·셋째 월요일 다음 거래일)"),
             number("kr.rules.parkCashThresholdPct", 0, 20, true, "재선정일이 아닌 날 남는 현금을 153130에 두는 기준(순자산 %)"),
+            choice(RuleTiming.KR_TIMING, RuleTiming.KR_OPTIONS, true,
+                    "한국 규칙 계좌의 체결 시각(ADR 0027) — 다음 거래일 시가(NEXT_OPEN, 기본)·다음 거래일의 지정한 분(AT_MINUTE — "
+                            + "kr.rules.timingAtKst)·다음 거래일 종가(NEXT_CLOSE). 기본이 아니면 그 결정의 주문 전부를 그 시각에 내고, 그날 체결되지 "
+                            + "못한 지정 시각·종가 주문은 다음 거래일 시가 주문으로 다시 냄. 스탑 주문은 그대로"),
+            of(RuleTiming.KR_AT, Type.TIME, true,
+                    "한국 규칙 계좌의 지정 시각(한국 시간 HH:mm, 09:01~15:19) — kr.rules.timing이 AT_MINUTE일 때만 읽음. 장 시간 변경일처럼 그날 받는 "
+                            + "범위 밖이면 그 결정의 주문은 기본 시점으로 냄"),
             of("kr.cashLikeTickers", Type.TICKERS, true,
                     "한국 현금성 종목(스탑·비중 상한·종목 수 제외, 기본 153130) — 수집기가 늘 받는 ETF("
                             + String.join("·", KR_SCOPE_ETFS) + ")만"),

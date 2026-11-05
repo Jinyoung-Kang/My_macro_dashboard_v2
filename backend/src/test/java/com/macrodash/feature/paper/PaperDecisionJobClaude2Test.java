@@ -325,6 +325,32 @@ class PaperDecisionJobClaude2Test {
     }
 
     @Test
+    @DisplayName("체결 시각을 정한 규칙 계좌(ADR 0027 결정 5 — rules.timing이 기본이 아님): 규칙 계좌 장부가 기준 시각이 지난 시각 지정 주문 때문에 이번 관측치를 "
+            + "미뤘으면 규칙 계좌는 결정하지 않고 다음 주기, 계좌1은 그대로. 기본 설정이면 그 기다림을 보지 않음(지금 그대로)")
+    void timedRulesBookWaitsForTheMinuteBars() {
+        store.insertOrder(new Order(0, PaperBooks.RULES, null, "SPY", "BUY", null, 3.0, null, PaperBooks.AT_MINUTE,
+                "RULE", PaperBooks.ORDER_PENDING, null, MAPPER.createObjectNode(), FRI, FRI_CLOSE, LocalDate.of(2026, 10, 28), null,
+                java.time.LocalTime.of(15, 0)));
+        Instant observedAt = Instant.parse("2026-10-26T22:50:00Z");
+        observed(observedAt, MON);
+
+        // 기본 설정 — 규칙 계좌는 그 기다림을 보지 않고 결정(지금 그대로).
+        job(MON_RUN, observedAt.plusSeconds(60)).run();
+        assertThat(calls).contains("rules 2026-10-26 SCHEDULED");
+
+        calls.clear();
+        store.decisions.clear();
+        ((ObjectNode) store.settings.body().get("rules")).put("timing", "AT_MINUTE").put("timingAtEt", "15:00");
+        job(MON_RUN.plusSeconds(120), observedAt.plusSeconds(180)).run();
+        assertThat(calls).as("규칙 계좌는 미루고 계좌1은 그대로").doesNotContain("rules 2026-10-26 SCHEDULED")
+                .contains("claude 2026-10-26 SCHEDULED");
+        assertThat(lastRun().path("rules").asString()).contains("규칙 계좌 장부가 관측치").contains("1분봉 기다림");
+
+        job(MON_RUN.plusSeconds(600), observedAt.plusSeconds(16 * 60)).run();
+        assertThat(calls).filteredOn(c -> c.startsWith("rules ")).containsExactly("rules 2026-10-26 SCHEDULED");
+    }
+
+    @Test
     @DisplayName("스위치가 꺼져 있으면(기본) 계좌1은 그 기다림을 보지 않음 — 끈 판의 결정 시각은 그대로")
     void book1DoesNotWaitWhenFreeTimingIsOff() {
         dueFreeTimingOrder();

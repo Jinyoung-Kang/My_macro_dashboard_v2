@@ -144,7 +144,8 @@ final class KrRuleBookService {
      * 표시({@code affectsRules})가 이 둘의 합과 같아야 합니다({@code KrRuleBookServiceTest}).
      */
     static final List<String> DECISION_KEYS = List.of("kr.rulesMaxNames", "kr.rules.weighting", "kr.rules.minStreakDays",
-            "kr.rules.debtRatioMaxPct", "kr.rules.reselection", "kr.rules.parkCashThresholdPct", "kr.maxWeightStockPct",
+            "kr.rules.debtRatioMaxPct", "kr.rules.reselection", "kr.rules.parkCashThresholdPct", RuleTiming.KR_TIMING,
+            RuleTiming.KR_AT, "kr.maxWeightStockPct",
             "kr.minOrderNotional", "kr.cashLikeTickers", "kr.slippageBp", "kr.commissionBp", "kr.tax.kospi.sttBp",
             "kr.tax.kospi.ruralBp", "kr.tax.etfBp");
     /** 한국 장부가 규칙 계좌 체결·스탑·재진입 금지에 읽는 {@code kr.*} 키(C2·C3 — {@link PaperSettings}). */
@@ -415,8 +416,20 @@ final class KrRuleBookService {
             Draft draft = plan(kind, selectionDay, selection, checks, view, settings, fillable(read));
             boolean selected = selectionDay;
             String status = selected || !draft.orders.isEmpty() ? RuleBookService.STATUS_OK : RuleBookService.STATUS_NO_TRADE;
+            // 체결 시각 설정(ADR 0027 결정 5) — 기본(다음 거래일 시가)이면 이 설정 전과 같은 주문·같은 기록. 기본이 아니면 그 결정의 주문 전부를 그
+            // 시점으로 내고, 그 시점이 이 결정에서 닫혔으면(장 시간 변경일의 범위 밖 등) 시가로 내며 사유를 남깁니다.
+            RuleTiming configured = RuleTiming.kr(run.settingsBody());
+            RuleTiming.Chosen timing = draft.orders.isEmpty() ? new RuleTiming.Chosen(PaperBooks.NEXT_OPEN, null, null)
+                    : configured.choose(d, clock.instant(), run.calendar(), true);
+            if (timing.note() != null) {
+                draft.notes.add(timing.note());
+            }
             Map<String, Object> response = response(d, kind, cycle.orElse(null), read, selection, checks, view, draft,
                     settings, version, gates == null ? null : Map.of("gates", gates));
+            if (!configured.standard(true)) {
+                response.put("timing", timing.at() == null ? timing.timing() : timing.timing() + " " + FreeTiming.label(timing.at()));
+                response.put("timingSetting", configured.label());
+            }
             Decision decision = new Decision(0, PaperBooks.KR_RULES, d, kind, null, status, null, null, version,
                     selected ? d : null, selected ? round4(selection.stockWeightPct()) : null, null, null, null,
                     mapper.valueToTree(response), null, null, null, pricesFinal, latency(started), 0);
@@ -424,7 +437,7 @@ final class KrRuleBookService {
                     PaperBooks.KR_RULES + "에 " + d + " " + kind + " 결정이 이미 있습니다"));
             LocalDate expires = run.calendar().addTradingDays(d, RuleBookService.ORDER_EXPIRY_TRADING_DAYS);
             for (PlannedOrder order : draft.orders) {
-                store.insertOrder(order(order, id, d, expires));
+                store.insertOrder(order(order, id, d, expires, timing));
             }
             log.info("한국 규칙 계좌 결정 {} {}: {} — {}", d, kind, status, response.get("summary"));
             return store.decision(id).orElseThrow();
@@ -1212,9 +1225,14 @@ final class KrRuleBookService {
     }
 
     private Order order(PlannedOrder order, Long decisionId, LocalDate d, LocalDate expires) {
+        return order(order, decisionId, d, expires, new RuleTiming.Chosen(PaperBooks.NEXT_OPEN, null, null));
+    }
+
+    /** 주문 행 — 그 결정이 고른 체결 시점({@link RuleTiming#choose} — 기본은 다음 거래일 시가)으로. */
+    private Order order(PlannedOrder order, Long decisionId, LocalDate d, LocalDate expires, RuleTiming.Chosen timing) {
         return new Order(0, PaperBooks.KR_RULES, decisionId, order.ticker(), order.side(), null, order.targetWeightPct(),
-                order.sellFraction(), PaperBooks.NEXT_OPEN, RuleBookService.SOURCE_RULE, PaperBooks.ORDER_PENDING, null,
-                mapper.valueToTree(order.reason()), d, null, expires, null);
+                order.sellFraction(), timing.timing(), RuleBookService.SOURCE_RULE, PaperBooks.ORDER_PENDING, null,
+                mapper.valueToTree(order.reason()), d, null, expires, null, timing.at());
     }
 
     // ------------------------------------------------------------------ 결정 기록(K26 동결)

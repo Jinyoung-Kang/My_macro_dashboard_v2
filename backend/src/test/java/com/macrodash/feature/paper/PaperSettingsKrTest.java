@@ -92,7 +92,8 @@ class PaperSettingsKrTest {
                 "kr.maxWeightEtfPct", "kr.maxPositions", "kr.maxDiscretionaryOrdersPerMonth", "kr.minHoldTradingDaysForSell",
                 "kr.trailingStopPct", "kr.lockoutTradingDays", "kr.rulesMaxNames", "kr.rules.weighting",
                 "kr.rules.minStreakDays", "kr.rules.debtRatioMaxPct", "kr.rules.reselection",
-                "kr.rules.parkCashThresholdPct", "kr.cashLikeTickers", "kr.universeExtraTickers", "kr.decisionTimeKst",
+                "kr.rules.parkCashThresholdPct", "kr.rules.timing", "kr.rules.timingAtKst", "kr.cashLikeTickers",
+                "kr.universeExtraTickers", "kr.decisionTimeKst",
                 "kr.decisionDeadlineKst", "kr.calendar.extraClosures", "kr.calendar.openTimeOverrides", "kr.news.enabled",
                 "kr.news.maxPerDay", "kr.news.keywords", "kr.news.feeds", "kr.news.aliases", "kr.claude2.riskProfile",
                 "kr.claude2.checkpoints", "kr.intradayMaxPerSession", "kr.claude.freeTiming", "kr.claude2.freeTiming");
@@ -151,7 +152,7 @@ class PaperSettingsKrTest {
                 "kr.tax.kosdaq.sttBp", "kr.tax.etfBp", "kr.tax.effectiveFrom", "kr.minOrderNotional", "kr.maxWeightStockPct",
                 "kr.trailingStopPct", "kr.lockoutTradingDays", "kr.rulesMaxNames",
                 "kr.rules.weighting", "kr.rules.minStreakDays", "kr.rules.debtRatioMaxPct", "kr.rules.reselection",
-                "kr.rules.parkCashThresholdPct", "kr.cashLikeTickers")) {
+                "kr.rules.parkCashThresholdPct", "kr.rules.timing", "kr.rules.timingAtKst", "kr.cashLikeTickers")) {
             assertThat(key(rules).path("affectsRules").asBoolean()).as(rules).isTrue();
         }
         // ETF 상한은 한국 규칙 계좌에 쓰일 자리가 없음(U는 보통주뿐·153130은 현금성 — D1a, D1b에서 표시를 내림).

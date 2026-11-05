@@ -346,6 +346,44 @@ class RuleBookServiceTest {
     }
 
     @Test
+    @DisplayName("체결 시각 설정(ADR 0027 결정 5): rules.timing이 AT_MINUTE(10:47)이면 그 결정의 주문 전부(신호 매도·현금 관리 매수)가 다음 세션의 그 분"
+            + "(AT_MINUTE + target_local), 만료는 기준 거래일 + 3거래일 그대로, 결정 기록에 timing·timingSetting. 종가(NEXT_CLOSE)도 같은 방식. 기본 설정이면 "
+            + "NEXT_OBSERVATION 그대로이고 그 칸이 없음")
+    void ruleTimingSettingSetsTheOrderTiming() {
+        selection(FRI);
+        activeRules(PaperBooks.ACTIVE, 51_000, "OLD", 100, 100, "ONE", 100, 100, "CCC", 50, 100, "SHY", 300, 80);
+        ObjectNode setting = (ObjectNode) store.settings.body().get("rules");
+        setting.put("timing", "AT_MINUTE").put("timingAtEt", "10:47");
+
+        Decision minute = rules.decide(MON, RuleBookService.SCHEDULED);
+
+        assertThat(orders()).extracting(Order::ticker, Order::side, Order::timing, Order::targetLocal).containsExactly(
+                tuple("OLD", "SELL", "AT_MINUTE", java.time.LocalTime.of(10, 47)),
+                tuple("SHY", "BUY", "AT_MINUTE", java.time.LocalTime.of(10, 47)));
+        assertThat(orders()).allSatisfy(o -> {
+            assertThat(o.source()).isEqualTo("RULE");
+            assertThat(o.expiresOn()).as("기준 거래일 + 3거래일 — 그 세션에 못 풀면 장부가 다음 관측치 주문으로 다시 냄").isEqualTo(LocalDate.of(2026, 10, 29));
+        });
+        assertThat(minute.response().path("timing").asString()).isEqualTo("AT_MINUTE 10:47");
+        assertThat(minute.response().path("timingSetting").asString()).isEqualTo("AT_MINUTE 10:47");
+
+        store.decisions.clear();
+        store.orders.clear();
+        setting.put("timing", "NEXT_CLOSE");
+        Decision close = rules.decide(MON, RuleBookService.SCHEDULED);
+        assertThat(orders()).extracting(Order::timing, Order::targetLocal).containsOnly(tuple("NEXT_CLOSE", null));
+        assertThat(close.response().path("timing").asString()).isEqualTo("NEXT_CLOSE");
+
+        store.decisions.clear();
+        store.orders.clear();
+        setting.put("timing", "NEXT_OBSERVATION");
+        Decision standard = rules.decide(MON, RuleBookService.SCHEDULED);
+        assertThat(orders()).extracting(Order::timing, Order::targetLocal).containsOnly(tuple("NEXT_OBSERVATION", null));
+        assertThat(standard.response().has("timing")).as("기본 설정 — 이 설정이 생기기 전과 같은 기록").isFalse();
+        assertThat(standard.response().has("timingSetting")).isFalse();
+    }
+
+    @Test
     @DisplayName("매도 신호는 보유 종목을 선정 기관 minHolders곳 이상이 전량 매도했을 때만 — 1곳(ONE)·보유 없는 종목(GONE)은 주문 없음")
     void sellSignalNeedsMinHoldersAmongHeld() {
         noParking();

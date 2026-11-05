@@ -537,7 +537,13 @@ public class PaperDecisionJob {
             detail.put("rules", RULES_NOT_YET);
         } else {
             try {
-                decision = decideRules(market, d, pricesFinal, detail);
+                // 체결 시각을 정한 규칙 계좌(ADR 0027 결정 5) — 규칙 계좌 장부가 이번 관측치를 처리한 뒤에만(1분봉 기다림이 풀린 뒤). 다음 주기에 다시 봅니다.
+                String rulesWait = ruleTimingWait(market, quotes, d);
+                if (rulesWait != null) {
+                    detail.put("rules", rulesWait);
+                } else {
+                    decision = decideRules(market, d, pricesFinal, detail);
+                }
                 failures.remove(new FailureKey(market.code(), d, market.rulesBook()));
             } catch (RuntimeException e) {
                 errors.add("규칙 계좌: " + message(e));
@@ -725,6 +731,19 @@ public class PaperDecisionJob {
         }
         return label + " 장부가 관측치(수집 " + Kst.stamp(quotes.get().collectedAt()) + ")를 아직 처리하지 않았습니다(1분봉 기다림) — "
                 + "다음 주기에 다시";
+    }
+
+    /**
+     * 체결 시각을 정한 미국 규칙 계좌의 결정을 이번 주기에 미뤄야 하는 사유(없으면 null) — 그 실행 설정의 {@value RuleTiming#US_TIMING}이 기본(다음 시간별
+     * 관측치)이 아니고, 그날 결정이 아직 없고, 규칙 계좌 장부가 이번 관측치를 아직 처리하지 않았을 때({@link #timedBookWait}). 장부가 기준 시각이 지난
+     * 시각 지정 규칙 주문 때문에 1분봉을 기다리는 사이에 결정을 내면, 재선정일의 현금 관리 주문 교체가 아직 풀리지 않은 주문을 취소합니다. 기본
+     * 설정이면 늘 null이라 규칙 계좌의 결정 시각은 그대로입니다. 한국은 밤 장부 뒤의 결정 게이트 ①이 같은 일을 합니다.
+     */
+    private String ruleTimingWait(MarketRun market, Optional<Quotes> quotes, LocalDate d) {
+        if (!usSteps(market) || RuleTiming.us(market.settingsBody()).standard(false) || rulesDecisionOn(d).isPresent()) {
+            return null;
+        }
+        return timedBookWait(market, quotes, market.rulesBook(), "규칙 계좌");
     }
 
     /**
