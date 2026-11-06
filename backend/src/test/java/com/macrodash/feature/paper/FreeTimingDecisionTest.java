@@ -254,7 +254,7 @@ class FreeTimingDecisionTest {
         assertThat(outside.status()).isEqualTo("REJECTED");
         assertThat(outside.rejectReason()).isEqualTo(com.macrodash.analytics.OrderValidator.MALFORMED);
         assertThat(outside.targetLocal()).as("거절 행은 받은 시각 그대로").isEqualTo(LocalTime.of(15, 55));
-        assertThat(outside.reason().path("validation").asString()).contains("09:31~15:54 ET");
+        assertThat(outside.reason().path("validation").asString()).contains("09:40~15:54 ET");
 
         Order close = orderOf(PaperBooks.CLAUDE2, "SHY");
         assertThat(close.status()).isEqualTo(PaperBooks.ORDER_PENDING);
@@ -317,12 +317,14 @@ class FreeTimingDecisionTest {
     }
 
     @Test
-    @DisplayName("계좌1: claude.freeTiming을 켠 정기 결정은 켠 판(계좌2와 같은 스키마·고정 문단, 투자 성향 절 없음) — 시가 주문이 다음 세션 하루짜리. 끈 판 응답 시점"
-            + "(NEXT_OBSERVATION)은 켠 판 스키마가 받지 않음. 기존 장중 확인(종류 CHECKPOINT)은 스위치가 켜져 있어도 끈 판 파이프라인")
+    @DisplayName("계좌1: claude.freeTiming을 켠 정기 결정은 켠 판(계좌2와 같은 스키마·고정 문단, 투자 성향 절 없음) — 종가·지정 시각 주문이 다음 세션 하루짜리, "
+            + "받는 가장 이른 분은 개장 10분 뒤(09:40 ET — 09:39는 MALFORMED). 끈 판 응답 시점(NEXT_OBSERVATION)과 시가(NEXT_OPEN — 판 ft-2부터)는 켠 판 스키마가 "
+            + "받지 않음. 기존 장중 확인(종류 CHECKPOINT)은 스위치가 켜져 있어도 끈 판 파이프라인")
     void claude1SwitchSelectsTheVariantButNotForTheOldCheckpoint() {
         active(PaperBooks.CLAUDE);
         ((ObjectNode) store.settings.body().get("claude")).put("freeTiming", true);
-        answerJson(decision(buy("AAA", 5, "NEXT_OPEN", null), buy("BBB", 5, "AT_MINUTE", "09:31")));
+        answerJson(decision(buy("AAA", 5, "NEXT_CLOSE", null), buy("BBB", 5, "AT_MINUTE", "09:40"),
+                buy("CCC", 3, "AT_MINUTE", "09:39")));
 
         Decision d = service().decide(MON, RuleBookService.SCHEDULED, true);
 
@@ -333,21 +335,28 @@ class FreeTimingDecisionTest {
         Golden.assertMatches("decision-schema-forapi-us-ft.json", on[2]);
         assertThat(on[0]).doesNotContain("## 투자 성향").doesNotContain("timing은 NEXT_OBSERVATION");
         verify(packets, never()).build(any(), anyString(), anyBoolean(), any(), any());
-        Order open = orderOf(PaperBooks.CLAUDE, "AAA");
-        assertThat(open.status()).isEqualTo(PaperBooks.ORDER_PENDING);
-        assertThat(open.timing()).isEqualTo(PaperBooks.NEXT_OPEN);
-        assertThat(open.expiresOn()).as("시각 지정 방식 — 다음 세션 하루짜리").isEqualTo(TUE);
+        Order close = orderOf(PaperBooks.CLAUDE, "AAA");
+        assertThat(close.status()).isEqualTo(PaperBooks.ORDER_PENDING);
+        assertThat(close.timing()).isEqualTo(PaperBooks.NEXT_CLOSE);
+        assertThat(close.expiresOn()).as("시각 지정 방식 — 다음 세션 하루짜리").isEqualTo(TUE);
         Order first = orderOf(PaperBooks.CLAUDE, "BBB");
-        assertThat(first.targetLocal()).as("받는 가장 이른 분").isEqualTo(LocalTime.of(9, 31));
+        assertThat(first.targetLocal()).as("받는 가장 이른 분 — 개장 10분 뒤").isEqualTo(LocalTime.of(9, 40));
         assertThat(first.status()).isEqualTo(PaperBooks.ORDER_PENDING);
+        Order early = orderOf(PaperBooks.CLAUDE, "CCC");
+        assertThat(early.status()).isEqualTo("REJECTED");
+        assertThat(early.rejectReason()).isEqualTo(com.macrodash.analytics.OrderValidator.MALFORMED);
+        assertThat(early.reason().path("validation").asString()).contains("09:39").contains("09:40~15:54 ET");
 
-        // 끈 판의 시점 글자는 켠 판 스키마(enum 셋)가 받지 않음 — 형식 오류로 남고 주문 행은 없음.
-        store.decisions.clear();
-        store.orders.clear();
-        answerJson(decision(buy("AAA", 5, "NEXT_OBSERVATION", "-")));
-        Decision bad = service().decide(MON, RuleBookService.SCHEDULED, true);
-        assertThat(bad.status()).isEqualTo("FORMAT_ERROR");
-        assertThat(store.ordersOf(PaperBooks.CLAUDE)).isEmpty();
+        // 끈 판의 시점 글자와 시가(판 ft-2부터)는 켠 판 스키마(enum 둘)가 받지 않음 — 형식 오류로 남고 주문 행은 없음.
+        for (String refused : List.of("NEXT_OBSERVATION", "NEXT_OPEN")) {
+            store.decisions.clear();
+            store.orders.clear();
+            answerJson(decision(buy("AAA", 5, refused, null)));
+            Decision bad = service().decide(MON, RuleBookService.SCHEDULED, true);
+            assertThat(bad.status()).as(refused).isEqualTo("FORMAT_ERROR");
+            assertThat(bad.error()).as(refused).contains("허용 값이 아닙니다");
+            assertThat(store.ordersOf(PaperBooks.CLAUDE)).as(refused).isEmpty();
+        }
 
         // 계좌1의 기존 장중 확인 — 늘 끈 판(끈 판 패킷 빌더·끈 판 스키마).
         store.decisions.clear();
@@ -361,7 +370,7 @@ class FreeTimingDecisionTest {
     }
 
     @Test
-    @DisplayName("장중 판단 예약(계좌2): 켠 판 결정의 checkpoints가 시각 순으로 순번 1·2의 PLANNED 행(판 ft-1·그 결정)이 됨. 같은 세션의 뒤 결정(수동)이 "
+    @DisplayName("장중 판단 예약(계좌2): 켠 판 결정의 checkpoints가 시각 순으로 순번 1·2의 PLANNED 행(판 ft-2·그 결정)이 됨. 같은 세션의 뒤 결정(수동)이 "
             + "예약을 줄이면 첫 순번은 새 값으로 바뀌고 남은 순번은 SUPERSEDED, 규칙에 맞지 않는 항목만 버려지고 주문 판정은 그대로")
     void checkpointsBecomePlanRowsAndALaterDecisionReplacesThem() {
         active(PaperBooks.CLAUDE2);
@@ -377,7 +386,7 @@ class FreeTimingDecisionTest {
         List<com.macrodash.store.PaperStore.IntradayPlan> plans = store.intradayPlans(PaperBooks.CLAUDE2, TUE);
         assertThat(plans).extracting(p -> p.slot() + " " + p.atLocal() + " " + p.feed() + " " + p.watch() + " " + p.status() + " "
                 + p.variant() + " " + p.manual()).as("시각 순으로 순번")
-                .containsExactly("1 10:15 MINUTE [AAA, SHY] PLANNED ft-1 false", "2 13:30 HOURLY [] PLANNED ft-1 false");
+                .containsExactly("1 10:15 MINUTE [AAA, SHY] PLANNED ft-2 false", "2 13:30 HOURLY [] PLANNED ft-2 false");
         assertThat(plans).allSatisfy(p -> {
             assertThat(p.sourceDecisionId()).isEqualTo(d.id());
             assertThat(p.requestedByDecisionId()).as("아침 결정이 예약").isNull();
@@ -397,7 +406,7 @@ class FreeTimingDecisionTest {
 
         // 같은 세션을 대신하는 수동 결정 — 하나는 유니버스 밖 감시 종목이라 버리고 하나만 받음.
         answerJson(decisionWith("[" + checkpoint("11:00", "MINUTE", "[\"ZZZ\"]", "없는 종목") + ","
-                + checkpoint("14:00", "HOURLY", "[]", "늦은 확인") + "]", buy("BBB", 5, "NEXT_OPEN", null)));
+                + checkpoint("14:00", "HOURLY", "[]", "늦은 확인") + "]", buy("BBB", 5, "NEXT_CLOSE", null)));
         Decision manual = service().decideClaude2(MarketRun.of(UsPaperMarket.INSTANCE, store), MON, RuleBookService.MANUAL, true, null,
                 null, false).decision();
 

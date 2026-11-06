@@ -282,8 +282,8 @@ class FrameworkServiceTest {
     }
 
     @Test
-    @DisplayName("고정본: 한국 자유 시점 판 시스템 프롬프트(ADR 0027 결정 2) — 계좌1·계좌2 켠 판. 끈 판 한국 렌더링과 하드 규칙의 체결 시점 줄·우선순위 줄의 시점 읽는 법·"
-            + "timing 줄·체결 절만 다르고, 계좌2는 투자 성향 절이 더해짐. 끈 판 렌더링은 그대로")
+    @DisplayName("고정본: 한국 자유 시점 판 시스템 프롬프트(ADR 0027 결정 2·ADR 0031 — kr-ft-2) — 계좌1·계좌2 켠 판. 끈 판 한국 렌더링과 하드 규칙의 체결 시점 줄·"
+            + "우선순위 줄의 시점 읽는 법·timing 줄·체결할 수 없는 종목 매도 줄·체결 절만 다르고(시가 없음), 계좌2는 투자 성향 절이 더해짐. 끈 판 렌더링은 그대로")
     void goldenKrFreeTimingRender() {
         JsonNode body = FrameworkService.interimBody(MAPPER);
         String off = FrameworkService.render(ClaudeBookProfile.KR_CLAUDE, body, 0, settings.defaultsJson());
@@ -293,21 +293,25 @@ class FrameworkServiceTest {
         Golden.assertMatches("render-kr-ft-claude-v0-default.txt", one);
         Golden.assertMatches("render-kr-ft-claude2-v0-default.txt", two);
 
-        assertThat(one).contains("- 체결 시점은 NEXT_OPEN(다음 거래일 시가)·AT_MINUTE(다음 거래일의 지정한 분 — atLocal에 한국 시간 HH:MM)·"
+        assertThat(one).contains("- 체결 시점은 AT_MINUTE(다음 거래일의 지정한 분, 개장 10분 뒤 ~ 종가 단일가 앞 — atLocal에 한국 시간 HH:MM)·"
                 + "NEXT_CLOSE(다음 거래일 종가), 정수 주").contains("## 체결(고정)").doesNotContain("NEXT_OPEN뿐").doesNotContain("AT_1000")
+                .doesNotContain("NEXT_OPEN(").doesNotContain("NEXT_OPEN은 시가 단일가").doesNotContain("그 뒤 첫 시가에 체결된다")
+                .contains("보통 날 09:10~15:19 KST")
                 .doesNotContain("## 장중 확인(고정)").doesNotContain("실시간").doesNotContain("## 투자 성향")
                 .contains("## 장중 판단(고정)").contains("1_basis.intraday.maxPerSession").contains("nextCheckpoint");
         assertThat(one.indexOf("## 체결(고정)")).as("체결 절 → 장중 판단 절 → 출력 절").isLessThan(one.indexOf("## 장중 판단(고정)"));
         assertThat(one.indexOf("## 장중 판단(고정)")).isLessThan(one.indexOf(ClaudePrompts.OUTPUT_HEADER.strip()));
         assertThat(two).contains("## 투자 성향");
-        // 끈 판에 없는 줄 = 켠 판이 바꾼 줄뿐(하드 규칙 시점 줄 · 우선순위 줄 · timing 줄 다섯 · 체결 절 넷 · 장중 판단 절 여섯).
+        // 끈 판에 없는 줄 = 켠 판이 바꾼 줄뿐(하드 규칙 시점 줄 · 우선순위 줄 · timing 줄 다섯 · 체결할 수 없는 종목 매도 줄 · 체결 절 넷 · 장중 판단 절 여섯).
         List<String> offLines = off.lines().toList();
         List<String> added = one.lines().filter(line -> !offLines.contains(line)).toList();
-        assertThat(added).hasSize(17);
-        assertThat(added.get(0)).startsWith("- 체결 시점은 NEXT_OPEN(다음 거래일 시가)·AT_MINUTE");
-        assertThat(added.get(1)).startsWith("우선순위(고정)").contains(ClaudePrompts.KR_CLAUDE2_TIMING_READING);
+        assertThat(added).hasSize(18);
+        assertThat(added.get(0)).startsWith("- 체결 시점은 AT_MINUTE(다음 거래일의 지정한 분, 개장 10분 뒤");
+        assertThat(added.get(1)).startsWith("우선순위(고정)").contains(ClaudePrompts.KR_FT_TIMING_READING);
+        assertThat(added).anyMatch(line -> line.contains(ClaudePrompts.KR_FT_UNFILLABLE_SELL));
         List<String> oneLines = one.lines().toList();
-        assertThat(off.lines().filter(line -> !oneLines.contains(line)).toList()).as("끈 판에서 빠진 줄 — 시점 줄 셋").hasSize(3);
+        assertThat(off.lines().filter(line -> !oneLines.contains(line)).toList()).as("끈 판에서 빠진 줄 — 시점 줄 셋·체결할 수 없는 종목 매도 줄")
+                .hasSize(4);
         assertThat(two.lines().filter(line -> !oneLines.contains(line)).toList()).as("계좌2 켠 판에만 있는 줄 — 투자 성향 절")
                 .allMatch(line -> line.startsWith("## 투자 성향") || line.startsWith("- "));
         assertThat(FrameworkService.render(ClaudeBookProfile.KR_CLAUDE_FT, body, 0, null)).as("설정 행이 없으면 한국 기본값으로").isEqualTo(one);

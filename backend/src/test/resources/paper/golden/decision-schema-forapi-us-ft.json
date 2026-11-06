@@ -39,7 +39,7 @@
             "type" : [ "number", "null" ]
           },
           "timing" : {
-            "enum" : [ "NEXT_OPEN", "AT_MINUTE", "NEXT_CLOSE" ]
+            "enum" : [ "AT_MINUTE", "NEXT_CLOSE" ]
           },
           "atLocal" : {
             "type" : [ "string", "null" ],

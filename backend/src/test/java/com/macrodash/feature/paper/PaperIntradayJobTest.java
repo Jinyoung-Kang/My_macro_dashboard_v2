@@ -493,7 +493,7 @@ class PaperIntradayJobTest {
         assertThat(second.feed()).isEqualTo("HOURLY");
         assertThat(second.sourceDecisionId()).as("패킷이 읽는 결정은 그 세션의 결정 그대로").isEqualTo(morning1);
         assertThat(second.requestedByDecisionId()).isEqualTo(first.id());
-        assertThat(second.variant()).isEqualTo("ft-1");
+        assertThat(second.variant()).as("다음 판단 예약은 지금 켠 판의 판").isEqualTo(PacketBuilder.FREE_FIXED_RULES_VERSION).isEqualTo("ft-2");
         JsonNode view = first.response().path("intradayPlan");
         assertThat(view.path("planned").get(0).path("slot").asInt()).isEqualTo(2);
         assertThat(view.path("planned").get(0).path("atEt").asString()).isEqualTo("13:30");

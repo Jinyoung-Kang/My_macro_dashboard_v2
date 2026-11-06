@@ -811,6 +811,30 @@ class KrLedgerTest {
         }
 
         @Test
+        @DisplayName("전환 세션(ADR 0031 — kr-ft-1 → kr-ft-2): 옛 범위(개장 1분 뒤)로 만든 대기 AT_MINUTE 09:01·시가(NEXT_OPEN) 주문은 만든 그대로 체결 — 장부는 받는 범위 "
+                + "시작을 다시 보지 않음(검증은 만들 때 한 번)")
+        void ordersMadeUnderTheOldWindowFillAsMade() {
+            book(BOOK2, PaperBooks.KIND_CLAUDE, 2_000_000);
+            assertThat(FreeTiming.window(D1, run().calendar(), true).accepts(kst("2026-11-03T09:01"))).as("새 범위로는 받지 않을 시각").isFalse();
+            long minute = minute2("005930", PaperBooks.BUY, 5, java.time.LocalTime.of(9, 1), CREATED);
+            long open = order2("000660", PaperBooks.BUY, 1, PaperBooks.NEXT_OPEN);
+            when(marketData.krTimed()).thenReturn(Map.of("005930", Map.of(D1, window("09:01", "09:02", 70_100))));
+            KrFixtures.Payload payload = new KrFixtures.Payload(D1);
+            openedAt(payload, "005930", 70_000);
+            openedAt(payload, "000660", 395_000);
+
+            process(payload, COLLECTED_D1);
+
+            assertThat(store.fillsOf(BOOK2)).extracting(Fill::ticker, Fill::price)
+                    .containsExactly(org.assertj.core.groups.Tuple.tuple("000660", 395_000.0),
+                            org.assertj.core.groups.Tuple.tuple("005930", 70_100.0));
+            assertThat(store.orders.get(minute).status()).isEqualTo(PaperBooks.ORDER_FILLED);
+            assertThat(store.orders.get(minute).targetLocal()).isEqualTo(java.time.LocalTime.of(9, 1));
+            assertThat(store.fillsOf(BOOK2).get(1).priceSource()).isEqualTo(KrTimedLadder.SOURCE_AT);
+            assertThat(store.orders.get(open).status()).isEqualTo(PaperBooks.ORDER_FILLED);
+        }
+
+        @Test
         @DisplayName("규칙 주문 다시 내기(ADR 0027 결정 5) — 지정 시각 규칙 주문(출처 RULE)이 목표 세션에 체결되지 못하면(그날 1분봉 없음) 만료로 닫고 같은 결정·"
                 + "같은 크기의 다음 거래일 시가 주문(기준 거래일 = 그 세션, 만료 = 원래 만료일, 근거에 원래 주문 번호)으로 다시 냄. Claude 주문은 대기 그대로")
         void unfilledRuleOrderIsReissuedAsTheNextOpenOrder() {

@@ -515,7 +515,8 @@ class KrStartTest {
         for (int i : new int[]{1, 2}) {
             KrClaudeFixtures.Request request = fake.requests.get(i);
             assertThat(request.system()).as("켠 판 시스템 프롬프트 " + i).contains(ClaudePrompts.KR_FT_TIMING_LINES)
-                    .contains("- 체결 시점은 NEXT_OPEN(다음 거래일 시가)·AT_MINUTE(다음 거래일의 지정한 분 — atLocal에 한국 시간 HH:MM)·NEXT_CLOSE(다음 거래일 종가)")
+                    .contains("- 체결 시점은 AT_MINUTE(다음 거래일의 지정한 분, 개장 10분 뒤 ~ 종가 단일가 앞 — atLocal에 한국 시간 HH:MM)·"
+                            + "NEXT_CLOSE(다음 거래일 종가)")
                     .doesNotContain("NEXT_OPEN뿐").doesNotContain("AT_1000").doesNotContain("## 장중 확인(고정)");
             assertThat(request.user()).as("켠 판 패킷 문장 " + i).contains(KrPacketBuilder.KR_FT_TIMING_LINE)
                     .contains(KrPacketBuilder.KR_FT_ALLOCATION_LINE).contains("\"variant\":\"freeTiming\"").contains("\"lastKst\":\"15:19\"");
@@ -544,7 +545,7 @@ class KrStartTest {
         assertThat(second).extracting(o -> o.ticker() + " " + o.timing() + " " + o.status() + " " + o.targetLocal())
                 .containsExactly("005930 AT_MINUTE REJECTED 15:20", "000660 NEXT_CLOSE PENDING null");
         assertThat(second.get(0).rejectReason()).isEqualTo(com.macrodash.analytics.OrderValidator.MALFORMED);
-        assertThat(second.get(0).reason().path("validation").asString()).contains("09:01~15:19 KST");
+        assertThat(second.get(0).reason().path("validation").asString()).contains("09:10~15:19 KST");
         assertThat(store.checkpoint(PaperBooks.KR_CLAUDE2, LocalDate.of(2026, 12, 2))).as("켠 판은 기존 장중 확인 계획 행을 쓰지 않음").isEmpty();
     }
 
@@ -858,7 +859,10 @@ class KrStartTest {
             t.put("session", E.toString());
             t.putArray("bars").addObject().put("label", label).put("o", 70_500).put("h", 70_600).put("l", 70_400).put("c", 70_550)
                     .put("v", 900);
-            t.putObject("windows").putArray("09:00").addObject().put("label", "09:01").put("open", 70_100).put("volume", 300);
+            tools.jackson.databind.node.ObjectNode windows = t.putObject("windows");
+            windows.putArray("09:00").addObject().put("label", "09:01").put("open", 70_100).put("volume", 300);
+            // 켠 판(kr-ft-2)의 가장 이른 지정 시각 09:10 창 — 시가가 없는 판의 '이미 지난 주문'은 이 창 가격으로 어림.
+            windows.putArray("09:10").addObject().put("label", "09:11").put("open", 70_100).put("volume", 300);
             t.putObject("firstAfter");
             t.putObject("lastBar").put("label", label).put("c", 70_550).put("v", 900);
         }
@@ -873,13 +877,13 @@ class KrStartTest {
 
     @Test
     @DisplayName("한국 장중 판단(ADR 0027 결정 3) — 켠 판 계좌1의 밤 결정이 09:10·13:00 판단을 예약 → 09:13에 그 계획의 감시 저장본이 오면 한 번 부름(밤 결정과 "
-            + "같은 시스템 프롬프트·한국 장중 판단 스키마·패킷의 계좌·순번·남은 시점). REPLACE: 이미 지난 시가 주문(09:00)은 남기고 13:30 지정 시각 주문만 "
-            + "대신함 — 한국 시가를 미국 표(09:30)로 세지 않음. 새 장중 시장가 주문은 대기, nextCheckpoint가 둘째 예약(13:00)을 10:30으로 바꿈")
+            + "같은 시스템 프롬프트·한국 장중 판단 스키마·패킷의 계좌·순번·남은 시점). REPLACE: 이미 지난 09:10 지정 시각 주문(켠 판의 가장 이른 분)은 남기고 "
+            + "13:30 지정 시각 주문만 대신함 — 한국 시각을 미국 표로 세지 않음. 새 장중 시장가 주문은 대기, nextCheckpoint가 둘째 예약(13:00)을 10:30으로 바꿈")
     void krIntradayJudgmentReplacesAndReschedules() {
         KrClaudeFixtures.FakeAi fake = new KrClaudeFixtures.FakeAi();
         startWithFreeTiming(fake);
         fake.answer(withCheckpoints(KrClaudeFixtures.decision(15, null,
-                        KrClaudeFixtures.freeOrder("005380", "BUY", 6.0, null, PaperBooks.NEXT_OPEN, null),
+                        KrClaudeFixtures.freeOrder("005380", "BUY", 6.0, null, PaperBooks.AT_MINUTE, "09:10"),
                         KrClaudeFixtures.freeOrder("000660", "BUY", 5.0, null, PaperBooks.AT_MINUTE, "13:30")),
                         "[{\"at\":\"13:00\",\"watch\":[\"000660\"],\"question\":\"오후 확인\"},"
                                 + "{\"at\":\"09:10\",\"watch\":[\"005930\"],\"question\":\"시가 갭이 유지되나\"}]"))
@@ -889,15 +893,15 @@ class KrStartTest {
         Decision night = store.decisionFor(PaperBooks.KR_CLAUDE, NEXT, RuleBookService.SCHEDULED).orElseThrow();
         assertThat(store.intradayPlans(PaperBooks.KR_CLAUDE, E)).extracting(p -> p.slot() + " " + p.atLocal() + " " + p.feed() + " "
                 + p.watch() + " " + p.status() + " " + p.variant()).as("시각 순으로 순번 — 한국은 늘 감시 1분봉")
-                .containsExactly("1 09:10 MINUTE [005930] PLANNED kr-ft-1", "2 13:00 MINUTE [000660] PLANNED kr-ft-1");
+                .containsExactly("1 09:10 MINUTE [005930] PLANNED kr-ft-2", "2 13:00 MINUTE [000660] PLANNED kr-ft-2");
         assertThat(night.response().path("intradayPlan").path("planned").get(0).path("atKst").asString()).isEqualTo("09:10");
         assertThat(store.intradayPlans(PaperBooks.KR_CLAUDE2, E)).as("계좌2는 예약하지 않음").isEmpty();
         assertThat(store.checkpoint(PaperBooks.KR_CLAUDE2, E)).as("끈 판의 장중 확인 표는 쓰지 않음").isEmpty();
         Order open = store.ordersOf(PaperBooks.KR_CLAUDE).stream().filter(o -> java.util.Objects.equals(o.decisionId(), night.id())
-                && PaperBooks.NEXT_OPEN.equals(o.timing())).findFirst().orElseThrow();
-        assertThat(open.status()).as("밤 결정의 시가 주문은 대기").isEqualTo(PaperBooks.ORDER_PENDING);
-        Order afternoon = store.ordersOf(PaperBooks.KR_CLAUDE).stream().filter(o -> PaperBooks.AT_MINUTE.equals(o.timing()))
-                .findFirst().orElseThrow();
+                && java.time.LocalTime.of(9, 10).equals(o.targetLocal())).findFirst().orElseThrow();
+        assertThat(open.status()).as("밤 결정의 09:10 지정 시각 주문은 대기").isEqualTo(PaperBooks.ORDER_PENDING);
+        Order afternoon = store.ordersOf(PaperBooks.KR_CLAUDE).stream().filter(o -> java.util.Objects.equals(o.decisionId(), night.id())
+                && java.time.LocalTime.of(13, 30).equals(o.targetLocal())).findFirst().orElseThrow();
         PaperKrIntradayJob intraday = intradayJob();
         int calls = fake.requests.size();
 
@@ -943,7 +947,7 @@ class KrStartTest {
         assertThat(d.status()).isEqualTo(ClaudeBookService.STATUS_OK);
         assertThat(d.response().path("applied").asBoolean()).isTrue();
         assertThat(d.response().path("supersededOrders").toString()).isEqualTo("[" + afternoon.id() + "]");
-        assertThat(store.orders.get(open.id()).status()).as("한국 시가(09:00)는 이미 지남 — 체결 예정으로 남김").isEqualTo(PaperBooks.ORDER_PENDING);
+        assertThat(store.orders.get(open.id()).status()).as("09:10 지정 시각은 이미 지남 — 체결 예정으로 남김").isEqualTo(PaperBooks.ORDER_PENDING);
         assertThat(store.orders.get(afternoon.id()).status()).isEqualTo(PaperBooks.ORDER_CANCELLED);
         assertThat(d.response().path("expectedState").path("assumedFills")).singleElement()
                 .satisfies(a -> assertThat(a.toString()).contains("005380").contains("70100"));

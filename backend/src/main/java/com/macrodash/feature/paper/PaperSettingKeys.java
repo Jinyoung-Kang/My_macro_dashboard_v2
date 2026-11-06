@@ -322,7 +322,8 @@ final class PaperSettingKeys {
                     "미국 장중 사건이 장중 판단을 당김(ADR 0031 초안, 기본 꺼짐) — 보유 종목 전일 대비 ±4%·SPY ±1.5%·트레일링 스탑 2% 안이면 가장 "
                             + "이른 예약을 당기거나 최대 횟수 안에서 더함(사건 하나에 한 번, 자료는 장중 스탑 감시 저장본)"),
             of(FreeTimingSettings.US_CLAUDE, Type.BOOLEAN, false,
-                    "Claude 계좌1 자유 시점 판(ADR 0027, 기본 꺼짐) — 켜면 다음 미국 결정부터 시가·분 단위 지정 시각(AT_MINUTE, 정규장 안)·종가를 "
+                    "Claude 계좌1 자유 시점 판(ADR 0027·0031, 기본 꺼짐) — 켜면 다음 미국 결정부터 분 단위 지정 시각(AT_MINUTE, "
+                            + SessionWindows.regularRange(false) + " ET — 개장 10분 뒤부터)·종가를 "
                             + "받는 판으로 부름(다음 관측치 NEXT_OBSERVATION은 내지 않음, 주문은 다음 세션 하루짜리). claude.checkpoint와 함께 켤 수 "
                             + "없음. 끄면 다음 결정부터 지금 판(프롬프트·스키마·패킷이 바이트까지 같음)"),
             // ---- 미국 Claude 계좌2(체결 시점 실험 — 계좌2 명세 §13-2, ADR 0022). 모두 규칙 계좌 영향 없음, 기본은 꺼짐·단계 1 값.
@@ -340,8 +341,8 @@ final class PaperSettingKeys {
             of(Claude2Settings.EXECUTION_RECORD, Type.BOOLEAN, false,
                     "계좌2 패킷 13_execution.record — 최근 체결 20건(고른 시점·체결 원가격·사다리 칸·계좌1식 대비 bp, 사실만)"),
             of(FreeTimingSettings.US_CLAUDE2, Type.BOOLEAN, false,
-                    "Claude 계좌2 자유 시점 판(ADR 0027, 기본 꺼짐) — 켜면 다음 미국 결정부터 매시 정각 메뉴 대신 시가·분 단위 지정 시각"
-                            + "(AT_MINUTE)·종가를 받는 판으로 부름. 켠 판은 claude2.checkpoints의 장중 확인(30분 격자 한 번)을 쓰지 않음. "
+                    "Claude 계좌2 자유 시점 판(ADR 0027·0031, 기본 꺼짐) — 켜면 다음 미국 결정부터 매시 정각 메뉴 대신 분 단위 지정 시각"
+                            + "(AT_MINUTE, 개장 10분 뒤부터)·종가를 받는 판으로 부름. 켠 판은 claude2.checkpoints의 장중 확인(30분 격자 한 번)을 쓰지 않음. "
                             + "끄면 다음 결정부터 지금 판"),
             of(Claude2Settings.CHECKPOINTS, Type.BOOLEAN, false,
                     "계좌2 장중 확인(단계 2 — 세션당 최대 1회, 켜면 아침 결정이 확인 시각·자료를 고를 수 있음). "
@@ -437,12 +438,12 @@ final class PaperSettingKeys {
                     "한국 장중 사건이 장중 판단을 당김(ADR 0031 초안, 기본 꺼짐) — 보유 종목 전일 대비 ±4%·069500 ±1.5%·트레일링 스탑 2% 안이면 "
                             + "가장 이른 예약을 당기거나 최대 횟수 안에서 더함(사건 하나에 한 번, 자료는 장중 스탑 감시 저장본)"),
             of(FreeTimingSettings.KR_CLAUDE, Type.BOOLEAN, false,
-                    "한국 Claude 계좌1 자유 시점 판(ADR 0027, 기본 꺼짐) — 켜면 다음 한국 결정부터 시가·분 단위 지정 시각(AT_MINUTE, "
-                            + SessionWindows.regularRange(true) + " KST)·종가를 받는 판으로 부름. 장중 체결에는 금융위 확정 조정이 없음. 끄면 다음 결정부터 "
+                    "한국 Claude 계좌1 자유 시점 판(ADR 0027·0031, 기본 꺼짐) — 켜면 다음 한국 결정부터 분 단위 지정 시각(AT_MINUTE, "
+                            + SessionWindows.regularRange(true) + " KST — 개장 10분 뒤부터)·종가를 받는 판으로 부름. 장중 체결에는 금융위 확정 조정이 없음. 끄면 다음 결정부터 "
                             + "지금 판"),
             of(FreeTimingSettings.KR_CLAUDE2, Type.BOOLEAN, false,
-                    "한국 Claude 계좌2 자유 시점 판(ADR 0027, 기본 꺼짐) — 켜면 다음 한국 결정부터 매시 정각 메뉴 대신 시가·분 단위 지정 시각"
-                            + "(AT_MINUTE)·종가를 받는 판으로 부름. 끄면 다음 결정부터 지금 판"));
+                    "한국 Claude 계좌2 자유 시점 판(ADR 0027·0031, 기본 꺼짐) — 켜면 다음 한국 결정부터 매시 정각 메뉴 대신 분 단위 지정 시각"
+                            + "(AT_MINUTE, 개장 10분 뒤부터)·종가를 받는 판으로 부름. 끄면 다음 결정부터 지금 판"));
 
 
     private static final Map<String, Spec> BY_KEY;

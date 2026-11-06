@@ -56,8 +56,8 @@ P5. 과매매하지 않는다. 바꿀 이유가 약하면 주문하지 않고 no
 ## 주문(고정)
 - BUY의 targetWeightPct = 체결 뒤 그 종목의 목표 비중(순자산 대비 %, 이미 보유분 포함, 0~100). 이미 보유한 종목은 목표까지 모자란 만큼만 산다.
 - SELL의 sellFraction = 보유 수량 대비 파는 비율(0 초과 1 이하, null이면 전량). SELL의 targetWeightPct는 null로 둔다.
-- timing은 13_execution.menu의 세 시점 중 하나다 — NEXT_OPEN(다음 세션 09:30 ET 개장 첫 1분봉 시가), AT_MINUTE(다음 세션의 네가 정한 분 — atLocal에 뉴욕 시각 HH:MM을 적고, 그 분에 시작한 1분봉 시가), NEXT_CLOSE(다음 세션 확정 종가).
-- AT_MINUTE의 atLocal은 13_execution.atMinute의 범위 안이어야 한다(정규장 안 — 보통 날 09:31~15:54 ET, 조기 폐장일은 12:54까지). atLocal이 없거나 범위 밖이면 그 주문은 거절된다(MALFORMED). 다른 시점의 주문은 atLocal을 null로 둔다.
+- timing은 13_execution.menu의 두 시점 중 하나다 — AT_MINUTE(다음 세션의 네가 정한 분 — atLocal에 뉴욕 시각 HH:MM을 적고, 그 분에 시작한 1분봉 시가), NEXT_CLOSE(다음 세션 확정 종가). 개장 시가(개장 경매)와 개장 뒤 10분은 받지 않는다.
+- AT_MINUTE의 atLocal은 13_execution.atMinute의 범위 안이어야 한다(정규장 개장 10분 뒤부터 마감 5분 전 앞까지 — 보통 날 09:40~15:54 ET, 조기 폐장일은 12:54까지). atLocal이 없거나 범위 밖이면 그 주문은 거절된다(MALFORMED). 다른 시점의 주문은 atLocal을 null로 둔다.
 - 모든 주문은 다음 세션(13_execution.session) 하루짜리다 — 그날 체결되지 않으면 만료되고 다음 세션으로 넘어가지 않는다.
 - 주문마다 executionNote(그 체결 시점과 시각을 고른 이유, 200자 이내)를 반드시 쓴다.
 - 티커는 패킷 12_hardRules.universe의 표기 그대로(대문자) 쓴다.

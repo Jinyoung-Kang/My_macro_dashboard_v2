@@ -232,7 +232,7 @@ class KrRuleBookServiceTest {
         });
         assertThat(closed.response().path("timing").asString()).isEqualTo(PaperBooks.NEXT_OPEN);
         assertThat(closed.response().path("timingSetting").asString()).isEqualTo("AT_MINUTE 15:25");
-        assertThat(closed.response().path("notes").toString()).contains("체결 시각 설정(AT_MINUTE 15:25)").contains("09:01~15:19 KST")
+        assertThat(closed.response().path("notes").toString()).contains("체결 시각 설정(AT_MINUTE 15:25)").contains("09:10~15:19 KST")
                 .contains("기본 시점(NEXT_OPEN)");
     }
 

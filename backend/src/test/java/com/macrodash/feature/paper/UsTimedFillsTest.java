@@ -1850,6 +1850,29 @@ class UsTimedFillsTest {
         }
 
         @Test
+        @DisplayName("전환 세션(ADR 0031 — 판 ft-1 → ft-2): 옛 범위(개장 1분 뒤)로 만든 대기 AT_MINUTE 09:31·시가(NEXT_OPEN) 주문은 배포 뒤에도 만든 그대로 체결 — "
+                + "장부는 받는 범위 시작을 다시 보지 않음(검증은 만들 때 한 번)")
+        void ordersMadeUnderTheOldWindowFillAsMade() {
+            java.time.LocalTime old = java.time.LocalTime.of(9, 31);
+            assertThat(FreeTiming.window(TUE, US, false).accepts(et(TUE, 9, 31))).as("새 범위로는 받지 않을 시각").isFalse();
+            long minute = atMinute("AAPL", PaperBooks.BUY, 10, null, old, MON, MON_DECIDED);
+            long open = timed("MSFT", PaperBooks.BUY, 1, null, null, PaperBooks.NEXT_OPEN, MON, MON_DECIDED);
+            bars(new Bars(et(TUE, 9, 58)).market(old)
+                    .bar("AAPL", TUE, et(TUE, 9, 30), 99.8, 900.0).bar("AAPL", TUE, et(TUE, 9, 31), 100.0, 500.0)
+                    .bar("AAPL", TUE, et(TUE, 9, 32), 100.2, 500.0)
+                    .bar("MSFT", TUE, et(TUE, 9, 30), 401.0, 9000.0).bar("MSFT", TUE, et(TUE, 9, 31), 401.5, 900.0));
+
+            observe(et(TUE, 9, 57), bar("AAPL", MON, 99.0, TUE, 101.0), bar("MSFT", MON, 399.0, TUE, 402.0));
+
+            assertThat(fillOf(minute).rawPrice()).isEqualTo(100.0);
+            assertThat(barOf(minute).barAt()).isEqualTo(et(TUE, 9, 31));
+            assertThat(barOf(minute).fillRung()).isEqualTo("Y1M_AT");
+            assertThat(order(minute).targetLocal()).isEqualTo(old);
+            assertThat(barOf(open).barAt()).as("시가 대기 주문도 개장 첫 봉 그대로").isEqualTo(et(TUE, 9, 30));
+            assertThat(fillOf(open).rawPrice()).isEqualTo(401.0);
+        }
+
+        @Test
         @DisplayName("이름 단위의 닫힌 시점 표는 AT_MINUTE를 판정하지 않음 — 주문마다 시각이 달라 닫힘은 주문 단위(검증기 새 진입점)가 맡음")
         void nameBasedClosureIgnoresAtMinute() {
             assertThat(UsTimedFills.closedTimings(List.of(PaperBooks.NEXT_OPEN, PaperBooks.AT_MINUTE, PaperBooks.NEXT_CLOSE), MON,

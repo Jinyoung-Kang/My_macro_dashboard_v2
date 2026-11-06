@@ -14,7 +14,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 /**
  * 한국 장중 판단 패킷({@link KrCheckpointPacket}의 자유 시점 판 칸 — ADR 0027 결정 3)의 남은 시점: 장중 시장가·종가는 끈 판 장중 확인과 같은 규칙
- * ({@link KrTimedLadder#closedTimings}), 분 단위 지정 시각은 그 세션의 받는 범위(09:01~15:19 KST) 안에서 지금 + 60초 뒤의 분부터. 패킷 조립은
+ * ({@link KrTimedLadder#closedTimings}), 분 단위 지정 시각은 그 세션의 받는 범위(09:10~15:19 KST — 개장 10분 뒤부터) 안에서 지금 + 60초 뒤의 분부터. 패킷 조립은
  * 작업 시험({@code KrStartTest})이 봅니다.
  *
  * <p>세션 E = 2026-12-02(수), 기준 거래일 d = 12-01.
@@ -31,10 +31,13 @@ class KrIntradayPacketTest {
     }
 
     @Test
-    @DisplayName("남은 지정 시각: 장중에는 지금 + 60초 뒤의 다음 분 ~ 15:19, 개장 전에는 09:01부터, 종가 단일가 시간(15:20)부터는 없음")
+    @DisplayName("남은 지정 시각: 장중에는 지금 + 60초 뒤의 다음 분 ~ 15:19, 개장 전·개장 직후에는 09:10부터, 종가 단일가 시간(15:20)부터는 없음")
     void remainingMinutes() {
         assertThat(KrCheckpointPacket.freeMinutes(E, KR, kst("09:14"))).containsExactly(kst("09:16"), kst("15:19"));
-        assertThat(KrCheckpointPacket.freeMinutes(E, KR, kst("08:30"))).containsExactly(kst("09:01"), kst("15:19"));
+        assertThat(KrCheckpointPacket.freeMinutes(E, KR, kst("08:30"))).as("개장 전 — 첫 분은 개장 10분 뒤").containsExactly(kst("09:10"),
+                kst("15:19"));
+        assertThat(KrCheckpointPacket.freeMinutes(E, KR, kst("09:02"))).as("09:04는 받는 범위 앞 — 09:10부터").containsExactly(kst("09:10"),
+                kst("15:19"));
         assertThat(KrCheckpointPacket.freeMinutes(E, KR, kst("15:17"))).as("15:17 + 60초 → 15:19").containsExactly(kst("15:19"), kst("15:19"));
         assertThat(KrCheckpointPacket.freeMinutes(E, KR, kst("15:18"))).as("15:20은 종가 단일가 시간").isNull();
         assertThat(KrCheckpointPacket.freeMinutes(LocalDate.of(2026, 12, 5), KR, kst("10:00"))).as("토요일").isNull();

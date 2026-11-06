@@ -19,8 +19,11 @@ public final class SessionWindows {
     private SessionWindows() {
     }
 
-    /** 개장 뒤 이만큼 지나야 장중 체결 시각을 받습니다 — 그 세션의 첫 분은 개장 + 이 값(개장 순간은 시가 단일가의 몫). */
-    public static final Duration OPEN_OFFSET = Duration.ofMinutes(1);
+    /**
+     * 개장 뒤 이만큼 지나야 장중 체결 시각을 받습니다 — 그 세션의 첫 분은 개장 + 이 값(사용자 결정 2026-11-06 '정규장 개장 10분 뒤 ~ 마감 전',
+     * ADR 0031 — 그 전은 1분). 개장 단일가와 개장 직후 10분은 자유 시점 판·규칙 계좌의 지정 시각이 받지 않습니다.
+     */
+    public static final Duration OPEN_OFFSET = Duration.ofMinutes(10);
     /** 미국 장중 시장가·지정 시각을 받는 끝 — 마감 이만큼 전부터는 받지 않습니다(보통 날 15:55 ET·조기 폐장일 12:55 ET). */
     public static final Duration US_MARKET_TAIL = Duration.ofMinutes(5);
     /** 한국 종가 단일가 시간 — 정규장 마감 이만큼 전부터(보통 날 15:20~15:30 KST). 장중 지정 시각은 그 앞까지입니다. */

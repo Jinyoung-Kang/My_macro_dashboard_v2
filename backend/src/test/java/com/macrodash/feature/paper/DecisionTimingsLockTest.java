@@ -84,7 +84,7 @@ class DecisionTimingsLockTest {
     }
 
     @Test
-    @DisplayName("자유 시점 판(ADR 0027 결정 2)의 문맥 — 미국·한국 계좌1·계좌2: 스키마 timing enum = 프로필의 받는 시점 = NEXT_OPEN·AT_MINUTE·NEXT_CLOSE, atLocal은 선택 "
+    @DisplayName("자유 시점 판(ADR 0027 결정 2·ADR 0031)의 문맥 — 미국·한국 계좌1·계좌2: 스키마 timing enum = 프로필의 받는 시점 = AT_MINUTE·NEXT_CLOSE(시가 없음), atLocal은 선택 "
             + "칸이고 pattern이 읽는 식과 같음, 고정 문단 timing 줄이 셋을 모두 말하고 매시 정각 이름은 말하지 않음, 받는 시점은 마지막 timing CHECK 안, 끈 판 프로필은 모두 "
             + "freeTiming 거짓")
     void freeTimingContextsAreLocked() throws IOException {
@@ -106,26 +106,34 @@ class DecisionTimingsLockTest {
             assertThat(profile.freeTiming()).as(code).isTrue();
             assertThat(profile.timed()).as(code + " 미국은 시각 지정 방식(다음 세션 하루짜리), 한국은 계좌2처럼 켜지 않음").isEqualTo(!korea);
             assertThat(profile.checkpoints()).as(code + " 기존 장중 확인 판이 아님").isFalse();
-            assertThat(profile.timings()).as(code).containsExactly("NEXT_OPEN", "AT_MINUTE", "NEXT_CLOSE")
+            assertThat(profile.timings()).as(code).containsExactly("AT_MINUTE", "NEXT_CLOSE")
                     .isEqualTo(FreeTiming.DECISION_TIMINGS).isEqualTo(schemaTimings(context.schemaResource()));
+            assertThat(profile.timingNames()).as(code + " 시가 이름 없음").doesNotContainKey(PaperBooks.NEXT_OPEN);
             assertThat(context.schemaResource()).isEqualTo(korea ? ClaudeBookService.KR_FT_SCHEMA_RESOURCE
                     : ClaudeBookService.US_FT_SCHEMA_RESOURCE);
             OrderValidator.Market validation = profile.orderValidation();
             assertThat(validation.timings()).isEqualTo(profile.timings());
-            assertThat(validation.earlyTiming()).isEqualTo(PaperBooks.NEXT_OPEN);
+            assertThat(validation.earlyTiming()).isEqualTo(PaperBooks.AT_MINUTE);
             assertThat(validation.closed()).as(code + " 닫힘은 결정마다(FreeTiming.validation)").isEmpty();
             assertThat(latest).as(code + " 받는 시점은 마지막 timing CHECK 안").containsAll(profile.timings());
             String timingLine = profile.fixedRules().lines().filter(line -> line.startsWith("- timing은")).findFirst().orElseThrow();
             for (String timing : profile.timings()) {
                 assertThat(timingLine).as(code + " timing 줄에 " + timing).contains(timing);
             }
+            assertThat(timingLine).as(code + " 켠 판 timing 줄은 시가를 메뉴로 말하지 않음").doesNotContain("NEXT_OPEN");
+            // 받는 범위 글자 = 보통 날의 FreeTiming.window(개장 10분 뒤 ~ 장 끝 여유 앞).
+            String range = com.macrodash.analytics.SessionWindows.regularRange(korea);
+            assertThat(profile.fixedRules()).as(code + " 범위 글자").contains("보통 날 " + range + (korea ? " KST" : " ET"))
+                    .contains("개장 10분 뒤");
             assertThat(profile.fixedRules()).as(code + " 매시 정각 이름·장중 확인 절이 없음").doesNotContain("AT_1000").doesNotContain("AT_1500")
                     .doesNotContain("## 장중 확인(고정)").contains("atLocal");
             List<String> mentions = profile.fixedRules().lines().filter(line -> line.contains(ExecutionAudit.NEXT_OBSERVATION)).toList();
             assertThat(mentions).as(code + " NEXT_OBSERVATION은 우선순위 줄에만").hasSize(1);
             assertThat(mentions.get(0)).startsWith("우선순위(고정)");
             if (korea) {
-                assertThat(mentions.get(0)).contains(ClaudePrompts.KR_CLAUDE2_TIMING_READING);
+                assertThat(mentions.get(0)).contains(ClaudePrompts.KR_FT_TIMING_READING).doesNotContain(ClaudePrompts.KR_CLAUDE2_TIMING_READING);
+                assertThat(profile.fixedRules()).as(code + " 체결할 수 없는 종목 매도도 시가가 아님").contains(ClaudePrompts.KR_FT_UNFILLABLE_SELL)
+                        .doesNotContain(ClaudePrompts.KR_UNFILLABLE_SELL);
                 assertThat(profile.packetVariant()).as(code + " 한국 패킷은 KrPacketBuilder.forFree").isNull();
                 assertThat(profile.fixedRules()).isEqualTo(ClaudePrompts.KR_FT_FIXED_RULES).doesNotContain("NEXT_OPEN뿐");
             } else {
@@ -237,8 +245,8 @@ class DecisionTimingsLockTest {
         // 한국 켠 판의 하드 규칙 줄 — 시장 묶음의 'NEXT_OPEN뿐'이 아니라 그 프로필의 받는 시점 셋. 끈 판 줄은 그대로.
         String krOn = FrameworkService.render(ClaudeBookProfile.KR_CLAUDE_FT, FrameworkService.interimBody(MAPPER), 0, null);
         String krOff = FrameworkService.render(ClaudeBookProfile.KR_CLAUDE, FrameworkService.interimBody(MAPPER), 0, null);
-        assertThat(krOn).contains("- 체결 시점은 NEXT_OPEN(다음 거래일 시가)·AT_MINUTE(다음 거래일의 지정한 분 — atLocal에 한국 시간 HH:MM)·"
-                + "NEXT_CLOSE(다음 거래일 종가), 정수 주").doesNotContain("NEXT_OPEN(다음 거래일 시가)뿐");
+        assertThat(krOn).contains("- 체결 시점은 AT_MINUTE(다음 거래일의 지정한 분, 개장 10분 뒤 ~ 종가 단일가 앞 — atLocal에 한국 시간 HH:MM)·"
+                + "NEXT_CLOSE(다음 거래일 종가), 정수 주").doesNotContain("NEXT_OPEN(다음 거래일 시가)");
         assertThat(krOff).contains("- 체결 시점은 NEXT_OPEN(다음 거래일 시가)뿐, 정수 주");
 
         for (ClaudeBookProfile off : List.of(ClaudeBookProfile.US_CLAUDE, ClaudeBookProfile.US_CLAUDE2, ClaudeBookProfile.US_CLAUDE2_C2,

@@ -260,7 +260,7 @@ final class KrCheckpointPacket {
 
     /**
      * 자유 시점 판 장중 판단 주문이 아직 고를 수 있는 분 단위 지정 시각의 범위 {@code [첫 분, 마지막 분]} — 검증({@link FreeTiming#validation})과 같은
-     * 규칙: 그 세션의 받는 범위({@link FreeTiming#window} — 개장 1분 뒤 ~ 종가 단일가 시간 앞) 안이고 지금 + 60초보다 뒤. 남은 분이 없으면 null.
+     * 규칙: 그 세션의 받는 범위({@link FreeTiming#window} — 개장 10분 뒤 ~ 종가 단일가 시간 앞) 안이고 지금 + 60초보다 뒤. 남은 분이 없으면 null.
      */
     static Instant[] freeMinutes(LocalDate session, TradingCalendar calendar, Instant now) {
         if (!calendar.isTradingDay(session)) {

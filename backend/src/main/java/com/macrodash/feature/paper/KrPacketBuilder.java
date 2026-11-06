@@ -491,28 +491,31 @@ final class KrPacketBuilder {
         return PaperBooks.KR_CLAUDE2.equals(book);
     }
 
-    /** 자유 시점 판의 체결 시점 문장(0_instructions — ADR 0027) — 시점 셋과 체결 순서, 지정 시각은 atLocal(KST)에. */
-    static final String KR_FT_TIMING_LINE = "주문 timing은 세 시점 중 하나다 — NEXT_OPEN(기준 거래일 다음 KRX 거래일 1_basis.nextSession의 정규장 "
-            + "시가 단일가), AT_MINUTE(그날의 네가 정한 분 — atLocal에 한국 시간 HH:MM, 1_basis.atMinute 범위 안, 그 분에 시작한 토스 1분봉 시가), "
-            + "NEXT_CLOSE(그날 정규장 종가 단일가). 체결 순서는 기준 시각 순(NEXT_OPEN < AT_MINUTE의 이른 시각 < 늦은 시각 < NEXT_CLOSE)이고, "
-            + "주문마다 executionNote(그 시점과 시각을 고른 이유)를 쓴다.";
+    /** 자유 시점 판의 체결 시점 문장(0_instructions — ADR 0027·0031) — 시점 둘(시가 단일가 없음)과 체결 순서, 지정 시각은 atLocal(KST)에. */
+    static final String KR_FT_TIMING_LINE = "주문 timing은 두 시점 중 하나다 — AT_MINUTE(기준 거래일 다음 KRX 거래일 1_basis.nextSession의 네가 "
+            + "정한 분 — atLocal에 한국 시간 HH:MM, 1_basis.atMinute 범위(개장 10분 뒤 ~ 종가 단일가 앞) 안, 그 분에 시작한 토스 1분봉 시가), "
+            + "NEXT_CLOSE(그날 정규장 종가 단일가). 시가 단일가와 개장 뒤 10분은 받지 않는다. 체결 순서는 기준 시각 순(AT_MINUTE의 이른 시각 < "
+            + "늦은 시각 < NEXT_CLOSE)이고, 주문마다 executionNote(그 시점과 시각을 고른 이유)를 쓴다.";
 
     /** 자유 시점 판의 매도 자리 문장(12_hardRules) — 순위는 시점 이름이 아니라 기준 시각 순(검증기에 넘기는 그 결정의 표). */
     static final String KR_FT_ALLOCATION_LINE = "매수 목표 합 + 매도 뒤 남는 보유 비중이 100%를 넘으면 목표 비중이 큰 주문부터 받고 넘치는 "
-            + "주문은 거절(OVER_ALLOCATED). 체결 순서는 기준 시각 순이다 — NEXT_OPEN(개장) < AT_MINUTE(atLocal이 이른 순) < NEXT_CLOSE(마감). "
+            + "주문은 거절(OVER_ALLOCATED). 체결 순서는 기준 시각 순이다 — AT_MINUTE(atLocal이 이른 순) < NEXT_CLOSE(마감). "
             + "매도는 같은 시각이거나 더 늦은 시각 매수의 자리만 만든다 — 늦은 시각의 매도는 이른 시각 매수의 현금(비중 합, OVER_ALLOCATED)·종목 "
             + "자리(최대 종목 수, MAX_POSITIONS)를 비우지 못한다. unfillableTickers 종목의 매도는 어느 시각 매수의 자리도 만들지 못한다.";
 
-    /** 자유 시점 판의 지정 시각·종가 체결 문장(12_hardRules — 시가 체결 문장 다음). */
+    /** 자유 시점 판의 지정 시각·종가 체결 문장(12_hardRules — 끈 판의 시가 체결 문장 자리). */
     static final String KR_FT_TIMED_FILL_LINE = "지정 시각(AT_MINUTE)·종가(NEXT_CLOSE) 주문은 다음 KRX 거래일(1_basis.nextSession)의 토스 1분봉으로만 "
             + "체결된다 — 지정 시각은 그 분 T에 시작한 봉 시가(거래 없으면 T+1~T+4분 첫 거래 봉, 그것도 없으면 그날 정규장 안 T 뒤 첫 거래 봉 — 대체 "
             + "체결, 금융위 확정 조정 없음), 종가는 정규장 마감 단일가 봉 종가(금융위 확정 종가가 들어오면 그 값으로 고침). 그날 체결되지 않으면"
             + "(거래정지·T 뒤 정규장 거래 없음) 다음 거래일로 넘어가지 않고 기준일 + 3거래일에 만료된다. AT_MINUTE의 atLocal이 없거나 "
-            + "1_basis.atMinute 범위(그날 개장 1분 뒤 ~ 종가 단일가 시간 앞) 밖이면 MALFORMED, 기준 시각이 주문 생성 + 60초 이전이면 "
+            + "1_basis.atMinute 범위(그날 개장 10분 뒤 ~ 종가 단일가 시간 앞) 밖이면 MALFORMED, 기준 시각이 주문 생성 + 60초 이전이면 "
             + "LATE_FOR_TIMING으로 거절.";
 
-    /** 자유 시점 판 패킷의 판 표시({@code 1_basis.variant}·{@code fixedRules} — 한국 켠 판 고정 문단 {@link ClaudePrompts#KR_FT_FIXED_RULES}). */
-    static final String KR_FREE_FIXED_RULES_VERSION = "kr-ft-1";
+    /**
+     * 자유 시점 판 패킷의 판 표시({@code 1_basis.variant}·{@code fixedRules} — 한국 켠 판 고정 문단 {@link ClaudePrompts#KR_FT_FIXED_RULES}). 판 kr-ft-2
+     * (ADR 0031): 지정 시각 범위가 개장 10분 뒤부터이고 시가 단일가를 받지 않습니다(그 전 kr-ft-1은 개장 1분 뒤·시가 포함).
+     */
+    static final String KR_FREE_FIXED_RULES_VERSION = "kr-ft-2";
 
     /** 한국 계좌2의 체결 시점 문장(0_instructions) — 메뉴 여덟과 체결 순서, 시각은 KST. */
     static final String KR_CLAUDE2_TIMING_LINE = "주문 timing은 체결 시점 메뉴 여덟 중 하나다 — NEXT_OPEN(기준 거래일 다음 KRX 거래일 "
@@ -573,15 +576,15 @@ final class KrPacketBuilder {
         out.put("nextSessionOpenKst", HOUR_MINUTE.format(calendar.openInstant(next).atZone(Kst.ZONE)));
         out.put("nextSessionCloseKst", HOUR_MINUTE.format(calendar.closeInstant(next).atZone(Kst.ZONE)));
         if (free) {
-            // 자유 시점 판만 — 판 표시와 분 단위 지정 시각(AT_MINUTE)의 받는 범위(그 세션의 개장 + 1분 ~ 종가 단일가 시간 앞, 양 끝 포함).
+            // 자유 시점 판만 — 판 표시와 분 단위 지정 시각(AT_MINUTE)의 받는 범위(그 세션의 개장 + 10분 ~ 종가 단일가 시간 앞, 양 끝 포함).
             FreeTiming.Window window = FreeTiming.window(next, calendar, true);
             out.put("variant", PacketBuilder.VARIANT_FREE);
             out.put("fixedRules", KR_FREE_FIXED_RULES_VERSION);
             Map<String, Object> range = new LinkedHashMap<>();
             range.put("firstKst", HOUR_MINUTE.format(window.first().atZone(Kst.ZONE)));
             range.put("lastKst", HOUR_MINUTE.format(window.last().atZone(Kst.ZONE)));
-            range.put("note", "AT_MINUTE 주문의 atLocal은 이 범위(양 끝 포함)의 한국 시간 HH:MM — 개장 순간은 NEXT_OPEN, 종가 단일가 시간(마감 10분 "
-                    + "전부터)은 NEXT_CLOSE");
+            range.put("note", "AT_MINUTE 주문의 atLocal은 이 범위(양 끝 포함)의 한국 시간 HH:MM — 개장 뒤 10분(시가 단일가 포함)은 받지 않고, "
+                    + "종가 단일가 시간(마감 10분 전부터)은 NEXT_CLOSE");
             out.put("atMinute", range);
             // 장중 판단 선택지(ADR 0027 결정 3) — 세션당 횟수(설정)와 그날의 받는 범위(개장 5분 뒤 ~ 종가 단일가 시작 30분 전, 양 끝 포함).
             IntradayRequest.Window judgments = IntradayRequest.window(next, calendar, true);
@@ -1410,9 +1413,13 @@ final class KrPacketBuilder {
         lines.add("유니버스(universe — U = 코스피 시가총액 상위 100 보통주, 금융위 기준일 universeAsOf ∪ etfTickers) 밖·같은 티커 두 번·"
                 + "재진입 금지 종목의 주문은 거절. 보유 종목은 U 밖이어도 팔 수 있다. unfillableTickers(지금 체결할 수 없는 종목 — 이번 관측치에 "
                 + "봉 없음·기준 거래일 거래정지·미처리 기업행위 보유, 규칙 계좌와 같은 판정)의 매수는 UNFILLABLE로 거절. 그 종목 보유의 "
-                + "매도는 받아 대기로 두고, 만료 전에 풀리면 그 뒤 첫 시가에 체결된다(규칙 계좌와 같음).");
-        lines.add((menu || free ? "NEXT_OPEN " : "") + "주문은 기준 거래일 뒤 첫 관측 봉(거래량 > 0)의 시가로 체결된다 — 기준 거래일 이하 봉·"
-                + "주문보다 먼저 받은 관측치·거래정지일(거래량 0) 봉으로는 체결되지 않고, 체결되지 않은 주문은 기준일 + 3거래일에 만료된다.");
+                + "매도는 받아 대기로 두고, "
+                + (free ? "만료 전에 풀리면 장부가 그 주문의 시점(지정 시각·종가)으로 체결한다." : "만료 전에 풀리면 그 뒤 첫 시가에 체결된다(규칙 계좌와 같음)."));
+        if (!free) {
+            // 자유 시점 판(kr-ft-2)은 시가 주문을 받지 않아 시가 체결 문장을 싣지 않습니다(지정 시각·종가 체결 문장은 아래 KR_FT_TIMED_FILL_LINE).
+            lines.add((menu ? "NEXT_OPEN " : "") + "주문은 기준 거래일 뒤 첫 관측 봉(거래량 > 0)의 시가로 체결된다 — 기준 거래일 이하 봉·"
+                    + "주문보다 먼저 받은 관측치·거래정지일(거래량 0) 봉으로는 체결되지 않고, 체결되지 않은 주문은 기준일 + 3거래일에 만료된다.");
+        }
         if (free) {
             lines.add(KR_FT_TIMED_FILL_LINE);
         } else if (menu) {

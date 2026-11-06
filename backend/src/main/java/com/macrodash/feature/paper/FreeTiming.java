@@ -29,25 +29,29 @@ import java.util.regex.Pattern;
  * 열쇠 {@code AT_MINUTE@HH:MM}({@link #key})을 만들어 그 결정만의 표({@link #validation})를 넘기고, 판정 뒤 주문 행에서는 열쇠를 다시
  * {@code AT_MINUTE} + {@code target_local}로 되돌립니다({@link #timeOf}). 검증기의 계산과 끈 판의 표는 그대로입니다.
  *
- * <p>받는 범위는 정규장 안입니다 — 개장 {@link #AFTER_OPEN} 뒤부터 그 시장의 장 끝 여유({@link #tail}) 앞까지. 미국은 장중 시장가와 같은
- * 마감 5분 전({@link UsTimedFills#MARKET_BEFORE_CLOSE} — 보통 날 09:31~15:54 ET), 한국은 종가 단일가 시간 앞
- * ({@link KrTimedLadder#CLOSING_AUCTION} — 보통 날 09:01~15:19 KST)입니다. 개장 시각 자체는 시가({@code NEXT_OPEN})가 맡습니다. 조기 폐장·개장 시각
- * 변경일은 그날의 개장·마감으로 셉니다(달력). 상태가 없는 계산입니다.
+ * <p>받는 범위는 정규장 안입니다 — 개장 {@link #AFTER_OPEN} 뒤부터 그 시장의 장 끝 여유({@link #tail}) 앞까지(사용자 결정 2026-11-06 '정규장 개장
+ * 10분 뒤 ~ 마감 전', ADR 0031). 미국은 장중 시장가와 같은 마감 5분 전({@link UsTimedFills#MARKET_BEFORE_CLOSE} — 보통 날 09:40~15:54 ET), 한국은
+ * 종가 단일가 시간 앞({@link KrTimedLadder#CLOSING_AUCTION} — 보통 날 09:10~15:19 KST)입니다. 개장 단일가(시가)와 개장 직후 10분은 받지 않습니다 —
+ * 켠 판 메뉴에 시가({@code NEXT_OPEN})가 없습니다(판 ft-2·kr-ft-2). 조기 폐장·개장 시각 변경일은 그날의 개장·마감으로 셉니다(달력 — 수능일 10:10~16:19).
+ * 장중 판단 응답의 장중 시장가({@code MARKET})도 기준 분이 그 세션 첫 분 앞이면 닫습니다({@link #validation}). 상태가 없는 계산입니다.
  */
 final class FreeTiming {
 
     private FreeTiming() {
     }
 
-    /** 자유 시점 판의 아침(한국은 밤) 결정이 받는 체결 시점, 이른 것부터 — 켠 판 응답 스키마의 {@code timing} enum과 같은 목록. */
-    static final List<String> DECISION_TIMINGS = List.of(PaperBooks.NEXT_OPEN, PaperBooks.AT_MINUTE, PaperBooks.NEXT_CLOSE);
+    /**
+     * 자유 시점 판의 아침(한국은 밤) 결정이 받는 체결 시점, 이른 것부터 — 켠 판 응답 스키마의 {@code timing} enum과 같은 목록. 시가({@code NEXT_OPEN})는
+     * 받지 않습니다(판 ft-2·kr-ft-2 — 사용자 결정 2026-11-06). 그 전 판에서 만든 대기 시가 주문은 장부가 만든 그대로 체결합니다.
+     */
+    static final List<String> DECISION_TIMINGS = List.of(PaperBooks.AT_MINUTE, PaperBooks.NEXT_CLOSE);
     /** 자유 시점 판의 장중 판단 응답이 받는 체결 시점 — 장중 시장가 · 그날 남은 지정 시각 · 그날 종가. */
     static final List<String> INTRADAY_TIMINGS = List.of(PaperBooks.MARKET, PaperBooks.AT_MINUTE, PaperBooks.NEXT_CLOSE);
 
     /** 응답의 시각 글자({@code atLocal}) — 그 시장 현지 시각 'HH:MM'(24시간). 응답 스키마의 pattern과 같은 식. */
     static final String CLOCK_PATTERN = "^([01][0-9]|2[0-3]):[0-5][0-9]$";
     private static final Pattern CLOCK = Pattern.compile(CLOCK_PATTERN);
-    /** 가장 이른 지정 시각은 개장 이만큼 뒤 — 개장 순간은 시가(NEXT_OPEN)의 몫. 값은 {@link SessionWindows#OPEN_OFFSET}(단일 출처). */
+    /** 가장 이른 지정 시각은 개장 이만큼 뒤(10분 — 개장 단일가와 개장 직후는 받지 않음). 값은 {@link SessionWindows#OPEN_OFFSET}(단일 출처). */
     static final Duration AFTER_OPEN = SessionWindows.OPEN_OFFSET;
     /** 주문 생성 뒤 이만큼 지나지 않은 시각은 늦은 주문(체결 조건 ⑤ — {@link ExecutionAudit#AFTER_CREATED}와 같은 60초). */
     static final Duration AFTER_CREATED = ExecutionAudit.AFTER_CREATED;

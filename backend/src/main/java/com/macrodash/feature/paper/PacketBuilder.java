@@ -238,11 +238,12 @@ public class PacketBuilder {
     /**
      * 자유 시점 판 패킷의 변형 이름·{@code 13_execution} 판·고정 문단 판(ADR 0027 결정 2 — {@link ClaudeBookProfile#freeTiming}). 패킷의 모양은
      * 계좌2 변형과 같은 줄기({@code 13_execution} 섹션 — {@link ClaudeBookProfile#packetVariant}는 {@value #VARIANT_CLAUDE2})이고, 머리의 이 세 칸과
-     * 섹션의 메뉴(시가·분 단위 지정 시각·종가)·하드 규칙의 시점 문장만 다릅니다. 미국 계좌1·계좌2의 켠 판이 함께 씁니다.
+     * 섹션의 메뉴(분 단위 지정 시각·종가)·하드 규칙의 시점 문장만 다릅니다. 미국 계좌1·계좌2의 켠 판이 함께 씁니다. 판 4·ft-2(ADR 0031 — 2026-11-06
+     * 사용자 결정): 체결 창이 개장 10분 뒤부터이고 메뉴에 시가가 없습니다(그 전 판 3·ft-1은 개장 1분 뒤·시가 포함).
      */
     static final String VARIANT_FREE = "freeTiming";
-    static final int EXECUTION_MENU_VERSION_FREE = 3;
-    static final String FREE_FIXED_RULES_VERSION = "ft-1";
+    static final int EXECUTION_MENU_VERSION_FREE = 4;
+    static final String FREE_FIXED_RULES_VERSION = "ft-2";
     /**
      * 장중 확인을 켠 계좌2 패킷의 목표 크기에 더하는 {@code 13_execution.checkpointOptions} 몫(토큰 어림) — 시각 열하나(ET·KST)·피드 뜻·규칙 세 줄
      * (packet-us-claude2-c2-meta.txt). 단계 1 패킷은 이 몫이 없습니다.
@@ -2270,8 +2271,8 @@ public class PacketBuilder {
         lines.add(initial ? "초기 결정의 통과 주문은 기준일(" + asOf + ") 종가로 사후 체결된다."
                 : book.freeTiming() ? "주문은 다음 세션(13_execution.session.date) 하루짜리로, 주문마다 고른 시점(13_execution.menu — AT_MINUTE는 "
                         + "atLocal에 적은 분)의 가격으로 체결된다 — 기준 거래일 봉으로는 체결되지 않고, 그날 체결되지 않으면 만료된다. "
-                        + "AT_MINUTE의 atLocal이 없거나 13_execution.atMinute 범위 밖이면 MALFORMED, 기준 시각이 주문 생성 + 60초 이전이면 "
-                        + "LATE_FOR_TIMING으로 거절."
+                        + "AT_MINUTE의 atLocal이 없거나 13_execution.atMinute 범위(개장 10분 뒤 ~ 마감 5분 전 앞) 밖이면 MALFORMED, 기준 시각이 "
+                        + "주문 생성 + 60초 이전이면 LATE_FOR_TIMING으로 거절."
                 : timed ? "주문은 다음 세션(13_execution.session.date) 하루짜리로, 주문마다 고른 시점(13_execution.menu)의 가격으로 "
                         + "체결된다 — 기준 거래일 봉으로는 체결되지 않고, 그날 체결되지 않으면 만료된다. 조기 폐장일의 마감 뒤 시점은 "
                         + "MALFORMED, 기준 시각이 주문 생성 + 60초 이전인 시점은 LATE_FOR_TIMING으로 거절."
@@ -2329,9 +2330,9 @@ public class PacketBuilder {
      * {@link FreeTiming#validation}).
      */
     static final String FREE_RANK_RULE = "매수 목표 합 + 매도 뒤 남는 보유 비중이 100%를 넘으면 목표 비중이 큰 주문부터 받고 넘치는 주문은 거절"
-            + "(OVER_ALLOCATED). 체결 순서는 기준 시각 순이다 — NEXT_OPEN(개장) < AT_MINUTE(atLocal이 이른 순) < NEXT_CLOSE(마감). 매도는 같은 "
-            + "시각이거나 더 늦은 시각의 매수에만 현금(비중 합, OVER_ALLOCATED)과 종목 자리(최대 종목 수, MAX_POSITIONS)를 만든다 — 예: NEXT_OPEN "
-            + "전량 매도는 AT_MINUTE 10:00 매수의 자리를 비우지만 AT_MINUTE 14:00 전량 매도는 AT_MINUTE 10:00 매수의 자리를 비우지 못한다. "
+            + "(OVER_ALLOCATED). 체결 순서는 기준 시각 순이다 — AT_MINUTE(atLocal이 이른 순) < NEXT_CLOSE(마감). 매도는 같은 "
+            + "시각이거나 더 늦은 시각의 매수에만 현금(비중 합, OVER_ALLOCATED)과 종목 자리(최대 종목 수, MAX_POSITIONS)를 만든다 — 예: AT_MINUTE "
+            + "09:45 전량 매도는 AT_MINUTE 10:00 매수의 자리를 비우지만 AT_MINUTE 14:00 전량 매도는 AT_MINUTE 10:00 매수의 자리를 비우지 못한다. "
             + "100% 검사·종목 수는 매수가 있는 시각마다 본다.";
 
     /**

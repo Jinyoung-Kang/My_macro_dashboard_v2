@@ -1452,8 +1452,9 @@ class PacketBuilderTest {
     }
 
     @Test
-    @DisplayName("고정본(자유 시점 판 — ADR 0027 결정 2): 미국 계좌2·계좌1 켠 판의 정기 패킷 — 계좌2 단계 1 패킷과 1_basis 세 칸(variant freeTiming·메뉴 판 3·고정 문단 판 "
-            + "ft-1), 12_hardRules의 시점 문장 둘, 13_execution의 판·메뉴(시가·분 단위 지정 시각·종가)·atMinute 범위·출처 사실 셋째 줄만 다르고 그 밖은 바이트 그대로. "
+    @DisplayName("고정본(자유 시점 판 — ADR 0027 결정 2·ADR 0031): 미국 계좌2·계좌1 켠 판의 정기 패킷 — 계좌2 단계 1 패킷과 1_basis 세 칸(variant freeTiming·메뉴 판 4·"
+            + "고정 문단 판 ft-2), 12_hardRules의 시점 문장 둘, 13_execution의 판·메뉴(분 단위 지정 시각 09:40~·종가 — 시가 없음)·atMinute 범위·출처 사실 셋째 줄만 "
+            + "다르고 그 밖은 바이트 그대로. "
             + "계좌1 켠 판은 계좌1 장부로 같은 모양(13_execution 있음). 끈 판 패킷은 그대로")
     void goldenFreeTimingPackets() {
         store.insertNote(new Note(0, NoteService.MARKET, FRI, TUE, "금요일 시황", "10년물 4.6%·브렌트 88", false, null));
@@ -1480,18 +1481,19 @@ class PacketBuilderTest {
 
         JsonNode basis = ft2.body().get(PacketBuilder.BASIS);
         assertThat(basis.get("variant").asString()).isEqualTo("freeTiming");
-        assertThat(basis.get("executionMenuVersion").asInt()).isEqualTo(3);
-        assertThat(basis.get("fixedRules").asString()).isEqualTo("ft-1");
+        assertThat(basis.get("executionMenuVersion").asInt()).isEqualTo(4);
+        assertThat(basis.get("fixedRules").asString()).isEqualTo("ft-2");
         assertThat(basis.get("book").asString()).isEqualTo("claude2");
         JsonNode execution = ft2.body().get(PacketBuilder.EXECUTION);
-        assertThat(execution.get("executionMenuVersion").asInt()).isEqualTo(3);
+        assertThat(execution.get("executionMenuVersion").asInt()).isEqualTo(4);
         List<String> menu = new ArrayList<>();
         execution.get("menu").get("rows").forEach(row -> menu.add(row.get(0).asString() + " " + row.get(1).asString("")));
-        assertThat(menu).containsExactly("NEXT_OPEN 09:30", "AT_MINUTE 09:31~15:54", "NEXT_CLOSE 16:00");
-        assertThat(execution.get("menu").get("rows").get(1).get(3).asString()).isEqualTo(ExecutionSection.AT_MINUTE_MEANING);
-        assertThat(execution.get("atMinute").get("firstEt").asString()).isEqualTo("09:31");
+        assertThat(menu).as("켠 판 메뉴에 시가(개장 경매)가 없음 — 판 4").containsExactly("AT_MINUTE 09:40~15:54", "NEXT_CLOSE 16:00");
+        assertThat(execution.get("menu").get("rows").get(0).get(3).asString()).isEqualTo(ExecutionSection.AT_MINUTE_MEANING);
+        assertThat(execution.get("atMinute").get("firstEt").asString()).isEqualTo("09:40");
         assertThat(execution.get("atMinute").get("lastEt").asString()).isEqualTo("15:54");
-        assertThat(execution.get("atMinute").get("firstKst").asString()).isEqualTo("2026-10-27 22:31 KST");
+        assertThat(execution.get("atMinute").get("firstKst").asString()).isEqualTo("2026-10-27 22:40 KST");
+        assertThat(execution.get("atMinute").get("note").asString()).contains("개장 뒤 10분").doesNotContain("NEXT_OPEN");
         assertThat(execution.get("closedTimings")).isEmpty();
         assertThat(execution.get("sourceFacts")).hasSize(3);
         assertThat(execution.get("sourceFacts").get(2).asString()).isEqualTo(ExecutionSection.FREE_SOURCE_FACT);
@@ -1503,7 +1505,12 @@ class PacketBuilderTest {
         List<String> rules = new ArrayList<>();
         ft2.body().get(PacketBuilder.HARD_RULES).get("lines").forEach(line -> rules.add(line.asString()));
         assertThat(rules).contains(PacketBuilder.FREE_RANK_RULE);
-        assertThat(rules).anyMatch(line -> line.contains("AT_MINUTE의 atLocal이 없거나 13_execution.atMinute 범위 밖이면 MALFORMED"));
+        assertThat(PacketBuilder.FREE_RANK_RULE).doesNotContain("NEXT_OPEN");
+        assertThat(rules).anyMatch(line -> line.contains("AT_MINUTE의 atLocal이 없거나 13_execution.atMinute 범위(개장 10분 뒤 ~ 마감 5분 전 앞) 밖이면 "
+                + "MALFORMED"));
+        assertThat(MAPPER.writeValueAsString(ft2.body().get(PacketBuilder.HARD_RULES).get("lines"))
+                + MAPPER.writeValueAsString(ft2.body().get(PacketBuilder.INSTRUCTIONS))).as("켠 판 규칙·지시 문장에 시가 시점이 없음")
+                .doesNotContain("NEXT_OPEN");
 
         // 장중 판단 선택지 — 세션당 횟수는 그 결정이 읽은 설정(기본 2), 받는 범위는 개장 5분 뒤 ~ 마감 30분 전.
         JsonNode intraday = execution.get("intraday");
@@ -1535,20 +1542,28 @@ class PacketBuilderTest {
     }
 
     @Test
-    @DisplayName("13_execution 자유 시점 판: 조기 폐장일(E 11-27 — 마감 13:00)의 지정 시각 범위는 12:54까지·장중 판단은 12:30까지, 서머타임이 끝난 주(E 11-02)의 "
-            + "09:31 ET = 23:31 KST, 장중 판단 선택지는 세션당 횟수(설정)·09:35~15:30 ET·간격 30분·지연 요약은 모이기 전 null")
+    @DisplayName("13_execution 자유 시점 판(메뉴 4): 메뉴는 AT_MINUTE·NEXT_CLOSE 둘(시가 없음), 조기 폐장일(E 11-27 — 마감 13:00)의 지정 시각 범위는 "
+            + "09:40~12:54·장중 판단은 12:30까지, 서머타임이 끝난 주(E 11-02)의 09:40 ET = 23:40 KST, 장중 판단 선택지는 세션당 횟수(설정)·09:35~15:30 ET·"
+            + "간격 30분·지연 요약은 모이기 전 null")
     void executionSectionFreeTiming() {
         activeClaude2();
         JsonNode early = MAPPER.valueToTree(PacketBuilder.toNode(ExecutionSection.build(LocalDate.of(2026, 11, 25),
                 FreeTiming.DECISION_TIMINGS, UsMarketCalendar.CALENDAR, 5, true, store, PaperBooks.CLAUDE2, false, true, 2)));
+        assertThat(early.get("executionMenuVersion").asInt()).isEqualTo(4);
+        assertThat(early.get("menu").get("rows")).hasSize(2);
+        assertThat(early.get("menu").get("rows").get(0).get(0).asString()).isEqualTo(PaperBooks.AT_MINUTE);
+        assertThat(early.get("menu").get("rows").get(1).get(0).asString()).isEqualTo(PaperBooks.NEXT_CLOSE);
+        assertThat(early.get("menu").toString() + early.get("atMinute")).as("메뉴·범위 설명에 시가 시점이 없음(지난 체결 기록에만 남음)")
+                .doesNotContain("NEXT_OPEN");
+        assertThat(early.get("atMinute").get("firstEt").asString()).as("조기 폐장일도 개장 10분 뒤부터").isEqualTo("09:40");
         assertThat(early.get("atMinute").get("lastEt").asString()).isEqualTo("12:54");
-        assertThat(early.get("menu").get("rows").get(1).get(1).asString()).isEqualTo("09:31~12:54");
+        assertThat(early.get("menu").get("rows").get(0).get(1).asString()).isEqualTo("09:40~12:54");
         assertThat(early.get("session").get("earlyClose").asBoolean()).isTrue();
         assertThat(early.get("intraday").get("firstEt").asString()).isEqualTo("09:35");
         assertThat(early.get("intraday").get("lastEt").asString()).as("조기 폐장일 — 마감 13:00의 30분 전").isEqualTo("12:30");
         JsonNode est = MAPPER.valueToTree(PacketBuilder.toNode(ExecutionSection.build(LocalDate.of(2026, 10, 30),
                 FreeTiming.DECISION_TIMINGS, UsMarketCalendar.CALENDAR, 5, true, store, PaperBooks.CLAUDE2, false, true, 1)));
-        assertThat(est.get("atMinute").get("firstKst").asString()).isEqualTo("2026-11-02 23:31 KST");
+        assertThat(est.get("atMinute").get("firstKst").asString()).isEqualTo("2026-11-02 23:40 KST");
         assertThat(est.get("atMinute").get("lastKst").asString()).isEqualTo("2026-11-03 05:54 KST");
         JsonNode intraday = est.get("intraday");
         assertThat(intraday.get("maxPerSession").asInt()).as("그 결정이 읽은 설정값").isEqualTo(1);
@@ -3353,8 +3368,8 @@ class PacketBuilderTest {
             "claude2-initial", "a95d2849759359c02da59e42da910dc77893f8f287d1686663222ffd9a10a9c8",
             "claude2-scheduled", "8a2d6849e50037141204d93cf4955d96923ab95f763d503166e7609da9222d89",
             "claude2-c2-scheduled", "f6c715284df1ec5c09c3fa4121aaa553e1e34e44d25cd6290da8e21df9871e4a",
-            "ft-claude-scheduled", "0b584a98d8f76fb55be9fe9346108db574654dc51cf6cd37790d68bbe22e6559",
-            "ft-claude2-scheduled", "798c55ba4b58273fcf0cf339a867437026fee2b255823f98d03e297f7fb3d2e4");
+            "ft-claude-scheduled", "e899efb332f30246f729907f2c9253e5f69003868b20c5a89b7afe01c73032b5",
+            "ft-claude2-scheduled", "f0f805ef105baabd144f85ddd46ff0ba3ba38040e990647e37a6ccc9cce533b3");
 
     /** 패킷에서 ADR 0030의 비용 칸(12_hardRules의 commissionBp·slippageBp·sellRegFees)과 비용 문장(lines 마지막 줄)을 뺀 글자. */
     private static String withoutCosts(Packet packet) {

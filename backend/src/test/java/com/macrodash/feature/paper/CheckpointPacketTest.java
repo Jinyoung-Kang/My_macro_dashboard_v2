@@ -345,7 +345,7 @@ class CheckpointPacketTest {
     }
 
     @Test
-    @DisplayName("고정본(자유 시점 판 장중 판단 — MINUTE): 계좌·순번·종류 INTRADAY_n·판 ft-1, 남은 시점은 장중 시장가·남은 지정 시각(10:35~15:54)·그날 종가, "
+    @DisplayName("고정본(자유 시점 판 장중 판단 — MINUTE): 계좌·순번·종류 INTRADAY_n·판 ft-2, 남은 시점은 장중 시장가·남은 지정 시각(10:35~15:54)·그날 종가, "
             + "대기 주문의 지정 시각은 그 분으로 지남/대기를 가르고, MINUTE 피드는 이 계획의 종목만(다른 계좌 계획의 AMD는 빠짐), 순번을 다 쓴 판단은 다음 "
             + "예약을 받지 않음. 끈 판 장중 확인 고정본은 그대로")
     void goldenFreeMinute() {
@@ -359,7 +359,7 @@ class CheckpointPacketTest {
         JsonNode basis = body.get("1_basis");
         assertThat(basis.get("book").asString()).isEqualTo(PaperBooks.CLAUDE);
         assertThat(basis.get("variant").asString()).isEqualTo("freeTiming");
-        assertThat(basis.get("fixedRules").asString()).isEqualTo("ft-1");
+        assertThat(basis.get("fixedRules").asString()).isEqualTo("ft-2");
         assertThat(basis.get("decisionKind").asString()).isEqualTo("INTRADAY_2");
         assertThat(basis.get("slot").asInt()).isEqualTo(2);
         assertThat(basis.get("remainingTimings").toString()).isEqualTo("[\"MARKET\",\"AT_MINUTE\",\"NEXT_CLOSE\"]");
@@ -416,7 +416,7 @@ class CheckpointPacketTest {
         assertThat(CheckpointPacket.freeMinutes(E, calendar, Instant.parse("2026-11-02T20:54:00Z"))).isNull();
         assertThat(CheckpointPacket.freeRemainingTimings(E, calendar, Instant.parse("2026-11-02T21:00:00Z"))).as("마감 뒤").isEmpty();
         assertThat(CheckpointPacket.freeMinutes(E, calendar, Instant.parse("2026-11-02T14:00:00Z")))
-                .as("개장 전 — 받는 범위의 첫 분 09:31부터").containsExactly(Instant.parse("2026-11-02T14:31:00Z"),
+                .as("개장 전 — 받는 범위의 첫 분 09:40부터(개장 10분 뒤)").containsExactly(Instant.parse("2026-11-02T14:40:00Z"),
                         Instant.parse("2026-11-02T20:54:00Z"));
     }
 
@@ -437,6 +437,6 @@ class CheckpointPacketTest {
         assertThat(Golden.sha256(hourly.replace(now, before)))
                 .isEqualTo("724b321e601b68ac3d0a7cc9c278cbea35e4074fc7d90ec6dc731c482b001232");
         assertThat(Golden.sha256(free.replace(now, before)))
-                .isEqualTo("8ecb6f8daa49dc68340593b5ca401607c27caf729bfe0fe5504f0004a593289c");
+                .isEqualTo("06591a4c60bb54c25299b1417a3c0e1c906cd439bc056f972c85c56e9cce9134");
     }
 }

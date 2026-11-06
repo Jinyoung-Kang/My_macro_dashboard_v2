@@ -20,7 +20,7 @@
           "side": {"enum": ["BUY", "SELL"]},
           "targetWeightPct": {"type": ["number", "null"], "minimum": 0, "maximum": 100},
           "sellFraction": {"type": ["number", "null"], "minimum": 0, "maximum": 1},
-          "timing": {"enum": ["NEXT_OPEN", "AT_MINUTE", "NEXT_CLOSE"]},
+          "timing": {"enum": ["AT_MINUTE", "NEXT_CLOSE"]},
           "atLocal": {"type": ["string", "null"], "pattern": "^([01][0-9]|2[0-3]):[0-5][0-9]$"},
           "executionNote": {"type": "string", "maxLength": 200},
           "thesis": {"type": "string", "maxLength": 600},

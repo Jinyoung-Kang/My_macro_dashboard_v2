@@ -67,7 +67,7 @@ class RuleTimingTest {
         RuleTiming.Chosen early = minute.choose(LocalDate.of(2026, 11, 25), Instant.parse("2026-11-25T22:00:00Z"), US, false);
         assertThat(early.timing()).as("조기 폐장일(11-27 마감 13:00) — 14:30은 범위 밖").isEqualTo("NEXT_OBSERVATION");
         assertThat(early.at()).isNull();
-        assertThat(early.note()).contains("AT_MINUTE 14:30").contains("09:31~12:54 ET").contains("기본 시점(NEXT_OBSERVATION)");
+        assertThat(early.note()).contains("AT_MINUTE 14:30").contains("09:40~12:54 ET").contains("기본 시점(NEXT_OBSERVATION)");
         RuleTiming.Chosen passed = minute.choose(MON, Instant.parse("2026-10-27T18:29:30Z"), US, false);
         assertThat(passed.timing()).as("세션 도중의 결정 — 14:30까지 60초가 남지 않음").isEqualTo("NEXT_OBSERVATION");
         assertThat(passed.note()).contains("이미 지남");
@@ -84,33 +84,40 @@ class RuleTimingTest {
     }
 
     @Test
-    @DisplayName("고르기(한국): 지정 시각은 다음 거래일의 09:01~15:19 KST 안 — 종가 단일가 시간(15:20)은 범위 밖이라 시가로, 기본 설정은 시가")
+    @DisplayName("고르기(한국): 지정 시각은 다음 거래일의 09:10~15:19 KST 안(개장 10분 뒤부터) — 종가 단일가 시간(15:20)은 범위 밖이라 시가로, 기본 설정은 시가")
     void choosesForTheKrSession() {
         LocalDate d = LocalDate.of(2026, 12, 1);
         Instant night = Instant.parse("2026-12-01T13:30:00Z");
         assertThat(new RuleTiming("NEXT_OPEN", null).choose(d, night, KR, true)).isEqualTo(new RuleTiming.Chosen("NEXT_OPEN", null, null));
-        assertThat(new RuleTiming("AT_MINUTE", LocalTime.of(9, 1)).choose(d, night, KR, true))
-                .isEqualTo(new RuleTiming.Chosen("AT_MINUTE", LocalTime.of(9, 1), null));
+        assertThat(new RuleTiming("AT_MINUTE", LocalTime.of(9, 10)).choose(d, night, KR, true))
+                .isEqualTo(new RuleTiming.Chosen("AT_MINUTE", LocalTime.of(9, 10), null));
         RuleTiming.Chosen auction = new RuleTiming("AT_MINUTE", LocalTime.of(15, 20)).choose(d, night, KR, true);
         assertThat(auction.timing()).isEqualTo("NEXT_OPEN");
-        assertThat(auction.note()).contains("09:01~15:19 KST").contains("기본 시점(NEXT_OPEN)");
+        assertThat(auction.note()).contains("09:10~15:19 KST").contains("기본 시점(NEXT_OPEN)");
         assertThat(new RuleTiming("NEXT_CLOSE", null).choose(d, night, KR, true)).isEqualTo(new RuleTiming.Chosen("NEXT_CLOSE", null, null));
     }
 
     @Test
-    @DisplayName("저장 검사: AT_MINUTE이면 지정 시각이 HH:MM이고 보통 날 범위(미국 09:31~15:54 ET·한국 09:01~15:19 KST) 안이어야 함 — 다른 시점은 지정 시각을 "
-            + "보지 않음")
+    @DisplayName("저장 검사: AT_MINUTE이면 지정 시각이 HH:MM이고 보통 날 범위(미국 09:40~15:54 ET·한국 09:10~15:19 KST — 개장 10분 뒤부터) 안이어야 함 — "
+            + "다른 시점은 지정 시각을 보지 않음")
     void validatesTheSavedBody() {
+        assertThat(RuleTiming.US_FIRST).isEqualTo(LocalTime.of(9, 40));
+        assertThat(RuleTiming.KR_FIRST).isEqualTo(LocalTime.of(9, 10));
         assertThat(RuleTiming.invalid(body("{}"))).isNull();
         assertThat(RuleTiming.invalid(body("{\"rules\":{\"timing\":\"NEXT_CLOSE\",\"timingAtEt\":\"23:00\"}}"))).isNull();
-        assertThat(RuleTiming.invalid(body("{\"rules\":{\"timing\":\"AT_MINUTE\",\"timingAtEt\":\"09:31\"}}"))).isNull();
+        assertThat(RuleTiming.invalid(body("{\"rules\":{\"timing\":\"AT_MINUTE\",\"timingAtEt\":\"09:40\"}}"))).isNull();
         assertThat(RuleTiming.invalid(body("{\"rules\":{\"timing\":\"AT_MINUTE\",\"timingAtEt\":\"15:54\"}}"))).isNull();
+        assertThat(RuleTiming.invalid(body("{\"rules\":{\"timing\":\"AT_MINUTE\",\"timingAtEt\":\"09:39\"}}")))
+                .contains("rules.timingAtEt").contains("09:40~15:54 ET").contains("09:39");
         assertThat(RuleTiming.invalid(body("{\"rules\":{\"timing\":\"AT_MINUTE\",\"timingAtEt\":\"09:30\"}}")))
-                .contains("rules.timingAtEt").contains("09:31~15:54 ET").contains("09:30");
+                .contains("rules.timingAtEt").contains("09:40~15:54 ET").contains("09:30");
         assertThat(RuleTiming.invalid(body("{\"rules\":{\"timing\":\"AT_MINUTE\",\"timingAtEt\":\"15:55\"}}"))).isNotNull();
         assertThat(RuleTiming.invalid(body("{\"rules\":{\"timing\":\"AT_MINUTE\"}}"))).as("시각 없음").isNotNull();
         assertThat(RuleTiming.invalid(body("{\"kr\":{\"rules\":{\"timing\":\"AT_MINUTE\",\"timingAtKst\":\"15:20\"}}}")))
-                .contains("kr.rules.timingAtKst").contains("09:01~15:19 KST");
+                .contains("kr.rules.timingAtKst").contains("09:10~15:19 KST");
+        assertThat(RuleTiming.invalid(body("{\"kr\":{\"rules\":{\"timing\":\"AT_MINUTE\",\"timingAtKst\":\"09:09\"}}}")))
+                .contains("kr.rules.timingAtKst").contains("09:10~15:19 KST");
+        assertThat(RuleTiming.invalid(body("{\"kr\":{\"rules\":{\"timing\":\"AT_MINUTE\",\"timingAtKst\":\"09:10\"}}}"))).isNull();
         assertThat(RuleTiming.invalid(body("{\"kr\":{\"rules\":{\"timing\":\"AT_MINUTE\",\"timingAtKst\":\"15:19\"}}}"))).isNull();
     }
 }

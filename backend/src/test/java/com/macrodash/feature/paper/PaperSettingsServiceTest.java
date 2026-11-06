@@ -374,7 +374,11 @@ class PaperSettingsServiceTest {
         assertThat(PaperSettingKeys.find("rules.timing").orElseThrow().options()).isEqualTo(RuleTiming.US_OPTIONS);
         assertThat(PaperSettingKeys.find("kr.rules.timing").orElseThrow().options()).isEqualTo(RuleTiming.KR_OPTIONS);
         assertThatThrownBy(() -> update("rules.timing", "AT_MINUTE", "rules.timingAtEt", "16:00")).isInstanceOf(InvalidRequestException.class)
-                .hasMessageContaining("rules.timingAtEt").hasMessageContaining("09:31~15:54 ET");
+                .hasMessageContaining("rules.timingAtEt").hasMessageContaining("09:40~15:54 ET");
+        assertThatThrownBy(() -> update("rules.timing", "AT_MINUTE", "rules.timingAtEt", "09:39")).as("개장 뒤 10분 안")
+                .isInstanceOf(InvalidRequestException.class).hasMessageContaining("09:40~15:54 ET");
+        assertThatThrownBy(() -> update("kr.rules.timing", "AT_MINUTE", "kr.rules.timingAtKst", "09:09")).as("한국 개장 뒤 10분 안")
+                .isInstanceOf(InvalidRequestException.class).hasMessageContaining("09:10~15:19 KST");
         assertThatThrownBy(() -> update("rules.timing", "AT_1000")).isInstanceOf(InvalidRequestException.class);
         Map<String, Object> minute = update("rules.timing", "AT_MINUTE", "rules.timingAtEt", "10:47");
         assertThat(minute.get("changedKeys")).isEqualTo(List.of("rules.timing", "rules.timingAtEt"));
