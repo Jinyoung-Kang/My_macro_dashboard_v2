@@ -1,14 +1,25 @@
 # 0033. ADR 0028·0029 개정: 실제 토스 계좌와 ISA 계좌가 규칙 계좌의 개장 10분 뒤 체결과 장중 스탑을 따름 — 일일 맞추기는 개장 10분 뒤 시장가(시가 맞추기 경로는 남김), 장중 스탑 매도는 기존 수집기 쓰기 경로·한도로만, 배포와 함께 바로 켬(사용자 결정)
 
-- 상태: **초안** (2026-11-06 밤 사용자 요청과 결정 — "한국 장중 감시(스탑 매매)를 토스·ISA에도 적용", 질문 답 "토스 장중 스탑은 배포와 함께 바로 켬"(권장안이었던
-  화면 스위치·하루 SHADOW 대신, 두 번 물음에 두 번 모두 '바로 켬'), 계획 승인). 구현은 브랜치 `claude/intraday-timing-2026-11`에서 하고, 배포·설정 저장이 끝나면
-  '채택'으로 바꾸고 시험 이름을 적습니다.
+- 상태: 채택 (2026-11-06 밤 사용자 요청과 결정 — "한국 장중 감시(스탑 매매)를 토스·ISA에도 적용", 질문 답 "토스 장중 스탑은 배포와 함께 바로 켬"(권장안이었던
+  화면 스위치·하루 SHADOW 대신, 두 번 물음에 두 번 모두 '바로 켬'), 계획 승인). **구현 끝, 배포 전**(브랜치 `claude/intraday-timing-2026-11`, 2026-11-07 — V28 `784286aa`,
+  실제 매매·ISA `1170b2b7`~`b03b3131`, 운영 가드 `d685dcc8`). 배포는 2026-11-08 23:30 KST 예정이다. 실제 돈의 동작은 따라 하는 책의 주문 시각과 스위치(`kr.rules.timing`·`kr.stopWatch.mode`)를
+  따르므로 배포만으로는 바뀌지 않고, 설정을 저장한 뒤 첫 효과가 난다(아래 '적용 시점'). 배포 커밋과 저장한 설정 판은 배포 뒤 이 줄에 적는다.
 - 바꾸는 결정: [ADR 0028](0028-real-trade-mirror.md) 결정 1·9(매일 시가 단일가 `OPG` 맞추기와 그 창 — 따라 하는 책이 개장 10분 뒤 `AT_MINUTE`이면 그 시각 시장가
-  맞추기), [ADR 0029](0029-isa-manual-account.md) 결정 1·3·4(다음 시가 매매 지시와 시가 사다리 자동 기록 — 개장 10분 뒤 지시·그 분의 사다리, 텔레그램 예외에
+  맞추기)와 [명세](../specs/2026-11-06-real-trade-mirror.md) §12.9(스탑은 시가 묶음이 흡수), [ADR 0029](0029-isa-manual-account.md) 결정 1·3·4(다음 시가 매매 지시와 시가 사다리 자동 기록 — 개장 10분 뒤 지시·그 분의 사다리, 텔레그램 예외에
   스탑 지시를 더함). 나머지 0028·0029 결정(세 스위치·켜기는 확인 글자와 비밀번호·쓰기 길은 수집기 `toss_trade.py`의 두 경로뿐·멱등·멈춤·텔레그램은 건수·상태만·
   ISA는 주문 없음)은 그대로다.
 - 함께 보는 결정: [ADR 0031](0031-open-offset-window-intraday-budget.md)(개장 10분 뒤 창·규칙 계좌 09:10), [ADR 0032](0032-paper-intraday-stop-watch.md)(모의 장중 스탑 감시 —
-  실제 계좌·ISA가 따르는 STOP 주문을 만듦).
+  실제 계좌·ISA가 따르는 STOP 주문을 만듦). 계약은 [실제 매매 명세](../specs/2026-11-06-real-trade-mirror.md) §13과 [ISA 명세](../specs/2026-11-06-isa-manual-account.md) §11.
+- 지키는 방법:
+  - 실제 매매: `RealTradePlannerTest.timedSyncWindows`·`stopWindow`, `RealTradeJobDbTest`(시각 맞추기 묶음·묶음 몫·창 끝 놓침, 스탑 정수 보유 전량·매수 멈춤 중에도·개장 10분 하한·놓침·시도 2,
+    묶음이 실패해도 스탑(`stopSellsWhenBatchFails`)·묶음과 스탑이 더 팔지 않음(`batchAndStopDoNotOversell`), 대기 STOP 종목 매수 없음(`pendingStopBlocksBuys`·`pendingStopBlocksDeferredRetry`),
+    장부 밀림 날 스탑만(`ledgerBehindStopsOnly`)·장 시간 불일치 날 스탑 없음(`hoursMismatchNoStops`)), `RealTradeServiceDbTest.previewUsesTimedSync`, `RealTradeNoticesTest`(건수만),
+    `PaperMirrorServiceTest`(`targetsAtIncludesTimedUpToT`·`targetsAtMatchesOpenTargetsAndCashLikeLast`·`dailySyncAtForRules`·`dailySyncAtLateOpenDay`·`dailySyncAtForClaude`·`pendingStopSymbols`·`ladderPrices`).
+  - ISA: `ManualAccountJobDbTest`(시각 맞추기 지시·자동 기록·open-fallback, 스탑 지시와 즉시 알림·흡수한 STOP은 지시 없음·종가 STOP 글·마감까지 못 알린 지시·자동 기록 순서·다음 날 07:00 포기·30초 주기),
+    `ManualAccountNoticesTest.timedSyncText`·`stopTexts`(금액 글자 없음), `ManualAccountStopStoreDbTest`(`readyRequiresV28`·`oneInstructionPerPaperOrder`·`checks`·**`oldStatementsStillWork`**(옛 코드의 `ON CONFLICT` 문장이 V28 뒤에도 통과)·`ledgerLinksAndCascade`),
+    화면 `isa.test.ts`·`isaScreen.test.tsx`·`realtrade.test.ts`·`realTradeScreen.test.tsx`.
+  - 운영: `collector/tests/test_db_scripts.py`(복원 halt가 오늘까지의 ISA 스탑 지시를 닫음 — psql이 있는 곳·CI에서만 돎), `collector/tests/test_vultr_scripts.py`(배포 가드 정규장 전체).
+  - **고치지 않고 통과해야 하는 경계 시험**: 수집기 `test_toss_trade.py`(쓰기 세션 가드·AST — 쓰기 호출은 `toss_trade.py`의 두 경로뿐), `ArchitectureRulesTest.realtradeIsIsolated`, 화면 `isaBoundary.test.ts`·`realtradeBoundary.test.ts`.
 
 ## 배경
 실제 토스 계좌는 고른 모의 책(기본 한국 규칙 계좌)을 매일 시가 단일가 `OPG`로 따라 하고, ISA 계좌는 같은 계산으로 다음 시가 매매 지시를 받는다. ADR 0031로 한국 규칙
@@ -47,11 +58,42 @@
 ## 대안과 버린 이유
 - **화면의 별도 스위치 + 하루 SHADOW**(권장안): 사용자가 바로 켬을 골랐다(두 번 확인).
 - **실제 계좌도 매일 시가에 맞추고 모의만 09:10**: 모의와 실제가 날마다 다른 가격으로 갈라진다.
+- **시가 맞추기를 두고 09:10 주문만 하나씩 따라 하기(MIRROR만)**: 계좌 전체 맞추기와 회전율 멈춤을 잃고, 시가와 09:10 사이 왕복 매매가 생긴다.
+- **실제 계좌가 스스로 가격을 감시하는 스탑**: 판단이 두 갈래가 된다(판단은 모의 책 하나).
 - **ISA 지시 표의 UNIQUE를 부분 유일 색인으로 바꿔 스탑 지시를 같은 표에**: 옛 코드의 `ON CONFLICT (account, session, symbol)`이 맞는 제약을 찾지 못해 코드를 되돌리면
   ISA 밤 지시가 실패한다.
 
+## 구현에서 정한 것 (2026-11-07 — 위 결정과 다르면 이쪽이 맞음)
+- **맞추기 시각**(`PaperMirrorService.dailySyncAt`): 책이 한국·운용 중·거래일이 아니거나, 그 세션 시가에 체결될 STOP이 아닌 `NEXT_OPEN` 대기 주문이 있으면 없음(전환일은 08:50 `OPG` 그대로).
+  규칙 계좌는 대기 `AT_MINUTE` 규칙 주문 가운데 가장 이른 목표(첫 분 이상)를 먼저 보고, 없으면 `kr.rules.timing=AT_MINUTE`일 때 `RuleTiming.choose`(기준일 = 앞 거래일)로 센다(개장이 늦은 날 10:10).
+  설정이 `NEXT_CLOSE`·`NEXT_OPEN`이면 없음(시가 맞추기). Claude 계좌는 `*.freeTiming`이 켜져 있으면 그 세션 첫 분, 아니면 없음.
+- **시각 맞추기 창**(`SYNC_AT`): [max(T, 정규장 시작 + 30초), min(T + 3분, 장중 끝)] — 그날은 시가 맞추기·시가 뒤 마무리 창이 없다. 창이 비면(T가 장중 끝 뒤) 시가 맞추기 날로 센다.
+  창 3분 전까지 주기마다 시각을 다시 세고, 따라 하는 책·세대가 바뀌면 다시 센다. 묶음 종류·주문 용도는 시가 뒤 마무리와 같다(DB CHECK 그대로). 기준 시각이 T 이하인 모의 주문은 묶음 몫이라
+  따로 따라 하지 않는다 — 묶음을 만들지 못하고 창을 넘기면 그 주문들도 놓침이다.
+- **목표**(`PaperMirrorService.targetsAt`): 보유 + 그 세션 시가 주문 + 기준 시각이 T 이하인 시각 지정 주문. 시각 지정 STOP(`MARKET`·`AT_MINUTE`·`NEXT_CLOSE`)은 비중에 반영하되 흡수하지 않고
+  `stopOrderIds`로 따로 돌려준다. 시가 경로(`openTargets`)는 바이트까지 그대로다. 옛 `NEXT_OPEN` STOP(감시를 켜지 않은 한국 밤 스탑)은 따로 갈 길이 없어 지금처럼 묶음이 흡수한다.
+- **스탑 매도**: 비중을 셈하지 않고(가격을 몰라도) 그때 다시 읽은 정수 보유 전량을 매도 가능 수량·1건 상한까지 판다. 창은 [max(T, 장중 시작, 정규장 시작 + 10분), min(시작 + 3분, 장중 끝)]이고
+  종가 STOP은 그날 종가 창이다. 같은 뿌리 최대 2회 — 시도 1이 체결이 있는 채 끝났으면 새로 읽은 수량으로 시도 2를 보낸다(보유가 남았을 때만). 진행 중인 이 기능의 주문이 있으면 다음 주기로 미룬다.
+  손실 한도로 매수가 멈춘 동안에도 판다. 장부가 밀린 날(`ledgerCaughtUp=false`)에도 스탑만은 보내고(묶음·장중 따라 하기 없음), 토스 장 시간이 모의 달력과 다른 날은 스탑도 보내지 않는다.
+  이벤트는 `STOP_SELL`(보냄·막힘·놓침 건수만).
+- **매수 직전 확인**: 대기 STOP 종목(`PaperMirrorService.pendingStopSymbols`)을 매수마다 DB에서 다시 읽고, 걸리면 건너뜀 사유 `pending-stop`으로 창 요약에 센다.
+- **ISA 지시**: `manual_instructions`에는 시각 칸이 없어 다음 지시의 시각을 지시 근거와 세션 상세의 `targetAt`에 둔다(마이그레이션 없음). 그 지시 목표에 반영된 시각 지정 STOP은 세션 상세의
+  `coveredStopOrderIds`에 적고 따로 스탑 지시를 만들지 않는다. 자동 기록은 그 시각이 지난 뒤 그 시각의 1분봉 사다리 값으로 하고, 창이 없는 종목은 그 세션 시가로 어림한다(`open-fallback`).
+  STOP은 시가 날·시각 맞추기 날 모두 '시가 밖 시점 주문'(`timed-orders`) 판정에서 빼므로 밤 대체 STOP이 ISA 지시를 막지 않는다. 앞 세션에 알린 스탑 지시가 아직 적히지 않았으면 다음 지시를 만들지 않는다
+  (`record-pending` — 같은 종목을 두 번 팔라고 하지 않게).
+- **ISA 스탑 지시**: 30초 주기(`dashboard.manual.stop-interval-ms`, 08:30~17:00 KST에만 달력을 엶 — 나머지 일은 10분 주기). 수량 = ISA 장부 + 지시 시각이 지난 아직 적지 않은 지시의 증감.
+  자동 기록은 그 모의 주문과 같은 사다리 값·기준 시각이고, 창이 없으면 그 세션 종가로 어림한다(`close-fallback`). 그 세션 마감까지 알리지 못한 지시는 `SKIPPED`(`not-notified`) — 적지 않는다.
+  다음 날 07:00 KST까지 값을 못 구하면(모의 주문이 지워짐 등) `SKIPPED`(`no-price`)로 두어 ISA를 끝없이 막지 않는다. 종가 STOP 글의 창은 그날 마감에서 센다(마감이 늦은 날 16:20~16:30), 장중 글은 개장 + 10분(09:10·10:10).
+  화면에서 스탑 지시를 바로 건너뛰는 단추는 없다(자동 기록 행을 장부에서 고침 — 새 경로 없음).
+- **배포 가드**: 평일 08:45~15:35 KST(장 시간 변경일 개장 − 15분 ~ 마감 + 5분, 설정을 읽지 못하면 08:45~16:35), `REALTRADE_DEPLOY_OK=1`일 때만 진행. 일요일 밤 배포는 창 밖이다.
+- **화면·알림 글**: 시가 뒤 마무리와 시각 맞추기의 시장가 주문이 함께 쓰는 이름표는 '맞추기(시장가)'다. 켜기 창 경고와 예상 목록은 다음 맞추기 방식('개장 10분 뒤 맞추기 09:10 시장가'·'시가 맞추기(시가 단일가)')을
+  예상 응답의 `syncAt`으로 보인다.
+
 ## 결과와 남은 위험
-- 실제 돈의 주문 시각이 바뀐다(첫 시각 맞추기는 2026-11-10 09:10, 11-09는 전환일이라 옛 `OPG`).
+- 실제 돈의 주문 시각이 바뀐다. `kr.rules.timing=AT_MINUTE`을 저장한 뒤 첫 시각 맞추기는 그 세션 시가에 체결될 STOP이 아닌 대기 주문이 없는 첫 세션이다 — 배포 전(금요일 11-06 밤) 결정이 낸
+  시가 주문이 남은 11-09는 전환일(옛 `OPG`)이고, 11-09 밤 결정의 주문부터 09:10이라 예상 첫날은 2026-11-10이다. `kr.stopWatch.mode=ON`을 11-09 09:10 전에 저장하고 실제 매매가 켜져 있으면
+  11-09 장중 감시 STOP은 `OPG` 날에도 스탑 경로로 실제 매도된다.
+- 1회 주문 상한이 가장 큰 보유보다 작으면 스탑은 시도마다 상한만큼 팔고(최대 2회), 남은 수량은 다음 날 맞추기가 '책에 없는 보유'로 판다.
 - 장중 스탑이 기업행위 날 잘못 걸리면 실제 매도가 나간다 — ADR 0032의 갭 가드가 막는다.
 - 되돌리기: 실제 돈이 이상하면 먼저 `POST /api/realtrade/disable`(에이전트가 부를 수 있는 유일한 API) → `kr.stopWatch.mode=OFF`·`kr.rules.timing=NEXT_OPEN` →
-  코드 되돌리기. V28은 남겨도 된다. DB 복원은 실제 매매를 멈춤으로 바꾸고 ISA 스탑 지시를 닫는다.
+  코드 되돌리기(옛 코드는 규칙 계좌 `AT_MINUTE` 주문을 하나씩 따라 하고 ISA 지시를 멈추므로 설정을 먼저 되돌림). V28은 남겨도 된다. DB 복원은 실제 매매를 멈춤으로 바꾸고 ISA 스탑 지시를 닫는다.
