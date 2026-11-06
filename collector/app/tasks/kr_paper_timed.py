@@ -9,7 +9,8 @@ app/tasks/kr_paper_timed.py
 그날과 받는 날을 같게(QA-201).
 
 실행 감사(단계 2c — 명세 §11)를 위해 장부 몫 뒤에 **한국 Claude 계좌1·2의 최근 결정 주문**(상태 무관, 최근 ``KR_AUDIT_RECENT_DAYS``일)의 (종목, E)도
-같은 모양으로 받습니다. 개장 창(``09:00`` — 시가 반사실)도 늘 싣고, 이미 받은 칸에 필요한 창 키가 없으면 그 칸만 다시 받습니다.
+같은 모양으로 받습니다. 개장 창(``09:00`` — 시가 반사실)도 늘 싣고, 감사 몫의 장중 시장가·분 단위 지정 시각 주문은 체결·취소된 뒤에도 그 기준 분 창을
+싣습니다(QA-301 — 칸을 다시 받을 때 창을 잃지 않게). 이미 받은 칸에 필요한 창 키가 없으면 그 칸만 다시 받습니다.
 
 모양(contract 1)::
 
@@ -25,7 +26,8 @@ app/tasks/kr_paper_timed.py
   창 ``09:00``은 개장 창(시가 반사실 — 실행 감사)이고, 장 시간 변경일(10:00 개장)에는 ``10:00`` 창이 그 일을 합니다(고르는 것은 백엔드).
   장중 시장가 주문은 그 기준 분 T((생성 + 60초)를 분으로 내린 뒤 + 1분 — 백엔드 ExecutionAudit.marketTarget과 같은 식)의 창 ``HH:MM``(라벨 T+1~T+5)을 같은 모양으로 더합니다
   (같은 종목·세션에 그 주문이 있을 때만 — 키가 매시와 같으면 같은 창). 분 단위 지정 시각(``AT_MINUTE`` — ADR 0027) 대기 주문은 그 지정 시각의
-  창 ``HH:MM``을 같은 모양으로 더합니다(어느 한국 계좌의 주문이든 — 그 종목·목표 세션에만).
+  창 ``HH:MM``을 같은 모양으로 더합니다(어느 한국 계좌의 주문이든 — 그 종목·목표 세션에만). 실행 감사 몫(한국 Claude 계좌1·2의 최근 주문, 상태 무관)의
+  지정 시각 주문도 그 목표 세션 E에 같은 창을 더합니다(QA-301).
 - ``firstAfter[hh:00]``는 E 안에서 라벨이 hh:01 이후이고 거래량이 0보다 큰 첫 봉(창 밖 대체 체결 R2b), 없으면 null.
 - 마감 봉은 정규장 마감 단일가 봉 — 라벨이 NXT 종목은 마감 + 1분(15:31), 그 밖(NXT 미지원 표시 주식·ETF)은 마감 시각(15:30)입니다(G2, 명세
   §8). 장 시간 변경일(16:30 마감)을 위해 16:30·16:31도 싣습니다. 고르는 것은 백엔드입니다(그날 마감·NXT 여부를 앎).
@@ -235,12 +237,15 @@ def task_kr_paper_timed() -> str:
         for session in target_sessions(code, as_of, sessions):
             targets.setdefault((code, session), set()).add(_label(at.hour, at.minute))
     audit = store.kr_audit_orders(KR_AUDIT_BOOKS, KR_AUDIT_RECENT_DAYS)
-    for code, as_of, timing, created_at in audit:
+    for code, as_of, timing, created_at, at in audit:
         if timing == MARKET_TIMING and created_at is not None:
             targets.setdefault((code, next_trading_day(as_of).isoformat()), set()).add(market_target(created_at))
+        elif timing == store.MINUTE_TIMING and at is not None:
+            # 체결·취소된 지정 시각 주문도(대기 목록에서 빠짐 — 장중 판단이 대신해 취소한 주문은 장부 몫으로 받은 적도 없음) 감사가 그 시각 창을 봄(QA-301).
+            targets.setdefault((code, next_trading_day(as_of).isoformat()), set()).add(_label(at.hour, at.minute))
     # 장부 몫(계좌2 대기 주문 — 그 밤 체결에 필요)을 먼저, 그 뒤 실행 감사 몫 — 예산이 모자라면 뒤쪽이 다음 주기로 밀림.
     wanted = (list(store.kr_timed_orders(KR_TIMED_BOOKS, KR_TIMED_TIMINGS)) + [(code, as_of) for code, as_of, _ in minute]
-              + [(code, as_of) for code, as_of, _, _ in audit])
+              + [(code, as_of) for code, as_of, _, _, _ in audit])
     for code, as_of in wanted:
         for session in target_sessions(code, as_of, sessions):
             closed_at = datetime.combine(date.fromisoformat(session), KR_TIMED_AFTER, tzinfo=KST)
