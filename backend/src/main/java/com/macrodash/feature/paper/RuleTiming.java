@@ -1,5 +1,6 @@
 package com.macrodash.feature.paper;
 
+import com.macrodash.analytics.SessionWindows;
 import com.macrodash.analytics.TradingCalendar;
 import tools.jackson.databind.JsonNode;
 
@@ -33,11 +34,14 @@ record RuleTiming(String timing, LocalTime at) {
     static final List<String> KR_OPTIONS = List.of(PaperBooks.NEXT_OPEN, PaperBooks.AT_MINUTE, PaperBooks.NEXT_CLOSE);
     /** 지정 시각 키의 기본값(시점이 {@code AT_MINUTE}일 때만 읽음). */
     static final String DEFAULT_AT = "10:00";
-    /** 저장할 때 받는 지정 시각의 범위(보통 날의 받는 범위 — 조기 폐장·개장 시각 변경일은 그 결정에서 {@link #choose}가 봄). */
-    static final LocalTime US_FIRST = LocalTime.of(9, 31);
-    static final LocalTime US_LAST = LocalTime.of(15, 54);
-    static final LocalTime KR_FIRST = LocalTime.of(9, 1);
-    static final LocalTime KR_LAST = LocalTime.of(15, 19);
+    /**
+     * 저장할 때 받는 지정 시각의 범위(보통 날의 받는 범위 — 조기 폐장·개장 시각 변경일은 그 결정에서 {@link #choose}가 봄). 값은
+     * {@link SessionWindows#regularFirst}·{@link SessionWindows#regularLast}(Claude 계좌의 지정 시각 범위 {@link FreeTiming#window}와 같은 출처).
+     */
+    static final LocalTime US_FIRST = SessionWindows.regularFirst(false);
+    static final LocalTime US_LAST = SessionWindows.regularLast(false);
+    static final LocalTime KR_FIRST = SessionWindows.regularFirst(true);
+    static final LocalTime KR_LAST = SessionWindows.regularLast(true);
 
     /** 미국 규칙 계좌의 설정 — 키가 없거나 받는 목록 밖이면 기본(이 키가 생기기 전에 만든 설정 행). */
     static RuleTiming us(JsonNode body) {

@@ -1,6 +1,7 @@
 package com.macrodash.feature.paper;
 
 import com.macrodash.analytics.NewsEvents;
+import com.macrodash.analytics.SessionWindows;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.node.ArrayNode;
 import tools.jackson.databind.node.JsonNodeFactory;
@@ -257,7 +258,8 @@ final class PaperSettingKeys {
                             + "(AT_MINUTE — rules.timingAtEt)·다음 세션 확정 종가(NEXT_CLOSE). 기본이 아니면 그 결정의 주문 전부를 그 시각에 내고, 그날 "
                             + "체결되지 못한 시가·지정 시각 주문은 다음 관측치 주문으로 다시 냄. 스탑 주문은 그대로"),
             of(RuleTiming.US_AT, Type.TIME, true,
-                    "미국 규칙 계좌의 지정 시각(뉴욕 시각 HH:mm, 09:31~15:54) — rules.timing이 AT_MINUTE일 때만 읽음. 조기 폐장일처럼 그날 받는 범위 "
+                    "미국 규칙 계좌의 지정 시각(뉴욕 시각 HH:mm, " + SessionWindows.regularRange(false) + ") — rules.timing이 AT_MINUTE일 때만 읽음. "
+                            + "조기 폐장일처럼 그날 받는 범위 "
                             + "밖이면 그 결정의 주문은 기본 시점으로 냄"),
             integer("blend.groupB.topN", 1, 12, true, "그룹 B 선정 수(D27)"),
             integer("blend.groupB.windowYears", 1, 2, true, "그룹 B 트랙레코드 창(년, D27)"),
@@ -371,7 +373,8 @@ final class PaperSettingKeys {
                             + "kr.rules.timingAtKst)·다음 거래일 종가(NEXT_CLOSE). 기본이 아니면 그 결정의 주문 전부를 그 시각에 내고, 그날 체결되지 "
                             + "못한 지정 시각·종가 주문은 다음 거래일 시가 주문으로 다시 냄. 스탑 주문은 그대로"),
             of(RuleTiming.KR_AT, Type.TIME, true,
-                    "한국 규칙 계좌의 지정 시각(한국 시간 HH:mm, 09:01~15:19) — kr.rules.timing이 AT_MINUTE일 때만 읽음. 장 시간 변경일처럼 그날 받는 "
+                    "한국 규칙 계좌의 지정 시각(한국 시간 HH:mm, " + SessionWindows.regularRange(true) + ") — kr.rules.timing이 AT_MINUTE일 때만 읽음. "
+                            + "장 시간 변경일처럼 그날 받는 "
                             + "범위 밖이면 그 결정의 주문은 기본 시점으로 냄"),
             of("kr.cashLikeTickers", Type.TICKERS, true,
                     "한국 현금성 종목(스탑·비중 상한·종목 수 제외, 기본 153130) — 수집기가 늘 받는 ETF("
@@ -412,7 +415,8 @@ final class PaperSettingKeys {
                     "한국 세션마다 계좌별 장중 판단 횟수(ADR 0027 — 자유 시점 판을 켠 계좌만, 0~2, 기본 2). 0이면 예약을 받지 않음"),
             of(FreeTimingSettings.KR_CLAUDE, Type.BOOLEAN, false,
                     "한국 Claude 계좌1 자유 시점 판(ADR 0027, 기본 꺼짐) — 켜면 다음 한국 결정부터 시가·분 단위 지정 시각(AT_MINUTE, "
-                            + "09:01~15:19 KST)·종가를 받는 판으로 부름. 장중 체결에는 금융위 확정 조정이 없음. 끄면 다음 결정부터 지금 판"),
+                            + SessionWindows.regularRange(true) + " KST)·종가를 받는 판으로 부름. 장중 체결에는 금융위 확정 조정이 없음. 끄면 다음 결정부터 "
+                            + "지금 판"),
             of(FreeTimingSettings.KR_CLAUDE2, Type.BOOLEAN, false,
                     "한국 Claude 계좌2 자유 시점 판(ADR 0027, 기본 꺼짐) — 켜면 다음 한국 결정부터 매시 정각 메뉴 대신 시가·분 단위 지정 시각"
                             + "(AT_MINUTE)·종가를 받는 판으로 부름. 끄면 다음 결정부터 지금 판"));

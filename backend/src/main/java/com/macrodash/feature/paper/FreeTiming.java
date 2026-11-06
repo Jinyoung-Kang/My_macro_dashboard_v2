@@ -2,6 +2,7 @@ package com.macrodash.feature.paper;
 
 import com.macrodash.Kst;
 import com.macrodash.analytics.OrderValidator;
+import com.macrodash.analytics.SessionWindows;
 import com.macrodash.analytics.TradingCalendar;
 
 import java.time.Duration;
@@ -46,8 +47,8 @@ final class FreeTiming {
     /** 응답의 시각 글자({@code atLocal}) — 그 시장 현지 시각 'HH:MM'(24시간). 응답 스키마의 pattern과 같은 식. */
     static final String CLOCK_PATTERN = "^([01][0-9]|2[0-3]):[0-5][0-9]$";
     private static final Pattern CLOCK = Pattern.compile(CLOCK_PATTERN);
-    /** 가장 이른 지정 시각은 개장 이만큼 뒤 — 개장 순간은 시가(NEXT_OPEN)의 몫. */
-    static final Duration AFTER_OPEN = Duration.ofMinutes(1);
+    /** 가장 이른 지정 시각은 개장 이만큼 뒤 — 개장 순간은 시가(NEXT_OPEN)의 몫. 값은 {@link SessionWindows#OPEN_OFFSET}(단일 출처). */
+    static final Duration AFTER_OPEN = SessionWindows.OPEN_OFFSET;
     /** 주문 생성 뒤 이만큼 지나지 않은 시각은 늦은 주문(체결 조건 ⑤ — {@link ExecutionAudit#AFTER_CREATED}와 같은 60초). */
     static final Duration AFTER_CREATED = ExecutionAudit.AFTER_CREATED;
 
@@ -100,15 +101,15 @@ final class FreeTiming {
         return keyed(timing) ? PaperBooks.AT_MINUTE : timing;
     }
 
-    /** 그 시장의 장 끝 여유 — 이 시간 안의 시각은 받지 않습니다(미국 마감 5분 전, 한국 종가 단일가 10분). */
+    /** 그 시장의 장 끝 여유 — 이 시간 안의 시각은 받지 않습니다(미국 마감 5분 전, 한국 종가 단일가 10분 — {@link SessionWindows#tail}). */
     static Duration tail(boolean korea) {
-        return korea ? KrTimedLadder.CLOSING_AUCTION : UsTimedFills.MARKET_BEFORE_CLOSE;
+        return SessionWindows.tail(korea);
     }
 
     /**
      * 그 세션에서 지정 시각으로 받는 범위 — {@code first} 이상 {@code end} 미만(둘 다 그 세션의 순간).
      *
-     * @param first 가장 이른 시각(개장 + 1분)
+     * @param first 가장 이른 시각(개장 + {@link SessionWindows#OPEN_OFFSET})
      * @param end   이 시각부터는 받지 않음(마감 − 장 끝 여유)
      */
     record Window(Instant first, Instant end) {
@@ -124,7 +125,7 @@ final class FreeTiming {
     }
 
     static Window window(LocalDate session, TradingCalendar calendar, boolean korea) {
-        return new Window(calendar.openInstant(session).plus(AFTER_OPEN), calendar.closeInstant(session).minus(tail(korea)));
+        return new Window(SessionWindows.first(calendar, session), SessionWindows.end(calendar, session, korea));
     }
 
     /** 그 세션의 그 현지 시각의 순간. */

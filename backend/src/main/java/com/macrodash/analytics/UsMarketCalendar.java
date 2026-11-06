@@ -52,10 +52,10 @@ public final class UsMarketCalendar {
      */
     public static final TradingCalendar CALENDAR = new Adapter();
 
-    /** 정규장 시작(동부 시각). */
-    private static final LocalTime OPEN = LocalTime.of(9, 30);
-    /** 정규장 마감(동부 시각). */
-    private static final LocalTime REGULAR_CLOSE = LocalTime.of(16, 0);
+    /** 정규장 시작(동부 시각). 같은 패키지의 {@link SessionWindows}가 보통 날 장중 범위를 셀 때 읽습니다. */
+    static final LocalTime OPEN = LocalTime.of(9, 30);
+    /** 정규장 마감(동부 시각). 같은 패키지의 {@link SessionWindows}가 보통 날 장중 범위를 셀 때 읽습니다. */
+    static final LocalTime REGULAR_CLOSE = LocalTime.of(16, 0);
     /** 조기 폐장일의 마감(동부 시각). */
     private static final LocalTime EARLY_CLOSE = LocalTime.of(13, 0);
     /** 13F는 분기 말 뒤 45일 안에 공시합니다(SEC Rule 13f-1). */

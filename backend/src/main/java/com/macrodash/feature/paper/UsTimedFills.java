@@ -3,6 +3,7 @@ package com.macrodash.feature.paper;
 import com.macrodash.Kst;
 import com.macrodash.analytics.OrderValidator;
 import com.macrodash.analytics.PaperLedger;
+import com.macrodash.analytics.SessionWindows;
 import com.macrodash.analytics.TradingCalendar;
 import com.macrodash.analytics.TrailingStop;
 import com.macrodash.feature.paper.ExecutionAudit.Price;
@@ -108,7 +109,7 @@ final class UsTimedFills {
     static final Set<String> TIMINGS = timings();
 
     /** MARKET은 E 마감 이만큼 전(보통 날 15:55·조기 폐장일 12:55 ET) 이후의 기준 시각이면 받지 않습니다(검증기 MALFORMED — 계좌2 명세 §6-2). */
-    static final Duration MARKET_BEFORE_CLOSE = Duration.ofMinutes(5);
+    static final Duration MARKET_BEFORE_CLOSE = SessionWindows.US_MARKET_TAIL;
 
     /**
      * 1분봉 저장본의 봉 시각 {@code t}가 무엇인가 — 늘 봉 <b>시작</b>입니다(수집기 계약 {@code paper_bars.BAR_LABEL}과 같은 글자, 시험이 대조). Yahoo

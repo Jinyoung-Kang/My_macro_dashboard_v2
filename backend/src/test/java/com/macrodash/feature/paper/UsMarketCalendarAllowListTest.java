@@ -85,6 +85,7 @@ class UsMarketCalendarAllowListTest {
         m.put("analytics/ReviewFacts.java", "달력 인자 없는 옛 시그니처를 미국 달력으로 위임(A2)");
         m.put("analytics/TrailingStop.java", "달력 인자 없는 옛 시그니처를 미국 달력으로 위임(A2)");
         m.put("analytics/TrackRecord13F.java", "13F 공시일 다음 거래일 기준 복제 수익률 — 미국 전용");
+        m.put("analytics/SessionWindows.java", "보통 날 미국 정규장 개장·마감 시각(저장 범위 검사·설명 글의 09:31~15:54) — 세션의 창은 인자로 받은 달력으로 셈");
         m.put("feature/paper/UsPaperMarket.java", "미국 시장 묶음 — calendar()가 어댑터 CALENDAR를 돌려줌");
         m.put("feature/paper/PaperConfig.java", "미국 출발일(dashboard.paper.start-date)이 미국 거래일인지 — 한국 출발일"
                 + "(kr.start-date)은 기동 때 형식만, 거래일은 한국 초기화·출발 때 KrxCalendar로(C1b)");
