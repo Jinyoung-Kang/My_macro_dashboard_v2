@@ -283,6 +283,19 @@ export const endpoints = {
     account: (market: "KR" | "US") => withQuery("/api/brokerage/account", { market }),
   },
 
+  // 실제 매매 — 토스증권 실제 계좌가 고른 모의 한국 책을 따라 함(운영자 전용, ADR 0028). 조회(brokerage)와 따로 둡니다.
+  // 쓰기 네 경로는 POST 본문에 market을 담습니다. 켜기·설정 바꾸기·멈춤 해제는 확인 글자 + 운영자 비밀번호, 끄기는 본문 market 하나.
+  realtrade: {
+    /** 상태(15초마다) — 서버 스위치·상태·따라 하는 책·한도·오늘 창·마지막 preflight·최근 주문 50·이벤트 30·책 목록. */
+    status: (market: "KR" | "US") => withQuery("/api/realtrade/status", { market }),
+    /** 켜기 창의 예상 목록 — 지금 preflight + 그 책의 '다음 시가' 목표(토스를 새로 읽음). */
+    preview: (market: "KR" | "US", sourceBook: string) => withQuery("/api/realtrade/preview", { market, sourceBook }),
+    enable: "/api/realtrade/enable",
+    disable: "/api/realtrade/disable",
+    update: "/api/realtrade/update",
+    resume: "/api/realtrade/resume",
+  },
+
   // 토스증권 연결 테스트 (경로는 /api/ai/toss 이지만 AI와 관계없음)
   toss: {
     diagnostics: (run: number) => withQuery("/api/ai/toss/diagnostics", { run }),

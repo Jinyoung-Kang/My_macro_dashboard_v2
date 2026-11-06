@@ -4,6 +4,9 @@ import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 import { ScrollTopButton } from "@/components/ScrollTopButton";
 import { BrokerageSection } from "@/components/screens/brokerage/BrokerageSection";
+import { RealTradePanel } from "@/components/screens/realtrade/RealTradePanel";
+import { RealTradeProvider } from "@/components/screens/realtrade/RealTradeProvider";
+import { RealTradeToggle } from "@/components/screens/realtrade/RealTradeToggle";
 import { Banner, Button, Card, ErrorState, Freshness, Loading, PageHeader, underlineTabClasses } from "@/components/ui";
 import { useApi } from "@/hooks/useApi";
 import { TickerNamesProvider } from "@/hooks/useTickerNames";
@@ -51,6 +54,10 @@ import { SettingsSection } from "./SettingsSection";
  * <p><b>실제 계좌</b> 탭(키 real, ADR 0025)은 모의 장부가 아니라 토스증권 실제 계좌의 읽기 전용 화면입니다 — 한국 화면은 원화 쪽, 미국 화면은
  * 달러 쪽. 개요 응답을 쓰지 않고 BrokerageSection이 그 탭이 열릴 때만 스스로 읽습니다(자동 갱신·셸 새로고침 없음). 이 파일은 그 섹션을 붙이기만
  * 하고 실제 계좌 자료를 다른 탭에 넘기지 않습니다(경계 시험 components/screens/brokerage/__tests__/brokerageBoundary.test.ts).
+ * 그 탭 맨 위에는 실제 매매 칸(RealTradePanel — 실제 계좌가 모의 한국 책을 따라 하기, ADR 0028)을 두고, 같은 켜기·끄기 단추(RealTradeToggle)를
+ * 조회 요약의 '다시 읽기' 옆에도 넘깁니다. 이 탭은 개요가 없거나 실패해도 그리고, 그때(탭 줄이 없음) 다른 탭에 있으면 한국 화면은 이 탭으로 가는 단추를
+ * 둬 끄기 단추가 늘 닿게 합니다. 실제 매매 모듈을 가져오는 곳은 이 파일
+ * 하나입니다(경계 시험 components/screens/realtrade/__tests__/realtradeBoundary.test.ts).
  */
 export default function PaperPage({
   initialTab = "overview",
@@ -149,10 +156,22 @@ function PaperScreenBody({ initialTab, market }: { initialTab: PaperTabKey; mark
           <strong>한국 책이 쉬고 있습니다</strong> — {data.dormantReason}
         </Banner>
       )}
+      {/* 개요가 아직 없거나 실패·읽을 수 없음이면 탭 줄이 없습니다 — 그래도 실제 매매 끄기 단추(실제 계좌 탭)로 가는 길을 둡니다(SEC-6, ADR 0028).
+          개요가 오면 탭 줄이 그 길이라 이 단추는 빠집니다. 실제 매매는 한국만이라 한국 화면에만 둡니다. */}
+      {korea && !data?.available && current.key !== "real" && (
+        <div className="flex flex-wrap items-center gap-2 text-sm text-text-2">
+          <span>실제 매매는 모의 장부와 상관없이 실제 계좌 탭에서 끌 수 있습니다.</span>
+          <Button size="sm" onClick={() => showTab("real")}>
+            실제 계좌 탭으로(실제 매매 끄기)
+          </Button>
+        </div>
+      )}
 
-      {data?.available && (
+      {/* 실제 계좌 탭은 개요 응답과 무관합니다(ADR 0028) — 개요가 아직 없거나 실패해도 그 탭의 실제 매매 칸(끄기 단추)·계좌 조회를 그립니다(탭 줄·한계
+          카드는 예전처럼 개요가 있을 때만). 같은 자리에 그려 개요가 도착해도 그 칸이 다시 붙지 않습니다(실제 매매 상태·실제 계좌를 두 번 읽지 않게). */}
+      {(data?.available || current.key === "real") && (
         <>
-          {(data.limits ?? []).length > 0 && (
+          {data?.available && (data.limits ?? []).length > 0 && (
             <Card
               title="이 장부의 한계"
               source={korea ? PAPER_SOURCES.krLedger : PAPER_SOURCES.ledger}
@@ -184,40 +203,49 @@ function PaperScreenBody({ initialTab, market }: { initialTab: PaperTabKey; mark
           )}
 
           {/* 밑줄 탭 — 위 하위 메뉴 줄(시장)보다 한 단계 작게(sm) 둬 두 줄의 위계를 가릅니다. 좁으면 줄을 바꾸지 않고 가로로 스크롤합니다. */}
-          <div role="tablist" aria-label="모의 매매 화면" className="flex overflow-x-auto border-b border-border">
-            {tabs.map((entry) => {
-              const active = entry.key === tab;
-              return (
-                <button
-                  key={entry.key}
-                  type="button"
-                  role="tab"
-                  id={`paper-tab-${entry.key}`}
-                  aria-selected={active}
-                  aria-controls="paper-tabpanel"
-                  onClick={() => {
-                    setPreselect("");
-                    setFocusProposal(null);
-                    showTab(entry.key);
-                  }}
-                  className={underlineTabClasses(active, "sm")}
-                >
-                  {entry.label}
-                  {entry.opensIn && <span className="ml-1 text-xs text-muted">(준비 중)</span>}
-                </button>
-              );
-            })}
-          </div>
+          {data?.available && (
+            <div role="tablist" aria-label="모의 매매 화면" className="flex overflow-x-auto border-b border-border">
+              {tabs.map((entry) => {
+                const active = entry.key === tab;
+                return (
+                  <button
+                    key={entry.key}
+                    type="button"
+                    role="tab"
+                    id={`paper-tab-${entry.key}`}
+                    aria-selected={active}
+                    aria-controls="paper-tabpanel"
+                    onClick={() => {
+                      setPreselect("");
+                      setFocusProposal(null);
+                      showTab(entry.key);
+                    }}
+                    className={underlineTabClasses(active, "sm")}
+                  >
+                    {entry.label}
+                    {entry.opensIn && <span className="ml-1 text-xs text-muted">(준비 중)</span>}
+                  </button>
+                );
+              })}
+            </div>
+          )}
 
-          <div role="tabpanel" id="paper-tabpanel" aria-labelledby={`paper-tab-${current.key}`} className="flex flex-col gap-6">
-            {current.key === "overview" && (
+          {/* 탭 줄이 없을 때(개요 없이 실제 계좌 탭만)는 탭 이름을 패널 이름으로 둡니다. */}
+          <div
+            role="tabpanel"
+            id="paper-tabpanel"
+            aria-labelledby={data?.available ? `paper-tab-${current.key}` : undefined}
+            aria-label={data?.available ? undefined : current.label}
+            className="flex flex-col gap-6"
+          >
+            {data?.available && current.key === "overview" && (
               <OverviewSection overview={data} onChanged={reload} onOpenTab={openTab} market={market} />
             )}
             {current.opensIn === null && current.key === "selection" && (korea ? <KrSelectionSection /> : <SelectionSection />)}
-            {current.opensIn === null && current.key === "holdings" && (
+            {data?.available && current.opensIn === null && current.key === "holdings" && (
               <HoldingsSection books={data.books ?? []} onChanged={reload} initialBook={preselect} market={market} />
             )}
-            {current.opensIn === null && current.key === "decisions" && (
+            {data?.available && current.opensIn === null && current.key === "decisions" && (
               <DecisionsSection
                 books={data.books ?? []}
                 onChanged={reload}
@@ -228,10 +256,16 @@ function PaperScreenBody({ initialTab, market }: { initialTab: PaperTabKey; mark
             )}
             {/* 프레임·설정은 두 시장이 함께 쓰는 화면 — 한국 화면에서는 섹션이 맨 위에 공용임을 밝힙니다(사용자 결정 2026-10-29). */}
             {current.key === "framework" && <FrameworkSection focusProposalId={focusProposal} market={market} />}
-            {current.opensIn === null && current.key === "notes" && <NotesSection startDate={data.startDate ?? null} market={market} />}
+            {data?.available && current.opensIn === null && current.key === "notes" && <NotesSection startDate={data.startDate ?? null} market={market} />}
             {current.key === "settings" && <SettingsSection market={market} />}
-            {/* 실제 계좌(ADR 0025) — 모의 장부와 별개, 읽기 전용. 이 탭일 때만 붙어 그때만 읽습니다(개요 응답·장부 값을 넘기지 않음). */}
-            {current.key === "real" && <BrokerageSection market={market} />}
+            {/* 실제 계좌(ADR 0025·0028) — 모의 장부와 별개. 이 탭일 때만 붙어 그때만 읽습니다(개요 응답·장부 값을 넘기지 않음). 맨 위는 실제 매매 칸,
+                그 아래 읽기 전용 조회이고, 같은 켜기·끄기 단추를 조회 요약의 '다시 읽기' 옆에도 넘깁니다(조회 모듈은 실제 매매 모듈을 모름). */}
+            {current.key === "real" && (
+              <RealTradeProvider market={market}>
+                <RealTradePanel />
+                <BrokerageSection market={market} extraActions={<RealTradeToggle />} />
+              </RealTradeProvider>
+            )}
             {current.opensIn && (
               <Banner tone="info">
                 <strong>{current.label}</strong> 탭은 다음 단계에서 엽니다 — {current.opensIn}.

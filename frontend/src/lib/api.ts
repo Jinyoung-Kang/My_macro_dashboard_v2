@@ -41,9 +41,13 @@ export function apiBase(): string {
 export const API_BASE = apiBase();
 
 export class ApiError extends Error {
+  /**
+   * @param code 서버 오류 본문의 `error` 칸(있으면 — 예: 실제 매매 켜기의 `password-invalid`). 화면이 코드별 문구를 고를 때 씁니다.
+   */
   constructor(
     message: string,
     readonly status: number,
+    readonly code: string | null = null,
   ) {
     super(message);
     this.name = "ApiError";
@@ -130,7 +134,8 @@ async function request<T>(
   }
 
   if (!response.ok) {
-    throw new ApiError((await messageOf(response)) ?? `요청 실패 (HTTP ${response.status})`, response.status);
+    const body = await errorBodyOf(response);
+    throw new ApiError(body.message ?? `요청 실패 (HTTP ${response.status})`, response.status, body.code);
   }
 
   if (response.status === 204) {
@@ -141,11 +146,18 @@ async function request<T>(
 
 /** 오류 응답 본문의 message. 본문이 JSON이 아니거나 없으면 null. */
 async function messageOf(response: Response): Promise<string | null> {
+  return (await errorBodyOf(response)).message;
+}
+
+/** 오류 본문의 `message`·`error`(코드). 본문이 JSON이 아니거나 칸이 비면 null. */
+async function errorBodyOf(response: Response): Promise<{ message: string | null; code: string | null }> {
   try {
     const body = await response.json();
-    return typeof body?.message === "string" && body.message ? body.message : null;
+    const message = typeof body?.message === "string" && body.message ? body.message : null;
+    const code = typeof body?.error === "string" && body.error ? body.error : null;
+    return { message, code };
   } catch {
-    return null;
+    return { message: null, code: null };
   }
 }
 

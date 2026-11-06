@@ -2,7 +2,8 @@
  * 모의매매 화면의 '실제 계좌' 탭(토스증권, 읽기 전용 — ADR 0025, 명세 docs/specs/2026-11-05-toss-account-readonly.md §5·§6).
  *
  *  - 탭을 열 때만 읽는다 — 개요 탭만 보면 /api/brokerage를 부르지 않고, 실제 계좌 탭은 그 시장 쪽 하나(GET, 40초 한도)
- *  - 한국 화면은 원화 쪽만, 미국 화면은 달러 쪽만 — 맨 위 '모의 장부와 별개 · 읽기 전용' 배너와 다른 시장 탭 링크
+ *  - 한국 화면은 원화 쪽만, 미국 화면은 달러 쪽만 — 맨 위 '모의 장부와 별개 · 조회는 읽기 전용' 배너와 다른 시장 탭 링크
+ *    (자동 매매는 그 위 실제 매매 칸 — ADR 0028, 그 칸의 시험은 components/screens/realtrade/__tests__)
  *  - 꺼짐(DISABLED)은 안내만(숫자·표·다시 읽기 없음), 그 밖의 실패는 고정 문구와 다시 시도, 요청 실패도 다시 시도
  *  - 모르는 숫자는 '—'(0으로 채우지 않음), 서버 이전 값(isStale)·화면 다시 읽기 실패(refreshError)는 '이전 값'과 받은 시각
  *  - 보유가 없으면 '보유 종목 없음', 끝난 주문이 잘렸으면 '일부만 받았습니다', 분류하지 못한 항목 수
@@ -177,7 +178,7 @@ describe("시장 쪽 나누기", () => {
 
     expect(await screen.findByText("실제 계좌 요약 — 원화")).toBeTruthy();
     expect(screen.getByRole("tab", { name: "실제 계좌" }).getAttribute("aria-selected")).toBe("true");
-    expect(screen.getByText(/실제 계좌\(토스증권\) — 모의 장부와 별개 · 읽기 전용 · 이 화면에서는 주문할 수 없습니다/)).toBeTruthy();
+    expect(screen.getByText(/실제 계좌\(토스증권\) — 모의 장부와 별개 · 조회는 읽기 전용 — 자동 매매는 위 실제 매매 칸/)).toBeTruthy();
     expect(screen.getByText(/원화 자산만 — 달러 자산은/)).toBeTruthy();
     expect(screen.getByRole("link", { name: "모의매매(미국)의 실제 계좌 탭" }).getAttribute("href")).toBe("/paper/us/real");
 
@@ -248,9 +249,10 @@ describe("상태", () => {
     expect(await screen.findByText("실제 계좌 조회가 꺼져 있습니다. 운영 서버에서만 켭니다.")).toBeTruthy();
     expect(within(panel()).queryAllByRole("group")).toEqual([]);
     expect(within(panel()).queryAllByRole("table")).toEqual([]);
-    expect(within(panel()).queryByRole("button")).toBeNull();
-    // 꺼져 있어도 '모의 장부와 별개 · 읽기 전용' 배너는 그대로입니다.
-    expect(screen.getByText(/모의 장부와 별개 · 읽기 전용/)).toBeTruthy();
+    // 조회 쪽 단추가 없습니다 — 맨 위 실제 매매 칸(ADR 0028, 미국은 '준비 중'과 꺼진 단추)은 조회와 별개라 뺍니다.
+    expect(within(panel()).queryAllByRole("button").filter((button) => !button.closest("[role='region'][aria-label='실제 매매']"))).toEqual([]);
+    // 꺼져 있어도 '모의 장부와 별개 · 조회는 읽기 전용' 배너는 그대로입니다.
+    expect(screen.getByText(/모의 장부와 별개 · 조회는 읽기 전용/)).toBeTruthy();
   });
 
   it("그 밖의 실패는 고정 문구(+ 토스 코드)와 다시 시도 — 누르면 다시 읽는다, 숫자는 없음", async () => {

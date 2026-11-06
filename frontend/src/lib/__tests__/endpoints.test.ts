@@ -162,6 +162,11 @@ const CASES: Case[] = [
   // 토스증권 실제 계좌(읽기 전용, ADR 0025) — 시장 쪽 하나(원화 KR·달러 US).
   { name: "brokerage.account(KR)", before: "/api/brokerage/account?market=KR", after: endpoints.brokerage.account("KR") },
   { name: "brokerage.account(US)", before: "/api/brokerage/account?market=US", after: endpoints.brokerage.account("US") },
+  // 실제 매매(ADR 0028) — 상태(시장 쪽 하나)와 켜기 창의 예상 목록(책 코드).
+  { name: "realtrade.status(KR)", before: "/api/realtrade/status?market=KR", after: endpoints.realtrade.status("KR") },
+  { name: "realtrade.status(US)", before: "/api/realtrade/status?market=US", after: endpoints.realtrade.status("US") },
+  { name: "realtrade.preview(KR, kr_claude2)", before: "/api/realtrade/preview?market=KR&sourceBook=kr_claude2",
+    after: endpoints.realtrade.preview("KR", "kr_claude2") },
 ];
 
 describe("API 경로 — 예전 조립식과 서버가 받는 값이 같다", () => {
@@ -236,6 +241,19 @@ describe("실제 계좌 경로(ADR 0025)", () => {
   });
 });
 
+describe("실제 매매 경로(ADR 0028)", () => {
+  it("/api/realtrade 아래 읽기 둘(상태·예상 목록)과 쓰기 넷(켜기·끄기·설정 바꾸기·멈춤 해제) — 실제 계좌 조회 경로와 따로", () => {
+    expect(Object.keys(endpoints.realtrade)).toEqual(["status", "preview", "enable", "disable", "update", "resume"]);
+    expect(endpoints.realtrade.status("KR")).toBe("/api/realtrade/status?market=KR");
+    expect(endpoints.realtrade.preview("KR", "kr_rules")).toBe("/api/realtrade/preview?market=KR&sourceBook=kr_rules");
+    expect([endpoints.realtrade.enable, endpoints.realtrade.disable, endpoints.realtrade.update, endpoints.realtrade.resume]).toEqual([
+      "/api/realtrade/enable", "/api/realtrade/disable", "/api/realtrade/update", "/api/realtrade/resume",
+    ]);
+    // 책 코드는 인코딩합니다(값이 쿼리를 쪼개지 않게).
+    expect(endpoints.realtrade.preview("KR", "a&b")).toBe("/api/realtrade/preview?market=KR&sourceBook=a%26b");
+  });
+});
+
 describe("모의 매매 주간 복기 경로", () => {
   it("목록 아래에 주(날짜)별 한 건과 수동 실행", () => {
     expect(endpoints.paper.reviews).toBe("/api/paper/reviews");
@@ -276,6 +294,6 @@ describe("docs/API.md 백엔드 표와 대조", () => {
     const paths = [...strings, ...CASES.map(({ after }) => after)].map(documentedForm);
     expect(paths.filter((path) => !documented.has(path))).toEqual([]);
     // 경로를 만드는 함수는 모두 위 CASES에 한 줄 이상 있습니다. 새 함수를 만들었다면 CASES에 추가하고 이 숫자를 고치세요.
-    expect(functions).toBe(61);
+    expect(functions).toBe(63);
   });
 });

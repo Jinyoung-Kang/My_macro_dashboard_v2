@@ -5,7 +5,7 @@
  * localhost를 찾고, LAN IP를 박으면 맥의 localhost:3000에서 쿠키가 다른 사이트가 됩니다.
  */
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { apiBase, apiGet, apiPost, UnauthorizedError } from "@/lib/api";
+import { ApiError, apiBase, apiGet, apiPost, UnauthorizedError } from "@/lib/api";
 
 describe("apiBase", () => {
   afterEach(() => vi.unstubAllGlobals());
@@ -85,5 +85,34 @@ describe("401 응답", () => {
 
     expect(failure).toBeInstanceOf(UnauthorizedError);
     expect(failure.message).toBe("이메일 또는 비밀번호가 올바르지 않습니다.");
+  });
+});
+
+describe("오류 본문의 코드", () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  it("서버 오류 본문의 error 칸을 ApiError.code로 나른다 — 실제 매매 켜기 창이 코드별 문구를 고름(ADR 0028)", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(
+      JSON.stringify({ ok: false, error: "password-invalid", message: "비밀번호가 맞지 않습니다." }),
+      { status: 403, headers: { "Content-Type": "application/json" } },
+    )));
+    vi.stubGlobal("window", { location: { protocol: "http:", hostname: "localhost" } });
+
+    const failure = (await apiPost("/api/realtrade/enable", {}).catch((e: unknown) => e)) as ApiError;
+
+    expect(failure).toBeInstanceOf(ApiError);
+    expect(failure.status).toBe(403);
+    expect(failure.code).toBe("password-invalid");
+    expect(failure.message).toBe("비밀번호가 맞지 않습니다.");
+  });
+
+  it("본문이 JSON이 아니면 code는 null", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response("oops", { status: 500 })));
+    vi.stubGlobal("window", { location: { protocol: "http:", hostname: "localhost" } });
+
+    const failure = (await apiPost("/api/realtrade/enable", {}).catch((e: unknown) => e)) as ApiError;
+
+    expect(failure.code).toBeNull();
+    expect(failure.message).toBe("요청 실패 (HTTP 500)");
   });
 });

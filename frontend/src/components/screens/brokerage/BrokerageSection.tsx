@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import type { ReactNode } from "react";
 import { StaleBadge } from "@/components/patterns";
 import { Banner, Button, ErrorState, Loading } from "@/components/ui";
 import { LockIcon } from "@/components/ui/icons";
@@ -28,8 +29,11 @@ const TIMEOUT_MS = 40_000;
  *
  * <p>상태: 꺼짐(DISABLED)은 안내만, 그 밖의 실패는 고정 문구와 다시 시도, 서버가 이전 값을 보이거나(isStale) 다시 읽기가 실패하면(refreshError)
  * '이전 값'과 받은 시각, 모르는 숫자는 "—"입니다.
+ *
+ * <p>`extraActions`는 부르는 쪽(PaperScreen)이 넘기는 단추로, 요약 카드의 '다시 읽기' 옆에 그대로 그립니다 — 실제 매매 켜기·끄기(ADR 0028)가 여기
+ * 들어옵니다. 이 모듈은 그 단추가 무엇인지 모르고 실제 매매 모듈을 가져오지 않습니다(조회는 여전히 읽기 전용).
  */
-export function BrokerageSection({ market }: { market: PaperMarketCode }) {
+export function BrokerageSection({ market, extraActions }: { market: PaperMarketCode; extraActions?: ReactNode }) {
   const { data, loading, error, reload, refreshError } = useApi<BrokerageAccountResponse>(endpoints.brokerage.account(market), 0, {
     followRefresh: false,
     timeoutMs: TIMEOUT_MS,
@@ -41,7 +45,7 @@ export function BrokerageSection({ market }: { market: PaperMarketCode }) {
   return (
     <div className="flex flex-col gap-6">
       <Banner tone="info" icon={<LockIcon size={16} />}>
-        <strong>실제 계좌(토스증권) — 모의 장부와 별개 · 읽기 전용 · 이 화면에서는 주문할 수 없습니다</strong>
+        <strong>실제 계좌(토스증권) — 모의 장부와 별개 · 조회는 읽기 전용 — 자동 매매는 위 실제 매매 칸</strong>
         <p className="mt-1 text-xs">
           {scope.currencyLabel} 자산만 — {scope.otherCurrencyLabel} 자산은{" "}
           <Link href={paperTabPath("real", scope.other)} className="text-accent underline underline-offset-2">
@@ -77,9 +81,12 @@ export function BrokerageSection({ market }: { market: PaperMarketCode }) {
             data={data}
             market={market}
             actions={
-              <Button size="sm" onClick={() => void reload()} disabled={loading}>
-                {loading ? "다시 읽는 중…" : "다시 읽기"}
-              </Button>
+              <>
+                <Button size="sm" onClick={() => void reload()} disabled={loading}>
+                  {loading ? "다시 읽는 중…" : "다시 읽기"}
+                </Button>
+                {extraActions}
+              </>
             }
           />
           <BrokerageHoldings rows={data.holdings ?? []} market={market} />
