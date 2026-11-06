@@ -1034,6 +1034,9 @@ class KrPacketBuilderTest {
         assertThat(intraday.get("maxPerSession").asInt()).isEqualTo(FreeTimingSettings.DEFAULT_INTRADAY_MAX);
         assertThat(intraday.get("firstKst").asString() + "~" + intraday.get("lastKst").asString()).isEqualTo("09:10~14:50");
         assertThat(intraday.get("minGapMinutes").asInt()).isEqualTo(20);
+        assertThat(intraday.get("minPerSession").asInt()).as("기본 0 — 보장 없음").isZero();
+        assertThat(intraday.get("guarantee").isNull()).isTrue();
+        assertThat(intraday.get("events").isNull()).isTrue();
         assertThat(off.body().get(PacketBuilder.BASIS).has("intraday")).as("끈 판에는 없음").isFalse();
         assertThat(on.noteIds()).isEqualTo(off.noteIds());
 
@@ -1045,6 +1048,24 @@ class KrPacketBuilderTest {
                 .doesNotContain(KrPacketBuilder.KR_CLAUDE2_TIMING_LINE, KrPacketBuilder.KR_CLAUDE2_CHECKPOINT_LINE);
         assertThat(two.get(PacketBuilder.BASIS).get("book").asString()).isEqualTo(PaperBooks.KR_CLAUDE2);
         assertThat(two.get(PacketBuilder.HARD_RULES).get("lines").toString()).doesNotContain("AT_1000");
+
+        // 보장·사건(ADR 0031 초안 결정 4·7) — 켜면 1_basis.intraday에 그 칸(보장 시각은 개장 + 150분 = 11:30 KST, 사건 지수 069500). 사건은 한국 장중 스탑
+        // 감시가 SHADOW·ON일 때만. 끈 판 패킷은 그대로.
+        ObjectNode kr = (ObjectNode) store.settings.body().get("kr");
+        kr.put("intradayMinPerSession", 1).put("intradayEvents", true);
+        JsonNode noWatch = builder.forFree(PaperBooks.KR_CLAUDE).build(run(), D, RuleBookService.SCHEDULED, false, 3, quotesD(), READ_D)
+                .body().get(PacketBuilder.BASIS).get("intraday");
+        assertThat(noWatch.get("minPerSession").asInt()).isEqualTo(1);
+        assertThat(noWatch.get("guarantee").get("atKst").asString()).isEqualTo("11:30");
+        assertThat(noWatch.get("guarantee").has("atEt")).isFalse();
+        assertThat(noWatch.get("events").isNull()).as("감시가 꺼져 있으면 사건 자료가 없음").isTrue();
+        ((ObjectNode) kr.get("stopWatch")).put("mode", "ON");
+        JsonNode events = builder.forFree(PaperBooks.KR_CLAUDE).build(run(), D, RuleBookService.SCHEDULED, false, 3, quotesD(), READ_D)
+                .body().get(PacketBuilder.BASIS).get("intraday").get("events");
+        assertThat(events.get("indexTicker").asString()).isEqualTo("069500");
+        assertThat(events.get("rule").asString()).isEqualTo(IntradayScheduler.eventRule(true)).contains("069500");
+        assertThat(builder.build(run(), D, RuleBookService.SCHEDULED, false, 3, quotesD(), READ_D).text()).as("끈 판 패킷은 그대로")
+                .isEqualTo(off.text());
     }
 
     private static String meta(String name, Packet packet) {

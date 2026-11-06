@@ -302,10 +302,11 @@ class FrameworkServiceTest {
         assertThat(one.indexOf("## 체결(고정)")).as("체결 절 → 장중 판단 절 → 출력 절").isLessThan(one.indexOf("## 장중 판단(고정)"));
         assertThat(one.indexOf("## 장중 판단(고정)")).isLessThan(one.indexOf(ClaudePrompts.OUTPUT_HEADER.strip()));
         assertThat(two).contains("## 투자 성향");
-        // 끈 판에 없는 줄 = 켠 판이 바꾼 줄뿐(하드 규칙 시점 줄 · 우선순위 줄 · timing 줄 다섯 · 체결할 수 없는 종목 매도 줄 · 체결 절 넷 · 장중 판단 절 여섯).
+        // 끈 판에 없는 줄 = 켠 판이 바꾼 줄뿐(하드 규칙 시점 줄 · 우선순위 줄 · timing 줄 다섯 · 체결할 수 없는 종목 매도 줄 · 체결 절 넷 · 장중 판단 절 일곱 —
+        // 일곱째는 보장·사건 줄, ADR 0031 초안 결정 4·7).
         List<String> offLines = off.lines().toList();
         List<String> added = one.lines().filter(line -> !offLines.contains(line)).toList();
-        assertThat(added).hasSize(18);
+        assertThat(added).hasSize(19);
         assertThat(added.get(0)).startsWith("- 체결 시점은 AT_MINUTE(다음 거래일의 지정한 분, 개장 10분 뒤");
         assertThat(added.get(1)).startsWith("우선순위(고정)").contains(ClaudePrompts.KR_FT_TIMING_READING);
         assertThat(added).anyMatch(line -> line.contains(ClaudePrompts.KR_FT_UNFILLABLE_SELL));

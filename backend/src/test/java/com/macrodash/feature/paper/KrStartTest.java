@@ -943,7 +943,13 @@ class KrStartTest {
         assertThat(basis.path("nextCheckpoint").path("available").asBoolean()).isTrue();
         assertThat(basis.path("nextCheckpoint").path("firstKst").asString()).as("09:10 + 20분").isEqualTo("09:30");
         assertThat(basis.path("nextCheckpoint").path("lastKst").asString()).isEqualTo("14:50");
+        assertThat(basis.path("origin").asString()).as("밤 결정의 예약").isEqualTo("RESERVED");
+        assertThat(basis.path("remainingJudgments").asInt()).as("세션당 2 − 순번 1").isEqualTo(1);
+        assertThat(basis.path("nextCheckpoint").path("replaces").toString()).as("다음 순번의 남은 예약(13:00)")
+                .isEqualTo("{\"atKst\":\"13:00\",\"origin\":\"RESERVED\"}");
+        assertThat(d.packet().path("2_request").path("trigger").isNull()).isTrue();
         assertThat(d.packet().path("0_instructions").path("lines").get(0).asString()).startsWith("장중 판단이다");
+        assertThat(d.packet().path("0_instructions").path("lines").toString()).contains("2_request.trigger").contains("1_basis.origin");
         assertThat(d.packet().path("5_feed").path("tickers").propertyNames()).as("이 계획의 감시·보유·대기·기준 종목만 — 373220은 다른 계획의 것")
                 .containsExactlyInAnyOrder("069500", "005930", "000660", "005380");
         assertThat(d.packet().path(PacketBuilder.HARD_RULES)).isEqualTo(night.packet().path(PacketBuilder.HARD_RULES));

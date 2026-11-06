@@ -227,6 +227,20 @@ class DecisionTimingsLockTest {
                 .contains("13_execution.intraday.maxPerSession").contains("nextCheckpoint").doesNotContain("실시간");
         assertThat(ClaudePrompts.KR_FT_INTRADAY_SECTION).contains("09:10~14:50 KST").contains(IntradayRequest.MIN_GAP.toMinutes() + "분 이상")
                 .contains("1_basis.intraday.maxPerSession").contains("nextCheckpoint").doesNotContain("실시간").doesNotContain("feed");
+        // 보장·사건 줄(ADR 0031 초안 결정 4·7) — 보통 날 보장 시각 = 개장 + 보장 오프셋(미국 12:30 ET·한국 11:30 KST), 지수 종목 = 사건 상수, 그 까닭은
+        // 장중 판단 패킷의 출처·사건 칸.
+        java.time.LocalDate krDay = java.time.LocalDate.of(2026, 12, 2);
+        com.macrodash.analytics.TradingCalendar krCalendar = new com.macrodash.analytics.KrxCalendar(
+                KrPaperMarket.holidaysByYear(KrFixtures.holidaysPayload(2026, 2027)), List.of(), java.util.Map.of());
+        String usGuarantee = FreeTiming.label(IntradayScheduler.guaranteeAt(usDay, UsPaperMarket.INSTANCE.calendar(), false)
+                .atZone(UsPaperMarket.INSTANCE.calendar().zone()).toLocalTime());
+        String krGuarantee = FreeTiming.label(IntradayScheduler.guaranteeAt(krDay, krCalendar, true).atZone(krCalendar.zone()).toLocalTime());
+        assertThat(usGuarantee + " " + krGuarantee).isEqualTo("12:30 11:30");
+        assertThat(ClaudePrompts.US_FT_INTRADAY_SECTION).contains("13_execution.intraday.guarantee").contains("보통 날 " + usGuarantee + " ET")
+                .contains("지수(" + IntradayScheduler.US_INDEX + ")").contains("1_basis.origin·3_request.trigger");
+        assertThat(ClaudePrompts.KR_FT_INTRADAY_SECTION).contains("1_basis.intraday.guarantee").contains("보통 날 " + krGuarantee + " KST")
+                .contains("지수(" + IntradayScheduler.KR_INDEX + ")").contains("1_basis.origin·2_request.trigger");
+        assertThat(IntradayScheduler.eventRule(false)).contains("±4%").contains("±1.5%").contains("간격(" + IntradayRequest.MIN_GAP.toMinutes() + "분)");
         assertThat(IntradayRequest.AFTER_OPEN.toMinutes()).as("체결 창과 같은 개장 10분 뒤").isEqualTo(10);
         assertThat(IntradayRequest.AFTER_OPEN).isEqualTo(com.macrodash.analytics.SessionWindows.OPEN_OFFSET);
         assertThat(IntradayRequest.MIN_GAP.toMinutes()).isEqualTo(20);

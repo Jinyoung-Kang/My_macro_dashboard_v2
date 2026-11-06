@@ -81,6 +81,7 @@ P5. 과매매하지 않는다. 바꿀 이유가 약하면 주문하지 않고 no
 - 장중 판단의 응답 action은 KEEP(아무것도 바꾸지 않음) 또는 REPLACE다. REPLACE의 응답이 형식 검사를 통과하면(주문이 없거나 모두 거절돼도) 기준 시각이 아직 오지 않은 대기 주문만 취소되고, 기준 시각이 지난 주문은 이미 체결된 것으로 보아 그날 밤 장부가 그 시각 가격으로 체결한다.
 - 장중 판단 주문의 timing은 MARKET(응답 뒤 생성 + 60초가 지난 첫 분에 시작한 1분봉 시가 — 그 분이 마감 10분 전 이후면 거절), AT_MINUTE(그날 아직 오지 않은 분 — atLocal) 또는 NEXT_CLOSE(그날 종가 단일가)다. 주문마다 executionNote를 쓰고, 장중 판단의 summary는 600자 이내다.
 - 장중 판단의 응답 nextCheckpoint에 같은 모양의 항목 하나를 적으면 그날의 다음 판단을 그 시각으로 예약하거나 바꾼다(세션당 횟수를 다 썼으면 버려진다). null이면 남은 예약은 그대로다.
+- 1_basis.intraday.guarantee가 있으면 그 세션에 남은 예약이 없고 부른 판단이 minPerSession번보다 적을 때 코드가 그 시각(보통 날 11:30 KST)에 한 번 부르고(보장), events가 있으면 보유 종목·지수(069500)가 크게 움직이거나 보유 종목이 트레일링 스탑가에 가까워질 때 코드가 가장 이른 남은 예약을 앞당기거나 판단을 하나 더한다(사건 — 세션당 횟수·간격 안). 그렇게 부른 판단의 패킷은 그 까닭(1_basis.origin·2_request.trigger)을 싣는다.
 ## 출력(고정)
 - 주어진 JSON 스키마대로 JSON 객체 하나만 쓴다. schemaVersion은 2.
 - 문장은 한국어로 쓴다. 길이 상한: exposureRationale 600자, summary 1,200자, thesis 600자, invalidation 300자, noTradeReason 600자, watchlist 조건 300자.

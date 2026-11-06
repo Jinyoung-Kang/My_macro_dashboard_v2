@@ -199,6 +199,20 @@ final class ExecutionSection {
     static Map<String, Object> build(LocalDate asOf, List<String> timings, TradingCalendar calendar, double slippageBp,
                                      boolean record, PaperStore store, String book, boolean checkpoints, boolean free,
                                      int intradayMax) {
+        return build(asOf, timings, calendar, slippageBp, record, store, book, checkpoints, free, intradayMax, 0, false);
+    }
+
+    /**
+     * {@link #build(LocalDate, List, TradingCalendar, double, boolean, PaperStore, String, boolean, boolean, int)}에 장중 판단의 코드 규칙(ADR 0031
+     * 초안 결정 4·7)을 더한 것 — {@code free}일 때만 {@code intraday}에 세션당 최소 횟수·보장({@link IntradayScheduler#guaranteeView})·사건
+     * ({@link IntradayScheduler#eventsView})을 싣습니다. 보장·사건이 꺼져 있으면 그 칸은 null입니다.
+     *
+     * @param intradayMin    그 결정이 읽은 설정의 세션당 최소 장중 판단 수({@link IntradayPolicy#minPerSession})
+     * @param intradayEvents 그 계좌의 사건이 판단을 당길 수 있나({@link IntradayScheduler#eventsOn})
+     */
+    static Map<String, Object> build(LocalDate asOf, List<String> timings, TradingCalendar calendar, double slippageBp,
+                                     boolean record, PaperStore store, String book, boolean checkpoints, boolean free,
+                                     int intradayMax, int intradayMin, boolean intradayEvents) {
         LocalDate session = calendar.nextTradingDay(asOf);
         Instant open = calendar.openInstant(session);
         Instant close = calendar.closeInstant(session);
@@ -277,7 +291,7 @@ final class ExecutionSection {
                     lagSummary(store.recentCheckpointLags(book, FEED_MINUTE, RECENT_LAG_SESSIONS))));
         }
         if (free) {
-            out.put("intraday", intradayOptions(session, calendar, intradayMax,
+            out.put("intraday", intradayOptions(session, calendar, intradayMax, intradayMin, intradayEvents,
                     lagSummary(store.recentIntradayLags(book, FEED_MINUTE, RECENT_LAG_SESSIONS))));
         }
         return out;
@@ -290,14 +304,18 @@ final class ExecutionSection {
             "놓치면 없음 — 서버 꺼짐·자료 없음·호출 상한으로 그 창을 놓치면 나중에 대신 부르지 않고, 대기 주문은 그대로 체결된다");
 
     /**
-     * 장중 판단 선택지(자유 시점 판 — ADR 0027 결정 3·ADR 0031) — 세션당 횟수(설정)·그 세션의 받는 범위(개장 10분 뒤 ~ 마감 30분 전, ET·KST —
-     * {@link IntradayRequest#window})·두 시각의 최소 간격·피드 뜻·감시 상한·최근 잰 지연 요약·규칙.
+     * 장중 판단 선택지(자유 시점 판 — ADR 0027 결정 3·ADR 0031) — 세션당 횟수(설정)·최소 횟수와 보장(그 세션의 보장 시각·규칙, 꺼져 있으면 null)·사건
+     * (문턱·규칙, 꺼져 있으면 null)·그 세션의 받는 범위(개장 10분 뒤 ~ 마감 30분 전, ET·KST — {@link IntradayRequest#window})·두 시각의 최소 간격·
+     * 피드 뜻·감시 상한·최근 잰 지연 요약·규칙.
      */
-    private static Map<String, Object> intradayOptions(LocalDate session, TradingCalendar calendar, int max,
+    private static Map<String, Object> intradayOptions(LocalDate session, TradingCalendar calendar, int max, int min, boolean events,
                                                        Map<String, Object> recentLag) {
         IntradayRequest.Window window = IntradayRequest.window(session, calendar, false);
         Map<String, Object> out = new LinkedHashMap<>();
         out.put("maxPerSession", max);
+        out.put("minPerSession", min);
+        out.put("guarantee", max < 1 ? null : IntradayScheduler.guaranteeView(session, calendar, false, min));
+        out.put("events", IntradayScheduler.eventsView(false, max >= 1 && events));
         out.put("firstEt", et(window.first(), calendar));
         out.put("lastEt", et(window.last(), calendar));
         out.put("firstKst", Kst.stamp(window.first()));

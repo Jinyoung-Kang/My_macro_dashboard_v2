@@ -5,6 +5,7 @@ import com.macrodash.analytics.TradingCalendar;
 import com.macrodash.feature.paper.PaperMarketData.Bar;
 import com.macrodash.feature.paper.PaperMarketData.Quotes;
 import com.macrodash.store.Datasets;
+import com.macrodash.store.PaperStore;
 import com.macrodash.store.PaperStore.BookState;
 import com.macrodash.store.PaperStore.Checkpoint;
 import com.macrodash.store.PaperStore.Decision;
@@ -105,21 +106,101 @@ final class CheckpointPacket {
     /**
      * 자유 시점 판의 장중 판단으로 조립할 때의 차이(ADR 0027 결정 3) — 없으면(null) 끈 판 장중 확인.
      *
-     * @param book   계좌 코드(미국 Claude 계좌1·계좌2)
-     * @param slot   그 세션의 몇 번째 판단인가(결정 종류 {@code INTRADAY_<slot>})
-     * @param max    그 호출이 읽은 설정의 세션당 장중 판단 횟수
-     * @param manual 운영자가 당긴 판단인가
+     * @param book     계좌 코드(미국 Claude 계좌1·계좌2)
+     * @param slot     그 세션의 몇 번째 판단인가(결정 종류 {@code INTRADAY_<slot>})
+     * @param max      그 호출이 읽은 설정의 세션당 장중 판단 횟수
+     * @param manual   운영자가 당긴 판단인가
+     * @param origin   그 계획 행을 누가 만들었나({@code PaperStore.IntradayPlan.ORIGINS} — ADR 0031 초안, null이면 수동 표시로 정함)
+     * @param trigger  사건이 당기거나 더하거나 붙인 판단이면 그 사건(계획 행의 {@code trigger} — {@code originalAt}·{@code events}), 없으면 null
+     * @param replaces 이 판단의 {@code nextCheckpoint}가 대신하게 될 남은 예약(다음 순번의 PLANNED 행), 없으면 null
      */
-    record Free(String book, int slot, int max, boolean manual) {
+    record Free(String book, int slot, int max, boolean manual, String origin, JsonNode trigger, Reserved replaces) {
 
         Free {
             Objects.requireNonNull(book, "book");
+            origin = origin != null ? origin : manual ? PaperStore.IntradayPlan.ORIGIN_MANUAL : PaperStore.IntradayPlan.ORIGIN_RESERVED;
+            trigger = trigger == null || trigger.isNull() || trigger.isMissingNode() ? null : trigger;
+        }
+
+        /** 출처·사건·남은 예약 없이(운영자 행이면 출처 MANUAL, 아니면 RESERVED). */
+        Free(String book, int slot, int max, boolean manual) {
+            this(book, slot, max, manual, null, null, null);
         }
 
         /** 이 판단의 결정 종류. */
         String kind() {
             return RuleBookService.intradayKind(slot);
         }
+
+        /** 이 판단 뒤 이 세션에 남은 장중 판단 횟수 — min(세션당 횟수, 코드가 부를 수 있는 순번 수) − 순번(0 아래면 0). */
+        int remaining() {
+            return Math.max(0, Math.min(max, RuleBookService.INTRADAY_MAX) - slot);
+        }
+    }
+
+    /**
+     * 남은 예약 하나 — 이 판단의 {@code nextCheckpoint}가 대신하게 될 다음 순번의 PLANNED 행(그 시장 현지 시각과 출처).
+     *
+     * @param at     예약 시각(그 시장 현지 시각)
+     * @param origin 그 행의 출처
+     */
+    record Reserved(LocalTime at, String origin) {
+
+        Reserved {
+            Objects.requireNonNull(at, "at");
+        }
+
+        /** 그 세션 행들에서 {@code slot} 다음 순번의 PLANNED 행(없으면 null). */
+        static Reserved after(List<PaperStore.IntradayPlan> rows, int slot) {
+            for (PaperStore.IntradayPlan p : rows) {
+                if (p.slot() == slot + 1 && PaperBooks.CHECKPOINT_PLANNED.equals(p.status())) {
+                    return new Reserved(p.atLocal(), p.origin());
+                }
+            }
+            return null;
+        }
+    }
+
+    /** 장중 판단 패킷 지시문의 출처 한 줄(켠 판 — 1_basis.origin의 값과 뜻). */
+    static final String ORIGIN_LINE = "1_basis.origin은 이 판단의 시각을 누가 정했나다 — RESERVED(이 세션의 결정이 예약)·NEXT(앞선 장중 판단이 예약)·"
+            + "GUARANTEE(코드 보장 — 이 세션에 장중 판단이 아직 없어 세션 중간에)·EVENT(코드 사건 규칙이 앞당기거나 더함)·MANUAL(운영자). "
+            + "이 판단 뒤 이 세션에 남은 횟수는 1_basis.remainingJudgments다.";
+
+    /** 사건(trigger)이 있는 판단의 지시문 한 줄(켠 판). */
+    static String triggerLine(String requestSection) {
+        return requestSection + ".trigger가 있으면 코드 사건 규칙이 그 사건으로 이 판단을 앞당기거나 더했거나 이 판단에 그 사건을 붙인 것이다 — 그 사건부터 "
+                + "본다. 사건은 판단할 계기일 뿐 매매하라는 뜻이 아니고, 이미 대기 중인 스탑 매도는 코드가 집행한다.";
+    }
+
+    /** 출처에 따른 요청 칸의 한 줄 설명(켠 판 — 운영자·보장·사건만, 그 밖은 null). */
+    static String originNote(boolean manual, String origin) {
+        if (manual) {
+            return "운영자가 당긴 판단이다 — 예약한 시각이 아니라 지금 부른다";
+        }
+        if (PaperStore.IntradayPlan.ORIGIN_GUARANTEE.equals(origin)) {
+            return "코드가 넣은 보장 판단이다 — 이 세션에 장중 판단이 아직 없어 세션 중간에 한 번 부른다(예약한 판단이 아님)";
+        }
+        if (PaperStore.IntradayPlan.ORIGIN_EVENT.equals(origin)) {
+            return "코드 사건 규칙이 앞당기거나 더한 판단이다 — trigger의 사건이 그 까닭이다";
+        }
+        return null;
+    }
+
+    /**
+     * 요청 칸의 사건({@code trigger}) — 계획 행의 사건을 그대로(원래 시각은 그 시장 시각 이름 {@code originalAt<Et|Kst>}로) 싣고 규칙 한 줄을 더합니다.
+     * 사건이 없으면 null.
+     */
+    static Map<String, Object> triggerView(JsonNode trigger, boolean korea) {
+        if (trigger == null || !trigger.isObject()) {
+            return null;
+        }
+        Map<String, Object> out = new LinkedHashMap<>();
+        String original = Json.asText(trigger, "originalAt");
+        out.put(korea ? "originalAtKst" : "originalAtEt", original);
+        JsonNode events = trigger.get("events");
+        out.put("events", events != null && events.isArray() ? events : List.of());
+        out.put("rule", IntradayScheduler.eventRule(korea));
+        return out;
     }
 
     /**
@@ -234,8 +315,10 @@ final class CheckpointPacket {
     /** 자유 시점 판 장중 판단의 지시문 — 끈 판과 같은 뜻에 순번·남은 시점(장중 시장가·지정 시각·종가)·다음 판단 예약을 적습니다. */
     private static Map<String, Object> freeInstructions() {
         List<String> lines = List.of(
-                "장중 판단이다 — 이 세션의 결정(1_basis.sourceDecisionId) 또는 앞선 장중 판단이 예약한 시각에 한 번만 부른다(1_basis.slot번째, "
-                        + "세션당 1_basis.maxPerSession번까지). 재시도는 없다.",
+                "장중 판단이다 — 이 세션의 결정(1_basis.sourceDecisionId)이나 앞선 장중 판단이 예약한 시각, 또는 코드 규칙(보장·사건)·운영자가 정한 "
+                        + "시각에 한 번만 부른다(1_basis.slot번째, 세션당 1_basis.maxPerSession번까지). 재시도는 없다.",
+                ORIGIN_LINE,
+                triggerLine("3_request"),
                 "자료는 조립 시각(1_basis.asOfInstant) 전에 끝난 봉·받은 값만 실었다. 지연 자료로 더 좋은 체결가를 얻을 수는 없다 — 체결은 늘 주문 뒤 그 시각의 1분봉이다.",
                 "action이 KEEP이면 아무것도 바꾸지 않는다. REPLACE이면 기준 시각이 아직 오지 않은 대기 주문(4_portfolio.pending의 state '"
                         + PENDING_AHEAD + "')만 취소되고 새 주문을 받는다 — 기준 시각이 지난 주문은 체결 예정으로 남는다.",
@@ -265,6 +348,8 @@ final class CheckpointPacket {
             out.put("slot", free.slot());
             out.put("maxPerSession", free.max());
             out.put("manual", free.manual());
+            out.put("origin", free.origin());
+            out.put("remainingJudgments", free.remaining());
         }
         out.put("sourceDecisionId", in.checkpoint().sourceDecisionId());
         out.put("selectionAsOf", morningPacket == null ? null
@@ -389,10 +474,22 @@ final class CheckpointPacket {
         out.put("firstEt", available ? et(earliest, calendar) : null);
         out.put("lastEt", available ? et(window.last(), calendar) : null);
         out.put("minGapMinutes", IntradayRequest.MIN_GAP.toMinutes());
+        out.put("replaces", reserved(free.replaces(), "atEt"));
         out.put("note", !room ? "세션당 횟수를 다 썼다 — nextCheckpoint를 적어도 버려진다"
                 : !available ? "받는 범위에 남은 시각이 없다 — nextCheckpoint를 적어도 버려진다"
                 : "nextCheckpoint.at은 이 범위(양 끝 포함)의 뉴욕 시각 HH:MM — 이 판단 시각과 " + IntradayRequest.MIN_GAP.toMinutes()
-                + "분 이상 떨어져야 한다. 남은 예약이 있으면 그 시각을 대신한다");
+                + "분 이상 떨어져야 한다. 남은 예약이 있으면(replaces) 그 시각을 대신한다");
+        return out;
+    }
+
+    /** 남은 예약의 칸 — 시각(그 시장 시각 이름)과 출처, 없으면 null. */
+    static Map<String, Object> reserved(Reserved replaces, String zoneField) {
+        if (replaces == null) {
+            return null;
+        }
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put(zoneField, CLOCK.format(replaces.at()));
+        out.put("origin", replaces.origin());
         return out;
     }
 
@@ -402,8 +499,12 @@ final class CheckpointPacket {
         out.put("feed", c.feed());
         out.put("watch", c.watch());
         out.put("question", c.question());
-        if (free != null && free.manual()) {
-            out.put("note", "운영자가 당긴 판단이다 — 예약한 시각이 아니라 지금 부른다");
+        if (free != null) {
+            String note = originNote(free.manual(), free.origin());
+            if (note != null) {
+                out.put("note", note);
+            }
+            out.put("trigger", triggerView(free.trigger(), false));
         }
         return out;
     }

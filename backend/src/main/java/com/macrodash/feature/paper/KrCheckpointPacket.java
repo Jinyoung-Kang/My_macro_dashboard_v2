@@ -4,6 +4,7 @@ import com.macrodash.Kst;
 import com.macrodash.analytics.KrxCalendar;
 import com.macrodash.analytics.TradingCalendar;
 import com.macrodash.feature.paper.PaperMarketData.Quotes;
+import com.macrodash.store.PaperStore;
 import com.macrodash.store.PaperStore.BookState;
 import com.macrodash.store.PaperStore.Checkpoint;
 import com.macrodash.store.PaperStore.Decision;
@@ -65,22 +66,38 @@ final class KrCheckpointPacket {
     static final List<String> TIMINGS = PaperBooks.CHECKPOINT_TIMINGS;
 
     /**
-     * 자유 시점 판의 장중 판단으로 조립할 때의 차이(ADR 0027 결정 3) — 없으면(null) 끈 판 장중 확인.
+     * 자유 시점 판의 장중 판단으로 조립할 때의 차이(ADR 0027 결정 3) — 없으면(null) 끈 판 장중 확인. 칸의 뜻은 미국 {@link CheckpointPacket.Free}와
+     * 같습니다.
      *
-     * @param book   계좌 코드(한국 Claude 계좌1·계좌2)
-     * @param slot   그 세션의 몇 번째 판단인가(결정 종류 {@code INTRADAY_<slot>})
-     * @param max    그 호출이 읽은 설정의 세션당 장중 판단 횟수
-     * @param manual 운영자가 당긴 판단인가
+     * @param book     계좌 코드(한국 Claude 계좌1·계좌2)
+     * @param slot     그 세션의 몇 번째 판단인가(결정 종류 {@code INTRADAY_<slot>})
+     * @param max      그 호출이 읽은 설정의 세션당 장중 판단 횟수
+     * @param manual   운영자가 당긴 판단인가
+     * @param origin   그 계획 행을 누가 만들었나(null이면 수동 표시로 정함)
+     * @param trigger  사건이 당기거나 더하거나 붙인 판단이면 그 사건, 없으면 null
+     * @param replaces 이 판단의 {@code nextCheckpoint}가 대신하게 될 남은 예약, 없으면 null
      */
-    record Free(String book, int slot, int max, boolean manual) {
+    record Free(String book, int slot, int max, boolean manual, String origin, JsonNode trigger, CheckpointPacket.Reserved replaces) {
 
         Free {
             Objects.requireNonNull(book, "book");
+            origin = origin != null ? origin : manual ? PaperStore.IntradayPlan.ORIGIN_MANUAL : PaperStore.IntradayPlan.ORIGIN_RESERVED;
+            trigger = trigger == null || trigger.isNull() || trigger.isMissingNode() ? null : trigger;
+        }
+
+        /** 출처·사건·남은 예약 없이(운영자 행이면 출처 MANUAL, 아니면 RESERVED). */
+        Free(String book, int slot, int max, boolean manual) {
+            this(book, slot, max, manual, null, null, null);
         }
 
         /** 이 판단의 결정 종류. */
         String kind() {
             return RuleBookService.intradayKind(slot);
+        }
+
+        /** 이 판단 뒤 이 세션에 남은 장중 판단 횟수(미국과 같은 셈). */
+        int remaining() {
+            return Math.max(0, Math.min(max, RuleBookService.INTRADAY_MAX) - slot);
         }
     }
 
@@ -179,8 +196,10 @@ final class KrCheckpointPacket {
     /** 자유 시점 판 장중 판단의 지시문 — 끈 판과 같은 뜻에 순번·남은 시점(장중 시장가·지정 시각·종가)·다음 판단 예약을 적습니다. */
     private static Map<String, Object> freeInstructions() {
         List<String> lines = List.of(
-                "장중 판단이다 — 밤 결정(1_basis.sourceDecisionId) 또는 앞선 장중 판단이 예약한 시각에 한 번만 부른다(1_basis.slot번째, 세션당 "
-                        + "1_basis.maxPerSession번까지). 재시도는 없다.",
+                "장중 판단이다 — 밤 결정(1_basis.sourceDecisionId)이나 앞선 장중 판단이 예약한 시각, 또는 코드 규칙(보장·사건)·운영자가 정한 시각에 "
+                        + "한 번만 부른다(1_basis.slot번째, 세션당 1_basis.maxPerSession번까지). 재시도는 없다.",
+                CheckpointPacket.ORIGIN_LINE,
+                CheckpointPacket.triggerLine("2_request"),
                 "자료는 조립 시각(1_basis.asOfInstant) 전에 끝난 봉·받은 값만 실었다. 5_feed는 확인 시각 뒤에 한 번 받은 토스증권 1분봉 저장본이라 "
                         + "실시간이 아니다(지연은 5_feed.lagSeconds). 체결은 늘 주문 뒤 그 시각의 1분봉이다.",
                 "action이 KEEP이면 아무것도 바꾸지 않는다. REPLACE이면 기준 시각이 아직 오지 않은 대기 주문(4_portfolio.pending의 state '"
@@ -217,6 +236,8 @@ final class KrCheckpointPacket {
             out.put("slot", free.slot());
             out.put("maxPerSession", free.max());
             out.put("manual", free.manual());
+            out.put("origin", free.origin());
+            out.put("remainingJudgments", free.remaining());
         }
         out.put("sourceDecisionId", in.checkpoint().sourceDecisionId());
         out.put("asOfInstant", now.toString());
@@ -303,8 +324,8 @@ final class KrCheckpointPacket {
     }
 
     /**
-     * 다음 판단을 예약할 수 있는가({@code 1_basis.nextCheckpoint}) — 순번이 남았고 받는 범위({@link IntradayRequest#window} — 개장 5분 뒤 ~ 종가 단일가
-     * 시작 30분 전)에 이 판단 시각 + 최소 간격 뒤의 시각이 남아 있을 때(미국 {@link CheckpointPacket}과 같은 계산).
+     * 다음 판단을 예약할 수 있는가({@code 1_basis.nextCheckpoint}) — 순번이 남았고 받는 범위({@link IntradayRequest#window} — 개장 10분 뒤 ~ 종가 단일가
+     * 시작 30분 전)에 이 판단 시각 + 최소 간격 뒤의 시각이 남아 있을 때(미국 {@link CheckpointPacket}과 같은 계산). 대신하게 될 남은 예약도 싣습니다.
      */
     private static Map<String, Object> nextCheckpoint(Free free, Checkpoint c, LocalDate session, TradingCalendar calendar,
                                                       Instant now) {
@@ -325,10 +346,11 @@ final class KrCheckpointPacket {
         out.put("firstKst", available ? clock(earliest) : null);
         out.put("lastKst", available ? clock(window.last()) : null);
         out.put("minGapMinutes", IntradayRequest.MIN_GAP.toMinutes());
+        out.put("replaces", CheckpointPacket.reserved(free.replaces(), "atKst"));
         out.put("note", !room ? "세션당 횟수를 다 썼다 — nextCheckpoint를 적어도 버려진다"
                 : !available ? "받는 범위에 남은 시각이 없다 — nextCheckpoint를 적어도 버려진다"
                 : "nextCheckpoint.at은 이 범위(양 끝 포함)의 한국 시간 HH:MM — 이 판단 시각과 " + IntradayRequest.MIN_GAP.toMinutes()
-                + "분 이상 떨어져야 한다. 남은 예약이 있으면 그 시각을 대신한다");
+                + "분 이상 떨어져야 한다. 남은 예약이 있으면(replaces) 그 시각을 대신한다");
         return out;
     }
 
@@ -337,8 +359,12 @@ final class KrCheckpointPacket {
         out.put("atKst", KrTimedLadder.label(c.atLocal()));
         out.put("question", c.question());
         out.put("watch", c.watch());
-        if (free != null && free.manual()) {
-            out.put("note", "운영자가 당긴 판단이다 — 예약한 시각이 아니라 지금 부른다");
+        if (free != null) {
+            String note = CheckpointPacket.originNote(free.manual(), free.origin());
+            if (note != null) {
+                out.put("note", note);
+            }
+            out.put("trigger", CheckpointPacket.triggerView(free.trigger(), true));
         }
         return out;
     }

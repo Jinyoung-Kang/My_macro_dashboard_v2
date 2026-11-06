@@ -182,7 +182,8 @@ final class ClaudePrompts {
      * 자유 시점 판의 장중 판단 절(ADR 0027 결정 3 — 출력 절 앞). 결정의 {@code checkpoints} 예약과 장중 판단 응답의 규칙을 함께 적습니다 — 장중 판단
      * 호출도 같은 시스템 프롬프트를 씁니다. 날짜·설정값이 없는 상수입니다(세션당 횟수와 그 세션의 받는 범위는 패킷 13_execution.intraday에).
      * 범위·간격은 {@link IntradayRequest}, 장중 판단이 받는 시점은 {@link FreeTiming#INTRADAY_TIMINGS}와 같습니다({@code DecisionTimingsLockTest}).
-     * '실시간'이라는 말은 쓰지 않습니다(끈 판의 장중 확인 절과 같은 까닭).
+     * 마지막 줄은 코드 규칙(보장·사건 — ADR 0031 초안 결정 4·7)이고, 켜졌는지·그 세션의 보장 시각은 패킷 13_execution.intraday.guarantee·events에
+     * 있습니다(보통 날 보장 시각은 {@link IntradayScheduler#GUARANTEE_AFTER_OPEN_US}와 같음). '실시간'이라는 말은 쓰지 않습니다(끈 판의 장중 확인 절과 같은 까닭).
      */
     static final String US_FT_INTRADAY_SECTION = """
             ## 장중 판단(고정)
@@ -191,6 +192,7 @@ final class ClaudePrompts {
             - 장중 판단의 응답 action은 KEEP(아무것도 바꾸지 않음) 또는 REPLACE다. REPLACE의 응답이 형식 검사를 통과하면(주문이 없거나 모두 거절돼도) 기준 시각이 아직 오지 않은 대기 주문만 취소되고, 기준 시각이 지난 주문은 이미 체결된 것으로 보아 자료가 오는 대로 체결한다.
             - 장중 판단 주문의 timing은 MARKET(응답 뒤 생성 + 60초가 지난 첫 분에 시작한 1분봉 시가 — 마감 5분 전부터는 거절), AT_MINUTE(그날 아직 오지 않은 분 — atLocal) 또는 NEXT_CLOSE(그날 확정 종가)다. 주문마다 executionNote를 쓰고, 장중 판단의 summary는 600자 이내다.
             - 장중 판단의 응답 nextCheckpoint에 같은 모양의 항목 하나를 적으면 그날의 다음 판단을 그 시각으로 예약하거나 바꾼다(세션당 횟수를 다 썼으면 버려진다). null이면 남은 예약은 그대로다.
+            - 13_execution.intraday.guarantee가 있으면 그 세션에 남은 예약이 없고 부른 판단이 minPerSession번보다 적을 때 코드가 그 시각(보통 날 12:30 ET)에 한 번 부르고(보장), events가 있으면 보유 종목·지수(SPY)가 크게 움직이거나 보유 종목이 트레일링 스탑가에 가까워질 때 코드가 가장 이른 남은 예약을 앞당기거나 판단을 하나 더한다(사건 — 세션당 횟수·간격 안). 그렇게 부른 판단의 패킷은 그 까닭(1_basis.origin·3_request.trigger)을 싣는다.
             """;
 
     /**
@@ -436,7 +438,8 @@ final class ClaudePrompts {
     /**
      * 한국 자유 시점 판의 장중 판단 절(ADR 0027 결정 3 — 체결 절 다음·출력 절 앞). 밤 결정의 {@code checkpoints} 예약과 장중 판단 응답의 규칙을 함께
      * 적습니다 — 장중 판단 호출도 같은 시스템 프롬프트를 씁니다. 날짜·설정값이 없는 상수입니다(세션당 횟수와 그날의 받는 범위는 패킷
-     * 1_basis.intraday에). 범위·간격은 {@link IntradayRequest}, 장중 판단이 받는 시점은 {@link FreeTiming#INTRADAY_TIMINGS}와 같습니다.
+     * 1_basis.intraday에). 범위·간격은 {@link IntradayRequest}, 장중 판단이 받는 시점은 {@link FreeTiming#INTRADAY_TIMINGS}와 같습니다. 마지막 줄은 코드
+     * 규칙(보장·사건 — 패킷 1_basis.intraday.guarantee·events, 보통 날 보장 시각은 {@link IntradayScheduler#GUARANTEE_AFTER_OPEN_KR}와 같음)입니다.
      */
     static final String KR_FT_INTRADAY_SECTION = """
             ## 장중 판단(고정)
@@ -445,6 +448,7 @@ final class ClaudePrompts {
             - 장중 판단의 응답 action은 KEEP(아무것도 바꾸지 않음) 또는 REPLACE다. REPLACE의 응답이 형식 검사를 통과하면(주문이 없거나 모두 거절돼도) 기준 시각이 아직 오지 않은 대기 주문만 취소되고, 기준 시각이 지난 주문은 이미 체결된 것으로 보아 그날 밤 장부가 그 시각 가격으로 체결한다.
             - 장중 판단 주문의 timing은 MARKET(응답 뒤 생성 + 60초가 지난 첫 분에 시작한 1분봉 시가 — 그 분이 마감 10분 전 이후면 거절), AT_MINUTE(그날 아직 오지 않은 분 — atLocal) 또는 NEXT_CLOSE(그날 종가 단일가)다. 주문마다 executionNote를 쓰고, 장중 판단의 summary는 600자 이내다.
             - 장중 판단의 응답 nextCheckpoint에 같은 모양의 항목 하나를 적으면 그날의 다음 판단을 그 시각으로 예약하거나 바꾼다(세션당 횟수를 다 썼으면 버려진다). null이면 남은 예약은 그대로다.
+            - 1_basis.intraday.guarantee가 있으면 그 세션에 남은 예약이 없고 부른 판단이 minPerSession번보다 적을 때 코드가 그 시각(보통 날 11:30 KST)에 한 번 부르고(보장), events가 있으면 보유 종목·지수(069500)가 크게 움직이거나 보유 종목이 트레일링 스탑가에 가까워질 때 코드가 가장 이른 남은 예약을 앞당기거나 판단을 하나 더한다(사건 — 세션당 횟수·간격 안). 그렇게 부른 판단의 패킷은 그 까닭(1_basis.origin·2_request.trigger)을 싣는다.
             """;
 
     /**

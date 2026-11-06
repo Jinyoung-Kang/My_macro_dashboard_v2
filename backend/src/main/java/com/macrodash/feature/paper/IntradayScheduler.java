@@ -1,5 +1,6 @@
 package com.macrodash.feature.paper;
 
+import com.macrodash.Kst;
 import com.macrodash.analytics.CalendarUnavailableException;
 import com.macrodash.analytics.TradingCalendar;
 import com.macrodash.store.PaperStore;
@@ -51,6 +52,83 @@ final class IntradayScheduler {
     static final Duration GUARANTEE_AFTER_OPEN_KR = Duration.ofMinutes(150);
     /** 보장 행의 질문. */
     static final String GUARANTEE_QUESTION = "코드가 부른 보장 판단 — 이 세션에 장중 판단이 아직 없어 세션 중간에 한 번 본다(대기 주문과 보유를 그대로 둘지)";
+
+    /** 사건 — 보유 종목이 전일 종가 대비 이만큼(%) 이상 움직임(위·아래 따로 — 사용자 결정 2026-11-06 '보유 ±4%'). */
+    static final double HELD_MOVE_PCT = 4.0;
+    /** 사건 — 지수({@link #US_INDEX}·{@link #KR_INDEX})가 전일 종가 대비 이만큼(%) 이상 움직임('지수 ±1.5%'). */
+    static final double INDEX_MOVE_PCT = 1.5;
+    /** 사건 — 보유 종목이 트레일링 스탑가 위 이만큼(%) 안('스탑 2% 근접' — 스탑가 이하는 장중 스탑 감시의 몫). */
+    static final double NEAR_STOP_PCT = 2.0;
+    /** 미국 지수 사건의 종목(감시 저장본의 기준 종목). */
+    static final String US_INDEX = CheckpointPacket.REFERENCE;
+    /** 한국 지수 사건의 종목(감시 저장본의 기준 종목 — KODEX 200). */
+    static final String KR_INDEX = PaperBooks.KODEX_200;
+
+    /** 결정 패킷의 보장 규칙 한 줄(켠 판 — {@code 13_execution.intraday.guarantee}·한국 {@code 1_basis.intraday.guarantee}). */
+    static final String GUARANTEE_RULE = "이 세션에 남은 예약(PLANNED)이 없고 부른 장중 판단이 minPerSession번보다 적으면 코드가 이 시각(그 전 판단 뒤 "
+            + IntradayRequest.MIN_GAP.toMinutes() + "분이 안 됐으면 그때)에 한 번 부른다 — 정기 몫(하루 상한 안), 재시도 없음. 남은 예약이 있으면 그 예약이 "
+            + "이 몫을 하고, 그 예약을 놓치면 순번이 남은 동안 다시 본다";
+
+    /** 그 시장 지수 사건의 종목. */
+    static String indexTicker(boolean korea) {
+        return korea ? KR_INDEX : US_INDEX;
+    }
+
+    /** 결정 패킷·장중 판단 패킷의 사건 규칙 한 줄(그 시장 지수 이름으로). */
+    static String eventRule(boolean korea) {
+        return "코드가 5분 장중 감시 저장본으로 보유 종목이 전일 종가 대비 ±" + trim(HELD_MOVE_PCT) + "% 이상, 지수(" + indexTicker(korea)
+                + ")가 ±" + trim(INDEX_MOVE_PCT) + "% 이상 움직이거나 보유 종목이 트레일링 스탑가 위 " + trim(NEAR_STOP_PCT)
+                + "% 안으로 오면(사건마다 세션에 한 번) 가장 이른 남은 예약을 지금으로 앞당기고, 남은 예약이 없으면 세션당 횟수 안에서 판단을 하나 "
+                + "더한다 — 세션당 횟수·간격(" + IntradayRequest.MIN_GAP.toMinutes() + "분)·받는 범위를 넘지 않고, 넘으면 그 사건은 버린다. 사건은 "
+                + "판단할 계기일 뿐 매매하라는 뜻이 아니다";
+    }
+
+    /**
+     * 결정 패킷의 보장 칸(켠 판) — 세션당 최소 횟수가 1 이상일 때 그 세션의 보장 시각(그 시장 현지 시각 HH:MM과 KST)·규칙, 0이면 null(보장 없음).
+     *
+     * @param session 결정의 목표 세션
+     */
+    static Map<String, Object> guaranteeView(LocalDate session, TradingCalendar calendar, boolean korea, int min) {
+        if (min < 1) {
+            return null;
+        }
+        Instant at = guaranteeAt(session, calendar, korea);
+        Map<String, Object> out = new LinkedHashMap<>();
+        if (korea) {
+            out.put("atKst", FreeTiming.label(at.atZone(calendar.zone()).toLocalTime()));
+        } else {
+            out.put("atEt", FreeTiming.label(at.atZone(calendar.zone()).toLocalTime()));
+            out.put("atKst", Kst.stamp(at));
+        }
+        out.put("rule", GUARANTEE_RULE);
+        return out;
+    }
+
+    /**
+     * 결정 패킷의 사건 칸(켠 판) — 사건이 판단을 당길 수 있을 때(그 계좌의 {@value IntradayPolicy#US_EVENTS}·{@value IntradayPolicy#KR_EVENTS}가 켜져
+     * 있고 그 시장 장중 스탑 감시가 SHADOW·ON — 사건의 자료가 감시 저장본이라) 문턱과 규칙, 아니면 null.
+     */
+    static Map<String, Object> eventsView(boolean korea, boolean on) {
+        if (!on) {
+            return null;
+        }
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("heldMovePct", HELD_MOVE_PCT);
+        out.put("indexTicker", indexTicker(korea));
+        out.put("indexMovePct", INDEX_MOVE_PCT);
+        out.put("nearStopPct", NEAR_STOP_PCT);
+        out.put("rule", eventRule(korea));
+        return out;
+    }
+
+    /** 그 계좌의 사건이 실제로 판단을 당길 수 있나 — 사건 스위치와 그 시장 장중 스탑 감시(SHADOW·ON — 사건의 자료). */
+    static boolean eventsOn(JsonNode body, String code, boolean korea) {
+        return IntradayPolicy.from(body).events(code) && StopWatchMode.of(body, korea).watching();
+    }
+
+    private static String trim(double value) {
+        return java.math.BigDecimal.valueOf(value).stripTrailingZeros().toPlainString();
+    }
 
     /**
      * 보장 행을 넣기 전에 작업이 보는 문 — 그 행을 부를 때 막힐 까닭(파이프라인 없음·계좌2 꺼짐·계좌2 소상한·하루 정기 문턱)을 미리 봅니다. 막히는 행을

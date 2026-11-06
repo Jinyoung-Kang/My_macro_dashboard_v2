@@ -343,7 +343,9 @@ public class PaperIntradayJob {
         // 예상 상태의 T 가격 — 1분봉 저장본(장부와 같은 판정). 조용히 읽음(수집 유발 없음).
         Optional<Snapshot> bars = reader.quietly(() -> marketData.barsUs());
         Instant calledAt = clock.instant();
-        CheckpointPacket.Free free = new CheckpointPacket.Free(code, p.slot(), max, p.manual());
+        // 호출 이유(출처·사건)와 이 판단의 다음 예약이 대신할 남은 예약(ADR 0031 초안 — 켠 판 패킷만).
+        CheckpointPacket.Free free = new CheckpointPacket.Free(code, p.slot(), max, p.manual(), p.origin(), p.trigger(),
+                CheckpointPacket.Reserved.after(store.intradayPlans(code, session), p.slot()));
         Attempt attempt = pipeline.attemptCheckpoint(version -> CheckpointPacket.build(new CheckpointPacket.Inputs(c, asOf,
                 source, store.state(code).orElse(null), store.positions(code), pendingOrders(code), todayFills(code, session),
                 watch, quotes, macro, version, row.version(), store.recentIntradayLags(code, ExecutionSection.FEED_MINUTE,

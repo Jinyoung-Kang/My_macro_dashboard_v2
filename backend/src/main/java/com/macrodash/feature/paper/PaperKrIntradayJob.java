@@ -285,7 +285,9 @@ public class PaperKrIntradayJob {
         }
         Optional<Snapshot> watch = Optional.of(snapshot);
         Instant calledAt = clock.instant();
-        KrCheckpointPacket.Free free = new KrCheckpointPacket.Free(code, p.slot(), max, p.manual());
+        // 호출 이유(출처·사건)와 이 판단의 다음 예약이 대신할 남은 예약(ADR 0031 초안 — 켠 판 패킷만).
+        KrCheckpointPacket.Free free = new KrCheckpointPacket.Free(code, p.slot(), max, p.manual(), p.origin(), p.trigger(),
+                CheckpointPacket.Reserved.after(store.intradayPlans(code, session), p.slot()));
         Attempt attempt = pipeline.attemptCheckpoint(version -> KrCheckpointPacket.build(new KrCheckpointPacket.Inputs(c, asOf,
                 source, store.state(code).orElse(null), store.positions(code), pendingOrders(code), watch, quotes, version,
                 row.version(), calendar, clock.instant(), free), mapper), row, claudeSettings, today, scheduled);

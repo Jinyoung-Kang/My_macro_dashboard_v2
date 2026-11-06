@@ -631,7 +631,9 @@ public class PacketBuilder {
             root.put(EXECUTION, ExecutionSection.build(asOf, book.timings(), UsMarketCalendar.CALENDAR,
                     in.paper().slippageBp(), Claude2Settings.from(in.settingsBody()).executionRecord(), store, book.code(),
                     book.checkpoints(), book.freeTiming(),
-                    FreeTimingSettings.from(in.settingsBody()).intradayMax(book.code())));
+                    FreeTimingSettings.from(in.settingsBody()).intradayMax(book.code()),
+                    IntradayPolicy.from(in.settingsBody()).minPerSession(book.code()),
+                    IntradayScheduler.eventsOn(in.settingsBody(), book.code(), false)));
         }
 
         JsonNode body = toNode(root);

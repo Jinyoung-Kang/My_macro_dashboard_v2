@@ -292,6 +292,10 @@ class PaperIntradayJobTest {
         assertThat(basis.get("slot").asInt()).isEqualTo(1);
         assertThat(basis.get("maxPerSession").asInt()).isEqualTo(2);
         assertThat(basis.get("manual").asBoolean()).isFalse();
+        assertThat(basis.get("origin").asString()).as("결정의 예약").isEqualTo("RESERVED");
+        assertThat(basis.get("remainingJudgments").asInt()).as("세션당 2 − 순번 1").isEqualTo(1);
+        assertThat(basis.get("nextCheckpoint").get("replaces").isNull()).as("다음 순번의 남은 예약 없음").isTrue();
+        assertThat(packet.get("3_request").get("trigger").isNull()).isTrue();
         assertThat(basis.get("asOfInstant").asString()).isEqualTo(called.toString());
         assertThat(basis.get("remainingTimings").toString()).isEqualTo("[\"MARKET\",\"AT_MINUTE\",\"NEXT_CLOSE\"]");
         assertThat(basis.get("atMinute").get("firstEt").asString()).as("10:02 + 60초 뒤의 다음 분").isEqualTo("10:04");
@@ -327,6 +331,36 @@ class PaperIntradayJobTest {
 
         runAt(job, called.plusSeconds(60));
         assertThat(sent).as("순번마다 한 번").hasSize(1);
+    }
+
+    @Test
+    @DisplayName("호출 이유(ADR 0031 초안): 사건이 당긴 행(출처 EVENT·사건)은 패킷 1_basis.origin·3_request.trigger(원래 시각·사건)로, 다음 순번의 남은 예약은 "
+            + "nextCheckpoint.replaces로 실림 — 결정 응답 checkpoint 칸에도 출처·사건이 남음")
+    void packetCarriesTheCallReason() {
+        store.intradayPlans.clear();
+        ((ObjectNode) store.settings.body()).put(FreeTimingSettings.US_INTRADAY_MAX, 3);
+        ObjectNode trigger = MAPPER.createObjectNode().put("originalAt", "13:30");
+        trigger.putArray("events").addObject().put("type", "INDEX_MOVE").put("ticker", "SPY").put("direction", "DOWN")
+                .put("changePct", -1.62);
+        store.upsertPlannedIntradayPlan(IntradayPlan.planned(PaperBooks.CLAUDE, E, 1, TEN, "HOURLY", List.of(), "오후 확인", "ft-2", false,
+                morning1, null, IntradayPlan.ORIGIN_EVENT, trigger));
+        plan(PaperBooks.CLAUDE, 2, LocalTime.of(14, 0), "HOURLY", List.of(), morning1, false);
+
+        runAt(job(true), T.plus(Duration.ofMinutes(3)));
+
+        assertThat(sent).hasSize(1);
+        JsonNode packet = MAPPER.readTree(sent.get(0)[1]);
+        JsonNode basis = packet.get("1_basis");
+        assertThat(basis.get("origin").asString()).isEqualTo("EVENT");
+        assertThat(basis.get("remainingJudgments").asInt()).isEqualTo(2);
+        assertThat(basis.get("nextCheckpoint").get("replaces").toString()).isEqualTo("{\"atEt\":\"14:00\",\"origin\":\"RESERVED\"}");
+        JsonNode sentTrigger = packet.get("3_request").get("trigger");
+        assertThat(sentTrigger.get("originalAtEt").asString()).isEqualTo("13:30");
+        assertThat(sentTrigger.get("events").get(0).get("ticker").asString()).isEqualTo("SPY");
+        assertThat(packet.get("3_request").get("note").asString()).startsWith("코드 사건 규칙");
+        Decision d = decision(PaperBooks.CLAUDE, 1);
+        assertThat(d.response().path("checkpoint").path("origin").asString()).isEqualTo("EVENT");
+        assertThat(d.response().path("checkpoint").path("trigger")).isEqualTo(trigger);
     }
 
     @Test

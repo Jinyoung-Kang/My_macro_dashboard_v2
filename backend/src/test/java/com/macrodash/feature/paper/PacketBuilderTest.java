@@ -1518,6 +1518,9 @@ class PacketBuilderTest {
         assertThat(intraday.get("firstEt").asString() + "~" + intraday.get("lastEt").asString()).isEqualTo("09:40~15:30");
         assertThat(intraday.get("minGapMinutes").asInt()).isEqualTo(20);
         assertThat(intraday.get("rules")).hasSize(ExecutionSection.INTRADAY_RULES.size());
+        assertThat(intraday.get("minPerSession").asInt()).as("기본 0 — 보장 없음").isZero();
+        assertThat(intraday.get("guarantee").isNull()).isTrue();
+        assertThat(intraday.get("events").isNull()).as("기본 꺼짐").isTrue();
 
         // 다른 곳: 1_basis 세 칸, 12_hardRules의 줄, 13_execution 다섯 칸(메뉴 판·메뉴·지정 시각 범위·출처 사실·장중 판단 선택지). 그 밖의 섹션은 끈 판
         // 계좌2 패킷과 바이트 그대로.
@@ -1540,6 +1543,30 @@ class PacketBuilderTest {
         assertThat(ft1.body().get(PacketBuilder.PORTFOLIO)).isEqualTo(book1.body().get(PacketBuilder.PORTFOLIO));
         assertThat(ft1.body().get(PacketBuilder.EXECUTION).get("menu")).isEqualTo(execution.get("menu"));
         assertThat(PacketBuilder.marketSectionsSha256(ft1.body(), MAPPER)).isEqualTo(PacketBuilder.marketSectionsSha256(book1.body(), MAPPER));
+
+        // 보장·사건(ADR 0031 초안 결정 4·7)을 켜면 13_execution.intraday에만 그 칸이 실림 — 사건은 그 시장 장중 스탑 감시가 SHADOW·ON일 때만(자료가 감시
+        // 저장본). 끈 판 패킷은 그대로.
+        ObjectNode body = (ObjectNode) store.settings.body();
+        body.put(IntradayPolicy.US_MIN, 1).put(IntradayPolicy.US_EVENTS, true);
+        PacketBuilder.MarketInputs withRules = builder.read(MON, false, store.settings);
+        JsonNode noWatch = builder.assemble(withRules, ClaudeBookProfile.US_CLAUDE_FT, RuleBookService.SCHEDULED, 0).body()
+                .get(PacketBuilder.EXECUTION).get("intraday");
+        assertThat(noWatch.get("minPerSession").asInt()).isEqualTo(1);
+        assertThat(noWatch.get("guarantee").get("atEt").asString()).as("개장 + 180분").isEqualTo("12:30");
+        assertThat(noWatch.get("guarantee").get("atKst").asString()).isEqualTo("2026-10-28 01:30 KST");
+        assertThat(noWatch.get("guarantee").get("rule").asString()).isEqualTo(IntradayScheduler.GUARANTEE_RULE);
+        assertThat(noWatch.get("events").isNull()).as("감시가 꺼져 있으면 사건 자료가 없음").isTrue();
+        ((ObjectNode) body.get("stopWatch")).put("mode", "SHADOW");
+        PacketBuilder.MarketInputs watching = builder.read(MON, false, store.settings);
+        JsonNode events = builder.assemble(watching, ClaudeBookProfile.US_CLAUDE_FT, RuleBookService.SCHEDULED, 0).body()
+                .get(PacketBuilder.EXECUTION).get("intraday").get("events");
+        assertThat(events.get("heldMovePct").asDouble()).isEqualTo(IntradayScheduler.HELD_MOVE_PCT);
+        assertThat(events.get("indexTicker").asString()).isEqualTo("SPY");
+        assertThat(events.get("indexMovePct").asDouble()).isEqualTo(IntradayScheduler.INDEX_MOVE_PCT);
+        assertThat(events.get("nearStopPct").asDouble()).isEqualTo(IntradayScheduler.NEAR_STOP_PCT);
+        assertThat(events.get("rule").asString()).isEqualTo(IntradayScheduler.eventRule(false));
+        Golden.assertMatches("packet-us-claude2-scheduled.json", builder.assemble(watching, ClaudeBookProfile.US_CLAUDE2,
+                RuleBookService.SCHEDULED, 0).text());
     }
 
     @Test
@@ -1575,6 +1602,27 @@ class PacketBuilderTest {
         assertThat(intraday.get("recentLag").isNull()).as("잰 지연이 모이기 전 — 0으로 채우지 않음").isTrue();
         assertThat(intraday.get("feeds").propertyNames()).containsExactly("MINUTE", "HOURLY");
         assertThat(est.has("checkpointOptions")).as("끈 판의 장중 확인 선택지는 없음").isFalse();
+        assertThat(intraday.get("guarantee").isNull()).isTrue();
+        assertThat(intraday.get("events").isNull()).isTrue();
+
+        // 보장(최소 1)·사건 — 보장 시각은 개장 기준(E 11-02 EST 12:30 ET = 11-03 02:30 KST), 조기 폐장일은 받는 범위 끝 − 1분(12:29), 횟수 0이면 둘 다 없음.
+        JsonNode rules = MAPPER.valueToTree(PacketBuilder.toNode(ExecutionSection.build(LocalDate.of(2026, 10, 30),
+                FreeTiming.DECISION_TIMINGS, UsMarketCalendar.CALENDAR, 5, true, store, PaperBooks.CLAUDE2, false, true, 3, 1, true)))
+                .get("intraday");
+        assertThat(rules.get("minPerSession").asInt()).isEqualTo(1);
+        assertThat(rules.get("guarantee").get("atEt").asString()).isEqualTo("12:30");
+        assertThat(rules.get("guarantee").get("atKst").asString()).isEqualTo("2026-11-03 02:30 KST");
+        assertThat(rules.get("events").get("indexTicker").asString()).isEqualTo("SPY");
+        JsonNode earlyRules = MAPPER.valueToTree(PacketBuilder.toNode(ExecutionSection.build(LocalDate.of(2026, 11, 25),
+                FreeTiming.DECISION_TIMINGS, UsMarketCalendar.CALENDAR, 5, true, store, PaperBooks.CLAUDE2, false, true, 3, 1, false)))
+                .get("intraday");
+        assertThat(earlyRules.get("guarantee").get("atEt").asString()).as("조기 폐장일 — 받는 범위 끝 12:30 − 1분").isEqualTo("12:29");
+        assertThat(earlyRules.get("events").isNull()).isTrue();
+        JsonNode none = MAPPER.valueToTree(PacketBuilder.toNode(ExecutionSection.build(LocalDate.of(2026, 10, 30),
+                FreeTiming.DECISION_TIMINGS, UsMarketCalendar.CALENDAR, 5, true, store, PaperBooks.CLAUDE2, false, true, 0, 1, true)))
+                .get("intraday");
+        assertThat(none.get("guarantee").isNull()).as("횟수 0 — 장중 판단 없음").isTrue();
+        assertThat(none.get("events").isNull()).isTrue();
     }
 
     @Test
@@ -3369,8 +3417,8 @@ class PacketBuilderTest {
             "claude2-initial", "a95d2849759359c02da59e42da910dc77893f8f287d1686663222ffd9a10a9c8",
             "claude2-scheduled", "8a2d6849e50037141204d93cf4955d96923ab95f763d503166e7609da9222d89",
             "claude2-c2-scheduled", "f6c715284df1ec5c09c3fa4121aaa553e1e34e44d25cd6290da8e21df9871e4a",
-            "ft-claude-scheduled", "5dd2003f2d6ebe65164e5f4fb1dabf8eb2be03efb86f09051178b129056602f1",
-            "ft-claude2-scheduled", "b3e8116a72ad2179b19c2a1626c438cf466105e7f73e8d578f125053046c52f8");
+            "ft-claude-scheduled", "eaf54bdc4a73270f15984ee37bb6c37f9d78f9db267bdbe2e16ff7d2725f0bd7",
+            "ft-claude2-scheduled", "6aba2cd7a423f01dc5a0ebdc218c05b24cf48de1e72b6bcc46b68465938bbc94");
 
     /** 패킷에서 ADR 0030의 비용 칸(12_hardRules의 commissionBp·slippageBp·sellRegFees)과 비용 문장(lines 마지막 줄)을 뺀 글자. */
     private static String withoutCosts(Packet packet) {

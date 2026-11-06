@@ -586,10 +586,17 @@ final class KrPacketBuilder {
             range.put("note", "AT_MINUTE 주문의 atLocal은 이 범위(양 끝 포함)의 한국 시간 HH:MM — 개장 뒤 10분(시가 단일가 포함)은 받지 않고, "
                     + "종가 단일가 시간(마감 10분 전부터)은 NEXT_CLOSE");
             out.put("atMinute", range);
-            // 장중 판단 선택지(ADR 0027 결정 3·ADR 0031) — 세션당 횟수(설정)와 그날의 받는 범위(개장 10분 뒤 ~ 종가 단일가 시작 30분 전, 양 끝 포함).
+            // 장중 판단 선택지(ADR 0027 결정 3·ADR 0031) — 세션당 횟수(설정)·최소 횟수와 보장·사건(코드 규칙 — 꺼져 있으면 null)과 그날의 받는 범위
+            // (개장 10분 뒤 ~ 종가 단일가 시작 30분 전, 양 끝 포함).
             IntradayRequest.Window judgments = IntradayRequest.window(next, calendar, true);
+            int max = FreeTimingSettings.from(run.settingsBody()).intradayMax(book);
             Map<String, Object> intraday = new LinkedHashMap<>();
-            intraday.put("maxPerSession", FreeTimingSettings.from(run.settingsBody()).intradayMax(book));
+            intraday.put("maxPerSession", max);
+            int min = IntradayPolicy.from(run.settingsBody()).minPerSession(book);
+            intraday.put("minPerSession", min);
+            intraday.put("guarantee", max < 1 ? null : IntradayScheduler.guaranteeView(next, calendar, true, min));
+            intraday.put("events", IntradayScheduler.eventsView(true, max >= 1
+                    && IntradayScheduler.eventsOn(run.settingsBody(), book, true)));
             intraday.put("firstKst", HOUR_MINUTE.format(judgments.first().atZone(Kst.ZONE)));
             intraday.put("lastKst", HOUR_MINUTE.format(judgments.last().atZone(Kst.ZONE)));
             intraday.put("minGapMinutes", IntradayRequest.MIN_GAP.toMinutes());

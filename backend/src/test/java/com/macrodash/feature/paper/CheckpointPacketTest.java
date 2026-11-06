@@ -314,6 +314,12 @@ class CheckpointPacketTest {
     // ------------------------------------------------------------------ 자유 시점 판의 장중 판단(ADR 0027 결정 3)
     /** 켠 판 계좌1의 둘째 판단(10:30 ET, 순번 2 — 세션당 2) — 대기 주문에 분 단위 지정 시각이 섞여 있고, 감시 저장본은 두 계획의 것. */
     private static CheckpointPacket.Inputs freeInputs(int slot, int max, boolean manual) {
+        return freeInputs(new CheckpointPacket.Free(PaperBooks.CLAUDE, slot, max, manual));
+    }
+
+    /** {@link #freeInputs(int, int, boolean)}를 주어진 자유 시점 판 칸(출처·사건·남은 예약 포함)으로. */
+    private static CheckpointPacket.Inputs freeInputs(CheckpointPacket.Free free) {
+        int slot = free.slot();
         Checkpoint plan = new Checkpoint(PaperBooks.CLAUDE, E, LocalTime.of(10, 30), "MINUTE", List.of("NVDA"), "반등이 이어지나", 41L,
                 null, PaperBooks.CHECKPOINT_PLANNED, null, null, null, null, null);
         List<Order> pending = List.of(
@@ -340,8 +346,19 @@ class CheckpointPacketTest {
                 Optional.of(quotes(Instant.parse("2026-11-02T15:20:00Z"), bar("AAPL", E, 230.4), bar("MSFT", E, 521.0),
                         bar("NVDA", E, 181.2), bar("XLK", D, 280.0))),
                 MAPPER.readTree("{\"source\":\"macro.collected\",\"cards\":[{\"key\":\"vix\",\"value\":17.2,\"delay\":\"15분 지연\"}]}"),
-                5, 12, List.of(60, 70), UsMarketCalendar.CALENDAR, ASSEMBLED, Optional.empty(),
-                new CheckpointPacket.Free(PaperBooks.CLAUDE, slot, max, manual));
+                5, 12, List.of(60, 70), UsMarketCalendar.CALENDAR, ASSEMBLED, Optional.empty(), free);
+    }
+
+    /** 사건 규칙이 당긴 판단의 계획 행 사건(V27 trigger — 원래 시각·사건 목록). */
+    private static ObjectNode trigger() {
+        ObjectNode trigger = MAPPER.createObjectNode();
+        trigger.put("originalAt", "13:30");
+        ArrayNode events = trigger.putArray("events");
+        events.addObject().put("type", "HELD_MOVE").put("ticker", "AAPL").put("direction", "DOWN").put("prevClose", 240.0)
+                .put("last", 230.1).put("changePct", -4.13).put("barEt", "10:24");
+        events.addObject().put("type", "INDEX_MOVE").put("ticker", "SPY").put("direction", "DOWN").put("prevClose", 590.0)
+                .put("last", 580.5).put("changePct", -1.61).put("barEt", "10:24");
+        return trigger;
     }
 
     @Test
@@ -367,6 +384,13 @@ class CheckpointPacketTest {
         assertThat(basis.get("atMinute").get("lastEt").asString()).isEqualTo("15:54");
         assertThat(basis.get("nextCheckpoint").get("available").asBoolean()).as("순번 2 = 세션당 2 — 다 씀").isFalse();
         assertThat(basis.get("nextCheckpoint").get("firstEt").isNull()).isTrue();
+        assertThat(basis.get("origin").asString()).as("결정의 예약").isEqualTo("RESERVED");
+        assertThat(basis.get("remainingJudgments").asInt()).as("세션당 2 − 순번 2").isZero();
+        assertThat(basis.get("nextCheckpoint").get("replaces").isNull()).as("남은 예약 없음").isTrue();
+        assertThat(body.get("3_request").get("trigger").isNull()).as("사건 없음").isTrue();
+        assertThat(body.get("3_request").has("note")).as("예약한 판단 — 설명 줄 없음").isFalse();
+        assertThat(body.get("0_instructions").get("lines").toString()).contains("1_basis.origin").contains("3_request.trigger")
+                .contains("remainingJudgments");
         JsonNode pending = body.get("4_portfolio").get("pending");
         assertThat(pending).extracting(p -> p.get("timing").asString() + " " + p.get("targetAtEt").asString() + " " + p.get("state").asString())
                 .containsExactly("NEXT_OPEN 09:30 " + CheckpointPacket.PENDING_DUE, "AT_MINUTE 10:05 " + CheckpointPacket.PENDING_DUE,
@@ -429,6 +453,44 @@ class CheckpointPacketTest {
     }
 
     @Test
+    @DisplayName("고정본(자유 시점 판 장중 판단 — 사건이 당긴 판단, ADR 0031 초안): 1_basis.origin EVENT·남은 횟수(세션당 3 − 순번 1 = 2), 3_request.trigger"
+            + "(원래 시각 originalAtEt·사건 목록 그대로·규칙 한 줄)와 사건 설명 줄, nextCheckpoint.replaces(다음 순번의 남은 예약 — 시각·출처). 보장 판단은 "
+            + "그 설명 줄, 운영자 판단은 예전 설명 줄 그대로")
+    void goldenFreeEventMinute() {
+        CheckpointPacket.Free free = new CheckpointPacket.Free(PaperBooks.CLAUDE, 1, 3, false, "EVENT", trigger(),
+                new CheckpointPacket.Reserved(LocalTime.of(14, 0), "RESERVED"));
+        PacketBuilder.Packet packet = CheckpointPacket.build(freeInputs(free), MAPPER);
+        Golden.assertMatches("packet-us-ft-intraday-minute-event.json", packet.text());
+        JsonNode basis = packet.body().get("1_basis");
+        assertThat(basis.get("origin").asString()).isEqualTo("EVENT");
+        assertThat(basis.get("remainingJudgments").asInt()).isEqualTo(2);
+        assertThat(basis.get("nextCheckpoint").get("replaces").toString()).isEqualTo("{\"atEt\":\"14:00\",\"origin\":\"RESERVED\"}");
+        JsonNode request = packet.body().get("3_request");
+        assertThat(request.get("note").asString()).startsWith("코드 사건 규칙이 앞당기거나 더한 판단이다");
+        JsonNode trigger = request.get("trigger");
+        assertThat(trigger.get("originalAtEt").asString()).isEqualTo("13:30");
+        assertThat(trigger.get("events")).isEqualTo(trigger().get("events"));
+        assertThat(trigger.get("rule").asString()).isEqualTo(IntradayScheduler.eventRule(false)).contains("±4%").contains("SPY")
+                .contains("±1.5%").contains("2% 안");
+        assertThat(packet.text()).doesNotContain("실시간");
+        assertThat(PacketBuilder.estimateTokens(packet.text())).isLessThanOrEqualTo(CheckpointPacket.CHECKPOINT_TARGET_TOKENS);
+
+        JsonNode guarantee = CheckpointPacket.build(freeInputs(new CheckpointPacket.Free(PaperBooks.CLAUDE, 1, 3, false, "GUARANTEE",
+                null, null)), MAPPER).body();
+        assertThat(guarantee.get("1_basis").get("origin").asString()).isEqualTo("GUARANTEE");
+        assertThat(guarantee.get("3_request").get("note").asString()).startsWith("코드가 넣은 보장 판단이다");
+        assertThat(guarantee.get("3_request").get("trigger").isNull()).isTrue();
+        JsonNode manual = CheckpointPacket.build(freeInputs(1, 2, true), MAPPER).body();
+        assertThat(manual.get("1_basis").get("origin").asString()).as("운영자 행 — 출처 MANUAL").isEqualTo("MANUAL");
+        assertThat(manual.get("3_request").get("note").asString()).isEqualTo("운영자가 당긴 판단이다 — 예약한 시각이 아니라 지금 부른다");
+        assertThat(CheckpointPacket.Reserved.after(List.of(
+                com.macrodash.store.PaperStore.IntradayPlan.planned(PaperBooks.CLAUDE, E, 2, LocalTime.of(11, 0), "HOURLY", List.of(), "q",
+                        "ft-2", false, 41L, 7L)), 1)).as("다음 순번의 PLANNED 행").isEqualTo(new CheckpointPacket.Reserved(LocalTime.of(11, 0),
+                "NEXT"));
+        assertThat(CheckpointPacket.Reserved.after(List.of(), 1)).isNull();
+    }
+
+    @Test
     @DisplayName("ADR 0030: 장중 확인·판단 패킷(MINUTE·HOURLY·자유 시점 MINUTE)에서 바뀐 것은 4_portfolio.expected.note의 어림 설명 문구뿐('슬리피지·수수료·매도 제비용 빼고 어림') — 되돌리면 ADR 0030 전 고정본과 바이트까지 같다")
     void onlyTheEstimateNoteChangedForCosts() {
         String now = "(슬리피지·수수료·매도 제비용 빼고 어림)";
@@ -445,6 +507,6 @@ class CheckpointPacketTest {
         assertThat(Golden.sha256(hourly.replace(now, before)))
                 .isEqualTo("724b321e601b68ac3d0a7cc9c278cbea35e4074fc7d90ec6dc731c482b001232");
         assertThat(Golden.sha256(free.replace(now, before)))
-                .isEqualTo("6366e448ee1bd478358b971ac1e469dfbf5186e57714ce2a214a8b030f6022f1");
+                .isEqualTo("b33984f6d35a771db5ec47968578fa725ae75e449ed76ddc7bd368438b19be6f");
     }
 }
