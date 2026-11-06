@@ -4161,10 +4161,12 @@ const SETTING_GROUP: Record<string, string> = {
   claude: "Claude 계좌 3단계 스위치 — 두 책 공통(규칙 계좌 영향 없음)",
   claude2: "미국 Claude 계좌2 — 체결 시점 실험(켜기 · 결정 주기 호출 상한 · 1분봉 기다림 · 체결 기록 · 장중 확인, 규칙 계좌 영향 없음)",
   regFees: "미국 책 — 매도 제비용(SEC fee · FINRA TAF — 매도만, 다섯 계좌 공통, ADR 0030)",
+  stopWatch: "미국 책 — 장중 스탑 감시(OFF · SHADOW 기록만 · ON 주문, 규칙 계좌 영향, ADR 0032)",
   kr: "한국 책 — 비용 · 장부 · 검증기 · 규칙 계좌 · 결정 시각(kr.*)",
   "kr.tax": "한국 책 — 매도 세금(세율 · 시행일)",
   "kr.rules": "한국 책 — 규칙 계좌(수급 신호 · 재선정)",
   "kr.calendar": "한국 책 — 거래일 달력(임시휴장 · 장 시간 변경일)",
+  "kr.stopWatch": "한국 책 — 장중 스탑 감시(OFF · SHADOW 기록만 · ON 주문, 규칙 계좌 영향, ADR 0032)",
   "kr.news": "한국 책 — 사건 뉴스(Claude 계좌 패킷 11b, 규칙 계좌 영향 없음)",
 };
 
