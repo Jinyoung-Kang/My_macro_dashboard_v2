@@ -3,6 +3,10 @@
 - 상태: 채택 (2026-11-05, 사용자 승인 — 질문 네 개의 답과 승인 때의 수정 "장 중 확인을 최대 2회로", "하루 호출 상한을 60, 예약을 20으로"). **구현·배포 끝**(B0~B6 — 2026-11-06 06:00 KST Vultr `main@2e9fd367`, B5는 줄인 범위 — 명세 §13). **2026-11-06 07:28 KST 네 Claude 계좌의 스위치를 켬**(사용자 지시 "미국·한국 네 계좌 모두" — 설정 v15: `claude.freeTiming`·`claude2.freeTiming`·`kr.claude.freeTiming`·`kr.claude2.freeTiming` 켬, `claude.checkpoint` 끔, 하루 호출 상한 60·예약 20, `claude2.maxCallsPerCycle` 4. 규칙 계좌의 체결 시각은 기본 그대로) —
   단계와 커밋 순서는 [명세](../specs/2026-11-05-free-fill-timing.md) §13, 끝난 단계는 그 표에 적습니다. 스위치는 모두 기본 꺼짐이라 배포만으로는 어느 계좌의
   결정·체결도 바뀌지 않습니다. **켜는 설정 저장은 그때 사용자에게 다시 확인받습니다**(결정 12).
+  **일부 개정 — [ADR 0031](0031-open-offset-window-intraday-budget.md)(2026-11-06 결정, 2026-11-08 배포 예정)**: 결정 1의 범위(개장 + 1분 → 개장 + 10분 — 미국 09:40~15:54 ET·한국 09:10~15:19),
+  결정 2의 켠 판 메뉴(시가 `NEXT_OPEN`을 빼고 `AT_MINUTE`·`NEXT_CLOSE` — `ft-2`·`kr-ft-2`), 결정 3의 장중 판단(최대 2회·간격 30분·창 개장 + 5분 → 최소 1·최대 3회·간격 20분·창 개장 + 10분 ~ 마감 − 30분,
+  보장·사건), 결정 4의 스키마(V27 — `INTRADAY_3`·순번 3·계획 행 출처), 결정 5의 규칙 계좌(설정으로 개장 10분 뒤, 한국 대체·다시 내기는 다음 세션 첫 분), 결정 9의 예산(70·30·5)과
+  장중 판단만 effort medium. 이 문서의 나머지 결정(스위치는 계좌별·끄면 바이트까지 같음·검증 표·복기·정규장만)은 그대로입니다.
 - 근거: [명세](../specs/2026-11-05-free-fill-timing.md) · [ADR 0018](0018-paper-trading-guardrails.md)(미국 책 가드레일) · [ADR 0020](0020-v2-program.md)(호출 상한) ·
   [ADR 0021](0021-kr-paper-prices-fills-start.md)(한국 책 가격·체결) · [ADR 0022](0022-us-claude-book2-timing.md)(계좌2 체결 시점 실험) ·
   [ADR 0008](0008-backend-owned-tables-and-scheduled-jobs.md)(테이블마다 쓰는 쪽 하나)
