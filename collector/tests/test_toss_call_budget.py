@@ -13,7 +13,7 @@ import re
 from pathlib import Path
 
 from app.services import toss as toss_service
-from app.tasks import kr_paper, kr_paper_timed, paper_watch_kr, toss
+from app.tasks import kr_paper, kr_paper_timed, paper_stopwatch, paper_watch_kr, toss
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -49,6 +49,7 @@ KR_BUDGETS = (
     ("kr_paper_price_history", "KR_HISTORY_CALL_BUDGET", kr_paper),
     ("kr_paper_timed", "KR_TIMED_CALL_BUDGET", kr_paper_timed),   # 한국 Claude 계좌2 단계 2a
     ("paper_watch_kr", "WATCH_CALL_BUDGET", paper_watch_kr),       # 한국 Claude 계좌2 단계 2b
+    ("paper_stopwatch_kr", "KR_CALL_BUDGET", paper_stopwatch),     # 장중 스탑 감시(ADR 0032)
 )
 
 
