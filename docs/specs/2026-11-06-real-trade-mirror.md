@@ -2,7 +2,7 @@
 
 - 상태: **확정**(2026-11-06 사용자 승인). 결정 기록은 [ADR 0028](../adr/0028-real-trade-mirror.md). 이 문서는 수집기·백엔드·화면이 함께 따르는 **계약**이다.
 - 사용자 요청: "모의 알고리즘 매매(한국)의 메커니즘에 따라 나의 실제 토스 계좌의 원화 자산을 운용·매매. 실제 계좌 요약의 '다시 읽기' 옆에 매매 켜기/끄기. [규칙 계좌,
-  Claude 계좌1, Claude 계좌2] 중 고른 방식으로. 달러 자산은 나중 — 가능성만." 수정: **처음 방식은 Claude 계좌2**.
+  Claude 계좌1, Claude 계좌2] 중 고른 방식으로. 달러 자산은 나중 — 가능성만." 수정: 처음 방식은 Claude 계좌2 → 같은 날 다시 수정: **켜기 창 기본 방식은 규칙 계좌**(커밋·배포 전에 되돌림 — 셋 중 고르는 기능은 그대로).
 - 사용자 결정(2026-11-06): ① 운용 범위 **원화 자산 전부** ② **바로 실제 주문**(미리보기·소액 시험 단계 없음) ③ 켜기류는 **확인 글자 + 운영자 비밀번호** ④ 텔레그램은 **건수·상태만**.
 - 모의 책과의 관계: 모의 책은 지금처럼 주문을 내지 않는다(모의 프롬프트·패킷·화면 문구 그대로 — 실험 조건). 실제 계좌가 그 책을 **따라 할지**는 운영자의 별도 결정이고,
   실제 계좌 자료는 모의 장부·패킷·프롬프트·복기에 들어가지 않는다(방향은 모의 → 실제 한쪽뿐).
@@ -51,7 +51,8 @@
 - 그 종목에 **반대 방향 미체결**(앱 주문 포함)이 있으면 그 종목은 건너뛴다(토스 409) — `skipped`(사유 `opposite-pending`), 알림. 사용자 주문을 취소하지 않는다.
 - 그 종목에 **이 기능이 낸 주문 중 종료가 확인 안 된 것**(SENDING·UNKNOWN·ACCEPTED·PENDING·PARTIAL_FILLED)이 있으면 새 주문 금지.
 - 매수 금액 확인: `수량 × upperLimitPrice ≤ 지금 매수 가능 금액 − 같은 창에서 이미 낸 매수의 상한가 합`. 모자라면 수량을 줄이고, 1주도 안 되면 그 창에서 미룬다(`deferred-cash`).
-- 1건 상한(`TOSS_TRADING_MAX_ORDER_KRW`)을 넘으면 쪼개지 않고 상한까지만 보내며 나머지는 `capped`(다음 시가 맞추기가 다시 시도).
+- 1건 상한(`TOSS_TRADING_MAX_ORDER_KRW`)을 넘으면 쪼개지 않고 상한까지만 보내며(매도는 floor(상한 ÷ (현재가 × 1.03)) — 수집기가 보내기 직전 현재가로 다시 잼) 나머지는 `capped`(다음 시가 맞추기가 다시 시도).
+- 수집기 하루 한도(건수·매수 금액)는 계획이 미리 지킨다 — §12.1.
 
 ## 3. 언제 — 창은 그날 토스 장 운영 정보로
 
@@ -74,7 +75,8 @@
 - `PaperMirrorService.openTargets(book, session)` — 책의 보유 + **그 세션 시가가 기준 시각인 모든 PENDING 주문**(출처 CLAUDE·RULE·STOP·INITIAL 모두)을 마지막 가격으로
   `ExpectedState.simulate` 한 결과의 비중(종목별 %)과 흡수한 모의 주문 번호들. 그 주문들은 MIRROR로 따로 따라 하지 않는다.
 - 차이가 **1주 이상이고 |차이 금액| ≥ E의 1%** 일 때만 주문(책에 없는 보유는 1% 조건 없이 전량).
-- 회전율 한도: 한 SYNC 묶음의 매수 + 매도 금액 합이 E의 60%를 넘으면 그 묶음을 보내지 않고 이상 멈춤(`turnover`) — 단 켜기·방식 바꾸기·멈춤 해제 직후 첫 SYNC(`sync_pending=true`)는 예외(켜기 창에서 확인).
+- 회전율 한도: 한 SYNC 묶음의 매수 + 매도 금액 합이 E의 60%를 넘으면 그 묶음을 보내지 않고 이상 멈춤(`turnover`) — 단 `sync_pending`을 켠 마지막 일(ENABLE·책을 바꾼 UPDATE·HALTED에서의 RESUME) 뒤 **첫 묶음**은 예외(켜기 창에서 확인). 남은 몫으로 `sync_pending`이 이어진 2·3번째 묶음은
+  목표 변화량 Σ|w_now − w_prev|(바로 앞 SYNC 묶음 목표, 합집합 종목, 없는 종목 0%)가 60% 이하일 때만 예외이고, 넘으면 `turnover` 이상 멈춤(detail `turnoverPct`·`targetDriftPct`, 묶음·주문 없음). `sync_pending`을 끄는 때는 §12.2.
 
 ### 3.2 장중 따라 하기의 목표
 - 대상: 따라 하는 책의 PENDING 주문 중 목표 세션 = 오늘, timing ∈ {`AT_MINUTE`, `AT_1000`…`AT_1500`, `MARKET`, `NEXT_CLOSE`}, 기준 시각 T ≤ 지금. 그 밖의 timing(모르는 값)은 보내지 않고 `skipped`(`timing-unsupported`)·알림.
@@ -105,7 +107,7 @@
 - 수집기 안의 재시도는 401(재발급 대상 코드) 뒤 같은 키로 한 번뿐이다. 그 밖의 재시도는 백엔드 한 곳에서만.
 - 상태 추적: 매 주기 `GET /toss/trading/orders/open` 한 번(전량) + OPEN에서 빠진 이 기능 주문만 `GET /toss/trading/orders/{orderId}` 한 번씩. 종료 상태(`FILLED`·`CANCELED`·`REJECTED`·`REPLACED`)와
   `execution`(체결 수량·평균가·금액·수수료·세금·체결 시각)을 행에 기록. 모르는 상태 코드는 종료로 보지 않고 기록·알림.
-- 취소: `POST /toss/trading/orders/{orderId}/cancel` → 원 주문을 `PENDING_CANCEL` → `CANCELED`/`FILLED`까지 따라감. 409 `already-*`는 종료로 처리, `CANCEL_REJECTED`면 원 주문이 살아 있음.
+- 취소: `POST /toss/trading/orders/{orderId}/cancel` → 원 주문을 `PENDING_CANCEL` → `CANCELED`/`FILLED`까지 따라감. `CANCEL_REJECTED`면 원 주문이 살아 있음. 다시 보내지 않는 끝난 거절과 재시도 규칙은 §12.3.
 
 ## 5. 수집기 계약
 
@@ -170,10 +172,12 @@
 - `AuthService.verify(현재 운영자 이메일, 비밀번호)`로 비밀번호 확인. 연속 5회 틀리면 30분 동안 켜기류를 거절(`password-locked`). 틀림은 `PASSWORD_FAILED` 이벤트.
 
 ### 7.2 API(모두 운영자 전용 — `AccessPolicy`, `AccessPolicyTest.realtradeRoutesAreOwnerOnly`)
-- `GET /api/realtrade/status?market=KR|US` → `{"available", "market", "supported": KR만 true, "serverEnabled": {"collector": bool, "backend": bool, "reason"}, "state", "sourceBook", "sourceLabel",
-  "lossLimitPct", "baselineEquity", "buysPaused", "haltReason", "version", "limits", "today": {"date","skipReason","windows"}, "lastPreflight": {"fetchedAt","equity","cashBuyingPower","holdings":[…]}|null,
-  "orders": [최근 50 — 종목·방향·수량·TIF·용도·상태·체결 수량·평균가·금액·사유 코드·시각, orderId·client_order_id 없음], "events": [최근 30], "books": [{"code","label","status"}]}`.
-- `GET /api/realtrade/preview?market=KR&sourceBook=kr_claude2` → 켜기 창의 예상 목록: 지금 preflight + 그 책의 '다음 시가' 목표로 §2·§3.1 계산 — `{"ok","equity","orders":[{"symbol","name","side","quantity","estAmount"}],"skipped":[…],"turnoverPct","warnings":[…]}`.
+- `GET /api/realtrade/status?market=KR|US` → 키(순서): `available`, `market`, `supported`(KR만 true), `serverEnabled`{`collector`,`backend`,`reason`}, `state`, `sourceBook`, `sourceLabel`, `lossLimitPct`,
+  `baselineEquity`, `baselineTotal`, `buysPaused`, `haltReason`, `unfinishedOrders`(토스 주문 번호가 있는 이 기능의 미종료 행 수), `cancelGaveUpOrders`(미종료이고 취소를 포기한 행 수),
+  `unresolvedOrders`(미종료·UNKNOWN·토스 주문 번호 없는 행 수 — 셋 다 건수만), `version`, `limits`, `today`{`date`,`skipReason`,`windows`[{`kind`,`start`,`end`}]}, `serverTime`(응답을 만든 서버 시각),
+  `jobStartedAt`(정기 작업 시작 — 꺼져 있으면 null), `jobLastCycleAt`(예외 없이 끝낸 마지막 주기 — 꺼져 있으면 null), `lastPreflight`{`fetchedAt`,`equity`,`total`,`cashBuyingPower`,`holdings`},
+  `orders`(최근 50 — orderId·client_order_id 없음), `events`(최근 30), `books`.
+- `GET /api/realtrade/preview?market=KR&sourceBook=kr_rules` → 켜기 창의 예상 목록: 지금 preflight + 그 책의 '다음 시가' 목표로 §2·§3.1 계산 — `{"ok","equity","orders":[{"symbol","name","side","quantity","estAmount"}],"skipped":[…],"turnoverPct","warnings":[…]}`.
 - `POST /api/realtrade/enable` 본문 `{"market","sourceBook","lossLimitPct","confirm","password","version"}` — confirm은 정확히 `실제 매매 켜기`. 서버 두 스위치가 켜져 있어야 함. 성공하면 LIVE·`sync_pending=true`·
   `baseline_equity`(preflight E)·`book_generation`.
 - `POST /api/realtrade/disable` 본문 `{"market"}` — 비밀번호·확인 글자 없음, 늘 받음(서버 스위치가 꺼져 있어도 상태를 STOPPING/OFF로).
@@ -187,8 +191,8 @@
 2. 진행 중 주문 추적(§4) — 상태와 무관하게 늘.
 3. LIVE가 아니면 끝. 따라 하는 책이 ACTIVE가 아니거나 세대가 다르면 이상 멈춤(`book-changed`/`book-not-active`).
 4. 오늘 달력·쉬는 날 판정(§3). 창 안이 아니면 끝(창 3분 전 warmup).
-5. 창마다 preflight → 손실 한도 검사(E ≤ 기준 × (1 − 한도%)면 `buys_paused`) → 계획(Planner) → 선점·SENDING → 전송 → 결과 기록. 창이 끝나면 `WINDOW_SUMMARY` 이벤트(건수: 접수·체결·놓침·건너뜀·막힘·미룸).
-- 이상 멈춤 사유: `unknown-order`, `idempotency-conflict`, `token-contention`, `repeated-error`(같은 code 3회 — 종목 단위 건너뜀 코드·429 제외), `turnover`, `book-changed`, `book-not-active`,
+5. 창마다 preflight(두 단계 — §12.4) → 손실 한도 검사(`baseline_total − 지금 상한 없는 총액 ≥ baseline_equity × 한도%`면 `buys_paused` — §12.5) → 계획(Planner) → 선점·SENDING → 전송 → 결과 기록. 창이 끝나면 `WINDOW_SUMMARY` 이벤트(건수: 접수·체결·놓침·건너뜀·막힘·미룸).
+- 이상 멈춤 사유: `unknown-order`, `idempotency-conflict`, `token-contention`, `repeated-error`(같은 code 3회 — 종목 단위 건너뜀 코드·`rate-limited`·`over-order-limit`·`over-daily-orders`·`over-daily-buy` 제외), `turnover`, `book-changed`, `book-not-active`,
   `close-auction-mismatch`, `unknown-broker-status`, `restored`.
   이상 멈춤은 이 기능의 미체결을 취소하고 매도도 멈춘다. 손실 한도는 매수만 멈춘다.
 
@@ -201,7 +205,7 @@
 - 새 `frontend/src/components/screens/realtrade/` + `lib/realtrade.ts` + `lib/types/realtrade.ts`(배럴에 넣지 않음) + `endpoints.realtrade.*`.
 - **실제 매매 칸**(`RealTradePanel`)은 `/paper/kr/real` 탭 맨 위 — 계좌 읽기(brokerage)·모의 개요 실패와 상관없이 그리고, **끄기 단추가 늘 보인다**(LIVE·HALTED·STOPPING). 상태는 `GET /api/realtrade/status`를 15초마다.
 - 같은 켜기/끄기 단추(`RealTradeToggle`)를 실제 계좌 요약 '다시 읽기' 옆에도(`PaperScreen`이 `BrokerageSection`에 `extraActions`로 넘김 — brokerage 모듈은 realtrade를 가져오지 않음).
-- 켜기 창(`RealTradeEnableDialog` — `Dialog` 위 폼, `ConfirmDialog`의 requireText 모양): 방식 셋(기본 Claude 계좌2, 책 상태 표시), 손실 한도(기본 15%), 서버 안전 상한, 예상 목록(`/preview`),
+- 켜기 창(`RealTradeEnableDialog` — `Dialog` 위 폼, `ConfirmDialog`의 requireText 모양): 방식 셋(기본 규칙 계좌, 책 상태 표시), 손실 한도(기본 15%), 서버 안전 상한, 예상 목록(`/preview`),
   경고 "원화 자산 전부를 운용합니다 — 이 책에 없는 국내 주식은 다음 시가에 팔립니다 · 켠 동안 앱에서 국내 주식을 직접 사고팔지 마세요 · 모의와 달리 실제 돈이 움직입니다", 켜기 전 점검표
   (토스 앱 투자자지시 거래소 '통합' · 미수·신용 끔 · 위험 고지·사전 요건), 확인 글자 칸(`실제 매매 켜기`), 비밀번호 칸. 친 글자를 그대로 서버로 보낸다.
 - 끄기: 확인 창 없이 바로(누른 뒤 "새 주문 멈춤 — 미체결 취소 중" → 결과).
@@ -213,9 +217,11 @@
 ## 9. 운영
 
 - 서버 `.env`(로컬 `.env`를 다시 보낼 때 다시 덧붙임): `TOSS_TRADING_ENABLED=true`, `REAL_TRADE_ENABLED=true`, 한도 네 줄. 값은 켜기 전에 사용자에게 확인.
-- **복원**: `scripts/db-restore.sh`(make restore·서버 복원)는 복원 직후 `real_trade_config`를 모두 `HALTED`(`restored`)로 바꾼다. QA 복원(`scripts/qa/qa-stack.sh restore`)은 `real_trade_*`를 비운다.
+- **복원**: `scripts/db-restore.sh`(make restore·서버 복원)는 복원 직후 꺼져 있지 않은 `real_trade_config` 행을 `HALTED`(`restored`)로 바꾼다(같은 트랜잭션 — 실패하면 복원 전체를 되돌림).
+  QA 복원(`scripts/qa/qa-stack.sh restore` → `RESTORE_REAL_TRADE=clear`)은 주문·묶음·이벤트를 비우고 설정을 `OFF`로 둔다.
 - `scripts/vultr/deploy.sh`: 실제 매매가 LIVE이고 지금이 한국 거래 창(08:45~09:35, 15:15~15:35 KST, 평일)이면 경고하고 멈춤 — `REALTRADE_DEPLOY_OK=1`일 때만 진행.
-- 비상 끄기: 화면 끄기 → 안 되면 서버에서 `POST /api/realtrade/disable` 한 줄(DEVELOPMENT §7) → 서버 `.env`의 `TOSS_TRADING_ENABLED=false`로 재배포 → 토스 앱에서 미체결 취소.
+- 비상 끄기: 화면 끄기 → 안 되면 서버에서 `POST /api/realtrade/disable` 한 줄(DEVELOPMENT §7) → 서버 `.env`의 `TOSS_TRADING_ENABLED=false`로 바꾸고 **수집기만 다시 만듦**
+  (`docker compose … up -d --no-deps --no-build collector` — `deploy.sh`는 LIVE·거래 창이면 멈추므로 비상 끄기에 쓰지 않음) → 토스 앱에서 미체결 취소.
 - 서버 밖(로컬 v1·v2·v3·QA) 어디에도 같은 토스 키를 두지 않는다(토큰 1개 — 주문 시각에 401).
 - **에이전트는 끄기 외의 켜기류 API(enable·update·resume)를 부르지 않는다.** 켜기는 사용자가 화면에서 직접.
 
@@ -238,3 +244,57 @@
   접근(회원 403·운영자 200), 분리(ArchitectureRulesTest), 알림 글에 종목·금액 없음, 복원 뒤 HALTED.
 - 화면: 끄기가 계좌·개요 실패 때도 보임, 켜기 창(확인 글자·비밀번호·기본 계좌2·예상 목록), US 준비 중, 경계 시험.
 - compose·CI: 로컬·QA 두 플래그 false(셸에 true가 있어도), Vultr 전달, 백엔드에 `TOSS_*` 없음·수집기에 `REAL_TRADE_ENABLED` 없음.
+
+## 12. 구현·적대적 리뷰 뒤 확정한 세부(2026-11-06)
+
+앞 절과 다르면 이 절이 맞다. 두 번의 적대적 리뷰(계획 다섯 관점, 구현 다섯 관점 — 지적마다 반박 검증)에서 확인된 결함을 고친 결과다.
+
+### 12.1 하루 한도를 계획이 지킴
+- 사전 조회 때마다 `GET /toss/trading/orders/today`를 읽어 수집기와 같은 식(오늘 국내 KRW 주문 수, 매도가 아닌 주문의 체결 금액 + 진행 중 잔량 × 상한가)으로 남은 건수·남은 매수 금액을 구한다.
+  넘는 주문은 줄이거나 미룬다(건너뜀 `deferred-daily-cap` — 창 요약의 '미룸'). 오늘 목록을 못 읽거나 진행 중 매수의 상한가를 끝내 모르면 그 주기는 보내지 않는다.
+
+### 12.2 시가 맞추기·마무리의 범위와 낡은 묶음
+- 시가 뒤 마무리의 범위 = 묶음 목표 종목 ∪ 그 묶음이 주문한 종목 − **그날 장중 따라 하기가 손댄 종목**(오늘 MIRROR 행이 있는 종목 + 묶음이 흡수하지 않은 장중 대기 주문 중 따라 할 시각 ≤ 지금인 종목).
+  범위 밖 보유는 팔지도 사지도 않는다. E는 전체 계좌로, 현금은 마무리 시도가 남은 종목에만 배정한다. 시가 창 안 재시도의 목표 수량은 묶음에 고정한 E(`real_trade_batches.equity`)로 센다.
+- 그날 묶음의 책이 지금 책과 다르거나, 묶음을 `sync_pending`을 켠 마지막 일(ENABLE, 책을 바꾼 UPDATE, HALTED에서의 RESUME)보다 먼저 만들었으면 그날 시가 재시도·마무리를 하지 않는다(`batch-stale`).
+- `sync_pending`은 묶음 계획에 `capped`·`deferred-cash`·`deferred-daily-cap`이 없으면 묶음을 만들 때 끈다. 있으면 켠 뒤 3번째 SYNC 묶음 전까지 켜 두고 3번째 묶음에서 끈다.
+
+### 12.3 취소 재시도
+- 다시 보내지 않는 끝난 거절: `REJECTED` 중 `already-filled`·`already-canceled`·`already-rejected`·`already-modified`·`cancel-restricted`·`order-not-found`·`http-404`. 수집기는 취소의 409
+  `already-processing`을 `UNKNOWN`으로 돌려준다. 그 밖(`rate-limited`·401 계열·`order-hours-closed`·`NOT_SENT`·`UNKNOWN`·접수했는데 원 주문이 살아 있음)은 마지막 시도부터 30초마다 최대 5번
+  (`real_trade_orders.cancel_count`·`cancel_last_at`). 다 쓰고도 원 주문이 미종료면 `CANCEL_GAVE_UP` 이벤트(알림, 건수만, 행마다 한 번 — `cancel_gave_up_at`) → 사람이 앱에서 취소.
+- 수집기는 취소의 401(재발급 대상 세 코드)이면 10분 재발급 창을 이미 썼어도 한 번 재발급해 같은 본문으로 다시 보낸다(끄기·이상 멈춤의 미체결 취소가 토큰 경합 때문에 401로만 끝나지 않게). 주문은 창을 그대로 따른다.
+- 미체결 목록에 없는 `PARTIAL_FILLED`는 주문 세션이 오늘보다 앞이거나, `canceledAt`이 있거나, 오늘 주문이고 지금 ≥ 정규장 끝 + 5분이면 종료로 본다(오늘 장중이면 아직 아님 — 목록 반영 지연).
+- 결과 모름 재전송: 주기 순서는 SENDING 정리 → 추적 → 설정 다시 읽기 → 재전송·대조. 재전송마다 설정 행 잠금 안에서 'LIVE이고 같은 version'을 확인하고, 같은 루프에서 이상 멈춤이 걸리면 남은 행은 재전송하지 않는다.
+
+### 12.4 사전 조회 두 단계·수집기 예산
+- 정기 작업과 켜기 창 예상 목록은 먼저 `sell` 없이 읽어 정수 보유로 계획하고, 매도 후보가 있으면 그 종목만 `sell`로 다시 읽어 매도 가능 수량까지로 자른다(모르면 팔지 않음 — `sellable-unknown`).
+  장중 따라 하기는 매도 주문의 종목만 `sell`로 묻는다.
+- 수집기 예산 = clamp(5 + 0.6 × 매도 종목 수 + 0.15 × 시세 종목 수, 20, 35)초(백엔드 읽기 시간 초과 40초 안). 어림이 35초를 넘으면 `invalid-request`로 거절한다.
+- `warmup`은 옛 토큰을 먼저 버리지 않는다 — `toss.refresh_token()`이 발급에 성공할 때만 캐시를 바꾼다.
+
+### 12.5 손실 한도
+- 켤 때(와 기준 다시 잡기 때) 상한 적용 평가액 `baseline_equity`(E0)와 상한 없는 총액 `baseline_total`(U0)을 함께 저장한다. 판정: `U0 − 지금 상한 없는 총액 ≥ E0 × 한도%`면 `buys_paused`.
+  지금 총액에는 이 기능의 미종료 매수 중 토스 주문 번호가 있는 것의 (수량 − 체결) × 상한가(모르면 기준가)를 되돌린다(미체결 매수가 매수 가능 금액을 잡아 생기는 거짓 멈춤 방지).
+  안전 상한보다 총액이 큰 계좌에서도 운용분의 손실을 잡는다. 입출금은 '기준 다시 잡기'로.
+- 기준 다시 잡기는 이 기능의 미종료 매수(토스 주문 번호 있음)가 있으면 409 `invalid-state`(사전 조회 전과 설정 행 잠금 안에서 확인) — U0와 판정값의 정의를 맞추기 위함.
+
+### 12.6 정기 작업·화면
+- `tick`은 Error를 포함해 무엇이든 잡고 다음 주기를 이어 간다(클래스 이름만 로그). 화면은 LIVE·HALTED·STOPPING인데 `jobLastCycleAt ?? jobStartedAt`이 같은 응답의 `serverTime`보다
+  3분 넘게 앞서면 '정기 작업이 멈춘 것 같습니다 — 비상 끄기 절차'(주기를 하나도 못 끝냈으면 '기동 뒤 끝낸 주기 없음').
+- 끄기 단추는 상태를 모르는 동안(첫 읽기·다시 읽기·실패)에도 보인다. 상태 읽기 한도는 30초, 백엔드의 수집기 상태 호출은 5초.
+- 취소를 포기한 주문이 있으면 '취소를 5번 보냈지만 n건이 아직 살아 있습니다 — 토스증권 앱에서 직접 취소하세요', 꺼졌는데 결과 모름이 남으면 '꺼졌습니다 — 결과를 모르는 주문 n건은 토스증권 앱에서 확인하세요'
+  (끄기 뒤 안내의 우선순위: 취소 포기 > 서버 스위치 꺼짐 > 결과 모름 > 정리 끝·취소 중).
+- 서버 스위치가 꺼졌는데 STOPPING·HALTED이거나 `unfinishedOrders > 0`이면 '이 기능이 미체결을 취소할 수 없습니다 — 토스증권 앱에서 직접 취소하세요'.
+- 모의 개요가 없거나 실패해도 한국 화면에 '실제 계좌 탭으로(실제 매매 끄기)' 단추를 둔다.
+- 오류 본문은 `{ok:false, error, message}` — 화면은 `error`를 정확히 비교한다(`ApiError.code`). 409는 `version-conflict`·`invalid-state`·`server-disabled`·`book-changed`·`not-ready`, 502 `preflight-failed`,
+  400 `invalid-market`·`invalid-version`·`invalid-loss-limit`·`invalid-source-book`·`book-not-active`·`nothing-to-update`.
+- 알림: STOPPED는 '꺼짐 / 취소로 끝남 n · 체결로 끝남 m', 새 종류 `CANCEL_GAVE_UP`은 '취소 못 함 / n건 — 토스증권 앱에서 직접 취소하세요'(종목·수량·금액 없음).
+
+### 12.7 V24에 더한 칸
+`real_trade_config.baseline_total`, `real_trade_orders.cancel_count`·`cancel_last_at`·`cancel_gave_up_at`. 그 밖에 안전 CHECK(LIVE면 책·세대 필수, TIF는 `DAY`·`OPG`, 시도 1~2, 한국 종목 모양,
+MIRROR는 모의 주문 번호·뿌리, SYNC·SYNC_FOLLOWUP은 묶음 번호 필수, 토스 주문 번호 부분 유일).
+
+### 12.8 첫 실제 주문 뒤 확인할 것(§10에 더함)
+- 토스 `cashBuyingPower`가 미체결 매수(상한가 기준)에 줄어드는지 — 줄지 않으면 §12.5의 되돌림이 평가액을 부풀려 손실 한도가 늦게 걸리고, 같은 창의 예약 이중 차감도 다시 본다.
+
