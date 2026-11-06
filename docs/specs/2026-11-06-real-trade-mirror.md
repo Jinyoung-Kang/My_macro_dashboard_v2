@@ -193,7 +193,7 @@
 4. 오늘 달력·쉬는 날 판정(§3). 창 안이 아니면 끝(창 3분 전 warmup).
 5. 창마다 preflight(두 단계 — §12.4) → 손실 한도 검사(`baseline_total − 지금 상한 없는 총액 ≥ baseline_equity × 한도%`면 `buys_paused` — §12.5) → 계획(Planner) → 선점·SENDING → 전송 → 결과 기록. 창이 끝나면 `WINDOW_SUMMARY` 이벤트(건수: 접수·체결·놓침·건너뜀·막힘·미룸).
 - 이상 멈춤 사유: `unknown-order`, `idempotency-conflict`, `token-contention`, `repeated-error`(같은 code 3회 — 종목 단위 건너뜀 코드·`rate-limited`·`over-order-limit`·`over-daily-orders`·`over-daily-buy` 제외), `turnover`, `book-changed`, `book-not-active`,
-  `close-auction-mismatch`, `unknown-broker-status`, `restored`.
+  `close-auction-mismatch`, `unknown-broker-status`, `restored`, `collector-disabled`(§12.10).
   이상 멈춤은 이 기능의 미체결을 취소하고 매도도 멈춘다. 손실 한도는 매수만 멈춘다.
 
 ### 7.4 알림(텔레그램 — 건수·상태만)
@@ -297,4 +297,18 @@ MIRROR는 모의 주문 번호·뿌리, SYNC·SYNC_FOLLOWUP은 묶음 번호 필
 
 ### 12.8 첫 실제 주문 뒤 확인할 것(§10에 더함)
 - 토스 `cashBuyingPower`가 미체결 매수(상한가 기준)에 줄어드는지 — 줄지 않으면 §12.5의 되돌림이 평가액을 부풀려 손실 한도가 늦게 걸리고, 같은 창의 예약 이중 차감도 다시 본다.
+
+### 12.9 스탑 매도는 규칙 계좌와 같은 시가에(사용자 결정 2026-11-06)
+- 시가 목표는 출처 STOP 매도도 흡수한다 — 실제 계좌는 규칙 계좌와 같은 시가에 판다. 모의 장부는 체결 때 금융위 확정 종가로 스탑을 다시 판정해 드물게 취소하는데
+  (잠정 종가 ≤ 스탑가 < 확정 종가), 그러면 실제 계좌만 그 종목을 다음 시가 맞추기에서 다시 사는 하루 왕복이 생긴다(비용은 그 종목의 약 0.2~0.3%). 손절을 늦추지 않는 쪽을 골랐다(3차 리뷰 RT3-MON-1).
+
+### 12.10 3차 리뷰 뒤 확정한 세부(2026-11-06)
+- **창 끝 다시 보기**: 묶음·장중 주문을 보내기 직전마다 그 창이 지금 시각에 열려 있는지 다시 보고, 닫혔으면 보내지 않고 '놓침'으로 센다. 시가 맞추기는 창 끝 − 60초 뒤에 시작한 시도에서
+  OPG를 보내지 않는다(그날 묶음이 없으면 묶음만 만들고 시가 뒤 마무리가 DAY로 메움). `outside-window`는 '같은 오류 3회'에 세지 않는다.
+- **수집기 스위치가 꺼지면 멈춤**: LIVE인데 수집기가 매매 스위치가 꺼졌다고 분명히 답하면 이상 멈춤 `collector-disabled` — 스위치를 되돌린 것만으로는 재개되지 않고 화면의 멈춤 해제
+  (확인 글자 + 비밀번호)가 필요하다. 상태를 읽지 못한 것(`serverEnabled.collector = null`, 사유 `status-unreadable`)은 멈추지 않고 화면은 '서버 상태를 읽지 못함'으로 보인다.
+- **끄기 마무리**: STOPPING → OFF는 그 주기 결과 모름 대조가 토스 목록을 실제로 읽었을 때만. OFF에서도 대조·추적을 이어 가고 늦게 묶인 이 기능의 토스 주문은 취소한다.
+- **기준 총액**: 켜기·기준 다시 잡기의 U0에 그때 토스 미체결 매수(앱 주문 포함)의 잔량 × 상한가를 되돌린다(판정값과 같은 정의). 켜기 창 예상 목록은 상태의 `lastPreflight`를 덮어쓰지 않는다.
+- **운영**: Vultr 덧붙임 `stop_grace_period` — backend 90초(종료 훅 60초 + 주문 읽기 25초보다 김), collector 30초. `deploy.sh` 가드는 LIVE·STOPPING·HALTED를 모두 센다.
+  복원은 복원 전 DB의 꺼지지 않은 시장·끝나지 않은 주문이 복원 뒤 빠지면 경고한다(켜기 전·V24 전 백업 — 토스 미체결은 운영자가 앱에서 확인·취소). 서버 `.env` 다시 전달은 서버 전용 줄을 서버에서 이어 붙인다.
 

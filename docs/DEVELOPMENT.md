@@ -341,23 +341,38 @@ GitHub 읽기 전용 배포 키(서버 ubuntu `~/.ssh/id_ed25519_github`, `~/.ss
 
 ### 서버 .env 전달
 
-서버 `.env` = 로컬 `.env` − 적지 않는 이름 + 서버 전용 줄([.env.vultr.example](../.env.vultr.example)). 값은 화면·로그에 찍지 않습니다.
+서버 `.env` = 로컬 `.env`에서 옮기는 줄 + 서버에만 있는 줄([.env.vultr.example](../.env.vultr.example)). 다시 전달할 때 서버에만 있는 줄은 PC를 거치지 않고
+서버의 지금 `.env`에서 그대로 이어 붙입니다(OPS-1) — 토스 키(`TOSS_CLIENT_ID`·`TOSS_CLIENT_SECRET`)는 서버 밖에 두지 않고(아래 '실제 매매 켜기' 점검표),
+텔레그램·Tailscale 신원·토스 스위치·실제 매매 여섯 줄·브라우저 비밀도 서버에서만 정한 값이기 때문입니다. 값은 화면·로그에 찍지 않습니다.
 
 ```bash
-# PC — 걸러 낸 사본을 만들어 Tailscale SSH의 stdin으로 보내고(처음부터 600 — 서버에서 파일이 잠깐이라도 남에게 읽히지 않게) 지웁니다. <버킷>은 백업 버킷 이름
-tmp="$(mktemp)" && grep -Ev '^[[:space:]]*(export[[:space:]]+)?(DATABASE_PORT|BACKEND_PORT|COLLECTOR_PORT|FRONTEND_PORT|COOKIE_SECURE|LOCAL_NO_LOGIN|FRONTEND_ORIGIN|PUBLIC_URL|AWS_INSTANCE_ID|PAPER_ENABLED|TOSS_ACCOUNT_ENABLED|TOSS_TRADING_[A-Z_]*|REAL_TRADE_ENABLED|BROWSER_[A-Z_]*|ORIGIN_SECRET|GATE_[A-Z_]*|VULTR_[A-Z_]*|TAILSCALE_[A-Z_]*|TAILNET_DOMAIN)=' .env > "$tmp" \
-  && printf '\nCOMPOSE_FILE=docker-compose.yml:compose.vultr.yml\nAWS_BACKUP_BUCKET=%s\nPUBLIC_ORIGIN=https://my-macro-app.%s\nPAPER_KR_START_DATE=2026-10-30\n' "<버킷>" "$(grep '^TAILNET_DOMAIN=' .env | cut -d= -f2-)" >> "$tmp" \
-  && ssh ubuntu@my-macro-app 'umask 077 && cat > My_macro_dashboard_v2/.env && chmod 600 My_macro_dashboard_v2/.env' < "$tmp"; rm -f "$tmp"
+# PC(저장소 최상위) — 로컬에서 옮길 줄만 걸러(서버에 적지 않는 이름과 서버 전용 이름을 모두 뺌) Tailscale SSH의 stdin으로 보내고 지웁니다.
+# 서버는 지금 .env를 .env.bak-<UTC 시각>(600)으로 떠 둔 뒤, 받은 줄 뒤에 지금 .env의 서버 전용 줄을 그대로 붙여 한 번에 바꿉니다(mv).
+tmp="$(mktemp)" && grep -Ev '^[[:space:]]*(export[[:space:]]+)?(DATABASE_PORT|BACKEND_PORT|COLLECTOR_PORT|FRONTEND_PORT|LOCAL_NO_LOGIN|FRONTEND_ORIGIN|PUBLIC_URL|AWS_INSTANCE_ID|ORIGIN_SECRET|GATE_[A-Z0-9_]*|VULTR_[A-Z0-9_]*|TAILSCALE_[A-Z0-9_]*|TAILNET_DOMAIN|COMPOSE_FILE|AWS_BACKUP_BUCKET|PUBLIC_ORIGIN|PAPER_KR_START_DATE|PAPER_ENABLED|COOKIE_SECURE|TAILNET_OWNER_LOGIN|TELEGRAM_[A-Z0-9_]*|TOSS_CLIENT_ID|TOSS_CLIENT_SECRET|TOSS_ACCOUNT_ENABLED|TOSS_TRADING_[A-Z0-9_]*|REAL_TRADE_ENABLED|BROWSER_[A-Z0-9_]*)=' .env > "$tmp" \
+  && ssh ubuntu@my-macro-app 'set -eu; cd ~/My_macro_dashboard_v2; [ -f .env ] || { echo "✗ 서버 .env가 없습니다 — 처음 한 번은 아래 뼈대부터 만듭니다" >&2; exit 1; }
+umask 077; b=".env.bak-$(date -u +%Y%m%d-%H%M%S)"; cp -p .env "$b"; cat > .env.new; printf "\n" >> .env.new
+grep -E "^[[:space:]]*(export[[:space:]]+)?(COMPOSE_FILE|AWS_BACKUP_BUCKET|PUBLIC_ORIGIN|PAPER_KR_START_DATE|PAPER_ENABLED|COOKIE_SECURE|TAILNET_OWNER_LOGIN|TELEGRAM_[A-Z0-9_]*|TOSS_CLIENT_ID|TOSS_CLIENT_SECRET|TOSS_ACCOUNT_ENABLED|TOSS_TRADING_[A-Z0-9_]*|REAL_TRADE_ENABLED|BROWSER_[A-Z0-9_]*)=" .env >> .env.new || true
+gone=; for n in $(sed -nE "s/^[[:space:]]*(export[[:space:]]+)?([A-Za-z_][A-Za-z0-9_]*)=.*/\2/p" .env | sort -u); do grep -Eq "^[[:space:]]*(export[[:space:]]+)?$n=" .env.new || gone="$gone $n"; done
+chmod 600 .env.new && mv .env.new .env && echo "✓ 서버 .env를 바꿨습니다(이전 판 $b — 배포를 확인한 뒤 지움)"
+[ -z "$gone" ] || echo "경고: 새 .env에 없는 이름:$gone — 서버에만 둔 줄이면 $b에서 그 줄을 다시 붙입니다"' < "$tmp"; rm -f "$tmp"
 ```
 
-- 로컬 `.env` 끝 줄에 줄바꿈이 없을 수 있어 덧붙이는 줄은 `\n`으로 시작합니다.
-- 로컬 `.env`의 `PAPER_ENABLED=false`는 거르고 다시 넣지 않습니다(서버는 비우면 켜짐). `PAPER_KR_START_DATE`는 로컬 `.env`에 없어 덧붙입니다(한국 출발일 —
-  빠지면 한국 초기화·출발이 막힘).
-- 로컬 `.env`의 `TOSS_ACCOUNT_ENABLED` 줄도 거릅니다(로컬은 늘 꺼짐 — 서버에서만 켬, 아래 '토스 실제 계좌 조회 켜기').
-- 로컬 `.env`의 `BROWSER_*` 줄도 거릅니다(브라우저 컨테이너는 서버에만 있음 — 아래 '브라우저 컨테이너 켜기').
-- 로컬 `.env`의 `TOSS_TRADING_*`·`REAL_TRADE_ENABLED` 줄도 거릅니다(실제 매매는 서버에서만 켜고 값은 켤 때 사용자에게 확인 — 아래 '실제 매매 켜기').
-- 다시 전달하면 서버 `.env`를 통째로 덮어씁니다. 서버에만 적은 줄(`TAILNET_OWNER_LOGIN`·`TOSS_ACCOUNT_ENABLED=true`·`BROWSER_FETCH_URL`·`BROWSER_FETCH_TOKEN`·`COOKIE_SECURE=false`,
-  실제 매매의 `TOSS_TRADING_ENABLED`·`REAL_TRADE_ENABLED`·한도 네 줄 등)은 다시 덧붙입니다. 실제 매매를 켠 채 다시 전달할 때는 그 여섯 줄을 빠뜨리면 서버 스위치가 꺼집니다(주문이 멈추는 쪽).
+```bash
+# 처음 한 번(서버에 .env가 없을 때)만 — 서버 전용 줄의 뼈대를 만든 뒤 위 명령을 돌립니다. <버킷>은 백업 버킷 이름
+printf 'COMPOSE_FILE=docker-compose.yml:compose.vultr.yml\nAWS_BACKUP_BUCKET=%s\nPUBLIC_ORIGIN=https://my-macro-app.%s\nPAPER_KR_START_DATE=2026-10-30\n' "<버킷>" "$(grep '^TAILNET_DOMAIN=' .env | cut -d= -f2-)" \
+  | ssh ubuntu@my-macro-app 'set -eu; cd ~/My_macro_dashboard_v2; [ ! -e .env ]; umask 077; cat > .env'
+```
+
+- PC가 거르는 이름은 두 갈래입니다. **서버에 적지 않는 이름**(포트 네 줄·`LOCAL_NO_LOGIN`·`FRONTEND_ORIGIN`·`PUBLIC_URL`·옛 AWS 공개 주소용 값·PC 전용 `AWS_INSTANCE_ID`·`VULTR_*`·
+  `TAILSCALE_*`·`TAILNET_DOMAIN` — `deploy.sh`가 막는 이름)과 **서버 전용 이름** — `COMPOSE_FILE`·`AWS_BACKUP_BUCKET`·`PUBLIC_ORIGIN`·`PAPER_KR_START_DATE`(한국 출발일),
+  `PAPER_ENABLED`·`COOKIE_SECURE`(로컬의 `false`는 옮기지 않음 — 서버는 비우면 켜짐·Secure, 정비 때 서버에서 일부러 적은 값은 그대로 남음),
+  `TAILNET_OWNER_LOGIN`·`TELEGRAM_*`, 토스 키 `TOSS_CLIENT_ID`·`TOSS_CLIENT_SECRET`, `TOSS_ACCOUNT_ENABLED`, 실제 매매 여섯 줄 `TOSS_TRADING_*`·`REAL_TRADE_ENABLED`, `BROWSER_*`.
+  서버 전용 이름은 서버의 지금 값을 그대로 이어 붙이므로, 실제 매매를 켠 채 다시 전달해도 서버 스위치·한도·토스 키가 그대로입니다
+  (예전 절차는 서버 `.env`를 통째로 덮어써, 로컬의 빈 줄 때문에 토스 키가 빈 값이 되면 수집기가 알림 없이 키 없음(`not-configured`)으로 주문 전에 막힐 수 있었음).
+- 서버 전용 이름을 새로 만들면 위 두 목록(PC의 `grep -Ev`, 서버의 `grep -E`)에 같이 더합니다. 지금 `.env`에 있던 이름이 새 `.env`에서 빠지면 이름만 '경고'로 찍습니다 —
+  서버에만 둔 줄이면 백업에서 그 줄을 다시 붙입니다. 로컬 `.env` 끝 줄에 줄바꿈이 없어도 서버가 줄바꿈을 하나 넣고 이어 붙입니다.
+- 바꾼 값은 다시 배포해야 컨테이너에 들어갑니다(`bash scripts/vultr/deploy.sh` — 실제 매매가 꺼져 있지 않으면 한국 거래 창 밖에서). 백업 `.env.bak-*`에는 비밀값이 있어
+  배포를 확인한 뒤 지웁니다(`rm ~/My_macro_dashboard_v2/.env.bak-*`).
 - `TAILNET_OWNER_LOGIN`은 운영자의 Tailscale 로그인 이름입니다(계정 고유 값 — 서버 `.env`에만). 값을 화면에 찍지 않고 서버에서 덧붙입니다:
   `v="$(tailscale status --json | python3 -c 'import json,sys; d=json.load(sys.stdin); print(d["User"][str(d["Self"]["UserID"])]["LoginName"])')" && printf '\nTAILNET_OWNER_LOGIN=%s\n' "$v" >> ~/My_macro_dashboard_v2/.env`
   (서버를 운영자 계정으로 tailnet에 넣었을 때 — 태그 기기면 PC에서 같은 명령으로 읽음) 뒤 `bash scripts/vultr/deploy.sh`. 로그에는 켜졌다는 경고 한 줄만 남습니다(값은 남기지 않음).
@@ -390,11 +405,13 @@ bash ~/My_macro_dashboard_v2/scripts/vultr/deploy.sh
   서버 `.env`에 적지 않는 이름(옛 AWS 공개 주소용 값·PC 전용 `VULTR_*`·`TAILSCALE_*` 포함)이 있으면 멈추고,
   `PAPER_ENABLED=false`가 있으면 운영본의 정기 작업(리스크 점검·결정·체결)이 꺼진 채 뜬다고 '주의'를 찍고(끝 요약에도 다시) 계속합니다 —
   정비 때 일부러 끈 것이 아니면 그 줄을 지우고 다시 배포합니다. 없으면 '참고: 모의 매매 정기 작업 켜짐' 한 줄입니다(QA-194).
-- 실제 매매([ADR 0028](adr/0028-real-trade-mirror.md))가 켜져(LIVE) 있고 지금이 한국 거래 창(평일 08:45~09:35 시가 맞추기·마무리, 15:15~15:35 종가 — KST)이면
-  빌드 전에 멈추고(장 시간 변경일 — 모의 설정 `kr.calendar.openTimeOverrides`에 오늘이 있으면 개장 −15분~+35분·마감 −15분~+5분, 예 수능 10:00~16:30은
+- 실제 매매([ADR 0028](adr/0028-real-trade-mirror.md))가 꺼져(OFF) 있지 않고 — 켜짐(LIVE)뿐 아니라 끄는 중(STOPPING)·이상 멈춤(HALTED)도 이 기능의 미체결 취소를
+  보내므로 셈(OPS-5) — 지금이 한국 거래 창(평일 08:45~09:35 시가 맞추기·마무리, 15:15~15:35 종가 — KST)이면 빌드 전에 멈추고(장 시간 변경일 — 모의 설정 `kr.calendar.openTimeOverrides`에 오늘이 있으면 개장 −15분~+35분·마감 −15분~+5분, 예 수능 10:00~16:30은
   09:45~10:35·16:15~16:35. 그 설정을 읽지 못했거나 모양이 틀리면 보수 창 평일 08:45~10:35·15:15~16:35), 빌드하는 동안 창에 들어왔으면
-  기동 직전에 멈춥니다(돌던 컨테이너 그대로). 창이 지난 뒤 다시 돌리고, 알고 진행할 때만 `REALTRADE_DEPLOY_OK=1 bash scripts/vultr/deploy.sh`. 상태는 postgres의 `real_trade_config`를 읽기만 하고(표가 없으면 통과, 읽지 못하면 경고만), 켜져 있으면
+  기동 직전에 멈춥니다(돌던 컨테이너 그대로). 창이 지난 뒤 다시 돌리고, 알고 진행할 때만 `REALTRADE_DEPLOY_OK=1 bash scripts/vultr/deploy.sh`. 상태는 postgres의 `real_trade_config`를 읽기만 하고(표가 없으면 통과, 읽지 못하면 경고만), 꺼져 있지 않으면
   창 밖에서도 '참고' 한 줄을 찍습니다 — 장중 따라 하기 주문은 정규장 어느 시각에도 있을 수 있어 정규장 밖 배포가 낫습니다.
+  다시 만들 때 백엔드는 90초·수집기는 30초까지 정상 종료를 기다립니다(`compose.vultr.yml`의 `stop_grace_period` — 백엔드 종료 훅이 진행 중인 주기를 60초까지,
+  그 안의 주문 읽기 상한 25초, 수집기 주문 한 건 예산 20초. 기본 10초면 보내던 주문이 SIGKILL로 잘려 결과 모름이 됨 — OPS-2).
 - 배포 전 DB 덤프(QA-200): 빌드가 끝나고 기동하기 전에 `backups/pre-deploy-YYYYmmdd-HHMMSS.sql`(서버에만, S3에 올리지 않음, 최근 `BACKUP_KEEP`개 — 기본 10, 하나 약 460 MB)을 뜹니다.
   뜨지 못하면 돌던 컨테이너 그대로 멈춥니다.
 - 되돌리기: 코드는 `main`에 `git revert` 커밋을 push한 뒤 `deploy.sh`(다시 빌드). 배포가 데이터를 망가뜨린 것(잘못된 데이터 변경 마이그레이션 등)을 곧바로 알아챘으면
@@ -402,8 +419,13 @@ bash ~/My_macro_dashboard_v2/scripts/vultr/deploy.sh
   (이름 시각은 서버 UTC). 되돌리는 배포도 덤프를 하나 더 뜨므로 가장 최근 파일이 아닙니다(그 사이 다른 배포가 없으면 `ls -t backups/pre-deploy-*.sql`의 둘째).
   그 배포 뒤에 쌓인 장부(체결·결정·작업 기록)와 수집 저장본도 함께 그 시점으로 돌아가므로, 늦게 알아챘으면 통째 복원보다 SQL로 고쳐 앞으로 가는 쪽을 먼저 봅니다.
 - 데이터 복원: `aws s3 ls s3://<버킷>/db/vultr/` → `aws s3 cp s3://<버킷>/db/vultr/<파일>.sql backups/` → `make restore F=backups/<파일>.sql`.
-  복원은 같은 트랜잭션 안에서 실제 매매 설정(`real_trade_config`)을 모두 이상 멈춤(`restored`)으로 바꿉니다 — 백업 뒤에 나간 실제 주문의 기록이 빠졌을 수 있어,
-  운영자가 토스 앱의 주문 내역과 화면을 맞춰 본 뒤 '멈춤 해제'(확인 글자 + 비밀번호) 또는 끄기를 합니다. QA 스택 복원은 `real_trade_*` 기록을 비우고 꺼짐으로 두며, ISA 계좌 표(`manual_*`)도 비웁니다.
+  복원은 같은 트랜잭션 안에서 **백업에 담긴** 실제 매매 설정(`real_trade_config`) 가운데 꺼져 있지 않은 것(LIVE·STOPPING·HALTED)을 이상 멈춤(`restored`)으로 바꿉니다
+  (꺼진 행은 그대로) — 백업 뒤에 나간 실제 주문의 기록이 빠졌을 수 있어, 운영자가 토스 앱의 주문 내역과 화면을 맞춰 본 뒤 '멈춤 해제'(확인 글자 + 비밀번호) 또는 끄기를 합니다.
+  **켜기 전(또는 V24 전) 백업을 복원하면** 실제 매매 기록(`real_trade_*`)이 없어져(또는 꺼진 행만 남아) 꺼짐(OFF)이 되고, 지금 DB가 추적하던 토스 미체결은 이 기능이
+  더 취소하지 않습니다(백업이 켜진 뒤의 것이어도 백업 뒤에 나간 주문은 같음). 복원은 복원 전 DB의 상태와 견주어 그때 '경고: 복원 전 DB에서 실제 매매가 꺼져 있지
+  않았는데(KR:LIVE) … 꺼짐(OFF)입니다' 또는 '경고: … 끝나지 않았던 실제 주문 가운데 복원한 DB에 없는 것이 있습니다'를 찍습니다(OPS-4 — 시장·상태만, 건수·종목 없음).
+  그러면 **토스증권 앱에서 미체결 주문을 직접 확인·취소**하고, 꺼짐이 됐으면 다시 켤 때 화면의 켜기(확인 글자 + 비밀번호, 예상 목록)부터 합니다.
+  복원은 백엔드·수집기를 멈췄다 켜므로, 실제 매매가 꺼져 있지 않으면 배포처럼 한국 거래 창 밖에서 합니다. QA 스택 복원은 `real_trade_*` 기록을 비우고 꺼짐으로 두며, ISA 계좌 표(`manual_*`)도 비웁니다.
   운영 복원 뒤에는 백업 뒤에 고친 ISA 장부가 빠지므로 운영자가 화면 `/paper/kr/isa`에서 그 증권사 체결 내역과 맞춥니다.
   AWS 운영본의 마지막 덤프(2026-11-03 02:28 KST)는 만료 없는 `archive/aws-final/`에 있습니다 — 서버의 IAM 사용자는 `db/`만 읽으므로 PC에서 받습니다.
 
@@ -458,11 +480,12 @@ docker compose exec -T collector python -c 'import json,os,urllib.request as u; 
 
 - **첫 실제 날**(권장, 필수 아님): 샌드박스가 없어 OPG 접수·거절 방식·잔량 처리, 시장가 매수 증거금 기준, 종가 단일가 구간 체결은 첫 주문에서 처음 드러납니다(명세 §10).
   운영자가 08:50~09:05 KST에 토스 앱의 주문·체결을 화면 '실제 매매' 칸과 함께 보고, 첫 종가 주문(15:20 전후)도 한 번 봅니다. 모르는 결과는 이상 멈춤이 되고, 해제는 사람이 합니다.
-- 켠 뒤 서버 `.env`를 다시 전달하면 여섯 줄이 빠집니다(위 '서버 .env 전달') — 다시 덧붙입니다.
+- 켠 뒤 서버 `.env`를 다시 전달해도 여섯 줄과 토스 키는 서버의 값 그대로 남습니다(위 '서버 .env 전달' — 서버 전용 줄은 서버에서 이어 붙임). 끝에 '경고: 새 .env에 없는 이름'이
+  찍히면 백업 `.env.bak-*`에서 그 줄을 다시 붙입니다.
 
-**비상 끄기** — 위에서부터, 앞 단계가 안 될 때만 다음으로:
+**비상 끄기** — **화면 끄기가 먼저**입니다. 위에서부터, 앞 단계가 안 될 때만 다음으로:
 
-1. 화면 '실제 매매' 칸(또는 계좌 요약 '다시 읽기' 옆)의 **끄기** — 확인 글자·비밀번호 없이 바로 새 주문을 멈추고 이 기능의 미체결을 취소합니다(보유는 팔지 않음).
+1. 화면 '실제 매매' 칸(또는 계좌 요약 '다시 읽기' 옆)의 **끄기** — 확인 글자·비밀번호 없이 바로 새 주문을 멈추고 이 기능의 미체결을 취소합니다(보유는 팔지 않음). 상태는 끄는 중(STOPPING — 미체결 취소) → 꺼짐(OFF).
 2. 화면이 안 열리면 서버 셸에서 같은 끄기를 한 줄로 — Tailscale 신원 자동 로그인(`TAILNET_OWNER_LOGIN`, ADR 0023)과 허용 출처로 루프백의 caddy를 부릅니다.
    로그인 이름은 백엔드 컨테이너의 환경에서 읽어 stdin으로만 넘기고(인자·화면에 남기지 않음), 출력은 HTTP 상태 코드뿐입니다(200이면 끔 — 401이면 `TAILNET_OWNER_LOGIN`이 빈 것이라 3으로).
 
@@ -470,12 +493,26 @@ docker compose exec -T collector python -c 'import json,os,urllib.request as u; 
    cd ~/My_macro_dashboard_v2 && printf 'Tailscale-User-Login: %s\n' "$(docker compose exec -T backend printenv TAILNET_OWNER_LOGIN)" | curl -sS -o /dev/null -w '%{http_code}\n' -X POST http://127.0.0.1:8201/api/realtrade/disable -H @- -H 'Origin: http://localhost:8201' -H 'Content-Type: application/json' --data '{"market":"KR"}'
    ```
 3. 그래도 안 되면 수집기 스위치를 끕니다 — 서버 `.env`의 `TOSS_TRADING_ENABLED`를 `false`로 바꾸고 수집기만 다시 만듭니다(빌드·코드 받기 없이 몇 초. `deploy.sh`는
-   코드를 받고 다시 빌드해 느리고, 켜진 채 거래 창이면 멈춤). 이때부터 수집기는 주문도 취소도 보내지 않습니다.
+   코드를 받고 다시 빌드해 느리고, 꺼지지 않은 채 거래 창이면 멈춤). 이때부터 수집기는 주문도 취소도 보내지 않습니다. 켜져(LIVE) 있던 백엔드는 다음 주기에 수집기
+   스위치가 꺼진 것(`enabled: false`·`reason: disabled`)을 보고 **이상 멈춤(HALTED, 사유 `collector-disabled`)**으로 둡니다 — 상태는 꺼짐이 아니라 이상 멈춤입니다.
+   아래 둘째 줄(위 '켜는 순서' 4와 같은 한 줄)로 `enabled`가 `False`이고 `reason`이 `'disabled'`인지 봅니다.
 
    ```bash
    cd ~/My_macro_dashboard_v2 && sed -i 's/^TOSS_TRADING_ENABLED=.*/TOSS_TRADING_ENABLED=false/' .env && docker compose up -d --no-deps --no-build collector
+   docker compose exec -T collector python -c 'import json,os,urllib.request as u; d=json.load(u.urlopen(u.Request("http://localhost:8000/toss/trading/status",headers={"X-Service-Token":os.environ["COLLECTOR_API_TOKEN"]}))); print({k:d.get(k) for k in ("ok","enabled","reason","tokenContention")}, "limits" if d.get("limits") else "no-limits")'
    ```
-4. **토스 앱에서 미체결 주문을 직접 취소**합니다(3 뒤에는 이 기능이 취소하지 못함). 원인을 찾은 뒤 다시 켤 때는 위 '켜는 순서' 2부터.
+4. **토스 앱에서 미체결 주문을 직접 취소**합니다(3 뒤에는 이 기능이 취소하지 못함).
+
+**비상 끄기 뒤 다시 켜기** — 원인을 찾은 뒤, 한국 거래 창 밖에서:
+
+- **1·2로 껐으면**(상태 꺼짐 OFF — 끄는 중이면 꺼짐이 될 때까지 기다림) 서버 스위치는 그대로입니다. 위 '켜는 순서' 4로 수집기 스위치를 보고 5(화면 켜기 —
+  확인 글자 `실제 매매 켜기` + 운영자 비밀번호, 예상 목록 확인)로 켭니다.
+- **3까지 갔으면** 상태는 이상 멈춤(`collector-disabled`)입니다. 스위치를 되돌리는 것만으로는 주문이 다시 나가지 않습니다 — 서버 `.env`의 `TOSS_TRADING_ENABLED`를
+  `true`로 되돌리고 수집기만 다시 만든 뒤(`sed -i 's/^TOSS_TRADING_ENABLED=.*/TOSS_TRADING_ENABLED=true/' .env && docker compose up -d --no-deps --no-build collector`),
+  '켜는 순서' 4로 `enabled`가 `True`인지 보고, 화면에서 **멈춤 해제**(확인 글자 + 운영자 비밀번호 — 다음 시가 맞추기부터, 회전율 예외)를 합니다.
+  4에서 토스 앱으로 보유를 손댔거나 예상 목록을 다시 보고 싶으면 멈춤 해제 대신 **끄기** → 꺼짐이 된 뒤 화면 켜기(5)로 켭니다(시가 맞추기가 앱에서 산 국내 주식을
+  책 비중으로 다시 맞춤). 계속 꺼 둘 때는 이상 멈춤 그대로 두어도 주문은 나가지 않습니다(수집기 스위치도 꺼져 있음).
+- 1·2로 이미 꺼짐(OFF)이 된 뒤에 3을 했으면 이상 멈춤이 걸리지 않습니다 — 스위치를 되돌린 뒤 화면 켜기(5).
 
 ### ISA 계좌 시작 ([ADR 0029](adr/0029-isa-manual-account.md))
 
