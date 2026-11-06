@@ -22,7 +22,7 @@ import {
 
 describe("탭 주소", () => {
   it("개요 밖의 일곱 탭 — 탭 순서 그대로, 키가 곧 주소 조각", () => {
-    expect(PAPER_TAB_SLUGS).toEqual(["selection", "holdings", "decisions", "framework", "notes", "settings", "real"]);
+    expect(PAPER_TAB_SLUGS).toEqual(["selection", "holdings", "decisions", "framework", "notes", "settings", "real", "isa"]);
     expect(PAPER_TAB_SLUGS).toEqual(PAPER_TABS.slice(1).map((tab) => tab.key));
   });
 
@@ -34,7 +34,7 @@ describe("탭 주소", () => {
     expect(paperTabPath("real")).toBe("/paper/us/real");
     expect(PAPER_TABS.map((tab) => paperTabPath(tab.key))).toEqual([
       "/paper/us", "/paper/us/selection", "/paper/us/holdings", "/paper/us/decisions",
-      "/paper/us/framework", "/paper/us/notes", "/paper/us/settings", "/paper/us/real",
+      "/paper/us/framework", "/paper/us/notes", "/paper/us/settings", "/paper/us/real", "/paper/us/isa",
     ]);
   });
 });
@@ -82,7 +82,7 @@ describe("한국 화면 주소(/paper/kr)", () => {
     expect(paperTabPath("real", "KR")).toBe("/paper/kr/real");
     expect(PAPER_TABS.map((tab) => paperTabPath(tab.key, "KR"))).toEqual([
       "/paper/kr", "/paper/kr/selection", "/paper/kr/holdings", "/paper/kr/decisions",
-      "/paper/kr/framework", "/paper/kr/notes", "/paper/kr/settings", "/paper/kr/real",
+      "/paper/kr/framework", "/paper/kr/notes", "/paper/kr/settings", "/paper/kr/real", "/paper/kr/isa",
     ]);
   });
 

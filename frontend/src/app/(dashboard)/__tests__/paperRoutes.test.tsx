@@ -99,7 +99,7 @@ describe("라우트 파일", () => {
     expect(dynamicParams).toBe(false);
     expect(generateStaticParams()).toEqual([
       { tab: "selection" }, { tab: "holdings" }, { tab: "decisions" }, { tab: "framework" }, { tab: "notes" }, { tab: "settings" },
-      { tab: "real" },
+      { tab: "real" }, { tab: "isa" },
     ]);
     const element = await PaperUsTabPage({ params: Promise.resolve({ tab: "holdings" }) });
     expect(isValidElement(element) && element.type).toBe(PaperScreen);
@@ -257,7 +257,7 @@ describe("한국 화면(/paper/kr)", () => {
     expect(notes.getAttribute("aria-selected")).toBe("true");
     expect(screen.queryByText(/탭은 다음 단계에서 엽니다/)).toBeNull();
     expect(screen.getAllByRole("tab").map((tab) => tab.textContent)).toEqual([
-      "개요", "종목 선정", "보유·체결", "결정 로그", "프레임", "메모", "설정", "실제 계좌",
+      "개요", "종목 선정", "보유·체결", "결정 로그", "프레임", "메모", "설정", "실제 계좌", "ISA 계좌",
     ]);
 
     fireEvent.click(screen.getByRole("tab", { name: "설정" }));

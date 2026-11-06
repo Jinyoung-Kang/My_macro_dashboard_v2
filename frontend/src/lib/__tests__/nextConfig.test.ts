@@ -40,7 +40,8 @@ describe("next.config 리디렉션", () => {
 
   it("어떤 source도 /paper/us와 그 아래 탭 주소에 맞지 않는다 — 맞으면 끝없는 리디렉션", async () => {
     const redirects = await loadRedirects();
-    expect(PAPER_US_PATHS).toHaveLength(8);
+    // 개요 + 여덟 조각(마지막 isa는 한국 탭이지만 /paper/us/isa도 있는 주소 — 미국 화면이 개요로 엶, ADR 0029).
+    expect(PAPER_US_PATHS).toHaveLength(9);
     for (const pathname of PAPER_US_PATHS) {
       expect(redirects.filter((entry) => matches(entry.source, pathname)), pathname).toEqual([]);
     }

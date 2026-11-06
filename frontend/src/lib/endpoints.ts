@@ -296,6 +296,18 @@ export const endpoints = {
     resume: "/api/realtrade/resume",
   },
 
+  // ISA 계좌 — 연결되지 않은 다른 증권사 계좌의 장부와 다음 시가 매매 지시(운영자 전용, ADR 0029). 증권사 연결·주문 경로는 없습니다(사용자가 직접 매매).
+  // 쓰기는 모두 POST — 시작(한 번만)·장부 행 추가·고치기(본문 id)·지우기·지시 건너뜀.
+  isa: {
+    /** 계좌·요약·보유·다음 시가 지시·최근 지시 30·장부 최근 200. */
+    account: "/api/manual/isa",
+    start: "/api/manual/isa/start",
+    /** 본문 `id`가 있으면 그 행을 고치고, 없으면 새 행. */
+    ledger: "/api/manual/isa/ledger",
+    deleteLedger: (id: number) => `/api/manual/isa/ledger/${segment(String(id))}/delete`,
+    skipInstruction: (id: number) => `/api/manual/isa/instructions/${segment(String(id))}/skip`,
+  },
+
   // 토스증권 연결 테스트 (경로는 /api/ai/toss 이지만 AI와 관계없음)
   toss: {
     diagnostics: (run: number) => withQuery("/api/ai/toss/diagnostics", { run }),

@@ -4,6 +4,7 @@ import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 import { ScrollTopButton } from "@/components/ScrollTopButton";
 import { BrokerageSection } from "@/components/screens/brokerage/BrokerageSection";
+import { IsaSection } from "@/components/screens/isa/IsaSection";
 import { RealTradePanel } from "@/components/screens/realtrade/RealTradePanel";
 import { RealTradeProvider } from "@/components/screens/realtrade/RealTradeProvider";
 import { RealTradeToggle } from "@/components/screens/realtrade/RealTradeToggle";
@@ -11,7 +12,7 @@ import { Banner, Button, Card, ErrorState, Freshness, Loading, PageHeader, under
 import { useApi } from "@/hooks/useApi";
 import { TickerNamesProvider } from "@/hooks/useTickerNames";
 import { endpoints } from "@/lib/endpoints";
-import { CLAUDE2_LIMITS, isTimedBook, PAPER_SOURCES, PAPER_TABS, type PaperTabKey } from "@/lib/paper";
+import { CLAUDE2_LIMITS, isTimedBook, PAPER_SOURCES, paperTabInMarket, paperTabsFor, type PaperTabKey } from "@/lib/paper";
 import { KR_TAB_LABELS } from "@/lib/paperKrProfiles";
 import { formatMoney, type PaperMarketCode } from "@/lib/paperMarket";
 import { paperTabFromPath, paperTabPath } from "@/lib/paperRoutes";
@@ -58,6 +59,10 @@ import { SettingsSection } from "./SettingsSection";
  * 조회 요약의 '다시 읽기' 옆에도 넘깁니다. 이 탭은 개요가 없거나 실패해도 그리고, 그때(탭 줄이 없음) 다른 탭에 있으면 한국 화면은 이 탭으로 가는 단추를
  * 둬 끄기 단추가 늘 닿게 합니다. 실제 매매 모듈을 가져오는 곳은 이 파일
  * 하나입니다(경계 시험 components/screens/realtrade/__tests__/realtradeBoundary.test.ts).
+ *
+ * <p><b>ISA 계좌</b> 탭(키 isa, ADR 0029)은 한국 화면에만 있는 시장 제한 칸입니다(lib/paper `paperTabsFor`) — 연결되지 않은 다른 증권사 계좌의 장부와
+ * 다음 시가 매매 지시. 실제 계좌 탭처럼 개요 응답과 무관하게 IsaSection이 그 탭이 열릴 때만 스스로 읽습니다. 미국 화면에서 그 주소(/paper/us/isa)로
+ * 오면 개요를 열고 주소도 개요로 바꿉니다. ISA 모듈을 가져오는 곳은 이 파일 하나입니다(경계 시험 components/screens/isa/__tests__/isaBoundary.test.ts).
  */
 export default function PaperPage({
   initialTab = "overview",
@@ -77,23 +82,33 @@ export default function PaperPage({
 
 function PaperScreenBody({ initialTab, market }: { initialTab: PaperTabKey; market: PaperMarketCode }) {
   const korea = market === "KR";
-  const [tab, setTab] = useState<PaperTabKey>(initialTab);
+  // 이 시장에 없는 탭(미국의 'ISA 계좌')으로 오면 개요로 엽니다.
+  const [tab, setTab] = useState<PaperTabKey>(() => (paperTabInMarket(initialTab, market) ? initialTab : "overview"));
   const [preselect, setPreselect] = useState("");
   // 결정 로그의 주간 복기에서 누른 제안 번호 — 프레임 탭이 그 제안으로 스크롤해 강조합니다(탭 단추로 옮기면 지움).
   const [focusProposal, setFocusProposal] = useState<number | null>(null);
   // '이 장부의 한계'는 접어 둔 채 시작합니다(사용자 요청 2026-11-02 — 단추로 펼침). 글은 늘 그 카드 안에 있고 펼칠 때만 보입니다.
   const [limitsOpen, setLimitsOpen] = useState(false);
   const { data, loading, error, reload, refreshError } = useApi<PaperOverviewResponse>(endpoints.paper.market(market).overview, 60_000);
-  // 한국 화면은 이름이 다른 탭(종목 선정)만 한국 이름으로 — 여덟 탭 모두 열림(미국 화면은 PAPER_TABS 그대로).
-  const tabs = PAPER_TABS.map((entry) => ({ ...entry, label: (korea ? KR_TAB_LABELS[entry.key] : undefined) ?? entry.label }));
+  // 한국 화면은 이름이 다른 탭(종목 선정)만 한국 이름으로 — 여덟 탭 모두 열림(미국 화면은 PAPER_TABS 그대로). 시장 제한 칸('ISA 계좌')은 한국에만.
+  const tabs = paperTabsFor(market).map((entry) => ({ ...entry, label: (korea ? KR_TAB_LABELS[entry.key] : undefined) ?? entry.label }));
   const current = tabs.find((entry) => entry.key === tab) ?? tabs[0];
   // 라우터 밖(테스트)에서는 null입니다 — 그때는 주소를 따라가지 않습니다.
   const pathname = usePathname();
   // 미국 Claude 계좌2(체결 시점 실험) — 머리 줄과 한계 문구에 그 계좌만의 줄을 더합니다(한국 화면은 없음).
   const book2 = korea ? undefined : data?.books?.find((entry) => isTimedBook(entry.code));
 
+  // 이 시장에 없는 탭의 주소(미국 /paper/us/isa)로 열렸으면 주소도 개요로 바꿉니다(기록을 쌓지 않음 — 처음 한 번).
   useEffect(() => {
-    const fromPath = paperTabFromPath(pathname, market);
+    if (!paperTabInMarket(initialTab, market) && window.location.pathname === paperTabPath(initialTab, market)) {
+      window.history.replaceState(null, "", paperTabPath("overview", market));
+    }
+  }, [initialTab, market]);
+
+  useEffect(() => {
+    const routed = paperTabFromPath(pathname, market);
+    // 이 시장에 없는 탭의 주소는 개요로 봅니다.
+    const fromPath = routed !== null && !paperTabInMarket(routed, market) ? "overview" : routed;
     // 이 화면이 방금 바꾼 주소(replaceState)는 지금 탭과 같아 아무 일도 없습니다. 라우터가 아직 옛 주소를 들고 있는 동안(탭을 막
     // 바꾼 직후)은 브라우저의 지금 주소와 달라 무시합니다 — 그러지 않으면 방금 고른 탭을 옛 주소의 탭으로 되돌립니다.
     if (fromPath === null || fromPath === tab || pathname !== window.location.pathname) return;
@@ -168,8 +183,9 @@ function PaperScreenBody({ initialTab, market }: { initialTab: PaperTabKey; mark
       )}
 
       {/* 실제 계좌 탭은 개요 응답과 무관합니다(ADR 0028) — 개요가 아직 없거나 실패해도 그 탭의 실제 매매 칸(끄기 단추)·계좌 조회를 그립니다(탭 줄·한계
-          카드는 예전처럼 개요가 있을 때만). 같은 자리에 그려 개요가 도착해도 그 칸이 다시 붙지 않습니다(실제 매매 상태·실제 계좌를 두 번 읽지 않게). */}
-      {(data?.available || current.key === "real") && (
+          카드는 예전처럼 개요가 있을 때만). 같은 자리에 그려 개요가 도착해도 그 칸이 다시 붙지 않습니다(실제 매매 상태·실제 계좌를 두 번 읽지 않게).
+          ISA 계좌 탭(ADR 0029)도 개요와 무관한 자기 장부라 같은 규칙으로 그립니다. */}
+      {(data?.available || current.key === "real" || current.key === "isa") && (
         <>
           {data?.available && (data.limits ?? []).length > 0 && (
             <Card
@@ -266,6 +282,8 @@ function PaperScreenBody({ initialTab, market }: { initialTab: PaperTabKey; mark
                 <BrokerageSection market={market} extraActions={<RealTradeToggle />} />
               </RealTradeProvider>
             )}
+            {/* ISA 계좌(ADR 0029, 한국만) — 모의 장부와 별개. 이 탭일 때만 붙어 그때만 읽습니다(개요 응답·장부 값을 넘기지 않음). */}
+            {current.key === "isa" && <IsaSection />}
             {current.opensIn && (
               <Banner tone="info">
                 <strong>{current.label}</strong> 탭은 다음 단계에서 엽니다 — {current.opensIn}.

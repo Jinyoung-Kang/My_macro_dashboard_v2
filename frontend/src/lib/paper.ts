@@ -140,8 +140,8 @@ export const PAPER_SOURCES = {
  * 탭 — 명세 U2의 여섯 탭에서 "프레임·메모"를 "프레임"과 "메모" 둘로 나눴습니다(단계 3b). 프레임 탭은 판·제안·편집, 메모 탭은 시황·방법론
  * 메모라 할 일이 달라, 한 탭에 두면 판 비교와 편집 폼 아래로 메모 목록이 밀려납니다. opensIn이 있는 탭은 아직 내용이 없고
  * "다음 단계에서 엽니다"만 보입니다(지금은 없음 — 다음 단계 탭이 생기면 씀). 탭을 숨기지 않는 이유 — 무엇이 올지 보여야 지금 화면이
- * 전부가 아니라는 것을 압니다. 맨 끝 '실제 계좌'는 모의 장부가 아니라 토스증권 실제 계좌의 읽기 전용 화면입니다(ADR 0025) — 조회가
- * 꺼져 있어도 탭은 보이고, 탭 안에 '꺼져 있음' 안내만 띄웁니다.
+ * 전부가 아니라는 것을 압니다. '실제 계좌'는 모의 장부가 아니라 토스증권 실제 계좌의 읽기 전용 화면입니다(ADR 0025) — 조회가
+ * 꺼져 있어도 탭은 보이고, 탭 안에 '꺼져 있음' 안내만 띄웁니다. 맨 끝 'ISA 계좌'(ADR 0029)는 한국 화면에만 있습니다(paperTabsFor).
  */
 export const PAPER_TABS = [
   { key: "overview", label: "개요", opensIn: null, upcoming: null },
@@ -156,9 +156,26 @@ export const PAPER_TABS = [
   { key: "settings", label: "설정", opensIn: null, upcoming: null },
   // 실제 계좌(ADR 0025) — 모의 장부와 별개인 토스증권 실제 계좌 읽기 전용(한국 화면은 원화 쪽, 미국 화면은 달러 쪽). 탭을 열 때만 읽습니다.
   { key: "real", label: "실제 계좌", opensIn: null, upcoming: null },
+  // ISA 계좌(ADR 0029) — 연결되지 않은 다른 증권사 계좌의 장부와 다음 시가 매매 지시. 한국 화면에만 있는 시장 제한 칸(markets)입니다.
+  { key: "isa", label: "ISA 계좌", opensIn: null, upcoming: null, markets: ["KR"] },
 ] as const;
 
 export type PaperTabKey = (typeof PAPER_TABS)[number]["key"];
+
+/**
+ * 그 시장의 탭 줄에 있는 탭인가 — 시장 제한 칸(`markets`)이 없는 탭은 두 시장 모두, 있으면 그 시장만('ISA 계좌'는 한국만 — 미국 `/paper/us/isa`는
+ * 화면이 개요로 엽니다). 모르는 키는 거짓.
+ */
+export function paperTabInMarket(key: PaperTabKey, market: PaperMarketCode): boolean {
+  const tab = PAPER_TABS.find((entry) => entry.key === key);
+  if (!tab) return false;
+  return !("markets" in tab) || (tab.markets as readonly PaperMarketCode[]).includes(market);
+}
+
+/** 그 시장의 탭 줄 — PAPER_TABS 순서 그대로, 시장 제한 칸은 그 시장에서만. */
+export function paperTabsFor(market: PaperMarketCode): (typeof PAPER_TABS)[number][] {
+  return PAPER_TABS.filter((tab) => paperTabInMarket(tab.key, market));
+}
 
 /**
  * 배지 색 — Banner·Freshness와 같은 팔레트. 경고·정상 바탕은 불투명 틴트(globals.css) — 계좌 상세처럼 페이지 바탕 위에 놓여도 대비 4.5:1 이상.
