@@ -454,6 +454,11 @@ public class PaperLedgerService {
         // 미국 시각 지정 체결의 1분봉 저장본 — 풀어야 할 시각 지정 주문이 있는 책이 처음 물을 때 한 번만 읽습니다(그 밖에는 읽지 않음).
         Supplier<UsTimedFills.Bars> bars = market.definition() == UsPaperMarket.INSTANCE ? once(
                 () -> UsTimedFills.Bars.of(marketData.barsUs())) : null;
+        // 장중 스탑 감시가 ON인 시장(ADR 0032 결정 7)의 감시 저장본 — 대체 경로(미국 시간별·한국 밤 스탑)가 감시가 지켜본 종목을 건너뛸 때 처음 물으면 한 번
+        // 읽습니다. OFF·SHADOW면 null이라 두 경로 모두 예전 그대로입니다(SHADOW는 주문을 내지 않으므로 기존 경로가 모두 지킴).
+        boolean korea = market.auctionFills();
+        Supplier<JsonNode> watch = StopWatchMode.of(settingsBody, korea).orders()
+                ? once(() -> marketData.stopWatch(korea).map(com.macrodash.store.Snapshot::payload).orElse(null)) : null;
 
         int filled = 0;
         int stopped = 0;
@@ -473,7 +478,7 @@ public class PaperLedgerService {
                 continue;
             }
             try {
-                BookRun run = store.atomically(() -> processBook(market, book, observed, current, settingsBody, bars));
+                BookRun run = store.atomically(() -> processBook(market, book, observed, current, settingsBody, bars, watch));
                 failedObservations.remove(key);
                 if (run == null) {
                     continue;
@@ -553,7 +558,7 @@ public class PaperLedgerService {
      * @param bars 미국 시각 지정 체결의 1분봉 저장본(한 처리에 한 번 읽음) — 미국이 아니면 null
      */
     private BookRun processBook(PaperMarket market, Book book, Quotes quotes, PaperSettings current,
-                                JsonNode settingsBody, Supplier<UsTimedFills.Bars> bars) {
+                                JsonNode settingsBody, Supplier<UsTimedFills.Bars> bars, Supplier<JsonNode> watch) {
         Optional<BookState> stateRow = store.state(book.code());
         if (stateRow.isEmpty()) {
             throw new IllegalStateException("계좌 상태(paper_book_state)가 없습니다 — 초기화를 다시 실행하세요");
@@ -563,6 +568,7 @@ public class PaperLedgerService {
             return null;
         }
         BookRun run = new BookRun(market, book, quotes, current, state.cash(), settingsBody);
+        run.stopWatch = watch;
 
         // 0. 미국 시각 지정 주문(명세 2026-10-30 §10-2): 기준 시각이 이 관측치 전인 대기 주문이 있으면 이 관측치 뒤의 1분봉 저장본을 기다립니다
         //    (최대 설정 claude2.barsWaitMinutes, 기본 15분) — 그러지 않으면 아래 시간별 스탑이 그 앞 시각의 시각 지정 매도보다 먼저 돕니다. 미루면
@@ -1293,6 +1299,13 @@ public class PaperLedgerService {
                 continue;
             }
             double stopPrice = TrailingStop.stopPrice(holding.highWatermark, stopPct);
+            if (watchCovers(run, holding, last.date())) {
+                // 장중 감시가 그 세션의 그 종목을 지켜봄(ADR 0032 결정 7) — 밤 잠정 종가 한 번으로 내지 않고 다음 세션 감시에 맡깁니다.
+                run.note(holding.ticker + " 밤 스탑을 장중 감시에 맡김 — 감시가 " + last.date() + " 세션을 지켜봄(잠정 종가 " + won(close)
+                        + " ≤ 스탑가 " + won(stopPrice) + ")");
+                continue;
+            }
+            LocalTime fallbackAt = run.stopWatch == null ? null : nightFallbackAt(run, last.date());
             Map<String, Object> reason = new LinkedHashMap<>();
             reason.put("trigger", "TRAILING_STOP");
             reason.put("stopPct", stopPct);
@@ -1301,16 +1314,41 @@ public class PaperLedgerService {
             reason.put("observedPrice", close);
             reason.put("observedSource", last.priceSource());
             reason.put("barDate", last.date().toString());
-            reason.put("detection", "밤 잠정 종가 — 다음 거래일 시가(NEXT_OPEN) 매도, 체결 때 금융위 " + last.date()
-                    + " 종가로 다시 판정(스탑가 위면 STOP_NOT_CONFIRMED 취소)");
+            if (fallbackAt == null) {
+                reason.put("detection", "밤 잠정 종가 — 다음 거래일 시가(NEXT_OPEN) 매도, 체결 때 금융위 " + last.date()
+                        + " 종가로 다시 판정(스탑가 위면 STOP_NOT_CONFIRMED 취소)");
+            } else {
+                reason.put("stopMode", STOP_MODE_NIGHT_FALLBACK);
+                reason.put("detection", "밤 잠정 종가(장중 감시가 덮지 못한 종목) — 다음 거래일 첫 분 " + FreeTiming.label(fallbackAt)
+                        + " 지정 시각(AT_MINUTE) 매도, 체결 때 금융위 " + last.date() + " 종가로 다시 판정(스탑가 위면 STOP_NOT_CONFIRMED 취소)");
+            }
             LocalDate expires = run.market.calendar().addTradingDays(last.date(), RuleBookService.ORDER_EXPIRY_TRADING_DAYS);
             long id = store.insertOrder(new Order(0, run.book.code(), null, holding.ticker, PaperBooks.SELL, null, null, null,
-                    PaperBooks.NEXT_OPEN, PaperBooks.SOURCE_STOP, PaperBooks.ORDER_PENDING, null, mapper.valueToTree(reason),
-                    last.date(), run.at, expires, null));
+                    fallbackAt == null ? PaperBooks.NEXT_OPEN : PaperBooks.AT_MINUTE, PaperBooks.SOURCE_STOP, PaperBooks.ORDER_PENDING, null,
+                    mapper.valueToTree(reason), last.date(), run.at, expires, null, fallbackAt));
             waiting.add(holding.ticker);
             run.note("주문 " + id + " " + holding.ticker + " 트레일링 스탑 감지 −" + trim(stopPct) + "%: 최고가 "
                     + won(holding.highWatermark) + " → " + last.date() + " 잠정 종가 " + won(close) + "("
-                    + last.priceSource() + ") ≤ 스탑가 " + won(stopPrice) + " — 다음 거래일 시가 매도(만료 " + expires + ")");
+                    + last.priceSource() + ") ≤ 스탑가 " + won(stopPrice) + " — " + (fallbackAt == null ? "다음 거래일 시가 매도"
+                    : "다음 거래일 첫 분 " + FreeTiming.label(fallbackAt) + " 매도") + "(만료 " + expires + ")");
+        }
+    }
+
+    /**
+     * 감시를 켠 한국 시장의 밤 대체 STOP 시각(ADR 0032 결정 7) — 감지한 세션 D 다음 거래일의 첫 분(개장 + 10분, 그날 달력 — 보통 날 09:10·수능일 10:10,
+     * {@link RuleTiming#reissueAt}). 그 시각이 이미 생성 + 60초 안으로 지났거나(밤 처리가 다음 세션까지 밀림) 다음 거래일을 달력에서 셀 수 없으면 null —
+     * 예전처럼 다음 거래일 시가로 냅니다.
+     */
+    private static LocalTime nightFallbackAt(BookRun run, LocalDate detected) {
+        try {
+            TradingCalendar calendar = run.market.calendar();
+            LocalDate next = calendar.nextTradingDay(detected);
+            LocalTime at = RuleTiming.reissueAt(next, calendar);
+            Instant target = java.time.ZonedDateTime.of(next, at, calendar.zone()).toInstant();
+            return target.isAfter(run.at.plus(ExecutionAudit.AFTER_CREATED)) ? at : null;
+        } catch (CalendarUnavailableException e) {
+            run.note("다음 거래일을 달력에서 셀 수 없어(" + e.getMessage() + ") 밤 대체 스탑을 시가로 냄");
+            return null;
         }
     }
 
@@ -1740,6 +1778,7 @@ public class PaperLedgerService {
 
     private void checkStops(BookRun run) {
         double stopPct = run.settings.trailingStopPct();
+        Set<String> waiting = pendingStops(run);
         for (Holding holding : new ArrayList<>(run.holdings.values())) {
             if (!holding.verified || run.settings.cashLike(holding.ticker)) {
                 continue;   // 이번 가격을 믿을 수 없거나(가격 없음) 현금성(SHY) — 스탑을 보지 않음
@@ -1749,6 +1788,18 @@ public class PaperLedgerService {
                 continue;
             }
             double stopPrice = TrailingStop.stopPrice(holding.highWatermark, stopPct);
+            if (waiting.contains(holding.ticker)) {
+                // 장중 감시가 낸 대기 STOP(ADR 0032)이 이미 있음 — 그 STOP이 자기 기준 시각 가격으로 팝니다(같은 보유를 두 번 팔지 않게).
+                run.note(holding.ticker + " 시간별 스탑을 보지 않음 — 대기 STOP이 이미 있음(관측가 " + money(bar.close()) + " ≤ 스탑 "
+                        + money(stopPrice) + ")");
+                continue;
+            }
+            if (watchCovers(run, holding, run.session)) {
+                // 장중 감시가 그 종목을 지켜봄 — '5분 두 번 이어짐' 규칙만 스탑을 냅니다(시간별 표본 한 번으로 팔지 않음, ADR 0032 결정 7).
+                run.note(holding.ticker + " 시간별 스탑을 장중 감시에 맡김 — 감시가 그 종목을 지켜봄(관측가 " + money(bar.close())
+                        + " ≤ 스탑 " + money(stopPrice) + ")");
+                continue;
+            }
             String unresolved = run.timedUnresolved.get(holding.ticker);
             if (unresolved != null) {
                 // 미국 시각 지정 주문 — 앞 시각 T의 주문이 아직 풀리지 않음(UsTimedFills '스탑과의 순서'). 이 관측가로 팔면 T 주문보다 먼저 팔게 되므로
@@ -1766,6 +1817,9 @@ public class PaperLedgerService {
             reason.put("stopPrice", PaperLedger.round4(stopPrice));
             reason.put("observedPrice", bar.close());
             reason.put("barDate", bar.date().toString());
+            if (run.stopWatch != null) {
+                reason.put("stopMode", STOP_MODE_HOURLY_FALLBACK);   // 감시가 덮지 못한 종목(ADR 0032 결정 7) — 감시를 켠 시장에서만 붙임
+            }
             // 스탑은 관측치가 만든 주문이라 생성·체결 시각 모두 그 관측치의 수집 시각입니다(IMMEDIATE). 체결가는 시장 몫(그 관측가).
             Order stop = new Order(0, run.book.code(), null, holding.ticker, PaperBooks.SELL, qty,
                     null, null, PaperBooks.IMMEDIATE, PaperBooks.SOURCE_STOP, PaperBooks.ORDER_FILLED, null,
@@ -1786,6 +1840,44 @@ public class PaperLedgerService {
             run.lockouts.put(holding.ticker, until);
             run.stopped++;
         }
+    }
+
+    /** 대체 경로 STOP 근거의 {@code stopMode} — 감시를 켠 시장에서 감시가 덮지 못한 종목의 미국 시간별 스탑·한국 밤 스탑(ADR 0032 결정 7). */
+    static final String STOP_MODE_HOURLY_FALLBACK = "HOURLY_FALLBACK";
+    static final String STOP_MODE_NIGHT_FALLBACK = "NIGHT_FALLBACK";
+
+    /** 그 책의 대기 STOP 매도 종목(장중 감시·밤 감지가 낸 것 — 이번 처리에서 체결·취소된 것은 빠짐). */
+    private Set<String> pendingStops(BookRun run) {
+        Set<String> out = new TreeSet<>();
+        for (Order order : store.ordersByStatus(run.book.code(), PaperBooks.ORDER_PENDING)) {
+            if (PaperBooks.SOURCE_STOP.equals(order.source()) && PaperBooks.SELL.equals(order.side())) {
+                out.add(order.ticker());
+            }
+        }
+        return out;
+    }
+
+    /**
+     * 감시가 그 세션의 그 종목을 지켜봤는가(그 시장 감시가 ON일 때만 — {@link StopWatch#covered}). 갭 가드의 장부 전일 종가는 그 보유의 분할 기준일이 그 세션
+     * 직전 거래일일 때의 기준 종가입니다(감시 작업과 같은 값).
+     */
+    private static boolean watchCovers(BookRun run, Holding holding, LocalDate session) {
+        if (run.stopWatch == null) {
+            return false;
+        }
+        JsonNode payload = run.stopWatch.get();
+        if (payload == null) {
+            return false;
+        }
+        TradingCalendar calendar = run.market.calendar();
+        LocalDate previous;
+        try {
+            previous = calendar.previousTradingDay(session);
+        } catch (CalendarUnavailableException e) {
+            return false;
+        }
+        Double ledgerPrev = previous.equals(holding.fillRefDate) ? holding.fillRefClose : null;
+        return StopWatch.covered(payload, holding.ticker, session, run.at, calendar, run.market.auctionFills(), ledgerPrev);
     }
 
     // ------------------------------------------------------------------ 5. 평가·저장
@@ -2192,6 +2284,8 @@ public class PaperLedgerService {
          * 풂, {@link UsTimedFills} '스탑과의 순서').
          */
         final Map<String, String> timedUnresolved = new TreeMap<>();
+        /** 장중 스탑 감시 저장본(그 시장 감시가 ON일 때만 — 아니면 null, ADR 0032 결정 7). 대체 경로가 감시가 지켜본 종목을 건너뜁니다({@link StopWatch#covered}). */
+        Supplier<JsonNode> stopWatch;
         int filled;
         int stopped;
         int expired;
