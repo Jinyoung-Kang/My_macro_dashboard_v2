@@ -26,7 +26,8 @@ import java.util.function.Function;
 import java.util.function.Supplier;
 
 /**
- * 연결되지 않은 다른 증권사 계좌(ISA 계좌 — ADR 0029, 명세 docs/specs/2026-11-06-isa-manual-account.md §6)의 표({@code manual_*}, V25) — 백엔드가 쓰는
+ * 연결되지 않은 다른 증권사 계좌(ISA 계좌 — ADR 0029, 명세 docs/specs/2026-11-06-isa-manual-account.md §6)의 표({@code manual_*}, V25 — 장중 스탑 매도
+ * 지시 {@code manual_stop_instructions}와 장부의 {@code stop_instruction_id}는 V28, ADR 0033 초안) — 백엔드가 쓰는
  * 표(ADR 0008). 이 표들의 JDBC는 <b>전부 여기</b>에 있고, 부르는 곳은 {@code feature.realtrade}의 ISA 계좌 클래스뿐입니다(ArchitectureRulesTest가 막음).
  *
  * <p><b>잠금</b>: {@link #lockAccount}가 계좌 행을 {@code SELECT … FOR UPDATE}로 잡은 트랜잭션 안에서 받은 일을 돌립니다 — 안에서 부르는 이 저장소의
@@ -79,20 +80,34 @@ public class ManualAccountStore {
         }
     }
 
-    /** 장부 행 하나(V25 {@code manual_ledger}의 모든 칸). */
+    /**
+     * 장부 행 하나(V25 {@code manual_ledger}의 모든 칸 + V28 {@code stop_instruction_id}). {@code stopInstructionId}는 그 스탑 매도 지시대로 적은 행의
+     * 지시 번호(없으면 null — 한 행은 {@code instructionId}와 이 칸 가운데 하나에만 묶임).
+     */
     public record LedgerRow(long id, String account, Instant at, String kind, String symbol, BigDecimal quantity, BigDecimal price,
                             BigDecimal amount, BigDecimal fee, BigDecimal tax, Long instructionId, String source, String note,
-                            Instant createdAt, Instant updatedAt) {
+                            Instant createdAt, Instant updatedAt, Long stopInstructionId) {
+
+        /** 스탑 지시에 묶이지 않은 행(V28 전 모양). */
+        public LedgerRow(long id, String account, Instant at, String kind, String symbol, BigDecimal quantity, BigDecimal price,
+                         BigDecimal amount, BigDecimal fee, BigDecimal tax, Long instructionId, String source, String note,
+                         Instant createdAt, Instant updatedAt) {
+            this(id, account, at, kind, symbol, quantity, price, amount, fee, tax, instructionId, source, note, createdAt, updatedAt, null);
+        }
 
         @Override
         public String toString() {
-            return "LedgerRow[id=" + id + ", kind=" + kind + ", source=" + source + ", instructionId=" + instructionId + "]";
+            return "LedgerRow[id=" + id + ", kind=" + kind + ", source=" + source + ", instructionId=" + instructionId
+                    + ", stopInstructionId=" + stopInstructionId + "]";
         }
     }
 
-    /** 새로 쓰거나 고칠 장부 행의 값(번호·시각 칸 없음). 수수료·세금이 null이면 0으로 씁니다. */
+    /**
+     * 새로 쓰거나 고칠 장부 행의 값(번호·시각 칸 없음). 수수료·세금이 null이면 0으로 씁니다. {@code stopInstructionId}는 새 행에만 씁니다 — 고칠 때는
+     * 이미 묶인 스탑 지시를 그대로 둡니다({@link #updateLedger}).
+     */
     public record LedgerValues(Instant at, String kind, String symbol, BigDecimal quantity, BigDecimal price, BigDecimal amount,
-                               BigDecimal fee, BigDecimal tax, Long instructionId, String source, String note) {
+                               BigDecimal fee, BigDecimal tax, Long instructionId, String source, String note, Long stopInstructionId) {
 
         public LedgerValues {
             Objects.requireNonNull(at, "at");
@@ -100,9 +115,16 @@ public class ManualAccountStore {
             Objects.requireNonNull(source, "source");
         }
 
+        /** 스탑 지시에 묶지 않는 값(V28 전 모양 — 다음 시가 지시·사용자 입력 행). */
+        public LedgerValues(Instant at, String kind, String symbol, BigDecimal quantity, BigDecimal price, BigDecimal amount,
+                            BigDecimal fee, BigDecimal tax, Long instructionId, String source, String note) {
+            this(at, kind, symbol, quantity, price, amount, fee, tax, instructionId, source, note, null);
+        }
+
         @Override
         public String toString() {
-            return "LedgerValues[kind=" + kind + ", source=" + source + ", instructionId=" + instructionId + "]";
+            return "LedgerValues[kind=" + kind + ", source=" + source + ", instructionId=" + instructionId
+                    + ", stopInstructionId=" + stopInstructionId + "]";
         }
     }
 
@@ -131,6 +153,46 @@ public class ManualAccountStore {
         }
     }
 
+    /**
+     * 장중 스탑 매도 지시 행 하나(V28 {@code manual_stop_instructions}의 모든 칸) — 따라 하는 모의 책의 STOP 주문 하나에 한 행.
+     *
+     * @param session      매도할 거래일(그 모의 주문의 목표 세션)
+     * @param paperOrderId 그 모의 STOP 주문 번호(참고용 — 외래키 없음)
+     * @param timing       그 모의 주문의 체결 시점(MARKET·AT_MINUTE·NEXT_CLOSE·NEXT_OPEN — 알림 글이 장중 시장가와 종가 단일가를 가름)
+     * @param targetAt     그 모의 주문의 기준 시각
+     * @param notifiedAt   즉시 알림을 보낸 시각(보내기 전 null)
+     */
+    public record StopInstruction(long id, String account, LocalDate session, long paperOrderId, String symbol, String side, int quantity,
+                                  String timing, Instant targetAt, JsonNode reason, String status, Instant notifiedAt, Instant createdAt,
+                                  Instant updatedAt) {
+
+        public boolean planned() {
+            return STATUS_PLANNED.equals(status);
+        }
+
+        @Override
+        public String toString() {
+            return "StopInstruction[id=" + id + ", session=" + session + ", paperOrderId=" + paperOrderId + ", status=" + status + "]";
+        }
+    }
+
+    /** 새 스탑 매도 지시 행의 값(매도만). */
+    public record NewStopInstruction(LocalDate session, long paperOrderId, String symbol, int quantity, String timing, Instant targetAt,
+                                     JsonNode reason) {
+
+        public NewStopInstruction {
+            Objects.requireNonNull(session, "session");
+            Objects.requireNonNull(symbol, "symbol");
+            Objects.requireNonNull(timing, "timing");
+            Objects.requireNonNull(targetAt, "targetAt");
+        }
+
+        @Override
+        public String toString() {
+            return "NewStopInstruction[session=" + session + ", paperOrderId=" + paperOrderId + "]";
+        }
+    }
+
     /** 세션 행 하나(V25 {@code manual_sessions}). {@code ledgerChangedAt}은 지시를 만든 뒤 장부가 바뀌었는데 다시 계산하지 않은 시각(없으면 null). */
     public record SessionRow(String account, LocalDate session, String state, Long decisionId, JsonNode detail, Instant ledgerChangedAt,
                              Instant createdAt) {
@@ -139,10 +201,12 @@ public class ManualAccountStore {
     private static final String ACCOUNT_COLUMNS = "code, label, market, source_book, state, started_at, start_cash, version, recalc_session, "
             + "created_at, updated_at";
     private static final String LEDGER_COLUMNS = "id, account, at, kind, symbol, quantity, price, amount, fee, tax, instruction_id, source, "
-            + "note, created_at, updated_at";
+            + "note, created_at, updated_at, stop_instruction_id";
     private static final String INSTRUCTION_COLUMNS = "id, account, session, symbol, side, quantity, ref_price, weight_pct, reason, status, "
             + "notified_night_at, notified_morning_at, created_at, updated_at";
     private static final String SESSION_COLUMNS = "account, session, state, decision_id, detail, ledger_changed_at, created_at";
+    private static final String STOP_COLUMNS = "id, account, session, paper_order_id, symbol, side, quantity, timing, target_at, reason, status, "
+            + "notified_at, created_at, updated_at";
 
     private final JdbcTemplate jdbc;
     private final ObjectMapper mapper;
@@ -157,10 +221,14 @@ public class ManualAccountStore {
         this.transactions = new TransactionTemplate(new DataSourceTransactionManager(jdbc.getDataSource()));
     }
 
-    /** 표가 있는가. 수집기가 아직 V25를 적용하지 않았으면 false입니다(그때 ISA 계좌는 '준비 중'). */
+    /**
+     * 표가 있는가. 수집기가 아직 V25·V28을 적용하지 않았으면 false입니다(그때 ISA 계좌는 '준비 중') — 장부 조회가 모두 V28의
+     * {@code stop_instruction_id} 칸을 읽으므로 백엔드만 새로 띄운 배포(QA-016)에서 SQL 오류 대신 안내 문구가 나가게.
+     */
     public boolean ready() {
         return schema.tableExists("manual_accounts") && schema.tableExists("manual_ledger")
-                && schema.tableExists("manual_instructions") && schema.tableExists("manual_sessions");
+                && schema.tableExists("manual_instructions") && schema.tableExists("manual_sessions")
+                && schema.tableExists("manual_stop_instructions") && schema.columnExists("manual_ledger", "stop_instruction_id");
     }
 
     /**
@@ -233,18 +301,32 @@ public class ManualAccountStore {
         return jdbc.query("SELECT " + LEDGER_COLUMNS + " FROM manual_ledger WHERE instruction_id = ? ORDER BY id", ledgerMapper(), instructionId);
     }
 
-    /** 장부 행을 씁니다 — 새 번호. */
+    /** 그 스탑 매도 지시에 묶인 장부 행. */
+    public List<LedgerRow> ledgerForStopInstruction(long stopInstructionId) {
+        return jdbc.query("SELECT " + LEDGER_COLUMNS + " FROM manual_ledger WHERE stop_instruction_id = ? ORDER BY id", ledgerMapper(),
+                stopInstructionId);
+    }
+
+    /** 장부 행을 씁니다 — 새 번호. 스탑 지시 번호({@link LedgerValues#stopInstructionId})도 함께 씁니다. */
     public long insertLedger(String code, LedgerValues v) {
         Long id = jdbc.query("INSERT INTO manual_ledger (account, at, kind, symbol, quantity, price, amount, fee, tax, instruction_id, source, "
-                        + "note) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id",
+                        + "note, stop_instruction_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id",
                 ps -> {
                     ps.setString(1, code);
                     bindLedger(ps, 2, v);
+                    if (v.stopInstructionId() == null) {
+                        ps.setNull(13, Types.BIGINT);
+                    } else {
+                        ps.setLong(13, v.stopInstructionId());
+                    }
                 }, (rs, rowNum) -> rs.getLong("id")).stream().findFirst().orElseThrow();
         return id;
     }
 
-    /** 장부 행을 고칩니다(모든 값 칸). 그 계좌의 행이 없으면 false. */
+    /**
+     * 장부 행을 고칩니다(V25의 모든 값 칸). 묶인 스탑 지시({@code stop_instruction_id})는 그대로 둡니다 — 그 칸을 모르는 고침(사용자 입력)이 자동 기록한
+     * 스탑 매도 행의 묶음을 지우지 않게. 그 계좌의 행이 없으면 false.
+     */
     public boolean updateLedger(String code, long id, LedgerValues v) {
         return jdbc.update("UPDATE manual_ledger SET at = ?, kind = ?, symbol = ?, quantity = ?, price = ?, amount = ?, fee = ?, tax = ?, "
                 + "instruction_id = ?, source = ?, note = ?, updated_at = now() WHERE id = ? AND account = ?", ps -> {
@@ -352,6 +434,79 @@ public class ManualAccountStore {
                 });
     }
 
+    // ------------------------------------------------------------------ 스탑 매도 지시(V28)
+    public Optional<StopInstruction> stopInstruction(long id) {
+        return jdbc.query("SELECT " + STOP_COLUMNS + " FROM manual_stop_instructions WHERE id = ?", stopMapper(), id).stream().findFirst();
+    }
+
+    /** 그 모의 STOP 주문의 지시(계좌마다 하나). */
+    public Optional<StopInstruction> stopInstructionForOrder(String code, long paperOrderId) {
+        return jdbc.query("SELECT " + STOP_COLUMNS + " FROM manual_stop_instructions WHERE account = ? AND paper_order_id = ?", stopMapper(),
+                code, paperOrderId).stream().findFirst();
+    }
+
+    /** 그 세션의 스탑 지시 — 만든 순서. */
+    public List<StopInstruction> stopInstructions(String code, LocalDate session) {
+        return jdbc.query("SELECT " + STOP_COLUMNS + " FROM manual_stop_instructions WHERE account = ? AND session = ? ORDER BY id", stopMapper(),
+                code, Date.valueOf(session));
+    }
+
+    /** 아직 장부에 적히지 않은(PLANNED) 스탑 지시 — 세션 → 번호 순. */
+    public List<StopInstruction> plannedStopInstructions(String code) {
+        return jdbc.query("SELECT " + STOP_COLUMNS + " FROM manual_stop_instructions WHERE account = ? AND status = 'PLANNED' "
+                + "ORDER BY session, id", stopMapper(), code);
+    }
+
+    /** 최근 스탑 지시 — 늦게 만든 것부터. */
+    public List<StopInstruction> recentStopInstructions(String code, int limit) {
+        return jdbc.query("SELECT " + STOP_COLUMNS + " FROM manual_stop_instructions WHERE account = ? ORDER BY id DESC LIMIT ?", stopMapper(),
+                code, limit);
+    }
+
+    /** 스탑 지시 행을 씁니다 — 같은 (계좌, 모의 주문)이 이미 있으면 아무것도 하지 않고 empty(같은 스탑을 두 번 알리거나 적지 않게). */
+    public Optional<Long> insertStopInstruction(String code, NewStopInstruction n) {
+        return jdbc.query("INSERT INTO manual_stop_instructions (account, session, paper_order_id, symbol, quantity, timing, target_at, reason) "
+                        + "VALUES (?, ?, ?, ?, ?, ?, ?, ?::jsonb) ON CONFLICT (account, paper_order_id) DO NOTHING RETURNING id",
+                ps -> {
+                    ps.setString(1, code);
+                    ps.setDate(2, Date.valueOf(n.session()));
+                    ps.setLong(3, n.paperOrderId());
+                    ps.setString(4, n.symbol());
+                    ps.setInt(5, n.quantity());
+                    ps.setString(6, n.timing());
+                    ps.setTimestamp(7, Timestamp.from(n.targetAt()));
+                    ps.setString(8, json(n.reason()));
+                }, (rs, rowNum) -> rs.getLong("id")).stream().findFirst();
+    }
+
+    /**
+     * 스탑 지시 상태를 바꿉니다. {@code reasonPatch}가 있으면 근거 JSON에 덧붙입니다(같은 키는 덮어씀). {@code expected}가 있으면 그 상태일 때만 바꿉니다.
+     *
+     * @return 바꿨으면 true
+     */
+    public boolean updateStopInstructionStatus(long id, String status, String expected, Map<String, ?> reasonPatch) {
+        String patch = reasonPatch == null || reasonPatch.isEmpty() ? "{}" : mapper.writeValueAsString(reasonPatch);
+        if (expected == null) {
+            return jdbc.update("UPDATE manual_stop_instructions SET status = ?, reason = reason || ?::jsonb, updated_at = now() WHERE id = ?",
+                    status, patch, id) == 1;
+        }
+        return jdbc.update("UPDATE manual_stop_instructions SET status = ?, reason = reason || ?::jsonb, updated_at = now() "
+                + "WHERE id = ? AND status = ?", status, patch, id, expected) == 1;
+    }
+
+    /** 즉시 알림을 보낸 시각을 남깁니다(아직 없는 행만). */
+    public int markStopNotified(Collection<Long> ids, Instant at) {
+        if (ids.isEmpty()) {
+            return 0;
+        }
+        Long[] array = ids.toArray(new Long[0]);
+        return jdbc.update("UPDATE manual_stop_instructions SET notified_at = ?, updated_at = now() WHERE id = ANY (?) AND notified_at IS NULL",
+                ps -> {
+                    ps.setTimestamp(1, Timestamp.from(at));
+                    ps.setArray(2, ps.getConnection().createArrayOf("bigint", array));
+                });
+    }
+
     // ------------------------------------------------------------------ 세션
     public Optional<SessionRow> session(String code, LocalDate session) {
         return jdbc.query("SELECT " + SESSION_COLUMNS + " FROM manual_sessions WHERE account = ? AND session = ?", sessionMapper(), code,
@@ -430,7 +585,14 @@ public class ManualAccountStore {
         return (rs, rowNum) -> new LedgerRow(rs.getLong("id"), rs.getString("account"), instant(rs, "at"), rs.getString("kind"),
                 rs.getString("symbol"), rs.getBigDecimal("quantity"), rs.getBigDecimal("price"), rs.getBigDecimal("amount"),
                 rs.getBigDecimal("fee"), rs.getBigDecimal("tax"), rs.getObject("instruction_id", Long.class), rs.getString("source"),
-                rs.getString("note"), instant(rs, "created_at"), instant(rs, "updated_at"));
+                rs.getString("note"), instant(rs, "created_at"), instant(rs, "updated_at"), rs.getObject("stop_instruction_id", Long.class));
+    }
+
+    private RowMapper<StopInstruction> stopMapper() {
+        return (rs, rowNum) -> new StopInstruction(rs.getLong("id"), rs.getString("account"), rs.getDate("session").toLocalDate(),
+                rs.getLong("paper_order_id"), rs.getString("symbol"), rs.getString("side"), rs.getInt("quantity"), rs.getString("timing"),
+                instant(rs, "target_at"), json(rs, "reason"), rs.getString("status"), instant(rs, "notified_at"), instant(rs, "created_at"),
+                instant(rs, "updated_at"));
     }
 
     private RowMapper<Instruction> instructionMapper() {

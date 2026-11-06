@@ -57,9 +57,10 @@ class ManualAccountServiceDbTest {
         return new ManualAccountStore(jdbc, MAPPER, new SchemaCheck(jdbc));
     }
 
-    /** 네 표를 비웁니다(이 기능만 쓰는 표 — 장부가 지시를, 모두가 계좌를 참조하는 순서). */
+    /** 다섯 표를 비웁니다(이 기능만 쓰는 표 — 장부가 지시·스탑 지시(V28)를, 모두가 계좌를 참조하는 순서). */
     static void clean(JdbcTemplate jdbc) {
         jdbc.update("DELETE FROM manual_ledger");
+        jdbc.update("DELETE FROM manual_stop_instructions");
         jdbc.update("DELETE FROM manual_instructions");
         jdbc.update("DELETE FROM manual_sessions");
         jdbc.update("DELETE FROM manual_accounts");
