@@ -71,6 +71,29 @@ class AccessPolicyTest {
     }
 
     @Test
+    @DisplayName("실제 매매 경로(/api/realtrade, ADR 0028)는 모두 운영자만 — 실제 주문 상태를 바꾸는 POST도, 상태·예상 목록 GET도")
+    void realtradeRoutesAreOwnerOnly() throws ClassNotFoundException {
+        java.util.List<String> declared = RouteInventoryTest.declaredRoutes().stream()
+                .filter(route -> route.split(" ")[1].startsWith("/api/realtrade/")).toList();
+        java.util.List<String> listed = AccessPolicy.routes().keySet().stream()
+                .filter(route -> route.split(" ")[1].startsWith("/api/realtrade/")).toList();
+        assertThat(declared).as("컨트롤러가 여는 실제 매매 경로").containsExactlyInAnyOrder("GET /api/realtrade/status",
+                "GET /api/realtrade/preview", "POST /api/realtrade/enable", "POST /api/realtrade/disable",
+                "POST /api/realtrade/update", "POST /api/realtrade/resume");
+        assertThat(listed).containsExactlyInAnyOrderElementsOf(declared);
+        listed.forEach(route -> assertThat(AccessPolicy.routes().get(route)).as(route).isEqualTo(AccessPolicy.Access.OWNER));
+        for (String path : java.util.List.of("/api/realtrade/status", "/api/realtrade/preview")) {
+            assertThat(AccessPolicy.required("GET", path)).as("GET " + path).isEqualTo(AccessPolicy.Access.OWNER);
+            assertThat(AccessPolicy.required("HEAD", path)).as("HEAD " + path).isEqualTo(AccessPolicy.Access.OWNER);
+        }
+        for (String path : java.util.List.of("/api/realtrade/enable", "/api/realtrade/disable", "/api/realtrade/update",
+                "/api/realtrade/resume")) {
+            assertThat(AccessPolicy.required("POST", path)).as("POST " + path).isEqualTo(AccessPolicy.Access.OWNER);
+        }
+        assertThat(AccessPolicy.allows(AccessPolicy.Access.OWNER, "MEMBER", "PRO")).as("유료 회원도 못 씀").isFalse();
+    }
+
+    @Test
     @DisplayName("운영자는 모든 등급 경로를, 무료 회원은 운영·유료 경로를 못 쓴다")
     void allows() {
         assertThat(AccessPolicy.allows(AccessPolicy.Access.OWNER, "MEMBER", "PRO")).isFalse();

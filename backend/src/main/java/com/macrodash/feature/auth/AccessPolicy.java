@@ -95,6 +95,9 @@ public final class AccessPolicy {
         owner("GET /api/admin/users", "POST /api/admin/users", "POST /api/admin/users/{id}", "GET /api/admin/audit");
         // 실제 계좌(토스증권, ADR 0025) — 운영자 개인 자산을 읽기만 함(주문 경로 없음, 저장하지 않음, 운영자의 토스 키로 외부 조회)
         owner("GET /api/brokerage/account");
+        // 실제 매매(토스증권, ADR 0028) — 운영자의 실제 계좌가 모의 한국 책을 따라 주문함(돈이 움직임). 켜기류는 확인 글자 + 비밀번호, 끄기는 늘 받음
+        owner("GET /api/realtrade/status", "GET /api/realtrade/preview", "POST /api/realtrade/enable",
+                "POST /api/realtrade/disable", "POST /api/realtrade/update", "POST /api/realtrade/resume");
         // 모의 매매 — 운영자 한 사람의 실험 장부. 초기화·리셋·리스크 실행·트랙레코드 재계산·결정·시작이 장부를 바꾸고,
         //    Claude 책의 결정·미리보기·시작은 운영자 키로 Claude를 부름(비용). 설정은 실험 조건을 바꿈
         owner("GET /api/paper/overview", "GET /api/paper/live", "GET /api/paper/status", "GET /api/paper/names",

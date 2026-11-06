@@ -130,6 +130,12 @@ dashboard:
     telegram-chat-id: ${TELEGRAM_CHAT_ID:}
     telegram-link-base: ${PUBLIC_ORIGIN:}   # 알림 끝의 화면 링크 앞부분(서버 공개 주소) — 비면 링크 줄 없음
 
+  # 실제 매매(실제 토스 계좌가 모의 한국 책을 따라 함 — ADR 0028, 명세 docs/specs/2026-11-06-real-trade-mirror.md). 여기는 세 스위치 중 백엔드 몫이고
+  # 기본은 꺼짐입니다 — 로컬·QA compose는 보간 없는 "false", Vultr 덧붙임만 서버 .env 값을 넘깁니다. 꺼져 있으면 정기 작업이 아무것도 하지 않습니다.
+  realtrade:
+    enabled: ${REAL_TRADE_ENABLED:false}
+    interval-ms: 10000                      # 정기 작업 주기(10초, 전용 단일 스레드 스케줄러 — 명세 §7.3)
+
   ai:
     # Claude API (Haiku 5.5) — platform.claude.com에서 발급. 자동 탐색의 첫 엔진입니다.
     anthropic-api-key: ${ANTHROPIC_API_KEY:}

@@ -249,6 +249,24 @@ GET·OPTIONS 밖(쓰기·HEAD)은 경로와 상관없이 403 `{"error":"demo_rea
 |---|---|
 | `GET /api/brokerage/account?market=KR` | `market=KR`(원화 — 국내 주식·원화 매수 가능 금액) 또는 `US`(달러 — 미국 주식·달러 매수 가능 금액), 없거나 틀리면 400 → `{available, state(OK·DISABLED·NOT_CONFIGURED·COLLECTOR_UNREACHABLE·IP_NOT_ALLOWED·AUTH_FAILED·RATE_LIMITED·NO_ACCOUNT·REFRESHING·UPSTREAM_ERROR), message, market, currency, accountLabel, accountCount, fetchedAtKst, staleSinceKst, ageSeconds, isStale, staleReason, upstreamCode, buyingPower, summary:{purchaseAmount, marketValue, marketValueAfterCost, profitLoss, profitLossAfterCost, dailyProfitLoss, profitLossPct, profitLossPctAfterCost(두 Pct는 같은 통화끼리 대시보드 계산)}, holdings:[…], openOrders:[…], closedOrders:[…](최근 30일, 최신순), closedFromDate, closedTruncated, unclassifiedCount}` — 계좌번호·계좌 식별 키·주문 번호는 싣지 않음, 모르는 값은 null |
 
+### 실제 매매(토스증권 실제 계좌가 모의 한국 책을 따라 함, 운영자 전용 — [ADR 0028](adr/0028-real-trade-mirror.md))
+
+운영자의 토스 실제 계좌(원화 자산 전부)가 고른 모의 한국 책(`kr_rules`·`kr_claude`·`kr_claude2`)을 따라 **실제 주문**을 냅니다. 계약 전체는 [명세 §7.2](specs/2026-11-06-real-trade-mirror.md).
+주문은 세 스위치(수집기 `TOSS_TRADING_ENABLED`·백엔드 `REAL_TRADE_ENABLED` — 둘 다 서버 `.env`에서만 켬 — 그리고 화면 스위치 `state=LIVE`)가 모두 켜져야 나갑니다.
+켜기류(enable·update·resume)는 확인 글자가 정확히 같아야 하고 운영자 비밀번호가 필요합니다(연속 5번 틀리면 30분 거절). 끄기는 확인 없이 늘 받습니다.
+거절은 `{ok:false, error, message}` — 400 `invalid-market`·`not-supported`(미국 켜기류)·`confirm-mismatch`·`invalid-version`·`invalid-loss-limit`·`invalid-source-book`·`book-not-active`·`nothing-to-update`,
+403 `password-invalid`·`password-locked`, 409 `version-conflict`·`invalid-state`·`server-disabled`·`book-changed`·`not-ready`, 502 `preflight-failed`. 토스 주문 번호·clientOrderId·계좌 값은 응답에 없습니다.
+금액·수량은 숫자, 시각은 ISO-8601(UTC `Z`)입니다.
+
+| 경로 | 설명 |
+|---|---|
+| `GET /api/realtrade/status?market=KR` | `market=KR`·`US`(없거나 틀리면 400) → `{available, market, supported(KR만 true), serverEnabled:{collector, backend, reason}, state(OFF·LIVE·HALTED·STOPPING), sourceBook, sourceLabel, lossLimitPct, baselineEquity, baselineTotal, buysPaused, haltReason, unfinishedOrders, cancelGaveUpOrders, unresolvedOrders(건수만), version, limits:{maxOrderKrw, maxOrdersPerDay, maxBuyKrwPerDay, maxEquityKrw}, today:{date, skipReason, windows:[{kind(SYNC·SYNC_FOLLOWUP·MIRROR·NEXT_CLOSE), start, end}]}, serverTime, jobStartedAt, jobLastCycleAt, lastPreflight:{fetchedAt, equity, total, cashBuyingPower, holdings:[{symbol, name, quantity, lastPrice}]}, orders:[{session, purpose, symbol, name, side, quantity, timeInForce, attempt, sendOutcome, brokerStatus, outcomeCode, terminal, filledQuantity, averageFilledPrice, filledAmount, cancelRequested, firstSentAt, createdAt, filledAt}](최근 50), events:[{at, kind, detail}](최근 30), books:[{code, label, status}]}` — 표가 없으면 `available:false`·`message` |
+| `GET /api/realtrade/preview?market=KR&sourceBook=kr_rules` | 켜기 창의 예상 목록 — 지금 새로 읽은 계좌 + 그 책의 다음 시가 목표 → `{ok, sourceBook, session, equity, orders:[{symbol, name, side, quantity, estAmount}], skipped:[{symbol, name, reason}], turnoverPct, warnings:[…]}`, 읽지 못하면 `{ok:false, reason}` |
+| `POST /api/realtrade/enable` | 본문 `{market:"KR", sourceBook, lossLimitPct(1~50, 기본 15), confirm:"실제 매매 켜기", password, version}` — 꺼짐에서만, 서버 두 스위치가 켜져 있어야 함 → LIVE·`sync_pending`·기준 평가액(지금 운용 평가액) → `{ok, state, version}` |
+| `POST /api/realtrade/disable` | 본문 `{market}` — 비밀번호·확인 글자 없음, 서버 스위치가 꺼져 있어도 받음. 이 기능의 미종료 주문이 있으면 STOPPING(정기 작업이 취소를 따라가 끝나면 OFF), 없으면 OFF → `{ok, state, version}` |
+| `POST /api/realtrade/update` | 본문 `{market:"KR", sourceBook?, lossLimitPct?, rebaseline?, confirm:"설정 바꾸기", password, version}` — 켜짐에서만. 방식이 바뀌면 옛 책 미체결 취소·`sync_pending` → `{ok, state, version}` |
+| `POST /api/realtrade/resume` | 본문 `{market:"KR", confirm:"멈춤 해제", password, version}` — 이상 멈춤 → 켜짐(`sync_pending`) 또는 켜짐의 매수 멈춤 해제 → `{ok, state, version}` |
+
 ### 모의 매매(미국·한국, 운영자 전용)
 
 모든 경로가 운영자 전용입니다. 테이블(V8)이나 V9~V11의 열(`paper_track_record.group_code`·`data_source`, `paper_decisions.packet_text`, `paper_api_usage.est_cost_calls`), V12의 `paper_reviews`, V13~V16의 열(`paper_books.market`·`currency`(V13), `paper_reviews.market`·`paper_notes.market`(V14), `paper_positions.fill_ref_volume`(V15), `paper_orders.ledger_hold_reason`(V16)), V17의 `paper_fills.bar_at` 열과 `paper_order_exec`, V18의 `paper_checkpoints`가 아직 없으면 `{available:false, message}`(POST·DELETE는 `ok:false`도)로 답합니다(`PaperStore.ready` — 백엔드만 새로 띄워 마이그레이션이 빠졌을 때, QA-016).

@@ -93,6 +93,9 @@ class RouteInventoryTest {
             "GET /api/live/prices", "GET /api/live/prices/stream",
             // 실제 계좌(토스증권, 읽기 전용 — 운영자 전용, ADR 0025)
             "GET /api/brokerage/account",
+            // 실제 매매(토스증권 실제 계좌가 모의 한국 책을 따라 함 — 운영자 전용, ADR 0028)
+            "GET /api/realtrade/status", "GET /api/realtrade/preview", "POST /api/realtrade/enable",
+            "POST /api/realtrade/disable", "POST /api/realtrade/update", "POST /api/realtrade/resume",
             // 모의 매매(운영자 전용)
             "GET /api/paper/overview", "GET /api/paper/live", "GET /api/paper/status", "GET /api/paper/names",
             "GET /api/paper/books/{code}/positions",

@@ -1,0 +1,469 @@
+package com.macrodash.feature.paper;
+
+import com.macrodash.analytics.KrxCalendar;
+import com.macrodash.feature.paper.PaperMarketData.Bar;
+import com.macrodash.feature.paper.PaperMarketData.Quotes;
+import com.macrodash.feature.paper.PaperMirrorService.DueOrder;
+import com.macrodash.feature.paper.PaperMirrorService.OpenTargets;
+import com.macrodash.feature.paper.PaperMirrorService.WeightAfter;
+import com.macrodash.read.StoreReader;
+import com.macrodash.store.PaperStore.Book;
+import com.macrodash.store.PaperStore.BookState;
+import com.macrodash.store.PaperStore.LedgerHold;
+import com.macrodash.store.PaperStore.Order;
+import com.macrodash.store.PaperStore.Position;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Test;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.node.ObjectNode;
+
+import java.time.Clock;
+import java.time.Instant;
+import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.time.LocalTime;
+import java.time.ZoneOffset;
+import java.time.ZonedDateTime;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Optional;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.within;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
+
+/**
+ * 모의 한국 책의 공개 창({@link PaperMirrorService}, ADR 0028 — 명세 2026-11-06 §3.1~3.3) — 시가 목표가 스탑·규칙·Claude 시가 주문을 모두 흡수하는지,
+ * 장중 주문의 따라 할 시각·뿌리, 그 주문 뒤 비중, 선점이 장중 교체와 겨룰 때 잠금 안에서 다시 보는지, 장부 반영 판정을 확인합니다. 달력은 천문연 실제
+ * 응답으로 만든 2026년 한국 달력이고, 종목·가격은 합성 값입니다.
+ */
+class PaperMirrorServiceTest {
+
+    private static final String BOOK = PaperBooks.KR_CLAUDE2;
+    /** 목표 세션 S(금)와 그 전 거래일 P(목)·P2(수). */
+    private static final LocalDate S = LocalDate.of(2026, 11, 6);
+    private static final LocalDate P = LocalDate.of(2026, 11, 5);
+    private static final LocalDate P2 = LocalDate.of(2026, 11, 4);
+    private static final String A = "005930";
+    private static final String B = "000660";
+    private static final String C = "035420";
+    private static final String CASH_LIKE = PaperBooks.KR_SHORT_BOND;
+    /** P 밤 결정이 주문을 만든 시각(22:40 KST). */
+    private static final Instant NIGHT = kst("2026-11-05T22:40");
+
+    private FakePaperStore store;
+    private StoreReader reader;
+    private PaperMarketData marketData;
+    private PaperMarkets markets;
+    private PaperLedgerService ledger;
+
+    private static Instant kst(String local) {
+        return ZonedDateTime.of(LocalDateTime.parse(local), KrxCalendar.SEOUL).toInstant();
+    }
+
+    @BeforeEach
+    void setUp() {
+        store = new FakePaperStore();
+        reader = PaperFixtures.quietReader();
+        KrFixtures.stubHolidays(reader, KrFixtures.holidays(2026, 2027));
+        marketData = mock(PaperMarketData.class);
+        when(marketData.quotes(any())).thenReturn(Optional.empty());
+        when(marketData.watchKr()).thenReturn(Optional.empty());
+        markets = new PaperMarkets(store, reader);
+        ledger = new PaperLedgerService(store, marketData, PaperFixtures.MAPPER);
+        store.books.put(BOOK, new Book(BOOK, PaperBooks.KIND_CLAUDE, PaperBooks.KR_CLAUDE2_LABEL, 100_000_000,
+                LocalDate.of(2026, 10, 30), PaperBooks.ACTIVE, Instant.parse("2026-10-29T13:00:00Z"), Book.MARKET_KR, Book.CURRENCY_KRW));
+        state(1_000_000, kst("2026-11-05T20:40"));
+    }
+
+    private PaperMirrorService service(Instant clockNow) {
+        return new PaperMirrorService(store, reader, marketData, markets, ledger, Clock.fixed(clockNow, ZoneOffset.UTC));
+    }
+
+    private PaperMirrorService service() {
+        return service(kst("2026-11-06T08:50"));
+    }
+
+    private void state(double cash, Instant processed) {
+        store.states.put(BOOK, new BookState(BOOK, cash, cash, 0, 0, processed, processed, P, null));
+    }
+
+    private void position(String ticker, int qty, double lastPrice) {
+        store.upsertPosition(new Position(BOOK, ticker, qty, lastPrice * 0.9, P2, NIGHT, lastPrice, NIGHT, lastPrice, NIGHT, false, P,
+                lastPrice, null));
+    }
+
+    private long order(String ticker, String side, Double weight, Double sellFraction, String timing, String source, LocalDate asOf,
+                       Instant createdAt, LocalTime targetLocal, JsonNode reason) {
+        return store.insertOrder(new Order(0, BOOK, null, ticker, side, null, weight, sellFraction, timing, source,
+                PaperBooks.ORDER_PENDING, null, reason, asOf, createdAt, asOf.plusDays(10), null, targetLocal));
+    }
+
+    private long order(String ticker, String side, Double weight, Double sellFraction, String timing, String source) {
+        return order(ticker, side, weight, sellFraction, timing, source, P, NIGHT, null, null);
+    }
+
+    private void quotes(Instant collectedAt, Object... tickerAndClose) {
+        Map<String, Bar> bars = new LinkedHashMap<>();
+        for (int i = 0; i < tickerAndClose.length; i += 2) {
+            String ticker = (String) tickerAndClose[i];
+            bars.put(ticker, PaperFixtures.bar(ticker, P2, ((Number) tickerAndClose[i + 1]).doubleValue() * 0.99, P,
+                    tickerAndClose[i + 1]));
+        }
+        when(marketData.quotes(any())).thenReturn(Optional.of(new Quotes(collectedAt, bars, P)));
+    }
+
+    // ------------------------------------------------------------------ 시가 목표
+    @Test
+    @DisplayName("시가 목표는 스탑·규칙·Claude 시가 주문을 모두 체결했다고 본 비중 — 흡수 번호는 그 세션 시가 주문뿐")
+    void openTargetsAbsorbAllOpenOrders() {
+        position(A, 100, 10_000);
+        quotes(kst("2026-11-05T20:30"), A, 10_000, B, 20_000, C, 5_000);
+        long stop = order(A, PaperBooks.SELL, null, null, PaperBooks.NEXT_OPEN, PaperBooks.SOURCE_STOP);
+        long rule = order(B, PaperBooks.BUY, 25.0, null, PaperBooks.NEXT_OPEN, RuleBookService.SOURCE_RULE);
+        long claude = order(C, PaperBooks.BUY, 10.0, null, PaperBooks.NEXT_OPEN, PacketBuilder.SOURCE_CLAUDE);
+        order(C, PaperBooks.BUY, 5.0, null, PaperBooks.AT_1000, PacketBuilder.SOURCE_CLAUDE);                     // 장중 — 흡수하지 않음
+        order(B, PaperBooks.BUY, 5.0, null, PaperBooks.NEXT_OPEN, PacketBuilder.SOURCE_CLAUDE, S, kst("2026-11-06T22:40"), null,
+                null);                                                                                           // 다음 세션 시가
+        order(B, PaperBooks.BUY, 5.0, null, PaperBooks.NEXT_OPEN, PacketBuilder.SOURCE_CLAUDE, P, kst("2026-11-06T10:00"), null,
+                null);                                                                                           // S 개장 뒤 생성 — 장부도 다음 시가
+        long cancelled = order(B, PaperBooks.BUY, 50.0, null, PaperBooks.NEXT_OPEN, PacketBuilder.SOURCE_CLAUDE);
+        store.markOrderStatus(cancelled, PaperBooks.ORDER_CANCELLED, "다음 결정이 대신함");
+
+        OpenTargets targets = service().openTargets(BOOK, S).orElseThrow();
+
+        assertThat(targets.absorbedOrderIds()).containsExactly(stop, rule, claude);
+        assertThat(targets.complete()).isTrue();
+        assertThat(targets.nav()).isCloseTo(2_000_000, within(0.01));
+        assertThat(targets.weightPct()).containsOnlyKeys(B, C);
+        assertThat(targets.weightPct().get(B)).as("25% × 200만 ÷ 2만 = 25주").isCloseTo(25.0, within(1e-9));
+        assertThat(targets.weightPct().get(C)).as("10% × 200만 ÷ 5천 = 40주").isCloseTo(10.0, within(1e-9));
+        assertThat(targets.cash()).isCloseTo(1_300_000, within(0.01));
+        assertThat(targets.price().get(B)).isEqualTo(20_000.0);
+    }
+
+    @Test
+    @DisplayName("시가 목표의 매수 순서는 장부와 같이 현금성을 마지막에 — 먼저 만든 현금성 매수가 현금을 먼저 쓰지 않는다")
+    void cashLikeBuysLast() {
+        quotes(kst("2026-11-05T20:30"), CASH_LIKE, 100_000, B, 20_000);
+        order(CASH_LIKE, PaperBooks.BUY, 80.0, null, PaperBooks.NEXT_OPEN, PacketBuilder.SOURCE_CLAUDE);
+        order(B, PaperBooks.BUY, 50.0, null, PaperBooks.NEXT_OPEN, PacketBuilder.SOURCE_CLAUDE);
+
+        OpenTargets targets = service().openTargets(BOOK, S).orElseThrow();
+
+        assertThat(targets.weightPct().get(B)).as("신호 종목이 먼저 25주").isCloseTo(50.0, within(1e-9));
+        assertThat(targets.weightPct().get(CASH_LIKE)).as("현금성은 남은 현금으로 5주").isCloseTo(50.0, within(1e-9));
+    }
+
+    @Test
+    @DisplayName("가격을 모르는 시가 주문은 흡수하되 불완전으로 알리고, 순자산이 0 이하·상태 없음·휴장·한국 책 아님은 목표를 내지 않는다")
+    void openTargetsRefuseIncompleteInputs() {
+        quotes(kst("2026-11-05T20:30"), B, 20_000);
+        long unpriced = order(C, PaperBooks.BUY, 10.0, null, PaperBooks.NEXT_OPEN, PacketBuilder.SOURCE_CLAUDE);
+
+        OpenTargets targets = service().openTargets(BOOK, S).orElseThrow();
+        assertThat(targets.absorbedOrderIds()).containsExactly(unpriced);
+        assertThat(targets.unpricedOrderIds()).containsExactly(unpriced);
+        assertThat(targets.complete()).isFalse();
+
+        assertThat(service().openTargets(BOOK, LocalDate.of(2026, 11, 7))).as("토요일").isEmpty();
+        state(0, kst("2026-11-05T20:40"));
+        assertThat(service().openTargets(BOOK, S)).as("순자산 0 — 빈 목표로 모두 팔지 않게").isEmpty();
+        store.states.remove(BOOK);
+        assertThat(service().openTargets(BOOK, S)).isEmpty();
+        store.books.put("claude2", new Book("claude2", PaperBooks.KIND_CLAUDE, "Claude 계좌2", 100_000, P, PaperBooks.ACTIVE,
+                Instant.parse("2026-10-20T00:00:00Z")));
+        assertThat(service().openTargets("claude2", S)).as("미국 책").isEmpty();
+        assertThat(service().openTargets("nope", S)).isEmpty();
+    }
+
+    // ------------------------------------------------------------------ 장중 주문
+    @Test
+    @DisplayName("장중 주문 — 따라 할 시각이 지난 그 세션 시각 지정 주문만, 종가는 종가 단일가 시작부터, 모르는 시점은 건너뜀으로 늘 보이고 뿌리를 단다")
+    void dueOrdersWindowAndRoots() {
+        long hourly = order(B, PaperBooks.BUY, 5.0, null, PaperBooks.AT_1000, PacketBuilder.SOURCE_CLAUDE);
+        long market = order(A, PaperBooks.SELL, null, 0.5, PaperBooks.MARKET, PacketBuilder.SOURCE_CLAUDE, P,
+                kst("2026-11-06T10:30"), null, null);                                                      // 기준 분 10:32
+        long minute = order(C, PaperBooks.BUY, 3.0, null, PaperBooks.AT_MINUTE, PacketBuilder.SOURCE_CLAUDE, P, NIGHT,
+                LocalTime.of(10, 45), null);
+        long close = order(C, PaperBooks.BUY, 2.0, null, PaperBooks.NEXT_CLOSE, PacketBuilder.SOURCE_CLAUDE);
+        order(B, PaperBooks.BUY, 4.0, null, PaperBooks.NEXT_OPEN, PacketBuilder.SOURCE_CLAUDE);                    // 시가 — 흡수 몫
+        order(B, PaperBooks.BUY, 4.0, null, PaperBooks.AT_1000, PacketBuilder.SOURCE_CLAUDE, P2, kst("2026-11-04T22:40"), null,
+                null);                                                                                           // 목표 세션 P
+        long r0 = order(A, PaperBooks.SELL, null, null, PaperBooks.AT_1000, RuleBookService.SOURCE_RULE, P2, kst("2026-11-04T22:40"),
+                null, null);
+        store.markOrderStatus(r0, PaperBooks.ORDER_EXPIRED, "다시 냄");
+        ObjectNode fromR0 = PaperFixtures.MAPPER.createObjectNode().put(UsTimedFills.REISSUED_FROM, r0);
+        long r1 = order(A, PaperBooks.SELL, null, null, PaperBooks.NEXT_OPEN, RuleBookService.SOURCE_RULE, P2, kst("2026-11-05T21:00"),
+                null, fromR0);
+        store.markOrderStatus(r1, PaperBooks.ORDER_EXPIRED, "다시 냄");
+        ObjectNode fromR1 = PaperFixtures.MAPPER.createObjectNode().put(UsTimedFills.REISSUED_FROM, r1);
+        long r2 = order(A, PaperBooks.SELL, null, null, PaperBooks.AT_1000, RuleBookService.SOURCE_RULE, P, NIGHT, null, fromR1);
+        long odd = order(B, PaperBooks.BUY, 1.0, null, "NEXT_OBSERVATION", PacketBuilder.SOURCE_CLAUDE);
+
+        List<DueOrder> at1040 = service().dueOrders(BOOK, S, kst("2026-11-06T10:40"));
+        assertThat(at1040).extracting(DueOrder::orderId).containsExactly(r2, hourly, market, odd);
+        DueOrder reissued = at1040.getFirst();
+        assertThat(reissued.rootOrderId()).as("재발행 사슬의 첫 주문").isEqualTo(r0);
+        assertThat(reissued.mirrorAt()).isEqualTo(kst("2026-11-06T10:00"));
+        assertThat(at1040.get(1).rootOrderId()).isEqualTo(hourly);
+        assertThat(at1040.get(2).mirrorAt()).isEqualTo(kst("2026-11-06T10:32"));
+        assertThat(at1040.get(2).sellFraction()).isEqualTo(0.5);
+        DueOrder unsupported = at1040.get(3);
+        assertThat(unsupported.supported()).isFalse();
+        assertThat(unsupported.mirrorAt()).isNull();
+
+        List<DueOrder> at1521 = service().dueOrders(BOOK, S, kst("2026-11-06T15:21"));
+        assertThat(at1521).extracting(DueOrder::orderId).contains(minute, close);
+        DueOrder closing = at1521.stream().filter(d -> d.orderId() == close).findFirst().orElseThrow();
+        assertThat(closing.mirrorAt()).as("종가 단일가 시작").isEqualTo(kst("2026-11-06T15:20"));
+        assertThat(closing.target()).as("모의 기준 시각은 마감").isEqualTo(kst("2026-11-06T15:30"));
+        assertThat(service().dueOrders(BOOK, S, kst("2026-11-06T15:19"))).extracting(DueOrder::orderId).doesNotContain(close);
+        assertThat(service().dueOrders("nope", S, kst("2026-11-06T15:21"))).isEmpty();
+    }
+
+    @Test
+    @DisplayName("그 주문 뒤 비중 — 시가 주문과 기준 시각이 그 주문 이하인 주문만 넣고, 감시 저장본은 지금 전에 받은 것만 쓴다")
+    void weightAfterIncludesEverythingUpToT() {
+        position(A, 100, 10_000);
+        quotes(kst("2026-11-05T20:30"), A, 10_000, B, 20_000, C, 5_000);
+        long open = order(B, PaperBooks.BUY, 10.0, null, PaperBooks.NEXT_OPEN, PacketBuilder.SOURCE_CLAUDE);
+        long sellHalf = order(A, PaperBooks.SELL, null, 0.5, PaperBooks.AT_1000, RuleBookService.SOURCE_RULE);
+        long buyC = order(C, PaperBooks.BUY, 20.0, null, PaperBooks.AT_1100, PacketBuilder.SOURCE_CLAUDE);
+        long later = order(A, PaperBooks.BUY, 10.0, null, PaperBooks.AT_1400, PacketBuilder.SOURCE_CLAUDE);
+
+        WeightAfter afterSell = service().weightAfter(BOOK, sellHalf, kst("2026-11-06T10:01")).orElseThrow();
+        assertThat(afterSell.applied()).isTrue();
+        assertThat(afterSell.assumedOrderIds()).containsExactly(open, sellHalf);
+        assertThat(afterSell.weightPct()).as("50주 × 1만 ÷ 200만").isCloseTo(25.0, within(1e-9));
+        assertThat(afterSell.side()).isEqualTo(PaperBooks.SELL);
+
+        WeightAfter afterBuy = service().weightAfter(BOOK, buyC, kst("2026-11-06T11:01")).orElseThrow();
+        assertThat(afterBuy.assumedOrderIds()).containsExactly(open, sellHalf, buyC).doesNotContain(later);
+        assertThat(afterBuy.weightPct()).as("20% × 200만 ÷ 5천 = 80주").isCloseTo(20.0, within(1e-9));
+        assertThat(afterBuy.nav()).isCloseTo(2_000_000, within(0.01));
+
+        // 감시 저장본의 10:00 창 첫 거래 봉(시가 12,000)으로 판 값 — 지금 전에 받은 저장본만.
+        ObjectNode watch = PaperFixtures.MAPPER.createObjectNode();
+        watch.putObject("tickers").putObject(A).putObject("windows").putArray("10:00").addObject()
+                .put("label", "10:01").put("open", 12_000).put("volume", 500);
+        when(marketData.watchKr()).thenReturn(Optional.of(KrFixtures.snapshot("paper.watch.kr", watch, kst("2026-11-06T10:01:30"))));
+        WeightAfter watched = service().weightAfter(BOOK, sellHalf, kst("2026-11-06T10:02")).orElseThrow();
+        assertThat(watched.nav()).as("현금 80만 + 50주×1.2만 + 60만 + B 20만").isCloseTo(2_200_000, within(0.01));
+        assertThat(watched.weightPct()).isCloseTo(600_000.0 / 2_200_000 * 100, within(1e-9));
+        WeightAfter tooEarly = service().weightAfter(BOOK, sellHalf, kst("2026-11-06T10:01")).orElseThrow();
+        assertThat(tooEarly.weightPct()).as("지금 뒤에 받은 저장본은 쓰지 않음").isCloseTo(25.0, within(1e-9));
+
+        store.markOrderStatus(later, PaperBooks.ORDER_CANCELLED, "장중 확인이 대신함");
+        assertThat(service().weightAfter(BOOK, later, kst("2026-11-06T14:01"))).as("대기가 아님").isEmpty();
+        assertThat(service().weightAfter("nope", sellHalf, kst("2026-11-06T10:01"))).isEmpty();
+    }
+
+    @Test
+    @DisplayName("그 주문의 가격을 모르면 비중은 그 주문 전 값이고 applied=false")
+    void weightAfterUnpricedOrder() {
+        position(A, 100, 10_000);
+        quotes(kst("2026-11-05T20:30"), A, 10_000);
+        long buyC = order(C, PaperBooks.BUY, 20.0, null, PaperBooks.AT_1100, PacketBuilder.SOURCE_CLAUDE);
+
+        WeightAfter after = service().weightAfter(BOOK, buyC, kst("2026-11-06T11:01")).orElseThrow();
+        assertThat(after.applied()).isFalse();
+        assertThat(after.unpricedOrderIds()).containsExactly(buyC);
+        assertThat(after.weightPct()).isZero();
+    }
+
+    // ------------------------------------------------------------------ 선점
+    @Test
+    @DisplayName("선점 — 대기이고 따라 할 시각이 지났고 목표 세션이 오늘일 때만 받은 일을 부른다(시가·다른 책·지난 세션·멈춘 책·시계보다 앞선 now는 아님)")
+    void claimChecks() {
+        long hourly = order(B, PaperBooks.BUY, 5.0, null, PaperBooks.AT_1000, PacketBuilder.SOURCE_CLAUDE);
+        long open = order(B, PaperBooks.BUY, 5.0, null, PaperBooks.NEXT_OPEN, PacketBuilder.SOURCE_CLAUDE);
+        long stale = order(B, PaperBooks.BUY, 5.0, null, PaperBooks.AT_1000, PacketBuilder.SOURCE_CLAUDE, P2, kst("2026-11-04T22:40"),
+                null, null);
+        long close = order(C, PaperBooks.BUY, 2.0, null, PaperBooks.NEXT_CLOSE, PacketBuilder.SOURCE_CLAUDE);
+        AtomicInteger calls = new AtomicInteger();
+        Instant t = kst("2026-11-06T10:00:30");
+
+        assertThat(service(t).claim(BOOK, hourly, t, () -> "row-" + calls.incrementAndGet())).contains("row-1");
+        assertThat(service(t).claim(BOOK, hourly, kst("2026-11-06T09:59"), calls::incrementAndGet)).as("T 전").isEmpty();
+        assertThat(service(kst("2026-11-06T09:59:30")).claim(BOOK, hourly, t, calls::incrementAndGet))
+                .as("받은 now가 서비스 시계보다 앞섬").isEmpty();
+        assertThat(service(t).claim(BOOK, open, t, calls::incrementAndGet)).as("시가 주문").isEmpty();
+        assertThat(service(t).claim(BOOK, stale, t, calls::incrementAndGet)).as("목표 세션 P").isEmpty();
+        assertThat(service(t).claim("kr_claude", hourly, t, calls::incrementAndGet)).as("다른 책 코드").isEmpty();
+        assertThat(service(t).claim(BOOK, close, t, calls::incrementAndGet)).as("종가는 15:20부터").isEmpty();
+        Instant closing = kst("2026-11-06T15:20:30");
+        assertThat(service(closing).claim(BOOK, close, closing, () -> "close")).contains("close");
+        assertThat(calls.get()).as("받은 일은 첫 선점에서만 불림").isEqualTo(1);
+
+        store.books.put(BOOK, new Book(BOOK, PaperBooks.KIND_CLAUDE, PaperBooks.KR_CLAUDE2_LABEL, 100_000_000, LocalDate.of(2026, 10, 30),
+                PaperBooks.PAUSED, Instant.parse("2026-10-29T13:00:00Z"), Book.MARKET_KR, Book.CURRENCY_KRW));
+        assertThat(service(t).claim(BOOK, hourly, t, calls::incrementAndGet)).as("일시정지").isEmpty();
+        assertThat(calls.get()).isEqualTo(1);
+    }
+
+    @Test
+    @DisplayName("선점이 장중 교체와 겨루면 — 교체가 잠금을 쥔 동안 선점은 기다렸다가 잠금 안에서 다시 읽어 취소된 주문을 보고 부르지 않는다")
+    void claimRacesSupersede() throws Exception {
+        long hourly = order(B, PaperBooks.BUY, 5.0, null, PaperBooks.AT_1000, PacketBuilder.SOURCE_CLAUDE);
+        Instant t = kst("2026-11-06T10:00:30");
+        PaperMirrorService service = service(t);
+        CountDownLatch supersedeHolds = new CountDownLatch(1);
+        CountDownLatch release = new CountDownLatch(1);
+        AtomicInteger inserts = new AtomicInteger();
+        ExecutorService pool = Executors.newFixedThreadPool(2);
+        try {
+            Future<?> supersede = pool.submit(() -> ledger.exclusively(() -> {
+                supersedeHolds.countDown();
+                await(release);
+                store.markOrderStatus(hourly, PaperBooks.ORDER_CANCELLED, ClaudeDecisionPipeline.SUPERSEDED_BY_CHECKPOINT);
+                return null;
+            }));
+            assertThat(supersedeHolds.await(5, TimeUnit.SECONDS)).isTrue();
+            Future<Optional<Integer>> claim = pool.submit(() -> service.claim(BOOK, hourly, t, inserts::incrementAndGet));
+            Thread.sleep(200);
+            assertThat(claim.isDone()).as("교체가 잠금을 쥔 동안 선점은 기다림").isFalse();
+            release.countDown();
+            supersede.get(5, TimeUnit.SECONDS);
+            assertThat(claim.get(5, TimeUnit.SECONDS)).isEmpty();
+        } finally {
+            pool.shutdownNow();
+        }
+        assertThat(inserts.get()).isZero();
+    }
+
+    @Test
+    @DisplayName("선점의 일은 잠금 안에서 돈다 — 그동안 장부를 바꾸는 다른 일은 기다리고, 끝난 뒤에는 이미 쓰인 행을 본다")
+    void claimRunsInsideTheLedgerLock() throws Exception {
+        long hourly = order(B, PaperBooks.BUY, 5.0, null, PaperBooks.AT_1000, PacketBuilder.SOURCE_CLAUDE);
+        Instant t = kst("2026-11-06T10:00:30");
+        PaperMirrorService service = service(t);
+        CountDownLatch inserting = new CountDownLatch(1);
+        CountDownLatch release = new CountDownLatch(1);
+        List<String> sequence = new java.util.concurrent.CopyOnWriteArrayList<>();
+        ExecutorService pool = Executors.newFixedThreadPool(2);
+        try {
+            Future<Optional<String>> claim = pool.submit(() -> service.claim(BOOK, hourly, t, () -> {
+                inserting.countDown();
+                await(release);
+                sequence.add("insert");
+                return "row";
+            }));
+            assertThat(inserting.await(5, TimeUnit.SECONDS)).isTrue();
+            Future<?> other = pool.submit(() -> ledger.exclusively(() -> {
+                sequence.add("ledger");
+                return null;
+            }));
+            Thread.sleep(200);
+            assertThat(other.isDone()).isFalse();
+            release.countDown();
+            assertThat(claim.get(5, TimeUnit.SECONDS)).contains("row");
+            other.get(5, TimeUnit.SECONDS);
+        } finally {
+            pool.shutdownNow();
+        }
+        assertThat(sequence).containsExactly("insert", "ledger");
+    }
+
+    // ------------------------------------------------------------------ 장부 반영·책·달력
+    @Test
+    @DisplayName("장부 반영 — P 관측치를 처리했고 일하는 이전 대기 주문이 없을 때만 참(장부가 그날 보류한 주문은 기다리지 않음)")
+    void ledgerCaughtUp() {
+        Instant processed = kst("2026-11-05T20:40");
+        quotes(kst("2026-11-05T20:30"), A, 10_000, B, 20_000);
+        assertThat(service().ledgerCaughtUp(BOOK, S)).isTrue();
+
+        state(1_000_000, kst("2026-11-04T20:40"));
+        assertThat(service().ledgerCaughtUp(BOOK, S)).as("마지막 처리가 P2").isFalse();
+        state(1_000_000, processed);
+
+        quotes(kst("2026-11-05T20:50"), A, 10_000, B, 20_000);
+        assertThat(service().ledgerCaughtUp(BOOK, S)).as("더 새 관측치를 아직 처리하지 못함").isFalse();
+        quotes(kst("2026-11-05T20:30"), A, 10_000, B, 20_000);
+
+        long waiting = order(B, PaperBooks.BUY, 5.0, null, PaperBooks.AT_MINUTE, PacketBuilder.SOURCE_CLAUDE, P2,
+                kst("2026-11-04T22:40"), LocalTime.of(10, 15), null);                                            // 목표 세션 P — 1분봉 기다림
+        assertThat(service().ledgerCaughtUp(BOOK, S)).as("P 시각 지정 주문이 아직 대기").isFalse();
+        store.ledgerHoldMarks.put(waiting, new LedgerHold(waiting, BOOK, B, "그날 1분봉 없음 · 체결하지 않음(만료까지)", processed));
+        assertThat(service().ledgerCaughtUp(BOOK, S)).as("장부가 그 관측치로 보류").isTrue();
+
+        store.states.remove(BOOK);
+        assertThat(service().ledgerCaughtUp(BOOK, S)).isFalse();
+        assertThat(service().ledgerCaughtUp("nope", S)).isFalse();
+    }
+
+    @Test
+    @DisplayName("뿌리 — 사슬 중간이 지워졌으면 가리킨 번호, 고리·다른 책을 가리키면 거기서 멈춤, 다른 책의 주문이면 없음")
+    void rootOf() {
+        ObjectNode fromMissing = PaperFixtures.MAPPER.createObjectNode().put(UsTimedFills.REISSUED_FROM, 999_999L);
+        long orphan = order(A, PaperBooks.SELL, null, null, PaperBooks.AT_1000, RuleBookService.SOURCE_RULE, P, NIGHT, null, fromMissing);
+        assertThat(service().rootOf(BOOK, orphan)).contains(999_999L);
+
+        long first = order(A, PaperBooks.SELL, null, null, PaperBooks.AT_1000, RuleBookService.SOURCE_RULE);
+        long second = order(A, PaperBooks.SELL, null, null, PaperBooks.AT_1000, RuleBookService.SOURCE_RULE, P, NIGHT, null,
+                PaperFixtures.MAPPER.createObjectNode().put(UsTimedFills.REISSUED_FROM, first));
+        store.updateOrderReason(first, PaperFixtures.MAPPER.createObjectNode().put(UsTimedFills.REISSUED_FROM, second));
+        assertThat(service().rootOf(BOOK, second)).as("고리").contains(first);
+
+        long other = store.insertOrder(new Order(0, PaperBooks.KR_RULES, null, A, PaperBooks.SELL, null, null, null, PaperBooks.AT_1000,
+                RuleBookService.SOURCE_RULE, PaperBooks.ORDER_PENDING, null, null, P, NIGHT, S, null, null));
+        long pointsAcross = order(A, PaperBooks.SELL, null, null, PaperBooks.AT_1000, RuleBookService.SOURCE_RULE, P, NIGHT, null,
+                PaperFixtures.MAPPER.createObjectNode().put(UsTimedFills.REISSUED_FROM, other));
+        assertThat(service().rootOf(BOOK, pointsAcross)).as("다른 책 주문을 가리킴").contains(pointsAcross);
+        assertThat(service().rootOf(BOOK, other)).as("다른 책의 주문").isEmpty();
+        assertThat(service().orderStatus(BOOK, first)).contains(PaperBooks.ORDER_PENDING);
+        assertThat(service().orderStatus(BOOK, other)).isEmpty();
+    }
+
+    @Test
+    @DisplayName("책 — 세대는 출발일|만든 시각(출발 전이면 '-'), 달력 — 거래일의 개장·마감, 휴장일, 모르는 해는 없음")
+    void bookAndSessionHours() {
+        PaperMirrorService.BookInfo info = service().book(BOOK).orElseThrow();
+        assertThat(info.generation()).isEqualTo("2026-10-30|2026-10-29T13:00:00Z");
+        assertThat(info.active()).isTrue();
+        assertThat(info.market()).isEqualTo("KR");
+        assertThat(service().book("nope")).isEmpty();
+        assertThat(PaperMirrorService.generation(new Book(BOOK, PaperBooks.KIND_CLAUDE, "x", 1, null, PaperBooks.NOT_STARTED,
+                Instant.parse("2026-10-29T13:00:00Z"), Book.MARKET_KR, Book.CURRENCY_KRW))).isEqualTo("-|2026-10-29T13:00:00Z");
+        assertThat(PaperMirrorService.FOLLOWABLE).containsExactly("kr_rules", "kr_claude", "kr_claude2");
+
+        PaperMirrorService.SessionHours friday = service().sessionHours(S).orElseThrow();
+        assertThat(friday.tradingDay()).isTrue();
+        assertThat(friday.open()).isEqualTo(kst("2026-11-06T09:00"));
+        assertThat(friday.close()).isEqualTo(kst("2026-11-06T15:30"));
+        assertThat(service().sessionHours(LocalDate.of(2026, 11, 7)).orElseThrow().tradingDay()).isFalse();
+        assertThat(service().sessionHours(LocalDate.of(2028, 1, 3))).as("공휴일 목록이 없는 해").isEmpty();
+    }
+
+    @Test
+    @DisplayName("표가 없으면 아무것도 읽지 않는다")
+    void notReady() {
+        store.ready = false;
+        assertThat(service().book(BOOK)).isEmpty();
+        assertThat(service().openTargets(BOOK, S)).isEmpty();
+        assertThat(service().dueOrders(BOOK, S, kst("2026-11-06T10:40"))).isEmpty();
+        assertThat(service().ledgerCaughtUp(BOOK, S)).isFalse();
+        assertThat(service().claim(BOOK, 1, kst("2026-11-06T10:40"), () -> "x")).isEmpty();
+    }
+
+    private static void await(CountDownLatch latch) {
+        try {
+            if (!latch.await(5, TimeUnit.SECONDS)) {
+                throw new IllegalStateException("시험 대기 시간 초과");
+            }
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException(e);
+        }
+    }
+}

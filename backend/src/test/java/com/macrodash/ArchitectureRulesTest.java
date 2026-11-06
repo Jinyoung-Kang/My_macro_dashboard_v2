@@ -248,6 +248,45 @@ class ArchitectureRulesTest {
                 .as("feature.brokerage가 쓰는 우리 패키지").isEmpty();
     }
 
+    private static final String REALTRADE = "com.macrodash.feature.realtrade";
+    /** 실제 매매만 쓰는 기반 클래스(ADR 0028 명세 §7.1) — 다른 패키지가 참조하면 실제 주문 경로가 밖으로 새는 것입니다. */
+    private static final List<String> REALTRADE_ONLY = List.of("com.macrodash.store.RealTradeStore",
+            "com.macrodash.collector.CollectorTradeClient");
+    /** feature.realtrade가 쓸 수 있는 우리 클래스(그 중첩 레코드 포함)와 패키지(명세 §7.1 허용 목록). */
+    private static final List<String> REALTRADE_ALLOWED_CLASSES = List.of("com.macrodash.store.RealTradeStore",
+            "com.macrodash.collector.CollectorTradeClient", "com.macrodash.feature.paper.PaperMirrorService",
+            "com.macrodash.feature.paper.PaperTelegram", "com.macrodash.feature.auth.AuthService", "com.macrodash.Kst");
+    private static final List<String> REALTRADE_ALLOWED_PACKAGES = List.of("com.macrodash.config.", "com.macrodash.support.",
+            "com.macrodash.analytics.");
+
+    /**
+     * 실제 매매(토스증권 실제 계좌가 모의 한국 책을 따라 주문, ADR 0028)는 고립 — 다른 패키지는 realtrade·그 저장소·그 수집기 클라이언트를 참조하지 못하고(모의
+     * 장부·패킷·프롬프트·복기로 실제 계좌 자료가 가는 길이 없게, 주문 경로가 늘지 않게), realtrade는 모의를 공개 창({@code PaperMirrorService})으로만 봅니다
+     * (PaperStore·StoreReader·다른 paper 클래스 금지). brokerage 고립 규칙은 그대로입니다.
+     */
+    @Test
+    @DisplayName("실제 매매(feature.realtrade)는 고립 — 아무도 realtrade·RealTradeStore·CollectorTradeClient를 참조하지 않고, realtrade는 명세 §7.1 허용 목록만 쓴다")
+    void realtradeIsIsolated() {
+        assertThat(SOURCES.values()).as("feature.realtrade 패키지가 있음")
+                .anyMatch(source -> source.pkg().equals(REALTRADE));
+        List<String> inbound = new ArrayList<>();
+        SOURCES.values().forEach(source -> {
+            if (source.pkg().equals(REALTRADE) || source.pkg().startsWith(REALTRADE + ".")
+                    || REALTRADE_ONLY.contains(source.pkg() + "." + source.simpleName())) {
+                return;
+            }
+            source.refs().stream().filter(ref -> ref.startsWith(REALTRADE + ".") || REALTRADE_ONLY.stream()
+                            .anyMatch(only -> ref.equals(only) || ref.startsWith(only + ".")))
+                    .forEach(ref -> inbound.add(source.simpleName() + " → " + ref));
+        });
+        assertThat(inbound).as("feature.realtrade·RealTradeStore·CollectorTradeClient를 참조하는 다른 패키지").isEmpty();
+        assertThat(violations(REALTRADE, ref -> isOurs(ref)
+                && !ref.startsWith(REALTRADE + ".")
+                && REALTRADE_ALLOWED_CLASSES.stream().noneMatch(allowed -> ref.equals(allowed) || ref.startsWith(allowed + "."))
+                && !startsWithAny(ref, REALTRADE_ALLOWED_PACKAGES.toArray(new String[0]))))
+                .as("feature.realtrade가 쓰는 우리 패키지").isEmpty();
+    }
+
     @Test
     @DisplayName("기능 사이 의존에 순환이 없다")
     void noCyclesBetweenFeatures() {

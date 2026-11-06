@@ -31,6 +31,9 @@ BACKEND_TABLES = (
     "paper_checkpoints",
     # 자유 시점 판의 장중 판단 계획(V23, ADR 0027) — 계획·결과는 백엔드만 씁니다. 수집기는 감시 범위를 읽기만 합니다.
     "paper_intraday_plans",
+    # 실제 매매(V24, ADR 0028) — 설정·이벤트·묶음·주문 기록은 백엔드 feature/realtrade만 씁니다. 수집기는 읽지도 쓰지도 않습니다
+    # (주문은 백엔드가 수집기 /toss/trading/*를 불러 보냄 — 기록은 백엔드가 남김).
+    "real_trade_config", "real_trade_events", "real_trade_batches", "real_trade_orders",
 )
 WRITE = re.compile(
     r"(?i)(INSERT\s+INTO|UPDATE|DELETE\s+FROM|TRUNCATE)\s+(" + "|".join(BACKEND_TABLES) + r")\b"

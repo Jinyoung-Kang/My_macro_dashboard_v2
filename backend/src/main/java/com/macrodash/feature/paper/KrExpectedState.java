@@ -78,6 +78,19 @@ final class KrExpectedState {
                 (o, target, position) -> price(o, target, now, watch, quotes, position));
     }
 
+    /**
+     * {@link #of}와 같은 가격 고르기(감시 저장본 → 밤 관측치 → 보유의 마지막 평가 가격)를 다른 대상 고르기가 쓰도록 — 실제 매매 장중 따라 하기의 '그 주문 뒤
+     * 예상 비중'(ADR 0028 — 명세 2026-11-06 §3.2, {@link PaperMirrorService#weightAfter})은 출처를 거르지 않고 시가 주문까지 넣으므로 대상만 다릅니다.
+     * {@link #of}는 이 함수를 거치지 않고 그대로입니다(고정본 불변).
+     *
+     * @param now    지금(이 시각 이하에 끝난 봉만)
+     * @param watch  감시 저장본 본문(없으면 null)
+     * @param quotes 밤 관측치(없으면 null)
+     */
+    static ExpectedState.Pricer pricer(Instant now, JsonNode watch, Quotes quotes) {
+        return (o, target, position) -> price(o, target, now, watch, quotes, position);
+    }
+
     /** 그 주문의 E 기준 시각 — 시가는 개장, 그 밖은 {@link KrTimedLadder#targetOn}(모르는 시점은 null). */
     static Instant targetAt(Order order, LocalDate session, TradingCalendar calendar) {
         if (PaperBooks.NEXT_OPEN.equals(order.timing())) {

@@ -227,6 +227,51 @@ class ApiIntegrationTest {
     }
 
     @Test
+    @DisplayName("실제 매매(ADR 0028): 회원은 GET·POST 모두 403(required=OWNER), 운영자는 상태 200(백엔드 스위치 꺼짐·수집기 없음), 끄기는 비밀번호 없이 200, "
+            + "켜기는 확인 글자가 다르면 400 confirm-mismatch·미국은 400 not-supported")
+    void realtradeRoutes() {
+        HttpHeaders member = new HttpHeaders();
+        member.add(HttpHeaders.COOKIE, login(MEMBER, "test-password"));
+        member.setContentType(MediaType.APPLICATION_JSON);
+        for (String path : List.of("/api/realtrade/status?market=KR", "/api/realtrade/preview?market=KR&sourceBook=kr_claude2")) {
+            ResponseEntity<JsonNode> denied = rest.exchange(url(path), HttpMethod.GET, new HttpEntity<>(null, member), JsonNode.class);
+            assertThat(denied.getStatusCode()).as("회원 GET " + path).isEqualTo(HttpStatus.FORBIDDEN);
+            assertThat(denied.getBody().path("required").asString()).isEqualTo("OWNER");
+        }
+        for (String path : List.of("/api/realtrade/enable", "/api/realtrade/disable", "/api/realtrade/update", "/api/realtrade/resume")) {
+            assertThat(rest.exchange(url(path), HttpMethod.POST, new HttpEntity<>(Map.of("market", "KR"), member), String.class)
+                    .getStatusCode()).as("회원 POST " + path).isEqualTo(HttpStatus.FORBIDDEN);
+        }
+
+        JsonNode status = authorizedGet("/api/realtrade/status?market=KR");
+        assertThat(status.path("market").asString()).isEqualTo("KR");
+        assertThat(status.path("supported").asBoolean()).isTrue();
+        assertThat(status.path("serverEnabled").path("backend").asBoolean(true)).as("REAL_TRADE_ENABLED 기본 꺼짐").isFalse();
+        assertThat(status.path("serverEnabled").path("collector").asBoolean(true)).isFalse();
+        assertThat(status.toString()).doesNotContain("clientOrderId", "tossOrderId", "requestBody");
+        assertThat(authorizedGet("/api/realtrade/status?market=US").path("supported").asBoolean(true)).isFalse();
+        assertThat(authorizedExchange("/api/realtrade/status?market=JP", HttpMethod.GET).getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+
+        HttpHeaders owner = new HttpHeaders();
+        owner.add(HttpHeaders.COOKIE, sessionCookie);
+        owner.setContentType(MediaType.APPLICATION_JSON);
+        ResponseEntity<JsonNode> disabled = rest.exchange(url("/api/realtrade/disable"), HttpMethod.POST,
+                new HttpEntity<>(Map.of("market", "KR"), owner), JsonNode.class);
+        assertThat(disabled.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(disabled.getBody().path("ok").asBoolean()).isTrue();
+
+        ResponseEntity<JsonNode> mismatch = rest.exchange(url("/api/realtrade/enable"), HttpMethod.POST, new HttpEntity<>(Map.of(
+                "market", "KR", "sourceBook", "kr_claude2", "lossLimitPct", 15, "confirm", "켜기", "password", "x", "version", 0), owner),
+                JsonNode.class);
+        assertThat(mismatch.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(mismatch.getBody().path("error").asString()).isEqualTo("confirm-mismatch");
+        ResponseEntity<JsonNode> us = rest.exchange(url("/api/realtrade/resume"), HttpMethod.POST, new HttpEntity<>(Map.of(
+                "market", "US", "confirm", "멈춤 해제", "password", "x", "version", 0), owner), JsonNode.class);
+        assertThat(us.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(us.getBody().path("error").asString()).isEqualTo("not-supported");
+    }
+
+    @Test
     @DisplayName("QA-093: 판정 기록 시각은 설정값을 따른다 — AWS 데모(평일 08:50–18:00 운영)는 18시 전에 기록해야 쌓인다")
     void regimeRecordHourFollowsConfiguration() {
         JsonNode log = authorizedGet("/api/analytics/regime/log");
