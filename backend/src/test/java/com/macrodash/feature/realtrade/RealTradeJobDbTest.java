@@ -934,6 +934,33 @@ class RealTradeJobDbTest {
     }
 
     @Test
+    @DisplayName("R2: 09:10 묶음의 매도 대금을 기다리던 매수가 재시도될 때 그사이 그 종목에 대기 STOP이 생겼으면 다시 사지 않음")
+    void pendingStopBlocksDeferredRetry() {
+        RealTradeFixtures.live(store, true, d("4000000"));
+        timedTargets(Map.of(B, 50.0), List.of(), List.of());
+        preflight("0", Map.of(C, new String[]{"100", "40000"}), Map.of(B, "20000"));
+
+        run("09:10:05");
+        assertThat(sentBodies()).extracting(RealTradeJobDbTest::summary).as("매수는 매도 대금을 기다림(deferred-cash)")
+                .containsExactly("SELL " + C + " DAY 100");
+
+        when(client.order("T-1")).thenReturn(Reply.of(broker("T-1", C, "SELL", "DAY", "FILLED", "100", "100", clock.now, clock.now)));
+        preflight("4000000", Map.of(), Map.of(B, "20000"));
+        when(paper.pendingStopSymbols(BOOK, SESSION)).thenReturn(Set.of(B));   // 09:12 감지 — B에 대기 STOP
+        run("09:12:30");
+        run("09:13:00");
+        assertThat(sentBodies()).extracting(RealTradeJobDbTest::summary).as("재시도 매수가 방금 판 종목을 다시 사지 않음")
+                .containsExactly("SELL " + C + " DAY 100");
+
+        when(paper.pendingStopSymbols(BOOK, SESSION)).thenReturn(Set.of());
+        clock.set(kst("2026-11-06T09:12:00"));
+        RealTradeJob fresh = new RealTradeJob(store, executor, client, paper, telegram, RealTradeFixtures.MAPPER, clock, true, false, 10_000);
+        fresh.cycle(kst("2026-11-06T09:12:00"));
+        assertThat(sentBodies()).extracting(RealTradeJobDbTest::summary).as("STOP이 없으면 같은 재시도가 매수를 보냄(대조)")
+                .containsExactly("SELL " + C + " DAY 100", "BUY " + B + " DAY 100");
+    }
+
+    @Test
     @DisplayName("장부 밀림으로 쉬는 날에도 스탑 매도만(묶음·장중 따라 하기 없음), 장 시간 불일치 날에는 스탑도 보내지 않음")
     void ledgerBehindStopsOnly() {
         RealTradeFixtures.live(store, false, d("10000000"));
