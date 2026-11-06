@@ -197,6 +197,36 @@ class FreeTimingTest {
     }
 
     @Test
+    @DisplayName("장중 시장가의 개장 10분 하한(ADR 0031): 기준 분이 그 세션 첫 분(미국 09:40 ET·한국 09:10 KST, 수능일 10:10) 앞이면 MALFORMED, 첫 분부터 받음. "
+            + "프로필 표가 이미 닫은 사유(정규장 밖)는 그대로")
+    void intradayMarketHasTheOpenOffsetFloor() {
+        OrderValidator.Market early = FreeTiming.validation(base(FreeTiming.INTRADAY_TIMINGS, OrderValidator.Money.USD), List.of(), TUE,
+                et(TUE, 9, 35).plusSeconds(20), US, false, true);
+        assertThat(early.closed()).containsKey(PaperBooks.MARKET);
+        assertThat(early.closed().get(PaperBooks.MARKET).reason()).isEqualTo(OrderValidator.MALFORMED);
+        assertThat(early.closed().get(PaperBooks.MARKET).detail()).contains("개장 10분 뒤(09:40 ET)").contains("09:37 ET");
+        OrderValidator.Market first = FreeTiming.validation(base(FreeTiming.INTRADAY_TIMINGS, OrderValidator.Money.USD), List.of(), TUE,
+                et(TUE, 9, 38).plusSeconds(30), US, false, true);
+        assertThat(first.closed()).as("기준 분 09:40 — 첫 분부터 받음").doesNotContainKey(PaperBooks.MARKET);
+
+        OrderValidator.Market preClosed = FreeTiming.validation(base(FreeTiming.INTRADAY_TIMINGS, OrderValidator.Money.USD)
+                        .withClosed(Map.of(PaperBooks.MARKET, new OrderValidator.Closed(OrderValidator.MALFORMED, "정규장 밖"))), List.of(), TUE,
+                et(TUE, 9, 0), US, false, true);
+        assertThat(preClosed.closed().get(PaperBooks.MARKET).detail()).as("이미 닫힌 사유 그대로").isEqualTo("정규장 밖");
+
+        OrderValidator.Market kr = FreeTiming.validation(base(FreeTiming.INTRADAY_TIMINGS, KrPaperMarket.INSTANCE.money()), List.of(), KR_E,
+                Instant.parse("2026-11-03T00:05:00Z"), KR, true, true);
+        assertThat(kr.closed().get(PaperBooks.MARKET).detail()).contains("개장 10분 뒤(09:10 KST)").contains("09:07 KST");
+        assertThat(FreeTiming.validation(base(FreeTiming.INTRADAY_TIMINGS, KrPaperMarket.INSTANCE.money()), List.of(), KR_E,
+                Instant.parse("2026-11-03T00:08:30Z"), KR, true, true).closed()).doesNotContainKey(PaperBooks.MARKET);
+        OrderValidator.Market exam = FreeTiming.validation(base(FreeTiming.INTRADAY_TIMINGS, KrPaperMarket.INSTANCE.money()), List.of(),
+                KR_EXAM, Instant.parse("2026-11-19T01:05:00Z"), KR_SHIFTED, true, true);
+        assertThat(exam.closed().get(PaperBooks.MARKET).detail()).as("수능일 10:00 개장 — 10:07 기준 분은 10:10 앞").contains("10:10 KST");
+        assertThat(FreeTiming.validation(base(FreeTiming.DECISION_TIMINGS, OrderValidator.Money.USD), List.of(), TUE, MON_DECIDED, US, false,
+                false).closed()).as("결정 표에는 장중 시장가가 없음").doesNotContainKey(PaperBooks.MARKET);
+    }
+
+    @Test
     @DisplayName("자유 시점 판의 표가 아니면(AT_MINUTE 없음) 막음 — 끈 판 표에 열쇠를 섞지 않음")
     void rejectsTablesWithoutAtMinute() {
         OrderValidator.Market off = base(List.of(PaperBooks.NEXT_OPEN, PaperBooks.NEXT_CLOSE), OrderValidator.Money.USD);

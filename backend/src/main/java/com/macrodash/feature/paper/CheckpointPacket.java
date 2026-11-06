@@ -340,7 +340,8 @@ final class CheckpointPacket {
 
     /**
      * 자유 시점 판 장중 판단 주문이 아직 고를 수 있는 시점({@link FreeTiming#INTRADAY_TIMINGS} 가운데) — 장중 시장가는 끈 판과 같은 규칙
-     * ({@link UsTimedFills#closedTimings}), 분 단위 지정 시각은 남은 분이 있을 때({@link #freeMinutes}), 그날 종가는 마감 전일 때.
+     * ({@link UsTimedFills#closedTimings})에 더해 기준 분이 그 세션 첫 분(개장 10분 뒤 — {@link FreeTiming#window}) 이상일 때(검증
+     * {@link FreeTiming#validation}의 하한과 같음), 분 단위 지정 시각은 남은 분이 있을 때({@link #freeMinutes}), 그날 종가는 마감 전일 때.
      */
     static List<String> freeRemainingTimings(LocalDate session, TradingCalendar calendar, Instant now) {
         List<String> out = new ArrayList<>();
@@ -349,7 +350,8 @@ final class CheckpointPacket {
         }
         for (String timing : FreeTiming.INTRADAY_TIMINGS) {
             if (PaperBooks.MARKET.equals(timing)) {
-                if (UsTimedFills.closedTimings(List.of(timing), calendar.previousTradingDay(session), now, calendar).isEmpty()) {
+                if (UsTimedFills.closedTimings(List.of(timing), calendar.previousTradingDay(session), now, calendar).isEmpty()
+                        && !ExecutionAudit.marketTarget(now).isBefore(FreeTiming.window(session, calendar, false).first())) {
                     out.add(timing);
                 }
             } else if (PaperBooks.AT_MINUTE.equals(timing)) {

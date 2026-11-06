@@ -276,7 +276,8 @@ final class KrCheckpointPacket {
 
     /**
      * 자유 시점 판 장중 판단 주문이 아직 고를 수 있는 시점({@link FreeTiming#INTRADAY_TIMINGS} 가운데) — 장중 시장가·종가는 끈 판과 같은 규칙
-     * ({@link KrTimedLadder#closedTimings}), 분 단위 지정 시각은 남은 분이 있을 때({@link #freeMinutes}).
+     * ({@link KrTimedLadder#closedTimings})이고 장중 시장가는 기준 분이 그 세션 첫 분(개장 10분 뒤 — {@link FreeTiming#window}) 이상일 때만
+     * (검증 {@link FreeTiming#validation}의 하한과 같음), 분 단위 지정 시각은 남은 분이 있을 때({@link #freeMinutes}).
      */
     static List<String> freeRemainingTimings(LocalDate asOf, LocalDate session, TradingCalendar calendar, Instant now) {
         List<String> out = new ArrayList<>();
@@ -288,6 +289,10 @@ final class KrCheckpointPacket {
         for (String timing : FreeTiming.INTRADAY_TIMINGS) {
             if (PaperBooks.AT_MINUTE.equals(timing)) {
                 if (freeMinutes(session, calendar, now) != null) {
+                    out.add(timing);
+                }
+            } else if (PaperBooks.MARKET.equals(timing)) {
+                if (!closed.containsKey(timing) && !ExecutionAudit.marketTarget(now).isBefore(FreeTiming.window(session, calendar, true).first())) {
                     out.add(timing);
                 }
             } else if (!closed.containsKey(timing)) {

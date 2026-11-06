@@ -141,6 +141,7 @@ final class FreeTiming {
      * 그 결정만의 검증 표 — {@code base}(계좌 프로필의 표: 받는 시점에 {@code AT_MINUTE}가 있고, 시가·장중 시장가의 닫힘은 이미 들어 있음)에 응답에 나온
      * 지정 시각마다 열쇠 하나를 더합니다. 순위는 기준 시각 순(같은 시각은 같은 순위 — 매도는 같거나 뒤 시각의 매수에만 자리를 만듦)이고, 열쇠는
      * 범위 밖이면 MALFORMED, 지금 + 60초 이전이면 LATE_FOR_TIMING으로 닫습니다. 시각 없는 {@code AT_MINUTE}는 맨 뒤 순위의 닫힌 시점으로 남습니다.
+     * 장중 판단 표의 장중 시장가({@code MARKET})는 기준 분이 그 세션 첫 분(개장 10분 뒤) 앞이면 MALFORMED로 닫습니다(이미 닫힌 사유가 있으면 그대로).
      *
      * @param base     계좌 프로필의 표(받는 시점은 {@link #DECISION_TIMINGS} 또는 {@link #INTRADAY_TIMINGS})
      * @param minutes  응답 주문들이 적은 시각(읽은 것만 — 겹쳐도 됨)
@@ -163,6 +164,15 @@ final class FreeTiming {
         for (String timing : base.timings()) {
             if (!PaperBooks.AT_MINUTE.equals(timing)) {
                 targets.put(timing, baseTarget(timing, session, now, calendar));
+            }
+        }
+        if (base.timings().contains(PaperBooks.MARKET)) {
+            // 장중 시장가에도 개장 10분 하한(ADR 0031) — 기준 분이 그 세션 첫 분 앞이면 닫음. 정규장 밖·장 끝 여유처럼 프로필 표가 이미 닫은 사유는 그대로.
+            Instant marketAt = targets.get(PaperBooks.MARKET);
+            if (marketAt.isBefore(window.first())) {
+                closed.putIfAbsent(PaperBooks.MARKET, new OrderValidator.Closed(OrderValidator.MALFORMED, "장중 시장가는 " + session + " 개장 10분 뒤("
+                        + label(window.first().atZone(calendar.zone()).toLocalTime()) + zone + ")부터 — 기준 분 "
+                        + label(marketAt.atZone(calendar.zone()).toLocalTime()) + zone + "이 그 앞이라 받지 않음"));
             }
         }
         // 닫힌 열쇠(범위 밖·지난 시각)와 시각 없는 AT_MINUTE는 순서에 넣지 않고 맨 뒤 순위로 — 받는 시점들의 순위·'이른 시점'이 거절될 주문에 끌려가지 않게.
