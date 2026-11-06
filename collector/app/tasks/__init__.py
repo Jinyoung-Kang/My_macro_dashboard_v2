@@ -13,7 +13,8 @@ app/tasks/ — 수집 작업 정의(패키지).
   slow   (1시간): fred_series · fed_liquidity · krx_futures · sector_history · fx_history ·
                   volatility_history · cot_history · daum_futures_trend · fsc_prices · fsc_etf_prices
   weekly (12시간): sec_13f · kr_holidays · dart_fundamentals
-  session (5분) : paper_watch_us(계좌2 장중 확인 감시 — 확인 시각 앞뒤에만 외부 호출) · paper_watch_kr(한국 계좌2 장중 확인 감시 — 확인 시각 뒤 한 번)
+  session (5분) : paper_watch_us(계좌2 장중 확인 감시 — 확인 시각 앞뒤에만 외부 호출) · paper_watch_kr(한국 계좌2 장중 확인 감시 — 확인 시각 뒤 한 번) ·
+                  paper_stopwatch_us·paper_stopwatch_kr(장중 스탑 감시 — 설정이 켜졌을 때 정규장 동안만, ADR 0032)
   polite (비주기): econ_calendar_tradingview — 차단 통과 수집 계층(ADR 0026). 태스크마다 다음 실행 시각을 무작위로 정하고 때가 된 것만 실행
 
 [규칙]
@@ -142,6 +143,10 @@ from .kr_paper_timed import (  # noqa: F401
 )
 from .paper_watch_kr import (  # noqa: F401
     task_paper_watch_kr,
+)
+from .paper_stopwatch import (  # noqa: F401
+    task_paper_stopwatch_kr,
+    task_paper_stopwatch_us,
 )
 from .maintenance import (  # noqa: F401
     task_run_log_retention,

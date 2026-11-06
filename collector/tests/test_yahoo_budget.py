@@ -190,7 +190,7 @@ def test_QA255_Yahoo_태스크의_좀비가_다른_태스크의_작업_스레드
 YAHOO_TASKS = {
     "scraper_markets", "macro_collected", "sector_history", "fx_history", "equity_history", "volatility_history",
     "paper_quotes", "paper_bars_us", "paper_watch_us", "paper_live_us", "us_calendar", "earnings_surprise",
-    "paper_price_history",
+    "paper_price_history", "paper_stopwatch_us",
 }
 
 
@@ -198,7 +198,7 @@ def test_QA255_Yahoo가_주_출처인_태스크만_따로_표시한다():
     marked = {task.name for task in tasks.ALL_TASKS if getattr(task, "yahoo", False)}
     assert marked == YAHOO_TASKS
     # 한국 장부 입력은 Yahoo 몫에 넣지 않습니다(그 좀비에 밀리지 않게).
-    assert not marked & {"kr_paper_timed", "kr_paper_quotes", "kr_paper_flows", "paper_watch_kr", "paper_live_kr"}
+    assert not marked & {"kr_paper_timed", "kr_paper_quotes", "kr_paper_flows", "paper_watch_kr", "paper_live_kr", "paper_stopwatch_kr"}
 
 
 def test_저장소의_yf_download는_모두_예산_세션을_넘긴다():

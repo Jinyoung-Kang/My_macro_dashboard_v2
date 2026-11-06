@@ -455,7 +455,7 @@ ssh ubuntu@my-macro-app                    # 서버 셸(Tailscale SSH) — 그 �
 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | 계층 구조, 데이터 흐름, 저장 스키마 |
 | [docs/API.md](docs/API.md) | REST 엔드포인트 전체 목록 |
 | [docs/adr/](docs/adr/README.md) | 설계 결정 기록 — 기능 단위 패키지·의존 규칙, Spring Boot 4 전환, 백업·복원, 프런트엔드 층 나누기 |
-| [docs/DATA_SOURCES.md](docs/DATA_SOURCES.md) | 수집 태스크 42종, 소스별 폴백 체인, 한계 |
+| [docs/DATA_SOURCES.md](docs/DATA_SOURCES.md) | 수집 태스크 44종, 소스별 폴백 체인, 한계 |
 | [docs/specs/2026-11-06-real-trade-mirror.md](docs/specs/2026-11-06-real-trade-mirror.md) | **실제 매매 계약(2026-11-06, [ADR 0028](docs/adr/0028-real-trade-mirror.md))** — 토스 실제 계좌가 모의 한국 책을 따라 하는 방식·창·멱등·멈춤·API·화면 |
 | [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) | 기여 절차, 브랜치·Git 문제 해결, 테스트 상세 |
 | [docs/LOCAL_SETUP.md](docs/LOCAL_SETUP.md) | 맥 설치·실행 상세, 포트 변경, launchd 상주 |

@@ -95,6 +95,17 @@ public final class Datasets {
      */
     public static final String SNAP_PAPER_WATCH_KR = "paper.watch.kr";
     /**
+     * 모의 장중 스탑 감시(ADR 0032 — 수집기 {@code paper_stopwatch_us}): 미국 모의 책(규칙·Claude 계좌1·2, 벤치마크 제외)의 보유 종목과 SPY의 그날
+     * 완성 1분봉 최근 40개(Yahoo spark — 종가만, 봉 시각은 시작), 그날 첫 봉, 전일 종가. 설정 {@code stopWatch.mode}가 SHADOW·ON일 때 정규장 동안
+     * 5분마다. 모양(contract 1)은 수집기 {@code app/tasks/paper_stopwatch.py} 머리말. 장중 스탑 감시 작업과 장부의 대체 스탑 판정({@code StopWatch})이 읽습니다.
+     */
+    public static final String SNAP_PAPER_STOPWATCH_US = "paper.stopwatch.us";
+    /**
+     * 한국 장중 스탑 감시(ADR 0032 — 수집기 {@code paper_stopwatch_kr}): 한국 모의 책(규칙·Claude 계좌1·2)의 보유 종목과 069500의 토스 1분봉(원시가,
+     * 봉 시각은 끝), 그날 첫 봉, 토스 일봉의 전일 원시·수정 종가. 설정 {@code kr.stopWatch.mode}가 SHADOW·ON일 때 정규장 동안 5분마다.
+     */
+    public static final String SNAP_PAPER_STOPWATCH_KR = "paper.stopwatch.kr";
+    /**
      * 모의 매매 트랙레코드 후보 기관 목록과 기관별 수집 진행률(저장 분기 수·완료 여부). 기관마다의 공시는
      * {@code sec13f(cik, TRACK_RECORD_QUARTERS)}에 있고, 이 저장본은 "누가 후보이고 어디까지 받았나"만 담습니다.
      */
@@ -319,6 +330,11 @@ public final class Datasets {
      * 시각)의 것인지·T 뒤에 받았는지는 작업이 봅니다.
      */
     public static final long MAX_AGE_WATCH_KR = 25 * 60L;
+    /**
+     * 장중 스탑 감시 저장본({@link #SNAP_PAPER_STOPWATCH_US}·{@link #SNAP_PAPER_STOPWATCH_KR})을 '지금 감시 중'으로 볼 최대 나이 — session 주기(300초) +
+     * 수집 여유. 이보다 오래되면 감시 작업이 판정하지 않습니다(장부의 대체 판정은 표본 시각으로 따로 봄 — {@code StopWatch#covered}).
+     */
+    public static final long MAX_AGE_STOPWATCH = 7 * 60L;
     /** 일별 확정치 (FRED/KRX 마감). */
     public static final long MAX_AGE_DAILY = 6 * 60 * 60L;
     /** 분기 공시(13F) 등 거의 변하지 않는 데이터. */

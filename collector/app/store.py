@@ -758,6 +758,53 @@ def watch_plans(market: str, session: date) -> list[dict]:
     return sorted(plans, key=lambda plan: (plan["atLocal"], plan["book"], plan["slot"] or 0))
 
 
+# 장중 스탑 감시(ADR 0032) — 범위의 책 상태·종류와 설정 키는 백엔드 PaperBooks.ACTIVE·KIND_BENCHMARK·StopWatchMode와 같은 글자입니다
+# (test_paper_stopwatch가 파일로 대조). 스위치 값은 셋 — OFF(기본, 키가 없거나 다른 값도 OFF)·SHADOW·ON.
+STOPWATCH_BOOK_STATUS = "ACTIVE"
+STOPWATCH_EXCLUDED_KIND = "BENCHMARK"
+STOPWATCH_MODES = ("OFF", "SHADOW", "ON")
+STOPWATCH_MODE_PATHS = {"US": ("stopWatch", "mode"), "KR": ("kr", "stopWatch", "mode")}
+KR_OPEN_OVERRIDES_PATH = ("kr", "calendar", "openTimeOverrides")
+
+
+def stopwatch_scope(market: str) -> list[str]:
+    """
+    장중 스탑 감시 범위 — 그 시장의 운용 중(ACTIVE)이고 벤치마크가 아닌 책(규칙·Claude 계좌1·2)의 보유 종목(중복 없음·정렬). 일시정지 책과
+    벤치마크는 스탑이 없어 받지 않습니다(백엔드 장부와 같은 범위). 현금성 종목도 담습니다(백엔드가 거름 — 설정을 수집기가 다시 해석하지 않게).
+
+    백엔드 표 ``paper_positions``·``paper_books``를 **읽기만** 합니다(쓰는 프로세스는 백엔드 하나 — ADR 0008, held_tickers와 같은 교차 읽기).
+    """
+    with connection() as conn:
+        rows = conn.execute(
+            "SELECT DISTINCT p.ticker FROM paper_positions p JOIN paper_books b ON b.code = p.book_code "
+            "WHERE b.market = %s AND b.status = %s AND b.kind <> %s AND p.qty > 0 ORDER BY p.ticker",
+            (market, STOPWATCH_BOOK_STATUS, STOPWATCH_EXCLUDED_KIND),
+        ).fetchall()
+    return [row["ticker"] for row in rows]
+
+
+def stopwatch_settings() -> dict:
+    """
+    장중 스탑 감시 스위치와 한국 장 시간 변경일 — ``{"US": "OFF"|"SHADOW"|"ON", "KR": …, "krOpenOverrides": {날짜: {open, close}}}``.
+    설정 행이 없거나 키가 없거나 세 값 밖이면 그 시장은 OFF입니다(백엔드 StopWatchMode와 같은 규칙 — 배포만으로는 켜지지 않음).
+
+    백엔드 표 ``paper_settings``를 **읽기만** 합니다(쓰는 프로세스는 백엔드 하나 — ADR 0008·0032).
+    """
+    with connection() as conn:
+        row = conn.execute(
+            "SELECT body #>> %s AS us, body #>> %s AS kr, body #> %s AS overrides FROM paper_settings WHERE id = 1",
+            (list(STOPWATCH_MODE_PATHS["US"]), list(STOPWATCH_MODE_PATHS["KR"]), list(KR_OPEN_OVERRIDES_PATH)),
+        ).fetchone()
+    if row is None:
+        return {"US": "OFF", "KR": "OFF", "krOpenOverrides": {}}
+    overrides = row["overrides"] if isinstance(row["overrides"], dict) else {}
+    return {
+        "US": row["us"] if row["us"] in STOPWATCH_MODES else "OFF",
+        "KR": row["kr"] if row["kr"] in STOPWATCH_MODES else "OFF",
+        "krOpenOverrides": overrides,
+    }
+
+
 # 장중 시장가(MARKET — 장중 확인·장중 판단 응답의 주문)와 분 단위 지정 시각(AT_MINUTE — ADR 0027)은 주문마다 기준 시각이 다릅니다. 1분봉
 # 저장본에 그 주문의 기준 시각 창을 더하려고 생성 시각(MARKET)·기준일과 지정 시각(AT_MINUTE)만 읽습니다. 어느 계좌의 주문이든 읽습니다 —
 # 그 시점을 내는 계좌는 백엔드가 정하고(스위치가 꺼진 동안 MARKET은 계좌2뿐, AT_MINUTE는 없음), 종목은 timed_scope가 담습니다.

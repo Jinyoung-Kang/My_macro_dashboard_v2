@@ -305,6 +305,40 @@ def _log_late_finish(name: str, started: float, done) -> None:
         logger.warning("  ! %-22s %6.1fs  뒤늦게 실패(이미 시간 초과로 기록): %s: %s", name, elapsed, type(exc).__name__, exc)
 
 
+# ==============================================================================
+# slow 군의 Yahoo 사용 중 표시 (장중 스탑 감시 — ADR 0032, 통합 검토 R7)
+# ==============================================================================
+# 속도군들은 서로 다른 스케줄러 작업이라 동시에 돕니다. 매시 :15 slow가 Yahoo 태스크(관측치 paper_quotes·1분봉 paper_bars_us 등)를 도는 동안
+# session의 paper_stopwatch_us가 Yahoo를 부르면 429 경합으로 그 시간의 장부 관측치·1분봉을 잃을 수 있어, 그동안은 감시가 쉽니다(다음 회차가
+# 저장본의 1분봉으로 빠진 격자를 메움). 'slow 군 실행 중'은 Yahoo 태스크가 든 군(slow·all) 실행이 진행 중이거나, slow Yahoo 태스크가 단독으로
+# 도는 중(수동 실행)일 때입니다.
+_running_groups: dict[str, int] = {}
+_running_lock = threading.Lock()
+
+
+def _yahoo_slow(task: Task) -> bool:
+    return task.speed == "slow" and task.yahoo
+
+
+def slow_yahoo_busy() -> bool:
+    """slow 군의 Yahoo 태스크가 돌고 있거나 돌 차례인가(위 설명) — 장중 스탑 감시(미국)가 이번 회차를 쉴지 정합니다."""
+    with _running_lock:
+        if any(count > 0 for count in _running_groups.values()):
+            return True
+    with _inflight_lock:
+        names = list(_inflight)
+    return any(name in TASKS_BY_NAME and _yahoo_slow(TASKS_BY_NAME[name]) for name in names)
+
+
+def _mark_group(label: str, selected: list[Task], delta: int) -> bool:
+    """slow Yahoo 태스크가 든 군 실행의 시작(+1)·끝(−1)을 적습니다. 적었으면 참."""
+    if not any(_yahoo_slow(task) for task in selected) or len(selected) == 1:
+        return False
+    with _running_lock:
+        _running_groups[label] = max(0, _running_groups.get(label, 0) + delta)
+    return True
+
+
 def run_group(group: str | None = None, task_name: str | None = None) -> dict:
     """
     작업군 또는 단일 태스크를 1회 실행합니다.
@@ -336,23 +370,28 @@ def run_group(group: str | None = None, task_name: str | None = None) -> dict:
     ok_count = 0
     failures: list[str] = []
 
-    for task in selected:
-        success, detail = run_task(task, run_id)
-        results.append({
-            "task": task.name,
-            "speed": task.speed,
-            "ok": success,
-            "detail": detail,
-        })
-        if success:
-            ok_count += 1
-        else:
-            failures.append(f"{task.name}: {detail}")
+    marked = _mark_group(label, selected, +1)
+    try:
+        for task in selected:
+            success, detail = run_task(task, run_id)
+            results.append({
+                "task": task.name,
+                "speed": task.speed,
+                "ok": success,
+                "detail": detail,
+            })
+            if success:
+                ok_count += 1
+            else:
+                failures.append(f"{task.name}: {detail}")
 
-        # 태스크마다 heartbeat를 남겨, 죽은 수집기를 "진행 중"으로 오인하지
-        # 않게 합니다 (13F는 한 태스크가 10분 넘게 걸립니다).
-        if run_id is not None:
-            store.heartbeat_run(run_id)
+            # 태스크마다 heartbeat를 남겨, 죽은 수집기를 "진행 중"으로 오인하지
+            # 않게 합니다 (13F는 한 태스크가 10분 넘게 걸립니다).
+            if run_id is not None:
+                store.heartbeat_run(run_id)
+    finally:
+        if marked:
+            _mark_group(label, selected, -1)
 
     elapsed = time.perf_counter() - started
 

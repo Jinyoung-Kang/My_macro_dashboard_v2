@@ -56,6 +56,11 @@ SNAP_PAPER_WATCH_US = "paper.watch.us"
 # 069500의 최근 완성 토스 1분봉 30개·지난 기준 시각 창·저장본 지연. 확인 시각 T ~ +20분에 한 번(session, 5분). 모양(contract 1)은
 # app/tasks/paper_watch_kr.py 머리말. 장중 확인 패킷·예상 상태 가격에만 쓰이고 장부 체결은 읽지 않습니다.
 SNAP_PAPER_WATCH_KR = "paper.watch.kr"
+# 모의 장중 스탑 감시(ADR 0032) — 미국·한국 모의 책(규칙·Claude 계좌1·2, 벤치마크 제외)의 보유 종목(백엔드 표 paper_positions를 읽기만)과
+# 기준 종목(SPY·069500)의 그날 완성 1분봉 최근 40개·그날 첫 봉·전일 종가. 설정 stopWatch.mode·kr.stopWatch.mode가 SHADOW·ON일 때 정규장
+# 동안만 받음(session, 5분). 모양(contract 1)은 app/tasks/paper_stopwatch.py 머리말. 백엔드 장중 스탑 감시 작업·장부의 대체 스탑 판정이 읽습니다.
+SNAP_PAPER_STOPWATCH_US = "paper.stopwatch.us"
+SNAP_PAPER_STOPWATCH_KR = "paper.stopwatch.kr"
 SNAP_TRACK_RECORD_INDEX = "sec.13f.track_record_index"  # 모의 매매 트랙레코드 후보 기관 목록·기관별 수집 진행률(q30)
 SNAP_US_FUNDAMENTALS_STATUS = "us.fundamentals.status"  # 모의 매매 미국 재무(SEC XBRL) 회사별 수집 상태 — 사실은 observations us.fundamentals
 # 모의 매매 Claude 계좌 패킷 1b_calendar의 원자료(2단계 A) — 거시 발표일(FRED 릴리스·FOMC 상수, 앞으로 45일)과 유니버스 종목
