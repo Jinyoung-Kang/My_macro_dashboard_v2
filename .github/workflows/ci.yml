@@ -251,6 +251,15 @@ jobs:
           jq -e '.services.backend.environment | has("TOSS_ACCOUNT_ENABLED") | not' "$RUNNER_TEMP/vultr.json"
           TOSS_ACCOUNT_ENABLED=true docker compose --env-file /dev/null -f docker-compose.yml -f compose.vultr.yml config --format json \
             | jq -e '.services.collector.environment.TOSS_ACCOUNT_ENABLED == "true" and (.services.backend.environment | has("TOSS_ACCOUNT_ENABLED") | not)'
+          # 실제 매매(ADR 0028)의 두 서버 스위치도 서버 .env의 값으로만 켬 — 기본 "false"·한도 빈 값. 수집기 스위치·한도 네 값은 수집기만,
+          # 백엔드 스위치는 백엔드만 받음(백엔드 환경에 TOSS_* 없음, 수집기 환경에 REAL_TRADE_ENABLED 없음)
+          jq -e '.services.collector.environment | .TOSS_TRADING_ENABLED == "false" and .TOSS_TRADING_MAX_ORDER_KRW == "" and .TOSS_TRADING_MAX_ORDERS_PER_DAY == "" and .TOSS_TRADING_MAX_BUY_KRW_PER_DAY == "" and .TOSS_TRADING_MAX_EQUITY_KRW == ""' "$RUNNER_TEMP/vultr.json"
+          jq -e '.services.backend.environment.REAL_TRADE_ENABLED == "false"' "$RUNNER_TEMP/vultr.json"
+          jq -e '(.services.backend.environment | keys | map(select(startswith("TOSS_"))) | length == 0) and (.services.collector.environment | has("REAL_TRADE_ENABLED") | not)' "$RUNNER_TEMP/vultr.json"
+          TOSS_TRADING_ENABLED=true REAL_TRADE_ENABLED=true TOSS_TRADING_MAX_ORDER_KRW=1000000 TOSS_TRADING_MAX_ORDERS_PER_DAY=20 \
+            TOSS_TRADING_MAX_BUY_KRW_PER_DAY=5000000 TOSS_TRADING_MAX_EQUITY_KRW=10000000 \
+            docker compose --env-file /dev/null -f docker-compose.yml -f compose.vultr.yml config --format json \
+            | jq -e '(.services.collector.environment | .TOSS_TRADING_ENABLED == "true" and .TOSS_TRADING_MAX_ORDER_KRW == "1000000" and .TOSS_TRADING_MAX_ORDERS_PER_DAY == "20" and .TOSS_TRADING_MAX_BUY_KRW_PER_DAY == "5000000" and .TOSS_TRADING_MAX_EQUITY_KRW == "10000000" and (has("REAL_TRADE_ENABLED") | not)) and (.services.backend.environment | .REAL_TRADE_ENABLED == "true" and (keys | map(select(startswith("TOSS_"))) | length == 0))'
           # 브라우저 컨테이너(차단 통과 수집 계층의 계층 2 — ADR 0026): 포트 없음, 망은 fetchnet 하나(기본 망의 postgres·backend에 닿지 못함),
           # 권한 전부 제거·권한 상승 금지·seccomp 프로필. 수집기만 두 망에 붙고 나머지 서비스는 기본 망에만 있습니다.
           jq -e '.services.browser | ((.ports // []) | length == 0) and (.networks | keys == ["fetchnet"]) and .cap_drop == ["ALL"]' "$RUNNER_TEMP/vultr.json"
@@ -276,6 +285,8 @@ jobs:
         # 기반 파일만으로 네 포트가 모두 127.0.0.1에 열리는지, 로그인 없는 열람이 기본으로 켜지고 LOCAL_NO_LOGIN=false로
         # 끌 수 있는지, QA 덧붙임은 셸에 LOCAL_NO_LOGIN=true가 있어도 끄는지(auth-probe.sh가 401을 기대) 봅니다.
         # 토스 실제 계좌 읽기 전용 조회(ADR 0025)는 운영 서버에서만 켜므로, 셸에 TOSS_ACCOUNT_ENABLED=true가 있어도 로컬·QA 해석은 "false"여야 합니다.
+        # 실제 매매(ADR 0028)의 두 서버 스위치(수집기 TOSS_TRADING_ENABLED·백엔드 REAL_TRADE_ENABLED)도 같습니다 — 셸에 true가 있어도 "false"이고,
+        # 한도 네 값(TOSS_TRADING_MAX_*)은 로컬·QA 수집기에 넘기지 않으며, 백엔드에는 TOSS_*가, 수집기에는 REAL_TRADE_ENABLED가 없습니다.
         # 브라우저 컨테이너(ADR 0026)도 운영 서버에만 있습니다 — 로컬·QA 해석에는 그 서비스가 없고, 셸에 BROWSER_FETCH_URL·BROWSER_FETCH_TOKEN이
         # 있어도 수집기의 값은 빈 값이어야 합니다(QA 스택에서 계층 2가 실제 사이트로 나가지 않게).
         run: |
@@ -289,14 +300,20 @@ jobs:
           jq -e '.services.collector.environment.TOSS_ACCOUNT_ENABLED == "false"' "$RUNNER_TEMP/local.json"
           TOSS_ACCOUNT_ENABLED=true docker compose --env-file /dev/null -f docker-compose.yml config --format json \
             | jq -e '.services.collector.environment.TOSS_ACCOUNT_ENABLED == "false" and (.services.backend.environment | has("TOSS_ACCOUNT_ENABLED") | not)'
+          jq -e '.services.collector.environment.TOSS_TRADING_ENABLED == "false" and .services.backend.environment.REAL_TRADE_ENABLED == "false"' "$RUNNER_TEMP/local.json"
+          jq -e '(.services.collector.environment | (keys | map(select(startswith("TOSS_TRADING_MAX_"))) | length == 0) and (has("REAL_TRADE_ENABLED") | not)) and (.services.backend.environment | keys | map(select(startswith("TOSS_"))) | length == 0)' "$RUNNER_TEMP/local.json"
+          TOSS_TRADING_ENABLED=true REAL_TRADE_ENABLED=true TOSS_TRADING_MAX_ORDER_KRW=1000000 docker compose --env-file /dev/null -f docker-compose.yml config --format json \
+            | jq -e '(.services.collector.environment | .TOSS_TRADING_ENABLED == "false" and (has("TOSS_TRADING_MAX_ORDER_KRW") | not) and (has("REAL_TRADE_ENABLED") | not)) and (.services.backend.environment | .REAL_TRADE_ENABLED == "false" and (keys | map(select(startswith("TOSS_"))) | length == 0))'
           jq -e '(.services | has("browser") | not) and (.services.collector.environment | .BROWSER_FETCH_URL == "" and .BROWSER_FETCH_TOKEN == "")' "$RUNNER_TEMP/local.json"
           BROWSER_FETCH_URL=http://browser:8191 BROWSER_FETCH_TOKEN=ci-browser-token docker compose --env-file /dev/null -f docker-compose.yml config --format json \
             | jq -e '.services.collector.environment | .BROWSER_FETCH_URL == "" and .BROWSER_FETCH_TOKEN == ""'
           LOCAL_NO_LOGIN=true TOSS_ACCOUNT_ENABLED=true BROWSER_FETCH_URL=http://browser:8191 BROWSER_FETCH_TOKEN=ci-browser-token \
+            TOSS_TRADING_ENABLED=true REAL_TRADE_ENABLED=true TOSS_TRADING_MAX_ORDER_KRW=1000000 \
             docker compose --env-file /dev/null -f docker-compose.yml -f scripts/qa/docker-compose.qa.yml \
             config --format json > "$RUNNER_TEMP/qa.json"
           jq -e '.services.backend.environment.DASHBOARD_LOCAL_NO_LOGIN == "false"' "$RUNNER_TEMP/qa.json"
           jq -e '.services.collector.environment.TOSS_ACCOUNT_ENABLED == "false"' "$RUNNER_TEMP/qa.json"
+          jq -e '(.services.collector.environment | .TOSS_TRADING_ENABLED == "false" and (keys | map(select(startswith("TOSS_TRADING_MAX_"))) | length == 0) and (has("REAL_TRADE_ENABLED") | not)) and (.services.backend.environment | .REAL_TRADE_ENABLED == "false" and (keys | map(select(startswith("TOSS_"))) | length == 0))' "$RUNNER_TEMP/qa.json"
           jq -e '(.services | has("browser") | not) and (.services.collector.environment | .BROWSER_FETCH_URL == "" and .BROWSER_FETCH_TOKEN == "")' "$RUNNER_TEMP/qa.json"
           jq -e '[.services[].ports[]?] | length > 0 and all(.host_ip == "127.0.0.1")' "$RUNNER_TEMP/qa.json"
 

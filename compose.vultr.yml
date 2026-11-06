@@ -33,6 +33,8 @@
 #   · 앞단이 넘긴 X-Forwarded-For를 Tomcat이 믿음(내부 대역에서 온 것만). tailscale serve가 루프백으로 넘긴 요청은 모두 한 주소로 보여
 #     로그인 제한은 사실상 이메일별 — 사용자 1명이라 그대로 둠(ADR 0023)
 #   · 수집기의 토스 실제 계좌 읽기 전용 조회(TOSS_ACCOUNT_ENABLED)는 서버 .env 값을 따름 — 기반 파일은 "false" 고정이라 여기서만 켤 수 있음(ADR 0025)
+#   · 실제 매매(ADR 0028)의 두 서버 스위치 — 수집기 TOSS_TRADING_ENABLED(+ 한도 네 값 TOSS_TRADING_MAX_*)와 백엔드 REAL_TRADE_ENABLED — 도 서버 .env 값을
+#     따름. 기반 파일은 둘 다 "false" 고정이라 여기서만 켤 수 있고, 화면 스위치까지 셋이 모두 켜져야 주문이 나감
 #   · 브라우저 컨테이너(browser — 차단 통과 수집 계층의 계층 2, ADR 0026)를 더함: 포트 없음, 수집기와만 통하는 망 fetchnet, 서버 .env의
 #     BROWSER_FETCH_URL·BROWSER_FETCH_TOKEN이 둘 다 있을 때만 수집기가 부름(기반 파일은 빈 값 고정이라 여기서만 켤 수 있음)
 #   · 국면 판정 기록은 23시(AWS와 같은 값 — 24시간이라 시각 제약은 없지만 기록 시점을 바꾸지 않음), postgres는 꺼질 때 30초까지 기다림
@@ -54,6 +56,14 @@ services:
       # 토스 실제 계좌 읽기 전용 조회(ADR 0025) — 서버 .env에 TOSS_ACCOUNT_ENABLED=true가 있을 때만 켬(비면 꺼짐). 기반 파일은 보간 없는 "false"라
       # 이 덧붙임을 읽는 곳(운영 서버)에서만 켤 수 있습니다. 백엔드는 이 이름을 받지 않습니다(켜짐 여부는 수집기 응답의 enabled).
       TOSS_ACCOUNT_ENABLED: "${TOSS_ACCOUNT_ENABLED:-false}"
+      # 실제 매매(ADR 0028)의 수집기 스위치와 한도 네 값 — 서버 .env에 TOSS_TRADING_ENABLED=true와 한도 네 줄이 모두 맞게 있을 때만 주문 경로가 켜짐
+      # (비면 꺼짐, 한도가 하나라도 없거나 틀리면 수집기가 끔 — limits-invalid). 기반 파일은 "false"·한도 없음이라 이 덧붙임을 읽는 곳(운영 서버)에서만
+      # 켤 수 있습니다. 백엔드는 이 이름들을 받지 않습니다(켜짐 여부는 수집기 /toss/trading/status 응답).
+      TOSS_TRADING_ENABLED: "${TOSS_TRADING_ENABLED:-false}"
+      TOSS_TRADING_MAX_ORDER_KRW: "${TOSS_TRADING_MAX_ORDER_KRW:-}"
+      TOSS_TRADING_MAX_ORDERS_PER_DAY: "${TOSS_TRADING_MAX_ORDERS_PER_DAY:-}"
+      TOSS_TRADING_MAX_BUY_KRW_PER_DAY: "${TOSS_TRADING_MAX_BUY_KRW_PER_DAY:-}"
+      TOSS_TRADING_MAX_EQUITY_KRW: "${TOSS_TRADING_MAX_EQUITY_KRW:-}"
       # 차단 통과 수집 계층의 계층 2(ADR 0026) — 서버 .env에 BROWSER_FETCH_URL=http://browser:8191과 BROWSER_FETCH_TOKEN이 둘 다 있을 때만
       # 브라우저 컨테이너를 부릅니다(비면 꺼짐 — 계층 1의 거부가 최종). 끄려면 서버 .env에서 BROWSER_FETCH_URL 줄을 지우고 deploy.sh.
       BROWSER_FETCH_URL: "${BROWSER_FETCH_URL:-}"
@@ -91,6 +101,9 @@ services:
       TAILNET_OWNER_LOGIN: "${TAILNET_OWNER_LOGIN:-}"
       # 알림 끝의 화면 링크(Tailscale 주소).
       PUBLIC_ORIGIN: "${PUBLIC_ORIGIN:?PUBLIC_ORIGIN 필요 — 서버 .env(.env.vultr.example)}"
+      # 실제 매매(ADR 0028)의 백엔드 스위치 — 서버 .env에 REAL_TRADE_ENABLED=true가 있을 때만 정기 작업이 돎(비면 꺼짐). 수집기 스위치와
+      # 화면 스위치(real_trade_config)까지 셋이 모두 켜져야 주문이 나갑니다. 기반 파일은 보간 없는 "false"라 여기서만 켤 수 있습니다.
+      REAL_TRADE_ENABLED: "${REAL_TRADE_ENABLED:-false}"
 
   frontend:
     build:

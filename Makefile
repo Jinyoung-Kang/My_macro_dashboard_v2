@@ -203,6 +203,9 @@ dev-backend: export PAPER_ENABLED := $(if $(filter true,$(subst ",,$(subst ',,$(
 # 실제 계좌 조회(ADR 0025)는 운영 서버에서만 켭니다. 셸에 TOSS_ACCOUNT_ENABLED=true가 남아 있어도 네이티브 수집기는 끈 채로 띄웁니다 —
 # 같은 토스 키로 토큰을 새로 받으면 서버 수집기의 토큰이 무효가 됩니다(compose의 "false" 고정과 같은 이유).
 dev-collector: export TOSS_ACCOUNT_ENABLED := false
+# 실제 매매(ADR 0028)의 두 서버 스위치도 같습니다 — 셸에 true가 남아 있어도 네이티브 수집기·백엔드는 끈 채로 띄웁니다(compose의 "false" 고정과 같은 이유).
+dev-collector: export TOSS_TRADING_ENABLED := false
+dev-backend: export REAL_TRADE_ENABLED := false
 
 dev-collector: ## 수집기 개발 서버 (자동 리로드 · collector/.venv 필요)
 	@test -x $(VENV_PY) || (echo "경고: collector/.venv가 없습니다. 먼저:" && \

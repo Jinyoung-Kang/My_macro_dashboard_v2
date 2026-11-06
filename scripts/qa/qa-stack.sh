@@ -3,7 +3,7 @@
 #
 # 사용:
 #   bash scripts/qa/qa-stack.sh up            .env.qa가 없으면 새 비밀값으로 만들고 빌드·기동
-#   bash scripts/qa/qa-stack.sh restore F=…   백업 파일을 QA DB에 복원(운영 DB는 건드리지 않음)
+#   bash scripts/qa/qa-stack.sh restore F=…   백업 파일을 QA DB에 복원(운영 DB는 건드리지 않음, 실제 매매 기록은 비움)
 #   bash scripts/qa/qa-stack.sh ps|logs [S]|exec S …|compose …
 #   bash scripts/qa/qa-stack.sh api /api/…    QA 백엔드에 로그인해 한 번 호출(비밀번호는 출력하지 않음)
 #   bash scripts/qa/qa-stack.sh proxy [mode]  차단 프록시 모드 조회·변경 (block | hang | slow:N)
@@ -98,7 +98,9 @@ case "$cmd" in
   restore)
     file="${1#F=}"
     [ -n "$file" ] || { echo "사용: restore F=backups/….sql" >&2; exit 1; }
-    bash scripts/db-restore.sh "$file" --yes
+    # 운영 백업에는 실제 매매 기록(real_trade_*, ADR 0028 — 실제 계좌의 주문)이 들어 있습니다. QA DB에는 남기지 않고 설정도 꺼짐으로
+    # 둡니다 — 복원과 같은 트랜잭션 안에서(scripts/db-restore.sh의 RESTORE_REAL_TRADE).
+    RESTORE_REAL_TRADE=clear bash scripts/db-restore.sh "$file" --yes
     ;;
   backup)
     bash scripts/db-backup.sh

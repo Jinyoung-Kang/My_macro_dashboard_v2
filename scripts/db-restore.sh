@@ -10,7 +10,16 @@
 #   4. 수집기·백엔드를 잠시 멈추고(쓰기 경합 방지), **한 트랜잭션 안에서** public 스키마를 비운 뒤
 #      백업을 적재합니다. 도중에 한 문장이라도 실패하거나 입력이 끊기면(창을 닫음·Ctrl-C) 전부
 #      되돌려 DB는 3번 시점 그대로입니다.
+#      같은 트랜잭션의 끝에서 꺼져 있지 않은 실제 매매 설정(real_trade_config, ADR 0028)을 이상 멈춤(HALTED, 사유 restored)으로
+#      바꿉니다 — 아래 RESTORE_REAL_TRADE.
 #   5. 멈췄던 서비스를 다시 켭니다(실패해도).
+#
+# RESTORE_REAL_TRADE  복원한 DB의 실제 매매 표(ADR 0028)를 어떻게 둘지. 표가 없는 백업(V24 전)이면 둘 다 아무것도 하지 않습니다.
+#   halt(기본)  real_trade_config에서 OFF가 아닌 행을 HALTED·halt_reason='restored'(version + 1)로(꺼진 행은 그대로). 백업 시점 뒤에 토스로 나간 실제 주문의
+#               기록이 빠진 채 따라 하기가 이어지지 않게 — 해제는 운영자가 화면에서(확인 글자 + 비밀번호). make restore·서버 복원
+#   clear       real_trade_orders·real_trade_batches·real_trade_events를 비우고 설정은 꺼짐(OFF, 기준 평가액 등 비움)으로.
+#               QA 스택 복원(scripts/qa/qa-stack.sh restore)이 씁니다 — 운영 백업의 실제 계좌 주문 기록을 QA DB에 남기지 않음
+#   이 단계가 실패하면 복원 전체를 되돌립니다(멈추지 못한 채로 복원하지 않음).
 #
 # 예전 `make restore`는 데이터가 있는 DB에 덤프를 그대로 부었습니다. 덤프에는 기존 표를 지우는
 # 문장이 없어 CREATE·COPY가 줄줄이 실패했는데도 0으로 끝났고, 값은 백업 시점으로 돌아오지
@@ -27,6 +36,11 @@ die() {
 file="${1:-}"
 assume_yes="no"
 [ "${2:-}" = "--yes" ] && assume_yes="yes"
+real_trade_mode="${RESTORE_REAL_TRADE:-halt}"
+case "$real_trade_mode" in
+    halt | clear) ;;
+    *) die "RESTORE_REAL_TRADE는 halt 또는 clear만 받습니다 — 아무것도 바꾸지 않았습니다." ;;
+esac
 
 [ -n "$file" ] || die "사용법: make restore F=backups/파일.sql"
 [ -f "$file" ] || die "백업 파일이 없습니다: $file"
@@ -82,6 +96,48 @@ echo "2/3 복원합니다 (한 트랜잭션 — 실패하면 전부 되돌립니
 # 덤프 자체가 `SET lock_timeout = 0`을 넣으므로, 잠금 대기 한도는 스키마를 지우는 문장 앞에 둡니다.
 # 새로 만드는 public 스키마의 소유자·권한은 PostgreSQL 15+ 기본값과 같게 맞춥니다.
 committed_marker="__restore_committed__"
+real_trade_marker="__real_trade_rows__"
+
+# 덤프를 적재한 뒤, COMMIT 전에 넣는 실제 매매 표 처리(위 RESTORE_REAL_TRADE). 덤프는 search_path를 비워 두므로 표 이름에 public.을 붙입니다.
+# 바꾼 설정 행 수를 트랜잭션 안 설정 값으로 넘겨 끝에 \echo로 찍습니다(표가 없으면 0).
+real_trade_sql() {
+    # shellcheck disable=SC2016  # $real_trade$는 PostgreSQL의 달러 따옴표입니다
+    printf 'DO $real_trade$\nDECLARE n integer := 0;\nBEGIN\n'
+    if [ "$real_trade_mode" = "clear" ]; then
+        # 주문이 묶음을 참조하므로 주문 → 묶음 순서로 지웁니다.
+        cat <<'SQL'
+    IF to_regclass('public.real_trade_orders') IS NOT NULL THEN
+        DELETE FROM public.real_trade_orders;
+    END IF;
+    IF to_regclass('public.real_trade_batches') IS NOT NULL THEN
+        DELETE FROM public.real_trade_batches;
+    END IF;
+    IF to_regclass('public.real_trade_events') IS NOT NULL THEN
+        DELETE FROM public.real_trade_events;
+    END IF;
+    IF to_regclass('public.real_trade_config') IS NOT NULL THEN
+        UPDATE public.real_trade_config
+           SET state = 'OFF', baseline_equity = NULL, baseline_total = NULL, buys_paused = false, sync_pending = false,
+               halt_reason = NULL, halt_detail = NULL, version = version + 1, updated_at = now(), updated_by = NULL;
+        GET DIAGNOSTICS n = ROW_COUNT;
+    END IF;
+SQL
+    else
+        cat <<'SQL'
+    IF to_regclass('public.real_trade_config') IS NOT NULL THEN
+        UPDATE public.real_trade_config
+           SET state = 'HALTED', halt_reason = 'restored', halt_detail = NULL,
+               version = version + 1, updated_at = now(), updated_by = NULL
+         WHERE state <> 'OFF';
+        GET DIAGNOSTICS n = ROW_COUNT;
+    END IF;
+SQL
+    fi
+    printf "    PERFORM set_config('macrodash.real_trade_rows', n::text, true);\nEND\n\$real_trade\$;\n"
+    printf "SELECT current_setting('macrodash.real_trade_rows') AS real_trade_rows \\\\gset\n"
+    printf '\\echo %s :real_trade_rows\n' "$real_trade_marker"
+}
+
 output="$({
     printf "SET lock_timeout = '30s';\n"
     printf "BEGIN;\n"
@@ -89,6 +145,7 @@ output="$({
     printf "CREATE SCHEMA public AUTHORIZATION pg_database_owner;\n"
     printf "GRANT USAGE ON SCHEMA public TO PUBLIC;\n"
     cat "$file"
+    real_trade_sql
     printf "COMMIT;\n"
     printf '\\echo %s\n' "$committed_marker"
 } | run_psql -q -v ON_ERROR_STOP=1 -f -)" || true
@@ -97,4 +154,14 @@ if [ "${output##*$'\n'}" != "$committed_marker" ]; then
 fi
 
 echo "✓ 복원했습니다: $file"
+real_trade_rows="$(sed -n "s/^$real_trade_marker //p" <<< "$output" | tail -n 1)"
+case "$real_trade_rows" in
+    '' | 0 | *[!0-9]*) ;;
+    *)
+        if [ "$real_trade_mode" = "clear" ]; then
+            echo "참고: 실제 매매 기록(real_trade_orders·batches·events)을 비우고 설정 ${real_trade_rows}개 시장을 꺼짐(OFF)으로 두었습니다."
+        else
+            echo "참고: 실제 매매 설정 ${real_trade_rows}개 시장을 이상 멈춤(restored)으로 바꿨습니다(ADR 0028) — 화면 '실제 계좌' 탭에서 확인한 뒤 멈춤 해제 또는 끄기."
+        fi ;;
+esac
 echo "   되돌리려면: make restore F=$safety"

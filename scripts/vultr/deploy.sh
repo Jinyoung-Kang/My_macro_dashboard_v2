@@ -12,7 +12,11 @@
 #      PAPER_ENABLED=false가 있으면 운영본의 모의 매매 정기 작업이 꺼진 채 뜬다고 '주의'를 찍습니다(끝 요약에도 다시 — QA-194).
 #   2. git fetch → main 체크아웃 → origin/main으로 fast-forward. 서버에서 고친 파일이 있거나 갈라졌으면 멈춥니다.
 #      받은 main에서 이 스크립트가 바뀌었으면 새 판으로 처음부터 한 번 다시 돕니다(QA-145).
-#   3. 화면 왼쪽 아래 버전(APP_VERSION·APP_UPDATED)
+#   3. 화면 왼쪽 아래 버전(APP_VERSION·APP_UPDATED). 실제 매매(ADR 0028)가 켜져(LIVE) 있고 지금이 한국 거래 창(평일 08:45~09:35·15:15~15:35 KST —
+#      시가 맞추기·시가 뒤 마무리·종가)이면 멈춥니다 — 창이 지난 뒤 다시 돌리거나, 알고 진행할 때만 REALTRADE_DEPLOY_OK=1. 빌드가 길어 6의 기동 직전에
+#      한 번 더 봅니다. 상태는 postgres의 real_trade_config를 읽기만 하고(표가 없으면 통과), 읽지 못하면 경고만 하고 계속합니다.
+#      장 시간 변경일(같은 psql 호출로 읽는 모의 설정 kr.calendar.openTimeOverrides의 오늘 값 — 예 수능 10:00~16:30)은 개장 −15분~+35분·
+#      마감 −15분~+5분, 그 설정을 읽지 못했거나 모양이 틀리면 보수 창(평일 08:45~10:35·15:15~16:35)으로 봅니다.
 #   4. 이미지를 하나씩 빌드: backend → frontend → collector → browser(베이스 이미지 보안 패치까지 --pull). browser는 차단 통과 수집 계층의
 #      브라우저 컨테이너(ADR 0026 — Chrome 안정 채널을 빌드 때 받음).
 #      4 GB라 동시에 빌드하면 메모리가 모자랍니다(make up은 한꺼번에 빌드). caddy·postgres 이미지도 새로 받습니다.
@@ -89,6 +93,107 @@ APP_UPDATED="$(TZ=Asia/Seoul git log -1 --format=%cd --date=format-local:%Y-%m-%
 export APP_VERSION APP_UPDATED
 echo "  코드: $APP_VERSION (최종 수정 $APP_UPDATED)"
 
+# 실제 매매(ADR 0028) — 켜진(LIVE) 시장 수와 오늘(KST)의 장 시간 변경을 한 줄로 냅니다: "<수>"(변경 없음) | "<수> <개장> <마감>"(모의 설정
+# kr.calendar.openTimeOverrides의 오늘 값 — 예 "1 10:00 16:30") | "<수> bad"(그 설정을 읽지 못했거나 모양이 틀림 — 보수 창).
+# 표가 없으면(V24 전) none, 읽지 못하면(postgres가 꺼짐 등) 빈 값. 값·종목은 읽지 않습니다.
+# 장 시간 변경은 백엔드가 그날 옮긴 시각으로 매매하는 조건(모의 달력 = 토스 장 운영 정보 — 명세 §3)과 같은 출처(paper_settings 한 행, 점 경로를
+# 중첩 객체로 저장)라 수집기 토큰도 .env도 필요 없습니다. 백엔드가 표 전체를 버리는 모양(날짜 키·개장·마감 HH:mm·개장 < 마감 중 하나라도 틀림 —
+# KrPaperMarket.sessionHours)이면 bad. 이 질의만 실패해도 켜진 시장 수는 그대로 내도록 그동안만 ON_ERROR_STOP을 끕니다(rt_hours는 bad로 남음).
+# DB 이름·계정은 postgres 컨테이너의 환경(compose가 넣은 POSTGRES_USER·POSTGRES_DB)으로 — .env를 읽지 않습니다.
+realtrade_state() {
+    # shellcheck disable=SC2016  # $POSTGRES_*는 컨테이너 안의 sh가 풉니다
+    docker compose exec -T postgres sh -c 'psql -X -q -At -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d "$POSTGRES_DB"' 2>/dev/null <<'SQL' || true
+SELECT to_regclass('public.real_trade_config') IS NOT NULL AS has_real_trade \gset
+\if :has_real_trade
+\set rt_hours bad
+\set ON_ERROR_STOP 0
+SELECT coalesce((
+    SELECT CASE
+        WHEN m IS NULL THEN ''
+        WHEN jsonb_typeof(m) <> 'object' THEN 'bad'
+        WHEN EXISTS (SELECT 1 FROM jsonb_each(CASE WHEN jsonb_typeof(m) = 'object' THEN m ELSE '{}' END) e
+                     WHERE e.key !~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}$' OR jsonb_typeof(e.value) <> 'object'
+                        OR coalesce(e.value ->> 'open', '') !~ '^[0-9]{2}:[0-9]{2}$'
+                        OR coalesce(e.value ->> 'close', '') !~ '^[0-9]{2}:[0-9]{2}$'
+                        OR (e.value ->> 'open') >= (e.value ->> 'close')) THEN 'bad'
+        ELSE coalesce((m -> d ->> 'open') || ' ' || (m -> d ->> 'close'), '')
+    END
+    FROM (SELECT body -> 'kr' -> 'calendar' -> 'openTimeOverrides' AS m,
+                 to_char(now() AT TIME ZONE 'Asia/Seoul', 'YYYY-MM-DD') AS d
+          FROM public.paper_settings WHERE id = 1) s), '') AS rt_hours \gset
+\set ON_ERROR_STOP 1
+SELECT concat_ws(' ', count(*), nullif(:'rt_hours', '')) FROM public.real_trade_config WHERE state = 'LIVE';
+\else
+SELECT 'none';
+\endif
+SQL
+}
+# 한국 거래 창 — 평일 08:45~09:35(시가 단일가의 시가 맞추기·시가 뒤 마무리), 15:15~15:35(종가) KST. 장 시간 변경일(모의 설정
+# kr.calendar.openTimeOverrides — 예 2026-11-19 수능 10:00~16:30)은 같은 여유로 개장 −15분~+35분·마감 −15분~+5분(09:45~10:35·16:15~16:35),
+# 그 설정을 읽지 못했거나 모양이 틀리면 둘을 합친 보수 창(평일 08:45~10:35·15:15~16:35)입니다. 이 창 안에서 백엔드·수집기를 다시 만들면
+# 보내던 주문의 결과를 놓쳐 '모름'(UNKNOWN) 처리·이상 멈춤으로 이어질 수 있습니다. 휴장일도 평일이면 창으로 봅니다(넘기려면 REALTRADE_DEPLOY_OK=1).
+kr_hhmm() {
+    printf '%02d:%02d' $(($1 / 60)) $(($1 % 60))
+}
+# $1 = realtrade_state의 장 시간 변경 칸(빈 값 | "HH:MM HH:MM" | 그 밖). kr_win(자정부터의 분 — 아침 시작·끝, 마감 시작·끝)과 알림 글 kr_win_text를 정합니다.
+kr_trade_window_for() {
+    local hours="$1" re='^([01][0-9]|2[0-3]):[0-5][0-9] ([01][0-9]|2[0-3]):[0-5][0-9]$' open close
+    if [ -z "$hours" ]; then
+        kr_win=(525 575 915 935)
+        kr_win_text="평일 08:45~09:35·15:15~15:35 KST"
+        return 0
+    fi
+    if [[ "$hours" =~ $re ]]; then
+        open=$((10#${hours:0:2} * 60 + 10#${hours:3:2}))
+        close=$((10#${hours:6:2} * 60 + 10#${hours:9:2}))
+        if [ "$open" -lt "$close" ]; then
+            kr_win=($((open - 15)) $((open + 35)) $((close - 15)) $((close + 5)))
+            kr_win_text="오늘 장 시간 변경 ${hours% *}~${hours#* } — $(kr_hhmm "${kr_win[0]}")~$(kr_hhmm "${kr_win[1]}")·$(kr_hhmm "${kr_win[2]}")~$(kr_hhmm "${kr_win[3]}") KST"
+            return 0
+        fi
+    fi
+    kr_win=(525 635 915 995)
+    kr_win_text="오늘 장 시간 변경(paper_settings의 kr.calendar.openTimeOverrides)을 읽지 못했거나 모양이 틀려 보수 창 — 평일 08:45~10:35·15:15~16:35 KST"
+}
+in_kr_trade_window() {
+    local now dow hm
+    now="$(TZ=Asia/Seoul date '+%u %H%M')"
+    dow="${now% *}"
+    hm="${now#* }"
+    hm=$((10#${hm:0:2} * 60 + 10#${hm:2:2}))
+    [ "$dow" -le 5 ] || return 1
+    { [ "$hm" -ge "${kr_win[0]}" ] && [ "$hm" -le "${kr_win[1]}" ]; } || { [ "$hm" -ge "${kr_win[2]}" ] && [ "$hm" -le "${kr_win[3]}" ]; }
+}
+# $1 = before-build(빌드 전 — 켜짐·읽지 못함도 알림) | before-up(기동 직전 — 창 안일 때만 말함)
+realtrade_guard() {
+    local out live hours=
+    out="$(realtrade_state)"
+    case "$out" in *$'\n'*) out= ;; esac   # 여러 줄은 모양이 틀린 응답 — 읽지 못함과 같이 봅니다
+    live="${out%% *}"
+    [ "$live" = "$out" ] || hours="${out#* }"
+    case "$live" in
+        none | 0) return 0 ;;
+        '' | *[!0-9]*)
+            [ "$1" != "before-build" ] ||
+                echo "경고: 실제 매매 상태(real_trade_config)를 읽지 못했습니다 — 켜져 있으면 한국 거래 창(평일 08:45~09:35·15:15~15:35 KST, 장 시간 변경일은 개장 −15분~+35분·마감 −15분~+5분) 밖에서 배포하세요."
+            return 0 ;;
+    esac
+    kr_trade_window_for "$hours"
+    if in_kr_trade_window; then
+        if [ "${REALTRADE_DEPLOY_OK:-}" = "1" ]; then
+            echo "경고: 실제 매매가 켜져(LIVE) 있고 지금은 한국 거래 창($kr_win_text)이지만 REALTRADE_DEPLOY_OK=1이라 계속합니다."
+            return 0
+        fi
+        if [ "$1" = "before-build" ]; then
+            die "실제 매매가 켜져(LIVE) 있고 지금은 한국 거래 창($kr_win_text)이라 배포하지 않았습니다 — 창이 지난 뒤 다시 실행하세요(알고 진행할 때만 REALTRADE_DEPLOY_OK=1). 비상 끄기라면 deploy.sh가 아니라 docs/DEVELOPMENT.md §7 비상 끄기 3단계(TOSS_TRADING_ENABLED=false로 바꾸고 수집기만 다시 만들기)."
+        fi
+        die "실제 매매가 켜져(LIVE) 있고 빌드하는 동안 한국 거래 창($kr_win_text)에 들어와 기동하지 않았습니다(빌드·배포 전 덤프까지 함, 돌던 컨테이너 그대로) — 창이 지난 뒤 다시 실행하세요(알고 진행할 때만 REALTRADE_DEPLOY_OK=1). 비상 끄기라면 deploy.sh가 아니라 docs/DEVELOPMENT.md §7 비상 끄기 3단계(TOSS_TRADING_ENABLED=false로 바꾸고 수집기만 다시 만들기)."
+    fi
+    [ "$1" != "before-build" ] ||
+        echo "참고: 실제 매매 켜짐(LIVE) — 기동하는 동안 장중 따라 하기 주문의 결과를 놓칠 수 있어 정규장 밖 배포가 낫습니다(오늘 한국 거래 창: $kr_win_text)."
+}
+realtrade_guard before-build
+
 # ---------------------------------------------------------------- 4) 빌드(하나씩)
 for service in backend frontend collector browser; do
     echo "빌드: $service"
@@ -110,6 +215,8 @@ bash scripts/db-backup.sh pre-deploy ||
     die "배포 전 DB 덤프에 실패해 배포하지 않았습니다(돌던 컨테이너 그대로) — 위 메시지와 df -h를 보세요."
 
 # ---------------------------------------------------------------- 6) 기동·스키마
+# 빌드가 몇 분 걸려 그 사이 거래 창에 들어왔을 수 있습니다 — 컨테이너를 바꾸기 직전에 한 번 더 봅니다(3의 실제 매매 가드).
+realtrade_guard before-up
 echo "기동합니다(건강해질 때까지 최대 5분)…"
 docker compose up -d --no-build --wait --wait-timeout 300
 

@@ -284,6 +284,165 @@ def test_QA200_deploy는_postgres가_떠_있으면_덤프_전에_컨테이너를
         "평소에는 돌던 DB를 그대로 뜸 — 컨테이너를 바꾸기 전 상태"
 
 
+# 실제 매매 가드(ADR 0028) — 가짜 docker는 postgres 안의 psql 질의(켜진 시장 수)에 FAKE_RT_OUT을 찍고(FAKE_RT_RC가 0이 아니면 실패),
+# 가짜 date는 '+%u %H%M'(요일·KST 시각)에 FAKE_KST_NOW를 찍습니다(FAKE_KST_LATER가 있으면 두 번째부터 그 값 — 빌드 중에 창에 들어옴).
+# 그 밖의 date 호출(백업 파일 이름 등)은 진짜 date로 넘깁니다.
+_RT_DOCKER = tools._FAKE_DOCKER.replace(
+    '    *" exec -T postgres true "*)',
+    '    *" exec -T postgres sh -c psql "*) [ "${FAKE_RT_RC:-0}" = 0 ] || exit 1; printf "%s\\n" "${FAKE_RT_OUT:-}"; exit 0 ;;\n'
+    '    *" exec -T postgres true "*)', 1)
+_REAL_DATE = shutil.which("date") or "/usr/bin/date"
+_FAKE_DATE = ('#!/usr/bin/env bash\n'
+              'if [ "$1" = "+%u %H%M" ]; then\n'
+              '  if [ -n "${FAKE_KST_LATER:-}" ] && [ -e "$FAKE_LOG.date" ]; then echo "$FAKE_KST_LATER"; else echo "$FAKE_KST_NOW"; fi\n'
+              '  : > "$FAKE_LOG.date"\n'
+              f'else exec {_REAL_DATE} "$@"; fi\n')
+
+
+@pytest.fixture()
+def rt_fakes(fakes):
+    """실제 매매 상태와 KST 시각을 흉내 내는 가짜 docker·date를 같은 가짜 폴더에 둡니다."""
+    assert _RT_DOCKER != tools._FAKE_DOCKER, "가짜 docker의 postgres 갈래 모양이 바뀜 — 이 시험의 덧붙임을 고치세요"
+    bin_dir, _ = fakes
+    tools._write_exec(bin_dir / "docker", _RT_DOCKER)
+    tools._write_exec(bin_dir / "date", _FAKE_DATE)
+    return fakes
+
+
+def _builds(calls: list[str]) -> list[str]:
+    return [c for c in calls if c.startswith("compose build")]
+
+
+@pytest.mark.parametrize("now", ["3 0850", "1 0845", "1 0935", "5 1520", "2 1515", "4 1535"])
+def test_deploy는_실제_매매가_켜져_있고_한국_거래_창이면_빌드_전에_멈춘다(server, rt_fakes, now):
+    result = _deploy(server, rt_fakes, FAKE_KST_NOW=now, FAKE_RT_OUT="1")
+    assert result.returncode != 0
+    assert "거래 창" in result.stderr and "REALTRADE_DEPLOY_OK=1" in result.stderr
+    calls = _docker_calls(rt_fakes)
+    assert _builds(calls) == [] and not any(c.startswith("compose up") for c in calls), "돌던 컨테이너 그대로"
+    assert _dump_calls(calls) == []
+
+
+@pytest.mark.parametrize("now", ["1 0844", "2 0936", "3 1514", "5 1536", "6 0850", "7 1520"])
+def test_deploy는_실제_매매가_켜져_있어도_한국_거래_창_밖이면_알리고_진행한다(server, rt_fakes, now):
+    result = _deploy(server, rt_fakes, FAKE_KST_NOW=now, FAKE_RT_OUT="1")
+    assert result.returncode == 0, result.stderr
+    assert UP in _docker_calls(rt_fakes)
+    assert "참고: 실제 매매 켜짐(LIVE)" in result.stdout
+
+
+@pytest.mark.parametrize("value,ok", [("1", True), ("yes", False), ("true", False), ("", False)])
+def test_deploy는_거래_창_안이라도_REALTRADE_DEPLOY_OK가_정확히_1이면_경고하고_진행한다(server, rt_fakes, value, ok):
+    result = _deploy(server, rt_fakes, FAKE_KST_NOW="3 0850", FAKE_RT_OUT="1", REALTRADE_DEPLOY_OK=value)
+    calls = _docker_calls(rt_fakes)
+    if ok:
+        assert result.returncode == 0, result.stderr
+        assert "REALTRADE_DEPLOY_OK=1이라 계속합니다" in result.stdout
+        assert UP in calls
+    else:
+        assert result.returncode != 0
+        assert _builds(calls) == [] and UP not in calls
+
+
+@pytest.mark.parametrize("out", ["0", "none"])
+def test_deploy는_실제_매매가_꺼졌거나_표가_없으면_거래_창이어도_말없이_진행한다(server, rt_fakes, out):
+    result = _deploy(server, rt_fakes, FAKE_KST_NOW="3 0850", FAKE_RT_OUT=out)
+    assert result.returncode == 0, result.stderr
+    assert UP in _docker_calls(rt_fakes)
+    assert "실제 매매" not in result.stdout + result.stderr
+
+
+@pytest.mark.parametrize("extra", [{"FAKE_RT_RC": "1"}, {"FAKE_RT_OUT": ""}, {"FAKE_RT_OUT": "ERROR: x"}])
+def test_deploy는_실제_매매_상태를_읽지_못하면_경고만_하고_진행한다(server, rt_fakes, extra):
+    result = _deploy(server, rt_fakes, FAKE_KST_NOW="3 0850", **{"FAKE_RT_OUT": "1", **extra})
+    assert result.returncode == 0, result.stderr
+    assert "경고: 실제 매매 상태(real_trade_config)를 읽지 못했습니다" in result.stdout
+    assert UP in _docker_calls(rt_fakes)
+
+
+def test_deploy는_빌드하는_동안_거래_창에_들어오면_기동_직전에_멈춘다(server, rt_fakes):
+    result = _deploy(server, rt_fakes, FAKE_KST_NOW="3 0840", FAKE_KST_LATER="3 0850", FAKE_RT_OUT="1")
+    assert result.returncode != 0
+    assert "빌드하는 동안" in result.stderr
+    calls = _docker_calls(rt_fakes)
+    assert len(_builds(calls)) == 4 and len(_dump_calls(calls)) == 1, "빌드·배포 전 덤프까지는 함"
+    assert not any(c.startswith("compose up") for c in calls), "돌던 컨테이너 그대로"
+
+
+# RT2-COL-1: 장 시간이 바뀐 날(2026-11-19 수능 10:00~16:30 등)에는 같은 psql 호출이 켜진 시장 수 뒤에 모의 설정
+# kr.calendar.openTimeOverrides의 오늘 값을 붙여 냅니다("1 10:00 16:30"). 창은 개장 −15분~+35분·마감 −15분~+5분(09:45~10:35·16:15~16:35),
+# 그 설정을 읽지 못했거나 모양이 틀리면("1 bad" 등) 보수 합집합 창(평일 08:45~10:35·15:15~16:35)입니다.
+@pytest.mark.parametrize("now", ["4 0955", "4 1005", "4 1625", "4 0945", "4 1035", "4 1615", "4 1635"])
+def test_RT2_COL_1_deploy는_장_시간_변경일이면_옮긴_한국_거래_창에서_빌드_전에_멈춘다(server, rt_fakes, now):
+    result = _deploy(server, rt_fakes, FAKE_KST_NOW=now, FAKE_RT_OUT="1 10:00 16:30")
+    assert result.returncode != 0, result.stdout
+    assert "거래 창" in result.stderr and "REALTRADE_DEPLOY_OK=1" in result.stderr
+    assert "09:45~10:35" in result.stderr and "16:15~16:35" in result.stderr, "옮긴 창을 알림"
+    calls = _docker_calls(rt_fakes)
+    assert _builds(calls) == [] and not any(c.startswith("compose up") for c in calls), "돌던 컨테이너 그대로"
+    assert _dump_calls(calls) == []
+
+
+@pytest.mark.parametrize("now", ["4 0850", "4 0920", "4 1520", "4 1530", "4 0944", "4 1036", "4 1614", "4 1636", "6 1005"])
+def test_RT2_COL_1_deploy는_장_시간_변경일이면_고정_창_시각이어도_옮긴_창_밖이면_진행한다(server, rt_fakes, now):
+    result = _deploy(server, rt_fakes, FAKE_KST_NOW=now, FAKE_RT_OUT="1 10:00 16:30")
+    assert result.returncode == 0, result.stderr
+    assert UP in _docker_calls(rt_fakes)
+    assert "참고: 실제 매매 켜짐(LIVE)" in result.stdout
+    assert "읽지 못했습니다" not in result.stdout + result.stderr
+
+
+@pytest.mark.parametrize("out", ["1 bad", "1 10:00", "1 25:00 16:30", "1 16:30 10:00", "1 10:00 16:30 x", "1 10:0 16:30", "1 ?"])
+@pytest.mark.parametrize("now", ["4 0850", "4 1005", "4 1035", "4 1520", "4 1625"])
+def test_RT2_COL_1_deploy는_장_시간_변경을_읽지_못했거나_모양이_틀리면_보수_창으로_멈춘다(server, rt_fakes, out, now):
+    result = _deploy(server, rt_fakes, FAKE_KST_NOW=now, FAKE_RT_OUT=out)
+    assert result.returncode != 0, result.stdout
+    assert "거래 창" in result.stderr and "보수 창" in result.stderr and "08:45~10:35·15:15~16:35" in result.stderr
+    assert _builds(_docker_calls(rt_fakes)) == []
+
+
+@pytest.mark.parametrize("now", ["4 0844", "4 1036", "4 1514", "4 1636", "7 1005"])
+def test_RT2_COL_1_deploy는_보수_창_밖이면_보수_창임을_알리고_진행한다(server, rt_fakes, now):
+    result = _deploy(server, rt_fakes, FAKE_KST_NOW=now, FAKE_RT_OUT="1 bad")
+    assert result.returncode == 0, result.stderr
+    assert UP in _docker_calls(rt_fakes)
+    assert "참고: 실제 매매 켜짐(LIVE)" in result.stdout and "보수 창" in result.stdout
+
+
+@pytest.mark.parametrize("out", ["0 10:00 16:30", "0 bad"])
+def test_RT2_COL_1_deploy는_실제_매매가_꺼졌으면_장_시간_변경과_관계없이_말없이_진행한다(server, rt_fakes, out):
+    result = _deploy(server, rt_fakes, FAKE_KST_NOW="4 1005", FAKE_RT_OUT=out)
+    assert result.returncode == 0, result.stderr
+    assert UP in _docker_calls(rt_fakes)
+    assert "실제 매매" not in result.stdout + result.stderr
+
+
+def test_RT2_COL_1_deploy는_장_시간_변경일에_빌드하는_동안_옮긴_창에_들어오면_기동_직전에_멈춘다(server, rt_fakes):
+    result = _deploy(server, rt_fakes, FAKE_KST_NOW="4 0930", FAKE_KST_LATER="4 0950", FAKE_RT_OUT="1 10:00 16:30")
+    assert result.returncode != 0
+    assert "빌드하는 동안" in result.stderr and "09:45~10:35" in result.stderr
+    calls = _docker_calls(rt_fakes)
+    assert len(_builds(calls)) == 4 and len(_dump_calls(calls)) == 1, "빌드·배포 전 덤프까지는 함"
+    assert not any(c.startswith("compose up") for c in calls), "돌던 컨테이너 그대로"
+
+
+def test_RT2_COL_1_deploy는_켜진_시장_수와_오늘의_장_시간_변경을_같은_psql_호출로_읽는다(server, rt_fakes):
+    result = _deploy(server, rt_fakes, FAKE_KST_NOW="4 0850", FAKE_RT_OUT="1 10:00 16:30")
+    assert result.returncode == 0, result.stderr
+    psql = [c for c in _docker_calls(rt_fakes) if c.startswith("compose exec -T postgres sh -c psql")]
+    assert len(psql) == 2, "빌드 전·기동 직전 가드마다 psql 한 번(수집기 토큰·.env 없이)"
+    text = (ROOT / "scripts/vultr/deploy.sh").read_text(encoding="utf-8")
+    sql = text[text.index("<<'SQL'"):text.index("\nSQL\n")]
+    # 백엔드가 쓰는 설정 행(paper_settings id = 1)의 중첩 경로 — valueAt이 점 경로 kr.calendar.openTimeOverrides를 중첩 객체로 풂.
+    assert "FROM public.paper_settings WHERE id = 1" in sql
+    assert "body -> 'kr' -> 'calendar' -> 'openTimeOverrides'" in sql
+    assert "to_char(now() AT TIME ZONE 'Asia/Seoul', 'YYYY-MM-DD')" in sql, "오늘은 KST 날짜(서버 TZ는 UTC)"
+    # 장 시간 변경 질의가 실패해도 켜진 시장 수는 내고(그때 bad — 보수 창), 실패를 '꺼짐'으로 읽지 않음.
+    assert "\\set rt_hours bad" in sql and "\\set ON_ERROR_STOP 0" in sql and "\\set ON_ERROR_STOP 1" in sql
+    assert sql.index("\\set rt_hours bad") < sql.index("\\set ON_ERROR_STOP 0") < sql.index("public.paper_settings") \
+        < sql.index("\\set ON_ERROR_STOP 1") < sql.index("FROM public.real_trade_config WHERE state = 'LIVE'")
+
+
 # --------------------------------------------------------------------------- backup-s3.sh
 @pytest.fixture()
 def backup_root(tmp_path):

@@ -14,6 +14,9 @@ DB 백업·복원 스크립트(scripts/db-backup.sh · scripts/db-restore.sh).
   - 입력이 중간에 끊겨도(창을 닫음·Ctrl-C·읽기 오류) 반쯤 복원된 상태를 확정하지 않는다
   - 끝까지 기록되지 않은 백업·확인 없는 실행은 거부한다
   - 백업이 실패하면 파일을 남기지 않고 0이 아닌 코드로 끝난다
+  - 실제 매매 표(ADR 0028, RESTORE_REAL_TRADE): halt(기본)는 꺼지지 않은 설정만 이상 멈춤(restored)으로 바꾸고 기록은 그대로,
+    clear(QA)는 기록을 비우고 설정을 꺼짐으로, 그 밖의 값은 시작하지 않고, 표가 없는 백업은 그 단계를 건너뛰고,
+    멈추지 못하면 복원 전체를 되돌린다
 
 각 테스트는 전용 임시 데이터베이스를 만들어 씁니다. 복원은 public 스키마를 통째로
 바꾸므로, 다른 테스트가 쓰는 테스트 DB를 건드리면 안 됩니다.
@@ -24,6 +27,7 @@ import os
 import shutil
 import subprocess
 import uuid
+from decimal import Decimal
 from pathlib import Path
 from urllib.parse import urlparse
 
@@ -280,3 +284,149 @@ def test_env_파일의_값을_docker_compose와_같게_읽는다(database_url, s
 
     assert result.returncode == 0, result.stderr
     assert _backups(tmp_path)[0].name.startswith(f"{name}-")
+
+
+# ------------------------------------------------------------------------ 실제 매매 표(ADR 0028)
+def _real_trade_env(database_url: str, db_name: str, backup_dir: Path, **extra: str) -> dict[str, str]:
+    """실제 매매 표 시험의 환경 — 개발자 셸의 RESTORE_REAL_TRADE·.env가 끼어들지 않게 합니다."""
+    env = _env(database_url, db_name, backup_dir)
+    env.pop("RESTORE_REAL_TRADE", None)
+    env["ENV_FILE"] = os.devnull
+    env.update(extra)
+    return env
+
+
+def _seed_real_trade(db_url: str, kr_state: str = "LIVE") -> None:
+    """합성 자료 — KR 설정은 kr_state(꺼지지 않음), US 설정은 꺼짐(OFF), 묶음·주문·이벤트 하나씩. 계좌·토스 주문 번호는 없습니다."""
+    with psycopg.connect(db_url, autocommit=True) as conn:
+        conn.execute(
+            "INSERT INTO real_trade_config(market, state, source_book, book_generation, baseline_equity, buys_paused,"
+            " sync_pending, halt_reason, version) VALUES"
+            " ('KR', %s, 'kr_claude2', '2026-10-30', 12345678.00, true, true, %s, 3),"
+            " ('US', 'OFF', NULL, NULL, NULL, false, false, NULL, 7)",
+            (kr_state, "loss-limit" if kr_state == "HALTED" else None))
+        batch_columns = {row[0] for row in conn.execute(
+            "SELECT column_name FROM information_schema.columns"
+            " WHERE table_schema = 'public' AND table_name = 'real_trade_batches'")}
+        columns, values = ["market", "session", "kind", "source_book"], ["KR", "2026-11-09", "SYNC", "kr_claude2"]
+        if "book_generation" in batch_columns:   # 묶음에 책 세대를 싣는 판
+            columns.append("book_generation")
+            values.append("2026-10-30")
+        batch_id = conn.execute(
+            f"INSERT INTO real_trade_batches({', '.join(columns)}) VALUES ({', '.join(['%s'] * len(values))}) RETURNING id",
+            values).fetchone()[0]
+        conn.execute(
+            "INSERT INTO real_trade_orders(market, session, purpose, batch_id, source_book, book_generation, symbol, side,"
+            " quantity, time_in_force, client_order_id, request_body, send_outcome, first_sent_at)"
+            " VALUES ('KR', '2026-11-09', 'SYNC', %s, 'kr_claude2', '2026-10-30', '000000', 'BUY', 1, 'OPG',"
+            " '00000000-0000-0000-0000-000000000000', '{}', 'ACCEPTED', now())", (batch_id,))
+        conn.execute("INSERT INTO real_trade_events(market, kind) VALUES ('KR', 'ENABLE')")
+
+
+def _real_trade_counts(db_url: str) -> tuple[int, int, int]:
+    with psycopg.connect(db_url) as conn:
+        return conn.execute("SELECT (SELECT count(*) FROM real_trade_orders), (SELECT count(*) FROM real_trade_batches),"
+                            " (SELECT count(*) FROM real_trade_events)").fetchone()
+
+
+def _real_trade_config(db_url: str, columns: str) -> list[tuple]:
+    with psycopg.connect(db_url) as conn:
+        return conn.execute(f"SELECT market, {columns} FROM real_trade_config ORDER BY market").fetchall()
+
+
+@pytest.mark.parametrize("kr_state", ["LIVE", "STOPPING", "HALTED"])
+def test_복원은_꺼지지_않은_실제_매매_설정만_이상_멈춤으로_바꾸고_기록은_그대로_둔다(database_url, scratch_db, tmp_path,
+                                                                                     kr_state):
+    """백업 시점 뒤에 토스로 나간 실제 주문의 기록이 빠진 채 따라 하기가 이어지지 않게 — 꺼진 시장은 그대로 둡니다."""
+    name, db_url = scratch_db
+    env = _real_trade_env(database_url, name, tmp_path)
+    _seed_real_trade(db_url, kr_state)
+    assert _run(BACKUP, env=env).returncode == 0
+    backup_file = _backups(tmp_path)[0]
+    _set(db_url, "UPDATE real_trade_config SET state = 'OFF', version = 99")     # 백업 뒤의 변경은 복원이 되돌림
+
+    result = _run(RESTORE, str(backup_file), "--yes", env=env)
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert _real_trade_config(db_url, "state, halt_reason, version, updated_by") == [
+        ("KR", "HALTED", "restored", 4, None),
+        ("US", "OFF", None, 7, None),                                              # 꺼진 행은 버전도 그대로
+    ]
+    assert _real_trade_config(db_url, "source_book, baseline_equity, buys_paused, sync_pending") == [
+        ("KR", "kr_claude2", Decimal("12345678.00"), True, True),
+        ("US", None, None, False, False),
+    ]
+    assert _real_trade_counts(db_url) == (1, 1, 1)                                 # 주문·묶음·이벤트 기록은 그대로
+    assert "실제 매매 설정 1개 시장을 이상 멈춤(restored)으로" in result.stdout
+    assert "__real_trade_rows__" not in result.stdout + result.stderr
+
+
+def test_QA_복원은_실제_매매_기록을_비우고_설정을_꺼짐으로_둔다(database_url, scratch_db, tmp_path):
+    name, db_url = scratch_db
+    env = _real_trade_env(database_url, name, tmp_path, RESTORE_REAL_TRADE="clear")
+    _seed_real_trade(db_url, "LIVE")
+    assert _run(BACKUP, env=env).returncode == 0
+    backup_file = _backups(tmp_path)[0]
+
+    result = _run(RESTORE, str(backup_file), "--yes", env=env)
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert _real_trade_counts(db_url) == (0, 0, 0)
+    assert _real_trade_config(db_url, "state, baseline_equity, buys_paused, sync_pending, halt_reason, version") == [
+        ("KR", "OFF", None, False, False, None, 4),
+        ("US", "OFF", None, False, False, None, 8),
+    ]
+    assert "꺼짐(OFF)으로 두었습니다" in result.stdout
+    assert "__real_trade_rows__" not in result.stdout + result.stderr
+
+
+@pytest.mark.parametrize("mode", ["wipe", "HALT", "clear;"])
+def test_RESTORE_REAL_TRADE가_halt·clear가_아니면_시작하지_않는다(database_url, scratch_db, tmp_path, mode):
+    name, db_url = scratch_db
+    env = _real_trade_env(database_url, name, tmp_path)
+    _seed_real_trade(db_url, "LIVE")
+    assert _run(BACKUP, env=env).returncode == 0
+    backup_file = _backups(tmp_path)[0]
+    _set(db_url, "UPDATE real_trade_config SET version = 99 WHERE market = 'KR'")
+
+    result = _run(RESTORE, str(backup_file), "--yes", env={**env, "RESTORE_REAL_TRADE": mode})
+
+    assert result.returncode != 0
+    assert "halt 또는 clear" in result.stderr
+    assert [f for f in _backups(tmp_path) if f.name.startswith("pre-restore-")] == []   # 복원 전 백업도 뜨지 않음
+    assert _real_trade_config(db_url, "state, version") == [("KR", "LIVE", 99), ("US", "OFF", 7)]
+
+
+@pytest.mark.parametrize("mode", ["halt", "clear"])
+def test_실제_매매_표가_없는_백업은_그_단계를_건너뛴다(database_url, scratch_db, tmp_path, mode):
+    """V24 전의 백업 — 표가 없으면 아무것도 하지 않고 복원은 그대로 성공합니다."""
+    name, db_url = scratch_db
+    env = _real_trade_env(database_url, name, tmp_path, RESTORE_REAL_TRADE=mode)
+    _set(db_url, "DROP TABLE real_trade_orders, real_trade_batches, real_trade_events, real_trade_config")
+    _set(db_url, "INSERT INTO snapshots(name, payload, collected_at) VALUES ('macro', '{\"v\":\"backup-time\"}', now())")
+    assert _run(BACKUP, env=env).returncode == 0
+    backup_file = _backups(tmp_path)[0]
+    _set(db_url, "UPDATE snapshots SET payload = '{\"v\":\"changed\"}'")
+
+    result = _run(RESTORE, str(backup_file), "--yes", env=env)
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert _snapshot_values(db_url) == {"macro": "backup-time"}
+    assert "실제 매매" not in result.stdout
+
+
+def test_실제_매매_설정을_멈추지_못하면_복원_전체를_되돌린다(database_url, scratch_db, tmp_path):
+    """멈추는 문장이 실패하는 백업(열이 다른 표) — 멈추지 못한 채 복원하지 않고, DB는 복원 전 그대로입니다."""
+    name, db_url = scratch_db
+    env = _real_trade_env(database_url, name, tmp_path)
+    _seed_real_trade(db_url, "LIVE")
+    _set(db_url, "ALTER TABLE real_trade_config DROP COLUMN halt_reason")
+    assert _run(BACKUP, env=env).returncode == 0
+    backup_file = _backups(tmp_path)[0]
+    _set(db_url, "UPDATE real_trade_config SET source_book = 'after-backup' WHERE market = 'KR'")
+
+    result = _run(RESTORE, str(backup_file), "--yes", env=env)
+
+    assert result.returncode != 0
+    assert "복원했습니다" not in result.stdout
+    assert _real_trade_config(db_url, "state, source_book") == [("KR", "LIVE", "after-backup"), ("US", "OFF", None)]
