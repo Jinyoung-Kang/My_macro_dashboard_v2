@@ -77,7 +77,10 @@ import java.util.function.BiFunction;
  *       대조로 늦게 묶인 이 기능의 토스 주문은 취소.</li>
  *   <li>켜짐(LIVE)이 아니면 끝. 따라 하는 책이 운용 중이 아니거나 세대가 다르면 이상 멈춤. 옛 책·세대의 미체결은 취소.</li>
  *   <li>수집기 스위치(꺼졌다고 분명히 답하면 이상 멈춤, 읽지 못하면 그 주기만 건너뜀)·토큰 경합·같은 오류 반복 확인 → 오늘 토스 장 운영 정보·쉬는 날
- *       판정(그날 첫 창 3분 전에 한 번) → 창 3분 전 토큰 예열.</li>
+ *       판정(그날 첫 창 3분 전에 한 번) → 창 3분 전 토큰 예열. 따라 하는 책이 그 세션에 개장 10분 뒤 지정 시각으로 체결하면
+ *       ({@link PaperMirrorService#dailySyncAt}) 시가 단일가 맞추기 창 없이 그 시각부터 3분의 시각 맞추기 창(시장가 DAY 묶음 — ADR 0033 초안 결정 1)을
+ *       둡니다. 그 창의 목표는 그 시각까지의 모의 주문을 반영하고({@link PaperMirrorService#targetsAt}), 기준 시각이 맞추기 시각 이하인 주문은 장중 따라
+ *       하기가 따로 보내지 않습니다(묶음 몫).</li>
  *   <li>창마다 새 사전 조회(매도 가능 수량은 팔 종목만 — 시가 맞추기류는 두 단계) + 오늘 주문 목록(수집기 하루 한도의 남은 몫) → 손실 한도(넘으면 매수만
  *       멈춤) → 계획({@link RealTradePlanner}) → 선점·SENDING·전송·결과({@link RealTradeExecutor}). 보내기 직전마다 지금 시각으로 그 창이 아직 열려 있는지
  *       다시 보고, 닫혔으면 보내지 않고 놓침으로 둡니다(RT3-MON-4). 창이 끝나면 창 요약 이벤트(접수·체결·놓침·건너뜀·막힘·미룸).</li>
@@ -515,9 +518,17 @@ class RealTradeJob {
             return false;
         }
         d.calendar = reply.value();
-        d.windows = RealTradePlanner.windows(d.date, reply.value().today());
+        d.windows = RealTradePlanner.windows(d.date, reply.value().today(), syncAt(store.configOrOff(MARKET).sourceBook(), d.date));
         publish(d);
         return true;
+    }
+
+    /**
+     * 따라 하는 책의 그날 일일 맞추기 시각(ADR 0033 초안 결정 1 — {@link PaperMirrorService#dailySyncAt}). 있으면 그날은 시가 단일가 맞추기 대신 그 시각
+     * 시장가 맞추기({@value RealTradePlanner#WINDOW_SYNC_AT}), 없으면(책이 없거나 시가 체결 책·전환일) 예전 시가 맞추기입니다.
+     */
+    private Instant syncAt(String book, LocalDate date) {
+        return book == null ? null : paper.dailySyncAt(book, date).orElse(null);
     }
 
     /** 쉬는 날 판정(명세 §3) — 그날 첫 창 3분 전에(휴장이면 바로) 한 번, 따라 하는 책·세대가 바뀌면 다시. */
@@ -525,6 +536,11 @@ class RealTradeJob {
         String key = cfg.sourceBook() + "|" + cfg.bookGeneration();
         if (key.equals(d.decidedFor)) {
             return;
+        }
+        if (d.calendar != null && d.calendar.today() != null) {
+            // 책·세대가 바뀌면 그 책의 맞추기 시각으로 창을 다시 셈(시가 맞추기 ↔ 시각 맞추기)
+            d.windows = RealTradePlanner.windows(d.date, d.calendar.today(), syncAt(cfg.sourceBook(), d.date));
+            publish(d);
         }
         if (d.windows != null && now.isBefore(d.windows.firstStart().minus(WARMUP_LEAD))) {
             return;
@@ -605,7 +621,10 @@ class RealTradeJob {
      * @param send false면 묶음만 만들고 보내지 않음(계획한 주문은 놓침 — 창 끝이 가까워 시작한 시가 맞추기, 시가 뒤 마무리가 메움)
      */
     private void createBatchAndSend(Cycle c, String purpose, String timeInForce, String window, boolean send) {
-        Optional<OpenTargets> found = paper.openTargets(c.cfg.sourceBook(), c.today);
+        // 시각 맞추기 날(ADR 0033 초안 결정 1)은 그 시각까지의 모의 주문을 반영한 목표(시각 지정 STOP은 흡수하지 않음 — 스탑 매도 경로가 따로 팖)
+        Instant syncAt = c.day.windows.syncAt();
+        Optional<OpenTargets> found = syncAt != null ? paper.targetsAt(c.cfg.sourceBook(), c.today, syncAt)
+                : paper.openTargets(c.cfg.sourceBook(), c.today);
         if (found.isEmpty()) {
             c.day.skip(window, "targets-unavailable", "*");
             return;
@@ -965,9 +984,15 @@ class RealTradeJob {
         }
         Set<Long> absorbed = store.batch(MARKET, c.today, RealTradeStore.BATCH_SYNC).map(b -> Set.copyOf(b.absorbedOrderIds()))
                 .orElse(Set.of());
+        Instant syncAt = w.syncAt();
         List<Due> due = new ArrayList<>();
         for (DueOrder o : upcoming) {
             if (absorbed.contains(o.orderId()) || (o.supported() && (o.mirrorAt() == null || o.mirrorAt().isAfter(c.now)))) {
+                continue;
+            }
+            if (syncAt != null && !o.stop() && o.target() != null && !o.target().isAfter(syncAt)) {
+                // 시각 맞추기 날의 묶음 몫(ADR 0033 초안 결정 1) — 기준 시각이 맞추기 시각 이하인 주문은 묶음이 흡수했든 아니든 따라 하지 않음(묶음 생성이
+                // 늦어진 주기에 하나씩 따라 하고 다음 주기 묶음이 또 맞추는 이중 경로를 막음). 묶음을 놓치면 함께 놓침 — 다음 날 맞추기가 메움.
                 continue;
             }
             long root = o.rootOrderId();
@@ -1399,8 +1424,8 @@ class RealTradeJob {
             boolean batch = store.batch(MARKET, c.today, RealTradeStore.BATCH_SYNC).isPresent();
             List<OrderRow> mine = rows.stream().filter(r -> RealTradeStore.PURPOSE_SYNC.equals(r.purpose())
                     || RealTradeStore.PURPOSE_SYNC_FOLLOWUP.equals(r.purpose())).toList();
-            summarize(c, RealTradePlanner.WINDOW_SYNC, mine, List.of(RealTradePlanner.WINDOW_SYNC, RealTradePlanner.WINDOW_FOLLOWUP),
-                    batch ? 0 : 1);
+            String window = w.syncAt() != null ? RealTradePlanner.WINDOW_SYNC_AT : RealTradePlanner.WINDOW_SYNC;
+            summarize(c, window, mine, List.of(RealTradePlanner.WINDOW_SYNC, RealTradePlanner.WINDOW_FOLLOWUP), batch ? 0 : 1);
         }
         if (w.intraday() != null && c.now.isAfter(w.intraday().end())) {
             List<OrderRow> mine = rows.stream().filter(r -> RealTradeStore.PURPOSE_MIRROR.equals(r.purpose())

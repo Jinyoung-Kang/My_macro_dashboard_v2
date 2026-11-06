@@ -503,6 +503,30 @@ class RealTradePlannerTest {
         assertThat(RealTradePlanner.windows(DAY, null)).as("휴장").isNull();
     }
 
+    @Test
+    @DisplayName("시각 맞추기 날(ADR 0033) — 시가 맞추기 창 없이 [T, T + 3분] 시장가 창(SYNC_AT), 맞추기 시각이 없으면 지금과 같은 창")
+    void timedSyncWindows() {
+        assertThat(RealTradePlanner.windows(DAY, normalSession(), null)).as("되돌리기용 시가 맞추기 경로 그대로")
+                .isEqualTo(RealTradePlanner.windows(DAY, normalSession()));
+        Day day = RealTradePlanner.windows(DAY, normalSession(), kst("2026-11-06T09:10"));
+        assertThat(day.sync()).isNull();
+        assertThat(day.followup()).isEqualTo(new Window("SYNC_AT", kst("2026-11-06T09:10"), kst("2026-11-06T09:13")));
+        assertThat(day.syncAt()).isEqualTo(kst("2026-11-06T09:10"));
+        assertThat(day.firstStart()).as("예열·쉬는 날 판정은 09:07").isEqualTo(kst("2026-11-06T09:10"));
+        assertThat(day.intraday()).isEqualTo(RealTradePlanner.windows(DAY, normalSession()).intraday());
+
+        CollectorTradeClient.Session exam = new CollectorTradeClient.Session(
+                new CollectorTradeClient.PreMarket(kst("2026-11-06T09:00"), kst("2026-11-06T09:50"), kst("2026-11-06T10:00")),
+                new CollectorTradeClient.Regular(kst("2026-11-06T10:00"), kst("2026-11-06T16:20"), kst("2026-11-06T16:30")));
+        assertThat(RealTradePlanner.windows(DAY, exam, kst("2026-11-06T10:10")).followup())
+                .as("수능일형 — 그날 첫 분 10:10~10:13").isEqualTo(new Window("SYNC_AT", kst("2026-11-06T10:10"), kst("2026-11-06T10:13")));
+        assertThat(RealTradePlanner.windows(DAY, normalSession(), kst("2026-11-06T15:18:30")).followup().end())
+                .as("장중 끝(종가 단일가 − 30초)에서 자름").isEqualTo(kst("2026-11-06T15:19:30"));
+        Day late = RealTradePlanner.windows(DAY, normalSession(), kst("2026-11-06T15:25"));
+        assertThat(late.syncAt()).as("장중 끝 뒤 시각이면 시가 맞추기 날로").isNull();
+        assertThat(late.sync()).isNotNull();
+    }
+
     // ------------------------------------------------------------------ 쉬는 날
     private static CollectorTradeClient.Calendar calendar(CollectorTradeClient.Session session, Double skew) {
         return new CollectorTradeClient.Calendar(DAY, skew, session, DAY.minusDays(1), DAY.plusDays(3));

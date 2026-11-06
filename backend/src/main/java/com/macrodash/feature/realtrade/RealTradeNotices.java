@@ -29,6 +29,7 @@ final class RealTradeNotices {
     /** 창 요약의 창 이름(명세 §7.4 예 '시가 맞추기'). */
     private static final Map<String, String> WINDOW_LABEL = Map.of(
             RealTradePlanner.WINDOW_SYNC, "시가 맞추기",
+            RealTradePlanner.WINDOW_SYNC_AT, "개장 10분 뒤 맞추기",
             RealTradePlanner.WINDOW_FOLLOWUP, "시가 뒤 마무리",
             RealTradePlanner.WINDOW_MIRROR, "장중 따라 하기",
             RealTradePlanner.WINDOW_CLOSE, "종가 따라 하기");

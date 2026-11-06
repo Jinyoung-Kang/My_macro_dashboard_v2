@@ -632,6 +632,89 @@ class RealTradeJobDbTest {
         assertThat(sentBodies()).extracting(RealTradeJobDbTest::summary).containsExactly("BUY " + A + " DAY 15", "BUY " + CASH_LIKE + " DAY 8");
     }
 
+    // ------------------------------------------------------------------ 시각 맞추기(ADR 0033 초안 결정 1)
+    private static final Instant SYNC_AT = kst("2026-11-06T09:10");
+
+    private void timedTargets(Map<String, Double> weights, List<Long> absorbed, List<Long> stops) {
+        when(paper.dailySyncAt(BOOK, SESSION)).thenReturn(Optional.of(SYNC_AT));
+        when(paper.targetsAt(BOOK, SESSION, SYNC_AT)).thenReturn(Optional.of(new OpenTargets(BOOK, SESSION, weights, Map.of(), 1e7, 0,
+                absorbed, List.of(), stops)));
+    }
+
+    @Test
+    @DisplayName("시각 맞추기 날 — 08:50 OPG 없음, 09:10에 묶음 하나(시장가 DAY)가 09:10 주문을 흡수, 다음 주기에 묶음을 또 만들지 않고 창 요약은 SYNC_AT")
+    void timedSyncBatch() {
+        RealTradeFixtures.live(store, true, d("10000000"));
+        timedTargets(Map.of(A, 50.0, B, 30.0), List.of(21L, 22L), List.of());
+        preflight("6000000", Map.of(C, new String[]{"100", "40000"}), Map.of(A, "50000", B, "20000"));
+
+        run("08:51");
+        run("08:55");
+        run("09:05");
+        verify(client, never()).placeOrder(anyString());
+        assertThat(store.batch("KR", SESSION, RealTradeStore.BATCH_SYNC)).isEmpty();
+        verify(paper, never()).openTargets(anyString(), any());
+
+        run("09:10:05");
+        assertThat(sentBodies()).extracting(RealTradeJobDbTest::summary)
+                .containsExactly("SELL " + C + " DAY 100", "BUY " + B + " DAY 150", "BUY " + A + " DAY 32");
+        Batch batch = store.batch("KR", SESSION, RealTradeStore.BATCH_SYNC).orElseThrow();
+        assertThat(batch.absorbedOrderIds()).containsExactly(21L, 22L);
+        assertThat(store.recentOrders("KR", 10)).allMatch(r -> r.purpose().equals("SYNC_FOLLOWUP") && r.batchId().equals(batch.id()));
+
+        run("09:10:40");
+        verify(client, times(3)).placeOrder(anyString());   // 묶음은 하루 하나 — 진행 중인 주문은 다시 보내지 않음
+        run("09:14");
+        assertThat(events("WINDOW_SUMMARY")).singleElement().satisfies(e -> {
+            assertThat(e.detail().path("window").asString()).isEqualTo("SYNC_AT");
+            assertThat(e.detail().path("accepted").asInt()).isEqualTo(3);
+        });
+        assertThat(RealTradeNotices.text(events("WINDOW_SUMMARY").getFirst())).contains("개장 10분 뒤 맞추기");
+    }
+
+    @Test
+    @DisplayName("시각 맞추기 날의 묶음 몫 — 묶음을 아직 못 만든 동안 09:10 이하 모의 주문을 장중 따라 하기가 하나씩 보내지 않고, 묶음이 생기면 묶음으로만")
+    void timedSyncShareGuard() {
+        RealTradeFixtures.live(store, false, d("10000000"));
+        when(paper.dailySyncAt(BOOK, SESSION)).thenReturn(Optional.of(SYNC_AT));
+        when(paper.targetsAt(BOOK, SESSION, SYNC_AT)).thenReturn(Optional.empty());
+        preflight("10000000", Map.of(), Map.of(A, "50000"));
+        when(paper.dueOrders(anyString(), any(), any())).thenReturn(List.of(dueFor(501, 500, A, "BUY", SYNC_AT)));
+        when(paper.weightAfter(eq(BOOK), eq(501L), any())).thenReturn(Optional.of(new WeightAfter(501, A, "BUY", 20.0, 1e7, true,
+                List.of(501L), List.of())));
+
+        run("09:10:05");
+        verify(client, never()).placeOrder(anyString());
+        verify(paper, never()).weightAfter(anyString(), anyLong(), any());
+
+        timedTargets(Map.of(A, 20.0), List.of(501L), List.of());
+        run("09:11");
+        assertThat(sentBodies()).extracting(RealTradeJobDbTest::summary).containsExactly("BUY " + A + " DAY 40");
+        assertThat(store.recentOrders("KR", 10)).noneMatch(r -> r.purpose().equals("MIRROR"));
+        run("09:12");
+        verify(client, times(1)).placeOrder(anyString());
+    }
+
+    @Test
+    @DisplayName("시각 맞추기 날 — 창 끝(09:13)까지 묶음을 만들지 못하면 보내지 않고 놓침, 그 주문들도 따라 하지 않음")
+    void timedSyncMissed() {
+        RealTradeFixtures.live(store, false, d("10000000"));
+        timedTargets(Map.of(A, 20.0), List.of(501L), List.of());
+        when(client.preflight(any(), any())).thenReturn(Reply.failed("timeout"));
+        when(paper.dueOrders(anyString(), any(), any())).thenReturn(List.of(dueFor(501, 500, A, "BUY", SYNC_AT)));
+
+        run("09:10:05");
+        run("09:11");
+        run("09:12:30");
+        preflight("10000000", Map.of(), Map.of(A, "50000"));
+        run("09:13:30");
+        verify(client, never()).placeOrder(anyString());
+        assertThat(events("WINDOW_SUMMARY")).singleElement().satisfies(e -> {
+            assertThat(e.detail().path("window").asString()).isEqualTo("SYNC_AT");
+            assertThat(e.detail().path("missed").asInt()).isEqualTo(1);
+        });
+    }
+
     // ------------------------------------------------------------------ 장중 따라 하기
     private static DueOrder due(long id, long root, String side, String timing, Instant mirrorAt, boolean supported) {
         return new DueOrder(id, root, A, side, timing, "CLAUDE", mirrorAt, mirrorAt, supported, 10.0, null, null);
