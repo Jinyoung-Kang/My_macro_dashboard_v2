@@ -538,7 +538,7 @@ def test_QA199_deploy는_마지막_S3_백업이_없거나_36시간을_넘었으�
     result = _deploy(server, fakes)
     assert result.returncode == 0, "경고만 — 배포는 막지 않음"
     assert any(line.startswith("경고") and "S3 백업" in line for line in result.stdout.splitlines()), \
-        "매일 06:45 KST 한 번이라 36시간이면 한 번 이상 놓친 것(cron이 빠지면 텔레그램 알림도 없음)"
+        "매일 08:00 KST 한 번이라 36시간이면 한 번 이상 놓친 것(cron이 빠지면 텔레그램 알림도 없음)"
 
 
 def test_QA199_deploy는_마지막_S3_백업이_36시간_안이면_경고_없이_나이만_찍는다(server, fakes):

@@ -3,7 +3,7 @@
 # scripts/vultr/backup-age.sh — 서버 밖 사본(S3 db/vultr/)을 마지막으로 올린 뒤 몇 시간이 지났는지 한 줄로 찍습니다(QA-199).
 # deploy.sh 끝 요약과 make status가 같이 불러, 36시간 판정과 문구가 한 곳에만 있게 합니다.
 #
-# 기록은 backup-s3.sh가 성공할 때 남기는 backups/.last-s3-ok(유닉스 초 · UTC 시각 · 올린 키)입니다. cron은 매일 06:45 KST라
+# 기록은 backup-s3.sh가 성공할 때 남기는 backups/.last-s3-ok(유닉스 초 · UTC 시각 · 올린 키)입니다. cron은 매일 08:00 KST라
 # 36시간이 넘으면 한 번 이상 놓친 것입니다. 실패는 텔레그램으로도 오지만 cron이 빠지면(crontab 유실·서버 재구성) 아무 신호가 없어
 # 이 줄로 봅니다.
 #

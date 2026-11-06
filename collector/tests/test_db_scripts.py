@@ -496,7 +496,7 @@ def test_OPS4_V24_전_백업을_복원해도_복원_전_DB가_켜져_있었다�
 
 
 def test_OPS4_백업_뒤에_나간_주문만_없으면_멈춤과_함께_그_주문만_경고한다(database_url, scratch_db, tmp_path):
-    """켜진 뒤의 백업(06:45) → 그 뒤 시가 맞추기 주문(08:50) → 복원: 시장은 이상 멈춤(restored)이 되지만 그 주문의 기록은 없습니다."""
+    """켜진 뒤의 백업(08:00) → 그 뒤 시가 맞추기 주문(08:50) → 복원: 시장은 이상 멈춤(restored)이 되지만 그 주문의 기록은 없습니다."""
     name, db_url = scratch_db
     env = _real_trade_env(database_url, name, tmp_path)
     _seed_real_trade(db_url, "LIVE")

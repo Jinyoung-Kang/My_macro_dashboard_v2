@@ -367,7 +367,7 @@ ssh ubuntu@my-macro-app                    # 서버 셸(Tailscale SSH) — 그 �
   `COMPOSE_FILE`·`AWS_BACKUP_BUCKET`·`PUBLIC_ORIGIN`(Tailscale 주소)·`PAPER_KR_START_DATE`(한국 출발일)·`TAILNET_OWNER_LOGIN`(그 Tailscale 사용자는 로그인 없이 운영자 —
   [ADR 0023](docs/adr/0023-vultr-deployment.md) 결정 10, 비면 로그인 화면)·`TOSS_ACCOUNT_ENABLED`(켤 때만 `true` — 토스 실제 계좌 읽기 전용 조회, [ADR 0025](docs/adr/0025-toss-real-account-readonly.md))·`BROWSER_FETCH_URL`·`BROWSER_FETCH_TOKEN`(켤 때만 — 브라우저 컨테이너, [ADR 0026](docs/adr/0026-polite-fetch-layers.md))·`TOSS_TRADING_ENABLED`·`REAL_TRADE_ENABLED`·한도 네 줄(켤 때만 — 실제 매매, [ADR 0028](docs/adr/0028-real-trade-mirror.md), 값은 켜기 전에 사용자 확인)을 더한 것입니다([.env.vultr.example](.env.vultr.example)).
   PC의 `.env`에는 `VULTR_API_KEY`·`VULTR_INSTANCE_ID`·`VULTR_SERVER_IP`·`VULTR_FIREWALL_GROUP_ID`·`TAILSCALE_AUTH_KEY`·`TAILNET_DOMAIN`을 더합니다.
-- DB는 06:45 KST(미국 결정 뒤)와 일요일 23:00 KST에 S3 백업 버킷의 `db/vultr/`로 백업합니다(`scripts/vultr/backup-s3.sh`, cron, 60일 보관).
+- DB는 매일 08:00 KST(미국 결정 뒤 — 2026-11-08까지는 06:45)와 일요일 23:00 KST에 S3 백업 버킷의 `db/vultr/`로 백업합니다(`scripts/vultr/backup-s3.sh`, cron, 60일 보관).
 - 서버 만들기·`.env` 전달·배포·백업 절차는 [docs/DEVELOPMENT.md §7](docs/DEVELOPMENT.md#7-vultr-서버)에 있습니다. 실제 매매를 켜는 절차·켜기 전 점검표·**비상 끄기 순서**도 같은 절('실제 매매 켜기')입니다.
   실제 매매가 꺼져 있지 않으면(켜짐·끄는 중·이상 멈춤 — 끄는 중·이상 멈춤도 미체결 취소를 보냄) `deploy.sh`는 한국 거래 창(평일 08:45~09:35·15:15~15:35 KST, 장 시간 변경일은 개장 −15분~+35분·마감 −15분~+5분, 설정을 읽지 못하면 08:45~10:35·15:15~16:35)에 멈추고, `make restore`는 복원한 백업에서 꺼지지 않은 실제 매매를 이상 멈춤(`restored`)으로 두며 복원 전 DB에서 켜져 있었는데 백업에 그 상태·주문이 없으면 경고합니다(토스 앱에서 미체결 직접 확인).
   서버 `.env`를 다시 전달해도 서버 전용 줄(토스 키·텔레그램·실제 매매 스위치·한도 등)은 서버에서 그대로 이어 붙이고, 백엔드·수집기는 다시 만들 때 보내던 주문이 끝나도록 90초·30초까지 기다립니다.

@@ -445,7 +445,7 @@ UTC라서 `LocalDate.now()`를 그대로 쓰면 한국 시각 00:00~09:00 사이
  tailscaled(serve https:443, 인증서는 Tailscale) ──► 127.0.0.1:8201 caddy ─┬─ /api/* ──► backend:8080 ──JDBC──► postgres:5432 ◄──적재── collector:8000
                                                                            └─ 나머지 ──► frontend:3000
  나가는 통신: collector ──► 외부 시장 데이터·토스(실제 매매를 켰을 때만 주문 — ADR 0028) · backend ──► Anthropic API · git ──► GitHub(읽기 전용 배포 키)
- cron 06:45 KST(·일 23:00): make backup ──► S3 백업 버킷/db/vultr/ (db/ 60일 만료, IAM 사용자 키 — db/vultr/에만 쓰기)
+ cron 08:00 KST(·일 23:00): make backup ──► S3 백업 버킷/db/vultr/ (db/ 60일 만료, IAM 사용자 키 — db/vultr/에만 쓰기)
 ```
 
 - **들어오는 길은 Tailscale 하나**(비상용 SSH 22 제외). `tailscale serve`는 tailnet 안에서만 듣고(`funnel` 안 씀) HTTPS를 끝낸 뒤 루프백의 caddy로 넘깁니다.
