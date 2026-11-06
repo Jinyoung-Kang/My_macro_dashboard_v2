@@ -102,7 +102,10 @@ export interface BrokerageAccountResponse {
   currency: "KRW" | "USD";
   accountLabel: string | null;
   accountCount: number | null;
-  /** 보이는 데이터를 받은 시각(KST `yyyy-MM-dd HH:mm`). */
+  /**
+   * 보이는 데이터를 수집기가 토스에서 받은 시각(KST) — 화면의 '기준 시각'(명세 2026-11-06-us-costs-backfill §6). 초까지(`yyyy-MM-dd HH:mm:ss`)를
+   * 기대하고, 예전 응답처럼 분까지(`yyyy-MM-dd HH:mm`)면 화면은 받은 그대로 적습니다(초를 지어내지 않음).
+   */
   fetchedAtKst: string | null;
   /** 이전 값을 보일 때 첫 실패 시각. */
   staleSinceKst: string | null;

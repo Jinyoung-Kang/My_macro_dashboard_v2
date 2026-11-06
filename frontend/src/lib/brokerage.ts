@@ -1,11 +1,12 @@
 /**
  * 토스증권 실제 계좌 탭(읽기 전용, ADR 0025 — docs/specs/2026-11-05-toss-account-readonly.md §5)의 표기 — React를 모르는 순수 함수(ADR 0004).
  *
- * 모의 장부와 별개 기능입니다. 이 파일은 lib/format·lib/paperMarket(시장별 자릿수·단위)과 응답 계약 lib/types/brokerage만 가져오고,
- * 모의·홈 모듈은 이 파일을 가져오지 않습니다(components/screens/brokerage/__tests__/brokerageBoundary.test.ts). 숫자는 백엔드가 보낸
- * 값 그대로 찍고(이 화면이 계산하는 숫자는 없음), 모르는 값은 "—"입니다 — 0으로 채우지 않습니다.
+ * 모의 장부와 별개 기능입니다. 이 파일은 lib/format·lib/paperMarket(시장별 자릿수·단위)·lib/livePrices(주기 이름 — 실시간 시세와 같은 주기 값)와
+ * 응답 계약 lib/types/brokerage만 가져오고, 모의·홈 모듈은 이 파일을 가져오지 않습니다(components/screens/brokerage/__tests__/brokerageBoundary.test.ts).
+ * 숫자는 백엔드가 보낸 값 그대로 찍고(이 화면이 계산하는 숫자는 없음), 모르는 값은 "—"입니다 — 0으로 채우지 않습니다.
  */
-import { EMPTY, formatKst, formatNumber, formatPercent, formatSigned } from "./format";
+import { EMPTY, formatKst, formatKstSeconds, formatNumber, formatPercent, formatSigned } from "./format";
+import { liveSecondsText } from "./livePrices";
 import { marketMeta, type PaperMarketCode } from "./paperMarket";
 import type { BrokerageAccountResponse, BrokerageOrderRow, BrokerageSummary } from "./types/brokerage";
 
@@ -248,4 +249,41 @@ export function profitLossNote(summary: BrokerageSummary | null | undefined, mar
 export function marketValueNote(summary: BrokerageSummary | null | undefined, market: PaperMarketCode): string | null {
   const value = summary?.marketValueAfterCost;
   return missing(value) ? null : `비용 차감 후 ${formatAmount(value, market)}${marketMeta(market).moneyUnit}`;
+}
+
+// ---------------------------------------------------------------- 새로고침 주기와 기준 시각(명세 2026-11-06-us-costs-backfill §6)
+
+/**
+ * 실제 계좌를 다시 읽는 가장 짧은 간격(초) — 수집기 계좌 캐시(성공값 10초, ADR 0025 결정 3 개정)보다 자주 읽어도 같은 값이라 5초는 10초로 올려 씁니다.
+ */
+export const BROKERAGE_MIN_REFRESH_SECONDS = 10;
+
+/**
+ * 고른 주기(초 — 실시간 시세와 같은 값, hooks/useLiveSeconds) → 실제 계좌를 다시 읽는 간격(ms). 끄기(0 이하)는 0(탭을 열 때와 '다시 읽기' 때만),
+ * 10초보다 짧으면 10초.
+ */
+export function brokerageRefreshMs(seconds: number): number {
+  if (!Number.isFinite(seconds) || seconds <= 0) {
+    return 0;
+  }
+  return Math.max(BROKERAGE_MIN_REFRESH_SECONDS, seconds) * 1000;
+}
+
+/** 주기 상자 옆 한 줄 — 끄기·고른 주기(5초는 10초로 올린다는 것)·실시간 시세와 같은 값이라는 것. */
+export function brokerageRefreshNote(seconds: number): string {
+  const ms = brokerageRefreshMs(seconds);
+  if (ms === 0) {
+    return "끄기 — 탭을 열 때와 '다시 읽기' 때만 읽음";
+  }
+  const every = `${liveSecondsText(ms / 1000)}마다 다시 읽음`;
+  return ms / 1000 > seconds ? `${every}(${liveSecondsText(seconds)}는 10초로 — 계좌 캐시 10초)` : every;
+}
+
+/**
+ * 기준 시각 — 수집기가 토스에서 그 값을 받은 시각(`fetchedAtKst`, 초까지 `YYYY-MM-DD HH:mm:ss KST`). 토스가 그 시각 가격으로 계산한 평가·손익입니다.
+ * 백엔드가 초 없이 보내면 받은 글자 그대로(초를 지어내지 않음), 모르면 "—".
+ */
+export function brokerageBasisText(response: Pick<BrokerageAccountResponse, "fetchedAtKst"> | null | undefined): string {
+  const text = formatKstSeconds(response?.fetchedAtKst ?? null);
+  return text === EMPTY ? EMPTY : `${text} KST`;
 }

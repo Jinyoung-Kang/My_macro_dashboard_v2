@@ -9,6 +9,7 @@ import { describe, expect, it } from "vitest";
 import {
   deltaColor, withoutLeadingIcon, formatAge, formatBillionUsd, formatKrw, formatNumber, formatPercent, formatSampleWindow, formatShares,
   formatSigned, formatSignedKrw, formatTrillionDelta, formatTrillionUsd, formatUsd, formatUsdWithKrw,
+  formatKstSeconds,
   formatLatency,
   formatSignedMinus,
   formatWithUnit,
@@ -198,5 +199,29 @@ describe("해석 색(statusColor) — 강조 파랑을 쓰지 않는 네 단계(
     expect(classes).toEqual(["text-ok", "text-text", "text-warn", "text-danger", "text-body"]);
     expect(new Set(classes).size).toBe(5);
     expect(classes.some((name) => name.includes("accent"))).toBe(false);
+  });
+});
+
+describe("기준 시각 — 초까지(formatKstSeconds, 명세 2026-11-06-us-costs-backfill §6)", () => {
+  it("ISO(시간대 있음)·Date는 서울 시각으로 바꿔 초까지, 소수초는 뗌", () => {
+    expect(formatKstSeconds("2026-11-06T05:31:05Z")).toBe("2026-11-06 14:31:05");
+    expect(formatKstSeconds("2026-11-06T14:31:05.987+09:00")).toBe("2026-11-06 14:31:05");
+    expect(formatKstSeconds("2026-11-06T14:31:05+09:00[Asia/Seoul]")).toBe("2026-11-06 14:31:05");
+    expect(formatKstSeconds(new Date("2026-11-06T15:00:09Z"))).toBe("2026-11-07 00:00:09");
+  });
+
+  it("이미 서울 시각인 글자는 초까지 그대로, 초가 없는 글자는 초를 지어내지 않음", () => {
+    expect(formatKstSeconds("2026-11-06 14:31:05")).toBe("2026-11-06 14:31:05");
+    expect(formatKstSeconds("2026-11-06 14:31:05 KST")).toBe("2026-11-06 14:31:05");
+    expect(formatKstSeconds("2026-11-06T14:31:05.5")).toBe("2026-11-06 14:31:05");
+    expect(formatKstSeconds("2026-11-06 14:31")).toBe("2026-11-06 14:31");
+  });
+
+  it("없으면 —, 알아볼 수 없으면 받은 그대로", () => {
+    expect(formatKstSeconds(null)).toBe("—");
+    expect(formatKstSeconds(undefined)).toBe("—");
+    expect(formatKstSeconds("")).toBe("—");
+    expect(formatKstSeconds("어제 저녁")).toBe("어제 저녁");
+    expect(formatKstSeconds(new Date(Number.NaN))).toBe("—");
   });
 });

@@ -11,7 +11,7 @@ import {
   marketValueNote,
   profitLossNote,
 } from "@/lib/brokerage";
-import { deltaColor, formatKst } from "@/lib/format";
+import { deltaColor, formatKstSeconds } from "@/lib/format";
 import { marketMeta, type PaperMarketCode } from "@/lib/paperMarket";
 import { SOURCES } from "@/lib/sources";
 import type { BrokerageAccountResponse } from "@/lib/types/brokerage";
@@ -39,7 +39,8 @@ export function BrokerageSummary({
   const amount = (value: number) => formatAmount(value, market);
   const signed = (value: number) => formatSignedAmount(value, market);
   const tone = (value: number | null | undefined) => deltaColor(value, amountDigits(market));
-  const received = data.fetchedAtKst ? `받은 시각 ${formatKst(data.fetchedAtKst)}` : "받은 시각 —";
+  // 받은 시각은 탭 머리의 기준 시각과 같은 값(초까지 — 명세 2026-11-06-us-costs-backfill §6).
+  const received = data.fetchedAtKst ? `받은 시각 ${formatKstSeconds(data.fetchedAtKst)}` : "받은 시각 —";
 
   return (
     <Card

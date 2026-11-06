@@ -41,6 +41,10 @@ import {
   statusToggle,
   stopText,
   timingLabel,
+  US_COST_RETRO_TEXT,
+  US_COST_RETRO_TITLE,
+  usCostAdjustmentTotalText,
+  usFillCosts,
 } from "@/lib/paper";
 import {
   KR_RESET_NOTE,
@@ -223,9 +227,29 @@ const FILL_COLUMNS: readonly Column<PaperFill>[] = [
   { key: "rawPrice", header: "관측가", align: "right", cell: (row) => formatSharePrice(row.rawPrice) },
   { key: "slippage", header: "슬리피지", align: "right", cell: (row) => formatWithUnit(row.slippageBp, 1, "bp") },
   { key: "gross", header: "금액(달러)", align: "right", cell: (row) => formatNumber(row.gross, 2) },
+  { key: "costs", header: "수수료·제비용(달러)", align: "right", cell: (row) => usCostCell(row) },
   { key: "barDate", header: "봉 날짜", cell: (row) => row.observationDate ?? EMPTY },
   { key: "priceSource", header: "가격 출처", cell: (row) => row.priceSource ?? EMPTY },
 ];
+
+/** 미국 체결 카드 부제의 비용 문장(ADR 0030). */
+const US_COST_NOTE = " 비용은 수수료(매수·매도) · 제비용(매도만 — SEC fee + FINRA TAF, 달러)이고 체결가와 따로 현금에서 뺍니다. '비용 소급'은 "
+  + "수수료가 없던 때의 체결에 나중에 더한 비용입니다 — 수량·체결가는 당시 그대로(그때 수수료가 있었다면 수량이 조금 달랐을 것).";
+
+/**
+ * 미국 체결의 비용 칸(ADR 0030) — 수수료 · 제비용(달러). 소급 조정 행이 있으면 그 아래 '비용 소급 — 수량은 당시 그대로'(설명은 title). 응답에 비용
+ * 칸이 없거나 값을 모르면 "—"(표가 값 없음으로 그림).
+ */
+function usCostCell(row: PaperFill): ReactNode {
+  const costs = usFillCosts(row);
+  if (!costs.retro) return costs.text;
+  return (
+    <span className="flex flex-col items-end" title={`${US_COST_RETRO_TITLE} 현금 ${costs.cash}달러.`}>
+      <span>{part(costs.text)}</span>
+      <span className="text-xs text-text-3">{US_COST_RETRO_TEXT}</span>
+    </span>
+  );
+}
 
 /*
  * 미국 Claude 계좌2(시각 지정 체결 — 계좌2 명세 §13-3)의 주문·체결 표. 목표 시각과 계좌1식 대비는 실행 감사 응답(GET books/{code}/execution)의 그
@@ -375,16 +399,26 @@ function timedFillColumns(audit: ReadonlyMap<number, PaperExecutionOrder>): Colu
       },
     },
     { key: "advantage", header: "계좌1식 대비", align: "right", cell: (row) => executionAdvantageText(audit.get(row.orderId)) },
+    // 비용(수수료 · 제비용 — ADR 0030)은 칸을 늘리지 않고 이 칸의 셋째 줄에(위 아홉 칸 폭 그대로). 응답에 비용 칸이 없으면(옛 응답) 그 줄이 없고,
+    // 소급 조정 행이 있으면 '비용 소급'(설명은 title — 수량은 당시 그대로).
     {
       key: "gross",
-      header: "금액(달러)·슬리피지",
+      header: "금액(달러)·슬리피지·비용",
       align: "right",
-      cell: (row) => (
-        <span className="flex flex-col items-end">
-          <span>{part(formatNumber(row.gross, 2))}</span>
-          <span className="text-xs text-text-3">{part(formatWithUnit(row.slippageBp, 1, "bp"), "슬리피지")}</span>
-        </span>
-      ),
+      cell: (row) => {
+        const costs = usFillCosts(row);
+        return (
+          <span className="flex flex-col items-end">
+            <span>{part(formatNumber(row.gross, 2))}</span>
+            <span className="text-xs text-text-3">{part(formatWithUnit(row.slippageBp, 1, "bp"), "슬리피지")}</span>
+            {costs.present && (
+              <span className="text-xs text-text-3" title={costs.retro ? `${US_COST_RETRO_TITLE} 현금 ${costs.cash}달러.` : undefined}>
+                {part(costs.text, costs.retro ? "비용 소급" : "비용")}
+              </span>
+            )}
+          </span>
+        );
+      },
     },
     { key: "priceSource", header: "가격 출처", className: "whitespace-nowrap", cell: (row) => row.priceSource ?? EMPTY },
   ];
@@ -713,7 +747,9 @@ export function HoldingsSection({
   const ledgerSource = korea ? PAPER_SOURCES.krLedger : PAPER_SOURCES.ledger;
   const jobs = status.data?.available ? (status.data.jobs ?? []) : null;
   const cautions = korea && jobs ? krConfirmationCautions(jobs, code) : [];
-  const totalText = korea ? krConfirmationTotalText(fills.data?.confirmationTotal) : null;
+  const totalText = korea
+    ? krConfirmationTotalText(fills.data?.confirmationTotal)
+    : usCostAdjustmentTotalText(fills.data?.costAdjustmentTotal);
   const action = statusToggle(book?.status);
   const audit = executionByOrder(execution.data);
   const orderColumns = korea ? KR_ORDER_COLUMNS : timed ? timedOrderColumns(audit) : ORDER_COLUMNS;
@@ -933,10 +969,10 @@ export function HoldingsSection({
             + "체결 행은 그대로 둔 채 확정 조정 행으로 현금·평단을 맞춥니다(보통 다음 영업일 13시 뒤). 실효 비용 = (수수료 + 세금 + 슬리피지) "
             + "÷ (체결가 × 수량) — 서버 계산. 비용 칸은 수수료 · 세금 · 슬리피지(원)이고, 두 비용 칸은 잠정 체결의 값 — 확정 조정 행이 있으면 "
             + "확정가로 다시 센 값('확정')을 그 아래에 둡니다."
-          : timed
+          : (timed
             ? "체결가는 고른 시각의 Yahoo 1분봉 시가(사다리 R1·R2) 또는 표시된 대체 체결가(R2b·R3·확정 종가 — '대체 체결' 배지)에 슬리피지를 얹은 "
               + "값입니다. 관측 시각은 장부가 그 체결을 반영한 관측치의 수집 시각, 체결 봉은 그 가격의 1분봉 시작입니다(종가·관측 종가 칸이면 —)."
-            : "체결가는 관측가에 슬리피지를 얹은 값입니다. 사후 체결은 그날 종가로 나중에 기록한 것입니다."}
+            : "체결가는 관측가에 슬리피지를 얹은 값입니다. 사후 체결은 그날 종가로 나중에 기록한 것입니다.") + US_COST_NOTE}
         source={ledgerSource}
       >
         {fills.loading && !fills.data && <Loading label="체결을 읽는 중…" />}

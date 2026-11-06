@@ -367,6 +367,56 @@ function kstParts(date: Date): string | null {
   }
 }
 
+/**
+ * 기준 시각(초까지) — `"YYYY-MM-DD HH:mm:ss"`(한국 시간). 실제 계좌·ISA 계좌의 '기준 시각'처럼 초가 뜻이 있는 자리만 씁니다
+ * (명세 docs/specs/2026-11-06-us-costs-backfill.md §6 — 다른 시각은 formatKst의 분까지 그대로).
+ *
+ * 받는 형식
+ *   - ISO 시각(시간대 있음 — `…Z`, `…+09:00[Asia/Seoul]`)·Date → KST로 바꿔 초까지(소수초는 뗌)
+ *   - 이미 KST인 글자 `YYYY-MM-DD[ T]HH:mm:ss[.SSS][ KST]` → 초까지 그대로
+ *   - 초가 없는 글자 `YYYY-MM-DD HH:mm` → 받은 그대로(초를 지어내지 않음)
+ *
+ * @returns 예 `"2026-11-06 14:31:05"`. 값이 없으면 `"—"`, 알아볼 수 없으면 받은 값 그대로
+ */
+export function formatKstSeconds(value: string | Date | null | undefined): string {
+  if (value === null || value === undefined || value === "") {
+    return EMPTY;
+  }
+  if (value instanceof Date) {
+    return kstSecondParts(value) ?? EMPTY;
+  }
+  const text = value.trim();
+  if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(text) && /(Z|[+-]\d{2}:?\d{2})(\[.*\])?$/.test(text)) {
+    const parsed = new Date(text.replace(/\[.*\]$/, ""));
+    return Number.isNaN(parsed.getTime()) ? text : (kstSecondParts(parsed) ?? text);
+  }
+  const plain = /^(\d{4}-\d{2}-\d{2})[ T](\d{2}:\d{2})(:\d{2})?(?:\.\d+)?(?: KST)?$/.exec(text);
+  return plain ? `${plain[1]} ${plain[2]}${plain[3] ?? ""}` : text;
+}
+
+/** Date → KST "YYYY-MM-DD HH:mm:ss". 변환이 불가능한 환경이면 null. */
+function kstSecondParts(date: Date): string | null {
+  try {
+    const parts = Object.fromEntries(
+      new Intl.DateTimeFormat("en-CA", {
+        timeZone: "Asia/Seoul",
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+        hour: "2-digit",
+        minute: "2-digit",
+        second: "2-digit",
+        hourCycle: "h23",
+      })
+        .formatToParts(date)
+        .map((part) => [part.type, part.value]),
+    );
+    return `${parts.year}-${parts.month}-${parts.day} ${parts.hour}:${parts.minute}:${parts.second}`;
+  } catch {
+    return null;
+  }
+}
+
 export function formatDate(value: string | null | undefined): string {
   if (!value) {
     return EMPTY;

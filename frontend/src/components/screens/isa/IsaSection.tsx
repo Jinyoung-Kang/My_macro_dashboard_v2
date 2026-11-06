@@ -1,11 +1,14 @@
 "use client";
 
-import { useCallback, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
+import { LiveIntervalSelect } from "@/components/LiveIntervalSelect";
 import { StatGrid, StatTile } from "@/components/patterns";
 import { Banner, Button, Card, ErrorState, Freshness, Loading } from "@/components/ui";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { useApi } from "@/hooks/useApi";
 import { useAsyncAction } from "@/hooks/useAsyncAction";
+import { useLivePrices } from "@/hooks/useLivePrices";
+import { useLiveSeconds } from "@/hooks/useLiveSeconds";
 import { endpoints } from "@/lib/endpoints";
 import { deltaColor, formatKst, formatNumber, formatPercent, formatSigned } from "@/lib/format";
 import {
@@ -15,6 +18,11 @@ import {
   formatWon,
   ISA_BANNER,
   ISA_SOURCE,
+  isaBasisNote,
+  isaBasisText,
+  type IsaLiveQuote,
+  type IsaValuation,
+  isaValuation,
   kindLabel,
   LEDGER_CHANGED_TEXT,
   ledgerRowForInstruction,
@@ -22,11 +30,11 @@ import {
   sessionStatusLabel,
   sideLabel,
   symbolText,
-  toNumber,
   tradeGuide,
   unavailableText,
   unpricedText,
 } from "@/lib/isa";
+import { liveKey, liveSecondsText, liveShown } from "@/lib/livePrices";
 import type { IsaInstructionItem, IsaLedgerRow, IsaOkResponse, IsaResponse } from "@/lib/types/isa";
 import { IsaLedgerDialog, type IsaLedgerTarget } from "./IsaLedgerDialog";
 import { IsaStartDialog } from "./IsaStartDialog";
@@ -51,6 +59,11 @@ const SAVED_TEXT: Readonly<Record<IsaLedgerTarget["mode"], string>> = {
  * 시작 뒤면 요약(순입금(시작 현금 포함)·평가액·손익(부호·색)·현금, 비용 0으로 어림) → 다음 시가 매매 지시(줄마다 체결 고치기·건너뜀, 지난 지시) →
  * 처리 안 된 지난 지시(앞 세션의 기록 전 지시 — 처리해야 다음 지시를 만듦) → 보유 → 장부(고치기·지우기)·행 추가 순입니다(이 화면을 보고 바로 매매하므로
  * 지시를 위로). 쓰기는 isaRequests의 apiPost(endpoints.isa.*)뿐이고, 결과가 나오면 장부를 다시 읽습니다. 서버 오류는 코드별 문구(lib/isa)로 보입니다.
+ *
+ * <p>평가(명세 docs/specs/2026-11-06-us-costs-backfill.md §6): 탭 머리의 주기 상자(components/LiveIntervalSelect — 다른 화면의 '실시간 시세'와 같은 값)로
+ * 고른 주기마다 보유 종목의 실시간 가격(hooks/useLivePrices — ADR 0024 SSE, 표시 전용)을 받아 평가액·손익·비중을 화면에서 다시 셉니다(lib/isa
+ * isaValuation — 못 받은 종목은 서버가 준 직전 종가, 표에 '직전 종가'). 기준 시각은 받은 가격의 시각 중 가장 이른 것(초까지)입니다. 서버 장부·지시는
+ * 그대로(직전 종가)입니다.
  *
  * <p>이 모듈을 밖에서 가져오는 곳은 PaperScreen 하나입니다(경계 시험 __tests__/isaBoundary.test.ts). 미국 화면에는 이 탭이 없습니다.
  */
@@ -89,9 +102,49 @@ export function IsaSection() {
   const available = data?.available === true;
   const started = available && data?.started === true;
 
+  // 실시간 평가 — 보유 종목의 가격을 고른 주기마다 받아 평가액·손익·비중을 다시 셉니다(표시 전용, 장부·지시는 직전 종가).
+  const [liveSeconds] = useLiveSeconds();
+  const holdings = started ? data?.holdings : null;
+  const liveItems = useMemo(() => (holdings ?? []).map((row) => liveKey("KR", row.symbol)), [holdings]);
+  const realtime = useLivePrices(liveItems, liveSeconds, started);
+  const valuation = useMemo(() => {
+    const quotes: Record<string, IsaLiveQuote> = {};
+    // 멈춘 값은 실시간으로 쓰지 않습니다(useLivePrices 계약 — QA-183·184): 연결이 끊기면 서버 값(직전 종가), 뒤 응답에서 빠진 종목은 직전 종가.
+    for (const row of realtime.disconnected ? [] : (holdings ?? [])) {
+      const key = liveKey("KR", row.symbol);
+      if (realtime.missing.includes(key)) continue;
+      const price = Object.hasOwn(realtime.prices, key) ? realtime.prices[key] : null;
+      if (!price) continue;
+      const shown = liveShown(price);
+      const receivedAt = realtime.receivedAtByKey[key];
+      quotes[row.symbol] = {
+        price: shown.price,
+        at: shown.tradedAt ?? (typeof receivedAt === "number" ? new Date(receivedAt).toISOString() : null),
+      };
+    }
+    return isaValuation(holdings, started ? data?.summary : null, quotes);
+  }, [holdings, started, data?.summary, realtime.prices, realtime.receivedAtByKey, realtime.missing, realtime.disconnected]);
+
   return (
     <div role="region" aria-label="ISA 계좌" className="flex flex-col gap-6">
       <Banner tone="info">{ISA_BANNER}</Banner>
+      {started && (
+        <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
+          <div className="text-xs tabular-nums text-text-2">
+            <p>
+              기준 시각 <strong className="font-semibold text-bright">{isaBasisText(valuation)}</strong>
+            </p>
+            <p className="mt-0.5 text-text-3">{isaBasisNote(valuation)}</p>
+            {realtime.error && <p className="mt-0.5 text-warn">{realtime.error}</p>}
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <LiveIntervalSelect />
+            <span className="text-xs text-text-3">
+              {liveSeconds === 0 ? "끄기 — 탭을 열 때 한 번 받음" : `${liveSecondsText(liveSeconds)}마다 받음(장이 닫혀 있으면 5분 이상 간격)`}
+            </span>
+          </div>
+        </div>
+      )}
       {loading && !data && <Loading label="ISA 계좌 장부를 읽는 중…" />}
       {error && !data && <ErrorState message={`ISA 계좌 장부를 읽지 못했습니다 — ${error}`} onRetry={reloadNow} />}
       {data && !available && <UnavailableNotice message={data.message ?? null} notes={data.notes ?? null} />}
@@ -125,6 +178,7 @@ export function IsaSection() {
       {started && data && (
         <StartedBody
           data={data}
+          valuation={valuation}
           refreshError={refreshError}
           busy={action.busy}
           onAdd={() => {
@@ -218,6 +272,7 @@ export function IsaSection() {
 
 function StartedBody({
   data,
+  valuation,
   refreshError,
   busy,
   onAdd,
@@ -227,6 +282,8 @@ function StartedBody({
   onSkip,
 }: {
   data: IsaResponse;
+  /** 요약·보유의 평가 — 실시간 가격을 받았으면 그것으로 다시 센 값, 아니면 서버 값 그대로(lib/isa isaValuation). */
+  valuation: IsaValuation;
   refreshError: string | null;
   busy: boolean;
   onAdd: () => void;
@@ -236,9 +293,8 @@ function StartedBody({
   onSkip: (item: IsaInstructionItem) => void;
 }) {
   const account = data.account ?? null;
-  const summary = data.summary ?? null;
-  const profit = toNumber(summary?.profitLoss);
-  const unpriced = unpricedText(summary?.unpriced);
+  const profit = valuation.profitLoss;
+  const unpriced = unpricedText(valuation.unpriced);
   const instructions = data.instructions ?? null;
   const pending = data.pendingInstructions ?? [];
   const recent = data.recentInstructions ?? [];
@@ -257,17 +313,17 @@ function StartedBody({
           <StatGrid cols={4}>
             <StatTile
               label="순입금(시작 현금 포함)"
-              value={toNumber(summary?.netDeposit)}
+              value={valuation.netDeposit}
               format={(value) => formatNumber(value, 0)}
               unit="원"
               note="입금 합 − 출금 합(장부 계산)"
             />
             <StatTile
               label="평가액"
-              value={toNumber(summary?.equity)}
+              value={valuation.equity}
               format={(value) => formatNumber(value, 0)}
               unit="원"
-              note={`보유 평가 ${formatWon(summary?.marketValue)} + 현금 ${formatWon(summary?.cash)}`}
+              note={`보유 평가 ${formatWon(valuation.marketValue)} + 현금 ${formatWon(valuation.cash)}`}
             />
             <StatTile
               label="손익"
@@ -275,9 +331,9 @@ function StartedBody({
               format={(value) => formatSigned(value, 0)}
               unit="원"
               valueClassName={deltaColor(profit, 0)}
-              note={`순입금 대비 ${formatPercent(toNumber(summary?.profitLossPct))}(대시보드 계산)`}
+              note={`순입금 대비 ${formatPercent(valuation.profitLossPct)}(대시보드 계산)`}
             />
-            <StatTile label="현금" value={toNumber(summary?.cash)} format={(value) => formatNumber(value, 0)} unit="원" />
+            <StatTile label="현금" value={valuation.cash} format={(value) => formatNumber(value, 0)} unit="원" />
           </StatGrid>
           <p className="text-xs leading-relaxed text-text-3">{COST_NOTE}</p>
           {unpriced && (
@@ -344,8 +400,11 @@ function StartedBody({
         </Card>
       )}
 
-      <Card title="보유" subtitle="장부의 종목별 수량 × 마지막 가격(밤 관측치 종가)">
-        <IsaHoldingsTable rows={data.holdings ?? []} />
+      <Card
+        title="보유"
+        subtitle="장부의 종목별 수량 × 실시간 가격(표시 전용 — 못 받은 종목은 서버가 준 직전 종가, 밤 관측치). 지시는 직전 종가로 계산합니다"
+      >
+        <IsaHoldingsTable rows={valuation.holdings} />
       </Card>
 
       <Card

@@ -32,7 +32,9 @@ import type {
   PaperDecisionSummary,
   PaperEarningsStatus,
   PaperExecutionOrder,
+  PaperCostAdjustmentTotal,
   PaperExecutionResponse,
+  PaperFill,
   PaperFrameworkEngine,
   PaperFrameworkMaxIds,
   PaperFrameworkPrinciple,
@@ -1334,6 +1336,60 @@ export function fillBadges(fill: { backfill: boolean; fallback?: boolean; fillRu
     });
   }
   return badges;
+}
+
+/** 미국 체결 표의 비용 소급 표시(ADR 0030 — 명세 2026-11-06-us-costs-backfill §2). */
+export const US_COST_RETRO_TEXT = "비용 소급 — 수량은 당시 그대로";
+
+/** 비용 소급 표시의 설명(title). */
+export const US_COST_RETRO_TITLE = "비용 소급 — 수량은 당시 그대로: 수수료가 없던 때의 체결이라 수수료·제비용을 나중에 조정 행으로 현금에서 뺐습니다. "
+  + "체결 행(수량·체결가·결정)은 그대로 — 그때 수수료가 있었다면 수량이 조금 달랐을 것입니다.";
+
+/** 미국 체결의 비용 칸(ADR 0030). */
+export interface UsFillCosts {
+  /** 응답에 비용 칸(fee·tax·costAdjustment)이 하나라도 있는가 — 비용을 싣지 않는 옛 응답이면 false(칸을 그리지 않거나 "—"). */
+  present: boolean;
+  /** "8.00 · 0.00" — 수수료 · 제비용(달러, 센트까지, 소급분 포함). 둘 다 모르면 "—". */
+  text: string;
+  /** 비용 소급 조정 행이 있음. */
+  retro: boolean;
+  /** 소급 조정의 현금 흐름("-8.00", 달러) — 소급이 없거나 모르면 "—". */
+  cash: string;
+}
+
+/** 아는 값끼리 더함 — 둘 다 모르면 null(0으로 채우지 않음). */
+function addKnown(left: number | null | undefined, right: number | null | undefined): number | null {
+  const a = typeof left === "number" && Number.isFinite(left) ? left : null;
+  const b = typeof right === "number" && Number.isFinite(right) ? right : null;
+  return a === null && b === null ? null : (a ?? 0) + (b ?? 0);
+}
+
+/**
+ * 미국 체결의 비용 칸(ADR 0030, 명세 2026-11-06-us-costs-backfill §4) — 수수료(매수·매도) · 제비용(매도만 — SEC fee + FINRA TAF), 달러 센트까지. 체결가와
+ * 별도로 현금에서 빠진 값입니다(슬리피지는 체결가에). 소급 조정 행(costAdjustment)이 있으면 체결 행의 비용(소급 대상은 0)에 그 값을 더한 값과
+ * '비용 소급' 표시 — 서버 값을 더하기만 하고 비율로 다시 계산하지 않습니다.
+ */
+export function usFillCosts(fill: Pick<PaperFill, "fee" | "tax" | "costAdjustment">): UsFillCosts {
+  const adjustment = fill.costAdjustment ?? null;
+  const present = fill.fee !== undefined || fill.tax !== undefined || adjustment !== null;
+  const fee = addKnown(fill.fee, adjustment?.fee);
+  const tax = addKnown(fill.tax, adjustment?.tax);
+  return {
+    present,
+    text: fee === null && tax === null ? EMPTY : `${formatNumber(fee, 2)} · ${formatNumber(tax, 2)}`,
+    retro: adjustment !== null,
+    cash: formatSigned(adjustment?.cashDelta ?? null, 2),
+  };
+}
+
+/**
+ * 미국 체결 표 위의 비용 소급 합계(그 계좌 전체 — 목록 상한과 무관) — "비용 소급 12건(계좌 전체) — 수수료 96.00 · 제비용 0.18 · 현금 -96.18달러 —
+ * 수량은 당시 그대로". 조정 행이 없거나(0건) 이 칸을 보내지 않는 서버면 null(줄 없음).
+ */
+export function usCostAdjustmentTotalText(total: PaperCostAdjustmentTotal | null | undefined): string | null {
+  if (!total || !(total.rows > 0)) return null;
+  return `비용 소급 ${formatNumber(total.rows, 0)}건(계좌 전체) — 수수료 ${formatNumber(total.fee, 2)} · 제비용 ${formatNumber(total.tax, 2)}`
+    + ` · 현금 ${formatSigned(total.cashDelta, 2)}달러 — 수량은 당시 그대로`;
 }
 
 /**
@@ -4104,6 +4160,7 @@ const SETTING_GROUP: Record<string, string> = {
   calendar: "발표 일정 — 캘린더 컨센서스(3단계 스위치, 두 책 공통)",
   claude: "Claude 계좌 3단계 스위치 — 두 책 공통(규칙 계좌 영향 없음)",
   claude2: "미국 Claude 계좌2 — 체결 시점 실험(켜기 · 결정 주기 호출 상한 · 1분봉 기다림 · 체결 기록 · 장중 확인, 규칙 계좌 영향 없음)",
+  regFees: "미국 책 — 매도 제비용(SEC fee · FINRA TAF — 매도만, 다섯 계좌 공통, ADR 0030)",
   kr: "한국 책 — 비용 · 장부 · 검증기 · 규칙 계좌 · 결정 시각(kr.*)",
   "kr.tax": "한국 책 — 매도 세금(세율 · 시행일)",
   "kr.rules": "한국 책 — 규칙 계좌(수급 신호 · 재선정)",

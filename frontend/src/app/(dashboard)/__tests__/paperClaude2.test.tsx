@@ -690,7 +690,7 @@ describe("보유·체결 — 계좌2 칸", () => {
 
     const fills = screen.getByRole("table", { name: "체결" });
     expect(headersOf(fills)).toEqual([
-      "관측 시각·봉 날짜", "종목", "방향", "수량", "체결가·관측가(달러)", "체결 봉·사다리", "계좌1식 대비", "금액(달러)·슬리피지", "가격 출처",
+      "관측 시각·봉 날짜", "종목", "방향", "수량", "체결가·관측가(달러)", "체결 봉·사다리", "계좌1식 대비", "금액(달러)·슬리피지·비용", "가격 출처",
     ]);
     expect(within(fills).getByText("R2b · 그 세션 T 뒤 첫 거래 봉 시가")).toBeTruthy();
     expect(within(fills).getByText("대체 체결")).toBeTruthy();
@@ -754,12 +754,33 @@ describe("보유·체결 — 계좌2 칸", () => {
 
     const fills = screen.getByRole("table", { name: "체결" });
     expect(headersOf(fills)).toEqual([
-      "관측 시각·봉 날짜", "종목", "방향", "수량", "체결가·관측가(달러)", "체결 봉·사다리", "계좌1식 대비", "금액(달러)·슬리피지", "가격 출처",
+      "관측 시각·봉 날짜", "종목", "방향", "수량", "체결가·관측가(달러)", "체결 봉·사다리", "계좌1식 대비", "금액(달러)·슬리피지·비용", "가격 출처",
     ]);
     expect(rowsOf(fills)).toEqual([[
       "2026-11-04 01:10봉 2026-11-03", "AAA대체 체결", "매수", "80", "100.0500관측 100.0000", "2026-11-04 00:00R2b · 그 세션 T 뒤 첫 거래 봉 시가",
       "+12.3bp", "8,004.00슬리피지 5.0bp", "—값 없음",
     ]]);
+  });
+
+  // ADR 0030 — 미국 비용(수수료 · 제비용)은 칸을 늘리지 않고 금액 칸의 셋째 줄에(아홉 칸 그대로). 소급 조정 행이 있으면 '비용 소급'(설명은 title).
+  it("계좌2 체결 표의 금액 칸 셋째 줄에 비용(수수료 · 제비용, 달러) — 소급 조정 행은 '비용 소급'과 수량은 당시 그대로라는 설명", async () => {
+    reads["/api/paper/books/claude2/fills"] = () => Promise.resolve({ available: true, fills: [
+      { ...FILLS[0], id: 83, side: "SELL", fee: 8.0, tax: 0.18 },
+      { ...FILLS[0], id: 84, fee: 0, tax: 0, costAdjustment: { fee: 8.0, tax: 0, cashDelta: -8.0 } },
+    ] });
+    render(<PaperPage initialTab="holdings" />);
+    await settled();
+    fireEvent.change(screen.getByLabelText("계좌 고르기"), { target: { value: "claude2" } });
+    await settled();
+
+    const fills = screen.getByRole("table", { name: "체결" });
+    expect(headersOf(fills)).toHaveLength(9);
+    const amounts = rowsOf(fills).map((cells) => cells[7]);
+    expect(amounts).toEqual(["8,004.00슬리피지 5.0bp비용 8.00 · 0.18", "8,004.00슬리피지 5.0bp비용 소급 8.00 · 0.00"]);
+    const retro = within(fills).getByText("비용 소급 8.00 · 0.00");
+    expect(retro.getAttribute("title")).toMatch(/^비용 소급 — 수량은 당시 그대로: .*현금 -8\.00달러\.$/);
+    expect(within(fills).getByText("비용 8.00 · 0.18").getAttribute("title")).toBeNull();
+    expect(screen.getByText(/'비용 소급'은 수수료가 없던 때의 체결에 나중에 더한 비용입니다 — 수량·체결가는 당시 그대로/)).toBeTruthy();
   });
 
   // 수정 전에는 두 줄 칸 안에서 값이 빠진 부분("목표 —"·"체결 —"·실행 메모 "—"·체결 봉 "—"·"슬리피지 —")을 글자 그대로 넣어, 칸 전체가 "—"일 때

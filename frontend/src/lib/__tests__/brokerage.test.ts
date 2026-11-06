@@ -7,12 +7,17 @@
  *  - 상태 → 화면 모양(꺼짐·실패·숫자), 문구는 백엔드 message가 있으면 그것, 없으면 고정 문구
  *  - '이전 값' 사유는 서버 이전 값(isStale)·화면 다시 읽기 실패(refreshError) 모두 받은 시각과 함께
  *  - 손익률은 '대시보드 계산'이라고 적고, 모르면 "—"
+ *  - 새로고침 주기(명세 2026-11-06-us-costs-backfill §6): 끄기 또는 10초 이상(5초는 10초로), 기준 시각은 받은 시각 초까지(없는 초를 지어내지 않음)
  * 값은 모두 토스 스펙 예시에서 만든 합성 값입니다.
  */
 import { describe, expect, it } from "vitest";
 
 import {
   amountDigits,
+  BROKERAGE_MIN_REFRESH_SECONDS,
+  brokerageBasisText,
+  brokerageRefreshMs,
+  brokerageRefreshNote,
   brokerageScope,
   brokerageStaleNote,
   brokerageStateLabel,
@@ -189,5 +194,33 @@ describe("요약 보조 글·쪽", () => {
     expect(brokerageScope("KR")).toEqual({ currencyLabel: "원화", otherCurrencyLabel: "달러", other: "US", otherScreen: "모의매매(미국)" });
     expect(brokerageScope("US")).toEqual({ currencyLabel: "달러", otherCurrencyLabel: "원화", other: "KR", otherScreen: "모의매매(한국)" });
     expect(BUYING_POWER_NOTE).toBe("통화별 현금 기반 — 두 화면의 금액을 더하지 마세요");
+  });
+});
+
+describe("새로고침 주기와 기준 시각(명세 2026-11-06-us-costs-backfill §6)", () => {
+  it("끄기는 0, 10초보다 짧은 주기는 10초로, 그 밖은 고른 주기 그대로(ms)", () => {
+    expect(BROKERAGE_MIN_REFRESH_SECONDS).toBe(10);
+    expect(brokerageRefreshMs(0)).toBe(0);
+    expect(brokerageRefreshMs(-5)).toBe(0);
+    expect(brokerageRefreshMs(Number.NaN)).toBe(0);
+    expect(brokerageRefreshMs(5)).toBe(10_000);
+    expect(brokerageRefreshMs(10)).toBe(10_000);
+    expect(brokerageRefreshMs(60)).toBe(60_000);
+    expect(brokerageRefreshMs(3600)).toBe(3_600_000);
+  });
+
+  it("주기 안내 — 끄기·고른 주기·5초는 10초로 올린다는 것", () => {
+    expect(brokerageRefreshNote(0)).toBe("끄기 — 탭을 열 때와 '다시 읽기' 때만 읽음");
+    expect(brokerageRefreshNote(5)).toBe("10초마다 다시 읽음(5초는 10초로 — 계좌 캐시 10초)");
+    expect(brokerageRefreshNote(10)).toBe("10초마다 다시 읽음");
+    expect(brokerageRefreshNote(300)).toBe("5분마다 다시 읽음");
+  });
+
+  it("기준 시각 — 받은 시각을 초까지 'YYYY-MM-DD HH:mm:ss KST', 초가 없으면 받은 그대로, 모르면 —", () => {
+    expect(brokerageBasisText({ fetchedAtKst: "2026-11-06 14:31:05" })).toBe("2026-11-06 14:31:05 KST");
+    expect(brokerageBasisText({ fetchedAtKst: "2026-11-06T05:31:05Z" })).toBe("2026-11-06 14:31:05 KST");
+    expect(brokerageBasisText({ fetchedAtKst: "2026-11-06 14:31" })).toBe("2026-11-06 14:31 KST");
+    expect(brokerageBasisText({ fetchedAtKst: null })).toBe("—");
+    expect(brokerageBasisText(null)).toBe("—");
   });
 });

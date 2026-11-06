@@ -8,10 +8,13 @@
  *  - 모르는 숫자는 '—'(0으로 채우지 않음), 서버 이전 값(isStale)·화면 다시 읽기 실패(refreshError)는 '이전 값'과 받은 시각
  *  - 보유가 없으면 '보유 종목 없음', 끝난 주문이 잘렸으면 '일부만 받았습니다', 분류하지 못한 항목 수
  *  - 주문·매수·매도·취소·정정 단추가 없고 쓰기 호출(apiPost·apiDelete)이 없다
+ *  - 명세 2026-11-06-us-costs-backfill §6: 탭 머리의 주기 상자(실시간 시세와 같은 값)로 고른 주기마다 다시 읽음 — 끄기 또는 10초 이상(5초는 10초로),
+ *    꺼짐(DISABLED)이면 주기 상자도 다시 읽기도 없음, 기준 시각은 받은 시각 초까지
  * 값은 모두 토스 스펙 예시에서 만든 합성 값입니다(실제 계좌 자료 아님).
  */
-import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { resetLiveSecondsForTest } from "@/hooks/useLiveSeconds";
 
 const api = vi.hoisted(() => {
   class UnauthorizedError extends Error {}
@@ -360,5 +363,110 @@ describe("읽기 전용", () => {
     await waitFor(() => expect(brokerageCalls()).toHaveLength(2));
     expect(api.apiPost).not.toHaveBeenCalled();
     expect(api.apiDelete).not.toHaveBeenCalled();
+  });
+});
+
+describe("새로고침 주기와 기준 시각(명세 2026-11-06-us-costs-backfill §6)", () => {
+  let intervals: ReturnType<typeof vi.spyOn>;
+  let clears: ReturnType<typeof vi.spyOn>;
+
+  beforeEach(() => {
+    window.localStorage.clear();
+    resetLiveSecondsForTest();
+    vi.spyOn(document, "visibilityState", "get").mockReturnValue("visible");
+    intervals = vi.spyOn(globalThis, "setInterval");
+    clears = vi.spyOn(globalThis, "clearInterval");
+  });
+
+  afterEach(() => {
+    window.localStorage.clear();
+    resetLiveSecondsForTest();
+  });
+
+  /**
+   * 그 간격(ms)으로 걸린 타이머 가운데 실제 계좌를 다시 읽는 것의 id — 하나씩 불러 /api/brokerage를 읽는지 봅니다(같은 화면의 다른 타이머와 가림).
+   * 손으로 부르면 풀린 타이머도 돌므로, 풀렸는지는 clearInterval 기록으로 따로 봅니다.
+   */
+  async function brokerageTimers(ms: number): Promise<unknown[]> {
+    const found: unknown[] = [];
+    const calls = intervals.mock.calls as unknown as [() => void, number][];
+    for (const [index, [callback, delay]] of calls.entries()) {
+      if (delay !== ms) continue;
+      const before = brokerageCalls().length;
+      await act(async () => callback());
+      if (brokerageCalls().length > before) found.push(intervals.mock.results[index]?.value);
+    }
+    return found;
+  }
+  const cleared = (id: unknown) => (clears.mock.calls as unknown as [unknown][]).some(([value]) => value === id);
+  /** 걸린 타이머의 간격(ms) 목록. */
+  const delays = () => (intervals.mock.calls as unknown as [unknown, number][]).map(([, delay]) => delay);
+
+  it("탭 머리에 기준 시각(초까지)과 주기 상자 — 기본은 실시간 시세와 같은 1시간, 요약의 받은 시각도 초까지", async () => {
+    reads["/api/brokerage/account?market=KR"] = () => Promise.resolve(account("KR", { fetchedAtKst: "2026-03-29 09:31:05" }));
+    render(<PaperScreen market="KR" initialTab="real" />);
+    expect(await screen.findByText("실제 계좌 요약 — 원화")).toBeTruthy();
+
+    expect(within(panel()).getByText(/^기준 시각/).textContent).toBe("기준 시각 2026-03-29 09:31:05 KST");
+    expect(within(panel()).getByText("토스가 그 시각 가격으로 계산한 평가·손익(수집기가 토스에서 받은 시각)")).toBeTruthy();
+    expect(within(panel()).getByText(/토스증권 종합매매 · 받은 시각 2026-03-29 09:31:05/)).toBeTruthy();
+    const select = within(panel()).getByRole("combobox", { name: "새로고침 주기" }) as HTMLSelectElement;
+    expect(select.value).toBe("3600");
+    expect(within(panel()).getByText("1시간마다 다시 읽음 · 실시간 시세와 같은 주기")).toBeTruthy();
+    expect(await brokerageTimers(3_600_000)).toHaveLength(1);
+  });
+
+  it("5초를 고르면 10초마다 다시 읽는다(계좌 캐시 10초) — 끄기면 다시 읽지 않고 '다시 읽기'만", async () => {
+    render(<PaperScreen market="KR" initialTab="real" />);
+    expect(await screen.findByText("실제 계좌 요약 — 원화")).toBeTruthy();
+    const select = () => within(panel()).getByRole("combobox", { name: "새로고침 주기" }) as HTMLSelectElement;
+
+    const hourly = await brokerageTimers(3_600_000);
+    expect(hourly).toHaveLength(1);
+    intervals.mockClear();
+    fireEvent.change(select(), { target: { value: "5" } });
+    expect(select().value).toBe("5");
+    expect(within(panel()).getByText("10초마다 다시 읽음(5초는 10초로 — 계좌 캐시 10초) · 실시간 시세와 같은 주기")).toBeTruthy();
+    // 앞 주기(1시간)의 타이머는 풀고, 5초가 아니라 10초로 겁니다.
+    expect(cleared(hourly[0])).toBe(true);
+    expect(delays()).not.toContain(5_000);
+    const tenSeconds = await brokerageTimers(10_000);
+    expect(tenSeconds).toHaveLength(1);
+    // 다시 읽은 값도 한 경로의 GET뿐 — 쓰기 호출은 없습니다.
+    expect(brokerageCalls().every((path) => path === "/api/brokerage/account?market=KR")).toBe(true);
+    expect(api.apiPost).not.toHaveBeenCalled();
+
+    intervals.mockClear();
+    fireEvent.change(select(), { target: { value: "0" } });
+    expect(within(panel()).getByText("끄기 — 탭을 열 때와 '다시 읽기' 때만 읽음 · 실시간 시세와 같은 주기")).toBeTruthy();
+    // 끄기 — 10초 타이머를 풀고 새 타이머를 걸지 않습니다('다시 읽기'만 남음).
+    expect(cleared(tenSeconds[0])).toBe(true);
+    expect(await brokerageTimers(10_000)).toEqual([]);
+    expect(delays().filter((delay) => typeof delay === "number" && delay >= 10_000)).toEqual([]);
+    const before = brokerageCalls().length;
+    fireEvent.click(within(panel()).getByRole("button", { name: "다시 읽기" }));
+    await waitFor(() => expect(brokerageCalls()).toHaveLength(before + 1));
+  });
+
+  it("꺼짐(DISABLED)이면 주기 상자·기준 시각이 없고, 고른 주기와 상관없이 다시 읽지 않는다", async () => {
+    window.localStorage.setItem("live.priceRefreshSeconds", "10");
+    resetLiveSecondsForTest();
+    reads["/api/brokerage/account?market=US"] = () => Promise.resolve(failed("US", "DISABLED", "실제 계좌 조회가 꺼져 있습니다."));
+    render(<PaperScreen initialTab="real" />);
+    expect(await screen.findByText("실제 계좌 조회가 꺼져 있습니다.")).toBeTruthy();
+    await waitFor(() => expect(within(panel()).queryByRole("combobox", { name: "새로고침 주기" })).toBeNull());
+    expect(within(panel()).queryByText(/^기준 시각/)).toBeNull();
+    // 응답을 받기 전에는 고른 주기(10초)로 걸었다가, 꺼짐을 받은 뒤 그 타이머를 풉니다 — 새로 걸지 않습니다.
+    const timers = await brokerageTimers(10_000);
+    expect(timers).toHaveLength(1);
+    expect(cleared(timers[0])).toBe(true);
+  });
+
+  it("실패 상태(호출 한도 등)는 기준 시각 '—' — 주기 상자는 남아 고른 주기로 다시 시도", async () => {
+    reads["/api/brokerage/account?market=US"] = () => Promise.resolve(failed("US", "RATE_LIMITED", "토스증권 호출 한도에 걸려 읽지 못했습니다."));
+    render(<PaperScreen initialTab="real" />);
+    expect(await screen.findByText("토스증권 호출 한도에 걸려 읽지 못했습니다.")).toBeTruthy();
+    expect(within(panel()).getByText(/^기준 시각/).textContent).toBe("기준 시각 —");
+    expect(within(panel()).getByRole("combobox", { name: "새로고침 주기" })).toBeTruthy();
   });
 });

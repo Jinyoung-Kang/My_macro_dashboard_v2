@@ -12,6 +12,7 @@
  *  - 미국 탭은 '미국 실제 매매는 준비 중입니다'와 꺼진 단추(상태를 읽지 않음)
  *  - RT3-UI-1: 수집기 상태를 읽지 못하면(collector null·사유 status-unreadable) '서버에서 꺼짐'과 꺼짐 배너 대신 '서버 상태를 읽지 못함 — 다시 읽는 중'
  *  - RT3-UI-3: 끄기 뒤 다른 곳에서 다시 켜면(꺼짐을 본 뒤 켜짐, 또는 끄기 응답보다 큰 버전의 켜짐) '새 주문 멈춤'·'꺼졌습니다' 안내가 사라진다
+ *  - 명세 2026-11-06-us-costs-backfill §6: 운용 평가액의 '토스에서 읽은 시각'(마지막 사전 조회)은 초까지
  * 값은 모두 합성 값입니다(실제 계좌 자료 아님).
  */
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
@@ -143,6 +144,8 @@ describe("자리와 읽기", () => {
     expect(inRegion().getByText(/서버 스위치: 수집기 켜짐 · 백엔드 켜짐/)).toBeTruthy();
     const equity = inRegion().getByRole("group", { name: "운용 평가액" });
     expect(equity.textContent).toContain("9,500,000원");
+    // 마지막 사전 조회(preflight) 시각은 초까지(명세 2026-11-06-us-costs-backfill §6).
+    expect(equity.textContent).toContain("토스에서 읽은 시각 2026-11-06 08:50:31");
     const delta = inRegion().getByRole("group", { name: "기준 대비 손익" });
     expect(delta.textContent).toContain("-500,000원");
     expect(delta.textContent).toContain("기준 평가액 10,000,000원 대비 -5.00%(대시보드 계산)");

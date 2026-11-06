@@ -873,9 +873,12 @@ export interface PaperFill {
   fillRung?: PaperFillRung | string | null;
   /** 미국 Claude 계좌2만 — 대체 칸(Y1M_LATE·QUOTES_FALLBACK·QUOTES_CLOSE)이면 true, 칸이 없는 체결은 false. */
   fallback?: boolean;
-  /** 한국 계좌만 — 수수료(원, 소수 2자리). 한국 슬리피지는 체결가가 아니라 비용 칸입니다(`price` = 잠정 체결가 그대로). */
+  /**
+   * 수수료 — 한국 계좌는 원(소수 2자리 — 한국 슬리피지는 체결가가 아니라 비용 칸, `price` = 잠정 체결가 그대로), 미국 계좌는 달러(센트까지 — 매수·매도
+   * 모두, ADR 0030 — 슬리피지는 체결가에). 미국 비용 전 체결은 0이고, 비용 칸을 싣지 않는 옛 응답에는 칸이 없습니다.
+   */
   fee?: number | null;
-  /** 한국 계좌만 — 세금(증권거래세 + 농어촌특별세, 원). */
+  /** 세금 — 한국 계좌는 증권거래세 + 농어촌특별세(원), 미국 계좌는 매도 제비용(SEC fee + FINRA TAF, 달러 — 매수는 0, ADR 0030). */
   tax?: number | null;
   /** 한국 계좌만 — 슬리피지 금액(원). */
   slippageCost?: number | null;
@@ -887,6 +890,37 @@ export interface PaperFill {
   confirmationState?: PaperFillConfirmationState | string | null;
   /** 한국 계좌만 — 확정 상태 문구('금융위 확정 미보정(ETF)'·'금융위 확정 못 함'·'금융위 {기준일}까지 냄 — 그날 값 기다림', 확정이면 null). */
   confirmationNote?: string | null;
+  /**
+   * 미국 계좌만 — 비용 소급 조정 행(ADR 0030, `paper_cost_adjustments` — 체결 하나에 한 행). 수수료가 없던 때의 체결에 나중에 더한 비용이고
+   * 체결 행(수량·체결가·`fee`·`tax` = 0)은 그대로입니다. 없으면 null, 소급을 싣지 않는 응답에는 칸이 없습니다.
+   */
+  costAdjustment?: PaperCostAdjustment | null;
+}
+
+/** 미국 체결의 비용 소급 조정 한 행(ADR 0030) — 그 체결에 더한 수수료·제비용(달러)과 현금 흐름 조정(= −(수수료 + 제비용), 0 이하). */
+export interface PaperCostAdjustment {
+  fee: number | null;
+  tax: number | null;
+  cashDelta: number | null;
+  /** 그 체결이 장부에 반영된 거래일(YYYY-MM-DD) — 순자산 줄을 고친 첫날. */
+  fillDate?: string | null;
+  /** 소급에 쓴 설정 판. */
+  settingsVersion?: number | null;
+  /** 쓴 비율(설정 키 이름 그대로 — JSON). */
+  rates?: unknown;
+  /** 'us-cost-backfill'. */
+  reason?: string | null;
+  createdAtKst?: string | null;
+  /** 서버의 표시 글('비용 소급 — 수량은 당시 그대로'). 화면은 같은 뜻의 고정 글을 씁니다. */
+  note?: string | null;
+}
+
+/** 미국 계좌의 비용 소급 합계 — 그 계좌 전체(목록 상한과 무관). 조정 행이 없으면 금액 칸은 null(0과 구분). */
+export interface PaperCostAdjustmentTotal {
+  rows: number;
+  fee: number | null;
+  tax: number | null;
+  cashDelta: number | null;
 }
 
 export type PaperFillConfirmationState = "CONFIRMED" | "WAITING" | "UNCORRECTED";
@@ -924,6 +958,8 @@ export interface PaperFillsResponse {
   message?: string;
   /** 한국 계좌만 — 확정 조정 합계(미국 응답에는 칸이 없음). */
   confirmationTotal?: PaperConfirmationTotal | null;
+  /** 미국 계좌만 — 비용 소급 합계(ADR 0030, 한국 응답·소급 전 백엔드에는 칸이 없음). */
+  costAdjustmentTotal?: PaperCostAdjustmentTotal | null;
   fills?: PaperFill[];
 }
 

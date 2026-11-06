@@ -2,7 +2,7 @@
 
 import { DataTable, type Column } from "@/components/patterns";
 import { buttonClasses } from "@/components/ui";
-import { formatKst } from "@/lib/format";
+import { EMPTY, formatKst, formatKstSeconds } from "@/lib/format";
 import {
   canFixFill,
   canSkip,
@@ -11,6 +11,7 @@ import {
   formatWeight,
   formatWon,
   instructionStatusLabel,
+  type IsaHoldingView,
   kindLabel,
   LEDGER_AMOUNT_NOTE,
   ledgerFormFromRow,
@@ -19,20 +20,59 @@ import {
   sideLabel,
   sourceLabel,
   symbolText,
+  timeSortValue,
+  toNumber,
 } from "@/lib/isa";
-import type { IsaHolding, IsaInstructionItem, IsaLedgerRow } from "@/lib/types/isa";
+import type { IsaInstructionItem, IsaLedgerRow } from "@/lib/types/isa";
 
-const HOLDING_COLUMNS: readonly Column<IsaHolding>[] = [
-  { key: "symbol", header: "종목", cell: (row) => symbolText(row.symbol, row.name), rowHeader: true },
-  { key: "quantity", header: "수량(주)", align: "right", cell: (row) => formatShares(row.quantity) },
-  { key: "avgPrice", header: "평균 단가", align: "right", cell: (row) => formatPrice(row.avgPrice) },
-  { key: "lastPrice", header: "마지막 가격", align: "right", cell: (row) => formatPrice(row.lastPrice) },
-  { key: "marketValue", header: "평가액", align: "right", cell: (row) => formatWon(row.marketValue) },
-  { key: "weightPct", header: "비중", align: "right", cell: (row) => formatWeight(row.weightPct) },
+/*
+ * 표 정렬(명세 docs/specs/2026-11-06-us-costs-backfill.md §5) — 숫자·글 열마다 sortValue를 두어 머리를 누르면 오름 → 내림(lib/dataTable nextSort,
+ * 지금 정렬한 열의 머리에 aria-sort). 모르는 값은 방향과 무관하게 맨 뒤입니다. 장부는 처음에 시각 내림차순(최근 순 — 서버 순서와 같음), 보유·지시는
+ * 서버 순서 그대로(지시는 매도 먼저·매수 나중이 매매 순서라 처음부터 정렬하지 않음). 단추 칸(고치기)·메모는 정렬하지 않습니다.
+ */
+
+/** 종목 정렬 값 — 화면에 보이는 "이름 코드"(없으면 null — 맨 뒤). */
+const symbolSort = (symbol: string | null | undefined, name: string | null | undefined): string | null => {
+  const text = symbolText(symbol ?? null, name ?? null);
+  return text === EMPTY ? null : text;
+};
+
+/** 이름표 정렬 값 — 이름표가 "—"면 null. */
+const labelSort = (text: string): string | null => (text === EMPTY ? null : text);
+
+/** 실시간 가격의 시각 → 서울 시각 "HH:mm:ss"(못 읽으면 null). */
+function clockOf(at: string | null): string | null {
+  return /^\d{4}-\d{2}-\d{2} (\d{2}:\d{2}(?::\d{2})?)$/.exec(formatKstSeconds(at))?.[1] ?? null;
+}
+
+/** 가격 칸 — 값과 그 출처(실시간이면 그 가격의 시각, 서버 직전 종가면 '직전 종가'). 가격을 모르면 "—"(표가 값 없음으로 그림). */
+function priceCell(row: IsaHoldingView) {
+  const price = formatPrice(row.lastPrice);
+  if (price === EMPTY) return price;
+  const clock = clockOf(row.priceAt);
+  const tag = row.priceSource === "live" ? `실시간${clock ? ` ${clock}` : ""}` : row.priceSource === "close" ? "직전 종가" : null;
+  return (
+    <span className="inline-flex flex-col items-end">
+      <span>{price}</span>
+      {tag && <span className="text-xs text-text-3">{tag}</span>}
+    </span>
+  );
+}
+
+const HOLDING_COLUMNS: readonly Column<IsaHoldingView>[] = [
+  { key: "symbol", header: "종목", cell: (row) => symbolText(row.symbol, row.name), rowHeader: true, sortValue: (row) => symbolSort(row.symbol, row.name) },
+  { key: "quantity", header: "수량(주)", align: "right", cell: (row) => formatShares(row.quantity), sortValue: (row) => toNumber(row.quantity) },
+  { key: "avgPrice", header: "평균 단가", align: "right", cell: (row) => formatPrice(row.avgPrice), sortValue: (row) => toNumber(row.avgPrice) },
+  { key: "lastPrice", header: "마지막 가격", align: "right", cell: priceCell, sortValue: (row) => toNumber(row.lastPrice) },
+  { key: "marketValue", header: "평가액", align: "right", cell: (row) => formatWon(row.marketValue), sortValue: (row) => toNumber(row.marketValue) },
+  { key: "weightPct", header: "비중", align: "right", cell: (row) => formatWeight(row.weightPct), sortValue: (row) => toNumber(row.weightPct) },
 ];
 
-/** 보유 — 장부의 종목별 수량을 마지막 가격으로 평가(서버 순서 그대로). 가격을 모르면 평가액·비중이 "—". */
-export function IsaHoldingsTable({ rows }: { rows: readonly IsaHolding[] }) {
+/**
+ * 보유 — 장부의 종목별 수량을 실시간 가격(받았으면 — 표시 전용) 또는 서버가 준 직전 종가로 평가(lib/isa isaValuation, 처음에는 서버 순서 그대로).
+ * 가격 칸 아래에 그 가격의 출처('실시간 HH:mm:ss'·'직전 종가'). 가격을 모르면 평가액·비중이 "—".
+ */
+export function IsaHoldingsTable({ rows }: { rows: readonly IsaHoldingView[] }) {
   return (
     <DataTable
       caption="ISA 계좌 보유"
@@ -109,13 +149,20 @@ export function IsaInstructionsTable({
   withSession?: boolean;
 }) {
   const columns: readonly Column<IsaInstructionItem>[] = [
-    ...(withSession ? [{ key: "session", header: "세션", cell: (row: IsaInstructionItem) => sessionLabel(row.session ?? null) }] : []),
-    { key: "symbol", header: "종목", cell: (row) => symbolText(row.symbol, row.name), rowHeader: true },
-    { key: "side", header: "방향", cell: (row) => sideLabel(row.side) },
-    { key: "quantity", header: "수량(주)", align: "right", cell: (row) => formatShares(row.quantity) },
-    { key: "refPrice", header: "기준가", align: "right", cell: (row) => formatPrice(row.refPrice) },
-    { key: "weightPct", header: "목표 비중", align: "right", cell: (row) => formatWeight(row.weightPct) },
-    { key: "status", header: "상태", cell: (row) => instructionStatusLabel(row.status) },
+    ...(withSession
+      ? [{
+          key: "session",
+          header: "세션",
+          cell: (row: IsaInstructionItem) => sessionLabel(row.session ?? null),
+          sortValue: (row: IsaInstructionItem) => row.session ?? null,
+        }]
+      : []),
+    { key: "symbol", header: "종목", cell: (row) => symbolText(row.symbol, row.name), rowHeader: true, sortValue: (row) => symbolSort(row.symbol, row.name) },
+    { key: "side", header: "방향", cell: (row) => sideLabel(row.side), sortValue: (row) => labelSort(sideLabel(row.side)) },
+    { key: "quantity", header: "수량(주)", align: "right", cell: (row) => formatShares(row.quantity), sortValue: (row) => toNumber(row.quantity) },
+    { key: "refPrice", header: "기준가", align: "right", cell: (row) => formatPrice(row.refPrice), sortValue: (row) => toNumber(row.refPrice) },
+    { key: "weightPct", header: "목표 비중", align: "right", cell: (row) => formatWeight(row.weightPct), sortValue: (row) => toNumber(row.weightPct) },
+    { key: "status", header: "상태", cell: (row) => instructionStatusLabel(row.status), sortValue: (row) => labelSort(instructionStatusLabel(row.status)) },
     { key: "notified", header: "알림", cell: (row) => notifiedText(row) },
     {
       key: "actions",
@@ -136,11 +183,11 @@ export function IsaInstructionsTable({
 }
 
 const RECENT_COLUMNS: readonly Column<IsaInstructionItem>[] = [
-  { key: "session", header: "세션", cell: (row) => sessionLabel(row.session ?? null) },
-  { key: "symbol", header: "종목", cell: (row) => symbolText(row.symbol, row.name) },
-  { key: "side", header: "방향", cell: (row) => sideLabel(row.side) },
-  { key: "quantity", header: "수량(주)", align: "right", cell: (row) => formatShares(row.quantity) },
-  { key: "status", header: "상태", cell: (row) => instructionStatusLabel(row.status) },
+  { key: "session", header: "세션", cell: (row) => sessionLabel(row.session ?? null), sortValue: (row) => row.session ?? null },
+  { key: "symbol", header: "종목", cell: (row) => symbolText(row.symbol, row.name), sortValue: (row) => symbolSort(row.symbol, row.name) },
+  { key: "side", header: "방향", cell: (row) => sideLabel(row.side), sortValue: (row) => labelSort(sideLabel(row.side)) },
+  { key: "quantity", header: "수량(주)", align: "right", cell: (row) => formatShares(row.quantity), sortValue: (row) => toNumber(row.quantity) },
+  { key: "status", header: "상태", cell: (row) => instructionStatusLabel(row.status), sortValue: (row) => labelSort(instructionStatusLabel(row.status)) },
   { key: "notified", header: "알림", cell: (row) => notifiedText(row) },
 ];
 
@@ -198,7 +245,10 @@ function LedgerActions({
   );
 }
 
-/** 장부(최근 200, 최근 순 — 서버 순서 그대로). 금액은 입출금이면 입출금액, 매수·매도면 수량×체결가(서버 값), 수량·가격은 매수·매도·조정 행만. */
+/**
+ * 장부(최근 200). 처음에는 시각 내림차순(최근 순 — 같은 시각은 서버 순서), 머리를 누르면 그 열로 오름 → 내림. 금액은 입출금이면 입출금액,
+ * 매수·매도면 수량×체결가(서버 값), 수량·가격은 매수·매도·조정 행만.
+ */
 export function IsaLedgerTable({
   rows,
   onEdit,
@@ -211,16 +261,26 @@ export function IsaLedgerTable({
   disabled: boolean;
 }) {
   const columns: readonly Column<IsaLedgerRow>[] = [
-    { key: "at", header: "시각", cell: (row) => formatKst(row.at) },
-    { key: "kind", header: "종류", cell: (row) => kindLabel(row.kind) },
-    { key: "symbol", header: "종목", cell: (row) => (row.symbol ? symbolText(row.symbol, row.name) : null) },
-    { key: "quantity", header: "수량(주)", align: "right", cell: (row) => formatShares(row.quantity) },
-    { key: "price", header: "체결가", align: "right", cell: (row) => formatPrice(row.price) },
-    { key: "amount", header: "금액", align: "right", cell: (row) => formatWon(row.amount) },
-    { key: "fee", header: "수수료", align: "right", cell: (row) => formatWon(row.fee) },
-    { key: "tax", header: "세금", align: "right", cell: (row) => formatWon(row.tax) },
-    { key: "source", header: "기록", cell: (row) => sourceLabel(row.source) },
-    { key: "instruction", header: "지시", cell: (row) => (typeof row.instructionId === "number" ? `#${row.instructionId}` : null) },
+    { key: "at", header: "시각", cell: (row) => formatKst(row.at), sortValue: (row) => timeSortValue(row.at) },
+    { key: "kind", header: "종류", cell: (row) => kindLabel(row.kind), sortValue: (row) => labelSort(kindLabel(row.kind)) },
+    {
+      key: "symbol",
+      header: "종목",
+      cell: (row) => (row.symbol ? symbolText(row.symbol, row.name) : null),
+      sortValue: (row) => (row.symbol ? symbolSort(row.symbol, row.name) : null),
+    },
+    { key: "quantity", header: "수량(주)", align: "right", cell: (row) => formatShares(row.quantity), sortValue: (row) => toNumber(row.quantity) },
+    { key: "price", header: "체결가", align: "right", cell: (row) => formatPrice(row.price), sortValue: (row) => toNumber(row.price) },
+    { key: "amount", header: "금액", align: "right", cell: (row) => formatWon(row.amount), sortValue: (row) => toNumber(row.amount) },
+    { key: "fee", header: "수수료", align: "right", cell: (row) => formatWon(row.fee), sortValue: (row) => toNumber(row.fee) },
+    { key: "tax", header: "세금", align: "right", cell: (row) => formatWon(row.tax), sortValue: (row) => toNumber(row.tax) },
+    { key: "source", header: "기록", cell: (row) => sourceLabel(row.source), sortValue: (row) => labelSort(sourceLabel(row.source)) },
+    {
+      key: "instruction",
+      header: "지시",
+      cell: (row) => (typeof row.instructionId === "number" ? `#${row.instructionId}` : null),
+      sortValue: (row) => (typeof row.instructionId === "number" ? row.instructionId : null),
+    },
     { key: "note", header: "메모", cell: (row) => row.note || null },
     {
       key: "actions",
@@ -236,6 +296,7 @@ export function IsaLedgerTable({
         rows={rows}
         rowKey={(row) => String(row.id)}
         emptyText="장부 행 없음"
+        initialSort={{ key: "at", dir: "desc" }}
         maxHeight={480}
         scrollHint="overflow"
       />

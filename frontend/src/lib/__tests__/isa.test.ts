@@ -7,6 +7,9 @@
  *  - 서버 오류 코드(invalid-request·ledger-invalid·not-found·already-started·not-started·already-recorded)별 문구
  *  - 그 세션 개장 시각(instructions.open)으로 동시호가 안내와 체결 고치기 기본 시각(장 시간 변경일), '못 만듦' 사유별 문구,
  *    고치기에서 시각을 바꾸지 않았으면 원문 시각을 그대로(초·소수초를 잃지 않게)
+ *  - 실시간 평가(명세 2026-11-06-us-costs-backfill §6): 받은 가격이 없으면 서버 값 그대로, 받았으면 평가액 = 현금 + Σ수량 × 가격(못 받은 종목은
+ *    직전 종가), 손익 = 평가액 − 순입금, 비중 다시 계산, 기준 시각 = 받은 가격의 시각 중 가장 이른 것(초까지), 가격 모르는 종목은 평가에서 뺌
+ *  - 장부 정렬의 시각 값(못 읽으면 null — 맨 뒤)
  * 값은 모두 합성 값입니다(실제 계좌 자료 아님).
  */
 import { describe, expect, it } from "vitest";
@@ -23,9 +26,12 @@ import {
   formatWeight,
   formatWon,
   instructionStatusLabel,
+  isaBasisNote,
+  isaBasisText,
   isaErrorCode,
   isaErrorNeedsReload,
   isaErrorText,
+  isaValuation,
   isoFromKstInput,
   kindLabel,
   kstInputFromIso,
@@ -43,12 +49,13 @@ import {
   sourceLabel,
   startBuysTotal,
   symbolText,
+  timeSortValue,
   toNumber,
   tradeGuide,
   unavailableText,
   unpricedText,
 } from "../isa";
-import type { IsaInstructionItem, IsaLedgerRow } from "../types/isa";
+import type { IsaHolding, IsaInstructionItem, IsaLedgerRow, IsaSummary } from "../types/isa";
 
 function item(over: Partial<IsaInstructionItem> = {}): IsaInstructionItem {
   return {
@@ -372,5 +379,89 @@ describe("이미 적힌 지시(already-recorded)", () => {
     expect(isaErrorText("already-recorded", "x")).toMatch(/^이 지시에는 이미 직접 적은 체결 행이 있습니다/);
     expect(isaErrorText("already-recorded", null)).toContain("체결 고치기");
     expect(isaErrorNeedsReload("already-recorded")).toBe(true);
+  });
+});
+
+describe("실시간 평가(명세 2026-11-06-us-costs-backfill §6)", () => {
+  const HOLDINGS: IsaHolding[] = [
+    { symbol: "111110", name: "합성전자", quantity: 100, avgPrice: 12_000, lastPrice: 12_500, marketValue: 1_250_000, weightPct: 24.51 },
+    { symbol: "222220", name: "합성화학", quantity: "50", avgPrice: 53_000, lastPrice: "53000", marketValue: 2_650_000, weightPct: 51.96 },
+    { symbol: "333330", name: "합성바이오", quantity: 10, avgPrice: 9_000, lastPrice: null, marketValue: null, weightPct: null },
+  ];
+  const SUMMARY: IsaSummary = {
+    // 가격 모르는 보유(333330)가 있어 서버도 손익을 비움(ManualAccountService — 평가액은 아는 종목만).
+    cash: 1_200_000, marketValue: 3_900_000, equity: 5_100_000, netDeposit: 5_000_000, profitLoss: null, profitLossPct: null, unpriced: ["333330"],
+  };
+
+  it("받은 실시간 가격이 없으면 서버 값 그대로 — 가격이 있는 종목은 '직전 종가', 기준 시각 없음", () => {
+    const view = isaValuation(HOLDINGS, SUMMARY, {});
+    expect(view).toMatchObject({
+      cash: 1_200_000, marketValue: 3_900_000, equity: 5_100_000, netDeposit: 5_000_000, profitLoss: null, profitLossPct: null,
+      unpriced: ["333330"], live: 0, close: 2, basisAt: null,
+    });
+    expect(view.holdings.map((row) => [row.symbol, row.priceSource, row.marketValue, row.weightPct])).toEqual([
+      ["111110", "close", 1_250_000, 24.51],
+      ["222220", "close", 2_650_000, 51.96],
+      ["333330", null, null, null],
+    ]);
+    expect(isaBasisText(view)).toBe("—");
+    expect(isaBasisNote(view)).toBe("실시간 가격을 아직 받지 못해 서버가 준 직전 종가(밤 관측치)로 평가");
+  });
+
+  it("받았으면 평가액 = 현금 + Σ수량 × 가격(못 받은 종목은 직전 종가), 비중을 다시 센다 — 가격 모르는 보유가 남으면 손익·손익률은 null(서버와 같음)", () => {
+    const view = isaValuation(HOLDINGS, SUMMARY, { "111110": { price: 13_000, at: "2026-11-09T05:31:05Z" } });
+    expect(view.marketValue).toBe(1_300_000 + 2_650_000);
+    expect(view.equity).toBe(5_150_000);
+    expect(view.profitLoss).toBeNull();
+    expect(view.profitLossPct).toBeNull();
+    expect(view.live).toBe(1);
+    expect(view.close).toBe(1);
+    const [live, close, unknown] = view.holdings;
+    expect(live).toMatchObject({ lastPrice: 13_000, marketValue: 1_300_000, priceSource: "live", priceAt: "2026-11-09T05:31:05Z" });
+    expect(live.weightPct).toBeCloseTo((1_300_000 / 5_150_000) * 100, 10);
+    expect(close).toMatchObject({ lastPrice: 53_000, marketValue: 2_650_000, priceSource: "close", priceAt: null });
+    expect(close.weightPct).toBeCloseTo((2_650_000 / 5_150_000) * 100, 10);
+    // 가격을 모르는 종목은 0으로 채우지 않고 평가에서 뺍니다.
+    expect(unknown).toMatchObject({ lastPrice: null, marketValue: null, weightPct: null, priceSource: null });
+    expect(view.unpriced).toEqual([{ symbol: "333330", name: "합성바이오" }]);
+    expect(isaBasisNote(view)).toBe("실시간 1종목 · 직전 종가 1종목 — 평가액·손익·비중만 다시 계산(장부·지시는 직전 종가)");
+  });
+
+  it("기준 시각은 받은 가격의 시각 중 가장 이른 것(초까지) — 직전 종가 종목은 넣지 않고, 시각을 모르는 가격은 건너뜀", () => {
+    const view = isaValuation(HOLDINGS, SUMMARY, {
+      "111110": { price: 13_000, at: "2026-11-09T05:31:05Z" },
+      "222220": { price: 54_000, at: "2026-11-09T05:30:59Z" },
+      "333330": { price: 9_500, at: null },
+    });
+    expect(view.basisAt).toBe("2026-11-09T05:30:59Z");
+    expect(isaBasisText(view)).toBe("2026-11-09 14:30:59 KST");
+    expect(view.live).toBe(3);
+    expect(view.close).toBe(0);
+    expect(view.unpriced).toEqual([]);
+    expect(view.equity).toBe(1_200_000 + 1_300_000 + 2_700_000 + 95_000);
+    // 서버 목록에서 가격을 몰랐던 종목도 실시간 가격을 받았으니 손익 = 평가액 − 순입금
+    expect(view.profitLoss).toBe(295_000);
+    expect(view.profitLossPct).toBeCloseTo(5.9, 10);
+    expect(isaBasisNote(view)).toBe("실시간 3종목 — 평가액·손익·비중만 다시 계산(장부·지시는 직전 종가)");
+  });
+
+  it("쓸 수 없는 가격(0·음수·NaN)은 받지 않은 것으로, 현금·순입금을 모르면 평가액·손익은 —(null)", () => {
+    expect(isaValuation(HOLDINGS, SUMMARY, { "111110": { price: 0, at: "2026-11-09T05:31:05Z" } }).live).toBe(0);
+    expect(isaValuation(HOLDINGS, SUMMARY, { "111110": { price: Number.NaN, at: null } }).live).toBe(0);
+    const unknownCash = isaValuation(HOLDINGS, { ...SUMMARY, cash: null }, { "111110": { price: 13_000, at: null } });
+    expect(unknownCash.equity).toBeNull();
+    expect(unknownCash.profitLoss).toBeNull();
+    expect(unknownCash.holdings[0].weightPct).toBeNull();
+    const zeroDeposit = isaValuation(HOLDINGS, { ...SUMMARY, netDeposit: 0 }, { "111110": { price: 13_000, at: null } });
+    expect(zeroDeposit.profitLossPct).toBeNull();
+    expect(isaValuation(null, null, {})).toMatchObject({ holdings: [], equity: null, live: 0, close: 0, unpriced: [] });
+  });
+
+  it("장부 정렬의 시각 값 — ISO를 ms로, 못 읽으면 null", () => {
+    expect(timeSortValue("2026-11-09T09:00:00+09:00")).toBe(Date.parse("2026-11-09T00:00:00Z"));
+    expect(timeSortValue("2026-11-09T09:00:00+09:00[Asia/Seoul]")).toBe(Date.parse("2026-11-09T00:00:00Z"));
+    expect(timeSortValue(null)).toBeNull();
+    expect(timeSortValue("")).toBeNull();
+    expect(timeSortValue("모름")).toBeNull();
   });
 });

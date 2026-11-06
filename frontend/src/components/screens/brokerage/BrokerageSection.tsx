@@ -1,12 +1,21 @@
 "use client";
 
 import Link from "next/link";
-import type { ReactNode } from "react";
+import { type ReactNode, useEffect, useState } from "react";
+import { LiveIntervalSelect } from "@/components/LiveIntervalSelect";
 import { StaleBadge } from "@/components/patterns";
 import { Banner, Button, ErrorState, Loading } from "@/components/ui";
 import { LockIcon } from "@/components/ui/icons";
 import { useApi } from "@/hooks/useApi";
-import { brokerageScope, brokerageStaleNote, brokerageView } from "@/lib/brokerage";
+import { useLiveSeconds } from "@/hooks/useLiveSeconds";
+import {
+  brokerageBasisText,
+  brokerageRefreshMs,
+  brokerageRefreshNote,
+  brokerageScope,
+  brokerageStaleNote,
+  brokerageView,
+} from "@/lib/brokerage";
 import { endpoints } from "@/lib/endpoints";
 import type { PaperMarketCode } from "@/lib/paperMarket";
 import { paperTabPath } from "@/lib/paperRoutes";
@@ -24,8 +33,11 @@ const TIMEOUT_MS = 40_000;
  * 보냄). 모의 계좌처럼 읽히지 않게 히어로·계좌 행·'출발 이후' 칩을 쓰지 않고 통계 타일과 표만 쓰며, 주문·취소 단추와 쓰기 호출이 없습니다
  * (경계 시험 __tests__/brokerageBoundary.test.ts).
  *
- * <p>읽기는 이 탭이 붙을 때 한 번과 '다시 읽기' 단추뿐입니다 — 자동 갱신도, 셸의 수동 새로고침 신호도 따르지 않습니다(토스 계좌 API의 호출
- * 한도와 운영 1분봉이 쓰는 단일 토큰을 아낌). 짧은 간격으로 눌러도 수집기 캐시(60초)가 같은 값을 돌려줍니다.
+ * <p>읽기는 이 탭이 붙을 때 한 번, '다시 읽기' 단추, 그리고 탭 머리의 주기 상자(명세 docs/specs/2026-11-06-us-costs-backfill.md §6 —
+ * components/LiveIntervalSelect, 값은 다른 화면의 '실시간 시세'와 같은 hooks/useLiveSeconds)로 고른 주기입니다. 주기는 끄기 또는 10초 이상이고
+ * 5초는 10초로 올려 씁니다 — 수집기 계좌 캐시(성공값 10초)보다 자주 읽어도 같은 값이고, 토스 계좌 API의 호출 한도와 운영 1분봉이 쓰는 단일 토큰을
+ * 아낍니다. 셸의 수동 새로고침 신호는 따르지 않고, 탭을 숨기면 멈춥니다(useApi). 꺼짐(DISABLED)이면 주기와 상관없이 다시 읽지 않습니다.
+ * 머리의 기준 시각은 수집기가 토스에서 그 값을 받은 시각(`fetchedAtKst`, 초까지)입니다 — 토스가 그 시각 가격으로 계산한 평가·손익.
  *
  * <p>상태: 꺼짐(DISABLED)은 안내만, 그 밖의 실패는 고정 문구와 다시 시도, 서버가 이전 값을 보이거나(isStale) 다시 읽기가 실패하면(refreshError)
  * '이전 값'과 받은 시각, 모르는 숫자는 "—"입니다.
@@ -34,10 +46,17 @@ const TIMEOUT_MS = 40_000;
  * 들어옵니다. 이 모듈은 그 단추가 무엇인지 모르고 실제 매매 모듈을 가져오지 않습니다(조회는 여전히 읽기 전용).
  */
 export function BrokerageSection({ market, extraActions }: { market: PaperMarketCode; extraActions?: ReactNode }) {
-  const { data, loading, error, reload, refreshError } = useApi<BrokerageAccountResponse>(endpoints.brokerage.account(market), 0, {
-    followRefresh: false,
-    timeoutMs: TIMEOUT_MS,
-  });
+  const [seconds] = useLiveSeconds();
+  // 꺼짐(DISABLED) 응답을 받았으면 고른 주기와 상관없이 다시 읽지 않습니다(운영 서버에서만 켜는 기능 — 켜질 때까지 같은 안내).
+  const [disabled, setDisabled] = useState(false);
+  const { data, loading, error, reload, refreshError } = useApi<BrokerageAccountResponse>(
+    endpoints.brokerage.account(market),
+    disabled ? 0 : brokerageRefreshMs(seconds),
+    { followRefresh: false, timeoutMs: TIMEOUT_MS },
+  );
+  useEffect(() => {
+    setDisabled(data?.state === "DISABLED");
+  }, [data]);
   const scope = brokerageScope(market);
   const view = data ? brokerageView(data) : null;
   const staleNote = data && view?.kind === "ok" ? brokerageStaleNote(data, refreshError) : null;
@@ -53,6 +72,21 @@ export function BrokerageSection({ market, extraActions }: { market: PaperMarket
           </Link>
         </p>
       </Banner>
+
+      {view?.kind !== "disabled" && (
+        <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
+          <div className="text-xs tabular-nums text-text-2">
+            <p>
+              기준 시각 <strong className="font-semibold text-bright">{view?.kind === "ok" ? brokerageBasisText(data) : "—"}</strong>
+            </p>
+            <p className="mt-0.5 text-text-3">토스가 그 시각 가격으로 계산한 평가·손익(수집기가 토스에서 받은 시각)</p>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <LiveIntervalSelect label="새로고침" />
+            <span className="text-xs text-text-3">{brokerageRefreshNote(seconds)} · 실시간 시세와 같은 주기</span>
+          </div>
+        </div>
+      )}
 
       {loading && !data && <Loading label="실제 계좌를 읽는 중…" />}
       {/* 요청 자체가 실패(권한·백엔드 오류·시간 초과)하면 빈 표가 아니라 이유를 보입니다 — 앞서 받은 값이 있으면 아래 '이전 값'으로. */}

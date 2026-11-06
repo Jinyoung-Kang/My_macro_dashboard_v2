@@ -4,16 +4,20 @@
  *
  * 이 파일은 lib/format과 응답 계약 lib/types/isa만 가져옵니다. 모의·홈·실제 계좌 조회(brokerage)·실제 매매(realtrade) 모듈과 서로 가져오지 않습니다
  * (components/screens/isa/__tests__/isaBoundary.test.ts). 장부 숫자(현금·평가액·손익·비중)는 백엔드가 계산한 값을 그대로 찍고, 화면이 계산하는 것은
- * 시작 창의 '시작 매수 합'(현금이 음수가 되는 장부를 보내기 전에 막으려는 어림)뿐입니다. 모르는 값은 "—"이고 0으로 채우지 않습니다.
+ * 시작 창의 '시작 매수 합'(현금이 음수가 되는 장부를 보내기 전에 막으려는 어림)과, 보유 종목의 실시간 가격(표시 전용 — ADR 0024, 명세
+ * docs/specs/2026-11-06-us-costs-backfill.md §6)을 받았을 때 그 가격으로 다시 센 평가액·손익·비중(`isaValuation` — 받은 가격이 없으면 서버 값 그대로)뿐입니다.
+ * 모르는 값은 "—"이고 0으로 채우지 않습니다.
  */
-import { EMPTY, formatKst, formatNumber, formatSigned } from "./format";
+import { EMPTY, formatKst, formatKstSeconds, formatNumber, formatSigned } from "./format";
 import type {
+  IsaHolding,
   IsaInstructionItem,
   IsaLedgerKind,
   IsaLedgerRequest,
   IsaLedgerRow,
   IsaStartBuy,
   IsaStartRequest,
+  IsaSummary,
   IsaUnpriced,
 } from "./types/isa";
 
@@ -22,7 +26,7 @@ export const ISA_BANNER = "연결되지 않은 다른 증권사 계좌 — 이 �
 
 /** 카드의 출처 한 줄. */
 export const ISA_SOURCE =
-  "이 대시보드의 ISA 계좌 장부(PostgreSQL manual_*) — 지시는 한국 규칙 계좌의 다음 시가 목표 비중(대시보드 계산), 평가는 마지막 가격(밤 관측치 종가)";
+  "이 대시보드의 ISA 계좌 장부(PostgreSQL manual_*) — 지시는 한국 규칙 계좌의 다음 시가 목표 비중(대시보드 계산), 평가는 실시간 가격(표시 전용 — 못 받은 종목은 밤 관측치 종가)";
 
 /** 자동 기록의 비용 안내(명세 §1 — 수수료·세금은 사용자가 고칠 때만). */
 export const COST_NOTE = "비용 0으로 어림 — 지시대로 자동 기록한 행은 수수료·세금을 0으로 적습니다. 실제 체결과 다르면 장부에서 고치세요.";
@@ -246,6 +250,157 @@ export function canSkip(item: Pick<IsaInstructionItem, "status">): boolean {
 /** 그 지시의 체결로 적힌 장부 행(자동·직접 — instructionId가 같은 것 중 가장 최근, 장부는 최근 순). 없으면 null. */
 export function ledgerRowForInstruction(ledger: readonly IsaLedgerRow[] | null | undefined, instructionId: number): IsaLedgerRow | null {
   return (ledger ?? []).find((row) => row.instructionId === instructionId) ?? null;
+}
+
+// ---------------------------------------------------------------- 실시간 평가(명세 2026-11-06-us-costs-backfill §6)
+
+/** 보유 종목 하나의 실시간 가격(화면 표시 전용 — ADR 0024) — 가격과 그 가격의 시각(ISO, 출처가 밝힌 기준 시각 — 모르면 받은 시각). */
+export interface IsaLiveQuote {
+  price: number;
+  at: string | null;
+}
+
+/** 평가한 보유 한 줄 — 가격·평가액·비중은 실시간 가격(있으면) 또는 서버가 준 직전 종가로 다시 센 값. */
+export interface IsaHoldingView extends IsaHolding {
+  /** 가격의 출처 — 실시간(live)·서버가 준 직전 종가(close)·모름(null). */
+  priceSource: "live" | "close" | null;
+  /** 실시간 가격의 시각(ISO) — 직전 종가·모름이면 null. */
+  priceAt: string | null;
+}
+
+/** 요약·보유를 한 기준으로 평가한 결과 — 받은 실시간 가격이 없으면 서버 값 그대로(`live` 0). */
+export interface IsaValuation {
+  holdings: IsaHoldingView[];
+  cash: number | null;
+  marketValue: number | null;
+  equity: number | null;
+  netDeposit: number | null;
+  profitLoss: number | null;
+  profitLossPct: number | null;
+  /** 가격을 몰라 평가에서 뺀 종목(실시간도 직전 종가도 없음). 받은 가격이 없으면 서버 목록 그대로. */
+  unpriced: IsaUnpriced[];
+  /** 실시간 가격으로 평가한 종목 수. */
+  live: number;
+  /** 서버가 준 직전 종가로 둔 종목 수. */
+  close: number;
+  /** 기준 시각 — 평가에 쓴 실시간 가격의 시각 중 가장 이른 것(ISO). 실시간 가격이 없거나 시각을 모르면 null. */
+  basisAt: string | null;
+}
+
+/** 쓸 수 있는 가격인가 — 0보다 큰 유한한 수. */
+function usablePrice(value: unknown): value is number {
+  return typeof value === "number" && Number.isFinite(value) && value > 0;
+}
+
+/**
+ * 보유 + 요약 + 실시간 가격(종목 코드 → 가격) → 평가(명세 §6). 실시간 가격을 하나라도 받았으면 평가액 = 현금 + Σ 수량 × 가격(실시간, 못 받은 종목은
+ * 서버가 준 직전 종가), 손익 = 평가액 − 순입금, 손익률 = 손익 ÷ 순입금(가격을 모르는 보유가 남으면 둘 다 null — 서버와 같음), 비중 = 평가액(종목) ÷
+ * 평가액으로 다시 셉니다. 받은 가격이 없으면 서버 값을 그대로
+ * 돌려줍니다(같은 값을 화면에서 다시 세어 반올림이 어긋나지 않게). 가격을 모르는 종목은 평가에서 빼고(0으로 채우지 않음) `unpriced`에 둡니다.
+ * 서버 장부·지시는 이 값을 쓰지 않습니다(직전 종가 그대로).
+ */
+export function isaValuation(
+  holdings: readonly IsaHolding[] | null | undefined,
+  summary: IsaSummary | null | undefined,
+  quotes: Readonly<Record<string, IsaLiveQuote>>,
+): IsaValuation {
+  const rows = holdings ?? [];
+  const quoteOf = (symbol: string): IsaLiveQuote | null => {
+    const quote = Object.hasOwn(quotes, symbol) ? quotes[symbol] : null;
+    return quote && usablePrice(quote.price) ? quote : null;
+  };
+  const cash = toNumber(summary?.cash);
+  const netDeposit = toNumber(summary?.netDeposit);
+  const live = rows.filter((row) => quoteOf(row.symbol) !== null).length;
+
+  if (live === 0) {
+    const views: IsaHoldingView[] = rows.map((row) => ({
+      ...row,
+      priceSource: toNumber(row.lastPrice) === null ? null : "close",
+      priceAt: null,
+    }));
+    return {
+      holdings: views,
+      cash,
+      marketValue: toNumber(summary?.marketValue),
+      equity: toNumber(summary?.equity),
+      netDeposit,
+      profitLoss: toNumber(summary?.profitLoss),
+      profitLossPct: toNumber(summary?.profitLossPct),
+      unpriced: [...(summary?.unpriced ?? [])],
+      live: 0,
+      close: views.filter((row) => row.priceSource === "close").length,
+      basisAt: null,
+    };
+  }
+
+  const priced = rows.map((row) => {
+    const quote = quoteOf(row.symbol);
+    const close = toNumber(row.lastPrice);
+    const price = quote ? quote.price : close;
+    const quantity = toNumber(row.quantity);
+    const value = price !== null && quantity !== null ? quantity * price : null;
+    return { row, quote, price, value, source: quote ? ("live" as const) : close === null ? null : ("close" as const) };
+  });
+  const marketValue = priced.reduce((sum, entry) => sum + (entry.value ?? 0), 0);
+  const equity = cash === null ? null : cash + marketValue;
+  // 가격을 모르는 보유가 남아 있으면 손익·손익률은 비웁니다(서버 요약과 같은 정의 — 평가액·비중은 아는 종목만으로 셈, 없는 숫자를 만들지 않음).
+  const hasUnpriced = priced.some((entry) => entry.value === null && (toNumber(entry.row.quantity) ?? 0) > 0);
+  const profitLoss = hasUnpriced || equity === null || netDeposit === null ? null : equity - netDeposit;
+  const profitLossPct = profitLoss === null || netDeposit === null || netDeposit <= 0 ? null : (profitLoss / netDeposit) * 100;
+  let basis: number | null = null;
+  let basisAt: string | null = null;
+  for (const entry of priced) {
+    const at = entry.quote?.at ? Date.parse(entry.quote.at) : NaN;
+    if (Number.isFinite(at) && (basis === null || at < basis)) {
+      basis = at;
+      basisAt = entry.quote?.at ?? null;
+    }
+  }
+  return {
+    holdings: priced.map(({ row, quote, price, value, source }) => ({
+      ...row,
+      lastPrice: price,
+      marketValue: value,
+      weightPct: value !== null && equity !== null && equity > 0 ? (value / equity) * 100 : null,
+      priceSource: source,
+      priceAt: quote?.at ?? null,
+    })),
+    cash,
+    marketValue,
+    equity,
+    netDeposit,
+    profitLoss,
+    profitLossPct,
+    unpriced: priced.filter((entry) => entry.value === null).map(({ row }) => ({ symbol: row.symbol, name: row.name })),
+    live,
+    close: priced.filter((entry) => entry.source === "close").length,
+    basisAt,
+  };
+}
+
+/** 기준 시각 글 — "2026-11-06 14:31:05 KST"(초까지). 실시간 가격이 없거나 시각을 모르면 "—". */
+export function isaBasisText(valuation: Pick<IsaValuation, "basisAt">): string {
+  const text = formatKstSeconds(valuation.basisAt);
+  return text === EMPTY ? EMPTY : `${text} KST`;
+}
+
+/** 기준 시각 옆 한 줄 — 몇 종목이 실시간이고 몇 종목이 직전 종가인지, 실시간 가격이 없으면 직전 종가로 평가한다는 것. */
+export function isaBasisNote(valuation: Pick<IsaValuation, "live" | "close">): string {
+  if (valuation.live === 0) {
+    return "실시간 가격을 아직 받지 못해 서버가 준 직전 종가(밤 관측치)로 평가";
+  }
+  const close = valuation.close > 0 ? ` · 직전 종가 ${valuation.close}종목` : "";
+  return `실시간 ${valuation.live}종목${close} — 평가액·손익·비중만 다시 계산(장부·지시는 직전 종가)`;
+}
+
+/** 시각 글자 → 정렬 값(ms). 못 읽으면 null(정렬에서 맨 뒤). */
+export function timeSortValue(value: string | null | undefined): number | null {
+  if (typeof value !== "string" || value.trim() === "") {
+    return null;
+  }
+  const parsed = Date.parse(value.trim().replace(/\[.*\]$/, ""));
+  return Number.isFinite(parsed) ? parsed : null;
 }
 
 // ---------------------------------------------------------------- 입력 검사
