@@ -389,6 +389,15 @@ public class PaperMirrorService {
      */
     public Optional<OpenTargets> openTargets(String code, LocalDate session) {
         Objects.requireNonNull(session, "session");
+        return targets(code, session, null);
+    }
+
+    /**
+     * 목표 계산의 본체 — 장부 상태·보유 + 그 세션 시가 주문({@link #openOrders}) + {@code cutoff}가 있으면 그 세션의 시각 지정 대기 주문 가운데 기준 시각이
+     * {@code cutoff} 이하인 것(장부 체결 조건 ⑤를 지나는 것만 — 현금성 매수는 같은 시각 마지막)을 마지막 가격으로 체결했다고 본 장부. {@code cutoff}가
+     * null이면 시가 주문만 봅니다({@link #openTargets} — 시가 맞추기).
+     */
+    private Optional<OpenTargets> targets(String code, LocalDate session, Instant cutoff) {
         if (krBook(code) == null) {
             return Optional.empty();
         }
@@ -406,11 +415,14 @@ public class PaperMirrorService {
             Quotes quotes = reader.quietly(() -> marketData.quotes(run)).orElse(null);
             Map<Long, Instant> targets = new HashMap<>();
             List<Order> due = openOrders(pending, session, run, targets);
+            if (cutoff != null) {
+                due.addAll(timedOrders(pending, session, run, cutoff, targets));
+            }
             Map<String, Position> held = new TreeMap<>();
             Map<String, Double> price = new HashMap<>();
             ledgerPositions(store.positions(code), held, price);
             ExpectedState.State expected = ExpectedState.simulate(state.cash(), held, price, new ArrayList<>(due), targets, session,
-                    calendar.openInstant(session), lastPrice(quotes));
+                    cutoff != null ? cutoff : calendar.openInstant(session), lastPrice(quotes));
             if (!(expected.nav() > 0)) {
                 return Optional.empty();
             }
@@ -630,6 +642,33 @@ public class PaperMirrorService {
             out.add(o);
             boolean cashLikeBuy = PaperBooks.BUY.equals(o.side()) && run.settings().cashLike(o.ticker());
             targets.put(o.id(), cashLikeBuy ? open.plusNanos(1) : open);
+        }
+        return out;
+    }
+
+    /**
+     * 목표 세션이 {@code session}인 시각 지정 대기 주문({@link KrTimedLadder#timed} — 매시·장중 시장가·분 단위 지정 시각·종가) 가운데 기준 시각
+     * ({@link KrExpectedState#targetAt})이 {@code cutoff} 이하이고 장부 체결 조건 ⑤({@link KrFills#opensAfterOrder} — 기준 시각이 생성 뒤)를 지나는 것 —
+     * 기준 시각을 {@code targets}에 넣습니다. 현금성 매수는 {@link #openOrders}와 같이 같은 시각의 다른 매수 뒤(+1나노초)입니다. 만료된 것은 뺍니다.
+     */
+    private static List<Order> timedOrders(List<Order> pending, LocalDate session, MarketRun run, Instant cutoff,
+                                           Map<Long, Instant> targets) {
+        TradingCalendar calendar = run.calendar();
+        List<Order> out = new ArrayList<>();
+        for (Order o : pending) {
+            if (!PaperBooks.ORDER_PENDING.equals(o.status()) || !KrTimedLadder.timed(o.timing())
+                    || !session.equals(ExecutionAudit.targetSession(o, calendar))
+                    || (o.expiresOn() != null && o.expiresOn().isBefore(session))
+                    || !KrFills.opensAfterOrder(o, session, calendar)) {
+                continue;
+            }
+            Instant target = KrExpectedState.targetAt(o, session, calendar);
+            if (target == null || target.isAfter(cutoff)) {
+                continue;
+            }
+            out.add(o);
+            boolean cashLikeBuy = PaperBooks.BUY.equals(o.side()) && run.settings().cashLike(o.ticker());
+            targets.put(o.id(), cashLikeBuy ? target.plusNanos(1) : target);
         }
         return out;
     }
