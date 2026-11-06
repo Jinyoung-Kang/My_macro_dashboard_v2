@@ -240,7 +240,9 @@ class PaperSettingsServiceTest {
 
         List<String> leaves = new ArrayList<>();
         collectLeaves(service.defaultsJson(), "", leaves);
-        assertThat(listed).as("기본값 본문의 키 = 화면에서 바꿀 수 있는 키").containsExactlyInAnyOrderElementsOf(leaves);
+        // 장중 판단만의 effort(ADR 0031 초안)는 기본 본문에 없는 유일한 키 — 없으면 effort를 따름(IntradayPolicy.effort).
+        leaves.add(IntradayPolicy.EFFORT);
+        assertThat(listed).as("기본값 본문의 키 + 장중 판단 effort = 화면에서 바꿀 수 있는 키").containsExactlyInAnyOrderElementsOf(leaves);
 
         JsonNode model = keys.get(listed.indexOf("model"));
         assertThat(model.path("type").asString()).isEqualTo("string");
@@ -335,11 +337,13 @@ class PaperSettingsServiceTest {
         assertThat(FreeTimingSettings.from(null)).isEqualTo(FreeTimingSettings.OFF);
         assertThat(FreeTimingSettings.key(PaperBooks.KR_CLAUDE2)).isEqualTo("kr.claude2.freeTiming");
         assertThat(FreeTimingSettings.key(PaperBooks.RULES)).as("규칙 계좌의 체결 시각은 다른 키").isNull();
-        // 세션마다 계좌별 장중 판단 횟수 — 기본 2, 0~2, 시장마다 따로.
+        // 세션마다 계좌별 장중 판단 횟수 — 기본 2, 저장 0~3(ADR 0031 초안), 시장마다 따로.
         assertThat(defaults.path("intradayMaxPerSession").asInt()).isEqualTo(2);
         assertThat(defaults.path("kr").path("intradayMaxPerSession").asInt()).isEqualTo(2);
         assertThat(PaperSettingKeys.find("intradayMaxPerSession").orElseThrow()).extracting(PaperSettingKeys.Spec::min,
-                PaperSettingKeys.Spec::max, PaperSettingKeys.Spec::affectsRules).containsExactly(0.0, 2.0, false);
+                PaperSettingKeys.Spec::max, PaperSettingKeys.Spec::affectsRules).containsExactly(0.0, 3.0, false);
+        assertThat(PaperSettingKeys.find("kr.intradayMaxPerSession").orElseThrow()).extracting(PaperSettingKeys.Spec::min,
+                PaperSettingKeys.Spec::max, PaperSettingKeys.Spec::affectsRules).containsExactly(0.0, 3.0, false);
         assertThat(PaperSettingKeys.find("kr.intradayMaxPerSession").orElseThrow().scope()).isEqualTo(PaperSettingKeys.Scope.KR);
 
         // 이 키들이 없는 옛 행(서버의 지금 행) — 꺼짐으로 읽고 판 그대로.
@@ -392,9 +396,13 @@ class PaperSettingsServiceTest {
                 .isInstanceOf(InvalidRequestException.class);
         assertThatThrownBy(() -> update("claude.freeTiming", "yes")).as("불리언만").isInstanceOf(InvalidRequestException.class);
 
-        // 장중 판단 횟수 — 0~2만 받고 시장마다 따로 읽음(키가 없는 옛 행은 2).
+        // 장중 판단 횟수 — 0~3만 받고(사용자 결정 2026-11-06 최대 3회) 시장마다 따로 읽음(키가 없는 옛 행은 2). 읽은 값은 코드가 부를 수 있는
+        // 순번 수(RuleBookService.INTRADAY_MAX)를 넘지 않음.
         assertThat(FreeTimingSettings.from(body()).intradayMax(PaperBooks.KR_CLAUDE)).as("kr 묶음이 없던 행 — 기본 2").isEqualTo(2);
-        assertThatThrownBy(() -> update("intradayMaxPerSession", 3)).as("최대 2회(사용자 결정)").isInstanceOf(InvalidRequestException.class);
+        assertThatThrownBy(() -> update("intradayMaxPerSession", 4)).as("최대 3회(사용자 결정)").isInstanceOf(InvalidRequestException.class);
+        update("intradayMaxPerSession", 3, "kr.intradayMaxPerSession", 3);
+        assertThat(FreeTimingSettings.from(body()).intradayMax(PaperBooks.CLAUDE)).isEqualTo(Math.min(3, RuleBookService.INTRADAY_MAX));
+        assertThat(FreeTimingSettings.from(body()).intradayMax(PaperBooks.KR_CLAUDE2)).isEqualTo(Math.min(3, RuleBookService.INTRADAY_MAX));
         update("intradayMaxPerSession", 1, "kr.intradayMaxPerSession", 0);
         FreeTimingSettings counts = FreeTimingSettings.from(body());
         assertThat(counts.intradayMax(PaperBooks.CLAUDE)).isEqualTo(1);
@@ -402,6 +410,98 @@ class PaperSettingsServiceTest {
         assertThat(counts.intradayMax(PaperBooks.KR_CLAUDE2)).isZero();
         assertThat(counts.intradayMax(PaperBooks.RULES)).isZero();
         update("intradayMaxPerSession", 2, "kr.intradayMaxPerSession", 2);
+    }
+
+    @Test
+    @DisplayName("장중 스탑 감시·장중 판단 최소·사건·effort 키(ADR 0031·0032 초안): 기본은 지금 동작(OFF·0·꺼짐·effort 없음), 형·범위·시장·규칙 계좌 영향, "
+            + "키가 없는 옛 행은 같은 값으로 읽고 판 그대로, 감시 스위치는 그 시장 규칙 계좌 경고")
+    void stopWatchAndIntradayPolicyKeys() {
+        JsonNode defaults = service.defaultsJson();
+        assertThat(defaults.path("stopWatch").path("mode").asString()).isEqualTo("OFF");
+        assertThat(defaults.path("kr").path("stopWatch").path("mode").asString()).isEqualTo("OFF");
+        assertThat(defaults.path("intradayMinPerSession").asInt(-1)).isZero();
+        assertThat(defaults.path("kr").path("intradayMinPerSession").asInt(-1)).isZero();
+        assertThat(defaults.path("intradayEvents").asBoolean(true)).isFalse();
+        assertThat(defaults.path("kr").path("intradayEvents").asBoolean(true)).isFalse();
+        assertThat(defaults.has("intradayEffort")).as("없으면 effort를 따름 — 기본 본문에 넣지 않음").isFalse();
+        assertThat(StopWatchMode.of(defaults, false)).isEqualTo(StopWatchMode.OFF);
+        assertThat(StopWatchMode.of(defaults, true)).isEqualTo(StopWatchMode.OFF);
+        assertThat(IntradayPolicy.from(defaults)).isEqualTo(IntradayPolicy.OFF);
+        assertThat(IntradayPolicy.effort(defaults, "high")).isEqualTo("high");
+
+        // 키 표 — 형·범위·시장·규칙 계좌 영향.
+        PaperSettingKeys.Spec us = PaperSettingKeys.find("stopWatch.mode").orElseThrow();
+        assertThat(us.type()).isEqualTo(PaperSettingKeys.Type.CHOICE);
+        assertThat(us.options()).containsExactly("OFF", "SHADOW", "ON");
+        assertThat(us.affectsRules()).as("규칙 계좌의 스탑 시점이 바뀜").isTrue();
+        assertThat(us.scope()).isEqualTo(PaperSettingKeys.Scope.US);
+        PaperSettingKeys.Spec kr = PaperSettingKeys.find("kr.stopWatch.mode").orElseThrow();
+        assertThat(kr.options()).containsExactly("OFF", "SHADOW", "ON");
+        assertThat(kr.affectsRules()).isTrue();
+        assertThat(kr.scope()).isEqualTo(PaperSettingKeys.Scope.KR);
+        for (String key : List.of("intradayMinPerSession", "kr.intradayMinPerSession")) {
+            assertThat(PaperSettingKeys.find(key).orElseThrow()).as(key).extracting(PaperSettingKeys.Spec::type, PaperSettingKeys.Spec::min,
+                    PaperSettingKeys.Spec::max, PaperSettingKeys.Spec::affectsRules).containsExactly(PaperSettingKeys.Type.INTEGER, 0.0, 1.0, false);
+        }
+        for (String key : List.of("intradayEvents", "kr.intradayEvents")) {
+            assertThat(PaperSettingKeys.find(key).orElseThrow()).as(key).extracting(PaperSettingKeys.Spec::type, PaperSettingKeys.Spec::affectsRules)
+                    .containsExactly(PaperSettingKeys.Type.BOOLEAN, false);
+        }
+        assertThat(PaperSettingKeys.find("kr.intradayEvents").orElseThrow().scope()).isEqualTo(PaperSettingKeys.Scope.KR);
+        PaperSettingKeys.Spec effort = PaperSettingKeys.find("intradayEffort").orElseThrow();
+        assertThat(effort.scope()).as("두 책 공통").isEqualTo(PaperSettingKeys.Scope.SHARED);
+        assertThat(effort.options()).isEqualTo(ClaudeBookService.EFFORTS);
+        assertThat(effort.affectsRules()).isFalse();
+
+        // 이 키들이 없는 옛 행(서버의 지금 행) — 같은 값으로 읽고 판 그대로.
+        tools.jackson.databind.node.ObjectNode old = (tools.jackson.databind.node.ObjectNode) body();
+        old.remove(List.of("stopWatch", "intradayMinPerSession", "intradayEvents"));
+        ((tools.jackson.databind.node.ObjectNode) old.get("kr")).remove(List.of("stopWatch", "intradayMinPerSession", "intradayEvents"));
+        assertThat(service.current().version()).isEqualTo(1);
+        assertThat(StopWatchMode.of(body(), false)).isEqualTo(StopWatchMode.OFF);
+        assertThat(StopWatchMode.of(body(), true)).isEqualTo(StopWatchMode.OFF);
+        assertThat(IntradayPolicy.from(body())).isEqualTo(IntradayPolicy.OFF);
+
+        // 쓰기 검사 — 범위·형·선택지 밖은 아무것도 바꾸지 않음.
+        assertThatThrownBy(() -> update("stopWatch.mode", "AUTO")).isInstanceOf(InvalidRequestException.class);
+        assertThatThrownBy(() -> update("kr.stopWatch.mode", true)).isInstanceOf(InvalidRequestException.class);
+        assertThatThrownBy(() -> update("intradayMinPerSession", 2)).isInstanceOf(InvalidRequestException.class);
+        assertThatThrownBy(() -> update("kr.intradayEvents", "true")).isInstanceOf(InvalidRequestException.class);
+        assertThatThrownBy(() -> update("intradayEffort", "ultra")).isInstanceOf(InvalidRequestException.class);
+        assertThat(service.current().version()).isEqualTo(1);
+
+        // 감시 스위치는 그 시장 규칙 계좌 경고, 장중 판단 키는 경고 없음.
+        assertThat(update("stopWatch.mode", "SHADOW").get("warning")).isEqualTo(PaperSettingKeys.RULES_FROZEN_WARNING);
+        assertThat(update("kr.stopWatch.mode", "ON").get("warning")).isEqualTo(PaperSettingKeys.KR_RULES_FROZEN_WARNING);
+        assertThat(StopWatchMode.of(body(), false)).isEqualTo(StopWatchMode.SHADOW);
+        assertThat(StopWatchMode.of(body(), false).watching()).isTrue();
+        assertThat(StopWatchMode.of(body(), false).orders()).isFalse();
+        assertThat(StopWatchMode.of(body(), true)).isEqualTo(StopWatchMode.ON);
+        assertThat(StopWatchMode.of(body(), true).orders()).isTrue();
+        Map<String, Object> intraday = update("intradayMinPerSession", 1, "intradayEvents", true, "kr.intradayMinPerSession", 1,
+                "intradayEffort", "medium");
+        assertThat(intraday.get("warning")).isNull();
+        IntradayPolicy policy = IntradayPolicy.from(body());
+        assertThat(policy).isEqualTo(new IntradayPolicy(1, 1, true, false));
+        assertThat(policy.minPerSession(PaperBooks.CLAUDE2)).isEqualTo(1);
+        assertThat(policy.minPerSession(PaperBooks.KR_CLAUDE)).isEqualTo(1);
+        assertThat(policy.minPerSession(PaperBooks.RULES)).as("Claude 계좌 넷 밖").isZero();
+        assertThat(policy.events(PaperBooks.CLAUDE)).isTrue();
+        assertThat(policy.events(PaperBooks.KR_CLAUDE2)).isFalse();
+        assertThat(policy.events(PaperBooks.KR_RULES)).isFalse();
+        assertThat(IntradayPolicy.effort(body(), "high")).isEqualTo("medium");
+        assertThat(ClaudeBookService.ClaudeSettings.from(body()).effort()).as("결정의 effort는 그대로").isEqualTo("high");
+
+        // 손으로 고친 틀린 값은 그 키만 기본으로.
+        tools.jackson.databind.node.ObjectNode broken = (tools.jackson.databind.node.ObjectNode) body();
+        broken.putObject("stopWatch").put("mode", "on");
+        broken.put("intradayMinPerSession", 5);
+        broken.put("intradayEffort", "turbo");
+        assertThat(StopWatchMode.of(body(), false)).isEqualTo(StopWatchMode.OFF);
+        assertThat(IntradayPolicy.from(body()).minUs()).isZero();
+        assertThat(IntradayPolicy.effort(body(), "high")).isEqualTo("high");
+        assertThat(StopWatchMode.of(null, true)).isEqualTo(StopWatchMode.OFF);
+        assertThat(IntradayPolicy.from(null)).isEqualTo(IntradayPolicy.OFF);
     }
 
     @Test
@@ -479,7 +579,7 @@ class PaperSettingsServiceTest {
                 assertThat(key.path("market").asString()).as(name).isEqualTo(name.startsWith("kr.") ? "KR" : "US");
             }
         }
-        assertThat(shared).containsExactly("model", "effort", "apiDailyCallCap", "apiScheduledReserve",
+        assertThat(shared).containsExactly("model", "effort", "intradayEffort", "apiDailyCallCap", "apiScheduledReserve",
                 "notesDefaultExpiryTradingDays", "notesMaxCharsInPacket", "frameworkTokenBudget",
                 "pricing.sonnet.inputUsdPerMTok", "pricing.sonnet.outputUsdPerMTok", "pricing.sonnet.cacheReadUsdPerMTok",
                 "pricing.sonnet.cacheWriteUsdPerMTok", "pricing.haiku.inputUsdPerMTok", "pricing.haiku.outputUsdPerMTok",

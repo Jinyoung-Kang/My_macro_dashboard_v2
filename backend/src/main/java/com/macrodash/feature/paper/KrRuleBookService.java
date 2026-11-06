@@ -148,10 +148,13 @@ final class KrRuleBookService {
             RuleTiming.KR_AT, "kr.maxWeightStockPct",
             "kr.minOrderNotional", "kr.cashLikeTickers", "kr.slippageBp", "kr.commissionBp", "kr.tax.kospi.sttBp",
             "kr.tax.kospi.ruralBp", "kr.tax.etfBp");
-    /** 한국 장부가 규칙 계좌 체결·스탑·재진입 금지에 읽는 {@code kr.*} 키(C2·C3 — {@link PaperSettings}). */
+    /**
+     * 한국 장부가 규칙 계좌 체결·스탑·재진입 금지에 읽는 {@code kr.*} 키(C2·C3 — {@link PaperSettings}). 장중 스탑 감시 스위치
+     * ({@value StopWatchMode#KR_KEY} — ADR 0032 초안)는 이 계좌 스탑의 시점을 바꾸는 키라 함께 셉니다.
+     */
     static final List<String> LEDGER_KEYS = List.of("kr.slippageBp", "kr.commissionBp", "kr.tax.kospi.sttBp",
             "kr.tax.kospi.ruralBp", "kr.tax.kosdaq.sttBp", "kr.tax.etfBp", "kr.tax.effectiveFrom", "kr.trailingStopPct",
-            "kr.lockoutTradingDays", "kr.cashLikeTickers");
+            "kr.lockoutTradingDays", "kr.cashLikeTickers", StopWatchMode.KR_KEY);
 
     private final PaperStore store;
     private final StoreReader reader;

@@ -90,13 +90,14 @@ class PaperSettingsKrTest {
         assertThat(kr).containsExactly("kr.slippageBp", "kr.commissionBp", "kr.tax.kospi.sttBp", "kr.tax.kospi.ruralBp",
                 "kr.tax.kosdaq.sttBp", "kr.tax.etfBp", "kr.tax.effectiveFrom", "kr.minOrderNotional", "kr.maxWeightStockPct",
                 "kr.maxWeightEtfPct", "kr.maxPositions", "kr.maxDiscretionaryOrdersPerMonth", "kr.minHoldTradingDaysForSell",
-                "kr.trailingStopPct", "kr.lockoutTradingDays", "kr.rulesMaxNames", "kr.rules.weighting",
+                "kr.trailingStopPct", "kr.lockoutTradingDays", "kr.stopWatch.mode", "kr.rulesMaxNames", "kr.rules.weighting",
                 "kr.rules.minStreakDays", "kr.rules.debtRatioMaxPct", "kr.rules.reselection",
                 "kr.rules.parkCashThresholdPct", "kr.rules.timing", "kr.rules.timingAtKst", "kr.cashLikeTickers",
                 "kr.universeExtraTickers", "kr.decisionTimeKst",
                 "kr.decisionDeadlineKst", "kr.calendar.extraClosures", "kr.calendar.openTimeOverrides", "kr.news.enabled",
                 "kr.news.maxPerDay", "kr.news.keywords", "kr.news.feeds", "kr.news.aliases", "kr.claude2.riskProfile",
-                "kr.claude2.checkpoints", "kr.intradayMaxPerSession", "kr.claude.freeTiming", "kr.claude2.freeTiming");
+                "kr.claude2.checkpoints", "kr.intradayMaxPerSession", "kr.intradayMinPerSession", "kr.intradayEvents",
+                "kr.claude.freeTiming", "kr.claude2.freeTiming");
 
         JsonNode d = service.defaultsJson().path("kr");
         assertThat(d.path("claude2").path("checkpoints").asBoolean(false)).as("한국 계좌2 장중 확인 스위치 기본 켬(단계 2b)").isTrue();
