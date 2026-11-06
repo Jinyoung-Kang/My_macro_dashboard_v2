@@ -23,8 +23,9 @@ import {
   REAL_TRADE_SOURCE,
   realTradeChip,
   realTradePnl,
-  serverEnabled,
+  serverSwitchState,
   serverSwitchText,
+  serverUnknownText,
   sourceBookLabel,
   toNumber,
   unresolvedOffCount,
@@ -144,6 +145,8 @@ function StatusBody({ status, rt }: { status: RealTradeStatusResponse; rt: RealT
   const pnl = realTradePnl(status);
   const lossPct = toNumber(status.lossLimitPct);
   const blocked = cancelBlocked(status);
+  // 서버 스위치를 모르면(수집기 상태를 읽지 못함) '꺼져 있어 주문이 나가지 않습니다'를 띄우지 않고 '읽지 못함 — 다시 읽는 중'을 적습니다(RT3-UI-1).
+  const server = serverSwitchState(status);
   const unfinished = toNumber(status.unfinishedOrders);
   // 정기 작업 멈춤은 이 응답의 서버 시각(serverTime)과 견줍니다 — 없으면 이 상태를 받은 시각(그것도 없으면 지금). 둘 다 그 응답의 시각이라 상태 읽기가
   // 실패하는 동안 오래된 값으로 멈춤을 짐작하지 않습니다(RT2-FE-2).
@@ -209,12 +212,13 @@ function StatusBody({ status, rt }: { status: RealTradeStatusResponse; rt: RealT
           합니다. &lsquo;멈춤 해제&rsquo;로 풉니다.
         </Banner>
       )}
-      {status.state === "LIVE" && !serverEnabled(status) && !blocked && (
+      {status.state === "LIVE" && server === "off" && !blocked && (
         <Banner tone="warn">
           화면 스위치는 켜져 있지만 운영 서버의 매매 스위치가 꺼져 있어 주문이 나가지 않습니다. 이 기능이 미체결을 취소할 수 없습니다 — 미체결이 있으면
           토스증권 앱에서 직접 취소하세요.
         </Banner>
       )}
+      {status.state === "LIVE" && server === "unknown" && !blocked && <Banner tone="warn">{serverUnknownText(status.serverEnabled)}</Banner>}
       {status.state === "OFF" && block && <p className="text-xs text-text-3">{block}</p>}
 
       {(canResume(status) || canUpdate(status)) && (

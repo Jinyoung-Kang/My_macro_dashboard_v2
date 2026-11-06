@@ -147,6 +147,7 @@ const HALT_REASON: Readonly<Record<string, string>> = {
   "close-auction-mismatch": "종가 체결 시각 이상",
   "unknown-broker-status": "모르는 주문 상태",
   restored: "DB 복원 직후",
+  "collector-disabled": "수집기 매매 스위치가 꺼져 멈춤 — 다시 켜려면 멈춤 해제",
 };
 
 /** 이상 멈춤 사유(명세 §7.3) — 이름표와 코드를 함께("주문 결과를 모름(unknown-order)"). 모르는 코드는 코드 그대로. */
@@ -158,11 +159,21 @@ export function haltReasonLabel(code: string | null | undefined): string {
   return label ? `${label}(${code})` : code;
 }
 
+/**
+ * 백엔드가 수집기 매매 스위치 상태를 읽지 못했을 때 싣는 사유 코드(RT3-UI-1) — 이때 `serverEnabled.collector`는 null(모름)입니다. 꺼짐이 아니라 모름이라
+ * 화면은 '서버에서 꺼짐'으로 그리지 않습니다. collector 칸이 null이 아니어도 이 사유가 오면 수집기를 모름으로 봅니다(꺼짐으로 단정하지 않음).
+ */
+export const SERVER_STATUS_UNREADABLE = "status-unreadable";
+
+/** 서버 스위치를 모를 때의 칩·문구(RT3-UI-1) — 상태 읽기는 15초마다 다시 합니다. */
+export const SERVER_UNKNOWN_TEXT = "서버 상태를 읽지 못함 — 다시 읽는 중";
+
 const SERVER_REASON: Readonly<Record<string, string>> = {
   disabled: "수집기 매매 스위치 꺼짐",
   "account-disabled": "실제 계좌 조회 꺼짐",
   "no-service-token": "서비스 토큰 없음",
   "limits-invalid": "한도 설정이 올바르지 않음",
+  [SERVER_STATUS_UNREADABLE]: "수집기 상태를 읽지 못함",
 };
 
 /** 서버 스위치 사유(수집기 코드) — 이름표(코드). 모르는 코드는 그대로. */
@@ -174,16 +185,49 @@ export function serverReasonLabel(code: string | null | undefined): string | nul
   return label ? `${label}(${code})` : code;
 }
 
-/** 서버 두 스위치가 모두 켜져 있는가(수집기·백엔드). 모르면 거짓. */
-export function serverEnabled(status: Pick<RealTradeStatusResponse, "serverEnabled"> | null | undefined): boolean {
-  return status?.serverEnabled?.collector === true && status.serverEnabled.backend === true;
+/** 수집기 스위치 값 — 사유가 '상태를 읽지 못함'이면 받은 값과 관계없이 모름(null). */
+function collectorSwitch(server: RealTradeServerEnabled | null | undefined): boolean | null {
+  if (!server || server.reason === SERVER_STATUS_UNREADABLE) {
+    return null;
+  }
+  return typeof server.collector === "boolean" ? server.collector : null;
 }
 
-/** 서버 스위치 한 줄("수집기 켜짐 · 백엔드 꺼짐 — 사유"). */
+/** 서버 두 스위치를 읽은 결과 — 둘 다 켜짐(on), 하나라도 꺼짐을 확인함(off), 그 밖(하나라도 모름 — 읽지 못함)은 unknown. */
+export type ServerSwitchState = "on" | "off" | "unknown";
+
+/**
+ * 서버 두 스위치(수집기·백엔드)의 상태(RT3-UI-1). 하나라도 꺼짐(false)을 확인했으면 off, 둘 다 켜짐이면 on, 그 밖은 unknown입니다 — 수집기 상태를 읽지
+ * 못한 것(collector null 또는 사유 `status-unreadable`)을 꺼짐으로 그리지 않으려고 나눕니다.
+ */
+export function serverSwitchState(status: Pick<RealTradeStatusResponse, "serverEnabled"> | null | undefined): ServerSwitchState {
+  const server = status?.serverEnabled;
+  const collector = collectorSwitch(server);
+  const backend = typeof server?.backend === "boolean" ? server.backend : null;
+  if (collector === false || backend === false) {
+    return "off";
+  }
+  return collector === true && backend === true ? "on" : "unknown";
+}
+
+/** 서버 두 스위치가 모두 켜져 있는가(수집기·백엔드). 모르면 거짓(취소 불가 판단·켜기 막기는 모름을 켜짐으로 보지 않음). */
+export function serverEnabled(status: Pick<RealTradeStatusResponse, "serverEnabled"> | null | undefined): boolean {
+  return serverSwitchState(status) === "on";
+}
+
+/** 서버 스위치 한 줄("수집기 켜짐 · 백엔드 꺼짐 — 사유"). 수집기 상태를 읽지 못했으면 수집기는 '모름'. */
 export function serverSwitchText(server: RealTradeServerEnabled | null | undefined): string {
   const one = (value: boolean | null | undefined) => (value === true ? "켜짐" : value === false ? "꺼짐" : "모름");
   const reason = serverReasonLabel(server?.reason);
-  return `수집기 ${one(server?.collector)} · 백엔드 ${one(server?.backend)}${reason ? ` — ${reason}` : ""}`;
+  return `수집기 ${one(collectorSwitch(server))} · 백엔드 ${one(server?.backend)}${reason ? ` — ${reason}` : ""}`;
+}
+
+/**
+ * 켜짐인데 서버 스위치를 모를 때의 경고 문구(RT3-UI-1) — '꺼져 있어 주문이 나가지 않습니다'라고 단정하지 않고, 읽지 못했고 다시 읽는 중이라고 적습니다.
+ */
+export function serverUnknownText(server: RealTradeServerEnabled | null | undefined): string {
+  const reason = serverReasonLabel(server?.reason);
+  return `${SERVER_UNKNOWN_TEXT}${reason ? `(${reason})` : ""} — 이번 읽기에서 운영 서버의 매매 스위치(수집기) 상태를 확인하지 못했을 뿐 꺼졌다는 뜻은 아닙니다. 계속되면 운영 서버의 수집기를 확인하세요.`;
 }
 
 /** 칩 톤 — components/ui/icons의 StatusTone과 같은 네 값(lib는 화면 모듈을 가져오지 않음). */
@@ -198,6 +242,7 @@ export interface RealTradeChip {
 /**
  * 상태 칩(명세 §8 — 꺼짐·켜짐·멈춤(사유)·끄는 중·서버에서 꺼짐). 끄는 중·멈춤은 서버 스위치보다 먼저(사람이 할 일이 있음),
  * 그다음 서버 스위치가 하나라도 꺼져 있으면 '서버에서 꺼짐'(화면 스위치가 켜져 있어도 주문이 나가지 않음), 켜짐에 매수 멈춤이면 함께 적습니다.
+ * 서버 스위치를 모르면(수집기 상태를 읽지 못함 — RT3-UI-1) '서버에서 꺼짐'이 아니라 상태 뒤에 '서버 상태를 읽지 못함 — 다시 읽는 중'(경고)입니다.
  */
 export function realTradeChip(
   status: Pick<RealTradeStatusResponse, "state" | "haltReason" | "buysPaused" | "serverEnabled"> | null | undefined,
@@ -209,14 +254,19 @@ export function realTradeChip(
   if (state === "HALTED") {
     return { label: `멈춤(${haltReasonLabel(status?.haltReason)})`, tone: "danger" };
   }
-  if (status && !serverEnabled(status) && (state === "OFF" || state === "LIVE")) {
+  const server = serverSwitchState(status);
+  if (status && server === "off" && (state === "OFF" || state === "LIVE")) {
     return { label: "서버에서 꺼짐", tone: "neutral" };
   }
   if (state === "LIVE") {
-    return status?.buysPaused === true ? { label: "켜짐 · 매수 멈춤(손실 한도)", tone: "warn" } : { label: "켜짐", tone: "ok" };
+    const base = status?.buysPaused === true ? "켜짐 · 매수 멈춤(손실 한도)" : "켜짐";
+    if (server === "unknown") {
+      return { label: `${base} · ${SERVER_UNKNOWN_TEXT}`, tone: "warn" };
+    }
+    return status?.buysPaused === true ? { label: base, tone: "warn" } : { label: base, tone: "ok" };
   }
   if (state === "OFF") {
-    return { label: "꺼짐", tone: "neutral" };
+    return server === "unknown" ? { label: `꺼짐 · ${SERVER_UNKNOWN_TEXT}`, tone: "warn" } : { label: "꺼짐", tone: "neutral" };
   }
   return { label: typeof state === "string" && state !== "" ? state : "상태 모름", tone: "warn" };
 }
@@ -245,7 +295,11 @@ export function enableBlock(
   if (status.state !== "OFF") {
     return "꺼져 있을 때만 켤 수 있습니다";
   }
-  if (!serverEnabled(status)) {
+  const server = serverSwitchState(status);
+  if (server === "unknown") {
+    return "서버 스위치 상태를 읽지 못해 켤 수 없습니다 — 다시 읽는 중";
+  }
+  if (server !== "on") {
     return "서버 스위치가 꺼져 있어 켤 수 없습니다";
   }
   return null;
@@ -380,6 +434,41 @@ export function disableFeedback(
   return status?.state === "OFF"
     ? { kind: "done", text: DISABLE_DONE_TEXT, tone: "ok" }
     : { kind: "sent", text: DISABLE_SENT_TEXT, tone: "info" };
+}
+
+/**
+ * 이 화면이 끄기를 보낸 표시(끄기 뒤 안내를 띄우는 동안) — 끄기 응답이 돌려준 설정 버전(없으면 null)과, 그 뒤 끄는 중·꺼짐 상태를 본 적이 있는가.
+ */
+export interface DisableSentMark {
+  version: number | null;
+  sawOff: boolean;
+}
+
+/**
+ * 끄기 뒤 새로 받은 상태로 표시를 다음 값으로 — null이면 표시를 지웁니다(RT3-UI-3: 다른 기기·탭에서 다시 켰는데 '새 주문 멈춤 — 취소 중'이 남지 않게).
+ *
+ * <ul>
+ *   <li>끄는 중·꺼짐 → 그대로 두고 '꺼짐 쪽을 봄'으로 적습니다(끄는 중 → 꺼짐도 설정 버전을 올리므로 버전만으로는 지우지 않음 — 정리 끝 안내가 보이게).</li>
+ *   <li>켜짐·이상 멈춤 → 꺼짐 쪽을 이미 봤거나(다시 켜짐으로 돌아옴) 상태의 버전이 끄기 응답의 버전보다 크면(그 뒤 다른 곳에서 켬) 지웁니다.
+ *       둘 다 아니면 끄기 직후 진행 중이던 읽기가 가져온 옛 켜짐이라 그대로 둡니다.</li>
+ *   <li>그 밖(상태 없음·모르는 상태) → 그대로.</li>
+ * </ul>
+ */
+export function nextDisableSentMark(
+  mark: DisableSentMark | null,
+  status: Pick<RealTradeStatusResponse, "state" | "version"> | null | undefined,
+): DisableSentMark | null {
+  if (!mark || !status) {
+    return mark;
+  }
+  if (status.state === "STOPPING" || status.state === "OFF") {
+    return mark.sawOff ? mark : { ...mark, sawOff: true };
+  }
+  if (status.state === "LIVE" || status.state === "HALTED") {
+    const newer = typeof status.version === "number" && typeof mark.version === "number" && status.version > mark.version;
+    return mark.sawOff || newer ? null : mark;
+  }
+  return mark;
 }
 
 /** 멈춤 해제를 보이는가 — 이상 멈춤이거나, 켜짐에 손실 한도로 매수가 멈췄을 때(명세 §7.2 resume). */
@@ -644,9 +733,10 @@ const EVENT_COUNTS: readonly [string, string][] = [
 
 /**
  * 이벤트 detail → 한 줄("시가 맞추기 · 사유 unknown-order · 접수 5 · 체결 5"). 용도·사유 코드·건수·책만 적고 그 밖의 칸은 적지 않습니다.
+ * 이상 멈춤(HALT) 이벤트의 사유는 멈춤 사유 이름표와 코드로 적습니다("사유 수집기 매매 스위치가 꺼져 멈춤 — 다시 켜려면 멈춤 해제(collector-disabled)").
  * 아무것도 없으면 null.
  */
-export function eventDetailText(detail: RealTradeEvent["detail"]): string | null {
+export function eventDetailText(detail: RealTradeEvent["detail"], kind?: RealTradeEvent["kind"]): string | null {
   if (!detail || typeof detail !== "object") {
     return null;
   }
@@ -657,7 +747,7 @@ export function eventDetailText(detail: RealTradeEvent["detail"]): string | null
   const book = text("sourceBook");
   if (book) parts.push(sourceBookLabel(book));
   const reason = text("reason") ?? text("code") ?? text("haltReason") ?? text("skipReason");
-  if (reason) parts.push(`사유 ${reason}`);
+  if (reason) parts.push(`사유 ${kind === "HALT" ? haltReasonLabel(reason) : reason}`);
   for (const [key, label] of EVENT_COUNTS) {
     const count = toNumber(detail[key]);
     if (count !== null) parts.push(`${label} ${formatNumber(count, 0)}`);

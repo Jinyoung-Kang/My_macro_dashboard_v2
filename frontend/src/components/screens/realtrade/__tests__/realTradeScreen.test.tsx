@@ -10,6 +10,8 @@
  *    비밀번호(type=password, autocomplete off) 필요, 친 글자를 그대로 보냄, 서버 오류 코드별 문구(비밀번호 틀림·버전 충돌)
  *  - 멈춤이면 멈춤 해제, 켜짐이면 설정 바꾸기(같은 확인)
  *  - 미국 탭은 '미국 실제 매매는 준비 중입니다'와 꺼진 단추(상태를 읽지 않음)
+ *  - RT3-UI-1: 수집기 상태를 읽지 못하면(collector null·사유 status-unreadable) '서버에서 꺼짐'과 꺼짐 배너 대신 '서버 상태를 읽지 못함 — 다시 읽는 중'
+ *  - RT3-UI-3: 끄기 뒤 다른 곳에서 다시 켜면(꺼짐을 본 뒤 켜짐, 또는 끄기 응답보다 큰 버전의 켜짐) '새 주문 멈춤'·'꺼졌습니다' 안내가 사라진다
  * 값은 모두 합성 값입니다(실제 계좌 자료 아님).
  */
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
@@ -538,6 +540,126 @@ describe("RT2-FE-3: 취소 포기·결과 모름이 남았을 때 '취소 중'·
       expect(inRegion().queryByText(/결과를 모르는 주문/), JSON.stringify(over)).toBeNull();
       again.unmount();
     }
+  });
+});
+
+describe("RT3-UI-1: 수집기 상태를 읽지 못함은 '서버에서 꺼짐'이 아니다", () => {
+  const UNREADABLE = { collector: null, backend: true, reason: "status-unreadable" };
+  const OFF_BANNER = /운영 서버의 매매 스위치가 꺼져 있어 주문이 나가지 않습니다/;
+  const BLOCKED = /이 기능이 미체결을 취소할 수 없습니다 — 토스증권 앱에서 직접 취소하세요/;
+
+  it("켜짐인데 수집기를 읽지 못하면 칩은 '켜짐 · 서버 상태를 읽지 못함 — 다시 읽는 중', 꺼짐 배너 없이 '읽지 못함' 경고", async () => {
+    reads[STATUS_PATH] = () => Promise.resolve(status({ state: "LIVE", serverEnabled: UNREADABLE, unfinishedOrders: 0 }));
+    renderKr();
+    expect(await inRegion().findByText("켜짐 · 서버 상태를 읽지 못함 — 다시 읽는 중")).toBeTruthy();
+    expect(inRegion().queryByText("서버에서 꺼짐")).toBeNull();
+    expect(inRegion().queryByText(OFF_BANNER)).toBeNull();
+    expect(inRegion().queryByText(BLOCKED)).toBeNull();
+    const banner = inRegion().getByText(/^서버 상태를 읽지 못함 — 다시 읽는 중\(수집기 상태를 읽지 못함\(status-unreadable\)\)/);
+    expect(banner.textContent).toContain("꺼졌다는 뜻은 아닙니다");
+    expect(inRegion().getByText(/서버 스위치: 수집기 모름 · 백엔드 켜짐/)).toBeTruthy();
+    // 끄기 단추는 그대로입니다.
+    expect(inRegion().getByRole("button", { name: "실제 매매 끄기" })).toBeTruthy();
+  });
+
+  it("백엔드가 collector를 false로 싣더라도 사유가 status-unreadable이면 같다", async () => {
+    reads[STATUS_PATH] = () => Promise.resolve(status({ state: "LIVE", serverEnabled: { ...UNREADABLE, collector: false } }));
+    renderKr();
+    expect(await inRegion().findByText("켜짐 · 서버 상태를 읽지 못함 — 다시 읽는 중")).toBeTruthy();
+    expect(inRegion().queryByText("서버에서 꺼짐")).toBeNull();
+    expect(inRegion().queryByText(OFF_BANNER)).toBeNull();
+  });
+
+  it("미종료 주문이 있으면 모를 때도 토스 앱에서 직접 취소하라는 위험 배너는 그대로(SEC-5 — 모름을 켜짐으로 보지 않음)", async () => {
+    reads[STATUS_PATH] = () => Promise.resolve(status({ state: "LIVE", serverEnabled: UNREADABLE, unfinishedOrders: 2 }));
+    renderKr();
+    expect(await inRegion().findByText(BLOCKED)).toBeTruthy();
+    expect(inRegion().getByText("켜짐 · 서버 상태를 읽지 못함 — 다시 읽는 중")).toBeTruthy();
+    expect(inRegion().queryByText(OFF_BANNER)).toBeNull();
+  });
+
+  it("꺼짐인데 수집기를 읽지 못하면 '꺼짐 · 서버 상태를 읽지 못함 — 다시 읽는 중'과 꺼진 켜기(읽지 못해 켤 수 없음)", async () => {
+    reads[STATUS_PATH] = () => Promise.resolve(status({ state: "OFF", serverEnabled: UNREADABLE }));
+    renderKr();
+    expect(await inRegion().findByText("꺼짐 · 서버 상태를 읽지 못함 — 다시 읽는 중")).toBeTruthy();
+    expect(inRegion().queryByText("서버에서 꺼짐")).toBeNull();
+    expect((inRegion().getByRole("button", { name: "실제 매매 켜기" }) as HTMLButtonElement).disabled).toBe(true);
+    expect(inRegion().getByText("서버 스위치 상태를 읽지 못해 켤 수 없습니다 — 다시 읽는 중")).toBeTruthy();
+  });
+
+  it("이상 멈춤 사유 collector-disabled — 칩과 이벤트 내용에 '수집기 매매 스위치가 꺼져 멈춤 — 다시 켜려면 멈춤 해제'", async () => {
+    reads[STATUS_PATH] = () => Promise.resolve(status({
+      state: "HALTED", haltReason: "collector-disabled", serverEnabled: { collector: false, backend: true, reason: "disabled" },
+      events: [{ at: "2026-11-09T08:50:40+09:00", kind: "HALT", detail: { reason: "collector-disabled" } }],
+    }));
+    renderKr();
+    const label = "수집기 매매 스위치가 꺼져 멈춤 — 다시 켜려면 멈춤 해제(collector-disabled)";
+    expect(await inRegion().findByText(`멈춤(${label})`)).toBeTruthy();
+    const events = inRegion().getByRole("table", { name: "실제 매매 이벤트" });
+    expect(within(events).getByText("이상 멈춤")).toBeTruthy();
+    expect(within(events).getByText(`사유 ${label}`)).toBeTruthy();
+  });
+});
+
+describe("RT3-UI-3: 끄기 뒤 다른 곳에서 다시 켜면 끄기 안내가 사라진다", () => {
+  const SENT = "새 주문 멈춤 — 이 기능의 미체결 주문 취소 중";
+  const DONE = /꺼졌습니다 — 새 주문 없음/;
+  const rereadStatus = () => document.dispatchEvent(new Event("visibilitychange"));
+
+  it("끄기 → 꺼짐(정리 끝) → 다른 탭에서 다시 켬(켜짐, 버전 그대로) — 안내가 사라지고 칩은 '켜짐'", async () => {
+    let current = status({ state: "LIVE", version: 3 });
+    reads[STATUS_PATH] = () => Promise.resolve(current);
+    api.apiPost.mockImplementation(() => {
+      current = status({ state: "OFF", version: 3 });
+      // 버전을 싣지 않는 응답 — 꺼짐을 본 뒤의 켜짐으로 지웁니다.
+      return Promise.resolve({ ok: true, state: "OFF" });
+    });
+    renderKr();
+    fireEvent.click(await inRegion().findByRole("button", { name: "실제 매매 끄기" }));
+    expect(await inRegion().findByText(DONE)).toBeTruthy();
+
+    current = status({ state: "LIVE", version: 3 });
+    rereadStatus();
+    expect(await inRegion().findByText("켜짐")).toBeTruthy();
+    expect(inRegion().queryByText(SENT)).toBeNull();
+    expect(inRegion().queryByText(DONE)).toBeNull();
+    expect(inRegion().queryByRole("status")).toBeNull();
+  });
+
+  it("끄기 직후 진행 중이던 읽기가 옛 켜짐(끄기 응답보다 작은 버전)을 가져오면 안내는 남고, 끄기 응답보다 큰 버전의 켜짐이 오면 사라진다", async () => {
+    let current = status({ state: "LIVE", version: 3 });
+    reads[STATUS_PATH] = () => Promise.resolve(current);
+    // 끄기는 끄는 중(버전 4)으로 받았지만, 다시 읽기는 아직 옛 켜짐(버전 3)을 돌려줍니다.
+    api.apiPost.mockResolvedValue({ ok: true, state: "STOPPING", version: 4 });
+    renderKr();
+    fireEvent.click(await inRegion().findByRole("button", { name: "실제 매매 끄기" }));
+    await waitFor(() => expect(api.apiPost).toHaveBeenCalledTimes(1));
+    expect(await inRegion().findByText(SENT)).toBeTruthy();
+    rereadStatus();
+    await waitFor(() => expect(calls(STATUS_PATH).length).toBeGreaterThanOrEqual(3));
+    expect(inRegion().getByText(SENT)).toBeTruthy();
+
+    // 그사이 끄는 중 → 꺼짐 → 다른 기기에서 다시 켬(버전 6) — 이 화면은 꺼짐을 보지 못했지만 버전이 끄기 응답보다 큽니다.
+    current = status({ state: "LIVE", version: 6 });
+    rereadStatus();
+    await waitFor(() => expect(inRegion().queryByText(SENT)).toBeNull());
+    expect(inRegion().getByText("켜짐")).toBeTruthy();
+    expect(inRegion().queryByRole("status")).toBeNull();
+  });
+
+  it("끄는 중 → 꺼짐은 버전이 올라도 안내를 지우지 않는다 — '꺼졌습니다 — 정리 끝'까지 보인다", async () => {
+    let current = status({ state: "LIVE", version: 3 });
+    reads[STATUS_PATH] = () => Promise.resolve(current);
+    api.apiPost.mockImplementation(() => {
+      current = status({ state: "STOPPING", version: 4 });
+      return Promise.resolve({ ok: true, state: "STOPPING", version: 4 });
+    });
+    renderKr();
+    fireEvent.click(await inRegion().findByRole("button", { name: "실제 매매 끄기" }));
+    expect(await inRegion().findByText(SENT)).toBeTruthy();
+    current = status({ state: "OFF", version: 5 });
+    rereadStatus();
+    expect(await inRegion().findByText(DONE)).toBeTruthy();
   });
 });
 

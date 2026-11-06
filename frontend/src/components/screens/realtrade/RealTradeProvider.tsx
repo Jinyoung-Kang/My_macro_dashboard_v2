@@ -1,11 +1,11 @@
 "use client";
 
-import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useApi } from "@/hooks/useApi";
 import { useAsyncAction } from "@/hooks/useAsyncAction";
 import { apiPost } from "@/lib/api";
 import { endpoints } from "@/lib/endpoints";
-import type { RealTradeDialogMode } from "@/lib/realtrade";
+import { nextDisableSentMark, type DisableSentMark, type RealTradeDialogMode } from "@/lib/realtrade";
 import type { RealTradeActionResponse, RealTradeDisableRequest, RealTradeMarket, RealTradeStatusResponse } from "@/lib/types/realtrade";
 import { RealTradeEnableDialog } from "./RealTradeEnableDialog";
 
@@ -47,7 +47,10 @@ export interface RealTradeContextValue {
   disable: () => Promise<void>;
   disableBusy: boolean;
   disableError: string | null;
-  /** 이 화면에서 끄기를 보냈는가 — '새 주문 멈춤 — 미체결 취소 중' 안내에 씁니다. */
+  /**
+   * 이 화면에서 끄기를 보냈는가 — '새 주문 멈춤 — 미체결 취소 중' 안내에 씁니다. 그 뒤 상태가 다시 켜짐·이상 멈춤으로 돌아오거나(끄는 중·꺼짐을 본 뒤)
+   * 설정 버전이 끄기 응답보다 커진 켜짐·이상 멈춤을 받으면 지웁니다(RT3-UI-3 — 다른 기기·탭에서 다시 켬, lib/realtrade `nextDisableSentMark`).
+   */
   disableSent: boolean;
   openDialog: (mode: RealTradeDialogMode) => void;
   /** 켜기·바꾸기·해제가 성공한 뒤의 안내(없으면 null). */
@@ -84,22 +87,36 @@ export function RealTradeProvider({ market, children }: { market: RealTradeMarke
   const statusError = data ? null : (error ?? (failedAt ? (lastError ?? STATUS_FAILED_FALLBACK) : null));
   const readFailed = Boolean(error || refreshError || failedAt);
   const [dialog, setDialog] = useState<RealTradeDialogMode | null>(null);
-  const [disableSent, setDisableSent] = useState(false);
+  // 끄기를 보낸 표시 — null이면 보내지 않음. 끄기 응답의 설정 버전과 그 뒤 끄는 중·꺼짐을 봤는지를 함께 둡니다(RT3-UI-3).
+  const [disableMark, setDisableMark] = useState<DisableSentMark | null>(null);
+  // 지금 상태로 표시를 다음 값으로 — 그리는 그 순간에 계산해 다시 켜진 상태와 옛 안내가 한 화면에 함께 그려지지 않게 하고, 저장은 아래 effect가 맞춥니다.
+  // 같은 상태로 다시 계산해도 값이 같으므로(끄는 중·꺼짐을 봤다는 표시는 남고, 지운 표시는 null) 몇 번 그려도 됩니다.
+  const currentMark = nextDisableSentMark(disableMark, data);
+  const disableSent = currentMark !== null;
   const [notice, setNotice] = useState<string | null>(null);
+  // 끄기 응답이 돌려준 설정 버전(없으면 null) — 그보다 큰 버전의 켜짐·이상 멈춤이 오면 다른 곳에서 다시 켠 것입니다.
+  const disabledVersion = useRef<number | null>(null);
 
-  const disableRequest = useCallback(
-    () => apiPost<RealTradeActionResponse>(endpoints.realtrade.disable, { market } satisfies RealTradeDisableRequest),
-    [market],
-  );
+  const disableRequest = useCallback(async () => {
+    const response = await apiPost<RealTradeActionResponse>(endpoints.realtrade.disable, { market } satisfies RealTradeDisableRequest);
+    disabledVersion.current = typeof response?.version === "number" ? response.version : null;
+    return response;
+  }, [market]);
   const disableAction = useAsyncAction(disableRequest, "실제 매매를 끄지 못했습니다.");
   const runDisable = disableAction.run;
 
   const disable = useCallback(async () => {
     setNotice(null);
-    if (await runDisable()) setDisableSent(true);
+    if (await runDisable()) setDisableMark({ version: disabledVersion.current, sawOff: false });
     // 성공·실패와 관계없이 상태를 다시 읽습니다(끄는 중·꺼짐이 칩에 바로 보이게).
     void reload();
   }, [runDisable, reload]);
+
+  // 계산한 표시를 저장 — 다시 켜짐으로 돌아왔으면 지우고, 끄는 중·꺼짐을 봤으면 그 사실을 남깁니다(끄기 직후 진행 중이던 읽기의 옛 켜짐으로는 지우지 않음).
+  // 함수형 갱신이라 방금 끄기가 세운 표시를 옛 계산값으로 덮지 않고, 표시가 바뀌어도 다시 맞춥니다(같은 값이면 그대로 — 끝없이 돌지 않음).
+  useEffect(() => {
+    setDisableMark((mark) => nextDisableSentMark(mark, data));
+  }, [data, disableMark]);
 
   const openDialog = useCallback((mode: RealTradeDialogMode) => {
     setNotice(null);
@@ -155,7 +172,7 @@ export function RealTradeProvider({ market, children }: { market: RealTradeMarke
           onConflict={() => void reload()}
           onDone={(mode) => {
             setDialog(null);
-            setDisableSent(false);
+            setDisableMark(null);
             setNotice(DONE_TEXT[mode]);
             void reload();
           }}

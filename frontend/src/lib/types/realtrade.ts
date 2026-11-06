@@ -20,7 +20,11 @@ export type RealTradeSourceBook = "kr_rules" | "kr_claude" | "kr_claude2";
 /** 숫자 또는 숫자 글자(BigDecimal) — 모르면 null. */
 export type RealTradeDecimal = number | string | null;
 
-/** 서버 두 스위치(명세 §1의 1·2) — 수집기 `TOSS_TRADING_ENABLED`·백엔드 `REAL_TRADE_ENABLED`. 사유는 수집기 코드(`disabled`·`limits-invalid` …). */
+/**
+ * 서버 두 스위치(명세 §1의 1·2) — 수집기 `TOSS_TRADING_ENABLED`·백엔드 `REAL_TRADE_ENABLED`. 사유는 수집기 코드(`disabled`·`limits-invalid` …).
+ * 백엔드가 수집기 상태를 읽지 못하면 `collector`는 null(모름), 사유는 `status-unreadable`입니다 — 화면은 꺼짐이 아니라 '서버 상태를 읽지 못함 — 다시 읽는 중'으로
+ * 그립니다(RT3-UI-1, lib/realtrade `serverSwitchState`).
+ */
 export interface RealTradeServerEnabled {
   collector: boolean | null;
   backend: boolean | null;

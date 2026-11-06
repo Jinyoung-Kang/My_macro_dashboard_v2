@@ -9,6 +9,9 @@
  *  - 손실 한도 표시(baselineTotal이 오면 상한 없는 총액 기준), 미체결 취소 불가(서버 스위치 꺼짐), 정기 작업 멈춤(기동 뒤 주기 없음·서버 시각 기준),
  *    비상 순서 문구, 취소 포기·결과 모름 건수와 끄기 뒤 안내의 우선순위
  *  - 시각·창·이벤트·건너뜀 표기 — 모르는 코드는 받은 글자 그대로
+ *  - RT3-UI-1: 수집기 상태를 읽지 못함(collector null·사유 status-unreadable)은 '서버에서 꺼짐'이 아니라 '서버 상태를 읽지 못함 — 다시 읽는 중'
+ *    (미체결 취소 불가 판단은 모름을 켜짐으로 보지 않음), 이상 멈춤 사유 collector-disabled 이름표
+ *  - RT3-UI-3: 끄기 뒤 표시는 다시 켜짐으로 돌아오거나(끄는 중·꺼짐을 본 뒤) 끄기 응답보다 큰 버전의 켜짐·이상 멈춤을 받으면 지운다
  */
 import { describe, expect, it } from "vitest";
 import {
@@ -33,13 +36,18 @@ import {
   limitRows,
   lossLimitText,
   lossLine,
+  nextDisableSentMark,
   orderStatusText,
   parseLossLimit,
   realTradeChip,
   realTradeErrorCode,
   realTradeErrorText,
   realTradePnl,
+  SERVER_UNKNOWN_TEXT,
+  serverEnabled,
+  serverSwitchState,
   serverSwitchText,
+  serverUnknownText,
   showDisable,
   skippedText,
   sourceBookLabel,
@@ -383,5 +391,110 @@ describe("표기", () => {
     );
     expect(skippedText({ symbol: "000660", reason: "new-code" })).toBe("000660 — new-code");
     expect(skippedText("글자 하나")).toBe("글자 하나");
+  });
+});
+
+describe("RT3-UI-1: 수집기 상태를 읽지 못함은 꺼짐이 아니라 모름", () => {
+  const UNREADABLE = { collector: null, backend: true, reason: "status-unreadable" };
+  const chip = (over: Record<string, unknown>) =>
+    realTradeChip({ state: "LIVE", haltReason: null, buysPaused: false, serverEnabled: UNREADABLE, ...over });
+
+  it("서버 스위치 상태 — 꺼짐을 확인했으면 off, 둘 다 켜짐이면 on, 수집기를 읽지 못했으면 unknown(사유 status-unreadable이면 받은 값과 관계없이)", () => {
+    expect(serverSwitchState({ serverEnabled: ON })).toBe("on");
+    expect(serverSwitchState({ serverEnabled: { collector: false, backend: true, reason: "disabled" } })).toBe("off");
+    expect(serverSwitchState({ serverEnabled: UNREADABLE })).toBe("unknown");
+    expect(serverSwitchState({ serverEnabled: { ...UNREADABLE, reason: null } })).toBe("unknown");
+    // 백엔드가 아직 collector를 false로 싣더라도 사유가 '읽지 못함'이면 꺼짐으로 단정하지 않습니다.
+    expect(serverSwitchState({ serverEnabled: { collector: false, backend: true, reason: "status-unreadable" } })).toBe("unknown");
+    expect(serverSwitchState({ serverEnabled: { collector: true, backend: true, reason: "status-unreadable" } })).toBe("unknown");
+    // 백엔드 스위치가 꺼졌음을 알면 수집기를 몰라도 꺼짐입니다(주문이 나가지 않음).
+    expect(serverSwitchState({ serverEnabled: { ...UNREADABLE, backend: false } })).toBe("off");
+    expect(serverSwitchState({ serverEnabled: null })).toBe("unknown");
+    // 모름은 켜짐이 아닙니다(취소 불가 판단·켜기 막기).
+    expect(serverEnabled({ serverEnabled: UNREADABLE })).toBe(false);
+    expect(serverEnabled({ serverEnabled: ON })).toBe(true);
+  });
+
+  it("칩 — 켜짐·꺼짐인데 수집기를 모르면 '서버에서 꺼짐' 대신 상태 + '서버 상태를 읽지 못함 — 다시 읽는 중'(경고)", () => {
+    expect(SERVER_UNKNOWN_TEXT).toBe("서버 상태를 읽지 못함 — 다시 읽는 중");
+    expect(chip({})).toEqual({ label: "켜짐 · 서버 상태를 읽지 못함 — 다시 읽는 중", tone: "warn" });
+    expect(chip({ serverEnabled: { collector: false, backend: true, reason: "status-unreadable" } }).label).toBe(
+      "켜짐 · 서버 상태를 읽지 못함 — 다시 읽는 중",
+    );
+    expect(chip({ buysPaused: true }).label).toBe("켜짐 · 매수 멈춤(손실 한도) · 서버 상태를 읽지 못함 — 다시 읽는 중");
+    expect(chip({ state: "OFF" })).toEqual({ label: "꺼짐 · 서버 상태를 읽지 못함 — 다시 읽는 중", tone: "warn" });
+    for (const state of ["LIVE", "OFF"]) expect(chip({ state }).label, state).not.toContain("서버에서 꺼짐");
+    // 꺼짐을 확인한 경우와 멈춤·끄는 중은 그대로입니다.
+    expect(chip({ serverEnabled: { collector: false, backend: true, reason: "disabled" } }).label).toBe("서버에서 꺼짐");
+    expect(chip({ serverEnabled: { ...UNREADABLE, backend: false } }).label).toBe("서버에서 꺼짐");
+    expect(chip({ state: "STOPPING" }).label).toBe("끄는 중");
+    expect(chip({ state: "HALTED", haltReason: "turnover" }).label).toMatch(/^멈춤/);
+  });
+
+  it("서버 스위치 한 줄은 수집기 '모름'과 사유 이름표, 켜기는 '읽지 못해 켤 수 없음 — 다시 읽는 중', 경고 문구는 꺼졌다고 단정하지 않는다", () => {
+    expect(serverSwitchText(UNREADABLE)).toBe("수집기 모름 · 백엔드 켜짐 — 수집기 상태를 읽지 못함(status-unreadable)");
+    expect(serverSwitchText({ collector: false, backend: true, reason: "status-unreadable" })).toBe(
+      "수집기 모름 · 백엔드 켜짐 — 수집기 상태를 읽지 못함(status-unreadable)",
+    );
+    expect(enableBlock({ available: true, supported: true, state: "OFF", serverEnabled: UNREADABLE })).toBe(
+      "서버 스위치 상태를 읽지 못해 켤 수 없습니다 — 다시 읽는 중",
+    );
+    expect(enableBlock({ available: true, supported: true, state: "OFF", serverEnabled: { collector: false, backend: true, reason: "disabled" } })).toBe(
+      "서버 스위치가 꺼져 있어 켤 수 없습니다",
+    );
+    const text = serverUnknownText(UNREADABLE);
+    expect(text.startsWith("서버 상태를 읽지 못함 — 다시 읽는 중(수집기 상태를 읽지 못함(status-unreadable))")).toBe(true);
+    expect(text).toContain("꺼졌다는 뜻은 아닙니다");
+    expect(text).not.toMatch(/꺼져 있어 주문이 나가지 않습니다/);
+  });
+
+  it("미체결 취소 불가 판단(SEC-5)은 모름을 켜짐으로 보지 않는다 — 끄는 중·멈춤·미종료 주문이면 그대로 참", () => {
+    expect(cancelBlocked({ state: "LIVE", serverEnabled: UNREADABLE, unfinishedOrders: 2 })).toBe(true);
+    expect(cancelBlocked({ state: "STOPPING", serverEnabled: UNREADABLE })).toBe(true);
+    expect(cancelBlocked({ state: "HALTED", serverEnabled: UNREADABLE })).toBe(true);
+    expect(cancelBlocked({ state: "LIVE", serverEnabled: UNREADABLE, unfinishedOrders: 0 })).toBe(false);
+  });
+
+  it("이상 멈춤 사유 collector-disabled — 칩·이벤트 내용에 '수집기 매매 스위치가 꺼져 멈춤 — 다시 켜려면 멈춤 해제'", () => {
+    const label = "수집기 매매 스위치가 꺼져 멈춤 — 다시 켜려면 멈춤 해제(collector-disabled)";
+    expect(haltReasonLabel("collector-disabled")).toBe(label);
+    expect(chip({ state: "HALTED", haltReason: "collector-disabled" })).toEqual({ label: `멈춤(${label})`, tone: "danger" });
+    expect(eventDetailText({ reason: "collector-disabled" }, "HALT")).toBe(`사유 ${label}`);
+    expect(eventDetailText({ reason: "repeated-error", code: "collector-http-500" }, "HALT")).toBe("사유 같은 오류 반복(repeated-error)");
+    // 이상 멈춤이 아닌 이벤트의 사유는 받은 코드 그대로입니다.
+    expect(eventDetailText({ reason: "collector-disabled" }, "SKIP_DAY")).toBe("사유 collector-disabled");
+  });
+});
+
+describe("RT3-UI-3: 끄기 뒤 표시는 다시 켜짐으로 돌아오면 지운다", () => {
+  it("끄는 중·꺼짐을 본 뒤 켜짐·이상 멈춤을 받으면 지운다(끄는 중 → 꺼짐은 버전이 올라도 남김 — 정리 끝 안내)", () => {
+    let mark = nextDisableSentMark({ version: 4, sawOff: false }, { state: "STOPPING", version: 4 });
+    expect(mark).toEqual({ version: 4, sawOff: true });
+    mark = nextDisableSentMark(mark, { state: "OFF", version: 5 });
+    expect(mark).toEqual({ version: 4, sawOff: true });
+    expect(nextDisableSentMark(mark, { state: "LIVE", version: 6 })).toBeNull();
+    expect(nextDisableSentMark({ version: null, sawOff: true }, { state: "LIVE", version: null })).toBeNull();
+    expect(nextDisableSentMark({ version: null, sawOff: true }, { state: "HALTED", version: 9 })).toBeNull();
+  });
+
+  it("꺼짐 쪽을 보지 못했어도 끄기 응답보다 큰 버전의 켜짐이면 지운다 — 같거나 작은 버전의 켜짐(끄기 직후 진행 중이던 읽기)은 남긴다", () => {
+    const sent = { version: 4, sawOff: false };
+    expect(nextDisableSentMark(sent, { state: "LIVE", version: 3 })).toBe(sent);
+    expect(nextDisableSentMark(sent, { state: "LIVE", version: 4 })).toBe(sent);
+    expect(nextDisableSentMark(sent, { state: "LIVE", version: 6 })).toBeNull();
+    expect(nextDisableSentMark(sent, { state: "HALTED", version: 5 })).toBeNull();
+    // 끄기 응답에 버전이 없거나 상태에 버전이 없으면 꺼짐 쪽을 본 뒤에만 지웁니다.
+    expect(nextDisableSentMark({ version: null, sawOff: false }, { state: "LIVE", version: 9 })).toEqual({ version: null, sawOff: false });
+    expect(nextDisableSentMark(sent, { state: "LIVE", version: null })).toBe(sent);
+  });
+
+  it("보내지 않았거나 상태가 없거나 모르는 상태면 그대로", () => {
+    expect(nextDisableSentMark(null, { state: "LIVE", version: 9 })).toBeNull();
+    const sent = { version: 4, sawOff: false };
+    expect(nextDisableSentMark(sent, null)).toBe(sent);
+    expect(nextDisableSentMark(sent, { state: null, version: null })).toBe(sent);
+    expect(nextDisableSentMark(sent, { state: "SOMETHING_NEW", version: 9 })).toBe(sent);
+    const seen = { version: 4, sawOff: true };
+    expect(nextDisableSentMark(seen, { state: "OFF", version: 5 })).toBe(seen);
   });
 });

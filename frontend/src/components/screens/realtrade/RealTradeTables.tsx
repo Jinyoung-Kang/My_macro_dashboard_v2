@@ -48,7 +48,7 @@ export function RealTradeOrders({ rows }: { rows: readonly RealTradeOrderRow[] }
 const EVENT_COLUMNS: readonly Column<RealTradeEvent>[] = [
   { key: "at", header: "시각", cell: (row) => formatKst(row.at) },
   { key: "kind", header: "일", cell: (row) => eventKindLabel(row.kind) },
-  { key: "detail", header: "내용", cell: (row) => eventDetailText(row.detail) },
+  { key: "detail", header: "내용", cell: (row) => eventDetailText(row.detail, row.kind) },
 ];
 
 /** 이벤트(최근 30) — 켜기·끄기·멈춤·창 요약·비밀번호 틀림 등. 내용은 용도·사유 코드·건수만 적습니다. */
