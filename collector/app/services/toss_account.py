@@ -15,6 +15,8 @@ app/services/toss_account.py
     ``error.code``만 싣습니다.
   - 토큰 보호 — 401은 ``expired-token``·``token-revoked``·``invalid-token``일 때만, 그것도 10분에 한 번만 재발급합니다.
     429는 잠들지 않고 바로 실패합니다(수집기 요청 스레드를 붙잡지 않게).
+  - 실제 매매(services/toss_trade, ADR 0028)와 나눠 쓰는 것 — 그룹별 속도 조절(services/toss_ratelimit), 10분 재발급 창,
+    accountSeq(:func:`account_seq`).
 
 캐시(명세 §2)
   - 성공은 60초 동안 그대로 씁니다. 갱신은 호출이 **모두** 성공해야 캐시를 바꿉니다(새 값과 옛 값을 섞지 않음).
@@ -31,7 +33,7 @@ from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
 from .. import settings
-from . import toss
+from . import toss, toss_ratelimit
 
 logger = logging.getLogger(__name__)
 
@@ -123,6 +125,18 @@ class _AccountNotFound(_Failure):
     """토스 ``account-not-found`` — 기억한 accountSeq를 버리고 /accounts를 한 번 다시 부릅니다."""
 
 
+class AccountUnavailable(Exception):
+    """
+    :func:`account_seq`가 accountSeq를 정하지 못함 — ``reason``(no-account·upstream-error·timeout …)과 형식이 맞는 토스
+    ``code``만 담습니다. 계좌번호·accountSeq·토스 message는 담지 않습니다.
+    """
+
+    def __init__(self, reason: str, code: str | None = None) -> None:
+        super().__init__(reason)
+        self.reason = reason
+        self.code = code
+
+
 class _State:
     def __init__(self) -> None:
         self.entry: dict | None = None          # {"data", "mono"(받은 시각, 단조), "fetchedAt"(KST 문자열)}
@@ -135,6 +149,7 @@ class _State:
 
 _refresh_lock = threading.Lock()   # 갱신은 한 번에 하나 — acquire(blocking=False)로만 잡습니다
 _state_lock = threading.Lock()
+_seq_lock = threading.Lock()       # account_seq()의 계좌 찾기는 한 번에 하나 — 기다린 쪽은 찾은 값을 그대로 씀
 _state = _State()
 
 
@@ -280,6 +295,31 @@ def get_account() -> dict:
         _refresh_lock.release()
 
 
+def account_seq(*, stale: int | None = None, budget_seconds: float = REFRESH_BUDGET_SECONDS) -> int:
+    """
+    BROKERAGE 계좌가 정확히 하나일 때 그 accountSeq — 실제 매매(services/toss_trade, ADR 0028)가 계좌 헤더에 씁니다.
+
+    기억한 값이 있으면 다시 부르지 않고 그 값을 씁니다(계좌 조회와 같은 칸). 찾기는 잠금 안에서 한 번에 하나이고, 기다린 쪽은
+    앞선 쪽이 찾은 값을 씁니다. 값은 헤더로만 쓰고 응답·로그에 싣지 않습니다.
+
+    :param stale: 토스가 ``account-not-found``로 거절한 값. 기억한 값이 아직 이것이면 버리고 /accounts를 다시 부릅니다
+        (그사이 다른 쪽이 다시 찾았으면 그 값을 씀)
+    :param budget_seconds: 찾기(/accounts 한 번)에 쓸 시간 상한
+    :raises AccountUnavailable: 찾지 못함(계좌가 0개·2개 이상, 토스 실패, 시간 초과)
+    """
+    with _seq_lock:
+        current = _state.account_seq
+        if current is not None and current != stale:
+            return current
+        _state.account_seq = None
+        try:
+            seq = _discover(toss._http(), _monotonic() + budget_seconds)
+        except _Failure as failure:
+            raise AccountUnavailable(failure.reason, failure.code) from None
+        _state.account_seq = seq
+        return seq
+
+
 # ==============================================================================
 # 호출 — 모두 toss._authorized_get(GET) 한 길
 # ==============================================================================
@@ -322,6 +362,10 @@ def _call(session, path: str, params: dict | None, seq: int | None, deadline: fl
     remaining = deadline - _monotonic()
     if remaining <= 0:
         raise _Failure("timeout")
+    # 실제 매매(toss_trade)와 함께 쓰는 그룹별 속도 조절(ADR 0028) — 기다림이 상한(남은 예산)을 넘으면 보내지 않음
+    if not toss_ratelimit.acquire(toss_ratelimit.group_for("GET", path),
+                                  min(toss_ratelimit.MAX_WAIT_SECONDS, remaining)):
+        raise _Failure("rate-limited")
     headers = {toss.ACCOUNT_HEADER: str(seq)} if seq is not None else None
     timeout = (min(CONNECT_TIMEOUT_SECONDS, remaining), min(READ_TIMEOUT_SECONDS, remaining))
     try:

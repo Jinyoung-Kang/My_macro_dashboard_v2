@@ -21,6 +21,7 @@ app/main.py
 from __future__ import annotations
 
 import hmac
+import json
 import logging
 import os
 import re
@@ -31,7 +32,8 @@ from zoneinfo import ZoneInfo
 from apscheduler.schedulers.background import BackgroundScheduler
 import psycopg
 from psycopg_pool import PoolTimeout
-from fastapi import BackgroundTasks, FastAPI, Header, HTTPException, Query
+from fastapi import BackgroundTasks, FastAPI, Header, HTTPException, Query, Request
+from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import JSONResponse
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
@@ -46,6 +48,7 @@ from .services import (
     radar as radar_service,
     toss as toss_service,
     toss_account as toss_account_service,
+    toss_trade as toss_trade_service,
 )
 
 logging.basicConfig(
@@ -634,3 +637,104 @@ def toss_account(
     except Exception as exc:  # noqa: BLE001
         logger.warning("토스 계좌 조회 중 예상 못 한 예외: %s", type(exc).__name__)
         return toss_account_service.empty_view(enabled=settings.toss_account_enabled(), reason="internal")
+
+
+# ==============================================================================
+# 실제 매매 — 수집기 쪽 주문 길(ADR 0028, 명세 docs/specs/2026-11-06-real-trade-mirror.md §5.2). 백엔드 전용
+# ==============================================================================
+# 토큰 검사 뒤에는 늘 200입니다. 서비스 토큰 없이 뜬 수집기(COLLECTOR_ALLOW_NO_TOKEN)에서는 막을 문이 없으므로 토스를 부르지 않고
+# {"ok": false, "enabled": false, "reason": "no-service-token"}입니다. 본문 전체를 감싸 예상 못 한 예외는 클래스 이름만 남깁니다.
+def _trading_read(call, *args) -> dict:
+    if not API_TOKEN:
+        return toss_trade_service.no_service_token_view()
+    try:
+        return call(*args)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("토스 매매 조회 중 예상 못 한 예외: %s", type(exc).__name__)
+        return {"ok": False, "enabled": settings.toss_trading_disabled_reason() is None, "reason": "internal"}
+
+
+def _trading_write(kind: str, call, *args) -> dict:
+    if not API_TOKEN:
+        return toss_trade_service.no_service_token_write(kind)
+    try:
+        return call(*args)
+    except Exception as exc:  # noqa: BLE001 — 보냈는지 모르는 자리일 수 있어 UNKNOWN(모르면 멈춤)
+        logger.warning("토스 매매 주문 중 예상 못 한 예외: %s", type(exc).__name__)
+        return toss_trade_service.write_result(kind, toss_trade_service.UNKNOWN, "internal")
+
+
+@app.get("/toss/trading/status")
+def toss_trading_status(x_service_token: str | None = Header(default=None)) -> dict:
+    """켜짐 여부·꺼진 사유·한도·토큰 경합·서버 시각. 토스를 부르지 않습니다."""
+    _check_token(x_service_token)
+    return _trading_read(toss_trade_service.status)
+
+
+@app.get("/toss/trading/calendar")
+def toss_trading_calendar(x_service_token: str | None = Header(default=None)) -> dict:
+    """그날 토스 장 운영 정보(통합 모드)와 시계 차이 — KST 날짜마다 한 번 받아 둡니다."""
+    _check_token(x_service_token)
+    return _trading_read(toss_trade_service.calendar)
+
+
+@app.post("/toss/trading/warmup")
+def toss_trading_warmup(x_service_token: str | None = Header(default=None)) -> dict:
+    """토큰 남은 시간이 30분 미만이면 미리 다시 받습니다(백엔드가 창마다 3분 전에 부름)."""
+    _check_token(x_service_token)
+    return _trading_read(toss_trade_service.warmup)
+
+
+@app.get("/toss/trading/preflight")
+def toss_trading_preflight(
+    symbols: str = Query("", max_length=2000),
+    sell: str = Query("", max_length=2000),
+    x_service_token: str | None = Header(default=None),
+) -> dict:
+    """캐시 없이 새로 읽은 원화 매수 가능 금액·국내 보유·시세·매도 가능 수량. 하나라도 실패하면 ok:false."""
+    _check_token(x_service_token)
+    return _trading_read(toss_trade_service.preflight, symbols, sell)
+
+
+@app.post("/toss/trading/orders")
+async def toss_trading_order(request: Request, x_service_token: str | None = Header(default=None)) -> dict:
+    """
+    주문 한 건 — 수집기 검사를 모두 통과해야 보냅니다. 결과 outcome은 ACCEPTED·REJECTED·UNKNOWN·NOT_SENT(명세 §4).
+
+    본문을 직접 읽습니다 — JSON이 아니어도 422가 아니라 200 NOT_SENT(invalid-request)로 답해, 백엔드가 '보내지 않음'을 확실히 알게.
+    """
+    _check_token(x_service_token)
+    raw = await request.body()
+    try:
+        payload = json.loads(raw) if raw else None
+    except (ValueError, RecursionError):
+        payload = None
+    return await run_in_threadpool(_trading_write, "order", toss_trade_service.place_order, payload)
+
+
+@app.post("/toss/trading/orders/{order_id}/cancel")
+def toss_trading_cancel(order_id: str, x_service_token: str | None = Header(default=None)) -> dict:
+    """주문 취소 — 주문 번호 형식이 틀리면 보내지 않습니다(NOT_SENT)."""
+    _check_token(x_service_token)
+    return _trading_write("cancel", toss_trade_service.cancel_order, order_id)
+
+
+@app.get("/toss/trading/orders/open")
+def toss_trading_open_orders(x_service_token: str | None = Header(default=None)) -> dict:
+    """진행 중 국내 주문 전량(앱 주문 포함)."""
+    _check_token(x_service_token)
+    return _trading_read(toss_trade_service.open_orders)
+
+
+@app.get("/toss/trading/orders/today")
+def toss_trading_today_orders(x_service_token: str | None = Header(default=None)) -> dict:
+    """오늘(KST) 국내 주문 전부(진행 중 + 끝남)."""
+    _check_token(x_service_token)
+    return _trading_read(toss_trade_service.today_orders)
+
+
+@app.get("/toss/trading/orders/{order_id}")
+def toss_trading_order_detail(order_id: str, x_service_token: str | None = Header(default=None)) -> dict:
+    """주문 하나(어느 상태든). 위의 open·today보다 뒤에 두어야 그 두 경로가 이 경로에 먹히지 않습니다."""
+    _check_token(x_service_token)
+    return _trading_read(toss_trade_service.order_detail, order_id)

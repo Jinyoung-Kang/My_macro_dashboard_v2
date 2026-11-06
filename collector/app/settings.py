@@ -238,6 +238,63 @@ def toss_account_enabled() -> bool:
     return (os.environ.get("TOSS_ACCOUNT_ENABLED") or "").strip() == "true"
 
 
+# 실제 매매 한도(ADR 0028, 명세 docs/specs/2026-11-06-real-trade-mirror.md §1) — (응답 이름, 환경변수, 최솟값, 최댓값 또는 None).
+# 1건 상한은 1억 미만 — 1억 이상 주문은 토스가 confirmHighValueOrder를 요구하는데, 이 기능은 그 값을 보내지 않습니다.
+TOSS_TRADING_LIMITS = (
+    ("maxOrderKrw", "TOSS_TRADING_MAX_ORDER_KRW", 1, 99_999_999),
+    ("maxOrdersPerDay", "TOSS_TRADING_MAX_ORDERS_PER_DAY", 1, 200),
+    ("maxBuyKrwPerDay", "TOSS_TRADING_MAX_BUY_KRW_PER_DAY", 1, None),
+    ("maxEquityKrw", "TOSS_TRADING_MAX_EQUITY_KRW", 1, None),
+)
+_PLAIN_INT_DIGITS = frozenset("0123456789")
+
+
+def toss_trading_switch() -> bool:
+    """
+    실제 매매 수집기 스위치(``TOSS_TRADING_ENABLED``) — 앞뒤 공백을 뺀 뒤 **정확히** ``true``일 때만 켬(``1``·``yes``·``TRUE``는 끔).
+
+    :func:`toss_account_enabled`와 같은 규칙입니다(secrets.toml·get_secret은 보지 않음 — 기반 compose는 ``"false"`` 고정).
+    매매가 실제로 켜지는지는 이 값만이 아니라 :func:`toss_trading_disabled_reason`이 정합니다.
+    """
+    return (os.environ.get("TOSS_TRADING_ENABLED") or "").strip() == "true"
+
+
+def toss_trading_limits() -> dict[str, int] | None:
+    """
+    실제 매매 한도 네 값(``TOSS_TRADING_MAX_*``). 하나라도 없거나, 부호·소수점·밑줄 없는 십진 정수가 아니거나, 범위 밖이면 None.
+
+    잘못 적은 값을 기본값으로 바꾸지 않습니다 — 돈이 움직이는 상한이라, 틀리면 매매를 끄는 쪽(``limits-invalid``)으로 갑니다.
+    """
+    limits: dict[str, int] = {}
+    for name, env_name, low, high in TOSS_TRADING_LIMITS:
+        raw = (os.environ.get(env_name) or "").strip()
+        if not raw or len(raw) > 15 or not set(raw) <= _PLAIN_INT_DIGITS:
+            return None
+        value = int(raw)
+        if value < low or (high is not None and value > high):
+            return None
+        limits[name] = value
+    return limits
+
+
+def toss_trading_disabled_reason() -> str | None:
+    """
+    실제 매매 수집기 쪽이 꺼진 사유. 모두 맞으면 None(켜짐) — 명세 §1의 첫째 스위치.
+
+    순서대로 ``disabled``(TOSS_TRADING_ENABLED) → ``account-disabled``(TOSS_ACCOUNT_ENABLED) → ``no-service-token``
+    (COLLECTOR_API_TOKEN이 빔) → ``limits-invalid``(:func:`toss_trading_limits`).
+    """
+    if not toss_trading_switch():
+        return "disabled"
+    if not toss_account_enabled():
+        return "account-disabled"
+    if not os.environ.get("COLLECTOR_API_TOKEN", ""):
+        return "no-service-token"
+    if toss_trading_limits() is None:
+        return "limits-invalid"
+    return None
+
+
 # ---- 국내 공공 API --------------------------------------------------------------
 # 공공데이터포털(data.go.kr)은 계정 하나에 인증키 하나이고, 활용 신청한 서비스마다
 # 같은 키를 씁니다. 그래서 특일정보·주식시세가 한 값을 공유합니다.

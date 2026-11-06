@@ -89,6 +89,24 @@ def get_access_token() -> tuple[str | None, str | None]:
         return _issue_token()
 
 
+def refresh_token(stale: str | None = None) -> tuple[str | None, str | None]:
+    """
+    (토큰, 오류 메시지) — 토큰을 미리 다시 받습니다(토스 매매의 미리 받기, services/toss_trade.warmup).
+
+    캐시를 먼저 비우지 않습니다. 발급에 성공했을 때만 캐시를 바꾸므로(:func:`_issue_token`), 토스 인증이 잠깐 실패해도
+    아직 유효한 옛 토큰으로 주문·취소를 계속 보낼 수 있습니다. 401 때문에 버리는 경로(:func:`_invalidate_token`)와는 다릅니다.
+
+    :param stale: 미리 받기 전에 본 토큰. 발급 차례를 기다리는 동안 다른 곳이 이미 새 토큰을 받아 캐시가 바뀌었으면 다시
+                  발급하지 않고 그 토큰을 돌려줍니다(client당 유효 토큰 1개 — 방금 받은 토큰을 무효로 만들지 않게)
+    """
+    with _issue_lock:
+        with _lock:
+            current = _token_cache
+        if stale is not None and current is not None and current[0] != stale and current[1] > time.time():
+            return current[0], None
+        return _issue_token()
+
+
 def _issue_token() -> tuple[str | None, str | None]:
     global _token_cache
     client_id, client_secret = settings.toss_credentials()
