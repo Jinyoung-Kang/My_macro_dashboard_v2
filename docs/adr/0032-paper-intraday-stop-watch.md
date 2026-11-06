@@ -1,11 +1,25 @@
 # 0032. 모의 장중 스탑 감시(미국·한국): 정규장 5분마다 보유 종목을 보고 트레일링 스탑선 아래가 두 번 이어지면 감지 2분 뒤 시장가 매도, 개장 10분 전에는 팔지 않음, 기업행위 갭 가드, 세 단계 스위치(OFF·SHADOW·ON), 기존 시간별·밤 스탑은 대체 경로로 남김
 
-- 상태: **초안** (2026-11-06 밤 사용자 요청과 결정 — "한국에도 미국처럼 장중 감시(스탑 매매)를 켜고 토스·ISA에도 적용", 질문 답 "5분 감시 · 두 번 연속 · 감지 다음 분 시장가 ·
-  개장 10분 전에는 팔지 않음", 계획 승인). 구현은 브랜치 `claude/intraday-timing-2026-11`에서 하고, 배포·설정 저장이 끝나면 '채택'으로 바꾸고 시험 이름을 적습니다.
-- 바꾸는 결정: 모의매매 명세 D10(트레일링 스탑 감지 시점 — 미국 시간별 관측치, 한국 밤 잠정 평가가 → 다음 거래일 시가)과 [ADR 0021](0021-kr-paper-prices-fills-start.md)의 한국 스탑 체결 시점.
+- 상태: 채택 (2026-11-06 밤 사용자 요청과 결정 — "한국에도 미국처럼 장중 감시(스탑 매매)를 켜고 토스·ISA에도 적용", 질문 답 "5분 감시 · 두 번 연속 · 감지 다음 분 시장가 ·
+  개장 10분 전에는 팔지 않음", 계획 승인). **구현 끝, 배포 전**(브랜치 `claude/intraday-timing-2026-11`, 2026-11-07 — 설정 키 `e5ebaeee`, 수집기·판정기·작업·장부·대체 경로·매수 거절
+  `0ddc66d8`~`05b1c302`, 스탑 설명 글 `135ddba7`). 배포는 2026-11-08 23:30 KST 예정이고, 스위치 기본값이 `OFF`라 배포만으로는 수집·판정·주문이 없습니다. 배포 커밋과 스위치를 저장한 설정 판은
+  배포 뒤 이 줄에 적습니다.
+- 바꾸는 결정: 모의매매 명세 D10(트레일링 스탑 감지 시점 — 미국 시간별 관측치, 한국 밤 잠정 평가가 → 다음 거래일 시가)과 [ADR 0021](0021-kr-paper-prices-fills-start.md) 결정 2의 한국 스탑 체결 시점(스위치를 켠 시장에 한해).
   스탑 비율(`trailingStopPct`·`kr.trailingStopPct`)·재진입 금지·현금성 제외는 그대로다.
 - 함께 보는 결정: [ADR 0031](0031-open-offset-window-intraday-budget.md)(개장 10분 뒤 창, 사건 판정이 이 저장본을 읽음), [ADR 0033](0033-real-isa-open-offset-and-stops.md)(실제 토스 계좌·ISA가 이 스탑을 따름),
-  [ADR 0008](0008-backend-owned-tables-and-scheduled-jobs.md)(수집기는 백엔드 표를 읽기만).
+  [ADR 0008](0008-backend-owned-tables-and-scheduled-jobs.md)(수집기는 백엔드 표를 읽기만), [ADR 0018](0018-paper-trading-guardrails.md)(실험 조건 경계 기록).
+- 지키는 방법:
+  - 수집기: `test_paper_stopwatch.py`(OFF·키 없음이면 호출 0회, 창 밖·주말·보유 없음·slow 군·래치면 묻지 않음, spark 줄 해석, 거부 뒤 두 회차 쉼, 휴장·조기 폐장 배우기, 한국 호출 상한·403·토스 키 없음,
+    범위는 운용 중이고 벤치마크가 아닌 책의 보유를 읽기만), `test_task_registry.py`(44), `test_yahoo_budget.py`, `test_toss_call_budget.py`(한국 감시 상한·시각 지정 1분봉 240과 문서 대조),
+    `test_table_ownership.py`(백엔드 표는 읽기만), 데이터셋 이름 대조 `DatasetsParityTest`.
+  - 판정·작업: `StopWatchTest`(두 번 이어짐·한국 봉 끝 라벨·묵은·다른 세션 항목·0.2주 무상증자형 갭·원시와 수정 종가 불일치·미국 분할 갭·창·한국 밤), `PaperStopWatchJobTest`
+    (`onPlacesOneStop`·`shadowAndOff`·`exclusionsAndGuard`·`windowAndLateSnapshot`·`missedGridsAreJudgedFromTheNextSnapshot`·`koreaGapGuardAndUnknownCalendar`·`koreaWatermarkAndHolds`), `PaperDecisionJobTest.schedulerPoolIsEight`.
+  - 장부·대체 경로: `StopWatchLedgerTest`(장중 시장가·종가 STOP 체결과 재진입 금지, 한국 장중 STOP은 금융위 재판정 없음, 늦은 주문 가드 ⑤), `StopWatchFallbackTest`(미국 — 덮인 종목은 감시에 맡김·덮이지 않은
+    종목은 시간별 스탑·OFF와 SHADOW는 옛 경로·대기 STOP을 겹쳐 내지 않음, 한국 — 덮이지 않은 종목은 다음 세션 첫 분·장 시간 변경일·SHADOW는 시가 스탑).
+  - 새 매수 거절: `KrClaudeValidationTest.pendingWatchStopBlocksNewBuys`, `KrRuleBookServiceTest.pendingWatchStopKeepsTheCandidateOut`.
+  - 스탑 설명 글(켰을 때만): `PacketBuilderTest.stopWatchOnPackets`, `KrPacketBuilderTest.stopWatchOnPacket`, `FrameworkServiceTest.krStopWatchOnRender`, `CheckpointPacketTest.stopWatchOnIntradayPacket`,
+    고정본 `packet-us-ft-claude2-stopwatch-scheduled.json`·`packet-kr-ft-stopwatch-scheduled.json`·`render-kr-ft-claude-v0-stopwatch.txt` — 기본 설정(OFF)의 고정본은 모두 그대로.
+  - 설정·화면: `PaperSettingsServiceTest.stopWatchAndIntradayPolicyKeys`(기본 OFF, 세 값만 받음, 규칙 계좌 영향 키), `KrRuleBookServiceTest.affectsRulesMatchesTheKeysRead`, 화면 `paperStopWatch.test.ts`.
 
 ## 배경
 트레일링 스탑은 지금 미국은 시간별 관측치(매시)로, 한국은 밤 잠정 평가가로 감지해 다음 거래일 시가에 판다. 장중에 스탑선을 깊이 뚫어도 한국은 다음 날 아침까지, 미국은 다음 관측치까지 기다린다.
@@ -25,7 +39,8 @@
 7. **대체 경로를 남긴다**: 감시가 덮지 못한 종목(수집 실패·가드 제외·감시 꺼짐)은 기존 경로가 판다 — 미국은 시간별 관측치, 한국은 밤 감지 뒤 다음 세션 개장 10분 뒤 `AT_MINUTE`.
 8. **대기 STOP 종목에는 새 매수를 거절한다**(Claude 검증기·규칙 계좌 후보).
 9. **스키마 변경 없음**: STOP + MARKET·AT_MINUTE·NEXT_CLOSE 조합은 기존 CHECK(V8·V22)가 받는다. 판정 근거는 `paper_orders.reason` JSON과 `paper_job_runs`에 남긴다.
-10. **운영 값**: 백엔드 정기 작업 스레드 6 → 8, 한국 시각 지정 1분봉 호출 예산 180 → 240. 켠 판 프롬프트·패킷은 감시가 `ON`일 때만 스탑 설명 글과 `1_basis.stopWatch`를 싣는다(끈 판 고정본 그대로).
+10. **운영 값**: 백엔드 정기 작업 스레드 6 → 8, 한국 시각 지정 1분봉 호출 예산 180 → 240. 감시가 `ON`인 시장의 Claude 결정 패킷은 스탑 설명 글과 `1_basis.stopWatch`를 싣는다
+    (기본 설정 `OFF`의 고정본은 그대로 — 아래 '구현에서 정한 것').
 11. **배포 뒤 저장**: 미국 `stopWatch.mode=ON`, 한국 `kr.stopWatch.mode=ON`(사용자 결정 — 하루 SHADOW 권장 대신 바로 켬, ADR 0033). 시장별로 따로, 그때 사용자에게 다시 확인받는다.
 
 ## 이유
@@ -37,9 +52,40 @@
 - **켜고 끄기 두 단계**: 로컬 스택(복원 데이터)도 미국 장중에 외부를 부르고, 실제 계좌에 닿기 전 하루 관찰(SHADOW)을 할 수 없다.
 - **기준 종가 × 0.69 가드만**: 0.2주 무상증자(약 −17%)를 못 잡아 −8% 스탑이 걸린다.
 - **미국 감시를 종목별 요청으로**: 세션당 요청 수가 spark 배치의 약 20배라 429 위험이 크다.
+- **미국 대체 경로도 대기 STOP으로**: 시간별 관측치에서 즉시 파는 지금 경로가 이미 시험되어 있고, 덮이지 않은 종목만 남으므로 그대로 둔다.
+
+## 구현에서 정한 것 (2026-11-07 — 위 결정과 다르면 이쪽이 맞음)
+- **수집**(`collector/app/tasks/paper_stopwatch.py`, session 군 — 매 5분 :20초, 저장본 `paper.stopwatch.us`·`paper.stopwatch.kr` contract 1): 창은 그 세션 개장 + 4분 ~ 장 끝 여유 앞 + 1분
+  (미국 09:34~15:56 ET, 한국 09:04~15:21 KST, 수능일 같은 장 시간 변경일은 `kr.calendar.openTimeOverrides`의 그날 개장·마감 — 10:04~16:21). 범위는 운용 중이고 벤치마크가 아닌 책의 보유 + 기준 종목
+  (미국 SPY·한국 069500 — 지연과 지수 사건의 입력). 미국은 Yahoo spark(`range=1d`·`interval=1m`, 20종목 한 요청)이고, 2026-11-06 장중 실측으로 응답은 종가와 봉 시작 시각뿐(거래량 없음)이며
+  진행 중인 봉은 분에 맞지 않는 시각으로 온다 — 그래서 미국의 '거래 봉'은 종가가 있는 봉이고 갭 가드의 '첫 봉 시가'는 첫 분 종가로 대신한다. 미국 휴장·조기 폐장은 첫 응답의 SPY로 배운다.
+  거부(403·429)를 받으면 다음 두 회차를 쉰다(spark 호스트 래치는 yfinance 래치를 닫지 않음). 한국은 토스 1분봉(원시가, 200개 한 쪽)과, 그 세션에 처음 보는 종목만 토스 일봉 원시·수정 각 한 쪽
+  (전일 종가 — 같은 세션 안에서는 직전 항목에서 이어 씀). 실행당 상한 120회·40초. 받지 못한 종목은 같은 세션의 직전 항목을 잇고 `isStale`(다른 세션 항목은 잇지 않음).
+- **판정**(`StopWatch` — 저장본 한 장만 보는 순수 함수, `PaperStopWatchJob` — 20초 주기, 판정 창 개장 10분 뒤 ~ 마감 5분 뒤, 장부 잠금 안, Claude 호출 없음): 격자 G = 개장 + 5분 × k, 끝은
+  마감 − 장 끝 여유(미국 15:55 ET, 한국 15:20). 격자의 가격은 그 5분의 마지막 거래 봉 종가(미국 봉 시작 [G − 5분, G − 1분], 한국 봉 끝 (G − 5분, G]). 첫 격자는 앞 격자가 없어 가장 이른 판정이
+  개장 + 10분이다. 주문 시점 T는 감지(주문 생성) + 60초 뒤 첫 분(`ExecutionAudit.marketTarget`)이고, T가 그 세션 첫 분 앞이면 첫 분의 `AT_MINUTE`, 장 끝 여유 안이면 그날 `NEXT_CLOSE`, 그 밖은
+  `MARKET`이다. 만료는 그 세션이다. 감시 회차를 쉬었어도(slow 군·래치) 다음 저장본의 40분 봉으로 빠진 격자를 판정한다(재기동 직후에는 가장 최근 격자만). 새 저장본이 없으면 판정하지 않고,
+  첫 판정 격자 + 15분이 지나도 없으면 그 세션에 한 번 '늦음'을 작업 기록에 남긴다(그동안은 대체 경로가 지킴). 판정 중 예외가 나면
+  본 저장본 표시를 남기지 않아 같은 저장본을 다시 보고, 달력이 그 해를 모르면 오류 없이 건너뛴다. 한국 최고가는 금융위 확정 종가를 반영한 유효 최고가다.
+- **갭 가드 수치**: 첫 봉 ≤ 전일 원시 종가 × 0.85, 한국 토스 일봉 전일 원시·수정 종가 차이 > 0.5%, 미국 Yahoo `previousClose`와 장부 전일 종가(`fill_ref_close` — 기준일이 직전 거래일일 때) 차이 > 2%.
+  가드를 판단할 자료(첫 봉·전일 종가)가 없으면 그 종목은 판정하지 않는다. 저장본에 전일 종가가 아직 없으면 장부 종가로 0.85 검사만 한다(원시·수정 대조는 빠짐).
+- **덮음과 대체 경로**(`ON`일 때만 — `SHADOW`의 장부 동작은 `OFF`와 같음): 그 세션 항목이 이어받지 않은 새 값이고 가드가 판단되어 통과했고 min(그 시각, 격자 끝) − 10분 뒤의 거래 표본이 있으면
+  감시가 그 종목을 '덮었다'고 본다. 미국 시간별 스탑은 덮인 종목을 건너뛰고, 덮이지 않은 종목은 예전처럼 즉시 스탑을 내되 근거에 `stopMode HOURLY_FALLBACK`을 붙인다. 한국 밤 감지는 덮인 종목을
+  다음 세션 감시에 맡기고(밤 잠정 종가 한 번으로 내지 않음), 덮이지 않은 종목은 다음 세션 첫 분(09:10, 수능일 10:10 — `RuleTiming.reissueAt`)의 `AT_MINUTE` STOP(`stopMode NIGHT_FALLBACK`, 기준일 D,
+  만료 D + 3거래일, 체결 때 금융위 재판정)을 낸다. 그 시각이 이미 지났으면 예전처럼 `NEXT_OPEN`이다. 대기 STOP이 있는 종목은 스위치와 상관없이 다시 내지 않는다.
+- **체결**: 대기 STOP 체결은 장부 결과에서 즉시 스탑과 같은 칸(`stopped`)으로 센다. 감시 STOP의 근거는 `stopMode INTRADAY_WATCH`와 감지 격자·가격이다.
+- **새 매수 거절**: Claude 검증기는 감시 기능이 낸 대기 STOP(`INTRADAY_WATCH`·`NIGHT_FALLBACK`)의 종목만 재진입 금지처럼 거절한다 — 감시를 켜기 전부터 있던 한국 밤 감지 STOP(`stopMode` 없음)은
+  넣지 않아 끈 판 검증 결과가 그대로다. 규칙 계좌 두 곳은 이미 대기 매도가 있는 종목을 매수 후보에서 뺀다(QA-196 — 시험으로만 고정).
+- **스탑 설명 글**(`ON`일 때): 그 시장의 모든 Claude 결정 패킷(끈 판 계좌1·한국 비 자유 시점 판 포함 — 스탑 동작이 시장 단위라서)에 스탑 문장과 `1_basis.stopWatch`를 싣고, 대기 감시 STOP 종목을
+  `12_hardRules.lockedOut`에 넣는다(검증기의 거절과 같음). 한국 시스템 프롬프트의 하드 규칙 스탑 줄(`FrameworkService.krHardRules` — 주간 복기 프롬프트도 씀)은 `kr.stopWatch.mode`가 `ON`일 때만 바뀐다
+  (켜는 저장 뒤 프롬프트 캐시가 한 번 새로 쓰임). 미국 시스템 프롬프트의 '(코드가 집행)' 줄은 여전히 맞아 바꾸지 않았다. 장중 판단 패킷은 켠 판 쪽만 `1_basis.stopWatch`(미국은 `6_hardRules` 감시 줄도)를 싣는다.
+- **운영 값**: 한국 감시 수집 실행당 120회·40초는 시각 지정 1분봉(`kr_paper_timed`, 240)과 따로 센다.
 
 ## 결과와 남은 위험
-- 대조군(규칙 계좌)의 스탑 시점이 바뀐다 — 실험 조건 변경으로 ADR 0018에 적는다.
-- 미국 Yahoo 1분봉 지연 때문에 감지가 몇 분 늦을 수 있다(저장본의 지연 값으로만 앎). 첫 주에 429 횟수를 잰다.
-- 감시와 장중 판단(사건 '스탑 2% 안')이 같은 종목을 함께 팔려 할 수 있다 — 장부가 남은 수량 0의 매도를 거절·만료로 처리하는지 시험한다.
-- 되돌리기: `stopWatch.mode`·`kr.stopWatch.mode`를 `OFF`로(몇 초). 남은 대기 STOP은 옛 사다리로 체결된다.
+- 대조군(규칙 계좌)의 스탑 시점이 바뀐다 — 실험 조건 변경으로 ADR 0018에 적었다. 켠 시장의 Claude 패킷·한국 시스템 프롬프트도 바뀐다.
+- 미국 Yahoo 1분봉 지연 때문에 감지가 몇 분 늦을 수 있다(저장본의 지연 값으로만 앎). 첫 주에 spark 429 횟수를 잰다. 미국 :15:20 회차는 slow 군 때문에 쉬는 것이 정상이다.
+- 감시와 장중 판단(사건 '스탑 2% 안')이 같은 종목을 함께 팔려 할 수 있다 — 대기 STOP 종목은 새 매수만 막고, 매도 쪽은 장부가 남은 수량으로 처리한다.
+- 텔레그램 체결 알림(`PaperNotifications.timingName`)은 감시의 종가 STOP을 '다음 거래일 종가'로 적는다(실제로는 그날 종가 — 주문 근거 메모는 '그날 종가 매도'). 화면 계좌 설명의 스탑 글과
+  '장중 감시 스탑 대기' 표시도 아직 감시 상태를 따르지 않는다(뒤 작업).
+- 되돌리기: `stopWatch.mode`·`kr.stopWatch.mode`를 `OFF`로(몇 초 — 수집 호출도 그다음 회차부터 0). 남은 대기 STOP(MARKET·AT_MINUTE)은 그대로 체결된다. 코드를 되돌리면 옛 사다리로 체결되고
+  재진입 금지가 걸리지 않는다 — 받아들이고 기록한다.
