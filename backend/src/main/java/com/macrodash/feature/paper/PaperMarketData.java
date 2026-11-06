@@ -181,6 +181,16 @@ public class PaperMarketData {
         return store.quietly(() -> store.read(Datasets.SNAP_PAPER_WATCH_KR, Datasets.MAX_AGE_WATCH_KR, null));
     }
 
+    /**
+     * 장중 스탑 감시 저장본(ADR 0032 — {@link Datasets#SNAP_PAPER_STOPWATCH_US}·{@link Datasets#SNAP_PAPER_STOPWATCH_KR}, 수집기 {@code paper_stopwatch})
+     * — 감시 작업({@link PaperStopWatchJob})과 장부의 대체 스탑 판정({@link StopWatch#covered})이 읽습니다. {@link StoreReader#quietly} 안에서 읽어 수집을
+     * 요청하지 않습니다(ADR 0008). 나이·세션 대조는 부르는 쪽이 봅니다. 없으면 empty.
+     */
+    Optional<Snapshot> stopWatch(boolean korea) {
+        String name = korea ? Datasets.SNAP_PAPER_STOPWATCH_KR : Datasets.SNAP_PAPER_STOPWATCH_US;
+        return store.quietly(() -> store.read(name, Datasets.MAX_AGE_STOPWATCH, null));
+    }
+
     /** 미국 관측치 저장본({@code paper.quotes})의 파서 — 미국 묶음의 {@link PaperMarket#parse}가 그대로 부릅니다(클래스 설명의 관측치). */
     static Optional<Quotes> parse(Snapshot snapshot) {
         if (snapshot.collectedAt() == null) {
