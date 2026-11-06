@@ -108,26 +108,33 @@ public class RuleBookService {
      */
     public static final String CHECKPOINT = "CHECKPOINT";
     /**
-     * 자유 시점 판의 장중 판단 응답 결정(V23 — ADR 0027 결정 3·4): 세션마다 계좌별 최대 두 번이라 종류도 둘입니다. 기준 거래일은 그 세션의 아침(한국은
-     * 밤) 결정과 같은 d라 UNIQUE(book, d, kind)가 '순번마다 한 번'을 강제합니다. 끈 판의 {@link #CHECKPOINT}와 달리 전체 결정이 아니라
+     * 자유 시점 판의 장중 판단 응답 결정(V23·V27 — ADR 0027 결정 3·4, ADR 0031): 세션마다 계좌별 최대 세 번이라 종류도 셋입니다. 기준 거래일은 그 세션의
+     * 아침(한국은 밤) 결정과 같은 d라 UNIQUE(book, d, kind)가 '순번마다 한 번'을 강제합니다. 끈 판의 {@link #CHECKPOINT}와 달리 전체 결정이 아니라
      * 유지·교체 응답이라, 지난 결정 목록의 '직전 결정'으로 읽지 않습니다({@link #intraday}).
      */
     public static final String INTRADAY_1 = "INTRADAY_1";
     public static final String INTRADAY_2 = "INTRADAY_2";
-    /** 세션마다 계좌별 장중 판단의 최대 횟수(사용자 결정 2026-11-05 — 2). 종류 값·순번 CHECK(V23)와 같은 수입니다. */
-    public static final int INTRADAY_MAX = 2;
+    /** 세 번째 장중 판단(V27 — 사용자 결정 2026-11-06 '최대 3'). 설정 키가 없으면 세션당 횟수는 2라 배포만으로는 부르지 않습니다. */
+    public static final String INTRADAY_3 = "INTRADAY_3";
+    /** 장중 판단 결정 종류, 순번 순 — 종류를 하나씩 적지 말고 이 목록으로 셉니다(소상한·화면·알림). */
+    public static final List<String> INTRADAY_KINDS = List.of(INTRADAY_1, INTRADAY_2, INTRADAY_3);
+    /**
+     * 세션마다 계좌별 장중 판단의 최대 횟수 — 코드가 부를 수 있는 순번 수(사용자 결정 2026-11-06 — 3, 그 전 2). 종류 값({@link #INTRADAY_KINDS})·순번 CHECK
+     * (V27 — slot 1..3)와 같은 수입니다. 실제 횟수는 설정 {@code intradayMaxPerSession}(기본 2)이 이 값 안에서 정합니다.
+     */
+    public static final int INTRADAY_MAX = 3;
 
     /** 그 순번(1부터)의 장중 판단 결정 종류. */
     public static String intradayKind(int slot) {
         if (slot < 1 || slot > INTRADAY_MAX) {
             throw new IllegalArgumentException("장중 판단 순번은 1~" + INTRADAY_MAX + "입니다: " + slot);
         }
-        return "INTRADAY_" + slot;
+        return INTRADAY_KINDS.get(slot - 1);
     }
 
     /** 자유 시점 판의 장중 판단 결정 종류인가. */
     public static boolean intraday(String kind) {
-        return INTRADAY_1.equals(kind) || INTRADAY_2.equals(kind);
+        return kind != null && INTRADAY_KINDS.contains(kind);
     }
 
     /** 결정 상태(paper_decisions.status). */

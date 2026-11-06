@@ -1029,11 +1029,11 @@ class KrPacketBuilderTest {
             ((ObjectNode) node.get(PacketBuilder.HARD_RULES)).remove(List.of("lines", "timings"));
         }
         assertThat(b).as("그 밖은 끈 판 한국 패킷과 같음").isEqualTo(a);
-        // 장중 판단 선택지 — 세션당 횟수(설정 기본 2)와 그날의 받는 범위(개장 5분 뒤 ~ 종가 단일가 시작 30분 전).
+        // 장중 판단 선택지 — 세션당 횟수(설정 기본 2)와 그날의 받는 범위(개장 10분 뒤 ~ 종가 단일가 시작 30분 전), 간격 20분.
         JsonNode intraday = on.body().get(PacketBuilder.BASIS).get("intraday");
         assertThat(intraday.get("maxPerSession").asInt()).isEqualTo(FreeTimingSettings.DEFAULT_INTRADAY_MAX);
-        assertThat(intraday.get("firstKst").asString() + "~" + intraday.get("lastKst").asString()).isEqualTo("09:05~14:50");
-        assertThat(intraday.get("minGapMinutes").asInt()).isEqualTo(30);
+        assertThat(intraday.get("firstKst").asString() + "~" + intraday.get("lastKst").asString()).isEqualTo("09:10~14:50");
+        assertThat(intraday.get("minGapMinutes").asInt()).isEqualTo(20);
         assertThat(off.body().get(PacketBuilder.BASIS).has("intraday")).as("끈 판에는 없음").isFalse();
         assertThat(on.noteIds()).isEqualTo(off.noteIds());
 

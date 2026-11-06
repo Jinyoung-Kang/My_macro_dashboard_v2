@@ -72,7 +72,7 @@ public class PaperIntradayJob {
     static final List<String> BOOKS = List.of(PaperBooks.CLAUDE, PaperBooks.CLAUDE2);
 
     static final String INTRADAY_OFF = "INTRADAY_OFF — 세션당 장중 판단 횟수 설정이 0이거나 그 계좌가 꺼져 있음";
-    static final String OUT_OF_RANGE = "OUT_OF_RANGE — 확인 시각이 그 세션의 받는 범위(개장 5분 뒤 ~ 마감 30분 전) 밖";
+    static final String OUT_OF_RANGE = "OUT_OF_RANGE — 확인 시각이 그 세션의 받는 범위(개장 10분 뒤 ~ 마감 30분 전) 밖";
     static final String NO_PIPELINE = "NO_PIPELINE — 그 계좌의 자유 시점 판 파이프라인이 없음";
     static final String CYCLE_CAP = "CYCLE_CAP — 계좌2 소상한(claude2.maxCallsPerCycle)에 닿음";
 

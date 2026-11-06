@@ -927,7 +927,7 @@ final class ClaudeDecisionPipeline {
                 continue;
             }
             // 한국 주문의 기준 시각은 한국 표로(시가 = 그날 개장 — 예상 상태·패킷과 같은 함수). 미국 표로 세면 한국 시가(09:00)를 09:30으로 보아
-            // 09:30 전의 교체가 이미 체결된 것으로 본 시가 주문을 취소합니다(ADR 0027 명세 §5 — 한국 장중 판단은 09:05부터).
+            // 09:30 전의 교체가 이미 체결된 것으로 본 시가 주문을 취소합니다(ADR 0027 명세 §5 — 한국 장중 판단은 09:10부터, ADR 0031).
             java.time.LocalDate session = ExecutionAudit.targetSession(order, market.calendar());
             Instant target = session == null ? null : market.definition() == KrPaperMarket.INSTANCE
                     ? KrExpectedState.targetAt(order, session, market.calendar())

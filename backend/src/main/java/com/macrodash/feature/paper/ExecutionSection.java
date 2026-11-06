@@ -285,12 +285,12 @@ final class ExecutionSection {
 
     /** 장중 판단 규칙(자유 시점 판 — 고정 문단 장중 판단 절과 같은 뜻). */
     static final List<String> INTRADAY_RULES = List.of(
-            "예약한 시각 + 2분 ~ + 20분에 한 번 부른다 — 두 시각은 30분 이상 떨어져야 한다",
+            "예약한 시각 + 2분 ~ + 20분에 한 번 부른다 — 두 시각은 20분 이상 떨어져야 한다",
             "재시도 없음 — 호출이 실패해도 다시 부르지 않는다",
             "놓치면 없음 — 서버 꺼짐·자료 없음·호출 상한으로 그 창을 놓치면 나중에 대신 부르지 않고, 대기 주문은 그대로 체결된다");
 
     /**
-     * 장중 판단 선택지(자유 시점 판 — ADR 0027 결정 3) — 세션당 횟수(설정)·그 세션의 받는 범위(개장 5분 뒤 ~ 마감 30분 전, ET·KST —
+     * 장중 판단 선택지(자유 시점 판 — ADR 0027 결정 3·ADR 0031) — 세션당 횟수(설정)·그 세션의 받는 범위(개장 10분 뒤 ~ 마감 30분 전, ET·KST —
      * {@link IntradayRequest#window})·두 시각의 최소 간격·피드 뜻·감시 상한·최근 잰 지연 요약·규칙.
      */
     private static Map<String, Object> intradayOptions(LocalDate session, TradingCalendar calendar, int max,

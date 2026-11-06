@@ -1,6 +1,7 @@
 package com.macrodash.feature.paper;
 
 import com.macrodash.analytics.OrderValidator;
+import com.macrodash.analytics.SessionWindows;
 import com.macrodash.analytics.TradingCalendar;
 import tools.jackson.databind.JsonNode;
 
@@ -15,14 +16,15 @@ import java.util.List;
 import java.util.Set;
 
 /**
- * 자유 시점 판의 장중 판단 예약(ADR 0027 결정 3, 명세 docs/specs/2026-11-05-free-fill-timing.md §7) — 결정 응답의 {@code checkpoints[]}와 장중 판단
+ * 자유 시점 판의 장중 판단 예약(ADR 0027 결정 3·ADR 0031, 명세 docs/specs/2026-11-05-free-fill-timing.md §7) — 결정 응답의 {@code checkpoints[]}와 장중 판단
  * 응답의 {@code nextCheckpoint}의 의미 검사. 스키마 검사기는 모양(시각 글자·감시 목록 상한·질문 길이)만 보므로, 받는 범위·간격·횟수·감시 목록의
  * 유니버스는 여기서 봅니다. 어긴 항목만 버리고(사유를 남김) 나머지 예약과 그 결정의 주문 판정은 그대로입니다.
  *
  * <p>규칙: 시각은 그 시장 현지 시각 'HH:MM'(분 단위)이고 목표 세션의 개장 {@link #AFTER_OPEN} 뒤부터 장중 시장가를 받는 끝({@link #window} — 미국은
- * 마감, 한국은 종가 단일가 시작)의 {@link #BEFORE_CLOSE} 전까지(양 끝 포함 — 보통 날 미국 09:35~15:30 ET·한국 09:05~14:50 KST, 조기 폐장·개장 시각
+ * 마감, 한국은 종가 단일가 시작)의 {@link #BEFORE_CLOSE} 전까지(양 끝 포함 — 보통 날 미국 09:40~15:30 ET·한국 09:10~14:50 KST, 조기 폐장·개장 시각
  * 변경일은 그날의 개장·마감), 호출 창 시작(시각 + {@link PaperCheckpointJob#WINDOW_START})이 지금보다 뒤, 같은 계좌의 다른
- * 판단 시각과 {@link #MIN_GAP} 이상 떨어짐(호출 창 시각 + 2분 ~ + 20분이 겹치지 않게), 세션당 {@code max}번까지(이른 시각부터 받음).
+ * 판단 시각과 {@link #MIN_GAP} 이상 떨어짐(호출 창 시각 + 2분 ~ + 20분이 겹치지 않게 — 창 길이 18분 ≤ 간격 20분), 세션당 {@code max}번까지(이른 시각부터
+ * 받음 — 코드가 부를 수 있는 순번은 {@link RuleBookService#INTRADAY_MAX} 셋).
  * 감시 목록은 {@link ExecutionSection#WATCH_MAX}개 이하·중복 없음·유니버스 안, 감시 1분봉(MINUTE)이면 비어 있지 않음. 한국은 늘 MINUTE입니다.
  * 순수 함수입니다(시계·저장소를 읽지 않음).
  */
@@ -31,15 +33,15 @@ final class IntradayRequest {
     private IntradayRequest() {
     }
 
-    /** 가장 이른 판단 시각은 개장 이만큼 뒤. */
-    static final Duration AFTER_OPEN = Duration.ofMinutes(5);
+    /** 가장 이른 판단 시각은 개장 이만큼 뒤 — 체결 창과 같은 개장 10분 뒤({@link SessionWindows#OPEN_OFFSET}, 사용자 결정 2026-11-06 — 그 전은 5분). */
+    static final Duration AFTER_OPEN = SessionWindows.OPEN_OFFSET;
     /**
      * 가장 늦은 판단 시각은 그 시장의 장중 거래가 끝나는 때(미국 마감, 한국 종가 단일가 시작 — 마감 {@link KrTimedLadder#CLOSING_AUCTION} 전)보다
      * 이만큼 앞(끈 판의 장중 확인과 같은 30분 — 호출 창 + 응답 뒤 장중 시장가가 들어갈 여유).
      */
     static final Duration BEFORE_CLOSE = ExecutionSection.CHECKPOINT_BEFORE_CLOSE;
-    /** 같은 계좌의 두 판단 시각 사이의 최소 간격. */
-    static final Duration MIN_GAP = Duration.ofMinutes(30);
+    /** 같은 계좌의 두 판단 시각 사이의 최소 간격(사용자 결정 2026-11-06 — 20분, 그 전은 30분). 호출 창 길이(2~20분, 18분)보다 길어 두 창이 겹치지 않습니다. */
+    static final Duration MIN_GAP = Duration.ofMinutes(20);
 
     /**
      * 받은 예약 하나.
@@ -163,7 +165,7 @@ final class IntradayRequest {
                 rejected.add(new Rejected(atText, OrderValidator.CHECKPOINT_INVALID + " — " + String.join("; ", reasons)));
             }
         }
-        // 이른 시각부터 받습니다 — 이미 정해진 시각·앞서 받은 시각과 30분 이상 떨어져야 하고, 횟수를 넘는 것은 버립니다.
+        // 이른 시각부터 받습니다 — 이미 정해진 시각·앞서 받은 시각과 MIN_GAP 이상 떨어져야 하고, 횟수를 넘는 것은 버립니다.
         candidates.sort(Comparator.comparing(Item::at));
         List<LocalTime> fixed = new ArrayList<>(taken);
         for (Item item : candidates) {

@@ -937,7 +937,7 @@ class KrStartTest {
         assertThat(basis.path("atMinute").path("firstKst").asString()).as("09:14 + 60초 뒤의 다음 분").isEqualTo("09:16");
         assertThat(basis.path("atMinute").path("lastKst").asString()).isEqualTo("15:19");
         assertThat(basis.path("nextCheckpoint").path("available").asBoolean()).isTrue();
-        assertThat(basis.path("nextCheckpoint").path("firstKst").asString()).as("09:10 + 30분").isEqualTo("09:40");
+        assertThat(basis.path("nextCheckpoint").path("firstKst").asString()).as("09:10 + 20분").isEqualTo("09:30");
         assertThat(basis.path("nextCheckpoint").path("lastKst").asString()).isEqualTo("14:50");
         assertThat(d.packet().path("0_instructions").path("lines").get(0).asString()).startsWith("장중 판단이다");
         assertThat(d.packet().path("5_feed").path("tickers").propertyNames()).as("이 계획의 감시·보유·대기·기준 종목만 — 373220은 다른 계획의 것")

@@ -392,15 +392,19 @@ class CheckpointPacketTest {
     }
 
     @Test
-    @DisplayName("자유 시점 판 장중 판단의 남은 것: 첫 판단(순번 1 < 세션당 2)은 다음 예약 가능(이 판단 시각 + 30분 ~ 15:30), 운영자가 당긴 판단은 그 표시, 마감 "
+    @DisplayName("자유 시점 판 장중 판단의 남은 것: 첫 판단(순번 1 < 세션당 2)은 다음 예약 가능(이 판단 시각 + 20분 ~ 15:30), 운영자가 당긴 판단은 그 표시, 마감 "
             + "5분 전부터는 장중 시장가·지정 시각이 닫히고 종가만, 마감 뒤에는 남은 시점 없음")
     void freeRemainingOptions() {
         JsonNode first = CheckpointPacket.build(freeInputs(1, 2, true), MAPPER).body();
         JsonNode next = first.get("1_basis").get("nextCheckpoint");
         assertThat(next.get("available").asBoolean()).isTrue();
-        assertThat(next.get("firstEt").asString()).as("10:30 + 30분").isEqualTo("11:00");
+        assertThat(next.get("firstEt").asString()).as("10:30 + 20분").isEqualTo("10:50");
         assertThat(next.get("lastEt").asString()).isEqualTo("15:30");
-        assertThat(next.get("minGapMinutes").asInt()).isEqualTo(30);
+        assertThat(next.get("minGapMinutes").asInt()).isEqualTo(20);
+        assertThat(CheckpointPacket.build(freeInputs(2, 3, false), MAPPER).body().get("1_basis").get("nextCheckpoint").get("available")
+                .asBoolean()).as("세션당 3번 — 둘째 판단도 셋째를 예약할 수 있음").isTrue();
+        assertThat(CheckpointPacket.build(freeInputs(3, 3, false), MAPPER).body().get("1_basis").get("decisionKind").asString())
+                .isEqualTo(RuleBookService.INTRADAY_3);
         assertThat(first.get("1_basis").get("manual").asBoolean()).isTrue();
         assertThat(first.get("3_request").get("note").asString()).contains("운영자가 당긴 판단");
         assertThat(CheckpointPacket.build(freeInputs(1, 1, false), MAPPER).body().get("1_basis").get("nextCheckpoint").get("available")
@@ -441,6 +445,6 @@ class CheckpointPacketTest {
         assertThat(Golden.sha256(hourly.replace(now, before)))
                 .isEqualTo("724b321e601b68ac3d0a7cc9c278cbea35e4074fc7d90ec6dc731c482b001232");
         assertThat(Golden.sha256(free.replace(now, before)))
-                .isEqualTo("06591a4c60bb54c25299b1417a3c0e1c906cd439bc056f972c85c56e9cce9134");
+                .isEqualTo("6366e448ee1bd478358b971ac1e469dfbf5186e57714ce2a214a8b030f6022f1");
     }
 }

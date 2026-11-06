@@ -1512,10 +1512,11 @@ class PacketBuilderTest {
                 + MAPPER.writeValueAsString(ft2.body().get(PacketBuilder.INSTRUCTIONS))).as("켠 판 규칙·지시 문장에 시가 시점이 없음")
                 .doesNotContain("NEXT_OPEN");
 
-        // 장중 판단 선택지 — 세션당 횟수는 그 결정이 읽은 설정(기본 2), 받는 범위는 개장 5분 뒤 ~ 마감 30분 전.
+        // 장중 판단 선택지 — 세션당 횟수는 그 결정이 읽은 설정(기본 2), 받는 범위는 개장 10분 뒤 ~ 마감 30분 전.
         JsonNode intraday = execution.get("intraday");
         assertThat(intraday.get("maxPerSession").asInt()).isEqualTo(FreeTimingSettings.DEFAULT_INTRADAY_MAX);
-        assertThat(intraday.get("firstEt").asString() + "~" + intraday.get("lastEt").asString()).isEqualTo("09:35~15:30");
+        assertThat(intraday.get("firstEt").asString() + "~" + intraday.get("lastEt").asString()).isEqualTo("09:40~15:30");
+        assertThat(intraday.get("minGapMinutes").asInt()).isEqualTo(20);
         assertThat(intraday.get("rules")).hasSize(ExecutionSection.INTRADAY_RULES.size());
 
         // 다른 곳: 1_basis 세 칸, 12_hardRules의 줄, 13_execution 다섯 칸(메뉴 판·메뉴·지정 시각 범위·출처 사실·장중 판단 선택지). 그 밖의 섹션은 끈 판
@@ -1543,8 +1544,8 @@ class PacketBuilderTest {
 
     @Test
     @DisplayName("13_execution 자유 시점 판(메뉴 4): 메뉴는 AT_MINUTE·NEXT_CLOSE 둘(시가 없음), 조기 폐장일(E 11-27 — 마감 13:00)의 지정 시각 범위는 "
-            + "09:40~12:54·장중 판단은 12:30까지, 서머타임이 끝난 주(E 11-02)의 09:40 ET = 23:40 KST, 장중 판단 선택지는 세션당 횟수(설정)·09:35~15:30 ET·"
-            + "간격 30분·지연 요약은 모이기 전 null")
+            + "09:40~12:54·장중 판단은 09:40~12:30, 서머타임이 끝난 주(E 11-02)의 09:40 ET = 23:40 KST, 장중 판단 선택지는 세션당 횟수(설정, 최대 3)·"
+            + "09:40~15:30 ET·간격 20분·지연 요약은 모이기 전 null")
     void executionSectionFreeTiming() {
         activeClaude2();
         JsonNode early = MAPPER.valueToTree(PacketBuilder.toNode(ExecutionSection.build(LocalDate.of(2026, 11, 25),
@@ -1559,7 +1560,7 @@ class PacketBuilderTest {
         assertThat(early.get("atMinute").get("lastEt").asString()).isEqualTo("12:54");
         assertThat(early.get("menu").get("rows").get(0).get(1).asString()).isEqualTo("09:40~12:54");
         assertThat(early.get("session").get("earlyClose").asBoolean()).isTrue();
-        assertThat(early.get("intraday").get("firstEt").asString()).isEqualTo("09:35");
+        assertThat(early.get("intraday").get("firstEt").asString()).isEqualTo("09:40");
         assertThat(early.get("intraday").get("lastEt").asString()).as("조기 폐장일 — 마감 13:00의 30분 전").isEqualTo("12:30");
         JsonNode est = MAPPER.valueToTree(PacketBuilder.toNode(ExecutionSection.build(LocalDate.of(2026, 10, 30),
                 FreeTiming.DECISION_TIMINGS, UsMarketCalendar.CALENDAR, 5, true, store, PaperBooks.CLAUDE2, false, true, 1)));
@@ -1567,9 +1568,9 @@ class PacketBuilderTest {
         assertThat(est.get("atMinute").get("lastKst").asString()).isEqualTo("2026-11-03 05:54 KST");
         JsonNode intraday = est.get("intraday");
         assertThat(intraday.get("maxPerSession").asInt()).as("그 결정이 읽은 설정값").isEqualTo(1);
-        assertThat(intraday.get("firstEt").asString() + "~" + intraday.get("lastEt").asString()).isEqualTo("09:35~15:30");
-        assertThat(intraday.get("firstKst").asString()).isEqualTo("2026-11-02 23:35 KST");
-        assertThat(intraday.get("minGapMinutes").asInt()).isEqualTo(30);
+        assertThat(intraday.get("firstEt").asString() + "~" + intraday.get("lastEt").asString()).isEqualTo("09:40~15:30");
+        assertThat(intraday.get("firstKst").asString()).isEqualTo("2026-11-02 23:40 KST");
+        assertThat(intraday.get("minGapMinutes").asInt()).isEqualTo(20);
         assertThat(intraday.get("watchMax").asInt()).isEqualTo(ExecutionSection.WATCH_MAX);
         assertThat(intraday.get("recentLag").isNull()).as("잰 지연이 모이기 전 — 0으로 채우지 않음").isTrue();
         assertThat(intraday.get("feeds").propertyNames()).containsExactly("MINUTE", "HOURLY");
@@ -3368,8 +3369,8 @@ class PacketBuilderTest {
             "claude2-initial", "a95d2849759359c02da59e42da910dc77893f8f287d1686663222ffd9a10a9c8",
             "claude2-scheduled", "8a2d6849e50037141204d93cf4955d96923ab95f763d503166e7609da9222d89",
             "claude2-c2-scheduled", "f6c715284df1ec5c09c3fa4121aaa553e1e34e44d25cd6290da8e21df9871e4a",
-            "ft-claude-scheduled", "e899efb332f30246f729907f2c9253e5f69003868b20c5a89b7afe01c73032b5",
-            "ft-claude2-scheduled", "f0f805ef105baabd144f85ddd46ff0ba3ba38040e990647e37a6ccc9cce533b3");
+            "ft-claude-scheduled", "5dd2003f2d6ebe65164e5f4fb1dabf8eb2be03efb86f09051178b129056602f1",
+            "ft-claude2-scheduled", "b3e8116a72ad2179b19c2a1626c438cf466105e7f73e8d578f125053046c52f8");
 
     /** 패킷에서 ADR 0030의 비용 칸(12_hardRules의 commissionBp·slippageBp·sellRegFees)과 비용 문장(lines 마지막 줄)을 뺀 글자. */
     private static String withoutCosts(Packet packet) {

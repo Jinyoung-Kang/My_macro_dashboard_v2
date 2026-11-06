@@ -222,12 +222,24 @@ class DecisionTimingsLockTest {
         IntradayRequest.Window us = IntradayRequest.window(usDay, UsPaperMarket.INSTANCE.calendar(), false);
         String usRange = FreeTiming.label(us.first().atZone(UsPaperMarket.INSTANCE.calendar().zone()).toLocalTime()) + "~"
                 + FreeTiming.label(us.last().atZone(UsPaperMarket.INSTANCE.calendar().zone()).toLocalTime());
-        assertThat(usRange).isEqualTo("09:35~15:30");
+        assertThat(usRange).isEqualTo("09:40~15:30");
         assertThat(ClaudePrompts.US_FT_INTRADAY_SECTION).contains(usRange + " ET").contains(IntradayRequest.MIN_GAP.toMinutes() + "분 이상")
                 .contains("13_execution.intraday.maxPerSession").contains("nextCheckpoint").doesNotContain("실시간");
-        assertThat(ClaudePrompts.KR_FT_INTRADAY_SECTION).contains("09:05~14:50 KST").contains(IntradayRequest.MIN_GAP.toMinutes() + "분 이상")
+        assertThat(ClaudePrompts.KR_FT_INTRADAY_SECTION).contains("09:10~14:50 KST").contains(IntradayRequest.MIN_GAP.toMinutes() + "분 이상")
                 .contains("1_basis.intraday.maxPerSession").contains("nextCheckpoint").doesNotContain("실시간").doesNotContain("feed");
-        assertThat(IntradayRequest.AFTER_OPEN.toMinutes()).isEqualTo(5);
+        assertThat(IntradayRequest.AFTER_OPEN.toMinutes()).as("체결 창과 같은 개장 10분 뒤").isEqualTo(10);
+        assertThat(IntradayRequest.AFTER_OPEN).isEqualTo(com.macrodash.analytics.SessionWindows.OPEN_OFFSET);
+        assertThat(IntradayRequest.MIN_GAP.toMinutes()).isEqualTo(20);
+        assertThat(RuleBookService.INTRADAY_MAX).as("코드가 부를 수 있는 순번 = 종류 수").isEqualTo(3)
+                .isEqualTo(RuleBookService.INTRADAY_KINDS.size());
+        assertThat(FreeTimingSettings.DEFAULT_INTRADAY_MAX).as("설정 키가 없으면 2 그대로 — 배포만으로는 셋째를 부르지 않음").isEqualTo(2);
+        for (int slot = 1; slot <= RuleBookService.INTRADAY_MAX; slot++) {
+            assertThat(RuleBookService.intradayKind(slot)).isEqualTo("INTRADAY_" + slot);
+            assertThat(RuleBookService.intraday(RuleBookService.intradayKind(slot))).isTrue();
+        }
+        assertThatThrownBy(() -> RuleBookService.intradayKind(4)).isInstanceOf(IllegalArgumentException.class);
+        assertThat(RuleBookService.intraday("INTRADAY_4")).isFalse();
+        assertThat(RuleBookService.intraday(null)).isFalse();
         assertThat(IntradayRequest.BEFORE_CLOSE).isEqualTo(ExecutionSection.CHECKPOINT_BEFORE_CLOSE);
         for (String section : List.of(ClaudePrompts.US_FT_INTRADAY_SECTION, ClaudePrompts.KR_FT_INTRADAY_SECTION)) {
             String timingLine = section.lines().filter(line -> line.startsWith("- 장중 판단 주문의 timing은")).findFirst().orElseThrow();

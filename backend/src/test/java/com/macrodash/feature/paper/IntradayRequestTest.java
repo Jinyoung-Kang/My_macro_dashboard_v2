@@ -19,8 +19,8 @@ import static com.macrodash.feature.paper.PaperFixtures.MAPPER;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * 자유 시점 판의 장중 판단 예약 의미 검사({@link IntradayRequest} — ADR 0027 결정 3): 받는 범위(미국 개장 5분 뒤 ~ 마감 30분 전, 한국 개장 5분 뒤 ~
- * 종가 단일가 시작 30분 전), 지난 시각, 30분 간격, 세션당 횟수, 감시 목록·피드·질문. 어긴 항목만 버리고 사유를 남깁니다.
+ * 자유 시점 판의 장중 판단 예약 의미 검사({@link IntradayRequest} — ADR 0027 결정 3·ADR 0031): 받는 범위(미국 개장 10분 뒤 ~ 마감 30분 전, 한국 개장 10분 뒤 ~
+ * 종가 단일가 시작 30분 전), 지난 시각, 20분 간격, 세션당 횟수(최대 3), 감시 목록·피드·질문. 어긴 항목만 버리고 사유를 남깁니다.
  *
  * <p>시각: 미국 목표 세션 E = 2026-10-27(화, 서머타임 — 09:30 ET = 13:30Z), 검사 시각은 그 전날 저녁. 한국 E = 2026-11-03(화).
  */
@@ -50,36 +50,50 @@ class IntradayRequestTest {
     }
 
     @Test
-    @DisplayName("받는 범위: 미국 09:35~15:30 ET(양 끝 포함), 조기 폐장일은 12:30까지, 한국 09:05~14:50 KST — 밖이면 그 항목만 버리고 사유에 범위를 적음")
+    @DisplayName("받는 범위: 미국 09:40~15:30 ET(양 끝 포함), 조기 폐장일은 12:30까지, 한국 09:10~14:50 KST(수능일 10:10~15:50) — 밖이면 그 항목만 버리고 "
+            + "사유에 범위를 적음")
     void windowPerMarket() {
+        assertThat(IntradayRequest.AFTER_OPEN).isEqualTo(com.macrodash.analytics.SessionWindows.OPEN_OFFSET).hasMinutes(10);
         IntradayRequest.Window us = IntradayRequest.window(TUE, US, false);
-        assertThat(us.first()).isEqualTo(Instant.parse("2026-10-27T13:35:00Z"));
+        assertThat(us.first()).isEqualTo(Instant.parse("2026-10-27T13:40:00Z"));
         assertThat(us.last()).isEqualTo(Instant.parse("2026-10-27T19:30:00Z"));
         assertThat(IntradayRequest.window(EARLY_CLOSE, US, false).last()).as("마감 13:00 ET(18:00Z)의 30분 전")
                 .isEqualTo(Instant.parse("2026-11-27T17:30:00Z"));
         IntradayRequest.Window kr = IntradayRequest.window(KR_E, KR, true);
-        assertThat(kr.first()).as("09:05 KST").isEqualTo(Instant.parse("2026-11-03T00:05:00Z"));
+        assertThat(kr.first()).as("09:10 KST").isEqualTo(Instant.parse("2026-11-03T00:10:00Z"));
         assertThat(kr.last()).as("14:50 KST — 종가 단일가(15:20) 30분 전").isEqualTo(Instant.parse("2026-11-03T05:50:00Z"));
 
-        IntradayRequest.Verdict edges = us(list(item("09:35", "HOURLY", "[]", "개장 뒤"), item("15:30", "HOURLY", "[]", "마감 전")), 2, List.of());
-        assertThat(edges.accepted()).extracting(IntradayRequest.Item::at).containsExactly(LocalTime.of(9, 35), LocalTime.of(15, 30));
+        IntradayRequest.Verdict edges = us(list(item("09:40", "HOURLY", "[]", "개장 뒤"), item("15:30", "HOURLY", "[]", "마감 전")), 2, List.of());
+        assertThat(edges.accepted()).extracting(IntradayRequest.Item::at).containsExactly(LocalTime.of(9, 40), LocalTime.of(15, 30));
         assertThat(edges.rejected()).isEmpty();
 
-        IntradayRequest.Verdict outside = us(list(item("09:34", "HOURLY", "[]", "이름"), item("15:31", "HOURLY", "[]", "늦음")), 2, List.of());
+        IntradayRequest.Verdict outside = us(list(item("09:39", "HOURLY", "[]", "이름"), item("15:31", "HOURLY", "[]", "늦음"),
+                item("09:35", "HOURLY", "[]", "옛 첫 시각")), 3, List.of());
         assertThat(outside.accepted()).isEmpty();
-        assertThat(outside.rejected()).extracting(IntradayRequest.Rejected::at).containsExactly("09:34", "15:31");
-        assertThat(outside.rejected().get(0).reason()).startsWith(OrderValidator.CHECKPOINT_INVALID).contains("09:35~15:30 ET");
+        assertThat(outside.rejected()).extracting(IntradayRequest.Rejected::at).containsExactly("09:39", "15:31", "09:35");
+        assertThat(outside.rejected().get(0).reason()).startsWith(OrderValidator.CHECKPOINT_INVALID).contains("09:40~15:30 ET");
 
         IntradayRequest.Verdict early = IntradayRequest.validate(list(item("12:30", "HOURLY", "[]", "q"), item("13:00", "HOURLY", "[]", "q")),
                 EARLY_CLOSE, US, UNIVERSE, NIGHT, 2, List.of(), false);
         assertThat(early.accepted()).extracting(IntradayRequest.Item::at).containsExactly(LocalTime.of(12, 30));
-        assertThat(early.rejected().get(0).reason()).contains("09:35~12:30 ET");
+        assertThat(early.rejected().get(0).reason()).contains("09:40~12:30 ET");
 
-        IntradayRequest.Verdict korea = IntradayRequest.validate(list(item("09:05", null, "[\"005930\"]", "q"),
-                item("14:51", null, "[\"005930\"]", "q")), KR_E, KR, KR_UNIVERSE, Instant.parse("2026-11-02T13:30:00Z"), 2, List.of(), true);
-        assertThat(korea.accepted()).extracting(IntradayRequest.Item::at).containsExactly(LocalTime.of(9, 5));
+        IntradayRequest.Verdict korea = IntradayRequest.validate(list(item("09:10", null, "[\"005930\"]", "q"),
+                item("14:51", null, "[\"005930\"]", "q"), item("09:09", null, "[\"005930\"]", "q")), KR_E, KR, KR_UNIVERSE,
+                Instant.parse("2026-11-02T13:30:00Z"), 3, List.of(), true);
+        assertThat(korea.accepted()).extracting(IntradayRequest.Item::at).containsExactly(LocalTime.of(9, 10));
         assertThat(korea.accepted().get(0).feed()).as("한국은 늘 감시 1분봉").isEqualTo(ExecutionSection.FEED_MINUTE);
-        assertThat(korea.rejected().get(0).reason()).contains("09:05~14:50 KST");
+        assertThat(korea.rejected()).extracting(IntradayRequest.Rejected::at).containsExactly("14:51", "09:09");
+        assertThat(korea.rejected().get(0).reason()).contains("09:10~14:50 KST");
+        assertThat(kr.last()).as("한국 끝은 14:50 그대로").isEqualTo(Instant.parse("2026-11-03T05:50:00Z"));
+
+        // 장 시간 변경일(수능일 10:00~16:30)은 그날 개장·마감에서 셈 — 10:10~15:50 KST.
+        LocalDate exam = LocalDate.of(2026, 11, 19);
+        TradingCalendar shifted = new KrxCalendar(KrPaperMarket.holidaysByYear(KrFixtures.holidaysPayload(2026, 2027)), List.of(),
+                Map.of(exam, new KrxCalendar.Hours(LocalTime.of(10, 0), LocalTime.of(16, 30))));
+        IntradayRequest.Window examWindow = IntradayRequest.window(exam, shifted, true);
+        assertThat(examWindow.first()).isEqualTo(Instant.parse("2026-11-19T01:10:00Z"));
+        assertThat(examWindow.last()).isEqualTo(Instant.parse("2026-11-19T06:50:00Z"));
     }
 
     @Test
@@ -95,19 +109,29 @@ class IntradayRequestTest {
     }
 
     @Test
-    @DisplayName("간격·횟수: 이른 시각부터 받고, 다른 판단 시각(이미 정해진 것 포함)과 30분 안이면 버리고, 남은 횟수를 넘으면 버림 — 0이면 모두 버림")
+    @DisplayName("간격·횟수: 이른 시각부터 받고, 다른 판단 시각(이미 정해진 것 포함)과 20분 안이면 버리고, 남은 횟수(최대 3)를 넘으면 버림 — 0이면 모두 버림")
     void gapAndCount() {
-        IntradayRequest.Verdict close = us(list(item("11:20", "HOURLY", "[]", "뒤"), item("11:00", "HOURLY", "[]", "앞")), 2, List.of());
+        assertThat(IntradayRequest.MIN_GAP).hasMinutes(20);
+        IntradayRequest.Verdict close = us(list(item("11:19", "HOURLY", "[]", "뒤"), item("11:00", "HOURLY", "[]", "앞")), 2, List.of());
         assertThat(close.accepted()).extracting(IntradayRequest.Item::at).containsExactly(LocalTime.of(11, 0));
-        assertThat(close.rejected().get(0).at()).isEqualTo("11:20");
-        assertThat(close.rejected().get(0).reason()).contains("11:00").contains("30분 안");
+        assertThat(close.rejected().get(0).at()).isEqualTo("11:19");
+        assertThat(close.rejected().get(0).reason()).contains("11:00").contains("20분 안");
 
-        IntradayRequest.Verdict exact = us(list(item("11:00", "HOURLY", "[]", "q"), item("11:30", "HOURLY", "[]", "q")), 2, List.of());
-        assertThat(exact.accepted()).as("딱 30분은 받음").hasSize(2);
+        IntradayRequest.Verdict exact = us(list(item("11:00", "HOURLY", "[]", "q"), item("11:20", "HOURLY", "[]", "q")), 2, List.of());
+        assertThat(exact.accepted()).as("딱 20분은 받음").hasSize(2);
 
-        IntradayRequest.Verdict taken = us(list(item("10:20", "HOURLY", "[]", "q"), item("13:00", "HOURLY", "[]", "q")), 1,
+        IntradayRequest.Verdict three = us(list(item("10:00", "HOURLY", "[]", "q"), item("12:00", "HOURLY", "[]", "q"),
+                item("14:00", "HOURLY", "[]", "q"), item("15:00", "HOURLY", "[]", "q")), 3, List.of());
+        assertThat(three.accepted()).as("세션당 셋까지").extracting(IntradayRequest.Item::at)
+                .containsExactly(LocalTime.of(10, 0), LocalTime.of(12, 0), LocalTime.of(14, 0));
+        assertThat(three.rejected()).singleElement().satisfies(r -> {
+            assertThat(r.at()).isEqualTo("15:00");
+            assertThat(r.reason()).contains("횟수(3번, 남은 3번)");
+        });
+
+        IntradayRequest.Verdict taken = us(list(item("10:15", "HOURLY", "[]", "q"), item("13:00", "HOURLY", "[]", "q")), 1,
                 List.of(LocalTime.of(10, 0)));
-        assertThat(taken.accepted()).as("끝난 판단 10:00과 30분 안인 10:20은 버리고 13:00을 받음").extracting(IntradayRequest.Item::at)
+        assertThat(taken.accepted()).as("끝난 판단 10:00과 20분 안인 10:15는 버리고 13:00을 받음").extracting(IntradayRequest.Item::at)
                 .containsExactly(LocalTime.of(13, 0));
 
         IntradayRequest.Verdict over = us(list(item("10:00", "HOURLY", "[]", "q"), item("13:00", "HOURLY", "[]", "q")), 1, List.of());

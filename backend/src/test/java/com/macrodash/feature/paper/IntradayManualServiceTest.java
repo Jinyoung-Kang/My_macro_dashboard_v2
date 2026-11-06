@@ -161,11 +161,11 @@ class IntradayManualServiceTest {
                 .isInstanceOf(InvalidRequestException.class).hasMessageContaining("claude2.enabled");
         ((ObjectNode) store.settings.body().get("claude2")).put("enabled", true);
 
-        // 받는 범위(09:35~15:30 ET) 밖 — 09:33과 15:30(당긴 시각 15:31).
-        for (String at : new String[]{"2026-11-02T14:33:00Z", "2026-11-02T20:30:10Z"}) {
+        // 받는 범위(09:40~15:30 ET — 개장 10분 뒤부터) 밖 — 09:33·09:38(당긴 시각 09:39)과 15:30(당긴 시각 15:31).
+        for (String at : new String[]{"2026-11-02T14:33:00Z", "2026-11-02T14:38:10Z", "2026-11-02T20:30:10Z"}) {
             clock.now = Instant.parse(at);
             assertThatThrownBy(() -> service(true).pull(UsPaperMarket.INSTANCE, PaperBooks.CLAUDE)).as(at)
-                    .isInstanceOf(InvalidRequestException.class).hasMessageContaining("09:35~15:30 ET");
+                    .isInstanceOf(InvalidRequestException.class).hasMessageContaining("09:40~15:30 ET");
         }
         clock.now = Instant.parse("2026-11-01T15:12:40Z");   // 일요일
         assertThatThrownBy(() -> service(true).pull(UsPaperMarket.INSTANCE, PaperBooks.CLAUDE))

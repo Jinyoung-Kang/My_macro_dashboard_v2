@@ -297,7 +297,7 @@ class PaperIntradayJobTest {
         assertThat(basis.get("atMinute").get("lastEt").asString()).isEqualTo("15:54");
         JsonNode nextOptions = basis.get("nextCheckpoint");
         assertThat(nextOptions.get("available").asBoolean()).isTrue();
-        assertThat(nextOptions.get("firstEt").asString()).as("이 판단 시각 10:00 + 30분").isEqualTo("10:30");
+        assertThat(nextOptions.get("firstEt").asString()).as("이 판단 시각 10:00 + 20분").isEqualTo("10:20");
         assertThat(nextOptions.get("lastEt").asString()).isEqualTo("15:30");
         assertThat(packet.get("4_portfolio").get("book").asString()).isEqualTo(PaperBooks.CLAUDE);
         assertThat(packet.get("5_feed").get("status").asString()).isEqualTo("OK");
@@ -480,7 +480,7 @@ class PaperIntradayJobTest {
 
     @Test
     @DisplayName("다음 판단 예약(nextCheckpoint): 첫 판단의 응답이 다음 순번 행을 넣거나(없을 때) 남은 예약을 그 시각으로 바꿈 — 그 세션의 결정은 그대로, 예약한 "
-            + "판단은 이 응답 결정. 이 판단 시각과 30분 안이면 버리고 남은 예약은 그대로. 순번을 다 쓴 둘째 판단의 예약은 버림")
+            + "판단은 이 응답 결정. 이 판단 시각과 20분 안이면 버리고 남은 예약은 그대로. 순번을 다 쓴 둘째 판단의 예약은 버림(세션당 횟수 기본 2)")
     void nextCheckpointPlansTheFollowingSlot() {
         answer = ok(reply("KEEP", next("13:30", "HOURLY", "[]")));
         PaperIntradayJob job = job(true);
@@ -499,13 +499,13 @@ class PaperIntradayJobTest {
         assertThat(view.path("planned").get(0).path("atEt").asString()).isEqualTo("13:30");
         assertThat(view.path("superseded").asInt()).as("nextCheckpoint는 남은 행을 닫지 않음").isZero();
 
-        // 이 판단 시각(10:00)과 30분 안 — 버리고 남은 예약은 그대로. 남은 예약(계좌2의 둘째)을 그 시각으로 바꾸는 경우도 함께.
+        // 이 판단 시각(10:00)과 20분 안 — 버리고 남은 예약은 그대로. 남은 예약(계좌2의 둘째)을 그 시각으로 바꾸는 경우도 함께.
         plan(PaperBooks.CLAUDE2, 1, TEN, "HOURLY", List.of(), morning2, false);
         plan(PaperBooks.CLAUDE2, 2, LocalTime.of(14, 0), "HOURLY", List.of(), morning2, false);
-        answer = ok(reply("KEEP", next("10:20", "HOURLY", "[]")));
+        answer = ok(reply("KEEP", next("10:15", "HOURLY", "[]")));
         runAt(job, T.plus(Duration.ofMinutes(4)));
         Decision close = decision(PaperBooks.CLAUDE2, 1);
-        assertThat(close.response().path("intradayPlan").path("rejected").get(0).path("reason").asString()).contains("30분 안");
+        assertThat(close.response().path("intradayPlan").path("rejected").get(0).path("reason").asString()).contains("20분 안");
         assertThat(row(PaperBooks.CLAUDE2, 2).atLocal()).as("남은 예약 그대로").isEqualTo(LocalTime.of(14, 0));
 
         // 둘째 판단(13:30)의 nextCheckpoint — 순번을 다 써서 버림.
