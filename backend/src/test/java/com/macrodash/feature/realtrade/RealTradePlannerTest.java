@@ -527,6 +527,20 @@ class RealTradePlannerTest {
         assertThat(late.sync()).isNotNull();
     }
 
+    @Test
+    @DisplayName("스탑 매도 창 — [T, T + 3분], 개장 10분 전 T는 개장 + 10분부터(개장 10분 전에는 팔지 않음), 종가 STOP은 종가 창")
+    void stopWindow() {
+        Day day = RealTradePlanner.windows(DAY, normalSession());
+        assertThat(RealTradePlanner.stopWindow(day, kst("2026-11-06T11:32"), false))
+                .isEqualTo(new Window("MIRROR", kst("2026-11-06T11:32"), kst("2026-11-06T11:35")));
+        assertThat(RealTradePlanner.stopWindow(day, kst("2026-11-06T09:02"), false))
+                .isEqualTo(new Window("MIRROR", kst("2026-11-06T09:10"), kst("2026-11-06T09:13")));
+        assertThat(RealTradePlanner.stopWindow(day, kst("2026-11-06T15:18"), false).end()).isEqualTo(kst("2026-11-06T15:19:30"));
+        assertThat(RealTradePlanner.stopWindow(day, kst("2026-11-06T15:19:45"), false)).isNull();
+        assertThat(RealTradePlanner.stopWindow(day, kst("2026-11-06T15:20"), true)).isEqualTo(day.close());
+        assertThat(RealTradePlanner.stopWindow(day, null, false)).isNull();
+    }
+
     // ------------------------------------------------------------------ 쉬는 날
     private static CollectorTradeClient.Calendar calendar(CollectorTradeClient.Session session, Double skew) {
         return new CollectorTradeClient.Calendar(DAY, skew, session, DAY.minusDays(1), DAY.plusDays(3));

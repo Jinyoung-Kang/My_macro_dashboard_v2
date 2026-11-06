@@ -37,6 +37,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import static com.macrodash.feature.realtrade.RealTradeFixtures.BOOK;
@@ -801,6 +802,168 @@ class RealTradeJobDbTest {
                     assertThat(e.detail().path("reasons").path("paper-cancelled-after-claim").asInt()).isEqualTo(1);
                     assertThat(e.notifies()).isTrue();
                 });
+    }
+
+    // ------------------------------------------------------------------ 장중 스탑 매도(ADR 0033 초안 결정 2·3·4)
+    private static DueOrder stopDue(long id, String ticker, String timing, Instant mirrorAt) {
+        Instant target = "NEXT_CLOSE".equals(timing) ? kst("2026-11-06T15:30") : mirrorAt;
+        return new DueOrder(id, id, ticker, "SELL", timing, "STOP", target, mirrorAt, true, null, null, null);
+    }
+
+    @Test
+    @DisplayName("스탑 매도 — 비중을 셈하지 않고(가격을 몰라도) 정수 보유 전량을 T~T+3분에 매도, 매수 멈춤 중에도, 알림은 건수만")
+    void stopSellsWholeHolding() {
+        RealTradeFixtures.live(store, false, d("10000000"));
+        store.lockConfig("KR", current -> store.updateConfig(current.withBuysPaused(true), null));
+        preflight("1000000", Map.of(A, new String[]{"100", "50000"}, B, new String[]{"10", "20000"}), Map.of());
+        when(paper.dueOrders(anyString(), any(), any())).thenReturn(List.of(stopDue(601, A, "MARKET", kst("2026-11-06T11:32"))));
+
+        run("11:31:50");
+        verify(client, never()).placeOrder(anyString());
+        run("11:32:10");
+
+        assertThat(sentBodies()).extracting(RealTradeJobDbTest::summary).containsExactly("SELL " + A + " DAY 100");
+        verify(paper, never()).weightAfter(anyString(), anyLong(), any());
+        OrderRow row = store.recentOrders("KR", 1).getFirst();
+        assertThat(row.purpose()).isEqualTo("MIRROR");
+        assertThat(row.paperOrderId()).isEqualTo(601L);
+        assertThat(events("STOP_SELL")).singleElement().satisfies(e -> {
+            assertThat(e.detail().path("sent").asInt()).isEqualTo(1);
+            assertThat(e.notifies()).isTrue();
+            String text = RealTradeNotices.text(e);
+            assertThat(text).contains("스탑 매도").contains("보냄 1").doesNotContain(A).doesNotContain("100");
+        });
+
+        run("11:32:40");
+        verify(client, times(1)).placeOrder(anyString());   // 진행 중 — 이 기능 주문 진행 중으로 건너뜀(같은 뿌리 두 번 보내지 않음)
+    }
+
+    @Test
+    @DisplayName("스탑 매도 — 개장 10분 전 T는 09:10부터 팔고, T + 3분이 지나도록 못 보내면 놓침(알림에 한 번만)")
+    void stopWindowFloorAndMissed() {
+        RealTradeFixtures.live(store, false, d("10000000"));
+        preflight("1000000", Map.of(A, new String[]{"100", "50000"}), Map.of());
+        when(paper.dueOrders(anyString(), any(), any())).thenReturn(List.of(stopDue(611, A, "AT_MINUTE", kst("2026-11-06T09:05"))));
+        run("09:06");
+        verify(client, never()).placeOrder(anyString());
+        run("09:10:05");
+        assertThat(sentBodies()).extracting(RealTradeJobDbTest::summary).containsExactly("SELL " + A + " DAY 100");
+
+        when(paper.dueOrders(anyString(), any(), any())).thenReturn(List.of(stopDue(621, B, "MARKET", kst("2026-11-06T10:00"))));
+        run("10:03:30");
+        run("10:04:00");
+        assertThat(events("STOP_SELL")).filteredOn(e -> e.detail().path("missed").asInt() > 0).singleElement()
+                .satisfies(e -> assertThat(e.detail().path("missed").asInt()).isEqualTo(1));
+    }
+
+    @Test
+    @DisplayName("스탑 매도 — 1건 상한으로 일부만 팔면 체결로 끝난 뒤 시도 2를 새로 읽은 수량으로(뿌리당 최대 2)")
+    void stopSecondAttemptAfterCappedFill() {
+        when(client.status()).thenReturn(RealTradeFixtures.enabledStatus(RealTradeFixtures.limits(1_000_000, 20, 5_000_000, 100_000_000)));
+        RealTradeFixtures.live(store, false, d("10000000"));
+        preflight("1000000", Map.of(A, new String[]{"100", "50000"}), Map.of());
+        when(paper.dueOrders(anyString(), any(), any())).thenReturn(List.of(stopDue(631, A, "MARKET", kst("2026-11-06T11:00"))));
+
+        run("11:00:10");
+        assertThat(sentBodies()).extracting(RealTradeJobDbTest::summary).containsExactly("SELL " + A + " DAY 19");
+        when(client.order("T-1")).thenReturn(Reply.of(broker("T-1", A, "SELL", "DAY", "FILLED", "19", "19", clock.now, clock.now)));
+        preflight("1950000", Map.of(A, new String[]{"81", "50000"}), Map.of());
+        run("11:00:40");
+        run("11:01:10");
+        assertThat(sentBodies()).extracting(RealTradeJobDbTest::summary).containsExactly("SELL " + A + " DAY 19", "SELL " + A + " DAY 19");
+        assertThat(store.ordersForRoot("KR", 631L)).extracting(OrderRow::attempt).containsExactly(1, 2);
+
+        when(client.order("T-2")).thenReturn(Reply.of(broker("T-2", A, "SELL", "DAY", "FILLED", "19", "19", clock.now, clock.now)));
+        preflight("2900000", Map.of(A, new String[]{"62", "50000"}), Map.of());
+        run("11:01:40");
+        run("11:02:20");
+        verify(client, times(2)).placeOrder(anyString());   // 시도 2가 끝 — 남은 보유는 다음 날 맞추기가 '책에 없는 보유'로 팖
+    }
+
+    @Test
+    @DisplayName("묶음 생성이 실패해도(시각 맞추기 목표 없음) 09:10 대체 스탑은 스탑 경로로 팔림(R3)")
+    void stopSellsWhenBatchFails() {
+        RealTradeFixtures.live(store, false, d("10000000"));
+        when(paper.dailySyncAt(BOOK, SESSION)).thenReturn(Optional.of(SYNC_AT));
+        when(paper.targetsAt(BOOK, SESSION, SYNC_AT)).thenReturn(Optional.empty());
+        preflight("1000000", Map.of(A, new String[]{"100", "50000"}), Map.of());
+        when(paper.dueOrders(anyString(), any(), any())).thenReturn(List.of(stopDue(641, A, "AT_MINUTE", SYNC_AT)));
+
+        run("09:10:05");
+
+        assertThat(store.batch("KR", SESSION, RealTradeStore.BATCH_SYNC)).as("묶음은 못 만듦").isEmpty();
+        assertThat(sentBodies()).extracting(RealTradeJobDbTest::summary).containsExactly("SELL " + A + " DAY 100");
+        assertThat(store.recentOrders("KR", 1).getFirst().purpose()).isEqualTo("MIRROR");
+    }
+
+    @Test
+    @DisplayName("묶음과 스탑이 같은 종목을 함께 팔아도 더 팔지 않음 — 묶음 매도가 진행 중이면 스탑은 건너뛰고, 끝난 뒤 보유가 0이면 끝")
+    void batchAndStopDoNotOversell() {
+        RealTradeFixtures.live(store, true, d("6000000"));
+        timedTargets(Map.of(B, 10.0), List.of(), List.of(641L));
+        preflight("1000000", Map.of(A, new String[]{"100", "50000"}), Map.of(B, "20000"));
+        when(paper.dueOrders(anyString(), any(), any())).thenReturn(List.of(stopDue(641, A, "AT_MINUTE", SYNC_AT)));
+
+        run("09:10:05");
+        assertThat(sentBodies()).extracting(RealTradeJobDbTest::summary).containsExactly("SELL " + A + " DAY 100", "BUY " + B + " DAY 30");
+        when(client.order("T-1")).thenReturn(Reply.of(broker("T-1", A, "SELL", "DAY", "FILLED", "100", "100", clock.now, clock.now)));
+        preflight("6000000", Map.of(), Map.of(B, "20000"));
+        run("09:10:40");
+        run("09:11:20");
+        assertThat(sentBodies()).extracting(RealTradeJobDbTest::summary).filteredOn(x -> x.startsWith("SELL")).hasSize(1);
+    }
+
+    @Test
+    @DisplayName("대기 STOP 종목은 매수를 보내지 않음 — 묶음(재시도 포함)·장중 따라 하기 모두 보내기 직전에 다시 읽음(R2)")
+    void pendingStopBlocksBuys() {
+        RealTradeFixtures.live(store, true, d("10000000"));
+        timedTargets(Map.of(B, 30.0, C, 10.0), List.of(), List.of());
+        preflight("10000000", Map.of(), Map.of(B, "20000", C, "40000"));
+        when(paper.pendingStopSymbols(BOOK, SESSION)).thenReturn(Set.of(B));
+
+        run("09:10:05");
+        assertThat(sentBodies()).extracting(RealTradeJobDbTest::summary).containsExactly("BUY " + C + " DAY 25");
+
+        when(paper.dueOrders(anyString(), any(), any())).thenReturn(List.of(dueFor(701, 700, B, "BUY", kst("2026-11-06T10:30"))));
+        when(paper.weightAfter(eq(BOOK), eq(701L), any())).thenReturn(Optional.of(new WeightAfter(701, B, "BUY", 20.0, 1e7, true,
+                List.of(701L), List.of())));
+        run("10:30:10");
+        verify(client, times(1)).placeOrder(anyString());
+        assertThat(events("WINDOW_SUMMARY")).filteredOn(e -> e.detail().path("window").asString().equals("SYNC_AT")).singleElement()
+                .satisfies(e -> assertThat(e.detail().path("reasons").path("pending-stop").asInt()).isEqualTo(1));
+    }
+
+    @Test
+    @DisplayName("장부 밀림으로 쉬는 날에도 스탑 매도만(묶음·장중 따라 하기 없음), 장 시간 불일치 날에는 스탑도 보내지 않음")
+    void ledgerBehindStopsOnly() {
+        RealTradeFixtures.live(store, false, d("10000000"));
+        when(paper.ledgerCaughtUp(BOOK, SESSION)).thenReturn(false);
+        targets(Map.of(B, 50.0), List.of(11L));
+        preflight("1000000", Map.of(A, new String[]{"100", "50000"}), Map.of(B, "20000"));
+        when(paper.dueOrders(anyString(), any(), any())).thenReturn(List.of(stopDue(651, A, "MARKET", kst("2026-11-06T11:00")),
+                dueFor(652, 652, B, "BUY", kst("2026-11-06T11:00"))));
+        when(paper.weightAfter(eq(BOOK), eq(652L), any())).thenReturn(Optional.of(new WeightAfter(652, B, "BUY", 20.0, 1e7, true,
+                List.of(652L), List.of())));
+
+        run("08:51");
+        run("11:00:10");
+        assertThat(sentBodies()).extracting(RealTradeJobDbTest::summary).containsExactly("SELL " + A + " DAY 100");
+        assertThat(events("SKIP_DAY")).singleElement().satisfies(e -> assertThat(e.detail().path("reason").asString())
+                .isEqualTo(RealTradePlanner.SKIP_LEDGER));
+        assertThat(store.batch("KR", SESSION, RealTradeStore.BATCH_SYNC)).isEmpty();
+    }
+
+    @Test
+    @DisplayName("장 시간 불일치(수능일형 설정 없음) 날에는 스탑도 보내지 않음")
+    void hoursMismatchNoStops() {
+        RealTradeFixtures.live(store, false, d("10000000"));
+        when(paper.sessionHours(SESSION)).thenReturn(Optional.of(new SessionHours(SESSION, true, kst("2026-11-06T10:00"),
+                kst("2026-11-06T16:30"))));
+        preflight("1000000", Map.of(A, new String[]{"100", "50000"}), Map.of());
+        when(paper.dueOrders(anyString(), any(), any())).thenReturn(List.of(stopDue(661, A, "MARKET", kst("2026-11-06T11:00"))));
+        run("08:51");
+        run("11:00:10");
+        verify(client, never()).placeOrder(anyString());
     }
 
     // ------------------------------------------------------------------ 멈춤·끄기

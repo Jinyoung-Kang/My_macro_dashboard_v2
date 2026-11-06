@@ -1,5 +1,6 @@
 package com.macrodash.feature.realtrade;
 
+import com.macrodash.analytics.SessionWindows;
 import com.macrodash.collector.CollectorTradeClient;
 import com.macrodash.feature.paper.PaperMirrorService;
 
@@ -114,6 +115,11 @@ final class RealTradePlanner {
     static final String SKIP_BUYS_PAUSED = "buys-paused";
     static final String SKIP_WEIGHT = "weight-unknown";
     static final String SKIP_SYMBOL = "symbol-unsupported";
+    /**
+     * 따라 하는 책에 그 종목의 오늘 대기 STOP 매도가 있어 매수를 보내지 않음(ADR 0033 초안 결정 4 — 묶음 재시도·마무리·장중 따라 하기의 매수를 보내기
+     * 직전에 다시 읽음, 방금 판 종목을 다시 사지 않게).
+     */
+    static final String SKIP_PENDING_STOP = "pending-stop";
 
     /** 국내 종목 코드(수집기·DB 검사와 같음) — 아니면 주문하지 않습니다. */
     private static final Pattern KR_SYMBOL = Pattern.compile("^[0-9][0-9A-Z]{5}$");
@@ -834,6 +840,29 @@ final class RealTradePlanner {
 
     private static Window window(String kind, Instant start, Instant end) {
         return start.isBefore(end) ? new Window(kind, start, end) : null;
+    }
+
+    /**
+     * 스탑 매도 하나의 창(ADR 0033 초안 결정 2) — 종가 STOP은 그날 종가 창, 그 밖은 시작 = max(따라 할 시각, 장중 시작, 정규장 시작 +
+     * {@link SessionWindows#OPEN_OFFSET}), 끝 = min(시작 + 3분, 장중 끝). 모의 쪽이 개장 10분 전 시각의 STOP을 내더라도 실제로는 개장 10분 전에 팔지 않게
+     * 하는 방어입니다(사용자 결정 2026-11-06 — 개장 10분 전에는 팔지 않음). 경로가 없거나 창이 비면 null(놓침).
+     */
+    static Window stopWindow(Day day, Instant mirrorAt, boolean nextClose) {
+        if (nextClose) {
+            return day.close();
+        }
+        Window intraday = day.intraday();
+        if (intraday == null || mirrorAt == null) {
+            return null;
+        }
+        Instant start = mirrorAt.isAfter(intraday.start()) ? mirrorAt : intraday.start();
+        Instant earliest = day.regularStart().plus(SessionWindows.OPEN_OFFSET);
+        if (start.isBefore(earliest)) {
+            start = earliest;
+        }
+        Instant until = start.plus(MIRROR_LENGTH);
+        Instant end = until.isBefore(intraday.end()) ? until : intraday.end();
+        return start.isAfter(end) ? null : new Window(WINDOW_MIRROR, start, end);
     }
 
     /**

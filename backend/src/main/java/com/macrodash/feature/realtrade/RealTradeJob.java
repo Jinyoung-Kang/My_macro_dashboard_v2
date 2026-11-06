@@ -370,6 +370,17 @@ class RealTradeJob {
             decide(d, now, cfg);
             if (d.skipReason != null) {
                 recordSkip(d);
+                if (RealTradePlanner.SKIP_LEDGER.equals(d.skipReason) && d.windows != null) {
+                    // 장부 밀림으로 쉬는 날에도 스탑 매도만(ADR 0033 초안 결정 2) — 매도는 실제 보유까지만이라 위험을 줄이는 쪽이고, 1분봉 수집 실패가
+                    // 손절을 하루 미루지 않게. 묶음·장중 따라 하기는 하지 않습니다. 휴장·장 시간 불일치·시계 어긋남·달력 날짜 불일치는 아무것도 하지 않음.
+                    Cycle c = new Cycle(now, d, cfg, status.value().limits(), paper.cashLikeTickers());
+                    List<DueOrder> stops = paper.dueOrders(cfg.sourceBook(), today, now.plus(WARMUP_LEAD)).stream().filter(DueOrder::stop)
+                            .toList();
+                    warmup(c, stops);
+                    if (live(c)) {
+                        runMirror(c, stops);
+                    }
+                }
                 return;
             }
             if (d.decidedFor == null || d.windows == null) {
@@ -459,6 +470,8 @@ class RealTradeJob {
         final Map<String, Map<String, Set<String>>> skipped = new HashMap<>();
         final Map<String, Set<String>> missed = new HashMap<>();
         final Set<Long> handledRoots = new HashSet<>();
+        /** 놓침을 스탑 매도 알림에 이미 센 스탑 뿌리(같은 놓침을 주기마다 다시 세지 않게). */
+        final Set<Long> stopMissCounted = new HashSet<>();
         final Set<String> summarized = new HashSet<>();
         Instant lastSyncTry;
         Instant lastFollowupTry;
@@ -955,6 +968,10 @@ class RealTradeJob {
                 c.day.miss(window, o.symbol());
                 continue;
             }
+            if (o.buy() && pendingStop(c, o.symbol())) {
+                c.day.skip(window, RealTradePlanner.SKIP_PENDING_STOP, o.symbol());   // 보내기 직전에 다시 읽은 대기 STOP 종목(ADR 0033 초안 결정 4)
+                continue;
+            }
             Sent sent = executor.send(new Send(c.today, purpose, batch.id(), null, null, o.symbol(), o.side(), quantity, timeInForce,
                     o.refPrice(), attempt), c.cfg);
             if (sent.result() != Result.NOT_INSERTED) {
@@ -976,8 +993,37 @@ class RealTradeJob {
      * 장중 따라 하기(명세 §3.2) — 따라 할 시각이 지난 모의 대기 주문(시가 맞추기가 흡수한 것 제외)마다 그 창 안에서, 같은 뿌리는 한 번만. 따라 할 수 없는
      * 시점은 건너뜀·알림. 창이 지나도록 행이 없으면 놓침. 보낼 것이 없거나(이미 맞음) 구조적으로 건너뛴 뿌리는 그날 다시 보지 않고, 미룸·이 기능 주문 진행
      * 중은 다음 주기에 다시 봅니다.
+     *
+     * <p><b>스탑 매도</b>({@link DueOrder#stop} — ADR 0033 초안 결정 2·3): 그 주문 뒤 비중을 셈하지 않고(가격을 몰라도 손절이 사라지지 않게) 목표 0으로
+     * 정수 보유 전량을 그때 다시 읽은 매도 가능 수량·1건 상한까지 팝니다. 창은 {@link RealTradePlanner#stopWindow}(개장 10분 전에는 팔지 않음), 묶음이
+     * 흡수했다고 적혀 있어도 따로 봅니다(묶음이 실패해도 손절이 나가게 — 두 길 모두 목표 0이라 겹쳐도 더 팔 수 없음). 시도 1이 체결로 끝났는데 새 계획에
+     * 아직 1주 이상 팔 것이 남으면(1건 상한) 시도 2를 새로 읽은 수량으로 냅니다(뿌리당 최대 2 — DB 그대로). 매수 멈춤과 상관없습니다. 주기마다 보냄·막힘·
+     * 놓침이 있으면 스탑 매도 이벤트(건수만 — 알림)를 남깁니다.
+     *
+     * <p>매수를 보내기 직전에는 따라 하는 책의 오늘 대기 STOP 종목을 다시 읽어 그 종목 매수를 보내지 않습니다(ADR 0033 초안 결정 4).
      */
     private void runMirror(Cycle c, List<DueOrder> upcoming) {
+        StopTally tally = new StopTally();
+        mirrorOrders(c, upcoming, tally);
+        if (tally.sent + tally.blocked + tally.missed > 0) {
+            Map<String, Object> detail = new LinkedHashMap<>();
+            detail.put("sent", tally.sent);
+            detail.put("blocked", tally.blocked);
+            detail.put("missed", tally.missed);
+            detail.put("date", c.today.toString());
+            store.addEvent(MARKET, RealTradeNotices.EVENT_STOP_SELL, null, detail, true);
+            log.info("실제 매매 스탑 매도 — 보냄 {} · 막힘 {} · 놓침 {}", tally.sent, tally.blocked, tally.missed);
+        }
+    }
+
+    /** 한 주기의 스탑 매도 건수(알림 — 종목·수량 없음). */
+    private static final class StopTally {
+        int sent;
+        int blocked;
+        int missed;
+    }
+
+    private void mirrorOrders(Cycle c, List<DueOrder> upcoming, StopTally tally) {
         Day w = c.day.windows;
         if (w.intraday() == null && w.close() == null) {
             return;
@@ -987,12 +1033,13 @@ class RealTradeJob {
         Instant syncAt = w.syncAt();
         List<Due> due = new ArrayList<>();
         for (DueOrder o : upcoming) {
-            if (absorbed.contains(o.orderId()) || (o.supported() && (o.mirrorAt() == null || o.mirrorAt().isAfter(c.now)))) {
+            boolean stop = o.stop();
+            if ((!stop && absorbed.contains(o.orderId())) || (o.supported() && (o.mirrorAt() == null || o.mirrorAt().isAfter(c.now)))) {
                 continue;
             }
-            if (syncAt != null && !o.stop() && o.target() != null && !o.target().isAfter(syncAt)) {
+            if (syncAt != null && !stop && o.target() != null && !o.target().isAfter(syncAt)) {
                 // 시각 맞추기 날의 묶음 몫(ADR 0033 초안 결정 1) — 기준 시각이 맞추기 시각 이하인 주문은 묶음이 흡수했든 아니든 따라 하지 않음(묶음 생성이
-                // 늦어진 주기에 하나씩 따라 하고 다음 주기 묶음이 또 맞추는 이중 경로를 막음). 묶음을 놓치면 함께 놓침 — 다음 날 맞추기가 메움.
+                // 늦어진 주기에 하나씩 따라 하고 다음 주기 묶음이 또 맞추는 이중 경로를 막음). 묶음을 놓치면 함께 놓침 — 다음 날 맞추기가 메움. 스탑은 예외.
                 continue;
             }
             long root = o.rootOrderId();
@@ -1007,19 +1054,22 @@ class RealTradeJob {
             String window = close ? RealTradePlanner.WINDOW_CLOSE : RealTradePlanner.WINDOW_MIRROR;
             List<OrderRow> rows = store.ordersForRoot(MARKET, root).stream()
                     .filter(row -> RealTradeStore.PURPOSE_MIRROR.equals(row.purpose())).toList();
-            Window win = RealTradePlanner.mirrorWindow(w, o.mirrorAt(), close);
+            Window win = stop ? RealTradePlanner.stopWindow(w, o.mirrorAt(), close) : RealTradePlanner.mirrorWindow(w, o.mirrorAt(), close);
             Map<String, Set<String>> windowSkips = c.day.skipped.getOrDefault(window, Map.of());
             boolean deferred = DEFERRED_SKIPS.stream().anyMatch(reason -> windowSkips.getOrDefault(reason, Set.of()).contains("root:" + root));
             if (win == null || c.now.isAfter(win.end())) {
                 if (rows.isEmpty() && !c.day.handledRoots.contains(root) && !deferred) {
                     c.day.miss(window, "root:" + root);
+                    if (stop && c.day.stopMissCounted.add(root)) {
+                        tally.missed++;
+                    }
                 }
                 continue;
             }
             if (c.now.isBefore(win.start()) || c.day.handledRoots.contains(root)) {
                 continue;
             }
-            int attempt = nextAttempt(rows, null, RealTradeStore.PURPOSE_MIRROR, true);
+            int attempt = stop ? stopAttempt(rows) : nextAttempt(rows, null, RealTradeStore.PURPOSE_MIRROR, true);
             if (attempt == 0) {
                 if (!rows.isEmpty() && rows.getLast().terminal()) {
                     c.day.handledRoots.add(root);
@@ -1051,14 +1101,22 @@ class RealTradeJob {
             DueOrder o = x.order();
             long root = o.rootOrderId();
             String key = "root:" + root;
-            Optional<WeightAfter> weight = paper.weightAfter(c.cfg.sourceBook(), o.orderId(), c.now);
-            if (weight.isEmpty() || weight.get().unpricedOrderIds().contains(o.orderId())) {
-                recordSkips(c, x.window(), List.of(new Skip(o.ticker(), null, RealTradePlanner.SKIP_WEIGHT)), key);
-                c.day.handledRoots.add(root);
-                continue;
+            boolean stop = o.stop();
+            Plan plan;
+            if (stop) {
+                // 스탑 — 비중을 셈하지 않고 목표 0(정수 보유 전량, 매도 가능 수량·1건 상한까지)
+                plan = RealTradePlanner.mirror(o.ticker(), RealTradePlanner.SELL, 0.0, f.equity(), f.account(), blocked, reserved,
+                        rules(c, f).withDaily(ordersLeft, buyLeft));
+            } else {
+                Optional<WeightAfter> weight = paper.weightAfter(c.cfg.sourceBook(), o.orderId(), c.now);
+                if (weight.isEmpty() || weight.get().unpricedOrderIds().contains(o.orderId())) {
+                    recordSkips(c, x.window(), List.of(new Skip(o.ticker(), null, RealTradePlanner.SKIP_WEIGHT)), key);
+                    c.day.handledRoots.add(root);
+                    continue;
+                }
+                plan = RealTradePlanner.mirror(o.ticker(), o.side(), weight.get().weightPct(), f.equity(), f.account(), blocked, reserved,
+                        rules(c, f).withDaily(ordersLeft, buyLeft));
             }
-            Plan plan = RealTradePlanner.mirror(o.ticker(), o.side(), weight.get().weightPct(), f.equity(), f.account(), blocked, reserved,
-                    rules(c, f).withDaily(ordersLeft, buyLeft));
             recordSkips(c, x.window(), plan.skipped(), key);
             if (plan.orders().isEmpty()) {
                 if (plan.skipped().stream().noneMatch(s -> TRANSIENT_SKIPS.contains(s.reason()))) {
@@ -1067,26 +1125,44 @@ class RealTradeJob {
                 continue;
             }
             Order planned = plan.orders().getFirst();
-            int quantity = x.attempt() == 2 ? Math.min(planned.quantity(), remaining(x.rows(), null, RealTradeStore.PURPOSE_MIRROR))
-                    : planned.quantity();
+            int quantity = stop || x.attempt() != 2 ? planned.quantity()
+                    : Math.min(planned.quantity(), remaining(x.rows(), null, RealTradeStore.PURPOSE_MIRROR));
             if (quantity < 1) {
+                c.day.handledRoots.add(root);
+                continue;
+            }
+            if (planned.buy() && pendingStop(c, planned.symbol())) {
+                // 보내기 직전에 다시 읽은 대기 STOP 종목(ADR 0033 초안 결정 4) — 그날 그 종목은 다시 사지 않음
+                recordSkips(c, x.window(), List.of(new Skip(planned.symbol(), null, RealTradePlanner.SKIP_PENDING_STOP)), key);
                 c.day.handledRoots.add(root);
                 continue;
             }
             if (clock.instant().isAfter(x.win().end())) {   // 앞 주문의 전송이 길어져 이 주문의 창이 닫힘 — 보내지 않고 놓침(RT3-MON-4)
                 log.warn("장중 따라 하기 창이 보내기 전에 닫힘 — 놓침으로");
                 c.day.miss(x.window(), key);
+                if (stop && c.day.stopMissCounted.add(root)) {
+                    tally.missed++;
+                }
                 continue;
             }
             Sent sent = executor.send(new Send(c.today, RealTradeStore.PURPOSE_MIRROR, null, o.orderId(), root, planned.symbol(),
                     planned.side(), quantity, "DAY", planned.refPrice(), x.attempt()), c.cfg);
+            if (stop) {
+                if (sent.result() == Result.ACCEPTED || sent.result() == Result.UNKNOWN) {
+                    tally.sent++;
+                } else if (sent.result() != Result.NOT_INSERTED) {
+                    tally.blocked++;
+                }
+            }
             if (!live(c)) {
                 return;
             }
             switch (sent.result()) {
                 case NOT_INSERTED -> c.day.handledRoots.add(root);   // 선점 실패(장중 교체가 먼저 취소·대기 아님) 또는 같은 키
                 case ACCEPTED, UNKNOWN -> {
-                    c.day.handledRoots.add(root);
+                    if (!stop) {
+                        c.day.handledRoots.add(root);   // 스탑은 끝난 뒤 남은 보유를 시도 2로 팔 수 있게 다시 봄(진행 중이면 이 기능 주문 진행 중으로 건너뜀)
+                    }
                     blocked.add(planned.symbol());
                     ordersLeft--;
                     if (planned.buy()) {
@@ -1101,6 +1177,28 @@ class RealTradeJob {
                 default -> blocked.add(planned.symbol());   // 안 보냄 — 시도 2 조건이면 다음 주기
             }
         }
+    }
+
+    /** 따라 하는 책의 오늘 대기 STOP 종목인가 — 보내기 직전마다 다시 읽음(ADR 0033 초안 결정 4). */
+    private boolean pendingStop(Cycle c, String symbol) {
+        return symbol != null && paper.pendingStopSymbols(c.cfg.sourceBook(), c.today).contains(symbol);
+    }
+
+    /**
+     * 스탑 매도의 다음 시도 번호 — {@link #nextAttempt}(지나가는 장애의 거절·안 보냄, 덜 체결)에 더해, 시도 1이 체결로 끝났으면 2(새 계획에 아직 팔 것이
+     * 남을 때만 보냄 — 1건 상한으로 잘린 손절의 나머지). 뿌리당 최대 2(DB CHECK 그대로).
+     */
+    static int stopAttempt(List<OrderRow> rows) {
+        int attempt = nextAttempt(rows, null, RealTradeStore.PURPOSE_MIRROR, true);
+        if (attempt != 0) {
+            return attempt;
+        }
+        List<OrderRow> mine = rows.stream().filter(r -> RealTradeStore.PURPOSE_MIRROR.equals(r.purpose()))
+                .sorted((a, b) -> Integer.compare(a.attempt(), b.attempt())).toList();
+        OrderRow last = mine.isEmpty() ? null : mine.getLast();
+        boolean filled = last != null && last.terminal() && last.attempt() == 1 && last.filledQuantity() != null
+                && last.filledQuantity().signum() > 0;
+        return filled ? 2 : 0;
     }
 
     // ------------------------------------------------------------------ 시도 번호
