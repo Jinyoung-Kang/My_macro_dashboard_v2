@@ -3,7 +3,7 @@
 - 상태: 채택 (2026-11-06, 사용자 요청과 승인 — "이 프로젝트와 연동하지 않은 다른 증권계좌(현금 1,000만 원)를 한국 '규칙 계좌' 메커니즘으로 운용. [한국]-[실제 계좌] 옆에 'ISA 계좌'.
   화면을 보거나 텔레그램 알림으로 내가 직접 매매", 질문 답 "지시대로 자동 기록 + 다르면 고침 · ISA만 종목·수량 포함 · 밤 결정 직후 + 아침 08:00 · 안내 목록대로 산 것으로 시작", 계획 승인).
   계약은 [명세](../specs/2026-11-06-isa-manual-account.md).
-- 지키는 방법: 백엔드 `ManualAccountServiceTest`·`ManualAccountJobDbTest`(지시 계산·자동 기록·알림 글에 금액 없음), `ArchitectureRulesTest.realtradeIsIsolated`(허용 목록에 `store.ManualAccountStore`),
+- 지키는 방법: 백엔드 `ManualAccountPlannerTest`·`ManualAccountLedgerTest`·`ManualAccountNoticesTest`·`ManualAccountServiceDbTest`·`ManualAccountJobDbTest`·`ManualAccountPaperReadsTest`(지시 계산·자동 기록·알림 글에 금액 없음), `ArchitectureRulesTest.realtradeIsIsolated`(허용 목록에 `store.ManualAccountStore`),
   `AccessPolicyTest`(운영자 전용), 화면 `isaBoundary.test.ts`·탭은 KR만.
 
 ## 배경

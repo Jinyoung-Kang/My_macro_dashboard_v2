@@ -14,7 +14,7 @@
 - 장부 행(`manual_ledger`)이 정본이다: `kind` ∈ {`DEPOSIT`(시작 현금 포함), `WITHDRAW`, `BUY`, `SELL`, `ADJUST`(수량만 바꾸는 조정 — 분할 등)}.
   현금 = Σ입금 − Σ출금 − Σ매수(수량 × 체결가 + 수수료 + 세금) + Σ매도(수량 × 체결가 − 수수료 − 세금). 보유 = 종목별 Σ매수 수량 − Σ매도 수량 + Σ조정 수량.
   현금이 음수가 되거나 보유가 음수가 되는 행은 받지 않는다(400 `ledger-invalid`).
-- 평가: 보유 × 마지막 가격(`PaperMirrorService.lastPrices` — 감시·실시간 1분 가격 → 밤 관측치 종가 → 없으면 null). 모르는 가격의 종목은 평가에서 빼고 `unpriced`로 알린다.
+- 평가: 보유 × 마지막 가격(`PaperMirrorService.lastPrices` — 밤 관측치 종가(직전 종가), 없으면 null. 한국 감시 1분봉은 장중 판단 입력 전용이라 쓰지 않는다). 모르는 가격의 종목은 평가에서 빼고 `unpriced`로 알린다.
   손익 = 평가액 − 순입금(Σ입금 − Σ출금). 수수료·세금은 사용자가 고칠 때만 들어간다(자동 기록은 0 — 화면에 '비용 0으로 어림' 표시).
 
 ## 2. 지시 만들기 — 실제 매매와 같은 '목표 보유 맞추기'
@@ -71,7 +71,7 @@
 
 - 백엔드는 `feature.realtrade` 안에 둔다(`RealTradePlanner`·`PaperMirrorService`·`PaperTelegram` 허용 범위를 그대로 씀): `ManualAccountService`·`ManualAccountController`·`ManualAccountJob`·`store.ManualAccountStore`.
   `ArchitectureRulesTest.realtradeIsIsolated` 허용 목록에 `store.ManualAccountStore`를 더한다. 토스 수집기(`CollectorTradeClient`)는 쓰지 않는다 — ISA는 증권사 호출이 없다.
-- `PaperMirrorService`에 읽기 도우미 둘: `openPrices(session, tickers)`(시가 사다리), `lastPrices(tickers)`(마지막 가격). 쓰기 없음.
+- `PaperMirrorService`에 읽기 도우미 둘: `openPrices(session, tickers)`(시가 사다리), `lastPrices(tickers)`(직전 종가). 쓰기 없음.
 - ISA 자료는 모의 장부·패킷·프롬프트·주간 복기·토스 실제 매매로 가지 않는다(방향은 모의 → ISA 한쪽).
 
 ## 8. 화면
@@ -85,3 +85,20 @@
 - 백엔드: 장부 계산(현금·보유·평가·손익, 음수 거부), 지시(비중→수량·임계값·책에 없는 보유 전량 매도·현금 확인·순서·목표 불완전이면 안 만듦·세션 한 번), 자동 기록(시가 사다리·사용자 입력 우선·시가 없음 대기),
   고침 뒤 재계산, 시작 한 번만, 알림(종목·수량만 — 금액 글자 없음, 밤·아침 한 번씩, 실패 재시도), 접근(회원 403·운영자 200), 분리(ArchitectureRulesTest).
 - 화면: 탭은 KR만, 지시·고치기·추가·시작 창, 경계 시험, 이모지.
+
+## 10. 적대적 리뷰 뒤 확정한 세부(2026-11-06)
+
+앞 절과 다르면 이 절이 맞다.
+
+- **시가가 다시 오지 않을 지시**: 그 세션에 거래가 없던(거래량 0·정지 — `PaperMirrorService.openUnfillable`, 사유 `halted`) 종목의 지시는 AUTO `SKIPPED`, 그 날이 거래일이 아니면(늦은 휴장 지정)
+  그 세션 `PLANNED` 지시 모두 AUTO `SKIPPED`(`not-trading`). 매수는 '기다리는' 매도에만 묶인다.
+- **처리 안 된 지난 지시**: 최신 세션보다 앞 세션의 `PLANNED` 지시는 응답 최상위 `pendingInstructions`(항목 = `instructions.items` 칸 + `session`)로 내려 화면에서 체결 고치기·건너뜀을 할 수 있다.
+  `instructions`에 `open`(그 세션 개장 시각)·`reason`(세션 행 사유 코드)·`ledgerChanged`를 싣는다. 표가 없으면 `message`.
+- **이중 기록 방지**: id 없이 `instructionId`를 준 새 행은 그 지시에 AUTO 행만 있으면 같은 트랜잭션에서 그 행을 지우고 USER 행으로 바꾸고(사용자 입력 우선), USER 행이 이미 있으면 409 `already-recorded`.
+- **장부를 고친 뒤 다시 계산**: 장부 쓰기(추가·고침·삭제, 자동 기록 행을 지우는 건너뜀)가 다음 세션 S의 지시가 이미 있고 지금이 S 08:00(그 전에 개장하면 개장) 전이면 S의 묶인 행 없는 `PLANNED` 지시와
+  세션 행을 지운다 → 정기 작업이 고친 장부로 다시 만들고 '…시가 매매 지시(다시 계산)' 알림을 보낸다(다시 계산했더니 지시가 없으면 '할 매매가 없습니다 — 앞서 보낸 지시는 내지 마세요' 한 통).
+  08:00 뒤나 계좌가 멈춤이면 지우지 않고 `ledgerChanged=true`(화면 경고). 칸 `manual_accounts.recalc_session`·`manual_sessions.ledger_changed_at`.
+- **시가 밖 시점 주문**: 규칙 계좌에 그 세션을 목표로 하는 시가 밖 시점(분 지정·매시·장중 시장가·종가) 대기 주문이 있으면 지시를 만들지 않는다(`timed-orders`, 개장 뒤 `UNAVAILABLE`) — ISA는 시가로만 지시한다.
+- 시작에서 `startedAt`을 비우면 지금을 초 단위로 자른 시각. `account.startCash`는 장부의 시작 입금 행 합(시작 입금 행을 고치면 따라 바뀜). 화면 요약은 '순입금(시작 현금 포함)'(`summary.netDeposit`).
+- 평가 가격은 밤 관측치 종가만(§1). 화면 안내의 동시호가 구간과 체결 고치기 기본 시각은 `instructions.open`에서(모르면 08:30~09:00·09:00).
+

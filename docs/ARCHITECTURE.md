@@ -44,6 +44,9 @@ PostgreSQL(paper_* 읽기) ──► Backend RealTradeJob ──① real_trade_o
 결과를 모르면 같은 바이트로만 다시 보내고 그래도 모르면 멈춤). 수집기는 백엔드 값을 믿지 않고 창·형식·한도를 토스에서 직접 센 값으로 한 번 더 봅니다.
 방향은 모의 → 실제 한쪽뿐이라 실제 계좌 자료는 모의 장부·패킷·프롬프트로 들어가지 않습니다.
 
+ISA 계좌([ADR 0029](adr/0029-isa-manual-account.md))는 이 쓰기에 들지 않습니다 — 증권사 연결이 없어, 백엔드 `ManualAccountJob`이 규칙 계좌 책(읽기 — `PaperMirrorService`)과
+자기 장부(`manual_*`)로 다음 시가 지시를 만들어 화면·텔레그램으로 알리고 그날 밤 같은 시가로 장부에 적을 뿐, 주문은 운영자가 그 증권사에서 직접 냅니다(방향은 모의 → ISA 한쪽).
+
 저장본이 **아예 없을 때**는 수집이 끝나기를 기다립니다. 다만 기다린 뒤에도 없던
 태스크는 10분 동안 다시 기다리지 않고, 같은 태스크를 동시에 기다리는 요청은 한 번의
 수집에 합류합니다(`StoreReader`). 추적하지 않는 13F CIK·FRED 시계열은 기다리지 않고
@@ -66,6 +69,7 @@ PostgreSQL(paper_* 읽기) ──► Backend RealTradeJob ──① real_trade_o
 | `users`·`user_sessions`·`audit_log`·`email_tokens`·`usage_counters` | 계정·DB 세션·감사 기록·메일 링크 토큰·하루 사용량 — **백엔드가 씁니다**(ADR 0010) |
 | `alert_rules`·`alert_events`·`alert_deliveries` | 알림 규칙·사건·알림함 — **백엔드가 씁니다**(ADR 0011). 수집기는 종목 규칙의 코드만 읽습니다 |
 | `real_trade_config`·`real_trade_events`·`real_trade_batches`·`real_trade_orders` (V24) | 실제 매매(운영자 전용, [ADR 0028](adr/0028-real-trade-mirror.md)) — 시장별 상태(꺼짐·켜짐·이상 멈춤·끄는 중)·따라 하는 책·손실 한도·버전, 켜기·끄기·멈춤 이벤트, 하루 한 번의 시가 맞추기 묶음, 실제 주문(멱등 키·요청 본문·토스 결과·체결). **백엔드가 씁니다**(JDBC는 `store.RealTradeStore`에만). 수집기는 읽지도 쓰지도 않습니다(오늘 건수·매수 금액은 토스 목록에서 셈). 계좌번호·계좌 식별 키는 저장하지 않고, 토스 주문 번호는 이 표에만 둡니다. 멱등·감사에 필요해 백업(S3)·배포 전 덤프에 들어가므로, 복원 직후에는 설정이 모두 이상 멈춤(`restored`)이 되고 QA 복원은 이 표들을 비웁니다(`scripts/db-restore.sh`) |
+| `manual_accounts`·`manual_ledger`·`manual_instructions`·`manual_sessions` (V25) | ISA 계좌(운영자 전용, [ADR 0029](adr/0029-isa-manual-account.md)) — 연결되지 않은 다른 증권사 계좌, 장부 행(입출금·매수·매도·조정 — 현금·보유의 정본, 자동 기록과 사용자 고침), 한국 규칙 계좌를 따라 만든 다음 시가 매매 지시와 밤·아침 알림 시각, 세션별 '지시 없음·못 만듦' 기록. **백엔드가 씁니다**(JDBC는 `store.ManualAccountStore`에만). 수집기는 읽지도 쓰지도 않습니다. 실제 계좌 값이라 저장소·문서·시험 자료에 값을 넣지 않고 시작 장부는 배포 뒤 API로 적습니다. 백업(S3)에 들어가고 QA 복원은 이 표들을 비웁니다 |
 | `paper_*` 23개 (V8, V9~V11·V13·V15·V16은 열 추가, V12 `paper_reviews`, V14 `paper_fill_confirmations`와 한국 책 열, V15 한국 보유의 since 봉 거래량, V16 한국 장부가 그날 보류한 대기 주문의 표시, V17 `paper_order_exec`와 시각 지정 체결 시점·체결 봉 열, V18 `paper_checkpoints`와 결정 종류 `CHECKPOINT`·시점 `MARKET`) | 모의 매매(운영자 전용) — 계좌·보유·재진입 금지·주문·체결·순자산, 결정 기록, 게이트 지표, 13F 트랙레코드·기관 선정, 프레임 판·제안, 메모, 설정, 작업 기록, 출발일 종가, Claude 사용량·추정 비용, 주간 복기, 체결 확정 조정(한국), 주문별 실행 감사·장중 확인 계획과 결과(미국 Claude 계좌2 실험 — ADR 0022). **백엔드가 씁니다**(ADR 0008, JDBC는 `store.PaperStore`에만). 수집기는 쓰지 않고(`collector/tests/test_table_ownership.py`가 검사), 수집 범위를 정하려고 보유·주문 종목만 읽습니다(장중 평가 `paper_positions` — ADR 0020, 계좌2 1분봉 `paper_orders`·`paper_positions`, 계좌2 장중 확인 감시 `paper_checkpoints` — ADR 0022) |
 
 **데이터셋 이름은 두 언어에 같은 문자열로 존재합니다** — `collector/app/catalog.py`와
@@ -149,7 +153,7 @@ feature/<기능>/  기능 하나의 컨트롤러(HTTP 경계) + 서비스(저장
                  paper(모의 매매, 운영자 전용) ·
                  brokerage(토스증권 실제 계좌 읽기 전용 조회 — 운영자 전용, 저장하지 않음, 다른 기능과 서로 모름, ADR 0025) ·
                  realtrade(실제 매매 — 운영자 전용, 아무 패키지도 realtrade를 모르고, realtrade는 모의 책을 paper의 공개 서비스
-                 PaperMirrorService로만 봄, ADR 0028)
+                 PaperMirrorService로만 봄, ADR 0028 — 증권사 호출 없는 ISA 계좌의 장부·지시도 여기, ADR 0029)
 analytics/       스프링도 DB도 모릅니다. 입력은 숫자와 날짜, 출력도 숫자입니다.
 read/            읽기 정책(StoreReader) — 저장본이 오래됐으면 읽기 모드에 따라 수집을 요청하고 다시 읽음
 store/           저장소 접근 · 데이터셋 이름 · 신선도 (외부 호출 없음)
@@ -236,6 +240,7 @@ config/          설정 값(AppProperties) · 정기 작업 켜기 — 여러 �
 | `PaperKrIntradayJob` | 60초 | 한국 Claude 계좌1·계좌2의 **장중 판단**(자유 시점 판 — [ADR 0027](adr/0027-free-fill-timing.md) 결정 3·4, 스위치 `kr.claude.freeTiming`·`kr.claude2.freeTiming`을 켠 밤 결정이 예약한 것) — 미국 `PaperIntradayJob`과 같은 규칙을 한국 달력·한국 패킷(`KrCheckpointPacket`의 자유 시점 판 칸)·한국 장중 판단 응답 스키마로: 확인 시각 T(그 세션 날짜의 서울 시각) + 2분 ~ + 20분 창에서, T 뒤에 받은 감시 저장본(`paper.watch.kr`)의 신원 목록에 자기 행이 있을 때 한 번 부름(재시도 없음 — 결정 행 kind `INTRADAY_<순번>`). REPLACE 검증의 신선도는 그 밤 결정의 순간으로 셈(입력 동결). '기준 시각이 남은 대기 주문'은 한국 표로 셈(시가 = 그날 개장 09:00 — 09:30 전의 교체가 이미 지난 시가 주문을 취소하지 않음). 결정 주기 소상한은 없고 하루 상한만. 멈추려면 `kr.intradayMaxPerSession`을 0으로. 작업 기록 이름 `kr.intraday` |
 | `PaperClaude1CheckpointJob` | 5분 | 미국 Claude 계좌1 장중 확인(사용자 결정 2026-11-02 — 설정 `claude.checkpoint`, 시각 `claude.checkpointAtEt` 뉴욕 10:00~15:00, 기본 12:00) — 그 시각 뒤 ~ 마감 30분 전 창에서 그날 세션의 시간별 관측치가 그 시각 뒤에 저장되면 계좌1 결정을 **한 번** 더 냄(결정 행 kind `CHECKPOINT`, 기준 거래일 = 아침 결정의 d — 아침 정기 결정이 있어야 부름, 재시도 없음). 패킷·검증기·기록은 정기 결정과 같고 지시 한 줄만 더함, 호출 문턱은 정기 작업(하루 상한까지), 검증을 통과하면 앞선 대기 주문을 "다음 결정이 대신함"으로 취소하고 새 주문은 다음 시간별 관측치·그날 종가 체결. 창을 넘기면 그 세션은 건너뜀(기록 없음). 계좌2의 시각 지정 장치(`paper_checkpoints`)는 쓰지 않고, 이 주문은 실행 감사의 시점 메뉴 줄에서 뺌. 부른 주기와 예외로 끝난 주기(`ERROR` — 부른 뒤 결정을 기록하지 못했으면 그 세션은 다시 부르지 않음, 부르기 전 오류는 세션당 3번까지)를 기록(`claude1-checkpoint`), 수동 실행 경로 없음 |
 | `RealTradeJob` | 10초 | 실제 매매([ADR 0028](adr/0028-real-trade-mirror.md), 백엔드 스위치 `REAL_TRADE_ENABLED` — 꺼져 있으면 아무것도 안 함) — 진행 중 실제 주문 추적, 끄는 중·이상 멈춤이면 이 기능의 미체결 취소만, 켜짐이면 그날 토스 장 운영 정보의 창(시가 맞추기·시가 뒤 마무리·장중 따라 하기·종가)마다 실제 보유를 새로 읽어 계획·전송. 장중 따라 하기의 선점은 장부 잠금 안(`PaperMirrorService.claim` — 장중 교체와 줄을 섬), 토스 호출은 잠금 밖. **전용 단일 스레드 스케줄러**라 아래 공유 풀을 쓰지 않습니다(Claude 호출이 풀을 잡아도 창을 놓치지 않게) |
+| `ManualAccountJob` | 10분 | ISA 계좌([ADR 0029](adr/0029-isa-manual-account.md), `dashboard.paper.enabled`일 때만, 시작한 ACTIVE 계좌만) — 한국 규칙 계좌의 결정일 D 정기 결정이 끝나고 모의 장부가 다음 세션 E까지 따라잡았으면 E의 시가 매매 지시를 한 번 만들고(목표가 비거나 불완전하면 만들지 않고 다음 주기에 다시 — 빈 목표로 전량 매도하지 않게), 만든 직후와 E 08:00 KST 뒤 텔레그램을 한 번씩(못 보내면 다음 주기에 다시), E 밤 모의 장부와 같은 시가가 생기면 남은 지시를 장부에 자동 기록. 증권사 호출 없음. `RealTradeJob`처럼 **전용 단일 스레드 스케줄러**라 공유 풀을 쓰지 않습니다 |
 
 - **스레드 6개**(`application.yml`의 `spring.task.scheduling.pool.size`, Spring Boot 기본 1개 — 4에서 5는 계좌2 단계 2의 장중 확인 작업, 5에서 6은 계좌1 장중 확인 작업 때문). 결정 작업이 Claude를 부르는 몇 분
   (한도 `claude-timeout-seconds` 300초) 동안 리스크 점검·알림·국면 기록이 그 뒤에 줄을 섰기 때문입니다. 주간 복기도 Claude를 부르는
@@ -265,7 +270,7 @@ lib/                        표시 규칙(서식·메뉴·검색·테마·화면
 ```
 
 - **정보 구조**: 다섯 탭 + 더보기. 1단계는 옛 화면의 경로를 그대로 탭에 묶기만 하고(시장 → `/macro` 등), 옛 화면을 `/markets/…`로 옮기는 일은
-  4단계입니다. 모의매매만 `/paper/us/*`로 옮겼고(옛 `/paper`는 리디렉션) 한국 책은 `/paper/kr/*`(같은 탭, 2단계 F2)입니다. 두 시장 모두 마지막 탭 '실제 계좌'는 모의 장부와 별개인 토스증권 실계좌 읽기 전용 조회입니다([ADR 0025](adr/0025-toss-real-account-readonly.md)). 한국 탭은 그 맨 위에 실제 매매 칸(켜기·끄기 — [ADR 0028](adr/0028-real-trade-mirror.md))이 있고, 계좌 읽기·모의 개요가 실패해도 그 칸과 끄기 단추는 보입니다. 검색 상세 화면
+  4단계입니다. 모의매매만 `/paper/us/*`로 옮겼고(옛 `/paper`는 리디렉션) 한국 책은 `/paper/kr/*`(같은 탭, 2단계 F2)입니다. 두 시장 모두 탭 '실제 계좌'는 모의 장부와 별개인 토스증권 실계좌 읽기 전용 조회입니다([ADR 0025](adr/0025-toss-real-account-readonly.md)). 한국 탭은 그 맨 위에 실제 매매 칸(켜기·끄기 — [ADR 0028](adr/0028-real-trade-mirror.md))이 있고, 계좌 읽기·모의 개요가 실패해도 그 칸과 끄기 단추는 보입니다. 한국 탭 줄에만 그 옆에 'ISA 계좌'(장부와 다음 시가 매매 지시, 주문 기능 없음 — [ADR 0029](adr/0029-isa-manual-account.md))가 있습니다. 검색 상세 화면
   (지표 `/markets/i/<키>`·종목 `/s/<시장>/<코드>`·기관 `/institutions/<CIK>`)은 2026-11-01에 열었습니다 — 시세·뉴스·종목 찾기는 백엔드
   `feature.detail`이 수집기 `/live/quote`·`/live/news`·`/live/symbols`(Yahoo·네이버·구글 뉴스, 짧은 캐시)를 중계하고 저장하지 않으며, 차트·13F는
   기존 경로를 씁니다([명세](specs/2026-11-01-search-detail.md)).

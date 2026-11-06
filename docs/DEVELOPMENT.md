@@ -403,7 +403,8 @@ bash ~/My_macro_dashboard_v2/scripts/vultr/deploy.sh
   그 배포 뒤에 쌓인 장부(체결·결정·작업 기록)와 수집 저장본도 함께 그 시점으로 돌아가므로, 늦게 알아챘으면 통째 복원보다 SQL로 고쳐 앞으로 가는 쪽을 먼저 봅니다.
 - 데이터 복원: `aws s3 ls s3://<버킷>/db/vultr/` → `aws s3 cp s3://<버킷>/db/vultr/<파일>.sql backups/` → `make restore F=backups/<파일>.sql`.
   복원은 같은 트랜잭션 안에서 실제 매매 설정(`real_trade_config`)을 모두 이상 멈춤(`restored`)으로 바꿉니다 — 백업 뒤에 나간 실제 주문의 기록이 빠졌을 수 있어,
-  운영자가 토스 앱의 주문 내역과 화면을 맞춰 본 뒤 '멈춤 해제'(확인 글자 + 비밀번호) 또는 끄기를 합니다. QA 스택 복원은 `real_trade_*` 기록을 비우고 꺼짐으로 둡니다.
+  운영자가 토스 앱의 주문 내역과 화면을 맞춰 본 뒤 '멈춤 해제'(확인 글자 + 비밀번호) 또는 끄기를 합니다. QA 스택 복원은 `real_trade_*` 기록을 비우고 꺼짐으로 두며, ISA 계좌 표(`manual_*`)도 비웁니다.
+  운영 복원 뒤에는 백업 뒤에 고친 ISA 장부가 빠지므로 운영자가 화면 `/paper/kr/isa`에서 그 증권사 체결 내역과 맞춥니다.
   AWS 운영본의 마지막 덤프(2026-11-03 02:28 KST)는 만료 없는 `archive/aws-final/`에 있습니다 — 서버의 IAM 사용자는 `db/`만 읽으므로 PC에서 받습니다.
 
 ### 토스 실제 계좌 조회 켜기 ([ADR 0025](adr/0025-toss-real-account-readonly.md))
@@ -475,6 +476,24 @@ docker compose exec -T collector python -c 'import json,os,urllib.request as u; 
    cd ~/My_macro_dashboard_v2 && sed -i 's/^TOSS_TRADING_ENABLED=.*/TOSS_TRADING_ENABLED=false/' .env && docker compose up -d --no-deps --no-build collector
    ```
 4. **토스 앱에서 미체결 주문을 직접 취소**합니다(3 뒤에는 이 기능이 취소하지 못함). 원인을 찾은 뒤 다시 켤 때는 위 '켜는 순서' 2부터.
+
+### ISA 계좌 시작 ([ADR 0029](adr/0029-isa-manual-account.md))
+
+연결되지 않은 다른 증권사 계좌의 장부를 배포 뒤 **한 번** 시작합니다(계약은 [명세](specs/2026-11-06-isa-manual-account.md) — 본문 모양은 §5). 새 환경변수는 없고, 서버의 모의 매매 정기 작업과
+텔레그램(`TELEGRAM_*`)을 그대로 씁니다. 시작 현금·시작 매수 목록은 실제 계좌 값이라 저장소·문서·커밋·QA 기록·로그에 적지 않습니다(위 '검증 출력 규칙'과 같음).
+운영자는 화면 `/paper/kr/isa`의 '시작' 창으로 하고, 화면 없이 할 때는 서버(ubuntu)에서 아래 순서로 합니다(위 비상 끄기와 같은 Tailscale 신원 + 허용 출처).
+
+1. `(umask 077 && cat > ~/isa-start.json)`을 따로 친 뒤 본문을 붙여 넣고 Ctrl-D(값이 셸 이력에 남지 않음 — 아래 줄과 함께 붙여 넣으면 그 줄이 파일로 들어감).
+2. 아래 한 줄로 보냅니다. 파일은 결과와 상관없이 지우고, 출력은 `ok`·`error`뿐입니다(`already-started`면 이미 시작 — 다시 시작하지 않고 화면의 장부 고치기로 맞춤).
+
+   ```bash
+   cd ~/My_macro_dashboard_v2 && printf 'Tailscale-User-Login: %s\n' "$(docker compose exec -T backend printenv TAILNET_OWNER_LOGIN)" | curl -sS -X POST http://127.0.0.1:8201/api/manual/isa/start -H @- -H 'Origin: http://localhost:8201' -H 'Content-Type: application/json' --data-binary @"$HOME/isa-start.json" | python3 -c 'import json,sys; d=json.load(sys.stdin); print({k:d.get(k) for k in ("ok","error")})'; rm -f ~/isa-start.json
+   ```
+3. 확인은 `available`·`started`만 찍습니다. 금액·종목·수량과 지시 내용은 운영자가 화면과 텔레그램에서 직접 봅니다.
+
+   ```bash
+   cd ~/My_macro_dashboard_v2 && printf 'Tailscale-User-Login: %s\n' "$(docker compose exec -T backend printenv TAILNET_OWNER_LOGIN)" | curl -sS http://127.0.0.1:8201/api/manual/isa -H @- | python3 -c 'import json,sys; d=json.load(sys.stdin); print({k:d.get(k) for k in ("available","started")})'
+   ```
 
 ### 백업 (cron)
 
