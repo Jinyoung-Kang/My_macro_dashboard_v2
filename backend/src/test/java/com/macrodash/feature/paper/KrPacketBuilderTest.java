@@ -1064,8 +1064,52 @@ class KrPacketBuilderTest {
                 .body().get(PacketBuilder.BASIS).get("intraday").get("events");
         assertThat(events.get("indexTicker").asString()).isEqualTo("069500");
         assertThat(events.get("rule").asString()).isEqualTo(IntradayScheduler.eventRule(true)).contains("069500");
+        ((ObjectNode) kr.get("stopWatch")).put("mode", "SHADOW");
+        assertThat(builder.forFree(PaperBooks.KR_CLAUDE).build(run(), D, RuleBookService.SCHEDULED, false, 3, quotesD(), READ_D).body()
+                .get(PacketBuilder.BASIS).get("intraday").get("events")).as("SHADOW도 사건 자료가 있음").isEqualTo(events);
         assertThat(builder.build(run(), D, RuleBookService.SCHEDULED, false, 3, quotesD(), READ_D).text()).as("끈 판 패킷은 그대로")
                 .isEqualTo(off.text());
+    }
+
+    @Test
+    @DisplayName("한국 장중 스탑 감시 ON(kr.stopWatch.mode — ADR 0032): 한국 결정 패킷(켠 판·끈 판)에 1_basis.stopWatch와 12_hardRules의 스탑 줄(5분 감시·"
+            + "두 번·장중 시장가·종가 단일가 뒤 종가·밤 대체 개장 10분 뒤)이 실리고 대기 감시 STOP 종목(밤 대체 포함)은 lockedOut — 그 밖은 바이트 그대로. "
+            + "SHADOW는 예전 고정본 그대로")
+    void stopWatchOnPacket() {
+        Packet off = scheduled();
+        ObjectNode kr = (ObjectNode) store.settings.body().get("kr");
+        ((ObjectNode) kr.get("stopWatch")).put("mode", "SHADOW");
+        assertThat(builder.build(run(), D, RuleBookService.SCHEDULED, false, 3, quotesD(), READ_D).text()).as("SHADOW — 예전 글자 그대로")
+                .isEqualTo(off.text());
+        Golden.assertMatches("packet-kr-ft-scheduled.json", builder.forFree(PaperBooks.KR_CLAUDE).build(run(), D, RuleBookService.SCHEDULED,
+                false, 3, quotesD(), READ_D).text());
+
+        ((ObjectNode) kr.get("stopWatch")).put("mode", "ON");
+        store.insertOrder(new Order(0, PaperBooks.KR_CLAUDE, null, "000660", "SELL", null, null, null, PaperBooks.AT_MINUTE,
+                PaperBooks.SOURCE_STOP, PaperBooks.ORDER_PENDING, null,
+                MAPPER.createObjectNode().put("stopMode", PaperLedgerService.STOP_MODE_NIGHT_FALLBACK), D, kst("2026-11-03T21:15"),
+                LocalDate.of(2026, 11, 6), null, java.time.LocalTime.of(9, 10)));
+        Packet on = builder.forFree(PaperBooks.KR_CLAUDE).build(run(), D, RuleBookService.SCHEDULED, false, 3, quotesD(), READ_D);
+        Golden.assertMatches("packet-kr-ft-stopwatch-scheduled.json", on.text());
+        JsonNode stopWatch = on.body().get(PacketBuilder.BASIS).get("stopWatch");
+        assertThat(stopWatch.get("mode").asString()).isEqualTo("ON");
+        assertThat(stopWatch.get("rule").asString()).isEqualTo(StopWatch.rule(true)).contains("토스 1분봉").contains("종가 단일가")
+                .contains("개장 10분 뒤 첫 분").contains("금융위 확정가로 다시 판정하지 않고");
+        List<String> rules = new ArrayList<>();
+        on.body().get(PacketBuilder.HARD_RULES).get("lines").forEach(line -> rules.add(line.asString()));
+        assertThat(rules).contains(StopWatch.hardRuleLine(true, "8", 20)).noneMatch(line -> line.contains("다음 거래일 시가에 매도"));
+        assertThat(on.body().get(PacketBuilder.HARD_RULES).get("lockedOut").toString()).contains("000660");
+        Packet offBoard = builder.build(run(), D, RuleBookService.SCHEDULED, false, 3, quotesD(), READ_D);
+        assertThat(offBoard.body().get(PacketBuilder.BASIS).get("stopWatch")).as("끈 판 한국 패킷도 같은 칸").isEqualTo(stopWatch);
+
+        // 다른 곳만 걷어 내면 끈 판(감시 OFF) 패킷과 같음.
+        ObjectNode a = (ObjectNode) off.body().deepCopy();
+        ObjectNode b = (ObjectNode) offBoard.body().deepCopy();
+        ((ObjectNode) b.get(PacketBuilder.BASIS)).remove("stopWatch");
+        for (ObjectNode node : List.of(a, b)) {
+            ((ObjectNode) node.get(PacketBuilder.HARD_RULES)).remove(List.of("lines", "lockedOut"));
+        }
+        assertThat(b).as("그 밖은 감시 OFF 패킷과 같음").isEqualTo(a);
     }
 
     private static String meta(String name, Packet packet) {

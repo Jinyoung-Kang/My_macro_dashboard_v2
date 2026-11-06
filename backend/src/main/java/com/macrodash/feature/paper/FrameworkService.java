@@ -359,7 +359,8 @@ public class FrameworkService {
      * 한국 책의 하드 규칙 줄(명세 K34 ①, E2a) — 미국 줄({@link #hardRules})과 같은 설정 읽기를 그 시장 접두어({@code kr.})로 하고
      * ({@link PacketBuilder.Limits}·{@link PaperSettings} — 검증기·장부·패킷 12_hardRules가 읽는 값), 문구는 한국 것입니다: 금액은 원
      * ({@link PaperMarket#money} — 검증기 문구와 같은 표기), 현금성은 {@code kr.cashLikeTickers}(기본 153130), 체결 시점은 그 시장이 받는 것
-     * ({@link PaperMarket#timings} — {@code KrPaperMarket.ALLOW_NEXT_CLOSE}가 거짓이면 NEXT_OPEN뿐), 스탑은 밤 감지 → 다음 거래일 시가,
+     * ({@link PaperMarket#timings} — {@code KrPaperMarket.ALLOW_NEXT_CLOSE}가 거짓이면 NEXT_OPEN뿐), 스탑은 밤 감지 → 다음 거래일 시가(장중 스탑 감시
+     * ON이면 그 규칙 — {@link StopWatch#krPromptLine}),
      * 정수 주(1주 체결 금액보다 작은 매수 증가분은 검증기가 BUY_BELOW_ONE_SHARE로 거절). 날짜는 넣지 않습니다(캐시 블록).
      */
     static List<String> krHardRules(PaperMarket market, JsonNode settingsBody) {
@@ -385,7 +386,10 @@ public class FrameworkService {
         out.add("- 종목 비중 ≤ " + plain(limits.maxWeightStockPct()) + "%, ETF ≤ " + plain(limits.maxWeightEtfPct())
                 + "%, 현금성(" + (cashLike.isEmpty() ? "없음" : cashLike) + ")은 상한 없음, 최대 " + limits.maxPositions()
                 + "종목(현금성 제외)");
-        out.add("- 트레일링 스탑 −" + plain(paper.trailingStopPct()) + "%(코드가 밤마다 잠정 종가로 감지해 다음 거래일 시가에 매도), 스탑 뒤 "
+        // 한국 장중 스탑 감시가 주문을 내는 판(kr.stopWatch.mode ON — ADR 0032)은 그 규칙으로. OFF·SHADOW는 예전 줄 그대로(시스템 프롬프트 바이트 그대로).
+        out.add(StopWatchMode.of(settingsBody, true).orders()
+                ? StopWatch.krPromptLine(plain(paper.trailingStopPct()), paper.lockoutTradingDays())
+                : "- 트레일링 스탑 −" + plain(paper.trailingStopPct()) + "%(코드가 밤마다 잠정 종가로 감지해 다음 거래일 시가에 매도), 스탑 뒤 "
                 + paper.lockoutTradingDays() + "거래일 재진입 금지");
         out.add("- 재량 주문 월 " + limits.maxDiscretionaryOrdersPerMonth() + "건(출발 결정 주문은 이달 누계에 세지 않음), 재량 매도는 보유 "
                 + limits.minHoldTradingDaysForSell() + "거래일 뒤부터, 매수 증가분 최소 "

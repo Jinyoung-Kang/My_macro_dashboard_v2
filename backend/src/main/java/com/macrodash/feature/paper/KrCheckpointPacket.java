@@ -75,14 +75,22 @@ final class KrCheckpointPacket {
      * @param manual   운영자가 당긴 판단인가
      * @param origin   그 계획 행을 누가 만들었나(null이면 수동 표시로 정함)
      * @param trigger  사건이 당기거나 더하거나 붙인 판단이면 그 사건, 없으면 null
-     * @param replaces 이 판단의 {@code nextCheckpoint}가 대신하게 될 남은 예약, 없으면 null
+     * @param replaces  이 판단의 {@code nextCheckpoint}가 대신하게 될 남은 예약, 없으면 null
+     * @param stopWatch 한국 장중 스탑 감시가 주문을 내는 판인가({@code kr.stopWatch.mode} ON — {@code 1_basis.stopWatch}, ADR 0032 — 스탑 줄은 밤 결정
+     *                  패킷의 12_hardRules에 있음)
      */
-    record Free(String book, int slot, int max, boolean manual, String origin, JsonNode trigger, CheckpointPacket.Reserved replaces) {
+    record Free(String book, int slot, int max, boolean manual, String origin, JsonNode trigger, CheckpointPacket.Reserved replaces,
+                boolean stopWatch) {
 
         Free {
             Objects.requireNonNull(book, "book");
             origin = origin != null ? origin : manual ? PaperStore.IntradayPlan.ORIGIN_MANUAL : PaperStore.IntradayPlan.ORIGIN_RESERVED;
             trigger = trigger == null || trigger.isNull() || trigger.isMissingNode() ? null : trigger;
+        }
+
+        /** 장중 스탑 감시 OFF·SHADOW 판. */
+        Free(String book, int slot, int max, boolean manual, String origin, JsonNode trigger, CheckpointPacket.Reserved replaces) {
+            this(book, slot, max, manual, origin, trigger, replaces, false);
         }
 
         /** 출처·사건·남은 예약 없이(운영자 행이면 출처 MANUAL, 아니면 RESERVED). */
@@ -260,6 +268,9 @@ final class KrCheckpointPacket {
         }
         out.put("frameworkVersion", in.frameworkVersion());
         out.put("settingsVersion", in.settingsVersion());
+        if (free != null && free.stopWatch()) {
+            out.put("stopWatch", StopWatch.basis(true));
+        }
         return out;
     }
 

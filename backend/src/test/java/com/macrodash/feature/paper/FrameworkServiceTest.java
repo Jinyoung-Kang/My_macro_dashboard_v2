@@ -319,6 +319,31 @@ class FrameworkServiceTest {
     }
 
     @Test
+    @DisplayName("한국 장중 스탑 감시 ON(kr.stopWatch.mode — ADR 0032): 한국 시스템 프롬프트(켠 판·끈 판·복기)의 하드 규칙 스탑 줄 하나만 감시 규칙으로 바뀜 — "
+            + "SHADOW는 바이트 그대로, 미국 렌더링은 감시를 켜도 그대로('코드가 집행')")
+    void krStopWatchOnRender() {
+        JsonNode body = FrameworkService.interimBody(MAPPER);
+        ObjectNode settingsBody = (ObjectNode) settings.defaultsJson().deepCopy();
+        String off = FrameworkService.render(ClaudeBookProfile.KR_CLAUDE_FT, body, 0, settingsBody);
+        ((ObjectNode) settingsBody.get("kr").get("stopWatch")).put("mode", "SHADOW");
+        assertThat(FrameworkService.render(ClaudeBookProfile.KR_CLAUDE_FT, body, 0, settingsBody)).isEqualTo(off);
+        ((ObjectNode) settingsBody.get("kr").get("stopWatch")).put("mode", "ON");
+        ((ObjectNode) settingsBody.get("stopWatch")).put("mode", "ON");
+        String on = FrameworkService.render(ClaudeBookProfile.KR_CLAUDE_FT, body, 0, settingsBody);
+        Golden.assertMatches("render-kr-ft-claude-v0-stopwatch.txt", on);
+        List<String> offLines = off.lines().toList();
+        List<String> onLines = on.lines().toList();
+        assertThat(onLines.stream().filter(line -> !offLines.contains(line)).toList()).containsExactly(StopWatch.krPromptLine("8", 20));
+        assertThat(offLines.stream().filter(line -> !onLines.contains(line)).toList()).singleElement()
+                .satisfies(line -> assertThat(line).contains("밤마다 잠정 종가로 감지해 다음 거래일 시가에 매도"));
+        assertThat(FrameworkService.render(ClaudeBookProfile.KR_CLAUDE, body, 0, settingsBody)).as("끈 판 한국 렌더링도 같은 줄")
+                .contains(StopWatch.krPromptLine("8", 20));
+        assertThat(ReviewService.systemPrompt(KrPaperMarket.INSTANCE, body, 0, settingsBody)).contains(StopWatch.krPromptLine("8", 20));
+        assertThat(FrameworkService.render(ClaudeBookProfile.US_CLAUDE_FT, body, 0, settingsBody)).as("미국은 감시를 켜도 그대로")
+                .isEqualTo(FrameworkService.render(ClaudeBookProfile.US_CLAUDE_FT, body, 0, settings.defaultsJson()));
+    }
+
+    @Test
     @DisplayName("고정본: 한국 시스템 프롬프트 — 결정(임시 v0·한국 기본 설정)과 주간 복기(REVIEW + 같은 한국 렌더링)가 바이트까지 같다")
     void goldenKrRender() {
         JsonNode body = FrameworkService.interimBody(MAPPER);

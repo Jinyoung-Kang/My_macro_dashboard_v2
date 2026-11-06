@@ -1570,6 +1570,59 @@ class PacketBuilderTest {
     }
 
     @Test
+    @DisplayName("장중 스탑 감시 ON(stopWatch.mode — ADR 0032): 미국 결정 패킷(켠 판·끈 판 모두)에 1_basis.stopWatch와 12_hardRules의 스탑 줄(5분 감시·두 번·"
+            + "감지 + 60초 뒤 시장가·대체 경로)이 실리고 대기 감시 STOP 종목은 lockedOut에 들어감 — 그 밖은 바이트 그대로. OFF·SHADOW는 예전 고정본 그대로")
+    void stopWatchOnPackets() {
+        store.insertNote(new Note(0, NoteService.MARKET, FRI, TUE, "금요일 시황", "10년물 4.6%·브렌트 88", false, null));
+        activeClaude();
+        activeClaude2();
+        ObjectNode body = (ObjectNode) store.settings.body();
+        ((ObjectNode) body.get("stopWatch")).put("mode", "SHADOW");
+        PacketBuilder.MarketInputs shadow = builder.read(MON, false, store.settings);
+        Golden.assertMatches("packet-us-ft-claude2-scheduled.json", builder.assemble(shadow, ClaudeBookProfile.US_CLAUDE2_FT,
+                RuleBookService.SCHEDULED, 0).text());
+        Golden.assertMatches("packet-us-scheduled.json", builder.assemble(shadow, ClaudeBookProfile.US_CLAUDE, RuleBookService.SCHEDULED, 0)
+                .text());
+        Packet before = builder.assemble(shadow, ClaudeBookProfile.US_CLAUDE2_FT, RuleBookService.SCHEDULED, 0);
+
+        ((ObjectNode) body.get("stopWatch")).put("mode", "ON");
+        store.insertOrder(new Order(0, PaperBooks.CLAUDE2, null, "MSFT", "SELL", null, null, null, PaperBooks.MARKET, PaperBooks.SOURCE_STOP,
+                PaperBooks.ORDER_PENDING, null, MAPPER.createObjectNode().put("stopMode", PaperStopWatchJob.STOP_MODE), FRI,
+                Instant.parse("2026-10-26T15:20:00Z"), MON, null, null));
+        PacketBuilder.MarketInputs on = builder.read(MON, false, store.settings);
+        Packet ft2 = builder.assemble(on, ClaudeBookProfile.US_CLAUDE2_FT, RuleBookService.SCHEDULED, 0);
+        Golden.assertMatches("packet-us-ft-claude2-stopwatch-scheduled.json", ft2.text());
+        JsonNode stopWatch = ft2.body().get(PacketBuilder.BASIS).get("stopWatch");
+        assertThat(stopWatch.get("mode").asString()).isEqualTo("ON");
+        assertThat(stopWatch.get("intervalMinutes").asInt()).isEqualTo(5);
+        assertThat(stopWatch.get("consecutiveChecks").asInt()).isEqualTo(2);
+        assertThat(stopWatch.get("firstJudgedAfterOpenMinutes").asInt()).isEqualTo(10);
+        assertThat(stopWatch.get("rule").asString()).isEqualTo(StopWatch.rule(false)).contains("마감 5분 전").contains("관측치마다")
+                .contains("15% 이상").doesNotContain("실시간");
+        List<String> rules = new ArrayList<>();
+        ft2.body().get(PacketBuilder.HARD_RULES).get("lines").forEach(line -> rules.add(line.asString()));
+        assertThat(rules).contains(StopWatch.hardRuleLine(false, "8", 20)).noneMatch(line -> line.contains("관측치마다 집행하고"));
+        assertThat(ft2.body().get(PacketBuilder.HARD_RULES).get("lockedOut").toString()).as("대기 감시 STOP 종목").contains("MSFT");
+
+        // 다른 곳만 걷어 내면 SHADOW 패킷과 같음.
+        ObjectNode a = (ObjectNode) before.body().deepCopy();
+        ObjectNode b = (ObjectNode) ft2.body().deepCopy();
+        ((ObjectNode) b.get(PacketBuilder.BASIS)).remove("stopWatch");
+        for (ObjectNode node : List.of(a, b)) {
+            ((ObjectNode) node.get(PacketBuilder.HARD_RULES)).remove(List.of("lines", "lockedOut"));
+            ((ObjectNode) node.get(PacketBuilder.BASIS)).remove("settingsVersion");
+        }
+        assertThat(b).as("그 밖은 감시 SHADOW 패킷과 같음").isEqualTo(a);
+
+        // 끈 판 계좌1 패킷도 스탑 규칙은 시장 것이라 같은 칸·줄(장중 감시는 Claude 계좌 모두를 지킴).
+        Packet book1 = builder.assemble(on, ClaudeBookProfile.US_CLAUDE, RuleBookService.SCHEDULED, 0);
+        assertThat(book1.body().get(PacketBuilder.BASIS).get("stopWatch")).isEqualTo(stopWatch);
+        assertThat(book1.body().get(PacketBuilder.HARD_RULES).get("lines").toString()).contains(StopWatch.rule(false));
+        assertThat(book1.body().get(PacketBuilder.HARD_RULES).get("lockedOut").toString()).as("계좌2의 STOP은 계좌1과 상관없음")
+                .doesNotContain("MSFT");
+    }
+
+    @Test
     @DisplayName("13_execution 자유 시점 판(메뉴 4): 메뉴는 AT_MINUTE·NEXT_CLOSE 둘(시가 없음), 조기 폐장일(E 11-27 — 마감 13:00)의 지정 시각 범위는 "
             + "09:40~12:54·장중 판단은 09:40~12:30, 서머타임이 끝난 주(E 11-02)의 09:40 ET = 23:40 KST, 장중 판단 선택지는 세션당 횟수(설정, 최대 3)·"
             + "09:40~15:30 ET·간격 20분·지연 요약은 모이기 전 null")

@@ -491,6 +491,30 @@ class CheckpointPacketTest {
     }
 
     @Test
+    @DisplayName("장중 스탑 감시 ON(ADR 0032): 켠 판 장중 판단 패킷에 1_basis.stopWatch와 6_hardRules 끝의 스탑 줄 — 그 밖은 바이트 그대로. 꺼진 판(OFF·SHADOW)은 "
+            + "고정본 그대로")
+    void stopWatchOnIntradayPacket() {
+        PacketBuilder.Packet off = CheckpointPacket.build(freeInputs(new CheckpointPacket.Free(PaperBooks.CLAUDE, 2, 2, false, null, null,
+                null, false)), MAPPER);
+        assertThat(off.text()).isEqualTo(CheckpointPacket.build(freeInputs(2, 2, false), MAPPER).text());
+        PacketBuilder.Packet on = CheckpointPacket.build(freeInputs(new CheckpointPacket.Free(PaperBooks.CLAUDE, 2, 2, false, null, null,
+                null, true)), MAPPER);
+        JsonNode stopWatch = on.body().get("1_basis").get("stopWatch");
+        assertThat(stopWatch.get("mode").asString()).isEqualTo("ON");
+        assertThat(stopWatch.get("rule").asString()).isEqualTo(StopWatch.rule(false));
+        JsonNode lines = on.body().get("6_hardRules").get("lines");
+        assertThat(lines.get(lines.size() - 1).asString()).isEqualTo(CheckpointPacket.STOP_WATCH_LINE);
+        ObjectNode a = (ObjectNode) off.body().deepCopy();
+        ObjectNode b = (ObjectNode) on.body().deepCopy();
+        ((ObjectNode) b.get("1_basis")).remove("stopWatch");
+        ((ArrayNode) b.get("6_hardRules").get("lines")).remove(lines.size() - 1);
+        assertThat(b).isEqualTo(a);
+        JsonNode checkpoint = CheckpointPacket.build(inputs("MINUTE", Optional.of(watch(FETCHED, watchTickers())), List.of(60, 70)), MAPPER)
+                .body();
+        assertThat(checkpoint.get("1_basis").has("stopWatch")).as("끈 판 장중 확인 패킷에는 없음").isFalse();
+    }
+
+    @Test
     @DisplayName("ADR 0030: 장중 확인·판단 패킷(MINUTE·HOURLY·자유 시점 MINUTE)에서 바뀐 것은 4_portfolio.expected.note의 어림 설명 문구뿐('슬리피지·수수료·매도 제비용 빼고 어림') — 되돌리면 ADR 0030 전 고정본과 바이트까지 같다")
     void onlyTheEstimateNoteChangedForCosts() {
         String now = "(슬리피지·수수료·매도 제비용 빼고 어림)";

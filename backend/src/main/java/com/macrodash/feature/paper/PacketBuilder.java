@@ -577,6 +577,12 @@ public class PacketBuilder {
         boolean initial = in.initial();
         LedgerView ledger = ledger(book, asOf, initial);
         Set<String> lockedOut = lockedOut(ledger.lockouts(), asOf);
+        if (!initial) {
+            // 장중 감시가 낸 대기 STOP 종목 — 검증기가 재진입 금지와 같게 새 매수를 거절하므로 패킷에도(ADR 0032 결정 8). 감시가 꺼져 있으면 없음.
+            lockedOut.addAll(StopWatch.pendingWatchStops(store.ordersByStatus(book.code(), PaperBooks.ORDER_PENDING)));
+        }
+        // 장중 스탑 감시가 주문을 내는 판(stopWatch.mode ON — ADR 0032): 1_basis.stopWatch와 스탑 문장. OFF·SHADOW는 예전 글자 그대로.
+        boolean stopWatch = StopWatchMode.of(in.settingsBody(), false).orders();
         // 검증기가 NO_PRICE·STALE_INPUT으로 거절할 종목·상태 — 패킷이 거래할 수 있는 것처럼 보이면 모델이 거절될 주문을 냅니다.
         Set<String> noPrice = initial ? null : noPriceTickers(in.quotes(), ledger.positions());
 
@@ -607,7 +613,7 @@ public class PacketBuilder {
         Map<String, Object> root = new LinkedHashMap<>();
         root.put(INSTRUCTIONS, instructions(asOf, initial, kind));
         root.put(BASIS, basis(book, asOf, kind, initial, in.quotes(), frameworkVersion, in.settingsVersion(),
-                in.chosen(), in.consensus() ? PACKET_VERSION_CONSENSUS : PACKET_VERSION));
+                in.chosen(), in.consensus() ? PACKET_VERSION_CONSENSUS : PACKET_VERSION, stopWatch));
         root.put(CALENDAR, calendar.section());
         root.put(MACRO, in.marketSections().get(MACRO));
         root.put(FRED, in.marketSections().get(FRED));
@@ -625,7 +631,7 @@ public class PacketBuilder {
         root.put(NOTES, in.marketSections().get(NOTES));
         root.put(EVENTS, events.section());
         root.put(HARD_RULES, hardRules(book, asOf, initial, in.limits(), in.paper(), in.ruleSettings(), in.universe(),
-                lockedOut, noPrice, in.inputsStale(), initial ? null : in.quotes().map(Quotes::collectedAt).orElse(null)));
+                lockedOut, noPrice, in.inputsStale(), initial ? null : in.quotes().map(Quotes::collectedAt).orElse(null), stopWatch));
         if (VARIANT_CLAUDE2.equals(book.packetVariant())) {
             // 계좌2만 — 체결 시점 메뉴·사다리·출처 사실·자기 체결 기록(계좌2 명세 §9-3). 계좌1 패킷에는 이 섹션이 없습니다(고정본 그대로).
             root.put(EXECUTION, ExecutionSection.build(asOf, book.timings(), UsMarketCalendar.CALENDAR,
@@ -753,7 +759,7 @@ public class PacketBuilder {
 
     private Map<String, Object> basis(ClaudeBookProfile book, LocalDate asOf, String kind, boolean initial,
                                       Optional<Quotes> quotes, Integer frameworkVersion, Integer settingsVersion,
-                                      Selection chosen, int packetVersion) {
+                                      Selection chosen, int packetVersion, boolean stopWatch) {
         LocalDate next = UsMarketCalendar.nextTradingDay(asOf);
         List<String> holidays = new ArrayList<>();
         for (int i = 1; i <= HOLIDAY_HORIZON_DAYS; i++) {
@@ -794,6 +800,9 @@ public class PacketBuilder {
         out.put("settingsVersion", settingsVersion);
         out.put("selectionAsOf", chosen == null ? null : chosen.asOfDate().toString());
         out.put("currency", "USD");
+        if (stopWatch) {
+            out.put("stopWatch", StopWatch.basis(false));
+        }
         return out;
     }
 
@@ -2227,7 +2236,7 @@ public class PacketBuilder {
     private static Map<String, Object> hardRules(ClaudeBookProfile book, LocalDate asOf, boolean initial, Limits limits,
                                                  PaperSettings paper, RuleSettings ruleSettings, Set<String> universe,
                                                  Set<String> lockedOut, Set<String> noPrice, boolean inputsStale,
-                                                 Instant quotesCollectedAt) {
+                                                 Instant quotesCollectedAt, boolean stopWatch) {
         // 계좌2(시각 지정 체결)는 시점 문장 셋이 순위 규칙·메뉴로 바뀝니다(계좌2 명세 §9-2·§10-5) — 나머지 줄은 계좌1과 같은 글자.
         boolean timed = book.timed();
         String cashLike = String.join(", ", paper.cashLikeTickers());
@@ -2259,7 +2268,8 @@ public class PacketBuilder {
                         + "매수를 목표 비중 큰 순) 넘치면 MONTHLY_CAP. ", limits.maxDiscretionaryOrdersPerMonth(),
                         timed ? "출발 결정(INITIAL) 주문 제외" : "초기 배분 제외"))
                 + String.format(Locale.ROOT, "재량 매도는 보유 %d거래일 뒤부터.", limits.minHoldTradingDaysForSell()));
-        lines.add(String.format(Locale.ROOT, "트레일링 스탑 −%s%%는 코드가 관측치마다 집행하고, 스탑 뒤 %d거래일 재진입 금지.",
+        lines.add(stopWatch ? StopWatch.hardRuleLine(false, plain(paper.trailingStopPct()), paper.lockoutTradingDays())
+                : String.format(Locale.ROOT, "트레일링 스탑 −%s%%는 코드가 관측치마다 집행하고, 스탑 뒤 %d거래일 재진입 금지.",
                 plain(paper.trailingStopPct()), paper.lockoutTradingDays()));
         long staleHours = ClaudeBookService.STALE_INPUT_AFTER.toHours();
         lines.add(initial

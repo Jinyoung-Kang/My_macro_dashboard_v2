@@ -112,14 +112,21 @@ final class CheckpointPacket {
      * @param manual   운영자가 당긴 판단인가
      * @param origin   그 계획 행을 누가 만들었나({@code PaperStore.IntradayPlan.ORIGINS} — ADR 0031 초안, null이면 수동 표시로 정함)
      * @param trigger  사건이 당기거나 더하거나 붙인 판단이면 그 사건(계획 행의 {@code trigger} — {@code originalAt}·{@code events}), 없으면 null
-     * @param replaces 이 판단의 {@code nextCheckpoint}가 대신하게 될 남은 예약(다음 순번의 PLANNED 행), 없으면 null
+     * @param replaces  이 판단의 {@code nextCheckpoint}가 대신하게 될 남은 예약(다음 순번의 PLANNED 행), 없으면 null
+     * @param stopWatch 장중 스탑 감시가 주문을 내는 판인가({@code stopWatch.mode} ON — {@code 1_basis.stopWatch}·스탑 줄, ADR 0032)
      */
-    record Free(String book, int slot, int max, boolean manual, String origin, JsonNode trigger, Reserved replaces) {
+    record Free(String book, int slot, int max, boolean manual, String origin, JsonNode trigger, Reserved replaces,
+                boolean stopWatch) {
 
         Free {
             Objects.requireNonNull(book, "book");
             origin = origin != null ? origin : manual ? PaperStore.IntradayPlan.ORIGIN_MANUAL : PaperStore.IntradayPlan.ORIGIN_RESERVED;
             trigger = trigger == null || trigger.isNull() || trigger.isMissingNode() ? null : trigger;
+        }
+
+        /** 장중 스탑 감시 OFF·SHADOW 판. */
+        Free(String book, int slot, int max, boolean manual, String origin, JsonNode trigger, Reserved replaces) {
+            this(book, slot, max, manual, origin, trigger, replaces, false);
         }
 
         /** 출처·사건·남은 예약 없이(운영자 행이면 출처 MANUAL, 아니면 RESERVED). */
@@ -287,7 +294,7 @@ final class CheckpointPacket {
         root.put("4_portfolio", portfolio(in, session));
         root.put("5_feed", ExecutionSection.FEED_MINUTE.equals(in.checkpoint().feed()) ? minuteFeed(in, session)
                 : hourlyFeed(in, morningPacket));
-        root.put("6_hardRules", hardRules(morningPacket, in.free() != null));
+        root.put("6_hardRules", hardRules(morningPacket, in.free() != null, in.free() != null && in.free().stopWatch()));
         JsonNode body = PacketBuilder.toNode(root);
         String text = mapper.writer().without(SerializationFeature.INDENT_OUTPUT).writeValueAsString(body);
         int tokens = PacketBuilder.estimateTokens(text);
@@ -375,8 +382,15 @@ final class CheckpointPacket {
         }
         out.put("frameworkVersion", in.frameworkVersion());
         out.put("settingsVersion", in.settingsVersion());
+        if (free != null && free.stopWatch()) {
+            out.put("stopWatch", StopWatch.basis(false));
+        }
         return out;
     }
+
+    /** 장중 스탑 감시 ON 판 장중 판단 패킷의 하드 규칙 한 줄(켠 판 — 끈 판·OFF·SHADOW는 없음). */
+    static final String STOP_WATCH_LINE = "트레일링 스탑은 코드가 장중 감시로 집행한다(1_basis.stopWatch.rule) — 스탑가 이하는 판단하지 않아도 팔리고, 대기 중인 "
+            + "감시 스탑 매도가 있는 종목의 새 매수는 재진입 금지와 같게 거절된다.";
 
     /**
      * 아직 고를 수 있는 시점 — 기준 시각 T가 지금 + 60초보다 뒤(⑤)이고, 시각 지정 시점은 E 마감 전(조기 폐장일 13:00 뒤 AT_*는 없음). MARKET은 검증기와
@@ -761,18 +775,9 @@ final class CheckpointPacket {
         return out;
     }
 
-    private static Map<String, Object> hardRules(JsonNode morningPacket, boolean free) {
+    private static Map<String, Object> hardRules(JsonNode morningPacket, boolean free, boolean stopWatch) {
         Map<String, Object> out = new LinkedHashMap<>();
-        List<String> lines = free ? List.of(
-                "주문 timing은 " + String.join("·", FreeTiming.INTRADAY_TIMINGS) + " 가운데 아직 고를 수 있는 것(1_basis.remainingTimings)만 받는다. "
-                        + "MARKET은 응답 뒤 생성 + 60초가 지난 첫 분의 1분봉 시가로 체결하고, 그 분이 마감 5분 전(조기 폐장일 12:55 ET) 이후면 "
-                        + "MALFORMED로 거절. AT_MINUTE은 atLocal의 분에 시작한 1분봉 시가 — atLocal이 없거나 받는 범위 밖이면 MALFORMED, 주문 생성 "
-                        + "+ 60초 이전의 분이면 LATE_FOR_TIMING으로 거절(1_basis.atMinute). NEXT_CLOSE는 이 세션 확정 종가.",
-                "매도는 같은 시각이거나 더 늦은 시각 매수의 현금·종목 자리만 만든다(기준 시각 순 — MARKET < AT_MINUTE(이른 순) < NEXT_CLOSE).",
-                "REPLACE는 기준 시각이 아직 오지 않은 대기 주문만 대신한다(취소) — 기준 시각이 지난 대기 주문은 이미 체결된 주문으로 보고 자료가 "
-                        + "오는 대로 체결한다. 형식 검사를 통과하면 새 주문이 모두 거절돼도 그 취소는 일어난다. KEEP은 아무것도 바꾸지 않는다.",
-                "한도·재량 매도 보유 기간·월 상한·재진입 금지는 이 세션의 결정과 같다(아래 값).")
-                : List.of(
+        List<String> lines = free ? freeHardRuleLines(stopWatch) : List.of(
                 "주문 timing은 " + String.join("·", TIMINGS) + " 가운데 기준 시각이 지금 + 60초보다 뒤인 것(1_basis.remainingTimings)만 "
                         + "받는다 — 지난 시점은 LATE_FOR_TIMING, 조기 폐장일 마감 뒤 시점은 MALFORMED로 거절. MARKET은 응답 뒤 생성 + 60초가 "
                         + "지난 첫 분의 1분봉 시가로 체결하고, 그 분이 마감 5분 전(조기 폐장일 12:55 ET) 이후면 MALFORMED로 거절.",
@@ -785,6 +790,23 @@ final class CheckpointPacket {
             out.put(key, morning == null || !morning.has(key) ? null : morning.get(key));
         }
         return out;
+    }
+
+    /** 자유 시점 판 장중 판단의 하드 규칙 줄 — 장중 스탑 감시 ON이면 스탑 줄({@link #STOP_WATCH_LINE})을 끝에 더함. */
+    private static List<String> freeHardRuleLines(boolean stopWatch) {
+        List<String> lines = new ArrayList<>(List.of(
+                "주문 timing은 " + String.join("·", FreeTiming.INTRADAY_TIMINGS) + " 가운데 아직 고를 수 있는 것(1_basis.remainingTimings)만 받는다. "
+                        + "MARKET은 응답 뒤 생성 + 60초가 지난 첫 분의 1분봉 시가로 체결하고, 그 분이 마감 5분 전(조기 폐장일 12:55 ET) 이후면 "
+                        + "MALFORMED로 거절. AT_MINUTE은 atLocal의 분에 시작한 1분봉 시가 — atLocal이 없거나 받는 범위 밖이면 MALFORMED, 주문 생성 "
+                        + "+ 60초 이전의 분이면 LATE_FOR_TIMING으로 거절(1_basis.atMinute). NEXT_CLOSE는 이 세션 확정 종가.",
+                "매도는 같은 시각이거나 더 늦은 시각 매수의 현금·종목 자리만 만든다(기준 시각 순 — MARKET < AT_MINUTE(이른 순) < NEXT_CLOSE).",
+                "REPLACE는 기준 시각이 아직 오지 않은 대기 주문만 대신한다(취소) — 기준 시각이 지난 대기 주문은 이미 체결된 주문으로 보고 자료가 "
+                        + "오는 대로 체결한다. 형식 검사를 통과하면 새 주문이 모두 거절돼도 그 취소는 일어난다. KEEP은 아무것도 바꾸지 않는다.",
+                "한도·재량 매도 보유 기간·월 상한·재진입 금지는 이 세션의 결정과 같다(아래 값)."));
+        if (stopWatch) {
+            lines.add(STOP_WATCH_LINE);
+        }
+        return lines;
     }
 
     // ------------------------------------------------------------------ 값

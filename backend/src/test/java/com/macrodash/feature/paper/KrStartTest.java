@@ -1114,6 +1114,24 @@ class KrStartTest {
         clock.set(kst("2026-12-02T10:06:30"));
         store.dbNow = kst("2026-12-02T10:06:30");
         assertThat(intraday.run().changes()).as("같은 저장본·같은 사건 — 다시 쓰지 않음").isEmpty();
+
+        // 감시를 ON으로 — 그 계획의 감시 저장본이 오면 부르고, 패킷에 사건(2_request.trigger)·출처·1_basis.stopWatch가 실림.
+        ((tools.jackson.databind.node.ObjectNode) kr.get("stopWatch")).put("mode", "ON");
+        int calls = fake.requests.size();
+        watchKrPlans(kst("2026-12-02T10:06:40"), PaperBooks.KR_CLAUDE + " 10:06 1", PaperBooks.KR_CLAUDE2 + " 10:06 1");
+        fake.answer(intradayReply("KEEP", null)).answer(intradayReply("KEEP", null));
+        clock.set(kst("2026-12-02T10:08:10"));
+        store.dbNow = kst("2026-12-02T10:08:10");
+        intraday.run();
+        assertThat(fake.requests).hasSize(calls + 2);
+        Decision judged = store.decisionFor(PaperBooks.KR_CLAUDE, NEXT, RuleBookService.INTRADAY_1).orElseThrow();
+        JsonNode basis = judged.packet().path("1_basis");
+        assertThat(basis.path("origin").asString()).isEqualTo("EVENT");
+        assertThat(basis.path("stopWatch").path("mode").asString()).isEqualTo("ON");
+        assertThat(basis.path("stopWatch").path("rule").asString()).isEqualTo(StopWatch.rule(true));
+        assertThat(judged.packet().path("2_request").path("trigger").path("events").get(0).path("ticker").asString()).isEqualTo("069500");
+        assertThat(judged.packet().path("2_request").path("trigger").path("rule").asString()).isEqualTo(IntradayScheduler.eventRule(true));
+        assertThat(judged.response().path("checkpoint").path("origin").asString()).isEqualTo("EVENT");
     }
 
     /** 확인 세션 E(12-02)를 설정 임시휴장으로 — 12-01 밤 결정의 장중 확인 세션이 12-03이 됨. 그 세션(12-03)을 돌려줍니다. 밤 실행·dbNow를 옮기기 전에 부름. */
