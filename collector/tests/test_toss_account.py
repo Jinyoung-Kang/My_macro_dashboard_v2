@@ -22,7 +22,6 @@ import copy
 import io
 import json
 import logging
-import os
 import threading
 import time
 from datetime import datetime, timedelta
@@ -68,27 +67,6 @@ def _response(request, status: int, body=None, headers: dict | None = None) -> r
 
 def _error(code: str | None, message: str = "") -> dict:
     return {"error": {"requestId": "01HXYZABCDEFG123456789", "code": code, "message": message}}
-
-
-@pytest.fixture(autouse=True)
-def _no_real_toss(monkeypatch):
-    """TOSS_* 환경변수를 지우고 키를 가짜로, tossinvest 호스트로 가는 send는 예외로 — 시험이 실제 토스에 닿지 못하게."""
-    for name in [name for name in os.environ if name.startswith("TOSS_")]:
-        monkeypatch.delenv(name)
-    monkeypatch.setattr(settings, "toss_credentials", lambda: ("fake-client-id", "fake-client-secret"))
-    real_send = HTTPAdapter.send
-
-    def refuse(adapter, request, *args, **kwargs):
-        if "tossinvest" in (urlsplit(request.url).hostname or "").lower():
-            raise AssertionError("시험이 실제 토스로 나가려 했습니다")
-        return real_send(adapter, request, *args, **kwargs)
-
-    monkeypatch.setattr(HTTPAdapter, "send", refuse)
-    toss._invalidate_token()
-    toss_account.reset_for_tests()
-    yield
-    toss._invalidate_token()
-    toss_account.reset_for_tests()
 
 
 class FakeToss:

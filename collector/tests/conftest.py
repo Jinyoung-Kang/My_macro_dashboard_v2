@@ -7,14 +7,18 @@ tests/conftest.py
 """
 from __future__ import annotations
 
+import importlib
+import importlib.util
 import os
 import threading
 import time
 import types
 import uuid
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from urllib.parse import urlsplit
 
 import pytest
+from requests.adapters import HTTPAdapter
 
 # TestClient의 기본 Host는 'testserver'입니다. 운영 기본 허용 목록에는 두지 않고(QA-038) 테스트에서만 더합니다 —
 # app.main이 불러와지기 전에(이 파일이 먼저 실행됨) 정해야 미들웨어가 이 목록으로 만들어집니다.
@@ -37,6 +41,42 @@ def _reset_http_guards():
     http.reset_guards()
     yahoo.reset_for_tests()
     ladder.reset()
+
+
+def _toss_trade_module():
+    """실제 매매 주문 길(app/services/toss_trade.py)이 있으면 그 모듈, 없으면 None — 상태를 비울 때만 씁니다."""
+    if importlib.util.find_spec("app.services.toss_trade") is None:
+        return None
+    return importlib.import_module("app.services.toss_trade")
+
+
+@pytest.fixture(autouse=True)
+def _no_real_toss(monkeypatch):
+    """TOSS_* 환경변수를 지우고 키를 가짜로, tossinvest 호스트로 가는 send는 예외로 — 시험이 실제 토스에 닿지 못하게."""
+    from app import settings
+    from app.services import toss, toss_account
+
+    for name in [name for name in os.environ if name.startswith("TOSS_")]:
+        monkeypatch.delenv(name)
+    monkeypatch.setattr(settings, "toss_credentials", lambda: ("fake-client-id", "fake-client-secret"))
+    real_send = HTTPAdapter.send
+
+    def refuse(adapter, request, *args, **kwargs):
+        if "tossinvest" in (urlsplit(request.url).hostname or "").lower():
+            raise AssertionError("시험이 실제 토스로 나가려 했습니다")
+        return real_send(adapter, request, *args, **kwargs)
+
+    monkeypatch.setattr(HTTPAdapter, "send", refuse)
+    trade = _toss_trade_module()
+    toss._invalidate_token()
+    toss_account.reset_for_tests()
+    if trade is not None:
+        trade.reset_for_tests()
+    yield
+    toss._invalidate_token()
+    toss_account.reset_for_tests()
+    if trade is not None:
+        trade.reset_for_tests()
 
 
 @pytest.fixture()
