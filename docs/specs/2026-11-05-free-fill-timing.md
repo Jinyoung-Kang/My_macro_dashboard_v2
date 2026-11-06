@@ -37,10 +37,13 @@
   `targetOn`은 지금 주문의 시각을 받지 않는 시그니처라 호출부 다섯(체결 조건·예상 상태·실행 감사 둘·사다리)이 함께 바뀝니다.
 - 받는 범위(검증기·규칙 계좌 주문 생성·설정 저장이 같은 함수로 판정):
 
-  | | 결정의 `AT_MINUTE` | 장중 판단 시각 | 장중 판단의 `MARKET` 닫힘(지금 그대로) |
+  | | 결정의 `AT_MINUTE` | 장중 판단 시각 | 장중 판단의 `MARKET` 닫힘 |
   |---|---|---|---|
-  | 미국 | 개장 + 1분 ~ 마감 5분 전 앞(보통 09:31~15:54 ET, 조기 폐장일 12:54까지) | 개장 + 5분 ~ 마감 − 30분(09:35~15:30 ET) | 마감 5분 전 뒤 |
-  | 한국 | 09:01 ~ 15:19 KST | 09:05 ~ 14:50 KST | 15:20(종가 단일가) 뒤 |
+  | 미국 | 개장 + 10분 ~ 마감 5분 전 앞(보통 09:40~15:54 ET, 조기 폐장일 12:54까지) | 개장 + 10분 ~ 마감 − 30분(09:40~15:30 ET) | 마감 5분 전 뒤, 개장 + 10분 앞(켠 판) |
+  | 한국 | 09:10 ~ 15:19 KST | 09:10 ~ 14:50 KST | 15:20(종가 단일가) 뒤, 09:10 앞(켠 판) |
+
+  위 값은 [ADR 0031](../adr/0031-open-offset-window-intraday-budget.md)(2026-11-08 배포)부터입니다. 그 전(ADR 0027 그대로)은 결정의 `AT_MINUTE` 개장 + 1분(09:31·09:01), 장중 판단 개장 + 5분(09:35·09:05)이었고
+  장중 시장가에는 개장 쪽 하한이 없었습니다(§17).
 
   조기 폐장일(예: 2026-11-27 13:00 ET)과 한국 개장 시각 변경일(`kr.calendar.openTimeOverrides`)은 그날의 개장·마감으로 계산합니다.
 - 닫힌 시점: T ≤ 주문 생성 + 60초이거나 T가 범위 밖이면 그 주문은 `LATE_FOR_TIMING`(Claude 주문 — 거절 행) 또는 기본 시점으로 냄(규칙 주문 — §8).
@@ -140,8 +143,8 @@ CREATE TABLE IF NOT EXISTS paper_intraday_plans (
 - 프로필(`ClaudeBookProfile`의 새 칸 `freeTiming`) 넷: `US_CLAUDE_FT`·`US_CLAUDE2_FT`·`KR_CLAUDE_FT`·`KR_CLAUDE2_FT`(B2 — 끝). 장중 판단 응답 프로필은 B3에서 더합니다.
   계좌2의 c2 판처럼 결정 파이프라인 맵 밖의 따로 만든 파이프라인(`ClaudeBookService.freeTiming`)이고, 결정마다 그 실행 설정의 스위치(`FreeTimingSettings`)로 고릅니다(`variant`).
   미국 계좌1의 시작·미리보기·기존 장중 확인(종류 `CHECKPOINT`)은 늘 끈 판 파이프라인입니다.
-- 응답 스키마(새 파일 둘 — 시장마다 하나, 그 시장의 두 계좌가 함께 씀): `paper/us-decision-ft.schema.json`·`paper/kr-decision-ft.schema.json`. `timing` enum {`NEXT_OPEN`, `AT_MINUTE`, `NEXT_CLOSE`},
-  주문의 선택 칸 `atLocal`("HH:MM" pattern — `FreeTiming.CLOCK_PATTERN`), 주문마다 `executionNote`. B3에서 `checkpoints[]`(최대 2, 각 `{at, feed, watch, question}`)와
+- 응답 스키마(새 파일 둘 — 시장마다 하나, 그 시장의 두 계좌가 함께 씀): `paper/us-decision-ft.schema.json`·`paper/kr-decision-ft.schema.json`. `timing` enum {`NEXT_OPEN`, `AT_MINUTE`, `NEXT_CLOSE`}(ADR 0031 `ft-2`·`kr-ft-2`부터 시가를 뺀 둘),
+  주문의 선택 칸 `atLocal`("HH:MM" pattern — `FreeTiming.CLOCK_PATTERN`), 주문마다 `executionNote`. B3에서 `checkpoints[]`(최대 2 — ADR 0031부터 3, 각 `{at, feed, watch, question}`)와
   장중 판단 스키마(`action` KEEP·REPLACE, 주문 `timing` enum {`MARKET`, `AT_MINUTE`, `NEXT_CLOSE`}, 선택 칸 `nextCheckpoint`)를 더합니다. 스키마 검사기(`StructuredSchema`)는 pattern을 받고 조건부 필수는 받지 않으므로
   '`AT_MINUTE`면 `atLocal` 필수'와 시각 범위는 검증 표의 닫힘으로, 30분 간격·남은 횟수·시각 순서는 의미 검사로 막습니다(어기면 그 주문·예약만 거절하고 사유를 남김).
 - 고정 문단(새 판, 계좌별): 받는 시점 셋, 시각 범위, 'E 하루짜리', 장중 판단의 뜻(확인 시각 뒤 첫 수집본으로 부름 — 몇 분 뒤, 실시간 아님), 횟수.
@@ -216,7 +219,7 @@ CREATE TABLE IF NOT EXISTS paper_intraday_plans (
 
 - **B4에서 정한 것**(구현 뒤 — 위 문장과 다르면 이쪽이 맞습니다):
   - 지정 시각 키(`rules.timingAtEt`·`kr.rules.timingAtKst`)의 기본값은 '없음'이 아니라 `10:00`입니다(시점이 `AT_MINUTE`일 때만 읽음 — 시각 종류 키가 빈 값을 받지 않음).
-    저장 검사는 보통 날 범위(미국 09:31~15:54 ET·한국 09:01~15:19 KST)로 하고, 그날의 범위(조기 폐장·장 시간 변경)는 결정마다 `RuleTiming.choose`가 봅니다.
+    저장 검사는 보통 날 범위(미국 09:31~15:54 ET·한국 09:01~15:19 KST — ADR 0031부터 09:40~15:54 ET·09:10~15:19 KST)로 하고, 그날의 범위(조기 폐장·장 시간 변경)는 결정마다 `RuleTiming.choose`가 봅니다.
   - 설정 시점이 그 결정에서 닫혔으면(범위 밖·이미 지난 시가/지정 시각/마감) 그 결정의 주문 전부를 기본 시점으로 내고 사유를 결정 기록 `notes`에 남깁니다.
     기본이 아닌 설정이면 결정 기록에 `timing`(그 결정이 쓴 시점)·`timingSetting`(설정 값)이 더해지고, 기본 설정의 기록은 이 설정 전과 같습니다(미국은 그 칸이 없음, 한국은 `timing: NEXT_OPEN` 그대로).
   - 다시 내기는 **미국 시가·지정 시각**(1분봉 장부 `UsTimedFills.expire` — 그 세션 하루짜리로 만료되는 자리)과 **한국 지정 시각·종가**(장부가 '만료까지 체결하지 않음'으로 판정한 자리)에서 합니다.
@@ -232,6 +235,7 @@ CREATE TABLE IF NOT EXISTS paper_intraday_plans (
 - 정기 호출의 하루 최대(평일): 미국 결정 2 + 재시도 2 + 미국 장중 판단 4 + 한국 결정 2 + 재시도 2 + 한국 장중 판단 4 = 16. 주간 복기는 세션이 없는 일요일입니다. 예약 20은 이보다 큽니다.
 - 계좌2 소상한 `claude2.maxCallsPerCycle`: 같은 기준 거래일의 결정·재시도·장중 판단 합. 켠 판에서는 결정 1 + 재시도 1 + 장중 판단 2 = 4가 필요합니다(서버 값 3). 셈(`claude2CallsInCycle`)에 `INTRADAY_*` 행을 더합니다.
 - 비용 어림(§16의 실측 단가 0.16~0.19달러): 네 계좌가 날마다 두 번씩 쓰면 하루 +8회 ≈ 1.3~1.5달러, 월 22거래일 ≈ 28~33달러. 상한 60 전부 ≈ 하루 11달러. 장중 호출은 캐시(5분)를 매번 다시 씁니다.
+- ADR 0031(2026-11-08)부터: 상한 70·예약 30·소상한 5(결정 1 + 재시도 1 + 장중 판단 3). 장중 판단이 세션당 3회가 되어 정기 호출의 하루(KST) 최악은 EST 22·EDT 26회입니다(§17).
 
 ## 10. 참고 지표·복기
 
@@ -262,7 +266,11 @@ CREATE TABLE IF NOT EXISTS paper_intraday_plans (
 | 키 | 기본 | 규칙 계좌 영향 | 뜻 |
 |---|---|---|---|
 | `claude.freeTiming` · `claude2.freeTiming` · `kr.claude.freeTiming` · `kr.claude2.freeTiming` | 꺼짐 | 아니오 | 그 계좌의 다음 결정부터 자유 시점 판 |
-| `intradayMaxPerSession` · `kr.intradayMaxPerSession` | 2 (0~2) | 아니오 | 세션마다 계좌별 장중 판단 횟수. 0이면 장중 판단 없음(분 단위 지정만) |
+| `intradayMaxPerSession` · `kr.intradayMaxPerSession` | 2 (0~2, ADR 0031부터 0~3) | 아니오 | 세션마다 계좌별 장중 판단 횟수. 0이면 장중 판단 없음(분 단위 지정만) |
+| `intradayMinPerSession` · `kr.intradayMinPerSession`(ADR 0031) | 0 (0~1) | 아니오 | 1이면 세션 중간까지 예약이 없을 때 코드가 한 번 넣음(보장) |
+| `intradayEvents` · `kr.intradayEvents`(ADR 0031) | 꺼짐 | 아니오 | 장중 사건이 장중 판단을 당김 — 그 시장 `stopWatch.mode`가 SHADOW·ON일 때만 자료가 있음 |
+| `intradayEffort`(ADR 0031, 두 책 공통) | 없음(= `effort`) | 아니오 | 장중 판단 호출만의 effort |
+| `stopWatch.mode` · `kr.stopWatch.mode`([ADR 0032](../adr/0032-paper-intraday-stop-watch.md)) | `OFF` | 예 | 장중 스탑 감시 `OFF`·`SHADOW`·`ON` |
 | `rules.timing` · `rules.timingAtEt` | `NEXT_OBSERVATION` · 없음 | 예 | 미국 규칙 계좌 체결 시각 |
 | `kr.rules.timing` · `kr.rules.timingAtKst` | `NEXT_OPEN` · 없음 | 예 | 한국 규칙 계좌 체결 시각 |
 | `apiDailyCallCap`(기존) | 그대로 | 아니오 | 코드 최대 50 → 100 |
@@ -274,6 +282,7 @@ CREATE TABLE IF NOT EXISTS paper_intraday_plans (
 - 미국: `claude.freeTiming`·`claude2.freeTiming` 켬, `claude.checkpoint` 끔, `claude2.maxCallsPerCycle` 4 이상.
 - 한국: `kr.claude.freeTiming`·`kr.claude2.freeTiming` 켬.
 - 규칙 계좌의 체결 시각은 사용자가 값을 정할 때 따로 저장합니다(기본값이면 아무것도 바뀌지 않음).
+- ADR 0031·0032 배포 뒤의 저장 값은 §17-3입니다.
 - 판은 결정 때 정해지므로 저장 시각에 제약은 없지만, 결정이 도는 중(미국 06:30 KST 앞뒤, 한국 22:30 KST 앞뒤)은 피합니다.
 
 ### 12-3. 켠 뒤 확인
@@ -301,6 +310,7 @@ CREATE TABLE IF NOT EXISTS paper_intraday_plans (
 | B5 | 참고 지표·복기·응답·화면 | 끝(줄인 범위) — 주간 복기는 장중 판단을 그 세션 결정에 접어 넣음, 실행 감사 M1·메뉴 줄은 장중 판단 결정의 주문을 뺌, 주문 행 `targetLocal`·상태 `intraday`, 화면은 결정 탭의 장중 판단 줄·수동 단추와 시점·종류 이름. **하지 않은 것**: 실행 감사 카드 이름 바꾸기와 기준 반사실의 주문 단위화(§10 첫 두 항목), 규칙 계좌를 감사 대상에 넣기, `kr_audit_orders`의 지정 시각 — 스위치를 켠 뒤 자료가 쌓이면 따로. **뒤에 한 것**(2026-11-07, 브랜치 `claude/intraday-timing-2026-11`): 기준 반사실의 주문 단위화(QA-300)·`kr_audit_orders`의 지정 시각(QA-301). 카드 이름·규칙 계좌 감사는 그대로 남음 |
 | B6 | QA 스택 확인(§14) → `main` 병합·CI → 서버 배포(꺼진 채) | 마이그레이션 확인은 QA 스택 대신 **로컬 postgres의 임시 DB**로 했습니다(2026-11-06 — 다른 세션의 QA 스택이 같은 포트로 떠 있어 건드리지 않음): V22 전 백업(11-04, 로컬 DB — 주문 23·결정 3·체결 23행)을 복원 → 모든 마이그레이션 적용 → 행 수 그대로·`target_local` 전부 NULL·새 표와 제약 확인 → 옛 판 백엔드의 문장 모양(`CHECKPOINT` 결정 넣기·`paper_checkpoints` ON CONFLICT)이 그대로 통함. 1분봉 고정본으로 장부 체결을 돌려 보는 일은 하지 않았습니다(장부 시험 `UsTimedFillsTest`·`KrLedgerTest`가 같은 경로). **병합·배포(스위치 꺼진 채)**: 2026-11-06 05:51 KST `main@2e9fd367` push — CI 6개 job 통과(첫 push `2470c8e7`은 비밀값 검사가 한국 켠 판 패킷 고정본의 지표 칸 키 `kospi200_night_scraped`를 오탐으로 잡아 `.gitleaksignore`에 지문 둘을 더함), JDK 21 컨테이너 `verify` 2,510개 통과. 06:00 KST Vultr 배포 — V23 적용(05:59:43), 계획 행 0·설정 v14 그대로(자유 시점 스위치·규칙 계좌 체결 시각 키 없음 = 꺼짐·기본값, 상한 40·예약 10), 컨테이너 여섯 정상·오류 0건. 배포 뒤 첫 미국 정기 결정(07:11~07:12 KST, 기준 거래일 11-05)은 세 계좌 모두 끈 판 그대로(계좌1 판 표시 없음, 계좌2 `c2-2`, 응답에 `intradayPlan` 없음). **켬**: 2026-11-06 07:28 KST 설정 v15(사용자 지시 — 미국·한국 네 Claude 계좌 모두. 바뀐 키 여덟: 스위치 넷·`claude.checkpoint` 끔·상한 60·예약 20·`claude2.maxCallsPerCycle` 4). 저장 때 남아 있던 것은 그대로입니다 — 한국 규칙 계좌 시가 대기 주문 2건, 그날 아침 끈 판 결정이 요청한 계좌2 장중 확인(11-06 세션 10:30 ET — 끈 판 작업이 그 판으로 부름). 켠 판의 첫 결정은 한국 11-06 22:30 KST(목표 세션 11-09), 미국 11-07 아침(기준 거래일 11-06, 목표 세션 11-09)이고 첫 장중 판단은 11-09 세션부터입니다. 그날(11-06) 미국 세션의 계좌1은 장중 확인이 없습니다(기존 12:00 ET 확인은 껐고, 켠 판의 장중 판단은 켠 판 결정이 예약해야 함). 첫 실행 확인 항목은 §12·§14 |
 | 켜기 | 사용자 확인 뒤 시장별 저장 → §12-3 확인 | |
+| ADR 0031 | 체결 창 개장 + 10분·켠 판 시가 제거(`ft-2`·`kr-ft-2`)·규칙 계좌 개장 10분 뒤·장중 판단 1~3회(보장·사건)·예산 70·30·5·장중 판단 effort | 구현 끝(2026-11-07, 브랜치 `claude/intraday-timing-2026-11`), 배포 2026-11-08 23:30 KST 예정 — §17 |
 
 단계마다 같은 커밋에서 함께 고쳐야 `make test`가 통과하는 곳:
 
@@ -342,3 +352,54 @@ CREATE TABLE IF NOT EXISTS paper_intraday_plans (
 - `paper_checkpoints`는 0행 — 계좌2(미국·한국)는 장중 확인을 요청한 적이 없습니다. 미국 계좌1의 `CHECKPOINT` 결정은 3건(기준일 11-03까지).
 - 최근 7일 체결: `claude2`는 `AT_1000`(R1 `Y1M_AT`) 8건뿐, `kr_claude2`·`kr_rules`는 `NEXT_OPEN`, `rules`는 `NEXT_OBSERVATION` 2건과 스탑 4건.
 - Claude 호출: 11-03 6회 0.99달러, 11-04 6회 0.97달러, 11-05 7회 1.35달러 — 1회 약 0.16~0.19달러(제안·복기 포함 평균).
+
+## 17. ADR 0031 개정 (2026-11-08 배포 예정)
+
+결정은 [ADR 0031](../adr/0031-open-offset-window-intraday-budget.md)(구현에서 정한 것 포함)에 있고, 이 절은 숫자와 운영 순서만 적습니다. 위 절과 다르면 이 절이 맞습니다.
+
+### 17-1. 바뀐 숫자
+
+| | ADR 0027(2026-11-06 배포) | ADR 0031 | 바뀌는 때 |
+|---|---|---|---|
+| 결정의 `AT_MINUTE` 범위 | 미국 09:31~15:54 ET · 한국 09:01~15:19 KST | 09:40~15:54 ET · 09:10~15:19 KST(수능일 10:10~16:19) | 배포(켠 판 결정부터) |
+| 켠 판 결정 메뉴 | `NEXT_OPEN`·`AT_MINUTE`·`NEXT_CLOSE`(`ft-1`·`kr-ft-1`, 메뉴 판 3) | `AT_MINUTE`·`NEXT_CLOSE`(`ft-2`·`kr-ft-2`, 메뉴 판 4) | 배포 |
+| 켠 판 장중 시장가 | 개장 쪽 하한 없음 | 기준 시각 ≥ 개장 + 10분 | 배포 |
+| 장중 판단 창·간격 | 개장 + 5분 ~ 마감 − 30분 · 30분 | 개장 + 10분 ~ 마감 − 30분 · 20분 | 배포 |
+| 장중 판단 횟수 | 최대 2 | 최대 3(키 없으면 2)·최소 0~1·사건 | 설정 |
+| 규칙 계좌 | 미국 다음 시간별 관측치 · 한국 다음 거래일 시가 | 설정으로 09:40 ET · 09:10 KST(개장이 늦은 날 그날 첫 분, 한국 대체·다시 내기는 다음 세션 첫 분) | 설정 |
+| 호출 예산 | 상한 60 · 예약 20 · 소상한 4 | 70 · 30 · 5 | 설정 |
+| effort | 모든 호출 `effort` | 장중 판단만 `intradayEffort` | 설정 |
+
+- 정기 호출의 하루(KST) 최악: 한국 결정 2 + 재시도 2 + 장중 판단 6, 미국 결정 2 + 재시도 2, 미국 장중 판단은 자정을 걸친 두 세션 몫(EST 23:40~05:30 KST 창이라 하루에 8, EDT 22:40~04:30이라 12)
+  → EST 22·EDT 26. 보장·사건은 최대 횟수 안이라 이 값을 늘리지 않습니다.
+- 전환: 배포 전 `ft-1` 결정이 낸 대기 주문(`NEXT_OPEN`, `AT_MINUTE` 09:31~09:39 ET·09:01~09:09 KST)은 낸 그대로 체결되고, 그 결정이 예약한 장중 판단 09:35 ET·09:05 KST는 `SKIPPED OUT_OF_RANGE`입니다.
+
+### 17-2. 새 칸
+
+- V27: 결정 종류 `INTRADAY_3`, 계획 순번 1~3, 계획 행 `origin`(`RESERVED`·`NEXT`·`MANUAL`·`GUARANTEE`·`EVENT` — 기존 행은 한 번 채움)·`trigger`(JSONB — `{originalAt, events:[{type, ticker, …}]}`).
+- 패킷(켠 판만): 장중 판단 `1_basis.origin`·`remainingJudgments`, 요청 `trigger`, `nextCheckpoint.replaces`. 결정 미국 `13_execution.intraday`·한국 `1_basis.intraday`의 `minPerSession`·`guarantee`·`events`.
+- 상태 응답 `intraday`: `minPerSession`·`events`와 행마다 `origin`·`trigger`([API](../API.md)).
+
+### 17-3. 배포 뒤 저장(시장별로 따로, 저장 때마다 사용자 확인, 요청에 Origin 헤더)
+
+1. 미국 Claude: `{"apiDailyCallCap":70,"apiScheduledReserve":30,"claude2.maxCallsPerCycle":5,"intradayMaxPerSession":3,"intradayMinPerSession":1,"intradayEvents":true,"intradayEffort":"medium"}`
+   (`effort` high·`claude.checkpoint` 끔·`*.freeTiming` 켬은 그대로 — `intradayEffort`는 두 책 공통이라 한국에도 바로 적용).
+2. 미국 규칙 계좌·감시: `{"rules.timing":"AT_MINUTE","rules.timingAtEt":"09:40","stopWatch.mode":"ON"}`.
+3. 한국 달력: `{"kr.calendar.openTimeOverrides":{"2026-11-19":{"open":"10:00","close":"16:30"},"2027-01-04":{"open":"10:00","close":"15:30"}}}`(2027-01-04는 12월 KRX 공지와 대조).
+4. 한국 장중 판단: `{"kr.intradayMaxPerSession":3,"kr.intradayMinPerSession":1,"kr.intradayEvents":true}`.
+5. 한국 규칙 계좌·감시(실제 돈 — [ADR 0033](../adr/0033-real-isa-open-offset-and-stops.md) 결정 5·10, 저장 전 서버 읽기 전용 확인): `{"kr.rules.timing":"AT_MINUTE","kr.rules.timingAtKst":"09:10","kr.stopWatch.mode":"ON"}`.
+
+- 사건은 감시 저장본을 읽으므로 `intradayEvents`만 켜고 감시가 `OFF`면 아무 일도 없습니다(2·5와 함께 켬).
+
+### 17-4. 배포 뒤 확인
+
+- 장중 판단: `paper_job_runs` `intraday`·`kr.intraday`의 'PLANNED GUARANTEE 12:31 ET'·'11:31 KST'(그 세션에 예약·부른 판단이 없을 때만), 'EVENT PULL …(원래 HH:MM)'·'EVENT ATTACH'·'SUPPRESSED …',
+  결정 응답 `checkpoint.origin`(`GUARANTEE`·`EVENT`)과 `usage.effort` medium, 패킷 `1_basis.origin`·`remainingJudgments`.
+- 첫 `kr-ft-2` 결정(11-09 22:30 KST)과 첫 미국 `ft-2` 결정(11-10 06:3x KST)의 메뉴(시가 없음)·지정 시각 범위.
+- 규칙 계좌 첫 `AT_MINUTE` 체결: 한국 11-10 09:10(그날 밤 장부), 미국 11-10 09:40 ET(다음 관측치). 결정 기록의 `timing`·`timingSetting`.
+
+### 17-5. 되돌리기
+
+1. 설정만(몇 초): `intradayMinPerSession`·`kr.intradayMinPerSession` 0, `intradayEvents`·`kr.intradayEvents` 꺼짐, `intradayMaxPerSession`·`kr.intradayMaxPerSession` 2, `intradayEffort`는 `effort`와 같은 값
+   (설정 API는 키를 지우지 않음), 예산 60·20·4, 규칙 계좌 기본 시점(`rules.timing` `NEXT_OBSERVATION`·`kr.rules.timing` `NEXT_OPEN`).
+2. 코드: 1 → `scripts/rollback/intraday-slot3.sql`(순번 3 `PLANNED` 행을 닫음 — 옛 코드는 순번 3을 부르지 못함) → `git revert` → 거래 창 밖 배포. V27은 남겨도 됩니다.

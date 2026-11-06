@@ -406,7 +406,7 @@ bash ~/My_macro_dashboard_v2/scripts/vultr/deploy.sh
   `PAPER_ENABLED=false`가 있으면 운영본의 정기 작업(리스크 점검·결정·체결)이 꺼진 채 뜬다고 '주의'를 찍고(끝 요약에도 다시) 계속합니다 —
   정비 때 일부러 끈 것이 아니면 그 줄을 지우고 다시 배포합니다. 없으면 '참고: 모의 매매 정기 작업 켜짐' 한 줄입니다(QA-194).
 - 실제 매매([ADR 0028](adr/0028-real-trade-mirror.md))가 꺼져(OFF) 있지 않고 — 켜짐(LIVE)뿐 아니라 끄는 중(STOPPING)·이상 멈춤(HALTED)도 이 기능의 미체결 취소를
-  보내므로 셈(OPS-5) — 지금이 한국 거래 창(평일 08:45~15:35 KST — 정규장 전체: 시가 맞추기·개장 10분 뒤 맞추기·장중 스탑 매도·종가, ADR 0033 초안)이면 빌드 전에 멈추고(장 시간 변경일 — 모의 설정 `kr.calendar.openTimeOverrides`에 오늘이 있으면 개장 −15분 ~ 마감 +5분, 예 수능 10:00~16:30은
+  보내므로 셈(OPS-5) — 지금이 한국 거래 창(평일 08:45~15:35 KST — 정규장 전체: 시가 맞추기·개장 10분 뒤 맞추기·장중 스탑 매도·종가, ADR 0033)이면 빌드 전에 멈추고(장 시간 변경일 — 모의 설정 `kr.calendar.openTimeOverrides`에 오늘이 있으면 개장 −15분 ~ 마감 +5분, 예 수능 10:00~16:30은
   09:45~16:35. 그 설정을 읽지 못했거나 모양이 틀리면 보수 창 평일 08:45~16:35), 빌드하는 동안 창에 들어왔으면
   기동 직전에 멈춥니다(돌던 컨테이너 그대로). 창이 지난 뒤 다시 돌리고, 알고 진행할 때만 `REALTRADE_DEPLOY_OK=1 bash scripts/vultr/deploy.sh`. 상태는 postgres의 `real_trade_config`를 읽기만 하고(표가 없으면 통과, 읽지 못하면 경고만), 꺼져 있지 않으면
   창 밖에서도 '참고' 한 줄을 찍습니다 — 장중 따라 하기 주문은 정규장 어느 시각에도 있을 수 있어 정규장 밖 배포가 낫습니다.
@@ -468,6 +468,8 @@ docker compose exec -T collector python -c 'import json,os,urllib.request as u; 
 1. 스위치 없이 `bash scripts/vultr/deploy.sh`로 배포하고 정상인지 봅니다(실제 계좌 탭이 읽히고, '실제 매매' 칸은 '서버에서 꺼짐').
 2. 한도 네 값(`TOSS_TRADING_MAX_ORDER_KRW`·`TOSS_TRADING_MAX_ORDERS_PER_DAY`·`TOSS_TRADING_MAX_BUY_KRW_PER_DAY`·`TOSS_TRADING_MAX_EQUITY_KRW` — 뜻과 범위는
    [.env.vultr.example](../.env.vultr.example))을 **사용자에게 확인받아** 서버에서 두 스위치와 함께 덧붙입니다. 값은 저장소·문서·커밋에 적지 않습니다(운용 규모가 드러남).
+   장중 스탑 매도([ADR 0033](adr/0033-real-isa-open-offset-and-stops.md))는 1건 상한까지만 팔고 뿌리당 2회까지라, 1건 상한은 가장 큰 단일 보유 평가액 이상, 하루 건수는 재선정일 주문 수에 스탑 여유를 더한 값 이상이 맞습니다
+   (모자라면 남은 수량은 다음 날 맞추기가 '책에 없는 보유'로 팖). 설정 `kr.stopWatch.mode`·`kr.rules.timing`을 바꾸기 전에도 서버에서 읽기 전용으로 이 둘이 맞는지만 봅니다(값은 출력하지 않음).
    `printf '\nTOSS_TRADING_ENABLED=true\nREAL_TRADE_ENABLED=true\nTOSS_TRADING_MAX_ORDER_KRW=%s\nTOSS_TRADING_MAX_ORDERS_PER_DAY=%s\nTOSS_TRADING_MAX_BUY_KRW_PER_DAY=%s\nTOSS_TRADING_MAX_EQUITY_KRW=%s\n' <값 넷> >> ~/My_macro_dashboard_v2/.env`
 3. 한국 거래 창 밖에서 다시 `bash scripts/vultr/deploy.sh`.
 4. 아래 한 줄로 수집기 스위치를 봅니다 — 출력은 상태·사유와 한도가 있는지뿐입니다(위 '검증 출력 규칙' — 한도 값·금액·종목을 찍지 않음). `enabled`가 `false`면 `reason`
@@ -476,10 +478,11 @@ docker compose exec -T collector python -c 'import json,os,urllib.request as u; 
    ```bash
    docker compose exec -T collector python -c 'import json,os,urllib.request as u; d=json.load(u.urlopen(u.Request("http://localhost:8000/toss/trading/status",headers={"X-Service-Token":os.environ["COLLECTOR_API_TOKEN"]}))); print({k:d.get(k) for k in ("ok","enabled","reason","tokenContention")}, "limits" if d.get("limits") else "no-limits")'
    ```
-5. 운영자가 화면에서 켭니다(방식·손실 한도·예상 목록 확인 → 확인 글자 `실제 매매 켜기` + 운영자 비밀번호). 다음 시가 단일가 창의 시가 맞추기부터 주문이 나갑니다.
+5. 운영자가 화면에서 켭니다(방식·손실 한도·예상 목록 확인 → 확인 글자 `실제 매매 켜기` + 운영자 비밀번호). 다음 맞추기부터 주문이 나갑니다 — 시가 단일가 창의 시가 맞추기,
+   따라 하는 책이 개장 10분 뒤 지정 시각인 날은 그 시각부터 3분의 시장가 맞추기(ADR 0033). 따라 하는 책의 장중 STOP은 그 기준 시각부터 3분 안에 따로 팝니다.
 
 - **첫 실제 날**(권장, 필수 아님): 샌드박스가 없어 OPG 접수·거절 방식·잔량 처리, 시장가 매수 증거금 기준, 종가 단일가 구간 체결은 첫 주문에서 처음 드러납니다(명세 §10).
-  운영자가 08:50~09:05 KST에 토스 앱의 주문·체결을 화면 '실제 매매' 칸과 함께 보고, 첫 종가 주문(15:20 전후)도 한 번 봅니다. 모르는 결과는 이상 멈춤이 되고, 해제는 사람이 합니다.
+  운영자가 08:50~09:05 KST(시각 맞추기 날은 09:07~09:20)에 토스 앱의 주문·체결을 화면 '실제 매매' 칸과 함께 보고, 첫 종가 주문(15:20 전후)도 한 번 봅니다. 모르는 결과는 이상 멈춤이 되고, 해제는 사람이 합니다.
 - 켠 뒤 서버 `.env`를 다시 전달해도 여섯 줄과 토스 키는 서버의 값 그대로 남습니다(위 '서버 .env 전달' — 서버 전용 줄은 서버에서 이어 붙임). 끝에 '경고: 새 .env에 없는 이름'이
   찍히면 백업 `.env.bak-*`에서 그 줄을 다시 붙입니다.
 
