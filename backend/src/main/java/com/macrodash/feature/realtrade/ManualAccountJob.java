@@ -59,6 +59,9 @@ import java.util.concurrent.locks.ReentrantLock;
  * <p>한 주기
  * <ol>
  *   <li><b>자동 기록</b>(§3): 개장이 지난 세션의 PLANNED 지시를 그 세션 시가({@link PaperMirrorService#openPrices} — 모의 장부와 같은 사다리)로 장부에
+ *       적습니다. 시각 맞추기 날의 지시(근거 {@value #DETAIL_TARGET_AT} — ADR 0033 초안 결정 7)는 그 시각이 지난 뒤 그 시각의 1분봉 사다리
+ *       ({@link PaperMirrorService#pricesAt} — 규칙 계좌 체결과 같은 값)로, 장부 시각도 그 시각으로 적고, 그 시각의 1분봉 창이 아예 없는 종목은 그 세션
+ *       시가로 어림해 적습니다({@value #AUTO_OPEN_FALLBACK}). 그 밖은 아래와 같습니다 — 장부에
  *       적습니다(AUTO, 수수료·세금 0 → RECORDED). 사용자가 먼저 그 지시에 묶어 넣은 행이 있으면 적지 않고 RECORDED. 시가를 아직 못 구한 종목은 PLANNED로
  *       남고, 그런 매도 시가를 기다리는 동안 그 세션 매수도 기다립니다(매도 대금 없이 매수를 적지 않게). 그 세션에 거래가 없어(거래량 0·정지) 시가가 다시
  *       오지 않을 종목({@link PaperMirrorService#openUnfillable})은 기다리지 않고 SKIPPED(autoNote {@code halted} — 매수를 막지 않음), 지시를 만든 뒤 그
@@ -68,8 +71,9 @@ import java.util.concurrent.locks.ReentrantLock;
  *   <li><b>지시 만들기</b>(§2): 다음 세션 E(개장 전)의 지시가 아직 없고, 앞 세션 지시가 모두 적혔고, 규칙 계좌의 D(E 전 거래일) 정기 결정이 최종
  *       (OK·NO_TRADE·SKIPPED 또는 기한 지남)이고, 규칙 계좌 장부가 D까지 반영했고({@link PaperMirrorService#ledgerCaughtUp}), 시가 목표가 완전할 때
  *       ({@link OpenTargets#complete}) {@link ManualAccountPlanner}로 계산해 세션 행과 지시 행을 한 트랜잭션으로 씁니다. 지시가 없으면 NONE(알리지 않음).
- *       규칙 계좌가 그 세션을 목표로 시가 밖 시점(분 지정·매시·장중 시장가·종가 — {@link PaperMirrorService#dueOrders}) 대기 주문을 냈으면 시가 목표가 그
- *       결정을 담지 못하므로 만들지 않습니다(사유 {@code timed-orders} — 개장 뒤 못 만듦). 장부 고침이 이미 알린 지시를 지운 세션
+ *       규칙 계좌가 개장 10분 뒤 지정 시각으로 체결하는 날({@link PaperMirrorService#dailySyncAt} — ADR 0033 초안 결정 7)은 그 시각까지의 모의 주문을
+ *       반영한 목표({@link PaperMirrorService#targetsAt})로 '그 시각 이후 시장가' 지시를 만듭니다. 그 목표에 들지 않는 시가 밖 시점 대기 주문(STOP 매도
+ *       제외 — 스탑 지시가 따로 맡음)이 있으면 목표가 그 결정을 담지 못하므로 만들지 않습니다(사유 {@code timed-orders} — 개장 뒤 못 만듦). 장부 고침이 이미 알린 지시를 지운 세션
  *       ({@link ManualAccountService} — 그 세션 08:00 전)을 다시 만들면 '다시 계산'으로 표시합니다.</li>
  *   <li><b>알림</b>(§4): 밤 — 지시를 만든 뒤 E 08:00(그 전에 개장하면 개장)까지, 아침 — E 08:00 뒤 E 마감 전까지 PLANNED 지시를 한 통씩. 텔레그램이
  *       설정되지 않았거나 실패하면 다음 주기에 다시. 글은 종목 코드·이름·수량만({@link ManualAccountNotices}). 다시 계산한 지시는 제목에 '(다시 계산)',
@@ -95,6 +99,14 @@ class ManualAccountJob {
     /** 자동 기록이 건너뛴 사유(지시 근거의 autoNote). */
     static final String AUTO_HALTED = PaperMirrorService.OPEN_HALTED;
     static final String AUTO_NOT_TRADING = "not-trading";
+    /** 자동 기록 메모 — 지시 시각의 1분봉 창이 아예 없어(그 시각 규칙 계좌 주문이 없던 종목) 그 세션 시가로 어림해 적음(ADR 0033 초안 결정 7). */
+    static final String AUTO_OPEN_FALLBACK = "open-fallback";
+    /**
+     * 지시 근거·세션 계산 기록의 키 — 그 지시를 낼 시각(시각 맞추기 날 — 따라 하는 책의 일일 맞추기 시각, ISO). 없으면 예전 시가 지시(시가 사다리
+     * 자동 기록). 세션 기록에는 그 지시 목표에 반영한 시각 지정 STOP 주문 번호({@value #DETAIL_COVERED_STOPS} — 스탑 지시를 따로 내지 않음)도 남깁니다.
+     */
+    static final String DETAIL_TARGET_AT = "targetAt";
+    static final String DETAIL_COVERED_STOPS = "coveredStopOrderIds";
     /** 세션 계산 기록(detail)의 '다시 계산' 표시와 '할 매매 없음' 알림 시각 키. */
     static final String DETAIL_RECALCULATED = "recalculated";
     static final String DETAIL_RECALC_NOTICE_AT = "recalcNoticeAt";
@@ -121,7 +133,7 @@ class ManualAccountJob {
             WAIT_PRICE, "ISA 보유 종목의 가격을 모름",
             WAIT_RECORD, "앞 세션 지시의 체결 기록 대기",
             WAIT_UNKNOWN, "개장 전에 지시를 만들지 못함",
-            WAIT_TIMED, "규칙 계좌가 시가 밖 시점(분 지정·종가 등)으로 주문함 — ISA는 시가만 지시");
+            WAIT_TIMED, "규칙 계좌가 지시 시각 밖 시점(분 지정·종가 등)으로 주문함 — ISA는 시가·개장 10분 뒤 시각만 지시");
 
     /** 다음 세션 지시를 아직 만들지 않은 사유(화면용 — 저장하지 않음). */
     record Waiting(LocalDate session, String reason, Instant at) {
@@ -268,12 +280,85 @@ class ManualAccountJob {
             }
             Set<String> symbols = new TreeSet<>();
             e.getValue().forEach(i -> symbols.add(i.symbol()));
-            Map<String, BigDecimal> opens = paper.openPrices(e.getKey(), symbols);
-            Map<String, String> unfillable = paper.openUnfillable(e.getKey(), symbols);
+            Instant target = targetAt(e.getValue());
+            if (target != null && now.isBefore(target)) {
+                continue;   // 시각 맞추기 지시 — 그 시각 전에는 적지 않음
+            }
+            Map<String, BigDecimal> prices;
+            Map<String, String> unfillable;
+            Set<String> fallback = new TreeSet<>();
+            if (target == null) {
+                prices = paper.openPrices(e.getKey(), symbols);
+                unfillable = paper.openUnfillable(e.getKey(), symbols);
+            } else {
+                prices = new TreeMap<>();
+                unfillable = new TreeMap<>();
+                timedPrices(e.getKey(), target, symbols, prices, unfillable, fallback);
+            }
+            Instant at = target != null ? target : hours.open();
             int written = store.lockAccount(CODE, acc -> acc == null || !acc.active() ? 0
-                    : record(e.getKey(), hours.open(), opens, unfillable));
+                    : record(e.getKey(), at, prices, unfillable, fallback, target != null));
             if (written > 0) {
                 log.info("ISA 계좌 자동 기록 — 세션 {} · {}건", e.getKey(), written);
+            }
+        }
+    }
+
+    /** 그 세션 지시들의 시각 맞추기 시각(근거 {@value #DETAIL_TARGET_AT}, 가장 이른 것) — 없으면 null(예전 시가 지시). */
+    static Instant targetAt(List<Instruction> instructions) {
+        Instant out = null;
+        for (Instruction i : instructions) {
+            Instant at = targetAt(i);
+            if (at != null && (out == null || at.isBefore(out))) {
+                out = at;
+            }
+        }
+        return out;
+    }
+
+    /** 지시 하나의 시각 맞추기 시각(근거 {@value #DETAIL_TARGET_AT}) — 없거나 읽지 못하면 null. */
+    static Instant targetAt(Instruction instruction) {
+        String text = instruction.reason() == null ? null : instruction.reason().path(DETAIL_TARGET_AT).asString(null);
+        if (text == null || text.isBlank()) {
+            return null;
+        }
+        try {
+            return Instant.parse(text);
+        } catch (RuntimeException e) {
+            return null;
+        }
+    }
+
+    /**
+     * 시각 맞추기 지시의 자동 기록 가격(ADR 0033 초안 결정 7) — 그 시각의 1분봉 사다리({@link PaperMirrorService#pricesAt}), 그날 1분봉이 없거나 T 뒤
+     * 거래가 없으면 다시 오지 않음(halted), 그 시각의 창이 아예 없는 종목(그 시각 규칙 계좌 주문이 없던 종목 — 수집기가 받지 않음)은 밤 관측치의 그
+     * 세션 시가로 어림(그 세션 시가도 다시 오지 않으면 halted). 그 밖은 기다림(결과에 없음).
+     */
+    private void timedPrices(LocalDate session, Instant target, Set<String> symbols, Map<String, BigDecimal> prices,
+                             Map<String, String> unfillable, Set<String> fallback) {
+        Map<String, PaperMirrorService.LadderPrice> ladder = paper.pricesAt(session, target.atZone(Kst.ZONE).toLocalTime(), symbols);
+        Set<String> noWindow = new TreeSet<>();
+        ladder.forEach((symbol, price) -> {
+            if (price.price() != null && price.price().signum() > 0) {
+                prices.put(symbol, price.price());
+            } else if (price.unfillable()) {
+                unfillable.put(symbol, AUTO_HALTED);
+            } else if (price.noWindow()) {
+                noWindow.add(symbol);
+            }
+        });
+        if (noWindow.isEmpty()) {
+            return;
+        }
+        Map<String, BigDecimal> opens = paper.openPrices(session, noWindow);
+        Map<String, String> openUnfillable = paper.openUnfillable(session, noWindow);
+        for (String symbol : noWindow) {
+            BigDecimal open = opens.get(symbol);
+            if (open != null && open.signum() > 0) {
+                prices.put(symbol, open);
+                fallback.add(symbol);
+            } else if (openUnfillable.containsKey(symbol)) {
+                unfillable.put(symbol, openUnfillable.get(symbol));
             }
         }
     }
@@ -298,9 +383,12 @@ class ManualAccountJob {
     }
 
     /**
-     * 잠금 안 — 그 세션의 PLANNED 지시를 다시 읽어 시가가 있는 것만 적고, 시가가 다시 오지 않을 종목은 SKIPPED로 둡니다(클래스 설명 1). 바꾼 지시 수.
+     * 잠금 안 — 그 세션의 PLANNED 지시를 다시 읽어 가격이 있는 것만 적고, 가격이 다시 오지 않을 종목은 SKIPPED로 둡니다(클래스 설명 1). {@code open}은
+     * 장부 시각(시가 지시는 개장, 시각 맞추기 지시는 그 시각), {@code fallback}은 시각 맞추기 지시인데 시가로 어림한 종목, {@code timed}는 시각 맞추기
+     * 지시인가(메모 글). 바꾼 지시 수.
      */
-    private int record(LocalDate session, Instant open, Map<String, BigDecimal> opens, Map<String, String> unfillable) {
+    private int record(LocalDate session, Instant open, Map<String, BigDecimal> opens, Map<String, String> unfillable, Set<String> fallback,
+                       boolean timed) {
         List<Instruction> planned = store.instructions(CODE, session).stream().filter(Instruction::planned).toList();
         List<Entry> entries = new ArrayList<>(store.ledger(CODE).stream().map(Entry::of).toList());
         int changed = 0;
@@ -344,7 +432,11 @@ class ManualAccountJob {
                 continue;
             }
             boolean reduced = quantity.compareTo(wanted) < 0;
-            String note = "지시대로 자동 기록(규칙 계좌와 같은 시가, 수수료·세금 0 어림)"
+            boolean openFallback = fallback.contains(i.symbol());
+            String clock = ManualAccountNotices.hhmm(open.atZone(Kst.ZONE).toLocalTime());
+            String note = (!timed ? "지시대로 자동 기록(규칙 계좌와 같은 시가, 수수료·세금 0 어림)"
+                    : openFallback ? "지시대로 자동 기록 — " + clock + " 1분봉이 없어 그 세션 시가로 어림(수수료·세금 0 어림)"
+                    : "지시대로 자동 기록(규칙 계좌와 같은 " + clock + " 1분봉 값, 수수료·세금 0 어림)")
                     + (reduced ? " — " + (sell ? "보유" : "현금") + "가 모자라 " + quantity.toPlainString() + "주로 줄임" : "");
             LedgerValues v = new LedgerValues(open, i.side(), i.symbol(), quantity, price, null, BigDecimal.ZERO, BigDecimal.ZERO, i.id(),
                     ManualAccountStore.SOURCE_AUTO, note);
@@ -354,6 +446,8 @@ class ManualAccountJob {
             patch.put("recordedBy", "AUTO");
             if (reduced) {
                 patch.put("autoNote", sell ? "reduced-holding" : "reduced-cash");
+            } else if (openFallback) {
+                patch.put("autoNote", AUTO_OPEN_FALLBACK);
             }
             store.updateInstructionStatus(i.id(), ManualAccountStore.STATUS_RECORDED, ManualAccountStore.STATUS_PLANNED, patch);
             changed++;
@@ -429,12 +523,22 @@ class ManualAccountJob {
             return;
         }
         Instant until = next.close() != null ? next.close() : Instant.MAX;
-        if (!paper.dueOrders(SOURCE_BOOK, session, until).isEmpty()) {
-            // 그 결정의 주문이 시가가 아닌 시점에 체결됨 — 시가 목표(시가 주문만 흡수)가 그 결정을 담지 못함
+        // 시각 맞추기 날(ADR 0033 초안 결정 7) — 규칙 계좌가 개장 10분 뒤 지정 시각으로 체결하면 그 시각까지의 모의 주문을 반영한 목표로 '그 시각 이후
+        // 시장가' 지시. 아니면 예전 시가 목표.
+        Instant syncAt = paper.dailySyncAt(SOURCE_BOOK, session).orElse(null);
+        OpenTargets targets = (syncAt != null ? paper.targetsAt(SOURCE_BOOK, session, syncAt) : paper.openTargets(SOURCE_BOOK, session))
+                .orElse(null);
+        Set<Long> covered = new java.util.HashSet<>();
+        if (targets != null) {
+            covered.addAll(targets.absorbedOrderIds());
+            covered.addAll(targets.stopOrderIds());
+        }
+        boolean timed = paper.dueOrders(SOURCE_BOOK, session, until).stream().anyMatch(o -> !o.stop() && !covered.contains(o.orderId()));
+        if (timed) {
+            // 그 결정의 주문이 지시 시각 밖 시점에 체결됨 — 목표가 그 결정을 담지 못함. STOP 매도는 스탑 지시가 따로 맡음(ADR 0033 초안 결정 7).
             waitFor(session, WAIT_TIMED, now);
             return;
         }
-        OpenTargets targets = paper.openTargets(SOURCE_BOOK, session).orElse(null);
         if (targets == null || !targets.complete()) {
             waitFor(session, WAIT_TARGETS, now);
             return;
@@ -460,7 +564,7 @@ class ManualAccountJob {
             if (result.isEmpty()) {
                 return WAIT_PRICE;
             }
-            write(session, decision, result.get(), session.equals(acc.recalcSession()));
+            write(session, decision, result.get(), session.equals(acc.recalcSession()), syncAt, targets.stopOrderIds());
             return result.get().drafts().isEmpty() ? ManualAccountStore.SESSION_NONE : ManualAccountStore.SESSION_PLANNED;
         });
         if (WAIT_PRICE.equals(outcome)) {
@@ -473,11 +577,20 @@ class ManualAccountJob {
         }
     }
 
-    /** 잠금 안 — 세션 행과 지시 행을 씁니다. {@code recalculated}면 장부 고침이 지운 세션을 다시 만든 것(표시를 남기고 계좌의 표시를 지움). */
-    private void write(LocalDate session, DecisionState decision, Result result, boolean recalculated) {
+    /**
+     * 잠금 안 — 세션 행과 지시 행을 씁니다. {@code recalculated}면 장부 고침이 지운 세션을 다시 만든 것(표시를 남기고 계좌의 표시를 지움). {@code syncAt}이
+     * 있으면 시각 맞추기 지시(세션 기록·지시 근거에 {@value #DETAIL_TARGET_AT}, 목표에 반영한 STOP 주문 번호 {@value #DETAIL_COVERED_STOPS}).
+     */
+    private void write(LocalDate session, DecisionState decision, Result result, boolean recalculated, Instant syncAt,
+                       List<Long> coveredStops) {
         ObjectNode detail = mapper.createObjectNode();
         if (recalculated) {
             detail.put(DETAIL_RECALCULATED, true);
+        }
+        if (syncAt != null) {
+            detail.put(DETAIL_TARGET_AT, syncAt.toString());
+            ArrayNode covered = detail.putArray(DETAIL_COVERED_STOPS);
+            coveredStops.forEach(covered::add);
         }
         detail.put("decisionDate", decision.date().toString());
         if (decision.decisionId() != null) {
@@ -510,6 +623,9 @@ class ManualAccountJob {
             reason.put("equity", result.equity());
             if (recalculated) {
                 reason.put(DETAIL_RECALCULATED, true);
+            }
+            if (syncAt != null) {
+                reason.put(DETAIL_TARGET_AT, syncAt.toString());
             }
             store.insertInstruction(CODE, new NewInstruction(session, d.symbol(), d.side(), d.quantity(), d.refPrice(), d.weightPct(),
                     mapper.valueToTree(reason)));
@@ -599,7 +715,9 @@ class ManualAccountJob {
         Set<String> symbols = new TreeSet<>();
         items.forEach(i -> symbols.add(i.symbol()));
         Map<String, String> names = new HashMap<>(paper.names(symbols));
-        return sendText(ManualAccountNotices.text(session, ManualAccountNotices.wallClock(open), items, names, recalculated));
+        Instant target = targetAt(items);
+        return sendText(ManualAccountNotices.text(session, ManualAccountNotices.wallClock(open), ManualAccountNotices.wallClock(target), items,
+                names, recalculated));
     }
 
     private boolean sendText(String text) {

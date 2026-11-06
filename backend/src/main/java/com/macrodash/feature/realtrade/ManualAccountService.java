@@ -235,6 +235,8 @@ public class ManualAccountService {
             JsonNode reason = row.detail() == null ? null : row.detail().get("reason");
             block.put("reason", reason != null && reason.isString() ? reason.asString() : null);
             block.put("ledgerChanged", row.ledgerChangedAt() != null);
+            JsonNode target = row.detail() == null ? null : row.detail().get(ManualAccountJob.DETAIL_TARGET_AT);
+            block.put("targetAt", target != null && target.isString() ? target.asString() : null);   // 시각 맞추기 지시(ADR 0033 초안), 시가 지시면 null
             out.put("instructions", block);
         } else {
             out.put("instructions", null);
@@ -320,6 +322,7 @@ public class ManualAccountService {
         out.put("refPrice", plain(i.refPrice()));
         out.put("weightPct", plain(i.weightPct()));
         out.put("status", i.status());
+        out.put("targetAt", iso(ManualAccountJob.targetAt(i)));
         out.put("notifiedNightAt", iso(i.notifiedNightAt()));
         out.put("notifiedMorningAt", iso(i.notifiedMorningAt()));
         return out;

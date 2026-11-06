@@ -45,8 +45,19 @@ final class ManualAccountNotices {
      * 지시 글 — {@code recalculated}면 장부를 고쳐 다시 계산한 지시(ISA-R4 — 제목에 '(다시 계산)'과 앞서 보낸 지시 대신이라는 줄).
      */
     static String text(LocalDate session, LocalTime open, List<Instruction> items, Map<String, String> names, boolean recalculated) {
+        return text(session, open, null, items, names, recalculated);
+    }
+
+    /**
+     * 지시 글. {@code at}이 있으면 시각 맞추기 지시(ADR 0033 초안 결정 7 — 제목 'MM/DD(요일) HH:MM 매매 지시', 끝줄 'HH:MM 이후 시장가'), 없으면 예전 시가
+     * 지시 글(바이트까지 그대로).
+     *
+     * @param at 지시 시각(KST 벽시계 — 규칙 계좌가 체결하는 시각, 보통 날 09:10), 시가 지시면 null
+     */
+    static String text(LocalDate session, LocalTime open, LocalTime at, List<Instruction> items, Map<String, String> names,
+                       boolean recalculated) {
         LocalTime start = open == null ? LocalTime.of(9, 0) : open;
-        StringBuilder out = new StringBuilder(title(session, recalculated));
+        StringBuilder out = new StringBuilder(at == null ? title(session, recalculated) : title(session, hhmm(at) + " 매매 지시", recalculated));
         if (recalculated) {
             out.append('\n').append("장부가 바뀌어 다시 계산한 지시입니다 — 앞서 보낸 지시 대신 이 지시를 따르세요.");
         }
@@ -65,6 +76,11 @@ final class ManualAccountNotices {
             }
             out.append(' ').append(i.quantity()).append("주");
         }
+        if (at != null) {
+            out.append('\n').append(hhmm(at)).append(" 이후 시장가로 내면 규칙 계좌와 같은 때(").append(hhmm(at))
+                    .append(")에 체결됩니다. 장중 스탑이 걸리면 따로 알립니다. 다르게 매매했으면 화면에서 고치세요.");
+            return out.toString();
+        }
         out.append('\n').append("장전 동시호가(").append(hhmm(start.minusMinutes(AUCTION_MINUTES))).append('~').append(hhmm(start))
                 .append(")에 시장가로 내면 규칙 계좌와 같은 시가에 체결됩니다. 다르게 매매했으면 화면에서 고치세요.");
         return out.toString();
@@ -76,8 +92,12 @@ final class ManualAccountNotices {
     }
 
     private static String title(LocalDate session, boolean recalculated) {
+        return title(session, "시가 매매 지시", recalculated);
+    }
+
+    private static String title(LocalDate session, String label, boolean recalculated) {
         return "<b>" + PREFIX + String.format(Locale.ROOT, "%02d/%02d", session.getMonthValue(), session.getDayOfMonth()) + '('
-                + session.getDayOfWeek().getDisplayName(TextStyle.SHORT, Locale.KOREAN) + ") 시가 매매 지시" + (recalculated ? "(다시 계산)" : "")
+                + session.getDayOfWeek().getDisplayName(TextStyle.SHORT, Locale.KOREAN) + ") " + label + (recalculated ? "(다시 계산)" : "")
                 + "</b>";
     }
 
@@ -86,7 +106,7 @@ final class ManualAccountNotices {
         return open == null ? null : open.atZone(Kst.ZONE).toLocalTime();
     }
 
-    private static String hhmm(LocalTime time) {
+    static String hhmm(LocalTime time) {
         return String.format(Locale.ROOT, "%02d:%02d", time.getHour(), time.getMinute());
     }
 

@@ -420,6 +420,98 @@ class ManualAccountJobDbTest {
         verify(telegram, never()).send(anyString());
     }
 
+    // ------------------------------------------------------------------ 시각 맞추기 날(ADR 0033 초안 결정 7)
+    private static final Instant SYNC_AT = kst("2026-11-09T09:10");
+
+    private void timedTargets(List<Long> absorbed, List<Long> stops) {
+        when(paper.dailySyncAt(BOOK, E)).thenReturn(Optional.of(SYNC_AT));
+        when(paper.targetsAt(BOOK, E, SYNC_AT)).thenReturn(Optional.of(new OpenTargets(BOOK, E, Map.of(A, 50.0, B, 30.0, CASH, 10.0),
+                Map.of(A, 10_000.0, B, 20_000.0, CASH, 100_000.0), 1e8, 0, absorbed, List.of(), stops)));
+    }
+
+    private static DueOrder ruleAt(long id, String ticker, String side, Instant at) {
+        return new DueOrder(id, id, ticker, side, "AT_MINUTE", "RULE", at, at, true, 10.0, null, null);
+    }
+
+    private static DueOrder stopAt(long id, String ticker, String timing, Instant at) {
+        return new DueOrder(id, id, ticker, "SELL", timing, "STOP", at, at, true, null, null, null);
+    }
+
+    @Test
+    @DisplayName("시각 맞추기 날 — 규칙 계좌 09:10 주문은 그 시각까지의 목표로 지시(timed-orders 아님), 근거·세션에 09:10, 알림 글은 '09:10 이후 시장가'")
+    void timedSyncInstructions() {
+        started("1000000", "2026-11-06T14:55", A, "10", "10000");
+        timedTargets(List.of(5L), List.of(9L));
+        when(paper.dueOrders(eq(BOOK), eq(E), any())).thenReturn(List.of(ruleAt(5L, B, "BUY", SYNC_AT),
+                stopAt(9L, X, "AT_MINUTE", SYNC_AT)));
+
+        cycleAt("2026-11-06T22:35");
+
+        assertThat(lines(E)).containsExactly("BUY " + B + " 15 PLANNED", "BUY " + A + " 40 PLANNED", "BUY " + CASH + " 1 PLANNED");
+        verify(paper, never()).openTargets(anyString(), any());
+        assertThat(store.instructions("isa", E)).allSatisfy(i -> assertThat(i.reason().path("targetAt").asString())
+                .isEqualTo(SYNC_AT.toString()));
+        assertThat(store.session("isa", E)).hasValueSatisfying(row -> {
+            assertThat(row.detail().path("targetAt").asString()).isEqualTo(SYNC_AT.toString());
+            assertThat(row.detail().path("coveredStopOrderIds").get(0).asLong()).isEqualTo(9L);
+        });
+        ArgumentCaptor<String> text = ArgumentCaptor.forClass(String.class);
+        verify(telegram).send(text.capture());
+        assertThat(text.getValue()).contains("11/09(월) 09:10 매매 지시").contains("09:10 이후 시장가로 내면").doesNotContain("장전 동시호가");
+        Map<String, Object> block = block(service().view());
+        assertThat(block).containsEntry("targetAt", SYNC_AT.toString());
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> items = (List<Map<String, Object>>) block.get("items");
+        assertThat(items).allSatisfy(item -> assertThat(item).containsEntry("targetAt", SYNC_AT.toString()));
+    }
+
+    @Test
+    @DisplayName("시각 맞추기 날 — 목표에 들지 않는 시가 밖 규칙 주문(11:00)이 있으면 timed-orders, 시가 날에도 STOP 매도만 있으면 지시를 만듦(스탑 지시가 따로)")
+    void timedOrdersIgnoreStops() {
+        started("1000000", "2026-11-06T14:55", A, "10", "10000");
+        timedTargets(List.of(5L), List.of());
+        when(paper.dueOrders(eq(BOOK), eq(E), any())).thenReturn(List.of(ruleAt(5L, B, "BUY", SYNC_AT),
+                ruleAt(6L, A, "SELL", kst("2026-11-09T11:00"))));
+        cycleAt("2026-11-06T22:35");
+        assertThat(store.session("isa", E)).isEmpty();
+        assertThat(job.waiting().reason()).isEqualTo(ManualAccountJob.WAIT_TIMED);
+
+        when(paper.dailySyncAt(BOOK, E)).thenReturn(Optional.empty());
+        standardTargets();
+        when(paper.dueOrders(eq(BOOK), eq(E), any())).thenReturn(List.of(stopAt(9L, X, "AT_MINUTE", SYNC_AT)));
+        cycleAt("2026-11-06T22:45");
+        assertThat(lines(E)).as("시가 날 — 밤 대체 STOP만 남음(감시 ON)").hasSize(3);
+        assertThat(store.instructions("isa", E).getFirst().reason().has("targetAt")).isFalse();
+    }
+
+    @Test
+    @DisplayName("시각 맞추기 지시 자동 기록 — 그 시각이 지난 뒤 09:10 사다리 값·장부 시각 09:10, 창이 없는 종목은 그 세션 시가로 어림(open-fallback), 그 밖은 기다림")
+    void timedAutoRecord() {
+        started("1000000", "2026-11-06T14:55", A, "10", "10000");
+        timedTargets(List.of(), List.of());
+        cycleAt("2026-11-06T22:35");
+        assertThat(lines(E)).hasSize(3);
+        when(paper.pricesAt(eq(E), eq(LocalTime.of(9, 10)), any())).thenReturn(Map.of(
+                B, new PaperMirrorService.LadderPrice(d("20500"), false, false),
+                A, new PaperMirrorService.LadderPrice(null, false, true)));
+        when(paper.openPrices(eq(E), any())).thenReturn(Map.of(A, d("10100")));
+
+        cycleAt("2026-11-09T09:05");
+        assertThat(store.ledger("isa")).as("지시 시각 전에는 적지 않음").hasSize(2);
+        verify(paper, never()).pricesAt(any(), any(), any());
+
+        cycleAt("2026-11-09T21:30");
+        assertThat(lines(E)).containsExactly("BUY " + B + " 15 RECORDED", "BUY " + A + " 40 RECORDED", "BUY " + CASH + " 1 PLANNED");
+        LedgerRow b = store.ledger("isa").stream().filter(r -> "AUTO".equals(r.source()) && B.equals(r.symbol())).findFirst().orElseThrow();
+        assertThat(b.price()).isEqualByComparingTo("20500");
+        assertThat(b.at()).isEqualTo(SYNC_AT);
+        assertThat(b.note()).contains("09:10 1분봉 값");
+        LedgerRow a = store.ledger("isa").stream().filter(r -> "AUTO".equals(r.source()) && A.equals(r.symbol())).findFirst().orElseThrow();
+        assertThat(a.price()).isEqualByComparingTo("10100");
+        assertThat(a.note()).contains("시가로 어림");
+        assertThat(store.instructions("isa", E).get(1).reason().path("autoNote").asString()).isEqualTo(ManualAccountJob.AUTO_OPEN_FALLBACK);
+    }
+
     private ManualAccountService service() {
         return new ManualAccountService(store, paper, job, clock);
     }

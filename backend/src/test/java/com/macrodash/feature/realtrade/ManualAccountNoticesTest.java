@@ -73,4 +73,20 @@ class ManualAccountNoticesTest {
         assertThat(ManualAccountNotices.noTrades(MONDAY)).isEqualTo("<b>[ISA 계좌] 11/09(월) 시가 매매 지시(다시 계산)</b>\n"
                 + "장부가 바뀌어 다시 계산했더니 이 세션 시가에 할 매매가 없습니다 — 앞서 보낸 지시는 내지 마세요.");
     }
+
+    @Test
+    @DisplayName("시각 맞추기 지시(ADR 0033 초안) — 제목 '11/09(월) 09:10 매매 지시', 끝줄 '09:10 이후 시장가'·장중 스탑 따로 알림, 금액 없음")
+    void timedSyncText() {
+        String text = ManualAccountNotices.text(MONDAY, LocalTime.of(9, 0), LocalTime.of(9, 10),
+                List.of(instruction(1, "307950", "SELL", 3, "123457", "4.5")), Map.of("307950", "합성오토"), false);
+
+        assertThat(text).isEqualTo("<b>[ISA 계좌] 11/09(월) 09:10 매매 지시</b>\n"
+                + "매도 307950 합성오토 3주\n"
+                + "09:10 이후 시장가로 내면 규칙 계좌와 같은 때(09:10)에 체결됩니다. 장중 스탑이 걸리면 따로 알립니다. 다르게 매매했으면 화면에서 고치세요.");
+        assertThat(text).doesNotContain("원", "123457", "4.5", "장전 동시호가");
+        assertThat(ManualAccountNotices.text(MONDAY, LocalTime.of(10, 0), LocalTime.of(10, 10), List.of(), Map.of(), true))
+                .startsWith("<b>[ISA 계좌] 11/09(월) 10:10 매매 지시(다시 계산)</b>").contains("10:10 이후 시장가");
+        assertThat(ManualAccountNotices.text(MONDAY, LocalTime.of(9, 0), null, List.of(), Map.of(), false))
+                .as("시각이 없으면 예전 시가 글 그대로").isEqualTo(ManualAccountNotices.text(MONDAY, LocalTime.of(9, 0), List.of(), Map.of(), false));
+    }
 }
